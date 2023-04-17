@@ -4,6 +4,7 @@
 #include "GravityTypeEnum.h"
 #include "Camera/CameraComponent.h"
 #include "GameFramework/SpringArmComponent.h"
+#include "Components/ArrowComponent.h"
 
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
@@ -37,8 +38,9 @@ protected:
 		EGravityType CurrentGravityType;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gravity")
-		FVector GravityDirection;
-
+		FVector GravityDirection {
+		0.0f, 0.0f, -1.0f
+	};
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gravity")
 		float GravityStrength;
 
@@ -53,12 +55,31 @@ protected:
 	UFUNCTION(BlueprintCallable, Category = "GravityCamera")
 		void UpdateCameraOrientation();
 
+/**
+ * @brief Camera
+*/
 public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera")
 		USpringArmComponent* CameraSpringArm;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera")
 		UCameraComponent* PlayerCamera;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Camera")
+		float YawSpeed{ 100.f };
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Camera")
+		float PitchSpeed{ 100.f };
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera")
+		UArrowComponent* ArrowForwardVector;
+private:
+	void Turn(float Value);
+	void LookUp(float Value);
+
+	void MoveForward(float Value);
+
+	void MoveRight(float Value);
 
 private:
 	void UpdateZeroGGravity();

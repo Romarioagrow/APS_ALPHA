@@ -14,6 +14,7 @@ void EmptyLinkFunctionForGeneratedCodeGravityCharacter() {}
 	APS_ALPHA_API UEnum* Z_Construct_UEnum_APS_ALPHA_EGravityType();
 	COREUOBJECT_API UScriptStruct* Z_Construct_UScriptStruct_FVector();
 	ENGINE_API UClass* Z_Construct_UClass_ACharacter();
+	ENGINE_API UClass* Z_Construct_UClass_UArrowComponent_NoRegister();
 	ENGINE_API UClass* Z_Construct_UClass_UCameraComponent_NoRegister();
 	ENGINE_API UClass* Z_Construct_UClass_USpringArmComponent_NoRegister();
 	UPackage* Z_Construct_UPackage__Script_APS_ALPHA();
@@ -165,6 +166,18 @@ void EmptyLinkFunctionForGeneratedCodeGravityCharacter() {}
 		static const UECodeGen_Private::FMetaDataPairParam NewProp_PlayerCamera_MetaData[];
 #endif
 		static const UECodeGen_Private::FObjectPropertyParams NewProp_PlayerCamera;
+#if WITH_METADATA
+		static const UECodeGen_Private::FMetaDataPairParam NewProp_YawSpeed_MetaData[];
+#endif
+		static const UECodeGen_Private::FFloatPropertyParams NewProp_YawSpeed;
+#if WITH_METADATA
+		static const UECodeGen_Private::FMetaDataPairParam NewProp_PitchSpeed_MetaData[];
+#endif
+		static const UECodeGen_Private::FFloatPropertyParams NewProp_PitchSpeed;
+#if WITH_METADATA
+		static const UECodeGen_Private::FMetaDataPairParam NewProp_ArrowForwardVector_MetaData[];
+#endif
+		static const UECodeGen_Private::FObjectPropertyParams NewProp_ArrowForwardVector;
 		static const UECodeGen_Private::FPropertyParamsBase* const PropPointers[];
 		static const FCppClassTypeInfoStatic StaticCppClassTypeInfo;
 		static const UECodeGen_Private::FClassParams ClassParams;
@@ -223,6 +236,28 @@ void EmptyLinkFunctionForGeneratedCodeGravityCharacter() {}
 	};
 #endif
 	const UECodeGen_Private::FObjectPropertyParams Z_Construct_UClass_AGravityCharacter_Statics::NewProp_PlayerCamera = { "PlayerCamera", nullptr, (EPropertyFlags)0x001000000008000d, UECodeGen_Private::EPropertyGenFlags::Object, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(AGravityCharacter, PlayerCamera), Z_Construct_UClass_UCameraComponent_NoRegister, METADATA_PARAMS(Z_Construct_UClass_AGravityCharacter_Statics::NewProp_PlayerCamera_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_AGravityCharacter_Statics::NewProp_PlayerCamera_MetaData)) };
+#if WITH_METADATA
+	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_AGravityCharacter_Statics::NewProp_YawSpeed_MetaData[] = {
+		{ "Category", "Camera" },
+		{ "ModuleRelativePath", "GravityCharacter.h" },
+	};
+#endif
+	const UECodeGen_Private::FFloatPropertyParams Z_Construct_UClass_AGravityCharacter_Statics::NewProp_YawSpeed = { "YawSpeed", nullptr, (EPropertyFlags)0x0010000000000015, UECodeGen_Private::EPropertyGenFlags::Float, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(AGravityCharacter, YawSpeed), METADATA_PARAMS(Z_Construct_UClass_AGravityCharacter_Statics::NewProp_YawSpeed_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_AGravityCharacter_Statics::NewProp_YawSpeed_MetaData)) };
+#if WITH_METADATA
+	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_AGravityCharacter_Statics::NewProp_PitchSpeed_MetaData[] = {
+		{ "Category", "Camera" },
+		{ "ModuleRelativePath", "GravityCharacter.h" },
+	};
+#endif
+	const UECodeGen_Private::FFloatPropertyParams Z_Construct_UClass_AGravityCharacter_Statics::NewProp_PitchSpeed = { "PitchSpeed", nullptr, (EPropertyFlags)0x0010000000000015, UECodeGen_Private::EPropertyGenFlags::Float, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(AGravityCharacter, PitchSpeed), METADATA_PARAMS(Z_Construct_UClass_AGravityCharacter_Statics::NewProp_PitchSpeed_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_AGravityCharacter_Statics::NewProp_PitchSpeed_MetaData)) };
+#if WITH_METADATA
+	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_AGravityCharacter_Statics::NewProp_ArrowForwardVector_MetaData[] = {
+		{ "Category", "Camera" },
+		{ "EditInline", "true" },
+		{ "ModuleRelativePath", "GravityCharacter.h" },
+	};
+#endif
+	const UECodeGen_Private::FObjectPropertyParams Z_Construct_UClass_AGravityCharacter_Statics::NewProp_ArrowForwardVector = { "ArrowForwardVector", nullptr, (EPropertyFlags)0x001000000008000d, UECodeGen_Private::EPropertyGenFlags::Object, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(AGravityCharacter, ArrowForwardVector), Z_Construct_UClass_UArrowComponent_NoRegister, METADATA_PARAMS(Z_Construct_UClass_AGravityCharacter_Statics::NewProp_ArrowForwardVector_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_AGravityCharacter_Statics::NewProp_ArrowForwardVector_MetaData)) };
 	const UECodeGen_Private::FPropertyParamsBase* const Z_Construct_UClass_AGravityCharacter_Statics::PropPointers[] = {
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AGravityCharacter_Statics::NewProp_CurrentGravityType_Underlying,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AGravityCharacter_Statics::NewProp_CurrentGravityType,
@@ -230,6 +265,9 @@ void EmptyLinkFunctionForGeneratedCodeGravityCharacter() {}
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AGravityCharacter_Statics::NewProp_GravityStrength,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AGravityCharacter_Statics::NewProp_CameraSpringArm,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AGravityCharacter_Statics::NewProp_PlayerCamera,
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AGravityCharacter_Statics::NewProp_YawSpeed,
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AGravityCharacter_Statics::NewProp_PitchSpeed,
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AGravityCharacter_Statics::NewProp_ArrowForwardVector,
 	};
 	const FCppClassTypeInfoStatic Z_Construct_UClass_AGravityCharacter_Statics::StaticCppClassTypeInfo = {
 		TCppClassTypeTraits<AGravityCharacter>::IsAbstract,
@@ -268,9 +306,9 @@ void EmptyLinkFunctionForGeneratedCodeGravityCharacter() {}
 		static const FClassRegisterCompiledInInfo ClassInfo[];
 	};
 	const FClassRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GravityCharacter_h_Statics::ClassInfo[] = {
-		{ Z_Construct_UClass_AGravityCharacter, AGravityCharacter::StaticClass, TEXT("AGravityCharacter"), &Z_Registration_Info_UClass_AGravityCharacter, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(AGravityCharacter), 2904076544U) },
+		{ Z_Construct_UClass_AGravityCharacter, AGravityCharacter::StaticClass, TEXT("AGravityCharacter"), &Z_Registration_Info_UClass_AGravityCharacter, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(AGravityCharacter), 2464509350U) },
 	};
-	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GravityCharacter_h_802882401(TEXT("/Script/APS_ALPHA"),
+	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GravityCharacter_h_3877266001(TEXT("/Script/APS_ALPHA"),
 		Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GravityCharacter_h_Statics::ClassInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GravityCharacter_h_Statics::ClassInfo),
 		nullptr, 0,
 		nullptr, 0);
