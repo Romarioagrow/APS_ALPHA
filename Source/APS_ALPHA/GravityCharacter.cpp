@@ -49,11 +49,82 @@ void AGravityCharacter::Tick(float DeltaTime)
 
     UpdateGravity();
     UpdateCameraOrientation();
+    //RotateMeshTowardsForwardVector();
 
     GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("GravityDirection: %s"), *GravityDirection.ToString()));
     GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("CurrentGravityType: %s"), *GetGravityTypeAsString(CurrentGravityType)));
 
 }
+
+void AGravityCharacter::RotateMeshTowardsForwardVector()
+{
+    // ѕолучаем текущий Z ротатор CapsuleComponent
+    FRotator CapsuleCurrentRotation = GetCapsuleComponent()->GetRelativeRotation();
+
+    // ѕолучаем направление ArrowForwardVector
+    FVector ForwardDirection = ArrowForwardVector->GetForwardVector();
+
+    // —оздаем новый ротатор с использованием текущего Pitch и Roll CapsuleComponent и Yaw ArrowForwardVector
+    FRotator TargetRotation = FRotator(CapsuleCurrentRotation.Pitch, ForwardDirection.Rotation().Yaw, CapsuleCurrentRotation.Roll);
+
+    // ƒобавл€ем смещение вращени€ меша
+    float MeshRotationOffset = -90.0f; // «начение смещени€ меша
+    TargetRotation.Yaw += MeshRotationOffset;
+
+
+    // ѕримен€ем целевое вращение к CapsuleComponent
+    GetCapsuleComponent()->SetRelativeRotation(TargetRotation);
+    GetMesh()->SetRelativeRotation(TargetRotation);
+
+
+    UE_LOG(LogTemp, Warning, TEXT("CapsuleComponent rotation: %s"), *TargetRotation.ToString());
+    UE_LOG(LogTemp, Warning, TEXT("GetRelativeRotation: %s"), *GetCapsuleComponent()->GetRelativeRotation().ToString());
+    
+    
+    //// ѕровер€ем, нажата ли хот€ бы одна из клавиш движени€
+    //float MoveForwardValue = InputComponent->GetAxisValue(TEXT("MoveForward"));
+    //float MoveRightValue = InputComponent->GetAxisValue(TEXT("MoveRight"));
+
+    //if (MoveForwardValue != 0 || MoveRightValue != 0)
+    //{
+    //    // ѕолучаем текущий Z ротатор CapsuleComponent
+    //    FRotator CapsuleCurrentRotation = GetCapsuleComponent()->GetRelativeRotation();
+
+    //    // ѕолучаем направление ArrowForwardVector
+    //    FVector ForwardDirection = ArrowForwardVector->GetForwardVector();
+
+    //    // —оздаем новый ротатор с использованием текущего Pitch и Roll CapsuleComponent и Yaw ArrowForwardVector
+    //    FRotator TargetRotation = FRotator(CapsuleCurrentRotation.Pitch, ForwardDirection.Rotation().Yaw, CapsuleCurrentRotation.Roll);
+
+    //    // ƒобавл€ем смещение вращени€ меша
+    //    float MeshRotationOffset = -90.0f; // «начение смещени€ меша
+    //    TargetRotation.Yaw += MeshRotationOffset;
+
+    //    // »нтерполируем между текущим и целевым вращением CapsuleComponent с использованием RInterpTo и DeltaTime
+    //    float RotationInterpSpeed = 10.0f; // —корость интерпол€ции вращени€, подстройте значение по вашему усмотрению
+    //    FRotator InterpolatedRotation = FMath::RInterpTo(CapsuleCurrentRotation, TargetRotation, GetWorld()->DeltaTimeSeconds, RotationInterpSpeed);
+
+    //    // ѕримен€ем интерполированное вращение к CapsuleComponent
+    //    GetCapsuleComponent()->SetRelativeRotation(InterpolatedRotation);
+    //}
+    
+    //// ѕолучаем текущий Z ротатор меша
+    //FRotator MeshCurrentRotation = GetMesh()->GetComponentRotation();
+
+    //// ѕолучаем направление ArrowForwardVector
+    //FVector ForwardDirection = ArrowForwardVector->GetForwardVector();
+
+    //// —оздаем новый ротатор с использованием текущего Pitch и Roll меша и Yaw ArrowForwardVector
+    //FRotator TargetRotation = FRotator(MeshCurrentRotation.Pitch, ForwardDirection.Rotation().Yaw, MeshCurrentRotation.Roll);
+    //TargetRotation.Yaw -= 90.0f;
+    //// »нтерполируем между текущим и целевым вращением меша с использованием Slerp и DeltaTime
+    //float RotationInterpSpeed = 10.0f; // —корость интерпол€ции вращени€, подстройте значение по вашему усмотрению
+    //FRotator InterpolatedRotation = FMath::RInterpTo(MeshCurrentRotation, TargetRotation, GetWorld()->DeltaTimeSeconds, RotationInterpSpeed);
+
+    //// ѕримен€ем интерполированное вращение к мешу персонажа
+    //GetMesh()->SetWorldRotation(InterpolatedRotation);
+}
+
 
 // Called to bind functionality to input
 void AGravityCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -84,6 +155,7 @@ void AGravityCharacter::Turn(float Value)
         float NewYaw = ArrowForwardVector->GetRelativeRotation().Yaw + Value * YawSpeed * GetWorld()->GetDeltaSeconds();
         FRotator NewRotation = FRotator(0.f, NewYaw, 0.f);
         ArrowForwardVector->SetRelativeRotation(NewRotation);
+        //RotateMeshTowardsForwardVector();
     }
     
 }
@@ -106,23 +178,11 @@ void AGravityCharacter::MoveForward(float Value)
     if ((Controller != NULL) && (Value != 0.0f))
     {
         // Ќайти направление перемещени€ персонажа в зависимости от текущей ориентации камеры
-        //const FRotator Rotation = ArrowForwardVector->GetComponentTransform().GetRotation();
-        //
-        
         const FQuat RotationQuat = ArrowForwardVector->GetComponentTransform().GetRotation();
         const FRotator Rotation = RotationQuat.Rotator();
         const FVector Direction = FRotationMatrix(Rotation).GetScaledAxis(EAxis::X);
-        GetCapsuleComponent()->AddForce(Direction * Value * 109000.f);
-
-
-        //GetCharacterMovement()->AddForce(Direction * Value * 1000.f);
-        //AddMovementInput(Direction, Value);
-        // const FQuat RotationQuat = ArrowForwardVector->GetComponentTransform().GetRotation();
-        //const FRotator Rotation = RotationQuat.Rotator();
-        //const FVector Direction = FRotationMatrix(Rotation).GetScaledAxis(EAxis::X);
-        ////AddMovementInput(Direction, Value);
-        //GetCapsuleComponent()->AddImpulse(Direction * Value * 1000.f);
-
+        GetCapsuleComponent()->AddForce(Direction * Value * 100000.f);
+        RotateMeshTowardsForwardVector();
     }
 }
 
@@ -131,23 +191,12 @@ void AGravityCharacter::MoveRight(float Value)
     if ((Controller != NULL) && (Value != 0.0f))
     {
         // Ќайти направление перемещени€ персонажа в зависимости от текущей ориентации камеры
-        //const FRotator Rotation = Controller->GetControlRotation();
-        
-        if ((Controller != NULL) && (Value != 0.0f))
-        {
-            const FQuat RotationQuat = ArrowForwardVector->GetComponentTransform().GetRotation();
-            const FRotator Rotation = RotationQuat.Rotator();
-            const FVector Direction = FRotationMatrix(Rotation).GetScaledAxis(EAxis::Y);
-            GetCapsuleComponent()->AddForce(Direction * Value * 109000.f);
-
-           // GetCharacterMovement()->AddForce(Direction * Value * 1000.f);
-            //AddMovementInput(Direction, Value);
-        }
-        
-        /*const FQuat RotationQuat = ArrowForwardVector->GetComponentTransform().GetRotation();
+        const FQuat RotationQuat = ArrowForwardVector->GetComponentTransform().GetRotation();
         const FRotator Rotation = RotationQuat.Rotator();
         const FVector Direction = FRotationMatrix(Rotation).GetScaledAxis(EAxis::Y);
-        GetCapsuleComponent()->AddImpulse(Direction * Value * 1000.f);*/
+        GetCapsuleComponent()->AddForce(Direction * Value * 100000.f);
+        RotateMeshTowardsForwardVector();
+
     }
 }
 

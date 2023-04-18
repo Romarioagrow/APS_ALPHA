@@ -27,6 +27,8 @@ public:
 	// Called every frame
 	virtual void Tick(float DeltaTime) override;
 
+	void RotateMeshTowardsForwardVector();
+
 	// Called to bind functionality to input
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 
@@ -54,6 +56,9 @@ protected:
 
 	UFUNCTION(BlueprintCallable, Category = "GravityCamera")
 		void UpdateCameraOrientation();
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+		USceneComponent* RootSceneComponent;
 
 /**
  * @brief Camera
