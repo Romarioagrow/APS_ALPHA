@@ -43,7 +43,9 @@ void AGravityCharacter::Tick(float DeltaTime)
     UpdateGravity();
     UpdateCameraOrientation();
 
-    GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("GravityDirection %s"), *GravityDirection.ToString()));
+    GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("GravityDirection: %s"), *GravityDirection.ToString()));
+    GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("CurrentGravityType: %s"), *GetGravityTypeAsString(CurrentGravityType)));
+
 }
 
 // Called to bind functionality to input
@@ -68,7 +70,6 @@ void AGravityCharacter::SetGravityType(EGravityType NewGravityType)
 void AGravityCharacter::UpdateGravity()
 {
     GravityDirection = -GetActorUpVector();
-    GetController()->SetControlRotation(UKismetMathLibrary::MakeRotationFromAxes(GetActorForwardVector(), GetActorRightVector(), -GravityDirection));
     
     //switch (CurrentGravityType)
     //{
@@ -206,4 +207,10 @@ void AGravityCharacter::UpdateShipGravity()
 
 void AGravityCharacter::UpdateShipCamera()
 {
+}
+
+FString AGravityCharacter::GetGravityTypeAsString(EGravityType GravityType)
+{
+    const UEnum* EnumPtr = StaticEnum<EGravityType>();
+    return EnumPtr ? EnumPtr->GetNameStringByValue(static_cast<int32>(GravityType)) : FString();
 }

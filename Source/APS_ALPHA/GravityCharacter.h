@@ -35,7 +35,7 @@ public:
 */
 protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gravity")
-		EGravityType CurrentGravityType;
+		EGravityType CurrentGravityType { EGravityType::ZeroG };
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gravity")
 		FVector GravityDirection {
@@ -93,4 +93,6 @@ private:
 
 	void UpdateShipGravity();
 	void UpdateShipCamera();
+
+	FString GetGravityTypeAsString(EGravityType GravityType);
 };
