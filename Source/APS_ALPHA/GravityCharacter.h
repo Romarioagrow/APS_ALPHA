@@ -1,6 +1,6 @@
 // Fill out your copyright notice in the Description page of Project Settings.
-
 #pragma once
+
 #include "GravityTypeEnum.h"
 #include "Camera/CameraComponent.h"
 #include "GameFramework/SpringArmComponent.h"
