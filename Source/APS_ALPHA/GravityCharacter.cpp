@@ -2,6 +2,8 @@
 
 #include "GravityCharacter.h"
 #include <Kismet/KismetMathLibrary.h>
+#include "Components/CapsuleComponent.h"
+#include "GameFramework/CharacterMovementComponent.h"
 
 // Sets default values
 AGravityCharacter::AGravityCharacter()
@@ -25,6 +27,7 @@ AGravityCharacter::AGravityCharacter()
     // —оздание и настройка CameraComponent
     PlayerCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("PlayerCamera"));
     PlayerCamera->SetupAttachment(CameraSpringArm, USpringArmComponent::SocketName);
+    GetCapsuleComponent()->SetPhysicsMaxAngularVelocityInDegrees(180.f);
 }
 
 // Called when the game starts or when spawned
@@ -33,6 +36,10 @@ void AGravityCharacter::BeginPlay()
 	Super::BeginPlay();
 
     //SetActorRotation(FRotator(-80.0f, -150.0f, -110.0f));
+
+    // set up input component
+    InputComponent = NewObject<UInputComponent>(this, TEXT("InputComponent"));
+
 }
 
 // Called every frame
@@ -67,78 +74,31 @@ void AGravityCharacter::SetGravityType(EGravityType NewGravityType)
 	UpdateGravity();
 }
 
-void AGravityCharacter::UpdateGravity()
-{
-    GravityDirection = -GetActorUpVector();
-    
-    //switch (CurrentGravityType)
-    //{
-    //case EGravityType::ZeroG:
-    //    // Ћогика обновлени€ гравитации в режиме невесомости
-    //    UpdateZeroGGravity();
-    //    UpdateZeroGCamera();
-    //    break;
-    //case EGravityType::OnStation:
-    //    // Ћогика обновлени€ гравитации на станции
-    //    UpdateStationGravity();
-    //    UpdateStationCamera();
-    //    break;
-    //case EGravityType::OnPlanet:
-    //    // Ћогика обновлени€ гравитации на планете
-    //    UpdatePlanetGravity();
-    //    UpdatePlanetCamera();
-    //    break;
-    //case EGravityType::OnShip:
-    //    // Ћогика обновлени€ гравитации на корабле
-    //    UpdateShipGravity();
-    //    UpdateShipCamera();
-    //    break;
-    //}
-}
 
-void AGravityCharacter::UpdateCameraOrientation()
-{
-    // ¬ращение камеры в зависимости от типа гравитации
-    //switch (CurrentGravityType)
-    //{
-    //case EGravityType::ZeroG:
-    //    //  од дл€ ориентации камеры в невесомости
-    //    break;
-
-    //case EGravityType::OnStation:
-    //    //  од дл€ ориентации камеры на станции
-    //    break;
-
-    //case EGravityType::OnPlanet:
-    //    //  од дл€ ориентации камеры на планете
-    //    break;
-
-    //case EGravityType::OnShip:
-    //    //  од дл€ ориентации камеры на корабле
-    //    break;
-
-    //default:
-    //    break;
-    //}
-
-    //GetController()->SetControlRotation(UKismetMathLibrary::MakeRotationFromAxes(GetActorForwardVector(), GetActorRightVector(), -GravityDirection));
-}
 
 void AGravityCharacter::Turn(float Value)
 {
-    // ќбновление смещени€ Yaw ArrowForwardVector
-    float NewYaw = ArrowForwardVector->GetRelativeRotation().Yaw + Value * YawSpeed * GetWorld()->GetDeltaSeconds();
-    FRotator NewRotation = FRotator(0.f, NewYaw, 0.f);
-    ArrowForwardVector->SetRelativeRotation(NewRotation);
+    if (Value != 0.0f)
+    {
+        // ќбновление смещени€ Yaw ArrowForwardVector
+        float NewYaw = ArrowForwardVector->GetRelativeRotation().Yaw + Value * YawSpeed * GetWorld()->GetDeltaSeconds();
+        FRotator NewRotation = FRotator(0.f, NewYaw, 0.f);
+        ArrowForwardVector->SetRelativeRotation(NewRotation);
+    }
+    
 }
 
 void AGravityCharacter::LookUp(float Value)
 {
-    // ќбновление смещени€ Pitch CameraSpringArm
-    float NewPitch = CameraSpringArm->GetRelativeRotation().Pitch + Value * PitchSpeed * GetWorld()->GetDeltaSeconds();
-    NewPitch = FMath::Clamp<float>(NewPitch, -80.f, 80.f);
-    FRotator NewRotation = FRotator(NewPitch, 0.f, 0.f);
-    CameraSpringArm->SetRelativeRotation(NewRotation);
+    if (Value != 0.0f)
+    {
+        // ќбновление смещени€ Pitch CameraSpringArm
+        float NewPitch = CameraSpringArm->GetRelativeRotation().Pitch + Value * PitchSpeed * GetWorld()->GetDeltaSeconds();
+        NewPitch = FMath::Clamp<float>(NewPitch, -80.f, 80.f);
+        FRotator NewRotation = FRotator(NewPitch, 0.f, 0.f);
+        CameraSpringArm->SetRelativeRotation(NewRotation);
+    }
+    
 }
 
 void AGravityCharacter::MoveForward(float Value)
@@ -146,9 +106,23 @@ void AGravityCharacter::MoveForward(float Value)
     if ((Controller != NULL) && (Value != 0.0f))
     {
         // Ќайти направление перемещени€ персонажа в зависимости от текущей ориентации камеры
-        const FRotator Rotation = Controller->GetControlRotation();
+        //const FRotator Rotation = ArrowForwardVector->GetComponentTransform().GetRotation();
+        //
+        
+        const FQuat RotationQuat = ArrowForwardVector->GetComponentTransform().GetRotation();
+        const FRotator Rotation = RotationQuat.Rotator();
         const FVector Direction = FRotationMatrix(Rotation).GetScaledAxis(EAxis::X);
-        AddMovementInput(Direction, Value);
+        GetCapsuleComponent()->AddForce(Direction * Value * 109000.f);
+
+
+        //GetCharacterMovement()->AddForce(Direction * Value * 1000.f);
+        //AddMovementInput(Direction, Value);
+        // const FQuat RotationQuat = ArrowForwardVector->GetComponentTransform().GetRotation();
+        //const FRotator Rotation = RotationQuat.Rotator();
+        //const FVector Direction = FRotationMatrix(Rotation).GetScaledAxis(EAxis::X);
+        ////AddMovementInput(Direction, Value);
+        //GetCapsuleComponent()->AddImpulse(Direction * Value * 1000.f);
+
     }
 }
 
@@ -157,9 +131,23 @@ void AGravityCharacter::MoveRight(float Value)
     if ((Controller != NULL) && (Value != 0.0f))
     {
         // Ќайти направление перемещени€ персонажа в зависимости от текущей ориентации камеры
-        const FRotator Rotation = Controller->GetControlRotation();
+        //const FRotator Rotation = Controller->GetControlRotation();
+        
+        if ((Controller != NULL) && (Value != 0.0f))
+        {
+            const FQuat RotationQuat = ArrowForwardVector->GetComponentTransform().GetRotation();
+            const FRotator Rotation = RotationQuat.Rotator();
+            const FVector Direction = FRotationMatrix(Rotation).GetScaledAxis(EAxis::Y);
+            GetCapsuleComponent()->AddForce(Direction * Value * 109000.f);
+
+           // GetCharacterMovement()->AddForce(Direction * Value * 1000.f);
+            //AddMovementInput(Direction, Value);
+        }
+        
+        /*const FQuat RotationQuat = ArrowForwardVector->GetComponentTransform().GetRotation();
+        const FRotator Rotation = RotationQuat.Rotator();
         const FVector Direction = FRotationMatrix(Rotation).GetScaledAxis(EAxis::Y);
-        AddMovementInput(Direction, Value);
+        GetCapsuleComponent()->AddImpulse(Direction * Value * 1000.f);*/
     }
 }
 
@@ -213,4 +201,61 @@ FString AGravityCharacter::GetGravityTypeAsString(EGravityType GravityType)
 {
     const UEnum* EnumPtr = StaticEnum<EGravityType>();
     return EnumPtr ? EnumPtr->GetNameStringByValue(static_cast<int32>(GravityType)) : FString();
+}
+
+void AGravityCharacter::UpdateGravity()
+{
+    GravityDirection = -GetActorUpVector();
+
+    //switch (CurrentGravityType)
+    //{
+    //case EGravityType::ZeroG:
+    //    // Ћогика обновлени€ гравитации в режиме невесомости
+    //    UpdateZeroGGravity();
+    //    UpdateZeroGCamera();
+    //    break;
+    //case EGravityType::OnStation:
+    //    // Ћогика обновлени€ гравитации на станции
+    //    UpdateStationGravity();
+    //    UpdateStationCamera();
+    //    break;
+    //case EGravityType::OnPlanet:
+    //    // Ћогика обновлени€ гравитации на планете
+    //    UpdatePlanetGravity();
+    //    UpdatePlanetCamera();
+    //    break;
+    //case EGravityType::OnShip:
+    //    // Ћогика обновлени€ гравитации на корабле
+    //    UpdateShipGravity();
+    //    UpdateShipCamera();
+    //    break;
+    //}
+}
+
+void AGravityCharacter::UpdateCameraOrientation()
+{
+    // ¬ращение камеры в зависимости от типа гравитации
+    //switch (CurrentGravityType)
+    //{
+    //case EGravityType::ZeroG:
+    //    //  од дл€ ориентации камеры в невесомости
+    //    break;
+
+    //case EGravityType::OnStation:
+    //    //  од дл€ ориентации камеры на станции
+    //    break;
+
+    //case EGravityType::OnPlanet:
+    //    //  од дл€ ориентации камеры на планете
+    //    break;
+
+    //case EGravityType::OnShip:
+    //    //  од дл€ ориентации камеры на корабле
+    //    break;
+
+    //default:
+    //    break;
+    //}
+
+    //GetController()->SetControlRotation(UKismetMathLibrary::MakeRotationFromAxes(GetActorForwardVector(), GetActorRightVector(), -GravityDirection));
 }

@@ -78,7 +78,6 @@ private:
 	void LookUp(float Value);
 
 	void MoveForward(float Value);
-
 	void MoveRight(float Value);
 
 private:
