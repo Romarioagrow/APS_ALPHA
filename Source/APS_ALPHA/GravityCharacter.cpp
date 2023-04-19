@@ -4,6 +4,7 @@
 #include <Kismet/KismetMathLibrary.h>
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include <Kismet/GameplayStatics.h>
 
 // Sets default values
 AGravityCharacter::AGravityCharacter()
@@ -67,13 +68,26 @@ void AGravityCharacter::OnBeginOverlap(UPrimitiveComponent* OverlappedComponent,
     UE_LOG(LogTemp, Warning, TEXT("BeginOverlap with: %s"), *OtherActor->GetName());
     GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Green, FString::Printf(TEXT("BeginOverlap with: %s"), *OtherActor->GetName()));
 
- //   if (OtherActor->IsA(AStationGravityActor::StaticClass()))
- //   {
- //       CurrentGravityType = EGravityType::OnStation;
- //       AStationGravityActor* CurrentGravityActor = Cast<AStationGravityActor>(OtherActor);
- ////       ////OtherActor 
- //       RotateToStationGravity(CurrentGravityActor);
-	//}
+    if (OtherActor->IsA(AStationGravityActor::StaticClass()))
+    {
+        CurrentGravityType = EGravityType::OnStation;
+        AStationGravityActor* CurrentGravityActor = Cast<AStationGravityActor>(OtherActor);
+        ////OtherActor 
+        RotateToStationGravity(CurrentGravityActor);
+	}
+    else if (OtherActor->IsA(APlanetGravityActor::StaticClass()))
+    {
+		CurrentGravityType = EGravityType::OnPlanet;
+		APlanetGravityActor* CurrentGravityActor = Cast<APlanetGravityActor>(OtherActor);
+		RotateToPlanetGravity(CurrentGravityActor);
+	}
+    else if (OtherActor->IsA(ASpaceshipGravityActor::StaticClass()))
+    {
+		CurrentGravityType = EGravityType::OnPlanet;
+        ASpaceshipGravityActor* CurrentGravityActor = Cast<ASpaceshipGravityActor>(OtherActor);
+        RotateToSpaceshipGravity(CurrentGravityActor);
+	}
+
 	
 }
 
@@ -87,23 +101,46 @@ void AGravityCharacter::OnEndOverlap(UPrimitiveComponent* OverlappedComponent, A
     //FVector GravityTargetDirection = GravityTargetLocation - GetActorLocation();
     //GravityTargetDirection.Normalize();
 
+    UpdateGravityStatus();
+
+}
+
+void AGravityCharacter::UpdateGravityStatus()
+{
+    GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Orange, FString::Printf(TEXT("UpdateGravityStatus")));
+
+    TArray<AActor*> TaggedActors;
+    UGameplayStatics::GetAllActorsWithTag(GetWorld(), "EventManager", TaggedActors);
 
 }
 
 void AGravityCharacter::RotateToStationGravity(AStationGravityActor* StationGravityActor)
 {
-    FVector GravityUpVector = StationGravityActor->GetActorLocation() - GetActorLocation();
-    GravityUpVector.Normalize();
+    GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Orange, FString::Printf(TEXT("RotateToStationGravity")));
 
-    FVector CapsuleForwardVector = GetCapsuleComponent()->GetForwardVector();
+    //FVector GravityUpVector = StationGravityActor->GetActorLocation() - GetActorLocation();
+    //GravityUpVector.Normalize();
 
-    FQuat TargetRotation = FQuat::FindBetween(GetCapsuleComponent()->GetUpVector(), GravityUpVector) * GetCapsuleComponent()->GetComponentQuat();
+    //FVector CapsuleForwardVector = GetCapsuleComponent()->GetForwardVector();
 
-    float InterpolationSpeed = 5.0f; // Задаем скорость интерполяции
-    float DeltaTime = GetWorld()->GetDeltaSeconds(); // Получаем время между кадрами
-    FQuat InterpolatedRotation = FQuat::Slerp(GetCapsuleComponent()->GetComponentQuat(), TargetRotation, DeltaTime * InterpolationSpeed);
+    //FQuat TargetRotation = FQuat::FindBetween(GetCapsuleComponent()->GetUpVector(), GravityUpVector) * GetCapsuleComponent()->GetComponentQuat();
 
-    GetCapsuleComponent()->SetWorldRotation(InterpolatedRotation);
+    //float InterpolationSpeed = 5.0f; // Задаем скорость интерполяции
+    //float DeltaTime = GetWorld()->GetDeltaSeconds(); // Получаем время между кадрами
+    //FQuat InterpolatedRotation = FQuat::Slerp(GetCapsuleComponent()->GetComponentQuat(), TargetRotation, DeltaTime * InterpolationSpeed);
+
+    //GetCapsuleComponent()->SetWorldRotation(InterpolatedRotation);
+}
+
+void AGravityCharacter::RotateToPlanetGravity(APlanetGravityActor* StationGravityActor)
+{
+    GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Orange, FString::Printf(TEXT("RotateToPlanetGravity")));
+}
+
+void AGravityCharacter::RotateToSpaceshipGravity(ASpaceshipGravityActor* StationGravityActor)
+{
+    GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Orange, FString::Printf(TEXT("RotateToShipGravity")));
+
 }
 
 void AGravityCharacter::RotateMeshTowardsForwardVector()

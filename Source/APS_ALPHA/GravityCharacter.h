@@ -2,6 +2,8 @@
 #pragma once
 
 #include "StationGravityActor.h"
+#include "PlanetGravityActor.h"
+#include "SpaceshipGravityActor.h"
 #include "GravityTypeEnum.h"
 #include "Camera/CameraComponent.h"
 #include "GameFramework/SpringArmComponent.h"
@@ -43,7 +45,13 @@ protected:
 	UFUNCTION()
 		void OnEndOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex);
 
+	void UpdateGravityStatus();
+
 	void RotateToStationGravity(AStationGravityActor* StationGravityActor);
+
+	void RotateToPlanetGravity(APlanetGravityActor* StationGravityActor);
+
+	void RotateToSpaceshipGravity(ASpaceshipGravityActor* StationGravityActor);
 
 /**
  * @Gravity Params
