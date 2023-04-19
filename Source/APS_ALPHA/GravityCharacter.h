@@ -85,6 +85,8 @@ private:
 	void MoveForward(float Value);
 	void MoveRight(float Value);
 
+	void MoveUp(float Value);
+
 private:
 	void UpdateZeroGGravity();
 	void UpdateZeroGCamera();

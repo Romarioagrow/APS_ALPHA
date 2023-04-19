@@ -86,6 +86,7 @@ void AGravityCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCo
     // Ќастройка параметров перемещени€ персонажа
 	PlayerInputComponent->BindAxis("MoveForward", this, &AGravityCharacter::MoveForward);
 	PlayerInputComponent->BindAxis("MoveRight", this, &AGravityCharacter::MoveRight);
+	PlayerInputComponent->BindAxis("MoveUp", this, &AGravityCharacter::MoveUp);
 
 	// Ќастройка параметров поворота камеры
 	PlayerInputComponent->BindAxis("Turn", this, &AGravityCharacter::Turn);
@@ -145,7 +146,19 @@ void AGravityCharacter::MoveRight(float Value)
         const FVector Direction = FRotationMatrix(Rotation).GetScaledAxis(EAxis::Y);
         GetCapsuleComponent()->AddForce(Direction * Value * 100000.f);
         RotateMeshTowardsForwardVector();
+    }
+}
 
+void AGravityCharacter::MoveUp(float Value)
+{
+    if ((Controller != NULL) && (Value != 0.0f))
+    {
+        // Ќайти направление перемещени€ персонажа в зависимости от текущей ориентации камеры
+        const FQuat RotationQuat = ArrowForwardVector->GetComponentTransform().GetRotation();
+        const FRotator Rotation = RotationQuat.Rotator();
+        const FVector Direction = FRotationMatrix(Rotation).GetScaledAxis(EAxis::Z);
+        GetCapsuleComponent()->AddForce(Direction * Value * 100000.f);
+        RotateMeshTowardsForwardVector();
     }
 }
 
