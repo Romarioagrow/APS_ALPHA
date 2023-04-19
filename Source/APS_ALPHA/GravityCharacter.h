@@ -108,6 +108,10 @@ private:
 
 	void MoveUp(float Value);
 
+	void RotatePitch(float Value);
+
+	void RotateRoll(float Value);
+
 private:
 	//void RotateRoll(float Value);
 	void UpdateZeroGGravity();

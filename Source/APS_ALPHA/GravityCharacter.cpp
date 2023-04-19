@@ -112,6 +112,18 @@ void AGravityCharacter::UpdateGravityStatus()
     TArray<AActor*> TaggedActors;
     UGameplayStatics::GetAllActorsWithTag(GetWorld(), "EventManager", TaggedActors);
 
+    if (TaggedActors.Num() > 0)
+    {
+        UClass* FirstGravityActor = TaggedActors[0]->GetClass();
+        GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Red, FString::Printf(TEXT("FirstGravityActor : %s"), *FirstGravityActor->GetName()));
+
+    }
+    else
+    {
+        GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Red, FString::Printf(TEXT("FirstGravityActorq 0")));
+    }
+    
+
 }
 
 void AGravityCharacter::RotateToStationGravity(AStationGravityActor* StationGravityActor)
@@ -183,6 +195,11 @@ void AGravityCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCo
 	// Настройка параметров поворота камеры
 	PlayerInputComponent->BindAxis("Turn", this, &AGravityCharacter::Turn);
 	PlayerInputComponent->BindAxis("LookUp", this, &AGravityCharacter::LookUp);
+    
+    PlayerInputComponent->BindAxis("RotatePitch", this, &AGravityCharacter::RotatePitch);
+	PlayerInputComponent->BindAxis("RotateRoll", this, &AGravityCharacter::RotateRoll);
+
+    
 }
 
 void AGravityCharacter::SetGravityType(EGravityType NewGravityType)
@@ -251,6 +268,26 @@ void AGravityCharacter::MoveUp(float Value)
         const FVector Direction = FRotationMatrix(Rotation).GetScaledAxis(EAxis::Z);
         GetCapsuleComponent()->AddForce(Direction * Value * 100000.f);
         RotateMeshTowardsForwardVector();
+    }
+}
+
+void AGravityCharacter::RotatePitch(float Value)
+{
+    if ((Controller != NULL) && (Value != 0.0f))
+    {
+        // Найти направление перемещения персонажа в зависимости от текущей ориентации камеры
+        GEngine->AddOnScreenDebugMessage(-1, 1.0f, FColor::Red, FString::Printf(TEXT("RotatePitch")));
+
+    }
+}
+
+void AGravityCharacter::RotateRoll(float Value)
+{
+    if ((Controller != NULL) && (Value != 0.0f))
+    {
+        // Найти направление перемещения персонажа в зависимости от текущей ориентации камеры
+        GEngine->AddOnScreenDebugMessage(-1, 1.0f, FColor::Red, FString::Printf(TEXT("RotateRoll")));
+
     }
 }
 
