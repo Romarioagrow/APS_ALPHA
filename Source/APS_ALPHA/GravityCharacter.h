@@ -88,6 +88,7 @@ private:
 	void MoveUp(float Value);
 
 private:
+	void RotateRoll(float Value);
 	void UpdateZeroGGravity();
 	void UpdateZeroGCamera();
 
