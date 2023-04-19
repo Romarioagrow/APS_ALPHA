@@ -35,11 +35,8 @@ void AGravityCharacter::BeginPlay()
 {
 	Super::BeginPlay();
 
-    //SetActorRotation(FRotator(-80.0f, -150.0f, -110.0f));
-
     // set up input component
     InputComponent = NewObject<UInputComponent>(this, TEXT("InputComponent"));
-
 }
 
 // Called every frame
@@ -49,80 +46,35 @@ void AGravityCharacter::Tick(float DeltaTime)
 
     UpdateGravity();
     UpdateCameraOrientation();
-    //RotateMeshTowardsForwardVector();
 
     GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("GravityDirection: %s"), *GravityDirection.ToString()));
     GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("CurrentGravityType: %s"), *GetGravityTypeAsString(CurrentGravityType)));
-
 }
 
 void AGravityCharacter::RotateMeshTowardsForwardVector()
 {
     // Получаем текущий Z ротатор CapsuleComponent
-    FRotator CapsuleCurrentRotation = GetCapsuleComponent()->GetRelativeRotation();
+    FRotator MeshCurrentRotation = GetMesh()->GetRelativeRotation();
 
     // Получаем направление ArrowForwardVector
-    FVector ForwardDirection = ArrowForwardVector->GetForwardVector();
+    FRotator ForwardRelativeRotation = ArrowForwardVector->GetRelativeRotation();
 
-    // Создаем новый ротатор с использованием текущего Pitch и Roll CapsuleComponent и Yaw ArrowForwardVector
-    FRotator TargetRotation = FRotator(CapsuleCurrentRotation.Pitch, ForwardDirection.Rotation().Yaw, CapsuleCurrentRotation.Roll);
+    ForwardRelativeRotation.Yaw -= 90.0f;
 
-    // Добавляем смещение вращения меша
-    float MeshRotationOffset = -90.0f; // Значение смещения меша
-    TargetRotation.Yaw += MeshRotationOffset;
+    // Интерполяция между текущим вращением меша и направлением ArrowForwardVector
+    float InterpolationSpeed = 5.0f; // Задаем скорость интерполяции
+    float DeltaTime = GetWorld()->GetDeltaSeconds(); // Получаем время между кадрами
+    FRotator InterpolatedRotation = FMath::RInterpTo(MeshCurrentRotation, ForwardRelativeRotation, DeltaTime, InterpolationSpeed);
 
+    // Применяем интерполированное вращение к мешу
+    GetMesh()->SetRelativeRotation(InterpolatedRotation);
 
-    // Применяем целевое вращение к CapsuleComponent
-    GetCapsuleComponent()->SetRelativeRotation(TargetRotation);
-    GetMesh()->SetRelativeRotation(TargetRotation);
-
-
-    UE_LOG(LogTemp, Warning, TEXT("CapsuleComponent rotation: %s"), *TargetRotation.ToString());
-    UE_LOG(LogTemp, Warning, TEXT("GetRelativeRotation: %s"), *GetCapsuleComponent()->GetRelativeRotation().ToString());
-    
-    
-    //// Проверяем, нажата ли хотя бы одна из клавиш движения
-    //float MoveForwardValue = InputComponent->GetAxisValue(TEXT("MoveForward"));
-    //float MoveRightValue = InputComponent->GetAxisValue(TEXT("MoveRight"));
-
-    //if (MoveForwardValue != 0 || MoveRightValue != 0)
-    //{
-    //    // Получаем текущий Z ротатор CapsuleComponent
-    //    FRotator CapsuleCurrentRotation = GetCapsuleComponent()->GetRelativeRotation();
-
-    //    // Получаем направление ArrowForwardVector
-    //    FVector ForwardDirection = ArrowForwardVector->GetForwardVector();
-
-    //    // Создаем новый ротатор с использованием текущего Pitch и Roll CapsuleComponent и Yaw ArrowForwardVector
-    //    FRotator TargetRotation = FRotator(CapsuleCurrentRotation.Pitch, ForwardDirection.Rotation().Yaw, CapsuleCurrentRotation.Roll);
-
-    //    // Добавляем смещение вращения меша
-    //    float MeshRotationOffset = -90.0f; // Значение смещения меша
-    //    TargetRotation.Yaw += MeshRotationOffset;
-
-    //    // Интерполируем между текущим и целевым вращением CapsuleComponent с использованием RInterpTo и DeltaTime
-    //    float RotationInterpSpeed = 10.0f; // Скорость интерполяции вращения, подстройте значение по вашему усмотрению
-    //    FRotator InterpolatedRotation = FMath::RInterpTo(CapsuleCurrentRotation, TargetRotation, GetWorld()->DeltaTimeSeconds, RotationInterpSpeed);
-
-    //    // Применяем интерполированное вращение к CapsuleComponent
-    //    GetCapsuleComponent()->SetRelativeRotation(InterpolatedRotation);
-    //}
-    
-    //// Получаем текущий Z ротатор меша
-    //FRotator MeshCurrentRotation = GetMesh()->GetComponentRotation();
-
-    //// Получаем направление ArrowForwardVector
-    //FVector ForwardDirection = ArrowForwardVector->GetForwardVector();
-
-    //// Создаем новый ротатор с использованием текущего Pitch и Roll меша и Yaw ArrowForwardVector
-    //FRotator TargetRotation = FRotator(MeshCurrentRotation.Pitch, ForwardDirection.Rotation().Yaw, MeshCurrentRotation.Roll);
-    //TargetRotation.Yaw -= 90.0f;
-    //// Интерполируем между текущим и целевым вращением меша с использованием Slerp и DeltaTime
-    //float RotationInterpSpeed = 10.0f; // Скорость интерполяции вращения, подстройте значение по вашему усмотрению
-    //FRotator InterpolatedRotation = FMath::RInterpTo(MeshCurrentRotation, TargetRotation, GetWorld()->DeltaTimeSeconds, RotationInterpSpeed);
-
-    //// Применяем интерполированное вращение к мешу персонажа
-    //GetMesh()->SetWorldRotation(InterpolatedRotation);
+    UE_LOG(LogTemp, Warning, TEXT("MeshCurrentRotation : %s"), 
+        *MeshCurrentRotation.ToString());
+    UE_LOG(LogTemp, Warning, TEXT("ForwardRelativeRotation : %s"), 
+        *ForwardRelativeRotation.ToString());
+    UE_LOG(LogTemp, Warning, TEXT("GetCapsuleComponent RelativeRotation: %s"), 
+        *GetCapsuleComponent()->GetRelativeRotation().ToString());
 }
 
 
@@ -134,6 +86,7 @@ void AGravityCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCo
     // Настройка параметров перемещения персонажа
 	PlayerInputComponent->BindAxis("MoveForward", this, &AGravityCharacter::MoveForward);
 	PlayerInputComponent->BindAxis("MoveRight", this, &AGravityCharacter::MoveRight);
+
 	// Настройка параметров поворота камеры
 	PlayerInputComponent->BindAxis("Turn", this, &AGravityCharacter::Turn);
 	PlayerInputComponent->BindAxis("LookUp", this, &AGravityCharacter::LookUp);
@@ -146,7 +99,6 @@ void AGravityCharacter::SetGravityType(EGravityType NewGravityType)
 }
 
 
-
 void AGravityCharacter::Turn(float Value)
 {
     if (Value != 0.0f)
@@ -155,9 +107,7 @@ void AGravityCharacter::Turn(float Value)
         float NewYaw = ArrowForwardVector->GetRelativeRotation().Yaw + Value * YawSpeed * GetWorld()->GetDeltaSeconds();
         FRotator NewRotation = FRotator(0.f, NewYaw, 0.f);
         ArrowForwardVector->SetRelativeRotation(NewRotation);
-        //RotateMeshTowardsForwardVector();
     }
-    
 }
 
 void AGravityCharacter::LookUp(float Value)
@@ -170,7 +120,6 @@ void AGravityCharacter::LookUp(float Value)
         FRotator NewRotation = FRotator(NewPitch, 0.f, 0.f);
         CameraSpringArm->SetRelativeRotation(NewRotation);
     }
-    
 }
 
 void AGravityCharacter::MoveForward(float Value)
