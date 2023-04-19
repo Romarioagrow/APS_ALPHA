@@ -47,7 +47,13 @@ protected:
 
 	void UpdateGravityStatus();
 
-	void RotateToStationGravity(AStationGravityActor* StationGravityActor);
+	void SwitchGravityToStation(AActor* OtherActor);
+
+	void SwitchGravityToPlanet(AActor* OtherActor);
+
+	void SwitchGravityToSpaceship(AActor* OtherActor);
+
+	//void RotateToStationGravity(AStationGravityActor* StationGravityActor);
 
 	void RotateToPlanetGravity(APlanetGravityActor* StationGravityActor);
 
@@ -58,14 +64,25 @@ protected:
 */
 protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gravity")
-		EGravityType CurrentGravityType { EGravityType::ZeroG };
+		EGravityType CurrentGravityType { 
+		EGravityType::ZeroG 
+	};
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gravity")
 		FVector GravityDirection {
 		0.0f, 0.0f, -1.0f
 	};
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gravity")
+		FRotator GravityTargetRotation {
+		0.0f, 0.0f, -1.0f
+	};
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gravity")
 		float GravityStrength;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gravity")
+		AGravityActor* GravityTargetActor;
 
 public:
 	UFUNCTION(BlueprintCallable, Category = "Gravity")

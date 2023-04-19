@@ -10,9 +10,11 @@
 PRAGMA_DISABLE_DEPRECATION_WARNINGS
 void EmptyLinkFunctionForGeneratedCodeGravityCharacter() {}
 // Cross Module References
+	APS_ALPHA_API UClass* Z_Construct_UClass_AGravityActor_NoRegister();
 	APS_ALPHA_API UClass* Z_Construct_UClass_AGravityCharacter();
 	APS_ALPHA_API UClass* Z_Construct_UClass_AGravityCharacter_NoRegister();
 	APS_ALPHA_API UEnum* Z_Construct_UEnum_APS_ALPHA_EGravityType();
+	COREUOBJECT_API UScriptStruct* Z_Construct_UScriptStruct_FRotator();
 	COREUOBJECT_API UScriptStruct* Z_Construct_UScriptStruct_FVector();
 	ENGINE_API UClass* Z_Construct_UClass_AActor_NoRegister();
 	ENGINE_API UClass* Z_Construct_UClass_ACharacter();
@@ -327,9 +329,17 @@ void EmptyLinkFunctionForGeneratedCodeGravityCharacter() {}
 #endif
 		static const UECodeGen_Private::FStructPropertyParams NewProp_GravityDirection;
 #if WITH_METADATA
+		static const UECodeGen_Private::FMetaDataPairParam NewProp_GravityTargetRotation_MetaData[];
+#endif
+		static const UECodeGen_Private::FStructPropertyParams NewProp_GravityTargetRotation;
+#if WITH_METADATA
 		static const UECodeGen_Private::FMetaDataPairParam NewProp_GravityStrength_MetaData[];
 #endif
 		static const UECodeGen_Private::FFloatPropertyParams NewProp_GravityStrength;
+#if WITH_METADATA
+		static const UECodeGen_Private::FMetaDataPairParam NewProp_GravityTargetActor_MetaData[];
+#endif
+		static const UECodeGen_Private::FObjectPropertyParams NewProp_GravityTargetActor;
 #if WITH_METADATA
 		static const UECodeGen_Private::FMetaDataPairParam NewProp_RootSceneComponent_MetaData[];
 #endif
@@ -392,12 +402,26 @@ void EmptyLinkFunctionForGeneratedCodeGravityCharacter() {}
 #endif
 	const UECodeGen_Private::FStructPropertyParams Z_Construct_UClass_AGravityCharacter_Statics::NewProp_GravityDirection = { "GravityDirection", nullptr, (EPropertyFlags)0x0020080000000015, UECodeGen_Private::EPropertyGenFlags::Struct, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(AGravityCharacter, GravityDirection), Z_Construct_UScriptStruct_FVector, METADATA_PARAMS(Z_Construct_UClass_AGravityCharacter_Statics::NewProp_GravityDirection_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_AGravityCharacter_Statics::NewProp_GravityDirection_MetaData)) };
 #if WITH_METADATA
+	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_AGravityCharacter_Statics::NewProp_GravityTargetRotation_MetaData[] = {
+		{ "Category", "Gravity" },
+		{ "ModuleRelativePath", "GravityCharacter.h" },
+	};
+#endif
+	const UECodeGen_Private::FStructPropertyParams Z_Construct_UClass_AGravityCharacter_Statics::NewProp_GravityTargetRotation = { "GravityTargetRotation", nullptr, (EPropertyFlags)0x0020080000000015, UECodeGen_Private::EPropertyGenFlags::Struct, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(AGravityCharacter, GravityTargetRotation), Z_Construct_UScriptStruct_FRotator, METADATA_PARAMS(Z_Construct_UClass_AGravityCharacter_Statics::NewProp_GravityTargetRotation_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_AGravityCharacter_Statics::NewProp_GravityTargetRotation_MetaData)) };
+#if WITH_METADATA
 	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_AGravityCharacter_Statics::NewProp_GravityStrength_MetaData[] = {
 		{ "Category", "Gravity" },
 		{ "ModuleRelativePath", "GravityCharacter.h" },
 	};
 #endif
 	const UECodeGen_Private::FFloatPropertyParams Z_Construct_UClass_AGravityCharacter_Statics::NewProp_GravityStrength = { "GravityStrength", nullptr, (EPropertyFlags)0x0020080000000015, UECodeGen_Private::EPropertyGenFlags::Float, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(AGravityCharacter, GravityStrength), METADATA_PARAMS(Z_Construct_UClass_AGravityCharacter_Statics::NewProp_GravityStrength_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_AGravityCharacter_Statics::NewProp_GravityStrength_MetaData)) };
+#if WITH_METADATA
+	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_AGravityCharacter_Statics::NewProp_GravityTargetActor_MetaData[] = {
+		{ "Category", "Gravity" },
+		{ "ModuleRelativePath", "GravityCharacter.h" },
+	};
+#endif
+	const UECodeGen_Private::FObjectPropertyParams Z_Construct_UClass_AGravityCharacter_Statics::NewProp_GravityTargetActor = { "GravityTargetActor", nullptr, (EPropertyFlags)0x0020080000000015, UECodeGen_Private::EPropertyGenFlags::Object, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(AGravityCharacter, GravityTargetActor), Z_Construct_UClass_AGravityActor_NoRegister, METADATA_PARAMS(Z_Construct_UClass_AGravityCharacter_Statics::NewProp_GravityTargetActor_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_AGravityCharacter_Statics::NewProp_GravityTargetActor_MetaData)) };
 #if WITH_METADATA
 	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_AGravityCharacter_Statics::NewProp_RootSceneComponent_MetaData[] = {
 		{ "Category", "Components" },
@@ -448,7 +472,9 @@ void EmptyLinkFunctionForGeneratedCodeGravityCharacter() {}
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AGravityCharacter_Statics::NewProp_CurrentGravityType_Underlying,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AGravityCharacter_Statics::NewProp_CurrentGravityType,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AGravityCharacter_Statics::NewProp_GravityDirection,
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AGravityCharacter_Statics::NewProp_GravityTargetRotation,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AGravityCharacter_Statics::NewProp_GravityStrength,
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AGravityCharacter_Statics::NewProp_GravityTargetActor,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AGravityCharacter_Statics::NewProp_RootSceneComponent,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AGravityCharacter_Statics::NewProp_CameraSpringArm,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AGravityCharacter_Statics::NewProp_PlayerCamera,
@@ -493,9 +519,9 @@ void EmptyLinkFunctionForGeneratedCodeGravityCharacter() {}
 		static const FClassRegisterCompiledInInfo ClassInfo[];
 	};
 	const FClassRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GravityCharacter_h_Statics::ClassInfo[] = {
-		{ Z_Construct_UClass_AGravityCharacter, AGravityCharacter::StaticClass, TEXT("AGravityCharacter"), &Z_Registration_Info_UClass_AGravityCharacter, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(AGravityCharacter), 1671790854U) },
+		{ Z_Construct_UClass_AGravityCharacter, AGravityCharacter::StaticClass, TEXT("AGravityCharacter"), &Z_Registration_Info_UClass_AGravityCharacter, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(AGravityCharacter), 524116472U) },
 	};
-	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GravityCharacter_h_2238612318(TEXT("/Script/APS_ALPHA"),
+	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GravityCharacter_h_2474519127(TEXT("/Script/APS_ALPHA"),
 		Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GravityCharacter_h_Statics::ClassInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GravityCharacter_h_Statics::ClassInfo),
 		nullptr, 0,
 		nullptr, 0);
