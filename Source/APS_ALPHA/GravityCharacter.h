@@ -1,6 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 #pragma once
 
+#include "StationGravityActor.h"
 #include "GravityTypeEnum.h"
 #include "Camera/CameraComponent.h"
 #include "GameFramework/SpringArmComponent.h"
@@ -41,6 +42,8 @@ protected:
 
 	UFUNCTION()
 		void OnEndOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex);
+
+	void RotateToStationGravity(AStationGravityActor* StationGravityActor);
 
 /**
  * @Gravity Params
@@ -98,18 +101,18 @@ private:
 	void MoveUp(float Value);
 
 private:
-	void RotateRoll(float Value);
+	//void RotateRoll(float Value);
 	void UpdateZeroGGravity();
-	void UpdateZeroGCamera();
+	//void UpdateZeroGCamera();
 
 	void UpdateStationGravity();
-	void UpdateStationCamera();
+	//void UpdateStationCamera();
 
 	void UpdatePlanetGravity();
-	void UpdatePlanetCamera();
+	//void UpdatePlanetCamera();
 
 	void UpdateShipGravity();
-	void UpdateShipCamera();
+	//void UpdateShipCamera();
 
 	FString GetGravityTypeAsString(EGravityType GravityType);
 };

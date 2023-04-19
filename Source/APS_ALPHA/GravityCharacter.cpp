@@ -55,7 +55,7 @@ void AGravityCharacter::Tick(float DeltaTime)
 	Super::Tick(DeltaTime);
 
     UpdateGravity();
-    UpdateCameraOrientation();
+    //UpdateCameraOrientation();
 
     GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Blue, FString::Printf(TEXT("GravityDirection: %s"), *GravityDirection.ToString()));
     GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Blue, FString::Printf(TEXT("CurrentGravityType: %s"), *GetGravityTypeAsString(CurrentGravityType)));
@@ -67,6 +67,14 @@ void AGravityCharacter::OnBeginOverlap(UPrimitiveComponent* OverlappedComponent,
     UE_LOG(LogTemp, Warning, TEXT("BeginOverlap with: %s"), *OtherActor->GetName());
     GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Green, FString::Printf(TEXT("BeginOverlap with: %s"), *OtherActor->GetName()));
 
+ //   if (OtherActor->IsA(AStationGravityActor::StaticClass()))
+ //   {
+ //       CurrentGravityType = EGravityType::OnStation;
+ //       AStationGravityActor* CurrentGravityActor = Cast<AStationGravityActor>(OtherActor);
+ ////       ////OtherActor 
+ //       RotateToStationGravity(CurrentGravityActor);
+	//}
+	
 }
 
 void AGravityCharacter::OnEndOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex)
@@ -75,6 +83,27 @@ void AGravityCharacter::OnEndOverlap(UPrimitiveComponent* OverlappedComponent, A
     UE_LOG(LogTemp, Warning, TEXT("EndOverlap with: %s"), *OtherActor->GetName());
     GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Red, FString::Printf(TEXT("EndOverlap with: %s"), *OtherActor->GetName()));
 
+    FVector GravityTargetLocation = OtherActor->GetActorLocation();
+    //FVector GravityTargetDirection = GravityTargetLocation - GetActorLocation();
+    //GravityTargetDirection.Normalize();
+
+
+}
+
+void AGravityCharacter::RotateToStationGravity(AStationGravityActor* StationGravityActor)
+{
+    FVector GravityUpVector = StationGravityActor->GetActorLocation() - GetActorLocation();
+    GravityUpVector.Normalize();
+
+    FVector CapsuleForwardVector = GetCapsuleComponent()->GetForwardVector();
+
+    FQuat TargetRotation = FQuat::FindBetween(GetCapsuleComponent()->GetUpVector(), GravityUpVector) * GetCapsuleComponent()->GetComponentQuat();
+
+    float InterpolationSpeed = 5.0f; // Задаем скорость интерполяции
+    float DeltaTime = GetWorld()->GetDeltaSeconds(); // Получаем время между кадрами
+    FQuat InterpolatedRotation = FQuat::Slerp(GetCapsuleComponent()->GetComponentQuat(), TargetRotation, DeltaTime * InterpolationSpeed);
+
+    GetCapsuleComponent()->SetWorldRotation(InterpolatedRotation);
 }
 
 void AGravityCharacter::RotateMeshTowardsForwardVector()
@@ -190,22 +219,29 @@ void AGravityCharacter::MoveUp(float Value)
 
 void AGravityCharacter::UpdateZeroGGravity()
 {
+    GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("ZeroG Gravity")));
+
 }
 
-void AGravityCharacter::UpdateZeroGCamera()
-{
-}
+//void AGravityCharacter::UpdateZeroGCamera()
+//{
+//}
 
 void AGravityCharacter::UpdateStationGravity()
 {
+    GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Station Gravity")));
+
 }
 
-void AGravityCharacter::UpdateStationCamera()
-{
-}
+//void AGravityCharacter::UpdateStationCamera()
+//{
+//}
 
 void AGravityCharacter::UpdatePlanetGravity()
 {
+    GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Planet Gravity")));
+
+    
     //FVector PlanetCenter = GetPlanetCenter(); // Здесь должна быть функция, которая возвращает центр текущей планеты
     //FVector GravityDirection = (GetActorLocation() - PlanetCenter).GetSafeNormal();
     //FVector GravityForce = -GravityDirection * GetPlanetGravity(); // Здесь должна быть функция, которая возвращает гравитационную силу текущей планеты
@@ -222,17 +258,19 @@ void AGravityCharacter::UpdatePlanetGravity()
     //GetCharacterMovement()->AddInputVector(FinalMovement);
 }
 
-void AGravityCharacter::UpdatePlanetCamera()
-{
-}
+//void AGravityCharacter::UpdatePlanetCamera()
+//{
+//}
 
 void AGravityCharacter::UpdateShipGravity()
 {
+    GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Green, FString::Printf(TEXT("Ship Gravity")));
+
 }
 
-void AGravityCharacter::UpdateShipCamera()
-{
-}
+//void AGravityCharacter::UpdateShipCamera()
+//{
+//}
 
 FString AGravityCharacter::GetGravityTypeAsString(EGravityType GravityType)
 {
@@ -242,31 +280,31 @@ FString AGravityCharacter::GetGravityTypeAsString(EGravityType GravityType)
 
 void AGravityCharacter::UpdateGravity()
 {
-    GravityDirection = -GetActorUpVector();
+   // GravityDirection = -GetActorUpVector();
 
-    //switch (CurrentGravityType)
-    //{
-    //case EGravityType::ZeroG:
-    //    // Логика обновления гравитации в режиме невесомости
-    //    UpdateZeroGGravity();
-    //    UpdateZeroGCamera();
-    //    break;
-    //case EGravityType::OnStation:
-    //    // Логика обновления гравитации на станции
-    //    UpdateStationGravity();
-    //    UpdateStationCamera();
-    //    break;
-    //case EGravityType::OnPlanet:
-    //    // Логика обновления гравитации на планете
-    //    UpdatePlanetGravity();
-    //    UpdatePlanetCamera();
-    //    break;
-    //case EGravityType::OnShip:
-    //    // Логика обновления гравитации на корабле
-    //    UpdateShipGravity();
-    //    UpdateShipCamera();
-    //    break;
-    //}
+    switch (CurrentGravityType)
+    {
+    case EGravityType::ZeroG:
+        // Логика обновления гравитации в режиме невесомости
+        UpdateZeroGGravity();
+        //UpdateZeroGCamera();
+        break;
+    case EGravityType::OnStation:
+        // Логика обновления гравитации на станции
+        UpdateStationGravity();
+       // UpdateStationCamera();
+        break;
+    case EGravityType::OnPlanet:
+        // Логика обновления гравитации на планете
+        UpdatePlanetGravity();
+       // UpdatePlanetCamera();
+        break;
+    case EGravityType::OnShip:
+        // Логика обновления гравитации на корабле
+        UpdateShipGravity();
+       // UpdateShipCamera();
+        break;
+    }
 }
 
 void AGravityCharacter::UpdateCameraOrientation()
