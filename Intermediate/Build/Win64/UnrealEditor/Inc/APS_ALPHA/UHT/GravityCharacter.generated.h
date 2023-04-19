@@ -9,7 +9,10 @@
 #include "UObject/ScriptMacros.h"
 
 PRAGMA_DISABLE_DEPRECATION_WARNINGS
+class AActor;
+class UPrimitiveComponent;
 enum class EGravityType : uint8;
+struct FHitResult;
 #ifdef APS_ALPHA_GravityCharacter_generated_h
 #error "GravityCharacter.generated.h already included, missing '#pragma once' in GravityCharacter.h"
 #endif
@@ -20,14 +23,18 @@ enum class EGravityType : uint8;
  \
 	DECLARE_FUNCTION(execUpdateCameraOrientation); \
 	DECLARE_FUNCTION(execUpdateGravity); \
-	DECLARE_FUNCTION(execSetGravityType);
+	DECLARE_FUNCTION(execSetGravityType); \
+	DECLARE_FUNCTION(execOnEndOverlap); \
+	DECLARE_FUNCTION(execOnBeginOverlap);
 
 
 #define FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GravityCharacter_h_16_RPC_WRAPPERS_NO_PURE_DECLS \
  \
 	DECLARE_FUNCTION(execUpdateCameraOrientation); \
 	DECLARE_FUNCTION(execUpdateGravity); \
-	DECLARE_FUNCTION(execSetGravityType);
+	DECLARE_FUNCTION(execSetGravityType); \
+	DECLARE_FUNCTION(execOnEndOverlap); \
+	DECLARE_FUNCTION(execOnBeginOverlap);
 
 
 #define FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GravityCharacter_h_16_ACCESSORS

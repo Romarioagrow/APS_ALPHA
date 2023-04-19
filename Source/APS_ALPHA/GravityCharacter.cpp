@@ -28,6 +28,12 @@ AGravityCharacter::AGravityCharacter()
     PlayerCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("PlayerCamera"));
     PlayerCamera->SetupAttachment(CameraSpringArm, USpringArmComponent::SocketName);
     GetCapsuleComponent()->SetPhysicsMaxAngularVelocityInDegrees(180.f);
+
+    GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+    GetCapsuleComponent()->SetCollisionObjectType(ECollisionChannel::ECC_Pawn);
+    GetCapsuleComponent()->SetCollisionResponseToAllChannels(ECollisionResponse::ECR_Block);
+    GetCapsuleComponent()->SetCollisionResponseToChannel(ECollisionChannel::ECC_PhysicsBody, ECollisionResponse::ECR_Overlap);
+
 }
 
 // Called when the game starts or when spawned
@@ -37,6 +43,10 @@ void AGravityCharacter::BeginPlay()
 
     // set up input component
     InputComponent = NewObject<UInputComponent>(this, TEXT("InputComponent"));
+
+    // Bind overlaps
+    GetCapsuleComponent()->OnComponentBeginOverlap.AddDynamic(this, &AGravityCharacter::OnBeginOverlap);
+    GetCapsuleComponent()->OnComponentEndOverlap.AddDynamic(this, &AGravityCharacter::OnEndOverlap);
 }
 
 // Called every frame
@@ -47,8 +57,24 @@ void AGravityCharacter::Tick(float DeltaTime)
     UpdateGravity();
     UpdateCameraOrientation();
 
-    GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("GravityDirection: %s"), *GravityDirection.ToString()));
-    GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("CurrentGravityType: %s"), *GetGravityTypeAsString(CurrentGravityType)));
+    GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Blue, FString::Printf(TEXT("GravityDirection: %s"), *GravityDirection.ToString()));
+    GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Blue, FString::Printf(TEXT("CurrentGravityType: %s"), *GetGravityTypeAsString(CurrentGravityType)));
+}
+
+void AGravityCharacter::OnBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
+{
+    // Ваш код здесь, например:
+    UE_LOG(LogTemp, Warning, TEXT("BeginOverlap with: %s"), *OtherActor->GetName());
+    GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Green, FString::Printf(TEXT("BeginOverlap with: %s"), *OtherActor->GetName()));
+
+}
+
+void AGravityCharacter::OnEndOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex)
+{
+    // Ваш код здесь, например:
+    UE_LOG(LogTemp, Warning, TEXT("EndOverlap with: %s"), *OtherActor->GetName());
+    GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Red, FString::Printf(TEXT("EndOverlap with: %s"), *OtherActor->GetName()));
+
 }
 
 void AGravityCharacter::RotateMeshTowardsForwardVector()
