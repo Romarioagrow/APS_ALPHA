@@ -35,6 +35,8 @@ AGravityCharacter::AGravityCharacter()
     GetCapsuleComponent()->SetCollisionResponseToAllChannels(ECollisionResponse::ECR_Block);
     GetCapsuleComponent()->SetCollisionResponseToChannel(ECollisionChannel::ECC_PhysicsBody, ECollisionResponse::ECR_Overlap);
 
+
+
 }
 
 // Called when the game starts or when spawned
