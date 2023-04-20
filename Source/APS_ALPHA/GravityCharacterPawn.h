@@ -6,6 +6,10 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Camera/CameraComponent.h"
 #include <GameFramework/SpringArmComponent.h>
+#include "GravityTypeEnum.h"
+#include "StationGravityActor.h"
+#include "PlanetGravityActor.h"
+#include "SpaceshipGravityActor.h"
 
 #include "CoreMinimal.h"
 #include "GameFramework/Pawn.h"
@@ -83,4 +87,41 @@ private:
 	float CharacterRotationScale{ 1.25f };	
 	float CharacterMovementScale{ 25.f };	
 
+
+protected:
+	UFUNCTION()
+		void OnBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, 
+			UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult);
+
+	UFUNCTION()
+		void OnEndOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, 
+			UPrimitiveComponent* OtherComp, int32 OtherBodyIndex);
+
+	void UpdateGravityStatus();
+
+protected:
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gravity")
+		EGravityType CurrentGravityType {
+		EGravityType::ZeroG
+	};
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gravity")
+		AGravityActor* GravityTargetActor;
+
+	void SwitchGravityToStation(AActor* OtherActor);
+
+	void SwitchGravityToPlanet(AActor* OtherActor);
+
+	void SwitchGravityToSpaceship(AActor* OtherActor);
+
+	void SwitchGravityToZeroG(AActor* OtherActor);
+
+private:
+	void UpdateZeroGGravity();
+
+	void UpdateStationGravity();
+
+	void UpdatePlanetGravity();
+
+	void UpdateShipGravity();
 };

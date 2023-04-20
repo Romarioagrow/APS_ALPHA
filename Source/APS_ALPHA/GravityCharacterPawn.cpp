@@ -2,6 +2,7 @@
 
 
 #include "GravityCharacterPawn.h"
+#include <Kismet/GameplayStatics.h>
 
 // Sets default values
 AGravityCharacterPawn::AGravityCharacterPawn()
@@ -37,16 +38,16 @@ AGravityCharacterPawn::AGravityCharacterPawn()
 	// Create and set up CameraComponent
 	PlayerCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("PlayerCamera"));
 	PlayerCamera->SetupAttachment(CameraSpringArm, USpringArmComponent::SocketName);
-
-
-
 }
 
 // Called when the game starts or when spawned
 void AGravityCharacterPawn::BeginPlay()
 {
 	Super::BeginPlay();
-	
+
+	// Bind overlaps
+	CapsuleComponent->OnComponentBeginOverlap.AddDynamic(this, &AGravityCharacterPawn::OnBeginOverlap);
+	CapsuleComponent->OnComponentEndOverlap.AddDynamic(this, &AGravityCharacterPawn::OnEndOverlap);
 }
 
 // Called every frame
@@ -54,6 +55,25 @@ void AGravityCharacterPawn::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
+	switch (CurrentGravityType)
+	{
+	case EGravityType::ZeroG:
+		// Логика обновления гравитации в режиме невесомости
+		UpdateZeroGGravity();
+		break;
+	case EGravityType::OnStation:
+		// Логика обновления гравитации на станции
+		UpdateStationGravity();
+		break;
+	case EGravityType::OnPlanet:
+		// Логика обновления гравитации на планете
+		UpdatePlanetGravity();
+		break;
+	case EGravityType::OnShip:
+		// Логика обновления гравитации на корабле
+		UpdateShipGravity();
+		break;
+	}
 }
 
 // Called to bind functionality to input
@@ -70,10 +90,131 @@ void AGravityCharacterPawn::SetupPlayerInputComponent(UInputComponent* PlayerInp
 	PlayerInputComponent->BindAxis("Turn", this, &AGravityCharacterPawn::Turn);
 	PlayerInputComponent->BindAxis("LookUp", this, &AGravityCharacterPawn::LookUp);
 
+	// Настройка параметров поворота персонажа
 	PlayerInputComponent->BindAxis("RotatePitch", this, &AGravityCharacterPawn::RotatePitch);
 	PlayerInputComponent->BindAxis("RotateRoll", this, &AGravityCharacterPawn::RotateRoll);
 	PlayerInputComponent->BindAxis("RotateYaw", this, &AGravityCharacterPawn::RotateYaw);
 }
+
+
+/**
+ * @brief Overlaps
+*/
+
+void AGravityCharacterPawn::OnBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
+{
+	UE_LOG(LogTemp, Warning, TEXT("BeginOverlap with: %s"), *OtherActor->GetName());
+	GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Green, FString::Printf(TEXT("BeginOverlap with: %s"), *OtherActor->GetName()));
+
+	if (OtherActor->IsA(AStationGravityActor::StaticClass()))
+	{
+		SwitchGravityToStation(OtherActor);
+	}
+	else if (OtherActor->IsA(APlanetGravityActor::StaticClass()))
+	{
+		SwitchGravityToPlanet(OtherActor);
+	}
+	else if (OtherActor->IsA(ASpaceshipGravityActor::StaticClass()))
+	{
+		SwitchGravityToSpaceship(OtherActor);
+	}
+}
+
+void AGravityCharacterPawn::OnEndOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex)
+{
+	UE_LOG(LogTemp, Warning, TEXT("EndOverlap with: %s"), *OtherActor->GetName());
+	GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Red, FString::Printf(TEXT("EndOverlap with: %s"), *OtherActor->GetName()));
+
+	FVector GravityTargetLocation = OtherActor->GetActorLocation();
+
+	UpdateGravityStatus();
+}
+
+
+/**
+ * @brief Gravity Actions
+*/
+
+void AGravityCharacterPawn::UpdateGravityStatus()
+{
+	GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Orange, FString::Printf(TEXT("UpdateGravityStatus")));
+
+	TArray<AActor*> TaggedActors;
+	UGameplayStatics::GetAllActorsWithTag(GetWorld(), "EventManager", TaggedActors);
+
+	if (TaggedActors.Num() > 0)
+	{
+		UClass* FirstGravityActor = TaggedActors[0]->GetClass();
+		GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Red, FString::Printf(TEXT("FirstGravityActor : %s"), *FirstGravityActor->GetName()));
+
+		// switch gravity to first 
+		// ... 
+
+	}
+	else
+	{
+		GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Red, FString::Printf(TEXT("FirstGravityActor 0")));
+		CurrentGravityType = EGravityType::ZeroG;
+	}
+
+}
+
+void AGravityCharacterPawn::SwitchGravityToStation(AActor* OtherActor)
+{
+	GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Orange, FString::Printf(TEXT("SwitchGravityToStation")));
+
+	CurrentGravityType = EGravityType::OnStation;
+	GravityTargetActor = Cast<AStationGravityActor>(OtherActor);
+}
+
+void AGravityCharacterPawn::SwitchGravityToPlanet(AActor* OtherActor)
+{
+	GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Orange, FString::Printf(TEXT("SwitchGravityToSpaceship")));
+
+	CurrentGravityType = EGravityType::OnPlanet;
+	GravityTargetActor = Cast<ASpaceshipGravityActor>(OtherActor);
+}
+
+void AGravityCharacterPawn::SwitchGravityToSpaceship(AActor* OtherActor)
+{
+	GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Orange, FString::Printf(TEXT("SwitchGravityToSpaceship")));
+	CurrentGravityType = EGravityType::OnShip;
+	GravityTargetActor = Cast<ASpaceshipGravityActor>(OtherActor);
+}
+
+void AGravityCharacterPawn::SwitchGravityToZeroG(AActor* OtherActor)
+{
+	GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Orange, FString::Printf(TEXT("SwitchGravityToZERO-G")));
+	CurrentGravityType = EGravityType::ZeroG;
+	GravityTargetActor = nullptr;
+}
+
+void AGravityCharacterPawn::UpdateZeroGGravity()
+{
+	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("ZeroG Gravity")));
+
+}
+
+void AGravityCharacterPawn::UpdateStationGravity()
+{
+	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Station Gravity")));
+
+}
+
+void AGravityCharacterPawn::UpdatePlanetGravity()
+{
+	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Planet Gravity")));
+}
+
+void AGravityCharacterPawn::UpdateShipGravity()
+{
+	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Ship Gravity")));
+}
+
+
+/**
+ * @brief  Movements, Rotations, Camera
+*/
 
 void AGravityCharacterPawn::Turn(float Value)
 {
@@ -146,3 +287,5 @@ void AGravityCharacterPawn::RotateYaw(float Value)
 {
 	AddActorLocalRotation(FQuat(FRotator(0.0f, Value * CharacterRotationScale, 0.0f)));
 }
+
+
