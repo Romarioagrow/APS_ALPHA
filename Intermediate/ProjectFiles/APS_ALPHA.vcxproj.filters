@@ -59,6 +59,12 @@
     <ClInclude Include="..\..\Source\APS_ALPHA\APS_ALPHAGameModeBase.h">
       <Filter>Source\APS_ALPHA</Filter>
     </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\GravityActor.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\GravityActor.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
     <ClCompile Include="..\..\Source\APS_ALPHA\GravityCharacter.cpp">
       <Filter>Source\APS_ALPHA</Filter>
     </ClCompile>
@@ -78,6 +84,30 @@
       <Filter>Source\APS_ALPHA</Filter>
     </ClInclude>
     <ClInclude Include="..\..\Source\APS_ALPHA\GravityTypeEnum.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\PlanetGravityActor.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\PlanetGravityActor.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\SpaceCharacter.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\SpaceCharacter.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\SpaceshipGravityActor.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\SpaceshipGravityActor.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\StationGravityActor.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\StationGravityActor.h">
       <Filter>Source\APS_ALPHA</Filter>
     </ClInclude>
   </ItemGroup>
