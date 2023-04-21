@@ -5,11 +5,9 @@
 #include "Components/ArrowComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Camera/CameraComponent.h"
-#include <GameFramework/SpringArmComponent.h>
 #include "GravityTypeEnum.h"
-#include "StationGravityActor.h"
 #include "PlanetGravityActor.h"
-#include "SpaceshipGravityActor.h"
+#include <GameFramework/SpringArmComponent.h>
 
 #include "CoreMinimal.h"
 #include "GameFramework/Pawn.h"

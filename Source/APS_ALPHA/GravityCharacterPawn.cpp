@@ -4,6 +4,8 @@
 #include "GravityCharacterPawn.h"
 #include <Kismet/GameplayStatics.h>
 #include <Kismet/KismetMathLibrary.h>
+#include "SpaceshipGravityActor.h"
+#include "StationGravityActor.h"
 
 // Sets default values
 AGravityCharacterPawn::AGravityCharacterPawn()
@@ -52,7 +54,7 @@ void AGravityCharacterPawn::BeginPlay()
 }
 
 // Called every frame
-void AGravityCharacterPawn::Tick(float DeltaTime)
+void AGravityCharacterPawn::Tick(const float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
@@ -118,6 +120,8 @@ void AGravityCharacterPawn::OnBeginOverlap(UPrimitiveComponent* OverlappedCompon
 	else if (OtherActor->IsA(ASpaceshipGravityActor::StaticClass()))
 	{
 		SwitchGravityToSpaceship(OtherActor);
+
+
 	}
 }
 
@@ -129,6 +133,8 @@ void AGravityCharacterPawn::OnEndOverlap(UPrimitiveComponent* OverlappedComponen
 	FVector GravityTargetLocation = OtherActor->GetActorLocation();
 
 	UpdateGravityStatus();
+
+
 }
 
 
@@ -145,7 +151,7 @@ void AGravityCharacterPawn::UpdateGravityStatus()
 
 	if (TaggedActors.Num() > 0)
 	{
-		UClass* FirstGravityActor = TaggedActors[0]->GetClass();
+		const UClass* FirstGravityActor = TaggedActors[0]->GetClass();
 		GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Red, FString::Printf(TEXT("FirstGravityActor : %s"), *FirstGravityActor->GetName()));
 
 		// switch gravity to first 
@@ -200,13 +206,13 @@ void AGravityCharacterPawn::UpdateStationGravity()
 {
 	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Station Gravity")));
 
-	FVector GravityRotZ = GravityTargetActor->GetActorUpVector();
-	FVector GravityRotX = CapsuleComponent->GetForwardVector();
+	const FVector GravityRotZ = GravityTargetActor->GetActorUpVector();
+	const FVector GravityRotX = CapsuleComponent->GetForwardVector();
 
-	FMatrix RotationMatrix = FRotationMatrix::MakeFromZX(GravityRotZ, GravityRotX);
-	FRotator Rotation = RotationMatrix.Rotator();
-	FRotator ActorRotation = GetActorRotation();
-	FRotator Result = FMath::RInterpTo(ActorRotation, Rotation, GetWorld()->GetDeltaSeconds(), 2.f);
+	const FMatrix RotationMatrix = FRotationMatrix::MakeFromZX(GravityRotZ, GravityRotX);
+	const FRotator Rotation = RotationMatrix.Rotator();
+	const FRotator ActorRotation = GetActorRotation();
+	const FRotator Result = FMath::RInterpTo(ActorRotation, Rotation, GetWorld()->GetDeltaSeconds(), 2.f);
 
 	SetActorRotation(Result);
 }
@@ -215,14 +221,14 @@ void AGravityCharacterPawn::UpdatePlanetGravity()
 {
 	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Planet Gravity")));
 
-	FVector GravityTargetLocation = GravityTargetActor->GetActorLocation();
-	FVector ActorLocation = GetActorLocation();
-	FRotator LookAtRotation = UKismetMathLibrary::FindLookAtRotation(GravityTargetLocation, ActorLocation);
-	FVector CapsuleForawardVector = CapsuleComponent->GetForwardVector();
-	FMatrix RotationMatrix = FRotationMatrix::MakeFromZX(LookAtRotation.Vector(), CapsuleForawardVector);
+	const FVector GravityTargetLocation = GravityTargetActor->GetActorLocation();
+	const FVector ActorLocation = GetActorLocation();
+	const FRotator LookAtRotation = UKismetMathLibrary::FindLookAtRotation(GravityTargetLocation, ActorLocation);
+	const FVector CapsuleForwardVector = CapsuleComponent->GetForwardVector();
+	const FMatrix RotationMatrix = FRotationMatrix::MakeFromZX(LookAtRotation.Vector(), CapsuleForwardVector);
 
-	FRotator ActorRotation = GetActorRotation();
-	FRotator Result = FMath::RInterpTo(ActorRotation, RotationMatrix.Rotator(), GetWorld()->GetDeltaSeconds(), 2.f);
+	const FRotator ActorRotation = GetActorRotation();
+	const FRotator Result = FMath::RInterpTo(ActorRotation, RotationMatrix.Rotator(), GetWorld()->GetDeltaSeconds(), 2.f);
 
 	SetActorRotation(Result);
 }
@@ -237,27 +243,27 @@ void AGravityCharacterPawn::UpdateShipGravity()
  * @brief  Movements, Rotations, Camera
 */
 
-void AGravityCharacterPawn::Turn(float Value)
+void AGravityCharacterPawn::Turn(const float Value)
 {
 	if (Value != 0)
 	{
 		FRotator ForwardRotator = ArrowForwardVector->GetRelativeRotation();
-		float NewCameraYaw = (ForwardRotator.Yaw + Value) * CameraYawScale;
+		const float NewCameraYaw = (ForwardRotator.Yaw + Value) * CameraYawScale;
 		ArrowForwardVector->SetRelativeRotation(FRotator(ForwardRotator.Pitch, NewCameraYaw, ForwardRotator.Roll));
 	}
 }
 
-void AGravityCharacterPawn::LookUp(float Value)
+void AGravityCharacterPawn::LookUp(const float Value)
 {
 	if (Value != 0)
 	{
 		FRotator ForwardRotator = ArrowForwardVector->GetRelativeRotation();
-		float NewCameraPitch = (ForwardRotator.Pitch + Value) * CameraPitchScale;
+		const float NewCameraPitch = (ForwardRotator.Pitch + Value) * CameraPitchScale;
 		ArrowForwardVector->SetRelativeRotation(FRotator(NewCameraPitch, ForwardRotator.Yaw, ForwardRotator.Roll));
 	}
 }
 
-void AGravityCharacterPawn::MoveForward(float Value)
+void AGravityCharacterPawn::MoveForward(const float Value)
 {
 	if (Value != 0)
 	{
@@ -271,7 +277,7 @@ void AGravityCharacterPawn::MoveForward(float Value)
 	}
 }
 
-void AGravityCharacterPawn::MoveRight(float Value)
+void AGravityCharacterPawn::MoveRight(const float Value)
 {
 	if (Value != 0)
 	{
@@ -285,7 +291,7 @@ void AGravityCharacterPawn::MoveRight(float Value)
 	}
 }
 
-void AGravityCharacterPawn::MoveUp(float Value)
+void AGravityCharacterPawn::MoveUp(const float Value)
 {
 	if (Value != 0)
 	{
@@ -294,17 +300,17 @@ void AGravityCharacterPawn::MoveUp(float Value)
 	}
 }
 
-void AGravityCharacterPawn::RotatePitch(float Value)
+void AGravityCharacterPawn::RotatePitch(const float Value)
 {
 	AddActorLocalRotation(FQuat(FRotator(Value * CharacterRotationScale, 0.0f, 0.0f)));
 }
 
-void AGravityCharacterPawn::RotateRoll(float Value)
+void AGravityCharacterPawn::RotateRoll(const float Value)
 {
 	AddActorLocalRotation(FQuat(FRotator(0.0f, 0.0f, Value * CharacterRotationScale)));
 }
 
-void AGravityCharacterPawn::RotateYaw(float Value)
+void AGravityCharacterPawn::RotateYaw(const float Value)
 {
 	AddActorLocalRotation(FQuat(FRotator(0.0f, Value * CharacterRotationScale, 0.0f)));
 }

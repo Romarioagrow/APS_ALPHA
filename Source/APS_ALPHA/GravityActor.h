@@ -4,13 +4,16 @@
 #include <Components/SphereComponent.h>
 
 #include "CoreMinimal.h"
+#include "GravityObjectInterface.h"
 #include "GameFramework/Actor.h"
 #include "GravityActor.generated.h"
 
-UCLASS()
-class APS_ALPHA_API AGravityActor : public AActor
+UCLASS(Abstract)
+class APS_ALPHA_API AGravityActor : public AActor, public IGravityObjectInterface
 {
 	GENERATED_BODY()
+
+	
 	
 public:	
 	// Sets default values for this actor's properties
