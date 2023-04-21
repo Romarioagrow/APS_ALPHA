@@ -3,6 +3,7 @@
 
 #include "GravityCharacterPawn.h"
 #include <Kismet/GameplayStatics.h>
+#include <Kismet/KismetMathLibrary.h>
 
 // Sets default values
 AGravityCharacterPawn::AGravityCharacterPawn()
@@ -172,7 +173,7 @@ void AGravityCharacterPawn::SwitchGravityToPlanet(AActor* OtherActor)
 	GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Orange, FString::Printf(TEXT("SwitchGravityToSpaceship")));
 
 	CurrentGravityType = EGravityType::OnPlanet;
-	GravityTargetActor = Cast<ASpaceshipGravityActor>(OtherActor);
+	GravityTargetActor = Cast<APlanetGravityActor>(OtherActor);
 }
 
 void AGravityCharacterPawn::SwitchGravityToSpaceship(AActor* OtherActor)
@@ -199,11 +200,31 @@ void AGravityCharacterPawn::UpdateStationGravity()
 {
 	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Station Gravity")));
 
+	FVector GravityRotZ = GravityTargetActor->GetActorUpVector();
+	FVector GravityRotX = CapsuleComponent->GetForwardVector();
+
+	FMatrix RotationMatrix = FRotationMatrix::MakeFromZX(GravityRotZ, GravityRotX);
+	FRotator Rotation = RotationMatrix.Rotator();
+	FRotator ActorRotation = GetActorRotation();
+	FRotator Result = FMath::RInterpTo(ActorRotation, Rotation, GetWorld()->GetDeltaSeconds(), 2.f);
+
+	SetActorRotation(Result);
 }
 
 void AGravityCharacterPawn::UpdatePlanetGravity()
 {
 	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Planet Gravity")));
+
+	FVector GravityTargetLocation = GravityTargetActor->GetActorLocation();
+	FVector ActorLocation = GetActorLocation();
+	FRotator LookAtRotation = UKismetMathLibrary::FindLookAtRotation(GravityTargetLocation, ActorLocation);
+	FVector CapsuleForawardVector = CapsuleComponent->GetForwardVector();
+	FMatrix RotationMatrix = FRotationMatrix::MakeFromZX(LookAtRotation.Vector(), CapsuleForawardVector);
+
+	FRotator ActorRotation = GetActorRotation();
+	FRotator Result = FMath::RInterpTo(ActorRotation, RotationMatrix.Rotator(), GetWorld()->GetDeltaSeconds(), 2.f);
+
+	SetActorRotation(Result);
 }
 
 void AGravityCharacterPawn::UpdateShipGravity()
