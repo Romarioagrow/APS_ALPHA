@@ -122,11 +122,9 @@ private:
 
 	void MoveForward(float Value);
 	void MoveRight(float Value);
-
 	void MoveUp(float Value);
 
 	void RotatePitch(float Value);
-
 	void RotateRoll(float Value);
 
 private:

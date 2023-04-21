@@ -35,6 +35,8 @@ AGravityCharacter::AGravityCharacter()
     GetCapsuleComponent()->SetCollisionResponseToAllChannels(ECollisionResponse::ECR_Block);
     GetCapsuleComponent()->SetCollisionResponseToChannel(ECollisionChannel::ECC_PhysicsBody, ECollisionResponse::ECR_Overlap);
 
+
+
 }
 
 // Called when the game starts or when spawned
@@ -176,7 +178,7 @@ void AGravityCharacter::SwitchGravityToPlanet(AActor* OtherActor)
 
     CurrentGravityType = EGravityType::OnPlanet;
     APlanetGravityActor* CurrentGravityActor = Cast<APlanetGravityActor>(OtherActor);
-    RotateToPlanetGravity(CurrentGravityActor);
+    //RotateToPlanetGravity(CurrentGravityActor);
 }
 
 void AGravityCharacter::SwitchGravityToSpaceship(AActor* OtherActor)
@@ -184,8 +186,8 @@ void AGravityCharacter::SwitchGravityToSpaceship(AActor* OtherActor)
     GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Orange, FString::Printf(TEXT("SwitchGravityToSpaceship")));
 
     CurrentGravityType = EGravityType::OnPlanet;
-    ASpaceshipGravityActor* CurrentGravityActor = Cast<ASpaceshipGravityActor>(OtherActor);
-    RotateToSpaceshipGravity(CurrentGravityActor);
+    GravityTargetActor = Cast<ASpaceshipGravityActor>(OtherActor);
+    //RotateToSpaceshipGravity(CurrentGravityActor);
 }
 
 //void AGravityCharacter::RotateToStationGravity(AStationGravityActor* StationGravityActor)
