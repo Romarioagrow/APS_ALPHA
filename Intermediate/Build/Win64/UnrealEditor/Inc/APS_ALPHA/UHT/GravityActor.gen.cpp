@@ -11,6 +11,7 @@ void EmptyLinkFunctionForGeneratedCodeGravityActor() {}
 // Cross Module References
 	APS_ALPHA_API UClass* Z_Construct_UClass_AGravityActor();
 	APS_ALPHA_API UClass* Z_Construct_UClass_AGravityActor_NoRegister();
+	APS_ALPHA_API UClass* Z_Construct_UClass_UGravityObjectInterface_NoRegister();
 	ENGINE_API UClass* Z_Construct_UClass_AActor();
 	ENGINE_API UClass* Z_Construct_UClass_USphereComponent_NoRegister();
 	UPackage* Z_Construct_UPackage__Script_APS_ALPHA();
@@ -34,6 +35,7 @@ void EmptyLinkFunctionForGeneratedCodeGravityActor() {}
 #endif
 		static const UECodeGen_Private::FObjectPropertyParams NewProp_SphereCollisionComponent;
 		static const UECodeGen_Private::FPropertyParamsBase* const PropPointers[];
+		static const UECodeGen_Private::FImplementedInterfaceParams InterfaceParams[];
 		static const FCppClassTypeInfoStatic StaticCppClassTypeInfo;
 		static const UECodeGen_Private::FClassParams ClassParams;
 	};
@@ -58,6 +60,9 @@ void EmptyLinkFunctionForGeneratedCodeGravityActor() {}
 	const UECodeGen_Private::FPropertyParamsBase* const Z_Construct_UClass_AGravityActor_Statics::PropPointers[] = {
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AGravityActor_Statics::NewProp_SphereCollisionComponent,
 	};
+		const UECodeGen_Private::FImplementedInterfaceParams Z_Construct_UClass_AGravityActor_Statics::InterfaceParams[] = {
+			{ Z_Construct_UClass_UGravityObjectInterface_NoRegister, (int32)VTABLE_OFFSET(AGravityActor, IGravityObjectInterface), false },  // 662310608
+		};
 	const FCppClassTypeInfoStatic Z_Construct_UClass_AGravityActor_Statics::StaticCppClassTypeInfo = {
 		TCppClassTypeTraits<AGravityActor>::IsAbstract,
 	};
@@ -68,12 +73,12 @@ void EmptyLinkFunctionForGeneratedCodeGravityActor() {}
 		DependentSingletons,
 		nullptr,
 		Z_Construct_UClass_AGravityActor_Statics::PropPointers,
-		nullptr,
+		InterfaceParams,
 		UE_ARRAY_COUNT(DependentSingletons),
 		0,
 		UE_ARRAY_COUNT(Z_Construct_UClass_AGravityActor_Statics::PropPointers),
-		0,
-		0x009000A4u,
+		UE_ARRAY_COUNT(InterfaceParams),
+		0x009000A5u,
 		METADATA_PARAMS(Z_Construct_UClass_AGravityActor_Statics::Class_MetaDataParams, UE_ARRAY_COUNT(Z_Construct_UClass_AGravityActor_Statics::Class_MetaDataParams))
 	};
 	UClass* Z_Construct_UClass_AGravityActor()
@@ -95,9 +100,9 @@ void EmptyLinkFunctionForGeneratedCodeGravityActor() {}
 		static const FClassRegisterCompiledInInfo ClassInfo[];
 	};
 	const FClassRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GravityActor_h_Statics::ClassInfo[] = {
-		{ Z_Construct_UClass_AGravityActor, AGravityActor::StaticClass, TEXT("AGravityActor"), &Z_Registration_Info_UClass_AGravityActor, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(AGravityActor), 3564739396U) },
+		{ Z_Construct_UClass_AGravityActor, AGravityActor::StaticClass, TEXT("AGravityActor"), &Z_Registration_Info_UClass_AGravityActor, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(AGravityActor), 796443693U) },
 	};
-	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GravityActor_h_1650902733(TEXT("/Script/APS_ALPHA"),
+	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GravityActor_h_3789352474(TEXT("/Script/APS_ALPHA"),
 		Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GravityActor_h_Statics::ClassInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GravityActor_h_Statics::ClassInfo),
 		nullptr, 0,
 		nullptr, 0);
