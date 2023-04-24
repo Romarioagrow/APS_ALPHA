@@ -106,6 +106,12 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gravity")
 		AGravityActor* GravityTargetActor;
 
+	UPROPERTY(BlueprintReadWrite, Category = "Movement")
+		float ForwardSpeed;
+
+	UPROPERTY(BlueprintReadWrite, Category = "Movement")
+		float RightSpeed;
+
 	void SwitchGravityToStation(AActor* OtherActor);
 
 	void SwitchGravityToPlanet(AActor* OtherActor);

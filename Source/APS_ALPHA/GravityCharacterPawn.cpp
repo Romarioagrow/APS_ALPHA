@@ -77,6 +77,33 @@ void AGravityCharacterPawn::Tick(const float DeltaTime)
 		UpdateShipGravity();
 		break;
 	}
+
+	// update velocity for animations
+	//const FVector Velocity = GetVelocity();
+	//FVector Velocity = UPrimitiveComponent::GetPhysicsLinearVelocity();
+	//const FVector Forward = GetActorForwardVector();
+	//const FVector Right = GetActorRightVector();
+
+
+	const FVector CurrentVelocity = CapsuleComponent->GetPhysicsLinearVelocity();
+	//float Speed = CurrentVelocity.Length();
+
+	ForwardSpeed = FVector::DotProduct(CurrentVelocity, GetActorForwardVector());
+	RightSpeed = FVector::DotProduct(CurrentVelocity, GetActorRightVector());
+
+	ForwardSpeed /= 10.0f;
+	RightSpeed /= 10.0f;
+
+	//float ForwardSpeed = FVector::DotProduct(CurrentVelocity, GetActorForwardVector());
+	//float RightSpeed = FVector::DotProduct(CurrentVelocity, GetActorRightVector());
+
+
+	//ForwardSpeed = FVector::DotProduct(Velocity, Forward);
+	//RightSpeed = FVector::DotProduct(Velocity, Right);
+
+	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Orange, FString::Printf(TEXT("ForwardSpeed: %f"), ForwardSpeed));
+	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Orange, FString::Printf(TEXT("RightSpeed: %f"), RightSpeed));
+
 }
 
 // Called to bind functionality to input
