@@ -44,10 +44,10 @@ AGravityCharacterPawn::AGravityCharacterPawn()
 	PlayerCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("PlayerCamera"));
 	PlayerCamera->SetupAttachment(CameraSpringArm, USpringArmComponent::SocketName);
 
-	bUseControllerRotationYaw = true;
+	/*bUseControllerRotationYaw = true;
 	bUseControllerRotationPitch = true;
 	bUseControllerRotationRoll = true;
-	CameraSpringArm->bUsePawnControlRotation = true;
+	CameraSpringArm->bUsePawnControlRotation = true;*/
 
 }
 
@@ -284,6 +284,13 @@ void AGravityCharacterPawn::UpdateShipGravity()
 
 void AGravityCharacterPawn::Turn(const float Value)
 {
+	FRotator RotationToAdd(0.0f, 0.0f, 0.0f);
+	RotationToAdd.Yaw = Value * CharacterRotationScale;
+
+	CameraSpringArm->AddLocalRotation(RotationToAdd, false);
+
+
+
 	/*FRotator RotationToAdd(0.0f, 0.0f, 0.0f);
 	RotationToAdd.Yaw = Value * CharacterRotationScale;
 	CameraSpringArm->AddLocalRotation(RotationToAdd, false);*/
@@ -394,6 +401,7 @@ void AGravityCharacterPawn::RotateRoll(const float Value)
 	RotationToAdd.Roll = Value * CharacterRotationScale;
 	//CameraSpringArm->AddLocalRotation(RotationToAdd, false);
 	AddActorLocalRotation(RotationToAdd);
+	//GetActorRelativeRotation();
 
 }
 
