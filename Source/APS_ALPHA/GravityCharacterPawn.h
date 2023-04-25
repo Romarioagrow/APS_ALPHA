@@ -44,8 +44,8 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 		UCapsuleComponent* CapsuleComponent;
 	
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-		UArrowComponent* ArrowForwardVector;
+	//UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	//	UArrowComponent* ArrowForwardVector;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 		USkeletalMeshComponent* MeshComponent;
@@ -55,6 +55,12 @@ public:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 		UCameraComponent* PlayerCamera;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rotation")
+		FRotator DesiredRotation;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Rotation")
+		float RotationInterpolationSpeed = 1.0f;
 
 /**
  * @brief General Movements, Rotations and Camera Control
