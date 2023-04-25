@@ -284,10 +284,15 @@ void AGravityCharacterPawn::UpdateShipGravity()
 
 void AGravityCharacterPawn::Turn(const float Value)
 {
-	FRotator RotationToAdd(0.0f, 0.0f, 0.0f);
-	RotationToAdd.Yaw = Value * CharacterRotationScale;
+	/*FRotator RotationToAdd(0.0f, 0.0f, 0.0f);
+	RotationToAdd.Yaw = Value * CharacterRotationScale;*/
 
-	CameraSpringArm->AddLocalRotation(RotationToAdd, false);
+	FRotator TargetRotation = CameraSpringArm->GetRelativeRotation(); //+= Value * CharacterRotationScale;
+	TargetRotation.Yaw += Value * CharacterRotationScale;
+	CameraSpringArm->SetRelativeRotation(TargetRotation);
+
+	//CameraSpringArm-Camera
+	//AddLocalRotation(RotationToAdd, false);
 
 
 
@@ -311,6 +316,10 @@ void AGravityCharacterPawn::Turn(const float Value)
 
 void AGravityCharacterPawn::LookUp(const float Value)
 {
+
+	FRotator TargetRotation = CameraSpringArm->GetRelativeRotation(); //+= Value * CharacterRotationScale;
+	TargetRotation.Pitch += Value * CharacterRotationScale;
+	CameraSpringArm->SetRelativeRotation(TargetRotation);
 
 	//AddControllerPitchInput(Value);
 
