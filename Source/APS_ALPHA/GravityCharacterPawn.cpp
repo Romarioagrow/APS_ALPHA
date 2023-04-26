@@ -301,19 +301,19 @@ void AGravityCharacterPawn::LookUp(const float Value)
 
 void AGravityCharacterPawn::AlignCharacterToCamera()
 {
-	// ѕолучаем текущее вращение камеры
-	const FRotator CameraRotation = CameraSpringArm->GetComponentRotation();
+	// ѕолучаем текущий кватернион вращени€ камеры
+	const FQuat CameraQuat = CameraSpringArm->GetComponentQuat();
 
-	// ¬ычисл€ем новое вращение персонажа, использу€ компоненты вращени€ камеры
-	FRotator NewCharacterRotation = FRotator(CameraRotation.Pitch, CameraRotation.Yaw, CameraRotation.Roll);
+	// ¬ычисл€ем новый кватернион вращени€ персонажа, использу€ кватернион вращени€ камеры
+	FQuat NewCharacterQuat = FQuat(CameraQuat.X, CameraQuat.Y, CameraQuat.Z, CameraQuat.W);
 
 	// »нтерполируем вращение CapsuleComponent и персонажа к вращению камеры
-	FRotator InterpolatedRotation = FMath::RInterpTo(GetActorRotation(), NewCharacterRotation, GetWorld()->GetDeltaSeconds(), 5.0f);
-	CapsuleComponent->SetWorldRotation(InterpolatedRotation);
-	SetActorRotation(InterpolatedRotation);
+	FQuat InterpolatedQuat = FMath::QInterpTo(GetActorQuat(), NewCharacterQuat, GetWorld()->GetDeltaSeconds(), CameraInterpolationSpeed);
+	CapsuleComponent->SetWorldRotation(InterpolatedQuat);
+	SetActorRotation(InterpolatedQuat);
 
-	// ќбнул€ем вращение CameraSpringArm
-	CameraSpringArm->SetWorldRotation(FRotator(CameraRotation.Pitch, NewCharacterRotation.Yaw, CameraRotation.Roll));
+	// ќбнул€ем вращение CameraSpringArm, сохран€€ только Yaw
+	CameraSpringArm->SetWorldRotation(FRotator(CameraQuat.Rotator().Pitch, NewCharacterQuat.Rotator().Yaw, CameraQuat.Rotator().Roll));
 }
 
 void AGravityCharacterPawn::MoveForward(const float Value)

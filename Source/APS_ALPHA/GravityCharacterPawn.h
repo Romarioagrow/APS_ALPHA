@@ -62,6 +62,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Rotation")
 		float RotationInterpolationSpeed = 1.0f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Camera")
+		float CameraInterpolationSpeed = 5.0f;
+
 /**
  * @brief General Movements, Rotations and Camera Control
 */
