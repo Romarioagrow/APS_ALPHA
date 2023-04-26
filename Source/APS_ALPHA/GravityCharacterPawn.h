@@ -71,6 +71,8 @@ public:
 	UFUNCTION()
 		void LookUp(float Value);
 
+	void AlignCharacterToCamera();
+
 	UFUNCTION()
 		void MoveForward(float Value);
 	UFUNCTION()

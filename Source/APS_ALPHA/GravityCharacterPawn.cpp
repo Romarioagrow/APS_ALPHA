@@ -284,77 +284,44 @@ void AGravityCharacterPawn::UpdateShipGravity()
 
 void AGravityCharacterPawn::Turn(const float Value)
 {
-	/*FRotator RotationToAdd(0.0f, 0.0f, 0.0f);
-	RotationToAdd.Yaw = Value * CharacterRotationScale;*/
-
-	FRotator TargetRotation = CameraSpringArm->GetRelativeRotation(); //+= Value * CharacterRotationScale;
+	FRotator TargetRotation = CameraSpringArm->GetRelativeRotation(); 
 	TargetRotation.Yaw += Value * CharacterRotationScale;
 	CameraSpringArm->SetRelativeRotation(TargetRotation);
 
-	//CameraSpringArm-Camera
-	//AddLocalRotation(RotationToAdd, false);
-
-
-
-	/*FRotator RotationToAdd(0.0f, 0.0f, 0.0f);
-	RotationToAdd.Yaw = Value * CharacterRotationScale;
-	CameraSpringArm->AddLocalRotation(RotationToAdd, false);*/
-
-	//AddControllerYawInput(Value);
-	/*FRotator RotationToAdd(0.0f, 0.0f, 0.0f);
-	RotationToAdd.Roll = Value * CharacterRotationScale;
-	CameraSpringArm->AddLocalRotation(RotationToAdd, false);*/
-
-	if (Value != 0)
-	{
-
-		/*FRotator ForwardRotator = ArrowForwardVector->GetRelativeRotation();
-		const float NewCameraYaw = (ForwardRotator.Yaw + Value) * CameraYawScale;
-		ArrowForwardVector->SetRelativeRotation(FRotator(ForwardRotator.Pitch, NewCameraYaw, ForwardRotator.Roll));*/
-	}
 }
 
 void AGravityCharacterPawn::LookUp(const float Value)
 {
 
-	FRotator TargetRotation = CameraSpringArm->GetRelativeRotation(); //+= Value * CharacterRotationScale;
+	FRotator TargetRotation = CameraSpringArm->GetRelativeRotation(); 
 	TargetRotation.Pitch += Value * CharacterRotationScale;
 	CameraSpringArm->SetRelativeRotation(TargetRotation);
 
-	//AddControllerPitchInput(Value);
+}
 
-	/*FRotator RotationToAdd(0.0f, 0.0f, 0.0f);
-	RotationToAdd.Pitch = Value * CharacterRotationScale;
-	CameraSpringArm->AddLocalRotation(RotationToAdd, false);*/
+void AGravityCharacterPawn::AlignCharacterToCamera()
+{
+	// Получаем текущее вращение камеры
+	const FRotator CameraRotation = CameraSpringArm->GetComponentRotation();
 
+	// Вычисляем новое вращение персонажа, используя компоненты вращения камеры
+	FRotator NewCharacterRotation = FRotator(CameraRotation.Pitch, CameraRotation.Yaw, CameraRotation.Roll);
 
-	if (Value != 0)
-	{
+	// Интерполируем вращение CapsuleComponent и персонажа к вращению камеры
+	FRotator InterpolatedRotation = FMath::RInterpTo(GetActorRotation(), NewCharacterRotation, GetWorld()->GetDeltaSeconds(), 5.0f);
+	CapsuleComponent->SetWorldRotation(InterpolatedRotation);
+	SetActorRotation(InterpolatedRotation);
 
-		/*FRotator ForwardRotator = ArrowForwardVector->GetRelativeRotation();
-		const float NewCameraPitch = (ForwardRotator.Pitch + Value) * CameraPitchScale;
-		ArrowForwardVector->SetRelativeRotation(FRotator(NewCameraPitch, ForwardRotator.Yaw, ForwardRotator.Roll));*/
-	}
+	// Обнуляем вращение CameraSpringArm
+	CameraSpringArm->SetWorldRotation(FRotator(CameraRotation.Pitch, NewCharacterRotation.Yaw, CameraRotation.Roll));
 }
 
 void AGravityCharacterPawn::MoveForward(const float Value)
 {
 	if (Value != 0)
 	{
-		// Получаем текущее вращение камеры
-		const FRotator CameraRotation = CameraSpringArm->GetComponentRotation();
-
-		// Вычисляем новое вращение персонажа, используя только Yaw и Pitch компоненты вращения камеры
-		FRotator NewCharacterRotation = FRotator(CameraRotation.Pitch, CameraRotation.Yaw, CameraRotation.Roll);
-
-		// Интерполируем вращение CapsuleComponent и персонажа к вращению камеры
-		FRotator InterpolatedRotation = FMath::RInterpTo(GetActorRotation(), NewCharacterRotation, GetWorld()->GetDeltaSeconds(), 5.0f);
-		CapsuleComponent->SetWorldRotation(InterpolatedRotation);
-		SetActorRotation(InterpolatedRotation);
-
-		// Обнуляем вращение CameraSpringArm, сохраняя только Yaw
-		CameraSpringArm->SetWorldRotation(FRotator(CameraRotation.Pitch, NewCharacterRotation.Yaw, CameraRotation.Roll));
-
+		
+		AlignCharacterToCamera();
 
 		// add impulse
 		CapsuleComponent->AddImpulse(GetActorForwardVector() * (Value * CharacterMovementScale), "None", true);
@@ -365,20 +332,6 @@ void AGravityCharacterPawn::MoveRight(const float Value)
 {
 	if (Value != 0)
 	{
-		// rotate character
-		/*FRotator RelativeForwardRotator = ArrowForwardVector->GetRelativeRotation();
-		AddActorLocalRotation(RelativeForwardRotator);
-		ArrowForwardVector->AddLocalRotation(RelativeForwardRotator.GetInverse());*/
-
-		const FVector CameraVector = PlayerCamera->GetRightVector();
-		//AddActorLocalRotation(CameraVector.Rotation());
-
-		if (GetActorRightVector() != CameraVector)
-		{
-			//SetActorRelativeRotation(CameraVector.Rotation());
-			//SetActorRotation(CameraVector.Rotation());
-
-		}
 
 		// add impulse
 		CapsuleComponent->AddImpulse(GetActorRightVector() * (Value * CharacterMovementScale), "None", true);
@@ -398,7 +351,6 @@ void AGravityCharacterPawn::RotatePitch(const float Value)
 {
 	FRotator RotationToAdd(0.0f, 0.0f, 0.0f);
 	RotationToAdd.Pitch = Value * CharacterRotationScale;
-	//CameraSpringArm->AddLocalRotation(RotationToAdd, false);
 	AddActorLocalRotation(RotationToAdd);
 
 }
@@ -407,9 +359,7 @@ void AGravityCharacterPawn::RotateRoll(const float Value)
 {
 	FRotator RotationToAdd(0.0f, 0.0f, 0.0f);
 	RotationToAdd.Roll = Value * CharacterRotationScale;
-	//CameraSpringArm->AddLocalRotation(RotationToAdd, false);
 	AddActorLocalRotation(RotationToAdd);
-	//GetActorRelativeRotation();
 
 }
 
@@ -417,36 +367,5 @@ void AGravityCharacterPawn::RotateYaw(const float Value)
 {
 	FRotator RotationToAdd(0.0f, 0.0f, 0.0f);
 	RotationToAdd.Yaw = Value * CharacterRotationScale;
-	//CameraSpringArm->AddLocalRotation(RotationToAdd, false);
 	AddActorLocalRotation(RotationToAdd);
 }
-
-//void AGravityCharacterPawn::RotatePitch(const float Value)
-//{
-//	//AddActorLocalRotation(FQuat(FRotator(Value * CharacterRotationScale, 0.0f, 0.0f)));
-//	//CameraSpringArm->AddLocalRotation(FRotator(0.0f, 0.0f, Value * CharacterRotationScale));
-//	//AddControllerPitchInput(Value * CharacterRotationScale);
-//
-//	DesiredRotation.Pitch += Value * CharacterRotationScale;
-//}
-//
-//void AGravityCharacterPawn::RotateRoll(const float Value)
-//{
-//	//AddControllerRollInput(Value * CharacterRotationScale);
-//	DesiredRotation.Roll += Value * CharacterRotationScale;
-//
-//	//AddActorLocalRotation(FQuat(FRotator(0.0f, 0.0f, Value * CharacterRotationScale)));
-//	//CameraSpringArm->AddLocalRotation(FRotator(0.0f, 0.0f, Value * CharacterRotationScale));
-//
-//}
-//
-//void AGravityCharacterPawn::RotateYaw(const float Value)
-//{
-//	//AddActorLocalRotation(FQuat(FRotator(0.0f, Value * CharacterRotationScale, 0.0f)));
-//	//CameraSpringArm->AddLocalRotation(FRotator(0.0f, 0.0f, Value * CharacterRotationScale));
-//	//AddControllerYawInput(Value * CharacterRotationScale);
-//
-//	DesiredRotation.Yaw += Value * CharacterRotationScale;
-//}
-
-
