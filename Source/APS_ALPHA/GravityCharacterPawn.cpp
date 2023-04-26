@@ -312,7 +312,7 @@ void AGravityCharacterPawn::AlignCharacterToCamera()
 	CapsuleComponent->SetWorldRotation(InterpolatedQuat);
 	SetActorRotation(InterpolatedQuat);
 
-	// ќбнул€ем вращение CameraSpringArm, сохран€€ только Yaw
+	// ќбнул€ем вращение CameraSpringArm
 	CameraSpringArm->SetWorldRotation(FRotator(CameraQuat.Rotator().Pitch, NewCharacterQuat.Rotator().Yaw, CameraQuat.Rotator().Roll));
 }
 
@@ -332,6 +332,7 @@ void AGravityCharacterPawn::MoveRight(const float Value)
 {
 	if (Value != 0)
 	{
+		AlignCharacterToCamera();
 
 		// add impulse
 		CapsuleComponent->AddImpulse(GetActorRightVector() * (Value * CharacterMovementScale), "None", true);
