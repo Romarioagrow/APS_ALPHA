@@ -247,8 +247,8 @@ void AGravityCharacterPawn::UpdateStationGravity()
 
 	const FVector GravityRotZ = GravityTargetActor->GetActorUpVector();
 	const FVector GravityRotX = CapsuleComponent->GetForwardVector();
-
 	const FMatrix RotationMatrix = FRotationMatrix::MakeFromZX(GravityRotZ, GravityRotX);
+
 	const FRotator Rotation = RotationMatrix.Rotator();
 	const FRotator ActorRotation = GetActorRotation();
 	const FRotator Result = FMath::RInterpTo(ActorRotation, Rotation, GetWorld()->GetDeltaSeconds(), 2.f);
@@ -265,16 +265,16 @@ void AGravityCharacterPawn::UpdatePlanetGravity()
 	const FRotator LookAtRotation = UKismetMathLibrary::FindLookAtRotation(GravityTargetLocation, ActorLocation);
 	const FVector CapsuleForwardVector = CapsuleComponent->GetForwardVector();
 	const FMatrix RotationMatrix = FRotationMatrix::MakeFromZX(LookAtRotation.Vector(), CapsuleForwardVector);
-
 	const FRotator ActorRotation = GetActorRotation();
-	const FRotator Result = FMath::RInterpTo(ActorRotation, RotationMatrix.Rotator(), GetWorld()->GetDeltaSeconds(), 2.f);
-
-	SetActorRotation(Result);
+	
+	const FRotator ResultRotation = FMath::RInterpTo(ActorRotation, RotationMatrix.Rotator(), GetWorld()->GetDeltaSeconds(), 2.f);
+	SetActorRotation(ResultRotation);
 }
 
 void AGravityCharacterPawn::UpdateShipGravity()
 {
 	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Ship Gravity")));
+
 }
 
 
