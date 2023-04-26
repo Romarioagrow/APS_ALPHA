@@ -344,13 +344,16 @@ void AGravityCharacterPawn::MoveForward(const float Value)
 		// Получаем текущее вращение камеры
 		const FRotator CameraRotation = CameraSpringArm->GetComponentRotation();
 
-		// Устанавливаем вращение CapsuleComponent и персонажа равным вращению камеры
-		FRotator NewCharacterRotation = FRotator(CameraRotation.Pitch, CameraRotation.Yaw, 0.0f);
-		CapsuleComponent->SetWorldRotation(NewCharacterRotation);
-		SetActorRotation(NewCharacterRotation);
+		// Вычисляем новое вращение персонажа, используя только Yaw и Pitch компоненты вращения камеры
+		FRotator NewCharacterRotation = FRotator(CameraRotation.Pitch, CameraRotation.Yaw, CameraRotation.Roll);
 
-		// Обнуляем вращение CameraSpringArm, сохраняя Pitch и Yaw
-		CameraSpringArm->SetWorldRotation(FRotator(CameraRotation.Pitch, NewCharacterRotation.Yaw, 0.0f));
+		// Интерполируем вращение CapsuleComponent и персонажа к вращению камеры
+		FRotator InterpolatedRotation = FMath::RInterpTo(GetActorRotation(), NewCharacterRotation, GetWorld()->GetDeltaSeconds(), 5.0f);
+		CapsuleComponent->SetWorldRotation(InterpolatedRotation);
+		SetActorRotation(InterpolatedRotation);
+
+		// Обнуляем вращение CameraSpringArm, сохраняя только Yaw
+		CameraSpringArm->SetWorldRotation(FRotator(CameraRotation.Pitch, NewCharacterRotation.Yaw, CameraRotation.Roll));
 
 
 		// add impulse
