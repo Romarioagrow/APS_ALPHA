@@ -52,6 +52,9 @@ void AGravityCharacterPawn::Tick(const float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
+	// Update gravity
+	// UpdateGravity();
+
 	switch (CurrentGravityType)
 	{
 	case EGravityType::ZeroG:
@@ -112,6 +115,9 @@ void AGravityCharacterPawn::OnBeginOverlap(UPrimitiveComponent* OverlappedCompon
 	UE_LOG(LogTemp, Warning, TEXT("BeginOverlap with: %s"), *OtherActor->GetName());
 	GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Green, FString::Printf(TEXT("BeginOverlap with: %s"), *OtherActor->GetName()));
 
+	// Update Gravity Status
+	// UpdateGravityStatus(AActor* OtherActor);
+	
 	if (OtherActor->IsA(AStationGravityActor::StaticClass()))
 	{
 		SwitchGravityToStation(OtherActor);

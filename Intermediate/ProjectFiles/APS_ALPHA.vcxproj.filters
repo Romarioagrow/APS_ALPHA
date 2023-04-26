@@ -65,6 +65,12 @@
     <ClInclude Include="..\..\Source\APS_ALPHA\GravityActor.h">
       <Filter>Source\APS_ALPHA</Filter>
     </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\GravityActorInterface.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\GravityActorInterface.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
     <ClCompile Include="..\..\Source\APS_ALPHA\GravityCharacter.cpp">
       <Filter>Source\APS_ALPHA</Filter>
     </ClCompile>

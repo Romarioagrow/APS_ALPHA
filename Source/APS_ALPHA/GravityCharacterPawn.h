@@ -44,9 +44,6 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 		UCapsuleComponent* CapsuleComponent;
 	
-	//UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-	//	UArrowComponent* ArrowForwardVector;
-
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 		USkeletalMeshComponent* MeshComponent;
 
@@ -55,9 +52,6 @@ public:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 		UCameraComponent* PlayerCamera;
-
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rotation")
-		FRotator DesiredRotation;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Rotation")
 		float RotationInterpolationSpeed = 1.0f;
@@ -74,8 +68,6 @@ public:
 	UFUNCTION()
 		void LookUp(float Value);
 
-	void AlignCharacterToCamera();
-
 	UFUNCTION()
 		void MoveForward(float Value);
 	UFUNCTION()
@@ -89,6 +81,9 @@ public:
 		void RotateRoll(float Value);
 	UFUNCTION()
 		void RotateYaw(float Value);
+
+	UFUNCTION()
+		void AlignCharacterToCamera();
 
 private:
 	float CameraYawScale{ 1.0f };	
@@ -106,22 +101,27 @@ protected:
 		void OnEndOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, 
 			UPrimitiveComponent* OtherComp, int32 OtherBodyIndex);
 
-	void UpdateGravityStatus();
+	void UpdateGravityStatus(); /// gr intrf
 
 protected:
+	/// gr intrf
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gravity")
 		EGravityType CurrentGravityType {
-		EGravityType::ZeroG
+		EGravityType::ZeroG 
 	};
 
+	/// gr intrf
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gravity")
-		AGravityActor* GravityTargetActor;
+		AGravityActor* GravityTargetActor; 
 
 	UPROPERTY(BlueprintReadWrite, Category = "Movement")
 		float ForwardSpeed;
 
 	UPROPERTY(BlueprintReadWrite, Category = "Movement")
 		float RightSpeed;
+
+	///void SwitchGravityType(AGravityActor* GravityTargetActor);
+
 
 	void SwitchGravityToStation(AActor* OtherActor);
 
