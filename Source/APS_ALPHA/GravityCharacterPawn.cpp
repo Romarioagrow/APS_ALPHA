@@ -15,16 +15,9 @@ AGravityCharacterPawn::AGravityCharacterPawn()
 
 	// Create CapsuleComponent
 	CapsuleComponent = CreateDefaultSubobject<UCapsuleComponent>(TEXT("CapsuleMesh"));
-	// Set properties
 	CapsuleComponent->InitCapsuleSize(42.f, 96.f);
 	CapsuleComponent->SetCollisionProfileName(TEXT("Pawn"));
-	// Attach to root component
-	//CapsuleMeshComponent->SetupAttachment(RootComponent);
 	SetRootComponent(CapsuleComponent);
-
-	// Create and attach arrow component
-	//ArrowForwardVector = CreateDefaultSubobject<UArrowComponent>(TEXT("ArrowForwardVector"));
-	//ArrowForwardVector->SetupAttachment(CapsuleComponent);
 
 	// Create and attach skeletal mesh component
 	MeshComponent = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("MeshComponent"));
@@ -37,17 +30,10 @@ AGravityCharacterPawn::AGravityCharacterPawn()
 	CameraSpringArm->SetupAttachment(CapsuleComponent);
 	CameraSpringArm->TargetArmLength = 300.0f;
 	CameraSpringArm->bUsePawnControlRotation = false;
-	/*CameraSpringArm->bEnableCameraLag = true;
-	CameraSpringArm->CameraLagSpeed = 3.0f;*/
 
 	// Create and set up CameraComponent
 	PlayerCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("PlayerCamera"));
 	PlayerCamera->SetupAttachment(CameraSpringArm, USpringArmComponent::SocketName);
-
-	/*bUseControllerRotationYaw = true;
-	bUseControllerRotationPitch = true;
-	bUseControllerRotationRoll = true;
-	CameraSpringArm->bUsePawnControlRotation = true;*/
 
 }
 
@@ -86,36 +72,14 @@ void AGravityCharacterPawn::Tick(const float DeltaTime)
 		break;
 	}
 
-	// update velocity for animations
-	//const FVector Velocity = GetVelocity();
-	//FVector Velocity = UPrimitiveComponent::GetPhysicsLinearVelocity();
-	//const FVector Forward = GetActorForwardVector();
-	//const FVector Right = GetActorRightVector();
-
-
-	/*FRotator CurrentRotation = GetActorRotation();
-	FRotator NewRotation = FMath::RInterpTo(CurrentRotation, DesiredRotation, DeltaTime, RotationInterpolationSpeed);
-	SetActorRotation(NewRotation);*/
-
 	const FVector CurrentVelocity = CapsuleComponent->GetPhysicsLinearVelocity();
-	//float Speed = CurrentVelocity.Length();
-
 	ForwardSpeed = FVector::DotProduct(CurrentVelocity, GetActorForwardVector());
 	RightSpeed = FVector::DotProduct(CurrentVelocity, GetActorRightVector());
-
 	ForwardSpeed /= 10.0f;
 	RightSpeed /= 10.0f;
 
-	//float ForwardSpeed = FVector::DotProduct(CurrentVelocity, GetActorForwardVector());
-	//float RightSpeed = FVector::DotProduct(CurrentVelocity, GetActorRightVector());
-
-
-	//ForwardSpeed = FVector::DotProduct(Velocity, Forward);
-	//RightSpeed = FVector::DotProduct(Velocity, Right);
-
 	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Orange, FString::Printf(TEXT("ForwardSpeed: %f"), ForwardSpeed));
 	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Orange, FString::Printf(TEXT("RightSpeed: %f"), RightSpeed));
-
 }
 
 // Called to bind functionality to input
@@ -173,9 +137,7 @@ void AGravityCharacterPawn::OnEndOverlap(UPrimitiveComponent* OverlappedComponen
 
 	UpdateGravityStatus();
 
-
 }
-
 
 /**
  * @brief Gravity Actions
@@ -276,7 +238,6 @@ void AGravityCharacterPawn::UpdateShipGravity()
 	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Ship Gravity")));
 
 }
-
 
 /**
  * @brief  Movements, Rotations, Camera
