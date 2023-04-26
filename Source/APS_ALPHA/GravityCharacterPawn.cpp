@@ -341,20 +341,16 @@ void AGravityCharacterPawn::MoveForward(const float Value)
 {
 	if (Value != 0)
 	{
-		// rotate character
-		/*FRotator RelativeForwardRotator = ArrowForwardVector->GetRelativeRotation();
-		AddActorLocalRotation(RelativeForwardRotator);
-		ArrowForwardVector->AddLocalRotation(RelativeForwardRotator.GetInverse());*/
+		// Получаем текущее вращение камеры
+		const FRotator CameraRotation = CameraSpringArm->GetComponentRotation();
 
-		const FVector CameraVector = PlayerCamera->GetForwardVector();
-		//AddActorLocalRotation(CameraVector.Rotation());
+		// Устанавливаем вращение CapsuleComponent и персонажа равным вращению камеры
+		FRotator NewCharacterRotation = FRotator(CameraRotation.Pitch, CameraRotation.Yaw, 0.0f);
+		CapsuleComponent->SetWorldRotation(NewCharacterRotation);
+		SetActorRotation(NewCharacterRotation);
 
-		if (GetActorRightVector() != CameraVector)
-		{
-			//SetActorRelativeRotation(CameraVector.Rotation());
-			//SetActorRotation(CameraVector.Rotation());
-		}
-
+		// Обнуляем вращение CameraSpringArm, сохраняя Pitch и Yaw
+		CameraSpringArm->SetWorldRotation(FRotator(CameraRotation.Pitch, NewCharacterRotation.Yaw, 0.0f));
 
 
 		// add impulse
