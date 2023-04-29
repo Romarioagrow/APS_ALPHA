@@ -1,12 +1,12 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
-
+#include "GravityTypeEnum.h"
+#include "GravityActor.h"
 #include "CoreMinimal.h"
 #include "UObject/Interface.h"
 #include "GravityActorInterface.generated.h"
-#include "GravityTypeEnum.h"
-#include "GravityActor.h"
+
 
 // This class does not need to be modified.
 UINTERFACE(MinimalAPI)
@@ -25,37 +25,33 @@ class APS_ALPHA_API IGravityActorInterface
 	// Add interface functions to this class. This is the class that will be inherited to implement this interface.
 public:
 
+	virtual void UpdateGravity();
 
-	void UpdateGravity();
+	virtual void UpdateGravityStatus(AActor* OtherActor);
 
-	void UpdateGravityStatus(AActor* OtherActor);
+	virtual void UpdateGravityStatus();
 
-	void UpdateGravityStatus();
+	virtual FVector GetGravityDirection() const;
 
-	FVector GetGravityDirection() const;
-
-	void SwitchGravityType(AGravityActor* GravityTargetActor);
+	virtual void SwitchGravityType(AGravityActor* GravityActorTarget);
 
 protected:
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gravity")
-		EGravityType CurrentGravityType {
+	EGravityType CurrentGravityType {
 		EGravityType::ZeroG
 	};
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gravity")
-		AGravityActor* GravityTargetActor;
+	AGravityActor* GravityActorTarget;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gravity")
-		FVector GravityDirection {
+	FVector GravityDirection {
 		0.0f, 0.0f, 0.0f
 	};
 
 private:
-	void UpdateZeroGGravity();
+	virtual void UpdateZeroGGravity();
 
-	void UpdateStationGravity();
+	virtual void UpdateStationGravity();
 
-	void UpdatePlanetGravity();
+	virtual void UpdatePlanetGravity();
 
-	void UpdateShipGravity();
+	virtual void UpdateShipGravity();
 };

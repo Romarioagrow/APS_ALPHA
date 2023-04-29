@@ -14,3 +14,8 @@ ASpaceshipGravityActor::ASpaceshipGravityActor()
     //SphereCollisionComponent = CreateDefaultSubobject<USphereComponent>(TEXT("SphereCollisionComponent"));
     SphereCollisionComponent->SetupAttachment(RootComponent);
 }
+
+//USphereComponent* ASpaceshipGravityActor::GetGravityField()
+//{
+//    return SphereCollisionComponent;
+//}

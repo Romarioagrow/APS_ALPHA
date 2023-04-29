@@ -4,3 +4,8 @@
 #include "GravityObjectInterface.h"
 
 // Add default functionality here for any IGravityObjectInterface functions that are not pure virtual.
+
+//USphereComponent* IGravityObjectInterface::GetGravityField()
+//{
+//	return nullptr;
+//}

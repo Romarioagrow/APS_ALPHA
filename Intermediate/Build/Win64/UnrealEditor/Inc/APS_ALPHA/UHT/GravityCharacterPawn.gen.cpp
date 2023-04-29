@@ -49,6 +49,13 @@ void EmptyLinkFunctionForGeneratedCodeGravityCharacterPawn() {}
 		P_THIS->OnBeginOverlap(Z_Param_OverlappedComponent,Z_Param_OtherActor,Z_Param_OtherComp,Z_Param_OtherBodyIndex,Z_Param_bFromSweep,Z_Param_Out_SweepResult);
 		P_NATIVE_END;
 	}
+	DEFINE_FUNCTION(AGravityCharacterPawn::execAlignCharacterToCamera)
+	{
+		P_FINISH;
+		P_NATIVE_BEGIN;
+		P_THIS->AlignCharacterToCamera();
+		P_NATIVE_END;
+	}
 	DEFINE_FUNCTION(AGravityCharacterPawn::execRotateYaw)
 	{
 		P_GET_PROPERTY(FFloatProperty,Z_Param_Value);
@@ -117,6 +124,7 @@ void EmptyLinkFunctionForGeneratedCodeGravityCharacterPawn() {}
 	{
 		UClass* Class = AGravityCharacterPawn::StaticClass();
 		static const FNameNativePtrPair Funcs[] = {
+			{ "AlignCharacterToCamera", &AGravityCharacterPawn::execAlignCharacterToCamera },
 			{ "LookUp", &AGravityCharacterPawn::execLookUp },
 			{ "MoveForward", &AGravityCharacterPawn::execMoveForward },
 			{ "MoveRight", &AGravityCharacterPawn::execMoveRight },
@@ -129,6 +137,28 @@ void EmptyLinkFunctionForGeneratedCodeGravityCharacterPawn() {}
 			{ "Turn", &AGravityCharacterPawn::execTurn },
 		};
 		FNativeFunctionRegistrar::RegisterFunctions(Class, Funcs, UE_ARRAY_COUNT(Funcs));
+	}
+	struct Z_Construct_UFunction_AGravityCharacterPawn_AlignCharacterToCamera_Statics
+	{
+#if WITH_METADATA
+		static const UECodeGen_Private::FMetaDataPairParam Function_MetaDataParams[];
+#endif
+		static const UECodeGen_Private::FFunctionParams FuncParams;
+	};
+#if WITH_METADATA
+	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UFunction_AGravityCharacterPawn_AlignCharacterToCamera_Statics::Function_MetaDataParams[] = {
+		{ "ModuleRelativePath", "GravityCharacterPawn.h" },
+	};
+#endif
+	const UECodeGen_Private::FFunctionParams Z_Construct_UFunction_AGravityCharacterPawn_AlignCharacterToCamera_Statics::FuncParams = { (UObject*(*)())Z_Construct_UClass_AGravityCharacterPawn, nullptr, "AlignCharacterToCamera", nullptr, nullptr, 0, nullptr, 0, RF_Public|RF_Transient|RF_MarkAsNative, (EFunctionFlags)0x00020401, 0, 0, METADATA_PARAMS(Z_Construct_UFunction_AGravityCharacterPawn_AlignCharacterToCamera_Statics::Function_MetaDataParams, UE_ARRAY_COUNT(Z_Construct_UFunction_AGravityCharacterPawn_AlignCharacterToCamera_Statics::Function_MetaDataParams)) };
+	UFunction* Z_Construct_UFunction_AGravityCharacterPawn_AlignCharacterToCamera()
+	{
+		static UFunction* ReturnFunction = nullptr;
+		if (!ReturnFunction)
+		{
+			UECodeGen_Private::ConstructUFunction(&ReturnFunction, Z_Construct_UFunction_AGravityCharacterPawn_AlignCharacterToCamera_Statics::FuncParams);
+		}
+		return ReturnFunction;
 	}
 	struct Z_Construct_UFunction_AGravityCharacterPawn_LookUp_Statics
 	{
@@ -593,6 +623,7 @@ void EmptyLinkFunctionForGeneratedCodeGravityCharacterPawn() {}
 		(UObject* (*)())Z_Construct_UPackage__Script_APS_ALPHA,
 	};
 	const FClassFunctionLinkInfo Z_Construct_UClass_AGravityCharacterPawn_Statics::FuncInfo[] = {
+		{ &Z_Construct_UFunction_AGravityCharacterPawn_AlignCharacterToCamera, "AlignCharacterToCamera" }, // 621088259
 		{ &Z_Construct_UFunction_AGravityCharacterPawn_LookUp, "LookUp" }, // 3537675169
 		{ &Z_Construct_UFunction_AGravityCharacterPawn_MoveForward, "MoveForward" }, // 3752209854
 		{ &Z_Construct_UFunction_AGravityCharacterPawn_MoveRight, "MoveRight" }, // 2636117551
@@ -669,14 +700,18 @@ void EmptyLinkFunctionForGeneratedCodeGravityCharacterPawn() {}
 #if WITH_METADATA
 	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_AGravityCharacterPawn_Statics::NewProp_CurrentGravityType_MetaData[] = {
 		{ "Category", "Gravity" },
+		{ "Comment", "/// gr intrf\n" },
 		{ "ModuleRelativePath", "GravityCharacterPawn.h" },
+		{ "ToolTip", "gr intrf" },
 	};
 #endif
 	const UECodeGen_Private::FEnumPropertyParams Z_Construct_UClass_AGravityCharacterPawn_Statics::NewProp_CurrentGravityType = { "CurrentGravityType", nullptr, (EPropertyFlags)0x0020080000000005, UECodeGen_Private::EPropertyGenFlags::Enum, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(AGravityCharacterPawn, CurrentGravityType), Z_Construct_UEnum_APS_ALPHA_EGravityType, METADATA_PARAMS(Z_Construct_UClass_AGravityCharacterPawn_Statics::NewProp_CurrentGravityType_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_AGravityCharacterPawn_Statics::NewProp_CurrentGravityType_MetaData)) }; // 459840205
 #if WITH_METADATA
 	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_AGravityCharacterPawn_Statics::NewProp_GravityTargetActor_MetaData[] = {
 		{ "Category", "Gravity" },
+		{ "Comment", "/// gr intrf\n" },
 		{ "ModuleRelativePath", "GravityCharacterPawn.h" },
+		{ "ToolTip", "gr intrf" },
 	};
 #endif
 	const UECodeGen_Private::FObjectPropertyParams Z_Construct_UClass_AGravityCharacterPawn_Statics::NewProp_GravityTargetActor = { "GravityTargetActor", nullptr, (EPropertyFlags)0x0020080000000015, UECodeGen_Private::EPropertyGenFlags::Object, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(AGravityCharacterPawn, GravityTargetActor), Z_Construct_UClass_AGravityActor_NoRegister, METADATA_PARAMS(Z_Construct_UClass_AGravityCharacterPawn_Statics::NewProp_GravityTargetActor_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_AGravityCharacterPawn_Statics::NewProp_GravityTargetActor_MetaData)) };
@@ -745,9 +780,9 @@ void EmptyLinkFunctionForGeneratedCodeGravityCharacterPawn() {}
 		static const FClassRegisterCompiledInInfo ClassInfo[];
 	};
 	const FClassRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GravityCharacterPawn_h_Statics::ClassInfo[] = {
-		{ Z_Construct_UClass_AGravityCharacterPawn, AGravityCharacterPawn::StaticClass, TEXT("AGravityCharacterPawn"), &Z_Registration_Info_UClass_AGravityCharacterPawn, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(AGravityCharacterPawn), 2367723606U) },
+		{ Z_Construct_UClass_AGravityCharacterPawn, AGravityCharacterPawn::StaticClass, TEXT("AGravityCharacterPawn"), &Z_Registration_Info_UClass_AGravityCharacterPawn, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(AGravityCharacterPawn), 1851087697U) },
 	};
-	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GravityCharacterPawn_h_1966844824(TEXT("/Script/APS_ALPHA"),
+	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GravityCharacterPawn_h_1003683917(TEXT("/Script/APS_ALPHA"),
 		Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GravityCharacterPawn_h_Statics::ClassInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GravityCharacterPawn_h_Statics::ClassInfo),
 		nullptr, 0,
 		nullptr, 0);
