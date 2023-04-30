@@ -9,9 +9,9 @@
 PRAGMA_DISABLE_DEPRECATION_WARNINGS
 void EmptyLinkFunctionForGeneratedCodePlanetaryEnvironment() {}
 // Cross Module References
+	APS_ALPHA_API UClass* Z_Construct_UClass_UBaseInterface();
 	APS_ALPHA_API UClass* Z_Construct_UClass_UPlanetaryEnvironment();
 	APS_ALPHA_API UClass* Z_Construct_UClass_UPlanetaryEnvironment_NoRegister();
-	COREUOBJECT_API UClass* Z_Construct_UClass_UInterface();
 	UPackage* Z_Construct_UPackage__Script_APS_ALPHA();
 // End Cross Module References
 	void UPlanetaryEnvironment::StaticRegisterNativesUPlanetaryEnvironment()
@@ -32,7 +32,7 @@ void EmptyLinkFunctionForGeneratedCodePlanetaryEnvironment() {}
 		static const UECodeGen_Private::FClassParams ClassParams;
 	};
 	UObject* (*const Z_Construct_UClass_UPlanetaryEnvironment_Statics::DependentSingletons[])() = {
-		(UObject* (*)())Z_Construct_UClass_UInterface,
+		(UObject* (*)())Z_Construct_UClass_UBaseInterface,
 		(UObject* (*)())Z_Construct_UPackage__Script_APS_ALPHA,
 	};
 #if WITH_METADATA
@@ -77,9 +77,9 @@ void EmptyLinkFunctionForGeneratedCodePlanetaryEnvironment() {}
 		static const FClassRegisterCompiledInInfo ClassInfo[];
 	};
 	const FClassRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_PlanetaryEnvironment_h_Statics::ClassInfo[] = {
-		{ Z_Construct_UClass_UPlanetaryEnvironment, UPlanetaryEnvironment::StaticClass, TEXT("UPlanetaryEnvironment"), &Z_Registration_Info_UClass_UPlanetaryEnvironment, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(UPlanetaryEnvironment), 1654094416U) },
+		{ Z_Construct_UClass_UPlanetaryEnvironment, UPlanetaryEnvironment::StaticClass, TEXT("UPlanetaryEnvironment"), &Z_Registration_Info_UClass_UPlanetaryEnvironment, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(UPlanetaryEnvironment), 3707047530U) },
 	};
-	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_PlanetaryEnvironment_h_112445461(TEXT("/Script/APS_ALPHA"),
+	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_PlanetaryEnvironment_h_133513206(TEXT("/Script/APS_ALPHA"),
 		Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_PlanetaryEnvironment_h_Statics::ClassInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_PlanetaryEnvironment_h_Statics::ClassInfo),
 		nullptr, 0,
 		nullptr, 0);

@@ -12,6 +12,7 @@ void EmptyLinkFunctionForGeneratedCodeMoon() {}
 	APS_ALPHA_API UClass* Z_Construct_UClass_AMoon();
 	APS_ALPHA_API UClass* Z_Construct_UClass_AMoon_NoRegister();
 	APS_ALPHA_API UClass* Z_Construct_UClass_AOrbitalBody();
+	APS_ALPHA_API UClass* Z_Construct_UClass_UPlanetaryEnvironment_NoRegister();
 	UPackage* Z_Construct_UPackage__Script_APS_ALPHA();
 // End Cross Module References
 	void AMoon::StaticRegisterNativesAMoon()
@@ -28,6 +29,7 @@ void EmptyLinkFunctionForGeneratedCodeMoon() {}
 #if WITH_METADATA
 		static const UECodeGen_Private::FMetaDataPairParam Class_MetaDataParams[];
 #endif
+		static const UECodeGen_Private::FImplementedInterfaceParams InterfaceParams[];
 		static const FCppClassTypeInfoStatic StaticCppClassTypeInfo;
 		static const UECodeGen_Private::FClassParams ClassParams;
 	};
@@ -42,6 +44,9 @@ void EmptyLinkFunctionForGeneratedCodeMoon() {}
 		{ "ModuleRelativePath", "Moon.h" },
 	};
 #endif
+		const UECodeGen_Private::FImplementedInterfaceParams Z_Construct_UClass_AMoon_Statics::InterfaceParams[] = {
+			{ Z_Construct_UClass_UPlanetaryEnvironment_NoRegister, (int32)VTABLE_OFFSET(AMoon, IPlanetaryEnvironment), false },  // 3707047530
+		};
 	const FCppClassTypeInfoStatic Z_Construct_UClass_AMoon_Statics::StaticCppClassTypeInfo = {
 		TCppClassTypeTraits<AMoon>::IsAbstract,
 	};
@@ -52,11 +57,11 @@ void EmptyLinkFunctionForGeneratedCodeMoon() {}
 		DependentSingletons,
 		nullptr,
 		nullptr,
-		nullptr,
+		InterfaceParams,
 		UE_ARRAY_COUNT(DependentSingletons),
 		0,
 		0,
-		0,
+		UE_ARRAY_COUNT(InterfaceParams),
 		0x009000A4u,
 		METADATA_PARAMS(Z_Construct_UClass_AMoon_Statics::Class_MetaDataParams, UE_ARRAY_COUNT(Z_Construct_UClass_AMoon_Statics::Class_MetaDataParams))
 	};
@@ -79,9 +84,9 @@ void EmptyLinkFunctionForGeneratedCodeMoon() {}
 		static const FClassRegisterCompiledInInfo ClassInfo[];
 	};
 	const FClassRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_Moon_h_Statics::ClassInfo[] = {
-		{ Z_Construct_UClass_AMoon, AMoon::StaticClass, TEXT("AMoon"), &Z_Registration_Info_UClass_AMoon, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(AMoon), 2651434503U) },
+		{ Z_Construct_UClass_AMoon, AMoon::StaticClass, TEXT("AMoon"), &Z_Registration_Info_UClass_AMoon, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(AMoon), 349756775U) },
 	};
-	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_Moon_h_893679733(TEXT("/Script/APS_ALPHA"),
+	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_Moon_h_3874396505(TEXT("/Script/APS_ALPHA"),
 		Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_Moon_h_Statics::ClassInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_Moon_h_Statics::ClassInfo),
 		nullptr, 0,
 		nullptr, 0);

@@ -9,7 +9,7 @@
 
 // This class does not need to be modified.
 UINTERFACE(MinimalAPI)
-class UPlanetaryEnvironment : public IBaseInterface
+class UPlanetaryEnvironment : public UBaseInterface
 {
 	GENERATED_BODY()
 };
