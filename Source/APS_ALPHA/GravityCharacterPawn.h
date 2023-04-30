@@ -1,6 +1,8 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
+#include "GravityPawn.h"
+#include "ControlledPawn.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/ArrowComponent.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -14,7 +16,7 @@
 #include "GravityCharacterPawn.generated.h"
 
 UCLASS()
-class APS_ALPHA_API AGravityCharacterPawn : public APawn
+class APS_ALPHA_API AGravityCharacterPawn : public AControlledPawn, public IGravityPawn
 {
 	GENERATED_BODY()
 

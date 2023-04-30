@@ -44,6 +44,12 @@
     <Filter Include="Source\APS_ALPHA">
       <UniqueIdentifier>{6A2D145E-F0AC-3999-8417-EB9FFCCB9AF2}</UniqueIdentifier>
     </Filter>
+    <ClCompile Include="..\..\Source\APS_ALPHA\Aircraft.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\Aircraft.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
     <None Include="..\..\Source\APS_ALPHA\APS_ALPHA.Build.cs">
       <Filter>Source\APS_ALPHA</Filter>
     </None>
@@ -143,6 +149,12 @@
     <ClInclude Include="..\..\Source\APS_ALPHA\Colony.h">
       <Filter>Source\APS_ALPHA</Filter>
     </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\ControlledPawn.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\ControlledPawn.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
     <ClCompile Include="..\..\Source\APS_ALPHA\Environment.cpp">
       <Filter>Source\APS_ALPHA</Filter>
     </ClCompile>
@@ -209,6 +221,12 @@
     <ClInclude Include="..\..\Source\APS_ALPHA\GravityObjectInterface.h">
       <Filter>Source\APS_ALPHA</Filter>
     </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\GravityPawn.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\GravityPawn.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
     <ClCompile Include="..\..\Source\APS_ALPHA\GravityPlayerController.cpp">
       <Filter>Source\APS_ALPHA</Filter>
     </ClCompile>
@@ -224,6 +242,12 @@
     <ClInclude Include="..\..\Source\APS_ALPHA\GravityTypeEnum.h">
       <Filter>Source\APS_ALPHA</Filter>
     </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\GroundVehicle.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\GroundVehicle.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
     <ClCompile Include="..\..\Source\APS_ALPHA\Moon.cpp">
       <Filter>Source\APS_ALPHA</Filter>
     </ClCompile>
@@ -234,6 +258,12 @@
       <Filter>Source\APS_ALPHA</Filter>
     </ClCompile>
     <ClInclude Include="..\..\Source\APS_ALPHA\OrbitalBody.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\PilotingVehicle.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\PilotingVehicle.h">
       <Filter>Source\APS_ALPHA</Filter>
     </ClInclude>
     <ClCompile Include="..\..\Source\APS_ALPHA\Planet.cpp">
@@ -264,6 +294,18 @@
       <Filter>Source\APS_ALPHA</Filter>
     </ClCompile>
     <ClInclude Include="..\..\Source\APS_ALPHA\SpaceCharacter.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\Spacecraft.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\Spacecraft.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\Spaceship.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\Spaceship.h">
       <Filter>Source\APS_ALPHA</Filter>
     </ClInclude>
     <ClCompile Include="..\..\Source\APS_ALPHA\SpaceshipGravityActor.cpp">
@@ -318,6 +360,12 @@
       <Filter>Source\APS_ALPHA</Filter>
     </ClCompile>
     <ClInclude Include="..\..\Source\APS_ALPHA\TechObject.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\VehicleControlling.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\VehicleControlling.h">
       <Filter>Source\APS_ALPHA</Filter>
     </ClInclude>
     <ClCompile Include="..\..\Source\APS_ALPHA\WorldActor.cpp">

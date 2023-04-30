@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include "GravitySource.h"
 #include "CoreMinimal.h"
 #include "TechActor.h"
 #include "SpaceStation.generated.h"
@@ -10,7 +11,7 @@
  * 
  */
 UCLASS()
-class APS_ALPHA_API ASpaceStation : public ATechActor
+class APS_ALPHA_API ASpaceStation : public ATechActor, public IGravitySource
 {
 	GENERATED_BODY()
 	
