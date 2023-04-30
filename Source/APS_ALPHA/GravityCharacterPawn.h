@@ -10,7 +10,6 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Camera/CameraComponent.h"
 #include "GravityTypeEnum.h"
-//#include "PlanetGravityActor.h"
 #include <GameFramework/SpringArmComponent.h>
 
 #include "CoreMinimal.h"
@@ -36,8 +35,6 @@ public:
 
 	// Called to bind functionality to input
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
-
-
 
 /**
  * @brief Character Basic Components
@@ -112,12 +109,7 @@ protected:
 
 	void UpdateGravity() override;
 
-
-	/// gr intrf
-	//void UpdateGravityStatus(AActor* Actor) override; /// gr intrf
-
 protected:
-	/// gr intrf
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gravity")
 		EGravityType CurrentGravityType {
 		EGravityType::ZeroG 
@@ -127,10 +119,7 @@ protected:
 		0.0f, 0.0f, 0.0f
 	};
 
-	/// gr intrf
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gravity")
-		//IGravityObject* GravityTargetActor;
-		//TScriptInterface<IGravitySource> GravityTargetActor;
 		AActor* GravityTargetActor;
 
 	UPROPERTY(BlueprintReadWrite, Category = "Movement")
@@ -138,15 +127,6 @@ protected:
 
 	UPROPERTY(BlueprintReadWrite, Category = "Movement")
 		float RightSpeed;
-
-	///void SwitchGravityType(AGravityActor* GravityTargetActor);
-
-
-	void SwitchGravityToStation(AActor* OtherActor);
-
-	void SwitchGravityToPlanet(AActor* OtherActor);
-
-	void SwitchGravityToSpaceship(AActor* OtherActor);
 
 	void SwitchGravityToZeroG(AActor* OtherActor);
 

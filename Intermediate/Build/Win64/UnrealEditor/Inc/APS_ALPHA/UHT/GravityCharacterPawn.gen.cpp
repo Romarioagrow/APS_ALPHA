@@ -701,18 +701,14 @@ void EmptyLinkFunctionForGeneratedCodeGravityCharacterPawn() {}
 #if WITH_METADATA
 	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_AGravityCharacterPawn_Statics::NewProp_CurrentGravityType_MetaData[] = {
 		{ "Category", "Gravity" },
-		{ "Comment", "/// gr intrf\n" },
 		{ "ModuleRelativePath", "GravityCharacterPawn.h" },
-		{ "ToolTip", "gr intrf" },
 	};
 #endif
 	const UECodeGen_Private::FEnumPropertyParams Z_Construct_UClass_AGravityCharacterPawn_Statics::NewProp_CurrentGravityType = { "CurrentGravityType", nullptr, (EPropertyFlags)0x0020080000000005, UECodeGen_Private::EPropertyGenFlags::Enum, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(AGravityCharacterPawn, CurrentGravityType), Z_Construct_UEnum_APS_ALPHA_EGravityType, METADATA_PARAMS(Z_Construct_UClass_AGravityCharacterPawn_Statics::NewProp_CurrentGravityType_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_AGravityCharacterPawn_Statics::NewProp_CurrentGravityType_MetaData)) }; // 459840205
 #if WITH_METADATA
 	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_AGravityCharacterPawn_Statics::NewProp_GravityTargetActor_MetaData[] = {
 		{ "Category", "Gravity" },
-		{ "Comment", "/// gr intrf\n//IGravityObject* GravityTargetActor;\n//TScriptInterface<IGravitySource> GravityTargetActor;\n" },
 		{ "ModuleRelativePath", "GravityCharacterPawn.h" },
-		{ "ToolTip", "gr intrf\nIGravityObject* GravityTargetActor;\nTScriptInterface<IGravitySource> GravityTargetActor;" },
 	};
 #endif
 	const UECodeGen_Private::FObjectPropertyParams Z_Construct_UClass_AGravityCharacterPawn_Statics::NewProp_GravityTargetActor = { "GravityTargetActor", nullptr, (EPropertyFlags)0x0020080000000015, UECodeGen_Private::EPropertyGenFlags::Object, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(AGravityCharacterPawn, GravityTargetActor), Z_Construct_UClass_AActor_NoRegister, METADATA_PARAMS(Z_Construct_UClass_AGravityCharacterPawn_Statics::NewProp_GravityTargetActor_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_AGravityCharacterPawn_Statics::NewProp_GravityTargetActor_MetaData)) };
@@ -784,9 +780,9 @@ void EmptyLinkFunctionForGeneratedCodeGravityCharacterPawn() {}
 		static const FClassRegisterCompiledInInfo ClassInfo[];
 	};
 	const FClassRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GravityCharacterPawn_h_Statics::ClassInfo[] = {
-		{ Z_Construct_UClass_AGravityCharacterPawn, AGravityCharacterPawn::StaticClass, TEXT("AGravityCharacterPawn"), &Z_Registration_Info_UClass_AGravityCharacterPawn, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(AGravityCharacterPawn), 1991587392U) },
+		{ Z_Construct_UClass_AGravityCharacterPawn, AGravityCharacterPawn::StaticClass, TEXT("AGravityCharacterPawn"), &Z_Registration_Info_UClass_AGravityCharacterPawn, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(AGravityCharacterPawn), 2502498707U) },
 	};
-	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GravityCharacterPawn_h_810827086(TEXT("/Script/APS_ALPHA"),
+	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GravityCharacterPawn_h_3335593225(TEXT("/Script/APS_ALPHA"),
 		Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GravityCharacterPawn_h_Statics::ClassInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GravityCharacterPawn_h_Statics::ClassInfo),
 		nullptr, 0,
 		nullptr, 0);

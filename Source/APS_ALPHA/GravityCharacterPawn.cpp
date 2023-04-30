@@ -1,15 +1,12 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "GravityCharacterPawn.h"
-
 #include "Spaceship.h"
 #include "SpaceStation.h"
 #include "OrbitalBody.h"
 #include "GravityCharacterPawn.h"
 #include <Kismet/GameplayStatics.h>
 #include <Kismet/KismetMathLibrary.h>
-//#include "SpaceshipGravityActor.h"
-//#include "StationGravityActor.h"
 
 // Sets default values
 AGravityCharacterPawn::AGravityCharacterPawn()
@@ -38,7 +35,6 @@ AGravityCharacterPawn::AGravityCharacterPawn()
 	// Create and set up CameraComponent
 	PlayerCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("PlayerCamera"));
 	PlayerCamera->SetupAttachment(CameraSpringArm, USpringArmComponent::SocketName);
-
 }
 
 // Called when the game starts or when spawned
@@ -49,6 +45,8 @@ void AGravityCharacterPawn::BeginPlay()
 	// Bind overlaps
 	CapsuleComponent->OnComponentBeginOverlap.AddDynamic(this, &AGravityCharacterPawn::OnBeginOverlap);
 	CapsuleComponent->OnComponentEndOverlap.AddDynamic(this, &AGravityCharacterPawn::OnEndOverlap);
+
+	UpdateGravityType();
 }
 
 // Called every frame
@@ -58,8 +56,6 @@ void AGravityCharacterPawn::Tick(const float DeltaTime)
 
 	// Update gravity
 	UpdateGravity();
-
-	
 
 	const FVector CurrentVelocity = CapsuleComponent->GetPhysicsLinearVelocity();
 	ForwardSpeed = FVector::DotProduct(CurrentVelocity, GetActorForwardVector());
@@ -124,38 +120,14 @@ void AGravityCharacterPawn::OnBeginOverlap(UPrimitiveComponent* OverlappedCompon
 	UE_LOG(LogTemp, Warning, TEXT("BeginOverlap with: %s"), *OtherActor->GetName());
 	GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Green, FString::Printf(TEXT("BeginOverlap with: %s"), *OtherActor->GetName()));
 
-	// Update Gravity Status
-	// UpdateGravityStatus(AActor* OtherActor);
-
-	//UpdateGravityStatus(OtherActor);
-
-
 	// if gravity object
 	if (OtherActor != nullptr)
 	{
 		if (OtherActor->GetClass()->ImplementsInterface(UGravitySource::StaticClass()))
-		{
-			//IGravitySource* GravitySourceActor = Cast<IGravitySource>(OtherActor);
-			
+		{			
 			SwitchGravityType(OtherActor);
-
 		}
 	}
-	
-	/*if (OtherActor->IsA(AStationGravityActor::StaticClass()))
-	{
-		SwitchGravityToStation(OtherActor);
-	}
-	else if (OtherActor->IsA(APlanetGravityActor::StaticClass()))
-	{
-		SwitchGravityToPlanet(OtherActor);
-	}
-	else if (OtherActor->IsA(ASpaceshipGravityActor::StaticClass()))
-	{
-		SwitchGravityToSpaceship(OtherActor);
-
-
-	}*/
 }
 
 void AGravityCharacterPawn::OnEndOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex)
@@ -163,10 +135,7 @@ void AGravityCharacterPawn::OnEndOverlap(UPrimitiveComponent* OverlappedComponen
 	UE_LOG(LogTemp, Warning, TEXT("EndOverlap with: %s"), *OtherActor->GetName());
 	GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Red, FString::Printf(TEXT("EndOverlap with: %s"), *OtherActor->GetName()));
 
-	FVector GravityTargetLocation = OtherActor->GetActorLocation();
-
 	UpdateGravityType();
-
 }
 
 /**
@@ -175,110 +144,54 @@ void AGravityCharacterPawn::OnEndOverlap(UPrimitiveComponent* OverlappedComponen
 
 void AGravityCharacterPawn::UpdateGravityType()
 {
-	GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Orange, FString::Printf(TEXT("UpdateGravityStatus")));
+	GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Orange, FString::Printf(TEXT("UpdateGravityType")));
 
-	TArray<AActor*> TaggedActors;
-	UGameplayStatics::GetAllActorsWithTag(GetWorld(), "EventManager", TaggedActors);
+	FName TagToCheck = "GravitySource";
+	TArray<AActor*> OverlappingActorsWithTag;
+	TArray<AActor*> OverlappingActors;
+	CapsuleComponent->GetOverlappingActors(OverlappingActors);
 
-	if (TaggedActors.Num() > 0)
+	// ѕроверить каждого актера на наличие тега
+	for (AActor* Actor : OverlappingActors)
 	{
-		const UClass* FirstGravityActor = TaggedActors[0]->GetClass();
+		if (Actor != nullptr && Actor->ActorHasTag(TagToCheck))
+		{
+			OverlappingActorsWithTag.Add(Actor);
+		}
+	}
+
+	if (OverlappingActorsWithTag.Num() > 0)
+	{
+		AActor* FirstGravityActor = OverlappingActorsWithTag[0];
 		GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Red, FString::Printf(TEXT("FirstGravityActor : %s"), *FirstGravityActor->GetName()));
 
 		// switch gravity to first 
-		// ... 
-
+		SwitchGravityType(FirstGravityActor);
 	}
 	else
 	{
 		GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Red, FString::Printf(TEXT("FirstGravityActor 0")));
 		CurrentGravityType = EGravityType::ZeroG;
 	}
-
 }
 
 void AGravityCharacterPawn::SwitchGravityType(AActor* GravitySourceActor)
 {
-	//OtherActor->interface
-
-	//IGravitySource* GravitySourceActor = Cast<IGravitySource>(OtherActor);
-
-	/*if (GravitySource != nullptr)
-	{
-		
-		if (GravitySource->GetClass()->ImplementsInterface(UGravityPawn::StaticClass()))
-			{
-
-			}
-	}*/
-
 	GravityTargetActor = GravitySourceActor;
 	
 	if (GravitySourceActor->IsA(ASpaceStation::StaticClass()))
 	{
-		//SwitchGravityToStation(GravitySourceActor);
 		CurrentGravityType = EGravityType::OnStation;
 	}
 	else if (GravitySourceActor->IsA(AOrbitalBody::StaticClass()))
 	{
-		//SwitchGravityToPlanet(GravitySourceActor);
 		CurrentGravityType = EGravityType::OnPlanet;
 	}
 	else if (GravitySourceActor->IsA(ASpaceship::StaticClass()))
 	{
-		//SwitchGravityToSpaceship(GravitySourceActor);
 		CurrentGravityType = EGravityType::OnShip;
 	}
-
-
 }
-
-//void AGravityCharacterPawn::SwitchGravityTo(EGravityType TargetGravityType, AActor* OtherActor)
-//{
-//
-//}
-
-//void AGravityCharacterPawn::SwitchGravityToStation(AActor* OtherActor)
-//{
-//	GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Orange, FString::Printf(TEXT("SwitchGravityToStation")));
-//
-//	// set gravity type
-//	CurrentGravityType = EGravityType::OnStation;
-//
-//	GravityTargetActor = OtherActor;
-//
-//	// set gravity target
-//	//GravityTargetActor.SetObject(OtherActor);
-//	//GravityTargetActor.SetInterface(Cast<IGravitySource>(OtherActor));
-//
-//	//GravityTargetActor = Cast<IGravitySource>(OtherActor);
-//}
-
-//void AGravityCharacterPawn::SwitchGravityToPlanet(AActor* OtherActor)
-//{
-//	GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Orange, FString::Printf(TEXT("SwitchGravityToSpaceship")));
-//
-//	CurrentGravityType = EGravityType::OnPlanet;
-//	//GravityTargetActor = Cast<IGravitySource>(OtherActor);
-//
-//	GravityTargetActor = OtherActor;
-//
-//	//GravityTargetActor.SetObject(OtherActor);
-//	//GravityTargetActor.SetInterface(Cast<IGravitySource>(OtherActor));
-//}
-
-//void AGravityCharacterPawn::SwitchGravityToSpaceship(AActor* OtherActor)
-//{
-//	GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Orange, FString::Printf(TEXT("SwitchGravityToSpaceship")));
-//	CurrentGravityType = EGravityType::OnShip;
-//
-//	GravityTargetActor = OtherActor;
-//
-//	//GravityTargetActor = Cast<ASpaceshipGravityActor>(OtherActor);
-//
-//	//GravityTargetActor.SetObject(OtherActor);
-//	//GravityTargetActor.SetInterface(Cast<IGravitySource>(OtherActor));
-//}
 
 void AGravityCharacterPawn::SwitchGravityToZeroG(AActor* OtherActor)
 {
@@ -290,25 +203,15 @@ void AGravityCharacterPawn::SwitchGravityToZeroG(AActor* OtherActor)
 void AGravityCharacterPawn::UpdateZeroGGravity()
 {
 	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("ZeroG Gravity")));
-
 }
 
 void AGravityCharacterPawn::UpdateStationGravity()
 {
 	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Station Gravity")));
 
-
-	//AActor* GravityTargetActorObject// = 
-		//GravityTargetActor.GetObject()->GetActor;  //GravityTargetActor.GetObject();
-
-	//TScriptInterface<IGravitySource>
-		//GravityTargetActor = Cast<IGravitySource>(OtherActor);
-	//AActor* GravityActor = GravityTargetActor.GetObject();
-
 	const FVector GravityRotZ = GravityTargetActor->GetActorUpVector();
 	const FVector GravityRotX = CapsuleComponent->GetForwardVector();
 	const FMatrix RotationMatrix = FRotationMatrix::MakeFromZX(GravityRotZ, GravityRotX);
-
 	const FRotator Rotation = RotationMatrix.Rotator();
 	const FRotator ActorRotation = GetActorRotation();
 	const FRotator Result = FMath::RInterpTo(ActorRotation, Rotation, GetWorld()->GetDeltaSeconds(), 2.f);
@@ -326,8 +229,8 @@ void AGravityCharacterPawn::UpdatePlanetGravity()
 	const FVector CapsuleForwardVector = CapsuleComponent->GetForwardVector();
 	const FMatrix RotationMatrix = FRotationMatrix::MakeFromZX(LookAtRotation.Vector(), CapsuleForwardVector);
 	const FRotator ActorRotation = GetActorRotation();
-	
 	const FRotator ResultRotation = FMath::RInterpTo(ActorRotation, RotationMatrix.Rotator(), GetWorld()->GetDeltaSeconds(), 2.f);
+	
 	SetActorRotation(ResultRotation);
 }
 
@@ -335,6 +238,14 @@ void AGravityCharacterPawn::UpdateShipGravity()
 {
 	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Ship Gravity")));
 
+	const FVector GravityRotZ = GravityTargetActor->GetActorUpVector();
+	const FVector GravityRotX = CapsuleComponent->GetForwardVector();
+	const FMatrix RotationMatrix = FRotationMatrix::MakeFromZX(GravityRotZ, GravityRotX);
+	const FRotator Rotation = RotationMatrix.Rotator();
+	const FRotator ActorRotation = GetActorRotation();
+	const FRotator Result = FMath::RInterpTo(ActorRotation, Rotation, GetWorld()->GetDeltaSeconds(), 2.f);
+
+	SetActorRotation(Result);
 }
 
 /**
@@ -351,11 +262,9 @@ void AGravityCharacterPawn::Turn(const float Value)
 
 void AGravityCharacterPawn::LookUp(const float Value)
 {
-
 	FRotator TargetRotation = CameraSpringArm->GetRelativeRotation(); 
 	TargetRotation.Pitch += Value * CharacterRotationScale;
 	CameraSpringArm->SetRelativeRotation(TargetRotation);
-
 }
 
 void AGravityCharacterPawn::AlignCharacterToCamera()
@@ -379,7 +288,6 @@ void AGravityCharacterPawn::MoveForward(const float Value)
 {
 	if (Value != 0)
 	{
-		
 		AlignCharacterToCamera();
 
 		// add impulse
@@ -412,7 +320,6 @@ void AGravityCharacterPawn::RotatePitch(const float Value)
 	FRotator RotationToAdd(0.0f, 0.0f, 0.0f);
 	RotationToAdd.Pitch = Value * CharacterRotationScale;
 	AddActorLocalRotation(RotationToAdd);
-
 }
 
 void AGravityCharacterPawn::RotateRoll(const float Value)
@@ -420,7 +327,6 @@ void AGravityCharacterPawn::RotateRoll(const float Value)
 	FRotator RotationToAdd(0.0f, 0.0f, 0.0f);
 	RotationToAdd.Roll = Value * CharacterRotationScale;
 	AddActorLocalRotation(RotationToAdd);
-
 }
 
 void AGravityCharacterPawn::RotateYaw(const float Value)

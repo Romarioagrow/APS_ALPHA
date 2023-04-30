@@ -19,10 +19,6 @@ class APS_ALPHA_API ASpaceStation : public ATechActor, public IGravitySource
 public:
 	ASpaceStation();
 
-	//virtual void BeginPlay() override;
-
-	//virtual void Tick(float DeltaTime) override;
-
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 		USphereComponent* SphereCollisionComponent;

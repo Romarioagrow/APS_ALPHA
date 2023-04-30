@@ -9,11 +9,3 @@ ASpaceStation::ASpaceStation()
 	SphereCollisionComponent = CreateDefaultSubobject<USphereComponent>(TEXT("SphereCollisionComponent"));
 	RootComponent = SphereCollisionComponent;
 }
-
-//void ASpaceStation::BeginPlay()
-//{
-//}
-//
-//void ASpaceStation::Tick(float DeltaTime)
-//{
-//}
