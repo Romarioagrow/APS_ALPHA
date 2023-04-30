@@ -1,6 +1,8 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
+#include "GravitySource.h"
+#include "GravityObject.h"
 #include "GravityPawn.h"
 #include "ControlledPawn.h"
 #include "Components/CapsuleComponent.h"
@@ -8,7 +10,7 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Camera/CameraComponent.h"
 #include "GravityTypeEnum.h"
-#include "PlanetGravityActor.h"
+//#include "PlanetGravityActor.h"
 #include <GameFramework/SpringArmComponent.h>
 
 #include "CoreMinimal.h"
@@ -34,6 +36,7 @@ public:
 
 	// Called to bind functionality to input
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
+
 
 
 /**
@@ -103,7 +106,15 @@ protected:
 		void OnEndOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, 
 			UPrimitiveComponent* OtherComp, int32 OtherBodyIndex);
 
-	void UpdateGravityStatus(); /// gr intrf
+	void UpdateGravityType() override;
+
+    void SwitchGravityType(AActor* GravitySourceActor) override;
+
+	void UpdateGravity() override;
+
+
+	/// gr intrf
+	//void UpdateGravityStatus(AActor* Actor) override; /// gr intrf
 
 protected:
 	/// gr intrf
@@ -112,9 +123,15 @@ protected:
 		EGravityType::ZeroG 
 	};
 
+	FVector GravityDirection{
+		0.0f, 0.0f, 0.0f
+	};
+
 	/// gr intrf
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gravity")
-		AGravityActor* GravityTargetActor; 
+		//IGravityObject* GravityTargetActor;
+		//TScriptInterface<IGravitySource> GravityTargetActor;
+		AActor* GravityTargetActor;
 
 	UPROPERTY(BlueprintReadWrite, Category = "Movement")
 		float ForwardSpeed;

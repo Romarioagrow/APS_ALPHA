@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <Components/SphereComponent.h>
 #include "GravitySource.h"
 #include "CoreMinimal.h"
 #include "TechActor.h"
@@ -15,4 +16,15 @@ class APS_ALPHA_API ASpaceStation : public ATechActor, public IGravitySource
 {
 	GENERATED_BODY()
 	
+public:
+	ASpaceStation();
+
+	//virtual void BeginPlay() override;
+
+	//virtual void Tick(float DeltaTime) override;
+
+protected:
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+		USphereComponent* SphereCollisionComponent;
+
 };

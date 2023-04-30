@@ -11,7 +11,6 @@ PRAGMA_DISABLE_DEPRECATION_WARNINGS
 void EmptyLinkFunctionForGeneratedCodeGravityCharacterPawn() {}
 // Cross Module References
 	APS_ALPHA_API UClass* Z_Construct_UClass_AControlledPawn();
-	APS_ALPHA_API UClass* Z_Construct_UClass_AGravityActor_NoRegister();
 	APS_ALPHA_API UClass* Z_Construct_UClass_AGravityCharacterPawn();
 	APS_ALPHA_API UClass* Z_Construct_UClass_AGravityCharacterPawn_NoRegister();
 	APS_ALPHA_API UClass* Z_Construct_UClass_UGravityPawn_NoRegister();
@@ -711,12 +710,12 @@ void EmptyLinkFunctionForGeneratedCodeGravityCharacterPawn() {}
 #if WITH_METADATA
 	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_AGravityCharacterPawn_Statics::NewProp_GravityTargetActor_MetaData[] = {
 		{ "Category", "Gravity" },
-		{ "Comment", "/// gr intrf\n" },
+		{ "Comment", "/// gr intrf\n//IGravityObject* GravityTargetActor;\n//TScriptInterface<IGravitySource> GravityTargetActor;\n" },
 		{ "ModuleRelativePath", "GravityCharacterPawn.h" },
-		{ "ToolTip", "gr intrf" },
+		{ "ToolTip", "gr intrf\nIGravityObject* GravityTargetActor;\nTScriptInterface<IGravitySource> GravityTargetActor;" },
 	};
 #endif
-	const UECodeGen_Private::FObjectPropertyParams Z_Construct_UClass_AGravityCharacterPawn_Statics::NewProp_GravityTargetActor = { "GravityTargetActor", nullptr, (EPropertyFlags)0x0020080000000015, UECodeGen_Private::EPropertyGenFlags::Object, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(AGravityCharacterPawn, GravityTargetActor), Z_Construct_UClass_AGravityActor_NoRegister, METADATA_PARAMS(Z_Construct_UClass_AGravityCharacterPawn_Statics::NewProp_GravityTargetActor_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_AGravityCharacterPawn_Statics::NewProp_GravityTargetActor_MetaData)) };
+	const UECodeGen_Private::FObjectPropertyParams Z_Construct_UClass_AGravityCharacterPawn_Statics::NewProp_GravityTargetActor = { "GravityTargetActor", nullptr, (EPropertyFlags)0x0020080000000015, UECodeGen_Private::EPropertyGenFlags::Object, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(AGravityCharacterPawn, GravityTargetActor), Z_Construct_UClass_AActor_NoRegister, METADATA_PARAMS(Z_Construct_UClass_AGravityCharacterPawn_Statics::NewProp_GravityTargetActor_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_AGravityCharacterPawn_Statics::NewProp_GravityTargetActor_MetaData)) };
 #if WITH_METADATA
 	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_AGravityCharacterPawn_Statics::NewProp_ForwardSpeed_MetaData[] = {
 		{ "Category", "Movement" },
@@ -746,7 +745,7 @@ void EmptyLinkFunctionForGeneratedCodeGravityCharacterPawn() {}
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AGravityCharacterPawn_Statics::NewProp_RightSpeed,
 	};
 		const UECodeGen_Private::FImplementedInterfaceParams Z_Construct_UClass_AGravityCharacterPawn_Statics::InterfaceParams[] = {
-			{ Z_Construct_UClass_UGravityPawn_NoRegister, (int32)VTABLE_OFFSET(AGravityCharacterPawn, IGravityPawn), false },  // 1138939472
+			{ Z_Construct_UClass_UGravityPawn_NoRegister, (int32)VTABLE_OFFSET(AGravityCharacterPawn, IGravityPawn), false },  // 3910067522
 		};
 	const FCppClassTypeInfoStatic Z_Construct_UClass_AGravityCharacterPawn_Statics::StaticCppClassTypeInfo = {
 		TCppClassTypeTraits<AGravityCharacterPawn>::IsAbstract,
@@ -785,9 +784,9 @@ void EmptyLinkFunctionForGeneratedCodeGravityCharacterPawn() {}
 		static const FClassRegisterCompiledInInfo ClassInfo[];
 	};
 	const FClassRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GravityCharacterPawn_h_Statics::ClassInfo[] = {
-		{ Z_Construct_UClass_AGravityCharacterPawn, AGravityCharacterPawn::StaticClass, TEXT("AGravityCharacterPawn"), &Z_Registration_Info_UClass_AGravityCharacterPawn, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(AGravityCharacterPawn), 110470872U) },
+		{ Z_Construct_UClass_AGravityCharacterPawn, AGravityCharacterPawn::StaticClass, TEXT("AGravityCharacterPawn"), &Z_Registration_Info_UClass_AGravityCharacterPawn, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(AGravityCharacterPawn), 1991587392U) },
 	};
-	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GravityCharacterPawn_h_2391520277(TEXT("/Script/APS_ALPHA"),
+	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GravityCharacterPawn_h_810827086(TEXT("/Script/APS_ALPHA"),
 		Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GravityCharacterPawn_h_Statics::ClassInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GravityCharacterPawn_h_Statics::ClassInfo),
 		nullptr, 0,
 		nullptr, 0);
