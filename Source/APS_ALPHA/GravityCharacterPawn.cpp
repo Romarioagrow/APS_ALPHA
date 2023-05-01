@@ -60,11 +60,13 @@ void AGravityCharacterPawn::Tick(const float DeltaTime)
 	const FVector CurrentVelocity = CapsuleComponent->GetPhysicsLinearVelocity();
 	ForwardSpeed = FVector::DotProduct(CurrentVelocity, GetActorForwardVector());
 	RightSpeed = FVector::DotProduct(CurrentVelocity, GetActorRightVector());
+	UpSpeed = FVector::DotProduct(CurrentVelocity, GetActorUpVector());
 	ForwardSpeed /= 10.0f;
 	RightSpeed /= 10.0f;
 
 	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Orange, FString::Printf(TEXT("ForwardSpeed: %f"), ForwardSpeed));
 	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Orange, FString::Printf(TEXT("RightSpeed: %f"), RightSpeed));
+	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Orange, FString::Printf(TEXT("UpSpeed: %f"), UpSpeed));
 }
 
 // Called to bind functionality to input
@@ -228,8 +230,6 @@ void AGravityCharacterPawn::UpdateAnimationState()
 		// Результат трассировки для анимации
 		FHitResult AnimHitResult;
 
-		
-
 		// Настройка коллизии
 		FCollisionQueryParams CollisionParams;
 		CollisionParams.AddIgnoredActor(this);
@@ -290,7 +290,7 @@ void AGravityCharacterPawn::UpdateGravityState()
 
 	if (World)
 	{
-		const float GravityDistanceThreshold = 2500.0f;
+		const float GravityDistanceThreshold = 5000.0f;
 
 		// Начальная позиция трассировки
 		FVector StartLocation = GetActorLocation();
