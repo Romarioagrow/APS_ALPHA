@@ -203,22 +203,100 @@ void AGravityCharacterPawn::SwitchGravityToZeroG(AActor* OtherActor)
 	GravityTargetActor = nullptr;
 }
 
+void AGravityCharacterPawn::UpdateAnimationState()
+{
+	// Получить строковое представление текущего состояния гравитации
+	FString AnimationStateString = StaticEnum<EAnimationState>()->GetNameStringByValue(static_cast<int32>(CurrentAnimationState));
+	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Blue, FString::Printf(TEXT("AnimationStateString: %s"), *AnimationStateString));
+	
+	// Получить ссылку на мир
+	UWorld* World = GetWorld();
+
+	if (World)
+	{
+		// Расстояние, на котором должен быть объект, чтобы считаться под ногами персонажа
+		const float GroundDistanceThreshold = 10.0f;
+		const float JumpDistanceThreshold = 250.0f;
+		
+		
+		// Начальная позиция трассировки
+		FVector StartLocation = GetActorLocation();
+
+		// Конечная позиция трассировки
+		FVector EndLocation = StartLocation - (GetActorUpVector() * JumpDistanceThreshold);
+
+		// Результат трассировки для анимации
+		FHitResult AnimHitResult;
+
+		
+
+		// Настройка коллизии
+		FCollisionQueryParams CollisionParams;
+		CollisionParams.AddIgnoredActor(this);
+
+		// Выполнение Line Trace для определения состояния анимации
+		bool bIsGrounded = World->LineTraceSingleByChannel(AnimHitResult, StartLocation, EndLocation, ECC_Visibility, CollisionParams);
+
+		// Вывод значения AnimHitResult.Distance на экран
+		GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("AnimHitResult.Distance: %f"), AnimHitResult.Distance));
+
+
+		//// Определение состояния анимации
+		if (bIsGrounded && AnimHitResult.Distance < CapsuleComponent->GetScaledCapsuleHalfHeight() + 2.5f)
+		{
+			// Персонаж стоит на поверхности
+			CurrentAnimationState = EAnimationState::OnGround;
+		}
+		else if (bIsGrounded && AnimHitResult.Distance > GroundDistanceThreshold)
+		{
+			// Персонаж прыгает
+			CurrentAnimationState = EAnimationState::Jumping;
+		}
+		else
+		{
+			// Персонаж падает (ничего не задето)
+			CurrentAnimationState = EAnimationState::Falling;
+		}
+
+
+		//// Получить половину высоты капсулы
+		//float CapsuleHalfHeight = CapsuleComponent->GetScaledCapsuleHalfHeight();
+		//float MaxJumpHeight = 100.0f;
+
+		//// Обновление состояния анимации
+		//if (AnimHitResult.Distance <= CapsuleHalfHeight + 1.0f) // Дополнительный допуск 1.0f для учета возможных неточностей
+		//{
+		//	CurrentAnimationState = EAnimationState::OnGround;
+		//}
+		//else if (AnimHitResult.Distance > CapsuleHalfHeight + 1.0f && AnimHitResult.Distance <= CapsuleHalfHeight + MaxJumpHeight)
+		//{
+		//	CurrentAnimationState = EAnimationState::Jumping;
+		//}
+		//else
+		//{
+		//	CurrentAnimationState = EAnimationState::Falling;
+		//}
+	}
+}
+
 void AGravityCharacterPawn::UpdateGravityState()
 {
 	// Получить строковое представление текущего состояния гравитации
 	FString GravityStateString = StaticEnum<EGravityState>()->GetNameStringByValue(static_cast<int32>(CurrentGravityState));
-	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Current Gravity State: %s"), *GravityStateString));
+	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("GravityStateString: %s"), *GravityStateString));
 
 	// Получить ссылку на мир
 	UWorld* World = GetWorld();
 
 	if (World)
 	{
+		const float GravityDistanceThreshold = 2500.0f;
+
 		// Начальная позиция трассировки
 		FVector StartLocation = GetActorLocation();
 
 		// Конечная позиция трассировки
-		FVector EndLocation = StartLocation - (GetActorUpVector() * 1000.0f);
+		FVector EndLocation = StartLocation - (GetActorUpVector() * GravityDistanceThreshold);
 
 		// Результат трассировки
 		FHitResult HitResult;
@@ -276,6 +354,8 @@ void AGravityCharacterPawn::UpdateStationGravity()
 
 	// update gravity state
 	UpdateGravityState();
+
+	UpdateAnimationState();
 
 
 	/// CHECK GRAVITY FORCE / EFFECT
