@@ -32,6 +32,7 @@
 			"GravityPawn.gen.cpp.obj",
 			"GravityPlayerController.gen.cpp.obj",
 			"GravitySource.gen.cpp.obj",
+			"GravityState.gen.cpp.obj",
 			"GravityTypeEnum.gen.cpp.obj",
 			"GroundVehicle.gen.cpp.obj",
 			"Moon.gen.cpp.obj",
@@ -86,6 +87,7 @@
 			"GravityPawn.cpp.obj",
 			"GravityPlayerController.cpp.obj",
 			"GravitySource.cpp.obj",
+			"GravityState.cpp.obj",
 			"GroundVehicle.cpp.obj",
 			"Moon.cpp.obj",
 			"OrbitalBody.cpp.obj",
@@ -108,11 +110,11 @@
 			"TechObject.cpp.obj",
 			"VehicleControlling.cpp.obj",
 			"WorldActor.cpp.obj",
+			"AnimationState.gen.cpp.obj",
 			"APS_ALPHA.init.gen.cpp.obj",
 			"GravityCharacterPawn.gen.cpp.obj",
-			"GravityState.gen.cpp.obj",
-			"GravityCharacterPawn.cpp.obj",
-			"GravityState.cpp.obj"
+			"AnimationState.cpp.obj",
+			"GravityCharacterPawn.cpp.obj"
 		]
 	}
 }
