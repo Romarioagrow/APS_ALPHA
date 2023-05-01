@@ -139,6 +139,9 @@ protected:
 
 	UPROPERTY(BlueprintReadWrite, Category = "Movement")
 		float RightSpeed;
+	
+	UPROPERTY(BlueprintReadWrite, Category = "Movement")
+		float UpSpeed;
 
 	void SwitchGravityToZeroG(AActor* OtherActor);
 
