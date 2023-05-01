@@ -13,6 +13,7 @@ void EmptyLinkFunctionForGeneratedCodeSpaceship() {}
 	APS_ALPHA_API UClass* Z_Construct_UClass_ASpaceship();
 	APS_ALPHA_API UClass* Z_Construct_UClass_ASpaceship_NoRegister();
 	APS_ALPHA_API UClass* Z_Construct_UClass_UGravitySource_NoRegister();
+	ENGINE_API UClass* Z_Construct_UClass_USphereComponent_NoRegister();
 	UPackage* Z_Construct_UPackage__Script_APS_ALPHA();
 // End Cross Module References
 	void ASpaceship::StaticRegisterNativesASpaceship()
@@ -29,6 +30,11 @@ void EmptyLinkFunctionForGeneratedCodeSpaceship() {}
 #if WITH_METADATA
 		static const UECodeGen_Private::FMetaDataPairParam Class_MetaDataParams[];
 #endif
+#if WITH_METADATA
+		static const UECodeGen_Private::FMetaDataPairParam NewProp_SphereCollisionComponent_MetaData[];
+#endif
+		static const UECodeGen_Private::FObjectPropertyParams NewProp_SphereCollisionComponent;
+		static const UECodeGen_Private::FPropertyParamsBase* const PropPointers[];
 		static const UECodeGen_Private::FImplementedInterfaceParams InterfaceParams[];
 		static const FCppClassTypeInfoStatic StaticCppClassTypeInfo;
 		static const UECodeGen_Private::FClassParams ClassParams;
@@ -45,6 +51,17 @@ void EmptyLinkFunctionForGeneratedCodeSpaceship() {}
 		{ "ModuleRelativePath", "Spaceship.h" },
 	};
 #endif
+#if WITH_METADATA
+	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_ASpaceship_Statics::NewProp_SphereCollisionComponent_MetaData[] = {
+		{ "Category", "Components" },
+		{ "EditInline", "true" },
+		{ "ModuleRelativePath", "Spaceship.h" },
+	};
+#endif
+	const UECodeGen_Private::FObjectPropertyParams Z_Construct_UClass_ASpaceship_Statics::NewProp_SphereCollisionComponent = { "SphereCollisionComponent", nullptr, (EPropertyFlags)0x00200800000a001d, UECodeGen_Private::EPropertyGenFlags::Object, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(ASpaceship, SphereCollisionComponent), Z_Construct_UClass_USphereComponent_NoRegister, METADATA_PARAMS(Z_Construct_UClass_ASpaceship_Statics::NewProp_SphereCollisionComponent_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_ASpaceship_Statics::NewProp_SphereCollisionComponent_MetaData)) };
+	const UECodeGen_Private::FPropertyParamsBase* const Z_Construct_UClass_ASpaceship_Statics::PropPointers[] = {
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_ASpaceship_Statics::NewProp_SphereCollisionComponent,
+	};
 		const UECodeGen_Private::FImplementedInterfaceParams Z_Construct_UClass_ASpaceship_Statics::InterfaceParams[] = {
 			{ Z_Construct_UClass_UGravitySource_NoRegister, (int32)VTABLE_OFFSET(ASpaceship, IGravitySource), false },  // 1846880873
 		};
@@ -57,11 +74,11 @@ void EmptyLinkFunctionForGeneratedCodeSpaceship() {}
 		&StaticCppClassTypeInfo,
 		DependentSingletons,
 		nullptr,
-		nullptr,
+		Z_Construct_UClass_ASpaceship_Statics::PropPointers,
 		InterfaceParams,
 		UE_ARRAY_COUNT(DependentSingletons),
 		0,
-		0,
+		UE_ARRAY_COUNT(Z_Construct_UClass_ASpaceship_Statics::PropPointers),
 		UE_ARRAY_COUNT(InterfaceParams),
 		0x009000A4u,
 		METADATA_PARAMS(Z_Construct_UClass_ASpaceship_Statics::Class_MetaDataParams, UE_ARRAY_COUNT(Z_Construct_UClass_ASpaceship_Statics::Class_MetaDataParams))
@@ -85,9 +102,9 @@ void EmptyLinkFunctionForGeneratedCodeSpaceship() {}
 		static const FClassRegisterCompiledInInfo ClassInfo[];
 	};
 	const FClassRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_Spaceship_h_Statics::ClassInfo[] = {
-		{ Z_Construct_UClass_ASpaceship, ASpaceship::StaticClass, TEXT("ASpaceship"), &Z_Registration_Info_UClass_ASpaceship, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(ASpaceship), 263427733U) },
+		{ Z_Construct_UClass_ASpaceship, ASpaceship::StaticClass, TEXT("ASpaceship"), &Z_Registration_Info_UClass_ASpaceship, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(ASpaceship), 1653448215U) },
 	};
-	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_Spaceship_h_4162996530(TEXT("/Script/APS_ALPHA"),
+	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_Spaceship_h_3133365054(TEXT("/Script/APS_ALPHA"),
 		Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_Spaceship_h_Statics::ClassInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_Spaceship_h_Statics::ClassInfo),
 		nullptr, 0,
 		nullptr, 0);

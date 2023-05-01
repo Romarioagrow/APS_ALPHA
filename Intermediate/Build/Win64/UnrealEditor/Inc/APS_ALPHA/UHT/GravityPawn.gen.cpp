@@ -9,9 +9,9 @@
 PRAGMA_DISABLE_DEPRECATION_WARNINGS
 void EmptyLinkFunctionForGeneratedCodeGravityPawn() {}
 // Cross Module References
+	APS_ALPHA_API UClass* Z_Construct_UClass_UGravityActorInterface();
 	APS_ALPHA_API UClass* Z_Construct_UClass_UGravityPawn();
 	APS_ALPHA_API UClass* Z_Construct_UClass_UGravityPawn_NoRegister();
-	COREUOBJECT_API UClass* Z_Construct_UClass_UInterface();
 	UPackage* Z_Construct_UPackage__Script_APS_ALPHA();
 // End Cross Module References
 	void UGravityPawn::StaticRegisterNativesUGravityPawn()
@@ -32,7 +32,7 @@ void EmptyLinkFunctionForGeneratedCodeGravityPawn() {}
 		static const UECodeGen_Private::FClassParams ClassParams;
 	};
 	UObject* (*const Z_Construct_UClass_UGravityPawn_Statics::DependentSingletons[])() = {
-		(UObject* (*)())Z_Construct_UClass_UInterface,
+		(UObject* (*)())Z_Construct_UClass_UGravityActorInterface,
 		(UObject* (*)())Z_Construct_UPackage__Script_APS_ALPHA,
 	};
 #if WITH_METADATA
@@ -77,9 +77,9 @@ void EmptyLinkFunctionForGeneratedCodeGravityPawn() {}
 		static const FClassRegisterCompiledInInfo ClassInfo[];
 	};
 	const FClassRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GravityPawn_h_Statics::ClassInfo[] = {
-		{ Z_Construct_UClass_UGravityPawn, UGravityPawn::StaticClass, TEXT("UGravityPawn"), &Z_Registration_Info_UClass_UGravityPawn, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(UGravityPawn), 1138939472U) },
+		{ Z_Construct_UClass_UGravityPawn, UGravityPawn::StaticClass, TEXT("UGravityPawn"), &Z_Registration_Info_UClass_UGravityPawn, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(UGravityPawn), 3910067522U) },
 	};
-	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GravityPawn_h_1128936097(TEXT("/Script/APS_ALPHA"),
+	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GravityPawn_h_3880325242(TEXT("/Script/APS_ALPHA"),
 		Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GravityPawn_h_Statics::ClassInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GravityPawn_h_Statics::ClassInfo),
 		nullptr, 0,
 		nullptr, 0);

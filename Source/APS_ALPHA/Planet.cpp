@@ -3,3 +3,9 @@
 
 #include "Planet.h"
 
+APlanet::APlanet()
+{
+	// Создание компонента SphereCollisionComponent
+	SphereCollisionComponent = CreateDefaultSubobject<USphereComponent>(TEXT("SphereCollisionComponent"));
+	RootComponent = SphereCollisionComponent;
+}

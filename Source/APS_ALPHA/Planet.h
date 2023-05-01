@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <Components/SphereComponent.h>
 #include "PlanetaryEnvironment.h"
 #include "OrbitalBody.h"
 #include "CoreMinimal.h"
@@ -15,5 +16,16 @@ UCLASS()
 class APS_ALPHA_API APlanet : public AOrbitalBody, public IPlanetaryEnvironment
 {
 	GENERATED_BODY()
-	
+
+public:
+	APlanet();
+
+	/*virtual void BeginPlay() override;
+
+	virtual void Tick(float DeltaTime) override;*/
+
+protected:
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+		USphereComponent* SphereCollisionComponent;
+
 };

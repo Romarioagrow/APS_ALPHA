@@ -3,3 +3,9 @@
 
 #include "Spaceship.h"
 
+ASpaceship::ASpaceship()
+{
+	// Создание компонента SphereCollisionComponent
+	SphereCollisionComponent = CreateDefaultSubobject<USphereComponent>(TEXT("SphereCollisionComponent"));
+	RootComponent = SphereCollisionComponent;
+}
