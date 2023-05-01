@@ -1,6 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
+#include "GravityState.h"
 #include "GravitySource.h"
 #include "GravityObject.h"
 #include "GravityPawn.h"
@@ -114,6 +115,11 @@ protected:
 		EGravityType CurrentGravityType {
 		EGravityType::ZeroG 
 	};
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gravity")
+		EGravityState CurrentGravityState {
+		EGravityState::LowG
+	};
 
 	FVector GravityDirection{
 		0.0f, 0.0f, 0.0f
@@ -129,6 +135,8 @@ protected:
 		float RightSpeed;
 
 	void SwitchGravityToZeroG(AActor* OtherActor);
+
+	void UpdateGravityState();
 
 private:
 	void UpdateZeroGGravity();

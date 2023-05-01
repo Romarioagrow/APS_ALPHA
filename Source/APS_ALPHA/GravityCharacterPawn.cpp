@@ -203,6 +203,59 @@ void AGravityCharacterPawn::SwitchGravityToZeroG(AActor* OtherActor)
 	GravityTargetActor = nullptr;
 }
 
+void AGravityCharacterPawn::UpdateGravityState()
+{
+	// Получить строковое представление текущего состояния гравитации
+	FString GravityStateString = StaticEnum<EGravityState>()->GetNameStringByValue(static_cast<int32>(CurrentGravityState));
+	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Current Gravity State: %s"), *GravityStateString));
+
+	// Получить ссылку на мир
+	UWorld* World = GetWorld();
+
+	if (World)
+	{
+		// Начальная позиция трассировки
+		FVector StartLocation = GetActorLocation();
+
+		// Конечная позиция трассировки
+		FVector EndLocation = StartLocation - (GetActorUpVector() * 1000.0f);
+
+		// Результат трассировки
+		FHitResult HitResult;
+
+		// Настройка коллизии
+		FCollisionQueryParams CollisionParams;
+		CollisionParams.AddIgnoredActor(this);
+
+		// Выполнение Line Trace By Channel
+		bool bHit = World->LineTraceSingleByChannel(HitResult, StartLocation, EndLocation, ECC_Visibility, CollisionParams);
+
+		// Отображение отладочной линии трассировки
+		FColor DebugLineColor = bHit ? FColor::Green : FColor::Red;
+		DrawDebugLine(World, StartLocation, EndLocation, DebugLineColor, false, 2.0f, 0, 2.0f);
+
+		if (bHit)
+		{
+			CurrentGravityState = EGravityState::Attracting;
+
+			
+			//// Если что-то было задето, обработайте результат
+			//AActor* HitActor = HitResult.GetActor();
+			//if (HitActor)
+			//{
+			//	// Делайте что-то с актером, которого мы задели
+			//}
+		}
+		else
+		{
+			CurrentGravityState = EGravityState::LowG;
+
+		}
+	}
+
+
+}
+
 void AGravityCharacterPawn::UpdateZeroGGravity()
 {
 	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("ZeroG Gravity")));
@@ -221,11 +274,20 @@ void AGravityCharacterPawn::UpdateStationGravity()
 
 	SetActorRotation(Result);
 
+	// update gravity state
+	UpdateGravityState();
+
+
 	/// CHECK GRAVITY FORCE / EFFECT
-	// Добавление гравитационной силы к персонажу
-	const float GravityStrength = -980.0f; // Например, сила гравитации Земли
-	FVector GravityForce = GravityTargetActor->GetActorUpVector() * GravityStrength;
-	CapsuleComponent->AddForce(GravityForce, "none", true);
+	if (CurrentGravityState != EGravityState::LowG)
+	{
+		// Добавление гравитационной силы к персонажу
+		const float GravityStrength = -980.0f; // Например, сила гравитации Земли
+		FVector GravityForce = GravityTargetActor->GetActorUpVector() * GravityStrength;
+		CapsuleComponent->AddForce(GravityForce, "none", true);
+	}
+
+	
 }
 
 void AGravityCharacterPawn::UpdatePlanetGravity()
