@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <Components/SphereComponent.h>
 #include "GravitySource.h"
 #include "CoreMinimal.h"
 #include "Spacecraft.h"
@@ -15,4 +16,10 @@ class APS_ALPHA_API ASpaceship : public ASpacecraft, public IGravitySource
 {
 	GENERATED_BODY()
 	
+public:
+	ASpaceship();
+
+protected:
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+		USphereComponent* SphereCollisionComponent;
 };

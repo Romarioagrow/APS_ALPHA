@@ -23,35 +23,5 @@ class APS_ALPHA_API IGravityActorInterface
 	GENERATED_BODY()
 
 	// Add interface functions to this class. This is the class that will be inherited to implement this interface.
-public:
 
-	virtual void UpdateGravity();
-
-	virtual void UpdateGravityStatus(AActor* OtherActor);
-
-	virtual void UpdateGravityStatus();
-
-	virtual FVector GetGravityDirection() const;
-
-	virtual void SwitchGravityType(AGravityActor* GravityActorTarget);
-
-protected:
-	EGravityType CurrentGravityType {
-		EGravityType::ZeroG
-	};
-
-	AGravityActor* GravityActorTarget;
-
-	FVector GravityDirection {
-		0.0f, 0.0f, 0.0f
-	};
-
-private:
-	virtual void UpdateZeroGGravity();
-
-	virtual void UpdateStationGravity();
-
-	virtual void UpdatePlanetGravity();
-
-	virtual void UpdateShipGravity();
 };
