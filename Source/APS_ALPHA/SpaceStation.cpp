@@ -3,3 +3,9 @@
 
 #include "SpaceStation.h"
 
+ASpaceStation::ASpaceStation()
+{
+	// Создание компонента SphereCollisionComponent
+	SphereCollisionComponent = CreateDefaultSubobject<USphereComponent>(TEXT("SphereCollisionComponent"));
+	RootComponent = SphereCollisionComponent;
+}
