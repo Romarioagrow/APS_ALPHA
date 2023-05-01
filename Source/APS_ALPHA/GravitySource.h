@@ -23,4 +23,7 @@ class APS_ALPHA_API IGravitySource
 
 	// Add interface functions to this class. This is the class that will be inherited to implement this interface.
 public:
+
+
+	//virtual FVector GetActorUpVectorA();// = 0;
 };
