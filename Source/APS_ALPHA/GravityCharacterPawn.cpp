@@ -191,6 +191,9 @@ void AGravityCharacterPawn::SwitchGravityType(AActor* GravitySourceActor)
 	{
 		CurrentGravityType = EGravityType::OnShip;
 	}
+
+	// switch gravity param
+
 }
 
 void AGravityCharacterPawn::SwitchGravityToZeroG(AActor* OtherActor)
@@ -217,6 +220,12 @@ void AGravityCharacterPawn::UpdateStationGravity()
 	const FRotator Result = FMath::RInterpTo(ActorRotation, Rotation, GetWorld()->GetDeltaSeconds(), 2.f);
 
 	SetActorRotation(Result);
+
+	/// CHECK GRAVITY FORCE / EFFECT
+	// Добавление гравитационной силы к персонажу
+	const float GravityStrength = -980.0f; // Например, сила гравитации Земли
+	FVector GravityForce = GravityTargetActor->GetActorUpVector() * GravityStrength;
+	CapsuleComponent->AddForce(GravityForce, "none", true);
 }
 
 void AGravityCharacterPawn::UpdatePlanetGravity()
