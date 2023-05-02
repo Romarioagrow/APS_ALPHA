@@ -28,4 +28,10 @@ public:
 	virtual void UpdateGravityType() = 0;
 
 	virtual void SwitchGravityType(AActor* GravitySourceActor) = 0;
+
+	//MoveForward
+
+	//MoveRight
+
+	//Jump
 };
