@@ -82,6 +82,7 @@
 #include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Source/APS_ALPHA/GravityActor.cpp"
 #include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Source/APS_ALPHA/GravityActorInterface.cpp"
 #include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Source/APS_ALPHA/GravityCharacter.cpp"
+#include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Source/APS_ALPHA/GravityCharacterPawn.cpp"
 #include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Source/APS_ALPHA/GravityGameModeBase.cpp"
 #include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Source/APS_ALPHA/GravityObject.cpp"
 #include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Source/APS_ALPHA/GravityObjectInterface.cpp"

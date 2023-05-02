@@ -333,13 +333,19 @@ void AGravityCharacterPawn::UpdateStationGravity()
 {
 	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Station Gravity")));
 
+	// Rotation Z and X
 	const FVector GravityRotZ = GravityTargetActor->GetActorUpVector();
 	const FVector GravityRotX = CapsuleComponent->GetForwardVector();
+
+	// Make Rot from ZX
 	const FMatrix RotationMatrix = FRotationMatrix::MakeFromZX(GravityRotZ, GravityRotX);
 	const FRotator Rotation = RotationMatrix.Rotator();
+
+	// Interp to Rot
 	const FRotator ActorRotation = GetActorRotation();
 	const FRotator Result = FMath::RInterpTo(ActorRotation, Rotation, GetWorld()->GetDeltaSeconds(), 2.f);
 
+	// Set new Rotation
 	SetActorRotation(Result);
 
 	// update gravity state
@@ -495,10 +501,22 @@ void AGravityCharacterPawn::MoveRight(const float Value)
 
 void AGravityCharacterPawn::MoveForwardOnStation(const float Value)
 {
-	AlignCharacterToCameraOnStation();
+	//AlignCharacterToCameraOnStation();
 	FVector ArrowForwardVector = ArrowComponent->GetForwardVector();
 	CapsuleComponent->AddForce(ArrowForwardVector * (Value * CharacterMovementScale * 100), "None", true);
+	//CapsuleComponent->SetPhysicsLinearVelocity(ArrowForwardVector * (Value * CharacterMovementScale * 10));
 }
+void AGravityCharacterPawn::MoveRightOnStation(const float Value)
+{
+	//AlignCharacterToCameraOnStation();
+	FVector ArrowRightVector = ArrowComponent->GetRightVector();
+	//FVector ArrowRightVector = ArrowComponent->GetRelativeRotation().Vector().RightVector;
+
+	CapsuleComponent->AddForce(ArrowRightVector * (Value * CharacterMovementScale * 100), "None", true);
+	//CapsuleComponent->SetPhysicsLinearVelocity(ArrowRightVector * (Value * CharacterMovementScale * 10));
+
+}
+
 
 void AGravityCharacterPawn::MoveForwardOnPlanet(const float Value)
 {
@@ -516,12 +534,7 @@ void AGravityCharacterPawn::MoveForwardZeroG(const float Value)
 	CapsuleComponent->AddImpulse(GetActorForwardVector() * (Value * CharacterMovementScale), "None", true);
 }
 
-void AGravityCharacterPawn::MoveRightOnStation(const float Value)
-{
-	AlignCharacterToCameraOnStation();
-	FVector ArrowRightVector = ArrowComponent->GetRightVector();
-	CapsuleComponent->AddForce(ArrowRightVector * (Value * CharacterMovementScale * 100), "None", true);
-}
+
 void AGravityCharacterPawn::MoveRightOnPlanet(const float Value)
 {
 	
@@ -549,21 +562,91 @@ void AGravityCharacterPawn::MoveUp(const float Value)
 
 void AGravityCharacterPawn::RotatePitch(const float Value)
 {
-	FRotator RotationToAdd(0.0f, 0.0f, 0.0f);
-	RotationToAdd.Pitch = Value * CharacterRotationScale;
-	AddActorLocalRotation(RotationToAdd);
+	if (Value != 0)
+	{
+		//CurrentGravityState, CurrentGravityType
+		FRotator RotationToAdd(0.0f, 0.0f, 0.0f);
+
+		switch (CurrentGravityType)
+		{
+		case EGravityType::ZeroG:
+			RotationToAdd.Pitch = Value * CharacterRotationScale;
+			AddActorLocalRotation(RotationToAdd);
+			break;
+		case EGravityType::OnStation:
+			if (CurrentGravityState == EGravityState::LowG)
+			{
+				RotationToAdd.Pitch = Value * CharacterRotationScale;
+				AddActorLocalRotation(RotationToAdd);
+			}
+			break;
+		case EGravityType::OnPlanet:
+			break;
+		case EGravityType::OnShip:
+			break;
+		default:
+			break;
+		}
+	}
 }
 
 void AGravityCharacterPawn::RotateRoll(const float Value)
 {
-	FRotator RotationToAdd(0.0f, 0.0f, 0.0f);
-	RotationToAdd.Roll = Value * CharacterRotationScale;
-	AddActorLocalRotation(RotationToAdd);
+	if (Value != 0)
+	{
+		FRotator RotationToAdd(0.0f, 0.0f, 0.0f);
+
+		switch (CurrentGravityType)
+		{
+		case EGravityType::ZeroG:
+			RotationToAdd.Roll = Value * CharacterRotationScale;
+			AddActorLocalRotation(RotationToAdd);
+			break;
+		case EGravityType::OnStation:
+			if (CurrentGravityState == EGravityState::LowG)
+			{
+				RotationToAdd.Roll = Value * CharacterRotationScale;
+				AddActorLocalRotation(RotationToAdd);
+			}
+			break;
+		case EGravityType::OnPlanet:
+			break;
+		case EGravityType::OnShip:
+			break;
+		default:
+			break;
+		}
+	}
 }
 
 void AGravityCharacterPawn::RotateYaw(const float Value)
 {
-	FRotator RotationToAdd(0.0f, 0.0f, 0.0f);
-	RotationToAdd.Yaw = Value * CharacterRotationScale;
-	AddActorLocalRotation(RotationToAdd);
+	if (Value != 0)
+	{
+		FRotator RotationToAdd(0.0f, 0.0f, 0.0f);
+
+		switch (CurrentGravityType)
+		{
+		case EGravityType::ZeroG:
+			RotationToAdd.Yaw = Value * CharacterRotationScale;
+			AddActorLocalRotation(RotationToAdd);
+			break;
+		case EGravityType::OnStation:
+			if (CurrentGravityState == EGravityState::LowG)
+			{
+				RotationToAdd.Yaw = Value * CharacterRotationScale;
+				AddActorLocalRotation(RotationToAdd);
+			}
+			break;
+		case EGravityType::OnPlanet:
+			break;
+		case EGravityType::OnShip:
+			break;
+		default:
+			break;
+		}
+		
+		
+	}
+	
 }
