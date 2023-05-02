@@ -74,6 +74,14 @@ public:
 
 	UFUNCTION()
 		void MoveForward(float Value);
+	void MoveForwardOnStation(const float Value);
+	void MoveForwardOnPlanet(const float Value);
+	void MoveForwardOnShip(const float Value);
+	void MoveForwardZeroG(const float Value);
+	void MoveRightOnStation(const float Value);
+	void MoveRightOnPlanet(const float Value);
+	void MoveRightOnShip(const float Value);
+	void MoveRightZeroG(const float Value);
 	UFUNCTION()
 		void MoveRight(float Value);
 	UFUNCTION()
@@ -87,7 +95,9 @@ public:
 		void RotateYaw(float Value);
 
 	UFUNCTION()
-		void AlignCharacterToCamera();
+		void AlignCharacterToCameraZeroG();
+
+	void AlignCharacterToCameraOnStation();
 
 private:
 	float CameraYawScale{ 1.0f };	
@@ -148,6 +158,10 @@ protected:
 	void UpdateAnimationState();
 
 	void UpdateGravityState();
+
+	// Внутри определения класса:
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+		UArrowComponent* ArrowComponent;
 
 private:
 	void UpdateZeroGGravity();

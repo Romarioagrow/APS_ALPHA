@@ -18,6 +18,7 @@ void EmptyLinkFunctionForGeneratedCodeGravityCharacterPawn() {}
 	APS_ALPHA_API UEnum* Z_Construct_UEnum_APS_ALPHA_EGravityState();
 	APS_ALPHA_API UEnum* Z_Construct_UEnum_APS_ALPHA_EGravityType();
 	ENGINE_API UClass* Z_Construct_UClass_AActor_NoRegister();
+	ENGINE_API UClass* Z_Construct_UClass_UArrowComponent_NoRegister();
 	ENGINE_API UClass* Z_Construct_UClass_UCameraComponent_NoRegister();
 	ENGINE_API UClass* Z_Construct_UClass_UCapsuleComponent_NoRegister();
 	ENGINE_API UClass* Z_Construct_UClass_UPrimitiveComponent_NoRegister();
@@ -51,11 +52,11 @@ void EmptyLinkFunctionForGeneratedCodeGravityCharacterPawn() {}
 		P_THIS->OnBeginOverlap(Z_Param_OverlappedComponent,Z_Param_OtherActor,Z_Param_OtherComp,Z_Param_OtherBodyIndex,Z_Param_bFromSweep,Z_Param_Out_SweepResult);
 		P_NATIVE_END;
 	}
-	DEFINE_FUNCTION(AGravityCharacterPawn::execAlignCharacterToCamera)
+	DEFINE_FUNCTION(AGravityCharacterPawn::execAlignCharacterToCameraZeroG)
 	{
 		P_FINISH;
 		P_NATIVE_BEGIN;
-		P_THIS->AlignCharacterToCamera();
+		P_THIS->AlignCharacterToCameraZeroG();
 		P_NATIVE_END;
 	}
 	DEFINE_FUNCTION(AGravityCharacterPawn::execRotateYaw)
@@ -126,7 +127,7 @@ void EmptyLinkFunctionForGeneratedCodeGravityCharacterPawn() {}
 	{
 		UClass* Class = AGravityCharacterPawn::StaticClass();
 		static const FNameNativePtrPair Funcs[] = {
-			{ "AlignCharacterToCamera", &AGravityCharacterPawn::execAlignCharacterToCamera },
+			{ "AlignCharacterToCameraZeroG", &AGravityCharacterPawn::execAlignCharacterToCameraZeroG },
 			{ "LookUp", &AGravityCharacterPawn::execLookUp },
 			{ "MoveForward", &AGravityCharacterPawn::execMoveForward },
 			{ "MoveRight", &AGravityCharacterPawn::execMoveRight },
@@ -140,7 +141,7 @@ void EmptyLinkFunctionForGeneratedCodeGravityCharacterPawn() {}
 		};
 		FNativeFunctionRegistrar::RegisterFunctions(Class, Funcs, UE_ARRAY_COUNT(Funcs));
 	}
-	struct Z_Construct_UFunction_AGravityCharacterPawn_AlignCharacterToCamera_Statics
+	struct Z_Construct_UFunction_AGravityCharacterPawn_AlignCharacterToCameraZeroG_Statics
 	{
 #if WITH_METADATA
 		static const UECodeGen_Private::FMetaDataPairParam Function_MetaDataParams[];
@@ -148,17 +149,17 @@ void EmptyLinkFunctionForGeneratedCodeGravityCharacterPawn() {}
 		static const UECodeGen_Private::FFunctionParams FuncParams;
 	};
 #if WITH_METADATA
-	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UFunction_AGravityCharacterPawn_AlignCharacterToCamera_Statics::Function_MetaDataParams[] = {
+	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UFunction_AGravityCharacterPawn_AlignCharacterToCameraZeroG_Statics::Function_MetaDataParams[] = {
 		{ "ModuleRelativePath", "GravityCharacterPawn.h" },
 	};
 #endif
-	const UECodeGen_Private::FFunctionParams Z_Construct_UFunction_AGravityCharacterPawn_AlignCharacterToCamera_Statics::FuncParams = { (UObject*(*)())Z_Construct_UClass_AGravityCharacterPawn, nullptr, "AlignCharacterToCamera", nullptr, nullptr, 0, nullptr, 0, RF_Public|RF_Transient|RF_MarkAsNative, (EFunctionFlags)0x00020401, 0, 0, METADATA_PARAMS(Z_Construct_UFunction_AGravityCharacterPawn_AlignCharacterToCamera_Statics::Function_MetaDataParams, UE_ARRAY_COUNT(Z_Construct_UFunction_AGravityCharacterPawn_AlignCharacterToCamera_Statics::Function_MetaDataParams)) };
-	UFunction* Z_Construct_UFunction_AGravityCharacterPawn_AlignCharacterToCamera()
+	const UECodeGen_Private::FFunctionParams Z_Construct_UFunction_AGravityCharacterPawn_AlignCharacterToCameraZeroG_Statics::FuncParams = { (UObject*(*)())Z_Construct_UClass_AGravityCharacterPawn, nullptr, "AlignCharacterToCameraZeroG", nullptr, nullptr, 0, nullptr, 0, RF_Public|RF_Transient|RF_MarkAsNative, (EFunctionFlags)0x00020401, 0, 0, METADATA_PARAMS(Z_Construct_UFunction_AGravityCharacterPawn_AlignCharacterToCameraZeroG_Statics::Function_MetaDataParams, UE_ARRAY_COUNT(Z_Construct_UFunction_AGravityCharacterPawn_AlignCharacterToCameraZeroG_Statics::Function_MetaDataParams)) };
+	UFunction* Z_Construct_UFunction_AGravityCharacterPawn_AlignCharacterToCameraZeroG()
 	{
 		static UFunction* ReturnFunction = nullptr;
 		if (!ReturnFunction)
 		{
-			UECodeGen_Private::ConstructUFunction(&ReturnFunction, Z_Construct_UFunction_AGravityCharacterPawn_AlignCharacterToCamera_Statics::FuncParams);
+			UECodeGen_Private::ConstructUFunction(&ReturnFunction, Z_Construct_UFunction_AGravityCharacterPawn_AlignCharacterToCameraZeroG_Statics::FuncParams);
 		}
 		return ReturnFunction;
 	}
@@ -630,6 +631,10 @@ void EmptyLinkFunctionForGeneratedCodeGravityCharacterPawn() {}
 		static const UECodeGen_Private::FMetaDataPairParam NewProp_UpSpeed_MetaData[];
 #endif
 		static const UECodeGen_Private::FFloatPropertyParams NewProp_UpSpeed;
+#if WITH_METADATA
+		static const UECodeGen_Private::FMetaDataPairParam NewProp_ArrowComponent_MetaData[];
+#endif
+		static const UECodeGen_Private::FObjectPropertyParams NewProp_ArrowComponent;
 		static const UECodeGen_Private::FPropertyParamsBase* const PropPointers[];
 		static const UECodeGen_Private::FImplementedInterfaceParams InterfaceParams[];
 		static const FCppClassTypeInfoStatic StaticCppClassTypeInfo;
@@ -640,7 +645,7 @@ void EmptyLinkFunctionForGeneratedCodeGravityCharacterPawn() {}
 		(UObject* (*)())Z_Construct_UPackage__Script_APS_ALPHA,
 	};
 	const FClassFunctionLinkInfo Z_Construct_UClass_AGravityCharacterPawn_Statics::FuncInfo[] = {
-		{ &Z_Construct_UFunction_AGravityCharacterPawn_AlignCharacterToCamera, "AlignCharacterToCamera" }, // 621088259
+		{ &Z_Construct_UFunction_AGravityCharacterPawn_AlignCharacterToCameraZeroG, "AlignCharacterToCameraZeroG" }, // 3186205240
 		{ &Z_Construct_UFunction_AGravityCharacterPawn_LookUp, "LookUp" }, // 3537675169
 		{ &Z_Construct_UFunction_AGravityCharacterPawn_MoveForward, "MoveForward" }, // 3752209854
 		{ &Z_Construct_UFunction_AGravityCharacterPawn_MoveRight, "MoveRight" }, // 2636117551
@@ -765,6 +770,16 @@ void EmptyLinkFunctionForGeneratedCodeGravityCharacterPawn() {}
 	};
 #endif
 	const UECodeGen_Private::FFloatPropertyParams Z_Construct_UClass_AGravityCharacterPawn_Statics::NewProp_UpSpeed = { "UpSpeed", nullptr, (EPropertyFlags)0x0020080000000004, UECodeGen_Private::EPropertyGenFlags::Float, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(AGravityCharacterPawn, UpSpeed), METADATA_PARAMS(Z_Construct_UClass_AGravityCharacterPawn_Statics::NewProp_UpSpeed_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_AGravityCharacterPawn_Statics::NewProp_UpSpeed_MetaData)) };
+#if WITH_METADATA
+	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_AGravityCharacterPawn_Statics::NewProp_ArrowComponent_MetaData[] = {
+		{ "Category", "Components" },
+		{ "Comment", "// \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd:\n" },
+		{ "EditInline", "true" },
+		{ "ModuleRelativePath", "GravityCharacterPawn.h" },
+		{ "ToolTip", "\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd:" },
+	};
+#endif
+	const UECodeGen_Private::FObjectPropertyParams Z_Construct_UClass_AGravityCharacterPawn_Statics::NewProp_ArrowComponent = { "ArrowComponent", nullptr, (EPropertyFlags)0x00200800000a001d, UECodeGen_Private::EPropertyGenFlags::Object, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(AGravityCharacterPawn, ArrowComponent), Z_Construct_UClass_UArrowComponent_NoRegister, METADATA_PARAMS(Z_Construct_UClass_AGravityCharacterPawn_Statics::NewProp_ArrowComponent_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_AGravityCharacterPawn_Statics::NewProp_ArrowComponent_MetaData)) };
 	const UECodeGen_Private::FPropertyParamsBase* const Z_Construct_UClass_AGravityCharacterPawn_Statics::PropPointers[] = {
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AGravityCharacterPawn_Statics::NewProp_RootSceneComponent,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AGravityCharacterPawn_Statics::NewProp_CapsuleComponent,
@@ -783,6 +798,7 @@ void EmptyLinkFunctionForGeneratedCodeGravityCharacterPawn() {}
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AGravityCharacterPawn_Statics::NewProp_ForwardSpeed,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AGravityCharacterPawn_Statics::NewProp_RightSpeed,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AGravityCharacterPawn_Statics::NewProp_UpSpeed,
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AGravityCharacterPawn_Statics::NewProp_ArrowComponent,
 	};
 		const UECodeGen_Private::FImplementedInterfaceParams Z_Construct_UClass_AGravityCharacterPawn_Statics::InterfaceParams[] = {
 			{ Z_Construct_UClass_UGravityPawn_NoRegister, (int32)VTABLE_OFFSET(AGravityCharacterPawn, IGravityPawn), false },  // 3910067522
@@ -824,9 +840,9 @@ void EmptyLinkFunctionForGeneratedCodeGravityCharacterPawn() {}
 		static const FClassRegisterCompiledInInfo ClassInfo[];
 	};
 	const FClassRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GravityCharacterPawn_h_Statics::ClassInfo[] = {
-		{ Z_Construct_UClass_AGravityCharacterPawn, AGravityCharacterPawn::StaticClass, TEXT("AGravityCharacterPawn"), &Z_Registration_Info_UClass_AGravityCharacterPawn, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(AGravityCharacterPawn), 3447981366U) },
+		{ Z_Construct_UClass_AGravityCharacterPawn, AGravityCharacterPawn::StaticClass, TEXT("AGravityCharacterPawn"), &Z_Registration_Info_UClass_AGravityCharacterPawn, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(AGravityCharacterPawn), 499619013U) },
 	};
-	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GravityCharacterPawn_h_1413958405(TEXT("/Script/APS_ALPHA"),
+	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GravityCharacterPawn_h_3646687408(TEXT("/Script/APS_ALPHA"),
 		Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GravityCharacterPawn_h_Statics::ClassInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GravityCharacterPawn_h_Statics::ClassInfo),
 		nullptr, 0,
 		nullptr, 0);

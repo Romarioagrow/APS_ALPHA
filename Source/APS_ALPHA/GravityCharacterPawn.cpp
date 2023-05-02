@@ -35,7 +35,16 @@ AGravityCharacterPawn::AGravityCharacterPawn()
 	// Create and set up CameraComponent
 	PlayerCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("PlayerCamera"));
 	PlayerCamera->SetupAttachment(CameraSpringArm, USpringArmComponent::SocketName);
+
+
+
+	
+
+	// Создайте Arrow компонент
+	ArrowComponent = CreateDefaultSubobject<UArrowComponent>(TEXT("ArrowComponent"));
+	ArrowComponent->SetupAttachment(CapsuleComponent);
 }
+
 
 // Called when the game starts or when spawned
 void AGravityCharacterPawn::BeginPlay()
@@ -241,7 +250,7 @@ void AGravityCharacterPawn::UpdateAnimationState()
 		GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("AnimHitResult.Distance: %f"), AnimHitResult.Distance));
 
 
-		//// Определение состояния анимации
+		//c Определение состояния анимации
 		if (bIsGrounded && AnimHitResult.Distance < CapsuleComponent->GetScaledCapsuleHalfHeight() + 2.5f)
 		{
 			// Персонаж стоит на поверхности
@@ -257,25 +266,6 @@ void AGravityCharacterPawn::UpdateAnimationState()
 			// Персонаж падает (ничего не задето)
 			CurrentAnimationState = EAnimationState::Falling;
 		}
-
-
-		//// Получить половину высоты капсулы
-		//float CapsuleHalfHeight = CapsuleComponent->GetScaledCapsuleHalfHeight();
-		//float MaxJumpHeight = 100.0f;
-
-		//// Обновление состояния анимации
-		//if (AnimHitResult.Distance <= CapsuleHalfHeight + 1.0f) // Дополнительный допуск 1.0f для учета возможных неточностей
-		//{
-		//	CurrentAnimationState = EAnimationState::OnGround;
-		//}
-		//else if (AnimHitResult.Distance > CapsuleHalfHeight + 1.0f && AnimHitResult.Distance <= CapsuleHalfHeight + MaxJumpHeight)
-		//{
-		//	CurrentAnimationState = EAnimationState::Jumping;
-		//}
-		//else
-		//{
-		//	CurrentAnimationState = EAnimationState::Falling;
-		//}
 	}
 }
 
@@ -367,7 +357,12 @@ void AGravityCharacterPawn::UpdateStationGravity()
 		CapsuleComponent->AddForce(GravityForce, "none", true);
 	}
 
-	
+	// Получить текущее вращение CameraSpringArm
+	FRotator CameraSpringArmRotation = CameraSpringArm->GetRelativeRotation();
+	// Создать новое вращение с использованием только Yaw от CameraSpringArm
+	FRotator NewArrowRotation(0.0f, CameraSpringArmRotation.Yaw, 0.0f);
+	// Установить новое вращение для Arrow Component
+	ArrowComponent->SetRelativeRotation(NewArrowRotation);
 }
 
 void AGravityCharacterPawn::UpdatePlanetGravity()
@@ -418,7 +413,7 @@ void AGravityCharacterPawn::LookUp(const float Value)
 	CameraSpringArm->SetRelativeRotation(TargetRotation);
 }
 
-void AGravityCharacterPawn::AlignCharacterToCamera()
+void AGravityCharacterPawn::AlignCharacterToCameraZeroG()
 {
 	// Получаем текущий кватернион вращения камеры
 	const FQuat CameraQuat = CameraSpringArm->GetComponentQuat();
@@ -435,14 +430,44 @@ void AGravityCharacterPawn::AlignCharacterToCamera()
 	CameraSpringArm->SetWorldRotation(FRotator(CameraQuat.Rotator().Pitch, NewCharacterQuat.Rotator().Yaw, CameraQuat.Rotator().Roll));
 }
 
+void AGravityCharacterPawn::AlignCharacterToCameraOnStation()
+{
+	
+
+	//// Получаем текущий кватернион вращения камеры
+	const FQuat CameraQuat = CameraSpringArm->GetComponentQuat();
+
+	//// Вычисляем новый кватернион вращения персонажа, используя кватернион вращения камеры
+	FQuat NewCharacterQuat = FQuat(CameraQuat.X, CameraQuat.Y, CameraQuat.Z, CameraQuat.W);
+
+	//// Интерполируем вращение CapsuleComponent и персонажа к вращению камеры
+	FQuat InterpolatedQuat = FMath::QInterpTo(GetActorQuat(), NewCharacterQuat, GetWorld()->GetDeltaSeconds(), CameraInterpolationSpeed);
+	CapsuleComponent->SetWorldRotation(InterpolatedQuat);
+	SetActorRotation(InterpolatedQuat);
+
+	//// Обнуляем вращение CameraSpringArm
+	CameraSpringArm->SetWorldRotation(FRotator(CameraQuat.Rotator().Pitch, NewCharacterQuat.Rotator().Yaw, CameraQuat.Rotator().Roll));
+}
+
 void AGravityCharacterPawn::MoveForward(const float Value)
 {
 	if (Value != 0)
 	{
-		AlignCharacterToCamera();
-
-		// add impulse
-		CapsuleComponent->AddImpulse(GetActorForwardVector() * (Value * CharacterMovementScale), "None", true);
+		switch (CurrentGravityType) 
+		{
+			case EGravityType::OnStation:
+				MoveForwardOnStation(Value);
+				break;
+			case EGravityType::OnPlanet:
+				MoveForwardOnPlanet(Value);
+				break;
+			case EGravityType::OnShip:
+				MoveForwardOnShip(Value);
+				break;
+			case EGravityType::ZeroG:
+				MoveForwardZeroG(Value);
+				break;
+		}
 	}
 }
 
@@ -450,12 +475,68 @@ void AGravityCharacterPawn::MoveRight(const float Value)
 {
 	if (Value != 0)
 	{
-		AlignCharacterToCamera();
-
-		// add impulse
-		CapsuleComponent->AddImpulse(GetActorRightVector() * (Value * CharacterMovementScale), "None", true);
+		switch (CurrentGravityType)
+		{
+		case EGravityType::OnStation:
+			MoveRightOnStation(Value);
+			break;
+		case EGravityType::OnPlanet:
+			MoveRightOnPlanet(Value);
+			break;
+		case EGravityType::OnShip:
+			MoveRightOnShip(Value);
+			break;
+		case EGravityType::ZeroG:
+			MoveRightZeroG(Value);
+			break;
+		}
 	}
 }
+
+void AGravityCharacterPawn::MoveForwardOnStation(const float Value)
+{
+	AlignCharacterToCameraOnStation();
+	FVector ArrowForwardVector = ArrowComponent->GetForwardVector();
+	CapsuleComponent->AddForce(ArrowForwardVector * (Value * CharacterMovementScale * 100), "None", true);
+}
+
+void AGravityCharacterPawn::MoveForwardOnPlanet(const float Value)
+{
+
+}
+
+void AGravityCharacterPawn::MoveForwardOnShip(const float Value)
+{
+
+}
+
+void AGravityCharacterPawn::MoveForwardZeroG(const float Value)
+{
+	AlignCharacterToCameraZeroG();
+	CapsuleComponent->AddImpulse(GetActorForwardVector() * (Value * CharacterMovementScale), "None", true);
+}
+
+void AGravityCharacterPawn::MoveRightOnStation(const float Value)
+{
+	AlignCharacterToCameraOnStation();
+	FVector ArrowRightVector = ArrowComponent->GetRightVector();
+	CapsuleComponent->AddForce(ArrowRightVector * (Value * CharacterMovementScale * 100), "None", true);
+}
+void AGravityCharacterPawn::MoveRightOnPlanet(const float Value)
+{
+	
+}
+void AGravityCharacterPawn::MoveRightOnShip(const float Value)
+{
+	
+}
+void AGravityCharacterPawn::MoveRightZeroG(const float Value)
+{
+	AlignCharacterToCameraZeroG();
+	CapsuleComponent->AddImpulse(GetActorRightVector() * (Value * CharacterMovementScale), "None", true);
+}
+
+
 
 void AGravityCharacterPawn::MoveUp(const float Value)
 {

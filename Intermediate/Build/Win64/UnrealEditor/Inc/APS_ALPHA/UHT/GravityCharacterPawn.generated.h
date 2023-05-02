@@ -22,7 +22,7 @@ struct FHitResult;
  \
 	DECLARE_FUNCTION(execOnEndOverlap); \
 	DECLARE_FUNCTION(execOnBeginOverlap); \
-	DECLARE_FUNCTION(execAlignCharacterToCamera); \
+	DECLARE_FUNCTION(execAlignCharacterToCameraZeroG); \
 	DECLARE_FUNCTION(execRotateYaw); \
 	DECLARE_FUNCTION(execRotateRoll); \
 	DECLARE_FUNCTION(execRotatePitch); \
@@ -37,7 +37,7 @@ struct FHitResult;
  \
 	DECLARE_FUNCTION(execOnEndOverlap); \
 	DECLARE_FUNCTION(execOnBeginOverlap); \
-	DECLARE_FUNCTION(execAlignCharacterToCamera); \
+	DECLARE_FUNCTION(execAlignCharacterToCameraZeroG); \
 	DECLARE_FUNCTION(execRotateYaw); \
 	DECLARE_FUNCTION(execRotateRoll); \
 	DECLARE_FUNCTION(execRotatePitch); \
