@@ -554,19 +554,49 @@ void AGravityCharacterPawn::AlignCharacterToCameraOnStation()
 
 	
 	
-	//// Получаем текущий кватернион вращения капсулы
+	////// Получаем текущий кватернион вращения капсулы
+	//const FQuat CapsuleQuat = CapsuleComponent->GetComponentQuat();
+
+	////// Получаем текущий кватернион вращения SpringArm
+	//const FQuat SpringArmQuat = ArrowComponent->GetComponentQuat();
+
+	////// Интерполируем вращение капсулы к целевому вращению SpringArm
+	//FQuat InterpolatedQuat = FMath::QInterpTo(CapsuleQuat, SpringArmQuat, GetWorld()->GetDeltaSeconds(), 5.0f);
+
+	////// Устанавливаем новое вращение для актора и капсулы
+	//CapsuleComponent->SetWorldRotation(InterpolatedQuat);
+	//SetActorRotation(InterpolatedQuat);
+
+
+
+
+	// Получаем текущий кватернион вращения капсулы
 	const FQuat CapsuleQuat = CapsuleComponent->GetComponentQuat();
 
-	//// Получаем текущий кватернион вращения SpringArm
+	// Получаем текущий кватернион вращения SpringArm
 	const FQuat SpringArmQuat = ArrowComponent->GetComponentQuat();
 
-	//// Интерполируем вращение капсулы к целевому вращению SpringArm
+	// Интерполируем вращение капсулы к целевому вращению SpringArm
 	FQuat InterpolatedQuat = FMath::QInterpTo(CapsuleQuat, SpringArmQuat, GetWorld()->GetDeltaSeconds(), 5.0f);
 
-	//// Устанавливаем новое вращение для актора и капсулы
+	// Вычисляем разницу между исходным и интерполированным вращением
+	FQuat DifferenceQuat = CapsuleQuat.Inverse() * InterpolatedQuat;
+
+	// Устанавливаем новое вращение для актора и капсулы
 	CapsuleComponent->SetWorldRotation(InterpolatedQuat);
 	SetActorRotation(InterpolatedQuat);
+
+	// Применяем обратную интерполяцию для SpringArm
+	FQuat NewSpringArmQuat = CameraSpringArm->GetComponentQuat() * DifferenceQuat.Inverse();
+	CameraSpringArm->SetWorldRotation(NewSpringArmQuat);
+	//CameraSpringArm->SetWorldRotation(FRotator(SpringArmQuat.Rotator().Pitch, InterpolatedQuat.Rotator().Yaw, SpringArmQuat.Rotator().Roll));
+
+
+
 	
+	//CameraSpringArm->SetWorldRotation(InterpolatedQuat.Inverse());
+	//ArrowComponent->SetWorldRotation(InterpolatedQuat.Inverse());
+	//CameraSpringArm->SetWorldRotation(FRotator(SpringArmQuat.Rotator().Pitch, InterpolatedQuat.Rotator().Yaw, SpringArmQuat.Rotator().Roll));
 
 
 
