@@ -70,12 +70,31 @@ void AGravityCharacterPawn::Tick(const float DeltaTime)
 	ForwardSpeed = FVector::DotProduct(CurrentVelocity, GetActorForwardVector());
 	RightSpeed = FVector::DotProduct(CurrentVelocity, GetActorRightVector());
 	UpSpeed = FVector::DotProduct(CurrentVelocity, GetActorUpVector());
-	ForwardSpeed /= 10.0f;
-	RightSpeed /= 10.0f;
+	
+
+
+	//FVector MeshForwardVector = MeshComponent->GetForwardVector();
+	//MeshForwardVector.Z -= 90;
+	//FVector MeshRightVector = MeshComponent->GetRightVector();
+	//MeshRightVector.Z -= 90;
+	//FVector MeshUpVector = MeshComponent->GetUpVector();
+
+
+	/*float ForwardSpeed1 = FVector::DotProduct(CurrentVelocity, MeshForwardVector);
+	float RightSpeed1 = FVector::DotProduct(CurrentVelocity, MeshRightVector);
+	float UpSpeed1 = FVector::DotProduct(CurrentVelocity, MeshUpVector);
+	ForwardSpeed1 /= 10.0f;
+	RightSpeed1 /= 10.0f;
+	UpSpeed1 /= 10.0f;*/
+	//RightSpeed /= 10.0f;
 
 	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Orange, FString::Printf(TEXT("ForwardSpeed: %f"), ForwardSpeed));
 	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Orange, FString::Printf(TEXT("RightSpeed: %f"), RightSpeed));
 	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Orange, FString::Printf(TEXT("UpSpeed: %f"), UpSpeed));
+	
+	/*GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Purple, FString::Printf(TEXT("ForwardSpeed1: %f"), ForwardSpeed1));
+	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Purple, FString::Printf(TEXT("RightSpeed1: %f"), RightSpeed1));
+	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Purple, FString::Printf(TEXT("UpSpeed1: %f"), UpSpeed1));*/
 }
 
 // Called to bind functionality to input
@@ -103,19 +122,15 @@ void AGravityCharacterPawn::UpdateGravity()
 	switch (CurrentGravityType)
 	{
 	case EGravityType::ZeroG:
-		// Логика обновления гравитации в режиме невесомости
 		UpdateZeroGGravity();
 		break;
 	case EGravityType::OnStation:
-		// Логика обновления гравитации на станции
 		UpdateStationGravity();
 		break;
 	case EGravityType::OnPlanet:
-		// Логика обновления гравитации на планете
 		UpdatePlanetGravity();
 		break;
 	case EGravityType::OnShip:
-		// Логика обновления гравитации на корабле
 		UpdateShipGravity();
 		break;
 	}
@@ -343,10 +358,62 @@ void AGravityCharacterPawn::UpdateStationGravity()
 
 	// Interp to Rot
 	const FRotator ActorRotation = GetActorRotation();
-	const FRotator Result = FMath::RInterpTo(ActorRotation, Rotation, GetWorld()->GetDeltaSeconds(), 2.f);
+	FRotator Result = FMath::RInterpTo(ActorRotation, Rotation, GetWorld()->GetDeltaSeconds(), 2.f);
+
+
+	/*if (CurrentGravityState != EGravityState::LowG)
+	{
+		CameraSpringArm->SetRelativeRotation(FRotator(0.0f, 0.0f, 0.0f));
+	}*/
+
+
+	//if (bAlignToCamera)
+	//{
+	//	//Rotation
+	//	const FRotator CameraRotation = CameraSpringArm->GetComponentRotation();
+	//	/*FRotator CombinedRotation = FRotator(Result.Pitch,
+	//		Result.Yaw + CameraRotation.Yaw,
+	//		Result.Roll);*/
+
+	//	FVector AWF = ArrowComponent->GetForwardVector();
+
+	//	FRotator NewRot = AWF.Rotation();
+
+	//	Result = FMath::RInterpTo(ActorRotation, NewRot, GetWorld()->GetDeltaSeconds(), 2.f);
+
+	//	SetActorRotation(Result);
+
+	//}
+	//else
+	//{
+	//	// Set new Rotation
+	//	SetActorRotation(Result);
+	//}
+	SetActorRotation(Result);
 
 	// Set new Rotation
-	SetActorRotation(Result);
+	//SetActorRotation(Result);
+
+
+	//if (bAlignToCamera)
+	//{
+	//	// Получаем текущий FRotator персонажа
+	//	FRotator CharacterRotator = GetActorRotation();
+
+	//	// Получаем текущий Yaw камеры
+	//	float CameraYaw = CameraSpringArm->GetComponentRotation().Yaw;
+
+	//	// Интерполируем вращение персонажа к вращению камеры только по оси Yaw
+	//	float NewCharacterYaw = FMath::FInterpTo(CharacterRotator.Yaw, CameraYaw, GetWorld()->GetDeltaSeconds(), CameraInterpolationSpeed);
+	//	CharacterRotator.Yaw = NewCharacterYaw;
+	//	SetActorRotation(FRotator(Result.Pitch, CharacterRotator.Yaw, Result.Roll));
+	//}
+
+	//// Если персонаж не движется вперед, устанавливаем bAlignToCamera обратно в false
+	//if (!GetInputAxisValue("MoveForward"))
+	//{
+	//	bAlignToCamera = false;
+	//}
 
 	// update gravity state
 	UpdateGravityState();
@@ -369,6 +436,32 @@ void AGravityCharacterPawn::UpdateStationGravity()
 	FRotator NewArrowRotation(0.0f, CameraSpringArmRotation.Yaw, 0.0f);
 	// Установить новое вращение для Arrow Component
 	ArrowComponent->SetRelativeRotation(NewArrowRotation);
+
+
+
+
+
+	//if (bIsMovingForward)
+	//{
+	//	// Получаем вектор направления движения камеры
+	//	FVector CameraForward = CameraSpringArm->GetForwardVector();
+	//	CameraForward.Z = 0; // Обнуляем компонент Z, чтобы оставаться на плоскости
+	//	CameraForward.Normalize();
+
+	//	// Получаем вращение персонажа
+	//	FRotator CharacterRotation = GetActorRotation();
+
+	//	// Вычисляем новое вращение персонажа
+	//	FRotator NewCharacterRotation = CameraForward.Rotation();
+	//	NewCharacterRotation.Pitch = 0.0f;
+	//	NewCharacterRotation.Roll = 0.0f;
+
+	//	// Интерполируем вращение персонажа к новому вращению
+	//	FRotator InterpolatedRotator = FMath::RInterpTo(CharacterRotation, NewCharacterRotation, GetWorld()->DeltaTimeSeconds, CameraInterpolationSpeed);
+
+	//	// Устанавливаем новое вращение для персонажа
+	//	SetActorRotation(InterpolatedRotator);
+	//}
 }
 
 void AGravityCharacterPawn::UpdatePlanetGravity()
@@ -381,7 +474,7 @@ void AGravityCharacterPawn::UpdatePlanetGravity()
 	const FVector CapsuleForwardVector = CapsuleComponent->GetForwardVector();
 	const FMatrix RotationMatrix = FRotationMatrix::MakeFromZX(LookAtRotation.Vector(), CapsuleForwardVector);
 	const FRotator ActorRotation = GetActorRotation();
-	const FRotator ResultRotation = FMath::RInterpTo(ActorRotation, RotationMatrix.Rotator(), GetWorld()->GetDeltaSeconds(), 2.f);
+	const FRotator ResultRotation = FMath::RInterpTo(ActorRotation, RotationMatrix.Rotator(), GetWorld()->GetDeltaSeconds(), 8.f);
 	
 	SetActorRotation(ResultRotation);
 }
@@ -439,20 +532,143 @@ void AGravityCharacterPawn::AlignCharacterToCameraZeroG()
 void AGravityCharacterPawn::AlignCharacterToCameraOnStation()
 {
 	
+	//// Получаем текущий кватернион вращения капсулы
+	//const FQuat CapsuleQuat = CapsuleComponent->GetComponentQuat();
 
-	//// Получаем текущий кватернион вращения камеры
-	const FQuat CameraQuat = CameraSpringArm->GetComponentQuat();
+	//// Получаем текущий кватернион вращения SpringArm
+	//const FQuat SpringArmQuat = ArrowComponent->GetComponentQuat();
 
-	//// Вычисляем новый кватернион вращения персонажа, используя кватернион вращения камеры
-	FQuat NewCharacterQuat = FQuat(CameraQuat.X, CameraQuat.Y, CameraQuat.Z, CameraQuat.W);
+	//// Интерполируем вращение капсулы к целевому вращению SpringArm
+	//FQuat InterpolatedQuat = FMath::QInterpTo(CapsuleQuat, SpringArmQuat, GetWorld()->GetDeltaSeconds(), RotationInterpolationSpeed);
 
-	//// Интерполируем вращение CapsuleComponent и персонажа к вращению камеры
-	FQuat InterpolatedQuat = FMath::QInterpTo(GetActorQuat(), NewCharacterQuat, GetWorld()->GetDeltaSeconds(), CameraInterpolationSpeed);
+	//// Устанавливаем новое вращение для актора и капсулы
+	//CapsuleComponent->SetWorldRotation(InterpolatedQuat);
+	//SetActorRotation(InterpolatedQuat);
+
+	//// Вычитаем интерполированное вращение из текущего вращения SpringArm
+	//FQuat NewSpringArmQuat = SpringArmQuat * InterpolatedQuat.Inverse();
+
+	//// Устанавливаем новое вращение для SpringArm
+	//CameraSpringArm->SetWorldRotation(NewSpringArmQuat);
+
+
+	
+	
+	//// Получаем текущий кватернион вращения капсулы
+	const FQuat CapsuleQuat = CapsuleComponent->GetComponentQuat();
+
+	//// Получаем текущий кватернион вращения SpringArm
+	const FQuat SpringArmQuat = ArrowComponent->GetComponentQuat();
+
+	//// Интерполируем вращение капсулы к целевому вращению SpringArm
+	FQuat InterpolatedQuat = FMath::QInterpTo(CapsuleQuat, SpringArmQuat, GetWorld()->GetDeltaSeconds(), 5.0f);
+
+	//// Устанавливаем новое вращение для актора и капсулы
 	CapsuleComponent->SetWorldRotation(InterpolatedQuat);
 	SetActorRotation(InterpolatedQuat);
+	
 
-	//// Обнуляем вращение CameraSpringArm
-	CameraSpringArm->SetWorldRotation(FRotator(CameraQuat.Rotator().Pitch, NewCharacterQuat.Rotator().Yaw, CameraQuat.Rotator().Roll));
+
+
+	//FQuat NewSpringArmQuat = SpringArmQuat * InterpolatedQuat.Inverse();
+
+	//// Устанавливаем новое вращение для SpringArm
+	//CameraSpringArm->SetWorldRotation(NewSpringArmQuat);
+	
+	//FRotator CameraRotation = CameraSpringArm->GetRelativeRotation();
+	//FRotator CapsuleRotation = CapsuleComponent->GetRelativeRotation();
+	//FRotator TargetRotation = FRotator(CapsuleRotation.Pitch, CapsuleRotation.Yaw + CameraRotation.Yaw, CapsuleRotation.Roll);
+
+	//// Интерполируем вращение меша к целевому вращению
+	//FRotator CurrentCapsuleRotation = CapsuleComponent->GetRelativeRotation();
+	//FRotator NewMeshRotation = FMath::RInterpTo(CurrentCapsuleRotation, TargetRotation, GetWorld()->GetDeltaSeconds(), 5.0f);
+	//CapsuleComponent->SetRelativeRotation(NewMeshRotation);
+
+
+	//FRotator CameraRotation = CameraSpringArm->GetRelativeRotation();
+	//FRotator TargetRotation = FRotator(0.0f, CameraRotation.Yaw - 90, 0.0f);
+
+	//// Интерполируем вращение меша к целевому вращению
+	//FRotator CurrentMeshRotation = MeshComponent->GetRelativeRotation();
+	//FRotator NewMeshRotation = FMath::RInterpTo(CurrentMeshRotation, TargetRotation, GetWorld()->GetDeltaSeconds(), 5.0f);
+	//MeshComponent->SetRelativeRotation(NewMeshRotation);
+	
+	
+	//// Получаем текущий кватернион вращения камеры
+	//const FRotator CameraRotator = CameraSpringArm->GetComponentRotation();
+
+	//// Получаем локальное вращение персонажа
+	//FRotator LocalCharacterRotator = GetActorRotation();
+
+	//// Устанавливаем Yaw персонажа равным Yaw камеры
+	//LocalCharacterRotator.Yaw = CameraRotator.Yaw;
+
+	//// Интерполируем вращение CapsuleComponent и персонажа к новому локальному вращению
+	//FRotator InterpolatedRotator = FMath::RInterpTo(GetActorRotation(), LocalCharacterRotator, GetWorld()->GetDeltaSeconds(), CameraInterpolationSpeed);
+	//CapsuleComponent->SetWorldRotation(InterpolatedRotator);
+	//SetActorRotation(InterpolatedRotator);
+
+	//// Получаем локальное вращение CameraSpringArm
+	//FRotator NewCameraRotator = CameraSpringArm->GetRelativeRotation();
+
+	//// Устанавливаем Yaw и Roll равными нулю, а Pitch противоположным значением вращения персонажа
+	//NewCameraRotator.Yaw = 0.0f;
+	//NewCameraRotator.Roll = 0.0f;
+	//NewCameraRotator.Pitch = -LocalCharacterRotator.Pitch;
+
+	//// Устанавливаем новое вращение для CameraSpringArm
+	//CameraSpringArm->SetRelativeRotation(NewCameraRotator);
+
+	
+	
+	//// Получаем текущий кватернион вращения камеры
+	//const FRotator CameraRotator = CameraSpringArm->GetComponentRotation();
+
+	//// Получаем локальное вращение персонажа
+	//FRotator LocalCharacterRotator = GetActorRotation();
+
+	//// Устанавливаем Yaw персонажа равным Yaw камеры
+	//LocalCharacterRotator.Yaw = CameraRotator.Yaw;
+
+	//// Интерполируем вращение CapsuleComponent и персонажа к новому локальному вращению
+	//FRotator InterpolatedRotator = FMath::RInterpTo(GetActorRotation(), LocalCharacterRotator, GetWorld()->GetDeltaSeconds(), CameraInterpolationSpeed);
+	//CapsuleComponent->SetWorldRotation(InterpolatedRotator);
+	//SetActorRelativeRotation(InterpolatedRotator);
+
+	//// Обнуляем Yaw вращение CameraSpringArm
+	//FRotator NewCameraRotator = CameraSpringArm->GetRelativeRotation();
+	//NewCameraRotator.Yaw = 0.0f;
+
+	//// Устанавливаем новое вращение для CameraSpringArm
+	//CameraSpringArm->SetRelativeRotation(NewCameraRotator);
+
+	/*FRotator ActorRotation = GetActorRotation();
+	FRotator SpringArmRotation = CameraSpringArm->GetRelativeRotation();
+	FRotator RotationToAdd(ActorRotation.Roll, ActorRotation.Pitch, 0.0f);
+	RotationToAdd.Yaw = SpringArmRotation.Yaw;
+	SetActorRotation(RotationToAdd);*/
+
+
+	/*FRotator SpringArmRotation = CameraSpringArm->GetRelativeRotation();
+	AddActorLocalRotation(FRotator(0.0f, SpringArmRotation.Yaw, 0.0f));
+	CameraSpringArm->AddLocalRotation(FRotator(0.0f, -SpringArmRotation.Yaw, 0.0f));*/
+
+	////// Получаем текущий кватернион вращения камеры
+	/*const FQuat CameraQuat = CameraSpringArm->GetComponentQuat();
+	const FQuat ActorQuat = GetActorQuat();*/
+
+	//AddActorLocalRotation(0.0f, 0.0f, CameraQuat.Z);
+
+	////// Вычисляем новый кватернион вращения персонажа, используя кватернион вращения камеры
+	//FQuat NewCharacterQuat = FQuat(CameraQuat.X, CameraQuat.Y, CameraQuat.Z, CameraQuat.W);
+
+	////// Интерполируем вращение CapsuleComponent и персонажа к вращению камеры
+	//FQuat InterpolatedQuat = FMath::QInterpTo(GetActorQuat(), NewCharacterQuat, GetWorld()->GetDeltaSeconds(), CameraInterpolationSpeed);
+	//CapsuleComponent->SetWorldRotation(InterpolatedQuat);
+	//SetActorRotation(InterpolatedQuat);
+
+	////// Обнуляем вращение CameraSpringArm
+	//CameraSpringArm->SetWorldRotation(FRotator(CameraQuat.Rotator().Pitch, NewCharacterQuat.Rotator().Yaw, CameraQuat.Rotator().Roll));
 }
 
 void AGravityCharacterPawn::MoveForward(const float Value)
@@ -475,6 +691,14 @@ void AGravityCharacterPawn::MoveForward(const float Value)
 				break;
 		}
 	}
+	else
+	{
+		/*CameraSpringArm->bInheritPitch = true;
+		CameraSpringArm->bInheritRoll = true;
+		CameraSpringArm->bInheritYaw = true;*/
+
+		bAlignToCamera = false;
+	}
 }
 
 void AGravityCharacterPawn::MoveRight(const float Value)
@@ -484,7 +708,7 @@ void AGravityCharacterPawn::MoveRight(const float Value)
 		switch (CurrentGravityType)
 		{
 		case EGravityType::OnStation:
-			MoveRightOnStation(Value);
+			//MoveRightOnStation(Value);
 			break;
 		case EGravityType::OnPlanet:
 			MoveRightOnPlanet(Value);
@@ -501,18 +725,58 @@ void AGravityCharacterPawn::MoveRight(const float Value)
 
 void AGravityCharacterPawn::MoveForwardOnStation(const float Value)
 {
-	//AlignCharacterToCameraOnStation();
+	/// drop camera arm inherit
+
+	// rotate to the target direction
+
+	switch (CurrentGravityState)
+	{
+	case EGravityState::LowG:
+		break;
+	case EGravityState::Attracting:
+		break;
+	case EGravityState::Jumping:
+		break;
+	case EGravityState::Falling:
+		break;
+	case EGravityState::Attracted:
+		break;
+	default:
+		break;
+	}
+
+	//FRotator SpringRot = CameraSpringArm->GetRelativeRotation();
+
+	/*CameraSpringArm->bInheritPitch = false;		
+	CameraSpringArm->bInheritRoll = false;		
+	CameraSpringArm->bInheritYaw = false;	*/	
+	//CameraSpringArm->SetRelativeRotation(SpringRot);
+
+
+
+
+	if (Value != 0.f && !bAlignToCamera)
+	{
+		bAlignToCamera = true;
+	}
+
+
+
+	AlignCharacterToCameraOnStation();
+
 	FVector ArrowForwardVector = ArrowComponent->GetForwardVector();
+	//CapsuleComponent->AddForce(GetActorForwardVector() * (Value * CharacterMovementScale * 100), "None", true);
 	CapsuleComponent->AddForce(ArrowForwardVector * (Value * CharacterMovementScale * 100), "None", true);
+	// 
 	//CapsuleComponent->SetPhysicsLinearVelocity(ArrowForwardVector * (Value * CharacterMovementScale * 10));
 }
 void AGravityCharacterPawn::MoveRightOnStation(const float Value)
 {
-	//AlignCharacterToCameraOnStation();
+	AlignCharacterToCameraOnStation();
 	FVector ArrowRightVector = ArrowComponent->GetRightVector();
 	//FVector ArrowRightVector = ArrowComponent->GetRelativeRotation().Vector().RightVector;
 
-	CapsuleComponent->AddForce(ArrowRightVector * (Value * CharacterMovementScale * 100), "None", true);
+	CapsuleComponent->AddForce(GetActorRightVector() * (Value * CharacterMovementScale * 100), "None", true);
 	//CapsuleComponent->SetPhysicsLinearVelocity(ArrowRightVector * (Value * CharacterMovementScale * 10));
 
 }
@@ -624,8 +888,9 @@ void AGravityCharacterPawn::RotateYaw(const float Value)
 	if (Value != 0)
 	{
 		FRotator RotationToAdd(0.0f, 0.0f, 0.0f);
-
-		switch (CurrentGravityType)
+		RotationToAdd.Yaw = Value * CharacterRotationScale;
+		AddActorLocalRotation(RotationToAdd);
+		/*switch (CurrentGravityType)
 		{
 		case EGravityType::ZeroG:
 			RotationToAdd.Yaw = Value * CharacterRotationScale;
@@ -644,7 +909,7 @@ void AGravityCharacterPawn::RotateYaw(const float Value)
 			break;
 		default:
 			break;
-		}
+		}*/
 		
 		
 	}

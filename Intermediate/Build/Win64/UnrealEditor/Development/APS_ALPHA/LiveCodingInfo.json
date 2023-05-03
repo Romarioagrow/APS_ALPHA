@@ -4,7 +4,6 @@
 		"Module.APS_ALPHA.cpp.obj": [
 			"Aircraft.gen.cpp.obj",
 			"AnimationState.gen.cpp.obj",
-			"APS_ALPHA.init.gen.cpp.obj",
 			"APS_ALPHAGameModeBase.gen.cpp.obj",
 			"Asteroid.gen.cpp.obj",
 			"AstonomicalBody.gen.cpp.obj",
@@ -28,7 +27,6 @@
 			"GravityActor.gen.cpp.obj",
 			"GravityActorInterface.gen.cpp.obj",
 			"GravityCharacter.gen.cpp.obj",
-			"GravityCharacterPawn.gen.cpp.obj",
 			"GravityGameModeBase.gen.cpp.obj",
 			"GravityObject.gen.cpp.obj",
 			"GravityObjectInterface.gen.cpp.obj",
@@ -114,6 +112,8 @@
 			"TechObject.cpp.obj",
 			"VehicleControlling.cpp.obj",
 			"WorldActor.cpp.obj",
+			"APS_ALPHA.init.gen.cpp.obj",
+			"GravityCharacterPawn.gen.cpp.obj",
 			"GravityCharacterPawn.cpp.obj"
 		]
 	}
