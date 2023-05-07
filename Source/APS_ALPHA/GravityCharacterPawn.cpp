@@ -470,10 +470,6 @@ void AGravityCharacterPawn::MoveForward(const float Value)
 				break;
 		}
 	}
-	else
-	{
-		bAlignToCamera = false;
-	}
 }
 
 void AGravityCharacterPawn::MoveRight(const float Value)
@@ -483,7 +479,7 @@ void AGravityCharacterPawn::MoveRight(const float Value)
 		switch (CurrentGravityType)
 		{
 		case EGravityType::OnStation:
-			//MoveRightOnStation(Value);
+			MoveRightOnStation(Value);
 			break;
 		case EGravityType::OnPlanet:
 			MoveRightOnPlanet(Value);
@@ -516,11 +512,6 @@ void AGravityCharacterPawn::MoveForwardOnStation(const float Value)
 		break;
 	}*/
 
-	if (Value != 0.f && !bAlignToCamera)
-	{
-		bAlignToCamera = true;
-	}
-
 	AlignCharacterToCameraOnStation();
 
 	// Add movement force to capsule 
@@ -532,7 +523,7 @@ void AGravityCharacterPawn::MoveRightOnStation(const float Value)
 	AlignCharacterToCameraOnStation();
 
 	FVector ArrowRightVector = ArrowComponent->GetRightVector();
-	CapsuleComponent->AddForce(GetActorRightVector() * (Value * CharacterMovementScale * 100), "None", true);
+	CapsuleComponent->AddForce(ArrowRightVector * (Value * CharacterMovementScale * 100), "None", true);
 }
 
 
