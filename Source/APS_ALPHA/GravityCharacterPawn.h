@@ -121,6 +121,8 @@ protected:
 
 	void UpdateGravity() override;
 
+	void UpdateGravityPhysicParams();
+
 protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gravity")
 		EGravityType CurrentGravityType {

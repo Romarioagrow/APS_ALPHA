@@ -1,5 +1,6 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
+#include "GravityParamStruct.h"
 #include "GravityCharacterPawn.h"
 #include "Spaceship.h"
 #include "SpaceStation.h"
@@ -68,9 +69,15 @@ void AGravityCharacterPawn::Tick(const float DeltaTime)
 	ForwardSpeed = FVector::DotProduct(CurrentVelocity, GetActorForwardVector());
 	RightSpeed = FVector::DotProduct(CurrentVelocity, GetActorRightVector());
 	UpSpeed = FVector::DotProduct(CurrentVelocity, GetActorUpVector());
+
+	float LinearDamping = CapsuleComponent->GetLinearDamping();
+	float AngularDamping = CapsuleComponent->GetAngularDamping();
+
 	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Orange, FString::Printf(TEXT("ForwardSpeed: %f"), ForwardSpeed));
 	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Orange, FString::Printf(TEXT("RightSpeed: %f"), RightSpeed));
 	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Orange, FString::Printf(TEXT("UpSpeed: %f"), UpSpeed));
+	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Purple, FString::Printf(TEXT("LinearDamping: %f"), LinearDamping));
+	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Purple, FString::Printf(TEXT("AngularDamping: %f"), AngularDamping));
 }
 
 // Called to bind functionality to input
@@ -112,6 +119,42 @@ void AGravityCharacterPawn::UpdateGravity()
 	}
 }
 
+void AGravityCharacterPawn::UpdateGravityPhysicParams()
+{
+	FGravityParamStruct GravityParams;
+	float AngularDamping, LinearDamping;
+	
+	switch (CurrentGravityType)
+	{
+	case EGravityType::ZeroG:
+		AngularDamping = GravityParams.AngularDampingZeroG;
+		LinearDamping = GravityParams.LinearDampingZeroG;
+		break;
+	case EGravityType::OnStation:
+		if (CurrentGravityState == EGravityState::LowG)
+		{
+			AngularDamping = GravityParams.AngularDampingLowG;
+			LinearDamping = GravityParams.LinearDampingLowG;
+		}
+		else
+		{
+			AngularDamping = GravityParams.AngularDampingStation;
+			LinearDamping = GravityParams.LinearDampingStation;
+		}
+		break;
+	case EGravityType::OnPlanet:
+		AngularDamping = GravityParams.AngularDampingPlanet;
+		LinearDamping = GravityParams.LinearDampingPlanet;
+		break;
+	case EGravityType::OnShip:
+		AngularDamping = GravityParams.AngularDampingPlanet;
+		LinearDamping = GravityParams.LinearDampingPlanet;
+		break;
+	}
+
+	CapsuleComponent->SetAngularDamping(AngularDamping);
+	CapsuleComponent->SetLinearDamping(LinearDamping);
+}
 
 /**
  * @brief Overlaps
@@ -174,6 +217,7 @@ void AGravityCharacterPawn::UpdateGravityType()
 	{
 		GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Red, FString::Printf(TEXT("FirstGravityActor 0")));
 		CurrentGravityType = EGravityType::ZeroG;
+		UpdateGravityPhysicParams();
 	}
 }
 
@@ -195,7 +239,7 @@ void AGravityCharacterPawn::SwitchGravityType(AActor* GravitySourceActor)
 	}
 
 	// switch gravity param
-
+	UpdateGravityPhysicParams();
 }
 
 void AGravityCharacterPawn::SwitchGravityToZeroG(AActor* OtherActor)
@@ -296,7 +340,8 @@ void AGravityCharacterPawn::UpdateGravityState()
 		if (bHit)
 		{
 			CurrentGravityState = EGravityState::Attracting;
-			//// Если что-то было задето, обработайте результат
+			UpdateGravityPhysicParams();
+			// Если что-то было задето, обработайте результат
 			//AActor* HitActor = HitResult.GetActor();
 			//if (HitActor)
 			//{
@@ -306,6 +351,7 @@ void AGravityCharacterPawn::UpdateGravityState()
 		else
 		{
 			CurrentGravityState = EGravityState::LowG;
+			UpdateGravityPhysicParams();
 		}
 	}
 }
@@ -374,7 +420,7 @@ void AGravityCharacterPawn::UpdatePlanetGravity()
 	const FVector CapsuleForwardVector = CapsuleComponent->GetForwardVector();
 	const FMatrix RotationMatrix = FRotationMatrix::MakeFromZX(LookAtRotation.Vector(), CapsuleForwardVector);
 	const FRotator ActorRotation = GetActorRotation();
-	const FRotator ResultRotation = FMath::RInterpTo(ActorRotation, RotationMatrix.Rotator(), GetWorld()->GetDeltaSeconds(), 8.f);
+	const FRotator ResultRotation = FMath::RInterpTo(ActorRotation, RotationMatrix.Rotator(), GetWorld()->GetDeltaSeconds(), 5.f);
 	
 	SetActorRotation(ResultRotation);
 }
@@ -388,7 +434,7 @@ void AGravityCharacterPawn::UpdateShipGravity()
 	const FMatrix RotationMatrix = FRotationMatrix::MakeFromZX(GravityRotZ, GravityRotX);
 	const FRotator Rotation = RotationMatrix.Rotator();
 	const FRotator ActorRotation = GetActorRotation();
-	const FRotator Result = FMath::RInterpTo(ActorRotation, Rotation, GetWorld()->GetDeltaSeconds(), 2.f);
+	const FRotator Result = FMath::RInterpTo(ActorRotation, Rotation, GetWorld()->GetDeltaSeconds(), 5.f);
 
 	SetActorRotation(Result);
 }
@@ -434,10 +480,10 @@ void AGravityCharacterPawn::AlignCharacterToCameraOnStation()
 	// Получаем текущий кватернион вращения капсулы
 	const FQuat CapsuleQuat = CapsuleComponent->GetComponentQuat();
 	// Получаем текущий кватернион вращения SpringArm
-	const FQuat SpringArmQuat = ArrowComponent->GetComponentQuat();
+	const FQuat ArrowForwardVector = ArrowComponent->GetComponentQuat();
 
 	// Интерполируем вращение капсулы к целевому вращению SpringArm
-	FQuat InterpolatedQuat = FMath::QInterpTo(CapsuleQuat, SpringArmQuat, GetWorld()->GetDeltaSeconds(), 5.0f);
+	FQuat InterpolatedQuat = FMath::QInterpTo(CapsuleQuat, ArrowForwardVector, GetWorld()->GetDeltaSeconds(), 5.0f);
 	// Вычисляем разницу между исходным и интерполированным вращением
 	FQuat DifferenceQuat = CapsuleQuat.Inverse() * InterpolatedQuat;
 

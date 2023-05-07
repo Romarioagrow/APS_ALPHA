@@ -227,6 +227,12 @@
     <ClInclude Include="..\..\Source\APS_ALPHA\GravityObjectInterface.h">
       <Filter>Source\APS_ALPHA</Filter>
     </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\GravityParamStruct.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\GravityParamStruct.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
     <ClCompile Include="..\..\Source\APS_ALPHA\GravityPawn.cpp">
       <Filter>Source\APS_ALPHA</Filter>
     </ClCompile>
