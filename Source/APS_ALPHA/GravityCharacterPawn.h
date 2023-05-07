@@ -172,6 +172,8 @@ protected:
 private:
 	void UpdateZeroGGravity();
 
+	void UpdateStationRotation();
+
 	void UpdateStationGravity();
 
 	void UpdatePlanetGravity();
