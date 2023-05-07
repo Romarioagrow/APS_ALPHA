@@ -163,12 +163,6 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 		UArrowComponent* ArrowComponent;
 
-	UPROPERTY()
-		bool bIsMovingForward;
-
-	UPROPERTY()
-		bool bAlignToCamera{ false };
-
 private:
 	void UpdateZeroGGravity();
 
