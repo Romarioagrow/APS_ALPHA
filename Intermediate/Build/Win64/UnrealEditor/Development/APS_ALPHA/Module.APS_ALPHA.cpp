@@ -28,6 +28,7 @@
 #include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Intermediate/Build/Win64/UnrealEditor/Inc/APS_ALPHA/UHT/GravityGameModeBase.gen.cpp"
 #include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Intermediate/Build/Win64/UnrealEditor/Inc/APS_ALPHA/UHT/GravityObject.gen.cpp"
 #include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Intermediate/Build/Win64/UnrealEditor/Inc/APS_ALPHA/UHT/GravityObjectInterface.gen.cpp"
+#include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Intermediate/Build/Win64/UnrealEditor/Inc/APS_ALPHA/UHT/GravityParamStruct.gen.cpp"
 #include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Intermediate/Build/Win64/UnrealEditor/Inc/APS_ALPHA/UHT/GravityPawn.gen.cpp"
 #include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Intermediate/Build/Win64/UnrealEditor/Inc/APS_ALPHA/UHT/GravityPlayerController.gen.cpp"
 #include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Intermediate/Build/Win64/UnrealEditor/Inc/APS_ALPHA/UHT/GravitySource.gen.cpp"

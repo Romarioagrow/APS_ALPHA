@@ -1,11 +1,12 @@
 // Fill out your copyright notice in the Description page of Project Settings.
+#include "GravityCharacterPawn.h"
 
+#include "GravityMovementStruct.h"
 #include "GravityParamStruct.h"
 #include "GravityCharacterPawn.h"
 #include "Spaceship.h"
 #include "SpaceStation.h"
 #include "OrbitalBody.h"
-#include "GravityCharacterPawn.h"
 #include <Kismet/GameplayStatics.h>
 #include <Kismet/KismetMathLibrary.h>
 
@@ -562,14 +563,14 @@ void AGravityCharacterPawn::MoveForwardOnStation(const float Value)
 
 	// Add movement force to capsule 
 	FVector ArrowForwardVector = ArrowComponent->GetForwardVector();
-	CapsuleComponent->AddForce(ArrowForwardVector * (Value * CharacterMovementScale * 100), "None", true);
+	CapsuleComponent->AddForce(ArrowForwardVector * (Value * CharacterMovementForce * 100), "None", true);
 }
 void AGravityCharacterPawn::MoveRightOnStation(const float Value)
 {
 	AlignCharacterToCameraOnStation();
 
 	FVector ArrowRightVector = ArrowComponent->GetRightVector();
-	CapsuleComponent->AddForce(ArrowRightVector * (Value * CharacterMovementScale * 100), "None", true);
+	CapsuleComponent->AddForce(ArrowRightVector * (Value * CharacterMovementForce * 100), "None", true);
 }
 
 
@@ -586,7 +587,7 @@ void AGravityCharacterPawn::MoveForwardOnShip(const float Value)
 void AGravityCharacterPawn::MoveForwardZeroG(const float Value)
 {
 	AlignCharacterToCameraZeroG();
-	CapsuleComponent->AddImpulse(GetActorForwardVector() * (Value * CharacterMovementScale), "None", true);
+	CapsuleComponent->AddImpulse(GetActorForwardVector() * (Value * CharacterMovementForce), "None", true);
 }
 
 
@@ -601,7 +602,7 @@ void AGravityCharacterPawn::MoveRightOnShip(const float Value)
 void AGravityCharacterPawn::MoveRightZeroG(const float Value)
 {
 	AlignCharacterToCameraZeroG();
-	CapsuleComponent->AddImpulse(GetActorRightVector() * (Value * CharacterMovementScale), "None", true);
+	CapsuleComponent->AddImpulse(GetActorRightVector() * (Value * CharacterMovementForce), "None", true);
 }
 
 void AGravityCharacterPawn::MoveUp(const float Value)
@@ -609,7 +610,7 @@ void AGravityCharacterPawn::MoveUp(const float Value)
 	if (Value != 0)
 	{
 		// add impulse
-		CapsuleComponent->AddImpulse(GetActorUpVector() * (Value * CharacterMovementScale), "None", true);
+		CapsuleComponent->AddImpulse(GetActorUpVector() * (Value * CharacterMovementForce), "None", true);
 	}
 }
 

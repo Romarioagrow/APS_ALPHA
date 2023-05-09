@@ -103,7 +103,8 @@ private:
 	float CameraYawScale{ 1.0f };	
 	float CameraPitchScale{ 1.0f };	
 	float CharacterRotationScale{ 1.25f };	
-	float CharacterMovementScale{ 25.f };	
+	float CharacterMovementForce{ 25.f };	
+	float CharacterJumpForce{ 25.f };	
 
 
 protected:
