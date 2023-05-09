@@ -9,7 +9,7 @@ struct FGravityParamStruct
     GENERATED_BODY()
 
     FGravityParamStruct()
-        : LinearDampingZeroG(0.0f)
+        : LinearDampingZeroG(0.05f)
         , AngularDampingZeroG(100.0f)
         , LinearDampingStation(1.0f)
         , AngularDampingStation(1000.0f)
@@ -50,5 +50,20 @@ struct FGravityParamStruct
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Angular Damping - LowG")
         float AngularDampingLowG;
+
+    /*UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Angular Damping - LowG")
+        float MovementsForceLowG;
+    
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Angular Damping - LowG")
+        float MovementsForceZeroG;
+    
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Angular Damping - LowG")
+        float MovementsForceStation;
+    
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Angular Damping - LowG")
+        float MovementsForcePlanet;
+    
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Angular Damping - LowG")
+        float MovementsForceShip;*/
 };
 

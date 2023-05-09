@@ -215,6 +215,9 @@
     <ClInclude Include="..\..\Source\APS_ALPHA\GravityGameModeBase.h">
       <Filter>Source\APS_ALPHA</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\Source\APS_ALPHA\GravityMovementStruct.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
     <ClCompile Include="..\..\Source\APS_ALPHA\GravityObject.cpp">
       <Filter>Source\APS_ALPHA</Filter>
     </ClCompile>
