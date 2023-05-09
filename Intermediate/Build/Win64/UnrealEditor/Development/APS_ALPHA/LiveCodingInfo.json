@@ -88,6 +88,7 @@
 			"GravityGameModeBase.cpp.obj",
 			"GravityObject.cpp.obj",
 			"GravityObjectInterface.cpp.obj",
+			"GravityParamStruct.cpp.obj",
 			"GravityPawn.cpp.obj",
 			"GravityPlayerController.cpp.obj",
 			"GravitySource.cpp.obj",
@@ -116,8 +117,7 @@
 			"WorldActor.cpp.obj",
 			"APS_ALPHA.init.gen.cpp.obj",
 			"GravityMovementStruct.gen.cpp.obj",
-			"GravityCharacterPawn.cpp.obj",
-			"GravityParamStruct.cpp.obj"
+			"GravityCharacterPawn.cpp.obj"
 		]
 	}
 }

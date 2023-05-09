@@ -10,14 +10,16 @@ struct FGravityMovementStruct
 
 
     FGravityMovementStruct()
-        : MovementsForceSpeedZeroG(0.05f)
-        , MovementsForceSpeedStation(100.0f)
-        , MovementsForceSpeedPlanet(100.0f)
-        , MovementsForceSpeedShip(100.0f)
-        , JumpForceSpeedZeroG(100.0f)
-        , JumpForceSpeedStation(100.0f)
-        , JumpForceSpeedPlanet(100.0f)
-        , JumpForceSpeedShip(100.0f)
+        : MovementsForceSpeedZeroG(25.f)
+        , MovementsForceSpeedStation(2000.f)
+        , MovementsForceSpeedPlanet(100.f)
+        , MovementsForceSpeedShip(100.f)
+        , MovementsForceSpeedLowG(25.f)
+        , JumpForceSpeedZeroG(25.f)
+        , JumpForceSpeedStation(30.f)
+        , JumpForceSpeedPlanet(100.f)
+        , JumpForceSpeedShip(100.f)
+        , JumpForceSpeedLowG(25.f)
     {}
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Movements Force Speed - ZeroG")
@@ -32,6 +34,9 @@ struct FGravityMovementStruct
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Movements Force Speed - Ship")
         float MovementsForceSpeedShip;
     
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Movements Force Speed - LowG")
+        float MovementsForceSpeedLowG;
+    
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Jump Force Speed - ZeroG")
         float JumpForceSpeedZeroG;
     
@@ -43,6 +48,9 @@ struct FGravityMovementStruct
     
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Jump Force Speed - Ship")
         float JumpForceSpeedShip;
+    
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Jump Force Speed - LowG")
+        float JumpForceSpeedLowG;
 
    
 };
