@@ -77,8 +77,10 @@ void AGravityCharacterPawn::Tick(const float DeltaTime)
 	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Orange, FString::Printf(TEXT("ForwardSpeed: %f"), ForwardSpeed));
 	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Orange, FString::Printf(TEXT("RightSpeed: %f"), RightSpeed));
 	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Orange, FString::Printf(TEXT("UpSpeed: %f"), UpSpeed));
-	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Purple, FString::Printf(TEXT("LinearDamping: %f"), LinearDamping));
 	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Purple, FString::Printf(TEXT("AngularDamping: %f"), AngularDamping));
+	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Purple, FString::Printf(TEXT("LinearDamping: %f"), LinearDamping));
+	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Yellow, FString::Printf(TEXT("CharacterJumpForce: %f"), CharacterJumpForce));
+	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Yellow, FString::Printf(TEXT("CharacterMovementForce: %f"), CharacterMovementForce));
 }
 
 // Called to bind functionality to input
@@ -123,6 +125,7 @@ void AGravityCharacterPawn::UpdateGravity()
 void AGravityCharacterPawn::UpdateGravityPhysicParams()
 {
 	FGravityParamStruct GravityParams;
+	FGravityMovementStruct GravityMovements;
 	float AngularDamping, LinearDamping;
 	
 	switch (CurrentGravityType)
@@ -130,26 +133,39 @@ void AGravityCharacterPawn::UpdateGravityPhysicParams()
 	case EGravityType::ZeroG:
 		AngularDamping = GravityParams.AngularDampingZeroG;
 		LinearDamping = GravityParams.LinearDampingZeroG;
+		CharacterMovementForce = GravityMovements.MovementsForceSpeedZeroG;
+		CharacterJumpForce = GravityMovements.JumpForceSpeedZeroG;
 		break;
+
 	case EGravityType::OnStation:
 		if (CurrentGravityState == EGravityState::LowG)
 		{
 			AngularDamping = GravityParams.AngularDampingLowG;
 			LinearDamping = GravityParams.LinearDampingLowG;
+			CharacterMovementForce = GravityMovements.MovementsForceSpeedLowG;
+			CharacterJumpForce = GravityMovements.JumpForceSpeedLowG;
 		}
 		else
 		{
 			AngularDamping = GravityParams.AngularDampingStation;
 			LinearDamping = GravityParams.LinearDampingStation;
+			CharacterMovementForce = GravityMovements.MovementsForceSpeedStation;
+			CharacterJumpForce = GravityMovements.JumpForceSpeedStation;
 		}
 		break;
+
 	case EGravityType::OnPlanet:
 		AngularDamping = GravityParams.AngularDampingPlanet;
 		LinearDamping = GravityParams.LinearDampingPlanet;
+		CharacterMovementForce = GravityMovements.MovementsForceSpeedPlanet;
+		CharacterJumpForce = GravityMovements.JumpForceSpeedPlanet;
 		break;
+
 	case EGravityType::OnShip:
-		AngularDamping = GravityParams.AngularDampingPlanet;
-		LinearDamping = GravityParams.LinearDampingPlanet;
+		AngularDamping = GravityParams.AngularDampingShip;
+		LinearDamping = GravityParams.LinearDampingShip;
+		CharacterMovementForce = GravityMovements.MovementsForceSpeedShip;
+		CharacterJumpForce = GravityMovements.JumpForceSpeedShip;
 		break;
 	}
 
@@ -563,14 +579,14 @@ void AGravityCharacterPawn::MoveForwardOnStation(const float Value)
 
 	// Add movement force to capsule 
 	FVector ArrowForwardVector = ArrowComponent->GetForwardVector();
-	CapsuleComponent->AddForce(ArrowForwardVector * (Value * CharacterMovementForce * 100), "None", true);
+	CapsuleComponent->AddForce(ArrowForwardVector * (Value * CharacterMovementForce), "None", true);
 }
 void AGravityCharacterPawn::MoveRightOnStation(const float Value)
 {
 	AlignCharacterToCameraOnStation();
 
 	FVector ArrowRightVector = ArrowComponent->GetRightVector();
-	CapsuleComponent->AddForce(ArrowRightVector * (Value * CharacterMovementForce * 100), "None", true);
+	CapsuleComponent->AddForce(ArrowRightVector * (Value * CharacterMovementForce), "None", true);
 }
 
 
@@ -610,7 +626,7 @@ void AGravityCharacterPawn::MoveUp(const float Value)
 	if (Value != 0)
 	{
 		// add impulse
-		CapsuleComponent->AddImpulse(GetActorUpVector() * (Value * CharacterMovementForce), "None", true);
+		CapsuleComponent->AddImpulse(GetActorUpVector() * (Value * CharacterJumpForce), "None", true);
 	}
 }
 
