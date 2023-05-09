@@ -302,8 +302,10 @@ void AGravityCharacterPawn::UpdateAnimationState()
 		GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("AnimHitResult.Distance: %f"), AnimHitResult.Distance));
 
 
+		float JumpDeadZone = 3.5f;
+
 		//c Определение состояния анимации
-		if (bIsGrounded && AnimHitResult.Distance < CapsuleComponent->GetScaledCapsuleHalfHeight() + 2.5f)
+		if (bIsGrounded && AnimHitResult.Distance < CapsuleComponent->GetScaledCapsuleHalfHeight() + JumpDeadZone)
 		{
 			// Персонаж стоит на поверхности
 			CurrentAnimationState = EAnimationState::OnGround;
