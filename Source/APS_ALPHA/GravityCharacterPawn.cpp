@@ -532,7 +532,11 @@ void AGravityCharacterPawn::MoveForward(const float Value)
 		switch (CurrentGravityType) 
 		{
 			case EGravityType::OnStation:
-				MoveForwardOnStation(Value);
+
+				if (CurrentAnimationState == EAnimationState::OnGround || CurrentGravityState == EGravityState::LowG)
+				{
+					MoveForwardOnStation(Value);
+				}
 				break;
 			case EGravityType::OnPlanet:
 				MoveForwardOnPlanet(Value);
@@ -554,7 +558,10 @@ void AGravityCharacterPawn::MoveRight(const float Value)
 		switch (CurrentGravityType)
 		{
 		case EGravityType::OnStation:
-			MoveRightOnStation(Value);
+			if (CurrentAnimationState == EAnimationState::OnGround || CurrentGravityState == EGravityState::LowG)
+			{
+				MoveRightOnStation(Value);
+			}
 			break;
 		case EGravityType::OnPlanet:
 			MoveRightOnPlanet(Value);
@@ -637,8 +644,28 @@ void AGravityCharacterPawn::MoveUp(const float Value)
 {
 	if (Value != 0)
 	{
-		// add impulse
-		CapsuleComponent->AddImpulse(GetActorUpVector() * (Value * CharacterJumpForce), "None", true);
+		switch (CurrentGravityType)
+		{
+		case EGravityType::OnStation:
+
+			if (CurrentAnimationState == EAnimationState::OnGround || CurrentGravityState == EGravityState::LowG)
+			{
+				CapsuleComponent->AddImpulse(GetActorUpVector() * (Value * CharacterJumpForce), "None", true);
+
+			}
+			break;
+		case EGravityType::OnPlanet:
+			
+			break;
+		case EGravityType::OnShip:
+			
+			break;
+		case EGravityType::ZeroG:
+
+			CapsuleComponent->AddImpulse(GetActorUpVector() * (Value * CharacterJumpForce), "None", true);
+
+			break;
+		}
 	}
 }
 
