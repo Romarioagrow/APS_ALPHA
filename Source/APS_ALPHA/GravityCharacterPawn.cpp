@@ -332,7 +332,7 @@ void AGravityCharacterPawn::UpdateGravityState()
 
 	if (World)
 	{
-		const float GravityDistanceThreshold = 5000.0f;
+		const float GravityDistanceThreshold = 15000.0f; // TODO: Distance to gravity
 
 		// Начальная позиция трассировки
 		FVector StartLocation = GetActorLocation();
@@ -358,6 +358,16 @@ void AGravityCharacterPawn::UpdateGravityState()
 		{
 			CurrentGravityState = EGravityState::Attracting;
 			UpdateGravityPhysicParams();
+
+			// Получаем расстояние между начальной точкой и точкой столкновения
+			float DistanceToGround = (HitResult.ImpactPoint - StartLocation).Size();
+
+			// Вычитаем CapsuleHalfHeight из расстояния до земли
+			HeightAboveGround = DistanceToGround - CapsuleComponent->GetScaledCapsuleHalfHeight();
+
+			GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Yellow, FString::Printf(TEXT("HeightAboveGround: %f"), HeightAboveGround));
+
+
 			// Если что-то было задето, обработайте результат
 			//AActor* HitActor = HitResult.GetActor();
 			//if (HitActor)
