@@ -19,7 +19,7 @@ struct FGravityMovementStruct
         , JumpForceSpeedStation(100.f)
         , JumpForceSpeedPlanet(100.f)
         , JumpForceSpeedShip(100.f)
-        , JumpForceSpeedLowG(10.f)
+        , JumpForceSpeedLowG(50.f)
     {}
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Movements Force Speed - ZeroG")

@@ -532,7 +532,7 @@ void AGravityCharacterPawn::MoveForward(const float Value)
 		switch (CurrentGravityType) 
 		{
 			case EGravityType::OnStation:
-
+					
 				if (CurrentAnimationState == EAnimationState::OnGround || CurrentGravityState == EGravityState::LowG)
 				{
 					MoveForwardOnStation(Value);
@@ -597,17 +597,23 @@ void AGravityCharacterPawn::MoveForwardOnStation(const float Value)
 	AlignCharacterToCameraOnStation();
 
 	// Add movement force to capsule 
-	FVector ArrowForwardVector = ArrowComponent->GetForwardVector();
-	CapsuleComponent->AddForce(ArrowForwardVector * (Value * CharacterMovementForce), "None", true);
+	if (CurrentAnimationState == EAnimationState::OnGround || CurrentGravityState == EGravityState::LowG)
+	{
+		FVector ArrowForwardVector = ArrowComponent->GetForwardVector();
+		CapsuleComponent->AddForce(ArrowForwardVector * (Value * CharacterMovementForce), "None", true);
+	}
 }
 void AGravityCharacterPawn::MoveRightOnStation(const float Value)
 {
 	AlignCharacterToCameraOnStation();
 
-	FVector ArrowRightVector = ArrowComponent->GetRightVector();
-	CapsuleComponent->AddForce(ArrowRightVector * (Value * CharacterMovementForce), "None", true);
-}
+	if (CurrentAnimationState == EAnimationState::OnGround || CurrentGravityState == EGravityState::LowG)
+	{
+		FVector ArrowRightVector = ArrowComponent->GetRightVector();
+		CapsuleComponent->AddForce(ArrowRightVector * (Value * CharacterMovementForce), "None", true);
+	}
 
+}
 
 void AGravityCharacterPawn::MoveForwardOnPlanet(const float Value)
 {
@@ -644,11 +650,14 @@ void AGravityCharacterPawn::MoveUp(const float Value)
 {
 	if (Value != 0)
 	{
+		
+		//bHasJumped = true;
+		
 		switch (CurrentGravityType)
 		{
 		case EGravityType::OnStation:
 
-			if (CurrentAnimationState == EAnimationState::OnGround || CurrentGravityState == EGravityState::LowG)
+			if (CurrentAnimationState == EAnimationState::OnGround || CurrentAnimationState == EAnimationState::Jumping || CurrentGravityState == EGravityState::LowG)
 			{
 				CapsuleComponent->AddImpulse(GetActorUpVector() * (Value * CharacterJumpForce), "None", true);
 
@@ -667,6 +676,10 @@ void AGravityCharacterPawn::MoveUp(const float Value)
 			break;
 		}
 	}
+	/*else if (Value == 0)
+	{
+		bHasJumped = false;
+	}*/
 }
 
 void AGravityCharacterPawn::RotatePitch(const float Value)
