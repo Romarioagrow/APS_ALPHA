@@ -12,7 +12,7 @@ struct FGravityParamStruct
         : LinearDampingZeroG(0.05f)
         , AngularDampingZeroG(100.0f)
         , LinearDampingStation(1.0f)
-        , AngularDampingStation(1000.0f)
+        , AngularDampingStation(5000.0f)
         , LinearDampingPlanet(1.0f)
         , AngularDampingPlanet(2000.0f)
         , LinearDampingShip(2.0f)
