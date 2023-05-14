@@ -735,8 +735,18 @@ void AGravityCharacterPawn::MoveUp(const float Value)
 			}
 			break;
 		case EGravityType::OnPlanet:
-			
+		{
+
+			//CapsuleComponent->AddImpulse(GetActorUpVector() * (Value * CharacterJumpForce), "None", true);
+			// Получаем вектор гравитации (от персонажа к центру планеты)
+			FVector JumpGravityDirection = (GravityTargetActor->GetActorLocation() - GetActorLocation()).GetSafeNormal();
+
+			// Добавляем силу в направлении, противоположном гравитации
+			CapsuleComponent->AddForce(-JumpGravityDirection * CharacterJumpForce, "none", true);
+
 			break;
+		}
+
 		case EGravityType::OnShip:
 			
 			break;
