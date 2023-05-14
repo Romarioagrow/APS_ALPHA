@@ -12,7 +12,7 @@ struct FGravityMovementStruct
     FGravityMovementStruct()
         : MovementsForceSpeedZeroG(25.f)
         , MovementsForceSpeedStation(1500.f)
-        , MovementsForceSpeedPlanet(100.f)
+        , MovementsForceSpeedPlanet(1000.f)
         , MovementsForceSpeedShip(100.f)
         , MovementsForceSpeedLowG(250)
         , JumpForceSpeedZeroG(25.f)
