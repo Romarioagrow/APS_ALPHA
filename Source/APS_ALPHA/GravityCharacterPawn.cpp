@@ -462,6 +462,11 @@ void AGravityCharacterPawn::UpdatePlanetGravity()
 
 
 	////
+	///
+	//UpdateGravityState();
+
+	///
+	UpdateAnimationState();
 
 	// Set SpringCameraArm Relative Roll always 0
 	FRotator CamRot = CameraSpringArm->GetRelativeRotation();
@@ -485,8 +490,34 @@ void AGravityCharacterPawn::UpdateShipGravity()
 	const FRotator Rotation = RotationMatrix.Rotator();
 	const FRotator ActorRotation = GetActorRotation();
 	const FRotator Result = FMath::RInterpTo(ActorRotation, Rotation, GetWorld()->GetDeltaSeconds(), 5.f);
-
 	SetActorRotation(Result);
+
+	///
+	UpdateGravityState();
+
+	///
+	UpdateAnimationState();
+
+
+	/// CHECK GRAVITY FORCE / EFFECT
+	if (CurrentGravityState != EGravityState::LowG)
+	{
+		// Добавление гравитационной силы к персонажу
+		const float GravityStrength = -980.0f; // Например, сила гравитации Земли
+		FVector GravityForce = GravityTargetActor->GetActorUpVector() * GravityStrength;
+		CapsuleComponent->AddForce(GravityForce, "none", true);
+	}
+
+	// Set SpringCameraArm Relative Roll always 0
+	FRotator CamRot = CameraSpringArm->GetRelativeRotation();
+	CameraSpringArm->SetRelativeRotation(FRotator(CamRot.Pitch, CamRot.Yaw, 0.0f));
+
+	// Получить текущее вращение CameraSpringArm
+	FRotator CameraSpringArmRotation = CameraSpringArm->GetRelativeRotation();
+
+	// Установить новое вращение Realtive Yaw для Arrow Component from CameraSpringArmRotation
+	FRotator NewArrowRotation(0.0f, CameraSpringArmRotation.Yaw, 0.0f);
+	ArrowComponent->SetRelativeRotation(NewArrowRotation);
 }
 
 /**
@@ -672,7 +703,8 @@ void AGravityCharacterPawn::MoveForwardOnPlanet(const float Value)
 
 void AGravityCharacterPawn::MoveForwardOnShip(const float Value)
 {
-
+	/////
+	MoveForwardOnStation(Value);
 }
 
 void AGravityCharacterPawn::MoveForwardZeroG(const float Value)
@@ -709,7 +741,8 @@ void AGravityCharacterPawn::MoveRightOnPlanet(const float Value)
 }
 void AGravityCharacterPawn::MoveRightOnShip(const float Value)
 {
-	
+	/////
+	MoveRightOnStation(Value);
 }
 void AGravityCharacterPawn::MoveRightZeroG(const float Value)
 {
@@ -728,11 +761,11 @@ void AGravityCharacterPawn::MoveUp(const float Value)
 		{
 		case EGravityType::OnStation:
 
-			if (CurrentAnimationState == EAnimationState::OnGround || CurrentAnimationState == EAnimationState::Jumping || CurrentGravityState == EGravityState::LowG)
-			{
+			//if (CurrentAnimationState == EAnimationState::OnGround || CurrentAnimationState == EAnimationState::Jumping || CurrentGravityState == EGravityState::LowG)
+			//{
 				CapsuleComponent->AddImpulse(GetActorUpVector() * (Value * CharacterJumpForce), "None", true);
 
-			}
+			//}
 			break;
 		case EGravityType::OnPlanet:
 		{
