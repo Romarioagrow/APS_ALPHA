@@ -455,10 +455,24 @@ void AGravityCharacterPawn::UpdatePlanetGravity()
 
 	// Добавление гравитационной силы к персонажу
 	const float GravityStrength = -980.0f; // Например, сила гравитации Земли
-	//FVector GravityForce = GravityTargetActor->GetActorUpVector() * GravityStrength;
 	GravityDirection = (GravityTargetActor->GetActorLocation() - GetActorLocation()).GetSafeNormal();
 	FVector GravityForce = GravityDirection * GravityStrength * -1;
 	CapsuleComponent->AddForce(GravityForce, "none", true);
+
+
+
+	////
+
+	// Set SpringCameraArm Relative Roll always 0
+	FRotator CamRot = CameraSpringArm->GetRelativeRotation();
+	CameraSpringArm->SetRelativeRotation(FRotator(CamRot.Pitch, CamRot.Yaw, 0.0f));
+
+	// Получить текущее вращение CameraSpringArm
+	FRotator CameraSpringArmRotation = CameraSpringArm->GetRelativeRotation();
+
+	// Установить новое вращение Realtive Yaw для Arrow Component from CameraSpringArmRotation
+	FRotator NewArrowRotation(0.0f, CameraSpringArmRotation.Yaw, 0.0f);
+	ArrowComponent->SetRelativeRotation(NewArrowRotation);
 }
 
 void AGravityCharacterPawn::UpdateShipGravity()
@@ -633,7 +647,27 @@ void AGravityCharacterPawn::MoveRightOnStation(const float Value)
 
 void AGravityCharacterPawn::MoveForwardOnPlanet(const float Value)
 {
+	// Получаем текущий кватернион вращения капсулы
+	const FQuat CapsuleQuat = CapsuleComponent->GetComponentQuat();
+	// Получаем текущий кватернион вращения SpringArm
+	const FQuat ArrowForwardVector = ArrowComponent->GetComponentQuat();
 
+	// Интерполируем вращение капсулы к целевому вращению SpringArm
+	FQuat InterpolatedQuat = FMath::QInterpTo(CapsuleQuat, ArrowForwardVector, GetWorld()->GetDeltaSeconds(), 5.0f);
+	// Вычисляем разницу между исходным и интерполированным вращением
+	FQuat DifferenceQuat = CapsuleQuat.Inverse() * InterpolatedQuat;
+
+	// Устанавливаем новое вращение для актора и капсулы
+	CapsuleComponent->SetWorldRotation(InterpolatedQuat);
+	SetActorRotation(InterpolatedQuat);
+
+	// Применяем обратную интерполяцию для SpringArm
+	FQuat NewSpringArmQuat = CameraSpringArm->GetComponentQuat() * DifferenceQuat.Inverse();
+	CameraSpringArm->SetWorldRotation(NewSpringArmQuat);
+
+
+	FVector ArrowForwardVectorV = ArrowComponent->GetForwardVector();
+	CapsuleComponent->AddForce(ArrowForwardVectorV * (Value * CharacterMovementForce), "None", true);
 }
 
 void AGravityCharacterPawn::MoveForwardOnShip(const float Value)
@@ -650,7 +684,28 @@ void AGravityCharacterPawn::MoveForwardZeroG(const float Value)
 
 void AGravityCharacterPawn::MoveRightOnPlanet(const float Value)
 {
-	
+	// Получаем текущий кватернион вращения капсулы
+	const FQuat CapsuleQuat = CapsuleComponent->GetComponentQuat();
+	// Получаем текущий кватернион вращения SpringArm
+	const FQuat ArrowForwardVector = ArrowComponent->GetComponentQuat();
+
+	// Интерполируем вращение капсулы к целевому вращению SpringArm
+	FQuat InterpolatedQuat = FMath::QInterpTo(CapsuleQuat, ArrowForwardVector, GetWorld()->GetDeltaSeconds(), 5.0f);
+	// Вычисляем разницу между исходным и интерполированным вращением
+	FQuat DifferenceQuat = CapsuleQuat.Inverse() * InterpolatedQuat;
+
+	// Устанавливаем новое вращение для актора и капсулы
+	CapsuleComponent->SetWorldRotation(InterpolatedQuat);
+	SetActorRotation(InterpolatedQuat);
+
+	// Применяем обратную интерполяцию для SpringArm
+	FQuat NewSpringArmQuat = CameraSpringArm->GetComponentQuat() * DifferenceQuat.Inverse();
+	CameraSpringArm->SetWorldRotation(NewSpringArmQuat);
+
+
+	FVector ArrowRightVector = ArrowComponent->GetRightVector();
+	CapsuleComponent->AddForce(ArrowRightVector * (Value * CharacterMovementForce), "None", true);
+
 }
 void AGravityCharacterPawn::MoveRightOnShip(const float Value)
 {
