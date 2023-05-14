@@ -443,6 +443,7 @@ void AGravityCharacterPawn::UpdatePlanetGravity()
 {
 	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Planet Gravity")));
 
+	// align rotation with planet
 	const FVector GravityTargetLocation = GravityTargetActor->GetActorLocation();
 	const FVector ActorLocation = GetActorLocation();
 	const FRotator LookAtRotation = UKismetMathLibrary::FindLookAtRotation(GravityTargetLocation, ActorLocation);
@@ -450,8 +451,14 @@ void AGravityCharacterPawn::UpdatePlanetGravity()
 	const FMatrix RotationMatrix = FRotationMatrix::MakeFromZX(LookAtRotation.Vector(), CapsuleForwardVector);
 	const FRotator ActorRotation = GetActorRotation();
 	const FRotator ResultRotation = FMath::RInterpTo(ActorRotation, RotationMatrix.Rotator(), GetWorld()->GetDeltaSeconds(), 5.f);
-	
 	SetActorRotation(ResultRotation);
+
+	// Добавление гравитационной силы к персонажу
+	const float GravityStrength = -980.0f; // Например, сила гравитации Земли
+	//FVector GravityForce = GravityTargetActor->GetActorUpVector() * GravityStrength;
+	GravityDirection = (GravityTargetActor->GetActorLocation() - GetActorLocation()).GetSafeNormal();
+	FVector GravityForce = GravityDirection * GravityStrength * -1;
+	CapsuleComponent->AddForce(GravityForce, "none", true);
 }
 
 void AGravityCharacterPawn::UpdateShipGravity()
@@ -533,10 +540,12 @@ void AGravityCharacterPawn::MoveForward(const float Value)
 		{
 			case EGravityType::OnStation:
 					
-				if (CurrentAnimationState == EAnimationState::OnGround || CurrentGravityState == EGravityState::LowG)
+				MoveForwardOnStation(Value);
+
+				/*if (CurrentAnimationState == EAnimationState::OnGround || CurrentGravityState == EGravityState::LowG)
 				{
 					MoveForwardOnStation(Value);
-				}
+				}*/
 				break;
 			case EGravityType::OnPlanet:
 				MoveForwardOnPlanet(Value);
@@ -558,10 +567,11 @@ void AGravityCharacterPawn::MoveRight(const float Value)
 		switch (CurrentGravityType)
 		{
 		case EGravityType::OnStation:
-			if (CurrentAnimationState == EAnimationState::OnGround || CurrentGravityState == EGravityState::LowG)
+			MoveRightOnStation(Value);
+			/*if (CurrentAnimationState == EAnimationState::OnGround || CurrentGravityState == EGravityState::LowG)
 			{
 				MoveRightOnStation(Value);
-			}
+			}*/
 			break;
 		case EGravityType::OnPlanet:
 			MoveRightOnPlanet(Value);
@@ -596,22 +606,28 @@ void AGravityCharacterPawn::MoveForwardOnStation(const float Value)
 
 	AlignCharacterToCameraOnStation();
 
+	FVector ArrowForwardVector = ArrowComponent->GetForwardVector();
+	CapsuleComponent->AddForce(ArrowForwardVector * (Value * CharacterMovementForce), "None", true);
+
 	// Add movement force to capsule 
-	if (CurrentAnimationState == EAnimationState::OnGround || CurrentGravityState == EGravityState::LowG)
+	/*if (CurrentAnimationState == EAnimationState::OnGround || CurrentGravityState == EGravityState::LowG)
 	{
 		FVector ArrowForwardVector = ArrowComponent->GetForwardVector();
 		CapsuleComponent->AddForce(ArrowForwardVector * (Value * CharacterMovementForce), "None", true);
-	}
+	}*/
 }
 void AGravityCharacterPawn::MoveRightOnStation(const float Value)
 {
 	AlignCharacterToCameraOnStation();
 
-	if (CurrentAnimationState == EAnimationState::OnGround || CurrentGravityState == EGravityState::LowG)
+	FVector ArrowRightVector = ArrowComponent->GetRightVector();
+	CapsuleComponent->AddForce(ArrowRightVector * (Value * CharacterMovementForce), "None", true);
+
+	/*if (CurrentAnimationState == EAnimationState::OnGround || CurrentGravityState == EGravityState::LowG)
 	{
 		FVector ArrowRightVector = ArrowComponent->GetRightVector();
 		CapsuleComponent->AddForce(ArrowRightVector * (Value * CharacterMovementForce), "None", true);
-	}
+	}*/
 
 }
 
