@@ -13,7 +13,6 @@
 // Sets default values
 AGravityCharacterPawn::AGravityCharacterPawn()
 {
- 	// Set this pawn to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = true;
 
 	// Create CapsuleComponent
@@ -53,6 +52,7 @@ void AGravityCharacterPawn::BeginPlay()
 	CapsuleComponent->OnComponentBeginOverlap.AddDynamic(this, &AGravityCharacterPawn::OnBeginOverlap);
 	CapsuleComponent->OnComponentEndOverlap.AddDynamic(this, &AGravityCharacterPawn::OnEndOverlap);
 
+	// Set initial gravity type
 	UpdateGravityType();
 }
 
@@ -61,7 +61,7 @@ void AGravityCharacterPawn::Tick(const float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	// Update gravity
+	// 
 	UpdateGravity();
 
 
@@ -187,7 +187,8 @@ void AGravityCharacterPawn::OnBeginOverlap(UPrimitiveComponent* OverlappedCompon
 	{
 		if (OtherActor->GetClass()->ImplementsInterface(UGravitySource::StaticClass()))
 		{			
-			SwitchGravityType(OtherActor);
+			SwitchGravityType(OtherActor); /// 	UpdateGravityType(); ?
+
 		}
 	}
 }
@@ -228,7 +229,7 @@ void AGravityCharacterPawn::UpdateGravityType()
 		GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Red, FString::Printf(TEXT("FirstGravityActor : %s"), *FirstGravityActor->GetName()));
 
 		// switch gravity to first 
-		SwitchGravityType(FirstGravityActor);
+		SwitchGravityType(FirstGravityActor); /// To last ? 
 	}
 	else
 	{
@@ -775,13 +776,13 @@ void AGravityCharacterPawn::MoveUp(const float Value)
 			FVector JumpGravityDirection = (GravityTargetActor->GetActorLocation() - GetActorLocation()).GetSafeNormal();
 
 			// Добавляем силу в направлении, противоположном гравитации
-			CapsuleComponent->AddForce(-JumpGravityDirection * CharacterJumpForce, "none", true);
+			CapsuleComponent->AddForce(-JumpGravityDirection * CharacterJumpForce * Value, "none", true);
 
 			break;
 		}
 
 		case EGravityType::OnShip:
-			
+			CapsuleComponent->AddImpulse(GetActorUpVector() * (Value * CharacterJumpForce), "None", true);
 			break;
 		case EGravityType::ZeroG:
 

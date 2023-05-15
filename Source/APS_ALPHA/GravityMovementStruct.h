@@ -18,7 +18,7 @@ struct FGravityMovementStruct
         , JumpForceSpeedZeroG(25.f)
         , JumpForceSpeedStation(100.f)
         , JumpForceSpeedPlanet(2100.f)
-        , JumpForceSpeedShip(100.f)
+        , JumpForceSpeedShip(35.f)
         , JumpForceSpeedLowG(50.f)
     {}
 
