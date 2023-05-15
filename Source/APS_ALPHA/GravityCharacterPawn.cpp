@@ -61,19 +61,16 @@ void AGravityCharacterPawn::Tick(const float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	// 
+	// Apply Gravity by GravityType
 	UpdateGravity();
-
 
 	// Compute and display Character Velocity
 	const FVector CurrentVelocity = CapsuleComponent->GetPhysicsLinearVelocity();
 	ForwardSpeed = FVector::DotProduct(CurrentVelocity, GetActorForwardVector());
 	RightSpeed = FVector::DotProduct(CurrentVelocity, GetActorRightVector());
 	UpSpeed = FVector::DotProduct(CurrentVelocity, GetActorUpVector());
-
 	float LinearDamping = CapsuleComponent->GetLinearDamping();
 	float AngularDamping = CapsuleComponent->GetAngularDamping();
-
 	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Orange, FString::Printf(TEXT("ForwardSpeed: %f"), ForwardSpeed));
 	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Orange, FString::Printf(TEXT("RightSpeed: %f"), RightSpeed));
 	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Orange, FString::Printf(TEXT("UpSpeed: %f"), UpSpeed));
@@ -188,7 +185,6 @@ void AGravityCharacterPawn::OnBeginOverlap(UPrimitiveComponent* OverlappedCompon
 		if (OtherActor->GetClass()->ImplementsInterface(UGravitySource::StaticClass()))
 		{			
 			SwitchGravityType(OtherActor); /// 	UpdateGravityType(); ?
-
 		}
 	}
 }
@@ -282,7 +278,6 @@ void AGravityCharacterPawn::UpdateAnimationState()
 		const float GroundDistanceThreshold = 10.0f;
 		const float JumpDistanceThreshold = 250.0f;
 		
-		
 		// Начальная позиция трассировки
 		FVector StartLocation = GetActorLocation();
 
@@ -301,7 +296,6 @@ void AGravityCharacterPawn::UpdateAnimationState()
 
 		// Вывод значения AnimHitResult.Distance на экран
 		GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("AnimHitResult.Distance: %f"), AnimHitResult.Distance));
-
 
 		float JumpDeadZone = 3.5f;
 
@@ -369,14 +363,6 @@ void AGravityCharacterPawn::UpdateGravityState()
 			HeightAboveGround = DistanceToGround - CapsuleComponent->GetScaledCapsuleHalfHeight();
 
 			GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Yellow, FString::Printf(TEXT("HeightAboveGround: %f"), HeightAboveGround));
-
-
-			// Если что-то было задето, обработайте результат
-			//AActor* HitActor = HitResult.GetActor();
-			//if (HitActor)
-			//{
-			//	// Делайте что-то с актером, которого мы задели
-			//}
 		}
 		else
 		{
@@ -419,7 +405,7 @@ void AGravityCharacterPawn::UpdateStationGravity()
 	UpdateAnimationState();
 
 
-	/// CHECK GRAVITY FORCE / EFFECT
+	// CHECK GRAVITY FORCE / EFFECT
 	if (CurrentGravityState != EGravityState::LowG)
 	{
 		// Добавление гравитационной силы к персонажу
@@ -460,13 +446,7 @@ void AGravityCharacterPawn::UpdatePlanetGravity()
 	FVector GravityForce = GravityDirection * GravityStrength * -1;
 	CapsuleComponent->AddForce(GravityForce, "none", true);
 
-
-
-	////
-	///
-	//UpdateGravityState();
-
-	///
+	// 
 	UpdateAnimationState();
 
 	// Set SpringCameraArm Relative Roll always 0
@@ -493,14 +473,13 @@ void AGravityCharacterPawn::UpdateShipGravity()
 	const FRotator Result = FMath::RInterpTo(ActorRotation, Rotation, GetWorld()->GetDeltaSeconds(), 5.f);
 	SetActorRotation(Result);
 
-	///
+	//
 	UpdateGravityState();
 
-	///
+	//
 	UpdateAnimationState();
 
-
-	/// CHECK GRAVITY FORCE / EFFECT
+	// CHECK GRAVITY FORCE / EFFECT
 	if (CurrentGravityState != EGravityState::LowG)
 	{
 		// Добавление гравитационной силы к персонажу
@@ -530,7 +509,6 @@ void AGravityCharacterPawn::Turn(const float Value)
 	FRotator TargetRotation = CameraSpringArm->GetRelativeRotation(); 
 	TargetRotation.Yaw += Value * CharacterRotationScale;
 	CameraSpringArm->SetRelativeRotation(TargetRotation);
-
 }
 
 void AGravityCharacterPawn::LookUp(const float Value)
@@ -585,13 +563,7 @@ void AGravityCharacterPawn::MoveForward(const float Value)
 		switch (CurrentGravityType) 
 		{
 			case EGravityType::OnStation:
-					
 				MoveForwardOnStation(Value);
-
-				/*if (CurrentAnimationState == EAnimationState::OnGround || CurrentGravityState == EGravityState::LowG)
-				{
-					MoveForwardOnStation(Value);
-				}*/
 				break;
 			case EGravityType::OnPlanet:
 				MoveForwardOnPlanet(Value);
@@ -614,10 +586,6 @@ void AGravityCharacterPawn::MoveRight(const float Value)
 		{
 		case EGravityType::OnStation:
 			MoveRightOnStation(Value);
-			/*if (CurrentAnimationState == EAnimationState::OnGround || CurrentGravityState == EGravityState::LowG)
-			{
-				MoveRightOnStation(Value);
-			}*/
 			break;
 		case EGravityType::OnPlanet:
 			MoveRightOnPlanet(Value);
@@ -634,33 +602,10 @@ void AGravityCharacterPawn::MoveRight(const float Value)
 
 void AGravityCharacterPawn::MoveForwardOnStation(const float Value)
 {
-	/*switch (CurrentGravityState)
-	{
-	case EGravityState::LowG:
-		break;
-	case EGravityState::Attracting:
-		break;
-	case EGravityState::Jumping:
-		break;
-	case EGravityState::Falling:
-		break;
-	case EGravityState::Attracted:
-		break;
-	default:
-		break;
-	}*/
-
 	AlignCharacterToCameraOnStation();
 
 	FVector ArrowForwardVector = ArrowComponent->GetForwardVector();
 	CapsuleComponent->AddForce(ArrowForwardVector * (Value * CharacterMovementForce), "None", true);
-
-	// Add movement force to capsule 
-	/*if (CurrentAnimationState == EAnimationState::OnGround || CurrentGravityState == EGravityState::LowG)
-	{
-		FVector ArrowForwardVector = ArrowComponent->GetForwardVector();
-		CapsuleComponent->AddForce(ArrowForwardVector * (Value * CharacterMovementForce), "None", true);
-	}*/
 }
 void AGravityCharacterPawn::MoveRightOnStation(const float Value)
 {
@@ -668,13 +613,6 @@ void AGravityCharacterPawn::MoveRightOnStation(const float Value)
 
 	FVector ArrowRightVector = ArrowComponent->GetRightVector();
 	CapsuleComponent->AddForce(ArrowRightVector * (Value * CharacterMovementForce), "None", true);
-
-	/*if (CurrentAnimationState == EAnimationState::OnGround || CurrentGravityState == EGravityState::LowG)
-	{
-		FVector ArrowRightVector = ArrowComponent->GetRightVector();
-		CapsuleComponent->AddForce(ArrowRightVector * (Value * CharacterMovementForce), "None", true);
-	}*/
-
 }
 
 void AGravityCharacterPawn::MoveForwardOnPlanet(const float Value)
@@ -697,14 +635,14 @@ void AGravityCharacterPawn::MoveForwardOnPlanet(const float Value)
 	FQuat NewSpringArmQuat = CameraSpringArm->GetComponentQuat() * DifferenceQuat.Inverse();
 	CameraSpringArm->SetWorldRotation(NewSpringArmQuat);
 
-
+	//
 	FVector ArrowForwardVectorV = ArrowComponent->GetForwardVector();
 	CapsuleComponent->AddForce(ArrowForwardVectorV * (Value * CharacterMovementForce), "None", true);
 }
 
 void AGravityCharacterPawn::MoveForwardOnShip(const float Value)
 {
-	/////
+	//
 	MoveForwardOnStation(Value);
 }
 
@@ -735,14 +673,14 @@ void AGravityCharacterPawn::MoveRightOnPlanet(const float Value)
 	FQuat NewSpringArmQuat = CameraSpringArm->GetComponentQuat() * DifferenceQuat.Inverse();
 	CameraSpringArm->SetWorldRotation(NewSpringArmQuat);
 
-
+	//
 	FVector ArrowRightVector = ArrowComponent->GetRightVector();
 	CapsuleComponent->AddForce(ArrowRightVector * (Value * CharacterMovementForce), "None", true);
 
 }
 void AGravityCharacterPawn::MoveRightOnShip(const float Value)
 {
-	/////
+	//
 	MoveRightOnStation(Value);
 }
 void AGravityCharacterPawn::MoveRightZeroG(const float Value)
@@ -754,30 +692,22 @@ void AGravityCharacterPawn::MoveRightZeroG(const float Value)
 void AGravityCharacterPawn::MoveUp(const float Value)
 {
 	if (Value != 0)
-	{
-		
-		//bHasJumped = true;
-		
+	{		
 		switch (CurrentGravityType)
 		{
 		case EGravityType::OnStation:
-
-			//if (CurrentAnimationState == EAnimationState::OnGround || CurrentAnimationState == EAnimationState::Jumping || CurrentGravityState == EGravityState::LowG)
-			//{
-				CapsuleComponent->AddImpulse(GetActorUpVector() * (Value * CharacterJumpForce), "None", true);
-
-			//}
+		{
+			CapsuleComponent->AddImpulse(GetActorUpVector() * (Value * CharacterJumpForce), "None", true);
 			break;
+		}
 		case EGravityType::OnPlanet:
 		{
 
-			//CapsuleComponent->AddImpulse(GetActorUpVector() * (Value * CharacterJumpForce), "None", true);
 			// Получаем вектор гравитации (от персонажа к центру планеты)
 			FVector JumpGravityDirection = (GravityTargetActor->GetActorLocation() - GetActorLocation()).GetSafeNormal();
 
 			// Добавляем силу в направлении, противоположном гравитации
 			CapsuleComponent->AddForce(-JumpGravityDirection * CharacterJumpForce * Value, "none", true);
-
 			break;
 		}
 
@@ -785,23 +715,16 @@ void AGravityCharacterPawn::MoveUp(const float Value)
 			CapsuleComponent->AddImpulse(GetActorUpVector() * (Value * CharacterJumpForce), "None", true);
 			break;
 		case EGravityType::ZeroG:
-
 			CapsuleComponent->AddImpulse(GetActorUpVector() * (Value * CharacterJumpForce), "None", true);
-
 			break;
 		}
 	}
-	/*else if (Value == 0)
-	{
-		bHasJumped = false;
-	}*/
 }
 
 void AGravityCharacterPawn::RotatePitch(const float Value)
 {
 	if (Value != 0)
 	{
-		//CurrentGravityState, CurrentGravityType
 		FRotator RotationToAdd(0.0f, 0.0f, 0.0f);
 
 		switch (CurrentGravityType)
@@ -863,25 +786,5 @@ void AGravityCharacterPawn::RotateYaw(const float Value)
 		FRotator RotationToAdd(0.0f, 0.0f, 0.0f);
 		RotationToAdd.Yaw = Value * CharacterRotationScale;
 		AddActorLocalRotation(RotationToAdd);
-		/*switch (CurrentGravityType)
-		{
-		case EGravityType::ZeroG:
-			RotationToAdd.Yaw = Value * CharacterRotationScale;
-			AddActorLocalRotation(RotationToAdd);
-			break;
-		case EGravityType::OnStation:
-			if (CurrentGravityState == EGravityState::LowG)
-			{
-				RotationToAdd.Yaw = Value * CharacterRotationScale;
-				AddActorLocalRotation(RotationToAdd);
-			}
-			break;
-		case EGravityType::OnPlanet:
-			break;
-		case EGravityType::OnShip:
-			break;
-		default:
-			break;
-		}*/
 	}
 }

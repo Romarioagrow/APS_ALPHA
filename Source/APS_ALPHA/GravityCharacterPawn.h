@@ -105,8 +105,6 @@ private:
 	float CharacterRotationScale{ 1.25f };	
 	float CharacterMovementForce{ 25.f };	
 	float CharacterJumpForce{ 25.f };	
-	//bool bHasJumped{ false };
-
 
 protected:
 	UFUNCTION()
