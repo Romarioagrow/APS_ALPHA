@@ -90,6 +90,7 @@
 			"GravityGameModeBase.cpp.obj",
 			"GravityObject.cpp.obj",
 			"GravityObjectInterface.cpp.obj",
+			"GravityParamStruct.cpp.obj",
 			"GravityPawn.cpp.obj",
 			"GravityPlayerController.cpp.obj",
 			"GravitySource.cpp.obj",
@@ -116,8 +117,7 @@
 			"TechObject.cpp.obj",
 			"VehicleControlling.cpp.obj",
 			"WorldActor.cpp.obj",
-			"GravityCharacterPawn.cpp.obj",
-			"GravityParamStruct.cpp.obj"
+			"GravityCharacterPawn.cpp.obj"
 		]
 	}
 }
