@@ -3,6 +3,7 @@
 #pragma once
 
 #include "Moon.h"
+#include "MoonGenerationModel.h"
 
 #include "CoreMinimal.h"
 #include "BaseProceduralGenerator.h"
@@ -22,4 +23,6 @@ public:
 public:
 	// Функция генерации луны
 	AMoon* GenerateMoon(); // FMoonParams Params
+
+	FMoonGenerationModel GenerateRandomMoonModel();
 };

@@ -34,6 +34,23 @@ public:
 	UPROPERTY()
 		UMoonGenerator* MoonGenerator;
 
+	UPROPERTY(EditAnywhere, Category = "AstroObject BP")
+		TSubclassOf<class APlanetarySystem> BP_PlanetarySystemClass;
+
+	UPROPERTY(EditAnywhere, Category = "AstroObject BP")
+		TSubclassOf<class AStarSystem> BP_StarSystemClass;
+
+	UPROPERTY(EditAnywhere, Category = "AstroObject BP")
+		TSubclassOf<class AStar> BP_StarClass;
+
+	UPROPERTY(EditAnywhere, Category = "AstroObject BP")
+		TSubclassOf<class APlanet> BP_PlanetClass;
+
+	UPROPERTY(EditAnywhere, Category = "AstroObject BP")
+		TSubclassOf<class AMoon> BP_MoonClass;
+	
+	
+
 	// функция генерации стартовой системы
 	//void GenerateHomeStarSystem(FStarSystemGenerationModel StarSystemModel, UWorld* World); //FStartSystemParams Params
 
