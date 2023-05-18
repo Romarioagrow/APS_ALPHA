@@ -14,5 +14,8 @@ UCLASS()
 class APS_ALPHA_API AOrbitalBody : public ACelestialBody, public IGravitySource
 {
 	GENERATED_BODY()
-	
+
+private:
+	UPROPERTY(EditAnywhere)
+	float RotationSpeed;
 };

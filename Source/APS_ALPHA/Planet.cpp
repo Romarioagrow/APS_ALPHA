@@ -9,3 +9,8 @@ APlanet::APlanet()
 	SphereCollisionComponent = CreateDefaultSubobject<USphereComponent>(TEXT("SphereCollisionComponent"));
 	RootComponent = SphereCollisionComponent;
 }
+
+void APlanet::AddMoon(AMoon* Moon)
+{
+	Moons.Add(Moon);
+}

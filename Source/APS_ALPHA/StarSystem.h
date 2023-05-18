@@ -1,6 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
+#include "PlanetarySystem.h"
 
 #include "CoreMinimal.h"
 #include "CelestialSystem.h"
@@ -14,4 +15,15 @@ class APS_ALPHA_API AStarSystem : public ACelestialSystem
 {
 	GENERATED_BODY()
 	
+private:
+
+	UPROPERTY(VisibleAnywhere, Category = "Star System")
+		int StarsAmount;
+
+	UPROPERTY()
+		TArray<APlanetarySystem*> PlanetarySystems;
+
+public:
+	void SetStarsAmount(int StarsAmount);
+	void AddPlanetarySystem(APlanetarySystem* PlanetarySystem);
 };

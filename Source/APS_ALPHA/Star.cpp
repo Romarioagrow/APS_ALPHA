@@ -3,3 +3,10 @@
 
 #include "Star.h"
 
+AStar::AStar()
+{
+}
+
+void AStar::AddPlanet(APlanet* Planet)
+{
+}
