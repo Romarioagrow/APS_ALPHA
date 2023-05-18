@@ -1,4 +1,5 @@
 #pragma once
+#include "StarSystemType.h"
 
 #include "GenerationModel.h"
 #include "CoreMinimal.h"
@@ -14,9 +15,12 @@ struct FStarSystemGenerationModel :
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star System")
 		int32 AmountOfStars;
 
-	// Расстояние между звездами
+	//// Расстояние между звездами
+	//UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star System")
+	//	double DistanceBetweenStars;
+	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star System")
-		double DistanceBetweenStars;
+		EStarSystemType StarSystemType;
 
 	//int32 AmountOfPlanets;
 

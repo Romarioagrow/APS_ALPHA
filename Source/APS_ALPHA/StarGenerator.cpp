@@ -9,6 +9,10 @@ UStarGenerator::UStarGenerator()
 
 //
 
+void UStarGenerator::ApplyModel(AAstroActor* AstroActor, FGenerationModel GenerationModel)
+{
+}
+
 FStarGenerationModel UStarGenerator::GenerateRandomStarModel()
 {
     

@@ -12,3 +12,8 @@ void AStarSystem::AddPlanetarySystem(APlanetarySystem* PlanetarySystem)
 {
 	PlanetarySystems.Add(PlanetarySystem);
 }
+
+void AStarSystem::SetStarSystemType(EStarSystemType Type)
+{
+	this->StarSystemType = Type;
+}

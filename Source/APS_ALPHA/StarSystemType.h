@@ -12,7 +12,7 @@ enum class EStarSystemType : uint8
     DoubleStar    
     UMETA(DisplayName = "Double Star"),
 
-    TrippleStar    
+    TripleStar
     UMETA(DisplayName = "Tripple Star"),
     
     MultipleStar

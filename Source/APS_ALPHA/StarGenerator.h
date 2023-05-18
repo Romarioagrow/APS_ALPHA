@@ -24,6 +24,8 @@ public:
 	// Функция генерации звезды
 	//AStar* GenerateStar(FStarGenerationModel StarModel); // FStarParams Params
 
+	void ApplyModel(AAstroActor* AstroActor, FGenerationModel GenerationModel);//override;
+
 	FStarGenerationModel GenerateRandomStarModel();
 
 };

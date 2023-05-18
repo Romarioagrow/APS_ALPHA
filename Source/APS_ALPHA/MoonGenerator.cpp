@@ -12,3 +12,7 @@ FMoonGenerationModel UMoonGenerator::GenerateRandomMoonModel()
 	
 	return FMoonGenerationModel();
 }
+
+void UMoonGenerator::ApplyModel(AAstroActor* AstroActor, FGenerationModel GenerationModel)
+{
+}

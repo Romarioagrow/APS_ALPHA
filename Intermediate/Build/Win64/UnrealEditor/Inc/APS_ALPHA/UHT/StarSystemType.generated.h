@@ -21,7 +21,7 @@ PRAGMA_DISABLE_DEPRECATION_WARNINGS
 #define FOREACH_ENUM_ESTARSYSTEMTYPE(op) \
 	op(EStarSystemType::SingleStar) \
 	op(EStarSystemType::DoubleStar) \
-	op(EStarSystemType::TrippleStar) \
+	op(EStarSystemType::TripleStar) \
 	op(EStarSystemType::MultipleStar) 
 
 enum class EStarSystemType : uint8;

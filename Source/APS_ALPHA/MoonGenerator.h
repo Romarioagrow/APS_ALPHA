@@ -25,4 +25,6 @@ public:
 	AMoon* GenerateMoon(); // FMoonParams Params
 
 	FMoonGenerationModel GenerateRandomMoonModel();
+
+	void ApplyModel(AAstroActor* AstroActor, FGenerationModel GenerationModel);// override;
 };

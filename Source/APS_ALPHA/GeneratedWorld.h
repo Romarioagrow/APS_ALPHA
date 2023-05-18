@@ -3,6 +3,7 @@
 #pragma once
 
 #include "StarSystemGenerator.h"
+#include "PlanetaryProceduralGenerator.h"
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
@@ -24,6 +25,9 @@ protected:
 public:
 	UPROPERTY()
 		UStarSystemGenerator* StarSystemGenerator;
+
+	UPROPERTY()
+		UPlanetarySystemGenerator* PlanetarySystemGenerator;
 
 	UPROPERTY()
 		UStarGenerator* StarGenerator;
