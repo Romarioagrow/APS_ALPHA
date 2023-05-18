@@ -19,6 +19,7 @@ void AStarClusterGenerator::BeginPlay()
 
     // Init generators
     StarSystemGenerator = NewObject<UStarSystemGenerator>();
+    PlanetarySystemGenerator = NewObject<UPlanetarySystemGenerator>();
     StarGenerator = NewObject<UStarGenerator>();
     PlanetGenerator = NewObject<UPlanetGenerator>();
     MoonGenerator = NewObject<UMoonGenerator>();
@@ -48,16 +49,16 @@ void AStarClusterGenerator::GenerateRandomStarSystem()
         // Создаем новую звездную систему
         FStarSystemGenerationModel StarSystemModel = StarSystemGenerator->GenerateRandomStarSystemModel();
         AStarSystem* NewStarSystem = World->SpawnActor<AStarSystem>(BP_StarSystemClass); 
-        if (!NewStarSystem) // Проверяем, успешно ли создана звездная система
+        // Проверяем, успешно ли создана звездная система
+        if (!NewStarSystem) 
         {
             // Обрабатываем ошибку
             UE_LOG(LogTemp, Warning, TEXT("NewStarSystem Falied!"));
             return; // Завершаем выполнение функции, если не можем создать звездную систему
         }
-        /// StarSystemGenerator->ApplyModel();
-        int AmountOfStars = StarSystemModel.AmountOfStars;
-        NewStarSystem->SetStarsAmount(AmountOfStars);
+        StarSystemGenerator->ApplyModel(NewStarSystem, StarSystemModel);
 
+        int AmountOfStars = StarSystemModel.AmountOfStars;
         // Генерация звезд для каждой планетарной системы
         for (int i = 0; i < AmountOfStars; i++)
         {
@@ -74,7 +75,7 @@ void AStarClusterGenerator::GenerateRandomStarSystem()
                 return; // Завершаем выполнение функции, если не можем создать звездную систему
 
             }
-            /// PlanetarySystemGenerator->ApplyModel();
+            PlanetarySystemGenerator->ApplyModel(NewPlanetarySystem, PlanetraySystemModel);
 
             // Проверяем, успешно ли создана планетарная система
             AStar* NewStar = World->SpawnActor<AStar>(BP_StarClass); //StarGenerator->GenerateStar(StarModel);
@@ -85,7 +86,7 @@ void AStarClusterGenerator::GenerateRandomStarSystem()
                 return; // Завершаем выполнение функции, если не можем создать звездную систему
 
             }
-            /// StarGenerator->ApplyModel();
+            StarGenerator->ApplyModel(NewStar, StarModel);
             NewPlanetarySystem->SetStar(NewStar);
             // Прикрепить NewStar к NewPlanetarySystem
             NewStar->AttachToActor(NewPlanetarySystem, FAttachmentTransformRules::KeepRelativeTransform);
@@ -104,8 +105,7 @@ void AStarClusterGenerator::GenerateRandomStarSystem()
                     return; // Завершаем выполнение функции, если не можем создать звездную систему
 
                 }
-
-                /// PlanetGenerator->ApplyModel();
+                PlanetGenerator->ApplyModel(NewPlanet, PlanetModel);
                 NewStar->AddPlanet(NewPlanet);
                 // Прикрепить NewPlanet к NewStar
                 NewPlanet->AttachToActor(NewStar, FAttachmentTransformRules::KeepRelativeTransform);
@@ -113,7 +113,6 @@ void AStarClusterGenerator::GenerateRandomStarSystem()
                 // Generate Moons
                 FMoonGenerationModel MoonModel = MoonGenerator->GenerateRandomMoonModel();
                 int AmountOfMoons = PlanetModel.AmountOfMoons;
-
                 for (int k = 0; k < 3; k++)
                 {
                     AMoon* NewMoon = World->SpawnActor<AMoon>(BP_MoonClass); //MoonGenerator->GenerateMoon(MoonModel);
@@ -124,8 +123,7 @@ void AStarClusterGenerator::GenerateRandomStarSystem()
                         return; // Завершаем выполнение функции, если не можем создать звездную систему
 
                     }
-                    /// MoonGenerator->ApplyModel();
-
+                    MoonGenerator->ApplyModel(NewMoon, MoonModel);
                     NewPlanet->AddMoon(NewMoon);
                     // Прикрепить NewMoon к NewPlanet
                     NewMoon->AttachToActor(NewPlanet, FAttachmentTransformRules::KeepRelativeTransform);

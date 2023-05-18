@@ -36,7 +36,7 @@ void EmptyLinkFunctionForGeneratedCodeStarSystemType() {}
 	const UECodeGen_Private::FEnumeratorParam Z_Construct_UEnum_APS_ALPHA_EStarSystemType_Statics::Enumerators[] = {
 		{ "EStarSystemType::SingleStar", (int64)EStarSystemType::SingleStar },
 		{ "EStarSystemType::DoubleStar", (int64)EStarSystemType::DoubleStar },
-		{ "EStarSystemType::TrippleStar", (int64)EStarSystemType::TrippleStar },
+		{ "EStarSystemType::TripleStar", (int64)EStarSystemType::TripleStar },
 		{ "EStarSystemType::MultipleStar", (int64)EStarSystemType::MultipleStar },
 	};
 #if WITH_METADATA
@@ -49,8 +49,8 @@ void EmptyLinkFunctionForGeneratedCodeStarSystemType() {}
 		{ "MultipleStar.Name", "EStarSystemType::MultipleStar" },
 		{ "SingleStar.DisplayName", "Single Star" },
 		{ "SingleStar.Name", "EStarSystemType::SingleStar" },
-		{ "TrippleStar.DisplayName", "Tripple Star" },
-		{ "TrippleStar.Name", "EStarSystemType::TrippleStar" },
+		{ "TripleStar.DisplayName", "Tripple Star" },
+		{ "TripleStar.Name", "EStarSystemType::TripleStar" },
 	};
 #endif
 	const UECodeGen_Private::FEnumParams Z_Construct_UEnum_APS_ALPHA_EStarSystemType_Statics::EnumParams = {
@@ -78,9 +78,9 @@ void EmptyLinkFunctionForGeneratedCodeStarSystemType() {}
 		static const FEnumRegisterCompiledInInfo EnumInfo[];
 	};
 	const FEnumRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarSystemType_h_Statics::EnumInfo[] = {
-		{ EStarSystemType_StaticEnum, TEXT("EStarSystemType"), &Z_Registration_Info_UEnum_EStarSystemType, CONSTRUCT_RELOAD_VERSION_INFO(FEnumReloadVersionInfo, 1597686544U) },
+		{ EStarSystemType_StaticEnum, TEXT("EStarSystemType"), &Z_Registration_Info_UEnum_EStarSystemType, CONSTRUCT_RELOAD_VERSION_INFO(FEnumReloadVersionInfo, 1630425490U) },
 	};
-	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarSystemType_h_2509624886(TEXT("/Script/APS_ALPHA"),
+	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarSystemType_h_628253923(TEXT("/Script/APS_ALPHA"),
 		nullptr, 0,
 		nullptr, 0,
 		Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarSystemType_h_Statics::EnumInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarSystemType_h_Statics::EnumInfo));

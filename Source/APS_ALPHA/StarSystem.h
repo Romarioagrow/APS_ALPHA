@@ -29,5 +29,7 @@ private:
 
 public:
 	void SetStarsAmount(int StarsAmount);
+	//void SetDistanceBetweenStars(int);
 	void AddPlanetarySystem(APlanetarySystem* PlanetarySystem);
+	void SetStarSystemType(EStarSystemType Type);
 };

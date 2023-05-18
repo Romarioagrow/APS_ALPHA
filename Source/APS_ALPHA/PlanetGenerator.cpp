@@ -34,3 +34,7 @@ FPlanetGenerationModel UPlanetGenerator::GenerateRandomPlanetModel()
 
     return FPlanetGenerationModel();
 }
+
+void UPlanetGenerator::ApplyModel(AAstroActor* AstroActor, FGenerationModel GenerationModel)
+{
+}
