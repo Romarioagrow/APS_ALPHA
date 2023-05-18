@@ -6,3 +6,9 @@
 UMoonGenerator::UMoonGenerator()
 {
 }
+
+FMoonGenerationModel UMoonGenerator::GenerateRandomMoonModel()
+{
+	
+	return FMoonGenerationModel();
+}

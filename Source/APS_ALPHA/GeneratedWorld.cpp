@@ -3,19 +3,13 @@
 
 #include "GeneratedWorld.h"
 #include "StarSystem.h"
+#include "MoonGenerationModel.h"
 
 // Sets default values
 AGeneratedWorld::AGeneratedWorld()
 {
  	// Set this actor to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = false;
-
-	StarSystemGenerator = NewObject<UStarSystemGenerator>();
-	StarGenerator = NewObject<UStarGenerator>();
-	PlanetGenerator = NewObject<UPlanetGenerator>();
-	MoonGenerator = NewObject<UMoonGenerator>();
-	
-
 }
 
 // Called when the game starts or when spawned
@@ -23,49 +17,42 @@ void AGeneratedWorld::BeginPlay()
 {
 	Super::BeginPlay();
 
+    // Init generators
+    StarSystemGenerator = NewObject<UStarSystemGenerator>();
+    StarGenerator = NewObject<UStarGenerator>();
+    PlanetGenerator = NewObject<UPlanetGenerator>();
+    MoonGenerator = NewObject<UMoonGenerator>();
+
 	GenerateRandomStarSystem();
-
-	// Generate Home start Star System
-	//FStarSystemGenerationModel StarSystemModel = StarSystemGenerator->GenerateRandomStarSystemModel();
-	//UWorld* World = GetWorld();
-	//StarSystemGenerator->GenerateHomeStarSystem(StarSystemModel, World);
-
 }
 
-//FPlanetarySystemGenerationModel AGeneratedWorld::GenerateRandomPlanetraySystemModel()
-//{
-//    FPlanetarySystemGenerationModel PlanetarySystemModel;
-//    PlanetarySystemModel.AmountOfPlanets = FMath::RandRange(1, 10);
-//    PlanetarySystemModel.DistanceBetweenPlanets = FMath::RandRange(0.1, 10.0);
-//    return PlanetarySystemModel;
-//}
 
 void AGeneratedWorld::GenerateRandomStarSystem()
 {
-	FStarSystemGenerationModel StarSystemModel = StarSystemGenerator->GenerateRandomStarSystemModel();
-
-    UWorld* World = GetWorld();
-
-    /*if (!StarGenerator || !PlanetGenerator || !MoonGenerator) {
+    if (StarGenerator == nullptr || PlanetGenerator == nullptr || MoonGenerator == nullptr) {
         UE_LOG(LogTemp, Warning, TEXT("One of the generators is null!"));
         return;
-    }*/
+    }
+    
+    if (!BP_PlanetarySystemClass || !BP_StarSystemClass || !BP_StarClass || !BP_PlanetClass || !BP_MoonClass)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("One of the blueprint classes is not assigned in the editor!"));
+        return;
+    }
 
+    UWorld* World = GetWorld();
+    
 
     if (World) // Проверяем, существует ли мир
     {
-        /*StarGenerator = CreateDefaultSubobject<UStarGenerator>(TEXT("UStarGenerator"));
-        PlanetGenerator = CreateDefaultSubobject<UPlanetGenerator>(TEXT("UPlanetGenerator"));
-        MoonGenerator = CreateDefaultSubobject<UMoonGenerator>(TEXT("UMoonGenerator"));*/
-
-        AStarSystem* NewStarSystem = World->SpawnActor<AStarSystem>(); // Создаем новую звездную систему
+        FStarSystemGenerationModel StarSystemModel = StarSystemGenerator->GenerateRandomStarSystemModel();
+        AStarSystem* NewStarSystem = World->SpawnActor<AStarSystem>(BP_StarSystemClass); // Создаем новую звездную систему
         if (!NewStarSystem) // Проверяем, успешно ли создана звездная система
         {
             // Обрабатываем ошибку
             UE_LOG(LogTemp, Warning, TEXT("NewStarSystem Falied!"));
             return; // Завершаем выполнение функции, если не можем создать звездную систему
         }
-
         /// StarSystemGenerator->ApplyModel();
         int AmountOfStars = StarSystemModel.AmountOfStars;
         NewStarSystem->SetStarsAmount(AmountOfStars);
@@ -77,7 +64,7 @@ void AGeneratedWorld::GenerateRandomStarSystem()
             FPlanetarySystemGenerationModel PlanetraySystemModel = GenerateRandomPlanetraySystemModel(); // Add StarModel and calculate based on it  
 
             // Create Planetray System
-            APlanetarySystem* NewPlanetarySystem = World->SpawnActor<APlanetarySystem>();
+            APlanetarySystem* NewPlanetarySystem = World->SpawnActor<APlanetarySystem>(BP_PlanetarySystemClass);
             if (!NewPlanetarySystem) // Проверяем, успешно ли создана планетарная система
             {
                 // Обрабатываем ошибку
@@ -88,7 +75,7 @@ void AGeneratedWorld::GenerateRandomStarSystem()
             /// PlanetarySystemGenerator->ApplyModel();
 
 
-            AStar* NewStar = World->SpawnActor<AStar>(); //StarGenerator->GenerateStar(StarModel);
+            AStar* NewStar = World->SpawnActor<AStar>(BP_StarClass); //StarGenerator->GenerateStar(StarModel);
             if (!NewPlanetarySystem) // Проверяем, успешно ли создана планетарная система
             {
                 // Обрабатываем ошибку
@@ -98,13 +85,16 @@ void AGeneratedWorld::GenerateRandomStarSystem()
             }
             /// StarGenerator->ApplyModel();
             NewPlanetarySystem->SetStar(NewStar);
-            int AmountOfPlanets = PlanetraySystemModel.AmountOfPlanets;
+            // Прикрепить NewStar к NewPlanetarySystem
+            NewStar->AttachToActor(NewPlanetarySystem, FAttachmentTransformRules::KeepRelativeTransform);
+            UE_LOG(LogTemp, Warning, TEXT("Star is attached to PlanetarySystem"));
 
+            int AmountOfPlanets = PlanetraySystemModel.AmountOfPlanets;
             // Генерация планет для каждой звезды
             for (int j = 0; j < AmountOfPlanets; j++)
             {
-                //FPlanetGenerationModel PlanetModel = PlanetGenerator->GenerateRandomPlanetModel();
-                APlanet* NewPlanet = World->SpawnActor<APlanet>(); //PlanetGenerator->GeneratePlanet(PlanetModel);
+                FPlanetGenerationModel PlanetModel = PlanetGenerator->GenerateRandomPlanetModel();
+                APlanet* NewPlanet = World->SpawnActor<APlanet>(BP_PlanetClass); //PlanetGenerator->GeneratePlanet(PlanetModel);
 
                 if (!NewPlanetarySystem) // Проверяем, успешно ли создана планетарная система
                 {
@@ -116,15 +106,17 @@ void AGeneratedWorld::GenerateRandomStarSystem()
 
                 /// PlanetGenerator->ApplyModel();
                 NewStar->AddPlanet(NewPlanet);
-
+                // Прикрепить NewPlanet к NewStar
+                NewPlanet->AttachToActor(NewStar, FAttachmentTransformRules::KeepRelativeTransform);
+                UE_LOG(LogTemp, Warning, TEXT("Planet is attached to Star"));
 
                 // Generate Moons
-                //FMoonGenerationModel MoonModel = MoonGenerator->GenerateRandomMoonModel();
-                //int AmountOfMoons = PlanetModel.AmountOfMoons;
+                FMoonGenerationModel MoonModel = MoonGenerator->GenerateRandomMoonModel();
+                int AmountOfMoons = PlanetModel.AmountOfMoons;
 
                 for (int k = 0; k < 3; k++)
                 {
-                    AMoon* NewMoon = World->SpawnActor<AMoon>(); //MoonGenerator->GenerateMoon(MoonModel);
+                    AMoon* NewMoon = World->SpawnActor<AMoon>(BP_MoonClass); //MoonGenerator->GenerateMoon(MoonModel);
                     if (!NewMoon) // Проверяем, успешно ли создана планетарная система
                     {
                         // Обрабатываем ошибку
@@ -133,11 +125,18 @@ void AGeneratedWorld::GenerateRandomStarSystem()
 
                     }
                     /// MoonGenerator->ApplyModel();
+
                     NewPlanet->AddMoon(NewMoon);
+                    // Прикрепить NewMoon к NewPlanet
+                    NewMoon->AttachToActor(NewPlanet, FAttachmentTransformRules::KeepRelativeTransform);
+                    UE_LOG(LogTemp, Warning, TEXT("Moon is attached to Planet"));
                 }
 
             }
             NewStarSystem->AddPlanetarySystem(NewPlanetarySystem);
+            // Прикрепить NewPlanetarySystem к NewStarSystem
+            NewPlanetarySystem->AttachToActor(NewStarSystem, FAttachmentTransformRules::KeepRelativeTransform);
+            UE_LOG(LogTemp, Warning, TEXT("PlanetarySystem is attached to StarSystem"));
         }
     }
 }
