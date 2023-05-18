@@ -13,6 +13,7 @@ void EmptyLinkFunctionForGeneratedCodeStarSystem() {}
 	APS_ALPHA_API UClass* Z_Construct_UClass_APlanetarySystem_NoRegister();
 	APS_ALPHA_API UClass* Z_Construct_UClass_AStarSystem();
 	APS_ALPHA_API UClass* Z_Construct_UClass_AStarSystem_NoRegister();
+	APS_ALPHA_API UEnum* Z_Construct_UEnum_APS_ALPHA_EStarSystemType();
 	UPackage* Z_Construct_UPackage__Script_APS_ALPHA();
 // End Cross Module References
 	void AStarSystem::StaticRegisterNativesAStarSystem()
@@ -33,6 +34,11 @@ void EmptyLinkFunctionForGeneratedCodeStarSystem() {}
 		static const UECodeGen_Private::FMetaDataPairParam NewProp_StarsAmount_MetaData[];
 #endif
 		static const UECodeGen_Private::FUnsizedIntPropertyParams NewProp_StarsAmount;
+		static const UECodeGen_Private::FBytePropertyParams NewProp_StarSystemType_Underlying;
+#if WITH_METADATA
+		static const UECodeGen_Private::FMetaDataPairParam NewProp_StarSystemType_MetaData[];
+#endif
+		static const UECodeGen_Private::FEnumPropertyParams NewProp_StarSystemType;
 		static const UECodeGen_Private::FObjectPropertyParams NewProp_PlanetarySystems_Inner;
 #if WITH_METADATA
 		static const UECodeGen_Private::FMetaDataPairParam NewProp_PlanetarySystems_MetaData[];
@@ -60,6 +66,14 @@ void EmptyLinkFunctionForGeneratedCodeStarSystem() {}
 	};
 #endif
 	const UECodeGen_Private::FUnsizedIntPropertyParams Z_Construct_UClass_AStarSystem_Statics::NewProp_StarsAmount = { "StarsAmount", nullptr, (EPropertyFlags)0x0040000000020001, UECodeGen_Private::EPropertyGenFlags::Int, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(AStarSystem, StarsAmount), METADATA_PARAMS(Z_Construct_UClass_AStarSystem_Statics::NewProp_StarsAmount_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_AStarSystem_Statics::NewProp_StarsAmount_MetaData)) };
+	const UECodeGen_Private::FBytePropertyParams Z_Construct_UClass_AStarSystem_Statics::NewProp_StarSystemType_Underlying = { "UnderlyingType", nullptr, (EPropertyFlags)0x0000000000000000, UECodeGen_Private::EPropertyGenFlags::Byte, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, 0, nullptr, METADATA_PARAMS(nullptr, 0) };
+#if WITH_METADATA
+	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_AStarSystem_Statics::NewProp_StarSystemType_MetaData[] = {
+		{ "Category", "StarSystem" },
+		{ "ModuleRelativePath", "StarSystem.h" },
+	};
+#endif
+	const UECodeGen_Private::FEnumPropertyParams Z_Construct_UClass_AStarSystem_Statics::NewProp_StarSystemType = { "StarSystemType", nullptr, (EPropertyFlags)0x0040000000020001, UECodeGen_Private::EPropertyGenFlags::Enum, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(AStarSystem, StarSystemType), Z_Construct_UEnum_APS_ALPHA_EStarSystemType, METADATA_PARAMS(Z_Construct_UClass_AStarSystem_Statics::NewProp_StarSystemType_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_AStarSystem_Statics::NewProp_StarSystemType_MetaData)) }; // 1597686544
 	const UECodeGen_Private::FObjectPropertyParams Z_Construct_UClass_AStarSystem_Statics::NewProp_PlanetarySystems_Inner = { "PlanetarySystems", nullptr, (EPropertyFlags)0x0000000000000000, UECodeGen_Private::EPropertyGenFlags::Object, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, 0, Z_Construct_UClass_APlanetarySystem_NoRegister, METADATA_PARAMS(nullptr, 0) };
 #if WITH_METADATA
 	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_AStarSystem_Statics::NewProp_PlanetarySystems_MetaData[] = {
@@ -69,6 +83,8 @@ void EmptyLinkFunctionForGeneratedCodeStarSystem() {}
 	const UECodeGen_Private::FArrayPropertyParams Z_Construct_UClass_AStarSystem_Statics::NewProp_PlanetarySystems = { "PlanetarySystems", nullptr, (EPropertyFlags)0x0040000000000000, UECodeGen_Private::EPropertyGenFlags::Array, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(AStarSystem, PlanetarySystems), EArrayPropertyFlags::None, METADATA_PARAMS(Z_Construct_UClass_AStarSystem_Statics::NewProp_PlanetarySystems_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_AStarSystem_Statics::NewProp_PlanetarySystems_MetaData)) };
 	const UECodeGen_Private::FPropertyParamsBase* const Z_Construct_UClass_AStarSystem_Statics::PropPointers[] = {
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AStarSystem_Statics::NewProp_StarsAmount,
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AStarSystem_Statics::NewProp_StarSystemType_Underlying,
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AStarSystem_Statics::NewProp_StarSystemType,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AStarSystem_Statics::NewProp_PlanetarySystems_Inner,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AStarSystem_Statics::NewProp_PlanetarySystems,
 	};
@@ -109,9 +125,9 @@ void EmptyLinkFunctionForGeneratedCodeStarSystem() {}
 		static const FClassRegisterCompiledInInfo ClassInfo[];
 	};
 	const FClassRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarSystem_h_Statics::ClassInfo[] = {
-		{ Z_Construct_UClass_AStarSystem, AStarSystem::StaticClass, TEXT("AStarSystem"), &Z_Registration_Info_UClass_AStarSystem, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(AStarSystem), 2398751310U) },
+		{ Z_Construct_UClass_AStarSystem, AStarSystem::StaticClass, TEXT("AStarSystem"), &Z_Registration_Info_UClass_AStarSystem, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(AStarSystem), 873841194U) },
 	};
-	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarSystem_h_131982959(TEXT("/Script/APS_ALPHA"),
+	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarSystem_h_1000252011(TEXT("/Script/APS_ALPHA"),
 		Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarSystem_h_Statics::ClassInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarSystem_h_Statics::ClassInfo),
 		nullptr, 0,
 		nullptr, 0);

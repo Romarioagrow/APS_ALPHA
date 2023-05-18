@@ -5,6 +5,7 @@
 #include <Components/SphereComponent.h>
 #include "PlanetaryEnvironment.h"
 #include "OrbitalBody.h"
+#include "PlanetType.h"
 
 #include "CoreMinimal.h"
 #include "CelestialBody.h"
@@ -23,6 +24,10 @@ class APS_ALPHA_API APlanet : public AOrbitalBody, public IPlanetaryEnvironment
 
 public:
 	APlanet();
+
+private:
+	UPROPERTY(VisibleAnywhere)
+		EPlanetType PlanetType;
 
 private:
 	TArray<AMoon*> Moons;

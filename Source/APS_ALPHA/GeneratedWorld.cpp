@@ -6,14 +6,14 @@
 #include "MoonGenerationModel.h"
 
 // Sets default values
-AGeneratedWorld::AGeneratedWorld()
+AStarClusterGenerator::AStarClusterGenerator()
 {
  	// Set this actor to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = false;
 }
 
 // Called when the game starts or when spawned
-void AGeneratedWorld::BeginPlay()
+void AStarClusterGenerator::BeginPlay()
 {
 	Super::BeginPlay();
 
@@ -27,7 +27,7 @@ void AGeneratedWorld::BeginPlay()
 }
 
 
-void AGeneratedWorld::GenerateRandomStarSystem()
+void AStarClusterGenerator::GenerateRandomStarSystem()
 {
     if (StarGenerator == nullptr || PlanetGenerator == nullptr || MoonGenerator == nullptr) {
         UE_LOG(LogTemp, Warning, TEXT("One of the generators is null!"));
@@ -139,7 +139,7 @@ void AGeneratedWorld::GenerateRandomStarSystem()
     }
 }
 
-FPlanetarySystemGenerationModel AGeneratedWorld::GenerateRandomPlanetraySystemModel()
+FPlanetarySystemGenerationModel AStarClusterGenerator::GenerateRandomPlanetraySystemModel()
 {
         FPlanetarySystemGenerationModel PlanetarySystemModel;
     PlanetarySystemModel.AmountOfPlanets = FMath::RandRange(1, 10);

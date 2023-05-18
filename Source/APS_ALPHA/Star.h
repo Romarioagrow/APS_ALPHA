@@ -3,10 +3,13 @@
 #pragma once
 
 #include "Planet.h"
+#include "StarType.h"
+#include "StarSpectralClass.h"
 
 #include "CoreMinimal.h"
 #include "CelestialBody.h"
 #include "Star.generated.h"
+
 
 /**
  * 
@@ -25,6 +28,12 @@ private:
 
 	UPROPERTY(VisibleAnywhere)
 		int SurfaceTemperature;
+
+	UPROPERTY(VisibleAnywhere)
+		EStarType StarType;
+	
+	UPROPERTY(VisibleAnywhere)
+		EStarSpectralClass StarSpectralClass;
 
 private:
 	UPROPERTY()

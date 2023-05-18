@@ -3,6 +3,7 @@
 #pragma once
 
 #include "Star.h"
+#include "PlanetarySystemType.h"
 
 #include "CoreMinimal.h"
 #include "CelestialSystem.h"
@@ -20,9 +21,11 @@ private:
 	UPROPERTY()
 		AStar* Star;
 
-	UPROPERTY()
+	UPROPERTY(VisibleAnywhere)
 		int AmountOfPlanets;
-		//TArray<APlanet*> Planets;
+
+	UPROPERTY(VisibleAnywhere)
+		EPlanetarySystemType PlanetarySystemType;
 
 public:
 	void SetStar(AStar* Star);
