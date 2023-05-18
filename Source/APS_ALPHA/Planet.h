@@ -1,7 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
-#include "Moon.h"
+//#include "Moon.h"
 #include <Components/SphereComponent.h>
 #include "PlanetaryEnvironment.h"
 #include "OrbitalBody.h"
@@ -9,6 +9,9 @@
 #include "CoreMinimal.h"
 #include "CelestialBody.h"
 #include "Planet.generated.h"
+
+// Forward declaration of AMoon
+class AMoon;
 
 /**
  * 

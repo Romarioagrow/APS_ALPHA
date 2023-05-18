@@ -29,6 +29,14 @@ void EmptyLinkFunctionForGeneratedCodeStar() {}
 #if WITH_METADATA
 		static const UECodeGen_Private::FMetaDataPairParam Class_MetaDataParams[];
 #endif
+#if WITH_METADATA
+		static const UECodeGen_Private::FMetaDataPairParam NewProp_Luminosity_MetaData[];
+#endif
+		static const UECodeGen_Private::FFloatPropertyParams NewProp_Luminosity;
+#if WITH_METADATA
+		static const UECodeGen_Private::FMetaDataPairParam NewProp_SurfaceTemperature_MetaData[];
+#endif
+		static const UECodeGen_Private::FUnsizedIntPropertyParams NewProp_SurfaceTemperature;
 		static const UECodeGen_Private::FObjectPropertyParams NewProp_Planets_Inner;
 #if WITH_METADATA
 		static const UECodeGen_Private::FMetaDataPairParam NewProp_Planets_MetaData[];
@@ -49,6 +57,20 @@ void EmptyLinkFunctionForGeneratedCodeStar() {}
 		{ "ModuleRelativePath", "Star.h" },
 	};
 #endif
+#if WITH_METADATA
+	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_AStar_Statics::NewProp_Luminosity_MetaData[] = {
+		{ "Category", "Star" },
+		{ "ModuleRelativePath", "Star.h" },
+	};
+#endif
+	const UECodeGen_Private::FFloatPropertyParams Z_Construct_UClass_AStar_Statics::NewProp_Luminosity = { "Luminosity", nullptr, (EPropertyFlags)0x0040000000020001, UECodeGen_Private::EPropertyGenFlags::Float, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(AStar, Luminosity), METADATA_PARAMS(Z_Construct_UClass_AStar_Statics::NewProp_Luminosity_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_AStar_Statics::NewProp_Luminosity_MetaData)) };
+#if WITH_METADATA
+	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_AStar_Statics::NewProp_SurfaceTemperature_MetaData[] = {
+		{ "Category", "Star" },
+		{ "ModuleRelativePath", "Star.h" },
+	};
+#endif
+	const UECodeGen_Private::FUnsizedIntPropertyParams Z_Construct_UClass_AStar_Statics::NewProp_SurfaceTemperature = { "SurfaceTemperature", nullptr, (EPropertyFlags)0x0040000000020001, UECodeGen_Private::EPropertyGenFlags::Int, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(AStar, SurfaceTemperature), METADATA_PARAMS(Z_Construct_UClass_AStar_Statics::NewProp_SurfaceTemperature_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_AStar_Statics::NewProp_SurfaceTemperature_MetaData)) };
 	const UECodeGen_Private::FObjectPropertyParams Z_Construct_UClass_AStar_Statics::NewProp_Planets_Inner = { "Planets", nullptr, (EPropertyFlags)0x0000000000000000, UECodeGen_Private::EPropertyGenFlags::Object, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, 0, Z_Construct_UClass_APlanet_NoRegister, METADATA_PARAMS(nullptr, 0) };
 #if WITH_METADATA
 	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_AStar_Statics::NewProp_Planets_MetaData[] = {
@@ -57,6 +79,8 @@ void EmptyLinkFunctionForGeneratedCodeStar() {}
 #endif
 	const UECodeGen_Private::FArrayPropertyParams Z_Construct_UClass_AStar_Statics::NewProp_Planets = { "Planets", nullptr, (EPropertyFlags)0x0040000000000000, UECodeGen_Private::EPropertyGenFlags::Array, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(AStar, Planets), EArrayPropertyFlags::None, METADATA_PARAMS(Z_Construct_UClass_AStar_Statics::NewProp_Planets_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_AStar_Statics::NewProp_Planets_MetaData)) };
 	const UECodeGen_Private::FPropertyParamsBase* const Z_Construct_UClass_AStar_Statics::PropPointers[] = {
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AStar_Statics::NewProp_Luminosity,
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AStar_Statics::NewProp_SurfaceTemperature,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AStar_Statics::NewProp_Planets_Inner,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AStar_Statics::NewProp_Planets,
 	};
@@ -97,9 +121,9 @@ void EmptyLinkFunctionForGeneratedCodeStar() {}
 		static const FClassRegisterCompiledInInfo ClassInfo[];
 	};
 	const FClassRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_Star_h_Statics::ClassInfo[] = {
-		{ Z_Construct_UClass_AStar, AStar::StaticClass, TEXT("AStar"), &Z_Registration_Info_UClass_AStar, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(AStar), 2389174334U) },
+		{ Z_Construct_UClass_AStar, AStar::StaticClass, TEXT("AStar"), &Z_Registration_Info_UClass_AStar, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(AStar), 3004472349U) },
 	};
-	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_Star_h_2766739925(TEXT("/Script/APS_ALPHA"),
+	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_Star_h_2380113958(TEXT("/Script/APS_ALPHA"),
 		Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_Star_h_Statics::ClassInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_Star_h_Statics::ClassInfo),
 		nullptr, 0,
 		nullptr, 0);
