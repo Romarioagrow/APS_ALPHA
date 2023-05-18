@@ -20,6 +20,13 @@ public:
 	AStar();
 
 private:
+	UPROPERTY(VisibleAnywhere)
+		float Luminosity;
+
+	UPROPERTY(VisibleAnywhere)
+		int SurfaceTemperature;
+
+private:
 	UPROPERTY()
 		TArray<APlanet*> Planets;
 

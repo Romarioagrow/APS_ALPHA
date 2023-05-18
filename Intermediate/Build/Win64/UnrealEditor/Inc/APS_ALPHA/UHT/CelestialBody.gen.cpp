@@ -37,6 +37,14 @@ void EmptyLinkFunctionForGeneratedCodeCelestialBody() {}
 		static const UECodeGen_Private::FMetaDataPairParam NewProp_Mass_MetaData[];
 #endif
 		static const UECodeGen_Private::FFloatPropertyParams NewProp_Mass;
+#if WITH_METADATA
+		static const UECodeGen_Private::FMetaDataPairParam NewProp_Age_MetaData[];
+#endif
+		static const UECodeGen_Private::FFloatPropertyParams NewProp_Age;
+#if WITH_METADATA
+		static const UECodeGen_Private::FMetaDataPairParam NewProp_AstroName_MetaData[];
+#endif
+		static const UECodeGen_Private::FNamePropertyParams NewProp_AstroName;
 		static const UECodeGen_Private::FPropertyParamsBase* const PropPointers[];
 		static const UECodeGen_Private::FImplementedInterfaceParams InterfaceParams[];
 		static const FCppClassTypeInfoStatic StaticCppClassTypeInfo;
@@ -59,17 +67,33 @@ void EmptyLinkFunctionForGeneratedCodeCelestialBody() {}
 		{ "ModuleRelativePath", "CelestialBody.h" },
 	};
 #endif
-	const UECodeGen_Private::FFloatPropertyParams Z_Construct_UClass_ACelestialBody_Statics::NewProp_Radius = { "Radius", nullptr, (EPropertyFlags)0x0040000000000001, UECodeGen_Private::EPropertyGenFlags::Float, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(ACelestialBody, Radius), METADATA_PARAMS(Z_Construct_UClass_ACelestialBody_Statics::NewProp_Radius_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_ACelestialBody_Statics::NewProp_Radius_MetaData)) };
+	const UECodeGen_Private::FFloatPropertyParams Z_Construct_UClass_ACelestialBody_Statics::NewProp_Radius = { "Radius", nullptr, (EPropertyFlags)0x0040000000020001, UECodeGen_Private::EPropertyGenFlags::Float, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(ACelestialBody, Radius), METADATA_PARAMS(Z_Construct_UClass_ACelestialBody_Statics::NewProp_Radius_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_ACelestialBody_Statics::NewProp_Radius_MetaData)) };
 #if WITH_METADATA
 	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_ACelestialBody_Statics::NewProp_Mass_MetaData[] = {
 		{ "Category", "CelestialBody" },
 		{ "ModuleRelativePath", "CelestialBody.h" },
 	};
 #endif
-	const UECodeGen_Private::FFloatPropertyParams Z_Construct_UClass_ACelestialBody_Statics::NewProp_Mass = { "Mass", nullptr, (EPropertyFlags)0x0040000000000001, UECodeGen_Private::EPropertyGenFlags::Float, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(ACelestialBody, Mass), METADATA_PARAMS(Z_Construct_UClass_ACelestialBody_Statics::NewProp_Mass_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_ACelestialBody_Statics::NewProp_Mass_MetaData)) };
+	const UECodeGen_Private::FFloatPropertyParams Z_Construct_UClass_ACelestialBody_Statics::NewProp_Mass = { "Mass", nullptr, (EPropertyFlags)0x0040000000020001, UECodeGen_Private::EPropertyGenFlags::Float, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(ACelestialBody, Mass), METADATA_PARAMS(Z_Construct_UClass_ACelestialBody_Statics::NewProp_Mass_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_ACelestialBody_Statics::NewProp_Mass_MetaData)) };
+#if WITH_METADATA
+	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_ACelestialBody_Statics::NewProp_Age_MetaData[] = {
+		{ "Category", "CelestialBody" },
+		{ "ModuleRelativePath", "CelestialBody.h" },
+	};
+#endif
+	const UECodeGen_Private::FFloatPropertyParams Z_Construct_UClass_ACelestialBody_Statics::NewProp_Age = { "Age", nullptr, (EPropertyFlags)0x0040000000020001, UECodeGen_Private::EPropertyGenFlags::Float, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(ACelestialBody, Age), METADATA_PARAMS(Z_Construct_UClass_ACelestialBody_Statics::NewProp_Age_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_ACelestialBody_Statics::NewProp_Age_MetaData)) };
+#if WITH_METADATA
+	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_ACelestialBody_Statics::NewProp_AstroName_MetaData[] = {
+		{ "Category", "CelestialBody" },
+		{ "ModuleRelativePath", "CelestialBody.h" },
+	};
+#endif
+	const UECodeGen_Private::FNamePropertyParams Z_Construct_UClass_ACelestialBody_Statics::NewProp_AstroName = { "AstroName", nullptr, (EPropertyFlags)0x0040000000020001, UECodeGen_Private::EPropertyGenFlags::Name, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(ACelestialBody, AstroName), METADATA_PARAMS(Z_Construct_UClass_ACelestialBody_Statics::NewProp_AstroName_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_ACelestialBody_Statics::NewProp_AstroName_MetaData)) };
 	const UECodeGen_Private::FPropertyParamsBase* const Z_Construct_UClass_ACelestialBody_Statics::PropPointers[] = {
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_ACelestialBody_Statics::NewProp_Radius,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_ACelestialBody_Statics::NewProp_Mass,
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_ACelestialBody_Statics::NewProp_Age,
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_ACelestialBody_Statics::NewProp_AstroName,
 	};
 		const UECodeGen_Private::FImplementedInterfaceParams Z_Construct_UClass_ACelestialBody_Statics::InterfaceParams[] = {
 			{ Z_Construct_UClass_UAstonomicalBody_NoRegister, (int32)VTABLE_OFFSET(ACelestialBody, IAstonomicalBody), false },  // 4128211536
@@ -111,9 +135,9 @@ void EmptyLinkFunctionForGeneratedCodeCelestialBody() {}
 		static const FClassRegisterCompiledInInfo ClassInfo[];
 	};
 	const FClassRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_CelestialBody_h_Statics::ClassInfo[] = {
-		{ Z_Construct_UClass_ACelestialBody, ACelestialBody::StaticClass, TEXT("ACelestialBody"), &Z_Registration_Info_UClass_ACelestialBody, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(ACelestialBody), 3230834572U) },
+		{ Z_Construct_UClass_ACelestialBody, ACelestialBody::StaticClass, TEXT("ACelestialBody"), &Z_Registration_Info_UClass_ACelestialBody, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(ACelestialBody), 1848556478U) },
 	};
-	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_CelestialBody_h_3284531231(TEXT("/Script/APS_ALPHA"),
+	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_CelestialBody_h_918801336(TEXT("/Script/APS_ALPHA"),
 		Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_CelestialBody_h_Statics::ClassInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_CelestialBody_h_Statics::ClassInfo),
 		nullptr, 0,
 		nullptr, 0);

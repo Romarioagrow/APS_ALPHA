@@ -3,3 +3,7 @@
 
 #include "Moon.h"
 
+void AMoon::SetParentPlanet(APlanet* Planet)
+{
+	ParentPlanet = Planet;
+}

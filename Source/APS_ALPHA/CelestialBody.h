@@ -16,10 +16,16 @@ class APS_ALPHA_API ACelestialBody : public AAstroActor, public IAstonomicalBody
 	GENERATED_BODY()
 
 private:
-	UPROPERTY(EditAnywhere)
+	UPROPERTY(VisibleAnywhere)
 		float Radius;
 
-	UPROPERTY(EditAnywhere)
+	UPROPERTY(VisibleAnywhere)
 		float Mass;
+	
+	UPROPERTY(VisibleAnywhere)
+		float Age;
+	
+	UPROPERTY(VisibleAnywhere)
+		FName AstroName;
 	
 };

@@ -19,6 +19,9 @@ class APS_ALPHA_API APlanetarySystem : public ACelestialSystem
 private:
 	UPROPERTY()
 		AStar* Star;
+
+	UPROPERTY()
+		int AmountOfPlanets;
 		//TArray<APlanet*> Planets;
 
 public:

@@ -45,8 +45,9 @@ void AGeneratedWorld::GenerateRandomStarSystem()
 
     if (World) // Проверяем, существует ли мир
     {
+        // Создаем новую звездную систему
         FStarSystemGenerationModel StarSystemModel = StarSystemGenerator->GenerateRandomStarSystemModel();
-        AStarSystem* NewStarSystem = World->SpawnActor<AStarSystem>(BP_StarSystemClass); // Создаем новую звездную систему
+        AStarSystem* NewStarSystem = World->SpawnActor<AStarSystem>(BP_StarSystemClass); 
         if (!NewStarSystem) // Проверяем, успешно ли создана звездная система
         {
             // Обрабатываем ошибку
@@ -65,7 +66,8 @@ void AGeneratedWorld::GenerateRandomStarSystem()
 
             // Create Planetray System
             APlanetarySystem* NewPlanetarySystem = World->SpawnActor<APlanetarySystem>(BP_PlanetarySystemClass);
-            if (!NewPlanetarySystem) // Проверяем, успешно ли создана планетарная система
+            // Проверяем, успешно ли создана планетарная система
+            if (!NewPlanetarySystem) 
             {
                 // Обрабатываем ошибку
                 UE_LOG(LogTemp, Warning, TEXT("NewPlanetarySystem Falied!"));
@@ -74,9 +76,9 @@ void AGeneratedWorld::GenerateRandomStarSystem()
             }
             /// PlanetarySystemGenerator->ApplyModel();
 
-
+            // Проверяем, успешно ли создана планетарная система
             AStar* NewStar = World->SpawnActor<AStar>(BP_StarClass); //StarGenerator->GenerateStar(StarModel);
-            if (!NewPlanetarySystem) // Проверяем, успешно ли создана планетарная система
+            if (!NewPlanetarySystem) 
             {
                 // Обрабатываем ошибку
                 UE_LOG(LogTemp, Warning, TEXT("NewPlanetarySystem Falied!"));
@@ -87,7 +89,6 @@ void AGeneratedWorld::GenerateRandomStarSystem()
             NewPlanetarySystem->SetStar(NewStar);
             // Прикрепить NewStar к NewPlanetarySystem
             NewStar->AttachToActor(NewPlanetarySystem, FAttachmentTransformRules::KeepRelativeTransform);
-            UE_LOG(LogTemp, Warning, TEXT("Star is attached to PlanetarySystem"));
 
             int AmountOfPlanets = PlanetraySystemModel.AmountOfPlanets;
             // Генерация планет для каждой звезды
@@ -108,7 +109,6 @@ void AGeneratedWorld::GenerateRandomStarSystem()
                 NewStar->AddPlanet(NewPlanet);
                 // Прикрепить NewPlanet к NewStar
                 NewPlanet->AttachToActor(NewStar, FAttachmentTransformRules::KeepRelativeTransform);
-                UE_LOG(LogTemp, Warning, TEXT("Planet is attached to Star"));
 
                 // Generate Moons
                 FMoonGenerationModel MoonModel = MoonGenerator->GenerateRandomMoonModel();
@@ -129,14 +129,12 @@ void AGeneratedWorld::GenerateRandomStarSystem()
                     NewPlanet->AddMoon(NewMoon);
                     // Прикрепить NewMoon к NewPlanet
                     NewMoon->AttachToActor(NewPlanet, FAttachmentTransformRules::KeepRelativeTransform);
-                    UE_LOG(LogTemp, Warning, TEXT("Moon is attached to Planet"));
                 }
 
             }
             NewStarSystem->AddPlanetarySystem(NewPlanetarySystem);
             // Прикрепить NewPlanetarySystem к NewStarSystem
             NewPlanetarySystem->AttachToActor(NewStarSystem, FAttachmentTransformRules::KeepRelativeTransform);
-            UE_LOG(LogTemp, Warning, TEXT("PlanetarySystem is attached to StarSystem"));
         }
     }
 }
