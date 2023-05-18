@@ -2,6 +2,7 @@
 
 #pragma once
 #include "PlanetarySystem.h"
+#include "StarSystemType.h"
 
 #include "CoreMinimal.h"
 #include "CelestialSystem.h"
@@ -19,6 +20,9 @@ private:
 
 	UPROPERTY(VisibleAnywhere, Category = "Star System")
 		int StarsAmount;
+
+	UPROPERTY(VisibleAnywhere)
+		EStarSystemType StarSystemType;
 
 	UPROPERTY()
 		TArray<APlanetarySystem*> PlanetarySystems;

@@ -320,6 +320,9 @@
     <ClInclude Include="..\..\Source\APS_ALPHA\MoonGenerator.h">
       <Filter>Source\APS_ALPHA</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\Source\APS_ALPHA\MoonType.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
     <ClCompile Include="..\..\Source\APS_ALPHA\OrbitalBody.cpp">
       <Filter>Source\APS_ALPHA</Filter>
     </ClCompile>
@@ -362,6 +365,9 @@
     <ClInclude Include="..\..\Source\APS_ALPHA\PlanetarySystemGenerationModel.h">
       <Filter>Source\APS_ALPHA</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\Source\APS_ALPHA\PlanetarySystemType.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
     <ClCompile Include="..\..\Source\APS_ALPHA\PlanetGenerationModel.cpp">
       <Filter>Source\APS_ALPHA</Filter>
     </ClCompile>
@@ -378,6 +384,9 @@
       <Filter>Source\APS_ALPHA</Filter>
     </ClCompile>
     <ClInclude Include="..\..\Source\APS_ALPHA\PlanetGravityActor.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\APS_ALPHA\PlanetType.h">
       <Filter>Source\APS_ALPHA</Filter>
     </ClInclude>
     <ClCompile Include="..\..\Source\APS_ALPHA\SpaceCharacter.cpp">
@@ -434,6 +443,9 @@
     <ClInclude Include="..\..\Source\APS_ALPHA\StarSector.h">
       <Filter>Source\APS_ALPHA</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\Source\APS_ALPHA\StarSpectralClass.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
     <ClCompile Include="..\..\Source\APS_ALPHA\StarSystem.cpp">
       <Filter>Source\APS_ALPHA</Filter>
     </ClCompile>
@@ -450,6 +462,12 @@
       <Filter>Source\APS_ALPHA</Filter>
     </ClCompile>
     <ClInclude Include="..\..\Source\APS_ALPHA\StarSystemGenerator.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\APS_ALPHA\StarSystemType.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\APS_ALPHA\StarType.h">
       <Filter>Source\APS_ALPHA</Filter>
     </ClInclude>
     <ClCompile Include="..\..\Source\APS_ALPHA\StationGravityActor.cpp">

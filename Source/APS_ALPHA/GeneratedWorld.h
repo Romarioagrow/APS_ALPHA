@@ -9,13 +9,13 @@
 #include "GeneratedWorld.generated.h"
 
 UCLASS()
-class APS_ALPHA_API AGeneratedWorld : public AActor
+class APS_ALPHA_API AStarClusterGenerator : public AActor
 {
 	GENERATED_BODY()
 	
 public:	
 	// Sets default values for this actor's properties
-	AGeneratedWorld();
+	AStarClusterGenerator();
 
 protected:
 	// Called when the game starts or when spawned
