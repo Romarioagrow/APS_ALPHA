@@ -3,3 +3,7 @@
 
 #include "PlanetarySystem.h"
 
+void APlanetarySystem::SetStar(AStar* NewStar)
+{
+	this->Star = NewStar;
+}

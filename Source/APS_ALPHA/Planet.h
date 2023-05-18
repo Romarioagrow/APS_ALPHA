@@ -1,10 +1,11 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
-
+#include "Moon.h"
 #include <Components/SphereComponent.h>
 #include "PlanetaryEnvironment.h"
 #include "OrbitalBody.h"
+
 #include "CoreMinimal.h"
 #include "CelestialBody.h"
 #include "Planet.generated.h"
@@ -20,9 +21,11 @@ class APS_ALPHA_API APlanet : public AOrbitalBody, public IPlanetaryEnvironment
 public:
 	APlanet();
 
-	/*virtual void BeginPlay() override;
+private:
+	TArray<AMoon*> Moons;
 
-	virtual void Tick(float DeltaTime) override;*/
+public:
+	void AddMoon(AMoon* Moon);
 
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")

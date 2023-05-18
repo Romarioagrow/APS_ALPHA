@@ -14,5 +14,12 @@ UCLASS()
 class APS_ALPHA_API ACelestialBody : public AAstroActor, public IAstonomicalBody
 {
 	GENERATED_BODY()
+
+private:
+	UPROPERTY(EditAnywhere)
+		float Radius;
+
+	UPROPERTY(EditAnywhere)
+		float Mass;
 	
 };
