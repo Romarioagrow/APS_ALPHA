@@ -22,7 +22,8 @@ PRAGMA_DISABLE_DEPRECATION_WARNINGS
 	op(EPlanetarySystemType::NoPlanetSystem) \
 	op(EPlanetarySystemType::SmallSystem) \
 	op(EPlanetarySystemType::LargeSystem) \
-	op(EPlanetarySystemType::ChaoticSystem) 
+	op(EPlanetarySystemType::ChaoticSystem) \
+	op(EPlanetarySystemType::DenseSystem) 
 
 enum class EPlanetarySystemType : uint8;
 template<> struct TIsUEnumClass<EPlanetarySystemType> { enum { Value = true }; };

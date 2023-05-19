@@ -1,4 +1,6 @@
 #pragma once
+#include "StarType.h"
+#include "StarSpectralClass.h"
 
 #include "CelestialGenerationModel.h"
 #include "CoreMinimal.h"
@@ -10,9 +12,17 @@ struct FStarGenerationModel :
 {
     GENERATED_BODY()
     
-    
         // Тип звезды (например, карлик, гигант, сверхгигант и т.д.)
-    /*UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star")
-        EStarType StarType;*/
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star")
+        EStarType StarType;
+
+	UPROPERTY(VisibleAnywhere)
+		float Luminosity;
+
+	UPROPERTY(VisibleAnywhere)
+		int SurfaceTemperature;
+
+	UPROPERTY(VisibleAnywhere)
+		EStarSpectralClass StarSpectralClass;
 };
 

@@ -41,5 +41,11 @@ private:
 
 	public:
 		void AddPlanet(APlanet* Planet);
+
+public:
+	void SetLuminosity(float Luminosity);
+	void SetSurfaceTemperature(int SurfaceTemperature);
+	void SetStarType(EStarType StarType);
+	void SetStarSpectralClass(EStarSpectralClass StarSpectralClass);
 	
 };
