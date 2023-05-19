@@ -1,4 +1,5 @@
 #pragma once
+#include "PlanetarySystemType.h"
 
 #include "GenerationModel.h"
 #include "CoreMinimal.h"
@@ -18,6 +19,8 @@ struct FPlanetarySystemGenerationModel :
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planetary System")
         double DistanceBetweenPlanets;
 
-    FPlanetarySystemGenerationModel GenerateRandomPlanetraySystemModel();
+    UPROPERTY(VisibleAnywhere)
+        EPlanetarySystemType PlanetarySystemType;
+
 };
 

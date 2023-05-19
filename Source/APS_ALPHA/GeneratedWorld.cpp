@@ -62,8 +62,9 @@ void AStarClusterGenerator::GenerateRandomStarSystem()
         // Генерация звезд для каждой планетарной системы
         for (int i = 0; i < AmountOfStars; i++)
         {
+            
             FStarGenerationModel StarModel = StarGenerator->GenerateRandomStarModel();
-            FPlanetarySystemGenerationModel PlanetraySystemModel = GenerateRandomPlanetraySystemModel(); // Add StarModel and calculate based on it  
+            FPlanetarySystemGenerationModel PlanetraySystemModel = PlanetarySystemGenerator->GenerateRandomPlanetraySystemModelByStar(StarModel); // Add StarModel and calculate based on it  
 
             // Create Planetray System
             APlanetarySystem* NewPlanetarySystem = World->SpawnActor<APlanetarySystem>(BP_PlanetarySystemClass);
@@ -88,7 +89,6 @@ void AStarClusterGenerator::GenerateRandomStarSystem()
             }
             StarGenerator->ApplyModel(NewStar, StarModel);
             NewPlanetarySystem->SetStar(NewStar);
-            // Прикрепить NewStar к NewPlanetarySystem
             NewStar->AttachToActor(NewPlanetarySystem, FAttachmentTransformRules::KeepRelativeTransform);
 
             int AmountOfPlanets = PlanetraySystemModel.AmountOfPlanets;
@@ -107,7 +107,6 @@ void AStarClusterGenerator::GenerateRandomStarSystem()
                 }
                 PlanetGenerator->ApplyModel(NewPlanet, PlanetModel);
                 NewStar->AddPlanet(NewPlanet);
-                // Прикрепить NewPlanet к NewStar
                 NewPlanet->AttachToActor(NewStar, FAttachmentTransformRules::KeepRelativeTransform);
 
                 // Generate Moons
@@ -137,12 +136,12 @@ void AStarClusterGenerator::GenerateRandomStarSystem()
     }
 }
 
-FPlanetarySystemGenerationModel AStarClusterGenerator::GenerateRandomPlanetraySystemModel()
-{
-        FPlanetarySystemGenerationModel PlanetarySystemModel;
-    PlanetarySystemModel.AmountOfPlanets = FMath::RandRange(1, 10);
-    PlanetarySystemModel.DistanceBetweenPlanets = FMath::RandRange(0.1, 10.0);
-    return PlanetarySystemModel;
-}
+//FPlanetarySystemGenerationModel AStarClusterGenerator::GenerateRandomPlanetraySystemModel()
+//{
+//    FPlanetarySystemGenerationModel PlanetarySystemModel;
+//    PlanetarySystemModel.AmountOfPlanets = FMath::RandRange(1, 10);
+//    PlanetarySystemModel.DistanceBetweenPlanets = FMath::RandRange(0.1, 10.0);
+//    return PlanetarySystemModel;
+//}
 
 

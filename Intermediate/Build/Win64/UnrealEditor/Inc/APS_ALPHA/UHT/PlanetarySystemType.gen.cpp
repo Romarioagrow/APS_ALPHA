@@ -38,12 +38,15 @@ void EmptyLinkFunctionForGeneratedCodePlanetarySystemType() {}
 		{ "EPlanetarySystemType::SmallSystem", (int64)EPlanetarySystemType::SmallSystem },
 		{ "EPlanetarySystemType::LargeSystem", (int64)EPlanetarySystemType::LargeSystem },
 		{ "EPlanetarySystemType::ChaoticSystem", (int64)EPlanetarySystemType::ChaoticSystem },
+		{ "EPlanetarySystemType::DenseSystem", (int64)EPlanetarySystemType::DenseSystem },
 	};
 #if WITH_METADATA
 	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UEnum_APS_ALPHA_EPlanetarySystemType_Statics::Enum_MetaDataParams[] = {
 		{ "BlueprintType", "true" },
 		{ "ChaoticSystem.DisplayName", "Chaotic System" },
 		{ "ChaoticSystem.Name", "EPlanetarySystemType::ChaoticSystem" },
+		{ "DenseSystem.DisplayName", "Dense System" },
+		{ "DenseSystem.Name", "EPlanetarySystemType::DenseSystem" },
 		{ "LargeSystem.DisplayName", "Large System" },
 		{ "LargeSystem.Name", "EPlanetarySystemType::LargeSystem" },
 		{ "ModuleRelativePath", "PlanetarySystemType.h" },
@@ -78,9 +81,9 @@ void EmptyLinkFunctionForGeneratedCodePlanetarySystemType() {}
 		static const FEnumRegisterCompiledInInfo EnumInfo[];
 	};
 	const FEnumRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_PlanetarySystemType_h_Statics::EnumInfo[] = {
-		{ EPlanetarySystemType_StaticEnum, TEXT("EPlanetarySystemType"), &Z_Registration_Info_UEnum_EPlanetarySystemType, CONSTRUCT_RELOAD_VERSION_INFO(FEnumReloadVersionInfo, 2240509717U) },
+		{ EPlanetarySystemType_StaticEnum, TEXT("EPlanetarySystemType"), &Z_Registration_Info_UEnum_EPlanetarySystemType, CONSTRUCT_RELOAD_VERSION_INFO(FEnumReloadVersionInfo, 3970969480U) },
 	};
-	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_PlanetarySystemType_h_3357180448(TEXT("/Script/APS_ALPHA"),
+	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_PlanetarySystemType_h_2030852529(TEXT("/Script/APS_ALPHA"),
 		nullptr, 0,
 		nullptr, 0,
 		Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_PlanetarySystemType_h_Statics::EnumInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_PlanetarySystemType_h_Statics::EnumInfo));

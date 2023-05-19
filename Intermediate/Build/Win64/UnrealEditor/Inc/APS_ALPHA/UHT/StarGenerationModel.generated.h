@@ -14,7 +14,7 @@ PRAGMA_DISABLE_DEPRECATION_WARNINGS
 #endif
 #define APS_ALPHA_StarGenerationModel_generated_h
 
-#define FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarGenerationModel_h_11_GENERATED_BODY \
+#define FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarGenerationModel_h_13_GENERATED_BODY \
 	friend struct Z_Construct_UScriptStruct_FStarGenerationModel_Statics; \
 	APS_ALPHA_API static class UScriptStruct* StaticStruct(); \
 	typedef FCelestialGenerationModel Super;

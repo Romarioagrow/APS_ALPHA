@@ -17,6 +17,8 @@ enum class EPlanetarySystemType : uint8
     
     ChaoticSystem
     UMETA(DisplayName = "Chaotic System"),
-
     
+    DenseSystem
+    UMETA(DisplayName = "Dense System"),
+
 };

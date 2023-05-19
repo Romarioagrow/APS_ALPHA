@@ -196,7 +196,6 @@ void UStarSystemGenerator::ApplyModel(AStarSystem* StarSystem, FStarSystemGenera
 FStarSystemGenerationModel UStarSystemGenerator::GenerateRandomStarSystemModel()
 {
 	FStarSystemGenerationModel StarSystemModel;
-	//StarSystemModel.DistanceBetweenStars = FMath::RandRange(0.1, 10.0);
 
 	// Случайное число в диапазоне от 0 до 100
 	int32 RandomValue = FMath::RandRange(0, 100);

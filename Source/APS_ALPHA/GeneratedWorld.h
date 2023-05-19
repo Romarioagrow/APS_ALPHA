@@ -66,7 +66,7 @@ public:
 	FPlanetarySystemGenerationModel GenerateRandomPlanetraySystemModel();
 
 	;*/
-	FPlanetarySystemGenerationModel GenerateRandomPlanetraySystemModel();
+	//FPlanetarySystemGenerationModel GenerateRandomPlanetraySystemModel();
 //private:
 	//void CreatePlanetarySystem(FPlanetarySystemGenerationModel PlanetarySystemModel); //FPlanetarySystemParams Params
 };

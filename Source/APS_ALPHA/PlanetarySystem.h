@@ -29,4 +29,8 @@ private:
 
 public:
 	void SetStar(AStar* Star);
+
+	void SetAmountOfPlanets(int AmountOfPlanets);
+
+	void SetPlanetarySystemType(EPlanetarySystemType PlanetarySystemType);
 };
