@@ -9,23 +9,23 @@
 PRAGMA_DISABLE_DEPRECATION_WARNINGS
 void EmptyLinkFunctionForGeneratedCodeStarSpectralClass() {}
 // Cross Module References
-	APS_ALPHA_API UEnum* Z_Construct_UEnum_APS_ALPHA_EStarSpectralClass();
+	APS_ALPHA_API UEnum* Z_Construct_UEnum_APS_ALPHA_ESpectralClass();
 	UPackage* Z_Construct_UPackage__Script_APS_ALPHA();
 // End Cross Module References
-	static FEnumRegistrationInfo Z_Registration_Info_UEnum_EStarSpectralClass;
-	static UEnum* EStarSpectralClass_StaticEnum()
+	static FEnumRegistrationInfo Z_Registration_Info_UEnum_ESpectralClass;
+	static UEnum* ESpectralClass_StaticEnum()
 	{
-		if (!Z_Registration_Info_UEnum_EStarSpectralClass.OuterSingleton)
+		if (!Z_Registration_Info_UEnum_ESpectralClass.OuterSingleton)
 		{
-			Z_Registration_Info_UEnum_EStarSpectralClass.OuterSingleton = GetStaticEnum(Z_Construct_UEnum_APS_ALPHA_EStarSpectralClass, Z_Construct_UPackage__Script_APS_ALPHA(), TEXT("EStarSpectralClass"));
+			Z_Registration_Info_UEnum_ESpectralClass.OuterSingleton = GetStaticEnum(Z_Construct_UEnum_APS_ALPHA_ESpectralClass, Z_Construct_UPackage__Script_APS_ALPHA(), TEXT("ESpectralClass"));
 		}
-		return Z_Registration_Info_UEnum_EStarSpectralClass.OuterSingleton;
+		return Z_Registration_Info_UEnum_ESpectralClass.OuterSingleton;
 	}
-	template<> APS_ALPHA_API UEnum* StaticEnum<EStarSpectralClass>()
+	template<> APS_ALPHA_API UEnum* StaticEnum<ESpectralClass>()
 	{
-		return EStarSpectralClass_StaticEnum();
+		return ESpectralClass_StaticEnum();
 	}
-	struct Z_Construct_UEnum_APS_ALPHA_EStarSpectralClass_Statics
+	struct Z_Construct_UEnum_APS_ALPHA_ESpectralClass_Statics
 	{
 		static const UECodeGen_Private::FEnumeratorParam Enumerators[];
 #if WITH_METADATA
@@ -33,81 +33,78 @@ void EmptyLinkFunctionForGeneratedCodeStarSpectralClass() {}
 #endif
 		static const UECodeGen_Private::FEnumParams EnumParams;
 	};
-	const UECodeGen_Private::FEnumeratorParam Z_Construct_UEnum_APS_ALPHA_EStarSpectralClass_Statics::Enumerators[] = {
-		{ "EStarSpectralClass::O", (int64)EStarSpectralClass::O },
-		{ "EStarSpectralClass::B", (int64)EStarSpectralClass::B },
-		{ "EStarSpectralClass::A", (int64)EStarSpectralClass::A },
-		{ "EStarSpectralClass::F", (int64)EStarSpectralClass::F },
-		{ "EStarSpectralClass::G", (int64)EStarSpectralClass::G },
-		{ "EStarSpectralClass::K", (int64)EStarSpectralClass::K },
-		{ "EStarSpectralClass::M", (int64)EStarSpectralClass::M },
-		{ "EStarSpectralClass::L", (int64)EStarSpectralClass::L },
-		{ "EStarSpectralClass::T", (int64)EStarSpectralClass::T },
-		{ "EStarSpectralClass::Y", (int64)EStarSpectralClass::Y },
-		{ "EStarSpectralClass::WD", (int64)EStarSpectralClass::WD },
-		{ "EStarSpectralClass::NS", (int64)EStarSpectralClass::NS },
-		{ "EStarSpectralClass::BH", (int64)EStarSpectralClass::BH },
+	const UECodeGen_Private::FEnumeratorParam Z_Construct_UEnum_APS_ALPHA_ESpectralClass_Statics::Enumerators[] = {
+		{ "ESpectralClass::O", (int64)ESpectralClass::O },
+		{ "ESpectralClass::B", (int64)ESpectralClass::B },
+		{ "ESpectralClass::A", (int64)ESpectralClass::A },
+		{ "ESpectralClass::F", (int64)ESpectralClass::F },
+		{ "ESpectralClass::G", (int64)ESpectralClass::G },
+		{ "ESpectralClass::K", (int64)ESpectralClass::K },
+		{ "ESpectralClass::M", (int64)ESpectralClass::M },
+		{ "ESpectralClass::L", (int64)ESpectralClass::L },
+		{ "ESpectralClass::T", (int64)ESpectralClass::T },
+		{ "ESpectralClass::Y", (int64)ESpectralClass::Y },
+		{ "ESpectralClass::NS", (int64)ESpectralClass::NS },
+		{ "ESpectralClass::BH", (int64)ESpectralClass::BH },
 	};
 #if WITH_METADATA
-	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UEnum_APS_ALPHA_EStarSpectralClass_Statics::Enum_MetaDataParams[] = {
+	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UEnum_APS_ALPHA_ESpectralClass_Statics::Enum_MetaDataParams[] = {
 		{ "A.DisplayName", "A - White" },
-		{ "A.Name", "EStarSpectralClass::A" },
-		{ "B.DisplayName", "B - Blue White" },
-		{ "B.Name", "EStarSpectralClass::B" },
+		{ "A.Name", "ESpectralClass::A" },
+		{ "B.DisplayName", "B - Blue-White" },
+		{ "B.Name", "ESpectralClass::B" },
 		{ "BH.DisplayName", "Black Hole" },
-		{ "BH.Name", "EStarSpectralClass::BH" },
+		{ "BH.Name", "ESpectralClass::BH" },
 		{ "BlueprintType", "true" },
-		{ "F.DisplayName", "F - Yellow White" },
-		{ "F.Name", "EStarSpectralClass::F" },
+		{ "F.DisplayName", "F - Yellow-White" },
+		{ "F.Name", "ESpectralClass::F" },
 		{ "G.DisplayName", "G - Yellow" },
-		{ "G.Name", "EStarSpectralClass::G" },
+		{ "G.Name", "ESpectralClass::G" },
 		{ "K.DisplayName", "K - Orange" },
-		{ "K.Name", "EStarSpectralClass::K" },
+		{ "K.Name", "ESpectralClass::K" },
 		{ "L.DisplayName", "L - Brown Dwarf" },
-		{ "L.Name", "EStarSpectralClass::L" },
+		{ "L.Name", "ESpectralClass::L" },
 		{ "M.DisplayName", "M - Red" },
-		{ "M.Name", "EStarSpectralClass::M" },
+		{ "M.Name", "ESpectralClass::M" },
 		{ "ModuleRelativePath", "StarSpectralClass.h" },
 		{ "NS.DisplayName", "Neutron Star" },
-		{ "NS.Name", "EStarSpectralClass::NS" },
+		{ "NS.Name", "ESpectralClass::NS" },
 		{ "O.DisplayName", "O - Blue" },
-		{ "O.Name", "EStarSpectralClass::O" },
+		{ "O.Name", "ESpectralClass::O" },
 		{ "T.DisplayName", "T - Methane Dwarf" },
-		{ "T.Name", "EStarSpectralClass::T" },
-		{ "WD.DisplayName", "White Dwarf" },
-		{ "WD.Name", "EStarSpectralClass::WD" },
+		{ "T.Name", "ESpectralClass::T" },
 		{ "Y.DisplayName", "Y - Cool Brown Dwarf" },
-		{ "Y.Name", "EStarSpectralClass::Y" },
+		{ "Y.Name", "ESpectralClass::Y" },
 	};
 #endif
-	const UECodeGen_Private::FEnumParams Z_Construct_UEnum_APS_ALPHA_EStarSpectralClass_Statics::EnumParams = {
+	const UECodeGen_Private::FEnumParams Z_Construct_UEnum_APS_ALPHA_ESpectralClass_Statics::EnumParams = {
 		(UObject*(*)())Z_Construct_UPackage__Script_APS_ALPHA,
 		nullptr,
-		"EStarSpectralClass",
-		"EStarSpectralClass",
-		Z_Construct_UEnum_APS_ALPHA_EStarSpectralClass_Statics::Enumerators,
-		UE_ARRAY_COUNT(Z_Construct_UEnum_APS_ALPHA_EStarSpectralClass_Statics::Enumerators),
+		"ESpectralClass",
+		"ESpectralClass",
+		Z_Construct_UEnum_APS_ALPHA_ESpectralClass_Statics::Enumerators,
+		UE_ARRAY_COUNT(Z_Construct_UEnum_APS_ALPHA_ESpectralClass_Statics::Enumerators),
 		RF_Public|RF_Transient|RF_MarkAsNative,
 		EEnumFlags::None,
 		(uint8)UEnum::ECppForm::EnumClass,
-		METADATA_PARAMS(Z_Construct_UEnum_APS_ALPHA_EStarSpectralClass_Statics::Enum_MetaDataParams, UE_ARRAY_COUNT(Z_Construct_UEnum_APS_ALPHA_EStarSpectralClass_Statics::Enum_MetaDataParams))
+		METADATA_PARAMS(Z_Construct_UEnum_APS_ALPHA_ESpectralClass_Statics::Enum_MetaDataParams, UE_ARRAY_COUNT(Z_Construct_UEnum_APS_ALPHA_ESpectralClass_Statics::Enum_MetaDataParams))
 	};
-	UEnum* Z_Construct_UEnum_APS_ALPHA_EStarSpectralClass()
+	UEnum* Z_Construct_UEnum_APS_ALPHA_ESpectralClass()
 	{
-		if (!Z_Registration_Info_UEnum_EStarSpectralClass.InnerSingleton)
+		if (!Z_Registration_Info_UEnum_ESpectralClass.InnerSingleton)
 		{
-			UECodeGen_Private::ConstructUEnum(Z_Registration_Info_UEnum_EStarSpectralClass.InnerSingleton, Z_Construct_UEnum_APS_ALPHA_EStarSpectralClass_Statics::EnumParams);
+			UECodeGen_Private::ConstructUEnum(Z_Registration_Info_UEnum_ESpectralClass.InnerSingleton, Z_Construct_UEnum_APS_ALPHA_ESpectralClass_Statics::EnumParams);
 		}
-		return Z_Registration_Info_UEnum_EStarSpectralClass.InnerSingleton;
+		return Z_Registration_Info_UEnum_ESpectralClass.InnerSingleton;
 	}
 	struct Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarSpectralClass_h_Statics
 	{
 		static const FEnumRegisterCompiledInInfo EnumInfo[];
 	};
 	const FEnumRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarSpectralClass_h_Statics::EnumInfo[] = {
-		{ EStarSpectralClass_StaticEnum, TEXT("EStarSpectralClass"), &Z_Registration_Info_UEnum_EStarSpectralClass, CONSTRUCT_RELOAD_VERSION_INFO(FEnumReloadVersionInfo, 3859857935U) },
+		{ ESpectralClass_StaticEnum, TEXT("ESpectralClass"), &Z_Registration_Info_UEnum_ESpectralClass, CONSTRUCT_RELOAD_VERSION_INFO(FEnumReloadVersionInfo, 3467577216U) },
 	};
-	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarSpectralClass_h_3987062484(TEXT("/Script/APS_ALPHA"),
+	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarSpectralClass_h_1744615312(TEXT("/Script/APS_ALPHA"),
 		nullptr, 0,
 		nullptr, 0,
 		Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarSpectralClass_h_Statics::EnumInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarSpectralClass_h_Statics::EnumInfo));

@@ -14,7 +14,10 @@ struct FStarGenerationModel :
     
         // Тип звезды (например, карлик, гигант, сверхгигант и т.д.)
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star")
-        EStarType StarType;
+        EStellarClass StellarClass;
+	
+	UPROPERTY(VisibleAnywhere)
+		ESpectralClass SpectralClass;
 
 	UPROPERTY(VisibleAnywhere)
 		float Luminosity;
@@ -22,7 +25,5 @@ struct FStarGenerationModel :
 	UPROPERTY(VisibleAnywhere)
 		int SurfaceTemperature;
 
-	UPROPERTY(VisibleAnywhere)
-		EStarSpectralClass StarSpectralClass;
 };
 

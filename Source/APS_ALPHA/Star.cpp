@@ -22,12 +22,12 @@ void AStar::SetSurfaceTemperature(int NewSurfaceTemperature)
 	this->SurfaceTemperature = NewSurfaceTemperature;
 }
 
-void AStar::SetStarType(EStarType NewStarType)
+void AStar::SetStarType(EStellarClass NewStarType)
 {
-	this->StarType = NewStarType;
+	this->StellarClass = NewStarType;
 }
 
-void AStar::SetStarSpectralClass(EStarSpectralClass NewStarSpectralClass)
+void AStar::SetStarSpectralClass(ESpectralClass NewStarSpectralClass)
 {
-	this->StarSpectralClass = NewStarSpectralClass;
+	this->SpectralClass = NewStarSpectralClass;
 }

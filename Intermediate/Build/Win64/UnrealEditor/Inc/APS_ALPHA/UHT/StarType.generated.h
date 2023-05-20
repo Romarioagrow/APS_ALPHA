@@ -18,22 +18,23 @@ PRAGMA_DISABLE_DEPRECATION_WARNINGS
 #define CURRENT_FILE_ID FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarType_h
 
 
-#define FOREACH_ENUM_ESTARTYPE(op) \
-	op(EStarType::MainSequence) \
-	op(EStarType::Giant) \
-	op(EStarType::SuperGiant) \
-	op(EStarType::WhiteDwarf) \
-	op(EStarType::Neutron) \
-	op(EStarType::BrownDwarf) \
-	op(EStarType::RedDwarf) \
-	op(EStarType::SubDwarf) \
-	op(EStarType::HyperGiant) \
-	op(EStarType::Protostar) \
-	op(EStarType::Pulsar) \
-	op(EStarType::BlackHole) 
+#define FOREACH_ENUM_ESTELLARCLASS(op) \
+	op(EStellarClass::HyperGiant) \
+	op(EStellarClass::SuperGiant) \
+	op(EStellarClass::BrightGiant) \
+	op(EStellarClass::Giant) \
+	op(EStellarClass::SubGiant) \
+	op(EStellarClass::MainSequence) \
+	op(EStellarClass::SubDwarf) \
+	op(EStellarClass::WhiteDwarf) \
+	op(EStellarClass::BrownDwarf) \
+	op(EStellarClass::Neutron) \
+	op(EStellarClass::Protostar) \
+	op(EStellarClass::Pulsar) \
+	op(EStellarClass::BlackHole) 
 
-enum class EStarType : uint8;
-template<> struct TIsUEnumClass<EStarType> { enum { Value = true }; };
-template<> APS_ALPHA_API UEnum* StaticEnum<EStarType>();
+enum class EStellarClass : uint8;
+template<> struct TIsUEnumClass<EStellarClass> { enum { Value = true }; };
+template<> APS_ALPHA_API UEnum* StaticEnum<EStellarClass>();
 
 PRAGMA_ENABLE_DEPRECATION_WARNINGS

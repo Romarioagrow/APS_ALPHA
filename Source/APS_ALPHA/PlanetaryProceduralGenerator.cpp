@@ -16,8 +16,8 @@ void UPlanetarySystemGenerator::ApplyModel(APlanetarySystem* NewPlanetarySystem,
 FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GenerateRandomPlanetraySystemModelByStar(FStarGenerationModel StarModel)
 {
     FPlanetarySystemGenerationModel PlanetarySystemModel;
-    EStarType StarType = StarModel.StarType;
-    EPlanetarySystemType PlanetarySystemType = GetRandomWithProbability(StarSystemTypeProbabilities[StarType].SystemTypeProbabilities);
+    EStellarClass StellarClass = StarModel.StellarClass;
+    EPlanetarySystemType PlanetarySystemType = GetRandomWithProbability(StarSystemTypeProbabilities[StellarClass].SystemTypeProbabilities);
     PlanetarySystemModel.PlanetarySystemType = PlanetarySystemType;
 
     // Получаем диапазон значений для данного типа системы

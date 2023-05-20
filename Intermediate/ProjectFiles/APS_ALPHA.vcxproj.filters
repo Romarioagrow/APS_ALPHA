@@ -425,6 +425,9 @@
     <ClInclude Include="..\..\Source\APS_ALPHA\SpaceStation.h">
       <Filter>Source\APS_ALPHA</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\Source\APS_ALPHA\SpectralType.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
     <ClCompile Include="..\..\Source\APS_ALPHA\Star.cpp">
       <Filter>Source\APS_ALPHA</Filter>
     </ClCompile>
@@ -519,11 +522,6 @@
       <Filter>Source\APS_ALPHA</Filter>
     </ClCompile>
     <ClInclude Include="..\..\Source\APS_ALPHA\WorldActor.h">
-      <Filter>Source\APS_ALPHA</Filter>
-    </ClInclude>
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="PlanetarySystemRanges.h">
       <Filter>Source\APS_ALPHA</Filter>
     </ClInclude>
   </ItemGroup>
