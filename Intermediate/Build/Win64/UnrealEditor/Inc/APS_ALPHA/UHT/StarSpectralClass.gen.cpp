@@ -71,7 +71,7 @@ void EmptyLinkFunctionForGeneratedCodeStarSpectralClass() {}
 		{ "NS.Name", "ESpectralClass::NS" },
 		{ "O.DisplayName", "O - Blue" },
 		{ "O.Name", "ESpectralClass::O" },
-		{ "T.DisplayName", "T - Methane Dwarf" },
+		{ "T.DisplayName", "T - Tauri Dwarf" },
 		{ "T.Name", "ESpectralClass::T" },
 		{ "Y.DisplayName", "Y - Cool Brown Dwarf" },
 		{ "Y.Name", "ESpectralClass::Y" },
@@ -102,9 +102,9 @@ void EmptyLinkFunctionForGeneratedCodeStarSpectralClass() {}
 		static const FEnumRegisterCompiledInInfo EnumInfo[];
 	};
 	const FEnumRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarSpectralClass_h_Statics::EnumInfo[] = {
-		{ ESpectralClass_StaticEnum, TEXT("ESpectralClass"), &Z_Registration_Info_UEnum_ESpectralClass, CONSTRUCT_RELOAD_VERSION_INFO(FEnumReloadVersionInfo, 3467577216U) },
+		{ ESpectralClass_StaticEnum, TEXT("ESpectralClass"), &Z_Registration_Info_UEnum_ESpectralClass, CONSTRUCT_RELOAD_VERSION_INFO(FEnumReloadVersionInfo, 2946860362U) },
 	};
-	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarSpectralClass_h_1744615312(TEXT("/Script/APS_ALPHA"),
+	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarSpectralClass_h_219207494(TEXT("/Script/APS_ALPHA"),
 		nullptr, 0,
 		nullptr, 0,
 		Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarSpectralClass_h_Statics::EnumInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarSpectralClass_h_Statics::EnumInfo));

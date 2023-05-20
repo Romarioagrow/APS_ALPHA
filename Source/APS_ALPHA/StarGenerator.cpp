@@ -1,20 +1,13 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
-
 #include "StarGenerator.h"
 #include "StarType.h"
 #include <random>
-//#include <random>
-//#include <numeric>
-
-// Define the random number generator as a member variable of your class
-//std::default_random_engine generator;
 
 UStarGenerator::UStarGenerator()
 {
 }
 
-//
 
 void UStarGenerator::ApplyModel(AStar* NewStar, FStarGenerationModel StarModel) // NewStar, StarModel
 {
@@ -26,6 +19,12 @@ void UStarGenerator::ApplyModel(AStar* NewStar, FStarGenerationModel StarModel) 
     NewStar->SetMass(StarModel.Mass);
     NewStar->SetRadius(StarModel.Radius);
     NewStar->SetAge(StarModel.Age);
+
+    NewStar->SetSpectralSubclass(StarModel.SpectralSubclass); 
+    NewStar->SetStarSpectralType(StarModel.SpectralType);
+    NewStar->SetFullSpectralClass(StarModel.FullSpectralClass);
+    NewStar->SetFullSpectralName(StarModel.FullSpectralName);
+
     //NewStar->SetAbsoluteMagnitude(StarModel.AbsoluteMagnitude);
 }
 
@@ -50,17 +49,17 @@ FStarGenerationModel UStarGenerator::GenerateRandomStarModel()
 
         {EStellarClass::HyperGiant, 1}, // Гипергиганты
         {EStellarClass::SuperGiant, 2}, // Супергиганты
-        {EStellarClass::SubGiant, 3}, // Супергиганты
         {EStellarClass::BrightGiant, 4}, // Белые карлики
         {EStellarClass::Giant, 5}, // Гиганты
-        {EStellarClass::MainSequence, 0}, // Главная последовательность
+        {EStellarClass::SubGiant, 3}, // Супергиганты
+        {EStellarClass::MainSequence, 10}, // Главная последовательность
         {EStellarClass::SubDwarf, 5}, // Субкарлики
-        {EStellarClass::WhiteDwarf, 100}, // Коричневые карлики
-        {EStellarClass::BrownDwarf, 0}, // Коричневые карлики
-        {EStellarClass::Protostar, 0}, // Протозвезды
-        {EStellarClass::Neutron, 0}, // Нейтронные звезды
-        {EStellarClass::Pulsar, 0}, // Пульсары
-        {EStellarClass::BlackHole, 0} // Черные дыры
+        {EStellarClass::WhiteDwarf, 2}, // Коричневые карлики
+        {EStellarClass::BrownDwarf, 2}, // Коричневые карлики
+        {EStellarClass::Protostar, 2}, // Протозвезды
+        {EStellarClass::Neutron, 1}, // Нейтронные звезды
+        {EStellarClass::Pulsar, 1}, // Пульсары
+        {EStellarClass::BlackHole, 1} // Черные дыры
     };
     int TotalWeight = 0;
     for (auto const& Pair : StarTypeWeights) {
@@ -113,7 +112,130 @@ FStarGenerationModel UStarGenerator::GenerateRandomStarModel()
         StarModel.Age = FMath::RandRange(attributeRanges.Age.Range.Get<0>(), attributeRanges.Age.Range.Get<1>());
     }
 
+    StarModel.SpectralSubclass = CalculateSpectralSubclass(StarModel.SurfaceTemperature, StarModel.SpectralClass);
+    StarModel.SpectralType = CalculateSpectralType(StarModel.StellarClass, StarModel.Luminosity);
+    StarModel.FullSpectralClass = GenerateFullSpectralClass(StarModel);
+    StarModel.FullSpectralName = GenerateFullSpectralName(StarModel);
+
     return StarModel;
+}
+
+FString UStarGenerator::GetSpectralClassColor(ESpectralClass Class)
+{
+    if (SpectralClassColorMap.Contains(Class))
+    {
+        return SpectralClassColorMap[Class];
+    }
+    else
+    {
+        return TEXT("Unknown");
+    }
+}
+
+FString UStarGenerator::GetSpectralTypeDescription(ESpectralType Type)
+{
+    if (SpectralTypeDescriptionMap.Contains(Type))
+    {
+        return SpectralTypeDescriptionMap[Type];
+    }
+    else
+    {
+        return TEXT("Unknown");
+    }
+}
+
+FName UStarGenerator::GenerateFullSpectralClass(const FStarGenerationModel& StarModel)
+{
+    FString SpectralClassString = StaticEnum<ESpectralClass>()->GetValueAsString(StarModel.SpectralClass);
+    SpectralClassString.RemoveFromStart("ESpectralClass::");  // Remove prefix
+
+    FString SpectralTypeString = StaticEnum<ESpectralType>()->GetValueAsString(StarModel.SpectralType);
+    SpectralTypeString.RemoveFromStart("ESpectralType::");  // Remove prefix
+
+    return FName(*(SpectralClassString + FString::Printf(TEXT("%d"), StarModel.SpectralSubclass) + SpectralTypeString));
+}
+
+FName UStarGenerator::GenerateFullSpectralName(const FStarGenerationModel& StarModel)
+{
+    FString SpectralClassColor = SpectralClassColorMap[StarModel.SpectralClass];  
+    FString SpectralTypeDescription = SpectralTypeDescriptionMap[StarModel.SpectralType];
+
+    FName SpectralClassColorName(*SpectralClassColor);
+    FName SpectralTypeDescriptionName(*SpectralTypeDescription);
+
+    return FName(*(SpectralClassColorName.ToString() + " " + SpectralTypeDescriptionName.ToString()));
+}
+
+ESpectralType UStarGenerator::CalculateSpectralType(EStellarClass StellarType, double Luminosity)
+{
+    switch (StellarType)
+    {
+    case EStellarClass::HyperGiant:
+        return ESpectralType::O;
+    case EStellarClass::BrightGiant:
+        return ESpectralType::II;
+    case EStellarClass::Giant:
+        return ESpectralType::III;
+    case EStellarClass::SubGiant:
+        return ESpectralType::IV;
+    case EStellarClass::MainSequence:
+        return ESpectralType::V;
+    case EStellarClass::SubDwarf:
+        return ESpectralType::VI;
+    case EStellarClass::WhiteDwarf:
+        return ESpectralType::VII;
+    case EStellarClass::SuperGiant:
+    {
+        FStarAttributeRanges& AttributeRanges = StarAttributeRanges[StellarType];
+        FLuminosityRange LuminosityRange = AttributeRanges.Luminosity;  // получаем диапазон светимости
+
+        double LowerThird = (2.0 / 3.0) * LuminosityRange.Range.Key;
+        double MiddleThird = (2.0 / 3.0) * LuminosityRange.Range.Value;
+
+        if (Luminosity < LowerThird)
+        {
+            return ESpectralType::Ib;
+        }
+        else if (Luminosity < MiddleThird)
+        {
+            return ESpectralType::Iab;
+        }
+        else
+        {
+            return ESpectralType::Ia;
+        }
+    }
+    default:
+        UE_LOG(LogTemp, Warning, TEXT("Unexpected StellarType value"));
+        return ESpectralType::V; // Return a default value
+    }
+}
+
+int UStarGenerator::CalculateSpectralSubclass(double StarTemperature, ESpectralClass SpectralClass)
+{
+    const TTuple<double, double>& TempRange = StarTypeTemperatureRanges[SpectralClass];
+
+    // Linear interpolation between the temperature range of the spectral class
+    double TempRatio = (StarTemperature - TempRange.Get<0>()) / (TempRange.Get<1>() - TempRange.Get<0>());
+
+    // Multiply by 10 to get subclass (0-9)
+    int Subclass = FMath::RoundToInt(TempRatio * 10.0);
+
+    // Ensure Subclass is within the valid range
+    if (SpectralClass == ESpectralClass::O && Subclass < 2)
+    {
+        Subclass = 2;
+    }
+    else if (Subclass < 0)
+    {
+        Subclass = 0;
+    }
+    else if (Subclass > 9)
+    {
+        Subclass = 9;
+    }
+
+    return Subclass;
 }
 
 double UStarGenerator::CalculateLuminosityByMass(double Mass)
@@ -141,22 +263,14 @@ double UStarGenerator::CalculateLuminosityByMass(double Mass)
         Luminosity = pow(Mass, 5.5);
     }
 
-    if (Luminosity > 100000)
+    if (Luminosity > 100000.0)
     {
         // Set a maximum luminosity
-        Luminosity = FMath::FRandRange(100000, 200000);
+        Luminosity = FMath::FRandRange(100000.0, 200000.0);
     }
 
     return Luminosity;
 }
-// код определяет светимость звезды на основе ее массы, используя разные формулы в зависимости от того, в какой диапазон попадает масса звезды.Замените числовые значения в этом коде на реальные значения, основанные на научных данных, если они вам доступны.
-
-
-
-
-
-
-
 
 double UStarGenerator::RandomFromRange(TTuple<double, double> Range)
 {
@@ -175,7 +289,6 @@ double UStarGenerator::RandomRadius(ESpectralClass SpectralClass)
     return FMath::FRandRange(Range.Get<0>(), Range.Get<1>());
 }
 
-
 double UStarGenerator::CalculateLuminosity(double Radius, double SurfaceTemperature)
 {
     const double StefanBoltzmannConstant = 5.67e-8;  // in W/(m^2 K^4)
@@ -193,10 +306,10 @@ double UStarGenerator::CalculateLuminosity(double Radius, double SurfaceTemperat
         // Set a minimum luminosity
         Luminosity = FMath::FRandRange(0.00001, 0.000001);
     }  
-    if (Luminosity > 100000) 
+    if (Luminosity > 100000.0) 
     { 
         // Set a maximum luminosity
-        Luminosity =  FMath::FRandRange(100000, 200000);
+        Luminosity =  FMath::FRandRange(100000.0, 200000.0);
     }  
     return Luminosity;
 }
@@ -241,8 +354,6 @@ BrownDwarf	    L, T, Y
 
 */
 
-
-
 ESpectralClass UStarGenerator::ChooseSpectralClassByStellarClass(EStellarClass StellarClass)
 {
     // Массивы спектральных классов для каждого стеллярного класса
@@ -257,11 +368,13 @@ ESpectralClass UStarGenerator::ChooseSpectralClassByStellarClass(EStellarClass S
     //const TArray<int> Weights_OM = { 30, 30, 30, 0, 0, 0, 0 }; // Weights for O, B, A, F, G, K, M
     //const TArray<int> Weights_OM = { 30, 30, 30, 0, 0, 0, 0 }; // Weights for O, B, A, F, G, K, M
     //const TArray<int> Weights_OM = { 50, 50, 0, 0, 0, 0, 0 }; // Weights for O, B, A, F, G, K, M
+    //const TArray<int> Weights_OM = { 3, 13, 22, 30, 20, 10, 2 }; // Weights for O, B, A, F, G, K, M
+    //const TArray<int> Weights_OK = { 3, 13, 22, 30, 20, 12 }; // Weights for O, B, A, F, G, K
+    //const TArray<int> Weights_LY = { 20, 50, 30 }; // Weights for L, T, Y
     
-    const TArray<int> Weights_OM = { 3, 13, 22, 30, 20, 10, 2 }; // Weights for O, B, A, F, G, K, M
+    const TArray<int> Weights_OM = { 3, 13, 22, 30, 20, 10, 22 }; // Weights for O, B, A, F, G, K, M
     const TArray<int> Weights_OK = { 3, 13, 22, 30, 20, 12 }; // Weights for O, B, A, F, G, K
     const TArray<int> Weights_LY = { 20, 50, 30 }; // Weights for L, T, Y
-
 
     // Определение выборки и весов
     const TArray<ESpectralClass>* SpectralArray;
@@ -347,21 +460,3 @@ double UStarGenerator::GenerateRandomTemperatureBySpectralClass(ESpectralClass S
     TTuple<double, double> TemperatureRange = StarTypeTemperatureRanges[SpectralClass];
     return FMath::RandRange(TemperatureRange.Get<0>(), TemperatureRange.Get<1>());
 }
-
-//double UStarGenerator::GenerateRandomLuminosity(EStarType StarType)
-//{
-//    TTuple<double, double> LuminosityRange = StarTypeLuminosityRanges[StarType];
-//    return FMath::RandRange(LuminosityRange.Get<0>(), LuminosityRange.Get<1>());
-//}
-//
-//double UStarGenerator::GenerateRandomMass(EStarType StarType)
-//{
-//    TTuple<double, double> MassRange = StarTypeMassRanges[StarType];
-//    return FMath::RandRange(MassRange.Get<0>(), MassRange.Get<1>());
-//}
-//
-//double UStarGenerator::GenerateRandomRadius(EStarType StarType)
-//{
-//    TTuple<double, double> RadiusRange = StarTypeRadiusRanges[StarType];
-//    return FMath::RandRange(RadiusRange.Get<0>(), RadiusRange.Get<1>());
-//}

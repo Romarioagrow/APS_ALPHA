@@ -1,6 +1,7 @@
 #pragma once
 #include "StarType.h"
 #include "StarSpectralClass.h"
+#include "SpectralType.h"
 
 #include "CelestialGenerationModel.h"
 #include "CoreMinimal.h"
@@ -20,6 +21,9 @@ struct FStarGenerationModel :
 		ESpectralClass SpectralClass;
 
 	UPROPERTY(VisibleAnywhere)
+		ESpectralType SpectralType;
+
+	UPROPERTY(VisibleAnywhere)
 		float Luminosity;
 
 	UPROPERTY(VisibleAnywhere)
@@ -27,6 +31,15 @@ struct FStarGenerationModel :
 	
 	UPROPERTY(VisibleAnywhere)
 		double Age;
+
+	UPROPERTY(VisibleAnywhere)
+		FName FullSpectralClass;
+
+	UPROPERTY(VisibleAnywhere)
+		FName FullSpectralName;
+
+	UPROPERTY(VisibleAnywhere)
+		int SpectralSubclass;
 
 };
 

@@ -13,7 +13,7 @@ enum class ESpectralClass : uint8
 	K 	UMETA(DisplayName = "K - Orange"),
 	M 	UMETA(DisplayName = "M - Red"),
 	L 	UMETA(DisplayName = "L - Brown Dwarf"),
-	T 	UMETA(DisplayName = "T - Methane Dwarf"),
+	T 	UMETA(DisplayName = "T - Tauri Dwarf"),
 	Y 	UMETA(DisplayName = "Y - Cool Brown Dwarf"),
 	NS 	UMETA(DisplayName = "Neutron Star"),
 	BH 	UMETA(DisplayName = "Black Hole")

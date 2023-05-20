@@ -10,6 +10,7 @@ PRAGMA_DISABLE_DEPRECATION_WARNINGS
 void EmptyLinkFunctionForGeneratedCodeStarGenerationModel() {}
 // Cross Module References
 	APS_ALPHA_API UEnum* Z_Construct_UEnum_APS_ALPHA_ESpectralClass();
+	APS_ALPHA_API UEnum* Z_Construct_UEnum_APS_ALPHA_ESpectralType();
 	APS_ALPHA_API UEnum* Z_Construct_UEnum_APS_ALPHA_EStellarClass();
 	APS_ALPHA_API UScriptStruct* Z_Construct_UScriptStruct_FCelestialGenerationModel();
 	APS_ALPHA_API UScriptStruct* Z_Construct_UScriptStruct_FStarGenerationModel();
@@ -47,6 +48,11 @@ template<> APS_ALPHA_API UScriptStruct* StaticStruct<FStarGenerationModel>()
 		static const UECodeGen_Private::FMetaDataPairParam NewProp_SpectralClass_MetaData[];
 #endif
 		static const UECodeGen_Private::FEnumPropertyParams NewProp_SpectralClass;
+		static const UECodeGen_Private::FBytePropertyParams NewProp_SpectralType_Underlying;
+#if WITH_METADATA
+		static const UECodeGen_Private::FMetaDataPairParam NewProp_SpectralType_MetaData[];
+#endif
+		static const UECodeGen_Private::FEnumPropertyParams NewProp_SpectralType;
 #if WITH_METADATA
 		static const UECodeGen_Private::FMetaDataPairParam NewProp_Luminosity_MetaData[];
 #endif
@@ -59,6 +65,18 @@ template<> APS_ALPHA_API UScriptStruct* StaticStruct<FStarGenerationModel>()
 		static const UECodeGen_Private::FMetaDataPairParam NewProp_Age_MetaData[];
 #endif
 		static const UECodeGen_Private::FDoublePropertyParams NewProp_Age;
+#if WITH_METADATA
+		static const UECodeGen_Private::FMetaDataPairParam NewProp_FullSpectralClass_MetaData[];
+#endif
+		static const UECodeGen_Private::FNamePropertyParams NewProp_FullSpectralClass;
+#if WITH_METADATA
+		static const UECodeGen_Private::FMetaDataPairParam NewProp_FullSpectralName_MetaData[];
+#endif
+		static const UECodeGen_Private::FNamePropertyParams NewProp_FullSpectralName;
+#if WITH_METADATA
+		static const UECodeGen_Private::FMetaDataPairParam NewProp_SpectralSubclass_MetaData[];
+#endif
+		static const UECodeGen_Private::FUnsizedIntPropertyParams NewProp_SpectralSubclass;
 		static const UECodeGen_Private::FPropertyParamsBase* const PropPointers[];
 		static const UECodeGen_Private::FStructParams ReturnStructParams;
 	};
@@ -89,7 +107,15 @@ template<> APS_ALPHA_API UScriptStruct* StaticStruct<FStarGenerationModel>()
 		{ "ModuleRelativePath", "StarGenerationModel.h" },
 	};
 #endif
-	const UECodeGen_Private::FEnumPropertyParams Z_Construct_UScriptStruct_FStarGenerationModel_Statics::NewProp_SpectralClass = { "SpectralClass", nullptr, (EPropertyFlags)0x0010000000020001, UECodeGen_Private::EPropertyGenFlags::Enum, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FStarGenerationModel, SpectralClass), Z_Construct_UEnum_APS_ALPHA_ESpectralClass, METADATA_PARAMS(Z_Construct_UScriptStruct_FStarGenerationModel_Statics::NewProp_SpectralClass_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FStarGenerationModel_Statics::NewProp_SpectralClass_MetaData)) }; // 3467577216
+	const UECodeGen_Private::FEnumPropertyParams Z_Construct_UScriptStruct_FStarGenerationModel_Statics::NewProp_SpectralClass = { "SpectralClass", nullptr, (EPropertyFlags)0x0010000000020001, UECodeGen_Private::EPropertyGenFlags::Enum, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FStarGenerationModel, SpectralClass), Z_Construct_UEnum_APS_ALPHA_ESpectralClass, METADATA_PARAMS(Z_Construct_UScriptStruct_FStarGenerationModel_Statics::NewProp_SpectralClass_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FStarGenerationModel_Statics::NewProp_SpectralClass_MetaData)) }; // 2946860362
+	const UECodeGen_Private::FBytePropertyParams Z_Construct_UScriptStruct_FStarGenerationModel_Statics::NewProp_SpectralType_Underlying = { "UnderlyingType", nullptr, (EPropertyFlags)0x0000000000000000, UECodeGen_Private::EPropertyGenFlags::Byte, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, 0, nullptr, METADATA_PARAMS(nullptr, 0) };
+#if WITH_METADATA
+	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UScriptStruct_FStarGenerationModel_Statics::NewProp_SpectralType_MetaData[] = {
+		{ "Category", "StarGenerationModel" },
+		{ "ModuleRelativePath", "StarGenerationModel.h" },
+	};
+#endif
+	const UECodeGen_Private::FEnumPropertyParams Z_Construct_UScriptStruct_FStarGenerationModel_Statics::NewProp_SpectralType = { "SpectralType", nullptr, (EPropertyFlags)0x0010000000020001, UECodeGen_Private::EPropertyGenFlags::Enum, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FStarGenerationModel, SpectralType), Z_Construct_UEnum_APS_ALPHA_ESpectralType, METADATA_PARAMS(Z_Construct_UScriptStruct_FStarGenerationModel_Statics::NewProp_SpectralType_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FStarGenerationModel_Statics::NewProp_SpectralType_MetaData)) }; // 766823447
 #if WITH_METADATA
 	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UScriptStruct_FStarGenerationModel_Statics::NewProp_Luminosity_MetaData[] = {
 		{ "Category", "StarGenerationModel" },
@@ -111,14 +137,40 @@ template<> APS_ALPHA_API UScriptStruct* StaticStruct<FStarGenerationModel>()
 	};
 #endif
 	const UECodeGen_Private::FDoublePropertyParams Z_Construct_UScriptStruct_FStarGenerationModel_Statics::NewProp_Age = { "Age", nullptr, (EPropertyFlags)0x0010000000020001, UECodeGen_Private::EPropertyGenFlags::Double, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FStarGenerationModel, Age), METADATA_PARAMS(Z_Construct_UScriptStruct_FStarGenerationModel_Statics::NewProp_Age_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FStarGenerationModel_Statics::NewProp_Age_MetaData)) };
+#if WITH_METADATA
+	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UScriptStruct_FStarGenerationModel_Statics::NewProp_FullSpectralClass_MetaData[] = {
+		{ "Category", "StarGenerationModel" },
+		{ "ModuleRelativePath", "StarGenerationModel.h" },
+	};
+#endif
+	const UECodeGen_Private::FNamePropertyParams Z_Construct_UScriptStruct_FStarGenerationModel_Statics::NewProp_FullSpectralClass = { "FullSpectralClass", nullptr, (EPropertyFlags)0x0010000000020001, UECodeGen_Private::EPropertyGenFlags::Name, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FStarGenerationModel, FullSpectralClass), METADATA_PARAMS(Z_Construct_UScriptStruct_FStarGenerationModel_Statics::NewProp_FullSpectralClass_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FStarGenerationModel_Statics::NewProp_FullSpectralClass_MetaData)) };
+#if WITH_METADATA
+	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UScriptStruct_FStarGenerationModel_Statics::NewProp_FullSpectralName_MetaData[] = {
+		{ "Category", "StarGenerationModel" },
+		{ "ModuleRelativePath", "StarGenerationModel.h" },
+	};
+#endif
+	const UECodeGen_Private::FNamePropertyParams Z_Construct_UScriptStruct_FStarGenerationModel_Statics::NewProp_FullSpectralName = { "FullSpectralName", nullptr, (EPropertyFlags)0x0010000000020001, UECodeGen_Private::EPropertyGenFlags::Name, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FStarGenerationModel, FullSpectralName), METADATA_PARAMS(Z_Construct_UScriptStruct_FStarGenerationModel_Statics::NewProp_FullSpectralName_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FStarGenerationModel_Statics::NewProp_FullSpectralName_MetaData)) };
+#if WITH_METADATA
+	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UScriptStruct_FStarGenerationModel_Statics::NewProp_SpectralSubclass_MetaData[] = {
+		{ "Category", "StarGenerationModel" },
+		{ "ModuleRelativePath", "StarGenerationModel.h" },
+	};
+#endif
+	const UECodeGen_Private::FUnsizedIntPropertyParams Z_Construct_UScriptStruct_FStarGenerationModel_Statics::NewProp_SpectralSubclass = { "SpectralSubclass", nullptr, (EPropertyFlags)0x0010000000020001, UECodeGen_Private::EPropertyGenFlags::Int, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FStarGenerationModel, SpectralSubclass), METADATA_PARAMS(Z_Construct_UScriptStruct_FStarGenerationModel_Statics::NewProp_SpectralSubclass_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FStarGenerationModel_Statics::NewProp_SpectralSubclass_MetaData)) };
 	const UECodeGen_Private::FPropertyParamsBase* const Z_Construct_UScriptStruct_FStarGenerationModel_Statics::PropPointers[] = {
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FStarGenerationModel_Statics::NewProp_StellarClass_Underlying,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FStarGenerationModel_Statics::NewProp_StellarClass,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FStarGenerationModel_Statics::NewProp_SpectralClass_Underlying,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FStarGenerationModel_Statics::NewProp_SpectralClass,
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FStarGenerationModel_Statics::NewProp_SpectralType_Underlying,
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FStarGenerationModel_Statics::NewProp_SpectralType,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FStarGenerationModel_Statics::NewProp_Luminosity,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FStarGenerationModel_Statics::NewProp_SurfaceTemperature,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FStarGenerationModel_Statics::NewProp_Age,
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FStarGenerationModel_Statics::NewProp_FullSpectralClass,
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FStarGenerationModel_Statics::NewProp_FullSpectralName,
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FStarGenerationModel_Statics::NewProp_SpectralSubclass,
 	};
 	const UECodeGen_Private::FStructParams Z_Construct_UScriptStruct_FStarGenerationModel_Statics::ReturnStructParams = {
 		(UObject* (*)())Z_Construct_UPackage__Script_APS_ALPHA,
@@ -146,9 +198,9 @@ template<> APS_ALPHA_API UScriptStruct* StaticStruct<FStarGenerationModel>()
 		static const FStructRegisterCompiledInInfo ScriptStructInfo[];
 	};
 	const FStructRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarGenerationModel_h_Statics::ScriptStructInfo[] = {
-		{ FStarGenerationModel::StaticStruct, Z_Construct_UScriptStruct_FStarGenerationModel_Statics::NewStructOps, TEXT("StarGenerationModel"), &Z_Registration_Info_UScriptStruct_StarGenerationModel, CONSTRUCT_RELOAD_VERSION_INFO(FStructReloadVersionInfo, sizeof(FStarGenerationModel), 1519318524U) },
+		{ FStarGenerationModel::StaticStruct, Z_Construct_UScriptStruct_FStarGenerationModel_Statics::NewStructOps, TEXT("StarGenerationModel"), &Z_Registration_Info_UScriptStruct_StarGenerationModel, CONSTRUCT_RELOAD_VERSION_INFO(FStructReloadVersionInfo, sizeof(FStarGenerationModel), 470154199U) },
 	};
-	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarGenerationModel_h_1166729645(TEXT("/Script/APS_ALPHA"),
+	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarGenerationModel_h_966358683(TEXT("/Script/APS_ALPHA"),
 		nullptr, 0,
 		Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarGenerationModel_h_Statics::ScriptStructInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarGenerationModel_h_Statics::ScriptStructInfo),
 		nullptr, 0);

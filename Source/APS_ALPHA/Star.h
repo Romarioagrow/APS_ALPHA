@@ -38,6 +38,15 @@ private:
 	
 	UPROPERTY(VisibleAnywhere)
 		ESpectralType SpectralType;
+	
+	UPROPERTY(VisibleAnywhere)
+		FName FullSpectralClass;
+
+	UPROPERTY(VisibleAnywhere)
+		FName FullSpectralName;
+	
+	UPROPERTY(VisibleAnywhere)
+		int SpectralSubclass;
 
 private:
 	UPROPERTY()
@@ -51,5 +60,8 @@ public:
 	void SetSurfaceTemperature(int SurfaceTemperature);
 	void SetStarType(EStellarClass StarType);
 	void SetStarSpectralClass(ESpectralClass StarSpectralClass);
-	
+	void SetStarSpectralType(ESpectralType StarSpectralType);
+	void SetFullSpectralClass(FName FullSpectralClass);
+	void SetFullSpectralName(FName FullSpectralName);
+	void SetSpectralSubclass(int SpectralSubclass);
 };

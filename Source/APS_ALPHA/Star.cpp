@@ -31,3 +31,23 @@ void AStar::SetStarSpectralClass(ESpectralClass NewStarSpectralClass)
 {
 	this->SpectralClass = NewStarSpectralClass;
 }
+
+void AStar::SetStarSpectralType(ESpectralType NewSpectralType)
+{
+	this->SpectralType = NewSpectralType;
+}
+
+void AStar::SetFullSpectralClass(FName NewFullSpectralClass)
+{
+	this->FullSpectralClass = NewFullSpectralClass;
+}
+
+void AStar::SetFullSpectralName(FName NewFullSpectralName)
+{
+	this->FullSpectralName = NewFullSpectralName;
+}
+
+void AStar::SetSpectralSubclass(int NewSpectralSubclass)
+{
+	this->SpectralSubclass = NewSpectralSubclass;
+}
