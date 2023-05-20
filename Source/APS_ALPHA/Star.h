@@ -5,6 +5,7 @@
 #include "Planet.h"
 #include "StarType.h"
 #include "StarSpectralClass.h"
+#include "SpectralType.h"
 
 #include "CoreMinimal.h"
 #include "CelestialBody.h"
@@ -30,10 +31,13 @@ private:
 		int SurfaceTemperature;
 
 	UPROPERTY(VisibleAnywhere)
-		EStarType StarType;
+		EStellarClass StellarClass;
 	
 	UPROPERTY(VisibleAnywhere)
-		EStarSpectralClass StarSpectralClass;
+		ESpectralClass SpectralClass;
+	
+	UPROPERTY(VisibleAnywhere)
+		ESpectralType SpectralType;
 
 private:
 	UPROPERTY()
@@ -45,7 +49,7 @@ private:
 public:
 	void SetLuminosity(float Luminosity);
 	void SetSurfaceTemperature(int SurfaceTemperature);
-	void SetStarType(EStarType StarType);
-	void SetStarSpectralClass(EStarSpectralClass StarSpectralClass);
+	void SetStarType(EStellarClass StarType);
+	void SetStarSpectralClass(ESpectralClass StarSpectralClass);
 	
 };
