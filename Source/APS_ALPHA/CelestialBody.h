@@ -27,5 +27,16 @@ private:
 	
 	UPROPERTY(VisibleAnywhere)
 		FName AstroName;
+
+public:
+	ACelestialBody();
+
+	void SetRadius(float Radius);
+
+	void SetMass(float Mass);
+
+	void SetAge(float Age);
+
+	void SetName(FName Name);
 	
 };

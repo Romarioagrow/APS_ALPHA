@@ -3,3 +3,27 @@
 
 #include "CelestialBody.h"
 
+ACelestialBody::ACelestialBody()
+{
+}
+
+void ACelestialBody::SetRadius(float NewRadius)
+{
+	this->Radius = NewRadius;
+}
+
+void ACelestialBody::SetMass(float NewMass)
+{
+	this->Mass = NewMass;
+}
+
+void ACelestialBody::SetAge(float NewAge)
+{
+	this->Age = NewAge;
+}
+
+void ACelestialBody::SetName(FName NewName)
+{
+	this->AstroName = NewName;
+
+}

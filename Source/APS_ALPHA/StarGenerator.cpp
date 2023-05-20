@@ -3,6 +3,7 @@
 
 #include "StarGenerator.h"
 #include "StarType.h"
+#include <random>
 //#include <random>
 //#include <numeric>
 
@@ -21,6 +22,11 @@ void UStarGenerator::ApplyModel(AStar* NewStar, FStarGenerationModel StarModel) 
     NewStar->SetSurfaceTemperature(StarModel.SurfaceTemperature);
     NewStar->SetStarType(StarModel.StellarClass);
     NewStar->SetStarSpectralClass(StarModel.SpectralClass);
+    
+    NewStar->SetMass(StarModel.Mass);
+    NewStar->SetRadius(StarModel.Radius);
+    NewStar->SetAge(StarModel.Age);
+    //NewStar->SetAbsoluteMagnitude(StarModel.AbsoluteMagnitude);
 }
 
 FStarGenerationModel UStarGenerator::GenerateRandomStarModel()
@@ -60,8 +66,37 @@ FStarGenerationModel UStarGenerator::GenerateRandomStarModel()
 
     //Определите ESpectralClass (спектральный класс) 
     StarModel.SpectralClass = ChooseSpectralClassByStellarClass(ChosenStellarClass);
- 
 
+
+
+    /*StarModel.Luminosity;
+    StarModel.SurfaceTemperature;
+    StarModel.Mass;
+    StarModel.Radius;
+    StarModel.Age;*/
+ 
+    // Получите диапазоны атрибутов для данного StellarClass
+    FStarAttributeRanges attributeRanges = StarAttributeRanges[ChosenStellarClass];
+
+    // Генератор случайных чисел
+    std::random_device rd;
+    std::mt19937 generator(rd());
+
+    // Генерируйте случайные значения для каждого параметра
+    std::uniform_real_distribution<double> distLuminosity(attributeRanges.Luminosity.Key, attributeRanges.Luminosity.Value);
+    StarModel.Luminosity = distLuminosity(generator);
+
+    /*std::uniform_real_distribution<double> distTemperature(attributeRanges.SurfaceTemperatureRange[0], attributeRanges.SurfaceTemperatureRange[1]);
+    StarModel.SurfaceTemperature = distTemperature(generator);*/
+
+    std::uniform_real_distribution<double> distMass(attributeRanges.Mass.Key, attributeRanges.Mass.Value);
+    StarModel.Mass = distMass(generator);
+
+    std::uniform_real_distribution<double> distRadius(attributeRanges.Radius.Key, attributeRanges.Radius.Value);
+    StarModel.Radius = distRadius(generator);
+
+    std::uniform_real_distribution<double> distAge(attributeRanges.Age.Key, attributeRanges.Age.Value);
+    StarModel.Age = distAge(generator);
 
     return StarModel;
 }
