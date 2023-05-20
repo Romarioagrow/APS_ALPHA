@@ -26,6 +26,18 @@ public:
 
 	FStarGenerationModel GenerateRandomStarModel();
 
+	FString GetSpectralClassColor(ESpectralClass Class);
+
+	FString GetSpectralTypeDescription(ESpectralType Type);
+
+	FName GenerateFullSpectralClass(const FStarGenerationModel& StarModel);
+
+	FName GenerateFullSpectralName(const FStarGenerationModel& StarModel);
+
+	ESpectralType CalculateSpectralType(EStellarClass StellarType, double Luminosity);
+
+	int CalculateSpectralSubclass(double StarTemperature, ESpectralClass SpectralClass);
+
 	double CalculateLuminosityByMass(double Mass);
 
 	double RandomFromRange(TTuple<double, double> range);
@@ -36,8 +48,6 @@ public:
 
 	double CalculateSurfaceTemperature(double Luminosity, double Radius);
 
-	//EStellarClass ChooseRandomStellarClass();
-
 	ESpectralClass ChooseSpectralClassByStellarClass(EStellarClass StellarClass);
 
 private:
@@ -47,13 +57,9 @@ private:
 
 	double GenerateRandomTemperatureBySpectralClass(ESpectralClass SpectralClass);
 
-	//double GenerateRandomTemperatureBySpectralClass(EStellarClass StarType);
-
-	double GenerateRandomLuminosity(EStellarClass StarType);
-
-	double GenerateRandomMass(EStellarClass StarType);
-
-	double GenerateRandomRadius(EStellarClass StarType);
+	//double GenerateRandomLuminosity(EStellarClass StarType);
+	//double GenerateRandomMass(EStellarClass StarType);
+	//double GenerateRandomRadius(EStellarClass StarType);
 
 private:
 
@@ -64,6 +70,38 @@ private:
 //G - класс : 5200 - 6000 К
 //K - класс : 3700 - 5200 К
 //M - класс : 2000 - 3700 К
+
+	// Создаем TMap для цветов спектральных классов.
+	TMap<ESpectralClass, FString> SpectralClassColorMap =
+	{
+		{ESpectralClass::O, TEXT("Blue")},
+		{ESpectralClass::B, TEXT("Blue-White")},
+		{ESpectralClass::A, TEXT("White")},
+		{ESpectralClass::F, TEXT("Yellow-White")},
+		{ESpectralClass::G, TEXT("Yellow")},
+		{ESpectralClass::K, TEXT("Orange")},
+		{ESpectralClass::M, TEXT("Red")},
+		{ESpectralClass::L, TEXT("Red-Brown")},
+		{ESpectralClass::T, TEXT("Magenta")},
+		{ESpectralClass::Y, TEXT("Brown")}
+		// Добавьте остальные классы, если они есть.
+	};
+
+	// Создаем TMap для описания спектральных типов.
+	TMap<ESpectralType, FString> SpectralTypeDescriptionMap =
+	{
+		{ESpectralType::O, TEXT("Hypergiant")},
+		{ESpectralType::Ia, TEXT("Luminous Supergiant")},
+		{ESpectralType::Iab, TEXT("Normal Supergiant")},
+		{ESpectralType::Ib, TEXT("Supergiant")},
+		{ESpectralType::II, TEXT("Bright Giant")},
+		{ESpectralType::III, TEXT("Giant")},
+		{ESpectralType::IV, TEXT("Subgiant")},
+		{ESpectralType::V, TEXT("Main Sequence Dwarf")},
+		{ESpectralType::VI, TEXT("Subdwarf")},
+		{ESpectralType::VII, TEXT("White Dwarf")}
+		// Добавьте остальные типы, если они есть.
+	};
 
 	TMap<ESpectralClass, TTuple<double, double>> MainSequenceMassRanges =
 	{
@@ -162,20 +200,4 @@ private:
 		{EStellarClass::BlackHole, FStarAttributeRanges({FLuminosityRange({0.0, 0.0}), FMassRange({3, 100}), FRadiusRange({0.001, 1000}), FAgeRange({1.0e5, 1.0e6}), FAbsoluteMagnitudeRange({-8.0, -10.0})})},
 		// остальные классы звезд...
 	};
-
-
-	//	{EStellarClass::HyperGiant, FStarAttributeRanges({90000.0, 100000.0}, {100, 250}, {40, 1000}, {1.0e5, 1.0e6}, {-8.0, -10.0})}, // Hypergiant stars
-	//	{EStellarClass::SuperGiant, FStarAttributeRanges({50000.0, 90000.0}, {15, 100}, {30, 500}, {1.0e6, 1.0e7}, {-4.0, -8.0})}, // Supergiant stars
-	//	{EStellarClass::BrightGiant, FStarAttributeRanges({650, 5000}, {15, 70}, {20, 100}, {1.0e10, 1.0e12}, {-2.0, -5.0})}, // Red Dwarf stars
-	//	{EStellarClass::Giant, FStarAttributeRanges({10.0, 1000.0}, {10, 50}, {10.0, 50}, {1.0e8, 1.0e9}, {0.0, 0.0})}, // Giant stars
-	//	{EStellarClass::SubGiant, FStarAttributeRanges({5.0, 100.0}, {5, 10.0}, {2, 10}, {1.0e8, 1.0e9}, {-4.7, 3.2})}, // Giant stars
-	//	{EStellarClass::MainSequence, FStarAttributeRanges({0.01, 100.0}, {0.1, 120}, {0.08, 10.0}, {1.0e7, 1.0e10}, {0.0, 0.0})}, // Main Sequence stars
-	//	{EStellarClass::SubDwarf, FStarAttributeRanges({0.00005, 1.0}, {0.1, 0.8}, {0.1, 0.8}, {1.0e9, 1.0e10}, {0.0, 0.0})}, // Subdwarf stars
-	//	{EStellarClass::WhiteDwarf, FStarAttributeRanges({0.0001, 0.01}, {0.5, 1.4}, {0.008, 0.02}, {1.0e9, 1.0e10}, {0.0, 0.0})}, // White Dwarf stars
-	//	{EStellarClass::BrownDwarf, FStarAttributeRanges({0.000001, 0.01}, {0.01, 0.08}, {0.01, 0.1}, {1.0e6, 1.0e9}, {0.0, 0.0})}, // Brown Dwarf stars
-	//	{EStellarClass::Neutron, FStarAttributeRanges({0.0000001, 0.00001}, {1.4, 3.0}, {0.00001, 0.00002}, {1.0e9, 1.0e10}, {0.0, 0.0})}, // Neutron stars
-	//	{EStellarClass::Protostar, FStarAttributeRanges({0.1, 1.0}, {0.01, 1.0}, {1.0, 10.0}, {1.0e4, 1.0e6}, {0.0, 0.0})}, // Protostar stars
-	//	{EStellarClass::Pulsar, FStarAttributeRanges({100000.0, 1000000.0}, {1.4, 3.0}, {0.00001, 0.00002}, {1.0e9, 1.0e10}, {0.0, 0.0})}, // Pulsar stars
-	//	{EStellarClass::BlackHole, FStarAttributeRanges({0.0, 0.0}, {5.0, 100000.0}, {0.01, 10}, { 1.0e9, 1.0e11}, {0.0, 0.0})} // Black Hole stars
-
 };
