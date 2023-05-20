@@ -35,17 +35,32 @@ FStarGenerationModel UStarGenerator::GenerateRandomStarModel()
 
     TMap<EStellarClass, int> StarTypeWeights = 
     {
+        //{EStellarClass::HyperGiant, 1}, // Гипергиганты
+        //{EStellarClass::SuperGiant, 2}, // Супергиганты
+        //{EStellarClass::BrightGiant, 3}, // Белые карлики
+        //{EStellarClass::Giant, 4}, // Гиганты
+        //{EStellarClass::MainSequence, 10}, // Главная последовательность
+        //{EStellarClass::SubDwarf, 5}, // Субкарлики
+        //{EStellarClass::Protostar, 1}, // Протозвезды
+        //{EStellarClass::BrownDwarf, 2}, // Коричневые карлики
+        //{EStellarClass::Neutron, 1}, // Нейтронные звезды
+        //{EStellarClass::Pulsar, 1}, // Пульсары
+        //{EStellarClass::BlackHole, 1} // Черные дыры
+
+
         {EStellarClass::HyperGiant, 1}, // Гипергиганты
         {EStellarClass::SuperGiant, 2}, // Супергиганты
-        {EStellarClass::BrightGiant, 3}, // Белые карлики
-        {EStellarClass::Giant, 4}, // Гиганты
-        {EStellarClass::MainSequence, 10}, // Главная последовательность
+        {EStellarClass::SubGiant, 3}, // Супергиганты
+        {EStellarClass::BrightGiant, 4}, // Белые карлики
+        {EStellarClass::Giant, 5}, // Гиганты
+        {EStellarClass::MainSequence, 0}, // Главная последовательность
         {EStellarClass::SubDwarf, 5}, // Субкарлики
-        {EStellarClass::Protostar, 1}, // Протозвезды
-        {EStellarClass::BrownDwarf, 2}, // Коричневые карлики
-        {EStellarClass::Neutron, 1}, // Нейтронные звезды
-        {EStellarClass::Pulsar, 1}, // Пульсары
-        {EStellarClass::BlackHole, 1} // Черные дыры
+        {EStellarClass::WhiteDwarf, 100}, // Коричневые карлики
+        {EStellarClass::BrownDwarf, 0}, // Коричневые карлики
+        {EStellarClass::Protostar, 0}, // Протозвезды
+        {EStellarClass::Neutron, 0}, // Нейтронные звезды
+        {EStellarClass::Pulsar, 0}, // Пульсары
+        {EStellarClass::BlackHole, 0} // Черные дыры
     };
     int TotalWeight = 0;
     for (auto const& Pair : StarTypeWeights) {
@@ -63,7 +78,6 @@ FStarGenerationModel UStarGenerator::GenerateRandomStarModel()
     StarModel.StellarClass = ChosenStellarClass;
 
 
-
     //Определите ESpectralClass (спектральный класс) 
     StarModel.SpectralClass = ChooseSpectralClassByStellarClass(ChosenStellarClass);
 
@@ -74,7 +88,7 @@ FStarGenerationModel UStarGenerator::GenerateRandomStarModel()
 
         // Calculate the radius and luminosity using mass-radius-luminosity relation
         double Radius = pow(Mass, 0.8);  // Radius  Mass^0.8
-        double Luminosity = pow(Mass, 3.5);  // Luminosity  Mass^3.5
+        double Luminosity = CalculateLuminosityByMass(Mass);
         double SurfaceTemperature = RandomFromRange(StarTypeTemperatureRanges[StarModel.SpectralClass]);
 
         // Generate a star model
@@ -101,6 +115,48 @@ FStarGenerationModel UStarGenerator::GenerateRandomStarModel()
 
     return StarModel;
 }
+
+double UStarGenerator::CalculateLuminosityByMass(double Mass)
+{
+    double Luminosity;
+
+    if (Mass < 0.43)
+    {
+        // Low mass stars (less than about 0.43 solar masses)
+        Luminosity = pow(Mass, 2.3);
+    }
+    else if (Mass >= 0.43 && Mass < 2)
+    {
+        // Solar-type stars (0.43 to about 2 solar masses)
+        Luminosity = pow(Mass, 4);
+    }
+    else if (Mass >= 2 && Mass < 20)
+    {
+        // Intermediate-mass stars (2 to about 20 solar masses)
+        Luminosity = pow(Mass, 3.5);
+    }
+    else
+    {
+        // High mass stars (greater than about 20 solar masses)
+        Luminosity = pow(Mass, 5.5);
+    }
+
+    if (Luminosity > 100000)
+    {
+        // Set a maximum luminosity
+        Luminosity = FMath::FRandRange(100000, 200000);
+    }
+
+    return Luminosity;
+}
+// код определяет светимость звезды на основе ее массы, используя разные формулы в зависимости от того, в какой диапазон попадает масса звезды.Замените числовые значения в этом коде на реальные значения, основанные на научных данных, если они вам доступны.
+
+
+
+
+
+
+
 
 double UStarGenerator::RandomFromRange(TTuple<double, double> Range)
 {
@@ -137,7 +193,7 @@ double UStarGenerator::CalculateLuminosity(double Radius, double SurfaceTemperat
         // Set a minimum luminosity
         Luminosity = FMath::FRandRange(0.00001, 0.000001);
     }  
-    if (Luminosity > 10000) 
+    if (Luminosity > 100000) 
     { 
         // Set a maximum luminosity
         Luminosity =  FMath::FRandRange(100000, 200000);
@@ -198,6 +254,10 @@ ESpectralClass UStarGenerator::ChooseSpectralClassByStellarClass(EStellarClass S
     const TArray<ESpectralClass> Spectral_LY = { ESpectralClass::L, ESpectralClass::T, ESpectralClass::Y };
 
     // Веса для спектральных классов, исходя из предположительной частоты встречаемости
+    //const TArray<int> Weights_OM = { 30, 30, 30, 0, 0, 0, 0 }; // Weights for O, B, A, F, G, K, M
+    //const TArray<int> Weights_OM = { 30, 30, 30, 0, 0, 0, 0 }; // Weights for O, B, A, F, G, K, M
+    //const TArray<int> Weights_OM = { 50, 50, 0, 0, 0, 0, 0 }; // Weights for O, B, A, F, G, K, M
+    
     const TArray<int> Weights_OM = { 3, 13, 22, 30, 20, 10, 2 }; // Weights for O, B, A, F, G, K, M
     const TArray<int> Weights_OK = { 3, 13, 22, 30, 20, 12 }; // Weights for O, B, A, F, G, K
     const TArray<int> Weights_LY = { 20, 50, 30 }; // Weights for L, T, Y
@@ -219,10 +279,10 @@ ESpectralClass UStarGenerator::ChooseSpectralClassByStellarClass(EStellarClass S
         break;
     case EStellarClass::SubGiant:
     case EStellarClass::SubDwarf:
+    case EStellarClass::WhiteDwarf:
         SpectralArray = &Spectral_OK;
         WeightsArray = &Weights_OK;
         break;
-    case EStellarClass::WhiteDwarf:
     case EStellarClass::BrownDwarf:
         SpectralArray = &Spectral_LY;
         WeightsArray = &Weights_LY;
