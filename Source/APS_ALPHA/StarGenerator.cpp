@@ -69,29 +69,19 @@ FStarGenerationModel UStarGenerator::GenerateRandomStarModel()
 
     if (StarModel.StellarClass == EStellarClass::MainSequence)
     {
-
-
-
         // Get the mass from the spectral class
-        double Mass = RandomMass(StarModel.SpectralClass);//RandomFromRange(MassRanges[SpectralClass]);
+        double Mass = RandomMass(StarModel.SpectralClass);
 
         // Calculate the radius and luminosity using mass-radius-luminosity relation
         double Radius = pow(Mass, 0.8);  // Radius  Mass^0.8
         double Luminosity = pow(Mass, 3.5);  // Luminosity  Mass^3.5
-
-        // Get the surface temperature from the spectral class
-        //double SurfaceTemperature = RandomFromRange(StarTypeTemperatureRanges[StarModel.SpectralClass]);
         double SurfaceTemperature = RandomFromRange(StarTypeTemperatureRanges[StarModel.SpectralClass]);
 
         // Generate a star model
-        //FStarModel StarModel;
         StarModel.Mass = Mass;
         StarModel.Radius = Radius;
         StarModel.Luminosity = Luminosity;
         StarModel.SurfaceTemperature = SurfaceTemperature;
-
-
-
     }
 	else 
 	{
@@ -102,23 +92,12 @@ FStarGenerationModel UStarGenerator::GenerateRandomStarModel()
         }
     
         FStarAttributeRanges& attributeRanges = StarAttributeRanges[StarModel.StellarClass];
-
-
         StarModel.Mass = FMath::RandRange(attributeRanges.Mass.Range.Get<0>(), attributeRanges.Mass.Range.Get<1>());
         StarModel.Radius = FMath::RandRange(attributeRanges.Radius.Range.Get<0>(), attributeRanges.Radius.Range.Get<1>());
-
         StarModel.SurfaceTemperature = GenerateRandomTemperatureBySpectralClass(StarModel.SpectralClass);//CalculateSurfaceTemperature(double Luminosity, double Radius)
         StarModel.Luminosity = CalculateLuminosity(StarModel.Radius, StarModel.SurfaceTemperature);
-
-        //StarModel.Luminosity = FMath::RandRange(attributeRanges.Luminosity.Range.Get<0>(), attributeRanges.Luminosity.Range.Get<1>());
-        //StarModel.SurfaceTemperature = CalculateSurfaceTemperature(StarModel.Luminosity, StarModel.Radius); // You'll need to define this function
-
         StarModel.Age = FMath::RandRange(attributeRanges.Age.Range.Get<0>(), attributeRanges.Age.Range.Get<1>());
-
-    
     }
-
-
 
     return StarModel;
 }
@@ -152,15 +131,18 @@ double UStarGenerator::CalculateLuminosity(double Radius, double SurfaceTemperat
     // Convert to solar luminosity units
     Luminosity /= SolarLuminosity;
 
+    // Check for anomalies
+    if (Luminosity < 0.0001) 
+    {   
+        // Set a minimum luminosity
+        Luminosity = FMath::FRandRange(0.00001, 0.000001);
+    }  
+    if (Luminosity > 10000) 
+    { 
+        // Set a maximum luminosity
+        Luminosity =  FMath::FRandRange(100000, 200000);
+    }  
     return Luminosity;
-    
-    //
-    // const double StefanBoltzmannConstant = 5.67e-8;  // in W/(m^2 K^4)
-    //const double SolarRadius = 6.96e8;  // in meters
-
-    //double Luminosity = 4.0 * PI * pow(Radius * SolarRadius, 2) * StefanBoltzmannConstant * pow(SurfaceTemperature, 4);
-
-    //return Luminosity;
 }
 
 double UStarGenerator::CalculateSurfaceTemperature(double Luminosity, double Radius)
@@ -172,16 +154,9 @@ double UStarGenerator::CalculateSurfaceTemperature(double Luminosity, double Rad
     // Convert solar units to SI units
     Luminosity *= SolarLuminosity;
     Radius *= SolarRadius;
-
     double SurfaceTemperature = pow(Luminosity / (4.0 * PI * Radius * Radius * StefanBoltzmannConstant), 0.25);
 
     return SurfaceTemperature;
-
-    /*const double StefanBoltzmannConstant = 5.67e-8;
-
-    double SurfaceTemperature = pow(Luminosity / (4.0 * PI * Radius * Radius * StefanBoltzmannConstant), 0.25);
-
-    return SurfaceTemperature;*/
 }
 
 
@@ -209,30 +184,6 @@ WhiteDwarf	    WD
 BrownDwarf	    L, T, Y 
 
 */
-
-
-//void UStarGenerator::GenerateMainSequenceStarAttributes(EStellarClass StellarClass)
-//{
-//    // Получаем диапазоны атрибутов для данного StellarClass
-//    FStarAttributeRanges Ranges = StarAttributeRanges[StellarClass];
-//
-//    // Генерируем массу звезды в заданном диапазоне
-//    Mass = FMath::FRandRange(Ranges.MassRange.Min, Ranges.MassRange.Max);
-//
-//    // Вычисляем светимость, радиус и температуру на основе массы
-//    Luminosity = FMath::Pow(Mass, 3.5);
-//    Radius = FMath::Pow(Mass, 0.8); // Используйте 0.8 для более точного соотношения масса-радиус
-//
-//    if (Mass < 1) {
-//        SurfaceTemperature = 3000 + (Mass - Ranges.MassRange.Min) * (5800 - 3000) / (1 - Ranges.MassRange.Min); // M6 to G2 class
-//    }
-//    else {
-//        SurfaceTemperature = 5800 + (Mass - 1) * (53300 - 5800) / (Ranges.MassRange.Max - 1); // G2 to O3 class
-//    }
-//
-//    // Задаем возраст звезды
-//    Age = FMath::FRandRange(Ranges.AgeRange.Min, Ranges.AgeRange.Max);
-//}
 
 
 
@@ -307,8 +258,6 @@ ESpectralClass UStarGenerator::ChooseSpectralClassByStellarClass(EStellarClass S
 
 }
 
-
-
 ESpectralClass UStarGenerator::DetermineSpectralClassByTemperature(EStellarClass StarType, double Temperature)
 {
     switch (StarType) {
@@ -332,18 +281,6 @@ ESpectralClass UStarGenerator::DetermineSpectralClassByTemperature(EStellarClass
         else return ESpectralClass::M;
     }
 }
-
-//double UStarGenerator::CalculateLuminosity(double Radius, double SurfaceTemperature)
-//{
-//    const double StefanBoltzmannConstant = 5.67e-8;  // in W/(m^2 K^4)
-//    const double SolarRadius = 6.96e8;  // in meters
-//
-//    double Luminosity = 4.0 * PI * pow(Radius * SolarRadius, 2) * StefanBoltzmannConstant * pow(SurfaceTemperature, 4);
-//
-//    return Luminosity;
-//}
-
-
 
 double UStarGenerator::GenerateRandomTemperatureBySpectralClass(ESpectralClass SpectralClass)
 {
