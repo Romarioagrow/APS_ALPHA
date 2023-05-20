@@ -24,6 +24,9 @@ struct FStarGenerationModel :
 
 	UPROPERTY(VisibleAnywhere)
 		int SurfaceTemperature;
+	
+	UPROPERTY(VisibleAnywhere)
+		double Age;
 
 };
 
