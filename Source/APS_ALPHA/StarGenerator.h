@@ -26,6 +26,8 @@ public:
 
 	FStarGenerationModel GenerateRandomStarModel();
 
+	double CalculateLuminosityByMass(double Mass);
+
 	double RandomFromRange(TTuple<double, double> range);
 
 	double RandomMass(ESpectralClass SpectralClass);
@@ -67,8 +69,8 @@ private:
 	{
 		{ESpectralClass::O, TTuple<double, double>(16, 60)},
 		{ESpectralClass::B, TTuple<double, double>(2.1, 16)},
-		{ESpectralClass::A, TTuple<double, double>(1.4, 2.1)},
-		{ESpectralClass::F, TTuple<double, double>(1.04, 1.4)},
+		{ESpectralClass::A, TTuple<double, double>(1.5, 3)},
+		{ESpectralClass::F, TTuple<double, double>(1.04, 1.6)},
 		{ESpectralClass::G, TTuple<double, double>(0.8, 1.04)},
 		{ESpectralClass::K, TTuple<double, double>(0.45, 0.8)},
 		{ESpectralClass::M, TTuple<double, double>(0.08, 0.45)},
@@ -78,7 +80,7 @@ private:
 	{
 		{ESpectralClass::O, TTuple<double, double>(6.6, 10)},
 		{ESpectralClass::B, TTuple<double, double>(1.8, 6.6)},
-		{ESpectralClass::A, TTuple<double, double>(1.4, 1.8)},
+		{ESpectralClass::A, TTuple<double, double>(1.4, 2.5)},
 		{ESpectralClass::F, TTuple<double, double>(1.15, 1.4)},
 		{ESpectralClass::G, TTuple<double, double>(0.96, 1.15)},
 		{ESpectralClass::K, TTuple<double, double>(0.7, 0.96)},
@@ -87,16 +89,13 @@ private:
 
 	TMap<ESpectralClass, TTuple<double, double>> StarTypeTemperatureRanges =
 	{
-
-		//30 
-
 		{ESpectralClass::O, TTuple<double, double>(30000, 60000)},
 		{ESpectralClass::B, TTuple<double, double>(10000, 30000)},
 		{ESpectralClass::A, TTuple<double, double>(7500, 10000)},
 		{ESpectralClass::F, TTuple<double, double>(6000, 7500)},
-		{ESpectralClass::G, TTuple<double, double>(5200, 6000)},
-		{ESpectralClass::K, TTuple<double, double>(250, 1300)},
-		{ESpectralClass::M, TTuple<double, double>(3700, 5200)},
+		{ESpectralClass::G, TTuple<double, double>(5000, 6000)},
+		{ESpectralClass::K, TTuple<double, double>(3800, 5000)},
+		{ESpectralClass::M, TTuple<double, double>(2500, 3800)},
 		{ESpectralClass::L, TTuple<double, double>(1300, 2400)},
 		{ESpectralClass::T, TTuple<double, double>(700, 1300)},
 		{ESpectralClass::Y, TTuple<double, double>(350, 700)},
@@ -158,9 +157,9 @@ private:
 		{EStellarClass::WhiteDwarf, FStarAttributeRanges({FLuminosityRange({0.00001, 0.01}), FMassRange({0.6, 1.4}), FRadiusRange({0.01, 0.2}), FAgeRange({1.0e5, 1.0e6}), FAbsoluteMagnitudeRange({-8.0, -10.0})})},
 		{EStellarClass::BrownDwarf, FStarAttributeRanges({FLuminosityRange({90000.0, 100000.0}), FMassRange({0.005, 0.075}), FRadiusRange({0.01, 0.1}), FAgeRange({1.0e5, 1.0e6}), FAbsoluteMagnitudeRange({-8.0, -10.0})})},
 		{EStellarClass::Neutron, FStarAttributeRanges({FLuminosityRange({90000.0, 100000.0}), FMassRange({100, 250}), FRadiusRange({40, 1000}), FAgeRange({1.0e5, 1.0e6}), FAbsoluteMagnitudeRange({-8.0, -10.0})})},
-		{EStellarClass::Protostar, FStarAttributeRanges({FLuminosityRange({90000.0, 100000.0}), FMassRange({100, 250}), FRadiusRange({40, 1000}), FAgeRange({1.0e5, 1.0e6}), FAbsoluteMagnitudeRange({-8.0, -10.0})})},
-		{EStellarClass::Pulsar, FStarAttributeRanges({FLuminosityRange({90000.0, 100000.0}), FMassRange({100, 250}), FRadiusRange({40, 1000}), FAgeRange({1.0e5, 1.0e6}), FAbsoluteMagnitudeRange({-8.0, -10.0})})},
-		{EStellarClass::BlackHole, FStarAttributeRanges({FLuminosityRange({0.0, 0.0}), FMassRange({100, 250}), FRadiusRange({40, 1000}), FAgeRange({1.0e5, 1.0e6}), FAbsoluteMagnitudeRange({-8.0, -10.0})})},
+		{EStellarClass::Protostar, FStarAttributeRanges({FLuminosityRange({90000.0, 100000.0}), FMassRange({0.1, 150}), FRadiusRange({10, 20}), FAgeRange({1.0e5, 1.0e6}), FAbsoluteMagnitudeRange({-8.0, -10.0})})},
+		{EStellarClass::Pulsar, FStarAttributeRanges({FLuminosityRange({90000.0, 100000.0}), FMassRange({2, 200}), FRadiusRange({0.0001, 0.001}), FAgeRange({1.0e5, 1.0e6}), FAbsoluteMagnitudeRange({-8.0, -10.0})})},
+		{EStellarClass::BlackHole, FStarAttributeRanges({FLuminosityRange({0.0, 0.0}), FMassRange({3, 100}), FRadiusRange({0.001, 1000}), FAgeRange({1.0e5, 1.0e6}), FAbsoluteMagnitudeRange({-8.0, -10.0})})},
 		// остальные классы звезд...
 	};
 
