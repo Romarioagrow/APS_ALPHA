@@ -64,7 +64,8 @@ void AStarClusterGenerator::GenerateRandomStarSystem()
         {
             
             FStarGenerationModel StarModel = StarGenerator->GenerateRandomStarModel();
-            FPlanetarySystemGenerationModel PlanetraySystemModel = PlanetarySystemGenerator->GenerateRandomPlanetraySystemModelByStar(StarModel); // Add StarModel and calculate based on it  
+            //FPlanetarySystemGenerationModel PlanetraySystemModel = PlanetarySystemGenerator->GenerateRandomPlanetraySystemModelByStar(StarModel); 
+            FPlanetarySystemGenerationModel PlanetraySystemModel = PlanetarySystemGenerator->GeneratePlanetraySystemModelByStar(StarModel); 
 
             // Create Planetray System
             APlanetarySystem* NewPlanetarySystem = World->SpawnActor<APlanetarySystem>(BP_PlanetarySystemClass);

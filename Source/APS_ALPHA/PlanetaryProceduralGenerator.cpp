@@ -13,6 +13,111 @@ void UPlanetarySystemGenerator::ApplyModel(APlanetarySystem* NewPlanetarySystem,
     NewPlanetarySystem->SetPlanetarySystemType(PlanetraySystemModel.PlanetarySystemType);
 }
 
+
+
+
+FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySystemModelByStar(FStarGenerationModel StarModel)
+{
+    // вычисляем вероятность что будут планеты
+    // находим макс и мин кол во планет
+    // опредлеяем расположение орбит планет  
+
+    FPlanetarySystemGenerationModel PlanetarySystem;
+    // Находим базовую вероятность для данного типа звезды
+    PlanetProbability BaseProbability = BasePlanetProbabilities[StarModel.StellarClass];
+    // Модифицируем вероятность на основе массы звезды.
+    PlanetProbability MassModifier;
+    if (StarModel.StellarClass == EStellarClass::MainSequence)
+    {
+        MassModifier = 1 / (1 + FMath::Exp(-StarModel.Mass));
+    }
+    else
+    {
+        MassModifier = 1 / (1 + FMath::Exp(-StarModel.Mass / 10));
+    }
+
+    PlanetProbability FinalProbability = BaseProbability * MassModifier;
+    UE_LOG(LogTemp, Warning, TEXT("FinalProbability: %f"), FinalProbability);
+    bool HasPlanets = FMath::FRand() <= FinalProbability;
+
+    if (HasPlanets) 
+    {
+        /*
+        try
+        {
+        }
+        catch()
+        {
+        }
+        */
+        const int32 MaxPlanetsAllowed = 20;
+        int32 MinPlanetCount = 1;
+        int32 MaxPlanetCount = FMath::Min(MaxPlanetsAllowed, FMath::Max(1, FMath::RoundToInt(StarModel.Mass * BasePlanetCount[StarModel.StellarClass] * MassModifier)));
+    
+        if (StarModel.StellarClass == EStellarClass::MainSequence && StarModel.SpectralClass == ESpectralClass::M)
+        {
+            MaxPlanetCount = 5;
+        }
+    
+        int32 FinalPlanetCount = FMath::RandRange(MinPlanetCount, MaxPlanetCount);
+        PlanetarySystem.AmountOfPlanets = FinalPlanetCount;
+        PlanetarySystem.PlanetarySystemType = EPlanetarySystemType::Unknown; ///
+
+
+        UE_LOG(LogTemp, Warning, TEXT("MinPlanetCount: %d"), MinPlanetCount);
+        UE_LOG(LogTemp, Warning, TEXT("MaxPlanetCount: %d"), MaxPlanetCount);
+        UE_LOG(LogTemp, Warning, TEXT("FinalPlanetCount: %d"), FinalPlanetCount);
+	}
+    else 
+    {
+		PlanetarySystem.AmountOfPlanets = 0;
+		PlanetarySystem.PlanetarySystemType = EPlanetarySystemType::NoPlanetSystem;
+	}
+    
+    return PlanetarySystem;
+}
+
+int UPlanetarySystemGenerator::DetermineMaxPlanets(EStellarClass StellarClass, FStarGenerationModel StarModel )
+{
+
+    int MaxPlanets;
+
+    // У некоторых типов звезд вообще нет планет
+    if (StellarClass == EStellarClass::WhiteDwarf || StellarClass == EStellarClass::Neutron) {
+        return 0;
+    }
+
+    // Задаем базовое количество планет в зависимости от класса звезды
+    switch (StellarClass) {
+    case EStellarClass::HyperGiant:
+    case EStellarClass::SuperGiant:
+    case EStellarClass::Giant:
+        MaxPlanets = 10; // Базовое количество для гигантских звезд
+        break;
+    case EStellarClass::MainSequence:
+        MaxPlanets = 5; // Базовое количество для звезд главной последовательности
+        break;
+    default:
+        MaxPlanets = 3; // Базовое количество для остальных типов звезд
+        break;
+    }
+
+    // Модифицируем количество планет в зависимости от массы и возраста звезды
+    MaxPlanets = MaxPlanets + StarModel.Mass * 0.5 + 0.2 * 0.1;
+
+    // Убедимся, что у нас есть хотя бы одна планета, если это возможно
+    /*if (MaxPlanets < 1 && StellarClass != EStellarClass::WhiteDwarf && StellarClass != EStellarClass::NeutronStar) {
+        MaxPlanets = 1;
+    }*/
+
+    // Ограничим максимальное количество планет, чтобы оно было разумным
+    if (MaxPlanets > 20) {
+        MaxPlanets = 20;
+    }
+
+    return MaxPlanets;
+}
+
 FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GenerateRandomPlanetraySystemModelByStar(FStarGenerationModel StarModel)
 {
     FPlanetarySystemGenerationModel PlanetarySystemModel;

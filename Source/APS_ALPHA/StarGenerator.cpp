@@ -411,8 +411,7 @@ ESpectralClass UStarGenerator::ChooseSpectralClassByStellarClass(EStellarClass S
     // Spectral Classes L, T, Y
     const TArray<ESpectralClass> Spectral_LY = { ESpectralClass::L, ESpectralClass::T, ESpectralClass::Y };
 
-  
-    const TArray<int> Weights_OM = { 3, 13, 22, 30, 20, 10, 22 }; // Weights for O, B, A, F, G, K, M
+    const TArray<int> Weights_OM = { 3, 5, 22, 30, 20, 10, 3 }; // Weights for O, B, A, F, G, K, M
     const TArray<int> Weights_OK = { 3, 13, 22, 30, 20, 12 }; // Weights for O, B, A, F, G, K
     const TArray<int> Weights_LY = { 20, 50, 30 }; // Weights for L, T, Y
 
