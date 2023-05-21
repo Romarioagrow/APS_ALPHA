@@ -26,6 +26,8 @@ public:
 
 	FStarGenerationModel GenerateRandomStarModel();
 
+	EStellarClass GenerateStarClassByRandomWeights();
+
 private:
 
 	FString GetSpectralClassColor(ESpectralClass Class);
@@ -73,6 +75,23 @@ private:
 //K - класс : 3700 - 5200 К
 //M - класс : 2000 - 3700 К
 
+	TMap<EStellarClass, int> StarTypeWeights =
+	{
+		{EStellarClass::HyperGiant, 1}, // Гипергиганты
+		{EStellarClass::SuperGiant, 3}, // Супергиганты
+		{EStellarClass::BrightGiant, 5}, // Белые карлики
+		{EStellarClass::Giant, 10}, // Гиганты
+		{EStellarClass::SubGiant, 5}, // Супергиганты
+		{EStellarClass::MainSequence, 70}, // Главная последовательность
+		{EStellarClass::SubDwarf, 5}, // Субкарлики
+		{EStellarClass::WhiteDwarf, 2}, // Коричневые карлики
+		{EStellarClass::BrownDwarf, 2}, // Коричневые карлики
+		{EStellarClass::Protostar, 1}, // Протозвезды
+		{EStellarClass::Neutron, 1}, // Нейтронные звезды
+		{EStellarClass::Pulsar, 1}, // Пульсары
+		{EStellarClass::BlackHole, 1} // Черные дыры
+	};
+
 	// Создаем TMap для цветов спектральных классов.
 	TMap<ESpectralClass, FString> SpectralClassColorMap =
 	{
@@ -85,8 +104,9 @@ private:
 		{ESpectralClass::M, TEXT("Red")},
 		{ESpectralClass::L, TEXT("Red-Brown")},
 		{ESpectralClass::T, TEXT("Magenta")},
-		{ESpectralClass::Y, TEXT("Brown")}
-		// Добавьте остальные классы, если они есть.
+		{ESpectralClass::Y, TEXT("Cool-Brown")},
+		{ESpectralClass::Unknown, TEXT("Unknown ")},
+
 	};
 
 	// Создаем TMap для описания спектральных типов.
@@ -99,9 +119,11 @@ private:
 		{ESpectralType::II, TEXT("Bright Giant")},
 		{ESpectralType::III, TEXT("Giant")},
 		{ESpectralType::IV, TEXT("Subgiant")},
-		{ESpectralType::V, TEXT("Main Sequence Dwarf")},
+		{ESpectralType::V, TEXT("Dwarf Main-Sequence")},
 		{ESpectralType::VI, TEXT("Subdwarf")},
-		{ESpectralType::VII, TEXT("White Dwarf")}
+		{ESpectralType::VII, TEXT("White-Dwarf")},
+		{ESpectralType::VIII, TEXT("Brown Dwarf")},
+		{ESpectralType::Unknown, TEXT("Unknown ")}
 		// Добавьте остальные типы, если они есть.
 	};
 
@@ -140,7 +162,9 @@ private:
 		{ESpectralClass::T, TTuple<double, double>(700, 1300)},
 		{ESpectralClass::Y, TTuple<double, double>(350, 700)},
 		{ESpectralClass::NS, TTuple<double, double>(1000000, 1000000)},
-		{ESpectralClass::BH, TTuple<double, double>(0, 0)} // Black holes do not have a definite temperature
+		{ESpectralClass::PS, TTuple<double, double>(2000, 3000)},
+		{ESpectralClass::BH, TTuple<double, double>(0, 0)}, // Black holes do not have a definite temperature
+		{ESpectralClass::Unknown, TTuple<double, double>(0, 0)} // Black holes do not have a definite temperature
 	};
 
 	struct FLuminosityRange
@@ -187,19 +211,32 @@ private:
 
 	TMap<EStellarClass, FStarAttributeRanges> StarAttributeRanges =
 	{
-		{EStellarClass::HyperGiant, FStarAttributeRanges({FLuminosityRange({90000.0, 100000.0}), FMassRange({100, 250}), FRadiusRange({40, 1000}), FAgeRange({1.0e5, 1.0e6}), FAbsoluteMagnitudeRange({-8.0, -10.0})})},
-		{EStellarClass::SuperGiant, FStarAttributeRanges({FLuminosityRange({50000.0, 90000.0}), FMassRange({15, 100}), FRadiusRange({30, 500}), FAgeRange({1.0e6, 1.0e7}), FAbsoluteMagnitudeRange({-4.0, -8.0})})},
-		{EStellarClass::BrightGiant, FStarAttributeRanges({FLuminosityRange({650, 5000}), FMassRange({15, 70}), FRadiusRange({20, 100}), FAgeRange({1.0e10, 1.0e12}), FAbsoluteMagnitudeRange({-2.0, -5.0})})},
-		{EStellarClass::Giant, FStarAttributeRanges({FLuminosityRange({10.0, 1000.0}), FMassRange({10, 500}), FRadiusRange({10.0, 50}), FAgeRange({1.0e8, 1.0e9}), FAbsoluteMagnitudeRange({-8.0, -10.0})})},
-		{EStellarClass::SubGiant, FStarAttributeRanges({FLuminosityRange({5.0, 100.0}), FMassRange({5, 10}), FRadiusRange({2, 10}), FAgeRange({1.0e5, 1.0e6}), FAbsoluteMagnitudeRange({-4.7, 3.2})})},
-		{EStellarClass::MainSequence, FStarAttributeRanges({FLuminosityRange({0.00001, 100000.0}), FMassRange({0.1, 120}), FRadiusRange({0.1, 120}), FAgeRange({1.0e5, 1.0e6}), FAbsoluteMagnitudeRange({-8.0, -10.0})})},
-		{EStellarClass::SubDwarf, FStarAttributeRanges({FLuminosityRange({10, 100.0}), FMassRange({0.5, 2}), FRadiusRange({0.5, 2}), FAgeRange({1.0e5, 1.0e6}), FAbsoluteMagnitudeRange({-8.0, -10.0})})},
-		{EStellarClass::WhiteDwarf, FStarAttributeRanges({FLuminosityRange({0.00001, 0.01}), FMassRange({0.6, 1.4}), FRadiusRange({0.01, 0.2}), FAgeRange({1.0e5, 1.0e6}), FAbsoluteMagnitudeRange({-8.0, -10.0})})},
-		{EStellarClass::BrownDwarf, FStarAttributeRanges({FLuminosityRange({90000.0, 100000.0}), FMassRange({0.005, 0.075}), FRadiusRange({0.01, 0.1}), FAgeRange({1.0e5, 1.0e6}), FAbsoluteMagnitudeRange({-8.0, -10.0})})},
-		{EStellarClass::Neutron, FStarAttributeRanges({FLuminosityRange({90000.0, 100000.0}), FMassRange({100, 250}), FRadiusRange({40, 1000}), FAgeRange({1.0e5, 1.0e6}), FAbsoluteMagnitudeRange({-8.0, -10.0})})},
-		{EStellarClass::Protostar, FStarAttributeRanges({FLuminosityRange({90000.0, 100000.0}), FMassRange({0.1, 150}), FRadiusRange({10, 20}), FAgeRange({1.0e5, 1.0e6}), FAbsoluteMagnitudeRange({-8.0, -10.0})})},
-		{EStellarClass::Pulsar, FStarAttributeRanges({FLuminosityRange({90000.0, 100000.0}), FMassRange({2, 200}), FRadiusRange({0.0001, 0.001}), FAgeRange({1.0e5, 1.0e6}), FAbsoluteMagnitudeRange({-8.0, -10.0})})},
-		{EStellarClass::BlackHole, FStarAttributeRanges({FLuminosityRange({0.0, 0.0}), FMassRange({3, 100}), FRadiusRange({0.001, 1000}), FAgeRange({1.0e5, 1.0e6}), FAbsoluteMagnitudeRange({-8.0, -10.0})})},
+		{EStellarClass::HyperGiant, FStarAttributeRanges(
+			{FLuminosityRange({90000.0, 100000.0}), FMassRange({100, 250}), FRadiusRange({40, 1000}), FAgeRange({1.0e5, 1.0e6}), FAbsoluteMagnitudeRange({-8.0, -10.0})})},
+		{EStellarClass::SuperGiant, FStarAttributeRanges(
+			{FLuminosityRange({50000.0, 90000.0}), FMassRange({15, 100}), FRadiusRange({30, 500}), FAgeRange({1.0e6, 1.0e7}), FAbsoluteMagnitudeRange({-4.0, -8.0})})},
+		{EStellarClass::BrightGiant, FStarAttributeRanges(
+			{FLuminosityRange({650, 5000}), FMassRange({15, 70}), FRadiusRange({20, 100}), FAgeRange({1.0e10, 1.0e12}), FAbsoluteMagnitudeRange({-2.0, -5.0})})},
+		{EStellarClass::Giant, FStarAttributeRanges(
+			{FLuminosityRange({10.0, 1000.0}), FMassRange({10, 500}), FRadiusRange({10.0, 50}), FAgeRange({1.0e8, 1.0e9}), FAbsoluteMagnitudeRange({-8.0, -10.0})})},
+		{EStellarClass::SubGiant, FStarAttributeRanges(
+			{FLuminosityRange({5.0, 100.0}), FMassRange({5, 10}), FRadiusRange({2, 10}), FAgeRange({1.0e5, 1.0e6}), FAbsoluteMagnitudeRange({-4.7, 3.2})})},
+		{EStellarClass::MainSequence, FStarAttributeRanges(
+			{FLuminosityRange({0.00001, 100000.0}), FMassRange({0.1, 120}), FRadiusRange({0.1, 120}), FAgeRange({1.0e5, 1.0e6}), FAbsoluteMagnitudeRange({-8.0, -10.0})})},
+		{EStellarClass::SubDwarf, FStarAttributeRanges(
+			{FLuminosityRange({10, 100.0}), FMassRange({0.5, 2}), FRadiusRange({0.5, 2}), FAgeRange({1.0e5, 1.0e6}), FAbsoluteMagnitudeRange({-8.0, -10.0})})},
+		{EStellarClass::WhiteDwarf, FStarAttributeRanges(
+			{FLuminosityRange({0.00001, 0.01}), FMassRange({0.6, 1.4}), FRadiusRange({0.01, 0.2}), FAgeRange({1.0e5, 1.0e6}), FAbsoluteMagnitudeRange({-8.0, -10.0})})},
+		{EStellarClass::BrownDwarf, FStarAttributeRanges(
+			{FLuminosityRange({90000.0, 100000.0}), FMassRange({0.005, 0.075}), FRadiusRange({0.01, 0.1}), FAgeRange({1.0e5, 1.0e6}), FAbsoluteMagnitudeRange({-8.0, -10.0})})},
+		{EStellarClass::Neutron, FStarAttributeRanges(
+			{FLuminosityRange({90000.0, 100000.0}), FMassRange({100, 250}), FRadiusRange({40, 1000}), FAgeRange({1.0e5, 1.0e6}), FAbsoluteMagnitudeRange({-8.0, -10.0})})},
+		{EStellarClass::Protostar, FStarAttributeRanges(
+			{FLuminosityRange({90000.0, 100000.0}), FMassRange({0.1, 150}), FRadiusRange({10, 20}), FAgeRange({1.0e5, 1.0e6}), FAbsoluteMagnitudeRange({-8.0, -10.0})})},
+		{EStellarClass::Pulsar, FStarAttributeRanges(
+			{FLuminosityRange({90000.0, 100000.0}), FMassRange({2, 200}), FRadiusRange({0.0001, 0.001}), FAgeRange({1.0e5, 1.0e6}), FAbsoluteMagnitudeRange({-8.0, -10.0})})},
+		{EStellarClass::BlackHole, FStarAttributeRanges(
+			{FLuminosityRange({0.0, 0.0}), FMassRange({3, 100}), FRadiusRange({0.001, 1000}), FAgeRange({1.0e5, 1.0e6}), FAbsoluteMagnitudeRange({-8.0, -10.0})})},
 		// остальные классы звезд...
 	};
 };

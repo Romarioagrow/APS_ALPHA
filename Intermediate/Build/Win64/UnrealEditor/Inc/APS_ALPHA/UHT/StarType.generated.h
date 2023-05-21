@@ -31,7 +31,8 @@ PRAGMA_DISABLE_DEPRECATION_WARNINGS
 	op(EStellarClass::Neutron) \
 	op(EStellarClass::Protostar) \
 	op(EStellarClass::Pulsar) \
-	op(EStellarClass::BlackHole) 
+	op(EStellarClass::BlackHole) \
+	op(EStellarClass::Unknown) 
 
 enum class EStellarClass : uint8;
 template<> struct TIsUEnumClass<EStellarClass> { enum { Value = true }; };
