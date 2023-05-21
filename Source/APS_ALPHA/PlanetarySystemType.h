@@ -20,5 +20,7 @@ enum class EPlanetarySystemType : uint8
     
     DenseSystem
     UMETA(DisplayName = "Dense System"),
-
+    
+    Unknown
+    UMETA(DisplayName = "Unknown"),
 };
