@@ -26,6 +26,8 @@ public:
 
 	FStarGenerationModel GenerateRandomStarModel();
 
+private:
+
 	FString GetSpectralClassColor(ESpectralClass Class);
 
 	FString GetSpectralTypeDescription(ESpectralType Type);
@@ -50,7 +52,7 @@ public:
 
 	ESpectralClass ChooseSpectralClassByStellarClass(EStellarClass StellarClass);
 
-private:
+
 	ESpectralClass DetermineSpectralClassByTemperature(EStellarClass StarType, double Temperature);
 
 	double CalculateLuminosity(double Radius, double SurfaceTemperature);
