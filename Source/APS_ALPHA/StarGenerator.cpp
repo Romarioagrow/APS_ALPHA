@@ -53,6 +53,7 @@ FStarGenerationModel UStarGenerator::GenerateRandomStarModel()
         StarModel.Radius = Radius;
         StarModel.Luminosity = Luminosity;
         StarModel.SurfaceTemperature = SurfaceTemperature;
+        StarModel.Age = CalculateMainSequenceStarAge(Mass);
     }
 	else 
 	{
@@ -67,7 +68,7 @@ FStarGenerationModel UStarGenerator::GenerateRandomStarModel()
         StarModel.Radius = FMath::RandRange(AttributeRanges.Radius.Range.Get<0>(), AttributeRanges.Radius.Range.Get<1>());
         StarModel.SurfaceTemperature = GenerateRandomTemperatureBySpectralClass(StarModel.SpectralClass);//CalculateSurfaceTemperature(double Luminosity, double Radius)
         StarModel.Luminosity = CalculateLuminosity(StarModel.Radius, StarModel.SurfaceTemperature);
-        StarModel.Age = FMath::RandRange(AttributeRanges.Age.Range.Get<0>(), AttributeRanges.Age.Range.Get<1>());
+        StarModel.Age = CalculateNonMainSequenceStarAge(StarModel.Mass);//FMath::RandRange(AttributeRanges.Age.Range.Get<0>(), AttributeRanges.Age.Range.Get<1>());
     }
 
     StarModel.SpectralSubclass = CalculateSpectralSubclass(StarModel.SurfaceTemperature, StarModel.SpectralClass);
@@ -76,6 +77,58 @@ FStarGenerationModel UStarGenerator::GenerateRandomStarModel()
     StarModel.FullSpectralName = GenerateFullSpectralName(StarModel);
 
     return StarModel;
+}
+
+FString UStarGenerator::CalculateNonMainSequenceStarAge(double StarMass)
+{
+    // Coefficient is a tuning parameter to fit the function to real star age data.
+    const double coefficient = 10.0; // This value may need to be adjusted
+
+    // Age is proportional to mass^-2.5
+    double AgeInBillionYears = coefficient * pow(StarMass, -2.5);
+
+    FString FormattedAge{};
+
+    if (AgeInBillionYears >= 1.0)
+    {
+        FormattedAge = FString::Printf(TEXT("%.2f bln years"), AgeInBillionYears);
+    }
+    else if (AgeInBillionYears >= 0.001)
+    {
+        AgeInBillionYears = AgeInBillionYears * 1000.0;
+        FormattedAge = FString::Printf(TEXT("%.2f mln years"), AgeInBillionYears);
+    }
+    else
+    {
+        AgeInBillionYears = AgeInBillionYears * 1000000.0;
+        FormattedAge = FString::Printf(TEXT("%.2f ths years"), AgeInBillionYears);
+    }
+
+    return FormattedAge;
+}
+
+FString UStarGenerator::CalculateMainSequenceStarAge(double Mass)
+{
+    // Применяем формулу T = M^(-2.5)
+    double AgeInBillionYears = pow(Mass, -2.5);
+    FString FormattedAge{};
+
+    if (AgeInBillionYears >= 1.0)
+    {
+        FormattedAge = FString::Printf(TEXT("%.2f bln years"), AgeInBillionYears);
+    }
+    else if (AgeInBillionYears >= 0.001)
+    {
+        AgeInBillionYears = AgeInBillionYears * 1000.0;
+        FormattedAge = FString::Printf(TEXT("%.2f mln years"), AgeInBillionYears);
+    }
+    else
+    {
+        AgeInBillionYears = AgeInBillionYears * 1000000.0;
+        FormattedAge = FString::Printf(TEXT("%.2f ths years"), AgeInBillionYears);
+    }
+
+    return FormattedAge;
 }
 
 EStellarClass UStarGenerator::GenerateStarClassByRandomWeights()

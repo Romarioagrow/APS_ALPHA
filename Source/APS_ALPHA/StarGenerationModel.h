@@ -30,7 +30,7 @@ struct FStarGenerationModel :
 		int SurfaceTemperature;
 	
 	UPROPERTY(VisibleAnywhere)
-		double Age;
+		FString Age;
 
 	UPROPERTY(VisibleAnywhere)
 		FName FullSpectralClass;

@@ -17,7 +17,7 @@ void ACelestialBody::SetMass(float NewMass)
 	this->Mass = NewMass;
 }
 
-void ACelestialBody::SetAge(float NewAge)
+void ACelestialBody::SetAge(FString NewAge)
 {
 	this->Age = NewAge;
 }

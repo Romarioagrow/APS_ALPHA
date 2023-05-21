@@ -64,7 +64,7 @@ template<> APS_ALPHA_API UScriptStruct* StaticStruct<FStarGenerationModel>()
 #if WITH_METADATA
 		static const UECodeGen_Private::FMetaDataPairParam NewProp_Age_MetaData[];
 #endif
-		static const UECodeGen_Private::FDoublePropertyParams NewProp_Age;
+		static const UECodeGen_Private::FStrPropertyParams NewProp_Age;
 #if WITH_METADATA
 		static const UECodeGen_Private::FMetaDataPairParam NewProp_FullSpectralClass_MetaData[];
 #endif
@@ -136,7 +136,7 @@ template<> APS_ALPHA_API UScriptStruct* StaticStruct<FStarGenerationModel>()
 		{ "ModuleRelativePath", "StarGenerationModel.h" },
 	};
 #endif
-	const UECodeGen_Private::FDoublePropertyParams Z_Construct_UScriptStruct_FStarGenerationModel_Statics::NewProp_Age = { "Age", nullptr, (EPropertyFlags)0x0010000000020001, UECodeGen_Private::EPropertyGenFlags::Double, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FStarGenerationModel, Age), METADATA_PARAMS(Z_Construct_UScriptStruct_FStarGenerationModel_Statics::NewProp_Age_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FStarGenerationModel_Statics::NewProp_Age_MetaData)) };
+	const UECodeGen_Private::FStrPropertyParams Z_Construct_UScriptStruct_FStarGenerationModel_Statics::NewProp_Age = { "Age", nullptr, (EPropertyFlags)0x0010000000020001, UECodeGen_Private::EPropertyGenFlags::Str, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FStarGenerationModel, Age), METADATA_PARAMS(Z_Construct_UScriptStruct_FStarGenerationModel_Statics::NewProp_Age_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FStarGenerationModel_Statics::NewProp_Age_MetaData)) };
 #if WITH_METADATA
 	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UScriptStruct_FStarGenerationModel_Statics::NewProp_FullSpectralClass_MetaData[] = {
 		{ "Category", "StarGenerationModel" },
@@ -198,9 +198,9 @@ template<> APS_ALPHA_API UScriptStruct* StaticStruct<FStarGenerationModel>()
 		static const FStructRegisterCompiledInInfo ScriptStructInfo[];
 	};
 	const FStructRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarGenerationModel_h_Statics::ScriptStructInfo[] = {
-		{ FStarGenerationModel::StaticStruct, Z_Construct_UScriptStruct_FStarGenerationModel_Statics::NewStructOps, TEXT("StarGenerationModel"), &Z_Registration_Info_UScriptStruct_StarGenerationModel, CONSTRUCT_RELOAD_VERSION_INFO(FStructReloadVersionInfo, sizeof(FStarGenerationModel), 995966186U) },
+		{ FStarGenerationModel::StaticStruct, Z_Construct_UScriptStruct_FStarGenerationModel_Statics::NewStructOps, TEXT("StarGenerationModel"), &Z_Registration_Info_UScriptStruct_StarGenerationModel, CONSTRUCT_RELOAD_VERSION_INFO(FStructReloadVersionInfo, sizeof(FStarGenerationModel), 3359801326U) },
 	};
-	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarGenerationModel_h_3277086377(TEXT("/Script/APS_ALPHA"),
+	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarGenerationModel_h_3393994452(TEXT("/Script/APS_ALPHA"),
 		nullptr, 0,
 		Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarGenerationModel_h_Statics::ScriptStructInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarGenerationModel_h_Statics::ScriptStructInfo),
 		nullptr, 0);
