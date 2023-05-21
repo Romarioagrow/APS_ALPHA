@@ -15,4 +15,6 @@ enum class ESpectralType : uint8
 	VI				UMETA(DisplayName = "VI Subdwarf"), // Субкарлики
 	VII				UMETA(DisplayName = "VII White Dwarf"), // Белые карлики
 	VIII			UMETA(DisplayName = "VIII Brown Dwarf"), // Белые карлики
+	Unknown			UMETA(DisplayName = "Unknown") // Неизвестный
+
 };

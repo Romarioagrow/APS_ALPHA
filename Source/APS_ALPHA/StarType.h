@@ -15,5 +15,6 @@ enum class EStellarClass : uint8
 	Neutron			UMETA(DisplayName = "Neutron Star"), // Нейтронные звезды (остатки взрывов суперновых, очень плотные)
 	Protostar		UMETA(DisplayName = "Protostar"), // Протозвезды (молодые звезды, которые еще не начали основную термоядерную реакцию)
 	Pulsar			UMETA(DisplayName = "Pulsar"), // Пульсары (вращающиеся нейтронные звезды, которые излучают импульсы радиоволн)
-	BlackHole		UMETA(DisplayName = "Black Hole") // Черные дыры (объекты с такой сильной гравитацией, что даже свет не может уйти)
+	BlackHole		UMETA(DisplayName = "Black Hole"), // Черные дыры (объекты с такой сильной гравитацией, что даже свет не может уйти)
+	Unknown			UMETA(DisplayName = "Black Hole") // Черные дыры (объекты с такой сильной гравитацией, что даже свет не может уйти)
 };

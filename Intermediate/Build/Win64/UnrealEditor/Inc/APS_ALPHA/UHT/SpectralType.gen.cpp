@@ -45,6 +45,7 @@ void EmptyLinkFunctionForGeneratedCodeSpectralType() {}
 		{ "ESpectralType::VI", (int64)ESpectralType::VI },
 		{ "ESpectralType::VII", (int64)ESpectralType::VII },
 		{ "ESpectralType::VIII", (int64)ESpectralType::VIII },
+		{ "ESpectralType::Unknown", (int64)ESpectralType::Unknown },
 	};
 #if WITH_METADATA
 	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UEnum_APS_ALPHA_ESpectralType_Statics::Enum_MetaDataParams[] = {
@@ -76,6 +77,10 @@ void EmptyLinkFunctionForGeneratedCodeSpectralType() {}
 		{ "ModuleRelativePath", "SpectralType.h" },
 		{ "O.DisplayName", "0 Hypergiant" },
 		{ "O.Name", "ESpectralType::O" },
+		{ "Unknown.Comment", "// \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\n" },
+		{ "Unknown.DisplayName", "Unknown" },
+		{ "Unknown.Name", "ESpectralType::Unknown" },
+		{ "Unknown.ToolTip", "\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd" },
 		{ "V.Comment", "// \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\n" },
 		{ "V.DisplayName", "V Main Sequence" },
 		{ "V.Name", "ESpectralType::V" },
@@ -119,9 +124,9 @@ void EmptyLinkFunctionForGeneratedCodeSpectralType() {}
 		static const FEnumRegisterCompiledInInfo EnumInfo[];
 	};
 	const FEnumRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_SpectralType_h_Statics::EnumInfo[] = {
-		{ ESpectralType_StaticEnum, TEXT("ESpectralType"), &Z_Registration_Info_UEnum_ESpectralType, CONSTRUCT_RELOAD_VERSION_INFO(FEnumReloadVersionInfo, 766823447U) },
+		{ ESpectralType_StaticEnum, TEXT("ESpectralType"), &Z_Registration_Info_UEnum_ESpectralType, CONSTRUCT_RELOAD_VERSION_INFO(FEnumReloadVersionInfo, 3694631182U) },
 	};
-	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_SpectralType_h_1984108703(TEXT("/Script/APS_ALPHA"),
+	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_SpectralType_h_1076568788(TEXT("/Script/APS_ALPHA"),
 		nullptr, 0,
 		nullptr, 0,
 		Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_SpectralType_h_Statics::EnumInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_SpectralType_h_Statics::EnumInfo));

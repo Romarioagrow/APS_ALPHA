@@ -45,7 +45,9 @@ void EmptyLinkFunctionForGeneratedCodeStarSpectralClass() {}
 		{ "ESpectralClass::T", (int64)ESpectralClass::T },
 		{ "ESpectralClass::Y", (int64)ESpectralClass::Y },
 		{ "ESpectralClass::NS", (int64)ESpectralClass::NS },
+		{ "ESpectralClass::PS", (int64)ESpectralClass::PS },
 		{ "ESpectralClass::BH", (int64)ESpectralClass::BH },
+		{ "ESpectralClass::Unknown", (int64)ESpectralClass::Unknown },
 	};
 #if WITH_METADATA
 	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UEnum_APS_ALPHA_ESpectralClass_Statics::Enum_MetaDataParams[] = {
@@ -71,8 +73,12 @@ void EmptyLinkFunctionForGeneratedCodeStarSpectralClass() {}
 		{ "NS.Name", "ESpectralClass::NS" },
 		{ "O.DisplayName", "O - Blue" },
 		{ "O.Name", "ESpectralClass::O" },
+		{ "PS.DisplayName", "Proto Star" },
+		{ "PS.Name", "ESpectralClass::PS" },
 		{ "T.DisplayName", "T - Tauri Dwarf" },
 		{ "T.Name", "ESpectralClass::T" },
+		{ "Unknown.DisplayName", "Unknown" },
+		{ "Unknown.Name", "ESpectralClass::Unknown" },
 		{ "Y.DisplayName", "Y - Cool Brown Dwarf" },
 		{ "Y.Name", "ESpectralClass::Y" },
 	};
@@ -102,9 +108,9 @@ void EmptyLinkFunctionForGeneratedCodeStarSpectralClass() {}
 		static const FEnumRegisterCompiledInInfo EnumInfo[];
 	};
 	const FEnumRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarSpectralClass_h_Statics::EnumInfo[] = {
-		{ ESpectralClass_StaticEnum, TEXT("ESpectralClass"), &Z_Registration_Info_UEnum_ESpectralClass, CONSTRUCT_RELOAD_VERSION_INFO(FEnumReloadVersionInfo, 2946860362U) },
+		{ ESpectralClass_StaticEnum, TEXT("ESpectralClass"), &Z_Registration_Info_UEnum_ESpectralClass, CONSTRUCT_RELOAD_VERSION_INFO(FEnumReloadVersionInfo, 1101356590U) },
 	};
-	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarSpectralClass_h_219207494(TEXT("/Script/APS_ALPHA"),
+	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarSpectralClass_h_2513888165(TEXT("/Script/APS_ALPHA"),
 		nullptr, 0,
 		nullptr, 0,
 		Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarSpectralClass_h_Statics::EnumInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarSpectralClass_h_Statics::EnumInfo));

@@ -53,20 +53,11 @@ public:
 	UPROPERTY(EditAnywhere, Category = "AstroObject BP")
 		TSubclassOf<class AMoon> BP_MoonClass;
 	
+	// функция генерации общей звездной системы
+	void GenerateRandomStarSystem(); 
 	
-
 	// функция генерации стартовой системы
 	//void GenerateHomeStarSystem(FStarSystemGenerationModel StarSystemModel, UWorld* World); //FStartSystemParams Params
 
-	// функция генерации общей звездной системы
-	void GenerateRandomStarSystem(); //FStartSystemParams Params // FStarSystemGenerationModel StarSystemModel, UWorld* World
 
-	/*FStarSystemGenerationModel GenerateHomeStarSystemModel();
-
-	FPlanetarySystemGenerationModel GenerateRandomPlanetraySystemModel();
-
-	;*/
-	//FPlanetarySystemGenerationModel GenerateRandomPlanetraySystemModel();
-//private:
-	//void CreatePlanetarySystem(FPlanetarySystemGenerationModel PlanetarySystemModel); //FPlanetarySystemParams Params
 };

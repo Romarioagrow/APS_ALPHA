@@ -30,7 +30,9 @@ PRAGMA_DISABLE_DEPRECATION_WARNINGS
 	op(ESpectralClass::T) \
 	op(ESpectralClass::Y) \
 	op(ESpectralClass::NS) \
-	op(ESpectralClass::BH) 
+	op(ESpectralClass::PS) \
+	op(ESpectralClass::BH) \
+	op(ESpectralClass::Unknown) 
 
 enum class ESpectralClass : uint8;
 template<> struct TIsUEnumClass<ESpectralClass> { enum { Value = true }; };

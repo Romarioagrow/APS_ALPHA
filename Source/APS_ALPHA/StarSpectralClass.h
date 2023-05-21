@@ -16,5 +16,7 @@ enum class ESpectralClass : uint8
 	T 	UMETA(DisplayName = "T - Tauri Dwarf"),
 	Y 	UMETA(DisplayName = "Y - Cool Brown Dwarf"),
 	NS 	UMETA(DisplayName = "Neutron Star"),
-	BH 	UMETA(DisplayName = "Black Hole")
+	PS 	UMETA(DisplayName = "Proto Star"),
+	BH 	UMETA(DisplayName = "Black Hole"),
+	Unknown	UMETA(DisplayName = "Unknown")
 };
