@@ -34,21 +34,8 @@ FStarGenerationModel UStarGenerator::GenerateRandomStarModel()
 
     TMap<EStellarClass, int> StarTypeWeights = 
     {
-        //{EStellarClass::HyperGiant, 1}, // Гипергиганты
-        //{EStellarClass::SuperGiant, 2}, // Супергиганты
-        //{EStellarClass::BrightGiant, 3}, // Белые карлики
-        //{EStellarClass::Giant, 4}, // Гиганты
-        //{EStellarClass::MainSequence, 10}, // Главная последовательность
-        //{EStellarClass::SubDwarf, 5}, // Субкарлики
-        //{EStellarClass::Protostar, 1}, // Протозвезды
-        //{EStellarClass::BrownDwarf, 2}, // Коричневые карлики
-        //{EStellarClass::Neutron, 1}, // Нейтронные звезды
-        //{EStellarClass::Pulsar, 1}, // Пульсары
-        //{EStellarClass::BlackHole, 1} // Черные дыры
-
-
-        {EStellarClass::HyperGiant, 1}, // Гипергиганты
-        {EStellarClass::SuperGiant, 2}, // Супергиганты
+        {EStellarClass::HyperGiant, 2}, // Гипергиганты
+        {EStellarClass::SuperGiant, 3}, // Супергиганты
         {EStellarClass::BrightGiant, 4}, // Белые карлики
         {EStellarClass::Giant, 5}, // Гиганты
         {EStellarClass::SubGiant, 3}, // Супергиганты
@@ -104,12 +91,12 @@ FStarGenerationModel UStarGenerator::GenerateRandomStarModel()
             return StarModel;
         }
     
-        FStarAttributeRanges& attributeRanges = StarAttributeRanges[StarModel.StellarClass];
-        StarModel.Mass = FMath::RandRange(attributeRanges.Mass.Range.Get<0>(), attributeRanges.Mass.Range.Get<1>());
-        StarModel.Radius = FMath::RandRange(attributeRanges.Radius.Range.Get<0>(), attributeRanges.Radius.Range.Get<1>());
+        FStarAttributeRanges& AttributeRanges = StarAttributeRanges[StarModel.StellarClass];
+        StarModel.Mass = FMath::RandRange(AttributeRanges.Mass.Range.Get<0>(), AttributeRanges.Mass.Range.Get<1>());
+        StarModel.Radius = FMath::RandRange(AttributeRanges.Radius.Range.Get<0>(), AttributeRanges.Radius.Range.Get<1>());
         StarModel.SurfaceTemperature = GenerateRandomTemperatureBySpectralClass(StarModel.SpectralClass);//CalculateSurfaceTemperature(double Luminosity, double Radius)
         StarModel.Luminosity = CalculateLuminosity(StarModel.Radius, StarModel.SurfaceTemperature);
-        StarModel.Age = FMath::RandRange(attributeRanges.Age.Range.Get<0>(), attributeRanges.Age.Range.Get<1>());
+        StarModel.Age = FMath::RandRange(AttributeRanges.Age.Range.Get<0>(), AttributeRanges.Age.Range.Get<1>());
     }
 
     StarModel.SpectralSubclass = CalculateSpectralSubclass(StarModel.SurfaceTemperature, StarModel.SpectralClass);
@@ -219,7 +206,8 @@ int UStarGenerator::CalculateSpectralSubclass(double StarTemperature, ESpectralC
     double TempRatio = (StarTemperature - TempRange.Get<0>()) / (TempRange.Get<1>() - TempRange.Get<0>());
 
     // Multiply by 10 to get subclass (0-9)
-    int Subclass = FMath::RoundToInt(TempRatio * 10.0);
+    //int Subclass = FMath::RoundToInt(TempRatio * 10.0);
+    int Subclass = 9 - FMath::RoundToInt(TempRatio * 10.0);
 
     // Ensure Subclass is within the valid range
     if (SpectralClass == ESpectralClass::O && Subclass < 2)
@@ -309,7 +297,7 @@ double UStarGenerator::CalculateLuminosity(double Radius, double SurfaceTemperat
     if (Luminosity > 100000.0) 
     { 
         // Set a maximum luminosity
-        Luminosity =  FMath::FRandRange(100000.0, 200000.0);
+        //Luminosity =  FMath::FRandRange(100000.0, 200000.0);
     }  
     return Luminosity;
 }
