@@ -26,6 +26,10 @@ public:
 
 	FStarGenerationModel GenerateRandomStarModel();
 
+	FString CalculateNonMainSequenceStarAge(double StarMass);
+
+	FString CalculateMainSequenceStarAge(double mass);
+
 	EStellarClass GenerateStarClassByRandomWeights();
 
 private:
@@ -82,7 +86,7 @@ private:
 		{EStellarClass::BrightGiant, 5}, // Белые карлики
 		{EStellarClass::Giant, 10}, // Гиганты
 		{EStellarClass::SubGiant, 5}, // Супергиганты
-		{EStellarClass::MainSequence, 70}, // Главная последовательность
+		{EStellarClass::MainSequence, 0}, // Главная последовательность
 		{EStellarClass::SubDwarf, 5}, // Субкарлики
 		{EStellarClass::WhiteDwarf, 2}, // Коричневые карлики
 		{EStellarClass::BrownDwarf, 2}, // Коричневые карлики

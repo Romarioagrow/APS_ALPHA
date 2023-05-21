@@ -23,7 +23,7 @@ private:
 		float Mass;
 	
 	UPROPERTY(VisibleAnywhere)
-		float Age;
+		FString Age;
 	
 	UPROPERTY(VisibleAnywhere)
 		FName AstroName;
@@ -35,7 +35,7 @@ public:
 
 	void SetMass(float Mass);
 
-	void SetAge(float Age);
+	void SetAge(FString Age);
 
 	void SetName(FName Name);
 	
