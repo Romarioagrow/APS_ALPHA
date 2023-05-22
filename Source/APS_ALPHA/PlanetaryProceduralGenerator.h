@@ -4,6 +4,7 @@
 #include "PlanetarySystemGenerationModel.h"
 #include "StarGenerationModel.h"
 #include "PlanetarySystem.h"
+#include "OrbitDistributionType.h"
 
 #include "CoreMinimal.h"
 #include "BaseProceduralGenerator.h"
@@ -25,16 +26,218 @@ public:
 
     int DetermineMaxPlanets(EStellarClass StellarClass, double StarMass);
 
+    //EOrbitDistributionType ChooseDistributionType(EStellarClass StellarClass, float StarMass, float MinOrbit, float MaxOrbit);
+
+   // EOrbitDistributionType ChooseDistributionType(EStellarClass StellarClass, float StarMass, float MinOrbit, float MaxOrbit);
+
+
     int DetermineMaxPlanets(EStellarClass StellarClass, FStarGenerationModel StarModel);
 
     FPlanetarySystemGenerationModel GeneratePlanetraySystemModelByStar(FStarGenerationModel StarModel);
 
 	FPlanetarySystemGenerationModel GenerateRandomPlanetraySystemModel(); 
     
+private:
+    EOrbitDistributionType ChooseDistributionType(EStellarClass StellarClass, float StarMass, float OrbitRange);
+
+    double RandGauss();
+
+    EOrbitDistributionType ChooseDistributionType(EStellarClass StellarClass, float StarMass, float MinOrbit, float MaxOrbit);
+
+    EOrbitDistributionType ChooseOrbitDistribution(EStellarClass stellarClass);
 
 typedef float PlanetProbability;
 
 private:
+
+  /*  TMap<EPlanetarySystemType, EOrbitDistributionType> PlanetarySystemRanges =
+    {
+        {EPlanetarySystemType::NoPlanetSystem, FPlanetarySystemRanges(TTuple<int, int>(0, 0), TTuple<double, double>(0.0, 0.0))},
+        {EPlanetarySystemType::SmallSystem, FPlanetarySystemRanges(TTuple<int, int>(1, 5), TTuple<double, double>(1.0, 3.0))},
+        {EPlanetarySystemType::LargeSystem, FPlanetarySystemRanges(TTuple<int, int>(6, 12), TTuple<double, double>(1.0, 5.0))},
+        {EPlanetarySystemType::ChaoticSystem, FPlanetarySystemRanges(TTuple<int, int>(5, 12), TTuple<double, double>(0.1, 2.0))},
+        {EPlanetarySystemType::DenseSystem, FPlanetarySystemRanges(TTuple<int, int>(3, 10), TTuple<double, double>(0.2, 1.0))}
+    };*/
+
+
+    //TMap<EStellarClass, EOrbitDistributionType> StellarOrbitDistributions = 
+    //{
+    //    {EStellarClass::HyperGiant, {{EOrbitDistributionType::Uniform, 0.05f}, {EOrbitDistributionType::Gaussian, 0.10f}, {EOrbitDistributionType::Chaotic, 0.50f}, {EOrbitDistributionType::InnerOuter, 0.25f}, {EOrbitDistributionType::Dense, 0.10f}}},
+    //    {EStellarClass::SuperGiant, {{EOrbitDistributionType::Uniform, 0.05f}, {EOrbitDistributionType::Gaussian, 0.20f}, {EOrbitDistributionType::Chaotic, 0.50f}, {EOrbitDistributionType::InnerOuter, 0.20f}, {EOrbitDistributionType::Dense, 0.05f}}},
+    //// Заполните остальные значения самостоятельно...
+    //};
+
+    //TMap<EStellarClass, TMap<EOrbitDistributionType, float>> StellarOrbitDistributions =
+    //{
+    //    {
+    //        EStellarClass::HyperGiant,
+    //        {
+    //            {EOrbitDistributionType::Uniform, 0.05f},
+    //            {EOrbitDistributionType::Gaussian, 0.10f},
+    //            {EOrbitDistributionType::Chaotic, 0.50f},
+    //            {EOrbitDistributionType::InnerOuter, 0.25f},
+    //            {EOrbitDistributionType::Dense, 0.10f}
+    //        }
+    //    },
+    //    {
+    //        EStellarClass::SuperGiant,
+    //        {
+    //            {EOrbitDistributionType::Uniform, 0.10f},
+    //            {EOrbitDistributionType::Gaussian, 0.20f},
+    //            {EOrbitDistributionType::Chaotic, 0.40f},
+    //            {EOrbitDistributionType::InnerOuter, 0.20f},
+    //            {EOrbitDistributionType::Dense, 0.10f}
+    //        }
+    //    },
+    //    // далее заполняем остальные значения, следуя аналогичной структуре
+    //    // используйте данные из вашей таблицы...
+    //};
+
+
+    TMap<EStellarClass, TMap<EOrbitDistributionType, float>> StellarOrbitDistributions =
+    {
+        {
+            EStellarClass::HyperGiant, 
+            {
+                {EOrbitDistributionType::Uniform, 0.05f}, 
+                {EOrbitDistributionType::Gaussian, 0.10f}, 
+                {EOrbitDistributionType::Chaotic, 0.50f}, 
+                {EOrbitDistributionType::InnerOuter, 0.25f}, 
+                {EOrbitDistributionType::Dense, 0.10f}
+            }
+        },
+        {
+            EStellarClass::SuperGiant, 
+            {
+                {EOrbitDistributionType::Uniform, 0.10f}, 
+                {EOrbitDistributionType::Gaussian, 0.20f}, 
+                {EOrbitDistributionType::Chaotic, 0.40f}, 
+                {EOrbitDistributionType::InnerOuter, 0.20f},
+                {EOrbitDistributionType::Dense, 0.10f}
+            }
+        },
+        {
+            EStellarClass::BrightGiant, 
+            {
+                {EOrbitDistributionType::Uniform, 0.15f}, 
+                {EOrbitDistributionType::Gaussian, 0.25f},
+                {EOrbitDistributionType::Chaotic, 0.30f}, 
+                {EOrbitDistributionType::InnerOuter, 0.20f}, 
+                {EOrbitDistributionType::Dense, 0.10f}
+            }
+        },
+        {
+            EStellarClass::Giant, 
+            {
+                {EOrbitDistributionType::Uniform, 0.20f}, 
+                {EOrbitDistributionType::Gaussian, 0.30f}, 
+                {EOrbitDistributionType::Chaotic, 0.25f}, 
+                {EOrbitDistributionType::InnerOuter, 0.15f},
+                {EOrbitDistributionType::Dense, 0.10f}
+            }
+        },
+        {   
+            EStellarClass::SubGiant,    
+            {
+                {EOrbitDistributionType::Uniform, 0.25f}, 
+                {EOrbitDistributionType::Gaussian, 0.35f}, 
+                {EOrbitDistributionType::Chaotic, 0.20f},
+                {EOrbitDistributionType::InnerOuter, 0.10f},
+                {EOrbitDistributionType::Dense, 0.50f}
+            }
+        },
+        {
+            EStellarClass::MainSequence, 
+            {
+                {EOrbitDistributionType::Uniform, 0.3f}, 
+                {EOrbitDistributionType::Gaussian, 0.2f}, 
+                {EOrbitDistributionType::Chaotic, 0.05f}, 
+                {EOrbitDistributionType::InnerOuter, 0.5f}, 
+                {EOrbitDistributionType::Dense, 0.05f}
+            }
+        },
+        {
+            EStellarClass::SubDwarf, 
+            {
+                {EOrbitDistributionType::Uniform, 0.35f}, 
+                {EOrbitDistributionType::Gaussian, 0.40f}, 
+                {EOrbitDistributionType::Chaotic, 0.10f}, 
+                {EOrbitDistributionType::InnerOuter, 0.10f}, 
+                {EOrbitDistributionType::Dense, 0.5f}
+            }
+        },
+        {   
+            EStellarClass::WhiteDwarf, 
+            {
+                {EOrbitDistributionType::Uniform, 0.40f}, 
+                {EOrbitDistributionType::Gaussian, 0.40f}, 
+                {EOrbitDistributionType::Chaotic, 0.05f}, 
+                {EOrbitDistributionType::InnerOuter, 0.10f}, 
+                {EOrbitDistributionType::Dense, 0.5f}
+            }
+        },
+        {   EStellarClass::BrownDwarf, 
+            {
+                {EOrbitDistributionType::Uniform, 0.45f}, 
+                {EOrbitDistributionType::Gaussian, 0.40f}, 
+                {EOrbitDistributionType::Chaotic, 0.05f}, 
+                {EOrbitDistributionType::InnerOuter, 0.05f}, 
+                {EOrbitDistributionType::Dense, 0.1f}
+            }
+        },
+        {
+            EStellarClass::Neutron, 
+            {
+                {EOrbitDistributionType::Uniform, 0.50f}, 
+                {EOrbitDistributionType::Gaussian, 0.40f},
+                {EOrbitDistributionType::Chaotic, 0.05f},
+                {EOrbitDistributionType::InnerOuter, 0.03f},
+                {EOrbitDistributionType::Dense, 0.02f}
+            }
+        },
+        {
+            EStellarClass::Protostar, 
+            {
+                {EOrbitDistributionType::Uniform, 0.50f}, 
+                {EOrbitDistributionType::Gaussian, 0.40f}, 
+                {EOrbitDistributionType::Chaotic, 0.05f}, 
+                {EOrbitDistributionType::InnerOuter, 0.03f}, 
+                {EOrbitDistributionType::Dense, 0.02f}
+            }
+        },
+        {
+            EStellarClass::Pulsar, 
+            {
+                {EOrbitDistributionType::Uniform, 0.50f}, 
+                {EOrbitDistributionType::Gaussian, 0.40f}, 
+                {EOrbitDistributionType::Chaotic, 0.05f}, 
+                {EOrbitDistributionType::InnerOuter, 0.03f}, 
+                {EOrbitDistributionType::Dense, 0.02f}
+            }
+        },
+        {   
+            EStellarClass::BlackHole, 
+            {
+                {EOrbitDistributionType::Uniform, 0.50f}, 
+                {EOrbitDistributionType::Gaussian, 0.40f}, 
+                {EOrbitDistributionType::Chaotic, 1.f}, 
+                {EOrbitDistributionType::InnerOuter, 0.03f}, 
+                {EOrbitDistributionType::Dense, 0.02f}
+            }
+        },
+        {
+            EStellarClass::Unknown, 
+            {
+                {EOrbitDistributionType::Uniform, 0.50f}, 
+                {EOrbitDistributionType::Gaussian, 0.40f}, 
+                {EOrbitDistributionType::Chaotic, 0.05f}, 
+                {EOrbitDistributionType::InnerOuter, 0.03f}, 
+                {EOrbitDistributionType::Dense, 0.02f}
+            }
+        }
+    };
+
+
     TMap<EStellarClass, int> BasePlanetCount = {
         {EStellarClass::HyperGiant, 15},
         {EStellarClass::SuperGiant, 10},
@@ -74,7 +277,7 @@ private:
         {EStellarClass::BrightGiant, 0.7f},
         {EStellarClass::Giant, 0.65f},
         {EStellarClass::SubGiant, 0.6f},
-        {EStellarClass::MainSequence, 0.7f},
+        {EStellarClass::MainSequence, 0.9f},
         {EStellarClass::SubDwarf, 0.3f},
         {EStellarClass::WhiteDwarf, 0.1f},
         {EStellarClass::BrownDwarf, 0.05f},
@@ -115,6 +318,8 @@ private:
         FPlanetarySystemRanges(TTuple<int, int> Planets, TTuple<double, double> Distance)
             : AmountOfPlanetsRange(Planets), DistanceBetweenPlanetsRange(Distance) {}
     };
+
+
 
     TMap<EPlanetarySystemType, FPlanetarySystemRanges> PlanetarySystemRanges =
     {

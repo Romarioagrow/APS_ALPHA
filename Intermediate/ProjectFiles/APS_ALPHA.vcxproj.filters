@@ -335,6 +335,9 @@
     <ClInclude Include="..\..\Source\APS_ALPHA\OrbitalBodyGenerationModel.h">
       <Filter>Source\APS_ALPHA</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\Source\APS_ALPHA\OrbitDistributionType.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
     <ClCompile Include="..\..\Source\APS_ALPHA\PilotingVehicle.cpp">
       <Filter>Source\APS_ALPHA</Filter>
     </ClCompile>

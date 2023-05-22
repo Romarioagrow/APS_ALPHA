@@ -83,10 +83,10 @@ private:
 	{
 		{EStellarClass::HyperGiant, 1}, // Гипергиганты
 		{EStellarClass::SuperGiant, 3}, // Супергиганты
-		{EStellarClass::BrightGiant, 5}, // Белые карлики
-		{EStellarClass::Giant, 10}, // Гиганты
+		{EStellarClass::BrightGiant, 3}, // Белые карлики
+		{EStellarClass::Giant, 5}, // Гиганты
 		{EStellarClass::SubGiant, 5}, // Супергиганты
-		{EStellarClass::MainSequence, 70}, // Главная последовательность
+		{EStellarClass::MainSequence, 80}, // Главная последовательность
 		{EStellarClass::SubDwarf, 5}, // Субкарлики
 		{EStellarClass::WhiteDwarf, 2}, // Коричневые карлики
 		{EStellarClass::BrownDwarf, 2}, // Коричневые карлики
