@@ -52,6 +52,7 @@
             "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\source\\aps_alpha\\startype.h",
             "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\source\\aps_alpha\\starspectralclass.h",
             "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\intermediate\\build\\win64\\unrealeditor\\inc\\aps_alpha\\uht\\starspectralclass.generated.h",
+            "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\source\\aps_alpha\\spectraltype.h",
             "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\intermediate\\build\\win64\\unrealeditor\\inc\\aps_alpha\\uht\\star.generated.h",
             "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\source\\aps_alpha\\stargenerationmodel.h",
             "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\source\\aps_alpha\\celestialgenerationmodel.h",
@@ -92,6 +93,7 @@
             "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\intermediate\\build\\win64\\unrealeditor\\inc\\aps_alpha\\uht\\starsystem.generated.h",
             "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\intermediate\\build\\win64\\unrealeditor\\inc\\aps_alpha\\uht\\starsystemgenerator.generated.h",
             "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\source\\aps_alpha\\planetaryproceduralgenerator.h",
+            "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\source\\aps_alpha\\orbitdistributiontype.h",
             "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\intermediate\\build\\win64\\unrealeditor\\inc\\aps_alpha\\uht\\planetaryproceduralgenerator.generated.h",
             "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\intermediate\\build\\win64\\unrealeditor\\inc\\aps_alpha\\uht\\generatedworld.generated.h"
         ],

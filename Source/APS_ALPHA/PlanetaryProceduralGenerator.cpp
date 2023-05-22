@@ -3,9 +3,11 @@
 
 #include "PlanetaryProceduralGenerator.h"
 #include "AstroActor.h"
+//#include "OrbitDistributionType.h"
 #include "StarTypeProbabilities.h"
 #include "PlanetarySystem.h"
 #include "PlanetarySystemGenerationModel.h"
+#include "OrbitDistributionType.h"
 
 void UPlanetarySystemGenerator::ApplyModel(APlanetarySystem* NewPlanetarySystem, FPlanetarySystemGenerationModel PlanetraySystemModel)
 {
@@ -37,8 +39,15 @@ FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySyst
     }
 
     PlanetProbability FinalProbability = BaseProbability * MassModifier;
-    UE_LOG(LogTemp, Warning, TEXT("FinalProbability: %f"), FinalProbability);
+    UE_LOG(LogTemp, Warning, TEXT("\nFinalProbability: %f"), FinalProbability);
     bool HasPlanets = FMath::FRand() <= FinalProbability;
+
+    // Выводим информацию о звезде
+    UE_LOG(LogTemp, Warning, TEXT("Star Information:"));
+    UE_LOG(LogTemp, Warning, TEXT("Spectral Class: %s"), *UEnum::GetValueAsString(StarModel.SpectralClass));
+    UE_LOG(LogTemp, Warning, TEXT("Stellar Class: %s"), *UEnum::GetValueAsString(StarModel.StellarClass));
+    UE_LOG(LogTemp, Warning, TEXT("Mass: %f Solar Masses"), StarModel.Mass);
+    UE_LOG(LogTemp, Warning, TEXT("Radius: %f Solar Radii"), StarModel.Radius);
 
     if (HasPlanets) 
     {
@@ -67,6 +76,202 @@ FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySyst
         UE_LOG(LogTemp, Warning, TEXT("MinPlanetCount: %d"), MinPlanetCount);
         UE_LOG(LogTemp, Warning, TEXT("MaxPlanetCount: %d"), MaxPlanetCount);
         UE_LOG(LogTemp, Warning, TEXT("FinalPlanetCount: %d"), FinalPlanetCount);
+
+
+
+        // orbits
+
+        //float MinOrbit = StarModel.Mass; // Можно ввести некоторую функцию от массы звезды, например, прямо пропорциональную
+        //float MaxOrbit = StarModel.Mass * 10; // Допустим, максимальная орбита пропорциональна массе звезды
+
+        //// Определяем распределение орбит в зависимости от типа звезды
+        //float OrbitCoefficient;
+        //switch (StarModel.StellarClass)
+        //{
+        //case EStellarClass::MainSequence:
+        //    OrbitCoefficient = 1.5f; // для звезд главной последовательности орбиты увеличиваются в геометрической прогрессии
+        //    break;
+        //case EStellarClass::HyperGiant:
+        //case EStellarClass::SuperGiant:
+        //case EStellarClass::BrightGiant:
+        //case EStellarClass::Giant:
+        //    //OrbitCoefficient = 1.0f; // для гигантских звезд орбиты на одинаковом расстоянии
+        //    //OrbitCoefficient = FMath::Exp(FMath::Clamp(StarModel.Mass / 10, 0.1f, 2.0f)); // exponential function, clamped
+        //    OrbitCoefficient = FMath::Max(1, FMath::Exp(FMath::Clamp(StarModel.Mass / 10, 0.1f, 2.0f))); // exponential function, clamped
+        //    break;
+        //case EStellarClass::WhiteDwarf://
+        //case EStellarClass::BrownDwarf://
+        //case EStellarClass::SubDwarf:
+
+        //    OrbitCoefficient = FMath::LogX(2, StarModel.Mass); // log2(mass)
+        //    break;
+        //default:
+        //    OrbitCoefficient = FMath::RandRange(0.5f, 2.0f); // для всех остальных типов орбиты случайны
+        //    break;
+        //}
+
+        //// Создаем массив для хранения радиусов орбит планет
+        //TArray<float> PlanetOrbits;
+        //float CurrentOrbit = MinOrbit;
+        //for (int i = 0; i < FinalPlanetCount; ++i)
+        //{
+        //    PlanetOrbits.Add(CurrentOrbit);
+        //    CurrentOrbit *= OrbitCoefficient;
+        //    if (CurrentOrbit > MaxOrbit)
+        //    {
+        //        break; // прекращаем, если текущая орбита превышает максимальную допустимую
+        //    }
+        //}
+
+
+
+        // Это могут быть константы или переменные, зависящие от стелларного класса
+        double MinOrbitScalingFactor = 1.0f;
+        double MaxOrbitScalingFactor = 10.0f;
+
+        if (StarModel.StellarClass == EStellarClass::HyperGiant)
+        {
+            MaxOrbitScalingFactor = 5.0f; // Уменьшаем максимальную орбиту для гипергигантов
+        }
+        else if (StarModel.StellarClass == EStellarClass::SuperGiant)
+        {
+            MaxOrbitScalingFactor = 6.0f; // Уменьшаем максимальную орбиту для сверхгигантов
+        }
+
+        double MinOrbit = StarModel.Mass * MinOrbitScalingFactor;
+        double MaxOrbit = StarModel.Mass * MaxOrbitScalingFactor;
+
+
+        //float MinOrbit = StarModel.Mass; // Можно ввести некоторую функцию от массы звезды, например, прямо пропорциональную
+        //float MaxOrbit = StarModel.Mass * 10; //// 
+        // Подбираем случайное распределение для нашей системы
+        //EOrbitDistributionType OrbitDistributionType = ChooseDistributionType(StarModel.StellarClass, StarModel.Mass, MinOrbit, MaxOrbit);//static_cast<EOrbitDistributionType>(FMath::RandRange(0, 2));
+        EOrbitDistributionType OrbitDistributionType = ChooseOrbitDistribution(StarModel.StellarClass);//ChooseDistributionType(StarModel.StellarClass, StarModel.Mass, MinOrbit, MaxOrbit);//static_cast<EOrbitDistributionType>(FMath::RandRange(0, 2));
+        FString OrbitType = UEnum::GetValueAsString(OrbitDistributionType);
+        UE_LOG(LogTemp, Warning, TEXT("Orbit Distribution Type: %s"), *OrbitType);
+
+        
+        TArray<double> OrbitRadii;
+        for (int i = 0; i < FinalPlanetCount; i++)
+        {
+            double OrbitDistributionValue;
+            switch (OrbitDistributionType)
+            {
+            case EOrbitDistributionType::Uniform:
+                OrbitDistributionValue = FMath::RandRange(0.0, 1.0);
+                break;
+            case EOrbitDistributionType::Gaussian:
+                //OrbitDistributionValue = FMath::RandGauss(0.5, 0.15);
+                OrbitDistributionValue = RandGauss() * 0.15 + 0.5;
+                break;
+            case EOrbitDistributionType::Chaotic:
+                OrbitDistributionValue = FMath::PerlinNoise1D(i * 0.1);//* 0.5 + 0.5; 
+                break;
+            //case EOrbitDistributionType::InnerOuter:
+            case EOrbitDistributionType::InnerOuter:
+            {
+
+                if (i < FinalPlanetCount / 2.0) {
+                    OrbitDistributionValue = FMath::RandRange(0.01, 0.5);
+                }
+                else {
+                    OrbitDistributionValue = FMath::RandRange(0.5, 1.0);
+                }
+                break;
+
+                /*if (i < FinalPlanetCount / 2.0) {
+                    OrbitDistributionValue = static_cast<double>(i) / (FinalPlanetCount / 2.0);
+                }
+                else {
+                    OrbitDistributionValue = 0.5 + static_cast<double>(i - FinalPlanetCount / 2.0) / (FinalPlanetCount / 2.0);
+                }
+                break;*/
+
+                /*if (i < FinalPlanetCount / 2) {
+                    OrbitDistributionValue = static_cast<double>(i) / (FinalPlanetCount / 2);
+                }
+                else {
+                    OrbitDistributionValue = 0.5 + static_cast<double>(i - FinalPlanetCount / 2) / (FinalPlanetCount / 2);
+                }
+                break;*/
+                
+                /*double MeanOrbit = (MinOrbit + MaxOrbit) / 2.0;
+                if (i < FinalPlanetCount / 2) {
+                    OrbitDistributionValue = FMath::RandRange(MinOrbit, MeanOrbit);
+                }
+                else {
+                    OrbitDistributionValue = FMath::RandRange(MeanOrbit, MaxOrbit);
+                }
+                OrbitRadii.Add(OrbitDistributionValue);
+                continue;*/
+                /*if (i < FinalPlanetCount / 2) {
+                    double MeanOrbit = (MinOrbit + MaxOrbit) / 2;
+                    OrbitDistributionValue = FMath::RandRange(MinOrbit, MeanOrbit);
+                }
+                else {
+                    double MeanOrbit = (MinOrbit + MaxOrbit) / 2;
+                    OrbitDistributionValue = FMath::RandRange(MeanOrbit, MaxOrbit);
+                }
+                break;*/
+            }
+            case EOrbitDistributionType::Dense:
+                OrbitDistributionValue = FMath::RandRange(0.01, 0.5);
+                break;
+            }
+
+            // Применяем функцию распределения к нашему диапазону орбит
+            double OrbitRadius = FMath::Lerp(MinOrbit, MaxOrbit, OrbitDistributionValue);
+            OrbitRadii.Add(OrbitRadius);
+
+        }
+
+
+        //// Выбираем функцию распределения на основе выбранного типа
+        //TArray<double> OrbitRadii;
+        //for (int i = 0; i < FinalPlanetCount; i++)
+        //{
+        //    double OrbitDistributionValue;
+        //    switch (OrbitDistributionType)
+        //    {
+        //    case EOrbitDistributionType::Uniform:
+        //        OrbitDistributionValue = FMath::RandRange(0.0, 1.0);
+        //        break;
+        //    case EOrbitDistributionType::Gaussian:
+        //        OrbitDistributionValue = FMath::RandGauss(0.5, 0.15);
+        //        break;
+        //    case EOrbitDistributionType::Chaotic:
+        //        OrbitDistributionValue = FMath::PerlinNoise1D(i * 0.1);
+        //        break;
+        //    }
+
+        //    // Применяем функцию распределения к нашему диапазону орбит
+        //    double OrbitRadius = FMath::Lerp(MinOrbit, MaxOrbit, OrbitDistributionValue);
+        //    OrbitRadii.Add(OrbitRadius);
+        //}
+
+        //// Сортируем радиусы орбит, чтобы гарантировать, что они всегда увеличиваются
+        OrbitRadii.Sort();
+
+
+        
+
+
+        // Выводим минимальную и максимальную орбиту
+        UE_LOG(LogTemp, Warning, TEXT("MinOrbit: %f, MaxOrbit: %f"), MinOrbit, MaxOrbit);
+
+        // Вычисляем обитаемую зону
+        float HabitableZoneInner = sqrt(StarModel.Luminosity / 1.1);
+        float HabitableZoneOuter = sqrt(StarModel.Luminosity / 0.53);
+        // Выводим обитаемую зону
+        UE_LOG(LogTemp, Warning, TEXT("Habitable Zone: %f AU - %f AU"), HabitableZoneInner, HabitableZoneOuter);
+
+        // Выводим коэффициент орбиты
+        //UE_LOG(LogTemp, Warning, TEXT("OrbitDistributionValue: %f"), OrbitDistributionValue);
+        // Выводим все орбиты планет
+        for (int i = 0; i < OrbitRadii.Num(); ++i)
+        {
+            UE_LOG(LogTemp, Warning, TEXT("Planet %d Orbit Radius: %f AU"), i + 1, OrbitRadii[i]);
+        }
 	}
     else 
     {
@@ -76,6 +281,103 @@ FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySyst
     
     return PlanetarySystem;
 }
+
+double UPlanetarySystemGenerator::RandGauss()
+{
+    double U = FMath::FRand();
+    double V = FMath::FRand();
+    double X = sqrt(-2.0 * log(U)) * cos(2.0 * PI * V);
+    return X;
+}
+
+EOrbitDistributionType UPlanetarySystemGenerator::ChooseDistributionType(EStellarClass StellarClass, float StarMass, float MinOrbit, float MaxOrbit)
+{
+    EOrbitDistributionType OrbitDistributionType;
+
+    if (StellarClass == EStellarClass::MainSequence)
+    {
+        return ChooseOrbitDistribution(StellarClass);
+
+	}
+	else
+
+    if (StellarClass == EStellarClass::WhiteDwarf || StellarClass == EStellarClass::SubDwarf)
+    {
+        // Если у нас маленькая звезда, то предпочтем Dense
+        OrbitDistributionType = EOrbitDistributionType::Dense;
+    }
+    else if (StellarClass == EStellarClass::Giant || StellarClass == EStellarClass::SuperGiant || StellarClass == EStellarClass::HyperGiant)
+    {
+        // Если у нас большая звезда, то предпочтем InnerOuter
+        OrbitDistributionType = EOrbitDistributionType::InnerOuter;
+    }
+    else
+    {
+        // Если у нас звезда среднего размера, будем использовать разные типы распределения в зависимости от массы
+        if (StarMass < 0.5f)
+        {
+            OrbitDistributionType = EOrbitDistributionType::Uniform;
+        }
+        else if (StarMass < 1.0f)
+        {
+            OrbitDistributionType = EOrbitDistributionType::Gaussian;
+        }
+        else if (MaxOrbit - MinOrbit < 5.0f) // Проверим, насколько близко друг к другу минимальная и максимальная орбиты
+        {
+            OrbitDistributionType = EOrbitDistributionType::Dense; // Если орбиты близки, будем использовать плотное распределение
+        }
+        else
+        {
+            OrbitDistributionType = EOrbitDistributionType::Chaotic;
+        }
+    }
+    return OrbitDistributionType;
+}
+
+
+EOrbitDistributionType UPlanetarySystemGenerator::ChooseOrbitDistribution(EStellarClass StellarClass)
+{
+    // Получаем мапу вероятностей для данного класса звезды
+    auto probabilities = StellarOrbitDistributions[StellarClass];
+
+    // Генерируем случайное число в диапазоне от 0 до 1
+    float randomValue = FMath::FRand();
+
+    // Идем по всем парам ключ-значение в словаре вероятностей
+    for (auto& keyValue : probabilities)
+    {
+        // Уменьшаем случайное число на вероятность текущего типа
+        randomValue -= keyValue.Value;
+
+        // Если случайное число стало меньше нуля, выбираем текущий тип
+        if (randomValue < 0)
+        {
+            return keyValue.Key;
+        }
+    }
+
+    // Возвращаем последний тип, если что-то пошло не так
+    return probabilities.end().Key();
+}
+
+//EOrbitDistributionType UPlanetarySystemGenerator::ChooseDistributionType(EStellarClass StellarClass, float StarMass, float OrbitRange)
+//{
+//    if (StellarClass == EStellarClass::Giant || StellarClass == EStellarClass::SuperGiant)
+//    {
+//        // Для гигантских звезд выбираем хаотичное распределение
+//        return EOrbitDistributionType::Chaotic;
+//    }
+//    else if (StarMass > 1.5f)
+//    {
+//        // Для более массивных звезд выбираем гауссово распределение
+//        return EOrbitDistributionType::Gaussian;
+//    }
+//    else
+//    {
+//        // Во всех остальных случаях выбираем равномерное распределение
+//        return EOrbitDistributionType::Uniform;
+//    }
+//}
 
 int UPlanetarySystemGenerator::DetermineMaxPlanets(EStellarClass StellarClass, FStarGenerationModel StarModel )
 {
