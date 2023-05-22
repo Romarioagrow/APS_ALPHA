@@ -64,11 +64,11 @@ void AStarClusterGenerator::GenerateRandomStarSystem()
         {
             
             FStarGenerationModel StarModel = StarGenerator->GenerateRandomStarModel();
-            //FPlanetarySystemGenerationModel PlanetraySystemModel = PlanetarySystemGenerator->GenerateRandomPlanetraySystemModelByStar(StarModel); 
             FPlanetarySystemGenerationModel PlanetraySystemModel = PlanetarySystemGenerator->GeneratePlanetraySystemModelByStar(StarModel); 
 
             // Create Planetray System
             APlanetarySystem* NewPlanetarySystem = World->SpawnActor<APlanetarySystem>(BP_PlanetarySystemClass);
+
             // Проверяем, успешно ли создана планетарная система
             if (!NewPlanetarySystem) 
             {
@@ -80,7 +80,7 @@ void AStarClusterGenerator::GenerateRandomStarSystem()
             PlanetarySystemGenerator->ApplyModel(NewPlanetarySystem, PlanetraySystemModel);
 
             // Проверяем, успешно ли создана планетарная система
-            AStar* NewStar = World->SpawnActor<AStar>(BP_StarClass); //StarGenerator->GenerateStar(StarModel);
+            AStar* NewStar = World->SpawnActor<AStar>(BP_StarClass); 
             if (!NewPlanetarySystem) 
             {
                 // Обрабатываем ошибку

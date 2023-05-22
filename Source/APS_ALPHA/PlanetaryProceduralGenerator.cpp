@@ -24,7 +24,7 @@ FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySyst
     // находим макс и мин кол во планет
     // опредлеяем расположение орбит планет  
 
-    FPlanetarySystemGenerationModel PlanetarySystem;
+    FPlanetarySystemGenerationModel PlanetarySystemModel;
     // Находим базовую вероятность для данного типа звезды
     PlanetProbability BaseProbability = BasePlanetProbabilities[StarModel.StellarClass];
     // Модифицируем вероятность на основе массы звезды.
@@ -69,60 +69,12 @@ FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySyst
         }
     
         int32 FinalPlanetCount = FMath::RandRange(MinPlanetCount, MaxPlanetCount);
-        PlanetarySystem.AmountOfPlanets = FinalPlanetCount;
-        PlanetarySystem.PlanetarySystemType = EPlanetarySystemType::Unknown; ///
-
+        PlanetarySystemModel.AmountOfPlanets = FinalPlanetCount;
+        PlanetarySystemModel.PlanetarySystemType = EPlanetarySystemType::Unknown; ///
 
         UE_LOG(LogTemp, Warning, TEXT("MinPlanetCount: %d"), MinPlanetCount);
         UE_LOG(LogTemp, Warning, TEXT("MaxPlanetCount: %d"), MaxPlanetCount);
         UE_LOG(LogTemp, Warning, TEXT("FinalPlanetCount: %d"), FinalPlanetCount);
-
-
-
-        // orbits
-
-        //float MinOrbit = StarModel.Mass; // Можно ввести некоторую функцию от массы звезды, например, прямо пропорциональную
-        //float MaxOrbit = StarModel.Mass * 10; // Допустим, максимальная орбита пропорциональна массе звезды
-
-        //// Определяем распределение орбит в зависимости от типа звезды
-        //float OrbitCoefficient;
-        //switch (StarModel.StellarClass)
-        //{
-        //case EStellarClass::MainSequence:
-        //    OrbitCoefficient = 1.5f; // для звезд главной последовательности орбиты увеличиваются в геометрической прогрессии
-        //    break;
-        //case EStellarClass::HyperGiant:
-        //case EStellarClass::SuperGiant:
-        //case EStellarClass::BrightGiant:
-        //case EStellarClass::Giant:
-        //    //OrbitCoefficient = 1.0f; // для гигантских звезд орбиты на одинаковом расстоянии
-        //    //OrbitCoefficient = FMath::Exp(FMath::Clamp(StarModel.Mass / 10, 0.1f, 2.0f)); // exponential function, clamped
-        //    OrbitCoefficient = FMath::Max(1, FMath::Exp(FMath::Clamp(StarModel.Mass / 10, 0.1f, 2.0f))); // exponential function, clamped
-        //    break;
-        //case EStellarClass::WhiteDwarf://
-        //case EStellarClass::BrownDwarf://
-        //case EStellarClass::SubDwarf:
-
-        //    OrbitCoefficient = FMath::LogX(2, StarModel.Mass); // log2(mass)
-        //    break;
-        //default:
-        //    OrbitCoefficient = FMath::RandRange(0.5f, 2.0f); // для всех остальных типов орбиты случайны
-        //    break;
-        //}
-
-        //// Создаем массив для хранения радиусов орбит планет
-        //TArray<float> PlanetOrbits;
-        //float CurrentOrbit = MinOrbit;
-        //for (int i = 0; i < FinalPlanetCount; ++i)
-        //{
-        //    PlanetOrbits.Add(CurrentOrbit);
-        //    CurrentOrbit *= OrbitCoefficient;
-        //    if (CurrentOrbit > MaxOrbit)
-        //    {
-        //        break; // прекращаем, если текущая орбита превышает максимальную допустимую
-        //    }
-        //}
-
 
 
         // Это могут быть константы или переменные, зависящие от стелларного класса
@@ -142,14 +94,12 @@ FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySyst
         double MaxOrbit = StarModel.Mass * MaxOrbitScalingFactor;
 
 
-        //float MinOrbit = StarModel.Mass; // Можно ввести некоторую функцию от массы звезды, например, прямо пропорциональную
-        //float MaxOrbit = StarModel.Mass * 10; //// 
         // Подбираем случайное распределение для нашей системы
-        //EOrbitDistributionType OrbitDistributionType = ChooseDistributionType(StarModel.StellarClass, StarModel.Mass, MinOrbit, MaxOrbit);//static_cast<EOrbitDistributionType>(FMath::RandRange(0, 2));
         EOrbitDistributionType OrbitDistributionType = ChooseOrbitDistribution(StarModel.StellarClass);//ChooseDistributionType(StarModel.StellarClass, StarModel.Mass, MinOrbit, MaxOrbit);//static_cast<EOrbitDistributionType>(FMath::RandRange(0, 2));
+        PlanetarySystemModel.OrbitDistributionType = OrbitDistributionType;
+
         FString OrbitType = UEnum::GetValueAsString(OrbitDistributionType);
         UE_LOG(LogTemp, Warning, TEXT("Orbit Distribution Type: %s"), *OrbitType);
-
         
         TArray<double> OrbitRadii;
         for (int i = 0; i < FinalPlanetCount; i++)
@@ -165,9 +115,8 @@ FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySyst
                 OrbitDistributionValue = RandGauss() * 0.15 + 0.5;
                 break;
             case EOrbitDistributionType::Chaotic:
-                OrbitDistributionValue = FMath::PerlinNoise1D(i * 0.1);//* 0.5 + 0.5; 
+                OrbitDistributionValue = FMath::PerlinNoise1D(i * 0.1);
                 break;
-            //case EOrbitDistributionType::InnerOuter:
             case EOrbitDistributionType::InnerOuter:
             {
 
@@ -178,41 +127,6 @@ FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySyst
                     OrbitDistributionValue = FMath::RandRange(0.5, 1.0);
                 }
                 break;
-
-                /*if (i < FinalPlanetCount / 2.0) {
-                    OrbitDistributionValue = static_cast<double>(i) / (FinalPlanetCount / 2.0);
-                }
-                else {
-                    OrbitDistributionValue = 0.5 + static_cast<double>(i - FinalPlanetCount / 2.0) / (FinalPlanetCount / 2.0);
-                }
-                break;*/
-
-                /*if (i < FinalPlanetCount / 2) {
-                    OrbitDistributionValue = static_cast<double>(i) / (FinalPlanetCount / 2);
-                }
-                else {
-                    OrbitDistributionValue = 0.5 + static_cast<double>(i - FinalPlanetCount / 2) / (FinalPlanetCount / 2);
-                }
-                break;*/
-                
-                /*double MeanOrbit = (MinOrbit + MaxOrbit) / 2.0;
-                if (i < FinalPlanetCount / 2) {
-                    OrbitDistributionValue = FMath::RandRange(MinOrbit, MeanOrbit);
-                }
-                else {
-                    OrbitDistributionValue = FMath::RandRange(MeanOrbit, MaxOrbit);
-                }
-                OrbitRadii.Add(OrbitDistributionValue);
-                continue;*/
-                /*if (i < FinalPlanetCount / 2) {
-                    double MeanOrbit = (MinOrbit + MaxOrbit) / 2;
-                    OrbitDistributionValue = FMath::RandRange(MinOrbit, MeanOrbit);
-                }
-                else {
-                    double MeanOrbit = (MinOrbit + MaxOrbit) / 2;
-                    OrbitDistributionValue = FMath::RandRange(MeanOrbit, MaxOrbit);
-                }
-                break;*/
             }
             case EOrbitDistributionType::Dense:
                 OrbitDistributionValue = FMath::RandRange(0.01, 0.5);
@@ -222,39 +136,9 @@ FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySyst
             // Применяем функцию распределения к нашему диапазону орбит
             double OrbitRadius = FMath::Lerp(MinOrbit, MaxOrbit, OrbitDistributionValue);
             OrbitRadii.Add(OrbitRadius);
-
         }
 
-
-        //// Выбираем функцию распределения на основе выбранного типа
-        //TArray<double> OrbitRadii;
-        //for (int i = 0; i < FinalPlanetCount; i++)
-        //{
-        //    double OrbitDistributionValue;
-        //    switch (OrbitDistributionType)
-        //    {
-        //    case EOrbitDistributionType::Uniform:
-        //        OrbitDistributionValue = FMath::RandRange(0.0, 1.0);
-        //        break;
-        //    case EOrbitDistributionType::Gaussian:
-        //        OrbitDistributionValue = FMath::RandGauss(0.5, 0.15);
-        //        break;
-        //    case EOrbitDistributionType::Chaotic:
-        //        OrbitDistributionValue = FMath::PerlinNoise1D(i * 0.1);
-        //        break;
-        //    }
-
-        //    // Применяем функцию распределения к нашему диапазону орбит
-        //    double OrbitRadius = FMath::Lerp(MinOrbit, MaxOrbit, OrbitDistributionValue);
-        //    OrbitRadii.Add(OrbitRadius);
-        //}
-
-        //// Сортируем радиусы орбит, чтобы гарантировать, что они всегда увеличиваются
         OrbitRadii.Sort();
-
-
-        
-
 
         // Выводим минимальную и максимальную орбиту
         UE_LOG(LogTemp, Warning, TEXT("MinOrbit: %f, MaxOrbit: %f"), MinOrbit, MaxOrbit);
@@ -262,24 +146,91 @@ FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySyst
         // Вычисляем обитаемую зону
         float HabitableZoneInner = sqrt(StarModel.Luminosity / 1.1);
         float HabitableZoneOuter = sqrt(StarModel.Luminosity / 0.53);
+        //PlanetarySystemModel.HabitableZoneRadius = TPair<double, double>(HabitableZoneInner, HabitableZoneOuter);
+
+        // Вычисляем холодную зону
+        double ColdZoneInner = HabitableZoneOuter;
+        double ColdZoneOuter = ColdZoneInner * 2; // Примерная формула
+       // PlanetarySystemModel.ColdZoneRadius = TPair<double, double>(ColdZoneInner, ColdZoneOuter);
+
+        // Вычисляем ледяную зону
+        double IceZoneInner = ColdZoneOuter;
+        double IceZoneOuter = IceZoneInner * 2; // Примерная формула
+       // PlanetarySystemModel.IceZoneRadius = TPair<double, double>(IceZoneInner, IceZoneOuter);
+
+        // Вычисляем теплую зону
+        double WarmZoneInner = HabitableZoneInner / 2; // Примерная формула
+        double WarmZoneOuter = HabitableZoneInner;
+       // PlanetarySystemModel.WarmZoneRadius = TPair<double, double>(WarmZoneInner, WarmZoneOuter);
+
+        // Вычисляем горячую зону
+        double HotZoneInner = WarmZoneInner / 2; // Примерная формула
+        double HotZoneOuter = WarmZoneInner;
+     //   PlanetarySystemModel.HotZoneRadius = TPair<double, double>(HotZoneInner, HotZoneOuter);
+
+        // Вычисляем зону газовых гигантов
+        double GasGiantsZoneInner = IceZoneOuter; // Примерная формула
+        double GasGiantsZoneOuter = GasGiantsZoneInner * 2; // Примерная формула
+      //  PlanetarySystemModel.GasGiantsZoneRadius = TPair<double, double>(GasGiantsZoneInner, GasGiantsZoneOuter);
+
+        // Вычисляем зону пояса астероидов
+        TArray<TPair<double, double>> AsteroidBeltZoneRadius;
+        // Здесь вы можете добавить каждый пояс астероидов в массив
+
+        // Вычисляем зону пояса Койпера
+        double KuiperBeltZoneInner = GasGiantsZoneOuter; // Примерная формула
+        double KuiperBeltZoneOuter = KuiperBeltZoneInner * 2; // Примерная формула
+        //PlanetarySystemModel.KuiperBeltZoneRadius = TPair<double, double>(KuiperBeltZoneInner, KuiperBeltZoneOuter);
+
+        if (OrbitDistributionType == EOrbitDistributionType::InnerOuter)
+        {
+            // Вычисляем внутреннюю зону
+            double InnerZoneInner = 0; // Начинается от звезды
+            double InnerZoneOuter = HotZoneOuter; // Заканчивается границей горячей зоны
+          //  PlanetarySystemModel.InnerZoneRadius = TPair<double, double>(InnerZoneInner, InnerZoneOuter);
+
+            // Вычисляем внешнюю зону
+            double OuterZoneInner = GasGiantsZoneOuter; // Начинается от границы зоны газовых гигантов
+            double OuterZoneOuter = OuterZoneInner * 2; // Примерная формула
+          //  PlanetarySystemModel.OuterZoneRadius = TPair<double, double>(OuterZoneInner, OuterZoneOuter);
+        }
+
+
         // Выводим обитаемую зону
         UE_LOG(LogTemp, Warning, TEXT("Habitable Zone: %f AU - %f AU"), HabitableZoneInner, HabitableZoneOuter);
 
         // Выводим коэффициент орбиты
-        //UE_LOG(LogTemp, Warning, TEXT("OrbitDistributionValue: %f"), OrbitDistributionValue);
         // Выводим все орбиты планет
         for (int i = 0; i < OrbitRadii.Num(); ++i)
         {
             UE_LOG(LogTemp, Warning, TEXT("Planet %d Orbit Radius: %f AU"), i + 1, OrbitRadii[i]);
         }
+
+       /* UE_LOG(LogTemp, Warning, TEXT("Habitable Zone: Inner = %f, Outer = %f"), PlanetarySystemModel.HabitableZoneRadius.Key, PlanetarySystemModel.HabitableZoneRadius.Value);
+        UE_LOG(LogTemp, Warning, TEXT("Cold Zone: Inner = %f, Outer = %f"), PlanetarySystemModel.ColdZoneRadius.Key, PlanetarySystemModel.ColdZoneRadius.Value);
+        UE_LOG(LogTemp, Warning, TEXT("Ice Zone: Inner = %f, Outer = %f"), PlanetarySystemModel.IceZoneRadius.Key, PlanetarySystemModel.IceZoneRadius.Value);
+        UE_LOG(LogTemp, Warning, TEXT("Warm Zone: Inner = %f, Outer = %f"), PlanetarySystemModel.WarmZoneRadius.Key, PlanetarySystemModel.WarmZoneRadius.Value);
+        UE_LOG(LogTemp, Warning, TEXT("Hot Zone: Inner = %f, Outer = %f"), PlanetarySystemModel.HotZoneRadius.Key, PlanetarySystemModel.HotZoneRadius.Value);
+        UE_LOG(LogTemp, Warning, TEXT("Gas Giants Zone: Inner = %f, Outer = %f"), PlanetarySystemModel.GasGiantsZoneRadius.Key, PlanetarySystemModel.GasGiantsZoneRadius.Value);
+
+        for (const auto& AsteroidBelt : AsteroidBeltZoneRadius)
+        {
+            UE_LOG(LogTemp, Warning, TEXT("Asteroid Belt: Inner = %f, Outer = %f"), PlanetarySystemModel.AsteroidBeltZoneRadius.Key, PlanetarySystemModel.AsteroidBeltZoneRadius.Value);
+        }
+
+        UE_LOG(LogTemp, Warning, TEXT("Kuiper Belt Zone: Inner = %f, Outer = %f"), PlanetarySystemModel.KuiperBeltZoneRadius.Key, PlanetarySystemModel.KuiperBeltZoneRadius.Value);
+        UE_LOG(LogTemp, Warning, TEXT("Inner Zone: Inner = %f, Outer = %f"), PlanetarySystemModel.InnerZoneRadius.Key, PlanetarySystemModel.InnerZoneRadius.Value);
+        UE_LOG(LogTemp, Warning, TEXT("Outer Zone: Inner = %f, Outer = %f"), PlanetarySystemModel.OuterZoneRadius.Key, PlanetarySystemModel.OuterZoneRadius.Value);*/
 	}
     else 
     {
-		PlanetarySystem.AmountOfPlanets = 0;
-		PlanetarySystem.PlanetarySystemType = EPlanetarySystemType::NoPlanetSystem;
+		PlanetarySystemModel.AmountOfPlanets = 0;
+		PlanetarySystemModel.PlanetarySystemType = EPlanetarySystemType::NoPlanetSystem;
 	}
+
+
     
-    return PlanetarySystem;
+    return PlanetarySystemModel;
 }
 
 double UPlanetarySystemGenerator::RandGauss()
