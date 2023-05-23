@@ -4,6 +4,7 @@
 		"Module.APS_ALPHA.1_of_3.cpp.obj": [
 			"Aircraft.gen.cpp.obj",
 			"AnimationState.gen.cpp.obj",
+			"APS_ALPHA.init.gen.cpp.obj",
 			"APS_ALPHAGameModeBase.gen.cpp.obj",
 			"Asteroid.gen.cpp.obj",
 			"AstonomicalBody.gen.cpp.obj",
@@ -52,12 +53,13 @@
 			"OrbitalBodyGenerationModel.gen.cpp.obj",
 			"OrbitDistributionType.gen.cpp.obj",
 			"PilotingVehicle.gen.cpp.obj",
-			"Planet.gen.cpp.obj",
-			"APS_ALPHA.init.gen.cpp.obj"
+			"Planet.gen.cpp.obj"
 		],
 		"Module.APS_ALPHA.2_of_3.cpp.obj": [
 			"PlanetaryEnvironment.gen.cpp.obj",
 			"PlanetaryProceduralGenerator.gen.cpp.obj",
+			"PlanetarySystem.gen.cpp.obj",
+			"PlanetarySystemGenerationModel.gen.cpp.obj",
 			"PlanetarySystemType.gen.cpp.obj",
 			"PlanetGenerationModel.gen.cpp.obj",
 			"PlanetGenerator.gen.cpp.obj",
@@ -136,6 +138,7 @@
 			"PilotingVehicle.cpp.obj",
 			"Planet.cpp.obj",
 			"PlanetaryEnvironment.cpp.obj",
+			"PlanetarySystem.cpp.obj",
 			"PlanetarySystemGenerationModel.cpp.obj",
 			"PlanetGenerationModel.cpp.obj",
 			"PlanetGenerator.cpp.obj",
@@ -147,11 +150,8 @@
 			"SpaceStation.cpp.obj",
 			"Star.cpp.obj",
 			"StarGenerationModel.cpp.obj",
-			"PlanetarySystem.gen.cpp.obj",
-			"PlanetarySystemGenerationModel.gen.cpp.obj",
-			"PlanetaryProceduralGenerator.cpp.obj",
-			"PlanetarySystem.cpp.obj",
-			"StarGenerator.cpp.obj"
+			"StarGenerator.cpp.obj",
+			"PlanetaryProceduralGenerator.cpp.obj"
 		],
 		"Module.APS_ALPHA.3_of_3.cpp.obj": [
 			"StarSector.cpp.obj",
