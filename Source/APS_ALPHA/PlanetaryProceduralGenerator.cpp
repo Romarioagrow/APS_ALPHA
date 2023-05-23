@@ -93,9 +93,8 @@ FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySyst
         double MinOrbit = StarModel.Mass * MinOrbitScalingFactor;
         double MaxOrbit = StarModel.Mass * MaxOrbitScalingFactor;
 
-
         // Подбираем случайное распределение для нашей системы
-        EOrbitDistributionType OrbitDistributionType = ChooseOrbitDistribution(StarModel.StellarClass);//ChooseDistributionType(StarModel.StellarClass, StarModel.Mass, MinOrbit, MaxOrbit);//static_cast<EOrbitDistributionType>(FMath::RandRange(0, 2));
+        EOrbitDistributionType OrbitDistributionType = ChooseOrbitDistribution(StarModel.StellarClass);
         PlanetarySystemModel.OrbitDistributionType = OrbitDistributionType;
 
         FString OrbitType = UEnum::GetValueAsString(OrbitDistributionType);
@@ -115,16 +114,13 @@ FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySyst
                 break;
             case EOrbitDistributionType::Chaotic:
             {
-
                 OrbitDistributionValue = FMath::RandRange(MinOrbit, MaxOrbit);
                 double OrbitRadius = OrbitDistributionValue;
                 OrbitRadii.Add(OrbitRadius);
                 continue;
-
             }
             case EOrbitDistributionType::InnerOuter:
             {
-
                 if (i < FinalPlanetCount / 2.0) {
                     OrbitDistributionValue = FMath::RandRange(0.01, 0.5);
                 }
@@ -152,55 +148,28 @@ FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySyst
         float HabitableZoneInner = sqrt(StarModel.Luminosity / 1.1);
         float HabitableZoneOuter = sqrt(StarModel.Luminosity / 0.53);
 
-
-
+        // Star Dead zone
         double StarDeadZoneInner = 0; // Начинается от звезды
         double StarRadiusInAU = StarModel.Radius * 0.00465047;
         double StarDeadZoneOuter = StarRadiusInAU * 2; // Заканчивается на расстоянии, равном двойному радиусу звезды в AU
 
-
-        // Вычисляем горячую зону
+        // Zones
         double HotZoneInner = 0;
         double HotZoneOuter = 0;
-
-        // Вычисляем теплую зону
         double WarmZoneInner = 0;
         double WarmZoneOuter = 0;
-
-        // Вычисляем холодную зону
         double ColdZoneInner = 0;
         double ColdZoneOuter = 0;
-
-        // Вычисляем ледяную зону
         double IceZoneInner = 0;
         double IceZoneOuter = 0;
-
-        // Вычисляем зону газовых гигантов
         double GasGiantsZoneInner = 0;
         double GasGiantsZoneOuter = 0;
-
-        // Вычисляем зону пояса Койпера
         double KuiperBeltZoneInner = 0;
         double KuiperBeltZoneOuter = 0;
-
-
-
-
-        // Вычисляем внутреннюю зону
         double InnerZoneInner = 0; // Начинается от звезды
         double InnerZoneOuter = 0; // Заканчивается границей горячей зоны
-
-        // Вычисляем внешнюю зону
         double OuterZoneInner = 0; // Начинается от границы зоны газовых гигантов
         double OuterZoneOuter = 0; // Примерная формула
-
-
-
-
-
-
-       // float gasGiantsCoeff = 1.4f; // коэффициент для зоны газовых гигантов
-
 
         if (HabitableZoneOuter < MaxOrbit)
         {
@@ -208,7 +177,6 @@ FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySyst
             StarDeadZoneInner = 0; // Начинается от звезды
             StarRadiusInAU = StarModel.Radius * 0.00465047;
             StarDeadZoneOuter = StarRadiusInAU * 2; // Заканчивается на расстоянии, равном двойному радиусу звезды в AU
-
 
             // Вычисляем горячую зону
             HotZoneInner = StarDeadZoneOuter;
@@ -235,7 +203,6 @@ FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySyst
             KuiperBeltZoneOuter = (KuiperBeltZoneInner * 2 > MaxOrbit) ? MaxOrbit : KuiperBeltZoneInner * 2;
 
 
-
             if (OrbitDistributionType == EOrbitDistributionType::InnerOuter)
             {
                 // Вычисляем внутреннюю зону
@@ -249,7 +216,6 @@ FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySyst
                 PlanetarySystemModel.InnerPlanetZoneRadius = FZoneRadius(InnerZoneInner, InnerZoneOuter);
                 PlanetarySystemModel.OuterPlanetZoneRadius = FZoneRadius(OuterZoneInner, OuterZoneOuter);
             }
-
         }
         else
         {
@@ -283,60 +249,6 @@ FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySyst
                 KuiperBeltZoneOuter = FMath::Min(GasGiantsZoneOuter * 2, MaxOrbit);
             }
         }
-
-
-
-        //if (HabitableZoneInner > MaxOrbit)
-        //{
-        //    //// Обитаемая зона за пределами максимальной орбиты
-        //    //ColdZoneInner = MaxOrbit;
-        //    //ColdZoneOuter = MaxOrbit;
-        //    //GasGiantsZoneInner = MaxOrbit;
-        //    //GasGiantsZoneOuter = MaxOrbit;
-        //    //KuiperBeltZoneInner = MaxOrbit;
-        //    //KuiperBeltZoneOuter = MaxOrbit;
-
-        //    // Обитаемая зона за пределами максимальной орбиты
-        //    HotZoneOuter = MinOrbit;
-        //    WarmZoneOuter = MaxOrbit;
-        //    HabitableZoneInner = MaxOrbit;
-        //    HabitableZoneOuter = MaxOrbit;
-        //    ColdZoneOuter = MaxOrbit;
-        //    GasGiantsZoneInner = MaxOrbit;
-        //    GasGiantsZoneOuter = MaxOrbit * gasGiantsCoeff;
-        //    KuiperBeltZoneInner = GasGiantsZoneOuter;
-        //    KuiperBeltZoneOuter = MaxOrbit;
-        //}
-        //else if (HabitableZoneOuter <= MinOrbit)
-        //{
-        //    // Обитаемая зона перед минимальной орбитой
-        //    /*HotZoneInner = MinOrbit;
-        //    HotZoneOuter = MinOrbit;
-        //    WarmZoneInner = MinOrbit;
-        //    WarmZoneOuter = MinOrbit;
-        //    ColdZoneInner = MinOrbit;
-        //    ColdZoneOuter = FMath::Max(MinOrbit, ColdZoneInner);
-        //    GasGiantsZoneInner = ColdZoneOuter;
-        //    GasGiantsZoneOuter = FMath::Max(ColdZoneOuter, ColdZoneOuter * 2);
-        //    KuiperBeltZoneInner = GasGiantsZoneOuter;
-        //    KuiperBeltZoneOuter = MaxOrbit;*/
-
-        //    // Обитаемая зона перед минимальной орбитой
-        //    HotZoneOuter = MinOrbit;
-        //    WarmZoneOuter = MinOrbit;
-        //    HabitableZoneOuter = MinOrbit;
-        //    ColdZoneOuter = MinOrbit;
-        //    GasGiantsZoneInner = MinOrbit;
-        //    GasGiantsZoneOuter = MinOrbit * gasGiantsCoeff;
-        //    KuiperBeltZoneInner = GasGiantsZoneOuter;
-        //    KuiperBeltZoneOuter = MaxOrbit;
-        //}
-        //else
-        //{
-
-        //    
-
-        //}
 
         PlanetarySystemModel.DeadZoneRadius = FZoneRadius(StarDeadZoneInner, StarDeadZoneOuter);
         PlanetarySystemModel.HabitableZoneRadius = FZoneRadius(HabitableZoneInner, HabitableZoneOuter);
@@ -374,8 +286,6 @@ FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySyst
 		PlanetarySystemModel.PlanetarySystemType = EPlanetarySystemType::NoPlanetSystem;
 	}
 
-
-    
     return PlanetarySystemModel;
 }
 
@@ -456,25 +366,6 @@ EOrbitDistributionType UPlanetarySystemGenerator::ChooseOrbitDistribution(EStell
     // Возвращаем последний тип, если что-то пошло не так
     return probabilities.end().Key();
 }
-
-//EOrbitDistributionType UPlanetarySystemGenerator::ChooseDistributionType(EStellarClass StellarClass, float StarMass, float OrbitRange)
-//{
-//    if (StellarClass == EStellarClass::Giant || StellarClass == EStellarClass::SuperGiant)
-//    {
-//        // Для гигантских звезд выбираем хаотичное распределение
-//        return EOrbitDistributionType::Chaotic;
-//    }
-//    else if (StarMass > 1.5f)
-//    {
-//        // Для более массивных звезд выбираем гауссово распределение
-//        return EOrbitDistributionType::Gaussian;
-//    }
-//    else
-//    {
-//        // Во всех остальных случаях выбираем равномерное распределение
-//        return EOrbitDistributionType::Uniform;
-//    }
-//}
 
 int UPlanetarySystemGenerator::DetermineMaxPlanets(EStellarClass StellarClass, FStarGenerationModel StarModel )
 {
