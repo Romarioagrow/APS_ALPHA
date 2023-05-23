@@ -131,6 +131,7 @@ private:
             {
                 {EOrbitDistributionType::Uniform, 0.20f}, 
                 {EOrbitDistributionType::Gaussian, 0.30f}, 
+                //{EOrbitDistributionType::Chaotic, 11110.25f}, 
                 {EOrbitDistributionType::Chaotic, 0.25f}, 
                 {EOrbitDistributionType::InnerOuter, 0.15f},
                 {EOrbitDistributionType::Dense, 0.10f}

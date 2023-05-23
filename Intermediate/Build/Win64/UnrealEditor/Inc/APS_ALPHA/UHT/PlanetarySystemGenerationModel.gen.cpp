@@ -13,8 +13,88 @@ void EmptyLinkFunctionForGeneratedCodePlanetarySystemGenerationModel() {}
 	APS_ALPHA_API UEnum* Z_Construct_UEnum_APS_ALPHA_EPlanetarySystemType();
 	APS_ALPHA_API UScriptStruct* Z_Construct_UScriptStruct_FGenerationModel();
 	APS_ALPHA_API UScriptStruct* Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel();
+	APS_ALPHA_API UScriptStruct* Z_Construct_UScriptStruct_FZoneRadius();
 	UPackage* Z_Construct_UPackage__Script_APS_ALPHA();
 // End Cross Module References
+	static FStructRegistrationInfo Z_Registration_Info_UScriptStruct_ZoneRadius;
+class UScriptStruct* FZoneRadius::StaticStruct()
+{
+	if (!Z_Registration_Info_UScriptStruct_ZoneRadius.OuterSingleton)
+	{
+		Z_Registration_Info_UScriptStruct_ZoneRadius.OuterSingleton = GetStaticStruct(Z_Construct_UScriptStruct_FZoneRadius, Z_Construct_UPackage__Script_APS_ALPHA(), TEXT("ZoneRadius"));
+	}
+	return Z_Registration_Info_UScriptStruct_ZoneRadius.OuterSingleton;
+}
+template<> APS_ALPHA_API UScriptStruct* StaticStruct<FZoneRadius>()
+{
+	return FZoneRadius::StaticStruct();
+}
+	struct Z_Construct_UScriptStruct_FZoneRadius_Statics
+	{
+#if WITH_METADATA
+		static const UECodeGen_Private::FMetaDataPairParam Struct_MetaDataParams[];
+#endif
+		static void* NewStructOps();
+#if WITH_METADATA
+		static const UECodeGen_Private::FMetaDataPairParam NewProp_InnerRadius_MetaData[];
+#endif
+		static const UECodeGen_Private::FDoublePropertyParams NewProp_InnerRadius;
+#if WITH_METADATA
+		static const UECodeGen_Private::FMetaDataPairParam NewProp_OuterRadius_MetaData[];
+#endif
+		static const UECodeGen_Private::FDoublePropertyParams NewProp_OuterRadius;
+		static const UECodeGen_Private::FPropertyParamsBase* const PropPointers[];
+		static const UECodeGen_Private::FStructParams ReturnStructParams;
+	};
+#if WITH_METADATA
+	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UScriptStruct_FZoneRadius_Statics::Struct_MetaDataParams[] = {
+		{ "BlueprintType", "true" },
+		{ "ModuleRelativePath", "PlanetarySystemGenerationModel.h" },
+	};
+#endif
+	void* Z_Construct_UScriptStruct_FZoneRadius_Statics::NewStructOps()
+	{
+		return (UScriptStruct::ICppStructOps*)new UScriptStruct::TCppStructOps<FZoneRadius>();
+	}
+#if WITH_METADATA
+	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UScriptStruct_FZoneRadius_Statics::NewProp_InnerRadius_MetaData[] = {
+		{ "Category", "Zone" },
+		{ "ModuleRelativePath", "PlanetarySystemGenerationModel.h" },
+	};
+#endif
+	const UECodeGen_Private::FDoublePropertyParams Z_Construct_UScriptStruct_FZoneRadius_Statics::NewProp_InnerRadius = { "InnerRadius", nullptr, (EPropertyFlags)0x0010000000020015, UECodeGen_Private::EPropertyGenFlags::Double, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FZoneRadius, InnerRadius), METADATA_PARAMS(Z_Construct_UScriptStruct_FZoneRadius_Statics::NewProp_InnerRadius_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FZoneRadius_Statics::NewProp_InnerRadius_MetaData)) };
+#if WITH_METADATA
+	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UScriptStruct_FZoneRadius_Statics::NewProp_OuterRadius_MetaData[] = {
+		{ "Category", "Zone" },
+		{ "ModuleRelativePath", "PlanetarySystemGenerationModel.h" },
+	};
+#endif
+	const UECodeGen_Private::FDoublePropertyParams Z_Construct_UScriptStruct_FZoneRadius_Statics::NewProp_OuterRadius = { "OuterRadius", nullptr, (EPropertyFlags)0x0010000000020015, UECodeGen_Private::EPropertyGenFlags::Double, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FZoneRadius, OuterRadius), METADATA_PARAMS(Z_Construct_UScriptStruct_FZoneRadius_Statics::NewProp_OuterRadius_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FZoneRadius_Statics::NewProp_OuterRadius_MetaData)) };
+	const UECodeGen_Private::FPropertyParamsBase* const Z_Construct_UScriptStruct_FZoneRadius_Statics::PropPointers[] = {
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FZoneRadius_Statics::NewProp_InnerRadius,
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FZoneRadius_Statics::NewProp_OuterRadius,
+	};
+	const UECodeGen_Private::FStructParams Z_Construct_UScriptStruct_FZoneRadius_Statics::ReturnStructParams = {
+		(UObject* (*)())Z_Construct_UPackage__Script_APS_ALPHA,
+		nullptr,
+		&NewStructOps,
+		"ZoneRadius",
+		sizeof(FZoneRadius),
+		alignof(FZoneRadius),
+		Z_Construct_UScriptStruct_FZoneRadius_Statics::PropPointers,
+		UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FZoneRadius_Statics::PropPointers),
+		RF_Public|RF_Transient|RF_MarkAsNative,
+		EStructFlags(0x00000001),
+		METADATA_PARAMS(Z_Construct_UScriptStruct_FZoneRadius_Statics::Struct_MetaDataParams, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FZoneRadius_Statics::Struct_MetaDataParams))
+	};
+	UScriptStruct* Z_Construct_UScriptStruct_FZoneRadius()
+	{
+		if (!Z_Registration_Info_UScriptStruct_ZoneRadius.InnerSingleton)
+		{
+			UECodeGen_Private::ConstructUScriptStruct(Z_Registration_Info_UScriptStruct_ZoneRadius.InnerSingleton, Z_Construct_UScriptStruct_FZoneRadius_Statics::ReturnStructParams);
+		}
+		return Z_Registration_Info_UScriptStruct_ZoneRadius.InnerSingleton;
+	}
 
 static_assert(std::is_polymorphic<FPlanetarySystemGenerationModel>() == std::is_polymorphic<FGenerationModel>(), "USTRUCT FPlanetarySystemGenerationModel cannot be polymorphic unless super FGenerationModel is polymorphic");
 
@@ -55,15 +135,55 @@ template<> APS_ALPHA_API UScriptStruct* StaticStruct<FPlanetarySystemGenerationM
 		static const UECodeGen_Private::FMetaDataPairParam NewProp_OrbitDistributionType_MetaData[];
 #endif
 		static const UECodeGen_Private::FEnumPropertyParams NewProp_OrbitDistributionType;
+#if WITH_METADATA
+		static const UECodeGen_Private::FMetaDataPairParam NewProp_HabitableZoneRadius_MetaData[];
+#endif
+		static const UECodeGen_Private::FStructPropertyParams NewProp_HabitableZoneRadius;
+#if WITH_METADATA
+		static const UECodeGen_Private::FMetaDataPairParam NewProp_ColdZoneRadius_MetaData[];
+#endif
+		static const UECodeGen_Private::FStructPropertyParams NewProp_ColdZoneRadius;
+#if WITH_METADATA
+		static const UECodeGen_Private::FMetaDataPairParam NewProp_IceZoneRadius_MetaData[];
+#endif
+		static const UECodeGen_Private::FStructPropertyParams NewProp_IceZoneRadius;
+#if WITH_METADATA
+		static const UECodeGen_Private::FMetaDataPairParam NewProp_WarmZoneRadius_MetaData[];
+#endif
+		static const UECodeGen_Private::FStructPropertyParams NewProp_WarmZoneRadius;
+#if WITH_METADATA
+		static const UECodeGen_Private::FMetaDataPairParam NewProp_HotZoneRadius_MetaData[];
+#endif
+		static const UECodeGen_Private::FStructPropertyParams NewProp_HotZoneRadius;
+#if WITH_METADATA
+		static const UECodeGen_Private::FMetaDataPairParam NewProp_InnerPlanetZoneRadius_MetaData[];
+#endif
+		static const UECodeGen_Private::FStructPropertyParams NewProp_InnerPlanetZoneRadius;
+#if WITH_METADATA
+		static const UECodeGen_Private::FMetaDataPairParam NewProp_OuterPlanetZoneRadius_MetaData[];
+#endif
+		static const UECodeGen_Private::FStructPropertyParams NewProp_OuterPlanetZoneRadius;
+		static const UECodeGen_Private::FStructPropertyParams NewProp_AsteroidBeltZoneRadius_ValueProp;
+		static const UECodeGen_Private::FIntPropertyParams NewProp_AsteroidBeltZoneRadius_Key_KeyProp;
+#if WITH_METADATA
+		static const UECodeGen_Private::FMetaDataPairParam NewProp_AsteroidBeltZoneRadius_MetaData[];
+#endif
+		static const UECodeGen_Private::FMapPropertyParams NewProp_AsteroidBeltZoneRadius;
+#if WITH_METADATA
+		static const UECodeGen_Private::FMetaDataPairParam NewProp_KuiperBeltZoneRadius_MetaData[];
+#endif
+		static const UECodeGen_Private::FStructPropertyParams NewProp_KuiperBeltZoneRadius;
+#if WITH_METADATA
+		static const UECodeGen_Private::FMetaDataPairParam NewProp_GasGiantsZoneRadius_MetaData[];
+#endif
+		static const UECodeGen_Private::FStructPropertyParams NewProp_GasGiantsZoneRadius;
 		static const UECodeGen_Private::FPropertyParamsBase* const PropPointers[];
 		static const UECodeGen_Private::FStructParams ReturnStructParams;
 	};
 #if WITH_METADATA
 	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::Struct_MetaDataParams[] = {
 		{ "BlueprintType", "true" },
-		{ "Comment", "//USTRUCT(BlueprintType)\n//struct FZoneRadius\n//{\n//\x09GENERATED_USTRUCT_BODY()\n//\n//\x09\x09UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = \"Zone\")\n//\x09\x09""double InnerRadius;\n//\n//\x09UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = \"Zone\")\n//\x09\x09""double OuterRadius;\n//\n//\x09""FZoneRadius()\n//\x09{\n//\x09\x09InnerRadius = 0.0;\n//\x09\x09OuterRadius = 0.0;\n//\x09}\n//};\n" },
 		{ "ModuleRelativePath", "PlanetarySystemGenerationModel.h" },
-		{ "ToolTip", "USTRUCT(BlueprintType)\nstruct FZoneRadius\n{\n       GENERATED_USTRUCT_BODY()\n\n               UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = \"Zone\")\n               double InnerRadius;\n\n       UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = \"Zone\")\n               double OuterRadius;\n\n       FZoneRadius()\n       {\n               InnerRadius = 0.0;\n               OuterRadius = 0.0;\n       }\n};" },
 	};
 #endif
 	void* Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewStructOps()
@@ -102,6 +222,78 @@ template<> APS_ALPHA_API UScriptStruct* StaticStruct<FPlanetarySystemGenerationM
 	};
 #endif
 	const UECodeGen_Private::FEnumPropertyParams Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_OrbitDistributionType = { "OrbitDistributionType", nullptr, (EPropertyFlags)0x0010000000020001, UECodeGen_Private::EPropertyGenFlags::Enum, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FPlanetarySystemGenerationModel, OrbitDistributionType), Z_Construct_UEnum_APS_ALPHA_EOrbitDistributionType, METADATA_PARAMS(Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_OrbitDistributionType_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_OrbitDistributionType_MetaData)) }; // 2085035236
+#if WITH_METADATA
+	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_HabitableZoneRadius_MetaData[] = {
+		{ "Category", "Zones" },
+		{ "ModuleRelativePath", "PlanetarySystemGenerationModel.h" },
+	};
+#endif
+	const UECodeGen_Private::FStructPropertyParams Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_HabitableZoneRadius = { "HabitableZoneRadius", nullptr, (EPropertyFlags)0x0010000000020001, UECodeGen_Private::EPropertyGenFlags::Struct, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FPlanetarySystemGenerationModel, HabitableZoneRadius), Z_Construct_UScriptStruct_FZoneRadius, METADATA_PARAMS(Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_HabitableZoneRadius_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_HabitableZoneRadius_MetaData)) }; // 3993418724
+#if WITH_METADATA
+	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_ColdZoneRadius_MetaData[] = {
+		{ "Category", "Zones" },
+		{ "ModuleRelativePath", "PlanetarySystemGenerationModel.h" },
+	};
+#endif
+	const UECodeGen_Private::FStructPropertyParams Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_ColdZoneRadius = { "ColdZoneRadius", nullptr, (EPropertyFlags)0x0010000000020001, UECodeGen_Private::EPropertyGenFlags::Struct, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FPlanetarySystemGenerationModel, ColdZoneRadius), Z_Construct_UScriptStruct_FZoneRadius, METADATA_PARAMS(Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_ColdZoneRadius_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_ColdZoneRadius_MetaData)) }; // 3993418724
+#if WITH_METADATA
+	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_IceZoneRadius_MetaData[] = {
+		{ "Category", "Zones" },
+		{ "ModuleRelativePath", "PlanetarySystemGenerationModel.h" },
+	};
+#endif
+	const UECodeGen_Private::FStructPropertyParams Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_IceZoneRadius = { "IceZoneRadius", nullptr, (EPropertyFlags)0x0010000000020001, UECodeGen_Private::EPropertyGenFlags::Struct, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FPlanetarySystemGenerationModel, IceZoneRadius), Z_Construct_UScriptStruct_FZoneRadius, METADATA_PARAMS(Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_IceZoneRadius_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_IceZoneRadius_MetaData)) }; // 3993418724
+#if WITH_METADATA
+	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_WarmZoneRadius_MetaData[] = {
+		{ "Category", "Zones" },
+		{ "ModuleRelativePath", "PlanetarySystemGenerationModel.h" },
+	};
+#endif
+	const UECodeGen_Private::FStructPropertyParams Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_WarmZoneRadius = { "WarmZoneRadius", nullptr, (EPropertyFlags)0x0010000000020001, UECodeGen_Private::EPropertyGenFlags::Struct, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FPlanetarySystemGenerationModel, WarmZoneRadius), Z_Construct_UScriptStruct_FZoneRadius, METADATA_PARAMS(Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_WarmZoneRadius_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_WarmZoneRadius_MetaData)) }; // 3993418724
+#if WITH_METADATA
+	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_HotZoneRadius_MetaData[] = {
+		{ "Category", "Zones" },
+		{ "ModuleRelativePath", "PlanetarySystemGenerationModel.h" },
+	};
+#endif
+	const UECodeGen_Private::FStructPropertyParams Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_HotZoneRadius = { "HotZoneRadius", nullptr, (EPropertyFlags)0x0010000000020001, UECodeGen_Private::EPropertyGenFlags::Struct, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FPlanetarySystemGenerationModel, HotZoneRadius), Z_Construct_UScriptStruct_FZoneRadius, METADATA_PARAMS(Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_HotZoneRadius_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_HotZoneRadius_MetaData)) }; // 3993418724
+#if WITH_METADATA
+	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_InnerPlanetZoneRadius_MetaData[] = {
+		{ "Category", "Zones" },
+		{ "ModuleRelativePath", "PlanetarySystemGenerationModel.h" },
+	};
+#endif
+	const UECodeGen_Private::FStructPropertyParams Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_InnerPlanetZoneRadius = { "InnerPlanetZoneRadius", nullptr, (EPropertyFlags)0x0010000000020001, UECodeGen_Private::EPropertyGenFlags::Struct, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FPlanetarySystemGenerationModel, InnerPlanetZoneRadius), Z_Construct_UScriptStruct_FZoneRadius, METADATA_PARAMS(Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_InnerPlanetZoneRadius_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_InnerPlanetZoneRadius_MetaData)) }; // 3993418724
+#if WITH_METADATA
+	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_OuterPlanetZoneRadius_MetaData[] = {
+		{ "Category", "Zones" },
+		{ "ModuleRelativePath", "PlanetarySystemGenerationModel.h" },
+	};
+#endif
+	const UECodeGen_Private::FStructPropertyParams Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_OuterPlanetZoneRadius = { "OuterPlanetZoneRadius", nullptr, (EPropertyFlags)0x0010000000020001, UECodeGen_Private::EPropertyGenFlags::Struct, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FPlanetarySystemGenerationModel, OuterPlanetZoneRadius), Z_Construct_UScriptStruct_FZoneRadius, METADATA_PARAMS(Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_OuterPlanetZoneRadius_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_OuterPlanetZoneRadius_MetaData)) }; // 3993418724
+	const UECodeGen_Private::FStructPropertyParams Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_AsteroidBeltZoneRadius_ValueProp = { "AsteroidBeltZoneRadius", nullptr, (EPropertyFlags)0x0000000000020001, UECodeGen_Private::EPropertyGenFlags::Struct, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, 1, Z_Construct_UScriptStruct_FZoneRadius, METADATA_PARAMS(nullptr, 0) }; // 3993418724
+	const UECodeGen_Private::FIntPropertyParams Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_AsteroidBeltZoneRadius_Key_KeyProp = { "AsteroidBeltZoneRadius_Key", nullptr, (EPropertyFlags)0x0000000000020001, UECodeGen_Private::EPropertyGenFlags::Int, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, 0, METADATA_PARAMS(nullptr, 0) };
+#if WITH_METADATA
+	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_AsteroidBeltZoneRadius_MetaData[] = {
+		{ "Category", "Zones" },
+		{ "ModuleRelativePath", "PlanetarySystemGenerationModel.h" },
+	};
+#endif
+	const UECodeGen_Private::FMapPropertyParams Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_AsteroidBeltZoneRadius = { "AsteroidBeltZoneRadius", nullptr, (EPropertyFlags)0x0010000000020001, UECodeGen_Private::EPropertyGenFlags::Map, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FPlanetarySystemGenerationModel, AsteroidBeltZoneRadius), EMapPropertyFlags::None, METADATA_PARAMS(Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_AsteroidBeltZoneRadius_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_AsteroidBeltZoneRadius_MetaData)) }; // 3993418724
+#if WITH_METADATA
+	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_KuiperBeltZoneRadius_MetaData[] = {
+		{ "Category", "Zones" },
+		{ "ModuleRelativePath", "PlanetarySystemGenerationModel.h" },
+	};
+#endif
+	const UECodeGen_Private::FStructPropertyParams Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_KuiperBeltZoneRadius = { "KuiperBeltZoneRadius", nullptr, (EPropertyFlags)0x0010000000020001, UECodeGen_Private::EPropertyGenFlags::Struct, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FPlanetarySystemGenerationModel, KuiperBeltZoneRadius), Z_Construct_UScriptStruct_FZoneRadius, METADATA_PARAMS(Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_KuiperBeltZoneRadius_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_KuiperBeltZoneRadius_MetaData)) }; // 3993418724
+#if WITH_METADATA
+	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_GasGiantsZoneRadius_MetaData[] = {
+		{ "Category", "Zones" },
+		{ "ModuleRelativePath", "PlanetarySystemGenerationModel.h" },
+	};
+#endif
+	const UECodeGen_Private::FStructPropertyParams Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_GasGiantsZoneRadius = { "GasGiantsZoneRadius", nullptr, (EPropertyFlags)0x0010000000020001, UECodeGen_Private::EPropertyGenFlags::Struct, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FPlanetarySystemGenerationModel, GasGiantsZoneRadius), Z_Construct_UScriptStruct_FZoneRadius, METADATA_PARAMS(Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_GasGiantsZoneRadius_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_GasGiantsZoneRadius_MetaData)) }; // 3993418724
 	const UECodeGen_Private::FPropertyParamsBase* const Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::PropPointers[] = {
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_AmountOfPlanets,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_DistanceBetweenPlanets,
@@ -109,6 +301,18 @@ template<> APS_ALPHA_API UScriptStruct* StaticStruct<FPlanetarySystemGenerationM
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_PlanetarySystemType,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_OrbitDistributionType_Underlying,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_OrbitDistributionType,
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_HabitableZoneRadius,
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_ColdZoneRadius,
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_IceZoneRadius,
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_WarmZoneRadius,
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_HotZoneRadius,
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_InnerPlanetZoneRadius,
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_OuterPlanetZoneRadius,
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_AsteroidBeltZoneRadius_ValueProp,
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_AsteroidBeltZoneRadius_Key_KeyProp,
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_AsteroidBeltZoneRadius,
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_KuiperBeltZoneRadius,
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_GasGiantsZoneRadius,
 	};
 	const UECodeGen_Private::FStructParams Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::ReturnStructParams = {
 		(UObject* (*)())Z_Construct_UPackage__Script_APS_ALPHA,
@@ -136,9 +340,10 @@ template<> APS_ALPHA_API UScriptStruct* StaticStruct<FPlanetarySystemGenerationM
 		static const FStructRegisterCompiledInInfo ScriptStructInfo[];
 	};
 	const FStructRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_PlanetarySystemGenerationModel_h_Statics::ScriptStructInfo[] = {
-		{ FPlanetarySystemGenerationModel::StaticStruct, Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewStructOps, TEXT("PlanetarySystemGenerationModel"), &Z_Registration_Info_UScriptStruct_PlanetarySystemGenerationModel, CONSTRUCT_RELOAD_VERSION_INFO(FStructReloadVersionInfo, sizeof(FPlanetarySystemGenerationModel), 943300335U) },
+		{ FZoneRadius::StaticStruct, Z_Construct_UScriptStruct_FZoneRadius_Statics::NewStructOps, TEXT("ZoneRadius"), &Z_Registration_Info_UScriptStruct_ZoneRadius, CONSTRUCT_RELOAD_VERSION_INFO(FStructReloadVersionInfo, sizeof(FZoneRadius), 3993418724U) },
+		{ FPlanetarySystemGenerationModel::StaticStruct, Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewStructOps, TEXT("PlanetarySystemGenerationModel"), &Z_Registration_Info_UScriptStruct_PlanetarySystemGenerationModel, CONSTRUCT_RELOAD_VERSION_INFO(FStructReloadVersionInfo, sizeof(FPlanetarySystemGenerationModel), 3819867992U) },
 	};
-	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_PlanetarySystemGenerationModel_h_3742591571(TEXT("/Script/APS_ALPHA"),
+	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_PlanetarySystemGenerationModel_h_1031547231(TEXT("/Script/APS_ALPHA"),
 		nullptr, 0,
 		Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_PlanetarySystemGenerationModel_h_Statics::ScriptStructInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_PlanetarySystemGenerationModel_h_Statics::ScriptStructInfo),
 		nullptr, 0);

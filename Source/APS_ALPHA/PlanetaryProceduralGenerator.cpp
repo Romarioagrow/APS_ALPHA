@@ -112,11 +112,45 @@ FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySyst
                 break;
             case EOrbitDistributionType::Gaussian:
                 //OrbitDistributionValue = FMath::RandGauss(0.5, 0.15);
-                OrbitDistributionValue = RandGauss() * 0.15 + 0.5;
+                OrbitDistributionValue = RandGauss(); // * 0.15 + 0.5
                 break;
             case EOrbitDistributionType::Chaotic:
-                OrbitDistributionValue = FMath::PerlinNoise1D(i * 0.1);
-                break;
+            {
+                
+                
+                
+                
+                /*while (OrbitRadii.Num() < FinalPlanetCount)
+                {
+                    OrbitDistributionValue = FMath::PerlinNoise1D(i * 0.1) * (MaxOrbit - MinOrbit) + MinOrbit;
+                    if (!OrbitRadii.Contains(OrbitDistributionValue))
+                    {
+                        OrbitRadii.Add(OrbitDistributionValue);
+                    }
+                }
+                break;*/
+
+
+
+                OrbitDistributionValue = FMath::RandRange(MinOrbit, MaxOrbit);
+                double OrbitRadius = OrbitDistributionValue;
+                OrbitRadii.Add(OrbitRadius);
+                continue;
+
+                // Уменьшите диапазон между MinOrbit и MaxOrbit
+               // float NewMinOrbit = 0.5f * MinOrbit;
+                //float NewMaxOrbit = 0.5f * MaxOrbit;
+
+                // Масштабируйте выходной сигнал PerlinNoise1D
+                //OrbitDistributionValue = 0.5f * ((FMath::PerlinNoise1D(i * FMath::RandRange(0.1f, 0.9f)) + 1) / 2 * (NewMaxOrbit - NewMinOrbit) + NewMinOrbit);
+                
+                //OrbitDistributionValue = FMath::PerlinNoise1D(i * 0.1);
+                //OrbitDistributionValue = FMath::PerlinNoise1D(i * FMath::RandRange(0.1, 0.9));
+                //OrbitDistributionValue = (FMath::PerlinNoise1D(i * FMath::RandRange(0.1, 0.9)) + 1) / 2 * (MaxOrbit - MinOrbit) + MinOrbit;
+
+
+               // break;
+            }
             case EOrbitDistributionType::InnerOuter:
             {
 
@@ -148,53 +182,79 @@ FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySyst
         float HabitableZoneOuter = sqrt(StarModel.Luminosity / 0.53);
         //PlanetarySystemModel.HabitableZoneRadius = TPair<double, double>(HabitableZoneInner, HabitableZoneOuter);
 
-        // Вычисляем холодную зону
+
+        // Сначала вычислите общий размер всех зон
+        //double TotalZoneSize = HotZoneOuter + WarmZoneOuter + HabitableZoneOuter + ColdZoneOuter + IceZoneOuter + GasGiantsZoneOuter + KuiperBeltZoneOuter;
+
+        // Затем вычислите коэффициент масштабирования
+        //double ScalingFactor = MaxOrbit / TotalZoneSize;
+
+        // Затем примените этот коэффициент ко всем границам зон
+        /*HotZoneInner *= ScalingFactor;
+        HotZoneOuter *= ScalingFactor;
+        WarmZoneInner *= ScalingFactor;
+        WarmZoneOuter *= ScalingFactor;
+        HabitableZoneInner *= ScalingFactor;
+        HabitableZoneOuter *= ScalingFactor;
+        ColdZoneInner *= ScalingFactor;
+        ColdZoneOuter *= ScalingFactor;
+        IceZoneInner *= ScalingFactor;
+        IceZoneOuter *= ScalingFactor;
+        GasGiantsZoneInner *= ScalingFactor;
+        GasGiantsZoneOuter *= ScalingFactor;
+        KuiperBeltZoneInner *= ScalingFactor;
+        KuiperBeltZoneOuter *= ScalingFactor;*/
+
+
+        //// Вычисляем холодную зону
         double ColdZoneInner = HabitableZoneOuter;
         double ColdZoneOuter = ColdZoneInner * 2; // Примерная формула
-       // PlanetarySystemModel.ColdZoneRadius = TPair<double, double>(ColdZoneInner, ColdZoneOuter);
 
-        // Вычисляем ледяную зону
+        //// Вычисляем ледяную зону
         double IceZoneInner = ColdZoneOuter;
         double IceZoneOuter = IceZoneInner * 2; // Примерная формула
-       // PlanetarySystemModel.IceZoneRadius = TPair<double, double>(IceZoneInner, IceZoneOuter);
 
-        // Вычисляем теплую зону
+        //// Вычисляем теплую зону
         double WarmZoneInner = HabitableZoneInner / 2; // Примерная формула
         double WarmZoneOuter = HabitableZoneInner;
-       // PlanetarySystemModel.WarmZoneRadius = TPair<double, double>(WarmZoneInner, WarmZoneOuter);
 
-        // Вычисляем горячую зону
+        //// Вычисляем горячую зону
         double HotZoneInner = WarmZoneInner / 2; // Примерная формула
         double HotZoneOuter = WarmZoneInner;
-     //   PlanetarySystemModel.HotZoneRadius = TPair<double, double>(HotZoneInner, HotZoneOuter);
 
-        // Вычисляем зону газовых гигантов
+        //// Вычисляем зону газовых гигантов
         double GasGiantsZoneInner = IceZoneOuter; // Примерная формула
         double GasGiantsZoneOuter = GasGiantsZoneInner * 2; // Примерная формула
-      //  PlanetarySystemModel.GasGiantsZoneRadius = TPair<double, double>(GasGiantsZoneInner, GasGiantsZoneOuter);
 
-        // Вычисляем зону пояса астероидов
-        TArray<TPair<double, double>> AsteroidBeltZoneRadius;
-        // Здесь вы можете добавить каждый пояс астероидов в массив
+        //// Вычисляем зону пояса астероидов
+        //TArray<TPair<double, double>> AsteroidBeltZoneRadius;
+        //// Здесь вы можете добавить каждый пояс астероидов в массив
 
-        // Вычисляем зону пояса Койпера
+        //// Вычисляем зону пояса Койпера
         double KuiperBeltZoneInner = GasGiantsZoneOuter; // Примерная формула
         double KuiperBeltZoneOuter = KuiperBeltZoneInner * 2; // Примерная формула
-        //PlanetarySystemModel.KuiperBeltZoneRadius = TPair<double, double>(KuiperBeltZoneInner, KuiperBeltZoneOuter);
 
         if (OrbitDistributionType == EOrbitDistributionType::InnerOuter)
         {
             // Вычисляем внутреннюю зону
             double InnerZoneInner = 0; // Начинается от звезды
             double InnerZoneOuter = HotZoneOuter; // Заканчивается границей горячей зоны
-          //  PlanetarySystemModel.InnerZoneRadius = TPair<double, double>(InnerZoneInner, InnerZoneOuter);
 
             // Вычисляем внешнюю зону
             double OuterZoneInner = GasGiantsZoneOuter; // Начинается от границы зоны газовых гигантов
             double OuterZoneOuter = OuterZoneInner * 2; // Примерная формула
-          //  PlanetarySystemModel.OuterZoneRadius = TPair<double, double>(OuterZoneInner, OuterZoneOuter);
+
+            PlanetarySystemModel.InnerPlanetZoneRadius = FZoneRadius(InnerZoneInner, InnerZoneOuter);
+            PlanetarySystemModel.OuterPlanetZoneRadius = FZoneRadius(OuterZoneInner, OuterZoneOuter);
         }
 
+        PlanetarySystemModel.HabitableZoneRadius = FZoneRadius(HabitableZoneInner, HabitableZoneOuter);
+        PlanetarySystemModel.ColdZoneRadius = FZoneRadius(ColdZoneInner, ColdZoneOuter);
+        PlanetarySystemModel.IceZoneRadius = FZoneRadius(IceZoneInner, IceZoneOuter);
+        PlanetarySystemModel.WarmZoneRadius = FZoneRadius(WarmZoneInner, WarmZoneOuter);
+        PlanetarySystemModel.HotZoneRadius = FZoneRadius(HotZoneInner, HotZoneOuter);
+        PlanetarySystemModel.GasGiantsZoneRadius = FZoneRadius(GasGiantsZoneInner, GasGiantsZoneOuter);
+        PlanetarySystemModel.KuiperBeltZoneRadius = FZoneRadius(KuiperBeltZoneInner, KuiperBeltZoneOuter);
 
         // Выводим обитаемую зону
         UE_LOG(LogTemp, Warning, TEXT("Habitable Zone: %f AU - %f AU"), HabitableZoneInner, HabitableZoneOuter);
@@ -205,6 +265,18 @@ FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySyst
         {
             UE_LOG(LogTemp, Warning, TEXT("Planet %d Orbit Radius: %f AU"), i + 1, OrbitRadii[i]);
         }
+
+        UE_LOG(LogTemp, Warning, TEXT("Habitable Zone: Inner Radius = %f, Outer Radius = %f"), PlanetarySystemModel.HabitableZoneRadius.InnerRadius, PlanetarySystemModel.HabitableZoneRadius.OuterRadius);
+        UE_LOG(LogTemp, Warning, TEXT("Cold Zone: Inner Radius = %f, Outer Radius = %f"), PlanetarySystemModel.ColdZoneRadius.InnerRadius, PlanetarySystemModel.ColdZoneRadius.OuterRadius);
+        UE_LOG(LogTemp, Warning, TEXT("Ice Zone: Inner Radius = %f, Outer Radius = %f"), PlanetarySystemModel.IceZoneRadius.InnerRadius, PlanetarySystemModel.IceZoneRadius.OuterRadius);
+        UE_LOG(LogTemp, Warning, TEXT("Warm Zone: Inner Radius = %f, Outer Radius = %f"), PlanetarySystemModel.WarmZoneRadius.InnerRadius, PlanetarySystemModel.WarmZoneRadius.OuterRadius);
+        UE_LOG(LogTemp, Warning, TEXT("Hot Zone: Inner Radius = %f, Outer Radius = %f"), PlanetarySystemModel.HotZoneRadius.InnerRadius, PlanetarySystemModel.HotZoneRadius.OuterRadius);
+        UE_LOG(LogTemp, Warning, TEXT("Gas Giants Zone: Inner Radius = %f, Outer Radius = %f"), PlanetarySystemModel.GasGiantsZoneRadius.InnerRadius, PlanetarySystemModel.GasGiantsZoneRadius.OuterRadius);
+        UE_LOG(LogTemp, Warning, TEXT("Kuiper Belt Zone: Inner Radius = %f, Outer Radius = %f"), PlanetarySystemModel.KuiperBeltZoneRadius.InnerRadius, PlanetarySystemModel.KuiperBeltZoneRadius.OuterRadius);
+        UE_LOG(LogTemp, Warning, TEXT("Inner Zone: Inner Radius = %f, Outer Radius = %f"), PlanetarySystemModel.InnerPlanetZoneRadius.InnerRadius, PlanetarySystemModel.InnerPlanetZoneRadius.OuterRadius);
+        UE_LOG(LogTemp, Warning, TEXT("Outer Zone: Inner Radius = %f, Outer Radius = %f"), PlanetarySystemModel.OuterPlanetZoneRadius.InnerRadius, PlanetarySystemModel.OuterPlanetZoneRadius.OuterRadius);
+
+
 
        /* UE_LOG(LogTemp, Warning, TEXT("Habitable Zone: Inner = %f, Outer = %f"), PlanetarySystemModel.HabitableZoneRadius.Key, PlanetarySystemModel.HabitableZoneRadius.Value);
         UE_LOG(LogTemp, Warning, TEXT("Cold Zone: Inner = %f, Outer = %f"), PlanetarySystemModel.ColdZoneRadius.Key, PlanetarySystemModel.ColdZoneRadius.Value);
@@ -238,7 +310,7 @@ double UPlanetarySystemGenerator::RandGauss()
     double U = FMath::FRand();
     double V = FMath::FRand();
     double X = sqrt(-2.0 * log(U)) * cos(2.0 * PI * V);
-    return X;
+    return X * 0.15 + 0.5;
 }
 
 EOrbitDistributionType UPlanetarySystemGenerator::ChooseDistributionType(EStellarClass StellarClass, float StarMass, float MinOrbit, float MaxOrbit)
