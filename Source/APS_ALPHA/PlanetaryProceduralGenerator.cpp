@@ -8,11 +8,14 @@
 #include "PlanetarySystem.h"
 #include "PlanetarySystemGenerationModel.h"
 #include "OrbitDistributionType.h"
+#include "PlanetGenerationModel.h"
 
 void UPlanetarySystemGenerator::ApplyModel(APlanetarySystem* NewPlanetarySystem, FPlanetarySystemGenerationModel PlanetraySystemModel)
 {
     NewPlanetarySystem->SetAmountOfPlanets(PlanetraySystemModel.AmountOfPlanets);
     NewPlanetarySystem->SetPlanetarySystemType(PlanetraySystemModel.PlanetarySystemType);
+    NewPlanetarySystem->SetOrbitDistributionType(PlanetraySystemModel.OrbitDistributionType);
+    NewPlanetarySystem->SetStarSpectralClass(PlanetraySystemModel.StarSpectralClass);
 }
 
 
@@ -25,6 +28,8 @@ FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySyst
     // опредле€ем расположение орбит планет  
 
     FPlanetarySystemGenerationModel PlanetarySystemModel;
+    PlanetarySystemModel.StarSpectralClass = StarModel.SpectralClass;
+
     // Ќаходим базовую веро€тность дл€ данного типа звезды
     PlanetProbability BaseProbability = BasePlanetProbabilities[StarModel.StellarClass];
     // ћодифицируем веро€тность на основе массы звезды.
@@ -100,7 +105,7 @@ FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySyst
         FString OrbitType = UEnum::GetValueAsString(OrbitDistributionType);
         UE_LOG(LogTemp, Warning, TEXT("Orbit Distribution Type: %s"), *OrbitType);
 
-        TArray<double> OrbitRadii;
+        //TArray<double> OrbitRadii;
         for (int i = 0; i < FinalPlanetCount; i++)
         {
             double OrbitDistributionValue;
@@ -286,8 +291,58 @@ FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySyst
 		PlanetarySystemModel.PlanetarySystemType = EPlanetarySystemType::NoPlanetSystem;
 	}
 
+
+    //PlanetarySystemModel.PlanetarySystemType = DetermineSystemType(PlanetarySystemModel);
+
+
+
+    // populate planets list
+    for (double OrbitRadius : OrbitRadii)
+    {
+
+        FPlanetGenerationModel PlanetModel;// = GeneratePlanet(PlanetarySystemModel, OrbitRadius);
+        PlanetModel.OrbitDistance = OrbitRadius;
+
+        PlanetModel.PlanetType = DeterminePlanetType(PlanetModel);
+        //
+
+
+    }
+
+
     return PlanetarySystemModel;
 }
+
+EPlanetType UPlanetarySystemGenerator::DeterminePlanetType(FPlanetGenerationModel PlanetModel)
+{
+
+    return EPlanetType::Unknown;
+
+}
+
+//EPlanetarySystemType UPlanetarySystemGenerator::DetermineSystemType(FPlanetarySystemGenerationModel PlanetarySystemModel) {
+//    int PlanetCount = system.GetPlanetCount();
+//    int GasGiantCount = system.GetGasGiantCount();
+//    int habitableZonePlanetCount = system.GetHabitableZonePlanetCount();
+//
+//    if (planetCount == 0) {
+//        return EPlanetarySystemType::NoPlanetSystem;
+//    }
+//    else if (planetCount == 1) {
+//        return EPlanetarySystemType::SinglePlanetSystem;
+//    }
+//    else {
+//        if (habitableZonePlanetCount > 0) {
+//            return EPlanetarySystemType::HabitableZoneSystem;
+//        }
+//        else if (gasGiantCount / static_cast<double>(planetCount) >= 0.5) { // ≈сли 50% или более планет €вл€ютс€ газовыми гигантами
+//            return EPlanetarySystemType::GasGiantDominatedSystem;
+//        }
+//        else {
+//            return EPlanetarySystemType::MultiPlanetSystem;
+//        }
+//    }
+//}
 
 double UPlanetarySystemGenerator::RandGauss()
 {
@@ -408,70 +463,73 @@ int UPlanetarySystemGenerator::DetermineMaxPlanets(EStellarClass StellarClass, F
     return MaxPlanets;
 }
 
-FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GenerateRandomPlanetraySystemModelByStar(FStarGenerationModel StarModel)
-{
-    FPlanetarySystemGenerationModel PlanetarySystemModel;
-    EStellarClass StellarClass = StarModel.StellarClass;
-    EPlanetarySystemType PlanetarySystemType = GetRandomWithProbability(StarSystemTypeProbabilities[StellarClass].SystemTypeProbabilities);
-    PlanetarySystemModel.PlanetarySystemType = PlanetarySystemType;
 
-    // ѕолучаем диапазон значений дл€ данного типа системы
-    FPlanetarySystemRanges SystemRanges = PlanetarySystemRanges[PlanetarySystemType];
+/// TODO:
+//FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GenerateRandomPlanetraySystemModelByStar(FStarGenerationModel StarModel)
+//{
+//    FPlanetarySystemGenerationModel PlanetarySystemModel;
+//    EStellarClass StellarClass = StarModel.StellarClass;
+//    EPlanetarySystemType PlanetarySystemType = GetRandomWithProbability(StarSystemTypeProbabilities[StellarClass].SystemTypeProbabilities);
+//    PlanetarySystemModel.PlanetarySystemType = PlanetarySystemType;
+//
+//    // ѕолучаем диапазон значений дл€ данного типа системы
+//    FPlanetarySystemRanges SystemRanges = PlanetarySystemRanges[PlanetarySystemType];
+//
+//    // √енерируем случайное значение в диапазоне
+//    int AmountOfPlanets = FMath::RandRange(SystemRanges.AmountOfPlanetsRange.Get<0>(), SystemRanges.AmountOfPlanetsRange.Get<1>());
+//    PlanetarySystemModel.AmountOfPlanets = AmountOfPlanets;
+//
+//    double DistanceBetweenPlanets = FMath::RandRange(SystemRanges.DistanceBetweenPlanetsRange.Get<0>(), SystemRanges.DistanceBetweenPlanetsRange.Get<1>());
+//    PlanetarySystemModel.DistanceBetweenPlanets = DistanceBetweenPlanets;
+//
+//    return PlanetarySystemModel;
+//}
 
-    // √енерируем случайное значение в диапазоне
-    int AmountOfPlanets = FMath::RandRange(SystemRanges.AmountOfPlanetsRange.Get<0>(), SystemRanges.AmountOfPlanetsRange.Get<1>());
-    PlanetarySystemModel.AmountOfPlanets = AmountOfPlanets;
 
-    double DistanceBetweenPlanets = FMath::RandRange(SystemRanges.DistanceBetweenPlanetsRange.Get<0>(), SystemRanges.DistanceBetweenPlanetsRange.Get<1>());
-    PlanetarySystemModel.DistanceBetweenPlanets = DistanceBetweenPlanets;
-
-    return PlanetarySystemModel;
-}
-
-
-FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GenerateRandomPlanetraySystemModel()
-{
-    FPlanetarySystemGenerationModel PlanetarySystemModel;
-
-    int32 RandomValue = FMath::RandRange(0, 100);
-
-    // ¬еса дл€ каждого типа системы
-    int32 NoPlanetSystemWeight = 10; // 10%
-    int32 SmallSystemWeight = 30; // 30%
-    int32 LargeSystemWeight = 25; // 25%
-    int32 ChaoticSystemWeight = 20; // 20%
-    int32 DenseSystemWeight = 15; // 15%
-
-    if (RandomValue < NoPlanetSystemWeight)
-    {
-        PlanetarySystemModel.PlanetarySystemType = EPlanetarySystemType::NoPlanetSystem;
-        PlanetarySystemModel.AmountOfPlanets = 0;
-        PlanetarySystemModel.DistanceBetweenPlanets = 0.0;
-    }
-    else if (RandomValue < NoPlanetSystemWeight + SmallSystemWeight)
-    {
-        PlanetarySystemModel.PlanetarySystemType = EPlanetarySystemType::SmallSystem;
-        PlanetarySystemModel.AmountOfPlanets = FMath::RandRange(1, 5);
-        PlanetarySystemModel.DistanceBetweenPlanets = FMath::RandRange(1.0, 3.0);
-    }
-    else if (RandomValue < NoPlanetSystemWeight + SmallSystemWeight + LargeSystemWeight)
-    {
-        PlanetarySystemModel.PlanetarySystemType = EPlanetarySystemType::LargeSystem;
-        PlanetarySystemModel.AmountOfPlanets = FMath::RandRange(6, 12);
-        PlanetarySystemModel.DistanceBetweenPlanets = FMath::RandRange(1.0, 5.0);
-    }
-    else if (RandomValue < NoPlanetSystemWeight + SmallSystemWeight + LargeSystemWeight + ChaoticSystemWeight)
-    {
-        PlanetarySystemModel.PlanetarySystemType = EPlanetarySystemType::ChaoticSystem;
-        PlanetarySystemModel.AmountOfPlanets = FMath::RandRange(5, 12);
-        PlanetarySystemModel.DistanceBetweenPlanets = FMath::RandRange(0.1, 2.0);
-    }
-    else
-    {
-        PlanetarySystemModel.PlanetarySystemType = EPlanetarySystemType::DenseSystem;
-        PlanetarySystemModel.AmountOfPlanets = FMath::RandRange(3, 10);
-        PlanetarySystemModel.DistanceBetweenPlanets = FMath::RandRange(0.2, 1.0);
-    }
-
-    return PlanetarySystemModel;
-}
+/// TODO:
+//FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GenerateRandomPlanetraySystemModel()
+//{
+//    FPlanetarySystemGenerationModel PlanetarySystemModel;
+//
+//    int32 RandomValue = FMath::RandRange(0, 100);
+//
+//    // ¬еса дл€ каждого типа системы
+//    int32 NoPlanetSystemWeight = 10; // 10%
+//    int32 SmallSystemWeight = 30; // 30%
+//    int32 LargeSystemWeight = 25; // 25%
+//    int32 ChaoticSystemWeight = 20; // 20%
+//    int32 DenseSystemWeight = 15; // 15%
+//
+//    if (RandomValue < NoPlanetSystemWeight)
+//    {
+//        PlanetarySystemModel.PlanetarySystemType = EPlanetarySystemType::NoPlanetSystem;
+//        PlanetarySystemModel.AmountOfPlanets = 0;
+//        PlanetarySystemModel.DistanceBetweenPlanets = 0.0;
+//    }
+//    else if (RandomValue < NoPlanetSystemWeight + SmallSystemWeight)
+//    {
+//        PlanetarySystemModel.PlanetarySystemType = EPlanetarySystemType::SmallSystem;
+//        PlanetarySystemModel.AmountOfPlanets = FMath::RandRange(1, 5);
+//        PlanetarySystemModel.DistanceBetweenPlanets = FMath::RandRange(1.0, 3.0);
+//    }
+//    else if (RandomValue < NoPlanetSystemWeight + SmallSystemWeight + LargeSystemWeight)
+//    {
+//        PlanetarySystemModel.PlanetarySystemType = EPlanetarySystemType::LargeSystem;
+//        PlanetarySystemModel.AmountOfPlanets = FMath::RandRange(6, 12);
+//        PlanetarySystemModel.DistanceBetweenPlanets = FMath::RandRange(1.0, 5.0);
+//    }
+//    else if (RandomValue < NoPlanetSystemWeight + SmallSystemWeight + LargeSystemWeight + ChaoticSystemWeight)
+//    {
+//        PlanetarySystemModel.PlanetarySystemType = EPlanetarySystemType::ChaoticSystem;
+//        PlanetarySystemModel.AmountOfPlanets = FMath::RandRange(5, 12);
+//        PlanetarySystemModel.DistanceBetweenPlanets = FMath::RandRange(0.1, 2.0);
+//    }
+//    else
+//    {
+//        PlanetarySystemModel.PlanetarySystemType = EPlanetarySystemType::DenseSystem;
+//        PlanetarySystemModel.AmountOfPlanets = FMath::RandRange(3, 10);
+//        PlanetarySystemModel.DistanceBetweenPlanets = FMath::RandRange(0.2, 1.0);
+//    }
+//
+//    return PlanetarySystemModel;
+//}

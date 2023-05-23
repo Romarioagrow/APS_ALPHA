@@ -1,6 +1,8 @@
 #pragma once
 #include "PlanetarySystemType.h"
 #include "OrbitDistributionType.h" 
+#include "StarSpectralClass.h" 
+#include "PlanetGenerationModel.h"
 
 #include "GenerationModel.h"
 #include "CoreMinimal.h"
@@ -32,6 +34,18 @@ struct FZoneRadius
 };
 
 USTRUCT(BlueprintType)
+struct FPlanetData {
+
+	GENERATED_USTRUCT_BODY()
+
+		int PlanetOrder;
+
+		double OrbitRadius;
+
+		FPlanetGenerationModel PlanetModel;
+};
+
+USTRUCT(BlueprintType)
 struct FPlanetarySystemGenerationModel :
     public FGenerationModel
 {
@@ -50,6 +64,18 @@ struct FPlanetarySystemGenerationModel :
     
     UPROPERTY(VisibleAnywhere)
         EOrbitDistributionType OrbitDistributionType;
+
+	UPROPERTY(VisibleAnywhere)
+		ESpectralClass StarSpectralClass;
+	
+	UPROPERTY(VisibleAnywhere)
+		FPlanetData PlanetsList;
+
+
+
+
+
+	/// TODO: To one struct
 
 	UPROPERTY(VisibleAnywhere, Category = "Zones")
 		FZoneRadius DeadZoneRadius;
@@ -83,77 +109,6 @@ struct FPlanetarySystemGenerationModel :
 	
 	UPROPERTY(VisibleAnywhere, Category = "Zones")
 		FZoneRadius GasGiantsZoneRadius;
-
-	//UPROPERTY(VisibleAnywhere, Category = "Zones")
-	//	FZoneRadius HabitableZoneRadius;
-
-	//UPROPERTY(VisibleAnywhere)
-	//	FZoneRadius ColdZoneRadius;
-
-	//UPROPERTY(VisibleAnywhere)
-	//	FZoneRadius IceZoneRadius;
-
-	//UPROPERTY(VisibleAnywhere)
-	//	FZoneRadius WarmZoneRadius;
-
-	//UPROPERTY(VisibleAnywhere)
-	//	FZoneRadius HotZoneRadius;
-
-	//UPROPERTY(VisibleAnywhere)
-	//	FZoneRadius InnerPlanetZoneRadius;
-
-	//UPROPERTY(VisibleAnywhere)
-	//	FZoneRadius OuterPlanetZoneRadius;
-
-	////UPROPERTY(VisibleAnywhere)
-	//	//TMap<int32, FZoneRadius> AsteroidBeltZoneRadius;
-
-	//UPROPERTY(VisibleAnywhere)
-	//	FZoneRadius KuiperBeltZoneRadius;
-
- //   //UPROPERTY(VisibleAnywhere)
-	//	TPair<double, double> HabitableZoneRadius;
-
-
-	//// Habitable Zone
-	////UPROPERTY(VisibleAnywhere)
-	//	TPair<double, double> HabitableZoneRadius;
-
-	//// Cold Zone
-	////UPROPERTY(VisibleAnywhere)
-	//	TPair<double, double> ColdZoneRadius;
-
-	//// Ice Zone
-	////UPROPERTY(VisibleAnywhere)
-	//	TPair<double, double> IceZoneRadius;
-
-	//// Warm Zone
-	////UPROPERTY(VisibleAnywhere)
-	//	TPair<double, double> WarmZoneRadius;
-
-	//// Hot Zone
-	////UPROPERTY(VisibleAnywhere)
-	//	TPair<double, double> HotZoneRadius;
-
-	//// Gas Giants Zone
-	////UPROPERTY(VisibleAnywhere)
-	//	TPair<double, double> GasGiantsZoneRadius;
-
-	//// Asteroid Belt Zone
-	////UPROPERTY(VisibleAnywhere)
-	//	TPair<double, double> AsteroidBeltZoneRadius;
-
-	//// Kuiper Belt Zone
-	////UPROPERTY(VisibleAnywhere)
-	//	TPair<double, double> KuiperBeltZoneRadius;
-
-	//// Inner Zone
-	////UPROPERTY(VisibleAnywhere)
-	//	TPair<double, double> InnerZoneRadius;
-
-	//// Outer Zone
-	////UPROPERTY(VisibleAnywhere)
-	//	TPair<double, double> OuterZoneRadius;
 
 };
 

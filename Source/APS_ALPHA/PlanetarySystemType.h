@@ -8,19 +8,19 @@ enum class EPlanetarySystemType : uint8
 {
     NoPlanetSystem
     UMETA(DisplayName = "No Planet System"),
-    
-    SmallSystem
-    UMETA(DisplayName = "Small System"),
-    
-    LargeSystem
-    UMETA(DisplayName = "Large System"),
-    
-    ChaoticSystem
-    UMETA(DisplayName = "Chaotic System"),
-    
-    DenseSystem
-    UMETA(DisplayName = "Dense System"),
-    
+
+    SinglePlanetSystem
+    UMETA(DisplayName = "Single Planet System"),
+
+    MultiPlanetSystem
+    UMETA(DisplayName = "Multi Planet System"),
+
+    HabitableZoneSystem
+    UMETA(DisplayName = "Habitable Zone System"),
+
+    GasGiantDominatedSystem
+    UMETA(DisplayName = "Gas Giant Dominated System"),
+
     Unknown
     UMETA(DisplayName = "Unknown"),
 };

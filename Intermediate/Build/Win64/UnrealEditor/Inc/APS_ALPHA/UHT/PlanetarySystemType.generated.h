@@ -20,10 +20,10 @@ PRAGMA_DISABLE_DEPRECATION_WARNINGS
 
 #define FOREACH_ENUM_EPLANETARYSYSTEMTYPE(op) \
 	op(EPlanetarySystemType::NoPlanetSystem) \
-	op(EPlanetarySystemType::SmallSystem) \
-	op(EPlanetarySystemType::LargeSystem) \
-	op(EPlanetarySystemType::ChaoticSystem) \
-	op(EPlanetarySystemType::DenseSystem) \
+	op(EPlanetarySystemType::SinglePlanetSystem) \
+	op(EPlanetarySystemType::MultiPlanetSystem) \
+	op(EPlanetarySystemType::HabitableZoneSystem) \
+	op(EPlanetarySystemType::GasGiantDominatedSystem) \
 	op(EPlanetarySystemType::Unknown) 
 
 enum class EPlanetarySystemType : uint8;

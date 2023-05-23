@@ -34,7 +34,8 @@ PRAGMA_DISABLE_DEPRECATION_WARNINGS
 	op(EPlanetType::Ammonia) \
 	op(EPlanetType::Iron) \
 	op(EPlanetType::Carbon) \
-	op(EPlanetType::SuperEarth) 
+	op(EPlanetType::SuperEarth) \
+	op(EPlanetType::Unknown) 
 
 enum class EPlanetType : uint8;
 template<> struct TIsUEnumClass<EPlanetType> { enum { Value = true }; };

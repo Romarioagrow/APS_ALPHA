@@ -58,16 +58,11 @@ private:
 
 	ESpectralClass ChooseSpectralClassByStellarClass(EStellarClass StellarClass);
 
-
 	ESpectralClass DetermineSpectralClassByTemperature(EStellarClass StarType, double Temperature);
 
 	double CalculateLuminosity(double Radius, double SurfaceTemperature);
 
 	double GenerateRandomTemperatureBySpectralClass(ESpectralClass SpectralClass);
-
-	//double GenerateRandomLuminosity(EStellarClass StarType);
-	//double GenerateRandomMass(EStellarClass StarType);
-	//double GenerateRandomRadius(EStellarClass StarType);
 
 private:
 
@@ -82,9 +77,9 @@ private:
 	TMap<EStellarClass, int> StarTypeWeights =
 	{
 		{EStellarClass::HyperGiant, 1}, // Гипергиганты
-		{EStellarClass::SuperGiant, 11113}, // Супергиганты
+		{EStellarClass::SuperGiant, 3}, // Супергиганты
 		{EStellarClass::BrightGiant, 3}, // Белые карлики
-		{EStellarClass::Giant,11115}, // Гиганты
+		{EStellarClass::Giant, 5}, // Гиганты
 		{EStellarClass::SubGiant, 5}, // Супергиганты
 		{EStellarClass::MainSequence, 80}, // Главная последовательность
 		{EStellarClass::SubDwarf, 5}, // Субкарлики
