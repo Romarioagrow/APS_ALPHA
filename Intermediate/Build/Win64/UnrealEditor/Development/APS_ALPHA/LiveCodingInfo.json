@@ -1,7 +1,7 @@
 {
 	"RemapUnityFiles": 
 	{
-		"Module.APS_ALPHA.cpp.obj": [
+		"Module.APS_ALPHA.1_of_3.cpp.obj": [
 			"Aircraft.gen.cpp.obj",
 			"AnimationState.gen.cpp.obj",
 			"APS_ALPHAGameModeBase.gen.cpp.obj",
@@ -53,6 +53,9 @@
 			"OrbitDistributionType.gen.cpp.obj",
 			"PilotingVehicle.gen.cpp.obj",
 			"Planet.gen.cpp.obj",
+			"APS_ALPHA.init.gen.cpp.obj"
+		],
+		"Module.APS_ALPHA.2_of_3.cpp.obj": [
 			"PlanetaryEnvironment.gen.cpp.obj",
 			"PlanetaryProceduralGenerator.gen.cpp.obj",
 			"PlanetarySystemType.gen.cpp.obj",
@@ -107,6 +110,7 @@
 			"Environment.cpp.obj",
 			"Galaxy.cpp.obj",
 			"GalaxySector.cpp.obj",
+			"GeneratedWorld.cpp.obj",
 			"GenerationModel.cpp.obj",
 			"Geosphere.cpp.obj",
 			"GravityActor.cpp.obj",
@@ -143,7 +147,13 @@
 			"SpaceStation.cpp.obj",
 			"Star.cpp.obj",
 			"StarGenerationModel.cpp.obj",
-			"StarGenerator.cpp.obj",
+			"PlanetarySystem.gen.cpp.obj",
+			"PlanetarySystemGenerationModel.gen.cpp.obj",
+			"PlanetaryProceduralGenerator.cpp.obj",
+			"PlanetarySystem.cpp.obj",
+			"StarGenerator.cpp.obj"
+		],
+		"Module.APS_ALPHA.3_of_3.cpp.obj": [
 			"StarSector.cpp.obj",
 			"StarSystem.cpp.obj",
 			"StarSystemGenerationModel.cpp.obj",
@@ -154,13 +164,7 @@
 			"TechObject.cpp.obj",
 			"UniverseProceduralGenerator.cpp.obj",
 			"VehicleControlling.cpp.obj",
-			"WorldActor.cpp.obj",
-			"APS_ALPHA.init.gen.cpp.obj",
-			"PlanetarySystem.gen.cpp.obj",
-			"PlanetarySystemGenerationModel.gen.cpp.obj",
-			"GeneratedWorld.cpp.obj",
-			"PlanetaryProceduralGenerator.cpp.obj",
-			"PlanetarySystem.cpp.obj"
+			"WorldActor.cpp.obj"
 		]
 	}
 }

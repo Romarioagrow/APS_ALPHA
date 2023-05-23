@@ -1,6 +1,5 @@
 #pragma once
 #include "PlanetarySystemType.h"
-#include "Containers/UnrealString.h" 
 #include "OrbitDistributionType.h" 
 
 #include "GenerationModel.h"
@@ -8,23 +7,29 @@
 #include "PlanetarySystemGenerationModel.generated.h"
 
 
-//USTRUCT(BlueprintType)
-//struct FZoneRadius
-//{
-//	GENERATED_USTRUCT_BODY()
-//
-//		UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Zone")
-//		double InnerRadius;
-//
-//	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Zone")
-//		double OuterRadius;
-//
-//	FZoneRadius()
-//	{
-//		InnerRadius = 0.0;
-//		OuterRadius = 0.0;
-//	}
-//};
+USTRUCT(BlueprintType)
+struct FZoneRadius
+{
+	GENERATED_USTRUCT_BODY()
+
+		UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Zone")
+		double InnerRadius;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Zone")
+		double OuterRadius;
+
+	FZoneRadius()
+	{
+		InnerRadius = 0.0;
+		OuterRadius = 0.0;
+	}
+
+	FZoneRadius(double InnerRadius, double OuterRadius)
+	{
+		this->InnerRadius = InnerRadius;
+		this->OuterRadius = OuterRadius;
+	}
+};
 
 USTRUCT(BlueprintType)
 struct FPlanetarySystemGenerationModel :
@@ -45,6 +50,36 @@ struct FPlanetarySystemGenerationModel :
     
     UPROPERTY(VisibleAnywhere)
         EOrbitDistributionType OrbitDistributionType;
+
+	UPROPERTY(VisibleAnywhere, Category = "Zones")
+		FZoneRadius HabitableZoneRadius;
+
+	UPROPERTY(VisibleAnywhere, Category = "Zones")
+		FZoneRadius ColdZoneRadius;
+
+	UPROPERTY(VisibleAnywhere, Category = "Zones")
+		FZoneRadius IceZoneRadius;
+
+	UPROPERTY(VisibleAnywhere, Category = "Zones")
+		FZoneRadius WarmZoneRadius;
+
+	UPROPERTY(VisibleAnywhere, Category = "Zones")
+		FZoneRadius HotZoneRadius;
+
+	UPROPERTY(VisibleAnywhere, Category = "Zones")
+		FZoneRadius InnerPlanetZoneRadius;
+
+	UPROPERTY(VisibleAnywhere, Category = "Zones")
+		FZoneRadius OuterPlanetZoneRadius;
+
+	UPROPERTY(VisibleAnywhere, Category = "Zones")
+		TMap<int32, FZoneRadius> AsteroidBeltZoneRadius;
+
+	UPROPERTY(VisibleAnywhere, Category = "Zones")
+		FZoneRadius KuiperBeltZoneRadius;
+	
+	UPROPERTY(VisibleAnywhere, Category = "Zones")
+		FZoneRadius GasGiantsZoneRadius;
 
 	//UPROPERTY(VisibleAnywhere, Category = "Zones")
 	//	FZoneRadius HabitableZoneRadius;

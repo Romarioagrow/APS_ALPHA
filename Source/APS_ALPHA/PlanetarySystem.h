@@ -5,7 +5,7 @@
 #include "Star.h"
 #include "PlanetarySystemType.h"
 #include "OrbitDistributionType.h"
-#include "Containers/UnrealString.h" 
+#include "PlanetarySystemGenerationModel.h"
 
 #include "CoreMinimal.h"
 #include "CelestialSystem.h"
@@ -32,6 +32,33 @@ private:
 	UPROPERTY(VisibleAnywhere)
 		EOrbitDistributionType OrbitDistributionType;
 
+	UPROPERTY(VisibleAnywhere, Category = "Zones")
+		FZoneRadius HabitableZoneRadius;
+
+	UPROPERTY(VisibleAnywhere, Category = "Zones")
+		FZoneRadius ColdZoneRadius;
+
+	UPROPERTY(VisibleAnywhere, Category = "Zones")
+		FZoneRadius IceZoneRadius;
+
+	UPROPERTY(VisibleAnywhere, Category = "Zones")
+		FZoneRadius WarmZoneRadius;
+
+	UPROPERTY(VisibleAnywhere, Category = "Zones")
+		FZoneRadius HotZoneRadius;
+
+	UPROPERTY(VisibleAnywhere, Category = "Zones")
+		FZoneRadius InnerPlanetZoneRadius;
+
+	UPROPERTY(VisibleAnywhere, Category = "Zones")
+		FZoneRadius OuterPlanetZoneRadius;
+
+	UPROPERTY(VisibleAnywhere, Category = "Zones")
+		TMap<int32, FZoneRadius> AsteroidBeltZoneRadius;
+	
+	UPROPERTY(VisibleAnywhere, Category = "Zones")
+		FZoneRadius KuiperBeltZoneRadius;
+
 	//// habitat zone
 	//UPROPERTY(VisibleAnywhere)
 	//	double InnerHabitableZoneRadius;
@@ -46,7 +73,7 @@ private:
 
 	//// Habitable Zone
 	////UPROPERTY()
-	//	TPair<double, double> HabitableZoneRadius;
+	//	TPair<double, double> HabitableZoneRadius1;
 
 	//// Cold Zone
 	////UPROPERTY()
