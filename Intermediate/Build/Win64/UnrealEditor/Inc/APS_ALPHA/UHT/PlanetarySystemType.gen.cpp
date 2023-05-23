@@ -35,26 +35,26 @@ void EmptyLinkFunctionForGeneratedCodePlanetarySystemType() {}
 	};
 	const UECodeGen_Private::FEnumeratorParam Z_Construct_UEnum_APS_ALPHA_EPlanetarySystemType_Statics::Enumerators[] = {
 		{ "EPlanetarySystemType::NoPlanetSystem", (int64)EPlanetarySystemType::NoPlanetSystem },
-		{ "EPlanetarySystemType::SmallSystem", (int64)EPlanetarySystemType::SmallSystem },
-		{ "EPlanetarySystemType::LargeSystem", (int64)EPlanetarySystemType::LargeSystem },
-		{ "EPlanetarySystemType::ChaoticSystem", (int64)EPlanetarySystemType::ChaoticSystem },
-		{ "EPlanetarySystemType::DenseSystem", (int64)EPlanetarySystemType::DenseSystem },
+		{ "EPlanetarySystemType::SinglePlanetSystem", (int64)EPlanetarySystemType::SinglePlanetSystem },
+		{ "EPlanetarySystemType::MultiPlanetSystem", (int64)EPlanetarySystemType::MultiPlanetSystem },
+		{ "EPlanetarySystemType::HabitableZoneSystem", (int64)EPlanetarySystemType::HabitableZoneSystem },
+		{ "EPlanetarySystemType::GasGiantDominatedSystem", (int64)EPlanetarySystemType::GasGiantDominatedSystem },
 		{ "EPlanetarySystemType::Unknown", (int64)EPlanetarySystemType::Unknown },
 	};
 #if WITH_METADATA
 	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UEnum_APS_ALPHA_EPlanetarySystemType_Statics::Enum_MetaDataParams[] = {
 		{ "BlueprintType", "true" },
-		{ "ChaoticSystem.DisplayName", "Chaotic System" },
-		{ "ChaoticSystem.Name", "EPlanetarySystemType::ChaoticSystem" },
-		{ "DenseSystem.DisplayName", "Dense System" },
-		{ "DenseSystem.Name", "EPlanetarySystemType::DenseSystem" },
-		{ "LargeSystem.DisplayName", "Large System" },
-		{ "LargeSystem.Name", "EPlanetarySystemType::LargeSystem" },
+		{ "GasGiantDominatedSystem.DisplayName", "Gas Giant Dominated System" },
+		{ "GasGiantDominatedSystem.Name", "EPlanetarySystemType::GasGiantDominatedSystem" },
+		{ "HabitableZoneSystem.DisplayName", "Habitable Zone System" },
+		{ "HabitableZoneSystem.Name", "EPlanetarySystemType::HabitableZoneSystem" },
 		{ "ModuleRelativePath", "PlanetarySystemType.h" },
+		{ "MultiPlanetSystem.DisplayName", "Multi Planet System" },
+		{ "MultiPlanetSystem.Name", "EPlanetarySystemType::MultiPlanetSystem" },
 		{ "NoPlanetSystem.DisplayName", "No Planet System" },
 		{ "NoPlanetSystem.Name", "EPlanetarySystemType::NoPlanetSystem" },
-		{ "SmallSystem.DisplayName", "Small System" },
-		{ "SmallSystem.Name", "EPlanetarySystemType::SmallSystem" },
+		{ "SinglePlanetSystem.DisplayName", "Single Planet System" },
+		{ "SinglePlanetSystem.Name", "EPlanetarySystemType::SinglePlanetSystem" },
 		{ "Unknown.DisplayName", "Unknown" },
 		{ "Unknown.Name", "EPlanetarySystemType::Unknown" },
 	};
@@ -84,9 +84,9 @@ void EmptyLinkFunctionForGeneratedCodePlanetarySystemType() {}
 		static const FEnumRegisterCompiledInInfo EnumInfo[];
 	};
 	const FEnumRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_PlanetarySystemType_h_Statics::EnumInfo[] = {
-		{ EPlanetarySystemType_StaticEnum, TEXT("EPlanetarySystemType"), &Z_Registration_Info_UEnum_EPlanetarySystemType, CONSTRUCT_RELOAD_VERSION_INFO(FEnumReloadVersionInfo, 1543107703U) },
+		{ EPlanetarySystemType_StaticEnum, TEXT("EPlanetarySystemType"), &Z_Registration_Info_UEnum_EPlanetarySystemType, CONSTRUCT_RELOAD_VERSION_INFO(FEnumReloadVersionInfo, 3370777339U) },
 	};
-	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_PlanetarySystemType_h_74244699(TEXT("/Script/APS_ALPHA"),
+	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_PlanetarySystemType_h_3724600972(TEXT("/Script/APS_ALPHA"),
 		nullptr, 0,
 		nullptr, 0,
 		Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_PlanetarySystemType_h_Statics::EnumInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_PlanetarySystemType_h_Statics::EnumInfo));

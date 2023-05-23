@@ -5,6 +5,7 @@
 #include "StarGenerationModel.h"
 #include "PlanetarySystem.h"
 #include "OrbitDistributionType.h"
+#include "PlanetGenerationModel.h"
 
 #include "CoreMinimal.h"
 #include "BaseProceduralGenerator.h"
@@ -20,25 +21,24 @@ class APS_ALPHA_API UPlanetarySystemGenerator : public UBaseProceduralGenerator
 
 public:
 	
-    void ApplyModel(APlanetarySystem* NewPlanetarySystem, FPlanetarySystemGenerationModel PlanetraySystemModel);
+    //void ApplyModel(APlanetarySystem* NewPlanetarySystem, FPlanetarySystemGenerationModel PlanetraySystemModel);
 
-    FPlanetarySystemGenerationModel GenerateRandomPlanetraySystemModelByStar(FStarGenerationModel StarModel);
+   // FPlanetarySystemGenerationModel GenerateRandomPlanetraySystemModelByStar(FStarGenerationModel StarModel);
 
-    int DetermineMaxPlanets(EStellarClass StellarClass, double StarMass);
-
-    //EOrbitDistributionType ChooseDistributionType(EStellarClass StellarClass, float StarMass, float MinOrbit, float MaxOrbit);
-
-   // EOrbitDistributionType ChooseDistributionType(EStellarClass StellarClass, float StarMass, float MinOrbit, float MaxOrbit);
-
+   // int DetermineMaxPlanets(EStellarClass StellarClass, double StarMass);
 
     int DetermineMaxPlanets(EStellarClass StellarClass, FStarGenerationModel StarModel);
 
+    void ApplyModel(APlanetarySystem* NewPlanetarySystem, FPlanetarySystemGenerationModel PlanetraySystemModel);
+
     FPlanetarySystemGenerationModel GeneratePlanetraySystemModelByStar(FStarGenerationModel StarModel);
 
-	FPlanetarySystemGenerationModel GenerateRandomPlanetraySystemModel(); 
+	//FPlanetarySystemGenerationModel GenerateRandomPlanetraySystemModel(); 
     
 private:
-    EOrbitDistributionType ChooseDistributionType(EStellarClass StellarClass, float StarMass, float OrbitRange);
+    EPlanetType DeterminePlanetType(FPlanetGenerationModel PlanetModel);
+
+ //   EOrbitDistributionType ChooseDistributionType(EStellarClass StellarClass, float StarMass, float OrbitRange);
 
     double RandGauss();
 
@@ -46,54 +46,11 @@ private:
 
     EOrbitDistributionType ChooseOrbitDistribution(EStellarClass stellarClass);
 
+    TArray<double> OrbitRadii;
+
 typedef float PlanetProbability;
 
 private:
-
-  /*  TMap<EPlanetarySystemType, EOrbitDistributionType> PlanetarySystemRanges =
-    {
-        {EPlanetarySystemType::NoPlanetSystem, FPlanetarySystemRanges(TTuple<int, int>(0, 0), TTuple<double, double>(0.0, 0.0))},
-        {EPlanetarySystemType::SmallSystem, FPlanetarySystemRanges(TTuple<int, int>(1, 5), TTuple<double, double>(1.0, 3.0))},
-        {EPlanetarySystemType::LargeSystem, FPlanetarySystemRanges(TTuple<int, int>(6, 12), TTuple<double, double>(1.0, 5.0))},
-        {EPlanetarySystemType::ChaoticSystem, FPlanetarySystemRanges(TTuple<int, int>(5, 12), TTuple<double, double>(0.1, 2.0))},
-        {EPlanetarySystemType::DenseSystem, FPlanetarySystemRanges(TTuple<int, int>(3, 10), TTuple<double, double>(0.2, 1.0))}
-    };*/
-
-
-    //TMap<EStellarClass, EOrbitDistributionType> StellarOrbitDistributions = 
-    //{
-    //    {EStellarClass::HyperGiant, {{EOrbitDistributionType::Uniform, 0.05f}, {EOrbitDistributionType::Gaussian, 0.10f}, {EOrbitDistributionType::Chaotic, 0.50f}, {EOrbitDistributionType::InnerOuter, 0.25f}, {EOrbitDistributionType::Dense, 0.10f}}},
-    //    {EStellarClass::SuperGiant, {{EOrbitDistributionType::Uniform, 0.05f}, {EOrbitDistributionType::Gaussian, 0.20f}, {EOrbitDistributionType::Chaotic, 0.50f}, {EOrbitDistributionType::InnerOuter, 0.20f}, {EOrbitDistributionType::Dense, 0.05f}}},
-    //// Заполните остальные значения самостоятельно...
-    //};
-
-    //TMap<EStellarClass, TMap<EOrbitDistributionType, float>> StellarOrbitDistributions =
-    //{
-    //    {
-    //        EStellarClass::HyperGiant,
-    //        {
-    //            {EOrbitDistributionType::Uniform, 0.05f},
-    //            {EOrbitDistributionType::Gaussian, 0.10f},
-    //            {EOrbitDistributionType::Chaotic, 0.50f},
-    //            {EOrbitDistributionType::InnerOuter, 0.25f},
-    //            {EOrbitDistributionType::Dense, 0.10f}
-    //        }
-    //    },
-    //    {
-    //        EStellarClass::SuperGiant,
-    //        {
-    //            {EOrbitDistributionType::Uniform, 0.10f},
-    //            {EOrbitDistributionType::Gaussian, 0.20f},
-    //            {EOrbitDistributionType::Chaotic, 0.40f},
-    //            {EOrbitDistributionType::InnerOuter, 0.20f},
-    //            {EOrbitDistributionType::Dense, 0.10f}
-    //        }
-    //    },
-    //    // далее заполняем остальные значения, следуя аналогичной структуре
-    //    // используйте данные из вашей таблицы...
-    //};
-
-
     TMap<EStellarClass, TMap<EOrbitDistributionType, float>> StellarOrbitDistributions =
     {
         {
@@ -131,7 +88,6 @@ private:
             {
                 {EOrbitDistributionType::Uniform, 0.20f}, 
                 {EOrbitDistributionType::Gaussian, 0.30f}, 
-                //{EOrbitDistributionType::Chaotic, 11110.25f}, 
                 {EOrbitDistributionType::Chaotic, 0.25f}, 
                 {EOrbitDistributionType::InnerOuter, 0.15f},
                 {EOrbitDistributionType::Dense, 0.10f}
@@ -238,7 +194,6 @@ private:
         }
     };
 
-
     TMap<EStellarClass, int> BasePlanetCount = {
         {EStellarClass::HyperGiant, 15},
         {EStellarClass::SuperGiant, 10},
@@ -253,22 +208,6 @@ private:
         {EStellarClass::Protostar, 2},
         {EStellarClass::Pulsar, 1},
         {EStellarClass::BlackHole, 0},
-        
-    //HyperGiant		UMETA(DisplayName = "Hypergiant"), // Гипергиганты (экстремально большие звезды)
-    //SuperGiant		UMETA(DisplayName = "Super Giant"), // Супергиганты (наибольшие звезды)
-    //BrightGiant		UMETA(DisplayName = "Bright Giant"), // BrightGiant
-    //Giant			UMETA(DisplayName = "Giant"), // Гиганты (большие звезды)
-    //SubGiant		UMETA(DisplayName = "SubGiant"), // SubGiant 
-    //MainSequence	UMETA(DisplayName = "Main Sequence"), // Главная последовательность (как наше Солнце)
-    //SubDwarf		UMETA(DisplayName = "Subdwarf"), // Субкарлики (звезды с малой яркостью и размером)
-    //WhiteDwarf		UMETA(DisplayName = "White Dwarf"), // Белые карлики (маленькие, горячие звезды)
-    //BrownDwarf		UMETA(DisplayName = "Brown Dwarf"), // Коричневые карлики (не достаточно массы для начала термоядерных реакций)
-    //Neutron			UMETA(DisplayName = "Neutron Star"), // Нейтронные звезды (остатки взрывов суперновых, очень плотные)
-    //Protostar		UMETA(DisplayName = "Protostar"), // Протозвезды (молодые звезды, которые еще не начали основную термоядерную реакцию)
-    //Pulsar			UMETA(DisplayName = "Pulsar"), // Пульсары (вращающиеся нейтронные звезды, которые излучают импульсы радиоволн)
-    //BlackHole		UMETA(DisplayName = "Black Hole"), // Черные дыры (объекты с такой сильной гравитацией, что даже свет не может уйти)
-    //Unknown			UMETA(DisplayName = "Black Hole")
-    //// Добавьте остальные классы звезд по аналогии...
 };
 
     TMap<EStellarClass, PlanetProbability> BasePlanetProbabilities = 
@@ -320,16 +259,12 @@ private:
             : AmountOfPlanetsRange(Planets), DistanceBetweenPlanetsRange(Distance) {}
     };
 
-
-
-    TMap<EPlanetarySystemType, FPlanetarySystemRanges> PlanetarySystemRanges =
+    /*TMap<EPlanetarySystemType, FPlanetarySystemRanges> PlanetarySystemRanges =
     {
         {EPlanetarySystemType::NoPlanetSystem, FPlanetarySystemRanges(TTuple<int, int>(0, 0), TTuple<double, double>(0.0, 0.0))},
         {EPlanetarySystemType::SmallSystem, FPlanetarySystemRanges(TTuple<int, int>(1, 5), TTuple<double, double>(1.0, 3.0))},
         {EPlanetarySystemType::LargeSystem, FPlanetarySystemRanges(TTuple<int, int>(6, 12), TTuple<double, double>(1.0, 5.0))},
         {EPlanetarySystemType::ChaoticSystem, FPlanetarySystemRanges(TTuple<int, int>(5, 12), TTuple<double, double>(0.1, 2.0))},
         {EPlanetarySystemType::DenseSystem, FPlanetarySystemRanges(TTuple<int, int>(3, 10), TTuple<double, double>(0.2, 1.0))}
-    };
-
-
+    };*/
 };

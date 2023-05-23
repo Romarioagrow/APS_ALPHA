@@ -26,7 +26,7 @@ private:
 		float OrbitalSpeed;
 	
 	UPROPERTY(VisibleAnywhere)
-		double DistanceFromParent;
+		double OrbitDistance;
 	
 	UPROPERTY(VisibleAnywhere)
 		float AxialTilt;

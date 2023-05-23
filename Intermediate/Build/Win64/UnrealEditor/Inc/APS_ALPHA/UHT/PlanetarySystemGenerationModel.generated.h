@@ -14,14 +14,21 @@ PRAGMA_DISABLE_DEPRECATION_WARNINGS
 #endif
 #define APS_ALPHA_PlanetarySystemGenerationModel_generated_h
 
-#define FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_PlanetarySystemGenerationModel_h_13_GENERATED_BODY \
+#define FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_PlanetarySystemGenerationModel_h_15_GENERATED_BODY \
 	friend struct Z_Construct_UScriptStruct_FZoneRadius_Statics; \
 	APS_ALPHA_API static class UScriptStruct* StaticStruct();
 
 
 template<> APS_ALPHA_API UScriptStruct* StaticStruct<struct FZoneRadius>();
 
-#define FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_PlanetarySystemGenerationModel_h_38_GENERATED_BODY \
+#define FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_PlanetarySystemGenerationModel_h_39_GENERATED_BODY \
+	friend struct Z_Construct_UScriptStruct_FPlanetData_Statics; \
+	APS_ALPHA_API static class UScriptStruct* StaticStruct();
+
+
+template<> APS_ALPHA_API UScriptStruct* StaticStruct<struct FPlanetData>();
+
+#define FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_PlanetarySystemGenerationModel_h_52_GENERATED_BODY \
 	friend struct Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics; \
 	APS_ALPHA_API static class UScriptStruct* StaticStruct(); \
 	typedef FGenerationModel Super;

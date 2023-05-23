@@ -18,5 +18,6 @@ enum class EPlanetType : uint8
 	Ammonia		UMETA(DisplayName = "Ammonia Planet"), // Планеты аммиака, на которых преобладают аммиачные соединения
 	Iron		UMETA(DisplayName = "Iron Planet"), // Железные планеты, состоящие преимущественно из металлов
 	Carbon		UMETA(DisplayName = "Carbon Planet"), // Углеродные планеты, где преобладает углерод
-	SuperEarth	UMETA(DisplayName = "Super-Earth") // Супер-Земли, которые значительно больше нашей планеты
+	SuperEarth	UMETA(DisplayName = "Super-Earth"), // Супер-Земли, которые значительно больше нашей планеты
+	Unknown	UMETA(DisplayName = "Unknown") // Unknown
 };

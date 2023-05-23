@@ -42,9 +42,9 @@ void EmptyLinkFunctionForGeneratedCodeOrbitalBody() {}
 #endif
 		static const UECodeGen_Private::FFloatPropertyParams NewProp_OrbitalSpeed;
 #if WITH_METADATA
-		static const UECodeGen_Private::FMetaDataPairParam NewProp_DistanceFromParent_MetaData[];
+		static const UECodeGen_Private::FMetaDataPairParam NewProp_OrbitDistance_MetaData[];
 #endif
-		static const UECodeGen_Private::FDoublePropertyParams NewProp_DistanceFromParent;
+		static const UECodeGen_Private::FDoublePropertyParams NewProp_OrbitDistance;
 #if WITH_METADATA
 		static const UECodeGen_Private::FMetaDataPairParam NewProp_AxialTilt_MetaData[];
 #endif
@@ -87,12 +87,12 @@ void EmptyLinkFunctionForGeneratedCodeOrbitalBody() {}
 #endif
 	const UECodeGen_Private::FFloatPropertyParams Z_Construct_UClass_AOrbitalBody_Statics::NewProp_OrbitalSpeed = { "OrbitalSpeed", nullptr, (EPropertyFlags)0x0040000000020001, UECodeGen_Private::EPropertyGenFlags::Float, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(AOrbitalBody, OrbitalSpeed), METADATA_PARAMS(Z_Construct_UClass_AOrbitalBody_Statics::NewProp_OrbitalSpeed_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_AOrbitalBody_Statics::NewProp_OrbitalSpeed_MetaData)) };
 #if WITH_METADATA
-	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_AOrbitalBody_Statics::NewProp_DistanceFromParent_MetaData[] = {
+	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_AOrbitalBody_Statics::NewProp_OrbitDistance_MetaData[] = {
 		{ "Category", "OrbitalBody" },
 		{ "ModuleRelativePath", "OrbitalBody.h" },
 	};
 #endif
-	const UECodeGen_Private::FDoublePropertyParams Z_Construct_UClass_AOrbitalBody_Statics::NewProp_DistanceFromParent = { "DistanceFromParent", nullptr, (EPropertyFlags)0x0040000000020001, UECodeGen_Private::EPropertyGenFlags::Double, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(AOrbitalBody, DistanceFromParent), METADATA_PARAMS(Z_Construct_UClass_AOrbitalBody_Statics::NewProp_DistanceFromParent_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_AOrbitalBody_Statics::NewProp_DistanceFromParent_MetaData)) };
+	const UECodeGen_Private::FDoublePropertyParams Z_Construct_UClass_AOrbitalBody_Statics::NewProp_OrbitDistance = { "OrbitDistance", nullptr, (EPropertyFlags)0x0040000000020001, UECodeGen_Private::EPropertyGenFlags::Double, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(AOrbitalBody, OrbitDistance), METADATA_PARAMS(Z_Construct_UClass_AOrbitalBody_Statics::NewProp_OrbitDistance_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_AOrbitalBody_Statics::NewProp_OrbitDistance_MetaData)) };
 #if WITH_METADATA
 	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_AOrbitalBody_Statics::NewProp_AxialTilt_MetaData[] = {
 		{ "Category", "OrbitalBody" },
@@ -104,7 +104,7 @@ void EmptyLinkFunctionForGeneratedCodeOrbitalBody() {}
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AOrbitalBody_Statics::NewProp_RotationSpeed,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AOrbitalBody_Statics::NewProp_OrbitalPeriod,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AOrbitalBody_Statics::NewProp_OrbitalSpeed,
-		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AOrbitalBody_Statics::NewProp_DistanceFromParent,
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AOrbitalBody_Statics::NewProp_OrbitDistance,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AOrbitalBody_Statics::NewProp_AxialTilt,
 	};
 		const UECodeGen_Private::FImplementedInterfaceParams Z_Construct_UClass_AOrbitalBody_Statics::InterfaceParams[] = {
@@ -147,9 +147,9 @@ void EmptyLinkFunctionForGeneratedCodeOrbitalBody() {}
 		static const FClassRegisterCompiledInInfo ClassInfo[];
 	};
 	const FClassRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_OrbitalBody_h_Statics::ClassInfo[] = {
-		{ Z_Construct_UClass_AOrbitalBody, AOrbitalBody::StaticClass, TEXT("AOrbitalBody"), &Z_Registration_Info_UClass_AOrbitalBody, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(AOrbitalBody), 4174266008U) },
+		{ Z_Construct_UClass_AOrbitalBody, AOrbitalBody::StaticClass, TEXT("AOrbitalBody"), &Z_Registration_Info_UClass_AOrbitalBody, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(AOrbitalBody), 2821120016U) },
 	};
-	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_OrbitalBody_h_3973346593(TEXT("/Script/APS_ALPHA"),
+	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_OrbitalBody_h_1154932221(TEXT("/Script/APS_ALPHA"),
 		Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_OrbitalBody_h_Statics::ClassInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_OrbitalBody_h_Statics::ClassInfo),
 		nullptr, 0,
 		nullptr, 0);

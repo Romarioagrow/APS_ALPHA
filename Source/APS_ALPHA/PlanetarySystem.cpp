@@ -17,3 +17,13 @@ void APlanetarySystem::SetPlanetarySystemType(EPlanetarySystemType Type)
 {
 	this->PlanetarySystemType = Type;
 }
+
+void APlanetarySystem::SetOrbitDistributionType(EOrbitDistributionType NewOrbitDistributionType)
+{
+	this->OrbitDistributionType = NewOrbitDistributionType;
+}
+
+void APlanetarySystem::SetStarSpectralClass(ESpectralClass NewStarSpectralClass)
+{
+	this->StarSpectralClass = NewStarSpectralClass;
+}

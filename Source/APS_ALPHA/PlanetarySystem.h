@@ -6,6 +6,7 @@
 #include "PlanetarySystemType.h"
 #include "OrbitDistributionType.h"
 #include "PlanetarySystemGenerationModel.h"
+#include "StarSpectralClass.h" 
 
 #include "CoreMinimal.h"
 #include "CelestialSystem.h"
@@ -31,6 +32,9 @@ private:
 
 	UPROPERTY(VisibleAnywhere)
 		EOrbitDistributionType OrbitDistributionType;
+
+	UPROPERTY(VisibleAnywhere)
+		ESpectralClass StarSpectralClass;
 
 	UPROPERTY(VisibleAnywhere, Category = "Zones")
 		FZoneRadius HabitableZoneRadius;
@@ -164,4 +168,8 @@ public:
 	void SetAmountOfPlanets(int AmountOfPlanets);
 
 	void SetPlanetarySystemType(EPlanetarySystemType PlanetarySystemType);
+
+	void SetOrbitDistributionType(EOrbitDistributionType OrbitDistributionType);
+
+	void SetStarSpectralClass(ESpectralClass StarSpectralClass);
 };

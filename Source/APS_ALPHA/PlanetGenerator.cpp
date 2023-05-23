@@ -14,6 +14,9 @@ APlanet* UPlanetGenerator::GeneratePlanet(FPlanetGenerationModel PlanetModel)
 
 FPlanetGenerationModel UPlanetGenerator::GenerateRandomPlanetModel()
 {
+
+
+
     
     // 
     //     // Параметры планеты

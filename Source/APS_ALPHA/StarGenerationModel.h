@@ -41,5 +41,8 @@ struct FStarGenerationModel :
 	UPROPERTY(VisibleAnywhere)
 		int SpectralSubclass;
 
+	UPROPERTY(VisibleAnywhere)
+		EStellarClass StarStellarClass;
+
 };
 

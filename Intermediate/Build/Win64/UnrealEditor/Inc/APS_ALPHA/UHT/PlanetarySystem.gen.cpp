@@ -16,6 +16,7 @@ void EmptyLinkFunctionForGeneratedCodePlanetarySystem() {}
 	APS_ALPHA_API UClass* Z_Construct_UClass_AStar_NoRegister();
 	APS_ALPHA_API UEnum* Z_Construct_UEnum_APS_ALPHA_EOrbitDistributionType();
 	APS_ALPHA_API UEnum* Z_Construct_UEnum_APS_ALPHA_EPlanetarySystemType();
+	APS_ALPHA_API UEnum* Z_Construct_UEnum_APS_ALPHA_ESpectralClass();
 	APS_ALPHA_API UScriptStruct* Z_Construct_UScriptStruct_FZoneRadius();
 	UPackage* Z_Construct_UPackage__Script_APS_ALPHA();
 // End Cross Module References
@@ -51,6 +52,11 @@ void EmptyLinkFunctionForGeneratedCodePlanetarySystem() {}
 		static const UECodeGen_Private::FMetaDataPairParam NewProp_OrbitDistributionType_MetaData[];
 #endif
 		static const UECodeGen_Private::FEnumPropertyParams NewProp_OrbitDistributionType;
+		static const UECodeGen_Private::FBytePropertyParams NewProp_StarSpectralClass_Underlying;
+#if WITH_METADATA
+		static const UECodeGen_Private::FMetaDataPairParam NewProp_StarSpectralClass_MetaData[];
+#endif
+		static const UECodeGen_Private::FEnumPropertyParams NewProp_StarSpectralClass;
 #if WITH_METADATA
 		static const UECodeGen_Private::FMetaDataPairParam NewProp_HabitableZoneRadius_MetaData[];
 #endif
@@ -125,7 +131,7 @@ void EmptyLinkFunctionForGeneratedCodePlanetarySystem() {}
 		{ "ModuleRelativePath", "PlanetarySystem.h" },
 	};
 #endif
-	const UECodeGen_Private::FEnumPropertyParams Z_Construct_UClass_APlanetarySystem_Statics::NewProp_PlanetarySystemType = { "PlanetarySystemType", nullptr, (EPropertyFlags)0x0040000000020001, UECodeGen_Private::EPropertyGenFlags::Enum, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(APlanetarySystem, PlanetarySystemType), Z_Construct_UEnum_APS_ALPHA_EPlanetarySystemType, METADATA_PARAMS(Z_Construct_UClass_APlanetarySystem_Statics::NewProp_PlanetarySystemType_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_APlanetarySystem_Statics::NewProp_PlanetarySystemType_MetaData)) }; // 1543107703
+	const UECodeGen_Private::FEnumPropertyParams Z_Construct_UClass_APlanetarySystem_Statics::NewProp_PlanetarySystemType = { "PlanetarySystemType", nullptr, (EPropertyFlags)0x0040000000020001, UECodeGen_Private::EPropertyGenFlags::Enum, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(APlanetarySystem, PlanetarySystemType), Z_Construct_UEnum_APS_ALPHA_EPlanetarySystemType, METADATA_PARAMS(Z_Construct_UClass_APlanetarySystem_Statics::NewProp_PlanetarySystemType_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_APlanetarySystem_Statics::NewProp_PlanetarySystemType_MetaData)) }; // 3370777339
 	const UECodeGen_Private::FBytePropertyParams Z_Construct_UClass_APlanetarySystem_Statics::NewProp_OrbitDistributionType_Underlying = { "UnderlyingType", nullptr, (EPropertyFlags)0x0000000000000000, UECodeGen_Private::EPropertyGenFlags::Byte, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, 0, nullptr, METADATA_PARAMS(nullptr, 0) };
 #if WITH_METADATA
 	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_APlanetarySystem_Statics::NewProp_OrbitDistributionType_MetaData[] = {
@@ -134,6 +140,14 @@ void EmptyLinkFunctionForGeneratedCodePlanetarySystem() {}
 	};
 #endif
 	const UECodeGen_Private::FEnumPropertyParams Z_Construct_UClass_APlanetarySystem_Statics::NewProp_OrbitDistributionType = { "OrbitDistributionType", nullptr, (EPropertyFlags)0x0040000000020001, UECodeGen_Private::EPropertyGenFlags::Enum, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(APlanetarySystem, OrbitDistributionType), Z_Construct_UEnum_APS_ALPHA_EOrbitDistributionType, METADATA_PARAMS(Z_Construct_UClass_APlanetarySystem_Statics::NewProp_OrbitDistributionType_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_APlanetarySystem_Statics::NewProp_OrbitDistributionType_MetaData)) }; // 2085035236
+	const UECodeGen_Private::FBytePropertyParams Z_Construct_UClass_APlanetarySystem_Statics::NewProp_StarSpectralClass_Underlying = { "UnderlyingType", nullptr, (EPropertyFlags)0x0000000000000000, UECodeGen_Private::EPropertyGenFlags::Byte, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, 0, nullptr, METADATA_PARAMS(nullptr, 0) };
+#if WITH_METADATA
+	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_APlanetarySystem_Statics::NewProp_StarSpectralClass_MetaData[] = {
+		{ "Category", "PlanetarySystem" },
+		{ "ModuleRelativePath", "PlanetarySystem.h" },
+	};
+#endif
+	const UECodeGen_Private::FEnumPropertyParams Z_Construct_UClass_APlanetarySystem_Statics::NewProp_StarSpectralClass = { "StarSpectralClass", nullptr, (EPropertyFlags)0x0040000000020001, UECodeGen_Private::EPropertyGenFlags::Enum, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(APlanetarySystem, StarSpectralClass), Z_Construct_UEnum_APS_ALPHA_ESpectralClass, METADATA_PARAMS(Z_Construct_UClass_APlanetarySystem_Statics::NewProp_StarSpectralClass_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_APlanetarySystem_Statics::NewProp_StarSpectralClass_MetaData)) }; // 1101356590
 #if WITH_METADATA
 	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_APlanetarySystem_Statics::NewProp_HabitableZoneRadius_MetaData[] = {
 		{ "Category", "Zones" },
@@ -206,6 +220,8 @@ void EmptyLinkFunctionForGeneratedCodePlanetarySystem() {}
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_APlanetarySystem_Statics::NewProp_PlanetarySystemType,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_APlanetarySystem_Statics::NewProp_OrbitDistributionType_Underlying,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_APlanetarySystem_Statics::NewProp_OrbitDistributionType,
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_APlanetarySystem_Statics::NewProp_StarSpectralClass_Underlying,
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_APlanetarySystem_Statics::NewProp_StarSpectralClass,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_APlanetarySystem_Statics::NewProp_HabitableZoneRadius,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_APlanetarySystem_Statics::NewProp_ColdZoneRadius,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_APlanetarySystem_Statics::NewProp_IceZoneRadius,
@@ -255,9 +271,9 @@ void EmptyLinkFunctionForGeneratedCodePlanetarySystem() {}
 		static const FClassRegisterCompiledInInfo ClassInfo[];
 	};
 	const FClassRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_PlanetarySystem_h_Statics::ClassInfo[] = {
-		{ Z_Construct_UClass_APlanetarySystem, APlanetarySystem::StaticClass, TEXT("APlanetarySystem"), &Z_Registration_Info_UClass_APlanetarySystem, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(APlanetarySystem), 1856180148U) },
+		{ Z_Construct_UClass_APlanetarySystem, APlanetarySystem::StaticClass, TEXT("APlanetarySystem"), &Z_Registration_Info_UClass_APlanetarySystem, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(APlanetarySystem), 15402444U) },
 	};
-	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_PlanetarySystem_h_837464960(TEXT("/Script/APS_ALPHA"),
+	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_PlanetarySystem_h_915231167(TEXT("/Script/APS_ALPHA"),
 		Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_PlanetarySystem_h_Statics::ClassInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_PlanetarySystem_h_Statics::ClassInfo),
 		nullptr, 0,
 		nullptr, 0);
