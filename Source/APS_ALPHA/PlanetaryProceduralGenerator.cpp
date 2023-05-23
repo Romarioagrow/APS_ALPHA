@@ -206,33 +206,61 @@ FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySyst
         KuiperBeltZoneOuter *= ScalingFactor;*/
 
 
+
+        // Вычисляем холодную зону
+        double ColdZoneInner = FMath::Max(HabitableZoneOuter, MinOrbit);
+        double ColdZoneOuter = FMath::Min(ColdZoneInner * 2, MaxOrbit); // Ограничиваем зону MaxOrbit
+
+        // Вычисляем ледяную зону
+        double IceZoneInner = FMath::Max(ColdZoneOuter, MinOrbit);
+        double IceZoneOuter = FMath::Min(IceZoneInner * 2, MaxOrbit);
+
+        // Вычисляем теплую зону
+        double WarmZoneInner = FMath::Max(HabitableZoneInner / 2, MinOrbit);
+        double WarmZoneOuter = FMath::Min(HabitableZoneInner, MaxOrbit);
+
+        // Вычисляем горячую зону
+        double HotZoneInner = FMath::Max(WarmZoneInner / 2, MinOrbit);
+        double HotZoneOuter = FMath::Min(WarmZoneInner, MaxOrbit);
+
+        // Вычисляем зону газовых гигантов
+        double GasGiantsZoneInner = FMath::Max(IceZoneOuter, MinOrbit);
+        double GasGiantsZoneOuter = FMath::Min(GasGiantsZoneInner * 2, MaxOrbit);
+
+        // Вычисляем зону пояса Койпера
+        double KuiperBeltZoneInner = FMath::Max(GasGiantsZoneOuter, MinOrbit);
+        double KuiperBeltZoneOuter = FMath::Min(KuiperBeltZoneInner * 2, MaxOrbit);
+
+
+
+
         //// Вычисляем холодную зону
-        double ColdZoneInner = HabitableZoneOuter;
-        double ColdZoneOuter = ColdZoneInner * 2; // Примерная формула
+        //double ColdZoneInner = HabitableZoneOuter;
+        //double ColdZoneOuter = ColdZoneInner * 2; // Примерная формула
 
-        //// Вычисляем ледяную зону
-        double IceZoneInner = ColdZoneOuter;
-        double IceZoneOuter = IceZoneInner * 2; // Примерная формула
+        ////// Вычисляем ледяную зону
+        //double IceZoneInner = ColdZoneOuter;
+        //double IceZoneOuter = IceZoneInner * 2; // Примерная формула
 
-        //// Вычисляем теплую зону
-        double WarmZoneInner = HabitableZoneInner / 2; // Примерная формула
-        double WarmZoneOuter = HabitableZoneInner;
+        ////// Вычисляем теплую зону
+        //double WarmZoneInner = HabitableZoneInner / 2; // Примерная формула
+        //double WarmZoneOuter = HabitableZoneInner;
 
-        //// Вычисляем горячую зону
-        double HotZoneInner = WarmZoneInner / 2; // Примерная формула
-        double HotZoneOuter = WarmZoneInner;
+        ////// Вычисляем горячую зону
+        //double HotZoneInner = WarmZoneInner / 2; // Примерная формула
+        //double HotZoneOuter = WarmZoneInner;
 
-        //// Вычисляем зону газовых гигантов
-        double GasGiantsZoneInner = IceZoneOuter; // Примерная формула
-        double GasGiantsZoneOuter = GasGiantsZoneInner * 2; // Примерная формула
+        ////// Вычисляем зону газовых гигантов
+        //double GasGiantsZoneInner = IceZoneOuter; // Примерная формула
+        //double GasGiantsZoneOuter = GasGiantsZoneInner * 2; // Примерная формула
 
-        //// Вычисляем зону пояса астероидов
-        //TArray<TPair<double, double>> AsteroidBeltZoneRadius;
-        //// Здесь вы можете добавить каждый пояс астероидов в массив
+        ////// Вычисляем зону пояса астероидов
+        ////TArray<TPair<double, double>> AsteroidBeltZoneRadius;
+        ////// Здесь вы можете добавить каждый пояс астероидов в массив
 
-        //// Вычисляем зону пояса Койпера
-        double KuiperBeltZoneInner = GasGiantsZoneOuter; // Примерная формула
-        double KuiperBeltZoneOuter = KuiperBeltZoneInner * 2; // Примерная формула
+        ////// Вычисляем зону пояса Койпера
+        //double KuiperBeltZoneInner = GasGiantsZoneOuter; // Примерная формула
+        //double KuiperBeltZoneOuter = KuiperBeltZoneInner * 2; // Примерная формула
 
         if (OrbitDistributionType == EOrbitDistributionType::InnerOuter)
         {
