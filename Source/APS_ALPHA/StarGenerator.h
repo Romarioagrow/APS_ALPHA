@@ -82,9 +82,9 @@ private:
 	TMap<EStellarClass, int> StarTypeWeights =
 	{
 		{EStellarClass::HyperGiant, 1}, // Гипергиганты
-		{EStellarClass::SuperGiant, 3}, // Супергиганты
+		{EStellarClass::SuperGiant, 11113}, // Супергиганты
 		{EStellarClass::BrightGiant, 3}, // Белые карлики
-		{EStellarClass::Giant,5}, // Гиганты
+		{EStellarClass::Giant,11115}, // Гиганты
 		{EStellarClass::SubGiant, 5}, // Супергиганты
 		{EStellarClass::MainSequence, 80}, // Главная последовательность
 		{EStellarClass::SubDwarf, 5}, // Субкарлики

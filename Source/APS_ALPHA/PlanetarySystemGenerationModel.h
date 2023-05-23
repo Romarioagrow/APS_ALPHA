@@ -52,6 +52,9 @@ struct FPlanetarySystemGenerationModel :
         EOrbitDistributionType OrbitDistributionType;
 
 	UPROPERTY(VisibleAnywhere, Category = "Zones")
+		FZoneRadius DeadZoneRadius;
+	
+	UPROPERTY(VisibleAnywhere, Category = "Zones")
 		FZoneRadius HabitableZoneRadius;
 
 	UPROPERTY(VisibleAnywhere, Category = "Zones")
