@@ -17,6 +17,9 @@ struct FCelestialGenerationModel :
 	// Радиус спутника
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "CelestialGeneration")
 		float Radius;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "CelestialGeneration")
+		float RadiusKM;
 
 
 };

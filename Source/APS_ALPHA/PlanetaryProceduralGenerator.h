@@ -44,6 +44,28 @@ struct FPlanetTypeProbability
     }
 };
 
+struct FDensityRange
+{
+    //GENERATED_USTRUCT_BODY()
+
+    double MinDensity;
+    double MaxDensity;
+
+    FDensityRange() : MinDensity(0.0), MaxDensity(0.0) {}
+    FDensityRange(double Min, double Max) : MinDensity(Min), MaxDensity(Max) {}
+};
+
+struct FRadiusRange {
+
+   // GENERATED_USTRUCT_BODY()
+
+    float MinRadius;
+    float MaxRadius;
+
+    FRadiusRange() {}
+
+    FRadiusRange(float Min, float Max) : MinRadius(Min), MaxRadius(Max) {}
+};
 
 /**
  * 
@@ -62,6 +84,12 @@ public:
 
     FPlanetarySystemGenerationModel GeneratePlanetraySystemModelByStar(FStarGenerationModel StarModel);
 
+    int CalculateMoons(double PlanetMass, EPlanetType PlanetType);
+
+    FRadiusRange GetPlanetRadiusRange(EPlanetType PlanetType);
+
+    FDensityRange GetPlanetDensityRange(EPlanetType PlanetType);
+
     
 private:
     EPlanetaryZoneType DeterminePlanetZone(double OrbitRadius, FPlanetarySystemGenerationModel PlanetarySystemModel);
@@ -78,8 +106,66 @@ private:
 
 typedef float PlanetProbability;
 
+
+
 private:
-    TMap<EStellarClass, TMap<EOrbitDistributionType, float>> StellarOrbitDistributions =
+
+    const TMap<EPlanetType, FRadiusRange> PlanetRadiusRanges =
+    {
+        {EPlanetType::Terrestrial,  FRadiusRange(0.9, 1.1)},     // Землеподобные
+        {EPlanetType::Rocky,        FRadiusRange(0.5, 0.9)},     // Скалистые
+        {EPlanetType::Greenhouse,   FRadiusRange(0.9, 1.1)},     // Парниковые
+        {EPlanetType::Melted,       FRadiusRange(0.6, 1.1)},     // Расплавленные
+        {EPlanetType::HotGiant,     FRadiusRange(9.4, 12.6)},    // Горячие гиганты
+        {EPlanetType::GasGiant,     FRadiusRange(7.9, 11.0)},    // Газовые гиганты
+        {EPlanetType::IceGiant,     FRadiusRange(3.1, 7.9)},     // Ледяные гиганты
+        {EPlanetType::Dwarf,        FRadiusRange(0.2, 0.5)},     // Карликовые планеты
+        {EPlanetType::Exoplanet,    FRadiusRange(0.2, 12.6)},    // Экзопланеты
+        {EPlanetType::Rogue,        FRadiusRange(0.2, 12.6)},    // Бродячие планеты
+        {EPlanetType::Ocean,        FRadiusRange(0.8, 1.1)},     // Океанические планеты
+        {EPlanetType::Desert,       FRadiusRange(0.8, 1.1)},     // Пустынные планеты
+        {EPlanetType::Forest,       FRadiusRange(0.9, 1.3)},     // Лесные планеты
+        {EPlanetType::Volcanic,     FRadiusRange(0.8, 1.1)},     // Вулканические планеты
+        {EPlanetType::Ice,          FRadiusRange(0.3, 0.8)},     // Ледяные планеты
+        {EPlanetType::Frozen,       FRadiusRange(0.3, 0.8)},     // Замороженные планеты
+        {EPlanetType::Ammonia,      FRadiusRange(0.6, 0.9)},     // Планеты аммиака
+        {EPlanetType::Iron,         FRadiusRange(0.8, 1.1)},     // Железные планеты
+        {EPlanetType::Carbon,       FRadiusRange(0.8, 1.1)},     // Углеродные планеты
+        {EPlanetType::SuperEarth,   FRadiusRange(1.5, 3.1)},     // Суперземли
+        {EPlanetType::Lava,         FRadiusRange(0.8, 1.1)},     // Лавовые планеты
+        {EPlanetType::Metallic,     FRadiusRange(0.8, 1.3)},     // Металлические планеты
+        {EPlanetType::Unknown,      FRadiusRange(0.2, 12.6)}     // Неизвестные планеты
+    };
+
+    const TMap<EPlanetType, FDensityRange> PlanetDensityRanges =
+    {
+        {EPlanetType::Terrestrial,  FDensityRange(5.0, 5.8)},
+        {EPlanetType::Rocky,        FDensityRange(5.0, 6.0)},
+        {EPlanetType::Greenhouse,   FDensityRange(4.5, 6.0)},
+        {EPlanetType::Melted,       FDensityRange(4.0, 6.0)},
+        {EPlanetType::HotGiant,     FDensityRange(0.4, 2.0)},
+        {EPlanetType::GasGiant,     FDensityRange(0.2, 2.5)},
+        {EPlanetType::IceGiant,     FDensityRange(1.5, 3.0)},
+        {EPlanetType::Dwarf,        FDensityRange(1.3, 3.0)},
+        {EPlanetType::Exoplanet,    FDensityRange(1.0, 10.0)},
+        {EPlanetType::Rogue,        FDensityRange(1.0, 10.0)},
+        {EPlanetType::Ocean,        FDensityRange(3.0, 5.0)},
+        {EPlanetType::Desert,       FDensityRange(2.5, 4.5)},
+        {EPlanetType::Forest,       FDensityRange(4.0, 6.0)},
+        {EPlanetType::Volcanic,     FDensityRange(3.0, 6.0)},
+        {EPlanetType::Ice,          FDensityRange(2.0, 3.5)},
+        {EPlanetType::Frozen,       FDensityRange(2.0, 3.5)},
+        {EPlanetType::Ammonia,      FDensityRange(2.0, 3.5)},
+        {EPlanetType::Iron,         FDensityRange(6.0, 8.0)},
+        {EPlanetType::Carbon,       FDensityRange(2.0, 3.5)},
+        {EPlanetType::SuperEarth,   FDensityRange(6.0, 9.0)},
+        {EPlanetType::Lava,         FDensityRange(3.0, 6.0)},
+        {EPlanetType::Metallic,     FDensityRange(5.0, 10.0)},
+        {EPlanetType::Unknown,      FDensityRange(0.1, 10.0)}
+    };
+
+
+    const TMap<EStellarClass, TMap<EOrbitDistributionType, float>> StellarOrbitDistributions =
     {
         {
             EStellarClass::HyperGiant, 
@@ -222,7 +308,7 @@ private:
         }
     };
 
-    TMap<EStellarClass, int> BasePlanetCount = {
+    const TMap<EStellarClass, int> BasePlanetCount = {
         {EStellarClass::HyperGiant, 15},
         {EStellarClass::SuperGiant, 10},
         {EStellarClass::BrightGiant, 10},
@@ -238,7 +324,7 @@ private:
         {EStellarClass::BlackHole, 0},
 };
 
-    TMap<EStellarClass, PlanetProbability> BasePlanetProbabilities = 
+    const TMap<EStellarClass, PlanetProbability> BasePlanetProbabilities =
     {
         {EStellarClass::HyperGiant, 0.7f},
         {EStellarClass::SuperGiant, 0.7f},
@@ -287,7 +373,7 @@ private:
             : AmountOfPlanetsRange(Planets), DistanceBetweenPlanetsRange(Distance) {}
     };
 
-    TMap<EPlanetaryZoneType, TArray<FPlanetTypeProbability>> ZonePlanetProbabilities =
+    const TMap<EPlanetaryZoneType, TArray<FPlanetTypeProbability>> ZonePlanetProbabilities =
     {
         {EPlanetaryZoneType::HabitableZone,
         {

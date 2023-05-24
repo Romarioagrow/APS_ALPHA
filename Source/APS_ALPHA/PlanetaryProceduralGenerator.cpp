@@ -293,7 +293,9 @@ FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySyst
 		PlanetarySystemModel.PlanetarySystemType = EPlanetarySystemType::NoPlanetSystem;
 	}
 
+    
 
+    /// TODO: To PanetGenerator
     // populate planets list by new PlanetModel
     for (double OrbitRadius : OrbitRadii)
     {
@@ -314,15 +316,25 @@ FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySyst
         EPlanetType PlanetType = DeterminePlanetType(PlanetZone);
         PlanetModel.PlanetType = PlanetType;
 
-        // TODO: Not random, by PlanetType Range
-        double MinPlanetMass = 0.1; // минимальна€ масса планеты в земных массах
-        double MaxPlanetMass = 10.0; // максимальна€ масса планеты в земных массах
-        double PlanetMass = FMath::RandRange(MinPlanetMass, MaxPlanetMass); // генераци€ случайной массы
-        PlanetModel.Mass = PlanetMass;
+        FDensityRange PlanetDensityRange = GetPlanetDensityRange(PlanetType);
+        double PlanetDensity = FMath::RandRange(PlanetDensityRange.MinDensity, PlanetDensityRange.MaxDensity);
+        PlanetModel.PlanetDensity = PlanetDensity;
 
-        double PlanetDensity = 5.5; // плотность «емли в г/cm^3
-        double PlanetRadius = pow((3.0 * PlanetMass) / (4.0 * PI * PlanetDensity), (1.0 / 3.0));
+        // assuming that radius is random in the range 1 - 2 Earth radii (this can be adjusted)
+        FRadiusRange PlanetRadiusRange = GetPlanetRadiusRange(PlanetType);
+        double PlanetRadius = FMath::RandRange(PlanetRadiusRange.MinRadius, PlanetRadiusRange.MaxRadius);
         PlanetModel.Radius = PlanetRadius;
+
+        // now calculate mass based on density and radius
+        PlanetModel.Mass = PlanetDensity * (4.0 / 3.0) * PI * FMath::Pow(PlanetRadius, 3);
+
+        const double EARTH_RADIUS_KM = 6371.0; // радиус «емли в километрах
+        double RadiusKM = PlanetRadius * EARTH_RADIUS_KM;
+        PlanetModel.RadiusKM = RadiusKM;
+
+        // for Gravity
+        PlanetModel.PlanetGravityStrength = PlanetModel.Mass / FMath::Pow(PlanetModel.Radius, 2);
+        PlanetModel.AmountOfMoons = CalculateMoons(PlanetModel.Mass, PlanetType);
 
         FPlanetData PlanetData = FPlanetData(PlanetIndex, OrbitRadius, PlanetModel);
         PlanetarySystemModel.PlanetsList.Add(PlanetData);
@@ -331,6 +343,57 @@ FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySyst
     return PlanetarySystemModel;
 }
 
+int UPlanetarySystemGenerator::CalculateMoons(double PlanetMass, EPlanetType PlanetType)
+{
+    // Calculate the base number of moons based on the planet mass
+    int BaseMoonCount = PlanetMass / 10.0;
+
+    // Generate a random number between 0 and 1
+    double RandomNumber = FMath::FRand();
+
+    // Apply the chance to have no moons
+    if (RandomNumber < 0.3)
+    {
+        return 0;
+    }
+    else if (BaseMoonCount > 15)
+    {
+
+        return 
+            PlanetType == EPlanetType::GasGiant ||
+            PlanetType == EPlanetType::IceGiant ||
+			PlanetType == EPlanetType::HotGiant ? FMath::RandRange(0, 15) : FMath::RandRange(0, 5);
+
+    }
+    {
+        // Otherwise, the number of moons is the base moon count plus a random number
+        return BaseMoonCount + FMath::RandRange(0, 3);
+    }
+
+
+}
+
+FRadiusRange UPlanetarySystemGenerator::GetPlanetRadiusRange(EPlanetType PlanetType)
+{
+    if (PlanetRadiusRanges.Contains(PlanetType))
+    {
+        return PlanetRadiusRanges[PlanetType];
+    }
+
+    // ¬озвращаем значени€ по умолчанию или выбрасываем ошибку
+    return FRadiusRange(0.2, 12.6);
+}
+
+FDensityRange UPlanetarySystemGenerator::GetPlanetDensityRange(EPlanetType PlanetType) 
+{
+    if (PlanetDensityRanges.Contains(PlanetType))
+    {
+        return PlanetDensityRanges[PlanetType];
+    }
+
+    // default value if planet type is not in map
+    return FDensityRange(5.0, 5.0);
+}
 
 EPlanetaryZoneType UPlanetarySystemGenerator::DeterminePlanetZone(double OrbitRadius, FPlanetarySystemGenerationModel PlanetarySystemModel)
 {

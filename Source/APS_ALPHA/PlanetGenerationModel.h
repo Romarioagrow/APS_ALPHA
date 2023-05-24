@@ -11,22 +11,30 @@ USTRUCT(BlueprintType)
 struct FPlanetGenerationModel :
     public FOrbitalBodyGenerationModel
 {
-	GENERATED_BODY()	
+	GENERATED_BODY()
+
+		FPlanetGenerationModel();
 
 		// Тип планеты (например, газовый гигант, землеподобная планета и т.д.)
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet")
-		EPlanetType PlanetType;
+		UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet")
+			EPlanetType PlanetType;
 
-	// Число спутников
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet")
-		int32 AmountOfMoons { 0 };
+		// Число спутников
+		UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet")
+			int32 AmountOfMoons { 0 };
 	
-	// Число спутников
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet")
-		int32 Temperature { 0 };
+		// Число спутников
+		UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet")
+			int32 Temperature { 0 };
 	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet")
-		EPlanetaryZoneType PlanetZone;
+		UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet")
+			EPlanetaryZoneType PlanetZone;
+		
+		UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet")
+			double PlanetDensity { 0 };
+		
+		UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet")
+			double PlanetGravityStrength { 0 };
 
 };
 
