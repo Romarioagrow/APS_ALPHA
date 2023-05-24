@@ -540,4 +540,9 @@
       <Filter>Source\APS_ALPHA</Filter>
     </ClInclude>
   </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="PlanetaryZoneType.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+  </ItemGroup>
 </Project>

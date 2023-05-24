@@ -1,6 +1,7 @@
 #pragma once
 
 #include "PlanetType.h"
+#include "PlanetaryZoneType.h"
 
 #include "OrbitalBodyGenerationModel.h"
 #include "CoreMinimal.h"
@@ -18,8 +19,14 @@ struct FPlanetGenerationModel :
 
 	// Число спутников
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet")
-		int32 AmountOfMoons;
-
+		int32 AmountOfMoons { 0 };
+	
+	// Число спутников
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet")
+		int32 Temperature { 0 };
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet")
+		EPlanetaryZoneType PlanetZone;
 
 };
 

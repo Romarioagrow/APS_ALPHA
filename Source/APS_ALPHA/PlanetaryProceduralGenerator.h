@@ -6,10 +6,44 @@
 #include "PlanetarySystem.h"
 #include "OrbitDistributionType.h"
 #include "PlanetGenerationModel.h"
+#include "PlanetaryZoneType.h"
 
 #include "CoreMinimal.h"
 #include "BaseProceduralGenerator.h"
 #include "PlanetaryProceduralGenerator.generated.h"
+
+//USTRUCT(BlueprintType)
+//struct FPlanetTypeProbability
+//{
+//    GENERATED_USTRUCT_BODY()
+//    EPlanetType Type;
+//    float Probability;
+//};
+
+USTRUCT(BlueprintType)
+struct FPlanetTypeProbability
+{
+    GENERATED_USTRUCT_BODY()
+
+        UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Zone")
+        EPlanetType PlanetType;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Zone")
+        float Probability;
+
+    FPlanetTypeProbability()
+    {
+        PlanetType = EPlanetType::Unknown;
+        Probability = 0.0f;
+    }
+
+    FPlanetTypeProbability(EPlanetType PlanetType, float Probability)
+    {
+        this->PlanetType = PlanetType;
+        this->Probability = Probability;
+    }
+};
+
 
 /**
  * 
@@ -20,12 +54,7 @@ class APS_ALPHA_API UPlanetarySystemGenerator : public UBaseProceduralGenerator
 	GENERATED_BODY()
 
 public:
-	
-    //void ApplyModel(APlanetarySystem* NewPlanetarySystem, FPlanetarySystemGenerationModel PlanetraySystemModel);
 
-   // FPlanetarySystemGenerationModel GenerateRandomPlanetraySystemModelByStar(FStarGenerationModel StarModel);
-
-   // int DetermineMaxPlanets(EStellarClass StellarClass, double StarMass);
 
     int DetermineMaxPlanets(EStellarClass StellarClass, FStarGenerationModel StarModel);
 
@@ -33,12 +62,11 @@ public:
 
     FPlanetarySystemGenerationModel GeneratePlanetraySystemModelByStar(FStarGenerationModel StarModel);
 
-	//FPlanetarySystemGenerationModel GenerateRandomPlanetraySystemModel(); 
     
 private:
-    EPlanetType DeterminePlanetType(FPlanetGenerationModel PlanetModel);
+    EPlanetaryZoneType DeterminePlanetZone(double OrbitRadius, FPlanetarySystemGenerationModel PlanetarySystemModel);
 
- //   EOrbitDistributionType ChooseDistributionType(EStellarClass StellarClass, float StarMass, float OrbitRange);
+    EPlanetType DeterminePlanetType(EPlanetaryZoneType PlanetZone);
 
     double RandGauss();
 
@@ -257,6 +285,110 @@ private:
 
         FPlanetarySystemRanges(TTuple<int, int> Planets, TTuple<double, double> Distance)
             : AmountOfPlanetsRange(Planets), DistanceBetweenPlanetsRange(Distance) {}
+    };
+
+    TMap<EPlanetaryZoneType, TArray<FPlanetTypeProbability>> ZonePlanetProbabilities =
+    {
+        {EPlanetaryZoneType::HabitableZone,
+        {
+            {EPlanetType::Terrestrial, 0.20f},
+            {EPlanetType::Ocean, 0.10f},
+            {EPlanetType::Forest, 0.10f},
+            {EPlanetType::SuperEarth, 0.20f},
+            {EPlanetType::Water, 0.10f},
+            {EPlanetType::GasGiant, 0.01f},
+            {EPlanetType::Desert, 0.5f},
+            {EPlanetType::Rocky, 0.3f},
+
+        }},
+
+        {EPlanetaryZoneType::DeadZone,
+        {
+            {EPlanetType::Dwarf, 0.5f},
+            //{EPlanetType::Asteroid, 0.5f}
+        }},
+        
+        
+        {EPlanetaryZoneType::Unknown,
+        {
+            {EPlanetType::Unknown, 1.f},
+            //{EPlanetType::Asteroid, 0.5f}
+        }},
+
+
+        {EPlanetaryZoneType::ColdZone,
+        {
+            //{EPlanetType::IceGiant, 0.5f},
+            {EPlanetType::Ice, 0.5f},
+            {EPlanetType::Frozen, 0.5f},
+            {EPlanetType::Rocky, 0.5f},
+            {EPlanetType::Terrestrial, 0.1f}
+        }},
+
+        {EPlanetaryZoneType::IceZone,
+        {
+            {EPlanetType::IceGiant, 0.1f},
+            {EPlanetType::Ice, 0.5f},
+            {EPlanetType::Frozen, 0.9f},
+            {EPlanetType::Rocky, 0.5f},
+        }},
+
+        {EPlanetaryZoneType::WarmZone,
+        {
+            {EPlanetType::Terrestrial, 0.2f},
+            {EPlanetType::Ocean, 0.2f},
+            {EPlanetType::Water, 0.2f},
+            {EPlanetType::Carbon, 0.1f},
+            {EPlanetType::Iron, 0.5f},
+            {EPlanetType::Metallic, 0.5f},
+            {EPlanetType::Volcanic, 0.3f},
+            {EPlanetType::Greenhouse, 0.5f},
+            {EPlanetType::Ammonia, 0.3f},
+
+            //{EPlanetType::Forest, 0.4f}
+        }},
+
+        {EPlanetaryZoneType::HotZone,
+        {
+            {EPlanetType::Volcanic, 0.3f},
+            {EPlanetType::Lava, 0.4f},
+            {EPlanetType::Iron, 0.3f},
+            {EPlanetType::Metallic, 0.3f},
+            {EPlanetType::HotGiant, 0.1f},
+            {EPlanetType::Melted, 0.5f}
+        }},
+
+        {EPlanetaryZoneType::InnerPlanetZone,
+        {
+            {EPlanetType::Rocky, 0.4f},
+            {EPlanetType::Iron, 0.3f},
+            {EPlanetType::Terrestrial, 0.3f}
+        }},
+
+        {EPlanetaryZoneType::OuterPlanetZone,
+        {
+            {EPlanetType::GasGiant, 0.5f},
+            {EPlanetType::IceGiant, 0.5f}
+        }},
+
+        {EPlanetaryZoneType::AsteroidBeltZone,
+        {
+            {EPlanetType::Dwarf, 0.5f},
+            //{EPlanetType::Asteroid, 0.5f}
+        }},
+
+        {EPlanetaryZoneType::KuiperBeltZone,
+        {
+            {EPlanetType::Dwarf, 0.7f},
+            {EPlanetType::Ice, 0.3f}
+        }},
+
+        {EPlanetaryZoneType::GasGiantsZone,
+        {
+            {EPlanetType::GasGiant, 0.5f},
+            {EPlanetType::IceGiant, 0.5f}
+        }},
+        // и так далее для каждой зоны...
     };
 
     /*TMap<EPlanetarySystemType, FPlanetarySystemRanges> PlanetarySystemRanges =

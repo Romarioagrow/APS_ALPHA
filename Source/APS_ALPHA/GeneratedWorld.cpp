@@ -68,14 +68,10 @@ void AStarClusterGenerator::GenerateRandomStarSystem()
 
             // Create Planetray System
             APlanetarySystem* NewPlanetarySystem = World->SpawnActor<APlanetarySystem>(BP_PlanetarySystemClass);
-
-            // Проверяем, успешно ли создана планетарная система
             if (!NewPlanetarySystem) 
             {
-                // Обрабатываем ошибку
                 UE_LOG(LogTemp, Warning, TEXT("NewPlanetarySystem Falied!"));
                 return; // Завершаем выполнение функции, если не можем создать звездную систему
-
             }
             PlanetarySystemGenerator->ApplyModel(NewPlanetarySystem, PlanetraySystemModel);
 

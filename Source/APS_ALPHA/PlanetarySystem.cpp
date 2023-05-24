@@ -23,7 +23,12 @@ void APlanetarySystem::SetOrbitDistributionType(EOrbitDistributionType NewOrbitD
 	this->OrbitDistributionType = NewOrbitDistributionType;
 }
 
-void APlanetarySystem::SetStarSpectralClass(ESpectralClass NewStarSpectralClass)
+void APlanetarySystem::SetStarFullSpectralName(FName NewStarFullSpectralName)
 {
-	this->StarSpectralClass = NewStarSpectralClass;
+	this->FullSpectralName = NewStarFullSpectralName;
+}
+
+void APlanetarySystem::SetPlanetsList(TArray<FPlanetData> NewPlanetsList)
+{
+	this->PlanetsList = NewPlanetsList;
 }
