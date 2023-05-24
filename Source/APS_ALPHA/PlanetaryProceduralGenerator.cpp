@@ -15,7 +15,9 @@ void UPlanetarySystemGenerator::ApplyModel(APlanetarySystem* NewPlanetarySystem,
     NewPlanetarySystem->SetAmountOfPlanets(PlanetraySystemModel.AmountOfPlanets);
     NewPlanetarySystem->SetPlanetarySystemType(PlanetraySystemModel.PlanetarySystemType);
     NewPlanetarySystem->SetOrbitDistributionType(PlanetraySystemModel.OrbitDistributionType);
-    NewPlanetarySystem->SetStarSpectralClass(PlanetraySystemModel.StarSpectralClass);
+    NewPlanetarySystem->SetStarFullSpectralName(PlanetraySystemModel.FullSpectralName);
+    NewPlanetarySystem->SetPlanetsList(PlanetraySystemModel.PlanetsList);
+
 }
 
 
@@ -28,7 +30,7 @@ FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySyst
     // опредле€ем расположение орбит планет  
 
     FPlanetarySystemGenerationModel PlanetarySystemModel;
-    PlanetarySystemModel.StarSpectralClass = StarModel.SpectralClass;
+    PlanetarySystemModel.FullSpectralName = StarModel.FullSpectralName;
 
     // Ќаходим базовую веро€тность дл€ данного типа звезды
     PlanetProbability BaseProbability = BasePlanetProbabilities[StarModel.StellarClass];
@@ -274,14 +276,14 @@ FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySyst
             UE_LOG(LogTemp, Warning, TEXT("Planet %d Orbit Radius: %f AU"), i + 1, OrbitRadii[i]);
         }
 
-        UE_LOG(LogTemp, Warning, TEXT("Radius Dead Zone - Inner: %f, Outer: %f AU"), PlanetarySystemModel.DeadZoneRadius.InnerRadius, PlanetarySystemModel.DeadZoneRadius.OuterRadius);
-        UE_LOG(LogTemp, Warning, TEXT("Radius Hot Zone - Inner: %f, Outer: %f AU"), PlanetarySystemModel.HotZoneRadius.InnerRadius, PlanetarySystemModel.HotZoneRadius.OuterRadius);
-        UE_LOG(LogTemp, Warning, TEXT("Radius Warm Zone - Inner: %f, Outer: %f AU"), PlanetarySystemModel.WarmZoneRadius.InnerRadius, PlanetarySystemModel.WarmZoneRadius.OuterRadius);
-        UE_LOG(LogTemp, Warning, TEXT("Radius Habitable Zone - Inner: %f, Outer: %f AU"), PlanetarySystemModel.HabitableZoneRadius.InnerRadius, PlanetarySystemModel.HabitableZoneRadius.OuterRadius);
-        UE_LOG(LogTemp, Warning, TEXT("Radius Cold Zone - Inner: %f, Outer: %f AU"), PlanetarySystemModel.ColdZoneRadius.InnerRadius, PlanetarySystemModel.ColdZoneRadius.OuterRadius);
-        UE_LOG(LogTemp, Warning, TEXT("Radius Ice Zone - Inner: %f, Outer: %f AU"), PlanetarySystemModel.IceZoneRadius.InnerRadius, PlanetarySystemModel.IceZoneRadius.OuterRadius);
-        UE_LOG(LogTemp, Warning, TEXT("Radius Gas Giants Zone - Inner: %f, Outer: %f AU"), PlanetarySystemModel.GasGiantsZoneRadius.InnerRadius, PlanetarySystemModel.GasGiantsZoneRadius.OuterRadius);
-        UE_LOG(LogTemp, Warning, TEXT("Radius Kuiper Belt Zone - Inner: %f, Outer: %f AU"), PlanetarySystemModel.KuiperBeltZoneRadius.InnerRadius, PlanetarySystemModel.KuiperBeltZoneRadius.OuterRadius);
+        UE_LOG(LogTemp, Warning, TEXT("Radius Dead Zone         - Inner: %f, Outer: %f AU"), PlanetarySystemModel.DeadZoneRadius.InnerRadius, PlanetarySystemModel.DeadZoneRadius.OuterRadius);
+        UE_LOG(LogTemp, Warning, TEXT("Radius Hot Zone          - Inner: %f, Outer: %f AU"), PlanetarySystemModel.HotZoneRadius.InnerRadius, PlanetarySystemModel.HotZoneRadius.OuterRadius);
+        UE_LOG(LogTemp, Warning, TEXT("Radius Warm Zone         - Inner: %f, Outer: %f AU"), PlanetarySystemModel.WarmZoneRadius.InnerRadius, PlanetarySystemModel.WarmZoneRadius.OuterRadius);
+        UE_LOG(LogTemp, Warning, TEXT("Radius Habitable Zone    - Inner: %f, Outer: %f AU"), PlanetarySystemModel.HabitableZoneRadius.InnerRadius, PlanetarySystemModel.HabitableZoneRadius.OuterRadius);
+        UE_LOG(LogTemp, Warning, TEXT("Radius Cold Zone         - Inner: %f, Outer: %f AU"), PlanetarySystemModel.ColdZoneRadius.InnerRadius, PlanetarySystemModel.ColdZoneRadius.OuterRadius);
+        UE_LOG(LogTemp, Warning, TEXT("Radius Ice Zone          - Inner: %f, Outer: %f AU"), PlanetarySystemModel.IceZoneRadius.InnerRadius, PlanetarySystemModel.IceZoneRadius.OuterRadius);
+        UE_LOG(LogTemp, Warning, TEXT("Radius Gas Giants Zone   - Inner: %f, Outer: %f AU"), PlanetarySystemModel.GasGiantsZoneRadius.InnerRadius, PlanetarySystemModel.GasGiantsZoneRadius.OuterRadius);
+        UE_LOG(LogTemp, Warning, TEXT("Radius Kuiper Belt Zone  - Inner: %f, Outer: %f AU"), PlanetarySystemModel.KuiperBeltZoneRadius.InnerRadius, PlanetarySystemModel.KuiperBeltZoneRadius.OuterRadius);
         UE_LOG(LogTemp, Warning, TEXT("Radius Inner Planet Zone - Inner: %f, Outer: %f AU"), PlanetarySystemModel.InnerPlanetZoneRadius.InnerRadius, PlanetarySystemModel.InnerPlanetZoneRadius.OuterRadius);
         UE_LOG(LogTemp, Warning, TEXT("Radius Outer Planet Zone - Inner: %f, Outer: %f AU"), PlanetarySystemModel.OuterPlanetZoneRadius.InnerRadius, PlanetarySystemModel.OuterPlanetZoneRadius.OuterRadius);
     }
@@ -292,57 +294,123 @@ FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySyst
 	}
 
 
-    //PlanetarySystemModel.PlanetarySystemType = DetermineSystemType(PlanetarySystemModel);
-
-
-
-    // populate planets list
+    // populate planets list by new PlanetModel
     for (double OrbitRadius : OrbitRadii)
     {
+        int PlanetIndex = OrbitRadii.IndexOfByKey(OrbitRadius);
 
         FPlanetGenerationModel PlanetModel;// = GeneratePlanet(PlanetarySystemModel, OrbitRadius);
         PlanetModel.OrbitDistance = OrbitRadius;
 
-        PlanetModel.PlanetType = DeterminePlanetType(PlanetModel);
-        //
+        // planet temperature
+        //double PlanetTemperature = 0;
+        double PlanetTemperature = StarModel.SurfaceTemperature * sqrt(StarModel.Radius / (2 * OrbitRadius));
+        PlanetModel.Temperature = PlanetTemperature; // to celestial body
 
+        // ќпределите, в какой зоне находитс€ планета.
+        EPlanetaryZoneType PlanetZone = DeterminePlanetZone(OrbitRadius, PlanetarySystemModel);
+        PlanetModel.PlanetZone = PlanetZone;
 
+        EPlanetType PlanetType = DeterminePlanetType(PlanetZone);
+        PlanetModel.PlanetType = PlanetType;
+
+        // TODO: Not random, by PlanetType Range
+        double MinPlanetMass = 0.1; // минимальна€ масса планеты в земных массах
+        double MaxPlanetMass = 10.0; // максимальна€ масса планеты в земных массах
+        double PlanetMass = FMath::RandRange(MinPlanetMass, MaxPlanetMass); // генераци€ случайной массы
+        PlanetModel.Mass = PlanetMass;
+
+        double PlanetDensity = 5.5; // плотность «емли в г/cm^3
+        double PlanetRadius = pow((3.0 * PlanetMass) / (4.0 * PI * PlanetDensity), (1.0 / 3.0));
+        PlanetModel.Radius = PlanetRadius;
+
+        FPlanetData PlanetData = FPlanetData(PlanetIndex, OrbitRadius, PlanetModel);
+        PlanetarySystemModel.PlanetsList.Add(PlanetData);
     }
-
 
     return PlanetarySystemModel;
 }
 
-EPlanetType UPlanetarySystemGenerator::DeterminePlanetType(FPlanetGenerationModel PlanetModel)
+
+EPlanetaryZoneType UPlanetarySystemGenerator::DeterminePlanetZone(double OrbitRadius, FPlanetarySystemGenerationModel PlanetarySystemModel)
+{
+    // TODO: To Struct
+    /*for (FZone Zone : Zones)
+    {
+        if (OrbitRadius >= Zone.Radius.InnerRadius && OrbitRadius <= Zone.Radius.OuterRadius)
+        {
+            return Zone.ZoneType;
+        }
+    }*/
+
+    if (OrbitRadius >= PlanetarySystemModel.DeadZoneRadius.InnerRadius && OrbitRadius <= PlanetarySystemModel.DeadZoneRadius.OuterRadius)
+    {
+        return EPlanetaryZoneType::DeadZone;
+    }
+
+    if (OrbitRadius >= PlanetarySystemModel.HotZoneRadius.InnerRadius && OrbitRadius <= PlanetarySystemModel.HotZoneRadius.OuterRadius)
+    {
+        return EPlanetaryZoneType::HotZone;
+    }
+    
+    if (OrbitRadius >= PlanetarySystemModel.WarmZoneRadius.InnerRadius && OrbitRadius <= PlanetarySystemModel.WarmZoneRadius.OuterRadius)
+    {
+        return EPlanetaryZoneType::WarmZone;
+    }
+
+    if (OrbitRadius >= PlanetarySystemModel.HabitableZoneRadius.InnerRadius && OrbitRadius <= PlanetarySystemModel.HabitableZoneRadius.OuterRadius)
+    {
+        return EPlanetaryZoneType::HabitableZone;
+    }
+
+    if (OrbitRadius >= PlanetarySystemModel.ColdZoneRadius.InnerRadius && OrbitRadius <= PlanetarySystemModel.ColdZoneRadius.OuterRadius)
+    {
+        return EPlanetaryZoneType::ColdZone;
+    }
+    
+    if (OrbitRadius >= PlanetarySystemModel.IceZoneRadius.InnerRadius && OrbitRadius <= PlanetarySystemModel.IceZoneRadius.OuterRadius)
+    {
+        return EPlanetaryZoneType::IceZone;
+    }
+    
+    if (OrbitRadius >= PlanetarySystemModel.GasGiantsZoneRadius.InnerRadius && OrbitRadius <= PlanetarySystemModel.GasGiantsZoneRadius.OuterRadius)
+    {
+        return EPlanetaryZoneType::GasGiantsZone;
+    }
+    
+    if (OrbitRadius >= PlanetarySystemModel.GasGiantsZoneRadius.InnerRadius && OrbitRadius <= PlanetarySystemModel.GasGiantsZoneRadius.OuterRadius)
+    {
+        return EPlanetaryZoneType::KuiperBeltZone;
+    }
+
+    // ≈сли мы не нашли подход€щую зону, возвращаем Unknown.
+    return EPlanetaryZoneType::Unknown;
+}
+
+EPlanetType UPlanetarySystemGenerator::DeterminePlanetType(EPlanetaryZoneType PlanetZone)
 {
 
+    // ѕолучите массив веро€тностей дл€ типов планет в этой зоне.
+    TArray<FPlanetTypeProbability> PlanetTypeProbabilities = ZonePlanetProbabilities[PlanetZone]; // try catch missed types, crashed 
+
+    // √енерируйте случайное число от 0 до 1.
+    double RandomNumber = FMath::RandRange(0.0f, 1.0f);
+
+    // ѕройдите через массив веро€тностей, подсчитыва€ сумму, пока не достигнете числа, которое больше или равно случайному числу.
+    double CumulativeProbability = 0.0f;
+    for (FPlanetTypeProbability PlanetTypeProbability : PlanetTypeProbabilities)
+    {
+        CumulativeProbability += PlanetTypeProbability.Probability;
+        if (RandomNumber <= CumulativeProbability)
+        {
+            return PlanetTypeProbability.PlanetType;
+        }
+    }
+
+    // ≈сли вы не нашли соответствующего типа планеты (что не должно произойти, если веро€тности правильно нормированы), верните Unknown.
     return EPlanetType::Unknown;
 
 }
-
-//EPlanetarySystemType UPlanetarySystemGenerator::DetermineSystemType(FPlanetarySystemGenerationModel PlanetarySystemModel) {
-//    int PlanetCount = system.GetPlanetCount();
-//    int GasGiantCount = system.GetGasGiantCount();
-//    int habitableZonePlanetCount = system.GetHabitableZonePlanetCount();
-//
-//    if (planetCount == 0) {
-//        return EPlanetarySystemType::NoPlanetSystem;
-//    }
-//    else if (planetCount == 1) {
-//        return EPlanetarySystemType::SinglePlanetSystem;
-//    }
-//    else {
-//        if (habitableZonePlanetCount > 0) {
-//            return EPlanetarySystemType::HabitableZoneSystem;
-//        }
-//        else if (gasGiantCount / static_cast<double>(planetCount) >= 0.5) { // ≈сли 50% или более планет €вл€ютс€ газовыми гигантами
-//            return EPlanetarySystemType::GasGiantDominatedSystem;
-//        }
-//        else {
-//            return EPlanetarySystemType::MultiPlanetSystem;
-//        }
-//    }
-//}
 
 double UPlanetarySystemGenerator::RandGauss()
 {

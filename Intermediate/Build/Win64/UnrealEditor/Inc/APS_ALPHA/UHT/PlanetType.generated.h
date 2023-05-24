@@ -21,20 +21,27 @@ PRAGMA_DISABLE_DEPRECATION_WARNINGS
 #define FOREACH_ENUM_EPLANETTYPE(op) \
 	op(EPlanetType::Terrestrial) \
 	op(EPlanetType::Rocky) \
+	op(EPlanetType::Greenhouse) \
+	op(EPlanetType::Melted) \
+	op(EPlanetType::HotGiant) \
 	op(EPlanetType::GasGiant) \
 	op(EPlanetType::IceGiant) \
 	op(EPlanetType::Dwarf) \
 	op(EPlanetType::Exoplanet) \
 	op(EPlanetType::Rogue) \
 	op(EPlanetType::Ocean) \
+	op(EPlanetType::Water) \
 	op(EPlanetType::Desert) \
 	op(EPlanetType::Forest) \
 	op(EPlanetType::Volcanic) \
 	op(EPlanetType::Ice) \
+	op(EPlanetType::Frozen) \
 	op(EPlanetType::Ammonia) \
 	op(EPlanetType::Iron) \
 	op(EPlanetType::Carbon) \
 	op(EPlanetType::SuperEarth) \
+	op(EPlanetType::Lava) \
+	op(EPlanetType::Metallic) \
 	op(EPlanetType::Unknown) 
 
 enum class EPlanetType : uint8;
