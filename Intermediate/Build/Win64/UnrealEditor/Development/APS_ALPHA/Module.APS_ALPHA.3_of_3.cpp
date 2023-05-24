@@ -15,7 +15,6 @@
 #include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Source/APS_ALPHA/MoonGenerationModel.cpp"
 #include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Source/APS_ALPHA/MoonGenerator.cpp"
 #include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Source/APS_ALPHA/OrbitalBody.cpp"
-#include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Source/APS_ALPHA/OrbitalBodyGenerationModel.cpp"
 #include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Source/APS_ALPHA/PilotingVehicle.cpp"
 #include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Source/APS_ALPHA/Planet.cpp"
 #include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Source/APS_ALPHA/PlanetaryEnvironment.cpp"

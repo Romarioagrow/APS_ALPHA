@@ -38,11 +38,11 @@ template<> APS_ALPHA_API UScriptStruct* StaticStruct<FOrbitalBodyGenerationModel
 #if WITH_METADATA
 		static const UECodeGen_Private::FMetaDataPairParam NewProp_RotationSpeed_MetaData[];
 #endif
-		static const UECodeGen_Private::FFloatPropertyParams NewProp_RotationSpeed;
+		static const UECodeGen_Private::FDoublePropertyParams NewProp_RotationSpeed;
 #if WITH_METADATA
 		static const UECodeGen_Private::FMetaDataPairParam NewProp_OrbitDistance_MetaData[];
 #endif
-		static const UECodeGen_Private::FFloatPropertyParams NewProp_OrbitDistance;
+		static const UECodeGen_Private::FDoublePropertyParams NewProp_OrbitDistance;
 		static const UECodeGen_Private::FPropertyParamsBase* const PropPointers[];
 		static const UECodeGen_Private::FStructParams ReturnStructParams;
 	};
@@ -62,14 +62,14 @@ template<> APS_ALPHA_API UScriptStruct* StaticStruct<FOrbitalBodyGenerationModel
 		{ "ModuleRelativePath", "OrbitalBodyGenerationModel.h" },
 	};
 #endif
-	const UECodeGen_Private::FFloatPropertyParams Z_Construct_UScriptStruct_FOrbitalBodyGenerationModel_Statics::NewProp_RotationSpeed = { "RotationSpeed", nullptr, (EPropertyFlags)0x0010000000000005, UECodeGen_Private::EPropertyGenFlags::Float, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FOrbitalBodyGenerationModel, RotationSpeed), METADATA_PARAMS(Z_Construct_UScriptStruct_FOrbitalBodyGenerationModel_Statics::NewProp_RotationSpeed_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FOrbitalBodyGenerationModel_Statics::NewProp_RotationSpeed_MetaData)) };
+	const UECodeGen_Private::FDoublePropertyParams Z_Construct_UScriptStruct_FOrbitalBodyGenerationModel_Statics::NewProp_RotationSpeed = { "RotationSpeed", nullptr, (EPropertyFlags)0x0010000000000005, UECodeGen_Private::EPropertyGenFlags::Double, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FOrbitalBodyGenerationModel, RotationSpeed), METADATA_PARAMS(Z_Construct_UScriptStruct_FOrbitalBodyGenerationModel_Statics::NewProp_RotationSpeed_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FOrbitalBodyGenerationModel_Statics::NewProp_RotationSpeed_MetaData)) };
 #if WITH_METADATA
 	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UScriptStruct_FOrbitalBodyGenerationModel_Statics::NewProp_OrbitDistance_MetaData[] = {
 		{ "Category", "OrbitalBodyGenerationModel" },
 		{ "ModuleRelativePath", "OrbitalBodyGenerationModel.h" },
 	};
 #endif
-	const UECodeGen_Private::FFloatPropertyParams Z_Construct_UScriptStruct_FOrbitalBodyGenerationModel_Statics::NewProp_OrbitDistance = { "OrbitDistance", nullptr, (EPropertyFlags)0x0010000000000005, UECodeGen_Private::EPropertyGenFlags::Float, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FOrbitalBodyGenerationModel, OrbitDistance), METADATA_PARAMS(Z_Construct_UScriptStruct_FOrbitalBodyGenerationModel_Statics::NewProp_OrbitDistance_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FOrbitalBodyGenerationModel_Statics::NewProp_OrbitDistance_MetaData)) };
+	const UECodeGen_Private::FDoublePropertyParams Z_Construct_UScriptStruct_FOrbitalBodyGenerationModel_Statics::NewProp_OrbitDistance = { "OrbitDistance", nullptr, (EPropertyFlags)0x0010000000000005, UECodeGen_Private::EPropertyGenFlags::Double, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FOrbitalBodyGenerationModel, OrbitDistance), METADATA_PARAMS(Z_Construct_UScriptStruct_FOrbitalBodyGenerationModel_Statics::NewProp_OrbitDistance_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FOrbitalBodyGenerationModel_Statics::NewProp_OrbitDistance_MetaData)) };
 	const UECodeGen_Private::FPropertyParamsBase* const Z_Construct_UScriptStruct_FOrbitalBodyGenerationModel_Statics::PropPointers[] = {
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FOrbitalBodyGenerationModel_Statics::NewProp_RotationSpeed,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FOrbitalBodyGenerationModel_Statics::NewProp_OrbitDistance,
@@ -100,9 +100,9 @@ template<> APS_ALPHA_API UScriptStruct* StaticStruct<FOrbitalBodyGenerationModel
 		static const FStructRegisterCompiledInInfo ScriptStructInfo[];
 	};
 	const FStructRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_OrbitalBodyGenerationModel_h_Statics::ScriptStructInfo[] = {
-		{ FOrbitalBodyGenerationModel::StaticStruct, Z_Construct_UScriptStruct_FOrbitalBodyGenerationModel_Statics::NewStructOps, TEXT("OrbitalBodyGenerationModel"), &Z_Registration_Info_UScriptStruct_OrbitalBodyGenerationModel, CONSTRUCT_RELOAD_VERSION_INFO(FStructReloadVersionInfo, sizeof(FOrbitalBodyGenerationModel), 2170198895U) },
+		{ FOrbitalBodyGenerationModel::StaticStruct, Z_Construct_UScriptStruct_FOrbitalBodyGenerationModel_Statics::NewStructOps, TEXT("OrbitalBodyGenerationModel"), &Z_Registration_Info_UScriptStruct_OrbitalBodyGenerationModel, CONSTRUCT_RELOAD_VERSION_INFO(FStructReloadVersionInfo, sizeof(FOrbitalBodyGenerationModel), 634517097U) },
 	};
-	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_OrbitalBodyGenerationModel_h_1585755083(TEXT("/Script/APS_ALPHA"),
+	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_OrbitalBodyGenerationModel_h_858252469(TEXT("/Script/APS_ALPHA"),
 		nullptr, 0,
 		Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_OrbitalBodyGenerationModel_h_Statics::ScriptStructInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_OrbitalBodyGenerationModel_h_Statics::ScriptStructInfo),
 		nullptr, 0);

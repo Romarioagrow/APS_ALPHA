@@ -40,6 +40,8 @@ private:
 		TArray<FPlanetData> PlanetsList;
 
 
+
+
 	/// ZONES 
 	/// TO SINGLE STRUCT
 

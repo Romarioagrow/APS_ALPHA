@@ -11,10 +11,10 @@ struct FOrbitalBodyGenerationModel :
     GENERATED_BODY()
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite)
-        float RotationSpeed;
+        double RotationSpeed{ 0 };
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite)
-        float OrbitDistance;
+        double OrbitDistance{ 0 };
 
 };
 

@@ -55,6 +55,14 @@ template<> APS_ALPHA_API UScriptStruct* StaticStruct<FPlanetGenerationModel>()
 		static const UECodeGen_Private::FMetaDataPairParam NewProp_PlanetZone_MetaData[];
 #endif
 		static const UECodeGen_Private::FEnumPropertyParams NewProp_PlanetZone;
+#if WITH_METADATA
+		static const UECodeGen_Private::FMetaDataPairParam NewProp_PlanetDensity_MetaData[];
+#endif
+		static const UECodeGen_Private::FDoublePropertyParams NewProp_PlanetDensity;
+#if WITH_METADATA
+		static const UECodeGen_Private::FMetaDataPairParam NewProp_PlanetGravityStrength_MetaData[];
+#endif
+		static const UECodeGen_Private::FDoublePropertyParams NewProp_PlanetGravityStrength;
 		static const UECodeGen_Private::FPropertyParamsBase* const PropPointers[];
 		static const UECodeGen_Private::FStructParams ReturnStructParams;
 	};
@@ -104,6 +112,20 @@ template<> APS_ALPHA_API UScriptStruct* StaticStruct<FPlanetGenerationModel>()
 	};
 #endif
 	const UECodeGen_Private::FEnumPropertyParams Z_Construct_UScriptStruct_FPlanetGenerationModel_Statics::NewProp_PlanetZone = { "PlanetZone", nullptr, (EPropertyFlags)0x0010000000000005, UECodeGen_Private::EPropertyGenFlags::Enum, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FPlanetGenerationModel, PlanetZone), Z_Construct_UEnum_APS_ALPHA_EPlanetaryZoneType, METADATA_PARAMS(Z_Construct_UScriptStruct_FPlanetGenerationModel_Statics::NewProp_PlanetZone_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FPlanetGenerationModel_Statics::NewProp_PlanetZone_MetaData)) }; // 266526262
+#if WITH_METADATA
+	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UScriptStruct_FPlanetGenerationModel_Statics::NewProp_PlanetDensity_MetaData[] = {
+		{ "Category", "Planet" },
+		{ "ModuleRelativePath", "PlanetGenerationModel.h" },
+	};
+#endif
+	const UECodeGen_Private::FDoublePropertyParams Z_Construct_UScriptStruct_FPlanetGenerationModel_Statics::NewProp_PlanetDensity = { "PlanetDensity", nullptr, (EPropertyFlags)0x0010000000000005, UECodeGen_Private::EPropertyGenFlags::Double, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FPlanetGenerationModel, PlanetDensity), METADATA_PARAMS(Z_Construct_UScriptStruct_FPlanetGenerationModel_Statics::NewProp_PlanetDensity_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FPlanetGenerationModel_Statics::NewProp_PlanetDensity_MetaData)) };
+#if WITH_METADATA
+	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UScriptStruct_FPlanetGenerationModel_Statics::NewProp_PlanetGravityStrength_MetaData[] = {
+		{ "Category", "Planet" },
+		{ "ModuleRelativePath", "PlanetGenerationModel.h" },
+	};
+#endif
+	const UECodeGen_Private::FDoublePropertyParams Z_Construct_UScriptStruct_FPlanetGenerationModel_Statics::NewProp_PlanetGravityStrength = { "PlanetGravityStrength", nullptr, (EPropertyFlags)0x0010000000000005, UECodeGen_Private::EPropertyGenFlags::Double, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FPlanetGenerationModel, PlanetGravityStrength), METADATA_PARAMS(Z_Construct_UScriptStruct_FPlanetGenerationModel_Statics::NewProp_PlanetGravityStrength_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FPlanetGenerationModel_Statics::NewProp_PlanetGravityStrength_MetaData)) };
 	const UECodeGen_Private::FPropertyParamsBase* const Z_Construct_UScriptStruct_FPlanetGenerationModel_Statics::PropPointers[] = {
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FPlanetGenerationModel_Statics::NewProp_PlanetType_Underlying,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FPlanetGenerationModel_Statics::NewProp_PlanetType,
@@ -111,6 +133,8 @@ template<> APS_ALPHA_API UScriptStruct* StaticStruct<FPlanetGenerationModel>()
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FPlanetGenerationModel_Statics::NewProp_Temperature,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FPlanetGenerationModel_Statics::NewProp_PlanetZone_Underlying,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FPlanetGenerationModel_Statics::NewProp_PlanetZone,
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FPlanetGenerationModel_Statics::NewProp_PlanetDensity,
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FPlanetGenerationModel_Statics::NewProp_PlanetGravityStrength,
 	};
 	const UECodeGen_Private::FStructParams Z_Construct_UScriptStruct_FPlanetGenerationModel_Statics::ReturnStructParams = {
 		(UObject* (*)())Z_Construct_UPackage__Script_APS_ALPHA,
@@ -138,9 +162,9 @@ template<> APS_ALPHA_API UScriptStruct* StaticStruct<FPlanetGenerationModel>()
 		static const FStructRegisterCompiledInInfo ScriptStructInfo[];
 	};
 	const FStructRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_PlanetGenerationModel_h_Statics::ScriptStructInfo[] = {
-		{ FPlanetGenerationModel::StaticStruct, Z_Construct_UScriptStruct_FPlanetGenerationModel_Statics::NewStructOps, TEXT("PlanetGenerationModel"), &Z_Registration_Info_UScriptStruct_PlanetGenerationModel, CONSTRUCT_RELOAD_VERSION_INFO(FStructReloadVersionInfo, sizeof(FPlanetGenerationModel), 2900875056U) },
+		{ FPlanetGenerationModel::StaticStruct, Z_Construct_UScriptStruct_FPlanetGenerationModel_Statics::NewStructOps, TEXT("PlanetGenerationModel"), &Z_Registration_Info_UScriptStruct_PlanetGenerationModel, CONSTRUCT_RELOAD_VERSION_INFO(FStructReloadVersionInfo, sizeof(FPlanetGenerationModel), 3253341240U) },
 	};
-	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_PlanetGenerationModel_h_605661465(TEXT("/Script/APS_ALPHA"),
+	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_PlanetGenerationModel_h_2582371760(TEXT("/Script/APS_ALPHA"),
 		nullptr, 0,
 		Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_PlanetGenerationModel_h_Statics::ScriptStructInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_PlanetGenerationModel_h_Statics::ScriptStructInfo),
 		nullptr, 0);
