@@ -50,9 +50,7 @@ template<> APS_ALPHA_API UScriptStruct* StaticStruct<FPlanetTypeProbability>()
 #if WITH_METADATA
 	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UScriptStruct_FPlanetTypeProbability_Statics::Struct_MetaDataParams[] = {
 		{ "BlueprintType", "true" },
-		{ "Comment", "//USTRUCT(BlueprintType)\n//struct FPlanetTypeProbability\n//{\n//    GENERATED_USTRUCT_BODY()\n//    EPlanetType Type;\n//    float Probability;\n//};\n" },
 		{ "ModuleRelativePath", "PlanetaryProceduralGenerator.h" },
-		{ "ToolTip", "USTRUCT(BlueprintType)\nstruct FPlanetTypeProbability\n{\n    GENERATED_USTRUCT_BODY()\n    EPlanetType Type;\n    float Probability;\n};" },
 	};
 #endif
 	void* Z_Construct_UScriptStruct_FPlanetTypeProbability_Statics::NewStructOps()
@@ -166,12 +164,12 @@ template<> APS_ALPHA_API UScriptStruct* StaticStruct<FPlanetTypeProbability>()
 		static const FClassRegisterCompiledInInfo ClassInfo[];
 	};
 	const FStructRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_PlanetaryProceduralGenerator_h_Statics::ScriptStructInfo[] = {
-		{ FPlanetTypeProbability::StaticStruct, Z_Construct_UScriptStruct_FPlanetTypeProbability_Statics::NewStructOps, TEXT("PlanetTypeProbability"), &Z_Registration_Info_UScriptStruct_PlanetTypeProbability, CONSTRUCT_RELOAD_VERSION_INFO(FStructReloadVersionInfo, sizeof(FPlanetTypeProbability), 2202783544U) },
+		{ FPlanetTypeProbability::StaticStruct, Z_Construct_UScriptStruct_FPlanetTypeProbability_Statics::NewStructOps, TEXT("PlanetTypeProbability"), &Z_Registration_Info_UScriptStruct_PlanetTypeProbability, CONSTRUCT_RELOAD_VERSION_INFO(FStructReloadVersionInfo, sizeof(FPlanetTypeProbability), 593961349U) },
 	};
 	const FClassRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_PlanetaryProceduralGenerator_h_Statics::ClassInfo[] = {
 		{ Z_Construct_UClass_UPlanetarySystemGenerator, UPlanetarySystemGenerator::StaticClass, TEXT("UPlanetarySystemGenerator"), &Z_Registration_Info_UClass_UPlanetarySystemGenerator, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(UPlanetarySystemGenerator), 1692124698U) },
 	};
-	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_PlanetaryProceduralGenerator_h_3795547675(TEXT("/Script/APS_ALPHA"),
+	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_PlanetaryProceduralGenerator_h_1689476917(TEXT("/Script/APS_ALPHA"),
 		Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_PlanetaryProceduralGenerator_h_Statics::ClassInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_PlanetaryProceduralGenerator_h_Statics::ClassInfo),
 		Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_PlanetaryProceduralGenerator_h_Statics::ScriptStructInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_PlanetaryProceduralGenerator_h_Statics::ScriptStructInfo),
 		nullptr, 0);

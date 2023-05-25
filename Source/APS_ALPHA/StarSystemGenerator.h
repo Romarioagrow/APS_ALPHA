@@ -28,31 +28,4 @@ public:
 	void ApplyModel(AStarSystem* StarSystem, FStarSystemGenerationModel StarSystemGenerationModel);
 
 	FStarSystemGenerationModel GenerateRandomStarSystemModel();
-
-//	// функция генерации стартовой системы
-//	void GenerateHomeStarSystem(FStarSystemGenerationModel StarSystemModel, UWorld* World); //FStartSystemParams Params
-//
-//	// функция генерации общей звездной системы
-//	void GenerateRandomStarSystem(FStarSystemGenerationModel StarSystemModel, UWorld* World); //FStartSystemParams Params
-//
-//	FStarSystemGenerationModel GenerateHomeStarSystemModel();
-//
-//	FPlanetarySystemGenerationModel GenerateRandomPlanetraySystemModel();
-//
-//	FStarSystemGenerationModel GenerateRandomStarSystemModel();
-//
-//private:
-//	void CreatePlanetarySystem(FPlanetarySystemGenerationModel PlanetarySystemModel); //FPlanetarySystemParams Params
-//
-//	//AStarSystem* SpawnNewStarSystem(FStarSystemGenerationModel StarSystemModel);
-//
-//public:
-//	UPROPERTY()
-//		UStarGenerator* StarGenerator;
-//
-//	UPROPERTY()
-//		UPlanetGenerator* PlanetGenerator;
-//
-//	UPROPERTY()
-//		UMoonGenerator* MoonGenerator;
 };

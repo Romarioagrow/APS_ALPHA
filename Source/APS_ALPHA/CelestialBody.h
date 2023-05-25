@@ -16,16 +16,16 @@ class APS_ALPHA_API ACelestialBody : public AAstroActor, public IAstonomicalBody
 	GENERATED_BODY()
 
 private:
-	UPROPERTY(VisibleAnywhere)
+	UPROPERTY(VisibleAnywhere, Category = "Celestial Body")
 		float Radius{ 0 };
 
-	UPROPERTY(VisibleAnywhere)
+	UPROPERTY(VisibleAnywhere, Category = "Celestial Body")
 		float Mass{ 0 };
 	
-	UPROPERTY(VisibleAnywhere)
+	UPROPERTY(VisibleAnywhere, Category = "Celestial Body")
 		FString Age { "Unknown" };
 	
-	UPROPERTY(VisibleAnywhere)
+	UPROPERTY(VisibleAnywhere, Category = "Celestial Body")
 		FName AstroName;
 
 public:
@@ -38,5 +38,4 @@ public:
 	void SetAge(FString Age);
 
 	void SetName(FName Name);
-	
 };

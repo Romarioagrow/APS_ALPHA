@@ -109,7 +109,9 @@ template<> APS_ALPHA_API UScriptStruct* StaticStruct<FStarGenerationModel>()
 #if WITH_METADATA
 	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UScriptStruct_FStarGenerationModel_Statics::NewProp_SpectralClass_MetaData[] = {
 		{ "Category", "StarGenerationModel" },
+		{ "Comment", "/// TODO: Rename to StellarType\n" },
 		{ "ModuleRelativePath", "StarGenerationModel.h" },
+		{ "ToolTip", "TODO: Rename to StellarType" },
 	};
 #endif
 	const UECodeGen_Private::FEnumPropertyParams Z_Construct_UScriptStruct_FStarGenerationModel_Statics::NewProp_SpectralClass = { "SpectralClass", nullptr, (EPropertyFlags)0x0010000000020001, UECodeGen_Private::EPropertyGenFlags::Enum, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FStarGenerationModel, SpectralClass), Z_Construct_UEnum_APS_ALPHA_ESpectralClass, METADATA_PARAMS(Z_Construct_UScriptStruct_FStarGenerationModel_Statics::NewProp_SpectralClass_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FStarGenerationModel_Statics::NewProp_SpectralClass_MetaData)) }; // 1101356590
@@ -213,9 +215,9 @@ template<> APS_ALPHA_API UScriptStruct* StaticStruct<FStarGenerationModel>()
 		static const FStructRegisterCompiledInInfo ScriptStructInfo[];
 	};
 	const FStructRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarGenerationModel_h_Statics::ScriptStructInfo[] = {
-		{ FStarGenerationModel::StaticStruct, Z_Construct_UScriptStruct_FStarGenerationModel_Statics::NewStructOps, TEXT("StarGenerationModel"), &Z_Registration_Info_UScriptStruct_StarGenerationModel, CONSTRUCT_RELOAD_VERSION_INFO(FStructReloadVersionInfo, sizeof(FStarGenerationModel), 871323455U) },
+		{ FStarGenerationModel::StaticStruct, Z_Construct_UScriptStruct_FStarGenerationModel_Statics::NewStructOps, TEXT("StarGenerationModel"), &Z_Registration_Info_UScriptStruct_StarGenerationModel, CONSTRUCT_RELOAD_VERSION_INFO(FStructReloadVersionInfo, sizeof(FStarGenerationModel), 2509045707U) },
 	};
-	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarGenerationModel_h_2191269459(TEXT("/Script/APS_ALPHA"),
+	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarGenerationModel_h_3417783691(TEXT("/Script/APS_ALPHA"),
 		nullptr, 0,
 		Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarGenerationModel_h_Statics::ScriptStructInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarGenerationModel_h_Statics::ScriptStructInfo),
 		nullptr, 0);

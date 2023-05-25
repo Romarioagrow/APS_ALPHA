@@ -14,13 +14,7 @@
 #include "BaseProceduralGenerator.h"
 #include "PlanetaryProceduralGenerator.generated.h"
 
-//USTRUCT(BlueprintType)
-//struct FPlanetTypeProbability
-//{
-//    GENERATED_USTRUCT_BODY()
-//    EPlanetType Type;
-//    float Probability;
-//};
+typedef float PlanetProbability;
 
 USTRUCT(BlueprintType)
 struct FPlanetTypeProbability
@@ -48,8 +42,6 @@ struct FPlanetTypeProbability
 
 struct FDensityRange
 {
-    //GENERATED_USTRUCT_BODY()
-
     double MinDensity;
     double MaxDensity;
 
@@ -57,10 +49,8 @@ struct FDensityRange
     FDensityRange(double Min, double Max) : MinDensity(Min), MaxDensity(Max) {}
 };
 
-struct FRadiusRange {
-
-   // GENERATED_USTRUCT_BODY()
-
+struct FRadiusRange 
+{
     float MinRadius;
     float MaxRadius;
 
@@ -78,8 +68,6 @@ class APS_ALPHA_API UPlanetarySystemGenerator : public UBaseProceduralGenerator
 	GENERATED_BODY()
 
 public:
-
-
     int DetermineMaxPlanets(EStellarClass StellarClass, FStarGenerationModel StarModel);
 
     void ApplyModel(APlanetarySystem* NewPlanetarySystem, FPlanetarySystemGenerationModel PlanetraySystemModel);
@@ -91,7 +79,6 @@ public:
     FRadiusRange GetPlanetRadiusRange(EPlanetType PlanetType);
 
     FDensityRange GetPlanetDensityRange(EPlanetType PlanetType);
-
     
 private:
     EPlanetaryZoneType DeterminePlanetZone(double OrbitRadius, FPlanetarySystemGenerationModel PlanetarySystemModel);
@@ -106,12 +93,7 @@ private:
 
     TArray<double> OrbitRadii;
 
-typedef float PlanetProbability;
-
-
-
 private:
-
     const TMap<EPlanetType, FRadiusRange> PlanetRadiusRanges =
     {
         {EPlanetType::Terrestrial,  FRadiusRange(0.9, 1.1)},     // Землеподобные
@@ -343,8 +325,6 @@ private:
         {EStellarClass::BlackHole, 0.01f}
     };
 
-
-
     template <typename T>
     T GetRandomWithProbability(const TMap<T, int32>& Probabilities)
     {
@@ -396,13 +376,11 @@ private:
             //{EPlanetType::Asteroid, 0.5f}
         }},
         
-        
         {EPlanetaryZoneType::Unknown,
         {
             {EPlanetType::Unknown, 1.f},
             //{EPlanetType::Asteroid, 0.5f}
         }},
-
 
         {EPlanetaryZoneType::ColdZone,
         {
@@ -432,8 +410,6 @@ private:
             {EPlanetType::Volcanic, 0.3f},
             {EPlanetType::Greenhouse, 0.5f},
             {EPlanetType::Ammonia, 0.3f},
-
-            //{EPlanetType::Forest, 0.4f}
         }},
 
         {EPlanetaryZoneType::HotZone,
@@ -479,6 +455,7 @@ private:
         // и так далее для каждой зоны...
     };
 
+    // TODO: For Fully Random Generation 
     /*TMap<EPlanetarySystemType, FPlanetarySystemRanges> PlanetarySystemRanges =
     {
         {EPlanetarySystemType::NoPlanetSystem, FPlanetarySystemRanges(TTuple<int, int>(0, 0), TTuple<double, double>(0.0, 0.0))},

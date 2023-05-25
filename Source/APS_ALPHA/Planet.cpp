@@ -6,7 +6,6 @@
 
 APlanet::APlanet()
 {
-	// Создание компонента SphereCollisionComponent
 	SphereCollisionComponent = CreateDefaultSubobject<USphereComponent>(TEXT("SphereCollisionComponent"));
 	RootComponent = SphereCollisionComponent;
 }
@@ -45,9 +44,6 @@ void APlanet::SetAmountOfMoons(int NewAmountOfMoons)
 {
 	this->AmountOfMoons = NewAmountOfMoons;
 }
-
-
-//PlanetActor->SetMoonsList(PlanetGenerationModel.MoonsList);
 
 void APlanet::SetMoonsList(TArray<FMoonData> NewMoonsList)
 {
