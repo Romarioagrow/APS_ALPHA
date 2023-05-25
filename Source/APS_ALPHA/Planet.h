@@ -1,11 +1,12 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
-//#include "Moon.h"
 #include <Components/SphereComponent.h>
 #include "PlanetaryEnvironment.h"
 #include "OrbitalBody.h"
 #include "PlanetType.h"
+#include "MoonGenerationModel.h"
+#include "PlanetGenerationModel.h"
 #include "PlanetaryZoneType.h"
 
 #include "CoreMinimal.h"
@@ -14,7 +15,7 @@
 
 // Forward declaration of AMoon
 class AMoon;
-
+class AStar;
 /**
  * 
  */
@@ -29,6 +30,9 @@ public:
 private:
 	UPROPERTY(VisibleAnywhere, Category = "Planet")
 		EPlanetType PlanetType;
+
+	UPROPERTY(VisibleAnywhere)
+		AStar* AStarPlanet;
 
 	// Число спутников
 	UPROPERTY(VisibleAnywhere, Category = "Planet")
@@ -47,6 +51,9 @@ private:
 	UPROPERTY(VisibleAnywhere, Category = "Planet")
 		double PlanetGravityStrength{ 0 };
 
+	UPROPERTY(VisibleAnywhere, Category = "Planet")
+		TArray<FMoonData> MoonsList;
+
 private:
 	TArray<AMoon*> Moons;
 
@@ -63,5 +70,7 @@ public:
 	void SetPlanetGravityStrength(double PlanetGravityStrength);
 	void SetTemperature(double Temperature);
 	void SetAmountOfMoons(int AmountOfMoons);
+
+	void SetMoonsList(TArray<FMoonData> NewAmountOfMoons);
 
 };

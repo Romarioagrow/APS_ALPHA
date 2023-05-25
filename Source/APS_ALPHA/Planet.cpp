@@ -2,6 +2,7 @@
 
 
 #include "Planet.h"
+#include "PlanetGenerationModel.h"
 
 APlanet::APlanet()
 {
@@ -43,4 +44,12 @@ void APlanet::SetTemperature(double NewTemperature)
 void APlanet::SetAmountOfMoons(int NewAmountOfMoons)
 {
 	this->AmountOfMoons = NewAmountOfMoons;
+}
+
+
+//PlanetActor->SetMoonsList(PlanetGenerationModel.MoonsList);
+
+void APlanet::SetMoonsList(TArray<FMoonData> NewMoonsList)
+{
+	this->MoonsList = NewMoonsList;
 }
