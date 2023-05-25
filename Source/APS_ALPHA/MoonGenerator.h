@@ -27,7 +27,7 @@ public:
 
     double CalculateRandomMoonDensity(EMoonType MoonType);
 
-	void ApplyModel(AAstroActor* AstroActor, FGenerationModel GenerationModel);
+	void ApplyModel(AMoon* Moon, FMoonGenerationModel MoonGenerationModel);
 
 	FMoonGenerationModel GenerateMoonModel();
 

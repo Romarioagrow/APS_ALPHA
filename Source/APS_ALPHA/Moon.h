@@ -22,12 +22,25 @@ class APS_ALPHA_API AMoon : public AOrbitalBody, public IPlanetaryEnvironment
 	GENERATED_BODY()
 
 private:
-	UPROPERTY(VisibleAnywhere)
+	UPROPERTY(VisibleAnywhere, Category = "Moon Model")
 		APlanet* ParentPlanet;
 
-	UPROPERTY(VisibleAnywhere)
+	UPROPERTY(VisibleAnywhere, Category = "Moon Model")
 		EMoonType MoonType;
+
+	UPROPERTY(VisibleAnywhere, Category = "Moon Model")
+		double MoonDensity;
+
+	UPROPERTY(VisibleAnywhere, Category = "Moon Model")
+		double MoonGravity;
 
 public:
 	void SetParentPlanet(APlanet* Planet);
+
+	void SetMoonType(EMoonType Type);
+
+	void SetMoonDensity(double MoonDensity);
+
+	void SetMoonGravity(double MoonGravity);
+
 };

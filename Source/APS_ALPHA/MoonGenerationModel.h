@@ -15,5 +15,11 @@ struct FMoonGenerationModel :
 
     UPROPERTY(EditAnywhere, Category = "Moon Generation Model")
     EMoonType Type;
+
+    UPROPERTY(EditAnywhere, Category = "Moon Generation Model")
+        double MoonDensity;
+    
+    UPROPERTY(EditAnywhere, Category = "Moon Generation Model")
+        double MoonGravity;
 };
 

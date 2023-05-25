@@ -79,9 +79,9 @@ void EmptyLinkFunctionForGeneratedCodeAsteroidBelt() {}
 		static const FClassRegisterCompiledInInfo ClassInfo[];
 	};
 	const FClassRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_AsteroidBelt_h_Statics::ClassInfo[] = {
-		{ Z_Construct_UClass_AAsteroidBelt, AAsteroidBelt::StaticClass, TEXT("AAsteroidBelt"), &Z_Registration_Info_UClass_AAsteroidBelt, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(AAsteroidBelt), 2423115797U) },
+		{ Z_Construct_UClass_AAsteroidBelt, AAsteroidBelt::StaticClass, TEXT("AAsteroidBelt"), &Z_Registration_Info_UClass_AAsteroidBelt, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(AAsteroidBelt), 320120349U) },
 	};
-	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_AsteroidBelt_h_4190640643(TEXT("/Script/APS_ALPHA"),
+	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_AsteroidBelt_h_1236555611(TEXT("/Script/APS_ALPHA"),
 		Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_AsteroidBelt_h_Statics::ClassInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_AsteroidBelt_h_Statics::ClassInfo),
 		nullptr, 0,
 		nullptr, 0);
