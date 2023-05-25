@@ -94,11 +94,9 @@ void AStarClusterGenerator::GenerateRandomStarSystem()
             {
 
                 // Planet Model and generation
-                FPlanetGenerationModel PlanetModel = FPlanetData.PlanetModel; //PlanetGenerator->GenerateRandomPlanetModel();
+                FPlanetGenerationModel PlanetModel = FPlanetData.PlanetModel; 
                 APlanet* NewPlanet = World->SpawnActor<APlanet>(BP_PlanetClass);
                 PlanetGenerator->ApplyModel(NewPlanet, PlanetModel);
-
-                // Connect planet with star
                 PlanetGenerator->ConnectPlanetWithStar(NewPlanet, NewStar);
                 /*NewStar->AddPlanet(NewPlanet);
                 NewPlanet->AttachToActor(NewStar, FAttachmentTransformRules::KeepRelativeTransform);*/
@@ -111,11 +109,12 @@ void AStarClusterGenerator::GenerateRandomStarSystem()
 
                 for (const FMoonData FMoonData : PlanetModel.MoonsList)
                 {
-					FMoonGenerationModel MoonModel = FMoonData.MoonModel; //MoonGenerator->GenerateRandomMoonModel();
+					FMoonGenerationModel MoonModel = FMoonData.MoonModel; 
 					AMoon* NewMoon = World->SpawnActor<AMoon>(BP_MoonClass);
 					MoonGenerator->ApplyModel(NewMoon, MoonModel);
-					NewPlanet->AddMoon(NewMoon);
-					NewMoon->AttachToActor(NewPlanet, FAttachmentTransformRules::KeepRelativeTransform);
+                    MoonGenerator->ConnectMoonWithPlanet(NewMoon, NewPlanet);
+                    /*NewPlanet->AddMoon(NewMoon);
+					NewMoon->AttachToActor(NewPlanet, FAttachmentTransformRules::KeepRelativeTransform);*/
 				}
 
             }
