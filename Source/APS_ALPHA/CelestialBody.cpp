@@ -27,3 +27,4 @@ void ACelestialBody::SetName(FName NewName)
 	this->AstroName = NewName;
 
 }
+

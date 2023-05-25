@@ -50,6 +50,7 @@ void UPlanetGenerator::ApplyModel(APlanet* PlanetActor, FPlanetGenerationModel P
 	PlanetActor->SetAmountOfMoons(PlanetGenerationModel.AmountOfMoons);
 	PlanetActor->SetRadius(PlanetGenerationModel.Radius);
 	PlanetActor->SetMass(PlanetGenerationModel.Mass);
+    PlanetActor->SetOrbitDistance(PlanetGenerationModel.OrbitDistance);
 
 }
 
