@@ -43,8 +43,6 @@
 #include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Intermediate/Build/Win64/UnrealEditor/Inc/APS_ALPHA/UHT/GroundVehicle.gen.cpp"
 #include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Intermediate/Build/Win64/UnrealEditor/Inc/APS_ALPHA/UHT/HomeStarSystemGenerationModel.gen.cpp"
 #include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Intermediate/Build/Win64/UnrealEditor/Inc/APS_ALPHA/UHT/KuiperBelt.gen.cpp"
-#include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Intermediate/Build/Win64/UnrealEditor/Inc/APS_ALPHA/UHT/Moon.gen.cpp"
 #include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Intermediate/Build/Win64/UnrealEditor/Inc/APS_ALPHA/UHT/MoonGenerator.gen.cpp"
-#include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Intermediate/Build/Win64/UnrealEditor/Inc/APS_ALPHA/UHT/MoonType.gen.cpp"
 #include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Intermediate/Build/Win64/UnrealEditor/Inc/APS_ALPHA/UHT/OrbitalBody.gen.cpp"
 #include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Intermediate/Build/Win64/UnrealEditor/Inc/APS_ALPHA/UHT/OrbitalBodyGenerationModel.gen.cpp"

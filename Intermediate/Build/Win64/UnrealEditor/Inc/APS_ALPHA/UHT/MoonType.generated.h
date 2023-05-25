@@ -29,7 +29,8 @@ PRAGMA_DISABLE_DEPRECATION_WARNINGS
 	op(EMoonType::Desert) \
 	op(EMoonType::TidallyLocked) \
 	op(EMoonType::Peculiar) \
-	op(EMoonType::CapturedAsteroid) 
+	op(EMoonType::CapturedAsteroid) \
+	op(EMoonType::Unknown) 
 
 enum class EMoonType : uint8;
 template<> struct TIsUEnumClass<EMoonType> { enum { Value = true }; };
