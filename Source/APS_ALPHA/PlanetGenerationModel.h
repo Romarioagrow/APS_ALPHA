@@ -47,7 +47,7 @@ struct FPlanetGenerationModel :
 
 		FPlanetGenerationModel();
 
-		// Тип планеты (например, газовый гигант, землеподобная планета и т.д.)
+		// Тип планеты 
 		UPROPERTY(VisibleAnywhere, Category = "Planet")
 			EPlanetType PlanetType;
 
@@ -71,10 +71,6 @@ struct FPlanetGenerationModel :
 		UPROPERTY(VisibleAnywhere)
 			TArray<FMoonData> MoonsList;
 		
-		/*UPROPERTY(VisibleAnywhere)
-			TMap<double, double> MoonOrbits;*/
-		
-		//UPROPERTY(VisibleAnywhere)
 			TPair<double, double> MoonOrbitsRange;
 
 };

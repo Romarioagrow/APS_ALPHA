@@ -53,3 +53,8 @@ void APlanet::SetMoonsList(TArray<FMoonData> NewMoonsList)
 {
 	this->MoonsList = NewMoonsList;
 }
+
+void APlanet::SetParentStar(AStar* Star)
+{
+	this->ParnetStar = Star;
+}
