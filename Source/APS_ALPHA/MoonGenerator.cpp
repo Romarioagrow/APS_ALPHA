@@ -2,6 +2,7 @@
 
 
 #include "MoonGenerator.h"
+#include "Planet.h"
 
 UMoonGenerator::UMoonGenerator()
 {
@@ -33,6 +34,13 @@ void UMoonGenerator::ApplyModel(AMoon* Moon, FMoonGenerationModel MoonGeneration
 
 }
 
+
+void UMoonGenerator::ConnectMoonWithPlanet(AMoon* NewMoon, APlanet* NewPlanet)
+{
+    NewPlanet->AddMoon(NewMoon);
+	NewMoon->AttachToActor(NewPlanet, FAttachmentTransformRules::KeepRelativeTransform);
+	NewMoon->SetParentPlanet(NewPlanet);
+}
 
 double UMoonGenerator::CalculateGravitationalForce(double MassPlanet, double MassMoon, double Distance)
 {
