@@ -63,4 +63,5 @@ public:
 	void SetPlanetGravityStrength(double PlanetGravityStrength);
 	void SetTemperature(double Temperature);
 	void SetAmountOfMoons(int AmountOfMoons);
+
 };

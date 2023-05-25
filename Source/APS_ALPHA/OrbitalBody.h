@@ -30,4 +30,8 @@ private:
 	
 	UPROPERTY(VisibleAnywhere)
 		float AxialTilt;
+
+public:
+	void SetOrbitDistance(double OrbitDistance);
+
 };
