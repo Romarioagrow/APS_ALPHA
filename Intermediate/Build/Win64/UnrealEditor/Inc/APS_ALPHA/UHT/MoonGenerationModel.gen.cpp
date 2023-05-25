@@ -41,6 +41,14 @@ template<> APS_ALPHA_API UScriptStruct* StaticStruct<FMoonGenerationModel>()
 		static const UECodeGen_Private::FMetaDataPairParam NewProp_Type_MetaData[];
 #endif
 		static const UECodeGen_Private::FEnumPropertyParams NewProp_Type;
+#if WITH_METADATA
+		static const UECodeGen_Private::FMetaDataPairParam NewProp_MoonDensity_MetaData[];
+#endif
+		static const UECodeGen_Private::FDoublePropertyParams NewProp_MoonDensity;
+#if WITH_METADATA
+		static const UECodeGen_Private::FMetaDataPairParam NewProp_MoonGravity_MetaData[];
+#endif
+		static const UECodeGen_Private::FDoublePropertyParams NewProp_MoonGravity;
 		static const UECodeGen_Private::FPropertyParamsBase* const PropPointers[];
 		static const UECodeGen_Private::FStructParams ReturnStructParams;
 	};
@@ -62,9 +70,25 @@ template<> APS_ALPHA_API UScriptStruct* StaticStruct<FMoonGenerationModel>()
 	};
 #endif
 	const UECodeGen_Private::FEnumPropertyParams Z_Construct_UScriptStruct_FMoonGenerationModel_Statics::NewProp_Type = { "Type", nullptr, (EPropertyFlags)0x0010000000000001, UECodeGen_Private::EPropertyGenFlags::Enum, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FMoonGenerationModel, Type), Z_Construct_UEnum_APS_ALPHA_EMoonType, METADATA_PARAMS(Z_Construct_UScriptStruct_FMoonGenerationModel_Statics::NewProp_Type_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FMoonGenerationModel_Statics::NewProp_Type_MetaData)) }; // 647168076
+#if WITH_METADATA
+	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UScriptStruct_FMoonGenerationModel_Statics::NewProp_MoonDensity_MetaData[] = {
+		{ "Category", "Moon Generation Model" },
+		{ "ModuleRelativePath", "MoonGenerationModel.h" },
+	};
+#endif
+	const UECodeGen_Private::FDoublePropertyParams Z_Construct_UScriptStruct_FMoonGenerationModel_Statics::NewProp_MoonDensity = { "MoonDensity", nullptr, (EPropertyFlags)0x0010000000000001, UECodeGen_Private::EPropertyGenFlags::Double, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FMoonGenerationModel, MoonDensity), METADATA_PARAMS(Z_Construct_UScriptStruct_FMoonGenerationModel_Statics::NewProp_MoonDensity_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FMoonGenerationModel_Statics::NewProp_MoonDensity_MetaData)) };
+#if WITH_METADATA
+	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UScriptStruct_FMoonGenerationModel_Statics::NewProp_MoonGravity_MetaData[] = {
+		{ "Category", "Moon Generation Model" },
+		{ "ModuleRelativePath", "MoonGenerationModel.h" },
+	};
+#endif
+	const UECodeGen_Private::FDoublePropertyParams Z_Construct_UScriptStruct_FMoonGenerationModel_Statics::NewProp_MoonGravity = { "MoonGravity", nullptr, (EPropertyFlags)0x0010000000000001, UECodeGen_Private::EPropertyGenFlags::Double, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FMoonGenerationModel, MoonGravity), METADATA_PARAMS(Z_Construct_UScriptStruct_FMoonGenerationModel_Statics::NewProp_MoonGravity_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FMoonGenerationModel_Statics::NewProp_MoonGravity_MetaData)) };
 	const UECodeGen_Private::FPropertyParamsBase* const Z_Construct_UScriptStruct_FMoonGenerationModel_Statics::PropPointers[] = {
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FMoonGenerationModel_Statics::NewProp_Type_Underlying,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FMoonGenerationModel_Statics::NewProp_Type,
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FMoonGenerationModel_Statics::NewProp_MoonDensity,
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FMoonGenerationModel_Statics::NewProp_MoonGravity,
 	};
 	const UECodeGen_Private::FStructParams Z_Construct_UScriptStruct_FMoonGenerationModel_Statics::ReturnStructParams = {
 		(UObject* (*)())Z_Construct_UPackage__Script_APS_ALPHA,
@@ -92,9 +116,9 @@ template<> APS_ALPHA_API UScriptStruct* StaticStruct<FMoonGenerationModel>()
 		static const FStructRegisterCompiledInInfo ScriptStructInfo[];
 	};
 	const FStructRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_MoonGenerationModel_h_Statics::ScriptStructInfo[] = {
-		{ FMoonGenerationModel::StaticStruct, Z_Construct_UScriptStruct_FMoonGenerationModel_Statics::NewStructOps, TEXT("MoonGenerationModel"), &Z_Registration_Info_UScriptStruct_MoonGenerationModel, CONSTRUCT_RELOAD_VERSION_INFO(FStructReloadVersionInfo, sizeof(FMoonGenerationModel), 3788542627U) },
+		{ FMoonGenerationModel::StaticStruct, Z_Construct_UScriptStruct_FMoonGenerationModel_Statics::NewStructOps, TEXT("MoonGenerationModel"), &Z_Registration_Info_UScriptStruct_MoonGenerationModel, CONSTRUCT_RELOAD_VERSION_INFO(FStructReloadVersionInfo, sizeof(FMoonGenerationModel), 1141667045U) },
 	};
-	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_MoonGenerationModel_h_1894854180(TEXT("/Script/APS_ALPHA"),
+	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_MoonGenerationModel_h_3823397451(TEXT("/Script/APS_ALPHA"),
 		nullptr, 0,
 		Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_MoonGenerationModel_h_Statics::ScriptStructInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_MoonGenerationModel_h_Statics::ScriptStructInfo),
 		nullptr, 0);

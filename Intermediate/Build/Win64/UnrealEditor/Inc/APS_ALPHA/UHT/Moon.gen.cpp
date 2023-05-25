@@ -40,6 +40,14 @@ void EmptyLinkFunctionForGeneratedCodeMoon() {}
 		static const UECodeGen_Private::FMetaDataPairParam NewProp_MoonType_MetaData[];
 #endif
 		static const UECodeGen_Private::FEnumPropertyParams NewProp_MoonType;
+#if WITH_METADATA
+		static const UECodeGen_Private::FMetaDataPairParam NewProp_MoonDensity_MetaData[];
+#endif
+		static const UECodeGen_Private::FDoublePropertyParams NewProp_MoonDensity;
+#if WITH_METADATA
+		static const UECodeGen_Private::FMetaDataPairParam NewProp_MoonGravity_MetaData[];
+#endif
+		static const UECodeGen_Private::FDoublePropertyParams NewProp_MoonGravity;
 		static const UECodeGen_Private::FPropertyParamsBase* const PropPointers[];
 		static const UECodeGen_Private::FImplementedInterfaceParams InterfaceParams[];
 		static const FCppClassTypeInfoStatic StaticCppClassTypeInfo;
@@ -58,7 +66,7 @@ void EmptyLinkFunctionForGeneratedCodeMoon() {}
 #endif
 #if WITH_METADATA
 	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_AMoon_Statics::NewProp_ParentPlanet_MetaData[] = {
-		{ "Category", "Moon" },
+		{ "Category", "Moon Model" },
 		{ "ModuleRelativePath", "Moon.h" },
 	};
 #endif
@@ -66,15 +74,31 @@ void EmptyLinkFunctionForGeneratedCodeMoon() {}
 	const UECodeGen_Private::FBytePropertyParams Z_Construct_UClass_AMoon_Statics::NewProp_MoonType_Underlying = { "UnderlyingType", nullptr, (EPropertyFlags)0x0000000000000000, UECodeGen_Private::EPropertyGenFlags::Byte, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, 0, nullptr, METADATA_PARAMS(nullptr, 0) };
 #if WITH_METADATA
 	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_AMoon_Statics::NewProp_MoonType_MetaData[] = {
-		{ "Category", "Moon" },
+		{ "Category", "Moon Model" },
 		{ "ModuleRelativePath", "Moon.h" },
 	};
 #endif
 	const UECodeGen_Private::FEnumPropertyParams Z_Construct_UClass_AMoon_Statics::NewProp_MoonType = { "MoonType", nullptr, (EPropertyFlags)0x0040000000020001, UECodeGen_Private::EPropertyGenFlags::Enum, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(AMoon, MoonType), Z_Construct_UEnum_APS_ALPHA_EMoonType, METADATA_PARAMS(Z_Construct_UClass_AMoon_Statics::NewProp_MoonType_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_AMoon_Statics::NewProp_MoonType_MetaData)) }; // 647168076
+#if WITH_METADATA
+	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_AMoon_Statics::NewProp_MoonDensity_MetaData[] = {
+		{ "Category", "Moon Model" },
+		{ "ModuleRelativePath", "Moon.h" },
+	};
+#endif
+	const UECodeGen_Private::FDoublePropertyParams Z_Construct_UClass_AMoon_Statics::NewProp_MoonDensity = { "MoonDensity", nullptr, (EPropertyFlags)0x0040000000020001, UECodeGen_Private::EPropertyGenFlags::Double, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(AMoon, MoonDensity), METADATA_PARAMS(Z_Construct_UClass_AMoon_Statics::NewProp_MoonDensity_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_AMoon_Statics::NewProp_MoonDensity_MetaData)) };
+#if WITH_METADATA
+	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_AMoon_Statics::NewProp_MoonGravity_MetaData[] = {
+		{ "Category", "Moon Model" },
+		{ "ModuleRelativePath", "Moon.h" },
+	};
+#endif
+	const UECodeGen_Private::FDoublePropertyParams Z_Construct_UClass_AMoon_Statics::NewProp_MoonGravity = { "MoonGravity", nullptr, (EPropertyFlags)0x0040000000020001, UECodeGen_Private::EPropertyGenFlags::Double, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(AMoon, MoonGravity), METADATA_PARAMS(Z_Construct_UClass_AMoon_Statics::NewProp_MoonGravity_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_AMoon_Statics::NewProp_MoonGravity_MetaData)) };
 	const UECodeGen_Private::FPropertyParamsBase* const Z_Construct_UClass_AMoon_Statics::PropPointers[] = {
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AMoon_Statics::NewProp_ParentPlanet,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AMoon_Statics::NewProp_MoonType_Underlying,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AMoon_Statics::NewProp_MoonType,
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AMoon_Statics::NewProp_MoonDensity,
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AMoon_Statics::NewProp_MoonGravity,
 	};
 		const UECodeGen_Private::FImplementedInterfaceParams Z_Construct_UClass_AMoon_Statics::InterfaceParams[] = {
 			{ Z_Construct_UClass_UPlanetaryEnvironment_NoRegister, (int32)VTABLE_OFFSET(AMoon, IPlanetaryEnvironment), false },  // 3707047530
@@ -116,9 +140,9 @@ void EmptyLinkFunctionForGeneratedCodeMoon() {}
 		static const FClassRegisterCompiledInInfo ClassInfo[];
 	};
 	const FClassRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_Moon_h_Statics::ClassInfo[] = {
-		{ Z_Construct_UClass_AMoon, AMoon::StaticClass, TEXT("AMoon"), &Z_Registration_Info_UClass_AMoon, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(AMoon), 3780833677U) },
+		{ Z_Construct_UClass_AMoon, AMoon::StaticClass, TEXT("AMoon"), &Z_Registration_Info_UClass_AMoon, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(AMoon), 4023423132U) },
 	};
-	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_Moon_h_551726317(TEXT("/Script/APS_ALPHA"),
+	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_Moon_h_539804134(TEXT("/Script/APS_ALPHA"),
 		Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_Moon_h_Statics::ClassInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_Moon_h_Statics::ClassInfo),
 		nullptr, 0,
 		nullptr, 0);

@@ -18,8 +18,19 @@ FMoonGenerationModel UMoonGenerator::GenerateRandomMoonModel()
 	return FMoonGenerationModel();
 }
 
-void UMoonGenerator::ApplyModel(AAstroActor* AstroActor, FGenerationModel GenerationModel)
+void UMoonGenerator::ApplyModel(AMoon* Moon, FMoonGenerationModel MoonGenerationModel)
 {
+
+    Moon->SetMoonType(MoonGenerationModel.Type);
+    Moon->SetMass(MoonGenerationModel.Mass);
+    Moon->SetRadius(MoonGenerationModel.Radius); 
+    Moon->SetMoonDensity(MoonGenerationModel.MoonDensity); 
+    Moon->SetMoonGravity(MoonGenerationModel.MoonGravity); 
+    Moon->SetOrbitDistance(MoonGenerationModel.OrbitDistance);
+    /*Moon->MoonEscapeVelocity = MoonGenerationModel.MoonEscapeVelocity;
+    Moon->MoonOrbitalPeriod = MoonGenerationModel.MoonOrbitalPeriod;*/
+    
+
 }
 
 

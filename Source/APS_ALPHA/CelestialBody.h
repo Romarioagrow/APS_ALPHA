@@ -17,13 +17,13 @@ class APS_ALPHA_API ACelestialBody : public AAstroActor, public IAstonomicalBody
 
 private:
 	UPROPERTY(VisibleAnywhere)
-		float Radius;
+		float Radius{ 0 };
 
 	UPROPERTY(VisibleAnywhere)
-		float Mass;
+		float Mass{ 0 };
 	
 	UPROPERTY(VisibleAnywhere)
-		FString Age;
+		FString Age { "Unknown" };
 	
 	UPROPERTY(VisibleAnywhere)
 		FName AstroName;

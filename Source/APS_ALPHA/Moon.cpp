@@ -5,5 +5,20 @@
 
 void AMoon::SetParentPlanet(APlanet* Planet)
 {
-	ParentPlanet = Planet;
+	this->ParentPlanet = Planet;
+}
+
+void AMoon::SetMoonType(EMoonType Type)
+{
+	this->MoonType = Type;
+}
+
+void AMoon::SetMoonDensity(double NewMoonDensity)
+{
+	this->MoonDensity = NewMoonDensity;
+}
+
+void AMoon::SetMoonGravity(double NewMoonGravity)
+{
+	this->MoonGravity = NewMoonGravity;
 }

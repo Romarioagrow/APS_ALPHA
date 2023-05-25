@@ -5,8 +5,6 @@
 			"Aircraft.gen.cpp.obj",
 			"AnimationState.gen.cpp.obj",
 			"APS_ALPHAGameModeBase.gen.cpp.obj",
-			"Asteroid.gen.cpp.obj",
-			"AsteroidBelt.gen.cpp.obj",
 			"AstonomicalBody.gen.cpp.obj",
 			"AstonomicalSystem.gen.cpp.obj",
 			"AstroActor.gen.cpp.obj",
@@ -45,14 +43,16 @@
 			"GravityTypeEnum.gen.cpp.obj",
 			"GroundVehicle.gen.cpp.obj",
 			"HomeStarSystemGenerationModel.gen.cpp.obj",
-			"KuiperBelt.gen.cpp.obj",
 			"MoonGenerator.gen.cpp.obj",
-			"OrbitalBody.gen.cpp.obj",
+			"MoonType.gen.cpp.obj",
 			"OrbitalBodyGenerationModel.gen.cpp.obj",
 			"APS_ALPHA.init.gen.cpp.obj",
+			"Asteroid.gen.cpp.obj",
+			"AsteroidBelt.gen.cpp.obj",
+			"KuiperBelt.gen.cpp.obj",
 			"Moon.gen.cpp.obj",
 			"MoonGenerationModel.gen.cpp.obj",
-			"MoonType.gen.cpp.obj"
+			"OrbitalBody.gen.cpp.obj"
 		],
 		"Module.APS_ALPHA.2_of_3.cpp.obj": [
 			"OrbitDistributionType.gen.cpp.obj",
@@ -103,8 +103,8 @@
 			"BaseInterface.cpp.obj",
 			"BaseProceduralGenerator.cpp.obj",
 			"Biosphere.cpp.obj",
-			"CelestialBody.cpp.obj",
 			"CelestialBodyInterface.cpp.obj",
+			"CelestialGenerationModel.cpp.obj",
 			"CelestialSystem.cpp.obj",
 			"Colony.cpp.obj",
 			"ControlledPawn.cpp.obj",
@@ -121,7 +121,7 @@
 			"PlanetarySystem.gen.cpp.obj",
 			"PlanetarySystemGenerationModel.gen.cpp.obj",
 			"PlanetGenerationModel.gen.cpp.obj",
-			"CelestialGenerationModel.cpp.obj"
+			"CelestialBody.cpp.obj"
 		],
 		"Module.APS_ALPHA.3_of_3.cpp.obj": [
 			"GravityCharacterPawn.cpp.obj",
@@ -137,13 +137,11 @@
 			"GroundVehicle.cpp.obj",
 			"HomeStarSystemGenerationModel.cpp.obj",
 			"KuiperBelt.cpp.obj",
-			"Moon.cpp.obj",
-			"MoonGenerationModel.cpp.obj",
-			"OrbitalBody.cpp.obj",
 			"OrbitalBodyGenerationModel.cpp.obj",
 			"PilotingVehicle.cpp.obj",
 			"Planet.cpp.obj",
 			"PlanetaryEnvironment.cpp.obj",
+			"PlanetaryProceduralGenerator.cpp.obj",
 			"PlanetarySystem.cpp.obj",
 			"PlanetarySystemGenerationModel.cpp.obj",
 			"PlanetGenerationModel.cpp.obj",
@@ -168,8 +166,10 @@
 			"UniverseProceduralGenerator.cpp.obj",
 			"VehicleControlling.cpp.obj",
 			"WorldActor.cpp.obj",
+			"Moon.cpp.obj",
+			"MoonGenerationModel.cpp.obj",
 			"MoonGenerator.cpp.obj",
-			"PlanetaryProceduralGenerator.cpp.obj"
+			"OrbitalBody.cpp.obj"
 		]
 	}
 }

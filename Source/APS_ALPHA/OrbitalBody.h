@@ -16,19 +16,19 @@ class APS_ALPHA_API AOrbitalBody : public ACelestialBody, public IGravitySource
 	GENERATED_BODY()
 
 private:
-	UPROPERTY(VisibleAnywhere)
+	UPROPERTY(VisibleAnywhere, Category = "Orbital Body")
+		double OrbitDistance;
+
+	UPROPERTY(VisibleAnywhere, Category = "Orbital Body")
 		float RotationSpeed;
 
-	UPROPERTY(VisibleAnywhere)
+	UPROPERTY(VisibleAnywhere, Category = "Orbital Body")
 		float OrbitalPeriod;
 	
-	UPROPERTY(VisibleAnywhere)
+	UPROPERTY(VisibleAnywhere, Category = "Orbital Body")
 		float OrbitalSpeed;
 	
-	UPROPERTY(VisibleAnywhere)
-		double OrbitDistance;
-	
-	UPROPERTY(VisibleAnywhere)
+	UPROPERTY(VisibleAnywhere, Category = "Orbital Body")
 		float AxialTilt;
 
 public:
