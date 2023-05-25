@@ -24,7 +24,6 @@ void AStarClusterGenerator::BeginPlay()
 	GenerateRandomStarSystem();
 }
 
-
 void AStarClusterGenerator::GenerateRandomStarSystem()
 {
     if (StarGenerator == nullptr || PlanetGenerator == nullptr || MoonGenerator == nullptr) {
@@ -77,6 +76,8 @@ void AStarClusterGenerator::GenerateRandomStarSystem()
                 return; 
             }
             StarGenerator->ApplyModel(NewStar, StarModel);
+
+            /// TODO: PlanetarySystemGenerator->ConnectStar()
             NewPlanetarySystem->SetStar(NewStar);
             NewStar->AttachToActor(NewPlanetarySystem, FAttachmentTransformRules::KeepRelativeTransform);
 
@@ -91,27 +92,19 @@ void AStarClusterGenerator::GenerateRandomStarSystem()
                 PlanetGenerator->ConnectPlanetWithStar(NewPlanet, NewStar);
 
                 // Generate Moons
-                UE_LOG(LogTemp, Warning, TEXT("PlanetModel.MoonsList %d"), PlanetModel.MoonsList.Num());
-                for (const FMoonData FMoonData : PlanetModel.MoonsList)
+                for (const FMoonData FMoonData : PlanetModel.MoonsList) /// TODO: Ref to pointers FMoonData 
                 {
-					FMoonGenerationModel MoonModel = FMoonData.MoonModel; 
 					AMoon* NewMoon = World->SpawnActor<AMoon>(BP_MoonClass);
-					MoonGenerator->ApplyModel(NewMoon, MoonModel);
+					MoonGenerator->ApplyModel(NewMoon, FMoonData.MoonModel);
                     MoonGenerator->ConnectMoonWithPlanet(NewMoon, NewPlanet);
 				}
             }
+            /// TODO: StarSystemGenerator->ConnectPlanetarySystem()
             NewStarSystem->AddPlanetarySystem(NewPlanetarySystem);
             NewPlanetarySystem->AttachToActor(NewStarSystem, FAttachmentTransformRules::KeepRelativeTransform);
         }
     }
 }
 
-//FPlanetarySystemGenerationModel AStarClusterGenerator::GenerateRandomPlanetraySystemModel()
-//{
-//    FPlanetarySystemGenerationModel PlanetarySystemModel;
-//    PlanetarySystemModel.AmountOfPlanets = FMath::RandRange(1, 10);
-//    PlanetarySystemModel.DistanceBetweenPlanets = FMath::RandRange(0.1, 10.0);
-//    return PlanetarySystemModel;
-//}
 
 

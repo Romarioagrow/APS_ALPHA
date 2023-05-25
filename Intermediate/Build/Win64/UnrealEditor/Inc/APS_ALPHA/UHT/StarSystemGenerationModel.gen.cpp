@@ -61,9 +61,7 @@ template<> APS_ALPHA_API UScriptStruct* StaticStruct<FStarSystemGenerationModel>
 #if WITH_METADATA
 	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UScriptStruct_FStarSystemGenerationModel_Statics::NewProp_AmountOfStars_MetaData[] = {
 		{ "Category", "Star System" },
-		{ "Comment", "// \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd \xef\xbf\xbd \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\n" },
 		{ "ModuleRelativePath", "StarSystemGenerationModel.h" },
-		{ "ToolTip", "\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd \xef\xbf\xbd \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd" },
 	};
 #endif
 	const UECodeGen_Private::FIntPropertyParams Z_Construct_UScriptStruct_FStarSystemGenerationModel_Statics::NewProp_AmountOfStars = { "AmountOfStars", nullptr, (EPropertyFlags)0x0010000000000005, UECodeGen_Private::EPropertyGenFlags::Int, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FStarSystemGenerationModel, AmountOfStars), METADATA_PARAMS(Z_Construct_UScriptStruct_FStarSystemGenerationModel_Statics::NewProp_AmountOfStars_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FStarSystemGenerationModel_Statics::NewProp_AmountOfStars_MetaData)) };
@@ -71,9 +69,7 @@ template<> APS_ALPHA_API UScriptStruct* StaticStruct<FStarSystemGenerationModel>
 #if WITH_METADATA
 	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UScriptStruct_FStarSystemGenerationModel_Statics::NewProp_StarSystemType_MetaData[] = {
 		{ "Category", "Star System" },
-		{ "Comment", "//// \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\n//UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = \"Star System\")\n//\x09""double DistanceBetweenStars;\n" },
 		{ "ModuleRelativePath", "StarSystemGenerationModel.h" },
-		{ "ToolTip", "/ \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\nUPROPERTY(EditAnywhere, BlueprintReadWrite, Category = \"Star System\")\n       double DistanceBetweenStars;" },
 	};
 #endif
 	const UECodeGen_Private::FEnumPropertyParams Z_Construct_UScriptStruct_FStarSystemGenerationModel_Statics::NewProp_StarSystemType = { "StarSystemType", nullptr, (EPropertyFlags)0x0010000000000005, UECodeGen_Private::EPropertyGenFlags::Enum, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FStarSystemGenerationModel, StarSystemType), Z_Construct_UEnum_APS_ALPHA_EStarSystemType, METADATA_PARAMS(Z_Construct_UScriptStruct_FStarSystemGenerationModel_Statics::NewProp_StarSystemType_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FStarSystemGenerationModel_Statics::NewProp_StarSystemType_MetaData)) }; // 1630425490
@@ -108,9 +104,9 @@ template<> APS_ALPHA_API UScriptStruct* StaticStruct<FStarSystemGenerationModel>
 		static const FStructRegisterCompiledInInfo ScriptStructInfo[];
 	};
 	const FStructRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarSystemGenerationModel_h_Statics::ScriptStructInfo[] = {
-		{ FStarSystemGenerationModel::StaticStruct, Z_Construct_UScriptStruct_FStarSystemGenerationModel_Statics::NewStructOps, TEXT("StarSystemGenerationModel"), &Z_Registration_Info_UScriptStruct_StarSystemGenerationModel, CONSTRUCT_RELOAD_VERSION_INFO(FStructReloadVersionInfo, sizeof(FStarSystemGenerationModel), 16786480U) },
+		{ FStarSystemGenerationModel::StaticStruct, Z_Construct_UScriptStruct_FStarSystemGenerationModel_Statics::NewStructOps, TEXT("StarSystemGenerationModel"), &Z_Registration_Info_UScriptStruct_StarSystemGenerationModel, CONSTRUCT_RELOAD_VERSION_INFO(FStructReloadVersionInfo, sizeof(FStarSystemGenerationModel), 3423992634U) },
 	};
-	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarSystemGenerationModel_h_2296774140(TEXT("/Script/APS_ALPHA"),
+	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarSystemGenerationModel_h_4150967285(TEXT("/Script/APS_ALPHA"),
 		nullptr, 0,
 		Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarSystemGenerationModel_h_Statics::ScriptStructInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarSystemGenerationModel_h_Statics::ScriptStructInfo),
 		nullptr, 0);

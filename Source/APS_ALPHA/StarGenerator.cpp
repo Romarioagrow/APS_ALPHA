@@ -60,11 +60,11 @@ FStarGenerationModel UStarGenerator::GenerateRandomStarModel()
         }
     
         FStarAttributeRanges& AttributeRanges = StarAttributeRanges[StarModel.StellarClass];
-        StarModel.Mass = FMath::RandRange(AttributeRanges.Mass.Range.Get<0>(), AttributeRanges.Mass.Range.Get<1>());
+        StarModel.Mass = FMath::RandRange(AttributeRanges.Mass.Range.Get<0>(), AttributeRanges.Mass.Range.Get<1>()); /// TODO: Refactor with Key/Val
         StarModel.Radius = FMath::RandRange(AttributeRanges.Radius.Range.Get<0>(), AttributeRanges.Radius.Range.Get<1>());
-        StarModel.SurfaceTemperature = GenerateRandomTemperatureBySpectralClass(StarModel.SpectralClass);//CalculateSurfaceTemperature(double Luminosity, double Radius)
+        StarModel.SurfaceTemperature = GenerateRandomTemperatureBySpectralClass(StarModel.SpectralClass);
         StarModel.Luminosity = CalculateLuminosity(StarModel.Radius, StarModel.SurfaceTemperature);
-        StarModel.Age = CalculateNonMainSequenceStarAge(StarModel.Mass);//FMath::RandRange(AttributeRanges.Age.Range.Get<0>(), AttributeRanges.Age.Range.Get<1>());
+        StarModel.Age = CalculateNonMainSequenceStarAge(StarModel.Mass);
     }
 
     StarModel.SpectralSubclass = CalculateSpectralSubclass(StarModel.SurfaceTemperature, StarModel.SpectralClass);

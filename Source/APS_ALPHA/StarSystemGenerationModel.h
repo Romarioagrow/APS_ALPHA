@@ -11,19 +11,10 @@ struct FStarSystemGenerationModel :
 {
     GENERATED_BODY()
 
-	// Количество звезд в системе
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star System")
 		int32 AmountOfStars;
-
-	//// Расстояние между звездами
-	//UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star System")
-	//	double DistanceBetweenStars;
 	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star System")
 		EStarSystemType StarSystemType;
-
-	//int32 AmountOfPlanets;
-
-
 };
 

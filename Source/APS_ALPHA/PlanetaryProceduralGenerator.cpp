@@ -72,7 +72,6 @@ FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySyst
         UE_LOG(LogTemp, Warning, TEXT("MaxPlanetCount: %d"), MaxPlanetCount);
         UE_LOG(LogTemp, Warning, TEXT("FinalPlanetCount: %d"), FinalPlanetCount);
 
-
         // Это могут быть константы или переменные, зависящие от стелларного класса
         double MinOrbitScalingFactor = 1.0f;
         double MaxOrbitScalingFactor = 10.0f;
@@ -96,7 +95,6 @@ FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySyst
         FString OrbitType = UEnum::GetValueAsString(OrbitDistributionType);
         UE_LOG(LogTemp, Warning, TEXT("Orbit Distribution Type: %s"), *OrbitType);
 
-        //TArray<double> OrbitRadii;
         for (int i = 0; i < FinalPlanetCount; i++)
         {
             double OrbitDistributionValue;
@@ -113,7 +111,6 @@ FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySyst
             {
                 OrbitDistributionValue = FMath::RandRange(MinOrbit, MaxOrbit);
                 OrbitRadius = OrbitDistributionValue;
-                //OrbitRadii.Add(OrbitRadius);
                 break;
             }
             case EOrbitDistributionType::InnerOuter:
@@ -135,7 +132,6 @@ FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySyst
             {
                 OrbitRadius = FMath::Lerp(MinOrbit, MaxOrbit, OrbitDistributionValue);
             }
-            
 
             // Применяем функцию распределения к нашему диапазону орбит
             OrbitRadii.Add(OrbitRadius);
@@ -282,21 +278,17 @@ FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySyst
         UE_LOG(LogTemp, Warning, TEXT("Radius Kuiper Belt Zone  - Inner: %f, Outer: %f AU"), PlanetarySystemModel.KuiperBeltZoneRadius.InnerRadius, PlanetarySystemModel.KuiperBeltZoneRadius.OuterRadius);
         UE_LOG(LogTemp, Warning, TEXT("Radius Inner Planet Zone - Inner: %f, Outer: %f AU"), PlanetarySystemModel.InnerPlanetZoneRadius.InnerRadius, PlanetarySystemModel.InnerPlanetZoneRadius.OuterRadius);
         UE_LOG(LogTemp, Warning, TEXT("Radius Outer Planet Zone - Inner: %f, Outer: %f AU"), PlanetarySystemModel.OuterPlanetZoneRadius.InnerRadius, PlanetarySystemModel.OuterPlanetZoneRadius.OuterRadius);
-    
-
 
         /// TODO: To PanetGenerator
         // populate planets list by new PlanetModel
-
         for (double OrbitRadius : OrbitRadii)
         {
             int PlanetIndex = OrbitRadii.IndexOfByKey(OrbitRadius);
 
-            FPlanetGenerationModel PlanetModel;// = GeneratePlanet(PlanetarySystemModel, OrbitRadius);
+            FPlanetGenerationModel PlanetModel; /// TODO: PlanetGenerator->GeneratePlanetModel(PlanetarySystemModel, OrbitRadius);
             PlanetModel.OrbitDistance = OrbitRadius;
 
             // planet temperature
-            //double PlanetTemperature = 0;
             double PlanetTemperature = StarModel.SurfaceTemperature * sqrt(StarModel.Radius / (2 * OrbitRadius));
             PlanetModel.Temperature = PlanetTemperature; // to celestial body
 
@@ -333,7 +325,7 @@ FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySyst
             double starMass = StarModel.Mass; // масса звезды
             double planetToStarDistance = PlanetModel.Radius; // среднее расстояние от планеты до звезды
             double planetRadius = PlanetModel.Radius; // радиус планеты
-            //double planetAtmosphereHeight = PlanetModel.AtmosphereHeight; // высота атмосферы планеты
+            /// TODO: PlanetAtmosphere //double planetAtmosphereHeight = PlanetModel.AtmosphereHeight; // высота атмосферы планеты
             double planetAtmosphereHeight = PlanetModel.Radius / 10; // высота атмосферы планеты
             // Минимальное расстояние - радиус планеты плюс высота атмосферы
             const double MinOrbitRadius = planetRadius + planetAtmosphereHeight;
@@ -365,7 +357,7 @@ FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySyst
             const double MoonMaxOrbitRadius = PlanetModel.MoonOrbitsRange.Value;
             const double uniformDistance = (MoonMaxOrbitRadius - MoonMinOrbitRadius) / (AmountOfMoons + 1);
 
-            // 2. Создаем массив со всеми возможными орбитами
+            // Создаем массив со всеми возможными орбитами
             MoonOrbits.Reserve(AmountOfMoons);
 
             for (size_t m = 0; m < AmountOfMoons; m++)
@@ -382,7 +374,7 @@ FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySyst
                 double MoonMass = MoonGenerator->CalculateRandomMoonMass();
                 double MoonDensity = MoonGenerator->CalculateRandomMoonDensity(MoonType);
                 double MoonRadius = MoonGenerator->CalculateMoonRadius(MoonDensity, MoonMass);
-                double MoonGravity = MoonMass / FMath::Pow(MoonRadius, 2);//MoonGenerator->CalculateGravitationalForce(PlanetModel.Mass, MoonMass, MoonOrbit);
+                double MoonGravity = MoonMass / FMath::Pow(MoonRadius, 2); /// TODO: to MoonGenerator->CalculateGravitationalForce(PlanetModel.Mass, MoonMass, MoonOrbit);
 
                 // Создаем модель луны
                 MoonModel.Type = MoonType;
@@ -411,9 +403,7 @@ FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySyst
 		PlanetarySystemModel.PlanetarySystemType = EPlanetarySystemType::NoPlanetSystem;
 	}
 
-
     OrbitRadii.Reset();
-
     return PlanetarySystemModel;
 }
 
@@ -432,19 +422,15 @@ int UPlanetarySystemGenerator::CalculateMoons(double PlanetMass, EPlanetType Pla
     }
     else if (BaseMoonCount > 15)
     {
-
         return 
             PlanetType == EPlanetType::GasGiant ||
             PlanetType == EPlanetType::IceGiant ||
 			PlanetType == EPlanetType::HotGiant ? FMath::RandRange(0, 15) : FMath::RandRange(0, 5);
-
     }
     {
         // Otherwise, the number of moons is the base moon count plus a random number
         return BaseMoonCount + FMath::RandRange(0, 3);
     }
-
-
 }
 
 FRadiusRange UPlanetarySystemGenerator::GetPlanetRadiusRange(EPlanetType PlanetType)
@@ -471,7 +457,7 @@ FDensityRange UPlanetarySystemGenerator::GetPlanetDensityRange(EPlanetType Plane
 
 EPlanetaryZoneType UPlanetarySystemGenerator::DeterminePlanetZone(double OrbitRadius, FPlanetarySystemGenerationModel PlanetarySystemModel)
 {
-    // TODO: To Struct
+    /// TODO: To Struct
     /*for (FZone Zone : Zones)
     {
         if (OrbitRadius >= Zone.Radius.InnerRadius && OrbitRadius <= Zone.Radius.OuterRadius)
@@ -484,37 +470,30 @@ EPlanetaryZoneType UPlanetarySystemGenerator::DeterminePlanetZone(double OrbitRa
     {
         return EPlanetaryZoneType::DeadZone;
     }
-
     if (OrbitRadius >= PlanetarySystemModel.HotZoneRadius.InnerRadius && OrbitRadius <= PlanetarySystemModel.HotZoneRadius.OuterRadius)
     {
         return EPlanetaryZoneType::HotZone;
     }
-    
     if (OrbitRadius >= PlanetarySystemModel.WarmZoneRadius.InnerRadius && OrbitRadius <= PlanetarySystemModel.WarmZoneRadius.OuterRadius)
     {
         return EPlanetaryZoneType::WarmZone;
     }
-
     if (OrbitRadius >= PlanetarySystemModel.HabitableZoneRadius.InnerRadius && OrbitRadius <= PlanetarySystemModel.HabitableZoneRadius.OuterRadius)
     {
         return EPlanetaryZoneType::HabitableZone;
     }
-
     if (OrbitRadius >= PlanetarySystemModel.ColdZoneRadius.InnerRadius && OrbitRadius <= PlanetarySystemModel.ColdZoneRadius.OuterRadius)
     {
         return EPlanetaryZoneType::ColdZone;
     }
-    
     if (OrbitRadius >= PlanetarySystemModel.IceZoneRadius.InnerRadius && OrbitRadius <= PlanetarySystemModel.IceZoneRadius.OuterRadius)
     {
         return EPlanetaryZoneType::IceZone;
     }
-    
     if (OrbitRadius >= PlanetarySystemModel.GasGiantsZoneRadius.InnerRadius && OrbitRadius <= PlanetarySystemModel.GasGiantsZoneRadius.OuterRadius)
     {
         return EPlanetaryZoneType::GasGiantsZone;
     }
-    
     if (OrbitRadius >= PlanetarySystemModel.KuiperBeltZoneRadius.InnerRadius && OrbitRadius <= PlanetarySystemModel.KuiperBeltZoneRadius.OuterRadius)
     {
         return EPlanetaryZoneType::KuiperBeltZone;
@@ -526,7 +505,6 @@ EPlanetaryZoneType UPlanetarySystemGenerator::DeterminePlanetZone(double OrbitRa
 
 EPlanetType UPlanetarySystemGenerator::DeterminePlanetType(EPlanetaryZoneType PlanetZone)
 {
-
     // Получите массив вероятностей для типов планет в этой зоне.
     TArray<FPlanetTypeProbability> PlanetTypeProbabilities = ZonePlanetProbabilities[PlanetZone]; // try catch missed types, crashed 
 
@@ -546,7 +524,6 @@ EPlanetType UPlanetarySystemGenerator::DeterminePlanetType(EPlanetaryZoneType Pl
 
     // Если вы не нашли соответствующего типа планеты (что не должно произойти, если вероятности правильно нормированы), верните Unknown.
     return EPlanetType::Unknown;
-
 }
 
 double UPlanetarySystemGenerator::RandGauss()
@@ -564,11 +541,8 @@ EOrbitDistributionType UPlanetarySystemGenerator::ChooseDistributionType(EStella
     if (StellarClass == EStellarClass::MainSequence)
     {
         return ChooseOrbitDistribution(StellarClass);
-
 	}
-	else
-
-    if (StellarClass == EStellarClass::WhiteDwarf || StellarClass == EStellarClass::SubDwarf)
+	else if (StellarClass == EStellarClass::WhiteDwarf || StellarClass == EStellarClass::SubDwarf)
     {
         // Если у нас маленькая звезда, то предпочтем Dense
         OrbitDistributionType = EOrbitDistributionType::Dense;
@@ -629,7 +603,6 @@ EOrbitDistributionType UPlanetarySystemGenerator::ChooseOrbitDistribution(EStell
 
 int UPlanetarySystemGenerator::DetermineMaxPlanets(EStellarClass StellarClass, FStarGenerationModel StarModel )
 {
-
     int MaxPlanets;
 
     // У некоторых типов звезд вообще нет планет
@@ -655,11 +628,6 @@ int UPlanetarySystemGenerator::DetermineMaxPlanets(EStellarClass StellarClass, F
     // Модифицируем количество планет в зависимости от массы и возраста звезды
     MaxPlanets = MaxPlanets + StarModel.Mass * 0.5 + 0.2 * 0.1;
 
-    // Убедимся, что у нас есть хотя бы одна планета, если это возможно
-    /*if (MaxPlanets < 1 && StellarClass != EStellarClass::WhiteDwarf && StellarClass != EStellarClass::NeutronStar) {
-        MaxPlanets = 1;
-    }*/
-
     // Ограничим максимальное количество планет, чтобы оно было разумным
     if (MaxPlanets > 20) {
         MaxPlanets = 20;
@@ -668,73 +636,3 @@ int UPlanetarySystemGenerator::DetermineMaxPlanets(EStellarClass StellarClass, F
     return MaxPlanets;
 }
 
-
-/// TODO:
-//FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GenerateRandomPlanetraySystemModelByStar(FStarGenerationModel StarModel)
-//{
-//    FPlanetarySystemGenerationModel PlanetarySystemModel;
-//    EStellarClass StellarClass = StarModel.StellarClass;
-//    EPlanetarySystemType PlanetarySystemType = GetRandomWithProbability(StarSystemTypeProbabilities[StellarClass].SystemTypeProbabilities);
-//    PlanetarySystemModel.PlanetarySystemType = PlanetarySystemType;
-//
-//    // Получаем диапазон значений для данного типа системы
-//    FPlanetarySystemRanges SystemRanges = PlanetarySystemRanges[PlanetarySystemType];
-//
-//    // Генерируем случайное значение в диапазоне
-//    int AmountOfPlanets = FMath::RandRange(SystemRanges.AmountOfPlanetsRange.Get<0>(), SystemRanges.AmountOfPlanetsRange.Get<1>());
-//    PlanetarySystemModel.AmountOfPlanets = AmountOfPlanets;
-//
-//    double DistanceBetweenPlanets = FMath::RandRange(SystemRanges.DistanceBetweenPlanetsRange.Get<0>(), SystemRanges.DistanceBetweenPlanetsRange.Get<1>());
-//    PlanetarySystemModel.DistanceBetweenPlanets = DistanceBetweenPlanets;
-//
-//    return PlanetarySystemModel;
-//}
-
-
-/// TODO:
-//FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GenerateRandomPlanetraySystemModel()
-//{
-//    FPlanetarySystemGenerationModel PlanetarySystemModel;
-//
-//    int32 RandomValue = FMath::RandRange(0, 100);
-//
-//    // Веса для каждого типа системы
-//    int32 NoPlanetSystemWeight = 10; // 10%
-//    int32 SmallSystemWeight = 30; // 30%
-//    int32 LargeSystemWeight = 25; // 25%
-//    int32 ChaoticSystemWeight = 20; // 20%
-//    int32 DenseSystemWeight = 15; // 15%
-//
-//    if (RandomValue < NoPlanetSystemWeight)
-//    {
-//        PlanetarySystemModel.PlanetarySystemType = EPlanetarySystemType::NoPlanetSystem;
-//        PlanetarySystemModel.AmountOfPlanets = 0;
-//        PlanetarySystemModel.DistanceBetweenPlanets = 0.0;
-//    }
-//    else if (RandomValue < NoPlanetSystemWeight + SmallSystemWeight)
-//    {
-//        PlanetarySystemModel.PlanetarySystemType = EPlanetarySystemType::SmallSystem;
-//        PlanetarySystemModel.AmountOfPlanets = FMath::RandRange(1, 5);
-//        PlanetarySystemModel.DistanceBetweenPlanets = FMath::RandRange(1.0, 3.0);
-//    }
-//    else if (RandomValue < NoPlanetSystemWeight + SmallSystemWeight + LargeSystemWeight)
-//    {
-//        PlanetarySystemModel.PlanetarySystemType = EPlanetarySystemType::LargeSystem;
-//        PlanetarySystemModel.AmountOfPlanets = FMath::RandRange(6, 12);
-//        PlanetarySystemModel.DistanceBetweenPlanets = FMath::RandRange(1.0, 5.0);
-//    }
-//    else if (RandomValue < NoPlanetSystemWeight + SmallSystemWeight + LargeSystemWeight + ChaoticSystemWeight)
-//    {
-//        PlanetarySystemModel.PlanetarySystemType = EPlanetarySystemType::ChaoticSystem;
-//        PlanetarySystemModel.AmountOfPlanets = FMath::RandRange(5, 12);
-//        PlanetarySystemModel.DistanceBetweenPlanets = FMath::RandRange(0.1, 2.0);
-//    }
-//    else
-//    {
-//        PlanetarySystemModel.PlanetarySystemType = EPlanetarySystemType::DenseSystem;
-//        PlanetarySystemModel.AmountOfPlanets = FMath::RandRange(3, 10);
-//        PlanetarySystemModel.DistanceBetweenPlanets = FMath::RandRange(0.2, 1.0);
-//    }
-//
-//    return PlanetarySystemModel;
-//}

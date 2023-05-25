@@ -28,7 +28,6 @@ void UMoonGenerator::ApplyModel(AMoon* Moon, FMoonGenerationModel MoonGeneration
     Moon->SetOrbitDistance(MoonGenerationModel.OrbitDistance);
 }
 
-
 void UMoonGenerator::ConnectMoonWithPlanet(AMoon* NewMoon, APlanet* NewPlanet)
 {
     NewPlanet->AddMoon(NewMoon);
@@ -59,8 +58,6 @@ double UMoonGenerator::CalculateRandomMoonDensity(EMoonType MoonType)
     TPair<double, double> DensityRange = MoonDensityRanges[MoonType];
     return FMath::RandRange(DensityRange.Key, DensityRange.Value);
 }
-
-
 
 EMoonType UMoonGenerator::GenerateMoonType(FPlanetGenerationModel PlanetModel)
 {
@@ -178,7 +175,6 @@ double UMoonGenerator::CalculateRandomMoonMass()
 
     return moonMass;
 }
-
 
 double UMoonGenerator::CalculateMoonRadius(double MoonDensity, double MoonMass)
 {

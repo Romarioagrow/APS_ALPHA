@@ -53,7 +53,4 @@ public:
 	
 	// функция генерации общей звездной системы
 	void GenerateRandomStarSystem(); 
-	
-	// функция генерации стартовой системы
-	//void GenerateHomeStarSystem(FStarSystemGenerationModel StarSystemModel, UWorld* World); //FStartSystemParams Params
 };

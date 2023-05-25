@@ -1,11 +1,12 @@
 {
     "Version": "1.2",
     "Data": {
-        "Source": "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\source\\aps_alpha\\planetarysystem.cpp",
+        "Source": "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\source\\aps_alpha\\starsystem.cpp",
         "ProvidedModule": "",
         "PCH": "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\intermediate\\build\\win64\\aps_alphaeditor\\development\\engine\\sharedpch.engine.shadowerrors.h.pch",
         "Includes": [
             "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\intermediate\\build\\win64\\unrealeditor\\development\\aps_alpha\\definitions.aps_alpha.h",
+            "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\source\\aps_alpha\\starsystem.h",
             "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\source\\aps_alpha\\planetarysystem.h",
             "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\source\\aps_alpha\\star.h",
             "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\source\\aps_alpha\\planet.h",
@@ -65,7 +66,10 @@
             "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\source\\aps_alpha\\celestialbodyinterface.h",
             "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\intermediate\\build\\win64\\unrealeditor\\inc\\aps_alpha\\uht\\celestialbodyinterface.generated.h",
             "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\intermediate\\build\\win64\\unrealeditor\\inc\\aps_alpha\\uht\\celestialsystem.generated.h",
-            "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\intermediate\\build\\win64\\unrealeditor\\inc\\aps_alpha\\uht\\planetarysystem.generated.h"
+            "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\intermediate\\build\\win64\\unrealeditor\\inc\\aps_alpha\\uht\\planetarysystem.generated.h",
+            "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\source\\aps_alpha\\starsystemtype.h",
+            "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\intermediate\\build\\win64\\unrealeditor\\inc\\aps_alpha\\uht\\starsystemtype.generated.h",
+            "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\intermediate\\build\\win64\\unrealeditor\\inc\\aps_alpha\\uht\\starsystem.generated.h"
         ],
         "ImportedModules": [],
         "ImportedHeaderUnits": []
