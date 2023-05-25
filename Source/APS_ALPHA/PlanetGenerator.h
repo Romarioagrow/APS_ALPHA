@@ -26,5 +26,5 @@ public:
 
 	FPlanetGenerationModel GenerateRandomPlanetModel();
 
-	void ApplyModel(AAstroActor* AstroActor, FGenerationModel GenerationModel); //override;
+	void ApplyModel(APlanet* PlanetActor, FPlanetGenerationModel PlanetGenerationModel); //override;
 };

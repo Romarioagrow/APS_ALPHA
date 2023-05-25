@@ -16,6 +16,7 @@
 #include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Intermediate/Build/Win64/UnrealEditor/Inc/APS_ALPHA/UHT/Biosphere.gen.cpp"
 #include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Intermediate/Build/Win64/UnrealEditor/Inc/APS_ALPHA/UHT/CelestialBody.gen.cpp"
 #include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Intermediate/Build/Win64/UnrealEditor/Inc/APS_ALPHA/UHT/CelestialBodyInterface.gen.cpp"
+#include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Intermediate/Build/Win64/UnrealEditor/Inc/APS_ALPHA/UHT/CelestialGenerationModel.gen.cpp"
 #include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Intermediate/Build/Win64/UnrealEditor/Inc/APS_ALPHA/UHT/CelestialSystem.gen.cpp"
 #include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Intermediate/Build/Win64/UnrealEditor/Inc/APS_ALPHA/UHT/Colony.gen.cpp"
 #include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Intermediate/Build/Win64/UnrealEditor/Inc/APS_ALPHA/UHT/ControlledPawn.gen.cpp"
@@ -47,4 +48,5 @@
 #include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Intermediate/Build/Win64/UnrealEditor/Inc/APS_ALPHA/UHT/MoonGenerator.gen.cpp"
 #include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Intermediate/Build/Win64/UnrealEditor/Inc/APS_ALPHA/UHT/MoonType.gen.cpp"
 #include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Intermediate/Build/Win64/UnrealEditor/Inc/APS_ALPHA/UHT/OrbitalBody.gen.cpp"
+#include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Intermediate/Build/Win64/UnrealEditor/Inc/APS_ALPHA/UHT/OrbitalBodyGenerationModel.gen.cpp"
 #include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Intermediate/Build/Win64/UnrealEditor/Inc/APS_ALPHA/UHT/OrbitDistributionType.gen.cpp"

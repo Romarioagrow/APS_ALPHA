@@ -14,3 +14,33 @@ void APlanet::AddMoon(AMoon* Moon)
 {
 	Moons.Add(Moon);
 }
+
+void APlanet::SetPlanetType(EPlanetType NewPlanetType)
+{
+	this->PlanetType = NewPlanetType;
+}
+
+void APlanet::SetPlanetZone(EPlanetaryZoneType NewPlanetZone)
+{
+	this->PlanetZone = NewPlanetZone;
+}
+
+void APlanet::SetPlanetDensity(double NewPlanetDensity)
+{
+	this->PlanetDensity = NewPlanetDensity;
+}
+
+void APlanet::SetPlanetGravityStrength(double NewPlanetGravityStrength)
+{
+	this->PlanetGravityStrength = NewPlanetGravityStrength;
+}
+
+void APlanet::SetTemperature(double NewTemperature)
+{
+	this->Temperature = NewTemperature;
+}
+
+void APlanet::SetAmountOfMoons(int NewAmountOfMoons)
+{
+	this->AmountOfMoons = NewAmountOfMoons;
+}

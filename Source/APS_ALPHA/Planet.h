@@ -6,6 +6,7 @@
 #include "PlanetaryEnvironment.h"
 #include "OrbitalBody.h"
 #include "PlanetType.h"
+#include "PlanetaryZoneType.h"
 
 #include "CoreMinimal.h"
 #include "CelestialBody.h"
@@ -26,17 +27,40 @@ public:
 	APlanet();
 
 private:
-	UPROPERTY(VisibleAnywhere)
+	UPROPERTY(VisibleAnywhere, Category = "Planet")
 		EPlanetType PlanetType;
+
+	// Число спутников
+	UPROPERTY(VisibleAnywhere, Category = "Planet")
+		int32 AmountOfMoons { 0 };
+
+	// Число спутников
+	UPROPERTY(VisibleAnywhere,Category = "Planet")
+		int32 Temperature { 0 };
+
+	UPROPERTY(VisibleAnywhere, Category = "Planet")
+		EPlanetaryZoneType PlanetZone;
+
+	UPROPERTY(VisibleAnywhere, Category = "Planet")
+		double PlanetDensity{ 0 };
+
+	UPROPERTY(VisibleAnywhere, Category = "Planet")
+		double PlanetGravityStrength{ 0 };
 
 private:
 	TArray<AMoon*> Moons;
-
-public:
-	void AddMoon(AMoon* Moon);
 
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 		USphereComponent* SphereCollisionComponent;
 
+public:
+	void AddMoon(AMoon* Moon);
+
+	void SetPlanetType(EPlanetType PlanetType);
+	void SetPlanetZone(EPlanetaryZoneType PlanetZone);
+	void SetPlanetDensity(double PlanetDensity);
+	void SetPlanetGravityStrength(double PlanetGravityStrength);
+	void SetTemperature(double Temperature);
+	void SetAmountOfMoons(int AmountOfMoons);
 };
