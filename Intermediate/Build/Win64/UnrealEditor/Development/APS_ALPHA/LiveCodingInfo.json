@@ -19,6 +19,7 @@
 			"Biosphere.gen.cpp.obj",
 			"CelestialBody.gen.cpp.obj",
 			"CelestialBodyInterface.gen.cpp.obj",
+			"CelestialGenerationModel.gen.cpp.obj",
 			"CelestialSystem.gen.cpp.obj",
 			"Colony.gen.cpp.obj",
 			"ControlledPawn.gen.cpp.obj",
@@ -50,14 +51,12 @@
 			"MoonGenerator.gen.cpp.obj",
 			"MoonType.gen.cpp.obj",
 			"OrbitalBody.gen.cpp.obj",
+			"OrbitalBodyGenerationModel.gen.cpp.obj",
 			"OrbitDistributionType.gen.cpp.obj",
-			"APS_ALPHA.init.gen.cpp.obj",
-			"CelestialGenerationModel.gen.cpp.obj",
-			"OrbitalBodyGenerationModel.gen.cpp.obj"
+			"APS_ALPHA.init.gen.cpp.obj"
 		],
 		"Module.APS_ALPHA.2_of_3.cpp.obj": [
 			"PilotingVehicle.gen.cpp.obj",
-			"Planet.gen.cpp.obj",
 			"PlanetaryEnvironment.gen.cpp.obj",
 			"PlanetaryProceduralGenerator.gen.cpp.obj",
 			"PlanetarySystemType.gen.cpp.obj",
@@ -106,23 +105,24 @@
 			"Biosphere.cpp.obj",
 			"CelestialBody.cpp.obj",
 			"CelestialBodyInterface.cpp.obj",
+			"CelestialGenerationModel.cpp.obj",
 			"CelestialSystem.cpp.obj",
 			"Colony.cpp.obj",
 			"ControlledPawn.cpp.obj",
 			"Environment.cpp.obj",
 			"Galaxy.cpp.obj",
 			"GalaxySector.cpp.obj",
-			"GeneratedWorld.cpp.obj",
 			"GenerationModel.cpp.obj",
 			"Geosphere.cpp.obj",
 			"GravityActor.cpp.obj",
 			"GravityActorInterface.cpp.obj",
 			"GravityCharacter.cpp.obj",
 			"GravityCharacterPawn.cpp.obj",
+			"Planet.gen.cpp.obj",
 			"PlanetarySystem.gen.cpp.obj",
 			"PlanetarySystemGenerationModel.gen.cpp.obj",
 			"PlanetGenerationModel.gen.cpp.obj",
-			"CelestialGenerationModel.cpp.obj"
+			"GeneratedWorld.cpp.obj"
 		],
 		"Module.APS_ALPHA.3_of_3.cpp.obj": [
 			"GravityGameModeBase.cpp.obj",
@@ -141,11 +141,11 @@
 			"MoonGenerationModel.cpp.obj",
 			"MoonGenerator.cpp.obj",
 			"OrbitalBody.cpp.obj",
+			"OrbitalBodyGenerationModel.cpp.obj",
 			"PilotingVehicle.cpp.obj",
-			"Planet.cpp.obj",
 			"PlanetaryEnvironment.cpp.obj",
+			"PlanetarySystem.cpp.obj",
 			"PlanetarySystemGenerationModel.cpp.obj",
-			"PlanetGenerator.cpp.obj",
 			"PlanetGravityActor.cpp.obj",
 			"SpaceCharacter.cpp.obj",
 			"Spacecraft.cpp.obj",
@@ -166,10 +166,10 @@
 			"UniverseProceduralGenerator.cpp.obj",
 			"VehicleControlling.cpp.obj",
 			"WorldActor.cpp.obj",
-			"OrbitalBodyGenerationModel.cpp.obj",
+			"Planet.cpp.obj",
 			"PlanetaryProceduralGenerator.cpp.obj",
-			"PlanetarySystem.cpp.obj",
-			"PlanetGenerationModel.cpp.obj"
+			"PlanetGenerationModel.cpp.obj",
+			"PlanetGenerator.cpp.obj"
 		]
 	}
 }

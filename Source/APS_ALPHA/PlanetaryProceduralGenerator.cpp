@@ -23,7 +23,7 @@ void UPlanetarySystemGenerator::ApplyModel(APlanetarySystem* NewPlanetarySystem,
 
 
 
-FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySystemModelByStar(FStarGenerationModel StarModel)
+FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySystemModelByStar(FStarGenerationModel StarModel, UPlanetGenerator* PlanetGenerator, UMoonGenerator* MoonGenerator)
 {
     // вычисляем вероятность что будут планеты
     // находим макс и мин кол во планет
@@ -338,6 +338,15 @@ FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySyst
 
         FPlanetData PlanetData = FPlanetData(PlanetIndex, OrbitRadius, PlanetModel);
         PlanetarySystemModel.PlanetsList.Add(PlanetData);
+
+
+
+
+        //FMoonData FMoonData = PlanetGenerator->GenerateMoonsModel();//PlanetraySystemModel.PlanetsList[0].MoonsList[0];
+
+
+
+
     }
 
     return PlanetarySystemModel;

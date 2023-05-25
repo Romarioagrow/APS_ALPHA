@@ -162,7 +162,7 @@ template<> APS_ALPHA_API UScriptStruct* StaticStruct<FPlanetData>()
 		{ "ModuleRelativePath", "PlanetarySystemGenerationModel.h" },
 	};
 #endif
-	const UECodeGen_Private::FStructPropertyParams Z_Construct_UScriptStruct_FPlanetData_Statics::NewProp_PlanetModel = { "PlanetModel", nullptr, (EPropertyFlags)0x0010000000000005, UECodeGen_Private::EPropertyGenFlags::Struct, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FPlanetData, PlanetModel), Z_Construct_UScriptStruct_FPlanetGenerationModel, METADATA_PARAMS(Z_Construct_UScriptStruct_FPlanetData_Statics::NewProp_PlanetModel_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FPlanetData_Statics::NewProp_PlanetModel_MetaData)) }; // 3253341240
+	const UECodeGen_Private::FStructPropertyParams Z_Construct_UScriptStruct_FPlanetData_Statics::NewProp_PlanetModel = { "PlanetModel", nullptr, (EPropertyFlags)0x0010000000000005, UECodeGen_Private::EPropertyGenFlags::Struct, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FPlanetData, PlanetModel), Z_Construct_UScriptStruct_FPlanetGenerationModel, METADATA_PARAMS(Z_Construct_UScriptStruct_FPlanetData_Statics::NewProp_PlanetModel_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FPlanetData_Statics::NewProp_PlanetModel_MetaData)) }; // 659680622
 	const UECodeGen_Private::FPropertyParamsBase* const Z_Construct_UScriptStruct_FPlanetData_Statics::PropPointers[] = {
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FPlanetData_Statics::NewProp_PlanetOrder,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FPlanetData_Statics::NewProp_OrbitRadius,
@@ -338,14 +338,14 @@ template<> APS_ALPHA_API UScriptStruct* StaticStruct<FPlanetarySystemGenerationM
 	};
 #endif
 	const UECodeGen_Private::FNamePropertyParams Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_FullSpectralName = { "FullSpectralName", nullptr, (EPropertyFlags)0x0010000000020001, UECodeGen_Private::EPropertyGenFlags::Name, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FPlanetarySystemGenerationModel, FullSpectralName), METADATA_PARAMS(Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_FullSpectralName_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_FullSpectralName_MetaData)) };
-	const UECodeGen_Private::FStructPropertyParams Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_PlanetsList_Inner = { "PlanetsList", nullptr, (EPropertyFlags)0x0000000000020000, UECodeGen_Private::EPropertyGenFlags::Struct, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, 0, Z_Construct_UScriptStruct_FPlanetData, METADATA_PARAMS(nullptr, 0) }; // 1386808770
+	const UECodeGen_Private::FStructPropertyParams Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_PlanetsList_Inner = { "PlanetsList", nullptr, (EPropertyFlags)0x0000000000020000, UECodeGen_Private::EPropertyGenFlags::Struct, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, 0, Z_Construct_UScriptStruct_FPlanetData, METADATA_PARAMS(nullptr, 0) }; // 2930514578
 #if WITH_METADATA
 	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_PlanetsList_MetaData[] = {
 		{ "Category", "PlanetarySystemGenerationModel" },
 		{ "ModuleRelativePath", "PlanetarySystemGenerationModel.h" },
 	};
 #endif
-	const UECodeGen_Private::FArrayPropertyParams Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_PlanetsList = { "PlanetsList", nullptr, (EPropertyFlags)0x0010000000020001, UECodeGen_Private::EPropertyGenFlags::Array, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FPlanetarySystemGenerationModel, PlanetsList), EArrayPropertyFlags::None, METADATA_PARAMS(Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_PlanetsList_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_PlanetsList_MetaData)) }; // 1386808770
+	const UECodeGen_Private::FArrayPropertyParams Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_PlanetsList = { "PlanetsList", nullptr, (EPropertyFlags)0x0010000000020001, UECodeGen_Private::EPropertyGenFlags::Array, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FPlanetarySystemGenerationModel, PlanetsList), EArrayPropertyFlags::None, METADATA_PARAMS(Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_PlanetsList_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_PlanetsList_MetaData)) }; // 2930514578
 #if WITH_METADATA
 	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewProp_DeadZoneRadius_MetaData[] = {
 		{ "Category", "Zones" },
@@ -478,10 +478,10 @@ template<> APS_ALPHA_API UScriptStruct* StaticStruct<FPlanetarySystemGenerationM
 	};
 	const FStructRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_PlanetarySystemGenerationModel_h_Statics::ScriptStructInfo[] = {
 		{ FZoneRadius::StaticStruct, Z_Construct_UScriptStruct_FZoneRadius_Statics::NewStructOps, TEXT("ZoneRadius"), &Z_Registration_Info_UScriptStruct_ZoneRadius, CONSTRUCT_RELOAD_VERSION_INFO(FStructReloadVersionInfo, sizeof(FZoneRadius), 3993418724U) },
-		{ FPlanetData::StaticStruct, Z_Construct_UScriptStruct_FPlanetData_Statics::NewStructOps, TEXT("PlanetData"), &Z_Registration_Info_UScriptStruct_PlanetData, CONSTRUCT_RELOAD_VERSION_INFO(FStructReloadVersionInfo, sizeof(FPlanetData), 1386808770U) },
-		{ FPlanetarySystemGenerationModel::StaticStruct, Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewStructOps, TEXT("PlanetarySystemGenerationModel"), &Z_Registration_Info_UScriptStruct_PlanetarySystemGenerationModel, CONSTRUCT_RELOAD_VERSION_INFO(FStructReloadVersionInfo, sizeof(FPlanetarySystemGenerationModel), 261526872U) },
+		{ FPlanetData::StaticStruct, Z_Construct_UScriptStruct_FPlanetData_Statics::NewStructOps, TEXT("PlanetData"), &Z_Registration_Info_UScriptStruct_PlanetData, CONSTRUCT_RELOAD_VERSION_INFO(FStructReloadVersionInfo, sizeof(FPlanetData), 2930514578U) },
+		{ FPlanetarySystemGenerationModel::StaticStruct, Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics::NewStructOps, TEXT("PlanetarySystemGenerationModel"), &Z_Registration_Info_UScriptStruct_PlanetarySystemGenerationModel, CONSTRUCT_RELOAD_VERSION_INFO(FStructReloadVersionInfo, sizeof(FPlanetarySystemGenerationModel), 4074721166U) },
 	};
-	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_PlanetarySystemGenerationModel_h_414126977(TEXT("/Script/APS_ALPHA"),
+	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_PlanetarySystemGenerationModel_h_957034256(TEXT("/Script/APS_ALPHA"),
 		nullptr, 0,
 		Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_PlanetarySystemGenerationModel_h_Statics::ScriptStructInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_PlanetarySystemGenerationModel_h_Statics::ScriptStructInfo),
 		nullptr, 0);

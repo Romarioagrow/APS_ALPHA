@@ -7,6 +7,8 @@
 #include "OrbitDistributionType.h"
 #include "PlanetGenerationModel.h"
 #include "PlanetaryZoneType.h"
+#include "PlanetGenerator.h"
+#include "MoonGenerator.h"
 
 #include "CoreMinimal.h"
 #include "BaseProceduralGenerator.h"
@@ -82,7 +84,7 @@ public:
 
     void ApplyModel(APlanetarySystem* NewPlanetarySystem, FPlanetarySystemGenerationModel PlanetraySystemModel);
 
-    FPlanetarySystemGenerationModel GeneratePlanetraySystemModelByStar(FStarGenerationModel StarModel);
+    FPlanetarySystemGenerationModel GeneratePlanetraySystemModelByStar(FStarGenerationModel StarModel, UPlanetGenerator* PlanetGenerator, UMoonGenerator* MoonGenerator);
 
     int CalculateMoons(double PlanetMass, EPlanetType PlanetType);
 

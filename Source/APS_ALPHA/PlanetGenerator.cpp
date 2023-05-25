@@ -38,6 +38,18 @@ FPlanetGenerationModel UPlanetGenerator::GenerateRandomPlanetModel()
     return FPlanetGenerationModel();
 }
 
-void UPlanetGenerator::ApplyModel(AAstroActor* AstroActor, FGenerationModel GenerationModel)
+void UPlanetGenerator::ApplyModel(APlanet* PlanetActor, FPlanetGenerationModel PlanetGenerationModel)
 {
+	//this.PlanetType
+
+	PlanetActor->SetPlanetType(PlanetGenerationModel.PlanetType);
+	PlanetActor->SetPlanetZone(PlanetGenerationModel.PlanetZone);
+	PlanetActor->SetPlanetDensity(PlanetGenerationModel.PlanetDensity);
+	PlanetActor->SetPlanetGravityStrength(PlanetGenerationModel.PlanetGravityStrength);
+	PlanetActor->SetTemperature(PlanetGenerationModel.Temperature);
+	PlanetActor->SetAmountOfMoons(PlanetGenerationModel.AmountOfMoons);
+	PlanetActor->SetRadius(PlanetGenerationModel.Radius);
+	PlanetActor->SetMass(PlanetGenerationModel.Mass);
+
 }
+
