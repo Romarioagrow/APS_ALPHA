@@ -21,7 +21,6 @@ public:
 	UStarGenerator();
 
 public:
-	// Функция генерации звезды
 	void ApplyModel(AStar* NewStar, FStarGenerationModel StarModel);
 
 	FStarGenerationModel GenerateRandomStarModel();
@@ -33,7 +32,6 @@ public:
 	EStellarClass GenerateStarClassByRandomWeights();
 
 private:
-
 	FString GetSpectralClassColor(ESpectralClass Class);
 
 	FString GetSpectralTypeDescription(ESpectralType Type);
@@ -64,8 +62,6 @@ private:
 
 	double GenerateRandomTemperatureBySpectralClass(ESpectralClass SpectralClass);
 
-private:
-
 //O - класс: 30000 - 60000 К
 //B - класс : 10000 - 30000 К
 //A - класс : 7500 - 10000 К
@@ -73,8 +69,8 @@ private:
 //G - класс : 5200 - 6000 К
 //K - класс : 3700 - 5200 К
 //M - класс : 2000 - 3700 К
-
-	TMap<EStellarClass, int> StarTypeWeights =
+private:
+	const TMap<EStellarClass, int> StarTypeWeights =
 	{
 		{EStellarClass::HyperGiant, 1}, // Гипергиганты
 		{EStellarClass::SuperGiant, 3}, // Супергиганты
@@ -92,7 +88,7 @@ private:
 	};
 
 	// Создаем TMap для цветов спектральных классов.
-	TMap<ESpectralClass, FString> SpectralClassColorMap =
+	const TMap<ESpectralClass, FString> SpectralClassColorMap =
 	{
 		{ESpectralClass::O, TEXT("Blue")},
 		{ESpectralClass::B, TEXT("Blue-White")},
@@ -105,11 +101,10 @@ private:
 		{ESpectralClass::T, TEXT("Magenta")},
 		{ESpectralClass::Y, TEXT("Cool-Brown")},
 		{ESpectralClass::Unknown, TEXT("Unknown ")},
-
 	};
 
 	// Создаем TMap для описания спектральных типов.
-	TMap<ESpectralType, FString> SpectralTypeDescriptionMap =
+	const TMap<ESpectralType, FString> SpectralTypeDescriptionMap =
 	{
 		{ESpectralType::O, TEXT("Hypergiant")},
 		{ESpectralType::Ia, TEXT("Luminous Supergiant")},
@@ -126,7 +121,7 @@ private:
 		// Добавьте остальные типы, если они есть.
 	};
 
-	TMap<ESpectralClass, TTuple<double, double>> MainSequenceMassRanges =
+	const TMap<ESpectralClass, TTuple<double, double>> MainSequenceMassRanges =
 	{
 		{ESpectralClass::O, TTuple<double, double>(16, 60)},
 		{ESpectralClass::B, TTuple<double, double>(2.1, 16)},
@@ -137,7 +132,7 @@ private:
 		{ESpectralClass::M, TTuple<double, double>(0.08, 0.45)},
 	};
 
-	TMap<ESpectralClass, TTuple<double, double>> MainSequenceRadiusRanges =
+	const TMap<ESpectralClass, TTuple<double, double>> MainSequenceRadiusRanges =
 	{
 		{ESpectralClass::O, TTuple<double, double>(6.6, 10)},
 		{ESpectralClass::B, TTuple<double, double>(1.8, 6.6)},
@@ -148,7 +143,7 @@ private:
 		{ESpectralClass::M, TTuple<double, double>(0.3, 0.7)},
 	};
 
-	TMap<ESpectralClass, TTuple<double, double>> StarTypeTemperatureRanges =
+	const TMap<ESpectralClass, TTuple<double, double>> StarTypeTemperatureRanges =
 	{
 		{ESpectralClass::O, TTuple<double, double>(30000, 60000)},
 		{ESpectralClass::B, TTuple<double, double>(10000, 30000)},
@@ -208,6 +203,7 @@ private:
 			: Luminosity(luminosity), Mass(mass), Radius(radius), Age(age), AbsoluteMagnitude(absoluteMagnitude) {}
 	};
 
+	// O.O
 	TMap<EStellarClass, FStarAttributeRanges> StarAttributeRanges =
 	{
 		{EStellarClass::HyperGiant, FStarAttributeRanges(

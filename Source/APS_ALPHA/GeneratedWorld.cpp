@@ -1,6 +1,3 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
-
 #include "GeneratedWorld.h"
 #include "StarSystem.h"
 #include "MoonGenerationModel.h"
@@ -42,9 +39,8 @@ void AStarClusterGenerator::GenerateRandomStarSystem()
     }
 
     UWorld* World = GetWorld();
-    
 
-    if (World) // Проверяем, существует ли мир
+    if (World) 
     {
         // Создаем новую звездную систему
         FStarSystemGenerationModel StarSystemModel = StarSystemGenerator->GenerateRandomStarSystemModel();
@@ -52,7 +48,7 @@ void AStarClusterGenerator::GenerateRandomStarSystem()
         if (!NewStarSystem) 
         {
             UE_LOG(LogTemp, Warning, TEXT("NewStarSystem Falied!"));
-            return; // Завершаем выполнение функции, если не можем создать звездную систему
+            return; 
         }
         StarSystemGenerator->ApplyModel(NewStarSystem, StarSystemModel);
 
@@ -69,7 +65,7 @@ void AStarClusterGenerator::GenerateRandomStarSystem()
             if (!NewPlanetarySystem) 
             {
                 UE_LOG(LogTemp, Warning, TEXT("NewPlanetarySystem Falied!"));
-                return; // Завершаем выполнение функции, если не можем создать звездную систему
+                return; 
             }
             PlanetarySystemGenerator->ApplyModel(NewPlanetarySystem, PlanetraySystemModel);
 
@@ -78,48 +74,33 @@ void AStarClusterGenerator::GenerateRandomStarSystem()
             if (!NewPlanetarySystem) 
             {
                 UE_LOG(LogTemp, Warning, TEXT("NewPlanetarySystem Falied!"));
-                return; // Завершаем выполнение функции, если не можем создать звездную систему
-
+                return; 
             }
             StarGenerator->ApplyModel(NewStar, StarModel);
             NewPlanetarySystem->SetStar(NewStar);
             NewStar->AttachToActor(NewPlanetarySystem, FAttachmentTransformRules::KeepRelativeTransform);
 
-            int AmountOfPlanets = PlanetraySystemModel.AmountOfPlanets;
             // Генерация планет для каждой звезды
-
-
-            // Planetary bodies generation
+            int AmountOfPlanets = PlanetraySystemModel.AmountOfPlanets;
             for (const FPlanetData FPlanetData : PlanetraySystemModel.PlanetsList)
             {
-
                 // Planet Model and generation
                 FPlanetGenerationModel PlanetModel = FPlanetData.PlanetModel; 
                 APlanet* NewPlanet = World->SpawnActor<APlanet>(BP_PlanetClass);
                 PlanetGenerator->ApplyModel(NewPlanet, PlanetModel);
                 PlanetGenerator->ConnectPlanetWithStar(NewPlanet, NewStar);
-                /*NewStar->AddPlanet(NewPlanet);
-                NewPlanet->AttachToActor(NewStar, FAttachmentTransformRules::KeepRelativeTransform);*/
-
-                // generate moons model for planet 
-                //int AmountOfMoons = PlanetModel.AmountOfMoons;
 
                 // Generate Moons
                 UE_LOG(LogTemp, Warning, TEXT("PlanetModel.MoonsList %d"), PlanetModel.MoonsList.Num());
-
                 for (const FMoonData FMoonData : PlanetModel.MoonsList)
                 {
 					FMoonGenerationModel MoonModel = FMoonData.MoonModel; 
 					AMoon* NewMoon = World->SpawnActor<AMoon>(BP_MoonClass);
 					MoonGenerator->ApplyModel(NewMoon, MoonModel);
                     MoonGenerator->ConnectMoonWithPlanet(NewMoon, NewPlanet);
-                    /*NewPlanet->AddMoon(NewMoon);
-					NewMoon->AttachToActor(NewPlanet, FAttachmentTransformRules::KeepRelativeTransform);*/
 				}
-
             }
             NewStarSystem->AddPlanetarySystem(NewPlanetarySystem);
-            // Прикрепить NewPlanetarySystem к NewStarSystem
             NewPlanetarySystem->AttachToActor(NewStarSystem, FAttachmentTransformRules::KeepRelativeTransform);
         }
     }

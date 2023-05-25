@@ -15,7 +15,7 @@ struct FStarGenerationModel :
     
         // Тип звезды (например, карлик, гигант, сверхгигант и т.д.)
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star")
-        EStellarClass StellarClass;
+        EStellarClass StellarClass; /// TODO: Rename to StellarType
 	
 	UPROPERTY(VisibleAnywhere)
 		ESpectralClass SpectralClass;

@@ -21,26 +21,14 @@ class APS_ALPHA_API UPlanetGenerator : public UBaseProceduralGenerator
 public:
 	UPlanetGenerator();
 
-	//void InitMoonGenerator();
-
-//private:
-//	TWeakObjectPtr<UMoonGenerator> MoonGenerator;
-
 public:
-
 	void ConnectPlanetWithStar(APlanet* NewPlanet, AStar* NewStar);
-
-	double CalculateMoonMass(EMoonType MoonType);
 
 	double CalculateMoonRadius(EMoonType MoonType);
 
-
-	// Функция генерации планеты
-	APlanet* GeneratePlanet(FPlanetGenerationModel PlanetModel); // FPlanetParams Params
-
 	FPlanetGenerationModel GenerateRandomPlanetModel();
 
-	void ApplyModel(APlanet* PlanetActor, FPlanetGenerationModel PlanetGenerationModel); //override;
+	void ApplyModel(APlanet* PlanetActor, FPlanetGenerationModel PlanetGenerationModel); 
 
 	TArray<FMoonData> GenerateMoonsList(FPlanetGenerationModel PlanetModel);
 };

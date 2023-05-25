@@ -15,8 +15,4 @@ UCLASS()
 class APS_ALPHA_API UBaseProceduralGenerator : public UObject
 {
 	GENERATED_BODY()
-
-public:
-	//virtual void ApplyModel(AAstroActor* AstroActor, FGenerationModel GenerationModel) PURE_VIRTUAL(UBaseProceduralGenerator::ApplyModel, );
-	
 };

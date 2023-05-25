@@ -34,6 +34,9 @@ private:
 	UPROPERTY(VisibleAnywhere, Category = "Planet")
 		EPlanetType PlanetType;
 
+	UPROPERTY(VisibleAnywhere, Category = "Planet")
+		EPlanetaryZoneType PlanetZone;
+
 	// Число спутников
 	UPROPERTY(VisibleAnywhere, Category = "Planet")
 		int32 AmountOfMoons { 0 };
@@ -42,8 +45,6 @@ private:
 	UPROPERTY(VisibleAnywhere,Category = "Planet")
 		int32 Temperature { 0 };
 
-	UPROPERTY(VisibleAnywhere, Category = "Planet")
-		EPlanetaryZoneType PlanetZone;
 
 	UPROPERTY(VisibleAnywhere, Category = "Planet")
 		double PlanetDensity{ 0 };

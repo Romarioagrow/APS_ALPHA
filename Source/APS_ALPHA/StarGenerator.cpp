@@ -8,7 +8,6 @@ UStarGenerator::UStarGenerator()
 {
 }
 
-
 void UStarGenerator::ApplyModel(AStar* NewStar, FStarGenerationModel StarModel) // NewStar, StarModel
 {
     NewStar->SetLuminosity(StarModel.Luminosity);
@@ -25,14 +24,11 @@ void UStarGenerator::ApplyModel(AStar* NewStar, FStarGenerationModel StarModel) 
     NewStar->SetFullSpectralClass(StarModel.FullSpectralClass);
     NewStar->SetFullSpectralName(StarModel.FullSpectralName);
 
-    //NewStar->SetAbsoluteMagnitude(StarModel.AbsoluteMagnitude);
 }
 
 FStarGenerationModel UStarGenerator::GenerateRandomStarModel()
 {
     FStarGenerationModel StarModel;
-
-
     StarModel.StellarClass = GenerateStarClassByRandomWeights();
 
     //ќпределите ESpectralClass (спектральный класс) 
@@ -375,7 +371,6 @@ double UStarGenerator::CalculateSurfaceTemperature(double Luminosity, double Rad
     return SurfaceTemperature;
 }
 
-
 /*
 ƒл€ начала, давайте определим, какие спектральные классы будут соответствовать каждому классу звезды(EStellarClass).
 ƒл€ этого мы можем использовать следующую таблицу :
@@ -439,7 +434,6 @@ ESpectralClass UStarGenerator::ChooseSpectralClassByStellarClass(EStellarClass S
         SpectralArray = &Spectral_LY;
         WeightsArray = &Weights_LY;
         break;
-
     default:
         UE_LOG(LogTemp, Warning, TEXT("Unknown StellarClass!"));
         return ESpectralClass::Unknown;  // ¬озвращает O класс по умолчанию или можно выбрать другой класс
@@ -468,7 +462,6 @@ ESpectralClass UStarGenerator::ChooseSpectralClassByStellarClass(EStellarClass S
 
     UE_LOG(LogTemp, Warning, TEXT("Failed to choose spectral class!"));
     return ESpectralClass::M;
-
 }
 
 ESpectralClass UStarGenerator::DetermineSpectralClassByTemperature(EStellarClass StarType, double Temperature)
