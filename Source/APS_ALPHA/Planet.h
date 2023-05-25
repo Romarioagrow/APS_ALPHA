@@ -29,10 +29,10 @@ public:
 
 private:
 	UPROPERTY(VisibleAnywhere, Category = "Planet")
+		AStar* ParnetStar;
+	
+	UPROPERTY(VisibleAnywhere, Category = "Planet")
 		EPlanetType PlanetType;
-
-	UPROPERTY(VisibleAnywhere)
-		AStar* AStarPlanet;
 
 	// Число спутников
 	UPROPERTY(VisibleAnywhere, Category = "Planet")

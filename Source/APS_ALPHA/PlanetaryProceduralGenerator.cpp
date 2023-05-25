@@ -382,11 +382,14 @@ FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySyst
                 double MoonMass = MoonGenerator->CalculateRandomMoonMass();
                 double MoonDensity = MoonGenerator->CalculateRandomMoonDensity(MoonType);
                 double MoonRadius = MoonGenerator->CalculateMoonRadius(MoonDensity, MoonMass);
+                double MoonGravity = MoonMass / FMath::Pow(MoonRadius, 2);//MoonGenerator->CalculateGravitationalForce(PlanetModel.Mass, MoonMass, MoonOrbit);
 
                 // Создаем модель луны
                 MoonModel.Type = MoonType;
                 MoonModel.Mass = MoonMass;
                 MoonModel.Radius = MoonRadius;
+                MoonModel.MoonDensity = MoonDensity; // TODO: To Parent 
+                MoonModel.MoonGravity = MoonGravity;
                 MoonModel.OrbitDistance = MoonOrbit;
 
                 // Создаем данные о луне
