@@ -25,6 +25,8 @@ public:
 	// Функция генерации луны
 	//AMoon* GenerateMoon(); // FMoonParams Params
 
+    double CalculateGravitationalForce(double MassPlanet, double MassMoon, double Distance);
+
     double CalculateRandomMoonDensity(EMoonType MoonType);
 
 	void ApplyModel(AMoon* Moon, FMoonGenerationModel MoonGenerationModel);

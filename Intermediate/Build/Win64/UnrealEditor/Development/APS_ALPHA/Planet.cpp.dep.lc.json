@@ -34,9 +34,6 @@
             "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\intermediate\\build\\win64\\unrealeditor\\inc\\aps_alpha\\uht\\celestialbody.generated.h",
             "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\intermediate\\build\\win64\\unrealeditor\\inc\\aps_alpha\\uht\\orbitalbody.generated.h",
             "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\source\\aps_alpha\\planettype.h",
-            "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\source\\aps_alpha\\planetaryzonetype.h",
-            "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\intermediate\\build\\win64\\unrealeditor\\inc\\aps_alpha\\uht\\planet.generated.h",
-            "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\source\\aps_alpha\\planetgenerationmodel.h",
             "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\source\\aps_alpha\\moongenerationmodel.h",
             "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\source\\aps_alpha\\moontype.h",
             "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\source\\aps_alpha\\orbitalbodygenerationmodel.h",
@@ -46,7 +43,10 @@
             "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\intermediate\\build\\win64\\unrealeditor\\inc\\aps_alpha\\uht\\celestialgenerationmodel.generated.h",
             "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\intermediate\\build\\win64\\unrealeditor\\inc\\aps_alpha\\uht\\orbitalbodygenerationmodel.generated.h",
             "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\intermediate\\build\\win64\\unrealeditor\\inc\\aps_alpha\\uht\\moongenerationmodel.generated.h",
-            "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\intermediate\\build\\win64\\unrealeditor\\inc\\aps_alpha\\uht\\planetgenerationmodel.generated.h"
+            "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\source\\aps_alpha\\planetgenerationmodel.h",
+            "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\source\\aps_alpha\\planetaryzonetype.h",
+            "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\intermediate\\build\\win64\\unrealeditor\\inc\\aps_alpha\\uht\\planetgenerationmodel.generated.h",
+            "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\intermediate\\build\\win64\\unrealeditor\\inc\\aps_alpha\\uht\\planet.generated.h"
         ],
         "ImportedModules": [],
         "ImportedHeaderUnits": []

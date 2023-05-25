@@ -34,6 +34,24 @@ void UMoonGenerator::ApplyModel(AMoon* Moon, FMoonGenerationModel MoonGeneration
 }
 
 
+double UMoonGenerator::CalculateGravitationalForce(double MassPlanet, double MassMoon, double Distance)
+{
+    const double G = 6.67430e-11; // Гравитационная постоянная в м^3 kg^-1 s^-2
+    const double MassEarth = 5.972e24; // Масса Земли в килограммах
+
+    // Преобразование масс из масс Земли в килограммы
+    double MassPlanetKg = MassPlanet * MassEarth;
+    double MassMoonKg = MassMoon * MassEarth;
+
+    // Преобразование расстояния из километров в метры
+    double DistanceM = Distance * 1000;
+
+    // Вычисление силы притяжения по формуле Ньютона
+    double Force = G * (MassPlanetKg * MassMoonKg) / pow(DistanceM, 2);
+
+    return Force;
+}
+
 double UMoonGenerator::CalculateRandomMoonDensity(EMoonType MoonType)
 {
     
