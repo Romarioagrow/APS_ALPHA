@@ -15,5 +15,4 @@ UCLASS()
 class APS_ALPHA_API ACelestialSystem : public AAstroActor, public IAstonomicalSystem
 {
 	GENERATED_BODY()
-	
 };

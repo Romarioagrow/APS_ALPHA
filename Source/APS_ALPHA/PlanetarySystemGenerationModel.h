@@ -15,10 +15,10 @@ struct FZoneRadius
 	GENERATED_USTRUCT_BODY()
 
 		UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Zone")
-		double InnerRadius;
+			double InnerRadius;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Zone")
-		double OuterRadius;
+		UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Zone")
+			double OuterRadius;
 
 	FZoneRadius()
 	{
@@ -47,18 +47,18 @@ struct FPlanetData {
 		UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Model")
 			FPlanetGenerationModel PlanetModel;
 
-		FPlanetData()
-		{
-			PlanetOrder = 0;
-			OrbitRadius = 0.0;
-		}
+	FPlanetData()
+	{
+		PlanetOrder = 0;
+		OrbitRadius = 0.0;
+	}
 
-		FPlanetData(int PlanetOrder, double OrbitRadius, FPlanetGenerationModel PlanetModel)
-		{
-			this->PlanetOrder = PlanetOrder;
-			this->OrbitRadius = OrbitRadius;
-			this->PlanetModel = PlanetModel;
-		}
+	FPlanetData(int PlanetOrder, double OrbitRadius, FPlanetGenerationModel PlanetModel)
+	{
+		this->PlanetOrder = PlanetOrder;
+		this->OrbitRadius = OrbitRadius;
+		this->PlanetModel = PlanetModel;
+	}
 };
 
 USTRUCT(BlueprintType)
@@ -81,17 +81,13 @@ struct FPlanetarySystemGenerationModel :
     UPROPERTY(VisibleAnywhere)
         EOrbitDistributionType OrbitDistributionType;
 
-	/*UPROPERTY(VisibleAnywhere)
-		ESpectralType StarSpectralType;*/
 	UPROPERTY(VisibleAnywhere)
 		FName FullSpectralName;
 	
 	UPROPERTY(VisibleAnywhere)
 		TArray<FPlanetData> PlanetsList;
 
-
 	/// TODO: To one struct
-
 	UPROPERTY(VisibleAnywhere, Category = "Zones")
 		FZoneRadius DeadZoneRadius;
 	
@@ -124,6 +120,5 @@ struct FPlanetarySystemGenerationModel :
 	
 	UPROPERTY(VisibleAnywhere, Category = "Zones")
 		FZoneRadius GasGiantsZoneRadius;
-
 };
 

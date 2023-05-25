@@ -39,12 +39,8 @@ private:
 	UPROPERTY(VisibleAnywhere)
 		TArray<FPlanetData> PlanetsList;
 
-
-
-
-	/// ZONES 
-	/// TO SINGLE STRUCT
-
+	// ZONES 
+	/// TODO: TO SINGLE STRUCT
 	UPROPERTY(VisibleAnywhere, Category = "Zones")
 		FZoneRadius HabitableZoneRadius;
 
@@ -71,9 +67,6 @@ private:
 	
 	UPROPERTY(VisibleAnywhere, Category = "Zones")
 		FZoneRadius KuiperBeltZoneRadius;
-
-
-
 
 public:
 	void SetStar(AStar* Star);

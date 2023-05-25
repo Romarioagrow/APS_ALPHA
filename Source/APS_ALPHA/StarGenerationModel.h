@@ -43,6 +43,5 @@ struct FStarGenerationModel :
 
 	UPROPERTY(VisibleAnywhere)
 		EStellarClass StarStellarClass;
-
 };
 

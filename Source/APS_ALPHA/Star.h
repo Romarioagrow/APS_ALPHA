@@ -11,7 +11,6 @@
 #include "CelestialBody.h"
 #include "Star.generated.h"
 
-
 /**
  * 
  */
@@ -57,11 +56,18 @@ private:
 
 public:
 	void SetLuminosity(float Luminosity);
+
 	void SetSurfaceTemperature(int SurfaceTemperature);
+
 	void SetStarType(EStellarClass StarType);
+
 	void SetStarSpectralClass(ESpectralClass StarSpectralClass);
+
 	void SetStarSpectralType(ESpectralType StarSpectralType);
+
 	void SetFullSpectralClass(FName FullSpectralClass);
+
 	void SetFullSpectralName(FName FullSpectralName);
+
 	void SetSpectralSubclass(int SpectralSubclass);
 };
