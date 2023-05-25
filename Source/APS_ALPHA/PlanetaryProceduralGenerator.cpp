@@ -344,21 +344,102 @@ FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySyst
             PlanetModel.PlanetGravityStrength = PlanetModel.Mass / FMath::Pow(PlanetModel.Radius, 2);
             PlanetModel.AmountOfMoons = CalculateMoons(PlanetModel.Mass, PlanetType);
 
+//            PlanetarySystemModel.PlanetsList.Add(PlanetData);
+
+
+
+            // Moons orbits
+            // Гипотетические параметры планеты и звезды
+            double planetMass = PlanetModel.Mass; // масса планеты
+            double starMass = StarModel.Mass; // масса звезды
+            double planetToStarDistance = PlanetModel.Radius; // среднее расстояние от планеты до звезды
+            double planetRadius = PlanetModel.Radius; // радиус планеты
+            //double planetAtmosphereHeight = PlanetModel.AtmosphereHeight; // высота атмосферы планеты
+            double planetAtmosphereHeight = PlanetModel.Radius / 10; // высота атмосферы планеты
+
+            // Минимальное расстояние - радиус планеты плюс высота атмосферы
+            const double MinOrbitRadius = planetRadius + planetAtmosphereHeight;
+
+            // Максимальное расстояние - радиус сферы Хилла
+            // Предполагаем, что орбита планеты почти круговая, т.е. эксцентриситет близок к 0
+            double eccentricity = 0;
+            double RadiusHill = planetToStarDistance * (1 - eccentricity) * pow(planetMass / (3 * starMass), 1.0 / 3);
+            const double MaxOrbitRadius = RadiusHill;
+  
+
+
+            TPair<double, double> OrbitRadiusPair;
+
+            if (MinOrbitRadius > MaxOrbitRadius) 
+            {
+                OrbitRadiusPair.Key = MaxOrbitRadius;
+                OrbitRadiusPair.Value = MinOrbitRadius;
+            }
+            else 
+            {
+                OrbitRadiusPair.Key = MinOrbitRadius;
+                OrbitRadiusPair.Value = MaxOrbitRadius;
+            }
+
+            PlanetModel.MoonOrbitsRange = OrbitRadiusPair;
+            UE_LOG(LogTemp, Warning, TEXT("Planet Moons Orbit Radius    - Min: %f, Max: %f x"), OrbitRadiusPair.Key, OrbitRadiusPair.Value);
+
+            //InitMoonGenerator();
+            //FMoonGenerationModel MoonModel = MoonGenerator->GenerateMoonModel();
+
+            
+            const int AmountOfMoons = PlanetModel.AmountOfMoons;
+            TArray<FMoonData> MoonsList {};
+            TArray<float> MoonOrbits;
+
+            const double MoonMinOrbitRadius = PlanetModel.MoonOrbitsRange.Key;
+            const double MoonMaxOrbitRadius = PlanetModel.MoonOrbitsRange.Value;
+            const double uniformDistance = (MoonMaxOrbitRadius - MoonMinOrbitRadius) / (AmountOfMoons + 1);
+
+            // 2. Создаем массив со всеми возможными орбитами
+            MoonOrbits.Reserve(AmountOfMoons);
+
+            for (size_t m = 0; m < AmountOfMoons; m++)
+            {
+                MoonOrbits.Add(MoonMinOrbitRadius + uniformDistance * (m + 1));
+            }
+
+            for (double MoonOrbit : MoonOrbits)
+            {
+                FMoonGenerationModel MoonModel;
+
+                EMoonType MoonType = MoonGenerator->GenerateMoonType(PlanetModel);
+
+                // Вычисляем физические параметры луны
+                double MoonMass = MoonGenerator->CalculateMoonMass(MoonType);
+                double MoonRadius = MoonGenerator->CalculateMoonRadius(MoonType);
+
+                // Создаем модель луны
+                MoonModel.Mass = MoonMass;
+                MoonModel.Radius = MoonRadius;
+                MoonModel.Type = MoonType;
+                MoonModel.OrbitDistance = MoonOrbit;
+
+                // Создаем данные о луне
+                int MoonIndex = MoonOrbits.IndexOfByKey(MoonOrbit);
+                FMoonData MoonData(MoonIndex + 1, MoonOrbit, MoonModel);
+
+                // Добавляем данные о луне в список
+                MoonsList.Add(MoonData);
+
+
+            }
+
+
+            PlanetModel.MoonsList = MoonsList;
             FPlanetData PlanetData = FPlanetData(PlanetIndex, OrbitRadius, PlanetModel);
             PlanetarySystemModel.PlanetsList.Add(PlanetData);
 
-
-
-
-            //FMoonData FMoonData = PlanetGenerator->GenerateMoonsModel();//PlanetraySystemModel.PlanetsList[0].MoonsList[0];
-
-
-
-
+            //MoonsList.Reset();
+            //MoonOrbits.Reset();
         }
 
-
-
+        //MoonsList.Reset();
     }
     else 
     {
@@ -366,7 +447,6 @@ FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySyst
 		PlanetarySystemModel.PlanetarySystemType = EPlanetarySystemType::NoPlanetSystem;
 	}
 
-    
 
     OrbitRadii.Reset();
 

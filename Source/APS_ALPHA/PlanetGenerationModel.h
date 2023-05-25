@@ -70,6 +70,12 @@ struct FPlanetGenerationModel :
 
 		UPROPERTY(VisibleAnywhere)
 			TArray<FMoonData> MoonsList;
+		
+		/*UPROPERTY(VisibleAnywhere)
+			TMap<double, double> MoonOrbits;*/
+		
+		//UPROPERTY(VisibleAnywhere)
+			TPair<double, double> MoonOrbitsRange;
 
 };
 

@@ -4,6 +4,7 @@
 
 #include "Moon.h"
 #include "MoonGenerationModel.h"
+#include "PlanetGenerationModel.h"
 
 #include "CoreMinimal.h"
 #include "BaseProceduralGenerator.h"
@@ -22,9 +23,18 @@ public:
 
 public:
 	// Функция генерации луны
-	AMoon* GenerateMoon(); // FMoonParams Params
+	//AMoon* GenerateMoon(); // FMoonParams Params
+	void ApplyModel(AAstroActor* AstroActor, FGenerationModel GenerationModel);
+
+	FMoonGenerationModel GenerateMoonModel();
 
 	FMoonGenerationModel GenerateRandomMoonModel();
 
-	void ApplyModel(AAstroActor* AstroActor, FGenerationModel GenerationModel);// override;
+	EMoonType GenerateMoonType(FPlanetGenerationModel PlanetModel);
+
+	double CalculateMoonMass(EMoonType MoonType);
+
+	double CalculateMoonRadius(EMoonType MoonType);
+
+	// override;
 };

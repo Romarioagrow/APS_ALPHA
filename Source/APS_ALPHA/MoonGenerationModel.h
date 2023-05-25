@@ -1,4 +1,5 @@
 #pragma once
+#include "MoonType.h"
 
 #include "OrbitalBodyGenerationModel.h"
 #include "CoreMinimal.h"
@@ -9,5 +10,10 @@ struct FMoonGenerationModel :
     public FOrbitalBodyGenerationModel
 {
     GENERATED_BODY()
+
+    FMoonGenerationModel();
+
+    UPROPERTY(EditAnywhere, Category = "Moon Generation Model")
+    EMoonType Type;
 };
 

@@ -6,15 +6,18 @@
 
 #include "UObject/GeneratedCppIncludes.h"
 #include "APS_ALPHA/Planet.h"
+#include "APS_ALPHA/PlanetGenerationModel.h"
 PRAGMA_DISABLE_DEPRECATION_WARNINGS
 void EmptyLinkFunctionForGeneratedCodePlanet() {}
 // Cross Module References
 	APS_ALPHA_API UClass* Z_Construct_UClass_AOrbitalBody();
 	APS_ALPHA_API UClass* Z_Construct_UClass_APlanet();
 	APS_ALPHA_API UClass* Z_Construct_UClass_APlanet_NoRegister();
+	APS_ALPHA_API UClass* Z_Construct_UClass_AStar_NoRegister();
 	APS_ALPHA_API UClass* Z_Construct_UClass_UPlanetaryEnvironment_NoRegister();
 	APS_ALPHA_API UEnum* Z_Construct_UEnum_APS_ALPHA_EPlanetaryZoneType();
 	APS_ALPHA_API UEnum* Z_Construct_UEnum_APS_ALPHA_EPlanetType();
+	APS_ALPHA_API UScriptStruct* Z_Construct_UScriptStruct_FMoonData();
 	ENGINE_API UClass* Z_Construct_UClass_USphereComponent_NoRegister();
 	UPackage* Z_Construct_UPackage__Script_APS_ALPHA();
 // End Cross Module References
@@ -38,6 +41,10 @@ void EmptyLinkFunctionForGeneratedCodePlanet() {}
 #endif
 		static const UECodeGen_Private::FEnumPropertyParams NewProp_PlanetType;
 #if WITH_METADATA
+		static const UECodeGen_Private::FMetaDataPairParam NewProp_AStarPlanet_MetaData[];
+#endif
+		static const UECodeGen_Private::FObjectPropertyParams NewProp_AStarPlanet;
+#if WITH_METADATA
 		static const UECodeGen_Private::FMetaDataPairParam NewProp_AmountOfMoons_MetaData[];
 #endif
 		static const UECodeGen_Private::FIntPropertyParams NewProp_AmountOfMoons;
@@ -58,6 +65,11 @@ void EmptyLinkFunctionForGeneratedCodePlanet() {}
 		static const UECodeGen_Private::FMetaDataPairParam NewProp_PlanetGravityStrength_MetaData[];
 #endif
 		static const UECodeGen_Private::FDoublePropertyParams NewProp_PlanetGravityStrength;
+		static const UECodeGen_Private::FStructPropertyParams NewProp_MoonsList_Inner;
+#if WITH_METADATA
+		static const UECodeGen_Private::FMetaDataPairParam NewProp_MoonsList_MetaData[];
+#endif
+		static const UECodeGen_Private::FArrayPropertyParams NewProp_MoonsList;
 #if WITH_METADATA
 		static const UECodeGen_Private::FMetaDataPairParam NewProp_SphereCollisionComponent_MetaData[];
 #endif
@@ -86,6 +98,13 @@ void EmptyLinkFunctionForGeneratedCodePlanet() {}
 	};
 #endif
 	const UECodeGen_Private::FEnumPropertyParams Z_Construct_UClass_APlanet_Statics::NewProp_PlanetType = { "PlanetType", nullptr, (EPropertyFlags)0x0040000000020001, UECodeGen_Private::EPropertyGenFlags::Enum, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(APlanet, PlanetType), Z_Construct_UEnum_APS_ALPHA_EPlanetType, METADATA_PARAMS(Z_Construct_UClass_APlanet_Statics::NewProp_PlanetType_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_APlanet_Statics::NewProp_PlanetType_MetaData)) }; // 2129899352
+#if WITH_METADATA
+	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_APlanet_Statics::NewProp_AStarPlanet_MetaData[] = {
+		{ "Category", "Planet" },
+		{ "ModuleRelativePath", "Planet.h" },
+	};
+#endif
+	const UECodeGen_Private::FObjectPropertyParams Z_Construct_UClass_APlanet_Statics::NewProp_AStarPlanet = { "AStarPlanet", nullptr, (EPropertyFlags)0x0040000000020001, UECodeGen_Private::EPropertyGenFlags::Object, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(APlanet, AStarPlanet), Z_Construct_UClass_AStar_NoRegister, METADATA_PARAMS(Z_Construct_UClass_APlanet_Statics::NewProp_AStarPlanet_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_APlanet_Statics::NewProp_AStarPlanet_MetaData)) };
 #if WITH_METADATA
 	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_APlanet_Statics::NewProp_AmountOfMoons_MetaData[] = {
 		{ "Category", "Planet" },
@@ -126,6 +145,14 @@ void EmptyLinkFunctionForGeneratedCodePlanet() {}
 	};
 #endif
 	const UECodeGen_Private::FDoublePropertyParams Z_Construct_UClass_APlanet_Statics::NewProp_PlanetGravityStrength = { "PlanetGravityStrength", nullptr, (EPropertyFlags)0x0040000000020001, UECodeGen_Private::EPropertyGenFlags::Double, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(APlanet, PlanetGravityStrength), METADATA_PARAMS(Z_Construct_UClass_APlanet_Statics::NewProp_PlanetGravityStrength_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_APlanet_Statics::NewProp_PlanetGravityStrength_MetaData)) };
+	const UECodeGen_Private::FStructPropertyParams Z_Construct_UClass_APlanet_Statics::NewProp_MoonsList_Inner = { "MoonsList", nullptr, (EPropertyFlags)0x0000000000020000, UECodeGen_Private::EPropertyGenFlags::Struct, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, 0, Z_Construct_UScriptStruct_FMoonData, METADATA_PARAMS(nullptr, 0) }; // 775936995
+#if WITH_METADATA
+	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_APlanet_Statics::NewProp_MoonsList_MetaData[] = {
+		{ "Category", "Planet" },
+		{ "ModuleRelativePath", "Planet.h" },
+	};
+#endif
+	const UECodeGen_Private::FArrayPropertyParams Z_Construct_UClass_APlanet_Statics::NewProp_MoonsList = { "MoonsList", nullptr, (EPropertyFlags)0x0040000000020001, UECodeGen_Private::EPropertyGenFlags::Array, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(APlanet, MoonsList), EArrayPropertyFlags::None, METADATA_PARAMS(Z_Construct_UClass_APlanet_Statics::NewProp_MoonsList_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_APlanet_Statics::NewProp_MoonsList_MetaData)) }; // 775936995
 #if WITH_METADATA
 	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_APlanet_Statics::NewProp_SphereCollisionComponent_MetaData[] = {
 		{ "Category", "Components" },
@@ -137,12 +164,15 @@ void EmptyLinkFunctionForGeneratedCodePlanet() {}
 	const UECodeGen_Private::FPropertyParamsBase* const Z_Construct_UClass_APlanet_Statics::PropPointers[] = {
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_APlanet_Statics::NewProp_PlanetType_Underlying,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_APlanet_Statics::NewProp_PlanetType,
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_APlanet_Statics::NewProp_AStarPlanet,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_APlanet_Statics::NewProp_AmountOfMoons,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_APlanet_Statics::NewProp_Temperature,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_APlanet_Statics::NewProp_PlanetZone_Underlying,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_APlanet_Statics::NewProp_PlanetZone,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_APlanet_Statics::NewProp_PlanetDensity,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_APlanet_Statics::NewProp_PlanetGravityStrength,
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_APlanet_Statics::NewProp_MoonsList_Inner,
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_APlanet_Statics::NewProp_MoonsList,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_APlanet_Statics::NewProp_SphereCollisionComponent,
 	};
 		const UECodeGen_Private::FImplementedInterfaceParams Z_Construct_UClass_APlanet_Statics::InterfaceParams[] = {
@@ -185,9 +215,9 @@ void EmptyLinkFunctionForGeneratedCodePlanet() {}
 		static const FClassRegisterCompiledInInfo ClassInfo[];
 	};
 	const FClassRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_Planet_h_Statics::ClassInfo[] = {
-		{ Z_Construct_UClass_APlanet, APlanet::StaticClass, TEXT("APlanet"), &Z_Registration_Info_UClass_APlanet, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(APlanet), 4138396233U) },
+		{ Z_Construct_UClass_APlanet, APlanet::StaticClass, TEXT("APlanet"), &Z_Registration_Info_UClass_APlanet, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(APlanet), 3428369326U) },
 	};
-	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_Planet_h_1335090746(TEXT("/Script/APS_ALPHA"),
+	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_Planet_h_949456997(TEXT("/Script/APS_ALPHA"),
 		Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_Planet_h_Statics::ClassInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_Planet_h_Statics::ClassInfo),
 		nullptr, 0,
 		nullptr, 0);
