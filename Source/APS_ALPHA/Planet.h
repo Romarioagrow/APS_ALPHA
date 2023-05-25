@@ -73,4 +73,6 @@ public:
 
 	void SetMoonsList(TArray<FMoonData> NewAmountOfMoons);
 
+	void SetParentStar(AStar* Star);
+
 };

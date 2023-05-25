@@ -3,6 +3,7 @@
 
 #include "PlanetGenerator.h"
 #include "MoonGenerator.h"
+#include "Star.h"
 
 
 //class UMoonGenerator MoonGenerator;
@@ -19,6 +20,18 @@ UPlanetGenerator::UPlanetGenerator()
 //        MoonGenerator = NewObject<UMoonGenerator>(this);
 //    }
 //}
+
+TArray<FMoonData> UPlanetGenerator::GenerateMoonsList(FPlanetGenerationModel PlanetModel)
+{
+    return TArray<FMoonData>();
+}
+
+void UPlanetGenerator::ConnectPlanetWithStar(APlanet* NewPlanet, AStar* NewStar)
+{
+    NewStar->AddPlanet(NewPlanet);
+    NewPlanet->AttachToActor(NewStar, FAttachmentTransformRules::KeepRelativeTransform);
+    NewPlanet->SetParentStar(NewStar);
+}
 
 APlanet* UPlanetGenerator::GeneratePlanet(FPlanetGenerationModel PlanetModel)
 {

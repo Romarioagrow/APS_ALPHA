@@ -27,7 +27,8 @@ public:
 //	TWeakObjectPtr<UMoonGenerator> MoonGenerator;
 
 public:
-	//EMoonType GenerateMoonType(FPlanetGenerationModel PlanetModel);
+
+	void ConnectPlanetWithStar(APlanet* NewPlanet, AStar* NewStar);
 
 	double CalculateMoonMass(EMoonType MoonType);
 

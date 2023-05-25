@@ -49,21 +49,20 @@ void AStarClusterGenerator::GenerateRandomStarSystem()
         // Создаем новую звездную систему
         FStarSystemGenerationModel StarSystemModel = StarSystemGenerator->GenerateRandomStarSystemModel();
         AStarSystem* NewStarSystem = World->SpawnActor<AStarSystem>(BP_StarSystemClass); 
-        // Проверяем, успешно ли создана звездная система
         if (!NewStarSystem) 
         {
-            // Обрабатываем ошибку
             UE_LOG(LogTemp, Warning, TEXT("NewStarSystem Falied!"));
             return; // Завершаем выполнение функции, если не можем создать звездную систему
         }
         StarSystemGenerator->ApplyModel(NewStarSystem, StarSystemModel);
 
-        int AmountOfStars = StarSystemModel.AmountOfStars;
         // Генерация звезд для каждой планетарной системы
+        int AmountOfStars = StarSystemModel.AmountOfStars;
         for (int i = 0; i < AmountOfStars; i++)
         {
             FStarGenerationModel StarModel = StarGenerator->GenerateRandomStarModel();
-            FPlanetarySystemGenerationModel PlanetraySystemModel = PlanetarySystemGenerator->GeneratePlanetraySystemModelByStar(StarModel, PlanetGenerator, MoonGenerator);
+            FPlanetarySystemGenerationModel PlanetraySystemModel = 
+                PlanetarySystemGenerator->GeneratePlanetraySystemModelByStar(StarModel, PlanetGenerator, MoonGenerator);
 
             // Create Planetray System
             APlanetarySystem* NewPlanetarySystem = World->SpawnActor<APlanetarySystem>(BP_PlanetarySystemClass);
@@ -78,7 +77,6 @@ void AStarClusterGenerator::GenerateRandomStarSystem()
             AStar* NewStar = World->SpawnActor<AStar>(BP_StarClass); 
             if (!NewPlanetarySystem) 
             {
-                // Обрабатываем ошибку
                 UE_LOG(LogTemp, Warning, TEXT("NewPlanetarySystem Falied!"));
                 return; // Завершаем выполнение функции, если не можем создать звездную систему
 
@@ -99,8 +97,11 @@ void AStarClusterGenerator::GenerateRandomStarSystem()
                 FPlanetGenerationModel PlanetModel = FPlanetData.PlanetModel; //PlanetGenerator->GenerateRandomPlanetModel();
                 APlanet* NewPlanet = World->SpawnActor<APlanet>(BP_PlanetClass);
                 PlanetGenerator->ApplyModel(NewPlanet, PlanetModel);
-                NewStar->AddPlanet(NewPlanet);
-                NewPlanet->AttachToActor(NewStar, FAttachmentTransformRules::KeepRelativeTransform);
+
+                // Connect planet with star
+                PlanetGenerator->ConnectPlanetWithStar(NewPlanet, NewStar);
+                /*NewStar->AddPlanet(NewPlanet);
+                NewPlanet->AttachToActor(NewStar, FAttachmentTransformRules::KeepRelativeTransform);*/
 
                 // generate moons model for planet 
                 //int AmountOfMoons = PlanetModel.AmountOfMoons;
