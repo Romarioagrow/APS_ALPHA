@@ -12,5 +12,6 @@ enum class EMoonType : uint8
 	Desert				UMETA(DisplayName = "Desert"), // ѕустынные луны (мало воды, засушливые услови€)
 	TidallyLocked		UMETA(DisplayName = "Tidally Locked"), // ѕриливно заблокированные луны (одна сторона всегда обращена к планете)
 	Peculiar			UMETA(DisplayName = "Peculiar"), // —транные луны (необычные свойства, которые не подход€т под другие категории)
-	CapturedAsteroid	UMETA(DisplayName = "Captured Asteroid") // «ахваченные астероиды (астероиды, попавшие на орбиту планеты и ставшие лунами)
+	CapturedAsteroid	UMETA(DisplayName = "Captured Asteroid"), // «ахваченные астероиды (астероиды, попавшие на орбиту планеты и ставшие лунами)
+	Unknown				UMETA(DisplayName = "Unknown"), // Unknown
 };
