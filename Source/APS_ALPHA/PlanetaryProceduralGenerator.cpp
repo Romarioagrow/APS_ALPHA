@@ -44,6 +44,7 @@ FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySyst
     PlanetProbability FinalProbability = BaseProbability * MassModifier;
     UE_LOG(LogTemp, Warning, TEXT("FinalProbability: %f"), FinalProbability);
     bool HasPlanets = FMath::FRand() <= FinalProbability;
+    //bool HasPlanets = false;//FMath::FRand() <= FinalProbability;
 
     // Выводим информацию о звезде
     UE_LOG(LogTemp, Warning, TEXT("HasPlanets: %s"), HasPlanets ? TEXT("true") : TEXT("false"));
@@ -599,6 +600,11 @@ EOrbitDistributionType UPlanetarySystemGenerator::ChooseOrbitDistribution(EStell
 
     // Возвращаем последний тип, если что-то пошло не так
     return probabilities.end().Key();
+}
+
+void UPlanetarySystemGenerator::SetAstroLocation(int StarNumber, APlanetarySystem* NewPlanetarySystem)
+{
+   // NewPlanetarySystem->Get
 }
 
 int UPlanetarySystemGenerator::DetermineMaxPlanets(EStellarClass StellarClass, FStarGenerationModel StarModel )

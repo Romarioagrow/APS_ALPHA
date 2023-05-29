@@ -51,9 +51,9 @@ void AStarClusterGenerator::GenerateRandomStarSystem()
         }
         StarSystemGenerator->ApplyModel(NewStarSystem, StarSystemModel);
 
-        // √енераци€ звезд дл€ каждой планетарной системы
+        // Generate astro model
         int AmountOfStars = StarSystemModel.AmountOfStars;
-        for (int i = 0; i < AmountOfStars; i++)
+        for (int StarNumber = 0; StarNumber < AmountOfStars; StarNumber++)
         {
             FStarGenerationModel StarModel = StarGenerator->GenerateRandomStarModel();
             FPlanetarySystemGenerationModel PlanetraySystemModel = 
@@ -67,6 +67,7 @@ void AStarClusterGenerator::GenerateRandomStarSystem()
                 return; 
             }
             PlanetarySystemGenerator->ApplyModel(NewPlanetarySystem, PlanetraySystemModel);
+            PlanetarySystemGenerator->SetAstroLocation(StarNumber, NewPlanetarySystem);
 
             // ѕровер€ем, успешно ли создана планетарна€ система
             AStar* NewStar = World->SpawnActor<AStar>(BP_StarClass); 
@@ -80,6 +81,10 @@ void AStarClusterGenerator::GenerateRandomStarSystem()
             /// TODO: PlanetarySystemGenerator->ConnectStar()
             NewPlanetarySystem->SetStar(NewStar);
             NewStar->AttachToActor(NewPlanetarySystem, FAttachmentTransformRules::KeepRelativeTransform);
+            // Set Star full-scale
+            //FVector StarFullscaledRadius = StarModel.Radius * FVector(813684224.0, 813684224.0, 813684224.0);
+            NewStar->SetActorScale3D(FVector(StarModel.Radius * 813684224.0));
+            NewStar->StarRadiusKM = StarModel.Radius * 696340;
 
             // √енераци€ планет дл€ каждой звезды
             int AmountOfPlanets = PlanetraySystemModel.AmountOfPlanets;
@@ -90,6 +95,13 @@ void AStarClusterGenerator::GenerateRandomStarSystem()
                 APlanet* NewPlanet = World->SpawnActor<APlanet>(BP_PlanetClass);
                 PlanetGenerator->ApplyModel(NewPlanet, PlanetModel);
                 PlanetGenerator->ConnectPlanetWithStar(NewPlanet, NewStar);
+                // set planet full-scale
+                //NewPlanet->SetActorScale3D(FVector(PlanetModel.Radius * 1000.0));
+                NewPlanet->SetActorScale3D(FVector(PlanetModel.Radius * 12742000));
+                FVector NewLocation = FVector(PlanetModel.OrbitDistance * 149600000000000 / 1000, 0, 0);
+                NewPlanet->SetActorLocation(NewLocation);
+                NewPlanet->PlanetRadiusKM = PlanetModel.Radius * 6371;
+                // set planet orbit full-scale location
 
                 // Generate Moons
                 for (const FMoonData FMoonData : PlanetModel.MoonsList) /// TODO: Ref to pointers FMoonData 
@@ -103,6 +115,18 @@ void AStarClusterGenerator::GenerateRandomStarSystem()
             NewStarSystem->AddPlanetarySystem(NewPlanetarySystem);
             NewPlanetarySystem->AttachToActor(NewStarSystem, FAttachmentTransformRules::KeepRelativeTransform);
         }
+
+
+        //// Arrange astro bodies by hierarchy 
+        //for (AStarSystem* GeneratedStarSystem : GeneratedStarSystems)
+        //{
+        //    if (GeneratedStarSystem)
+        //    {
+        //        GeneratedStarSystem
+        //    }
+        //}
+
+
     }
 }
 
