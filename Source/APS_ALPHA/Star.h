@@ -22,12 +22,17 @@ class APS_ALPHA_API AStar : public ACelestialBody
 public:
 	AStar();
 
+	UPROPERTY(VisibleAnywhere)
+		int StarRadiusKM;
+
 private:
 	UPROPERTY(VisibleAnywhere)
 		float Luminosity;
 
 	UPROPERTY(VisibleAnywhere)
 		int SurfaceTemperature;
+	
+	
 
 	UPROPERTY(VisibleAnywhere)
 		EStellarClass StellarClass;

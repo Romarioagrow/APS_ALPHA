@@ -68,6 +68,9 @@ class APS_ALPHA_API UPlanetarySystemGenerator : public UBaseProceduralGenerator
 	GENERATED_BODY()
 
 public:
+    void SetAstroLocation(int StarNumber, APlanetarySystem* NewPlanetarySystem);
+
+
     int DetermineMaxPlanets(EStellarClass StellarClass, FStarGenerationModel StarModel);
 
     void ApplyModel(APlanetarySystem* NewPlanetarySystem, FPlanetarySystemGenerationModel PlanetraySystemModel);

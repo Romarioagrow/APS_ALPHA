@@ -22,6 +22,9 @@ protected:
 
 public:
 	UPROPERTY()
+		TArray<AStarSystem*> GeneratedStarSystems;
+
+	UPROPERTY()
 		UStarSystemGenerator* StarSystemGenerator;
 
 	UPROPERTY()
