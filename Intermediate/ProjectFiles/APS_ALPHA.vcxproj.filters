@@ -143,6 +143,12 @@
     <ClInclude Include="..\..\Source\APS_ALPHA\Biosphere.h">
       <Filter>Source\APS_ALPHA</Filter>
     </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\CatalogStarGenerator.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\CatalogStarGenerator.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
     <ClCompile Include="..\..\Source\APS_ALPHA\CelestialBody.cpp">
       <Filter>Source\APS_ALPHA</Filter>
     </ClCompile>
@@ -389,6 +395,9 @@
     <ClInclude Include="..\..\Source\APS_ALPHA\PlanetarySystemType.h">
       <Filter>Source\APS_ALPHA</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\Source\APS_ALPHA\PlanetaryZoneType.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
     <ClCompile Include="..\..\Source\APS_ALPHA\PlanetGenerationModel.cpp">
       <Filter>Source\APS_ALPHA</Filter>
     </ClCompile>
@@ -537,11 +546,6 @@
       <Filter>Source\APS_ALPHA</Filter>
     </ClCompile>
     <ClInclude Include="..\..\Source\APS_ALPHA\WorldActor.h">
-      <Filter>Source\APS_ALPHA</Filter>
-    </ClInclude>
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="PlanetaryZoneType.h">
       <Filter>Source\APS_ALPHA</Filter>
     </ClInclude>
   </ItemGroup>
