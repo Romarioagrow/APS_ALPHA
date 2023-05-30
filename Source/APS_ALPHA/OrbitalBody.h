@@ -16,9 +16,6 @@ class APS_ALPHA_API AOrbitalBody : public ACelestialBody, public IGravitySource
 	GENERATED_BODY()
 
 public:
-	// Добавляем якорь орбиты
-	UPROPERTY(VisibleAnywhere, Category = "Orbit")
-		USceneComponent* OrbitAnchor;
 
 private:
 	UPROPERTY(VisibleAnywhere, Category = "Orbital Body")

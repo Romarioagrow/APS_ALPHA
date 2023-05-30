@@ -25,7 +25,6 @@
 			"Environment.gen.cpp.obj",
 			"Galaxy.gen.cpp.obj",
 			"GalaxySector.gen.cpp.obj",
-			"GeneratedWorld.gen.cpp.obj",
 			"GenerationModel.gen.cpp.obj",
 			"Geosphere.gen.cpp.obj",
 			"GravityActor.gen.cpp.obj",
@@ -50,6 +49,7 @@
 			"APS_ALPHA.init.gen.cpp.obj",
 			"Asteroid.gen.cpp.obj",
 			"AsteroidBelt.gen.cpp.obj",
+			"GeneratedWorld.gen.cpp.obj",
 			"KuiperBelt.gen.cpp.obj",
 			"Moon.gen.cpp.obj",
 			"OrbitalBody.gen.cpp.obj"
@@ -117,15 +117,16 @@
 			"Environment.cpp.obj",
 			"Galaxy.cpp.obj",
 			"GalaxySector.cpp.obj",
-			"GeneratedWorld.cpp.obj",
+			"Planet.gen.cpp.obj",
+			"PlanetOrbit.gen.cpp.obj",
+			"GeneratedWorld.cpp.obj"
+		],
+		"Module.APS_ALPHA.3_of_3.cpp.obj": [
 			"GenerationModel.cpp.obj",
 			"Geosphere.cpp.obj",
 			"GravityActor.cpp.obj",
 			"GravityActorInterface.cpp.obj",
 			"GravityCharacter.cpp.obj",
-			"Planet.gen.cpp.obj"
-		],
-		"Module.APS_ALPHA.3_of_3.cpp.obj": [
 			"GravityCharacterPawn.cpp.obj",
 			"GravityGameModeBase.cpp.obj",
 			"GravityMovementStruct.cpp.obj",
@@ -140,14 +141,12 @@
 			"HomeStarSystemGenerationModel.cpp.obj",
 			"KuiperBelt.cpp.obj",
 			"MoonGenerationModel.cpp.obj",
-			"MoonGenerator.cpp.obj",
 			"OrbitalBodyGenerationModel.cpp.obj",
 			"PilotingVehicle.cpp.obj",
 			"PlanetaryEnvironment.cpp.obj",
 			"PlanetarySystem.cpp.obj",
 			"PlanetarySystemGenerationModel.cpp.obj",
 			"PlanetGenerationModel.cpp.obj",
-			"PlanetGenerator.cpp.obj",
 			"PlanetGravityActor.cpp.obj",
 			"SpaceCharacter.cpp.obj",
 			"Spacecraft.cpp.obj",
@@ -169,9 +168,12 @@
 			"VehicleControlling.cpp.obj",
 			"WorldActor.cpp.obj",
 			"Moon.cpp.obj",
+			"MoonGenerator.cpp.obj",
 			"OrbitalBody.cpp.obj",
 			"Planet.cpp.obj",
-			"PlanetaryProceduralGenerator.cpp.obj"
+			"PlanetaryProceduralGenerator.cpp.obj",
+			"PlanetGenerator.cpp.obj",
+			"PlanetOrbit.cpp.obj"
 		]
 	}
 }

@@ -12,6 +12,7 @@ void EmptyLinkFunctionForGeneratedCodeGeneratedWorld() {}
 	APS_ALPHA_API UClass* Z_Construct_UClass_AMoon_NoRegister();
 	APS_ALPHA_API UClass* Z_Construct_UClass_APlanet_NoRegister();
 	APS_ALPHA_API UClass* Z_Construct_UClass_APlanetarySystem_NoRegister();
+	APS_ALPHA_API UClass* Z_Construct_UClass_APlanetOrbit_NoRegister();
 	APS_ALPHA_API UClass* Z_Construct_UClass_AStar_NoRegister();
 	APS_ALPHA_API UClass* Z_Construct_UClass_AStarClusterGenerator();
 	APS_ALPHA_API UClass* Z_Construct_UClass_AStarClusterGenerator_NoRegister();
@@ -39,6 +40,11 @@ void EmptyLinkFunctionForGeneratedCodeGeneratedWorld() {}
 #if WITH_METADATA
 		static const UECodeGen_Private::FMetaDataPairParam Class_MetaDataParams[];
 #endif
+#if WITH_METADATA
+		static const UECodeGen_Private::FMetaDataPairParam NewProp_bNeedOrbitRotation_MetaData[];
+#endif
+		static void NewProp_bNeedOrbitRotation_SetBit(void* Obj);
+		static const UECodeGen_Private::FBoolPropertyParams NewProp_bNeedOrbitRotation;
 		static const UECodeGen_Private::FObjectPropertyParams NewProp_GeneratedStarSystems_Inner;
 #if WITH_METADATA
 		static const UECodeGen_Private::FMetaDataPairParam NewProp_GeneratedStarSystems_MetaData[];
@@ -81,6 +87,10 @@ void EmptyLinkFunctionForGeneratedCodeGeneratedWorld() {}
 #endif
 		static const UECodeGen_Private::FClassPropertyParams NewProp_BP_PlanetClass;
 #if WITH_METADATA
+		static const UECodeGen_Private::FMetaDataPairParam NewProp_BP_PlanetOrbit_MetaData[];
+#endif
+		static const UECodeGen_Private::FClassPropertyParams NewProp_BP_PlanetOrbit;
+#if WITH_METADATA
 		static const UECodeGen_Private::FMetaDataPairParam NewProp_BP_MoonClass_MetaData[];
 #endif
 		static const UECodeGen_Private::FClassPropertyParams NewProp_BP_MoonClass;
@@ -98,6 +108,17 @@ void EmptyLinkFunctionForGeneratedCodeGeneratedWorld() {}
 		{ "ModuleRelativePath", "GeneratedWorld.h" },
 	};
 #endif
+#if WITH_METADATA
+	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_AStarClusterGenerator_Statics::NewProp_bNeedOrbitRotation_MetaData[] = {
+		{ "Category", "Generation Params" },
+		{ "ModuleRelativePath", "GeneratedWorld.h" },
+	};
+#endif
+	void Z_Construct_UClass_AStarClusterGenerator_Statics::NewProp_bNeedOrbitRotation_SetBit(void* Obj)
+	{
+		((AStarClusterGenerator*)Obj)->bNeedOrbitRotation = 1;
+	}
+	const UECodeGen_Private::FBoolPropertyParams Z_Construct_UClass_AStarClusterGenerator_Statics::NewProp_bNeedOrbitRotation = { "bNeedOrbitRotation", nullptr, (EPropertyFlags)0x0010000000000001, UECodeGen_Private::EPropertyGenFlags::Bool | UECodeGen_Private::EPropertyGenFlags::NativeBool, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, sizeof(bool), sizeof(AStarClusterGenerator), &Z_Construct_UClass_AStarClusterGenerator_Statics::NewProp_bNeedOrbitRotation_SetBit, METADATA_PARAMS(Z_Construct_UClass_AStarClusterGenerator_Statics::NewProp_bNeedOrbitRotation_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_AStarClusterGenerator_Statics::NewProp_bNeedOrbitRotation_MetaData)) };
 	const UECodeGen_Private::FObjectPropertyParams Z_Construct_UClass_AStarClusterGenerator_Statics::NewProp_GeneratedStarSystems_Inner = { "GeneratedStarSystems", nullptr, (EPropertyFlags)0x0000000000000000, UECodeGen_Private::EPropertyGenFlags::Object, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, 0, Z_Construct_UClass_AStarSystem_NoRegister, METADATA_PARAMS(nullptr, 0) };
 #if WITH_METADATA
 	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_AStarClusterGenerator_Statics::NewProp_GeneratedStarSystems_MetaData[] = {
@@ -164,6 +185,13 @@ void EmptyLinkFunctionForGeneratedCodeGeneratedWorld() {}
 #endif
 	const UECodeGen_Private::FClassPropertyParams Z_Construct_UClass_AStarClusterGenerator_Statics::NewProp_BP_PlanetClass = { "BP_PlanetClass", nullptr, (EPropertyFlags)0x0014000000000001, UECodeGen_Private::EPropertyGenFlags::Class, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(AStarClusterGenerator, BP_PlanetClass), Z_Construct_UClass_UClass, Z_Construct_UClass_APlanet_NoRegister, METADATA_PARAMS(Z_Construct_UClass_AStarClusterGenerator_Statics::NewProp_BP_PlanetClass_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_AStarClusterGenerator_Statics::NewProp_BP_PlanetClass_MetaData)) };
 #if WITH_METADATA
+	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_AStarClusterGenerator_Statics::NewProp_BP_PlanetOrbit_MetaData[] = {
+		{ "Category", "AstroObject BP" },
+		{ "ModuleRelativePath", "GeneratedWorld.h" },
+	};
+#endif
+	const UECodeGen_Private::FClassPropertyParams Z_Construct_UClass_AStarClusterGenerator_Statics::NewProp_BP_PlanetOrbit = { "BP_PlanetOrbit", nullptr, (EPropertyFlags)0x0014000000000001, UECodeGen_Private::EPropertyGenFlags::Class, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(AStarClusterGenerator, BP_PlanetOrbit), Z_Construct_UClass_UClass, Z_Construct_UClass_APlanetOrbit_NoRegister, METADATA_PARAMS(Z_Construct_UClass_AStarClusterGenerator_Statics::NewProp_BP_PlanetOrbit_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_AStarClusterGenerator_Statics::NewProp_BP_PlanetOrbit_MetaData)) };
+#if WITH_METADATA
 	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_AStarClusterGenerator_Statics::NewProp_BP_MoonClass_MetaData[] = {
 		{ "Category", "AstroObject BP" },
 		{ "ModuleRelativePath", "GeneratedWorld.h" },
@@ -171,6 +199,7 @@ void EmptyLinkFunctionForGeneratedCodeGeneratedWorld() {}
 #endif
 	const UECodeGen_Private::FClassPropertyParams Z_Construct_UClass_AStarClusterGenerator_Statics::NewProp_BP_MoonClass = { "BP_MoonClass", nullptr, (EPropertyFlags)0x0014000000000001, UECodeGen_Private::EPropertyGenFlags::Class, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(AStarClusterGenerator, BP_MoonClass), Z_Construct_UClass_UClass, Z_Construct_UClass_AMoon_NoRegister, METADATA_PARAMS(Z_Construct_UClass_AStarClusterGenerator_Statics::NewProp_BP_MoonClass_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_AStarClusterGenerator_Statics::NewProp_BP_MoonClass_MetaData)) };
 	const UECodeGen_Private::FPropertyParamsBase* const Z_Construct_UClass_AStarClusterGenerator_Statics::PropPointers[] = {
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AStarClusterGenerator_Statics::NewProp_bNeedOrbitRotation,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AStarClusterGenerator_Statics::NewProp_GeneratedStarSystems_Inner,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AStarClusterGenerator_Statics::NewProp_GeneratedStarSystems,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AStarClusterGenerator_Statics::NewProp_StarSystemGenerator,
@@ -182,6 +211,7 @@ void EmptyLinkFunctionForGeneratedCodeGeneratedWorld() {}
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AStarClusterGenerator_Statics::NewProp_BP_StarSystemClass,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AStarClusterGenerator_Statics::NewProp_BP_StarClass,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AStarClusterGenerator_Statics::NewProp_BP_PlanetClass,
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AStarClusterGenerator_Statics::NewProp_BP_PlanetOrbit,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AStarClusterGenerator_Statics::NewProp_BP_MoonClass,
 	};
 	const FCppClassTypeInfoStatic Z_Construct_UClass_AStarClusterGenerator_Statics::StaticCppClassTypeInfo = {
@@ -221,9 +251,9 @@ void EmptyLinkFunctionForGeneratedCodeGeneratedWorld() {}
 		static const FClassRegisterCompiledInInfo ClassInfo[];
 	};
 	const FClassRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GeneratedWorld_h_Statics::ClassInfo[] = {
-		{ Z_Construct_UClass_AStarClusterGenerator, AStarClusterGenerator::StaticClass, TEXT("AStarClusterGenerator"), &Z_Registration_Info_UClass_AStarClusterGenerator, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(AStarClusterGenerator), 2267168927U) },
+		{ Z_Construct_UClass_AStarClusterGenerator, AStarClusterGenerator::StaticClass, TEXT("AStarClusterGenerator"), &Z_Registration_Info_UClass_AStarClusterGenerator, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(AStarClusterGenerator), 3534148216U) },
 	};
-	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GeneratedWorld_h_4067836552(TEXT("/Script/APS_ALPHA"),
+	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GeneratedWorld_h_3135743127(TEXT("/Script/APS_ALPHA"),
 		Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GeneratedWorld_h_Statics::ClassInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GeneratedWorld_h_Statics::ClassInfo),
 		nullptr, 0,
 		nullptr, 0);

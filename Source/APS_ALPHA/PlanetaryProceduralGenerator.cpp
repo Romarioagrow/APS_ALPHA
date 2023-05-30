@@ -394,8 +394,8 @@ FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySyst
                 }
             }
             else {
-                double a = 0.4;
-                double d = 0.3;
+                double a = 1.4;
+                double d = 1.3;
                 // Коэффициенты закона Тициуса-Боде для остальных планет
                 for (int i = 0; i < AmountOfMoons; i++) {
                     double orbitRadius = a + d * pow(2, i);
