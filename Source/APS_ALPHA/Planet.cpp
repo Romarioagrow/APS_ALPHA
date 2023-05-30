@@ -13,9 +13,8 @@ APlanet::APlanet()
 	USceneComponent* Root = CreateDefaultSubobject<USceneComponent>(TEXT("RootComponent"));
 	RootComponent = Root;
 
-	// Создайте OrbitAnchor и привяжите его к Root
-	OrbitAnchor = CreateDefaultSubobject<USceneComponent>(TEXT("OrbitAnchor"));
-	OrbitAnchor->SetupAttachment(Root);
+	PlanetaryZone = CreateDefaultSubobject<USphereComponent>(TEXT("PlanetaryZoneComponent"));
+	PlanetaryZone->SetupAttachment(RootComponent);
 }
 
 void APlanet::AddMoon(AMoon* Moon)

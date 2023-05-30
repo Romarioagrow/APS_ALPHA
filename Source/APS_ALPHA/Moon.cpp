@@ -8,10 +8,6 @@ AMoon::AMoon()
 	//OrbitAnchor = CreateDefaultSubobject<USceneComponent>(TEXT("OrbitAnchor"));
 	USceneComponent* Root = CreateDefaultSubobject<USceneComponent>(TEXT("RootComponent"));
 	RootComponent = Root;
-
-	// Создайте OrbitAnchor и привяжите его к Root
-	OrbitAnchor = CreateDefaultSubobject<USceneComponent>(TEXT("OrbitAnchor"));
-	OrbitAnchor->SetupAttachment(Root);
 }
 
 void AMoon::SetParentPlanet(APlanet* Planet)

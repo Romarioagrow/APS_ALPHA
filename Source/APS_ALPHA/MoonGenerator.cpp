@@ -30,9 +30,9 @@ void UMoonGenerator::ApplyModel(AMoon* Moon, FMoonGenerationModel MoonGeneration
 
 void UMoonGenerator::ConnectMoonWithPlanet(AMoon* NewMoon, APlanet* NewPlanet)
 {
-    NewPlanet->AddMoon(NewMoon);
+    /*NewPlanet->AddMoon(NewMoon);
 	NewMoon->AttachToActor(NewPlanet, FAttachmentTransformRules::KeepRelativeTransform);
-	NewMoon->SetParentPlanet(NewPlanet);
+	NewMoon->SetParentPlanet(NewPlanet);*/
 }
 
 double UMoonGenerator::CalculateGravitationalForce(double MassPlanet, double MassMoon, double Distance)

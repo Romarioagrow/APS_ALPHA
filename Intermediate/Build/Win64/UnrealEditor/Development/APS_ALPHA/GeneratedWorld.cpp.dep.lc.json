@@ -96,7 +96,9 @@
             "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\intermediate\\build\\win64\\unrealeditor\\inc\\aps_alpha\\uht\\starsystemgenerator.generated.h",
             "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\source\\aps_alpha\\planetaryproceduralgenerator.h",
             "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\intermediate\\build\\win64\\unrealeditor\\inc\\aps_alpha\\uht\\planetaryproceduralgenerator.generated.h",
-            "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\intermediate\\build\\win64\\unrealeditor\\inc\\aps_alpha\\uht\\generatedworld.generated.h"
+            "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\intermediate\\build\\win64\\unrealeditor\\inc\\aps_alpha\\uht\\generatedworld.generated.h",
+            "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\source\\aps_alpha\\planetorbit.h",
+            "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\intermediate\\build\\win64\\unrealeditor\\inc\\aps_alpha\\uht\\planetorbit.generated.h"
         ],
         "ImportedModules": [],
         "ImportedHeaderUnits": []

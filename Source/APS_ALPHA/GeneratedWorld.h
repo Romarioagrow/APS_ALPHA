@@ -21,6 +21,9 @@ protected:
 	virtual void BeginPlay() override;
 
 public:
+	UPROPERTY(EditAnywhere, Category = "Generation Params")
+		bool bNeedOrbitRotation { false };
+
 	UPROPERTY()
 		TArray<AStarSystem*> GeneratedStarSystems;
 
@@ -50,6 +53,9 @@ public:
 
 	UPROPERTY(EditAnywhere, Category = "AstroObject BP")
 		TSubclassOf<class APlanet> BP_PlanetClass;
+	
+	UPROPERTY(EditAnywhere, Category = "AstroObject BP")
+		TSubclassOf<class APlanetOrbit> BP_PlanetOrbit;
 
 	UPROPERTY(EditAnywhere, Category = "AstroObject BP")
 		TSubclassOf<class AMoon> BP_MoonClass;

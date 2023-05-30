@@ -27,7 +27,8 @@ class APS_ALPHA_API APlanet : public AOrbitalBody, public IPlanetaryEnvironment
 public:
 	APlanet();
 
-	
+	UPROPERTY(VisibleAnywhere, Category = "Components")
+		USphereComponent* PlanetaryZone;// = NewObject<USphereComponent>(this);
 
 	UPROPERTY(VisibleAnywhere, Category = "Planet")
 		int PlanetRadiusKM;
