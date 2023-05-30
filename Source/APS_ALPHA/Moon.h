@@ -21,6 +21,13 @@ class APS_ALPHA_API AMoon : public AOrbitalBody, public IPlanetaryEnvironment
 {
 	GENERATED_BODY()
 
+public:
+		// Добавляем якорь орбиты
+	/*UPROPERTY(VisibleAnywhere, Category = "Orbit")
+		USceneComponent* OrbitAnchor;*/
+
+	AMoon();
+
 private:
 	UPROPERTY(VisibleAnywhere, Category = "Moon Model")
 		APlanet* ParentPlanet;

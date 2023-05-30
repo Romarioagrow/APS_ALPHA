@@ -367,17 +367,41 @@ FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySyst
                 MoonOrbits.Add(MoonMinOrbitRadius + uniformDistance * (m + 1));
             }*/
 
-            // Коэффициенты закона Тициуса-Боде
-            double a = 0.4;
-            double d = 0.3;
+            //// Коэффициенты закона Тициуса-Боде
+            //double a = (PlanetModel.PlanetType == EPlanetType::GasGiant) ? 0.2 : 0.4;
+            //double d = (PlanetModel.PlanetType == EPlanetType::GasGiant) ? 0.2 : 0.3;
+            //// Создаем массив со всеми возможными орбитами
+            //MoonOrbits.Reserve(AmountOfMoons);
+            //for (int i = 0; i < AmountOfMoons; i++) {
+            //    double orbitRadius = a + d * pow(2, i);
+
+            //    orbitRadius = FMath::RandRange(orbitRadius * 0.9, orbitRadius * 1.3);
+
+            //    MoonOrbits.Add(orbitRadius);
+            //}
+            //MoonOrbits.Sort();
             // Создаем массив со всеми возможными орбитами
             MoonOrbits.Reserve(AmountOfMoons);
-            for (int i = 0; i < AmountOfMoons; i++) {
-                double orbitRadius = a + d * pow(2, i);
 
-                orbitRadius = FMath::RandRange(orbitRadius * 0.9, orbitRadius * 1.3);
-
-                MoonOrbits.Add(orbitRadius);
+            if (PlanetModel.PlanetType == EPlanetType::GasGiant 
+                || PlanetModel.PlanetType == EPlanetType::IceGiant 
+                || PlanetModel.PlanetType == EPlanetType::HotGiant) {
+                // Распределение орбит от 1 до 10 радиусов планеты
+                for (int i = 0; i < AmountOfMoons; i++) {
+                    double orbitRadius = FMath::RandRange(planetRadius * 1.0, planetRadius * 10.0);
+                    orbitRadius /= 50;
+                    MoonOrbits.Add(orbitRadius);
+                }
+            }
+            else {
+                double a = 0.4;
+                double d = 0.3;
+                // Коэффициенты закона Тициуса-Боде для остальных планет
+                for (int i = 0; i < AmountOfMoons; i++) {
+                    double orbitRadius = a + d * pow(2, i);
+                    orbitRadius = FMath::RandRange(orbitRadius * 0.9, orbitRadius * 1.3);
+                    MoonOrbits.Add(orbitRadius);
+                }
             }
             MoonOrbits.Sort();
 
@@ -441,7 +465,7 @@ int UPlanetarySystemGenerator::CalculateMoons(double PlanetMass, EPlanetType Pla
         return 
             PlanetType == EPlanetType::GasGiant ||
             PlanetType == EPlanetType::IceGiant ||
-			PlanetType == EPlanetType::HotGiant ? FMath::RandRange(0, 15) : FMath::RandRange(0, 5);
+			PlanetType == EPlanetType::HotGiant ? FMath::RandRange(0, 10) : FMath::RandRange(0, 5);
     }
     {
         // Otherwise, the number of moons is the base moon count plus a random number
