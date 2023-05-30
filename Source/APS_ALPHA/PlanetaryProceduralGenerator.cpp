@@ -328,8 +328,11 @@ FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySyst
             double planetRadius = PlanetModel.Radius; // радиус планеты
             /// TODO: PlanetAtmosphere //double planetAtmosphereHeight = PlanetModel.AtmosphereHeight; // высота атмосферы планеты
             double planetAtmosphereHeight = PlanetModel.Radius / 10; // высота атмосферы планеты
+
+
+
             // Минимальное расстояние - радиус планеты плюс высота атмосферы
-            const double MinOrbitRadius = planetRadius + planetAtmosphereHeight;
+            const double MinOrbitRadius = planetRadius  + planetAtmosphereHeight;
             // Максимальное расстояние - радиус сферы Хилла
             // Предполагаем, что орбита планеты почти круговая, т.е. эксцентриситет близок к 0
             double eccentricity = 0;
@@ -354,17 +357,29 @@ FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySyst
             TArray<FMoonData> MoonsList {};
             TArray<float> MoonOrbits;
 
-            const double MoonMinOrbitRadius = PlanetModel.MoonOrbitsRange.Key;
+            /*const double MoonMinOrbitRadius = PlanetModel.MoonOrbitsRange.Key;
             const double MoonMaxOrbitRadius = PlanetModel.MoonOrbitsRange.Value;
             const double uniformDistance = (MoonMaxOrbitRadius - MoonMinOrbitRadius) / (AmountOfMoons + 1);
-
-            // Создаем массив со всеми возможными орбитами
             MoonOrbits.Reserve(AmountOfMoons);
 
             for (size_t m = 0; m < AmountOfMoons; m++)
             {
                 MoonOrbits.Add(MoonMinOrbitRadius + uniformDistance * (m + 1));
+            }*/
+
+            // Коэффициенты закона Тициуса-Боде
+            double a = 0.4;
+            double d = 0.3;
+            // Создаем массив со всеми возможными орбитами
+            MoonOrbits.Reserve(AmountOfMoons);
+            for (int i = 0; i < AmountOfMoons; i++) {
+                double orbitRadius = a + d * pow(2, i);
+
+                orbitRadius = FMath::RandRange(orbitRadius * 0.9, orbitRadius * 1.3);
+
+                MoonOrbits.Add(orbitRadius);
             }
+            MoonOrbits.Sort();
 
             for (double MoonOrbit : MoonOrbits)
             {

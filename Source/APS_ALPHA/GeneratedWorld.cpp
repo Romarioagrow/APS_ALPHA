@@ -104,11 +104,19 @@ void AStarClusterGenerator::GenerateRandomStarSystem()
                 // set planet orbit full-scale location
 
                 // Generate Moons
-                for (const FMoonData FMoonData : PlanetModel.MoonsList) /// TODO: Ref to pointers FMoonData 
+                for (const FMoonData MoonData : PlanetModel.MoonsList) /// TODO: Ref to pointers FMoonData 
                 {
+                    double MoonRadius = MoonData.MoonModel.Radius;
 					AMoon* NewMoon = World->SpawnActor<AMoon>(BP_MoonClass);
-					MoonGenerator->ApplyModel(NewMoon, FMoonData.MoonModel);
+					MoonGenerator->ApplyModel(NewMoon, MoonData.MoonModel);
                     MoonGenerator->ConnectMoonWithPlanet(NewMoon, NewPlanet);
+                    NewMoon->SetActorScale3D(FVector(MoonRadius * 12742000));
+                    FVector MoonLocation = NewPlanet->GetActorLocation();
+                    MoonLocation.Y = -100;//MoonData.OrbitRadius * PlanetModel.Radius; // + FVector(0, MoonData.OrbitRadius * PlanetModel.Radius, 0);
+                    NewMoon->SetActorLocation(MoonLocation);
+                    NewMoon->AddActorLocalOffset(FVector(0, (MoonData.OrbitRadius * 2) * 100, 0));
+                    //NewMoon->SetActorRelativeLocation(FVector(0, MoonData.OrbitRadius * PlanetModel.Radius, 0));
+
 				}
             }
             /// TODO: StarSystemGenerator->ConnectPlanetarySystem()
