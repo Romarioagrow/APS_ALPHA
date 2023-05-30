@@ -40,7 +40,7 @@ public: \
 
 #define FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_Moon_h_22_STANDARD_CONSTRUCTORS \
 	/** Standard constructor, called after all reflected properties have been initialized */ \
-	NO_API AMoon(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get()); \
+	NO_API AMoon(const FObjectInitializer& ObjectInitializer); \
 	DEFINE_DEFAULT_OBJECT_INITIALIZER_CONSTRUCTOR_CALL(AMoon) \
 	DECLARE_VTABLE_PTR_HELPER_CTOR(NO_API, AMoon); \
 	DEFINE_VTABLE_PTR_HELPER_CTOR_CALLER(AMoon); \
@@ -53,8 +53,6 @@ public: \
 
 
 #define FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_Moon_h_22_ENHANCED_CONSTRUCTORS \
-	/** Standard constructor, called after all reflected properties have been initialized */ \
-	NO_API AMoon() { }; \
 private: \
 	/** Private move- and copy-constructors, should never be used */ \
 	NO_API AMoon(AMoon&&); \
