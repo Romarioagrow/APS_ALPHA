@@ -142,13 +142,11 @@
 			"KuiperBelt.cpp.obj",
 			"Moon.cpp.obj",
 			"MoonGenerationModel.cpp.obj",
-			"MoonGenerator.cpp.obj",
 			"OrbitalBody.cpp.obj",
 			"OrbitalBodyGenerationModel.cpp.obj",
 			"PilotingVehicle.cpp.obj",
 			"Planet.cpp.obj",
 			"PlanetaryEnvironment.cpp.obj",
-			"PlanetaryProceduralGenerator.cpp.obj",
 			"PlanetarySystem.cpp.obj",
 			"PlanetarySystemGenerationModel.cpp.obj",
 			"PlanetGenerationModel.cpp.obj",
@@ -173,7 +171,9 @@
 			"TechObject.cpp.obj",
 			"UniverseProceduralGenerator.cpp.obj",
 			"VehicleControlling.cpp.obj",
-			"WorldActor.cpp.obj"
+			"WorldActor.cpp.obj",
+			"MoonGenerator.cpp.obj",
+			"PlanetaryProceduralGenerator.cpp.obj"
 		]
 	}
 }

@@ -83,13 +83,12 @@ void AStarClusterGenerator::GenerateRandomStarSystem()
             // Set Star full-scale
             NewPlanetarySystem->SetStar(NewStar);
             NewStar->AttachToActor(NewPlanetarySystem, FAttachmentTransformRules::KeepWorldTransform);
-            //FVector StarFullscaledRadius = StarModel.Radius * FVector(813684224.0, 813684224.0, 813684224.0);
             NewStar->SetActorScale3D(FVector(StarModel.Radius * 813684224.0));
             NewStar->StarRadiusKM = StarModel.Radius * 696340;
 
             // Генерация планет для каждой звезды
             int AmountOfPlanets = PlanetraySystemModel.AmountOfPlanets;
-            for (const FPlanetData FPlanetData : PlanetraySystemModel.PlanetsList)
+            for (const FPlanetData& FPlanetData : PlanetraySystemModel.PlanetsList)
             {
                 APlanetOrbit* NewPlanetOrbit = World->SpawnActor<APlanetOrbit>(BP_PlanetOrbit, NewStar->GetActorLocation(), FRotator::ZeroRotator);
                 NewPlanetOrbit->AttachToActor(NewStar, FAttachmentTransformRules::KeepWorldTransform);
@@ -104,20 +103,18 @@ void AStarClusterGenerator::GenerateRandomStarSystem()
                 NewPlanet->SetParentStar(NewStar);
 
                 // set planet full-scale
-                //NewPlanet->SetActorScale3D(FVector(PlanetModel.Radius * 1000.0));
                 NewPlanet->SetActorScale3D(FVector(PlanetModel.Radius * 12742000));
                 FVector NewLocation = FVector(PlanetModel.OrbitDistance * 149600000000000 / 1000, 0, 0);
                 NewPlanet->PlanetRadiusKM = PlanetModel.Radius * 6371;
                 NewPlanet->SetActorLocation(NewLocation);
-                //NewPlanet->OrbitAnchor->SetWorldLocation(NewLocation);
                 // set planet orbit full-scale location
+                NewPlanetOrbit->SetActorRelativeRotation(FRotator(FMath::RandRange(-30.0, 30.0), FMath::RandRange(-360.0, 360.0), 0));
 
                 const double KM_TO_UE_UNIT_SCALE = 100000;
-                //double OrbitRadiusOfLastMoon = 0;
                 double DiameterOfLastMoon = 0;
                 FVector LastMoonLocation;
                 // Generate Moons
-                for (const FMoonData MoonData : PlanetModel.MoonsList) /// TODO: Ref to pointers FMoonData 
+                for (const FMoonData& MoonData : PlanetModel.MoonsList) /// TODO: Ref to pointers FMoonData 
                 {
                     APlanetOrbit* NewMoonOrbit = World->SpawnActor<APlanetOrbit>(BP_PlanetOrbit, NewPlanet->GetActorLocation(), FRotator::ZeroRotator);
                     NewMoonOrbit->AttachToActor(NewPlanet, FAttachmentTransformRules::KeepWorldTransform);
@@ -134,6 +131,7 @@ void AStarClusterGenerator::GenerateRandomStarSystem()
                     double MoonRadius = MoonData.MoonModel.Radius;
                     NewMoon->SetActorScale3D(FVector(MoonRadius * 12742000));
                     NewMoon->AddActorLocalOffset(FVector(0, ((PlanetModel.RadiusKM + (MoonData.OrbitRadius * PlanetModel.RadiusKM)) * KM_TO_UE_UNIT_SCALE) * 1, 0));
+                    NewMoonOrbit->SetActorRelativeRotation(FRotator(FMath::RandRange(-360.0, 360.0), FMath::RandRange(-360.0, 360.0), FMath::RandRange(-360.0, 360.0)));
 				
                     DiameterOfLastMoon = MoonRadius * 2;
                     LastMoonLocation = NewMoon->GetActorLocation();
@@ -142,7 +140,6 @@ void AStarClusterGenerator::GenerateRandomStarSystem()
                 if (DiameterOfLastMoon == 0)
                 {
                     NewPlanet->PlanetaryZone->SetSphereRadius(100);
-
                 }
                 else
                 {
@@ -152,24 +149,11 @@ void AStarClusterGenerator::GenerateRandomStarSystem()
                     SphereRadius /= NewPlanet->GetActorScale3D().X;
                     NewPlanet->PlanetaryZone->SetSphereRadius(SphereRadius * 1.1);
                 }
- 
             }
             /// TODO: StarSystemGenerator->ConnectPlanetarySystem()
             NewStarSystem->AddPlanetarySystem(NewPlanetarySystem);
             NewPlanetarySystem->AttachToActor(NewStarSystem, FAttachmentTransformRules::KeepWorldTransform);
         }
-
-
-        //// Arrange astro bodies by hierarchy 
-        //for (AStarSystem* GeneratedStarSystem : GeneratedStarSystems)
-        //{
-        //    if (GeneratedStarSystem)
-        //    {
-        //        GeneratedStarSystem
-        //    }
-        //}
-
-
     }
 }
 
