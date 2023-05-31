@@ -135,16 +135,24 @@ void AStarClusterGenerator::GenerateRandomStarSystem()
                     NewMoon->SetActorScale3D(FVector(MoonRadius * 12742000));
                     NewMoon->AddActorLocalOffset(FVector(0, ((PlanetModel.RadiusKM + (MoonData.OrbitRadius * PlanetModel.RadiusKM)) * KM_TO_UE_UNIT_SCALE) * 1, 0));
 				
-                    //OrbitRadiusOfLastMoon = MoonData.OrbitRadius * PlanetModel.RadiusKM;
                     DiameterOfLastMoon = MoonRadius * 2;
                     LastMoonLocation = NewMoon->GetActorLocation();
                 }
+
+                if (DiameterOfLastMoon == 0)
+                {
+                    NewPlanet->PlanetaryZone->SetSphereRadius(100);
+
+                }
+                else
+                {
+                    FVector PlanetLocation = NewPlanet->GetActorLocation();
+                    FVector LastMoonOuterEdgeLocation = LastMoonLocation + FVector(0, DiameterOfLastMoon * 6371, 0);
+                    float SphereRadius = FVector::Dist(PlanetLocation, LastMoonOuterEdgeLocation);
+                    SphereRadius /= NewPlanet->GetActorScale3D().X;
+                    NewPlanet->PlanetaryZone->SetSphereRadius(SphereRadius * 1.1);
+                }
  
-                FVector PlanetLocation = NewPlanet->GetActorLocation();
-                FVector LastMoonOuterEdgeLocation = LastMoonLocation + FVector(0, DiameterOfLastMoon * 6371, 0);
-                float SphereRadius = FVector::Dist(PlanetLocation, LastMoonOuterEdgeLocation);
-                SphereRadius /= NewPlanet->GetActorScale3D().X;
-                NewPlanet->PlanetaryZone->SetSphereRadius(SphereRadius * 1.1);
             }
             /// TODO: StarSystemGenerator->ConnectPlanetarySystem()
             NewStarSystem->AddPlanetarySystem(NewPlanetarySystem);
