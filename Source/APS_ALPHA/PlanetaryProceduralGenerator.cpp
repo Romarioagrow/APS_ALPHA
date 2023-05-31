@@ -356,30 +356,6 @@ FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySyst
             const int AmountOfMoons = PlanetModel.AmountOfMoons;
             TArray<FMoonData> MoonsList {};
             TArray<float> MoonOrbits;
-
-            /*const double MoonMinOrbitRadius = PlanetModel.MoonOrbitsRange.Key;
-            const double MoonMaxOrbitRadius = PlanetModel.MoonOrbitsRange.Value;
-            const double uniformDistance = (MoonMaxOrbitRadius - MoonMinOrbitRadius) / (AmountOfMoons + 1);
-            MoonOrbits.Reserve(AmountOfMoons);
-
-            for (size_t m = 0; m < AmountOfMoons; m++)
-            {
-                MoonOrbits.Add(MoonMinOrbitRadius + uniformDistance * (m + 1));
-            }*/
-
-            //// Коэффициенты закона Тициуса-Боде
-            //double a = (PlanetModel.PlanetType == EPlanetType::GasGiant) ? 0.2 : 0.4;
-            //double d = (PlanetModel.PlanetType == EPlanetType::GasGiant) ? 0.2 : 0.3;
-            //// Создаем массив со всеми возможными орбитами
-            //MoonOrbits.Reserve(AmountOfMoons);
-            //for (int i = 0; i < AmountOfMoons; i++) {
-            //    double orbitRadius = a + d * pow(2, i);
-
-            //    orbitRadius = FMath::RandRange(orbitRadius * 0.9, orbitRadius * 1.3);
-
-            //    MoonOrbits.Add(orbitRadius);
-            //}
-            //MoonOrbits.Sort();
             // Создаем массив со всеми возможными орбитами
             MoonOrbits.Reserve(AmountOfMoons);
 
@@ -389,13 +365,13 @@ FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySyst
                 // Распределение орбит от 1 до 10 радиусов планеты
                 for (int i = 0; i < AmountOfMoons; i++) {
                     double orbitRadius = FMath::RandRange(planetRadius * 1.0, planetRadius * 10.0);
-                    orbitRadius /= 50;
+                    orbitRadius /= 40;
                     MoonOrbits.Add(orbitRadius);
                 }
             }
             else {
-                double a = 1.4;
-                double d = 1.3;
+                double a = 1.5;
+                double d = 1.4;
                 // Коэффициенты закона Тициуса-Боде для остальных планет
                 for (int i = 0; i < AmountOfMoons; i++) {
                     double orbitRadius = a + d * pow(2, i);
