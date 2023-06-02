@@ -24,16 +24,190 @@ void UStarGenerator::ApplySpectralMaterial(AStar* NewStar, FStarGenerationModel 
 
     // Установите скалярный параметр
     FName ParameterName1 = "Multiplier";
-    float MultiplierValue = 10000.0f; // замените на ваше значение
-    StarDynamicMaterial->SetScalarParameterValue(ParameterName1, MultiplierValue);
+    float MultiplierValue = 500 * StarModel.Luminosity;//10000.0f; // замените на ваше значение
+    //StarDynamicMaterial->SetScalarParameterValue(ParameterName1, MultiplierValue);
 
     // Установите векторный параметр
     FName ParameterName2 = "Color";
-    FLinearColor ColorValue = FLinearColor::Red; // замените на ваше значение
+    //FLinearColor ColorValue = TemperatureToRGB(StarModel.SurfaceTemperature);//FLinearColor::White; // замените на ваше значение
+    //FLinearColor ColorValue = TemperatureToColor(StarModel.SurfaceTemperature);//FLinearColor::White; // замените на ваше значение
+    FLinearColor ColorValue = GetStarColor(StarModel.SpectralClass, StarModel.SpectralSubclass);//TemperatureToColor(StarModel.SurfaceTemperature);//FLinearColor::White; // замените на ваше значение
     StarDynamicMaterial->SetVectorParameterValue(ParameterName2, ColorValue);
 
     // Примените динамический материал к вашему объекту
     NewStar->StarMesh->SetMaterial(0, StarDynamicMaterial);
+}
+
+
+
+
+// Закон Вина
+double UStarGenerator::WienLaw(double temperature)
+{
+    const double b = 2.897771955e-3; // Константа Вина, м*К
+    return b / temperature;
+}
+
+FLinearColor UStarGenerator::WavelengthToRGB(double wavelength)
+{
+    double r, g, b;
+
+    if (wavelength >= 380.0 && wavelength < 440.0) {
+        r = -(wavelength - 440.0) / (440.0 - 380.0);
+        g = 0.0;
+        b = 1.0;
+    }
+    else if (wavelength >= 440.0 && wavelength < 490.0) {
+        r = 0.0;
+        g = (wavelength - 440.0) / (490.0 - 440.0);
+        b = 1.0;
+    }
+    else if (wavelength >= 490.0 && wavelength < 510.0) {
+        r = 0.0;
+        g = 1.0;
+        b = -(wavelength - 510.0) / (510.0 - 490.0);
+    }
+    else if (wavelength >= 510.0 && wavelength < 580.0) {
+        r = (wavelength - 510.0) / (580.0 - 510.0);
+        g = 1.0;
+        b = 0.0;
+    }
+    else if (wavelength >= 580.0 && wavelength < 645.0) {
+        r = 1.0;
+        g = -(wavelength - 645.0) / (645.0 - 580.0);
+        b = 0.0;
+    }
+    else if (wavelength >= 645.0 && wavelength <= 780.0) {
+        r = 1.0;
+        g = 0.0;
+        b = 0.0;
+    }
+    else {
+        r = 0.0;
+        g = 0.0;
+        b = 0.0;
+    }
+
+    // Переводим волновую длину в нанометрах в цветовую температуру в Кельвинах
+    double s = 1.0;
+    if (wavelength > 700.0) {
+        s = 0.3 + 0.7 * (780.0 - wavelength) / (780.0 - 700.0);
+    }
+    else if (wavelength < 420.0) {
+        s = 0.3 + 0.7 * (wavelength - 380.0) / (420.0 - 380.0);
+    }
+
+    return FLinearColor(r * s, g * s, b * s, 1.0);
+}
+
+FLinearColor UStarGenerator::TemperatureToColor(double temperature)
+{
+    double wavelength = WienLaw(temperature);
+    return WavelengthToRGB(wavelength);
+}
+
+FLinearColor UStarGenerator::GetStarColor(ESpectralClass spectralClass, int subclass)
+{
+    // Ваши базовые цвета для каждого спектрального класса
+    static const TMap<ESpectralClass, FLinearColor> baseColors =
+    {
+        {ESpectralClass::O, FLinearColor(0.5, 0.5, 1)},
+        {ESpectralClass::B, FLinearColor(0.6, 0.6, 1)},
+        {ESpectralClass::A, FLinearColor(1, 1, 1)},
+        {ESpectralClass::F, FLinearColor(1, 1, 0.8)},
+        {ESpectralClass::G, FLinearColor(1, 1, 0.6)},
+        {ESpectralClass::K, FLinearColor(1, 0.6, 0.3)},
+        {ESpectralClass::M, FLinearColor(1, 0.3, 0.3)}
+    };
+
+    // Вычисляем коэффициент интерполяции
+    float interpFactor = static_cast<float>(subclass) / 10.0f;
+
+    // Получаем базовый цвет для данного и следующего спектрального класса
+    FLinearColor baseColor = baseColors[spectralClass];
+    FLinearColor nextBaseColor = baseColors[static_cast<ESpectralClass>(static_cast<int>(spectralClass) + 1)];
+
+    // Интерполируем между двумя цветами
+    FLinearColor starColor = FLinearColor::LerpUsingHSV(baseColor, nextBaseColor, interpFactor);
+
+    return starColor;
+}
+
+
+
+FLinearColor UStarGenerator::TemperatureToRGB(float temperature)
+{
+
+    float r, g, b;
+
+    // Обычно температура ниже 1000K не учитывается, но вы можете настроить этот порог как вам удобнее.
+    if (temperature < 1000)
+        temperature = 1000;
+
+    // Нормализовать температуру (диапазон 0-1)
+    temperature /= 10000;
+
+    if (temperature <= 0.66)
+    {
+        r = 1;
+        g = temperature;
+        g = 0.39008157876902 * pow(g, -0.93412075736856);  // Корректировка гаммы для зеленого
+    }
+    else
+    {
+        r = 0.98866243976127 * pow(temperature - 0.66, -0.6841316279095123);  // Корректировка гаммы для красного
+        g = 1 - r;
+    }
+
+    if (temperature >= 0.5)
+    {
+        b = 1;
+    }
+    else if (temperature >= 0.25)
+    {
+        b = 0.94279106151537 * pow((0.5 - temperature) * 2, -0.70176690865074);  // Корректировка гаммы для синего
+    }
+    else
+    {
+        b = 0;
+    }
+
+    return FLinearColor(r, g, b);
+
+    /*double Red, Green, Blue;
+
+    if (Temperature <= 1000.0)
+    {
+        Red = 0.647;
+        Green = 0.498;
+        Blue = 1.000;
+    }
+    else if (Temperature <= 3500.0)
+    {
+        Red = 1.000;
+        Green = 0.706 - (Temperature - 2000.0) / 1500.0 * 0.206;
+        Blue = 0.306;
+    }
+    else if (Temperature <= 6000.0)
+    {
+        Red = 1.000 - (Temperature - 3500.0) / 2500.0 * 0.454;
+        Green = 0.706 - (Temperature - 3500.0) / 2500.0 * 0.706;
+        Blue = 0.000;
+    }
+    else if (Temperature <= 9000.0)
+    {
+        Red = 0.546 - (Temperature - 6000.0) / 3000.0 * 0.546;
+        Green = 0.000;
+        Blue = 0.000;
+    }
+    else
+    {
+        Red = 0.000;
+        Green = 0.000;
+        Blue = 0.000;
+    }
+
+    return FLinearColor(Red, Green, Blue);*/
 }
 
 void UStarGenerator::ApplyModel(AStar* NewStar, FStarGenerationModel StarModel) // NewStar, StarModel
