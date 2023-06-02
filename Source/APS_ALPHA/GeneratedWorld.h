@@ -61,5 +61,8 @@ public:
 		TSubclassOf<class AMoon> BP_MoonClass;
 	
 	// функция генерации общей звездной системы
-	void GenerateRandomStarSystem(); 
+	void GenerateRandomStarSystem();
+
+	void GenerateStarCluster();
+
 };

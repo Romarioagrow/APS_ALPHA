@@ -5,6 +5,8 @@
 
 AStar::AStar()
 {
+	PlanetarySystemZone = CreateDefaultSubobject<USphereComponent>(TEXT("PlanetarySystemZoneComponent"));
+	PlanetarySystemZone->SetupAttachment(RootComponent);
 }
 
 void AStar::AddPlanet(APlanet* Planet)

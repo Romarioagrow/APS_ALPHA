@@ -22,6 +22,9 @@ class APS_ALPHA_API AStar : public ACelestialBody
 public:
 	AStar();
 
+	UPROPERTY(VisibleAnywhere, Category = "Components")
+		USphereComponent* PlanetarySystemZone;
+
 	UPROPERTY(VisibleAnywhere)
 		int StarRadiusKM;
 
