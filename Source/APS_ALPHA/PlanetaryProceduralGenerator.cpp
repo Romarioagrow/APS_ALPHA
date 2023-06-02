@@ -436,7 +436,7 @@ int UPlanetarySystemGenerator::CalculateMoons(double PlanetMass, EPlanetType Pla
     {
         return 0;
     }
-    else if (BaseMoonCount > 15)
+    else if (BaseMoonCount > 10)
     {
         return 
             PlanetType == EPlanetType::GasGiant ||
