@@ -23,6 +23,16 @@ public:
 public:
 	void ApplySpectralMaterial(AStar* NewStar, FStarGenerationModel StarModel);
 
+	double WienLaw(double temperature);
+
+	FLinearColor WavelengthToRGB(double wavelength);
+
+	FLinearColor TemperatureToColor(double temperature);
+
+	FLinearColor GetStarColor(ESpectralClass spectralClass, int subclass);
+
+	FLinearColor TemperatureToRGB(float Temperature);
+
 
 	void ApplyModel(AStar* NewStar, FStarGenerationModel StarModel);
 
