@@ -1,7 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
-#include "PlanetarySystem.h"
+#include "Star.h"
 #include "StarSystemType.h"
 
 #include "CoreMinimal.h"
@@ -24,11 +24,16 @@ private:
 	UPROPERTY(VisibleAnywhere)
 		EStarSystemType StarSystemType;
 
+	/*UPROPERTY()
+		TArray<APlanetarySystem*> PlanetarySystems;*/
+
 	UPROPERTY()
-		TArray<APlanetarySystem*> PlanetarySystems;
+		TArray<AStar*> Stars;
 
 public:
 	void SetStarsAmount(int StarsAmount);
-	void AddPlanetarySystem(APlanetarySystem* PlanetarySystem);
+
+	void AddNewStar(AStar* MewStar);
+
 	void SetStarSystemType(EStarSystemType Type);
 };

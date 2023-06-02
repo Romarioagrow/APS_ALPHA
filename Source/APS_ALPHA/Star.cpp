@@ -5,6 +5,9 @@
 
 AStar::AStar()
 {
+	USceneComponent* Root = CreateDefaultSubobject<USceneComponent>(TEXT("RootComponent"));
+	RootComponent = Root;
+
 	PlanetarySystemZone = CreateDefaultSubobject<USphereComponent>(TEXT("PlanetarySystemZoneComponent"));
 	PlanetarySystemZone->SetupAttachment(RootComponent);
 }
@@ -12,6 +15,11 @@ AStar::AStar()
 void AStar::AddPlanet(APlanet* Planet)
 {
 	this->Planets.Add(Planet);
+}
+
+void AStar::SetPlanetarySystem(APlanetarySystem* NewPlanetarySystem)
+{
+	this->PlanetarySystem = NewPlanetarySystem;
 }
 
 void AStar::SetLuminosity(float StarLuminosity)

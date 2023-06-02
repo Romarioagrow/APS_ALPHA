@@ -6,10 +6,13 @@
 #include "StarType.h"
 #include "StarSpectralClass.h"
 #include "SpectralType.h"
+//#include "PlanetarySystem.h"
 
 #include "CoreMinimal.h"
 #include "CelestialBody.h"
 #include "Star.generated.h"
+
+class APlanetarySystem;
 
 /**
  * 
@@ -21,6 +24,9 @@ class APS_ALPHA_API AStar : public ACelestialBody
 
 public:
 	AStar();
+
+	UPROPERTY(VisibleAnywhere, Category = "Components")
+		APlanetarySystem* PlanetarySystem;
 
 	UPROPERTY(VisibleAnywhere, Category = "Components")
 		USphereComponent* PlanetarySystemZone;
@@ -35,8 +41,6 @@ private:
 	UPROPERTY(VisibleAnywhere)
 		int SurfaceTemperature;
 	
-	
-
 	UPROPERTY(VisibleAnywhere)
 		EStellarClass StellarClass;
 	
@@ -61,6 +65,8 @@ private:
 
 	public:
 		void AddPlanet(APlanet* Planet);
+
+		void SetPlanetarySystem(APlanetarySystem* PlanetarySystem);
 
 public:
 	void SetLuminosity(float Luminosity);

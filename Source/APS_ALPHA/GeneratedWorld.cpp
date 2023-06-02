@@ -58,42 +58,38 @@ void AStarClusterGenerator::GenerateRandomStarSystem()
         for (int StarNumber = 0; StarNumber < AmountOfStars; StarNumber++)
         {
             FStarGenerationModel StarModel = StarGenerator->GenerateRandomStarModel();
+            AStar* NewStar = World->SpawnActor<AStar>(BP_StarClass); 
+
             FPlanetarySystemGenerationModel PlanetraySystemModel = 
                 PlanetarySystemGenerator->GeneratePlanetraySystemModelByStar(StarModel, PlanetGenerator, MoonGenerator);
 
-            // Create Planetray System
             APlanetarySystem* NewPlanetarySystem = World->SpawnActor<APlanetarySystem>(BP_PlanetarySystemClass);
             if (!NewPlanetarySystem) 
             {
                 UE_LOG(LogTemp, Warning, TEXT("NewPlanetarySystem Falied!"));
                 return; 
             }
-            PlanetarySystemGenerator->ApplyModel(NewPlanetarySystem, PlanetraySystemModel);
-            PlanetarySystemGenerator->SetAstroLocation(StarNumber, NewPlanetarySystem);
 
-            // ѕровер€ем, успешно ли создана планетарна€ система
-            AStar* NewStar = World->SpawnActor<AStar>(BP_StarClass); 
-            if (!NewPlanetarySystem) 
-            {
-                UE_LOG(LogTemp, Warning, TEXT("NewPlanetarySystem Falied!"));
-                return; 
-            }
             StarGenerator->ApplyModel(NewStar, StarModel);
-
+            PlanetarySystemGenerator->ApplyModel(NewPlanetarySystem, PlanetraySystemModel);
+            //PlanetarySystemGenerator->SetAstroLocation(StarNumber, NewPlanetarySystem);
             /// TODO: PlanetarySystemGenerator->ConnectStar()
             // Set Star full-scale
-            NewPlanetarySystem->SetStar(NewStar);
-            NewStar->AttachToActor(NewPlanetarySystem, FAttachmentTransformRules::KeepWorldTransform);
+            //NewPlanetarySystem->SetStar(NewStar);
+            NewStar->AttachToActor(NewStarSystem, FAttachmentTransformRules::KeepWorldTransform);
             NewStar->SetActorScale3D(FVector(StarModel.Radius * 813684224.0));
             NewStar->StarRadiusKM = StarModel.Radius * 696340;
+            NewStar->SetPlanetarySystem(NewPlanetarySystem);
+            NewPlanetarySystem->AttachToActor(NewStar, FAttachmentTransformRules::KeepWorldTransform);
+
 
             // √енераци€ планет дл€ каждой звезды
             FVector LastPlanetLocation{ 0 };
             int AmountOfPlanets = PlanetraySystemModel.AmountOfPlanets;
             for (const FPlanetData& FPlanetData : PlanetraySystemModel.PlanetsList)
             {
-                APlanetOrbit* NewPlanetOrbit = World->SpawnActor<APlanetOrbit>(BP_PlanetOrbit, NewStar->GetActorLocation(), FRotator::ZeroRotator);
-                NewPlanetOrbit->AttachToActor(NewStar, FAttachmentTransformRules::KeepWorldTransform);
+                APlanetOrbit* NewPlanetOrbit = World->SpawnActor<APlanetOrbit>(BP_PlanetOrbit, NewPlanetarySystem->GetActorLocation(), FRotator::ZeroRotator);
+                NewPlanetOrbit->AttachToActor(NewPlanetarySystem, FAttachmentTransformRules::KeepWorldTransform);
 
                 // Planet Model and generation
                 FPlanetGenerationModel PlanetModel = FPlanetData.PlanetModel; 
@@ -155,8 +151,7 @@ void AStarClusterGenerator::GenerateRandomStarSystem()
                 LastPlanetLocation = NewPlanet->GetActorLocation();
             }
             /// TODO: StarSystemGenerator->ConnectPlanetarySystem()
-            NewStarSystem->AddPlanetarySystem(NewPlanetarySystem);
-            NewPlanetarySystem->AttachToActor(NewStarSystem, FAttachmentTransformRules::KeepWorldTransform);
+            //NewPlanetarySystem->AttachToActor(NewStarSystem, FAttachmentTransformRules::KeepWorldTransform);
 
             if (LastPlanetLocation.IsZero())
             {
@@ -168,6 +163,8 @@ void AStarClusterGenerator::GenerateRandomStarSystem()
                 StarSphereRadius /= NewStar->GetActorScale3D().X;
                 NewStar->PlanetarySystemZone->SetSphereRadius(StarSphereRadius * 1.1);
             }
+            
+            NewStarSystem->AddNewStar(NewStar);
         }
     }
 }
