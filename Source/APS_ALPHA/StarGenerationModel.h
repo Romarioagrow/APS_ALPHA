@@ -8,7 +8,7 @@
 #include "StarGenerationModel.generated.h"
 
 USTRUCT(BlueprintType)
-struct FStarGenerationModel :
+struct FStarModel :
     public FCelestialGenerationModel
 {
     GENERATED_BODY()

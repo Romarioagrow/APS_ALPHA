@@ -45,6 +45,9 @@ public:
 
 	UPROPERTY(VisibleAnywhere)
 		int StarRadiusKM;
+	
+	UPROPERTY(VisibleAnywhere)
+		double StarAffectionZoneRadius;
 
 private:
 	UPROPERTY(VisibleAnywhere)

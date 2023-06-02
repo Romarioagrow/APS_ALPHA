@@ -21,7 +21,7 @@ public:
 	UStarGenerator();
 
 public:
-	void ApplySpectralMaterial(AStar* NewStar, FStarGenerationModel StarModel);
+	void ApplySpectralMaterial(AStar* NewStar, FStarModel StarModel);
 
 	double WienLaw(double temperature);
 
@@ -34,9 +34,9 @@ public:
 	FLinearColor TemperatureToRGB(float Temperature);
 
 
-	void ApplyModel(AStar* NewStar, FStarGenerationModel StarModel);
+	void ApplyModel(AStar* NewStar, FStarModel StarModel);
 
-	FStarGenerationModel GenerateRandomStarModel();
+	FStarModel GenerateRandomStarModel();
 
 	FString CalculateNonMainSequenceStarAge(double StarMass);
 
@@ -49,9 +49,9 @@ private:
 
 	FString GetSpectralTypeDescription(ESpectralType Type);
 
-	FName GenerateFullSpectralClass(const FStarGenerationModel& StarModel);
+	FName GenerateFullSpectralClass(const FStarModel& StarModel);
 
-	FName GenerateFullSpectralName(const FStarGenerationModel& StarModel);
+	FName GenerateFullSpectralName(const FStarModel& StarModel);
 
 	ESpectralType CalculateSpectralType(EStellarClass StellarType, double Luminosity);
 
