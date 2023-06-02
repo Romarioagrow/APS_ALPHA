@@ -3,11 +3,12 @@
 #pragma once
 
 #include "StarSystemGenerator.h"
+#include "StarClusterGenerator.h"
 #include "PlanetaryProceduralGenerator.h"
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
-#include "GeneratedWorld.generated.h"
+#include "AstroGenerator.generated.h"
 
 UCLASS()
 class APS_ALPHA_API AAstroGenerator : public AActor
@@ -26,6 +27,9 @@ public:
 
 	UPROPERTY()
 		TArray<AStarSystem*> GeneratedStarSystems;
+
+	UPROPERTY()
+		UStarClusterGenerator* StarClusterGenerator;
 
 	UPROPERTY()
 		UStarSystemGenerator* StarSystemGenerator;
