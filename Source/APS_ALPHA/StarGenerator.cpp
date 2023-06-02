@@ -24,21 +24,16 @@ void UStarGenerator::ApplySpectralMaterial(AStar* NewStar, FStarGenerationModel 
 
     // Установите скалярный параметр
     FName ParameterName1 = "Multiplier";
-    float MultiplierValue = 500 * StarModel.Luminosity;//10000.0f; // замените на ваше значение
-    //StarDynamicMaterial->SetScalarParameterValue(ParameterName1, MultiplierValue);
+    float MultiplierValue = 500 * StarModel.Luminosity;
 
     // Установите векторный параметр
     FName ParameterName2 = "Color";
-    //FLinearColor ColorValue = TemperatureToRGB(StarModel.SurfaceTemperature);//FLinearColor::White; // замените на ваше значение
-    //FLinearColor ColorValue = TemperatureToColor(StarModel.SurfaceTemperature);//FLinearColor::White; // замените на ваше значение
-    FLinearColor ColorValue = GetStarColor(StarModel.SpectralClass, StarModel.SpectralSubclass);//TemperatureToColor(StarModel.SurfaceTemperature);//FLinearColor::White; // замените на ваше значение
+    FLinearColor ColorValue = GetStarColor(StarModel.SpectralClass, StarModel.SpectralSubclass);
     StarDynamicMaterial->SetVectorParameterValue(ParameterName2, ColorValue);
 
     // Примените динамический материал к вашему объекту
     NewStar->StarMesh->SetMaterial(0, StarDynamicMaterial);
 }
-
-
 
 
 // Закон Вина
@@ -106,29 +101,43 @@ FLinearColor UStarGenerator::TemperatureToColor(double temperature)
     return WavelengthToRGB(wavelength);
 }
 
-FLinearColor UStarGenerator::GetStarColor(ESpectralClass spectralClass, int subclass)
+FLinearColor UStarGenerator::GetStarColor(ESpectralClass SpectralClass, int Subclass)
 {
-    // Ваши базовые цвета для каждого спектрального класса
-    static const TMap<ESpectralClass, FLinearColor> baseColors =
+    static const TMap<ESpectralClass, FLinearColor> BaseColors =
     {
-        {ESpectralClass::O, FLinearColor(0.5, 0.5, 1)},
-        {ESpectralClass::B, FLinearColor(0.6, 0.6, 1)},
-        {ESpectralClass::A, FLinearColor(1, 1, 1)},
-        {ESpectralClass::F, FLinearColor(1, 1, 0.8)},
-        {ESpectralClass::G, FLinearColor(1, 1, 0.6)},
-        {ESpectralClass::K, FLinearColor(1, 0.6, 0.3)},
-        {ESpectralClass::M, FLinearColor(1, 0.3, 0.3)}
+        {ESpectralClass::O, FLinearColor(0.5, 0.5, 1)},     // Синий
+        {ESpectralClass::B, FLinearColor(0.6, 0.6, 1)},     // Голубой
+        {ESpectralClass::A, FLinearColor(1, 1, 1)},         // Белый
+        {ESpectralClass::F, FLinearColor(1, 1, 0.8)},       // Желто-белый
+        {ESpectralClass::G, FLinearColor(1, 1, 0.6)},       // Желтый
+        {ESpectralClass::K, FLinearColor(1, 0.6, 0.3)},     // Оранжевый
+        {ESpectralClass::M, FLinearColor(1, 0.3, 0.3)},     // Красный
+        {ESpectralClass::L, FLinearColor(0.5, 0.3, 0.1)},   // Бурый (для Brown Dwarf)
+        {ESpectralClass::T, FLinearColor(0.6, 0.3, 0.1)},   // Коричневый (для Tauri Dwarf)
+        {ESpectralClass::Y, FLinearColor(0.6, 0.5, 0.1)},   // Темно-желтый (для Cool Brown Dwarf)
+        {ESpectralClass::NS, FLinearColor(0.9, 0.9, 1)},    // Бело-голубой (для Neutron Star)
+        {ESpectralClass::PS, FLinearColor(1, 0.9, 0.6)},    // Желтоватый (для Proto Star)
+        {ESpectralClass::BH, FLinearColor(0, 0, 0)},        // Черный (для Black Hole)
+        {ESpectralClass::Unknown, FLinearColor(0.5, 0.5, 0.5)} // Серый (для Unknown)
     };
 
     // Вычисляем коэффициент интерполяции
-    float interpFactor = static_cast<float>(subclass) / 10.0f;
+    float InterpFactor = static_cast<float>(Subclass) / 10.0f;
 
     // Получаем базовый цвет для данного и следующего спектрального класса
-    FLinearColor baseColor = baseColors[spectralClass];
-    FLinearColor nextBaseColor = baseColors[static_cast<ESpectralClass>(static_cast<int>(spectralClass) + 1)];
+    FLinearColor BaseColor = BaseColors[SpectralClass]; /// CRASH PIE
+    FLinearColor NextBaseColor;
+    if (SpectralClass != ESpectralClass::Unknown) // Проверяем, что текущий класс не последний
+    {
+        NextBaseColor = BaseColors[static_cast<ESpectralClass>(static_cast<int>(SpectralClass) + 1)];
+    }
+    else
+    {
+        NextBaseColor = BaseColor; // Если текущий класс уже последний, то следующий цвет просто равен текущему
+    }
 
     // Интерполируем между двумя цветами
-    FLinearColor starColor = FLinearColor::LerpUsingHSV(baseColor, nextBaseColor, interpFactor);
+    FLinearColor starColor = FLinearColor::LerpUsingHSV(BaseColor, NextBaseColor, InterpFactor);
 
     return starColor;
 }
@@ -608,7 +617,9 @@ ESpectralClass UStarGenerator::ChooseSpectralClassByStellarClass(EStellarClass S
     // Spectral Classes L, T, Y
     const TArray<ESpectralClass> Spectral_LY = { ESpectralClass::L, ESpectralClass::T, ESpectralClass::Y };
 
-    const TArray<int> Weights_OM = { 3, 5, 22, 30, 20, 10, 3 }; // Weights for O, B, A, F, G, K, M
+    const TArray<int> Weights_OM = { 1, 2, 10, 20, 30, 40, 50 }; // best for direct systems
+    //const TArray<int> Weights_OM = { 1, 2, 6, 30, 76, 121, 764 }; // best for stur clusters
+    //const TArray<int> Weights_OM = { 3, 5, 22, 30, 20, 10, 30 }; // Weights for O, B, A, F, G, K, M
     const TArray<int> Weights_OK = { 3, 13, 22, 30, 20, 12 }; // Weights for O, B, A, F, G, K
     const TArray<int> Weights_LY = { 20, 50, 30 }; // Weights for L, T, Y
 

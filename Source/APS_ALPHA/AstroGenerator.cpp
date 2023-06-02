@@ -71,12 +71,11 @@ void AAstroGenerator::GenerateRandomStarSystem()
                 return; 
             }
 
+            // Set Star full-scale
+            /// TODO: PlanetarySystemGenerator->ConnectStar()
             StarGenerator->ApplyModel(NewStar, StarModel);
             PlanetarySystemGenerator->ApplyModel(NewPlanetarySystem, PlanetraySystemModel);
             //PlanetarySystemGenerator->SetAstroLocation(StarNumber, NewPlanetarySystem);
-            /// TODO: PlanetarySystemGenerator->ConnectStar()
-            // Set Star full-scale
-            //NewPlanetarySystem->SetStar(NewStar);
             NewStar->AttachToActor(NewStarSystem, FAttachmentTransformRules::KeepWorldTransform);
             NewStar->SetActorScale3D(FVector(StarModel.Radius * 813684224.0));
             NewStar->StarRadiusKM = StarModel.Radius * 696340;
@@ -153,8 +152,6 @@ void AAstroGenerator::GenerateRandomStarSystem()
 
                 LastPlanetLocation = NewPlanet->GetActorLocation();
             }
-            /// TODO: StarSystemGenerator->ConnectPlanetarySystem()
-            //NewPlanetarySystem->AttachToActor(NewStarSystem, FAttachmentTransformRules::KeepWorldTransform);
 
             if (LastPlanetLocation.IsZero())
             {
