@@ -1,4 +1,4 @@
-#include "GeneratedWorld.h"
+#include "AstroGenerator.h"
 #include "StarSystem.h"
 #include "PlanetOrbit.h"
 #include "MoonGenerationModel.h"
@@ -15,6 +15,7 @@ void AAstroGenerator::BeginPlay()
 	Super::BeginPlay();
 
     // Init generators
+    StarClusterGenerator = NewObject<UStarClusterGenerator>();
     StarSystemGenerator = NewObject<UStarSystemGenerator>();
     PlanetarySystemGenerator = NewObject<UPlanetarySystemGenerator>();
     StarGenerator = NewObject<UStarGenerator>();
@@ -166,6 +167,8 @@ void AAstroGenerator::GenerateRandomStarSystem()
             
             NewStarSystem->AddNewStar(NewStar);
         }
+
+        StarClusterGenerator->GenerateRandomStarCluster();
     }
 }
 
