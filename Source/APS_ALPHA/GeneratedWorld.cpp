@@ -6,7 +6,6 @@
 // Sets default values
 AStarClusterGenerator::AStarClusterGenerator()
 {
- 	// Set this actor to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = false;
 }
 
@@ -23,6 +22,8 @@ void AStarClusterGenerator::BeginPlay()
     MoonGenerator = NewObject<UMoonGenerator>();
 
 	GenerateRandomStarSystem();
+
+    GenerateStarCluster();
 }
 
 void AStarClusterGenerator::GenerateRandomStarSystem()
@@ -87,6 +88,7 @@ void AStarClusterGenerator::GenerateRandomStarSystem()
             NewStar->StarRadiusKM = StarModel.Radius * 696340;
 
             // Генерация планет для каждой звезды
+            FVector LastPlanetLocation{ 0 };
             int AmountOfPlanets = PlanetraySystemModel.AmountOfPlanets;
             for (const FPlanetData& FPlanetData : PlanetraySystemModel.PlanetsList)
             {
@@ -149,13 +151,29 @@ void AStarClusterGenerator::GenerateRandomStarSystem()
                     SphereRadius /= NewPlanet->GetActorScale3D().X;
                     NewPlanet->PlanetaryZone->SetSphereRadius(SphereRadius * 1.1);
                 }
+
+                LastPlanetLocation = NewPlanet->GetActorLocation();
             }
             /// TODO: StarSystemGenerator->ConnectPlanetarySystem()
             NewStarSystem->AddPlanetarySystem(NewPlanetarySystem);
             NewPlanetarySystem->AttachToActor(NewStarSystem, FAttachmentTransformRules::KeepWorldTransform);
+
+            if (LastPlanetLocation.IsZero())
+            {
+                NewStar->PlanetarySystemZone->SetSphereRadius(500);
+            }
+            else
+            {
+                float StarSphereRadius = FVector::Dist(NewStar->GetActorLocation(), LastPlanetLocation);
+                StarSphereRadius /= NewStar->GetActorScale3D().X;
+                NewStar->PlanetarySystemZone->SetSphereRadius(StarSphereRadius * 1.1);
+            }
         }
     }
 }
 
 
+void AStarClusterGenerator::GenerateStarCluster()
+{
 
+}
