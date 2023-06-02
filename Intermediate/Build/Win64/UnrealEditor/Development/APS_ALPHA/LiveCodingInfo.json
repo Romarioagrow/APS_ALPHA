@@ -148,6 +148,7 @@
 			"PilotingVehicle.cpp.obj",
 			"Planet.cpp.obj",
 			"PlanetaryEnvironment.cpp.obj",
+			"PlanetaryProceduralGenerator.cpp.obj",
 			"PlanetarySystem.cpp.obj",
 			"PlanetarySystemGenerationModel.cpp.obj",
 			"PlanetGenerationModel.cpp.obj",
@@ -165,7 +166,6 @@
 			"StarSector.cpp.obj",
 			"StarSystem.cpp.obj",
 			"StarSystemGenerationModel.cpp.obj",
-			"StarSystemGenerator.cpp.obj",
 			"StationGravityActor.cpp.obj",
 			"TechActor.cpp.obj",
 			"TechInfrastructure.cpp.obj",
@@ -173,7 +173,7 @@
 			"UniverseProceduralGenerator.cpp.obj",
 			"VehicleControlling.cpp.obj",
 			"WorldActor.cpp.obj",
-			"PlanetaryProceduralGenerator.cpp.obj"
+			"StarSystemGenerator.cpp.obj"
 		]
 	}
 }

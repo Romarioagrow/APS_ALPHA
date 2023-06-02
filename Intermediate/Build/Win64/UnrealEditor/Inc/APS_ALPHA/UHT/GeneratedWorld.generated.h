@@ -20,46 +20,46 @@ PRAGMA_DISABLE_DEPRECATION_WARNINGS
 #define FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GeneratedWorld_h_15_ACCESSORS
 #define FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GeneratedWorld_h_15_INCLASS_NO_PURE_DECLS \
 private: \
-	static void StaticRegisterNativesAStarClusterGenerator(); \
-	friend struct Z_Construct_UClass_AStarClusterGenerator_Statics; \
+	static void StaticRegisterNativesAAstroGenerator(); \
+	friend struct Z_Construct_UClass_AAstroGenerator_Statics; \
 public: \
-	DECLARE_CLASS(AStarClusterGenerator, AActor, COMPILED_IN_FLAGS(0 | CLASS_Config), CASTCLASS_None, TEXT("/Script/APS_ALPHA"), NO_API) \
-	DECLARE_SERIALIZER(AStarClusterGenerator)
+	DECLARE_CLASS(AAstroGenerator, AActor, COMPILED_IN_FLAGS(0 | CLASS_Config), CASTCLASS_None, TEXT("/Script/APS_ALPHA"), NO_API) \
+	DECLARE_SERIALIZER(AAstroGenerator)
 
 
 #define FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GeneratedWorld_h_15_INCLASS \
 private: \
-	static void StaticRegisterNativesAStarClusterGenerator(); \
-	friend struct Z_Construct_UClass_AStarClusterGenerator_Statics; \
+	static void StaticRegisterNativesAAstroGenerator(); \
+	friend struct Z_Construct_UClass_AAstroGenerator_Statics; \
 public: \
-	DECLARE_CLASS(AStarClusterGenerator, AActor, COMPILED_IN_FLAGS(0 | CLASS_Config), CASTCLASS_None, TEXT("/Script/APS_ALPHA"), NO_API) \
-	DECLARE_SERIALIZER(AStarClusterGenerator)
+	DECLARE_CLASS(AAstroGenerator, AActor, COMPILED_IN_FLAGS(0 | CLASS_Config), CASTCLASS_None, TEXT("/Script/APS_ALPHA"), NO_API) \
+	DECLARE_SERIALIZER(AAstroGenerator)
 
 
 #define FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GeneratedWorld_h_15_STANDARD_CONSTRUCTORS \
 	/** Standard constructor, called after all reflected properties have been initialized */ \
-	NO_API AStarClusterGenerator(const FObjectInitializer& ObjectInitializer); \
-	DEFINE_DEFAULT_OBJECT_INITIALIZER_CONSTRUCTOR_CALL(AStarClusterGenerator) \
-	DECLARE_VTABLE_PTR_HELPER_CTOR(NO_API, AStarClusterGenerator); \
-	DEFINE_VTABLE_PTR_HELPER_CTOR_CALLER(AStarClusterGenerator); \
+	NO_API AAstroGenerator(const FObjectInitializer& ObjectInitializer); \
+	DEFINE_DEFAULT_OBJECT_INITIALIZER_CONSTRUCTOR_CALL(AAstroGenerator) \
+	DECLARE_VTABLE_PTR_HELPER_CTOR(NO_API, AAstroGenerator); \
+	DEFINE_VTABLE_PTR_HELPER_CTOR_CALLER(AAstroGenerator); \
 private: \
 	/** Private move- and copy-constructors, should never be used */ \
-	NO_API AStarClusterGenerator(AStarClusterGenerator&&); \
-	NO_API AStarClusterGenerator(const AStarClusterGenerator&); \
+	NO_API AAstroGenerator(AAstroGenerator&&); \
+	NO_API AAstroGenerator(const AAstroGenerator&); \
 public: \
-	NO_API virtual ~AStarClusterGenerator();
+	NO_API virtual ~AAstroGenerator();
 
 
 #define FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GeneratedWorld_h_15_ENHANCED_CONSTRUCTORS \
 private: \
 	/** Private move- and copy-constructors, should never be used */ \
-	NO_API AStarClusterGenerator(AStarClusterGenerator&&); \
-	NO_API AStarClusterGenerator(const AStarClusterGenerator&); \
+	NO_API AAstroGenerator(AAstroGenerator&&); \
+	NO_API AAstroGenerator(const AAstroGenerator&); \
 public: \
-	DECLARE_VTABLE_PTR_HELPER_CTOR(NO_API, AStarClusterGenerator); \
-	DEFINE_VTABLE_PTR_HELPER_CTOR_CALLER(AStarClusterGenerator); \
-	DEFINE_DEFAULT_CONSTRUCTOR_CALL(AStarClusterGenerator) \
-	NO_API virtual ~AStarClusterGenerator();
+	DECLARE_VTABLE_PTR_HELPER_CTOR(NO_API, AAstroGenerator); \
+	DEFINE_VTABLE_PTR_HELPER_CTOR_CALLER(AAstroGenerator); \
+	DEFINE_DEFAULT_CONSTRUCTOR_CALL(AAstroGenerator) \
+	NO_API virtual ~AAstroGenerator();
 
 
 #define FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GeneratedWorld_h_12_PROLOG
@@ -87,7 +87,7 @@ private: \
 PRAGMA_ENABLE_DEPRECATION_WARNINGS
 
 
-template<> APS_ALPHA_API UClass* StaticClass<class AStarClusterGenerator>();
+template<> APS_ALPHA_API UClass* StaticClass<class AAstroGenerator>();
 
 #undef CURRENT_FILE_ID
 #define CURRENT_FILE_ID FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GeneratedWorld_h
