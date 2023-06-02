@@ -80,7 +80,6 @@
 			"StarGenerator.gen.cpp.obj",
 			"StarSector.gen.cpp.obj",
 			"StarSpectralClass.gen.cpp.obj",
-			"StarSystem.gen.cpp.obj",
 			"StarSystemGenerationModel.gen.cpp.obj",
 			"StarSystemGenerator.gen.cpp.obj",
 			"StarSystemType.gen.cpp.obj",
@@ -119,6 +118,7 @@
 			"Galaxy.cpp.obj",
 			"GalaxySector.cpp.obj",
 			"Star.gen.cpp.obj",
+			"StarSystem.gen.cpp.obj",
 			"GeneratedWorld.cpp.obj"
 		],
 		"Module.APS_ALPHA.3_of_3.cpp.obj": [
@@ -146,6 +146,7 @@
 			"OrbitalBody.cpp.obj",
 			"OrbitalBodyGenerationModel.cpp.obj",
 			"PilotingVehicle.cpp.obj",
+			"Planet.cpp.obj",
 			"PlanetaryEnvironment.cpp.obj",
 			"PlanetaryProceduralGenerator.cpp.obj",
 			"PlanetarySystem.cpp.obj",
@@ -162,7 +163,6 @@
 			"StarGenerationModel.cpp.obj",
 			"StarGenerator.cpp.obj",
 			"StarSector.cpp.obj",
-			"StarSystem.cpp.obj",
 			"StarSystemGenerationModel.cpp.obj",
 			"StarSystemGenerator.cpp.obj",
 			"StationGravityActor.cpp.obj",
@@ -172,8 +172,8 @@
 			"UniverseProceduralGenerator.cpp.obj",
 			"VehicleControlling.cpp.obj",
 			"WorldActor.cpp.obj",
-			"Planet.cpp.obj",
-			"Star.cpp.obj"
+			"Star.cpp.obj",
+			"StarSystem.cpp.obj"
 		]
 	}
 }

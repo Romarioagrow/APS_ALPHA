@@ -8,9 +8,9 @@ void AStarSystem::SetStarsAmount(int Amount)
 	this->StarsAmount = Amount;
 }
 
-void AStarSystem::AddPlanetarySystem(APlanetarySystem* PlanetarySystem)
+void AStarSystem::AddNewStar(AStar* NewStar)
 {
-	PlanetarySystems.Add(PlanetarySystem);
+	Stars.Add(NewStar);
 }
 
 void AStarSystem::SetStarSystemType(EStarSystemType Type)

@@ -24,7 +24,6 @@
 #include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Intermediate/Build/Win64/UnrealEditor/Inc/APS_ALPHA/UHT/StarGenerator.gen.cpp"
 #include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Intermediate/Build/Win64/UnrealEditor/Inc/APS_ALPHA/UHT/StarSector.gen.cpp"
 #include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Intermediate/Build/Win64/UnrealEditor/Inc/APS_ALPHA/UHT/StarSpectralClass.gen.cpp"
-#include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Intermediate/Build/Win64/UnrealEditor/Inc/APS_ALPHA/UHT/StarSystem.gen.cpp"
 #include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Intermediate/Build/Win64/UnrealEditor/Inc/APS_ALPHA/UHT/StarSystemGenerationModel.gen.cpp"
 #include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Intermediate/Build/Win64/UnrealEditor/Inc/APS_ALPHA/UHT/StarSystemGenerator.gen.cpp"
 #include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Intermediate/Build/Win64/UnrealEditor/Inc/APS_ALPHA/UHT/StarSystemType.gen.cpp"
