@@ -19,7 +19,7 @@ void UPlanetarySystemGenerator::ApplyModel(APlanetarySystem* NewPlanetarySystem,
 }
 
 
-FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySystemModelByStar(FStarGenerationModel StarModel, UPlanetGenerator* PlanetGenerator, UMoonGenerator* MoonGenerator)
+FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySystemModelByStar(FStarModel StarModel, UPlanetGenerator* PlanetGenerator, UMoonGenerator* MoonGenerator)
 {
     // вычисляем вероятность что будут планеты
     // находим макс и мин кол во планет
@@ -622,7 +622,7 @@ void UPlanetarySystemGenerator::SetAstroLocation(int StarNumber, APlanetarySyste
    // NewPlanetarySystem->Get
 }
 
-int UPlanetarySystemGenerator::DetermineMaxPlanets(EStellarClass StellarClass, FStarGenerationModel StarModel )
+int UPlanetarySystemGenerator::DetermineMaxPlanets(EStellarClass StellarClass, FStarModel StarModel )
 {
     int MaxPlanets;
 

@@ -24,6 +24,9 @@ protected:
 public:
 	UPROPERTY(EditAnywhere, Category = "Generation Params")
 		bool bNeedOrbitRotation { false };
+	
+	UPROPERTY(EditAnywhere, Category = "Generation Params")
+		bool bGenerateHomeSystem { false };
 
 	UPROPERTY()
 		TArray<AStarSystem*> GeneratedStarSystems;

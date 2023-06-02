@@ -71,11 +71,11 @@ public:
     void SetAstroLocation(int StarNumber, APlanetarySystem* NewPlanetarySystem);
 
 
-    int DetermineMaxPlanets(EStellarClass StellarClass, FStarGenerationModel StarModel);
+    int DetermineMaxPlanets(EStellarClass StellarClass, FStarModel StarModel);
 
     void ApplyModel(APlanetarySystem* NewPlanetarySystem, FPlanetarySystemGenerationModel PlanetraySystemModel);
 
-    FPlanetarySystemGenerationModel GeneratePlanetraySystemModelByStar(FStarGenerationModel StarModel, UPlanetGenerator* PlanetGenerator, UMoonGenerator* MoonGenerator);
+    FPlanetarySystemGenerationModel GeneratePlanetraySystemModelByStar(FStarModel StarModel, UPlanetGenerator* PlanetGenerator, UMoonGenerator* MoonGenerator);
 
     int CalculateMoons(double PlanetMass, EPlanetType PlanetType);
 

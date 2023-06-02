@@ -8,7 +8,7 @@ UStarGenerator::UStarGenerator()
 {
 }
 
-void UStarGenerator::ApplySpectralMaterial(AStar* NewStar, FStarGenerationModel StarModel)
+void UStarGenerator::ApplySpectralMaterial(AStar* NewStar, FStarModel StarModel)
 {
     // Получить материал с меша звезды
     UMaterialInterface* Material = NewStar->StarMesh->GetMaterial(0);
@@ -219,7 +219,7 @@ FLinearColor UStarGenerator::TemperatureToRGB(float temperature)
     return FLinearColor(Red, Green, Blue);*/
 }
 
-void UStarGenerator::ApplyModel(AStar* NewStar, FStarGenerationModel StarModel) // NewStar, StarModel
+void UStarGenerator::ApplyModel(AStar* NewStar, FStarModel StarModel) // NewStar, StarModel
 {
     NewStar->SetLuminosity(StarModel.Luminosity);
     NewStar->SetSurfaceTemperature(StarModel.SurfaceTemperature);
@@ -237,9 +237,9 @@ void UStarGenerator::ApplyModel(AStar* NewStar, FStarGenerationModel StarModel) 
 
 }
 
-FStarGenerationModel UStarGenerator::GenerateRandomStarModel()
+FStarModel UStarGenerator::GenerateRandomStarModel()
 {
-    FStarGenerationModel StarModel;
+    FStarModel StarModel;
     StarModel.StellarClass = GenerateStarClassByRandomWeights();
 
     //Определите ESpectralClass (спектральный класс) 
@@ -380,7 +380,7 @@ FString UStarGenerator::GetSpectralTypeDescription(ESpectralType Type)
     }
 }
 
-FName UStarGenerator::GenerateFullSpectralClass(const FStarGenerationModel& StarModel)
+FName UStarGenerator::GenerateFullSpectralClass(const FStarModel& StarModel)
 {
     if (StarModel.SpectralClass == ESpectralClass::Unknown)
     {
@@ -396,7 +396,7 @@ FName UStarGenerator::GenerateFullSpectralClass(const FStarGenerationModel& Star
     return FName(*(SpectralClassString + FString::Printf(TEXT("%d"), StarModel.SpectralSubclass) + SpectralTypeString));
 }
 
-FName UStarGenerator::GenerateFullSpectralName(const FStarGenerationModel& StarModel)
+FName UStarGenerator::GenerateFullSpectralName(const FStarModel& StarModel)
 {
     if (StarModel.SpectralClass == ESpectralClass::Unknown)
     {

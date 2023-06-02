@@ -58,7 +58,7 @@ void AAstroGenerator::GenerateRandomStarSystem()
         int AmountOfStars = StarSystemModel.AmountOfStars;
         for (int StarNumber = 0; StarNumber < AmountOfStars; StarNumber++)
         {
-            FStarGenerationModel StarModel = StarGenerator->GenerateRandomStarModel();
+            FStarModel StarModel = StarGenerator->GenerateRandomStarModel();
             AStar* NewStar = World->SpawnActor<AStar>(BP_StarClass); 
 
             FPlanetarySystemGenerationModel PlanetraySystemModel = 
@@ -145,7 +145,7 @@ void AAstroGenerator::GenerateRandomStarSystem()
                 {
                     FVector PlanetLocation = NewPlanet->GetActorLocation();
                     FVector LastMoonOuterEdgeLocation = LastMoonLocation + FVector(0, DiameterOfLastMoon * 6371, 0);
-                    float SphereRadius = FVector::Dist(PlanetLocation, LastMoonOuterEdgeLocation);
+                    double SphereRadius = FVector::Dist(PlanetLocation, LastMoonOuterEdgeLocation);
                     SphereRadius /= NewPlanet->GetActorScale3D().X;
                     NewPlanet->PlanetaryZone->SetSphereRadius(SphereRadius * 1.1);
                 }
@@ -159,7 +159,8 @@ void AAstroGenerator::GenerateRandomStarSystem()
             }
             else
             {
-                float StarSphereRadius = FVector::Dist(NewStar->GetActorLocation(), LastPlanetLocation);
+                double StarSphereRadius = FVector::Dist(NewStar->GetActorLocation(), LastPlanetLocation);
+                NewStar->StarAffectionZoneRadius = StarSphereRadius;
                 StarSphereRadius /= NewStar->GetActorScale3D().X;
                 NewStar->PlanetarySystemZone->SetSphereRadius(StarSphereRadius * 1.1);
             }

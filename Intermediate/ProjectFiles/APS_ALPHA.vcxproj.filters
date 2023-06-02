@@ -467,10 +467,19 @@
     <ClInclude Include="..\..\Source\APS_ALPHA\Star.h">
       <Filter>Source\APS_ALPHA</Filter>
     </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\StarCluster.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\StarCluster.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
     <ClCompile Include="..\..\Source\APS_ALPHA\StarClusterGenerator.cpp">
       <Filter>Source\APS_ALPHA</Filter>
     </ClCompile>
     <ClInclude Include="..\..\Source\APS_ALPHA\StarClusterGenerator.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\APS_ALPHA\StarClusterType.h">
       <Filter>Source\APS_ALPHA</Filter>
     </ClInclude>
     <ClCompile Include="..\..\Source\APS_ALPHA\StarGenerationModel.cpp">
