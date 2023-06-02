@@ -21,6 +21,9 @@ public:
 	UStarGenerator();
 
 public:
+	void ApplySpectralMaterial(AStar* NewStar, FStarGenerationModel StarModel);
+
+
 	void ApplyModel(AStar* NewStar, FStarGenerationModel StarModel);
 
 	FStarGenerationModel GenerateRandomStarModel();

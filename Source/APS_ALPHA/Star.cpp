@@ -10,6 +10,32 @@ AStar::AStar()
 
 	PlanetarySystemZone = CreateDefaultSubobject<USphereComponent>(TEXT("PlanetarySystemZoneComponent"));
 	PlanetarySystemZone->SetupAttachment(RootComponent);
+
+	// Создайте и прикрепите компонент меша к корневому компоненту
+	//StarMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("StarMesh"));
+	StarMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("StarMesh"));
+	StarMesh->SetupAttachment(RootComponent);
+}
+
+void AStar::BeginPlay()
+{
+	Super::BeginPlay();
+
+	//StarDynamicMaterial = UMaterialInstanceDynamic::Create(StarMesh->GetMaterial(0), this);
+	StarDynamicMaterial = UMaterialInstanceDynamic::Create(StarMesh->GetMaterial(0), this);
+	if (StarDynamicMaterial)
+	{
+		StarMesh->SetMaterial(0, StarDynamicMaterial);
+	}
+}
+
+void AStar::SetStarProperties(FLinearColor Color, float Multiplier)
+{
+	if (StarDynamicMaterial != nullptr)
+	{
+		StarDynamicMaterial->SetVectorParameterValue(FName("Color"), Color);
+		StarDynamicMaterial->SetScalarParameterValue(FName("Multiplier"), Multiplier);
+	}
 }
 
 void AStar::AddPlanet(APlanet* Planet)
