@@ -8,6 +8,34 @@ UStarGenerator::UStarGenerator()
 {
 }
 
+void UStarGenerator::ApplySpectralMaterial(AStar* NewStar, FStarGenerationModel StarModel)
+{
+    // Получить материал с меша звезды
+    UMaterialInterface* Material = NewStar->StarMesh->GetMaterial(0);
+
+    // Попытаться привести материал к динамическому экземпляру
+    UMaterialInstanceDynamic* StarDynamicMaterial = Cast<UMaterialInstanceDynamic>(Material);
+
+    if (StarDynamicMaterial == nullptr)
+    {
+        // Если это не динамический материал, создайте новый динамический экземпляр
+        StarDynamicMaterial = UMaterialInstanceDynamic::Create(Material, this);
+    }
+
+    // Установите скалярный параметр
+    FName ParameterName1 = "Multiplier";
+    float MultiplierValue = 10000.0f; // замените на ваше значение
+    StarDynamicMaterial->SetScalarParameterValue(ParameterName1, MultiplierValue);
+
+    // Установите векторный параметр
+    FName ParameterName2 = "Color";
+    FLinearColor ColorValue = FLinearColor::Red; // замените на ваше значение
+    StarDynamicMaterial->SetVectorParameterValue(ParameterName2, ColorValue);
+
+    // Примените динамический материал к вашему объекту
+    NewStar->StarMesh->SetMaterial(0, StarDynamicMaterial);
+}
+
 void UStarGenerator::ApplyModel(AStar* NewStar, FStarGenerationModel StarModel) // NewStar, StarModel
 {
     NewStar->SetLuminosity(StarModel.Luminosity);

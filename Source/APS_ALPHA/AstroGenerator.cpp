@@ -82,7 +82,9 @@ void AAstroGenerator::GenerateRandomStarSystem()
             NewStar->StarRadiusKM = StarModel.Radius * 696340;
             NewStar->SetPlanetarySystem(NewPlanetarySystem);
             NewPlanetarySystem->AttachToActor(NewStar, FAttachmentTransformRules::KeepWorldTransform);
-
+            
+            // Apply material luminocity multiplier and emissive light color
+            StarGenerator->ApplySpectralMaterial(NewStar, StarModel);
 
             // Генерация планет для каждой звезды
             FVector LastPlanetLocation{ 0 };

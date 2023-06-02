@@ -25,6 +25,18 @@ class APS_ALPHA_API AStar : public ACelestialBody
 public:
 	AStar();
 
+protected:
+	virtual void BeginPlay() override;
+
+public:
+	void SetStarProperties(FLinearColor Color, float Multiplier);
+
+	UPROPERTY(VisibleAnywhere, Category = "Star Visual")
+		UStaticMeshComponent* StarMesh;
+
+	UPROPERTY(VisibleAnywhere, Category = "Star Visual")
+		UMaterialInstanceDynamic* StarDynamicMaterial;
+
 	UPROPERTY(VisibleAnywhere, Category = "Components")
 		APlanetarySystem* PlanetarySystem;
 
