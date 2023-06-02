@@ -4,13 +4,13 @@
 #include "MoonGenerationModel.h"
 
 // Sets default values
-AStarClusterGenerator::AStarClusterGenerator()
+AAstroGenerator::AAstroGenerator()
 {
 	PrimaryActorTick.bCanEverTick = false;
 }
 
 // Called when the game starts or when spawned
-void AStarClusterGenerator::BeginPlay()
+void AAstroGenerator::BeginPlay()
 {
 	Super::BeginPlay();
 
@@ -26,7 +26,7 @@ void AStarClusterGenerator::BeginPlay()
     GenerateStarCluster();
 }
 
-void AStarClusterGenerator::GenerateRandomStarSystem()
+void AAstroGenerator::GenerateRandomStarSystem()
 {
     if (StarGenerator == nullptr || PlanetGenerator == nullptr || MoonGenerator == nullptr) {
         UE_LOG(LogTemp, Warning, TEXT("One of the generators is null!"));
@@ -44,7 +44,7 @@ void AStarClusterGenerator::GenerateRandomStarSystem()
     if (World) 
     {
         // Создаем новую звездную систему
-        FStarSystemGenerationModel StarSystemModel = StarSystemGenerator->GenerateRandomStarSystemModel();
+        FStarSystemGenerationModel StarSystemModel = StarSystemGenerator->GenerateRandomStarSystemModel(); 
         AStarSystem* NewStarSystem = World->SpawnActor<AStarSystem>(BP_StarSystemClass); 
         if (!NewStarSystem) 
         {
@@ -170,7 +170,7 @@ void AStarClusterGenerator::GenerateRandomStarSystem()
 }
 
 
-void AStarClusterGenerator::GenerateStarCluster()
+void AAstroGenerator::GenerateStarCluster()
 {
 
 }

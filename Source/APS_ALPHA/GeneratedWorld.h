@@ -10,12 +10,12 @@
 #include "GeneratedWorld.generated.h"
 
 UCLASS()
-class APS_ALPHA_API AStarClusterGenerator : public AActor
+class APS_ALPHA_API AAstroGenerator : public AActor
 {
 	GENERATED_BODY()
 	
 public:	
-	AStarClusterGenerator();
+	AAstroGenerator();
 
 protected:
 	virtual void BeginPlay() override;
