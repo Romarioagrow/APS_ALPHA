@@ -189,6 +189,29 @@ EStarClusterType AAstroGenerator::ProvideStarClusterType()
     }
 }
 
+TMap<EStarClusterType, TPair<int, int>> ClusterStarAmount =
+{
+    {EStarClusterType::OpenCluster, {500, 5000}},
+    {EStarClusterType::GlobularCluster, {5000, 25000}},
+    {EStarClusterType::Supercluster, {25000, 50000}},
+    {EStarClusterType::Nebula, {1000, 10000}},
+    {EStarClusterType::Unknown, {0, 0}}
+};
+
+int AAstroGenerator::GetRandomValueFromRange(EStarClusterType ClusterType)
+{
+    if (ClusterStarAmount.Contains(ClusterType))
+    {
+        TPair<int, int> Range = ClusterStarAmount[ClusterType];
+        return FMath::RandRange(Range.Key, Range.Value);
+    }
+    else
+    {
+        UE_LOG(LogTemp, Warning, TEXT("Cluster type not found in map, or range is invalid"));
+        return 0;
+    }
+}
+
 void AAstroGenerator::GenerateStarCluster()
 {
     /// TODO: StarClusterGenerator->GenerateRandomStarCluster(World);
@@ -199,9 +222,10 @@ void AAstroGenerator::GenerateStarCluster()
 
         EStarClusterType ClusterType = ProvideStarClusterType();//static_cast<EStarClusterType>(FMath::RandRange(0, static_cast<int>(EStarClusterType::Nebula)));
         AStarCluster* NewStarCluster = World->SpawnActor<AStarCluster>(BP_StarClusterClass);
+        NewStarCluster->AttachToActor(this, FAttachmentTransformRules::KeepWorldTransform);
 
         NewStarCluster->ClusterType = ClusterType;
-        NewStarCluster->StarCount = FMath::RandRange(100, 1000);
+        NewStarCluster->StarCount = GetRandomValueFromRange(ClusterType);//ClusterStarAmount[ClusterType];//FMath::RandRange(100, 1000);
         NewStarCluster->StarDensity = FMath::RandRange(0.1f, 1.0f);
         NewStarCluster->ClusterBounds = FVector(1000.0f, 1000.0f, 1000.0f);
 

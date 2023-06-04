@@ -9,4 +9,5 @@ enum class EStarClusterType : uint8
 	Supercluster 	UMETA(DisplayName = "Supercluster"),
 	Nebula 			UMETA(DisplayName = "Nebula"),
 	Unknown			UMETA(DisplayName = "Unknown")
+	// ,Embedded 
 }; 
