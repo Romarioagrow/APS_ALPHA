@@ -9,7 +9,7 @@ UStarClusterGenerator::UStarClusterGenerator()
     BP_StarClusterClass = AStarCluster::StaticClass();
 }
 
-FVector UStarClusterGenerator::CalculateStarPosition(int StarIndex, const AStarCluster* StarCluster, const FStarModel& StarModel)
+FVector UStarClusterGenerator::CalculateStarPosition(int StarIndex, AStarCluster* StarCluster, const FStarModel& StarModel)
 {
     FVector StarPosition;
 
@@ -20,7 +20,8 @@ FVector UStarClusterGenerator::CalculateStarPosition(int StarIndex, const AStarC
     {
     case EStarClusterType::OpenCluster:
     {
-        //     ClusterBounds = FVector(1000.0f, 1000.0f, 1000.0f);
+        StarCluster->ClusterBounds = FVector(100000.0f, 100000.0f, 100000.0f);
+        //tarCluster->ClusterBounds = FVector(1000.0f, 1000.0f, 1000.0f);
 
         // Равномерное распределение с учетом размера звезды
         StarPosition = FMath::RandPointInBox(FBox(FVector(-StarCluster->ClusterBounds.X / 2 - StarSize
@@ -41,6 +42,7 @@ FVector UStarClusterGenerator::CalculateStarPosition(int StarIndex, const AStarC
     case EStarClusterType::Supercluster:
     {
         //     ClusterBounds = FVector(1000.0f, 1000.0f, 1000.0f);
+        StarCluster->ClusterBounds = FVector(100000.0f, 100000.0f, 100000.0f);
 
         // Почти равномерное распределение, но с некоторыми большими звездами в центре, с учетом размера звезды
         StarPosition = FMath::RandPointInBox(FBox(FVector(-StarCluster->ClusterBounds.X / 2 - StarSize
