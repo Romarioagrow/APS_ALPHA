@@ -254,7 +254,8 @@ void AAstroGenerator::GenerateStarCluster()
 
         if (bGenerateFullScaledStarCluster)
         {
-            NewStarCluster->SetActorScale3D(FVector(100000000, 100000000, 100000000));
+            //NewStarCluster->SetActorScale3D(FVector(100000000, 100000000, 100000000));
+            NewStarCluster->SetActorScale3D(FVector(10000000000, 10000000000, 10000000000));
         }
     }
     else
