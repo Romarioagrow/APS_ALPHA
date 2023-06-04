@@ -9,11 +9,25 @@ AStarCluster::AStarCluster()
 {
     PrimaryActorTick.bCanEverTick = false;
 
+    StarMeshInstances = CreateDefaultSubobject<UHierarchicalInstancedStaticMeshComponent>(TEXT("StarMeshInstances"));
+    RootComponent = Cast<USceneComponent>(StarMeshInstances);
+    RootComponent->SetupAttachment(StarMeshInstances);
+
     // Инициализация значений по умолчанию
     StarCount = 100;
     StarDensity = 1.0f;
     ClusterType = EStarClusterType::OpenCluster;
     ClusterBounds = FVector(1000.0f, 1000.0f, 1000.0f);
+}
+
+void AStarCluster::AddStarToCluster(AStar* Star)
+{
+    Stars.Add(Star);
+}
+
+void AStarCluster::AddStarToClusterModel(FVector StarLocation, FStarModel StarModel)
+{
+    StarsModel.Add(StarLocation, StarModel);
 }
 
 // Функция генерации скопления

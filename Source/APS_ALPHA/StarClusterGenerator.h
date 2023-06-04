@@ -2,6 +2,7 @@
 
 #pragma once
 #include "StarGenerationModel.h"
+#include "StarCluster.h"
 
 #include "CoreMinimal.h"
 #include "BaseProceduralGenerator.h"
@@ -17,9 +18,12 @@ class APS_ALPHA_API UStarClusterGenerator : public UBaseProceduralGenerator
 
 public:
 	UStarClusterGenerator();
-	
+
+	//FVector CalculateStarPosition(int StarIndex, const AStarCluster* StarCluster, const FStarModel& StarModel);
+	FVector CalculateStarPosition(int StarIndex, const AStarCluster* StarCluster, const FStarModel& StarModel);
+
 public:
-	void GenerateRandomStarCluster();
+	void GenerateRandomStarCluster(UWorld* World);
 
 	UPROPERTY(EditAnywhere, Category = "Generation Params")
 		TSubclassOf<class AStarCluster> BP_StarClusterClass;
