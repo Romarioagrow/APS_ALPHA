@@ -18,40 +18,46 @@ FVector UStarClusterGenerator::CalculateStarPosition(int StarIndex, const AStarC
 
     switch (StarCluster->ClusterType)
     {
-        case EStarClusterType::OpenCluster:
+    case EStarClusterType::OpenCluster:
+    {
+        // –авномерное распределение с учетом размера звезды
+        StarPosition = FMath::RandPointInBox(FBox(FVector(-StarCluster->ClusterBounds.X / 2 - StarSize
+            , -StarCluster->ClusterBounds.Y / 2 - StarSize, -StarCluster->ClusterBounds.Z / 2 - StarSize)
+            , FVector(StarCluster->ClusterBounds.X / 2 + StarSize, StarCluster->ClusterBounds.Y / 2 + StarSize
+            , StarCluster->ClusterBounds.Z / 2 + StarSize)));
+    }
+    break;
+    case EStarClusterType::GlobularCluster:
+    {
+        // Ѕольше звезд ближе к центру, с учетом размера звезды
+        double Radius = FMath::RandRange(static_cast<double>(StarSize), StarCluster->ClusterBounds.X / 2) + StarSize * 100; // умножаем на 100, так как StarSize в UE scale, а не в координатах.
+        float Angle = FMath::RandRange(0.0f, 2 * PI);
+        float Z = FMath::RandRange(-StarCluster->ClusterBounds.Z / 2, StarCluster->ClusterBounds.Z / 2);
+        StarPosition = FVector(Radius * FMath::Cos(Angle), Radius * FMath::Sin(Angle), Z);
+    }
+    break;
+    case EStarClusterType::Supercluster:
+    {
+        // ѕочти равномерное распределение, но с некоторыми большими звездами в центре, с учетом размера звезды
+        StarPosition = FMath::RandPointInBox(FBox(FVector(-StarCluster->ClusterBounds.X / 2 - StarSize
+            , -StarCluster->ClusterBounds.Y / 2 - StarSize, -StarCluster->ClusterBounds.Z / 2 - StarSize)
+            , FVector(StarCluster->ClusterBounds.X / 2 + StarSize, StarCluster->ClusterBounds.Y / 2 + StarSize
+            , StarCluster->ClusterBounds.Z / 2 + StarSize)));
+        if (StarSize > 10.0f)
         {
-            // –авномерное распределение
-            StarPosition = FMath::RandPointInBox(FBox(FVector(-StarCluster->ClusterBounds.X / 2, -StarCluster->ClusterBounds.Y / 2, -StarCluster->ClusterBounds.Z / 2), FVector(StarCluster->ClusterBounds.X / 2, StarCluster->ClusterBounds.Y / 2, StarCluster->ClusterBounds.Z / 2)));
+            StarPosition /= 2;  // ѕеремещаем большие звезды ближе к центру
         }
-        break;
-        case EStarClusterType::GlobularCluster:
-        {
-            // Ѕольше звезд ближе к центру
-            double Radius = FMath::RandRange(static_cast<double>(StarSize), StarCluster->ClusterBounds.X / 2);
-            //float Radius = FMath::RandRange(StarSize, StarCluster->ClusterBounds.X / 2);
-            float Angle = FMath::RandRange(0.0f, 2 * PI);
-            float Z = FMath::RandRange(-StarCluster->ClusterBounds.Z / 2, StarCluster->ClusterBounds.Z / 2);
-            StarPosition = FVector(Radius * FMath::Cos(Angle), Radius * FMath::Sin(Angle), Z);
-        }
-        break;
-        case EStarClusterType::Supercluster:
-        {
-            // ѕочти равномерное распределение, но с некоторыми большими звездами в центре
-            StarPosition = FMath::RandPointInBox(FBox(FVector(-StarCluster->ClusterBounds.X / 2, -StarCluster->ClusterBounds.Y / 2, -StarCluster->ClusterBounds.Z / 2), FVector(StarCluster->ClusterBounds.X / 2, StarCluster->ClusterBounds.Y / 2, StarCluster->ClusterBounds.Z / 2)));
-            if (StarSize > 10.0f)
-            {
-                StarPosition /= 2;  // ѕеремещаем большие звезды ближе к центру
-            }
-        }
-        break;
-        case EStarClusterType::Nebula:
-        {
-            // –аспределение звезд по спирали
-            float SpiralRadius = StarIndex * StarSize;
-            float SpiralAngle = 2 * PI * StarIndex / StarCluster->StarCount;
-            StarPosition = FVector(SpiralRadius * FMath::Cos(SpiralAngle), SpiralRadius * FMath::Sin(SpiralAngle), FMath::RandRange(-StarCluster->ClusterBounds.Z / 2, StarCluster->ClusterBounds.Z / 2));
-        }
-        break;
+    }
+    break;
+    case EStarClusterType::Nebula:
+    {
+        // –аспределение звезд по спирали с учетом размера звезды
+        double SpiralRadius = StarIndex * StarSize;
+        //double SpiralRadius = StarIndex * (StarSize + StarSize); // ”величиваем радиус спирали на размер звезды
+        double SpiralAngle = 2 * PI * StarIndex / StarCluster->StarCount;
+        StarPosition = FVector(SpiralRadius * FMath::Cos(SpiralAngle), SpiralRadius * FMath::Sin(SpiralAngle), FMath::RandRange(-StarCluster->ClusterBounds.Z / 2, StarCluster->ClusterBounds.Z / 2));
+    }
+    break;
     }
     return StarPosition * 100;
 }
