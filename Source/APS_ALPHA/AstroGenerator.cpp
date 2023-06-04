@@ -251,6 +251,11 @@ void AAstroGenerator::GenerateStarCluster()
             StarTransform.SetScale3D(FVector(NewStarModel.Radius));
             NewStarCluster->StarMeshInstances->AddInstance(StarTransform);
         }
+
+        if (bGenerateFullScaledStarCluster)
+        {
+            NewStarCluster->SetActorScale3D(FVector(100000000, 100000000, 100000000));
+        }
     }
     else
     {

@@ -18,7 +18,7 @@ FVector UStarClusterGenerator::CalculateStarPosition(int StarIndex, AStarCluster
 
     switch (StarCluster->ClusterType)
     {
-    case EStarClusterType::OpenCluster:
+    case EStarClusterType::OpenCluster: 
     {
         StarCluster->ClusterBounds = FVector(100000.0f, 100000.0f, 100000.0f);
         //tarCluster->ClusterBounds = FVector(1000.0f, 1000.0f, 1000.0f);
@@ -30,7 +30,7 @@ FVector UStarClusterGenerator::CalculateStarPosition(int StarIndex, AStarCluster
             , StarCluster->ClusterBounds.Z / 2 + StarSize)));
     }
     break;
-    case EStarClusterType::GlobularCluster:
+    case EStarClusterType::GlobularCluster: /// TODO: ALL STAR MAIN SEQUENCE !
     {
         // Больше звезд ближе к центру, с учетом размера звезды
         double Radius = FMath::RandRange(static_cast<double>(StarSize), StarCluster->ClusterBounds.X / 2) + StarSize * 100; // умножаем на 100, так как StarSize в UE scale, а не в координатах.
@@ -42,13 +42,62 @@ FVector UStarClusterGenerator::CalculateStarPosition(int StarIndex, AStarCluster
     case EStarClusterType::Supercluster:
     {
         //     ClusterBounds = FVector(1000.0f, 1000.0f, 1000.0f);
-        StarCluster->ClusterBounds = FVector(100000.0f, 100000.0f, 100000.0f);
+        //StarCluster->ClusterBounds = FVector(5000000.0f, 5000000.0f, 5000000.0f);
+        StarCluster->ClusterBounds = FVector(500, 500, 500);
 
         // Почти равномерное распределение, но с некоторыми большими звездами в центре, с учетом размера звезды
-        StarPosition = FMath::RandPointInBox(FBox(FVector(-StarCluster->ClusterBounds.X / 2 - StarSize
-            , -StarCluster->ClusterBounds.Y / 2 - StarSize, -StarCluster->ClusterBounds.Z / 2 - StarSize)
-            , FVector(StarCluster->ClusterBounds.X / 2 + StarSize, StarCluster->ClusterBounds.Y / 2 + StarSize
-            , StarCluster->ClusterBounds.Z / 2 + StarSize)));
+        //float SphereRadius = FMath::Max(StarCluster->ClusterBounds.X, FMath::Max(StarCluster->ClusterBounds.Y, StarCluster->ClusterBounds.Z)) / 2;
+        //StarPosition = FMath::RandPointInBoundingSphere(SphereRadius);
+
+
+        double SphereRadius = FMath::Max(StarCluster->ClusterBounds.X, FMath::Max(StarCluster->ClusterBounds.Y, StarCluster->ClusterBounds.Z)) / 2;
+        FVector RandomPoint = FMath::VRand();
+        double Weight = 1 - FMath::Pow(StarSize, 3); // измененная часть
+        double RandomScale = SphereRadius - (FMath::FRand() * Weight * (SphereRadius - StarSize));
+        RandomPoint *= RandomScale;
+        StarPosition = RandomPoint;
+
+        if (StarSize > 10.0f)
+        {
+            StarPosition /= 2;  // Перемещаем большие звезды ближе к центру
+        }
+
+
+        //double SphereRadius = FMath::Max(StarCluster->ClusterBounds.X, FMath::Max(StarCluster->ClusterBounds.Y, StarCluster->ClusterBounds.Z)) / 2;
+        //// Создаем случайную точку на единичной сфере
+        //FVector RandomPoint = FMath::VRand();
+        //// Создаем весовой коэффициент на основе размера звезды
+        //double Weight = FMath::Pow(StarSize, 3);
+        //// Случайным образом масштабируем радиус от границы сферы внутрь, учитывая размер звезды и весовой коэффициент
+        //double RandomScale = SphereRadius - (FMath::FRand() * Weight * (SphereRadius - StarSize));
+        //// Применяем масштабирование к нашей случайной точке
+        //RandomPoint *= RandomScale;
+        //StarPosition = RandomPoint;
+
+
+        //double SphereRadius = FMath::Max(StarCluster->ClusterBounds.X, FMath::Max(StarCluster->ClusterBounds.Y, StarCluster->ClusterBounds.Z)) / 2;
+        //// Создаем случайную точку на единичной сфере
+        //FVector RandomPoint = FMath::VRand();
+        //// Случайным образом масштабируем радиус от границы сферы внутрь, учитывая размер звезды
+        //double RandomScale = SphereRadius - (FMath::FRand() * (SphereRadius - StarSize));
+        //// Применяем масштабирование к нашей случайной точке
+        //RandomPoint *= RandomScale;
+        //StarPosition = RandomPoint;
+
+        //double SphereRadius = FMath::Max(StarCluster->ClusterBounds.X, FMath::Max(StarCluster->ClusterBounds.Y, StarCluster->ClusterBounds.Z)) / 2;
+        //// Создаем случайную точку на единичной сфере
+        //FVector RandomPoint = FMath::VRand();
+        //// Случайным образом масштабируем радиус внутри сферы, учитывая размер звезды
+        //double RandomScale = FMath::FRand() * (SphereRadius - StarSize);
+        //// Применяем масштабирование к нашей случайной точке
+        //RandomPoint *= RandomScale;
+        //StarPosition = RandomPoint;
+
+        //// Почти равномерное распределение, но с некоторыми большими звездами в центре, с учетом размера звезды
+        //StarPosition = FMath::RandPointInBox(FBox(FVector(-StarCluster->ClusterBounds.X / 2 - StarSize
+        //    , -StarCluster->ClusterBounds.Y / 2 - StarSize, -StarCluster->ClusterBounds.Z / 2 - StarSize)
+        //    , FVector(StarCluster->ClusterBounds.X / 2 + StarSize, StarCluster->ClusterBounds.Y / 2 + StarSize
+        //    , StarCluster->ClusterBounds.Z / 2 + StarSize)));
         if (StarSize > 10.0f)
         {
             StarPosition /= 2;  // Перемещаем большие звезды ближе к центру
