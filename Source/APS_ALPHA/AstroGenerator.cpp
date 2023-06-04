@@ -211,6 +211,7 @@ void AAstroGenerator::GenerateStarCluster()
 
             // Создаем инстанс звезды и добавляем его в HISM компонент
             FTransform StarTransform(StarPosition);
+            StarTransform.SetScale3D(FVector(NewStarModel.Radius));
             NewStarCluster->StarMeshInstances->AddInstance(StarTransform);
         }
     }
