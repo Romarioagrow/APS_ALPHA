@@ -23,7 +23,10 @@ void AAstroGenerator::BeginPlay()
     PlanetGenerator = NewObject<UPlanetGenerator>();
     MoonGenerator = NewObject<UMoonGenerator>();
 
-	GenerateRandomStarSystem();
+    if (bGenerateHomeSystem)
+    {
+	    GenerateRandomStarSystem();
+    }
 
     GenerateStarCluster();
 }
@@ -169,44 +172,50 @@ void AAstroGenerator::GenerateRandomStarSystem()
             NewStarSystem->AddNewStar(NewStar);
         }
 
-        /// TODO: StarClusterGenerator->GenerateRandomStarCluster(World);
-        if (true)
-        {
-            //...
-            EStarClusterType ClusterType = static_cast<EStarClusterType>(FMath::RandRange(0, static_cast<int>(EStarClusterType::Nebula)));
-            AStarCluster* NewStarCluster = World->SpawnActor<AStarCluster>(BP_StarClusterClass);
-
-            NewStarCluster->ClusterType = ClusterType;
-            NewStarCluster->StarCount = FMath::RandRange(100, 1000);
-            NewStarCluster->StarDensity = FMath::RandRange(0.1f, 1.0f);
-            NewStarCluster->ClusterBounds = FVector(1000.0f, 1000.0f, 1000.0f);
-
-            UE_LOG(LogTemp, Warning, TEXT("StarCount: %d"), NewStarCluster->StarCount);
-            UE_LOG(LogTemp, Warning, TEXT("StarDensity: %f"), NewStarCluster->StarDensity);
-            UE_LOG(LogTemp, Warning, TEXT("ClusterBounds: %s"), *NewStarCluster->ClusterBounds.ToString());
-            UE_LOG(LogTemp, Warning, TEXT("ClusterType: %d"), static_cast<int>(NewStarCluster->ClusterType));
-
-            for (size_t i = 0; i < NewStarCluster->StarCount; i++)
-            {
-                // Создаем модель звезды
-                FStarModel NewStarModel = StarGenerator->GenerateRandomStarModel();
-
-                // Позиционируем звезду в кластере
-                FVector StarPosition = StarClusterGenerator->CalculateStarPosition(i, NewStarCluster, NewStarModel);
-
-                // Добавляем модель звезды в список моделей звезд кластера
-                NewStarCluster->AddStarToClusterModel(StarPosition, NewStarModel);
-
-
-                // Создаем инстанс звезды и добавляем его в HISM компонент
-                FTransform StarTransform(StarPosition);
-                NewStarCluster->StarMeshInstances->AddInstance(StarTransform);
-            }
-        }
+        
     }
 }
 
 void AAstroGenerator::GenerateStarCluster()
 {
+    /// TODO: StarClusterGenerator->GenerateRandomStarCluster(World);
+    if (true)
+    {
+        //...
+        UWorld* World = GetWorld();
 
+        EStarClusterType ClusterType = static_cast<EStarClusterType>(FMath::RandRange(0, static_cast<int>(EStarClusterType::Nebula)));
+        AStarCluster* NewStarCluster = World->SpawnActor<AStarCluster>(BP_StarClusterClass);
+
+        NewStarCluster->ClusterType = ClusterType;
+        NewStarCluster->StarCount = FMath::RandRange(100, 1000);
+        NewStarCluster->StarDensity = FMath::RandRange(0.1f, 1.0f);
+        NewStarCluster->ClusterBounds = FVector(1000.0f, 1000.0f, 1000.0f);
+
+        UE_LOG(LogTemp, Warning, TEXT("StarCount: %d"), NewStarCluster->StarCount);
+        UE_LOG(LogTemp, Warning, TEXT("StarDensity: %f"), NewStarCluster->StarDensity);
+        UE_LOG(LogTemp, Warning, TEXT("ClusterBounds: %s"), *NewStarCluster->ClusterBounds.ToString());
+        UE_LOG(LogTemp, Warning, TEXT("ClusterType: %d"), static_cast<int>(NewStarCluster->ClusterType));
+
+        for (size_t i = 0; i < NewStarCluster->StarCount; i++)
+        {
+            // Создаем модель звезды
+            FStarModel NewStarModel = StarGenerator->GenerateRandomStarModel();
+
+            // Позиционируем звезду в кластере
+            FVector StarPosition = StarClusterGenerator->CalculateStarPosition(i, NewStarCluster, NewStarModel);
+
+            // Добавляем модель звезды в список моделей звезд кластера
+            NewStarCluster->AddStarToClusterModel(StarPosition, NewStarModel);
+
+
+            // Создаем инстанс звезды и добавляем его в HISM компонент
+            FTransform StarTransform(StarPosition);
+            NewStarCluster->StarMeshInstances->AddInstance(StarTransform);
+        }
+    }
+    else
+    {
+        UE_LOG(LogTemp, Warning, TEXT("StarClusterGenerator is not implemented yet!"));
+    }
 }
