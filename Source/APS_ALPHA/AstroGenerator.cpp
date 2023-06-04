@@ -176,6 +176,19 @@ void AAstroGenerator::GenerateRandomStarSystem()
     }
 }
 
+EStarClusterType AAstroGenerator::ProvideStarClusterType()
+{
+	//...
+    if (bGenerateRandomCluster)
+    {
+        return static_cast<EStarClusterType>(FMath::RandRange(0, static_cast<int>(EStarClusterType::Nebula)));
+    }
+    else
+    {
+        return StarClusterType;
+    }
+}
+
 void AAstroGenerator::GenerateStarCluster()
 {
     /// TODO: StarClusterGenerator->GenerateRandomStarCluster(World);
@@ -184,7 +197,7 @@ void AAstroGenerator::GenerateStarCluster()
         //...
         UWorld* World = GetWorld();
 
-        EStarClusterType ClusterType = static_cast<EStarClusterType>(FMath::RandRange(0, static_cast<int>(EStarClusterType::Nebula)));
+        EStarClusterType ClusterType = ProvideStarClusterType();//static_cast<EStarClusterType>(FMath::RandRange(0, static_cast<int>(EStarClusterType::Nebula)));
         AStarCluster* NewStarCluster = World->SpawnActor<AStarCluster>(BP_StarClusterClass);
 
         NewStarCluster->ClusterType = ClusterType;

@@ -20,7 +20,7 @@ public:
 	UStarClusterGenerator();
 
 	//FVector CalculateStarPosition(int StarIndex, const AStarCluster* StarCluster, const FStarModel& StarModel);
-	FVector CalculateStarPosition(int StarIndex, const AStarCluster* StarCluster, const FStarModel& StarModel);
+	FVector CalculateStarPosition(int StarIndex, AStarCluster* StarCluster, const FStarModel& StarModel);
 
 public:
 	void GenerateRandomStarCluster(UWorld* World);

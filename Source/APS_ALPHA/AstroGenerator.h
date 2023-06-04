@@ -32,9 +32,9 @@ public:
 		bool bGenerateFullScaledStarCluster { false };
 	
 	UPROPERTY(EditAnywhere, Category = "Generation Params")
-		bool bGenerateRandomCluster { false };
+		bool bGenerateRandomCluster { true };
 
-	UPROPERTY(EditAnywhere, Category = "Generation Params", meta = (EditCondition = "bGenerateRandomCluster"))
+	UPROPERTY(EditAnywhere, Category = "Generation Params", meta = (EditCondition = "!bGenerateRandomCluster"))
 		EStarClusterType StarClusterType;
 	
 	UPROPERTY(EditAnywhere, Category = "Generation Params")
@@ -84,6 +84,8 @@ public:
 	
 	// функция генерации общей звездной системы
 	void GenerateRandomStarSystem();
+
+	EStarClusterType ProvideStarClusterType();
 
 	void GenerateStarCluster();
 

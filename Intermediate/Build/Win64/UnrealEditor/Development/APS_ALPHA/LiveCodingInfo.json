@@ -4,14 +4,12 @@
 		"Module.APS_ALPHA.1_of_3.cpp.obj": [
 			"Aircraft.gen.cpp.obj",
 			"AnimationState.gen.cpp.obj",
-			"APS_ALPHA.init.gen.cpp.obj",
 			"APS_ALPHAGameModeBase.gen.cpp.obj",
 			"Asteroid.gen.cpp.obj",
 			"AsteroidBelt.gen.cpp.obj",
 			"AstonomicalBody.gen.cpp.obj",
 			"AstonomicalSystem.gen.cpp.obj",
 			"AstroActor.gen.cpp.obj",
-			"AstroGenerator.gen.cpp.obj",
 			"AstroLocation.gen.cpp.obj",
 			"AstroObject.gen.cpp.obj",
 			"Atmosphere.gen.cpp.obj",
@@ -51,7 +49,9 @@
 			"Moon.gen.cpp.obj",
 			"MoonGenerationModel.gen.cpp.obj",
 			"MoonGenerator.gen.cpp.obj",
-			"MoonType.gen.cpp.obj"
+			"MoonType.gen.cpp.obj",
+			"APS_ALPHA.init.gen.cpp.obj",
+			"AstroGenerator.gen.cpp.obj"
 		],
 		"Module.APS_ALPHA.2_of_3.cpp.obj": [
 			"OrbitalBody.gen.cpp.obj",
