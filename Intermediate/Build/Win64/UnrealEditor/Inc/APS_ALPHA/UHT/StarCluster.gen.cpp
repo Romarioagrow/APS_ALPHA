@@ -6,10 +6,12 @@
 
 #include "UObject/GeneratedCppIncludes.h"
 #include "APS_ALPHA/StarCluster.h"
+#include "APS_ALPHA/StarGenerationModel.h"
 PRAGMA_DISABLE_DEPRECATION_WARNINGS
 void EmptyLinkFunctionForGeneratedCodeStarCluster() {}
 // Cross Module References
 	APS_ALPHA_API UClass* Z_Construct_UClass_AAstroActor();
+	APS_ALPHA_API UClass* Z_Construct_UClass_AStar_NoRegister();
 	APS_ALPHA_API UClass* Z_Construct_UClass_AStarCluster();
 	APS_ALPHA_API UClass* Z_Construct_UClass_AStarCluster_NoRegister();
 	APS_ALPHA_API UEnum* Z_Construct_UEnum_APS_ALPHA_ESpectralClass();
@@ -17,9 +19,10 @@ void EmptyLinkFunctionForGeneratedCodeStarCluster() {}
 	APS_ALPHA_API UEnum* Z_Construct_UEnum_APS_ALPHA_EStellarClass();
 	APS_ALPHA_API UScriptStruct* Z_Construct_UScriptStruct_FClusterParameters();
 	APS_ALPHA_API UScriptStruct* Z_Construct_UScriptStruct_FRange();
+	APS_ALPHA_API UScriptStruct* Z_Construct_UScriptStruct_FStarModel();
 	COREUOBJECT_API UScriptStruct* Z_Construct_UScriptStruct_FVector();
+	ENGINE_API UClass* Z_Construct_UClass_UHierarchicalInstancedStaticMeshComponent_NoRegister();
 	ENGINE_API UClass* Z_Construct_UClass_UMaterialInterface_NoRegister();
-	ENGINE_API UClass* Z_Construct_UClass_UStaticMesh_NoRegister();
 	UPackage* Z_Construct_UPackage__Script_APS_ALPHA();
 // End Cross Module References
 	static FStructRegistrationInfo Z_Registration_Info_UScriptStruct_Range;
@@ -286,6 +289,17 @@ template<> APS_ALPHA_API UScriptStruct* StaticStruct<FClusterParameters>()
 #if WITH_METADATA
 		static const UECodeGen_Private::FMetaDataPairParam Class_MetaDataParams[];
 #endif
+		static const UECodeGen_Private::FObjectPropertyParams NewProp_Stars_Inner;
+#if WITH_METADATA
+		static const UECodeGen_Private::FMetaDataPairParam NewProp_Stars_MetaData[];
+#endif
+		static const UECodeGen_Private::FArrayPropertyParams NewProp_Stars;
+		static const UECodeGen_Private::FStructPropertyParams NewProp_StarsModel_ValueProp;
+		static const UECodeGen_Private::FStructPropertyParams NewProp_StarsModel_Key_KeyProp;
+#if WITH_METADATA
+		static const UECodeGen_Private::FMetaDataPairParam NewProp_StarsModel_MetaData[];
+#endif
+		static const UECodeGen_Private::FMapPropertyParams NewProp_StarsModel;
 		static const UECodeGen_Private::FBytePropertyParams NewProp_ClusterType_Underlying;
 #if WITH_METADATA
 		static const UECodeGen_Private::FMetaDataPairParam NewProp_ClusterType_MetaData[];
@@ -314,9 +328,9 @@ template<> APS_ALPHA_API UScriptStruct* StaticStruct<FClusterParameters>()
 #endif
 		static const UECodeGen_Private::FMapPropertyParams NewProp_StellarClassProbabilities;
 #if WITH_METADATA
-		static const UECodeGen_Private::FMetaDataPairParam NewProp_StarModel_MetaData[];
+		static const UECodeGen_Private::FMetaDataPairParam NewProp_StarMeshInstances_MetaData[];
 #endif
-		static const UECodeGen_Private::FObjectPropertyParams NewProp_StarModel;
+		static const UECodeGen_Private::FObjectPropertyParams NewProp_StarMeshInstances;
 #if WITH_METADATA
 		static const UECodeGen_Private::FMetaDataPairParam NewProp_ClusterBounds_MetaData[];
 #endif
@@ -343,6 +357,23 @@ template<> APS_ALPHA_API UScriptStruct* StaticStruct<FClusterParameters>()
 		{ "ModuleRelativePath", "StarCluster.h" },
 	};
 #endif
+	const UECodeGen_Private::FObjectPropertyParams Z_Construct_UClass_AStarCluster_Statics::NewProp_Stars_Inner = { "Stars", nullptr, (EPropertyFlags)0x0000000000020000, UECodeGen_Private::EPropertyGenFlags::Object, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, 0, Z_Construct_UClass_AStar_NoRegister, METADATA_PARAMS(nullptr, 0) };
+#if WITH_METADATA
+	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_AStarCluster_Statics::NewProp_Stars_MetaData[] = {
+		{ "Category", "Star Cluster" },
+		{ "ModuleRelativePath", "StarCluster.h" },
+	};
+#endif
+	const UECodeGen_Private::FArrayPropertyParams Z_Construct_UClass_AStarCluster_Statics::NewProp_Stars = { "Stars", nullptr, (EPropertyFlags)0x0010000000020001, UECodeGen_Private::EPropertyGenFlags::Array, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(AStarCluster, Stars), EArrayPropertyFlags::None, METADATA_PARAMS(Z_Construct_UClass_AStarCluster_Statics::NewProp_Stars_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_AStarCluster_Statics::NewProp_Stars_MetaData)) };
+	const UECodeGen_Private::FStructPropertyParams Z_Construct_UClass_AStarCluster_Statics::NewProp_StarsModel_ValueProp = { "StarsModel", nullptr, (EPropertyFlags)0x0000000000020001, UECodeGen_Private::EPropertyGenFlags::Struct, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, 1, Z_Construct_UScriptStruct_FStarModel, METADATA_PARAMS(nullptr, 0) }; // 491934795
+	const UECodeGen_Private::FStructPropertyParams Z_Construct_UClass_AStarCluster_Statics::NewProp_StarsModel_Key_KeyProp = { "StarsModel_Key", nullptr, (EPropertyFlags)0x0000000000020001, UECodeGen_Private::EPropertyGenFlags::Struct, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, 0, Z_Construct_UScriptStruct_FVector, METADATA_PARAMS(nullptr, 0) };
+#if WITH_METADATA
+	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_AStarCluster_Statics::NewProp_StarsModel_MetaData[] = {
+		{ "Category", "Star Cluster" },
+		{ "ModuleRelativePath", "StarCluster.h" },
+	};
+#endif
+	const UECodeGen_Private::FMapPropertyParams Z_Construct_UClass_AStarCluster_Statics::NewProp_StarsModel = { "StarsModel", nullptr, (EPropertyFlags)0x0010000000020001, UECodeGen_Private::EPropertyGenFlags::Map, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(AStarCluster, StarsModel), EMapPropertyFlags::None, METADATA_PARAMS(Z_Construct_UClass_AStarCluster_Statics::NewProp_StarsModel_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_AStarCluster_Statics::NewProp_StarsModel_MetaData)) }; // 491934795
 	const UECodeGen_Private::FBytePropertyParams Z_Construct_UClass_AStarCluster_Statics::NewProp_ClusterType_Underlying = { "UnderlyingType", nullptr, (EPropertyFlags)0x0000000000000000, UECodeGen_Private::EPropertyGenFlags::Byte, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, 0, nullptr, METADATA_PARAMS(nullptr, 0) };
 #if WITH_METADATA
 	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_AStarCluster_Statics::NewProp_ClusterType_MetaData[] = {
@@ -396,14 +427,15 @@ template<> APS_ALPHA_API UScriptStruct* StaticStruct<FClusterParameters>()
 #endif
 	const UECodeGen_Private::FMapPropertyParams Z_Construct_UClass_AStarCluster_Statics::NewProp_StellarClassProbabilities = { "StellarClassProbabilities", nullptr, (EPropertyFlags)0x0010000000000005, UECodeGen_Private::EPropertyGenFlags::Map, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(AStarCluster, StellarClassProbabilities), EMapPropertyFlags::None, METADATA_PARAMS(Z_Construct_UClass_AStarCluster_Statics::NewProp_StellarClassProbabilities_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_AStarCluster_Statics::NewProp_StellarClassProbabilities_MetaData)) }; // 3378852079
 #if WITH_METADATA
-	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_AStarCluster_Statics::NewProp_StarModel_MetaData[] = {
+	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_AStarCluster_Statics::NewProp_StarMeshInstances_MetaData[] = {
 		{ "Category", "Star Cluster" },
-		{ "Comment", "// \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\n" },
+		{ "Comment", "//// \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\n//UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = \"Star Cluster\")\n//    UStaticMesh* StarModel;\n// HISM \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\n" },
+		{ "EditInline", "true" },
 		{ "ModuleRelativePath", "StarCluster.h" },
-		{ "ToolTip", "\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd" },
+		{ "ToolTip", "/ \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\nUPROPERTY(EditAnywhere, BlueprintReadWrite, Category = \"Star Cluster\")\n    UStaticMesh* StarModel;\n HISM \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd" },
 	};
 #endif
-	const UECodeGen_Private::FObjectPropertyParams Z_Construct_UClass_AStarCluster_Statics::NewProp_StarModel = { "StarModel", nullptr, (EPropertyFlags)0x0010000000000005, UECodeGen_Private::EPropertyGenFlags::Object, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(AStarCluster, StarModel), Z_Construct_UClass_UStaticMesh_NoRegister, METADATA_PARAMS(Z_Construct_UClass_AStarCluster_Statics::NewProp_StarModel_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_AStarCluster_Statics::NewProp_StarModel_MetaData)) };
+	const UECodeGen_Private::FObjectPropertyParams Z_Construct_UClass_AStarCluster_Statics::NewProp_StarMeshInstances = { "StarMeshInstances", nullptr, (EPropertyFlags)0x001000000008000d, UECodeGen_Private::EPropertyGenFlags::Object, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(AStarCluster, StarMeshInstances), Z_Construct_UClass_UHierarchicalInstancedStaticMeshComponent_NoRegister, METADATA_PARAMS(Z_Construct_UClass_AStarCluster_Statics::NewProp_StarMeshInstances_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_AStarCluster_Statics::NewProp_StarMeshInstances_MetaData)) };
 #if WITH_METADATA
 	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_AStarCluster_Statics::NewProp_ClusterBounds_MetaData[] = {
 		{ "Category", "Star Cluster" },
@@ -423,6 +455,11 @@ template<> APS_ALPHA_API UScriptStruct* StaticStruct<FClusterParameters>()
 #endif
 	const UECodeGen_Private::FObjectPropertyParams Z_Construct_UClass_AStarCluster_Statics::NewProp_StarMaterial = { "StarMaterial", nullptr, (EPropertyFlags)0x0010000000000005, UECodeGen_Private::EPropertyGenFlags::Object, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(AStarCluster, StarMaterial), Z_Construct_UClass_UMaterialInterface_NoRegister, METADATA_PARAMS(Z_Construct_UClass_AStarCluster_Statics::NewProp_StarMaterial_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_AStarCluster_Statics::NewProp_StarMaterial_MetaData)) };
 	const UECodeGen_Private::FPropertyParamsBase* const Z_Construct_UClass_AStarCluster_Statics::PropPointers[] = {
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AStarCluster_Statics::NewProp_Stars_Inner,
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AStarCluster_Statics::NewProp_Stars,
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AStarCluster_Statics::NewProp_StarsModel_ValueProp,
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AStarCluster_Statics::NewProp_StarsModel_Key_KeyProp,
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AStarCluster_Statics::NewProp_StarsModel,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AStarCluster_Statics::NewProp_ClusterType_Underlying,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AStarCluster_Statics::NewProp_ClusterType,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AStarCluster_Statics::NewProp_StarCount,
@@ -435,7 +472,7 @@ template<> APS_ALPHA_API UScriptStruct* StaticStruct<FClusterParameters>()
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AStarCluster_Statics::NewProp_StellarClassProbabilities_Key_KeyProp_Underlying,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AStarCluster_Statics::NewProp_StellarClassProbabilities_Key_KeyProp,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AStarCluster_Statics::NewProp_StellarClassProbabilities,
-		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AStarCluster_Statics::NewProp_StarModel,
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AStarCluster_Statics::NewProp_StarMeshInstances,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AStarCluster_Statics::NewProp_ClusterBounds,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AStarCluster_Statics::NewProp_StarMaterial,
 	};
@@ -481,9 +518,9 @@ template<> APS_ALPHA_API UScriptStruct* StaticStruct<FClusterParameters>()
 		{ FClusterParameters::StaticStruct, Z_Construct_UScriptStruct_FClusterParameters_Statics::NewStructOps, TEXT("ClusterParameters"), &Z_Registration_Info_UScriptStruct_ClusterParameters, CONSTRUCT_RELOAD_VERSION_INFO(FStructReloadVersionInfo, sizeof(FClusterParameters), 2845724219U) },
 	};
 	const FClassRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarCluster_h_Statics::ClassInfo[] = {
-		{ Z_Construct_UClass_AStarCluster, AStarCluster::StaticClass, TEXT("AStarCluster"), &Z_Registration_Info_UClass_AStarCluster, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(AStarCluster), 4062970467U) },
+		{ Z_Construct_UClass_AStarCluster, AStarCluster::StaticClass, TEXT("AStarCluster"), &Z_Registration_Info_UClass_AStarCluster, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(AStarCluster), 1745153623U) },
 	};
-	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarCluster_h_3417588765(TEXT("/Script/APS_ALPHA"),
+	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarCluster_h_3534614298(TEXT("/Script/APS_ALPHA"),
 		Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarCluster_h_Statics::ClassInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarCluster_h_Statics::ClassInfo),
 		Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarCluster_h_Statics::ScriptStructInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarCluster_h_Statics::ScriptStructInfo),
 		nullptr, 0);

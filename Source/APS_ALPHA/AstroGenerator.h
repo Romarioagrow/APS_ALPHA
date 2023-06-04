@@ -27,6 +27,12 @@ public:
 	
 	UPROPERTY(EditAnywhere, Category = "Generation Params")
 		bool bGenerateHomeSystem { false };
+	
+	UPROPERTY(EditAnywhere, Category = "Generation Params")
+		bool bGenerateFullScaledStarCluster { false };
+	
+	UPROPERTY(EditAnywhere, Category = "Generation Params")
+		FVector HomeSystemRadius { 0 };
 
 	UPROPERTY()
 		TArray<AStarSystem*> GeneratedStarSystems;
@@ -48,6 +54,9 @@ public:
 
 	UPROPERTY()
 		UMoonGenerator* MoonGenerator;
+
+	UPROPERTY(EditAnywhere, Category = "AstroObject BP")
+		TSubclassOf<class AStarCluster> BP_StarClusterClass;
 
 	UPROPERTY(EditAnywhere, Category = "AstroObject BP")
 		TSubclassOf<class APlanetarySystem> BP_PlanetarySystemClass;

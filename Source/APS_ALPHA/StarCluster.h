@@ -1,12 +1,15 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
-
-#include "CoreMinimal.h"
+ 
 #include "AstroActor.h"
+#include "Components/HierarchicalInstancedStaticMeshComponent.h"
+#include "StarGenerationModel.h"
 #include "StarSpectralClass.h"
 #include "StarClusterType.h"
 #include "StarType.h"
+#include "Star.h"
+#include "CoreMinimal.h"
 #include "StarCluster.generated.h"
 
 
@@ -60,6 +63,16 @@ public:
     // Конструктор
     AStarCluster();
 
+    UPROPERTY(VisibleAnywhere, Category = "Star Cluster")
+        TArray<AStar*> Stars;
+
+    UPROPERTY(VisibleAnywhere, Category = "Star Cluster")
+        TMap<FVector, FStarModel> StarsModel;
+
+    void AddStarToCluster(AStar* Star);
+
+    void AddStarToClusterModel(FVector StarLocation, FStarModel StarModel);
+
     // Тип скопления
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star Cluster")
         EStarClusterType ClusterType;
@@ -80,9 +93,12 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star Cluster")
         TMap<EStellarClass, float> StellarClassProbabilities;
 
-    // Модель звезды для создания инстансов
+    //// Модель звезды для создания инстансов
+    //UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star Cluster")
+    //    UStaticMesh* StarModel;
+    // HISM звезды для создания инстансов
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star Cluster")
-        UStaticMesh* StarModel;
+        UHierarchicalInstancedStaticMeshComponent* StarMeshInstances;
 
     // Границы звездного скопления
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star Cluster")
