@@ -87,6 +87,8 @@ public:
 
 	EStarClusterType ProvideStarClusterType();
 
+	int GetRandomValueFromRange(EStarClusterType ClusterType);
+
 	void GenerateStarCluster();
 
 };
