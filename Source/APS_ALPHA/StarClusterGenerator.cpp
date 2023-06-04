@@ -21,8 +21,6 @@ FVector UStarClusterGenerator::CalculateStarPosition(int StarIndex, AStarCluster
     case EStarClusterType::OpenCluster: 
     {
         StarCluster->ClusterBounds = FVector(100000.0f, 100000.0f, 100000.0f);
-        //tarCluster->ClusterBounds = FVector(1000.0f, 1000.0f, 1000.0f);
-
         // Равномерное распределение с учетом размера звезды
         StarPosition = FMath::RandPointInBox(FBox(FVector(-StarCluster->ClusterBounds.X / 2 - StarSize
             , -StarCluster->ClusterBounds.Y / 2 - StarSize, -StarCluster->ClusterBounds.Z / 2 - StarSize)
@@ -41,14 +39,7 @@ FVector UStarClusterGenerator::CalculateStarPosition(int StarIndex, AStarCluster
     break;
     case EStarClusterType::Supercluster:
     {
-        //     ClusterBounds = FVector(1000.0f, 1000.0f, 1000.0f);
-        //StarCluster->ClusterBounds = FVector(5000000.0f, 5000000.0f, 5000000.0f);
-        StarCluster->ClusterBounds = FVector(500, 500, 500);
-
-        // Почти равномерное распределение, но с некоторыми большими звездами в центре, с учетом размера звезды
-        //float SphereRadius = FMath::Max(StarCluster->ClusterBounds.X, FMath::Max(StarCluster->ClusterBounds.Y, StarCluster->ClusterBounds.Z)) / 2;
-        //StarPosition = FMath::RandPointInBoundingSphere(SphereRadius);
-
+        StarCluster->ClusterBounds = FVector(1000.0f, 1000.0f, 1000.0f);
 
         double SphereRadius = FMath::Max(StarCluster->ClusterBounds.X, FMath::Max(StarCluster->ClusterBounds.Y, StarCluster->ClusterBounds.Z)) / 2;
         FVector RandomPoint = FMath::VRand();
@@ -61,37 +52,6 @@ FVector UStarClusterGenerator::CalculateStarPosition(int StarIndex, AStarCluster
         {
             StarPosition /= 2;  // Перемещаем большие звезды ближе к центру
         }
-
-
-        //double SphereRadius = FMath::Max(StarCluster->ClusterBounds.X, FMath::Max(StarCluster->ClusterBounds.Y, StarCluster->ClusterBounds.Z)) / 2;
-        //// Создаем случайную точку на единичной сфере
-        //FVector RandomPoint = FMath::VRand();
-        //// Создаем весовой коэффициент на основе размера звезды
-        //double Weight = FMath::Pow(StarSize, 3);
-        //// Случайным образом масштабируем радиус от границы сферы внутрь, учитывая размер звезды и весовой коэффициент
-        //double RandomScale = SphereRadius - (FMath::FRand() * Weight * (SphereRadius - StarSize));
-        //// Применяем масштабирование к нашей случайной точке
-        //RandomPoint *= RandomScale;
-        //StarPosition = RandomPoint;
-
-
-        //double SphereRadius = FMath::Max(StarCluster->ClusterBounds.X, FMath::Max(StarCluster->ClusterBounds.Y, StarCluster->ClusterBounds.Z)) / 2;
-        //// Создаем случайную точку на единичной сфере
-        //FVector RandomPoint = FMath::VRand();
-        //// Случайным образом масштабируем радиус от границы сферы внутрь, учитывая размер звезды
-        //double RandomScale = SphereRadius - (FMath::FRand() * (SphereRadius - StarSize));
-        //// Применяем масштабирование к нашей случайной точке
-        //RandomPoint *= RandomScale;
-        //StarPosition = RandomPoint;
-
-        //double SphereRadius = FMath::Max(StarCluster->ClusterBounds.X, FMath::Max(StarCluster->ClusterBounds.Y, StarCluster->ClusterBounds.Z)) / 2;
-        //// Создаем случайную точку на единичной сфере
-        //FVector RandomPoint = FMath::VRand();
-        //// Случайным образом масштабируем радиус внутри сферы, учитывая размер звезды
-        //double RandomScale = FMath::FRand() * (SphereRadius - StarSize);
-        //// Применяем масштабирование к нашей случайной точке
-        //RandomPoint *= RandomScale;
-        //StarPosition = RandomPoint;
 
         //// Почти равномерное распределение, но с некоторыми большими звездами в центре, с учетом размера звезды
         //StarPosition = FMath::RandPointInBox(FBox(FVector(-StarCluster->ClusterBounds.X / 2 - StarSize
@@ -106,11 +66,14 @@ FVector UStarClusterGenerator::CalculateStarPosition(int StarIndex, AStarCluster
     break;
     case EStarClusterType::Nebula:
     {
+        //StarCluster->ClusterBounds = FVector(10, 10, 10);
+
         // Распределение звезд по спирали с учетом размера звезды
         double SpiralRadius = StarIndex * StarSize;
         //double SpiralRadius = StarIndex * (StarSize + StarSize); // Увеличиваем радиус спирали на размер звезды
         double SpiralAngle = 2 * PI * StarIndex / StarCluster->StarCount;
         StarPosition = FVector(SpiralRadius * FMath::Cos(SpiralAngle), SpiralRadius * FMath::Sin(SpiralAngle), FMath::RandRange(-StarCluster->ClusterBounds.Z / 2, StarCluster->ClusterBounds.Z / 2));
+        //StarPosition /= 5;
     }
     break;
     }

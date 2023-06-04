@@ -194,7 +194,7 @@ TMap<EStarClusterType, TPair<int, int>> ClusterStarAmount =
     {EStarClusterType::OpenCluster, {500, 5000}},
     {EStarClusterType::GlobularCluster, {5000, 25000}},
     {EStarClusterType::Supercluster, {25000, 50000}},
-    {EStarClusterType::Nebula, {1000, 10000}},
+    {EStarClusterType::Nebula, {10000, 20000}},
     {EStarClusterType::Unknown, {0, 0}}
 };
 
