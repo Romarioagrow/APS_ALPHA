@@ -356,6 +356,63 @@ EStellarClass UStarGenerator::GenerateStarClassByRandomWeights()
     return ChosenStellarClass;
 }
 
+double UStarGenerator::CalculateEmission(float starLuminosity)
+{
+
+    if (starLuminosity < MinStarLuminosity)
+    return MinStarLuminosity;
+	else if (starLuminosity > MaxStarLuminosity)
+        return MaxStarLuminosity;
+    else 
+		return starLuminosity;
+
+
+    // Нормализация светимости звезды в пределах заданного диапазона.
+    //double normalizedLuminosity = (starLuminosity - MinStarLuminosity) / (MaxStarLuminosity - MinStarLuminosity);
+
+    //// Задайте минимальное и максимальное значения для коэффициента эмиссии.
+    //const double MinEmissionCoefficient = 25.0;
+    //const double MaxEmissionCoefficient = 1000.0;
+
+    //// Используйте нормализованную светимость для интерполяции между минимальным и максимальным значениями коэффициента эмиссии.
+    //double emissionCoefficient = FMath::Lerp(MinEmissionCoefficient, MaxEmissionCoefficient, normalizedLuminosity);
+
+    //// Верните вычисленный коэффициент эмиссии.
+    //return emissionCoefficient;
+
+    //// Вычислить коэффициент эмиссии как отношение светимости звезды к светимости Солнца.
+    //double emissionCoefficient = starLuminosity / SolarLuminosity;
+
+    //// Умножить коэффициент эмиссии на заданный базовый множитель.
+    //// Предполагается, что базовый множитель был установлен так, чтобы при светимости, равной светимости Солнца,
+    //// коэффициент эмиссии был равен желаемому значению для Солнца (например, 25 или 50).
+    //emissionCoefficient *= BaseEmissionMultiplier;
+
+    //// Задать максимальное значение для коэффициента эмиссии, чтобы избежать проблем с мерцанием.
+    //const double MaxEmissionCoefficient = 1000.0f;
+    //if (emissionCoefficient > MaxEmissionCoefficient) {
+    //    emissionCoefficient = MaxEmissionCoefficient;
+    //}
+
+    //// Вернуть вычисленный коэффициент эмиссии.
+    //return emissionCoefficient;
+
+    //// Нормализовать светимость звезды в пределах заданного диапазона.
+    //double normalizedLuminosity = (starLuminosity - MinStarLuminosity) / (MaxStarLuminosity - MinStarLuminosity);
+
+    //// Вычислить коэффициент эмиссии как отношение нормализованной светимости звезды к светимости Солнца.
+    //double emissionCoefficient = normalizedLuminosity / SolarEmissiveLuminosity;
+
+    //// Задать максимальное значение для коэффициента эмиссии, чтобы избежать проблем с мерцанием.
+    //const double MaxEmissionCoefficient = 1000.0f;
+    //if (emissionCoefficient > MaxEmissionCoefficient) {
+    //    emissionCoefficient = MaxEmissionCoefficient;
+    //}
+
+    //// Вернуть вычисленный коэффициент эмиссии.
+    //return emissionCoefficient;
+}
+
 FString UStarGenerator::GetSpectralClassColor(ESpectralClass Class)
 {
     if (SpectralClassColorMap.Contains(Class))

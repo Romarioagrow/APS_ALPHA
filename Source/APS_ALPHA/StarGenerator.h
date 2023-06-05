@@ -21,6 +21,13 @@ public:
 	UStarGenerator();
 
 public:
+	// Базовая светимость Солнца.
+	const double SolarEmissiveLuminosity = 1.0;
+	// Минимальная и максимальная светимости для звезд.
+	const double MinStarLuminosity = 100;
+	const double MaxStarLuminosity = 500;
+
+public:
 	void ApplySpectralMaterial(AStar* NewStar, FStarModel StarModel);
 
 	double WienLaw(double temperature);
@@ -33,7 +40,6 @@ public:
 
 	FLinearColor TemperatureToRGB(float Temperature);
 
-
 	void ApplyModel(AStar* NewStar, FStarModel StarModel);
 
 	FStarModel GenerateRandomStarModel();
@@ -43,6 +49,9 @@ public:
 	FString CalculateMainSequenceStarAge(double mass);
 
 	EStellarClass GenerateStarClassByRandomWeights();
+
+	// Функция для вычисления эмиссии звезды.
+	double CalculateEmission(float starLuminosity);// {
 
 private:
 	FString GetSpectralClassColor(ESpectralClass Class);
