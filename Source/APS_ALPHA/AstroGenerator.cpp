@@ -257,7 +257,10 @@ void AAstroGenerator::GenerateStarCluster()
             NewStarCluster->StarMeshInstances->SetCustomDataValue(StarInstIndex, 2, ColorValue.B);
 
 
-            NewStarCluster->StarMeshInstances->SetCustomDataValue(StarInstIndex, 3, NewStarModel.Luminosity);
+            //NewStarCluster->StarMeshInstances->SetCustomDataValue(StarInstIndex, 3, NewStarModel.Luminosity);
+            double StarEmission = StarGenerator->CalculateEmission(NewStarModel.Luminosity * 25);
+            //StarEmission *= 25;
+            NewStarCluster->StarMeshInstances->SetCustomDataValue(StarInstIndex, 3, StarEmission);
         }
 
         if (bGenerateFullScaledStarCluster)
@@ -270,3 +273,5 @@ void AAstroGenerator::GenerateStarCluster()
         UE_LOG(LogTemp, Warning, TEXT("StarClusterGenerator is not implemented yet!"));
     }
 }
+
+
