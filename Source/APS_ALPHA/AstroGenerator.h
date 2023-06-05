@@ -29,6 +29,9 @@ public:
 		bool bGenerateHomeSystem { false };
 	
 	UPROPERTY(EditAnywhere, Category = "Generation Params")
+		bool bGenerateStarCluster { true };
+	
+	UPROPERTY(EditAnywhere, Category = "Generation Params")
 		bool bGenerateFullScaledStarCluster { false };
 	
 	UPROPERTY(EditAnywhere, Category = "Generation Params")
@@ -36,6 +39,12 @@ public:
 
 	UPROPERTY(EditAnywhere, Category = "Generation Params", meta = (EditCondition = "!bGenerateRandomCluster"))
 		EStarClusterType StarClusterType;
+
+	UPROPERTY(EditAnywhere, Category = "Star Cluster", meta = (EditCondition = "!bGenerateRandomCluster"))
+		EStarClusterPopulation StarClusterPopulation;
+
+	UPROPERTY(EditAnywhere, Category = "Star Cluster", meta = (EditCondition = "!bGenerateRandomCluster"))
+		EStarClusterComposition StarClusterComposition;
 	
 	UPROPERTY(EditAnywhere, Category = "Generation Params")
 		FVector HomeSystemRadius { 0 };
