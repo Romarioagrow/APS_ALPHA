@@ -4,7 +4,6 @@
 		"Module.APS_ALPHA.1_of_3.cpp.obj": [
 			"Aircraft.gen.cpp.obj",
 			"AnimationState.gen.cpp.obj",
-			"APS_ALPHA.init.gen.cpp.obj",
 			"APS_ALPHAGameModeBase.gen.cpp.obj",
 			"Asteroid.gen.cpp.obj",
 			"AsteroidBelt.gen.cpp.obj",
@@ -51,7 +50,8 @@
 			"Moon.gen.cpp.obj",
 			"MoonGenerationModel.gen.cpp.obj",
 			"MoonGenerator.gen.cpp.obj",
-			"MoonType.gen.cpp.obj"
+			"MoonType.gen.cpp.obj",
+			"APS_ALPHA.init.gen.cpp.obj"
 		],
 		"Module.APS_ALPHA.2_of_3.cpp.obj": [
 			"OrbitalBody.gen.cpp.obj",
@@ -77,7 +77,6 @@
 			"SpaceStation.gen.cpp.obj",
 			"SpectralType.gen.cpp.obj",
 			"Star.gen.cpp.obj",
-			"StarCluster.gen.cpp.obj",
 			"StarClusterGenerator.gen.cpp.obj",
 			"StarClusterType.gen.cpp.obj",
 			"StarGenerationModel.gen.cpp.obj",
@@ -85,7 +84,8 @@
 			"StarSector.gen.cpp.obj",
 			"StarSpectralClass.gen.cpp.obj",
 			"StarSystem.gen.cpp.obj",
-			"StarSystemGenerationModel.gen.cpp.obj"
+			"StarSystemGenerationModel.gen.cpp.obj",
+			"StarCluster.gen.cpp.obj"
 		],
 		"Module.APS_ALPHA.3_of_3.cpp.obj": [
 			"StarSystemGenerator.gen.cpp.obj",
@@ -163,7 +163,6 @@
 			"SpaceshipGravityActor.cpp.obj",
 			"SpaceStation.cpp.obj",
 			"Star.cpp.obj",
-			"StarCluster.cpp.obj",
 			"StarClusterGenerator.cpp.obj",
 			"StarGenerationModel.cpp.obj",
 			"StarGenerator.cpp.obj",
@@ -178,7 +177,8 @@
 			"UniverseProceduralGenerator.cpp.obj",
 			"VehicleControlling.cpp.obj",
 			"WorldActor.cpp.obj",
-			"AstroGenerator.cpp.obj"
+			"AstroGenerator.cpp.obj",
+			"StarCluster.cpp.obj"
 		]
 	}
 }

@@ -246,15 +246,22 @@ void AAstroGenerator::GenerateStarCluster()
             NewStarCluster->AddStarToClusterModel(StarPosition, NewStarModel);
 
 
+
             // Создаем инстанс звезды и добавляем его в HISM компонент
             FTransform StarTransform(StarPosition);
             StarTransform.SetScale3D(FVector(NewStarModel.Radius));
-            NewStarCluster->StarMeshInstances->AddInstance(StarTransform);
+            int32 StarInstIndex = NewStarCluster->StarMeshInstances->AddInstance(StarTransform, true);
+            FLinearColor ColorValue = StarGenerator->GetStarColor(NewStarModel.SpectralClass, NewStarModel.SpectralSubclass);
+            NewStarCluster->StarMeshInstances->SetCustomDataValue(StarInstIndex, 0, ColorValue.R);
+            NewStarCluster->StarMeshInstances->SetCustomDataValue(StarInstIndex, 1, ColorValue.G);
+            NewStarCluster->StarMeshInstances->SetCustomDataValue(StarInstIndex, 2, ColorValue.B);
+
+
+            NewStarCluster->StarMeshInstances->SetCustomDataValue(StarInstIndex, 3, NewStarModel.Luminosity);
         }
 
         if (bGenerateFullScaledStarCluster)
         {
-            //NewStarCluster->SetActorScale3D(FVector(100000000, 100000000, 100000000));
             NewStarCluster->SetActorScale3D(FVector(10000000000, 10000000000, 10000000000));
         }
     }
