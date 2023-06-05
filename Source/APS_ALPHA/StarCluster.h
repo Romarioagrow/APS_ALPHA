@@ -9,6 +9,8 @@
 #include "StarClusterType.h"
 #include "StarType.h"
 #include "Star.h"
+#include "StarClusterPopulation.h"
+#include "StarClusterComposition.h"
 #include "CoreMinimal.h"
 #include "StarCluster.generated.h"
 
@@ -62,6 +64,22 @@ class APS_ALPHA_API AStarCluster : public AAstroActor
 public:
     // Конструктор
     AStarCluster();
+        
+    UPROPERTY(VisibleAnywhere, Category = "Star Cluster")
+        EStarClusterPopulation StarClusterPopulation;
+
+    UPROPERTY(VisibleAnywhere, Category = "Star Cluster")
+        EStarClusterComposition StarClusterComposition;
+
+
+
+    /*UPROPERTY(VisibleAnywhere, Category = "Star Cluster")
+        EStarClusterPop
+
+
+
+        UPROPERTY(VisibleAnywhere, Category = "Star Cluster")*/
+
 
     UPROPERTY(VisibleAnywhere, Category = "Star Cluster")
         TArray<AStar*> Stars;

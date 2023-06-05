@@ -28,7 +28,11 @@ void AAstroGenerator::BeginPlay()
 	    GenerateRandomStarSystem();
     }
 
-    GenerateStarCluster();
+    if (bGenerateStarCluster)
+    {
+        GenerateStarCluster();
+    }
+
 }
 
 void AAstroGenerator::GenerateRandomStarSystem()
@@ -191,7 +195,8 @@ EStarClusterType AAstroGenerator::ProvideStarClusterType()
 
 TMap<EStarClusterType, TPair<int, int>> ClusterStarAmount =
 {
-    {EStarClusterType::OpenCluster, {500, 5000}},
+    //{EStarClusterType::OpenCluster, {500, 5000}},
+    {EStarClusterType::OpenCluster, {15000, 50000}},
     {EStarClusterType::GlobularCluster, {5000, 25000}},
     {EStarClusterType::Supercluster, {25000, 50000}},
     {EStarClusterType::Nebula, {10000, 20000}},
