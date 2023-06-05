@@ -77,17 +77,18 @@
 			"SpaceStation.gen.cpp.obj",
 			"SpectralType.gen.cpp.obj",
 			"Star.gen.cpp.obj",
+			"StarClusterComposition.gen.cpp.obj",
 			"StarClusterGenerator.gen.cpp.obj",
+			"StarClusterPopulation.gen.cpp.obj",
 			"StarClusterType.gen.cpp.obj",
 			"StarGenerationModel.gen.cpp.obj",
 			"StarGenerator.gen.cpp.obj",
-			"StarSector.gen.cpp.obj",
-			"StarSpectralClass.gen.cpp.obj",
 			"StarCluster.gen.cpp.obj",
-			"StarClusterComposition.gen.cpp.obj",
-			"StarClusterPopulation.gen.cpp.obj"
+			"StarClusterSize.gen.cpp.obj"
 		],
 		"Module.APS_ALPHA.3_of_3.cpp.obj": [
+			"StarSector.gen.cpp.obj",
+			"StarSpectralClass.gen.cpp.obj",
 			"StarSystem.gen.cpp.obj",
 			"StarSystemGenerationModel.gen.cpp.obj",
 			"StarSystemGenerator.gen.cpp.obj",

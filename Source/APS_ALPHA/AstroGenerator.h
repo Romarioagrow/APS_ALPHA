@@ -37,7 +37,7 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Generation Params")
 		bool bGenerateRandomCluster { true };
 
-	UPROPERTY(EditAnywhere, Category = "Generation Params", meta = (EditCondition = "!bGenerateRandomCluster"))
+	UPROPERTY(EditAnywhere, Category = "Star Cluster", meta = (EditCondition = "!bGenerateRandomCluster"))
 		EStarClusterType StarClusterType;
 
 	UPROPERTY(EditAnywhere, Category = "Star Cluster", meta = (EditCondition = "!bGenerateRandomCluster"))
@@ -45,6 +45,9 @@ public:
 
 	UPROPERTY(EditAnywhere, Category = "Star Cluster", meta = (EditCondition = "!bGenerateRandomCluster"))
 		EStarClusterComposition StarClusterComposition;
+
+	UPROPERTY(EditAnywhere, Category = "Star Cluster", meta = (EditCondition = "!bGenerateRandomCluster"))
+		EStarClusterSize StarClusterSize;
 	
 	UPROPERTY(EditAnywhere, Category = "Generation Params")
 		FVector HomeSystemRadius { 0 };

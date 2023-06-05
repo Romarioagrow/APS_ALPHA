@@ -582,4 +582,9 @@
       <Filter>Source\APS_ALPHA</Filter>
     </ClInclude>
   </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\..\Source\APS_ALPHA\StarClusterSize.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+  </ItemGroup>
 </Project>
