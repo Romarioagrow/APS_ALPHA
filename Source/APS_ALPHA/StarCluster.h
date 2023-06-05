@@ -105,8 +105,8 @@ public:
         FVector ClusterBounds;
 
     // Материал звезд
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star Cluster")
-        UMaterialInterface* StarMaterial;
+    /*UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star Cluster")
+        UMaterialInterface* StarMaterial;*/
 
     // Функция генерации скопления
     UFUNCTION(BlueprintCallable, Category = "Star Cluster")
