@@ -11,6 +11,7 @@
 #include "Star.h"
 #include "StarClusterPopulation.h"
 #include "StarClusterComposition.h"
+#include "StarClusterSize.h"
 #include "CoreMinimal.h"
 #include "StarCluster.generated.h"
 
@@ -70,6 +71,9 @@ public:
 
     UPROPERTY(VisibleAnywhere, Category = "Star Cluster")
         EStarClusterComposition StarClusterComposition;
+    
+    UPROPERTY(VisibleAnywhere, Category = "Star Cluster")
+        EStarClusterSize StarClusterSize;
 
 
 
