@@ -180,18 +180,7 @@ void AAstroGenerator::GenerateRandomStarSystem()
     }
 }
 
-EStarClusterType AAstroGenerator::ProvideStarClusterType()
-{
-	//...
-    if (bGenerateRandomCluster)
-    {
-        return static_cast<EStarClusterType>(FMath::RandRange(0, static_cast<int>(EStarClusterType::Nebula)));
-    }
-    else
-    {
-        return StarClusterType;
-    }
-}
+
 
 TMap<EStarClusterType, TPair<int, int>> ClusterStarAmount =
 {
@@ -203,7 +192,7 @@ TMap<EStarClusterType, TPair<int, int>> ClusterStarAmount =
     {EStarClusterType::Unknown, {0, 0}}
 };
 
-int AAstroGenerator::GetRandomValueFromRange(EStarClusterType ClusterType)
+int AAstroGenerator::GetRandomValueFromStarAmountRange(EStarClusterType ClusterType)
 {
     if (ClusterStarAmount.Contains(ClusterType))
     {
@@ -225,32 +214,61 @@ void AAstroGenerator::GenerateStarCluster()
         //...
         UWorld* World = GetWorld();
 
-        EStarClusterType ClusterType = ProvideStarClusterType();//static_cast<EStarClusterType>(FMath::RandRange(0, static_cast<int>(EStarClusterType::Nebula)));
+        //FStarClusterModel StarClusterModel = StarClusterGenerator->;
+        FStarClusterModel StarClusterModel;
+        if (bGenerateRandomCluster)
+        {
+            StarClusterModel = StarClusterGenerator->GetRandomStarClusterModel();
+        }
+        else
+        {
+            StarClusterModel.StarClusterSize = StarClusterSize;
+            StarClusterModel.StarClusterType = StarClusterType;
+            StarClusterModel.StarClusterPopulation = StarClusterPopulation;
+            StarClusterModel.StarClusterComposition = StarClusterComposition;
+        }
+
+        EStarClusterType ClusterType = StarClusterModel.StarClusterType;//GetRandomClusterType();//static_cast<EStarClusterType>(FMath::RandRange(0, static_cast<int>(EStarClusterType::Nebula)));
         AStarCluster* NewStarCluster = World->SpawnActor<AStarCluster>(BP_StarClusterClass);
         NewStarCluster->AttachToActor(this, FAttachmentTransformRules::KeepWorldTransform);
 
-        NewStarCluster->ClusterType = ClusterType;
-        NewStarCluster->StarCount = GetRandomValueFromRange(ClusterType);//ClusterStarAmount[ClusterType];//FMath::RandRange(100, 1000);
-        NewStarCluster->StarDensity = FMath::RandRange(0.1f, 1.0f);
-        NewStarCluster->ClusterBounds = FVector(1000.0f, 1000.0f, 1000.0f);
 
-        UE_LOG(LogTemp, Warning, TEXT("StarCount: %d"), NewStarCluster->StarCount);
+        /// Calculate Cluster Params
+        //NewStarCluster->ClusterType = ClusterType;
+        NewStarCluster->StarAmount = StarClusterGenerator->GetStarsAmountByRange(StarClusterModel.StarClusterSize);//GetRandomValueFromStarAmountRange(ClusterType);//ClusterStarAmount[ClusterType];//FMath::RandRange(100, 1000);
+        NewStarCluster->StarDensity = StarClusterGenerator->GetStarClusterDensityByRange();//FMath::RandRange(0.1f, 1.0f); /// from generation struct
+        NewStarCluster->ClusterBounds = StarClusterGenerator->GetStarClusterBoundsByRange(ClusterType);//FVector(1000.0f, 1000.0f, 1000.0f); /// from generation struct
+        //NewStarCluster->PopulationProbability = ; /// from generation struct
+        //NewStarCluster->SpectralProbability = ; /// from generation struct
+        
+        ///
+
+
+        UE_LOG(LogTemp, Warning, TEXT("StarCount: %d"), NewStarCluster->StarAmount);
         UE_LOG(LogTemp, Warning, TEXT("StarDensity: %f"), NewStarCluster->StarDensity);
         UE_LOG(LogTemp, Warning, TEXT("ClusterBounds: %s"), *NewStarCluster->ClusterBounds.ToString());
         UE_LOG(LogTemp, Warning, TEXT("ClusterType: %d"), static_cast<int>(NewStarCluster->ClusterType));
 
-        for (size_t i = 0; i < NewStarCluster->StarCount; i++)
+        for (size_t i = 0; i < NewStarCluster->StarAmount; i++)
         {
             // Создаем модель звезды
-            FStarModel NewStarModel = StarGenerator->GenerateRandomStarModel();
+            FStarModel NewStarModel;
+
+            if (bGenerateRandomCluster)
+            {
+                NewStarModel = StarGenerator->GenerateRandomStarModel();
+            }
+            else
+            {
+                NewStarModel = StarGenerator->GenerateStarModelByProbability(StarClusterModel);
+            }
+            
 
             // Позиционируем звезду в кластере
             FVector StarPosition = StarClusterGenerator->CalculateStarPosition(i, NewStarCluster, NewStarModel);
 
             // Добавляем модель звезды в список моделей звезд кластера
             NewStarCluster->AddStarToClusterModel(StarPosition, NewStarModel);
-
-
 
             // Создаем инстанс звезды и добавляем его в HISM компонент
             FTransform StarTransform(StarPosition);

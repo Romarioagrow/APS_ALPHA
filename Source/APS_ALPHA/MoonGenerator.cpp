@@ -167,8 +167,8 @@ EMoonType UMoonGenerator::GenerateMoonType(FPlanetGenerationModel PlanetModel)
 double UMoonGenerator::CalculateRandomMoonMass()
 {
     // Convert the range from a logarithmic scale to a linear scale
-    double minMass = FMath::Pow(10, -4);
-    double maxMass = FMath::Pow(10, -1.5);
+    double minMass = FMath::Pow(10.0, -4.0);
+    double maxMass = FMath::Pow(10.0, -1.5);
 
     // Generate a random mass within the range
     double moonMass = FMath::RandRange(minMass, maxMass);

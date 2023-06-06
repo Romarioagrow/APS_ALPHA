@@ -13,9 +13,8 @@ struct FStarModel :
 {
     GENERATED_BODY()
     
-        // Тип звезды (например, карлик, гигант, сверхгигант и т.д.)
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star")
-        EStellarClass StellarClass; /// TODO: Rename to StellarType
+        EStellarType StellarType; 
 	
 	UPROPERTY(VisibleAnywhere)
 		ESpectralClass SpectralClass;
@@ -42,6 +41,6 @@ struct FStarModel :
 		int SpectralSubclass;
 
 	UPROPERTY(VisibleAnywhere)
-		EStellarClass StarStellarClass;
+		EStellarType StarStellarClass;
 };
 
