@@ -128,8 +128,8 @@ private:
 		{
 			EStarClusterComposition::OnlyBlue,
 			{
-				{ESpectralClass::O, 50}, // O-класс, очень гор€чие и €ркие звезды. ќчень редкие.
-				{ESpectralClass::B, 50}, // B-класс, гор€чие, €ркие звезды. –едкие.
+				{ESpectralClass::O, 90}, // O-класс, очень гор€чие и €ркие звезды. ќчень редкие.
+				{ESpectralClass::B, 10}, // B-класс, гор€чие, €ркие звезды. –едкие.
 			}
 		},
 		{
@@ -233,7 +233,6 @@ private:
 		{
 			EStarClusterComposition::OnlyRed,
 			{
-				//{ESpectralClass::K, 50}, // K-класс, оранжевые звезды. ƒостаточно обычны.
 				{ESpectralClass::M, 100}, // K-класс, оранжевые звезды. ƒостаточно обычны.
 			}
 		},

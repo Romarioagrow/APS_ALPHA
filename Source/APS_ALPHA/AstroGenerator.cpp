@@ -240,6 +240,10 @@ void AAstroGenerator::GenerateStarCluster()
         NewStarCluster->ClusterBounds = StarClusterGenerator->GetStarClusterBoundsByRange(ClusterType);//FVector(1000.0f, 1000.0f, 1000.0f); /// from generation struct
         //NewStarCluster->PopulationProbability = ; /// from generation struct
         //NewStarCluster->SpectralProbability = ; /// from generation struct
+        NewStarCluster->ClusterType = ClusterType;
+        NewStarCluster->StarClusterComposition = StarClusterModel.StarClusterComposition;
+        NewStarCluster->StarClusterPopulation = StarClusterModel.StarClusterPopulation;
+        NewStarCluster->StarClusterSize = StarClusterModel.StarClusterSize;
         
         ///
 
