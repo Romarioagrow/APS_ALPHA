@@ -11,7 +11,7 @@ void EmptyLinkFunctionForGeneratedCodeStarGenerationModel() {}
 // Cross Module References
 	APS_ALPHA_API UEnum* Z_Construct_UEnum_APS_ALPHA_ESpectralClass();
 	APS_ALPHA_API UEnum* Z_Construct_UEnum_APS_ALPHA_ESpectralType();
-	APS_ALPHA_API UEnum* Z_Construct_UEnum_APS_ALPHA_EStellarClass();
+	APS_ALPHA_API UEnum* Z_Construct_UEnum_APS_ALPHA_EStellarType();
 	APS_ALPHA_API UScriptStruct* Z_Construct_UScriptStruct_FCelestialGenerationModel();
 	APS_ALPHA_API UScriptStruct* Z_Construct_UScriptStruct_FStarModel();
 	UPackage* Z_Construct_UPackage__Script_APS_ALPHA();
@@ -38,11 +38,11 @@ template<> APS_ALPHA_API UScriptStruct* StaticStruct<FStarModel>()
 		static const UECodeGen_Private::FMetaDataPairParam Struct_MetaDataParams[];
 #endif
 		static void* NewStructOps();
-		static const UECodeGen_Private::FBytePropertyParams NewProp_StellarClass_Underlying;
+		static const UECodeGen_Private::FBytePropertyParams NewProp_StellarType_Underlying;
 #if WITH_METADATA
-		static const UECodeGen_Private::FMetaDataPairParam NewProp_StellarClass_MetaData[];
+		static const UECodeGen_Private::FMetaDataPairParam NewProp_StellarType_MetaData[];
 #endif
-		static const UECodeGen_Private::FEnumPropertyParams NewProp_StellarClass;
+		static const UECodeGen_Private::FEnumPropertyParams NewProp_StellarType;
 		static const UECodeGen_Private::FBytePropertyParams NewProp_SpectralClass_Underlying;
 #if WITH_METADATA
 		static const UECodeGen_Private::FMetaDataPairParam NewProp_SpectralClass_MetaData[];
@@ -95,23 +95,19 @@ template<> APS_ALPHA_API UScriptStruct* StaticStruct<FStarModel>()
 	{
 		return (UScriptStruct::ICppStructOps*)new UScriptStruct::TCppStructOps<FStarModel>();
 	}
-	const UECodeGen_Private::FBytePropertyParams Z_Construct_UScriptStruct_FStarModel_Statics::NewProp_StellarClass_Underlying = { "UnderlyingType", nullptr, (EPropertyFlags)0x0000000000000000, UECodeGen_Private::EPropertyGenFlags::Byte, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, 0, nullptr, METADATA_PARAMS(nullptr, 0) };
+	const UECodeGen_Private::FBytePropertyParams Z_Construct_UScriptStruct_FStarModel_Statics::NewProp_StellarType_Underlying = { "UnderlyingType", nullptr, (EPropertyFlags)0x0000000000000000, UECodeGen_Private::EPropertyGenFlags::Byte, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, 0, nullptr, METADATA_PARAMS(nullptr, 0) };
 #if WITH_METADATA
-	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UScriptStruct_FStarModel_Statics::NewProp_StellarClass_MetaData[] = {
+	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UScriptStruct_FStarModel_Statics::NewProp_StellarType_MetaData[] = {
 		{ "Category", "Star" },
-		{ "Comment", "// \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd (\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd, \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd, \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd, \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd \xef\xbf\xbd \xef\xbf\xbd.\xef\xbf\xbd.)\n" },
 		{ "ModuleRelativePath", "StarGenerationModel.h" },
-		{ "ToolTip", "\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd (\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd, \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd, \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd, \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd \xef\xbf\xbd \xef\xbf\xbd.\xef\xbf\xbd.)" },
 	};
 #endif
-	const UECodeGen_Private::FEnumPropertyParams Z_Construct_UScriptStruct_FStarModel_Statics::NewProp_StellarClass = { "StellarClass", nullptr, (EPropertyFlags)0x0010000000000005, UECodeGen_Private::EPropertyGenFlags::Enum, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FStarModel, StellarClass), Z_Construct_UEnum_APS_ALPHA_EStellarClass, METADATA_PARAMS(Z_Construct_UScriptStruct_FStarModel_Statics::NewProp_StellarClass_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FStarModel_Statics::NewProp_StellarClass_MetaData)) }; // 3378852079
+	const UECodeGen_Private::FEnumPropertyParams Z_Construct_UScriptStruct_FStarModel_Statics::NewProp_StellarType = { "StellarType", nullptr, (EPropertyFlags)0x0010000000000005, UECodeGen_Private::EPropertyGenFlags::Enum, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FStarModel, StellarType), Z_Construct_UEnum_APS_ALPHA_EStellarType, METADATA_PARAMS(Z_Construct_UScriptStruct_FStarModel_Statics::NewProp_StellarType_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FStarModel_Statics::NewProp_StellarType_MetaData)) }; // 3048584829
 	const UECodeGen_Private::FBytePropertyParams Z_Construct_UScriptStruct_FStarModel_Statics::NewProp_SpectralClass_Underlying = { "UnderlyingType", nullptr, (EPropertyFlags)0x0000000000000000, UECodeGen_Private::EPropertyGenFlags::Byte, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, 0, nullptr, METADATA_PARAMS(nullptr, 0) };
 #if WITH_METADATA
 	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UScriptStruct_FStarModel_Statics::NewProp_SpectralClass_MetaData[] = {
 		{ "Category", "StarModel" },
-		{ "Comment", "/// TODO: Rename to StellarType\n" },
 		{ "ModuleRelativePath", "StarGenerationModel.h" },
-		{ "ToolTip", "TODO: Rename to StellarType" },
 	};
 #endif
 	const UECodeGen_Private::FEnumPropertyParams Z_Construct_UScriptStruct_FStarModel_Statics::NewProp_SpectralClass = { "SpectralClass", nullptr, (EPropertyFlags)0x0010000000020001, UECodeGen_Private::EPropertyGenFlags::Enum, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FStarModel, SpectralClass), Z_Construct_UEnum_APS_ALPHA_ESpectralClass, METADATA_PARAMS(Z_Construct_UScriptStruct_FStarModel_Statics::NewProp_SpectralClass_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FStarModel_Statics::NewProp_SpectralClass_MetaData)) }; // 1101356590
@@ -172,10 +168,10 @@ template<> APS_ALPHA_API UScriptStruct* StaticStruct<FStarModel>()
 		{ "ModuleRelativePath", "StarGenerationModel.h" },
 	};
 #endif
-	const UECodeGen_Private::FEnumPropertyParams Z_Construct_UScriptStruct_FStarModel_Statics::NewProp_StarStellarClass = { "StarStellarClass", nullptr, (EPropertyFlags)0x0010000000020001, UECodeGen_Private::EPropertyGenFlags::Enum, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FStarModel, StarStellarClass), Z_Construct_UEnum_APS_ALPHA_EStellarClass, METADATA_PARAMS(Z_Construct_UScriptStruct_FStarModel_Statics::NewProp_StarStellarClass_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FStarModel_Statics::NewProp_StarStellarClass_MetaData)) }; // 3378852079
+	const UECodeGen_Private::FEnumPropertyParams Z_Construct_UScriptStruct_FStarModel_Statics::NewProp_StarStellarClass = { "StarStellarClass", nullptr, (EPropertyFlags)0x0010000000020001, UECodeGen_Private::EPropertyGenFlags::Enum, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FStarModel, StarStellarClass), Z_Construct_UEnum_APS_ALPHA_EStellarType, METADATA_PARAMS(Z_Construct_UScriptStruct_FStarModel_Statics::NewProp_StarStellarClass_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FStarModel_Statics::NewProp_StarStellarClass_MetaData)) }; // 3048584829
 	const UECodeGen_Private::FPropertyParamsBase* const Z_Construct_UScriptStruct_FStarModel_Statics::PropPointers[] = {
-		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FStarModel_Statics::NewProp_StellarClass_Underlying,
-		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FStarModel_Statics::NewProp_StellarClass,
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FStarModel_Statics::NewProp_StellarType_Underlying,
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FStarModel_Statics::NewProp_StellarType,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FStarModel_Statics::NewProp_SpectralClass_Underlying,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FStarModel_Statics::NewProp_SpectralClass,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FStarModel_Statics::NewProp_SpectralType_Underlying,
@@ -215,9 +211,9 @@ template<> APS_ALPHA_API UScriptStruct* StaticStruct<FStarModel>()
 		static const FStructRegisterCompiledInInfo ScriptStructInfo[];
 	};
 	const FStructRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarGenerationModel_h_Statics::ScriptStructInfo[] = {
-		{ FStarModel::StaticStruct, Z_Construct_UScriptStruct_FStarModel_Statics::NewStructOps, TEXT("StarModel"), &Z_Registration_Info_UScriptStruct_StarModel, CONSTRUCT_RELOAD_VERSION_INFO(FStructReloadVersionInfo, sizeof(FStarModel), 491934795U) },
+		{ FStarModel::StaticStruct, Z_Construct_UScriptStruct_FStarModel_Statics::NewStructOps, TEXT("StarModel"), &Z_Registration_Info_UScriptStruct_StarModel, CONSTRUCT_RELOAD_VERSION_INFO(FStructReloadVersionInfo, sizeof(FStarModel), 3171828587U) },
 	};
-	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarGenerationModel_h_897091747(TEXT("/Script/APS_ALPHA"),
+	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarGenerationModel_h_1494247952(TEXT("/Script/APS_ALPHA"),
 		nullptr, 0,
 		Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarGenerationModel_h_Statics::ScriptStructInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarGenerationModel_h_Statics::ScriptStructInfo),
 		nullptr, 0);

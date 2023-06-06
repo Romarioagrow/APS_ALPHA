@@ -1,7 +1,7 @@
 #pragma once
 
 UENUM(BlueprintType)
-enum class EStellarClass : uint8
+enum class EStellarType : uint8
 {
 	HyperGiant		UMETA(DisplayName = "Hypergiant"), // Гипергиганты (экстремально большие звезды)
 	SuperGiant		UMETA(DisplayName = "Super Giant"), // Супергиганты (наибольшие звезды)

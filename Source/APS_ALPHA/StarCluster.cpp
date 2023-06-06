@@ -14,7 +14,7 @@ AStarCluster::AStarCluster()
     RootComponent->SetupAttachment(StarMeshInstances);
 
     // Инициализация значений по умолчанию
-    StarCount = 100;
+    StarAmount = 100;
     StarDensity = 1.0f;
     ClusterType = EStarClusterType::OpenCluster;
     ClusterBounds = FVector(1000.0f, 1000.0f, 1000.0f);

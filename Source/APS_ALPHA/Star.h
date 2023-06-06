@@ -57,7 +57,7 @@ private:
 		int SurfaceTemperature;
 	
 	UPROPERTY(VisibleAnywhere)
-		EStellarClass StellarClass;
+		EStellarType StellarClass;
 	
 	UPROPERTY(VisibleAnywhere)
 		ESpectralClass SpectralClass;
@@ -88,7 +88,7 @@ public:
 
 	void SetSurfaceTemperature(int SurfaceTemperature);
 
-	void SetStarType(EStellarClass StarType);
+	void SetStarType(EStellarType StarType);
 
 	void SetStarSpectralClass(ESpectralClass StarSpectralClass);
 

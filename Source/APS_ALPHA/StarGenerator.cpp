@@ -3,6 +3,7 @@
 #include "StarGenerator.h"
 #include "StarType.h"
 #include <random>
+#include "StarClusterType.h"
 
 UStarGenerator::UStarGenerator()
 {
@@ -33,6 +34,40 @@ void UStarGenerator::ApplySpectralMaterial(AStar* NewStar, FStarModel StarModel)
 
     // ѕримените динамический материал к вашему объекту
     NewStar->StarMesh->SetMaterial(0, StarDynamicMaterial);
+}
+
+FStarModel UStarGenerator::GenerateStarModelByProbability(FStarClusterModel FStarClusterModel)
+{
+    FStarModel StarModel;
+
+    EStellarType StellarType;
+    if (StarClusterPopulationWeights.Contains(FStarClusterModel.StarClusterPopulation))
+    {
+        TMap<EStellarType, int> StellarTypeMap = StarClusterPopulationWeights[FStarClusterModel.StarClusterPopulation];
+        StellarType = GenerateStellarTypeByRandomWeights(StellarTypeMap);
+    }
+    else
+    {
+        UE_LOG(LogTemp, Warning, TEXT("StarClusterPopulationWeights doesn't contain %s"), *UEnum::GetValueAsString(FStarClusterModel.StarClusterPopulation));
+        StellarType = EStellarType::Unknown;
+    }
+    StarModel.StellarType = StellarType;//GenerateStarClassByRandomWeights();
+
+    ESpectralClass SpectralClass;
+    if (StarClusterCompositionWeights.Contains(FStarClusterModel.StarClusterComposition))
+    {
+        TMap<ESpectralClass, int> SpectralClassMap = StarClusterCompositionWeights[FStarClusterModel.StarClusterComposition];
+        SpectralClass = GenerateSpectralClassByProbability(SpectralClassMap);
+
+    }
+    else
+    {
+        UE_LOG(LogTemp, Warning, TEXT("StarClusterCompositionWeights doesn't contain %s"), *UEnum::GetValueAsString(FStarClusterModel.StarClusterComposition));
+        SpectralClass = ESpectralClass::Unknown;
+    }
+    StarModel.SpectralClass = SpectralClass;//GenerateSpectralClassByProbability()//ChooseSpectralClassByStellarClass(StarModel.StellarClass);
+
+    return GenerateStarModel(StarModel);
 }
 
 
@@ -142,8 +177,6 @@ FLinearColor UStarGenerator::GetStarColor(ESpectralClass SpectralClass, int Subc
     return starColor;
 }
 
-
-
 FLinearColor UStarGenerator::TemperatureToRGB(float temperature)
 {
 
@@ -223,7 +256,7 @@ void UStarGenerator::ApplyModel(AStar* NewStar, FStarModel StarModel) // NewStar
 {
     NewStar->SetLuminosity(StarModel.Luminosity);
     NewStar->SetSurfaceTemperature(StarModel.SurfaceTemperature);
-    NewStar->SetStarType(StarModel.StellarClass);
+    NewStar->SetStarType(StarModel.StellarType);
     NewStar->SetStarSpectralClass(StarModel.SpectralClass);
     
     NewStar->SetMass(StarModel.Mass);
@@ -237,15 +270,10 @@ void UStarGenerator::ApplyModel(AStar* NewStar, FStarModel StarModel) // NewStar
 
 }
 
-FStarModel UStarGenerator::GenerateRandomStarModel()
+FStarModel UStarGenerator::GenerateStarModel(FStarModel StarModel)
 {
-    FStarModel StarModel;
-    StarModel.StellarClass = GenerateStarClassByRandomWeights();
 
-    //ќпределите ESpectralClass (спектральный класс) 
-    StarModel.SpectralClass = ChooseSpectralClassByStellarClass(StarModel.StellarClass);
-
-    if (StarModel.StellarClass == EStellarClass::MainSequence)
+    if (StarModel.StellarType == EStellarType::MainSequence)
     {
         // Get the mass from the spectral class
         double Mass = RandomMass(StarModel.SpectralClass);
@@ -262,15 +290,15 @@ FStarModel UStarGenerator::GenerateRandomStarModel()
         StarModel.SurfaceTemperature = SurfaceTemperature;
         StarModel.Age = CalculateMainSequenceStarAge(Mass);
     }
-	else 
-	{
-        if (!StarAttributeRanges.Contains(StarModel.StellarClass))
+    else
+    {
+        if (!StarAttributeRanges.Contains(StarModel.StellarType))
         {
             UE_LOG(LogTemp, Error, TEXT("Unknown stellar class: %d"), static_cast<int>(StarModel.SpectralClass));
             return StarModel;
         }
-    
-        FStarAttributeRanges& AttributeRanges = StarAttributeRanges[StarModel.StellarClass];
+
+        FStarAttributeRanges& AttributeRanges = StarAttributeRanges[StarModel.StellarType];
         StarModel.Mass = FMath::RandRange(AttributeRanges.Mass.Range.Get<0>(), AttributeRanges.Mass.Range.Get<1>()); /// TODO: Refactor with Key/Val
         StarModel.Radius = FMath::RandRange(AttributeRanges.Radius.Range.Get<0>(), AttributeRanges.Radius.Range.Get<1>());
         StarModel.SurfaceTemperature = GenerateRandomTemperatureBySpectralClass(StarModel.SpectralClass);
@@ -279,11 +307,63 @@ FStarModel UStarGenerator::GenerateRandomStarModel()
     }
 
     StarModel.SpectralSubclass = CalculateSpectralSubclass(StarModel.SurfaceTemperature, StarModel.SpectralClass);
-    StarModel.SpectralType = CalculateSpectralType(StarModel.StellarClass, StarModel.Luminosity);
+    StarModel.SpectralType = CalculateSpectralType(StarModel.StellarType, StarModel.Luminosity);
     StarModel.FullSpectralClass = GenerateFullSpectralClass(StarModel);
     StarModel.FullSpectralName = GenerateFullSpectralName(StarModel);
 
     return StarModel;
+}
+
+
+FStarModel UStarGenerator::GenerateRandomStarModel()
+{
+    FStarModel StarModel;
+    StarModel.StellarType = GenerateStellarTypeByRandomWeights();
+
+    //ќпределите ESpectralClass (спектральный класс) 
+    StarModel.SpectralClass = ChooseSpectralClassByStellarClass(StarModel.StellarType);
+
+    return GenerateStarModel(StarModel);
+    // GenerateStarModel();
+ //   if (StarModel.StellarClass == EStellarClass::MainSequence)
+ //   {
+ //       // Get the mass from the spectral class
+ //       double Mass = RandomMass(StarModel.SpectralClass);
+
+ //       // Calculate the radius and luminosity using mass-radius-luminosity relation
+ //       double Radius = pow(Mass, 0.8);  // Radius  Mass^0.8
+ //       double Luminosity = CalculateLuminosityByMass(Mass);
+ //       double SurfaceTemperature = RandomFromRange(StarTypeTemperatureRanges[StarModel.SpectralClass]);
+
+ //       // Generate a star model
+ //       StarModel.Mass = Mass;
+ //       StarModel.Radius = Radius;
+ //       StarModel.Luminosity = Luminosity;
+ //       StarModel.SurfaceTemperature = SurfaceTemperature;
+ //       StarModel.Age = CalculateMainSequenceStarAge(Mass);
+ //   }
+	//else 
+	//{
+ //       if (!StarAttributeRanges.Contains(StarModel.StellarClass))
+ //       {
+ //           UE_LOG(LogTemp, Error, TEXT("Unknown stellar class: %d"), static_cast<int>(StarModel.SpectralClass));
+ //           return StarModel;
+ //       }
+ //   
+ //       FStarAttributeRanges& AttributeRanges = StarAttributeRanges[StarModel.StellarClass];
+ //       StarModel.Mass = FMath::RandRange(AttributeRanges.Mass.Range.Get<0>(), AttributeRanges.Mass.Range.Get<1>()); /// TODO: Refactor with Key/Val
+ //       StarModel.Radius = FMath::RandRange(AttributeRanges.Radius.Range.Get<0>(), AttributeRanges.Radius.Range.Get<1>());
+ //       StarModel.SurfaceTemperature = GenerateRandomTemperatureBySpectralClass(StarModel.SpectralClass);
+ //       StarModel.Luminosity = CalculateLuminosity(StarModel.Radius, StarModel.SurfaceTemperature);
+ //       StarModel.Age = CalculateNonMainSequenceStarAge(StarModel.Mass);
+ //   }
+
+ //   StarModel.SpectralSubclass = CalculateSpectralSubclass(StarModel.SurfaceTemperature, StarModel.SpectralClass);
+ //   StarModel.SpectralType = CalculateSpectralType(StarModel.StellarClass, StarModel.Luminosity);
+ //   StarModel.FullSpectralClass = GenerateFullSpectralClass(StarModel);
+ //   StarModel.FullSpectralName = GenerateFullSpectralName(StarModel);
+
+   // return StarModel;
 }
 
 FString UStarGenerator::CalculateNonMainSequenceStarAge(double StarMass)
@@ -338,15 +418,34 @@ FString UStarGenerator::CalculateMainSequenceStarAge(double Mass)
     return FormattedAge;
 }
 
-EStellarClass UStarGenerator::GenerateStarClassByRandomWeights()
+
+
+ESpectralClass UStarGenerator::GenerateSpectralClassByProbability(TMap<ESpectralClass, int> StarSpectralClassProbabilities)
 {
     int TotalWeight = 0;
-    for (auto const& Pair : StarTypeWeights) {
+    for (auto const& Pair : StarSpectralClassProbabilities) {
         TotalWeight += Pair.Value;
     }
     int RandomValue = FMath::RandRange(0, TotalWeight - 1);
-    EStellarClass ChosenStellarClass{};
-    for (auto const& pair : StarTypeWeights) {
+    ESpectralClass ChosenSpectralClass{};
+    for (auto const& pair : StarSpectralClassProbabilities) {
+        if (RandomValue < pair.Value) {
+            ChosenSpectralClass = pair.Key;
+            break;
+        }
+        RandomValue -= pair.Value;
+    }
+    return ChosenSpectralClass;
+}
+EStellarType UStarGenerator::GenerateStellarTypeByRandomWeights(TMap<EStellarType, int> StarTypeProbabilities)
+{
+    int TotalWeight = 0;
+    for (auto const& Pair : StarTypeProbabilities) {
+        TotalWeight += Pair.Value;
+    }
+    int RandomValue = FMath::RandRange(0, TotalWeight - 1);
+    EStellarType ChosenStellarClass{};
+    for (auto const& pair : StarTypeProbabilities) {
         if (RandomValue < pair.Value) {
             ChosenStellarClass = pair.Key;
             break;
@@ -355,6 +454,25 @@ EStellarClass UStarGenerator::GenerateStarClassByRandomWeights()
     }
     return ChosenStellarClass;
 }
+EStellarType UStarGenerator::GenerateStellarTypeByRandomWeights()
+{
+    int TotalWeight = 0;
+    for (auto const& Pair : DefaultStarTypeWeights) {
+        TotalWeight += Pair.Value;
+    }
+    int RandomValue = FMath::RandRange(0, TotalWeight - 1);
+    EStellarType ChosenStellarClass{};
+    for (auto const& pair : DefaultStarTypeWeights) {
+        if (RandomValue < pair.Value) {
+            ChosenStellarClass = pair.Key;
+            break;
+        }
+        RandomValue -= pair.Value;
+    }
+    return ChosenStellarClass;
+}
+
+
 
 double UStarGenerator::CalculateEmission(float starLuminosity)
 {
@@ -460,8 +578,29 @@ FName UStarGenerator::GenerateFullSpectralName(const FStarModel& StarModel)
 		return FName("Unknown");
 	}
 
-    FString SpectralClassColor = SpectralClassColorMap[StarModel.SpectralClass];  
-    FString SpectralTypeDescription = SpectralTypeDescriptionMap[StarModel.SpectralType];
+    /*FString SpectralClassColor = SpectralClassColorMap[StarModel.SpectralClass];  
+    FString SpectralTypeDescription = SpectralTypeDescriptionMap[StarModel.SpectralType];*/
+    FString SpectralClassColor;
+    if (SpectralClassColorMap.Contains(StarModel.SpectralClass))
+    {
+        SpectralClassColor = SpectralClassColorMap[StarModel.SpectralClass];
+    }
+    else
+    {
+        UE_LOG(LogTemp, Warning, TEXT("SpectralClassColorMap doesn't contain %s"), *UEnum::GetValueAsString(StarModel.SpectralClass));
+        SpectralClassColor = "UnknownSpectralClassColor"; // ¬озвращаем значение по умолчанию или обрабатываем ошибку иначе
+    }
+
+    FString SpectralTypeDescription;
+    if (SpectralTypeDescriptionMap.Contains(StarModel.SpectralType))
+    {
+        SpectralTypeDescription = SpectralTypeDescriptionMap[StarModel.SpectralType];
+    }
+    else
+    {
+        UE_LOG(LogTemp, Warning, TEXT("SpectralTypeDescriptionMap doesn't contain %s"), *UEnum::GetValueAsString(StarModel.SpectralType));
+        SpectralTypeDescription = "UnknownSpectralTypeDescription"; // ¬озвращаем значение по умолчанию или обрабатываем ошибку иначе
+    }
 
     FName SpectralClassColorName(*SpectralClassColor);
     FName SpectralTypeDescriptionName(*SpectralTypeDescription);
@@ -469,27 +608,27 @@ FName UStarGenerator::GenerateFullSpectralName(const FStarModel& StarModel)
     return FName(*(SpectralClassColorName.ToString() + " " + SpectralTypeDescriptionName.ToString()));
 }
 
-ESpectralType UStarGenerator::CalculateSpectralType(EStellarClass StellarType, double Luminosity)
+ESpectralType UStarGenerator::CalculateSpectralType(EStellarType StellarType, double Luminosity)
 {
     switch (StellarType)
     {
-    case EStellarClass::HyperGiant:
+    case EStellarType::HyperGiant:
         return ESpectralType::O;
-    case EStellarClass::BrightGiant:
+    case EStellarType::BrightGiant:
         return ESpectralType::II;
-    case EStellarClass::Giant:
+    case EStellarType::Giant:
         return ESpectralType::III;
-    case EStellarClass::SubGiant:
+    case EStellarType::SubGiant:
         return ESpectralType::IV;
-    case EStellarClass::MainSequence:
+    case EStellarType::MainSequence:
         return ESpectralType::V;
-    case EStellarClass::SubDwarf:
+    case EStellarType::SubDwarf:
         return ESpectralType::VI;
-    case EStellarClass::WhiteDwarf:
+    case EStellarType::WhiteDwarf:
         return ESpectralType::VII;
-    case EStellarClass::BrownDwarf:
+    case EStellarType::BrownDwarf:
         return ESpectralType::VIII;
-    case EStellarClass::SuperGiant:
+    case EStellarType::SuperGiant:
     {
         FStarAttributeRanges& AttributeRanges = StarAttributeRanges[StellarType];
         FLuminosityRange LuminosityRange = AttributeRanges.Luminosity;  // получаем диапазон светимости
@@ -590,8 +729,19 @@ double UStarGenerator::RandomFromRange(TTuple<double, double> Range)
 
 double UStarGenerator::RandomMass(ESpectralClass SpectralClass)
 {
-    auto Range = MainSequenceMassRanges[SpectralClass];
-    return FMath::FRandRange(Range.Get<0>(), Range.Get<1>());
+
+    if (MainSequenceMassRanges.Contains(SpectralClass))
+    {
+        auto Range = MainSequenceMassRanges[SpectralClass];
+        return FMath::FRandRange(Range.Get<0>(), Range.Get<1>());
+    }
+    else
+    {
+        UE_LOG(LogTemp, Warning, TEXT("MainSequenceMassRanges doesn't contain %s"), *UEnum::GetValueAsString(SpectralClass));
+        return 0; // ¬озвращаем некоторое значение по умолчанию или обрабатываем ошибку иначе
+    }
+    /*auto Range = MainSequenceMassRanges[SpectralClass];
+    return FMath::FRandRange(Range.Get<0>(), Range.Get<1>());*/
 }
 
 double UStarGenerator::RandomRadius(ESpectralClass SpectralClass)
@@ -664,7 +814,13 @@ BrownDwarf	    L, T, Y
 
 */
 
-ESpectralClass UStarGenerator::ChooseSpectralClassByStellarClass(EStellarClass StellarClass)
+//ESpectralClass UStarGenerator::ChooseSpectralClassByProbability(TMap<ESpectralClass, int> Probabilities)
+//{
+//
+//}
+
+
+ESpectralClass UStarGenerator::ChooseSpectralClassByStellarClass(EStellarType StellarClass)
 {
     // ћассивы спектральных классов дл€ каждого стелл€рного класса
     // Spectral Classes O, B, A, F, G, K, M
@@ -675,7 +831,7 @@ ESpectralClass UStarGenerator::ChooseSpectralClassByStellarClass(EStellarClass S
     const TArray<ESpectralClass> Spectral_LY = { ESpectralClass::L, ESpectralClass::T, ESpectralClass::Y };
 
     const TArray<int> Weights_OM = { 1, 2, 10, 20, 30, 40, 50 }; // best for direct systems
-    //const TArray<int> Weights_OM = { 1, 2, 6, 30, 76, 121, 764 }; // best for stur clusters
+    //const TArray<int> Weights_OM = { 1, 2, 6, 30, 76, 121, 764 }; // best for star clusters
     //const TArray<int> Weights_OM = { 3, 5, 22, 30, 20, 10, 30 }; // Weights for O, B, A, F, G, K, M
     const TArray<int> Weights_OK = { 3, 13, 22, 30, 20, 12 }; // Weights for O, B, A, F, G, K
     const TArray<int> Weights_LY = { 20, 50, 30 }; // Weights for L, T, Y
@@ -686,21 +842,21 @@ ESpectralClass UStarGenerator::ChooseSpectralClassByStellarClass(EStellarClass S
 
     switch (StellarClass)
     {
-    case EStellarClass::HyperGiant:
-    case EStellarClass::SuperGiant:
-    case EStellarClass::BrightGiant:
-    case EStellarClass::Giant:
-    case EStellarClass::MainSequence:
+    case EStellarType::HyperGiant:
+    case EStellarType::SuperGiant:
+    case EStellarType::BrightGiant:
+    case EStellarType::Giant:
+    case EStellarType::MainSequence:
         SpectralArray = &Spectral_OM;
         WeightsArray = &Weights_OM;
         break;
-    case EStellarClass::SubGiant:
-    case EStellarClass::SubDwarf:
-    case EStellarClass::WhiteDwarf:
+    case EStellarType::SubGiant:
+    case EStellarType::SubDwarf:
+    case EStellarType::WhiteDwarf:
         SpectralArray = &Spectral_OK;
         WeightsArray = &Weights_OK;
         break;
-    case EStellarClass::BrownDwarf:
+    case EStellarType::BrownDwarf:
         SpectralArray = &Spectral_LY;
         WeightsArray = &Weights_LY;
         break;
@@ -734,16 +890,16 @@ ESpectralClass UStarGenerator::ChooseSpectralClassByStellarClass(EStellarClass S
     return ESpectralClass::M;
 }
 
-ESpectralClass UStarGenerator::DetermineSpectralClassByTemperature(EStellarClass StarType, double Temperature)
+ESpectralClass UStarGenerator::DetermineSpectralClassByTemperature(EStellarType StarType, double Temperature)
 {
     switch (StarType) {
     /*case EStarStellarClass::WhiteDwarf:
         return EStarSpectralClass::WD;*/
-    case EStellarClass::Neutron:
+    case EStellarType::Neutron:
         return ESpectralClass::NS;
-    case EStellarClass::BlackHole:
+    case EStellarType::BlackHole:
         return ESpectralClass::BH;
-    case EStellarClass::BrownDwarf:
+    case EStellarType::BrownDwarf:
         if (Temperature > 1300) return ESpectralClass::L;
         else if (Temperature > 700) return ESpectralClass::T;
         else return ESpectralClass::Y;

@@ -38,6 +38,9 @@ public:
 		bool bGenerateRandomCluster { true };
 
 	UPROPERTY(EditAnywhere, Category = "Star Cluster", meta = (EditCondition = "!bGenerateRandomCluster"))
+		EStarClusterSize StarClusterSize;
+
+	UPROPERTY(EditAnywhere, Category = "Star Cluster", meta = (EditCondition = "!bGenerateRandomCluster"))
 		EStarClusterType StarClusterType;
 
 	UPROPERTY(EditAnywhere, Category = "Star Cluster", meta = (EditCondition = "!bGenerateRandomCluster"))
@@ -45,9 +48,6 @@ public:
 
 	UPROPERTY(EditAnywhere, Category = "Star Cluster", meta = (EditCondition = "!bGenerateRandomCluster"))
 		EStarClusterComposition StarClusterComposition;
-
-	UPROPERTY(EditAnywhere, Category = "Star Cluster", meta = (EditCondition = "!bGenerateRandomCluster"))
-		EStarClusterSize StarClusterSize;
 	
 	UPROPERTY(EditAnywhere, Category = "Generation Params")
 		FVector HomeSystemRadius { 0 };
@@ -97,9 +97,9 @@ public:
 	// функция генерации общей звездной системы
 	void GenerateRandomStarSystem();
 
-	EStarClusterType ProvideStarClusterType();
+	EStarClusterType GetRandomClusterType();
 
-	int GetRandomValueFromRange(EStarClusterType ClusterType);
+	int GetRandomValueFromStarAmountRange(EStarClusterType ClusterType);
 
 	void GenerateStarCluster();
 

@@ -31,26 +31,39 @@ struct FRange
 
 // Структура для хранения параметров скопления
 USTRUCT(BlueprintType)
-struct FClusterParameters
+struct FStarClusterModel
 {
     GENERATED_BODY()
 
         // Количество звезд
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star Cluster")
+    UPROPERTY(VisibleAnywhere, Category = "Star Cluster")
         FRange StarCountRange;
 
     // Плотность звезд
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star Cluster")
+    UPROPERTY(VisibleAnywhere, Category = "Star Cluster")
         FRange StarDensityRange;
+    
+    UPROPERTY(VisibleAnywhere, Category = "Star Cluster")
+        EStarClusterType StarClusterType;
 
-    // Вероятности спектральных классов
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star Cluster")
-        TMap<ESpectralClass, FRange> SpectralClassProbabilitiesRange;
+    UPROPERTY(VisibleAnywhere, Category = "Star Cluster")
+        EStarClusterPopulation StarClusterPopulation;
 
-    // Вероятности стелларных классов
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star Cluster")
-        TMap<EStellarClass, FRange> StellarClassProbabilitiesRange;
+    UPROPERTY(VisibleAnywhere, Category = "Star Cluster")
+        EStarClusterComposition StarClusterComposition;
+
+    UPROPERTY(VisibleAnywhere, Category = "Star Cluster")
+        EStarClusterSize StarClusterSize;
+
+    //// Вероятности спектральных классов
+    //UPROPERTY(VisibleAnywhere, Category = "Star Cluster")
+    //    TMap<ESpectralClass, FRange> SpectralClassProbabilitiesRange;
+
+    //// Вероятности стелларных классов
+    //UPROPERTY(VisibleAnywhere, Category = "Star Cluster")
+    //    TMap<EStellarClass, FRange> StellarClassProbabilitiesRange;
 };
+
 
 /**
  * 
@@ -75,16 +88,6 @@ public:
     UPROPERTY(VisibleAnywhere, Category = "Star Cluster")
         EStarClusterSize StarClusterSize;
 
-
-
-    /*UPROPERTY(VisibleAnywhere, Category = "Star Cluster")
-        EStarClusterPop
-
-
-
-        UPROPERTY(VisibleAnywhere, Category = "Star Cluster")*/
-
-
     UPROPERTY(VisibleAnywhere, Category = "Star Cluster")
         TArray<AStar*> Stars;
 
@@ -101,7 +104,7 @@ public:
 
     // Количество звезд
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star Cluster")
-        int StarCount;
+        int StarAmount;
 
     // Плотность звезд
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star Cluster")
@@ -113,11 +116,8 @@ public:
 
     // Вероятности стелларных классов
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star Cluster")
-        TMap<EStellarClass, float> StellarClassProbabilities;
+        TMap<EStellarType, float> StellarClassProbabilities;
 
-    //// Модель звезды для создания инстансов
-    //UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star Cluster")
-    //    UStaticMesh* StarModel;
     // HISM звезды для создания инстансов
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star Cluster")
         UHierarchicalInstancedStaticMeshComponent* StarMeshInstances;

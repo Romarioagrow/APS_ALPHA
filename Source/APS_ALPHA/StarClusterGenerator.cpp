@@ -71,13 +71,45 @@ FVector UStarClusterGenerator::CalculateStarPosition(int StarIndex, AStarCluster
         // Распределение звезд по спирали с учетом размера звезды
         double SpiralRadius = StarIndex * StarSize;
         //double SpiralRadius = StarIndex * (StarSize + StarSize); // Увеличиваем радиус спирали на размер звезды
-        double SpiralAngle = 2 * PI * StarIndex / StarCluster->StarCount;
+        double SpiralAngle = 2 * PI * StarIndex / StarCluster->StarAmount;
         StarPosition = FVector(SpiralRadius * FMath::Cos(SpiralAngle), SpiralRadius * FMath::Sin(SpiralAngle), FMath::RandRange(-StarCluster->ClusterBounds.Z / 2, StarCluster->ClusterBounds.Z / 2));
         //StarPosition /= 5;
     }
     break;
     }
     return StarPosition * 100;
+}
+
+TMap<EStarClusterSize, TPair<int, int>> StarClusterSizes =
+{
+    {EStarClusterSize::Tiny, TPair<int, int>(100, 500)},
+    {EStarClusterSize::Small, TPair<int, int>(500, 1500)},
+    {EStarClusterSize::Medium, TPair<int, int>(1500, 5000)},
+    {EStarClusterSize::Large, TPair<int, int>(5000, 25000)},
+    {EStarClusterSize::Giant, TPair<int, int>(250000, 50000)},
+    {EStarClusterSize::Unknown, TPair<int, int>(0, 0)},
+};
+
+
+
+int UStarClusterGenerator::GetStarsAmountByRange(EStarClusterSize StarClusterSize)
+{
+    const TPair<int, int>* Range = StarClusterSizes.Find(StarClusterSize);
+    if (Range == nullptr)
+    {
+        return 0;
+    }
+    return FMath::RandRange(Range->Key, Range->Value);
+}
+
+double UStarClusterGenerator::GetStarClusterDensityByRange()
+{
+    return FMath::RandRange(0.1f, 1.0f); /// TODO: RANGE
+}
+
+FVector UStarClusterGenerator::GetStarClusterBoundsByRange(EStarClusterType ClusterType)
+{
+    return FVector(1000.0f, 1000.0f, 1000.0f); /// TODO: RANGE
 }
 
 /// TODO: USAGE?
@@ -94,17 +126,17 @@ void UStarClusterGenerator::GenerateRandomStarCluster(UWorld* World)
         EStarClusterType ClusterType = static_cast<EStarClusterType>(FMath::RandRange(0, static_cast<int>(EStarClusterType::Nebula)));
 
         NewStarCluster->ClusterType = ClusterType;
-        NewStarCluster->StarCount = FMath::RandRange(100, 1000);
+        NewStarCluster->StarAmount = FMath::RandRange(100, 1000);
         NewStarCluster->StarDensity = FMath::RandRange(0.1f, 1.0f);
         NewStarCluster->ClusterBounds = FVector(1000.0f, 1000.0f, 1000.0f);
 
 
-        UE_LOG(LogTemp, Warning, TEXT("StarCount: %d"), NewStarCluster->StarCount);
+        UE_LOG(LogTemp, Warning, TEXT("StarCount: %d"), NewStarCluster->StarAmount);
         UE_LOG(LogTemp, Warning, TEXT("StarDensity: %f"), NewStarCluster->StarDensity);
         UE_LOG(LogTemp, Warning, TEXT("ClusterBounds: %s"), *NewStarCluster->ClusterBounds.ToString());
         UE_LOG(LogTemp, Warning, TEXT("ClusterType: %d"), static_cast<int>(NewStarCluster->ClusterType));
 
-        for (size_t i = 0; i < NewStarCluster->StarCount; i++)
+        for (size_t i = 0; i < NewStarCluster->StarAmount; i++)
         {
             //// Создаем модель звезды
             //FStarModel NewStarModel = StarGenerator.GenerateStarModel();
@@ -174,4 +206,29 @@ void UStarClusterGenerator::GenerateRandomStarCluster(UWorld* World)
     //}
 
     // TODO: Визуализируем звездные системы
+}
+
+
+EStarClusterType UStarClusterGenerator::GetRandomClusterType()
+{
+    return static_cast<EStarClusterType>(FMath::RandRange(0, static_cast<int>(EStarClusterType::Nebula)));
+}
+
+FStarClusterModel UStarClusterGenerator::GenerateRandomStarClusterModelByParams(FStarClusterModel& StarClusterModel)
+{
+    
+    
+    return StarClusterModel;
+}
+
+FStarClusterModel UStarClusterGenerator::GetRandomStarClusterModel()
+{
+    FStarClusterModel StarClusterModel{};
+    
+    StarClusterModel.StarClusterSize = static_cast<EStarClusterSize>(FMath::RandRange(0, static_cast<int>(EStarClusterSize::Giant)));
+    StarClusterModel.StarClusterType = static_cast<EStarClusterType>(FMath::RandRange(0, static_cast<int>(EStarClusterType::Nebula)));
+    StarClusterModel.StarClusterPopulation = static_cast<EStarClusterPopulation>(FMath::RandRange(0, static_cast<int>(EStarClusterPopulation::Protostars)));
+    StarClusterModel.StarClusterComposition = static_cast<EStarClusterComposition>(FMath::RandRange(0, static_cast<int>(EStarClusterComposition::MostlyRed)));
+    
+    return StarClusterModel;
 }

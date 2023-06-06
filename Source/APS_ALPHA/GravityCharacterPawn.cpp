@@ -123,7 +123,7 @@ void AGravityCharacterPawn::UpdateGravityPhysicParams()
 {
 	FGravityParamStruct GravityParams;
 	FGravityMovementStruct GravityMovements;
-	float AngularDamping, LinearDamping;
+	double AngularDamping {0}, LinearDamping{0};
 	
 	switch (CurrentGravityType)
 	{
