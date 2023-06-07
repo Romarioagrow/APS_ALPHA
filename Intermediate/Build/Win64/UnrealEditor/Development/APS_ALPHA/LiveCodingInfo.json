@@ -167,7 +167,6 @@
 			"SpaceStation.cpp.obj",
 			"Star.cpp.obj",
 			"StarCluster.cpp.obj",
-			"StarClusterGenerator.cpp.obj",
 			"StarGenerationModel.cpp.obj",
 			"StarSector.cpp.obj",
 			"StarSystem.cpp.obj",
@@ -181,6 +180,7 @@
 			"VehicleControlling.cpp.obj",
 			"WorldActor.cpp.obj",
 			"AstroGenerator.cpp.obj",
+			"StarClusterGenerator.cpp.obj",
 			"StarGenerator.cpp.obj"
 		]
 	}
