@@ -19,11 +19,13 @@ FStarSystemGenerationModel UStarSystemGenerator::GenerateRandomStarSystemModel()
 	int32 RandomValue = FMath::RandRange(0, 100);
 
 	// Веса для каждого типа системы
-	int32 SingleStarWeight = 80; // 80%
+	int32 SingleStarWeight = 1000000; // 80%
+	//int32 SingleStarWeight = 80; // 80%
 	int32 DoubleStarWeight = 10; // 10%
 	int32 TripleStarWeight = 8; // 8%
 	int32 MultipleStarWeight = 2; // 2%
 
+	if (RandomValue < SingleStarWeight)
 	if (RandomValue < SingleStarWeight)
 	{
 		StarSystemModel.StarSystemType = EStarSystemType::SingleStar;

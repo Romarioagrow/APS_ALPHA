@@ -19,7 +19,7 @@ void UPlanetarySystemGenerator::ApplyModel(APlanetarySystem* NewPlanetarySystem,
 }
 
 
-FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySystemModelByStar(FStarGenerationModel StarModel, UPlanetGenerator* PlanetGenerator, UMoonGenerator* MoonGenerator)
+FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySystemModelByStar(FStarModel StarModel, UPlanetGenerator* PlanetGenerator, UMoonGenerator* MoonGenerator)
 {
     // вычисляем вероятность что будут планеты
     // находим макс и мин кол во планет
@@ -29,10 +29,10 @@ FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySyst
     PlanetarySystemModel.FullSpectralName = StarModel.FullSpectralName;
 
     // Находим базовую вероятность для данного типа звезды
-    PlanetProbability BaseProbability = BasePlanetProbabilities[StarModel.StellarClass];
+    PlanetProbability BaseProbability = BasePlanetProbabilities[StarModel.StellarType];
     // Модифицируем вероятность на основе массы звезды.
     PlanetProbability MassModifier;
-    if (StarModel.StellarClass == EStellarClass::MainSequence)
+    if (StarModel.StellarType == EStellarType::MainSequence)
     {
         MassModifier = 1 / (1 + FMath::Exp(-StarModel.Mass));
     }
@@ -44,12 +44,13 @@ FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySyst
     PlanetProbability FinalProbability = BaseProbability * MassModifier;
     UE_LOG(LogTemp, Warning, TEXT("FinalProbability: %f"), FinalProbability);
     bool HasPlanets = FMath::FRand() <= FinalProbability;
+    //bool HasPlanets = false;//FMath::FRand() <= FinalProbability;
 
     // Выводим информацию о звезде
     UE_LOG(LogTemp, Warning, TEXT("HasPlanets: %s"), HasPlanets ? TEXT("true") : TEXT("false"));
     UE_LOG(LogTemp, Warning, TEXT("Star Information:"));
     UE_LOG(LogTemp, Warning, TEXT("Spectral Class: %s"), *UEnum::GetValueAsString(StarModel.SpectralClass));
-    UE_LOG(LogTemp, Warning, TEXT("Stellar Class: %s"), *UEnum::GetValueAsString(StarModel.StellarClass));
+    UE_LOG(LogTemp, Warning, TEXT("Stellar Class: %s"), *UEnum::GetValueAsString(StarModel.StellarType));
     UE_LOG(LogTemp, Warning, TEXT("Mass: %f Solar Masses"), StarModel.Mass);
     UE_LOG(LogTemp, Warning, TEXT("Radius: %f Solar Radii"), StarModel.Radius);
 
@@ -57,9 +58,9 @@ FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySyst
     {
         const int32 MaxPlanetsAllowed = 20;
         int32 MinPlanetCount = 1;
-        int32 MaxPlanetCount = FMath::Min(MaxPlanetsAllowed, FMath::Max(1, FMath::RoundToInt(StarModel.Mass * BasePlanetCount[StarModel.StellarClass] * MassModifier)));
+        int32 MaxPlanetCount = FMath::Min(MaxPlanetsAllowed, FMath::Max(1, FMath::RoundToInt(StarModel.Mass * BasePlanetCount[StarModel.StellarType] * MassModifier)));
 
-        if (StarModel.StellarClass == EStellarClass::MainSequence && StarModel.SpectralClass == ESpectralClass::M)
+        if (StarModel.StellarType == EStellarType::MainSequence && StarModel.SpectralClass == ESpectralClass::M)
         {
             MaxPlanetCount = 5;
         }
@@ -76,11 +77,11 @@ FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySyst
         double MinOrbitScalingFactor = 1.0f;
         double MaxOrbitScalingFactor = 10.0f;
 
-        if (StarModel.StellarClass == EStellarClass::HyperGiant)
+        if (StarModel.StellarType == EStellarType::HyperGiant)
         {
             MaxOrbitScalingFactor = 5.0f; // Уменьшаем максимальную орбиту для гипергигантов
         }
-        else if (StarModel.StellarClass == EStellarClass::SuperGiant)
+        else if (StarModel.StellarType == EStellarType::SuperGiant)
         {
             MaxOrbitScalingFactor = 6.0f; // Уменьшаем максимальную орбиту для сверхгигантов
         }
@@ -89,7 +90,7 @@ FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySyst
         double MaxOrbit = StarModel.Mass * MaxOrbitScalingFactor;
 
         // Подбираем случайное распределение для нашей системы
-        EOrbitDistributionType OrbitDistributionType = ChooseOrbitDistribution(StarModel.StellarClass);
+        EOrbitDistributionType OrbitDistributionType = ChooseOrbitDistribution(StarModel.StellarType);
         PlanetarySystemModel.OrbitDistributionType = OrbitDistributionType;
 
         FString OrbitType = UEnum::GetValueAsString(OrbitDistributionType);
@@ -327,8 +328,11 @@ FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySyst
             double planetRadius = PlanetModel.Radius; // радиус планеты
             /// TODO: PlanetAtmosphere //double planetAtmosphereHeight = PlanetModel.AtmosphereHeight; // высота атмосферы планеты
             double planetAtmosphereHeight = PlanetModel.Radius / 10; // высота атмосферы планеты
+
+
+
             // Минимальное расстояние - радиус планеты плюс высота атмосферы
-            const double MinOrbitRadius = planetRadius + planetAtmosphereHeight;
+            const double MinOrbitRadius = planetRadius  + planetAtmosphereHeight;
             // Максимальное расстояние - радиус сферы Хилла
             // Предполагаем, что орбита планеты почти круговая, т.е. эксцентриситет близок к 0
             double eccentricity = 0;
@@ -352,18 +356,30 @@ FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySyst
             const int AmountOfMoons = PlanetModel.AmountOfMoons;
             TArray<FMoonData> MoonsList {};
             TArray<float> MoonOrbits;
-
-            const double MoonMinOrbitRadius = PlanetModel.MoonOrbitsRange.Key;
-            const double MoonMaxOrbitRadius = PlanetModel.MoonOrbitsRange.Value;
-            const double uniformDistance = (MoonMaxOrbitRadius - MoonMinOrbitRadius) / (AmountOfMoons + 1);
-
             // Создаем массив со всеми возможными орбитами
             MoonOrbits.Reserve(AmountOfMoons);
 
-            for (size_t m = 0; m < AmountOfMoons; m++)
-            {
-                MoonOrbits.Add(MoonMinOrbitRadius + uniformDistance * (m + 1));
+            if (PlanetModel.PlanetType == EPlanetType::GasGiant 
+                || PlanetModel.PlanetType == EPlanetType::IceGiant 
+                || PlanetModel.PlanetType == EPlanetType::HotGiant) {
+                // Распределение орбит от 1 до 10 радиусов планеты
+                for (int i = 0; i < AmountOfMoons; i++) {
+                    double orbitRadius = FMath::RandRange(planetRadius * 1.0, planetRadius * 10.0);
+                    orbitRadius /= 40;
+                    MoonOrbits.Add(orbitRadius);
+                }
             }
+            else {
+                double a = 1.5;
+                double d = 1.4;
+                // Коэффициенты закона Тициуса-Боде для остальных планет
+                for (int i = 0; i < AmountOfMoons; i++) {
+                    double orbitRadius = a + d * pow(2, i);
+                    orbitRadius = FMath::RandRange(orbitRadius * 0.9, orbitRadius * 1.3);
+                    MoonOrbits.Add(orbitRadius);
+                }
+            }
+            MoonOrbits.Sort();
 
             for (double MoonOrbit : MoonOrbits)
             {
@@ -420,12 +436,12 @@ int UPlanetarySystemGenerator::CalculateMoons(double PlanetMass, EPlanetType Pla
     {
         return 0;
     }
-    else if (BaseMoonCount > 15)
+    else if (BaseMoonCount > 10)
     {
         return 
             PlanetType == EPlanetType::GasGiant ||
             PlanetType == EPlanetType::IceGiant ||
-			PlanetType == EPlanetType::HotGiant ? FMath::RandRange(0, 15) : FMath::RandRange(0, 5);
+			PlanetType == EPlanetType::HotGiant ? FMath::RandRange(0, 10) : FMath::RandRange(0, 5);
     }
     {
         // Otherwise, the number of moons is the base moon count plus a random number
@@ -534,20 +550,20 @@ double UPlanetarySystemGenerator::RandGauss()
     return X * 0.15 + 0.5;
 }
 
-EOrbitDistributionType UPlanetarySystemGenerator::ChooseDistributionType(EStellarClass StellarClass, float StarMass, float MinOrbit, float MaxOrbit)
+EOrbitDistributionType UPlanetarySystemGenerator::ChooseDistributionType(EStellarType StellarClass, float StarMass, float MinOrbit, float MaxOrbit)
 {
     EOrbitDistributionType OrbitDistributionType;
 
-    if (StellarClass == EStellarClass::MainSequence)
+    if (StellarClass == EStellarType::MainSequence)
     {
         return ChooseOrbitDistribution(StellarClass);
 	}
-	else if (StellarClass == EStellarClass::WhiteDwarf || StellarClass == EStellarClass::SubDwarf)
+	else if (StellarClass == EStellarType::WhiteDwarf || StellarClass == EStellarType::SubDwarf)
     {
         // Если у нас маленькая звезда, то предпочтем Dense
         OrbitDistributionType = EOrbitDistributionType::Dense;
     }
-    else if (StellarClass == EStellarClass::Giant || StellarClass == EStellarClass::SuperGiant || StellarClass == EStellarClass::HyperGiant)
+    else if (StellarClass == EStellarType::Giant || StellarClass == EStellarType::SuperGiant || StellarClass == EStellarType::HyperGiant)
     {
         // Если у нас большая звезда, то предпочтем InnerOuter
         OrbitDistributionType = EOrbitDistributionType::InnerOuter;
@@ -576,7 +592,7 @@ EOrbitDistributionType UPlanetarySystemGenerator::ChooseDistributionType(EStella
 }
 
 
-EOrbitDistributionType UPlanetarySystemGenerator::ChooseOrbitDistribution(EStellarClass StellarClass)
+EOrbitDistributionType UPlanetarySystemGenerator::ChooseOrbitDistribution(EStellarType StellarClass)
 {
     // Получаем мапу вероятностей для данного класса звезды
     auto probabilities = StellarOrbitDistributions[StellarClass];
@@ -601,23 +617,28 @@ EOrbitDistributionType UPlanetarySystemGenerator::ChooseOrbitDistribution(EStell
     return probabilities.end().Key();
 }
 
-int UPlanetarySystemGenerator::DetermineMaxPlanets(EStellarClass StellarClass, FStarGenerationModel StarModel )
+void UPlanetarySystemGenerator::SetAstroLocation(int StarNumber, APlanetarySystem* NewPlanetarySystem)
+{
+   // NewPlanetarySystem->Get
+}
+
+int UPlanetarySystemGenerator::DetermineMaxPlanets(EStellarType StellarClass, FStarModel StarModel )
 {
     int MaxPlanets;
 
     // У некоторых типов звезд вообще нет планет
-    if (StellarClass == EStellarClass::WhiteDwarf || StellarClass == EStellarClass::Neutron) {
+    if (StellarClass == EStellarType::WhiteDwarf || StellarClass == EStellarType::Neutron) {
         return 0;
     }
 
     // Задаем базовое количество планет в зависимости от класса звезды
     switch (StellarClass) {
-    case EStellarClass::HyperGiant:
-    case EStellarClass::SuperGiant:
-    case EStellarClass::Giant:
+    case EStellarType::HyperGiant:
+    case EStellarType::SuperGiant:
+    case EStellarType::Giant:
         MaxPlanets = 10; // Базовое количество для гигантских звезд
         break;
-    case EStellarClass::MainSequence:
+    case EStellarType::MainSequence:
         MaxPlanets = 5; // Базовое количество для звезд главной последовательности
         break;
     default:

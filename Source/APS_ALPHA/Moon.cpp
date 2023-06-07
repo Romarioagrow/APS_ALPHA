@@ -3,6 +3,13 @@
 
 #include "Moon.h"
 
+AMoon::AMoon()
+{
+	//OrbitAnchor = CreateDefaultSubobject<USceneComponent>(TEXT("OrbitAnchor"));
+	USceneComponent* Root = CreateDefaultSubobject<USceneComponent>(TEXT("RootComponent"));
+	RootComponent = Root;
+}
+
 void AMoon::SetParentPlanet(APlanet* Planet)
 {
 	this->ParentPlanet = Planet;

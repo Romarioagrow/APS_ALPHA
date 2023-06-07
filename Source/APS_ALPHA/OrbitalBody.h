@@ -15,21 +15,36 @@ class APS_ALPHA_API AOrbitalBody : public ACelestialBody, public IGravitySource
 {
 	GENERATED_BODY()
 
+public:
+
 private:
 	UPROPERTY(VisibleAnywhere, Category = "Orbital Body")
 		double OrbitDistance;
 
 	UPROPERTY(VisibleAnywhere, Category = "Orbital Body")
-		float RotationSpeed;
+		double RotationSpeed;
 
 	UPROPERTY(VisibleAnywhere, Category = "Orbital Body")
-		float OrbitalPeriod;
+		double OrbitalPeriod;
 	
 	UPROPERTY(VisibleAnywhere, Category = "Orbital Body")
-		float OrbitalSpeed;
+		double OrbitalSpeed;
 	
 	UPROPERTY(VisibleAnywhere, Category = "Orbital Body")
-		float AxialTilt;
+		double AxialTilt;
+
+	UPROPERTY(VisibleAnywhere, Category = "Orbital Body")
+		double SemiMajorAxis;
+
+	UPROPERTY(VisibleAnywhere, Category = "Orbital Body")
+		double TrueAnomaly;
+
+	UPROPERTY(VisibleAnywhere, Category = "Orbital Body")
+		double LongitudeOfAscendingNode;
+
+	UPROPERTY(VisibleAnywhere, Category = "Orbital Body")
+		double Inclination;
+
 
 public:
 	void SetOrbitDistance(double OrbitDistance);
