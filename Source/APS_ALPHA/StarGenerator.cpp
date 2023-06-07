@@ -324,46 +324,6 @@ FStarModel UStarGenerator::GenerateRandomStarModel()
     StarModel.SpectralClass = ChooseSpectralClassByStellarClass(StarModel.StellarType);
 
     return GenerateStarModel(StarModel);
-    // GenerateStarModel();
- //   if (StarModel.StellarClass == EStellarClass::MainSequence)
- //   {
- //       // Get the mass from the spectral class
- //       double Mass = RandomMass(StarModel.SpectralClass);
-
- //       // Calculate the radius and luminosity using mass-radius-luminosity relation
- //       double Radius = pow(Mass, 0.8);  // Radius  Mass^0.8
- //       double Luminosity = CalculateLuminosityByMass(Mass);
- //       double SurfaceTemperature = RandomFromRange(StarTypeTemperatureRanges[StarModel.SpectralClass]);
-
- //       // Generate a star model
- //       StarModel.Mass = Mass;
- //       StarModel.Radius = Radius;
- //       StarModel.Luminosity = Luminosity;
- //       StarModel.SurfaceTemperature = SurfaceTemperature;
- //       StarModel.Age = CalculateMainSequenceStarAge(Mass);
- //   }
-	//else 
-	//{
- //       if (!StarAttributeRanges.Contains(StarModel.StellarClass))
- //       {
- //           UE_LOG(LogTemp, Error, TEXT("Unknown stellar class: %d"), static_cast<int>(StarModel.SpectralClass));
- //           return StarModel;
- //       }
- //   
- //       FStarAttributeRanges& AttributeRanges = StarAttributeRanges[StarModel.StellarClass];
- //       StarModel.Mass = FMath::RandRange(AttributeRanges.Mass.Range.Get<0>(), AttributeRanges.Mass.Range.Get<1>()); /// TODO: Refactor with Key/Val
- //       StarModel.Radius = FMath::RandRange(AttributeRanges.Radius.Range.Get<0>(), AttributeRanges.Radius.Range.Get<1>());
- //       StarModel.SurfaceTemperature = GenerateRandomTemperatureBySpectralClass(StarModel.SpectralClass);
- //       StarModel.Luminosity = CalculateLuminosity(StarModel.Radius, StarModel.SurfaceTemperature);
- //       StarModel.Age = CalculateNonMainSequenceStarAge(StarModel.Mass);
- //   }
-
- //   StarModel.SpectralSubclass = CalculateSpectralSubclass(StarModel.SurfaceTemperature, StarModel.SpectralClass);
- //   StarModel.SpectralType = CalculateSpectralType(StarModel.StellarClass, StarModel.Luminosity);
- //   StarModel.FullSpectralClass = GenerateFullSpectralClass(StarModel);
- //   StarModel.FullSpectralName = GenerateFullSpectralName(StarModel);
-
-   // return StarModel;
 }
 
 FString UStarGenerator::CalculateNonMainSequenceStarAge(double StarMass)
@@ -418,8 +378,6 @@ FString UStarGenerator::CalculateMainSequenceStarAge(double Mass)
     return FormattedAge;
 }
 
-
-
 ESpectralClass UStarGenerator::GenerateSpectralClassByProbability(TMap<ESpectralClass, int> StarSpectralClassProbabilities)
 {
     int TotalWeight = 0;
@@ -472,8 +430,6 @@ EStellarType UStarGenerator::GenerateStellarTypeByRandomWeights()
     return ChosenStellarClass;
 }
 
-
-
 double UStarGenerator::CalculateEmission(float starLuminosity)
 {
 
@@ -483,52 +439,6 @@ double UStarGenerator::CalculateEmission(float starLuminosity)
         return MaxStarLuminosity;
     else 
 		return starLuminosity;
-
-
-    // Нормализация светимости звезды в пределах заданного диапазона.
-    //double normalizedLuminosity = (starLuminosity - MinStarLuminosity) / (MaxStarLuminosity - MinStarLuminosity);
-
-    //// Задайте минимальное и максимальное значения для коэффициента эмиссии.
-    //const double MinEmissionCoefficient = 25.0;
-    //const double MaxEmissionCoefficient = 1000.0;
-
-    //// Используйте нормализованную светимость для интерполяции между минимальным и максимальным значениями коэффициента эмиссии.
-    //double emissionCoefficient = FMath::Lerp(MinEmissionCoefficient, MaxEmissionCoefficient, normalizedLuminosity);
-
-    //// Верните вычисленный коэффициент эмиссии.
-    //return emissionCoefficient;
-
-    //// Вычислить коэффициент эмиссии как отношение светимости звезды к светимости Солнца.
-    //double emissionCoefficient = starLuminosity / SolarLuminosity;
-
-    //// Умножить коэффициент эмиссии на заданный базовый множитель.
-    //// Предполагается, что базовый множитель был установлен так, чтобы при светимости, равной светимости Солнца,
-    //// коэффициент эмиссии был равен желаемому значению для Солнца (например, 25 или 50).
-    //emissionCoefficient *= BaseEmissionMultiplier;
-
-    //// Задать максимальное значение для коэффициента эмиссии, чтобы избежать проблем с мерцанием.
-    //const double MaxEmissionCoefficient = 1000.0f;
-    //if (emissionCoefficient > MaxEmissionCoefficient) {
-    //    emissionCoefficient = MaxEmissionCoefficient;
-    //}
-
-    //// Вернуть вычисленный коэффициент эмиссии.
-    //return emissionCoefficient;
-
-    //// Нормализовать светимость звезды в пределах заданного диапазона.
-    //double normalizedLuminosity = (starLuminosity - MinStarLuminosity) / (MaxStarLuminosity - MinStarLuminosity);
-
-    //// Вычислить коэффициент эмиссии как отношение нормализованной светимости звезды к светимости Солнца.
-    //double emissionCoefficient = normalizedLuminosity / SolarEmissiveLuminosity;
-
-    //// Задать максимальное значение для коэффициента эмиссии, чтобы избежать проблем с мерцанием.
-    //const double MaxEmissionCoefficient = 1000.0f;
-    //if (emissionCoefficient > MaxEmissionCoefficient) {
-    //    emissionCoefficient = MaxEmissionCoefficient;
-    //}
-
-    //// Вернуть вычисленный коэффициент эмиссии.
-    //return emissionCoefficient;
 }
 
 FString UStarGenerator::GetSpectralClassColor(ESpectralClass Class)
@@ -578,8 +488,6 @@ FName UStarGenerator::GenerateFullSpectralName(const FStarModel& StarModel)
 		return FName("Unknown");
 	}
 
-    /*FString SpectralClassColor = SpectralClassColorMap[StarModel.SpectralClass];  
-    FString SpectralTypeDescription = SpectralTypeDescriptionMap[StarModel.SpectralType];*/
     FString SpectralClassColor;
     if (SpectralClassColorMap.Contains(StarModel.SpectralClass))
     {
@@ -729,7 +637,6 @@ double UStarGenerator::RandomFromRange(TTuple<double, double> Range)
 
 double UStarGenerator::RandomMass(ESpectralClass SpectralClass)
 {
-
     if (MainSequenceMassRanges.Contains(SpectralClass))
     {
         auto Range = MainSequenceMassRanges[SpectralClass];
@@ -740,8 +647,6 @@ double UStarGenerator::RandomMass(ESpectralClass SpectralClass)
         UE_LOG(LogTemp, Warning, TEXT("MainSequenceMassRanges doesn't contain %s"), *UEnum::GetValueAsString(SpectralClass));
         return 0; // Возвращаем некоторое значение по умолчанию или обрабатываем ошибку иначе
     }
-    /*auto Range = MainSequenceMassRanges[SpectralClass];
-    return FMath::FRandRange(Range.Get<0>(), Range.Get<1>());*/
 }
 
 double UStarGenerator::RandomRadius(ESpectralClass SpectralClass)
@@ -755,7 +660,6 @@ double UStarGenerator::CalculateLuminosity(double Radius, double SurfaceTemperat
     const double StefanBoltzmannConstant = 5.67e-8;  // in W/(m^2 K^4)
     const double SolarRadius = 6.96e8;  // in meters
     const double SolarLuminosity = 3.828e26;  // in watts
-
     double Luminosity = 4.0 * PI * pow(Radius * SolarRadius, 2) * StefanBoltzmannConstant * pow(SurfaceTemperature, 4);
 
     // Convert to solar luminosity units
@@ -813,12 +717,6 @@ WhiteDwarf	    WD
 BrownDwarf	    L, T, Y 
 
 */
-
-//ESpectralClass UStarGenerator::ChooseSpectralClassByProbability(TMap<ESpectralClass, int> Probabilities)
-//{
-//
-//}
-
 
 ESpectralClass UStarGenerator::ChooseSpectralClassByStellarClass(EStellarType StellarClass)
 {

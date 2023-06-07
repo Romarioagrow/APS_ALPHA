@@ -28,7 +28,6 @@ public:
 	FVector GetStarClusterBoundsByRange(EStarClusterType ClusterType);
 
 public:
-	void GenerateRandomStarCluster(UWorld* World);
 
 	UPROPERTY(EditAnywhere, Category = "Generation Params")
 		TSubclassOf<class AStarCluster> BP_StarClusterClass;
