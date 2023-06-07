@@ -68,11 +68,14 @@ class APS_ALPHA_API UPlanetarySystemGenerator : public UBaseProceduralGenerator
 	GENERATED_BODY()
 
 public:
-    int DetermineMaxPlanets(EStellarClass StellarClass, FStarGenerationModel StarModel);
+    void SetAstroLocation(int StarNumber, APlanetarySystem* NewPlanetarySystem);
+
+
+    int DetermineMaxPlanets(EStellarType StellarClass, FStarModel StarModel);
 
     void ApplyModel(APlanetarySystem* NewPlanetarySystem, FPlanetarySystemGenerationModel PlanetraySystemModel);
 
-    FPlanetarySystemGenerationModel GeneratePlanetraySystemModelByStar(FStarGenerationModel StarModel, UPlanetGenerator* PlanetGenerator, UMoonGenerator* MoonGenerator);
+    FPlanetarySystemGenerationModel GeneratePlanetraySystemModelByStar(FStarModel StarModel, UPlanetGenerator* PlanetGenerator, UMoonGenerator* MoonGenerator);
 
     int CalculateMoons(double PlanetMass, EPlanetType PlanetType);
 
@@ -87,9 +90,9 @@ private:
 
     double RandGauss();
 
-    EOrbitDistributionType ChooseDistributionType(EStellarClass StellarClass, float StarMass, float MinOrbit, float MaxOrbit);
+    EOrbitDistributionType ChooseDistributionType(EStellarType StellarClass, float StarMass, float MinOrbit, float MaxOrbit);
 
-    EOrbitDistributionType ChooseOrbitDistribution(EStellarClass stellarClass);
+    EOrbitDistributionType ChooseOrbitDistribution(EStellarType stellarClass);
 
     TArray<double> OrbitRadii;
 
@@ -149,10 +152,10 @@ private:
     };
 
 
-    const TMap<EStellarClass, TMap<EOrbitDistributionType, float>> StellarOrbitDistributions =
+    const TMap<EStellarType, TMap<EOrbitDistributionType, float>> StellarOrbitDistributions =
     {
         {
-            EStellarClass::HyperGiant, 
+            EStellarType::HyperGiant, 
             {
                 {EOrbitDistributionType::Uniform, 0.05f}, 
                 {EOrbitDistributionType::Gaussian, 0.10f}, 
@@ -162,7 +165,7 @@ private:
             }
         },
         {
-            EStellarClass::SuperGiant, 
+            EStellarType::SuperGiant, 
             {
                 {EOrbitDistributionType::Uniform, 0.10f}, 
                 {EOrbitDistributionType::Gaussian, 0.20f}, 
@@ -172,7 +175,7 @@ private:
             }
         },
         {
-            EStellarClass::BrightGiant, 
+            EStellarType::BrightGiant, 
             {
                 {EOrbitDistributionType::Uniform, 0.15f}, 
                 {EOrbitDistributionType::Gaussian, 0.25f},
@@ -182,7 +185,7 @@ private:
             }
         },
         {
-            EStellarClass::Giant, 
+            EStellarType::Giant, 
             {
                 {EOrbitDistributionType::Uniform, 0.20f}, 
                 {EOrbitDistributionType::Gaussian, 0.30f}, 
@@ -192,7 +195,7 @@ private:
             }
         },
         {   
-            EStellarClass::SubGiant,    
+            EStellarType::SubGiant,    
             {
                 {EOrbitDistributionType::Uniform, 0.25f}, 
                 {EOrbitDistributionType::Gaussian, 0.35f}, 
@@ -202,7 +205,7 @@ private:
             }
         },
         {
-            EStellarClass::MainSequence, 
+            EStellarType::MainSequence, 
             {
                 {EOrbitDistributionType::Uniform, 0.3f}, 
                 {EOrbitDistributionType::Gaussian, 0.2f}, 
@@ -212,7 +215,7 @@ private:
             }
         },
         {
-            EStellarClass::SubDwarf, 
+            EStellarType::SubDwarf, 
             {
                 {EOrbitDistributionType::Uniform, 0.35f}, 
                 {EOrbitDistributionType::Gaussian, 0.40f}, 
@@ -222,7 +225,7 @@ private:
             }
         },
         {   
-            EStellarClass::WhiteDwarf, 
+            EStellarType::WhiteDwarf, 
             {
                 {EOrbitDistributionType::Uniform, 0.40f}, 
                 {EOrbitDistributionType::Gaussian, 0.40f}, 
@@ -231,7 +234,7 @@ private:
                 {EOrbitDistributionType::Dense, 0.5f}
             }
         },
-        {   EStellarClass::BrownDwarf, 
+        {   EStellarType::BrownDwarf, 
             {
                 {EOrbitDistributionType::Uniform, 0.45f}, 
                 {EOrbitDistributionType::Gaussian, 0.40f}, 
@@ -241,7 +244,7 @@ private:
             }
         },
         {
-            EStellarClass::Neutron, 
+            EStellarType::Neutron, 
             {
                 {EOrbitDistributionType::Uniform, 0.50f}, 
                 {EOrbitDistributionType::Gaussian, 0.40f},
@@ -251,7 +254,7 @@ private:
             }
         },
         {
-            EStellarClass::Protostar, 
+            EStellarType::Protostar, 
             {
                 {EOrbitDistributionType::Uniform, 0.50f}, 
                 {EOrbitDistributionType::Gaussian, 0.40f}, 
@@ -261,7 +264,7 @@ private:
             }
         },
         {
-            EStellarClass::Pulsar, 
+            EStellarType::Pulsar, 
             {
                 {EOrbitDistributionType::Uniform, 0.50f}, 
                 {EOrbitDistributionType::Gaussian, 0.40f}, 
@@ -271,7 +274,7 @@ private:
             }
         },
         {   
-            EStellarClass::BlackHole, 
+            EStellarType::BlackHole, 
             {
                 {EOrbitDistributionType::Uniform, 0.50f}, 
                 {EOrbitDistributionType::Gaussian, 0.40f}, 
@@ -281,7 +284,7 @@ private:
             }
         },
         {
-            EStellarClass::Unknown, 
+            EStellarType::Unknown, 
             {
                 {EOrbitDistributionType::Uniform, 0.50f}, 
                 {EOrbitDistributionType::Gaussian, 0.40f}, 
@@ -292,37 +295,37 @@ private:
         }
     };
 
-    const TMap<EStellarClass, int> BasePlanetCount = {
-        {EStellarClass::HyperGiant, 15},
-        {EStellarClass::SuperGiant, 10},
-        {EStellarClass::BrightGiant, 10},
-        {EStellarClass::Giant, 7},
-        {EStellarClass::SubGiant, 4},
-        {EStellarClass::MainSequence, 10},
-        {EStellarClass::SubDwarf, 3},
-        {EStellarClass::WhiteDwarf, 2},
-        {EStellarClass::BrownDwarf, 0},
-        {EStellarClass::Neutron, 1},
-        {EStellarClass::Protostar, 2},
-        {EStellarClass::Pulsar, 1},
-        {EStellarClass::BlackHole, 0},
+    const TMap<EStellarType, int> BasePlanetCount = {
+        {EStellarType::HyperGiant, 15},
+        {EStellarType::SuperGiant, 10},
+        {EStellarType::BrightGiant, 10},
+        {EStellarType::Giant, 7},
+        {EStellarType::SubGiant, 4},
+        {EStellarType::MainSequence, 10},
+        {EStellarType::SubDwarf, 3},
+        {EStellarType::WhiteDwarf, 2},
+        {EStellarType::BrownDwarf, 0},
+        {EStellarType::Neutron, 1},
+        {EStellarType::Protostar, 2},
+        {EStellarType::Pulsar, 1},
+        {EStellarType::BlackHole, 0},
 };
 
-    const TMap<EStellarClass, PlanetProbability> BasePlanetProbabilities =
+    const TMap<EStellarType, PlanetProbability> BasePlanetProbabilities =
     {
-        {EStellarClass::HyperGiant, 0.7f},
-        {EStellarClass::SuperGiant, 0.7f},
-        {EStellarClass::BrightGiant, 0.7f},
-        {EStellarClass::Giant, 0.65f},
-        {EStellarClass::SubGiant, 0.6f},
-        {EStellarClass::MainSequence, 0.9f},
-        {EStellarClass::SubDwarf, 0.3f},
-        {EStellarClass::WhiteDwarf, 0.1f},
-        {EStellarClass::BrownDwarf, 0.05f},
-        {EStellarClass::Neutron, 0.01f},
-        {EStellarClass::Protostar, 0.6f},
-        {EStellarClass::Pulsar, 0.01f},
-        {EStellarClass::BlackHole, 0.01f}
+        {EStellarType::HyperGiant, 0.7f},
+        {EStellarType::SuperGiant, 0.7f},
+        {EStellarType::BrightGiant, 0.7f},
+        {EStellarType::Giant, 0.65f},
+        {EStellarType::SubGiant, 0.6f},
+        {EStellarType::MainSequence, 0.9f},
+        {EStellarType::SubDwarf, 0.3f},
+        {EStellarType::WhiteDwarf, 0.1f},
+        {EStellarType::BrownDwarf, 0.05f},
+        {EStellarType::Neutron, 0.01f},
+        {EStellarType::Protostar, 0.6f},
+        {EStellarType::Pulsar, 0.01f},
+        {EStellarType::BlackHole, 0.01f}
     };
 
     template <typename T>

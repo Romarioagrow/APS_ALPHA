@@ -8,14 +8,13 @@
 #include "StarGenerationModel.generated.h"
 
 USTRUCT(BlueprintType)
-struct FStarGenerationModel :
+struct FStarModel :
     public FCelestialGenerationModel
 {
     GENERATED_BODY()
     
-        // Тип звезды (например, карлик, гигант, сверхгигант и т.д.)
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star")
-        EStellarClass StellarClass; /// TODO: Rename to StellarType
+        EStellarType StellarType; 
 	
 	UPROPERTY(VisibleAnywhere)
 		ESpectralClass SpectralClass;
@@ -42,6 +41,6 @@ struct FStarGenerationModel :
 		int SpectralSubclass;
 
 	UPROPERTY(VisibleAnywhere)
-		EStellarClass StarStellarClass;
+		EStellarType StarStellarClass;
 };
 

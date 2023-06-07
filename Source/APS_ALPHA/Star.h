@@ -6,10 +6,13 @@
 #include "StarType.h"
 #include "StarSpectralClass.h"
 #include "SpectralType.h"
+//#include "PlanetarySystem.h"
 
 #include "CoreMinimal.h"
 #include "CelestialBody.h"
 #include "Star.generated.h"
+
+class APlanetarySystem;
 
 /**
  * 
@@ -22,15 +25,39 @@ class APS_ALPHA_API AStar : public ACelestialBody
 public:
 	AStar();
 
+protected:
+	virtual void BeginPlay() override;
+
+public:
+	void SetStarProperties(FLinearColor Color, float Multiplier);
+
+	UPROPERTY(VisibleAnywhere, Category = "Star Visual")
+		UStaticMeshComponent* StarMesh;
+
+	UPROPERTY(VisibleAnywhere, Category = "Star Visual")
+		UMaterialInstanceDynamic* StarDynamicMaterial;
+
+	UPROPERTY(VisibleAnywhere, Category = "Components")
+		APlanetarySystem* PlanetarySystem;
+
+	UPROPERTY(VisibleAnywhere, Category = "Components")
+		USphereComponent* PlanetarySystemZone;
+
+	UPROPERTY(VisibleAnywhere)
+		int StarRadiusKM;
+	
+	UPROPERTY(VisibleAnywhere)
+		double StarAffectionZoneRadius;
+
 private:
 	UPROPERTY(VisibleAnywhere)
 		float Luminosity;
 
 	UPROPERTY(VisibleAnywhere)
 		int SurfaceTemperature;
-
+	
 	UPROPERTY(VisibleAnywhere)
-		EStellarClass StellarClass;
+		EStellarType StellarClass;
 	
 	UPROPERTY(VisibleAnywhere)
 		ESpectralClass SpectralClass;
@@ -54,12 +81,14 @@ private:
 	public:
 		void AddPlanet(APlanet* Planet);
 
+		void SetPlanetarySystem(APlanetarySystem* PlanetarySystem);
+
 public:
 	void SetLuminosity(float Luminosity);
 
 	void SetSurfaceTemperature(int SurfaceTemperature);
 
-	void SetStarType(EStellarClass StarType);
+	void SetStarType(EStellarType StarType);
 
 	void SetStarSpectralClass(ESpectralClass StarSpectralClass);
 

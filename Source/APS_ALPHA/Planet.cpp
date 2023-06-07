@@ -6,8 +6,11 @@
 
 APlanet::APlanet()
 {
-	SphereCollisionComponent = CreateDefaultSubobject<USphereComponent>(TEXT("SphereCollisionComponent"));
-	RootComponent = SphereCollisionComponent;
+	USceneComponent* Root = CreateDefaultSubobject<USceneComponent>(TEXT("RootComponent"));
+	RootComponent = Root;
+
+	PlanetaryZone = CreateDefaultSubobject<USphereComponent>(TEXT("PlanetaryZoneComponent"));
+	PlanetaryZone->SetupAttachment(RootComponent);
 }
 
 void APlanet::AddMoon(AMoon* Moon)

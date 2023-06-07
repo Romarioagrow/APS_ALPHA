@@ -30,9 +30,9 @@ void UMoonGenerator::ApplyModel(AMoon* Moon, FMoonGenerationModel MoonGeneration
 
 void UMoonGenerator::ConnectMoonWithPlanet(AMoon* NewMoon, APlanet* NewPlanet)
 {
-    NewPlanet->AddMoon(NewMoon);
+    /*NewPlanet->AddMoon(NewMoon);
 	NewMoon->AttachToActor(NewPlanet, FAttachmentTransformRules::KeepRelativeTransform);
-	NewMoon->SetParentPlanet(NewPlanet);
+	NewMoon->SetParentPlanet(NewPlanet);*/
 }
 
 double UMoonGenerator::CalculateGravitationalForce(double MassPlanet, double MassMoon, double Distance)
@@ -167,8 +167,8 @@ EMoonType UMoonGenerator::GenerateMoonType(FPlanetGenerationModel PlanetModel)
 double UMoonGenerator::CalculateRandomMoonMass()
 {
     // Convert the range from a logarithmic scale to a linear scale
-    double minMass = FMath::Pow(10, -4);
-    double maxMass = FMath::Pow(10, -1.5);
+    double minMass = FMath::Pow(10.0, -4.0);
+    double maxMass = FMath::Pow(10.0, -1.5);
 
     // Generate a random mass within the range
     double moonMass = FMath::RandRange(minMass, maxMass);

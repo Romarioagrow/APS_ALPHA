@@ -15,9 +15,9 @@ TArray<FMoonData> UPlanetGenerator::GenerateMoonsList(FPlanetGenerationModel Pla
 
 void UPlanetGenerator::ConnectPlanetWithStar(APlanet* NewPlanet, AStar* NewStar)
 {
-    NewStar->AddPlanet(NewPlanet);
+    /*NewStar->AddPlanet(NewPlanet);
     NewPlanet->AttachToActor(NewStar, FAttachmentTransformRules::KeepRelativeTransform);
-    NewPlanet->SetParentStar(NewStar);
+    NewPlanet->SetParentStar(NewStar);*/
 }
 
 FPlanetGenerationModel UPlanetGenerator::GenerateRandomPlanetModel()
