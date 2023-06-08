@@ -22,20 +22,20 @@ protected:
 	virtual void BeginPlay() override;
 
 public:
-	UPROPERTY(EditAnywhere, Category = "Generation Params")
-		bool bNeedOrbitRotation { false };
 	
+
 	UPROPERTY(EditAnywhere, Category = "Generation Params")
 		bool bGenerateHomeSystem { false };
 	
 	UPROPERTY(EditAnywhere, Category = "Generation Params")
 		bool bGenerateStarCluster { true };
+
 	
-	UPROPERTY(EditAnywhere, Category = "Generation Params")
-		bool bGenerateFullScaledStarCluster { false };
-	
-	UPROPERTY(EditAnywhere, Category = "Generation Params")
+	UPROPERTY(EditAnywhere, Category = "Star Cluster")
 		bool bGenerateRandomCluster { true };
+
+	UPROPERTY(EditAnywhere, Category = "Star Cluster")
+		bool bGenerateFullScaledStarCluster { false };
 
 	UPROPERTY(EditAnywhere, Category = "Star Cluster", meta = (EditCondition = "!bGenerateRandomCluster"))
 		EStarClusterSize StarClusterSize;
@@ -49,7 +49,10 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Star Cluster", meta = (EditCondition = "!bGenerateRandomCluster"))
 		EStarClusterComposition StarClusterComposition;
 	
-	UPROPERTY(EditAnywhere, Category = "Generation Params")
+	UPROPERTY(EditAnywhere, Category = "Home System")
+		bool bNeedOrbitRotation { false };
+
+	UPROPERTY(EditAnywhere, Category = "Home System")
 		FVector HomeSystemRadius { 0 };
 
 	UPROPERTY()

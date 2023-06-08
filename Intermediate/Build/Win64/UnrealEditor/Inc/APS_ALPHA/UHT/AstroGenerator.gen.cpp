@@ -48,11 +48,6 @@ void EmptyLinkFunctionForGeneratedCodeAstroGenerator() {}
 		static const UECodeGen_Private::FMetaDataPairParam Class_MetaDataParams[];
 #endif
 #if WITH_METADATA
-		static const UECodeGen_Private::FMetaDataPairParam NewProp_bNeedOrbitRotation_MetaData[];
-#endif
-		static void NewProp_bNeedOrbitRotation_SetBit(void* Obj);
-		static const UECodeGen_Private::FBoolPropertyParams NewProp_bNeedOrbitRotation;
-#if WITH_METADATA
 		static const UECodeGen_Private::FMetaDataPairParam NewProp_bGenerateHomeSystem_MetaData[];
 #endif
 		static void NewProp_bGenerateHomeSystem_SetBit(void* Obj);
@@ -63,15 +58,15 @@ void EmptyLinkFunctionForGeneratedCodeAstroGenerator() {}
 		static void NewProp_bGenerateStarCluster_SetBit(void* Obj);
 		static const UECodeGen_Private::FBoolPropertyParams NewProp_bGenerateStarCluster;
 #if WITH_METADATA
-		static const UECodeGen_Private::FMetaDataPairParam NewProp_bGenerateFullScaledStarCluster_MetaData[];
-#endif
-		static void NewProp_bGenerateFullScaledStarCluster_SetBit(void* Obj);
-		static const UECodeGen_Private::FBoolPropertyParams NewProp_bGenerateFullScaledStarCluster;
-#if WITH_METADATA
 		static const UECodeGen_Private::FMetaDataPairParam NewProp_bGenerateRandomCluster_MetaData[];
 #endif
 		static void NewProp_bGenerateRandomCluster_SetBit(void* Obj);
 		static const UECodeGen_Private::FBoolPropertyParams NewProp_bGenerateRandomCluster;
+#if WITH_METADATA
+		static const UECodeGen_Private::FMetaDataPairParam NewProp_bGenerateFullScaledStarCluster_MetaData[];
+#endif
+		static void NewProp_bGenerateFullScaledStarCluster_SetBit(void* Obj);
+		static const UECodeGen_Private::FBoolPropertyParams NewProp_bGenerateFullScaledStarCluster;
 		static const UECodeGen_Private::FBytePropertyParams NewProp_StarClusterSize_Underlying;
 #if WITH_METADATA
 		static const UECodeGen_Private::FMetaDataPairParam NewProp_StarClusterSize_MetaData[];
@@ -92,6 +87,11 @@ void EmptyLinkFunctionForGeneratedCodeAstroGenerator() {}
 		static const UECodeGen_Private::FMetaDataPairParam NewProp_StarClusterComposition_MetaData[];
 #endif
 		static const UECodeGen_Private::FEnumPropertyParams NewProp_StarClusterComposition;
+#if WITH_METADATA
+		static const UECodeGen_Private::FMetaDataPairParam NewProp_bNeedOrbitRotation_MetaData[];
+#endif
+		static void NewProp_bNeedOrbitRotation_SetBit(void* Obj);
+		static const UECodeGen_Private::FBoolPropertyParams NewProp_bNeedOrbitRotation;
 #if WITH_METADATA
 		static const UECodeGen_Private::FMetaDataPairParam NewProp_HomeSystemRadius_MetaData[];
 #endif
@@ -168,17 +168,6 @@ void EmptyLinkFunctionForGeneratedCodeAstroGenerator() {}
 	};
 #endif
 #if WITH_METADATA
-	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_AAstroGenerator_Statics::NewProp_bNeedOrbitRotation_MetaData[] = {
-		{ "Category", "Generation Params" },
-		{ "ModuleRelativePath", "AstroGenerator.h" },
-	};
-#endif
-	void Z_Construct_UClass_AAstroGenerator_Statics::NewProp_bNeedOrbitRotation_SetBit(void* Obj)
-	{
-		((AAstroGenerator*)Obj)->bNeedOrbitRotation = 1;
-	}
-	const UECodeGen_Private::FBoolPropertyParams Z_Construct_UClass_AAstroGenerator_Statics::NewProp_bNeedOrbitRotation = { "bNeedOrbitRotation", nullptr, (EPropertyFlags)0x0010000000000001, UECodeGen_Private::EPropertyGenFlags::Bool | UECodeGen_Private::EPropertyGenFlags::NativeBool, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, sizeof(bool), sizeof(AAstroGenerator), &Z_Construct_UClass_AAstroGenerator_Statics::NewProp_bNeedOrbitRotation_SetBit, METADATA_PARAMS(Z_Construct_UClass_AAstroGenerator_Statics::NewProp_bNeedOrbitRotation_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_AAstroGenerator_Statics::NewProp_bNeedOrbitRotation_MetaData)) };
-#if WITH_METADATA
 	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_AAstroGenerator_Statics::NewProp_bGenerateHomeSystem_MetaData[] = {
 		{ "Category", "Generation Params" },
 		{ "ModuleRelativePath", "AstroGenerator.h" },
@@ -201,19 +190,8 @@ void EmptyLinkFunctionForGeneratedCodeAstroGenerator() {}
 	}
 	const UECodeGen_Private::FBoolPropertyParams Z_Construct_UClass_AAstroGenerator_Statics::NewProp_bGenerateStarCluster = { "bGenerateStarCluster", nullptr, (EPropertyFlags)0x0010000000000001, UECodeGen_Private::EPropertyGenFlags::Bool | UECodeGen_Private::EPropertyGenFlags::NativeBool, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, sizeof(bool), sizeof(AAstroGenerator), &Z_Construct_UClass_AAstroGenerator_Statics::NewProp_bGenerateStarCluster_SetBit, METADATA_PARAMS(Z_Construct_UClass_AAstroGenerator_Statics::NewProp_bGenerateStarCluster_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_AAstroGenerator_Statics::NewProp_bGenerateStarCluster_MetaData)) };
 #if WITH_METADATA
-	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_AAstroGenerator_Statics::NewProp_bGenerateFullScaledStarCluster_MetaData[] = {
-		{ "Category", "Generation Params" },
-		{ "ModuleRelativePath", "AstroGenerator.h" },
-	};
-#endif
-	void Z_Construct_UClass_AAstroGenerator_Statics::NewProp_bGenerateFullScaledStarCluster_SetBit(void* Obj)
-	{
-		((AAstroGenerator*)Obj)->bGenerateFullScaledStarCluster = 1;
-	}
-	const UECodeGen_Private::FBoolPropertyParams Z_Construct_UClass_AAstroGenerator_Statics::NewProp_bGenerateFullScaledStarCluster = { "bGenerateFullScaledStarCluster", nullptr, (EPropertyFlags)0x0010000000000001, UECodeGen_Private::EPropertyGenFlags::Bool | UECodeGen_Private::EPropertyGenFlags::NativeBool, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, sizeof(bool), sizeof(AAstroGenerator), &Z_Construct_UClass_AAstroGenerator_Statics::NewProp_bGenerateFullScaledStarCluster_SetBit, METADATA_PARAMS(Z_Construct_UClass_AAstroGenerator_Statics::NewProp_bGenerateFullScaledStarCluster_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_AAstroGenerator_Statics::NewProp_bGenerateFullScaledStarCluster_MetaData)) };
-#if WITH_METADATA
 	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_AAstroGenerator_Statics::NewProp_bGenerateRandomCluster_MetaData[] = {
-		{ "Category", "Generation Params" },
+		{ "Category", "Star Cluster" },
 		{ "ModuleRelativePath", "AstroGenerator.h" },
 	};
 #endif
@@ -222,6 +200,17 @@ void EmptyLinkFunctionForGeneratedCodeAstroGenerator() {}
 		((AAstroGenerator*)Obj)->bGenerateRandomCluster = 1;
 	}
 	const UECodeGen_Private::FBoolPropertyParams Z_Construct_UClass_AAstroGenerator_Statics::NewProp_bGenerateRandomCluster = { "bGenerateRandomCluster", nullptr, (EPropertyFlags)0x0010000000000001, UECodeGen_Private::EPropertyGenFlags::Bool | UECodeGen_Private::EPropertyGenFlags::NativeBool, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, sizeof(bool), sizeof(AAstroGenerator), &Z_Construct_UClass_AAstroGenerator_Statics::NewProp_bGenerateRandomCluster_SetBit, METADATA_PARAMS(Z_Construct_UClass_AAstroGenerator_Statics::NewProp_bGenerateRandomCluster_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_AAstroGenerator_Statics::NewProp_bGenerateRandomCluster_MetaData)) };
+#if WITH_METADATA
+	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_AAstroGenerator_Statics::NewProp_bGenerateFullScaledStarCluster_MetaData[] = {
+		{ "Category", "Star Cluster" },
+		{ "ModuleRelativePath", "AstroGenerator.h" },
+	};
+#endif
+	void Z_Construct_UClass_AAstroGenerator_Statics::NewProp_bGenerateFullScaledStarCluster_SetBit(void* Obj)
+	{
+		((AAstroGenerator*)Obj)->bGenerateFullScaledStarCluster = 1;
+	}
+	const UECodeGen_Private::FBoolPropertyParams Z_Construct_UClass_AAstroGenerator_Statics::NewProp_bGenerateFullScaledStarCluster = { "bGenerateFullScaledStarCluster", nullptr, (EPropertyFlags)0x0010000000000001, UECodeGen_Private::EPropertyGenFlags::Bool | UECodeGen_Private::EPropertyGenFlags::NativeBool, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, sizeof(bool), sizeof(AAstroGenerator), &Z_Construct_UClass_AAstroGenerator_Statics::NewProp_bGenerateFullScaledStarCluster_SetBit, METADATA_PARAMS(Z_Construct_UClass_AAstroGenerator_Statics::NewProp_bGenerateFullScaledStarCluster_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_AAstroGenerator_Statics::NewProp_bGenerateFullScaledStarCluster_MetaData)) };
 	const UECodeGen_Private::FBytePropertyParams Z_Construct_UClass_AAstroGenerator_Statics::NewProp_StarClusterSize_Underlying = { "UnderlyingType", nullptr, (EPropertyFlags)0x0000000000000000, UECodeGen_Private::EPropertyGenFlags::Byte, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, 0, nullptr, METADATA_PARAMS(nullptr, 0) };
 #if WITH_METADATA
 	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_AAstroGenerator_Statics::NewProp_StarClusterSize_MetaData[] = {
@@ -259,8 +248,19 @@ void EmptyLinkFunctionForGeneratedCodeAstroGenerator() {}
 #endif
 	const UECodeGen_Private::FEnumPropertyParams Z_Construct_UClass_AAstroGenerator_Statics::NewProp_StarClusterComposition = { "StarClusterComposition", nullptr, (EPropertyFlags)0x0010000000000001, UECodeGen_Private::EPropertyGenFlags::Enum, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(AAstroGenerator, StarClusterComposition), Z_Construct_UEnum_APS_ALPHA_EStarClusterComposition, METADATA_PARAMS(Z_Construct_UClass_AAstroGenerator_Statics::NewProp_StarClusterComposition_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_AAstroGenerator_Statics::NewProp_StarClusterComposition_MetaData)) }; // 399386891
 #if WITH_METADATA
+	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_AAstroGenerator_Statics::NewProp_bNeedOrbitRotation_MetaData[] = {
+		{ "Category", "Home System" },
+		{ "ModuleRelativePath", "AstroGenerator.h" },
+	};
+#endif
+	void Z_Construct_UClass_AAstroGenerator_Statics::NewProp_bNeedOrbitRotation_SetBit(void* Obj)
+	{
+		((AAstroGenerator*)Obj)->bNeedOrbitRotation = 1;
+	}
+	const UECodeGen_Private::FBoolPropertyParams Z_Construct_UClass_AAstroGenerator_Statics::NewProp_bNeedOrbitRotation = { "bNeedOrbitRotation", nullptr, (EPropertyFlags)0x0010000000000001, UECodeGen_Private::EPropertyGenFlags::Bool | UECodeGen_Private::EPropertyGenFlags::NativeBool, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, sizeof(bool), sizeof(AAstroGenerator), &Z_Construct_UClass_AAstroGenerator_Statics::NewProp_bNeedOrbitRotation_SetBit, METADATA_PARAMS(Z_Construct_UClass_AAstroGenerator_Statics::NewProp_bNeedOrbitRotation_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_AAstroGenerator_Statics::NewProp_bNeedOrbitRotation_MetaData)) };
+#if WITH_METADATA
 	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_AAstroGenerator_Statics::NewProp_HomeSystemRadius_MetaData[] = {
-		{ "Category", "Generation Params" },
+		{ "Category", "Home System" },
 		{ "ModuleRelativePath", "AstroGenerator.h" },
 	};
 #endif
@@ -358,11 +358,10 @@ void EmptyLinkFunctionForGeneratedCodeAstroGenerator() {}
 #endif
 	const UECodeGen_Private::FClassPropertyParams Z_Construct_UClass_AAstroGenerator_Statics::NewProp_BP_MoonClass = { "BP_MoonClass", nullptr, (EPropertyFlags)0x0014000000000001, UECodeGen_Private::EPropertyGenFlags::Class, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(AAstroGenerator, BP_MoonClass), Z_Construct_UClass_UClass, Z_Construct_UClass_AMoon_NoRegister, METADATA_PARAMS(Z_Construct_UClass_AAstroGenerator_Statics::NewProp_BP_MoonClass_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_AAstroGenerator_Statics::NewProp_BP_MoonClass_MetaData)) };
 	const UECodeGen_Private::FPropertyParamsBase* const Z_Construct_UClass_AAstroGenerator_Statics::PropPointers[] = {
-		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AAstroGenerator_Statics::NewProp_bNeedOrbitRotation,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AAstroGenerator_Statics::NewProp_bGenerateHomeSystem,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AAstroGenerator_Statics::NewProp_bGenerateStarCluster,
-		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AAstroGenerator_Statics::NewProp_bGenerateFullScaledStarCluster,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AAstroGenerator_Statics::NewProp_bGenerateRandomCluster,
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AAstroGenerator_Statics::NewProp_bGenerateFullScaledStarCluster,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AAstroGenerator_Statics::NewProp_StarClusterSize_Underlying,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AAstroGenerator_Statics::NewProp_StarClusterSize,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AAstroGenerator_Statics::NewProp_StarClusterType_Underlying,
@@ -371,6 +370,7 @@ void EmptyLinkFunctionForGeneratedCodeAstroGenerator() {}
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AAstroGenerator_Statics::NewProp_StarClusterPopulation,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AAstroGenerator_Statics::NewProp_StarClusterComposition_Underlying,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AAstroGenerator_Statics::NewProp_StarClusterComposition,
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AAstroGenerator_Statics::NewProp_bNeedOrbitRotation,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AAstroGenerator_Statics::NewProp_HomeSystemRadius,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AAstroGenerator_Statics::NewProp_GeneratedStarSystems_Inner,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AAstroGenerator_Statics::NewProp_GeneratedStarSystems,
@@ -425,9 +425,9 @@ void EmptyLinkFunctionForGeneratedCodeAstroGenerator() {}
 		static const FClassRegisterCompiledInInfo ClassInfo[];
 	};
 	const FClassRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_AstroGenerator_h_Statics::ClassInfo[] = {
-		{ Z_Construct_UClass_AAstroGenerator, AAstroGenerator::StaticClass, TEXT("AAstroGenerator"), &Z_Registration_Info_UClass_AAstroGenerator, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(AAstroGenerator), 327815485U) },
+		{ Z_Construct_UClass_AAstroGenerator, AAstroGenerator::StaticClass, TEXT("AAstroGenerator"), &Z_Registration_Info_UClass_AAstroGenerator, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(AAstroGenerator), 640644452U) },
 	};
-	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_AstroGenerator_h_1771020928(TEXT("/Script/APS_ALPHA"),
+	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_AstroGenerator_h_2795988974(TEXT("/Script/APS_ALPHA"),
 		Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_AstroGenerator_h_Statics::ClassInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_AstroGenerator_h_Statics::ClassInfo),
 		nullptr, 0,
 		nullptr, 0);

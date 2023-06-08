@@ -323,6 +323,18 @@
     <ClInclude Include="..\..\Source\APS_ALPHA\KuiperBelt.h">
       <Filter>Source\APS_ALPHA</Filter>
     </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\MainMenuController.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\MainMenuController.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\MainMenuGameModeBase.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\MainMenuGameModeBase.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
     <ClCompile Include="..\..\Source\APS_ALPHA\Moon.cpp">
       <Filter>Source\APS_ALPHA</Filter>
     </ClCompile>
@@ -488,6 +500,9 @@
     <ClInclude Include="..\..\Source\APS_ALPHA\StarClusterPopulation.h">
       <Filter>Source\APS_ALPHA</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\Source\APS_ALPHA\StarClusterSize.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
     <ClInclude Include="..\..\Source\APS_ALPHA\StarClusterType.h">
       <Filter>Source\APS_ALPHA</Filter>
     </ClInclude>
@@ -579,11 +594,6 @@
       <Filter>Source\APS_ALPHA</Filter>
     </ClCompile>
     <ClInclude Include="..\..\Source\APS_ALPHA\WorldActor.h">
-      <Filter>Source\APS_ALPHA</Filter>
-    </ClInclude>
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="..\..\Source\APS_ALPHA\StarClusterSize.h">
       <Filter>Source\APS_ALPHA</Filter>
     </ClInclude>
   </ItemGroup>
