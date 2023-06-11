@@ -46,14 +46,15 @@
 			"GroundVehicle.gen.cpp.obj",
 			"HomeStarSystemGenerationModel.gen.cpp.obj",
 			"KuiperBelt.gen.cpp.obj",
-			"Moon.gen.cpp.obj",
-			"MoonGenerationModel.gen.cpp.obj",
 			"APS_ALPHA.init.gen.cpp.obj",
-			"AstroGenerator.gen.cpp.obj",
-			"MainMenuController.gen.cpp.obj",
-			"MainMenuGameModeBase.gen.cpp.obj"
+			"AstroGenerationLevel.gen.cpp.obj",
+			"AstroGenerator.gen.cpp.obj"
 		],
 		"Module.APS_ALPHA.2_of_3.cpp.obj": [
+			"MainMenuController.gen.cpp.obj",
+			"MainMenuGameModeBase.gen.cpp.obj",
+			"Moon.gen.cpp.obj",
+			"MoonGenerationModel.gen.cpp.obj",
 			"MoonGenerator.gen.cpp.obj",
 			"MoonType.gen.cpp.obj",
 			"OrbitalBody.gen.cpp.obj",
@@ -80,14 +81,14 @@
 			"SpectralType.gen.cpp.obj",
 			"Star.gen.cpp.obj",
 			"StarCluster.gen.cpp.obj",
-			"StarClusterComposition.gen.cpp.obj",
+			"StarClusterComposition.gen.cpp.obj"
+		],
+		"Module.APS_ALPHA.3_of_3.cpp.obj": [
 			"StarClusterGenerator.gen.cpp.obj",
 			"StarClusterPopulation.gen.cpp.obj",
 			"StarClusterSize.gen.cpp.obj",
 			"StarClusterType.gen.cpp.obj",
-			"StarGenerationModel.gen.cpp.obj"
-		],
-		"Module.APS_ALPHA.3_of_3.cpp.obj": [
+			"StarGenerationModel.gen.cpp.obj",
 			"StarGenerator.gen.cpp.obj",
 			"StarSector.gen.cpp.obj",
 			"StarSpectralClass.gen.cpp.obj",
@@ -147,6 +148,8 @@
 			"GroundVehicle.cpp.obj",
 			"HomeStarSystemGenerationModel.cpp.obj",
 			"KuiperBelt.cpp.obj",
+			"MainMenuController.cpp.obj",
+			"MainMenuGameModeBase.cpp.obj",
 			"Moon.cpp.obj",
 			"MoonGenerationModel.cpp.obj",
 			"MoonGenerator.cpp.obj",
@@ -183,9 +186,7 @@
 			"UniverseProceduralGenerator.cpp.obj",
 			"VehicleControlling.cpp.obj",
 			"WorldActor.cpp.obj",
-			"AstroGenerator.cpp.obj",
-			"MainMenuController.cpp.obj",
-			"MainMenuGameModeBase.cpp.obj"
+			"AstroGenerator.cpp.obj"
 		]
 	}
 }

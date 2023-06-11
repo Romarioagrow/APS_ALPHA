@@ -597,4 +597,9 @@
       <Filter>Source\APS_ALPHA</Filter>
     </ClInclude>
   </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\..\Source\APS_ALPHA\AstroGenerationLevel.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+  </ItemGroup>
 </Project>
