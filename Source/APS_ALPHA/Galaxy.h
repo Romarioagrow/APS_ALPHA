@@ -17,10 +17,10 @@ class APS_ALPHA_API AGalaxy : public ACelestialSystem
 	GENERATED_BODY()
 
 public:
-	UPROPERTY(EditAnywhere, Category = "Home System")
+	UPROPERTY(VisibleAnywhere, Category = "Galaxy")
 		EGalaxyType GalaxyType;
 
-	UPROPERTY(EditAnywhere, Category = "Home System")
+	UPROPERTY(VisibleAnywhere, Category = "Galaxy")
 		EGalaxyClass GalaxyGlass;
 	
 };

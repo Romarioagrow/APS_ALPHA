@@ -7,5 +7,6 @@ enum class EGalaxyType : uint8
 	Spiral 			UMETA(DisplayName = "Spiral Galaxy"),
 	BarredSpiral	UMETA(DisplayName = "Barred Spiral Galaxy"),
 	Irregular 		UMETA(DisplayName = "Irregular Galaxy"),
+	Peculiar  		UMETA(DisplayName = "Peculiar Galaxy"),
 	Unknown			UMETA(DisplayName = "Unknown"),
 };

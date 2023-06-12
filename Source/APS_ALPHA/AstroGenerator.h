@@ -6,6 +6,8 @@
 #include "StarClusterGenerator.h"
 #include "PlanetaryProceduralGenerator.h"
 #include "AstroGenerationLevel.h"
+#include "GalaxyType.h"
+#include "GalaxyClass.h"
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
@@ -83,8 +85,20 @@ public:
 		EOrbitDistributionType HomeSystemOrbitDistributionType { EOrbitDistributionType::Dense };
 
 	/// STAR CLUSTER GENERATOR
+	UPROPERTY(EditAnywhere, Category = "Galaxy Cluster")
+		bool bGenerateRandomGalaxyCluster{ false };
+	
+	UPROPERTY(EditAnywhere, Category = "Galaxy")
+		bool bGenerateRandomGalaxy{ false };
+
+	UPROPERTY(EditAnywhere, Category = "Galaxy")
+		EGalaxyType GalaxyType;
+
+	UPROPERTY(EditAnywhere, Category = "Galaxy")
+		EGalaxyClass GalaxyGlass;
+	
 	UPROPERTY(EditAnywhere, Category = "Star Cluster")
-		bool bGenerateRandomCluster { true };
+		bool bGenerateRandomCluster { false };
 
 	UPROPERTY(EditAnywhere, Category = "Star Cluster")
 		bool bGenerateFullScaledStarCluster { false };
@@ -149,8 +163,8 @@ public:
 	UPROPERTY(EditAnywhere, Category = "AstroObject BP")
 		TSubclassOf<class AMoon> BP_MoonClass;
 	
-	// функция генерации общей звездной системы
-	void GenerateStarSystem();
+	//// функция генерации общей звездной системы
+	//void GenerateStarSystem();
 
 	EStarClusterType GetRandomClusterType();
 
