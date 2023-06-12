@@ -19,8 +19,9 @@ PRAGMA_DISABLE_DEPRECATION_WARNINGS
 
 
 #define FOREACH_ENUM_EASTROGENERATIONLEVEL(op) \
+	op(EAstroGenerationLevel::GalaxiesCluster) \
 	op(EAstroGenerationLevel::Galaxy) \
-	op(EAstroGenerationLevel::Cluster) \
+	op(EAstroGenerationLevel::StarCluster) \
 	op(EAstroGenerationLevel::StarSystem) \
 	op(EAstroGenerationLevel::PlanetSystem) \
 	op(EAstroGenerationLevel::SinglePlanet) \

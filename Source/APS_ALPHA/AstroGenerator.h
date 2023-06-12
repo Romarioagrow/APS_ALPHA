@@ -22,17 +22,31 @@ public:
 protected:
 	virtual void BeginPlay() override;
 
+	void GenerateGalaxiesCluster();
+
+	void GenerateGalaxy();
+
+	void GenerateStarSystem();
+
+	void GeneratePlanetSystem();
+
+	void GenerateSinglePlanet();
+
+	void GenerateRandomWorld();
+
+	void InitAstroGenerators();
+
 public:
 	
 	/// BASE ASTRO GENERATOR
 	UPROPERTY(EditAnywhere, Category = "Generation Params")
-		bool bGenerateHomeSystem { false };
-	
-	UPROPERTY(EditAnywhere, Category = "Generation Params")
-		bool bGenerateStarCluster { true };
+		bool bGenerateFullScaledWorld { true };
 
 	UPROPERTY(EditAnywhere, Category = "Generation Params")
-		EAstroGenerationLevel AstroGenerationLevel { EAstroGenerationLevel::PlanetSystem };
+		bool bGenerateHomeSystem { false };
+
+	UPROPERTY(EditAnywhere, Category = "Generation Params")
+		EAstroGenerationLevel AstroGenerationLevel { EAstroGenerationLevel::StarCluster };
 	
 	/// STAR SYSTEM GENERATOR
 	UPROPERTY(EditAnywhere, Category = "Home System")

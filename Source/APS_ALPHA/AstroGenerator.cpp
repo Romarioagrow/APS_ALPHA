@@ -15,6 +15,82 @@ void AAstroGenerator::BeginPlay()
 {
 	Super::BeginPlay();
 
+    InitAstroGenerators();
+
+    switch (AstroGenerationLevel)
+    {   
+    case EAstroGenerationLevel::GalaxiesCluster:
+        GenerateGalaxiesCluster();
+        break;
+    case EAstroGenerationLevel::Galaxy:
+        GenerateGalaxy();
+        break;
+    case EAstroGenerationLevel::StarCluster:
+        GenerateStarCluster();
+        break;
+    case EAstroGenerationLevel::StarSystem:
+        GenerateStarSystem();
+        break;
+    case EAstroGenerationLevel::PlanetSystem:
+        GeneratePlanetSystem();
+        break;
+    case EAstroGenerationLevel::SinglePlanet:
+        GenerateSinglePlanet();
+        break;
+    case EAstroGenerationLevel::Random:
+        GenerateRandomWorld();
+        break;
+    default:
+        GenerateRandomWorld();
+        break;
+    }
+
+
+    /*if (bGenerateHomeSystem)
+    {
+	    GenerateRandomStarSystem();
+    }
+
+    if (bGenerateStarCluster)
+    {
+        GenerateStarCluster();
+    }*/
+
+}
+
+void AAstroGenerator::GenerateGalaxiesCluster()
+{
+
+}
+
+void AAstroGenerator::GenerateGalaxy()
+{
+
+}
+
+void AAstroGenerator::GenerateStarSystem()
+{
+
+}
+
+void AAstroGenerator::GeneratePlanetSystem()
+{
+
+}
+
+void AAstroGenerator::GenerateSinglePlanet()
+{
+
+}
+
+void AAstroGenerator::GenerateRandomWorld()
+{
+
+}
+
+
+void AAstroGenerator::InitAstroGenerators()
+{
     // Init generators
     StarClusterGenerator = NewObject<UStarClusterGenerator>();
     StarSystemGenerator = NewObject<UStarSystemGenerator>();
@@ -23,16 +99,16 @@ void AAstroGenerator::BeginPlay()
     PlanetGenerator = NewObject<UPlanetGenerator>();
     MoonGenerator = NewObject<UMoonGenerator>();
 
-    if (bGenerateHomeSystem)
+    if (StarClusterGenerator == nullptr || StarSystemGenerator == nullptr || PlanetarySystemGenerator == nullptr ||
+        StarGenerator == nullptr || PlanetGenerator == nullptr || MoonGenerator == nullptr)
     {
-	    GenerateRandomStarSystem();
-    }
-
-    if (bGenerateStarCluster)
+		UE_LOG(LogTemp, Warning, TEXT("One of the generators is null!"));
+		return;
+	}
+    else
     {
-        GenerateStarCluster();
+        UE_LOG(LogTemp, Warning, TEXT("All generators OK!"));
     }
-
 }
 
 void AAstroGenerator::GenerateRandomStarSystem()

@@ -34,8 +34,9 @@ void EmptyLinkFunctionForGeneratedCodeAstroGenerationLevel() {}
 		static const UECodeGen_Private::FEnumParams EnumParams;
 	};
 	const UECodeGen_Private::FEnumeratorParam Z_Construct_UEnum_APS_ALPHA_EAstroGenerationLevel_Statics::Enumerators[] = {
+		{ "EAstroGenerationLevel::GalaxiesCluster", (int64)EAstroGenerationLevel::GalaxiesCluster },
 		{ "EAstroGenerationLevel::Galaxy", (int64)EAstroGenerationLevel::Galaxy },
-		{ "EAstroGenerationLevel::Cluster", (int64)EAstroGenerationLevel::Cluster },
+		{ "EAstroGenerationLevel::StarCluster", (int64)EAstroGenerationLevel::StarCluster },
 		{ "EAstroGenerationLevel::StarSystem", (int64)EAstroGenerationLevel::StarSystem },
 		{ "EAstroGenerationLevel::PlanetSystem", (int64)EAstroGenerationLevel::PlanetSystem },
 		{ "EAstroGenerationLevel::SinglePlanet", (int64)EAstroGenerationLevel::SinglePlanet },
@@ -44,29 +45,21 @@ void EmptyLinkFunctionForGeneratedCodeAstroGenerationLevel() {}
 #if WITH_METADATA
 	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UEnum_APS_ALPHA_EAstroGenerationLevel_Statics::Enum_MetaDataParams[] = {
 		{ "BlueprintType", "true" },
-		{ "Cluster.Comment", "// Unknown\n" },
-		{ "Cluster.DisplayName", "Cluster" },
-		{ "Cluster.Name", "EAstroGenerationLevel::Cluster" },
-		{ "Cluster.ToolTip", "Unknown" },
+		{ "GalaxiesCluster.DisplayName", "Galaxies Cluster" },
+		{ "GalaxiesCluster.Name", "EAstroGenerationLevel::GalaxiesCluster" },
 		{ "Galaxy.DisplayName", "Galaxy" },
 		{ "Galaxy.Name", "EAstroGenerationLevel::Galaxy" },
 		{ "ModuleRelativePath", "AstroGenerationLevel.h" },
-		{ "PlanetSystem.Comment", "// Unknown\n" },
-		{ "PlanetSystem.DisplayName", "PlanetSystem" },
+		{ "PlanetSystem.DisplayName", "Planet System" },
 		{ "PlanetSystem.Name", "EAstroGenerationLevel::PlanetSystem" },
-		{ "PlanetSystem.ToolTip", "Unknown" },
-		{ "Random.Comment", "// Unknown\n" },
 		{ "Random.DisplayName", "Random" },
 		{ "Random.Name", "EAstroGenerationLevel::Random" },
-		{ "Random.ToolTip", "Unknown" },
-		{ "SinglePlanet.Comment", "// Unknown\n" },
-		{ "SinglePlanet.DisplayName", "SinglePlanet" },
+		{ "SinglePlanet.DisplayName", "Single Planet" },
 		{ "SinglePlanet.Name", "EAstroGenerationLevel::SinglePlanet" },
-		{ "SinglePlanet.ToolTip", "Unknown" },
-		{ "StarSystem.Comment", "// Unknown\n" },
-		{ "StarSystem.DisplayName", "StarSystem" },
+		{ "StarCluster.DisplayName", "Star Cluster" },
+		{ "StarCluster.Name", "EAstroGenerationLevel::StarCluster" },
+		{ "StarSystem.DisplayName", "Star System" },
 		{ "StarSystem.Name", "EAstroGenerationLevel::StarSystem" },
-		{ "StarSystem.ToolTip", "Unknown" },
 	};
 #endif
 	const UECodeGen_Private::FEnumParams Z_Construct_UEnum_APS_ALPHA_EAstroGenerationLevel_Statics::EnumParams = {
@@ -94,9 +87,9 @@ void EmptyLinkFunctionForGeneratedCodeAstroGenerationLevel() {}
 		static const FEnumRegisterCompiledInInfo EnumInfo[];
 	};
 	const FEnumRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_AstroGenerationLevel_h_Statics::EnumInfo[] = {
-		{ EAstroGenerationLevel_StaticEnum, TEXT("EAstroGenerationLevel"), &Z_Registration_Info_UEnum_EAstroGenerationLevel, CONSTRUCT_RELOAD_VERSION_INFO(FEnumReloadVersionInfo, 3252446912U) },
+		{ EAstroGenerationLevel_StaticEnum, TEXT("EAstroGenerationLevel"), &Z_Registration_Info_UEnum_EAstroGenerationLevel, CONSTRUCT_RELOAD_VERSION_INFO(FEnumReloadVersionInfo, 2796898956U) },
 	};
-	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_AstroGenerationLevel_h_2748523484(TEXT("/Script/APS_ALPHA"),
+	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_AstroGenerationLevel_h_839422616(TEXT("/Script/APS_ALPHA"),
 		nullptr, 0,
 		nullptr, 0,
 		Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_AstroGenerationLevel_h_Statics::EnumInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_AstroGenerationLevel_h_Statics::EnumInfo));
