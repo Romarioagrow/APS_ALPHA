@@ -212,10 +212,22 @@
     <ClInclude Include="..\..\Source\APS_ALPHA\Galaxy.h">
       <Filter>Source\APS_ALPHA</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\Source\APS_ALPHA\GalaxyClass.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\GalaxyGenerator.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\GalaxyGenerator.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
     <ClCompile Include="..\..\Source\APS_ALPHA\GalaxySector.cpp">
       <Filter>Source\APS_ALPHA</Filter>
     </ClCompile>
     <ClInclude Include="..\..\Source\APS_ALPHA\GalaxySector.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\APS_ALPHA\GalaxyType.h">
       <Filter>Source\APS_ALPHA</Filter>
     </ClInclude>
     <ClCompile Include="..\..\Source\APS_ALPHA\GenerationModel.cpp">
@@ -607,10 +619,7 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\..\Source\APS_ALPHA\GalaxyType.h">
-      <Filter>Source\APS_ALPHA</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\Source\APS_ALPHA\GalaxyClass.h">
+    <ClInclude Include="..\..\Source\APS_ALPHA\GalaxyModel.h">
       <Filter>Source\APS_ALPHA</Filter>
     </ClInclude>
   </ItemGroup>

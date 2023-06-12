@@ -10,17 +10,14 @@ struct FCelestialGenerationModel :
 {
 	GENERATED_BODY()
 
-	// Масса спутника
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "CelestialGeneration")
 		float Mass {0};
 
-	// Радиус спутника
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "CelestialGeneration")
 		float Radius{ 0 };
 	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "CelestialGeneration")
 		float RadiusKM{ 0 };
-
 
 };
 

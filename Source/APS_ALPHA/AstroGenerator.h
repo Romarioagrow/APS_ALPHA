@@ -4,6 +4,7 @@
 
 #include "StarSystemGenerator.h"
 #include "StarClusterGenerator.h"
+#include "GalaxyGenerator.h"
 #include "PlanetaryProceduralGenerator.h"
 #include "AstroGenerationLevel.h"
 #include "GalaxyType.h"
@@ -125,6 +126,9 @@ public:
 		TArray<AStarSystem*> GeneratedStarSystems;
 
 	UPROPERTY()
+		UGalaxyGenerator* GalaxyGenerator;
+	
+	UPROPERTY()
 		UStarClusterGenerator* StarClusterGenerator;
 
 	UPROPERTY()
@@ -142,6 +146,9 @@ public:
 	UPROPERTY()
 		UMoonGenerator* MoonGenerator;
 
+	UPROPERTY(EditAnywhere, Category = "AstroObject BP")
+		TSubclassOf<class AGalaxy> BP_GalaxyClass;
+	
 	UPROPERTY(EditAnywhere, Category = "AstroObject BP")
 		TSubclassOf<class AStarCluster> BP_StarClusterClass;
 

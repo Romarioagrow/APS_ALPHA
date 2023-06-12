@@ -14,6 +14,7 @@ void EmptyLinkFunctionForGeneratedCodeGalaxy() {}
 	APS_ALPHA_API UClass* Z_Construct_UClass_AGalaxy_NoRegister();
 	APS_ALPHA_API UEnum* Z_Construct_UEnum_APS_ALPHA_EGalaxyClass();
 	APS_ALPHA_API UEnum* Z_Construct_UEnum_APS_ALPHA_EGalaxyType();
+	ENGINE_API UClass* Z_Construct_UClass_UHierarchicalInstancedStaticMeshComponent_NoRegister();
 	UPackage* Z_Construct_UPackage__Script_APS_ALPHA();
 // End Cross Module References
 	void AGalaxy::StaticRegisterNativesAGalaxy()
@@ -40,6 +41,10 @@ void EmptyLinkFunctionForGeneratedCodeGalaxy() {}
 		static const UECodeGen_Private::FMetaDataPairParam NewProp_GalaxyGlass_MetaData[];
 #endif
 		static const UECodeGen_Private::FEnumPropertyParams NewProp_GalaxyGlass;
+#if WITH_METADATA
+		static const UECodeGen_Private::FMetaDataPairParam NewProp_StarMeshInstances_MetaData[];
+#endif
+		static const UECodeGen_Private::FObjectPropertyParams NewProp_StarMeshInstances;
 		static const UECodeGen_Private::FPropertyParamsBase* const PropPointers[];
 		static const FCppClassTypeInfoStatic StaticCppClassTypeInfo;
 		static const UECodeGen_Private::FClassParams ClassParams;
@@ -71,11 +76,22 @@ void EmptyLinkFunctionForGeneratedCodeGalaxy() {}
 	};
 #endif
 	const UECodeGen_Private::FEnumPropertyParams Z_Construct_UClass_AGalaxy_Statics::NewProp_GalaxyGlass = { "GalaxyGlass", nullptr, (EPropertyFlags)0x0010000000020001, UECodeGen_Private::EPropertyGenFlags::Enum, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(AGalaxy, GalaxyGlass), Z_Construct_UEnum_APS_ALPHA_EGalaxyClass, METADATA_PARAMS(Z_Construct_UClass_AGalaxy_Statics::NewProp_GalaxyGlass_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_AGalaxy_Statics::NewProp_GalaxyGlass_MetaData)) }; // 1326469318
+#if WITH_METADATA
+	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_AGalaxy_Statics::NewProp_StarMeshInstances_MetaData[] = {
+		{ "Category", "Galaxy Stars" },
+		{ "Comment", "// HISM \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\n" },
+		{ "EditInline", "true" },
+		{ "ModuleRelativePath", "Galaxy.h" },
+		{ "ToolTip", "HISM \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd" },
+	};
+#endif
+	const UECodeGen_Private::FObjectPropertyParams Z_Construct_UClass_AGalaxy_Statics::NewProp_StarMeshInstances = { "StarMeshInstances", nullptr, (EPropertyFlags)0x001000000008000d, UECodeGen_Private::EPropertyGenFlags::Object, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(AGalaxy, StarMeshInstances), Z_Construct_UClass_UHierarchicalInstancedStaticMeshComponent_NoRegister, METADATA_PARAMS(Z_Construct_UClass_AGalaxy_Statics::NewProp_StarMeshInstances_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_AGalaxy_Statics::NewProp_StarMeshInstances_MetaData)) };
 	const UECodeGen_Private::FPropertyParamsBase* const Z_Construct_UClass_AGalaxy_Statics::PropPointers[] = {
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AGalaxy_Statics::NewProp_GalaxyType_Underlying,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AGalaxy_Statics::NewProp_GalaxyType,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AGalaxy_Statics::NewProp_GalaxyGlass_Underlying,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AGalaxy_Statics::NewProp_GalaxyGlass,
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AGalaxy_Statics::NewProp_StarMeshInstances,
 	};
 	const FCppClassTypeInfoStatic Z_Construct_UClass_AGalaxy_Statics::StaticCppClassTypeInfo = {
 		TCppClassTypeTraits<AGalaxy>::IsAbstract,
@@ -114,9 +130,9 @@ void EmptyLinkFunctionForGeneratedCodeGalaxy() {}
 		static const FClassRegisterCompiledInInfo ClassInfo[];
 	};
 	const FClassRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_Galaxy_h_Statics::ClassInfo[] = {
-		{ Z_Construct_UClass_AGalaxy, AGalaxy::StaticClass, TEXT("AGalaxy"), &Z_Registration_Info_UClass_AGalaxy, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(AGalaxy), 1366768745U) },
+		{ Z_Construct_UClass_AGalaxy, AGalaxy::StaticClass, TEXT("AGalaxy"), &Z_Registration_Info_UClass_AGalaxy, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(AGalaxy), 3739704838U) },
 	};
-	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_Galaxy_h_2567868579(TEXT("/Script/APS_ALPHA"),
+	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_Galaxy_h_2955646351(TEXT("/Script/APS_ALPHA"),
 		Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_Galaxy_h_Statics::ClassInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_Galaxy_h_Statics::ClassInfo),
 		nullptr, 0,
 		nullptr, 0);

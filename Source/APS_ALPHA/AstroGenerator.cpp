@@ -3,6 +3,7 @@
 #include "PlanetOrbit.h"
 #include "MoonGenerationModel.h"
 #include "StarCluster.h"
+#include "Galaxy.h"
 
 // Sets default values
 AAstroGenerator::AAstroGenerator()
@@ -65,6 +66,61 @@ void AAstroGenerator::GenerateGalaxiesCluster()
 
 void AAstroGenerator::GenerateGalaxy()
 {
+    FGalaxyModel GalaxyModel;
+    if (bGenerateRandomGalaxy)
+    {
+        GalaxyModel = GalaxyGenerator->GenerateRandomGalaxyModel();
+    }
+    else
+    {
+        GalaxyModel.GalaxyGlass = GalaxyGlass;
+        GalaxyModel.GalaxyType = GalaxyType;
+        GalaxyModel.StarsCount = FMath::RandRange(10000, 20000);
+        //GalaxyGenerator->GenerateGalaxyByParamsModel(GalaxyType, GalaxyGlass);
+    }
+
+    UWorld* World = GetWorld();
+
+    if (World)
+    {
+        AGalaxy* NewGalaxy = World->SpawnActor<AGalaxy>(BP_GalaxyClass);
+
+        for (size_t i = 0; i < GalaxyModel.StarsCount; i++)
+        {
+            FStarClusterModel StarClusterModel = StarClusterGenerator->GetRandomStarClusterModel();
+
+
+            //double StarDistance = 10000.0f;  // replace this with your desired distance
+            double LightYearInKm = 9.461e12;
+            double UnitInKm = 6963.4;
+            double LightYearInUnrealUnits = LightYearInKm / UnitInKm;
+            double AstroScaleCoeff = 10;
+            LightYearInUnrealUnits /= AstroScaleCoeff;
+
+            FVector NextStarPosition = GalaxyGenerator->GenerateStarInEllipticalGalaxy(GalaxyModel.GalaxyGlass, LightYearInUnrealUnits);
+
+            // Создаем инстанс звезды и добавляем его в HISM компонент
+            FTransform StarTransform(NextStarPosition);
+            int32 StarInstIndex = NewGalaxy->StarMeshInstances->AddInstance(StarTransform, true);
+        }
+
+        //for (size_t i = 0; i < GalaxyModel.StarsCount; i++)
+        //{
+        //    FStarClusterModel StarClusterModel = StarClusterGenerator->GetRandomStarClusterModel();
+        //    FVector NextStarPosition = GalaxyGenerator->GenerateStarInEllipticalGalaxy(GalaxyModel.GalaxyGlass);
+        //    //NextStarPosition *= 1000000;
+        //    //NextStarPosition *= 10000;
+        //    //FVector StarPosition = StarClusterGenerator->CalculateStarPosition(i, NewStarCluster, NewStarModel);
+        //   // NewStarCluster->AddStarToClusterModel(StarPosition, NewStarModel);
+
+        //    // Создаем инстанс звезды и добавляем его в HISM компонент
+        //    FTransform StarTransform(NextStarPosition);
+        //    //StarTransform.SetScale3D(FVector(NewStarModel.Radius));
+        //    int32 StarInstIndex = NewGalaxy->StarMeshInstances->AddInstance(StarTransform, true);
+        //}
+    }
+
+
 
 }
 
@@ -92,6 +148,7 @@ void AAstroGenerator::GenerateRandomWorld()
 void AAstroGenerator::InitAstroGenerators()
 {
     // Init generators
+    GalaxyGenerator = NewObject<UGalaxyGenerator>();
     StarClusterGenerator = NewObject<UStarClusterGenerator>();
     StarSystemGenerator = NewObject<UStarSystemGenerator>();
     PlanetarySystemGenerator = NewObject<UPlanetarySystemGenerator>();
@@ -99,7 +156,7 @@ void AAstroGenerator::InitAstroGenerators()
     PlanetGenerator = NewObject<UPlanetGenerator>();
     MoonGenerator = NewObject<UMoonGenerator>();
 
-    if (StarClusterGenerator == nullptr || StarSystemGenerator == nullptr || PlanetarySystemGenerator == nullptr ||
+    if (GalaxyGenerator == nullptr || StarClusterGenerator == nullptr || StarSystemGenerator == nullptr || PlanetarySystemGenerator == nullptr ||
         StarGenerator == nullptr || PlanetGenerator == nullptr || MoonGenerator == nullptr)
     {
 		UE_LOG(LogTemp, Warning, TEXT("One of the generators is null!"));
