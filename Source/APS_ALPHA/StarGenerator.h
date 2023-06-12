@@ -310,20 +310,37 @@ private:
 
 	const TMap<EStellarType, int> DefaultStarTypeWeights =
 	{
-		{EStellarType::HyperGiant, 1}, // Гипергиганты
-		{EStellarType::SuperGiant, 1}, // Супергиганты
-		{EStellarType::BrightGiant, 1}, // Белые гиганты
-		{EStellarType::Giant, 3}, // Гиганты
-		{EStellarType::SubGiant, 3}, // Субгиганты
+		{EStellarType::HyperGiant, 0}, // Гипергиганты
+		{EStellarType::SuperGiant, 0}, // Супергиганты
+		{EStellarType::BrightGiant, 0}, // Белые гиганты
+		{EStellarType::Giant, 0}, // Гиганты
+		{EStellarType::SubGiant, 0}, // Субгиганты
 		{EStellarType::MainSequence, 90}, // Главная последовательность
-		{EStellarType::SubDwarf, 1}, // Субкарлики
-		{EStellarType::WhiteDwarf, 1}, // Белые карлики
-		{EStellarType::BrownDwarf, 1}, // Коричневые карлики
-		{EStellarType::Protostar, 1}, // Протозвезды
-		{EStellarType::Neutron, 1}, // Нейтронные звезды
-		{EStellarType::Pulsar, 1}, // Пульсары
-		{EStellarType::BlackHole, 1} // Черные дыры
+		{EStellarType::SubDwarf, 0}, // Субкарлики
+		{EStellarType::WhiteDwarf, 0}, // Белые карлики
+		{EStellarType::BrownDwarf, 0}, // Коричневые карлики
+		{EStellarType::Protostar, 0}, // Протозвезды
+		{EStellarType::Neutron, 0}, // Нейтронные звезды
+		{EStellarType::Pulsar, 0}, // Пульсары
+		{EStellarType::BlackHole, 0} // Черные дыры
 	};
+	
+	//const TMap<EStellarType, int> DefaultStarTypeWeights =
+	//{
+	//	{EStellarType::HyperGiant, 1}, // Гипергиганты
+	//	{EStellarType::SuperGiant, 1}, // Супергиганты
+	//	{EStellarType::BrightGiant, 1}, // Белые гиганты
+	//	{EStellarType::Giant, 3}, // Гиганты
+	//	{EStellarType::SubGiant, 3}, // Субгиганты
+	//	{EStellarType::MainSequence, 90}, // Главная последовательность
+	//	{EStellarType::SubDwarf, 1}, // Субкарлики
+	//	{EStellarType::WhiteDwarf, 1}, // Белые карлики
+	//	{EStellarType::BrownDwarf, 1}, // Коричневые карлики
+	//	{EStellarType::Protostar, 1}, // Протозвезды
+	//	{EStellarType::Neutron, 1}, // Нейтронные звезды
+	//	{EStellarType::Pulsar, 1}, // Пульсары
+	//	{EStellarType::BlackHole, 1} // Черные дыры
+	//};
 
 	//const TMap<EStellarType, int> DefaultStarTypeWeights =
 	//{
