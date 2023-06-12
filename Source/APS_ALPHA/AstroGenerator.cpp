@@ -25,17 +25,10 @@ void AAstroGenerator::BeginPlay()
         GenerateGalaxiesCluster();
         break;
     case EAstroGenerationLevel::Galaxy:
-        //GenerateGalaxy();
-        //AGalaxy* myGalaxy = new AGalaxy();
     {
-
-        //AGalaxy* NewGalaxy = GetWorld()->SpawnActor<AGalaxy>(AGalaxy::StaticClass());
         AGalaxy* NewGalaxy = GetWorld()->SpawnActor<AGalaxy>(BP_GalaxyClass);
-
-
         GalaxyGenerator->GenerateStarsInGalaxy(StarGenerator, NewGalaxy);
     }
-
         break;
     case EAstroGenerationLevel::StarCluster:
         GenerateStarCluster();

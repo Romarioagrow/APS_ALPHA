@@ -22,9 +22,22 @@ FGalaxyModel UGalaxyGenerator::GenerateGalaxyByParamsModel(EGalaxyType GalaxyTyp
 void UGalaxyGenerator::GenerateStarsInGalaxy(UStarGenerator* StarGenerator, AGalaxy* NewGalaxy)
 {
 
+    //FGalaxyModel GalaxyModel;
+    //if (bGenerateRandomGalaxy)
+    //{
+    //    GalaxyModel = GalaxyGenerator->GenerateRandomGalaxyModel();
+    //}
+    //else
+    //{
+    //    GalaxyModel.GalaxyClass = GalaxyGlass;
+    //    GalaxyModel.GalaxyType = GalaxyType;
+    //    GalaxyModel.StarsCount = FMath::RandRange(100000, 200000);
+    //    //GalaxyGenerator->GenerateGalaxyByParamsModel(GalaxyType, GalaxyGlass);
+    //}
+
     // —оздаем октодерево
-    double GalaxyRadius = 10000;
-    double StarsCount = 100000;
+    double GalaxyRadius = 10;
+    double StarsCount = 10000;
     Octree* galaxyOctree = new Octree(FVector(0, 0, 0), FVector(GalaxyRadius, GalaxyRadius, GalaxyRadius));
 
     for (int i = 0; i < StarsCount; i++)
@@ -33,14 +46,20 @@ void UGalaxyGenerator::GenerateStarsInGalaxy(UStarGenerator* StarGenerator, AGal
         bool spaceOccupied = true;
         FVector position;
 
-        double StarDistance = 10000;
+        //double StarDistance = 50000;
+        double LightYearInKm = 9.461e12;
+        double UnitInKm = 6963.4;
+        double LightYearInUnrealUnits = LightYearInKm / UnitInKm;
+        double AstroScaleCoeff = 100000;
+        LightYearInUnrealUnits /= AstroScaleCoeff;
+        double StarDistance = LightYearInUnrealUnits;
 
         // ѕровер€ем, зан€то ли пространство, прежде чем вставл€ть новую звезду
         while (spaceOccupied) {
             position = GenerateStarInEllipticalGalaxy(EGalaxyClass::E7, StarDistance, StarModel.Radius);
-            float radius = StarModel.Radius;
+            float checkRadius = StarModel.Radius;
 
-            spaceOccupied = galaxyOctree->SpaceOccupied(position, radius);
+            spaceOccupied = galaxyOctree->SpaceOccupied(position, checkRadius + StarModel.Radius);
         }
 
         // ¬ставл€ем звезду в октодерево

@@ -118,7 +118,6 @@
 			"AstonomicalBody.cpp.obj",
 			"AstonomicalSystem.cpp.obj",
 			"AstroActor.cpp.obj",
-			"AstroGenerator.cpp.obj",
 			"AstroLocation.cpp.obj",
 			"AstroObject.cpp.obj",
 			"Atmosphere.cpp.obj",
@@ -181,6 +180,7 @@
 			"StarCluster.cpp.obj",
 			"StarClusterGenerator.cpp.obj",
 			"StarGenerationModel.cpp.obj",
+			"StarGenerator.cpp.obj",
 			"StarSector.cpp.obj",
 			"StarSystem.cpp.obj",
 			"StarSystemGenerationModel.cpp.obj",
@@ -192,8 +192,8 @@
 			"UniverseProceduralGenerator.cpp.obj",
 			"VehicleControlling.cpp.obj",
 			"WorldActor.cpp.obj",
-			"GalaxyGenerator.cpp.obj",
-			"StarGenerator.cpp.obj"
+			"AstroGenerator.cpp.obj",
+			"GalaxyGenerator.cpp.obj"
 		]
 	}
 }
