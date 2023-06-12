@@ -4,12 +4,15 @@
 		"Module.APS_ALPHA.1_of_3.cpp.obj": [
 			"Aircraft.gen.cpp.obj",
 			"AnimationState.gen.cpp.obj",
+			"APS_ALPHA.init.gen.cpp.obj",
 			"APS_ALPHAGameModeBase.gen.cpp.obj",
 			"Asteroid.gen.cpp.obj",
 			"AsteroidBelt.gen.cpp.obj",
 			"AstonomicalBody.gen.cpp.obj",
 			"AstonomicalSystem.gen.cpp.obj",
 			"AstroActor.gen.cpp.obj",
+			"AstroGenerationLevel.gen.cpp.obj",
+			"AstroGenerator.gen.cpp.obj",
 			"AstroLocation.gen.cpp.obj",
 			"AstroObject.gen.cpp.obj",
 			"Atmosphere.gen.cpp.obj",
@@ -25,6 +28,7 @@
 			"Colony.gen.cpp.obj",
 			"ControlledPawn.gen.cpp.obj",
 			"Environment.gen.cpp.obj",
+			"GalaxiesCluster.gen.cpp.obj",
 			"Galaxy.gen.cpp.obj",
 			"GalaxySector.gen.cpp.obj",
 			"GenerationModel.gen.cpp.obj",
@@ -44,13 +48,10 @@
 			"GravityState.gen.cpp.obj",
 			"GravityTypeEnum.gen.cpp.obj",
 			"GroundVehicle.gen.cpp.obj",
-			"HomeStarSystemGenerationModel.gen.cpp.obj",
-			"KuiperBelt.gen.cpp.obj",
-			"APS_ALPHA.init.gen.cpp.obj",
-			"AstroGenerationLevel.gen.cpp.obj",
-			"AstroGenerator.gen.cpp.obj"
+			"HomeStarSystemGenerationModel.gen.cpp.obj"
 		],
 		"Module.APS_ALPHA.2_of_3.cpp.obj": [
+			"KuiperBelt.gen.cpp.obj",
 			"MainMenuController.gen.cpp.obj",
 			"MainMenuGameModeBase.gen.cpp.obj",
 			"Moon.gen.cpp.obj",
@@ -80,10 +81,10 @@
 			"SpaceStation.gen.cpp.obj",
 			"SpectralType.gen.cpp.obj",
 			"Star.gen.cpp.obj",
-			"StarCluster.gen.cpp.obj",
-			"StarClusterComposition.gen.cpp.obj"
+			"StarCluster.gen.cpp.obj"
 		],
 		"Module.APS_ALPHA.3_of_3.cpp.obj": [
+			"StarClusterComposition.gen.cpp.obj",
 			"StarClusterGenerator.gen.cpp.obj",
 			"StarClusterPopulation.gen.cpp.obj",
 			"StarClusterSize.gen.cpp.obj",
@@ -186,7 +187,8 @@
 			"UniverseProceduralGenerator.cpp.obj",
 			"VehicleControlling.cpp.obj",
 			"WorldActor.cpp.obj",
-			"AstroGenerator.cpp.obj"
+			"AstroGenerator.cpp.obj",
+			"GalaxiesCluster.cpp.obj"
 		]
 	}
 }

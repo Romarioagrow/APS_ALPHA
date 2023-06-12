@@ -68,10 +68,10 @@ void AAstroGenerator::GenerateGalaxy()
 
 }
 
-void AAstroGenerator::GenerateStarSystem()
-{
-
-}
+//void AAstroGenerator::GenerateStarSystem()
+//{
+//
+//}
 
 void AAstroGenerator::GeneratePlanetSystem()
 {
@@ -111,7 +111,7 @@ void AAstroGenerator::InitAstroGenerators()
     }
 }
 
-void AAstroGenerator::GenerateRandomStarSystem()
+void AAstroGenerator::GenerateStarSystem()
 {
     if (StarGenerator == nullptr || PlanetGenerator == nullptr || MoonGenerator == nullptr) {
         UE_LOG(LogTemp, Warning, TEXT("One of the generators is null!"));

@@ -101,6 +101,9 @@
     <ClInclude Include="..\..\Source\APS_ALPHA\AstroActor.h">
       <Filter>Source\APS_ALPHA</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\Source\APS_ALPHA\AstroGenerationLevel.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
     <ClCompile Include="..\..\Source\APS_ALPHA\AstroGenerator.cpp">
       <Filter>Source\APS_ALPHA</Filter>
     </ClCompile>
@@ -195,6 +198,12 @@
       <Filter>Source\APS_ALPHA</Filter>
     </ClCompile>
     <ClInclude Include="..\..\Source\APS_ALPHA\Environment.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\GalaxiesCluster.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\GalaxiesCluster.h">
       <Filter>Source\APS_ALPHA</Filter>
     </ClInclude>
     <ClCompile Include="..\..\Source\APS_ALPHA\Galaxy.cpp">
@@ -598,7 +607,10 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\..\Source\APS_ALPHA\AstroGenerationLevel.h">
+    <ClInclude Include="..\..\Source\APS_ALPHA\GalaxyType.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\APS_ALPHA\GalaxyClass.h">
       <Filter>Source\APS_ALPHA</Filter>
     </ClInclude>
   </ItemGroup>
