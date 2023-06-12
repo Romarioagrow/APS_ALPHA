@@ -11,12 +11,12 @@ struct FGalaxyModel : public FCelestialGenerationModel
 {
 	GENERATED_BODY()
 
-	UPROPERTY(VisibleAnywhere, Category = "Galaxy")
+	UPROPERTY(VisibleAnywhere)
 		EGalaxyType GalaxyType;
 
-	UPROPERTY(VisibleAnywhere, Category = "Galaxy")
-		EGalaxyClass GalaxyGlass;
+	UPROPERTY(VisibleAnywhere)
+		EGalaxyClass GalaxyClass;
 
-	UPROPERTY(VisibleAnywhere, Category = "Galaxy")
+	UPROPERTY(VisibleAnywhere)
 		int StarsCount;
 };

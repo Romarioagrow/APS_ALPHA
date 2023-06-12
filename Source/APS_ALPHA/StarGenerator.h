@@ -311,19 +311,36 @@ private:
 	const TMap<EStellarType, int> DefaultStarTypeWeights =
 	{
 		{EStellarType::HyperGiant, 1}, // Гипергиганты
-		{EStellarType::SuperGiant, 3}, // Супергиганты
-		{EStellarType::BrightGiant, 3}, // Белые карлики
-		{EStellarType::Giant, 5}, // Гиганты
-		{EStellarType::SubGiant, 5}, // Супергиганты
-		{EStellarType::MainSequence, 80}, // Главная последовательность
-		{EStellarType::SubDwarf, 5}, // Субкарлики
-		{EStellarType::WhiteDwarf, 2}, // Коричневые карлики
-		{EStellarType::BrownDwarf, 2}, // Коричневые карлики
+		{EStellarType::SuperGiant, 1}, // Супергиганты
+		{EStellarType::BrightGiant, 1}, // Белые гиганты
+		{EStellarType::Giant, 3}, // Гиганты
+		{EStellarType::SubGiant, 3}, // Субгиганты
+		{EStellarType::MainSequence, 90}, // Главная последовательность
+		{EStellarType::SubDwarf, 1}, // Субкарлики
+		{EStellarType::WhiteDwarf, 1}, // Белые карлики
+		{EStellarType::BrownDwarf, 1}, // Коричневые карлики
 		{EStellarType::Protostar, 1}, // Протозвезды
 		{EStellarType::Neutron, 1}, // Нейтронные звезды
 		{EStellarType::Pulsar, 1}, // Пульсары
 		{EStellarType::BlackHole, 1} // Черные дыры
 	};
+
+	//const TMap<EStellarType, int> DefaultStarTypeWeights =
+	//{
+	//	{EStellarType::HyperGiant, 1}, // Гипергиганты
+	//	{EStellarType::SuperGiant, 3}, // Супергиганты
+	//	{EStellarType::BrightGiant, 3}, // Белые карлики
+	//	{EStellarType::Giant, 5}, // Гиганты
+	//	{EStellarType::SubGiant, 5}, // Супергиганты
+	//	{EStellarType::MainSequence, 80}, // Главная последовательность
+	//	{EStellarType::SubDwarf, 5}, // Субкарлики
+	//	{EStellarType::WhiteDwarf, 2}, // Коричневые карлики
+	//	{EStellarType::BrownDwarf, 2}, // Коричневые карлики
+	//	{EStellarType::Protostar, 1}, // Протозвезды
+	//	{EStellarType::Neutron, 1}, // Нейтронные звезды
+	//	{EStellarType::Pulsar, 1}, // Пульсары
+	//	{EStellarType::BlackHole, 1} // Черные дыры
+	//};
 
 	// Создаем TMap для цветов спектральных классов.
 	const TMap<ESpectralClass, FString> SpectralClassColorMap =

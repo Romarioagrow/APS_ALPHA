@@ -42,11 +42,11 @@ template<> APS_ALPHA_API UScriptStruct* StaticStruct<FGalaxyModel>()
 		static const UECodeGen_Private::FMetaDataPairParam NewProp_GalaxyType_MetaData[];
 #endif
 		static const UECodeGen_Private::FEnumPropertyParams NewProp_GalaxyType;
-		static const UECodeGen_Private::FBytePropertyParams NewProp_GalaxyGlass_Underlying;
+		static const UECodeGen_Private::FBytePropertyParams NewProp_GalaxyClass_Underlying;
 #if WITH_METADATA
-		static const UECodeGen_Private::FMetaDataPairParam NewProp_GalaxyGlass_MetaData[];
+		static const UECodeGen_Private::FMetaDataPairParam NewProp_GalaxyClass_MetaData[];
 #endif
-		static const UECodeGen_Private::FEnumPropertyParams NewProp_GalaxyGlass;
+		static const UECodeGen_Private::FEnumPropertyParams NewProp_GalaxyClass;
 #if WITH_METADATA
 		static const UECodeGen_Private::FMetaDataPairParam NewProp_StarsCount_MetaData[];
 #endif
@@ -67,22 +67,22 @@ template<> APS_ALPHA_API UScriptStruct* StaticStruct<FGalaxyModel>()
 	const UECodeGen_Private::FBytePropertyParams Z_Construct_UScriptStruct_FGalaxyModel_Statics::NewProp_GalaxyType_Underlying = { "UnderlyingType", nullptr, (EPropertyFlags)0x0000000000000000, UECodeGen_Private::EPropertyGenFlags::Byte, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, 0, nullptr, METADATA_PARAMS(nullptr, 0) };
 #if WITH_METADATA
 	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UScriptStruct_FGalaxyModel_Statics::NewProp_GalaxyType_MetaData[] = {
-		{ "Category", "Galaxy" },
+		{ "Category", "GalaxyModel" },
 		{ "ModuleRelativePath", "GalaxyModel.h" },
 	};
 #endif
 	const UECodeGen_Private::FEnumPropertyParams Z_Construct_UScriptStruct_FGalaxyModel_Statics::NewProp_GalaxyType = { "GalaxyType", nullptr, (EPropertyFlags)0x0010000000020001, UECodeGen_Private::EPropertyGenFlags::Enum, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FGalaxyModel, GalaxyType), Z_Construct_UEnum_APS_ALPHA_EGalaxyType, METADATA_PARAMS(Z_Construct_UScriptStruct_FGalaxyModel_Statics::NewProp_GalaxyType_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FGalaxyModel_Statics::NewProp_GalaxyType_MetaData)) }; // 2575129112
-	const UECodeGen_Private::FBytePropertyParams Z_Construct_UScriptStruct_FGalaxyModel_Statics::NewProp_GalaxyGlass_Underlying = { "UnderlyingType", nullptr, (EPropertyFlags)0x0000000000000000, UECodeGen_Private::EPropertyGenFlags::Byte, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, 0, nullptr, METADATA_PARAMS(nullptr, 0) };
+	const UECodeGen_Private::FBytePropertyParams Z_Construct_UScriptStruct_FGalaxyModel_Statics::NewProp_GalaxyClass_Underlying = { "UnderlyingType", nullptr, (EPropertyFlags)0x0000000000000000, UECodeGen_Private::EPropertyGenFlags::Byte, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, 0, nullptr, METADATA_PARAMS(nullptr, 0) };
 #if WITH_METADATA
-	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UScriptStruct_FGalaxyModel_Statics::NewProp_GalaxyGlass_MetaData[] = {
-		{ "Category", "Galaxy" },
+	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UScriptStruct_FGalaxyModel_Statics::NewProp_GalaxyClass_MetaData[] = {
+		{ "Category", "GalaxyModel" },
 		{ "ModuleRelativePath", "GalaxyModel.h" },
 	};
 #endif
-	const UECodeGen_Private::FEnumPropertyParams Z_Construct_UScriptStruct_FGalaxyModel_Statics::NewProp_GalaxyGlass = { "GalaxyGlass", nullptr, (EPropertyFlags)0x0010000000020001, UECodeGen_Private::EPropertyGenFlags::Enum, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FGalaxyModel, GalaxyGlass), Z_Construct_UEnum_APS_ALPHA_EGalaxyClass, METADATA_PARAMS(Z_Construct_UScriptStruct_FGalaxyModel_Statics::NewProp_GalaxyGlass_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FGalaxyModel_Statics::NewProp_GalaxyGlass_MetaData)) }; // 1326469318
+	const UECodeGen_Private::FEnumPropertyParams Z_Construct_UScriptStruct_FGalaxyModel_Statics::NewProp_GalaxyClass = { "GalaxyClass", nullptr, (EPropertyFlags)0x0010000000020001, UECodeGen_Private::EPropertyGenFlags::Enum, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FGalaxyModel, GalaxyClass), Z_Construct_UEnum_APS_ALPHA_EGalaxyClass, METADATA_PARAMS(Z_Construct_UScriptStruct_FGalaxyModel_Statics::NewProp_GalaxyClass_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FGalaxyModel_Statics::NewProp_GalaxyClass_MetaData)) }; // 1326469318
 #if WITH_METADATA
 	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UScriptStruct_FGalaxyModel_Statics::NewProp_StarsCount_MetaData[] = {
-		{ "Category", "Galaxy" },
+		{ "Category", "GalaxyModel" },
 		{ "ModuleRelativePath", "GalaxyModel.h" },
 	};
 #endif
@@ -90,8 +90,8 @@ template<> APS_ALPHA_API UScriptStruct* StaticStruct<FGalaxyModel>()
 	const UECodeGen_Private::FPropertyParamsBase* const Z_Construct_UScriptStruct_FGalaxyModel_Statics::PropPointers[] = {
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FGalaxyModel_Statics::NewProp_GalaxyType_Underlying,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FGalaxyModel_Statics::NewProp_GalaxyType,
-		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FGalaxyModel_Statics::NewProp_GalaxyGlass_Underlying,
-		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FGalaxyModel_Statics::NewProp_GalaxyGlass,
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FGalaxyModel_Statics::NewProp_GalaxyClass_Underlying,
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FGalaxyModel_Statics::NewProp_GalaxyClass,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FGalaxyModel_Statics::NewProp_StarsCount,
 	};
 	const UECodeGen_Private::FStructParams Z_Construct_UScriptStruct_FGalaxyModel_Statics::ReturnStructParams = {
@@ -120,9 +120,9 @@ template<> APS_ALPHA_API UScriptStruct* StaticStruct<FGalaxyModel>()
 		static const FStructRegisterCompiledInInfo ScriptStructInfo[];
 	};
 	const FStructRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GalaxyModel_h_Statics::ScriptStructInfo[] = {
-		{ FGalaxyModel::StaticStruct, Z_Construct_UScriptStruct_FGalaxyModel_Statics::NewStructOps, TEXT("GalaxyModel"), &Z_Registration_Info_UScriptStruct_GalaxyModel, CONSTRUCT_RELOAD_VERSION_INFO(FStructReloadVersionInfo, sizeof(FGalaxyModel), 1329670897U) },
+		{ FGalaxyModel::StaticStruct, Z_Construct_UScriptStruct_FGalaxyModel_Statics::NewStructOps, TEXT("GalaxyModel"), &Z_Registration_Info_UScriptStruct_GalaxyModel, CONSTRUCT_RELOAD_VERSION_INFO(FStructReloadVersionInfo, sizeof(FGalaxyModel), 1780379187U) },
 	};
-	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GalaxyModel_h_4111541435(TEXT("/Script/APS_ALPHA"),
+	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GalaxyModel_h_2478351107(TEXT("/Script/APS_ALPHA"),
 		nullptr, 0,
 		Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GalaxyModel_h_Statics::ScriptStructInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GalaxyModel_h_Statics::ScriptStructInfo),
 		nullptr, 0);
