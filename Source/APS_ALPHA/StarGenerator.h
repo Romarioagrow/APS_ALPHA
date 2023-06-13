@@ -308,23 +308,40 @@ private:
 		},
 	};
 
-	const TMap<EStellarType, int> DefaultStarTypeWeights =
-	{
-		{EStellarType::HyperGiant, 0}, // Гипергиганты
-		{EStellarType::SuperGiant, 0}, // Супергиганты
-		{EStellarType::BrightGiant, 0}, // Белые гиганты
-		{EStellarType::Giant, 0}, // Гиганты
-		{EStellarType::SubGiant, 0}, // Субгиганты
-		{EStellarType::MainSequence, 90}, // Главная последовательность
-		{EStellarType::SubDwarf, 0}, // Субкарлики
-		{EStellarType::WhiteDwarf, 0}, // Белые карлики
-		{EStellarType::BrownDwarf, 0}, // Коричневые карлики
-		{EStellarType::Protostar, 0}, // Протозвезды
-		{EStellarType::Neutron, 0}, // Нейтронные звезды
-		{EStellarType::Pulsar, 0}, // Пульсары
-		{EStellarType::BlackHole, 0} // Черные дыры
-	};
+	//const TMap<EStellarType, int> DefaultStarTypeWeights =
+	//{
+	//	{EStellarType::HyperGiant, 0}, // Гипергиганты
+	//	{EStellarType::SuperGiant, 0}, // Супергиганты
+	//	{EStellarType::BrightGiant, 0}, // Белые гиганты
+	//	{EStellarType::Giant, 0}, // Гиганты
+	//	{EStellarType::SubGiant, 0}, // Субгиганты
+	//	{EStellarType::MainSequence, 90}, // Главная последовательность
+	//	{EStellarType::SubDwarf, 0}, // Субкарлики
+	//	{EStellarType::WhiteDwarf, 0}, // Белые карлики
+	//	{EStellarType::BrownDwarf, 0}, // Коричневые карлики
+	//	{EStellarType::Protostar, 0}, // Протозвезды
+	//	{EStellarType::Neutron, 0}, // Нейтронные звезды
+	//	{EStellarType::Pulsar, 0}, // Пульсары
+	//	{EStellarType::BlackHole, 0} // Черные дыры
+	//};
 	
+	const TMap<EStellarType, float> DefaultStarTypeWeights =
+	{
+		{EStellarType::HyperGiant, 0.001f}, // Гипергиганты
+		{EStellarType::SuperGiant, 0.01f}, // Супергиганты
+		{EStellarType::BrightGiant, 0.1f}, // Белые гиганты
+		{EStellarType::Giant, 1.0f}, // Гиганты
+		{EStellarType::SubGiant, 10.0f}, // Субгиганты
+		{EStellarType::MainSequence, 1000.0f}, // Главная последовательность
+		{EStellarType::SubDwarf, 0.1f}, // Субкарлики
+		{EStellarType::WhiteDwarf, 1.0f}, // Белые карлики
+		{EStellarType::BrownDwarf, 0.01f}, // Коричневые карлики
+		{EStellarType::Protostar, 0.01f}, // Протозвезды
+		{EStellarType::Neutron, 0.001f}, // Нейтронные звезды
+		{EStellarType::Pulsar, 0.001f}, // Пульсары
+		{EStellarType::BlackHole, 0.001f}
+	};
+
 	//const TMap<EStellarType, int> DefaultStarTypeWeights =
 	//{
 	//	{EStellarType::HyperGiant, 1}, // Гипергиганты

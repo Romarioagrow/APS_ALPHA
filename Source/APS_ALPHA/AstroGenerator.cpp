@@ -6,29 +6,29 @@
 #include "Galaxy.h"
 #include "Octree.h"
 
-// Sets default values
 AAstroGenerator::AAstroGenerator()
 {
 	PrimaryActorTick.bCanEverTick = false;
 }
 
-// Called when the game starts or when spawned
 void AAstroGenerator::BeginPlay()
 {
 	Super::BeginPlay();
 
     InitAstroGenerators();
 
+    InitGenerationLevel();
+}
+
+void AAstroGenerator::InitGenerationLevel()
+{
     switch (AstroGenerationLevel)
-    {   
+    {
     case EAstroGenerationLevel::GalaxiesCluster:
         GenerateGalaxiesCluster();
         break;
     case EAstroGenerationLevel::Galaxy:
-    {
-        AGalaxy* NewGalaxy = GetWorld()->SpawnActor<AGalaxy>(BP_GalaxyClass);
-        GalaxyGenerator->GenerateStarsInGalaxy(StarGenerator, NewGalaxy);
-    }
+        GenerateGalaxy();
         break;
     case EAstroGenerationLevel::StarCluster:
         GenerateStarCluster();
@@ -49,64 +49,12 @@ void AAstroGenerator::BeginPlay()
         GenerateRandomWorld();
         break;
     }
-
-
-    /*if (bGenerateHomeSystem)
-    {
-	    GenerateRandomStarSystem();
-    }
-
-    if (bGenerateStarCluster)
-    {
-        GenerateStarCluster();
-    }*/
-
 }
 
 void AAstroGenerator::GenerateGalaxiesCluster()
 {
 
 }
-
-//void UGalaxyGenerator::GenerateStarsInGalaxy(AGalaxy* NewGalaxy) {
-//    float galaxyRadius = 10000;//NewGalaxy->Radius;
-//    FVector galaxyCenter = FVector(0, 0, 0);  // Находим центр галактики, здесь я предполагаю, что это (0, 0, 0)
-//
-//    Octree* galaxyOctree = new Octree(galaxyCenter, FVector(galaxyRadius, galaxyRadius, galaxyRadius));
-//
-//    for (int i = 0; i < 10000; ++i) {
-//        bool starInserted = false;
-//
-//        while (!starInserted) {
-//            // Генерация параметров звезды
-//            FStarModel StarModel = StarGenerator->GenerateRandomStarModel();
-//            FVector position = GenerateStarInGalaxy(StarModel, NewGalaxy);
-//            float radius = StarModel.Radius;
-//
-//            // Попытка вставки звезды в октодерево
-//            starInserted = galaxyOctree->insertStar(position, radius);
-//        }
-//
-//        // Создание звезды в галактике после успешной вставки в октодерево
-//        FTransform StarTransform;
-//        StarTransform.SetLocation(position);
-//        StarTransform.SetRotation(FQuat::MakeFromEuler(FVector(0.0f, 0.0f, FMath::RandRange(-180.0f, 180.0f))));
-//        StarTransform.SetScale3D(FVector(1.f));
-//
-//        int32 StarInstIndex = NewGalaxy->StarMeshInstances->AddInstance(StarTransform, true);
-//
-//        FLinearColor ColorValue = StarGenerator->GetStarColor(StarModel.SpectralClass, StarModel.SpectralSubclass);
-//        NewGalaxy->StarMeshInstances->SetCustomDataValue(StarInstIndex, 0, ColorValue.R);
-//        NewGalaxy->StarMeshInstances->SetCustomDataValue(StarInstIndex, 1, ColorValue.G);
-//        NewGalaxy->StarMeshInstances->SetCustomDataValue(StarInstIndex, 2, ColorValue.B);
-//        double StarEmission = StarGenerator->CalculateEmission(StarModel.Luminosity * 25);
-//        NewGalaxy->StarMeshInstances->SetCustomDataValue(StarInstIndex, 3, StarEmission);
-//    }
-//
-//    // Удалить октодерево после использования
-//    delete galaxyOctree;
-//}
-
 
 void AAstroGenerator::GenerateGalaxy()
 {
@@ -119,8 +67,6 @@ void AAstroGenerator::GenerateGalaxy()
     {
         GalaxyModel.GalaxyClass = GalaxyGlass;
         GalaxyModel.GalaxyType = GalaxyType;
-        GalaxyModel.StarsCount = FMath::RandRange(100000, 200000);
-        //GalaxyGenerator->GenerateGalaxyByParamsModel(GalaxyType, GalaxyGlass);
     }
 
     UWorld* World = GetWorld();
@@ -128,61 +74,10 @@ void AAstroGenerator::GenerateGalaxy()
     if (World)
     {
         AGalaxy* NewGalaxy = World->SpawnActor<AGalaxy>(BP_GalaxyClass);
-        int TotalStars;
-        for (size_t i = 0; i < GalaxyModel.StarsCount; i++)
-        {
-            FStarModel StarModel = StarGenerator->GenerateRandomStarModel();
-
-
-            //double StarDistance = 10000.0f;  // replace this with your desired distance
-            double LightYearInKm = 9.461e12;
-            double UnitInKm = 6963.4;
-            double LightYearInUnrealUnits = LightYearInKm / UnitInKm;
-            double AstroScaleCoeff = 100;
-            LightYearInUnrealUnits /= AstroScaleCoeff;
-
-            FVector NextStarPosition = GalaxyGenerator->GenerateStarInEllipticalGalaxy(GalaxyModel.GalaxyClass, LightYearInUnrealUnits, StarModel.Radius);
-
-            // Создаем инстанс звезды и добавляем его в HISM компонент
-            FTransform StarTransform(NextStarPosition);
-            StarTransform.SetScale3D(FVector(StarModel.Radius));
-            int32 StarInstIndex = NewGalaxy->StarMeshInstances->AddInstance(StarTransform, true);
-
-            FLinearColor ColorValue = StarGenerator->GetStarColor(StarModel.SpectralClass, StarModel.SpectralSubclass);
-            NewGalaxy->StarMeshInstances->SetCustomDataValue(StarInstIndex, 0, ColorValue.R);
-            NewGalaxy->StarMeshInstances->SetCustomDataValue(StarInstIndex, 1, ColorValue.G);
-            NewGalaxy->StarMeshInstances->SetCustomDataValue(StarInstIndex, 2, ColorValue.B);
-            double StarEmission = StarGenerator->CalculateEmission(StarModel.Luminosity * 25);
-            NewGalaxy->StarMeshInstances->SetCustomDataValue(StarInstIndex, 3, StarEmission);
-            TotalStars = StarInstIndex;
-        }
-
-        UE_LOG(LogTemp, Warning, TEXT("Total stars: %d"), TotalStars);
-
-        //for (size_t i = 0; i < GalaxyModel.StarsCount; i++)
-        //{
-        //    FStarClusterModel StarClusterModel = StarClusterGenerator->GetRandomStarClusterModel();
-        //    FVector NextStarPosition = GalaxyGenerator->GenerateStarInEllipticalGalaxy(GalaxyModel.GalaxyGlass);
-        //    //NextStarPosition *= 1000000;
-        //    //NextStarPosition *= 10000;
-        //    //FVector StarPosition = StarClusterGenerator->CalculateStarPosition(i, NewStarCluster, NewStarModel);
-        //   // NewStarCluster->AddStarToClusterModel(StarPosition, NewStarModel);
-
-        //    // Создаем инстанс звезды и добавляем его в HISM компонент
-        //    FTransform StarTransform(NextStarPosition);
-        //    //StarTransform.SetScale3D(FVector(NewStarModel.Radius));
-        //    int32 StarInstIndex = NewGalaxy->StarMeshInstances->AddInstance(StarTransform, true);
-        //}
+        GalaxyModel.StarsCount = 100000;
+        GalaxyGenerator->GenerateGalaxyOctreeStars(StarGenerator, NewGalaxy, GalaxyModel);
     }
-
-
-
 }
-
-//void AAstroGenerator::GenerateStarSystem()
-//{
-//
-//}
 
 void AAstroGenerator::GeneratePlanetSystem()
 {
@@ -199,7 +94,6 @@ void AAstroGenerator::GenerateRandomWorld()
 
 }
 
-
 void AAstroGenerator::InitAstroGenerators()
 {
     // Init generators
@@ -211,8 +105,13 @@ void AAstroGenerator::InitAstroGenerators()
     PlanetGenerator = NewObject<UPlanetGenerator>();
     MoonGenerator = NewObject<UMoonGenerator>();
 
-    if (GalaxyGenerator == nullptr || StarClusterGenerator == nullptr || StarSystemGenerator == nullptr || PlanetarySystemGenerator == nullptr ||
-        StarGenerator == nullptr || PlanetGenerator == nullptr || MoonGenerator == nullptr)
+    if (GalaxyGenerator == nullptr 
+        || StarClusterGenerator == nullptr 
+        || StarSystemGenerator == nullptr 
+        || PlanetarySystemGenerator == nullptr 
+        || StarGenerator == nullptr 
+        || PlanetGenerator == nullptr 
+        || MoonGenerator == nullptr)
     {
 		UE_LOG(LogTemp, Warning, TEXT("One of the generators is null!"));
 		return;

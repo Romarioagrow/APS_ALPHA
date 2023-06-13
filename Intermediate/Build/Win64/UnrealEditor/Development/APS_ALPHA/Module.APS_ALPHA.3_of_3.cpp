@@ -91,7 +91,6 @@
 #include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Source/APS_ALPHA/StarCluster.cpp"
 #include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Source/APS_ALPHA/StarClusterGenerator.cpp"
 #include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Source/APS_ALPHA/StarGenerationModel.cpp"
-#include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Source/APS_ALPHA/StarGenerator.cpp"
 #include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Source/APS_ALPHA/StarSector.cpp"
 #include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Source/APS_ALPHA/StarSystem.cpp"
 #include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Source/APS_ALPHA/StarSystemGenerationModel.cpp"

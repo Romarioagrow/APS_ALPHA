@@ -24,9 +24,9 @@ public:
 
 	FGalaxyModel GenerateGalaxyByParamsModel(EGalaxyType GalaxyType, EGalaxyClass GalaxyGlass);
 
-	void GenerateStarsInGalaxy(UStarGenerator* StarGenerator, AGalaxy* NewGalaxy);
+	void GenerateGalaxyOctreeStars(UStarGenerator* StarGenerator, AGalaxy* NewGalaxy, FGalaxyModel GalaxyModel);
 
-	FVector GenerateStarInEllipticalGalaxy(EGalaxyClass GalaxyClass, float StarDistance, float StarRadius);
+	FVector GenerateStarInEllipticalGalaxy(EGalaxyClass GalaxyClass, double StarDistance, double StarRadius);
 
 	FVector GenerateStarInEllipticalGalaxy(EGalaxyClass GalaxyClass, float StarDistance);
 

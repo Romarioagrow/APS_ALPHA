@@ -135,17 +135,4 @@ public:
         // ≈сли узел содержит позицию звезды, и радиус этой звезды больше или равен радиусу провер€емого пространства, пространство зан€то.
         return true;
     }
-    //bool SpaceOccupiedInNode(OctreeNode* node, const FVector& position, float radius) {
-    //    // ≈сли узел не содержит позиции звезды, пространство свободно.
-    //    if (node->starPosition == FVector(0, 0, 0))
-    //        return false;
-
-    //    // ≈сли узел содержит позицию звезды, но радиус этой звезды меньше радиуса провер€емого пространства, пространство свободно.
-    //    float distanceBetweenStars = FVector::Dist(node->starPosition, position);
-    //    if (distanceBetweenStars > radius)
-    //        return false;
-
-    //    // ≈сли узел содержит позицию звезды, и радиус этой звезды больше или равен радиусу провер€емого пространства, пространство зан€то.
-    //    return true;
-    //}
 };

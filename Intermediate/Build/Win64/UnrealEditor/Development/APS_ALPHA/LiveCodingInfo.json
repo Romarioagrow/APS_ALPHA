@@ -180,7 +180,6 @@
 			"StarCluster.cpp.obj",
 			"StarClusterGenerator.cpp.obj",
 			"StarGenerationModel.cpp.obj",
-			"StarGenerator.cpp.obj",
 			"StarSector.cpp.obj",
 			"StarSystem.cpp.obj",
 			"StarSystemGenerationModel.cpp.obj",
@@ -193,7 +192,8 @@
 			"VehicleControlling.cpp.obj",
 			"WorldActor.cpp.obj",
 			"AstroGenerator.cpp.obj",
-			"GalaxyGenerator.cpp.obj"
+			"GalaxyGenerator.cpp.obj",
+			"StarGenerator.cpp.obj"
 		]
 	}
 }

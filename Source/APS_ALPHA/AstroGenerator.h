@@ -25,6 +25,8 @@ public:
 protected:
 	virtual void BeginPlay() override;
 
+	void InitGenerationLevel();
+
 	void GenerateGalaxiesCluster();
 
 	void GenerateGalaxy();
