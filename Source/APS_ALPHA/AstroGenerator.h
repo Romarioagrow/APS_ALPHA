@@ -119,7 +119,13 @@ public:
 		EStarClusterComposition StarClusterComposition;
 	
 	UPROPERTY(EditAnywhere, Category = "Galaxy")
-		int GalaxySize{ 1 };
+		int GalaxySize{ 250 };
+	
+	UPROPERTY(EditAnywhere, Category = "Galaxy")
+		int GalaxyStarCount{ 100000 };
+	
+	UPROPERTY(EditAnywhere, Category = "Galaxy")
+		double GalaxyStarDensity{ 10.0 };
 
 	UPROPERTY(EditAnywhere, Category = "Character Spawn")
 		bool bCharacterSpawn{ true };

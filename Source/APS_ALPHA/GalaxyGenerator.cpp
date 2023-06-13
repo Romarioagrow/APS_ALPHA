@@ -20,7 +20,7 @@ FGalaxyModel UGalaxyGenerator::GenerateGalaxyByParamsModel(EGalaxyType GalaxyTyp
 void UGalaxyGenerator::GenerateGalaxyOctreeStars(UStarGenerator* StarGenerator, AGalaxy* NewGalaxy, FGalaxyModel GalaxyModel)
 {
     // —оздаем октодерево
-    double GalaxyOctreeHalfDimension = 500;
+    double GalaxyOctreeHalfDimension = GalaxyModel.GalaxySize;
     Octree* galaxyOctree = new Octree(FVector(0), FVector(GalaxyOctreeHalfDimension));
 
     double StarsCount = GalaxyModel.StarsCount;
@@ -33,14 +33,13 @@ void UGalaxyGenerator::GenerateGalaxyOctreeStars(UStarGenerator* StarGenerator, 
         double LightYearInKm = 9.461e12;
         double UnitInKm = 6963.4;
         double LightYearInUnrealUnits = LightYearInKm / UnitInKm;
-        double AstroScaleCoeff = 1;
+        double AstroScaleCoeff = GalaxyModel.StarsDensity;
         LightYearInUnrealUnits /= AstroScaleCoeff;
 
         // ѕровер€ем, зан€то ли пространство, прежде чем вставл€ть новую звезду
         while (spaceOccupied) {
             position = GenerateStarInEllipticalGalaxy(GalaxyModel.GalaxyClass, LightYearInUnrealUnits, StarModel.Radius);
-            double checkRadius = StarModel.Radius;
-            spaceOccupied = galaxyOctree->SpaceOccupied(position, checkRadius + StarModel.Radius);
+            spaceOccupied = galaxyOctree->SpaceOccupied(position, StarModel.Radius);
         }
 
         // ¬ставл€ем звезду в октодерево

@@ -67,6 +67,9 @@ void AAstroGenerator::GenerateGalaxy()
     {
         GalaxyModel.GalaxyClass = GalaxyGlass;
         GalaxyModel.GalaxyType = GalaxyType;
+        GalaxyModel.StarsCount = GalaxyStarCount;
+        GalaxyModel.StarsDensity = GalaxyStarDensity;
+        GalaxyModel.GalaxySize = GalaxySize;
     }
 
     UWorld* World = GetWorld();
@@ -74,7 +77,6 @@ void AAstroGenerator::GenerateGalaxy()
     if (World)
     {
         AGalaxy* NewGalaxy = World->SpawnActor<AGalaxy>(BP_GalaxyClass);
-        GalaxyModel.StarsCount = 100000;
         GalaxyGenerator->GenerateGalaxyOctreeStars(StarGenerator, NewGalaxy, GalaxyModel);
     }
 }

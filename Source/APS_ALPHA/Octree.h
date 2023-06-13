@@ -133,6 +133,28 @@ public:
             return false;
 
         // ≈сли узел содержит позицию звезды, и радиус этой звезды больше или равен радиусу провер€емого пространства, пространство зан€то.
+        // Ќо прежде чем вернуть true, проверим дочерние узлы.
+        for (int i = 0; i < 8; ++i) { // обходим все 8 дочерних узлов
+            if (node->children[i] != nullptr) {
+                if (SpaceOccupiedInNode(node->children[i], position, radius)) {
+                    return true;
+                }
+            }
+        }
+
         return true;
     }
+    //bool SpaceOccupiedInNode(OctreeNode* node, const FVector& position, float radius) {
+    //    // ≈сли узел не содержит позиции звезды и радиуса звезды, пространство свободно.
+    //    if (node->starPosition == FVector(0, 0, 0) && node->starRadius == 0)
+    //        return false;
+
+    //    // ≈сли узел содержит позицию звезды, но радиус этой звезды меньше радиуса провер€емого пространства, пространство свободно.
+    //    float distanceBetweenStars = FVector::Dist(node->starPosition, position);
+    //    if (distanceBetweenStars > (node->starRadius + radius)) // проверка на пересечение
+    //        return false;
+
+    //    // ≈сли узел содержит позицию звезды, и радиус этой звезды больше или равен радиусу провер€емого пространства, пространство зан€то.
+    //    return true;
+    //}
 };

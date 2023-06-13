@@ -19,4 +19,11 @@ struct FGalaxyModel : public FCelestialGenerationModel
 
 	UPROPERTY(VisibleAnywhere)
 		int StarsCount;
+	
+	UPROPERTY(VisibleAnywhere)
+		int GalaxySize;
+
+	UPROPERTY(VisibleAnywhere)
+		double StarsDensity;
+
 };

@@ -51,6 +51,14 @@ template<> APS_ALPHA_API UScriptStruct* StaticStruct<FGalaxyModel>()
 		static const UECodeGen_Private::FMetaDataPairParam NewProp_StarsCount_MetaData[];
 #endif
 		static const UECodeGen_Private::FUnsizedIntPropertyParams NewProp_StarsCount;
+#if WITH_METADATA
+		static const UECodeGen_Private::FMetaDataPairParam NewProp_GalaxySize_MetaData[];
+#endif
+		static const UECodeGen_Private::FUnsizedIntPropertyParams NewProp_GalaxySize;
+#if WITH_METADATA
+		static const UECodeGen_Private::FMetaDataPairParam NewProp_StarsDensity_MetaData[];
+#endif
+		static const UECodeGen_Private::FDoublePropertyParams NewProp_StarsDensity;
 		static const UECodeGen_Private::FPropertyParamsBase* const PropPointers[];
 		static const UECodeGen_Private::FStructParams ReturnStructParams;
 	};
@@ -87,12 +95,28 @@ template<> APS_ALPHA_API UScriptStruct* StaticStruct<FGalaxyModel>()
 	};
 #endif
 	const UECodeGen_Private::FUnsizedIntPropertyParams Z_Construct_UScriptStruct_FGalaxyModel_Statics::NewProp_StarsCount = { "StarsCount", nullptr, (EPropertyFlags)0x0010000000020001, UECodeGen_Private::EPropertyGenFlags::Int, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FGalaxyModel, StarsCount), METADATA_PARAMS(Z_Construct_UScriptStruct_FGalaxyModel_Statics::NewProp_StarsCount_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FGalaxyModel_Statics::NewProp_StarsCount_MetaData)) };
+#if WITH_METADATA
+	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UScriptStruct_FGalaxyModel_Statics::NewProp_GalaxySize_MetaData[] = {
+		{ "Category", "GalaxyModel" },
+		{ "ModuleRelativePath", "GalaxyModel.h" },
+	};
+#endif
+	const UECodeGen_Private::FUnsizedIntPropertyParams Z_Construct_UScriptStruct_FGalaxyModel_Statics::NewProp_GalaxySize = { "GalaxySize", nullptr, (EPropertyFlags)0x0010000000020001, UECodeGen_Private::EPropertyGenFlags::Int, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FGalaxyModel, GalaxySize), METADATA_PARAMS(Z_Construct_UScriptStruct_FGalaxyModel_Statics::NewProp_GalaxySize_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FGalaxyModel_Statics::NewProp_GalaxySize_MetaData)) };
+#if WITH_METADATA
+	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UScriptStruct_FGalaxyModel_Statics::NewProp_StarsDensity_MetaData[] = {
+		{ "Category", "GalaxyModel" },
+		{ "ModuleRelativePath", "GalaxyModel.h" },
+	};
+#endif
+	const UECodeGen_Private::FDoublePropertyParams Z_Construct_UScriptStruct_FGalaxyModel_Statics::NewProp_StarsDensity = { "StarsDensity", nullptr, (EPropertyFlags)0x0010000000020001, UECodeGen_Private::EPropertyGenFlags::Double, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FGalaxyModel, StarsDensity), METADATA_PARAMS(Z_Construct_UScriptStruct_FGalaxyModel_Statics::NewProp_StarsDensity_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FGalaxyModel_Statics::NewProp_StarsDensity_MetaData)) };
 	const UECodeGen_Private::FPropertyParamsBase* const Z_Construct_UScriptStruct_FGalaxyModel_Statics::PropPointers[] = {
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FGalaxyModel_Statics::NewProp_GalaxyType_Underlying,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FGalaxyModel_Statics::NewProp_GalaxyType,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FGalaxyModel_Statics::NewProp_GalaxyClass_Underlying,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FGalaxyModel_Statics::NewProp_GalaxyClass,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FGalaxyModel_Statics::NewProp_StarsCount,
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FGalaxyModel_Statics::NewProp_GalaxySize,
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FGalaxyModel_Statics::NewProp_StarsDensity,
 	};
 	const UECodeGen_Private::FStructParams Z_Construct_UScriptStruct_FGalaxyModel_Statics::ReturnStructParams = {
 		(UObject* (*)())Z_Construct_UPackage__Script_APS_ALPHA,
@@ -120,9 +144,9 @@ template<> APS_ALPHA_API UScriptStruct* StaticStruct<FGalaxyModel>()
 		static const FStructRegisterCompiledInInfo ScriptStructInfo[];
 	};
 	const FStructRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GalaxyModel_h_Statics::ScriptStructInfo[] = {
-		{ FGalaxyModel::StaticStruct, Z_Construct_UScriptStruct_FGalaxyModel_Statics::NewStructOps, TEXT("GalaxyModel"), &Z_Registration_Info_UScriptStruct_GalaxyModel, CONSTRUCT_RELOAD_VERSION_INFO(FStructReloadVersionInfo, sizeof(FGalaxyModel), 1780379187U) },
+		{ FGalaxyModel::StaticStruct, Z_Construct_UScriptStruct_FGalaxyModel_Statics::NewStructOps, TEXT("GalaxyModel"), &Z_Registration_Info_UScriptStruct_GalaxyModel, CONSTRUCT_RELOAD_VERSION_INFO(FStructReloadVersionInfo, sizeof(FGalaxyModel), 1925221879U) },
 	};
-	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GalaxyModel_h_2478351107(TEXT("/Script/APS_ALPHA"),
+	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GalaxyModel_h_747762115(TEXT("/Script/APS_ALPHA"),
 		nullptr, 0,
 		Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GalaxyModel_h_Statics::ScriptStructInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GalaxyModel_h_Statics::ScriptStructInfo),
 		nullptr, 0);
