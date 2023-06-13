@@ -100,11 +100,11 @@ public:
 	void AlignCharacterToCameraOnStation();
 
 private:
-	float CameraYawScale{ 1.0f };	
-	float CameraPitchScale{ 1.0f };	
-	float CharacterRotationScale{ 1.25f };	
-	float CharacterMovementForce{ 25.f };	
-	float CharacterJumpForce{ 25.f };	
+	double CameraYawScale{ 1.0 };	
+	double CameraPitchScale{ 1.0 };
+	double CharacterRotationScale{ 1.25 };
+	double CharacterMovementForce{ 25.0 };
+	double CharacterJumpForce{ 25.0 };
 
 protected:
 	UFUNCTION()

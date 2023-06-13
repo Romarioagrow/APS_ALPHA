@@ -4,7 +4,6 @@
 		"Module.APS_ALPHA.1_of_3.cpp.obj": [
 			"Aircraft.gen.cpp.obj",
 			"AnimationState.gen.cpp.obj",
-			"APS_ALPHA.init.gen.cpp.obj",
 			"APS_ALPHAGameModeBase.gen.cpp.obj",
 			"Asteroid.gen.cpp.obj",
 			"AsteroidBelt.gen.cpp.obj",
@@ -42,10 +41,11 @@
 			"GravityCharacter.gen.cpp.obj",
 			"GravityCharacterPawn.gen.cpp.obj",
 			"GravityGameModeBase.gen.cpp.obj",
-			"GravityMovementStruct.gen.cpp.obj",
 			"GravityObject.gen.cpp.obj",
 			"GravityObjectInterface.gen.cpp.obj",
-			"GravityParamStruct.gen.cpp.obj"
+			"GravityParamStruct.gen.cpp.obj",
+			"APS_ALPHA.init.gen.cpp.obj",
+			"GravityMovementStruct.gen.cpp.obj"
 		],
 		"Module.APS_ALPHA.2_of_3.cpp.obj": [
 			"GravityPawn.gen.cpp.obj",
@@ -118,6 +118,7 @@
 			"AstonomicalBody.cpp.obj",
 			"AstonomicalSystem.cpp.obj",
 			"AstroActor.cpp.obj",
+			"AstroGenerator.cpp.obj",
 			"AstroLocation.cpp.obj",
 			"AstroObject.cpp.obj",
 			"Atmosphere.cpp.obj",
@@ -135,15 +136,14 @@
 			"Environment.cpp.obj",
 			"GalaxiesCluster.cpp.obj",
 			"Galaxy.cpp.obj",
+			"GalaxyGenerator.cpp.obj",
 			"GalaxySector.cpp.obj",
 			"GenerationModel.cpp.obj",
 			"Geosphere.cpp.obj",
 			"GravityActor.cpp.obj",
 			"GravityActorInterface.cpp.obj",
 			"GravityCharacter.cpp.obj",
-			"GravityCharacterPawn.cpp.obj",
 			"GravityGameModeBase.cpp.obj",
-			"GravityMovementStruct.cpp.obj",
 			"GravityObject.cpp.obj",
 			"GravityObjectInterface.cpp.obj",
 			"GravityParamStruct.cpp.obj",
@@ -192,8 +192,8 @@
 			"UniverseProceduralGenerator.cpp.obj",
 			"VehicleControlling.cpp.obj",
 			"WorldActor.cpp.obj",
-			"AstroGenerator.cpp.obj",
-			"GalaxyGenerator.cpp.obj"
+			"GravityCharacterPawn.cpp.obj",
+			"GravityMovementStruct.cpp.obj"
 		]
 	}
 }

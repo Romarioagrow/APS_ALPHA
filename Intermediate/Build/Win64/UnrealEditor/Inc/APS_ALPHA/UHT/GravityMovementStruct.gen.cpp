@@ -34,43 +34,43 @@ template<> APS_ALPHA_API UScriptStruct* StaticStruct<FGravityMovementStruct>()
 #if WITH_METADATA
 		static const UECodeGen_Private::FMetaDataPairParam NewProp_MovementsForceSpeedZeroG_MetaData[];
 #endif
-		static const UECodeGen_Private::FFloatPropertyParams NewProp_MovementsForceSpeedZeroG;
+		static const UECodeGen_Private::FDoublePropertyParams NewProp_MovementsForceSpeedZeroG;
 #if WITH_METADATA
 		static const UECodeGen_Private::FMetaDataPairParam NewProp_MovementsForceSpeedStation_MetaData[];
 #endif
-		static const UECodeGen_Private::FFloatPropertyParams NewProp_MovementsForceSpeedStation;
+		static const UECodeGen_Private::FDoublePropertyParams NewProp_MovementsForceSpeedStation;
 #if WITH_METADATA
 		static const UECodeGen_Private::FMetaDataPairParam NewProp_MovementsForceSpeedPlanet_MetaData[];
 #endif
-		static const UECodeGen_Private::FFloatPropertyParams NewProp_MovementsForceSpeedPlanet;
+		static const UECodeGen_Private::FDoublePropertyParams NewProp_MovementsForceSpeedPlanet;
 #if WITH_METADATA
 		static const UECodeGen_Private::FMetaDataPairParam NewProp_MovementsForceSpeedShip_MetaData[];
 #endif
-		static const UECodeGen_Private::FFloatPropertyParams NewProp_MovementsForceSpeedShip;
+		static const UECodeGen_Private::FDoublePropertyParams NewProp_MovementsForceSpeedShip;
 #if WITH_METADATA
 		static const UECodeGen_Private::FMetaDataPairParam NewProp_MovementsForceSpeedLowG_MetaData[];
 #endif
-		static const UECodeGen_Private::FFloatPropertyParams NewProp_MovementsForceSpeedLowG;
+		static const UECodeGen_Private::FDoublePropertyParams NewProp_MovementsForceSpeedLowG;
 #if WITH_METADATA
 		static const UECodeGen_Private::FMetaDataPairParam NewProp_JumpForceSpeedZeroG_MetaData[];
 #endif
-		static const UECodeGen_Private::FFloatPropertyParams NewProp_JumpForceSpeedZeroG;
+		static const UECodeGen_Private::FDoublePropertyParams NewProp_JumpForceSpeedZeroG;
 #if WITH_METADATA
 		static const UECodeGen_Private::FMetaDataPairParam NewProp_JumpForceSpeedStation_MetaData[];
 #endif
-		static const UECodeGen_Private::FFloatPropertyParams NewProp_JumpForceSpeedStation;
+		static const UECodeGen_Private::FDoublePropertyParams NewProp_JumpForceSpeedStation;
 #if WITH_METADATA
 		static const UECodeGen_Private::FMetaDataPairParam NewProp_JumpForceSpeedPlanet_MetaData[];
 #endif
-		static const UECodeGen_Private::FFloatPropertyParams NewProp_JumpForceSpeedPlanet;
+		static const UECodeGen_Private::FDoublePropertyParams NewProp_JumpForceSpeedPlanet;
 #if WITH_METADATA
 		static const UECodeGen_Private::FMetaDataPairParam NewProp_JumpForceSpeedShip_MetaData[];
 #endif
-		static const UECodeGen_Private::FFloatPropertyParams NewProp_JumpForceSpeedShip;
+		static const UECodeGen_Private::FDoublePropertyParams NewProp_JumpForceSpeedShip;
 #if WITH_METADATA
 		static const UECodeGen_Private::FMetaDataPairParam NewProp_JumpForceSpeedLowG_MetaData[];
 #endif
-		static const UECodeGen_Private::FFloatPropertyParams NewProp_JumpForceSpeedLowG;
+		static const UECodeGen_Private::FDoublePropertyParams NewProp_JumpForceSpeedLowG;
 		static const UECodeGen_Private::FPropertyParamsBase* const PropPointers[];
 		static const UECodeGen_Private::FStructParams ReturnStructParams;
 	};
@@ -90,70 +90,70 @@ template<> APS_ALPHA_API UScriptStruct* StaticStruct<FGravityMovementStruct>()
 		{ "ModuleRelativePath", "GravityMovementStruct.h" },
 	};
 #endif
-	const UECodeGen_Private::FFloatPropertyParams Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_MovementsForceSpeedZeroG = { "MovementsForceSpeedZeroG", nullptr, (EPropertyFlags)0x0010000000020015, UECodeGen_Private::EPropertyGenFlags::Float, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FGravityMovementStruct, MovementsForceSpeedZeroG), METADATA_PARAMS(Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_MovementsForceSpeedZeroG_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_MovementsForceSpeedZeroG_MetaData)) };
+	const UECodeGen_Private::FDoublePropertyParams Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_MovementsForceSpeedZeroG = { "MovementsForceSpeedZeroG", nullptr, (EPropertyFlags)0x0010000000020015, UECodeGen_Private::EPropertyGenFlags::Double, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FGravityMovementStruct, MovementsForceSpeedZeroG), METADATA_PARAMS(Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_MovementsForceSpeedZeroG_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_MovementsForceSpeedZeroG_MetaData)) };
 #if WITH_METADATA
 	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_MovementsForceSpeedStation_MetaData[] = {
 		{ "Category", "Movements Force Speed - Station" },
 		{ "ModuleRelativePath", "GravityMovementStruct.h" },
 	};
 #endif
-	const UECodeGen_Private::FFloatPropertyParams Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_MovementsForceSpeedStation = { "MovementsForceSpeedStation", nullptr, (EPropertyFlags)0x0010000000020015, UECodeGen_Private::EPropertyGenFlags::Float, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FGravityMovementStruct, MovementsForceSpeedStation), METADATA_PARAMS(Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_MovementsForceSpeedStation_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_MovementsForceSpeedStation_MetaData)) };
+	const UECodeGen_Private::FDoublePropertyParams Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_MovementsForceSpeedStation = { "MovementsForceSpeedStation", nullptr, (EPropertyFlags)0x0010000000020015, UECodeGen_Private::EPropertyGenFlags::Double, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FGravityMovementStruct, MovementsForceSpeedStation), METADATA_PARAMS(Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_MovementsForceSpeedStation_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_MovementsForceSpeedStation_MetaData)) };
 #if WITH_METADATA
 	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_MovementsForceSpeedPlanet_MetaData[] = {
 		{ "Category", "Movements Force Speed - Planet" },
 		{ "ModuleRelativePath", "GravityMovementStruct.h" },
 	};
 #endif
-	const UECodeGen_Private::FFloatPropertyParams Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_MovementsForceSpeedPlanet = { "MovementsForceSpeedPlanet", nullptr, (EPropertyFlags)0x0010000000020015, UECodeGen_Private::EPropertyGenFlags::Float, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FGravityMovementStruct, MovementsForceSpeedPlanet), METADATA_PARAMS(Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_MovementsForceSpeedPlanet_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_MovementsForceSpeedPlanet_MetaData)) };
+	const UECodeGen_Private::FDoublePropertyParams Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_MovementsForceSpeedPlanet = { "MovementsForceSpeedPlanet", nullptr, (EPropertyFlags)0x0010000000020015, UECodeGen_Private::EPropertyGenFlags::Double, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FGravityMovementStruct, MovementsForceSpeedPlanet), METADATA_PARAMS(Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_MovementsForceSpeedPlanet_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_MovementsForceSpeedPlanet_MetaData)) };
 #if WITH_METADATA
 	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_MovementsForceSpeedShip_MetaData[] = {
 		{ "Category", "Movements Force Speed - Ship" },
 		{ "ModuleRelativePath", "GravityMovementStruct.h" },
 	};
 #endif
-	const UECodeGen_Private::FFloatPropertyParams Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_MovementsForceSpeedShip = { "MovementsForceSpeedShip", nullptr, (EPropertyFlags)0x0010000000020015, UECodeGen_Private::EPropertyGenFlags::Float, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FGravityMovementStruct, MovementsForceSpeedShip), METADATA_PARAMS(Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_MovementsForceSpeedShip_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_MovementsForceSpeedShip_MetaData)) };
+	const UECodeGen_Private::FDoublePropertyParams Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_MovementsForceSpeedShip = { "MovementsForceSpeedShip", nullptr, (EPropertyFlags)0x0010000000020015, UECodeGen_Private::EPropertyGenFlags::Double, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FGravityMovementStruct, MovementsForceSpeedShip), METADATA_PARAMS(Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_MovementsForceSpeedShip_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_MovementsForceSpeedShip_MetaData)) };
 #if WITH_METADATA
 	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_MovementsForceSpeedLowG_MetaData[] = {
 		{ "Category", "Movements Force Speed - LowG" },
 		{ "ModuleRelativePath", "GravityMovementStruct.h" },
 	};
 #endif
-	const UECodeGen_Private::FFloatPropertyParams Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_MovementsForceSpeedLowG = { "MovementsForceSpeedLowG", nullptr, (EPropertyFlags)0x0010000000020015, UECodeGen_Private::EPropertyGenFlags::Float, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FGravityMovementStruct, MovementsForceSpeedLowG), METADATA_PARAMS(Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_MovementsForceSpeedLowG_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_MovementsForceSpeedLowG_MetaData)) };
+	const UECodeGen_Private::FDoublePropertyParams Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_MovementsForceSpeedLowG = { "MovementsForceSpeedLowG", nullptr, (EPropertyFlags)0x0010000000020015, UECodeGen_Private::EPropertyGenFlags::Double, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FGravityMovementStruct, MovementsForceSpeedLowG), METADATA_PARAMS(Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_MovementsForceSpeedLowG_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_MovementsForceSpeedLowG_MetaData)) };
 #if WITH_METADATA
 	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_JumpForceSpeedZeroG_MetaData[] = {
 		{ "Category", "Jump Force Speed - ZeroG" },
 		{ "ModuleRelativePath", "GravityMovementStruct.h" },
 	};
 #endif
-	const UECodeGen_Private::FFloatPropertyParams Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_JumpForceSpeedZeroG = { "JumpForceSpeedZeroG", nullptr, (EPropertyFlags)0x0010000000020015, UECodeGen_Private::EPropertyGenFlags::Float, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FGravityMovementStruct, JumpForceSpeedZeroG), METADATA_PARAMS(Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_JumpForceSpeedZeroG_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_JumpForceSpeedZeroG_MetaData)) };
+	const UECodeGen_Private::FDoublePropertyParams Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_JumpForceSpeedZeroG = { "JumpForceSpeedZeroG", nullptr, (EPropertyFlags)0x0010000000020015, UECodeGen_Private::EPropertyGenFlags::Double, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FGravityMovementStruct, JumpForceSpeedZeroG), METADATA_PARAMS(Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_JumpForceSpeedZeroG_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_JumpForceSpeedZeroG_MetaData)) };
 #if WITH_METADATA
 	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_JumpForceSpeedStation_MetaData[] = {
 		{ "Category", "Jump Force Speed - Station" },
 		{ "ModuleRelativePath", "GravityMovementStruct.h" },
 	};
 #endif
-	const UECodeGen_Private::FFloatPropertyParams Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_JumpForceSpeedStation = { "JumpForceSpeedStation", nullptr, (EPropertyFlags)0x0010000000020015, UECodeGen_Private::EPropertyGenFlags::Float, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FGravityMovementStruct, JumpForceSpeedStation), METADATA_PARAMS(Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_JumpForceSpeedStation_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_JumpForceSpeedStation_MetaData)) };
+	const UECodeGen_Private::FDoublePropertyParams Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_JumpForceSpeedStation = { "JumpForceSpeedStation", nullptr, (EPropertyFlags)0x0010000000020015, UECodeGen_Private::EPropertyGenFlags::Double, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FGravityMovementStruct, JumpForceSpeedStation), METADATA_PARAMS(Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_JumpForceSpeedStation_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_JumpForceSpeedStation_MetaData)) };
 #if WITH_METADATA
 	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_JumpForceSpeedPlanet_MetaData[] = {
 		{ "Category", "Jump Force Speed - Planet" },
 		{ "ModuleRelativePath", "GravityMovementStruct.h" },
 	};
 #endif
-	const UECodeGen_Private::FFloatPropertyParams Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_JumpForceSpeedPlanet = { "JumpForceSpeedPlanet", nullptr, (EPropertyFlags)0x0010000000020015, UECodeGen_Private::EPropertyGenFlags::Float, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FGravityMovementStruct, JumpForceSpeedPlanet), METADATA_PARAMS(Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_JumpForceSpeedPlanet_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_JumpForceSpeedPlanet_MetaData)) };
+	const UECodeGen_Private::FDoublePropertyParams Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_JumpForceSpeedPlanet = { "JumpForceSpeedPlanet", nullptr, (EPropertyFlags)0x0010000000020015, UECodeGen_Private::EPropertyGenFlags::Double, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FGravityMovementStruct, JumpForceSpeedPlanet), METADATA_PARAMS(Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_JumpForceSpeedPlanet_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_JumpForceSpeedPlanet_MetaData)) };
 #if WITH_METADATA
 	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_JumpForceSpeedShip_MetaData[] = {
 		{ "Category", "Jump Force Speed - Ship" },
 		{ "ModuleRelativePath", "GravityMovementStruct.h" },
 	};
 #endif
-	const UECodeGen_Private::FFloatPropertyParams Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_JumpForceSpeedShip = { "JumpForceSpeedShip", nullptr, (EPropertyFlags)0x0010000000020015, UECodeGen_Private::EPropertyGenFlags::Float, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FGravityMovementStruct, JumpForceSpeedShip), METADATA_PARAMS(Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_JumpForceSpeedShip_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_JumpForceSpeedShip_MetaData)) };
+	const UECodeGen_Private::FDoublePropertyParams Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_JumpForceSpeedShip = { "JumpForceSpeedShip", nullptr, (EPropertyFlags)0x0010000000020015, UECodeGen_Private::EPropertyGenFlags::Double, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FGravityMovementStruct, JumpForceSpeedShip), METADATA_PARAMS(Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_JumpForceSpeedShip_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_JumpForceSpeedShip_MetaData)) };
 #if WITH_METADATA
 	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_JumpForceSpeedLowG_MetaData[] = {
 		{ "Category", "Jump Force Speed - LowG" },
 		{ "ModuleRelativePath", "GravityMovementStruct.h" },
 	};
 #endif
-	const UECodeGen_Private::FFloatPropertyParams Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_JumpForceSpeedLowG = { "JumpForceSpeedLowG", nullptr, (EPropertyFlags)0x0010000000020015, UECodeGen_Private::EPropertyGenFlags::Float, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FGravityMovementStruct, JumpForceSpeedLowG), METADATA_PARAMS(Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_JumpForceSpeedLowG_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_JumpForceSpeedLowG_MetaData)) };
+	const UECodeGen_Private::FDoublePropertyParams Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_JumpForceSpeedLowG = { "JumpForceSpeedLowG", nullptr, (EPropertyFlags)0x0010000000020015, UECodeGen_Private::EPropertyGenFlags::Double, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FGravityMovementStruct, JumpForceSpeedLowG), METADATA_PARAMS(Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_JumpForceSpeedLowG_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_JumpForceSpeedLowG_MetaData)) };
 	const UECodeGen_Private::FPropertyParamsBase* const Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::PropPointers[] = {
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_MovementsForceSpeedZeroG,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewProp_MovementsForceSpeedStation,
@@ -192,9 +192,9 @@ template<> APS_ALPHA_API UScriptStruct* StaticStruct<FGravityMovementStruct>()
 		static const FStructRegisterCompiledInInfo ScriptStructInfo[];
 	};
 	const FStructRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GravityMovementStruct_h_Statics::ScriptStructInfo[] = {
-		{ FGravityMovementStruct::StaticStruct, Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewStructOps, TEXT("GravityMovementStruct"), &Z_Registration_Info_UScriptStruct_GravityMovementStruct, CONSTRUCT_RELOAD_VERSION_INFO(FStructReloadVersionInfo, sizeof(FGravityMovementStruct), 3713279993U) },
+		{ FGravityMovementStruct::StaticStruct, Z_Construct_UScriptStruct_FGravityMovementStruct_Statics::NewStructOps, TEXT("GravityMovementStruct"), &Z_Registration_Info_UScriptStruct_GravityMovementStruct, CONSTRUCT_RELOAD_VERSION_INFO(FStructReloadVersionInfo, sizeof(FGravityMovementStruct), 2745920790U) },
 	};
-	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GravityMovementStruct_h_3318356924(TEXT("/Script/APS_ALPHA"),
+	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GravityMovementStruct_h_3279348987(TEXT("/Script/APS_ALPHA"),
 		nullptr, 0,
 		Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GravityMovementStruct_h_Statics::ScriptStructInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GravityMovementStruct_h_Statics::ScriptStructInfo),
 		nullptr, 0);
