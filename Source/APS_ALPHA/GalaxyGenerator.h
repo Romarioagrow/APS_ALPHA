@@ -28,6 +28,16 @@ public:
 
 	FVector GenerateStarInEllipticalGalaxy(EGalaxyClass GalaxyClass, double StarDistance, double StarRadius);
 
+	FVector GenerateStarInLenticularGalaxy(EGalaxyClass GalaxyClass, double StarDistance, double StarRadius);
+
+	FVector GenerateStarInSpiralGalaxy(EGalaxyClass GalaxyClass, double StarDistance, double StarRadius);
+
+	FVector GenerateStarInBarredSpiralGalaxy(EGalaxyClass GalaxyClass, double StarDistance, double StarRadius);
+
+	FVector GenerateStarInIrregularGalaxy(EGalaxyClass GalaxyClass, double StarDistance, double StarRadius);
+
+	FVector GenerateStarInPeculiarGalaxy(EGalaxyClass GalaxyClass, double StarDistance, double StarRadius);
+
 	FVector GenerateStarInEllipticalGalaxy(EGalaxyClass GalaxyClass, float StarDistance);
 
 	FVector GenerateStarInEllipticalGalaxy(EGalaxyClass GalaxyClass);

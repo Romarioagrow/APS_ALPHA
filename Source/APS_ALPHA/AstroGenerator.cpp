@@ -78,6 +78,7 @@ void AAstroGenerator::GenerateGalaxy()
     {
         AGalaxy* NewGalaxy = World->SpawnActor<AGalaxy>(BP_GalaxyClass);
         GalaxyGenerator->GenerateGalaxyOctreeStars(StarGenerator, NewGalaxy, GalaxyModel);
+        NewGalaxy->AttachToActor(this, FAttachmentTransformRules::KeepRelativeTransform);
     }
 }
 
