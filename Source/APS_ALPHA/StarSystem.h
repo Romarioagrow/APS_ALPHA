@@ -24,13 +24,8 @@ private:
 	UPROPERTY(VisibleAnywhere, Category = "Star System")
 		EStarSystemType StarSystemType;
 
-	/*UPROPERTY()
-		TArray<APlanetarySystem*> PlanetarySystems;*/
-
 	UPROPERTY()
 		TArray<AStar*> Stars;
-
-	
 
 public:
 	AStarSystem();
@@ -46,7 +41,6 @@ public:
 	
 	UPROPERTY(VisibleAnywhere, Category = "Star System")
 		FVector StarSystemZoneRadius;
-
 
 	UPROPERTY(VisibleAnywhere, Category = "Star")
 		USphereComponent* StarSystemZone;

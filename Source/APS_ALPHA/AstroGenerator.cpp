@@ -89,7 +89,7 @@ void AAstroGenerator::GenerateGalaxy()
 
         if (bGenerateFullScaledWorld)
         {
-            this->SetActorScale3D(FVector(1000000000, 1000000000, 1000000000));
+            this->SetActorScale3D(FVector(1000000000, 1000000000, 1000000000)); /// TODO: Const FullScaleCoefficient
         }
     }
 }
@@ -260,15 +260,15 @@ void AAstroGenerator::GenerateStarSystem()
                 }
                 LastPlanetLocation = NewPlanet->GetActorLocation();
                 LastStarLocation = LastPlanetLocation * 1.1; 
-                //NewStarSystem->StarSystemRadius =  /// TODO: For multiplie stars
             }
 
             double StarSphereRadius;
             if (LastPlanetLocation.IsZero())
             {
-                StarSphereRadius = NewStar->GetRadius() * GetActorScale3D().X * 2;// 500;
+                StarSphereRadius = NewStar->GetRadius() * NewStar->GetActorScale3D().X * 2;
+                StarSphereRadius /= 1000000;
                 NewStar->PlanetarySystemZone->SetSphereRadius(StarSphereRadius);
-                NewStar->StarAffectionZoneRadius = StarSphereRadius * 1.2 * NewStar->GetActorScale3D().X;
+                NewStar->StarAffectionZoneRadius = StarSphereRadius * 1.2;// * NewStar->GetActorScale3D().X;
 
             }
             else
@@ -276,16 +276,11 @@ void AAstroGenerator::GenerateStarSystem()
                 StarSphereRadius = FVector::Dist(NewStar->GetActorLocation(), LastPlanetLocation);
                 StarSphereRadius /= NewStar->GetActorScale3D().X;
                 NewStar->PlanetarySystemZone->SetSphereRadius(StarSphereRadius * 1.1);
-                NewStar->StarAffectionZoneRadius = StarSphereRadius;//StarSphereRadius * 1.2 * NewStar->GetActorScale3D().X;
+                NewStar->StarAffectionZoneRadius = StarSphereRadius;
 
             }
             NewStarSystem->AddNewStar(NewStar);
             NewStarSystem->StarSystemRadius = NewStar->StarAffectionZoneRadius;
-
-            
-            //NewStarSystem->StarSystemAffectionZoneRadius = StarSystemSphereRadius * 1.2 * NewStar->GetActorScale3D().X;
-
-            //LastStarLocation = NewStar->StarAffectionZoneRadius;//NewStar->GetActorLocation();
         }
 
         double StarSystemSphereRadius = FVector::Dist(NewStarSystem->GetActorLocation(), LastStarLocation);
@@ -295,27 +290,21 @@ void AAstroGenerator::GenerateStarSystem()
 
         if (bGenerateFullScaledWorld )
         {
-
             /* method 1: non-adaptive
                 if center = spawn at 000
                 if random = spawn at random index
                 if zones = spawn in distance from center
 
                 check overlapped hism, if overlapped, (re)move it
-            
-            
             */
 
-
-
-
-
-            FVector HomeSystemLocation = NewStarSystem->GetActorLocation();
-            double HomeSystemrRadiusScaled = NewStarSystem->StarSystemRadius * 10;
+            double StarSystemDeadZone = 1;
+            double HomeSystemrRadiusScaled = NewStarSystem->StarSystemRadius * StarSystemDeadZone;
             FCollisionShape MySphere = FCollisionShape::MakeSphere(HomeSystemrRadiusScaled);
             TArray<FOverlapResult> Overlaps;
 
             // выполните проверку перекрыти€
+            FVector HomeSystemLocation = NewStarSystem->GetActorLocation();
             bool isOverlap = World->OverlapMultiByChannel(Overlaps, HomeSystemLocation, FQuat::Identity, ECC_Visibility, MySphere);
 
             float DebugDuration = 60.0f;
@@ -353,235 +342,12 @@ void AAstroGenerator::GenerateStarSystem()
                 {
                     OverlappingHISM->RemoveInstance(Index);
                 }
-
-                int TotalAfter = Overlaps.Num();
-                UE_LOG(LogTemp, Warning, TEXT("Total number of stars before: %d"), TotalOverlaps);
-                UE_LOG(LogTemp, Warning, TEXT("Total number of overlaps after: %d"), TotalAfter);
-                UE_LOG(LogTemp, Warning, TEXT("Total replacing count: %d"), TotalOverlaps - TotalAfter);
             }
             else
             {
                 UE_LOG(LogTemp, Warning, TEXT("No overlaped stars!"));
             }
-
-
-
-
-
-
-            //FVector HomeSystemLocation = NewStarSystem->GetActorLocation();
-            //double HomeSystemrRadiusScaled = NewStarSystem->StarSystemRadius;
-            //HomeSystemrRadiusScaled *= 10;
-            //FCollisionShape MySphere = FCollisionShape::MakeSphere(HomeSystemrRadiusScaled);
-            //TArray<FOverlapResult> Overlaps;
-
-            //// Execute overlap check
-            //bool isOverlap = World->OverlapMultiByChannel(Overlaps, HomeSystemLocation, FQuat::Identity, ECC_Visibility, MySphere);
-
-            //float DebugDuration = 60.0f;
-            //DrawDebugSphere(
-            //    GetWorld(),
-            //    HomeSystemLocation,
-            //    HomeSystemrRadiusScaled,
-            //    50,
-            //    FColor::Purple,
-            //    true,
-            //    DebugDuration
-            //);
-
-            //if (isOverlap)
-            //{
-            //    int TotalOverlaps = Overlaps.Num();
-            //    int TotalBefore{ 0 };
-            //    TArray<int32> InstancesToRemove; // new array for storing instances to be removed
-
-            //    for (auto& Result : Overlaps)
-            //    {
-            //        UHierarchicalInstancedStaticMeshComponent* HISM = Cast<UHierarchicalInstancedStaticMeshComponent>(Result.Component.Get());
-            //        if (HISM)
-            //        {
-            //            if (TotalBefore == 0)
-            //            {
-            //                TotalBefore = HISM->GetInstanceCount();
-            //            }
-
-            //            int32 InstanceIndex = Result.ItemIndex;
-            //            InstancesToRemove.Add(InstanceIndex); // add the index to the removal array instead of removing the instance right away
-            //        }
-            //    }
-
-            //    // Sort instances to remove in descending order
-            //    InstancesToRemove.Sort([](const int32& A, const int32& B) { return A > B; });
-
-            //    for (int32 Index : InstancesToRemove)
-            //    {
-            //        UHierarchicalInstancedStaticMeshComponent* HISM = Cast<UHierarchicalInstancedStaticMeshComponent>(Overlaps[Index].Component.Get());
-            //        if (HISM)
-            //        {
-            //            HISM->RemoveInstance(Index);
-            //            UE_LOG(LogTemp, Warning, TEXT("Overlapping HISM Instance with Index: %d removed."), Index);
-            //        }
-            //    }
-
-            //    int TotalAfter = Overlaps.Num();
-            //    UE_LOG(LogTemp, Warning, TEXT("Total number of stars before: %d"), TotalBefore);
-            //    UE_LOG(LogTemp, Warning, TEXT("Total number of overlaps after: %d"), TotalAfter);
-            //    UE_LOG(LogTemp, Warning, TEXT("Total replacing count: %d"), TotalBefore - TotalAfter);
-            //}
-            //else
-            //{
-            //    UE_LOG(LogTemp, Warning, TEXT("No overlapped stars!"));
-            //}
-
-
-            // check oferlapped star in system and move it
-            //TArray<int32> OverlappingInstances;
-            //int32 InstanceCount;
-
-            //FVector HomeSystemLocation = NewStarSystem->GetActorLocation();
-            //double HomeSystemrRadiusScaled = NewStarSystem->StarSystemRadius;//100;// NewStarSystem->PlanetarySystemZone->SphereRadius * 100;
-            //HomeSystemrRadiusScaled *= 10;
-            //FCollisionShape MySphere = FCollisionShape::MakeSphere(HomeSystemrRadiusScaled ); //* 100 // создайте сферическую форму коллизии с нужным радиусом
-            //TArray<FOverlapResult> Overlaps;  // массив дл€ хранени€ результатов перекрыти€
-
-            //// выполните проверку перекрыти€
-            //bool isOverlap = World->OverlapMultiByChannel(Overlaps, HomeSystemLocation, FQuat::Identity, ECC_Visibility, MySphere );
-
-            //float DebugDuration = 60.0f;  // врем€ отображени€ в секундах
-            //DrawDebugSphere(
-            //    GetWorld(),
-            //    HomeSystemLocation,
-            //    HomeSystemrRadiusScaled,
-            //    50,  // число сегментов сферы, чем больше, тем сфера круглее
-            //    FColor::Purple,  // цвет
-            //    true,  // создать глубину
-            //    DebugDuration  // продолжительность отображени€
-            //);
-
-            //if (isOverlap)  // если есть перекрытие
-            //{
-
-            //    int TotalOverlaps = Overlaps.Num();
-            //    int TotalBefore{0};
-            //    UE_LOG(LogTemp, Warning, TEXT("Total number of overlaps: %d"), TotalOverlaps);
-
-            //    for (auto& Result : Overlaps)  // переберите все результаты перекрыти€
-            //    {
-            //        UHierarchicalInstancedStaticMeshComponent* HISM = Cast<UHierarchicalInstancedStaticMeshComponent>(Result.Component.Get());
-            //        if (HISM)  // если компонент €вл€етс€ HISM
-            //        {
-            //            if (TotalBefore == 0)
-            //            {
-            //                TotalBefore = HISM->GetInstanceCount();
-            //            }
-            //            //UE_LOG(LogTemp, Warning, TEXT("Overlapping HISM"));
-            //            // здесь вы можете сделать что-то с индексом экземпл€ра HISM
-            //            int32 InstanceIndex = Result.ItemIndex;
-            //            // например, вы можете удалить экземпл€р, если это необходимо
-            //            HISM->RemoveInstance(InstanceIndex);
-            //            UE_LOG(LogTemp, Warning, TEXT("Overlapping HISM Instance with Index: %d"), InstanceIndex);
-            //            UE_LOG(LogTemp, Warning, TEXT("Number of HISM Instances after: %d"), HISM->GetInstanceCount());
-            //        }
-            //    }
-            //    int TotalAfter = Overlaps.Num();
-            //    UE_LOG(LogTemp, Warning, TEXT("Total number of stars before: %d"), TotalBefore);
-            //    UE_LOG(LogTemp, Warning, TEXT("Total number of overlaps after: %d"), TotalAfter);
-            //    UE_LOG(LogTemp, Warning, TEXT("Total replacing count: %d"), TotalBefore - TotalAfter);
-            //}
-            //else
-            //{
-            //    UE_LOG(LogTemp, Warning, TEXT("No overlaped stars!"));
-            //}
-
-            //// Check for Star Cluster
-            //if (GeneratedGalaxy && AstroGenerationLevel == EAstroGenerationLevel::Galaxy)
-            //{
-            //    InstanceCount = GeneratedGalaxy->StarMeshInstances->GetInstanceCount();
-            //    UE_LOG(LogTemp, Warning, TEXT("Overlapping Galaxy"));
-            //    UE_LOG(LogTemp, Warning, TEXT("Number Galaxy of HISM Instances before: %d"), InstanceCount);
-
-            //    OverlappingInstances = GeneratedGalaxy->StarMeshInstances->GetInstancesOverlappingSphere(HomeSystemLocation, HomeSystemrRadiusScaled, true);
-            //}
-            //else if (GeneratedStarCluster && AstroGenerationLevel == EAstroGenerationLevel::StarCluster)
-            //{
-            //    InstanceCount = GeneratedStarCluster->StarMeshInstances->GetInstanceCount();
-            //    UE_LOG(LogTemp, Warning, TEXT("Overlapping StarCluster"));
-            //    UE_LOG(LogTemp, Warning, TEXT("Number of StarCluster HISM Instances before: %d"), InstanceCount);
-
-            //    OverlappingInstances = GeneratedStarCluster->StarMeshInstances->GetInstancesOverlappingSphere(HomeSystemLocation, HomeSystemrRadiusScaled, true);
-            //}
-            //UE_LOG(LogTemp, Warning, TEXT("OverlappingInstances: %d"), OverlappingInstances.Num());
-
-            //// Check for Galaxy
-            //if (GeneratedGalaxy && AstroGenerationLevel == EAstroGenerationLevel::Galaxy)
-            //{
-            //    for (int32 InstanceIndex : OverlappingInstances)
-            //    {
-            //        GeneratedGalaxy->StarMeshInstances->RemoveInstance(InstanceIndex);
-            //        UE_LOG(LogTemp, Warning, TEXT("Remove Galaxy Instance Index: %d"), InstanceIndex);
-            //    }
-            //    GeneratedGalaxy->StarMeshInstances->MarkRenderStateDirty();
-            //    InstanceCount = GeneratedGalaxy->StarMeshInstances->GetInstanceCount();
-            //    UE_LOG(LogTemp, Warning, TEXT("Number of Galaxy HISM Instances after: %d"), InstanceCount);
-            //}
-            //else if (GeneratedStarCluster && AstroGenerationLevel == EAstroGenerationLevel::StarCluster)
-            //{
-            //    for (int32 InstanceIndex : OverlappingInstances)
-            //    {
-            //        GeneratedStarCluster->StarMeshInstances->RemoveInstance(InstanceIndex);
-            //        UE_LOG(LogTemp, Warning, TEXT("Remove StarCluster Instance Index: %d"), InstanceIndex);
-            //    }
-            //    GeneratedStarCluster->StarMeshInstances->MarkRenderStateDirty();
-            //    InstanceCount = GeneratedStarCluster->StarMeshInstances->GetInstanceCount();
-            //    UE_LOG(LogTemp, Warning, TEXT("Number of StarCluster HISM Instances after: %d"), InstanceCount);
-            //}
-
-
-
-
-    //        for (int32 InstanceIndex : OverlappingInstances)
-    //        {
-    //            
-
-    //            if (GeneratedGalaxy && AstroGenerationLevel == EAstroGenerationLevel::Galaxy)
-    //            {
-				//	GeneratedGalaxy->StarMeshInstances->RemoveInstance(InstanceIndex);
-				//	UE_LOG(LogTemp, Warning, TEXT("Remove Instance Index: %d"), InstanceIndex);
-				//}
-    //            else if (GeneratedStarCluster && AstroGenerationLevel == EAstroGenerationLevel::StarCluster)
-    //            {
-				//	GeneratedStarCluster->StarMeshInstances->RemoveInstance(InstanceIndex);
-				//	UE_LOG(LogTemp, Warning, TEXT("Remove Instance Index: %d"), InstanceIndex);
-				//}
-    //            //GeneratedGalaxy->StarMeshInstances->RemoveInstance(InstanceIndex);
-    //            //UE_LOG(LogTemp, Warning, TEXT("Remove Instance Index: %d"), InstanceIndex);
-
-    //        }
-    //        /*for (int32 i = OverlappingInstances.Num(); i >= 0; --i)
-    //        {
-    //            GeneratedGalaxy->StarMeshInstances->RemoveInstance(OverlappingInstances[i]);
-    //            UE_LOG(LogTemp, Warning, TEXT("Remove Instance Index: %d"), i);
-
-    //        }*/
-
-    //        if (AstroGenerationLevel == EAstroGenerationLevel::Galaxy)
-    //        {
-    //            GeneratedGalaxy->StarMeshInstances->MarkRenderStateDirty();
-
-    //        }
-    //        else if (AstroGenerationLevel == EAstroGenerationLevel::StarCluster)
-    //        {
-				//GeneratedStarCluster->StarMeshInstances->MarkRenderStateDirty();
-    //        }
-
-
         }
-
-        
-
-        //MyHISMComponent->GetInstancesOverlappingSphere(Center, Radius, OverlappingInstances);
-
-
     }
 }
 
