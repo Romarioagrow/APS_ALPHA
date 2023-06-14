@@ -9,6 +9,7 @@
 #include "AstroGenerationLevel.h"
 #include "GalaxyType.h"
 #include "GalaxyClass.h"
+#include "HomeSystemPosition.h"
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
@@ -41,6 +42,12 @@ protected:
 
 	void InitAstroGenerators();
 
+	UPROPERTY(VisibleAnywhere, Category = "Generated Astro Actros")
+		AGalaxy* GeneratedGalaxy;
+	
+	UPROPERTY(VisibleAnywhere, Category = "Generated Astro Actros")
+		AStarCluster* GeneratedStarCluster;
+
 public:
 	
 	/// BASE ASTRO GENERATOR
@@ -54,6 +61,9 @@ public:
 		EAstroGenerationLevel AstroGenerationLevel { EAstroGenerationLevel::StarCluster };
 	
 	/// STAR SYSTEM GENERATOR
+	UPROPERTY(EditAnywhere, Category = "Home System")
+		EHomeSystemPosition HomeSystemPosition;
+	
 	UPROPERTY(EditAnywhere, Category = "Home System")
 		bool bFullScaledHomeSystem{ false };
 
@@ -103,8 +113,8 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Star Cluster")
 		bool bGenerateRandomCluster { false };
 
-	UPROPERTY(EditAnywhere, Category = "Star Cluster")
-		bool bGenerateFullScaledStarCluster { false };
+	/*UPROPERTY(EditAnywhere, Category = "Star Cluster")
+		bool bGenerateFullScaledStarCluster { false };*/
 
 	UPROPERTY(EditAnywhere, Category = "Star Cluster", meta = (EditCondition = "!bGenerateRandomCluster"))
 		EStarClusterSize StarClusterSize;

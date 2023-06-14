@@ -21,7 +21,7 @@ private:
 	UPROPERTY(VisibleAnywhere, Category = "Star System")
 		int StarsAmount;
 
-	UPROPERTY(VisibleAnywhere)
+	UPROPERTY(VisibleAnywhere, Category = "Star System")
 		EStarSystemType StarSystemType;
 
 	/*UPROPERTY()
@@ -30,10 +30,15 @@ private:
 	UPROPERTY()
 		TArray<AStar*> Stars;
 
+	
+
 public:
 	void SetStarsAmount(int StarsAmount);
 
 	void AddNewStar(AStar* MewStar);
 
 	void SetStarSystemType(EStarSystemType Type);
+
+	UPROPERTY(VisibleAnywhere, Category = "Star System")
+		double StarSystemRadius;
 };

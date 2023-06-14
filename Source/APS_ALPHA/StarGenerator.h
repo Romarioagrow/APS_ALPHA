@@ -57,7 +57,7 @@ public:
 
 	ESpectralClass GenerateSpectralClassByProbability(TMap<ESpectralClass, int> StarSpectralClassProbabilities);
 
-	EStellarType GenerateStellarTypeByRandomWeights(TMap<EStellarType, int> StarTypeProbabilities);
+	EStellarType GenerateStellarTypeByRandomWeights(TMap<EStellarType, float> StarTypeProbabilities);
 
 	EStellarType GenerateStellarTypeByRandomWeights();
 
@@ -248,62 +248,80 @@ private:
 
 
 
-	const TMap<EStarClusterPopulation, TMap<EStellarType, int>> StarClusterPopulationWeights =
+	const TMap<EStarClusterPopulation, TMap<EStellarType, float>> StarClusterPopulationWeights =
 	{
 		{
 			EStarClusterPopulation::AllSequenses,
 			{
-				{EStellarType::HyperGiant, 1}, // Гипергиганты
-				{EStellarType::SuperGiant, 3}, // Супергиганты
-				{EStellarType::BrightGiant, 3}, // Белые карлики
-				{EStellarType::Giant, 5}, // Гиганты
-				{EStellarType::SubGiant, 5}, // Супергиганты
-				{EStellarType::MainSequence, 80}, // Главная последовательность
-				{EStellarType::SubDwarf, 5}, // Субкарлики
-				{EStellarType::WhiteDwarf, 2}, // Белые карлики
-				{EStellarType::BrownDwarf, 2}, // Коричневые карлики
-				{EStellarType::Protostar, 1}, // Протозвезды
-				{EStellarType::Neutron, 1}, // Нейтронные звезды
-				{EStellarType::Pulsar, 1}, // Пульсары
-				{EStellarType::BlackHole, 1} // Черные дыры
+				{EStellarType::HyperGiant, 0.001f}, // Гипергиганты
+				{EStellarType::SuperGiant, 0.01f}, // Супергиганты
+				{EStellarType::BrightGiant, 0.1f}, // Белые гиганты
+				{EStellarType::Giant, 1.0f}, // Гиганты
+				{EStellarType::SubGiant, 10.0f}, // Субгиганты
+				{EStellarType::MainSequence, 1000.0f}, // Главная последовательность
+				{EStellarType::SubDwarf, 0.1f}, // Субкарлики
+				{EStellarType::WhiteDwarf, 1.0f}, // Белые карлики
+				{EStellarType::BrownDwarf, 0.01f}, // Коричневые карлики
+				{EStellarType::Protostar, 0.01f}, // Протозвезды
+				{EStellarType::Neutron, 0.001f}, // Нейтронные звезды
+				{EStellarType::Pulsar, 0.001f}, // Пульсары
+				{EStellarType::BlackHole, 0.001f}
 			}
 		},
+		//{
+		//	EStarClusterPopulation::AllSequenses,
+		//	{
+		//		{EStellarType::HyperGiant, 1}, // Гипергиганты
+		//		{EStellarType::SuperGiant, 3}, // Супергиганты
+		//		{EStellarType::BrightGiant, 3}, // Белые карлики
+		//		{EStellarType::Giant, 5}, // Гиганты
+		//		{EStellarType::SubGiant, 5}, // Супергиганты
+		//		{EStellarType::MainSequence, 80}, // Главная последовательность
+		//		{EStellarType::SubDwarf, 5}, // Субкарлики
+		//		{EStellarType::WhiteDwarf, 2}, // Белые карлики
+		//		{EStellarType::BrownDwarf, 2}, // Коричневые карлики
+		//		{EStellarType::Protostar, 1}, // Протозвезды
+		//		{EStellarType::Neutron, 1}, // Нейтронные звезды
+		//		{EStellarType::Pulsar, 1}, // Пульсары
+		//		{EStellarType::BlackHole, 1} // Черные дыры
+		//	}
+		//},
 		{
 			EStarClusterPopulation::MainSequence,
 			{
-				{EStellarType::MainSequence, 100}, // Главная последовательность
+				{EStellarType::MainSequence, 100.f}, // Главная последовательность
 			}
 		},
 		{
 			EStarClusterPopulation::Giants,
 			{
-				{EStellarType::HyperGiant, 1}, // Гипергиганты
-				{EStellarType::SuperGiant, 5}, // Супергиганты
-				{EStellarType::BrightGiant, 10}, // Белые карлики
-				{EStellarType::Giant, 50}, // Гиганты
-				{EStellarType::SubGiant, 30}, // Главная последовательность
+				{EStellarType::HyperGiant, 1.f}, // Гипергиганты
+				{EStellarType::SuperGiant, 5.f}, // Супергиганты
+				{EStellarType::BrightGiant, 10.f}, // Белые карлики
+				{EStellarType::Giant, 50.f}, // Гиганты
+				{EStellarType::SubGiant, 30.f}, // Главная последовательность
 			}
 		},
 		{
 			EStarClusterPopulation::Dwarfs,
 			{
-				{EStellarType::SubDwarf, 50}, // Субкарлики
-				{EStellarType::WhiteDwarf, 12}, // Белые карлики
-				{EStellarType::BrownDwarf, 5}, // Коричневые карлики
-				{EStellarType::Protostar, 5}, // Протозвезды
-				{EStellarType::Neutron, 3}, // Нейтронные звезды
-				{EStellarType::Pulsar, 2}, // Пульсары
-				{EStellarType::BlackHole, 1}// Главная последовательность
+				{EStellarType::SubDwarf, 50.f}, // Субкарлики
+				{EStellarType::WhiteDwarf, 12.f}, // Белые карлики
+				{EStellarType::BrownDwarf, 5.f}, // Коричневые карлики
+				{EStellarType::Protostar, 5.f}, // Протозвезды
+				{EStellarType::Neutron, 3.f}, // Нейтронные звезды
+				{EStellarType::Pulsar, 2.f}, // Пульсары
+				{EStellarType::BlackHole, 1.f}// Главная последовательность
 			}
 		},
 		{
 			EStarClusterPopulation::Protostars,
 			{
 
-				{EStellarType::BrownDwarf, 15}, // Коричневые карлики
-				{EStellarType::Protostar, 50}, // Протозвезды
-				{EStellarType::Neutron, 10}, // Нейтронные звезды
-				{EStellarType::Pulsar, 10}, // Пульсары
+				{EStellarType::BrownDwarf, 15.f}, // Коричневые карлики
+				{EStellarType::Protostar, 50.f}, // Протозвезды
+				{EStellarType::Neutron, 10.f}, // Нейтронные звезды
+				{EStellarType::Pulsar, 10.f}, // Пульсары
 			}
 		},
 	};

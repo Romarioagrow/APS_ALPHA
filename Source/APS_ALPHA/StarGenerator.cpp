@@ -43,7 +43,7 @@ FStarModel UStarGenerator::GenerateStarModelByProbability(FStarClusterModel FSta
     EStellarType StellarType;
     if (StarClusterPopulationWeights.Contains(FStarClusterModel.StarClusterPopulation))
     {
-        TMap<EStellarType, int> StellarTypeMap = StarClusterPopulationWeights[FStarClusterModel.StarClusterPopulation];
+        TMap<EStellarType, float> StellarTypeMap = StarClusterPopulationWeights[FStarClusterModel.StarClusterPopulation];
         StellarType = GenerateStellarTypeByRandomWeights(StellarTypeMap);
     }
     else
@@ -395,13 +395,13 @@ ESpectralClass UStarGenerator::GenerateSpectralClassByProbability(TMap<ESpectral
     }
     return ChosenSpectralClass;
 }
-EStellarType UStarGenerator::GenerateStellarTypeByRandomWeights(TMap<EStellarType, int> StarTypeProbabilities)
+EStellarType UStarGenerator::GenerateStellarTypeByRandomWeights(TMap<EStellarType, float> StarTypeProbabilities)
 {
-    int TotalWeight = 0;
+    float TotalWeight = 0.f;
     for (auto const& Pair : StarTypeProbabilities) {
         TotalWeight += Pair.Value;
     }
-    int RandomValue = FMath::RandRange(0, TotalWeight - 1);
+    float RandomValue = FMath::RandRange(0.f, TotalWeight - 1.f);
     EStellarType ChosenStellarClass{};
     for (auto const& pair : StarTypeProbabilities) {
         if (RandomValue < pair.Value) {

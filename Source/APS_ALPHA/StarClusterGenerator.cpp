@@ -86,7 +86,7 @@ TMap<EStarClusterSize, TPair<int, int>> StarClusterSizes =
     {EStarClusterSize::Small, TPair<int, int>(500, 1500)},
     {EStarClusterSize::Medium, TPair<int, int>(1500, 5000)},
     {EStarClusterSize::Large, TPair<int, int>(5000, 25000)},
-    {EStarClusterSize::Giant, TPair<int, int>(250000, 50000)},
+    {EStarClusterSize::Giant, TPair<int, int>(25000, 50000)},
     {EStarClusterSize::Unknown, TPair<int, int>(0, 0)},
 };
 
