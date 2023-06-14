@@ -294,28 +294,32 @@ void AAstroGenerator::GenerateStarSystem()
 
             // check oferlapped star in system and move it
             TArray<int32> OverlappingInstances;
-            int32 instanceCount;
+            int32 InstanceCount;
+
+            FVector HomeSystemLocation = NewStarSystem->GetActorLocation();
+            //double HomeSystemrRadiusScaled = NewStarSystem->StarSystemRadius * 100000;
+            double HomeSystemrRadiusScaled = NewStarSystem->StarSystemRadius * 1000000000;
+
+            // Check for Star Cluster
             if (GeneratedGalaxy && AstroGenerationLevel == EAstroGenerationLevel::Galaxy)
             {
+                InstanceCount = GeneratedGalaxy->StarMeshInstances->GetInstanceCount();
                 UE_LOG(LogTemp, Warning, TEXT("Overlapping Galaxy"));
-                instanceCount = GeneratedGalaxy->StarMeshInstances->GetInstanceCount();
-                UE_LOG(LogTemp, Warning, TEXT("Number Galaxy of HISM Instances before: %d"), instanceCount);
+                UE_LOG(LogTemp, Warning, TEXT("Number Galaxy of HISM Instances before: %d"), InstanceCount);
 
-                OverlappingInstances = GeneratedGalaxy->StarMeshInstances->GetInstancesOverlappingSphere(NewStarSystem->GetActorLocation(), NewStarSystem->StarSystemRadius * 100000, true);
-            
+                OverlappingInstances = GeneratedGalaxy->StarMeshInstances->GetInstancesOverlappingSphere(HomeSystemLocation, HomeSystemrRadiusScaled, true);
             }
             else if (GeneratedStarCluster && AstroGenerationLevel == EAstroGenerationLevel::StarCluster)
             {
+                InstanceCount = GeneratedStarCluster->StarMeshInstances->GetInstanceCount();
                 UE_LOG(LogTemp, Warning, TEXT("Overlapping StarCluster"));
-                instanceCount = GeneratedStarCluster->StarMeshInstances->GetInstanceCount();
-                UE_LOG(LogTemp, Warning, TEXT("Number of StarCluster HISM Instances before: %d"), instanceCount);
+                UE_LOG(LogTemp, Warning, TEXT("Number of StarCluster HISM Instances before: %d"), InstanceCount);
 
-                OverlappingInstances = GeneratedStarCluster->StarMeshInstances->GetInstancesOverlappingSphere(NewStarSystem->GetActorLocation(), NewStarSystem->StarSystemRadius * 100000, true);
-
+                OverlappingInstances = GeneratedStarCluster->StarMeshInstances->GetInstancesOverlappingSphere(HomeSystemLocation, HomeSystemrRadiusScaled, true);
             }
             UE_LOG(LogTemp, Warning, TEXT("OverlappingInstances: %d"), OverlappingInstances.Num());
 
-
+            // Check for Galaxy
             if (GeneratedGalaxy && AstroGenerationLevel == EAstroGenerationLevel::Galaxy)
             {
                 for (int32 InstanceIndex : OverlappingInstances)
@@ -324,9 +328,8 @@ void AAstroGenerator::GenerateStarSystem()
                     UE_LOG(LogTemp, Warning, TEXT("Remove Galaxy Instance Index: %d"), InstanceIndex);
                 }
                 GeneratedGalaxy->StarMeshInstances->MarkRenderStateDirty();
-                instanceCount = GeneratedGalaxy->StarMeshInstances->GetInstanceCount();
-                UE_LOG(LogTemp, Warning, TEXT("Number of Galaxy HISM Instances after: %d"), instanceCount);
-
+                InstanceCount = GeneratedGalaxy->StarMeshInstances->GetInstanceCount();
+                UE_LOG(LogTemp, Warning, TEXT("Number of Galaxy HISM Instances after: %d"), InstanceCount);
             }
             else if (GeneratedStarCluster && AstroGenerationLevel == EAstroGenerationLevel::StarCluster)
             {
@@ -336,8 +339,8 @@ void AAstroGenerator::GenerateStarSystem()
                     UE_LOG(LogTemp, Warning, TEXT("Remove StarCluster Instance Index: %d"), InstanceIndex);
                 }
                 GeneratedStarCluster->StarMeshInstances->MarkRenderStateDirty();
-                instanceCount = GeneratedStarCluster->StarMeshInstances->GetInstanceCount();
-                UE_LOG(LogTemp, Warning, TEXT("Number of StarCluster HISM Instances after: %d"), instanceCount);
+                InstanceCount = GeneratedStarCluster->StarMeshInstances->GetInstanceCount();
+                UE_LOG(LogTemp, Warning, TEXT("Number of StarCluster HISM Instances after: %d"), InstanceCount);
             }
 
 

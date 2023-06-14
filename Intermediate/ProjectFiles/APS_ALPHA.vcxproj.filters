@@ -221,6 +221,9 @@
     <ClInclude Include="..\..\Source\APS_ALPHA\GalaxyGenerator.h">
       <Filter>Source\APS_ALPHA</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\Source\APS_ALPHA\GalaxyModel.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
     <ClCompile Include="..\..\Source\APS_ALPHA\GalaxySector.cpp">
       <Filter>Source\APS_ALPHA</Filter>
     </ClCompile>
@@ -329,10 +332,16 @@
     <ClInclude Include="..\..\Source\APS_ALPHA\GroundVehicle.h">
       <Filter>Source\APS_ALPHA</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\Source\APS_ALPHA\Header.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
     <ClCompile Include="..\..\Source\APS_ALPHA\HomeStarSystemGenerationModel.cpp">
       <Filter>Source\APS_ALPHA</Filter>
     </ClCompile>
     <ClInclude Include="..\..\Source\APS_ALPHA\HomeStarSystemGenerationModel.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\APS_ALPHA\HomeSystemPosition.h">
       <Filter>Source\APS_ALPHA</Filter>
     </ClInclude>
     <None Include="..\..\Source\APS_ALPHA\hyg_v35.csv">
@@ -375,6 +384,9 @@
       <Filter>Source\APS_ALPHA</Filter>
     </ClInclude>
     <ClInclude Include="..\..\Source\APS_ALPHA\MoonType.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\APS_ALPHA\Octree.h">
       <Filter>Source\APS_ALPHA</Filter>
     </ClInclude>
     <ClCompile Include="..\..\Source\APS_ALPHA\OrbitalBody.cpp">
@@ -581,6 +593,12 @@
     <ClInclude Include="..\..\Source\APS_ALPHA\StationGravityActor.h">
       <Filter>Source\APS_ALPHA</Filter>
     </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\SuperSpeedSpectatorPawn.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\SuperSpeedSpectatorPawn.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
     <ClCompile Include="..\..\Source\APS_ALPHA\TechActor.cpp">
       <Filter>Source\APS_ALPHA</Filter>
     </ClCompile>
@@ -616,20 +634,6 @@
     </ClCompile>
     <ClInclude Include="..\..\Source\APS_ALPHA\WorldActor.h">
       <Filter>Source\APS_ALPHA</Filter>
-    </ClInclude>
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="..\..\Source\APS_ALPHA\GalaxyModel.h">
-      <Filter>Source\APS_ALPHA</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\Source\APS_ALPHA\Header.h">
-      <Filter>Source</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\Source\APS_ALPHA\Octree.h">
-      <Filter>Source</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\Source\APS_ALPHA\HomeSystemPosition.h">
-      <Filter>Source</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

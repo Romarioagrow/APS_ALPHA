@@ -11,6 +11,7 @@
 			"AstonomicalSystem.gen.cpp.obj",
 			"AstroActor.gen.cpp.obj",
 			"AstroGenerationLevel.gen.cpp.obj",
+			"AstroGenerator.gen.cpp.obj",
 			"AstroLocation.gen.cpp.obj",
 			"AstroObject.gen.cpp.obj",
 			"Atmosphere.gen.cpp.obj",
@@ -44,8 +45,7 @@
 			"GravityObject.gen.cpp.obj",
 			"GravityObjectInterface.gen.cpp.obj",
 			"GravityParamStruct.gen.cpp.obj",
-			"APS_ALPHA.init.gen.cpp.obj",
-			"AstroGenerator.gen.cpp.obj"
+			"APS_ALPHA.init.gen.cpp.obj"
 		],
 		"Module.APS_ALPHA.2_of_3.cpp.obj": [
 			"GravityPawn.gen.cpp.obj",
@@ -55,6 +55,7 @@
 			"GravityTypeEnum.gen.cpp.obj",
 			"GroundVehicle.gen.cpp.obj",
 			"HomeStarSystemGenerationModel.gen.cpp.obj",
+			"HomeSystemPosition.gen.cpp.obj",
 			"KuiperBelt.gen.cpp.obj",
 			"MainMenuController.gen.cpp.obj",
 			"MainMenuGameModeBase.gen.cpp.obj",
@@ -85,8 +86,7 @@
 			"SpaceStation.gen.cpp.obj",
 			"SpectralType.gen.cpp.obj",
 			"Star.gen.cpp.obj",
-			"StarCluster.gen.cpp.obj",
-			"HomeSystemPosition.gen.cpp.obj"
+			"StarCluster.gen.cpp.obj"
 		],
 		"Module.APS_ALPHA.3_of_3.cpp.obj": [
 			"StarClusterComposition.gen.cpp.obj",
@@ -98,6 +98,7 @@
 			"StarGenerator.gen.cpp.obj",
 			"StarSector.gen.cpp.obj",
 			"StarSpectralClass.gen.cpp.obj",
+			"StarSystem.gen.cpp.obj",
 			"StarSystemGenerationModel.gen.cpp.obj",
 			"StarSystemGenerator.gen.cpp.obj",
 			"StarSystemType.gen.cpp.obj",
@@ -144,6 +145,7 @@
 			"GravityCharacter.cpp.obj",
 			"GravityCharacterPawn.cpp.obj",
 			"GravityGameModeBase.cpp.obj",
+			"GravityMovementStruct.cpp.obj",
 			"GravityObject.cpp.obj",
 			"GravityObjectInterface.cpp.obj",
 			"GravityParamStruct.cpp.obj",
@@ -178,8 +180,11 @@
 			"SpaceStation.cpp.obj",
 			"Star.cpp.obj",
 			"StarCluster.cpp.obj",
+			"StarClusterGenerator.cpp.obj",
 			"StarGenerationModel.cpp.obj",
+			"StarGenerator.cpp.obj",
 			"StarSector.cpp.obj",
+			"StarSystem.cpp.obj",
 			"StarSystemGenerationModel.cpp.obj",
 			"StarSystemGenerator.cpp.obj",
 			"StationGravityActor.cpp.obj",
@@ -189,12 +194,9 @@
 			"UniverseProceduralGenerator.cpp.obj",
 			"VehicleControlling.cpp.obj",
 			"WorldActor.cpp.obj",
-			"StarSystem.gen.cpp.obj",
+			"SuperSpeedSpectatorPawn.gen.cpp.obj",
 			"AstroGenerator.cpp.obj",
-			"GravityMovementStruct.cpp.obj",
-			"StarClusterGenerator.cpp.obj",
-			"StarGenerator.cpp.obj",
-			"StarSystem.cpp.obj"
+			"SuperSpeedSpectatorPawn.cpp.obj"
 		]
 	}
 }
