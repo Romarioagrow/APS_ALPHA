@@ -31,47 +31,47 @@ protected:
 public:
 	void SetStarProperties(FLinearColor Color, float Multiplier);
 
-	UPROPERTY(VisibleAnywhere, Category = "Star Visual")
+	UPROPERTY(VisibleAnywhere, Category = "Star")
 		UStaticMeshComponent* StarMesh;
 
-	UPROPERTY(VisibleAnywhere, Category = "Star Visual")
+	UPROPERTY(VisibleAnywhere, Category = "Star")
 		UMaterialInstanceDynamic* StarDynamicMaterial;
 
-	UPROPERTY(VisibleAnywhere, Category = "Components")
+	UPROPERTY(VisibleAnywhere, Category = "Star")
 		APlanetarySystem* PlanetarySystem;
 
-	UPROPERTY(VisibleAnywhere, Category = "Components")
+	UPROPERTY(VisibleAnywhere, Category = "Star")
 		USphereComponent* PlanetarySystemZone;
 
-	UPROPERTY(VisibleAnywhere)
+	UPROPERTY(VisibleAnywhere, Category = "Star")
 		int StarRadiusKM;
 	
-	UPROPERTY(VisibleAnywhere)
+	UPROPERTY(VisibleAnywhere, Category = "Star")
 		double StarAffectionZoneRadius;
 
 private:
-	UPROPERTY(VisibleAnywhere)
+	UPROPERTY(VisibleAnywhere, Category = "Star")
 		float Luminosity;
 
-	UPROPERTY(VisibleAnywhere)
+	UPROPERTY(VisibleAnywhere, Category = "Star")
 		int SurfaceTemperature;
 	
-	UPROPERTY(VisibleAnywhere)
+	UPROPERTY(VisibleAnywhere, Category = "Star")
 		EStellarType StellarClass;
 	
-	UPROPERTY(VisibleAnywhere)
+	UPROPERTY(VisibleAnywhere, Category = "Star")
 		ESpectralClass SpectralClass;
 	
-	UPROPERTY(VisibleAnywhere)
+	UPROPERTY(VisibleAnywhere, Category = "Star")
 		ESpectralType SpectralType;
 	
-	UPROPERTY(VisibleAnywhere)
+	UPROPERTY(VisibleAnywhere, Category = "Star")
 		FName FullSpectralClass;
 
-	UPROPERTY(VisibleAnywhere)
+	UPROPERTY(VisibleAnywhere, Category = "Star")
 		FName FullSpectralName;
 	
-	UPROPERTY(VisibleAnywhere)
+	UPROPERTY(VisibleAnywhere, Category = "Star")
 		int SpectralSubclass;
 
 private:

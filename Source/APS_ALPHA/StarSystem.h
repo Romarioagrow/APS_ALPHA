@@ -33,6 +33,8 @@ private:
 	
 
 public:
+	AStarSystem();
+
 	void SetStarsAmount(int StarsAmount);
 
 	void AddNewStar(AStar* MewStar);
@@ -41,4 +43,11 @@ public:
 
 	UPROPERTY(VisibleAnywhere, Category = "Star System")
 		double StarSystemRadius;
+	
+	UPROPERTY(VisibleAnywhere, Category = "Star System")
+		FVector StarSystemZoneRadius;
+
+
+	UPROPERTY(VisibleAnywhere, Category = "Star")
+		USphereComponent* StarSystemZone;
 };

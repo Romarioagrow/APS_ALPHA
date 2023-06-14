@@ -7,6 +7,11 @@ ACelestialBody::ACelestialBody()
 {
 }
 
+float ACelestialBody::GetRadius()
+{
+	return this->Radius;
+}
+
 void ACelestialBody::SetRadius(float NewRadius)
 {
 	this->Radius = NewRadius;

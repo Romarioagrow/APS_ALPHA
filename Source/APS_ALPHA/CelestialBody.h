@@ -31,6 +31,8 @@ private:
 public:
 	ACelestialBody();
 
+	float GetRadius();
+
 	void SetRadius(float Radius);
 
 	void SetMass(float Mass);

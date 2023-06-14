@@ -14,6 +14,8 @@ void EmptyLinkFunctionForGeneratedCodeStarSystem() {}
 	APS_ALPHA_API UClass* Z_Construct_UClass_AStarSystem();
 	APS_ALPHA_API UClass* Z_Construct_UClass_AStarSystem_NoRegister();
 	APS_ALPHA_API UEnum* Z_Construct_UEnum_APS_ALPHA_EStarSystemType();
+	COREUOBJECT_API UScriptStruct* Z_Construct_UScriptStruct_FVector();
+	ENGINE_API UClass* Z_Construct_UClass_USphereComponent_NoRegister();
 	UPackage* Z_Construct_UPackage__Script_APS_ALPHA();
 // End Cross Module References
 	void AStarSystem::StaticRegisterNativesAStarSystem()
@@ -48,6 +50,14 @@ void EmptyLinkFunctionForGeneratedCodeStarSystem() {}
 		static const UECodeGen_Private::FMetaDataPairParam NewProp_StarSystemRadius_MetaData[];
 #endif
 		static const UECodeGen_Private::FDoublePropertyParams NewProp_StarSystemRadius;
+#if WITH_METADATA
+		static const UECodeGen_Private::FMetaDataPairParam NewProp_StarSystemZoneRadius_MetaData[];
+#endif
+		static const UECodeGen_Private::FStructPropertyParams NewProp_StarSystemZoneRadius;
+#if WITH_METADATA
+		static const UECodeGen_Private::FMetaDataPairParam NewProp_StarSystemZone_MetaData[];
+#endif
+		static const UECodeGen_Private::FObjectPropertyParams NewProp_StarSystemZone;
 		static const UECodeGen_Private::FPropertyParamsBase* const PropPointers[];
 		static const FCppClassTypeInfoStatic StaticCppClassTypeInfo;
 		static const UECodeGen_Private::FClassParams ClassParams;
@@ -94,6 +104,21 @@ void EmptyLinkFunctionForGeneratedCodeStarSystem() {}
 	};
 #endif
 	const UECodeGen_Private::FDoublePropertyParams Z_Construct_UClass_AStarSystem_Statics::NewProp_StarSystemRadius = { "StarSystemRadius", nullptr, (EPropertyFlags)0x0010000000020001, UECodeGen_Private::EPropertyGenFlags::Double, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(AStarSystem, StarSystemRadius), METADATA_PARAMS(Z_Construct_UClass_AStarSystem_Statics::NewProp_StarSystemRadius_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_AStarSystem_Statics::NewProp_StarSystemRadius_MetaData)) };
+#if WITH_METADATA
+	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_AStarSystem_Statics::NewProp_StarSystemZoneRadius_MetaData[] = {
+		{ "Category", "Star System" },
+		{ "ModuleRelativePath", "StarSystem.h" },
+	};
+#endif
+	const UECodeGen_Private::FStructPropertyParams Z_Construct_UClass_AStarSystem_Statics::NewProp_StarSystemZoneRadius = { "StarSystemZoneRadius", nullptr, (EPropertyFlags)0x0010000000020001, UECodeGen_Private::EPropertyGenFlags::Struct, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(AStarSystem, StarSystemZoneRadius), Z_Construct_UScriptStruct_FVector, METADATA_PARAMS(Z_Construct_UClass_AStarSystem_Statics::NewProp_StarSystemZoneRadius_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_AStarSystem_Statics::NewProp_StarSystemZoneRadius_MetaData)) };
+#if WITH_METADATA
+	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_AStarSystem_Statics::NewProp_StarSystemZone_MetaData[] = {
+		{ "Category", "Star" },
+		{ "EditInline", "true" },
+		{ "ModuleRelativePath", "StarSystem.h" },
+	};
+#endif
+	const UECodeGen_Private::FObjectPropertyParams Z_Construct_UClass_AStarSystem_Statics::NewProp_StarSystemZone = { "StarSystemZone", nullptr, (EPropertyFlags)0x00100000000a0009, UECodeGen_Private::EPropertyGenFlags::Object, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(AStarSystem, StarSystemZone), Z_Construct_UClass_USphereComponent_NoRegister, METADATA_PARAMS(Z_Construct_UClass_AStarSystem_Statics::NewProp_StarSystemZone_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_AStarSystem_Statics::NewProp_StarSystemZone_MetaData)) };
 	const UECodeGen_Private::FPropertyParamsBase* const Z_Construct_UClass_AStarSystem_Statics::PropPointers[] = {
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AStarSystem_Statics::NewProp_StarsAmount,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AStarSystem_Statics::NewProp_StarSystemType_Underlying,
@@ -101,6 +126,8 @@ void EmptyLinkFunctionForGeneratedCodeStarSystem() {}
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AStarSystem_Statics::NewProp_Stars_Inner,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AStarSystem_Statics::NewProp_Stars,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AStarSystem_Statics::NewProp_StarSystemRadius,
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AStarSystem_Statics::NewProp_StarSystemZoneRadius,
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AStarSystem_Statics::NewProp_StarSystemZone,
 	};
 	const FCppClassTypeInfoStatic Z_Construct_UClass_AStarSystem_Statics::StaticCppClassTypeInfo = {
 		TCppClassTypeTraits<AStarSystem>::IsAbstract,
@@ -139,9 +166,9 @@ void EmptyLinkFunctionForGeneratedCodeStarSystem() {}
 		static const FClassRegisterCompiledInInfo ClassInfo[];
 	};
 	const FClassRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarSystem_h_Statics::ClassInfo[] = {
-		{ Z_Construct_UClass_AStarSystem, AStarSystem::StaticClass, TEXT("AStarSystem"), &Z_Registration_Info_UClass_AStarSystem, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(AStarSystem), 3056659387U) },
+		{ Z_Construct_UClass_AStarSystem, AStarSystem::StaticClass, TEXT("AStarSystem"), &Z_Registration_Info_UClass_AStarSystem, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(AStarSystem), 3842227400U) },
 	};
-	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarSystem_h_1499598824(TEXT("/Script/APS_ALPHA"),
+	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarSystem_h_2956854183(TEXT("/Script/APS_ALPHA"),
 		Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarSystem_h_Statics::ClassInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarSystem_h_Statics::ClassInfo),
 		nullptr, 0,
 		nullptr, 0);
