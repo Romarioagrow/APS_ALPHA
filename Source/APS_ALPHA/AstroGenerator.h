@@ -51,6 +51,9 @@ protected:
 		AStarCluster* GeneratedStarCluster;
 
 public:
+	UPROPERTY(VisibleAnywhere, Category = "Home System")
+		TMap<int32, FStarModel> StarIndexModelMap;
+
 	UPROPERTY(EditAnywhere, Category = "Home System")
 		double StarSystemDeadZone { 1 };
 

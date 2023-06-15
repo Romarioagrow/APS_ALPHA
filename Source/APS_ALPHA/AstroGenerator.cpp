@@ -161,6 +161,42 @@ void AAstroGenerator::GenerateStarSystem()
 
     if (World) 
     {
+
+        //swith(HomeSystemPosition)
+        FVector HomeSystemSpawnLocation;
+        switch (HomeSystemPosition)
+        {
+        case EHomeSystemPosition::WorldCenter:
+            break;
+        case EHomeSystemPosition::RandomPosition:
+            break;
+        case EHomeSystemPosition::DirectPosition:
+            break;
+        default:
+            break;
+        }
+
+
+        /*
+        RandomPosition:
+        get random index from hism array indexes
+        get index model
+        from hism index to star model map get random pair
+
+        
+        
+        */
+
+        //FVector SpawnLocation = //FVector(X, Y, Z);  // Замените X, Y, Z на нужные вам координаты
+        //FQuat SpawnRotation = FQuat::Identity;  // Используем идентичное вращение (нет вращения)
+        //FVector SpawnScale = FVector(1.0f, 1.0f, 1.0f);  // Используем стандартный масштаб
+
+        //FTransform SpawnTransform(SpawnRotation, HomeSystemSpawnLocation, SpawnScale);  // Создаем структуру преобразования
+
+        //AStarSystem* NewStarSystem = World->SpawnActor<AStarSystem>(BP_StarSystemClass, SpawnTransform);
+
+
+
         // Создаем новую звездную систему
         FStarSystemGenerationModel StarSystemModel = StarSystemGenerator->GenerateRandomStarSystemModel(); 
         AStarSystem* NewStarSystem = World->SpawnActor<AStarSystem>(BP_StarSystemClass); 
@@ -448,6 +484,9 @@ void AAstroGenerator::GenerateStarCluster()
 
             double StarEmission = StarGenerator->CalculateEmission(NewStarModel.Luminosity * 25);
             NewStarCluster->StarMeshInstances->SetCustomDataValue(StarInstIndex, 3, StarEmission);
+
+
+            StarIndexModelMap.Add(StarInstIndex, NewStarModel);
         }
 
         GeneratedStarCluster = NewStarCluster;
