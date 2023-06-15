@@ -298,7 +298,7 @@ void AAstroGenerator::GenerateStarSystem()
                 check overlapped hism, if overlapped, (re)move it
             */
 
-            double StarSystemDeadZone = 1;
+            
             double HomeSystemrRadiusScaled = NewStarSystem->StarSystemRadius * StarSystemDeadZone;
             FCollisionShape MySphere = FCollisionShape::MakeSphere(HomeSystemrRadiusScaled);
             TArray<FOverlapResult> Overlaps;

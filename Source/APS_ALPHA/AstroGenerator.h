@@ -24,6 +24,8 @@ public:
 	AAstroGenerator();
 
 protected:
+	
+
 	virtual void BeginPlay() override;
 
 	void InitGenerationLevel();
@@ -49,7 +51,9 @@ protected:
 		AStarCluster* GeneratedStarCluster;
 
 public:
-	
+	UPROPERTY(EditAnywhere, Category = "Home System")
+		double StarSystemDeadZone { 1 };
+
 	/// BASE ASTRO GENERATOR
 	UPROPERTY(EditAnywhere, Category = "Generation Params")
 		bool bGenerateFullScaledWorld { true };
