@@ -24,7 +24,7 @@ public:
 	AAstroGenerator();
 
 protected:
-	
+	void GenerateHomeStarSystem();
 
 	virtual void BeginPlay() override;
 

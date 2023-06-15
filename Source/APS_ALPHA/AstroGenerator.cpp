@@ -137,6 +137,13 @@ void AAstroGenerator::InitAstroGenerators()
     }
 }
 
+void AAstroGenerator::GenerateHomeStarSystem()
+{
+
+
+
+}
+
 void AAstroGenerator::GenerateStarSystem()
 {
     if (StarGenerator == nullptr || PlanetGenerator == nullptr || MoonGenerator == nullptr) {
