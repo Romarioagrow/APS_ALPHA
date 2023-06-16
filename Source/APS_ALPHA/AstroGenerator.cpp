@@ -162,20 +162,47 @@ void AAstroGenerator::GenerateStarSystem()
 
     if (World) 
     {
+        FTransform HomeSystemTransform;
 
-        FVector HomeSystemSpawnLocation;
+        FVector HomeSystemSpawnLocation{ 0 };
         switch (HomeSystemPosition)
         {
         case EHomeSystemPosition::WorldCenter:
+            HomeSystemSpawnLocation = FVector(0, 0, 0);
             break;
         case EHomeSystemPosition::RandomPosition:
+        {
+            // Задайте HomeSystemSpawnLocation в зависимости от вашего определения центра, середины и конца.
+            // Например:
+            double RandomX = FMath::RandRange(-1000, 1000);
+            double RandomY = FMath::RandRange(-1000, 1000);
+            double RandomZ = FMath::RandRange(-1000, 1000);
+            HomeSystemSpawnLocation = FVector(RandomX, RandomY, RandomZ); //* 1000000000;
+        }
             break;
         case EHomeSystemPosition::DirectPosition:
+        {
+            if (StarIndexModelMap.Num() > 0)
+            {
+                int32 RandomIndex = FMath::RandRange(0, StarIndexModelMap.Num() - 1); // получаем случайный индекс
+                if (StarIndexModelMap.Contains(RandomIndex))
+                {
+                    TSharedPtr<FStarModel> StarModel = StarIndexModelMap[RandomIndex];
+                    // Используйте данные StarModel для получения позиции, если они доступны
+                    // Например, если у вас есть поле Position в StarModel:
+                    HomeSystemSpawnLocation = StarModel->Location;// * 1000000000;
+
+                    UE_LOG(LogTemp, Warning, TEXT("Random Index: %d"), RandomIndex);
+                    UE_LOG(LogTemp, Warning, TEXT("Home System Spawn Location: %s"), *HomeSystemSpawnLocation.ToString());
+                }
+            }
+        }
             break;
         default:
             break;
         }
-
+        HomeSystemTransform.SetLocation(HomeSystemSpawnLocation);
+        HomeSystemTransform.SetRotation(FRotator::ZeroRotator.Quaternion());
         /*
         RandomPosition:
         get random index from hism array indexes
@@ -187,8 +214,11 @@ void AAstroGenerator::GenerateStarSystem()
         // Создаем новую звездную систему
         TSharedPtr<FStarSystemModel> StarSystemModel = MakeShared<FStarSystemModel>();
         StarSystemGenerator->GenerateRandomStarSystemModel(StarSystemModel);
+        
+        //AStarSystem* NewStarSystem = World->SpawnActor<AStarSystem>(BP_StarSystemClass); 
+        AStarSystem* NewStarSystem = World->SpawnActor<AStarSystem>(BP_StarSystemClass, HomeSystemTransform);
 
-        AStarSystem* NewStarSystem = World->SpawnActor<AStarSystem>(BP_StarSystemClass); 
+        
         if (!NewStarSystem) 
         {
             UE_LOG(LogTemp, Warning, TEXT("NewStarSystem Falied!"));
@@ -473,6 +503,7 @@ void AAstroGenerator::GenerateStarCluster()
             // Позиционируем звезду в кластере
             FVector StarPosition = StarClusterGenerator->CalculateStarPosition(i, NewStarCluster, NewStarModel);
             NewStarCluster->AddStarToClusterModel(StarPosition, NewStarModel);
+            NewStarModel->Location = StarPosition;
 
             // Создаем инстанс звезды и добавляем его в HISM компонент
             FTransform StarTransform(StarPosition);
