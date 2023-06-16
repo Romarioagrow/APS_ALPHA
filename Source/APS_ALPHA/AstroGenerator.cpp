@@ -209,6 +209,12 @@ void AAstroGenerator::GenerateStarSystem()
 
             AStar* NewStar = World->SpawnActor<AStar>(BP_StarClass); 
             APlanetarySystem* NewPlanetarySystem = World->SpawnActor<APlanetarySystem>(BP_PlanetarySystemClass);
+
+            if (StarNumber == 0)
+            {
+                NewStarSystem->MainStar = NewStar;
+            }
+
             if (!NewStar || !NewPlanetarySystem)
             {
                 UE_LOG(LogTemp, Warning, TEXT("Star Falied!"));
@@ -302,7 +308,6 @@ void AAstroGenerator::GenerateStarSystem()
                 StarSphereRadius /= 1000000;
                 NewStar->PlanetarySystemZone->SetSphereRadius(StarSphereRadius);
                 NewStar->StarAffectionZoneRadius = StarSphereRadius * 1.2;
-
             }
             else
             {
@@ -320,6 +325,13 @@ void AAstroGenerator::GenerateStarSystem()
         StarSystemSphereRadius /= NewStarSystem->GetActorScale3D().X;
         NewStarSystem->StarSystemZone->SetSphereRadius(StarSystemSphereRadius * 1.1);
         NewStarSystem->StarSystemRadius = StarSystemSphereRadius;
+
+        if (NewStarSystem->StarSystemRadius == 0)
+        {
+            float SphereRadius = NewStarSystem->MainStar->PlanetarySystemZone->GetScaledSphereRadius() * 1.1;
+            NewStarSystem->StarSystemRadius = SphereRadius;
+            NewStarSystem->StarSystemZone->SetSphereRadius(SphereRadius);
+        }
 
         if (bGenerateFullScaledWorld )
         {

@@ -8,6 +8,7 @@
 #include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Intermediate/Build/Win64/UnrealEditor/Inc/APS_ALPHA/UHT/AstonomicalSystem.gen.cpp"
 #include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Intermediate/Build/Win64/UnrealEditor/Inc/APS_ALPHA/UHT/AstroActor.gen.cpp"
 #include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Intermediate/Build/Win64/UnrealEditor/Inc/APS_ALPHA/UHT/AstroGenerationLevel.gen.cpp"
+#include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Intermediate/Build/Win64/UnrealEditor/Inc/APS_ALPHA/UHT/AstroGenerator.gen.cpp"
 #include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Intermediate/Build/Win64/UnrealEditor/Inc/APS_ALPHA/UHT/AstroLocation.gen.cpp"
 #include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Intermediate/Build/Win64/UnrealEditor/Inc/APS_ALPHA/UHT/AstroObject.gen.cpp"
 #include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Intermediate/Build/Win64/UnrealEditor/Inc/APS_ALPHA/UHT/Atmosphere.gen.cpp"
