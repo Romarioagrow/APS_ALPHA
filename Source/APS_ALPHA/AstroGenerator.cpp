@@ -63,18 +63,19 @@ void AAstroGenerator::GenerateGalaxiesCluster()
 
 void AAstroGenerator::GenerateGalaxy()
 {
-    FGalaxyModel GalaxyModel;
+    TSharedPtr<FGalaxyModel> GalaxyModel = MakeShared<FGalaxyModel>();
+
     if (bGenerateRandomGalaxy)
     {
-        GalaxyModel = GalaxyGenerator->GenerateRandomGalaxyModel();
+        GalaxyGenerator->GenerateRandomGalaxyModel(GalaxyModel);
     }
     else
     {
-        GalaxyModel.GalaxyClass = GalaxyGlass;
-        GalaxyModel.GalaxyType = GalaxyType;
-        GalaxyModel.StarsCount = GalaxyStarCount;
-        GalaxyModel.StarsDensity = GalaxyStarDensity;
-        GalaxyModel.GalaxySize = GalaxySize;
+        GalaxyModel->GalaxyClass = GalaxyGlass;
+        GalaxyModel->GalaxyType = GalaxyType;
+        GalaxyModel->StarsCount = GalaxyStarCount;
+        GalaxyModel->StarsDensity = GalaxyStarDensity;
+        GalaxyModel->GalaxySize = GalaxySize;
     }
 
     UWorld* World = GetWorld();
@@ -237,9 +238,8 @@ void AAstroGenerator::GenerateStarSystem()
 
                 // Planet Model and generation
                 TSharedPtr<FPlanetModel> PlanetModel = FPlanetData.PlanetModel;
-
-
                 APlanet* NewPlanet = World->SpawnActor<APlanet>(BP_PlanetClass);
+
                 PlanetGenerator->ApplyModel(NewPlanet, PlanetModel);
                 NewStar->AddPlanet(NewPlanet);
                 NewPlanet->AttachToActor(NewPlanetOrbit, FAttachmentTransformRules::KeepWorldTransform);
@@ -250,14 +250,13 @@ void AAstroGenerator::GenerateStarSystem()
                 FVector NewLocation = FVector(PlanetModel->OrbitDistance * 149600000000000 / 1000, 0, 0);
                 NewPlanet->PlanetRadiusKM = PlanetModel->Radius * 6371;
                 NewPlanet->SetActorLocation(NewLocation);
-                // set planet orbit full-scale location
                 NewPlanetOrbit->SetActorRelativeRotation(FRotator(FMath::RandRange(-30.0, 30.0), FMath::RandRange(-360.0, 360.0), 0));
 
                 const double KM_TO_UE_UNIT_SCALE = 100000;
                 double DiameterOfLastMoon = 0;
                 FVector LastMoonLocation;
                 // Generate Moons
-                for (const TSharedPtr<FMoonData> MoonData : PlanetModel->MoonsList) /// TODO: Ref to pointers FMoonData 
+                for (const TSharedPtr<FMoonData> MoonData : PlanetModel->MoonsList) 
                 {
                     APlanetOrbit* NewMoonOrbit = World->SpawnActor<APlanetOrbit>(BP_PlanetOrbit, NewPlanet->GetActorLocation(), FRotator::ZeroRotator);
                     NewMoonOrbit->AttachToActor(NewPlanet, FAttachmentTransformRules::KeepWorldTransform);
@@ -302,7 +301,7 @@ void AAstroGenerator::GenerateStarSystem()
                 StarSphereRadius = NewStar->GetRadius() * NewStar->GetActorScale3D().X * 2;
                 StarSphereRadius /= 1000000;
                 NewStar->PlanetarySystemZone->SetSphereRadius(StarSphereRadius);
-                NewStar->StarAffectionZoneRadius = StarSphereRadius * 1.2;// * NewStar->GetActorScale3D().X;
+                NewStar->StarAffectionZoneRadius = StarSphereRadius * 1.2;
 
             }
             else

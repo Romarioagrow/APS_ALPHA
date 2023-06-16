@@ -51,14 +51,7 @@ protected:
 		AStarCluster* GeneratedStarCluster;
 
 public:
-	/*UPROPERTY(VisibleAnywhere, Category = "Home System")
-		TMap<int32, FStarModel> StarIndexModelMap;*/
-
-	//UPROPERTY(VisibleAnywhere, Category = "Home System")
-		TMap<int32, TSharedPtr<FStarModel>> StarIndexModelMap;
-
-	UPROPERTY(EditAnywhere, Category = "Home System")
-		double StarSystemDeadZone { 1 };
+	TMap<int32, TSharedPtr<FStarModel>> StarIndexModelMap;
 
 	/// BASE ASTRO GENERATOR
 	UPROPERTY(EditAnywhere, Category = "Generation Params")
@@ -71,6 +64,9 @@ public:
 		EAstroGenerationLevel AstroGenerationLevel { EAstroGenerationLevel::StarCluster };
 	
 	/// STAR SYSTEM GENERATOR
+	UPROPERTY(EditAnywhere, Category = "Home System")
+		double StarSystemDeadZone { 1 };
+
 	UPROPERTY(EditAnywhere, Category = "Home System")
 		EHomeSystemPosition HomeSystemPosition;
 	
@@ -122,9 +118,6 @@ public:
 	
 	UPROPERTY(EditAnywhere, Category = "Star Cluster")
 		bool bGenerateRandomCluster { false };
-
-	/*UPROPERTY(EditAnywhere, Category = "Star Cluster")
-		bool bGenerateFullScaledStarCluster { false };*/
 
 	UPROPERTY(EditAnywhere, Category = "Star Cluster", meta = (EditCondition = "!bGenerateRandomCluster"))
 		EStarClusterSize StarClusterSize;
@@ -198,9 +191,6 @@ public:
 	UPROPERTY(EditAnywhere, Category = "AstroObject BP")
 		TSubclassOf<class AMoon> BP_MoonClass;
 	
-	//// функция генерации общей звездной системы
-	//void GenerateStarSystem();
-
 	EStarClusterType GetRandomClusterType();
 
 	int GetRandomValueFromStarAmountRange(EStarClusterType ClusterType);

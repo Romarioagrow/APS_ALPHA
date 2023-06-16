@@ -75,7 +75,7 @@ public:
 
     void ApplyModel(APlanetarySystem* NewPlanetarySystem, TSharedPtr<FPlanetarySystemModel> PlanetraySystemModel);
 
-    /*FPlanetarySystemModel*/void GeneratePlanetraySystemModelByStar(TSharedPtr<FPlanetarySystemModel> PlanetarySystemModel, TSharedPtr<FStarModel> StarModel, UPlanetGenerator* PlanetGenerator, UMoonGenerator* MoonGenerator);
+    void GeneratePlanetraySystemModelByStar(TSharedPtr<FPlanetarySystemModel> PlanetarySystemModel, TSharedPtr<FStarModel> StarModel, UPlanetGenerator* PlanetGenerator, UMoonGenerator* MoonGenerator);
 
     int CalculateMoons(double PlanetMass, EPlanetType PlanetType);
 

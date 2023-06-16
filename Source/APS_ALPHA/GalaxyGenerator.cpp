@@ -7,9 +7,9 @@
 #include "StarGenerationModel.h"
 #include <cmath>
 
-FGalaxyModel UGalaxyGenerator::GenerateRandomGalaxyModel()
+void UGalaxyGenerator::GenerateRandomGalaxyModel(TSharedPtr<FGalaxyModel> GalaxyModel)
 {
-	return FGalaxyModel();
+	//return FGalaxyModel();
 }
 
 FGalaxyModel UGalaxyGenerator::GenerateGalaxyByParamsModel(EGalaxyType GalaxyType, EGalaxyClass GalaxyGlass)
@@ -17,15 +17,15 @@ FGalaxyModel UGalaxyGenerator::GenerateGalaxyByParamsModel(EGalaxyType GalaxyTyp
 	return FGalaxyModel();
 }
 
-void UGalaxyGenerator::GenerateGalaxyOctreeStars(UStarGenerator* StarGenerator, AGalaxy* NewGalaxy, FGalaxyModel GalaxyModel)
+void UGalaxyGenerator::GenerateGalaxyOctreeStars(UStarGenerator* StarGenerator, AGalaxy* NewGalaxy, TSharedPtr<FGalaxyModel> GalaxyModel)
 {
     // Создаем октодерево
-    double GalaxyOctreeHalfDimension = GalaxyModel.GalaxySize;
+    double GalaxyOctreeHalfDimension = GalaxyModel->GalaxySize;
     Octree* galaxyOctree = new Octree(FVector(0), FVector(GalaxyOctreeHalfDimension));
 
     // Определение функции генерации в зависимости от типа галактики
     FVector(UGalaxyGenerator:: * generateStar)(EGalaxyClass, double, double);
-    switch (GalaxyModel.GalaxyType)
+    switch (GalaxyModel->GalaxyType)
     {
     case EGalaxyType::Elliptical:
         generateStar = &UGalaxyGenerator::GenerateStarInEllipticalGalaxy;
@@ -50,23 +50,22 @@ void UGalaxyGenerator::GenerateGalaxyOctreeStars(UStarGenerator* StarGenerator, 
         break;
     }
 
-    double StarsCount = GalaxyModel.StarsCount;
+    double StarsCount = GalaxyModel->StarsCount;
     for (int i = 0; i < StarsCount; i++)
     {
-        TSharedPtr<FStarModel> StarModel = MakeShared<FStarModel>();//
+        TSharedPtr<FStarModel> StarModel = MakeShared<FStarModel>();
         StarGenerator->GenerateRandomStarModel(StarModel);
-        //FStarModel StarModel = StarGenerator->GenerateRandomStarModel();
         bool spaceOccupied = true;
         FVector position;
 
         double LightYearInKm = 9.461e12;
         double UnitInKm = 6963.4;
         double LightYearInUnrealUnits = LightYearInKm / UnitInKm;
-        double AstroScaleCoeff = GalaxyModel.StarsDensity;
+        double AstroScaleCoeff = GalaxyModel->StarsDensity;
         LightYearInUnrealUnits /= AstroScaleCoeff;
 
         while (spaceOccupied) {
-            position = (this->*generateStar)(GalaxyModel.GalaxyClass, LightYearInUnrealUnits, StarModel->Radius);
+            position = (this->*generateStar)(GalaxyModel->GalaxyClass, LightYearInUnrealUnits, StarModel->Radius);
             spaceOccupied = galaxyOctree->SpaceOccupied(position, StarModel->Radius);
         }
 

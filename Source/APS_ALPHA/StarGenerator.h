@@ -33,7 +33,7 @@ public:
 public:
 	void ApplySpectralMaterial(AStar* NewStar, TSharedPtr<FStarModel> StarModel);
 
-	/*TUniquePtr<FStarModel> */ void GenerateStarModelByProbability(TSharedPtr<FStarModel> NewStarModel, TSharedPtr<FStarClusterModel> FStarClusterModel);
+	void GenerateStarModelByProbability(TSharedPtr<FStarModel> NewStarModel, TSharedPtr<FStarClusterModel> FStarClusterModel);
 
 	double WienLaw(double temperature);
 
@@ -47,9 +47,9 @@ public:
 
 	void ApplyModel(AStar* NewStar, TSharedPtr<FStarModel> StarModel);
 
-	/*TUniquePtr<FStarModel>&*/void GenerateStarModel(TSharedPtr<FStarModel> StarModel);
+	void GenerateStarModel(TSharedPtr<FStarModel> StarModel);
 
-	/*TUniquePtr<FStarModel>&*/void GenerateRandomStarModel(TSharedPtr<FStarModel> StarModel);
+	void GenerateRandomStarModel(TSharedPtr<FStarModel> StarModel);
 
 	FString CalculateNonMainSequenceStarAge(double StarMass);
 
@@ -62,7 +62,7 @@ public:
 	EStellarType GenerateStellarTypeByRandomWeights();
 
 	// Функция для вычисления эмиссии звезды.
-	double CalculateEmission(float starLuminosity);// {
+	double CalculateEmission(float starLuminosity);
 
 private:
 	FString GetSpectralClassColor(ESpectralClass Class);
@@ -86,8 +86,6 @@ private:
 	double RandomRadius(ESpectralClass SpectralClass);
 
 	double CalculateSurfaceTemperature(double Luminosity, double Radius);
-
-	//ESpectralClass ChooseSpectralClassByProbability(TMap<ESpectralClass, int> Probabilities);
 
 	ESpectralClass ChooseSpectralClassByStellarClass(EStellarType StellarClass);
 

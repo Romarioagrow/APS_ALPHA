@@ -36,6 +36,5 @@ public:
 
 	TUniquePtr<FStarClusterModel> GenerateRandomStarClusterModelByParams(TUniquePtr<FStarClusterModel> StarClusterModel);
 
-	/*TUniquePtr<FStarClusterModel>*/void GetRandomStarClusterModel(TSharedPtr<FStarClusterModel> StarClusterModel);
-	
+	void GetRandomStarClusterModel(TSharedPtr<FStarClusterModel> StarClusterModel);
 };
