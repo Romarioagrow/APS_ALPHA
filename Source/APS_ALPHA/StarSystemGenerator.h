@@ -25,7 +25,7 @@ public:
 	UStarSystemGenerator();
 
 public:
-	void ApplyModel(AStarSystem* StarSystem, FStarSystemGenerationModel StarSystemGenerationModel);
+	void ApplyModel(AStarSystem* StarSystem, TSharedPtr<FStarSystemModel> StarSystemGenerationModel);
 
-	FStarSystemGenerationModel GenerateRandomStarSystemModel();
+	void GenerateRandomStarSystemModel(TSharedPtr<FStarSystemModel> StarSystemModel);
 };

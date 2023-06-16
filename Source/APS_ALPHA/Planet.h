@@ -60,8 +60,9 @@ private:
 	UPROPERTY(VisibleAnywhere, Category = "Planet")
 		double PlanetGravityStrength{ 0 };
 
-	UPROPERTY(VisibleAnywhere, Category = "Planet")
-		TArray<FMoonData> MoonsList;
+	//UPROPERTY(VisibleAnywhere, Category = "Planet")
+		//TArray<FMoonData> MoonsList;
+		TArray<TSharedPtr<FMoonData>> MoonsList;
 
 private:
 	TArray<AMoon*> Moons;
@@ -80,7 +81,7 @@ public:
 	void SetTemperature(double Temperature);
 	void SetAmountOfMoons(int AmountOfMoons);
 
-	void SetMoonsList(TArray<FMoonData> NewAmountOfMoons);
+	void SetMoonsList(TArray<TSharedPtr<FMoonData>> NewAmountOfMoons);
 
 	void SetParentStar(AStar* Star);
 

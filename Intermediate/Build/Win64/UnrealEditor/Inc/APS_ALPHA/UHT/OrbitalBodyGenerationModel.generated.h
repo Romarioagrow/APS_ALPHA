@@ -15,12 +15,12 @@ PRAGMA_DISABLE_DEPRECATION_WARNINGS
 #define APS_ALPHA_OrbitalBodyGenerationModel_generated_h
 
 #define FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_OrbitalBodyGenerationModel_h_11_GENERATED_BODY \
-	friend struct Z_Construct_UScriptStruct_FOrbitalBodyGenerationModel_Statics; \
+	friend struct Z_Construct_UScriptStruct_FOrbitalBodyModel_Statics; \
 	APS_ALPHA_API static class UScriptStruct* StaticStruct(); \
-	typedef FCelestialGenerationModel Super;
+	typedef FCelestialBodyModel Super;
 
 
-template<> APS_ALPHA_API UScriptStruct* StaticStruct<struct FOrbitalBodyGenerationModel>();
+template<> APS_ALPHA_API UScriptStruct* StaticStruct<struct FOrbitalBodyModel>();
 
 #undef CURRENT_FILE_ID
 #define CURRENT_FILE_ID FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_OrbitalBodyGenerationModel_h

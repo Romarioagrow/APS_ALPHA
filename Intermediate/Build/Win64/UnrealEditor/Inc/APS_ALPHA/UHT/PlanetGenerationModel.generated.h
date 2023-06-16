@@ -21,13 +21,13 @@ PRAGMA_DISABLE_DEPRECATION_WARNINGS
 
 template<> APS_ALPHA_API UScriptStruct* StaticStruct<struct FMoonData>();
 
-#define FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_PlanetGenerationModel_h_46_GENERATED_BODY \
-	friend struct Z_Construct_UScriptStruct_FPlanetGenerationModel_Statics; \
+#define FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_PlanetGenerationModel_h_47_GENERATED_BODY \
+	friend struct Z_Construct_UScriptStruct_FPlanetModel_Statics; \
 	APS_ALPHA_API static class UScriptStruct* StaticStruct(); \
-	typedef FOrbitalBodyGenerationModel Super;
+	typedef FOrbitalBodyModel Super;
 
 
-template<> APS_ALPHA_API UScriptStruct* StaticStruct<struct FPlanetGenerationModel>();
+template<> APS_ALPHA_API UScriptStruct* StaticStruct<struct FPlanetModel>();
 
 #undef CURRENT_FILE_ID
 #define CURRENT_FILE_ID FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_PlanetGenerationModel_h

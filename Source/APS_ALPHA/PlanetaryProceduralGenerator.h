@@ -73,9 +73,9 @@ public:
 
     int DetermineMaxPlanets(EStellarType StellarClass, FStarModel StarModel);
 
-    void ApplyModel(APlanetarySystem* NewPlanetarySystem, FPlanetarySystemGenerationModel PlanetraySystemModel);
+    void ApplyModel(APlanetarySystem* NewPlanetarySystem, TSharedPtr<FPlanetarySystemModel> PlanetraySystemModel);
 
-    FPlanetarySystemGenerationModel GeneratePlanetraySystemModelByStar(TSharedPtr<FStarModel> StarModel, UPlanetGenerator* PlanetGenerator, UMoonGenerator* MoonGenerator);
+    /*FPlanetarySystemModel*/void GeneratePlanetraySystemModelByStar(TSharedPtr<FPlanetarySystemModel> PlanetarySystemModel, TSharedPtr<FStarModel> StarModel, UPlanetGenerator* PlanetGenerator, UMoonGenerator* MoonGenerator);
 
     int CalculateMoons(double PlanetMass, EPlanetType PlanetType);
 
@@ -84,7 +84,7 @@ public:
     FDensityRange GetPlanetDensityRange(EPlanetType PlanetType);
     
 private:
-    EPlanetaryZoneType DeterminePlanetZone(double OrbitRadius, FPlanetarySystemGenerationModel PlanetarySystemModel);
+    EPlanetaryZoneType DeterminePlanetZone(double OrbitRadius, TSharedPtr<FPlanetarySystemModel> PlanetarySystemModel );
 
     EPlanetType DeterminePlanetType(EPlanetaryZoneType PlanetZone);
 

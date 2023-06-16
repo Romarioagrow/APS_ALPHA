@@ -48,7 +48,7 @@ void APlanet::SetAmountOfMoons(int NewAmountOfMoons)
 	this->AmountOfMoons = NewAmountOfMoons;
 }
 
-void APlanet::SetMoonsList(TArray<FMoonData> NewMoonsList)
+void APlanet::SetMoonsList(TArray<TSharedPtr<FMoonData>> NewMoonsList)
 {
 	this->MoonsList = NewMoonsList;
 }

@@ -9,7 +9,7 @@
 
 USTRUCT(BlueprintType)
 struct FStarModel :
-    public FCelestialGenerationModel
+    public FCelestialBodyModel
 {
     GENERATED_BODY()
     

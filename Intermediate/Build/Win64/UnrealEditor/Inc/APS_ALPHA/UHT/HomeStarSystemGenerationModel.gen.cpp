@@ -10,11 +10,11 @@ PRAGMA_DISABLE_DEPRECATION_WARNINGS
 void EmptyLinkFunctionForGeneratedCodeHomeStarSystemGenerationModel() {}
 // Cross Module References
 	APS_ALPHA_API UScriptStruct* Z_Construct_UScriptStruct_FHomeStarSystemGenerationModel();
-	APS_ALPHA_API UScriptStruct* Z_Construct_UScriptStruct_FStarSystemGenerationModel();
+	APS_ALPHA_API UScriptStruct* Z_Construct_UScriptStruct_FStarSystemModel();
 	UPackage* Z_Construct_UPackage__Script_APS_ALPHA();
 // End Cross Module References
 
-static_assert(std::is_polymorphic<FHomeStarSystemGenerationModel>() == std::is_polymorphic<FStarSystemGenerationModel>(), "USTRUCT FHomeStarSystemGenerationModel cannot be polymorphic unless super FStarSystemGenerationModel is polymorphic");
+static_assert(std::is_polymorphic<FHomeStarSystemGenerationModel>() == std::is_polymorphic<FStarSystemModel>(), "USTRUCT FHomeStarSystemGenerationModel cannot be polymorphic unless super FStarSystemModel is polymorphic");
 
 	static FStructRegistrationInfo Z_Registration_Info_UScriptStruct_HomeStarSystemGenerationModel;
 class UScriptStruct* FHomeStarSystemGenerationModel::StaticStruct()
@@ -49,7 +49,7 @@ template<> APS_ALPHA_API UScriptStruct* StaticStruct<FHomeStarSystemGenerationMo
 	}
 	const UECodeGen_Private::FStructParams Z_Construct_UScriptStruct_FHomeStarSystemGenerationModel_Statics::ReturnStructParams = {
 		(UObject* (*)())Z_Construct_UPackage__Script_APS_ALPHA,
-		Z_Construct_UScriptStruct_FStarSystemGenerationModel,
+		Z_Construct_UScriptStruct_FStarSystemModel,
 		&NewStructOps,
 		"HomeStarSystemGenerationModel",
 		sizeof(FHomeStarSystemGenerationModel),
@@ -73,9 +73,9 @@ template<> APS_ALPHA_API UScriptStruct* StaticStruct<FHomeStarSystemGenerationMo
 		static const FStructRegisterCompiledInInfo ScriptStructInfo[];
 	};
 	const FStructRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_HomeStarSystemGenerationModel_h_Statics::ScriptStructInfo[] = {
-		{ FHomeStarSystemGenerationModel::StaticStruct, Z_Construct_UScriptStruct_FHomeStarSystemGenerationModel_Statics::NewStructOps, TEXT("HomeStarSystemGenerationModel"), &Z_Registration_Info_UScriptStruct_HomeStarSystemGenerationModel, CONSTRUCT_RELOAD_VERSION_INFO(FStructReloadVersionInfo, sizeof(FHomeStarSystemGenerationModel), 3020112730U) },
+		{ FHomeStarSystemGenerationModel::StaticStruct, Z_Construct_UScriptStruct_FHomeStarSystemGenerationModel_Statics::NewStructOps, TEXT("HomeStarSystemGenerationModel"), &Z_Registration_Info_UScriptStruct_HomeStarSystemGenerationModel, CONSTRUCT_RELOAD_VERSION_INFO(FStructReloadVersionInfo, sizeof(FHomeStarSystemGenerationModel), 370590486U) },
 	};
-	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_HomeStarSystemGenerationModel_h_2389714654(TEXT("/Script/APS_ALPHA"),
+	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_HomeStarSystemGenerationModel_h_2820099818(TEXT("/Script/APS_ALPHA"),
 		nullptr, 0,
 		Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_HomeStarSystemGenerationModel_h_Statics::ScriptStructInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_HomeStarSystemGenerationModel_h_Statics::ScriptStructInfo),
 		nullptr, 0);

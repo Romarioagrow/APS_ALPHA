@@ -26,9 +26,9 @@ public:
 
 	double CalculateMoonRadius(EMoonType MoonType);
 
-	FPlanetGenerationModel GenerateRandomPlanetModel();
+	FPlanetModel GenerateRandomPlanetModel();
 
-	void ApplyModel(APlanet* PlanetActor, FPlanetGenerationModel PlanetGenerationModel); 
+	void ApplyModel(APlanet* PlanetActor, TSharedPtr<FPlanetModel> PlanetGenerationModel);
 
-	TArray<FMoonData> GenerateMoonsList(FPlanetGenerationModel PlanetModel);
+	TArray<FMoonData> GenerateMoonsList(FPlanetModel PlanetModel);
 };

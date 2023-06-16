@@ -17,7 +17,7 @@ PRAGMA_DISABLE_DEPRECATION_WARNINGS
 #define FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_HomeStarSystemGenerationModel_h_11_GENERATED_BODY \
 	friend struct Z_Construct_UScriptStruct_FHomeStarSystemGenerationModel_Statics; \
 	APS_ALPHA_API static class UScriptStruct* StaticStruct(); \
-	typedef FStarSystemGenerationModel Super;
+	typedef FStarSystemModel Super;
 
 
 template<> APS_ALPHA_API UScriptStruct* StaticStruct<struct FHomeStarSystemGenerationModel>();

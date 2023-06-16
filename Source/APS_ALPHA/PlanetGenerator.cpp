@@ -8,7 +8,7 @@ UPlanetGenerator::UPlanetGenerator()
 {
 }
 
-TArray<FMoonData> UPlanetGenerator::GenerateMoonsList(FPlanetGenerationModel PlanetModel)
+TArray<FMoonData> UPlanetGenerator::GenerateMoonsList(FPlanetModel PlanetModel)
 {
     return TArray<FMoonData>();
 }
@@ -20,21 +20,21 @@ void UPlanetGenerator::ConnectPlanetWithStar(APlanet* NewPlanet, AStar* NewStar)
     NewPlanet->SetParentStar(NewStar);*/
 }
 
-FPlanetGenerationModel UPlanetGenerator::GenerateRandomPlanetModel()
+FPlanetModel UPlanetGenerator::GenerateRandomPlanetModel()
 {
-    return FPlanetGenerationModel();
+    return FPlanetModel();
 }
 
-void UPlanetGenerator::ApplyModel(APlanet* PlanetActor, FPlanetGenerationModel PlanetGenerationModel)
+void UPlanetGenerator::ApplyModel(APlanet* PlanetActor, TSharedPtr<FPlanetModel> PlanetGenerationModel)
 {
-	PlanetActor->SetPlanetType(PlanetGenerationModel.PlanetType);
-	PlanetActor->SetPlanetZone(PlanetGenerationModel.PlanetZone);
-	PlanetActor->SetPlanetDensity(PlanetGenerationModel.PlanetDensity);
-	PlanetActor->SetPlanetGravityStrength(PlanetGenerationModel.PlanetGravityStrength);
-	PlanetActor->SetTemperature(PlanetGenerationModel.Temperature);
-	PlanetActor->SetAmountOfMoons(PlanetGenerationModel.AmountOfMoons);
-	PlanetActor->SetRadius(PlanetGenerationModel.Radius);
-	PlanetActor->SetMass(PlanetGenerationModel.Mass);
-    PlanetActor->SetOrbitDistance(PlanetGenerationModel.OrbitDistance);
-    PlanetActor->SetMoonsList(PlanetGenerationModel.MoonsList);
+	PlanetActor->SetPlanetType(PlanetGenerationModel->PlanetType);
+	PlanetActor->SetPlanetZone(PlanetGenerationModel->PlanetZone);
+	PlanetActor->SetPlanetDensity(PlanetGenerationModel->PlanetDensity);
+	PlanetActor->SetPlanetGravityStrength(PlanetGenerationModel->PlanetGravityStrength);
+	PlanetActor->SetTemperature(PlanetGenerationModel->Temperature);
+	PlanetActor->SetAmountOfMoons(PlanetGenerationModel->AmountOfMoons);
+	PlanetActor->SetRadius(PlanetGenerationModel->Radius);
+	PlanetActor->SetMass(PlanetGenerationModel->Mass);
+    PlanetActor->SetOrbitDistance(PlanetGenerationModel->OrbitDistance);
+    PlanetActor->SetMoonsList(PlanetGenerationModel->MoonsList);
 }

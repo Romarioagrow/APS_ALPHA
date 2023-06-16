@@ -15,12 +15,12 @@ PRAGMA_DISABLE_DEPRECATION_WARNINGS
 #define APS_ALPHA_CelestialGenerationModel_generated_h
 
 #define FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_CelestialGenerationModel_h_11_GENERATED_BODY \
-	friend struct Z_Construct_UScriptStruct_FCelestialGenerationModel_Statics; \
+	friend struct Z_Construct_UScriptStruct_FCelestialBodyModel_Statics; \
 	APS_ALPHA_API static class UScriptStruct* StaticStruct(); \
 	typedef FGenerationModel Super;
 
 
-template<> APS_ALPHA_API UScriptStruct* StaticStruct<struct FCelestialGenerationModel>();
+template<> APS_ALPHA_API UScriptStruct* StaticStruct<struct FCelestialBodyModel>();
 
 #undef CURRENT_FILE_ID
 #define CURRENT_FILE_ID FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_CelestialGenerationModel_h

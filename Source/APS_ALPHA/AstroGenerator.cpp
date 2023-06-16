@@ -162,7 +162,6 @@ void AAstroGenerator::GenerateStarSystem()
     if (World) 
     {
 
-        //swith(HomeSystemPosition)
         FVector HomeSystemSpawnLocation;
         switch (HomeSystemPosition)
         {
@@ -176,29 +175,18 @@ void AAstroGenerator::GenerateStarSystem()
             break;
         }
 
-
         /*
         RandomPosition:
         get random index from hism array indexes
         get index model
         from hism index to star model map get random pair
-
-        
         
         */
 
-        //FVector SpawnLocation = //FVector(X, Y, Z);  // Замените X, Y, Z на нужные вам координаты
-        //FQuat SpawnRotation = FQuat::Identity;  // Используем идентичное вращение (нет вращения)
-        //FVector SpawnScale = FVector(1.0f, 1.0f, 1.0f);  // Используем стандартный масштаб
-
-        //FTransform SpawnTransform(SpawnRotation, HomeSystemSpawnLocation, SpawnScale);  // Создаем структуру преобразования
-
-        //AStarSystem* NewStarSystem = World->SpawnActor<AStarSystem>(BP_StarSystemClass, SpawnTransform);
-
-
-
         // Создаем новую звездную систему
-        FStarSystemGenerationModel StarSystemModel = StarSystemGenerator->GenerateRandomStarSystemModel(); 
+        TSharedPtr<FStarSystemModel> StarSystemModel = MakeShared<FStarSystemModel>();
+        StarSystemGenerator->GenerateRandomStarSystemModel(StarSystemModel);
+
         AStarSystem* NewStarSystem = World->SpawnActor<AStarSystem>(BP_StarSystemClass); 
         if (!NewStarSystem) 
         {
@@ -208,16 +196,15 @@ void AAstroGenerator::GenerateStarSystem()
         StarSystemGenerator->ApplyModel(NewStarSystem, StarSystemModel);
 
         // Generate astro model
-        int AmountOfStars = StarSystemModel.AmountOfStars;
+        int AmountOfStars = StarSystemModel->AmountOfStars;
         FVector LastStarLocation { 0 };
         for (int StarNumber = 0; StarNumber < AmountOfStars; StarNumber++)
         {
             TSharedPtr<FStarModel> StarModel = MakeShared<FStarModel>();
-            //FStarModel StarModel = 
-                StarGenerator->GenerateRandomStarModel(StarModel);
+            StarGenerator->GenerateRandomStarModel(StarModel);
 
-            FPlanetarySystemGenerationModel PlanetraySystemModel = 
-                PlanetarySystemGenerator->GeneratePlanetraySystemModelByStar(StarModel, PlanetGenerator, MoonGenerator);
+            TSharedPtr<FPlanetarySystemModel> PlanetraySystemModel = MakeShared<FPlanetarySystemModel>();
+            PlanetarySystemGenerator->GeneratePlanetraySystemModelByStar(PlanetraySystemModel, StarModel, PlanetGenerator, MoonGenerator);
 
             AStar* NewStar = World->SpawnActor<AStar>(BP_StarClass); 
             APlanetarySystem* NewPlanetarySystem = World->SpawnActor<APlanetarySystem>(BP_PlanetarySystemClass);
@@ -242,14 +229,16 @@ void AAstroGenerator::GenerateStarSystem()
 
             // Генерация планет для каждой звезды
             FVector LastPlanetLocation{ 0 };
-            int AmountOfPlanets = PlanetraySystemModel.AmountOfPlanets;
-            for (const FPlanetData& FPlanetData : PlanetraySystemModel.PlanetsList)
+            int AmountOfPlanets = PlanetraySystemModel->AmountOfPlanets;
+            for (const FPlanetData& FPlanetData : PlanetraySystemModel->PlanetsList)
             {
                 APlanetOrbit* NewPlanetOrbit = World->SpawnActor<APlanetOrbit>(BP_PlanetOrbit, NewPlanetarySystem->GetActorLocation(), FRotator::ZeroRotator);
                 NewPlanetOrbit->AttachToActor(NewPlanetarySystem, FAttachmentTransformRules::KeepWorldTransform);
 
                 // Planet Model and generation
-                FPlanetGenerationModel PlanetModel = FPlanetData.PlanetModel; 
+                TSharedPtr<FPlanetModel> PlanetModel = FPlanetData.PlanetModel;
+
+
                 APlanet* NewPlanet = World->SpawnActor<APlanet>(BP_PlanetClass);
                 PlanetGenerator->ApplyModel(NewPlanet, PlanetModel);
                 NewStar->AddPlanet(NewPlanet);
@@ -257,9 +246,9 @@ void AAstroGenerator::GenerateStarSystem()
                 NewPlanet->SetParentStar(NewStar);
 
                 // set planet full-scale
-                NewPlanet->SetActorScale3D(FVector(PlanetModel.Radius * 12742000));
-                FVector NewLocation = FVector(PlanetModel.OrbitDistance * 149600000000000 / 1000, 0, 0);
-                NewPlanet->PlanetRadiusKM = PlanetModel.Radius * 6371;
+                NewPlanet->SetActorScale3D(FVector(PlanetModel->Radius * 12742000));
+                FVector NewLocation = FVector(PlanetModel->OrbitDistance * 149600000000000 / 1000, 0, 0);
+                NewPlanet->PlanetRadiusKM = PlanetModel->Radius * 6371;
                 NewPlanet->SetActorLocation(NewLocation);
                 // set planet orbit full-scale location
                 NewPlanetOrbit->SetActorRelativeRotation(FRotator(FMath::RandRange(-30.0, 30.0), FMath::RandRange(-360.0, 360.0), 0));
@@ -268,23 +257,23 @@ void AAstroGenerator::GenerateStarSystem()
                 double DiameterOfLastMoon = 0;
                 FVector LastMoonLocation;
                 // Generate Moons
-                for (const FMoonData& MoonData : PlanetModel.MoonsList) /// TODO: Ref to pointers FMoonData 
+                for (const TSharedPtr<FMoonData> MoonData : PlanetModel->MoonsList) /// TODO: Ref to pointers FMoonData 
                 {
                     APlanetOrbit* NewMoonOrbit = World->SpawnActor<APlanetOrbit>(BP_PlanetOrbit, NewPlanet->GetActorLocation(), FRotator::ZeroRotator);
                     NewMoonOrbit->AttachToActor(NewPlanet, FAttachmentTransformRules::KeepWorldTransform);
 
                     FVector MoonLocation = NewPlanet->GetActorLocation();
                     AMoon* NewMoon = World->SpawnActor<AMoon>(BP_MoonClass, MoonLocation, FRotator::ZeroRotator);
-                    MoonGenerator->ApplyModel(NewMoon, MoonData.MoonModel);
+                    MoonGenerator->ApplyModel(NewMoon, MoonData->MoonModel);
                     MoonGenerator->ConnectMoonWithPlanet(NewMoon, NewPlanet);
                     NewPlanet->AddMoon(NewMoon);
                     NewMoon->AttachToActor(NewMoonOrbit, FAttachmentTransformRules::KeepWorldTransform);
                     NewMoon->SetParentPlanet(NewPlanet);
 
                     // set moon full-scale
-                    double MoonRadius = MoonData.MoonModel.Radius;
+                    double MoonRadius = MoonData->MoonModel->Radius;
                     NewMoon->SetActorScale3D(FVector(MoonRadius * 12742000));
-                    NewMoon->AddActorLocalOffset(FVector(0, ((PlanetModel.RadiusKM + (MoonData.OrbitRadius * PlanetModel.RadiusKM)) * KM_TO_UE_UNIT_SCALE) * 1, 0));
+                    NewMoon->AddActorLocalOffset(FVector(0, ((PlanetModel->RadiusKM + (MoonData->OrbitRadius * PlanetModel->RadiusKM)) * KM_TO_UE_UNIT_SCALE) * 1, 0));
                     NewMoonOrbit->SetActorRelativeRotation(FRotator(FMath::RandRange(-360.0, 360.0), FMath::RandRange(-360.0, 360.0), FMath::RandRange(-360.0, 360.0)));
 				
                     DiameterOfLastMoon = MoonRadius * 2;
@@ -425,14 +414,11 @@ void AAstroGenerator::GenerateStarCluster()
     if (true)
     {
         UWorld* World = GetWorld();
-
-        //TUniquePtr<FStarClusterModel> StarClusterModel;
         TSharedPtr<FStarClusterModel> StarClusterModel = MakeShared<FStarClusterModel>();
 
         if (bGenerateRandomCluster)
         {
-            //StarClusterModel = 
-                StarClusterGenerator->GetRandomStarClusterModel(StarClusterModel);
+            StarClusterGenerator->GetRandomStarClusterModel(StarClusterModel);
         }
         else
         {
@@ -441,7 +427,6 @@ void AAstroGenerator::GenerateStarCluster()
             StarClusterModel->StarClusterPopulation = StarClusterPopulation;
             StarClusterModel->StarClusterComposition = StarClusterComposition;
         }
-        //TUniquePtr<FStarClusterModel> StarClusterModel;
         EStarClusterType ClusterType = StarClusterModel->StarClusterType;
         AStarCluster* NewStarCluster = World->SpawnActor<AStarCluster>(BP_StarClusterClass);
         NewStarCluster->AttachToActor(this, FAttachmentTransformRules::KeepWorldTransform);
@@ -463,20 +448,15 @@ void AAstroGenerator::GenerateStarCluster()
         for (size_t i = 0; i < NewStarCluster->StarAmount; i++)
         {
             // Создаем модель звезды
-            //FStarModel NewStarModel;
-            //TUniquePtr<FStarModel> NewStarModel;// = new FStarModel();
-            //TUniquePtr<FStarModel> NewStarModel = MakeUnique<FStarModel>();
             TSharedPtr<FStarModel> NewStarModel = MakeShared<FStarModel>();
 
             if (bGenerateRandomCluster)
             {
-                //NewStarModel = 
-                    StarGenerator->GenerateRandomStarModel(NewStarModel);
+                StarGenerator->GenerateRandomStarModel(NewStarModel);
             }
             else
             {
-                //NewStarModel = 
-                    StarGenerator->GenerateStarModelByProbability(NewStarModel, StarClusterModel);
+                StarGenerator->GenerateStarModelByProbability(NewStarModel, StarClusterModel);
             }
 
             // Позиционируем звезду в кластере
@@ -494,7 +474,6 @@ void AAstroGenerator::GenerateStarCluster()
 
             double StarEmission = StarGenerator->CalculateEmission(NewStarModel->Luminosity * 25);
             NewStarCluster->StarMeshInstances->SetCustomDataValue(StarInstIndex, 3, StarEmission);
-
 
             StarIndexModelMap.Add(StarInstIndex, NewStarModel);
         }

@@ -22,8 +22,9 @@ struct FMoonData
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Mode")
 		double OrbitRadius;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Model")
-		FMoonGenerationModel MoonModel;
+	//UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Model")
+		TSharedPtr<FMoonModel> MoonModel;
+		//FMoonModel MoonModel;
 
 	FMoonData()
 	{
@@ -31,7 +32,7 @@ struct FMoonData
 		OrbitRadius = 0.0;
 	}
 
-	FMoonData(int MoonOrder, double OrbitRadius, FMoonGenerationModel MoonModel)
+	FMoonData(int MoonOrder, double OrbitRadius, TSharedPtr<FMoonModel> MoonModel)
 	{
 		this->MoonOrder = MoonOrder;
 		this->OrbitRadius = OrbitRadius;
@@ -40,12 +41,12 @@ struct FMoonData
 };
 
 USTRUCT(BlueprintType)
-struct FPlanetGenerationModel :
-    public FOrbitalBodyGenerationModel
+struct FPlanetModel :
+    public FOrbitalBodyModel
 {
 	GENERATED_BODY()
 
-		FPlanetGenerationModel();
+		FPlanetModel();
 
 		// Тип планеты 
 		UPROPERTY(VisibleAnywhere, Category = "Planet")
@@ -68,8 +69,8 @@ struct FPlanetGenerationModel :
 		UPROPERTY(VisibleAnywhere, Category = "Planet")
 			double PlanetGravityStrength { 0 };
 
-		UPROPERTY(VisibleAnywhere)
-			TArray<FMoonData> MoonsList;
+		//UPROPERTY(VisibleAnywhere)
+			TArray<TSharedPtr<FMoonData>> MoonsList;
 		
 			TPair<double, double> MoonOrbitsRange;
 

@@ -7,7 +7,7 @@
 #include "GalaxyModel.generated.h"
 
 USTRUCT(BlueprintType)
-struct FGalaxyModel : public FCelestialGenerationModel
+struct FGalaxyModel : public FCelestialBodyModel
 {
 	GENERATED_BODY()
 

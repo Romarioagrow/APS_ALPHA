@@ -5,8 +5,8 @@
 #include "OrbitalBodyGenerationModel.generated.h"
 
 USTRUCT(BlueprintType)
-struct FOrbitalBodyGenerationModel :
-    public FCelestialGenerationModel
+struct FOrbitalBodyModel :
+    public FCelestialBodyModel
 {
     GENERATED_BODY()
 

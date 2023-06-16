@@ -1,5 +1,5 @@
 #include "MoonGenerationModel.h"
 
-FMoonGenerationModel::FMoonGenerationModel()
+FMoonModel::FMoonModel()
 {
 }
