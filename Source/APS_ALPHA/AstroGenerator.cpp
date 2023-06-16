@@ -182,18 +182,49 @@ void AAstroGenerator::GenerateStarSystem()
             break;
         case EHomeSystemPosition::DirectPosition:
         {
-            if (StarIndexModelMap.Num() > 0)
+            TArray<AActor*> AttachedActors;
+            GetAttachedActors(AttachedActors);
+            if (AttachedActors.Num() > 0) // Убедитесь, что есть прикрепленные акторы
             {
-                int32 RandomIndex = FMath::RandRange(0, StarIndexModelMap.Num() - 1); // получаем случайный индекс
-                if (StarIndexModelMap.Contains(RandomIndex))
+                int32 RandomIndex = FMath::RandRange(0, AttachedActors.Num() - 1); // Получите случайный индекс
+                if (AstroGenerationLevel == EAstroGenerationLevel::Galaxy)
                 {
-                    TSharedPtr<FStarModel> StarModel = StarIndexModelMap[RandomIndex];
-                    // Используйте данные StarModel для получения позиции, если они доступны
-                    // Например, если у вас есть поле Position в StarModel:
-                    HomeSystemSpawnLocation = StarModel->Location;// * 1000000000;
+                    AGalaxy* GalaxyActor = Cast<AGalaxy>(AttachedActors[RandomIndex]); // Приведите актора к типу AGalaxy
+                    if (GalaxyActor)
+                    {
+                        // Если актор является экземпляром класса AGalaxy, извлеките его HISM компонент.
+                        UHierarchicalInstancedStaticMeshComponent* HISMComponent = GalaxyActor->StarMeshInstances;
+                        if (HISMComponent && HISMComponent->GetInstanceCount() > 0)
+                        {
+                            // Получите случайный индекс из диапазона доступных инстансов
+                            int32 RandomInstanceIndex = FMath::RandRange(0, HISMComponent->GetInstanceCount() - 1);
+                            // Извлеките трансформацию случайного инстанса
+                            FTransform InstanceTransform;
+                            HISMComponent->GetInstanceTransform(RandomInstanceIndex, InstanceTransform, true);
+                            // Используйте позицию из трансформации инстанса как HomeSystemSpawnLocation
+                            HomeSystemSpawnLocation = InstanceTransform.GetLocation();
+                        }
+                    }
+                }
+                else if (AstroGenerationLevel == EAstroGenerationLevel::StarCluster)
+                {
+                    AStarCluster* StarClusterActor = Cast<AStarCluster>(AttachedActors[RandomIndex]); // Приведите актора к типу AStarCluster
+                    if (StarClusterActor)
+                    {
+                        // Если актор является экземпляром класса AStarCluster, извлеките его HISM компонент.
+                        UHierarchicalInstancedStaticMeshComponent* HISMComponent = StarClusterActor->StarMeshInstances;
 
-                    UE_LOG(LogTemp, Warning, TEXT("Random Index: %d"), RandomIndex);
-                    UE_LOG(LogTemp, Warning, TEXT("Home System Spawn Location: %s"), *HomeSystemSpawnLocation.ToString());
+                        if (HISMComponent && HISMComponent->GetInstanceCount() > 0)
+                        {
+                            // Получите случайный индекс из диапазона доступных инстансов
+                            int32 RandomInstanceIndex = FMath::RandRange(0, HISMComponent->GetInstanceCount() - 1);
+                            // Извлеките трансформацию случайного инстанса
+                            FTransform InstanceTransform;
+                            HISMComponent->GetInstanceTransform(RandomInstanceIndex, InstanceTransform, true);
+                            // Используйте позицию из трансформации инстанса как HomeSystemSpawnLocation
+                            HomeSystemSpawnLocation = InstanceTransform.GetLocation();
+                        }
+                    }
                 }
             }
         }
@@ -215,9 +246,10 @@ void AAstroGenerator::GenerateStarSystem()
         TSharedPtr<FStarSystemModel> StarSystemModel = MakeShared<FStarSystemModel>();
         StarSystemGenerator->GenerateRandomStarSystemModel(StarSystemModel);
         
-        //AStarSystem* NewStarSystem = World->SpawnActor<AStarSystem>(BP_StarSystemClass); 
-        AStarSystem* NewStarSystem = World->SpawnActor<AStarSystem>(BP_StarSystemClass, HomeSystemTransform);
-
+        AStarSystem* NewStarSystem = World->SpawnActor<AStarSystem>(BP_StarSystemClass); 
+        //AStarSystem* NewStarSystem = World->SpawnActor<AStarSystem>(BP_StarSystemClass, HomeSystemTransform);
+        NewStarSystem->AttachToActor(this, FAttachmentTransformRules::KeepWorldTransform);
+        NewStarSystem->SetActorLocation(HomeSystemSpawnLocation);
         
         if (!NewStarSystem) 
         {
