@@ -9,12 +9,12 @@ UStarClusterGenerator::UStarClusterGenerator()
     BP_StarClusterClass = AStarCluster::StaticClass();
 }
 
-FVector UStarClusterGenerator::CalculateStarPosition(int StarIndex, AStarCluster* StarCluster, const FStarModel& StarModel)
+FVector UStarClusterGenerator::CalculateStarPosition(int StarIndex, AStarCluster* StarCluster, const TSharedPtr<FStarModel> StarModel)
 {
     FVector StarPosition;
 
     // Размер звезды
-    double StarSize = StarModel.Radius;
+    double StarSize = StarModel->Radius;
 
     switch (StarCluster->ClusterType)
     {
@@ -115,21 +115,21 @@ EStarClusterType UStarClusterGenerator::GetRandomClusterType()
     return static_cast<EStarClusterType>(FMath::RandRange(0, static_cast<int>(EStarClusterType::Nebula)));
 }
 
-FStarClusterModel UStarClusterGenerator::GenerateRandomStarClusterModelByParams(FStarClusterModel& StarClusterModel)
+TUniquePtr<FStarClusterModel> UStarClusterGenerator::GenerateRandomStarClusterModelByParams(TUniquePtr<FStarClusterModel> StarClusterModel)
 {
-    
+    //TUniquePtr<FStarClusterModel> StarClusterModel = MakeUnique<FStarClusterModel>();;
     
     return StarClusterModel;
 }
 
-FStarClusterModel UStarClusterGenerator::GetRandomStarClusterModel()
+/*TUniquePtr<FStarClusterModel>*/void UStarClusterGenerator::GetRandomStarClusterModel(TSharedPtr<FStarClusterModel> StarClusterModel)
 {
-    FStarClusterModel StarClusterModel{};
+    //TUniquePtr<FStarClusterModel> StarClusterModel = MakeUnique<FStarClusterModel>();
     
-    StarClusterModel.StarClusterSize = static_cast<EStarClusterSize>(FMath::RandRange(0, static_cast<int>(EStarClusterSize::Giant)));
-    StarClusterModel.StarClusterType = static_cast<EStarClusterType>(FMath::RandRange(0, static_cast<int>(EStarClusterType::Nebula)));
-    StarClusterModel.StarClusterPopulation = static_cast<EStarClusterPopulation>(FMath::RandRange(0, static_cast<int>(EStarClusterPopulation::Protostars)));
-    StarClusterModel.StarClusterComposition = static_cast<EStarClusterComposition>(FMath::RandRange(0, static_cast<int>(EStarClusterComposition::MostlyRed)));
+    StarClusterModel->StarClusterSize = static_cast<EStarClusterSize>(FMath::RandRange(0, static_cast<int>(EStarClusterSize::Giant)));
+    StarClusterModel->StarClusterType = static_cast<EStarClusterType>(FMath::RandRange(0, static_cast<int>(EStarClusterType::Nebula)));
+    StarClusterModel->StarClusterPopulation = static_cast<EStarClusterPopulation>(FMath::RandRange(0, static_cast<int>(EStarClusterPopulation::Protostars)));
+    StarClusterModel->StarClusterComposition = static_cast<EStarClusterComposition>(FMath::RandRange(0, static_cast<int>(EStarClusterComposition::MostlyRed)));
     
-    return StarClusterModel;
+    //return StarClusterModel;
 }

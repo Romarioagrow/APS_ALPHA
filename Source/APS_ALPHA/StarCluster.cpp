@@ -25,7 +25,7 @@ void AStarCluster::AddStarToCluster(AStar* Star)
     Stars.Add(Star);
 }
 
-void AStarCluster::AddStarToClusterModel(FVector StarLocation, FStarModel StarModel)
+void AStarCluster::AddStarToClusterModel(FVector StarLocation, TSharedPtr<FStarModel> StarModel)
 {
     StarsModel.Add(StarLocation, StarModel);
 }

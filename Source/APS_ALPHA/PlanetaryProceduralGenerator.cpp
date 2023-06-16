@@ -19,26 +19,26 @@ void UPlanetarySystemGenerator::ApplyModel(APlanetarySystem* NewPlanetarySystem,
 }
 
 
-FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySystemModelByStar(FStarModel StarModel, UPlanetGenerator* PlanetGenerator, UMoonGenerator* MoonGenerator)
+FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySystemModelByStar(TSharedPtr<FStarModel> StarModel, UPlanetGenerator* PlanetGenerator, UMoonGenerator* MoonGenerator)
 {
     // вычисляем вероятность что будут планеты
     // находим макс и мин кол во планет
     // опредлеяем расположение орбит планет  
 
     FPlanetarySystemGenerationModel PlanetarySystemModel;
-    PlanetarySystemModel.FullSpectralName = StarModel.FullSpectralName;
+    PlanetarySystemModel.FullSpectralName = StarModel->FullSpectralName;
 
     // Находим базовую вероятность для данного типа звезды
-    PlanetProbability BaseProbability = BasePlanetProbabilities[StarModel.StellarType];
+    PlanetProbability BaseProbability = BasePlanetProbabilities[StarModel->StellarType];
     // Модифицируем вероятность на основе массы звезды.
     PlanetProbability MassModifier;
-    if (StarModel.StellarType == EStellarType::MainSequence)
+    if (StarModel->StellarType == EStellarType::MainSequence)
     {
-        MassModifier = 1 / (1 + FMath::Exp(-StarModel.Mass));
+        MassModifier = 1 / (1 + FMath::Exp(-StarModel->Mass));
     }
     else
     {
-        MassModifier = 1 / (1 + FMath::Exp(-StarModel.Mass / 10));
+        MassModifier = 1 / (1 + FMath::Exp(-StarModel->Mass / 10));
     }
 
     PlanetProbability FinalProbability = BaseProbability * MassModifier;
@@ -49,18 +49,18 @@ FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySyst
     // Выводим информацию о звезде
     UE_LOG(LogTemp, Warning, TEXT("HasPlanets: %s"), HasPlanets ? TEXT("true") : TEXT("false"));
     UE_LOG(LogTemp, Warning, TEXT("Star Information:"));
-    UE_LOG(LogTemp, Warning, TEXT("Spectral Class: %s"), *UEnum::GetValueAsString(StarModel.SpectralClass));
-    UE_LOG(LogTemp, Warning, TEXT("Stellar Class: %s"), *UEnum::GetValueAsString(StarModel.StellarType));
-    UE_LOG(LogTemp, Warning, TEXT("Mass: %f Solar Masses"), StarModel.Mass);
-    UE_LOG(LogTemp, Warning, TEXT("Radius: %f Solar Radii"), StarModel.Radius);
+    UE_LOG(LogTemp, Warning, TEXT("Spectral Class: %s"), *UEnum::GetValueAsString(StarModel->SpectralClass));
+    UE_LOG(LogTemp, Warning, TEXT("Stellar Class: %s"), *UEnum::GetValueAsString(StarModel->StellarType));
+    UE_LOG(LogTemp, Warning, TEXT("Mass: %f Solar Masses"), StarModel->Mass);
+    UE_LOG(LogTemp, Warning, TEXT("Radius: %f Solar Radii"), StarModel->Radius);
 
     if (HasPlanets)
     {
         const int32 MaxPlanetsAllowed = 20;
         int32 MinPlanetCount = 1;
-        int32 MaxPlanetCount = FMath::Min(MaxPlanetsAllowed, FMath::Max(1, FMath::RoundToInt(StarModel.Mass * BasePlanetCount[StarModel.StellarType] * MassModifier)));
+        int32 MaxPlanetCount = FMath::Min(MaxPlanetsAllowed, FMath::Max(1, FMath::RoundToInt(StarModel->Mass * BasePlanetCount[StarModel->StellarType] * MassModifier)));
 
-        if (StarModel.StellarType == EStellarType::MainSequence && StarModel.SpectralClass == ESpectralClass::M)
+        if (StarModel->StellarType == EStellarType::MainSequence && StarModel->SpectralClass == ESpectralClass::M)
         {
             MaxPlanetCount = 5;
         }
@@ -77,20 +77,20 @@ FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySyst
         double MinOrbitScalingFactor = 1.0f;
         double MaxOrbitScalingFactor = 10.0f;
 
-        if (StarModel.StellarType == EStellarType::HyperGiant)
+        if (StarModel->StellarType == EStellarType::HyperGiant)
         {
             MaxOrbitScalingFactor = 5.0f; // Уменьшаем максимальную орбиту для гипергигантов
         }
-        else if (StarModel.StellarType == EStellarType::SuperGiant)
+        else if (StarModel->StellarType == EStellarType::SuperGiant)
         {
             MaxOrbitScalingFactor = 6.0f; // Уменьшаем максимальную орбиту для сверхгигантов
         }
 
-        double MinOrbit = StarModel.Mass * MinOrbitScalingFactor;
-        double MaxOrbit = StarModel.Mass * MaxOrbitScalingFactor;
+        double MinOrbit = StarModel->Mass * MinOrbitScalingFactor;
+        double MaxOrbit = StarModel->Mass * MaxOrbitScalingFactor;
 
         // Подбираем случайное распределение для нашей системы
-        EOrbitDistributionType OrbitDistributionType = ChooseOrbitDistribution(StarModel.StellarType);
+        EOrbitDistributionType OrbitDistributionType = ChooseOrbitDistribution(StarModel->StellarType);
         PlanetarySystemModel.OrbitDistributionType = OrbitDistributionType;
 
         FString OrbitType = UEnum::GetValueAsString(OrbitDistributionType);
@@ -145,12 +145,12 @@ FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySyst
         UE_LOG(LogTemp, Warning, TEXT("MinOrbit: %f, MaxOrbit: %f"), MinOrbit, MaxOrbit);
 
         // Вычисляем обитаемую зону
-        float HabitableZoneInner = sqrt(StarModel.Luminosity / 1.1);
-        float HabitableZoneOuter = sqrt(StarModel.Luminosity / 0.53);
+        float HabitableZoneInner = sqrt(StarModel->Luminosity / 1.1);
+        float HabitableZoneOuter = sqrt(StarModel->Luminosity / 0.53);
 
         // Star Dead zone
         double StarDeadZoneInner = 0; // Начинается от звезды
-        double StarRadiusInAU = StarModel.Radius * 0.00465047;
+        double StarRadiusInAU = StarModel->Radius * 0.00465047;
         double StarDeadZoneOuter = StarRadiusInAU * 2; // Заканчивается на расстоянии, равном двойному радиусу звезды в AU
 
         // Zones
@@ -175,7 +175,7 @@ FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySyst
         {
             // Вычисляем зону StarDeadZone
             StarDeadZoneInner = 0; // Начинается от звезды
-            StarRadiusInAU = StarModel.Radius * 0.00465047;
+            StarRadiusInAU = StarModel->Radius * 0.00465047;
             StarDeadZoneOuter = StarRadiusInAU * 2; // Заканчивается на расстоянии, равном двойному радиусу звезды в AU
 
             // Вычисляем горячую зону
@@ -220,7 +220,7 @@ FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySyst
         else
         {
             StarDeadZoneInner = 0;
-            StarRadiusInAU = StarModel.Radius * 0.00465047;
+            StarRadiusInAU = StarModel->Radius * 0.00465047;
             StarDeadZoneOuter = StarRadiusInAU * 2;
             HotZoneInner = StarDeadZoneOuter;
             HotZoneOuter = StarDeadZoneOuter + (HabitableZoneInner - StarDeadZoneOuter) / 2;
@@ -290,7 +290,7 @@ FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySyst
             PlanetModel.OrbitDistance = OrbitRadius;
 
             // planet temperature
-            double PlanetTemperature = StarModel.SurfaceTemperature * sqrt(StarModel.Radius / (2 * OrbitRadius));
+            double PlanetTemperature = StarModel->SurfaceTemperature * sqrt(StarModel->Radius / (2 * OrbitRadius));
             PlanetModel.Temperature = PlanetTemperature; // to celestial body
 
             // Определите, в какой зоне находится планета.
@@ -323,7 +323,7 @@ FPlanetarySystemGenerationModel UPlanetarySystemGenerator::GeneratePlanetraySyst
             // Moons orbits
             // Гипотетические параметры планеты и звезды
             double planetMass = PlanetModel.Mass; // масса планеты
-            double starMass = StarModel.Mass; // масса звезды
+            double starMass = StarModel->Mass; // масса звезды
             double planetToStarDistance = PlanetModel.Radius; // среднее расстояние от планеты до звезды
             double planetRadius = PlanetModel.Radius; // радиус планеты
             /// TODO: PlanetAtmosphere //double planetAtmosphereHeight = PlanetModel.AtmosphereHeight; // высота атмосферы планеты

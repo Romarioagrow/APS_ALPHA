@@ -53,7 +53,9 @@ void UGalaxyGenerator::GenerateGalaxyOctreeStars(UStarGenerator* StarGenerator, 
     double StarsCount = GalaxyModel.StarsCount;
     for (int i = 0; i < StarsCount; i++)
     {
-        FStarModel StarModel = StarGenerator->GenerateRandomStarModel();
+        TSharedPtr<FStarModel> StarModel = MakeShared<FStarModel>();//
+        StarGenerator->GenerateRandomStarModel(StarModel);
+        //FStarModel StarModel = StarGenerator->GenerateRandomStarModel();
         bool spaceOccupied = true;
         FVector position;
 
@@ -64,23 +66,23 @@ void UGalaxyGenerator::GenerateGalaxyOctreeStars(UStarGenerator* StarGenerator, 
         LightYearInUnrealUnits /= AstroScaleCoeff;
 
         while (spaceOccupied) {
-            position = (this->*generateStar)(GalaxyModel.GalaxyClass, LightYearInUnrealUnits, StarModel.Radius);
-            spaceOccupied = galaxyOctree->SpaceOccupied(position, StarModel.Radius);
+            position = (this->*generateStar)(GalaxyModel.GalaxyClass, LightYearInUnrealUnits, StarModel->Radius);
+            spaceOccupied = galaxyOctree->SpaceOccupied(position, StarModel->Radius);
         }
 
         // Вставляем звезду в октодерево
-        galaxyOctree->InsertStar(position, StarModel.Radius);
+        galaxyOctree->InsertStar(position, StarModel->Radius);
 
         FTransform StarTransform;
         StarTransform.SetLocation(position);
-        StarTransform.SetScale3D(FVector(StarModel.Radius));
+        StarTransform.SetScale3D(FVector(StarModel->Radius));
         int32 StarInstIndex = NewGalaxy->StarMeshInstances->AddInstance(StarTransform, true);
 
-        FLinearColor ColorValue = StarGenerator->GetStarColor(StarModel.SpectralClass, StarModel.SpectralSubclass);
+        FLinearColor ColorValue = StarGenerator->GetStarColor(StarModel->SpectralClass, StarModel->SpectralSubclass);
         NewGalaxy->StarMeshInstances->SetCustomDataValue(StarInstIndex, 0, ColorValue.R);
         NewGalaxy->StarMeshInstances->SetCustomDataValue(StarInstIndex, 1, ColorValue.G);
         NewGalaxy->StarMeshInstances->SetCustomDataValue(StarInstIndex, 2, ColorValue.B);
-        double StarEmission = StarGenerator->CalculateEmission(StarModel.Luminosity * 25);
+        double StarEmission = StarGenerator->CalculateEmission(StarModel->Luminosity * 25);
         NewGalaxy->StarMeshInstances->SetCustomDataValue(StarInstIndex, 3, StarEmission);
     }
     delete galaxyOctree;

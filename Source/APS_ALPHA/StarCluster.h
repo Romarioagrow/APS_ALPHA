@@ -91,12 +91,12 @@ public:
     UPROPERTY(VisibleAnywhere, Category = "Star Cluster")
         TArray<AStar*> Stars;
 
-    UPROPERTY(VisibleAnywhere, Category = "Star Cluster")
-        TMap<FVector, FStarModel> StarsModel;
+    //UPROPERTY(VisibleAnywhere, Category = "Star Cluster")
+        TMap<FVector, TSharedPtr<FStarModel>> StarsModel;
 
     void AddStarToCluster(AStar* Star);
 
-    void AddStarToClusterModel(FVector StarLocation, FStarModel StarModel);
+    void AddStarToClusterModel(FVector StarLocation, TSharedPtr<FStarModel> StarModel);
 
     // Тип скопления
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star Cluster")
