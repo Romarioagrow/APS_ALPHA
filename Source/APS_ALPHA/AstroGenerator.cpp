@@ -52,7 +52,7 @@ void AAstroGenerator::InitGenerationLevel()
 
     if (bGenerateHomeSystem)
     {
-        GenerateStarSystem();
+        GenerateHomeStarSystem();
     }
 }
 
@@ -140,11 +140,78 @@ void AAstroGenerator::InitAstroGenerators()
 
 void AAstroGenerator::GenerateHomeStarSystem()
 {
+    /// TODO: Refactoring - GenerateStarSystem(StarSystemModel);
+    GenerateStarSystem();
+
+    if (GeneratedHomeStarSystem
+        && GeneratedHomeStarSystem->MainStar
+        && GeneratedHomeStarSystem->MainStar->PlanetarySystem)
+    {
+
+        TArray<TSharedPtr<FPlanetData>> PlanetDataMap = GeneratedHomeStarSystem->MainStar->PlanetarySystem->PlanetsList;
+
+        UE_LOG(LogTemp, Warning, TEXT("Planet List - "));
+        UE_LOG(LogTemp, Warning, TEXT("Planet Amount: %d"), PlanetDataMap.Num());
 
 
+        for (const TSharedPtr<FPlanetData>& PlanetDataPtr : PlanetDataMap)
+        {
+            if (PlanetDataPtr.IsValid())
+            {
+                FPlanetData PlanetData = *(PlanetDataPtr.Get());
+                // Вывод основных данных о планете
+                UE_LOG(LogTemp, Warning, TEXT("    Planet Order: %d"), PlanetData.PlanetOrder);
+                UE_LOG(LogTemp, Warning, TEXT("     Orbit Radius: %f"), PlanetData.OrbitRadius);
 
+                // Получаем модель планеты
+                TSharedPtr<FPlanetModel> PlanetModel = PlanetData.PlanetModel;
+
+                // Вывод данных модели планеты
+                if (PlanetModel.IsValid())
+                {
+                    UE_LOG(LogTemp, Warning, TEXT("     Planet Type: %s"), *UEnum::GetValueAsString(PlanetModel->PlanetType));
+                    UE_LOG(LogTemp, Warning, TEXT("     Planet Zone: %s"), *UEnum::GetValueAsString(PlanetModel->PlanetZone));
+                    UE_LOG(LogTemp, Warning, TEXT("     Temperature: %d"), PlanetModel->Temperature);
+                    UE_LOG(LogTemp, Warning, TEXT("     Planet Density: %f"), PlanetModel->PlanetDensity);
+                    UE_LOG(LogTemp, Warning, TEXT("     Planet Gravity Strength: %f"), PlanetModel->PlanetGravityStrength);
+                    UE_LOG(LogTemp, Warning, TEXT("     Amount of Moons: %d"), PlanetModel->AmountOfMoons);
+
+                    // Вывод информации о спутниках
+                    TArray<TSharedPtr<FMoonData>> MoonsList = PlanetModel->MoonsList;
+                    for (int32 i = 0; i < MoonsList.Num(); i++)
+                    {
+                        // ... Продолжение цикла for для MoonsList ...
+
+                        if (MoonsList[i].IsValid())
+                        {
+                            // Замените FMoonData на структуру данных вашего спутника
+                            FMoonData MoonData = *(MoonsList[i].Get());
+
+                            // Выводим данные спутника
+                            UE_LOG(LogTemp, Warning, TEXT("         Moon Order: %d"), MoonData.MoonOrder);
+                            UE_LOG(LogTemp, Warning, TEXT("             Moon Orbit Radius: %f"), MoonData.OrbitRadius);
+
+                            // Получаем модель Moon
+                            TSharedPtr<FMoonModel> MoonModel = MoonData.MoonModel;
+
+                            // Вывод данных модели Moon
+                            if (MoonModel.IsValid())
+                            {
+                                UE_LOG(LogTemp, Warning, TEXT("             Moon Type: %s"), *UEnum::GetValueAsString(MoonModel->Type));
+                                UE_LOG(LogTemp, Warning, TEXT("             Moon Density: %f"), MoonModel->MoonDensity);
+                                UE_LOG(LogTemp, Warning, TEXT("             Moon Gravity: %f"), MoonModel->MoonGravity);
+                            }
+                        }
+
+                    }
+                }
+            }
+        }
+    }
 }
 
+
+/// TODO: Refactoring - GenerateStarSystem(StarSystemModel);
 void AAstroGenerator::GenerateStarSystem()
 {
     if (StarGenerator == nullptr || PlanetGenerator == nullptr || MoonGenerator == nullptr) {
@@ -162,6 +229,8 @@ void AAstroGenerator::GenerateStarSystem()
 
     if (World) 
     {
+        UE_LOG(LogTemp, Warning, TEXT("Generate Star System!"));
+
         FTransform HomeSystemTransform;
 
         FVector HomeSystemSpawnLocation{ 0 };
@@ -244,7 +313,15 @@ void AAstroGenerator::GenerateStarSystem()
 
         // Создаем новую звездную систему
         TSharedPtr<FStarSystemModel> StarSystemModel = MakeShared<FStarSystemModel>();
-        StarSystemGenerator->GenerateRandomStarSystemModel(StarSystemModel);
+
+        if (bRandomHomeSystem)
+        {
+            StarSystemGenerator->GenerateRandomStarSystemModel(StarSystemModel);
+        }
+        else
+        {
+            StarSystemGenerator->GenerateRandomStarSystemModel(StarSystemModel);
+        }
         
         AStarSystem* NewStarSystem = World->SpawnActor<AStarSystem>(BP_StarSystemClass); 
         //AStarSystem* NewStarSystem = World->SpawnActor<AStarSystem>(BP_StarSystemClass, HomeSystemTransform);
@@ -264,10 +341,28 @@ void AAstroGenerator::GenerateStarSystem()
         for (int StarNumber = 0; StarNumber < AmountOfStars; StarNumber++)
         {
             TSharedPtr<FStarModel> StarModel = MakeShared<FStarModel>();
-            StarGenerator->GenerateRandomStarModel(StarModel);
+
+            if (bRandomHomeStar)
+            {
+                StarGenerator->GenerateRandomStarModel(StarModel);
+            }
+            else
+            {
+                StarGenerator->GenerateRandomStarModel(StarModel);
+            }
 
             TSharedPtr<FPlanetarySystemModel> PlanetraySystemModel = MakeShared<FPlanetarySystemModel>();
-            PlanetarySystemGenerator->GeneratePlanetraySystemModelByStar(PlanetraySystemModel, StarModel, PlanetGenerator, MoonGenerator);
+            
+            if (bRandomHomeSystemType)
+            {
+                PlanetarySystemGenerator->GeneratePlanetraySystemModelByStar(PlanetraySystemModel, StarModel, PlanetGenerator, MoonGenerator);
+
+            }
+            else
+            {
+                PlanetarySystemGenerator->GeneratePlanetraySystemModelByStar(PlanetraySystemModel, StarModel, PlanetGenerator, MoonGenerator);
+                //PlanetarySystemGenerator->GenerateCustomPlanetarySystem();
+            }
 
             AStar* NewStar = World->SpawnActor<AStar>(BP_StarClass); 
             APlanetarySystem* NewPlanetarySystem = World->SpawnActor<APlanetarySystem>(BP_PlanetarySystemClass);
@@ -299,13 +394,13 @@ void AAstroGenerator::GenerateStarSystem()
             // Генерация планет для каждой звезды
             FVector LastPlanetLocation{ 0 };
             int AmountOfPlanets = PlanetraySystemModel->AmountOfPlanets;
-            for (const FPlanetData& FPlanetData : PlanetraySystemModel->PlanetsList)
+            for (const TSharedPtr<FPlanetData> FPlanetData : PlanetraySystemModel->PlanetsList)
             {
                 APlanetOrbit* NewPlanetOrbit = World->SpawnActor<APlanetOrbit>(BP_PlanetOrbit, NewPlanetarySystem->GetActorLocation(), FRotator::ZeroRotator);
                 NewPlanetOrbit->AttachToActor(NewPlanetarySystem, FAttachmentTransformRules::KeepWorldTransform);
 
                 // Planet Model and generation
-                TSharedPtr<FPlanetModel> PlanetModel = FPlanetData.PlanetModel;
+                TSharedPtr<FPlanetModel> PlanetModel = FPlanetData->PlanetModel;
                 APlanet* NewPlanet = World->SpawnActor<APlanet>(BP_PlanetClass);
 
                 PlanetGenerator->ApplyModel(NewPlanet, PlanetModel);
@@ -455,6 +550,14 @@ void AAstroGenerator::GenerateStarSystem()
                 UE_LOG(LogTemp, Warning, TEXT("No overlaped stars!"));
             }
         }
+
+
+        /// TO HOME SYSTEM
+        GeneratedHomeStarSystem = NewStarSystem;
+    }
+    else
+    {
+        UE_LOG(LogTemp, Warning, TEXT("Falied to get World!"));
     }
 }
 

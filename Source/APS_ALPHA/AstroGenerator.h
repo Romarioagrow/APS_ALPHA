@@ -10,6 +10,7 @@
 #include "GalaxyType.h"
 #include "GalaxyClass.h"
 #include "HomeSystemPosition.h"
+#include "CharSpawnPlace.h"
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
@@ -49,6 +50,9 @@ protected:
 	
 	UPROPERTY(VisibleAnywhere, Category = "Generated Astro Actros")
 		AStarCluster* GeneratedStarCluster;
+	
+	UPROPERTY(VisibleAnywhere, Category = "Generated Astro Actros")
+		AStarSystem* GeneratedHomeStarSystem;
 
 public:
 	TMap<int32, TSharedPtr<FStarModel>> StarIndexModelMap;
@@ -142,6 +146,16 @@ public:
 
 	UPROPERTY(EditAnywhere, Category = "Character Spawn")
 		bool bCharacterSpawn{ true };
+	
+	UPROPERTY(EditAnywhere, Category = "Character Spawn")
+		bool bCharacterSpawnAtRandomPlanet{ true };
+	
+	UPROPERTY(EditAnywhere, Category = "Character Spawn")
+		ECharSpawnPlace CharSpawnPlace;
+	
+	UPROPERTY(EditAnywhere, Category = "Character Spawn")
+		//ECharSpawnPlace CharSpawnPlace;
+		TSubclassOf<class AControlledPawn> BP_CharacterClass;
 
 	UPROPERTY()
 		TArray<AStarSystem*> GeneratedStarSystems;

@@ -182,6 +182,9 @@
     <ClInclude Include="..\..\Source\APS_ALPHA\CelestialSystem.h">
       <Filter>Source\APS_ALPHA</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\Source\APS_ALPHA\CharSpawnPlace.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
     <ClCompile Include="..\..\Source\APS_ALPHA\Colony.cpp">
       <Filter>Source\APS_ALPHA</Filter>
     </ClCompile>

@@ -11,9 +11,8 @@ void UStarSystemGenerator::ApplyModel(AStarSystem* StarSystem, TSharedPtr<FStarS
 	StarSystem->SetStarSystemType(StarSystemGenerationModel->StarSystemType);
 }
 
-/*FStarSystemModel*/void UStarSystemGenerator::GenerateRandomStarSystemModel(TSharedPtr<FStarSystemModel> StarSystemModel)
+void UStarSystemGenerator::GenerateRandomStarSystemModel(TSharedPtr<FStarSystemModel> StarSystemModel)
 {
-	//FStarSystemModel StarSystemModel;
 
 	// Случайное число в диапазоне от 0 до 100
 	int32 RandomValue = FMath::RandRange(0, 100);

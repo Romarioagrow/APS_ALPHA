@@ -85,8 +85,8 @@ struct FPlanetarySystemModel :
 	UPROPERTY(VisibleAnywhere)
 		FName FullSpectralName;
 	
-	UPROPERTY(VisibleAnywhere)
-		TArray<FPlanetData> PlanetsList;
+	//UPROPERTY(VisibleAnywhere)
+		TArray<TSharedPtr<FPlanetData>> PlanetsList;
 
 	/// TODO: To one struct
 	UPROPERTY(VisibleAnywhere, Category = "Zones")

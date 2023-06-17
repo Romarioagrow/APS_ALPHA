@@ -19,7 +19,7 @@ void UPlanetarySystemGenerator::ApplyModel(APlanetarySystem* NewPlanetarySystem,
 }
 
 
-/*FPlanetarySystemModel*/void UPlanetarySystemGenerator::GeneratePlanetraySystemModelByStar(TSharedPtr<FPlanetarySystemModel> PlanetarySystemModel, TSharedPtr<FStarModel> StarModel, UPlanetGenerator* PlanetGenerator, UMoonGenerator* MoonGenerator)
+void UPlanetarySystemGenerator::GeneratePlanetraySystemModelByStar(TSharedPtr<FPlanetarySystemModel> PlanetarySystemModel, TSharedPtr<FStarModel> StarModel, UPlanetGenerator* PlanetGenerator, UMoonGenerator* MoonGenerator)
 {
     // вычисл€ем веро€тность что будут планеты
     // находим макс и мин кол во планет
@@ -43,7 +43,7 @@ void UPlanetarySystemGenerator::ApplyModel(APlanetarySystem* NewPlanetarySystem,
 
     PlanetProbability FinalProbability = BaseProbability * MassModifier;
     UE_LOG(LogTemp, Warning, TEXT("FinalProbability: %f"), FinalProbability);
-    bool HasPlanets = FMath::FRand() <= FinalProbability;
+    bool HasPlanets = true;//FMath::FRand() <= FinalProbability;
     //bool HasPlanets = false;//FMath::FRand() <= FinalProbability;
 
     // ¬ыводим информацию о звезде
@@ -415,7 +415,9 @@ void UPlanetarySystemGenerator::ApplyModel(APlanetarySystem* NewPlanetarySystem,
             }
 
             PlanetModel->MoonsList = MoonsList;
-            FPlanetData PlanetData = FPlanetData(PlanetIndex, OrbitRadius, PlanetModel);
+            //FPlanetData PlanetData = FPlanetData(PlanetIndex, OrbitRadius, PlanetModel);
+            TSharedPtr<FPlanetData> PlanetData = MakeShared<FPlanetData>(PlanetIndex, OrbitRadius, PlanetModel);
+            
             PlanetarySystemModel->PlanetsList.Add(PlanetData);
         }
     }
@@ -626,6 +628,10 @@ EOrbitDistributionType UPlanetarySystemGenerator::ChooseOrbitDistribution(EStell
 void UPlanetarySystemGenerator::SetAstroLocation(int StarNumber, APlanetarySystem* NewPlanetarySystem)
 {
    // NewPlanetarySystem->Get
+}
+
+void UPlanetarySystemGenerator::GenerateCustomPlanetarySystem()
+{
 }
 
 int UPlanetarySystemGenerator::DetermineMaxPlanets(EStellarType StellarClass, FStarModel StarModel )

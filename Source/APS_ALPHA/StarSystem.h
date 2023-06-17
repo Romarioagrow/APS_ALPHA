@@ -27,8 +27,6 @@ private:
 	UPROPERTY()
 		TArray<AStar*> Stars;
 	
-	
-
 public:
 	AStarSystem();
 

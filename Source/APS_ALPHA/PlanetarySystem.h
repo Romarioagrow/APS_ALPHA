@@ -36,8 +36,7 @@ private:
 	UPROPERTY(VisibleAnywhere)
 		FName FullSpectralName;
 
-	UPROPERTY(VisibleAnywhere)
-		TArray<FPlanetData> PlanetsList;
+	
 
 	// ZONES 
 	/// TODO: TO SINGLE STRUCT
@@ -69,6 +68,9 @@ private:
 		FZoneRadius KuiperBeltZoneRadius;
 
 public:
+	//UPROPERTY(VisibleAnywhere)
+		TArray<TSharedPtr<FPlanetData>> PlanetsList;
+
 	void SetStar(AStar* Star);
 
 	void SetAmountOfPlanets(int AmountOfPlanets);
@@ -79,5 +81,5 @@ public:
 
 	void SetStarFullSpectralName(FName NewStarFullSpectralName);
 
-	void SetPlanetsList(TArray<FPlanetData> NewPlanetsList);
+	void SetPlanetsList(TArray<TSharedPtr<FPlanetData>> NewPlanetsList);
 };
