@@ -50,7 +50,7 @@ void EmptyLinkFunctionForGeneratedCodeOrbitHeight() {}
 		{ "LowOrbit.DisplayName", "Low Orbit" },
 		{ "LowOrbit.Name", "EOrbitHeight::LowOrbit" },
 		{ "ModuleRelativePath", "OrbitHeight.h" },
-		{ "UpperAtmosphere.DisplayName", "Atmosphere" },
+		{ "UpperAtmosphere.DisplayName", "Upper Atmosphere" },
 		{ "UpperAtmosphere.Name", "EOrbitHeight::UpperAtmosphere" },
 		{ "VeryHighOrbit.DisplayName", "Very High Orbit" },
 		{ "VeryHighOrbit.Name", "EOrbitHeight::VeryHighOrbit" },
@@ -81,9 +81,9 @@ void EmptyLinkFunctionForGeneratedCodeOrbitHeight() {}
 		static const FEnumRegisterCompiledInInfo EnumInfo[];
 	};
 	const FEnumRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_OrbitHeight_h_Statics::EnumInfo[] = {
-		{ EOrbitHeight_StaticEnum, TEXT("EOrbitHeight"), &Z_Registration_Info_UEnum_EOrbitHeight, CONSTRUCT_RELOAD_VERSION_INFO(FEnumReloadVersionInfo, 2131536111U) },
+		{ EOrbitHeight_StaticEnum, TEXT("EOrbitHeight"), &Z_Registration_Info_UEnum_EOrbitHeight, CONSTRUCT_RELOAD_VERSION_INFO(FEnumReloadVersionInfo, 2567945888U) },
 	};
-	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_OrbitHeight_h_367143334(TEXT("/Script/APS_ALPHA"),
+	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_OrbitHeight_h_898025415(TEXT("/Script/APS_ALPHA"),
 		nullptr, 0,
 		nullptr, 0,
 		Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_OrbitHeight_h_Statics::EnumInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_OrbitHeight_h_Statics::EnumInfo));

@@ -5,6 +5,7 @@
 #include "StarCluster.h"
 #include "Galaxy.h"
 #include "Octree.h"
+#include "SpaceStation.h"
 
 AAstroGenerator::AAstroGenerator()
 {
@@ -199,14 +200,63 @@ void AAstroGenerator::GenerateHomeStarSystem()
                                 UE_LOG(LogTemp, Warning, TEXT("             Moon Gravity: %f"), MoonModel->MoonGravity);
                             }
                         }
-
                     }
+                }
+            }
+        }
+
+        if (bCharacterSpawnAtRandomPlanet)
+        {
+            if (PlanetDataMap.Num() > 0)
+            {
+                TSharedPtr<FPlanetData> StartPlanetData = PlanetDataMap[0];
+                TSharedPtr<FPlanetModel> StartPlanetModel = StartPlanetData->PlanetModel;
+                int HomePlanetIndex = StartPlanetData->PlanetOrder;
+
+                // Спавн станции
+                UWorld* World = GetWorld();  
+                if (World)
+                {
+                    APlanet* HomePlanet = GeneratedHomeStarSystem->MainStar->PlanetarySystem->PlanetsActorsList[HomePlanetIndex];
+
+                    FActorSpawnParameters SpawnParams;
+                    SpawnParams.Owner = HomePlanet;
+                    SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+                    double StationOrbitHeight = PlanetGenerator->CalculateOrbitHeight(HomeSpaceStationOrbitHeight, StartPlanetModel->Radius);
+                    FVector PlanetPosition = HomePlanet->GetActorLocation();
+                    ASpaceStation* NewStation = World->SpawnActor<ASpaceStation>(BP_HomeSpaceStation, PlanetPosition, FRotator::ZeroRotator, SpawnParams);
+
+                    NewStation->AttachToActor(HomePlanet, FAttachmentTransformRules::KeepWorldTransform);
+                    NewStation->SetActorRelativeRotation(FRotator(0, 0, 0));
+                    const double EARTH_RADIUS_CM = 637100000.0; 
+                    FVector Offset = FVector(0, 0, StationOrbitHeight * EARTH_RADIUS_CM);
+                    NewStation->AddActorWorldOffset(Offset);
+
+                    /*switch (HomeSpaceStationOrbitHeight)
+                    {
+                    case EOrbitHeight::UpperAtmosphere:
+
+                        break;
+                    case EOrbitHeight::Geostationary:
+						break;
+                    default:
+                        break;
+                    }*/
+
+                    /*switch (CharSpawnPlace)
+                    {
+                    case ECharSpawnPlace::PlanetOrbit:
+                        break;
+                    default:
+                        break;
+                    }*/
+
                 }
             }
         }
     }
 }
-
 
 /// TODO: Refactoring - GenerateStarSystem(StarSystemModel);
 void AAstroGenerator::GenerateStarSystem()
@@ -411,6 +461,8 @@ void AAstroGenerator::GenerateStarSystem()
                 NewPlanet->PlanetRadiusKM = PlanetModel->Radius * 6371;
                 NewPlanet->SetActorLocation(NewLocation);
                 NewPlanetOrbit->SetActorRelativeRotation(FRotator(FMath::RandRange(-30.0, 30.0), FMath::RandRange(-360.0, 360.0), 0));
+
+                NewPlanetarySystem->PlanetsActorsList.Add(NewPlanet);
 
                 const double KM_TO_UE_UNIT_SCALE = 100000;
                 double DiameterOfLastMoon = 0;
