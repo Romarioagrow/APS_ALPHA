@@ -9,13 +9,97 @@
 PRAGMA_DISABLE_DEPRECATION_WARNINGS
 void EmptyLinkFunctionForGeneratedCodePlanetGenerationModel() {}
 // Cross Module References
+	APS_ALPHA_API UEnum* Z_Construct_UEnum_APS_ALPHA_EOrbitHeight();
 	APS_ALPHA_API UEnum* Z_Construct_UEnum_APS_ALPHA_EPlanetaryZoneType();
 	APS_ALPHA_API UEnum* Z_Construct_UEnum_APS_ALPHA_EPlanetType();
 	APS_ALPHA_API UScriptStruct* Z_Construct_UScriptStruct_FMoonData();
 	APS_ALPHA_API UScriptStruct* Z_Construct_UScriptStruct_FOrbitalBodyModel();
+	APS_ALPHA_API UScriptStruct* Z_Construct_UScriptStruct_FOrbitInfo();
 	APS_ALPHA_API UScriptStruct* Z_Construct_UScriptStruct_FPlanetModel();
 	UPackage* Z_Construct_UPackage__Script_APS_ALPHA();
 // End Cross Module References
+	static FStructRegistrationInfo Z_Registration_Info_UScriptStruct_OrbitInfo;
+class UScriptStruct* FOrbitInfo::StaticStruct()
+{
+	if (!Z_Registration_Info_UScriptStruct_OrbitInfo.OuterSingleton)
+	{
+		Z_Registration_Info_UScriptStruct_OrbitInfo.OuterSingleton = GetStaticStruct(Z_Construct_UScriptStruct_FOrbitInfo, Z_Construct_UPackage__Script_APS_ALPHA(), TEXT("OrbitInfo"));
+	}
+	return Z_Registration_Info_UScriptStruct_OrbitInfo.OuterSingleton;
+}
+template<> APS_ALPHA_API UScriptStruct* StaticStruct<FOrbitInfo>()
+{
+	return FOrbitInfo::StaticStruct();
+}
+	struct Z_Construct_UScriptStruct_FOrbitInfo_Statics
+	{
+#if WITH_METADATA
+		static const UECodeGen_Private::FMetaDataPairParam Struct_MetaDataParams[];
+#endif
+		static void* NewStructOps();
+		static const UECodeGen_Private::FBytePropertyParams NewProp_OrbitHeightType_Underlying;
+#if WITH_METADATA
+		static const UECodeGen_Private::FMetaDataPairParam NewProp_OrbitHeightType_MetaData[];
+#endif
+		static const UECodeGen_Private::FEnumPropertyParams NewProp_OrbitHeightType;
+#if WITH_METADATA
+		static const UECodeGen_Private::FMetaDataPairParam NewProp_OrbitHeight_MetaData[];
+#endif
+		static const UECodeGen_Private::FDoublePropertyParams NewProp_OrbitHeight;
+		static const UECodeGen_Private::FPropertyParamsBase* const PropPointers[];
+		static const UECodeGen_Private::FStructParams ReturnStructParams;
+	};
+#if WITH_METADATA
+	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UScriptStruct_FOrbitInfo_Statics::Struct_MetaDataParams[] = {
+		{ "BlueprintType", "true" },
+		{ "ModuleRelativePath", "PlanetGenerationModel.h" },
+	};
+#endif
+	void* Z_Construct_UScriptStruct_FOrbitInfo_Statics::NewStructOps()
+	{
+		return (UScriptStruct::ICppStructOps*)new UScriptStruct::TCppStructOps<FOrbitInfo>();
+	}
+	const UECodeGen_Private::FBytePropertyParams Z_Construct_UScriptStruct_FOrbitInfo_Statics::NewProp_OrbitHeightType_Underlying = { "UnderlyingType", nullptr, (EPropertyFlags)0x0000000000000000, UECodeGen_Private::EPropertyGenFlags::Byte, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, 0, nullptr, METADATA_PARAMS(nullptr, 0) };
+#if WITH_METADATA
+	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UScriptStruct_FOrbitInfo_Statics::NewProp_OrbitHeightType_MetaData[] = {
+		{ "Category", "Planet" },
+		{ "ModuleRelativePath", "PlanetGenerationModel.h" },
+	};
+#endif
+	const UECodeGen_Private::FEnumPropertyParams Z_Construct_UScriptStruct_FOrbitInfo_Statics::NewProp_OrbitHeightType = { "OrbitHeightType", nullptr, (EPropertyFlags)0x0010000000000005, UECodeGen_Private::EPropertyGenFlags::Enum, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FOrbitInfo, OrbitHeightType), Z_Construct_UEnum_APS_ALPHA_EOrbitHeight, METADATA_PARAMS(Z_Construct_UScriptStruct_FOrbitInfo_Statics::NewProp_OrbitHeightType_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FOrbitInfo_Statics::NewProp_OrbitHeightType_MetaData)) }; // 2131536111
+#if WITH_METADATA
+	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UScriptStruct_FOrbitInfo_Statics::NewProp_OrbitHeight_MetaData[] = {
+		{ "Category", "Planet" },
+		{ "ModuleRelativePath", "PlanetGenerationModel.h" },
+	};
+#endif
+	const UECodeGen_Private::FDoublePropertyParams Z_Construct_UScriptStruct_FOrbitInfo_Statics::NewProp_OrbitHeight = { "OrbitHeight", nullptr, (EPropertyFlags)0x0010000000000005, UECodeGen_Private::EPropertyGenFlags::Double, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(FOrbitInfo, OrbitHeight), METADATA_PARAMS(Z_Construct_UScriptStruct_FOrbitInfo_Statics::NewProp_OrbitHeight_MetaData, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FOrbitInfo_Statics::NewProp_OrbitHeight_MetaData)) };
+	const UECodeGen_Private::FPropertyParamsBase* const Z_Construct_UScriptStruct_FOrbitInfo_Statics::PropPointers[] = {
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FOrbitInfo_Statics::NewProp_OrbitHeightType_Underlying,
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FOrbitInfo_Statics::NewProp_OrbitHeightType,
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UScriptStruct_FOrbitInfo_Statics::NewProp_OrbitHeight,
+	};
+	const UECodeGen_Private::FStructParams Z_Construct_UScriptStruct_FOrbitInfo_Statics::ReturnStructParams = {
+		(UObject* (*)())Z_Construct_UPackage__Script_APS_ALPHA,
+		nullptr,
+		&NewStructOps,
+		"OrbitInfo",
+		sizeof(FOrbitInfo),
+		alignof(FOrbitInfo),
+		Z_Construct_UScriptStruct_FOrbitInfo_Statics::PropPointers,
+		UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FOrbitInfo_Statics::PropPointers),
+		RF_Public|RF_Transient|RF_MarkAsNative,
+		EStructFlags(0x00000001),
+		METADATA_PARAMS(Z_Construct_UScriptStruct_FOrbitInfo_Statics::Struct_MetaDataParams, UE_ARRAY_COUNT(Z_Construct_UScriptStruct_FOrbitInfo_Statics::Struct_MetaDataParams))
+	};
+	UScriptStruct* Z_Construct_UScriptStruct_FOrbitInfo()
+	{
+		if (!Z_Registration_Info_UScriptStruct_OrbitInfo.InnerSingleton)
+		{
+			UECodeGen_Private::ConstructUScriptStruct(Z_Registration_Info_UScriptStruct_OrbitInfo.InnerSingleton, Z_Construct_UScriptStruct_FOrbitInfo_Statics::ReturnStructParams);
+		}
+		return Z_Registration_Info_UScriptStruct_OrbitInfo.InnerSingleton;
+	}
 	static FStructRegistrationInfo Z_Registration_Info_UScriptStruct_MoonData;
 class UScriptStruct* FMoonData::StaticStruct()
 {
@@ -242,10 +326,11 @@ template<> APS_ALPHA_API UScriptStruct* StaticStruct<FPlanetModel>()
 		static const FStructRegisterCompiledInInfo ScriptStructInfo[];
 	};
 	const FStructRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_PlanetGenerationModel_h_Statics::ScriptStructInfo[] = {
+		{ FOrbitInfo::StaticStruct, Z_Construct_UScriptStruct_FOrbitInfo_Statics::NewStructOps, TEXT("OrbitInfo"), &Z_Registration_Info_UScriptStruct_OrbitInfo, CONSTRUCT_RELOAD_VERSION_INFO(FStructReloadVersionInfo, sizeof(FOrbitInfo), 1721787115U) },
 		{ FMoonData::StaticStruct, Z_Construct_UScriptStruct_FMoonData_Statics::NewStructOps, TEXT("MoonData"), &Z_Registration_Info_UScriptStruct_MoonData, CONSTRUCT_RELOAD_VERSION_INFO(FStructReloadVersionInfo, sizeof(FMoonData), 1115629065U) },
 		{ FPlanetModel::StaticStruct, Z_Construct_UScriptStruct_FPlanetModel_Statics::NewStructOps, TEXT("PlanetModel"), &Z_Registration_Info_UScriptStruct_PlanetModel, CONSTRUCT_RELOAD_VERSION_INFO(FStructReloadVersionInfo, sizeof(FPlanetModel), 2106184861U) },
 	};
-	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_PlanetGenerationModel_h_3844956348(TEXT("/Script/APS_ALPHA"),
+	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_PlanetGenerationModel_h_1730884329(TEXT("/Script/APS_ALPHA"),
 		nullptr, 0,
 		Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_PlanetGenerationModel_h_Statics::ScriptStructInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_PlanetGenerationModel_h_Statics::ScriptStructInfo),
 		nullptr, 0);

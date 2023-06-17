@@ -639,4 +639,9 @@
       <Filter>Source\APS_ALPHA</Filter>
     </ClInclude>
   </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\..\Source\APS_ALPHA\OrbitHeight.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+  </ItemGroup>
 </Project>

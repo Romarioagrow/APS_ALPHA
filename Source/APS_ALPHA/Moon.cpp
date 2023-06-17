@@ -6,7 +6,7 @@
 AMoon::AMoon()
 {
 	//OrbitAnchor = CreateDefaultSubobject<USceneComponent>(TEXT("OrbitAnchor"));
-	USceneComponent* Root = CreateDefaultSubobject<USceneComponent>(TEXT("RootComponent"));
+	USceneComponent* Root = CreateDefaultSubobject<USceneComponent>(TEXT("MoonRootComponent"));
 	RootComponent = Root;
 }
 

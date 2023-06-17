@@ -7,6 +7,7 @@
 #include "PlanetarySystemGenerationModel.h"
 #include "OrbitDistributionType.h"
 #include "PlanetGenerationModel.h"
+#include <cmath>
 
 void UPlanetarySystemGenerator::ApplyModel(APlanetarySystem* NewPlanetarySystem, TSharedPtr<FPlanetarySystemModel> PlanetraySystemModel)
 {
@@ -325,21 +326,18 @@ void UPlanetarySystemGenerator::GeneratePlanetraySystemModelByStar(TSharedPtr<FP
 
             // Moons orbits
             // Гипотетические параметры планеты и звезды
-            double planetMass = PlanetModel->Mass; // масса планеты
-            double starMass = StarModel->Mass; // масса звезды
-            double planetToStarDistance = PlanetModel->Radius; // среднее расстояние от планеты до звезды
+            double PlanetMass = PlanetModel->Mass; // масса планеты
+            double StarMass = StarModel->Mass; // масса звезды
+            double PlanetToStarDistance = PlanetModel->Radius; // среднее расстояние от планеты до звезды
             double planetRadius = PlanetModel->Radius; // радиус планеты
             /// TODO: PlanetAtmosphere //double planetAtmosphereHeight = PlanetModel.AtmosphereHeight; // высота атмосферы планеты
-            double planetAtmosphereHeight = PlanetModel->Radius / 10; // высота атмосферы планеты
-
+            double PlanetAtmosphereHeight = PlanetModel->Radius / 10; // высота атмосферы планеты
 
 
             // Минимальное расстояние - радиус планеты плюс высота атмосферы
-            const double MinOrbitRadius = planetRadius  + planetAtmosphereHeight;
-            // Максимальное расстояние - радиус сферы Хилла
-            // Предполагаем, что орбита планеты почти круговая, т.е. эксцентриситет близок к 0
+            const double MinOrbitRadius = planetRadius + PlanetAtmosphereHeight;
             double eccentricity = 0;
-            double RadiusHill = planetToStarDistance * (1 - eccentricity) * pow(planetMass / (3 * starMass), 1.0 / 3);
+            double RadiusHill = PlanetToStarDistance * (1 - eccentricity) * pow(PlanetMass / (3 * StarMass), 1.0 / 3);
             const double MaxOrbitRadius = RadiusHill;
             TPair<double, double> OrbitRadiusPair;
             if (MinOrbitRadius > MaxOrbitRadius) 
@@ -367,7 +365,7 @@ void UPlanetarySystemGenerator::GeneratePlanetraySystemModelByStar(TSharedPtr<FP
                 || PlanetModel->PlanetType == EPlanetType::HotGiant) {
                 // Распределение орбит от 1 до 10 радиусов планеты
                 for (int i = 0; i < AmountOfMoons; i++) {
-                    double orbitRadius = FMath::RandRange(planetRadius * 1.0, planetRadius * 10.0);
+                    double orbitRadius = FMath::RandRange(PlanetRadius * 1.0, PlanetRadius * 10.0);
                     orbitRadius /= 40;
                     MoonOrbits.Add(orbitRadius);
                 }
@@ -414,10 +412,29 @@ void UPlanetarySystemGenerator::GeneratePlanetraySystemModelByStar(TSharedPtr<FP
                 MoonsList.Add(MoonData);
             }
 
+
+            //// Вычисление позиций точек Лагранжа (это упрощенные формулы, в реальности они сложнее)
+            //FVector L1_Position = FVector(OrbitRadius * (1 - pow(PlanetMass / 3, 1.0 / 3.0)), 0, 0);
+            //FVector L2_Position = FVector(OrbitRadius * (1 + pow(PlanetMass / 3, 1.0 / 3.0)), 0, 0);
+            //FVector L3_Position = FVector(-OrbitRadius * (1 + 5 * PlanetMass / 12), 0, 0);
+            //FVector L4_Position = FVector(OrbitRadius * cos(PI / 3), OrbitRadius * sin(PI / 3), 0);
+            //FVector L5_Position = FVector(OrbitRadius * cos(PI / 3), -OrbitRadius * sin(PI / 3), 0);
+            //PlanetModel->LagrangePoints.Add(L1_Position);
+            //PlanetModel->LagrangePoints.Add(L2_Position);
+            //PlanetModel->LagrangePoints.Add(L3_Position);
+            //PlanetModel->LagrangePoints.Add(L4_Position);
+            //PlanetModel->LagrangePoints.Add(L5_Position);
+
+            for (int32 i = 0; i <= (int32)EOrbitHeight::VeryHighOrbit; ++i)
+            {
+                FOrbitInfo OrbitInfo{};
+                OrbitInfo.OrbitHeightType = (EOrbitHeight)i;
+                OrbitInfo.OrbitHeight = PlanetGenerator->CalculateOrbitHeight(OrbitInfo.OrbitHeightType, PlanetRadius);
+                PlanetModel->Orbits.Add(OrbitInfo);
+            }
+
             PlanetModel->MoonsList = MoonsList;
-            //FPlanetData PlanetData = FPlanetData(PlanetIndex, OrbitRadius, PlanetModel);
             TSharedPtr<FPlanetData> PlanetData = MakeShared<FPlanetData>(PlanetIndex, OrbitRadius, PlanetModel);
-            
             PlanetarySystemModel->PlanetsList.Add(PlanetData);
         }
     }

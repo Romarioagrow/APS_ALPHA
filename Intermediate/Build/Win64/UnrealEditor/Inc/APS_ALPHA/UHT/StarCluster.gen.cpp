@@ -545,9 +545,9 @@ template<> APS_ALPHA_API UScriptStruct* StaticStruct<FStarClusterModel>()
 		{ FStarClusterModel::StaticStruct, Z_Construct_UScriptStruct_FStarClusterModel_Statics::NewStructOps, TEXT("StarClusterModel"), &Z_Registration_Info_UScriptStruct_StarClusterModel, CONSTRUCT_RELOAD_VERSION_INFO(FStructReloadVersionInfo, sizeof(FStarClusterModel), 2205410493U) },
 	};
 	const FClassRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarCluster_h_Statics::ClassInfo[] = {
-		{ Z_Construct_UClass_AStarCluster, AStarCluster::StaticClass, TEXT("AStarCluster"), &Z_Registration_Info_UClass_AStarCluster, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(AStarCluster), 3616987804U) },
+		{ Z_Construct_UClass_AStarCluster, AStarCluster::StaticClass, TEXT("AStarCluster"), &Z_Registration_Info_UClass_AStarCluster, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(AStarCluster), 241002083U) },
 	};
-	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarCluster_h_2715393519(TEXT("/Script/APS_ALPHA"),
+	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarCluster_h_619465721(TEXT("/Script/APS_ALPHA"),
 		Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarCluster_h_Statics::ClassInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarCluster_h_Statics::ClassInfo),
 		Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarCluster_h_Statics::ScriptStructInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarCluster_h_Statics::ScriptStructInfo),
 		nullptr, 0);

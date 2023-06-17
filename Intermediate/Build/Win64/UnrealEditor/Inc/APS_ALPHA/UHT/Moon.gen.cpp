@@ -140,9 +140,9 @@ void EmptyLinkFunctionForGeneratedCodeMoon() {}
 		static const FClassRegisterCompiledInInfo ClassInfo[];
 	};
 	const FClassRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_Moon_h_Statics::ClassInfo[] = {
-		{ Z_Construct_UClass_AMoon, AMoon::StaticClass, TEXT("AMoon"), &Z_Registration_Info_UClass_AMoon, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(AMoon), 3177544777U) },
+		{ Z_Construct_UClass_AMoon, AMoon::StaticClass, TEXT("AMoon"), &Z_Registration_Info_UClass_AMoon, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(AMoon), 2156266690U) },
 	};
-	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_Moon_h_468815299(TEXT("/Script/APS_ALPHA"),
+	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_Moon_h_775492491(TEXT("/Script/APS_ALPHA"),
 		Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_Moon_h_Statics::ClassInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_Moon_h_Statics::ClassInfo),
 		nullptr, 0,
 		nullptr, 0);

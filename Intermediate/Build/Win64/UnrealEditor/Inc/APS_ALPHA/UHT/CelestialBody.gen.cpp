@@ -135,9 +135,9 @@ void EmptyLinkFunctionForGeneratedCodeCelestialBody() {}
 		static const FClassRegisterCompiledInInfo ClassInfo[];
 	};
 	const FClassRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_CelestialBody_h_Statics::ClassInfo[] = {
-		{ Z_Construct_UClass_ACelestialBody, ACelestialBody::StaticClass, TEXT("ACelestialBody"), &Z_Registration_Info_UClass_ACelestialBody, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(ACelestialBody), 2550715138U) },
+		{ Z_Construct_UClass_ACelestialBody, ACelestialBody::StaticClass, TEXT("ACelestialBody"), &Z_Registration_Info_UClass_ACelestialBody, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(ACelestialBody), 984811122U) },
 	};
-	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_CelestialBody_h_2764905258(TEXT("/Script/APS_ALPHA"),
+	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_CelestialBody_h_2452809680(TEXT("/Script/APS_ALPHA"),
 		Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_CelestialBody_h_Statics::ClassInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_CelestialBody_h_Statics::ClassInfo),
 		nullptr, 0,
 		nullptr, 0);

@@ -3,20 +3,30 @@
 #include "PlanetType.h"
 #include "PlanetaryZoneType.h"
 #include "MoonGenerationModel.h"
+#include "OrbitHeight.h"
 
 #include "OrbitalBodyGenerationModel.h"
 #include "CoreMinimal.h"
 #include "PlanetGenerationModel.generated.h"
 
+USTRUCT(BlueprintType)
+struct FOrbitInfo
+{
+	GENERATED_BODY()
 
+		UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet")
+		EOrbitHeight OrbitHeightType;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet")
+		double OrbitHeight;
+};
 
 USTRUCT(BlueprintType)
 struct FMoonData
 {
-
 	GENERATED_USTRUCT_BODY()
 
-		UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Mode")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Mode")
 		int MoonOrder;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Mode")
@@ -41,12 +51,13 @@ struct FMoonData
 };
 
 USTRUCT(BlueprintType)
-struct FPlanetModel :
-    public FOrbitalBodyModel
+struct FPlanetModel : public FOrbitalBodyModel
 {
 	GENERATED_BODY()
 
 		FPlanetModel();
+
+		TArray<FOrbitInfo> Orbits;
 
 		// Тип планеты 
 		UPROPERTY(VisibleAnywhere, Category = "Planet")

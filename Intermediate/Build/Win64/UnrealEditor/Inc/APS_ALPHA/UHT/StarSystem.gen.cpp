@@ -176,9 +176,9 @@ void EmptyLinkFunctionForGeneratedCodeStarSystem() {}
 		static const FClassRegisterCompiledInInfo ClassInfo[];
 	};
 	const FClassRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarSystem_h_Statics::ClassInfo[] = {
-		{ Z_Construct_UClass_AStarSystem, AStarSystem::StaticClass, TEXT("AStarSystem"), &Z_Registration_Info_UClass_AStarSystem, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(AStarSystem), 2302969098U) },
+		{ Z_Construct_UClass_AStarSystem, AStarSystem::StaticClass, TEXT("AStarSystem"), &Z_Registration_Info_UClass_AStarSystem, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(AStarSystem), 285599627U) },
 	};
-	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarSystem_h_817582730(TEXT("/Script/APS_ALPHA"),
+	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarSystem_h_67999016(TEXT("/Script/APS_ALPHA"),
 		Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarSystem_h_Statics::ClassInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarSystem_h_Statics::ClassInfo),
 		nullptr, 0,
 		nullptr, 0);

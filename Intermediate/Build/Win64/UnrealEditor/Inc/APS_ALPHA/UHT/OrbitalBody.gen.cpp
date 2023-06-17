@@ -13,6 +13,7 @@ void EmptyLinkFunctionForGeneratedCodeOrbitalBody() {}
 	APS_ALPHA_API UClass* Z_Construct_UClass_AOrbitalBody();
 	APS_ALPHA_API UClass* Z_Construct_UClass_AOrbitalBody_NoRegister();
 	APS_ALPHA_API UClass* Z_Construct_UClass_UGravitySource_NoRegister();
+	COREUOBJECT_API UScriptStruct* Z_Construct_UScriptStruct_FVector();
 	UPackage* Z_Construct_UPackage__Script_APS_ALPHA();
 // End Cross Module References
 	void AOrbitalBody::StaticRegisterNativesAOrbitalBody()
@@ -29,6 +30,11 @@ void EmptyLinkFunctionForGeneratedCodeOrbitalBody() {}
 #if WITH_METADATA
 		static const UECodeGen_Private::FMetaDataPairParam Class_MetaDataParams[];
 #endif
+		static const UECodeGen_Private::FStructPropertyParams NewProp_LagrangePoints_Inner;
+#if WITH_METADATA
+		static const UECodeGen_Private::FMetaDataPairParam NewProp_LagrangePoints_MetaData[];
+#endif
+		static const UECodeGen_Private::FArrayPropertyParams NewProp_LagrangePoints;
 #if WITH_METADATA
 		static const UECodeGen_Private::FMetaDataPairParam NewProp_OrbitDistance_MetaData[];
 #endif
@@ -81,6 +87,14 @@ void EmptyLinkFunctionForGeneratedCodeOrbitalBody() {}
 		{ "ModuleRelativePath", "OrbitalBody.h" },
 	};
 #endif
+	const UECodeGen_Private::FStructPropertyParams Z_Construct_UClass_AOrbitalBody_Statics::NewProp_LagrangePoints_Inner = { "LagrangePoints", nullptr, (EPropertyFlags)0x0000000000020000, UECodeGen_Private::EPropertyGenFlags::Struct, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, 0, Z_Construct_UScriptStruct_FVector, METADATA_PARAMS(nullptr, 0) };
+#if WITH_METADATA
+	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_AOrbitalBody_Statics::NewProp_LagrangePoints_MetaData[] = {
+		{ "Category", "Planet" },
+		{ "ModuleRelativePath", "OrbitalBody.h" },
+	};
+#endif
+	const UECodeGen_Private::FArrayPropertyParams Z_Construct_UClass_AOrbitalBody_Statics::NewProp_LagrangePoints = { "LagrangePoints", nullptr, (EPropertyFlags)0x0010000000020001, UECodeGen_Private::EPropertyGenFlags::Array, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(AOrbitalBody, LagrangePoints), EArrayPropertyFlags::None, METADATA_PARAMS(Z_Construct_UClass_AOrbitalBody_Statics::NewProp_LagrangePoints_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_AOrbitalBody_Statics::NewProp_LagrangePoints_MetaData)) };
 #if WITH_METADATA
 	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_AOrbitalBody_Statics::NewProp_OrbitDistance_MetaData[] = {
 		{ "Category", "Orbital Body" },
@@ -145,6 +159,8 @@ void EmptyLinkFunctionForGeneratedCodeOrbitalBody() {}
 #endif
 	const UECodeGen_Private::FDoublePropertyParams Z_Construct_UClass_AOrbitalBody_Statics::NewProp_Inclination = { "Inclination", nullptr, (EPropertyFlags)0x0040000000020001, UECodeGen_Private::EPropertyGenFlags::Double, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(AOrbitalBody, Inclination), METADATA_PARAMS(Z_Construct_UClass_AOrbitalBody_Statics::NewProp_Inclination_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_AOrbitalBody_Statics::NewProp_Inclination_MetaData)) };
 	const UECodeGen_Private::FPropertyParamsBase* const Z_Construct_UClass_AOrbitalBody_Statics::PropPointers[] = {
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AOrbitalBody_Statics::NewProp_LagrangePoints_Inner,
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AOrbitalBody_Statics::NewProp_LagrangePoints,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AOrbitalBody_Statics::NewProp_OrbitDistance,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AOrbitalBody_Statics::NewProp_RotationSpeed,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AOrbitalBody_Statics::NewProp_OrbitalPeriod,
@@ -195,9 +211,9 @@ void EmptyLinkFunctionForGeneratedCodeOrbitalBody() {}
 		static const FClassRegisterCompiledInInfo ClassInfo[];
 	};
 	const FClassRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_OrbitalBody_h_Statics::ClassInfo[] = {
-		{ Z_Construct_UClass_AOrbitalBody, AOrbitalBody::StaticClass, TEXT("AOrbitalBody"), &Z_Registration_Info_UClass_AOrbitalBody, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(AOrbitalBody), 1979568923U) },
+		{ Z_Construct_UClass_AOrbitalBody, AOrbitalBody::StaticClass, TEXT("AOrbitalBody"), &Z_Registration_Info_UClass_AOrbitalBody, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(AOrbitalBody), 3769543296U) },
 	};
-	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_OrbitalBody_h_519337377(TEXT("/Script/APS_ALPHA"),
+	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_OrbitalBody_h_4054583736(TEXT("/Script/APS_ALPHA"),
 		Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_OrbitalBody_h_Statics::ClassInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_OrbitalBody_h_Statics::ClassInfo),
 		nullptr, 0,
 		nullptr, 0);

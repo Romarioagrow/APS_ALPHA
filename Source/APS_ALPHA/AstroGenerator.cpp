@@ -153,13 +153,12 @@ void AAstroGenerator::GenerateHomeStarSystem()
         UE_LOG(LogTemp, Warning, TEXT("Planet List - "));
         UE_LOG(LogTemp, Warning, TEXT("Planet Amount: %d"), PlanetDataMap.Num());
 
-
+        /// ShowPlanetList();
         for (const TSharedPtr<FPlanetData>& PlanetDataPtr : PlanetDataMap)
         {
             if (PlanetDataPtr.IsValid())
             {
                 FPlanetData PlanetData = *(PlanetDataPtr.Get());
-                // Вывод основных данных о планете
                 UE_LOG(LogTemp, Warning, TEXT("    Planet Order: %d"), PlanetData.PlanetOrder);
                 UE_LOG(LogTemp, Warning, TEXT("     Orbit Radius: %f"), PlanetData.OrbitRadius);
 
@@ -180,8 +179,6 @@ void AAstroGenerator::GenerateHomeStarSystem()
                     TArray<TSharedPtr<FMoonData>> MoonsList = PlanetModel->MoonsList;
                     for (int32 i = 0; i < MoonsList.Num(); i++)
                     {
-                        // ... Продолжение цикла for для MoonsList ...
-
                         if (MoonsList[i].IsValid())
                         {
                             // Замените FMoonData на структуру данных вашего спутника
@@ -440,6 +437,7 @@ void AAstroGenerator::GenerateStarSystem()
 				
                     DiameterOfLastMoon = MoonRadius * 2;
                     LastMoonLocation = NewMoon->GetActorLocation();
+
                 }
 
                 if (DiameterOfLastMoon == 0)
@@ -456,6 +454,7 @@ void AAstroGenerator::GenerateStarSystem()
                 }
                 LastPlanetLocation = NewPlanet->GetActorLocation();
                 LastStarLocation = LastPlanetLocation * 1.1; 
+                
             }
 
             double StarSphereRadius;

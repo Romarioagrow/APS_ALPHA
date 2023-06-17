@@ -5,6 +5,7 @@
 #include "Planet.h"
 #include "PlanetGenerationModel.h"
 #include "MoonGenerator.h"
+#include "OrbitHeight.h"
 
 #include "CoreMinimal.h"
 #include "BaseProceduralGenerator.h"
@@ -24,11 +25,15 @@ public:
 public:
 	void ConnectPlanetWithStar(APlanet* NewPlanet, AStar* NewStar);
 
-	double CalculateMoonRadius(EMoonType MoonType);
+	//double CalculateMoonRadius(EMoonType MoonType);
 
 	FPlanetModel GenerateRandomPlanetModel();
 
 	void ApplyModel(APlanet* PlanetActor, TSharedPtr<FPlanetModel> PlanetGenerationModel);
 
 	TArray<FMoonData> GenerateMoonsList(FPlanetModel PlanetModel);
+
+	double CalculateOrbitHeight(EOrbitHeight OrbitHeightType, double PlanetRadius);
+
+	void CalculateLagrangePoints();
 };
