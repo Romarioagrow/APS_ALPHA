@@ -274,7 +274,23 @@ void AAstroGenerator::GenerateHomeStarSystem()
 						UE_LOG(LogTemp, Warning, TEXT("PlayerCharacter is null!"));
 					}
 
-                    
+                    /// relocate char to 000
+                    {
+                        // Получаем текущее положение игрока
+                        FVector PlayerLocation = PlayerCharacter->GetActorLocation();
+
+                        // Получаем текущее положение AstroGenerator
+                        FVector GeneratorLocation = this->GetActorLocation();
+
+                        // Вычисляем новое положение для AstroGenerator
+                        FVector NewGeneratorLocation = GeneratorLocation - PlayerLocation;
+
+                        // Устанавливаем новое положение для AstroGenerator
+                        this->SetActorLocation(NewGeneratorLocation, false);
+
+                        // Устанавливаем положение игрока на (0,0,0)
+                        PlayerCharacter->SetActorLocation(FVector(0, 0, 0), false);
+                    }
 
                     /*if (BP_CharacterClass)
                     {
