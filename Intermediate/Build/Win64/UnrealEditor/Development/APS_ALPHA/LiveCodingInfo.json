@@ -167,7 +167,6 @@
 			"OrbitalBody.cpp.obj",
 			"OrbitalBodyGenerationModel.cpp.obj",
 			"PilotingVehicle.cpp.obj",
-			"Planet.cpp.obj",
 			"PlanetaryEnvironment.cpp.obj",
 			"PlanetaryProceduralGenerator.cpp.obj",
 			"PlanetarySystem.cpp.obj",
@@ -180,6 +179,7 @@
 			"Spacecraft.cpp.obj",
 			"Spaceship.cpp.obj",
 			"SpaceshipGravityActor.cpp.obj",
+			"SpaceStation.cpp.obj",
 			"Star.cpp.obj",
 			"StarCluster.cpp.obj",
 			"StarClusterGenerator.cpp.obj",
@@ -188,7 +188,7 @@
 			"StarSector.cpp.obj",
 			"StarSystem.cpp.obj",
 			"GravityCharacterPawn.cpp.obj",
-			"SpaceStation.cpp.obj"
+			"Planet.cpp.obj"
 		],
 		"Module.APS_ALPHA.4_of_4.cpp.obj": [
 			"StarSystemGenerationModel.cpp.obj",

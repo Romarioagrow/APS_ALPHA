@@ -5,9 +5,6 @@
 
 ASpaceStation::ASpaceStation()
 {
-	//USceneComponent* Root = CreateDefaultSubobject<USceneComponent>(TEXT("RootComponent"));
-	//RootComponent = Root;
-
 	// Создание компонента SphereCollisionComponent
 	GravityCollisionZone = CreateDefaultSubobject<USphereComponent>(TEXT("StationGravitySphereCollisionComponent"));
 	GravityCollisionZone->SetupAttachment(RootComponent);

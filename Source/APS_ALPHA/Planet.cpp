@@ -15,6 +15,8 @@ APlanet::APlanet()
 	GravityCollisionZone = CreateDefaultSubobject<USphereComponent>(TEXT("PlanetGravityCollisionZoneComponent"));
 	GravityCollisionZone->SetupAttachment(RootComponent);
 
+	// PlanetZone
+	PlanetaryZone->SetCollisionObjectType(ECollisionChannel::ECC_GameTraceChannel3); 
 }
 
 void APlanet::AddMoon(AMoon* Moon)

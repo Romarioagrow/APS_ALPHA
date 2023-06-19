@@ -40,6 +40,9 @@ AGravityCharacterPawn::AGravityCharacterPawn()
 	// Создайте Arrow компонент
 	ArrowComponent = CreateDefaultSubobject<UArrowComponent>(TEXT("ArrowComponent"));
 	ArrowComponent->SetupAttachment(CapsuleComponent);
+
+	// Set Gravity Collision Profile
+	CapsuleComponent->SetCollisionResponseToChannel(ECollisionChannel::ECC_EngineTraceChannel3 , ECollisionResponse::ECR_Ignore);
 }
 
 
@@ -187,7 +190,7 @@ void AGravityCharacterPawn::OnBeginOverlap(UPrimitiveComponent* OverlappedCompon
 	{
 		if (OtherActor->GetClass()->ImplementsInterface(UGravitySource::StaticClass()))
 		{			
-			SwitchGravityType(OtherActor); /// 	UpdateGravityType(); ?
+			SwitchGravityType(OtherActor); 
 		}
 	}
 }
