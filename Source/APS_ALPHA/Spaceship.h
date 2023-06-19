@@ -22,4 +22,6 @@ public:
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 		USphereComponent* SphereCollisionComponent;
+
+
 };

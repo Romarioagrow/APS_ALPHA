@@ -20,10 +20,12 @@ public:
 	ASpaceStation();
 
 protected:
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-		USphereComponent* SphereCollisionComponent;
+	
 
 public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 		USceneComponent* SpawnPoint;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Gravity")
+		USphereComponent* GravityCollisionZone;
 };

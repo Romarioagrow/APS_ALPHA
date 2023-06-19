@@ -11,6 +11,10 @@ APlanet::APlanet()
 
 	PlanetaryZone = CreateDefaultSubobject<USphereComponent>(TEXT("PlanetaryZoneComponent"));
 	PlanetaryZone->SetupAttachment(RootComponent);
+
+	GravityCollisionZone = CreateDefaultSubobject<USphereComponent>(TEXT("PlanetGravityCollisionZoneComponent"));
+	GravityCollisionZone->SetupAttachment(RootComponent);
+
 }
 
 void APlanet::AddMoon(AMoon* Moon)

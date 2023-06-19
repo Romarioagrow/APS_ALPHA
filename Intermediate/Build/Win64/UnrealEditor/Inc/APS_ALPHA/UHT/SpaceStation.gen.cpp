@@ -32,13 +32,13 @@ void EmptyLinkFunctionForGeneratedCodeSpaceStation() {}
 		static const UECodeGen_Private::FMetaDataPairParam Class_MetaDataParams[];
 #endif
 #if WITH_METADATA
-		static const UECodeGen_Private::FMetaDataPairParam NewProp_SphereCollisionComponent_MetaData[];
-#endif
-		static const UECodeGen_Private::FObjectPropertyParams NewProp_SphereCollisionComponent;
-#if WITH_METADATA
 		static const UECodeGen_Private::FMetaDataPairParam NewProp_SpawnPoint_MetaData[];
 #endif
 		static const UECodeGen_Private::FObjectPropertyParams NewProp_SpawnPoint;
+#if WITH_METADATA
+		static const UECodeGen_Private::FMetaDataPairParam NewProp_GravityCollisionZone_MetaData[];
+#endif
+		static const UECodeGen_Private::FObjectPropertyParams NewProp_GravityCollisionZone;
 		static const UECodeGen_Private::FPropertyParamsBase* const PropPointers[];
 		static const UECodeGen_Private::FImplementedInterfaceParams InterfaceParams[];
 		static const FCppClassTypeInfoStatic StaticCppClassTypeInfo;
@@ -56,14 +56,6 @@ void EmptyLinkFunctionForGeneratedCodeSpaceStation() {}
 	};
 #endif
 #if WITH_METADATA
-	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_ASpaceStation_Statics::NewProp_SphereCollisionComponent_MetaData[] = {
-		{ "Category", "Components" },
-		{ "EditInline", "true" },
-		{ "ModuleRelativePath", "SpaceStation.h" },
-	};
-#endif
-	const UECodeGen_Private::FObjectPropertyParams Z_Construct_UClass_ASpaceStation_Statics::NewProp_SphereCollisionComponent = { "SphereCollisionComponent", nullptr, (EPropertyFlags)0x00200800000a001d, UECodeGen_Private::EPropertyGenFlags::Object, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(ASpaceStation, SphereCollisionComponent), Z_Construct_UClass_USphereComponent_NoRegister, METADATA_PARAMS(Z_Construct_UClass_ASpaceStation_Statics::NewProp_SphereCollisionComponent_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_ASpaceStation_Statics::NewProp_SphereCollisionComponent_MetaData)) };
-#if WITH_METADATA
 	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_ASpaceStation_Statics::NewProp_SpawnPoint_MetaData[] = {
 		{ "Category", "Components" },
 		{ "EditInline", "true" },
@@ -71,9 +63,17 @@ void EmptyLinkFunctionForGeneratedCodeSpaceStation() {}
 	};
 #endif
 	const UECodeGen_Private::FObjectPropertyParams Z_Construct_UClass_ASpaceStation_Statics::NewProp_SpawnPoint = { "SpawnPoint", nullptr, (EPropertyFlags)0x00100000000a001d, UECodeGen_Private::EPropertyGenFlags::Object, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(ASpaceStation, SpawnPoint), Z_Construct_UClass_USceneComponent_NoRegister, METADATA_PARAMS(Z_Construct_UClass_ASpaceStation_Statics::NewProp_SpawnPoint_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_ASpaceStation_Statics::NewProp_SpawnPoint_MetaData)) };
+#if WITH_METADATA
+	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_ASpaceStation_Statics::NewProp_GravityCollisionZone_MetaData[] = {
+		{ "Category", "Gravity" },
+		{ "EditInline", "true" },
+		{ "ModuleRelativePath", "SpaceStation.h" },
+	};
+#endif
+	const UECodeGen_Private::FObjectPropertyParams Z_Construct_UClass_ASpaceStation_Statics::NewProp_GravityCollisionZone = { "GravityCollisionZone", nullptr, (EPropertyFlags)0x00100000000a001d, UECodeGen_Private::EPropertyGenFlags::Object, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(ASpaceStation, GravityCollisionZone), Z_Construct_UClass_USphereComponent_NoRegister, METADATA_PARAMS(Z_Construct_UClass_ASpaceStation_Statics::NewProp_GravityCollisionZone_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_ASpaceStation_Statics::NewProp_GravityCollisionZone_MetaData)) };
 	const UECodeGen_Private::FPropertyParamsBase* const Z_Construct_UClass_ASpaceStation_Statics::PropPointers[] = {
-		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_ASpaceStation_Statics::NewProp_SphereCollisionComponent,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_ASpaceStation_Statics::NewProp_SpawnPoint,
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_ASpaceStation_Statics::NewProp_GravityCollisionZone,
 	};
 		const UECodeGen_Private::FImplementedInterfaceParams Z_Construct_UClass_ASpaceStation_Statics::InterfaceParams[] = {
 			{ Z_Construct_UClass_UGravitySource_NoRegister, (int32)VTABLE_OFFSET(ASpaceStation, IGravitySource), false },  // 1846880873
@@ -115,9 +115,9 @@ void EmptyLinkFunctionForGeneratedCodeSpaceStation() {}
 		static const FClassRegisterCompiledInInfo ClassInfo[];
 	};
 	const FClassRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_SpaceStation_h_Statics::ClassInfo[] = {
-		{ Z_Construct_UClass_ASpaceStation, ASpaceStation::StaticClass, TEXT("ASpaceStation"), &Z_Registration_Info_UClass_ASpaceStation, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(ASpaceStation), 1844152727U) },
+		{ Z_Construct_UClass_ASpaceStation, ASpaceStation::StaticClass, TEXT("ASpaceStation"), &Z_Registration_Info_UClass_ASpaceStation, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(ASpaceStation), 3592552316U) },
 	};
-	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_SpaceStation_h_3530387935(TEXT("/Script/APS_ALPHA"),
+	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_SpaceStation_h_1866693716(TEXT("/Script/APS_ALPHA"),
 		Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_SpaceStation_h_Statics::ClassInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_SpaceStation_h_Statics::ClassInfo),
 		nullptr, 0,
 		nullptr, 0);

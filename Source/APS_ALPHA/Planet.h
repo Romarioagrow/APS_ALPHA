@@ -29,6 +29,9 @@ class APS_ALPHA_API APlanet : public AOrbitalBody, public IPlanetaryEnvironment
 public:
 	APlanet();
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Gravity")
+		USphereComponent* GravityCollisionZone;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet")
 		TArray<FOrbitInfo> Orbits;
 

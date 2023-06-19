@@ -341,7 +341,6 @@
             "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\source\\aps_alpha\\orbitalbody.cpp",
             "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\source\\aps_alpha\\orbitalbodygenerationmodel.cpp",
             "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\source\\aps_alpha\\pilotingvehicle.cpp",
-            "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\source\\aps_alpha\\planet.cpp",
             "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\source\\aps_alpha\\planetaryenvironment.cpp",
             "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\source\\aps_alpha\\planetaryproceduralgenerator.cpp",
             "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\source\\aps_alpha\\planetaryproceduralgenerator.h",
@@ -361,9 +360,7 @@
             "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\source\\aps_alpha\\spacecharacter.h",
             "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\intermediate\\build\\win64\\unrealeditor\\inc\\aps_alpha\\uht\\spacecharacter.generated.h",
             "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\source\\aps_alpha\\spacecraft.cpp",
-            "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\source\\aps_alpha\\spaceship.cpp",
             "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\source\\aps_alpha\\spaceshipgravityactor.cpp",
-            "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\source\\aps_alpha\\spacestation.cpp",
             "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\source\\aps_alpha\\star.cpp",
             "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\source\\aps_alpha\\starcluster.cpp",
             "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\source\\aps_alpha\\starclustergenerator.cpp",
@@ -371,7 +368,9 @@
             "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\source\\aps_alpha\\stargenerator.cpp",
             "c:\\program files\\microsoft visual studio\\2022\\community\\vc\\tools\\msvc\\14.33.31629\\include\\random",
             "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\source\\aps_alpha\\starsector.cpp",
-            "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\source\\aps_alpha\\starsystem.cpp"
+            "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\source\\aps_alpha\\starsystem.cpp",
+            "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\source\\aps_alpha\\starsystemgenerationmodel.cpp",
+            "c:\\users\\romar\\documents\\unreal projects\\aps\\aps_alpha\\source\\aps_alpha\\starsystemgenerator.cpp"
         ],
         "ImportedModules": [],
         "ImportedHeaderUnits": []
