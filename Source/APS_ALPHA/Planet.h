@@ -21,8 +21,6 @@ class AStar;
  * 
  */
 
-
-
 UCLASS()
 class APS_ALPHA_API APlanet : public AOrbitalBody, public IPlanetaryEnvironment
 {

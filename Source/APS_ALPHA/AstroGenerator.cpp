@@ -6,6 +6,9 @@
 #include "Galaxy.h"
 #include "Octree.h"
 #include "SpaceStation.h"
+#include <Kismet/GameplayStatics.h>
+#include "GameFramework/Character.h"
+
 
 AAstroGenerator::AAstroGenerator()
 {
@@ -225,32 +228,60 @@ void AAstroGenerator::GenerateHomeStarSystem()
 
                     double StationOrbitHeight = PlanetGenerator->CalculateOrbitHeight(HomeSpaceStationOrbitHeight, StartPlanetModel->Radius);
                     FVector PlanetPosition = HomePlanet->GetActorLocation();
-                    ASpaceStation* NewStation = World->SpawnActor<ASpaceStation>(BP_HomeSpaceStation, PlanetPosition, FRotator::ZeroRotator, SpawnParams);
+                    ASpaceStation* HomeStation = World->SpawnActor<ASpaceStation>(BP_HomeSpaceStation, PlanetPosition, FRotator::ZeroRotator, SpawnParams);
 
-                    NewStation->AttachToActor(HomePlanet, FAttachmentTransformRules::KeepWorldTransform);
-                    NewStation->SetActorRelativeRotation(FRotator(0, 0, 0));
+                    HomeStation->AttachToActor(HomePlanet, FAttachmentTransformRules::KeepWorldTransform);
+                    HomeStation->SetActorRelativeRotation(FRotator(0, 0, 0));
                     const double EARTH_RADIUS_CM = 637100000.0; 
                     FVector Offset = FVector(0, 0, StationOrbitHeight * EARTH_RADIUS_CM);
-                    NewStation->AddActorWorldOffset(Offset);
+                    HomeStation->AddActorWorldOffset(Offset);
 
-                    /*switch (HomeSpaceStationOrbitHeight)
+                    FVector CharSpawnLocation{ 0 };
+                    APawn* PlayerCharacter = UGameplayStatics::GetPlayerPawn(GetWorld(), 0);
+
+                    if (PlayerCharacter)
                     {
-                    case EOrbitHeight::UpperAtmosphere:
 
-                        break;
-                    case EOrbitHeight::Geostationary:
-						break;
-                    default:
-                        break;
-                    }*/
+                        CharSpawnLocation = HomeStation->SpawnPoint->GetComponentLocation();
+                        UE_LOG(LogTemp, Warning, TEXT("CharSpawnLocation: %s"), *CharSpawnLocation.ToString());
+                        bool bTeleportSucces = PlayerCharacter->SetActorLocation(CharSpawnLocation, false);
+                        UE_LOG(LogTemp, Warning, TEXT("Teleport success: %s"), bTeleportSucces ? TEXT("True") : TEXT("False"));
 
-                    /*switch (CharSpawnPlace)
+                        //switch (CharSpawnPlace)
+                        //{
+                        ///*case ECharSpawnPlace::PlanetOrbit:
+                        //    break;*/
+                        //case  ECharSpawnPlace::PlanetOrbit:
+                        //{
+                        //    //NewStation->SetActorRelativeRotation(FRotator(0, 0, 0));
+                        //    //CharSpawnLocation = HomeStation->SpawnPoint->GetComponentLocation();
+                        //    //PlayerCharacter->SetActorLocation(CharSpawnLocation);
+                        //    CharSpawnLocation = HomeStation->SpawnPoint->GetComponentLocation();
+                        //    UE_LOG(LogTemp, Warning, TEXT("CharSpawnLocation: %s"), *CharSpawnLocation.ToString());
+                        //    bool bTeleportSucces = PlayerCharacter->SetActorLocation(CharSpawnLocation, true);
+                        //    UE_LOG(LogTemp, Warning, TEXT("Teleport success: %s"), bTeleportSucces ? TEXT("True") : TEXT("False"));
+                        //}
+                        //    break;
+
+                        //default:
+                        //    ///CharSpawnLocation = HomeStation->SpawnPoint->GetComponentLocation();
+                        //    //PlayerCharacter->SetActorLocation(CharSpawnLocation);
+                        //    break;
+                        //}
+                    }
+					else
+					{
+						UE_LOG(LogTemp, Warning, TEXT("PlayerCharacter is null!"));
+					}
+
+                    
+
+                    /*if (BP_CharacterClass)
                     {
-                    case ECharSpawnPlace::PlanetOrbit:
-                        break;
-                    default:
-                        break;
-                    }*/
+						ACharacter* NewCharacter = World->SpawnActor<ACharacter>(BP_CharacterClass, CharSpawnLocation, FRotator::ZeroRotator, SpawnParams);
+						NewCharacter->AttachToActor(HomeStation, FAttachmentTransformRules::KeepWorldTransform);
+						NewCharacter->SetActorRelativeRotation(FRotator(0, 0, 0));
+					}*/
 
                 }
             }

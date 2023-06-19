@@ -78,6 +78,9 @@ void AGravityCharacterPawn::Tick(const float DeltaTime)
 	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Purple, FString::Printf(TEXT("LinearDamping: %f"), LinearDamping));
 	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Yellow, FString::Printf(TEXT("CharacterJumpForce: %f"), CharacterJumpForce));
 	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Yellow, FString::Printf(TEXT("CharacterMovementForce: %f"), CharacterMovementForce));
+
+	FString LocationString = GetActorLocation().ToString();
+	GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, FString::Printf(TEXT("PlayerCharacter Location: %s"), *LocationString));
 }
 
 // Called to bind functionality to input
