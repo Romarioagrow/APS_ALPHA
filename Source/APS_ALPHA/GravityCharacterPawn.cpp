@@ -224,12 +224,12 @@ void AGravityCharacterPawn::UpdateGravityType()
 
 	if (OverlappingActorsWithTag.Num() > 0)
 	{
-		//AActor* FirstGravityActor = OverlappingActorsWithTag[0];
+		//AActor* LastGravityActor = OverlappingActorsWithTag[0];
 		AActor* LastGravityActor = OverlappingActorsWithTag[OverlappingActorsWithTag.Num()-1];
 		GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Red, FString::Printf(TEXT("LastGravityActor : %s"), *LastGravityActor->GetName()));
 
 		// switch gravity to first 
-		SwitchGravityType(LastGravityActor); /// To last ? 
+		SwitchGravityType(LastGravityActor);
 	}
 	else
 	{

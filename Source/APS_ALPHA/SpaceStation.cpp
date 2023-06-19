@@ -13,5 +13,5 @@ ASpaceStation::ASpaceStation()
 	GravityCollisionZone->SetupAttachment(RootComponent);
 
 	SpawnPoint = CreateDefaultSubobject<USceneComponent>(TEXT("SpawnPoint"));
-	SpawnPoint->SetupAttachment(RootComponent);
+	SpawnPoint->SetupAttachment(GravityCollisionZone);
 }
