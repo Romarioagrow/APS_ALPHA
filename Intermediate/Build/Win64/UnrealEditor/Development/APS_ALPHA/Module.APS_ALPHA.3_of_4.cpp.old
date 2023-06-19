@@ -86,7 +86,6 @@
 #include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Source/APS_ALPHA/PlanetOrbit.cpp"
 #include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Source/APS_ALPHA/SpaceCharacter.cpp"
 #include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Source/APS_ALPHA/Spacecraft.cpp"
-#include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Source/APS_ALPHA/Spaceship.cpp"
 #include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Source/APS_ALPHA/SpaceshipGravityActor.cpp"
 #include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Source/APS_ALPHA/Star.cpp"
 #include "C:/Users/romar/Documents/Unreal Projects/APS/APS_ALPHA/Source/APS_ALPHA/StarCluster.cpp"
