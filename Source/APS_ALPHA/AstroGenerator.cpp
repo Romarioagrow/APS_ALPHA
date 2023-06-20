@@ -254,7 +254,7 @@ void AAstroGenerator::GenerateHomeStarSystem()
                     FVector HomeSpaceshipLocation = HomeSpaceShipyard->SpawnPoint->GetComponentLocation();
                     //FVector HomeSpaceshipLocation = HomeSpaceShipyard->SpawnPoint->GetComponentTransform().GetLocation();
 
-                    HomeSpaceshipLocation.Z += 700;
+                    HomeSpaceshipLocation.Z += 1000;
                     ASpaceship* NewHomeSpaceship = World->SpawnActor<ASpaceship>(BP_HomeSpaceship, HomeSpaceshipLocation, HomeSpaceShipyard->GetActorRotation(), SpaceshipSpawnParams);
                     NewHomeSpaceship->AttachToActor(HomeSpaceShipyard, FAttachmentTransformRules::KeepWorldTransform);
                     //NewHomeSpaceship->AddActorLocalOffset(FVector(0, 0, 1000));

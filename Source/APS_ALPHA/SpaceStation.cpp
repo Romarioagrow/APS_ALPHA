@@ -11,4 +11,5 @@ ASpaceStation::ASpaceStation()
 
 	SpawnPoint = CreateDefaultSubobject<USceneComponent>(TEXT("SpawnPoint"));
 	SpawnPoint->SetupAttachment(GravityCollisionZone);
+	SpawnPoint->SetWorldRotation(GetActorRotation());
 }
