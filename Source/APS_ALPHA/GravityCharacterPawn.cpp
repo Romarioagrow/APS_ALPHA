@@ -144,6 +144,8 @@ void AGravityCharacterPawn::CharacterAction()
 				SetActorEnableCollision(false);
 				SetActorTickEnabled(false);
 				CapsuleComponent->SetSimulatePhysics(false);
+				AddActorLocalRotation(FRotator(0.0, 180.0, 0.0));
+
 			}
 		}
 	}
@@ -177,11 +179,8 @@ void AGravityCharacterPawn::ReleaseControl(APilotingVehicle* PilotingVehicle)
 		CurrentSpaceship = Spaceship;
 
 		CapsuleComponent->SetSimulatePhysics(true);
-		SetActorRotation(CurrentSpaceship->PilotChair->GetComponentRotation());
 		SetActorLocation(CurrentSpaceship->PilotChair->GetComponentLocation());
-		AddActorLocalOffset(FVector(0.0, 160.0, 0.0));
-		AddActorLocalRotation(FRotator(0.0, 180.0, 0.0));
-
+		AddActorLocalOffset(FVector(0.0, -160.0, 0.0));
 	}
 	else
 	{
