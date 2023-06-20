@@ -174,6 +174,11 @@ void AGravityCharacterPawn::ReleaseControl(APilotingVehicle* PilotingVehicle)
 	if (Spaceship)
 	{
 		CurrentSpaceship = Spaceship;
+
+		SetActorRotation(CurrentSpaceship->PilotChair->GetComponentRotation());
+		SetActorLocation(CurrentSpaceship->PilotChair->GetComponentLocation());
+		AddActorLocalOffset(FVector(0.0, 160.0, 0.0));
+		AddActorLocalRotation(FRotator(0.0, 180.0, 0.0));
 	}
 	else
 	{
