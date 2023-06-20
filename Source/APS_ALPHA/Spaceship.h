@@ -25,6 +25,36 @@ public:
 	ASpaceship();
 
 public:
+	double ThrustForce { 10000.0 };
+
+	bool bEngineRunning {false };
+
+	void SwitchEngines();
+
+	void ThrustForward(float Value);
+
+	void ThrustSide(float Value);
+
+	void ThrustVertical(float Value);
+
+	void ThrustYaw(float Value);
+
+	void ThrustPitch(float Value);
+
+	void ThrustRoll(float Value);
+
+	void SetPilot(AGravityCharacterPawn* NewPilot);
+
+
+
+
+	/*PlayerInputComponent->BindAction("SwitchEngines", IE_Pressed, this, &ASpaceship::SwitchEngines);
+	PlayerInputComponent->BindAxis("ThrustForward", this, &ASpaceship::ThrustForward);
+	PlayerInputComponent->BindAxis("ThrustSide", this, &ASpaceship::ThrustSide);
+	PlayerInputComponent->BindAxis("ThrustVertical", this, &ASpaceship::ThrustVertical);
+	PlayerInputComponent->BindAxis("ThrustYaw", this, &ASpaceship::ThrustYaw);
+	PlayerInputComponent->BindAxis("ThrustPitch", this, &ASpaceship::ThrustPitch);
+	PlayerInputComponent->BindAxis("ThrustRoll", this, &ASpaceship::ThrustRoll);*/
 	
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")

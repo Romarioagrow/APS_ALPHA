@@ -17,6 +17,55 @@ ASpaceship::ASpaceship()
 	PilotChair->SetupAttachment(SpaceshipHull);
 }
 
+void ASpaceship::SwitchEngines()
+{
+	bEngineRunning = !bEngineRunning;
+	SpaceshipHull->SetSimulatePhysics(bEngineRunning);
+	GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Green, FString::Printf(TEXT("Engine running: %s"), bEngineRunning ? TEXT("true") : TEXT("false")));
+}
+
+void ASpaceship::ThrustForward(float Value)
+{
+	// Если Value равно нулю, никакого ввода не было, поэтому ничего не делаем.
+	if (FMath::Abs(Value) < KINDA_SMALL_NUMBER) return;
+
+	// Получаем вектор вперед корабля.
+	const FVector Direction = GetActorForwardVector();
+
+	// Умножаем вектор вперед на значение оси и на силу двигателя.
+	// Сила двигателя может быть предварительно заданной константой.
+	const FVector Impulse = Direction * Value * ThrustForce;
+
+	// Применяем импульс к кораблю.
+	// Предполагается, что у вас есть UPrimitiveComponent, который представляет тело корабля.
+	// Корпус корабля должен иметь включенное физическое взаимодействие (Simulate Physics).
+	SpaceshipHull->AddImpulse(Impulse);
+}
+
+void ASpaceship::ThrustSide(float Value)
+{
+}
+
+void ASpaceship::ThrustVertical(float Value)
+{
+}
+
+void ASpaceship::ThrustYaw(float Value)
+{
+}
+
+void ASpaceship::ThrustPitch(float Value)
+{
+}
+
+void ASpaceship::ThrustRoll(float Value)
+{
+}
+
+void ASpaceship::SetPilot(AGravityCharacterPawn* NewPilot)
+{
+}
+
 void ASpaceship::BeginPlay()
 {
 	Super::BeginPlay();
@@ -67,4 +116,12 @@ void ASpaceship::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
 
 	PlayerInputComponent->BindAction("ReleaseControl", IE_Pressed, this, &ASpaceship::ReleaseControl);
+
+	PlayerInputComponent->BindAction("SwitchEngines", IE_Pressed, this, &ASpaceship::SwitchEngines);
+	PlayerInputComponent->BindAxis("ThrustForward", this, &ASpaceship::ThrustForward);
+	PlayerInputComponent->BindAxis("ThrustSide", this, &ASpaceship::ThrustSide);
+	PlayerInputComponent->BindAxis("ThrustVertical", this, &ASpaceship::ThrustVertical);
+	PlayerInputComponent->BindAxis("ThrustYaw", this, &ASpaceship::ThrustYaw);
+	PlayerInputComponent->BindAxis("ThrustPitch", this, &ASpaceship::ThrustPitch);
+	PlayerInputComponent->BindAxis("ThrustRoll", this, &ASpaceship::ThrustRoll);
 }
