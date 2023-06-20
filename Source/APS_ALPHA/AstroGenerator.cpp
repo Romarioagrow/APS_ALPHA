@@ -242,15 +242,25 @@ void AAstroGenerator::GenerateHomeStarSystem()
                     double HomeStationOffset = HomeSpaceStation->GravityCollisionZone->GetScaledSphereRadius() * 2;
                     HomeSpaceStation->AddActorLocalOffset(FVector(0, HomeStationOffset, 0));
 
-                    /// Spawn HomeShipyard and HomeSpaceship
+                    /// Spawn HomeShipyard
                     HomeSpaceShipyard = World->SpawnActor<ASpaceShipyard>(BP_HomeSpaceShipyard, HomeSpaceHeadquartersLocation, HomeSpaceHeadquartersRotation);
                     double HomeSpaceShipyardLocationOffset = HomeSpaceShipyard->GravityCollisionZone->GetScaledSphereRadius() * 2;
                     HomeSpaceShipyard->AddActorLocalOffset(FVector(0, -HomeSpaceShipyardLocationOffset, 0));
                     HomeSpaceShipyard->AttachToActor(HomeSpaceHeadquarters, FAttachmentTransformRules::KeepWorldTransform);
 
+                    //Spawn HomeSpaceship
+                    FActorSpawnParameters SpaceshipSpawnParams;
+                    SpaceshipSpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+                    FVector HomeSpaceshipLocation = HomeSpaceShipyard->SpawnPoint->GetComponentLocation();
+                    //FVector HomeSpaceshipLocation = HomeSpaceShipyard->SpawnPoint->GetComponentTransform().GetLocation();
+
+                    HomeSpaceshipLocation.Z += 700;
+                    ASpaceship* NewHomeSpaceship = World->SpawnActor<ASpaceship>(BP_HomeSpaceship, HomeSpaceshipLocation, HomeSpaceShipyard->GetActorRotation(), SpaceshipSpawnParams);
+                    NewHomeSpaceship->AttachToActor(HomeSpaceShipyard, FAttachmentTransformRules::KeepWorldTransform);
+                    //NewHomeSpaceship->AddActorLocalOffset(FVector(0, 0, 1000));
+
                     FVector CharSpawnLocation{ 0 };
                     APawn* PlayerCharacter = UGameplayStatics::GetPlayerPawn(World, 0);
-
                     if (PlayerCharacter)
                     {
 

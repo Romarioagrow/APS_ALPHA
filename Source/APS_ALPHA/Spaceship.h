@@ -4,6 +4,7 @@
 
 #include <Components/SphereComponent.h>
 #include "GravitySource.h"
+
 #include "CoreMinimal.h"
 #include "Spacecraft.h"
 #include "Spaceship.generated.h"
@@ -22,6 +23,4 @@ public:
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 		USphereComponent* SphereCollisionComponent;
-
-
 };
