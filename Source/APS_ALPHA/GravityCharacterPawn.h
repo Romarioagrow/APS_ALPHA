@@ -1,12 +1,17 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
+#include "AnimationState.h"
+#include "GravityState.h"
+#include "GravitySource.h"
+#include "GravityObject.h"
+#include "GravityPawn.h"
+#include "ControlledPawn.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/ArrowComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Camera/CameraComponent.h"
 #include "GravityTypeEnum.h"
-#include "PlanetGravityActor.h"
 #include <GameFramework/SpringArmComponent.h>
 
 #include "CoreMinimal.h"
@@ -14,7 +19,7 @@
 #include "GravityCharacterPawn.generated.h"
 
 UCLASS()
-class APS_ALPHA_API AGravityCharacterPawn : public APawn
+class APS_ALPHA_API AGravityCharacterPawn : public AControlledPawn, public IGravityPawn
 {
 	GENERATED_BODY()
 
@@ -33,7 +38,6 @@ public:
 	// Called to bind functionality to input
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 
-
 /**
  * @brief Character Basic Components
 */
@@ -44,9 +48,6 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 		UCapsuleComponent* CapsuleComponent;
 	
-	//UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-	//	UArrowComponent* ArrowForwardVector;
-
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 		USkeletalMeshComponent* MeshComponent;
 
@@ -55,9 +56,6 @@ public:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 		UCameraComponent* PlayerCamera;
-
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rotation")
-		FRotator DesiredRotation;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Rotation")
 		float RotationInterpolationSpeed = 1.0f;
@@ -74,10 +72,16 @@ public:
 	UFUNCTION()
 		void LookUp(float Value);
 
-	void AlignCharacterToCamera();
-
 	UFUNCTION()
 		void MoveForward(float Value);
+	void MoveForwardOnStation(const float Value);
+	void MoveForwardOnPlanet(const float Value);
+	void MoveForwardOnShip(const float Value);
+	void MoveForwardZeroG(const float Value);
+	void MoveRightOnStation(const float Value);
+	void MoveRightOnPlanet(const float Value);
+	void MoveRightOnShip(const float Value);
+	void MoveRightZeroG(const float Value);
 	UFUNCTION()
 		void MoveRight(float Value);
 	UFUNCTION()
@@ -90,12 +94,17 @@ public:
 	UFUNCTION()
 		void RotateYaw(float Value);
 
-private:
-	float CameraYawScale{ 1.0f };	
-	float CameraPitchScale{ 1.0f };	
-	float CharacterRotationScale{ 1.25f };	
-	float CharacterMovementScale{ 25.f };	
+	UFUNCTION()
+		void AlignCharacterToCameraZeroG();
 
+	void AlignCharacterToCameraOnStation();
+
+private:
+	double CameraYawScale{ 1.0 };	
+	double CameraPitchScale{ 1.0 };
+	double CharacterRotationScale{ 1.25 };
+	double CharacterMovementForce{ 25.0 };
+	double CharacterJumpForce{ 25.0 };
 
 protected:
 	UFUNCTION()
@@ -106,33 +115,63 @@ protected:
 		void OnEndOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, 
 			UPrimitiveComponent* OtherComp, int32 OtherBodyIndex);
 
-	void UpdateGravityStatus();
+	void UpdateGravityType() override;
+
+    void SwitchGravityType(AActor* GravitySourceActor) override;
+
+	void UpdateGravity() override;
+
+	void UpdateGravityPhysicParams();
 
 protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gravity")
 		EGravityType CurrentGravityType {
-		EGravityType::ZeroG
+		EGravityType::ZeroG 
+	};
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gravity")
+		EGravityState CurrentGravityState {
+		EGravityState::LowG
+	};
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gravity")
+		EAnimationState CurrentAnimationState {
+		EAnimationState::Floating
+	};
+
+	FVector GravityDirection{
+		0.0f, 0.0f, 0.0f
 	};
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gravity")
-		AGravityActor* GravityTargetActor;
+		AActor* GravityTargetActor;
 
 	UPROPERTY(BlueprintReadWrite, Category = "Movement")
 		float ForwardSpeed;
 
 	UPROPERTY(BlueprintReadWrite, Category = "Movement")
 		float RightSpeed;
-
-	void SwitchGravityToStation(AActor* OtherActor);
-
-	void SwitchGravityToPlanet(AActor* OtherActor);
-
-	void SwitchGravityToSpaceship(AActor* OtherActor);
+	
+	UPROPERTY(BlueprintReadWrite, Category = "Movement")
+		float UpSpeed;
+	
+	UPROPERTY(BlueprintReadWrite, Category = "Movement")
+		float HeightAboveGround;
 
 	void SwitchGravityToZeroG(AActor* OtherActor);
 
+	void UpdateAnimationState();
+
+	void UpdateGravityState();
+
+	// Внутри определения класса:
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+		UArrowComponent* ArrowComponent;
+
 private:
 	void UpdateZeroGGravity();
+
+	void UpdateStationRotation();
 
 	void UpdateStationGravity();
 

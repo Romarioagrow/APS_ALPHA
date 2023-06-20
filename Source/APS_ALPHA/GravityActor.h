@@ -30,4 +30,7 @@ public:
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 		USphereComponent* SphereCollisionComponent;
+
+	// IGravityObjectInterface implementation
+	virtual USphereComponent* GetGravityField() override;
 };

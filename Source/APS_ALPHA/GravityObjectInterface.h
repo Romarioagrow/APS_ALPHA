@@ -1,6 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
+#include <Components/SphereComponent.h>
 
 #include "CoreMinimal.h"
 #include "UObject/Interface.h"
@@ -22,4 +23,10 @@ class APS_ALPHA_API IGravityObjectInterface
 
 	// Add interface functions to this class. This is the class that will be inherited to implement this interface.
 public:
+
+	//UFUNCTION()
+		virtual USphereComponent* GetGravityField() PURE_VIRTUAL(IHomingActorInterface, return nullptr;);
+
+	//USphereComponent* GravityField;
+	//virtual USphereComponent* GetGravityField() PURE_VIRTUAL(IGravityObjectInterface, nullptr;);
 };

@@ -44,6 +44,18 @@
     <Filter Include="Source\APS_ALPHA">
       <UniqueIdentifier>{6A2D145E-F0AC-3999-8417-EB9FFCCB9AF2}</UniqueIdentifier>
     </Filter>
+    <ClCompile Include="..\..\Source\APS_ALPHA\Aircraft.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\Aircraft.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\AnimationState.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\AnimationState.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
     <None Include="..\..\Source\APS_ALPHA\APS_ALPHA.Build.cs">
       <Filter>Source\APS_ALPHA</Filter>
     </None>
@@ -59,10 +71,199 @@
     <ClInclude Include="..\..\Source\APS_ALPHA\APS_ALPHAGameModeBase.h">
       <Filter>Source\APS_ALPHA</Filter>
     </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\Asteroid.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\Asteroid.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\AsteroidBelt.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\AsteroidBelt.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\AstonomicalBody.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\AstonomicalBody.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\AstonomicalSystem.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\AstonomicalSystem.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\AstroActor.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\AstroActor.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\APS_ALPHA\AstroGenerationLevel.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\AstroGenerator.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\AstroGenerator.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\AstroLocation.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\AstroLocation.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\AstroObject.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\AstroObject.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\Atmosphere.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\Atmosphere.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\AutonomousOutpost.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\AutonomousOutpost.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\BaseInterface.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\BaseInterface.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\BaseProceduralGenerator.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\BaseProceduralGenerator.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\Biosphere.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\Biosphere.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\CatalogStarGenerator.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\CatalogStarGenerator.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\CelestialBody.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\CelestialBody.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\CelestialBodyInterface.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\CelestialBodyInterface.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\CelestialGenerationModel.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\CelestialGenerationModel.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\CelestialSystem.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\CelestialSystem.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\APS_ALPHA\CharSpawnPlace.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\Civilization.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\Civilization.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\Colony.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\Colony.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\ControlledPawn.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\ControlledPawn.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\Environment.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\Environment.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\GalaxiesCluster.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\GalaxiesCluster.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\Galaxy.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\Galaxy.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\APS_ALPHA\GalaxyClass.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\GalaxyGenerator.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\GalaxyGenerator.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\APS_ALPHA\GalaxyModel.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\GalaxySector.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\GalaxySector.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\APS_ALPHA\GalaxyType.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\GenerationModel.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\GenerationModel.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\Geosphere.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\Geosphere.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
     <ClCompile Include="..\..\Source\APS_ALPHA\GravityActor.cpp">
       <Filter>Source\APS_ALPHA</Filter>
     </ClCompile>
     <ClInclude Include="..\..\Source\APS_ALPHA\GravityActor.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\GravityActorInterface.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\GravityActorInterface.h">
       <Filter>Source\APS_ALPHA</Filter>
     </ClInclude>
     <ClCompile Include="..\..\Source\APS_ALPHA\GravityCharacter.cpp">
@@ -83,10 +284,34 @@
     <ClInclude Include="..\..\Source\APS_ALPHA\GravityGameModeBase.h">
       <Filter>Source\APS_ALPHA</Filter>
     </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\GravityMovementStruct.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\GravityMovementStruct.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\GravityObject.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\GravityObject.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
     <ClCompile Include="..\..\Source\APS_ALPHA\GravityObjectInterface.cpp">
       <Filter>Source\APS_ALPHA</Filter>
     </ClCompile>
     <ClInclude Include="..\..\Source\APS_ALPHA\GravityObjectInterface.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\GravityParamStruct.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\GravityParamStruct.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\GravityPawn.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\GravityPawn.h">
       <Filter>Source\APS_ALPHA</Filter>
     </ClInclude>
     <ClCompile Include="..\..\Source\APS_ALPHA\GravityPlayerController.cpp">
@@ -95,7 +320,163 @@
     <ClInclude Include="..\..\Source\APS_ALPHA\GravityPlayerController.h">
       <Filter>Source\APS_ALPHA</Filter>
     </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\GravitySource.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\GravitySource.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\GravityState.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\GravityState.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
     <ClInclude Include="..\..\Source\APS_ALPHA\GravityTypeEnum.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\GroundVehicle.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\GroundVehicle.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\APS_ALPHA\Header.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\Headquarters.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\Headquarters.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\HomeStarSystemGenerationModel.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\HomeStarSystemGenerationModel.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\APS_ALPHA\HomeSystemPosition.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <None Include="..\..\Source\APS_ALPHA\hyg_v35.csv">
+      <Filter>Source\APS_ALPHA</Filter>
+    </None>
+    <ClCompile Include="..\..\Source\APS_ALPHA\KuiperBelt.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\KuiperBelt.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\MainMenuController.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\MainMenuController.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\MainMenuGameModeBase.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\MainMenuGameModeBase.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\Moon.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\Moon.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\MoonGenerationModel.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\MoonGenerationModel.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\MoonGenerator.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\MoonGenerator.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\APS_ALPHA\MoonType.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\APS_ALPHA\Octree.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\OrbitalBody.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\OrbitalBody.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\OrbitalBodyGenerationModel.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\OrbitalBodyGenerationModel.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\APS_ALPHA\OrbitDistributionType.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\APS_ALPHA\OrbitHeight.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\PilotingVehicle.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\PilotingVehicle.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\Planet.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\Planet.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\PlanetaryEnvironment.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\PlanetaryEnvironment.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\PlanetaryProceduralGenerator.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\PlanetaryProceduralGenerator.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\PlanetarySystem.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\PlanetarySystem.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\PlanetarySystemGenerationModel.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\PlanetarySystemGenerationModel.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\APS_ALPHA\PlanetarySystemRanges.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\APS_ALPHA\PlanetarySystemType.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\APS_ALPHA\PlanetaryZoneType.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\PlanetGenerationModel.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\PlanetGenerationModel.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\PlanetGenerator.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\PlanetGenerator.h">
       <Filter>Source\APS_ALPHA</Filter>
     </ClInclude>
     <ClCompile Include="..\..\Source\APS_ALPHA\PlanetGravityActor.cpp">
@@ -104,10 +485,37 @@
     <ClInclude Include="..\..\Source\APS_ALPHA\PlanetGravityActor.h">
       <Filter>Source\APS_ALPHA</Filter>
     </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\PlanetOrbit.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\PlanetOrbit.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\APS_ALPHA\PlanetType.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
     <ClCompile Include="..\..\Source\APS_ALPHA\SpaceCharacter.cpp">
       <Filter>Source\APS_ALPHA</Filter>
     </ClCompile>
     <ClInclude Include="..\..\Source\APS_ALPHA\SpaceCharacter.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\Spacecraft.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\Spacecraft.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\SpaceHeadquarters.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\SpaceHeadquarters.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\Spaceship.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\Spaceship.h">
       <Filter>Source\APS_ALPHA</Filter>
     </ClInclude>
     <ClCompile Include="..\..\Source\APS_ALPHA\SpaceshipGravityActor.cpp">
@@ -116,10 +524,145 @@
     <ClInclude Include="..\..\Source\APS_ALPHA\SpaceshipGravityActor.h">
       <Filter>Source\APS_ALPHA</Filter>
     </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\SpaceShipyard.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\SpaceShipyard.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\SpaceStation.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\SpaceStation.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\APS_ALPHA\SpectralType.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\Star.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\Star.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\StarCluster.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\StarCluster.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\APS_ALPHA\StarClusterComposition.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\StarClusterGenerator.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\StarClusterGenerator.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\APS_ALPHA\StarClusterPopulation.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\APS_ALPHA\StarClusterSize.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\APS_ALPHA\StarClusterType.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\StarGenerationModel.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\StarGenerationModel.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\StarGenerator.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\StarGenerator.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\StarSector.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\StarSector.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\APS_ALPHA\StarSpectralClass.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\StarSystem.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\StarSystem.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\StarSystemGenerationModel.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\StarSystemGenerationModel.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\StarSystemGenerator.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\StarSystemGenerator.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\APS_ALPHA\StarSystemType.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\APS_ALPHA\StarType.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\APS_ALPHA\StarTypeProbabilities.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
     <ClCompile Include="..\..\Source\APS_ALPHA\StationGravityActor.cpp">
       <Filter>Source\APS_ALPHA</Filter>
     </ClCompile>
     <ClInclude Include="..\..\Source\APS_ALPHA\StationGravityActor.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\SuperSpeedSpectatorPawn.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\SuperSpeedSpectatorPawn.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\TechActor.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\TechActor.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\TechInfrastructure.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\TechInfrastructure.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\TechObject.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\TechObject.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\UniverseProceduralGenerator.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\UniverseProceduralGenerator.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\VehicleControlling.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\VehicleControlling.h">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\APS_ALPHA\WorldActor.cpp">
+      <Filter>Source\APS_ALPHA</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\APS_ALPHA\WorldActor.h">
       <Filter>Source\APS_ALPHA</Filter>
     </ClInclude>
   </ItemGroup>

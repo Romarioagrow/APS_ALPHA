@@ -27,3 +27,8 @@ void AGravityActor::Tick(float DeltaTime)
 
 }
 
+USphereComponent* AGravityActor::GetGravityField()
+{
+	return SphereCollisionComponent;
+}
+
