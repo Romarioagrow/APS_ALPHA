@@ -12,6 +12,8 @@
 #include "HomeSystemPosition.h"
 #include "CharSpawnPlace.h"
 #include "SpaceStation.h"
+#include "Spaceship.h"
+#include "SpaceShipyard.h"
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
@@ -55,8 +57,14 @@ protected:
 	UPROPERTY(VisibleAnywhere, Category = "Generated Astro Actros")
 		AStarSystem* GeneratedHomeStarSystem;
 	
-	UPROPERTY(VisibleAnywhere, Category = "Generated Astro Actros")
+	UPROPERTY(VisibleAnywhere, Category = "Generated Tech Actros")
 		ASpaceStation* HomeSpaceStation;
+	
+	UPROPERTY(VisibleAnywhere, Category = "Generated Tech Actros")
+		ASpaceship* HomeSpaceship;
+	
+	UPROPERTY(VisibleAnywhere, Category = "Generated Tech Actros")
+		ASpaceShipyard* HomeSpaceShipyard;
 
 public:
 	TMap<int32, TSharedPtr<FStarModel>> StarIndexModelMap;
@@ -148,23 +156,29 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Galaxy")
 		double GalaxyStarDensity{ 10.0 };
 
-	UPROPERTY(EditAnywhere, Category = "Character Spawn")
+	UPROPERTY(EditAnywhere, Category = "Player Spawn")
 		bool bCharacterSpawn{ true };
 	
-	UPROPERTY(EditAnywhere, Category = "Character Spawn")
+	UPROPERTY(EditAnywhere, Category = "Player Spawn")
 		bool bCharacterSpawnAtRandomPlanet{ true };
 	
-	UPROPERTY(EditAnywhere, Category = "Character Spawn")
+	UPROPERTY(EditAnywhere, Category = "Player Spawn")
 		ECharSpawnPlace CharSpawnPlace;
 	
-	UPROPERTY(EditAnywhere, Category = "Character Spawn")
+	UPROPERTY(EditAnywhere, Category = "Player Spawn")
 		EOrbitHeight HomeSpaceStationOrbitHeight;
 	
-	UPROPERTY(EditAnywhere, Category = "Character Spawn")
+	UPROPERTY(EditAnywhere, Category = "Player Spawn")
 		TSubclassOf<class AControlledPawn> BP_CharacterClass;
 	
-	UPROPERTY(EditAnywhere, Category = "Character Spawn")
+	UPROPERTY(EditAnywhere, Category = "Player Spawn")
 		TSubclassOf<class ASpaceStation> BP_HomeSpaceStation;
+	
+	UPROPERTY(EditAnywhere, Category = "Player Spawn")
+		TSubclassOf<class ASpaceship> BP_HomeSpaceship;
+	
+	UPROPERTY(EditAnywhere, Category = "Player Spawn")
+		TSubclassOf<class ASpaceShipyard> BP_HomeSpaceShipyard;
 
 	UPROPERTY()
 		TArray<AStarSystem*> GeneratedStarSystems;

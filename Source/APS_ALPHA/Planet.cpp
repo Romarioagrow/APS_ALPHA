@@ -17,6 +17,7 @@ APlanet::APlanet()
 
 	// PlanetZone
 	PlanetaryZone->SetCollisionObjectType(ECollisionChannel::ECC_GameTraceChannel3); 
+	////
 }
 
 void APlanet::AddMoon(AMoon* Moon)

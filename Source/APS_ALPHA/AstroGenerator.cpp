@@ -301,6 +301,11 @@ void AAstroGenerator::GenerateHomeStarSystem()
 						NewCharacter->SetActorRelativeRotation(FRotator(0, 0, 0));
 					}*/
 
+                    FVector HomeSpaceStationLocation = HomeStation->GetActorLocation();
+                    /// Spawn HomeShipyard and HomeSpaceship
+                    HomeSpaceShipyard = World->SpawnActor<ASpaceShipyard>(BP_HomeSpaceShipyard, HomeSpaceStationLocation, HomeStation->GetActorRotation());
+                    double HomeSpaceShipyardLocationOffset = HomeStation->GravityCollisionZone->GetScaledSphereRadius() * 2;
+                    HomeSpaceShipyard->AddActorLocalOffset(FVector(0, HomeSpaceShipyardLocationOffset, 0));
                 }
             }
         }

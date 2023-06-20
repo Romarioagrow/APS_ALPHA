@@ -1,0 +1,14 @@
+{
+	"Targets": [
+		{
+			"Name": "APS_ALPHA",
+			"Path": "C:\\Users\\romar\\Documents\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA.Target.cs",
+			"Type": "Game"
+		},
+		{
+			"Name": "APS_ALPHAEditor",
+			"Path": "C:\\Users\\romar\\Documents\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHAEditor.Target.cs",
+			"Type": "Editor"
+		}
+	]
+}

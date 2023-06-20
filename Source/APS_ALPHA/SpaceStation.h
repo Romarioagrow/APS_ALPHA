@@ -12,7 +12,7 @@
  * 
  */
 UCLASS()
-class APS_ALPHA_API ASpaceStation : public ATechActor, public IGravitySource
+class APS_ALPHA_API ASpaceStation : /*public AGravityStation*/ public ATechActor, public IGravitySource /// 
 {
 	GENERATED_BODY()
 	
@@ -23,6 +23,7 @@ protected:
 	
 
 public:
+	/// TO parent comp
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 		USceneComponent* SpawnPoint;
 
