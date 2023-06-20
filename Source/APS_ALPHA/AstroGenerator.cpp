@@ -252,43 +252,38 @@ void AAstroGenerator::GenerateHomeStarSystem()
                     FActorSpawnParameters SpaceshipSpawnParams;
                     SpaceshipSpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
                     FVector HomeSpaceshipLocation = HomeSpaceShipyard->SpawnPoint->GetComponentLocation();
-                    //FVector HomeSpaceshipLocation = HomeSpaceShipyard->SpawnPoint->GetComponentTransform().GetLocation();
 
                     HomeSpaceshipLocation.Z += 1000;
                     ASpaceship* NewHomeSpaceship = World->SpawnActor<ASpaceship>(BP_HomeSpaceship, HomeSpaceshipLocation, HomeSpaceShipyard->GetActorRotation(), SpaceshipSpawnParams);
                     NewHomeSpaceship->AttachToActor(HomeSpaceShipyard, FAttachmentTransformRules::KeepWorldTransform);
-                    //NewHomeSpaceship->AddActorLocalOffset(FVector(0, 0, 1000));
 
                     FVector CharSpawnLocation{ 0 };
                     APawn* PlayerCharacter = UGameplayStatics::GetPlayerPawn(World, 0);
                     if (PlayerCharacter)
                     {
+                        switch (CharSpawnPlace)
+                        {
+                        case ECharSpawnPlace::PlanetOrbit:
+                            CharSpawnLocation = HomeSpaceStation->SpawnPoint->GetComponentLocation();
+                            break;
+                        case ECharSpawnPlace::PlanetSurface:
+                            break;
+                        case ECharSpawnPlace::MoonOrbit:
+                            break;
+                        case ECharSpawnPlace::MoonSurface:
+                            break;
+                        case ECharSpawnPlace::SpaceShip:
+                        {
+                            CharSpawnLocation = NewHomeSpaceship->GetActorLocation();
+                        }
+                            break;
+                        default:
+                            break;
+                        }
 
-                        CharSpawnLocation = HomeSpaceStation->SpawnPoint->GetComponentLocation();
                         UE_LOG(LogTemp, Warning, TEXT("CharSpawnLocation: %s"), *CharSpawnLocation.ToString());
                         bool bTeleportSucces = PlayerCharacter->SetActorLocation(CharSpawnLocation, false);
                         UE_LOG(LogTemp, Warning, TEXT("Teleport success: %s"), bTeleportSucces ? TEXT("True") : TEXT("False"));
-
-                        //switch (CharSpawnPlace)
-                        //{
-                        ///*case ECharSpawnPlace::PlanetOrbit:
-                        //    break;*/
-                        //case  ECharSpawnPlace::PlanetOrbit:
-                        //{
-                        //    //NewStation->SetActorRelativeRotation(FRotator(0, 0, 0));
-                        //    //CharSpawnLocation = HomeStation->SpawnPoint->GetComponentLocation();
-                        //    //PlayerCharacter->SetActorLocation(CharSpawnLocation);
-                        //    CharSpawnLocation = HomeStation->SpawnPoint->GetComponentLocation();
-                        //    UE_LOG(LogTemp, Warning, TEXT("CharSpawnLocation: %s"), *CharSpawnLocation.ToString());
-                        //    bool bTeleportSucces = PlayerCharacter->SetActorLocation(CharSpawnLocation, true);
-                        //    UE_LOG(LogTemp, Warning, TEXT("Teleport success: %s"), bTeleportSucces ? TEXT("True") : TEXT("False"));
-                        //}
-                        //    break;
-                        //default:
-                        //    ///CharSpawnLocation = HomeStation->SpawnPoint->GetComponentLocation();
-                        //    //PlayerCharacter->SetActorLocation(CharSpawnLocation);
-                        //    break;
-                        //}
 
                         /// relocate char to 000
                         {

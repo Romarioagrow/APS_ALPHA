@@ -104,6 +104,15 @@ void AGravityCharacterPawn::SetupPlayerInputComponent(UInputComponent* PlayerInp
 	PlayerInputComponent->BindAxis("RotatePitch", this, &AGravityCharacterPawn::RotatePitch);
 	PlayerInputComponent->BindAxis("RotateRoll", this, &AGravityCharacterPawn::RotateRoll);
 	PlayerInputComponent->BindAxis("RotateYaw", this, &AGravityCharacterPawn::RotateYaw);
+
+	PlayerInputComponent->BindAction("CharacterAction", IE_Pressed, this, &AGravityCharacterPawn::CharacterAction);
+
+}
+
+void AGravityCharacterPawn::CharacterAction()
+{
+	GEngine->AddOnScreenDebugMessage(-1, 1.0f, FColor::Green, FString::Printf(TEXT("CharacterAction!")));
+
 }
 
 void AGravityCharacterPawn::UpdateGravity()
