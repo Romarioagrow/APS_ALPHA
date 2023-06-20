@@ -163,6 +163,14 @@ void AGravityCharacterPawn::CharacterAction()
 
 }
 
+void AGravityCharacterPawn::ReleaseControl()
+{
+	GEngine->AddOnScreenDebugMessage(-1, 10.0f, FColor::Orange, FString::Printf(TEXT("AGravityCharacterPawn ReleaseControl")));
+	//GEngine->AddOnScreenDebugMessage(-1, 10.0f, FColor::Orange, FString::Printf(TEXT("AGravityCharacterPawn ReleaseControl")));
+	//CurrentSpaceship
+	CurrentGravityType = EGravityType::OnShip;
+}
+
 void AGravityCharacterPawn::UpdateGravity()
 {
 	switch (CurrentGravityType)
@@ -284,7 +292,6 @@ void AGravityCharacterPawn::UpdateGravityType()
 
 	if (OverlappingActorsWithTag.Num() > 0)
 	{
-		//AActor* LastGravityActor = OverlappingActorsWithTag[0];
 		AActor* LastGravityActor = OverlappingActorsWithTag[OverlappingActorsWithTag.Num()-1];
 		GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Red, FString::Printf(TEXT("LastGravityActor : %s"), *LastGravityActor->GetName()));
 
@@ -572,9 +579,6 @@ void AGravityCharacterPawn::UpdateShipGravity()
 	// Установить новое вращение Realtive Yaw для Arrow Component from CameraSpringArmRotation
 	FRotator NewArrowRotation(0.0f, CameraSpringArmRotation.Yaw, 0.0f);
 	ArrowComponent->SetRelativeRotation(NewArrowRotation);
-
-
-
 
 }
 

@@ -43,6 +43,8 @@ public:
 
 	void CharacterAction();
 
+	void ReleaseControl();
+
 /**
  * @brief Character Basic Components
 */

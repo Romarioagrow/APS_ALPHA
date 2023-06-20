@@ -304,8 +304,6 @@ void AAstroGenerator::GenerateHomeStarSystem()
 					    UE_LOG(LogTemp, Warning, TEXT("PlayerCharacter is null!"));
 					}
 
-                    
-
                     /*if (BP_CharacterClass)
                     {
 						ACharacter* NewCharacter = World->SpawnActor<ACharacter>(BP_CharacterClass, CharSpawnLocation, FRotator::ZeroRotator, SpawnParams);
@@ -313,9 +311,6 @@ void AAstroGenerator::GenerateHomeStarSystem()
 						NewCharacter->SetActorRelativeRotation(FRotator(0, 0, 0));
 					}*/
 
-
-
- 
                 }
             }
         }
