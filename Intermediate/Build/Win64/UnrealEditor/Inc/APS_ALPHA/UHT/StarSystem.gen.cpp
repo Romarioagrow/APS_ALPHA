@@ -47,6 +47,10 @@ void EmptyLinkFunctionForGeneratedCodeStarSystem() {}
 #endif
 		static const UECodeGen_Private::FArrayPropertyParams NewProp_Stars;
 #if WITH_METADATA
+		static const UECodeGen_Private::FMetaDataPairParam NewProp_MainStar_MetaData[];
+#endif
+		static const UECodeGen_Private::FObjectPropertyParams NewProp_MainStar;
+#if WITH_METADATA
 		static const UECodeGen_Private::FMetaDataPairParam NewProp_StarSystemRadius_MetaData[];
 #endif
 		static const UECodeGen_Private::FDoublePropertyParams NewProp_StarSystemRadius;
@@ -96,6 +100,13 @@ void EmptyLinkFunctionForGeneratedCodeStarSystem() {}
 #endif
 	const UECodeGen_Private::FArrayPropertyParams Z_Construct_UClass_AStarSystem_Statics::NewProp_Stars = { "Stars", nullptr, (EPropertyFlags)0x0040000000000000, UECodeGen_Private::EPropertyGenFlags::Array, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(AStarSystem, Stars), EArrayPropertyFlags::None, METADATA_PARAMS(Z_Construct_UClass_AStarSystem_Statics::NewProp_Stars_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_AStarSystem_Statics::NewProp_Stars_MetaData)) };
 #if WITH_METADATA
+	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_AStarSystem_Statics::NewProp_MainStar_MetaData[] = {
+		{ "Category", "Star System" },
+		{ "ModuleRelativePath", "StarSystem.h" },
+	};
+#endif
+	const UECodeGen_Private::FObjectPropertyParams Z_Construct_UClass_AStarSystem_Statics::NewProp_MainStar = { "MainStar", nullptr, (EPropertyFlags)0x0010000000020001, UECodeGen_Private::EPropertyGenFlags::Object, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(AStarSystem, MainStar), Z_Construct_UClass_AStar_NoRegister, METADATA_PARAMS(Z_Construct_UClass_AStarSystem_Statics::NewProp_MainStar_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_AStarSystem_Statics::NewProp_MainStar_MetaData)) };
+#if WITH_METADATA
 	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_AStarSystem_Statics::NewProp_StarSystemRadius_MetaData[] = {
 		{ "Category", "Star System" },
 		{ "ModuleRelativePath", "StarSystem.h" },
@@ -123,6 +134,7 @@ void EmptyLinkFunctionForGeneratedCodeStarSystem() {}
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AStarSystem_Statics::NewProp_StarSystemType,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AStarSystem_Statics::NewProp_Stars_Inner,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AStarSystem_Statics::NewProp_Stars,
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AStarSystem_Statics::NewProp_MainStar,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AStarSystem_Statics::NewProp_StarSystemRadius,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AStarSystem_Statics::NewProp_StarSystemZoneRadius,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AStarSystem_Statics::NewProp_StarSystemZone,
@@ -164,9 +176,9 @@ void EmptyLinkFunctionForGeneratedCodeStarSystem() {}
 		static const FClassRegisterCompiledInInfo ClassInfo[];
 	};
 	const FClassRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarSystem_h_Statics::ClassInfo[] = {
-		{ Z_Construct_UClass_AStarSystem, AStarSystem::StaticClass, TEXT("AStarSystem"), &Z_Registration_Info_UClass_AStarSystem, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(AStarSystem), 3847914692U) },
+		{ Z_Construct_UClass_AStarSystem, AStarSystem::StaticClass, TEXT("AStarSystem"), &Z_Registration_Info_UClass_AStarSystem, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(AStarSystem), 285599627U) },
 	};
-	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarSystem_h_2911043446(TEXT("/Script/APS_ALPHA"),
+	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarSystem_h_67999016(TEXT("/Script/APS_ALPHA"),
 		Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarSystem_h_Statics::ClassInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarSystem_h_Statics::ClassInfo),
 		nullptr, 0,
 		nullptr, 0);

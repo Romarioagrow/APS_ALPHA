@@ -11,6 +11,13 @@ APlanet::APlanet()
 
 	PlanetaryZone = CreateDefaultSubobject<USphereComponent>(TEXT("PlanetaryZoneComponent"));
 	PlanetaryZone->SetupAttachment(RootComponent);
+
+	GravityCollisionZone = CreateDefaultSubobject<USphereComponent>(TEXT("PlanetGravityCollisionZoneComponent"));
+	GravityCollisionZone->SetupAttachment(RootComponent);
+
+	// PlanetZone
+	PlanetaryZone->SetCollisionObjectType(ECollisionChannel::ECC_GameTraceChannel3); 
+	////
 }
 
 void APlanet::AddMoon(AMoon* Moon)
@@ -48,7 +55,7 @@ void APlanet::SetAmountOfMoons(int NewAmountOfMoons)
 	this->AmountOfMoons = NewAmountOfMoons;
 }
 
-void APlanet::SetMoonsList(TArray<FMoonData> NewMoonsList)
+void APlanet::SetMoonsList(TArray<TSharedPtr<FMoonData>> NewMoonsList)
 {
 	this->MoonsList = NewMoonsList;
 }

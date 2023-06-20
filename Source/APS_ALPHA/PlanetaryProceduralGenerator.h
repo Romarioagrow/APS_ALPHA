@@ -70,12 +70,13 @@ class APS_ALPHA_API UPlanetarySystemGenerator : public UBaseProceduralGenerator
 public:
     void SetAstroLocation(int StarNumber, APlanetarySystem* NewPlanetarySystem);
 
+    void GenerateCustomPlanetarySystem();
 
     int DetermineMaxPlanets(EStellarType StellarClass, FStarModel StarModel);
 
-    void ApplyModel(APlanetarySystem* NewPlanetarySystem, FPlanetarySystemGenerationModel PlanetraySystemModel);
+    void ApplyModel(APlanetarySystem* NewPlanetarySystem, TSharedPtr<FPlanetarySystemModel> PlanetraySystemModel);
 
-    FPlanetarySystemGenerationModel GeneratePlanetraySystemModelByStar(FStarModel StarModel, UPlanetGenerator* PlanetGenerator, UMoonGenerator* MoonGenerator);
+    void GeneratePlanetraySystemModelByStar(TSharedPtr<FPlanetarySystemModel> PlanetarySystemModel, TSharedPtr<FStarModel> StarModel, UPlanetGenerator* PlanetGenerator, UMoonGenerator* MoonGenerator);
 
     int CalculateMoons(double PlanetMass, EPlanetType PlanetType);
 
@@ -84,7 +85,7 @@ public:
     FDensityRange GetPlanetDensityRange(EPlanetType PlanetType);
     
 private:
-    EPlanetaryZoneType DeterminePlanetZone(double OrbitRadius, FPlanetarySystemGenerationModel PlanetarySystemModel);
+    EPlanetaryZoneType DeterminePlanetZone(double OrbitRadius, TSharedPtr<FPlanetarySystemModel> PlanetarySystemModel );
 
     EPlanetType DeterminePlanetType(EPlanetaryZoneType PlanetZone);
 

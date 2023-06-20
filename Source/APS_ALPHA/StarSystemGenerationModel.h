@@ -6,7 +6,7 @@
 #include "StarSystemGenerationModel.generated.h"
 
 USTRUCT(BlueprintType)
-struct FStarSystemGenerationModel :
+struct FStarSystemModel :
     public FGenerationModel
 {
     GENERATED_BODY()

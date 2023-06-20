@@ -6,12 +6,12 @@
 #include "MoonGenerationModel.generated.h"
 
 USTRUCT(BlueprintType)
-struct FMoonGenerationModel :
-    public FOrbitalBodyGenerationModel
+struct FMoonModel :
+    public FOrbitalBodyModel
 {
     GENERATED_BODY()
 
-    FMoonGenerationModel();
+    FMoonModel();
 
     UPROPERTY(EditAnywhere, Category = "Moon Generation Model")
     EMoonType Type;

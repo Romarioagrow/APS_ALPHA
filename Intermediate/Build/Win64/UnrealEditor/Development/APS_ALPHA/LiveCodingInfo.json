@@ -1,9 +1,10 @@
 {
 	"RemapUnityFiles": 
 	{
-		"Module.APS_ALPHA.1_of_3.cpp.obj": [
+		"Module.APS_ALPHA.1_of_4.cpp.obj": [
 			"Aircraft.gen.cpp.obj",
 			"AnimationState.gen.cpp.obj",
+			"APS_ALPHA.init.gen.cpp.obj",
 			"APS_ALPHAGameModeBase.gen.cpp.obj",
 			"Asteroid.gen.cpp.obj",
 			"AsteroidBelt.gen.cpp.obj",
@@ -24,6 +25,8 @@
 			"CelestialBodyInterface.gen.cpp.obj",
 			"CelestialGenerationModel.gen.cpp.obj",
 			"CelestialSystem.gen.cpp.obj",
+			"CharSpawnPlace.gen.cpp.obj",
+			"Civilization.gen.cpp.obj",
 			"Colony.gen.cpp.obj",
 			"ControlledPawn.gen.cpp.obj",
 			"Environment.gen.cpp.obj",
@@ -40,20 +43,20 @@
 			"GravityActorInterface.gen.cpp.obj",
 			"GravityCharacter.gen.cpp.obj",
 			"GravityCharacterPawn.gen.cpp.obj",
-			"GravityGameModeBase.gen.cpp.obj",
+			"GravityGameModeBase.gen.cpp.obj"
+		],
+		"Module.APS_ALPHA.2_of_4.cpp.obj": [
 			"GravityMovementStruct.gen.cpp.obj",
 			"GravityObject.gen.cpp.obj",
 			"GravityObjectInterface.gen.cpp.obj",
 			"GravityParamStruct.gen.cpp.obj",
-			"APS_ALPHA.init.gen.cpp.obj"
-		],
-		"Module.APS_ALPHA.2_of_3.cpp.obj": [
 			"GravityPawn.gen.cpp.obj",
 			"GravityPlayerController.gen.cpp.obj",
 			"GravitySource.gen.cpp.obj",
 			"GravityState.gen.cpp.obj",
 			"GravityTypeEnum.gen.cpp.obj",
 			"GroundVehicle.gen.cpp.obj",
+			"Headquarters.gen.cpp.obj",
 			"HomeStarSystemGenerationModel.gen.cpp.obj",
 			"HomeSystemPosition.gen.cpp.obj",
 			"KuiperBelt.gen.cpp.obj",
@@ -66,6 +69,7 @@
 			"OrbitalBody.gen.cpp.obj",
 			"OrbitalBodyGenerationModel.gen.cpp.obj",
 			"OrbitDistributionType.gen.cpp.obj",
+			"OrbitHeight.gen.cpp.obj",
 			"PilotingVehicle.gen.cpp.obj",
 			"Planet.gen.cpp.obj",
 			"PlanetaryEnvironment.gen.cpp.obj",
@@ -81,14 +85,16 @@
 			"PlanetType.gen.cpp.obj",
 			"SpaceCharacter.gen.cpp.obj",
 			"Spacecraft.gen.cpp.obj",
+			"SpaceHeadquarters.gen.cpp.obj",
 			"Spaceship.gen.cpp.obj",
 			"SpaceshipGravityActor.gen.cpp.obj",
+			"SpaceShipyard.gen.cpp.obj"
+		],
+		"Module.APS_ALPHA.3_of_4.cpp.obj": [
 			"SpaceStation.gen.cpp.obj",
 			"SpectralType.gen.cpp.obj",
 			"Star.gen.cpp.obj",
-			"StarCluster.gen.cpp.obj"
-		],
-		"Module.APS_ALPHA.3_of_3.cpp.obj": [
+			"StarCluster.gen.cpp.obj",
 			"StarClusterComposition.gen.cpp.obj",
 			"StarClusterGenerator.gen.cpp.obj",
 			"StarClusterPopulation.gen.cpp.obj",
@@ -98,6 +104,7 @@
 			"StarGenerator.gen.cpp.obj",
 			"StarSector.gen.cpp.obj",
 			"StarSpectralClass.gen.cpp.obj",
+			"StarSystem.gen.cpp.obj",
 			"StarSystemGenerationModel.gen.cpp.obj",
 			"StarSystemGenerator.gen.cpp.obj",
 			"StarSystemType.gen.cpp.obj",
@@ -131,6 +138,7 @@
 			"CelestialBodyInterface.cpp.obj",
 			"CelestialGenerationModel.cpp.obj",
 			"CelestialSystem.cpp.obj",
+			"Civilization.cpp.obj",
 			"Colony.cpp.obj",
 			"ControlledPawn.cpp.obj",
 			"Environment.cpp.obj",
@@ -154,6 +162,7 @@
 			"GravitySource.cpp.obj",
 			"GravityState.cpp.obj",
 			"GroundVehicle.cpp.obj",
+			"Headquarters.cpp.obj",
 			"HomeStarSystemGenerationModel.cpp.obj",
 			"KuiperBelt.cpp.obj",
 			"MainMenuController.cpp.obj",
@@ -174,10 +183,14 @@
 			"PlanetGravityActor.cpp.obj",
 			"PlanetOrbit.cpp.obj",
 			"SpaceCharacter.cpp.obj",
+			"AstroGenerator.cpp.obj"
+		],
+		"Module.APS_ALPHA.4_of_4.cpp.obj": [
 			"Spacecraft.cpp.obj",
+			"SpaceHeadquarters.cpp.obj",
 			"Spaceship.cpp.obj",
 			"SpaceshipGravityActor.cpp.obj",
-			"SpaceStation.cpp.obj",
+			"SpaceShipyard.cpp.obj",
 			"Star.cpp.obj",
 			"StarCluster.cpp.obj",
 			"StarClusterGenerator.cpp.obj",
@@ -195,8 +208,7 @@
 			"UniverseProceduralGenerator.cpp.obj",
 			"VehicleControlling.cpp.obj",
 			"WorldActor.cpp.obj",
-			"StarSystem.gen.cpp.obj",
-			"AstroGenerator.cpp.obj"
+			"SpaceStation.cpp.obj"
 		]
 	}
 }

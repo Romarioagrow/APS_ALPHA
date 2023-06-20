@@ -1,6 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
+#include <Components/SphereComponent.h>
 
 #include "CoreMinimal.h"
 #include "AstroObject.h"
@@ -15,4 +16,10 @@ class APS_ALPHA_API AAstroActor : public AWorldActor, public IAstroObject
 {
 	GENERATED_BODY()
 	
+public:
+	AAstroActor();
+
+	UPROPERTY(VisibleAnywhere)
+		UStaticMeshComponent* StaticMeshComponent;
+
 };

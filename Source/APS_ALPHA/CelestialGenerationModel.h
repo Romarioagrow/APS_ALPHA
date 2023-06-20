@@ -5,7 +5,7 @@
 #include "CelestialGenerationModel.generated.h"
 
 USTRUCT(BlueprintType)
-struct FCelestialGenerationModel :
+struct FCelestialBodyModel :
     public FGenerationModel
 {
 	GENERATED_BODY()

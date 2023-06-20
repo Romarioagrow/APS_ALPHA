@@ -5,15 +5,14 @@ UStarSystemGenerator::UStarSystemGenerator()
 {
 }
 
-void UStarSystemGenerator::ApplyModel(AStarSystem* StarSystem, FStarSystemGenerationModel StarSystemGenerationModel)
+void UStarSystemGenerator::ApplyModel(AStarSystem* StarSystem, TSharedPtr<FStarSystemModel> StarSystemGenerationModel)
 {
-	StarSystem->SetStarsAmount(StarSystemGenerationModel.AmountOfStars);
-	StarSystem->SetStarSystemType(StarSystemGenerationModel.StarSystemType);
+	StarSystem->SetStarsAmount(StarSystemGenerationModel->AmountOfStars);
+	StarSystem->SetStarSystemType(StarSystemGenerationModel->StarSystemType);
 }
 
-FStarSystemGenerationModel UStarSystemGenerator::GenerateRandomStarSystemModel()
+void UStarSystemGenerator::GenerateRandomStarSystemModel(TSharedPtr<FStarSystemModel> StarSystemModel)
 {
-	FStarSystemGenerationModel StarSystemModel;
 
 	// Случайное число в диапазоне от 0 до 100
 	int32 RandomValue = FMath::RandRange(0, 100);
@@ -28,24 +27,24 @@ FStarSystemGenerationModel UStarSystemGenerator::GenerateRandomStarSystemModel()
 	if (RandomValue < SingleStarWeight)
 	if (RandomValue < SingleStarWeight)
 	{
-		StarSystemModel.StarSystemType = EStarSystemType::SingleStar;
-		StarSystemModel.AmountOfStars = 1;
+		StarSystemModel->StarSystemType = EStarSystemType::SingleStar;
+		StarSystemModel->AmountOfStars = 1;
 	}
 	else if (RandomValue < SingleStarWeight + DoubleStarWeight)
 	{
-		StarSystemModel.StarSystemType = EStarSystemType::DoubleStar;
-		StarSystemModel.AmountOfStars = 2;
+		StarSystemModel->StarSystemType = EStarSystemType::DoubleStar;
+		StarSystemModel->AmountOfStars = 2;
 	}
 	else if (RandomValue < SingleStarWeight + DoubleStarWeight + TripleStarWeight)
 	{
-		StarSystemModel.StarSystemType = EStarSystemType::TripleStar;
-		StarSystemModel.AmountOfStars = 3;
+		StarSystemModel->StarSystemType = EStarSystemType::TripleStar;
+		StarSystemModel->AmountOfStars = 3;
 	}
 	else
 	{
-		StarSystemModel.StarSystemType = EStarSystemType::MultipleStar;
-		StarSystemModel.AmountOfStars = FMath::RandRange(4, 6);
+		StarSystemModel->StarSystemType = EStarSystemType::MultipleStar;
+		StarSystemModel->AmountOfStars = FMath::RandRange(4, 6);
 	}
 
-	return StarSystemModel;
+	//return StarSystemModel;
 }

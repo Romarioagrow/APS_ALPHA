@@ -3,3 +3,10 @@
 
 #include "AstroActor.h"
 
+AAstroActor::AAstroActor()
+{
+	USceneComponent* Root = CreateDefaultSubobject<USceneComponent>(TEXT("AstroActorRootComponent"));
+	RootComponent = Root;
+
+	
+}

@@ -19,7 +19,7 @@ class APS_ALPHA_API UStarClusterGenerator : public UBaseProceduralGenerator
 public:
 	UStarClusterGenerator();
 
-	FVector CalculateStarPosition(int StarIndex, AStarCluster* StarCluster, const FStarModel& StarModel);
+	FVector CalculateStarPosition(int StarIndex, AStarCluster* StarCluster, const TSharedPtr<FStarModel> StarModel);
 
 	int GetStarsAmountByRange(EStarClusterSize StarClusterSize);
 	
@@ -34,8 +34,7 @@ public:
 
 	EStarClusterType GetRandomClusterType();
 
-	FStarClusterModel GenerateRandomStarClusterModelByParams(FStarClusterModel& StarClusterModel);
+	TUniquePtr<FStarClusterModel> GenerateRandomStarClusterModelByParams(TUniquePtr<FStarClusterModel> StarClusterModel);
 
-	FStarClusterModel GetRandomStarClusterModel();
-	
+	void GetRandomStarClusterModel(TSharedPtr<FStarClusterModel> StarClusterModel);
 };

@@ -28,13 +28,13 @@ public:
 
     double CalculateRandomMoonDensity(EMoonType MoonType);
 
-	void ApplyModel(AMoon* Moon, FMoonGenerationModel MoonGenerationModel);
+	void ApplyModel(AMoon* Moon, TSharedPtr<FMoonModel> MoonGenerationModel);
 
-	FMoonGenerationModel GenerateMoonModel();
+	FMoonModel GenerateMoonModel();
 
-	FMoonGenerationModel GenerateRandomMoonModel();
+	FMoonModel GenerateRandomMoonModel();
 
-	EMoonType GenerateMoonType(FPlanetGenerationModel PlanetModel);
+	EMoonType GenerateMoonType(TSharedPtr<FPlanetModel> PlanetModel);
 
     double CalculateRandomMoonMass();
 

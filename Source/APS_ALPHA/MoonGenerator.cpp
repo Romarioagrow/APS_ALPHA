@@ -8,24 +8,24 @@ UMoonGenerator::UMoonGenerator()
 {
 }
 
-FMoonGenerationModel UMoonGenerator::GenerateMoonModel()
+FMoonModel UMoonGenerator::GenerateMoonModel()
 {
-	return FMoonGenerationModel();
+	return FMoonModel();
 }
 
-FMoonGenerationModel UMoonGenerator::GenerateRandomMoonModel()
+FMoonModel UMoonGenerator::GenerateRandomMoonModel()
 {
-	return FMoonGenerationModel();
+	return FMoonModel();
 }
 
-void UMoonGenerator::ApplyModel(AMoon* Moon, FMoonGenerationModel MoonGenerationModel)
+void UMoonGenerator::ApplyModel(AMoon* Moon, TSharedPtr<FMoonModel> MoonGenerationModel)
 {
-    Moon->SetMoonType(MoonGenerationModel.Type);
-    Moon->SetMass(MoonGenerationModel.Mass);
-    Moon->SetRadius(MoonGenerationModel.Radius); 
-    Moon->SetMoonDensity(MoonGenerationModel.MoonDensity); 
-    Moon->SetMoonGravity(MoonGenerationModel.MoonGravity); 
-    Moon->SetOrbitDistance(MoonGenerationModel.OrbitDistance);
+    Moon->SetMoonType(MoonGenerationModel->Type);
+    Moon->SetMass(MoonGenerationModel->Mass);
+    Moon->SetRadius(MoonGenerationModel->Radius);
+    Moon->SetMoonDensity(MoonGenerationModel->MoonDensity);
+    Moon->SetMoonGravity(MoonGenerationModel->MoonGravity);
+    Moon->SetOrbitDistance(MoonGenerationModel->OrbitDistance);
 }
 
 void UMoonGenerator::ConnectMoonWithPlanet(AMoon* NewMoon, APlanet* NewPlanet)
@@ -59,9 +59,9 @@ double UMoonGenerator::CalculateRandomMoonDensity(EMoonType MoonType)
     return FMath::RandRange(DensityRange.Key, DensityRange.Value);
 }
 
-EMoonType UMoonGenerator::GenerateMoonType(FPlanetGenerationModel PlanetModel)
+EMoonType UMoonGenerator::GenerateMoonType(TSharedPtr<FPlanetModel> PlanetModel)
 {
-    EPlanetaryZoneType PlanetZone = PlanetModel.PlanetZone;
+    EPlanetaryZoneType PlanetZone = PlanetModel->PlanetZone;
     TMap<EMoonType, float> PlanetMoonTypeProbabilities;
     if (PlanetZone == EPlanetaryZoneType::HotZone)
     {

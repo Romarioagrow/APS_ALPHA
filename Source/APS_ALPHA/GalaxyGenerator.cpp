@@ -7,9 +7,9 @@
 #include "StarGenerationModel.h"
 #include <cmath>
 
-FGalaxyModel UGalaxyGenerator::GenerateRandomGalaxyModel()
+void UGalaxyGenerator::GenerateRandomGalaxyModel(TSharedPtr<FGalaxyModel> GalaxyModel)
 {
-	return FGalaxyModel();
+	//return FGalaxyModel();
 }
 
 FGalaxyModel UGalaxyGenerator::GenerateGalaxyByParamsModel(EGalaxyType GalaxyType, EGalaxyClass GalaxyGlass)
@@ -17,15 +17,15 @@ FGalaxyModel UGalaxyGenerator::GenerateGalaxyByParamsModel(EGalaxyType GalaxyTyp
 	return FGalaxyModel();
 }
 
-void UGalaxyGenerator::GenerateGalaxyOctreeStars(UStarGenerator* StarGenerator, AGalaxy* NewGalaxy, FGalaxyModel GalaxyModel)
+void UGalaxyGenerator::GenerateGalaxyOctreeStars(UStarGenerator* StarGenerator, AGalaxy* NewGalaxy, TSharedPtr<FGalaxyModel> GalaxyModel)
 {
     // Создаем октодерево
-    double GalaxyOctreeHalfDimension = GalaxyModel.GalaxySize;
+    double GalaxyOctreeHalfDimension = GalaxyModel->GalaxySize;
     Octree* galaxyOctree = new Octree(FVector(0), FVector(GalaxyOctreeHalfDimension));
 
     // Определение функции генерации в зависимости от типа галактики
     FVector(UGalaxyGenerator:: * generateStar)(EGalaxyClass, double, double);
-    switch (GalaxyModel.GalaxyType)
+    switch (GalaxyModel->GalaxyType)
     {
     case EGalaxyType::Elliptical:
         generateStar = &UGalaxyGenerator::GenerateStarInEllipticalGalaxy;
@@ -50,37 +50,38 @@ void UGalaxyGenerator::GenerateGalaxyOctreeStars(UStarGenerator* StarGenerator, 
         break;
     }
 
-    double StarsCount = GalaxyModel.StarsCount;
+    double StarsCount = GalaxyModel->StarsCount;
     for (int i = 0; i < StarsCount; i++)
     {
-        FStarModel StarModel = StarGenerator->GenerateRandomStarModel();
+        TSharedPtr<FStarModel> StarModel = MakeShared<FStarModel>();
+        StarGenerator->GenerateRandomStarModel(StarModel);
         bool spaceOccupied = true;
         FVector position;
 
         double LightYearInKm = 9.461e12;
         double UnitInKm = 6963.4;
         double LightYearInUnrealUnits = LightYearInKm / UnitInKm;
-        double AstroScaleCoeff = GalaxyModel.StarsDensity;
+        double AstroScaleCoeff = GalaxyModel->StarsDensity;
         LightYearInUnrealUnits /= AstroScaleCoeff;
 
         while (spaceOccupied) {
-            position = (this->*generateStar)(GalaxyModel.GalaxyClass, LightYearInUnrealUnits, StarModel.Radius);
-            spaceOccupied = galaxyOctree->SpaceOccupied(position, StarModel.Radius);
+            position = (this->*generateStar)(GalaxyModel->GalaxyClass, LightYearInUnrealUnits, StarModel->Radius);
+            spaceOccupied = galaxyOctree->SpaceOccupied(position, StarModel->Radius);
         }
 
         // Вставляем звезду в октодерево
-        galaxyOctree->InsertStar(position, StarModel.Radius);
+        galaxyOctree->InsertStar(position, StarModel->Radius);
 
         FTransform StarTransform;
         StarTransform.SetLocation(position);
-        StarTransform.SetScale3D(FVector(StarModel.Radius));
+        StarTransform.SetScale3D(FVector(StarModel->Radius));
         int32 StarInstIndex = NewGalaxy->StarMeshInstances->AddInstance(StarTransform, true);
 
-        FLinearColor ColorValue = StarGenerator->GetStarColor(StarModel.SpectralClass, StarModel.SpectralSubclass);
+        FLinearColor ColorValue = StarGenerator->GetStarColor(StarModel->SpectralClass, StarModel->SpectralSubclass);
         NewGalaxy->StarMeshInstances->SetCustomDataValue(StarInstIndex, 0, ColorValue.R);
         NewGalaxy->StarMeshInstances->SetCustomDataValue(StarInstIndex, 1, ColorValue.G);
         NewGalaxy->StarMeshInstances->SetCustomDataValue(StarInstIndex, 2, ColorValue.B);
-        double StarEmission = StarGenerator->CalculateEmission(StarModel.Luminosity * 25);
+        double StarEmission = StarGenerator->CalculateEmission(StarModel->Luminosity * 25);
         NewGalaxy->StarMeshInstances->SetCustomDataValue(StarInstIndex, 3, StarEmission);
     }
     delete galaxyOctree;

@@ -20,11 +20,11 @@ class APS_ALPHA_API UGalaxyGenerator : public UBaseProceduralGenerator
 	GENERATED_BODY()
 
 public:
-	FGalaxyModel GenerateRandomGalaxyModel();
+	void GenerateRandomGalaxyModel(TSharedPtr<FGalaxyModel> GalaxyModel);
 
 	FGalaxyModel GenerateGalaxyByParamsModel(EGalaxyType GalaxyType, EGalaxyClass GalaxyGlass);
 
-	void GenerateGalaxyOctreeStars(UStarGenerator* StarGenerator, AGalaxy* NewGalaxy, FGalaxyModel GalaxyModel);
+	void GenerateGalaxyOctreeStars(UStarGenerator* StarGenerator, AGalaxy* NewGalaxy, TSharedPtr<FGalaxyModel> GalaxyModel);
 
 	FVector GenerateStarInEllipticalGalaxy(EGalaxyClass GalaxyClass, double StarDistance, double StarRadius);
 

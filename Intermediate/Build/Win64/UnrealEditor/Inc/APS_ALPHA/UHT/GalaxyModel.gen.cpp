@@ -11,12 +11,12 @@ void EmptyLinkFunctionForGeneratedCodeGalaxyModel() {}
 // Cross Module References
 	APS_ALPHA_API UEnum* Z_Construct_UEnum_APS_ALPHA_EGalaxyClass();
 	APS_ALPHA_API UEnum* Z_Construct_UEnum_APS_ALPHA_EGalaxyType();
-	APS_ALPHA_API UScriptStruct* Z_Construct_UScriptStruct_FCelestialGenerationModel();
+	APS_ALPHA_API UScriptStruct* Z_Construct_UScriptStruct_FCelestialBodyModel();
 	APS_ALPHA_API UScriptStruct* Z_Construct_UScriptStruct_FGalaxyModel();
 	UPackage* Z_Construct_UPackage__Script_APS_ALPHA();
 // End Cross Module References
 
-static_assert(std::is_polymorphic<FGalaxyModel>() == std::is_polymorphic<FCelestialGenerationModel>(), "USTRUCT FGalaxyModel cannot be polymorphic unless super FCelestialGenerationModel is polymorphic");
+static_assert(std::is_polymorphic<FGalaxyModel>() == std::is_polymorphic<FCelestialBodyModel>(), "USTRUCT FGalaxyModel cannot be polymorphic unless super FCelestialBodyModel is polymorphic");
 
 	static FStructRegistrationInfo Z_Registration_Info_UScriptStruct_GalaxyModel;
 class UScriptStruct* FGalaxyModel::StaticStruct()
@@ -120,7 +120,7 @@ template<> APS_ALPHA_API UScriptStruct* StaticStruct<FGalaxyModel>()
 	};
 	const UECodeGen_Private::FStructParams Z_Construct_UScriptStruct_FGalaxyModel_Statics::ReturnStructParams = {
 		(UObject* (*)())Z_Construct_UPackage__Script_APS_ALPHA,
-		Z_Construct_UScriptStruct_FCelestialGenerationModel,
+		Z_Construct_UScriptStruct_FCelestialBodyModel,
 		&NewStructOps,
 		"GalaxyModel",
 		sizeof(FGalaxyModel),
@@ -144,9 +144,9 @@ template<> APS_ALPHA_API UScriptStruct* StaticStruct<FGalaxyModel>()
 		static const FStructRegisterCompiledInInfo ScriptStructInfo[];
 	};
 	const FStructRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GalaxyModel_h_Statics::ScriptStructInfo[] = {
-		{ FGalaxyModel::StaticStruct, Z_Construct_UScriptStruct_FGalaxyModel_Statics::NewStructOps, TEXT("GalaxyModel"), &Z_Registration_Info_UScriptStruct_GalaxyModel, CONSTRUCT_RELOAD_VERSION_INFO(FStructReloadVersionInfo, sizeof(FGalaxyModel), 1925221879U) },
+		{ FGalaxyModel::StaticStruct, Z_Construct_UScriptStruct_FGalaxyModel_Statics::NewStructOps, TEXT("GalaxyModel"), &Z_Registration_Info_UScriptStruct_GalaxyModel, CONSTRUCT_RELOAD_VERSION_INFO(FStructReloadVersionInfo, sizeof(FGalaxyModel), 2165413138U) },
 	};
-	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GalaxyModel_h_747762115(TEXT("/Script/APS_ALPHA"),
+	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GalaxyModel_h_2221967849(TEXT("/Script/APS_ALPHA"),
 		nullptr, 0,
 		Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GalaxyModel_h_Statics::ScriptStructInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_GalaxyModel_h_Statics::ScriptStructInfo),
 		nullptr, 0);

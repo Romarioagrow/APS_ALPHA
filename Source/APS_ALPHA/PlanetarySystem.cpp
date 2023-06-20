@@ -28,7 +28,7 @@ void APlanetarySystem::SetStarFullSpectralName(FName NewStarFullSpectralName)
 	this->FullSpectralName = NewStarFullSpectralName;
 }
 
-void APlanetarySystem::SetPlanetsList(TArray<FPlanetData> NewPlanetsList)
+void APlanetarySystem::SetPlanetsList(TArray<TSharedPtr<FPlanetData>> NewPlanetsList)
 {
 	this->PlanetsList = NewPlanetsList;
 }

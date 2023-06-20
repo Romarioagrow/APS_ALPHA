@@ -6,6 +6,10 @@
 ASpaceStation::ASpaceStation()
 {
 	// Создание компонента SphereCollisionComponent
-	SphereCollisionComponent = CreateDefaultSubobject<USphereComponent>(TEXT("SphereCollisionComponent"));
-	RootComponent = SphereCollisionComponent;
+	GravityCollisionZone = CreateDefaultSubobject<USphereComponent>(TEXT("StationGravitySphereCollisionComponent"));
+	GravityCollisionZone->SetupAttachment(RootComponent);
+
+	SpawnPoint = CreateDefaultSubobject<USceneComponent>(TEXT("SpawnPoint"));
+	SpawnPoint->SetupAttachment(GravityCollisionZone);
+	SpawnPoint->SetWorldRotation(GetActorRotation());
 }

@@ -6,7 +6,6 @@
 
 #include "UObject/GeneratedCppIncludes.h"
 #include "APS_ALPHA/StarCluster.h"
-#include "APS_ALPHA/StarGenerationModel.h"
 PRAGMA_DISABLE_DEPRECATION_WARNINGS
 void EmptyLinkFunctionForGeneratedCodeStarCluster() {}
 // Cross Module References
@@ -22,7 +21,6 @@ void EmptyLinkFunctionForGeneratedCodeStarCluster() {}
 	APS_ALPHA_API UEnum* Z_Construct_UEnum_APS_ALPHA_EStellarType();
 	APS_ALPHA_API UScriptStruct* Z_Construct_UScriptStruct_FRange();
 	APS_ALPHA_API UScriptStruct* Z_Construct_UScriptStruct_FStarClusterModel();
-	APS_ALPHA_API UScriptStruct* Z_Construct_UScriptStruct_FStarModel();
 	COREUOBJECT_API UScriptStruct* Z_Construct_UScriptStruct_FVector();
 	ENGINE_API UClass* Z_Construct_UClass_UHierarchicalInstancedStaticMeshComponent_NoRegister();
 	UPackage* Z_Construct_UPackage__Script_APS_ALPHA();
@@ -325,12 +323,6 @@ template<> APS_ALPHA_API UScriptStruct* StaticStruct<FStarClusterModel>()
 		static const UECodeGen_Private::FMetaDataPairParam NewProp_Stars_MetaData[];
 #endif
 		static const UECodeGen_Private::FArrayPropertyParams NewProp_Stars;
-		static const UECodeGen_Private::FStructPropertyParams NewProp_StarsModel_ValueProp;
-		static const UECodeGen_Private::FStructPropertyParams NewProp_StarsModel_Key_KeyProp;
-#if WITH_METADATA
-		static const UECodeGen_Private::FMetaDataPairParam NewProp_StarsModel_MetaData[];
-#endif
-		static const UECodeGen_Private::FMapPropertyParams NewProp_StarsModel;
 		static const UECodeGen_Private::FBytePropertyParams NewProp_ClusterType_Underlying;
 #if WITH_METADATA
 		static const UECodeGen_Private::FMetaDataPairParam NewProp_ClusterType_MetaData[];
@@ -416,15 +408,6 @@ template<> APS_ALPHA_API UScriptStruct* StaticStruct<FStarClusterModel>()
 	};
 #endif
 	const UECodeGen_Private::FArrayPropertyParams Z_Construct_UClass_AStarCluster_Statics::NewProp_Stars = { "Stars", nullptr, (EPropertyFlags)0x0010000000020001, UECodeGen_Private::EPropertyGenFlags::Array, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(AStarCluster, Stars), EArrayPropertyFlags::None, METADATA_PARAMS(Z_Construct_UClass_AStarCluster_Statics::NewProp_Stars_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_AStarCluster_Statics::NewProp_Stars_MetaData)) };
-	const UECodeGen_Private::FStructPropertyParams Z_Construct_UClass_AStarCluster_Statics::NewProp_StarsModel_ValueProp = { "StarsModel", nullptr, (EPropertyFlags)0x0000000000020001, UECodeGen_Private::EPropertyGenFlags::Struct, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, 1, Z_Construct_UScriptStruct_FStarModel, METADATA_PARAMS(nullptr, 0) }; // 3171828587
-	const UECodeGen_Private::FStructPropertyParams Z_Construct_UClass_AStarCluster_Statics::NewProp_StarsModel_Key_KeyProp = { "StarsModel_Key", nullptr, (EPropertyFlags)0x0000000000020001, UECodeGen_Private::EPropertyGenFlags::Struct, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, 0, Z_Construct_UScriptStruct_FVector, METADATA_PARAMS(nullptr, 0) };
-#if WITH_METADATA
-	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_AStarCluster_Statics::NewProp_StarsModel_MetaData[] = {
-		{ "Category", "Star Cluster" },
-		{ "ModuleRelativePath", "StarCluster.h" },
-	};
-#endif
-	const UECodeGen_Private::FMapPropertyParams Z_Construct_UClass_AStarCluster_Statics::NewProp_StarsModel = { "StarsModel", nullptr, (EPropertyFlags)0x0010000000020001, UECodeGen_Private::EPropertyGenFlags::Map, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(AStarCluster, StarsModel), EMapPropertyFlags::None, METADATA_PARAMS(Z_Construct_UClass_AStarCluster_Statics::NewProp_StarsModel_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_AStarCluster_Statics::NewProp_StarsModel_MetaData)) }; // 3171828587
 	const UECodeGen_Private::FBytePropertyParams Z_Construct_UClass_AStarCluster_Statics::NewProp_ClusterType_Underlying = { "UnderlyingType", nullptr, (EPropertyFlags)0x0000000000000000, UECodeGen_Private::EPropertyGenFlags::Byte, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, 0, nullptr, METADATA_PARAMS(nullptr, 0) };
 #if WITH_METADATA
 	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_AStarCluster_Statics::NewProp_ClusterType_MetaData[] = {
@@ -505,9 +488,6 @@ template<> APS_ALPHA_API UScriptStruct* StaticStruct<FStarClusterModel>()
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AStarCluster_Statics::NewProp_StarClusterSize,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AStarCluster_Statics::NewProp_Stars_Inner,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AStarCluster_Statics::NewProp_Stars,
-		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AStarCluster_Statics::NewProp_StarsModel_ValueProp,
-		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AStarCluster_Statics::NewProp_StarsModel_Key_KeyProp,
-		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AStarCluster_Statics::NewProp_StarsModel,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AStarCluster_Statics::NewProp_ClusterType_Underlying,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AStarCluster_Statics::NewProp_ClusterType,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AStarCluster_Statics::NewProp_StarAmount,
@@ -565,9 +545,9 @@ template<> APS_ALPHA_API UScriptStruct* StaticStruct<FStarClusterModel>()
 		{ FStarClusterModel::StaticStruct, Z_Construct_UScriptStruct_FStarClusterModel_Statics::NewStructOps, TEXT("StarClusterModel"), &Z_Registration_Info_UScriptStruct_StarClusterModel, CONSTRUCT_RELOAD_VERSION_INFO(FStructReloadVersionInfo, sizeof(FStarClusterModel), 2205410493U) },
 	};
 	const FClassRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarCluster_h_Statics::ClassInfo[] = {
-		{ Z_Construct_UClass_AStarCluster, AStarCluster::StaticClass, TEXT("AStarCluster"), &Z_Registration_Info_UClass_AStarCluster, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(AStarCluster), 685272071U) },
+		{ Z_Construct_UClass_AStarCluster, AStarCluster::StaticClass, TEXT("AStarCluster"), &Z_Registration_Info_UClass_AStarCluster, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(AStarCluster), 241002083U) },
 	};
-	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarCluster_h_3971180589(TEXT("/Script/APS_ALPHA"),
+	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarCluster_h_619465721(TEXT("/Script/APS_ALPHA"),
 		Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarCluster_h_Statics::ClassInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarCluster_h_Statics::ClassInfo),
 		Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarCluster_h_Statics::ScriptStructInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarCluster_h_Statics::ScriptStructInfo),
 		nullptr, 0);

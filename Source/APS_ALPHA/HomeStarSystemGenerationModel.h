@@ -6,7 +6,7 @@
 
 USTRUCT(BlueprintType)
 struct FHomeStarSystemGenerationModel :
-    public FStarSystemGenerationModel
+    public FStarSystemModel
 {
     GENERATED_BODY()
 

@@ -12,12 +12,12 @@ void EmptyLinkFunctionForGeneratedCodeStarGenerationModel() {}
 	APS_ALPHA_API UEnum* Z_Construct_UEnum_APS_ALPHA_ESpectralClass();
 	APS_ALPHA_API UEnum* Z_Construct_UEnum_APS_ALPHA_ESpectralType();
 	APS_ALPHA_API UEnum* Z_Construct_UEnum_APS_ALPHA_EStellarType();
-	APS_ALPHA_API UScriptStruct* Z_Construct_UScriptStruct_FCelestialGenerationModel();
+	APS_ALPHA_API UScriptStruct* Z_Construct_UScriptStruct_FCelestialBodyModel();
 	APS_ALPHA_API UScriptStruct* Z_Construct_UScriptStruct_FStarModel();
 	UPackage* Z_Construct_UPackage__Script_APS_ALPHA();
 // End Cross Module References
 
-static_assert(std::is_polymorphic<FStarModel>() == std::is_polymorphic<FCelestialGenerationModel>(), "USTRUCT FStarModel cannot be polymorphic unless super FCelestialGenerationModel is polymorphic");
+static_assert(std::is_polymorphic<FStarModel>() == std::is_polymorphic<FCelestialBodyModel>(), "USTRUCT FStarModel cannot be polymorphic unless super FCelestialBodyModel is polymorphic");
 
 	static FStructRegistrationInfo Z_Registration_Info_UScriptStruct_StarModel;
 class UScriptStruct* FStarModel::StaticStruct()
@@ -187,7 +187,7 @@ template<> APS_ALPHA_API UScriptStruct* StaticStruct<FStarModel>()
 	};
 	const UECodeGen_Private::FStructParams Z_Construct_UScriptStruct_FStarModel_Statics::ReturnStructParams = {
 		(UObject* (*)())Z_Construct_UPackage__Script_APS_ALPHA,
-		Z_Construct_UScriptStruct_FCelestialGenerationModel,
+		Z_Construct_UScriptStruct_FCelestialBodyModel,
 		&NewStructOps,
 		"StarModel",
 		sizeof(FStarModel),
@@ -211,9 +211,9 @@ template<> APS_ALPHA_API UScriptStruct* StaticStruct<FStarModel>()
 		static const FStructRegisterCompiledInInfo ScriptStructInfo[];
 	};
 	const FStructRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarGenerationModel_h_Statics::ScriptStructInfo[] = {
-		{ FStarModel::StaticStruct, Z_Construct_UScriptStruct_FStarModel_Statics::NewStructOps, TEXT("StarModel"), &Z_Registration_Info_UScriptStruct_StarModel, CONSTRUCT_RELOAD_VERSION_INFO(FStructReloadVersionInfo, sizeof(FStarModel), 3171828587U) },
+		{ FStarModel::StaticStruct, Z_Construct_UScriptStruct_FStarModel_Statics::NewStructOps, TEXT("StarModel"), &Z_Registration_Info_UScriptStruct_StarModel, CONSTRUCT_RELOAD_VERSION_INFO(FStructReloadVersionInfo, sizeof(FStarModel), 570580683U) },
 	};
-	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarGenerationModel_h_1494247952(TEXT("/Script/APS_ALPHA"),
+	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarGenerationModel_h_2749969237(TEXT("/Script/APS_ALPHA"),
 		nullptr, 0,
 		Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarGenerationModel_h_Statics::ScriptStructInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarGenerationModel_h_Statics::ScriptStructInfo),
 		nullptr, 0);

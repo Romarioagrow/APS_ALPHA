@@ -130,9 +130,9 @@ void EmptyLinkFunctionForGeneratedCodeGalaxy() {}
 		static const FClassRegisterCompiledInInfo ClassInfo[];
 	};
 	const FClassRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_Galaxy_h_Statics::ClassInfo[] = {
-		{ Z_Construct_UClass_AGalaxy, AGalaxy::StaticClass, TEXT("AGalaxy"), &Z_Registration_Info_UClass_AGalaxy, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(AGalaxy), 3739704838U) },
+		{ Z_Construct_UClass_AGalaxy, AGalaxy::StaticClass, TEXT("AGalaxy"), &Z_Registration_Info_UClass_AGalaxy, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(AGalaxy), 1922305871U) },
 	};
-	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_Galaxy_h_2955646351(TEXT("/Script/APS_ALPHA"),
+	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_Galaxy_h_1627124706(TEXT("/Script/APS_ALPHA"),
 		Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_Galaxy_h_Statics::ClassInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_Galaxy_h_Statics::ClassInfo),
 		nullptr, 0,
 		nullptr, 0);

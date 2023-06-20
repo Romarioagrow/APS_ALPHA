@@ -44,8 +44,9 @@ struct FPlanetData {
 		UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Mode")
 			double OrbitRadius;
 
-		UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Model")
-			FPlanetGenerationModel PlanetModel;
+		//UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Model")
+			//FPlanetModel PlanetModel;
+			TSharedPtr<FPlanetModel> PlanetModel;
 
 	FPlanetData()
 	{
@@ -53,7 +54,7 @@ struct FPlanetData {
 		OrbitRadius = 0.0;
 	}
 
-	FPlanetData(int PlanetOrder, double OrbitRadius, FPlanetGenerationModel PlanetModel)
+	FPlanetData(int PlanetOrder, double OrbitRadius, TSharedPtr<FPlanetModel> PlanetModel)
 	{
 		this->PlanetOrder = PlanetOrder;
 		this->OrbitRadius = OrbitRadius;
@@ -62,7 +63,7 @@ struct FPlanetData {
 };
 
 USTRUCT(BlueprintType)
-struct FPlanetarySystemGenerationModel :
+struct FPlanetarySystemModel :
     public FGenerationModel
 {
     GENERATED_BODY()
@@ -84,8 +85,8 @@ struct FPlanetarySystemGenerationModel :
 	UPROPERTY(VisibleAnywhere)
 		FName FullSpectralName;
 	
-	UPROPERTY(VisibleAnywhere)
-		TArray<FPlanetData> PlanetsList;
+	//UPROPERTY(VisibleAnywhere)
+		TArray<TSharedPtr<FPlanetData>> PlanetsList;
 
 	/// TODO: To one struct
 	UPROPERTY(VisibleAnywhere, Category = "Zones")

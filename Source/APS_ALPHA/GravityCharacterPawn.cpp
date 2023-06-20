@@ -40,6 +40,9 @@ AGravityCharacterPawn::AGravityCharacterPawn()
 	// Создайте Arrow компонент
 	ArrowComponent = CreateDefaultSubobject<UArrowComponent>(TEXT("ArrowComponent"));
 	ArrowComponent->SetupAttachment(CapsuleComponent);
+
+	// Set Gravity Collision Profile
+	CapsuleComponent->SetCollisionResponseToChannel(ECollisionChannel::ECC_EngineTraceChannel3 , ECollisionResponse::ECR_Ignore);
 }
 
 
@@ -78,6 +81,9 @@ void AGravityCharacterPawn::Tick(const float DeltaTime)
 	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Purple, FString::Printf(TEXT("LinearDamping: %f"), LinearDamping));
 	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Yellow, FString::Printf(TEXT("CharacterJumpForce: %f"), CharacterJumpForce));
 	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Yellow, FString::Printf(TEXT("CharacterMovementForce: %f"), CharacterMovementForce));
+
+	FString LocationString = GetActorLocation().ToString();
+	GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, FString::Printf(TEXT("PlayerCharacter Location: %s"), *LocationString));
 }
 
 // Called to bind functionality to input
@@ -184,7 +190,7 @@ void AGravityCharacterPawn::OnBeginOverlap(UPrimitiveComponent* OverlappedCompon
 	{
 		if (OtherActor->GetClass()->ImplementsInterface(UGravitySource::StaticClass()))
 		{			
-			SwitchGravityType(OtherActor); /// 	UpdateGravityType(); ?
+			SwitchGravityType(OtherActor); 
 		}
 	}
 }
@@ -221,15 +227,16 @@ void AGravityCharacterPawn::UpdateGravityType()
 
 	if (OverlappingActorsWithTag.Num() > 0)
 	{
-		AActor* FirstGravityActor = OverlappingActorsWithTag[0];
-		GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Red, FString::Printf(TEXT("FirstGravityActor : %s"), *FirstGravityActor->GetName()));
+		//AActor* LastGravityActor = OverlappingActorsWithTag[0];
+		AActor* LastGravityActor = OverlappingActorsWithTag[OverlappingActorsWithTag.Num()-1];
+		GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Red, FString::Printf(TEXT("LastGravityActor : %s"), *LastGravityActor->GetName()));
 
 		// switch gravity to first 
-		SwitchGravityType(FirstGravityActor); /// To last ? 
+		SwitchGravityType(LastGravityActor);
 	}
 	else
 	{
-		GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Red, FString::Printf(TEXT("FirstGravityActor 0")));
+		GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Red, FString::Printf(TEXT("LastGravityActor 0")));
 		CurrentGravityType = EGravityType::ZeroG;
 		UpdateGravityPhysicParams();
 	}

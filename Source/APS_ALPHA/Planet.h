@@ -13,12 +13,14 @@
 #include "CelestialBody.h"
 #include "Planet.generated.h"
 
+
 // Forward declaration of AMoon
 class AMoon;
 class AStar;
 /**
  * 
  */
+
 UCLASS()
 class APS_ALPHA_API APlanet : public AOrbitalBody, public IPlanetaryEnvironment
 {
@@ -27,20 +29,24 @@ class APS_ALPHA_API APlanet : public AOrbitalBody, public IPlanetaryEnvironment
 public:
 	APlanet();
 
-	UPROPERTY(VisibleAnywhere, Category = "Components")
-		USphereComponent* PlanetaryZone;// = NewObject<USphereComponent>(this);
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Gravity")
+		USphereComponent* GravityCollisionZone;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet")
+		TArray<FOrbitInfo> Orbits;
+
+	UPROPERTY(VisibleAnywhere, Category = "Planet")
+		USphereComponent* PlanetaryZone;
 
 	UPROPERTY(VisibleAnywhere, Category = "Planet")
 		int PlanetRadiusKM;
-
+	
 private:
 	UPROPERTY(VisibleAnywhere, Category = "Planet")
 		AStar* ParnetStar;
 	
 	UPROPERTY(VisibleAnywhere, Category = "Planet")
 		EPlanetType PlanetType;
-	
-	
 
 	UPROPERTY(VisibleAnywhere, Category = "Planet")
 		EPlanetaryZoneType PlanetZone;
@@ -60,8 +66,7 @@ private:
 	UPROPERTY(VisibleAnywhere, Category = "Planet")
 		double PlanetGravityStrength{ 0 };
 
-	UPROPERTY(VisibleAnywhere, Category = "Planet")
-		TArray<FMoonData> MoonsList;
+		TArray<TSharedPtr<FMoonData>> MoonsList;
 
 private:
 	TArray<AMoon*> Moons;
@@ -74,14 +79,18 @@ public:
 	void AddMoon(AMoon* Moon);
 
 	void SetPlanetType(EPlanetType PlanetType);
+
 	void SetPlanetZone(EPlanetaryZoneType PlanetZone);
+
 	void SetPlanetDensity(double PlanetDensity);
+
 	void SetPlanetGravityStrength(double PlanetGravityStrength);
+
 	void SetTemperature(double Temperature);
+
 	void SetAmountOfMoons(int AmountOfMoons);
 
-	void SetMoonsList(TArray<FMoonData> NewAmountOfMoons);
+	void SetMoonsList(TArray<TSharedPtr<FMoonData>> NewAmountOfMoons);
 
 	void SetParentStar(AStar* Star);
-
 };

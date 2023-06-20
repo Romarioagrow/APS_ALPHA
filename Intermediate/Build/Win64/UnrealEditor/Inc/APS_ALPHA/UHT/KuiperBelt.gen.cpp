@@ -79,9 +79,9 @@ void EmptyLinkFunctionForGeneratedCodeKuiperBelt() {}
 		static const FClassRegisterCompiledInInfo ClassInfo[];
 	};
 	const FClassRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_KuiperBelt_h_Statics::ClassInfo[] = {
-		{ Z_Construct_UClass_AKuiperBelt, AKuiperBelt::StaticClass, TEXT("AKuiperBelt"), &Z_Registration_Info_UClass_AKuiperBelt, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(AKuiperBelt), 3080700162U) },
+		{ Z_Construct_UClass_AKuiperBelt, AKuiperBelt::StaticClass, TEXT("AKuiperBelt"), &Z_Registration_Info_UClass_AKuiperBelt, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(AKuiperBelt), 2546312864U) },
 	};
-	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_KuiperBelt_h_3815819860(TEXT("/Script/APS_ALPHA"),
+	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_KuiperBelt_h_1476345243(TEXT("/Script/APS_ALPHA"),
 		Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_KuiperBelt_h_Statics::ClassInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_KuiperBelt_h_Statics::ClassInfo),
 		nullptr, 0,
 		nullptr, 0);

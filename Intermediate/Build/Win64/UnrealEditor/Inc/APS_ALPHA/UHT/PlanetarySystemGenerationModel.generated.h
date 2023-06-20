@@ -28,13 +28,13 @@ template<> APS_ALPHA_API UScriptStruct* StaticStruct<struct FZoneRadius>();
 
 template<> APS_ALPHA_API UScriptStruct* StaticStruct<struct FPlanetData>();
 
-#define FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_PlanetarySystemGenerationModel_h_68_GENERATED_BODY \
-	friend struct Z_Construct_UScriptStruct_FPlanetarySystemGenerationModel_Statics; \
+#define FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_PlanetarySystemGenerationModel_h_69_GENERATED_BODY \
+	friend struct Z_Construct_UScriptStruct_FPlanetarySystemModel_Statics; \
 	APS_ALPHA_API static class UScriptStruct* StaticStruct(); \
 	typedef FGenerationModel Super;
 
 
-template<> APS_ALPHA_API UScriptStruct* StaticStruct<struct FPlanetarySystemGenerationModel>();
+template<> APS_ALPHA_API UScriptStruct* StaticStruct<struct FPlanetarySystemModel>();
 
 #undef CURRENT_FILE_ID
 #define CURRENT_FILE_ID FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_PlanetarySystemGenerationModel_h

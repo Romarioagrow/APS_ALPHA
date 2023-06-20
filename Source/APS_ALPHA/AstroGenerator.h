@@ -10,6 +10,11 @@
 #include "GalaxyType.h"
 #include "GalaxyClass.h"
 #include "HomeSystemPosition.h"
+#include "CharSpawnPlace.h"
+#include "SpaceStation.h"
+#include "Spaceship.h"
+#include "SpaceShipyard.h"
+#include "SpaceHeadquarters.h"
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
@@ -24,7 +29,7 @@ public:
 	AAstroGenerator();
 
 protected:
-	
+	void GenerateHomeStarSystem();
 
 	virtual void BeginPlay() override;
 
@@ -49,10 +54,27 @@ protected:
 	
 	UPROPERTY(VisibleAnywhere, Category = "Generated Astro Actros")
 		AStarCluster* GeneratedStarCluster;
+	
+	UPROPERTY(VisibleAnywhere, Category = "Generated Astro Actros")
+		AStarSystem* GeneratedHomeStarSystem;
+	
+	UPROPERTY(VisibleAnywhere, Category = "Generated Astro Actros")
+		APlanet* HomePlanet;
+	
+	UPROPERTY(VisibleAnywhere, Category = "Generated Tech Actros")
+		ASpaceHeadquarters* HomeSpaceHeadquarters;
+	
+	UPROPERTY(VisibleAnywhere, Category = "Generated Tech Actros")
+		ASpaceStation* HomeSpaceStation;
+	
+	UPROPERTY(VisibleAnywhere, Category = "Generated Tech Actros")
+		ASpaceship* HomeSpaceship;
+	
+	UPROPERTY(VisibleAnywhere, Category = "Generated Tech Actros")
+		ASpaceShipyard* HomeSpaceShipyard;
 
 public:
-	UPROPERTY(EditAnywhere, Category = "Home System")
-		double StarSystemDeadZone { 1 };
+	TMap<int32, TSharedPtr<FStarModel>> StarIndexModelMap;
 
 	/// BASE ASTRO GENERATOR
 	UPROPERTY(EditAnywhere, Category = "Generation Params")
@@ -65,6 +87,9 @@ public:
 		EAstroGenerationLevel AstroGenerationLevel { EAstroGenerationLevel::StarCluster };
 	
 	/// STAR SYSTEM GENERATOR
+	UPROPERTY(EditAnywhere, Category = "Home System")
+		double StarSystemDeadZone { 1 };
+
 	UPROPERTY(EditAnywhere, Category = "Home System")
 		EHomeSystemPosition HomeSystemPosition;
 	
@@ -117,9 +142,6 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Star Cluster")
 		bool bGenerateRandomCluster { false };
 
-	/*UPROPERTY(EditAnywhere, Category = "Star Cluster")
-		bool bGenerateFullScaledStarCluster { false };*/
-
 	UPROPERTY(EditAnywhere, Category = "Star Cluster", meta = (EditCondition = "!bGenerateRandomCluster"))
 		EStarClusterSize StarClusterSize;
 
@@ -141,8 +163,32 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Galaxy")
 		double GalaxyStarDensity{ 10.0 };
 
-	UPROPERTY(EditAnywhere, Category = "Character Spawn")
+	UPROPERTY(EditAnywhere, Category = "Player Spawn")
 		bool bCharacterSpawn{ true };
+	
+	UPROPERTY(EditAnywhere, Category = "Player Spawn")
+		bool bCharacterSpawnAtRandomPlanet{ true };
+	
+	UPROPERTY(EditAnywhere, Category = "Player Spawn")
+		ECharSpawnPlace CharSpawnPlace;
+	
+	UPROPERTY(EditAnywhere, Category = "Player Spawn")
+		EOrbitHeight HomeSpaceStationOrbitHeight;
+	
+	UPROPERTY(EditAnywhere, Category = "Player Spawn")
+		TSubclassOf<class AControlledPawn> BP_CharacterClass;
+	
+	UPROPERTY(EditAnywhere, Category = "Player Spawn")
+		TSubclassOf<class ASpaceStation> BP_HomeSpaceStation;
+	
+	UPROPERTY(EditAnywhere, Category = "Player Spawn")
+		TSubclassOf<class ASpaceship> BP_HomeSpaceship;
+	
+	UPROPERTY(EditAnywhere, Category = "Player Spawn")
+		TSubclassOf<class ASpaceShipyard> BP_HomeSpaceShipyard;
+	
+	UPROPERTY(EditAnywhere, Category = "Player Spawn")
+		TSubclassOf<class ASpaceHeadquarters> BP_HomeSpaceHeadquarters;
 
 	UPROPERTY()
 		TArray<AStarSystem*> GeneratedStarSystems;
@@ -192,9 +238,6 @@ public:
 	UPROPERTY(EditAnywhere, Category = "AstroObject BP")
 		TSubclassOf<class AMoon> BP_MoonClass;
 	
-	//// функция генерации общей звездной системы
-	//void GenerateStarSystem();
-
 	EStarClusterType GetRandomClusterType();
 
 	int GetRandomValueFromStarAmountRange(EStarClusterType ClusterType);

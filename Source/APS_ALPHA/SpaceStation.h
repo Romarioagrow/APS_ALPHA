@@ -12,7 +12,7 @@
  * 
  */
 UCLASS()
-class APS_ALPHA_API ASpaceStation : public ATechActor, public IGravitySource
+class APS_ALPHA_API ASpaceStation : /*public AGravityStation*/ public ATechActor, public IGravitySource /// 
 {
 	GENERATED_BODY()
 	
@@ -20,7 +20,13 @@ public:
 	ASpaceStation();
 
 protected:
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-		USphereComponent* SphereCollisionComponent;
+	
 
+public:
+	/// TO parent comp
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+		USceneComponent* SpawnPoint;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Gravity")
+		USphereComponent* GravityCollisionZone;
 };

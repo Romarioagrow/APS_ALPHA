@@ -16,6 +16,8 @@ class APS_ALPHA_API AOrbitalBody : public ACelestialBody, public IGravitySource
 	GENERATED_BODY()
 
 public:
+	UPROPERTY(VisibleAnywhere, Category = "Planet")
+		TArray<FVector> LagrangePoints;
 
 private:
 	UPROPERTY(VisibleAnywhere, Category = "Orbital Body")

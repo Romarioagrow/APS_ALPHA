@@ -1,6 +1,6 @@
 #include "PlanetGenerationModel.h"
 
-FPlanetGenerationModel::FPlanetGenerationModel()
+FPlanetModel::FPlanetModel()
 {
 	this->AmountOfMoons = 0;
 	this->Temperature = 0;

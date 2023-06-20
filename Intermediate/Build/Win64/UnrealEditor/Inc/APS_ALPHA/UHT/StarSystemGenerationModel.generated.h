@@ -15,12 +15,12 @@ PRAGMA_DISABLE_DEPRECATION_WARNINGS
 #define APS_ALPHA_StarSystemGenerationModel_generated_h
 
 #define FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarSystemGenerationModel_h_12_GENERATED_BODY \
-	friend struct Z_Construct_UScriptStruct_FStarSystemGenerationModel_Statics; \
+	friend struct Z_Construct_UScriptStruct_FStarSystemModel_Statics; \
 	APS_ALPHA_API static class UScriptStruct* StaticStruct(); \
 	typedef FGenerationModel Super;
 
 
-template<> APS_ALPHA_API UScriptStruct* StaticStruct<struct FStarSystemGenerationModel>();
+template<> APS_ALPHA_API UScriptStruct* StaticStruct<struct FStarSystemModel>();
 
 #undef CURRENT_FILE_ID
 #define CURRENT_FILE_ID FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_StarSystemGenerationModel_h

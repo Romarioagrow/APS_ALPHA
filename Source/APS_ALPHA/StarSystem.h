@@ -26,9 +26,12 @@ private:
 
 	UPROPERTY()
 		TArray<AStar*> Stars;
-
+	
 public:
 	AStarSystem();
+
+	UPROPERTY(VisibleAnywhere, Category = "Star System")
+		AStar* MainStar;
 
 	void SetStarsAmount(int StarsAmount);
 

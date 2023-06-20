@@ -3,27 +3,38 @@
 #include "PlanetType.h"
 #include "PlanetaryZoneType.h"
 #include "MoonGenerationModel.h"
+#include "OrbitHeight.h"
 
 #include "OrbitalBodyGenerationModel.h"
 #include "CoreMinimal.h"
 #include "PlanetGenerationModel.generated.h"
 
+USTRUCT(BlueprintType)
+struct FOrbitInfo
+{
+	GENERATED_BODY()
 
+		UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet")
+		EOrbitHeight OrbitHeightType;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet")
+		double OrbitHeight;
+};
 
 USTRUCT(BlueprintType)
 struct FMoonData
 {
-
 	GENERATED_USTRUCT_BODY()
 
-		UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Mode")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Mode")
 		int MoonOrder;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Mode")
 		double OrbitRadius;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Model")
-		FMoonGenerationModel MoonModel;
+	//UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Model")
+		TSharedPtr<FMoonModel> MoonModel;
+		//FMoonModel MoonModel;
 
 	FMoonData()
 	{
@@ -31,7 +42,7 @@ struct FMoonData
 		OrbitRadius = 0.0;
 	}
 
-	FMoonData(int MoonOrder, double OrbitRadius, FMoonGenerationModel MoonModel)
+	FMoonData(int MoonOrder, double OrbitRadius, TSharedPtr<FMoonModel> MoonModel)
 	{
 		this->MoonOrder = MoonOrder;
 		this->OrbitRadius = OrbitRadius;
@@ -40,12 +51,13 @@ struct FMoonData
 };
 
 USTRUCT(BlueprintType)
-struct FPlanetGenerationModel :
-    public FOrbitalBodyGenerationModel
+struct FPlanetModel : public FOrbitalBodyModel
 {
 	GENERATED_BODY()
 
-		FPlanetGenerationModel();
+		FPlanetModel();
+
+		TArray<FOrbitInfo> Orbits;
 
 		// Тип планеты 
 		UPROPERTY(VisibleAnywhere, Category = "Planet")
@@ -68,8 +80,8 @@ struct FPlanetGenerationModel :
 		UPROPERTY(VisibleAnywhere, Category = "Planet")
 			double PlanetGravityStrength { 0 };
 
-		UPROPERTY(VisibleAnywhere)
-			TArray<FMoonData> MoonsList;
+		//UPROPERTY(VisibleAnywhere)
+			TArray<TSharedPtr<FMoonData>> MoonsList;
 		
 			TPair<double, double> MoonOrbitsRange;
 
