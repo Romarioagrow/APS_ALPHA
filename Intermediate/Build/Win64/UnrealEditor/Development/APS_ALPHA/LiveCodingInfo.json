@@ -126,6 +126,7 @@
 			"AstonomicalBody.cpp.obj",
 			"AstonomicalSystem.cpp.obj",
 			"AstroActor.cpp.obj",
+			"AstroGenerator.cpp.obj",
 			"AstroLocation.cpp.obj",
 			"AstroObject.cpp.obj",
 			"Atmosphere.cpp.obj",
@@ -182,8 +183,7 @@
 			"PlanetGenerator.cpp.obj",
 			"PlanetGravityActor.cpp.obj",
 			"PlanetOrbit.cpp.obj",
-			"SpaceCharacter.cpp.obj",
-			"AstroGenerator.cpp.obj"
+			"SpaceCharacter.cpp.obj"
 		],
 		"Module.APS_ALPHA.4_of_4.cpp.obj": [
 			"Spacecraft.cpp.obj",
@@ -191,6 +191,7 @@
 			"Spaceship.cpp.obj",
 			"SpaceshipGravityActor.cpp.obj",
 			"SpaceShipyard.cpp.obj",
+			"SpaceStation.cpp.obj",
 			"Star.cpp.obj",
 			"StarCluster.cpp.obj",
 			"StarClusterGenerator.cpp.obj",
@@ -207,8 +208,7 @@
 			"TechObject.cpp.obj",
 			"UniverseProceduralGenerator.cpp.obj",
 			"VehicleControlling.cpp.obj",
-			"WorldActor.cpp.obj",
-			"SpaceStation.cpp.obj"
+			"WorldActor.cpp.obj"
 		]
 	}
 }
