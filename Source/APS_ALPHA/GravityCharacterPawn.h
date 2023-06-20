@@ -12,14 +12,15 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Camera/CameraComponent.h"
 #include "GravityTypeEnum.h"
-//#include "Spaceship.h"
+//#include "PilotingVehicle.h"
 #include <GameFramework/SpringArmComponent.h>
 
 #include "CoreMinimal.h"
 #include "GameFramework/Pawn.h"
 #include "GravityCharacterPawn.generated.h"
 
-class ASpaceship;
+class ASpaceship;	
+class APilotingVehicle;
 
 UCLASS()
 class APS_ALPHA_API AGravityCharacterPawn : public AControlledPawn, public IGravityPawn
@@ -43,7 +44,7 @@ public:
 
 	void CharacterAction();
 
-	void ReleaseControl();
+	void ReleaseControl(APilotingVehicle* PilotingVehicle);
 
 /**
  * @brief Character Basic Components

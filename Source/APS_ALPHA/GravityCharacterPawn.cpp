@@ -163,12 +163,23 @@ void AGravityCharacterPawn::CharacterAction()
 
 }
 
-void AGravityCharacterPawn::ReleaseControl()
+void AGravityCharacterPawn::ReleaseControl(APilotingVehicle* PilotingVehicle)
 {
 	GEngine->AddOnScreenDebugMessage(-1, 10.0f, FColor::Orange, FString::Printf(TEXT("AGravityCharacterPawn ReleaseControl")));
-	//GEngine->AddOnScreenDebugMessage(-1, 10.0f, FColor::Orange, FString::Printf(TEXT("AGravityCharacterPawn ReleaseControl")));
-	//CurrentSpaceship
 	CurrentGravityType = EGravityType::OnShip;
+
+	// Cast the PilotingVehicle to ASpaceship
+	ASpaceship* Spaceship = Cast<ASpaceship>(PilotingVehicle);
+
+	if (Spaceship)
+	{
+		CurrentSpaceship = Spaceship;
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Failed to cast APilotingVehicle to ASpaceship"));
+	}
+
 }
 
 void AGravityCharacterPawn::UpdateGravity()

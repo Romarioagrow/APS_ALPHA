@@ -50,7 +50,7 @@ void APilotingVehicle::ReleaseControl()
                 // Re-possess the previous pawn
                 PlayerController->Possess(PreviousGravityPawn);
 
-                PreviousGravityPawn->ReleaseControl();
+                PreviousGravityPawn->ReleaseControl(this);
 
                 // Detach the pilot from the PilotChair of the spaceship
                 Pilot->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
