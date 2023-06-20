@@ -12,12 +12,14 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Camera/CameraComponent.h"
 #include "GravityTypeEnum.h"
-#include "Spaceship.h"
+//#include "Spaceship.h"
 #include <GameFramework/SpringArmComponent.h>
 
 #include "CoreMinimal.h"
 #include "GameFramework/Pawn.h"
 #include "GravityCharacterPawn.generated.h"
+
+class ASpaceship;
 
 UCLASS()
 class APS_ALPHA_API AGravityCharacterPawn : public AControlledPawn, public IGravityPawn
@@ -45,6 +47,8 @@ public:
  * @brief Character Basic Components
 */
 public:
+	bool isAllowedToControlSpaceship { true }; /// false!
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 		ASpaceship* CurrentSpaceship;
 

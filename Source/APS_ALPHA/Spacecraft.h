@@ -14,4 +14,5 @@ class APS_ALPHA_API ASpacecraft : public APilotingVehicle
 {
 	GENERATED_BODY()
 	
+
 };

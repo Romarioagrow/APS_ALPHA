@@ -82,17 +82,15 @@ void AGravityCharacterPawn::Tick(const float DeltaTime)
 	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Yellow, FString::Printf(TEXT("CharacterJumpForce: %f"), CharacterJumpForce));
 	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Yellow, FString::Printf(TEXT("CharacterMovementForce: %f"), CharacterMovementForce));
 
+	// Char Location
 	FString LocationString = GetActorLocation().ToString();
 	GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, FString::Printf(TEXT("PlayerCharacter Location: %s"), *LocationString));
 
-
+	// Current Ship
 	if (CurrentSpaceship) {
 		FString SpaceshipName = CurrentSpaceship->GetName();
 		GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Purple, FString::Printf(TEXT("Current Spaceship: %s"), *SpaceshipName));
 	}
-	/*else {
-		GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, TEXT("CurrentSpaceship is null."));
-	}*/
 }
 
 // Called to bind functionality to input
@@ -122,9 +120,32 @@ void AGravityCharacterPawn::CharacterAction()
 {
 	GEngine->AddOnScreenDebugMessage(-1, 1.0f, FColor::Green, FString::Printf(TEXT("CharacterAction!")));
 
-	TArray<AActor*> overlappingActors;
-	GetOverlappingActors(overlappingActors, TSubclassOf<AActor>());  // get all types of actors
+	/*TArray<AActor*> overlappingActors;
+	GetOverlappingActors(overlappingActors, TSubclassOf<AActor>()); */ // get all types of actors
 
+
+	if (CurrentGravityType == EGravityType::OnShip)
+	{
+		if (CurrentSpaceship && isAllowedToControlSpaceship) 
+		{
+			APlayerController* PlayerController = GetWorld()->GetFirstPlayerController();
+			if (PlayerController)
+			{
+				CurrentSpaceship->TakeControl(this);
+				// Possess the spaceship
+				PlayerController->Possess(CurrentSpaceship);
+
+				// Attach the pawn to the PilotChair of the spaceship
+				FAttachmentTransformRules AttachmentRules(EAttachmentRule::SnapToTarget, true);
+				AttachToComponent(CurrentSpaceship->PilotChair, AttachmentRules);
+
+				// Disable pawn's input and movement
+				DisableInput(PlayerController);
+				SetActorEnableCollision(false);
+				SetActorTickEnabled(false);
+			}
+		}
+	}
 	//for (AActor* actor : overlappingActors)
 	//{
 	//	if (actor->GetClass()->ImplementsInterface(UIVehicleControlling::StaticClass()))
@@ -551,6 +572,10 @@ void AGravityCharacterPawn::UpdateShipGravity()
 	// Установить новое вращение Realtive Yaw для Arrow Component from CameraSpringArmRotation
 	FRotator NewArrowRotation(0.0f, CameraSpringArmRotation.Yaw, 0.0f);
 	ArrowComponent->SetRelativeRotation(NewArrowRotation);
+
+
+
+
 }
 
 /**
