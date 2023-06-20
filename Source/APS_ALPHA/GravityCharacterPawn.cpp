@@ -84,6 +84,15 @@ void AGravityCharacterPawn::Tick(const float DeltaTime)
 
 	FString LocationString = GetActorLocation().ToString();
 	GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, FString::Printf(TEXT("PlayerCharacter Location: %s"), *LocationString));
+
+
+	if (CurrentSpaceship) {
+		FString SpaceshipName = CurrentSpaceship->GetName();
+		GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Purple, FString::Printf(TEXT("Current Spaceship: %s"), *SpaceshipName));
+	}
+	/*else {
+		GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, TEXT("CurrentSpaceship is null."));
+	}*/
 }
 
 // Called to bind functionality to input
@@ -112,6 +121,24 @@ void AGravityCharacterPawn::SetupPlayerInputComponent(UInputComponent* PlayerInp
 void AGravityCharacterPawn::CharacterAction()
 {
 	GEngine->AddOnScreenDebugMessage(-1, 1.0f, FColor::Green, FString::Printf(TEXT("CharacterAction!")));
+
+	TArray<AActor*> overlappingActors;
+	GetOverlappingActors(overlappingActors, TSubclassOf<AActor>());  // get all types of actors
+
+	//for (AActor* actor : overlappingActors)
+	//{
+	//	if (actor->GetClass()->ImplementsInterface(UIVehicleControlling::StaticClass()))
+	//	{
+	//		// This actor implements the IVehicleControlling interface.
+	//		// You can cast it to the interface type and call methods on it, like so:
+
+	//		IIVehicleControlling* vehicleController = Cast<IIVehicleControlling>(actor);
+	//		if (vehicleController)
+	//		{
+	//			// call methods on vehicleController here
+	//		}
+	//	}
+	//}
 
 }
 
@@ -266,6 +293,16 @@ void AGravityCharacterPawn::SwitchGravityType(AActor* GravitySourceActor)
 	else if (GravitySourceActor->IsA(ASpaceship::StaticClass()))
 	{
 		CurrentGravityType = EGravityType::OnShip;
+		ASpaceship* Spaceship = Cast<ASpaceship>(GravitySourceActor);
+		if (Spaceship != nullptr)
+		{
+			CurrentSpaceship = Spaceship;
+		}
+	}
+	// Remove ship
+	if (CurrentGravityType != EGravityType::OnShip)
+	{
+		CurrentSpaceship = nullptr;
 	}
 
 	// switch gravity param

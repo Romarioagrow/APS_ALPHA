@@ -12,6 +12,7 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Camera/CameraComponent.h"
 #include "GravityTypeEnum.h"
+#include "Spaceship.h"
 #include <GameFramework/SpringArmComponent.h>
 
 #include "CoreMinimal.h"
@@ -44,6 +45,9 @@ public:
  * @brief Character Basic Components
 */
 public:
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+		ASpaceship* CurrentSpaceship;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 		USceneComponent* RootSceneComponent;
 
