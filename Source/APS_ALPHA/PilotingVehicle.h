@@ -22,5 +22,7 @@ public:
 		AGravityCharacterPawn* Pilot;
 
 	void TakeControl(APawn* Pawn);
+
+	void ReleaseControl();
 	//void TakeControl(APawn* Pawn) final;
 };

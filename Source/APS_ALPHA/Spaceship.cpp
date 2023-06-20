@@ -61,3 +61,10 @@ void ASpaceship::Tick(float DeltaTime)
 	}
 
 }
+
+void ASpaceship::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
+{
+	Super::SetupPlayerInputComponent(PlayerInputComponent);
+
+	PlayerInputComponent->BindAction("ReleaseControl", IE_Pressed, this, &ASpaceship::ReleaseControl);
+}
