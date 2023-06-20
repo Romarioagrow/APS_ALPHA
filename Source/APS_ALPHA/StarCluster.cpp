@@ -11,7 +11,8 @@ AStarCluster::AStarCluster()
 
     StarMeshInstances = CreateDefaultSubobject<UHierarchicalInstancedStaticMeshComponent>(TEXT("StarMeshInstances"));
     RootComponent = Cast<USceneComponent>(StarMeshInstances);
-    RootComponent->SetupAttachment(StarMeshInstances);
+    //RootComponent->SetupAttachment(StarMeshInstances);
+    StarMeshInstances->SetupAttachment(RootComponent);
 
     // Инициализация значений по умолчанию
     StarAmount = 100;
