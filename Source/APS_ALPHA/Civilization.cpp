@@ -3,3 +3,10 @@
 
 #include "Civilization.h"
 
+UCivilization::UCivilization()
+{
+}
+
+FleetDivision::FleetDivision()
+{
+}

@@ -17,6 +17,7 @@ void EmptyLinkFunctionForGeneratedCodeAstroGenerator() {}
 	APS_ALPHA_API UClass* Z_Construct_UClass_APlanet_NoRegister();
 	APS_ALPHA_API UClass* Z_Construct_UClass_APlanetarySystem_NoRegister();
 	APS_ALPHA_API UClass* Z_Construct_UClass_APlanetOrbit_NoRegister();
+	APS_ALPHA_API UClass* Z_Construct_UClass_ASpaceHeadquarters_NoRegister();
 	APS_ALPHA_API UClass* Z_Construct_UClass_ASpaceship_NoRegister();
 	APS_ALPHA_API UClass* Z_Construct_UClass_ASpaceShipyard_NoRegister();
 	APS_ALPHA_API UClass* Z_Construct_UClass_ASpaceStation_NoRegister();
@@ -76,6 +77,14 @@ void EmptyLinkFunctionForGeneratedCodeAstroGenerator() {}
 		static const UECodeGen_Private::FMetaDataPairParam NewProp_GeneratedHomeStarSystem_MetaData[];
 #endif
 		static const UECodeGen_Private::FObjectPropertyParams NewProp_GeneratedHomeStarSystem;
+#if WITH_METADATA
+		static const UECodeGen_Private::FMetaDataPairParam NewProp_HomePlanet_MetaData[];
+#endif
+		static const UECodeGen_Private::FObjectPropertyParams NewProp_HomePlanet;
+#if WITH_METADATA
+		static const UECodeGen_Private::FMetaDataPairParam NewProp_HomeSpaceHeadquarters_MetaData[];
+#endif
+		static const UECodeGen_Private::FObjectPropertyParams NewProp_HomeSpaceHeadquarters;
 #if WITH_METADATA
 		static const UECodeGen_Private::FMetaDataPairParam NewProp_HomeSpaceStation_MetaData[];
 #endif
@@ -259,6 +268,10 @@ void EmptyLinkFunctionForGeneratedCodeAstroGenerator() {}
 		static const UECodeGen_Private::FMetaDataPairParam NewProp_BP_HomeSpaceShipyard_MetaData[];
 #endif
 		static const UECodeGen_Private::FClassPropertyParams NewProp_BP_HomeSpaceShipyard;
+#if WITH_METADATA
+		static const UECodeGen_Private::FMetaDataPairParam NewProp_BP_HomeSpaceHeadquarters_MetaData[];
+#endif
+		static const UECodeGen_Private::FClassPropertyParams NewProp_BP_HomeSpaceHeadquarters;
 		static const UECodeGen_Private::FObjectPropertyParams NewProp_GeneratedStarSystems_Inner;
 #if WITH_METADATA
 		static const UECodeGen_Private::FMetaDataPairParam NewProp_GeneratedStarSystems_MetaData[];
@@ -359,6 +372,20 @@ void EmptyLinkFunctionForGeneratedCodeAstroGenerator() {}
 	};
 #endif
 	const UECodeGen_Private::FObjectPropertyParams Z_Construct_UClass_AAstroGenerator_Statics::NewProp_GeneratedHomeStarSystem = { "GeneratedHomeStarSystem", nullptr, (EPropertyFlags)0x0020080000020001, UECodeGen_Private::EPropertyGenFlags::Object, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(AAstroGenerator, GeneratedHomeStarSystem), Z_Construct_UClass_AStarSystem_NoRegister, METADATA_PARAMS(Z_Construct_UClass_AAstroGenerator_Statics::NewProp_GeneratedHomeStarSystem_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_AAstroGenerator_Statics::NewProp_GeneratedHomeStarSystem_MetaData)) };
+#if WITH_METADATA
+	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_AAstroGenerator_Statics::NewProp_HomePlanet_MetaData[] = {
+		{ "Category", "Generated Astro Actros" },
+		{ "ModuleRelativePath", "AstroGenerator.h" },
+	};
+#endif
+	const UECodeGen_Private::FObjectPropertyParams Z_Construct_UClass_AAstroGenerator_Statics::NewProp_HomePlanet = { "HomePlanet", nullptr, (EPropertyFlags)0x0020080000020001, UECodeGen_Private::EPropertyGenFlags::Object, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(AAstroGenerator, HomePlanet), Z_Construct_UClass_APlanet_NoRegister, METADATA_PARAMS(Z_Construct_UClass_AAstroGenerator_Statics::NewProp_HomePlanet_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_AAstroGenerator_Statics::NewProp_HomePlanet_MetaData)) };
+#if WITH_METADATA
+	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_AAstroGenerator_Statics::NewProp_HomeSpaceHeadquarters_MetaData[] = {
+		{ "Category", "Generated Tech Actros" },
+		{ "ModuleRelativePath", "AstroGenerator.h" },
+	};
+#endif
+	const UECodeGen_Private::FObjectPropertyParams Z_Construct_UClass_AAstroGenerator_Statics::NewProp_HomeSpaceHeadquarters = { "HomeSpaceHeadquarters", nullptr, (EPropertyFlags)0x0020080000020001, UECodeGen_Private::EPropertyGenFlags::Object, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(AAstroGenerator, HomeSpaceHeadquarters), Z_Construct_UClass_ASpaceHeadquarters_NoRegister, METADATA_PARAMS(Z_Construct_UClass_AAstroGenerator_Statics::NewProp_HomeSpaceHeadquarters_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_AAstroGenerator_Statics::NewProp_HomeSpaceHeadquarters_MetaData)) };
 #if WITH_METADATA
 	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_AAstroGenerator_Statics::NewProp_HomeSpaceStation_MetaData[] = {
 		{ "Category", "Generated Tech Actros" },
@@ -705,6 +732,13 @@ void EmptyLinkFunctionForGeneratedCodeAstroGenerator() {}
 	};
 #endif
 	const UECodeGen_Private::FClassPropertyParams Z_Construct_UClass_AAstroGenerator_Statics::NewProp_BP_HomeSpaceShipyard = { "BP_HomeSpaceShipyard", nullptr, (EPropertyFlags)0x0014000000000001, UECodeGen_Private::EPropertyGenFlags::Class, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(AAstroGenerator, BP_HomeSpaceShipyard), Z_Construct_UClass_UClass, Z_Construct_UClass_ASpaceShipyard_NoRegister, METADATA_PARAMS(Z_Construct_UClass_AAstroGenerator_Statics::NewProp_BP_HomeSpaceShipyard_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_AAstroGenerator_Statics::NewProp_BP_HomeSpaceShipyard_MetaData)) };
+#if WITH_METADATA
+	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_AAstroGenerator_Statics::NewProp_BP_HomeSpaceHeadquarters_MetaData[] = {
+		{ "Category", "Player Spawn" },
+		{ "ModuleRelativePath", "AstroGenerator.h" },
+	};
+#endif
+	const UECodeGen_Private::FClassPropertyParams Z_Construct_UClass_AAstroGenerator_Statics::NewProp_BP_HomeSpaceHeadquarters = { "BP_HomeSpaceHeadquarters", nullptr, (EPropertyFlags)0x0014000000000001, UECodeGen_Private::EPropertyGenFlags::Class, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, STRUCT_OFFSET(AAstroGenerator, BP_HomeSpaceHeadquarters), Z_Construct_UClass_UClass, Z_Construct_UClass_ASpaceHeadquarters_NoRegister, METADATA_PARAMS(Z_Construct_UClass_AAstroGenerator_Statics::NewProp_BP_HomeSpaceHeadquarters_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_AAstroGenerator_Statics::NewProp_BP_HomeSpaceHeadquarters_MetaData)) };
 	const UECodeGen_Private::FObjectPropertyParams Z_Construct_UClass_AAstroGenerator_Statics::NewProp_GeneratedStarSystems_Inner = { "GeneratedStarSystems", nullptr, (EPropertyFlags)0x0000000000000000, UECodeGen_Private::EPropertyGenFlags::Object, RF_Public|RF_Transient|RF_MarkAsNative, 1, nullptr, nullptr, 0, Z_Construct_UClass_AStarSystem_NoRegister, METADATA_PARAMS(nullptr, 0) };
 #if WITH_METADATA
 	const UECodeGen_Private::FMetaDataPairParam Z_Construct_UClass_AAstroGenerator_Statics::NewProp_GeneratedStarSystems_MetaData[] = {
@@ -814,6 +848,8 @@ void EmptyLinkFunctionForGeneratedCodeAstroGenerator() {}
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AAstroGenerator_Statics::NewProp_GeneratedGalaxy,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AAstroGenerator_Statics::NewProp_GeneratedStarCluster,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AAstroGenerator_Statics::NewProp_GeneratedHomeStarSystem,
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AAstroGenerator_Statics::NewProp_HomePlanet,
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AAstroGenerator_Statics::NewProp_HomeSpaceHeadquarters,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AAstroGenerator_Statics::NewProp_HomeSpaceStation,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AAstroGenerator_Statics::NewProp_HomeSpaceship,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AAstroGenerator_Statics::NewProp_HomeSpaceShipyard,
@@ -868,6 +904,7 @@ void EmptyLinkFunctionForGeneratedCodeAstroGenerator() {}
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AAstroGenerator_Statics::NewProp_BP_HomeSpaceStation,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AAstroGenerator_Statics::NewProp_BP_HomeSpaceship,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AAstroGenerator_Statics::NewProp_BP_HomeSpaceShipyard,
+		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AAstroGenerator_Statics::NewProp_BP_HomeSpaceHeadquarters,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AAstroGenerator_Statics::NewProp_GeneratedStarSystems_Inner,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AAstroGenerator_Statics::NewProp_GeneratedStarSystems,
 		(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AAstroGenerator_Statics::NewProp_GalaxyGenerator,
@@ -923,9 +960,9 @@ void EmptyLinkFunctionForGeneratedCodeAstroGenerator() {}
 		static const FClassRegisterCompiledInInfo ClassInfo[];
 	};
 	const FClassRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_AstroGenerator_h_Statics::ClassInfo[] = {
-		{ Z_Construct_UClass_AAstroGenerator, AAstroGenerator::StaticClass, TEXT("AAstroGenerator"), &Z_Registration_Info_UClass_AAstroGenerator, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(AAstroGenerator), 1916886970U) },
+		{ Z_Construct_UClass_AAstroGenerator, AAstroGenerator::StaticClass, TEXT("AAstroGenerator"), &Z_Registration_Info_UClass_AAstroGenerator, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(AAstroGenerator), 1550507783U) },
 	};
-	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_AstroGenerator_h_3153925932(TEXT("/Script/APS_ALPHA"),
+	static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_AstroGenerator_h_4078658436(TEXT("/Script/APS_ALPHA"),
 		Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_AstroGenerator_h_Statics::ClassInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_romar_Documents_Unreal_Projects_APS_APS_ALPHA_Source_APS_ALPHA_AstroGenerator_h_Statics::ClassInfo),
 		nullptr, 0,
 		nullptr, 0);

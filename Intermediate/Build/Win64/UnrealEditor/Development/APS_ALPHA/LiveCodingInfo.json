@@ -1,11 +1,9 @@
 {
 	"RemapUnityFiles": 
 	{
-		"Module.APS_ALPHA.1_of_2.cpp.obj": [
-			"Aircraft.cpp.obj",
+		"Module.APS_ALPHA.1_of_4.cpp.obj": [
 			"Aircraft.gen.cpp.obj",
 			"AnimationState.gen.cpp.obj",
-			"APS_ALPHA.init.gen.cpp.obj",
 			"APS_ALPHAGameModeBase.gen.cpp.obj",
 			"Asteroid.gen.cpp.obj",
 			"AsteroidBelt.gen.cpp.obj",
@@ -13,7 +11,6 @@
 			"AstonomicalSystem.gen.cpp.obj",
 			"AstroActor.gen.cpp.obj",
 			"AstroGenerationLevel.gen.cpp.obj",
-			"AstroGenerator.gen.cpp.obj",
 			"AstroLocation.gen.cpp.obj",
 			"AstroObject.gen.cpp.obj",
 			"Atmosphere.gen.cpp.obj",
@@ -45,6 +42,10 @@
 			"GravityCharacter.gen.cpp.obj",
 			"GravityCharacterPawn.gen.cpp.obj",
 			"GravityGameModeBase.gen.cpp.obj",
+			"APS_ALPHA.init.gen.cpp.obj",
+			"AstroGenerator.gen.cpp.obj"
+		],
+		"Module.APS_ALPHA.2_of_4.cpp.obj": [
 			"GravityMovementStruct.gen.cpp.obj",
 			"GravityObject.gen.cpp.obj",
 			"GravityObjectInterface.gen.cpp.obj",
@@ -55,7 +56,6 @@
 			"GravityState.gen.cpp.obj",
 			"GravityTypeEnum.gen.cpp.obj",
 			"GroundVehicle.gen.cpp.obj",
-			"Headquarters.gen.cpp.obj",
 			"HomeStarSystemGenerationModel.gen.cpp.obj",
 			"HomeSystemPosition.gen.cpp.obj",
 			"KuiperBelt.gen.cpp.obj",
@@ -84,10 +84,13 @@
 			"PlanetType.gen.cpp.obj",
 			"SpaceCharacter.gen.cpp.obj",
 			"Spacecraft.gen.cpp.obj",
-			"SpaceHeadquarters.gen.cpp.obj",
 			"Spaceship.gen.cpp.obj",
 			"SpaceshipGravityActor.gen.cpp.obj",
 			"SpaceShipyard.gen.cpp.obj",
+			"Headquarters.gen.cpp.obj",
+			"SpaceHeadquarters.gen.cpp.obj"
+		],
+		"Module.APS_ALPHA.3_of_4.cpp.obj": [
 			"SpaceStation.gen.cpp.obj",
 			"SpectralType.gen.cpp.obj",
 			"Star.gen.cpp.obj",
@@ -113,9 +116,8 @@
 			"TechObject.gen.cpp.obj",
 			"UniverseProceduralGenerator.gen.cpp.obj",
 			"VehicleControlling.gen.cpp.obj",
-			"WorldActor.gen.cpp.obj"
-		],
-		"Module.APS_ALPHA.2_of_2.cpp.obj": [
+			"WorldActor.gen.cpp.obj",
+			"Aircraft.cpp.obj",
 			"AnimationState.cpp.obj",
 			"APS_ALPHA.cpp.obj",
 			"APS_ALPHAGameModeBase.cpp.obj",
@@ -159,6 +161,7 @@
 			"GravitySource.cpp.obj",
 			"GravityState.cpp.obj",
 			"GroundVehicle.cpp.obj",
+			"Headquarters.cpp.obj",
 			"HomeStarSystemGenerationModel.cpp.obj",
 			"KuiperBelt.cpp.obj",
 			"MainMenuController.cpp.obj",
@@ -169,6 +172,7 @@
 			"OrbitalBody.cpp.obj",
 			"OrbitalBodyGenerationModel.cpp.obj",
 			"PilotingVehicle.cpp.obj",
+			"Planet.cpp.obj",
 			"PlanetaryEnvironment.cpp.obj",
 			"PlanetaryProceduralGenerator.cpp.obj",
 			"PlanetarySystem.cpp.obj",
@@ -178,9 +182,16 @@
 			"PlanetGravityActor.cpp.obj",
 			"PlanetOrbit.cpp.obj",
 			"SpaceCharacter.cpp.obj",
+			"AstroGenerator.cpp.obj",
+			"Civilization.cpp.obj"
+		],
+		"Module.APS_ALPHA.4_of_4.cpp.obj": [
 			"Spacecraft.cpp.obj",
+			"SpaceHeadquarters.cpp.obj",
 			"Spaceship.cpp.obj",
 			"SpaceshipGravityActor.cpp.obj",
+			"SpaceShipyard.cpp.obj",
+			"SpaceStation.cpp.obj",
 			"Star.cpp.obj",
 			"StarCluster.cpp.obj",
 			"StarClusterGenerator.cpp.obj",
@@ -197,14 +208,7 @@
 			"TechObject.cpp.obj",
 			"UniverseProceduralGenerator.cpp.obj",
 			"VehicleControlling.cpp.obj",
-			"WorldActor.cpp.obj",
-			"AstroGenerator.cpp.obj",
-			"Civilization.cpp.obj",
-			"Headquarters.cpp.obj",
-			"Planet.cpp.obj",
-			"SpaceHeadquarters.cpp.obj",
-			"SpaceShipyard.cpp.obj",
-			"SpaceStation.cpp.obj"
+			"WorldActor.cpp.obj"
 		]
 	}
 }

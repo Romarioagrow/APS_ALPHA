@@ -14,6 +14,7 @@
 #include "SpaceStation.h"
 #include "Spaceship.h"
 #include "SpaceShipyard.h"
+#include "SpaceHeadquarters.h"
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
@@ -56,6 +57,12 @@ protected:
 	
 	UPROPERTY(VisibleAnywhere, Category = "Generated Astro Actros")
 		AStarSystem* GeneratedHomeStarSystem;
+	
+	UPROPERTY(VisibleAnywhere, Category = "Generated Astro Actros")
+		APlanet* HomePlanet;
+	
+	UPROPERTY(VisibleAnywhere, Category = "Generated Tech Actros")
+		ASpaceHeadquarters* HomeSpaceHeadquarters;
 	
 	UPROPERTY(VisibleAnywhere, Category = "Generated Tech Actros")
 		ASpaceStation* HomeSpaceStation;
@@ -179,6 +186,9 @@ public:
 	
 	UPROPERTY(EditAnywhere, Category = "Player Spawn")
 		TSubclassOf<class ASpaceShipyard> BP_HomeSpaceShipyard;
+	
+	UPROPERTY(EditAnywhere, Category = "Player Spawn")
+		TSubclassOf<class ASpaceHeadquarters> BP_HomeSpaceHeadquarters;
 
 	UPROPERTY()
 		TArray<AStarSystem*> GeneratedStarSystems;

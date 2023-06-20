@@ -38,12 +38,6 @@ struct Infrastructure {
     //...
 };
 
-//struct Division {
-//    FName name;
-//    int level;
-//    //...
-//};
-
 // Базовый класс подразделения
 class Division {
 public:
@@ -170,6 +164,8 @@ public:
 
 class  ForeignAffairsDivision : public Division {
 public:
+	ForeignAffairsDivision();
+
 	// Foreign Affairs Division
 	void	EstablishCivilization();
 	void	EstablishState();
@@ -183,6 +179,8 @@ public:
 // Подразделение военных операций
 class MilitaryDivision : public Division {
 public:
+	MilitaryDivision();
+
 	void MobilizeForces();
 	void ExecuteDefenseProtocol();
 	void ExecuteOffensiveStrategy();
@@ -193,6 +191,8 @@ public:
 // Флотское подразделение
 class FleetDivision : public Division {
 public:
+	FleetDivision();
+
 	void DeployFleet();
 	void ExecuteNavalStrategy();
 	void RepairShips();
