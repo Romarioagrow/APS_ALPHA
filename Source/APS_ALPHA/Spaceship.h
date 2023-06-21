@@ -25,7 +25,7 @@ public:
 	ASpaceship();
 
 public:
-	double ThrustForce { 10000.0 };
+	double ThrustForce { 1000000.0 };
 
 	bool bEngineRunning {false };
 
