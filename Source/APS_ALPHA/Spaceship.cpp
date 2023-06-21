@@ -15,6 +15,9 @@ ASpaceship::ASpaceship()
 	// Создание компонента PilotChair и прикрепление его к SpaceshipHull
 	PilotChair = CreateDefaultSubobject<USceneComponent>(TEXT("PilotChair"));
 	PilotChair->SetupAttachment(SpaceshipHull);
+
+	ForwardVector = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ForwardVector"));
+	ForwardVector->SetupAttachment(SpaceshipHull);
 }
 
 void ASpaceship::SwitchEngines()
@@ -30,36 +33,61 @@ void ASpaceship::ThrustForward(float Value)
 	if (FMath::Abs(Value) < KINDA_SMALL_NUMBER) return;
 
 	// Получаем вектор вперед корабля.
-	const FVector Direction = GetActorForwardVector();
+	//const FVector Direction = GetActorForwardVector();
+	const FVector Direction = ForwardVector->GetForwardVector();// GetActorForwardVector();
 
 	// Умножаем вектор вперед на значение оси и на силу двигателя.
-	// Сила двигателя может быть предварительно заданной константой.
 	const FVector Impulse = Direction * Value * ThrustForce;
-
-	// Применяем импульс к кораблю.
-	// Предполагается, что у вас есть UPrimitiveComponent, который представляет тело корабля.
-	// Корпус корабля должен иметь включенное физическое взаимодействие (Simulate Physics).
-	SpaceshipHull->AddImpulse(Impulse);
+	SpaceshipHull->AddImpulse(Impulse, NAME_None, true);
 }
 
 void ASpaceship::ThrustSide(float Value)
 {
+	// Если Value равно нулю, никакого ввода не было, поэтому ничего не делаем.
+	if (FMath::Abs(Value) < KINDA_SMALL_NUMBER) return;
+
+	// Получаем вектор вперед корабля.
+	//const FVector Direction = GetActorForwardVector();
+	const FVector Direction = ForwardVector->GetRightVector();// GetActorForwardVector();
+
+	// Умножаем вектор вперед на значение оси и на силу двигателя.
+	const FVector Impulse = Direction * Value * ThrustForce;
+	SpaceshipHull->AddImpulse(Impulse, NAME_None, true);
 }
 
 void ASpaceship::ThrustVertical(float Value)
 {
+	// Если Value равно нулю, никакого ввода не было, поэтому ничего не делаем.
+	if (FMath::Abs(Value) < KINDA_SMALL_NUMBER) return;
+
+	// Получаем вектор вперед корабля.
+	//const FVector Direction = GetActorForwardVector();
+	const FVector Direction = ForwardVector->GetUpVector();// GetActorForwardVector();
+
+	// Умножаем вектор вперед на значение оси и на силу двигателя.
+	const FVector Impulse = Direction * Value * ThrustForce;
+	SpaceshipHull->AddImpulse(Impulse, NAME_None, true);
 }
 
 void ASpaceship::ThrustYaw(float Value)
 {
+	float Torque = Value * 0.5;  // Вы можете настроить YawTorqueFactor для контроля скорости вращения
+	FVector TorqueVector = GetActorUpVector() * Torque;
+	SpaceshipHull->AddTorqueInRadians(TorqueVector, NAME_None, true);
 }
 
 void ASpaceship::ThrustPitch(float Value)
 {
+	float Torque = Value * 0.5;
+	FVector TorqueVector = GetActorRightVector() * Torque;
+	SpaceshipHull->AddTorqueInRadians(TorqueVector, NAME_None, true);
 }
 
 void ASpaceship::ThrustRoll(float Value)
 {
+	float Torque = Value * 0.5;
+	FVector TorqueVector = GetActorForwardVector() * Torque;
+	SpaceshipHull->AddTorqueInRadians(TorqueVector, NAME_None, true);
 }
 
 void ASpaceship::SetPilot(AGravityCharacterPawn* NewPilot)
@@ -107,6 +135,9 @@ void ASpaceship::Tick(float DeltaTime)
 		{
 			GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Pilot Actor Name: %s"), *PilotName));
 		}
+
+		FVector OppositeTorque = -SpaceshipHull->GetPhysicsAngularVelocityInRadians() * 0.5;
+		SpaceshipHull->AddTorqueInRadians(OppositeTorque, NAME_None, true);
 	}
 
 }

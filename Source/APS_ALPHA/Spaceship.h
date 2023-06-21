@@ -25,7 +25,9 @@ public:
 	ASpaceship();
 
 public:
-	double ThrustForce { 1000000.0 };
+	void SwitchCamera();
+
+	double ThrustForce { 100 };
 
 	bool bEngineRunning {false };
 
@@ -45,23 +47,14 @@ public:
 
 	void SetPilot(AGravityCharacterPawn* NewPilot);
 
-
-
-
-	/*PlayerInputComponent->BindAction("SwitchEngines", IE_Pressed, this, &ASpaceship::SwitchEngines);
-	PlayerInputComponent->BindAxis("ThrustForward", this, &ASpaceship::ThrustForward);
-	PlayerInputComponent->BindAxis("ThrustSide", this, &ASpaceship::ThrustSide);
-	PlayerInputComponent->BindAxis("ThrustVertical", this, &ASpaceship::ThrustVertical);
-	PlayerInputComponent->BindAxis("ThrustYaw", this, &ASpaceship::ThrustYaw);
-	PlayerInputComponent->BindAxis("ThrustPitch", this, &ASpaceship::ThrustPitch);
-	PlayerInputComponent->BindAxis("ThrustRoll", this, &ASpaceship::ThrustRoll);*/
-	
-
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 		USphereComponent* SphereCollisionComponent;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 		UStaticMeshComponent* SpaceshipHull;
+	
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+		UStaticMeshComponent* ForwardVector;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 		USceneComponent* PilotChair;
