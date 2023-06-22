@@ -8,21 +8,27 @@
 
 //#define GETENUMSTRING(etype, evalue) ( (FindObject(ANY_PACKAGE, TEXT(etype), true) != nullptr) ? FindObject(ANY_PACKAGE, TEXT(etype), true)->GetEnumName((int32)evalue) : FString("Invalid - are you sure enum uses UENUM() macro?") )
 
-UENUM(BlueprintType)
-enum class EFlightType : uint8
-{
-    Station UMETA(DisplayName = "Elliptical Galaxy"),
-    Surface UMETA(DisplayName = "Elliptical Galaxy"),
-    Atmospheric UMETA(DisplayName = "Elliptical Galaxy"),
-    Orbital UMETA(DisplayName = "Elliptical Galaxy"),
-    Planetary UMETA(DisplayName = "Elliptical Galaxy"),
-    Interplanetray UMETA(DisplayName = "Elliptical Galaxy"),
-    Interstellar UMETA(DisplayName = "Elliptical Galaxy"),
-    Intergalaxy UMETA(DisplayName = "Elliptical Galaxy")
-};
-
+/**
+ * @brief Diapasones, limits, ranges, etc.
+*/
 UENUM(BlueprintType)
 enum class EFlightMode : uint8
+{
+    Station UMETA(DisplayName = "Station"),
+    Surface UMETA(DisplayName = "Surface"),
+    Atmospheric UMETA(DisplayName = "Atmospheric"),
+    Orbital UMETA(DisplayName = "Orbital"),
+    Planetary UMETA(DisplayName = "Planetary"),
+    Interplanetray UMETA(DisplayName = "Interplanetray"),
+    Interstellar UMETA(DisplayName = "Interstellar"),
+    Intergalaxy UMETA(DisplayName = "Intergalaxy")
+};
+
+/**
+ * @brief Physic forces effects and resistance
+*/
+UENUM(BlueprintType)
+enum class EFlightType : uint8
 {
     ZeroG,
     Atmospheric,
@@ -36,7 +42,7 @@ enum class EFlightMode : uint8
 };
 
 UENUM(BlueprintType)
-enum class EEngineType : uint8
+enum class EEngineMode : uint8
 {
     Impulse,
     Offset,
@@ -193,7 +199,7 @@ struct FEngineSystem
 
 public:
     EEngineState CurrentEngineState{ EEngineState::Idle };
-    EEngineType CurrentEngineType{ EEngineType::Impulse };
+    EEngineMode CurrentEngineType{ EEngineMode::Impulse };
     FThrustMode CurrentThrustMode;
 
     void MarshallerEngineMode();
@@ -409,12 +415,12 @@ struct FFlightSystem
 public:
     //FlightSystem();
 
-    EFlightType CurrentFlightType{ EFlightType::Station };
-    EFlightMode CurrentFlightMode{ EFlightMode::ZeroG };
+    EFlightMode CurrentFlightMode{ EFlightMode::Station };
+    EFlightType CurrentFlightType{ EFlightType::ZeroG };
     EFlightStatus CurrentFlightStatus{ EFlightStatus::OK };
 
     // Метод для переключения типа полёта
-    void SwitchEngineType(EEngineType EngineType);
+    void SwitchEngineType(EEngineMode EngineType);
     void SwitchFlightMode(EFlightMode FlightMode);
 
     void CheckFlightStatus();
@@ -481,13 +487,13 @@ public:
         FFlightSystem FlightSystem {};
 
     UPROPERTY()
+        FEngineSystem EngineSystem {};
+
+    UPROPERTY()
         FTargetSystem TargetSystem {};
 
     UPROPERTY()
         FAstroNavigationSystem AstroNavigationSystem {};
-
-    UPROPERTY()
-        FEngineSystem EngineSystem {};
 
     UPROPERTY()
         FAstroExplorationSystem AstroExplorationSystem {};

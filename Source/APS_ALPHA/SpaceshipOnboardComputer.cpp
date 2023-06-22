@@ -33,36 +33,25 @@ FString USpaceshipOnboardComputer::GetEnumValueAsString(const TCHAR* EnumName, i
 
 FString USpaceshipOnboardComputer::GetFlightTypeAsString()
 {
-    EFlightType FlightType = FlightSystem.CurrentFlightType;
-    FString String = UEnum::GetValueAsString(FlightType);
-    return String;
+    return UEnum::GetValueAsString(FlightSystem.CurrentFlightType);
 }
 
 FString USpaceshipOnboardComputer::GetFlightModeAsString()
 {
-    EFlightMode FlightMode = FlightSystem.CurrentFlightMode;
-    FString String = UEnum::GetValueAsString(FlightMode);
-    return String;
+    return UEnum::GetValueAsString(FlightSystem.CurrentFlightMode);
 }
 
 FString USpaceshipOnboardComputer::GetFlightStatusAsString()
 {
-    EFlightStatus FlightStatus = FlightSystem.CurrentFlightStatus;
-    FString String = UEnum::GetValueAsString(FlightStatus);
-    return String;
+    return UEnum::GetValueAsString(FlightSystem.CurrentFlightStatus);
 }
 
-// Допустим, у вас есть объект EngineSystem
 FString USpaceshipOnboardComputer::GetEngineStateAsString()
 {
-    EEngineState EngineState = EngineSystem.CurrentEngineState;
-    FString String = UEnum::GetValueAsString(EngineState);
-    return String;
+    return UEnum::GetValueAsString(EngineSystem.CurrentEngineState);
 }
 
 FString USpaceshipOnboardComputer::GetEngineTypeAsString()
 {
-    EEngineType EngineType = EngineSystem.CurrentEngineType;
-    FString String = UEnum::GetValueAsString(EngineType);
-    return String;
+    return UEnum::GetValueAsString(EngineSystem.CurrentEngineType);
 }

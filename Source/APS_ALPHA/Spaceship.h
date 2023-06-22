@@ -29,6 +29,8 @@ private:
 	UPROPERTY(VisibleAnywhere, Category = "Onboard Computer")
 	USpaceshipOnboardComputer* OnboardComputer;
 
+	TArray<AWorldActor*> WorldActors{};
+	TArray<AWorldActor*> CurrentZones{};
 
 public:
 	void SwitchCamera();
