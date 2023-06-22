@@ -22,58 +22,19 @@ ASpaceship::ASpaceship()
 	OnboardComputer = CreateDefaultSubobject<USpaceshipOnboardComputer>(TEXT("OnboardComputer"));
 }
 
-//FString GetEnumValueAsString(const TCHAR* Enum, int32 EnumValue)
-//{
-//	UEnum* EnumPtr = FindObject<UEnum>(ANY_PACKAGE, Enum, true);
-//	return EnumPtr ? EnumPtr->GetNameByValue(EnumValue).ToString() : "";
-//}
-
-// и теперь вы можете просто вызывать еЄ
-//GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, FString::Printf(TEXT("Current Flight Type: %s"), *GetEnumValueAsString(TEXT("EFlightType"), (int32)OnboardComputer->FlightSystemInstance.CurrentFlightType)));
-// јналогично дл€ остальных типов...
-
-
 void ASpaceship::PrintOnboardComputerBasicIformation() 
 {
-	EFlightType FlightType = OnboardComputer->FlightSystem.CurrentFlightType;
-	FString String = UEnum::GetValueAsString(FlightType);
-	GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, FString::Printf(TEXT("%s"), *String));
+	GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, FString::Printf(TEXT("Current Flight Type:	%s"), *OnboardComputer->GetEnumValueAsString(TEXT("EFlightType"), (int32)OnboardComputer->FlightSystem.CurrentFlightType)));
+	GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, FString::Printf(TEXT("Current Flight Mode:	%s"), *OnboardComputer->GetEnumValueAsString(TEXT("EFlightMode"), (int32)OnboardComputer->FlightSystem.CurrentFlightMode)));
+	GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, FString::Printf(TEXT("Current Flight Status: %s"), *OnboardComputer->GetEnumValueAsString(TEXT("EFlightStatus"), (int32)OnboardComputer->FlightSystem.CurrentFlightStatus)));
+	GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, FString::Printf(TEXT("Current Engine State:	%s"), *OnboardComputer->GetEnumValueAsString(TEXT("EEngineState"), (int32)OnboardComputer->EngineSystem.CurrentEngineState)));
+	GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, FString::Printf(TEXT("Current Engine Type:	%s"), *OnboardComputer->GetEnumValueAsString(TEXT("EEngineType"), (int32)OnboardComputer->EngineSystem.CurrentEngineType)));
 
-
-
-	//FString CurrentFlightType = OnboardComputer->GetCurrentFlightType();
-	//UE_LOG(LogTemp, Warning, TEXT("CurrentFlightType: %s"), CurrentFlightType);
-
-	//GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Green, FString::Printf(TEXT("Current Flight Type: %s"), CurrentFlightType));
-
-
-	//GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("CurrentFlightType: %s"), OnboardComputer->FlightSystemInstance.CurrentFlightType));
-
-	/*FString GravityStateString = StaticEnum<USpaceshipOnboardComputer::EFlightType>()->GetNameStringByValue(static_cast<int32>(OnboardComputer->FlightSystemInstance.CurrentFlightType));
-	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("GravityStateString: %s"), *GravityStateString));*/
-
-	//GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, FString::Printf(TEXT("Current Flight Type: %s"), *GetEnumValueAsString(TEXT("EFlightType"), (int32)OnboardComputer->FlightSystemInstance.CurrentFlightType)));
-	////GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, FString::Printf(TEXT("Current Flight Mode: %s"), *GetEnumValueAsString(TEXT("EFlightMode"), (int32)OnboardComputer->FlightSystemInstance.CurrentFlightMode)));
-	//GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, FString::Printf(TEXT("Current Flight Status: %s"), *GetEnumValueAsString(TEXT("EFlightStatus"), (int32)OnboardComputer->FlightSystemInstance.CurrentFlightStatus)));
-	//GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, FString::Printf(TEXT("Current Engine State: %s"), *GetEnumValueAsString(TEXT("EEngineState"), (int32)OnboardComputer->EngineSystemInstance.CurrentEngineState)));
-	//GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, FString::Printf(TEXT("Current Engine Type: %s"), *GetEnumValueAsString(TEXT("EEngineType"), (int32)OnboardComputer->EngineSystemInstance.CurrentEngineType)));
-
-
-
-	//UE_LOG(LogTemp, Warning, TEXT("Current Target: %s"), *OnboardComputer->TargetSystemInstance.CurrentTarget);
-	//UE_LOG(LogTemp, Warning, TEXT("Current Astro Target: %s"), *OnboardComputer->AstroNavigationSystemInstance.CurrentAstroTarget);
-	/*GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, FString::Printf(TEXT("Current Flight Type: %d"), OnboardComputer->FlightSystemInstance.CurrentFlightType));
-	GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, FString::Printf(TEXT("Current Flight Mode: %d"), OnboardComputer->FlightSystemInstance.CurrentFlightMode));
-	GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, FString::Printf(TEXT("Current Flight Status: %d"), OnboardComputer->FlightSystemInstance.CurrentFlightStatus));
-	GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, FString::Printf(TEXT("Current Engine State: %d"), OnboardComputer->EngineSystemInstance.CurrentEngineState));
-	GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, FString::Printf(TEXT("Current Engine Type: %d"), OnboardComputer->EngineSystemInstance.CurrentEngineType));*/
-	/*GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, FString::Printf(TEXT("Current Flight Type: %s"), *GET_ENUM_NAME(EFlightType, OnboardComputer->FlightSystemInstance.CurrentFlightType)));
-	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, FString::Printf(TEXT("Current Flight Mode: %s"), *GET_ENUM_NAME(EFlightMode, OnboardComputer->FlightSystemInstance.CurrentFlightMode)));
-	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, FString::Printf(TEXT("Current Flight Status: %s"), *GET_ENUM_NAME(EFlightStatus, OnboardComputer->FlightSystemInstance.CurrentFlightStatus)));
-	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, FString::Printf(TEXT("Current Engine State: %s"), *GET_ENUM_NAME(EEngineState, OnboardComputer->EngineSystemInstance.CurrentEngineState)));
-	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, FString::Printf(TEXT("Current Engine Type: %s"), *GET_ENUM_NAME(EEngineType, OnboardComputer->EngineSystemInstance.CurrentEngineType)));*/
-
-	//UE_LOG(LogTemp, Warning, TEXT("Current Thrust Mode: %d"), OnboardComputer->EngineSystemInstance.CurrentThrustMode);
+	/*GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, FString::Printf(TEXT("Current Flight Type: %s"), *OnboardComputer->GetFlightTypeAsString()));
+	GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, FString::Printf(TEXT("Current Flight Mode: %s"), *OnboardComputer->GetFlightModeAsString()));
+	GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, FString::Printf(TEXT("Current Flight Status: %s"), *OnboardComputer->GetFlightStatusAsString()));
+	GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, FString::Printf(TEXT("Current Engine State: %s"), *OnboardComputer->GetEngineStateAsString()));
+	GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, FString::Printf(TEXT("Current Engine Type: %s"), *OnboardComputer->GetEngineTypeAsString()));*/
 }
 
 void ASpaceship::SwitchEngines()
@@ -89,8 +50,7 @@ void ASpaceship::ThrustForward(float Value)
 	if (FMath::Abs(Value) < KINDA_SMALL_NUMBER) return;
 
 	// ѕолучаем вектор вперед корабл€.
-	//const FVector Direction = GetActorForwardVector();
-	const FVector Direction = ForwardVector->GetForwardVector();// GetActorForwardVector();
+	const FVector Direction = ForwardVector->GetForwardVector();
 
 	// ”множаем вектор вперед на значение оси и на силу двигател€.
 	const FVector Impulse = Direction * Value * ThrustForce;
@@ -104,7 +64,7 @@ void ASpaceship::ThrustSide(float Value)
 
 	// ѕолучаем вектор вперед корабл€.
 	//const FVector Direction = GetActorForwardVector();
-	const FVector Direction = ForwardVector->GetRightVector();// GetActorForwardVector();
+	const FVector Direction = ForwardVector->GetRightVector();
 
 	// ”множаем вектор вперед на значение оси и на силу двигател€.
 	const FVector Impulse = Direction * Value * ThrustForce;
@@ -117,8 +77,7 @@ void ASpaceship::ThrustVertical(float Value)
 	if (FMath::Abs(Value) < KINDA_SMALL_NUMBER) return;
 
 	// ѕолучаем вектор вперед корабл€.
-	//const FVector Direction = GetActorForwardVector();
-	const FVector Direction = ForwardVector->GetUpVector();// GetActorForwardVector();
+	const FVector Direction = ForwardVector->GetUpVector();
 
 	// ”множаем вектор вперед на значение оси и на силу двигател€.
 	const FVector Impulse = Direction * Value * ThrustForce;
@@ -159,46 +118,26 @@ void ASpaceship::BeginPlay()
 void ASpaceship::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
-	// Assuming 'Pilot' is already assigned and valid
 	if (Pilot)
 	{
 		// Telemetry
-		// Get actor's world location
 		FVector ActorLocation = GetActorLocation();
-		// Get actor's forward, right and up vectors
-		/*FVector ActorForward = GetActorForwardVector();
-		FVector ActorRight = GetActorRightVector();
-		FVector ActorUp = GetActorUpVector();*/
-		// Get actor's linear speed
 		FVector ActorVelocity = GetVelocity();
 		double ActorSpeed = ActorVelocity.Size();
 
+		PrintOnboardComputerBasicIformation();
+
 		// Displaying them on screen
-		if (GEngine)
+		GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("ActorLocation: %s"), *ActorLocation.ToString()));
+		GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("ActorSpeed: %f"), ActorSpeed));
+		GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Pilot Actor Name: %s"), *Pilot->GetName()));
+
+		if (bEngineRunning)
 		{
-			GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("ActorLocation: %s"), *ActorLocation.ToString()));
-			//GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("ActorForward: %s"), *ActorForward.ToString()));
-			//GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("ActorRight: %s"), *ActorRight.ToString()));
-			//GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("ActorUp: %s"), *ActorUp.ToString()));
-			GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("ActorSpeed: %f"), ActorSpeed));
-
-
-			PrintOnboardComputerBasicIformation();
+			FVector OppositeTorque = -SpaceshipHull->GetPhysicsAngularVelocityInRadians() * 0.5;
+			SpaceshipHull->AddTorqueInRadians(OppositeTorque, NAME_None, true);
 		}
-
-	
-		FString PilotName = Pilot->GetName();
-
-		// Display pilot's actor name on screen
-		if (GEngine)
-		{
-			GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Pilot Actor Name: %s"), *PilotName));
-		}
-
-		FVector OppositeTorque = -SpaceshipHull->GetPhysicsAngularVelocityInRadians() * 0.5;
-		SpaceshipHull->AddTorqueInRadians(OppositeTorque, NAME_None, true);
 	}
-
 }
 
 void ASpaceship::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -206,7 +145,6 @@ void ASpaceship::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
 
 	PlayerInputComponent->BindAction("ReleaseControl", IE_Pressed, this, &ASpaceship::ReleaseControl);
-
 	PlayerInputComponent->BindAction("SwitchEngines", IE_Pressed, this, &ASpaceship::SwitchEngines);
 	PlayerInputComponent->BindAxis("ThrustForward", this, &ASpaceship::ThrustForward);
 	PlayerInputComponent->BindAxis("ThrustSide", this, &ASpaceship::ThrustSide);

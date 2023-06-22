@@ -465,33 +465,48 @@ class APS_ALPHA_API USpaceshipOnboardComputer : public UObject
 public:
     USpaceshipOnboardComputer();
 
+    FString GetEnumValueAsString(const TCHAR* EnumName, int32 EnumValue);
+
+    FString GetFlightTypeAsString();
+
+    FString GetFlightModeAsString();
+
+    FString GetFlightStatusAsString();
+
+    FString GetEngineStateAsString();
+
+    FString GetEngineTypeAsString();
+
     UPROPERTY()
         FFlightSystem FlightSystem {};
 
     UPROPERTY()
-        FTargetSystem TargetSystemInstance {};
+        FTargetSystem TargetSystem {};
 
     UPROPERTY()
-        FAstroNavigationSystem AstroNavigationSystemInstance {};
+        FAstroNavigationSystem AstroNavigationSystem {};
 
     UPROPERTY()
-        FEngineSystem EngineSystemInstance {};
+        FEngineSystem EngineSystem {};
 
     UPROPERTY()
-        FAstroExplorationSystem AstroExplorationSystemInstance {};
+        FAstroExplorationSystem AstroExplorationSystem {};
 
     UPROPERTY()
-        FBoardSystems BoardSystemsInstance {};
+        FBoardSystems BoardSystems {};
 
     UPROPERTY()
-        FCommunicationSystem CommunicationSystemInstance {};
+        FCommunicationSystem CommunicationSystem {};
 
     UPROPERTY()
-        FDockingCargoSystem DockingCargoSystemInstance {};
+        FDockingCargoSystem DockingCargoSystem {};
 
     UPROPERTY()
-        FLifeSupportSystems LifeSupportSystemsInstance {};
+        FLifeSupportSystems LifeSupportSystems {};
 
     FString GetCurrentFlightType();
+
+public:
+
 
 };

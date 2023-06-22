@@ -6,60 +6,63 @@
 #include "UObject/Class.h"
 #include "UObject/EnumProperty.h"
 
-//USpaceshipOnboardComputer::USpaceshipOnboardComputer()
-//{
-//    
-//}
+
 
 USpaceshipOnboardComputer::USpaceshipOnboardComputer()
 {
 }
 
-//FString USpaceshipOnboardComputer::GetCurrentFlightType()
-//{
-//    UEnum* EnumPtr = FindObject<UEnum>(GetTransientPackage(), TEXT("EFlightType"), true);
-//    if (EnumPtr)
-//    {
-//        FString FlightTypeString = EnumPtr->GetNameStringByIndex(static_cast<int32>(FlightSystemInstance.CurrentFlightType));
-//        return FlightTypeString;
-//    }
-//    
-//    return FString();
-//    
-//    
-//    
-//    //UEnum::GetEnumName(FlightSystemInstance.CurrentFlightType);
-//    //GETENUMSTRING("EFlightType", FlightSystemInstance.CurrentFlightType);
-//    //return StaticEnum<EFlightType>()->GetNameStringByValue(static_cast<int64>(FlightSystemInstance.CurrentFlightType));
-//    //return FString();
-//}
-//FString USpaceshipOnboardComputer::GetCurrentFlightType()
-//{
-//   
-//    const TEnumAsByte<EFlightType> SurfaceEnum = FlightSystemInstance.CurrentFlightType;
-//    FString EnumAsString = UEnum::GetValueAsString(SurfaceEnum.GetValue());
-//    return EnumAsString;
-//
-//}
+FString USpaceshipOnboardComputer::GetEnumValueAsString(const TCHAR* EnumName, int32 EnumValue)
+{
+    const UEnum* EnumPtr = FindObject<UEnum>(ANY_PACKAGE, EnumName, true);
+    if (!EnumPtr)
+    {
+        return FString("Invalid");
+    }
 
-//const FString EnumToString(const TCHAR* Enum, int32 EnumValue)
-//{
-//    const UEnum* EnumPtr = FindObject<UEnum>(ANY_PACKAGE, Enum, true);
-//    if (!EnumPtr)
-//        return NSLOCTEXT("Invalid", "Invalid", "Invalid").ToString();
-//
-//#if WITH_EDITOR
-//    return EnumPtr->GetDisplayNameText(EnumValue).ToString();
-//#else
-//    return EnumPtr->GetEnumName(EnumValue);
-//#endif
-//}
+    FString EnumValueName = EnumPtr->GetNameByValue((int64)EnumValue).ToString();
+    int32 DoubleColonIndex = EnumValueName.Find(TEXT("::"));
 
-//FlightSystem::FlightSystem()
-//{
-//    CurrentFlightType = EFlightType::Station;
-//	CurrentFlightMode = EFlightMode::ZeroG;
-//	//CurrentEngineType = EEngineType::Impulse;
-//	//CurrentEngineState = EEngineState::Idle;
-//	CurrentFlightStatus = EFlightStatus::OK;
-//}
+    if (DoubleColonIndex != INDEX_NONE)
+    {
+        EnumValueName = EnumValueName.Mid(DoubleColonIndex + 2);
+    }
+
+    return EnumValueName;
+}
+
+FString USpaceshipOnboardComputer::GetFlightTypeAsString()
+{
+    EFlightType FlightType = FlightSystem.CurrentFlightType;
+    FString String = UEnum::GetValueAsString(FlightType);
+    return String;
+}
+
+FString USpaceshipOnboardComputer::GetFlightModeAsString()
+{
+    EFlightMode FlightMode = FlightSystem.CurrentFlightMode;
+    FString String = UEnum::GetValueAsString(FlightMode);
+    return String;
+}
+
+FString USpaceshipOnboardComputer::GetFlightStatusAsString()
+{
+    EFlightStatus FlightStatus = FlightSystem.CurrentFlightStatus;
+    FString String = UEnum::GetValueAsString(FlightStatus);
+    return String;
+}
+
+// Допустим, у вас есть объект EngineSystem
+FString USpaceshipOnboardComputer::GetEngineStateAsString()
+{
+    EEngineState EngineState = EngineSystem.CurrentEngineState;
+    FString String = UEnum::GetValueAsString(EngineState);
+    return String;
+}
+
+FString USpaceshipOnboardComputer::GetEngineTypeAsString()
+{
+    EEngineType EngineType = EngineSystem.CurrentEngineType;
+    FString String = UEnum::GetValueAsString(EngineType);
+    return String;
+}
