@@ -84,86 +84,117 @@ enum class EFlightSafeMode : uint8
     Combat
 };
 
-struct Target
+USTRUCT(BlueprintType)
+struct FTarget
 {
+    GENERATED_USTRUCT_BODY()
+
     FName TargetName;
     FName TargetType;
     FVector TargetLocation;
 };
 
-struct AstroTarget : public Target
+USTRUCT(BlueprintType)
+struct FAstroTarget : public FTarget
 {
+    GENERATED_USTRUCT_BODY()
 
 };
 
-struct TechTarget : public Target
+USTRUCT(BlueprintType)
+struct FTechTarget : public FTarget
 {
+    GENERATED_USTRUCT_BODY()
 
 };
 
-struct FlightRange
+USTRUCT(BlueprintType)
+struct FFlightRange
 {
+    GENERATED_USTRUCT_BODY()
+
     double MinRange;
     double MaxRange;
 };
 
-struct ThrustMode
+USTRUCT(BlueprintType)
+struct FThrustMode
 {
+    GENERATED_USTRUCT_BODY()
+
     double MinThrust;
     double MaxThrust;
     double CurrentTrust;
 };
 
-struct ProbeData
+USTRUCT(BlueprintType)
+struct FProbeData
 {
+    GENERATED_USTRUCT_BODY()
+
     FName Data;
 };
 
-struct Message
+USTRUCT(BlueprintType)
+struct FMessage
 {
+    GENERATED_USTRUCT_BODY()
+
     FName Message;
 };
 
-struct Cargo
+USTRUCT(BlueprintType)
+struct FCargo
 {
+    GENERATED_USTRUCT_BODY()
+
     FName CargoName;
     double CargoVolume;
     double CargoWeight;
 };
 
-class TargetSystem
+USTRUCT(BlueprintType)
+struct FTargetSystem
 {
-public:
-    Target* CurrentTarget;
-    TArray<Target*> TargetList;
+    GENERATED_USTRUCT_BODY()
 
-    void LockTarget(Target* Target);
-    void FlyTo(Target* Target);
-    void JumpTo(Target* Target);
+public:
+    FTarget* CurrentTarget;
+    TArray<FTarget*> TargetList;
+
+    void LockTarget(FTarget* Target);
+    void FlyTo(FTarget* Target);
+    void JumpTo(FTarget* Target);
     void ScanTargets();
     void provideScanInfo();
 };
 
-class AstroNavigationSystem
+USTRUCT(BlueprintType)
+struct FAstroNavigationSystem
 {
+    GENERATED_USTRUCT_BODY()
+
 public:
     bool IsAstroNavigationEnabled;
-    AstroTarget* CurrentAstroTarget;
-    TArray<AstroTarget*> AstroTargetList;
+    FAstroTarget* CurrentAstroTarget;
+    TArray<FAstroTarget*> AstroTargetList;
 
-    void CalculateRoute(Target* Target);
+    void CalculateRoute(FTarget* Target);
     void ChangeMapMode(); // Navigation/Astronomical/Projection Map Modes
     void MultiTargetTracking();
 };
 
 //USTRUCT(BlueprintType)
 
+USTRUCT(BlueprintType)
+struct FEngineSystem 
+{
+    GENERATED_USTRUCT_BODY()
 
-class EngineSystem {
 public:
     EEngineState CurrentEngineState{ EEngineState::Idle };
     EEngineType CurrentEngineType{ EEngineType::Impulse };
-    ThrustMode CurrentThrustMode;
+    FThrustMode CurrentThrustMode;
 
     void MarshallerEngineMode();
     void TraverserEngineMode();
@@ -176,16 +207,20 @@ public:
     void InitiateTraverserFlight();
 };
 
-class AstroExplorationSystem {
+USTRUCT(BlueprintType)
+struct FAstroExplorationSystem 
+{
+    GENERATED_USTRUCT_BODY()
+
 public:
     bool IsExplorationUnderway;
-    ProbeData* CurrentProbeData;
-    TArray<ProbeData*> DataCollection;
+    FProbeData* CurrentProbeData;
+    TArray<FProbeData*> DataCollection;
 
     void ExploreAstroObject();
     void CollectSamples();
     void LaunchProbe(AAstroActor* AstroObject);
-    void ReceiveProbeData(ProbeData* data);
+    void ReceiveProbeData(FProbeData* data);
     void DeployScientificEquipment();
     void CollectScientificData();
 
@@ -194,9 +229,13 @@ public:
     void initiateFullSpectrumScan();
 };
 
-class BoardSystems {
+USTRUCT(BlueprintType)
+struct FBoardSystems 
+{
+    GENERATED_USTRUCT_BODY()
+
 public:
-    class ShieldSubSystem
+    struct FShieldSubSystem
     {
     public:
         bool IsActivated;
@@ -207,7 +246,7 @@ public:
         void AdjustPower();
     };
 
-    class WeaponSubSystem
+    struct FWeaponSubSystem
     {
     public:
         bool IsWeaponsLoaded;
@@ -216,7 +255,7 @@ public:
         void FireWeapons();
     };
 
-    class DamageControlSubSystem
+    struct FDamageControlSubSystem
     {
     public:
         bool IsDamagePresent;
@@ -226,7 +265,7 @@ public:
 
     };
 
-    class DefenceSubSystem
+    struct FDefenceSubSystem
     {
     public:
         void InitiateThreatScan();
@@ -236,7 +275,7 @@ public:
         void InitiateStealthMode();
     };
 
-    class VitalSubSystem
+    struct FVitalSubSystem
     {
     public:
         double CurrentFuelLevel;
@@ -254,17 +293,21 @@ public:
     };
 };
 
-class CommunicationSystem {
+USTRUCT(BlueprintType)
+struct FCommunicationSystem 
+{
+    GENERATED_USTRUCT_BODY()
+
 public:
-    Message* CurrentMessage;
-    TArray<Message*> MessageQueue;
+    FMessage* CurrentMessage;
+    TArray<FMessage*> MessageQueue;
     bool SecureCommunicationEnabled;
 
-    void SendMessage(Message* message);
+    void SendMessage(FMessage* message);
     void EmergencyBeacon();
     void SwitchSecureCommunication();
 
-    class InterstellarCommunication {
+    struct FInterstellarCommunication {
     public:
         bool IsSignalReceived;
 
@@ -272,7 +315,7 @@ public:
         void ReceiveSignal();
     };
 
-    class ShipToShipCommunication {
+    struct FShipToShipCommunication {
     public:
         bool IsSignalReceived;
 
@@ -280,7 +323,7 @@ public:
         void ReceiveSignal();
     };
 
-    class EmergencyBeacon {
+    struct FEmergencyBeacon {
     public:
         bool IsActivated;
 
@@ -289,28 +332,36 @@ public:
     };
 };
 
-class DockingCargoSystem {
+USTRUCT(BlueprintType)
+struct FDockingCargoSystem 
+{
+    GENERATED_USTRUCT_BODY()
+
 public:
     bool IsDockingInitiated;
     double CargoWeight;
     ASpaceStation* DockedStation;
-    TArray<Cargo*> CargoList;
+    TArray<FCargo*> CargoList;
 
     void InitiateDocking();
     void UnloadCargo();
     void Dock(ASpaceStation* station);
     void Undock();
-    void LoadCargo(Cargo* cargo);
-    void UnloadCargo(Cargo* cargo);
+    void LoadCargo(FCargo* cargo);
+    void UnloadCargo(FCargo* cargo);
 };
 
-class LifeSupportSystems {
+USTRUCT(BlueprintType)
+struct FLifeSupportSystems 
+{
+    GENERATED_USTRUCT_BODY()
+
 public:
     bool LIsLifeSupportEnabled;
     float CurrentLifeSupportLevel;
     float EmergencyLifeSupportLevel;
 
-    class LifeSupport {
+    struct FLifeSupport {
     public:
         double OxygenLevel;
         double Temperature;
@@ -321,7 +372,7 @@ public:
         void ManageHumidity();
     };
 
-    class FoodWaterSubSystem {
+    struct FFoodWaterSubSystem {
     public:
         double FoodStock;
         double WaterStock;
@@ -330,7 +381,7 @@ public:
         void PurifyWater();
     };
 
-    class MedicalSubSystem {
+    struct FMedicalSubSystem {
     public:
         bool IsInjuryPresent;
         bool IsIllnessPresent;
@@ -339,7 +390,7 @@ public:
         void TreatIllnesses();
     };
 
-    class ArtificialGravitySubSystem {
+    struct FArtificialGravitySubSystem {
     public:
         bool IsActivated;
         bool ArtificialGravityEnabled;
@@ -350,12 +401,9 @@ public:
     };
 };
 
-
-
 USTRUCT(BlueprintType)
 struct FFlightSystem
 {
-    //GENERATED_BODY()
     GENERATED_USTRUCT_BODY()
 
 public:
@@ -370,7 +418,7 @@ public:
     void SwitchFlightMode(EFlightMode FlightMode);
 
     void CheckFlightStatus();
-    void SetFlightRange(FlightRange Range);
+    void SetFlightRange(FFlightRange Range);
     void SetFlightMode(EFlightMode FlightMode);
     void SwitchFlightMode(); ///  Atmospheric, Orbital, ZeroG, Interplanetary, Interstellar 
 
@@ -389,14 +437,14 @@ public:
     void InitiateDecelerationMode();
     void InitiateCruiseMode(/*Type, Limit*/);
 
-    /*class FlightAssistant
+    struct FlightAssistant
     {
     public:
         void SwitchAutopilot();
         void SwitchFlightAssistant();
         void ExitAtmosphere();
         void ExitOrbit();
-    };*/
+    };
 
     /*FlightSystem()
         : CurrentFlightType(EFlightType::Station)
@@ -418,16 +466,31 @@ public:
     USpaceshipOnboardComputer();
 
     UPROPERTY()
-        FFlightSystem FlightSystem;
+        FFlightSystem FlightSystem {};
 
-   /* TargetSystem TargetSystemInstance{};
-    AstroNavigationSystem AstroNavigationSystemInstance{};
-    EngineSystem EngineSystemInstance{};
-    AstroExplorationSystem AstroExplorationSystemInstance{};
-    BoardSystems BoardSystemsInstance{};
-    CommunicationSystem CommunicationSystemInstance{};
-    DockingCargoSystem DockingCargoSystemInstance{};
-    LifeSupportSystems LifeSupportSystemsInstance{};*/
+    UPROPERTY()
+        FTargetSystem TargetSystemInstance {};
+
+    UPROPERTY()
+        FAstroNavigationSystem AstroNavigationSystemInstance {};
+
+    UPROPERTY()
+        FEngineSystem EngineSystemInstance {};
+
+    UPROPERTY()
+        FAstroExplorationSystem AstroExplorationSystemInstance {};
+
+    UPROPERTY()
+        FBoardSystems BoardSystemsInstance {};
+
+    UPROPERTY()
+        FCommunicationSystem CommunicationSystemInstance {};
+
+    UPROPERTY()
+        FDockingCargoSystem DockingCargoSystemInstance {};
+
+    UPROPERTY()
+        FLifeSupportSystems LifeSupportSystemsInstance {};
 
     FString GetCurrentFlightType();
 

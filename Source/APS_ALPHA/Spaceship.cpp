@@ -37,7 +37,9 @@ void ASpaceship::PrintOnboardComputerBasicIformation()
 {
 	EFlightType FlightType = OnboardComputer->FlightSystem.CurrentFlightType;
 	FString String = UEnum::GetValueAsString(FlightType);
-	GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, FString::Printf(TEXT("CurrentFlightType: %s"), *String));
+	GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, FString::Printf(TEXT("%s"), *String));
+
+
 
 	//FString CurrentFlightType = OnboardComputer->GetCurrentFlightType();
 	//UE_LOG(LogTemp, Warning, TEXT("CurrentFlightType: %s"), CurrentFlightType);
@@ -164,9 +166,9 @@ void ASpaceship::Tick(float DeltaTime)
 		// Get actor's world location
 		FVector ActorLocation = GetActorLocation();
 		// Get actor's forward, right and up vectors
-		FVector ActorForward = GetActorForwardVector();
+		/*FVector ActorForward = GetActorForwardVector();
 		FVector ActorRight = GetActorRightVector();
-		FVector ActorUp = GetActorUpVector();
+		FVector ActorUp = GetActorUpVector();*/
 		// Get actor's linear speed
 		FVector ActorVelocity = GetVelocity();
 		double ActorSpeed = ActorVelocity.Size();
@@ -175,9 +177,9 @@ void ASpaceship::Tick(float DeltaTime)
 		if (GEngine)
 		{
 			GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("ActorLocation: %s"), *ActorLocation.ToString()));
-			GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("ActorForward: %s"), *ActorForward.ToString()));
-			GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("ActorRight: %s"), *ActorRight.ToString()));
-			GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("ActorUp: %s"), *ActorUp.ToString()));
+			//GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("ActorForward: %s"), *ActorForward.ToString()));
+			//GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("ActorRight: %s"), *ActorRight.ToString()));
+			//GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("ActorUp: %s"), *ActorUp.ToString()));
 			GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("ActorSpeed: %f"), ActorSpeed));
 
 
