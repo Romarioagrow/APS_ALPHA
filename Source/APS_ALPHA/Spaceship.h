@@ -5,97 +5,11 @@
 #include <Components/SphereComponent.h>
 #include "GravitySource.h"
 #include "GravityCharacterPawn.h"
+#include "SpaceshipOnboardComputer.h"
 
 #include "CoreMinimal.h"
 #include "Spacecraft.h"
 #include "Spaceship.generated.h"
-
-///class AGravityCharacterPawn;
-
-
-
-
-
-//
-//// Класс автопилота и помощника полета
-//class AutopilotSystem {
-//public:
-//    void enableAutopilot();
-//    void disableAutopilot();
-//    void enableFlightAssistant();
-//    void disableFlightAssistant();
-//};
-//
-//// Класс горячих кнопок
-//class HotButtonSystem {
-//public:
-//    void exitAtmosphere();
-//    void stopRotation();
-//};
-//
-//// Класс интерстелларной связи
-//class CommunicationSystem {
-//public:
-//    void sendMessage(Message* message);
-//    void receiveMessage(Message* message);
-//    void emergencyBeacon();
-//    void enableSecureCommunication();
-//    void disableSecureCommunication();
-//};
-//
-//// Класс системы стыковки и грузоперевозок
-//class DockingAndCargoSystem {
-//public:
-//    void dock(Station* station);
-//    void undock();
-//    void loadCargo(Cargo* cargo);
-//    void unloadCargo(Cargo* cargo);
-//};
-//
-//// Класс системы исследования
-//class ExplorationSystem {
-//public:
-//    void launchProbe(Planet* planet);
-//    void receiveProbeData(ProbeData* data);
-//    void deployScientificEquipment();
-//    void collectScientificData();
-//};
-//
-//// Класс системы жизнеобеспечения
-//class LifeSupportSystem {
-//public:
-//    void enableLifeSupport();
-//    void disableLifeSupport();
-//    void checkLifeSupport();
-//    void initiateEmergencyLifeSupport();
-//};
-//
-//// Класс системы искусственной гравитации
-//class ArtificialGravitySystem {
-//public:
-//    void enableArtificialGravity();
-//    void disableArtificialGravity();
-//    void adjustArtificialGravity(float level);
-//};
-//
-//// Класс системы обнаружения угроз и обороны
-//class ThreatDetectionAndDefenceSystem {
-//public:
-//    void initiateThreatScan();
-//    void initiateCountermeasures();
-//    void initiateEvasiveManeuvers();
-//    void initiateCombatMode();
-//    void initiateStealthMode();
-//};
-//
-//// Класс системы детектирования и сканирования
-//class ScanningSystem {
-//public:
-//    void initiateShortRangeScan();
-//    void initiateLongRangeScan();
-//    void initiateFullSpectrumScan();
-//};
-
 
 
 /**
@@ -108,6 +22,13 @@ class APS_ALPHA_API ASpaceship : public ASpacecraft, public IGravitySource
 	
 public:
 	ASpaceship();
+
+	void PrintOnboardComputerBasicIformation();
+
+private:
+	UPROPERTY(VisibleAnywhere, Category = "Onboard Computer")
+	USpaceshipOnboardComputer* OnboardComputer;
+
 
 public:
 	void SwitchCamera();

@@ -18,6 +18,60 @@ ASpaceship::ASpaceship()
 
 	ForwardVector = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ForwardVector"));
 	ForwardVector->SetupAttachment(SpaceshipHull);
+
+	OnboardComputer = CreateDefaultSubobject<USpaceshipOnboardComputer>(TEXT("OnboardComputer"));
+}
+
+//FString GetEnumValueAsString(const TCHAR* Enum, int32 EnumValue)
+//{
+//	UEnum* EnumPtr = FindObject<UEnum>(ANY_PACKAGE, Enum, true);
+//	return EnumPtr ? EnumPtr->GetNameByValue(EnumValue).ToString() : "";
+//}
+
+// и теперь вы можете просто вызывать её
+//GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, FString::Printf(TEXT("Current Flight Type: %s"), *GetEnumValueAsString(TEXT("EFlightType"), (int32)OnboardComputer->FlightSystemInstance.CurrentFlightType)));
+// Аналогично для остальных типов...
+
+
+void ASpaceship::PrintOnboardComputerBasicIformation() 
+{
+	EFlightType FlightType = OnboardComputer->FlightSystem.CurrentFlightType;
+	FString String = UEnum::GetValueAsString(FlightType);
+	GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, FString::Printf(TEXT("CurrentFlightType: %s"), *String));
+
+	//FString CurrentFlightType = OnboardComputer->GetCurrentFlightType();
+	//UE_LOG(LogTemp, Warning, TEXT("CurrentFlightType: %s"), CurrentFlightType);
+
+	//GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Green, FString::Printf(TEXT("Current Flight Type: %s"), CurrentFlightType));
+
+
+	//GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("CurrentFlightType: %s"), OnboardComputer->FlightSystemInstance.CurrentFlightType));
+
+	/*FString GravityStateString = StaticEnum<USpaceshipOnboardComputer::EFlightType>()->GetNameStringByValue(static_cast<int32>(OnboardComputer->FlightSystemInstance.CurrentFlightType));
+	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("GravityStateString: %s"), *GravityStateString));*/
+
+	//GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, FString::Printf(TEXT("Current Flight Type: %s"), *GetEnumValueAsString(TEXT("EFlightType"), (int32)OnboardComputer->FlightSystemInstance.CurrentFlightType)));
+	////GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, FString::Printf(TEXT("Current Flight Mode: %s"), *GetEnumValueAsString(TEXT("EFlightMode"), (int32)OnboardComputer->FlightSystemInstance.CurrentFlightMode)));
+	//GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, FString::Printf(TEXT("Current Flight Status: %s"), *GetEnumValueAsString(TEXT("EFlightStatus"), (int32)OnboardComputer->FlightSystemInstance.CurrentFlightStatus)));
+	//GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, FString::Printf(TEXT("Current Engine State: %s"), *GetEnumValueAsString(TEXT("EEngineState"), (int32)OnboardComputer->EngineSystemInstance.CurrentEngineState)));
+	//GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, FString::Printf(TEXT("Current Engine Type: %s"), *GetEnumValueAsString(TEXT("EEngineType"), (int32)OnboardComputer->EngineSystemInstance.CurrentEngineType)));
+
+
+
+	//UE_LOG(LogTemp, Warning, TEXT("Current Target: %s"), *OnboardComputer->TargetSystemInstance.CurrentTarget);
+	//UE_LOG(LogTemp, Warning, TEXT("Current Astro Target: %s"), *OnboardComputer->AstroNavigationSystemInstance.CurrentAstroTarget);
+	/*GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, FString::Printf(TEXT("Current Flight Type: %d"), OnboardComputer->FlightSystemInstance.CurrentFlightType));
+	GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, FString::Printf(TEXT("Current Flight Mode: %d"), OnboardComputer->FlightSystemInstance.CurrentFlightMode));
+	GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, FString::Printf(TEXT("Current Flight Status: %d"), OnboardComputer->FlightSystemInstance.CurrentFlightStatus));
+	GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, FString::Printf(TEXT("Current Engine State: %d"), OnboardComputer->EngineSystemInstance.CurrentEngineState));
+	GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, FString::Printf(TEXT("Current Engine Type: %d"), OnboardComputer->EngineSystemInstance.CurrentEngineType));*/
+	/*GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, FString::Printf(TEXT("Current Flight Type: %s"), *GET_ENUM_NAME(EFlightType, OnboardComputer->FlightSystemInstance.CurrentFlightType)));
+	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, FString::Printf(TEXT("Current Flight Mode: %s"), *GET_ENUM_NAME(EFlightMode, OnboardComputer->FlightSystemInstance.CurrentFlightMode)));
+	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, FString::Printf(TEXT("Current Flight Status: %s"), *GET_ENUM_NAME(EFlightStatus, OnboardComputer->FlightSystemInstance.CurrentFlightStatus)));
+	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, FString::Printf(TEXT("Current Engine State: %s"), *GET_ENUM_NAME(EEngineState, OnboardComputer->EngineSystemInstance.CurrentEngineState)));
+	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, FString::Printf(TEXT("Current Engine Type: %s"), *GET_ENUM_NAME(EEngineType, OnboardComputer->EngineSystemInstance.CurrentEngineType)));*/
+
+	//UE_LOG(LogTemp, Warning, TEXT("Current Thrust Mode: %d"), OnboardComputer->EngineSystemInstance.CurrentThrustMode);
 }
 
 void ASpaceship::SwitchEngines()
@@ -125,6 +179,9 @@ void ASpaceship::Tick(float DeltaTime)
 			GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("ActorRight: %s"), *ActorRight.ToString()));
 			GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("ActorUp: %s"), *ActorUp.ToString()));
 			GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("ActorSpeed: %f"), ActorSpeed));
+
+
+			PrintOnboardComputerBasicIformation();
 		}
 
 	
