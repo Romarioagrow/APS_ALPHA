@@ -17,7 +17,7 @@ enum class EFlightMode : uint8
     Station UMETA(DisplayName = "Station"),
     Surface UMETA(DisplayName = "Surface"),
     Atmospheric UMETA(DisplayName = "Atmospheric"),
-    Orbital UMETA(DisplayName = "Orbital"),
+    Orbit UMETA(DisplayName = "Orbital"),
     Planetary UMETA(DisplayName = "Planetary"),
     Interplanetray UMETA(DisplayName = "Interplanetray"),
     Interstellar UMETA(DisplayName = "Interstellar"),
@@ -25,12 +25,13 @@ enum class EFlightMode : uint8
 };
 
 /**
- * @brief Physic forces effects and resistance
+ * @brief Physic forces, effects, resistance etc
 */
 UENUM(BlueprintType)
 enum class EFlightType : uint8
 {
     ZeroG,
+    LowG,
     Atmospheric,
     SubOrbital,
     Orbital,
@@ -38,9 +39,15 @@ enum class EFlightType : uint8
     LightSpeed,
     FTL,
     Hyperspace,
-    Tunneling
+    Tunneling,
+    Landing,
+    Docking,
+    Attracting,
 };
 
+/**
+ * @brief Fundamental Principle of moving ship
+*/
 UENUM(BlueprintType)
 enum class EEngineMode : uint8
 {
@@ -49,6 +56,9 @@ enum class EEngineMode : uint8
     SpaceWrap,
 };
 
+/**
+ * @brief Power and usage of engine
+*/
 UENUM(BlueprintType)
 enum class EEngineState : uint8
 {
@@ -59,6 +69,9 @@ enum class EEngineState : uint8
     Drift,
 };
 
+/**
+ * @brief Global ship status
+*/
 UENUM(BlueprintType)
 enum class EFlightStatus : uint8
 {
@@ -71,15 +84,25 @@ enum class EFlightStatus : uint8
     Combat,
 };
 
+/**
+ * @brief Presets for Fuel, power, supply etc ranges
+*/
 UENUM(BlueprintType)
 enum class EFlightRangeType : uint8
 {
+    Nearby,
     Short,
+    Close,
     Medium,
     Long,
+    Far,
+    Distant,
     Extreme
 };
 
+/**
+ * @brief Acceleration extremums, flight behavior, safety regulations etc
+*/
 UENUM(BlueprintType)
 enum class EFlightSafeMode : uint8
 {
@@ -199,7 +222,7 @@ struct FEngineSystem
 
 public:
     EEngineState CurrentEngineState{ EEngineState::Idle };
-    EEngineMode CurrentEngineType{ EEngineMode::Impulse };
+    EEngineMode CurrentEngineMode{ EEngineMode::Impulse };
     FThrustMode CurrentThrustMode;
 
     void MarshallerEngineMode();

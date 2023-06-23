@@ -53,5 +53,5 @@ FString USpaceshipOnboardComputer::GetEngineStateAsString()
 
 FString USpaceshipOnboardComputer::GetEngineTypeAsString()
 {
-    return UEnum::GetValueAsString(EngineSystem.CurrentEngineType);
+    return UEnum::GetValueAsString(EngineSystem.CurrentEngineMode);
 }
