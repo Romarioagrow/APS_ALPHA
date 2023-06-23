@@ -44,6 +44,18 @@ void ASpaceship::BeginPlay()
 	}
 }
 
+// TO COMP
+struct ZoneData
+{
+	AWorldActor* Actor;
+	double Distance;
+
+	ZoneData(AWorldActor* InActor, double InDistance)
+		: Actor(InActor)
+		, Distance(InDistance)
+	{}
+};
+
 void ASpaceship::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
@@ -59,7 +71,6 @@ void ASpaceship::Tick(float DeltaTime)
 		// Displaying them on screen
 		GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("ActorLocation: %s"), *ActorLocation.ToString()));
 		GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("ActorSpeed: %f"), ActorSpeed));
-		GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Pilot Actor Name: %s"), *Pilot->GetName()));
 
 		if (bEngineRunning)
 		{
@@ -100,19 +111,32 @@ void ASpaceship::Tick(float DeltaTime)
 						// TO PROXIMITY SYSTEM
 						double DistanceInKm = FMath::Sqrt(DistanceSquared) / 100000;
 						FString Message = FString::Printf(TEXT("Inside the zone of influence of actor %s at a distance of %f kilometers."), *WorldActor->GetName(), DistanceInKm);
-
 						GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Yellow, Message);
 					}
 				}
 			}
 
-			// После первого цикла...
-			for (AWorldActor* WorldActor : CurrentZones)
+			if (CurrentZones.Num() > 0)
 			{
-				FString Message = FString::Printf(TEXT("Currently inside the zone of influence of actor %s."), *WorldActor->GetName());
-				GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Green, Message);
+				// Получить положение актора для удобства
+				FVector MyLocation = GetActorLocation();
+
+				// Отсортировать массив по расстоянию до актора
+				CurrentZones.Sort([MyLocation](const AWorldActor& A, const AWorldActor& B)
+					{
+						float DistanceA = FVector::DistSquared(A.GetActorLocation(), MyLocation);
+						float DistanceB = FVector::DistSquared(B.GetActorLocation(), MyLocation);
+						return DistanceA < DistanceB;
+					});
+
+				AWorldActor* AffectActor = CurrentZones[0];
+				GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, TEXT("Affect Object: ") + AffectActor->GetName());
+
+				// OnBoardComputer->ComputeFlightStatus(AffectActor);
+			
 			}
 		}
+		GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Pilot Actor Name: %s"), *Pilot->GetName()));
 	}
 }
 
