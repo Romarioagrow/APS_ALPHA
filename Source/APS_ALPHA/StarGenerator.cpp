@@ -267,6 +267,7 @@ void UStarGenerator::ApplyModel(AStar* NewStar, TSharedPtr<FStarModel> StarModel
     NewStar->SetStarSpectralType(StarModel->SpectralType);
     NewStar->SetFullSpectralClass(StarModel->FullSpectralClass);
     NewStar->SetFullSpectralName(StarModel->FullSpectralName);
+    NewStar->RadiusKM = StarModel->RadiusKM;
 
 }
 
@@ -286,6 +287,7 @@ void UStarGenerator::ApplyModel(AStar* NewStar, TSharedPtr<FStarModel> StarModel
         // Generate a star model
         StarModel->Mass = Mass;
         StarModel->Radius = Radius;
+        StarModel->RadiusKM = Radius * 6.957e+5;
         StarModel->Luminosity = Luminosity;
         StarModel->SurfaceTemperature = SurfaceTemperature;
         StarModel->Age = CalculateMainSequenceStarAge(Mass);

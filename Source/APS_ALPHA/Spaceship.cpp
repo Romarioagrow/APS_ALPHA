@@ -3,6 +3,8 @@
 #include "Spaceship.h"
 #include "WorldActor.h"
 #include "Kismet/GameplayStatics.h"
+#include "CelestialBody.h"
+#include "Star.h"
 
 
 ASpaceship::ASpaceship()
@@ -71,7 +73,20 @@ void ASpaceship::Tick(float DeltaTime)
 			{
 				if (WorldActor)
 				{
-					double DistanceSquared = FVector::DistSquared(WorldActor->GetActorLocation(), GetActorLocation());
+					double DistanceSquared = 0;
+					if (WorldActor->IsA(AStar::StaticClass()) || WorldActor->IsA(AOrbitalBody::StaticClass()))
+					{
+						ACelestialBody* CelestialBody = Cast<ACelestialBody>(WorldActor);
+						if (CelestialBody)
+						{
+							double InfluenceRadius = CelestialBody->RadiusKM * 100000; // Конвертировать километры в юниты Unreal (1 unit = 1 cm)
+							DistanceSquared = FVector::DistSquared(WorldActor->GetActorLocation(), GetActorLocation()) - FMath::Square(InfluenceRadius);
+						}
+					}
+					else
+					{
+						DistanceSquared = FVector::DistSquared(WorldActor->GetActorLocation(), GetActorLocation());
+					}
 
 					FVector Origin, BoxExtent;
 					WorldActor->GetActorBounds(true, Origin, BoxExtent);
@@ -83,7 +98,6 @@ void ASpaceship::Tick(float DeltaTime)
 
 						// Вывести сообщение на экран
 						// TO PROXIMITY SYSTEM
-						//FString Message = FString::Printf(TEXT("Inside the zone of influence of actor %s at a distance of %f units."), *WorldActor->GetName(), FMath::Sqrt(DistanceSquared));
 						double DistanceInKm = FMath::Sqrt(DistanceSquared) / 100000;
 						FString Message = FString::Printf(TEXT("Inside the zone of influence of actor %s at a distance of %f kilometers."), *WorldActor->GetName(), DistanceInKm);
 

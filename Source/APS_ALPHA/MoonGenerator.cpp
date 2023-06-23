@@ -26,6 +26,7 @@ void UMoonGenerator::ApplyModel(AMoon* Moon, TSharedPtr<FMoonModel> MoonGenerati
     Moon->SetMoonDensity(MoonGenerationModel->MoonDensity);
     Moon->SetMoonGravity(MoonGenerationModel->MoonGravity);
     Moon->SetOrbitDistance(MoonGenerationModel->OrbitDistance);
+    Moon->RadiusKM = MoonGenerationModel->RadiusKM;
 }
 
 void UMoonGenerator::ConnectMoonWithPlanet(AMoon* NewMoon, APlanet* NewPlanet)

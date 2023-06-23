@@ -15,12 +15,16 @@ class APS_ALPHA_API ACelestialBody : public AAstroActor, public IAstonomicalBody
 {
 	GENERATED_BODY()
 
-private:
+//private:
+public:
 	UPROPERTY(VisibleAnywhere, Category = "Celestial Body")
-		float Radius{ 0 };
+		double Radius{ 0 };
 
 	UPROPERTY(VisibleAnywhere, Category = "Celestial Body")
-		float Mass{ 0 };
+		double RadiusKM{ 0 };
+
+	UPROPERTY(VisibleAnywhere, Category = "Celestial Body")
+		double Mass{ 0 };
 	
 	UPROPERTY(VisibleAnywhere, Category = "Celestial Body")
 		FString Age { "Unknown" };

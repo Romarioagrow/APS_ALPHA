@@ -99,4 +99,5 @@ void UPlanetGenerator::ApplyModel(APlanet* PlanetActor, TSharedPtr<FPlanetModel>
     PlanetActor->SetMoonsList(PlanetGenerationModel->MoonsList);
 	PlanetActor->LagrangePoints = PlanetGenerationModel->LagrangePoints;
     PlanetActor->Orbits = PlanetGenerationModel->Orbits;
+    PlanetActor->RadiusKM = PlanetGenerationModel->RadiusKM;
 }
