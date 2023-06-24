@@ -89,8 +89,9 @@ enum class EFlightStatus : uint8
  * @brief Presets for Fuel, power, supply etc ranges
 */
 UENUM(BlueprintType)
-enum class EFlightRangeType : uint8
+enum class EFlightRange : uint8
 {
+    Standart,
     Nearby,
     Short,
     Close,
@@ -442,6 +443,8 @@ public:
     EFlightMode CurrentFlightMode{ EFlightMode::Station };
     EFlightType CurrentFlightType{ EFlightType::ZeroG };
     EFlightStatus CurrentFlightStatus{ EFlightStatus::OK };
+    EFlightRange CurrentFlightRange{ EFlightRange::Standart };
+    EFlightSafeMode CurrentFlightSafeMode{ EFlightSafeMode::Normal };
 
     // Метод для переключения типа полёта
     void SwitchEngineType(EEngineMode EngineType);
