@@ -147,20 +147,19 @@ void ASpaceship::Tick(float DeltaTime)
 
 			if (CurrentZones.Num() > 0)
 			{
-				const FActorDistance& ClosestActorDistance = CurrentZones[0];
+				const FActorDistance& AffectedActorDistance = CurrentZones[0];
 
-				AWorldActor* ClosestActor = ClosestActorDistance.Actor;
-				GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, TEXT("Affect Object: ") + ClosestActor->GetName());
+				AWorldActor* AffectedActor = AffectedActorDistance.Actor;
+				GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, TEXT("Affect Object: ") + AffectedActor->GetName());
 
 
-				/// OnboardComputer->ComputeFlightStatus(ClosestActor);
+				OnboardComputer->ComputeFlightStatus(AffectedActor);
 
-				ACelestialBody* CelestialBody = Cast<ACelestialBody>(ClosestActor);
+				ACelestialBody* CelestialBody = Cast<ACelestialBody>(AffectedActor);
 				if (CelestialBody)
 				{
 					TArray<AActor*> ChildActors;
 					GetAttachedActorsRecursively(CelestialBody, ChildActors);
-
 					for (AActor* ChildActor : ChildActors)
 					{
 						AWorldActor* WorldActorChild = Cast<AWorldActor>(ChildActor);
@@ -168,6 +167,11 @@ void ASpaceship::Tick(float DeltaTime)
 						{
 							CalculateDistanceAndAddToZones(WorldActorChild);
 						}
+					}
+					if (ChildActors.Num() > 0)
+					{
+						AActor* ClosestObject = ChildActors[0];
+						GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, FString::Printf(TEXT("Closest Object: %s"), *ClosestObject->GetName()));
 					}
 				}
 			}

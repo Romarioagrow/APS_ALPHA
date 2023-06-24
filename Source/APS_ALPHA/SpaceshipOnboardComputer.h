@@ -43,6 +43,7 @@ enum class EFlightType : uint8
     Landing,
     Docking,
     Attracting,
+    ArtificialGravity
 };
 
 /**
@@ -493,6 +494,8 @@ class APS_ALPHA_API USpaceshipOnboardComputer : public UObject
 
 public:
     USpaceshipOnboardComputer();
+
+    void ComputeFlightStatus(AWorldActor* AffectedActor);
 
     FString GetEnumValueAsString(const TCHAR* EnumName, int32 EnumValue);
 

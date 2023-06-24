@@ -5,11 +5,63 @@
 #include "UObject/UnrealType.h"
 #include "UObject/Class.h"
 #include "UObject/EnumProperty.h"
+#include "CelestialBody.h"
+#include "Planet.h"
+#include "Star.h"
 
 
 
 USpaceshipOnboardComputer::USpaceshipOnboardComputer()
 {
+}
+
+void USpaceshipOnboardComputer::ComputeFlightStatus(AWorldActor* AffectedActor)
+{
+    if (!AffectedActor) // Проверка на валидность
+        return;
+
+    // Проверить тип актора и установить соответствующий режим полета и тип полета
+    if (AffectedActor->IsA(ACelestialBody::StaticClass()))
+    {
+        ACelestialBody* CelestialBody = Cast<ACelestialBody>(AffectedActor);
+
+        // Изменение параметров полета в зависимости от типа тела
+        if (CelestialBody->IsA(APlanet::StaticClass()))
+        {
+            FlightSystem.CurrentFlightMode = EFlightMode::Planetary;
+            FlightSystem.CurrentFlightType = EFlightType::ZeroG;
+
+            // check proximity!
+        }
+        else if (CelestialBody->IsA(AStar::StaticClass()))
+        {
+            FlightSystem.CurrentFlightMode = EFlightMode::Interplanetray;
+            FlightSystem.CurrentFlightType = EFlightType::LightSpeed;
+        }
+        // Добавьте больше условий, если необходимо
+    }
+    else if (AffectedActor->IsA(ATechActor::StaticClass()))
+    {
+        // Здесь вы можете настроить параметры полета для технических объектов
+        FlightSystem.CurrentFlightMode = EFlightMode::Station;
+        FlightSystem.CurrentFlightType = EFlightType::ArtificialGravity;
+    }
+
+    //// Настройка типа диапазона полета, например, в зависимости от расстояния до объекта
+    //float Distance = FVector::Dist(Actor->GetActorLocation(), ShipLocation); // Допустим, ShipLocation - это положение корабля
+    //if (Distance < 1000) // Примерное расстояние, замените на реальные значения
+    //{
+    //    FlightRangeType = EFlightRangeType::Nearby;
+    //}
+    //else if (Distance < 10000)
+    //{
+    //    FlightRangeType = EFlightRangeType::Medium;
+    //}
+    //else
+    //{
+    //    FlightRangeType = EFlightRangeType::Distant;
+    //}
+
 }
 
 FString USpaceshipOnboardComputer::GetEnumValueAsString(const TCHAR* EnumName, int32 EnumValue)

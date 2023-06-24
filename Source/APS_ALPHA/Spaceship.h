@@ -38,7 +38,6 @@ private:
 
 	TArray<AWorldActor*> WorldActors{};
 	TArray<AWorldActor*> CurrentZonesInfluence{};
-	//TArray<AWorldActor*> CurrentZones{};
 	TArray<FActorDistance> Distances;
 	TArray<FActorDistance> CurrentZones;
 
