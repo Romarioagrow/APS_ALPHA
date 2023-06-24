@@ -105,8 +105,11 @@ void ASpaceship::Tick(float DeltaTime)
 		PrintOnboardComputerBasicIformation();
 
 		// Displaying them on screen
-		GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("ActorLocation: %s"), *ActorLocation.ToString()));
-		GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("ActorSpeed: %f"), ActorSpeed));
+		GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Actor Location: %s"), *ActorLocation.ToString()));
+		GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Actor Velocity: %f"), ActorSpeed));
+		GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Thrust Force: %f"), OnboardComputer->GetEngineThrustForce()));
+		GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Hull Angular Damping: %f"), SpaceshipHull->GetAngularDamping()));
+		GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Hull Linear Damping: %f"), SpaceshipHull->GetLinearDamping()));
 
 		if (bEngineRunning)
 		{
@@ -218,6 +221,8 @@ void ASpaceship::PrintOnboardComputerBasicIformation()
 		*OnboardComputer->GetEnumValueAsString(TEXT("EFlightMode"), (int32)OnboardComputer->FlightSystem.CurrentFlightMode)));
 }
 
+
+
 void ASpaceship::SwitchEngines()
 {
 	bEngineRunning = !bEngineRunning;
@@ -234,7 +239,7 @@ void ASpaceship::ThrustForward(float Value)
 	const FVector Direction = ForwardVector->GetForwardVector();
 
 	// ”множаем вектор вперед на значение оси и на силу двигател€.
-	const FVector Impulse = Direction * Value * ThrustForce;
+	const FVector Impulse = Direction * Value * OnboardComputer->GetEngineThrustForce();//OnboardComputer->FlightSystem.FlightParams.ThrustForce;
 	SpaceshipHull->AddImpulse(Impulse, NAME_None, true);
 }
 
@@ -245,7 +250,7 @@ void ASpaceship::ThrustSide(float Value)
 
 	// ѕолучаем вектор вперед корабл€.
 	const FVector Direction = ForwardVector->GetRightVector();
-	const FVector Impulse = Direction * Value * ThrustForce;
+	const FVector Impulse = Direction * Value * OnboardComputer->GetEngineThrustForce();
 	SpaceshipHull->AddImpulse(Impulse, NAME_None, true);
 }
 
@@ -256,7 +261,7 @@ void ASpaceship::ThrustVertical(float Value)
 
 	// ѕолучаем вектор вперед корабл€.
 	const FVector Direction = ForwardVector->GetUpVector();
-	const FVector Impulse = Direction * Value * ThrustForce;
+	const FVector Impulse = Direction * Value * OnboardComputer->GetEngineThrustForce();
 	SpaceshipHull->AddImpulse(Impulse, NAME_None, true);
 }
 

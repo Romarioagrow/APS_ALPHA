@@ -6,7 +6,29 @@
 #include "UObject/NoExportTypes.h"
 #include "SpaceshipOnboardComputer.generated.h"
 
-//#define GETENUMSTRING(etype, evalue) ( (FindObject(ANY_PACKAGE, TEXT(etype), true) != nullptr) ? FindObject(ANY_PACKAGE, TEXT(etype), true)->GetEnumName((int32)evalue) : FString("Invalid - are you sure enum uses UENUM() macro?") )
+USTRUCT(BlueprintType)
+struct FFlightParams
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite)
+        double ThrustForce;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite)
+        double LinearResistance;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite)
+        double AngularResistance;
+
+    // Конструктор по умолчанию
+    FFlightParams() : ThrustForce(100), LinearResistance(0.1), AngularResistance(0.1) {}
+
+    // Конструктор с параметрами
+    FFlightParams(double InThrustForce, double InLinearResistance, double InAngularResistance)
+        : ThrustForce(InThrustForce), LinearResistance(InLinearResistance), AngularResistance(InAngularResistance) {}
+};
+
+
 
 /**
  * @brief Diapasones, limits, ranges, etc.
@@ -184,6 +206,8 @@ struct FCargo
     double CargoWeight;
 };
 
+
+
 USTRUCT(BlueprintType)
 struct FTargetSystem
 {
@@ -223,6 +247,8 @@ struct FEngineSystem
     GENERATED_USTRUCT_BODY()
 
 public:
+    double ThrustForce { 100 };
+
     EEngineState CurrentEngineState{ EEngineState::Idle };
     EEngineMode CurrentEngineMode{ EEngineMode::Impulse };
     FThrustMode CurrentThrustMode;
@@ -439,6 +465,7 @@ struct FFlightSystem
 
 public:
     //FlightSystem();
+    FFlightParams FlightParams {};
 
     EFlightMode CurrentFlightMode{ EFlightMode::Station };
     EFlightType CurrentFlightType{ EFlightType::ZeroG };
@@ -498,6 +525,9 @@ class APS_ALPHA_API USpaceshipOnboardComputer : public UObject
 public:
     USpaceshipOnboardComputer();
 
+public:
+    double GetEngineThrustForce();//
+
     void ComputeFlightStatus(AWorldActor* AffectedActor);
 
     FString GetEnumValueAsString(const TCHAR* EnumName, int32 EnumValue);
@@ -540,6 +570,19 @@ public:
         FLifeSupportSystems LifeSupportSystems {};
 
     FString GetCurrentFlightType();
+
+    UPROPERTY()
+        TMap<EFlightMode, FFlightParams> FlightModeParams =
+        {
+            {EFlightMode::Station, FFlightParams(50.0, 0.01, 0.05)},
+            {EFlightMode::Surface, FFlightParams(100, 0.03, 0.08)},
+            {EFlightMode::Atmospheric, FFlightParams(500, 0.04, 0.12)},
+            {EFlightMode::Orbit, FFlightParams(1000, 0.05, 0.16)},
+            {EFlightMode::Planetary, FFlightParams(10000, 0.06, 0.2)},
+            {EFlightMode::Interplanetray, FFlightParams(100000, 0.07, 0.24)},
+            {EFlightMode::Interstellar, FFlightParams(1000000, 0.08, 0.28)},
+            {EFlightMode::Intergalaxy, FFlightParams(100000000, 0.09, 0.32)}
+        };
 
 public:
 

@@ -47,6 +47,22 @@ void USpaceshipOnboardComputer::ComputeFlightStatus(AWorldActor* AffectedActor)
         FlightSystem.CurrentFlightType = EFlightType::ArtificialGravity;
     }
 
+    FFlightParams* Params = FlightModeParams.Find(FlightSystem.CurrentFlightMode);
+
+    // Проверка, были ли найдены параметры
+    if (Params)
+    {
+        // Установка параметров
+        FlightSystem.FlightParams.ThrustForce = Params->ThrustForce;
+        FlightSystem.FlightParams.LinearResistance = Params->LinearResistance;
+        FlightSystem.FlightParams.AngularResistance = Params->AngularResistance;
+
+    }
+    else
+    {
+        // Если параметры не найдены, можно вывести ошибку или выполнить какое-то другое действие.
+        UE_LOG(LogTemp, Warning, TEXT("No flight parameters found for current mode"));
+    }
     //// Настройка типа диапазона полета, например, в зависимости от расстояния до объекта
     //float Distance = FVector::Dist(Actor->GetActorLocation(), ShipLocation); // Допустим, ShipLocation - это положение корабля
     //if (Distance < 1000) // Примерное расстояние, замените на реальные значения
@@ -106,4 +122,9 @@ FString USpaceshipOnboardComputer::GetEngineStateAsString()
 FString USpaceshipOnboardComputer::GetEngineTypeAsString()
 {
     return UEnum::GetValueAsString(EngineSystem.CurrentEngineMode);
+}
+
+double USpaceshipOnboardComputer::GetEngineThrustForce()
+{
+    return FlightSystem.FlightParams.ThrustForce;
 }

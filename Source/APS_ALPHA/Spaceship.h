@@ -19,6 +19,8 @@ struct FActorDistance
 
 	FActorDistance(AWorldActor* InActor, double InDistance) : Actor(InActor), Distance(InDistance) {}
 };
+
+
 /**
  * 
  */
@@ -41,10 +43,11 @@ private:
 	TArray<FActorDistance> Distances;
 	TArray<FActorDistance> CurrentZones;
 
-public:
-	void SwitchCamera();
+	
 
-	double ThrustForce { 100 };
+public:
+
+	void SwitchCamera();
 
 	bool bEngineRunning {false };
 
