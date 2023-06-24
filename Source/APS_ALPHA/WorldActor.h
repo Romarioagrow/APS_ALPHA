@@ -16,6 +16,9 @@ public:
 	// Sets default values for this actor's properties
 	AWorldActor();
 
+	UPROPERTY(VisibleAnywhere, Category = "World Actor")
+		double AffectionRadiusKM{ 0 };
+
 protected:
 	// Called when the game starts or when spawned
 	virtual void BeginPlay() override;

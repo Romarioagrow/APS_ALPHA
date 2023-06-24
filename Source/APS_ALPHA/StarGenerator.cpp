@@ -268,6 +268,7 @@ void UStarGenerator::ApplyModel(AStar* NewStar, TSharedPtr<FStarModel> StarModel
     NewStar->SetFullSpectralClass(StarModel->FullSpectralClass);
     NewStar->SetFullSpectralName(StarModel->FullSpectralName);
     NewStar->RadiusKM = StarModel->RadiusKM;
+    NewStar->AffectionRadiusKM = StarModel->RadiusKM;
 
 }
 

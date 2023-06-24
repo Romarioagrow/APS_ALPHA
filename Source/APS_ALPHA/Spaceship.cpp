@@ -59,6 +59,8 @@ struct ZoneData
 void ASpaceship::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+	uint64 StartCycles = FPlatformTime::Cycles();
+
 	if (Pilot)
 	{
 		// Telemetry
@@ -78,27 +80,13 @@ void ASpaceship::Tick(float DeltaTime)
 			SpaceshipHull->AddTorqueInRadians(OppositeTorque, NAME_None, true);
 
 			CurrentZones.Empty();
-
-			// Проверить расстояния до всех акторов AWorldActor
 			for (AWorldActor* WorldActor : WorldActors)
 			{
 				if (WorldActor)
 				{
-					double DistanceSquared = 0;
 					FVector ShipLocation = GetActorLocation();
-					if (WorldActor->IsA(AStar::StaticClass()) || WorldActor->IsA(AOrbitalBody::StaticClass()))
-					{
-						ACelestialBody* CelestialBody = Cast<ACelestialBody>(WorldActor);
-						if (CelestialBody)
-						{
-							double InfluenceRadius = CelestialBody->RadiusKM * 100000; // Конвертировать километры в юниты Unreal (1 unit = 1 cm)
-							DistanceSquared = FVector::DistSquared(WorldActor->GetActorLocation(), ShipLocation) - FMath::Square(InfluenceRadius);
-						}
-					}
-					else
-					{
-						DistanceSquared = FVector::DistSquared(WorldActor->GetActorLocation(), ShipLocation);
-					}
+					double InfluenceRadius = WorldActor->AffectionRadiusKM * 100000; // Конвертировать километры в юниты Unreal (1 unit = 1 cm)
+					double DistanceSquared = FVector::DistSquared(WorldActor->GetActorLocation(), ShipLocation) - FMath::Square(InfluenceRadius);
 
 					FVector Origin, BoxExtent;
 					WorldActor->GetActorBounds(true, Origin, BoxExtent);
@@ -106,10 +94,10 @@ void ASpaceship::Tick(float DeltaTime)
 
 					if (DistanceSquared <= FMath::Square(InfluenceRadius))
 					{
-						CurrentZones.Add(WorldActor); // Добавить в список текущих зон
+						// Добавить в список текущих зон
+						CurrentZones.Add(FActorDistance(WorldActor, DistanceSquared));
 
 						// Вывести сообщение на экран
-						// TO PROXIMITY SYSTEM
 						double DistanceInKm = FMath::Sqrt(DistanceSquared) / 100000;
 						FString Message = FString::Printf(TEXT("Inside the zone of influence of actor %s at a distance of %f kilometers."), *WorldActor->GetName(), DistanceInKm);
 						GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Yellow, Message);
@@ -117,28 +105,27 @@ void ASpaceship::Tick(float DeltaTime)
 				}
 			}
 
+			// Сортировать массив по расстоянию до актора
+			CurrentZones.Sort([](const FActorDistance& A, const FActorDistance& B)
+				{
+					return A.Distance < B.Distance;
+				});
+
 			if (CurrentZones.Num() > 0)
 			{
-				// Получить положение актора для удобства
-				FVector MyLocation = GetActorLocation();
+				const FActorDistance& ClosestActorDistance = CurrentZones[0];
 
-				// Отсортировать массив по расстоянию до актора
-				CurrentZones.Sort([MyLocation](const AWorldActor& A, const AWorldActor& B)
-					{
-						double DistanceA = FVector::DistSquared(A.GetActorLocation(), MyLocation);
-						double DistanceB = FVector::DistSquared(B.GetActorLocation(), MyLocation);
-						return DistanceA < DistanceB;
-					});
+				AWorldActor* ClosestActor = ClosestActorDistance.Actor;
+				GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, TEXT("Affect Object: ") + ClosestActor->GetName());
 
-				AWorldActor* AffectActor = CurrentZones[0];
-				GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, TEXT("Affect Object: ") + AffectActor->GetName());
-
-				// OnBoardComputer->ComputeFlightStatus(AffectActor);
-			
+				/// OnboardComputer->ComputeFlightStatus(ClosestActor);
 			}
 		}
 		GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Pilot Actor Name: %s"), *Pilot->GetName()));
 	}
+	uint64 EndCycles = FPlatformTime::Cycles();
+	double ElapsedTime = FPlatformTime::ToSeconds(EndCycles - StartCycles);
+	GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, FString::Printf(TEXT("Time elapsed: %f seconds"), ElapsedTime));
 }
 
 void ASpaceship::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)

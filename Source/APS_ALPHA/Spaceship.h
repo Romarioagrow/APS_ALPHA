@@ -11,7 +11,14 @@
 #include "Spacecraft.h"
 #include "Spaceship.generated.h"
 
+// Определите эту структуру где-то в начале файла
+struct FActorDistance
+{
+	AWorldActor* Actor;
+	double Distance;
 
+	FActorDistance(AWorldActor* InActor, double InDistance) : Actor(InActor), Distance(InDistance) {}
+};
 /**
  * 
  */
@@ -30,7 +37,9 @@ private:
 	USpaceshipOnboardComputer* OnboardComputer;
 
 	TArray<AWorldActor*> WorldActors{};
-	TArray<AWorldActor*> CurrentZones{};
+	//TArray<AWorldActor*> CurrentZones{};
+	TArray<FActorDistance> Distances;
+	TArray<FActorDistance> CurrentZones;
 
 public:
 	void SwitchCamera();
