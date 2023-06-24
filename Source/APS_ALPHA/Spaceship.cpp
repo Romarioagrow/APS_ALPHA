@@ -85,18 +85,19 @@ void ASpaceship::Tick(float DeltaTime)
 				if (WorldActor)
 				{
 					double DistanceSquared = 0;
+					FVector ShipLocation = GetActorLocation();
 					if (WorldActor->IsA(AStar::StaticClass()) || WorldActor->IsA(AOrbitalBody::StaticClass()))
 					{
 						ACelestialBody* CelestialBody = Cast<ACelestialBody>(WorldActor);
 						if (CelestialBody)
 						{
 							double InfluenceRadius = CelestialBody->RadiusKM * 100000; // Конвертировать километры в юниты Unreal (1 unit = 1 cm)
-							DistanceSquared = FVector::DistSquared(WorldActor->GetActorLocation(), GetActorLocation()) - FMath::Square(InfluenceRadius);
+							DistanceSquared = FVector::DistSquared(WorldActor->GetActorLocation(), ShipLocation) - FMath::Square(InfluenceRadius);
 						}
 					}
 					else
 					{
-						DistanceSquared = FVector::DistSquared(WorldActor->GetActorLocation(), GetActorLocation());
+						DistanceSquared = FVector::DistSquared(WorldActor->GetActorLocation(), ShipLocation);
 					}
 
 					FVector Origin, BoxExtent;
@@ -124,8 +125,8 @@ void ASpaceship::Tick(float DeltaTime)
 				// Отсортировать массив по расстоянию до актора
 				CurrentZones.Sort([MyLocation](const AWorldActor& A, const AWorldActor& B)
 					{
-						float DistanceA = FVector::DistSquared(A.GetActorLocation(), MyLocation);
-						float DistanceB = FVector::DistSquared(B.GetActorLocation(), MyLocation);
+						double DistanceA = FVector::DistSquared(A.GetActorLocation(), MyLocation);
+						double DistanceB = FVector::DistSquared(B.GetActorLocation(), MyLocation);
 						return DistanceA < DistanceB;
 					});
 
