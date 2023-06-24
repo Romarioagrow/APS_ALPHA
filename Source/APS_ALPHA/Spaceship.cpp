@@ -90,7 +90,7 @@ void ASpaceship::Tick(float DeltaTime)
 
 					FVector Origin, BoxExtent;
 					WorldActor->GetActorBounds(true, Origin, BoxExtent);
-					double InfluenceRadius = BoxExtent.Size() / 2;
+					InfluenceRadius = BoxExtent.Size() / 2;
 
 					if (DistanceSquared <= FMath::Square(InfluenceRadius))
 					{
@@ -118,7 +118,55 @@ void ASpaceship::Tick(float DeltaTime)
 				AWorldActor* ClosestActor = ClosestActorDistance.Actor;
 				GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, TEXT("Affect Object: ") + ClosestActor->GetName());
 
+
 				/// OnboardComputer->ComputeFlightStatus(ClosestActor);
+
+
+
+				ACelestialBody* CelestialBody = Cast<ACelestialBody>(ClosestActor);
+
+				if (CelestialBody)
+				{
+					// Получаем все связанные с CelestialBody акторы
+					TArray<AActor*> ChildActors;
+					CelestialBody->GetAttachedActors(ChildActors);
+
+					TMap<AAstroActor*, double> BodyAstroActorsDistance;
+					double MinDistance = MAX_dbl;
+					AAstroActor* ClosestAstroActor = nullptr;
+
+					for (AActor* Actor : ChildActors)
+					{
+						AAstroActor* BodyAstroActor = Cast<AAstroActor>(Actor);
+						if (BodyAstroActor)
+						{
+							double BodyActorDistance = FVector::DistSquared(BodyAstroActor->GetActorLocation(), ActorLocation) - FMath::Square(BodyAstroActor->AffectionRadiusKM * 100000);
+							BodyAstroActorsDistance.Add(BodyAstroActor, BodyActorDistance);
+
+							// Если это ближайший WorldActor, сохраняем его
+							if (BodyActorDistance < MinDistance)
+							{
+								MinDistance = BodyActorDistance;
+								ClosestAstroActor = BodyAstroActor;
+							}
+						}
+					}
+
+					// Выводим на экран информацию обо всех WorldActors и ближайшем WorldActor
+					for (auto& Elem : BodyAstroActorsDistance)
+					{
+						double DistanceInKm = FMath::Sqrt(Elem.Value) / 100000;
+						FString Message = FString::Printf(TEXT("AstroActor %s is at a distance of %f kilometers."), *Elem.Key->GetName(), DistanceInKm);
+						GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Yellow, Message);
+					}
+
+					if (ClosestAstroActor)
+					{
+						double DistanceInKm = FMath::Sqrt(MinDistance) / 100000;
+						FString Message = FString::Printf(TEXT("Closest AstroActor is %s at a distance of %f kilometers."), *ClosestAstroActor->GetName(), DistanceInKm);
+						GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Green, Message);
+					}
+				}
 			}
 		}
 		GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Pilot Actor Name: %s"), *Pilot->GetName()));
@@ -126,6 +174,7 @@ void ASpaceship::Tick(float DeltaTime)
 	uint64 EndCycles = FPlatformTime::Cycles();
 	double ElapsedTime = FPlatformTime::ToSeconds(EndCycles - StartCycles);
 	GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, FString::Printf(TEXT("Time elapsed: %f seconds"), ElapsedTime));
+
 }
 
 void ASpaceship::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -140,6 +189,7 @@ void ASpaceship::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent
 	PlayerInputComponent->BindAxis("ThrustYaw", this, &ASpaceship::ThrustYaw);
 	PlayerInputComponent->BindAxis("ThrustPitch", this, &ASpaceship::ThrustPitch);
 	PlayerInputComponent->BindAxis("ThrustRoll", this, &ASpaceship::ThrustRoll);
+
 }
 
 
