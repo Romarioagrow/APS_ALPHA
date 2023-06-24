@@ -56,6 +56,40 @@ struct ZoneData
 	{}
 };
 
+void GetAttachedActorsRecursively(AActor* ParentActor, TArray<AActor*>& OutActors)
+{
+	TArray<AActor*> AttachedActors;
+	ParentActor->GetAttachedActors(AttachedActors);
+	for (AActor* ChildActor : AttachedActors)
+	{
+		OutActors.Add(ChildActor);
+		GetAttachedActorsRecursively(ChildActor, OutActors);
+	}
+}
+
+void ASpaceship::CalculateDistanceAndAddToZones(AWorldActor* WorldActor)
+{
+	if (WorldActor)
+	{
+		double DistanceSquared = 0;
+		FVector ShipLocation = GetActorLocation();
+
+		double InfluenceRadius = WorldActor->AffectionRadiusKM * 100000; // Конвертировать километры в юниты Unreal (1 unit = 1 cm)
+		DistanceSquared = FVector::DistSquared(WorldActor->GetActorLocation(), ShipLocation) - FMath::Square(InfluenceRadius);
+
+		// Получить родительского актора и вывести его на экран
+		AActor* ParentActor = WorldActor->GetRootComponent()->GetAttachParent()->GetOwner();
+		FString ParentName = ParentActor ? *ParentActor->GetName() : FString("No Parent");
+
+		// Вывести сообщение на экран
+		double DistanceInKm = FMath::Sqrt(DistanceSquared) / 100000;
+		FString Message = FString::Printf(TEXT("Distance to %s (orbiting %s): %f kilometers."), *WorldActor->GetName(), *ParentName, DistanceInKm);
+
+		GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Cyan, Message);
+
+	}
+}
+
 void ASpaceship::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
@@ -121,50 +155,19 @@ void ASpaceship::Tick(float DeltaTime)
 
 				/// OnboardComputer->ComputeFlightStatus(ClosestActor);
 
-
-
 				ACelestialBody* CelestialBody = Cast<ACelestialBody>(ClosestActor);
-
 				if (CelestialBody)
 				{
-					// Получаем все связанные с CelestialBody акторы
 					TArray<AActor*> ChildActors;
-					CelestialBody->GetAttachedActors(ChildActors);
+					GetAttachedActorsRecursively(CelestialBody, ChildActors);
 
-					TMap<AAstroActor*, double> BodyAstroActorsDistance;
-					double MinDistance = MAX_dbl;
-					AAstroActor* ClosestAstroActor = nullptr;
-
-					for (AActor* Actor : ChildActors)
+					for (AActor* ChildActor : ChildActors)
 					{
-						AAstroActor* BodyAstroActor = Cast<AAstroActor>(Actor);
-						if (BodyAstroActor)
+						AWorldActor* WorldActorChild = Cast<AWorldActor>(ChildActor);
+						if (WorldActorChild && (WorldActorChild->IsA(AOrbitalBody::StaticClass()) || WorldActorChild->IsA(ATechActor::StaticClass())))
 						{
-							double BodyActorDistance = FVector::DistSquared(BodyAstroActor->GetActorLocation(), ActorLocation) - FMath::Square(BodyAstroActor->AffectionRadiusKM * 100000);
-							BodyAstroActorsDistance.Add(BodyAstroActor, BodyActorDistance);
-
-							// Если это ближайший WorldActor, сохраняем его
-							if (BodyActorDistance < MinDistance)
-							{
-								MinDistance = BodyActorDistance;
-								ClosestAstroActor = BodyAstroActor;
-							}
+							CalculateDistanceAndAddToZones(WorldActorChild);
 						}
-					}
-
-					// Выводим на экран информацию обо всех WorldActors и ближайшем WorldActor
-					for (auto& Elem : BodyAstroActorsDistance)
-					{
-						double DistanceInKm = FMath::Sqrt(Elem.Value) / 100000;
-						FString Message = FString::Printf(TEXT("AstroActor %s is at a distance of %f kilometers."), *Elem.Key->GetName(), DistanceInKm);
-						GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Yellow, Message);
-					}
-
-					if (ClosestAstroActor)
-					{
-						double DistanceInKm = FMath::Sqrt(MinDistance) / 100000;
-						FString Message = FString::Printf(TEXT("Closest AstroActor is %s at a distance of %f kilometers."), *ClosestAstroActor->GetName(), DistanceInKm);
-						GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Green, Message);
 					}
 				}
 			}

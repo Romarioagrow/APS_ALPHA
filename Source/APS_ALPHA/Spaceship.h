@@ -37,6 +37,7 @@ private:
 	USpaceshipOnboardComputer* OnboardComputer;
 
 	TArray<AWorldActor*> WorldActors{};
+	TArray<AWorldActor*> CurrentZonesInfluence{};
 	//TArray<AWorldActor*> CurrentZones{};
 	TArray<FActorDistance> Distances;
 	TArray<FActorDistance> CurrentZones;
@@ -81,6 +82,7 @@ protected:
 	virtual void BeginPlay() override;
 
 public:
+	void CalculateDistanceAndAddToZones(AWorldActor* WorldActor);
 	virtual void Tick(float DeltaTime) override;
 
 
