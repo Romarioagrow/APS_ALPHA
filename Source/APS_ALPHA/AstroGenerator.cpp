@@ -256,6 +256,8 @@ void AAstroGenerator::GenerateHomeStarSystem()
                     HomeSpaceshipLocation.Z += 1000;
                     ASpaceship* NewHomeSpaceship = World->SpawnActor<ASpaceship>(BP_HomeSpaceship, HomeSpaceshipLocation, HomeSpaceShipyard->GetActorRotation(), SpaceshipSpawnParams);
                     NewHomeSpaceship->AttachToActor(HomeSpaceShipyard, FAttachmentTransformRules::KeepWorldTransform);
+                    NewHomeSpaceship->OffsetSystem = GeneratedHomeStarSystem;
+                    NewHomeSpaceship->OnboardComputer->OffsetSystem = GeneratedHomeStarSystem;
 
                     FVector CharSpawnLocation{ 0 };
                     APawn* PlayerCharacter = UGameplayStatics::GetPlayerPawn(World, 0);
@@ -592,6 +594,7 @@ void AAstroGenerator::GenerateStarSystem()
         StarSystemSphereRadius /= NewStarSystem->GetActorScale3D().X;
         NewStarSystem->StarSystemZone->SetSphereRadius(StarSystemSphereRadius * 1.1);
         NewStarSystem->StarSystemRadius = StarSystemSphereRadius;
+        GeneratedHomeStarSystem = NewStarSystem;
 
         if (NewStarSystem->StarSystemRadius == 0)
         {
@@ -663,7 +666,6 @@ void AAstroGenerator::GenerateStarSystem()
 
 
         /// TO HOME SYSTEM
-        GeneratedHomeStarSystem = NewStarSystem;
     }
     else
     {

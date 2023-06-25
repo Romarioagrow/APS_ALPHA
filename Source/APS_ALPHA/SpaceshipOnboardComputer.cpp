@@ -44,7 +44,9 @@ void USpaceshipOnboardComputer::ComputeFlightStatus(AWorldActor* AffectedActor)
             FlightSystem.CurrentFlightMode = EFlightMode::Interplanetray;
             FlightSystem.CurrentFlightType = EFlightType::LightSpeed;
             //EngineSystem.CurrentEngineMode = EEngineMode::Offset;
-            EngineSystem.InitiateOffsetMode();
+            SwitchEngineMode(EEngineMode::SpaceWrap);//InitiateOffsetMode();
+            //SpaceshipHull->SetSimulatePhysics(false);
+
         }
         // Добавьте больше условий, если необходимо
     }
@@ -54,7 +56,9 @@ void USpaceshipOnboardComputer::ComputeFlightStatus(AWorldActor* AffectedActor)
         FlightSystem.CurrentFlightMode = EFlightMode::Station;
         FlightSystem.CurrentFlightType = EFlightType::ArtificialGravity;
 
-        EngineSystem.InitiateOffsetMode();
+        SwitchEngineMode(EEngineMode::Impulse);
+        //SpaceshipHull->SetSimulatePhysics(true);
+        //EngineSystem.InitiateOffsetMode();
 
         //EngineSystem.CurrentEngineMode = EEngineMode::Impulse;
     }
@@ -195,4 +199,27 @@ void FEngineSystem::InitiateImpulseMode()
 {
     CurrentEngineMode = EEngineMode::Impulse;
 
+}
+
+void USpaceshipOnboardComputer::SwitchEngineMode(EEngineMode EngineMode)
+{
+    EngineSystem.CurrentEngineMode = EngineMode;
+    switch (EngineMode)
+    {
+    case EEngineMode::Impulse:
+        CurrentMovementStrategy = MakeUnique<ImpulseMovementStrategy>(SpaceshipHull);
+        SpaceshipHull->SetSimulatePhysics(true);
+        break;
+    case EEngineMode::Offset:
+        CurrentMovementStrategy = MakeUnique<OffsetMovementStrategy>(SpaceshipHull);
+        SpaceshipHull->SetSimulatePhysics(false);
+        break;
+        // Добавьте больше случаев для других типов движения
+    case EEngineMode::SpaceWrap:
+        //CurrentMovementStrategy = MakeUnique<OffsetWrapMovementStrategy>(SpaceshipHull);
+        CurrentMovementStrategy = MakeUnique<OffsetWrapMovementStrategy>(SpaceshipHull, OffsetSystem, 100000.0);
+        SpaceshipHull->SetSimulatePhysics(false);
+        break;
+        // Добавьте больше случаев для других типов движения
+    }
 }

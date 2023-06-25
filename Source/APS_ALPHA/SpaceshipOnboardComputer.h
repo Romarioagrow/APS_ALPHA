@@ -1,6 +1,7 @@
 #pragma once
 #include "AstroActor.h"
 #include "SpaceStation.h"
+#include "IMovementStrategy.h"
 
 #include "CoreMinimal.h"
 #include "UObject/NoExportTypes.h"
@@ -255,6 +256,8 @@ public:
 
     void InitiateOffsetMode();
     void InitiateImpulseMode();
+    //void SwitchEngineMode(EEngineMode EngineMode);
+
     void MarshallerEngineMode();
     void TraverserEngineMode();
     void SetCruiserFlightMode();
@@ -528,6 +531,8 @@ public:
     void AccelerateBoost(float DeltaTime);
     void DecelerateBoost(float DeltaTime);
 
+    void SwitchEngineMode(EEngineMode EngineMode);
+
     void ComputeFlightStatus(AWorldActor* AffectedActor);
 
     FString GetEnumValueAsString(const TCHAR* EnumName, int32 EnumValue);
@@ -574,7 +579,7 @@ public:
     UPROPERTY()
         TMap<EFlightMode, FFlightParams> FlightModeParams =
         {
-            {EFlightMode::Station, FFlightParams(25, 0.01, 0.05)},
+            {EFlightMode::Station, FFlightParams(55, 0.01, 0.05)},
             {EFlightMode::Surface, FFlightParams(100, 0.03, 0.08)},
             {EFlightMode::Atmospheric, FFlightParams(500, 0.04, 0.12)},
             {EFlightMode::Orbit, FFlightParams(1000, 0.05, 0.16)},
@@ -588,4 +593,9 @@ public:
 
     UPROPERTY()
         UStaticMeshComponent* SpaceshipHull;
+
+    TUniquePtr<IMovementStrategy> CurrentMovementStrategy;
+
+    AStarSystem* OffsetSystem;
+
 };

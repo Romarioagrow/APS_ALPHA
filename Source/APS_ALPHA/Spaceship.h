@@ -29,7 +29,8 @@ public:
 
 	void PrintOnboardComputerBasicIformation();
 
-private:
+//private:
+public:	
 	UPROPERTY(VisibleAnywhere, Category = "Onboard Computer")
 	USpaceshipOnboardComputer* OnboardComputer;
 
@@ -41,6 +42,8 @@ private:
 	
 
 public:
+	UPROPERTY(VisibleAnywhere, Category = "Onboard Computer")
+	AStarSystem* OffsetSystem;
 
 	void SwitchCamera();
 
@@ -81,6 +84,7 @@ protected:
 
 	bool bIsAccelerating{ false };
 	bool bIsDecelerating{ false };
+
 
 public:
 	void CalculateDistanceAndAddToZones(AWorldActor* WorldActor);
