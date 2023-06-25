@@ -253,6 +253,8 @@ public:
     EEngineMode CurrentEngineMode{ EEngineMode::Impulse };
     FThrustMode CurrentThrustMode;
 
+    void InitiateOffsetMode();
+    void InitiateImpulseMode();
     void MarshallerEngineMode();
     void TraverserEngineMode();
     void SetCruiserFlightMode();
@@ -572,7 +574,7 @@ public:
     UPROPERTY()
         TMap<EFlightMode, FFlightParams> FlightModeParams =
         {
-            {EFlightMode::Station, FFlightParams(10.0, 0.01, 0.05)},
+            {EFlightMode::Station, FFlightParams(25, 0.01, 0.05)},
             {EFlightMode::Surface, FFlightParams(100, 0.03, 0.08)},
             {EFlightMode::Atmospheric, FFlightParams(500, 0.04, 0.12)},
             {EFlightMode::Orbit, FFlightParams(1000, 0.05, 0.16)},
@@ -583,4 +585,7 @@ public:
         };
 
     bool IsBoosting{ false };
+
+    UPROPERTY()
+        UStaticMeshComponent* SpaceshipHull;
 };

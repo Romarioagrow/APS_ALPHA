@@ -62,6 +62,8 @@ public:
 
 	void SetPilot(AGravityCharacterPawn* NewPilot);
 
+	UStaticMeshComponent* GetSpaceshipHull();
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 		USphereComponent* SphereCollisionComponent;
 

@@ -25,6 +25,7 @@ ASpaceship::ASpaceship()
 	ForwardVector->SetupAttachment(SpaceshipHull);
 
 	OnboardComputer = CreateDefaultSubobject<USpaceshipOnboardComputer>(TEXT("OnboardComputer"));
+	OnboardComputer->SpaceshipHull = SpaceshipHull;
 }
 
 void ASpaceship::BeginPlay()
@@ -362,5 +363,8 @@ void ASpaceship::SetPilot(AGravityCharacterPawn* NewPilot)
 {
 }
 
-
+UStaticMeshComponent* ASpaceship::GetSpaceshipHull()
+{
+	return SpaceshipHull;
+}
 

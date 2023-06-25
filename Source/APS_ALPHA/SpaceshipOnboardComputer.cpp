@@ -8,11 +8,18 @@
 #include "CelestialBody.h"
 #include "Planet.h"
 #include "Star.h"
+#include "Spaceship.h"
 
 
 
 USpaceshipOnboardComputer::USpaceshipOnboardComputer()
 {
+    //ASpaceship* Spaceship = Cast<ASpaceship>(GetOwner());
+    //if (Spaceship)
+    //{
+    //    UStaticMeshComponent* SpaceshipHull = Spaceship->GetSpaceshipHull();
+    //    // Выполните здесь действия с SpaceshipHull
+    //}
 }
 
 void USpaceshipOnboardComputer::ComputeFlightStatus(AWorldActor* AffectedActor)
@@ -36,6 +43,8 @@ void USpaceshipOnboardComputer::ComputeFlightStatus(AWorldActor* AffectedActor)
         {
             FlightSystem.CurrentFlightMode = EFlightMode::Interplanetray;
             FlightSystem.CurrentFlightType = EFlightType::LightSpeed;
+            //EngineSystem.CurrentEngineMode = EEngineMode::Offset;
+            EngineSystem.InitiateOffsetMode();
         }
         // Добавьте больше условий, если необходимо
     }
@@ -44,6 +53,10 @@ void USpaceshipOnboardComputer::ComputeFlightStatus(AWorldActor* AffectedActor)
         // Здесь вы можете настроить параметры полета для технических объектов
         FlightSystem.CurrentFlightMode = EFlightMode::Station;
         FlightSystem.CurrentFlightType = EFlightType::ArtificialGravity;
+
+        EngineSystem.InitiateOffsetMode();
+
+        //EngineSystem.CurrentEngineMode = EEngineMode::Impulse;
     }
 
     FFlightParams* Params = FlightModeParams.Find(FlightSystem.CurrentFlightMode);
@@ -170,4 +183,16 @@ void USpaceshipOnboardComputer::DecelerateBoost(float DeltaTime)
 {
     // Уменьшаем силу тяги на определенный процент. Здесь я использую 10% в качестве примера.
     FlightSystem.FlightParams.ThrustForce -= FlightSystem.FlightParams.ThrustForce * 0.1 * DeltaTime;
+}
+
+void FEngineSystem::InitiateOffsetMode()
+{
+    CurrentEngineMode = EEngineMode::Offset;
+
+}
+
+void FEngineSystem::InitiateImpulseMode()
+{
+    CurrentEngineMode = EEngineMode::Impulse;
+
 }
