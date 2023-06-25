@@ -9,8 +9,12 @@
 #include "Planet.h"
 #include "Star.h"
 #include "Spaceship.h"
+#include "StarCluster.h"
 
-
+USpaceshipOnboardComputer::USpaceshipOnboardComputer(AActor* InOwner)
+{
+    Owner = InOwner;
+}
 
 USpaceshipOnboardComputer::USpaceshipOnboardComputer()
 {
@@ -20,6 +24,7 @@ USpaceshipOnboardComputer::USpaceshipOnboardComputer()
     //    UStaticMeshComponent* SpaceshipHull = Spaceship->GetSpaceshipHull();
     //    // Выполните здесь действия с SpaceshipHull
     //}
+    //Owner = InOwner;
 }
 
 void USpaceshipOnboardComputer::ComputeFlightStatus(AWorldActor* AffectedActor)
@@ -57,6 +62,26 @@ void USpaceshipOnboardComputer::ComputeFlightStatus(AWorldActor* AffectedActor)
         FlightSystem.CurrentFlightType = EFlightType::ArtificialGravity;
 
         SwitchEngineMode(EEngineMode::Impulse);
+        //SpaceshipHull->SetSimulatePhysics(true);
+        //EngineSystem.InitiateOffsetMode();
+
+        //EngineSystem.CurrentEngineMode = EEngineMode::Impulse;
+    }
+    else if (AffectedActor->IsA(AStarCluster::StaticClass()))
+    {
+        // Здесь вы можете настроить параметры полета для технических объектов
+        FlightSystem.CurrentFlightMode = EFlightMode::Interstellar;
+        FlightSystem.CurrentFlightType = EFlightType::FTL;
+
+        SwitchEngineMode(EEngineMode::Offset);
+
+        OffsetGalaxy = Cast<AAstroActor>(AffectedActor);
+
+        //bIsRescaling = true;
+
+        // В Tick
+        
+
         //SpaceshipHull->SetSimulatePhysics(true);
         //EngineSystem.InitiateOffsetMode();
 

@@ -44,6 +44,10 @@ public:
 public:
 	UPROPERTY(VisibleAnywhere, Category = "Onboard Computer")
 	AStarSystem* OffsetSystem;
+	
+	UPROPERTY(VisibleAnywhere, Category = "Onboard Computer")
+	AAstroActor* OffsetGalaxy;
+
 
 	void SwitchCamera();
 

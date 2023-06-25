@@ -5,6 +5,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "CelestialBody.h"
 #include "Star.h"
+#include "StarCluster.h"
 
 
 ASpaceship::ASpaceship()
@@ -27,6 +28,8 @@ ASpaceship::ASpaceship()
 	OnboardComputer = CreateDefaultSubobject<USpaceshipOnboardComputer>(TEXT("OnboardComputer"));
 	OnboardComputer->SpaceshipHull = SpaceshipHull;
 	OnboardComputer->OffsetSystem = OffsetSystem;
+
+
 }
 
 void ASpaceship::BeginPlay()
@@ -168,10 +171,47 @@ void ASpaceship::Tick(float DeltaTime)
 				AWorldActor* AffectedActor = AffectedActorDistance.Actor;
 				GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, TEXT("Affect Object: ") + AffectedActor->GetName());
 
-				if (OnboardComputer->FlightSystem.CurrentFlightSafeMode != EFlightSafeMode::Unsafe)
-				{
+				//if (OnboardComputer->FlightSystem.CurrentFlightSafeMode != EFlightSafeMode::Unsafe)
+				//{
 					OnboardComputer->ComputeFlightStatus(AffectedActor);
-				}
+
+					if (AffectedActor->IsA(AStarCluster::StaticClass()) && AffectedActor->GetActorScale3D() != FVector(1.0f, 1.0f, 1.0f)) {
+						
+						GEngine->AddOnScreenDebugMessage(-1, 11.f, FColor::Green, TEXT("GALAXY SCALE!!!"));
+
+
+
+						// Меняем масштаб
+						FVector NewScale = FVector(1.0f, 1.0f, 1.0f);
+						AffectedActor->SetActorScale3D(NewScale);
+
+						// Перемещаем корабль
+						//FVector NewLocation = /* расчет новой позиции */;
+
+						//AActor* Spaceship = Owner;
+						//AActor* Spaceship = GetOwner();
+						//if (Spaceship) {
+						FVector OldLocation = GetActorLocation(); // текущая позиция корабля
+						FVector WorldCenter = FVector::ZeroVector; // предполагается, что центр мира находится в (0,0,0)
+						double ScaleFactor = 1000000000.0; // ваш фактор масштабирования
+
+						FVector RelativeLocation = OldLocation - WorldCenter; // текущая позиция корабля относительно центра мира
+						FVector NewRelativeLocation = RelativeLocation / ScaleFactor; // новая позиция корабля относительно центра мира
+
+						FVector NewLocation = WorldCenter + NewRelativeLocation; // новая абсолютная позиция корабля
+
+						SetActorLocation(NewLocation);
+						//}
+						//Spaceship->SetActorLocation(NewLocation);
+
+						//bIsRescaling = false; // сброс флага, чтобы предотвратить повторение
+					}
+					else
+					{
+						GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Green, TEXT("GALAXY IS SCALED!"));
+
+					}
+				//}
 
 				ACelestialBody* CelestialBody = Cast<ACelestialBody>(AffectedActor);
 				if (CelestialBody)
@@ -326,13 +366,24 @@ void ASpaceship::ThrustForward(float Value)
 		//const FVector Direction = SpaceshipHull->GetForwardVector();
 
 		// Сдвигаем StarSystem
-		OffsetSystem->AddActorLocalOffset(-Direction * Value * 10000000);
+		OffsetSystem->AddActorLocalOffset(-Direction * Value * OnboardComputer->GetEngineThrustForce());
 	}
 	else if (OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::Impulse)
 	{
 		const FVector Impulse = Direction * Value * OnboardComputer->GetEngineThrustForce();
 		SpaceshipHull->AddImpulse(Impulse, NAME_None, true);
 	}
+	else if (OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::Offset)
+	{
+		const FVector Offset = Direction * Value * OnboardComputer->GetEngineThrustForce();
+		SpaceshipHull->AddWorldOffset(Offset, true);
+	}
+
+	/*else if (OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::Offset)
+	{
+		const FVector Impulse = Direction * Value * OnboardComputer->GetEngineThrustForce();
+		SpaceshipHull->AddImpulse(Impulse, NAME_None, true);
+	}*/
 
 	
 }
@@ -354,13 +405,18 @@ void ASpaceship::ThrustSide(float Value)
 		//const FVector Direction = SpaceshipHull->GetRightVector();
 
 		// Сдвигаем StarSystem
-		OffsetSystem->AddActorLocalOffset(-Direction * Value * 10000000);
+		OffsetSystem->AddActorLocalOffset(-Direction * Value * OnboardComputer->GetEngineThrustForce());
 	}
 	else if (OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::Impulse)
 	{
 		// Получаем вектор вперед корабля.
 		const FVector Impulse = Direction * Value * OnboardComputer->GetEngineThrustForce();
 		SpaceshipHull->AddImpulse(Impulse, NAME_None, true);
+	}
+	else if (OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::Offset)
+	{
+		const FVector Offset = Direction * Value * OnboardComputer->GetEngineThrustForce();
+		SpaceshipHull->AddWorldOffset(Offset, true);
 	}
 
 	
@@ -383,13 +439,18 @@ void ASpaceship::ThrustVertical(float Value)
 		//const FVector Direction = SpaceshipHull->GetRightVector();
 
 		// Сдвигаем StarSystem
-		OffsetSystem->AddActorLocalOffset(-Direction * Value * 10000000);
+		OffsetSystem->AddActorLocalOffset(-Direction * Value * OnboardComputer->GetEngineThrustForce());
 	}
 	else if (OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::Impulse)
 	{
 		// Получаем вектор вперед корабля.
 		const FVector Impulse = Direction * Value * OnboardComputer->GetEngineThrustForce();
 		SpaceshipHull->AddImpulse(Impulse, NAME_None, true);
+	}
+	else if (OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::Offset)
+	{
+		const FVector Offset = Direction * Value * OnboardComputer->GetEngineThrustForce();
+		SpaceshipHull->AddWorldOffset(Offset, true);
 	}
 
 	

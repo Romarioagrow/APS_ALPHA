@@ -522,9 +522,12 @@ class APS_ALPHA_API USpaceshipOnboardComputer : public UObject
 	GENERATED_BODY()
 
 public:
+    USpaceshipOnboardComputer(AActor* InOwner);
     USpaceshipOnboardComputer();
 
 public:
+    AActor* Owner; //
+
     double GetEngineThrustForce();
     void IncreaseFlightMode();
     void DecreaseFlightMode();
@@ -584,9 +587,9 @@ public:
             {EFlightMode::Atmospheric, FFlightParams(500, 0.04, 0.12)},
             {EFlightMode::Orbit, FFlightParams(1000, 0.05, 0.16)},
             {EFlightMode::Planetary, FFlightParams(10000, 0.06, 0.2)},
-            {EFlightMode::Interplanetray, FFlightParams(100000, 0.07, 0.24)},
-            {EFlightMode::Interstellar, FFlightParams(1000000, 0.08, 0.28)},
-            {EFlightMode::Intergalaxy, FFlightParams(100000000, 0.09, 0.32)}
+            {EFlightMode::Interplanetray, FFlightParams(1000000000, 0.07, 0.24)},
+            {EFlightMode::Interstellar, FFlightParams(100000000, 0.08, 0.28)},
+            {EFlightMode::Intergalaxy, FFlightParams(10000000000, 0.09, 0.32)}
         };
 
     bool IsBoosting{ false };
@@ -597,5 +600,10 @@ public:
     TUniquePtr<IMovementStrategy> CurrentMovementStrategy;
 
     AStarSystem* OffsetSystem;
+
+    AAstroActor* OffsetGalaxy;
+
+    bool bIsRescaling{ false };
+
 
 };
