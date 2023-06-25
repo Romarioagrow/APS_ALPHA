@@ -11,7 +11,6 @@
 #include "Spacecraft.h"
 #include "Spaceship.generated.h"
 
-// Определите эту структуру где-то в начале файла
 struct FActorDistance
 {
 	AWorldActor* Actor;
@@ -20,10 +19,6 @@ struct FActorDistance
 	FActorDistance(AWorldActor* InActor, double InDistance) : Actor(InActor), Distance(InDistance) {}
 };
 
-
-/**
- * 
- */
 UCLASS()
 class APS_ALPHA_API ASpaceship : public ASpacecraft, public IGravitySource
 {
@@ -80,8 +75,10 @@ public:
 		USceneComponent* PilotChair;
 
 protected:
-	// Called when the game starts or when spawned
 	virtual void BeginPlay() override;
+
+	bool bIsAccelerating{ false };
+	bool bIsDecelerating{ false };
 
 public:
 	void CalculateDistanceAndAddToZones(AWorldActor* WorldActor);
@@ -90,6 +87,21 @@ public:
 
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 
+	void StartAccelerationBoost();
+
+	void StopAccelerationBoost();
+
+	void StartDecelerationBoost();
+
+	void StopDecelerationBoost();
+
+	void HandleAccelerationBoost(float Value);
+
+	void HandleDecelerationBoost(float Value);
+
+	void IncreaseFlightMode();
+
+	void DecreaseFlightMode();
 };
 
 

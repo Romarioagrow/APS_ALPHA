@@ -86,7 +86,6 @@ void ASpaceship::CalculateDistanceAndAddToZones(AWorldActor* WorldActor)
 		FString Message = FString::Printf(TEXT("Distance to %s (orbiting %s): %f kilometers."), *WorldActor->GetName(), *ParentName, DistanceInKm);
 
 		GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Cyan, Message);
-
 	}
 }
 
@@ -115,6 +114,18 @@ void ASpaceship::Tick(float DeltaTime)
 		{
 			FVector OppositeTorque = -SpaceshipHull->GetPhysicsAngularVelocityInRadians() * 0.5;
 			SpaceshipHull->AddTorqueInRadians(OppositeTorque, NAME_None, true);
+
+			if (bIsAccelerating)
+			{
+				GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Accelerating")));
+				OnboardComputer->AccelerateBoost(DeltaTime);
+			}
+
+			if (bIsDecelerating)
+			{
+				GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Decelerating")));
+				OnboardComputer->DecelerateBoost(DeltaTime);
+			}
 
 			CurrentZones.Empty();
 			for (AWorldActor* WorldActor : WorldActors)
@@ -155,8 +166,10 @@ void ASpaceship::Tick(float DeltaTime)
 				AWorldActor* AffectedActor = AffectedActorDistance.Actor;
 				GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, TEXT("Affect Object: ") + AffectedActor->GetName());
 
-
-				OnboardComputer->ComputeFlightStatus(AffectedActor);
+				if (OnboardComputer->FlightSystem.CurrentFlightSafeMode != EFlightSafeMode::Unsafe)
+				{
+					OnboardComputer->ComputeFlightStatus(AffectedActor);
+				}
 
 				ACelestialBody* CelestialBody = Cast<ACelestialBody>(AffectedActor);
 				if (CelestialBody)
@@ -177,6 +190,7 @@ void ASpaceship::Tick(float DeltaTime)
 						GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, FString::Printf(TEXT("Closest Object: %s"), *ClosestObject->GetName()));
 					}
 				}
+
 			}
 		}
 		GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Pilot Actor Name: %s"), *Pilot->GetName()));
@@ -184,7 +198,6 @@ void ASpaceship::Tick(float DeltaTime)
 	uint64 EndCycles = FPlatformTime::Cycles();
 	double ElapsedTime = FPlatformTime::ToSeconds(EndCycles - StartCycles);
 	GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, FString::Printf(TEXT("Time elapsed: %f seconds"), ElapsedTime));
-
 }
 
 void ASpaceship::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -200,8 +213,69 @@ void ASpaceship::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent
 	PlayerInputComponent->BindAxis("ThrustPitch", this, &ASpaceship::ThrustPitch);
 	PlayerInputComponent->BindAxis("ThrustRoll", this, &ASpaceship::ThrustRoll);
 
+	PlayerInputComponent->BindAction("IncreaseFlightMode", IE_Pressed, this, &ASpaceship::IncreaseFlightMode);
+	PlayerInputComponent->BindAction("DecreaseFlightMode", IE_Pressed, this, &ASpaceship::DecreaseFlightMode);
+	PlayerInputComponent->BindAction("AccelerationBoost", IE_Pressed, this, &ASpaceship::StartAccelerationBoost);
+	PlayerInputComponent->BindAction("AccelerationBoost", IE_Released, this, &ASpaceship::StopAccelerationBoost);
+	PlayerInputComponent->BindAction("DecelerationBoost", IE_Pressed, this, &ASpaceship::StartDecelerationBoost);
+	PlayerInputComponent->BindAction("DecelerationBoost", IE_Released, this, &ASpaceship::StopDecelerationBoost);
 }
 
+void ASpaceship::StartAccelerationBoost()
+{
+	bIsAccelerating = true;
+	OnboardComputer->IsBoosting = true;
+}
+
+void ASpaceship::StopAccelerationBoost()
+{
+	bIsAccelerating = false;
+	OnboardComputer->IsBoosting = false;
+}
+
+void ASpaceship::StartDecelerationBoost()
+{
+	bIsDecelerating = true;
+	OnboardComputer->IsBoosting = true;
+}
+
+void ASpaceship::StopDecelerationBoost()
+{
+	bIsDecelerating = false;
+	OnboardComputer->IsBoosting = false;
+}
+
+void ASpaceship::HandleAccelerationBoost(float Value)
+{
+	if (Value > 0)
+	{
+		OnboardComputer->AccelerateBoost(GetWorld()->GetDeltaSeconds());
+	}
+}
+
+void ASpaceship::HandleDecelerationBoost(float Value)
+{
+	if (Value > 0)
+	{
+		OnboardComputer->DecelerateBoost(GetWorld()->GetDeltaSeconds());
+	}
+}
+
+void ASpaceship::IncreaseFlightMode()
+{
+	if (OnboardComputer != nullptr)
+	{
+		OnboardComputer->IncreaseFlightMode();
+	}
+}
+
+void ASpaceship::DecreaseFlightMode()
+{
+	if (OnboardComputer != nullptr)
+	{
+		OnboardComputer->DecreaseFlightMode();
+	}
+}
 
 void ASpaceship::PrintOnboardComputerBasicIformation() 
 {
@@ -221,8 +295,6 @@ void ASpaceship::PrintOnboardComputerBasicIformation()
 		*OnboardComputer->GetEnumValueAsString(TEXT("EFlightMode"), (int32)OnboardComputer->FlightSystem.CurrentFlightMode)));
 }
 
-
-
 void ASpaceship::SwitchEngines()
 {
 	bEngineRunning = !bEngineRunning;
@@ -232,20 +304,15 @@ void ASpaceship::SwitchEngines()
 
 void ASpaceship::ThrustForward(float Value)
 {
-	// Если Value равно нулю, никакого ввода не было, поэтому ничего не делаем.
 	if (FMath::Abs(Value) < KINDA_SMALL_NUMBER) return;
 
-	// Получаем вектор вперед корабля.
 	const FVector Direction = ForwardVector->GetForwardVector();
-
-	// Умножаем вектор вперед на значение оси и на силу двигателя.
-	const FVector Impulse = Direction * Value * OnboardComputer->GetEngineThrustForce();//OnboardComputer->FlightSystem.FlightParams.ThrustForce;
+	const FVector Impulse = Direction * Value * OnboardComputer->GetEngineThrustForce();
 	SpaceshipHull->AddImpulse(Impulse, NAME_None, true);
 }
 
 void ASpaceship::ThrustSide(float Value)
 {
-	// Если Value равно нулю, никакого ввода не было, поэтому ничего не делаем.
 	if (FMath::Abs(Value) < KINDA_SMALL_NUMBER) return;
 
 	// Получаем вектор вперед корабля.
@@ -256,7 +323,6 @@ void ASpaceship::ThrustSide(float Value)
 
 void ASpaceship::ThrustVertical(float Value)
 {
-	// Если Value равно нулю, никакого ввода не было, поэтому ничего не делаем.
 	if (FMath::Abs(Value) < KINDA_SMALL_NUMBER) return;
 
 	// Получаем вектор вперед корабля.
@@ -267,17 +333,15 @@ void ASpaceship::ThrustVertical(float Value)
 
 void ASpaceship::ThrustYaw(float Value)
 {
-	// Если Value равно нулю, никакого ввода не было, поэтому ничего не делаем.
 	if (FMath::Abs(Value) < KINDA_SMALL_NUMBER) return;
 
-	float Torque = Value * 0.5;  // Вы можете настроить YawTorqueFactor для контроля скорости вращения
+	float Torque = Value * 0.5;  
 	FVector TorqueVector = GetActorUpVector() * Torque;
 	SpaceshipHull->AddTorqueInRadians(TorqueVector, NAME_None, true);
 }
 
 void ASpaceship::ThrustPitch(float Value)
 {
-	// Если Value равно нулю, никакого ввода не было, поэтому ничего не делаем.
 	if (FMath::Abs(Value) < KINDA_SMALL_NUMBER) return;
 
 	float Torque = Value * 0.5;
@@ -287,7 +351,6 @@ void ASpaceship::ThrustPitch(float Value)
 
 void ASpaceship::ThrustRoll(float Value)
 {
-	// Если Value равно нулю, никакого ввода не было, поэтому ничего не делаем.
 	if (FMath::Abs(Value) < KINDA_SMALL_NUMBER) return;
 
 	float Torque = Value * 0.5;

@@ -505,12 +505,6 @@ public:
         void ExitAtmosphere();
         void ExitOrbit();
     };
-
-    /*FlightSystem()
-        : CurrentFlightType(EFlightType::Station)
-        , CurrentFlightMode(EFlightMode::ZeroG)
-        , CurrentFlightStatus(EFlightStatus::OK)
-    { }*/
 };
 
 
@@ -526,7 +520,11 @@ public:
     USpaceshipOnboardComputer();
 
 public:
-    double GetEngineThrustForce();//
+    double GetEngineThrustForce();
+    void IncreaseFlightMode();
+    void DecreaseFlightMode();
+    void AccelerateBoost(float DeltaTime);
+    void DecelerateBoost(float DeltaTime);
 
     void ComputeFlightStatus(AWorldActor* AffectedActor);
 
@@ -574,7 +572,7 @@ public:
     UPROPERTY()
         TMap<EFlightMode, FFlightParams> FlightModeParams =
         {
-            {EFlightMode::Station, FFlightParams(50.0, 0.01, 0.05)},
+            {EFlightMode::Station, FFlightParams(10.0, 0.01, 0.05)},
             {EFlightMode::Surface, FFlightParams(100, 0.03, 0.08)},
             {EFlightMode::Atmospheric, FFlightParams(500, 0.04, 0.12)},
             {EFlightMode::Orbit, FFlightParams(1000, 0.05, 0.16)},
@@ -584,7 +582,5 @@ public:
             {EFlightMode::Intergalaxy, FFlightParams(100000000, 0.09, 0.32)}
         };
 
-public:
-
-
+    bool IsBoosting{ false };
 };

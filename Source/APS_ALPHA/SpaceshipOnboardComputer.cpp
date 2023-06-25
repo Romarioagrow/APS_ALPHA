@@ -17,8 +17,7 @@ USpaceshipOnboardComputer::USpaceshipOnboardComputer()
 
 void USpaceshipOnboardComputer::ComputeFlightStatus(AWorldActor* AffectedActor)
 {
-    if (!AffectedActor) // Проверка на валидность
-        return;
+    if (!AffectedActor) return;
 
     // Проверить тип актора и установить соответствующий режим полета и тип полета
     if (AffectedActor->IsA(ACelestialBody::StaticClass()))
@@ -50,7 +49,7 @@ void USpaceshipOnboardComputer::ComputeFlightStatus(AWorldActor* AffectedActor)
     FFlightParams* Params = FlightModeParams.Find(FlightSystem.CurrentFlightMode);
 
     // Проверка, были ли найдены параметры
-    if (Params)
+    if (Params && !IsBoosting)
     {
         // Установка параметров
         FlightSystem.FlightParams.ThrustForce = Params->ThrustForce;
@@ -58,11 +57,7 @@ void USpaceshipOnboardComputer::ComputeFlightStatus(AWorldActor* AffectedActor)
         FlightSystem.FlightParams.AngularResistance = Params->AngularResistance;
 
     }
-    else
-    {
-        // Если параметры не найдены, можно вывести ошибку или выполнить какое-то другое действие.
-        UE_LOG(LogTemp, Warning, TEXT("No flight parameters found for current mode"));
-    }
+
     //// Настройка типа диапазона полета, например, в зависимости от расстояния до объекта
     //float Distance = FVector::Dist(Actor->GetActorLocation(), ShipLocation); // Допустим, ShipLocation - это положение корабля
     //if (Distance < 1000) // Примерное расстояние, замените на реальные значения
@@ -127,4 +122,52 @@ FString USpaceshipOnboardComputer::GetEngineTypeAsString()
 double USpaceshipOnboardComputer::GetEngineThrustForce()
 {
     return FlightSystem.FlightParams.ThrustForce;
+}
+
+void USpaceshipOnboardComputer::IncreaseFlightMode()
+{
+    // Проверяем, что текущий FlightMode не является последним в енаме.
+    if (static_cast<int32>(FlightSystem.CurrentFlightMode) < static_cast<int32>(EFlightMode::Intergalaxy))
+    {
+        FlightSystem.CurrentFlightSafeMode = EFlightSafeMode::Unsafe;
+
+        // Увеличиваем FlightMode на 1.
+        FlightSystem.CurrentFlightMode = static_cast<EFlightMode>(static_cast<int32>(FlightSystem.CurrentFlightMode) + 1);
+
+        // Обновляем параметры полета для нового FlightMode.
+        if (FlightModeParams.Contains(FlightSystem.CurrentFlightMode))
+        {
+            FlightSystem.FlightParams = FlightModeParams[FlightSystem.CurrentFlightMode];
+
+            /// TODO: Switch to unsafe flight mode
+        }
+    }
+}
+
+void USpaceshipOnboardComputer::DecreaseFlightMode()
+{
+    // Проверяем, что текущий FlightMode не является первым в енаме.
+    if (static_cast<int32>(FlightSystem.CurrentFlightMode) > static_cast<int32>(EFlightMode::Station))
+    {
+        // Уменьшаем FlightMode на 1.
+        FlightSystem.CurrentFlightMode = static_cast<EFlightMode>(static_cast<int32>(FlightSystem.CurrentFlightMode) - 1);
+
+        // Обновляем параметры полета для нового FlightMode.
+        if (FlightModeParams.Contains(FlightSystem.CurrentFlightMode))
+        {
+            FlightSystem.FlightParams = FlightModeParams[FlightSystem.CurrentFlightMode];
+        }
+    }
+}
+
+void USpaceshipOnboardComputer::AccelerateBoost(float DeltaTime)
+{
+    // Увеличиваем силу тяги на определенный процент. Здесь я использую 10% в качестве примера.
+    FlightSystem.FlightParams.ThrustForce += FlightSystem.FlightParams.ThrustForce * 0.1 * DeltaTime;
+}
+
+void USpaceshipOnboardComputer::DecelerateBoost(float DeltaTime)
+{
+    // Уменьшаем силу тяги на определенный процент. Здесь я использую 10% в качестве примера.
+    FlightSystem.FlightParams.ThrustForce -= FlightSystem.FlightParams.ThrustForce * 0.1 * DeltaTime;
 }
