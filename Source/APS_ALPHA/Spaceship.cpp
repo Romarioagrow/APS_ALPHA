@@ -318,18 +318,18 @@ void ASpaceship::ThrustForward(float Value)
 		GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Green, FString::Printf(TEXT("NO CurrentMovementStrategy")));
 
 	}*/
+	const FVector Direction = ForwardVector->GetForwardVector();
 
 	if (OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::SpaceWrap)
 	{
 		// Получаем вектор вперед корабля
-		const FVector Direction = SpaceshipHull->GetForwardVector();
+		//const FVector Direction = SpaceshipHull->GetForwardVector();
 
 		// Сдвигаем StarSystem
 		OffsetSystem->AddActorLocalOffset(-Direction * Value * 10000000);
 	}
 	else if (OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::Impulse)
 	{
-		const FVector Direction = ForwardVector->GetForwardVector();
 		const FVector Impulse = Direction * Value * OnboardComputer->GetEngineThrustForce();
 		SpaceshipHull->AddImpulse(Impulse, NAME_None, true);
 	}
@@ -345,11 +345,25 @@ void ASpaceship::ThrustSide(float Value)
 	{
 		OnboardComputer->CurrentMovementStrategy->ThrustSide(Value);
 	}*/
-
-	// Получаем вектор вперед корабля.
 	const FVector Direction = ForwardVector->GetRightVector();
-	const FVector Impulse = Direction * Value * OnboardComputer->GetEngineThrustForce();
-	SpaceshipHull->AddImpulse(Impulse, NAME_None, true);
+
+	if (OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::SpaceWrap)
+	{
+		// Получаем вектор вперед корабля
+		// Получаем вектор в сторону корабля
+		//const FVector Direction = SpaceshipHull->GetRightVector();
+
+		// Сдвигаем StarSystem
+		OffsetSystem->AddActorLocalOffset(-Direction * Value * 10000000);
+	}
+	else if (OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::Impulse)
+	{
+		// Получаем вектор вперед корабля.
+		const FVector Impulse = Direction * Value * OnboardComputer->GetEngineThrustForce();
+		SpaceshipHull->AddImpulse(Impulse, NAME_None, true);
+	}
+
+	
 }
 
 void ASpaceship::ThrustVertical(float Value)
@@ -360,38 +374,108 @@ void ASpaceship::ThrustVertical(float Value)
 	{
 		OnboardComputer->CurrentMovementStrategy->ThrustVertical(Value);
 	}*/
-	// Получаем вектор вперед корабля.
 	const FVector Direction = ForwardVector->GetUpVector();
-	const FVector Impulse = Direction * Value * OnboardComputer->GetEngineThrustForce();
-	SpaceshipHull->AddImpulse(Impulse, NAME_None, true);
+
+	if (OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::SpaceWrap)
+	{
+		// Получаем вектор вперед корабля
+		// Получаем вектор в сторону корабля
+		//const FVector Direction = SpaceshipHull->GetRightVector();
+
+		// Сдвигаем StarSystem
+		OffsetSystem->AddActorLocalOffset(-Direction * Value * 10000000);
+	}
+	else if (OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::Impulse)
+	{
+		// Получаем вектор вперед корабля.
+		const FVector Impulse = Direction * Value * OnboardComputer->GetEngineThrustForce();
+		SpaceshipHull->AddImpulse(Impulse, NAME_None, true);
+	}
+
+	
 }
+
 
 void ASpaceship::ThrustYaw(float Value)
 {
 	if (FMath::Abs(Value) < KINDA_SMALL_NUMBER) return;
 
-	float Torque = Value * 0.5;  
-	FVector TorqueVector = GetActorUpVector() * Torque;
-	SpaceshipHull->AddTorqueInRadians(TorqueVector, NAME_None, true);
+	float RotationAmount = Value * 0.5;  // Вы можете изменить эту переменную для управления скоростью вращения
+
+	if (OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::SpaceWrap)
+	{
+		FRotator NewRotation = FRotator(0, RotationAmount, 0);
+		AddActorLocalRotation(NewRotation);
+	}
+	else if (OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::Impulse)
+	{
+		FVector TorqueVector = GetActorUpVector() * RotationAmount;
+		SpaceshipHull->AddTorqueInRadians(TorqueVector, NAME_None, true);
+	}
 }
 
 void ASpaceship::ThrustPitch(float Value)
 {
 	if (FMath::Abs(Value) < KINDA_SMALL_NUMBER) return;
 
-	float Torque = Value * 0.5;
-	FVector TorqueVector = GetActorRightVector() * Torque;
-	SpaceshipHull->AddTorqueInRadians(TorqueVector, NAME_None, true);
+	float RotationAmount = Value * 0.5;
+
+	if (OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::SpaceWrap)
+	{
+		FRotator NewRotation = FRotator(RotationAmount, 0, 0);
+		AddActorLocalRotation(NewRotation);
+	}
+	else if (OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::Impulse)
+	{
+		FVector TorqueVector = GetActorRightVector() * RotationAmount;
+		SpaceshipHull->AddTorqueInRadians(TorqueVector, NAME_None, true);
+	}
 }
 
 void ASpaceship::ThrustRoll(float Value)
 {
 	if (FMath::Abs(Value) < KINDA_SMALL_NUMBER) return;
 
-	float Torque = Value * 0.5;
-	FVector TorqueVector = GetActorForwardVector() * Torque;
-	SpaceshipHull->AddTorqueInRadians(TorqueVector, NAME_None, true);
+	float RotationAmount = Value * 0.5;
+
+	if (OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::SpaceWrap)
+	{
+		FRotator NewRotation = FRotator(0, 0, RotationAmount);
+		AddActorLocalRotation(NewRotation);
+	}
+	else if (OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::Impulse)
+	{
+		FVector TorqueVector = GetActorForwardVector() * RotationAmount;
+		SpaceshipHull->AddTorqueInRadians(TorqueVector, NAME_None, true);
+	}
 }
+//void ASpaceship::ThrustYaw(float Value)
+//{
+//	if (FMath::Abs(Value) < KINDA_SMALL_NUMBER) return;
+//
+//	float Torque = Value * 0.5;  
+//	FVector TorqueVector = GetActorUpVector() * Torque;
+//	SpaceshipHull->AddTorqueInRadians(TorqueVector, NAME_None, true);
+//}
+//
+//void ASpaceship::ThrustPitch(float Value)
+//{
+//	if (FMath::Abs(Value) < KINDA_SMALL_NUMBER) return;
+//
+//	float Torque = Value * 0.5;
+//	FVector TorqueVector = GetActorRightVector() * Torque;
+//	SpaceshipHull->AddTorqueInRadians(TorqueVector, NAME_None, true);
+//}
+//
+//void ASpaceship::ThrustRoll(float Value)
+//{
+//	if (FMath::Abs(Value) < KINDA_SMALL_NUMBER) return;
+//
+//	float Torque = Value * 0.5;
+//	FVector TorqueVector = GetActorForwardVector() * Torque;
+//
+//	SpaceshipHull->AddTorqueInRadians(TorqueVector, NAME_None, true);
+//}
 
 void ASpaceship::SetPilot(AGravityCharacterPawn* NewPilot)
 {
