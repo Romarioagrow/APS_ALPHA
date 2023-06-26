@@ -205,7 +205,7 @@ void USpaceshipOnboardComputer::DecreaseFlightMode()
 void USpaceshipOnboardComputer::AccelerateBoost(float DeltaTime)
 {
     // ”величиваем силу т€ги на определенный процент. «десь € использую 10% в качестве примера.
-    FlightSystem.FlightParams.ThrustForce += FlightSystem.FlightParams.ThrustForce * 0.1 * DeltaTime;
+    FlightSystem.FlightParams.ThrustForce += FlightSystem.FlightParams.ThrustForce * 1.1 * DeltaTime;
 }
 
 void USpaceshipOnboardComputer::DecelerateBoost(float DeltaTime)

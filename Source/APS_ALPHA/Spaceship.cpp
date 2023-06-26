@@ -175,7 +175,7 @@ void ASpaceship::Tick(float DeltaTime)
 				//{
 					OnboardComputer->ComputeFlightStatus(AffectedActor);
 
-					if (AffectedActor->IsA(AStarCluster::StaticClass()) && AffectedActor->GetActorScale3D() != FVector(1.0f, 1.0f, 1.0f)) {
+					if (false && AffectedActor->IsA(AStarCluster::StaticClass()) && AffectedActor->GetActorScale3D() != FVector(1.0f, 1.0f, 1.0f)) {
 						
 						GEngine->AddOnScreenDebugMessage(-1, 11.f, FColor::Green, TEXT("GALAXY SCALE!!!"));
 
@@ -463,7 +463,7 @@ void ASpaceship::ThrustYaw(float Value)
 
 	float RotationAmount = Value * 0.5;  // Вы можете изменить эту переменную для управления скоростью вращения
 
-	if (OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::SpaceWrap)
+	if (OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::SpaceWrap || OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::Offset)
 	{
 		FRotator NewRotation = FRotator(0, RotationAmount, 0);
 		AddActorLocalRotation(NewRotation);
@@ -481,7 +481,7 @@ void ASpaceship::ThrustPitch(float Value)
 
 	float RotationAmount = Value * 0.5;
 
-	if (OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::SpaceWrap)
+	if (OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::SpaceWrap || OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::Offset)
 	{
 		FRotator NewRotation = FRotator(RotationAmount, 0, 0);
 		AddActorLocalRotation(NewRotation);
@@ -499,7 +499,7 @@ void ASpaceship::ThrustRoll(float Value)
 
 	float RotationAmount = Value * 0.5;
 
-	if (OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::SpaceWrap)
+	if (OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::SpaceWrap || OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::Offset)
 	{
 		FRotator NewRotation = FRotator(0, 0, RotationAmount);
 		AddActorLocalRotation(NewRotation);
