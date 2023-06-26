@@ -6,6 +6,7 @@
 #include "CelestialBody.h"
 #include "Star.h"
 #include "StarCluster.h"
+#include "AstroGenerator.h"
 
 
 ASpaceship::ASpaceship()
@@ -30,11 +31,30 @@ ASpaceship::ASpaceship()
 	OnboardComputer->OffsetSystem = OffsetSystem;
 
 
+	
+
+
+
 }
 
 void ASpaceship::BeginPlay()
 {
 	Super::BeginPlay();
+
+	/// TODO
+	//Pilot = AGravityCharacterPawn;
+
+	 // Находим AAstroGenerator (например, ищем первый найденный AAstroGenerator в мире)
+	GeneratedWorld = Cast<AAstroGenerator>(UGameplayStatics::GetActorOfClass(GetWorld(), AAstroGenerator::StaticClass()));
+
+
+	FActorSpawnParameters SpawnParams;
+	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+	FVector SpawnLocation = PilotChair->GetComponentLocation(); // Место спавна на кресле пилота
+	FRotator SpawnRotation = PilotChair->GetComponentRotation(); // Ориентация спавна в соответствии с креслом пилота
+	Pilot = GetWorld()->SpawnActor<AGravityCharacterPawn>(AGravityCharacterPawn::StaticClass(), SpawnLocation, SpawnRotation, SpawnParams);
+
 
 	TArray<AActor*> TempActors;
 	UGameplayStatics::GetAllActorsOfClass(GetWorld(), AWorldActor::StaticClass(), TempActors);
@@ -99,7 +119,8 @@ void ASpaceship::Tick(float DeltaTime)
 	Super::Tick(DeltaTime);
 	uint64 StartCycles = FPlatformTime::Cycles();
 
-	if (Pilot)
+	//if (Pilot)
+	if (true)
 	{
 		// Telemetry
 		FVector ActorLocation = GetActorLocation();
@@ -235,7 +256,11 @@ void ASpaceship::Tick(float DeltaTime)
 
 			}
 		}
-		GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Pilot Actor Name: %s"), *Pilot->GetName()));
+		if (Pilot)
+		{
+
+			GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Pilot Actor Name: %s"), *Pilot->GetName()));
+		}
 	}
 	uint64 EndCycles = FPlatformTime::Cycles();
 	double ElapsedTime = FPlatformTime::ToSeconds(EndCycles - StartCycles);
@@ -254,6 +279,8 @@ void ASpaceship::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent
 	PlayerInputComponent->BindAxis("ThrustYaw", this, &ASpaceship::ThrustYaw);
 	PlayerInputComponent->BindAxis("ThrustPitch", this, &ASpaceship::ThrustPitch);
 	PlayerInputComponent->BindAxis("ThrustRoll", this, &ASpaceship::ThrustRoll);
+
+	PlayerInputComponent->BindAction("ToggleScale", IE_Pressed, this, &ASpaceship::ToggleScale);
 
 	PlayerInputComponent->BindAction("IncreaseFlightMode", IE_Pressed, this, &ASpaceship::IncreaseFlightMode);
 	PlayerInputComponent->BindAction("DecreaseFlightMode", IE_Pressed, this, &ASpaceship::DecreaseFlightMode);
@@ -318,6 +345,37 @@ void ASpaceship::DecreaseFlightMode()
 		OnboardComputer->DecreaseFlightMode();
 	}
 }
+
+
+void ASpaceship::ToggleScale()
+{
+	if (GeneratedWorld)
+	{
+		if (bIsScaledUp)
+		{
+			// Масштабирование вниз (к 1,1,1)
+			GeneratedWorld->SetActorScale3D(FVector(1.0f, 1.0f, 1.0f));
+			// Масштабирование локации корабля
+			this->SetActorLocation(this->GetActorLocation() / 1000000000.0);
+		}
+		else
+		{
+			// Масштабирование вверх (к 1000000000, 1000000000, 1000000000)
+			GeneratedWorld->SetActorScale3D(FVector(1000000000.0, 1000000000.0, 1000000000.0));
+			// Масштабирование локации корабля
+			this->SetActorLocation(this->GetActorLocation() * 1000000000.0);
+		}
+
+		// Переключаем состояние масштабирования
+		bIsScaledUp = !bIsScaledUp;
+	}
+}
+
+//Теперь в BeginPlay(), UGameplayStatics::GetActorOfClass() используется для получения экземпляра класса AAstroGenerator.Данная функция вернет первый найденный в мире актор данного класса.Если
+
+
+
+
 
 void ASpaceship::PrintOnboardComputerBasicIformation() 
 {

@@ -29,6 +29,13 @@ public:
 
 	void PrintOnboardComputerBasicIformation();
 
+	void ToggleScale();
+
+	bool bIsScaledUp{ false };
+
+	UPROPERTY(VisibleAnywhere, Category = "Astro Actor")
+	AActor* GeneratedWorld;
+
 //private:
 public:	
 	UPROPERTY(VisibleAnywhere, Category = "Onboard Computer")

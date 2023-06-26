@@ -19,7 +19,7 @@ class APS_ALPHA_API APilotingVehicle : public AControlledPawn, public IVehicleCo
 
 public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Piloting")
-		AGravityCharacterPawn* Pilot;
+		AGravityCharacterPawn* Pilot {};
 
 	void TakeControl(APawn* Pawn);
 

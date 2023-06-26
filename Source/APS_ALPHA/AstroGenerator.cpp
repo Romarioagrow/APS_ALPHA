@@ -706,6 +706,9 @@ void AAstroGenerator::GenerateStarCluster()
     else
     {
         UWorld* World = GetWorld();
+
+
+
         TSharedPtr<FStarClusterModel> StarClusterModel = MakeShared<FStarClusterModel>();
 
         if (bGenerateRandomCluster)
@@ -775,13 +778,14 @@ void AAstroGenerator::GenerateStarCluster()
 
         if (bGenerateFullScaledWorld)
         {
-            NewStarCluster->SetActorScale3D(FVector(1000000000, 1000000000, 1000000000));
+            //NewStarCluster->
+                SetActorScale3D(FVector(1000000000, 1000000000, 1000000000));
         }
     }
-    else
+    /*else
     {
         UE_LOG(LogTemp, Warning, TEXT("StarClusterGenerator is not implemented yet!"));
-    }
+    }*/
 }
 
 
