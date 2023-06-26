@@ -6,6 +6,7 @@
 #include "GravitySource.h"
 #include "GravityCharacterPawn.h"
 #include "SpaceshipOnboardComputer.h"
+#include "StarCluster.h"
 
 #include "CoreMinimal.h"
 #include "Spacecraft.h"
@@ -27,6 +28,9 @@ class APS_ALPHA_API ASpaceship : public ASpacecraft, public IGravitySource
 public:
 	ASpaceship();
 
+	UPROPERTY(VisibleAnywhere, Category = "Astro Actor")
+		AStarCluster* GeneratedStarCluster;
+
 	void PrintOnboardComputerBasicIformation();
 
 	void ToggleScale();
@@ -34,7 +38,7 @@ public:
 	bool bIsScaledUp{ false };
 
 	UPROPERTY(VisibleAnywhere, Category = "Astro Actor")
-	AActor* GeneratedWorld;
+		AActor* GeneratedWorld;
 
 //private:
 public:	

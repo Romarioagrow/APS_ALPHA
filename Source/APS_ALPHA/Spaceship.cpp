@@ -46,7 +46,7 @@ void ASpaceship::BeginPlay()
 
 	 // Ќаходим AAstroGenerator (например, ищем первый найденный AAstroGenerator в мире)
 	GeneratedWorld = Cast<AAstroGenerator>(UGameplayStatics::GetActorOfClass(GetWorld(), AAstroGenerator::StaticClass()));
-
+	GeneratedStarCluster = Cast<AStarCluster>(UGameplayStatics::GetActorOfClass(GetWorld(), AStarCluster::StaticClass()));
 
 	FActorSpawnParameters SpawnParams;
 	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
@@ -114,6 +114,24 @@ void ASpaceship::CalculateDistanceAndAddToZones(AWorldActor* WorldActor)
 	}
 }
 
+TSharedPtr<FStarModel> FindNearestStar(TMap<FVector, TSharedPtr<FStarModel>>& Stars, const FVector& ReferencePoint)
+{
+	TSharedPtr<FStarModel> NearestStar = nullptr;
+	float NearestDistanceSquared = FLT_MAX;
+
+	for (const auto& KeyValuePair : Stars)
+	{
+		float DistanceSquared = FVector::DistSquared(ReferencePoint, KeyValuePair.Key);
+		if (DistanceSquared < NearestDistanceSquared)
+		{
+			NearestDistanceSquared = DistanceSquared;
+			NearestStar = KeyValuePair.Value;
+		}
+	}
+
+	return NearestStar;
+}
+
 void ASpaceship::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
@@ -138,6 +156,21 @@ void ASpaceship::Tick(float DeltaTime)
 
 		if (bEngineRunning)
 		{
+
+			if (OnboardComputer->FlightSystem.CurrentFlightMode == EFlightMode::Interstellar)
+			{
+				if (GeneratedStarCluster)
+				{
+					TSharedPtr<FStarModel> NearestStar = FindNearestStar(GeneratedStarCluster->StarsModel, ActorLocation);
+					GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Nearest Star: %f"), NearestStar->Radius));
+				}
+				else
+				{
+					GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("NO GeneratedStarCluster")));
+				}
+			}
+
+
 			FVector OppositeTorque = -SpaceshipHull->GetPhysicsAngularVelocityInRadians() * 0.5;
 			SpaceshipHull->AddTorqueInRadians(OppositeTorque, NAME_None, true);
 
@@ -389,7 +422,7 @@ void ASpaceship::PrintOnboardComputerBasicIformation()
 void ASpaceship::SwitchEngines()
 {
 	bEngineRunning = !bEngineRunning;
-	SpaceshipHull->SetSimulatePhysics(bEngineRunning);
+	//SpaceshipHull->SetSimulatePhysics(bEngineRunning);
 	GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Green, FString::Printf(TEXT("Engine running: %s"), bEngineRunning ? TEXT("true") : TEXT("false")));
 }
 
