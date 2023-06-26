@@ -114,6 +114,38 @@ void ASpaceship::CalculateDistanceAndAddToZones(AWorldActor* WorldActor)
 	}
 }
 
+//float SurfaceDistSquared(const FVector& PointA, const FVector& PointB, float Radius)
+//{
+//	float TotalDistSquared = FVector::DistSquared(PointA, PointB);
+//	float RadiusSquared = FMath::Square(Radius);
+//	// Если расстояние меньше радиуса, то точка внутри объекта. Возвращаем 0.
+//	if (TotalDistSquared <= RadiusSquared) return 0.0f;
+//
+//	return TotalDistSquared - RadiusSquared;
+//}
+//TSharedPtr<FStarModel> FindNearestStar(TMap<FVector, TSharedPtr<FStarModel>>& Stars, const FVector& ReferencePoint)
+//{
+//	TSharedPtr<FStarModel> NearestStar = nullptr;
+//	float NearestDistanceSquared = FLT_MAX;
+//
+//	for (const auto& KeyValuePair : Stars)
+//	{
+//		float DistanceSquared = SurfaceDistSquared(ReferencePoint, KeyValuePair.Key, KeyValuePair.Value->Radius);
+//		if (DistanceSquared < NearestDistanceSquared)
+//		{
+//			NearestDistanceSquared = DistanceSquared;
+//			NearestStar = KeyValuePair.Value;
+//		}
+//		/*float DistanceSquared = FVector::DistSquared(ReferencePoint, KeyValuePair.Key);
+//		if (DistanceSquared < NearestDistanceSquared)
+//		{
+//			NearestDistanceSquared = DistanceSquared;
+//			NearestStar = KeyValuePair.Value;
+//		}*/
+//	}
+//
+//	return NearestStar;
+//}
 TSharedPtr<FStarModel> FindNearestStar(TMap<FVector, TSharedPtr<FStarModel>>& Stars, const FVector& ReferencePoint)
 {
 	TSharedPtr<FStarModel> NearestStar = nullptr;
@@ -121,7 +153,11 @@ TSharedPtr<FStarModel> FindNearestStar(TMap<FVector, TSharedPtr<FStarModel>>& St
 
 	for (const auto& KeyValuePair : Stars)
 	{
-		float DistanceSquared = FVector::DistSquared(ReferencePoint, KeyValuePair.Key);
+		float TotalDistSquared = FVector::DistSquared(ReferencePoint, KeyValuePair.Key);
+		float RadiusSquared = FMath::Square(KeyValuePair.Value->Radius);
+
+		float DistanceSquared = TotalDistSquared > RadiusSquared ? TotalDistSquared - RadiusSquared : 0.0f;
+
 		if (DistanceSquared < NearestDistanceSquared)
 		{
 			NearestDistanceSquared = DistanceSquared;
@@ -131,7 +167,6 @@ TSharedPtr<FStarModel> FindNearestStar(TMap<FVector, TSharedPtr<FStarModel>>& St
 
 	return NearestStar;
 }
-
 void ASpaceship::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
