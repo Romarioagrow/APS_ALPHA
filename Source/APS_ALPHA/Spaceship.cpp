@@ -353,16 +353,12 @@ void ASpaceship::ToggleScale()
 	{
 		if (bIsScaledUp)
 		{
-			// Масштабирование вниз (к 1,1,1)
 			GeneratedWorld->SetActorScale3D(FVector(1.0f, 1.0f, 1.0f));
-			// Масштабирование локации корабля
 			this->SetActorLocation(this->GetActorLocation() / 1000000000.0);
 		}
 		else
 		{
-			// Масштабирование вверх (к 1000000000, 1000000000, 1000000000)
 			GeneratedWorld->SetActorScale3D(FVector(1000000000.0, 1000000000.0, 1000000000.0));
-			// Масштабирование локации корабля
 			this->SetActorLocation(this->GetActorLocation() * 1000000000.0);
 		}
 
@@ -370,11 +366,6 @@ void ASpaceship::ToggleScale()
 		bIsScaledUp = !bIsScaledUp;
 	}
 }
-
-//Теперь в BeginPlay(), UGameplayStatics::GetActorOfClass() используется для получения экземпляра класса AAstroGenerator.Данная функция вернет первый найденный в мире актор данного класса.Если
-
-
-
 
 
 void ASpaceship::PrintOnboardComputerBasicIformation() 
@@ -424,7 +415,7 @@ void ASpaceship::ThrustForward(float Value)
 		//const FVector Direction = SpaceshipHull->GetForwardVector();
 
 		// Сдвигаем StarSystem
-		OffsetSystem->AddActorLocalOffset(-Direction * Value * OnboardComputer->GetEngineThrustForce());
+		OffsetSystem->AddActorLocalOffset(-Direction * Value * OnboardComputer->GetEngineThrustForce()); /// CRASHED PIE!
 	}
 	else if (OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::Impulse)
 	{
