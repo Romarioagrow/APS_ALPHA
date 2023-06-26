@@ -15,6 +15,7 @@
 #include "Spaceship.h"
 #include "SpaceShipyard.h"
 #include "SpaceHeadquarters.h"
+#include "AstroAnchor.h"
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
@@ -32,6 +33,8 @@ protected:
 	void GenerateHomeStarSystem();
 
 	virtual void BeginPlay() override;
+
+	void GenerateTEST_FULLSCALED();
 
 	void InitGenerationLevel();
 
@@ -73,10 +76,16 @@ protected:
 	UPROPERTY(VisibleAnywhere, Category = "Generated Tech Actros")
 		ASpaceShipyard* HomeSpaceShipyard;
 
+	UPROPERTY(VisibleAnywhere, Category = "Generated Astro Actros")
+		AActor* GeneratedWorld;
+
 public:
 	TMap<int32, TSharedPtr<FStarModel>> StarIndexModelMap;
 
 	/// BASE ASTRO GENERATOR
+	UPROPERTY(EditAnywhere, Category = "Generation Params")
+		bool bGenerateTEST_FULLSCALED { false };
+	
 	UPROPERTY(EditAnywhere, Category = "Generation Params")
 		bool bGenerateFullScaledWorld { true };
 	
@@ -240,6 +249,9 @@ public:
 
 	UPROPERTY(EditAnywhere, Category = "AstroObject BP")
 		TSubclassOf<class AMoon> BP_MoonClass;
+	
+	UPROPERTY(EditAnywhere, Category = "AstroObject BP")
+		TSubclassOf<class AAstroAnchor> BP_AstroAnchor;
 	
 	EStarClusterType GetRandomClusterType();
 

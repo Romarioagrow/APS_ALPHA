@@ -21,8 +21,102 @@ void AAstroGenerator::BeginPlay()
 
     InitAstroGenerators();
 
-    InitGenerationLevel();
+    if (bGenerateTEST_FULLSCALED)
+    {
+        GenerateTEST_FULLSCALED();
+    }  
+    else
+    {
+        InitGenerationLevel();
+    }
+
 }
+void AAstroGenerator::GenerateTEST_FULLSCALED()
+{
+    // Задаем параметры звезд
+    const double MinStarRadius = 0.1f;
+    const double MaxStarRadius = 10.0f;
+    const int StarCount = 100;
+
+    // Создаем актор-якорь для нашего мира
+   // AAstroAnchor* AstroAnchor = GetWorld()->SpawnActor<AAstroAnchor>();
+    AAstroAnchor* AstroAnchor = GetWorld()->SpawnActor<AAstroAnchor>(BP_AstroAnchor);
+
+    // Создаем актор кластера звезд и прикрепляем его к якорю
+    AStarCluster* StarCluster = GetWorld()->SpawnActor<AStarCluster>(BP_StarClusterClass);
+    StarCluster->AttachToActor(AstroAnchor, FAttachmentTransformRules::KeepRelativeTransform);
+
+    // Создаем кластер звезд
+    for (int i = 0; i < StarCount; ++i)
+    {
+        // Генерируем случайные координаты и радиус для звезды
+        FVector StarPosition = FMath::VRand() * FMath::FRand() * 5.0f;
+        double StarRadius = FMath::RandRange(MinStarRadius, MaxStarRadius);
+
+        // Создаем преобразование для звезды
+        FTransform StarTransform;
+        StarTransform.SetLocation(StarPosition * 10000);
+        StarTransform.SetScale3D(FVector(StarRadius));
+
+        // Добавляем инстанс звезды в HISM
+        StarCluster->StarMeshInstances->AddInstance(StarTransform);
+        
+
+    }
+    //// Создаем кластер звезд
+    //for (int i = 0; i < StarCount; ++i)
+    //{
+    //    // Генерируем случайные координаты и радиус для звезды
+    //    FVector StarPosition = FMath::RandPointInBox(FBox(FVector(-5.0f, -5.0f, -5.0f), FVector(5.0f, 5.0f, 5.0f)));
+    //    float StarRadius = FMath::RandRange(MinStarRadius, MaxStarRadius);
+
+    //    // Создаем преобразование для звезды
+    //    FTransform StarTransform;
+    //    StarTransform.SetLocation(StarPosition);
+    //    StarTransform.SetScale3D(FVector(StarRadius));
+
+    //    // Добавляем инстанс звезды в HISM
+    //    StarCluster->StarMeshInstances->AddInstance(StarTransform);
+    //}
+
+    // Запоминаем актор-якорь и актор кластера в классе генератора
+    GeneratedWorld = AstroAnchor;
+    GeneratedStarCluster = StarCluster;
+}
+//void AAstroGenerator::GenerateTEST_FULLSCALED()
+//{
+//    // Задаем параметры звезд
+//    const float MinStarRadius = 0.1f;
+//    const float MaxStarRadius = 10.0f;
+//    const int StarCount = 100;
+//
+//    // Создаем актор-якорь для нашего мира
+//    AAstroAnchor* AstroAnchor = GetWorld()->SpawnActor<AAstroAnchor>();
+//
+//    // Создаем актор кластера звезд и прикрепляем его к якорю
+//    AStarCluster* StarCluster = GetWorld()->SpawnActor<AStarCluster>();
+//    //StarCluster->AttachToActor(AstroAnchor, FAttachmentTransformRules::KeepRelativeTransform);
+//
+//    // Создаем кластер звезд
+//    for (int i = 0; i < StarCount; ++i)
+//    {
+//        // Генерируем случайные координаты и радиус для звезды
+//        FVector StarPosition = FMath::RandPointInBox(FBox(FVector(-5.0f, -5.0f, -5.0f), FVector(5.0f, 5.0f, 5.0f)));
+//        float StarRadius = FMath::RandRange(MinStarRadius, MaxStarRadius);
+//
+//        // Создаем преобразование для звезды
+//        FTransform StarTransform;
+//        StarTransform.SetLocation(StarPosition);
+//        StarTransform.SetScale3D(FVector(StarRadius));
+//
+//        // Добавляем инстанс звезды в HISM
+//        StarCluster->StarMeshInstances->AddInstance(StarTransform);
+//    }
+//
+//    // Запоминаем актор-якорь и актор кластера в классе генератора
+//    GeneratedWorld = AstroAnchor;
+//    GeneratedStarCluster = StarCluster;
+//}
 
 void AAstroGenerator::InitGenerationLevel()
 {
