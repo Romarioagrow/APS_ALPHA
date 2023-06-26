@@ -323,7 +323,7 @@ void AAstroGenerator::GenerateHomeStarSystem()
                     FVector PlanetPosition = HomePlanet->GetActorLocation();
                     
                     HomeSpaceHeadquarters = World->SpawnActor<ASpaceHeadquarters>(BP_HomeSpaceHeadquarters, PlanetPosition, FRotator::ZeroRotator);
-                    HomeSpaceHeadquarters->AttachToActor(HomePlanet, FAttachmentTransformRules::KeepWorldTransform);
+                    HomeSpaceHeadquarters->AttachToActor(HomePlanet, FAttachmentTransformRules::KeepWorldTransform); /// CRASH PIE!!!
                     HomeSpaceHeadquarters->SetActorRelativeRotation(FRotator(0, 0, 0));
                     const double EARTH_RADIUS_CM = 637100000.0;
                     FVector Offset = FVector(0, 0, StationOrbitHeight * EARTH_RADIUS_CM);
@@ -451,7 +451,7 @@ void AAstroGenerator::GenerateStarSystem()
             HomeSystemSpawnLocation = FVector(RandomX, RandomY, RandomZ); //* 1000000000;
         }
             break;
-        case EHomeSystemPosition::DirectPosition:
+        case EHomeSystemPosition::DirectPosition: 
         {
             TArray<AActor*> AttachedActors;
             GetAttachedActors(AttachedActors);

@@ -15,6 +15,7 @@
 struct FActorDistance
 {
 	AWorldActor* Actor;
+
 	double Distance;
 
 	FActorDistance(AWorldActor* InActor, double InDistance) : Actor(InActor), Distance(InDistance) {}
@@ -43,22 +44,22 @@ public:
 //private:
 public:	
 	UPROPERTY(VisibleAnywhere, Category = "Onboard Computer")
-	USpaceshipOnboardComputer* OnboardComputer;
+		USpaceshipOnboardComputer* OnboardComputer;
 
 	TArray<AWorldActor*> WorldActors{};
-	TArray<AWorldActor*> CurrentZonesInfluence{};
-	TArray<FActorDistance> Distances;
-	TArray<FActorDistance> CurrentZones;
 
-	
+	TArray<AWorldActor*> CurrentZonesInfluence{};
+
+	TArray<FActorDistance> Distances;
+
+	TArray<FActorDistance> CurrentZones;
 
 public:
 	UPROPERTY(VisibleAnywhere, Category = "Onboard Computer")
-	AStarSystem* OffsetSystem;
+		AStarSystem* OffsetSystem;
 	
 	UPROPERTY(VisibleAnywhere, Category = "Onboard Computer")
-	AAstroActor* OffsetGalaxy;
-
+		AAstroActor* OffsetGalaxy;
 
 	void SwitchCamera();
 
@@ -98,13 +99,13 @@ protected:
 	virtual void BeginPlay() override;
 
 	bool bIsAccelerating{ false };
-	bool bIsDecelerating{ false };
 
+	bool bIsDecelerating{ false };
 
 public:
 	void CalculateDistanceAndAddToZones(AWorldActor* WorldActor);
-	virtual void Tick(float DeltaTime) override;
 
+	virtual void Tick(float DeltaTime) override;
 
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 

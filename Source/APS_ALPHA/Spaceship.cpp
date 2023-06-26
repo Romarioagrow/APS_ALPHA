@@ -41,20 +41,28 @@ void ASpaceship::BeginPlay()
 {
 	Super::BeginPlay();
 
-	/// TODO
-	//Pilot = AGravityCharacterPawn;
-
 	 // Находим AAstroGenerator (например, ищем первый найденный AAstroGenerator в мире)
 	GeneratedWorld = Cast<AAstroGenerator>(UGameplayStatics::GetActorOfClass(GetWorld(), AAstroGenerator::StaticClass()));
 	GeneratedStarCluster = Cast<AStarCluster>(UGameplayStatics::GetActorOfClass(GetWorld(), AStarCluster::StaticClass()));
 
 	FActorSpawnParameters SpawnParams;
 	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-
 	FVector SpawnLocation = PilotChair->GetComponentLocation(); // Место спавна на кресле пилота
 	FRotator SpawnRotation = PilotChair->GetComponentRotation(); // Ориентация спавна в соответствии с креслом пилота
 	Pilot = GetWorld()->SpawnActor<AGravityCharacterPawn>(AGravityCharacterPawn::StaticClass(), SpawnLocation, SpawnRotation, SpawnParams);
 
+	if (!OffsetSystem)
+	{
+		OffsetSystem = Cast<AStarSystem>(UGameplayStatics::GetActorOfClass(GetWorld(), AStarSystem::StaticClass()));
+		if (OffsetSystem)  // Проверяем, что OffsetSystem успешно получен
+		{
+			GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("OffsetSystem successfully obtained!"));
+		}
+		else
+		{
+			GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("Failed to obtain OffsetSystem."));
+		}
+	}
 
 	TArray<AActor*> TempActors;
 	UGameplayStatics::GetAllActorsOfClass(GetWorld(), AWorldActor::StaticClass(), TempActors);
@@ -114,38 +122,7 @@ void ASpaceship::CalculateDistanceAndAddToZones(AWorldActor* WorldActor)
 	}
 }
 
-//float SurfaceDistSquared(const FVector& PointA, const FVector& PointB, float Radius)
-//{
-//	float TotalDistSquared = FVector::DistSquared(PointA, PointB);
-//	float RadiusSquared = FMath::Square(Radius);
-//	// Если расстояние меньше радиуса, то точка внутри объекта. Возвращаем 0.
-//	if (TotalDistSquared <= RadiusSquared) return 0.0f;
-//
-//	return TotalDistSquared - RadiusSquared;
-//}
-//TSharedPtr<FStarModel> FindNearestStar(TMap<FVector, TSharedPtr<FStarModel>>& Stars, const FVector& ReferencePoint)
-//{
-//	TSharedPtr<FStarModel> NearestStar = nullptr;
-//	float NearestDistanceSquared = FLT_MAX;
-//
-//	for (const auto& KeyValuePair : Stars)
-//	{
-//		float DistanceSquared = SurfaceDistSquared(ReferencePoint, KeyValuePair.Key, KeyValuePair.Value->Radius);
-//		if (DistanceSquared < NearestDistanceSquared)
-//		{
-//			NearestDistanceSquared = DistanceSquared;
-//			NearestStar = KeyValuePair.Value;
-//		}
-//		/*float DistanceSquared = FVector::DistSquared(ReferencePoint, KeyValuePair.Key);
-//		if (DistanceSquared < NearestDistanceSquared)
-//		{
-//			NearestDistanceSquared = DistanceSquared;
-//			NearestStar = KeyValuePair.Value;
-//		}*/
-//	}
-//
-//	return NearestStar;
-//}
+
 TSharedPtr<FStarModel> FindNearestStar(TMap<FVector, TSharedPtr<FStarModel>>& Stars, const FVector& ReferencePoint)
 {
 	TSharedPtr<FStarModel> NearestStar = nullptr;
@@ -155,7 +132,6 @@ TSharedPtr<FStarModel> FindNearestStar(TMap<FVector, TSharedPtr<FStarModel>>& St
 	{
 		float TotalDistSquared = FVector::DistSquared(ReferencePoint, KeyValuePair.Key);
 		float RadiusSquared = FMath::Square(KeyValuePair.Value->Radius);
-
 		float DistanceSquared = TotalDistSquared > RadiusSquared ? TotalDistSquared - RadiusSquared : 0.0f;
 
 		if (DistanceSquared < NearestDistanceSquared)
@@ -477,7 +453,7 @@ void ASpaceship::ThrustForward(float Value)
 	}*/
 	const FVector Direction = ForwardVector->GetForwardVector();
 
-	if (OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::SpaceWrap)
+	if (OffsetSystem && OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::SpaceWrap)
 	{
 		// Получаем вектор вперед корабля
 		//const FVector Direction = SpaceshipHull->GetForwardVector();
@@ -515,7 +491,7 @@ void ASpaceship::ThrustSide(float Value)
 	}*/
 	const FVector Direction = ForwardVector->GetRightVector();
 
-	if (OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::SpaceWrap)
+	if (OffsetSystem && OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::SpaceWrap)
 	{
 		// Получаем вектор вперед корабля
 		// Получаем вектор в сторону корабля
@@ -549,7 +525,7 @@ void ASpaceship::ThrustVertical(float Value)
 	}*/
 	const FVector Direction = ForwardVector->GetUpVector();
 
-	if (OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::SpaceWrap)
+	if (OffsetSystem && OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::SpaceWrap)
 	{
 		// Получаем вектор вперед корабля
 		// Получаем вектор в сторону корабля
