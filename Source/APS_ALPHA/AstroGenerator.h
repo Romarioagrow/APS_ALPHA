@@ -79,6 +79,9 @@ public:
 	/// BASE ASTRO GENERATOR
 	UPROPERTY(EditAnywhere, Category = "Generation Params")
 		bool bGenerateFullScaledWorld { true };
+	
+	UPROPERTY(EditAnywhere, Category = "Generation Params")
+		bool bGenerateFullScaledStarSystem { true };
 
 	UPROPERTY(EditAnywhere, Category = "Generation Params")
 		bool bGenerateHomeSystem { false };

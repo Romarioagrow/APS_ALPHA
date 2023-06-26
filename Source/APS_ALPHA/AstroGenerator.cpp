@@ -699,7 +699,11 @@ int AAstroGenerator::GetRandomValueFromStarAmountRange(EStarClusterType ClusterT
 void AAstroGenerator::GenerateStarCluster()
 {
     /// TODO: StarClusterGenerator->GenerateRandomStarCluster(World);
-    if (true)
+    if (bGenerateFullScaledStarSystem)
+    {
+
+    }
+    else
     {
         UWorld* World = GetWorld();
         TSharedPtr<FStarClusterModel> StarClusterModel = MakeShared<FStarClusterModel>();
