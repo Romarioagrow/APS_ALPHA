@@ -517,7 +517,7 @@ public:
  * 
  */
 UCLASS()
-class APS_ALPHA_API USpaceshipOnboardComputer : public UObject
+class APS_ALPHA_API USpaceshipOnboardComputer : public UActorComponent
 {
 	GENERATED_BODY()
 
