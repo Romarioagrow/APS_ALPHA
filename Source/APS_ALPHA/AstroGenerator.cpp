@@ -349,9 +349,38 @@ void AAstroGenerator::GenerateHomeStarSystem()
 
                     HomeSpaceshipLocation.Z += 1000;
                     ASpaceship* NewHomeSpaceship = World->SpawnActor<ASpaceship>(BP_HomeSpaceship, HomeSpaceshipLocation, HomeSpaceShipyard->GetActorRotation(), SpaceshipSpawnParams);
-                    NewHomeSpaceship->AttachToActor(HomeSpaceShipyard, FAttachmentTransformRules::KeepWorldTransform);
+                    /*NewHomeSpaceship->AttachToActor(HomeSpaceShipyard, FAttachmentTransformRules::KeepWorldTransform);
                     NewHomeSpaceship->OffsetSystem = GeneratedHomeStarSystem;
-                    NewHomeSpaceship->OnboardComputer->OffsetSystem = GeneratedHomeStarSystem;
+                    NewHomeSpaceship->OnboardComputer->OffsetSystem = GeneratedHomeStarSystem;*/
+
+                   // ASpaceship* NewHomeSpaceship = World->SpawnActor<ASpaceship>(BP_HomeSpaceship, HomeSpaceshipLocation, HomeSpaceShipyard->GetActorRotation(), SpaceshipSpawnParams);
+
+                    if (NewHomeSpaceship && GeneratedHomeStarSystem)
+                    {
+                        NewHomeSpaceship->AttachToActor(HomeSpaceShipyard, FAttachmentTransformRules::KeepWorldTransform);
+                        NewHomeSpaceship->OffsetSystem = GeneratedHomeStarSystem;
+
+                        if (NewHomeSpaceship->OnboardComputer)
+                        {
+                            NewHomeSpaceship->OnboardComputer->OffsetSystem = GeneratedHomeStarSystem;
+                        }
+                        else
+                        {
+                            UE_LOG(LogTemp, Error, TEXT("Onboard Computer is nullptr!"));
+                        }
+                    }
+                    else
+                    {
+                        if (!NewHomeSpaceship)
+                        {
+                            UE_LOG(LogTemp, Error, TEXT("NewHomeSpaceship is nullptr!"));
+                        }
+
+                        if (!GeneratedHomeStarSystem)
+                        {
+                            UE_LOG(LogTemp, Error, TEXT("GeneratedHomeStarSystem is nullptr!"));
+                        }
+                    }
 
                     FVector CharSpawnLocation{ 0 };
                     APawn* PlayerCharacter = UGameplayStatics::GetPlayerPawn(World, 0);

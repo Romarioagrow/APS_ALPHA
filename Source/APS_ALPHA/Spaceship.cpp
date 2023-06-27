@@ -26,9 +26,11 @@ ASpaceship::ASpaceship()
 	ForwardVector = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ForwardVector"));
 	ForwardVector->SetupAttachment(SpaceshipHull);
 
-	OnboardComputer = CreateDefaultSubobject<USpaceshipOnboardComputer>(TEXT("OnboardComputer"));
-	OnboardComputer->SpaceshipHull = SpaceshipHull;
-	OnboardComputer->OffsetSystem = OffsetSystem;
+	//OnboardComputer = CreateDefaultSubobject<USpaceshipOnboardComputer>(TEXT("OnboardComputer"));
+	
+
+	
+	
 
 }
 
@@ -45,6 +47,17 @@ void ASpaceship::BeginPlay()
 	//FVector SpawnLocation = PilotChair->GetComponentLocation(); // Место спавна на кресле пилота
 	//FRotator SpawnRotation = PilotChair->GetComponentRotation(); // Ориентация спавна в соответствии с креслом пилота
 	//Pilot = GetWorld()->SpawnActor<AGravityCharacterPawn>(AGravityCharacterPawn::StaticClass(), SpawnLocation, SpawnRotation, SpawnParams);
+
+	OnboardComputer = NewObject<USpaceshipOnboardComputer>(this, TEXT("OnboardComputer"));
+	if (OnboardComputer)
+	{
+		OnboardComputer->SpaceshipHull = SpaceshipHull;
+		OnboardComputer->OffsetSystem = OffsetSystem;
+	}
+	else
+	{
+		UE_LOG(LogTemp, Error, TEXT("OnboardComputer is nullptr!"));
+	}
 
 	if (!OffsetSystem)
 	{
@@ -229,50 +242,23 @@ void ASpaceship::Tick(float DeltaTime)
 			GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, TEXT("Affect Object: ") + AffectedActor->GetName());
 
 			//if (OnboardComputer->FlightSystem.CurrentFlightSafeMode != EFlightSafeMode::Unsafe)
-			
 
 			OnboardComputer->ComputeFlightStatus(AffectedActor);
 
-			/// TODO: Change EngineMode to SpaceWrap if FlightMode == Planetary || > && Actor Velocity > 700k
-			/*
-			* if Distance to StarSystem > StarSystemRadius -> FlightMode = Interstellar
-			*/
-
-				//if (false && AffectedActor->IsA(AStarCluster::StaticClass()) && AffectedActor->GetActorScale3D() != FVector(1.0f, 1.0f, 1.0f)) {
-				//		
-				//	GEngine->AddOnScreenDebugMessage(-1, 11.f, FColor::Green, TEXT("GALAXY SCALE!!!"));
-
-				//	// Меняем масштаб
-				//	FVector NewScale = FVector(1.0f, 1.0f, 1.0f);
-				//	AffectedActor->SetActorScale3D(NewScale);
-
-				//	// Перемещаем корабль
-				//	//FVector NewLocation = /* расчет новой позиции */;
-
-				//	//AActor* Spaceship = Owner;
-				//	//AActor* Spaceship = GetOwner();
-				//	//if (Spaceship) {
-				//	FVector OldLocation = GetActorLocation(); // текущая позиция корабля
-				//	FVector WorldCenter = FVector::ZeroVector; // предполагается, что центр мира находится в (0,0,0)
-				//	double ScaleFactor = 1000000000.0; // ваш фактор масштабирования
-
-				//	FVector RelativeLocation = OldLocation - WorldCenter; // текущая позиция корабля относительно центра мира
-				//	FVector NewRelativeLocation = RelativeLocation / ScaleFactor; // новая позиция корабля относительно центра мира
-
-				//	FVector NewLocation = WorldCenter + NewRelativeLocation; // новая абсолютная позиция корабля
-
-				//	SetActorLocation(NewLocation);
-				//	//}
-				//	//Spaceship->SetActorLocation(NewLocation);
-
-				//	//bIsRescaling = false; // сброс флага, чтобы предотвратить повторение
-				//}
-				//else
-				//{
-				//	GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Green, TEXT("GALAXY IS SCALED!"));
-
-				//}
-			//}
+			if (OnboardComputer->FlightSystem.CurrentFlightMode == EFlightMode::Interstellar && !bIsScaled)
+			{
+				//OnboardComputer->FlightSystem.CurrentFlightType = EFlightType::FTL;
+				//SwitchEngineMode(EEngineMode::Offset);
+				//Owner->
+				ToggleScale();
+				bIsScaled = true;
+			}
+			else if (OnboardComputer->FlightSystem.CurrentFlightMode != EFlightMode::Interstellar && bIsScaled)
+			{
+				//Owner->
+				ToggleScale();
+				bIsScaled = false;
+			}
 
 			ACelestialBody* CelestialBody = Cast<ACelestialBody>(AffectedActor);
 			if (CelestialBody)

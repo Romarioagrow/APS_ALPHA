@@ -586,10 +586,10 @@ public:
             {EFlightMode::Surface, FFlightParams(100, 0.03, 0.08)},
             {EFlightMode::Atmospheric, FFlightParams(500, 0.04, 0.12)},
             {EFlightMode::Orbit, FFlightParams(1000, 0.05, 0.16)},
-            {EFlightMode::Planetary, FFlightParams(1000, 0.06, 0.2)},
-            {EFlightMode::Interplanetray, FFlightParams(1, 0.07, 0.24)},
+            {EFlightMode::Planetary, FFlightParams(0.01, 0.06, 0.2)},
+            {EFlightMode::Interplanetray, FFlightParams(0.666, 0.07, 0.24)},
            // {EFlightMode::Interstellar, FFlightParams(100000000, 0.08, 0.28)},
-            {EFlightMode::Interstellar, FFlightParams(50, 0.08, 0.28)},
+            {EFlightMode::Interstellar, FFlightParams(0, 0.08, 0.28)},
             {EFlightMode::Intergalaxy, FFlightParams(10000000000, 0.09, 0.32)}
         };
 

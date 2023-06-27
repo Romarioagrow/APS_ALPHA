@@ -29,6 +29,8 @@ class APS_ALPHA_API ASpaceship : public ASpacecraft, public IGravitySource
 public:
 	ASpaceship();
 
+	bool bIsScaled{ false };
+
 	UPROPERTY(VisibleAnywhere, Category = "Astro Actor")
 		AStarCluster* GeneratedStarCluster;
 
@@ -36,7 +38,7 @@ public:
 
 	void ToggleScale();
 
-	bool bIsScaledUp{ false };
+	bool bIsScaledUp{ true };
 
 	UPROPERTY(VisibleAnywhere, Category = "Astro Actor")
 		AActor* GeneratedWorld;
