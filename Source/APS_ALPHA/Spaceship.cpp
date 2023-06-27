@@ -230,7 +230,7 @@ void ASpaceship::Tick(float DeltaTime)
 
 			//if (OnboardComputer->FlightSystem.CurrentFlightSafeMode != EFlightSafeMode::Unsafe)
 			//{
-				OnboardComputer->ComputeFlightStatus(AffectedActor);
+			OnboardComputer->ComputeFlightStatus(AffectedActor);
 
 				//if (false && AffectedActor->IsA(AStarCluster::StaticClass()) && AffectedActor->GetActorScale3D() != FVector(1.0f, 1.0f, 1.0f)) {
 				//		
