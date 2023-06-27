@@ -229,8 +229,14 @@ void ASpaceship::Tick(float DeltaTime)
 			GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, TEXT("Affect Object: ") + AffectedActor->GetName());
 
 			//if (OnboardComputer->FlightSystem.CurrentFlightSafeMode != EFlightSafeMode::Unsafe)
-			//{
+			
+
 			OnboardComputer->ComputeFlightStatus(AffectedActor);
+
+			/// TODO: Change EngineMode to SpaceWrap if FlightMode == Planetary || > && Actor Velocity > 700k
+			/*
+			* if Distance to StarSystem > StarSystemRadius -> FlightMode = Interstellar
+			*/
 
 				//if (false && AffectedActor->IsA(AStarCluster::StaticClass()) && AffectedActor->GetActorScale3D() != FVector(1.0f, 1.0f, 1.0f)) {
 				//		
