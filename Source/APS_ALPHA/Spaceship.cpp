@@ -56,7 +56,7 @@ void ASpaceship::BeginPlay()
 	if (!OffsetSystem)
 	{
 		OffsetSystem = Cast<AStarSystem>(UGameplayStatics::GetActorOfClass(GetWorld(), AStarSystem::StaticClass()));
-		if (OffsetSystem)  // Проверяем, что OffsetSystem успешно получен
+		if (OffsetSystem)  
 		{
 			GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("OffsetSystem successfully obtained!"));
 		}
@@ -78,8 +78,6 @@ void ASpaceship::BeginPlay()
 		}
 	}
 }
-
-
 
 void GetAttachedActorsRecursively(AActor* ParentActor, TArray<AActor*>& OutActors)
 {
@@ -162,84 +160,135 @@ void ASpaceship::Tick(float DeltaTime)
 			OnboardComputer->DecelerateBoost(DeltaTime);
 		}
 
-		CurrentZones.Empty();
-		for (AWorldActor* WorldActor : WorldNavigatableActors)
+
+
 		{
-			if (WorldActor)
+			FVector ShipLocation = this->GetActorLocation();
+
+			AWorldActor* ClosestActor = nullptr;
+			double ClosestDistance = DBL_MAX;
+
+			for (AWorldActor* Actor : WorldNavigatableActors)
 			{
-				FVector ShipLocation = GetActorLocation();
-				double InfluenceRadius = WorldActor->AffectionRadiusKM * 100000; // Конвертировать километры в юниты Unreal (1 unit = 1 cm)
-				double DistanceSquared = FVector::DistSquared(WorldActor->GetActorLocation(), ShipLocation) - FMath::Square(InfluenceRadius);
+				FVector ActorLocation = Actor->GetActorLocation();
+				double AffectionRadius = Actor->AffectionRadiusKM * 100000; // переводим в сантиметры
 
-				FVector Origin, BoxExtent;
-				WorldActor->GetActorBounds(true, Origin, BoxExtent);
-				InfluenceRadius = BoxExtent.Size() / 2;
+				// Вычисляем расстояние от корабля до границы радиуса воздействия актёра
+				double DistanceToActor = (ActorLocation - ShipLocation).Size() - AffectionRadius;
 
-				if (DistanceSquared <= FMath::Square(InfluenceRadius))
+				// Выводим расстояние в километрах
+				//UE_LOG(LogTemp, Warning, TEXT("Distance to actor %s is %f km"), *Actor->GetName(), DistanceToActor / 100000);
+				// Выводим расстояние на экран
+				FString DistanceMessage = FString::Printf(TEXT("Distance to actor %s is %f km"), *Actor->GetName(), DistanceToActor / 100000);
+				GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, DistanceMessage);
+
+				// Если корабль находится в зоне действия актёра (т.е. расстояние меньше или равно нулю)
+				if (DistanceToActor <= 0)
 				{
-					// Добавить в список текущих зон
-					CurrentZones.Add(FActorDistance(WorldActor, DistanceSquared));
+					// Присваиваем AffactedActor ссылку на этого актёра
+					AffactedActor = Actor;
+					//UE_LOG(LogTemp, Warning, TEXT("Ship is within the action radius of %s"), *Actor->GetName());
+					// Выводим сообщение на экран
+					FString RadiusMessage = FString::Printf(TEXT("Ship is within the action radius of %s"), *Actor->GetName());
+					GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Green, RadiusMessage);
 
-					// Вывести сообщение на экран
-					double DistanceInKm = FMath::Sqrt(DistanceSquared) / 100000;
-					FString Message = FString::Printf(TEXT("Inside the zone of influence of actor %s at a distance of %f kilometers."), *WorldActor->GetName(), DistanceInKm);
-					GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Yellow, Message);
 				}
+
+				// Находим ближайшего актёра
+				if (DistanceToActor < ClosestDistance)
+				{
+					ClosestDistance = DistanceToActor;
+					ClosestActor = Actor;
+				}
+			}
+
+			if (ClosestActor != nullptr)
+			{
+				FString ClosestActorMessage = FString::Printf(TEXT("Closest actor is %s"), *ClosestActor->GetName());
+				GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Blue, ClosestActorMessage);
+				OnboardComputer->ComputeFlightStatus(ClosestActor);
 			}
 		}
 
-		// Сортировать массив по расстоянию до актора
-		CurrentZones.Sort([](const FActorDistance& A, const FActorDistance& B)
-			{
-				return A.Distance < B.Distance;
-			});
 
-		if (CurrentZones.Num() > 0)
-		{
-			const FActorDistance& AffectedActorDistance = CurrentZones[0];
+		//CurrentZones.Empty();
+		//for (AWorldActor* WorldActor : WorldNavigatableActors)
+		//{
+		//	if (WorldActor)
+		//	{
+		//		FVector ShipLocation = GetActorLocation();
+		//		double InfluenceRadius = WorldActor->AffectionRadiusKM * 100000; // Конвертировать километры в юниты Unreal (1 unit = 1 cm)
+		//		double DistanceSquared = FVector::DistSquared(WorldActor->GetActorLocation(), ShipLocation) - FMath::Square(InfluenceRadius);
 
-			AWorldActor* AffectedActor = AffectedActorDistance.Actor;
-			GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, TEXT("Affect Object: ") + AffectedActor->GetName());
+		//		FVector Origin, BoxExtent;
+		//		WorldActor->GetActorBounds(true, Origin, BoxExtent);
+		//		InfluenceRadius = BoxExtent.Size() / 2;
 
-			//if (OnboardComputer->FlightSystem.CurrentFlightSafeMode != EFlightSafeMode::Unsafe)
+		//		if (DistanceSquared <= FMath::Square(InfluenceRadius))
+		//		{
+		//			// Добавить в список текущих зон
+		//			CurrentZones.Add(FActorDistance(WorldActor, DistanceSquared));
 
-			OnboardComputer->ComputeFlightStatus(AffectedActor);
+		//			// Вывести сообщение на экран
+		//			double DistanceInKm = FMath::Sqrt(DistanceSquared) / 100000;
+		//			FString Message = FString::Printf(TEXT("Inside the zone of influence of actor %s at a distance of %f kilometers."), *WorldActor->GetName(), DistanceInKm);
+		//			GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Yellow, Message);
+		//		}
+		//	}
+		//}
 
-			if (OnboardComputer->FlightSystem.CurrentFlightMode == EFlightMode::Interstellar && !bIsScaled)
-			{
-				//OnboardComputer->FlightSystem.CurrentFlightType = EFlightType::FTL;
-				//SwitchEngineMode(EEngineMode::Offset);
-				//Owner->
-				//ToggleScale();
-				bIsScaled = true;
-			}
-			else if (OnboardComputer->FlightSystem.CurrentFlightMode != EFlightMode::Interstellar && bIsScaled)
-			{
-				//Owner->
-				//ToggleScale();
-				bIsScaled = false;
-			}
+		//// Сортировать массив по расстоянию до актора
+		//CurrentZones.Sort([](const FActorDistance& A, const FActorDistance& B)
+		//	{
+		//		return A.Distance < B.Distance;
+		//	});
 
-			ACelestialBody* CelestialBody = Cast<ACelestialBody>(AffectedActor);
-			if (CelestialBody)
-			{
-				TArray<AActor*> ChildActors;
-				GetAttachedActorsRecursively(CelestialBody, ChildActors);
-				for (AActor* ChildActor : ChildActors)
-				{
-					AWorldActor* WorldActorChild = Cast<AWorldActor>(ChildActor);
-					if (WorldActorChild && (WorldActorChild->IsA(AOrbitalBody::StaticClass()) || WorldActorChild->IsA(ATechActor::StaticClass())))
-					{
-						CalculateDistanceAndAddToZones(WorldActorChild);
-					}
-				}
-				if (ChildActors.Num() > 0)
-				{
-					AActor* ClosestObject = ChildActors[0];
-					GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, FString::Printf(TEXT("Closest Object: %s"), *ClosestObject->GetName()));
-				}
-			}
-		}
+		//if (CurrentZones.Num() > 0)
+		//{
+		//	const FActorDistance& AffectedActorDistance = CurrentZones[0];
+
+		//	AWorldActor* AffectedActor = AffectedActorDistance.Actor;
+		//	GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, TEXT("Affect Object: ") + AffectedActor->GetName());
+
+		//	//if (OnboardComputer->FlightSystem.CurrentFlightSafeMode != EFlightSafeMode::Unsafe)
+
+		//	OnboardComputer->ComputeFlightStatus(AffectedActor);
+
+		//	if (OnboardComputer->FlightSystem.CurrentFlightMode == EFlightMode::Interstellar && !bIsScaled)
+		//	{
+		//		//OnboardComputer->FlightSystem.CurrentFlightType = EFlightType::FTL;
+		//		//SwitchEngineMode(EEngineMode::Offset);
+		//		//Owner->
+		//		//ToggleScale();
+		//		bIsScaled = true;
+		//	}
+		//	else if (OnboardComputer->FlightSystem.CurrentFlightMode != EFlightMode::Interstellar && bIsScaled)
+		//	{
+		//		//Owner->
+		//		//ToggleScale();
+		//		bIsScaled = false;
+		//	}
+
+		//	ACelestialBody* CelestialBody = Cast<ACelestialBody>(AffectedActor);
+		//	if (CelestialBody)
+		//	{
+		//		TArray<AActor*> ChildActors;
+		//		GetAttachedActorsRecursively(CelestialBody, ChildActors);
+		//		for (AActor* ChildActor : ChildActors)
+		//		{
+		//			AWorldActor* WorldActorChild = Cast<AWorldActor>(ChildActor);
+		//			if (WorldActorChild && (WorldActorChild->IsA(AOrbitalBody::StaticClass()) || WorldActorChild->IsA(ATechActor::StaticClass())))
+		//			{
+		//				CalculateDistanceAndAddToZones(WorldActorChild);
+		//			}
+		//		}
+		//		if (ChildActors.Num() > 0)
+		//		{
+		//			AActor* ClosestObject = ChildActors[0];
+		//			GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, FString::Printf(TEXT("Closest Object: %s"), *ClosestObject->GetName()));
+		//		}
+		//	}
+		//}
 
 		if (OnboardComputer->FlightSystem.CurrentFlightMode == EFlightMode::Interstellar)
 		{

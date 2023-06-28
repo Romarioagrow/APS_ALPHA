@@ -85,6 +85,8 @@ public:
 
 	TArray<FActorDistance> CurrentZones;
 
+	AWorldActor* AffactedActor{ nullptr };
+
 	void ToggleScale();
 
 	bool bIsScaledUp{ true };
