@@ -16,18 +16,21 @@ public:
 	// Sets default values for this actor's properties
 	AWorldActor();
 
+protected:
+	// Called when the game starts or when spawned
+	virtual void BeginPlay() override;
+
+public:
+	// Called every frame
+	virtual void Tick(float DeltaTime) override;
+
+public:
 	UPROPERTY(VisibleAnywhere, Category = "World Actor")
 		double AffectionRadiusKM{ 0 };
 
 	UPROPERTY(VisibleAnywhere, Category = "Celestial Body")
 		double RadiusKM{ 0 };
 
-protected:
-	// Called when the game starts or when spawned
-	virtual void BeginPlay() override;
-
-public:	
-	// Called every frame
-	virtual void Tick(float DeltaTime) override;
+	void CalculateAffectionRadius();
 
 };

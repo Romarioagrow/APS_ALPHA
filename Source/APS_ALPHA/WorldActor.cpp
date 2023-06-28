@@ -25,3 +25,15 @@ void AWorldActor::Tick(float DeltaTime)
 
 }
 
+void AWorldActor::CalculateAffectionRadius()
+{
+	//return 0.0;
+	FVector Origin, BoxExtent;
+	double SphereRadius;
+	this->GetActorBounds(false, Origin, BoxExtent);
+	SphereRadius = BoxExtent.GetMax();
+	this->AffectionRadiusKM = SphereRadius / 100000.0;
+	//return SphereRadius / 100000.0;
+	//NewMoon->AffectionRadiusKM = SphereRadius / 100000.0;
+}
+

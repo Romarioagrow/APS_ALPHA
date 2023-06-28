@@ -335,12 +335,14 @@ void AAstroGenerator::GenerateHomeStarSystem()
                     HomeSpaceStation->AttachToActor(HomeSpaceHeadquarters, FAttachmentTransformRules::KeepWorldTransform);
                     double HomeStationOffset = HomeSpaceStation->GravityCollisionZone->GetScaledSphereRadius() * 2;
                     HomeSpaceStation->AddActorLocalOffset(FVector(0, HomeStationOffset, 0));
+                    HomeSpaceStation->CalculateAffectionRadius();
 
                     /// Spawn HomeShipyard
                     HomeSpaceShipyard = World->SpawnActor<ASpaceShipyard>(BP_HomeSpaceShipyard, HomeSpaceHeadquartersLocation, HomeSpaceHeadquartersRotation);
                     double HomeSpaceShipyardLocationOffset = HomeSpaceShipyard->GravityCollisionZone->GetScaledSphereRadius() * 2;
                     HomeSpaceShipyard->AddActorLocalOffset(FVector(0, -HomeSpaceShipyardLocationOffset, 0));
                     HomeSpaceShipyard->AttachToActor(HomeSpaceHeadquarters, FAttachmentTransformRules::KeepWorldTransform);
+                    HomeSpaceShipyard->CalculateAffectionRadius();
 
                     //Spawn HomeSpaceship
                     FActorSpawnParameters SpaceshipSpawnParams;
@@ -717,6 +719,8 @@ void AAstroGenerator::GenerateStarSystem()
                 NewStar->StarAffectionZoneRadius = StarSphereRadius;
 
             }
+            //NewStar->AffectionRadiusKM = 
+                NewStar->CalculateAffectionRadius();
             NewStarSystem->AddNewStar(NewStar);
             NewStarSystem->StarSystemRadius = NewStar->StarAffectionZoneRadius;
         }
@@ -727,6 +731,8 @@ void AAstroGenerator::GenerateStarSystem()
         NewStarSystem->StarSystemZone->SetSphereRadius(StarSystemSphereRadius);
         NewStarSystem->StarSystemRadius = StarSystemSphereRadius;
         GeneratedHomeStarSystem = NewStarSystem;
+        //NewStarSystem->AffectionRadiusKM = 
+            NewStarSystem->CalculateAffectionRadius();
 
         if (NewStarSystem->StarSystemRadius == 0)
         {
