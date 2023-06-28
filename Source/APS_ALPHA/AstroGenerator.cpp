@@ -672,14 +672,12 @@ void AAstroGenerator::GenerateStarSystem()
 				
                     DiameterOfLastMoon = MoonRadius * 2;
                     LastMoonLocation = NewMoon->GetActorLocation();
-
                 }
 
                 if (DiameterOfLastMoon == 0)
                 {
                     NewPlanet->PlanetaryZone->SetSphereRadius(100);
                     NewPlanet->AffectionRadiusKM = 100 * NewPlanet->GetActorScale3D().X / 100000;
-
                 }
                 else
                 {
