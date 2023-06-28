@@ -665,6 +665,7 @@ void AAstroGenerator::GenerateStarSystem()
 
                     // set moon full-scale
                     double MoonRadius = MoonData->MoonModel->Radius;
+                    NewMoon->RadiusKM = MoonRadius * 6371;//SetActorScale3D(FVector(MoonRadius * 12742000));
                     NewMoon->SetActorScale3D(FVector(MoonRadius * 12742000));
                     NewMoon->AddActorLocalOffset(FVector(0, ((PlanetModel->RadiusKM + (MoonData->OrbitRadius * PlanetModel->RadiusKM)) * KM_TO_UE_UNIT_SCALE) * 1, 0));
                     NewMoon->AttachToActor(NewMoonOrbit, FAttachmentTransformRules::KeepWorldTransform);
@@ -691,7 +692,6 @@ void AAstroGenerator::GenerateStarSystem()
                 }
                 LastPlanetLocation = NewPlanet->GetActorLocation();
                 LastStarLocation = LastPlanetLocation * 1.1; 
-                
             }
 
             double StarSphereRadius;
