@@ -4,6 +4,8 @@
 
 #include <Components/SphereComponent.h>
 #include "GravitySource.h"
+#include "NavigatableBody.h"
+
 #include "CoreMinimal.h"
 #include "TechActor.h"
 #include "SpaceStation.generated.h"
@@ -12,7 +14,7 @@
  * 
  */
 UCLASS()
-class APS_ALPHA_API ASpaceStation : /*public AGravityStation*/ public ATechActor, public IGravitySource /// 
+class APS_ALPHA_API ASpaceStation : /*public AGravityStation*/ public ATechActor, public IGravitySource, public INavigatableBody
 {
 	GENERATED_BODY()
 	

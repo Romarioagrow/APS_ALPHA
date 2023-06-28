@@ -7,6 +7,7 @@
 #include "Star.h"
 #include "StarCluster.h"
 #include "AstroGenerator.h"
+#include "NavigatableBody.h"
 
 
 ASpaceship::ASpaceship()
@@ -65,26 +66,37 @@ void ASpaceship::BeginPlay()
 		}
 	}
 
-	TArray<AActor*> TempActors;
-	UGameplayStatics::GetAllActorsOfClass(GetWorld(), AWorldActor::StaticClass(), TempActors);
+
+
+	TArray<AActor*> WorldActors;
+	UGameplayStatics::GetAllActorsOfClass(GetWorld(), AWorldActor::StaticClass(), WorldActors);
+	for (AActor* Actor : WorldActors)
+	{
+		if (Actor->GetClass()->ImplementsInterface(UNavigatableBody::StaticClass()))
+		{
+			AWorldActor* WorldNavigatableActor = Cast<AWorldActor>(Actor);
+			WorldNavigatableActors.Add(WorldNavigatableActor);
+			GEngine->AddOnScreenDebugMessage(-1, 50.f, FColor::Yellow, FString::Printf(TEXT("WorldActor: %s"), *WorldNavigatableActor->GetName()));
+		}
+	}
 	// Приведем тип AActor к AWorldActor и добавим в массив
-	for (AActor* Actor : TempActors)
+	/*for (AActor* Actor : WorldActors)
 	{
 		AWorldActor* WorldActor = Cast<AWorldActor>(Actor);
 		if (WorldActor)
 		{
-			WorldActors.Add(WorldActor);
+			WorldNavigatableActors.Add(WorldActor);
 		}
 	}
-	GEngine->AddOnScreenDebugMessage(-1, 50.f, FColor::Yellow, FString::Printf(TEXT("Number of WorldActors: %d"), WorldActors.Num()));
-	for (int32 i = 0; i < WorldActors.Num(); i++)
+	GEngine->AddOnScreenDebugMessage(-1, 50.f, FColor::Yellow, FString::Printf(TEXT("Number of WorldActors: %d"), WorldNavigatableActors.Num()));
+	for (int32 i = 0; i < WorldNavigatableActors.Num(); i++)
 	{
-		AWorldActor* WorldActor = WorldActors[i];
+		AWorldActor* WorldActor = WorldNavigatableActors[i];
 		if (WorldActor)
 		{
 			GEngine->AddOnScreenDebugMessage(-1, 50.f, FColor::Yellow, FString::Printf(TEXT("WorldActor[%d]: %s"), i, *WorldActor->GetName()));
 		}
-	}
+	}*/
 }
 
 // TO COMP
@@ -181,7 +193,7 @@ void ASpaceship::Tick(float DeltaTime)
 		}
 
 		CurrentZones.Empty();
-		for (AWorldActor* WorldActor : WorldActors)
+		for (AWorldActor* WorldActor : WorldNavigatableActors)
 		{
 			if (WorldActor)
 			{

@@ -64,7 +64,7 @@ public:
 	UPROPERTY(VisibleAnywhere, Category = "Onboard Computer")
 		AAstroActor* OffsetGalaxy;
 
-	TArray<AWorldActor*> WorldActors{};
+	TArray<AWorldActor*> WorldNavigatableActors{};
 
 	TArray<AWorldActor*> CurrentZonesInfluence{};
 

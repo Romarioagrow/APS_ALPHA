@@ -473,7 +473,6 @@ void AAstroGenerator::GenerateStarSystem()
         case EHomeSystemPosition::RandomPosition:
         {
             // «адайте HomeSystemSpawnLocation в зависимости от вашего определени€ центра, середины и конца.
-            // Ќапример:
             double RandomX = FMath::RandRange(-1000, 1000);
             double RandomY = FMath::RandRange(-1000, 1000);
             double RandomZ = FMath::RandRange(-1000, 1000);
@@ -613,10 +612,10 @@ void AAstroGenerator::GenerateStarSystem()
             /// TODO: PlanetarySystemGenerator->ConnectStar()
             StarGenerator->ApplyModel(NewStar, StarModel);
             PlanetarySystemGenerator->ApplyModel(NewPlanetarySystem, PlanetraySystemModel);
-            NewStar->AttachToActor(NewStarSystem, FAttachmentTransformRules::KeepWorldTransform);
             NewStar->SetActorScale3D(FVector(StarModel->Radius * 813684224.0));
             NewStar->StarRadiusKM = StarModel->Radius * 696340;
             NewStar->SetPlanetarySystem(NewPlanetarySystem);
+            NewStar->AttachToActor(NewStarSystem, FAttachmentTransformRules::KeepWorldTransform);
             NewPlanetarySystem->AttachToActor(NewStar, FAttachmentTransformRules::KeepWorldTransform);
             
             // Apply material luminocity multiplier and emissive light color
@@ -831,8 +830,6 @@ void AAstroGenerator::GenerateStarCluster()
     else
     {
         UWorld* World = GetWorld();
-
-
 
         TSharedPtr<FStarClusterModel> StarClusterModel = MakeShared<FStarClusterModel>();
 
