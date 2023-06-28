@@ -85,7 +85,7 @@ public:
 
 	TArray<FActorDistance> CurrentZones;
 
-	AWorldActor* AffactedActor{ nullptr };
+	AWorldActor* AffectedActor{ nullptr };
 
 	void ToggleScale();
 

@@ -19,6 +19,9 @@ public:
 	UPROPERTY(VisibleAnywhere, Category = "World Actor")
 		double AffectionRadiusKM{ 0 };
 
+	UPROPERTY(VisibleAnywhere, Category = "Celestial Body")
+		double RadiusKM{ 0 };
+
 protected:
 	// Called when the game starts or when spawned
 	virtual void BeginPlay() override;
