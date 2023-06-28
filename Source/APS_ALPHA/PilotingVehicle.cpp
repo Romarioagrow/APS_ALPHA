@@ -15,6 +15,9 @@ void APilotingVehicle::TakeControl(APawn* Pawn)
         {
             UE_LOG(LogTemp, Warning, TEXT("TakeControl called with non-AGravityCharacterPawn Pawn."));
         }
+        FDetachmentTransformRules DetachRules = FDetachmentTransformRules::KeepWorldTransform; // Вы можете изменить это на другие варианты, в зависимости от того, хотите ли вы сохранить преобразования мира или родителя.
+
+        this->DetachFromActor(DetachRules);
 
     }
     else

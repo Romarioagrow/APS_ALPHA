@@ -21,6 +21,19 @@ struct FActorDistance
 	FActorDistance(AWorldActor* InActor, double InDistance) : Actor(InActor), Distance(InDistance) {}
 };
 
+// TO COMP
+struct ZoneData
+{
+	AWorldActor* Actor;
+
+	double Distance;
+
+	ZoneData(AWorldActor* InActor, double InDistance)
+		: Actor(InActor)
+		, Distance(InDistance)
+	{}
+};
+
 UCLASS()
 class APS_ALPHA_API ASpaceship : public ASpacecraft, public IGravitySource
 {

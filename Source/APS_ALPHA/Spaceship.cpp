@@ -66,8 +66,6 @@ void ASpaceship::BeginPlay()
 		}
 	}
 
-
-
 	TArray<AActor*> WorldActors;
 	UGameplayStatics::GetAllActorsOfClass(GetWorld(), AWorldActor::StaticClass(), WorldActors);
 	for (AActor* Actor : WorldActors)
@@ -76,40 +74,12 @@ void ASpaceship::BeginPlay()
 		{
 			AWorldActor* WorldNavigatableActor = Cast<AWorldActor>(Actor);
 			WorldNavigatableActors.Add(WorldNavigatableActor);
-			GEngine->AddOnScreenDebugMessage(-1, 50.f, FColor::Yellow, FString::Printf(TEXT("WorldActor: %s"), *WorldNavigatableActor->GetName()));
+			GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Yellow, FString::Printf(TEXT("WorldActor: %s"), *WorldNavigatableActor->GetName()));
 		}
 	}
-	// Приведем тип AActor к AWorldActor и добавим в массив
-	/*for (AActor* Actor : WorldActors)
-	{
-		AWorldActor* WorldActor = Cast<AWorldActor>(Actor);
-		if (WorldActor)
-		{
-			WorldNavigatableActors.Add(WorldActor);
-		}
-	}
-	GEngine->AddOnScreenDebugMessage(-1, 50.f, FColor::Yellow, FString::Printf(TEXT("Number of WorldActors: %d"), WorldNavigatableActors.Num()));
-	for (int32 i = 0; i < WorldNavigatableActors.Num(); i++)
-	{
-		AWorldActor* WorldActor = WorldNavigatableActors[i];
-		if (WorldActor)
-		{
-			GEngine->AddOnScreenDebugMessage(-1, 50.f, FColor::Yellow, FString::Printf(TEXT("WorldActor[%d]: %s"), i, *WorldActor->GetName()));
-		}
-	}*/
 }
 
-// TO COMP
-struct ZoneData
-{
-	AWorldActor* Actor;
-	double Distance;
 
-	ZoneData(AWorldActor* InActor, double InDistance)
-		: Actor(InActor)
-		, Distance(InDistance)
-	{}
-};
 
 void GetAttachedActorsRecursively(AActor* ParentActor, TArray<AActor*>& OutActors)
 {
