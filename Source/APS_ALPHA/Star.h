@@ -6,7 +6,7 @@
 #include "StarType.h"
 #include "StarSpectralClass.h"
 #include "SpectralType.h"
-//#include "PlanetarySystem.h"
+#include "NavigatableBody.h"
 
 #include "CoreMinimal.h"
 #include "CelestialBody.h"
@@ -14,11 +14,8 @@
 
 class APlanetarySystem;
 
-/**
- * 
- */
 UCLASS()
-class APS_ALPHA_API AStar : public ACelestialBody
+class APS_ALPHA_API AStar : public ACelestialBody, public INavigatableBody
 {
 	GENERATED_BODY()
 

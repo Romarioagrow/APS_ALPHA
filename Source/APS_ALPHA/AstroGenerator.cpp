@@ -686,7 +686,8 @@ void AAstroGenerator::GenerateStarSystem()
                     FVector LastMoonOuterEdgeLocation = LastMoonLocation + FVector(0, DiameterOfLastMoon * 6371, 0);
                     double SphereRadius = FVector::Dist(PlanetLocation, LastMoonOuterEdgeLocation);
                     SphereRadius /= NewPlanet->GetActorScale3D().X;
-                    NewPlanet->PlanetaryZone->SetSphereRadius(SphereRadius * 1.1);
+                    SphereRadius *= 1.5;
+                    NewPlanet->PlanetaryZone->SetSphereRadius(SphereRadius);
                 }
                 LastPlanetLocation = NewPlanet->GetActorLocation();
                 LastStarLocation = LastPlanetLocation * 1.1; 
@@ -699,13 +700,13 @@ void AAstroGenerator::GenerateStarSystem()
                 StarSphereRadius = NewStar->GetRadius() * NewStar->GetActorScale3D().X * 2;
                 StarSphereRadius /= 1000000;
                 NewStar->PlanetarySystemZone->SetSphereRadius(StarSphereRadius);
-                NewStar->StarAffectionZoneRadius = StarSphereRadius * 1.2;
+                NewStar->StarAffectionZoneRadius = StarSphereRadius * 1.5;
             }
             else
             {
                 StarSphereRadius = FVector::Dist(NewStar->GetActorLocation(), LastPlanetLocation);
                 StarSphereRadius /= NewStar->GetActorScale3D().X;
-                NewStar->PlanetarySystemZone->SetSphereRadius(StarSphereRadius * 1.1);
+                NewStar->PlanetarySystemZone->SetSphereRadius(StarSphereRadius * 1.5);
                 NewStar->StarAffectionZoneRadius = StarSphereRadius;
 
             }
@@ -715,13 +716,14 @@ void AAstroGenerator::GenerateStarSystem()
 
         double StarSystemSphereRadius = FVector::Dist(NewStarSystem->GetActorLocation(), LastStarLocation);
         StarSystemSphereRadius /= NewStarSystem->GetActorScale3D().X;
-        NewStarSystem->StarSystemZone->SetSphereRadius(StarSystemSphereRadius * 1.1);
+        StarSystemSphereRadius *= 1.6;
+        NewStarSystem->StarSystemZone->SetSphereRadius(StarSystemSphereRadius);
         NewStarSystem->StarSystemRadius = StarSystemSphereRadius;
         GeneratedHomeStarSystem = NewStarSystem;
 
         if (NewStarSystem->StarSystemRadius == 0)
         {
-            float SphereRadius = NewStarSystem->MainStar->PlanetarySystemZone->GetScaledSphereRadius() * 1.1;
+            double SphereRadius = NewStarSystem->MainStar->PlanetarySystemZone->GetScaledSphereRadius() * 1.5;
             NewStarSystem->StarSystemRadius = SphereRadius;
             NewStarSystem->StarSystemZone->SetSphereRadius(SphereRadius);
         }

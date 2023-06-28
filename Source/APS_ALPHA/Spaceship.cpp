@@ -13,7 +13,7 @@ ASpaceship::ASpaceship()
 {
 	// Создание компонента SpaceshipHull
 	SpaceshipHull = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("SpaceshipHull"));
-	RootComponent = SpaceshipHull; // делаем его корневым компонентом
+	RootComponent = SpaceshipHull; 
 
 	// Создание компонента SphereCollisionComponent и прикрепление его к SpaceshipHull
 	SphereCollisionComponent = CreateDefaultSubobject<USphereComponent>(TEXT("SphereCollisionComponent"));
@@ -25,13 +25,6 @@ ASpaceship::ASpaceship()
 
 	ForwardVector = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ForwardVector"));
 	ForwardVector->SetupAttachment(SpaceshipHull);
-
-	//OnboardComputer = CreateDefaultSubobject<USpaceshipOnboardComputer>(TEXT("OnboardComputer"));
-	
-
-	
-	
-
 }
 
 void ASpaceship::BeginPlay()
@@ -81,6 +74,15 @@ void ASpaceship::BeginPlay()
 		if (WorldActor)
 		{
 			WorldActors.Add(WorldActor);
+		}
+	}
+	GEngine->AddOnScreenDebugMessage(-1, 50.f, FColor::Yellow, FString::Printf(TEXT("Number of WorldActors: %d"), WorldActors.Num()));
+	for (int32 i = 0; i < WorldActors.Num(); i++)
+	{
+		AWorldActor* WorldActor = WorldActors[i];
+		if (WorldActor)
+		{
+			GEngine->AddOnScreenDebugMessage(-1, 50.f, FColor::Yellow, FString::Printf(TEXT("WorldActor[%d]: %s"), i, *WorldActor->GetName()));
 		}
 	}
 }
@@ -158,37 +160,13 @@ void ASpaceship::Tick(float DeltaTime)
 	
 	if (bEngineRunning)
 	{
-		// Telemetry
-		FVector ActorLocation = GetActorLocation();
-		FVector ActorVelocity = GetVelocity();
-		double ActorSpeed = ActorVelocity.Size();
-
 		PrintOnboardComputerBasicIformation();
 
-		// Displaying them on screen
-		GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Actor Location: %s"), *ActorLocation.ToString()));
-		GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Actor Velocity: %f"), ActorSpeed));
-		GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Thrust Force: %f"), OnboardComputer->GetEngineThrustForce()));
-		GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Hull Angular Damping: %f"), SpaceshipHull->GetAngularDamping()));
-		GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Hull Linear Damping: %f"), SpaceshipHull->GetLinearDamping()));
-
-
-		if (OnboardComputer->FlightSystem.CurrentFlightMode == EFlightMode::Interstellar)
+		if (SpaceshipHull->IsSimulatingPhysics())
 		{
-			if (GeneratedStarCluster)
-			{
-				TSharedPtr<FStarModel> NearestStar = FindNearestStar(GeneratedStarCluster->StarsModel, ActorLocation);
-				GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Nearest Star: %f"), NearestStar->Radius));
-			}
-			else
-			{
-				GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("NO GeneratedStarCluster")));
-			}
+			FVector OppositeTorque = -SpaceshipHull->GetPhysicsAngularVelocityInRadians() * 0.5;
+			SpaceshipHull->AddTorqueInRadians(OppositeTorque, NAME_None, true);
 		}
-
-
-		FVector OppositeTorque = -SpaceshipHull->GetPhysicsAngularVelocityInRadians() * 0.5;
-		SpaceshipHull->AddTorqueInRadians(OppositeTorque, NAME_None, true);
 
 		if (bIsAccelerating)
 		{
@@ -250,13 +228,13 @@ void ASpaceship::Tick(float DeltaTime)
 				//OnboardComputer->FlightSystem.CurrentFlightType = EFlightType::FTL;
 				//SwitchEngineMode(EEngineMode::Offset);
 				//Owner->
-				ToggleScale();
+				//ToggleScale();
 				bIsScaled = true;
 			}
 			else if (OnboardComputer->FlightSystem.CurrentFlightMode != EFlightMode::Interstellar && bIsScaled)
 			{
 				//Owner->
-				ToggleScale();
+				//ToggleScale();
 				bIsScaled = false;
 			}
 
@@ -279,7 +257,19 @@ void ASpaceship::Tick(float DeltaTime)
 					GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, FString::Printf(TEXT("Closest Object: %s"), *ClosestObject->GetName()));
 				}
 			}
+		}
 
+		if (OnboardComputer->FlightSystem.CurrentFlightMode == EFlightMode::Interstellar)
+		{
+			if (GeneratedStarCluster)
+			{
+				TSharedPtr<FStarModel> NearestStar = FindNearestStar(GeneratedStarCluster->StarsModel, GetActorLocation());
+				GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Nearest Star: %f"), NearestStar->Radius));
+			}
+			else
+			{
+				GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("NO GeneratedStarCluster")));
+			}
 		}
 	}
 	if (Pilot)
@@ -408,6 +398,19 @@ void ASpaceship::PrintOnboardComputerBasicIformation()
 		*OnboardComputer->GetEnumValueAsString(TEXT("EFlightType"), (int32)OnboardComputer->FlightSystem.CurrentFlightType)));
 	GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, FString::Printf(TEXT("Current Flight Mode:	%s"), 
 		*OnboardComputer->GetEnumValueAsString(TEXT("EFlightMode"), (int32)OnboardComputer->FlightSystem.CurrentFlightMode)));
+
+	// Telemetry
+	FVector ActorLocation = GetActorLocation();
+	FVector ActorVelocity = GetVelocity();
+	double ActorSpeed = ActorVelocity.Size();
+
+	// Displaying them on screen
+	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Actor Location: %s"), *ActorLocation.ToString()));
+	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Actor Velocity: %f"), ActorSpeed));
+	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Thrust Force: %f"), OnboardComputer->GetEngineThrustForce()));
+	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Hull Angular Damping: %f"), SpaceshipHull->GetAngularDamping()));
+	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Hull Linear Damping: %f"), SpaceshipHull->GetLinearDamping()));
+
 }
 
 void ASpaceship::SwitchEngines()

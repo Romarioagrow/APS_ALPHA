@@ -8,21 +8,17 @@
 #include "MoonGenerationModel.h"
 #include "PlanetGenerationModel.h"
 #include "PlanetaryZoneType.h"
+#include "NavigatableBody.h"
 
 #include "CoreMinimal.h"
 #include "CelestialBody.h"
 #include "Planet.generated.h"
 
-
-// Forward declaration of AMoon
 class AMoon;
 class AStar;
-/**
- * 
- */
 
 UCLASS()
-class APS_ALPHA_API APlanet : public AOrbitalBody, public IPlanetaryEnvironment
+class APS_ALPHA_API APlanet : public AOrbitalBody, public IPlanetaryEnvironment, public INavigatableBody
 {
 	GENERATED_BODY()
 
