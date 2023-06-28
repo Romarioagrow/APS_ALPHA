@@ -166,6 +166,7 @@ void ASpaceship::Tick(float DeltaTime)
 			FVector ShipLocation = this->GetActorLocation();
 			AWorldActor* ClosestActor = nullptr;
 			double ClosestDistance = DBL_MAX;
+			double ClosestAffectionDistance = DBL_MAX;
 			CurrentZonesInfluence.Empty();
 
 			for (AWorldActor* Actor : WorldNavigatableActors)
@@ -183,10 +184,16 @@ void ASpaceship::Tick(float DeltaTime)
 				// Если корабль находится в зоне действия актёра (т.е. расстояние меньше или равно нулю)
 				if (DistanceToAffectionZone <= AffectionRadius)
 				{
-					AffectedActor = Actor;
+					//AffectedActor = Actor;
 					FString RadiusMessage = FString::Printf(TEXT("Ship is within the action radius of %s"), *Actor->GetName());
 					GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Green, RadiusMessage);
 					CurrentZonesInfluence.Add(Actor);
+
+					if (DistanceToAffectionZone < ClosestAffectionDistance)
+					{
+						ClosestAffectionDistance = DistanceToAffectionZone;
+						AffectedActor = Actor;
+					}
 				}
 				else
 				{
@@ -194,26 +201,29 @@ void ASpaceship::Tick(float DeltaTime)
 					GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, RadiusMessage);
 				}
 
-				// Находим ближайшего актёра
 				if (DistanceToActor < ClosestDistance)
 				{
 					ClosestDistance = DistanceToActor;
 					ClosestActor = Actor;
 				}
+				
 			}
 
 			if (ClosestActor != nullptr)
 			{
 				FString ClosestActorMessage = FString::Printf(TEXT("Closest actor is %s"), *ClosestActor->GetName());
 				GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Blue, ClosestActorMessage);
-				//OnboardComputer->ComputeFlightStatus(ClosestActor);
+			}
+			
+			if (AffectedActor != nullptr)
+			{
+				FString ClosestAffectedActorMessage = FString::Printf(TEXT("Affection zone is %s"), *AffectedActor->GetName());
+				GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Green, ClosestAffectedActorMessage);
 			}
 
 			// Выводим CurrentZones на экран
 			for (AWorldActor* Actor : CurrentZonesInfluence)
 			{
-				//FString ZoneMessage = FString::Printf(TEXT("Actor %s is in the current zone"), *Actor->GetName());
-				//GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Green, TEXT("Actor %s is in the current zone"), *Actor->GetName());
 				GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Actor %s is in the current zone"), *Actor->GetName()));
 			
 			}
