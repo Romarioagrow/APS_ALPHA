@@ -663,20 +663,16 @@ void AAstroGenerator::GenerateStarSystem()
                     NewPlanet->AddMoon(NewMoon);
                     NewMoon->SetParentPlanet(NewPlanet);
 
-                    //NewMoon->GetActorBounds();
-
                     // set moon full-scale
                     double MoonRadius = MoonData->MoonModel->Radius;
-                    NewMoon->RadiusKM = MoonRadius * 6371;//SetActorScale3D(FVector(MoonRadius * 12742000));
+                    NewMoon->RadiusKM = MoonRadius * 6371;
                     NewMoon->SetActorScale3D(FVector(MoonRadius * 12742000));
                     
-                    //NewMoon->AffectionRadiusKM = NewMoon->RadiusKM * NewMoon->GetActorScale3D().X / 100000;
                     FVector Origin, BoxExtent;
-                    float SphereRadius;
+                    double SphereRadius;
                     NewMoon->GetActorBounds(false, Origin, BoxExtent);
                     SphereRadius = BoxExtent.GetMax();
-                    NewMoon->AffectionRadiusKM = SphereRadius / 100000.0;// * NewMoon->GetActorScale3D().X / 100000.0;
-
+                    NewMoon->AffectionRadiusKM = SphereRadius / 100000.0;
 
                     NewMoon->AddActorLocalOffset(FVector(0, ((PlanetModel->RadiusKM + (MoonData->OrbitRadius * PlanetModel->RadiusKM)) * KM_TO_UE_UNIT_SCALE) * 1, 0));
                     NewMoon->AttachToActor(NewMoonOrbit, FAttachmentTransformRules::KeepWorldTransform);
