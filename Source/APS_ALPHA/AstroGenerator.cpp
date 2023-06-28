@@ -635,7 +635,6 @@ void AAstroGenerator::GenerateStarSystem()
 
                 PlanetGenerator->ApplyModel(NewPlanet, PlanetModel);
                 NewStar->AddPlanet(NewPlanet);
-                NewPlanet->AttachToActor(NewPlanetOrbit, FAttachmentTransformRules::KeepWorldTransform);
                 NewPlanet->SetParentStar(NewStar);
 
                 // set planet full-scale
@@ -645,6 +644,7 @@ void AAstroGenerator::GenerateStarSystem()
                 NewPlanet->SetActorLocation(NewLocation);
                 NewPlanetOrbit->SetActorRelativeRotation(FRotator(FMath::RandRange(-30.0, 30.0), FMath::RandRange(-360.0, 360.0), 0));
 
+                NewPlanet->AttachToActor(NewPlanetOrbit, FAttachmentTransformRules::KeepWorldTransform);
                 NewPlanetarySystem->PlanetsActorsList.Add(NewPlanet);
 
                 const double KM_TO_UE_UNIT_SCALE = 100000;
