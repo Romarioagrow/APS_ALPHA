@@ -523,15 +523,20 @@ class APS_ALPHA_API USpaceshipOnboardComputer : public UActorComponent
 
 public:
     USpaceshipOnboardComputer(AActor* InOwner);
+
     USpaceshipOnboardComputer();
 
 public:
     AActor* Owner; //
 
     double GetEngineThrustForce();
+
     void IncreaseFlightMode();
+
     void DecreaseFlightMode();
+
     void AccelerateBoost(float DeltaTime);
+
     void DecelerateBoost(float DeltaTime);
 
     void SwitchEngineMode(EEngineMode EngineMode);
@@ -588,7 +593,6 @@ public:
             {EFlightMode::Orbit, FFlightParams(1000, 0.05, 0.16)},
             {EFlightMode::Planetary, FFlightParams(0.01, 0.06, 0.2)},
             {EFlightMode::Interplanetray, FFlightParams(0.666, 0.07, 0.24)},
-           // {EFlightMode::Interstellar, FFlightParams(100000000, 0.08, 0.28)},
             {EFlightMode::Interstellar, FFlightParams(100000000, 0.08, 0.28)},
             {EFlightMode::Intergalaxy, FFlightParams(10000000000, 0.09, 0.32)}
         };
@@ -605,6 +609,8 @@ public:
     AAstroActor* OffsetGalaxy;
 
     bool bIsRescaling{ false };
+
+    void ComputeInterstellarFlight();
 
 
 };

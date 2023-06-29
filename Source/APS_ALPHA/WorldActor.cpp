@@ -33,6 +33,10 @@ void AWorldActor::CalculateAffectionRadius()
 	this->GetActorBounds(false, Origin, BoxExtent);
 	SphereRadius = BoxExtent.GetMax();
 	this->AffectionRadiusKM = SphereRadius / 100000.0;
+
+	FString RadiusMessage = FString::Printf(TEXT("Actor %s has a radius of %f km"), *(this->GetName()), AffectionRadiusKM);
+	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Cyan, RadiusMessage);
+
 	//return SphereRadius / 100000.0;
 	//NewMoon->AffectionRadiusKM = SphereRadius / 100000.0;
 }

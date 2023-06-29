@@ -870,6 +870,7 @@ void AAstroGenerator::GenerateStarCluster()
         NewStarCluster->StarClusterComposition = StarClusterModel->StarClusterComposition;
         NewStarCluster->StarClusterPopulation = StarClusterModel->StarClusterPopulation;
         NewStarCluster->StarClusterSize = StarClusterModel->StarClusterSize;
+        NewStarCluster->CalculateAffectionRadius();
 
         UE_LOG(LogTemp, Warning, TEXT("StarCount: %d"), NewStarCluster->StarAmount);
         UE_LOG(LogTemp, Warning, TEXT("StarDensity: %f"), NewStarCluster->StarDensity);

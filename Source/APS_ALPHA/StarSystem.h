@@ -12,7 +12,7 @@
  * 
  */
 UCLASS()
-class APS_ALPHA_API AStarSystem : public ACelestialSystem
+class APS_ALPHA_API AStarSystem : public ACelestialSystem, public INavigatableBody
 {
 	GENERATED_BODY()
 	

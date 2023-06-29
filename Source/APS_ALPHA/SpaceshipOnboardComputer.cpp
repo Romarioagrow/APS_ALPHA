@@ -65,6 +65,14 @@ void USpaceshipOnboardComputer::ComputeFlightStatus(AWorldActor* AffectedActor)
 
         OffsetGalaxy = Cast<AAstroActor>(AffectedActor);
     }
+    else if (AffectedActor->IsA(AStarSystem::StaticClass()))
+    {
+        FlightSystem.CurrentFlightMode = EFlightMode::Interplanetray;
+        FlightSystem.CurrentFlightType = EFlightType::LightSpeed;
+        SwitchEngineMode(EEngineMode::SpaceWrap);
+
+        OffsetGalaxy = Cast<AAstroActor>(AffectedActor);
+    }
     else
     {
         FlightSystem.CurrentFlightMode = EFlightMode::Interstellar;
@@ -144,6 +152,13 @@ FString USpaceshipOnboardComputer::GetEngineStateAsString()
 FString USpaceshipOnboardComputer::GetEngineTypeAsString()
 {
     return UEnum::GetValueAsString(EngineSystem.CurrentEngineMode);
+}
+
+void USpaceshipOnboardComputer::ComputeInterstellarFlight()
+{
+    FlightSystem.CurrentFlightMode = EFlightMode::Interstellar;
+    FlightSystem.CurrentFlightType = EFlightType::FTL;
+    SwitchEngineMode(EEngineMode::Offset);
 }
 
 double USpaceshipOnboardComputer::GetEngineThrustForce()

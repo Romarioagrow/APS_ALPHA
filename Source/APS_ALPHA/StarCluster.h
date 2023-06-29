@@ -12,9 +12,10 @@
 #include "StarClusterPopulation.h"
 #include "StarClusterComposition.h"
 #include "StarClusterSize.h"
+#include "NavigatableBody.h"
+
 #include "CoreMinimal.h"
 #include "StarCluster.generated.h"
-
 
 // Структура для хранения диапазонов значений
 USTRUCT(BlueprintType)
@@ -54,29 +55,14 @@ struct FStarClusterModel
 
     UPROPERTY(VisibleAnywhere, Category = "Star Cluster")
         EStarClusterSize StarClusterSize;
-
-    //// Вероятности спектральных классов
-    //UPROPERTY(VisibleAnywhere, Category = "Star Cluster")
-    //    TMap<ESpectralClass, FRange> SpectralClassProbabilitiesRange;
-
-    //// Вероятности стелларных классов
-    //UPROPERTY(VisibleAnywhere, Category = "Star Cluster")
-    //    TMap<EStellarClass, FRange> StellarClassProbabilitiesRange;
 };
 
-
-/**
- * 
- */
 UCLASS()
-class APS_ALPHA_API AStarCluster : public AAstroActor
+class APS_ALPHA_API AStarCluster : public AAstroActor/*, public INavigatableBody*/
 {
 	GENERATED_BODY()
 
-
-
 public:
-    // Конструктор
     AStarCluster();
         
     UPROPERTY(VisibleAnywhere, Category = "Star Cluster")
@@ -91,8 +77,7 @@ public:
     UPROPERTY(VisibleAnywhere, Category = "Star Cluster")
         TArray<AStar*> Stars;
 
-    //UPROPERTY(VisibleAnywhere, Category = "Star Cluster")
-        TMap<FVector, TSharedPtr<FStarModel>> StarsModel;
+    TMap<FVector, TSharedPtr<FStarModel>> StarsModel;
 
     void AddStarToCluster(AStar* Star);
 
