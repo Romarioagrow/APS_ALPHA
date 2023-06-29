@@ -16,7 +16,7 @@ APlanet::APlanet()
 	GravityCollisionZone->SetupAttachment(RootComponent);
 
 	// PlanetZone
-	PlanetaryZone->SetCollisionObjectType(ECollisionChannel::ECC_GameTraceChannel3); 
+	//PlanetaryZone->SetCollisionObjectType(ECollisionChannel::ECC_GameTraceChannel3); 
 	////
 }
 

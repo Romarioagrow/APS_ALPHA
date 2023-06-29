@@ -40,52 +40,45 @@ void USpaceshipOnboardComputer::ComputeFlightStatus(AWorldActor* AffectedActor)
         if (CelestialBody->IsA(APlanet::StaticClass()))
         {
             FlightSystem.CurrentFlightMode = EFlightMode::Planetary;
-            FlightSystem.CurrentFlightType = EFlightType::ZeroG;
-
+            FlightSystem.CurrentFlightType = EFlightType::LightSpeed;
+            SwitchEngineMode(EEngineMode::SpaceWrap);
             // check proximity!
         }
         else if (CelestialBody->IsA(AStar::StaticClass()))
         {
             FlightSystem.CurrentFlightMode = EFlightMode::Interplanetray;
             FlightSystem.CurrentFlightType = EFlightType::LightSpeed;
-            //EngineSystem.CurrentEngineMode = EEngineMode::Offset;
             SwitchEngineMode(EEngineMode::SpaceWrap);//InitiateOffsetMode();
-            //SpaceshipHull->SetSimulatePhysics(false);
-
         }
-        // Добавьте больше условий, если необходимо
     }
     else if (AffectedActor->IsA(ATechActor::StaticClass()))
     {
-        // Здесь вы можете настроить параметры полета для технических объектов
         FlightSystem.CurrentFlightMode = EFlightMode::Station;
         FlightSystem.CurrentFlightType = EFlightType::ArtificialGravity;
-
         SwitchEngineMode(EEngineMode::Impulse);
-        //SpaceshipHull->SetSimulatePhysics(true);
-        //EngineSystem.InitiateOffsetMode();
-
-        //EngineSystem.CurrentEngineMode = EEngineMode::Impulse;
     }
     else if (AffectedActor->IsA(AStarCluster::StaticClass()))
     {
-        // Здесь вы можете настроить параметры полета для технических объектов
         FlightSystem.CurrentFlightMode = EFlightMode::Interstellar;
         FlightSystem.CurrentFlightType = EFlightType::FTL;
-
         SwitchEngineMode(EEngineMode::Offset);
 
         OffsetGalaxy = Cast<AAstroActor>(AffectedActor);
+    }
+    else if (AffectedActor->IsA(AStarSystem::StaticClass()))
+    {
+        FlightSystem.CurrentFlightMode = EFlightMode::Interplanetray;
+        FlightSystem.CurrentFlightType = EFlightType::LightSpeed;
+        SwitchEngineMode(EEngineMode::SpaceWrap);
 
-        //bIsRescaling = true;
-
-        // В Tick
-        
-
-        //SpaceshipHull->SetSimulatePhysics(true);
-        //EngineSystem.InitiateOffsetMode();
-
-        //EngineSystem.CurrentEngineMode = EEngineMode::Impulse;
+        OffsetGalaxy = Cast<AAstroActor>(AffectedActor);
+    }
+    else
+    {
+        FlightSystem.CurrentFlightMode = EFlightMode::Interstellar;
+        FlightSystem.CurrentFlightType = EFlightType::FTL;
+        SwitchEngineMode(EEngineMode::Offset);
+        //Owner->Swit
     }
 
     FFlightParams* Params = FlightModeParams.Find(FlightSystem.CurrentFlightMode);
@@ -159,6 +152,13 @@ FString USpaceshipOnboardComputer::GetEngineStateAsString()
 FString USpaceshipOnboardComputer::GetEngineTypeAsString()
 {
     return UEnum::GetValueAsString(EngineSystem.CurrentEngineMode);
+}
+
+void USpaceshipOnboardComputer::ComputeInterstellarFlight()
+{
+    FlightSystem.CurrentFlightMode = EFlightMode::Interstellar;
+    FlightSystem.CurrentFlightType = EFlightType::FTL;
+    SwitchEngineMode(EEngineMode::Offset);
 }
 
 double USpaceshipOnboardComputer::GetEngineThrustForce()

@@ -5,19 +5,16 @@
 #include "MoonType.h"
 #include "PlanetaryEnvironment.h"
 #include "OrbitalBody.h"
+#include "NavigatableBody.h"
 
 #include "CoreMinimal.h"
 #include "CelestialBody.h"
 #include "Moon.generated.h"
 
-// Forward declaration of APlanet
 class APlanet;
 
-/**
- * 
- */
 UCLASS()
-class APS_ALPHA_API AMoon : public AOrbitalBody, public IPlanetaryEnvironment
+class APS_ALPHA_API AMoon : public AOrbitalBody, public IPlanetaryEnvironment, public INavigatableBody
 {
 	GENERATED_BODY()
 

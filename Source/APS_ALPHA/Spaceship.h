@@ -6,6 +6,7 @@
 #include "GravitySource.h"
 #include "GravityCharacterPawn.h"
 #include "SpaceshipOnboardComputer.h"
+#include "StarCluster.h"
 
 #include "CoreMinimal.h"
 #include "Spacecraft.h"
@@ -14,9 +15,23 @@
 struct FActorDistance
 {
 	AWorldActor* Actor;
+
 	double Distance;
 
 	FActorDistance(AWorldActor* InActor, double InDistance) : Actor(InActor), Distance(InDistance) {}
+};
+
+// TO COMP
+struct ZoneData
+{
+	AWorldActor* Actor;
+
+	double Distance;
+
+	ZoneData(AWorldActor* InActor, double InDistance)
+		: Actor(InActor)
+		, Distance(InDistance)
+	{}
 };
 
 UCLASS()
@@ -27,31 +42,69 @@ class APS_ALPHA_API ASpaceship : public ASpacecraft, public IGravitySource
 public:
 	ASpaceship();
 
-	void PrintOnboardComputerBasicIformation();
+	virtual void Tick(float DeltaTime) override;
 
-//private:
-public:	
-	UPROPERTY(VisibleAnywhere, Category = "Onboard Computer")
-	USpaceshipOnboardComputer* OnboardComputer;
+	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 
-	TArray<AWorldActor*> WorldActors{};
-	TArray<AWorldActor*> CurrentZonesInfluence{};
-	TArray<FActorDistance> Distances;
-	TArray<FActorDistance> CurrentZones;
-
-	
+protected:
+	virtual void BeginPlay() override;
 
 public:
-	UPROPERTY(VisibleAnywhere, Category = "Onboard Computer")
-	AStarSystem* OffsetSystem;
-	
-	UPROPERTY(VisibleAnywhere, Category = "Onboard Computer")
-	AAstroActor* OffsetGalaxy;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+		USphereComponent* SphereCollisionComponent;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+		UStaticMeshComponent* SpaceshipHull;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+		UStaticMeshComponent* ForwardVector;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+		USceneComponent* PilotChair;
+
+	UPROPERTY(VisibleAnywhere, Category = "Astro Actor")
+		AStarCluster* GeneratedStarCluster;
+
+	UPROPERTY(VisibleAnywhere, Category = "Astro Actor")
+		AActor* GeneratedWorld;
+
+	UPROPERTY(VisibleAnywhere, Category = "Onboard Computer")
+		USpaceshipOnboardComputer* OnboardComputer;
+
+	UPROPERTY(VisibleAnywhere, Category = "Onboard Computer")
+		AStarSystem* OffsetSystem;
+
+	UPROPERTY(VisibleAnywhere, Category = "Onboard Computer")
+		AAstroActor* OffsetGalaxy;
+
+	TArray<AWorldActor*> WorldNavigatableActors{};
+
+	TArray<AWorldActor*> CurrentZonesInfluence{};
+
+	TArray<FActorDistance> Distances;
+
+	TArray<FActorDistance> CurrentZones;
+
+	AWorldActor* AffectedActor{ nullptr };
+
+	void ToggleScale();
+
+	bool bIsScaledUp{ true };
+
+	bool bIsScaled{ false };
+
+	bool bEngineRunning{ false };
+
+	bool bIsAccelerating{ false };
+
+	bool bIsDecelerating{ false };
+
+public:	
+	UStaticMeshComponent* GetSpaceshipHull();
+
+	void PrintOnboardComputerBasicIformation();
 
 	void SwitchCamera();
-
-	bool bEngineRunning {false };
 
 	void SwitchEngines();
 
@@ -69,33 +122,7 @@ public:
 
 	void SetPilot(AGravityCharacterPawn* NewPilot);
 
-	UStaticMeshComponent* GetSpaceshipHull();
-
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-		USphereComponent* SphereCollisionComponent;
-
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-		UStaticMeshComponent* SpaceshipHull;
-	
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-		UStaticMeshComponent* ForwardVector;
-
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-		USceneComponent* PilotChair;
-
-protected:
-	virtual void BeginPlay() override;
-
-	bool bIsAccelerating{ false };
-	bool bIsDecelerating{ false };
-
-
-public:
 	void CalculateDistanceAndAddToZones(AWorldActor* WorldActor);
-	virtual void Tick(float DeltaTime) override;
-
-
-	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 
 	void StartAccelerationBoost();
 

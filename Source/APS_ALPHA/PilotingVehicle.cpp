@@ -7,7 +7,6 @@ void APilotingVehicle::TakeControl(APawn* Pawn)
 {
 	GEngine->AddOnScreenDebugMessage(-1, 10.0f, FColor::Green, FString::Printf(TEXT("APilotingVehicle TakeControl")));
 
-	//Pilot = Cast<AGravityCharacterPawn>(Pawn);
     if (Pawn)
     {
         Pilot = Cast<AGravityCharacterPawn>(Pawn);
@@ -15,7 +14,8 @@ void APilotingVehicle::TakeControl(APawn* Pawn)
         {
             UE_LOG(LogTemp, Warning, TEXT("TakeControl called with non-AGravityCharacterPawn Pawn."));
         }
-
+        FDetachmentTransformRules DetachRules = FDetachmentTransformRules::KeepWorldTransform; 
+        this->DetachFromActor(DetachRules);
     }
     else
     {
@@ -26,7 +26,6 @@ void APilotingVehicle::TakeControl(APawn* Pawn)
 void APilotingVehicle::ReleaseControl()
 {
     GEngine->AddOnScreenDebugMessage(-1, 10.0f, FColor::Orange, FString::Printf(TEXT("APilotingVehicle ReleaseControl")));
-
 
     // Ensure the pilot exists and is attached to the spaceship
     if (Pilot && Pilot->IsAttachedTo(this))

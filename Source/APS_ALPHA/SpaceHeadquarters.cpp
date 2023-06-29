@@ -3,3 +3,7 @@
 
 #include "SpaceHeadquarters.h"
 
+void ASpaceHeadquarters::BeginPlay()
+{
+	this->CalculateAffectionRadius();
+}

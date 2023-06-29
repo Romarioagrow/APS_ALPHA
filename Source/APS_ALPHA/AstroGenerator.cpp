@@ -21,8 +21,102 @@ void AAstroGenerator::BeginPlay()
 
     InitAstroGenerators();
 
-    InitGenerationLevel();
+    if (bGenerateTEST_FULLSCALED)
+    {
+        GenerateTEST_FULLSCALED();
+    }  
+    else
+    {
+        InitGenerationLevel();
+    }
+
 }
+void AAstroGenerator::GenerateTEST_FULLSCALED()
+{
+    // Задаем параметры звезд
+    const double MinStarRadius = 0.1f;
+    const double MaxStarRadius = 10.0f;
+    const int StarCount = 100;
+
+    // Создаем актор-якорь для нашего мира
+   // AAstroAnchor* AstroAnchor = GetWorld()->SpawnActor<AAstroAnchor>();
+    AAstroAnchor* AstroAnchor = GetWorld()->SpawnActor<AAstroAnchor>(BP_AstroAnchor);
+
+    // Создаем актор кластера звезд и прикрепляем его к якорю
+    AStarCluster* StarCluster = GetWorld()->SpawnActor<AStarCluster>(BP_StarClusterClass);
+    StarCluster->AttachToActor(AstroAnchor, FAttachmentTransformRules::KeepRelativeTransform);
+
+    // Создаем кластер звезд
+    for (int i = 0; i < StarCount; ++i)
+    {
+        // Генерируем случайные координаты и радиус для звезды
+        FVector StarPosition = FMath::VRand() * FMath::FRand() * 5.0f;
+        double StarRadius = FMath::RandRange(MinStarRadius, MaxStarRadius);
+
+        // Создаем преобразование для звезды
+        FTransform StarTransform;
+        StarTransform.SetLocation(StarPosition * 10000);
+        StarTransform.SetScale3D(FVector(StarRadius));
+
+        // Добавляем инстанс звезды в HISM
+        StarCluster->StarMeshInstances->AddInstance(StarTransform);
+        
+
+    }
+    //// Создаем кластер звезд
+    //for (int i = 0; i < StarCount; ++i)
+    //{
+    //    // Генерируем случайные координаты и радиус для звезды
+    //    FVector StarPosition = FMath::RandPointInBox(FBox(FVector(-5.0f, -5.0f, -5.0f), FVector(5.0f, 5.0f, 5.0f)));
+    //    float StarRadius = FMath::RandRange(MinStarRadius, MaxStarRadius);
+
+    //    // Создаем преобразование для звезды
+    //    FTransform StarTransform;
+    //    StarTransform.SetLocation(StarPosition);
+    //    StarTransform.SetScale3D(FVector(StarRadius));
+
+    //    // Добавляем инстанс звезды в HISM
+    //    StarCluster->StarMeshInstances->AddInstance(StarTransform);
+    //}
+
+    // Запоминаем актор-якорь и актор кластера в классе генератора
+    GeneratedWorld = AstroAnchor;
+    GeneratedStarCluster = StarCluster;
+}
+//void AAstroGenerator::GenerateTEST_FULLSCALED()
+//{
+//    // Задаем параметры звезд
+//    const float MinStarRadius = 0.1f;
+//    const float MaxStarRadius = 10.0f;
+//    const int StarCount = 100;
+//
+//    // Создаем актор-якорь для нашего мира
+//    AAstroAnchor* AstroAnchor = GetWorld()->SpawnActor<AAstroAnchor>();
+//
+//    // Создаем актор кластера звезд и прикрепляем его к якорю
+//    AStarCluster* StarCluster = GetWorld()->SpawnActor<AStarCluster>();
+//    //StarCluster->AttachToActor(AstroAnchor, FAttachmentTransformRules::KeepRelativeTransform);
+//
+//    // Создаем кластер звезд
+//    for (int i = 0; i < StarCount; ++i)
+//    {
+//        // Генерируем случайные координаты и радиус для звезды
+//        FVector StarPosition = FMath::RandPointInBox(FBox(FVector(-5.0f, -5.0f, -5.0f), FVector(5.0f, 5.0f, 5.0f)));
+//        float StarRadius = FMath::RandRange(MinStarRadius, MaxStarRadius);
+//
+//        // Создаем преобразование для звезды
+//        FTransform StarTransform;
+//        StarTransform.SetLocation(StarPosition);
+//        StarTransform.SetScale3D(FVector(StarRadius));
+//
+//        // Добавляем инстанс звезды в HISM
+//        StarCluster->StarMeshInstances->AddInstance(StarTransform);
+//    }
+//
+//    // Запоминаем актор-якорь и актор кластера в классе генератора
+//    GeneratedWorld = AstroAnchor;
+//    GeneratedStarCluster = StarCluster;
+//}
 
 void AAstroGenerator::InitGenerationLevel()
 {
@@ -229,7 +323,7 @@ void AAstroGenerator::GenerateHomeStarSystem()
                     FVector PlanetPosition = HomePlanet->GetActorLocation();
                     
                     HomeSpaceHeadquarters = World->SpawnActor<ASpaceHeadquarters>(BP_HomeSpaceHeadquarters, PlanetPosition, FRotator::ZeroRotator);
-                    HomeSpaceHeadquarters->AttachToActor(HomePlanet, FAttachmentTransformRules::KeepWorldTransform);
+                    HomeSpaceHeadquarters->AttachToActor(HomePlanet, FAttachmentTransformRules::KeepWorldTransform); /// CRASH PIE!!!
                     HomeSpaceHeadquarters->SetActorRelativeRotation(FRotator(0, 0, 0));
                     const double EARTH_RADIUS_CM = 637100000.0;
                     FVector Offset = FVector(0, 0, StationOrbitHeight * EARTH_RADIUS_CM);
@@ -241,12 +335,14 @@ void AAstroGenerator::GenerateHomeStarSystem()
                     HomeSpaceStation->AttachToActor(HomeSpaceHeadquarters, FAttachmentTransformRules::KeepWorldTransform);
                     double HomeStationOffset = HomeSpaceStation->GravityCollisionZone->GetScaledSphereRadius() * 2;
                     HomeSpaceStation->AddActorLocalOffset(FVector(0, HomeStationOffset, 0));
+                    HomeSpaceStation->CalculateAffectionRadius();
 
                     /// Spawn HomeShipyard
                     HomeSpaceShipyard = World->SpawnActor<ASpaceShipyard>(BP_HomeSpaceShipyard, HomeSpaceHeadquartersLocation, HomeSpaceHeadquartersRotation);
                     double HomeSpaceShipyardLocationOffset = HomeSpaceShipyard->GravityCollisionZone->GetScaledSphereRadius() * 2;
                     HomeSpaceShipyard->AddActorLocalOffset(FVector(0, -HomeSpaceShipyardLocationOffset, 0));
                     HomeSpaceShipyard->AttachToActor(HomeSpaceHeadquarters, FAttachmentTransformRules::KeepWorldTransform);
+                    HomeSpaceShipyard->CalculateAffectionRadius();
 
                     //Spawn HomeSpaceship
                     FActorSpawnParameters SpaceshipSpawnParams;
@@ -255,9 +351,38 @@ void AAstroGenerator::GenerateHomeStarSystem()
 
                     HomeSpaceshipLocation.Z += 1000;
                     ASpaceship* NewHomeSpaceship = World->SpawnActor<ASpaceship>(BP_HomeSpaceship, HomeSpaceshipLocation, HomeSpaceShipyard->GetActorRotation(), SpaceshipSpawnParams);
-                    NewHomeSpaceship->AttachToActor(HomeSpaceShipyard, FAttachmentTransformRules::KeepWorldTransform);
+                    /*NewHomeSpaceship->AttachToActor(HomeSpaceShipyard, FAttachmentTransformRules::KeepWorldTransform);
                     NewHomeSpaceship->OffsetSystem = GeneratedHomeStarSystem;
-                    NewHomeSpaceship->OnboardComputer->OffsetSystem = GeneratedHomeStarSystem;
+                    NewHomeSpaceship->OnboardComputer->OffsetSystem = GeneratedHomeStarSystem;*/
+
+                   // ASpaceship* NewHomeSpaceship = World->SpawnActor<ASpaceship>(BP_HomeSpaceship, HomeSpaceshipLocation, HomeSpaceShipyard->GetActorRotation(), SpaceshipSpawnParams);
+
+                    if (NewHomeSpaceship && GeneratedHomeStarSystem)
+                    {
+                        NewHomeSpaceship->AttachToActor(HomeSpaceShipyard, FAttachmentTransformRules::KeepWorldTransform);
+                        NewHomeSpaceship->OffsetSystem = GeneratedHomeStarSystem;
+
+                        if (NewHomeSpaceship->OnboardComputer)
+                        {
+                            NewHomeSpaceship->OnboardComputer->OffsetSystem = GeneratedHomeStarSystem;
+                        }
+                        else
+                        {
+                            UE_LOG(LogTemp, Error, TEXT("Onboard Computer is nullptr!"));
+                        }
+                    }
+                    else
+                    {
+                        if (!NewHomeSpaceship)
+                        {
+                            UE_LOG(LogTemp, Error, TEXT("NewHomeSpaceship is nullptr!"));
+                        }
+
+                        if (!GeneratedHomeStarSystem)
+                        {
+                            UE_LOG(LogTemp, Error, TEXT("GeneratedHomeStarSystem is nullptr!"));
+                        }
+                    }
 
                     FVector CharSpawnLocation{ 0 };
                     APawn* PlayerCharacter = UGameplayStatics::GetPlayerPawn(World, 0);
@@ -350,14 +475,13 @@ void AAstroGenerator::GenerateStarSystem()
         case EHomeSystemPosition::RandomPosition:
         {
             // Задайте HomeSystemSpawnLocation в зависимости от вашего определения центра, середины и конца.
-            // Например:
             double RandomX = FMath::RandRange(-1000, 1000);
             double RandomY = FMath::RandRange(-1000, 1000);
             double RandomZ = FMath::RandRange(-1000, 1000);
             HomeSystemSpawnLocation = FVector(RandomX, RandomY, RandomZ); //* 1000000000;
         }
             break;
-        case EHomeSystemPosition::DirectPosition:
+        case EHomeSystemPosition::DirectPosition: 
         {
             TArray<AActor*> AttachedActors;
             GetAttachedActors(AttachedActors);
@@ -490,10 +614,10 @@ void AAstroGenerator::GenerateStarSystem()
             /// TODO: PlanetarySystemGenerator->ConnectStar()
             StarGenerator->ApplyModel(NewStar, StarModel);
             PlanetarySystemGenerator->ApplyModel(NewPlanetarySystem, PlanetraySystemModel);
-            NewStar->AttachToActor(NewStarSystem, FAttachmentTransformRules::KeepWorldTransform);
             NewStar->SetActorScale3D(FVector(StarModel->Radius * 813684224.0));
             NewStar->StarRadiusKM = StarModel->Radius * 696340;
             NewStar->SetPlanetarySystem(NewPlanetarySystem);
+            NewStar->AttachToActor(NewStarSystem, FAttachmentTransformRules::KeepWorldTransform);
             NewPlanetarySystem->AttachToActor(NewStar, FAttachmentTransformRules::KeepWorldTransform);
             
             // Apply material luminocity multiplier and emissive light color
@@ -513,7 +637,6 @@ void AAstroGenerator::GenerateStarSystem()
 
                 PlanetGenerator->ApplyModel(NewPlanet, PlanetModel);
                 NewStar->AddPlanet(NewPlanet);
-                NewPlanet->AttachToActor(NewPlanetOrbit, FAttachmentTransformRules::KeepWorldTransform);
                 NewPlanet->SetParentStar(NewStar);
 
                 // set planet full-scale
@@ -521,8 +644,9 @@ void AAstroGenerator::GenerateStarSystem()
                 FVector NewLocation = FVector(PlanetModel->OrbitDistance * 149600000000000 / 1000, 0, 0);
                 NewPlanet->PlanetRadiusKM = PlanetModel->Radius * 6371;
                 NewPlanet->SetActorLocation(NewLocation);
-                NewPlanetOrbit->SetActorRelativeRotation(FRotator(FMath::RandRange(-30.0, 30.0), FMath::RandRange(-360.0, 360.0), 0));
 
+                NewPlanet->AttachToActor(NewPlanetOrbit, FAttachmentTransformRules::KeepWorldTransform);
+                NewPlanetOrbit->SetActorRelativeRotation(FRotator(FMath::RandRange(-30.0, 30.0), FMath::RandRange(-360.0, 360.0), 0));
                 NewPlanetarySystem->PlanetsActorsList.Add(NewPlanet);
 
                 const double KM_TO_UE_UNIT_SCALE = 100000;
@@ -539,23 +663,31 @@ void AAstroGenerator::GenerateStarSystem()
                     MoonGenerator->ApplyModel(NewMoon, MoonData->MoonModel);
                     MoonGenerator->ConnectMoonWithPlanet(NewMoon, NewPlanet);
                     NewPlanet->AddMoon(NewMoon);
-                    NewMoon->AttachToActor(NewMoonOrbit, FAttachmentTransformRules::KeepWorldTransform);
                     NewMoon->SetParentPlanet(NewPlanet);
 
                     // set moon full-scale
                     double MoonRadius = MoonData->MoonModel->Radius;
+                    NewMoon->RadiusKM = MoonRadius * 6371;
                     NewMoon->SetActorScale3D(FVector(MoonRadius * 12742000));
+                    
+                    FVector Origin, BoxExtent;
+                    double SphereRadius;
+                    NewMoon->GetActorBounds(false, Origin, BoxExtent);
+                    SphereRadius = BoxExtent.GetMax();
+                    NewMoon->AffectionRadiusKM = SphereRadius / 100000.0;
+
                     NewMoon->AddActorLocalOffset(FVector(0, ((PlanetModel->RadiusKM + (MoonData->OrbitRadius * PlanetModel->RadiusKM)) * KM_TO_UE_UNIT_SCALE) * 1, 0));
+                    NewMoon->AttachToActor(NewMoonOrbit, FAttachmentTransformRules::KeepWorldTransform);
                     NewMoonOrbit->SetActorRelativeRotation(FRotator(FMath::RandRange(-360.0, 360.0), FMath::RandRange(-360.0, 360.0), FMath::RandRange(-360.0, 360.0)));
 				
                     DiameterOfLastMoon = MoonRadius * 2;
                     LastMoonLocation = NewMoon->GetActorLocation();
-
                 }
 
                 if (DiameterOfLastMoon == 0)
                 {
                     NewPlanet->PlanetaryZone->SetSphereRadius(100);
+                    NewPlanet->AffectionRadiusKM = 100 * NewPlanet->GetActorScale3D().X / 100000;
                 }
                 else
                 {
@@ -563,11 +695,12 @@ void AAstroGenerator::GenerateStarSystem()
                     FVector LastMoonOuterEdgeLocation = LastMoonLocation + FVector(0, DiameterOfLastMoon * 6371, 0);
                     double SphereRadius = FVector::Dist(PlanetLocation, LastMoonOuterEdgeLocation);
                     SphereRadius /= NewPlanet->GetActorScale3D().X;
-                    NewPlanet->PlanetaryZone->SetSphereRadius(SphereRadius * 1.1);
+                    SphereRadius *= 1.5;
+                    NewPlanet->PlanetaryZone->SetSphereRadius(SphereRadius);
+                    NewPlanet->AffectionRadiusKM = SphereRadius * NewPlanet->GetActorScale3D().X / 100000;
                 }
                 LastPlanetLocation = NewPlanet->GetActorLocation();
                 LastStarLocation = LastPlanetLocation * 1.1; 
-                
             }
 
             double StarSphereRadius;
@@ -576,29 +709,34 @@ void AAstroGenerator::GenerateStarSystem()
                 StarSphereRadius = NewStar->GetRadius() * NewStar->GetActorScale3D().X * 2;
                 StarSphereRadius /= 1000000;
                 NewStar->PlanetarySystemZone->SetSphereRadius(StarSphereRadius);
-                NewStar->StarAffectionZoneRadius = StarSphereRadius * 1.2;
+                NewStar->StarAffectionZoneRadius = StarSphereRadius * 1.5;
             }
             else
             {
                 StarSphereRadius = FVector::Dist(NewStar->GetActorLocation(), LastPlanetLocation);
                 StarSphereRadius /= NewStar->GetActorScale3D().X;
-                NewStar->PlanetarySystemZone->SetSphereRadius(StarSphereRadius * 1.1);
+                NewStar->PlanetarySystemZone->SetSphereRadius(StarSphereRadius * 1.5);
                 NewStar->StarAffectionZoneRadius = StarSphereRadius;
 
             }
+            //NewStar->AffectionRadiusKM = 
+                NewStar->CalculateAffectionRadius();
             NewStarSystem->AddNewStar(NewStar);
             NewStarSystem->StarSystemRadius = NewStar->StarAffectionZoneRadius;
         }
 
         double StarSystemSphereRadius = FVector::Dist(NewStarSystem->GetActorLocation(), LastStarLocation);
         StarSystemSphereRadius /= NewStarSystem->GetActorScale3D().X;
-        NewStarSystem->StarSystemZone->SetSphereRadius(StarSystemSphereRadius * 1.1);
+        StarSystemSphereRadius *= 1.6;
+        NewStarSystem->StarSystemZone->SetSphereRadius(StarSystemSphereRadius);
         NewStarSystem->StarSystemRadius = StarSystemSphereRadius;
         GeneratedHomeStarSystem = NewStarSystem;
+        //NewStarSystem->AffectionRadiusKM = 
+            NewStarSystem->CalculateAffectionRadius();
 
         if (NewStarSystem->StarSystemRadius == 0)
         {
-            float SphereRadius = NewStarSystem->MainStar->PlanetarySystemZone->GetScaledSphereRadius() * 1.1;
+            double SphereRadius = NewStarSystem->MainStar->PlanetarySystemZone->GetScaledSphereRadius() * 1.5;
             NewStarSystem->StarSystemRadius = SphereRadius;
             NewStarSystem->StarSystemZone->SetSphereRadius(SphereRadius);
         }
@@ -706,6 +844,7 @@ void AAstroGenerator::GenerateStarCluster()
     else
     {
         UWorld* World = GetWorld();
+
         TSharedPtr<FStarClusterModel> StarClusterModel = MakeShared<FStarClusterModel>();
 
         if (bGenerateRandomCluster)
@@ -731,6 +870,7 @@ void AAstroGenerator::GenerateStarCluster()
         NewStarCluster->StarClusterComposition = StarClusterModel->StarClusterComposition;
         NewStarCluster->StarClusterPopulation = StarClusterModel->StarClusterPopulation;
         NewStarCluster->StarClusterSize = StarClusterModel->StarClusterSize;
+        NewStarCluster->CalculateAffectionRadius();
 
         UE_LOG(LogTemp, Warning, TEXT("StarCount: %d"), NewStarCluster->StarAmount);
         UE_LOG(LogTemp, Warning, TEXT("StarDensity: %f"), NewStarCluster->StarDensity);
@@ -775,13 +915,14 @@ void AAstroGenerator::GenerateStarCluster()
 
         if (bGenerateFullScaledWorld)
         {
-            NewStarCluster->SetActorScale3D(FVector(1000000000, 1000000000, 1000000000));
+            //NewStarCluster->
+                SetActorScale3D(FVector(1000000000, 1000000000, 1000000000));
         }
     }
-    else
+    /*else
     {
         UE_LOG(LogTemp, Warning, TEXT("StarClusterGenerator is not implemented yet!"));
-    }
+    }*/
 }
 
 

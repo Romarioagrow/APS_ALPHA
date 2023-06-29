@@ -6,13 +6,15 @@
 #include "CelestialBody.h"
 #include "Star.h"
 #include "StarCluster.h"
+#include "AstroGenerator.h"
+#include "NavigatableBody.h"
 
 
 ASpaceship::ASpaceship()
 {
 	// Создание компонента SpaceshipHull
 	SpaceshipHull = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("SpaceshipHull"));
-	RootComponent = SpaceshipHull; // делаем его корневым компонентом
+	RootComponent = SpaceshipHull; 
 
 	// Создание компонента SphereCollisionComponent и прикрепление его к SpaceshipHull
 	SphereCollisionComponent = CreateDefaultSubobject<USphereComponent>(TEXT("SphereCollisionComponent"));
@@ -24,42 +26,58 @@ ASpaceship::ASpaceship()
 
 	ForwardVector = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ForwardVector"));
 	ForwardVector->SetupAttachment(SpaceshipHull);
-
-	OnboardComputer = CreateDefaultSubobject<USpaceshipOnboardComputer>(TEXT("OnboardComputer"));
-	OnboardComputer->SpaceshipHull = SpaceshipHull;
-	OnboardComputer->OffsetSystem = OffsetSystem;
-
-
 }
 
 void ASpaceship::BeginPlay()
 {
 	Super::BeginPlay();
 
-	TArray<AActor*> TempActors;
-	UGameplayStatics::GetAllActorsOfClass(GetWorld(), AWorldActor::StaticClass(), TempActors);
-	// Приведем тип AActor к AWorldActor и добавим в массив
-	for (AActor* Actor : TempActors)
+	 // Находим AAstroGenerator (например, ищем первый найденный AAstroGenerator в мире)
+	GeneratedWorld = Cast<AAstroGenerator>(UGameplayStatics::GetActorOfClass(GetWorld(), AAstroGenerator::StaticClass()));
+	GeneratedStarCluster = Cast<AStarCluster>(UGameplayStatics::GetActorOfClass(GetWorld(), AStarCluster::StaticClass()));
+
+	//FActorSpawnParameters SpawnParams;
+	//SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	//FVector SpawnLocation = PilotChair->GetComponentLocation(); // Место спавна на кресле пилота
+	//FRotator SpawnRotation = PilotChair->GetComponentRotation(); // Ориентация спавна в соответствии с креслом пилота
+	//Pilot = GetWorld()->SpawnActor<AGravityCharacterPawn>(AGravityCharacterPawn::StaticClass(), SpawnLocation, SpawnRotation, SpawnParams);
+
+	OnboardComputer = NewObject<USpaceshipOnboardComputer>(this, TEXT("OnboardComputer"));
+	if (OnboardComputer)
 	{
-		AWorldActor* WorldActor = Cast<AWorldActor>(Actor);
-		if (WorldActor)
+		OnboardComputer->SpaceshipHull = SpaceshipHull;
+		OnboardComputer->OffsetSystem = OffsetSystem;
+	}
+	else
+	{
+		UE_LOG(LogTemp, Error, TEXT("OnboardComputer is nullptr!"));
+	}
+
+	if (!OffsetSystem)
+	{
+		OffsetSystem = Cast<AStarSystem>(UGameplayStatics::GetActorOfClass(GetWorld(), AStarSystem::StaticClass()));
+		if (OffsetSystem)  
 		{
-			WorldActors.Add(WorldActor);
+			GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("OffsetSystem successfully obtained!"));
+		}
+		else
+		{
+			GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("Failed to obtain OffsetSystem."));
+		}
+	}
+
+	TArray<AActor*> WorldActors;
+	UGameplayStatics::GetAllActorsOfClass(GetWorld(), AWorldActor::StaticClass(), WorldActors);
+	for (AActor* Actor : WorldActors)
+	{
+		if (Actor->GetClass()->ImplementsInterface(UNavigatableBody::StaticClass()))
+		{
+			AWorldActor* WorldNavigatableActor = Cast<AWorldActor>(Actor);
+			WorldNavigatableActors.Add(WorldNavigatableActor);
+			GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Yellow, FString::Printf(TEXT("WorldActor: %s"), *WorldNavigatableActor->GetName()));
 		}
 	}
 }
-
-// TO COMP
-struct ZoneData
-{
-	AWorldActor* Actor;
-	double Distance;
-
-	ZoneData(AWorldActor* InActor, double InDistance)
-		: Actor(InActor)
-		, Distance(InDistance)
-	{}
-};
 
 void GetAttachedActorsRecursively(AActor* ParentActor, TArray<AActor*>& OutActors)
 {
@@ -94,147 +112,243 @@ void ASpaceship::CalculateDistanceAndAddToZones(AWorldActor* WorldActor)
 	}
 }
 
+
+TSharedPtr<FStarModel> FindNearestStar(TMap<FVector, TSharedPtr<FStarModel>>& Stars, const FVector& ReferencePoint)
+{
+	TSharedPtr<FStarModel> NearestStar = nullptr;
+	float NearestDistanceSquared = FLT_MAX;
+
+	for (const auto& KeyValuePair : Stars)
+	{
+		float TotalDistSquared = FVector::DistSquared(ReferencePoint, KeyValuePair.Key);
+		float RadiusSquared = FMath::Square(KeyValuePair.Value->Radius);
+		float DistanceSquared = TotalDistSquared > RadiusSquared ? TotalDistSquared - RadiusSquared : 0.0f;
+
+		if (DistanceSquared < NearestDistanceSquared)
+		{
+			NearestDistanceSquared = DistanceSquared;
+			NearestStar = KeyValuePair.Value;
+		}
+	}
+
+	return NearestStar;
+}
 void ASpaceship::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 	uint64 StartCycles = FPlatformTime::Cycles();
-
-	if (Pilot)
+	
+	if (bEngineRunning)
 	{
-		// Telemetry
-		FVector ActorLocation = GetActorLocation();
-		FVector ActorVelocity = GetVelocity();
-		double ActorSpeed = ActorVelocity.Size();
-
 		PrintOnboardComputerBasicIformation();
 
-		// Displaying them on screen
-		GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Actor Location: %s"), *ActorLocation.ToString()));
-		GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Actor Velocity: %f"), ActorSpeed));
-		GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Thrust Force: %f"), OnboardComputer->GetEngineThrustForce()));
-		GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Hull Angular Damping: %f"), SpaceshipHull->GetAngularDamping()));
-		GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Hull Linear Damping: %f"), SpaceshipHull->GetLinearDamping()));
-
-		if (bEngineRunning)
+		if (SpaceshipHull->IsSimulatingPhysics())
 		{
 			FVector OppositeTorque = -SpaceshipHull->GetPhysicsAngularVelocityInRadians() * 0.5;
 			SpaceshipHull->AddTorqueInRadians(OppositeTorque, NAME_None, true);
+		}
 
-			if (bIsAccelerating)
-			{
-				GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Accelerating")));
-				OnboardComputer->AccelerateBoost(DeltaTime);
-			}
+		if (bIsAccelerating)
+		{
+			GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Accelerating")));
+			OnboardComputer->AccelerateBoost(DeltaTime);
+		}
 
-			if (bIsDecelerating)
-			{
-				GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Decelerating")));
-				OnboardComputer->DecelerateBoost(DeltaTime);
-			}
+		if (bIsDecelerating)
+		{
+			GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Decelerating")));
+			OnboardComputer->DecelerateBoost(DeltaTime);
+		}
 
-			CurrentZones.Empty();
-			for (AWorldActor* WorldActor : WorldActors)
+		{
+			if (OnboardComputer->FlightSystem.CurrentFlightMode != EFlightMode::Interstellar)
 			{
-				if (WorldActor)
+
+				FVector ShipLocation = this->GetActorLocation();
+				AWorldActor* ClosestActor = nullptr;
+				double ClosestDistance = DBL_MAX;
+				double ClosestAffectionDistance = DBL_MAX;
+				CurrentZonesInfluence.Empty();
+
+				/// if !Interstellar
+				for (AWorldActor* Actor : WorldNavigatableActors)
 				{
-					FVector ShipLocation = GetActorLocation();
-					double InfluenceRadius = WorldActor->AffectionRadiusKM * 100000; // Конвертировать километры в юниты Unreal (1 unit = 1 cm)
-					double DistanceSquared = FVector::DistSquared(WorldActor->GetActorLocation(), ShipLocation) - FMath::Square(InfluenceRadius);
+					FVector ActorLocation = Actor->GetActorLocation();
+					double AffectionRadius = Actor->AffectionRadiusKM * 100000; 
+					double SurfaceRadius = Actor->RadiusKM * 100000; 
+					double DistanceToActor = (ActorLocation - ShipLocation).Size() - SurfaceRadius;
+					double DistanceToAffectionZone = (ActorLocation - ShipLocation).Size();
 
-					FVector Origin, BoxExtent;
-					WorldActor->GetActorBounds(true, Origin, BoxExtent);
-					InfluenceRadius = BoxExtent.Size() / 2;
+					// Выводим расстояние в километрах
+					FString DistanceMessage = FString::Printf(TEXT("Distance to actor %s is %f km"), *Actor->GetName(), DistanceToActor / 100000);
+					GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Yellow, DistanceMessage);
 
-					if (DistanceSquared <= FMath::Square(InfluenceRadius))
+					// Если корабль находится в зоне действия актёра (т.е. расстояние меньше или равно нулю)
+					if (DistanceToAffectionZone <= AffectionRadius)
 					{
-						// Добавить в список текущих зон
-						CurrentZones.Add(FActorDistance(WorldActor, DistanceSquared));
+						CurrentZonesInfluence.Add(Actor);
 
-						// Вывести сообщение на экран
-						double DistanceInKm = FMath::Sqrt(DistanceSquared) / 100000;
-						FString Message = FString::Printf(TEXT("Inside the zone of influence of actor %s at a distance of %f kilometers."), *WorldActor->GetName(), DistanceInKm);
-						GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Yellow, Message);
-					}
-				}
-			}
-
-			// Сортировать массив по расстоянию до актора
-			CurrentZones.Sort([](const FActorDistance& A, const FActorDistance& B)
-				{
-					return A.Distance < B.Distance;
-				});
-
-			if (CurrentZones.Num() > 0)
-			{
-				const FActorDistance& AffectedActorDistance = CurrentZones[0];
-
-				AWorldActor* AffectedActor = AffectedActorDistance.Actor;
-				GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, TEXT("Affect Object: ") + AffectedActor->GetName());
-
-				//if (OnboardComputer->FlightSystem.CurrentFlightSafeMode != EFlightSafeMode::Unsafe)
-				//{
-					OnboardComputer->ComputeFlightStatus(AffectedActor);
-
-					if (false && AffectedActor->IsA(AStarCluster::StaticClass()) && AffectedActor->GetActorScale3D() != FVector(1.0f, 1.0f, 1.0f)) {
-						
-						GEngine->AddOnScreenDebugMessage(-1, 11.f, FColor::Green, TEXT("GALAXY SCALE!!!"));
-
-
-
-						// Меняем масштаб
-						FVector NewScale = FVector(1.0f, 1.0f, 1.0f);
-						AffectedActor->SetActorScale3D(NewScale);
-
-						// Перемещаем корабль
-						//FVector NewLocation = /* расчет новой позиции */;
-
-						//AActor* Spaceship = Owner;
-						//AActor* Spaceship = GetOwner();
-						//if (Spaceship) {
-						FVector OldLocation = GetActorLocation(); // текущая позиция корабля
-						FVector WorldCenter = FVector::ZeroVector; // предполагается, что центр мира находится в (0,0,0)
-						double ScaleFactor = 1000000000.0; // ваш фактор масштабирования
-
-						FVector RelativeLocation = OldLocation - WorldCenter; // текущая позиция корабля относительно центра мира
-						FVector NewRelativeLocation = RelativeLocation / ScaleFactor; // новая позиция корабля относительно центра мира
-
-						FVector NewLocation = WorldCenter + NewRelativeLocation; // новая абсолютная позиция корабля
-
-						SetActorLocation(NewLocation);
-						//}
-						//Spaceship->SetActorLocation(NewLocation);
-
-						//bIsRescaling = false; // сброс флага, чтобы предотвратить повторение
-					}
-					else
-					{
-						GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Green, TEXT("GALAXY IS SCALED!"));
-
-					}
-				//}
-
-				ACelestialBody* CelestialBody = Cast<ACelestialBody>(AffectedActor);
-				if (CelestialBody)
-				{
-					TArray<AActor*> ChildActors;
-					GetAttachedActorsRecursively(CelestialBody, ChildActors);
-					for (AActor* ChildActor : ChildActors)
-					{
-						AWorldActor* WorldActorChild = Cast<AWorldActor>(ChildActor);
-						if (WorldActorChild && (WorldActorChild->IsA(AOrbitalBody::StaticClass()) || WorldActorChild->IsA(ATechActor::StaticClass())))
+						if (DistanceToAffectionZone < ClosestAffectionDistance)
 						{
-							CalculateDistanceAndAddToZones(WorldActorChild);
+							ClosestAffectionDistance = DistanceToAffectionZone;
+							AffectedActor = Actor;
 						}
 					}
-					if (ChildActors.Num() > 0)
+
+					if (DistanceToActor < ClosestDistance)
 					{
-						AActor* ClosestObject = ChildActors[0];
-						GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, FString::Printf(TEXT("Closest Object: %s"), *ClosestObject->GetName()));
+						ClosestDistance = DistanceToActor;
+						ClosestActor = Actor;
 					}
 				}
+
+				if (ClosestActor != nullptr)
+				{
+					FString ClosestActorMessage = FString::Printf(TEXT("Closest actor is %s"), *ClosestActor->GetName());
+					GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Orange, ClosestActorMessage);
+				}
+				if (AffectedActor != nullptr)
+				{
+					FString ClosestAffectedActorMessage = FString::Printf(TEXT("Affection zone is %s"), *AffectedActor->GetName());
+					GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Orange, ClosestAffectedActorMessage);
+				}
+
+				//if CurrentZonesInfluence > 0 -> ComputeFlightStatus else AffectedActor = nullptr
+				if (CurrentZonesInfluence.Num() > 0)
+				{
+					for (AWorldActor* Actor : CurrentZonesInfluence)
+					{
+						FString RadiusMessage = FString::Printf(TEXT("Ship is affected by %s"), *Actor->GetName());
+						GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Green, RadiusMessage);
+					}
+					GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("CurrentZonesInfluence: %d"), CurrentZonesInfluence.Num()));
+
+					OnboardComputer->ComputeFlightStatus(AffectedActor);
+				}
+				else
+				{
+					OnboardComputer->ComputeInterstellarFlight();
+					if (OnboardComputer->FlightSystem.CurrentFlightMode == EFlightMode::Interstellar && !bIsScaled)
+					{
+						ToggleScale();
+						bIsScaled = true;
+						GEngine->AddOnScreenDebugMessage(-1, 15.0f, FColor::Green, FString::Printf(TEXT("Galaxy is Downscaled")));
+
+					}
+					else if (OnboardComputer->FlightSystem.CurrentFlightMode != EFlightMode::Interstellar && bIsScaled)
+					{
+						ToggleScale();
+						bIsScaled = false;
+						GEngine->AddOnScreenDebugMessage(-1, 15.0f, FColor::Green, FString::Printf(TEXT("Galaxy is Upscaled")));
+
+					}
+				}
+			}
+			else
+			{
+				AffectedActor = nullptr;
+				OnboardComputer->ComputeInterstellarFlight();
+				GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Purple, FString::Printf(TEXT("Interstellar Flight!")));
 
 			}
 		}
+
+
+
+		//CurrentZones.Empty();
+		//for (AWorldActor* WorldActor : WorldNavigatableActors)
+		//{
+		//	if (WorldActor)
+		//	{
+		//		FVector ShipLocation = GetActorLocation();
+		//		double InfluenceRadius = WorldActor->AffectionRadiusKM * 100000; // Конвертировать километры в юниты Unreal (1 unit = 1 cm)
+		//		double DistanceSquared = FVector::DistSquared(WorldActor->GetActorLocation(), ShipLocation) - FMath::Square(InfluenceRadius);
+
+		//		FVector Origin, BoxExtent;
+		//		WorldActor->GetActorBounds(true, Origin, BoxExtent);
+		//		InfluenceRadius = BoxExtent.Size() / 2;
+
+		//		if (DistanceSquared <= FMath::Square(InfluenceRadius))
+		//		{
+		//			// Добавить в список текущих зон
+		//			CurrentZones.Add(FActorDistance(WorldActor, DistanceSquared));
+
+		//			// Вывести сообщение на экран
+		//			double DistanceInKm = FMath::Sqrt(DistanceSquared) / 100000;
+		//			FString Message = FString::Printf(TEXT("Inside the zone of influence of actor %s at a distance of %f kilometers."), *WorldActor->GetName(), DistanceInKm);
+		//			GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Yellow, Message);
+		//		}
+		//	}
+		//}
+
+		//// Сортировать массив по расстоянию до актора
+		//CurrentZones.Sort([](const FActorDistance& A, const FActorDistance& B)
+		//	{
+		//		return A.Distance < B.Distance;
+		//	});
+
+		//if (CurrentZones.Num() > 0)
+		//{
+		//	const FActorDistance& AffectedActorDistance = CurrentZones[0];
+
+		//	AWorldActor* AffectedActor = AffectedActorDistance.Actor;
+		//	GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, TEXT("Affect Object: ") + AffectedActor->GetName());
+
+		//	//if (OnboardComputer->FlightSystem.CurrentFlightSafeMode != EFlightSafeMode::Unsafe)
+
+		//	OnboardComputer->ComputeFlightStatus(AffectedActor);
+
+		//	if (OnboardComputer->FlightSystem.CurrentFlightMode == EFlightMode::Interstellar && !bIsScaled)
+		//	{
+		//		//OnboardComputer->FlightSystem.CurrentFlightType = EFlightType::FTL;
+		//		//SwitchEngineMode(EEngineMode::Offset);
+		//		//Owner->
+		//		//ToggleScale();
+		//		bIsScaled = true;
+		//	}
+		//	else if (OnboardComputer->FlightSystem.CurrentFlightMode != EFlightMode::Interstellar && bIsScaled)
+		//	{
+		//		//Owner->
+		//		//ToggleScale();
+		//		bIsScaled = false;
+		//	}
+
+		//	ACelestialBody* CelestialBody = Cast<ACelestialBody>(AffectedActor);
+		//	if (CelestialBody)
+		//	{
+		//		TArray<AActor*> ChildActors;
+		//		GetAttachedActorsRecursively(CelestialBody, ChildActors);
+		//		for (AActor* ChildActor : ChildActors)
+		//		{
+		//			AWorldActor* WorldActorChild = Cast<AWorldActor>(ChildActor);
+		//			if (WorldActorChild && (WorldActorChild->IsA(AOrbitalBody::StaticClass()) || WorldActorChild->IsA(ATechActor::StaticClass())))
+		//			{
+		//				CalculateDistanceAndAddToZones(WorldActorChild);
+		//			}
+		//		}
+		//		if (ChildActors.Num() > 0)
+		//		{
+		//			AActor* ClosestObject = ChildActors[0];
+		//			GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, FString::Printf(TEXT("Closest Object: %s"), *ClosestObject->GetName()));
+		//		}
+		//	}
+		//}
+
+		if (OnboardComputer->FlightSystem.CurrentFlightMode == EFlightMode::Interstellar)
+		{
+			if (GeneratedStarCluster)
+			{
+				TSharedPtr<FStarModel> NearestStar = FindNearestStar(GeneratedStarCluster->StarsModel, GetActorLocation());
+				GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Nearest Star: %f"), NearestStar->Radius));
+			}
+			else
+			{
+				GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("NO GeneratedStarCluster")));
+			}
+		}
+	}
+	if (Pilot)
+	{
 		GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Pilot Actor Name: %s"), *Pilot->GetName()));
 	}
 	uint64 EndCycles = FPlatformTime::Cycles();
@@ -254,6 +368,8 @@ void ASpaceship::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent
 	PlayerInputComponent->BindAxis("ThrustYaw", this, &ASpaceship::ThrustYaw);
 	PlayerInputComponent->BindAxis("ThrustPitch", this, &ASpaceship::ThrustPitch);
 	PlayerInputComponent->BindAxis("ThrustRoll", this, &ASpaceship::ThrustRoll);
+
+	PlayerInputComponent->BindAction("ToggleScale", IE_Pressed, this, &ASpaceship::ToggleScale);
 
 	PlayerInputComponent->BindAction("IncreaseFlightMode", IE_Pressed, this, &ASpaceship::IncreaseFlightMode);
 	PlayerInputComponent->BindAction("DecreaseFlightMode", IE_Pressed, this, &ASpaceship::DecreaseFlightMode);
@@ -319,6 +435,38 @@ void ASpaceship::DecreaseFlightMode()
 	}
 }
 
+
+void ASpaceship::ToggleScale()
+{
+	if (GeneratedWorld)
+	{
+		if (bIsScaledUp)
+		{
+			GeneratedWorld->SetActorScale3D(FVector(1.0f, 1.0f, 1.0f));
+			GeneratedWorld->SetActorLocation(GeneratedWorld->GetActorLocation() / 1000000000.0);
+			this->SetActorLocation(this->GetActorLocation() / 1000000000.0);
+			this->SetActorScale3D(FVector(0.01, 0.01, 0.01));
+			/// this->SetSmallHullMesh
+
+			GEngine->AddOnScreenDebugMessage(-1, 15.0f, FColor::Green, FString::Printf(TEXT("Scaling to 1")));
+		}
+		else
+		{
+			GeneratedWorld->SetActorScale3D(FVector(1000000000.0, 1000000000.0, 1000000000.0));
+			GeneratedWorld->SetActorLocation(GeneratedWorld->GetActorLocation() * 1000000000.0);
+			this->SetActorLocation(this->GetActorLocation() * 1000000000.0);
+			this->SetActorScale3D(FVector(1, 1, 1));
+			/// this->SetBigHullMesh
+
+			GEngine->AddOnScreenDebugMessage(-1, 15.0f, FColor::Green, FString::Printf(TEXT("Scaling to 1000000000")));
+		}
+
+		// Переключаем состояние масштабирования
+		bIsScaledUp = !bIsScaledUp;
+	}
+}
+
+
 void ASpaceship::PrintOnboardComputerBasicIformation() 
 {
 	GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, FString::Printf(TEXT("Current Flight Safe Mode: %s"),
@@ -335,12 +483,25 @@ void ASpaceship::PrintOnboardComputerBasicIformation()
 		*OnboardComputer->GetEnumValueAsString(TEXT("EFlightType"), (int32)OnboardComputer->FlightSystem.CurrentFlightType)));
 	GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, FString::Printf(TEXT("Current Flight Mode:	%s"), 
 		*OnboardComputer->GetEnumValueAsString(TEXT("EFlightMode"), (int32)OnboardComputer->FlightSystem.CurrentFlightMode)));
+
+	// Telemetry
+	FVector ActorLocation = GetActorLocation();
+	FVector ActorVelocity = GetVelocity();
+	double ActorSpeed = ActorVelocity.Size();
+
+	// Displaying them on screen
+	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Actor Location: %s"), *ActorLocation.ToString()));
+	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Actor Velocity: %f"), ActorSpeed));
+	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Thrust Force: %f"), OnboardComputer->GetEngineThrustForce()));
+	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Hull Angular Damping: %f"), SpaceshipHull->GetAngularDamping()));
+	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Hull Linear Damping: %f"), SpaceshipHull->GetLinearDamping()));
+
 }
 
 void ASpaceship::SwitchEngines()
 {
 	bEngineRunning = !bEngineRunning;
-	SpaceshipHull->SetSimulatePhysics(bEngineRunning);
+	//SpaceshipHull->SetSimulatePhysics(bEngineRunning);
 	GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Green, FString::Printf(TEXT("Engine running: %s"), bEngineRunning ? TEXT("true") : TEXT("false")));
 }
 
@@ -360,13 +521,13 @@ void ASpaceship::ThrustForward(float Value)
 	}*/
 	const FVector Direction = ForwardVector->GetForwardVector();
 
-	if (OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::SpaceWrap)
+	if (OffsetSystem && OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::SpaceWrap)
 	{
 		// Получаем вектор вперед корабля
 		//const FVector Direction = SpaceshipHull->GetForwardVector();
 
 		// Сдвигаем StarSystem
-		OffsetSystem->AddActorLocalOffset(-Direction * Value * OnboardComputer->GetEngineThrustForce());
+		OffsetSystem->AddActorLocalOffset(-Direction * Value * OnboardComputer->GetEngineThrustForce()); /// CRASHED PIE!
 	}
 	else if (OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::Impulse)
 	{
@@ -398,7 +559,7 @@ void ASpaceship::ThrustSide(float Value)
 	}*/
 	const FVector Direction = ForwardVector->GetRightVector();
 
-	if (OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::SpaceWrap)
+	if (OffsetSystem && OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::SpaceWrap)
 	{
 		// Получаем вектор вперед корабля
 		// Получаем вектор в сторону корабля
@@ -432,7 +593,7 @@ void ASpaceship::ThrustVertical(float Value)
 	}*/
 	const FVector Direction = ForwardVector->GetUpVector();
 
-	if (OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::SpaceWrap)
+	if (OffsetSystem && OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::SpaceWrap)
 	{
 		// Получаем вектор вперед корабля
 		// Получаем вектор в сторону корабля

@@ -140,7 +140,7 @@ void AGravityCharacterPawn::CharacterAction()
 				AttachToComponent(CurrentSpaceship->PilotChair, AttachmentRules);
 
 				// Disable pawn's input and movement
-				DisableInput(PlayerController);
+				//DisableInput(PlayerController);
 				SetActorEnableCollision(false);
 				SetActorTickEnabled(false);
 				CapsuleComponent->SetSimulatePhysics(false);
