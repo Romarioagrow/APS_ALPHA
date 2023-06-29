@@ -21,6 +21,7 @@
 #include "GameFramework/Actor.h"
 #include "AstroGenerator.generated.h"
 
+/// TODO: FormStarSystemsInCluster();
 UCLASS()
 class APS_ALPHA_API AAstroGenerator : public AActor
 {

@@ -161,84 +161,95 @@ void ASpaceship::Tick(float DeltaTime)
 		}
 
 		{
-			FVector ShipLocation = this->GetActorLocation();
-			AWorldActor* ClosestActor = nullptr;
-			double ClosestDistance = DBL_MAX;
-			double ClosestAffectionDistance = DBL_MAX;
-			CurrentZonesInfluence.Empty();
-
-			/// if !Interstellar
-			for (AWorldActor* Actor : WorldNavigatableActors)
+			if (OnboardComputer->FlightSystem.CurrentFlightMode != EFlightMode::Interstellar)
 			{
-				FVector ActorLocation = Actor->GetActorLocation();
-				double AffectionRadius = Actor->AffectionRadiusKM * 100000; 
-				double SurfaceRadius = Actor->RadiusKM * 100000; 
-				double DistanceToActor = (ActorLocation - ShipLocation).Size() - SurfaceRadius;
-				double DistanceToAffectionZone = (ActorLocation - ShipLocation).Size();
 
-				// ¬ыводим рассто€ние в километрах
-				FString DistanceMessage = FString::Printf(TEXT("Distance to actor %s is %f km"), *Actor->GetName(), DistanceToActor / 100000);
-				GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Yellow, DistanceMessage);
+				FVector ShipLocation = this->GetActorLocation();
+				AWorldActor* ClosestActor = nullptr;
+				double ClosestDistance = DBL_MAX;
+				double ClosestAffectionDistance = DBL_MAX;
+				CurrentZonesInfluence.Empty();
 
-				// ≈сли корабль находитс€ в зоне действи€ актЄра (т.е. рассто€ние меньше или равно нулю)
-				if (DistanceToAffectionZone <= AffectionRadius)
+				/// if !Interstellar
+				for (AWorldActor* Actor : WorldNavigatableActors)
 				{
-					CurrentZonesInfluence.Add(Actor);
+					FVector ActorLocation = Actor->GetActorLocation();
+					double AffectionRadius = Actor->AffectionRadiusKM * 100000; 
+					double SurfaceRadius = Actor->RadiusKM * 100000; 
+					double DistanceToActor = (ActorLocation - ShipLocation).Size() - SurfaceRadius;
+					double DistanceToAffectionZone = (ActorLocation - ShipLocation).Size();
 
-					if (DistanceToAffectionZone < ClosestAffectionDistance)
+					// ¬ыводим рассто€ние в километрах
+					FString DistanceMessage = FString::Printf(TEXT("Distance to actor %s is %f km"), *Actor->GetName(), DistanceToActor / 100000);
+					GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Yellow, DistanceMessage);
+
+					// ≈сли корабль находитс€ в зоне действи€ актЄра (т.е. рассто€ние меньше или равно нулю)
+					if (DistanceToAffectionZone <= AffectionRadius)
 					{
-						ClosestAffectionDistance = DistanceToAffectionZone;
-						AffectedActor = Actor;
+						CurrentZonesInfluence.Add(Actor);
+
+						if (DistanceToAffectionZone < ClosestAffectionDistance)
+						{
+							ClosestAffectionDistance = DistanceToAffectionZone;
+							AffectedActor = Actor;
+						}
+					}
+
+					if (DistanceToActor < ClosestDistance)
+					{
+						ClosestDistance = DistanceToActor;
+						ClosestActor = Actor;
 					}
 				}
 
-				if (DistanceToActor < ClosestDistance)
+				if (ClosestActor != nullptr)
 				{
-					ClosestDistance = DistanceToActor;
-					ClosestActor = Actor;
+					FString ClosestActorMessage = FString::Printf(TEXT("Closest actor is %s"), *ClosestActor->GetName());
+					GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Orange, ClosestActorMessage);
 				}
-			}
-
-			if (ClosestActor != nullptr)
-			{
-				FString ClosestActorMessage = FString::Printf(TEXT("Closest actor is %s"), *ClosestActor->GetName());
-				GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Orange, ClosestActorMessage);
-			}
-			if (AffectedActor != nullptr)
-			{
-				FString ClosestAffectedActorMessage = FString::Printf(TEXT("Affection zone is %s"), *AffectedActor->GetName());
-				GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Orange, ClosestAffectedActorMessage);
-			}
-
-			//if CurrentZonesInfluence > 0 -> ComputeFlightStatus else AffectedActor = nullptr
-			if (CurrentZonesInfluence.Num() > 0)
-			{
-				for (AWorldActor* Actor : CurrentZonesInfluence)
+				if (AffectedActor != nullptr)
 				{
-					FString RadiusMessage = FString::Printf(TEXT("Ship is affected by %s"), *Actor->GetName());
-					GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Green, RadiusMessage);
+					FString ClosestAffectedActorMessage = FString::Printf(TEXT("Affection zone is %s"), *AffectedActor->GetName());
+					GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Orange, ClosestAffectedActorMessage);
 				}
-				GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("CurrentZonesInfluence: %d"), CurrentZonesInfluence.Num()));
 
-				OnboardComputer->ComputeFlightStatus(AffectedActor);
+				//if CurrentZonesInfluence > 0 -> ComputeFlightStatus else AffectedActor = nullptr
+				if (CurrentZonesInfluence.Num() > 0)
+				{
+					for (AWorldActor* Actor : CurrentZonesInfluence)
+					{
+						FString RadiusMessage = FString::Printf(TEXT("Ship is affected by %s"), *Actor->GetName());
+						GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Green, RadiusMessage);
+					}
+					GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("CurrentZonesInfluence: %d"), CurrentZonesInfluence.Num()));
+
+					OnboardComputer->ComputeFlightStatus(AffectedActor);
+				}
+				else
+				{
+					OnboardComputer->ComputeInterstellarFlight();
+					if (OnboardComputer->FlightSystem.CurrentFlightMode == EFlightMode::Interstellar && !bIsScaled)
+					{
+						ToggleScale();
+						bIsScaled = true;
+						GEngine->AddOnScreenDebugMessage(-1, 15.0f, FColor::Green, FString::Printf(TEXT("Galaxy is Downscaled")));
+
+					}
+					else if (OnboardComputer->FlightSystem.CurrentFlightMode != EFlightMode::Interstellar && bIsScaled)
+					{
+						ToggleScale();
+						bIsScaled = false;
+						GEngine->AddOnScreenDebugMessage(-1, 15.0f, FColor::Green, FString::Printf(TEXT("Galaxy is Upscaled")));
+
+					}
+				}
 			}
 			else
 			{
+				AffectedActor = nullptr;
 				OnboardComputer->ComputeInterstellarFlight();
-				if (OnboardComputer->FlightSystem.CurrentFlightMode == EFlightMode::Interstellar && !bIsScaled)
-				{
-					ToggleScale();
-					bIsScaled = true;
-					GEngine->AddOnScreenDebugMessage(-1, 15.0f, FColor::Green, FString::Printf(TEXT("Galaxy is Downscaled")));
+				GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Purple, FString::Printf(TEXT("Interstellar Flight!")));
 
-				}
-				else if (OnboardComputer->FlightSystem.CurrentFlightMode != EFlightMode::Interstellar && bIsScaled)
-				{
-					ToggleScale();
-					bIsScaled = false;
-					GEngine->AddOnScreenDebugMessage(-1, 15.0f, FColor::Green, FString::Printf(TEXT("Galaxy is Upscaled")));
-
-				}
 			}
 		}
 
