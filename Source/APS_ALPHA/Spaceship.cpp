@@ -227,9 +227,6 @@ void ASpaceship::Tick(float DeltaTime)
 				OnboardComputer->ComputeInterstellarFlight();
 				if (OnboardComputer->FlightSystem.CurrentFlightMode == EFlightMode::Interstellar && !bIsScaled)
 				{
-					//OnboardComputer->FlightSystem.CurrentFlightType = EFlightType::FTL;
-					//SwitchEngineMode(EEngineMode::Offset);
-					//Owner->
 					ToggleScale();
 					bIsScaled = true;
 					GEngine->AddOnScreenDebugMessage(-1, 15.0f, FColor::Green, FString::Printf(TEXT("Galaxy is Downscaled")));
@@ -237,7 +234,6 @@ void ASpaceship::Tick(float DeltaTime)
 				}
 				else if (OnboardComputer->FlightSystem.CurrentFlightMode != EFlightMode::Interstellar && bIsScaled)
 				{
-					//Owner->
 					ToggleScale();
 					bIsScaled = false;
 					GEngine->AddOnScreenDebugMessage(-1, 15.0f, FColor::Green, FString::Printf(TEXT("Galaxy is Upscaled")));
@@ -439,15 +435,19 @@ void ASpaceship::ToggleScale()
 			GeneratedWorld->SetActorLocation(GeneratedWorld->GetActorLocation() / 1000000000.0);
 			this->SetActorLocation(this->GetActorLocation() / 1000000000.0);
 			this->SetActorScale3D(FVector(0.01, 0.01, 0.01));
-			GEngine->AddOnScreenDebugMessage(-1, 15.0f, FColor::Green, FString::Printf(TEXT("Scaling to 1")));
+			/// this->SetSmallHullMesh
 
+			GEngine->AddOnScreenDebugMessage(-1, 15.0f, FColor::Green, FString::Printf(TEXT("Scaling to 1")));
 		}
 		else
 		{
 			GeneratedWorld->SetActorScale3D(FVector(1000000000.0, 1000000000.0, 1000000000.0));
+			GeneratedWorld->SetActorLocation(GeneratedWorld->GetActorLocation() * 1000000000.0);
 			this->SetActorLocation(this->GetActorLocation() * 1000000000.0);
-			GEngine->AddOnScreenDebugMessage(-1, 15.0f, FColor::Green, FString::Printf(TEXT("Scaling to 1000000000")));
+			this->SetActorScale3D(FVector(1, 1, 1));
+			/// this->SetBigHullMesh
 
+			GEngine->AddOnScreenDebugMessage(-1, 15.0f, FColor::Green, FString::Printf(TEXT("Scaling to 1000000000")));
 		}
 
 		// Переключаем состояние масштабирования
