@@ -9,6 +9,10 @@
 #include "PlanetGenerationModel.h"
 #include "PlanetaryZoneType.h"
 #include "NavigatableBody.h"
+//#include "PlanetSurfaceGenerator.h"
+//#include "WorldScapeCore/Public/WorldScapeRoot.h"
+#include "WorldScapeCore/Public/WorldScapeRoot.h"
+
 
 #include "CoreMinimal.h"
 #include "CelestialBody.h"
@@ -22,9 +26,18 @@ class APS_ALPHA_API APlanet : public AOrbitalBody, public IPlanetaryEnvironment,
 {
 	GENERATED_BODY()
 
+protected:
+	virtual void BeginPlay() override;
+
 public:
 	APlanet();
 
+	UPROPERTY(VisibleAnywhere, Category = "World Scape")
+		AWorldScapeRoot* WorldScapeRootInstance;
+
+	//UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Planet Environment")
+		//APlanetEnvironmentGenerator* PlanetEnvironmentGenerator;
+	
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Gravity")
 		USphereComponent* GravityCollisionZone;
 
