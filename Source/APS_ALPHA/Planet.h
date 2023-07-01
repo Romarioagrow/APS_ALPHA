@@ -10,9 +10,6 @@
 #include "PlanetaryZoneType.h"
 #include "NavigatableBody.h"
 #include "PlanetSurfaceGenerator.h"
-//#include "WorldScapeCore/Public/WorldScapeRoot.h"
-//#include "WorldScapeCore/Public/WorldScapeRoot.h"
-
 
 #include "CoreMinimal.h"
 #include "CelestialBody.h"
@@ -32,10 +29,8 @@ protected:
 public:
 	APlanet();
 
-	/*UPROPERTY(VisibleAnywhere, Category = "World Scape")
-		AWorldScapeRoot* WorldScapeRootInstance;*/
-
-
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Environment")
+		bool bGenerateByDefault{ false };
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Planet Environment")
 		APlanetEnvironmentGenerator* PlanetEnvironmentGenerator;

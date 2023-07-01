@@ -4,8 +4,6 @@
 #include "Planet.h"
 #include "PlanetGenerationModel.h"
 
-
-
 APlanet::APlanet()
 {
 	USceneComponent* Root = CreateDefaultSubobject<USceneComponent>(TEXT("RootComponent"));
@@ -16,9 +14,6 @@ APlanet::APlanet()
 
 	GravityCollisionZone = CreateDefaultSubobject<USphereComponent>(TEXT("PlanetGravityCollisionZoneComponent"));
 	GravityCollisionZone->SetupAttachment(RootComponent);
-
-	/*WorldScapeRootInstance = CreateDefaultSubobject<AWorldScapeRoot>(TEXT("WorldScapeRoot"));
-	WorldScapeRootInstance->SetupAttachment(RootComponent);*/
 }
 
 void APlanet::BeginPlay()
@@ -29,15 +24,18 @@ void APlanet::BeginPlay()
 		GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("PlanetSurfaceGenerator has been created successfully."));
 		UE_LOG(LogTemp, Warning, TEXT("PlanetSurfaceGenerator has been created successfully."));
 		
-		UWorld* World = GetWorld();
-		if (World)
+		if (bGenerateByDefault)
 		{
-			PlanetEnvironmentGenerator->InitWorldScape(World);
-			GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("World Scape INITED!"));
-		}
-		else
-		{
-			GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("World IS NULL!!!"));
+			UWorld* World = GetWorld();
+			if (World)
+			{
+				PlanetEnvironmentGenerator->InitWorldScape(World);
+				GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("World Scape Initiated!"));
+			}
+			else
+			{
+				GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("World IS NULL!!!"));
+			}
 		}
 	}
 	else
