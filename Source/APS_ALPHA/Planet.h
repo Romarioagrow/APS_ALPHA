@@ -9,9 +9,9 @@
 #include "PlanetGenerationModel.h"
 #include "PlanetaryZoneType.h"
 #include "NavigatableBody.h"
-//#include "PlanetSurfaceGenerator.h"
+#include "PlanetSurfaceGenerator.h"
 //#include "WorldScapeCore/Public/WorldScapeRoot.h"
-#include "WorldScapeCore/Public/WorldScapeRoot.h"
+//#include "WorldScapeCore/Public/WorldScapeRoot.h"
 
 
 #include "CoreMinimal.h"
@@ -32,11 +32,13 @@ protected:
 public:
 	APlanet();
 
-	UPROPERTY(VisibleAnywhere, Category = "World Scape")
-		AWorldScapeRoot* WorldScapeRootInstance;
+	/*UPROPERTY(VisibleAnywhere, Category = "World Scape")
+		AWorldScapeRoot* WorldScapeRootInstance;*/
 
-	//UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Planet Environment")
-		//APlanetEnvironmentGenerator* PlanetEnvironmentGenerator;
+
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Planet Environment")
+		APlanetEnvironmentGenerator* PlanetEnvironmentGenerator;
 	
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Gravity")
 		USphereComponent* GravityCollisionZone;

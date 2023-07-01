@@ -16,21 +16,9 @@ void APlanetEnvironmentGenerator::BeginPlay()
 {
 	Super::BeginPlay();
 
-    WorldScapeRootInstance = NewObject<AWorldScapeRoot>();
-
-    if (WorldScapeRootInstance)
+    if (true)
     {
-        // TODO: Добавьте любую дополнительную логику инициализации здесь
-        GEngine->AddOnScreenDebugMessage(-1, 51.f, FColor::Red, TEXT("WorldScapeRootInstance has been created successfully."));
-        UE_LOG(LogTemp, Warning, TEXT("WorldScapeRootInstance has been created successfully."));
-
-    }
-    else
-    {
-        // TODO: Добавьте обработку ошибок, если NewObject вернул nullptr
-        GEngine->AddOnScreenDebugMessage(-1, 51.f, FColor::Red, TEXT("Failed to create WorldScapeRootInstance."));
-        UE_LOG(LogTemp, Warning, TEXT("Failed to create WorldScapeRootInstance."));
-
+        InitWorldScape();
     }
 }
 
@@ -41,3 +29,40 @@ void APlanetEnvironmentGenerator::Tick(float DeltaTime)
 
 }
 
+void APlanetEnvironmentGenerator::InitWorldScape()
+{
+    GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Magenta, TEXT("InitWorldScape!"));
+   // WorldScapeRootInstance = NewObject<AWorldScapeRoot>();
+    FActorSpawnParameters SpawnParams;
+    WorldScapeRootInstance = GetWorld()->SpawnActor<AWorldScapeRoot>(AWorldScapeRoot::StaticClass(), FTransform(), SpawnParams);
+
+    if (WorldScapeRootInstance)
+    {
+        // TODO: Добавьте любую дополнительную логику инициализации здесь
+        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("InitWorldScape WorldScapeRootInstance has been created successfully."));
+        UE_LOG(LogTemp, Warning, TEXT("InitWorldScape WorldScapeRootInstance has been created successfully."));
+
+        
+
+        //SetupDefaultGenerator();
+        WorldScapeRootInstance->GenerationType = EWorldScapeType::Planet;
+        WorldScapeRootInstance->bGenerateWorldScape = true;
+        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Magenta, TEXT("SetupDefaultGenerator!"));
+    }
+    else
+    {
+        // TODO: Добавьте обработку ошибок, если NewObject вернул nullptr
+        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("InitWorldScape Failed to create WorldScapeRootInstance."));
+        UE_LOG(LogTemp, Warning, TEXT("InitWorldScape Failed to create WorldScapeRootInstance."));
+    }
+}
+
+void APlanetEnvironmentGenerator::SetupDefaultGenerator()
+{
+   
+    
+    WorldScapeRootInstance->GenerationType = EWorldScapeType::Planet;
+    WorldScapeRootInstance->bGenerateWorldScape = true;
+    GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Magenta, TEXT("SetupDefaultGenerator!"));
+
+}
