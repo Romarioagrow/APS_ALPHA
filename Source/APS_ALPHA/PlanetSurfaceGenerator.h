@@ -28,8 +28,8 @@ public:
 	UPROPERTY(VisibleAnywhere, Category = "World Scape")
 		AWorldScapeRoot* WorldScapeRootInstance;
 
-	void InitWorldScape();
+	void InitWorldScape(UWorld* World);
 
-	void SetupDefaultGenerator();
+	//void SetupDefaultGenerator();
 
 };

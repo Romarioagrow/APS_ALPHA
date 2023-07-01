@@ -28,28 +28,23 @@ void APlanet::BeginPlay()
 	{
 		GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("PlanetSurfaceGenerator has been created successfully."));
 		UE_LOG(LogTemp, Warning, TEXT("PlanetSurfaceGenerator has been created successfully."));
-		PlanetEnvironmentGenerator->InitWorldScape();
+		
+		UWorld* World = GetWorld();
+		if (World)
+		{
+			PlanetEnvironmentGenerator->InitWorldScape(World);
+			GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("World Scape INITED!"));
+		}
+		else
+		{
+			GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("World IS NULL!!!"));
+		}
 	}
 	else
 	{
 		GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("Failed to create PlanetSurfaceGenerator."));
 		UE_LOG(LogTemp, Warning, TEXT("Failed to create PlanetSurfaceGenerator."));
 	}
-
-
-	//WorldScapeRootInstance = NewObject<AWorldScapeRoot>();
-	//if (WorldScapeRootInstance)
-	//{
-	//	// TODO: Добавьте любую дополнительную логику инициализации здесь
-	//	GEngine->AddOnScreenDebugMessage(-1, 51.f, FColor::Red, TEXT("WorldScapeRootInstance has been created successfully."));
-	//	UE_LOG(LogTemp, Warning, TEXT("WorldScapeRootInstance has been created successfully."));
-	//}
-	//else
-	//{
-	//	// TODO: Добавьте обработку ошибок, если NewObject вернул nullptr
-	//	GEngine->AddOnScreenDebugMessage(-1, 51.f, FColor::Red, TEXT("Failed to create WorldScapeRootInstance."));
-	//	UE_LOG(LogTemp, Warning, TEXT("Failed to create WorldScapeRootInstance."));
-	//}
 }
 
 void APlanet::AddMoon(AMoon* Moon)

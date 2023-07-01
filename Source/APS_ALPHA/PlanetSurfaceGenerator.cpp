@@ -16,9 +16,9 @@ void APlanetEnvironmentGenerator::BeginPlay()
 {
 	Super::BeginPlay();
 
-    if (true)
+    if (false)
     {
-        InitWorldScape();
+        InitWorldScape(GetWorld());
     }
 }
 
@@ -29,40 +29,31 @@ void APlanetEnvironmentGenerator::Tick(float DeltaTime)
 
 }
 
-void APlanetEnvironmentGenerator::InitWorldScape()
+void APlanetEnvironmentGenerator::InitWorldScape(UWorld* World)
 {
     GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Magenta, TEXT("InitWorldScape!"));
-   // WorldScapeRootInstance = NewObject<AWorldScapeRoot>();
     FActorSpawnParameters SpawnParams;
-    WorldScapeRootInstance = GetWorld()->SpawnActor<AWorldScapeRoot>(AWorldScapeRoot::StaticClass(), FTransform(), SpawnParams);
+    WorldScapeRootInstance = World->SpawnActor<AWorldScapeRoot>(AWorldScapeRoot::StaticClass(), FTransform(), SpawnParams);
 
     if (WorldScapeRootInstance)
     {
-        // TODO: Добавьте любую дополнительную логику инициализации здесь
         GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("InitWorldScape WorldScapeRootInstance has been created successfully."));
         UE_LOG(LogTemp, Warning, TEXT("InitWorldScape WorldScapeRootInstance has been created successfully."));
 
-        
-
-        //SetupDefaultGenerator();
         WorldScapeRootInstance->GenerationType = EWorldScapeType::Planet;
         WorldScapeRootInstance->bGenerateWorldScape = true;
-        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Magenta, TEXT("SetupDefaultGenerator!"));
+        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Magenta, TEXT("GenerateWorldScape!"));
     }
     else
     {
-        // TODO: Добавьте обработку ошибок, если NewObject вернул nullptr
         GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("InitWorldScape Failed to create WorldScapeRootInstance."));
         UE_LOG(LogTemp, Warning, TEXT("InitWorldScape Failed to create WorldScapeRootInstance."));
     }
 }
 
-void APlanetEnvironmentGenerator::SetupDefaultGenerator()
-{
-   
-    
-    WorldScapeRootInstance->GenerationType = EWorldScapeType::Planet;
-    WorldScapeRootInstance->bGenerateWorldScape = true;
-    GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Magenta, TEXT("SetupDefaultGenerator!"));
-
-}
+//void APlanetEnvironmentGenerator::SetupDefaultGenerator()
+//{
+//    WorldScapeRootInstance->GenerationType = EWorldScapeType::Planet;
+//    WorldScapeRootInstance->bGenerateWorldScape = true;
+//    GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Magenta, TEXT("SetupDefaultGenerator!"));
+//}
