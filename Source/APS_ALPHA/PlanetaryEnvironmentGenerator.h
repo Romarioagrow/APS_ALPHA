@@ -6,19 +6,19 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
-#include "PlanetSurfaceGenerator.generated.h"
+#include "PlanetaryEnvironmentGenerator.generated.h"
 
 //class APlanet;
 class APlanet;  // Forward declaration
 
 UCLASS()
-class APS_ALPHA_API APlanetEnvironmentGenerator : public AActor
+class APS_ALPHA_API APlanetaryEnvironmentGenerator : public AActor
 {
 	GENERATED_BODY()
 	
 public:	
 	// Sets default values for this actor's properties
-	APlanetEnvironmentGenerator();
+	APlanetaryEnvironmentGenerator();
 
 protected:
 	// Called when the game starts or when spawned

@@ -9,7 +9,7 @@
 #include "PlanetGenerationModel.h"
 #include "PlanetaryZoneType.h"
 #include "NavigatableBody.h"
-#include "PlanetSurfaceGenerator.h"
+#include "PlanetaryBody.h"
 
 #include "CoreMinimal.h"
 #include "CelestialBody.h"
@@ -20,26 +20,26 @@ class AStar;
 //class APlanetEnvironmentGenerator;
 
 UCLASS()
-class APS_ALPHA_API APlanet : public AOrbitalBody, public IPlanetaryEnvironment, public INavigatableBody
+class APS_ALPHA_API APlanet : public APlanetaryBody, public IPlanetaryEnvironment, public INavigatableBody
 {
 	GENERATED_BODY()
 
-protected:
-	virtual void BeginPlay() override;
+//protected:
+//	virtual void BeginPlay() override;
 
 public:
 	APlanet();
 
 	bool IsNotGasGiant();
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Environment")
+	/*UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Environment")
 		bool bGenerateByDefault{ false };
-	
+	*/
 	/*UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Environment")
 		double PlanetRadiusKM{ 0 };*/
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Planet Environment")
-		APlanetEnvironmentGenerator* PlanetEnvironmentGenerator;
+	/*UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Planet Environment")
+		APlanetEnvironmentGenerator* PlanetEnvironmentGenerator;*/
 	
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Gravity")
 		USphereComponent* GravityCollisionZone;

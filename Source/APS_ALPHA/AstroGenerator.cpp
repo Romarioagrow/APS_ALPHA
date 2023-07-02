@@ -709,7 +709,7 @@ void AAstroGenerator::GenerateStarSystem()
                     //FTransoNewPlanet->GetActorTransform();
                     if (NewPlanet->IsNotGasGiant())
                     {
-                        NewPlanet->PlanetEnvironmentGenerator->GenerateWorldscapeSurfaceByModel(World, NewPlanet);
+                        NewPlanet->PlanetaryEnvironmentGenerator->GenerateWorldscapeSurfaceByModel(World, NewPlanet);
                     }
                 }
             }

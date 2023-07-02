@@ -23,34 +23,34 @@ bool APlanet::IsNotGasGiant()
 		&& PlanetType != EPlanetType::IceGiant;
 }
 
-void APlanet::BeginPlay()
-{
-	PlanetEnvironmentGenerator = NewObject<APlanetEnvironmentGenerator>();
-	if (PlanetEnvironmentGenerator)
-	{
-		GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("PlanetSurfaceGenerator has been created successfully."));
-		UE_LOG(LogTemp, Warning, TEXT("PlanetSurfaceGenerator has been created successfully."));
-		
-		if (bGenerateByDefault)
-		{
-			UWorld* World = GetWorld();
-			if (World)
-			{
-				PlanetEnvironmentGenerator->InitWorldScape(World);
-				GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("World Scape Initiated!"));
-			}
-			else
-			{
-				GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("World IS NULL!!!"));
-			}
-		}
-	}
-	else
-	{
-		GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("Failed to create PlanetSurfaceGenerator."));
-		UE_LOG(LogTemp, Warning, TEXT("Failed to create PlanetSurfaceGenerator."));
-	}
-}
+//void APlanet::BeginPlay()
+//{
+//	PlanetEnvironmentGenerator = NewObject<APlanetEnvironmentGenerator>();
+//	if (PlanetEnvironmentGenerator)
+//	{
+//		GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("PlanetSurfaceGenerator has been created successfully."));
+//		UE_LOG(LogTemp, Warning, TEXT("PlanetSurfaceGenerator has been created successfully."));
+//		
+//		if (bGenerateByDefault)
+//		{
+//			UWorld* World = GetWorld();
+//			if (World)
+//			{
+//				PlanetEnvironmentGenerator->InitWorldScape(World);
+//				GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("World Scape Initiated!"));
+//			}
+//			else
+//			{
+//				GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("World IS NULL!!!"));
+//			}
+//		}
+//	}
+//	else
+//	{
+//		GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("Failed to create PlanetSurfaceGenerator."));
+//		UE_LOG(LogTemp, Warning, TEXT("Failed to create PlanetSurfaceGenerator."));
+//	}
+//}
 
 void APlanet::AddMoon(AMoon* Moon)
 {

@@ -1,11 +1,11 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 
-#include "PlanetSurfaceGenerator.h"
+#include "PlanetaryEnvironmentGenerator.h"
 #include "Planet.h"
 
 // Sets default values
-APlanetEnvironmentGenerator::APlanetEnvironmentGenerator()
+APlanetaryEnvironmentGenerator::APlanetaryEnvironmentGenerator()
 {
  	// Set this actor to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = true;
@@ -13,7 +13,7 @@ APlanetEnvironmentGenerator::APlanetEnvironmentGenerator()
 }
 
 // Called when the game starts or when spawned
-void APlanetEnvironmentGenerator::BeginPlay()
+void APlanetaryEnvironmentGenerator::BeginPlay()
 {
 	Super::BeginPlay();
 
@@ -24,7 +24,7 @@ void APlanetEnvironmentGenerator::BeginPlay()
 }
 
 // Called every frame
-void APlanetEnvironmentGenerator::Tick(float DeltaTime)
+void APlanetaryEnvironmentGenerator::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
@@ -32,7 +32,7 @@ void APlanetEnvironmentGenerator::Tick(float DeltaTime)
 
 //void APlanetEnvironmentGenerator::InitWorldScape(UWorld* World, )
 
-void APlanetEnvironmentGenerator::InitWorldScape(UWorld* World)
+void APlanetaryEnvironmentGenerator::InitWorldScape(UWorld* World)
 {
     GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Magenta, TEXT("InitWorldScape!"));
     FActorSpawnParameters SpawnParams;
@@ -61,7 +61,7 @@ void APlanetEnvironmentGenerator::InitWorldScape(UWorld* World)
     }
 }
 
-void APlanetEnvironmentGenerator::GenerateWorldscapeSurfaceByModel(UWorld* World, APlanet* NewPlanet)
+void APlanetaryEnvironmentGenerator::GenerateWorldscapeSurfaceByModel(UWorld* World, APlanet* NewPlanet)
 {
     GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Magenta, TEXT("GenerateWorldscapeSurfaceByModel!"));
     FActorSpawnParameters SpawnParams;

@@ -1,0 +1,32 @@
+// Fill out your copyright notice in the Description page of Project Settings.
+
+#pragma once
+
+#include "PlanetaryEnvironmentGenerator.h"
+
+#include "CoreMinimal.h"
+#include "OrbitalBody.h"
+#include "PlanetaryBody.generated.h"
+
+/**
+ * 
+ */
+UCLASS()
+class APS_ALPHA_API APlanetaryBody : public AOrbitalBody
+{
+	GENERATED_BODY()
+
+public:
+		APlanetaryBody();
+
+protected:
+	virtual void BeginPlay() override;
+	
+public:
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Planet Environment")
+		APlanetaryEnvironmentGenerator* PlanetaryEnvironmentGenerator;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Environment")
+		bool bGenerateByDefault{ false };
+
+};
