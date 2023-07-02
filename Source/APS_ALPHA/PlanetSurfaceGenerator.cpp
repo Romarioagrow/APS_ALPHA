@@ -2,6 +2,7 @@
 
 
 #include "PlanetSurfaceGenerator.h"
+#include "Planet.h"
 
 // Sets default values
 APlanetEnvironmentGenerator::APlanetEnvironmentGenerator()
@@ -29,6 +30,8 @@ void APlanetEnvironmentGenerator::Tick(float DeltaTime)
 
 }
 
+//void APlanetEnvironmentGenerator::InitWorldScape(UWorld* World, )
+
 void APlanetEnvironmentGenerator::InitWorldScape(UWorld* World)
 {
     GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Magenta, TEXT("InitWorldScape!"));
@@ -41,6 +44,47 @@ void APlanetEnvironmentGenerator::InitWorldScape(UWorld* World)
         UE_LOG(LogTemp, Warning, TEXT("InitWorldScape WorldScapeRootInstance has been created successfully."));
 
         WorldScapeRootInstance->GenerationType = EWorldScapeType::Planet;
+
+        /*if (RadiusKM > 0)
+        {
+
+        }*/
+
+        WorldScapeRootInstance->bGenerateWorldScape = true;
+
+        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Magenta, TEXT("GenerateWorldScape!"));
+    }
+    else
+    {
+        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("InitWorldScape Failed to create WorldScapeRootInstance."));
+        UE_LOG(LogTemp, Warning, TEXT("InitWorldScape Failed to create WorldScapeRootInstance."));
+    }
+}
+
+void APlanetEnvironmentGenerator::GenerateWorldscapeSurfaceByModel(UWorld* World, APlanet* NewPlanet)
+{
+    GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Magenta, TEXT("GenerateWorldscapeSurfaceByModel!"));
+    FActorSpawnParameters SpawnParams;
+    WorldScapeRootInstance = World->SpawnActor<AWorldScapeRoot>(AWorldScapeRoot::StaticClass(), FTransform(), SpawnParams);
+
+    if (WorldScapeRootInstance)
+    {
+        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("InitWorldScape WorldScapeRootInstance has been created successfully."));
+        UE_LOG(LogTemp, Warning, TEXT("InitWorldScape WorldScapeRootInstance has been created successfully."));
+
+        double PlanetRadiusKM = NewPlanet->RadiusKM;
+
+        WorldScapeRootInstance->GenerationType = EWorldScapeType::Planet;
+        WorldScapeRootInstance->PlanetScale = PlanetRadiusKM * 100000;
+        WorldScapeRootInstance->DistanceToFreezeGeneration = PlanetRadiusKM;
+
+
+        WorldScapeRootInstance->SetActorLocation(NewPlanet->GetActorLocation());
+        WorldScapeRootInstance->SetActorRotation(NewPlanet->GetActorRotation());
+        WorldScapeRootInstance->AttachToActor(NewPlanet, FAttachmentTransformRules::KeepWorldTransform);
+        //NewPlanet->Mesh
+        //NewPlanet->SetupWorldScapeRoot(WorldScapeRootInstance);
+
         WorldScapeRootInstance->bGenerateWorldScape = true;
         GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Magenta, TEXT("GenerateWorldScape!"));
     }
@@ -49,6 +93,9 @@ void APlanetEnvironmentGenerator::InitWorldScape(UWorld* World)
         GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("InitWorldScape Failed to create WorldScapeRootInstance."));
         UE_LOG(LogTemp, Warning, TEXT("InitWorldScape Failed to create WorldScapeRootInstance."));
     }
+
+
+
 }
 
 //void APlanetEnvironmentGenerator::SetupDefaultGenerator()

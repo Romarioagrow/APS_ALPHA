@@ -28,7 +28,7 @@ public:
 	UPROPERTY(VisibleAnywhere, Category = "World Actor")
 		double AffectionRadiusKM{ 0 };
 
-	UPROPERTY(VisibleAnywhere, Category = "Celestial Body")
+	UPROPERTY(EditAnywhere, Category = "Celestial Body")
 		double RadiusKM{ 0 };
 
 	void CalculateAffectionRadius();

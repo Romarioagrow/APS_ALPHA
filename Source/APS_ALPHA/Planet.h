@@ -17,6 +17,7 @@
 
 class AMoon;
 class AStar;
+//class APlanetEnvironmentGenerator;
 
 UCLASS()
 class APS_ALPHA_API APlanet : public AOrbitalBody, public IPlanetaryEnvironment, public INavigatableBody
@@ -29,8 +30,13 @@ protected:
 public:
 	APlanet();
 
+	bool IsNotGasGiant();
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Environment")
 		bool bGenerateByDefault{ false };
+	
+	/*UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Environment")
+		double PlanetRadiusKM{ 0 };*/
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Planet Environment")
 		APlanetEnvironmentGenerator* PlanetEnvironmentGenerator;

@@ -2,10 +2,14 @@
 
 #pragma once
 #include "WorldScapeCore/Public/WorldScapeRoot.h"
+//#include "Planet.h"
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "PlanetSurfaceGenerator.generated.h"
+
+//class APlanet;
+class APlanet;  // Forward declaration
 
 UCLASS()
 class APS_ALPHA_API APlanetEnvironmentGenerator : public AActor
@@ -27,8 +31,15 @@ public:
 public:
 	UPROPERTY(VisibleAnywhere, Category = "World Scape")
 		AWorldScapeRoot* WorldScapeRootInstance;
+	
+	UPROPERTY(VisibleAnywhere, Category = "World Scape")
+		double RadiusKM;
+
+
 
 	void InitWorldScape(UWorld* World);
+
+	void GenerateWorldscapeSurfaceByModel(UWorld* World, APlanet* NewPlanet);
 
 	//void SetupDefaultGenerator();
 

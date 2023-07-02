@@ -701,7 +701,21 @@ void AAstroGenerator::GenerateStarSystem()
                 }
                 LastPlanetLocation = NewPlanet->GetActorLocation();
                 LastStarLocation = LastPlanetLocation * 1.1; 
+
+                if (true)
+                {
+                    ///NewPlanet->PlanetEnvironmentGenerator->GeneratePlanetEnviroment();
+                    
+                    //FTransoNewPlanet->GetActorTransform();
+                    if (NewPlanet->IsNotGasGiant())
+                    {
+                        NewPlanet->PlanetEnvironmentGenerator->GenerateWorldscapeSurfaceByModel(World, NewPlanet);
+                    }
+                }
             }
+            
+
+
 
             double StarSphereRadius;
             if (LastPlanetLocation.IsZero())

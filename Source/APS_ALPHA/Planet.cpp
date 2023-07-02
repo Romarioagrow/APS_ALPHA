@@ -16,6 +16,13 @@ APlanet::APlanet()
 	GravityCollisionZone->SetupAttachment(RootComponent);
 }
 
+bool APlanet::IsNotGasGiant()
+{
+	return  PlanetType != EPlanetType::GasGiant 
+		&& PlanetType != EPlanetType::HotGiant
+		&& PlanetType != EPlanetType::IceGiant;
+}
+
 void APlanet::BeginPlay()
 {
 	PlanetEnvironmentGenerator = NewObject<APlanetEnvironmentGenerator>();
