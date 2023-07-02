@@ -2,7 +2,7 @@
 
 #pragma once
 #include "WorldScapeCore/Public/WorldScapeRoot.h"
-//#include "Planet.h"
+#include "AtmoScape/Public/Atmosphere.h"
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
@@ -11,6 +11,7 @@
 //class APlanet;
 class APlanet;  // Forward declaration
 class AMoon;  // Forward declaration
+class APlanetaryBody;  // Forward declaration
 
 UCLASS()
 class APS_ALPHA_API APlanetaryEnvironmentGenerator : public AActor
@@ -29,9 +30,14 @@ public:
 	// Called every frame
 	virtual void Tick(float DeltaTime) override;
 
+	void InitAtmoScape(UWorld* World, double Radius, APlanetaryBody* PlanetaryBody);
+
 public:
 	UPROPERTY(VisibleAnywhere, Category = "World Scape")
 		AWorldScapeRoot* WorldScapeRootInstance;
+
+	UPROPERTY(VisibleAnywhere, Category = "Atmo Scape")
+		AAtmosphere* PlanetAtmosphere;
 	
 	UPROPERTY(VisibleAnywhere, Category = "World Scape")
 		double RadiusKM;

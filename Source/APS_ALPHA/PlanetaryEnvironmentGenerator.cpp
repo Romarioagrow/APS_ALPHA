@@ -31,7 +31,21 @@ void APlanetaryEnvironmentGenerator::Tick(float DeltaTime)
 
 }
 
-//void APlanetEnvironmentGenerator::InitWorldScape(UWorld* World, )
+void APlanetaryEnvironmentGenerator::InitAtmoScape(UWorld* World, double Radius, APlanetaryBody* PlanetaryBody)
+{
+    PlanetAtmosphere = World->SpawnActor<AAtmosphere>(AAtmosphere::StaticClass(), FTransform());
+
+    if (PlanetAtmosphere)
+    {
+        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("PlanetAtmosphere AtmoScapeInstance has been created successfully."));
+        // Установка параметров и свойств для объекта Atmosphere.
+        PlanetAtmosphere->PlanetRadius = Radius;
+        PlanetAtmosphere->SetActorLocation(PlanetaryBody->GetActorLocation());
+        PlanetAtmosphere->SetActorRotation(PlanetaryBody->GetActorRotation());
+        PlanetAtmosphere->AttachToActor(PlanetaryBody, FAttachmentTransformRules::KeepWorldTransform);
+    }
+}
+
 
 void APlanetaryEnvironmentGenerator::InitWorldScape(UWorld* World)
 {
@@ -45,12 +59,6 @@ void APlanetaryEnvironmentGenerator::InitWorldScape(UWorld* World)
         UE_LOG(LogTemp, Warning, TEXT("InitWorldScape WorldScapeRootInstance has been created successfully."));
 
         WorldScapeRootInstance->GenerationType = EWorldScapeType::Planet;
-
-        /*if (RadiusKM > 0)
-        {
-
-        }*/
-
         WorldScapeRootInstance->bGenerateWorldScape = true;
 
         GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Magenta, TEXT("GenerateWorldScape!"));

@@ -8,7 +8,16 @@ public class APS_ALPHA : ModuleRules
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 	
-		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "WorldScapeCore", "WorldScapeCommon", "WorldScapeNoise", "WorldScapeVolume", "WorldScapeFoliages", "WorldScapeEditor", "ProceduralMeshComponent" });
+		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore"
+			, "WorldScapeCore"
+			, "WorldScapeCommon"
+			, "WorldScapeNoise"
+			, "WorldScapeVolume"
+			, "WorldScapeFoliages"
+			, "WorldScapeEditor"
+			, "ProceduralMeshComponent" 
+			, "AtmoScape"
+        });
 
 
         PrivateDependencyModuleNames.AddRange(new string[] {  });

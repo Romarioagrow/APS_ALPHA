@@ -686,7 +686,8 @@ void AAstroGenerator::GenerateStarSystem()
 
                     /// Generate WSC
                     NewMoon->PlanetaryEnvironmentGenerator->GenerateWorldscapeSurfaceByModel(World, NewMoon);
-
+                    NewMoon->PlanetaryEnvironmentGenerator->InitAtmoScape(World, NewMoon->RadiusKM, NewMoon);
+                    
 
                 }
 
@@ -716,6 +717,8 @@ void AAstroGenerator::GenerateStarSystem()
                     if (NewPlanet->IsNotGasGiant())
                     {
                         NewPlanet->PlanetaryEnvironmentGenerator->GenerateWorldscapeSurfaceByModel(World, NewPlanet);
+                        NewPlanet->PlanetaryEnvironmentGenerator->InitAtmoScape(World, NewPlanet->RadiusKM, NewPlanet);
+
                     }
                 }
             }
