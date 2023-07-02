@@ -10,6 +10,7 @@
 
 //class APlanet;
 class APlanet;  // Forward declaration
+class AMoon;  // Forward declaration
 
 UCLASS()
 class APS_ALPHA_API APlanetaryEnvironmentGenerator : public AActor
@@ -40,6 +41,8 @@ public:
 	void InitWorldScape(UWorld* World);
 
 	void GenerateWorldscapeSurfaceByModel(UWorld* World, APlanet* NewPlanet);
+
+	void GenerateWorldscapeSurfaceByModel(UWorld* World, AMoon* NewMoon);
 
 	//void SetupDefaultGenerator();
 

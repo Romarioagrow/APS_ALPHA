@@ -2,7 +2,6 @@
 
 #pragma once
 #include <Components/SphereComponent.h>
-#include "PlanetaryEnvironment.h"
 #include "OrbitalBody.h"
 #include "PlanetType.h"
 #include "MoonGenerationModel.h"
@@ -20,7 +19,7 @@ class AStar;
 //class APlanetEnvironmentGenerator;
 
 UCLASS()
-class APS_ALPHA_API APlanet : public APlanetaryBody, public IPlanetaryEnvironment, public INavigatableBody
+class APS_ALPHA_API APlanet : public APlanetaryBody, public INavigatableBody
 {
 	GENERATED_BODY()
 

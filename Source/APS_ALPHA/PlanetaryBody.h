@@ -3,6 +3,7 @@
 #pragma once
 
 #include "PlanetaryEnvironmentGenerator.h"
+#include "PlanetaryEnvironment.h"
 
 #include "CoreMinimal.h"
 #include "OrbitalBody.h"
@@ -12,7 +13,7 @@
  * 
  */
 UCLASS()
-class APS_ALPHA_API APlanetaryBody : public AOrbitalBody
+class APS_ALPHA_API APlanetaryBody : public AOrbitalBody, public IPlanetaryEnvironment
 {
 	GENERATED_BODY()
 

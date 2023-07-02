@@ -3,6 +3,7 @@
 
 #include "PlanetaryEnvironmentGenerator.h"
 #include "Planet.h"
+#include "Moon.h"
 
 // Sets default values
 APlanetaryEnvironmentGenerator::APlanetaryEnvironmentGenerator()
@@ -94,7 +95,39 @@ void APlanetaryEnvironmentGenerator::GenerateWorldscapeSurfaceByModel(UWorld* Wo
         UE_LOG(LogTemp, Warning, TEXT("InitWorldScape Failed to create WorldScapeRootInstance."));
     }
 
+}
+void APlanetaryEnvironmentGenerator::GenerateWorldscapeSurfaceByModel(UWorld* World, AMoon* NewMoon)
+{
+    GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Magenta, TEXT("GenerateWorldscapeSurfaceByModel!"));
+    FActorSpawnParameters SpawnParams;
+    WorldScapeRootInstance = World->SpawnActor<AWorldScapeRoot>(AWorldScapeRoot::StaticClass(), FTransform(), SpawnParams);
 
+    if (WorldScapeRootInstance)
+    {
+        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("InitWorldScape WorldScapeRootInstance has been created successfully."));
+        UE_LOG(LogTemp, Warning, TEXT("InitWorldScape WorldScapeRootInstance has been created successfully."));
+
+        double PlanetRadiusKM = NewMoon->RadiusKM;
+
+        WorldScapeRootInstance->GenerationType = EWorldScapeType::Planet;
+        WorldScapeRootInstance->PlanetScale = PlanetRadiusKM * 100000;
+        WorldScapeRootInstance->DistanceToFreezeGeneration = PlanetRadiusKM;
+
+
+        WorldScapeRootInstance->SetActorLocation(NewMoon->GetActorLocation());
+        WorldScapeRootInstance->SetActorRotation(NewMoon->GetActorRotation());
+        WorldScapeRootInstance->AttachToActor(NewMoon, FAttachmentTransformRules::KeepWorldTransform);
+        //NewPlanet->Mesh
+        //NewPlanet->SetupWorldScapeRoot(WorldScapeRootInstance);
+
+        WorldScapeRootInstance->bGenerateWorldScape = true;
+        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Magenta, TEXT("GenerateWorldScape!"));
+    }
+    else
+    {
+        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("InitWorldScape Failed to create WorldScapeRootInstance."));
+        UE_LOG(LogTemp, Warning, TEXT("InitWorldScape Failed to create WorldScapeRootInstance."));
+    }
 
 }
 

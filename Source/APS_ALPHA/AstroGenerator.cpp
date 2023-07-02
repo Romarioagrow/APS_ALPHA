@@ -682,6 +682,12 @@ void AAstroGenerator::GenerateStarSystem()
 				
                     DiameterOfLastMoon = MoonRadius * 2;
                     LastMoonLocation = NewMoon->GetActorLocation();
+
+
+                    /// Generate WSC
+                    NewMoon->PlanetaryEnvironmentGenerator->GenerateWorldscapeSurfaceByModel(World, NewMoon);
+
+
                 }
 
                 if (DiameterOfLastMoon == 0)

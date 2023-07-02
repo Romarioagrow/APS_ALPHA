@@ -15,7 +15,7 @@
 class APlanet;
 
 UCLASS()
-class APS_ALPHA_API AMoon : public APlanetaryBody, public IPlanetaryEnvironment, public INavigatableBody
+class APS_ALPHA_API AMoon : public APlanetaryBody, public INavigatableBody
 {
 	GENERATED_BODY()
 
