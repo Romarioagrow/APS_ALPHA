@@ -10,6 +10,28 @@
 #include "NavigatableBody.h"
 
 
+//ASpaceship::DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnFlightModeChangedDelegate)
+//{
+//
+//}
+
+//ASpaceship::DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnFlightModeChangedDelegate)
+//{
+//
+//}
+
+void ASpaceship::UpdateNavigatableActorsForInterstellar()
+{
+}
+
+void ASpaceship::UpdateNavigatableActorsForStellar()
+{
+}
+
+void ASpaceship::UpdateNavigatableActorsForInterplanetary()
+{
+}
+
 ASpaceship::ASpaceship()
 {
 	// Создание компонента SpaceshipHull
@@ -26,6 +48,14 @@ ASpaceship::ASpaceship()
 
 	ForwardVector = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ForwardVector"));
 	ForwardVector->SetupAttachment(SpaceshipHull);
+
+
+	// Привязка делегатов к функциям
+	OnInterstellarMode.AddDynamic(this, &ASpaceship::UpdateNavigatableActorsForInterstellar);
+	OnStellarMode.AddDynamic(this, &ASpaceship::UpdateNavigatableActorsForStellar);
+	OnInterplanetaryMode.AddDynamic(this, &ASpaceship::UpdateNavigatableActorsForInterplanetary);
+	// И так далее для каждого режима полета...
+
 }
 
 void ASpaceship::BeginPlay()
@@ -172,58 +202,69 @@ void ASpaceship::Tick(float DeltaTime)
 
 
 
-		switch (OnboardComputer->FlightSystem.CurrentFlightMode)
+		//switch (OnboardComputer->FlightSystem.CurrentFlightMode)
+		//{
+		//	case EFlightMode::Interstellar:
+		//	//GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Interstellar flight")));
+		//	//OnboardComputer->InterstellarFlight(DeltaTime);
+		//	break;
+		//	
+		//	case EFlightMode::Stellar:
+		//		//GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Stellar flight")));
+		//		//OnboardComputer->StellarFlight(DeltaTime); // proximity level = All StarSystem Stars
+		//	break;
+		//	
+		//	case EFlightMode::Interplanetray:
+		//		//GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Interplanetary flight")));
+		//		//OnboardComputer->InterplanetaryFlight(DeltaTime); // proximity level = Star and its planets, moons, stations
+		//		ComputeProximity();
+
+		//	break;
+		//	
+		//	case EFlightMode::Planetary:
+		//		//GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Planetary flight")));
+		//		//OnboardComputer->PlanetaryFlight(DeltaTime); // proximity level = Planet and its moons, stations
+		//		ComputeProximity();
+		//	break;
+		//	
+		//	case EFlightMode::Orbital:
+		//		//GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Orbital flight")));
+		//		//OnboardComputer->OrbitalFlight(DeltaTime); // proximity level = Planet and its stations, colonies
+		//	break;
+		//	
+		//	case EFlightMode::Atmospheric:
+		//		//GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Atmospheric flight")));
+		//		//OnboardComputer->AtmosphericFlight(DeltaTime); // proximity level = Planet and its stations, colonies
+		//	break;
+		//	
+		//	case EFlightMode::Surface:
+		//		//GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Surface flight")));
+		//		//OnboardComputer->SurfaceFlight(DeltaTime); // proximity level = Planet suraface, stations, colonies
+		//	break;
+		//	
+		//	case EFlightMode::Station:
+		//		ComputeProximity();
+
+		//		//GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Station flight")));
+		//		//OnboardComputer->StationFlight(DeltaTime);
+		//	break;
+
+		//default:
+		//	break;
+		//}
+
+		if (OnboardComputer->FlightSystem.CurrentFlightMode != LastFlightMode)
 		{
-			case EFlightMode::Interstellar:
-			//GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Interstellar flight")));
-			//OnboardComputer->InterstellarFlight(DeltaTime);
-			break;
-			
-			case EFlightMode::Stellar:
-				//GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Stellar flight")));
-				//OnboardComputer->StellarFlight(DeltaTime); // proximity level = All StarSystem Stars
-			break;
-			
-			case EFlightMode::Interplanetray:
-				//GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Interplanetary flight")));
-				//OnboardComputer->InterplanetaryFlight(DeltaTime); // proximity level = Star and its planets, moons, stations
-				ComputeProximity();
-
-			break;
-			
-			case EFlightMode::Planetary:
-				//GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Planetary flight")));
-				//OnboardComputer->PlanetaryFlight(DeltaTime); // proximity level = Planet and its moons, stations
-				ComputeProximity();
-			break;
-			
-			case EFlightMode::Orbital:
-				//GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Orbital flight")));
-				//OnboardComputer->OrbitalFlight(DeltaTime); // proximity level = Planet and its stations, colonies
-			break;
-			
-			case EFlightMode::Atmospheric:
-				//GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Atmospheric flight")));
-				//OnboardComputer->AtmosphericFlight(DeltaTime); // proximity level = Planet and its stations, colonies
-			break;
-			
-			case EFlightMode::Surface:
-				//GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Surface flight")));
-				//OnboardComputer->SurfaceFlight(DeltaTime); // proximity level = Planet suraface, stations, colonies
-			break;
-			
-			case EFlightMode::Station:
-				ComputeProximity();
-
-				//GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Station flight")));
-				//OnboardComputer->StationFlight(DeltaTime);
-			break;
-
-		default:
-			break;
+			UpdateNavigatableActors();
+			LastFlightMode = OnboardComputer->FlightSystem.CurrentFlightMode;
 		}
 
+		ComputeProximity();
+
+		OnboardComputer->ComputeFlightStatus(AffectedActor);
+
 		CheckFlightModeChange();
+
 
 		if (ClosestActor != nullptr)
 		{
@@ -807,8 +848,8 @@ void ASpaceship::ComputeProximity()
 		double DistanceToAffectionZone = (ActorLocation - ShipLocation).Size();
 
 		// Выводим расстояние в километрах
-		FString DistanceMessage = FString::Printf(TEXT("Distance to actor %s is %f km"), *Actor->GetName(), DistanceToActor / 100000);
-		GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Yellow, DistanceMessage);
+		//FString DistanceMessage = FString::Printf(TEXT("Distance to actor %s is %f km"), *Actor->GetName(), DistanceToActor / 100000);
+		//GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Yellow, DistanceMessage);
 
 		// Если корабль находится в зоне действия актёра (т.е. расстояние меньше или равно нулю)
 		if (DistanceToAffectionZone <= AffectionRadius)
@@ -838,12 +879,14 @@ void ASpaceship::ComputeProximity()
 		}
 		GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("CurrentZonesInfluence: %d"), CurrentZonesInfluence.Num()));
 
-		OnboardComputer->ComputeFlightStatus(AffectedActor);
+		//OnboardComputer->ComputeFlightStatus(AffectedActor);
 	}
 }
 
 void ASpaceship::UpdateNavigatableActors()
 {
+	GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Red, FString::Printf(TEXT("UpdateNavigatableActors!!!")));
+
 }
 
 void ASpaceship::CheckFlightModeChange()

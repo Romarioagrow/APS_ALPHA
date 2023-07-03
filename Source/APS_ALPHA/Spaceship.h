@@ -34,11 +34,27 @@ struct ZoneData
 	{}
 };
 
+
+
 UCLASS()
 class APS_ALPHA_API ASpaceship : public ASpacecraft, public IGravitySource
 {
 	GENERATED_BODY()
+
+public:
+	// ќпределение типа делегата
+	DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnFlightModeChangedDelegate);
+
+	// ќпределение экземпл€ров делегата
+	FOnFlightModeChangedDelegate OnInterstellarMode;
+	FOnFlightModeChangedDelegate OnStellarMode;
+	FOnFlightModeChangedDelegate OnInterplanetaryMode;
 	
+	// ќбъ€вление функций
+	void UpdateNavigatableActorsForInterstellar();
+	void UpdateNavigatableActorsForStellar();
+	void UpdateNavigatableActorsForInterplanetary();
+
 public:
 	ASpaceship();
 
@@ -51,7 +67,7 @@ protected:
 
 public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Flight Mode")
-		EFlightMode LastFlightMode = EFlightMode::Station;  // или любое начальное значение
+		EFlightMode LastFlightMode = EFlightMode::Basic;  // или любое начальное значение
 
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
