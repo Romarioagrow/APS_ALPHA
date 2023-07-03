@@ -31,7 +31,7 @@ void USpaceshipOnboardComputer::ComputeFlightStatus(AWorldActor* AffectedActor)
 {
     if (!AffectedActor) return;
 
-    // Проверить тип актора и установить соответствующий режим полета и тип полета
+    // Celestial bodies: stars, planets, moons
     if (AffectedActor->IsA(ACelestialBody::StaticClass()))
     {
         ACelestialBody* CelestialBody = Cast<ACelestialBody>(AffectedActor);
@@ -51,12 +51,16 @@ void USpaceshipOnboardComputer::ComputeFlightStatus(AWorldActor* AffectedActor)
             SwitchEngineMode(EEngineMode::SpaceWrap);//InitiateOffsetMode();
         }
     }
+
+    // Techical objects: space stations, satellites, etc.
     else if (AffectedActor->IsA(ATechActor::StaticClass()))
     {
         FlightSystem.CurrentFlightMode = EFlightMode::Station;
         FlightSystem.CurrentFlightType = EFlightType::ArtificialGravity;
         SwitchEngineMode(EEngineMode::Impulse);
     }
+
+    // Star clusters: galaxies, nebulae, etc.
     else if (AffectedActor->IsA(AStarCluster::StaticClass()))
     {
         FlightSystem.CurrentFlightMode = EFlightMode::Interstellar;
@@ -65,20 +69,23 @@ void USpaceshipOnboardComputer::ComputeFlightStatus(AWorldActor* AffectedActor)
 
         OffsetGalaxy = Cast<AAstroActor>(AffectedActor);
     }
+
+    // Between star system and star cluster
     else if (AffectedActor->IsA(AStarSystem::StaticClass()))
     {
-        FlightSystem.CurrentFlightMode = EFlightMode::Interplanetray;
+        FlightSystem.CurrentFlightMode = EFlightMode::Stellar;
         FlightSystem.CurrentFlightType = EFlightType::LightSpeed;
         SwitchEngineMode(EEngineMode::SpaceWrap);
-
+        //CalculateProximity = false;
         OffsetGalaxy = Cast<AAstroActor>(AffectedActor);
     }
+
+    // All others
     else
     {
-        FlightSystem.CurrentFlightMode = EFlightMode::Interstellar;
-        FlightSystem.CurrentFlightType = EFlightType::FTL;
-        SwitchEngineMode(EEngineMode::Offset);
-        //Owner->Swit
+        FlightSystem.CurrentFlightMode = EFlightMode::Basic;
+        FlightSystem.CurrentFlightType = EFlightType::ZeroG;
+        SwitchEngineMode(EEngineMode::Impulse);
     }
 
     FFlightParams* Params = FlightModeParams.Find(FlightSystem.CurrentFlightMode);

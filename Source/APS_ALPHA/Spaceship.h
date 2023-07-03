@@ -50,6 +50,10 @@ protected:
 	virtual void BeginPlay() override;
 
 public:
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Flight Mode")
+		EFlightMode LastFlightMode = EFlightMode::Station;  // или любое начальное значение
+
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 		USphereComponent* SphereCollisionComponent;
 
@@ -87,6 +91,9 @@ public:
 
 	AWorldActor* AffectedActor{ nullptr };
 
+	AWorldActor* ClosestActor{ nullptr };
+
+
 	void ToggleScale();
 
 	bool bIsScaledUp{ true };
@@ -100,6 +107,13 @@ public:
 	bool bIsDecelerating{ false };
 
 public:	
+
+	void ComputeProximity();
+
+	void UpdateNavigatableActors();
+
+	void CheckFlightModeChange();
+
 	UStaticMeshComponent* GetSpaceshipHull();
 
 	void PrintOnboardComputerBasicIformation();
