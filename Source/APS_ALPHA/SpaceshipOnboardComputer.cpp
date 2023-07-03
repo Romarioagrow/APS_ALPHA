@@ -10,6 +10,7 @@
 #include "Star.h"
 #include "Spaceship.h"
 #include "StarCluster.h"
+#include "Moon.h"
 
 USpaceshipOnboardComputer::USpaceshipOnboardComputer(AActor* InOwner)
 {
@@ -50,6 +51,12 @@ void USpaceshipOnboardComputer::ComputeFlightStatus(AWorldActor* AffectedActor)
             FlightSystem.CurrentFlightType = EFlightType::LightSpeed;
             SwitchEngineMode(EEngineMode::SpaceWrap);//InitiateOffsetMode();
         }
+        else if (CelestialBody->IsA(AMoon::StaticClass()))
+        {
+            FlightSystem.CurrentFlightMode = EFlightMode::Orbital;
+            FlightSystem.CurrentFlightType = EFlightType::Orbital;
+            SwitchEngineMode(EEngineMode::SpaceWrap);//InitiateOffsetMode();
+        }
     }
 
     // Techical objects: space stations, satellites, etc.
@@ -88,17 +95,19 @@ void USpaceshipOnboardComputer::ComputeFlightStatus(AWorldActor* AffectedActor)
         SwitchEngineMode(EEngineMode::Impulse);
     }
 
-    FFlightParams* Params = FlightModeParams.Find(FlightSystem.CurrentFlightMode);
+    ComputeFlightParams();
 
-    // Проверка, были ли найдены параметры
-    if (Params && !IsBoosting)
-    {
-        // Установка параметров
-        FlightSystem.FlightParams.ThrustForce = Params->ThrustForce;
-        FlightSystem.FlightParams.LinearResistance = Params->LinearResistance;
-        FlightSystem.FlightParams.AngularResistance = Params->AngularResistance;
+    //FFlightParams* Params = FlightModeParams.Find(FlightSystem.CurrentFlightMode);
 
-    }
+    //// Проверка, были ли найдены параметры
+    //if (Params && !IsBoosting)
+    //{
+    //    // Установка параметров
+    //    FlightSystem.FlightParams.ThrustForce = Params->ThrustForce;
+    //    FlightSystem.FlightParams.LinearResistance = Params->LinearResistance;
+    //    FlightSystem.FlightParams.AngularResistance = Params->AngularResistance;
+
+    //}
 
     //// Настройка типа диапазона полета, например, в зависимости от расстояния до объекта
     //float Distance = FVector::Dist(Actor->GetActorLocation(), ShipLocation); // Допустим, ShipLocation - это положение корабля
@@ -115,6 +124,21 @@ void USpaceshipOnboardComputer::ComputeFlightStatus(AWorldActor* AffectedActor)
     //    FlightRangeType = EFlightRangeType::Distant;
     //}
 
+}
+
+void USpaceshipOnboardComputer::ComputeFlightParams()
+{
+    FFlightParams* Params = FlightModeParams.Find(FlightSystem.CurrentFlightMode);
+
+    // Проверка, были ли найдены параметры
+    if (Params && !IsBoosting)
+    {
+        // Установка параметров
+        FlightSystem.FlightParams.ThrustForce = Params->ThrustForce;
+        FlightSystem.FlightParams.LinearResistance = Params->LinearResistance;
+        FlightSystem.FlightParams.AngularResistance = Params->AngularResistance;
+
+    }
 }
 
 FString USpaceshipOnboardComputer::GetEnumValueAsString(const TCHAR* EnumName, int32 EnumValue)
@@ -166,6 +190,8 @@ void USpaceshipOnboardComputer::ComputeInterstellarFlight()
     FlightSystem.CurrentFlightMode = EFlightMode::Interstellar;
     FlightSystem.CurrentFlightType = EFlightType::FTL;
     SwitchEngineMode(EEngineMode::Offset);
+
+
 }
 
 double USpaceshipOnboardComputer::GetEngineThrustForce()

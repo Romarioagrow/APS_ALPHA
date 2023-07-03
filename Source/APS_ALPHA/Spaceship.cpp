@@ -261,7 +261,30 @@ void ASpaceship::Tick(float DeltaTime)
 
 		ComputeProximity();
 
-		OnboardComputer->ComputeFlightStatus(AffectedActor);
+
+		if (CurrentZonesInfluence.Num() > 0)
+		{
+			OnboardComputer->ComputeFlightStatus(AffectedActor);
+		}
+		else
+		{
+			OnboardComputer->ComputeInterstellarFlight();
+
+			if (GeneratedStarCluster)
+			{
+				TSharedPtr<FStarModel> NearestStar = FindNearestStar(GeneratedStarCluster->StarsModel, GetActorLocation());
+				GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Nearest Star: %f"), NearestStar->Radius));
+				
+
+			
+			}
+			else
+			{
+				GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("NO GeneratedStarCluster")));
+			}
+		}
+
+		//OnboardComputer->ComputeFlightParams();
 
 		CheckFlightModeChange();
 
@@ -463,7 +486,7 @@ void ASpaceship::Tick(float DeltaTime)
 		//	}
 		//}
 
-		if (OnboardComputer->FlightSystem.CurrentFlightMode == EFlightMode::Interstellar)
+		/*if (OnboardComputer->FlightSystem.CurrentFlightMode == EFlightMode::Interstellar)
 		{
 			if (GeneratedStarCluster)
 			{
@@ -474,7 +497,7 @@ void ASpaceship::Tick(float DeltaTime)
 			{
 				GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("NO GeneratedStarCluster")));
 			}
-		}
+		}*/
 	}
 	if (Pilot)
 	{
@@ -838,6 +861,9 @@ void ASpaceship::ComputeProximity()
 	double ClosestDistance = DBL_MAX;
 	double ClosestAffectionDistance = DBL_MAX;
 	CurrentZonesInfluence.Empty();
+
+	//GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Yellow, TEXT("Navigatable proximity: %d"), WorldNavigatableActors.Num());
+	GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Yellow, FString::Printf(TEXT("Navigatable proximity: %d"), WorldNavigatableActors.Num()));
 
 	for (AWorldActor* Actor : WorldNavigatableActors)
 	{
