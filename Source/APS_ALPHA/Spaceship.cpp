@@ -44,6 +44,18 @@ void ASpaceship::UpdateNavigatableActorsForStellar()
 	// if previous actor == star -> non
 	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("UpdateNavigatableActorsForStellar"));
 
+	TArray<AActor*> WorldActors;
+	UGameplayStatics::GetAllActorsOfClass(GetWorld(), AWorldActor::StaticClass(), WorldActors);
+	for (AActor* Actor : WorldActors)
+	{
+		if (Actor->GetClass()->ImplementsInterface(UNavigatableBody::StaticClass()))
+		{
+			AWorldActor* WorldNavigatableActor = Cast<AWorldActor>(Actor);
+			WorldNavigatableActors.Add(WorldNavigatableActor);
+			GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Yellow, FString::Printf(TEXT("WorldActor: %s"), *WorldNavigatableActor->GetName()));
+		}
+	}
+
 	if (LastFlightMode == EFlightMode::Interstellar)
 	{
 		ToggleScale();
@@ -249,15 +261,40 @@ void ASpaceship::Tick(float DeltaTime)
 		}
 
 		ComputeProximity();
-		
-		OnboardComputer->ComputeFlightStatus(AffectedActor);
 
-		/*if (AffectedActor)
+		// Если мы в режиме Interstellar, проверить ближайшую звезду
+		if (OnboardComputer->FlightSystem.CurrentFlightMode == EFlightMode::Interstellar)
 		{
+			//ComputeClosestStar(); // Обновить OffsetSystem
 
-		}*/
+			double Distance = FVector::Dist(this->GetActorLocation(), OffsetSystem->GetActorLocation());
+			double AffectionRadiusUnits = OffsetSystem->AffectionRadiusKM * 100000 / 1000000000.0; // Переводим км в юниты и учитываем масштабирование
 
+			GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Orange, FString::Printf(TEXT("Distance: %f, Affection Radius: %f"), Distance, AffectionRadiusUnits));
 
+			// Если мы в пределах зоны влияния, переключиться на Stellar
+			if (Distance < AffectionRadiusUnits && LastFlightMode != EFlightMode::Stellar)
+			{
+				// Заскейлить мир обратно в большой
+				//ToggleScale();
+
+				// Переключить режим полета на Stellar
+				OnboardComputer->FlightSystem.CurrentFlightMode = EFlightMode::Stellar;
+				OnboardComputer->FlightSystem.CurrentFlightType = EFlightType::LightSpeed;
+				OnboardComputer->SwitchEngineMode(EEngineMode::SpaceWrap);
+				OnStellarMode.Broadcast();
+
+				// Обновить последний режим полета
+				LastFlightMode = OnboardComputer->FlightSystem.CurrentFlightMode;
+
+				GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Orange, TEXT("AffectionRadiusUnits!!!"));
+			}
+		}
+		// Если мы в режиме Stellar, вычислить статус полета
+		else 
+		{
+			OnboardComputer->ComputeFlightStatus(AffectedActor);
+		}
 
 		if (OnboardComputer->FlightSystem.CurrentFlightMode != LastFlightMode)
 		{
@@ -270,9 +307,9 @@ void ASpaceship::Tick(float DeltaTime)
 				OnInterstellarMode.Broadcast();
 				break;
 
-			case EFlightMode::Stellar:
+			/*case EFlightMode::Stellar:
 				OnStellarMode.Broadcast();
-				break;
+				break;*/
 
 			case EFlightMode::Interplanetary:
 				OnInterplanetaryMode.Broadcast();
