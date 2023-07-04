@@ -31,10 +31,14 @@ public:
 	// Called every frame
 	virtual void Tick(float DeltaTime) override;
 
+	void CheckPlayerPawn();
+
 public:
 	APlanet();
 
 	bool IsNotGasGiant();
+
+	FTimerHandle PlayerPawnTimerHandle;
 
 	/*UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Environment")
 		bool bGenerateByDefault{ false };

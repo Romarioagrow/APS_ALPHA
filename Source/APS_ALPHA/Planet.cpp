@@ -11,7 +11,6 @@ void APlanet::Tick(float DeltaTime)
 	if (PlayerPawn != nullptr)
 	{
 		double Distance = FVector::Dist(PlayerPawn->GetActorLocation(), GetActorLocation());
-		//GEngine->AddOnScreenDebugMessage(-1, 0.0, FColor::Magenta, FString::Printf(TEXT("Planet Distance to player: %f"), Distance));
 		if (Distance < AffectionRadiusKM * WSCZoneScale * 100000)
 		{
 			if (!bEnvironmentSpawned)
@@ -29,16 +28,69 @@ void APlanet::Tick(float DeltaTime)
 			}
 		}
 	}
+}
+
+void APlanet::CheckPlayerPawn()
+{
+	// Ищем PlayerPawn в мире
+	APlayerController* PlayerController = GetWorld()->GetFirstPlayerController();
+	if (PlayerController != nullptr)
+	{
+		PlayerPawn = PlayerController->GetPawn();
+	}
+
+	// Если PlayerPawn найден, проверяем расстояние и останавливаем таймер
+	if (PlayerPawn != nullptr)
+	{
+		GetWorldTimerManager().ClearTimer(PlayerPawnTimerHandle);
+
+		double Distance = FVector::Dist(PlayerPawn->GetActorLocation(), GetActorLocation());
+		//GEngine->AddOnScreenDebugMessage(-1, 0.0, FColor::Magenta, FString::Printf(TEXT("Planet Distance to player: %f"), Distance));
+		if (Distance < AffectionRadiusKM * WSCZoneScale * 100000)
+		{
+			PlanetaryEnvironmentGenerator->SpawnPlanetEnvironment();
+			bEnvironmentSpawned = true;
+		}
+		else
+		{
+			PlanetaryEnvironmentGenerator->DestroyPlanetEnvironment();
+			bEnvironmentSpawned = false;
+		}
+	}
 	else
 	{
-		GEngine->AddOnScreenDebugMessage(-1, 0.0, FColor::Magenta, TEXT("PlayerPawn nullptr!"));
-
+		GEngine->AddOnScreenDebugMessage(-1, 20.0, FColor::Magenta, TEXT("PlayerPawn nullptr!"));
 	}
 }
+
+
+
+
 
 void APlanet::BeginPlay()
 {
 	Super::BeginPlay();
+	GetWorldTimerManager().SetTimer(PlayerPawnTimerHandle, this, &APlanet::CheckPlayerPawn, 1.0f, true);
+
+	//if (PlayerPawn != nullptr)
+	//{
+	//	double Distance = FVector::Dist(PlayerPawn->GetActorLocation(), GetActorLocation());
+	//	//GEngine->AddOnScreenDebugMessage(-1, 0.0, FColor::Magenta, FString::Printf(TEXT("Planet Distance to player: %f"), Distance));
+	//	if (Distance < AffectionRadiusKM * WSCZoneScale * 100000)
+	//	{
+	//		PlanetaryEnvironmentGenerator->SpawnPlanetEnvironment();
+	//		bEnvironmentSpawned = true;
+	//	}
+	//	else
+	//	{
+	//		PlanetaryEnvironmentGenerator->DestroyPlanetEnvironment();
+	//		bEnvironmentSpawned = false;
+	//	}
+	//}
+	//else
+	//{
+	//	GEngine->AddOnScreenDebugMessage(-1, 20.0, FColor::Magenta, TEXT("PlayerPawn nullptr!"));
+	//}
 }
 
 APlanet::APlanet()

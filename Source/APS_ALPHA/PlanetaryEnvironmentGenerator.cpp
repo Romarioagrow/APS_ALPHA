@@ -146,14 +146,34 @@ void APlanetaryEnvironmentGenerator::GenerateWorldscapeSurfaceByModel(UWorld* Wo
 
 void APlanetaryEnvironmentGenerator::SpawnPlanetEnvironment()
 {
-    GEngine->AddOnScreenDebugMessage(-1, 15.f, FColor::Magenta, TEXT("SpawnPlanetEnvironment!"));
-    WorldScapeRootInstance->bGenerateWorldScape = true;
+    if (WorldScapeRootInstance)
+    {
+
+        GEngine->AddOnScreenDebugMessage(-1, 15.f, FColor::Magenta, TEXT("SpawnPlanetEnvironment!"));
+        WorldScapeRootInstance->bGenerateWorldScape = true;
+        WorldScapeRootInstance->SetActorHiddenInGame(false);    
+        WorldScapeRootInstance->SetActorTickEnabled(true);
+        WorldScapeRootInstance->SetActorEnableCollision(true);
+
+
+    }
 }
 
 void APlanetaryEnvironmentGenerator::DestroyPlanetEnvironment()
 {
-    GEngine->AddOnScreenDebugMessage(-1, 15.f, FColor::Magenta, TEXT("DestroyPlanetEnvironment!"));
-    WorldScapeRootInstance->bGenerateWorldScape = false;
+    if (WorldScapeRootInstance)
+    {
+        GEngine->AddOnScreenDebugMessage(-1, 15.f, FColor::Magenta, TEXT("DestroyPlanetEnvironment!"));
+        WorldScapeRootInstance->bGenerateWorldScape = false;
+        //WorldScapeRootInstance->SetHidden(true);// = true;
+        WorldScapeRootInstance->SetActorHiddenInGame(true);
+        WorldScapeRootInstance->SetActorTickEnabled(false);
+        WorldScapeRootInstance->SetActorEnableCollision(false);
+
+
+
+        WorldScapeRootInstance->DetachRootComponentFromParent();
+    }
 
 }
 

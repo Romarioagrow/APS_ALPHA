@@ -27,6 +27,8 @@
 void ASpaceship::UpdateNavigatableActorsForInterstellar()
 {
 	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("UpdateNavigatableActorsForInterstellar"));
+
+	WorldNavigatableActors.Empty();
 	if (LastFlightMode == EFlightMode::Stellar)
 	{
 		ToggleScale();

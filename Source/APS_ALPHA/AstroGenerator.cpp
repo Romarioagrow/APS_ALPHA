@@ -685,7 +685,7 @@ void AAstroGenerator::GenerateStarSystem()
 
 
                     /// Generate WSC
-                    NewMoon->PlanetaryEnvironmentGenerator->GenerateWorldscapeSurfaceByModel(World, NewMoon);
+                    //NewMoon->PlanetaryEnvironmentGenerator->GenerateWorldscapeSurfaceByModel(World, NewMoon);
                     NewMoon->PlanetaryEnvironmentGenerator->InitAtmoScape(World, NewMoon->RadiusKM, NewMoon);
                     
 
