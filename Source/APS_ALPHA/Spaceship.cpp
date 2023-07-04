@@ -27,6 +27,13 @@
 void ASpaceship::UpdateNavigatableActorsForInterstellar()
 {
 	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("UpdateNavigatableActorsForInterstellar"));
+	if (LastFlightMode == EFlightMode::Stellar)
+	{
+		ToggleScale();
+		bIsScaled = true;
+		GEngine->AddOnScreenDebugMessage(-1, 15.0f, FColor::Green, FString::Printf(TEXT("Galaxy is Downscaled")));
+	}
+
 }
 
 void ASpaceship::UpdateNavigatableActorsForStellar()
@@ -34,6 +41,13 @@ void ASpaceship::UpdateNavigatableActorsForStellar()
 	// if previous actor == star cluster -> downscale
 	// if previous actor == star -> non
 	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("UpdateNavigatableActorsForStellar"));
+
+	if (LastFlightMode == EFlightMode::Interstellar)
+	{
+		ToggleScale();
+		bIsScaled = false;
+		GEngine->AddOnScreenDebugMessage(-1, 15.0f, FColor::Green, FString::Printf(TEXT("Galaxy is Upscaled")));
+	}
 
 }
 
