@@ -191,7 +191,7 @@ void USpaceshipOnboardComputer::ComputeInterstellarFlight()
     FlightSystem.CurrentFlightType = EFlightType::FTL;
     SwitchEngineMode(EEngineMode::Offset);
 
-
+    ComputeFlightParams();
 }
 
 double USpaceshipOnboardComputer::GetEngineThrustForce()
