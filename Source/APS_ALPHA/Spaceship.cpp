@@ -248,6 +248,7 @@ void ASpaceship::Tick(float DeltaTime)
 			GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Orange, EnumValueString);
 		}
 
+		ComputeProximity();
 		
 		OnboardComputer->ComputeFlightStatus(AffectedActor);
 
@@ -256,7 +257,6 @@ void ASpaceship::Tick(float DeltaTime)
 
 		}*/
 
-		ComputeProximity();
 
 
 		if (OnboardComputer->FlightSystem.CurrentFlightMode != LastFlightMode)

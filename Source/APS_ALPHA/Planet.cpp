@@ -3,20 +3,28 @@
 
 #include "Planet.h"
 #include "PlanetGenerationModel.h"
+#include "Spaceship.h"
 
 void APlanet::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	if (PlayerPawn != nullptr)
+	if (IsComputingWSCProximity && PlayerPawn != nullptr)
 	{
 		double Distance = FVector::Dist(PlayerPawn->GetActorLocation(), GetActorLocation());
 		if (Distance < AffectionRadiusKM * WSCZoneScale * 100000)
 		{
 			if (!bEnvironmentSpawned)
 			{
-				PlanetaryEnvironmentGenerator->SpawnPlanetEnvironment();
-				bEnvironmentSpawned = true;
+
+				ASpaceship* PlayerShip = Cast<ASpaceship>(PlayerPawn);
+
+				if (PlayerShip && PlayerShip->OnboardComputer->FlightSystem.CurrentFlightMode != EFlightMode::Interstellar )
+				{
+					PlanetaryEnvironmentGenerator->SpawnPlanetEnvironment();
+					bEnvironmentSpawned = true;
+
+				}
 			}
 		}
 		else
@@ -25,9 +33,15 @@ void APlanet::Tick(float DeltaTime)
 			{
 				PlanetaryEnvironmentGenerator->DestroyPlanetEnvironment();
 				bEnvironmentSpawned = false;
+
 			}
 		}
 	}
+}
+
+void APlanet::HandleOnStellarMode()
+{
+	IsComputingWSCProximity = false;
 }
 
 void APlanet::CheckPlayerPawn()
@@ -70,6 +84,10 @@ void APlanet::CheckPlayerPawn()
 void APlanet::BeginPlay()
 {
 	Super::BeginPlay();
+
+	//Spaceship->OnStellarMode.AddDynamic(this, &APlanet::HandleOnStellarMode);
+
+
 	GetWorldTimerManager().SetTimer(PlayerPawnTimerHandle, this, &APlanet::CheckPlayerPawn, 1.0f, true);
 
 	//if (PlayerPawn != nullptr)
