@@ -20,16 +20,27 @@
 //
 //}
 
+//ASpaceship::DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnFlightModeChangedDelegate)
+//{
+//}
+
 void ASpaceship::UpdateNavigatableActorsForInterstellar()
 {
+	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("UpdateNavigatableActorsForInterstellar"));
 }
 
 void ASpaceship::UpdateNavigatableActorsForStellar()
 {
+	// if previous actor == star cluster -> downscale
+	// if previous actor == star -> non
+	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("UpdateNavigatableActorsForStellar"));
+
 }
 
 void ASpaceship::UpdateNavigatableActorsForInterplanetary()
 {
+	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("UpdateNavigatableActorsForInterplanetary"));
+
 }
 
 ASpaceship::ASpaceship()
@@ -108,6 +119,9 @@ void ASpaceship::BeginPlay()
 			GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Yellow, FString::Printf(TEXT("WorldActor: %s"), *WorldNavigatableActor->GetName()));
 		}
 	}
+
+	ComputeProximity();
+
 }
 
 void GetAttachedActorsRecursively(AActor* ParentActor, TArray<AActor*>& OutActors)
@@ -187,19 +201,70 @@ void ASpaceship::Tick(float DeltaTime)
 			FVector OppositeTorque = -SpaceshipHull->GetPhysicsAngularVelocityInRadians() * 0.5;
 			SpaceshipHull->AddTorqueInRadians(OppositeTorque, NAME_None, true);
 		}
-
 		if (bIsAccelerating)
 		{
 			GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Accelerating")));
 			OnboardComputer->AccelerateBoost(DeltaTime);
 		}
-
 		if (bIsDecelerating)
 		{
 			GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Decelerating")));
 			OnboardComputer->DecelerateBoost(DeltaTime);
 		}
+		if (ClosestActor != nullptr)
+		{
+			FString ClosestActorMessage = FString::Printf(TEXT("Closest actor is %s"), *ClosestActor->GetName());
+			GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Orange, ClosestActorMessage);
+		}
+		if (AffectedActor != nullptr)
+		{
+			FString ClosestAffectedActorMessage = FString::Printf(TEXT("Affection zone is %s"), *AffectedActor->GetName());
+			GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Orange, ClosestAffectedActorMessage);
+		}
+		UEnum* EnumPtr = FindObject<UEnum>(ANY_PACKAGE, TEXT("EFlightMode"), true);
+		if (!EnumPtr)
+		{
+			GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Orange, TEXT("EFlightMode enum not found"));
+		}
+		else
+		{
+			FString EnumValueString = EnumPtr->GetNameByValue((int64)LastFlightMode).ToString();
+			GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Orange, EnumValueString);
+		}
 
+		ComputeProximity();
+
+		OnboardComputer->ComputeFlightStatus(AffectedActor);
+
+		if (OnboardComputer->FlightSystem.CurrentFlightMode != LastFlightMode)
+		{
+			/*UpdateNavigatableActors();
+			LastFlightMode = OnboardComputer->FlightSystem.CurrentFlightMode;*/
+
+			switch (OnboardComputer->FlightSystem.CurrentFlightMode)
+			{
+			case EFlightMode::Interstellar:
+				OnInterstellarMode.Broadcast();
+				break;
+
+			case EFlightMode::Stellar:
+				OnStellarMode.Broadcast();
+				break;
+
+			case EFlightMode::Interplanetary:
+				OnInterplanetaryMode.Broadcast();
+				break;
+
+			default:
+				// Обработка неожиданных режимов полёта
+				break;
+			}
+
+			UpdateNavigatableActors();
+			LastFlightMode = OnboardComputer->FlightSystem.CurrentFlightMode;
+		}
+
+		OnboardComputer->ComputeFlightParams();
 
 
 		//switch (OnboardComputer->FlightSystem.CurrentFlightMode)
@@ -253,52 +318,52 @@ void ASpaceship::Tick(float DeltaTime)
 		//	break;
 		//}
 
-		if (OnboardComputer->FlightSystem.CurrentFlightMode != LastFlightMode)
-		{
-			UpdateNavigatableActors();
-			LastFlightMode = OnboardComputer->FlightSystem.CurrentFlightMode;
-		}
+		//if (OnboardComputer->FlightSystem.CurrentFlightMode != LastFlightMode)
+		//{
+		//	UpdateNavigatableActors();
+		//	LastFlightMode = OnboardComputer->FlightSystem.CurrentFlightMode;
+		//}
 
-		ComputeProximity();
-
-
-		if (CurrentZonesInfluence.Num() > 0)
-		{
-			OnboardComputer->ComputeFlightStatus(AffectedActor);
-		}
-		else
-		{
-			OnboardComputer->ComputeInterstellarFlight();
-
-			if (GeneratedStarCluster)
-			{
-				TSharedPtr<FStarModel> NearestStar = FindNearestStar(GeneratedStarCluster->StarsModel, GetActorLocation());
-				GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Nearest Star: %f"), NearestStar->Radius));
-				
-
-			
-			}
-			else
-			{
-				GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("NO GeneratedStarCluster")));
-			}
-		}
-
-		//OnboardComputer->ComputeFlightParams();
-
-		CheckFlightModeChange();
+		//ComputeProximity();
 
 
-		if (ClosestActor != nullptr)
-		{
-			FString ClosestActorMessage = FString::Printf(TEXT("Closest actor is %s"), *ClosestActor->GetName());
-			GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Orange, ClosestActorMessage);
-		}
-		if (AffectedActor != nullptr)
-		{
-			FString ClosestAffectedActorMessage = FString::Printf(TEXT("Affection zone is %s"), *AffectedActor->GetName());
-			GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Orange, ClosestAffectedActorMessage);
-		}
+		//if (CurrentZonesInfluence.Num() > 0)
+		//{
+		//	OnboardComputer->ComputeFlightStatus(AffectedActor);
+		//}
+		//else
+		//{
+		//	OnboardComputer->ComputeInterstellarFlight();
+
+		//	if (GeneratedStarCluster)
+		//	{
+		//		TSharedPtr<FStarModel> NearestStar = FindNearestStar(GeneratedStarCluster->StarsModel, GetActorLocation());
+		//		GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Nearest Star: %f"), NearestStar->Radius));
+		//		
+
+		//	
+		//	}
+		//	else
+		//	{
+		//		GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("NO GeneratedStarCluster")));
+		//	}
+		//}
+
+		////OnboardComputer->ComputeFlightParams();
+
+		//CheckFlightModeChange();
+
+
+		//if (ClosestActor != nullptr)
+		//{
+		//	FString ClosestActorMessage = FString::Printf(TEXT("Closest actor is %s"), *ClosestActor->GetName());
+		//	GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Orange, ClosestActorMessage);
+		//}
+		//if (AffectedActor != nullptr)
+		//{
+		//	FString ClosestAffectedActorMessage = FString::Printf(TEXT("Affection zone is %s"), *AffectedActor->GetName());
+		//	GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Orange, ClosestAffectedActorMessage);
+		//}
 
 		///////////
 		//{
@@ -896,6 +961,7 @@ void ASpaceship::ComputeProximity()
 		}
 	}
 
+	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("CurrentZonesInfluence: %d"), CurrentZonesInfluence.Num()));
 	if (CurrentZonesInfluence.Num() > 0)
 	{
 		for (AWorldActor* Actor : CurrentZonesInfluence)
@@ -903,8 +969,6 @@ void ASpaceship::ComputeProximity()
 			FString RadiusMessage = FString::Printf(TEXT("Ship is affected by %s"), *Actor->GetName());
 			GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Green, RadiusMessage);
 		}
-		GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("CurrentZonesInfluence: %d"), CurrentZonesInfluence.Num()));
-
 		//OnboardComputer->ComputeFlightStatus(AffectedActor);
 	}
 }

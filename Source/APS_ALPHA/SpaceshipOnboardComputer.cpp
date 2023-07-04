@@ -47,7 +47,7 @@ void USpaceshipOnboardComputer::ComputeFlightStatus(AWorldActor* AffectedActor)
         }
         else if (CelestialBody->IsA(AStar::StaticClass()))
         {
-            FlightSystem.CurrentFlightMode = EFlightMode::Interplanetray;
+            FlightSystem.CurrentFlightMode = EFlightMode::Interplanetary;
             FlightSystem.CurrentFlightType = EFlightType::LightSpeed;
             SwitchEngineMode(EEngineMode::SpaceWrap);//InitiateOffsetMode();
         }
@@ -95,7 +95,7 @@ void USpaceshipOnboardComputer::ComputeFlightStatus(AWorldActor* AffectedActor)
         SwitchEngineMode(EEngineMode::Impulse);
     }
 
-    ComputeFlightParams();
+    //ComputeFlightParams();
 
     //FFlightParams* Params = FlightModeParams.Find(FlightSystem.CurrentFlightMode);
 

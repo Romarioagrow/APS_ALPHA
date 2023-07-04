@@ -51,8 +51,11 @@ public:
 	FOnFlightModeChangedDelegate OnInterplanetaryMode;
 	
 	// Объявление функций
+	UFUNCTION()
 	void UpdateNavigatableActorsForInterstellar();
+	UFUNCTION()
 	void UpdateNavigatableActorsForStellar();
+	UFUNCTION()
 	void UpdateNavigatableActorsForInterplanetary();
 
 public:
