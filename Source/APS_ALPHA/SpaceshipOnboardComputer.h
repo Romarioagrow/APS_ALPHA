@@ -597,6 +597,7 @@ public:
             {EFlightMode::Orbital, FFlightParams(0.0002, 0.05, 0.16)},
             {EFlightMode::Planetary, FFlightParams(0.0005, 0.06, 0.2)},
             {EFlightMode::Interplanetary, FFlightParams(0.666, 0.07, 0.24)},
+            {EFlightMode::Stellar, FFlightParams(1, 0.06, 0.2)},
             {EFlightMode::Interstellar, FFlightParams(15000000000, 0.08, 0.28)},
             {EFlightMode::Intergalaxy, FFlightParams(100000000000, 0.09, 0.32)}
         };

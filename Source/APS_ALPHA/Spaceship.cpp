@@ -732,6 +732,8 @@ void ASpaceship::SwitchEngines()
 void ASpaceship::ThrustForward(float Value)
 {
 
+	double EngineThrustForce = OnboardComputer->GetEngineThrustForce();
+
 	if (FMath::Abs(Value) < KINDA_SMALL_NUMBER) return;
 
 	/*if (OnboardComputer->CurrentMovementStrategy)
@@ -749,18 +751,22 @@ void ASpaceship::ThrustForward(float Value)
 	{
 		// Получаем вектор вперед корабля
 		//const FVector Direction = SpaceshipHull->GetForwardVector();
+		if (EngineThrustForce < 100)
+		{
+
+			OffsetSystem->AddActorLocalOffset(-Direction * Value * EngineThrustForce); /// CRASHED PIE!
+		}
 
 		// Сдвигаем StarSystem
-		OffsetSystem->AddActorLocalOffset(-Direction * Value * OnboardComputer->GetEngineThrustForce()); /// CRASHED PIE!
 	}
 	else if (OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::Impulse)
 	{
-		const FVector Impulse = Direction * Value * OnboardComputer->GetEngineThrustForce();
+		const FVector Impulse = Direction * Value * EngineThrustForce;
 		SpaceshipHull->AddImpulse(Impulse, NAME_None, true);
 	}
 	else if (OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::Offset)
 	{
-		const FVector Offset = Direction * Value * OnboardComputer->GetEngineThrustForce();
+		const FVector Offset = Direction * Value * EngineThrustForce;
 		SpaceshipHull->AddWorldOffset(Offset, true);
 	}
 
