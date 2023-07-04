@@ -19,6 +19,7 @@ void APlanet::Tick(float DeltaTime)
 
 				ASpaceship* PlayerShip = Cast<ASpaceship>(PlayerPawn);
 
+				/// TODO: Normal Check
 				if (PlayerShip && PlayerShip->OnboardComputer->FlightSystem.CurrentFlightMode != EFlightMode::Interstellar )
 				{
 					PlanetaryEnvironmentGenerator->SpawnPlanetEnvironment();

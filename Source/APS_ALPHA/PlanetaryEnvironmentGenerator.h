@@ -44,7 +44,7 @@ public:
 	UPROPERTY(VisibleAnywhere, Category = "World Scape")
 		double RadiusKM;
 
-
+	APlanetaryBody* PlanetaryBody;
 
 	void InitWorldScape(UWorld* World);
 

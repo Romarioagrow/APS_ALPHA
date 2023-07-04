@@ -36,7 +36,7 @@ void APlanetaryEnvironmentGenerator::Tick(float DeltaTime)
     /// if pawn.distance > planet-affectDistance * WSCScale -> Destroy planet environment
 }
 
-void APlanetaryEnvironmentGenerator::InitAtmoScape(UWorld* World, double Radius, APlanetaryBody* PlanetaryBody)
+void APlanetaryEnvironmentGenerator::InitAtmoScape(UWorld* World, double Radius, APlanetaryBody* NewPlanetaryBody)
 {
     PlanetAtmosphere = World->SpawnActor<AAtmosphere>(AAtmosphere::StaticClass(), FTransform());
 
@@ -45,9 +45,9 @@ void APlanetaryEnvironmentGenerator::InitAtmoScape(UWorld* World, double Radius,
         GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("PlanetAtmosphere AtmoScapeInstance has been created successfully."));
         // Установка параметров и свойств для объекта Atmosphere.
         PlanetAtmosphere->PlanetRadius = Radius;
-        PlanetAtmosphere->SetActorLocation(PlanetaryBody->GetActorLocation());
-        PlanetAtmosphere->SetActorRotation(PlanetaryBody->GetActorRotation());
-        PlanetAtmosphere->AttachToActor(PlanetaryBody, FAttachmentTransformRules::KeepWorldTransform);
+        PlanetAtmosphere->SetActorLocation(NewPlanetaryBody->GetActorLocation());
+        PlanetAtmosphere->SetActorRotation(NewPlanetaryBody->GetActorRotation());
+        PlanetAtmosphere->AttachToActor(NewPlanetaryBody, FAttachmentTransformRules::KeepWorldTransform);
     }
 }
 
@@ -83,6 +83,8 @@ void APlanetaryEnvironmentGenerator::GenerateWorldscapeSurfaceByModel(UWorld* Wo
 
     if (WorldScapeRootInstance)
     {
+        PlanetaryBody = NewPlanet;
+
         GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("InitWorldScape WorldScapeRootInstance has been created successfully."));
         UE_LOG(LogTemp, Warning, TEXT("InitWorldScape WorldScapeRootInstance has been created successfully."));
 
@@ -117,8 +119,11 @@ void APlanetaryEnvironmentGenerator::GenerateWorldscapeSurfaceByModel(UWorld* Wo
 
     if (WorldScapeRootInstance)
     {
+
         GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("InitWorldScape WorldScapeRootInstance has been created successfully."));
         UE_LOG(LogTemp, Warning, TEXT("InitWorldScape WorldScapeRootInstance has been created successfully."));
+
+        PlanetaryBody = NewMoon;
 
         double PlanetRadiusKM = NewMoon->RadiusKM;
 
@@ -155,7 +160,28 @@ void APlanetaryEnvironmentGenerator::SpawnPlanetEnvironment()
         WorldScapeRootInstance->SetActorTickEnabled(true);
         WorldScapeRootInstance->SetActorEnableCollision(true);
 
+        if (WorldScapeRootInstance->GetAttachParentActor() != PlanetaryBody)
+        {
+            WorldScapeRootInstance->SetActorLocation(FVector(0.0, 0.0, 0.0));
+            WorldScapeRootInstance->AttachToActor(PlanetaryBody, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
+            GEngine->AddOnScreenDebugMessage(-1, 15.f, FColor::Magenta, TEXT("WorldScapeRootInstance respawned!"));
+        }
 
+        /*if (WorldScapeRootInstance->GetAttachParentActor() != PlanetaryBody)
+        {
+            WorldScapeRootInstance->AttachToActor(PlanetaryBody, FAttachmentTransformRules::KeepWorldTransform);
+            WorldScapeRootInstance->SetActorLocation(FVector(0.0, 0.0, 0.0));
+            GEngine->AddOnScreenDebugMessage(-1, 15.f, FColor::Magenta, TEXT("WorldScapeRootInstance respawned!"));
+
+        }*/
+
+        //if not attached 
+       /* if (WorldScapeRootInstance->GetAttachParent() != PlanetaryBody)
+        {
+            WorldScapeRootInstance->AttachToActor(PlanetaryBody, FAttachmentTransformRules::KeepWorldTransform);
+        }
+        WorldScapeRootInstance->AttachToActor(PlanetaryBody, FAttachmentTransformRules::KeepWorldTransform);
+        WorldScapeRootInstance->SetActorLocation(FVector(0.0));*/
     }
 }
 
@@ -169,8 +195,6 @@ void APlanetaryEnvironmentGenerator::DestroyPlanetEnvironment()
         WorldScapeRootInstance->SetActorHiddenInGame(true);
         WorldScapeRootInstance->SetActorTickEnabled(false);
         WorldScapeRootInstance->SetActorEnableCollision(false);
-
-
 
         WorldScapeRootInstance->DetachRootComponentFromParent();
     }
