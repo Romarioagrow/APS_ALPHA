@@ -3,6 +3,7 @@
 #pragma once
 #include "WorldScapeCore/Public/WorldScapeRoot.h"
 #include "AtmoScape/Public/Atmosphere.h"
+#include <Kismet/GameplayStatics.h>
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
@@ -17,16 +18,17 @@ UCLASS()
 class APS_ALPHA_API APlanetaryEnvironmentGenerator : public AActor
 {
 	GENERATED_BODY()
-	
-public:	
+
+public:
 	// Sets default values for this actor's properties
 	APlanetaryEnvironmentGenerator();
+
 
 protected:
 	// Called when the game starts or when spawned
 	virtual void BeginPlay() override;
 
-public:	
+public:
 	// Called every frame
 	virtual void Tick(float DeltaTime) override;
 
@@ -38,7 +40,7 @@ public:
 
 	UPROPERTY(VisibleAnywhere, Category = "Atmo Scape")
 		AAtmosphere* PlanetAtmosphere;
-	
+
 	UPROPERTY(VisibleAnywhere, Category = "World Scape")
 		double RadiusKM;
 
@@ -50,6 +52,11 @@ public:
 
 	void GenerateWorldscapeSurfaceByModel(UWorld* World, AMoon* NewMoon);
 
-	//void SetupDefaultGenerator();
+	void SpawnPlanetEnvironment();
+
+	void DestroyPlanetEnvironment();
 
 };
+
+	//void SetupDefaultGenerator();
+

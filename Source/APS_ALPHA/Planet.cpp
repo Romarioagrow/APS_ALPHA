@@ -4,8 +4,47 @@
 #include "Planet.h"
 #include "PlanetGenerationModel.h"
 
+void APlanet::Tick(float DeltaTime)
+{
+	Super::Tick(DeltaTime);
+
+	if (PlayerPawn != nullptr)
+	{
+		double Distance = FVector::Dist(PlayerPawn->GetActorLocation(), GetActorLocation());
+		//GEngine->AddOnScreenDebugMessage(-1, 0.0, FColor::Magenta, FString::Printf(TEXT("Planet Distance to player: %f"), Distance));
+		if (Distance < AffectionRadiusKM * WSCZoneScale * 100000)
+		{
+			if (!bEnvironmentSpawned)
+			{
+				PlanetaryEnvironmentGenerator->SpawnPlanetEnvironment();
+				bEnvironmentSpawned = true;
+			}
+		}
+		else
+		{
+			if (bEnvironmentSpawned)
+			{
+				PlanetaryEnvironmentGenerator->DestroyPlanetEnvironment();
+				bEnvironmentSpawned = false;
+			}
+		}
+	}
+	else
+	{
+		GEngine->AddOnScreenDebugMessage(-1, 0.0, FColor::Magenta, TEXT("PlayerPawn nullptr!"));
+
+	}
+}
+
+void APlanet::BeginPlay()
+{
+	Super::BeginPlay();
+}
+
 APlanet::APlanet()
 {
+	PrimaryActorTick.bCanEverTick = true;
+	
 	USceneComponent* Root = CreateDefaultSubobject<USceneComponent>(TEXT("RootComponent"));
 	RootComponent = Root;
 
@@ -14,6 +53,9 @@ APlanet::APlanet()
 
 	GravityCollisionZone = CreateDefaultSubobject<USphereComponent>(TEXT("PlanetGravityCollisionZoneComponent"));
 	GravityCollisionZone->SetupAttachment(RootComponent);
+
+
+
 }
 
 bool APlanet::IsNotGasGiant()

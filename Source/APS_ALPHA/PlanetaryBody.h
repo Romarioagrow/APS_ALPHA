@@ -22,7 +22,11 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
-	
+
+public:
+	// Called every frame
+	virtual void Tick(float DeltaTime) override;
+
 public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Planet Environment")
 		APlanetaryEnvironmentGenerator* PlanetaryEnvironmentGenerator;
@@ -30,4 +34,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Environment")
 		bool bGenerateByDefault{ false };
 
+	APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(this, 0);
+
+	double WSCZoneScale {1.0 };
+
+	bool bEnvironmentSpawned{ false };
 };

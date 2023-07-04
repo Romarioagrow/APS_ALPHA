@@ -23,8 +23,13 @@ class APS_ALPHA_API APlanet : public APlanetaryBody, public INavigatableBody
 {
 	GENERATED_BODY()
 
-//protected:
-//	virtual void BeginPlay() override;
+
+protected:
+	virtual void BeginPlay() override;
+
+public:
+	// Called every frame
+	virtual void Tick(float DeltaTime) override;
 
 public:
 	APlanet();

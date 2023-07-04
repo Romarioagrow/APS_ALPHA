@@ -18,6 +18,7 @@ void APlanetaryEnvironmentGenerator::BeginPlay()
 {
 	Super::BeginPlay();
 
+
     if (false)
     {
         InitWorldScape(GetWorld());
@@ -29,6 +30,10 @@ void APlanetaryEnvironmentGenerator::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
+    
+
+    /// if pawn.distance < planet-affectDistance * WSCScale -> Spawn planet environment
+    /// if pawn.distance > planet-affectDistance * WSCScale -> Destroy planet environment
 }
 
 void APlanetaryEnvironmentGenerator::InitAtmoScape(UWorld* World, double Radius, APlanetaryBody* PlanetaryBody)
@@ -136,6 +141,17 @@ void APlanetaryEnvironmentGenerator::GenerateWorldscapeSurfaceByModel(UWorld* Wo
         GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("InitWorldScape Failed to create WorldScapeRootInstance."));
         UE_LOG(LogTemp, Warning, TEXT("InitWorldScape Failed to create WorldScapeRootInstance."));
     }
+
+}
+
+void APlanetaryEnvironmentGenerator::SpawnPlanetEnvironment()
+{
+    GEngine->AddOnScreenDebugMessage(-1, 15.f, FColor::Magenta, TEXT("SpawnPlanetEnvironment!"));
+}
+
+void APlanetaryEnvironmentGenerator::DestroyPlanetEnvironment()
+{
+    GEngine->AddOnScreenDebugMessage(-1, 15.f, FColor::Magenta, TEXT("DestroyPlanetEnvironment!"));
 
 }
 
