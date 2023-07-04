@@ -99,7 +99,7 @@ void APlanetaryEnvironmentGenerator::GenerateWorldscapeSurfaceByModel(UWorld* Wo
         //NewPlanet->Mesh
         //NewPlanet->SetupWorldScapeRoot(WorldScapeRootInstance);
 
-        WorldScapeRootInstance->bGenerateWorldScape = true;
+        //WorldScapeRootInstance->bGenerateWorldScape = true;
         GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Magenta, TEXT("GenerateWorldScape!"));
     }
     else
@@ -133,7 +133,7 @@ void APlanetaryEnvironmentGenerator::GenerateWorldscapeSurfaceByModel(UWorld* Wo
         //NewPlanet->Mesh
         //NewPlanet->SetupWorldScapeRoot(WorldScapeRootInstance);
 
-        WorldScapeRootInstance->bGenerateWorldScape = true;
+        //WorldScapeRootInstance->bGenerateWorldScape = true;
         GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Magenta, TEXT("GenerateWorldScape!"));
     }
     else
@@ -147,11 +147,13 @@ void APlanetaryEnvironmentGenerator::GenerateWorldscapeSurfaceByModel(UWorld* Wo
 void APlanetaryEnvironmentGenerator::SpawnPlanetEnvironment()
 {
     GEngine->AddOnScreenDebugMessage(-1, 15.f, FColor::Magenta, TEXT("SpawnPlanetEnvironment!"));
+    WorldScapeRootInstance->bGenerateWorldScape = true;
 }
 
 void APlanetaryEnvironmentGenerator::DestroyPlanetEnvironment()
 {
     GEngine->AddOnScreenDebugMessage(-1, 15.f, FColor::Magenta, TEXT("DestroyPlanetEnvironment!"));
+    WorldScapeRootInstance->bGenerateWorldScape = false;
 
 }
 

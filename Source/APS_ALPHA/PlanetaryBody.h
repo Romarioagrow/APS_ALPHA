@@ -36,7 +36,7 @@ public:
 
 	APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(this, 0);
 
-	double WSCZoneScale {1.0 };
+	double WSCZoneScale {10.0 };
 
 	bool bEnvironmentSpawned{ false };
 };
