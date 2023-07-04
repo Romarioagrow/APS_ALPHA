@@ -232,9 +232,16 @@ void ASpaceship::Tick(float DeltaTime)
 			GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Orange, EnumValueString);
 		}
 
+		
+		OnboardComputer->ComputeFlightStatus(AffectedActor);
+
+		/*if (AffectedActor)
+		{
+
+		}*/
+
 		ComputeProximity();
 
-		OnboardComputer->ComputeFlightStatus(AffectedActor);
 
 		if (OnboardComputer->FlightSystem.CurrentFlightMode != LastFlightMode)
 		{
@@ -970,6 +977,10 @@ void ASpaceship::ComputeProximity()
 			GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Green, RadiusMessage);
 		}
 		//OnboardComputer->ComputeFlightStatus(AffectedActor);
+	}
+	else
+	{
+		AffectedActor = nullptr;
 	}
 }
 

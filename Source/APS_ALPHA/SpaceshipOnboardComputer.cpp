@@ -30,10 +30,15 @@ USpaceshipOnboardComputer::USpaceshipOnboardComputer()
 
 void USpaceshipOnboardComputer::ComputeFlightStatus(AWorldActor* AffectedActor)
 {
-    if (!AffectedActor) return;
+    if (!AffectedActor) //return;
+    {
+        FlightSystem.CurrentFlightMode = EFlightMode::Interstellar;
+        FlightSystem.CurrentFlightType = EFlightType::FTL;
+        SwitchEngineMode(EEngineMode::Offset);
+    }
 
     // Celestial bodies: stars, planets, moons
-    if (AffectedActor->IsA(ACelestialBody::StaticClass()))
+    else if (AffectedActor->IsA(ACelestialBody::StaticClass()))
     {
         ACelestialBody* CelestialBody = Cast<ACelestialBody>(AffectedActor);
 
