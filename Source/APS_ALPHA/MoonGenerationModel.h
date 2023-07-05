@@ -21,5 +21,7 @@ struct FMoonModel :
     
     UPROPERTY(EditAnywhere, Category = "Moon Generation Model")
         double MoonGravity;
+
+    double MoonAtmosphereHeight { 0.0 };
 };
 

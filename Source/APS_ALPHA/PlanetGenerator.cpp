@@ -101,4 +101,5 @@ void UPlanetGenerator::ApplyModel(APlanet* PlanetActor, TSharedPtr<FPlanetModel>
     PlanetActor->Orbits = PlanetGenerationModel->Orbits;
     PlanetActor->RadiusKM = PlanetGenerationModel->RadiusKM;
     PlanetActor->AffectionRadiusKM = PlanetGenerationModel->RadiusKM;
+    PlanetActor->AtmosphereHeight = PlanetGenerationModel->AtmosphereHeight;
 }

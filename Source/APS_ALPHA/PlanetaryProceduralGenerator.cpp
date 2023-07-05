@@ -325,14 +325,19 @@ void UPlanetarySystemGenerator::GeneratePlanetraySystemModelByStar(TSharedPtr<FP
             PlanetModel->AmountOfMoons = CalculateMoons(PlanetModel->Mass, PlanetType);
 
             // Moons orbits
-            // Гипотетические параметры планеты и звезды
-            double PlanetMass = PlanetModel->Mass; // масса планеты
-            double StarMass = StarModel->Mass; // масса звезды
-            double PlanetToStarDistance = PlanetModel->Radius; // среднее расстояние от планеты до звезды
-            double planetRadius = PlanetModel->Radius; // радиус планеты
-            /// TODO: PlanetAtmosphere //double planetAtmosphereHeight = PlanetModel.AtmosphereHeight; // высота атмосферы планеты
-            double PlanetAtmosphereHeight = PlanetModel->Radius / 10; // высота атмосферы планеты
+            double PlanetMass = PlanetModel->Mass; 
+            double StarMass = StarModel->Mass;
+            double PlanetToStarDistance = PlanetModel->Radius; 
+            double planetRadius = PlanetModel->Radius;
 
+            //const double EARTH_RADIUS_KM = 6371.0; // радиус Земли в километрах
+            //const double EARTH_MASS = 1.0; // масса Земли (в данном случае массы планеты измеряются в единицах массы Земли)
+           // const double ATMOSPHERE_HEIGHT_COEFFICIENT = 100.0;
+            //double massFactor = FMath::Clamp(PlanetModel->Mass / EARTH_MASS, 0.1, 5.0);
+            //double PlanetAtmosphereHeight = (PlanetModel->Radius ) * massFactor * ATMOSPHERE_HEIGHT_COEFFICIENT;
+            /// TODO: PlanetAtmosphere //double planetAtmosphereHeight = PlanetModel.AtmosphereHeight; // высота атмосферы планеты
+            double PlanetAtmosphereHeight = PlanetModel->RadiusKM / 30; // высота атмосферы планеты
+            PlanetModel->AtmosphereHeight = PlanetAtmosphereHeight;
 
             // Минимальное расстояние - радиус планеты плюс высота атмосферы
             const double MinOrbitRadius = planetRadius + PlanetAtmosphereHeight;
@@ -400,9 +405,11 @@ void UPlanetarySystemGenerator::GeneratePlanetraySystemModelByStar(TSharedPtr<FP
                 MoonModel->Type = MoonType;
                 MoonModel->Mass = MoonMass;
                 MoonModel->Radius = MoonRadius;
+                MoonModel->RadiusKM = MoonModel->Radius * 6371.0;
                 MoonModel->MoonDensity = MoonDensity; // TODO: To Parent 
                 MoonModel->MoonGravity = MoonGravity;
                 MoonModel->OrbitDistance = MoonOrbit;
+                MoonModel->MoonAtmosphereHeight = MoonModel->RadiusKM / 30;
 
                 // Создаем данные о луне
                 int MoonIndex = MoonOrbits.IndexOfByKey(MoonOrbit);
