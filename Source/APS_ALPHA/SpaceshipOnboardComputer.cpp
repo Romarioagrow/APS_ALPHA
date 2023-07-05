@@ -37,6 +37,50 @@ void USpaceshipOnboardComputer::ComputeFlightStatus(AWorldActor* AffectedActor)
         SwitchEngineMode(EEngineMode::Impulse);
     }
 
+
+    //else if (AffectedActor->IsA(APlanet::StaticClass()))
+    //{
+    //    APlanet* Planet = Cast<APlanet>(AffectedActor);
+    //    
+    //    FlightSystem.CurrentFlightMode = EFlightMode::Planetary;
+    //    FlightSystem.CurrentFlightType = EFlightType::LightSpeed;
+    //    SwitchEngineMode(EEngineMode::SpaceWrap);
+    //    // check proximity!
+
+    //    // Получить позиции корабля и планеты.
+    //    FVector ShipPosition = GetActorLocation();
+    //    FVector PlanetPosition = Planet->GetActorLocation();
+
+    //    // Вычислить расстояние между кораблем и планетой.
+    //    double DistanceToPlanet = FVector::Dist(ShipPosition, PlanetPosition) - Planet->GetRadius();
+
+    //    // Выбор режима полета на основе расстояния до планеты.
+    //    if (DistanceToPlanet <= Planet->AtmosphereHeight)
+    //    {
+    //        // Если корабль внутри атмосферы планеты.
+    //        if (DistanceToPlanet <= 10)
+    //        {
+    //            // Если корабль ближе 10 км к поверхности планеты.
+    //            FlightSystem.CurrentFlightMode = EFlightMode::Planetary;
+    //        }
+    //        else
+    //        {
+    //            // Если корабль внутри атмосферы, но дальше 10 км от поверхности.
+    //            FlightSystem.CurrentFlightMode = EFlightMode::Atmospheric;
+    //        }
+    //    }
+    //    else if (DistanceToPlanet <= Planet->OrbitHeight)
+    //    {
+    //        // Если корабль внутри орбиты планеты, но за пределами атмосферы.
+    //        FlightSystem.CurrentFlightMode = EFlightMode::Orbital;
+    //    }
+    //    else
+    //    {
+    //        // Если корабль в открытом космосе.
+    //        FlightSystem.CurrentFlightMode = EFlightMode::Space;
+    //    }
+    //}
+
     // Celestial bodies: stars, planets, moons
     else if (AffectedActor->IsA(ACelestialBody::StaticClass()))
     {
@@ -49,6 +93,8 @@ void USpaceshipOnboardComputer::ComputeFlightStatus(AWorldActor* AffectedActor)
             FlightSystem.CurrentFlightType = EFlightType::LightSpeed;
             SwitchEngineMode(EEngineMode::SpaceWrap);
             // check proximity!
+
+
         }
         else if (CelestialBody->IsA(AStar::StaticClass()))
         {

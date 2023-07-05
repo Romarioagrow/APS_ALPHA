@@ -276,7 +276,113 @@ void ASpaceship::Tick(float DeltaTime)
 		}
 		else 
 		{
-			OnboardComputer->ComputeFlightStatus(AffectedActor);
+			//OnboardComputer->ComputeFlightStatus(AffectedActor);
+
+			if (!AffectedActor) //return;
+			{
+				OnboardComputer->FlightSystem.CurrentFlightMode = EFlightMode::Interstellar;
+				OnboardComputer->FlightSystem.CurrentFlightType = EFlightType::FTL;
+				OnboardComputer->SwitchEngineMode(EEngineMode::Impulse);
+			}
+			else if (AffectedActor->IsA(APlanet::StaticClass()))
+			{
+				APlanet* Planet = Cast<APlanet>(AffectedActor);
+
+				OnboardComputer->FlightSystem.CurrentFlightMode = EFlightMode::Planetary;
+				OnboardComputer->FlightSystem.CurrentFlightType = EFlightType::LightSpeed;
+				OnboardComputer->SwitchEngineMode(EEngineMode::SpaceWrap);
+				// check proximity!
+
+				// Получить позиции корабля и планеты.
+				FVector ShipPosition = GetActorLocation();
+				FVector PlanetPosition = Planet->GetActorLocation();
+				// Вычислить расстояние между кораблем и планетой.
+				double DistanceToPlanet = FVector::Dist(ShipPosition, PlanetPosition) - Planet->GetRadius();
+				DistanceToPlanet /= 100000.0;
+				// Выбор режима полета на основе расстояния до планеты.
+				if (DistanceToPlanet <= Planet->RadiusKM + Planet->AtmosphereHeight)
+				{
+					// Если корабль внутри атмосферы планеты.
+					if (DistanceToPlanet <= 10)
+					{
+						// Если корабль ближе 10 км к поверхности планеты.
+						OnboardComputer->FlightSystem.CurrentFlightMode = EFlightMode::Surface;
+						OnboardComputer->FlightSystem.CurrentFlightType = EFlightType::Atmospheric;
+						OnboardComputer->SwitchEngineMode(EEngineMode::Impulse);
+					}
+					else
+					{
+						// Если корабль внутри атмосферы, но дальше 10 км от поверхности.
+						OnboardComputer->FlightSystem.CurrentFlightMode = EFlightMode::Atmospheric;
+						OnboardComputer->FlightSystem.CurrentFlightType = EFlightType::Atmospheric;
+						OnboardComputer->SwitchEngineMode(EEngineMode::Impulse);
+
+					}
+				}
+				else if (DistanceToPlanet <= Planet->RadiusKM + Planet->OrbitHeight)
+				{
+					// Если корабль внутри орбиты планеты, но за пределами атмосферы.
+					OnboardComputer->FlightSystem.CurrentFlightMode = EFlightMode::Orbital;
+					OnboardComputer->FlightSystem.CurrentFlightType = EFlightType::Orbital;
+					OnboardComputer->SwitchEngineMode(EEngineMode::Impulse);
+				}
+
+				//GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, FString::Printf(TEXT("Ship Position: %s"), *ShipPosition.ToString()));
+				//GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, FString::Printf(TEXT("Planet Position: %s"), *PlanetPosition.ToString()));
+				GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Green, FString::Printf(TEXT("Distance to Planet Surface: %f"), DistanceToPlanet - Planet->RadiusKM));
+				//GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, FString::Printf(TEXT("Current Flight Mode: %s"), *UEnum::GetValueAsString(OnboardComputer->FlightSystem.CurrentFlightMode)));
+
+				//else
+				//{
+				//	// Если корабль в открытом космосе.
+				//	FlightSystem.CurrentFlightMode = EFlightMode::Space;
+				//}
+			}
+			else if (AffectedActor->IsA(AMoon::StaticClass()))
+			{
+				OnboardComputer->FlightSystem.CurrentFlightMode = EFlightMode::Orbital;
+				OnboardComputer->FlightSystem.CurrentFlightType = EFlightType::Orbital;
+				OnboardComputer->SwitchEngineMode(EEngineMode::SpaceWrap);//InitiateOffsetMode();
+			}
+			else if (AffectedActor->IsA(AStar::StaticClass()))
+			{
+				OnboardComputer->FlightSystem.CurrentFlightMode = EFlightMode::Interplanetary;
+				OnboardComputer->FlightSystem.CurrentFlightType = EFlightType::LightSpeed;
+				OnboardComputer->SwitchEngineMode(EEngineMode::SpaceWrap);//InitiateOffsetMode();
+			}
+			// Techical objects: space stations, satellites, etc.
+			else if (AffectedActor->IsA(ATechActor::StaticClass()))
+			{
+				OnboardComputer->FlightSystem.CurrentFlightMode = EFlightMode::Station;
+				OnboardComputer->FlightSystem.CurrentFlightType = EFlightType::ArtificialGravity;
+				OnboardComputer->SwitchEngineMode(EEngineMode::Impulse);
+			}
+			// Star clusters: galaxies, nebulae, etc.
+			else if (AffectedActor->IsA(AStarCluster::StaticClass()))
+			{
+				OnboardComputer->FlightSystem.CurrentFlightMode = EFlightMode::Interstellar;
+				OnboardComputer->FlightSystem.CurrentFlightType = EFlightType::FTL;
+				OnboardComputer->SwitchEngineMode(EEngineMode::Offset);
+
+				OffsetGalaxy = Cast<AAstroActor>(AffectedActor);
+			}
+			// Between star system and star cluster
+			else if (AffectedActor->IsA(AStarSystem::StaticClass()))
+			{
+				OnboardComputer->FlightSystem.CurrentFlightMode = EFlightMode::Stellar;
+				OnboardComputer->FlightSystem.CurrentFlightType = EFlightType::LightSpeed;
+				OnboardComputer->SwitchEngineMode(EEngineMode::SpaceWrap);
+				//CalculateProximity = false;
+				OffsetGalaxy = Cast<AAstroActor>(AffectedActor);
+			}
+			// All others
+			else
+			{
+				OnboardComputer->FlightSystem.CurrentFlightMode = EFlightMode::Basic;
+				OnboardComputer->FlightSystem.CurrentFlightType = EFlightType::ZeroG;
+				OnboardComputer->SwitchEngineMode(EEngineMode::Impulse);
+			}
+
 		}
 
 		if (OnboardComputer->FlightSystem.CurrentFlightMode != LastFlightMode)

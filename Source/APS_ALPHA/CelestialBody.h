@@ -20,8 +20,6 @@ public:
 	UPROPERTY(VisibleAnywhere, Category = "Celestial Body")
 		double Radius{ 0 };
 
-	
-
 	UPROPERTY(VisibleAnywhere, Category = "Celestial Body")
 		double Mass{ 0 };
 	
