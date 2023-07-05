@@ -645,6 +645,7 @@ void AAstroGenerator::GenerateStarSystem()
                 NewPlanet->PlanetRadiusKM = PlanetModel->Radius * 6371;
                 NewPlanet->SetActorLocation(NewLocation);
 
+
                 NewPlanet->AttachToActor(NewPlanetOrbit, FAttachmentTransformRules::KeepWorldTransform);
                 NewPlanetOrbit->SetActorRelativeRotation(FRotator(FMath::RandRange(-30.0, 30.0), FMath::RandRange(-360.0, 360.0), 0));
                 NewPlanetarySystem->PlanetsActorsList.Add(NewPlanet);
@@ -660,10 +661,11 @@ void AAstroGenerator::GenerateStarSystem()
 
                     FVector MoonLocation = NewPlanet->GetActorLocation();
                     AMoon* NewMoon = World->SpawnActor<AMoon>(BP_MoonClass, MoonLocation, FRotator::ZeroRotator);
-                    MoonGenerator->ApplyModel(NewMoon, MoonData->MoonModel);
-                    MoonGenerator->ConnectMoonWithPlanet(NewMoon, NewPlanet);
                     NewPlanet->AddMoon(NewMoon);
                     NewMoon->SetParentPlanet(NewPlanet);
+
+                    MoonGenerator->ApplyModel(NewMoon, MoonData->MoonModel);
+                    MoonGenerator->ConnectMoonWithPlanet(NewMoon, NewPlanet);
 
                     // set moon full-scale
                     double MoonRadius = MoonData->MoonModel->Radius;

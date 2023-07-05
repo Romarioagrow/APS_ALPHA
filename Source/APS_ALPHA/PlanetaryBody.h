@@ -34,9 +34,15 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Environment")
 		bool bGenerateByDefault{ false };
 
+
 	APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(this, 0);
 
-	double WSCZoneScale {10.0 };
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Environment")
+		double WSCZoneScale {10.0 };
 
-	bool bEnvironmentSpawned{ false };
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Environment")
+		bool bEnvironmentSpawned{ false };
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Environment")
+		double AtmosphereHeight { 0.0 };
 };

@@ -40,6 +40,17 @@ void ASpaceship::UpdateNavigatableActorsForStellar()
 
 	if (LastFlightMode == EFlightMode::Interstellar)
 	{
+
+		// reorigin star system and ship to 0 0 0
+		 // Получаем текущее положение игрока
+		FVector PlayerLocation = this->GetActorLocation();
+		// Вычисляем новое положение для OffsetSystem
+		FVector NewSystemLocation = OffsetSystem->GetActorLocation() - PlayerLocation;
+		// Устанавливаем новое положение для OffsetSystem
+		OffsetSystem->SetActorLocation(NewSystemLocation, false);
+		// Устанавливаем положение игрока на (0,0,0)
+		this->SetActorLocation(FVector(0, 0, 0), false);
+
 		ToggleScale();
 		bIsScaled = false;
 		GEngine->AddOnScreenDebugMessage(-1, 15.0f, FColor::Green, FString::Printf(TEXT("Galaxy is Upscaled")));

@@ -119,7 +119,7 @@ private:
         {EPlanetType::Ammonia,      FRadiusRange(0.6, 0.9)},     // Планеты аммиака
         {EPlanetType::Iron,         FRadiusRange(0.8, 1.1)},     // Железные планеты
         {EPlanetType::Carbon,       FRadiusRange(0.8, 1.1)},     // Углеродные планеты
-        {EPlanetType::SuperEarth,   FRadiusRange(1.5, 3.1)},     // Суперземли
+        {EPlanetType::SuperEarth,   FRadiusRange(1.3, 2)},     // Суперземли
         {EPlanetType::Lava,         FRadiusRange(0.8, 1.1)},     // Лавовые планеты
         {EPlanetType::Metallic,     FRadiusRange(0.8, 1.3)},     // Металлические планеты
         {EPlanetType::Unknown,      FRadiusRange(0.2, 12.6)}     // Неизвестные планеты

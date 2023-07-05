@@ -45,6 +45,8 @@ void APlanetaryEnvironmentGenerator::InitAtmoScape(UWorld* World, double Radius,
         GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("PlanetAtmosphere AtmoScapeInstance has been created successfully."));
         // Установка параметров и свойств для объекта Atmosphere.
         PlanetAtmosphere->PlanetRadius = Radius - 1; // Atm Dead Zone 
+        PlanetAtmosphere->bKeepRelativeScale = false;
+        PlanetAtmosphere->AtmosphereHeight = NewPlanetaryBody->AtmosphereHeight;
         PlanetAtmosphere->SetActorLocation(NewPlanetaryBody->GetActorLocation());
         PlanetAtmosphere->SetActorRotation(NewPlanetaryBody->GetActorRotation());
         PlanetAtmosphere->AttachToActor(NewPlanetaryBody, FAttachmentTransformRules::KeepWorldTransform);

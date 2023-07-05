@@ -85,5 +85,7 @@ struct FPlanetModel : public FOrbitalBodyModel
 		
 			TPair<double, double> MoonOrbitsRange;
 
+			double AtmosphereHeight{ 0 };
+
 };
 
