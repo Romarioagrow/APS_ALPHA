@@ -714,10 +714,10 @@ void AAstroGenerator::GenerateStarSystem()
                     ///NewPlanet->PlanetEnvironmentGenerator->GeneratePlanetEnviroment();
                     
                     //FTransoNewPlanet->GetActorTransform();
+                    NewPlanet->PlanetaryEnvironmentGenerator->InitAtmoScape(World, NewPlanet->RadiusKM, NewPlanet);
                     if (NewPlanet->IsNotGasGiant())
                     {
                         NewPlanet->PlanetaryEnvironmentGenerator->GenerateWorldscapeSurfaceByModel(World, NewPlanet);
-                        NewPlanet->PlanetaryEnvironmentGenerator->InitAtmoScape(World, NewPlanet->RadiusKM, NewPlanet);
 
                     }
                 }
