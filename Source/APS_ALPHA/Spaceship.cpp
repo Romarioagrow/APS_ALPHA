@@ -77,7 +77,7 @@ ASpaceship::ASpaceship()
 	// Создайте и настройте компонент SpringArm
 	SpringArmComponent = CreateDefaultSubobject<USpringArmComponent>(TEXT("SpringArm"));
 	SpringArmComponent->SetupAttachment(RootComponent);
-	SpringArmComponent->TargetArmLength = 800.0;
+	SpringArmComponent->TargetArmLength = 1000.0;
 	SpringArmComponent->SetWorldLocation(FVector(2340.0, 0.0, 1280.0));
 	//SpringArmComponent->SetWorldRotation(FRotator(0.0, -180.0, 0.0 ));
 	//SpringArmComponent->bUsePawnControlRotation = true;
@@ -410,7 +410,7 @@ void ASpaceship::ToggleScale()
 			this->SetActorScale3D(FVector(1, 1, 1));
 			/// this->SetBigHullMesh
 			//this->SpaceshipHull->SetStaticMesh(LargeScaleHullMesh);
-			this->SpringArmComponent->TargetArmLength = 800;
+			this->SpringArmComponent->TargetArmLength = 1000;
 			//this->CameraComponent->FieldOfView = 90;
 
 			GEngine->AddOnScreenDebugMessage(-1, 15.0f, FColor::Green, FString::Printf(TEXT("Scaling to 1000000000")));

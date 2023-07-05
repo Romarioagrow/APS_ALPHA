@@ -92,7 +92,7 @@ void APlanetaryEnvironmentGenerator::GenerateWorldscapeSurfaceByModel(UWorld* Wo
 
         WorldScapeRootInstance->GenerationType = EWorldScapeType::Planet;
         WorldScapeRootInstance->PlanetScale = PlanetRadiusKM * 100000;
-        WorldScapeRootInstance->DistanceToFreezeGeneration = PlanetRadiusKM;
+        WorldScapeRootInstance->DistanceToFreezeGeneration = PlanetRadiusKM * 1000000;
 
 
         WorldScapeRootInstance->SetActorLocation(NewPlanet->GetActorLocation());

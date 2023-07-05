@@ -34,7 +34,7 @@ void USpaceshipOnboardComputer::ComputeFlightStatus(AWorldActor* AffectedActor)
     {
         FlightSystem.CurrentFlightMode = EFlightMode::Interstellar;
         FlightSystem.CurrentFlightType = EFlightType::FTL;
-        SwitchEngineMode(EEngineMode::Offset);
+        SwitchEngineMode(EEngineMode::Impulse);
     }
 
     // Celestial bodies: stars, planets, moons
