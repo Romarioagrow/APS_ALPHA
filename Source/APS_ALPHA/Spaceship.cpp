@@ -288,9 +288,9 @@ void ASpaceship::Tick(float DeltaTime)
 			{
 				APlanet* Planet = Cast<APlanet>(AffectedActor);
 
-				OnboardComputer->FlightSystem.CurrentFlightMode = EFlightMode::Planetary;
+				/*OnboardComputer->FlightSystem.CurrentFlightMode = EFlightMode::Planetary;
 				OnboardComputer->FlightSystem.CurrentFlightType = EFlightType::LightSpeed;
-				OnboardComputer->SwitchEngineMode(EEngineMode::SpaceWrap);
+				OnboardComputer->SwitchEngineMode(EEngineMode::SpaceWrap);*/
 				// check proximity!
 
 				// Получить позиции корабля и планеты.
@@ -318,18 +318,25 @@ void ASpaceship::Tick(float DeltaTime)
 						OnboardComputer->SwitchEngineMode(EEngineMode::Impulse);
 
 					}
+					GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Yellow, FString::Printf(TEXT("Distance to Planet Surface: %f"), DistanceToPlanet - Planet->RadiusKM));
 				}
 				else if (DistanceToPlanet <= Planet->RadiusKM + Planet->OrbitHeight)
 				{
 					// Если корабль внутри орбиты планеты, но за пределами атмосферы.
 					OnboardComputer->FlightSystem.CurrentFlightMode = EFlightMode::Orbital;
 					OnboardComputer->FlightSystem.CurrentFlightType = EFlightType::Orbital;
-					OnboardComputer->SwitchEngineMode(EEngineMode::Impulse);
+					OnboardComputer->SwitchEngineMode(EEngineMode::SpaceWrap);
+				}
+				else
+				{
+
+					OnboardComputer->FlightSystem.CurrentFlightMode = EFlightMode::Planetary;
+					OnboardComputer->FlightSystem.CurrentFlightType = EFlightType::LightSpeed;
+					OnboardComputer->SwitchEngineMode(EEngineMode::SpaceWrap);
 				}
 
 				//GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, FString::Printf(TEXT("Ship Position: %s"), *ShipPosition.ToString()));
 				//GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, FString::Printf(TEXT("Planet Position: %s"), *PlanetPosition.ToString()));
-				GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Green, FString::Printf(TEXT("Distance to Planet Surface: %f"), DistanceToPlanet - Planet->RadiusKM));
 				//GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, FString::Printf(TEXT("Current Flight Mode: %s"), *UEnum::GetValueAsString(OnboardComputer->FlightSystem.CurrentFlightMode)));
 
 				//else
@@ -410,6 +417,7 @@ void ASpaceship::Tick(float DeltaTime)
 		}
 
 		OnboardComputer->ComputeFlightParams();
+		// Switch Engine mode
 	}
 	if (Pilot)
 	{
@@ -659,10 +667,6 @@ void ASpaceship::ThrustVertical(float Value)
 
 	if (OffsetSystem && OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::SpaceWrap)
 	{
-		// Получаем вектор вперед корабля
-		// Получаем вектор в сторону корабля
-		//const FVector Direction = SpaceshipHull->GetRightVector();
-
 		// Сдвигаем StarSystem
 		OffsetSystem->AddActorLocalOffset(-Direction * Value * OnboardComputer->GetEngineThrustForce());
 	}
@@ -692,7 +696,7 @@ void ASpaceship::ThrustYaw(float Value)
 	}
 	else if (OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::Impulse)
 	{
-		FVector TorqueVector = GetActorUpVector() * RotationAmount;
+		FVector TorqueVector = ForwardVector->GetUpVector() * RotationAmount;
 		SpaceshipHull->AddTorqueInRadians(TorqueVector, NAME_None, true);
 	}
 }
@@ -710,7 +714,7 @@ void ASpaceship::ThrustPitch(float Value)
 	}
 	else if (OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::Impulse)
 	{
-		FVector TorqueVector = GetActorRightVector() * RotationAmount;
+		FVector TorqueVector = ForwardVector->GetRightVector() * RotationAmount;
 		SpaceshipHull->AddTorqueInRadians(TorqueVector, NAME_None, true);
 	}
 }
@@ -728,7 +732,7 @@ void ASpaceship::ThrustRoll(float Value)
 	}
 	else if (OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::Impulse)
 	{
-		FVector TorqueVector = GetActorForwardVector() * RotationAmount;
+		FVector TorqueVector = ForwardVector->GetForwardVector() * RotationAmount;
 		SpaceshipHull->AddTorqueInRadians(TorqueVector, NAME_None, true);
 	}
 }
