@@ -303,8 +303,10 @@ void ASpaceship::Tick(float DeltaTime)
 				if (DistanceToPlanet <= Planet->RadiusKM + Planet->AtmosphereHeight)
 				{
 					// Если корабль внутри атмосферы планеты.
-					if (DistanceToPlanet <= 10)
+					if (DistanceToPlanet - Planet->RadiusKM <= 10.0)
 					{
+						GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, TEXT("Inside DistanceToPlanet <= 10 block"));
+
 						// Если корабль ближе 10 км к поверхности планеты.
 						OnboardComputer->FlightSystem.CurrentFlightMode = EFlightMode::Surface;
 						OnboardComputer->FlightSystem.CurrentFlightType = EFlightType::Atmospheric;
@@ -313,6 +315,8 @@ void ASpaceship::Tick(float DeltaTime)
 					else
 					{
 						// Если корабль внутри атмосферы, но дальше 10 км от поверхности.
+						GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, TEXT("Inside Atmospheric"));
+
 						OnboardComputer->FlightSystem.CurrentFlightMode = EFlightMode::Atmospheric;
 						OnboardComputer->FlightSystem.CurrentFlightType = EFlightType::Atmospheric;
 						OnboardComputer->SwitchEngineMode(EEngineMode::Impulse);
