@@ -6,6 +6,7 @@
 #include "PlanetaryEnvironment.h"
 #include "OrbitalBody.h"
 #include "NavigatableBody.h"
+#include "PlanetaryBody.h"
 
 #include "CoreMinimal.h"
 #include "CelestialBody.h"
@@ -14,7 +15,7 @@
 class APlanet;
 
 UCLASS()
-class APS_ALPHA_API AMoon : public AOrbitalBody, public IPlanetaryEnvironment, public INavigatableBody
+class APS_ALPHA_API AMoon : public APlanetaryBody, public INavigatableBody
 {
 	GENERATED_BODY()
 

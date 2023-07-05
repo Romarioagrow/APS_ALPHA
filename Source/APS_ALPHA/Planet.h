@@ -2,13 +2,13 @@
 
 #pragma once
 #include <Components/SphereComponent.h>
-#include "PlanetaryEnvironment.h"
 #include "OrbitalBody.h"
 #include "PlanetType.h"
 #include "MoonGenerationModel.h"
 #include "PlanetGenerationModel.h"
 #include "PlanetaryZoneType.h"
 #include "NavigatableBody.h"
+#include "PlanetaryBody.h"
 
 #include "CoreMinimal.h"
 #include "CelestialBody.h"
@@ -16,15 +16,43 @@
 
 class AMoon;
 class AStar;
+//class APlanetEnvironmentGenerator;
 
 UCLASS()
-class APS_ALPHA_API APlanet : public AOrbitalBody, public IPlanetaryEnvironment, public INavigatableBody
+class APS_ALPHA_API APlanet : public APlanetaryBody, public INavigatableBody
 {
 	GENERATED_BODY()
+
+
+protected:
+	virtual void BeginPlay() override;
+
+public:
+	// Called every frame
+	virtual void Tick(float DeltaTime) override;
+
+	void HandleOnStellarMode();
+
+	void CheckPlayerPawn();
 
 public:
 	APlanet();
 
+	bool IsNotGasGiant();
+
+	bool IsComputingWSCProximity{ true };
+
+	FTimerHandle PlayerPawnTimerHandle;
+
+	/*UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Environment")
+		bool bGenerateByDefault{ false };
+	*/
+	/*UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Environment")
+		double PlanetRadiusKM{ 0 };*/
+
+	/*UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Planet Environment")
+		APlanetEnvironmentGenerator* PlanetEnvironmentGenerator;*/
+	
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Gravity")
 		USphereComponent* GravityCollisionZone;
 

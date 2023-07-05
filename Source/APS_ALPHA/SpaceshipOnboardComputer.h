@@ -37,14 +37,16 @@ struct FFlightParams
 UENUM(BlueprintType)
 enum class EFlightMode : uint8
 {
-    Station UMETA(DisplayName = "Station"),
-    Surface UMETA(DisplayName = "Surface"),
-    Atmospheric UMETA(DisplayName = "Atmospheric"),
-    Orbit UMETA(DisplayName = "Orbital"),
-    Planetary UMETA(DisplayName = "Planetary"),
-    Interplanetray UMETA(DisplayName = "Interplanetray"),
-    Interstellar UMETA(DisplayName = "Interstellar"),
-    Intergalaxy UMETA(DisplayName = "Intergalaxy")
+    Station         UMETA(DisplayName = "Station"),
+    Surface         UMETA(DisplayName = "Surface"),
+    Atmospheric     UMETA(DisplayName = "Atmospheric"),
+    Orbital         UMETA(DisplayName = "Orbital"),
+    Planetary       UMETA(DisplayName = "Planetary"),
+    Interplanetary  UMETA(DisplayName = "Interplanetary"),
+    Stellar         UMETA(DisplayName = "Stellar "),
+    Interstellar    UMETA(DisplayName = "Interstellar"),
+    Intergalaxy     UMETA(DisplayName = "Intergalaxy"),
+    Basic           UMETA(DisplayName = "Basic")
 };
 
 /**
@@ -543,6 +545,8 @@ public:
 
     void ComputeFlightStatus(AWorldActor* AffectedActor);
 
+    void ComputeFlightParams();
+
     FString GetEnumValueAsString(const TCHAR* EnumName, int32 EnumValue);
 
     FString GetFlightTypeAsString();
@@ -590,14 +594,20 @@ public:
             {EFlightMode::Station, FFlightParams(55, 0.01, 0.05)},
             {EFlightMode::Surface, FFlightParams(100, 0.03, 0.08)},
             {EFlightMode::Atmospheric, FFlightParams(500, 0.04, 0.12)},
-            {EFlightMode::Orbit, FFlightParams(1000, 0.05, 0.16)},
-            {EFlightMode::Planetary, FFlightParams(0.01, 0.06, 0.2)},
-            {EFlightMode::Interplanetray, FFlightParams(0.666, 0.07, 0.24)},
-            {EFlightMode::Interstellar, FFlightParams(100000000, 0.08, 0.28)},
-            {EFlightMode::Intergalaxy, FFlightParams(10000000000, 0.09, 0.32)}
+            {EFlightMode::Orbital, FFlightParams(0.0002, 0.05, 0.16)},
+            {EFlightMode::Planetary, FFlightParams(0.0005, 0.06, 0.2)},
+            {EFlightMode::Interplanetary, FFlightParams(0.666, 0.07, 0.24)},
+            {EFlightMode::Stellar, FFlightParams(1, 0.06, 0.2)},
+            //{EFlightMode::Interstellar, FFlightParams(15000000000, 0.08, 0.28)},
+            {EFlightMode::Interstellar, FFlightParams(1.0, 0.08, 0.28)},
+            {EFlightMode::Intergalaxy, FFlightParams(100000000000, 0.09, 0.32)}
         };
 
     bool IsBoosting{ false };
+
+    bool CalculateProximity{ true };
+
+
 
     UPROPERTY()
         UStaticMeshComponent* SpaceshipHull;

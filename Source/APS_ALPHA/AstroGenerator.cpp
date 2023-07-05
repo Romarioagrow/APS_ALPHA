@@ -682,6 +682,13 @@ void AAstroGenerator::GenerateStarSystem()
 				
                     DiameterOfLastMoon = MoonRadius * 2;
                     LastMoonLocation = NewMoon->GetActorLocation();
+
+
+                    /// Generate WSC
+                    //NewMoon->PlanetaryEnvironmentGenerator->GenerateWorldscapeSurfaceByModel(World, NewMoon);
+                    NewMoon->PlanetaryEnvironmentGenerator->InitAtmoScape(World, NewMoon->RadiusKM, NewMoon);
+                    
+
                 }
 
                 if (DiameterOfLastMoon == 0)
@@ -701,7 +708,23 @@ void AAstroGenerator::GenerateStarSystem()
                 }
                 LastPlanetLocation = NewPlanet->GetActorLocation();
                 LastStarLocation = LastPlanetLocation * 1.1; 
+
+                if (true)
+                {
+                    ///NewPlanet->PlanetEnvironmentGenerator->GeneratePlanetEnviroment();
+                    
+                    //FTransoNewPlanet->GetActorTransform();
+                    if (NewPlanet->IsNotGasGiant())
+                    {
+                        NewPlanet->PlanetaryEnvironmentGenerator->GenerateWorldscapeSurfaceByModel(World, NewPlanet);
+                        NewPlanet->PlanetaryEnvironmentGenerator->InitAtmoScape(World, NewPlanet->RadiusKM, NewPlanet);
+
+                    }
+                }
             }
+            
+
+
 
             double StarSphereRadius;
             if (LastPlanetLocation.IsZero())

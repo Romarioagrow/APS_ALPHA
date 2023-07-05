@@ -34,11 +34,30 @@ struct ZoneData
 	{}
 };
 
+
+
 UCLASS()
 class APS_ALPHA_API ASpaceship : public ASpacecraft, public IGravitySource
 {
 	GENERATED_BODY()
+
+public:
+	// ќпределение типа делегата
+	DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnFlightModeChangedDelegate);
+
+	// ќпределение экземпл€ров делегата
+	FOnFlightModeChangedDelegate OnInterstellarMode;
+	FOnFlightModeChangedDelegate OnStellarMode;
+	FOnFlightModeChangedDelegate OnInterplanetaryMode;
 	
+	// ќбъ€вление функций
+	UFUNCTION()
+	void UpdateNavigatableActorsForInterstellar();
+	UFUNCTION()
+	void UpdateNavigatableActorsForStellar();
+	UFUNCTION()
+	void UpdateNavigatableActorsForInterplanetary();
+
 public:
 	ASpaceship();
 
@@ -50,6 +69,25 @@ protected:
 	virtual void BeginPlay() override;
 
 public:
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Camera)
+		USpringArmComponent* SpringArmComponent;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Camera)
+		UCameraComponent* CameraComponent;
+
+	// ƒобавьте эти две строки в область public вашего класса
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Meshes")
+		UStaticMesh* SmallScaleHullMesh;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Meshes")
+		UStaticMesh* LargeScaleHullMesh;
+
+
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Flight Mode")
+		EFlightMode LastFlightMode = EFlightMode::Basic;  // или любое начальное значение
+
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 		USphereComponent* SphereCollisionComponent;
 
@@ -87,6 +125,9 @@ public:
 
 	AWorldActor* AffectedActor{ nullptr };
 
+	AWorldActor* ClosestActor{ nullptr };
+
+
 	void ToggleScale();
 
 	bool bIsScaledUp{ true };
@@ -100,6 +141,13 @@ public:
 	bool bIsDecelerating{ false };
 
 public:	
+
+	void ComputeProximity();
+
+	void UpdateNavigatableActors();
+
+	void CheckFlightModeChange();
+
 	UStaticMeshComponent* GetSpaceshipHull();
 
 	void PrintOnboardComputerBasicIformation();

@@ -8,9 +8,19 @@ public class APS_ALPHA : ModuleRules
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 	
-		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore" });
+		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore"
+			, "WorldScapeCore"
+			, "WorldScapeCommon"
+			, "WorldScapeNoise"
+			, "WorldScapeVolume"
+			, "WorldScapeFoliages"
+			, "WorldScapeEditor"
+			, "ProceduralMeshComponent" 
+			, "AtmoScape"
+        });
 
-		PrivateDependencyModuleNames.AddRange(new string[] {  });
+
+        PrivateDependencyModuleNames.AddRange(new string[] {  });
 
 		// Uncomment if you are using Slate UI
 		// PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });
