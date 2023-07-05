@@ -28,21 +28,23 @@ public:
 	virtual void Tick(float DeltaTime) override;
 
 public:
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Planet Environment")
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Planet Body")
 		APlanetaryEnvironmentGenerator* PlanetaryEnvironmentGenerator;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Environment")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Body")
 		bool bGenerateByDefault{ false };
-
 
 	APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(this, 0);
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Environment")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Body")
 		double WSCZoneScale {10.0 };
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Environment")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Body")
 		bool bEnvironmentSpawned{ false };
 	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Environment")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Body")
 		double AtmosphereHeight { 0.0 };
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Body")
+		double OrbitHeight { 0.0 };
 };

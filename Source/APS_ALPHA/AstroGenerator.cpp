@@ -716,6 +716,9 @@ void AAstroGenerator::GenerateStarSystem()
                     ///NewPlanet->PlanetEnvironmentGenerator->GeneratePlanetEnviroment();
                     
                     //FTransoNewPlanet->GetActorTransform();
+
+                    NewPlanet->OrbitHeight = (NewPlanet->GravityCollisionZone->GetScaledSphereRadius() / 100000) - NewPlanet->RadiusKM;
+
                     NewPlanet->PlanetaryEnvironmentGenerator->InitAtmoScape(World, NewPlanet->RadiusKM, NewPlanet);
                     if (NewPlanet->IsNotGasGiant())
                     {
