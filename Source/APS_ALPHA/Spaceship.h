@@ -69,6 +69,21 @@ protected:
 	virtual void BeginPlay() override;
 
 public:
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Camera)
+		USpringArmComponent* SpringArmComponent;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Camera)
+		UCameraComponent* CameraComponent;
+
+	// ƒобавьте эти две строки в область public вашего класса
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Meshes")
+		UStaticMesh* SmallScaleHullMesh;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Meshes")
+		UStaticMesh* LargeScaleHullMesh;
+
+
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Flight Mode")
 		EFlightMode LastFlightMode = EFlightMode::Basic;  // или любое начальное значение
 

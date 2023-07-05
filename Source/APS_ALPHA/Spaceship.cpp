@@ -72,6 +72,21 @@ ASpaceship::ASpaceship()
 	OnInterstellarMode.AddDynamic(this, &ASpaceship::UpdateNavigatableActorsForInterstellar);
 	OnStellarMode.AddDynamic(this, &ASpaceship::UpdateNavigatableActorsForStellar);
 	OnInterplanetaryMode.AddDynamic(this, &ASpaceship::UpdateNavigatableActorsForInterplanetary);
+
+
+	// Создайте и настройте компонент SpringArm
+	SpringArmComponent = CreateDefaultSubobject<USpringArmComponent>(TEXT("SpringArm"));
+	SpringArmComponent->SetupAttachment(RootComponent);
+	SpringArmComponent->TargetArmLength = 800.0;
+	SpringArmComponent->SetWorldLocation(FVector(2340.0, 0.0, 1280.0));
+	//SpringArmComponent->SetWorldRotation(FRotator(0.0, -180.0, 0.0 ));
+	//SpringArmComponent->bUsePawnControlRotation = true;
+
+	// Создайте и настройте компонент камеры
+	CameraComponent = CreateDefaultSubobject<UCameraComponent>(TEXT("Camera"));
+	CameraComponent->SetupAttachment(SpringArmComponent, USpringArmComponent::SocketName);
+
+
 }
 
 void ASpaceship::BeginPlay()
@@ -379,6 +394,11 @@ void ASpaceship::ToggleScale()
 			this->SetActorLocation(this->GetActorLocation() / 1000000000.0);
 			this->SetActorScale3D(FVector(0.01, 0.01, 0.01));
 			/// this->SetSmallHullMesh
+			//this->SpaceshipHull = SmallScaleHullMesh;
+			//this->SpaceshipHull->SetStaticMesh(SmallScaleHullMesh);
+			this->SpringArmComponent->TargetArmLength = 35;
+			//this->CameraComponent->FieldOfView = 45;
+			//this->CameraComponent->FOV
 
 			GEngine->AddOnScreenDebugMessage(-1, 15.0f, FColor::Green, FString::Printf(TEXT("Scaling to 1")));
 		}
@@ -389,6 +409,9 @@ void ASpaceship::ToggleScale()
 			this->SetActorLocation(this->GetActorLocation() * 1000000000.0);
 			this->SetActorScale3D(FVector(1, 1, 1));
 			/// this->SetBigHullMesh
+			//this->SpaceshipHull->SetStaticMesh(LargeScaleHullMesh);
+			this->SpringArmComponent->TargetArmLength = 800;
+			//this->CameraComponent->FieldOfView = 90;
 
 			GEngine->AddOnScreenDebugMessage(-1, 15.0f, FColor::Green, FString::Printf(TEXT("Scaling to 1000000000")));
 		}
