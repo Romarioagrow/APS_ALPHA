@@ -64,6 +64,59 @@ void AGravityCharacterPawn::Tick(const float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
+	if (CurrentGravityType != EGravityType::OnShip)
+	
+	{
+		GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Orange, FString::Printf(TEXT("UpdateGravityType")));
+
+		FName TagToCheck = "GravitySource";
+		TArray<AActor*> GravitySources;
+		TArray<AWorldActor*> WorldNavigatableActors;
+		UGameplayStatics::GetAllActorsOfClass(GetWorld(), AWorldActor::StaticClass(), GravitySources);
+
+		// ѕроверить каждого актера на наличие интерфейса UNavigatableBody
+		for (AActor* Actor : GravitySources)
+		{
+			if (Actor != nullptr && Actor->GetClass()->ImplementsInterface(UNavigatableBody::StaticClass()))
+			{
+				AWorldActor* WorldNavigatableActor = Cast<AWorldActor>(Actor);
+				WorldNavigatableActors.Add(WorldNavigatableActor);
+			}
+		}
+
+		FVector CharacterLocation = GetActorLocation();
+		AActor* ClosestGravitySource = nullptr;
+		float ClosestGravitySourceDistance = FLT_MAX;
+
+		// ѕровер€ем, находитс€ ли персонаж в радиусе вли€ни€ каждого источника гравитации
+		for (AWorldActor* GravitySourceActor : WorldNavigatableActors)
+		{
+			FVector GravitySourceLocation = GravitySourceActor->GetActorLocation();
+			double DistanceToGravitySource = FVector::Distance(CharacterLocation, GravitySourceLocation);
+			DistanceToGravitySource /= 100000.0;
+			if ((DistanceToGravitySource <= GravitySourceActor->AffectionRadiusKM) &&
+				(DistanceToGravitySource < ClosestGravitySourceDistance))
+			{
+				ClosestGravitySource = GravitySourceActor;
+				ClosestGravitySourceDistance = DistanceToGravitySource;
+			}
+		}
+
+		// ≈сли персонаж в зоне вли€ни€ источника гравитации, устанавливаем гравитацию в соответствии с этим источником
+		if (ClosestGravitySource)
+		{
+			GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Red, FString::Printf(TEXT("ClosestGravityActor : %s"), *ClosestGravitySource->GetName()));
+			SwitchGravityType(ClosestGravitySource);
+		}
+		else
+		{
+			GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Red, FString::Printf(TEXT("No Closest Gravity Actor")));
+			CurrentGravityType = EGravityType::ZeroG;
+			UpdateGravityPhysicParams();
+		}
+	}
+
+
 	// Apply Gravity by GravityType
 	UpdateGravity();
 
