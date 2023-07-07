@@ -282,7 +282,7 @@ void ASpaceship::Tick(float DeltaTime)
 			{
 				OnboardComputer->FlightSystem.CurrentFlightMode = EFlightMode::Interstellar;
 				OnboardComputer->FlightSystem.CurrentFlightType = EFlightType::FTL;
-				OnboardComputer->SwitchEngineMode(EEngineMode::Impulse);
+				OnboardComputer->SwitchEngineMode(EEngineMode::Offset);
 			}
 			else if (AffectedActor->IsA(APlanet::StaticClass()))
 			{
