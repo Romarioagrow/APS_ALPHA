@@ -126,6 +126,9 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Home System")
 		bool bNeedOrbitRotation{ false };
 	
+	UPROPERTY(EditAnywhere, Category = "Home System")
+		bool bOrbitRotationCheck{ false };
+	
 	UPROPERTY(EditAnywhere, Category = "Home System", meta = (EditCondition = "!bRandomHomeSystem"))
 		int PlanetsAmount { 1 };
 

@@ -1143,7 +1143,39 @@ void AAstroGenerator::GenerateCustomHomeSystem()
                 }
             }
             
+            /// Place Orbits
+            if (bOrbitRotationCheck)
+            {
+                double OrbitCoeff { 1.1 };
+                UE_LOG(LogTemp, Warning, TEXT("NewPlanetarySystem->PlanetsActorsList: %d"), NewPlanetarySystem->PlanetsActorsList.Num());
+                
+                for (int i = 1; i < NewPlanetarySystem->PlanetsActorsList.Num(); i++)
+                {
+                    APlanet* CurrentPlanet = NewPlanetarySystem->PlanetsActorsList[i];
+                    APlanet* PreviousPlanet = NewPlanetarySystem->PlanetsActorsList[i - 1];
 
+                    double CurrentPlanetLocation = CurrentPlanet->GetActorLocation().X;
+                    double PreviousPlanetLocation = PreviousPlanet->GetActorLocation().X;
+                    double SumOfAffectionZones = (CurrentPlanet->AffectionRadiusKM + PreviousPlanet->AffectionRadiusKM) * 1000000; // Converting to the same unit as locations
+                    double DistanceBetweenPlanets = CurrentPlanetLocation - PreviousPlanetLocation;
+
+                    UE_LOG(LogTemp, Warning, TEXT("Planet %d: Current Location: %f, Previous Location: %f, Distance: %f, SumOfAffectionZones: %f"),
+                        i, CurrentPlanetLocation, PreviousPlanetLocation, DistanceBetweenPlanets, SumOfAffectionZones);
+
+                    if (DistanceBetweenPlanets <= SumOfAffectionZones)
+                    {
+
+                        // Мы сдвигаем её на величину AffectionRadiusKM текущей планеты
+                        double NewLocationX = (PreviousPlanetLocation + PreviousPlanet->AffectionRadiusKM * 100000) + ((CurrentPlanet->AffectionRadiusKM * 100000) + OrbitCoeff);
+
+                        FVector NewLocation = CurrentPlanet->GetActorLocation();
+                        NewLocation.X = NewLocationX;
+                        CurrentPlanet->SetActorLocation(NewLocation);
+                        UE_LOG(LogTemp, Warning, TEXT("Moved Planet %d to: %f"), i, NewLocationX);
+ 
+                    }
+                }
+            }
 
 
             double StarSphereRadius;

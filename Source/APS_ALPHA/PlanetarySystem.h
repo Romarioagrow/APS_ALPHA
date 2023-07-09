@@ -71,6 +71,7 @@ public:
 	//UPROPERTY(VisibleAnywhere)
 		TArray<TSharedPtr<FPlanetData>> PlanetsList;
 
+		UPROPERTY(VisibleAnywhere, Category = "Planets")
 		TArray<APlanet*> PlanetsActorsList;
 
 	void SetStar(AStar* Star);

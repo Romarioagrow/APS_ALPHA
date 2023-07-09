@@ -61,10 +61,12 @@ void UPlanetarySystemGenerator::GenerateCustomPlanetraySystemModel(
         switch (OrbitDistributionType)
         {
         case EOrbitDistributionType::Uniform:
-            OrbitDistributionValue = FMath::RandRange(0.0, 1.0);
+            OrbitDistributionValue = FMath::RandRange(0.1, 1.0);
+            // next orbit - PlanetAffection Zone + Star Radius
             break;
         case EOrbitDistributionType::Gaussian:
             OrbitDistributionValue = RandGauss();
+            // Overlap Fix
             break;
         case EOrbitDistributionType::Chaotic:
         {

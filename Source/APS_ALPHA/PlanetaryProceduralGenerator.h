@@ -439,8 +439,15 @@ private:
 
         {EPlanetaryZoneType::OuterPlanetZone,
         {
-            {EPlanetType::GasGiant, 0.5f},
-            {EPlanetType::IceGiant, 0.5f}
+            {EPlanetType::GasGiant, 0.1f},
+            {EPlanetType::IceGiant, 0.1f},
+            {EPlanetType::Rocky, 0.1f},
+            {EPlanetType::Iron, 0.1f},
+            {EPlanetType::Terrestrial, 0.1f},
+            {EPlanetType::Ammonia, 0.1f},
+            {EPlanetType::Dwarf, 0.1f},
+            {EPlanetType::Ice, 0.1f}
+
         }},
 
         {EPlanetaryZoneType::AsteroidBeltZone,
@@ -452,13 +459,21 @@ private:
         {EPlanetaryZoneType::KuiperBeltZone,
         {
             {EPlanetType::Dwarf, 0.7f},
-            {EPlanetType::Ice, 0.3f}
+            {EPlanetType::Ice, 0.3f},
+            {EPlanetType::Rocky, 0.2f},
+
         }},
 
         {EPlanetaryZoneType::GasGiantsZone,
         {
             {EPlanetType::GasGiant, 0.5f},
-            {EPlanetType::IceGiant, 0.5f}
+            {EPlanetType::IceGiant, 0.5f},
+            {EPlanetType::Rocky, 0.1f},
+            {EPlanetType::Iron, 0.1f},
+            {EPlanetType::Terrestrial, 0.1f},
+            {EPlanetType::Ammonia, 0.1f},
+            {EPlanetType::Dwarf, 0.1f},
+            {EPlanetType::Ice, 0.1f}
         }},
         // и так далее для каждой зоны...
     };
