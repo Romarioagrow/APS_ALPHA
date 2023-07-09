@@ -150,7 +150,15 @@ void AAstroGenerator::InitGenerationLevel()
 
     if (bGenerateHomeSystem)
     {
-        GenerateHomeStarSystem();
+        if (bRandomHomeSystem)
+        {
+            GenerateHomeStarSystem();
+        }
+        else
+        {
+            GenerateCustomHomeSystem();
+            //GenerateHomeStarSystem();
+        }
     }
 }
 
@@ -235,6 +243,11 @@ void AAstroGenerator::InitAstroGenerators()
         UE_LOG(LogTemp, Warning, TEXT("All generators OK!"));
     }
 }
+
+//void AAstroGenerator::GenerateCustomHomeSystem()
+//{
+//
+//}
 
 void AAstroGenerator::GenerateHomeStarSystem()
 {
@@ -475,9 +488,9 @@ void AAstroGenerator::GenerateStarSystem()
         case EHomeSystemPosition::RandomPosition:
         {
             // Задайте HomeSystemSpawnLocation в зависимости от вашего определения центра, середины и конца.
-            double RandomX = FMath::RandRange(-1000, 1000);
-            double RandomY = FMath::RandRange(-1000, 1000);
-            double RandomZ = FMath::RandRange(-1000, 1000);
+            double RandomX = FMath::RandRange(-1000000000000, 1000000000000);
+            double RandomY = FMath::RandRange(-1000000000000, 1000000000000);
+            double RandomZ = FMath::RandRange(-1000000000000, 1000000000000);
             HomeSystemSpawnLocation = FVector(RandomX, RandomY, RandomZ); //* 1000000000;
         }
             break;
@@ -545,18 +558,9 @@ void AAstroGenerator::GenerateStarSystem()
 
         // Создаем новую звездную систему
         TSharedPtr<FStarSystemModel> StarSystemModel = MakeShared<FStarSystemModel>();
+        StarSystemGenerator->GenerateRandomStarSystemModel(StarSystemModel);
 
-        if (bRandomHomeSystem)
-        {
-            StarSystemGenerator->GenerateRandomStarSystemModel(StarSystemModel);
-        }
-        else
-        {
-            StarSystemGenerator->GenerateRandomStarSystemModel(StarSystemModel);
-        }
-        
-        AStarSystem* NewStarSystem = World->SpawnActor<AStarSystem>(BP_StarSystemClass); 
-        //AStarSystem* NewStarSystem = World->SpawnActor<AStarSystem>(BP_StarSystemClass, HomeSystemTransform);
+        AStarSystem* NewStarSystem = World->SpawnActor<AStarSystem>(BP_StarSystemClass, HomeSystemTransform);
         NewStarSystem->AttachToActor(this, FAttachmentTransformRules::KeepWorldTransform);
         NewStarSystem->SetActorLocation(HomeSystemSpawnLocation);
         
@@ -767,6 +771,437 @@ void AAstroGenerator::GenerateStarSystem()
             double SphereRadius = NewStarSystem->MainStar->PlanetarySystemZone->GetScaledSphereRadius() * 1.5;
             NewStarSystem->StarSystemRadius = SphereRadius;
             NewStarSystem->StarSystemZone->SetSphereRadius(SphereRadius);
+        }
+
+        if (bGenerateFullScaledWorld )
+        {
+            /* method 1: non-adaptive
+                if center = spawn at 000
+                if random = spawn at random index
+                if zones = spawn in distance from center
+
+                check overlapped hism, if overlapped, (re)move it
+            */
+
+            
+            double HomeSystemrRadiusScaled = NewStarSystem->StarSystemRadius * StarSystemDeadZone;
+            FCollisionShape MySphere = FCollisionShape::MakeSphere(HomeSystemrRadiusScaled);
+            TArray<FOverlapResult> Overlaps;
+
+            // выполните проверку перекрытия
+            FVector HomeSystemLocation = NewStarSystem->GetActorLocation();
+            bool isOverlap = World->OverlapMultiByChannel(Overlaps, HomeSystemLocation, FQuat::Identity, ECC_Visibility, MySphere);
+
+            float DebugDuration = 60.0f;
+            DrawDebugSphere(
+                GetWorld(),
+                HomeSystemLocation,
+                HomeSystemrRadiusScaled,
+                50,
+                FColor::Purple,
+                true,
+                DebugDuration
+            );
+
+            TArray<int32> InstancesToRemove;
+            UHierarchicalInstancedStaticMeshComponent* OverlappingHISM = nullptr;
+
+            if (isOverlap)
+            {
+                int TotalOverlaps = Overlaps.Num();
+                UE_LOG(LogTemp, Warning, TEXT("Total number of overlaps: %d"), TotalOverlaps);
+
+                for (auto& Result : Overlaps)
+                {
+                    UHierarchicalInstancedStaticMeshComponent* HISM = Cast<UHierarchicalInstancedStaticMeshComponent>(Result.Component.Get());
+                    if (HISM)
+                    {
+                        OverlappingHISM = HISM;
+                        int32 InstanceIndex = Result.ItemIndex;
+                        InstancesToRemove.Add(InstanceIndex);
+                    }
+                }
+                // сортируем массив индексов в обратном порядке
+                InstancesToRemove.Sort([](const int32& A, const int32& B) { return A > B; });
+                for (auto Index : InstancesToRemove)
+                {
+                    OverlappingHISM->RemoveInstance(Index);
+                }
+            }
+            else
+            {
+                UE_LOG(LogTemp, Warning, TEXT("No overlaped stars!"));
+            }
+        }
+
+
+        /// TO HOME SYSTEM
+    }
+    else
+    {
+        UE_LOG(LogTemp, Warning, TEXT("Falied to get World!"));
+    }
+}
+
+void AAstroGenerator::GenerateCustomHomeSystem()
+{
+    if (StarGenerator == nullptr || PlanetGenerator == nullptr || MoonGenerator == nullptr) {
+        UE_LOG(LogTemp, Warning, TEXT("One of the generators is null!"));
+        return;
+    }
+    
+    if (!BP_PlanetarySystemClass || !BP_StarSystemClass || !BP_StarClass || !BP_PlanetClass || !BP_MoonClass)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("One of the blueprint classes is not assigned in the editor!"));
+        return;
+    }
+
+    UWorld* World = GetWorld();
+
+    if (World) 
+    {
+        UE_LOG(LogTemp, Warning, TEXT("Generate Star System!"));
+
+        FTransform HomeSystemTransform;
+
+        FVector HomeSystemSpawnLocation{ 0 };
+        switch (HomeSystemPosition)
+        {
+        case EHomeSystemPosition::WorldCenter:
+            HomeSystemSpawnLocation = FVector(0, 0, 0);
+            break;
+        case EHomeSystemPosition::RandomPosition:
+        {
+            // Задайте HomeSystemSpawnLocation в зависимости от вашего определения центра, середины и конца.
+            double RandomX = FMath::RandRange(-1000000000000, 1000000000000);
+            double RandomY = FMath::RandRange(-1000000000000, 1000000000000);
+            double RandomZ = FMath::RandRange(-1000000000000, 1000000000000);
+            HomeSystemSpawnLocation = FVector(RandomX, RandomY, RandomZ); //* 1000000000;
+        }
+            break;
+        case EHomeSystemPosition::DirectPosition: 
+        {
+            TArray<AActor*> AttachedActors;
+            GetAttachedActors(AttachedActors);
+            if (AttachedActors.Num() > 0) // Убедитесь, что есть прикрепленные акторы
+            {
+                int32 RandomIndex = FMath::RandRange(0, AttachedActors.Num() - 1); // Получите случайный индекс
+                if (AstroGenerationLevel == EAstroGenerationLevel::Galaxy)
+                {
+                    AGalaxy* GalaxyActor = Cast<AGalaxy>(AttachedActors[RandomIndex]); // Приведите актора к типу AGalaxy
+                    if (GalaxyActor)
+                    {
+                        // Если актор является экземпляром класса AGalaxy, извлеките его HISM компонент.
+                        UHierarchicalInstancedStaticMeshComponent* HISMComponent = GalaxyActor->StarMeshInstances;
+                        if (HISMComponent && HISMComponent->GetInstanceCount() > 0)
+                        {
+                            // Получите случайный индекс из диапазона доступных инстансов
+                            int32 RandomInstanceIndex = FMath::RandRange(0, HISMComponent->GetInstanceCount() - 1);
+                            // Извлеките трансформацию случайного инстанса
+                            FTransform InstanceTransform;
+                            HISMComponent->GetInstanceTransform(RandomInstanceIndex, InstanceTransform, true);
+                            // Используйте позицию из трансформации инстанса как HomeSystemSpawnLocation
+                            HomeSystemSpawnLocation = InstanceTransform.GetLocation();
+                        }
+                    }
+                }
+                else if (AstroGenerationLevel == EAstroGenerationLevel::StarCluster)
+                {
+                    AStarCluster* StarClusterActor = Cast<AStarCluster>(AttachedActors[RandomIndex]); // Приведите актора к типу AStarCluster
+                    if (StarClusterActor)
+                    {
+                        // Если актор является экземпляром класса AStarCluster, извлеките его HISM компонент.
+                        UHierarchicalInstancedStaticMeshComponent* HISMComponent = StarClusterActor->StarMeshInstances;
+
+                        if (HISMComponent && HISMComponent->GetInstanceCount() > 0)
+                        {
+                            // Получите случайный индекс из диапазона доступных инстансов
+                            int32 RandomInstanceIndex = FMath::RandRange(0, HISMComponent->GetInstanceCount() - 1);
+                            // Извлеките трансформацию случайного инстанса
+                            FTransform InstanceTransform;
+                            HISMComponent->GetInstanceTransform(RandomInstanceIndex, InstanceTransform, true);
+                            // Используйте позицию из трансформации инстанса как HomeSystemSpawnLocation
+                            HomeSystemSpawnLocation = InstanceTransform.GetLocation();
+                        }
+                    }
+                }
+            }
+        }
+            break;
+        default:
+            break;
+        }
+        HomeSystemTransform.SetLocation(HomeSystemSpawnLocation);
+        HomeSystemTransform.SetRotation(FRotator::ZeroRotator.Quaternion());
+        /*
+        RandomPosition:
+        get random index from hism array indexes
+        get index model
+        from hism index to star model map get random pair
+        
+        */
+
+        // Создаем новую звездную систему
+        TSharedPtr<FStarSystemModel> StarSystemModel = MakeShared<FStarSystemModel>();
+        //StarSystemGenerator->GenerateRandomStarSystemModel(StarSystemModel);
+        //StarSystemModel->AmountOfStars = 1;
+        int AmountOfStars{ 0 };
+        switch (HomeSystemStarType)
+        {   
+        case EStarSystemType::SingleStar:
+            AmountOfStars = 1;
+            break;
+        case EStarSystemType::DoubleStar:
+            AmountOfStars = 2;
+            break;
+        case EStarSystemType::TripleStar:
+            AmountOfStars = 3;
+            break;
+        case EStarSystemType::MultipleStar:
+            AmountOfStars = FMath::RandRange(4, 6);
+            break;
+        default:
+            AmountOfStars = 1;
+            break;
+        }
+        StarSystemModel->AmountOfStars = AmountOfStars;
+
+        AStarSystem* NewStarSystem = World->SpawnActor<AStarSystem>(BP_StarSystemClass, HomeSystemTransform);
+        NewStarSystem->AttachToActor(this, FAttachmentTransformRules::KeepWorldTransform);
+        NewStarSystem->SetActorLocation(HomeSystemSpawnLocation);
+        
+        if (!NewStarSystem) 
+        {
+            UE_LOG(LogTemp, Warning, TEXT("NewStarSystem Falied!"));
+            return; 
+        }
+        StarSystemGenerator->ApplyModel(NewStarSystem, StarSystemModel);
+
+        FVector LastStarLocation { 0 };
+        for (int StarNumber = 0; StarNumber < AmountOfStars; StarNumber++)
+        {
+            TSharedPtr<FStarModel> StarModel = MakeShared<FStarModel>();
+
+            if (bRandomHomeStar)
+            {
+                StarGenerator->GenerateRandomStarModel(StarModel);
+            }
+            else
+            {
+                StarModel->StellarType = HomeStarStellarType;
+                StarModel->SpectralClass = HomeStarSpectralClass;
+                StarGenerator->GenerateStarModel(StarModel);
+            }
+
+            TSharedPtr<FPlanetarySystemModel> PlanetraySystemModel = MakeShared<FPlanetarySystemModel>();
+            
+            if (bRandomHomeSystemType)
+            {
+                PlanetarySystemGenerator->GeneratePlanetraySystemModelByStar(PlanetraySystemModel, StarModel, PlanetGenerator, MoonGenerator);
+
+            }
+            else
+            {
+                PlanetraySystemModel->AmountOfPlanets = PlanetsAmount;
+                PlanetraySystemModel->PlanetarySystemType = HomeSystemPlanetaryType;
+                PlanetraySystemModel->OrbitDistributionType = HomeSystemOrbitDistributionType;
+                PlanetarySystemGenerator->GenerateCustomPlanetraySystemModel(PlanetraySystemModel, StarModel, PlanetGenerator, MoonGenerator);
+            }
+
+            AStar* NewStar = World->SpawnActor<AStar>(BP_StarClass); 
+            APlanetarySystem* NewPlanetarySystem = World->SpawnActor<APlanetarySystem>(BP_PlanetarySystemClass);
+
+            if (StarNumber == 0)
+            {
+                NewStarSystem->MainStar = NewStar;
+            }
+
+            if (!NewStar || !NewPlanetarySystem)
+            {
+                UE_LOG(LogTemp, Warning, TEXT("Star Falied!"));
+                return; 
+            }
+
+            // Set Star full-scale
+            /// TODO: PlanetarySystemGenerator->ConnectStar()
+            StarGenerator->ApplyModel(NewStar, StarModel);
+            PlanetarySystemGenerator->ApplyModel(NewPlanetarySystem, PlanetraySystemModel);
+            NewStar->SetActorScale3D(FVector(StarModel->Radius * 813684224.0));
+            NewStar->StarRadiusKM = StarModel->Radius * 696340;
+            NewStar->SetPlanetarySystem(NewPlanetarySystem);
+            NewStar->AttachToActor(NewStarSystem, FAttachmentTransformRules::KeepWorldTransform);
+            NewPlanetarySystem->AttachToActor(NewStar, FAttachmentTransformRules::KeepWorldTransform);
+            
+            // Apply material luminocity multiplier and emissive light color
+            StarGenerator->ApplySpectralMaterial(NewStar, StarModel);
+
+            // Генерация планет для каждой звезды
+            FVector LastPlanetLocation{ 0 };
+            int AmountOfPlanets = PlanetraySystemModel->AmountOfPlanets;
+            for (const TSharedPtr<FPlanetData> FPlanetData : PlanetraySystemModel->PlanetsList)
+            {
+                APlanetOrbit* NewPlanetOrbit = World->SpawnActor<APlanetOrbit>(BP_PlanetOrbit, NewPlanetarySystem->GetActorLocation(), FRotator::ZeroRotator);
+                NewPlanetOrbit->AttachToActor(NewPlanetarySystem, FAttachmentTransformRules::KeepWorldTransform);
+
+                // Planet Model and generation
+                TSharedPtr<FPlanetModel> PlanetModel = FPlanetData->PlanetModel;
+                APlanet* NewPlanet = World->SpawnActor<APlanet>(BP_PlanetClass);
+
+                PlanetGenerator->ApplyModel(NewPlanet, PlanetModel);
+                NewStar->AddPlanet(NewPlanet);
+                NewPlanet->SetParentStar(NewStar);
+
+                // set planet full-scale
+                NewPlanet->SetActorScale3D(FVector(PlanetModel->Radius * 12742000));
+                FVector NewLocation = FVector(PlanetModel->OrbitDistance * 149600000000000 / 1000, 0, 0);
+                NewPlanet->PlanetRadiusKM = PlanetModel->Radius * 6371;
+                NewPlanet->SetActorLocation(NewLocation);
+
+                NewPlanet->AttachToActor(NewPlanetOrbit, FAttachmentTransformRules::KeepWorldTransform);
+                if (bNeedOrbitRotation)
+                {
+                    NewPlanetOrbit->SetActorRelativeRotation(FRotator(FMath::RandRange(-30.0, 30.0), FMath::RandRange(-360.0, 360.0), 0));
+                }
+                NewPlanetarySystem->PlanetsActorsList.Add(NewPlanet);
+
+                const double KM_TO_UE_UNIT_SCALE = 100000;
+                double DiameterOfLastMoon = 0;
+                FVector LastMoonLocation;
+                // Generate Moons
+                for (const TSharedPtr<FMoonData> MoonData : PlanetModel->MoonsList) 
+                {
+                    APlanetOrbit* NewMoonOrbit = World->SpawnActor<APlanetOrbit>(BP_PlanetOrbit, NewPlanet->GetActorLocation(), FRotator::ZeroRotator);
+                    NewMoonOrbit->AttachToActor(NewPlanet, FAttachmentTransformRules::KeepWorldTransform);
+
+                    FVector MoonLocation = NewPlanet->GetActorLocation();
+                    AMoon* NewMoon = World->SpawnActor<AMoon>(BP_MoonClass, MoonLocation, FRotator::ZeroRotator);
+                    NewPlanet->AddMoon(NewMoon);
+                    NewMoon->SetParentPlanet(NewPlanet);
+
+                    MoonGenerator->ApplyModel(NewMoon, MoonData->MoonModel);
+                    MoonGenerator->ConnectMoonWithPlanet(NewMoon, NewPlanet);
+
+                    // set moon full-scale
+                    double MoonRadius = MoonData->MoonModel->Radius;
+                    NewMoon->RadiusKM = MoonRadius * 6371;
+                    NewMoon->SetActorScale3D(FVector(MoonRadius * 12742000));
+                    
+                    FVector Origin, BoxExtent;
+                    double SphereRadius;
+                    NewMoon->GetActorBounds(false, Origin, BoxExtent);
+                    SphereRadius = BoxExtent.GetMax();
+                    NewMoon->AffectionRadiusKM = SphereRadius / 100000.0;
+
+                    NewMoon->AddActorLocalOffset(FVector(0, ((PlanetModel->RadiusKM + (MoonData->OrbitRadius * PlanetModel->RadiusKM)) * KM_TO_UE_UNIT_SCALE) * 1, 0));
+                    NewMoon->AttachToActor(NewMoonOrbit, FAttachmentTransformRules::KeepWorldTransform);
+                    
+                    if (bNeedOrbitRotation)
+                    {
+                        NewMoonOrbit->SetActorRelativeRotation(FRotator(FMath::RandRange(-360.0, 360.0), FMath::RandRange(-360.0, 360.0), FMath::RandRange(-360.0, 360.0)));
+                    }
+				
+                    DiameterOfLastMoon = MoonRadius * 2;
+                    LastMoonLocation = NewMoon->GetActorLocation();
+
+                    /// Generate WSC
+                    //NewMoon->PlanetaryEnvironmentGenerator->GenerateWorldscapeSurfaceByModel(World, NewMoon);
+                    NewMoon->PlanetaryEnvironmentGenerator->InitAtmoScape(World, NewMoon->RadiusKM, NewMoon);
+                }
+
+                if (DiameterOfLastMoon == 0)
+                {
+                    NewPlanet->PlanetaryZone->SetSphereRadius(100);
+                    NewPlanet->AffectionRadiusKM = 100 * NewPlanet->GetActorScale3D().X / 100000;
+                }
+                else
+                {
+                    FVector PlanetLocation = NewPlanet->GetActorLocation();
+                    FVector LastMoonOuterEdgeLocation = LastMoonLocation + FVector(0, DiameterOfLastMoon * 6371, 0);
+                    double SphereRadius = FVector::Dist(PlanetLocation, LastMoonOuterEdgeLocation);
+                    SphereRadius /= NewPlanet->GetActorScale3D().X;
+                    SphereRadius *= 1.5;
+                    NewPlanet->PlanetaryZone->SetSphereRadius(SphereRadius);
+                    NewPlanet->AffectionRadiusKM = SphereRadius * NewPlanet->GetActorScale3D().X / 100000;
+                }
+                LastPlanetLocation = NewPlanet->GetActorLocation();
+                LastStarLocation = LastPlanetLocation * 1.1; 
+
+                if (true)
+                {
+                    ///NewPlanet->PlanetEnvironmentGenerator->GeneratePlanetEnviroment();
+                    
+                    //FTransoNewPlanet->GetActorTransform();
+
+                    NewPlanet->OrbitHeight = (NewPlanet->GravityCollisionZone->GetScaledSphereRadius() / 100000) - NewPlanet->RadiusKM;
+
+                    NewPlanet->PlanetaryEnvironmentGenerator->InitAtmoScape(World, NewPlanet->RadiusKM, NewPlanet);
+                    if (NewPlanet->IsNotGasGiant())
+                    {
+                        NewPlanet->PlanetaryEnvironmentGenerator->GenerateWorldscapeSurfaceByModel(World, NewPlanet);
+
+                    }
+                }
+            }
+            
+
+
+
+            double StarSphereRadius;
+            if (LastPlanetLocation.IsZero())
+            {
+                StarSphereRadius = NewStar->GetRadius() * NewStar->GetActorScale3D().X * 2;
+                StarSphereRadius /= 1000000;
+                NewStar->PlanetarySystemZone->SetSphereRadius(StarSphereRadius);
+                NewStar->StarAffectionZoneRadius = StarSphereRadius * 1.5;
+            }
+            else
+            {
+                StarSphereRadius = FVector::Dist(NewStar->GetActorLocation(), LastPlanetLocation);
+                StarSphereRadius /= NewStar->GetActorScale3D().X;
+                NewStar->PlanetarySystemZone->SetSphereRadius(StarSphereRadius * 1.5);
+                NewStar->StarAffectionZoneRadius = StarSphereRadius;
+
+            }
+            //NewStar->AffectionRadiusKM = 
+                NewStar->CalculateAffectionRadius();
+            NewStarSystem->AddNewStar(NewStar);
+            NewStarSystem->StarSystemRadius = NewStar->StarAffectionZoneRadius;
+        }
+
+        double StarSystemSphereRadius = FVector::Dist(NewStarSystem->GetActorLocation(), LastStarLocation);
+        StarSystemSphereRadius /= NewStarSystem->GetActorScale3D().X;
+        StarSystemSphereRadius *= 1.6;
+        NewStarSystem->StarSystemZone->SetSphereRadius(StarSystemSphereRadius);
+        NewStarSystem->StarSystemRadius = StarSystemSphereRadius;
+        GeneratedHomeStarSystem = NewStarSystem;
+        //NewStarSystem->AffectionRadiusKM = 
+        NewStarSystem->CalculateAffectionRadius();
+
+        /*if (NewStarSystem->StarSystemRadius == 0)
+        {
+            double SphereRadius = NewStarSystem->MainStar->PlanetarySystemZone->GetScaledSphereRadius() * 1.5;
+            NewStarSystem->StarSystemRadius = SphereRadius;
+            NewStarSystem->StarSystemZone->SetSphereRadius(SphereRadius);
+        }*/
+        if (NewStarSystem->StarSystemRadius == 0)
+        {
+            if (NewStarSystem->MainStar && NewStarSystem->MainStar->PlanetarySystemZone)
+            {
+                double SphereRadius = NewStarSystem->MainStar->PlanetarySystemZone->GetScaledSphereRadius() * 1.5;
+                NewStarSystem->StarSystemRadius = SphereRadius;
+                NewStarSystem->StarSystemZone->SetSphereRadius(SphereRadius);
+            }
+            else
+            {
+                if (!NewStarSystem->MainStar)
+                {
+                    UE_LOG(LogTemp, Error, TEXT("NewStarSystem->MainStar is null"));
+                }
+                else if (!NewStarSystem->MainStar->PlanetarySystemZone)
+                {
+                    UE_LOG(LogTemp, Error, TEXT("NewStarSystem->MainStar->PlanetarySystemZone is null"));
+                }
+            }
         }
 
         if (bGenerateFullScaledWorld )

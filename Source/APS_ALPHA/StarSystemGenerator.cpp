@@ -11,6 +11,11 @@ void UStarSystemGenerator::ApplyModel(AStarSystem* StarSystem, TSharedPtr<FStarS
 	StarSystem->SetStarSystemType(StarSystemGenerationModel->StarSystemType);
 }
 
+void UStarSystemGenerator::GenerateCustomHomeSystemModel(TSharedPtr<FStarSystemModel> StarSystemModel)
+{
+	//StarSystemModel
+}
+
 void UStarSystemGenerator::GenerateRandomStarSystemModel(TSharedPtr<FStarSystemModel> StarSystemModel)
 {
 
