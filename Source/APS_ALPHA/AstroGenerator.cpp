@@ -1170,9 +1170,14 @@ void AAstroGenerator::GenerateCustomHomeSystem()
                             case EOrbitDistributionType::Uniform:
                             {
                                 //OrbitCoeff = NewStar->RadiusKM * 100000 * (1.1 * i);//FMath::RandRange(0.0, SumOfAffectionZones);
-                                OrbitCoeff = NewStar->RadiusKM * 100000 * (CurrentPlanet->Radius);//FMath::RandRange(0.0, SumOfAffectionZones);
+                                OrbitCoeff = NewStar->RadiusKM / 2 * 100000 * (CurrentPlanet->Radius);//FMath::RandRange(0.0, SumOfAffectionZones);
 
                                 break;
+							}
+                            case EOrbitDistributionType::Chaotic:
+                            {
+								OrbitCoeff = CurrentPlanet->Radius * 100000 * FMath::RandRange(1, 10);
+								break;
 							}
                         default:
                             break;
