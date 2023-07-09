@@ -16,6 +16,13 @@ void UPlanetarySystemGenerator::ApplyModel(APlanetarySystem* NewPlanetarySystem,
     NewPlanetarySystem->SetOrbitDistributionType(PlanetraySystemModel->OrbitDistributionType);
     NewPlanetarySystem->SetStarFullSpectralName(PlanetraySystemModel->FullSpectralName);
     NewPlanetarySystem->SetPlanetsList(PlanetraySystemModel->PlanetsList);
+    NewPlanetarySystem->HotZoneRadius = PlanetraySystemModel->HotZoneRadius;
+    NewPlanetarySystem->WarmZoneRadius = PlanetraySystemModel->WarmZoneRadius;
+    NewPlanetarySystem->ColdZoneRadius = PlanetraySystemModel->ColdZoneRadius;
+    NewPlanetarySystem->IceZoneRadius = PlanetraySystemModel->IceZoneRadius;
+    NewPlanetarySystem->InnerPlanetZoneRadius = PlanetraySystemModel->InnerPlanetZoneRadius;
+    NewPlanetarySystem->HabitableZoneRadius = PlanetraySystemModel->HabitableZoneRadius;
+    NewPlanetarySystem->GasGiantsZoneRadius = PlanetraySystemModel->GasGiantsZoneRadius;
 
 }
 
@@ -44,10 +51,16 @@ void UPlanetarySystemGenerator::GenerateCustomPlanetraySystemModel(
 
     double MinOrbit = StarModel->Mass * MinOrbitScalingFactor;
     double MaxOrbit = StarModel->Mass * MaxOrbitScalingFactor;
+    StarModel->MinOrbit = MinOrbit;
+    StarModel->MaxOrbit = MaxOrbit;
+    UE_LOG(LogTemp, Warning, TEXT("MAX Orbit: %f"), MaxOrbit);
+
+   
+
+    
 
     // Подбираем случайное распределение для нашей системы
     EOrbitDistributionType OrbitDistributionType = PlanetarySystemModel->OrbitDistributionType;//ChooseOrbitDistribution(StarModel->StellarType);
-    //PlanetarySystemModel->OrbitDistributionType = OrbitDistributionType;
 
     FString OrbitType = UEnum::GetValueAsString(OrbitDistributionType);
     UE_LOG(LogTemp, Warning, TEXT("Orbit Distribution Type: %s"), *OrbitType);
@@ -85,7 +98,7 @@ void UPlanetarySystemGenerator::GenerateCustomPlanetraySystemModel(
             break;
         }
         case EOrbitDistributionType::Dense:
-            OrbitDistributionValue = FMath::RandRange(0.01, 0.5);
+            OrbitDistributionValue = FMath::RandRange(0.05, 0.5);
             break;
         }
 

@@ -1291,6 +1291,144 @@ void AAstroGenerator::GenerateCustomHomeSystem()
                 NewStar->CalculateAffectionRadius();
             NewStarSystem->AddNewStar(NewStar);
             NewStarSystem->StarSystemRadius = NewStar->StarAffectionZoneRadius;
+
+
+            //double HomeSystemrRadiusScaled = NewStarSystem->StarSystemRadius * StarSystemDeadZone;
+            //FCollisionShape MySphere = FCollisionShape::MakeSphere(HomeSystemrRadiusScaled);
+            //TArray<FOverlapResult> Overlaps;
+
+            // выполните проверку перекрыти€
+           // bool isOverlap = World->OverlapMultiByChannel(Overlaps, HomeSystemLocation, FQuat::Identity, ECC_Visibility, MySphere);
+
+
+
+            FVector HomeSystemLocation = NewStar->GetActorLocation();
+            double MinOrbitScaleDist = NewStar->MinOrbit * 149597870 * 1000;
+            double MaxOrbitScaleDist = NewStar->MaxOrbit * 149597870 * 1000 * 2;
+            double HotZoneRadius = NewPlanetarySystem->HotZoneRadius.OuterRadius * 149597870 * 1000;
+            double WarmZoneRadius = NewPlanetarySystem->WarmZoneRadius.OuterRadius * 149597870 * 1000;
+            double HabitableZoneRadius = NewPlanetarySystem->HabitableZoneRadius.OuterRadius * 149597870 * 1000;
+            double ColdZoneRadius = NewPlanetarySystem->ColdZoneRadius.OuterRadius * 149597870 * 1000;
+            double IceZoneRadius = NewPlanetarySystem->IceZoneRadius.OuterRadius * 149597870 * 1000;
+            double GasGiantsZoneRadius = NewPlanetarySystem->GasGiantsZoneRadius.OuterRadius * 149597870 * 1000;
+            double KuiperBeltZoneRadius = NewPlanetarySystem->KuiperBeltZoneRadius.OuterRadius * 149597870 * 1000;
+            //double HotZoneRadius = NewPlanetarySystem->AsteroidBeltZoneRadius.OuterRadius;
+           // double MinOrbitScaleDist = NewStar->MinOrbit * NewStar->Radius * 100000 * 696340;
+            //double MaxOrbitScaleDist = NewStar->MaxOrbit * NewStar->Radius * 100000 * 696340;
+            //double HomeSystemrRadiusScaled = NewStarSystem->StarSystemRadius * StarSystemDeadZone;
+            //FCollisionShape MySphere = FCollisionShape::MakeSphere(MaxOrbitScaleDist);
+            //TArray<FOverlapResult> Overlaps;
+            float DebugDuration = 60.0f;
+            DrawDebugSphere(
+                GetWorld(),
+                HomeSystemLocation,
+                MinOrbitScaleDist,
+                50,
+                FColor::Red,
+                true,
+                DebugDuration
+            );
+            DrawDebugSphere(
+                GetWorld(),
+                HomeSystemLocation,
+                HotZoneRadius,
+                50,
+                FColor::Orange,
+                true,
+                DebugDuration
+            );
+            DrawDebugSphere(
+                GetWorld(),
+                HomeSystemLocation,
+                WarmZoneRadius,
+                50,
+                FColor::Yellow,
+                true,
+                DebugDuration
+            );
+            DrawDebugSphere(
+                GetWorld(),
+                HomeSystemLocation,
+                HabitableZoneRadius,
+                50,
+                FColor::Blue,
+                true,
+                DebugDuration
+            );
+            DrawDebugSphere(
+                GetWorld(),
+                HomeSystemLocation,
+                ColdZoneRadius,
+                50,
+                FColor::Turquoise,
+                true,
+                DebugDuration
+            );
+            DrawDebugSphere(
+                GetWorld(),
+                HomeSystemLocation,
+                IceZoneRadius,
+                50,
+                FColor::Cyan,
+                true,
+                DebugDuration
+            );
+            DrawDebugSphere(
+                GetWorld(),
+                HomeSystemLocation,
+                GasGiantsZoneRadius,
+                50,
+                FColor::Silver,
+                true,
+                DebugDuration
+            );
+            DrawDebugSphere(
+                GetWorld(),
+                HomeSystemLocation,
+                KuiperBeltZoneRadius,
+                50,
+                FColor::Magenta,
+                true,
+                DebugDuration
+            );
+            DrawDebugSphere(
+                GetWorld(),
+                HomeSystemLocation,
+                MaxOrbitScaleDist,
+                50,
+                FColor::Emerald,
+                true,
+                DebugDuration
+            );
+
+            // ¬ыполнение проверки перекрыти€
+            //FVector HomeSystemLocation{ 0.0, 0.0, 0.0 };//NewStarSystem->GetActorLocation();
+            //bool isOverlap = GetWorld()->OverlapMultiByChannel(Overlaps, HomeSystemLocation, FQuat::Identity, ECC_Visibility, MySphere);
+
+            //float DebugDuration = 60.0f;
+            //DrawDebugSphere(
+            //    GetWorld(),
+            //    HomeSystemLocation,
+            //    MaxOrbitScaleDist,
+            //    50,
+            //    FColor::Purple,
+            //    true,
+            //    DebugDuration
+            //);
+            //// ¬ыполнение проверки перекрыти€
+            //FVector HomeSystemLocation{ 0.0, 0.0, 0.0 };//NewStarSystem->GetActorLocation();
+            //bool isOverlap = GetWorld()->OverlapMultiByChannel(Overlaps, HomeSystemLocation, FQuat::Identity, ECC_Visibility, MySphere);
+
+            //float DebugDuration = 60.0f;
+            //DrawDebugSphere(
+            //    GetWorld(),
+            //    HomeSystemLocation,
+            //    MaxOrbitScaleDist,
+            //    50,
+            //    FColor::Purple,
+            //    true,
+            //    DebugDuration
+            //);
         }
 
         double StarSystemSphereRadius = FVector::Dist(NewStarSystem->GetActorLocation(), LastStarLocation);

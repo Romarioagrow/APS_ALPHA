@@ -42,5 +42,8 @@ struct FStarModel :
 
 	UPROPERTY(VisibleAnywhere)
 		EStellarType StarStellarClass;
+
+	double MinOrbit;
+	double MaxOrbit;
 };
 

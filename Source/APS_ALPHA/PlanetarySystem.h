@@ -43,6 +43,9 @@ public:
 	/// TODO: TO SINGLE STRUCT
 	UPROPERTY(VisibleAnywhere, Category = "Zones")
 		FZoneRadius HabitableZoneRadius;
+	
+	UPROPERTY(VisibleAnywhere, Category = "Zones")
+		FZoneRadius GasGiantsZoneRadius;
 
 	UPROPERTY(VisibleAnywhere, Category = "Zones")
 		FZoneRadius ColdZoneRadius;

@@ -269,7 +269,8 @@ void UStarGenerator::ApplyModel(AStar* NewStar, TSharedPtr<FStarModel> StarModel
     NewStar->SetFullSpectralName(StarModel->FullSpectralName);
     NewStar->RadiusKM = StarModel->RadiusKM;
     NewStar->AffectionRadiusKM = StarModel->RadiusKM;
-
+    NewStar->MinOrbit = StarModel->MinOrbit;
+    NewStar->MaxOrbit = StarModel->MaxOrbit;
 }
 
 /*TUniquePtr<FStarModel>&*/void UStarGenerator::GenerateStarModel(TSharedPtr<FStarModel> StarModel)
