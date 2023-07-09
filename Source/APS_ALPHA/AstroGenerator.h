@@ -146,7 +146,7 @@ public:
 		EPlanetarySystemType HomeSystemPlanetaryType { EPlanetarySystemType::MultiPlanetSystem };
 	
 	UPROPERTY(EditAnywhere, Category = "Home System", meta = (EditCondition = "!bRandomHomeSystem"))
-		EOrbitDistributionType HomeSystemOrbitDistributionType { EOrbitDistributionType::Dense };
+		EOrbitDistributionType HomeSystemOrbitDistributionType { EOrbitDistributionType::Uniform };
 
 	/// STAR CLUSTER GENERATOR
 	UPROPERTY(EditAnywhere, Category = "Galaxy Cluster")

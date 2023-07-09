@@ -8,5 +8,5 @@ enum class EOrbitDistributionType : uint8
     Chaotic     UMETA(DisplayName = "Chaotic"),
     InnerOuter  UMETA(DisplayName = "InnerOuter"),
     Dense       UMETA(DisplayName = "Dense"),
-    Count       UMETA(DisplayName = "Count") // Этот тип можно использовать для получения количества доступных типов
+   // Count       UMETA(DisplayName = "Count") 
 }; 

@@ -1146,7 +1146,7 @@ void AAstroGenerator::GenerateCustomHomeSystem()
             /// Place Orbits
             if (bOrbitRotationCheck)
             {
-                double OrbitCoeff { 1.1 };
+                
                 UE_LOG(LogTemp, Warning, TEXT("NewPlanetarySystem->PlanetsActorsList: %d"), NewPlanetarySystem->PlanetsActorsList.Num());
                 
                 for (int i = 1; i < NewPlanetarySystem->PlanetsActorsList.Num(); i++)
@@ -1164,6 +1164,19 @@ void AAstroGenerator::GenerateCustomHomeSystem()
 
                     if (DistanceBetweenPlanets <= SumOfAffectionZones)
                     {
+                        double OrbitCoeff = CurrentPlanet->AffectionRadiusKM * 100000;
+                        switch (NewPlanetarySystem->OrbitDistributionType)
+                        {
+                            case EOrbitDistributionType::Uniform:
+                            {
+                                //OrbitCoeff = NewStar->RadiusKM * 100000 * (1.1 * i);//FMath::RandRange(0.0, SumOfAffectionZones);
+                                OrbitCoeff = NewStar->RadiusKM * 100000 * (CurrentPlanet->Radius);//FMath::RandRange(0.0, SumOfAffectionZones);
+
+                                break;
+							}
+                        default:
+                            break;
+                        }
 
                         // Мы сдвигаем её на величину AffectionRadiusKM текущей планеты
                         double NewLocationX = (PreviousPlanetLocation + PreviousPlanet->AffectionRadiusKM * 100000) + ((CurrentPlanet->AffectionRadiusKM * 100000) + OrbitCoeff);
@@ -1177,6 +1190,81 @@ void AAstroGenerator::GenerateCustomHomeSystem()
                 }
             }
 
+            //for (APlanet* Planet : NewPlanetarySystem->PlanetsActorsList)
+            //{
+            //    // Получить позицию планеты
+            //    FVector PlanetLocation = Planet->GetActorLocation();
+
+            //    // Используем дистанцию до звезды как радиус
+            //    float CircleRadius = FVector::Dist(PlanetLocation, NewStar->GetActorLocation());
+
+            //    // Получить позицию звезды (или другого центра системы)
+            //    FVector StarLocation = NewStar->GetActorLocation();  // Заменить на реальное положение звезды
+
+            //    // Нарисовать круг вокруг звезды
+            //    DrawDebugCircle(
+            //        GetWorld(),
+            //        StarLocation,
+            //        CircleRadius,
+            //        100,  // Количество сегментов
+            //        FColor::Green,
+            //        true,  // bPersistentLines
+            //        -1.0,  // LifeTime
+            //        0,  // DepthPriority
+            //        100000000.0,  // Thickness
+            //        FVector(0, 0, 1),  // ZAxis
+            //        FVector(0, 1, 0),  // YAxis
+            //        true  // bDrawAxis
+            //    );
+            //}
+            //for (APlanet* Planet : NewPlanetarySystem->PlanetsActorsList)
+            //{
+            //    // Получить позицию планеты
+            //    FVector PlanetLocation = Planet->GetActorLocation();
+
+            //    // Используем дистанцию до звезды как радиус
+            //    float SphereRadius = FVector::Dist(PlanetLocation, NewStar->GetActorLocation());
+
+            //    // Получить позицию звезды (или другого центра системы)
+            //    FVector StarLocation = NewStar->GetActorLocation();  // Заменить на реальное положение звезды
+
+            //    // Выполните проверку перекрытия
+            //    FCollisionShape MySphere = FCollisionShape::MakeSphere(SphereRadius);
+            //    TArray<FOverlapResult> Overlaps;
+            //    bool isOverlap = GetWorld()->OverlapMultiByChannel(Overlaps, StarLocation, FQuat::Identity, ECC_Visibility, MySphere);
+
+            //    float DebugDuration = 60.0f;
+            //    DrawDebugSphere(
+            //        GetWorld(),
+            //        StarLocation,
+            //        SphereRadius,
+            //        50,
+            //        FColor::Purple,
+            //        true,
+            //        DebugDuration
+            //    );
+            //}
+            //for (APlanet* Planet : NewPlanetarySystem->PlanetsActorsList)
+            //{
+            //    // Получить позицию планеты
+            //    FVector PlanetLocation = Planet->GetActorLocation();
+
+            //    // Используем дистанцию до звезды как радиус сферы
+            //    float SphereRadius = FVector::Dist(PlanetLocation, NewStar->GetActorLocation());
+
+            //    // Нарисовать сферу вокруг планеты
+            //    DrawDebugSphere(
+            //        GetWorld(),
+            //        PlanetLocation,
+            //        SphereRadius,
+            //        50,  // Количество сегментов
+            //        FColor::Red,
+            //        true,  // bPersistentLines
+            //        -1.0,  // LifeTime
+            //        0,  // DepthPriority
+            //        5.0  // Thickness
+            //    );
+            //}
 
             double StarSphereRadius;
             if (LastPlanetLocation.IsZero())

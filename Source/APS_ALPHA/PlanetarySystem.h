@@ -20,7 +20,8 @@ class APS_ALPHA_API APlanetarySystem : public ACelestialSystem
 {
 	GENERATED_BODY()
 
-private:
+//private:
+public:
 	UPROPERTY(VisibleAnywhere)
 		AStar* Star;
 
