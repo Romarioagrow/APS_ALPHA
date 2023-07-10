@@ -1305,14 +1305,27 @@ void AAstroGenerator::GenerateCustomHomeSystem()
             /// TODO: APPLY TO MODEL FIRST!!!
             FVector HomeSystemLocation = NewStar->GetActorLocation();
             double MinOrbitScaleDist = NewStar->MinOrbit * 149597870 * 1000;
-            double MaxOrbitScaleDist = NewStar->MaxOrbit * 149597870 * 1000 * 2;
+            double MaxOrbitScaleDist = NewStar->MaxOrbit * 149597870 * 3000;
+            double HotZoneRadius = NewPlanetarySystem->HotZoneOuter;
+            double WarmZoneRadius = NewPlanetarySystem->WarmZoneOuter;
+            double HabitableZoneRadius = NewPlanetarySystem->HabitableZoneOuter;
+            double ColdZoneRadius = NewPlanetarySystem->ColdZoneOuter;
+            double IceZoneRadius = NewPlanetarySystem->IceZoneOuter;
+            double GasGiantsZoneRadius = NewPlanetarySystem->GasGiantsZoneOuter;
+            double KuiperBeltZoneRadius = NewPlanetarySystem->KuiperBeltZoneOuter;
+            
+            
+           /* double MinOrbitScaleDist = NewStar->MinOrbit * 149597870 * 1000;
+            double MaxOrbitScaleDist = NewStar->MaxOrbit * 149597870 * 3000;
             double HotZoneRadius = NewPlanetarySystem->HotZoneRadius.OuterRadius * 149597870 * 3000;
-            double WarmZoneRadius = NewPlanetarySystem->WarmZoneRadius.OuterRadius * 149597870 * 2000;
+            double WarmZoneRadius = NewPlanetarySystem->WarmZoneRadius.OuterRadius * 149597870 * 3000;
             double HabitableZoneRadius = NewPlanetarySystem->HabitableZoneRadius.OuterRadius * 149597870 * 3000;
             double ColdZoneRadius = NewPlanetarySystem->ColdZoneRadius.OuterRadius * 149597870 * 3000;
             double IceZoneRadius = NewPlanetarySystem->IceZoneRadius.OuterRadius * 149597870 * 3000;
             double GasGiantsZoneRadius = NewPlanetarySystem->GasGiantsZoneRadius.OuterRadius * 149597870 * 3000;
-            double KuiperBeltZoneRadius = NewPlanetarySystem->KuiperBeltZoneRadius.OuterRadius * 149597870 * 3000;
+            double KuiperBeltZoneRadius = NewPlanetarySystem->KuiperBeltZoneRadius.OuterRadius * 149597870 * 3000;*/
+
+
             //double HotZoneRadius = NewPlanetarySystem->AsteroidBeltZoneRadius.OuterRadius;
            // double MinOrbitScaleDist = NewStar->MinOrbit * NewStar->Radius * 100000 * 696340;
             //double MaxOrbitScaleDist = NewStar->MaxOrbit * NewStar->Radius * 100000 * 696340;

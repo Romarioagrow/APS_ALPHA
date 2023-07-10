@@ -72,6 +72,18 @@ public:
 		FZoneRadius KuiperBeltZoneRadius;
 
 public:
+	double HotZoneOuter;
+	double WarmZoneOuter;
+	double ColdZoneOuter;
+	double IceZoneOuter;
+	double GasGiantsZoneOuter;
+	double KuiperBeltZoneOuter;
+	double InnerZoneOuter;
+	double OuterZoneOuter;
+	double HabitableZoneOuter;
+	double StarDeadZoneOuter;
+
+public:
 	//UPROPERTY(VisibleAnywhere)
 		TArray<TSharedPtr<FPlanetData>> PlanetsList;
 

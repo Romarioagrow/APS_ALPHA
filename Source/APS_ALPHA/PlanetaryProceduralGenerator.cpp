@@ -24,6 +24,16 @@ void UPlanetarySystemGenerator::ApplyModel(APlanetarySystem* NewPlanetarySystem,
     NewPlanetarySystem->HabitableZoneRadius = PlanetraySystemModel->HabitableZoneRadius;
     NewPlanetarySystem->GasGiantsZoneRadius = PlanetraySystemModel->GasGiantsZoneRadius;
 
+    NewPlanetarySystem->HotZoneOuter = PlanetraySystemModel->HotZoneOuter;
+    NewPlanetarySystem->WarmZoneOuter = PlanetraySystemModel->WarmZoneOuter;
+    NewPlanetarySystem->ColdZoneOuter = PlanetraySystemModel->ColdZoneOuter;
+    NewPlanetarySystem->IceZoneOuter = PlanetraySystemModel->IceZoneOuter;
+    NewPlanetarySystem->GasGiantsZoneOuter = PlanetraySystemModel->GasGiantsZoneOuter;
+    NewPlanetarySystem->KuiperBeltZoneOuter = PlanetraySystemModel->KuiperBeltZoneOuter;
+    NewPlanetarySystem->InnerZoneOuter = PlanetraySystemModel->InnerZoneOuter;
+    NewPlanetarySystem->OuterZoneOuter = PlanetraySystemModel->OuterZoneOuter;
+    NewPlanetarySystem->HabitableZoneOuter = PlanetraySystemModel->HabitableZoneOuter;
+    NewPlanetarySystem->StarDeadZoneOuter = PlanetraySystemModel->StarDeadZoneOuter;
 }
 
 
@@ -115,8 +125,8 @@ void UPlanetarySystemGenerator::GenerateCustomPlanetraySystemModel(
     UE_LOG(LogTemp, Warning, TEXT("MinOrbit: %f, MaxOrbit: %f"), MinOrbit, MaxOrbit);
 
     // Вычисляем обитаемую зону
-    float HabitableZoneInner = sqrt(StarModel->Luminosity / 1.1);
-    float HabitableZoneOuter = sqrt(StarModel->Luminosity / 0.53);
+    float HabitableZoneInner = sqrt(StarModel->Luminosity / 1.1) * 2;
+    float HabitableZoneOuter = sqrt(StarModel->Luminosity / 0.53) * 2;
 
     // Star Dead zone
     double StarDeadZoneInner = 0; // Начинается от звезды
@@ -220,6 +230,53 @@ void UPlanetarySystemGenerator::GenerateCustomPlanetraySystemModel(
         }
     }
 
+    // Масштабируемые коэффициенты для разных зон
+    double scaleCoeff = 149597870 * 3000;
+
+
+
+   /* StarDeadZoneOuter = StarDeadZoneOuter * 149597870 * 3000;
+    HotZoneOuter = (StarDeadZoneOuter + ((HabitableZoneInner * scaleCoeff) - StarDeadZoneOuter) / 2) * 149597870 * 3000;
+    WarmZoneOuter = HabitableZoneInner * scaleCoeff * 149597870 * 3000;
+    ColdZoneOuter = (ColdZoneInner * 2 > MaxOrbit) ? MaxOrbit : ColdZoneInner * 2 * scaleCoeff * 149597870 * 3000;
+    IceZoneOuter = (IceZoneInner * 2 > MaxOrbit) ? MaxOrbit : IceZoneInner * 2 * scaleCoeff * 149597870 * 3000;
+    GasGiantsZoneOuter = (GasGiantsZoneInner * 2 > MaxOrbit) ? MaxOrbit : GasGiantsZoneInner * 2 * scaleCoeff * 149597870 * 3000;
+    KuiperBeltZoneOuter = (KuiperBeltZoneInner * 2 > MaxOrbit) ? MaxOrbit : KuiperBeltZoneInner * 2 * scaleCoeff * 149597870 * 3000;*/
+
+    //*149597870 * 3000
+
+    //PlanetarySystemModel->MinOrbit
+
+    /*HotZoneInner *= 149597870 * 3000;
+    HotZoneOuter *= 149597870 * 3000;
+    WarmZoneInner *= 149597870 * 3000;
+    WarmZoneOuter *= 149597870 * 3000;
+    ColdZoneInner *= 149597870 * 3000;
+    ColdZoneOuter *= 149597870 * 3000;
+    IceZoneInner *= 149597870 * 3000;
+    IceZoneOuter *= 149597870 * 3000;
+    GasGiantsZoneInner *= 149597870 * 3000;
+    GasGiantsZoneOuter *= 149597870 * 3000;
+    KuiperBeltZoneInner *= 149597870 * 3000;
+    KuiperBeltZoneOuter *= 149597870 * 3000;
+    InnerZoneInner *= 149597870 * 3000;
+    InnerZoneOuter *= 149597870 * 3000;
+    OuterZoneInner *= 149597870 * 3000;
+    OuterZoneOuter *= 149597870 * 3000;*/
+
+    PlanetarySystemModel->HotZoneOuter = HotZoneOuter * 149597870 * 3000;
+    PlanetarySystemModel->WarmZoneOuter = WarmZoneOuter * 149597870 * 3000;
+    PlanetarySystemModel->ColdZoneOuter = ColdZoneOuter * 149597870 * 3000;
+    PlanetarySystemModel->IceZoneOuter = IceZoneOuter *149597870 * 3000;
+    PlanetarySystemModel->GasGiantsZoneOuter = GasGiantsZoneOuter * 149597870 * 3000;
+    PlanetarySystemModel->KuiperBeltZoneOuter = KuiperBeltZoneOuter * 149597870 * 3000;
+    PlanetarySystemModel->InnerZoneOuter = InnerZoneOuter * 149597870 * 3000;
+    PlanetarySystemModel->OuterZoneOuter = OuterZoneOuter * 149597870 * 3000;
+    PlanetarySystemModel->HabitableZoneOuter = HabitableZoneOuter * 149597870 * 3000;
+    PlanetarySystemModel->StarDeadZoneOuter = StarDeadZoneOuter * 149597870 * 3000;
+
+
+
     PlanetarySystemModel->DeadZoneRadius = FZoneRadius(StarDeadZoneInner, StarDeadZoneOuter);
     PlanetarySystemModel->HabitableZoneRadius = FZoneRadius(HabitableZoneInner, HabitableZoneOuter);
     PlanetarySystemModel->ColdZoneRadius = FZoneRadius(ColdZoneInner, ColdZoneOuter);
@@ -249,6 +306,18 @@ void UPlanetarySystemGenerator::GenerateCustomPlanetraySystemModel(
     UE_LOG(LogTemp, Warning, TEXT("Radius Kuiper Belt Zone  - Inner: %f, Outer: %f AU"), PlanetarySystemModel->KuiperBeltZoneRadius.InnerRadius, PlanetarySystemModel->KuiperBeltZoneRadius.OuterRadius);
     UE_LOG(LogTemp, Warning, TEXT("Radius Inner Planet Zone - Inner: %f, Outer: %f AU"), PlanetarySystemModel->InnerPlanetZoneRadius.InnerRadius, PlanetarySystemModel->InnerPlanetZoneRadius.OuterRadius);
     UE_LOG(LogTemp, Warning, TEXT("Radius Outer Planet Zone - Inner: %f, Outer: %f AU"), PlanetarySystemModel->OuterPlanetZoneRadius.InnerRadius, PlanetarySystemModel->OuterPlanetZoneRadius.OuterRadius);
+
+
+    UE_LOG(LogTemp, Warning, TEXT("Hot Zone Outer: %f"), PlanetarySystemModel->HotZoneOuter);
+    UE_LOG(LogTemp, Warning, TEXT("Warm Zone Outer: %f"), PlanetarySystemModel->WarmZoneOuter);
+    UE_LOG(LogTemp, Warning, TEXT("Cold Zone Outer: %f"), PlanetarySystemModel->ColdZoneOuter);
+    UE_LOG(LogTemp, Warning, TEXT("Ice Zone Outer: %f"), PlanetarySystemModel->IceZoneOuter);
+    UE_LOG(LogTemp, Warning, TEXT("Gas Giants Zone Outer: %f"), PlanetarySystemModel->GasGiantsZoneOuter);
+    UE_LOG(LogTemp, Warning, TEXT("Kuiper Belt Zone Outer: %f"), PlanetarySystemModel->KuiperBeltZoneOuter);
+    UE_LOG(LogTemp, Warning, TEXT("Inner Zone Outer: %f"), PlanetarySystemModel->InnerZoneOuter);
+    UE_LOG(LogTemp, Warning, TEXT("Outer Zone Outer: %f"), PlanetarySystemModel->OuterZoneOuter);
+    UE_LOG(LogTemp, Warning, TEXT("Habitable Zone Outer: %f"), PlanetarySystemModel->HabitableZoneOuter);
+    UE_LOG(LogTemp, Warning, TEXT("Star Dead Zone Outer: %f"), PlanetarySystemModel->StarDeadZoneOuter);
 
     /// TODO: To GeneratePlanetOrbits
     {
@@ -912,7 +981,7 @@ EPlanetaryZoneType UPlanetarySystemGenerator::DeterminePlanetZone(double OrbitRa
         }
     }*/
 
-    if (OrbitRadius >= PlanetarySystemModel->DeadZoneRadius.InnerRadius && OrbitRadius <= PlanetarySystemModel->DeadZoneRadius.OuterRadius)
+    /*if (OrbitRadius >= PlanetarySystemModel->DeadZoneRadius.InnerRadius && OrbitRadius <= PlanetarySystemModel->DeadZoneRadius.OuterRadius)
     {
         return EPlanetaryZoneType::DeadZone;
     }
@@ -941,6 +1010,41 @@ EPlanetaryZoneType UPlanetarySystemGenerator::DeterminePlanetZone(double OrbitRa
         return EPlanetaryZoneType::GasGiantsZone;
     }
     if (OrbitRadius >= PlanetarySystemModel->KuiperBeltZoneRadius.InnerRadius && OrbitRadius <= PlanetarySystemModel->KuiperBeltZoneRadius.OuterRadius)
+    {
+        return EPlanetaryZoneType::KuiperBeltZone;
+    }*/
+
+    OrbitRadius *= 149597870 * 3000;
+
+    if (OrbitRadius <= PlanetarySystemModel->StarDeadZoneOuter)
+    {
+        return EPlanetaryZoneType::DeadZone;
+    }
+    if (OrbitRadius >= PlanetarySystemModel->StarDeadZoneOuter && OrbitRadius <= PlanetarySystemModel->HotZoneOuter)
+    {
+        return EPlanetaryZoneType::HotZone;
+    }
+    if (OrbitRadius >= PlanetarySystemModel->HotZoneOuter && OrbitRadius <= PlanetarySystemModel->WarmZoneOuter)
+    {
+        return EPlanetaryZoneType::WarmZone;
+    }
+    if (OrbitRadius >= PlanetarySystemModel->WarmZoneOuter && OrbitRadius <= PlanetarySystemModel->HabitableZoneOuter)
+    {
+        return EPlanetaryZoneType::HabitableZone;
+    }
+    if (OrbitRadius >= PlanetarySystemModel->HabitableZoneOuter && OrbitRadius <= PlanetarySystemModel->ColdZoneOuter)
+    {
+        return EPlanetaryZoneType::ColdZone;
+    }
+    if (OrbitRadius >= PlanetarySystemModel->ColdZoneOuter && OrbitRadius <= PlanetarySystemModel->IceZoneOuter)
+    {
+        return EPlanetaryZoneType::IceZone;
+    }
+    if (OrbitRadius >= PlanetarySystemModel->IceZoneOuter && OrbitRadius <= PlanetarySystemModel->GasGiantsZoneOuter)
+    {
+        return EPlanetaryZoneType::GasGiantsZone;
+    }
+    if (OrbitRadius >= PlanetarySystemModel->GasGiantsZoneOuter && OrbitRadius <= PlanetarySystemModel->KuiperBeltZoneOuter)
     {
         return EPlanetaryZoneType::KuiperBeltZone;
     }

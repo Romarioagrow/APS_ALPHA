@@ -121,5 +121,17 @@ struct FPlanetarySystemModel :
 	
 	UPROPERTY(VisibleAnywhere, Category = "Zones")
 		FZoneRadius GasGiantsZoneRadius;
+
+
+	double HotZoneOuter;
+	double WarmZoneOuter;
+	double ColdZoneOuter;
+	double IceZoneOuter;
+	double GasGiantsZoneOuter;
+	double KuiperBeltZoneOuter;
+	double InnerZoneOuter;
+	double OuterZoneOuter;
+	double HabitableZoneOuter;
+	double StarDeadZoneOuter;
 };
 
