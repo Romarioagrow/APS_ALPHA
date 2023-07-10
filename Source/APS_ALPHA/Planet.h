@@ -92,7 +92,8 @@ private:
 
 		TArray<TSharedPtr<FMoonData>> MoonsList;
 
-private:
+//private:
+public:
 	TArray<AMoon*> Moons;
 
 protected:

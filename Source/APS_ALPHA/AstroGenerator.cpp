@@ -1129,17 +1129,13 @@ void AAstroGenerator::GenerateCustomHomeSystem()
 
                 if (true)
                 {
-                    ///NewPlanet->PlanetEnvironmentGenerator->GeneratePlanetEnviroment();
-                    
-                    //FTransoNewPlanet->GetActorTransform();
-
                     NewPlanet->OrbitHeight = (NewPlanet->GravityCollisionZone->GetScaledSphereRadius() / 100000) - NewPlanet->RadiusKM;
 
+                    /// TODO: PlanetaryEnvironmentGenerator->InitEnviroment();
                     NewPlanet->PlanetaryEnvironmentGenerator->InitAtmoScape(World, NewPlanet->RadiusKM, NewPlanet);
                     if (NewPlanet->IsNotGasGiant())
                     {
                         NewPlanet->PlanetaryEnvironmentGenerator->GenerateWorldscapeSurfaceByModel(World, NewPlanet);
-
                     }
                 }
             }
@@ -1147,10 +1143,7 @@ void AAstroGenerator::GenerateCustomHomeSystem()
             /// Place Orbits
             if (bOrbitRotationCheck)
             {
-                ///TODO: ALSO CHECK MOONS!
-
                 UE_LOG(LogTemp, Warning, TEXT("NewPlanetarySystem->PlanetsActorsList: %d"), NewPlanetarySystem->PlanetsActorsList.Num());
-                
                 for (int i = 1; i < NewPlanetarySystem->PlanetsActorsList.Num(); i++)
                 {
                     APlanet* CurrentPlanet = NewPlanetarySystem->PlanetsActorsList[i];
@@ -1161,9 +1154,6 @@ void AAstroGenerator::GenerateCustomHomeSystem()
                     double SumOfAffectionZones = (CurrentPlanet->AffectionRadiusKM + PreviousPlanet->AffectionRadiusKM) * 1000000; // Converting to the same unit as locations
                     double DistanceBetweenPlanets = CurrentPlanetLocation - PreviousPlanetLocation;
 
-                    UE_LOG(LogTemp, Warning, TEXT("Planet %d: Current Location: %f, Previous Location: %f, Distance: %f, SumOfAffectionZones: %f"),
-                        i, CurrentPlanetLocation, PreviousPlanetLocation, DistanceBetweenPlanets, SumOfAffectionZones);
-
                     if (DistanceBetweenPlanets <= SumOfAffectionZones)
                     {
                         double OrbitCoeff = CurrentPlanet->AffectionRadiusKM * 100000;
@@ -1172,9 +1162,7 @@ void AAstroGenerator::GenerateCustomHomeSystem()
                         {
                             case EOrbitDistributionType::Uniform:
                             {
-                                //OrbitCoeff = NewStar->RadiusKM * 100000 * (1.1 * i);//FMath::RandRange(0.0, SumOfAffectionZones);
-                                OrbitCoeff = NewStar->RadiusKM / 2 * 100000 * (CurrentPlanet->Radius);//FMath::RandRange(0.0, SumOfAffectionZones);
-
+                                OrbitCoeff = NewStar->RadiusKM / 2 * 100000 * (CurrentPlanet->Radius);
                                 break;
 							}
                             case EOrbitDistributionType::Chaotic:
@@ -1193,8 +1181,42 @@ void AAstroGenerator::GenerateCustomHomeSystem()
                         NewLocation.X = NewLocationX;
                         CurrentPlanet->SetActorLocation(NewLocation);
                         LastPlanetLocation = NewLocation;
-                        UE_LOG(LogTemp, Warning, TEXT("Moved Planet %d to: %f"), i, NewLocationX);
- 
+                        
+                        FVector OldLocation = CurrentPlanet->GetActorLocation();
+                        double OldLocationX = OldLocation.X;
+                        CurrentPlanet->SetActorLocation(NewLocation);
+
+                        UE_LOG(LogTemp, Warning, TEXT("Planet %d: Moved from %f to %f, Distance: %f, SumOfAffectionZones: %f"), i, OldLocationX, NewLocationX, DistanceBetweenPlanets, SumOfAffectionZones);
+
+                    }
+
+                    // Check Moons Orbits
+                    {
+                        UE_LOG(LogTemp, Warning, TEXT("CurrentPlanet->Moons.Num(): %d"), CurrentPlanet->Moons.Num())
+                        for (int j = 1; j < CurrentPlanet->Moons.Num(); j++)
+                        {
+                            AMoon* CurrentMoon = CurrentPlanet->Moons[j];
+                            AMoon* PreviousMoon = CurrentPlanet->Moons[j - 1];
+
+                            double CurrentMoonLocation = CurrentMoon->GetActorLocation().Y;
+                            double PreviousMoonLocation = PreviousMoon->GetActorLocation().Y;
+                            double MoonSumOfAffectionZones = (CurrentMoon->AffectionRadiusKM + PreviousMoon->AffectionRadiusKM) * 100000; // Converting to the same unit as locations
+                            double DistanceBetweenMoons = CurrentMoonLocation - PreviousMoonLocation;
+
+                            if (DistanceBetweenMoons <= MoonSumOfAffectionZones)
+                            {
+                                double OrbitCoeff = CurrentMoon->AffectionRadiusKM * 100000;
+                                OrbitCoeff *= 1.1;
+                                double NewLocationY = (PreviousMoonLocation + PreviousMoon->AffectionRadiusKM * 100000) + ((CurrentMoon->AffectionRadiusKM * 100000) + OrbitCoeff);
+                                CurrentMoon->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+                                FVector NewLocation = CurrentMoon->GetActorLocation();
+                                NewLocation.Y = NewLocationY; 
+                                CurrentMoon->SetActorLocation(NewLocation);
+                                CurrentMoon->AttachToActor(CurrentPlanet, FAttachmentTransformRules::KeepWorldTransform);
+                                UE_LOG(LogTemp, Warning, TEXT("Moon %d: Moved from %f to %f, Distance: %f, SumOfAffectionZones: %f"), j, PreviousMoonLocation, CurrentMoonLocation, DistanceBetweenMoons, MoonSumOfAffectionZones);
+
+                            }
+                        }
                     }
                 }
             }
@@ -1292,7 +1314,7 @@ void AAstroGenerator::GenerateCustomHomeSystem()
 
             }
             //NewStar->AffectionRadiusKM = 
-                NewStar->CalculateAffectionRadius();
+            NewStar->CalculateAffectionRadius();
             NewStarSystem->AddNewStar(NewStar);
             NewStarSystem->StarSystemRadius = NewStar->StarAffectionZoneRadius;
 
@@ -1454,15 +1476,8 @@ void AAstroGenerator::GenerateCustomHomeSystem()
         NewStarSystem->StarSystemZone->SetSphereRadius(StarSystemSphereRadius);
         NewStarSystem->StarSystemRadius = StarSystemSphereRadius;
         GeneratedHomeStarSystem = NewStarSystem;
-        //NewStarSystem->AffectionRadiusKM = 
         NewStarSystem->CalculateAffectionRadius();
 
-        /*if (NewStarSystem->StarSystemRadius == 0)
-        {
-            double SphereRadius = NewStarSystem->MainStar->PlanetarySystemZone->GetScaledSphereRadius() * 1.5;
-            NewStarSystem->StarSystemRadius = SphereRadius;
-            NewStarSystem->StarSystemZone->SetSphereRadius(SphereRadius);
-        }*/
         if (NewStarSystem->StarSystemRadius == 0)
         {
             if (NewStarSystem->MainStar && NewStarSystem->MainStar->PlanetarySystemZone)
