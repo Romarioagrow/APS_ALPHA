@@ -1146,7 +1146,8 @@ void AAstroGenerator::GenerateCustomHomeSystem()
             /// Place Orbits
             if (bOrbitRotationCheck)
             {
-                
+                ///TODO: ALSO CHECK MOONS!
+
                 UE_LOG(LogTemp, Warning, TEXT("NewPlanetarySystem->PlanetsActorsList: %d"), NewPlanetarySystem->PlanetsActorsList.Num());
                 
                 for (int i = 1; i < NewPlanetarySystem->PlanetsActorsList.Num(); i++)
@@ -1301,17 +1302,17 @@ void AAstroGenerator::GenerateCustomHomeSystem()
            // bool isOverlap = World->OverlapMultiByChannel(Overlaps, HomeSystemLocation, FQuat::Identity, ECC_Visibility, MySphere);
 
 
-
+            /// TODO: APPLY TO MODEL FIRST!!!
             FVector HomeSystemLocation = NewStar->GetActorLocation();
             double MinOrbitScaleDist = NewStar->MinOrbit * 149597870 * 1000;
             double MaxOrbitScaleDist = NewStar->MaxOrbit * 149597870 * 1000 * 2;
-            double HotZoneRadius = NewPlanetarySystem->HotZoneRadius.OuterRadius * 149597870 * 1000;
-            double WarmZoneRadius = NewPlanetarySystem->WarmZoneRadius.OuterRadius * 149597870 * 1000;
-            double HabitableZoneRadius = NewPlanetarySystem->HabitableZoneRadius.OuterRadius * 149597870 * 1000;
-            double ColdZoneRadius = NewPlanetarySystem->ColdZoneRadius.OuterRadius * 149597870 * 1000;
-            double IceZoneRadius = NewPlanetarySystem->IceZoneRadius.OuterRadius * 149597870 * 1000;
-            double GasGiantsZoneRadius = NewPlanetarySystem->GasGiantsZoneRadius.OuterRadius * 149597870 * 1000;
-            double KuiperBeltZoneRadius = NewPlanetarySystem->KuiperBeltZoneRadius.OuterRadius * 149597870 * 1000;
+            double HotZoneRadius = NewPlanetarySystem->HotZoneRadius.OuterRadius * 149597870 * 3000;
+            double WarmZoneRadius = NewPlanetarySystem->WarmZoneRadius.OuterRadius * 149597870 * 2000;
+            double HabitableZoneRadius = NewPlanetarySystem->HabitableZoneRadius.OuterRadius * 149597870 * 3000;
+            double ColdZoneRadius = NewPlanetarySystem->ColdZoneRadius.OuterRadius * 149597870 * 3000;
+            double IceZoneRadius = NewPlanetarySystem->IceZoneRadius.OuterRadius * 149597870 * 3000;
+            double GasGiantsZoneRadius = NewPlanetarySystem->GasGiantsZoneRadius.OuterRadius * 149597870 * 3000;
+            double KuiperBeltZoneRadius = NewPlanetarySystem->KuiperBeltZoneRadius.OuterRadius * 149597870 * 3000;
             //double HotZoneRadius = NewPlanetarySystem->AsteroidBeltZoneRadius.OuterRadius;
            // double MinOrbitScaleDist = NewStar->MinOrbit * NewStar->Radius * 100000 * 696340;
             //double MaxOrbitScaleDist = NewStar->MaxOrbit * NewStar->Radius * 100000 * 696340;
@@ -1351,7 +1352,7 @@ void AAstroGenerator::GenerateCustomHomeSystem()
                 HomeSystemLocation,
                 HabitableZoneRadius,
                 50,
-                FColor::Blue,
+                FColor::Green,
                 true,
                 DebugDuration
             );
@@ -1360,7 +1361,7 @@ void AAstroGenerator::GenerateCustomHomeSystem()
                 HomeSystemLocation,
                 ColdZoneRadius,
                 50,
-                FColor::Turquoise,
+                FColor::Cyan,
                 true,
                 DebugDuration
             );
@@ -1369,7 +1370,7 @@ void AAstroGenerator::GenerateCustomHomeSystem()
                 HomeSystemLocation,
                 IceZoneRadius,
                 50,
-                FColor::Cyan,
+                FColor::Blue,
                 true,
                 DebugDuration
             );
@@ -1387,7 +1388,7 @@ void AAstroGenerator::GenerateCustomHomeSystem()
                 HomeSystemLocation,
                 KuiperBeltZoneRadius,
                 50,
-                FColor::Magenta,
+                FColor::Black,
                 true,
                 DebugDuration
             );

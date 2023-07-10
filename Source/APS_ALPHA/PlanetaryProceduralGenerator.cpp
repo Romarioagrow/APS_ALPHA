@@ -55,9 +55,6 @@ void UPlanetarySystemGenerator::GenerateCustomPlanetraySystemModel(
     StarModel->MaxOrbit = MaxOrbit;
     UE_LOG(LogTemp, Warning, TEXT("MAX Orbit: %f"), MaxOrbit);
 
-   
-
-    
 
     // Подбираем случайное распределение для нашей системы
     EOrbitDistributionType OrbitDistributionType = PlanetarySystemModel->OrbitDistributionType;//ChooseOrbitDistribution(StarModel->StellarType);

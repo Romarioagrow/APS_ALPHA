@@ -67,6 +67,11 @@ class APS_ALPHA_API UPlanetarySystemGenerator : public UBaseProceduralGenerator
 {
 	GENERATED_BODY()
 
+//public:
+    //UPlanetarySystemGenerator();
+
+    //FRandomStream RandomStream;
+
 public:
     void SetAstroLocation(int StarNumber, APlanetarySystem* NewPlanetarySystem);
 
