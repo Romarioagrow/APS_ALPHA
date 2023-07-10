@@ -125,8 +125,8 @@ void UPlanetarySystemGenerator::GenerateCustomPlanetraySystemModel(
     UE_LOG(LogTemp, Warning, TEXT("MinOrbit: %f, MaxOrbit: %f"), MinOrbit, MaxOrbit);
 
     // Вычисляем обитаемую зону
-    float HabitableZoneInner = sqrt(StarModel->Luminosity / 1.1) * 2;
-    float HabitableZoneOuter = sqrt(StarModel->Luminosity / 0.53) * 2;
+    double HabitableZoneInner = sqrt(StarModel->Luminosity / 1.1) * 2;
+    double HabitableZoneOuter = sqrt(StarModel->Luminosity / 0.53) * 2;
 
     // Star Dead zone
     double StarDeadZoneInner = 0; // Начинается от звезды
@@ -156,7 +156,7 @@ void UPlanetarySystemGenerator::GenerateCustomPlanetraySystemModel(
         // Вычисляем зону StarDeadZone
         StarDeadZoneInner = 0; // Начинается от звезды
         StarRadiusInAU = StarModel->Radius * 0.00465047;
-        StarDeadZoneOuter = StarRadiusInAU * 2; // Заканчивается на расстоянии, равном двойному радиусу звезды в AU
+        StarDeadZoneOuter = StarRadiusInAU; // Заканчивается на расстоянии, равном двойному радиусу звезды в AU
 
         // Вычисляем горячую зону
         HotZoneInner = StarDeadZoneOuter;
@@ -264,16 +264,16 @@ void UPlanetarySystemGenerator::GenerateCustomPlanetraySystemModel(
     OuterZoneInner *= 149597870 * 3000;
     OuterZoneOuter *= 149597870 * 3000;*/
 
-    PlanetarySystemModel->HotZoneOuter = HotZoneOuter * 149597870 * 3000;
-    PlanetarySystemModel->WarmZoneOuter = WarmZoneOuter * 149597870 * 3000;
-    PlanetarySystemModel->ColdZoneOuter = ColdZoneOuter * 149597870 * 3000;
-    PlanetarySystemModel->IceZoneOuter = IceZoneOuter *149597870 * 3000;
-    PlanetarySystemModel->GasGiantsZoneOuter = GasGiantsZoneOuter * 149597870 * 3000;
-    PlanetarySystemModel->KuiperBeltZoneOuter = KuiperBeltZoneOuter * 149597870 * 3000;
-    PlanetarySystemModel->InnerZoneOuter = InnerZoneOuter * 149597870 * 3000;
-    PlanetarySystemModel->OuterZoneOuter = OuterZoneOuter * 149597870 * 3000;
-    PlanetarySystemModel->HabitableZoneOuter = HabitableZoneOuter * 149597870 * 3000;
-    PlanetarySystemModel->StarDeadZoneOuter = StarDeadZoneOuter * 149597870 * 3000;
+    //PlanetarySystemModel->HotZoneOuter = HotZoneOuter * 149597870 * 3000;
+    //PlanetarySystemModel->WarmZoneOuter = WarmZoneOuter * 149597870 * 3000;
+    //PlanetarySystemModel->ColdZoneOuter = ColdZoneOuter * 149597870 * 3000;
+    //PlanetarySystemModel->IceZoneOuter = IceZoneOuter *149597870 * 3000;
+    //PlanetarySystemModel->GasGiantsZoneOuter = GasGiantsZoneOuter * 149597870 * 3000;
+    //PlanetarySystemModel->KuiperBeltZoneOuter = KuiperBeltZoneOuter * 149597870 * 3000;
+    //PlanetarySystemModel->InnerZoneOuter = InnerZoneOuter * 149597870 * 3000;
+    //PlanetarySystemModel->OuterZoneOuter = OuterZoneOuter * 149597870 * 3000;
+    //PlanetarySystemModel->HabitableZoneOuter = HabitableZoneOuter * 149597870 * 3000;
+    //PlanetarySystemModel->StarDeadZoneOuter = StarDeadZoneOuter * 149597870 * 3000;
 
 
 
@@ -336,7 +336,7 @@ void UPlanetarySystemGenerator::GenerateCustomPlanetraySystemModel(
             PlanetModel->Temperature = PlanetTemperature; // to celestial body
 
             // Определите, в какой зоне находится планета.
-            EPlanetaryZoneType PlanetZone = DeterminePlanetZone(OrbitRadius, PlanetarySystemModel);
+            EPlanetaryZoneType PlanetZone = DeterminePlanetZone(OrbitRadius, PlanetarySystemModel);//EPlanetaryZoneType::Unknown;//DeterminePlanetZone(OrbitRadius, PlanetarySystemModel);
             PlanetModel->PlanetZone = PlanetZone;
 
             EPlanetType PlanetType = DeterminePlanetType(PlanetZone);
@@ -930,6 +930,11 @@ int UPlanetarySystemGenerator::CalculateMoons(double PlanetMass, EPlanetType Pla
     // Generate a random number between 0 and 1
     double RandomNumber = FMath::FRand();
 
+    if (PlanetType == EPlanetType::Unknown)
+    {
+        return FMath::RandRange(0, 5);
+    }
+
     // Apply the chance to have no moons
     if (RandomNumber < 0.3)
     {
@@ -981,7 +986,7 @@ EPlanetaryZoneType UPlanetarySystemGenerator::DeterminePlanetZone(double OrbitRa
         }
     }*/
 
-    /*if (OrbitRadius >= PlanetarySystemModel->DeadZoneRadius.InnerRadius && OrbitRadius <= PlanetarySystemModel->DeadZoneRadius.OuterRadius)
+    if (OrbitRadius >= PlanetarySystemModel->DeadZoneRadius.InnerRadius && OrbitRadius <= PlanetarySystemModel->DeadZoneRadius.OuterRadius)
     {
         return EPlanetaryZoneType::DeadZone;
     }
@@ -1012,11 +1017,11 @@ EPlanetaryZoneType UPlanetarySystemGenerator::DeterminePlanetZone(double OrbitRa
     if (OrbitRadius >= PlanetarySystemModel->KuiperBeltZoneRadius.InnerRadius && OrbitRadius <= PlanetarySystemModel->KuiperBeltZoneRadius.OuterRadius)
     {
         return EPlanetaryZoneType::KuiperBeltZone;
-    }*/
+    }
 
-    OrbitRadius *= 149597870 * 3000;
+    ///OrbitRadius *= 149597870; // * 100000;
 
-    if (OrbitRadius <= PlanetarySystemModel->StarDeadZoneOuter)
+    /*if (OrbitRadius <= PlanetarySystemModel->StarDeadZoneOuter)
     {
         return EPlanetaryZoneType::DeadZone;
     }
@@ -1047,7 +1052,7 @@ EPlanetaryZoneType UPlanetarySystemGenerator::DeterminePlanetZone(double OrbitRa
     if (OrbitRadius >= PlanetarySystemModel->GasGiantsZoneOuter && OrbitRadius <= PlanetarySystemModel->KuiperBeltZoneOuter)
     {
         return EPlanetaryZoneType::KuiperBeltZone;
-    }
+    }*/
 
     // Если мы не нашли подходящую зону, возвращаем Unknown.
     return EPlanetaryZoneType::Unknown;

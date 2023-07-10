@@ -216,6 +216,7 @@ void AAstroGenerator::GenerateRandomWorld()
 
 }
 
+
 void AAstroGenerator::InitAstroGenerators()
 {
     // Init generators
@@ -1166,6 +1167,7 @@ void AAstroGenerator::GenerateCustomHomeSystem()
                     if (DistanceBetweenPlanets <= SumOfAffectionZones)
                     {
                         double OrbitCoeff = CurrentPlanet->AffectionRadiusKM * 100000;
+                        OrbitCoeff *= 1.25;
                         switch (NewPlanetarySystem->OrbitDistributionType)
                         {
                             case EOrbitDistributionType::Uniform:
@@ -1177,7 +1179,7 @@ void AAstroGenerator::GenerateCustomHomeSystem()
 							}
                             case EOrbitDistributionType::Chaotic:
                             {
-								OrbitCoeff = CurrentPlanet->Radius * 100000 * FMath::RandRange(1, 10);
+								OrbitCoeff = OrbitCoeff * FMath::RandRange(1, 10) * 2;
 								break;
 							}
                         default:
@@ -1190,6 +1192,7 @@ void AAstroGenerator::GenerateCustomHomeSystem()
                         FVector NewLocation = CurrentPlanet->GetActorLocation();
                         NewLocation.X = NewLocationX;
                         CurrentPlanet->SetActorLocation(NewLocation);
+                        LastPlanetLocation = NewLocation;
                         UE_LOG(LogTemp, Warning, TEXT("Moved Planet %d to: %f"), i, NewLocationX);
  
                     }
@@ -1303,16 +1306,16 @@ void AAstroGenerator::GenerateCustomHomeSystem()
 
 
             /// TODO: APPLY TO MODEL FIRST!!!
-            FVector HomeSystemLocation = NewStar->GetActorLocation();
-            double MinOrbitScaleDist = NewStar->MinOrbit * 149597870 * 1000;
-            double MaxOrbitScaleDist = NewStar->MaxOrbit * 149597870 * 3000;
+            /*FVector HomeSystemLocation = NewStar->GetActorLocation();
+            double MinOrbitScaleDist = NewStar->MinOrbit * 149597870 * 100000;
+                double MaxOrbitScaleDist = NewStar->MaxOrbit * 149597870 * 100000;
             double HotZoneRadius = NewPlanetarySystem->HotZoneOuter;
             double WarmZoneRadius = NewPlanetarySystem->WarmZoneOuter;
             double HabitableZoneRadius = NewPlanetarySystem->HabitableZoneOuter;
             double ColdZoneRadius = NewPlanetarySystem->ColdZoneOuter;
             double IceZoneRadius = NewPlanetarySystem->IceZoneOuter;
             double GasGiantsZoneRadius = NewPlanetarySystem->GasGiantsZoneOuter;
-            double KuiperBeltZoneRadius = NewPlanetarySystem->KuiperBeltZoneOuter;
+            double KuiperBeltZoneRadius = NewPlanetarySystem->KuiperBeltZoneOuter;*/
             
             
            /* double MinOrbitScaleDist = NewStar->MinOrbit * 149597870 * 1000;
@@ -1332,7 +1335,7 @@ void AAstroGenerator::GenerateCustomHomeSystem()
             //double HomeSystemrRadiusScaled = NewStarSystem->StarSystemRadius * StarSystemDeadZone;
             //FCollisionShape MySphere = FCollisionShape::MakeSphere(MaxOrbitScaleDist);
             //TArray<FOverlapResult> Overlaps;
-            float DebugDuration = 60.0f;
+            /*float DebugDuration = 60.0f;
             DrawDebugSphere(
                 GetWorld(),
                 HomeSystemLocation,
@@ -1413,7 +1416,7 @@ void AAstroGenerator::GenerateCustomHomeSystem()
                 FColor::Emerald,
                 true,
                 DebugDuration
-            );
+            );*/
 
             // Выполнение проверки перекрытия
             //FVector HomeSystemLocation{ 0.0, 0.0, 0.0 };//NewStarSystem->GetActorLocation();
@@ -1464,7 +1467,7 @@ void AAstroGenerator::GenerateCustomHomeSystem()
         {
             if (NewStarSystem->MainStar && NewStarSystem->MainStar->PlanetarySystemZone)
             {
-                double SphereRadius = NewStarSystem->MainStar->PlanetarySystemZone->GetScaledSphereRadius() * 1.5;
+                double SphereRadius = NewStarSystem->MainStar->PlanetarySystemZone->GetScaledSphereRadius() * 1.25;
                 NewStarSystem->StarSystemRadius = SphereRadius;
                 NewStarSystem->StarSystemZone->SetSphereRadius(SphereRadius);
             }
@@ -1501,7 +1504,7 @@ void AAstroGenerator::GenerateCustomHomeSystem()
             bool isOverlap = World->OverlapMultiByChannel(Overlaps, HomeSystemLocation, FQuat::Identity, ECC_Visibility, MySphere);
 
             float DebugDuration = 60.0f;
-            DrawDebugSphere(
+            /*DrawDebugSphere(
                 GetWorld(),
                 HomeSystemLocation,
                 HomeSystemrRadiusScaled,
@@ -1509,7 +1512,7 @@ void AAstroGenerator::GenerateCustomHomeSystem()
                 FColor::Purple,
                 true,
                 DebugDuration
-            );
+            );*/
 
             TArray<int32> InstancesToRemove;
             UHierarchicalInstancedStaticMeshComponent* OverlappingHISM = nullptr;
