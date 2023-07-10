@@ -406,7 +406,8 @@ private:
 
         {EPlanetaryZoneType::IceZone,
         {
-            {EPlanetType::IceGiant, 0.1f},
+            {EPlanetType::IceGiant, 0.2f},
+            {EPlanetType::GasGiant, 0.1f},
             {EPlanetType::Ice, 0.5f},
             {EPlanetType::Frozen, 0.9f},
             {EPlanetType::Rocky, 0.5f},

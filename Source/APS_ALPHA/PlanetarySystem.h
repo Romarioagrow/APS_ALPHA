@@ -7,6 +7,7 @@
 #include "OrbitDistributionType.h"
 #include "PlanetarySystemGenerationModel.h"
 #include "StarSpectralClass.h" 
+#include "PlanetOrbit.h" 
 
 #include "CoreMinimal.h"
 #include "CelestialSystem.h"
@@ -89,6 +90,9 @@ public:
 
 		UPROPERTY(VisibleAnywhere, Category = "Planets")
 		TArray<APlanet*> PlanetsActorsList;
+		
+		UPROPERTY(VisibleAnywhere, Category = "Planets")
+		TArray<APlanetOrbit*> PlanetOrbitsList;
 
 	void SetStar(AStar* Star);
 

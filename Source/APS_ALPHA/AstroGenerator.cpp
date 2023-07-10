@@ -654,6 +654,7 @@ void AAstroGenerator::GenerateStarSystem()
                 NewPlanet->AttachToActor(NewPlanetOrbit, FAttachmentTransformRules::KeepWorldTransform);
                 NewPlanetOrbit->SetActorRelativeRotation(FRotator(FMath::RandRange(-30.0, 30.0), FMath::RandRange(-360.0, 360.0), 0));
                 NewPlanetarySystem->PlanetsActorsList.Add(NewPlanet);
+                NewPlanetarySystem->PlanetOrbitsList.Add(NewPlanetOrbit);
 
                 const double KM_TO_UE_UNIT_SCALE = 100000;
                 double DiameterOfLastMoon = 0;
@@ -1043,6 +1044,7 @@ void AAstroGenerator::GenerateCustomHomeSystem()
             {
                 APlanetOrbit* NewPlanetOrbit = World->SpawnActor<APlanetOrbit>(BP_PlanetOrbit, NewPlanetarySystem->GetActorLocation(), FRotator::ZeroRotator);
                 NewPlanetOrbit->AttachToActor(NewPlanetarySystem, FAttachmentTransformRules::KeepWorldTransform);
+                NewPlanetarySystem->PlanetOrbitsList.Add(NewPlanetOrbit);
 
                 // Planet Model and generation
                 TSharedPtr<FPlanetModel> PlanetModel = FPlanetData->PlanetModel;
@@ -1059,7 +1061,7 @@ void AAstroGenerator::GenerateCustomHomeSystem()
                 NewPlanet->SetActorLocation(NewLocation);
 
                 NewPlanet->AttachToActor(NewPlanetOrbit, FAttachmentTransformRules::KeepWorldTransform);
-                if (bNeedOrbitRotation)
+                if (false)
                 {
                     NewPlanetOrbit->SetActorRelativeRotation(FRotator(FMath::RandRange(-30.0, 30.0), FMath::RandRange(-360.0, 360.0), 0));
                 }
@@ -1073,6 +1075,7 @@ void AAstroGenerator::GenerateCustomHomeSystem()
                 {
                     APlanetOrbit* NewMoonOrbit = World->SpawnActor<APlanetOrbit>(BP_PlanetOrbit, NewPlanet->GetActorLocation(), FRotator::ZeroRotator);
                     NewMoonOrbit->AttachToActor(NewPlanet, FAttachmentTransformRules::KeepWorldTransform);
+                    NewPlanet->MoonOrbitsList.Add(NewMoonOrbit);
 
                     FVector MoonLocation = NewPlanet->GetActorLocation();
                     AMoon* NewMoon = World->SpawnActor<AMoon>(BP_MoonClass, MoonLocation, FRotator::ZeroRotator);
@@ -1096,7 +1099,7 @@ void AAstroGenerator::GenerateCustomHomeSystem()
                     NewMoon->AddActorLocalOffset(FVector(0, ((PlanetModel->RadiusKM + (MoonData->OrbitRadius * PlanetModel->RadiusKM)) * KM_TO_UE_UNIT_SCALE) * 1, 0));
                     NewMoon->AttachToActor(NewMoonOrbit, FAttachmentTransformRules::KeepWorldTransform);
                     
-                    if (bNeedOrbitRotation)
+                    if (false)
                     {
                         NewMoonOrbit->SetActorRelativeRotation(FRotator(FMath::RandRange(-360.0, 360.0), FMath::RandRange(-360.0, 360.0), FMath::RandRange(-360.0, 360.0)));
                     }
@@ -1219,6 +1222,11 @@ void AAstroGenerator::GenerateCustomHomeSystem()
                         }
                     }
                 }
+            }
+
+            if (bNeedOrbitRotation)
+            {
+
             }
 
             //for (APlanet* Planet : NewPlanetarySystem->PlanetsActorsList)

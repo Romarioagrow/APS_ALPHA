@@ -826,7 +826,9 @@ void UPlanetarySystemGenerator::GeneratePlanetraySystemModelByStar(TSharedPtr<FP
 
             if (PlanetModel->PlanetType == EPlanetType::GasGiant
                 || PlanetModel->PlanetType == EPlanetType::IceGiant
-                || PlanetModel->PlanetType == EPlanetType::HotGiant) {
+                || PlanetModel->PlanetType == EPlanetType::HotGiant
+                || PlanetModel->PlanetType == EPlanetType::Ocean
+                ) {
                 // Распределение орбит от 1 до 10 радиусов планеты
                 for (int i = 0; i < AmountOfMoons; i++) {
                     double orbitRadius = FMath::RandRange(PlanetRadius * 1.0, PlanetRadius * 10.0);
@@ -932,7 +934,12 @@ int UPlanetarySystemGenerator::CalculateMoons(double PlanetMass, EPlanetType Pla
 
     if (PlanetType == EPlanetType::Unknown)
     {
-        return FMath::RandRange(0, 5);
+        return FMath::RandRange(0, 3);
+    }
+    
+    if (PlanetType == EPlanetType::Ocean || PlanetType == EPlanetType::SuperEarth)
+    {
+        return FMath::RandRange(0, 1);
     }
 
     // Apply the chance to have no moons

@@ -9,6 +9,7 @@
 #include "PlanetaryZoneType.h"
 #include "NavigatableBody.h"
 #include "PlanetaryBody.h"
+#include "PlanetOrbit.h" 
 
 #include "CoreMinimal.h"
 #include "CelestialBody.h"
@@ -92,9 +93,15 @@ private:
 
 		TArray<TSharedPtr<FMoonData>> MoonsList;
 
+		
+
 //private:
 public:
-	TArray<AMoon*> Moons;
+	UPROPERTY(VisibleAnywhere, Category = "Moons")
+		TArray<AMoon*> Moons;
+
+	UPROPERTY(VisibleAnywhere, Category = "Moons")
+		TArray<APlanetOrbit*> MoonOrbitsList;
 
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
