@@ -150,15 +150,7 @@ void AAstroGenerator::InitGenerationLevel()
 
     if (bGenerateHomeSystem)
     {
-        if (bRandomHomeSystem)
-        {
-            GenerateHomeStarSystem();
-        }
-        else
-        {
-            GenerateCustomHomeSystem();
-            //GenerateHomeStarSystem();
-        }
+        GenerateHomeStarSystem();
     }
 }
 
@@ -253,7 +245,15 @@ void AAstroGenerator::InitAstroGenerators()
 void AAstroGenerator::GenerateHomeStarSystem()
 {
     /// TODO: Refactoring - GenerateStarSystem(StarSystemModel);
-    GenerateStarSystem();
+
+    if (bRandomHomeSystem)
+    {
+        GenerateStarSystem();
+    }
+    else
+    {
+        GenerateCustomHomeSystem();
+    }
 
     if (GeneratedHomeStarSystem
         && GeneratedHomeStarSystem->MainStar
@@ -1226,7 +1226,33 @@ void AAstroGenerator::GenerateCustomHomeSystem()
 
             if (bNeedOrbitRotation)
             {
+                for (APlanetOrbit* PlanetOrbit : NewPlanetarySystem->PlanetOrbitsList)
+                {
+                    float RandomZRotation = FMath::RandRange(-360.0f, 360.0f);
+                    float RandomYRotation = FMath::RandRange(-15.0f, 15.0f);
+                    FRotator NewRotation = FRotator(RandomYRotation, RandomZRotation, 0);
+                    PlanetOrbit->AddActorLocalRotation(NewRotation);
 
+                    TArray<AActor*> AttachedActors;
+                    PlanetOrbit->GetAttachedActors(AttachedActors);
+
+                    for (AActor* AttachedActor : AttachedActors)
+                    {
+                        APlanet* Planet = Cast<APlanet>(AttachedActor);
+                        if (Planet)
+                        {
+                            // Iterate through the list of moons for this planet.
+                            for (APlanetOrbit* MoonOrbit : Planet->MoonOrbitsList)
+                            {
+                                float RandomXRotationMoon = FMath::RandRange(-360.0f, 360.0f);
+                                float RandomYRotationMoon = FMath::RandRange(-360.0f, 360.0f);
+                                float RandomZRotationMoon = FMath::RandRange(-360.0f, 360.0f);
+                                FRotator NewRotationMoon = FRotator(RandomXRotationMoon, RandomYRotationMoon, RandomZRotationMoon);
+                                MoonOrbit->AddActorLocalRotation(NewRotationMoon);
+                            }
+                        }
+                    }
+                }
             }
 
             //for (APlanet* Planet : NewPlanetarySystem->PlanetsActorsList)
@@ -1346,7 +1372,6 @@ void AAstroGenerator::GenerateCustomHomeSystem()
             double IceZoneRadius = NewPlanetarySystem->IceZoneOuter;
             double GasGiantsZoneRadius = NewPlanetarySystem->GasGiantsZoneOuter;
             double KuiperBeltZoneRadius = NewPlanetarySystem->KuiperBeltZoneOuter;*/
-            
             
            /* double MinOrbitScaleDist = NewStar->MinOrbit * 149597870 * 1000;
             double MaxOrbitScaleDist = NewStar->MaxOrbit * 149597870 * 3000;

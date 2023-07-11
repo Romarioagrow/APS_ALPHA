@@ -14,4 +14,8 @@ class APS_ALPHA_API APlanetOrbit : public AAstroActor
 {
 	GENERATED_BODY()
 	
+
+
+		/*public:
+			APlanet* Planet;*/
 };
