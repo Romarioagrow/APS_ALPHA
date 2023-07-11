@@ -3,7 +3,7 @@
 #pragma once
 #include <Components/SphereComponent.h>
 #include "OrbitalBody.h"
-#include "PlanetType.h"
+//#include "PlanetType.h"
 #include "MoonGenerationModel.h"
 #include "PlanetGenerationModel.h"
 #include "PlanetaryZoneType.h"
@@ -66,12 +66,13 @@ public:
 	UPROPERTY(VisibleAnywhere, Category = "Planet")
 		int PlanetRadiusKM;
 	
-private:
+//private:
+public:
 	UPROPERTY(VisibleAnywhere, Category = "Planet")
 		AStar* ParnetStar;
 	
-	UPROPERTY(VisibleAnywhere, Category = "Planet")
-		EPlanetType PlanetType;
+	/*UPROPERTY(VisibleAnywhere, Category = "Planet")
+		EPlanetType PlanetType;*/
 
 	UPROPERTY(VisibleAnywhere, Category = "Planet")
 		EPlanetaryZoneType PlanetZone;

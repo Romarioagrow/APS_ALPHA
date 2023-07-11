@@ -248,10 +248,14 @@ void AAstroGenerator::GenerateHomeStarSystem()
 
     if (bRandomHomeSystem)
     {
+        // Random Model
+        /// GenerateHomeSystem(RandomHomeSystem)
         GenerateStarSystem();
     }
     else
     {
+        // Custom Model from Editor
+        /// GenerateHomeSystem(CustomHomeSystem)
         GenerateCustomHomeSystem();
     }
 
@@ -1061,10 +1065,10 @@ void AAstroGenerator::GenerateCustomHomeSystem()
                 NewPlanet->SetActorLocation(NewLocation);
 
                 NewPlanet->AttachToActor(NewPlanetOrbit, FAttachmentTransformRules::KeepWorldTransform);
-                if (false)
+                /*if (false)
                 {
                     NewPlanetOrbit->SetActorRelativeRotation(FRotator(FMath::RandRange(-30.0, 30.0), FMath::RandRange(-360.0, 360.0), 0));
-                }
+                }*/
                 NewPlanetarySystem->PlanetsActorsList.Add(NewPlanet);
 
                 const double KM_TO_UE_UNIT_SCALE = 100000;
@@ -1099,10 +1103,10 @@ void AAstroGenerator::GenerateCustomHomeSystem()
                     NewMoon->AddActorLocalOffset(FVector(0, ((PlanetModel->RadiusKM + (MoonData->OrbitRadius * PlanetModel->RadiusKM)) * KM_TO_UE_UNIT_SCALE) * 1, 0));
                     NewMoon->AttachToActor(NewMoonOrbit, FAttachmentTransformRules::KeepWorldTransform);
                     
-                    if (false)
+                    /*if (false)
                     {
                         NewMoonOrbit->SetActorRelativeRotation(FRotator(FMath::RandRange(-360.0, 360.0), FMath::RandRange(-360.0, 360.0), FMath::RandRange(-360.0, 360.0)));
-                    }
+                    }*/
 				
                     DiameterOfLastMoon = MoonRadius * 2;
                     LastMoonLocation = NewMoon->GetActorLocation();
@@ -1135,11 +1139,12 @@ void AAstroGenerator::GenerateCustomHomeSystem()
                     NewPlanet->OrbitHeight = (NewPlanet->GravityCollisionZone->GetScaledSphereRadius() / 100000) - NewPlanet->RadiusKM;
 
                     /// TODO: PlanetaryEnvironmentGenerator->InitEnviroment();
-                    NewPlanet->PlanetaryEnvironmentGenerator->InitAtmoScape(World, NewPlanet->RadiusKM, NewPlanet);
+                    NewPlanet->PlanetaryEnvironmentGenerator->InitEnviroment(NewPlanet, World);
+                    /*NewPlanet->PlanetaryEnvironmentGenerator->InitAtmoScape(World, NewPlanet->RadiusKM, NewPlanet);
                     if (NewPlanet->IsNotGasGiant())
                     {
                         NewPlanet->PlanetaryEnvironmentGenerator->GenerateWorldscapeSurfaceByModel(World, NewPlanet);
-                    }
+                    }*/
                 }
             }
             
