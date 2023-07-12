@@ -94,9 +94,9 @@ FVector UGalaxyGenerator::GenerateStarInEllipticalGalaxy(EGalaxyClass GalaxyClas
 
     do
     {
-        Direction.X = FMath::FRandRange(-1, 1);
-        Direction.Y = FMath::FRandRange(-1, 1) * (1 - 0.1f * ellipticity);
-        Direction.Z = FMath::FRandRange(-1, 1) * (1 - 0.1f * ellipticity);
+        Direction.X = FMath::FRandRange(-1.0, 1.0);
+        Direction.Y = FMath::FRandRange(-1.0, 1.0) * (1.0 - 0.1 * ellipticity);
+        Direction.Z = FMath::FRandRange(-1.0, 1.0) * (1.0 - 0.1 * ellipticity);
     } while (Direction.SizeSquared() > 1.0f);  // If the direction is outside the unit sphere, try again
 
     double RandomDistance = FMath::FRand() * StarDistance + StarRadius;
@@ -115,9 +115,9 @@ FVector UGalaxyGenerator::GenerateStarInLenticularGalaxy(EGalaxyClass GalaxyClas
 
     do
     {
-        Direction.X = FMath::FRandRange(-1, 1);
-        Direction.Y = FMath::FRandRange(-1, 1) * (1 - 0.1f * ellipticity);
-        Direction.Z = FMath::FRandRange(-1, 1) * (1 - 0.1f * ellipticity);
+        Direction.X = FMath::FRandRange(-1.0, 1.0);
+        Direction.Y = FMath::FRandRange(-1.0, 1.0) * (1.0 - 0.1 * ellipticity);
+        Direction.Z = FMath::FRandRange(-1.0, 1.0) * (1.0 - 0.1 * ellipticity);
     } while (Direction.SizeSquared() > 1.0f);
 
     double RandomDistance = FMath::FRand() * StarDistance + StarRadius + FMath::FRandRange(-StarRadius / 2, StarRadius / 2);
@@ -133,7 +133,7 @@ FVector UGalaxyGenerator::GenerateStarInSpiralGalaxy(EGalaxyClass GalaxyClass, d
     double angle = FMath::FRandRange(0, 2 * PI);
     double RandomDistance = StarDistance * exp(angle / tan(0.1 * PI));  // Adjust this to change the tightness of the spiral
 
-    FVector Direction(cos(angle), sin(angle), FMath::FRandRange(-1, 1));
+    FVector Direction(cos(angle), sin(angle), FMath::FRandRange(-1.0, 1.0));
 
     return Direction.GetSafeNormal() * RandomDistance;
 }
@@ -159,9 +159,9 @@ FVector UGalaxyGenerator::GenerateStarInIrregularGalaxy(EGalaxyClass GalaxyClass
 
     do
     {
-        Direction.X = FMath::FRandRange(-1, 1);
-        Direction.Y = FMath::FRandRange(-1, 1);
-        Direction.Z = FMath::FRandRange(-1, 1);
+        Direction.X = FMath::FRandRange(-1.0, 1.0);
+        Direction.Y = FMath::FRandRange(-1.0, 1.0);
+        Direction.Z = FMath::FRandRange(-1.0, 1.0);
     } while (Direction.SizeSquared() > 1.0f);
 
     double RandomDistance = FMath::FRand() * StarDistance + StarRadius;
