@@ -39,7 +39,6 @@ void AAstroGenerator::GenerateTEST_FULLSCALED()
     const int StarCount = 100;
 
     // Создаем актор-якорь для нашего мира
-   // AAstroAnchor* AstroAnchor = GetWorld()->SpawnActor<AAstroAnchor>();
     AAstroAnchor* AstroAnchor = GetWorld()->SpawnActor<AAstroAnchor>(BP_AstroAnchor);
 
     // Создаем актор кластера звезд и прикрепляем его к якорю
@@ -60,63 +59,12 @@ void AAstroGenerator::GenerateTEST_FULLSCALED()
 
         // Добавляем инстанс звезды в HISM
         StarCluster->StarMeshInstances->AddInstance(StarTransform);
-        
-
     }
-    //// Создаем кластер звезд
-    //for (int i = 0; i < StarCount; ++i)
-    //{
-    //    // Генерируем случайные координаты и радиус для звезды
-    //    FVector StarPosition = FMath::RandPointInBox(FBox(FVector(-5.0f, -5.0f, -5.0f), FVector(5.0f, 5.0f, 5.0f)));
-    //    float StarRadius = FMath::RandRange(MinStarRadius, MaxStarRadius);
-
-    //    // Создаем преобразование для звезды
-    //    FTransform StarTransform;
-    //    StarTransform.SetLocation(StarPosition);
-    //    StarTransform.SetScale3D(FVector(StarRadius));
-
-    //    // Добавляем инстанс звезды в HISM
-    //    StarCluster->StarMeshInstances->AddInstance(StarTransform);
-    //}
 
     // Запоминаем актор-якорь и актор кластера в классе генератора
     GeneratedWorld = AstroAnchor;
     GeneratedStarCluster = StarCluster;
 }
-//void AAstroGenerator::GenerateTEST_FULLSCALED()
-//{
-//    // Задаем параметры звезд
-//    const float MinStarRadius = 0.1f;
-//    const float MaxStarRadius = 10.0f;
-//    const int StarCount = 100;
-//
-//    // Создаем актор-якорь для нашего мира
-//    AAstroAnchor* AstroAnchor = GetWorld()->SpawnActor<AAstroAnchor>();
-//
-//    // Создаем актор кластера звезд и прикрепляем его к якорю
-//    AStarCluster* StarCluster = GetWorld()->SpawnActor<AStarCluster>();
-//    //StarCluster->AttachToActor(AstroAnchor, FAttachmentTransformRules::KeepRelativeTransform);
-//
-//    // Создаем кластер звезд
-//    for (int i = 0; i < StarCount; ++i)
-//    {
-//        // Генерируем случайные координаты и радиус для звезды
-//        FVector StarPosition = FMath::RandPointInBox(FBox(FVector(-5.0f, -5.0f, -5.0f), FVector(5.0f, 5.0f, 5.0f)));
-//        float StarRadius = FMath::RandRange(MinStarRadius, MaxStarRadius);
-//
-//        // Создаем преобразование для звезды
-//        FTransform StarTransform;
-//        StarTransform.SetLocation(StarPosition);
-//        StarTransform.SetScale3D(FVector(StarRadius));
-//
-//        // Добавляем инстанс звезды в HISM
-//        StarCluster->StarMeshInstances->AddInstance(StarTransform);
-//    }
-//
-//    // Запоминаем актор-якорь и актор кластера в классе генератора
-//    GeneratedWorld = AstroAnchor;
-//    GeneratedStarCluster = StarCluster;
-//}
 
 void AAstroGenerator::InitGenerationLevel()
 {
@@ -236,11 +184,6 @@ void AAstroGenerator::InitAstroGenerators()
         UE_LOG(LogTemp, Warning, TEXT("All generators OK!"));
     }
 }
-
-//void AAstroGenerator::GenerateCustomHomeSystem()
-//{
-//
-//}
 
 void AAstroGenerator::GenerateHomeStarSystem()
 {
@@ -369,11 +312,6 @@ void AAstroGenerator::GenerateHomeStarSystem()
 
                     HomeSpaceshipLocation.Z += 1000;
                     ASpaceship* NewHomeSpaceship = World->SpawnActor<ASpaceship>(BP_HomeSpaceship, HomeSpaceshipLocation, HomeSpaceShipyard->GetActorRotation(), SpaceshipSpawnParams);
-                    /*NewHomeSpaceship->AttachToActor(HomeSpaceShipyard, FAttachmentTransformRules::KeepWorldTransform);
-                    NewHomeSpaceship->OffsetSystem = GeneratedHomeStarSystem;
-                    NewHomeSpaceship->OnboardComputer->OffsetSystem = GeneratedHomeStarSystem;*/
-
-                   // ASpaceship* NewHomeSpaceship = World->SpawnActor<ASpaceship>(BP_HomeSpaceship, HomeSpaceshipLocation, HomeSpaceShipyard->GetActorRotation(), SpaceshipSpawnParams);
 
                     if (NewHomeSpaceship && GeneratedHomeStarSystem)
                     {
@@ -448,14 +386,6 @@ void AAstroGenerator::GenerateHomeStarSystem()
 					{
 					    UE_LOG(LogTemp, Warning, TEXT("PlayerCharacter is null!"));
 					}
-
-                    /*if (BP_CharacterClass)
-                    {
-						ACharacter* NewCharacter = World->SpawnActor<ACharacter>(BP_CharacterClass, CharSpawnLocation, FRotator::ZeroRotator, SpawnParams);
-						NewCharacter->AttachToActor(HomeStation, FAttachmentTransformRules::KeepWorldTransform);
-						NewCharacter->SetActorRelativeRotation(FRotator(0, 0, 0));
-					}*/
-
                 }
             }
         }
@@ -695,12 +625,9 @@ void AAstroGenerator::GenerateStarSystem()
                     DiameterOfLastMoon = MoonRadius * 2;
                     LastMoonLocation = NewMoon->GetActorLocation();
 
-
                     /// Generate WSC
                     //NewMoon->PlanetaryEnvironmentGenerator->GenerateWorldscapeSurfaceByModel(World, NewMoon);
                     NewMoon->PlanetaryEnvironmentGenerator->InitAtmoScape(World, NewMoon->RadiusKM, NewMoon);
-                    
-
                 }
 
                 if (DiameterOfLastMoon == 0)
@@ -723,12 +650,8 @@ void AAstroGenerator::GenerateStarSystem()
 
                 if (true)
                 {
-                    ///NewPlanet->PlanetEnvironmentGenerator->GeneratePlanetEnviroment();
-                    
-                    //FTransoNewPlanet->GetActorTransform();
-
+                    /// NewPlanet->PlanetEnvironmentGenerator->GeneratePlanetEnviroment();
                     NewPlanet->OrbitHeight = (NewPlanet->GravityCollisionZone->GetScaledSphereRadius() / 100000) - NewPlanet->RadiusKM;
-
                     NewPlanet->PlanetaryEnvironmentGenerator->InitAtmoScape(World, NewPlanet->RadiusKM, NewPlanet);
                     if (NewPlanet->IsNotGasGiant())
                     {
@@ -737,9 +660,6 @@ void AAstroGenerator::GenerateStarSystem()
                     }
                 }
             }
-            
-
-
 
             double StarSphereRadius;
             if (LastPlanetLocation.IsZero())
@@ -757,8 +677,7 @@ void AAstroGenerator::GenerateStarSystem()
                 NewStar->StarAffectionZoneRadius = StarSphereRadius;
 
             }
-            //NewStar->AffectionRadiusKM = 
-                NewStar->CalculateAffectionRadius();
+            NewStar->CalculateAffectionRadius();
             NewStarSystem->AddNewStar(NewStar);
             NewStarSystem->StarSystemRadius = NewStar->StarAffectionZoneRadius;
         }
@@ -769,8 +688,7 @@ void AAstroGenerator::GenerateStarSystem()
         NewStarSystem->StarSystemZone->SetSphereRadius(StarSystemSphereRadius);
         NewStarSystem->StarSystemRadius = StarSystemSphereRadius;
         GeneratedHomeStarSystem = NewStarSystem;
-        //NewStarSystem->AffectionRadiusKM = 
-            NewStarSystem->CalculateAffectionRadius();
+        NewStarSystem->CalculateAffectionRadius();
 
         if (NewStarSystem->StarSystemRadius == 0)
         {
@@ -788,7 +706,6 @@ void AAstroGenerator::GenerateStarSystem()
 
                 check overlapped hism, if overlapped, (re)move it
             */
-
             
             double HomeSystemrRadiusScaled = NewStarSystem->StarSystemRadius * StarSystemDeadZone;
             FCollisionShape MySphere = FCollisionShape::MakeSphere(HomeSystemrRadiusScaled);
@@ -949,8 +866,7 @@ void AAstroGenerator::GenerateCustomHomeSystem()
 
         // Создаем новую звездную систему
         TSharedPtr<FStarSystemModel> StarSystemModel = MakeShared<FStarSystemModel>();
-        //StarSystemGenerator->GenerateRandomStarSystemModel(StarSystemModel);
-        //StarSystemModel->AmountOfStars = 1;
+
         int AmountOfStars{ 0 };
         switch (HomeSystemStarType)
         {   
@@ -1065,10 +981,6 @@ void AAstroGenerator::GenerateCustomHomeSystem()
                 NewPlanet->SetActorLocation(NewLocation);
 
                 NewPlanet->AttachToActor(NewPlanetOrbit, FAttachmentTransformRules::KeepWorldTransform);
-                /*if (false)
-                {
-                    NewPlanetOrbit->SetActorRelativeRotation(FRotator(FMath::RandRange(-30.0, 30.0), FMath::RandRange(-360.0, 360.0), 0));
-                }*/
                 NewPlanetarySystem->PlanetsActorsList.Add(NewPlanet);
 
                 const double KM_TO_UE_UNIT_SCALE = 100000;
@@ -1103,16 +1015,10 @@ void AAstroGenerator::GenerateCustomHomeSystem()
                     NewMoon->AddActorLocalOffset(FVector(0, ((PlanetModel->RadiusKM + (MoonData->OrbitRadius * PlanetModel->RadiusKM)) * KM_TO_UE_UNIT_SCALE) * 1, 0));
                     NewMoon->AttachToActor(NewMoonOrbit, FAttachmentTransformRules::KeepWorldTransform);
                     
-                    /*if (false)
-                    {
-                        NewMoonOrbit->SetActorRelativeRotation(FRotator(FMath::RandRange(-360.0, 360.0), FMath::RandRange(-360.0, 360.0), FMath::RandRange(-360.0, 360.0)));
-                    }*/
-				
                     DiameterOfLastMoon = MoonRadius * 2;
                     LastMoonLocation = NewMoon->GetActorLocation();
 
                     /// Generate WSC
-                    //NewMoon->PlanetaryEnvironmentGenerator->GenerateWorldscapeSurfaceByModel(World, NewMoon);
                     NewMoon->PlanetaryEnvironmentGenerator->InitAtmoScape(World, NewMoon->RadiusKM, NewMoon);
                 }
 
@@ -1140,11 +1046,6 @@ void AAstroGenerator::GenerateCustomHomeSystem()
 
                     /// TODO: PlanetaryEnvironmentGenerator->InitEnviroment();
                     NewPlanet->PlanetaryEnvironmentGenerator->InitEnviroment(NewPlanet, World);
-                    /*NewPlanet->PlanetaryEnvironmentGenerator->InitAtmoScape(World, NewPlanet->RadiusKM, NewPlanet);
-                    if (NewPlanet->IsNotGasGiant())
-                    {
-                        NewPlanet->PlanetaryEnvironmentGenerator->GenerateWorldscapeSurfaceByModel(World, NewPlanet);
-                    }*/
                 }
             }
             
@@ -1260,82 +1161,6 @@ void AAstroGenerator::GenerateCustomHomeSystem()
                 }
             }
 
-            //for (APlanet* Planet : NewPlanetarySystem->PlanetsActorsList)
-            //{
-            //    // Получить позицию планеты
-            //    FVector PlanetLocation = Planet->GetActorLocation();
-
-            //    // Используем дистанцию до звезды как радиус
-            //    float CircleRadius = FVector::Dist(PlanetLocation, NewStar->GetActorLocation());
-
-            //    // Получить позицию звезды (или другого центра системы)
-            //    FVector StarLocation = NewStar->GetActorLocation();  // Заменить на реальное положение звезды
-
-            //    // Нарисовать круг вокруг звезды
-            //    DrawDebugCircle(
-            //        GetWorld(),
-            //        StarLocation,
-            //        CircleRadius,
-            //        100,  // Количество сегментов
-            //        FColor::Green,
-            //        true,  // bPersistentLines
-            //        -1.0,  // LifeTime
-            //        0,  // DepthPriority
-            //        100000000.0,  // Thickness
-            //        FVector(0, 0, 1),  // ZAxis
-            //        FVector(0, 1, 0),  // YAxis
-            //        true  // bDrawAxis
-            //    );
-            //}
-            //for (APlanet* Planet : NewPlanetarySystem->PlanetsActorsList)
-            //{
-            //    // Получить позицию планеты
-            //    FVector PlanetLocation = Planet->GetActorLocation();
-
-            //    // Используем дистанцию до звезды как радиус
-            //    float SphereRadius = FVector::Dist(PlanetLocation, NewStar->GetActorLocation());
-
-            //    // Получить позицию звезды (или другого центра системы)
-            //    FVector StarLocation = NewStar->GetActorLocation();  // Заменить на реальное положение звезды
-
-            //    // Выполните проверку перекрытия
-            //    FCollisionShape MySphere = FCollisionShape::MakeSphere(SphereRadius);
-            //    TArray<FOverlapResult> Overlaps;
-            //    bool isOverlap = GetWorld()->OverlapMultiByChannel(Overlaps, StarLocation, FQuat::Identity, ECC_Visibility, MySphere);
-
-            //    float DebugDuration = 60.0f;
-            //    DrawDebugSphere(
-            //        GetWorld(),
-            //        StarLocation,
-            //        SphereRadius,
-            //        50,
-            //        FColor::Purple,
-            //        true,
-            //        DebugDuration
-            //    );
-            //}
-            //for (APlanet* Planet : NewPlanetarySystem->PlanetsActorsList)
-            //{
-            //    // Получить позицию планеты
-            //    FVector PlanetLocation = Planet->GetActorLocation();
-
-            //    // Используем дистанцию до звезды как радиус сферы
-            //    float SphereRadius = FVector::Dist(PlanetLocation, NewStar->GetActorLocation());
-
-            //    // Нарисовать сферу вокруг планеты
-            //    DrawDebugSphere(
-            //        GetWorld(),
-            //        PlanetLocation,
-            //        SphereRadius,
-            //        50,  // Количество сегментов
-            //        FColor::Red,
-            //        true,  // bPersistentLines
-            //        -1.0,  // LifeTime
-            //        0,  // DepthPriority
-            //        5.0  // Thickness
-            //    );
-            //}
-
             double StarSphereRadius;
             if (LastPlanetLocation.IsZero())
             {
@@ -1352,160 +1177,9 @@ void AAstroGenerator::GenerateCustomHomeSystem()
                 NewStar->StarAffectionZoneRadius = StarSphereRadius;
 
             }
-            //NewStar->AffectionRadiusKM = 
             NewStar->CalculateAffectionRadius();
             NewStarSystem->AddNewStar(NewStar);
             NewStarSystem->StarSystemRadius = NewStar->StarAffectionZoneRadius;
-
-
-            //double HomeSystemrRadiusScaled = NewStarSystem->StarSystemRadius * StarSystemDeadZone;
-            //FCollisionShape MySphere = FCollisionShape::MakeSphere(HomeSystemrRadiusScaled);
-            //TArray<FOverlapResult> Overlaps;
-
-            // выполните проверку перекрытия
-           // bool isOverlap = World->OverlapMultiByChannel(Overlaps, HomeSystemLocation, FQuat::Identity, ECC_Visibility, MySphere);
-
-
-            /// TODO: APPLY TO MODEL FIRST!!!
-            /*FVector HomeSystemLocation = NewStar->GetActorLocation();
-            double MinOrbitScaleDist = NewStar->MinOrbit * 149597870 * 100000;
-                double MaxOrbitScaleDist = NewStar->MaxOrbit * 149597870 * 100000;
-            double HotZoneRadius = NewPlanetarySystem->HotZoneOuter;
-            double WarmZoneRadius = NewPlanetarySystem->WarmZoneOuter;
-            double HabitableZoneRadius = NewPlanetarySystem->HabitableZoneOuter;
-            double ColdZoneRadius = NewPlanetarySystem->ColdZoneOuter;
-            double IceZoneRadius = NewPlanetarySystem->IceZoneOuter;
-            double GasGiantsZoneRadius = NewPlanetarySystem->GasGiantsZoneOuter;
-            double KuiperBeltZoneRadius = NewPlanetarySystem->KuiperBeltZoneOuter;*/
-            
-           /* double MinOrbitScaleDist = NewStar->MinOrbit * 149597870 * 1000;
-            double MaxOrbitScaleDist = NewStar->MaxOrbit * 149597870 * 3000;
-            double HotZoneRadius = NewPlanetarySystem->HotZoneRadius.OuterRadius * 149597870 * 3000;
-            double WarmZoneRadius = NewPlanetarySystem->WarmZoneRadius.OuterRadius * 149597870 * 3000;
-            double HabitableZoneRadius = NewPlanetarySystem->HabitableZoneRadius.OuterRadius * 149597870 * 3000;
-            double ColdZoneRadius = NewPlanetarySystem->ColdZoneRadius.OuterRadius * 149597870 * 3000;
-            double IceZoneRadius = NewPlanetarySystem->IceZoneRadius.OuterRadius * 149597870 * 3000;
-            double GasGiantsZoneRadius = NewPlanetarySystem->GasGiantsZoneRadius.OuterRadius * 149597870 * 3000;
-            double KuiperBeltZoneRadius = NewPlanetarySystem->KuiperBeltZoneRadius.OuterRadius * 149597870 * 3000;*/
-
-
-            //double HotZoneRadius = NewPlanetarySystem->AsteroidBeltZoneRadius.OuterRadius;
-           // double MinOrbitScaleDist = NewStar->MinOrbit * NewStar->Radius * 100000 * 696340;
-            //double MaxOrbitScaleDist = NewStar->MaxOrbit * NewStar->Radius * 100000 * 696340;
-            //double HomeSystemrRadiusScaled = NewStarSystem->StarSystemRadius * StarSystemDeadZone;
-            //FCollisionShape MySphere = FCollisionShape::MakeSphere(MaxOrbitScaleDist);
-            //TArray<FOverlapResult> Overlaps;
-            /*float DebugDuration = 60.0f;
-            DrawDebugSphere(
-                GetWorld(),
-                HomeSystemLocation,
-                MinOrbitScaleDist,
-                50,
-                FColor::Red,
-                true,
-                DebugDuration
-            );
-            DrawDebugSphere(
-                GetWorld(),
-                HomeSystemLocation,
-                HotZoneRadius,
-                50,
-                FColor::Orange,
-                true,
-                DebugDuration
-            );
-            DrawDebugSphere(
-                GetWorld(),
-                HomeSystemLocation,
-                WarmZoneRadius,
-                50,
-                FColor::Yellow,
-                true,
-                DebugDuration
-            );
-            DrawDebugSphere(
-                GetWorld(),
-                HomeSystemLocation,
-                HabitableZoneRadius,
-                50,
-                FColor::Green,
-                true,
-                DebugDuration
-            );
-            DrawDebugSphere(
-                GetWorld(),
-                HomeSystemLocation,
-                ColdZoneRadius,
-                50,
-                FColor::Cyan,
-                true,
-                DebugDuration
-            );
-            DrawDebugSphere(
-                GetWorld(),
-                HomeSystemLocation,
-                IceZoneRadius,
-                50,
-                FColor::Blue,
-                true,
-                DebugDuration
-            );
-            DrawDebugSphere(
-                GetWorld(),
-                HomeSystemLocation,
-                GasGiantsZoneRadius,
-                50,
-                FColor::Silver,
-                true,
-                DebugDuration
-            );
-            DrawDebugSphere(
-                GetWorld(),
-                HomeSystemLocation,
-                KuiperBeltZoneRadius,
-                50,
-                FColor::Black,
-                true,
-                DebugDuration
-            );
-            DrawDebugSphere(
-                GetWorld(),
-                HomeSystemLocation,
-                MaxOrbitScaleDist,
-                50,
-                FColor::Emerald,
-                true,
-                DebugDuration
-            );*/
-
-            // Выполнение проверки перекрытия
-            //FVector HomeSystemLocation{ 0.0, 0.0, 0.0 };//NewStarSystem->GetActorLocation();
-            //bool isOverlap = GetWorld()->OverlapMultiByChannel(Overlaps, HomeSystemLocation, FQuat::Identity, ECC_Visibility, MySphere);
-
-            //float DebugDuration = 60.0f;
-            //DrawDebugSphere(
-            //    GetWorld(),
-            //    HomeSystemLocation,
-            //    MaxOrbitScaleDist,
-            //    50,
-            //    FColor::Purple,
-            //    true,
-            //    DebugDuration
-            //);
-            //// Выполнение проверки перекрытия
-            //FVector HomeSystemLocation{ 0.0, 0.0, 0.0 };//NewStarSystem->GetActorLocation();
-            //bool isOverlap = GetWorld()->OverlapMultiByChannel(Overlaps, HomeSystemLocation, FQuat::Identity, ECC_Visibility, MySphere);
-
-            //float DebugDuration = 60.0f;
-            //DrawDebugSphere(
-            //    GetWorld(),
-            //    HomeSystemLocation,
-            //    MaxOrbitScaleDist,
-            //    50,
-            //    FColor::Purple,
-            //    true,
-            //    DebugDuration
-            //);
         }
 
         double StarSystemSphereRadius = FVector::Dist(NewStarSystem->GetActorLocation(), LastStarLocation);
@@ -1711,14 +1385,9 @@ void AAstroGenerator::GenerateStarCluster()
 
         if (bGenerateFullScaledWorld)
         {
-            //NewStarCluster->
-                SetActorScale3D(FVector(1000000000, 1000000000, 1000000000));
+            SetActorScale3D(FVector(1000000000, 1000000000, 1000000000));
         }
     }
-    /*else
-    {
-        UE_LOG(LogTemp, Warning, TEXT("StarClusterGenerator is not implemented yet!"));
-    }*/
 }
 
 
