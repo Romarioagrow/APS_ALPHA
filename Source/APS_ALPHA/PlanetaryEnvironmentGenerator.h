@@ -134,8 +134,8 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Materials")
 		UMaterialInstance* MI_Lava_Ocean;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Materials")
-		UMaterial* M_Lava_WorldScape;
+	/*UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Materials")
+		UMaterial* M_Lava_WorldScape;*/
 
 protected:
 	// Called when the game starts or when spawned

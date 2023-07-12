@@ -30,6 +30,48 @@ APlanetaryEnvironmentGenerator::APlanetaryEnvironmentGenerator()
 void APlanetaryEnvironmentGenerator::BeginPlay()
 {
 	Super::BeginPlay();
+    //MoonLikeNoise = StaticLoadObject(UWorldScapeNoiseClass::StaticClass(), nullptr, TEXT("/WorldScape/Ressources/Noise/MoonLike.MoonLike"));
+    //MoonLikeNoise = Cast<UWorldScapeNoiseClass>(StaticLoadObject(UWorldScapeNoiseClass::StaticClass(), nullptr, TEXT("/WorldScape/Ressources/Noise/MoonLike.MoonLike")));
+
+
+    //MoonLikeNoise = Cast<UWorldScapeNoiseClass>(StaticLoadObject(UWorldScapeNoiseClass::StaticClass(), nullptr, TEXT("/Game/APS/WSC/MoonLike.MoonLike")));
+    //LavaWorldNoise = Cast<UWorldScapeNoiseClass>(StaticLoadObject(UWorldScapeNoiseClass::StaticClass(), nullptr, TEXT("/Game/APS/WSC/LavaWorld.LavaWorld")));
+    //SelenaeNoise = Cast<UWorldScapeNoiseClass>(StaticLoadObject(UWorldScapeNoiseClass::StaticClass(), nullptr, TEXT("/Game/APS/WSC/Selenae.Selenae")));
+    //SelenaeMetalNoise = Cast<UWorldScapeNoiseClass>(StaticLoadObject(UWorldScapeNoiseClass::StaticClass(), nullptr, TEXT("/Game/APS/WSC/SelenaeMetal.SelenaeMetal")));
+    //EarthLikeNoise = Cast<UWorldScapeNoiseClass>(StaticLoadObject(UWorldScapeNoiseClass::StaticClass(), nullptr, TEXT("/Game/APS/WSC/EarthLike.EarthLike")));
+    //EarthNoise = Cast<UWorldScapeNoiseClass>(StaticLoadObject(UWorldScapeNoiseClass::StaticClass(), nullptr, TEXT("/Game/APS/WSC/EarthNoise.EarthNoise")));
+    //TerraNoise = Cast<UWorldScapeNoiseClass>(StaticLoadObject(UWorldScapeNoiseClass::StaticClass(), nullptr, TEXT("/Game/APS/WSC/TerraNoise.TerraNoise")));
+    //IceWorldNoise = Cast<UWorldScapeNoiseClass>(StaticLoadObject(UWorldScapeNoiseClass::StaticClass(), nullptr, TEXT("/Game/APS/WSC/IceWorldNoise.IceWorldNoise")));
+    //TerraDesert = Cast<UWorldScapeNoiseClass>(StaticLoadObject(UWorldScapeNoiseClass::StaticClass(), nullptr, TEXT("/Game/APS/WSC/TerraDesert.TerraDesert")));
+    //TerraForestNoise = Cast<UWorldScapeNoiseClass>(StaticLoadObject(UWorldScapeNoiseClass::StaticClass(), nullptr, TEXT("/Game/APS/WSC/TerraForestNoise.TerraForestNoise")));
+
+    //// Materials
+    //MI_Terra = Cast<UMaterialInstance>(StaticLoadObject(UMaterialInstance::StaticClass(), nullptr, TEXT("/Game/APS/WSC/WorldScapeMaterials/MaterialInstances/MI_Terra.MI_Terra")));
+    //MI_Selenae = Cast<UMaterialInstance>(StaticLoadObject(UMaterialInstance::StaticClass(), nullptr, TEXT("/Game/APS/WSC/WorldScapeMaterials/MaterialInstances/MI_Selenae.MI_Selenae")));
+    //MI_Magma = Cast<UMaterialInstance>(StaticLoadObject(UMaterialInstance::StaticClass(), nullptr, TEXT("/Game/APS/WSC/WorldScapeMaterials/MaterialInstances/MI_Magma.MI_Magma")));
+    //MI_Planetary_Ocean = Cast<UMaterialInstance>(StaticLoadObject(UMaterialInstance::StaticClass(), nullptr, TEXT("/Game/APS/WSC/WorldScapeMaterials/Ocean/MI_Planetary_Ocean.MI_Planetary_Ocean")));
+    //MI_Lava_Ocean = Cast<UMaterialInstance>(StaticLoadObject(UMaterialInstance::StaticClass(), nullptr, TEXT("/Game/APS/WSC/WorldScapeMaterials/Ocean/MI_Lava_Ocean.MI_Lava_Ocean")));
+
+
+
+    //MoonLikeNoise = LoadObject<UWorldScapeNoiseClass>(nullptr, TEXT("/WorldScape/Ressources/Noise/MoonLike.MoonLike"));
+    //LavaWorldNoise = LoadObject<UWorldScapeNoiseClass>(nullptr, TEXT("/WorldScape/Ressources/Noise/LavaWorld.LavaWorld"));
+    //SelenaeNoise = LoadObject<UWorldScapeNoiseClass>(nullptr, TEXT("/WorldScape/Ressources/Noise/Selenae.Selenae"));
+    //SelenaeMetalNoise = LoadObject<UWorldScapeNoiseClass>(nullptr, TEXT("/WorldScape/Ressources/Noise/Selenae.Selenae"));
+    //EarthLikeNoise = LoadObject<UWorldScapeNoiseClass>(nullptr, TEXT("/WorldScape/Ressources/Noise/Selenae.Selenae"));
+    //EarthNoise = LoadObject<UWorldScapeNoiseClass>(nullptr, TEXT("/WorldScape/Ressources/Noise/Selenae.Selenae"));
+    //TerraNoise = LoadObject<UWorldScapeNoiseClass>(nullptr, TEXT("/WorldScape/Ressources/Noise/Selenae.Selenae"));
+    //IceWorldNoise = LoadObject<UWorldScapeNoiseClass>(nullptr, TEXT("/WorldScape/Ressources/Noise/Selenae.Selenae"));
+    //TerraDesert = LoadObject<UWorldScapeNoiseClass>(nullptr, TEXT("/WorldScape/Ressources/Noise/Selenae.Selenae"));
+    //TerraForestNoise = LoadObject<UWorldScapeNoiseClass>(nullptr, TEXT("/WorldScape/Ressources/Noise/Selenae.Selenae"));
+    ////...
+    //MI_Terra = LoadObject<UMaterialInstance>(nullptr, TEXT("/WorldScape/Ressources/Materials/WorldScapeMaterials/MaterialInstances/MI_Terra.MI_Terra"));
+    //MI_Selenae = LoadObject<UMaterialInstance>(nullptr, TEXT("/WorldScape/Ressources/Materials/WorldScapeMaterials/MaterialInstances/MI_Selenae.MI_Selenae"));
+    //MI_Magma = LoadObject<UMaterialInstance>(nullptr, TEXT("/WorldScape/Ressources/Materials/WorldScapeMaterials/MaterialInstances/MI_Selenae.MI_Selenae"));
+    //MI_Planetary_Ocean = LoadObject<UMaterialInstance>(nullptr, TEXT("/WorldScape/Ressources/Materials/WorldScapeMaterials/Ocean/MI_Planetary_Ocean.MI_Planetary_Ocean"));
+    //MI_Lava_Ocean = LoadObject<UMaterialInstance>(nullptr, TEXT("/WorldScape/Ressources/Materials/WorldScapeMaterials/MaterialInstances/MI_Selenae.MI_Selenae"));
+
+
 
 
     if (false)
@@ -404,6 +446,45 @@ void APlanetaryEnvironmentGenerator::InitWorldScape(UWorld* World)
 
 void APlanetaryEnvironmentGenerator::GenerateWorldscapeSurfaceByModel(UWorld* World, APlanet* NewPlanet)
 {
+
+    // /Script/WorldScapeNoise.IceWorldNoise'/Game/APS/WSC/WSCN_IceWorld.WSCN_IceWorld'
+
+    /*
+    
+    / Script / WorldScapeNoise.WorldScapeCustomNoise'/Game/APS/WSC/WSCN_MoonLike.WSCN_MoonLike'
+    /Script/WorldScapeNoise.TerraNoiseExample'/Game/APS/WSC/WSCN_LavaWorld.WSCN_LavaWorld'
+    /Script/WorldScapeNoise.SelenaeNoise'/Game/APS/WSC/WSCN_Selenae.WSCN_Selenae'
+    /Script/WorldScapeNoise.SelenaeNoise'/Game/APS/WSC/WSCN_Selenae_Metal.WSCN_Selenae_Metal'
+    /Script/WorldScapeNoise.WorldScapeCustomNoise'/Game/APS/WSC/WSCN_EarthLike.WSCN_EarthLike'
+
+    /Script/Engine.MaterialInstanceConstant'/Game/APS/WSC/WSC_MI_LavaOcean.WSC_MI_LavaOcean'
+    /Script/Engine.MaterialInstanceConstant'/Game/APS/WSC/WSC_MI_Magma.WSC_MI_Magma'
+    /Script/Engine.MaterialInstanceConstant'/Game/APS/WSC/WSC_MI_Planetary_Ocean.WSC_MI_Planetary_Ocean'
+    /Script/Engine.MaterialInstanceConstant'/Game/APS/WSC/WSC_MI_Selenae.WSC_MI_Selenae'
+    /Script/Engine.MaterialInstanceConstant'/Game/APS/WSC/WSC_MI_Terra.WSC_MI_Terra'
+
+    */
+
+
+    MoonLikeNoise = Cast<UWorldScapeNoiseClass>(StaticLoadObject(UWorldScapeNoiseClass::StaticClass(), nullptr, TEXT("/Game/APS/WSC/WSCN_MoonLike.WSCN_MoonLike")));
+    LavaWorldNoise = Cast<UWorldScapeNoiseClass>(StaticLoadObject(UWorldScapeNoiseClass::StaticClass(), nullptr, TEXT("/Game/APS/WSC/WSCN_LavaWorld.WSCN_LavaWorld")));
+    SelenaeNoise = Cast<UWorldScapeNoiseClass>(StaticLoadObject(UWorldScapeNoiseClass::StaticClass(), nullptr, TEXT("/Game/APS/WSC/WSCN_Selenae.WSCN_Selenae")));
+    SelenaeMetalNoise = Cast<UWorldScapeNoiseClass>(StaticLoadObject(UWorldScapeNoiseClass::StaticClass(), nullptr, TEXT("/Game/APS/WSC/WSCN_Selenae_Metal.WSCN_Selenae_Metal")));
+    EarthLikeNoise = Cast<UWorldScapeNoiseClass>(StaticLoadObject(UWorldScapeNoiseClass::StaticClass(), nullptr, TEXT("/Game/APS/WSC/WSCN_EarthLike.WSCN_EarthLike")));
+    EarthNoise = Cast<UWorldScapeNoiseClass>(StaticLoadObject(UWorldScapeNoiseClass::StaticClass(), nullptr, TEXT("/Game/APS/WSC/WSCN_EarthNoise.WSCN_EarthNoise")));
+    TerraNoise = Cast<UWorldScapeNoiseClass>(StaticLoadObject(UWorldScapeNoiseClass::StaticClass(), nullptr, TEXT("/Game/APS/WSC/WSCN_Terra.WSCN_Terra")));
+    IceWorldNoise = Cast<UWorldScapeNoiseClass>(StaticLoadObject(UWorldScapeNoiseClass::StaticClass(), nullptr, TEXT("/Game/APS/WSC/WSCN_IceWorld.WSCN_IceWorld")));
+    TerraDesert = Cast<UWorldScapeNoiseClass>(StaticLoadObject(UWorldScapeNoiseClass::StaticClass(), nullptr, TEXT("/Game/APS/WSC/WSCN_Terra_Desert.WSCN_Terra_Desert")));
+    TerraForestNoise = Cast<UWorldScapeNoiseClass>(StaticLoadObject(UWorldScapeNoiseClass::StaticClass(), nullptr, TEXT("/Game/APS/WSC/WSCN_Terra_Forest.WSCN_Terra_Forest")));
+
+    // Materials
+    MI_Terra = Cast<UMaterialInstance>(StaticLoadObject(UMaterialInstance::StaticClass(), nullptr, TEXT("/Game/APS/WSC/WSC_MI_Terra.WSC_MI_Terra")));
+    MI_Selenae = Cast<UMaterialInstance>(StaticLoadObject(UMaterialInstance::StaticClass(), nullptr, TEXT("/Game/APS/WSC/WSC_MI_Selenae.WSC_MI_Selenae")));
+    MI_Magma = Cast<UMaterialInstance>(StaticLoadObject(UMaterialInstance::StaticClass(), nullptr, TEXT("/Game/APS/WSC/WSC_MI_Magma.WSC_MI_Magma")));
+    MI_Planetary_Ocean = Cast<UMaterialInstance>(StaticLoadObject(UMaterialInstance::StaticClass(), nullptr, TEXT("/Game/APS/WSC/WSC_MI_Planetary_Ocean.WSC_MI_Planetary_Ocean")));
+    MI_Lava_Ocean = Cast<UMaterialInstance>(StaticLoadObject(UMaterialInstance::StaticClass(), nullptr, TEXT("/Game/APS/WSC/WSC_MI_LavaOcean.WSC_MI_LavaOcean")));
+
+
     GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Magenta, TEXT("GenerateWorldscapeSurfaceByModel!"));
     FActorSpawnParameters SpawnParams;
     WorldScapeRootInstance = World->SpawnActor<AWorldScapeRoot>(AWorldScapeRoot::StaticClass(), FTransform(), SpawnParams);
@@ -436,9 +517,9 @@ void APlanetaryEnvironmentGenerator::GenerateWorldscapeSurfaceByModel(UWorld* Wo
         WorldScapeRootInstance->WorldScapeNoise;
 
         EPlanetType PlanetType = NewPlanet->PlanetType;
-        UWorldScapeNoiseClass* WorldScapeNoise;// = WorldScapeRootInstance->WorldScapeNoise;
-        UMaterialInstance* WorldScapeMaterial;
-        UMaterialInstance* WorldScapeMaterialOcean;
+        UWorldScapeNoiseClass* WorldScapeNoise = MoonLikeNoise;// = WorldScapeRootInstance->WorldScapeNoise;
+        UMaterialInstance* WorldScapeMaterial = MI_Selenae;
+        UMaterialInstance* WorldScapeMaterialOcean = MI_Planetary_Ocean;
         double NoiseScale{ 800.0 };
         double NoiseIntensity{ 1200000.0 };
         int NoiseSeed{ 10 };
@@ -467,6 +548,15 @@ void APlanetaryEnvironmentGenerator::GenerateWorldscapeSurfaceByModel(UWorld* Wo
             WorldScapeMaterial = MI_Terra;
             WorldScapeMaterialOcean = MI_Planetary_Ocean;
             WorldScapeRootInstance->bOcean = true;
+            break;
+        case EPlanetType::Forest:
+            WorldScapeNoise = TerraForestNoise;
+            WorldScapeMaterial = MI_Terra;
+            WorldScapeMaterialOcean = MI_Planetary_Ocean;
+            WorldScapeRootInstance->bOcean = true;
+            NoiseScale = FMath::RandRange(500.0, 800.0);
+            NoiseIntensity = FMath::RandRange(1000000.0, 1300000.0);//2200000.0;
+            NoiseSeed = FMath::RandRange(10.0, 1000.0);
             break;
 
         case EPlanetType::Volcanic:
@@ -515,15 +605,7 @@ void APlanetaryEnvironmentGenerator::GenerateWorldscapeSurfaceByModel(UWorld* Wo
             NoiseSeed = FMath::RandRange(10.0, 1000.0);
             break;
 
-        case EPlanetType::Forest:
-            WorldScapeNoise = TerraForestNoise;
-            WorldScapeMaterial = MI_Terra;
-            WorldScapeMaterialOcean = MI_Planetary_Ocean;
-            WorldScapeRootInstance->bOcean = true;
-            NoiseScale = FMath::RandRange(500.0, 800.0);
-            NoiseIntensity = FMath::RandRange(1000000.0, 1300000.0);//2200000.0;
-            NoiseSeed = FMath::RandRange(10.0, 1000.0);
-            break;
+        
 
         case EPlanetType::Ice:
             WorldScapeNoise = IceWorldNoise;
@@ -605,6 +687,15 @@ void APlanetaryEnvironmentGenerator::GenerateWorldscapeSurfaceByModel(UWorld* Wo
             WorldScapeRootInstance->bOcean = false;
             break;
         }
+
+
+        WorldScapeRootInstance->WorldScapeNoise = WorldScapeNoise;
+        WorldScapeRootInstance->NoiseScale = FMath::RoundToInt(NoiseScale);
+        WorldScapeRootInstance->NoiseIntensity = FMath::RoundToInt(NoiseIntensity);
+        WorldScapeRootInstance->Seed = NoiseSeed;
+        WorldScapeRootInstance->TerrainMaterial.DefaultMaterial = WorldScapeMaterial;
+        WorldScapeRootInstance->OceanMaterial.DefaultMaterial = WorldScapeMaterialOcean;
+
 
 
         //WorldScapeRootInstance->bGenerateWorldScape = true;
