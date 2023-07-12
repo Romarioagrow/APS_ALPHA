@@ -11,6 +11,19 @@ APlanetaryEnvironmentGenerator::APlanetaryEnvironmentGenerator()
  	// Set this actor to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = true;
 
+    /*MoonLikeNoise = LoadObject<UWorldScapeNoiseClass>(nullptr, TEXT("/WorldScape/Ressources/Noise/MoonLike.MoonLike"));
+    LavaWorldNoise = LoadObject<UWorldScapeNoiseClass>(nullptr, TEXT("/WorldScape/Ressources/Noise/LavaWorld.LavaWorld"));
+    SelenaeNoise = LoadObject<UWorldScapeNoiseClass>(nullptr, TEXT("/WorldScape/Ressources/Noise/Selenae.Selenae"));
+    EarthLikeNoise = LoadObject<UWorldScapeNoiseClass>(nullptr, TEXT("/WorldScape/Ressources/Noise/EarthLike.EarthLike"));
+    EarthNoise = LoadObject<UWorldScapeNoiseClass>(nullptr, TEXT("/WorldScape/Ressources/Noise/EarthNoise.EarthNoise"));
+    IceWorldNoise = LoadObject<UWorldScapeNoiseClass>(nullptr, TEXT("/WorldScape/Ressources/Noise/IceWorld.IceWorld"));
+
+    MI_Terra = LoadObject<UMaterialInstance>(nullptr, TEXT("/WorldScape/Ressources/Materials/WorldScapeMaterials/MaterialInstances/MI_Terra.MI_Terra"));
+    MI_Selenae = LoadObject<UMaterialInstance>(nullptr, TEXT("/WorldScape/Ressources/Materials/WorldScapeMaterials/MaterialInstances/MI_Selenae.MI_Selenae"));
+    MI_Magma = LoadObject<UMaterialInstance>(nullptr, TEXT("/WorldScape/Ressources/Materials/WorldScapeMaterials/MaterialInstances/MI_Magma.MI_Magma"));
+    MI_Planetary_Ocean = LoadObject<UMaterialInstance>(nullptr, TEXT("/WorldScape/Ressources/Materials/WorldScapeMaterials/Ocean/MI_Planetary_Ocean.MI_Planetary_Ocean"));
+    M_Lava_WorldScape = LoadObject<UMaterial>(nullptr, TEXT("/WorldScape/Ressources/Materials/WorldScapeMaterials/Ocean/M_Lava_WorldScape.M_Lava_WorldScape"));*/
+
 }
 
 // Called when the game starts or when spawned
@@ -252,7 +265,7 @@ void APlanetaryEnvironmentGenerator::InitAtmoScape(UWorld* World, double Radius,
                 MinColor = FLinearColor(0.7f, 0.7f, 0.0f, 1.0f);
                 MaxColor = FLinearColor(0.9f, 0.9f, 0.2f, 1.0f);
                 break;
-            case EPlanetType::Iron:
+            case EPlanetType::Metal:
                 MinColor = FLinearColor(0.6f, 0.5f, 0.4f, 1.0f);
                 MaxColor = FLinearColor(0.7f, 0.6f, 0.5f, 1.0f);
                 break;
@@ -408,10 +421,189 @@ void APlanetaryEnvironmentGenerator::GenerateWorldscapeSurfaceByModel(UWorld* Wo
 
 
         WorldScapeRootInstance->SetActorLocation(NewPlanet->GetActorLocation());
-        WorldScapeRootInstance->SetActorRotation(NewPlanet->GetActorRotation());
+        WorldScapeRootInstance->SetActorRotation(NewPlanet->GetActorRotation()); 
         WorldScapeRootInstance->AttachToActor(NewPlanet, FAttachmentTransformRules::KeepWorldTransform);
         //NewPlanet->Mesh
         //NewPlanet->SetupWorldScapeRoot(WorldScapeRootInstance);
+        
+
+
+        WorldScapeRootInstance->LodResolution = 256;
+        WorldScapeRootInstance->TriangleSize = 50;
+        WorldScapeRootInstance->HeightAnchor = 80000.0;
+        WorldScapeRootInstance->WorldScapeNoise;
+
+        EPlanetType PlanetType = NewPlanet->PlanetType;
+        UWorldScapeNoiseClass* WorldScapeNoise;// = WorldScapeRootInstance->WorldScapeNoise;
+        UMaterialInstance* WorldScapeMaterial;
+        UMaterialInstance* WorldScapeMaterialOcean;
+        double NoiseScale{ 800.0 };
+        double NoiseIntensity{ 1200000.0 };
+        int NoiseSeed{ 10 };
+
+        NoiseScale *= NewPlanet->Radius;
+        NoiseIntensity *= NewPlanet->Radius;
+
+
+        switch (PlanetType)
+        {
+        case EPlanetType::Rocky:
+            WorldScapeNoise = MoonLikeNoise;
+            WorldScapeMaterial = MI_Selenae;
+            WorldScapeRootInstance->bOcean = false;
+            break;
+
+        case EPlanetType::Dwarf:
+            WorldScapeNoise = MoonLikeNoise;
+            WorldScapeMaterial = MI_Terra;
+            WorldScapeRootInstance->bOcean = false;
+            break;
+        
+        case EPlanetType::Greenhouse:
+        case EPlanetType::Terrestrial:
+            WorldScapeNoise = EarthNoise;
+            WorldScapeMaterial = MI_Terra;
+            WorldScapeMaterialOcean = MI_Planetary_Ocean;
+            WorldScapeRootInstance->bOcean = true;
+            break;
+
+        case EPlanetType::Volcanic:
+        case EPlanetType::Melted:
+        case EPlanetType::Lava:
+            WorldScapeNoise = LavaWorldNoise;
+            WorldScapeMaterial = MI_Magma;
+            WorldScapeMaterialOcean = MI_Lava_Ocean;
+            WorldScapeRootInstance->bOcean = true;
+            break;
+
+
+        /*case EPlanetType::HotGiant:
+            break;
+        case EPlanetType::GasGiant:
+            break;
+        case EPlanetType::IceGiant:
+            break;*/
+        case EPlanetType::Ocean:
+            WorldScapeNoise = EarthNoise;
+            WorldScapeMaterial = MI_Terra;
+            WorldScapeMaterialOcean = MI_Planetary_Ocean;
+            WorldScapeRootInstance->bOcean = true;
+            NoiseScale = FMath::RandRange(50.0, 100.0);
+            NoiseIntensity = FMath::RandRange(1000000.0, 3000000.0);//2200000.0;
+            NoiseSeed = FMath::RandRange(10.0, 1000.0);
+
+            break;
+        case EPlanetType::Water:
+            WorldScapeNoise = TerraNoise;
+            WorldScapeMaterial = MI_Terra;
+            WorldScapeMaterialOcean = MI_Planetary_Ocean;
+            WorldScapeRootInstance->bOcean = true;
+            NoiseScale = FMath::RandRange(10.0, 100.0);
+            NoiseIntensity = FMath::RandRange(1000000.0, 12000000.0);//2200000.0;
+            NoiseSeed = FMath::RandRange(10.0, 100.0);
+            break;
+
+        case EPlanetType::Desert:
+            WorldScapeNoise = TerraDesert;
+            WorldScapeMaterial = MI_Terra;
+            WorldScapeMaterialOcean = MI_Planetary_Ocean;
+            WorldScapeRootInstance->bOcean = true;
+            NoiseScale = FMath::RandRange(10.0, 100.0);
+            NoiseIntensity = FMath::RandRange(1000000.0, 1300000.0);//2200000.0;
+            NoiseSeed = FMath::RandRange(10.0, 1000.0);
+            break;
+
+        case EPlanetType::Forest:
+            WorldScapeNoise = TerraForestNoise;
+            WorldScapeMaterial = MI_Terra;
+            WorldScapeMaterialOcean = MI_Planetary_Ocean;
+            WorldScapeRootInstance->bOcean = true;
+            NoiseScale = FMath::RandRange(500.0, 800.0);
+            NoiseIntensity = FMath::RandRange(1000000.0, 1300000.0);//2200000.0;
+            NoiseSeed = FMath::RandRange(10.0, 1000.0);
+            break;
+
+        case EPlanetType::Ice:
+            WorldScapeNoise = IceWorldNoise;
+            WorldScapeMaterial = MI_Selenae;
+            //WorldScapeMaterialOcean = MI_Planetary_Ocean;
+            WorldScapeRootInstance->bOcean = false;
+            NoiseScale = FMath::RandRange(250.0, 800.0);
+            NoiseIntensity = FMath::RandRange(1000000.0, 1500000.0);//2200000.0;
+            NoiseSeed = FMath::RandRange(10.0, 1000.0);
+            break;
+
+        case EPlanetType::Frozen:
+            WorldScapeNoise = IceWorldNoise;
+            WorldScapeMaterial = MI_Terra;
+            WorldScapeRootInstance->bOcean = false;
+            NoiseScale = FMath::RandRange(100.0, 800.0);
+            NoiseIntensity = FMath::RandRange(1000000.0, 1500000.0);//2200000.0;
+            NoiseSeed = FMath::RandRange(1000000.0, 10000000.0);
+            break;
+
+        case EPlanetType::Ammonia:
+            WorldScapeNoise = SelenaeNoise;
+            WorldScapeMaterial = MI_Selenae;
+            WorldScapeRootInstance->bOcean = false;
+            NoiseScale = FMath::RandRange(100.0, 800.0);
+            NoiseIntensity = FMath::RandRange(1000000.0, 1500000.0);//2200000.0;
+            NoiseSeed = FMath::RandRange(10.0, 10000000.0);
+            break;
+
+
+        case EPlanetType::Metal:
+            WorldScapeNoise = SelenaeMetalNoise;
+            WorldScapeMaterial = MI_Selenae;
+            WorldScapeRootInstance->bOcean = false;
+            NoiseScale = FMath::RandRange(500.0, 1000.0);
+            NoiseIntensity = FMath::RandRange(800000.0, 1500000.0);//2200000.0;
+            NoiseSeed = FMath::RandRange(10.0, 100000.0);
+            break;
+
+
+        case EPlanetType::Carbon:
+            break;
+        case EPlanetType::SuperEarth:
+            break;
+            //break;
+        /*case EPlanetType::Metallic:
+            break;*/
+        case EPlanetType::Nordic:
+            break;
+        case EPlanetType::Tundra:
+            break;
+        case EPlanetType::HighMountain:
+            break;
+        case EPlanetType::Sand:
+            break;
+        case EPlanetType::Oasis:
+            //NoiseScale = 123.0;
+            break;
+        case EPlanetType::Archipelago:
+            break;
+        case EPlanetType::Pangea:
+            NoiseScale = FMath::RandRange(50.0, 150.0);
+            NoiseIntensity = FMath::RandRange(1000000.0, 3000000.0);//2200000.0;
+            NoiseSeed = FMath::RandRange(10.0, 1000.0);
+            WorldScapeNoise = EarthLikeNoise;
+            WorldScapeMaterial = MI_Terra;
+            WorldScapeMaterialOcean = MI_Planetary_Ocean;
+            WorldScapeRootInstance->bOcean = true;
+            break;
+        case EPlanetType::Rogue:
+            break;
+        case EPlanetType::Exoplanet:
+            break;
+        case EPlanetType::Unknown:
+            break;
+        default:
+            WorldScapeNoise = MoonLikeNoise;
+            WorldScapeMaterial = MI_Selenae;
+            WorldScapeRootInstance->bOcean = false;
+            break;
+        }
+
 
         //WorldScapeRootInstance->bGenerateWorldScape = true;
         GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Magenta, TEXT("GenerateWorldScape!"));

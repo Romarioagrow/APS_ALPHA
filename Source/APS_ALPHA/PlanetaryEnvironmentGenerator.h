@@ -72,9 +72,70 @@ public:
 
 	FAmbientParameters AmbientParams;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet")
-		TMap<EPlanetType, FPlanetColorParams> PlanetColorParams;
+	//UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet")
+	//	TMap<EPlanetType, FPlanetColorParams> PlanetColorParams;
 
+	//UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Noises")
+	//	UWorldScapeNoiseClass* MoonLikeNoise;
+
+	//UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Noises")
+	//	UWorldScapeNoiseClass* LavaWorldNoise;
+
+	//// ... more noise declarations ...
+
+	//UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Materials")
+	//	UMaterialInstance* MI_Terra;
+
+	//UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Materials")
+	//	UMaterialInstance* MI_Selenae;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Noises")
+		UWorldScapeNoiseClass* MoonLikeNoise;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Noises")
+		UWorldScapeNoiseClass* LavaWorldNoise;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Noises")
+		UWorldScapeNoiseClass* SelenaeNoise;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Noises")
+		UWorldScapeNoiseClass* SelenaeMetalNoise;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Noises")
+		UWorldScapeNoiseClass* EarthLikeNoise;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Noises")
+		UWorldScapeNoiseClass* EarthNoise;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Noises")
+		UWorldScapeNoiseClass* TerraNoise;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Noises")
+		UWorldScapeNoiseClass* IceWorldNoise;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Noises")
+		UWorldScapeNoiseClass* TerraDesert;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Noises")
+		UWorldScapeNoiseClass* TerraForestNoise;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Materials")
+		UMaterialInstance* MI_Terra;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Materials")
+		UMaterialInstance* MI_Selenae;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Materials")
+		UMaterialInstance* MI_Magma;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Materials")
+		UMaterialInstance* MI_Planetary_Ocean;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Materials")
+		UMaterialInstance* MI_Lava_Ocean;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Materials")
+		UMaterial* M_Lava_WorldScape;
 
 protected:
 	// Called when the game starts or when spawned

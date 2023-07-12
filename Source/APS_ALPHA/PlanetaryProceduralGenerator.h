@@ -126,7 +126,7 @@ private:
         {EPlanetType::Ice,          FRadiusRange(0.3, 0.8)},     // Ледяные планеты
         {EPlanetType::Frozen,       FRadiusRange(0.3, 0.8)},     // Замороженные планеты
         {EPlanetType::Ammonia,      FRadiusRange(0.6, 0.9)},     // Планеты аммиака
-        {EPlanetType::Iron,         FRadiusRange(0.8, 1.1)},     // Железные планеты
+        {EPlanetType::Metal,         FRadiusRange(0.8, 1.1)},     // Железные планеты
         {EPlanetType::Carbon,       FRadiusRange(0.8, 1.1)},     // Углеродные планеты
         {EPlanetType::SuperEarth,   FRadiusRange(1.3, 2)},     // Суперземли
         {EPlanetType::Lava,         FRadiusRange(0.8, 1.1)},     // Лавовые планеты
@@ -153,7 +153,7 @@ private:
         {EPlanetType::Ice,          FDensityRange(2.0, 3.5)},
         {EPlanetType::Frozen,       FDensityRange(2.0, 3.5)},
         {EPlanetType::Ammonia,      FDensityRange(2.0, 3.5)},
-        {EPlanetType::Iron,         FDensityRange(6.0, 8.0)},
+        {EPlanetType::Metal,         FDensityRange(6.0, 8.0)},
         {EPlanetType::Carbon,       FDensityRange(2.0, 3.5)},
         {EPlanetType::SuperEarth,   FDensityRange(6.0, 9.0)},
         {EPlanetType::Lava,         FDensityRange(3.0, 6.0)},
@@ -419,7 +419,7 @@ private:
             {EPlanetType::Ocean, 0.2f},
             {EPlanetType::Water, 0.2f},
             {EPlanetType::Carbon, 0.1f},
-            {EPlanetType::Iron, 0.5f},
+            {EPlanetType::Metal, 0.5f},
             {EPlanetType::Metallic, 0.5f},
             {EPlanetType::Volcanic, 0.3f},
             {EPlanetType::Greenhouse, 0.5f},
@@ -430,7 +430,7 @@ private:
         {
             {EPlanetType::Volcanic, 0.3f},
             {EPlanetType::Lava, 0.4f},
-            {EPlanetType::Iron, 0.3f},
+            {EPlanetType::Metal, 0.3f},
             {EPlanetType::Metallic, 0.3f},
             {EPlanetType::HotGiant, 0.1f},
             {EPlanetType::Melted, 0.5f}
@@ -439,7 +439,7 @@ private:
         {EPlanetaryZoneType::InnerPlanetZone,
         {
             {EPlanetType::Rocky, 0.4f},
-            {EPlanetType::Iron, 0.3f},
+            {EPlanetType::Metal, 0.3f},
             {EPlanetType::Terrestrial, 0.3f}
         }},
 
@@ -448,7 +448,7 @@ private:
             {EPlanetType::GasGiant, 0.1f},
             {EPlanetType::IceGiant, 0.1f},
             {EPlanetType::Rocky, 0.1f},
-            {EPlanetType::Iron, 0.1f},
+            {EPlanetType::Metal, 0.1f},
             {EPlanetType::Terrestrial, 0.1f},
             {EPlanetType::Ammonia, 0.1f},
             {EPlanetType::Dwarf, 0.1f},
@@ -475,7 +475,7 @@ private:
             {EPlanetType::GasGiant, 0.5f},
             {EPlanetType::IceGiant, 0.5f},
             {EPlanetType::Rocky, 0.1f},
-            {EPlanetType::Iron, 0.1f},
+            {EPlanetType::Metal, 0.1f},
             {EPlanetType::Terrestrial, 0.1f},
             {EPlanetType::Ammonia, 0.1f},
             {EPlanetType::Dwarf, 0.1f},

@@ -19,7 +19,7 @@ enum class EPlanetType : uint8
 	Ice				UMETA(DisplayName = "Ice Planet"), // Ледяные планеты, покрытые льдом
 	Frozen			UMETA(DisplayName = "Frozen Planet"), // Frozen планеты, покрытые льдом
 	Ammonia			UMETA(DisplayName = "Ammonia Planet"), // Планеты аммиака, на которых преобладают аммиачные соединения
-	Iron			UMETA(DisplayName = "Iron Planet"), // Железные планеты, состоящие преимущественно из металлов
+	Metal			UMETA(DisplayName = "Metal Planet"), // Железные планеты, состоящие преимущественно из металлов
 	Carbon			UMETA(DisplayName = "Carbon Planet"), // Углеродные планеты, где преобладает углерод
 	SuperEarth		UMETA(DisplayName = "Super-Earth"), // Супер-Земли, которые значительно больше нашей планеты
 	Lava			UMETA(DisplayName = "Lava Planet"), // Планеты, полностью или большей частью покрытые раскаленной лавой.
