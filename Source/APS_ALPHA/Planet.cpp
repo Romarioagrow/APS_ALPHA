@@ -2,6 +2,7 @@
 
 
 #include "Planet.h"
+#include "Moon.h"
 #include "PlanetGenerationModel.h"
 #include "Spaceship.h"
 
@@ -16,15 +17,19 @@ void APlanet::Tick(float DeltaTime)
 		{
 			if (!bEnvironmentSpawned)
 			{
-
 				ASpaceship* PlayerShip = Cast<ASpaceship>(PlayerPawn);
 
 				/// TODO: Normal Check
 				if (PlayerShip && PlayerShip->OnboardComputer->FlightSystem.CurrentFlightMode != EFlightMode::Interstellar )
 				{
 					PlanetaryEnvironmentGenerator->SpawnPlanetEnvironment();
-					bEnvironmentSpawned = true;
 
+					for (AMoon* Moon : Moons)
+					{
+						Moon->PlanetaryEnvironmentGenerator->SpawnPlanetEnvironment();
+					}
+
+					bEnvironmentSpawned = true;
 				}
 			}
 		}
@@ -33,6 +38,12 @@ void APlanet::Tick(float DeltaTime)
 			if (bEnvironmentSpawned)
 			{
 				PlanetaryEnvironmentGenerator->DestroyPlanetEnvironment();
+
+				for (AMoon* Moon : Moons)
+				{
+					Moon->PlanetaryEnvironmentGenerator->DestroyPlanetEnvironment();
+				}
+
 				bEnvironmentSpawned = false;
 
 			}

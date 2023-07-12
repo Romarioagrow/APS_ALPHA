@@ -94,8 +94,6 @@ public:
 
 		TArray<TSharedPtr<FMoonData>> MoonsList;
 
-		
-
 //private:
 public:
 	UPROPERTY(VisibleAnywhere, Category = "Moons")

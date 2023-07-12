@@ -10,10 +10,9 @@
 #include "GameFramework/Actor.h"
 #include "PlanetaryEnvironmentGenerator.generated.h"
 
-//class APlanet;
-class APlanet;  // Forward declaration
-class AMoon;  // Forward declaration
-class APlanetaryBody;  // Forward declaration
+class APlanet;  
+class AMoon;  
+class APlanetaryBody;  
 
 USTRUCT(BlueprintType)
 struct FAmbientParameters
@@ -72,23 +71,6 @@ public:
 
 	FAmbientParameters AmbientParams;
 
-	//UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet")
-	//	TMap<EPlanetType, FPlanetColorParams> PlanetColorParams;
-
-	//UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Noises")
-	//	UWorldScapeNoiseClass* MoonLikeNoise;
-
-	//UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Noises")
-	//	UWorldScapeNoiseClass* LavaWorldNoise;
-
-	//// ... more noise declarations ...
-
-	//UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Materials")
-	//	UMaterialInstance* MI_Terra;
-
-	//UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Materials")
-	//	UMaterialInstance* MI_Selenae;
-
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Noises")
 		UWorldScapeNoiseClass* MoonLikeNoise;
 
@@ -134,9 +116,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Materials")
 		UMaterialInstance* MI_Lava_Ocean;
 
-	/*UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Materials")
-		UMaterial* M_Lava_WorldScape;*/
-
 protected:
 	// Called when the game starts or when spawned
 	virtual void BeginPlay() override;
@@ -159,8 +138,6 @@ public:
 	UPROPERTY(VisibleAnywhere, Category = "World Scape")
 		double RadiusKM;
 
-	//AmbientParams
-
 	APlanetaryBody* PlanetaryBody;
 
 	void InitWorldScape(UWorld* World);
@@ -174,6 +151,3 @@ public:
 	void DestroyPlanetEnvironment();
 
 };
-
-	//void SetupDefaultGenerator();
-

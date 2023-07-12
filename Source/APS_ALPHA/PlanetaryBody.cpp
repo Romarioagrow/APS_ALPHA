@@ -16,7 +16,6 @@ void APlanetaryBody::BeginPlay()
 	if (PlanetaryEnvironmentGenerator)
 	{
 		GEngine->AddOnScreenDebugMessage(-1, 1.f, FColor::Green, TEXT("PlanetSurfaceGenerator has been created successfully."));
-		//UE_LOG(LogTemp, Warning, TEXT("PlanetSurfaceGenerator has been created successfully."));
 
 		if (bGenerateByDefault)
 		{
@@ -45,73 +44,6 @@ void APlanetaryBody::BeginPlay()
 void APlanetaryBody::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
-
-	//if (PlayerPawn != nullptr)
-	//{
-	//	double Distance = FVector::Dist(PlayerPawn->GetActorLocation(), GetActorLocation());
-	//	//GEngine->AddOnScreenDebugMessage(-1, 0.0, FColor::Magenta, FString::Printf(TEXT("Planet Distance to player: %f"), Distance));
-	//	if (Distance < AffectionRadiusKM * WSCZoneScale * 100000)
-	//	{
-	//		if (!bEnvironmentSpawned)
-	//		{
-	//			PlanetaryEnvironmentGenerator->SpawnPlanetEnvironment();
-	//			bEnvironmentSpawned = true;
-	//		}
-	//	}
-	//	else
-	//	{
-	//		if (bEnvironmentSpawned)
-	//		{
-	//			PlanetaryEnvironmentGenerator->DestroyPlanetEnvironment();
-	//			bEnvironmentSpawned = false;
-	//		}
-	//	}
-	//}
-	//else
-	//{
-	//	GEngine->AddOnScreenDebugMessage(-1, 0.0, FColor::Magenta, TEXT("PlayerPawn nullptr!"));
-
-	//}
-	
-	//if (PlayerPawn != nullptr)
-	//{
-	//	double Distance = FVector::Dist(PlayerPawn->GetActorLocation(), GetActorLocation());
-	//	//GEngine->AddOnScreenDebugMessage(-1, 0.0, FColor::Magenta, FString::Printf(TEXT("Planet Distance to player: %f"), Distance));
-	//	if (Distance < AffectionRadiusKM * WSCZoneScale * 100000)
-	//	{
-	//		if (!bEnvironmentSpawned)
-	//		{
-	//			PlanetaryEnvironmentGenerator->SpawnPlanetEnvironment();
-	//			bEnvironmentSpawned = true;
-	//		}
-	//	}
-	//	else
-	//	{
-	//		if (bEnvironmentSpawned)
-	//		{
-	//			PlanetaryEnvironmentGenerator->DestroyPlanetEnvironment();
-	//			bEnvironmentSpawned = false;
-	//		}
-	//	}
-	//}
-	//else
-	//{
-	//	GEngine->AddOnScreenDebugMessage(-1, 0.0, FColor::Magenta, TEXT("PlayerPawn nullptr!"));
-
-	//}
-
-	/*if (PlayerPawn != nullptr)
-	{
-		double Distance = FVector::Dist(PlayerPawn->GetActorLocation(), GetActorLocation());
-		if (Distance < AffectionRadiusKM * WSCZoneScale * 100000)
-		{
-			PlanetaryEnvironmentGenerator->SpawnPlanetEnvironment();
-		}
-		else
-		{
-			PlanetaryEnvironmentGenerator->DestroyPlanetEnvironment();
-		}
-	}*/
 }
 
 

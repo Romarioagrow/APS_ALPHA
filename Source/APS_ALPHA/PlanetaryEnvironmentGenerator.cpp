@@ -444,6 +444,19 @@ void APlanetaryEnvironmentGenerator::InitWorldScape(UWorld* World)
     }
 }
 
+//void APlanetaryEnvironmentGenerator::GenerateWorldscapeSurfaceByModel(UWorld* World, AMoon* NewMoon)
+//{
+//    FActorSpawnParameters SpawnParams;
+//    WorldScapeRootInstance = World->SpawnActor<AWorldScapeRoot>(AWorldScapeRoot::StaticClass(), FTransform(), SpawnParams);
+//
+//    WorldScapeRootInstance->LodResolution = 200;
+//    WorldScapeRootInstance->TriangleSize = 75;
+//    WorldScapeRootInstance->HeightAnchor = 50000.0;
+//    WorldScapeRootInstance->WorldScapeNoise;
+//
+//
+//}
+
 void APlanetaryEnvironmentGenerator::GenerateWorldscapeSurfaceByModel(UWorld* World, APlanet* NewPlanet)
 {
 
@@ -511,9 +524,9 @@ void APlanetaryEnvironmentGenerator::GenerateWorldscapeSurfaceByModel(UWorld* Wo
         
 
 
-        WorldScapeRootInstance->LodResolution = 256;
-        WorldScapeRootInstance->TriangleSize = 50;
-        WorldScapeRootInstance->HeightAnchor = 80000.0;
+        WorldScapeRootInstance->LodResolution = 200;
+        WorldScapeRootInstance->TriangleSize = 75;
+        WorldScapeRootInstance->HeightAnchor = 50000.0;
         WorldScapeRootInstance->WorldScapeNoise;
 
         EPlanetType PlanetType = NewPlanet->PlanetType;
@@ -723,6 +736,7 @@ void APlanetaryEnvironmentGenerator::GenerateWorldscapeSurfaceByModel(UWorld* Wo
         PlanetaryBody = NewMoon;
 
         double PlanetRadiusKM = NewMoon->RadiusKM;
+        double PlanetRadius = NewMoon->Radius;
 
         WorldScapeRootInstance->GenerationType = EWorldScapeType::Planet;
         WorldScapeRootInstance->PlanetScale = PlanetRadiusKM * 100000;
@@ -735,7 +749,14 @@ void APlanetaryEnvironmentGenerator::GenerateWorldscapeSurfaceByModel(UWorld* Wo
         //NewPlanet->Mesh
         //NewPlanet->SetupWorldScapeRoot(WorldScapeRootInstance);
 
-        //WorldScapeRootInstance->bGenerateWorldScape = true;
+        int MoonNoiseScale = WorldScapeRootInstance->NoiseScale * PlanetRadius;
+        int MoonNoiseIntensity = WorldScapeRootInstance->NoiseIntensity * PlanetRadius;
+        WorldScapeRootInstance->NoiseScale = MoonNoiseScale;
+        WorldScapeRootInstance->NoiseIntensity = MoonNoiseIntensity;
+        WorldScapeRootInstance->Seed = FMath::FRandRange(10.0, 1000.0);
+
+
+        WorldScapeRootInstance->bGenerateWorldScape = true;
         GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Magenta, TEXT("GenerateWorldScape!"));
     }
     else
@@ -763,22 +784,6 @@ void APlanetaryEnvironmentGenerator::SpawnPlanetEnvironment()
             WorldScapeRootInstance->AttachToActor(PlanetaryBody, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
             GEngine->AddOnScreenDebugMessage(-1, 15.f, FColor::Magenta, TEXT("WorldScapeRootInstance respawned!"));
         }
-
-        /*if (WorldScapeRootInstance->GetAttachParentActor() != PlanetaryBody)
-        {
-            WorldScapeRootInstance->AttachToActor(PlanetaryBody, FAttachmentTransformRules::KeepWorldTransform);
-            WorldScapeRootInstance->SetActorLocation(FVector(0.0, 0.0, 0.0));
-            GEngine->AddOnScreenDebugMessage(-1, 15.f, FColor::Magenta, TEXT("WorldScapeRootInstance respawned!"));
-
-        }*/
-
-        //if not attached 
-       /* if (WorldScapeRootInstance->GetAttachParent() != PlanetaryBody)
-        {
-            WorldScapeRootInstance->AttachToActor(PlanetaryBody, FAttachmentTransformRules::KeepWorldTransform);
-        }
-        WorldScapeRootInstance->AttachToActor(PlanetaryBody, FAttachmentTransformRules::KeepWorldTransform);
-        WorldScapeRootInstance->SetActorLocation(FVector(0.0));*/
     }
 }
 
@@ -788,11 +793,9 @@ void APlanetaryEnvironmentGenerator::DestroyPlanetEnvironment()
     {
         GEngine->AddOnScreenDebugMessage(-1, 15.f, FColor::Magenta, TEXT("DestroyPlanetEnvironment!"));
         WorldScapeRootInstance->bGenerateWorldScape = false;
-        //WorldScapeRootInstance->SetHidden(true);// = true;
         WorldScapeRootInstance->SetActorHiddenInGame(true);
         WorldScapeRootInstance->SetActorTickEnabled(false);
         WorldScapeRootInstance->SetActorEnableCollision(false);
-
         WorldScapeRootInstance->DetachRootComponentFromParent();
     }
 

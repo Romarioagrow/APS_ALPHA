@@ -1020,6 +1020,7 @@ void AAstroGenerator::GenerateCustomHomeSystem()
 
                     /// Generate WSC
                     NewMoon->PlanetaryEnvironmentGenerator->InitAtmoScape(World, NewMoon->RadiusKM, NewMoon);
+                    NewMoon->PlanetaryEnvironmentGenerator->GenerateWorldscapeSurfaceByModel(World, NewMoon);
                 }
 
                 if (DiameterOfLastMoon == 0)
