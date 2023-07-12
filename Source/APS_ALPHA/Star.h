@@ -45,7 +45,8 @@ public:
 	
 	UPROPERTY(VisibleAnywhere, Category = "Star")
 		double StarAffectionZoneRadius;
-
+	double MinOrbit;
+	double MaxOrbit;
 private:
 	UPROPERTY(VisibleAnywhere, Category = "Star")
 		float Luminosity;
@@ -70,6 +71,8 @@ private:
 	
 	UPROPERTY(VisibleAnywhere, Category = "Star")
 		int SpectralSubclass;
+
+	
 
 private:
 	UPROPERTY()

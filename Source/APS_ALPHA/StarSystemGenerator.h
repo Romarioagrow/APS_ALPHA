@@ -27,5 +27,7 @@ public:
 public:
 	void ApplyModel(AStarSystem* StarSystem, TSharedPtr<FStarSystemModel> StarSystemGenerationModel);
 
+	void GenerateCustomHomeSystemModel(TSharedPtr<FStarSystemModel> StarSystemModel);
+
 	void GenerateRandomStarSystemModel(TSharedPtr<FStarSystemModel> StarSystemModel);
 };

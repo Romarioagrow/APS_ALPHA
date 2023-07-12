@@ -15,8 +15,8 @@ void APlanetaryBody::BeginPlay()
 	PlanetaryEnvironmentGenerator = NewObject<APlanetaryEnvironmentGenerator>();
 	if (PlanetaryEnvironmentGenerator)
 	{
-		GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("PlanetSurfaceGenerator has been created successfully."));
-		UE_LOG(LogTemp, Warning, TEXT("PlanetSurfaceGenerator has been created successfully."));
+		GEngine->AddOnScreenDebugMessage(-1, 1.f, FColor::Green, TEXT("PlanetSurfaceGenerator has been created successfully."));
+		//UE_LOG(LogTemp, Warning, TEXT("PlanetSurfaceGenerator has been created successfully."));
 
 		if (bGenerateByDefault)
 		{

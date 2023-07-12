@@ -26,7 +26,8 @@ public:
 
 	AMoon();
 
-private:
+//private:
+public:
 	UPROPERTY(VisibleAnywhere, Category = "Moon Model")
 		APlanet* ParentPlanet;
 

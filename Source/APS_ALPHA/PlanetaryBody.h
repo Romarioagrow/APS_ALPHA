@@ -4,6 +4,7 @@
 
 #include "PlanetaryEnvironmentGenerator.h"
 #include "PlanetaryEnvironment.h"
+#include "PlanetType.h"
 
 #include "CoreMinimal.h"
 #include "OrbitalBody.h"
@@ -47,4 +48,7 @@ public:
 	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Body")
 		double OrbitHeight { 0.0 };
+
+	UPROPERTY(VisibleAnywhere, Category = "Planet")
+		EPlanetType PlanetType;
 };

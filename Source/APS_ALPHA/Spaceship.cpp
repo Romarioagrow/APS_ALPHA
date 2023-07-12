@@ -282,7 +282,7 @@ void ASpaceship::Tick(float DeltaTime)
 			{
 				OnboardComputer->FlightSystem.CurrentFlightMode = EFlightMode::Interstellar;
 				OnboardComputer->FlightSystem.CurrentFlightType = EFlightType::FTL;
-				OnboardComputer->SwitchEngineMode(EEngineMode::Impulse);
+				OnboardComputer->SwitchEngineMode(EEngineMode::Offset);
 			}
 			else if (AffectedActor->IsA(APlanet::StaticClass()))
 			{
@@ -305,7 +305,7 @@ void ASpaceship::Tick(float DeltaTime)
 					// Если корабль внутри атмосферы планеты.
 					if (DistanceToPlanet - Planet->RadiusKM <= 10.0)
 					{
-						GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, TEXT("Inside DistanceToPlanet <= 10 block"));
+						GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, TEXT("Surface Flight!"));
 
 						// Если корабль ближе 10 км к поверхности планеты.
 						OnboardComputer->FlightSystem.CurrentFlightMode = EFlightMode::Surface;
@@ -315,7 +315,7 @@ void ASpaceship::Tick(float DeltaTime)
 					else
 					{
 						// Если корабль внутри атмосферы, но дальше 10 км от поверхности.
-						GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, TEXT("Inside Atmospheric"));
+						GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, TEXT("Atmospheric Flight!"));
 
 						OnboardComputer->FlightSystem.CurrentFlightMode = EFlightMode::Atmospheric;
 						OnboardComputer->FlightSystem.CurrentFlightType = EFlightType::Atmospheric;
@@ -330,6 +330,8 @@ void ASpaceship::Tick(float DeltaTime)
 					OnboardComputer->FlightSystem.CurrentFlightMode = EFlightMode::Orbital;
 					OnboardComputer->FlightSystem.CurrentFlightType = EFlightType::Orbital;
 					OnboardComputer->SwitchEngineMode(EEngineMode::SpaceWrap);
+					GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Yellow, FString::Printf(TEXT("Orbit Height: %f"), DistanceToPlanet - Planet->RadiusKM));
+
 				}
 				else
 				{

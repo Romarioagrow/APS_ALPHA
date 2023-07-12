@@ -5,6 +5,8 @@
 
 UStarGenerator::UStarGenerator()
 {
+    FDateTime Time = FDateTime::UtcNow();
+    RandomStream = FRandomStream(Time.ToUnixTimestamp());
 }
 
 void UStarGenerator::ApplySpectralMaterial(AStar* NewStar, TSharedPtr<FStarModel> StarModel)
@@ -269,10 +271,11 @@ void UStarGenerator::ApplyModel(AStar* NewStar, TSharedPtr<FStarModel> StarModel
     NewStar->SetFullSpectralName(StarModel->FullSpectralName);
     NewStar->RadiusKM = StarModel->RadiusKM;
     NewStar->AffectionRadiusKM = StarModel->RadiusKM;
-
+    NewStar->MinOrbit = StarModel->MinOrbit;
+    NewStar->MaxOrbit = StarModel->MaxOrbit;
 }
 
-/*TUniquePtr<FStarModel>&*/void UStarGenerator::GenerateStarModel(TSharedPtr<FStarModel> StarModel)
+void UStarGenerator::GenerateStarModel(TSharedPtr<FStarModel> StarModel)
 {
 
     if (StarModel->StellarType == EStellarType::MainSequence)
@@ -298,7 +301,7 @@ void UStarGenerator::ApplyModel(AStar* NewStar, TSharedPtr<FStarModel> StarModel
         if (!StarAttributeRanges.Contains(StarModel->StellarType))
         {
             UE_LOG(LogTemp, Error, TEXT("Unknown stellar class: %d"), static_cast<int>(StarModel->SpectralClass));
-            return; //StarModel;
+            return; 
         }
 
         FStarAttributeRanges& AttributeRanges = StarAttributeRanges[StarModel->StellarType];
@@ -311,22 +314,14 @@ void UStarGenerator::ApplyModel(AStar* NewStar, TSharedPtr<FStarModel> StarModel
 
     StarModel->SpectralSubclass = CalculateSpectralSubclass(StarModel->SurfaceTemperature, StarModel->SpectralClass);
     StarModel->SpectralType = CalculateSpectralType(StarModel->StellarType, StarModel->Luminosity);
-    //StarModel->FullSpectralClass = GenerateFullSpectralClass(StarModel);
-   // StarModel->FullSpectralName = GenerateFullSpectralName(StarModel);
-
-    //return;// StarModel;
 }
 
 
-/*TUniquePtr<FStarModel>*/void UStarGenerator::GenerateRandomStarModel(TSharedPtr<FStarModel> StarModel)
+void UStarGenerator::GenerateRandomStarModel(TSharedPtr<FStarModel> StarModel)
 {
-
     StarModel->StellarType = GenerateStellarTypeByRandomWeights();
-
-    //ќпределите ESpectralClass (спектральный класс) 
     StarModel->SpectralClass = ChooseSpectralClassByStellarClass(StarModel->StellarType);
-
-    /*return*/ GenerateStarModel(StarModel);
+    GenerateStarModel(StarModel);
 }
 
 FString UStarGenerator::CalculateNonMainSequenceStarAge(double StarMass)
@@ -643,13 +638,23 @@ double UStarGenerator::RandomMass(ESpectralClass SpectralClass)
     if (MainSequenceMassRanges.Contains(SpectralClass))
     {
         auto Range = MainSequenceMassRanges[SpectralClass];
-        return FMath::FRandRange(Range.Get<0>(), Range.Get<1>());
+        return RandomStream.FRandRange(Range.Get<0>(), Range.Get<1>());
     }
     else
     {
         UE_LOG(LogTemp, Warning, TEXT("MainSequenceMassRanges doesn't contain %s"), *UEnum::GetValueAsString(SpectralClass));
         return 0; // ¬озвращаем некоторое значение по умолчанию или обрабатываем ошибку иначе
     }
+    //if (MainSequenceMassRanges.Contains(SpectralClass))
+    //{
+    //    auto Range = MainSequenceMassRanges[SpectralClass];
+    //    return FMath::FRandRange(Range.Get<0>(), Range.Get<1>());
+    //}
+    //else
+    //{
+    //    UE_LOG(LogTemp, Warning, TEXT("MainSequenceMassRanges doesn't contain %s"), *UEnum::GetValueAsString(SpectralClass));
+    //    return 0; // ¬озвращаем некоторое значение по умолчанию или обрабатываем ошибку иначе
+    //}
 }
 
 double UStarGenerator::RandomRadius(ESpectralClass SpectralClass)

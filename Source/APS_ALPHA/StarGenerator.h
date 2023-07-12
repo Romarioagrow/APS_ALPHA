@@ -23,6 +23,9 @@ class APS_ALPHA_API UStarGenerator : public UBaseProceduralGenerator
 public:
 	UStarGenerator();
 
+private:
+	FRandomStream RandomStream;
+
 public:
 	// Базовая светимость Солнца.
 	const double SolarEmissiveLuminosity = 1.0;

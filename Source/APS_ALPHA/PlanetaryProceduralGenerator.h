@@ -67,6 +67,11 @@ class APS_ALPHA_API UPlanetarySystemGenerator : public UBaseProceduralGenerator
 {
 	GENERATED_BODY()
 
+//public:
+    //UPlanetarySystemGenerator();
+
+    //FRandomStream RandomStream;
+
 public:
     void SetAstroLocation(int StarNumber, APlanetarySystem* NewPlanetarySystem);
 
@@ -76,7 +81,11 @@ public:
 
     void ApplyModel(APlanetarySystem* NewPlanetarySystem, TSharedPtr<FPlanetarySystemModel> PlanetraySystemModel);
 
+    void GenerateCustomPlanetraySystemModel(TSharedPtr<FPlanetarySystemModel> PlanetarySystemModel, TSharedPtr<FStarModel> StarModel, UPlanetGenerator* PlanetGenerator, UMoonGenerator* MoonGenerator);
+
     void GeneratePlanetraySystemModelByStar(TSharedPtr<FPlanetarySystemModel> PlanetarySystemModel, TSharedPtr<FStarModel> StarModel, UPlanetGenerator* PlanetGenerator, UMoonGenerator* MoonGenerator);
+
+    void GeneratePlanetOrbits();
 
     int CalculateMoons(double PlanetMass, EPlanetType PlanetType);
 
@@ -108,8 +117,8 @@ private:
         {EPlanetType::GasGiant,     FRadiusRange(7.9, 11.0)},    // Газовые гиганты
         {EPlanetType::IceGiant,     FRadiusRange(3.1, 7.9)},     // Ледяные гиганты
         {EPlanetType::Dwarf,        FRadiusRange(0.2, 0.5)},     // Карликовые планеты
-        {EPlanetType::Exoplanet,    FRadiusRange(0.2, 12.6)},    // Экзопланеты
-        {EPlanetType::Rogue,        FRadiusRange(0.2, 12.6)},    // Бродячие планеты
+        {EPlanetType::Exoplanet,    FRadiusRange(0.2, 3)},    // Экзопланеты
+        {EPlanetType::Rogue,        FRadiusRange(0.2, 2)},    // Бродячие планеты
         {EPlanetType::Ocean,        FRadiusRange(0.8, 1.1)},     // Океанические планеты
         {EPlanetType::Desert,       FRadiusRange(0.8, 1.1)},     // Пустынные планеты
         {EPlanetType::Forest,       FRadiusRange(0.9, 1.3)},     // Лесные планеты
@@ -122,7 +131,7 @@ private:
         {EPlanetType::SuperEarth,   FRadiusRange(1.3, 2)},     // Суперземли
         {EPlanetType::Lava,         FRadiusRange(0.8, 1.1)},     // Лавовые планеты
         {EPlanetType::Metallic,     FRadiusRange(0.8, 1.3)},     // Металлические планеты
-        {EPlanetType::Unknown,      FRadiusRange(0.2, 12.6)}     // Неизвестные планеты
+        {EPlanetType::Unknown,      FRadiusRange(0.2, 5)}     // Неизвестные планеты
     };
 
     const TMap<EPlanetType, FDensityRange> PlanetDensityRanges =
@@ -397,7 +406,8 @@ private:
 
         {EPlanetaryZoneType::IceZone,
         {
-            {EPlanetType::IceGiant, 0.1f},
+            {EPlanetType::IceGiant, 0.2f},
+            {EPlanetType::GasGiant, 0.1f},
             {EPlanetType::Ice, 0.5f},
             {EPlanetType::Frozen, 0.9f},
             {EPlanetType::Rocky, 0.5f},
@@ -435,8 +445,15 @@ private:
 
         {EPlanetaryZoneType::OuterPlanetZone,
         {
-            {EPlanetType::GasGiant, 0.5f},
-            {EPlanetType::IceGiant, 0.5f}
+            {EPlanetType::GasGiant, 0.1f},
+            {EPlanetType::IceGiant, 0.1f},
+            {EPlanetType::Rocky, 0.1f},
+            {EPlanetType::Iron, 0.1f},
+            {EPlanetType::Terrestrial, 0.1f},
+            {EPlanetType::Ammonia, 0.1f},
+            {EPlanetType::Dwarf, 0.1f},
+            {EPlanetType::Ice, 0.1f}
+
         }},
 
         {EPlanetaryZoneType::AsteroidBeltZone,
@@ -448,13 +465,21 @@ private:
         {EPlanetaryZoneType::KuiperBeltZone,
         {
             {EPlanetType::Dwarf, 0.7f},
-            {EPlanetType::Ice, 0.3f}
+            {EPlanetType::Ice, 0.3f},
+            {EPlanetType::Rocky, 0.2f},
+
         }},
 
         {EPlanetaryZoneType::GasGiantsZone,
         {
             {EPlanetType::GasGiant, 0.5f},
-            {EPlanetType::IceGiant, 0.5f}
+            {EPlanetType::IceGiant, 0.5f},
+            {EPlanetType::Rocky, 0.1f},
+            {EPlanetType::Iron, 0.1f},
+            {EPlanetType::Terrestrial, 0.1f},
+            {EPlanetType::Ammonia, 0.1f},
+            {EPlanetType::Dwarf, 0.1f},
+            {EPlanetType::Ice, 0.1f}
         }},
         // и так далее для каждой зоны...
     };

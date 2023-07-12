@@ -53,6 +53,8 @@ protected:
 
 	void InitAstroGenerators();
 
+	void GenerateCustomHomeSystem();
+
 	UPROPERTY(VisibleAnywhere, Category = "Generated Astro Actros")
 		AGalaxy* GeneratedGalaxy;
 	
@@ -100,44 +102,51 @@ public:
 		EAstroGenerationLevel AstroGenerationLevel { EAstroGenerationLevel::StarCluster };
 	
 	/// STAR SYSTEM GENERATOR
-	UPROPERTY(EditAnywhere, Category = "Home System")
+	UPROPERTY(VisibleAnywhere, Category = "Home System")
 		double StarSystemDeadZone { 1 };
 
-	UPROPERTY(EditAnywhere, Category = "Home System")
+	UPROPERTY(VisibleAnywhere, Category = "Home System")
 		EHomeSystemPosition HomeSystemPosition;
 	
-	UPROPERTY(EditAnywhere, Category = "Home System")
+	UPROPERTY(VisibleAnywhere, Category = "Home System")
 		bool bFullScaledHomeSystem{ false };
 
-	UPROPERTY(EditAnywhere, Category = "Home System")
-		bool bNeedOrbitRotation { false };
-
-	UPROPERTY(EditAnywhere, Category = "Home System")
+	UPROPERTY(VisibleAnywhere, Category = "Home System")
 		FVector HomeSystemRadius { 0 };
 	
 	UPROPERTY(EditAnywhere, Category = "Home System")
-		bool bRandomHomeSystem { false };
+		bool bRandomHomeSystem { true };
 
-	UPROPERTY(EditAnywhere, Category = "Home System")
-		EStarSystemType HomeSystemStarType { EStarSystemType::SingleStar };
+	UPROPERTY(EditAnywhere, Category = "Home System", meta = (EditCondition = "!bRandomHomeSystem"))
+		bool bRandomHomeSystemType;
 
-	UPROPERTY(EditAnywhere, Category = "Home System")
+	UPROPERTY(EditAnywhere, Category = "Home System", meta = (EditCondition = "!bRandomHomeSystem"))
 		bool bRandomHomeStar;
 
 	UPROPERTY(EditAnywhere, Category = "Home System")
-		EStellarType HomeStarStellarType { EStellarType::MainSequence };
-
-	UPROPERTY(EditAnywhere, Category = "Home System")
-		ESpectralClass HomeStarSpectralClass { ESpectralClass::G };
-
-	UPROPERTY(EditAnywhere, Category = "Home System")
-		bool bRandomHomeSystemType;
-
-	UPROPERTY(EditAnywhere, Category = "Home System")
-		EPlanetarySystemType HomeSystemPlanetaryType { EPlanetarySystemType::MultiPlanetSystem };
+		bool bNeedOrbitRotation{ false };
 	
 	UPROPERTY(EditAnywhere, Category = "Home System")
-		EOrbitDistributionType HomeSystemOrbitDistributionType { EOrbitDistributionType::Dense };
+		bool bOrbitRotationCheck{ false };
+	
+	UPROPERTY(EditAnywhere, Category = "Home System", meta = (EditCondition = "!bRandomHomeSystem"))
+		int PlanetsAmount { 1 };
+
+	UPROPERTY(EditAnywhere, Category = "Home System", meta = (EditCondition = "!bRandomHomeSystem"))
+		EStarSystemType HomeSystemStarType { EStarSystemType::SingleStar };
+
+	UPROPERTY(EditAnywhere, Category = "Home System", meta = (EditCondition = "!bRandomHomeSystem"))
+		EStellarType HomeStarStellarType { EStellarType::MainSequence };
+
+	UPROPERTY(EditAnywhere, Category = "Home System", meta = (EditCondition = "!bRandomHomeSystem"))
+		ESpectralClass HomeStarSpectralClass { ESpectralClass::G };
+
+
+	UPROPERTY(EditAnywhere, Category = "Home System", meta = (EditCondition = "!bRandomHomeSystem"))
+		EPlanetarySystemType HomeSystemPlanetaryType { EPlanetarySystemType::MultiPlanetSystem };
+	
+	UPROPERTY(EditAnywhere, Category = "Home System", meta = (EditCondition = "!bRandomHomeSystem"))
+		EOrbitDistributionType HomeSystemOrbitDistributionType { EOrbitDistributionType::Uniform };
 
 	/// STAR CLUSTER GENERATOR
 	UPROPERTY(EditAnywhere, Category = "Galaxy Cluster")
