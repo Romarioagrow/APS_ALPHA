@@ -51,6 +51,8 @@ void APlanetaryEnvironmentGenerator::Tick(float DeltaTime)
 
 void APlanetaryEnvironmentGenerator::InitEnviroment(APlanet* NewPlanet, UWorld* World)
 {
+    /// TO DO: ONE COMMON SWITCH FOR EnviromentModel
+
     InitAtmoScape(World, NewPlanet->RadiusKM, NewPlanet);
 
     // Generate Atmosphere Enviroment
@@ -146,7 +148,7 @@ void APlanetaryEnvironmentGenerator::InitEnviroment(APlanet* NewPlanet, UWorld* 
     }
 }
 
-void APlanetaryEnvironmentGenerator::InitAtmoScape(UWorld* World, double Radius, APlanetaryBody* NewPlanetaryBody)
+void APlanetaryEnvironmentGenerator::InitAtmoScape(UWorld* World, double PlanetaryRadiusKM, APlanetaryBody* NewPlanetaryBody)
 {
     PlanetAtmosphere = World->SpawnActor<AAtmosphere>(AAtmosphere::StaticClass(), FTransform());
 
@@ -156,7 +158,7 @@ void APlanetaryEnvironmentGenerator::InitAtmoScape(UWorld* World, double Radius,
         
         
         // Установка параметров и свойств для объекта Atmosphere.
-        PlanetAtmosphere->PlanetRadius = Radius - 1; // Atm Dead Zone 
+        PlanetAtmosphere->PlanetRadius = PlanetaryRadiusKM - 1; // Atm Dead Zone 
         PlanetAtmosphere->bKeepRelativeScale = false;
         PlanetAtmosphere->AtmosphereHeight = NewPlanetaryBody->AtmosphereHeight;
         PlanetAtmosphere->SetActorLocation(NewPlanetaryBody->GetActorLocation());
@@ -164,19 +166,19 @@ void APlanetaryEnvironmentGenerator::InitAtmoScape(UWorld* World, double Radius,
         PlanetAtmosphere->AttachToActor(NewPlanetaryBody, FAttachmentTransformRules::KeepWorldTransform);
 
 
-        float RadiusFactor = Radius / 6371;//* NewPlanetaryBody->Mass; //EARTH_RADIUS_KM;  // EARTH_RADIUS_KM is a constant representing the Earth's radius in kilometers.
-        AmbientParams.Opacity = FMath::Clamp(1.0f * RadiusFactor, 0.5f, 100.0f);
-        AmbientParams.MultiScatering = FMath::Clamp(1.0f * RadiusFactor, 0.5f, 100.0f);
+        float RadiusFactor = PlanetaryRadiusKM / 6371;//* NewPlanetaryBody->Mass; //EARTH_RADIUS_KM;  // EARTH_RADIUS_KM is a constant representing the Earth's radius in kilometers.
+        AmbientParams.Opacity = FMath::Clamp(10.0f * RadiusFactor, 0.5f, 80.0f);
+        AmbientParams.MultiScatering = FMath::Clamp(10.0f * RadiusFactor, 0.5f, 80.0f);
 
         // Below parameters are based on Earth's atmosphere. 
         // To bring in more diversity, you could also apply some randomization or relation to planet's physical characteristics
         // These are just for illustration and you should adjust it according to your project's need.
-        AmbientParams.RayleighHeight = FMath::Clamp(8.0f * RadiusFactor, 1.1f, 80.0f);
+        AmbientParams.RayleighHeight = FMath::Clamp(8.0f * RadiusFactor, 4.1f, 80.0f);
         AmbientParams.MieHeight = FMath::Clamp(1.2f * RadiusFactor, 0.01f, 15.0f);
         AmbientParams.MiePhase = FMath::Clamp(0.5f * RadiusFactor, -0.935f, 0.935f);
         AmbientParams.OzoneContribution = FMath::Clamp(0.5f * RadiusFactor, 0.0f, 1.0f);
 
-        float AtmCoeff = 3.0f;
+        float AtmCoeff = 1.0f;
         PlanetAtmosphere->AtmosphereOpacity = AmbientParams.Opacity * AtmCoeff;
         PlanetAtmosphere->MultiScatering = AmbientParams.MultiScatering * AtmCoeff;
         PlanetAtmosphere->RayleighHeight = AmbientParams.RayleighHeight * AtmCoeff;
