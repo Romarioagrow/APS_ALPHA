@@ -188,7 +188,6 @@ void AAstroGenerator::InitAstroGenerators()
 void AAstroGenerator::GenerateHomeStarSystem()
 {
     /// TODO: Refactoring - GenerateStarSystem(StarSystemModel);
-
     if (bRandomHomeSystem)
     {
         // Random Model
@@ -207,12 +206,12 @@ void AAstroGenerator::GenerateHomeStarSystem()
         && GeneratedHomeStarSystem->MainStar->PlanetarySystem)
     {
 
-        TArray<TSharedPtr<FPlanetData>> PlanetDataMap = GeneratedHomeStarSystem->MainStar->PlanetarySystem->PlanetsList;
+        TArray<TSharedPtr<FPlanetData>> PlanetDataMap = GeneratedHomeStarSystem->MainStar->PlanetarySystem->PlanetsList; /// TODO: GetPlanetsList();
 
         UE_LOG(LogTemp, Warning, TEXT("Planet List - "));
         UE_LOG(LogTemp, Warning, TEXT("Planet Amount: %d"), PlanetDataMap.Num());
 
-        /// ShowPlanetList();
+        /// TODO: ShowPlanetList();
         for (const TSharedPtr<FPlanetData>& PlanetDataPtr : PlanetDataMap)
         {
             if (PlanetDataPtr.IsValid())
@@ -368,7 +367,7 @@ void AAstroGenerator::GenerateHomeStarSystem()
                         bool bTeleportSucces = PlayerCharacter->SetActorLocation(CharSpawnLocation, false);
                         UE_LOG(LogTemp, Warning, TEXT("Teleport success: %s"), bTeleportSucces ? TEXT("True") : TEXT("False"));
 
-                        /// relocate char to 000
+                        /// TODO: relocate char to 000
                         {
                             // Получаем текущее положение игрока
                             FVector PlayerLocation = PlayerCharacter->GetActorLocation();
@@ -802,6 +801,8 @@ void AAstroGenerator::GenerateCustomHomeSystem()
             HomeSystemSpawnLocation = FVector(RandomX, RandomY, RandomZ); //* 1000000000;
         }
             break;
+
+        /// TODO: GetRandom Star index and replace with current System
         case EHomeSystemPosition::DirectPosition: 
         {
             TArray<AActor*> AttachedActors;
@@ -983,7 +984,7 @@ void AAstroGenerator::GenerateCustomHomeSystem()
                 NewPlanet->AttachToActor(NewPlanetOrbit, FAttachmentTransformRules::KeepWorldTransform);
                 NewPlanetarySystem->PlanetsActorsList.Add(NewPlanet);
 
-                const double KM_TO_UE_UNIT_SCALE = 100000;
+                const double KM_TO_UE_UNIT_SCALE = 100000; /// TODO: To consts class
                 double DiameterOfLastMoon = 0;
                 FVector LastMoonLocation;
                 // Generate Moons
@@ -1185,7 +1186,7 @@ void AAstroGenerator::GenerateCustomHomeSystem()
 
         double StarSystemSphereRadius = FVector::Dist(NewStarSystem->GetActorLocation(), LastStarLocation);
         StarSystemSphereRadius /= NewStarSystem->GetActorScale3D().X;
-        StarSystemSphereRadius *= 1.6;
+        StarSystemSphereRadius *= 1.6; /// TODO: Adjust coeff
         NewStarSystem->StarSystemZone->SetSphereRadius(StarSystemSphereRadius);
         NewStarSystem->StarSystemRadius = StarSystemSphereRadius;
         GeneratedHomeStarSystem = NewStarSystem;
@@ -1195,7 +1196,7 @@ void AAstroGenerator::GenerateCustomHomeSystem()
         {
             if (NewStarSystem->MainStar && NewStarSystem->MainStar->PlanetarySystemZone)
             {
-                double SphereRadius = NewStarSystem->MainStar->PlanetarySystemZone->GetScaledSphereRadius() * 1.25;
+                double SphereRadius = NewStarSystem->MainStar->PlanetarySystemZone->GetScaledSphereRadius() * 1.25; /// TODO: Adjust coeff
                 NewStarSystem->StarSystemRadius = SphereRadius;
                 NewStarSystem->StarSystemZone->SetSphereRadius(SphereRadius);
             }
@@ -1212,6 +1213,8 @@ void AAstroGenerator::GenerateCustomHomeSystem()
             }
         }
 
+
+        /// TODO: Instead of deletig HISM better spawn it out of HomeSystem Affection or Dead Zone
         if (bGenerateFullScaledWorld )
         {
             /* method 1: non-adaptive
@@ -1223,8 +1226,8 @@ void AAstroGenerator::GenerateCustomHomeSystem()
             */
 
             
-            double HomeSystemrRadiusScaled = NewStarSystem->StarSystemRadius * StarSystemDeadZone;
-            FCollisionShape MySphere = FCollisionShape::MakeSphere(HomeSystemrRadiusScaled);
+            double HomeSystemRadiusScaled = NewStarSystem->StarSystemRadius * StarSystemDeadZone;
+            FCollisionShape MySphere = FCollisionShape::MakeSphere(HomeSystemRadiusScaled);
             TArray<FOverlapResult> Overlaps;
 
             // выполните проверку перекрытия
@@ -1272,9 +1275,6 @@ void AAstroGenerator::GenerateCustomHomeSystem()
                 UE_LOG(LogTemp, Warning, TEXT("No overlaped stars!"));
             }
         }
-
-
-        /// TO HOME SYSTEM
     }
     else
     {

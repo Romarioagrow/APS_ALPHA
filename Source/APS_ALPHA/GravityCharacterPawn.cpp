@@ -187,6 +187,7 @@ void AGravityCharacterPawn::CharacterAction()
 				CurrentSpaceship->TakeControl(this);
 				// Possess the spaceship
 				PlayerController->Possess(CurrentSpaceship);
+				
 
 				// Attach the pawn to the PilotChair of the spaceship
 				FAttachmentTransformRules AttachmentRules(EAttachmentRule::SnapToTarget, true);

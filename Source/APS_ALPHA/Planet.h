@@ -41,7 +41,7 @@ public:
 
 	bool IsNotGasGiant();
 
-	bool IsComputingWSCProximity{ true };
+	bool IsComputingWSCProximity{ false };
 
 	FTimerHandle PlayerPawnTimerHandle;
 
@@ -69,7 +69,7 @@ public:
 //private:
 public:
 	UPROPERTY(VisibleAnywhere, Category = "Planet")
-		AStar* ParnetStar;
+		AStar* ParentStar;
 	
 	/*UPROPERTY(VisibleAnywhere, Category = "Planet")
 		EPlanetType PlanetType;*/
@@ -84,7 +84,6 @@ public:
 	// Число спутников
 	UPROPERTY(VisibleAnywhere,Category = "Planet")
 		int32 Temperature { 0 };
-
 
 	UPROPERTY(VisibleAnywhere, Category = "Planet")
 		double PlanetDensity{ 0 };

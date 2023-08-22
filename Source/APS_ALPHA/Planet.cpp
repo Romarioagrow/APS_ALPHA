@@ -10,6 +10,8 @@ void APlanet::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
+	APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(this, 0);
+
 	if (IsComputingWSCProximity && PlayerPawn != nullptr)
 	{
 		double Distance = FVector::Dist(PlayerPawn->GetActorLocation(), GetActorLocation());
@@ -58,6 +60,8 @@ void APlanet::HandleOnStellarMode()
 
 void APlanet::CheckPlayerPawn()
 {
+	APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(this, 0);
+
 	// »щем PlayerPawn в мире
 	APlayerController* PlayerController = GetWorld()->GetFirstPlayerController();
 	if (PlayerController != nullptr)
@@ -218,5 +222,5 @@ void APlanet::SetMoonsList(TArray<TSharedPtr<FMoonData>> NewMoonsList)
 
 void APlanet::SetParentStar(AStar* Star)
 {
-	this->ParnetStar = Star;
+	this->ParentStar = Star;
 }

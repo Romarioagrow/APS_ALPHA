@@ -37,7 +37,7 @@ void APlanetaryBody::BeginPlay()
 		UE_LOG(LogTemp, Warning, TEXT("Failed to create PlanetSurfaceGenerator."));
 	}
 
-	PlayerPawn = UGameplayStatics::GetPlayerPawn(this, 0);
+	//PlayerPawn = UGameplayStatics::GetPlayerPawn(this, 0);
 
 }
 

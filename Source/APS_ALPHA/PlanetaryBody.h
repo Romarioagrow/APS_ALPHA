@@ -35,7 +35,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Body")
 		bool bGenerateByDefault{ false };
 
-	APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(this, 0);
+	//APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(this, 0);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Body")
 		double WSCZoneScale {10.0 };

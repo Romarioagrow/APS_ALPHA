@@ -189,7 +189,7 @@ public:
 		bool bCharacterSpawn{ true };
 	
 	UPROPERTY(EditAnywhere, Category = "Player Spawn")
-		bool bCharacterSpawnAtRandomPlanet{ true };
+		bool bCharacterSpawnAtRandomPlanet{ true }; /// TODO: Implement logic!
 	
 	UPROPERTY(EditAnywhere, Category = "Player Spawn")
 		ECharSpawnPlace CharSpawnPlace;
