@@ -1,9 +1,5 @@
-// Fill out your copyright notice in the Description page of Project Settings.
 #include "PlanetaryBody.h"
-
 #include "APS_ALPHA/Generation/PlanetaryEnvironmentGenerator.h"
-
-//#include "PlanetaryEnvironmentGenerator.h"
 
 APlanetaryBody::APlanetaryBody()
 {

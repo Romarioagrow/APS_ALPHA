@@ -1,14 +1,5 @@
 #include "AstroGenerator.h"
-/*#include "StarSystem.h"
-#include "PlanetOrbit.h"
-#include "MoonGenerationModel.h"
-#include "StarCluster.h"
-#include "Galaxy.h"
-#include "SpaceStation.h"*/
-#include "Octree.h"
-
 #include <Kismet/GameplayStatics.h>
-
 #include "PlanetaryEnvironmentGenerator.h"
 #include "PlanetGenerator.h"
 #include "APS_ALPHA/Actors/Astro/AstroAnchor.h"
@@ -27,8 +18,6 @@
 #include "APS_ALPHA/Core/Structs/StarGenerationModel.h"
 #include "APS_ALPHA/Core/Structs/StarSystemGenerationModel.h"
 #include "APS_ALPHA/Pawns/Spaceships/Spaceship.h"
-#include "GameFramework/Character.h"
-
 
 AAstroGenerator::AAstroGenerator()
 {
@@ -165,7 +154,6 @@ void AAstroGenerator::GenerateRandomWorld()
 {
 }
 
-
 void AAstroGenerator::InitAstroGenerators()
 {
 	// Init generators
@@ -196,18 +184,18 @@ void AAstroGenerator::InitAstroGenerators()
 
 void AAstroGenerator::GenerateHomeStarSystem()
 {
-	/// TODO: Refactoring - GenerateStarSystem(StarSystemModel);
+	// TODO: Refactoring - GenerateStarSystem(StarSystemModel);
 
 	if (bRandomHomeSystem)
 	{
 		// Random Model
-		/// GenerateHomeSystem(RandomHomeSystem)
+		// GenerateHomeSystem(RandomHomeSystem)
 		GenerateStarSystem();
 	}
 	else
 	{
 		// Custom Model from Editor
-		/// GenerateHomeSystem(CustomHomeSystem)
+		// GenerateHomeSystem(CustomHomeSystem)
 		GenerateCustomHomeSystem();
 	}
 
@@ -414,7 +402,7 @@ void AAstroGenerator::GenerateHomeStarSystem()
 				HomeSpaceStation->AddActorLocalOffset(FVector(0, HomeStationOffset, 0));
 				HomeSpaceStation->CalculateAffectionRadius();
 
-				/// Spawn HomeShipyard
+				// Spawn HomeShipyard
 				HomeSpaceShipyard = World->SpawnActor<ASpaceShipyard>(BP_HomeSpaceShipyard,
 				                                                      HomeSpaceHeadquartersLocation,
 				                                                      HomeSpaceHeadquartersRotation);
@@ -490,7 +478,7 @@ void AAstroGenerator::GenerateHomeStarSystem()
 					UE_LOG(LogTemp, Warning, TEXT("Teleport success: %s"),
 					       bTeleportSucces ? TEXT("True") : TEXT("False"));
 
-					/// relocate char to 000
+					// relocate char to 000
 					{
 						// Получаем текущее положение игрока
 						FVector PlayerLocation = PlayerCharacter->GetActorLocation();
@@ -513,7 +501,7 @@ void AAstroGenerator::GenerateHomeStarSystem()
 	}
 }
 
-/// TODO: Refactoring - GenerateStarSystem(StarSystemModel);
+// TODO: Refactoring - GenerateStarSystem(StarSystemModel);
 void AAstroGenerator::GenerateStarSystem()
 {
 	if (StarGenerator == nullptr || PlanetGenerator == nullptr || MoonGenerator == nullptr)
@@ -608,12 +596,12 @@ void AAstroGenerator::GenerateStarSystem()
 		}
 		HomeSystemTransform.SetLocation(HomeSystemSpawnLocation);
 		HomeSystemTransform.SetRotation(FRotator::ZeroRotator.Quaternion());
+
 		/*
 		RandomPosition:
 		get random index from hism array indexes
 		get index model
 		from hism index to star model map get random pair
-
 		*/
 
 		// Создаем новую звездную систему
@@ -678,7 +666,7 @@ void AAstroGenerator::GenerateStarSystem()
 			}
 
 			// Set Star full-scale
-			/// TODO: PlanetarySystemGenerator->ConnectStar()
+			// TODO: PlanetarySystemGenerator->ConnectStar()
 			StarGenerator->ApplyModel(NewStar, StarModel);
 			PlanetarySystemGenerator->ApplyModel(HomePlanetarySystem, PlanetraySystemModel);
 			NewStar->SetActorScale3D(FVector(StarModel->Radius * 813684224.0));
@@ -1086,7 +1074,7 @@ void AAstroGenerator::GenerateCustomHomeSystem()
 			}
 
 			// Set Star full-scale
-			/// TODO: PlanetarySystemGenerator->ConnectStar()
+			// TODO: PlanetarySystemGenerator->ConnectStar()
 			StarGenerator->ApplyModel(NewStar, StarModel);
 			PlanetarySystemGenerator->ApplyModel(NewPlanetarySystem, PlanetraySystemModel);
 			NewStar->SetActorScale3D(FVector(StarModel->Radius * 813684224.0));

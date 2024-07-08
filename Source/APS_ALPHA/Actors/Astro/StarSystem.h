@@ -1,32 +1,16 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
 #pragma once
-#include "Star.h"
-//#include "StarSystemType.h"
 
+#include "Star.h"
 #include "CoreMinimal.h"
 #include "CelestialSystem.h"
 #include "StarSystem.generated.h"
 
 enum class EStarSystemType : uint8;
-/**
- *
- */
+
 UCLASS()
 class APS_ALPHA_API AStarSystem : public ACelestialSystem, public INavigatableBody
 {
 	GENERATED_BODY()
-
-private:
-
-	UPROPERTY(VisibleAnywhere, Category = "Star System")
-	int StarsAmount;
-
-	UPROPERTY(VisibleAnywhere, Category = "Star System")
-	EStarSystemType StarSystemType;
-
-	UPROPERTY()
-	TArray<AStar*> Stars;
 
 public:
 	AStarSystem();
@@ -48,4 +32,14 @@ public:
 
 	UPROPERTY(VisibleAnywhere, Category = "Star")
 	USphereComponent* StarSystemZone;
+
+private:
+	UPROPERTY(VisibleAnywhere, Category = "Star System")
+	int StarsAmount;
+
+	UPROPERTY(VisibleAnywhere, Category = "Star System")
+	EStarSystemType StarSystemType;
+
+	UPROPERTY()
+	TArray<AStar*> Stars;
 };

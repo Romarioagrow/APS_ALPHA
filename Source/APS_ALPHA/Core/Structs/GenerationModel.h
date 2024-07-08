@@ -9,4 +9,3 @@ struct FGenerationModel
 
 	FVector Location;
 };
-

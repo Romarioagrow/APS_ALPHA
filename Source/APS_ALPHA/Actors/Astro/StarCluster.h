@@ -1,25 +1,14 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
 #pragma once
 
 #include "AstroActor.h"
 #include "Components/HierarchicalInstancedStaticMeshComponent.h"
-/*#include "StarGenerationModel.h"
-#include "StarSpectralClass.h"
-#include "StarClusterType.h"
-#include "StarType.h"
-#include "StarClusterPopulation.h"
-#include "StarClusterComposition.h"
-#include "StarClusterSize.h"
-#include "NavigatableBody.h"*/
 #include "Star.h"
-
 #include "CoreMinimal.h"
 #include "StarCluster.generated.h"
 
+struct FStarModel;
 enum class EStellarType : uint8;
 enum class ESpectralClass : uint8;
-struct FStarModel;
 enum class EStarClusterSize : uint8;
 enum class EStarClusterComposition : uint8;
 enum class EStarClusterPopulation : uint8;
@@ -118,10 +107,6 @@ public:
 	// Границы звездного скопления
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star Cluster")
 	FVector ClusterBounds;
-
-	// Материал звезд
-	/*UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star Cluster")
-	    UMaterialInterface* StarMaterial;*/
 
 	// Функция генерации скопления
 	UFUNCTION(BlueprintCallable, Category = "Star Cluster")

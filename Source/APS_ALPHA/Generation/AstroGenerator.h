@@ -1,23 +1,10 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
 #pragma once
 
 #include "StarSystemGenerator.h"
 #include "StarClusterGenerator.h"
 #include "GalaxyGenerator.h"
 #include "PlanetaryProceduralGenerator.h"
-/*#include "AstroGenerationLevel.h"
-#include "GalaxyType.h"
-#include "GalaxyClass.h"
-#include "HomeSystemPosition.h"
-#include "CharSpawnPlace.h"
-#include "SpaceStation.h"
-#include "Spaceship.h"
-#include "SpaceShipyard.h"
-#include "SpaceHeadquarters.h"
-#include "AstroAnchor.h"*/
 #include "WorldScapeCore/Public/WorldScapeRoot.h"
-
 #include "CoreMinimal.h"
 #include "APS_ALPHA/Core/Enums/AstroGenerationLevel.h"
 #include "APS_ALPHA/Core/Enums/PlanetarySystemType.h"
@@ -25,16 +12,17 @@
 #include "GameFramework/Actor.h"
 #include "AstroGenerator.generated.h"
 
-enum class EOrbitHeight : uint8;
 class APlanet;
-enum class EHomeSystemPosition : uint8;
 class ASpaceShipyard;
 class ASpaceship;
 class ASpaceStation;
 class ASpaceHeadquarters;
 enum class ECharSpawnPlace : uint8;
+enum class EHomeSystemPosition : uint8;
+enum class EOrbitHeight : uint8;
 
-/// TODO: FormStarSystemsInCluster();
+
+// TODO: FormStarSystemsInCluster();
 UCLASS()
 class APS_ALPHA_API AAstroGenerator : public AActor
 {
@@ -77,9 +65,6 @@ protected:
 	UPROPERTY(VisibleAnywhere, Category = "Generated Astro Actros")
 	AStarSystem* GeneratedHomeStarSystem;
 
-	/*UPROPERTY(VisibleAnywhere, Category = "Generated Astro Actros")
-	APlanet* HomePlanet;*/
-
 	UPROPERTY(VisibleAnywhere, Category = "Generated Tech Actros")
 	ASpaceHeadquarters* HomeSpaceHeadquarters;
 
@@ -99,15 +84,8 @@ public:
 
 	TMap<int32, TSharedPtr<FStarModel>> StarIndexModelMap;
 
-	/// BASE ASTRO GENERATOR
-	/*UPROPERTY(EditAnywhere, Category = "Generation Params")
-		bool bGenerateTEST_FULLSCALED { false };*/
-
 	UPROPERTY(EditAnywhere, Category = "Generation Params")
 	bool bGenerateFullScaledWorld{ true };
-
-	/*UPROPERTY(EditAnywhere, Category = "Generation Params")
-		bool bGenerateFullScaledStarSystem { true };*/
 
 	UPROPERTY(EditAnywhere, Category = "Generation Params")
 	bool bGenerateHomeSystem{ false };
@@ -118,18 +96,16 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Generation Params")
 	EAstroGenerationLevel AstroGenerationLevel{ EAstroGenerationLevel::StarCluster };
 
-	/*UPROPERTY(EditAnywhere, Category = "Generation Params")
-		TSubclassOf<class AWorldScapeRoot> StartHomePlanet;*/
 	UPROPERTY(EditInstanceOnly, Category = "Generation Params")
 	AWorldScapeRoot* StartHomePlanet;
 
 	UPROPERTY(EditInstanceOnly, Category = "Generation Params")
 	APlanet* HomePlanet;
 
-	//UPROPERTY(EditInstanceOnly, Category = "Generation Params")
+	UPROPERTY()
 	APlanetarySystem* HomePlanetarySystem;
 
-	/// STAR SYSTEM GENERATOR
+	// STAR SYSTEM GENERATOR
 	UPROPERTY(VisibleAnywhere, Category = "Home System")
 	double StarSystemDeadZone{ 1 };
 
@@ -181,7 +157,7 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Home System", meta = (EditCondition = "!bRandomHomeSystem"))
 	EOrbitDistributionType HomeSystemOrbitDistributionType{ EOrbitDistributionType::Uniform };
 
-	/// STAR CLUSTER GENERATOR
+	// STAR CLUSTER GENERATOR
 	UPROPERTY(EditAnywhere, Category = "Galaxy Cluster")
 	bool bGenerateRandomGalaxyCluster{ false };
 
@@ -301,5 +277,4 @@ public:
 	int GetRandomValueFromStarAmountRange(EStarClusterType ClusterType);
 
 	void GenerateStarCluster();
-
 };

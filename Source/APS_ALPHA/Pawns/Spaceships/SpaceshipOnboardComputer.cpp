@@ -1,11 +1,7 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
-
 #include "SpaceshipOnboardComputer.h"
 #include "UObject/UnrealType.h"
 #include "UObject/Class.h"
 #include "UObject/EnumProperty.h"
-#include "Spaceship.h"
 #include "APS_ALPHA/Actors/Astro/CelestialBody.h"
 #include "APS_ALPHA/Actors/Astro/Moon.h"
 #include "APS_ALPHA/Actors/Astro/Planet.h"
@@ -15,12 +11,6 @@
 #include "APS_ALPHA/Actors/Astro/WorldActor.h"
 #include "APS_ALPHA/Actors/Tech/TechActor.h"
 #include "APS_ALPHA/Core/Interfaces/IMovementStrategy.h"
-
-/*#include "CelestialBody.h"
-#include "Planet.h"
-#include "Star.h"
-#include "StarCluster.h"
-#include "Moon.h"*/
 
 USpaceshipOnboardComputer::USpaceshipOnboardComputer(AActor* InOwner)
 {

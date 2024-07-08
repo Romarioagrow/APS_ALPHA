@@ -1,9 +1,5 @@
 #pragma once
-/*#include "StarType.h"
-#include "StarSpectralClass.h"
-#include "SpectralType.h"
 
-#include "CelestialGenerationModel.h"*/
 #include "CoreMinimal.h"
 #include "APS_ALPHA/Generation/CelestialGenerationModel.h"
 #include "StarGenerationModel.generated.h"
@@ -45,5 +41,6 @@ struct FStarModel :
 	EStellarType StarStellarClass;
 
 	double MinOrbit;
+
 	double MaxOrbit;
 };

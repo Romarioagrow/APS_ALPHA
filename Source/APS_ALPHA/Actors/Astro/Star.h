@@ -1,13 +1,6 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
 #pragma once
 
 #include "Planet.h"
-/*#include "StarType.h"
-#include "StarSpectralClass.h"
-#include "SpectralType.h"
-#include "NavigatableBody.h"*/
-
 #include "CoreMinimal.h"
 #include "CelestialBody.h"
 #include "Star.generated.h"
@@ -48,9 +41,9 @@ public:
 
 	UPROPERTY(VisibleAnywhere, Category = "Star")
 	double StarAffectionZoneRadius;
-	
+
 	double MinOrbit;
-	
+
 	double MaxOrbit;
 
 private:
@@ -78,7 +71,6 @@ private:
 	UPROPERTY(VisibleAnywhere, Category = "Star")
 	int SpectralSubclass;
 
-private:
 	UPROPERTY()
 	TArray<APlanet*> Planets;
 
@@ -87,7 +79,6 @@ public:
 
 	void SetPlanetarySystem(APlanetarySystem* PlanetarySystem);
 
-public:
 	void SetLuminosity(float Luminosity);
 
 	void SetSurfaceTemperature(int SurfaceTemperature);

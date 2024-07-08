@@ -1,5 +1,3 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
 #pragma once
 
 #include "CoreMinimal.h"
@@ -7,9 +5,6 @@
 #include "APS_ALPHA/Gameplay/Gravity/GravitySource.h"
 #include "OrbitalBody.generated.h"
 
-/**
- * 
- */
 UCLASS()
 class APS_ALPHA_API AOrbitalBody : public ACelestialBody, public IGravitySource
 {
@@ -17,38 +12,36 @@ class APS_ALPHA_API AOrbitalBody : public ACelestialBody, public IGravitySource
 
 public:
 	UPROPERTY(VisibleAnywhere, Category = "Planet")
-		TArray<FVector> LagrangePoints;
+	TArray<FVector> LagrangePoints;
 
 private:
 	UPROPERTY(VisibleAnywhere, Category = "Orbital Body")
-		double OrbitDistance;
+	double OrbitDistance;
 
 	UPROPERTY(VisibleAnywhere, Category = "Orbital Body")
-		double RotationSpeed;
+	double RotationSpeed;
 
 	UPROPERTY(VisibleAnywhere, Category = "Orbital Body")
-		double OrbitalPeriod;
-	
-	UPROPERTY(VisibleAnywhere, Category = "Orbital Body")
-		double OrbitalSpeed;
-	
-	UPROPERTY(VisibleAnywhere, Category = "Orbital Body")
-		double AxialTilt;
+	double OrbitalPeriod;
 
 	UPROPERTY(VisibleAnywhere, Category = "Orbital Body")
-		double SemiMajorAxis;
+	double OrbitalSpeed;
 
 	UPROPERTY(VisibleAnywhere, Category = "Orbital Body")
-		double TrueAnomaly;
+	double AxialTilt;
 
 	UPROPERTY(VisibleAnywhere, Category = "Orbital Body")
-		double LongitudeOfAscendingNode;
+	double SemiMajorAxis;
 
 	UPROPERTY(VisibleAnywhere, Category = "Orbital Body")
-		double Inclination;
+	double TrueAnomaly;
 
+	UPROPERTY(VisibleAnywhere, Category = "Orbital Body")
+	double LongitudeOfAscendingNode;
+
+	UPROPERTY(VisibleAnywhere, Category = "Orbital Body")
+	double Inclination;
 
 public:
 	void SetOrbitDistance(double OrbitDistance);
-
 };

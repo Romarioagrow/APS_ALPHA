@@ -30,6 +30,5 @@ void ACelestialBody::SetAge(FString NewAge)
 void ACelestialBody::SetName(FName NewName)
 {
 	this->AstroName = NewName;
-
 }
 

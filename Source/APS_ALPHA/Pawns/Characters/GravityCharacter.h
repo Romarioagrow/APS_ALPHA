@@ -1,14 +1,8 @@
-// Fill out your copyright notice in the Description page of Project Settings.
 #pragma once
 
-/*#include "StationGravityActor.h"
-#include "PlanetGravityActor.h"
-#include "SpaceshipGravityActor.h"
-#include "GravityTypeEnum.h"*/
 #include "Camera/CameraComponent.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "Components/ArrowComponent.h"
-
 #include "CoreMinimal.h"
 #include "APS_ALPHA/Core/Enums/GravityTypeEnum.h"
 #include "GameFramework/Character.h"
@@ -61,8 +55,6 @@ protected:
 
 	void SwitchGravityToSpaceship(AActor* OtherActor);
 
-	//void RotateToStationGravity(AStationGravityActor* StationGravityActor);
-
 	void RotateToPlanetGravity(APlanetGravityActor* StationGravityActor);
 
 	void RotateToSpaceshipGravity(ASpaceshipGravityActor* StationGravityActor);
@@ -70,7 +62,6 @@ protected:
 	/**
 	 * @Gravity Params
 	*/
-protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gravity")
 	EGravityType CurrentGravityType{
 		EGravityType::ZeroG
@@ -127,32 +118,26 @@ public:
 
 private:
 	void Turn(float Value);
-	
+
 	void LookUp(float Value);
 
 	void MoveForward(float Value);
-	
+
 	void MoveRight(float Value);
-	
+
 	void MoveUp(float Value);
 
 	void RotatePitch(float Value);
-	
+
 	void RotateRoll(float Value);
 
-private:
-	//void RotateRoll(float Value);
 	void UpdateZeroGGravity();
-	//void UpdateZeroGCamera();
 
 	void UpdateStationGravity();
-	//void UpdateStationCamera();
 
 	void UpdatePlanetGravity();
-	//void UpdatePlanetCamera();
 
 	void UpdateShipGravity();
-	//void UpdateShipCamera();
 
 	FString GetGravityTypeAsString(EGravityType GravityType);
 };

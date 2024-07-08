@@ -6,14 +6,12 @@
 #include "BaseProceduralGenerator.h"
 #include "StarClusterGenerator.generated.h"
 
+class AStarCluster;
 struct FStarModel;
 struct FStarClusterModel;
 enum class EStarClusterType : uint8;
 enum class EStarClusterSize : uint8;
-class AStarCluster;
-/**
- * 
- */
+
 UCLASS()
 class APS_ALPHA_API UStarClusterGenerator : public UBaseProceduralGenerator
 {
@@ -30,7 +28,6 @@ public:
 
 	FVector GetStarClusterBoundsByRange(EStarClusterType ClusterType);
 
-public:
 	UPROPERTY(EditAnywhere, Category = "Generation Params")
 	TSubclassOf<class AStarCluster> BP_StarClusterClass;
 

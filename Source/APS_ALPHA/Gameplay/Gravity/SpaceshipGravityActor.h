@@ -16,7 +16,7 @@ class APS_ALPHA_API ASpaceshipGravityActor : public AGravityActor
 
 public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-		UStaticMeshComponent* StaticMeshComponent;
+	UStaticMeshComponent* StaticMeshComponent;
 
 	ASpaceshipGravityActor();
 };

@@ -1,10 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
 #pragma once
-
-/*#include "Moon.h"
-#include "MoonGenerationModel.h"
-#include "PlanetGenerationModel.h"*/
 
 #include "CoreMinimal.h"
 #include "BaseProceduralGenerator.h"
@@ -12,12 +6,10 @@
 #include "APS_ALPHA/Core/Structs/MoonGenerationModel.h"
 #include "MoonGenerator.generated.h"
 
+class AMoon;
 class APlanet;
 struct FPlanetModel;
-class AMoon;
-/**
- * 
- */
+
 UCLASS()
 class APS_ALPHA_API UMoonGenerator : public UBaseProceduralGenerator
 {
@@ -26,7 +18,6 @@ class APS_ALPHA_API UMoonGenerator : public UBaseProceduralGenerator
 public:
 	UMoonGenerator();
 
-public:
     void ConnectMoonWithPlanet(AMoon* NewMoon, APlanet* NewPlanet);
 
     double CalculateGravitationalForce(double MassPlanet, double MassMoon, double Distance);
@@ -45,7 +36,6 @@ public:
 
 	double CalculateMoonRadius(double MoonDensity, double MoonMass);
 
-public:
     const TMap<EMoonType, TPair<double, double>> MoonDensityRanges = 
     {
         {EMoonType::Rocky, {2.5, 3.0}}, // ��/��^3

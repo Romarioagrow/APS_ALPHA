@@ -1,5 +1,3 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
 #pragma once
 
 #include "CoreMinimal.h"
@@ -11,8 +9,8 @@ UCLASS()
 class APS_ALPHA_API AWorldActor : public AActor, public IAstroLocation
 {
 	GENERATED_BODY()
-	
-public:	
+
+public:
 	// Sets default values for this actor's properties
 	AWorldActor();
 
@@ -26,11 +24,10 @@ public:
 
 public:
 	UPROPERTY(EditAnywhere, Category = "World Actor")
-		double AffectionRadiusKM{ 0 };
+	double AffectionRadiusKM{0};
 
 	UPROPERTY(EditAnywhere, Category = "World Actor")
-		double RadiusKM{ 0 };
+	double RadiusKM{0};
 
 	void CalculateAffectionRadius();
-
 };

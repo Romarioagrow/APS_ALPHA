@@ -6,14 +6,8 @@
 #include "CelestialSystem.h"
 #include "GalaxiesCluster.generated.h"
 
-/**
- * 
- */
 UCLASS()
 class APS_ALPHA_API AGalaxiesCluster : public ACelestialSystem
 {
 	GENERATED_BODY()
-
-
-
 };

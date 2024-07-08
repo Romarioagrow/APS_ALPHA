@@ -1,13 +1,7 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
 #pragma once
 
 #include <Components/SphereComponent.h>
-/*#include "GravitySource.h"
-#include "GravityCharacterPawn.h"
-#include "StarCluster.h"*/
 #include "SpaceshipOnboardComputer.h"
-
 #include "CoreMinimal.h"
 #include "Spacecraft.h"
 #include "APS_ALPHA/Gameplay/Gravity/GravitySource.h"
@@ -31,7 +25,7 @@ struct FActorDistance
 	}
 };
 
-// TO COMP
+// To component
 struct ZoneData
 {
 	AWorldActor* Actor;
@@ -57,18 +51,21 @@ public:
 
 	// Определение экземпляров делегата
 	FOnFlightModeChangedDelegate OnInterstellarMode;
+
 	FOnFlightModeChangedDelegate OnStellarMode;
+
 	FOnFlightModeChangedDelegate OnInterplanetaryMode;
 
 	// Объявление функций
 	UFUNCTION()
 	void UpdateNavigatableActorsForInterstellar();
+
 	UFUNCTION()
 	void UpdateNavigatableActorsForStellar();
+
 	UFUNCTION()
 	void UpdateNavigatableActorsForInterplanetary();
 
-public:
 	ASpaceship();
 
 	virtual void Tick(float DeltaTime) override;
@@ -137,7 +134,6 @@ public:
 
 	UStaticMeshComponent* GetSpaceshipHull();
 
-public:
 	void ToggleScale();
 
 	bool bIsScaledUp{true};

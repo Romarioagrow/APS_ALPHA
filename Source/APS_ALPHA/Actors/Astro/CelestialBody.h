@@ -7,29 +7,24 @@
 #include "AstroActor.h"
 #include "CelestialBody.generated.h"
 
-/**
- * 
- */
 UCLASS()
 class APS_ALPHA_API ACelestialBody : public AAstroActor, public IAstonomicalBody
 {
 	GENERATED_BODY()
 
-//private:
 public:
 	UPROPERTY(VisibleAnywhere, Category = "Celestial Body")
-		double Radius{ 0 };
+	double Radius{0};
 
 	UPROPERTY(VisibleAnywhere, Category = "Celestial Body")
-		double Mass{ 0 };
-	
-	UPROPERTY(VisibleAnywhere, Category = "Celestial Body")
-		FString Age { "Unknown" };
-	
-	UPROPERTY(VisibleAnywhere, Category = "Celestial Body")
-		FName AstroName;
+	double Mass{0};
 
-public:
+	UPROPERTY(VisibleAnywhere, Category = "Celestial Body")
+	FString Age{"Unknown"};
+
+	UPROPERTY(VisibleAnywhere, Category = "Celestial Body")
+	FName AstroName;
+
 	ACelestialBody();
 
 	float GetRadius();

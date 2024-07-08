@@ -3,7 +3,6 @@
 #pragma once
 
 #include "AstonomicalSystem.h"
-//#include "CelestialBodyInterface.h"
 #include "CoreMinimal.h"
 #include "AstroActor.h"
 #include "CelestialSystem.generated.h"

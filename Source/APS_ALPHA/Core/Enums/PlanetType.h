@@ -31,7 +31,6 @@ enum class EPlanetType : uint8
 	Oasis			UMETA(DisplayName = "Metallic Planet"), // 
 	Archipelago 	UMETA(DisplayName = "Metallic Planet"), // 
 	Pangea		 	UMETA(DisplayName = "Metallic Planet"), // 
-
 	Rogue			UMETA(DisplayName = "Rogue Planet"), // Ѕрод€чие планеты - планеты, которые не прив€заны к конкретной звезде
 	Exoplanet		UMETA(DisplayName = "Exoplanet"), // Ёкзопланеты - планеты вокруг других звезд
 	Unknown	UMETA(DisplayName = "Unknown") // Unknown

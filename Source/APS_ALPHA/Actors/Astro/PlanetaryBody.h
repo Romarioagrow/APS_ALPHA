@@ -1,7 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
 #pragma once
-
 
 #include "CoreMinimal.h"
 #include "OrbitalBody.h"
@@ -11,45 +8,41 @@
 
 class APlanetaryEnvironmentGenerator;
 enum class EPlanetType : uint8;
-/**
- * 
- */
+
 UCLASS()
 class APS_ALPHA_API APlanetaryBody : public AOrbitalBody, public IPlanetaryEnvironment
 {
 	GENERATED_BODY()
 
 public:
-		APlanetaryBody();
+	APlanetaryBody();
 
 protected:
 	virtual void BeginPlay() override;
 
 public:
-	// Called every frame
 	virtual void Tick(float DeltaTime) override;
 
-public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Planet Body")
-		APlanetaryEnvironmentGenerator* PlanetaryEnvironmentGenerator;
+	APlanetaryEnvironmentGenerator* PlanetaryEnvironmentGenerator;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Body")
-		bool bGenerateByDefault{ false };
+	bool bGenerateByDefault{false};
 
 	APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(this, 0);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Body")
-		double WSCZoneScale {10.0 };
+	double WSCZoneScale{10.0};
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Body")
-		bool bEnvironmentSpawned{ false };
-	
+	bool bEnvironmentSpawned{false};
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Body")
-		double AtmosphereHeight { 0.0 };
-	
+	double AtmosphereHeight{0.0};
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Body")
-		double OrbitHeight { 0.0 };
+	double OrbitHeight{0.0};
 
 	UPROPERTY(VisibleAnywhere, Category = "Planet")
-		EPlanetType PlanetType;
+	EPlanetType PlanetType;
 };
