@@ -1,15 +1,6 @@
-// Fill out your copyright notice in the Description page of Project Settings.
 #include "GravityCharacterPawn.h"
-
-/*#include "GravityMovementStruct.h"
-#include "GravityParamStruct.h"
-#include "GravityCharacterPawn.h"
-#include "Spaceship.h"
-#include "SpaceStation.h"
-#include "OrbitalBody.h"*/
 #include <Kismet/GameplayStatics.h>
 #include <Kismet/KismetMathLibrary.h>
-
 #include "APS_ALPHA/Actors/Astro/OrbitalBody.h"
 #include "APS_ALPHA/Actors/Astro/WorldActor.h"
 #include "APS_ALPHA/Actors/Tech/SpaceHeadquarters.h"
@@ -18,8 +9,6 @@
 #include "APS_ALPHA/Core/Structs/GravityMovementStruct.h"
 #include "APS_ALPHA/Core/Structs/GravityParamStruct.h"
 #include "APS_ALPHA/Pawns/Spaceships/Spaceship.h"
-
-//#include "SpaceHeadquarters.h"
 
 // Sets default values
 AGravityCharacterPawn::AGravityCharacterPawn()
@@ -56,7 +45,6 @@ AGravityCharacterPawn::AGravityCharacterPawn()
 	CapsuleComponent->SetCollisionResponseToChannel(ECollisionChannel::ECC_EngineTraceChannel3,
 	                                                ECollisionResponse::ECR_Ignore);
 }
-
 
 // Called when the game starts or when spawned
 void AGravityCharacterPawn::BeginPlay()

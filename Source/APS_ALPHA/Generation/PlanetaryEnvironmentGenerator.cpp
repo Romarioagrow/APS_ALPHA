@@ -1,14 +1,8 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
-
 #include "PlanetaryEnvironmentGenerator.h"
-
 #include "APS_ALPHA/Actors/Astro/Moon.h"
 #include "APS_ALPHA/Actors/Astro/Planet.h"
 #include "APS_ALPHA/Core/Enums/MoonType.h"
 #include "APS_ALPHA/Core/Enums/PlanetType.h"
-/*#include "Planet.h"
-#include "Moon.h"*/
 
 // Sets default values
 APlanetaryEnvironmentGenerator::APlanetaryEnvironmentGenerator()
@@ -834,7 +828,8 @@ void APlanetaryEnvironmentGenerator::DestroyPlanetEnvironment()
         WorldScapeRootInstance->SetActorHiddenInGame(true);
         WorldScapeRootInstance->SetActorTickEnabled(false);
         WorldScapeRootInstance->SetActorEnableCollision(false);
-        WorldScapeRootInstance->DetachRootComponentFromParent();
+        //WorldScapeRootInstance->DetachRootComponentFromParent();
+        WorldScapeRootInstance->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
     }
 
 }

@@ -1,14 +1,5 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
 #include "PlanetaryProceduralGenerator.h"
-/*#include "AstroActor.h"
-#include "StarTypeProbabilities.h"
-#include "PlanetarySystem.h"
-#include "PlanetarySystemGenerationModel.h"
-#include "OrbitDistributionType.h"
-#include "PlanetGenerationModel.h"*/
 #include <cmath>
-
 #include "MoonGenerator.h"
 #include "PlanetGenerator.h"
 #include "APS_ALPHA/Actors/Astro/PlanetarySystem.h"
@@ -83,8 +74,7 @@ void UPlanetarySystemGenerator::GenerateCustomPlanetraySystemModel(
 	FString OrbitType = UEnum::GetValueAsString(OrbitDistributionType);
 	UE_LOG(LogTemp, Warning, TEXT("Orbit Distribution Type: %s"), *OrbitType);
 
-
-	/// TODO: To base method
+	// TODO: To base method
 	for (int i = 0; i < FinalPlanetCount; i++)
 	{
 		double OrbitDistributionValue;
@@ -482,7 +472,6 @@ void UPlanetarySystemGenerator::GenerateCustomPlanetraySystemModel(
 				// Добавляем данные о луне в список
 				MoonsList.Add(MoonData);
 			}
-
 
 			//// Вычисление позиций точек Лагранжа (это упрощенные формулы, в реальности они сложнее)
 			//FVector L1_Position = FVector(OrbitRadius * (1 - pow(PlanetMass / 3, 1.0 / 3.0)), 0, 0);

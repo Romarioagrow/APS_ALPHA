@@ -12,8 +12,6 @@ struct FMoonModel :
 {
 	GENERATED_BODY()
 
-	//FMoonModel();
-
 	UPROPERTY(EditAnywhere, Category = "Moon Generation Model")
 	EMoonType Type;
 

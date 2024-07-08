@@ -1,12 +1,6 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
 #pragma once
-/*#include "GalaxyModel.h"
-#include "GalaxyClass.h"
-#include "GalaxyType.h"
-#include "Galaxy.h"*/
-#include "StarGenerator.h"
 
+#include "StarGenerator.h"
 #include "CoreMinimal.h"
 #include "BaseProceduralGenerator.h"
 #include "GalaxyGenerator.generated.h"
@@ -15,9 +9,7 @@ class AGalaxy;
 enum class EGalaxyClass : uint8;
 enum class EGalaxyType : uint8;
 struct FGalaxyModel;
-/**
- * 
- */
+
 UCLASS()
 class APS_ALPHA_API UGalaxyGenerator : public UBaseProceduralGenerator
 {
@@ -45,9 +37,4 @@ public:
 	FVector GenerateStarInEllipticalGalaxy(EGalaxyClass GalaxyClass, float StarDistance);
 
 	FVector GenerateStarInEllipticalGalaxy(EGalaxyClass GalaxyClass);
-
-	//void GenerateStarsInGalaxy(UStarGenerator* StarGenerator, AGalaxy* NewGalaxy);
-
-	//void GenerateStarsInGalaxy(AGalaxy* NewGalaxy);
-
 };

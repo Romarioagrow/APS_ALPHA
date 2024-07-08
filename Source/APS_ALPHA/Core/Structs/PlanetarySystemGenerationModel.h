@@ -43,8 +43,6 @@ struct FPlanetData
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Mode")
 	double OrbitRadius;
 
-	//UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Model")
-	//FPlanetModel PlanetModel;
 	TSharedPtr<FPlanetModel> PlanetModel;
 
 	FPlanetData()
@@ -83,10 +81,9 @@ struct FPlanetarySystemModel :
 	UPROPERTY(VisibleAnywhere)
 	FName FullSpectralName;
 
-	//UPROPERTY(VisibleAnywhere)
 	TArray<TSharedPtr<FPlanetData>> PlanetsList;
 
-	/// TODO: To one struct
+	// TODO: To one struct
 	UPROPERTY(VisibleAnywhere, Category = "Zones")
 	FZoneRadius DeadZoneRadius;
 

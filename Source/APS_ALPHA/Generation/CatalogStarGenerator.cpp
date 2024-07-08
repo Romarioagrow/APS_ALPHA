@@ -1,26 +1,20 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
-
 #include "CatalogStarGenerator.h"
 #include "Engine/Classes/Components/HierarchicalInstancedStaticMeshComponent.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 #include "HAL/PlatformFilemanager.h"
 
-
-const FString SpectralClasses[] = { TEXT("O"), TEXT("B"), TEXT("A"), TEXT("F"), TEXT("G"), TEXT("K"), TEXT("M") };
-
+const FString SpectralClasses[] = {TEXT("O"), TEXT("B"), TEXT("A"), TEXT("F"), TEXT("G"), TEXT("K"), TEXT("M")};
 
 // Sets default values
 ACatalogStarGenerator::ACatalogStarGenerator()
 {
- 	// Set this actor to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
+	// Set this actor to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = true;
 
 
 	HISMComponent = CreateDefaultSubobject<UHierarchicalInstancedStaticMeshComponent>(TEXT("HISMComponent"));
 	RootComponent = HISMComponent;
-
 }
 
 // Called when the game starts or when spawned
@@ -87,12 +81,13 @@ void ACatalogStarGenerator::BeginPlay()
 			double LightYearToUEScale = 9.461e+12; // Коэффициент преобразования световых лет в масштаб UE
 			double LightYearScale = 100000.0; // Коэффициент масштабирования в световых годах
 
-			double X = FCString::Atof(*Columns[17]);// * 1000000;// * LightYearToUEScale / LightYearScale; // Замените 17 на фактический номер столбца для координаты X
-			double Y = FCString::Atof(*Columns[18]);// * 1000000;// * LightYearToUEScale / LightYearScale; // Замените 18 на фактический номер столбца для координаты Y
-			double Z = FCString::Atof(*Columns[19]);// * 1000000;// * LightYearToUEScale / LightYearScale; // Замените 19 на фактический номер столбца для координаты Z
+			double X = FCString::Atof(*Columns[17]);
+			// * 1000000;// * LightYearToUEScale / LightYearScale; // Замените 17 на фактический номер столбца для координаты X
+			double Y = FCString::Atof(*Columns[18]);
+			// * 1000000;// * LightYearToUEScale / LightYearScale; // Замените 18 на фактический номер столбца для координаты Y
+			double Z = FCString::Atof(*Columns[19]);
+			// * 1000000;// * LightYearToUEScale / LightYearScale; // Замените 19 на фактический номер столбца для координаты Z
 			//UE_LOG(LogTemp, Warning, TEXT("ScaledRadius: %f"), ScaledRadius);
-
-
 
 
 			// Создаем экземпляр HISM с заданными координатами и масштабом
@@ -105,11 +100,6 @@ void ACatalogStarGenerator::BeginPlay()
 	{
 		UE_LOG(LogTemp, Error, TEXT("Failed to load CSV file: %s"), *CSVFilePath);
 	}
-
-
-
-
-
 
 
 	// read csv file
@@ -176,6 +166,4 @@ void ACatalogStarGenerator::BeginPlay()
 void ACatalogStarGenerator::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
-
 }
-

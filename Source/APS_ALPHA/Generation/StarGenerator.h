@@ -1,12 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
 #pragma once
-
-/*#include "Star.h"
-#include "StarGenerationModel.h"
-#include "StarClusterType.h"
-#include "StarClusterPopulation.h"
-#include "StarCluster.h"*/
 
 #include "CoreMinimal.h"
 #include "BaseProceduralGenerator.h"
@@ -17,13 +9,11 @@
 #include "APS_ALPHA/Core/Enums/StarType.h"
 #include "StarGenerator.generated.h"
 
-struct FStarClusterModel;
-enum class EStarClusterComposition : uint8;
-struct FStarModel;
 class AStar;
-/**
- * 
- */
+struct FStarClusterModel;
+struct FStarModel;
+enum class EStarClusterComposition : uint8;
+
 UCLASS()
 class APS_ALPHA_API UStarGenerator : public UBaseProceduralGenerator
 {
@@ -38,9 +28,10 @@ private:
 public:
 	const double SolarEmissiveLuminosity = 1.0;
 	const double MinStarLuminosity = 100;
+	
+	
 	const double MaxStarLuminosity = 500;
 
-public:
 	void ApplySpectralMaterial(AStar* NewStar, TSharedPtr<FStarModel> StarModel);
 
 	void GenerateStarModelByProbability(TSharedPtr<FStarModel> NewStarModel, TSharedPtr<FStarClusterModel> FStarClusterModel);
@@ -111,7 +102,6 @@ private:
 //G - ����� : 5200 - 6000 �
 //K - ����� : 3700 - 5200 �
 //M - ����� : 2000 - 3700 �
-private:
 	const TMap<EStarClusterComposition, TMap<ESpectralClass, int>> StarClusterCompositionWeights =
 	{
 		{

@@ -1,7 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
 #include "Spaceship.h"
-
 #include "APS_ALPHA/Actors/Astro/Moon.h"
 #include "APS_ALPHA/Actors/Astro/StarCluster.h"
 #include "APS_ALPHA/Actors/Astro/StarSystem.h"
@@ -15,22 +12,10 @@
 #include "GameFramework/SpringArmComponent.h"
 #include "Kismet/GameplayStatics.h"
 
-/*#include "WorldActor.h"
-#include "CelestialBody.h"
-#include "Star.h"
-#include "StarCluster.h"
-#include "AstroGenerator.h"
-#include "NavigatableBody.h"*/
-
-
 /*
-
 press shift + hold Lshift = busting
 double press Lshift = increase engine mode
-
-
 */
-
 
 void ASpaceship::UpdateNavigatableActorsForInterstellar()
 {

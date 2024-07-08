@@ -27,28 +27,28 @@ public:
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-		class USkeletalMeshComponent* SkeletalMesh;
+	class USkeletalMeshComponent* SkeletalMesh;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-		class UCameraComponent* Camera;
+	class UCameraComponent* Camera;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-		class USpringArmComponent* CameraSpringArm;
+	class USpringArmComponent* CameraSpringArm;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Movement")
-		float MovementSpeed;
+	float MovementSpeed;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Movement")
-		float RotationSpeed;
+	float RotationSpeed;
 
 	UFUNCTION(BlueprintCallable, Category = "Rotation")
-		void RotatePitch(float Value);
+	void RotatePitch(float Value);
 
 	UFUNCTION(BlueprintCallable, Category = "Rotation")
-		void RotateYaw(float Value);
+	void RotateYaw(float Value);
 
 	UFUNCTION(BlueprintCallable, Category = "Rotation")
-		void RotateRoll(float Value);
+	void RotateRoll(float Value);
 
 	void UpdateCameraOrientation();
 

@@ -1,29 +1,18 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
 #pragma once
+
 #include <Components/SphereComponent.h>
-//#include "OrbitalBody.h"
-//#include "PlanetType.h"
-/*#include "MoonGenerationModel.h"
-#include "PlanetGenerationModel.h"
-#include "PlanetaryZoneType.h"
-#include "NavigatableBody.h"*/
 #include "PlanetaryBody.h"
 #include "PlanetOrbit.h"
 #include "WorldScapeCore/Public/WorldScapeRoot.h"
-
 #include "CoreMinimal.h"
-//#include "CelestialBody.h"
 #include "APS_ALPHA/Core/Interfaces/NavigatableBody.h"
 #include "APS_ALPHA/Core/Structs/PlanetGenerationModel.h"
 #include "Planet.generated.h"
 
 struct FMoonData;
 enum class EPlanetaryZoneType : uint8;
-//struct FOrbitInfo;
 class AMoon;
 class AStar;
-//class APlanetEnvironmentGenerator;
 
 UCLASS()
 class APS_ALPHA_API APlanet : public APlanetaryBody, public INavigatableBody
@@ -34,7 +23,6 @@ protected:
 	virtual void BeginPlay() override;
 
 public:
-	// Called every frame
 	virtual void Tick(float DeltaTime) override;
 
 	void HandleOnStellarMode();
@@ -42,11 +30,11 @@ public:
 	void CheckPlayerPawn();
 
 	void SetManualPlanet(AWorldScapeRoot* StartHomePlanet);
+	
 	void DestroyWSC();
 
 	void InitWSC();
 
-public:
 	APlanet();
 
 	bool IsNotGasGiant();
@@ -57,15 +45,6 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Setup")
 	bool IsManual{false};
-
-	/*UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Environment")
-		bool bGenerateByDefault{ false };
-	*/
-	/*UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Environment")
-		double PlanetRadiusKM{ 0 };*/
-
-	/*UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Planet Environment")
-		APlanetEnvironmentGenerator* PlanetEnvironmentGenerator;*/
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Gravity")
 	USphereComponent* GravityCollisionZone;
@@ -79,13 +58,8 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Planet")
 	int PlanetRadiusKM;
 
-	//private:
-public:
 	UPROPERTY(VisibleAnywhere, Category = "Planet")
 	AStar* ParnetStar;
-
-	/*UPROPERTY(VisibleAnywhere, Category = "Planet")
-		EPlanetType PlanetType;*/
 
 	UPROPERTY(VisibleAnywhere, Category = "Planet")
 	EPlanetaryZoneType PlanetZone;
@@ -98,7 +72,6 @@ public:
 	UPROPERTY(VisibleAnywhere, Category = "Planet")
 	int32 Temperature{0};
 
-
 	UPROPERTY(VisibleAnywhere, Category = "Planet")
 	double PlanetDensity{0};
 
@@ -107,8 +80,6 @@ public:
 
 	TArray<TSharedPtr<FMoonData>> MoonsList;
 
-	//private:
-public:
 	UPROPERTY(VisibleAnywhere, Category = "Moons")
 	TArray<AMoon*> Moons;
 
@@ -141,10 +112,10 @@ public:
 	void SetupHomePlanetFromEditor(AWorldScapeRoot* StartHomePlanet);
 
 	void RemoveAllChildrenRecursively(AActor* ParentActor);
+	
 	void EnableSphereMesh();
 
 	void DisableSphereMesh();
 
 	void ApplyNewPlanetParameters(AWorldScapeRoot* StartHomePlanet);
-	//AWorldScapeRoot* StartHomePlanet;
 };

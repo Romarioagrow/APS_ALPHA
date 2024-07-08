@@ -1,17 +1,13 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
 #pragma once
-#include "Components/HierarchicalInstancedStaticMeshComponent.h"
 
+#include "Components/HierarchicalInstancedStaticMeshComponent.h"
 #include "CoreMinimal.h"
 #include "CelestialSystem.h"
 #include "Galaxy.generated.h"
 
 enum class EGalaxyClass : uint8;
 enum class EGalaxyType : uint8;
-/**
- * 
- */
+
 UCLASS()
 class APS_ALPHA_API AGalaxy : public ACelestialSystem
 {
@@ -26,7 +22,6 @@ public:
 	UPROPERTY(VisibleAnywhere, Category = "Galaxy")
 	EGalaxyClass GalaxyGlass;
 
-	// HISM ������ ��� �������� ���������
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Galaxy Stars")
 	UHierarchicalInstancedStaticMeshComponent* StarMeshInstances;
 };

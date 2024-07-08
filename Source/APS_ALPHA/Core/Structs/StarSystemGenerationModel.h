@@ -1,5 +1,4 @@
 #pragma once
-//#include "StarSystemType.h"
 
 #include "GenerationModel.h"
 #include "CoreMinimal.h"

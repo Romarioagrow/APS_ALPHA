@@ -1,6 +1,3 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
-
 #include "SpaceHeadquarters.h"
 
 ASpaceHeadquarters::ASpaceHeadquarters()
@@ -15,7 +12,6 @@ ASpaceHeadquarters::ASpaceHeadquarters()
 
 void ASpaceHeadquarters::BeginPlay()
 {
-	//this->CalculateAffectionRadius();
 }
 
 FVector ASpaceHeadquarters::GetStartPointPosition()

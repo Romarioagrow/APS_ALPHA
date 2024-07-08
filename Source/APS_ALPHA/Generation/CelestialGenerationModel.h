@@ -6,18 +6,16 @@
 
 USTRUCT(BlueprintType)
 struct FCelestialBodyModel :
-    public FGenerationModel
+	public FGenerationModel
 {
 	GENERATED_BODY()
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "CelestialGeneration")
-		float Mass {0};
+	float Mass{0};
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "CelestialGeneration")
-		float Radius{ 0 };
-	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "CelestialGeneration")
-		float RadiusKM{ 0 };
+	float Radius{0};
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "CelestialGeneration")
+	float RadiusKM{0};
 };
-

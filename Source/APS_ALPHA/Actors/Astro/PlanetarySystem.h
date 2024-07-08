@@ -1,14 +1,7 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
 #pragma once
 
 #include "Star.h"
-/*#include "PlanetarySystemType.h"
-#include "OrbitDistributionType.h"
-#include "PlanetarySystemGenerationModel.h"
-#include "StarSpectralClass.h" */
 #include "PlanetOrbit.h" 
-
 #include "CoreMinimal.h"
 #include "CelestialSystem.h"
 #include "APS_ALPHA/Core/Structs/PlanetarySystemGenerationModel.h"
@@ -16,15 +9,12 @@
 
 enum class EOrbitDistributionType : uint8;
 enum class EPlanetarySystemType : uint8;
-/**
- *
- */
+
 UCLASS()
 class APS_ALPHA_API APlanetarySystem : public ACelestialSystem
 {
 	GENERATED_BODY()
 
-	//private:
 public:
 	UPROPERTY(VisibleAnywhere)
 	AStar* Star;
@@ -41,8 +31,7 @@ public:
 	UPROPERTY(VisibleAnywhere)
 	FName FullSpectralName;
 
-	// ZONES 
-	/// TODO: TO SINGLE STRUCT
+	/// TODO: ZONES, TO SINGLE STRUCT
 	UPROPERTY(VisibleAnywhere, Category = "Zones")
 	FZoneRadius HabitableZoneRadius;
 
@@ -73,20 +62,26 @@ public:
 	UPROPERTY(VisibleAnywhere, Category = "Zones")
 	FZoneRadius KuiperBeltZoneRadius;
 
-public:
 	double HotZoneOuter;
+	
 	double WarmZoneOuter;
+	
 	double ColdZoneOuter;
+	
 	double IceZoneOuter;
+	
 	double GasGiantsZoneOuter;
+	
 	double KuiperBeltZoneOuter;
+	
 	double InnerZoneOuter;
+	
 	double OuterZoneOuter;
+	
 	double HabitableZoneOuter;
+	
 	double StarDeadZoneOuter;
 
-public:
-	//UPROPERTY(VisibleAnywhere)
 	TArray<TSharedPtr<FPlanetData>> PlanetsList;
 
 	UPROPERTY(VisibleAnywhere, Category = "Planets")

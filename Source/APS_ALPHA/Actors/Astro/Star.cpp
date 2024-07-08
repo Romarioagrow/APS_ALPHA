@@ -1,6 +1,3 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
-
 #include "Star.h"
 
 AStar::AStar()
@@ -11,8 +8,6 @@ AStar::AStar()
 	PlanetarySystemZone = CreateDefaultSubobject<USphereComponent>(TEXT("PlanetarySystemZoneComponent"));
 	PlanetarySystemZone->SetupAttachment(RootComponent);
 
-	// Создайте и прикрепите компонент меша к корневому компоненту
-	//StarMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("StarMesh"));
 	StarMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("StarMesh"));
 	StarMesh->SetupAttachment(RootComponent);
 }
@@ -21,7 +16,6 @@ void AStar::BeginPlay()
 {
 	Super::BeginPlay();
 
-	//StarDynamicMaterial = UMaterialInstanceDynamic::Create(StarMesh->GetMaterial(0), this);
 	StarDynamicMaterial = UMaterialInstanceDynamic::Create(StarMesh->GetMaterial(0), this);
 	if (StarDynamicMaterial)
 	{

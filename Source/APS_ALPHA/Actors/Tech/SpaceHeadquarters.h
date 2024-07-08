@@ -1,17 +1,9 @@
- // Fill out your copyright notice in the Description page of Project Settings.
-
 #pragma once
-//#include "NavigatableBody.h"
-#include "SpaceStation.h"
-#include <Components/SphereComponent.h>
 
+#include "SpaceStation.h"
 #include "CoreMinimal.h"
-#include "Headquarters.h"
 #include "SpaceHeadquarters.generated.h"
 
-/**
- * 
- */
 UCLASS()
 class APS_ALPHA_API ASpaceHeadquarters : public ASpaceStation // AHeadquarters
 {
@@ -31,6 +23,4 @@ public:
 	ASpaceHeadquarters();
 
 	FVector GetStartPointPosition();
-
-	
 };

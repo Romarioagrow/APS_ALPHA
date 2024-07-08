@@ -1,10 +1,7 @@
 #pragma once
-/*#include "GalaxyClass.h"
-#include "GalaxyType.h"*/
 
 #include "CoreMinimal.h"
 #include "APS_ALPHA/Generation/CelestialGenerationModel.h"
-//#include "CelestialGenerationModel.h"
 #include "GalaxyModel.generated.h"
 
 USTRUCT(BlueprintType)

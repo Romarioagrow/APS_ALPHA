@@ -1,15 +1,10 @@
 #pragma once
-/*#include "AstroActor.h"
-#include "SpaceStation.h"
-#include "IMovementStrategy.h"*/
 
 #include "CoreMinimal.h"
 #include "APS_ALPHA/Core/Interfaces/IMovementStrategy.h"
-#include "UObject/NoExportTypes.h"
 #include "SpaceshipOnboardComputer.generated.h"
 
 class AStarSystem;
-//class IMovementStrategy;
 class AWorldActor;
 class ASpaceStation;
 class AAstroActor;

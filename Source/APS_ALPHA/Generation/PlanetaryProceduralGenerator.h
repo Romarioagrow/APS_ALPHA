@@ -1,17 +1,6 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
 #pragma once
-/*#include "PlanetarySystemGenerationModel.h"
-#include "StarGenerationModel.h"
-#include "PlanetarySystem.h"
-#include "OrbitDistributionType.h"
-#include "PlanetGenerationModel.h"
-#include "PlanetaryZoneType.h"*/
-//#include "PlanetGenerator.h"
-//#include "MoonGenerator.h"
 
 #include "CoreMinimal.h"
-//#include "BaseProceduralGenerator.h"
 #include "BaseProceduralGenerator.h"
 #include "APS_ALPHA/Core/Enums/OrbitDistributionType.h"
 #include "APS_ALPHA/Core/Enums/PlanetaryZoneType.h"
@@ -19,11 +8,11 @@
 #include "APS_ALPHA/Core/Enums/StarType.h"
 #include "PlanetaryProceduralGenerator.generated.h"
 
+class APlanetarySystem;
 class UMoonGenerator;
 class UPlanetGenerator;
 struct FPlanetarySystemModel;
 struct FStarModel;
-class APlanetarySystem;
 typedef float PlanetProbability;
 
 USTRUCT(BlueprintType)
@@ -86,11 +75,6 @@ class APS_ALPHA_API UPlanetarySystemGenerator : public UBaseProceduralGenerator
 {
 	GENERATED_BODY()
 
-	//public:
-	//UPlanetarySystemGenerator();
-
-	//FRandomStream RandomStream;
-
 public:
 	void SetAstroLocation(int StarNumber, APlanetarySystem* NewPlanetarySystem);
 
@@ -130,7 +114,6 @@ private:
 
 	TArray<double> OrbitRadii;
 
-private:
 	const TMap<EPlanetType, FRadiusRange> PlanetRadiusRanges =
 	{
 		{EPlanetType::Terrestrial, FRadiusRange(0.9, 1.1)}, // �������������
@@ -184,7 +167,6 @@ private:
 		{EPlanetType::Metallic, FDensityRange(5.0, 10.0)},
 		{EPlanetType::Unknown, FDensityRange(0.1, 10.0)}
 	};
-
 
 	const TMap<EStellarType, TMap<EOrbitDistributionType, float>> StellarOrbitDistributions =
 	{

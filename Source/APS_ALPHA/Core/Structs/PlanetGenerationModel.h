@@ -1,10 +1,6 @@
 #pragma once
 
-/*#include "PlanetType.h"
-#include "PlanetaryZoneType.h"
-#include "OrbitHeight.h"*/
 #include "MoonGenerationModel.h"
-
 #include "OrbitalBodyGenerationModel.h"
 #include "CoreMinimal.h"
 #include "PlanetGenerationModel.generated.h"
@@ -36,9 +32,7 @@ struct FMoonData
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Mode")
 	double OrbitRadius;
 
-	//UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Model")
 	TSharedPtr<FMoonModel> MoonModel;
-	//FMoonModel MoonModel;
 
 	FMoonData()
 	{

@@ -1,56 +1,11 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
-
 #include "Planet.h"
 #include "Moon.h"
 #include "APS_ALPHA/Core/Enums/PlanetType.h"
 #include "APS_ALPHA/Generation/PlanetaryEnvironmentGenerator.h"
-/*#include "PlanetGenerationModel.h"
-#include "Spaceship.h"*/
 
 void APlanet::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
-
-	/*if (IsComputingWSCProximity && PlayerPawn != nullptr)
-	{
-		double Distance = FVector::Dist(PlayerPawn->GetActorLocation(), GetActorLocation());
-		if (Distance < AffectionRadiusKM * WSCZoneScale * 100000)
-		{
-			if (!bEnvironmentSpawned)
-			{
-				ASpaceship* PlayerShip = Cast<ASpaceship>(PlayerPawn);
-
-				/// TODO: Normal Check
-				if (PlayerShip && PlayerShip->OnboardComputer->FlightSystem.CurrentFlightMode != EFlightMode::Interstellar)
-				{
-					PlanetaryEnvironmentGenerator->SpawnPlanetEnvironment();
-
-					for (AMoon* Moon : Moons)
-					{
-						Moon->PlanetaryEnvironmentGenerator->SpawnPlanetEnvironment();
-					}
-
-					bEnvironmentSpawned = true;
-				}
-			}
-		}
-		else
-		{
-			if (bEnvironmentSpawned)
-			{
-				PlanetaryEnvironmentGenerator->DestroyPlanetEnvironment();
-
-				for (AMoon* Moon : Moons)
-				{
-					Moon->PlanetaryEnvironmentGenerator->DestroyPlanetEnvironment();
-				}
-
-				bEnvironmentSpawned = false;
-
-			}
-		}
-	}*/
 }
 
 void APlanet::HandleOnStellarMode()
@@ -73,7 +28,6 @@ void APlanet::CheckPlayerPawn()
 		GetWorldTimerManager().ClearTimer(PlayerPawnTimerHandle);
 
 		double Distance = FVector::Dist(PlayerPawn->GetActorLocation(), GetActorLocation());
-		//GEngine->AddOnScreenDebugMessage(-1, 0.0, FColor::Magenta, FString::Printf(TEXT("Planet Distance to player: %f"), Distance));
 		if (Distance < AffectionRadiusKM * WSCZoneScale * 100000)
 		{
 			PlanetaryEnvironmentGenerator->SpawnWorldScapeRoot();
@@ -143,30 +97,7 @@ void APlanet::BeginPlay()
 {
 	Super::BeginPlay();
 
-	//Spaceship->OnStellarMode.AddDynamic(this, &APlanet::HandleOnStellarMode);
-
-
 	GetWorldTimerManager().SetTimer(PlayerPawnTimerHandle, this, &APlanet::CheckPlayerPawn, 1.0f, true);
-
-	//if (PlayerPawn != nullptr)
-	//{
-	//	double Distance = FVector::Dist(PlayerPawn->GetActorLocation(), GetActorLocation());
-	//	//GEngine->AddOnScreenDebugMessage(-1, 0.0, FColor::Magenta, FString::Printf(TEXT("Planet Distance to player: %f"), Distance));
-	//	if (Distance < AffectionRadiusKM * WSCZoneScale * 100000)
-	//	{
-	//		PlanetaryEnvironmentGenerator->SpawnPlanetEnvironment();
-	//		bEnvironmentSpawned = true;
-	//	}
-	//	else
-	//	{
-	//		PlanetaryEnvironmentGenerator->DestroyPlanetEnvironment();
-	//		bEnvironmentSpawned = false;
-	//	}
-	//}
-	//else
-	//{
-	//	GEngine->AddOnScreenDebugMessage(-1, 20.0, FColor::Magenta, TEXT("PlayerPawn nullptr!"));
-	//}
 }
 
 APlanet::APlanet()
@@ -189,35 +120,6 @@ bool APlanet::IsNotGasGiant()
 		&& PlanetType != EPlanetType::HotGiant
 		&& PlanetType != EPlanetType::IceGiant;
 }
-
-//void APlanet::BeginPlay()
-//{
-//	PlanetEnvironmentGenerator = NewObject<APlanetEnvironmentGenerator>();
-//	if (PlanetEnvironmentGenerator)
-//	{
-//		GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("PlanetSurfaceGenerator has been created successfully."));
-//		UE_LOG(LogTemp, Warning, TEXT("PlanetSurfaceGenerator has been created successfully."));
-//		
-//		if (bGenerateByDefault)
-//		{
-//			UWorld* World = GetWorld();
-//			if (World)
-//			{
-//				PlanetEnvironmentGenerator->InitWorldScape(World);
-//				GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("World Scape Initiated!"));
-//			}
-//			else
-//			{
-//				GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("World IS NULL!!!"));
-//			}
-//		}
-//	}
-//	else
-//	{
-//		GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("Failed to create PlanetSurfaceGenerator."));
-//		UE_LOG(LogTemp, Warning, TEXT("Failed to create PlanetSurfaceGenerator."));
-//	}
-//}
 
 void APlanet::AddMoon(AMoon* Moon)
 {
@@ -337,13 +239,4 @@ void APlanet::ApplyNewPlanetParameters(AWorldScapeRoot* StartHomePlanet)
 
 	PlanetaryZone->SetSphereRadius(100);
 	AffectionRadiusKM = GetActorScale3D().X / 100000;
-
-	//FVector PlanetLocation = GetActorLocation();
-	////FVector LastMoonOuterEdgeLocation = LastMoonLocation + FVector(0, DiameterOfLastMoon * 6371, 0);
-	//double SphereRadius = 637817792.0;//FVector::Dist(PlanetLocation, LastMoonOuterEdgeLocation);
-	////SphereRadius /= NewPlanet->GetActorScale3D().X;
-	//SphereRadius *= 1.1 / 1000000;
-	//PlanetaryZone->SetSphereRadius(SphereRadius * 2);
-	//AffectionRadiusKM = SphereRadius * 2;
-	//GravityCollisionZone->SetSphereRadius(SphereRadius);
 }

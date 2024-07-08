@@ -1,19 +1,13 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
-
 #include "StarCluster.h"
 #include "Star.h"
 #include "APS_ALPHA/Core/Enums/StarClusterType.h"
 
-// Конструктор
 AStarCluster::AStarCluster()
 {
     PrimaryActorTick.bCanEverTick = false;
 
     StarMeshInstances = CreateDefaultSubobject<UHierarchicalInstancedStaticMeshComponent>(TEXT("StarMeshInstances"));
     RootComponent = Cast<USceneComponent>(StarMeshInstances);
-    //RootComponent->SetupAttachment(StarMeshInstances);
-    //StarMeshInstances->SetupAttachment(RootComponent);
 
     // Инициализация значений по умолчанию
     StarAmount = 100;
@@ -35,5 +29,5 @@ void AStarCluster::AddStarToClusterModel(FVector StarLocation, TSharedPtr<FStarM
 // Функция генерации скопления
 void AStarCluster::GenerateCluster()
 {
-    // Ваша логика генерации здесь
+    // Логика генерации здесь
 }
