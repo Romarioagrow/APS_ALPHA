@@ -15,13 +15,13 @@ class UMainMenuUI : public UBaseWidget
 public:
 
 	UPROPERTY()
-	TArray<ABaseActor*> ExistingWorlds;
+	TArray<AGeneratedWorld*> ExistingWorlds;
 	
 	UPROPERTY()
-	TArray<ABaseActor*> ExistingPlanets;
+	TArray<AGeneratedWorld*> ExistingPlanets;
 
 	UPROPERTY()
-	ABaseActor* LastWorld; // ALastWorld*
+	AGeneratedWorld* LastWorld; // ALastWorld*
 
 	UPROPERTY()
 	AAstroGenerator* AstroGenerator;
