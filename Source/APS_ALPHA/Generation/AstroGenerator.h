@@ -12,6 +12,7 @@
 #include "GameFramework/Actor.h"
 #include "AstroGenerator.generated.h"
 
+class AGeneratedWorld;
 class APlanet;
 class ASpaceShipyard;
 class ASpaceship;
@@ -30,6 +31,9 @@ class APS_ALPHA_API AAstroGenerator : public AActor
 
 public:
 	AAstroGenerator();
+
+	UFUNCTION()
+	void GenerateWorld(AGeneratedWorld* GeneratedWorld);
 
 protected:
 	void GenerateHomeStarSystem();
