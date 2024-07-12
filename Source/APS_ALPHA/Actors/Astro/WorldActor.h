@@ -1,12 +1,13 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "APS_ALPHA/Actors/BaseActor.h"
 #include "APS_ALPHA/Core/Interfaces/AstroLocation.h"
 #include "GameFramework/Actor.h"
 #include "WorldActor.generated.h"
 
 UCLASS()
-class APS_ALPHA_API AWorldActor : public AActor, public IAstroLocation
+class APS_ALPHA_API AWorldActor : public ABaseActor, public IAstroLocation
 {
 	GENERATED_BODY()
 
