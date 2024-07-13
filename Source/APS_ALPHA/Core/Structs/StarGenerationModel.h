@@ -10,7 +10,7 @@ struct FStarModel :
 {
 	GENERATED_BODY()
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star")
+	UPROPERTY(VisibleAnywhere)
 	EStellarType StellarType;
 
 	UPROPERTY(VisibleAnywhere)
