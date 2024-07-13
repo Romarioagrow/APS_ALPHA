@@ -31,6 +31,8 @@ class AGeneratedWorld : public ABaseActor
 	GENERATED_BODY()
 	
 public:
+
+	
 	UPROPERTY(EditAnywhere, Category = "Generation Params")
 	bool bGenerateFullScaledWorld{ true };
 
