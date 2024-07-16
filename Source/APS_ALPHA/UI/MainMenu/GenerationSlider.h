@@ -20,7 +20,7 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Enum")
 	FOnValueChangedSignature OnGenerationSliderChanged;
 
-	void PopulateEnumArray(UEnum* Enum);
+	void PopulateEnumArray(const UEnum* Enum);
 	
 	void SetEnumContent(UEnum* Enum);
 

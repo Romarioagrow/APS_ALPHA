@@ -7,37 +7,27 @@ void UAstroGenerationMenu::NativeConstruct()
 {
 	Super::NativeConstruct();
 
-	
-	//GS_GenerationSlider->SetEnumContent(EAstroGenerationLevel);
-	//GS_MenuSlider->SetEnumContent(EGalaxyClass);
-	//GS_GenSlider->SetEnumContent(EGravityState);
-	
-	//SetEnumContent
-
-	//EnumSlider
-
-	if (GS_GenerationSlider)
+	if (GS_GenerationLevel)
 	{
-		GS_GenerationSlider->OnGenerationSliderChanged.AddDynamic(this, &UAstroGenerationMenu::Update_AstroGenerationLevel);
-		GS_GenerationSlider->OnGenerationSliderChanged.AddDynamic(this, &UAstroGenerationMenu::Update_AstroGenerationLevel);
-		GS_GenerationSlider->SetEnumContent(StaticEnum<EAstroGenerationLevel>());
+		GS_GenerationLevel->OnGenerationSliderChanged.AddDynamic(this, &UAstroGenerationMenu::Update_AstroGenerationLevel);
+		GS_GenerationLevel->SetEnumContent(StaticEnum<EAstroGenerationLevel>());
 	}
 }
 
 void UAstroGenerationMenu::Update_AstroGenerationLevel(float InValue)
 {
-	if (GS_GenerationSlider && GS_GenerationSlider->EnumArray.Num() > 0)
+	if (GS_GenerationLevel && GS_GenerationLevel->EnumArray.Num() > 0)
 	{
-		int32 Index = FMath::RoundToInt(InValue * (GS_GenerationSlider->EnumArray.Num() - 1));
-		if (GS_GenerationSlider->EnumArray.IsValidIndex(Index))
+		if (GS_GenerationLevel->EnumArray.IsValidIndex(InValue))
 		{
-			uint8 EnumValue = GS_GenerationSlider->EnumArray[Index];
-			FString EnumName = StaticEnum<EAstroGenerationLevel>()->GetNameStringByValue(EnumValue);
-			
-			UE_LOG(LogTemp, Warning, TEXT("Current Enum Value: %s"), *EnumName);
+			uint8 EnumValue = GS_GenerationLevel->EnumArray[InValue];
+			AstroGenerationLevel = static_cast<EAstroGenerationLevel>(EnumValue);
+
 			if (GEngine)
 			{
-				GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, FString::Printf(TEXT("Current Enum Value: %s"), *EnumName));
+				FString AstroGenerationLevelName = StaticEnum<EAstroGenerationLevel>()->GetNameStringByValue(static_cast<uint8>(AstroGenerationLevel));
+				GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, FString::Printf(TEXT("Astro Generation Level: %s"), *AstroGenerationLevelName));
+
 			}
 		}
 	}

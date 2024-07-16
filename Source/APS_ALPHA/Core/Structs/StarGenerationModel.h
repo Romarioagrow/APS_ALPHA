@@ -1,6 +1,9 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "APS_ALPHA/Core/Enums/StarType.h"
+#include "APS_ALPHA/Core/Enums/StarSpectralClass.h"
+#include "APS_ALPHA/Core/Enums/SpectralType.h"
 #include "APS_ALPHA/Generation/CelestialGenerationModel.h"
 #include "StarGenerationModel.generated.h"
 
