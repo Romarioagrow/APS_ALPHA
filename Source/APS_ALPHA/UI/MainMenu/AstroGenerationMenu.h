@@ -19,25 +19,11 @@ public:
 	TArray<EAstroGenerationLevel> EAstroGenerationLevelArray;
 
 	UPROPERTY(BlueprintReadWrite, meta = (BindWidget))
-	UGenerationSlider* GS_GenerationSlider;
-
-	/*UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astro Generation")
-	TMap<UEnum*, TSubclassOf<UGenerationSlider>> EnumSliderMap;*/
-	/*UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astro Generation")
-	TMap<UEnum*, TSubclassOf<UGenerationSlider>> EnumSliderMap;*/
-
-	
-	
-	//UGenerationSlider* GS_GenerationSlider;
-	// Класс виджета
-	/*UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astro Generation")
-	TSubclassOf<UGenerationSlider> GS_GenerationSliderClass;*/
-
-	// Массив значений Enum
-	//UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enum")
-	/*TArray<TEnumAsByte<EAstroGenerationLevel>> AstroGenerationLevelEnumArray;*/
+	UGenerationSlider* GS_GenerationLevel;
 
 private:
 	UFUNCTION()
 	void Update_AstroGenerationLevel(float InValue);
+
+	EAstroGenerationLevel AstroGenerationLevel;
 };
