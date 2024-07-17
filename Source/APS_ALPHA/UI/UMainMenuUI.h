@@ -3,7 +3,7 @@
 #include "BaseWidget.h"
 #include "UMainMenuUI.generated.h"
 
-class AGeneratedWorld;
+class UGeneratedWorld;
 class ABaseActor;
 class AAstroGenerator;
 
@@ -15,19 +15,19 @@ class UMainMenuUI : public UBaseWidget
 public:
 
 	UPROPERTY()
-	TArray<AGeneratedWorld*> ExistingWorlds;
+	TArray<UGeneratedWorld*> ExistingWorlds;
 	
 	UPROPERTY()
-	TArray<AGeneratedWorld*> ExistingPlanets;
+	TArray<UGeneratedWorld*> ExistingPlanets;
 
 	UPROPERTY()
-	AGeneratedWorld* LastWorld; // ALastWorld*
+	UGeneratedWorld* LastWorld; 
 
 	UPROPERTY()
 	AAstroGenerator* AstroGenerator;
 
 	UPROPERTY()
-	AGeneratedWorld* GeneratedWorld; // AGeneratedWorld*
+	UGeneratedWorld* GeneratedWorld; 
 
 protected:
 	UFUNCTION()

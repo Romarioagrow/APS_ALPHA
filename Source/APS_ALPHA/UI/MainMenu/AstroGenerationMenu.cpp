@@ -2,10 +2,13 @@
 
 #include "GenerationSlider.h"
 #include "APS_ALPHA/Core/Enums/AstroGenerationLevel.h"
+#include "APS_ALPHA/Core/Model/GeneratedWorld.h"
 
 void UAstroGenerationMenu::NativeConstruct()
 {
 	Super::NativeConstruct();
+
+	NewGeneratedWorld = NewObject<UGeneratedWorld>(this, UGeneratedWorld::StaticClass());
 
 	SetupSlider(GS_GenerationLevel, StaticEnum<EAstroGenerationLevel>());
 
@@ -28,33 +31,15 @@ void UAstroGenerationMenu::SetupSlider(UGenerationSlider* Slider, UEnum* EnumTyp
 	}
 }
 
-
 void UAstroGenerationMenu::HandleGenerationSlider(const float Value, const UEnum* EnumClass)
 {
-	if (GEngine)
-	{
-		GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Yellow, FString::Printf(TEXT("Slider Value: %f"), Value));
-	}
-
-	/*// Вывод информации о классе EnumClass на экран
-	if (EnumClass)
-	{
-		FString EnumClassName = EnumClass->GetName();
-		if (GEngine)
-		{
-			GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Yellow,
-			                                 FString::Printf(TEXT("Enum Class: %s"), *EnumClassName));
-		}
-	}
-	*/
+	if (!GEngine) return;
+	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Yellow, FString::Printf(TEXT("Slider Value: %f"), Value));
 
 	if (EnumClass)
 	{
 		FString EnumClassName = EnumClass->GetName();
-		if (GEngine)
-		{
-			GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Yellow, FString::Printf(TEXT("Enum Class: %s"), *EnumClassName));
-		}
+		GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Yellow, FString::Printf(TEXT("Enum Class: %s"), *EnumClassName));
 
 		// Получить все значения EnumClass и поместить их в массив
 		TArray<int32> EnumValues;
@@ -63,59 +48,65 @@ void UAstroGenerationMenu::HandleGenerationSlider(const float Value, const UEnum
 			EnumValues.Add(EnumClass->GetValueByIndex(i));
 		}
 
-		// Найти нужное значение по индексу Value
-		//int32 EnumIndex = FMath::RoundToInt(Value * (EnumValues.Num() - 1));
-		if (EnumValues.IsValidIndex(Value))
+		int32 EnumIndex = static_cast<int32>(Value);  // Используем Value как индекс напрямую
+		if (EnumValues.IsValidIndex(EnumIndex))
 		{
-			//int32 SelectedValue = EnumValues[Value];
+			int32 SelectedValue = EnumValues[EnumIndex];
 
 			// Вывод значения Enum на экран
-			FString EnumValueName = EnumClass->GetNameStringByIndex(Value);
-			if (GEngine)
-			{
-				GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, FString::Printf(TEXT("Selected Enum Value: %s"), *EnumValueName));
-			}
+			FString EnumValueName = EnumClass->GetNameStringByIndex(EnumIndex);
+			GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, FString::Printf(TEXT("Selected Enum Value: %s"), *EnumValueName));
 
-			// Динамически обновить значение енама
-			//UpdateEnumValue(EnumClass, SelectedValue);
-		}
-	}
-}
-template<typename EnumType>
-void UAstroGenerationMenu::UpdateEnumValue(const UEnum* EnumClass, int32 SelectedValue)
-{
-	if (EnumClass == StaticEnum<EnumType>())
-	{
-		EnumType& EnumVariable = *reinterpret_cast<EnumType*>(FindField<FFloatProperty>(UAstroGenerationMenu::StaticClass(), EnumClass->GetName()));
-		EnumVariable = static_cast<EnumType>(SelectedValue);
-
-		if (AGeneratedWorld)
-		{
-			EnumType AGeneratedWorld::* WorldField = *reinterpret_cast<EnumType AGeneratedWorld::**>(FindField<FFloatProperty>(AGeneratedWorld::StaticClass(), EnumClass->GetName()));
-			AGeneratedWorld->*WorldField = EnumVariable;
+			// Динамически обновить значение енама в AGeneratedWorld
+			UpdateGeneratedWorldEnumValue(EnumClass, SelectedValue);
 		}
 	}
 }
 
-
-void UAstroGenerationMenu::Update_AstroGenerationLevel(float InValue)
+void UAstroGenerationMenu::UpdateGeneratedWorldEnumValue(const UEnum* EnumClass, int32 SelectedValue)
 {
-	if (GS_GenerationLevel && GS_GenerationLevel->EnumArray.Num() > 0)
+    if (!NewGeneratedWorld || !EnumClass || !GEngine) 
+    {
+    	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("GeneratedWorld или EnumClass == nullptr"));
+        return;
+    }
+
+    // Получить имя енама и соответствующее имя свойства
+    FString EnumClassName = EnumClass->GetName();
+	if (EnumClassName.StartsWith("E"))
 	{
-		if (GS_GenerationLevel->EnumArray.IsValidIndex(InValue))
-		{
-			uint8 EnumValue = GS_GenerationLevel->EnumArray[InValue];
-			AstroGenerationLevel = static_cast<EAstroGenerationLevel>(EnumValue);
-
-
-			if (GEngine)
-			{
-				FString AstroGenerationLevelName = StaticEnum<EAstroGenerationLevel>()->GetNameStringByValue(
-					static_cast<uint8>(AstroGenerationLevel));
-				GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red,
-				                                 FString::Printf(
-					                                 TEXT("Astro Generation Level: %s"), *AstroGenerationLevelName));
-			}
-		}
+		EnumClassName = EnumClassName.RightChop(1); // Удаляем первую букву 'E'
 	}
+	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Emerald, FString::Printf(TEXT("EnumClassName: %s"), *EnumClassName));
+
+    // Используем рефлексию для поиска свойства в классе UGeneratedWorld
+    FProperty* Property = FindFProperty<FProperty>(UGeneratedWorld::StaticClass(), *EnumClassName);
+    if (Property)
+    {
+    	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Blue, TEXT("Property найден"));
+
+        // Обновляем значение свойства
+        void* ValuePtr = Property->ContainerPtrToValuePtr<void>(NewGeneratedWorld);
+        if (FByteProperty* ByteProperty = CastField<FByteProperty>(Property))
+        {
+            ByteProperty->SetPropertyValue(ValuePtr, static_cast<uint8>(SelectedValue));
+        	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Blue, TEXT("ByteProperty обновлен"));
+
+        }
+        else if (FEnumProperty* EnumProperty = CastField<FEnumProperty>(Property))
+        {
+            FNumericProperty* UnderlyingProperty = EnumProperty->GetUnderlyingProperty();
+            UnderlyingProperty->SetIntPropertyValue(ValuePtr, static_cast<int64>(SelectedValue));
+        	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Blue, TEXT("EnumProperty обновлен"));
+        }
+
+    	FString EnumValueName = EnumClass->GetNameStringByValue(SelectedValue);
+    	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Purple, FString::Printf(TEXT("Updated Enum Value: %s = %d"), *EnumClassName, SelectedValue));
+
+    	NewGeneratedWorld->PrintAllValues();
+    }
+    else
+    {
+    	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("Property не найден"));
+    }
 }

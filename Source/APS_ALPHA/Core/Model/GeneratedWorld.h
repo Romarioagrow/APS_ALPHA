@@ -1,6 +1,5 @@
 ﻿#pragma once
 
-#include "APS_ALPHA/Actors/BaseActor.h"
 #include "APS_ALPHA/Core/Enums/AstroGenerationLevel.h"
 #include "APS_ALPHA/Core/Enums/OrbitDistributionType.h"
 #include "APS_ALPHA/Core/Enums/PlanetarySystemType.h"
@@ -8,6 +7,9 @@
 #include "APS_ALPHA/Core/Enums/StarSystemType.h"
 #include "APS_ALPHA/Core/Enums/StarType.h"
 #include "GeneratedWorld.generated.h"
+
+class APlanetarySystem;
+class APlanet;
 
 enum class EHomeSystemPosition : uint8;
 enum class EStarClusterComposition : uint8;
@@ -21,18 +23,17 @@ enum class EPlanetarySystemType : uint8;
 enum class ESpectralClass : uint8;
 enum class EStellarType : uint8;
 enum class EStarSystemType : uint8;
-class APlanetarySystem;
-class APlanet;
 enum class EAstroGenerationLevel : uint8;
 
 UCLASS()
-class AGeneratedWorld : public ABaseActor
+class UGeneratedWorld : public UObject
 {
 	GENERATED_BODY()
 	
 public:
-	AGeneratedWorld();
-	
+	UGeneratedWorld();
+	void PrintAllValues() const;
+
 	UPROPERTY(EditAnywhere, Category = "Generation Params")
 	bool bGenerateFullScaledWorld{ true };
 
@@ -57,10 +58,6 @@ public:
 
 	UPROPERTY(EditAnywhere, Category = "Generation Params")
 	EAstroGenerationLevel AstroGenerationLevel{ EAstroGenerationLevel::StarCluster };
-
-	/*UPROPERTY(EditInstanceOnly, Category = "Generation Params")
-	AWorldScapeRoot* StartHomePlanet;*/
-
 
 	UPROPERTY(EditAnywhere, Category = "Galaxy")
 	EGalaxyType GalaxyType;

@@ -24,10 +24,6 @@ AAstroGenerator::AAstroGenerator()
 	PrimaryActorTick.bCanEverTick = false;
 }
 
-void AAstroGenerator::GenerateWorld(AGeneratedWorld*)
-{
-	
-}
 
 void AAstroGenerator::BeginPlay()
 {

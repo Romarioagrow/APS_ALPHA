@@ -3,13 +3,13 @@
 #include "APS_ALPHA/UI/BaseWidget.h"
 #include "AstroGenerationMenu.generated.h"
 
+class UGenerationSlider;
+class UGeneratedWorld;
 enum class EStarClusterComposition : uint8;
 enum class EStarClusterPopulation : uint8;
 enum class EStarClusterType : uint8;
 enum class EStarClusterSize : uint8;
-class AGeneratedWorld;
 enum class EAstroGenerationLevel : uint8;
-class UGenerationSlider;
 
 UCLASS()
 class UAstroGenerationMenu : public UBaseWidget
@@ -24,10 +24,9 @@ protected:
 
 	UFUNCTION()
 	void HandleGenerationSlider(float Value, const UEnum* EnumClass);
-	template <class EnumType>
-	void UpdateEnumValue(const UEnum* EnumClass, int32 SelectedValue);
-
-	//void SetupSlider(UGenerationSlider* Slider, UEnum* EnumType, FName DelegateName);
+	
+	UFUNCTION()
+	void UpdateGeneratedWorldEnumValue(const UEnum* EnumClass, int32 SelectedValue);
 
 public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astro Generation")
@@ -48,22 +47,6 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, meta = (BindWidget))
 	UGenerationSlider* GS_StarClusterComposition;
 
-private:
-	UFUNCTION()
-	void Update_AstroGenerationLevel(float InValue);
-
-	EAstroGenerationLevel AstroGenerationLevel;
-
-	UPROPERTY()
-	AGeneratedWorld* AGeneratedWorld;
-
-	EStarClusterSize StarClusterSize;
-	
-	EStarClusterType StarClusterType;
-	
-	EStarClusterPopulation StarClusterPopulation;
-	
-	EStarClusterComposition StarClusterComposition;
-
-
+	UPROPERTY(VisibleAnywhere)
+	UGeneratedWorld* NewGeneratedWorld;
 };
