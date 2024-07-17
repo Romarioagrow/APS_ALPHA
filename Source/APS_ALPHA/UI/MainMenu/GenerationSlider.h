@@ -8,7 +8,8 @@ class USlider;
 class UImage;
 enum class EBaseType : uint8;
 
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnValueChangedSignature, float, Value);
+//DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnValueChangedSignature, float, Value);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnGenerationSliderChanged, const float, Value, const UEnum*, EnumClass);
 
 UCLASS()
 class UGenerationSlider : public UBaseWidget
@@ -18,11 +19,11 @@ class UGenerationSlider : public UBaseWidget
 public:
 
 	UPROPERTY(BlueprintAssignable, Category = "Enum")
-	FOnValueChangedSignature OnGenerationSliderChanged;
+	FOnGenerationSliderChanged OnGenerationSliderChanged;
 
 	void PopulateEnumArray(const UEnum* Enum);
 	
-	void SetEnumContent(UEnum* Enum);
+	void SetEnumContent(UEnum* InEnum);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enum")
 	TArray<uint8> EnumArray;
@@ -45,6 +46,8 @@ private:
 	UPROPERTY(meta = (BindWidget))
 	UImage* IconImage;
 
-	UPROPERTY(meta = (BindWidget))
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, meta = (AllowPrivateAccess = "true", BindWidget))
 	USlider* EnumSlider;
+
+	UEnum* EnumType;
 };

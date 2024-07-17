@@ -25,9 +25,13 @@ void UGenerationSlider::PopulateEnumArray(const UEnum* Enum)
 	}
 }
 
-void UGenerationSlider::SetEnumContent(UEnum* Enum)
+void UGenerationSlider::SetEnumContent(UEnum* InEnum)
 {
-	PopulateEnumArray(Enum);
+
+	this->EnumType = InEnum;
+	
+	PopulateEnumArray(InEnum);
+	
 }
 
 void UGenerationSlider::UpdateIcon(int32 Index)
@@ -37,7 +41,7 @@ void UGenerationSlider::UpdateIcon(int32 Index)
 
 void UGenerationSlider::OnSliderValueChanged(float Value)
 {
-	OnGenerationSliderChanged.Broadcast(Value);
+	OnGenerationSliderChanged.Broadcast(Value, EnumType);
 	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Blue, FString::Printf(TEXT("Value: %f"), Value));
 }
 
