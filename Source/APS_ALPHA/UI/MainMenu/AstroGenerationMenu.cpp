@@ -2,6 +2,7 @@
 
 #include "GenerationSlider.h"
 #include "APS_ALPHA/Core/Enums/AstroGenerationLevel.h"
+#include "APS_ALPHA/Core/Enums/PlanetType.h"
 #include "APS_ALPHA/Core/Model/GeneratedWorld.h"
 
 void UAstroGenerationMenu::NativeConstruct()
@@ -10,6 +11,14 @@ void UAstroGenerationMenu::NativeConstruct()
 
 	CreateNewGeneratedWorld();
 
+	SetupSliders();
+}
+
+/*
+ * Setup required generation sliders
+ */
+void UAstroGenerationMenu::SetupSliders()
+{
 	SetupSlider(GS_GenerationLevel, StaticEnum<EAstroGenerationLevel>());
 
 	SetupSlider(GS_StarClusterSize, StaticEnum<EStarClusterSize>());
@@ -17,6 +26,24 @@ void UAstroGenerationMenu::NativeConstruct()
 	SetupSlider(GS_StarClusterType, StaticEnum<EStarClusterType>());
 
 	SetupSlider(GS_StarClusterPopulation, StaticEnum<EStarClusterPopulation>());
+
+	SetupSlider(GS_StarClusterComposition, StaticEnum<EStarClusterComposition>());
+
+	SetupSlider(GS_GalaxyType, StaticEnum<EGalaxyType>());
+
+	SetupSlider(GS_GalaxyClass, StaticEnum<EGalaxyClass>());
+
+	SetupSlider(GS_StarType, StaticEnum<EStarSystemType>());
+
+	SetupSlider(GS_StellarType, StaticEnum<EStellarType>());
+
+	SetupSlider(GS_SpectralClass, StaticEnum<ESpectralClass>());
+
+	SetupSlider(GS_PlanetType, StaticEnum<EPlanetType>());
+
+	SetupSlider(GS_SystemDistributionType, StaticEnum<EOrbitDistributionType>());
+
+	SetupSlider(GS_SystemPlanetaryType, StaticEnum<EPlanetarySystemType>());
 
 	SetupSlider(GS_StarClusterComposition, StaticEnum<EStarClusterComposition>());
 }
@@ -32,7 +59,6 @@ void UAstroGenerationMenu::SetupSlider(UGenerationSlider* Slider, UEnum* EnumTyp
 	{
 		Slider->OnGenerationSliderChanged.AddDynamic(this, &UAstroGenerationMenu::HandleGenerationSlider);
 		Slider->SetEnumContent(EnumType);
-		
 	}
 }
 
@@ -67,7 +93,6 @@ void UAstroGenerationMenu::HandleGenerationSlider(const float Value, const UEnum
 			UpdateGeneratedWorldEnumValue(EnumClass, SelectedValue);
 
 			Slider->UpdateCurrentValueText(EnumValueName);
-			
 		}
 	}
 }
@@ -119,11 +144,6 @@ void UAstroGenerationMenu::UpdateGeneratedWorldEnumValue(const UEnum* EnumClass,
 		                                 FString::Printf(
 			                                 TEXT("Updated Enum Value: %s = %d"), *EnumClassName, SelectedValue));
 
-
-		
-
-		
-		
 		NewGeneratedWorld->PrintAllValues();
 	}
 	else
