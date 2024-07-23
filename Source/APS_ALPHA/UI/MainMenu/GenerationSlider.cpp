@@ -1,6 +1,7 @@
 ﻿#include "GenerationSlider.h"
 
 #include "Components/Slider.h"
+#include "Components/TextBlock.h"
 
 void UGenerationSlider::PopulateEnumArray(const UEnum* Enum)
 {
@@ -25,13 +26,24 @@ void UGenerationSlider::PopulateEnumArray(const UEnum* Enum)
 	}
 }
 
+float UGenerationSlider::GetSliderValue()
+{
+	return EnumSlider->GetValue();
+}
+
 void UGenerationSlider::SetEnumContent(UEnum* InEnum)
 {
 
 	this->EnumType = InEnum;
 	
 	PopulateEnumArray(InEnum);
-	
+
+	OnSliderValueChanged(GetSliderValue());
+}
+
+void UGenerationSlider::UpdateCurrentValueText(const FString& InString)
+{
+	this->TextBlock_ValueText->SetText(FText::FromString(InString));
 }
 
 void UGenerationSlider::UpdateIcon(int32 Index)
@@ -41,7 +53,7 @@ void UGenerationSlider::UpdateIcon(int32 Index)
 
 void UGenerationSlider::OnSliderValueChanged(float Value)
 {
-	OnGenerationSliderChanged.Broadcast(Value, EnumType);
+	OnGenerationSliderChanged.Broadcast(Value, EnumType, this);
 	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Blue, FString::Printf(TEXT("Value: %f"), Value));
 }
 

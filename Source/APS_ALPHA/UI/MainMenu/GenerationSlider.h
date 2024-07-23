@@ -4,12 +4,12 @@
 #include "APS_ALPHA/UI/BaseWidget.h"
 #include "GenerationSlider.generated.h"
 
+class UTextBlock;
 class USlider;
 class UImage;
 enum class EBaseType : uint8;
 
-//DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnValueChangedSignature, float, Value);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnGenerationSliderChanged, const float, Value, const UEnum*, EnumClass);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FOnGenerationSliderChanged, const float, Value, const UEnum*, EnumClass, UGenerationSlider*, Slider);
 
 UCLASS()
 class UGenerationSlider : public UBaseWidget
@@ -21,9 +21,17 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Enum")
 	FOnGenerationSliderChanged OnGenerationSliderChanged;
 
+	UFUNCTION()
 	void PopulateEnumArray(const UEnum* Enum);
+
+	UFUNCTION()
+	float GetSliderValue();
 	
+	UFUNCTION()
 	void SetEnumContent(UEnum* InEnum);
+
+	UFUNCTION()
+	void UpdateCurrentValueText(const FString& InString);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enum")
 	TArray<uint8> EnumArray;
@@ -48,6 +56,9 @@ private:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, meta = (AllowPrivateAccess = "true", BindWidget))
 	USlider* EnumSlider;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, meta = (AllowPrivateAccess = "true", BindWidget))
+	UTextBlock* TextBlock_ValueText;
 
 	UEnum* EnumType;
 };
