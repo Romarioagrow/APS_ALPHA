@@ -17,10 +17,13 @@ class UAstroGenerationMenu : public UBaseWidget
 	GENERATED_BODY()
 
 protected:
+	virtual void NativeConstruct() override;
+
 	UFUNCTION()
 	void CreateNewGeneratedWorld();
-	
-	virtual void NativeConstruct() override;
+
+	UFUNCTION()
+	void SetupSliders();
 
 	UFUNCTION()
 	void SetupSlider(UGenerationSlider* Slider, UEnum* EnumType);
@@ -38,6 +41,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astro Generation")
 	TArray<EAstroGenerationLevel> EAstroGenerationLevelArray;
 
+	UPROPERTY(VisibleAnywhere)
+	UGeneratedWorld* NewGeneratedWorld;
+	
 	UPROPERTY(BlueprintReadWrite, meta = (BindWidget))
 	UGenerationSlider* GS_GenerationLevel;
 
@@ -53,6 +59,31 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, meta = (BindWidget))
 	UGenerationSlider* GS_StarClusterComposition;
 
-	UPROPERTY(VisibleAnywhere)
-	UGeneratedWorld* NewGeneratedWorld;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, meta = (BindWidget))
+	UGenerationSlider* GS_GalaxyType;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, meta = (BindWidget))
+	UGenerationSlider* GS_GalaxyClass;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, meta = (BindWidget))
+	UGenerationSlider* GS_StarType;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, meta = (BindWidget))
+	UGenerationSlider* GS_StellarType;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, meta = (BindWidget))
+	UGenerationSlider* GS_SpectralClass;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, meta = (BindWidget))
+	UGenerationSlider* GS_PlanetType;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, meta = (BindWidget))
+	UGenerationSlider* GS_PlanetAtmosphere;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, meta = (BindWidget))
+	UGenerationSlider* GS_SystemPlanetaryType;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, meta = (BindWidget))
+	UGenerationSlider* GS_SystemDistributionType;
+	
 };
