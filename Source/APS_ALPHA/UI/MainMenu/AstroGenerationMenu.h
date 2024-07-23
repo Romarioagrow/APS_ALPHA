@@ -17,14 +17,20 @@ class UAstroGenerationMenu : public UBaseWidget
 	GENERATED_BODY()
 
 protected:
+	UFUNCTION()
+	void CreateNewGeneratedWorld();
+	
 	virtual void NativeConstruct() override;
 
 	UFUNCTION()
 	void SetupSlider(UGenerationSlider* Slider, UEnum* EnumType);
 
 	UFUNCTION()
-	void HandleGenerationSlider(float Value, const UEnum* EnumClass);
-	
+	void HandleGenerationSlider(float Value, const UEnum* EnumClass, UGenerationSlider* Slider);
+
+	UFUNCTION()
+	FString HandleEnumClassName(const UEnum* EnumClass);
+
 	UFUNCTION()
 	void UpdateGeneratedWorldEnumValue(const UEnum* EnumClass, int32 SelectedValue);
 
