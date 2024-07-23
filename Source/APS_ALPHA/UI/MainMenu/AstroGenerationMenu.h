@@ -3,6 +3,7 @@
 #include "APS_ALPHA/UI/BaseWidget.h"
 #include "AstroGenerationMenu.generated.h"
 
+class UGenerationInput;
 class UGenerationSlider;
 class UGeneratedWorld;
 enum class EStarClusterComposition : uint8;
@@ -18,6 +19,9 @@ class UAstroGenerationMenu : public UBaseWidget
 
 protected:
 	virtual void NativeConstruct() override;
+	
+	UFUNCTION()
+	void SetupInputs();
 
 	UFUNCTION()
 	void CreateNewGeneratedWorld();
@@ -85,5 +89,47 @@ public:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, meta = (BindWidget))
 	UGenerationSlider* GS_SystemDistributionType;
-	
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, meta = (BindWidget))
+	UGenerationInput* GI_GalaxySize;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, meta = (BindWidget))
+	UGenerationInput* GI_GalaxyStarCount;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, meta = (BindWidget))
+	UGenerationInput* GI_GalaxyStarDensity;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, meta = (BindWidget))
+	UGenerationInput* GI_PlanetRadius;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, meta = (BindWidget))
+	UGenerationInput* GI_MoonsAmount;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, meta = (BindWidget))
+	UGenerationInput* GI_PlanetsAmount;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, meta = (BindWidget))
+	UGenerationInput* GI_StartPlanetIndex;
+
+private:
+	UFUNCTION()
+	void OnGalaxySizeChanged(const float InValue);
+
+	UFUNCTION()
+	void OnGalaxyStarCountChanged(const float InValue);
+
+	UFUNCTION()
+	void OnGalaxyStarDensityChanged(const float InValue);
+
+	UFUNCTION()
+	void OnPlanetRadiusChanged(const float InValue);
+
+	UFUNCTION()
+	void OnMoonsAmountChanged(const float InValue);
+
+	UFUNCTION()
+	void OnPlanetsAmountChanged(const float InValue);
+
+	UFUNCTION()
+	void OnStartPlanetIndexChanged(const float InValue);
 };

@@ -999,16 +999,16 @@ void AAstroGenerator::GenerateCustomHomeSystem()
 		int AmountOfStars{0};
 		switch (HomeSystemStarType)
 		{
-		case EStarSystemType::SingleStar:
+		case EStarType::SingleStar:
 			AmountOfStars = 1;
 			break;
-		case EStarSystemType::DoubleStar:
+		case EStarType::DoubleStar:
 			AmountOfStars = 2;
 			break;
-		case EStarSystemType::TripleStar:
+		case EStarType::TripleStar:
 			AmountOfStars = 3;
 			break;
-		case EStarSystemType::MultipleStar:
+		case EStarType::MultipleStar:
 			AmountOfStars = FMath::RandRange(4, 6);
 			break;
 		default:
