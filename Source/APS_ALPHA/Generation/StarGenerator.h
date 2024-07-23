@@ -6,7 +6,7 @@
 #include "APS_ALPHA/Core/Enums/StarClusterComposition.h"
 #include "APS_ALPHA/Core/Enums/StarClusterPopulation.h"
 #include "APS_ALPHA/Core/Enums/StarSpectralClass.h"
-#include "APS_ALPHA/Core/Enums/StarType.h"
+#include "APS_ALPHA/Core/Enums/StellarType.h"
 #include "StarGenerator.generated.h"
 
 class AStar;

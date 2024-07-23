@@ -8,7 +8,7 @@
 #include "CoreMinimal.h"
 #include "APS_ALPHA/Core/Enums/AstroGenerationLevel.h"
 #include "APS_ALPHA/Core/Enums/PlanetarySystemType.h"
-#include "APS_ALPHA/Core/Enums/StarSystemType.h"
+#include "APS_ALPHA/Core/Enums/StarType.h"
 #include "GameFramework/Actor.h"
 #include "AstroGenerator.generated.h"
 
@@ -145,7 +145,7 @@ public:
 	int StartPlanetNumber{ 1 };
 
 	UPROPERTY(EditAnywhere, Category = "Home System", meta = (EditCondition = "!bRandomHomeSystem"))
-	EStarSystemType HomeSystemStarType{ EStarSystemType::SingleStar };
+	EStarType HomeSystemStarType{ EStarType::SingleStar };
 
 	UPROPERTY(EditAnywhere, Category = "Home System", meta = (EditCondition = "!bRandomHomeSystem"))
 	EStellarType HomeStarStellarType{ EStellarType::MainSequence };

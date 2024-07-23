@@ -8,7 +8,7 @@
 #include "APS_ALPHA/Core/Enums/StarClusterSize.h"
 #include "APS_ALPHA/Core/Enums/StarClusterType.h"
 
-UGeneratedWorld::UGeneratedWorld()
+UGeneratedWorld::UGeneratedWorld(): GalaxyClass()
 {
 	bGenerateFullScaledWorld = true;
 	bGenerateHomeSystem = false;
@@ -18,18 +18,18 @@ UGeneratedWorld::UGeneratedWorld()
 	bRandomHomeStar = false;
 	bRandomStartPlanetNumber = true;
 	AstroGenerationLevel = EAstroGenerationLevel::StarCluster;
-	GalaxyType = EGalaxyType::Elliptical;  
-	GalaxyGlass = EGalaxyClass::E0;  
-	StarClusterSize = EStarClusterSize::Giant;  
-	StarClusterType = EStarClusterType::Nebula;  
-	StarClusterPopulation = EStarClusterPopulation::Dwarfs;  
-	StarClusterComposition = EStarClusterComposition::Unknown;  
-	HomeSystemStarType = EStarSystemType::SingleStar;
-	HomeStarStellarType = EStellarType::MainSequence;
-	HomeStarSpectralClass = ESpectralClass::G;
-	HomeSystemPlanetaryType = EPlanetarySystemType::MultiPlanetSystem;
-	HomeSystemOrbitDistributionType = EOrbitDistributionType::Uniform;
-	HomeSystemPosition = EHomeSystemPosition::DirectPosition;  
+	GalaxyType = EGalaxyType::Elliptical;
+	GalaxyClass = EGalaxyClass::E0;
+	StarClusterSize = EStarClusterSize::Giant;
+	StarClusterType = EStarClusterType::Nebula;
+	StarClusterPopulation = EStarClusterPopulation::Dwarfs;
+	StarClusterComposition = EStarClusterComposition::Unknown;
+	StarType = EStarType::SingleStar;
+	StellarType = EStellarType::MainSequence;
+	SpectralClass = ESpectralClass::G;
+	PlanetarySystemType = EPlanetarySystemType::MultiPlanetSystem;
+	OrbitDistributionType = EOrbitDistributionType::Uniform;
+	HomeSystemPosition = EHomeSystemPosition::DirectPosition;
 	GalaxySize = 250;
 	GalaxyStarCount = 100000;
 	StartPlanetNumber = 0;

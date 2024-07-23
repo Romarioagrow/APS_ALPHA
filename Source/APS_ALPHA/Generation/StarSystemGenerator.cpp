@@ -1,6 +1,6 @@
 #include "StarSystemGenerator.h"
 #include "APS_ALPHA/Actors/Astro/StarSystem.h"
-#include "APS_ALPHA/Core/Enums/StarSystemType.h"
+#include "APS_ALPHA/Core/Enums/StarType.h"
 #include "APS_ALPHA/Core/Structs/StarSystemGenerationModel.h"
 
 UStarSystemGenerator::UStarSystemGenerator()
@@ -33,22 +33,22 @@ void UStarSystemGenerator::GenerateRandomStarSystemModel(TSharedPtr<FStarSystemM
 	if (RandomValue < SingleStarWeight)
 		if (RandomValue < SingleStarWeight)
 		{
-			StarSystemModel->StarSystemType = EStarSystemType::SingleStar;
+			StarSystemModel->StarSystemType = EStarType::SingleStar;
 			StarSystemModel->AmountOfStars = 1;
 		}
 		else if (RandomValue < SingleStarWeight + DoubleStarWeight)
 		{
-			StarSystemModel->StarSystemType = EStarSystemType::DoubleStar;
+			StarSystemModel->StarSystemType = EStarType::DoubleStar;
 			StarSystemModel->AmountOfStars = 2;
 		}
 		else if (RandomValue < SingleStarWeight + DoubleStarWeight + TripleStarWeight)
 		{
-			StarSystemModel->StarSystemType = EStarSystemType::TripleStar;
+			StarSystemModel->StarSystemType = EStarType::TripleStar;
 			StarSystemModel->AmountOfStars = 3;
 		}
 		else
 		{
-			StarSystemModel->StarSystemType = EStarSystemType::MultipleStar;
+			StarSystemModel->StarSystemType = EStarType::MultipleStar;
 			StarSystemModel->AmountOfStars = FMath::RandRange(4, 6);
 		}
 

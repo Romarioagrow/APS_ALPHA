@@ -3,11 +3,13 @@
 #include "APS_ALPHA/Core/Enums/AstroGenerationLevel.h"
 #include "APS_ALPHA/Core/Enums/OrbitDistributionType.h"
 #include "APS_ALPHA/Core/Enums/PlanetarySystemType.h"
+#include "APS_ALPHA/Core/Enums/PlanetType.h"
 #include "APS_ALPHA/Core/Enums/StarSpectralClass.h"
-#include "APS_ALPHA/Core/Enums/StarSystemType.h"
 #include "APS_ALPHA/Core/Enums/StarType.h"
+#include "APS_ALPHA/Core/Enums/StellarType.h"
 #include "GeneratedWorld.generated.h"
 
+enum class EPlanetType : uint8;
 class APlanetarySystem;
 class APlanet;
 
@@ -22,7 +24,7 @@ enum class EOrbitDistributionType : uint8;
 enum class EPlanetarySystemType : uint8;
 enum class ESpectralClass : uint8;
 enum class EStellarType : uint8;
-enum class EStarSystemType : uint8;
+enum class EStarType : uint8;
 enum class EAstroGenerationLevel : uint8;
 
 UCLASS()
@@ -32,6 +34,7 @@ class UGeneratedWorld : public UObject
 	
 public:
 	UGeneratedWorld();
+	
 	void PrintAllValues() const;
 
 	UPROPERTY(EditAnywhere, Category = "Generation Params")
@@ -63,7 +66,7 @@ public:
 	EGalaxyType GalaxyType;
 
 	UPROPERTY(EditAnywhere, Category = "Galaxy")
-	EGalaxyClass GalaxyGlass;
+	EGalaxyClass GalaxyClass;
 
 	UPROPERTY(EditAnywhere, Category = "Star Cluster", meta = (EditCondition = "!bGenerateRandomCluster"))
 	EStarClusterSize StarClusterSize;
@@ -78,19 +81,19 @@ public:
 	EStarClusterComposition StarClusterComposition;
 
 	UPROPERTY(EditAnywhere, Category = "Home System", meta = (EditCondition = "!bRandomHomeSystem"))
-	EStarSystemType HomeSystemStarType{ EStarSystemType::SingleStar };
+	EStarType StarType{ EStarType::SingleStar };
 
 	UPROPERTY(EditAnywhere, Category = "Home System", meta = (EditCondition = "!bRandomHomeSystem"))
-	EStellarType HomeStarStellarType{ EStellarType::MainSequence };
+	EStellarType StellarType{ EStellarType::MainSequence };
 
 	UPROPERTY(EditAnywhere, Category = "Home System", meta = (EditCondition = "!bRandomHomeSystem"))
-	ESpectralClass HomeStarSpectralClass{ ESpectralClass::G };
+	ESpectralClass SpectralClass{ ESpectralClass::G };
 
 	UPROPERTY(EditAnywhere, Category = "Home System", meta = (EditCondition = "!bRandomHomeSystem"))
-	EPlanetarySystemType HomeSystemPlanetaryType{ EPlanetarySystemType::MultiPlanetSystem };
+	EPlanetarySystemType PlanetarySystemType{ EPlanetarySystemType::MultiPlanetSystem };
 
 	UPROPERTY(EditAnywhere, Category = "Home System", meta = (EditCondition = "!bRandomHomeSystem"))
-	EOrbitDistributionType HomeSystemOrbitDistributionType{ EOrbitDistributionType::Uniform };
+	EOrbitDistributionType OrbitDistributionType{ EOrbitDistributionType::Uniform };
 
 	UPROPERTY(VisibleAnywhere, Category = "Home System")
 	EHomeSystemPosition HomeSystemPosition;
@@ -108,13 +111,26 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Home System", meta = (EditCondition = "!bRandomHomeSystem"))
 	int PlanetsAmount{ 0 };
 
+	UPROPERTY(EditAnywhere, Category = "Home System", meta = (EditCondition = "!bRandomHomeSystem"))
+	int MoonsAmount{ 0 };
+
+	UPROPERTY(EditAnywhere, Category = "Home System", meta = (EditCondition = "!bRandomHomeSystem"))
+	int StartPlanetIndex{ 0 };
+
 	UPROPERTY(EditAnywhere, Category = "Galaxy")
 	double GalaxyStarDensity{ 10.0 };
-	
+
+	UPROPERTY(EditAnywhere, Category = "Galaxy")
+	double PlanetRadius{ 6750.0 };
+		
 	
 	UPROPERTY()
 	APlanetarySystem* HomePlanetarySystem;
 	
 	UPROPERTY(EditInstanceOnly, Category = "Generation Params")
 	APlanet* HomePlanet;
+
+	UPROPERTY(EditAnywhere, Category = "Home System", meta = (EditCondition = "!bRandomHomeSystem"))
+	EPlanetType PlanetType{ EPlanetType::Frozen };
+	
 };

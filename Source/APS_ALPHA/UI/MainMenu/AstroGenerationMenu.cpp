@@ -1,9 +1,11 @@
 ﻿#include "AstroGenerationMenu.h"
 
+#include "GenerationInput.h"
 #include "GenerationSlider.h"
 #include "APS_ALPHA/Core/Enums/AstroGenerationLevel.h"
 #include "APS_ALPHA/Core/Enums/PlanetType.h"
 #include "APS_ALPHA/Core/Model/GeneratedWorld.h"
+#include "Components/SpinBox.h"
 
 void UAstroGenerationMenu::NativeConstruct()
 {
@@ -12,6 +14,8 @@ void UAstroGenerationMenu::NativeConstruct()
 	CreateNewGeneratedWorld();
 
 	SetupSliders();
+
+	SetupInputs();
 }
 
 /*
@@ -33,7 +37,7 @@ void UAstroGenerationMenu::SetupSliders()
 
 	SetupSlider(GS_GalaxyClass, StaticEnum<EGalaxyClass>());
 
-	SetupSlider(GS_StarType, StaticEnum<EStarSystemType>());
+	SetupSlider(GS_StarType, StaticEnum<EStarType>());
 
 	SetupSlider(GS_StellarType, StaticEnum<EStellarType>());
 
@@ -46,6 +50,79 @@ void UAstroGenerationMenu::SetupSliders()
 	SetupSlider(GS_SystemPlanetaryType, StaticEnum<EPlanetarySystemType>());
 
 	SetupSlider(GS_StarClusterComposition, StaticEnum<EStarClusterComposition>());
+}
+
+void UAstroGenerationMenu::SetupInputs()
+{
+	if (GI_GalaxySize && GI_GalaxySize->SpinBox_Value)
+	{
+		GI_GalaxySize->SpinBox_Value->OnValueChanged.AddDynamic(this, &UAstroGenerationMenu::OnGalaxySizeChanged);
+	}
+
+	if (GI_GalaxyStarCount && GI_GalaxyStarCount->SpinBox_Value)
+	{
+		GI_GalaxyStarCount->SpinBox_Value->OnValueChanged.AddDynamic(this, &UAstroGenerationMenu::OnGalaxyStarCountChanged);
+	}
+
+	if (GI_GalaxyStarDensity && GI_GalaxyStarDensity->SpinBox_Value)
+	{
+		GI_GalaxyStarDensity->SpinBox_Value->OnValueChanged.AddDynamic(this, &UAstroGenerationMenu::OnGalaxyStarDensityChanged);
+	}
+
+	if (GI_PlanetRadius && GI_PlanetRadius->SpinBox_Value)
+	{
+		GI_PlanetRadius->SpinBox_Value->OnValueChanged.AddDynamic(this, &UAstroGenerationMenu::OnPlanetRadiusChanged);
+	}
+
+	if (GI_MoonsAmount && GI_MoonsAmount->SpinBox_Value)
+	{
+		GI_MoonsAmount->SpinBox_Value->OnValueChanged.AddDynamic(this, &UAstroGenerationMenu::OnMoonsAmountChanged);
+	}
+
+	if (GI_PlanetsAmount && GI_PlanetsAmount->SpinBox_Value)
+	{
+		GI_PlanetsAmount->SpinBox_Value->OnValueChanged.AddDynamic(this, &UAstroGenerationMenu::OnPlanetsAmountChanged);
+	}
+
+	if (GI_StartPlanetIndex && GI_StartPlanetIndex->SpinBox_Value)
+	{
+		GI_StartPlanetIndex->SpinBox_Value->OnValueChanged.AddDynamic(this, &UAstroGenerationMenu::OnStartPlanetIndexChanged);
+	}
+}
+
+void UAstroGenerationMenu::OnGalaxySizeChanged(const float InValue) 
+{
+	NewGeneratedWorld->GalaxySize = static_cast<int>(InValue);
+}
+
+void UAstroGenerationMenu::OnGalaxyStarCountChanged(const float InValue) 
+{
+	NewGeneratedWorld->GalaxyStarCount = static_cast<int>(InValue);
+}
+
+void UAstroGenerationMenu::OnGalaxyStarDensityChanged(const float InValue) 
+{
+	NewGeneratedWorld->GalaxyStarDensity = static_cast<double>(InValue);
+}
+
+void UAstroGenerationMenu::OnPlanetRadiusChanged(const float InValue) 
+{
+	NewGeneratedWorld->PlanetRadius = static_cast<int>(InValue);
+}
+
+void UAstroGenerationMenu::OnMoonsAmountChanged(const float InValue) 
+{
+	NewGeneratedWorld->GalaxyStarDensity = static_cast<double>(InValue);
+}
+
+void UAstroGenerationMenu::OnPlanetsAmountChanged(const float InValue) 
+{
+	NewGeneratedWorld->MoonsAmount = static_cast<double>(InValue);
+}
+
+void UAstroGenerationMenu::OnStartPlanetIndexChanged(const float InValue) 
+{
+	NewGeneratedWorld->StartPlanetIndex = static_cast<double>(InValue);
 }
 
 void UAstroGenerationMenu::CreateNewGeneratedWorld()

@@ -19,7 +19,7 @@ void AStarSystem::AddNewStar(AStar* NewStar)
 	Stars.Add(NewStar);
 }
 
-void AStarSystem::SetStarSystemType(EStarSystemType Type)
+void AStarSystem::SetStarSystemType(EStarType Type)
 {
 	this->StarSystemType = Type;
 }

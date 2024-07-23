@@ -5,7 +5,7 @@
 #include "CelestialSystem.h"
 #include "StarSystem.generated.h"
 
-enum class EStarSystemType : uint8;
+enum class EStarType : uint8;
 
 UCLASS()
 class APS_ALPHA_API AStarSystem : public ACelestialSystem, public INavigatableBody
@@ -22,7 +22,7 @@ public:
 
 	void AddNewStar(AStar* MewStar);
 
-	void SetStarSystemType(EStarSystemType Type);
+	void SetStarSystemType(EStarType Type);
 
 	UPROPERTY(VisibleAnywhere, Category = "Star System")
 	double StarSystemRadius;
@@ -38,7 +38,7 @@ private:
 	int StarsAmount;
 
 	UPROPERTY(VisibleAnywhere, Category = "Star System")
-	EStarSystemType StarSystemType;
+	EStarType StarSystemType;
 
 	UPROPERTY()
 	TArray<AStar*> Stars;
