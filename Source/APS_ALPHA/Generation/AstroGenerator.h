@@ -32,8 +32,18 @@ class APS_ALPHA_API AAstroGenerator : public AActor
 public:
 	AAstroGenerator();
 
+	void SetGeneratedWorld(UGeneratedWorld* InGeneratedWorld);
 
+	UPROPERTY(EditAnywhere, Category = "Generation Params")
+	bool bAutoGeneration{ false };
+
+	UFUNCTION()
+	void DisplayNewGeneratedWorld();
+	
 protected:
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "World Generation")
+	UGeneratedWorld* NewGeneratedWorld;
+
 	void GenerateHomeStarSystem();
 
 	virtual void BeginPlay() override;

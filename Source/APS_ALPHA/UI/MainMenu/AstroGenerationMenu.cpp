@@ -4,9 +4,13 @@
 #include "GenerationSlider.h"
 #include "APS_ALPHA/Core/Enums/AstroGenerationLevel.h"
 #include "APS_ALPHA/Core/Enums/PlanetType.h"
+#include "APS_ALPHA/Core/Instances/MainGameplayInstance.h"
 #include "APS_ALPHA/Core/Model/GeneratedWorld.h"
+#include "APS_ALPHA/Generation/AstroGenerator.h"
 #include "Components/SpinBox.h"
 #include "Kismet/GameplayStatics.h"
+
+class UMainGameplayInstance;
 
 void UAstroGenerationMenu::NativeConstruct()
 {
@@ -142,10 +146,17 @@ void UAstroGenerationMenu::OnStartPlanetIndexChanged(const float InValue)
 void UAstroGenerationMenu::GenerateWorldByModel()
 {
 	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Yellow, FString::Printf(TEXT("GenerateWorldByModel")));
-	NewGeneratedWorld->PrintAllValues();
 	
 	if (UWorld* World = GetWorld())
 	{
+
+		// Saving NewGeneratedWorld in GameInstance for transfer to new level
+		if (UGameInstance* GameInstance = World->GetGameInstance())
+		{
+			GameInstance->GetSubsystem<UMainGameplayInstance>()->NewGeneratedWorld = NewGeneratedWorld;
+		}
+
+		// Loading a new level
 		UGameplayStatics::OpenLevel(World, FName(*LevelName));
 	}
 }
@@ -175,7 +186,7 @@ void UAstroGenerationMenu::HandleGenerationSlider(const float Value, const UEnum
 		GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Yellow,
 		                                 FString::Printf(TEXT("Enum Class: %s"), *EnumClassName));
 
-		// Получить все значения EnumClass и поместить их в массив
+		// Get all EnumClass values and put them in an array
 		TArray<int32> EnumValues;
 		for (int32 i = 0; i < EnumClass->NumEnums() - 1; ++i)
 		{
@@ -191,7 +202,7 @@ void UAstroGenerationMenu::HandleGenerationSlider(const float Value, const UEnum
 			GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green,
 			                                 FString::Printf(TEXT("Selected Enum Value: %s"), *EnumValueName));
 
-			// Динамически обновить значение енама в AGeneratedWorld
+			/// Dynamically update the enam value in AGEneratedWorld
 			UpdateGeneratedWorldEnumValue(EnumClass, SelectedValue);
 
 			Slider->UpdateCurrentValueText(EnumValueName);
@@ -204,7 +215,8 @@ FString UAstroGenerationMenu::HandleEnumClassName(const UEnum* EnumClass)
 	FString LEnumClassName = EnumClass->GetName();
 	if (LEnumClassName.StartsWith("E"))
 	{
-		LEnumClassName = LEnumClassName.RightChop(1); // Удаляем первую букву 'E'
+		// Remove the first letter 'E'
+		LEnumClassName = LEnumClassName.RightChop(1); 
 	}
 	return LEnumClassName;
 }
@@ -217,17 +229,17 @@ void UAstroGenerationMenu::UpdateGeneratedWorldEnumValue(const UEnum* EnumClass,
 		return;
 	}
 
-	// Получить имя енама и соответствующее имя свойства
+	// Get the name of the enam and the corresponding property name
 	const FString EnumClassName = HandleEnumClassName(EnumClass);
 	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Emerald,
 	                                 FString::Printf(TEXT("EnumClassName: %s"), *EnumClassName));
 
-	// Используем рефлексию для поиска свойства в классе UGeneratedWorld
+	// Use reflection to find a property in the UGeneratedWorld class
 	if (FProperty* Property = FindFProperty<FProperty>(UGeneratedWorld::StaticClass(), *EnumClassName))
 	{
 		GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Blue, TEXT("Property найден"));
 
-		// Обновляем значение свойства
+		// Update the property value
 		void* ValuePtr = Property->ContainerPtrToValuePtr<void>(NewGeneratedWorld);
 		if (FByteProperty* ByteProperty = CastField<FByteProperty>(Property))
 		{
