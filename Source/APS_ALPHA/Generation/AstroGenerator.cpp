@@ -18,10 +18,21 @@
 #include "APS_ALPHA/Core/Structs/StarGenerationModel.h"
 #include "APS_ALPHA/Core/Structs/StarSystemGenerationModel.h"
 #include "APS_ALPHA/Pawns/Spaceships/Spaceship.h"
+#include "APS_ALPHA/Core/Model/GeneratedWorld.h"
 
 AAstroGenerator::AAstroGenerator()
 {
 	PrimaryActorTick.bCanEverTick = false;
+}
+
+void AAstroGenerator::SetGeneratedWorld(UGeneratedWorld* InGeneratedWorld)
+{
+	this->NewGeneratedWorld = InGeneratedWorld;
+}
+
+void AAstroGenerator::DisplayNewGeneratedWorld()
+{
+	this->NewGeneratedWorld->PrintAllValues();
 }
 
 
@@ -29,9 +40,12 @@ void AAstroGenerator::BeginPlay()
 {
 	Super::BeginPlay();
 
-	InitAstroGenerators();
+	if (bAutoGeneration)
+	{
+		InitAstroGenerators();
 
-	InitGenerationLevel();
+		InitGenerationLevel();
+	}
 }
 
 void AAstroGenerator::GenerateTEST_FULLSCALED()

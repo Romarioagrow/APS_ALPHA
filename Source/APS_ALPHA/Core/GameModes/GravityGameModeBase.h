@@ -15,6 +15,7 @@ class APS_ALPHA_API AGravityGameModeBase : public AGameModeBase
 	GENERATED_BODY()
 
 public:
-
 	AGravityGameModeBase();
+
+	virtual void BeginPlay() override;
 };
