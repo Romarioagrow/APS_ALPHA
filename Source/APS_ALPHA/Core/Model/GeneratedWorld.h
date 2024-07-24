@@ -105,9 +105,6 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Galaxy")
 	int GalaxyStarCount{ 100000 };
 
-	UPROPERTY(EditAnywhere, Category = "Home System", meta = (EditCondition = "!bRandomStartPlanetNumber"))
-	int StartPlanetNumber{ 0 };
-
 	UPROPERTY(EditAnywhere, Category = "Home System", meta = (EditCondition = "!bRandomHomeSystem"))
 	int PlanetsAmount{ 0 };
 

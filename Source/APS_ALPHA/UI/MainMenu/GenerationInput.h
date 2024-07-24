@@ -13,4 +13,7 @@ class UGenerationInput : public UBaseWidget
 public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, meta = (BindWidget))
 	USpinBox* SpinBox_Value;
+
+	UFUNCTION()
+	float GetCurrentValue();
 };
