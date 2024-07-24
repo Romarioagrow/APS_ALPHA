@@ -41,6 +41,9 @@ protected:
 	UFUNCTION()
 	void UpdateGeneratedWorldEnumValue(const UEnum* EnumClass, int32 SelectedValue);
 
+	UFUNCTION(BlueprintCallable, Category = "World Generation")
+	void GenerateWorldByModel();
+
 public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astro Generation")
 	TArray<EAstroGenerationLevel> EAstroGenerationLevelArray;
@@ -112,6 +115,8 @@ public:
 	UGenerationInput* GI_StartPlanetIndex;
 
 private:
+	const FString LevelName = TEXT("L_WorldGeneration");
+	
 	UFUNCTION()
 	void OnGalaxySizeChanged(const float InValue);
 

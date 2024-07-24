@@ -6,6 +6,7 @@
 #include "APS_ALPHA/Core/Enums/PlanetType.h"
 #include "APS_ALPHA/Core/Model/GeneratedWorld.h"
 #include "Components/SpinBox.h"
+#include "Kismet/GameplayStatics.h"
 
 void UAstroGenerationMenu::NativeConstruct()
 {
@@ -57,36 +58,49 @@ void UAstroGenerationMenu::SetupInputs()
 	if (GI_GalaxySize && GI_GalaxySize->SpinBox_Value)
 	{
 		GI_GalaxySize->SpinBox_Value->OnValueChanged.AddDynamic(this, &UAstroGenerationMenu::OnGalaxySizeChanged);
+		OnGalaxySizeChanged(GI_GalaxySize->GetCurrentValue());
 	}
 
 	if (GI_GalaxyStarCount && GI_GalaxyStarCount->SpinBox_Value)
 	{
 		GI_GalaxyStarCount->SpinBox_Value->OnValueChanged.AddDynamic(this, &UAstroGenerationMenu::OnGalaxyStarCountChanged);
+		OnGalaxyStarCountChanged(GI_GalaxyStarCount->GetCurrentValue());
+
 	}
 
 	if (GI_GalaxyStarDensity && GI_GalaxyStarDensity->SpinBox_Value)
 	{
 		GI_GalaxyStarDensity->SpinBox_Value->OnValueChanged.AddDynamic(this, &UAstroGenerationMenu::OnGalaxyStarDensityChanged);
+		OnGalaxyStarDensityChanged(GI_GalaxyStarDensity->GetCurrentValue());
+
 	}
 
 	if (GI_PlanetRadius && GI_PlanetRadius->SpinBox_Value)
 	{
 		GI_PlanetRadius->SpinBox_Value->OnValueChanged.AddDynamic(this, &UAstroGenerationMenu::OnPlanetRadiusChanged);
+		OnPlanetRadiusChanged(GI_PlanetRadius->GetCurrentValue());
+
 	}
 
 	if (GI_MoonsAmount && GI_MoonsAmount->SpinBox_Value)
 	{
 		GI_MoonsAmount->SpinBox_Value->OnValueChanged.AddDynamic(this, &UAstroGenerationMenu::OnMoonsAmountChanged);
+		OnMoonsAmountChanged(GI_MoonsAmount->GetCurrentValue());
+
 	}
 
 	if (GI_PlanetsAmount && GI_PlanetsAmount->SpinBox_Value)
 	{
 		GI_PlanetsAmount->SpinBox_Value->OnValueChanged.AddDynamic(this, &UAstroGenerationMenu::OnPlanetsAmountChanged);
+		OnPlanetsAmountChanged(GI_PlanetsAmount->GetCurrentValue());
+
 	}
 
 	if (GI_StartPlanetIndex && GI_StartPlanetIndex->SpinBox_Value)
 	{
 		GI_StartPlanetIndex->SpinBox_Value->OnValueChanged.AddDynamic(this, &UAstroGenerationMenu::OnStartPlanetIndexChanged);
+		OnStartPlanetIndexChanged(GI_StartPlanetIndex->GetCurrentValue());
+
 	}
 }
 
@@ -112,17 +126,28 @@ void UAstroGenerationMenu::OnPlanetRadiusChanged(const float InValue)
 
 void UAstroGenerationMenu::OnMoonsAmountChanged(const float InValue) 
 {
-	NewGeneratedWorld->GalaxyStarDensity = static_cast<double>(InValue);
+	NewGeneratedWorld->MoonsAmount = static_cast<double>(InValue);
 }
 
 void UAstroGenerationMenu::OnPlanetsAmountChanged(const float InValue) 
 {
-	NewGeneratedWorld->MoonsAmount = static_cast<double>(InValue);
+	NewGeneratedWorld->PlanetsAmount = static_cast<double>(InValue);
 }
 
 void UAstroGenerationMenu::OnStartPlanetIndexChanged(const float InValue) 
 {
 	NewGeneratedWorld->StartPlanetIndex = static_cast<double>(InValue);
+}
+
+void UAstroGenerationMenu::GenerateWorldByModel()
+{
+	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Yellow, FString::Printf(TEXT("GenerateWorldByModel")));
+	NewGeneratedWorld->PrintAllValues();
+	
+	if (UWorld* World = GetWorld())
+	{
+		UGameplayStatics::OpenLevel(World, FName(*LevelName));
+	}
 }
 
 void UAstroGenerationMenu::CreateNewGeneratedWorld()

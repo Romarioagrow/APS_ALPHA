@@ -32,7 +32,6 @@ UGeneratedWorld::UGeneratedWorld(): GalaxyClass()
 	HomeSystemPosition = EHomeSystemPosition::DirectPosition;
 	GalaxySize = 250;
 	GalaxyStarCount = 100000;
-	StartPlanetNumber = 0;
 	PlanetsAmount = 0;
 	GalaxyStarDensity = 10.0;
 	HomePlanetarySystem = nullptr;
