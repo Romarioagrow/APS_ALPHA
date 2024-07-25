@@ -8,23 +8,22 @@ public class APS_ALPHA : ModuleRules
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 	
-		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore"
+		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "UMG"
 			, "WorldScapeCore"
 			, "WorldScapeCommon"
 			, "WorldScapeNoise"
 			, "WorldScapeVolume"
 			, "WorldScapeFoliages"
-			//, "WorldScapeEditor"
 			, "ProceduralMeshComponent" 
 			, "AtmoScape"
-        });
+		});
 
 		if (Target.bBuildEditor)
 		{
 			PublicDependencyModuleNames.Add("WorldScapeEditor");
 		}
 		
-        PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });
+		PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });
 
 		// Uncomment if you are using Slate UI
 		// PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });
