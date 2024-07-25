@@ -39,6 +39,9 @@ public:
 
 	UFUNCTION()
 	void DisplayNewGeneratedWorld();
+
+	UFUNCTION()
+	void GenerateWorldByModel();
 	
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "World Generation")
@@ -276,17 +279,23 @@ public:
 	TSubclassOf<class APlanet> BP_PlanetClass;
 
 	UPROPERTY(EditAnywhere, Category = "AstroObject BP")
-	TSubclassOf<class APlanetOrbit> BP_PlanetOrbit;
+	TSubclassOf<class APlanetOrbit> BP_PlanetOrbitClass;
 
 	UPROPERTY(EditAnywhere, Category = "AstroObject BP")
 	TSubclassOf<class AMoon> BP_MoonClass;
 
 	UPROPERTY(EditAnywhere, Category = "AstroObject BP")
-	TSubclassOf<class AAstroAnchor> BP_AstroAnchor;
+	TSubclassOf<class AAstroAnchor> BP_AstroAnchorClass;
 
 	EStarClusterType GetRandomClusterType();
 
 	int GetRandomValueFromStarAmountRange(EStarClusterType ClusterType);
 
 	void GenerateStarCluster();
+	
+	void InitializeAstroClasses(TSubclassOf<AGalaxy> GalaxyClass, TSubclassOf<AStarCluster> StarClusterClass,
+	                            TSubclassOf<APlanetarySystem> PlanetarySystemClass,
+	                            TSubclassOf<AStarSystem> StarSystemClass, TSubclassOf<AStar> StarClass,
+	                            TSubclassOf<APlanet> PlanetClass, TSubclassOf<APlanetOrbit> PlanetOrbitClass,
+	                            TSubclassOf<AMoon> MoonClass, TSubclassOf<AAstroAnchor> AstroAnchorClass);
 };
