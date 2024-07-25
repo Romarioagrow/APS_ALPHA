@@ -8,10 +8,15 @@
 #include "CoreMinimal.h"
 #include "APS_ALPHA/Core/Enums/AstroGenerationLevel.h"
 #include "APS_ALPHA/Core/Enums/PlanetarySystemType.h"
-#include "APS_ALPHA/Core/Enums/StarSystemType.h"
+#include "APS_ALPHA/Core/Enums/StarType.h"
 #include "GameFramework/Actor.h"
 #include "AstroGenerator.generated.h"
 
+class AControlledPawn;
+class AAstroAnchor;
+class AMoon;
+class APlanetOrbit;
+class UGeneratedWorld;
 class APlanet;
 class ASpaceShipyard;
 class ASpaceship;
@@ -21,8 +26,6 @@ enum class ECharSpawnPlace : uint8;
 enum class EHomeSystemPosition : uint8;
 enum class EOrbitHeight : uint8;
 
-
-// TODO: FormStarSystemsInCluster();
 UCLASS()
 class APS_ALPHA_API AAstroGenerator : public AActor
 {
@@ -31,12 +34,29 @@ class APS_ALPHA_API AAstroGenerator : public AActor
 public:
 	AAstroGenerator();
 
+	void SetGeneratedWorld(UGeneratedWorld* InGeneratedWorld);
+
+	UPROPERTY(EditAnywhere, Category = "Generation Params")
+	bool bAutoGeneration{ false };
+
+	UFUNCTION()
+	void DisplayNewGeneratedWorld();
+	
+	UFUNCTION()
+	void ApplyWorldModel();
+	
+	UFUNCTION()
+	void GenerateWorldByModel();
+	
 protected:
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "World Generation")
+	UGeneratedWorld* NewGeneratedWorld;
+
 	void GenerateHomeStarSystem();
 
 	virtual void BeginPlay() override;
 
-	void GenerateTEST_FULLSCALED();
+	void Test_GenerateFullscaled();
 
 	void InitGenerationLevel();
 
@@ -81,7 +101,6 @@ protected:
 	AActor* GeneratedWorld;
 
 public:
-
 	TMap<int32, TSharedPtr<FStarModel>> StarIndexModelMap;
 
 	UPROPERTY(EditAnywhere, Category = "Generation Params")
@@ -143,7 +162,7 @@ public:
 	int StartPlanetNumber{ 1 };
 
 	UPROPERTY(EditAnywhere, Category = "Home System", meta = (EditCondition = "!bRandomHomeSystem"))
-	EStarSystemType HomeSystemStarType{ EStarSystemType::SingleStar };
+	EStarType HomeSystemStarType{ EStarType::SingleStar };
 
 	UPROPERTY(EditAnywhere, Category = "Home System", meta = (EditCondition = "!bRandomHomeSystem"))
 	EStellarType HomeStarStellarType{ EStellarType::MainSequence };
@@ -207,19 +226,19 @@ public:
 	EOrbitHeight HomeSpaceStationOrbitHeight;
 
 	UPROPERTY(EditAnywhere, Category = "Player Spawn")
-	TSubclassOf<class AControlledPawn> BP_CharacterClass;
+	TSubclassOf<AControlledPawn> BP_CharacterClass;
 
 	UPROPERTY(EditAnywhere, Category = "Player Spawn")
-	TSubclassOf<class ASpaceStation> BP_HomeSpaceStation;
+	TSubclassOf<ASpaceStation> BP_HomeSpaceStation;
 
 	UPROPERTY(EditAnywhere, Category = "Player Spawn")
-	TSubclassOf<class ASpaceship> BP_HomeSpaceship;
+	TSubclassOf<ASpaceship> BP_HomeSpaceship;
 
 	UPROPERTY(EditAnywhere, Category = "Player Spawn")
-	TSubclassOf<class ASpaceShipyard> BP_HomeSpaceShipyard;
+	TSubclassOf<ASpaceShipyard> BP_HomeSpaceShipyard;
 
 	UPROPERTY(EditAnywhere, Category = "Player Spawn")
-	TSubclassOf<class ASpaceHeadquarters> BP_HomeSpaceHeadquarters;
+	TSubclassOf<ASpaceHeadquarters> BP_HomeSpaceHeadquarters;
 
 	UPROPERTY()
 	TArray<AStarSystem*> GeneratedStarSystems;
@@ -246,33 +265,31 @@ public:
 	UMoonGenerator* MoonGenerator;
 
 	UPROPERTY(EditAnywhere, Category = "AstroObject BP")
-	TSubclassOf<class AGalaxy> BP_GalaxyClass;
+	TSubclassOf<AGalaxy> BP_GalaxyClass;
 
 	UPROPERTY(EditAnywhere, Category = "AstroObject BP")
-	TSubclassOf<class AStarCluster> BP_StarClusterClass;
+	TSubclassOf<AStarCluster> BP_StarClusterClass;
 
 	UPROPERTY(EditAnywhere, Category = "AstroObject BP")
-	TSubclassOf<class APlanetarySystem> BP_PlanetarySystemClass;
+	TSubclassOf<APlanetarySystem> BP_PlanetarySystemClass;
 
 	UPROPERTY(EditAnywhere, Category = "AstroObject BP")
-	TSubclassOf<class AStarSystem> BP_StarSystemClass;
+	TSubclassOf<AStarSystem> BP_StarSystemClass;
 
 	UPROPERTY(EditAnywhere, Category = "AstroObject BP")
-	TSubclassOf<class AStar> BP_StarClass;
+	TSubclassOf<AStar> BP_StarClass;
 
 	UPROPERTY(EditAnywhere, Category = "AstroObject BP")
-	TSubclassOf<class APlanet> BP_PlanetClass;
+	TSubclassOf<APlanet> BP_PlanetClass;
 
 	UPROPERTY(EditAnywhere, Category = "AstroObject BP")
-	TSubclassOf<class APlanetOrbit> BP_PlanetOrbit;
+	TSubclassOf<APlanetOrbit> BP_PlanetOrbitClass;
 
 	UPROPERTY(EditAnywhere, Category = "AstroObject BP")
-	TSubclassOf<class AMoon> BP_MoonClass;
+	TSubclassOf<AMoon> BP_MoonClass;
 
 	UPROPERTY(EditAnywhere, Category = "AstroObject BP")
-	TSubclassOf<class AAstroAnchor> BP_AstroAnchor;
-
-	EStarClusterType GetRandomClusterType();
+	TSubclassOf<AAstroAnchor> BP_AstroAnchorClass;
 
 	int GetRandomValueFromStarAmountRange(EStarClusterType ClusterType);
 

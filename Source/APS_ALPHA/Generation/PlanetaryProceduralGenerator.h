@@ -5,7 +5,7 @@
 #include "APS_ALPHA/Core/Enums/OrbitDistributionType.h"
 #include "APS_ALPHA/Core/Enums/PlanetaryZoneType.h"
 #include "APS_ALPHA/Core/Enums/PlanetType.h"
-#include "APS_ALPHA/Core/Enums/StarType.h"
+#include "APS_ALPHA/Core/Enums/StellarType.h"
 #include "PlanetaryProceduralGenerator.generated.h"
 
 class APlanetarySystem;
