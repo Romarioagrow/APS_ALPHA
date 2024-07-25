@@ -12,6 +12,13 @@ AGravityGameModeBase::AGravityGameModeBase()
 	HUDClass = ASMENU_HUD::StaticClass();
 }
 
+void AGravityGameModeBase::InitAstroClasses(AAstroGenerator* AstroGenerator)
+{
+	AstroGenerator->InitializeAstroClasses(BP_GalaxyClass, BP_StarClusterClass, BP_PlanetarySystemClass,
+	                                       BP_StarSystemClass, BP_StarClass, BP_PlanetClass,
+	                                       BP_PlanetOrbitClass, BP_MoonClass, BP_AstroAnchorClass);
+}
+
 void AGravityGameModeBase::BeginPlay()
 {
 	Super::BeginPlay();
@@ -23,7 +30,8 @@ void AGravityGameModeBase::BeginPlay()
 			UGeneratedWorld* NewGeneratedWorld = GameInstance->GetSubsystem<UMainGameplayInstance>()->NewGeneratedWorld;
 			if (NewGeneratedWorld)
 			{
-				GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, FString::Printf(TEXT("Spawning AstroGenerator")));
+				GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green,
+				                                 FString::Printf(TEXT("Spawning AstroGenerator")));
 
 				// Spawn AAstroGenerator and pass UGeneratedWorld
 				FActorSpawnParameters SpawnParams;
@@ -33,11 +41,15 @@ void AGravityGameModeBase::BeginPlay()
 					SpawnParams.Owner = OwnerActor;
 				}
 
-				AAstroGenerator* AstroGenerator = World->SpawnActor<AAstroGenerator>(AAstroGenerator::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, SpawnParams);
+				AAstroGenerator* AstroGenerator = World->SpawnActor<AAstroGenerator>(
+					AAstroGenerator::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, SpawnParams);
 				if (AstroGenerator)
 				{
+					InitAstroClasses(AstroGenerator);
+
 					AstroGenerator->SetGeneratedWorld(NewGeneratedWorld);
 					AstroGenerator->DisplayNewGeneratedWorld();
+					AstroGenerator->GenerateWorldByModel();
 				}
 			}
 		}

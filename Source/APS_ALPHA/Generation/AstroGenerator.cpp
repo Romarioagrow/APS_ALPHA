@@ -35,6 +35,12 @@ void AAstroGenerator::DisplayNewGeneratedWorld()
 	this->NewGeneratedWorld->PrintAllValues();
 }
 
+void AAstroGenerator::GenerateWorldByModel()
+{
+	InitAstroGenerators();
+	
+	GenerateStarCluster();
+}
 
 void AAstroGenerator::BeginPlay()
 {
@@ -56,7 +62,7 @@ void AAstroGenerator::GenerateTEST_FULLSCALED()
 	const int StarCount = 100;
 
 	// Создаем актор-якорь для нашего мира
-	AAstroAnchor* AstroAnchor = GetWorld()->SpawnActor<AAstroAnchor>(BP_AstroAnchor);
+	AAstroAnchor* AstroAnchor = GetWorld()->SpawnActor<AAstroAnchor>(BP_AstroAnchorClass);
 
 	// Создаем актор кластера звезд и прикрепляем его к якорю
 	AStarCluster* StarCluster = GetWorld()->SpawnActor<AStarCluster>(BP_StarClusterClass);
@@ -189,7 +195,6 @@ void AAstroGenerator::InitAstroGenerators()
 		|| MoonGenerator == nullptr)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("One of the generators is null!"));
-		return;
 	}
 	else
 	{
@@ -302,13 +307,14 @@ void AAstroGenerator::GenerateHomeStarSystem()
 				if (GeneratedHomeStarSystem)
 				{
 					//APlanet* NewHomePlanet = GeneratedHomeStarSystem->MainStar->PlanetarySystem->PlanetsActorsList[StartPlanetIndex]; /// To method
-					APlanetOrbit* NewHomePlanetOrbit = GeneratedHomeStarSystem->MainStar->PlanetarySystem->PlanetOrbitsList[StartPlanetIndex]; /// To method
+					APlanetOrbit* NewHomePlanetOrbit = GeneratedHomeStarSystem->MainStar->PlanetarySystem->
+						PlanetOrbitsList[StartPlanetIndex]; /// To method
 
 					if (NewHomePlanetOrbit && NewHomePlanetOrbit->Planet)
 					{
-
 						// Шаг 1: Получаем локальную позицию текущей планеты.
-						FVector OldPlanetLocalPosition = NewHomePlanetOrbit->Planet->GetActorLocation() - NewHomePlanetOrbit->GetActorLocation();
+						FVector OldPlanetLocalPosition = NewHomePlanetOrbit->Planet->GetActorLocation() -
+							NewHomePlanetOrbit->GetActorLocation();
 
 						// Шаг 2: Удаляем всех дочерних акторов орбиты.
 						TArray<AActor*> AttachedOrbitalActors;
@@ -325,12 +331,14 @@ void AAstroGenerator::GenerateHomeStarSystem()
 						// Шаг 3: Прикрепляем вашу планету из редактора к актору орбиты. Допустим, это PlanetFromEditor.
 						if (HomePlanet)
 						{
-							HomePlanet->AttachToActor(NewHomePlanetOrbit, FAttachmentTransformRules::KeepWorldTransform);
+							HomePlanet->AttachToActor(NewHomePlanetOrbit,
+							                          FAttachmentTransformRules::KeepWorldTransform);
 
 							// Шаг 4: Устанавливаем локальную позицию для вашей планеты на основе сохраненного смещения.
-							HomePlanet->SetActorLocation(NewHomePlanetOrbit->GetActorLocation() + OldPlanetLocalPosition);
+							HomePlanet->SetActorLocation(
+								NewHomePlanetOrbit->GetActorLocation() + OldPlanetLocalPosition);
 						}
-						
+
 						/// Move system to 000
 						APawn* PlayerCharacter = Cast<APawn>(UGameplayStatics::GetPlayerPawn(this, 0));
 						if (PlayerCharacter)
@@ -360,7 +368,7 @@ void AAstroGenerator::GenerateHomeStarSystem()
 
 										/// ApplyAstroParamsToPlanet
 										////HomePlanet->ApplyNewPlanetParameters(StartHomePlanet);
-										
+
 										FVector StartHeadquartersLocation = Headquarters->GetStartPointPosition();
 										PlayerCharacter->SetActorLocation(StartHeadquartersLocation);
 										break;
@@ -699,7 +707,7 @@ void AAstroGenerator::GenerateStarSystem()
 			for (const TSharedPtr<FPlanetData> FPlanetData : PlanetraySystemModel->PlanetsList)
 			{
 				APlanetOrbit* NewPlanetOrbit = World->SpawnActor<APlanetOrbit>(
-					BP_PlanetOrbit, HomePlanetarySystem->GetActorLocation(), FRotator::ZeroRotator);
+					BP_PlanetOrbitClass, HomePlanetarySystem->GetActorLocation(), FRotator::ZeroRotator);
 				NewPlanetOrbit->AttachToActor(HomePlanetarySystem, FAttachmentTransformRules::KeepWorldTransform);
 
 				// Planet Model and generation
@@ -730,7 +738,7 @@ void AAstroGenerator::GenerateStarSystem()
 				for (const TSharedPtr<FMoonData> MoonData : PlanetModel->MoonsList)
 				{
 					APlanetOrbit* NewMoonOrbit = World->SpawnActor<APlanetOrbit>(
-						BP_PlanetOrbit, NewPlanet->GetActorLocation(), FRotator::ZeroRotator);
+						BP_PlanetOrbitClass, NewPlanet->GetActorLocation(), FRotator::ZeroRotator);
 					NewMoonOrbit->AttachToActor(NewPlanet, FAttachmentTransformRules::KeepWorldTransform);
 
 					FVector MoonLocation = NewPlanet->GetActorLocation();
@@ -1107,7 +1115,7 @@ void AAstroGenerator::GenerateCustomHomeSystem()
 			for (const TSharedPtr<FPlanetData> FPlanetData : PlanetraySystemModel->PlanetsList)
 			{
 				APlanetOrbit* NewPlanetOrbit = World->SpawnActor<APlanetOrbit>(
-					BP_PlanetOrbit, NewPlanetarySystem->GetActorLocation(), FRotator::ZeroRotator);
+					BP_PlanetOrbitClass, NewPlanetarySystem->GetActorLocation(), FRotator::ZeroRotator);
 				NewPlanetOrbit->AttachToActor(NewPlanetarySystem, FAttachmentTransformRules::KeepWorldTransform);
 				NewPlanetarySystem->PlanetOrbitsList.Add(NewPlanetOrbit);
 
@@ -1137,7 +1145,7 @@ void AAstroGenerator::GenerateCustomHomeSystem()
 				for (const TSharedPtr<FMoonData> MoonData : PlanetModel->MoonsList)
 				{
 					APlanetOrbit* NewMoonOrbit = World->SpawnActor<APlanetOrbit>(
-						BP_PlanetOrbit, NewPlanet->GetActorLocation(), FRotator::ZeroRotator);
+						BP_PlanetOrbitClass, NewPlanet->GetActorLocation(), FRotator::ZeroRotator);
 					NewMoonOrbit->AttachToActor(NewPlanet, FAttachmentTransformRules::KeepWorldTransform);
 					NewPlanet->MoonOrbitsList.Add(NewMoonOrbit);
 
@@ -1471,81 +1479,107 @@ int AAstroGenerator::GetRandomValueFromStarAmountRange(EStarClusterType ClusterT
 void AAstroGenerator::GenerateStarCluster()
 {
 	/// TODO: StarClusterGenerator->GenerateRandomStarCluster(World);
-	
-	{
-		UWorld* World = GetWorld();
 
-		const TSharedPtr<FStarClusterModel> StarClusterModel = MakeShared<FStarClusterModel>();
+	if (BP_StarClusterClass == nullptr)
+	{
+		UE_LOG(LogTemp, Error, TEXT("BP_StarClusterClass is not set!"));
+		return;
+	}
+	
+	UWorld* World = GetWorld();
+
+	const TSharedPtr<FStarClusterModel> StarClusterModel = MakeShared<FStarClusterModel>();
+
+	if (bGenerateRandomCluster)
+	{
+		StarClusterGenerator->GetRandomStarClusterModel(StarClusterModel);
+	}
+	else
+	{
+		StarClusterModel->StarClusterSize = StarClusterSize;
+		StarClusterModel->StarClusterType = StarClusterType;
+		StarClusterModel->StarClusterPopulation = StarClusterPopulation;
+		StarClusterModel->StarClusterComposition = StarClusterComposition;
+	}
+	const EStarClusterType ClusterType = StarClusterModel->StarClusterType;
+	AStarCluster* NewStarCluster = World->SpawnActor<AStarCluster>(BP_StarClusterClass);
+	NewStarCluster->AttachToActor(this, FAttachmentTransformRules::KeepWorldTransform);
+
+	/// Calculate Cluster Params
+	NewStarCluster->StarAmount = StarClusterGenerator->GetStarsAmountByRange(StarClusterModel->StarClusterSize);
+	NewStarCluster->StarDensity = StarClusterGenerator->GetStarClusterDensityByRange();
+	NewStarCluster->ClusterBounds = StarClusterGenerator->GetStarClusterBoundsByRange(ClusterType);
+	NewStarCluster->ClusterType = ClusterType;
+	NewStarCluster->StarClusterComposition = StarClusterModel->StarClusterComposition;
+	NewStarCluster->StarClusterPopulation = StarClusterModel->StarClusterPopulation;
+	NewStarCluster->StarClusterSize = StarClusterModel->StarClusterSize;
+	NewStarCluster->CalculateAffectionRadius();
+
+	UE_LOG(LogTemp, Warning, TEXT("StarCount: %d"), NewStarCluster->StarAmount);
+	UE_LOG(LogTemp, Warning, TEXT("StarDensity: %f"), NewStarCluster->StarDensity);
+	UE_LOG(LogTemp, Warning, TEXT("ClusterBounds: %s"), *NewStarCluster->ClusterBounds.ToString());
+	UE_LOG(LogTemp, Warning, TEXT("ClusterType: %d"), static_cast<int>(NewStarCluster->ClusterType));
+
+	for (size_t i = 0; i < NewStarCluster->StarAmount; i++)
+	{
+		// Создаем модель звезды
+		TSharedPtr<FStarModel> NewStarModel = MakeShared<FStarModel>();
 
 		if (bGenerateRandomCluster)
 		{
-			StarClusterGenerator->GetRandomStarClusterModel(StarClusterModel);
+			StarGenerator->GenerateRandomStarModel(NewStarModel);
 		}
 		else
 		{
-			StarClusterModel->StarClusterSize = StarClusterSize;
-			StarClusterModel->StarClusterType = StarClusterType;
-			StarClusterModel->StarClusterPopulation = StarClusterPopulation;
-			StarClusterModel->StarClusterComposition = StarClusterComposition;
-		}
-		const EStarClusterType ClusterType = StarClusterModel->StarClusterType;
-		AStarCluster* NewStarCluster = World->SpawnActor<AStarCluster>(BP_StarClusterClass);
-		NewStarCluster->AttachToActor(this, FAttachmentTransformRules::KeepWorldTransform);
-
-		/// Calculate Cluster Params
-		NewStarCluster->StarAmount = StarClusterGenerator->GetStarsAmountByRange(StarClusterModel->StarClusterSize);
-		NewStarCluster->StarDensity = StarClusterGenerator->GetStarClusterDensityByRange();
-		NewStarCluster->ClusterBounds = StarClusterGenerator->GetStarClusterBoundsByRange(ClusterType);
-		NewStarCluster->ClusterType = ClusterType;
-		NewStarCluster->StarClusterComposition = StarClusterModel->StarClusterComposition;
-		NewStarCluster->StarClusterPopulation = StarClusterModel->StarClusterPopulation;
-		NewStarCluster->StarClusterSize = StarClusterModel->StarClusterSize;
-		NewStarCluster->CalculateAffectionRadius();
-
-		UE_LOG(LogTemp, Warning, TEXT("StarCount: %d"), NewStarCluster->StarAmount);
-		UE_LOG(LogTemp, Warning, TEXT("StarDensity: %f"), NewStarCluster->StarDensity);
-		UE_LOG(LogTemp, Warning, TEXT("ClusterBounds: %s"), *NewStarCluster->ClusterBounds.ToString());
-		UE_LOG(LogTemp, Warning, TEXT("ClusterType: %d"), static_cast<int>(NewStarCluster->ClusterType));
-
-		for (size_t i = 0; i < NewStarCluster->StarAmount; i++)
-		{
-			// Создаем модель звезды
-			TSharedPtr<FStarModel> NewStarModel = MakeShared<FStarModel>();
-
-			if (bGenerateRandomCluster)
-			{
-				StarGenerator->GenerateRandomStarModel(NewStarModel);
-			}
-			else
-			{
-				StarGenerator->GenerateStarModelByProbability(NewStarModel, StarClusterModel);
-			}
-
-			// Позиционируем звезду в кластере
-			FVector StarPosition = StarClusterGenerator->CalculateStarPosition(i, NewStarCluster, NewStarModel);
-			NewStarCluster->AddStarToClusterModel(StarPosition, NewStarModel);
-			NewStarModel->Location = StarPosition;
-
-			// Создаем инстанс звезды и добавляем его в HISM компонент
-			FTransform StarTransform(StarPosition);
-			StarTransform.SetScale3D(FVector(NewStarModel->Radius));
-			int32 StarInstIndex = NewStarCluster->StarMeshInstances->AddInstance(StarTransform, true);
-			const FLinearColor ColorValue = StarGenerator->GetStarColor(NewStarModel->SpectralClass, NewStarModel->SpectralSubclass);
-			NewStarCluster->StarMeshInstances->SetCustomDataValue(StarInstIndex, 0, ColorValue.R);
-			NewStarCluster->StarMeshInstances->SetCustomDataValue(StarInstIndex, 1, ColorValue.G);
-			NewStarCluster->StarMeshInstances->SetCustomDataValue(StarInstIndex, 2, ColorValue.B);
-
-			const double StarEmission = StarGenerator->CalculateEmission(NewStarModel->Luminosity * 25);
-			NewStarCluster->StarMeshInstances->SetCustomDataValue(StarInstIndex, 3, StarEmission);
-
-			StarIndexModelMap.Add(StarInstIndex, NewStarModel);
+			StarGenerator->GenerateStarModelByProbability(NewStarModel, StarClusterModel);
 		}
 
-		GeneratedStarCluster = NewStarCluster;
+		// Позиционируем звезду в кластере
+		FVector StarPosition = StarClusterGenerator->CalculateStarPosition(i, NewStarCluster, NewStarModel);
+		NewStarCluster->AddStarToClusterModel(StarPosition, NewStarModel);
+		NewStarModel->Location = StarPosition;
 
-		if (bGenerateFullScaledWorld)
-		{
-			SetActorScale3D(FVector(1000000000, 1000000000, 1000000000));
-		}
+		// Создаем инстанс звезды и добавляем его в HISM компонент
+		FTransform StarTransform(StarPosition);
+		StarTransform.SetScale3D(FVector(NewStarModel->Radius));
+		int32 StarInstIndex = NewStarCluster->StarMeshInstances->AddInstance(StarTransform, true);
+		const FLinearColor ColorValue = StarGenerator->GetStarColor(NewStarModel->SpectralClass,
+		                                                            NewStarModel->SpectralSubclass);
+		NewStarCluster->StarMeshInstances->SetCustomDataValue(StarInstIndex, 0, ColorValue.R);
+		NewStarCluster->StarMeshInstances->SetCustomDataValue(StarInstIndex, 1, ColorValue.G);
+		NewStarCluster->StarMeshInstances->SetCustomDataValue(StarInstIndex, 2, ColorValue.B);
+
+		const double StarEmission = StarGenerator->CalculateEmission(NewStarModel->Luminosity * 25);
+		NewStarCluster->StarMeshInstances->SetCustomDataValue(StarInstIndex, 3, StarEmission);
+
+		StarIndexModelMap.Add(StarInstIndex, NewStarModel);
 	}
+
+	GeneratedStarCluster = NewStarCluster;
+
+	if (bGenerateFullScaledWorld)
+	{
+		SetActorScale3D(FVector(1000000000, 1000000000, 1000000000));
+	}
+}
+
+void AAstroGenerator::InitializeAstroClasses(TSubclassOf<AGalaxy> GalaxyClass,
+											 TSubclassOf<AStarCluster> StarClusterClass,
+											 TSubclassOf<APlanetarySystem> PlanetarySystemClass,
+											 TSubclassOf<AStarSystem> StarSystemClass,
+											 TSubclassOf<AStar> StarClass,
+											 TSubclassOf<APlanet> PlanetClass,
+											 TSubclassOf<APlanetOrbit> PlanetOrbitClass,
+											 TSubclassOf<AMoon> MoonClass,
+											 TSubclassOf<AAstroAnchor> AstroAnchorClass)
+{
+	BP_GalaxyClass = GalaxyClass;
+	BP_StarClusterClass = StarClusterClass;
+	BP_PlanetarySystemClass = PlanetarySystemClass;
+	BP_StarSystemClass = StarSystemClass;
+	BP_StarClass = StarClass;
+	BP_PlanetClass = PlanetClass;
+	BP_PlanetOrbitClass = PlanetOrbitClass;
+	BP_MoonClass = MoonClass;
+	BP_AstroAnchorClass = AstroAnchorClass;
 }
