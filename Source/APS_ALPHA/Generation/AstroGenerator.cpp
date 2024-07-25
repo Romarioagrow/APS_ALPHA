@@ -96,7 +96,7 @@ void AAstroGenerator::BeginPlay()
 	}
 }
 
-void AAstroGenerator::GenerateTEST_FULLSCALED()
+void AAstroGenerator::Test_GenerateFullscaled()
 {
 	// Задаем параметры звезд
 	const double MinStarRadius = 0.1f;
@@ -1435,7 +1435,6 @@ void AAstroGenerator::GenerateCustomHomeSystem()
 				check overlapped hism, if overlapped, (re)move it
 			*/
 
-
 			double HomeSystemrRadiusScaled = NewStarSystem->StarSystemRadius * StarSystemDeadZone;
 			FCollisionShape MySphere = FCollisionShape::MakeSphere(HomeSystemrRadiusScaled);
 			TArray<FOverlapResult> Overlaps;
@@ -1487,9 +1486,6 @@ void AAstroGenerator::GenerateCustomHomeSystem()
 				UE_LOG(LogTemp, Warning, TEXT("No overlaped stars!"));
 			}
 		}
-
-
-		/// TO HOME SYSTEM
 	}
 	else
 	{
@@ -1523,18 +1519,13 @@ int AAstroGenerator::GetRandomValueFromStarAmountRange(EStarClusterType ClusterT
 
 void AAstroGenerator::GenerateStarCluster()
 {
-	/// TODO: StarClusterGenerator->GenerateRandomStarCluster(World);
-
 	if (BP_StarClusterClass == nullptr)
 	{
 		UE_LOG(LogTemp, Error, TEXT("BP_StarClusterClass is not set!"));
 		return;
 	}
 	
-	//UWorld* World = GetWorld();
-
 	const TSharedPtr<FStarClusterModel> StarClusterModel = MakeShared<FStarClusterModel>();
-
 	if (bGenerateRandomCluster)
 	{
 		StarClusterGenerator->GetRandomStarClusterModel(StarClusterModel);
@@ -1550,7 +1541,7 @@ void AAstroGenerator::GenerateStarCluster()
 	AStarCluster* NewStarCluster = GetWorld()->SpawnActor<AStarCluster>(BP_StarClusterClass);
 	NewStarCluster->AttachToActor(this, FAttachmentTransformRules::KeepWorldTransform);
 
-	/// Calculate Cluster Params
+	// Calculate Cluster Params
 	NewStarCluster->StarAmount = StarClusterGenerator->GetStarsAmountByRange(StarClusterModel->StarClusterSize);
 	NewStarCluster->StarDensity = StarClusterGenerator->GetStarClusterDensityByRange();
 	NewStarCluster->ClusterBounds = StarClusterGenerator->GetStarClusterBoundsByRange(ClusterType);
@@ -1606,25 +1597,4 @@ void AAstroGenerator::GenerateStarCluster()
 	{
 		SetActorScale3D(FVector(1000000000, 1000000000, 1000000000));
 	}
-}
-
-void AAstroGenerator::InitializeAstroClasses(TSubclassOf<AGalaxy> GalaxyClass,
-											 TSubclassOf<AStarCluster> StarClusterClass,
-											 TSubclassOf<APlanetarySystem> PlanetarySystemClass,
-											 TSubclassOf<AStarSystem> StarSystemClass,
-											 TSubclassOf<AStar> StarClass,
-											 TSubclassOf<APlanet> PlanetClass,
-											 TSubclassOf<APlanetOrbit> PlanetOrbitClass,
-											 TSubclassOf<AMoon> MoonClass,
-											 TSubclassOf<AAstroAnchor> AstroAnchorClass)
-{
-	BP_GalaxyClass = GalaxyClass;
-	BP_StarClusterClass = StarClusterClass;
-	BP_PlanetarySystemClass = PlanetarySystemClass;
-	BP_StarSystemClass = StarSystemClass;
-	BP_StarClass = StarClass;
-	BP_PlanetClass = PlanetClass;
-	BP_PlanetOrbitClass = PlanetOrbitClass;
-	BP_MoonClass = MoonClass;
-	BP_AstroAnchorClass = AstroAnchorClass;
 }
