@@ -1,6 +1,9 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "APS_ALPHA/Core/Enums/StellarType.h"
+#include "APS_ALPHA/Core/Enums/StarSpectralClass.h"
+#include "APS_ALPHA/Core/Enums/SpectralType.h"
 #include "APS_ALPHA/Generation/CelestialGenerationModel.h"
 #include "StarGenerationModel.generated.h"
 
@@ -10,7 +13,7 @@ struct FStarModel :
 {
 	GENERATED_BODY()
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star")
+	UPROPERTY(VisibleAnywhere)
 	EStellarType StellarType;
 
 	UPROPERTY(VisibleAnywhere)

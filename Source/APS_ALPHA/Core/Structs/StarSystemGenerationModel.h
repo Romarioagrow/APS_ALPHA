@@ -4,7 +4,7 @@
 #include "CoreMinimal.h"
 #include "StarSystemGenerationModel.generated.h"
 
-enum class EStarSystemType : uint8;
+enum class EStarType : uint8;
 
 USTRUCT(BlueprintType)
 struct FStarSystemModel :
@@ -16,5 +16,5 @@ struct FStarSystemModel :
 	int32 AmountOfStars;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star System")
-	EStarSystemType StarSystemType;
+	EStarType StarSystemType;
 };
