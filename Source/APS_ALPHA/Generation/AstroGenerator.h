@@ -138,7 +138,7 @@ public:
 	FVector HomeSystemRadius{ 0 };
 
 	UPROPERTY(EditAnywhere, Category = "Home System")
-	bool bRandomHomeSystem{ true };
+	bool bRandomHomeSystem{ false };
 
 	UPROPERTY(EditAnywhere, Category = "Home System", meta = (EditCondition = "!bRandomHomeSystem"))
 	bool bRandomHomeSystemType;

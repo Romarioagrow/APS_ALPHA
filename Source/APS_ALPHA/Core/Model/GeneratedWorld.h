@@ -41,22 +41,22 @@ public:
 	bool bGenerateFullScaledWorld{ true };
 
 	UPROPERTY(EditAnywhere, Category = "Generation Params")
-	bool bGenerateHomeSystem{ false };
+	bool bGenerateHomeSystem{ true };
 
 	UPROPERTY(EditAnywhere, Category = "Generation Params")
-	bool bStartWithHomePlanet{ false };
+	bool bStartWithHomePlanet{ true };
 
 	UPROPERTY(EditAnywhere, Category = "Home System")
-	bool bRandomHomeSystem{ true };
+	bool bRandomHomeSystem{ false };
 
 	UPROPERTY(EditAnywhere, Category = "Home System", meta = (EditCondition = "!bRandomHomeSystem"))
-	bool bRandomHomeSystemType;
+	bool bRandomHomeSystemType{ false };
 
 	UPROPERTY(EditAnywhere, Category = "Home System", meta = (EditCondition = "!bRandomHomeSystem"))
-	bool bRandomHomeStar;
+	bool bRandomHomeStar{ false };
 
 	UPROPERTY(EditAnywhere, Category = "Home System")
-	bool bRandomStartPlanetNumber{ true };
+	bool bRandomStartPlanetNumber{ false };
 
 
 	UPROPERTY(EditAnywhere, Category = "Generation Params")
