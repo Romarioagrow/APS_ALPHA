@@ -82,6 +82,8 @@ void AAstroGenerator::GenerateWorldByModel()
 	ApplyWorldModel();
 
 	GenerateStarCluster();
+
+	GenerateHomeStarSystem();
 }
 
 void AAstroGenerator::BeginPlay()
@@ -203,7 +205,7 @@ void AAstroGenerator::GenerateGalaxy()
 			const double Scale = 1000000000.0;
 			FVector VectorScale = FVector(1000000000, 1000000000, 1000000000);
 			VectorScale = VectorScale * Scale;
-			this->SetActorScale3D(VectorScale); 
+			this->SetActorScale3D(VectorScale);
 		}
 	}
 }
@@ -249,18 +251,12 @@ void AAstroGenerator::InitAstroGenerators()
 
 void AAstroGenerator::GenerateHomeStarSystem()
 {
-	// TODO: Refactoring - GenerateStarSystem(StarSystemModel);
-
 	if (bRandomHomeSystem)
 	{
-		// Random Model
-		// GenerateHomeSystem(RandomHomeSystem)
 		GenerateStarSystem();
 	}
 	else
 	{
-		// Custom Model from Editor
-		// GenerateHomeSystem(CustomHomeSystem)
 		GenerateCustomHomeSystem();
 	}
 
@@ -304,7 +300,6 @@ void AAstroGenerator::GenerateHomeStarSystem()
 					{
 						if (MoonsList[i].IsValid())
 						{
-							// Замените FMoonData на структуру данных вашего спутника
 							FMoonData MoonData = *(MoonsList[i].Get());
 
 							// Выводим данные спутника
@@ -351,9 +346,8 @@ void AAstroGenerator::GenerateHomeStarSystem()
 
 				if (GeneratedHomeStarSystem)
 				{
-					//APlanet* NewHomePlanet = GeneratedHomeStarSystem->MainStar->PlanetarySystem->PlanetsActorsList[StartPlanetIndex]; /// To method
 					APlanetOrbit* NewHomePlanetOrbit = GeneratedHomeStarSystem->MainStar->PlanetarySystem->
-						PlanetOrbitsList[StartPlanetIndex]; /// To method
+						PlanetOrbitsList[StartPlanetIndex];
 
 					if (NewHomePlanetOrbit && NewHomePlanetOrbit->Planet)
 					{
@@ -384,7 +378,7 @@ void AAstroGenerator::GenerateHomeStarSystem()
 								NewHomePlanetOrbit->GetActorLocation() + OldPlanetLocalPosition);
 						}
 
-						/// Move system to 000
+						// Move system to 000
 						APawn* PlayerCharacter = Cast<APawn>(UGameplayStatics::GetPlayerPawn(this, 0));
 						if (PlayerCharacter)
 						{
@@ -411,9 +405,7 @@ void AAstroGenerator::GenerateHomeStarSystem()
 										// Устанавливаем положение игрока на (0,0,0)
 										Headquarters->SetActorLocation(FVector(0, 0, 0), false);
 
-										/// ApplyAstroParamsToPlanet
-										////HomePlanet->ApplyNewPlanetParameters(StartHomePlanet);
-
+										// ApplyAstroParamsToPlanet
 										FVector StartHeadquartersLocation = Headquarters->GetStartPointPosition();
 										PlayerCharacter->SetActorLocation(StartHeadquartersLocation);
 										break;
@@ -455,7 +447,6 @@ void AAstroGenerator::GenerateHomeStarSystem()
 				HomeSpaceHeadquarters = World->SpawnActor<ASpaceHeadquarters>(
 					BP_HomeSpaceHeadquarters, PlanetPosition, FRotator::ZeroRotator);
 				HomeSpaceHeadquarters->AttachToActor(HomePlanet, FAttachmentTransformRules::KeepWorldTransform);
-				/// CRASH PIE!!!
 				HomeSpaceHeadquarters->SetActorRelativeRotation(FRotator(0, 0, 0));
 				const double EARTH_RADIUS_CM = 637100000.0;
 				FVector Offset = FVector(0, 0, StationOrbitHeight * EARTH_RADIUS_CM);
@@ -518,8 +509,7 @@ void AAstroGenerator::GenerateHomeStarSystem()
 				}
 
 				FVector CharSpawnLocation{0};
-				APawn* PlayerCharacter = UGameplayStatics::GetPlayerPawn(World, 0);
-				if (PlayerCharacter)
+				if (APawn* PlayerCharacter = UGameplayStatics::GetPlayerPawn(World, 0))
 				{
 					switch (CharSpawnPlace)
 					{
@@ -542,23 +532,21 @@ void AAstroGenerator::GenerateHomeStarSystem()
 					}
 
 					UE_LOG(LogTemp, Warning, TEXT("CharSpawnLocation: %s"), *CharSpawnLocation.ToString());
-					bool bTeleportSucces = PlayerCharacter->SetActorLocation(CharSpawnLocation, false);
+					bool bTeleportSuccess = PlayerCharacter->SetActorLocation(CharSpawnLocation, false);
 					UE_LOG(LogTemp, Warning, TEXT("Teleport success: %s"),
-					       bTeleportSucces ? TEXT("True") : TEXT("False"));
+					       bTeleportSuccess ? TEXT("True") : TEXT("False"));
 
 					// relocate char to 000
-					{
-						// Получаем текущее положение игрока
-						FVector PlayerLocation = PlayerCharacter->GetActorLocation();
-						// Получаем текущее положение AstroGenerator
-						FVector GeneratorLocation = this->GetActorLocation();
-						// Вычисляем новое положение для AstroGenerator
-						FVector NewGeneratorLocation = GeneratorLocation - PlayerLocation;
-						// Устанавливаем новое положение для AstroGenerator
-						this->SetActorLocation(NewGeneratorLocation, false);
-						// Устанавливаем положение игрока на (0,0,0)
-						PlayerCharacter->SetActorLocation(FVector(0, 0, 0), false);
-					}
+					// Получаем текущее положение игрока
+					FVector PlayerLocation = PlayerCharacter->GetActorLocation();
+					// Получаем текущее положение AstroGenerator
+					FVector GeneratorLocation = this->GetActorLocation();
+					// Вычисляем новое положение для AstroGenerator
+					FVector NewGeneratorLocation = GeneratorLocation - PlayerLocation;
+					// Устанавливаем новое положение для AstroGenerator
+					this->SetActorLocation(NewGeneratorLocation, false);
+					// Устанавливаем положение игрока на (0,0,0)
+					PlayerCharacter->SetActorLocation(FVector(0, 0, 0), false);
 				}
 				else
 				{
@@ -768,11 +756,10 @@ void AAstroGenerator::GenerateStarSystem()
 				FVector NewLocation = FVector(PlanetModel->OrbitDistance * 149600000000000 / 1000, 0, 0);
 				NewPlanet->PlanetRadiusKM = PlanetModel->Radius * 6371;
 				NewPlanet->SetActorLocation(NewLocation);
-
-
 				NewPlanet->AttachToActor(NewPlanetOrbit, FAttachmentTransformRules::KeepWorldTransform);
 				NewPlanetOrbit->SetActorRelativeRotation(
 					FRotator(FMath::RandRange(-30.0, 30.0), FMath::RandRange(-360.0, 360.0), 0));
+
 				HomePlanetarySystem->PlanetsActorsList.Add(NewPlanet);
 				HomePlanetarySystem->PlanetOrbitsList.Add(NewPlanetOrbit);
 
@@ -948,8 +935,6 @@ void AAstroGenerator::GenerateStarSystem()
 				UE_LOG(LogTemp, Warning, TEXT("No overlaped stars!"));
 			}
 		}
-
-
 		/// TO HOME SYSTEM
 	}
 	else
@@ -1524,7 +1509,7 @@ void AAstroGenerator::GenerateStarCluster()
 		UE_LOG(LogTemp, Error, TEXT("BP_StarClusterClass is not set!"));
 		return;
 	}
-	
+
 	const TSharedPtr<FStarClusterModel> StarClusterModel = MakeShared<FStarClusterModel>();
 	if (bGenerateRandomCluster)
 	{
