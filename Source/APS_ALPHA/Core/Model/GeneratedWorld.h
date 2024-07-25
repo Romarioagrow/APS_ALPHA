@@ -98,6 +98,8 @@ public:
 	UPROPERTY(VisibleAnywhere, Category = "Home System")
 	EHomeSystemPosition HomeSystemPosition;
 	
+	UPROPERTY(EditAnywhere, Category = "Home System", meta = (EditCondition = "!bRandomHomeSystem"))
+	EPlanetType PlanetType{ EPlanetType::Frozen };
 
 	UPROPERTY(EditAnywhere, Category = "Galaxy")
 	int GalaxySize{ 250 };
@@ -126,8 +128,4 @@ public:
 	
 	UPROPERTY(EditInstanceOnly, Category = "Generation Params")
 	APlanet* HomePlanet;
-
-	UPROPERTY(EditAnywhere, Category = "Home System", meta = (EditCondition = "!bRandomHomeSystem"))
-	EPlanetType PlanetType{ EPlanetType::Frozen };
-	
 };

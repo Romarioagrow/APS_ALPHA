@@ -39,7 +39,10 @@ public:
 
 	UFUNCTION()
 	void DisplayNewGeneratedWorld();
-
+	
+	UFUNCTION()
+	void ApplyWorldModel();
+	
 	UFUNCTION()
 	void GenerateWorldByModel();
 	
@@ -96,7 +99,6 @@ protected:
 	AActor* GeneratedWorld;
 
 public:
-
 	TMap<int32, TSharedPtr<FStarModel>> StarIndexModelMap;
 
 	UPROPERTY(EditAnywhere, Category = "Generation Params")

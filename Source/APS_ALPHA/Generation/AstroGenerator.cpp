@@ -35,10 +35,52 @@ void AAstroGenerator::DisplayNewGeneratedWorld()
 	this->NewGeneratedWorld->PrintAllValues();
 }
 
+void AAstroGenerator::ApplyWorldModel()
+{
+	if (!NewGeneratedWorld)
+	{
+		UE_LOG(LogTemp, Error, TEXT("NewGeneratedWorld is nullptr"));
+		return;
+	}
+
+	// Copy values from NewGeneratedWorld to AAstroGenerator
+	bGenerateFullScaledWorld = NewGeneratedWorld->bGenerateFullScaledWorld;
+	bGenerateHomeSystem = NewGeneratedWorld->bGenerateHomeSystem;
+	bStartWithHomePlanet = NewGeneratedWorld->bStartWithHomePlanet;
+	bRandomHomeSystem = NewGeneratedWorld->bRandomHomeSystem;
+	bRandomHomeSystemType = NewGeneratedWorld->bRandomHomeSystemType;
+	bRandomHomeStar = NewGeneratedWorld->bRandomHomeStar;
+	bRandomStartPlanetNumber = NewGeneratedWorld->bRandomStartPlanetNumber;
+	AstroGenerationLevel = NewGeneratedWorld->AstroGenerationLevel;
+	GalaxyType = NewGeneratedWorld->GalaxyType;
+	GalaxyGlass = NewGeneratedWorld->GalaxyClass;
+	StarClusterSize = NewGeneratedWorld->StarClusterSize;
+	StarClusterType = NewGeneratedWorld->StarClusterType;
+	StarClusterPopulation = NewGeneratedWorld->StarClusterPopulation;
+	StarClusterComposition = NewGeneratedWorld->StarClusterComposition;
+	HomeSystemStarType = NewGeneratedWorld->StarType;
+	HomeStarStellarType = NewGeneratedWorld->StellarType;
+	HomeStarSpectralClass = NewGeneratedWorld->SpectralClass;
+	HomeSystemPlanetaryType = NewGeneratedWorld->PlanetarySystemType;
+	HomeSystemOrbitDistributionType = NewGeneratedWorld->OrbitDistributionType;
+	HomeSystemPosition = NewGeneratedWorld->HomeSystemPosition;
+	GalaxySize = NewGeneratedWorld->GalaxySize;
+	GalaxyStarCount = NewGeneratedWorld->GalaxyStarCount;
+	PlanetsAmount = NewGeneratedWorld->PlanetsAmount;
+	StartPlanetNumber = NewGeneratedWorld->StartPlanetIndex;
+	GalaxyStarDensity = NewGeneratedWorld->GalaxyStarDensity;
+	HomePlanetarySystem = NewGeneratedWorld->HomePlanetarySystem;
+	HomePlanet = NewGeneratedWorld->HomePlanet;
+	//PlanetRadius = NewGeneratedWorld->PlanetRadius;
+	//MoonsAmount = NewGeneratedWorld->MoonsAmount;
+}
+
 void AAstroGenerator::GenerateWorldByModel()
 {
 	InitAstroGenerators();
-	
+
+	ApplyWorldModel();
+
 	GenerateStarCluster();
 }
 
@@ -111,9 +153,9 @@ void AAstroGenerator::InitGenerationLevel()
 	case EAstroGenerationLevel::SinglePlanet:
 		GenerateSinglePlanet();
 		break;
-	case EAstroGenerationLevel::Random:
+	/*case EAstroGenerationLevel::Random:
 		GenerateRandomWorld();
-		break;
+		break;*/
 	default:
 		GenerateRandomWorld();
 		break;
@@ -158,7 +200,10 @@ void AAstroGenerator::GenerateGalaxy()
 
 		if (bGenerateFullScaledWorld)
 		{
-			this->SetActorScale3D(FVector(1000000000, 1000000000, 1000000000)); /// TODO: Const FullScaleCoefficient
+			const double Scale = 1000000000.0;
+			FVector VectorScale = FVector(1000000000, 1000000000, 1000000000);
+			VectorScale = VectorScale * Scale;
+			this->SetActorScale3D(VectorScale); 
 		}
 	}
 }
@@ -1486,7 +1531,7 @@ void AAstroGenerator::GenerateStarCluster()
 		return;
 	}
 	
-	UWorld* World = GetWorld();
+	//UWorld* World = GetWorld();
 
 	const TSharedPtr<FStarClusterModel> StarClusterModel = MakeShared<FStarClusterModel>();
 
@@ -1502,7 +1547,7 @@ void AAstroGenerator::GenerateStarCluster()
 		StarClusterModel->StarClusterComposition = StarClusterComposition;
 	}
 	const EStarClusterType ClusterType = StarClusterModel->StarClusterType;
-	AStarCluster* NewStarCluster = World->SpawnActor<AStarCluster>(BP_StarClusterClass);
+	AStarCluster* NewStarCluster = GetWorld()->SpawnActor<AStarCluster>(BP_StarClusterClass);
 	NewStarCluster->AttachToActor(this, FAttachmentTransformRules::KeepWorldTransform);
 
 	/// Calculate Cluster Params

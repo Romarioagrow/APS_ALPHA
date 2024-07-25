@@ -17,11 +17,11 @@ void UGenerationSlider::PopulateEnumArray(const UEnum* Enum)
 
 			// Получение имени элемента Enum
 			FString EnumName = Enum->GetNameStringByIndex(i);
-			UE_LOG(LogTemp, Warning, TEXT("Enum Element: %s"), *EnumName);
+			/*UE_LOG(LogTemp, Warning, TEXT("Enum Element: %s"), *EnumName);
 			if (GEngine)
 			{
 				GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::Green, FString::Printf(TEXT("Populate Enum Element: %s"), *EnumName));
-			}
+			}*/
 		}
 	}
 }
@@ -54,7 +54,7 @@ void UGenerationSlider::UpdateIcon(int32 Index)
 void UGenerationSlider::OnSliderValueChanged(float Value)
 {
 	OnGenerationSliderChanged.Broadcast(Value, EnumType, this);
-	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Blue, FString::Printf(TEXT("Value: %f"), Value));
+	//GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Blue, FString::Printf(TEXT("Value: %f"), Value));
 }
 
 void UGenerationSlider::NativeConstruct()
