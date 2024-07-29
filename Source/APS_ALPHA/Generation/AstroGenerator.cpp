@@ -350,29 +350,17 @@ void AAstroGenerator::GenerateHomeStarSystem()
 			                                                            PlanetOrbitsList[StartPlanetNumber - 1];
 			if (NewHomePlanetOrbit && NewHomePlanetOrbit->Planet)
 			{
-				// Шаг 1: Получаем локальную позицию текущей планеты.
-				FVector OldPlanetLocalPosition = NewHomePlanetOrbit->Planet->GetActorLocation() -
-					NewHomePlanetOrbit->GetActorLocation();
+				NewHomePlanetOrbit->TriggerClearChildren();
 
-				// Шаг 2: Удаляем всех дочерних акторов орбиты.
-				TArray<AActor*> AttachedOrbitalActors;
-				NewHomePlanetOrbit->GetAttachedActors(AttachedOrbitalActors);
-
-				for (AActor* Actor : AttachedOrbitalActors)
-				{
-					if (Actor)
-					{
-						Actor->Destroy();
-					}
-				}
-
-				// Шаг 3: Прикрепляем вашу планету из редактора к актору орбиты. Допустим, это PlanetFromEditor.
+				// Прикрепить планету из редактора к актору орбиты
 				if (HomePlanet)
 				{
 					HomePlanet->AttachToActor(NewHomePlanetOrbit,
 					                          FAttachmentTransformRules::KeepRelativeTransform);
 
-					// Шаг 4: Устанавливаем локальную позицию для вашей планеты на основе сохраненного смещения.
+					// Получить локальную позицию текущей планеты и устанавливаем локальную позицию для вашей планеты на основе сохраненного смещения
+					FVector OldPlanetLocalPosition = NewHomePlanetOrbit->Planet->GetActorLocation() -
+						NewHomePlanetOrbit->GetActorLocation();
 					HomePlanet->SetActorLocation(
 						NewHomePlanetOrbit->GetActorLocation() + OldPlanetLocalPosition);
 				}
