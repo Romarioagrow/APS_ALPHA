@@ -12,6 +12,7 @@
 #include "GameFramework/Actor.h"
 #include "AstroGenerator.generated.h"
 
+struct FPlanetData;
 class AControlledPawn;
 class AAstroAnchor;
 class AMoon;
@@ -50,7 +51,7 @@ public:
 	
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "World Generation")
-	UGeneratedWorld* NewGeneratedWorld;
+	UGeneratedWorld* GeneratedWorldModel;
 
 	void GenerateHomeStarSystem();
 
@@ -64,7 +65,7 @@ protected:
 
 	void GenerateGalaxy();
 
-	void GenerateStarSystem();
+	void GenerateRandomStarSystem();
 
 	void GeneratePlanetSystem();
 
@@ -75,6 +76,12 @@ protected:
 	void InitAstroGenerators();
 
 	void GenerateCustomHomeSystem();
+	
+	bool CheckGeneratorsFails();
+
+	void GenerateHomeSystemByModel();
+
+	void ShowPlanetsList(TArray<TSharedPtr<FPlanetData>> PlanetDataMap);
 
 	UPROPERTY(VisibleAnywhere, Category = "Generated Astro Actros")
 	AGalaxy* GeneratedGalaxy;
@@ -294,4 +301,17 @@ public:
 	int GetRandomValueFromStarAmountRange(EStarClusterType ClusterType);
 
 	void GenerateStarCluster();
+
+	UFUNCTION()
+	FVector DetermineHomeSystemSpawnLocation();
+
+	UFUNCTION()
+	FVector GetHomeSystemSpawnLocationForGalaxy(TArray<AActor*> AttachedActors, int32 RandomIndex);
+
+	UFUNCTION()
+	FVector GetHomeSystemSpawnLocationForStarCluster(TArray<AActor*> AttachedActors, int32 RandomIndex);
+
+	//UFUNCTION()
+	void GenerateStarSystem(AStarSystem* NewStarSystem, TSharedPtr<FStarSystemModel> StarSystemModel);
+
 };

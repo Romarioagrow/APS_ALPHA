@@ -44,7 +44,7 @@ public:
 	bool bGenerateHomeSystem{ true };
 
 	UPROPERTY(EditAnywhere, Category = "Generation Params")
-	bool bStartWithHomePlanet{ true };
+	bool bStartWithHomePlanet{ false };
 
 	UPROPERTY(EditAnywhere, Category = "Home System")
 	bool bRandomHomeSystem{ false };
