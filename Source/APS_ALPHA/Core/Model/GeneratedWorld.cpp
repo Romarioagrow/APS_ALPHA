@@ -13,10 +13,10 @@ UGeneratedWorld::UGeneratedWorld(): GalaxyClass()
 	bGenerateFullScaledWorld = true;
 	bGenerateHomeSystem = false;
 	bStartWithHomePlanet = false;
-	bRandomHomeSystem = true;
+	bRandomHomeSystem = false;
 	bRandomHomeSystemType = false;
 	bRandomHomeStar = false;
-	bRandomStartPlanetNumber = true;
+	bRandomStartPlanetNumber = false;
 	AstroGenerationLevel = EAstroGenerationLevel::StarCluster;
 	GalaxyType = EGalaxyType::Elliptical;
 	GalaxyClass = EGalaxyClass::E0;
@@ -88,7 +88,7 @@ void UGeneratedWorld::PrintAllValues() const
 
         if (GEngine)
         {
-            GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, FString::Printf(TEXT("%s: %s"), *PropertyName, *PropertyValue));
+            GEngine->AddOnScreenDebugMessage(-1, 50.f, FColor::Red, FString::Printf(TEXT("%s: %s"), *PropertyName, *PropertyValue));
         }
     }
 }
