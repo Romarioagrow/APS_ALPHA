@@ -38,7 +38,7 @@ void UPlanetarySystemGenerator::ApplyModel(APlanetarySystem* NewPlanetarySystem,
 }
 
 
-void UPlanetarySystemGenerator::GenerateCustomPlanetraySystemModel(
+void UPlanetarySystemGenerator::GenerateCustomPlanetarySystemModel(
 	TSharedPtr<FPlanetarySystemModel> PlanetarySystemModel,
 	TSharedPtr<FStarModel> StarModel,
 	UPlanetGenerator* PlanetGenerator,
@@ -69,10 +69,17 @@ void UPlanetarySystemGenerator::GenerateCustomPlanetraySystemModel(
 
 	// Подбираем случайное распределение для нашей системы
 	EOrbitDistributionType OrbitDistributionType = PlanetarySystemModel->OrbitDistributionType;
-	//ChooseOrbitDistribution(StarModel->StellarType);
-
 	FString OrbitType = UEnum::GetValueAsString(OrbitDistributionType);
 	UE_LOG(LogTemp, Warning, TEXT("Orbit Distribution Type: %s"), *OrbitType);
+
+	if (PlanetarySystemModel->PlanetarySystemType == EPlanetarySystemType::NoPlanetSystem)
+	{
+		FinalPlanetCount = 0;
+	}
+	if (PlanetarySystemModel->PlanetarySystemType == EPlanetarySystemType::SinglePlanetSystem)
+	{
+		FinalPlanetCount = 1;
+	}
 
 	// TODO: To base method
 	for (int i = 0; i < FinalPlanetCount; i++)
@@ -501,7 +508,7 @@ void UPlanetarySystemGenerator::GenerateCustomPlanetraySystemModel(
 }
 
 
-void UPlanetarySystemGenerator::GeneratePlanetraySystemModelByStar(
+void UPlanetarySystemGenerator::GeneratePlanetarySystemModelByStar(
 	TSharedPtr<FPlanetarySystemModel> PlanetarySystemModel, TSharedPtr<FStarModel> StarModel,
 	UPlanetGenerator* PlanetGenerator, UMoonGenerator* MoonGenerator)
 {

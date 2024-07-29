@@ -711,12 +711,12 @@ void AAstroGenerator::GenerateRandomStarSystem()
 
 			if (bRandomHomeSystemType)
 			{
-				PlanetarySystemGenerator->GeneratePlanetraySystemModelByStar(
+				PlanetarySystemGenerator->GeneratePlanetarySystemModelByStar(
 					PlanetraySystemModel, StarModel, PlanetGenerator, MoonGenerator);
 			}
 			else
 			{
-				PlanetarySystemGenerator->GeneratePlanetraySystemModelByStar(
+				PlanetarySystemGenerator->GeneratePlanetarySystemModelByStar(
 					PlanetraySystemModel, StarModel, PlanetGenerator, MoonGenerator);
 				//PlanetarySystemGenerator->GenerateCustomPlanetarySystem();
 			}
@@ -1114,7 +1114,7 @@ void AAstroGenerator::GenerateCustomHomeSystem()
 
 			if (bRandomHomeSystemType)
 			{
-				PlanetarySystemGenerator->GeneratePlanetraySystemModelByStar(
+				PlanetarySystemGenerator->GeneratePlanetarySystemModelByStar(
 					PlanetraySystemModel, StarModel, PlanetGenerator, MoonGenerator);
 			}
 			else
@@ -1122,7 +1122,7 @@ void AAstroGenerator::GenerateCustomHomeSystem()
 				PlanetraySystemModel->AmountOfPlanets = PlanetsAmount;
 				PlanetraySystemModel->PlanetarySystemType = HomeSystemPlanetaryType;
 				PlanetraySystemModel->OrbitDistributionType = HomeSystemOrbitDistributionType;
-				PlanetarySystemGenerator->GenerateCustomPlanetraySystemModel(
+				PlanetarySystemGenerator->GenerateCustomPlanetarySystemModel(
 					PlanetraySystemModel, StarModel, PlanetGenerator, MoonGenerator);
 			}
 
@@ -1629,7 +1629,7 @@ void AAstroGenerator::GenerateStarSystem(AStarSystem* NewStarSystem, TSharedPtr<
 
 		if (bRandomHomeSystemType)
 		{
-			PlanetarySystemGenerator->GeneratePlanetraySystemModelByStar(
+			PlanetarySystemGenerator->GeneratePlanetarySystemModelByStar(
 				PlanetarySystemModel, StarModel, PlanetGenerator, MoonGenerator);
 		}
 		else
@@ -1637,7 +1637,7 @@ void AAstroGenerator::GenerateStarSystem(AStarSystem* NewStarSystem, TSharedPtr<
 			PlanetarySystemModel->AmountOfPlanets = PlanetsAmount;
 			PlanetarySystemModel->PlanetarySystemType = HomeSystemPlanetaryType;
 			PlanetarySystemModel->OrbitDistributionType = HomeSystemOrbitDistributionType;
-			PlanetarySystemGenerator->GenerateCustomPlanetraySystemModel(
+			PlanetarySystemGenerator->GenerateCustomPlanetarySystemModel(
 				PlanetarySystemModel, StarModel, PlanetGenerator, MoonGenerator);
 		}
 
@@ -1896,7 +1896,7 @@ void AAstroGenerator::GenerateHomeSystemByModel()
 
 			if (bRandomHomeSystemType)
 			{
-				PlanetarySystemGenerator->GeneratePlanetraySystemModelByStar(
+				PlanetarySystemGenerator->GeneratePlanetarySystemModelByStar(
 					PlanetarySystemModel, StarModel, PlanetGenerator, MoonGenerator);
 			}
 			else
@@ -1904,7 +1904,7 @@ void AAstroGenerator::GenerateHomeSystemByModel()
 				PlanetarySystemModel->AmountOfPlanets = PlanetsAmount;
 				PlanetarySystemModel->PlanetarySystemType = HomeSystemPlanetaryType;
 				PlanetarySystemModel->OrbitDistributionType = HomeSystemOrbitDistributionType;
-				PlanetarySystemGenerator->GenerateCustomPlanetraySystemModel(
+				PlanetarySystemGenerator->GenerateCustomPlanetarySystemModel(
 					PlanetarySystemModel, StarModel, PlanetGenerator, MoonGenerator);
 			}
 
@@ -1937,8 +1937,8 @@ void AAstroGenerator::GenerateHomeSystemByModel()
 
 			// Генерация планет для каждой звезды
 			FVector LastPlanetLocation{0};
-			int AmountOfPlanets = PlanetarySystemModel->AmountOfPlanets;
 			//PlanetarySystemModel->PlanetsList,clear
+			int AmountOfPlanets = PlanetarySystemModel->AmountOfPlanets;
 			for (const TSharedPtr<FPlanetData> FPlanetData : PlanetarySystemModel->PlanetsList)
 			{
 				APlanetOrbit* NewPlanetOrbit = World->SpawnActor<APlanetOrbit>(

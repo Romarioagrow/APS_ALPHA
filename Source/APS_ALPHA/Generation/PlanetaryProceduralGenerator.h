@@ -84,11 +84,11 @@ public:
 
 	void ApplyModel(APlanetarySystem* NewPlanetarySystem, TSharedPtr<FPlanetarySystemModel> PlanetraySystemModel);
 
-	void GenerateCustomPlanetraySystemModel(TSharedPtr<FPlanetarySystemModel> PlanetarySystemModel,
+	void GenerateCustomPlanetarySystemModel(TSharedPtr<FPlanetarySystemModel> PlanetarySystemModel,
 	                                        TSharedPtr<FStarModel> StarModel, UPlanetGenerator* PlanetGenerator,
 	                                        UMoonGenerator* MoonGenerator);
 
-	void GeneratePlanetraySystemModelByStar(TSharedPtr<FPlanetarySystemModel> PlanetarySystemModel,
+	void GeneratePlanetarySystemModelByStar(TSharedPtr<FPlanetarySystemModel> PlanetarySystemModel,
 	                                        TSharedPtr<FStarModel> StarModel, UPlanetGenerator* PlanetGenerator,
 	                                        UMoonGenerator* MoonGenerator);
 
