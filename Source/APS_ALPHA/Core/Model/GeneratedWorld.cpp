@@ -12,7 +12,7 @@ UGeneratedWorld::UGeneratedWorld(): GalaxyClass()
 {
 	bGenerateFullScaledWorld = true;
 	bGenerateHomeSystem = false;
-	bStartWithHomePlanet = false;
+	bStartWithHomePlanet = true;
 	bRandomHomeSystem = false;
 	bRandomHomeSystemType = false;
 	bRandomHomeStar = false;

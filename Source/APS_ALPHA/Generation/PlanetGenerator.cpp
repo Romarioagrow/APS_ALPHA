@@ -1,6 +1,10 @@
 #include "PlanetGenerator.h"
+
+#include "Atmosphere.h"
 #include "APS_ALPHA/Actors/Astro/Planet.h"
 #include "APS_ALPHA/Core/Enums/OrbitHeight.h"
+#include "APS_ALPHA/Core/Model/GeneratedWorld.h"
+#include "APS_ALPHA/Core/Structs/PlanetAtmosphereModel.h"
 
 UPlanetGenerator::UPlanetGenerator()
 {
@@ -69,6 +73,89 @@ void UPlanetGenerator::CalculateLagrangePoints()
 	//    }
 	//}
 }
+
+APlanet* UPlanetGenerator::GeneratePlanet(const TSharedPtr<FPlanetModel>& PlanetModel,
+                                          const TSubclassOf<APlanet> PlanetClass, UWorld* World)
+{
+	if (!World || !PlanetModel || !PlanetClass)
+	{
+		return nullptr;
+	}
+
+	APlanet* NewPlanet = World->SpawnActor<APlanet>(PlanetClass);
+	if (NewPlanet)
+	{
+		ApplyModel(NewPlanet, PlanetModel);
+		const double RadiusInCm = PlanetModel->Radius * KM_TO_CM * SCALE_FACTOR;
+		NewPlanet->SetActorScale3D(FVector(RadiusInCm));
+		NewPlanet->PlanetRadiusKM = PlanetModel->Radius; // * 6371;
+		//FVector NewLocation = FVector(PlanetModel->OrbitDistance * 149600000000000 / 1000, 0, 0);
+		//NewPlanet->SetActorLocation(NewLocation);
+	}
+	return NewPlanet;
+}
+
+TSharedPtr<FPlanetModel> UPlanetGenerator::CreatePlanetModelFromGeneratedWorld(const UGeneratedWorld* GeneratedWorld)
+{
+	if (!GeneratedWorld)
+	{
+		return nullptr;
+	}
+
+	TSharedPtr<FPlanetModel> PlanetModel = MakeShared<FPlanetModel>();
+	PlanetModel->PlanetType = GeneratedWorld->PlanetType;
+	PlanetModel->AmountOfMoons = GeneratedWorld->MoonsAmount;
+	PlanetModel->Radius = GeneratedWorld->PlanetRadius;
+
+	return PlanetModel;
+}
+
+void UPlanetGenerator::GeneratePlanetAtmosphere(APlanet* Planet, const TSharedPtr<FPlanetAtmosphereModel>& PlanetAtmosphereMode)
+{
+	if (!Planet || !PlanetAtmosphereMode)
+	{
+		return;
+	}
+
+	UWorld* World = Planet->GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	if (AAtmosphere* PlanetAtmosphere = World->SpawnActor<AAtmosphere>(AAtmosphere::StaticClass(), FTransform()))
+	{
+		PlanetAtmosphere->SetActorLocation(Planet->GetActorLocation());
+		PlanetAtmosphere->AttachToActor(Planet, FAttachmentTransformRules::KeepWorldTransform);
+
+		// Настройка параметров атмосферы
+		PlanetAtmosphere->PlanetRadius = PlanetAtmosphereMode->AtmosphereRadiusKm;
+		PlanetAtmosphere->AtmosphereHeight = PlanetAtmosphereMode->AtmosphereHeight;
+		PlanetAtmosphere->AtmosphereOpacity = PlanetAtmosphereMode->AtmosphereOpacity;
+		PlanetAtmosphere->MultiScatering = PlanetAtmosphereMode->AtmosphereMultiScattering;
+		PlanetAtmosphere->RayleighHeight = PlanetAtmosphereMode->AtmosphereRayleighScattering;
+		//PlanetAtmosphere->Ray = PlanetAtmosphereMode->AtmosphereColor;
+		PlanetAtmosphere->RayleighScattering = PlanetAtmosphereMode->AtmosphereColor;
+	}
+}
+
+TSharedPtr<FPlanetAtmosphereModel> UPlanetGenerator::CreateAtmosphereModelFromGeneratedWorld(
+	UGeneratedWorld* GeneratedWorld)
+{
+	if (!GeneratedWorld)
+	{
+		return nullptr;
+	}
+
+	TSharedPtr<FPlanetAtmosphereModel> AtmosphereModel = MakeShared<FPlanetAtmosphereModel>();
+	AtmosphereModel->AtmosphereRadiusKm = GeneratedWorld->PlanetRadius; 
+	AtmosphereModel->AtmosphereHeight = GeneratedWorld->AtmosphereHeight;
+	AtmosphereModel->AtmosphereOpacity = GeneratedWorld->AtmosphereOpacity;
+	AtmosphereModel->AtmosphereMultiScattering = GeneratedWorld->AtmosphereMultiScattering;
+	AtmosphereModel->AtmosphereRayleighScattering = GeneratedWorld->AtmosphereRayleighScattering;
+	AtmosphereModel->AtmosphereColor = GeneratedWorld->AtmosphereColor;
+
+	return AtmosphereModel;}
 
 void UPlanetGenerator::ConnectPlanetWithStar(APlanet* NewPlanet, AStar* NewStar)
 {

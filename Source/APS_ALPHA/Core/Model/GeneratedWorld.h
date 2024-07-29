@@ -128,4 +128,21 @@ public:
 	
 	UPROPERTY(EditInstanceOnly, Category = "Generation Params")
 	APlanet* HomePlanet;
+
+	
+	// Свойства атмосферы
+	UPROPERTY(EditAnywhere, Category = "Atmosphere")
+	double AtmosphereHeight{ 100.0 };
+
+	UPROPERTY(EditAnywhere, Category = "Atmosphere")
+	double AtmosphereOpacity{ 1.0 };
+
+	UPROPERTY(EditAnywhere, Category = "Atmosphere")
+	double AtmosphereMultiScattering{ 1.0 };
+
+	UPROPERTY(EditAnywhere, Category = "Atmosphere")
+	double AtmosphereRayleighScattering{ 8.0 };
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Atmosphere")
+	FLinearColor AtmosphereColor {FLinearColor(3.8f, 13.5f, 33.0f, 0.0f)};
 };
