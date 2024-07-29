@@ -81,7 +81,6 @@ void UPlanetarySystemGenerator::GenerateCustomPlanetarySystemModel(
 		FinalPlanetCount = 1;
 	}
 
-	// TODO: To base method
 	for (int i = 0; i < FinalPlanetCount; i++)
 	{
 		double OrbitDistributionValue;
@@ -127,11 +126,8 @@ void UPlanetarySystemGenerator::GenerateCustomPlanetarySystemModel(
 		// Применяем функцию распределения к нашему диапазону орбит
 		OrbitRadii.Add(OrbitRadius);
 	}
-
 	OrbitRadii.Sort();
 	UE_LOG(LogTemp, Warning, TEXT("OrbitRadii Num: %d "), OrbitRadii.Num());
-
-	// Выводим минимальную и максимальную орбиту
 	UE_LOG(LogTemp, Warning, TEXT("MinOrbit: %f, MaxOrbit: %f"), MinOrbit, MaxOrbit);
 
 	// Вычисляем обитаемую зону
@@ -241,8 +237,7 @@ void UPlanetarySystemGenerator::GenerateCustomPlanetarySystemModel(
 	}
 
 	// Масштабируемые коэффициенты для разных зон
-	double scaleCoeff = 149597870 * 3000;
-
+	//double scaleCoeff = 149597870 * 3000;
 
 	/* StarDeadZoneOuter = StarDeadZoneOuter * 149597870 * 3000;
 	 HotZoneOuter = (StarDeadZoneOuter + ((HabitableZoneInner * scaleCoeff) - StarDeadZoneOuter) / 2) * 149597870 * 3000;
@@ -253,9 +248,7 @@ void UPlanetarySystemGenerator::GenerateCustomPlanetarySystemModel(
 	 KuiperBeltZoneOuter = (KuiperBeltZoneInner * 2 > MaxOrbit) ? MaxOrbit : KuiperBeltZoneInner * 2 * scaleCoeff * 149597870 * 3000;*/
 
 	//*149597870 * 3000
-
 	//PlanetarySystemModel->MinOrbit
-
 	/*HotZoneInner *= 149597870 * 3000;
 	HotZoneOuter *= 149597870 * 3000;
 	WarmZoneInner *= 149597870 * 3000;
@@ -283,7 +276,6 @@ void UPlanetarySystemGenerator::GenerateCustomPlanetarySystemModel(
 	//PlanetarySystemModel->OuterZoneOuter = OuterZoneOuter * 149597870 * 3000;
 	//PlanetarySystemModel->HabitableZoneOuter = HabitableZoneOuter * 149597870 * 3000;
 	//PlanetarySystemModel->StarDeadZoneOuter = StarDeadZoneOuter * 149597870 * 3000;
-
 
 	PlanetarySystemModel->DeadZoneRadius = FZoneRadius(StarDeadZoneInner, StarDeadZoneOuter);
 	PlanetarySystemModel->HabitableZoneRadius = FZoneRadius(HabitableZoneInner, HabitableZoneOuter);

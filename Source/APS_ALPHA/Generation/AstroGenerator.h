@@ -120,6 +120,12 @@ public:
 	bool bStartWithHomePlanet{ false };
 
 	UPROPERTY(EditAnywhere, Category = "Generation Params")
+	bool bSpawnStarterLocation{ true };
+
+	UPROPERTY(EditAnywhere, Category = "Generation Params")
+	bool bSpawnStarterPlanet{ true };
+
+	UPROPERTY(EditAnywhere, Category = "Generation Params")
 	EAstroGenerationLevel AstroGenerationLevel{ EAstroGenerationLevel::StarCluster };
 
 	UPROPERTY(EditInstanceOnly, Category = "Generation Params")
