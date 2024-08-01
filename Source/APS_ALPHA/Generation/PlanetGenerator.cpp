@@ -1,6 +1,7 @@
 #include "PlanetGenerator.h"
 
 #include "Atmosphere.h"
+#include "PlanetaryEnvironmentGenerator.h"
 #include "APS_ALPHA/Actors/Astro/Planet.h"
 #include "APS_ALPHA/Core/Enums/OrbitHeight.h"
 #include "APS_ALPHA/Core/Model/GeneratedWorld.h"
@@ -88,9 +89,9 @@ APlanet* UPlanetGenerator::GeneratePlanet(const TSharedPtr<FPlanetModel>& Planet
 		ApplyModel(NewPlanet, PlanetModel);
 		const double RadiusInCm = PlanetModel->Radius * KM_TO_CM * SCALE_FACTOR;
 		NewPlanet->SetActorScale3D(FVector(RadiusInCm));
-		NewPlanet->PlanetRadiusKM = PlanetModel->Radius; // * 6371;
-		//FVector NewLocation = FVector(PlanetModel->OrbitDistance * 149600000000000 / 1000, 0, 0);
-		//NewPlanet->SetActorLocation(NewLocation);
+		NewPlanet->PlanetRadiusKM = PlanetModel->Radius; 
+
+		
 	}
 	return NewPlanet;
 }
