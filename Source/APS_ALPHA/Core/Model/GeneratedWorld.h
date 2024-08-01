@@ -41,22 +41,22 @@ public:
 	bool bGenerateFullScaledWorld{ true };
 
 	UPROPERTY(EditAnywhere, Category = "Generation Params")
-	bool bGenerateHomeSystem{ false };
+	bool bGenerateHomeSystem{ true };
 
 	UPROPERTY(EditAnywhere, Category = "Generation Params")
 	bool bStartWithHomePlanet{ false };
 
 	UPROPERTY(EditAnywhere, Category = "Home System")
-	bool bRandomHomeSystem{ true };
+	bool bRandomHomeSystem{ false };
 
 	UPROPERTY(EditAnywhere, Category = "Home System", meta = (EditCondition = "!bRandomHomeSystem"))
-	bool bRandomHomeSystemType;
+	bool bRandomHomeSystemType{ false };
 
 	UPROPERTY(EditAnywhere, Category = "Home System", meta = (EditCondition = "!bRandomHomeSystem"))
-	bool bRandomHomeStar;
+	bool bRandomHomeStar{ false };
 
 	UPROPERTY(EditAnywhere, Category = "Home System")
-	bool bRandomStartPlanetNumber{ true };
+	bool bRandomStartPlanetNumber{ false };
 
 
 	UPROPERTY(EditAnywhere, Category = "Generation Params")
@@ -128,4 +128,21 @@ public:
 	
 	UPROPERTY(EditInstanceOnly, Category = "Generation Params")
 	APlanet* HomePlanet;
+
+	
+	// Свойства атмосферы
+	UPROPERTY(EditAnywhere, Category = "Atmosphere")
+	double AtmosphereHeight{ 100.0 };
+
+	UPROPERTY(EditAnywhere, Category = "Atmosphere")
+	double AtmosphereOpacity{ 1.0 };
+
+	UPROPERTY(EditAnywhere, Category = "Atmosphere")
+	double AtmosphereMultiScattering{ 1.0 };
+
+	UPROPERTY(EditAnywhere, Category = "Atmosphere")
+	double AtmosphereRayleighScattering{ 8.0 };
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Atmosphere")
+	FLinearColor AtmosphereColor {FLinearColor(3.8f, 13.5f, 33.0f, 0.0f)};
 };
