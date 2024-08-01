@@ -5,13 +5,13 @@
 UENUM(BlueprintType)
 enum class ESpectralClass : uint8
 {
-	O 	UMETA(DisplayName = "O - Blue"),
-	B 	UMETA(DisplayName = "B - Blue-White"),
-	A 	UMETA(DisplayName = "A - White"),
-	F 	UMETA(DisplayName = "F - Yellow-White"),
-	G 	UMETA(DisplayName = "G - Yellow"),
-	K 	UMETA(DisplayName = "K - Orange"),
 	M 	UMETA(DisplayName = "M - Red"),
+	K 	UMETA(DisplayName = "K - Orange"),
+	G 	UMETA(DisplayName = "G - Yellow"),
+	F 	UMETA(DisplayName = "F - Yellow-White"),
+	A 	UMETA(DisplayName = "A - White"),
+	B 	UMETA(DisplayName = "B - Blue-White"),
+	O 	UMETA(DisplayName = "O - Blue"),
 	L 	UMETA(DisplayName = "L - Brown Dwarf"),
 	T 	UMETA(DisplayName = "T - Tauri Dwarf"),
 	Y 	UMETA(DisplayName = "Y - Cool Brown Dwarf"),

@@ -505,7 +505,7 @@ void APlanetaryEnvironmentGenerator::GenerateWorldscapeSurfaceByModel(UWorld* Wo
         GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("InitWorldScape WorldScapeRootInstance has been created successfully."));
         UE_LOG(LogTemp, Warning, TEXT("InitWorldScape WorldScapeRootInstance has been created successfully."));
 
-        double PlanetRadiusKM = NewPlanet->RadiusKM;
+        double PlanetRadiusKM = NewPlanet->PlanetRadiusKM;
 
         WorldScapeRootInstance->GenerationType = EWorldScapeType::Planet;
         WorldScapeRootInstance->PlanetScale = PlanetRadiusKM * 100000;
@@ -533,8 +533,8 @@ void APlanetaryEnvironmentGenerator::GenerateWorldscapeSurfaceByModel(UWorld* Wo
         double NoiseIntensity{ 1200000.0 };
         int NoiseSeed{ 10 };
 
-        NoiseScale *= NewPlanet->Radius;
-        NoiseIntensity *= NewPlanet->Radius;
+        //NoiseScale *= NewPlanet->Radius;
+       // NoiseIntensity *= NewPlanet->Radius;
 
 
         /*switch (PlanetType)

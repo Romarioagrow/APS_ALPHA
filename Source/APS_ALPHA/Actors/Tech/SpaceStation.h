@@ -16,9 +16,9 @@ public:
 	ASpaceStation();
 
 	// TODO: To parent component
-	UPROPERTY(EditAnywhere,  Category = "Components")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Components")
 	USceneComponent* SpawnPoint;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Gravity")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gravity")
 	USphereComponent* GravityCollisionZone;
 };

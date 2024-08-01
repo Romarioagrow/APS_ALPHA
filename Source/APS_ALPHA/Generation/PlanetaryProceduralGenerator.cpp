@@ -38,7 +38,88 @@ void UPlanetarySystemGenerator::ApplyModel(APlanetarySystem* NewPlanetarySystem,
 }
 
 
-void UPlanetarySystemGenerator::GenerateCustomPlanetraySystemModel(
+void UPlanetarySystemGenerator::GeneratePlanetMoonsList(
+	UPlanetGenerator* PlanetGenerator,
+	UMoonGenerator* MoonGenerator,
+	TSharedPtr<FPlanetModel> PlanetModel,
+	const double PlanetRadius, const int AmountOfMoons)
+{
+	TArray<TSharedPtr<FMoonData>> MoonsList{};
+	TArray<double> MoonOrbits;
+	MoonOrbits.Reserve(AmountOfMoons);
+
+	if (PlanetModel->PlanetType == EPlanetType::GasGiant
+		|| PlanetModel->PlanetType == EPlanetType::IceGiant
+		|| PlanetModel->PlanetType == EPlanetType::HotGiant)
+	{
+		// Распределение орбит от 1 до 10 радиусов планеты
+		for (int i = 0; i < AmountOfMoons; i++)
+		{
+			double orbitRadius = FMath::RandRange(PlanetRadius * 1.0, PlanetRadius * 10.0);
+			orbitRadius /= 40;
+			MoonOrbits.Add(orbitRadius);
+		}
+	}
+	else
+	{
+		double a = 1.5;
+		double d = 1.4;
+		// Коэффициенты закона Тициуса-Боде для остальных планет
+		for (int i = 0; i < AmountOfMoons; i++)
+		{
+			double MoonOrbitRadius = a + d * pow(2, i);
+			MoonOrbitRadius = FMath::RandRange(MoonOrbitRadius * 0.9, MoonOrbitRadius * 1.3);
+			MoonOrbits.Add(MoonOrbitRadius);
+		}
+	}
+	MoonOrbits.Sort();
+
+	for (double MoonOrbit : MoonOrbits)
+	{
+		//FMoonGenerationModel MoonModel;
+		TSharedPtr<FMoonModel> MoonModel = MakeShared<FMoonModel>();
+
+		EMoonType MoonType = MoonGenerator->GenerateMoonType(PlanetModel);
+
+		// Вычисляем физические параметры луны
+		double MoonMass = MoonGenerator->CalculateRandomMoonMass();
+		double MoonDensity = MoonGenerator->CalculateRandomMoonDensity(MoonType);
+		double MoonRadius = MoonGenerator->CalculateMoonRadius(MoonDensity, MoonMass);
+		double MoonGravity = MoonMass / FMath::Pow(MoonRadius, 2);
+		/// TODO: to MoonGenerator->CalculateGravitationalForce(PlanetModel.Mass, MoonMass, MoonOrbit);
+
+		// Создаем модель луны
+		MoonModel->Type = MoonType;
+		MoonModel->Mass = MoonMass;
+		MoonModel->Radius = MoonRadius;
+		MoonModel->RadiusKM = MoonModel->Radius * 6371.0;
+		MoonModel->MoonDensity = MoonDensity; // TODO: To Parent 
+		MoonModel->MoonGravity = MoonGravity;
+		MoonModel->OrbitDistance = MoonOrbit;
+		MoonModel->MoonAtmosphereHeight = MoonModel->RadiusKM / 30;
+
+		// Создаем данные о луне
+		int MoonIndex = MoonOrbits.IndexOfByKey(MoonOrbit);
+		TSharedPtr<FMoonData> MoonData = MakeShared<FMoonData>(MoonIndex + 1, MoonOrbit, MoonModel);
+
+		// Добавляем данные о луне в список
+		MoonsList.Add(MoonData);
+	}
+
+	for (int32 i = 0; i <= (int32)EOrbitHeight::VeryHighOrbit; ++i)
+	{
+		FOrbitInfo OrbitInfo{};
+		OrbitInfo.OrbitHeightType = (EOrbitHeight)i;
+		OrbitInfo.OrbitHeight = PlanetGenerator->CalculateOrbitHeight(OrbitInfo.OrbitHeightType, PlanetRadius);
+		PlanetModel->Orbits.Add(OrbitInfo);
+	}
+
+	PlanetModel->MoonsList = MoonsList;
+	/*TSharedPtr<FPlanetData> PlanetData = MakeShared<FPlanetData>(PlanetIndex, OrbitRadius, PlanetModel);
+	PlanetarySystemModel->PlanetsList.Add(PlanetData);*/
+}
+
+void UPlanetarySystemGenerator::GenerateCustomPlanetarySystemModel(
 	TSharedPtr<FPlanetarySystemModel> PlanetarySystemModel,
 	TSharedPtr<FStarModel> StarModel,
 	UPlanetGenerator* PlanetGenerator,
@@ -69,12 +150,18 @@ void UPlanetarySystemGenerator::GenerateCustomPlanetraySystemModel(
 
 	// Подбираем случайное распределение для нашей системы
 	EOrbitDistributionType OrbitDistributionType = PlanetarySystemModel->OrbitDistributionType;
-	//ChooseOrbitDistribution(StarModel->StellarType);
-
 	FString OrbitType = UEnum::GetValueAsString(OrbitDistributionType);
 	UE_LOG(LogTemp, Warning, TEXT("Orbit Distribution Type: %s"), *OrbitType);
 
-	// TODO: To base method
+	if (PlanetarySystemModel->PlanetarySystemType == EPlanetarySystemType::NoPlanetSystem)
+	{
+		FinalPlanetCount = 0;
+	}
+	if (PlanetarySystemModel->PlanetarySystemType == EPlanetarySystemType::SinglePlanetSystem)
+	{
+		FinalPlanetCount = 1;
+	}
+
 	for (int i = 0; i < FinalPlanetCount; i++)
 	{
 		double OrbitDistributionValue;
@@ -120,11 +207,8 @@ void UPlanetarySystemGenerator::GenerateCustomPlanetraySystemModel(
 		// Применяем функцию распределения к нашему диапазону орбит
 		OrbitRadii.Add(OrbitRadius);
 	}
-
 	OrbitRadii.Sort();
 	UE_LOG(LogTemp, Warning, TEXT("OrbitRadii Num: %d "), OrbitRadii.Num());
-
-	// Выводим минимальную и максимальную орбиту
 	UE_LOG(LogTemp, Warning, TEXT("MinOrbit: %f, MaxOrbit: %f"), MinOrbit, MaxOrbit);
 
 	// Вычисляем обитаемую зону
@@ -234,8 +318,7 @@ void UPlanetarySystemGenerator::GenerateCustomPlanetraySystemModel(
 	}
 
 	// Масштабируемые коэффициенты для разных зон
-	double scaleCoeff = 149597870 * 3000;
-
+	//double scaleCoeff = 149597870 * 3000;
 
 	/* StarDeadZoneOuter = StarDeadZoneOuter * 149597870 * 3000;
 	 HotZoneOuter = (StarDeadZoneOuter + ((HabitableZoneInner * scaleCoeff) - StarDeadZoneOuter) / 2) * 149597870 * 3000;
@@ -246,9 +329,7 @@ void UPlanetarySystemGenerator::GenerateCustomPlanetraySystemModel(
 	 KuiperBeltZoneOuter = (KuiperBeltZoneInner * 2 > MaxOrbit) ? MaxOrbit : KuiperBeltZoneInner * 2 * scaleCoeff * 149597870 * 3000;*/
 
 	//*149597870 * 3000
-
 	//PlanetarySystemModel->MinOrbit
-
 	/*HotZoneInner *= 149597870 * 3000;
 	HotZoneOuter *= 149597870 * 3000;
 	WarmZoneInner *= 149597870 * 3000;
@@ -276,7 +357,6 @@ void UPlanetarySystemGenerator::GenerateCustomPlanetraySystemModel(
 	//PlanetarySystemModel->OuterZoneOuter = OuterZoneOuter * 149597870 * 3000;
 	//PlanetarySystemModel->HabitableZoneOuter = HabitableZoneOuter * 149597870 * 3000;
 	//PlanetarySystemModel->StarDeadZoneOuter = StarDeadZoneOuter * 149597870 * 3000;
-
 
 	PlanetarySystemModel->DeadZoneRadius = FZoneRadius(StarDeadZoneInner, StarDeadZoneOuter);
 	PlanetarySystemModel->HabitableZoneRadius = FZoneRadius(HabitableZoneInner, HabitableZoneOuter);
@@ -411,89 +491,8 @@ void UPlanetarySystemGenerator::GenerateCustomPlanetraySystemModel(
 			       OrbitRadiusPair.Value);
 
 			const int AmountOfMoons = PlanetModel->AmountOfMoons;
-			TArray<TSharedPtr<FMoonData>> MoonsList{};
-			TArray<double> MoonOrbits;
-			MoonOrbits.Reserve(AmountOfMoons);
 
-			if (PlanetModel->PlanetType == EPlanetType::GasGiant
-				|| PlanetModel->PlanetType == EPlanetType::IceGiant
-				|| PlanetModel->PlanetType == EPlanetType::HotGiant)
-			{
-				// Распределение орбит от 1 до 10 радиусов планеты
-				for (int i = 0; i < AmountOfMoons; i++)
-				{
-					double orbitRadius = FMath::RandRange(PlanetRadius * 1.0, PlanetRadius * 10.0);
-					orbitRadius /= 40;
-					MoonOrbits.Add(orbitRadius);
-				}
-			}
-			else
-			{
-				double a = 1.5;
-				double d = 1.4;
-				// Коэффициенты закона Тициуса-Боде для остальных планет
-				for (int i = 0; i < AmountOfMoons; i++)
-				{
-					double MoonOrbitRadius = a + d * pow(2, i);
-					MoonOrbitRadius = FMath::RandRange(MoonOrbitRadius * 0.9, MoonOrbitRadius * 1.3);
-					MoonOrbits.Add(MoonOrbitRadius);
-				}
-			}
-			MoonOrbits.Sort();
-
-			for (double MoonOrbit : MoonOrbits)
-			{
-				//FMoonGenerationModel MoonModel;
-				TSharedPtr<FMoonModel> MoonModel = MakeShared<FMoonModel>();
-
-				EMoonType MoonType = MoonGenerator->GenerateMoonType(PlanetModel);
-
-				// Вычисляем физические параметры луны
-				double MoonMass = MoonGenerator->CalculateRandomMoonMass();
-				double MoonDensity = MoonGenerator->CalculateRandomMoonDensity(MoonType);
-				double MoonRadius = MoonGenerator->CalculateMoonRadius(MoonDensity, MoonMass);
-				double MoonGravity = MoonMass / FMath::Pow(MoonRadius, 2);
-				/// TODO: to MoonGenerator->CalculateGravitationalForce(PlanetModel.Mass, MoonMass, MoonOrbit);
-
-				// Создаем модель луны
-				MoonModel->Type = MoonType;
-				MoonModel->Mass = MoonMass;
-				MoonModel->Radius = MoonRadius;
-				MoonModel->RadiusKM = MoonModel->Radius * 6371.0;
-				MoonModel->MoonDensity = MoonDensity; // TODO: To Parent 
-				MoonModel->MoonGravity = MoonGravity;
-				MoonModel->OrbitDistance = MoonOrbit;
-				MoonModel->MoonAtmosphereHeight = MoonModel->RadiusKM / 30;
-
-				// Создаем данные о луне
-				int MoonIndex = MoonOrbits.IndexOfByKey(MoonOrbit);
-				TSharedPtr<FMoonData> MoonData = MakeShared<FMoonData>(MoonIndex + 1, MoonOrbit, MoonModel);
-
-				// Добавляем данные о луне в список
-				MoonsList.Add(MoonData);
-			}
-
-			//// Вычисление позиций точек Лагранжа (это упрощенные формулы, в реальности они сложнее)
-			//FVector L1_Position = FVector(OrbitRadius * (1 - pow(PlanetMass / 3, 1.0 / 3.0)), 0, 0);
-			//FVector L2_Position = FVector(OrbitRadius * (1 + pow(PlanetMass / 3, 1.0 / 3.0)), 0, 0);
-			//FVector L3_Position = FVector(-OrbitRadius * (1 + 5 * PlanetMass / 12), 0, 0);
-			//FVector L4_Position = FVector(OrbitRadius * cos(PI / 3), OrbitRadius * sin(PI / 3), 0);
-			//FVector L5_Position = FVector(OrbitRadius * cos(PI / 3), -OrbitRadius * sin(PI / 3), 0);
-			//PlanetModel->LagrangePoints.Add(L1_Position);
-			//PlanetModel->LagrangePoints.Add(L2_Position);
-			//PlanetModel->LagrangePoints.Add(L3_Position);
-			//PlanetModel->LagrangePoints.Add(L4_Position);
-			//PlanetModel->LagrangePoints.Add(L5_Position);
-
-			for (int32 i = 0; i <= (int32)EOrbitHeight::VeryHighOrbit; ++i)
-			{
-				FOrbitInfo OrbitInfo{};
-				OrbitInfo.OrbitHeightType = (EOrbitHeight)i;
-				OrbitInfo.OrbitHeight = PlanetGenerator->CalculateOrbitHeight(OrbitInfo.OrbitHeightType, PlanetRadius);
-				PlanetModel->Orbits.Add(OrbitInfo);
-			}
-
-			PlanetModel->MoonsList = MoonsList;
+			GeneratePlanetMoonsList(PlanetGenerator, MoonGenerator, PlanetModel, PlanetRadius, AmountOfMoons);
 			TSharedPtr<FPlanetData> PlanetData = MakeShared<FPlanetData>(PlanetIndex, OrbitRadius, PlanetModel);
 			PlanetarySystemModel->PlanetsList.Add(PlanetData);
 		}
@@ -501,7 +500,7 @@ void UPlanetarySystemGenerator::GenerateCustomPlanetraySystemModel(
 }
 
 
-void UPlanetarySystemGenerator::GeneratePlanetraySystemModelByStar(
+void UPlanetarySystemGenerator::GeneratePlanetarySystemModelByStar(
 	TSharedPtr<FPlanetarySystemModel> PlanetarySystemModel, TSharedPtr<FStarModel> StarModel,
 	UPlanetGenerator* PlanetGenerator, UMoonGenerator* MoonGenerator)
 {
