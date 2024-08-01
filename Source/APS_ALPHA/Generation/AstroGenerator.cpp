@@ -408,7 +408,7 @@ void AAstroGenerator::SpawnPlanetMoons(const TSharedPtr<FPlanetModel>& PlanetMod
 
 		///Generate WSC
 		NewMoon->PlanetaryEnvironmentGenerator->InitAtmoScape(GetWorld(), NewMoon->RadiusKM, NewMoon);
-		//NewMoon->PlanetaryEnvironmentGenerator->GenerateWorldscapeSurfaceByModel(World, NewMoon);
+		NewMoon->PlanetaryEnvironmentGenerator->GenerateWorldscapeSurfaceByModel(GetWorld(), NewMoon);
 	}
 
 	if (DiameterOfLastMoon == 0)
@@ -558,7 +558,7 @@ void AAstroGenerator::SpawnStartInteractiveActors(TSharedPtr<FPlanetModel> Start
 		this->SetActorLocation(NewGeneratorLocation, false);
 		// Устанавливаем положение игрока на (0,0,0)
 		
-		PlayerCharacter->SetActorLocation(FVector(0, 0, 0), false);
+		PlayerCharacter->SetActorLocation(FVector(0, 0, 1500), false);
 	}
 	else
 	{
@@ -602,6 +602,8 @@ void AAstroGenerator::GenerateHomeStarSystem()
 				CreateAtmosphereModelFromGeneratedWorld(GeneratedWorldModel);
 			HomePlanet = PlanetGenerator->GeneratePlanet(HomePlanetModel, BP_PlanetClass, GetWorld());
 			PlanetGenerator->GeneratePlanetAtmosphere(HomePlanet, PlanetAtmosphereModel);
+			HomePlanet->PlanetaryEnvironmentGenerator->GenerateWorldscapeSurfaceByModel(GetWorld(), HomePlanet);
+
 
 			APlanetOrbit* NewHomePlanetOrbit = GeneratedHomeStarSystem->MainStar->PlanetarySystem->
 			                                                            PlanetOrbitsList[StartPlanetNumber - 1];
