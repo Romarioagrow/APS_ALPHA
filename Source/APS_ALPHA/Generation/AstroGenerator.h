@@ -12,7 +12,6 @@
 #include "GameFramework/Actor.h"
 #include "AstroGenerator.generated.h"
 
-struct FPlanetData;
 class AControlledPawn;
 class AAstroAnchor;
 class AMoon;
@@ -26,6 +25,8 @@ class ASpaceHeadquarters;
 enum class ECharSpawnPlace : uint8;
 enum class EHomeSystemPosition : uint8;
 enum class EOrbitHeight : uint8;
+struct FPlanetModel;
+struct FPlanetData;
 
 UCLASS()
 class APS_ALPHA_API AAstroGenerator : public AActor
@@ -34,6 +35,10 @@ class APS_ALPHA_API AAstroGenerator : public AActor
 
 public:
 	AAstroGenerator();
+
+	TSharedPtr<FPlanetarySystemModel> PlanetarySystemModel;
+
+	void SpawnPlanetMoons(const TSharedPtr<FPlanetModel>& PlanetModel);
 
 	void SetGeneratedWorld(UGeneratedWorld* InGeneratedWorld);
 
@@ -82,6 +87,8 @@ protected:
 	void GenerateHomeSystemByModel();
 
 	void ShowPlanetsList(TArray<TSharedPtr<FPlanetData>> PlanetDataMap);
+	
+	void SpawnMoons(UWorld* World, APlanet* Planet, int32 NumberOfMoons);
 
 	UPROPERTY(VisibleAnywhere, Category = "Generated Astro Actros")
 	AGalaxy* GeneratedGalaxy;

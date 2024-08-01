@@ -8,6 +8,7 @@
 #include "APS_ALPHA/Core/Enums/StellarType.h"
 #include "PlanetaryProceduralGenerator.generated.h"
 
+struct FPlanetModel;
 class APlanetarySystem;
 class UMoonGenerator;
 class UPlanetGenerator;
@@ -76,6 +77,11 @@ class APS_ALPHA_API UPlanetarySystemGenerator : public UBaseProceduralGenerator
 	GENERATED_BODY()
 
 public:
+	void GeneratePlanetMoonsList(
+		UPlanetGenerator* PlanetGenerator, UMoonGenerator* MoonGenerator,
+		TSharedPtr<FPlanetModel> PlanetModel, const double PlanetRadius,
+		const int AmountOfMoons);
+
 	void SetAstroLocation(int StarNumber, APlanetarySystem* NewPlanetarySystem);
 
 	void GenerateCustomPlanetarySystem();
