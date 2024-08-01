@@ -36,6 +36,8 @@ class APS_ALPHA_API AAstroGenerator : public AActor
 public:
 	AAstroGenerator();
 
+	void SpawnStartInteractiveActors(TSharedPtr<FPlanetModel> StartPlanetModel);
+	
 	void ComputeStarAmount(TSharedPtr<FStarSystemModel>& StarSystemModel, int& AmountOfStars);
 	
 	TSharedPtr<FPlanetarySystemModel> PlanetarySystemModel;
