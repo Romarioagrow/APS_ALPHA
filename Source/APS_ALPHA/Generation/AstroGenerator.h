@@ -36,6 +36,8 @@ class APS_ALPHA_API AAstroGenerator : public AActor
 public:
 	AAstroGenerator();
 
+	void ComputeStarAmount(TSharedPtr<FStarSystemModel>& StarSystemModel, int& AmountOfStars);
+	
 	TSharedPtr<FPlanetarySystemModel> PlanetarySystemModel;
 
 	void SpawnPlanetMoons(const TSharedPtr<FPlanetModel>& PlanetModel);
@@ -59,6 +61,7 @@ protected:
 	UGeneratedWorld* GeneratedWorldModel;
 
 	void GenerateHomeStarSystem();
+	void SetMoonRotation(APlanetOrbit* NewMoonOrbit);
 
 	virtual void BeginPlay() override;
 
@@ -167,10 +170,10 @@ public:
 	bool bRandomHomeStar;
 
 	UPROPERTY(EditAnywhere, Category = "Home System")
-	bool bNeedOrbitRotation{ false };
+	bool bNeedOrbitRotation{ true };
 
 	UPROPERTY(EditAnywhere, Category = "Home System")
-	bool bOrbitRotationCheck{ false };
+	bool bOrbitRotationCheck{ true };
 
 	UPROPERTY(EditAnywhere, Category = "Home System", meta = (EditCondition = "!bRandomHomeSystem"))
 	int PlanetsAmount{ 1 };
@@ -326,5 +329,6 @@ public:
 
 	//UFUNCTION()
 	void GenerateStarSystem(AStarSystem* NewStarSystem, TSharedPtr<FStarSystemModel> StarSystemModel);
-
+	void RotatePlanetOrbits(APlanetarySystem* NewPlanetarySystem);
+	void ComputeHomeSystemPosition(FTransform& HomeSystemTransform, FVector& HomeSystemSpawnLocation);
 };
