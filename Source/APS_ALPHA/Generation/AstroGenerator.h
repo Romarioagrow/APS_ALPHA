@@ -25,6 +25,8 @@ class ASpaceHeadquarters;
 enum class ECharSpawnPlace : uint8;
 enum class EHomeSystemPosition : uint8;
 enum class EOrbitHeight : uint8;
+struct FPlanetModel;
+struct FPlanetData;
 
 UCLASS()
 class APS_ALPHA_API AAstroGenerator : public AActor
@@ -33,6 +35,14 @@ class APS_ALPHA_API AAstroGenerator : public AActor
 
 public:
 	AAstroGenerator();
+
+	void SpawnStartInteractiveActors(TSharedPtr<FPlanetModel> StartPlanetModel);
+	
+	void ComputeStarAmount(TSharedPtr<FStarSystemModel>& StarSystemModel, int& AmountOfStars);
+	
+	TSharedPtr<FPlanetarySystemModel> PlanetarySystemModel;
+
+	void SpawnPlanetMoons(const TSharedPtr<FPlanetModel>& PlanetModel);
 
 	void SetGeneratedWorld(UGeneratedWorld* InGeneratedWorld);
 
@@ -50,9 +60,10 @@ public:
 	
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "World Generation")
-	UGeneratedWorld* NewGeneratedWorld;
+	UGeneratedWorld* GeneratedWorldModel;
 
 	void GenerateHomeStarSystem();
+	void SetMoonRotation(APlanetOrbit* NewMoonOrbit);
 
 	virtual void BeginPlay() override;
 
@@ -64,7 +75,7 @@ protected:
 
 	void GenerateGalaxy();
 
-	void GenerateStarSystem();
+	void GenerateRandomStarSystem();
 
 	void GeneratePlanetSystem();
 
@@ -75,6 +86,14 @@ protected:
 	void InitAstroGenerators();
 
 	void GenerateCustomHomeSystem();
+	
+	bool CheckGeneratorsFails();
+
+	void GenerateHomeSystemByModel();
+
+	void ShowPlanetsList(TArray<TSharedPtr<FPlanetData>> PlanetDataMap);
+	
+	void SpawnMoons(UWorld* World, APlanet* Planet, int32 NumberOfMoons);
 
 	UPROPERTY(VisibleAnywhere, Category = "Generated Astro Actros")
 	AGalaxy* GeneratedGalaxy;
@@ -113,6 +132,12 @@ public:
 	bool bStartWithHomePlanet{ false };
 
 	UPROPERTY(EditAnywhere, Category = "Generation Params")
+	bool bSpawnStarterLocation{ true };
+
+	UPROPERTY(EditAnywhere, Category = "Generation Params")
+	bool bSpawnStarterPlanet{ true };
+
+	UPROPERTY(EditAnywhere, Category = "Generation Params")
 	EAstroGenerationLevel AstroGenerationLevel{ EAstroGenerationLevel::StarCluster };
 
 	UPROPERTY(EditInstanceOnly, Category = "Generation Params")
@@ -138,7 +163,7 @@ public:
 	FVector HomeSystemRadius{ 0 };
 
 	UPROPERTY(EditAnywhere, Category = "Home System")
-	bool bRandomHomeSystem{ true };
+	bool bRandomHomeSystem{ false };
 
 	UPROPERTY(EditAnywhere, Category = "Home System", meta = (EditCondition = "!bRandomHomeSystem"))
 	bool bRandomHomeSystemType;
@@ -147,10 +172,10 @@ public:
 	bool bRandomHomeStar;
 
 	UPROPERTY(EditAnywhere, Category = "Home System")
-	bool bNeedOrbitRotation{ false };
+	bool bNeedOrbitRotation{ true };
 
 	UPROPERTY(EditAnywhere, Category = "Home System")
-	bool bOrbitRotationCheck{ false };
+	bool bOrbitRotationCheck{ true };
 
 	UPROPERTY(EditAnywhere, Category = "Home System", meta = (EditCondition = "!bRandomHomeSystem"))
 	int PlanetsAmount{ 1 };
@@ -294,4 +319,18 @@ public:
 	int GetRandomValueFromStarAmountRange(EStarClusterType ClusterType);
 
 	void GenerateStarCluster();
+
+	UFUNCTION()
+	FVector DetermineHomeSystemSpawnLocation();
+
+	UFUNCTION()
+	FVector GetHomeSystemSpawnLocationForGalaxy(TArray<AActor*> AttachedActors, int32 RandomIndex);
+
+	UFUNCTION()
+	FVector GetHomeSystemSpawnLocationForStarCluster(TArray<AActor*> AttachedActors, int32 RandomIndex);
+
+	//UFUNCTION()
+	void GenerateStarSystem(AStarSystem* NewStarSystem, TSharedPtr<FStarSystemModel> StarSystemModel);
+	void RotatePlanetOrbits(APlanetarySystem* NewPlanetarySystem);
+	void ComputeHomeSystemPosition(FTransform& HomeSystemTransform, FVector& HomeSystemSpawnLocation);
 };
