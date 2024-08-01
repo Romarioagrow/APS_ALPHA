@@ -433,6 +433,139 @@ void AAstroGenerator::SpawnPlanetMoons(const TSharedPtr<FPlanetModel>& PlanetMod
 	HomePlanet->PlanetaryEnvironmentGenerator->InitEnviroment(HomePlanet, GetWorld());
 }
 
+void AAstroGenerator::SpawnStartInteractiveActors(TSharedPtr<FPlanetModel> StartPlanetModel)
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	FActorSpawnParameters SpawnParams;
+	SpawnParams.Owner = HomePlanet;
+	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	double StationOrbitHeight = PlanetGenerator->CalculateOrbitHeight(
+		HomeSpaceStationOrbitHeight, StartPlanetModel->Radius);
+	FVector PlanetPosition = HomePlanet->GetActorLocation();
+
+	HomeSpaceHeadquarters = World->SpawnActor<ASpaceHeadquarters>(
+		BP_HomeSpaceHeadquarters, PlanetPosition, FRotator::ZeroRotator);
+	HomeSpaceHeadquarters->AttachToActor(HomePlanet, FAttachmentTransformRules::KeepWorldTransform);
+	HomeSpaceHeadquarters->SetActorRelativeRotation(FRotator(0, 0, 0));
+	//const double EARTH_RADIUS_CM = 637100000.0;
+	const double EARTH_RADIUS_CM = 250000.0;
+	const double SpawnOffset = StationOrbitHeight * EARTH_RADIUS_CM;
+	FVector Offset = FVector(0, SpawnOffset, 0);
+	HomeSpaceHeadquarters->AddActorWorldOffset(Offset);
+
+	FVector HomeSpaceHeadquartersLocation = HomeSpaceHeadquarters->GetActorLocation();
+	FRotator HomeSpaceHeadquartersRotation = HomeSpaceHeadquarters->GetActorRotation();
+	HomeSpaceStation = World->SpawnActor<ASpaceStation>(
+		BP_HomeSpaceStation, HomeSpaceHeadquartersLocation,
+		HomeSpaceHeadquartersRotation, SpawnParams);
+	HomeSpaceStation->AttachToActor(HomeSpaceHeadquarters,
+	                                FAttachmentTransformRules::KeepWorldTransform);
+	double HomeStationOffset = HomeSpaceStation->GravityCollisionZone->GetScaledSphereRadius() * 2;
+	HomeSpaceStation->AddActorLocalOffset(FVector(0, HomeStationOffset, 0));
+	HomeSpaceStation->CalculateAffectionRadius();
+
+	// Spawn HomeShipyard
+	HomeSpaceShipyard = World->SpawnActor<ASpaceShipyard>(BP_HomeSpaceShipyard,
+	                                                      HomeSpaceHeadquartersLocation,
+	                                                      HomeSpaceHeadquartersRotation);
+	double HomeSpaceShipyardLocationOffset = HomeSpaceShipyard->GravityCollisionZone->
+	                                                            GetScaledSphereRadius() * 2;
+	HomeSpaceShipyard->AddActorLocalOffset(FVector(0, -HomeSpaceShipyardLocationOffset, 0));
+	HomeSpaceShipyard->AttachToActor(HomeSpaceHeadquarters,
+	                                 FAttachmentTransformRules::KeepWorldTransform);
+	HomeSpaceShipyard->CalculateAffectionRadius();
+
+	//Spawn HomeSpaceship
+	FActorSpawnParameters SpaceshipSpawnParams;
+	SpaceshipSpawnParams.SpawnCollisionHandlingOverride =
+		ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	FVector HomeSpaceshipLocation = HomeSpaceShipyard->SpawnPoint->GetComponentLocation();
+
+	HomeSpaceshipLocation.Z += 1000;
+	ASpaceship* NewHomeSpaceship = World->SpawnActor<ASpaceship>(
+		BP_HomeSpaceship, HomeSpaceshipLocation, HomeSpaceShipyard->GetActorRotation(),
+		SpaceshipSpawnParams);
+
+	if (NewHomeSpaceship && GeneratedHomeStarSystem)
+	{
+		NewHomeSpaceship->AttachToActor(HomeSpaceShipyard,
+		                                FAttachmentTransformRules::KeepWorldTransform);
+		NewHomeSpaceship->OffsetSystem = GeneratedHomeStarSystem;
+
+		if (NewHomeSpaceship->OnboardComputer)
+		{
+			NewHomeSpaceship->OnboardComputer->OffsetSystem = GeneratedHomeStarSystem;
+		}
+		else
+		{
+			UE_LOG(LogTemp, Error, TEXT("Onboard Computer is nullptr!"));
+		}
+	}
+	else
+	{
+		if (!NewHomeSpaceship)
+		{
+			UE_LOG(LogTemp, Error, TEXT("NewHomeSpaceship is nullptr!"));
+		}
+
+		if (!GeneratedHomeStarSystem)
+		{
+			UE_LOG(LogTemp, Error, TEXT("GeneratedHomeStarSystem is nullptr!"));
+		}
+	}
+
+	FVector CharSpawnLocation{0};
+	if (APawn* PlayerCharacter = UGameplayStatics::GetPlayerPawn(World, 0))
+	{
+		switch (CharSpawnPlace)
+		{
+		case ECharSpawnPlace::PlanetOrbit:
+			CharSpawnLocation = HomeSpaceStation->SpawnPoint->GetComponentLocation();
+			break;
+		case ECharSpawnPlace::PlanetSurface:
+			break;
+		case ECharSpawnPlace::MoonOrbit:
+			break;
+		case ECharSpawnPlace::MoonSurface:
+			break;
+		case ECharSpawnPlace::SpaceShip:
+			{
+				CharSpawnLocation = NewHomeSpaceship->GetActorLocation();
+			}
+			break;
+		default:
+			break;
+		}
+
+		UE_LOG(LogTemp, Warning, TEXT("CharSpawnLocation: %s"), *CharSpawnLocation.ToString());
+		bool bTeleportSuccess = PlayerCharacter->SetActorLocation(CharSpawnLocation, false);
+		UE_LOG(LogTemp, Warning, TEXT("Teleport success: %s"),
+		       bTeleportSuccess ? TEXT("True") : TEXT("False"));
+
+		// relocate char to 000
+		// Получаем текущее положение игрока
+		FVector PlayerLocation = HomeSpaceHeadquarters->GetActorLocation();
+		// Получаем текущее положение AstroGenerator
+		FVector GeneratorLocation = this->GetActorLocation();
+		// Вычисляем новое положение для AstroGenerator
+		FVector NewGeneratorLocation = GeneratorLocation - PlayerLocation;
+		// Устанавливаем новое положение для AstroGenerator
+		this->SetActorLocation(NewGeneratorLocation, false);
+		// Устанавливаем положение игрока на (0,0,0)
+		
+		PlayerCharacter->SetActorLocation(FVector(0, 0, 0), false);
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("PlayerCharacter is null!"));
+	}
+}
+
 void AAstroGenerator::GenerateHomeStarSystem()
 {
 	/*
@@ -463,11 +596,11 @@ void AAstroGenerator::GenerateHomeStarSystem()
 
 		if (bSpawnStarterPlanet && GeneratedHomeStarSystem)
 		{
-			const TSharedPtr<FPlanetModel> PlanetModel = PlanetGenerator->CreatePlanetModelFromGeneratedWorld(
+			const TSharedPtr<FPlanetModel> HomePlanetModel = PlanetGenerator->CreatePlanetModelFromGeneratedWorld(
 				GeneratedWorldModel);
 			const TSharedPtr<FPlanetAtmosphereModel> PlanetAtmosphereModel = PlanetGenerator->
 				CreateAtmosphereModelFromGeneratedWorld(GeneratedWorldModel);
-			HomePlanet = PlanetGenerator->GeneratePlanet(PlanetModel, BP_PlanetClass, GetWorld());
+			HomePlanet = PlanetGenerator->GeneratePlanet(HomePlanetModel, BP_PlanetClass, GetWorld());
 			PlanetGenerator->GeneratePlanetAtmosphere(HomePlanet, PlanetAtmosphereModel);
 
 			APlanetOrbit* NewHomePlanetOrbit = GeneratedHomeStarSystem->MainStar->PlanetarySystem->
@@ -488,19 +621,21 @@ void AAstroGenerator::GenerateHomeStarSystem()
 					HomePlanet->SetActorLocation(
 						NewHomePlanetOrbit->GetActorLocation() + OldPlanetLocalPosition);
 
-					PlanetModel->RadiusKM = PlanetModel->Radius;
+					HomePlanetModel->RadiusKM = HomePlanetModel->Radius;
 					PlanetarySystemGenerator->GeneratePlanetMoonsList(PlanetGenerator, MoonGenerator,
-					                                                  PlanetModel, PlanetModel->Radius,
+					                                                  HomePlanetModel, HomePlanetModel->Radius,
 					                                                  GeneratedWorldModel->MoonsAmount);
 
-					SpawnPlanetMoons(PlanetModel);
+					SpawnPlanetMoons(HomePlanetModel);
+
+					SpawnStartInteractiveActors(HomePlanetModel);
 				}
 			}
 		}
 
 		// TODO: REMOVE
 		//if (bSpawnStarterLocation)
-		if (false)
+		/*if (false)
 		// ReSharper disable once CppUnreachableCode
 		{
 			//if (bStartWithHomePlanet)
@@ -511,14 +646,14 @@ void AAstroGenerator::GenerateHomeStarSystem()
 					Disable all Generated object
 					Place and attach HomePlanet To Planet Location
 					Move world to char location become 000
-				*/
+				#1#
 
 				//	if (StartHomePlanet)
 				if (true)
 				{
 					/*GEngine->AddOnScreenDebugMessage(-1, 65.f, FColor::Red,
 					                                 FString::Printf(
-						                                 TEXT("StartHomePlanet: %s"), *StartHomePlanet->GetName()));*/
+						                                 TEXT("StartHomePlanet: %s"), *StartHomePlanet->GetName()));#1#
 
 					/*int StartPlanetIndex = bRandomStartPlanetNumber
 						                       ? FMath::RandRange(0, PlanetsAmount - 1)
@@ -526,7 +661,7 @@ void AAstroGenerator::GenerateHomeStarSystem()
 					if (StartPlanetIndex >= PlanetsAmount || StartPlanetIndex < 0)
 					{
 						StartPlanetIndex = PlanetsAmount - 1;
-					}*/
+					}#1#
 
 					if (GeneratedHomeStarSystem)
 					{
@@ -622,129 +757,10 @@ void AAstroGenerator::GenerateHomeStarSystem()
 				{
 					HomePlanet = GeneratedHomeStarSystem->MainStar->PlanetarySystem->PlanetsActorsList[HomePlanetIndex];
 
-					FActorSpawnParameters SpawnParams;
-					SpawnParams.Owner = HomePlanet;
-					SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-					double StationOrbitHeight = PlanetGenerator->CalculateOrbitHeight(
-						HomeSpaceStationOrbitHeight, StartPlanetModel->Radius);
-					FVector PlanetPosition = HomePlanet->GetActorLocation();
-
-					HomeSpaceHeadquarters = World->SpawnActor<ASpaceHeadquarters>(
-						BP_HomeSpaceHeadquarters, PlanetPosition, FRotator::ZeroRotator);
-					HomeSpaceHeadquarters->AttachToActor(HomePlanet, FAttachmentTransformRules::KeepWorldTransform);
-					HomeSpaceHeadquarters->SetActorRelativeRotation(FRotator(0, 0, 0));
-					const double EARTH_RADIUS_CM = 637100000.0;
-					FVector Offset = FVector(0, 0, StationOrbitHeight * EARTH_RADIUS_CM);
-					HomeSpaceHeadquarters->AddActorWorldOffset(Offset);
-
-					FVector HomeSpaceHeadquartersLocation = HomeSpaceHeadquarters->GetActorLocation();
-					FRotator HomeSpaceHeadquartersRotation = HomeSpaceHeadquarters->GetActorRotation();
-					HomeSpaceStation = World->SpawnActor<ASpaceStation>(
-						BP_HomeSpaceStation, HomeSpaceHeadquartersLocation,
-						HomeSpaceHeadquartersRotation, SpawnParams);
-					HomeSpaceStation->AttachToActor(HomeSpaceHeadquarters,
-					                                FAttachmentTransformRules::KeepWorldTransform);
-					double HomeStationOffset = HomeSpaceStation->GravityCollisionZone->GetScaledSphereRadius() * 2;
-					HomeSpaceStation->AddActorLocalOffset(FVector(0, HomeStationOffset, 0));
-					HomeSpaceStation->CalculateAffectionRadius();
-
-					// Spawn HomeShipyard
-					HomeSpaceShipyard = World->SpawnActor<ASpaceShipyard>(BP_HomeSpaceShipyard,
-					                                                      HomeSpaceHeadquartersLocation,
-					                                                      HomeSpaceHeadquartersRotation);
-					double HomeSpaceShipyardLocationOffset = HomeSpaceShipyard->GravityCollisionZone->
-						GetScaledSphereRadius() * 2;
-					HomeSpaceShipyard->AddActorLocalOffset(FVector(0, -HomeSpaceShipyardLocationOffset, 0));
-					HomeSpaceShipyard->AttachToActor(HomeSpaceHeadquarters,
-					                                 FAttachmentTransformRules::KeepWorldTransform);
-					HomeSpaceShipyard->CalculateAffectionRadius();
-
-					//Spawn HomeSpaceship
-					FActorSpawnParameters SpaceshipSpawnParams;
-					SpaceshipSpawnParams.SpawnCollisionHandlingOverride =
-						ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-					FVector HomeSpaceshipLocation = HomeSpaceShipyard->SpawnPoint->GetComponentLocation();
-
-					HomeSpaceshipLocation.Z += 1000;
-					ASpaceship* NewHomeSpaceship = World->SpawnActor<ASpaceship>(
-						BP_HomeSpaceship, HomeSpaceshipLocation, HomeSpaceShipyard->GetActorRotation(),
-						SpaceshipSpawnParams);
-
-					if (NewHomeSpaceship && GeneratedHomeStarSystem)
-					{
-						NewHomeSpaceship->AttachToActor(HomeSpaceShipyard,
-						                                FAttachmentTransformRules::KeepWorldTransform);
-						NewHomeSpaceship->OffsetSystem = GeneratedHomeStarSystem;
-
-						if (NewHomeSpaceship->OnboardComputer)
-						{
-							NewHomeSpaceship->OnboardComputer->OffsetSystem = GeneratedHomeStarSystem;
-						}
-						else
-						{
-							UE_LOG(LogTemp, Error, TEXT("Onboard Computer is nullptr!"));
-						}
-					}
-					else
-					{
-						if (!NewHomeSpaceship)
-						{
-							UE_LOG(LogTemp, Error, TEXT("NewHomeSpaceship is nullptr!"));
-						}
-
-						if (!GeneratedHomeStarSystem)
-						{
-							UE_LOG(LogTemp, Error, TEXT("GeneratedHomeStarSystem is nullptr!"));
-						}
-					}
-
-					FVector CharSpawnLocation{0};
-					if (APawn* PlayerCharacter = UGameplayStatics::GetPlayerPawn(World, 0))
-					{
-						switch (CharSpawnPlace)
-						{
-						case ECharSpawnPlace::PlanetOrbit:
-							CharSpawnLocation = HomeSpaceStation->SpawnPoint->GetComponentLocation();
-							break;
-						case ECharSpawnPlace::PlanetSurface:
-							break;
-						case ECharSpawnPlace::MoonOrbit:
-							break;
-						case ECharSpawnPlace::MoonSurface:
-							break;
-						case ECharSpawnPlace::SpaceShip:
-							{
-								CharSpawnLocation = NewHomeSpaceship->GetActorLocation();
-							}
-							break;
-						default:
-							break;
-						}
-
-						UE_LOG(LogTemp, Warning, TEXT("CharSpawnLocation: %s"), *CharSpawnLocation.ToString());
-						bool bTeleportSuccess = PlayerCharacter->SetActorLocation(CharSpawnLocation, false);
-						UE_LOG(LogTemp, Warning, TEXT("Teleport success: %s"),
-						       bTeleportSuccess ? TEXT("True") : TEXT("False"));
-
-						// relocate char to 000
-						// Получаем текущее положение игрока
-						FVector PlayerLocation = PlayerCharacter->GetActorLocation();
-						// Получаем текущее положение AstroGenerator
-						FVector GeneratorLocation = this->GetActorLocation();
-						// Вычисляем новое положение для AstroGenerator
-						FVector NewGeneratorLocation = GeneratorLocation - PlayerLocation;
-						// Устанавливаем новое положение для AstroGenerator
-						this->SetActorLocation(NewGeneratorLocation, false);
-						// Устанавливаем положение игрока на (0,0,0)
-						PlayerCharacter->SetActorLocation(FVector(0, 0, 0), false);
-					}
-					else
-					{
-						UE_LOG(LogTemp, Warning, TEXT("PlayerCharacter is null!"));
-					}
+					SpawnStartInteractiveActors(StartPlanetModel, World);
 				}
 			}
-		}
+		}*/
 	}
 }
 
