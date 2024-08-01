@@ -309,6 +309,128 @@ void AAstroGenerator::ShowPlanetsList(TArray<TSharedPtr<FPlanetData>> PlanetData
 	}
 }
 
+void AAstroGenerator::SpawnMoons(UWorld* World, APlanet* Planet, int32 NumberOfMoons)
+{
+	if (!Planet || NumberOfMoons <= 0 || !BP_MoonClass || !BP_PlanetOrbitClass)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Invalid parameters for spawning moons."));
+		return;
+	}
+
+	const double KM_TO_CM = 100000.0;
+	const double SCALE_FACTOR = 1.0 / 50.0;
+
+	// Радиус планеты в единицах UE
+	double PlanetRadiusUE = Planet->PlanetRadiusKM * KM_TO_CM * SCALE_FACTOR;
+
+	// Минимальная и максимальная орбитальная дистанция для лун
+	double MinOrbitDistanceUE = PlanetRadiusUE * 1.2; // Минимальная орбита: 1.2 радиусов планеты
+	double MaxOrbitDistanceUE = PlanetRadiusUE * 10; // Максимальная орбита: 10 радиусов планеты
+
+	// Генерация лун
+	for (int32 i = 0; i < NumberOfMoons; ++i)
+	{
+		// Создаем орбиту для луны
+		APlanetOrbit* NewMoonOrbit = World->SpawnActor<APlanetOrbit>(BP_PlanetOrbitClass, Planet->GetActorLocation(),
+		                                                             FRotator::ZeroRotator);
+		if (NewMoonOrbit)
+		{
+			NewMoonOrbit->AttachToActor(Planet, FAttachmentTransformRules::KeepWorldTransform);
+			Planet->MoonOrbitsList.Add(NewMoonOrbit);
+
+			// Спавним луну
+			FVector MoonLocation = Planet->GetActorLocation();
+			AMoon* NewMoon = World->SpawnActor<AMoon>(BP_MoonClass, MoonLocation, FRotator::ZeroRotator);
+			if (NewMoon)
+			{
+				Planet->AddMoon(NewMoon);
+				NewMoon->SetParentPlanet(Planet);
+
+				// Устанавливаем масштаб луны
+				double MoonRadiusKM = FMath::RandRange(100.0, 1000.0); // Радиус луны в километрах
+				NewMoon->RadiusKM = MoonRadiusKM;
+				const double MoonRadiusInCm = MoonRadiusKM * KM_TO_CM * SCALE_FACTOR;
+				NewMoon->SetActorScale3D(FVector(MoonRadiusInCm));
+
+				// Устанавливаем орбитальное расстояние
+				double OrbitDistanceUE = FMath::RandRange(MinOrbitDistanceUE, MaxOrbitDistanceUE);
+				FVector OffsetLocation = FVector(0, OrbitDistanceUE, 0); // Орбита луны на расстоянии от планеты
+				NewMoon->AddActorLocalOffset(OffsetLocation);
+				NewMoon->AttachToActor(NewMoonOrbit, FAttachmentTransformRules::KeepWorldTransform);
+
+				// Настраиваем атмосферу и прочие параметры (если нужно)
+				NewMoon->PlanetaryEnvironmentGenerator->InitAtmoScape(World, NewMoon->RadiusKM, NewMoon);
+			}
+		}
+	}
+}
+
+void AAstroGenerator::SpawnPlanetMoons(const TSharedPtr<FPlanetModel>& PlanetModel)
+{
+	double DiameterOfLastMoon = 0;
+	FVector LastMoonLocation;
+	for (const TSharedPtr<FMoonData> MoonData : PlanetModel->MoonsList)
+	{
+		const double KM_TO_UE_UNIT_SCALE = 100000;
+		APlanetOrbit* NewMoonOrbit = GetWorld()->SpawnActor<APlanetOrbit>(
+			BP_PlanetOrbitClass, HomePlanet->GetActorLocation(), FRotator::ZeroRotator);
+		NewMoonOrbit->AttachToActor(HomePlanet, FAttachmentTransformRules::KeepWorldTransform);
+		HomePlanet->MoonOrbitsList.Add(NewMoonOrbit);
+
+		FVector MoonLocation = HomePlanet->GetActorLocation();
+		AMoon* NewMoon = GetWorld()->SpawnActor<AMoon>(BP_MoonClass, MoonLocation, FRotator::ZeroRotator);
+		HomePlanet->AddMoon(NewMoon);
+		NewMoon->SetParentPlanet(HomePlanet);
+
+		MoonGenerator->ApplyModel(NewMoon, MoonData->MoonModel);
+		MoonGenerator->ConnectMoonWithPlanet(NewMoon, HomePlanet);
+
+		// set moon full-scale
+		double MoonRadius = MoonData->MoonModel->Radius;
+		NewMoon->RadiusKM = MoonRadius * 6371;
+		NewMoon->SetActorScale3D(FVector(MoonRadius * 12742000));
+
+		FVector Origin, BoxExtent;
+		double SphereRadius;
+		NewMoon->GetActorBounds(false, Origin, BoxExtent);
+		SphereRadius = BoxExtent.GetMax();
+		NewMoon->AffectionRadiusKM = SphereRadius / 100000.0;
+
+		NewMoon->AddActorLocalOffset(FVector(
+			0, ((PlanetModel->RadiusKM + (MoonData->OrbitRadius * PlanetModel->RadiusKM)) *
+				KM_TO_UE_UNIT_SCALE) * 1, 0));
+		NewMoon->AttachToActor(NewMoonOrbit, FAttachmentTransformRules::KeepWorldTransform);
+
+		DiameterOfLastMoon = MoonRadius * 2;
+		LastMoonLocation = NewMoon->GetActorLocation();
+
+		///Generate WSC
+		NewMoon->PlanetaryEnvironmentGenerator->InitAtmoScape(GetWorld(), NewMoon->RadiusKM, NewMoon);
+		//NewMoon->PlanetaryEnvironmentGenerator->GenerateWorldscapeSurfaceByModel(World, NewMoon);
+	}
+
+	if (DiameterOfLastMoon == 0)
+	{
+		HomePlanet->PlanetaryZone->SetSphereRadius(100);
+		HomePlanet->AffectionRadiusKM = 100 * HomePlanet->GetActorScale3D().X / 100000;
+	}
+	else
+	{
+		FVector PlanetLocation = HomePlanet->GetActorLocation();
+		FVector LastMoonOuterEdgeLocation = LastMoonLocation + FVector(0, DiameterOfLastMoon * 6371, 0);
+		double SphereRadius = FVector::Dist(PlanetLocation, LastMoonOuterEdgeLocation);
+		SphereRadius /= HomePlanet->GetActorScale3D().X;
+		SphereRadius *= 1.5;
+		HomePlanet->PlanetaryZone->SetSphereRadius(SphereRadius);
+		HomePlanet->AffectionRadiusKM = SphereRadius * HomePlanet->GetActorScale3D().X / 100000;
+	}
+
+	HomePlanet->OrbitHeight = (HomePlanet->GravityCollisionZone->GetScaledSphereRadius() / 100000) -
+		HomePlanet->RadiusKM;
+
+	HomePlanet->PlanetaryEnvironmentGenerator->InitEnviroment(HomePlanet, GetWorld());
+}
+
 void AAstroGenerator::GenerateHomeStarSystem()
 {
 	/*
@@ -363,6 +485,13 @@ void AAstroGenerator::GenerateHomeStarSystem()
 						NewHomePlanetOrbit->GetActorLocation();
 					HomePlanet->SetActorLocation(
 						NewHomePlanetOrbit->GetActorLocation() + OldPlanetLocalPosition);
+
+					PlanetModel->RadiusKM = PlanetModel->Radius;
+					PlanetarySystemGenerator->GeneratePlanetMoonsList(PlanetGenerator, MoonGenerator,
+					                                                  PlanetModel, PlanetModel->Radius,
+					                                                  GeneratedWorldModel->MoonsAmount);
+
+					SpawnPlanetMoons(PlanetModel);
 				}
 			}
 		}
@@ -1669,7 +1798,7 @@ void AAstroGenerator::GenerateStarSystem(AStarSystem* NewStarSystem, TSharedPtr<
 			StarGenerator->GenerateStarModel(StarModel);
 		}
 
-		TSharedPtr<FPlanetarySystemModel> PlanetarySystemModel = MakeShared<FPlanetarySystemModel>();
+		PlanetarySystemModel = MakeShared<FPlanetarySystemModel>();
 
 		if (bRandomHomeSystemType)
 		{
@@ -1936,7 +2065,7 @@ void AAstroGenerator::GenerateHomeSystemByModel()
 				StarGenerator->GenerateStarModel(StarModel);
 			}
 
-			TSharedPtr<FPlanetarySystemModel> PlanetarySystemModel = MakeShared<FPlanetarySystemModel>();
+			PlanetarySystemModel = MakeShared<FPlanetarySystemModel>();
 
 			if (bRandomHomeSystemType)
 			{
