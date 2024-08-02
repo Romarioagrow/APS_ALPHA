@@ -1,66 +1,51 @@
 ﻿#include "SpawnClassPicker.h"
-
-#include "Components/TextBlock.h"
+#include "SpawnDropbox.h"
+#include "SpawnItem.h"
+#include "Blueprint/WidgetTree.h"
 
 void USpawnClassPicker::NativeConstruct()
 {
 	Super::NativeConstruct();
 
-	// Инициализация массива классов
-	/*SpaceshipClasses = {
-		BP_HomeSpaceHeadquarters::StaticClass(),
-		BP_HomeSpaceStation::StaticClass(),
-		BP_HomeSpaceship::StaticClass()
-	};
+	InitializeClassPicker();
 
-	InitializeClassPicker();*/
-
-	SpaceshipClasses = {
-		// Замените на ваши конкретные классы
-		//BP_HomeSpaceship::StaticClass(),
-		//BP_HomeSpaceStation::StaticClass()
-	};
-
-	CharacterClasses = {
-		// Замените на ваши конкретные классы
-		//BP_CharacterClass::StaticClass()
-	};
-
-	SpaceStationClasses = {
-		// Замените на ваши конкретные классы
-		//BP_HomeSpaceHeadquarters::StaticClass()
-	};
-	
 }
-
-
 
 void USpawnClassPicker::InitializeClassPicker()
 {
-	// Очистка текущих элементов
-	//SpaceshipVerticalBox->ClearChildren();
-	//CharacterVerticalBox->ClearChildren();
-	//SpaceStationVerticalBox->ClearChildren();
+	SpaceshipDropbox->ClearChildren();
+	CharacterDropbox->ClearChildren();
+	SpaceStationDropbox->ClearChildren();
 
-	for (TSubclassOf<AActor> Class : SpaceshipClasses)
+	for (const TSubclassOf<AActor> Class : SpaceshipClasses)
 	{
-		//AddClassToVerticalBox(Class, SpaceshipVerticalBox);
+		AddClassToDropbox(Class, SpaceshipDropbox);
 	}
 
-	for (TSubclassOf<AActor> Class : CharacterClasses)
+	for (const TSubclassOf<AActor> Class : CharacterClasses)
 	{
-		//AddClassToVerticalBox(Class, CharacterVerticalBox);
+		AddClassToDropbox(Class, CharacterDropbox);
 	}
 
-	for (TSubclassOf<AActor> Class : SpaceStationClasses)
+	for (const TSubclassOf<AActor> Class : SpaceStationClasses)
 	{
-		//AddClassToVerticalBox(Class, SpaceStationVerticalBox);
+		AddClassToDropbox(Class, SpaceStationDropbox);
+	}
+
+	for (const TSubclassOf<AActor> Class : SpaceHeadquartersClasses)
+	{
+		AddClassToDropbox(Class, SpaceHeadquartersDropbox);
 	}
 }
 
-/*void USpawnClassPicker::AddClassToVerticalBox(const TSubclassOf<AActor> Class, UVerticalBox* VerticalBox)
+void USpawnClassPicker::AddClassToDropbox(TSubclassOf<AActor> Class, USpawnDropbox* Dropbox)
 {
-	//UTextBlock* TextBlock = NewObject<UTextBlock>(this);
-	//TextBlock->SetText(FText::FromString(Class->GetName()));
-	//VerticalBox->AddChild(TextBlock);
-}*/
+	if (!BP_SpawnItemClass) return;
+
+	if (USpawnItem* SpawnItem = CreateWidget<USpawnItem>(this, BP_SpawnItemClass))
+	{
+		SpawnItem->SetContent(Class);
+		Dropbox->AddChild(SpawnItem);
+	}
+
+}
