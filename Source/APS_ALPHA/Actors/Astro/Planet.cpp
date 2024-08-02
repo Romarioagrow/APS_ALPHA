@@ -163,7 +163,7 @@ void APlanet::SetMoonsList(TArray<TSharedPtr<FMoonData>> NewMoonsList)
 
 void APlanet::SetParentStar(AStar* Star)
 {
-	this->ParnetStar = Star;
+	this->ParentStar = Star;
 }
 
 void APlanet::SetupHomePlanetFromEditor(AWorldScapeRoot* StartHomePlanet)
