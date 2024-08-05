@@ -1,14 +1,14 @@
 ﻿#pragma once
 
 #include "BaseWidget.h"
-#include "UMainMenuUI.generated.h"
+#include "USelectWorldsMenu.generated.h"
 
 class UGeneratedWorld;
 class ABaseActor;
 class AAstroGenerator;
 
 UCLASS()
-class UMainMenuUI : public UBaseWidget
+class USelectWorldsMenu : public UBaseWidget
 {
 	GENERATED_BODY()
 	
