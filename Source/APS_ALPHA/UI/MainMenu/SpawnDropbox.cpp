@@ -1,5 +1,6 @@
 ﻿#include "SpawnDropbox.h"
 
+#include "SpawnItem.h"
 #include "APS_ALPHA/Core/Interfaces/ItemInfoInterface.h"
 #include "Components/Image.h"
 #include "Components/TextBlock.h"
@@ -17,8 +18,17 @@ void USpawnDropbox::AddChild(UUserWidget* Widget)
 {
 	if (DropdownBody && Widget)
 	{
+		if (USpawnItem* SpawnItem = Cast<USpawnItem>(Widget))
+		{
+			SpawnItem->OnItemClicked.AddDynamic(this, &USpawnDropbox::OnItemClicked);
+		}
 		DropdownBody->AddChild(Widget);
 	}
+}
+
+void USpawnDropbox::OnItemClicked(TSubclassOf<AActor> ClickedClass)
+{
+	SetContent(ClickedClass);
 }
 
 void USpawnDropbox::SetContent(TSubclassOf<AActor> Class)
