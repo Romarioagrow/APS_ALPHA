@@ -25,9 +25,15 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, meta = (BindWidget))
 	UImage* ItemImage;
 
+	UFUNCTION()
 	void ClearChildren();
-	
+
+	UFUNCTION()
 	void AddChild(UUserWidget* Widget);
-	
+
+	UFUNCTION()
+	void OnItemClicked(TSubclassOf<AActor> ClickedClass);
+
+	UFUNCTION()
 	void SetContent(TSubclassOf<AActor> Class);
 };
