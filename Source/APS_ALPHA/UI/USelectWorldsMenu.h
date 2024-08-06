@@ -13,7 +13,6 @@ class USelectWorldsMenu : public UBaseWidget
 	GENERATED_BODY()
 	
 public:
-
 	UPROPERTY()
 	TArray<UGeneratedWorld*> ExistingWorlds;
 	
@@ -27,7 +26,10 @@ public:
 	AAstroGenerator* AstroGenerator;
 
 	UPROPERTY()
-	UGeneratedWorld* GeneratedWorld; 
+	UGeneratedWorld* GeneratedWorld;
+
+	UFUNCTION(BlueprintCallable)
+	void LoadWorld();
 
 protected:
 	UFUNCTION()

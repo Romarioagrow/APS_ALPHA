@@ -22,6 +22,7 @@
 #include <unordered_map>
 #include <functional>
 #include "DrawDebugHelpers.h"
+#include "APS_ALPHA/Core/Controllers/GravityPlayerController.h"
 #include "APS_ALPHA/Core/Instances/MainGameplayInstance.h"
 #include "APS_ALPHA/Core/Model/SpawnParameters.h"
 #include "APS_ALPHA/Core/Structs/PlanetAtmosphereModel.h"
@@ -285,6 +286,15 @@ void AAstroGenerator::GenerateHomeStarSystem()
 					SpawnPlanetMoons(HomePlanetModel);
 
 					SpawnStartInteractiveActors(HomePlanetModel);
+
+					if (APlayerController* PC = UGameplayStatics::GetPlayerController(GetWorld(), 0))
+					{
+						AGravityPlayerController* MyPC = Cast<AGravityPlayerController>(PC);
+						if (MyPC)
+						{
+							MyPC->SaveGame();
+						}
+					}
 				}
 			}
 		}

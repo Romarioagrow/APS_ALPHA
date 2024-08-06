@@ -13,5 +13,14 @@ UCLASS()
 class APS_ALPHA_API AGravityPlayerController : public APlayerController
 {
 	GENERATED_BODY()
-	
+
+protected:
+	virtual void SetupInputComponent() override;
+
+public:
+	UFUNCTION(BlueprintCallable, Category = "SaveLoad")
+	void SaveGame();
+
+	/*UFUNCTION(BlueprintCallable, Category = "SaveLoad")
+	void LoadGame();*/
 };

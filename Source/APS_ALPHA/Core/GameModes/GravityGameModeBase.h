@@ -19,7 +19,7 @@ public:
 	AGravityGameModeBase();
 
 	virtual void BeginPlay() override;
-	
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astro Object BP")
 	TSubclassOf<AAstroGenerator> BP_AstroGeneratorClass;
 };
