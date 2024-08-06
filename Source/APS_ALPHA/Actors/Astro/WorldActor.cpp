@@ -31,3 +31,23 @@ void AWorldActor::CalculateAffectionRadius()
 	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Cyan, RadiusMessage);
 }
 
+/*FText AWorldActor::GetInGameName_Implementation() const
+{
+	return IItemInfoInterface::GetInGameName_Implementation();
+}
+
+UTexture2D* AWorldActor::GetAvatarPicture_Implementation() const
+{
+	return IItemInfoInterface::GetAvatarPicture_Implementation();
+}*/
+
+
+FText AWorldActor::GetInGameName_Implementation() const
+{
+	return InGameName;
+}
+
+UTexture2D* AWorldActor::GetAvatarPicture_Implementation() const
+{
+	return AvatarPicture;
+}
