@@ -37,6 +37,8 @@ void USpawnDropbox::SetContent(TSubclassOf<AActor> Class)
 	{
 		if (AActor* DefaultActor = Class->GetDefaultObject<AActor>())
 		{
+			SelectedClass = Class;
+
 			if (const IItemInfoInterface* GameActor = Cast<IItemInfoInterface>(DefaultActor))
 			{
 				if (TextBlock_ItemName)
@@ -50,4 +52,9 @@ void USpawnDropbox::SetContent(TSubclassOf<AActor> Class)
 			}
 		}
 	}
+}
+
+TSubclassOf<AActor> USpawnDropbox::GetSelectedClass() const
+{
+	return SelectedClass;
 }

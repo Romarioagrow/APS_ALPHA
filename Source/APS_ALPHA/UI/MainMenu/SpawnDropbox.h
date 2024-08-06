@@ -36,4 +36,10 @@ public:
 
 	UFUNCTION()
 	void SetContent(TSubclassOf<AActor> Class);
+	
+	UFUNCTION()
+	TSubclassOf<AActor> GetSelectedClass() const;
+
+private:
+	TSubclassOf<AActor> SelectedClass;
 };
