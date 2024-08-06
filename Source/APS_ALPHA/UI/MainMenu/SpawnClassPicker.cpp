@@ -13,32 +13,49 @@ void USpawnClassPicker::NativeConstruct()
 
 void USpawnClassPicker::InitializeClassPicker()
 {
-	SpaceshipDropbox->ClearChildren();
 	CharacterDropbox->ClearChildren();
+	SpaceshipDropbox->ClearChildren();
 	SpaceStationDropbox->ClearChildren();
+	SpaceHeadquartersDropbox->ClearChildren();
 
-	for (const TSubclassOf<AActor> Class : SpaceshipClasses)
+	if (CharacterClasses.Num() > 0)
 	{
-		AddClassToDropbox(Class, SpaceshipDropbox);
+		CharacterDropbox->SetContent(CharacterClasses[0]);
+		for (const TSubclassOf<AActor> Class : CharacterClasses)
+		{
+			AddClassToDropbox(Class, CharacterDropbox);
+		}
 	}
 
-	for (const TSubclassOf<AActor> Class : CharacterClasses)
+	if (SpaceshipClasses.Num() > 0)
 	{
-		AddClassToDropbox(Class, CharacterDropbox);
+		SpaceshipDropbox->SetContent(SpaceshipClasses[0]);
+		for (const TSubclassOf<AActor> Class : SpaceshipClasses)
+		{
+			AddClassToDropbox(Class, SpaceshipDropbox);
+		}
 	}
 
-	for (const TSubclassOf<AActor> Class : SpaceStationClasses)
+	if (SpaceStationClasses.Num() > 0)
 	{
-		AddClassToDropbox(Class, SpaceStationDropbox);
+		SpaceStationDropbox->SetContent(SpaceStationClasses[0]);
+		for (const TSubclassOf<AActor> Class : SpaceStationClasses)
+		{
+			AddClassToDropbox(Class, SpaceStationDropbox);
+		}
 	}
 
-	for (const TSubclassOf<AActor> Class : SpaceHeadquartersClasses)
+	if (SpaceHeadquartersClasses.Num() > 0)
 	{
-		AddClassToDropbox(Class, SpaceHeadquartersDropbox);
+		SpaceHeadquartersDropbox->SetContent(SpaceHeadquartersClasses[0]);
+		for (const TSubclassOf<AActor> Class : SpaceHeadquartersClasses)
+		{
+			AddClassToDropbox(Class, SpaceHeadquartersDropbox);
+		}
 	}
 }
 
-void USpawnClassPicker::AddClassToDropbox(TSubclassOf<AActor> Class, USpawnDropbox* Dropbox)
+void USpawnClassPicker::AddClassToDropbox(const TSubclassOf<AActor> Class, USpawnDropbox* Dropbox)
 {
 	if (!BP_SpawnItemClass) return;
 
@@ -47,5 +64,5 @@ void USpawnClassPicker::AddClassToDropbox(TSubclassOf<AActor> Class, USpawnDropb
 		SpawnItem->SetContent(Class);
 		Dropbox->AddChild(SpawnItem);
 	}
-
 }
+
