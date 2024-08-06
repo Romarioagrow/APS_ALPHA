@@ -32,3 +32,12 @@ void AControlledPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComp
 
 }
 
+FText AControlledPawn::GetInGameName_Implementation() const
+{
+	return InGameName;
+}
+
+UTexture2D* AControlledPawn::GetAvatarPicture_Implementation() const
+{
+	return AvatarPicture;
+}

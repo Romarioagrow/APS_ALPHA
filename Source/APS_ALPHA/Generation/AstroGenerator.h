@@ -12,6 +12,7 @@
 #include "GameFramework/Actor.h"
 #include "AstroGenerator.generated.h"
 
+class USpawnParameters;
 class AControlledPawn;
 class AAstroAnchor;
 class AMoon;
@@ -34,35 +35,43 @@ class APS_ALPHA_API AAstroGenerator : public AActor
 	GENERATED_BODY()
 
 public:
-	AAstroGenerator();
-
 	void SpawnStartInteractiveActors(TSharedPtr<FPlanetModel> StartPlanetModel);
-	
+
 	void ComputeStarAmount(TSharedPtr<FStarSystemModel>& StarSystemModel, int& AmountOfStars);
-	
+
 	TSharedPtr<FPlanetarySystemModel> PlanetarySystemModel;
 
 	void SpawnPlanetMoons(const TSharedPtr<FPlanetModel>& PlanetModel);
 
+	void ResolveSpawnLocation(const ASpaceship* NewHomeSpaceship, FVector& CharSpawnLocation);
+
 	void SetGeneratedWorld(UGeneratedWorld* InGeneratedWorld);
 
 	UPROPERTY(EditAnywhere, Category = "Generation Params")
-	bool bAutoGeneration{ false };
+	bool bAutoGeneration{false};
 
 	UFUNCTION()
 	void DisplayNewGeneratedWorld();
-	
+
 	UFUNCTION()
 	void ApplyWorldModel();
-	
+
 	UFUNCTION()
 	void GenerateWorldByModel();
-	
+
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "World Generation")
 	UGeneratedWorld* GeneratedWorldModel;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "World Generation")
+	USpawnParameters* SpawnParameters;
+
+	void SetAutoStarSystemModel();
+
+	void GenerateRandomStarSystemModel();
+
 	void GenerateHomeStarSystem();
+
 	void SetMoonRotation(APlanetOrbit* NewMoonOrbit);
 
 	virtual void BeginPlay() override;
@@ -75,8 +84,6 @@ protected:
 
 	void GenerateGalaxy();
 
-	void GenerateRandomStarSystem();
-
 	void GeneratePlanetSystem();
 
 	void GenerateSinglePlanet();
@@ -84,15 +91,15 @@ protected:
 	void GenerateRandomWorld();
 
 	void InitAstroGenerators();
-
-	void GenerateCustomHomeSystem();
 	
+	void ApplySpawnParameters();
+
 	bool CheckGeneratorsFails();
 
-	void GenerateHomeSystemByModel();
+	void GenerateStarSystemByModel();
 
 	void ShowPlanetsList(TArray<TSharedPtr<FPlanetData>> PlanetDataMap);
-	
+
 	void SpawnMoons(UWorld* World, APlanet* Planet, int32 NumberOfMoons);
 
 	UPROPERTY(VisibleAnywhere, Category = "Generated Astro Actros")
@@ -119,26 +126,28 @@ protected:
 	UPROPERTY(VisibleAnywhere, Category = "Generated Astro Actros")
 	AActor* GeneratedWorld;
 
+	double FullScaleValue{1000000000.0};
+
 public:
 	TMap<int32, TSharedPtr<FStarModel>> StarIndexModelMap;
 
 	UPROPERTY(EditAnywhere, Category = "Generation Params")
-	bool bGenerateFullScaledWorld{ true };
+	bool bGenerateFullScaledWorld{true};
 
 	UPROPERTY(EditAnywhere, Category = "Generation Params")
-	bool bGenerateHomeSystem{ false };
+	bool bGenerateHomeSystem{false};
 
 	UPROPERTY(EditAnywhere, Category = "Generation Params")
-	bool bStartWithHomePlanet{ false };
+	bool bStartWithHomePlanet{false};
 
 	UPROPERTY(EditAnywhere, Category = "Generation Params")
-	bool bSpawnStarterLocation{ true };
+	bool bSpawnStarterLocation{true};
 
 	UPROPERTY(EditAnywhere, Category = "Generation Params")
-	bool bSpawnStarterPlanet{ true };
+	bool bSpawnStarterPlanet{true};
 
 	UPROPERTY(EditAnywhere, Category = "Generation Params")
-	EAstroGenerationLevel AstroGenerationLevel{ EAstroGenerationLevel::StarCluster };
+	EAstroGenerationLevel AstroGenerationLevel{EAstroGenerationLevel::StarCluster};
 
 	UPROPERTY(EditInstanceOnly, Category = "Generation Params")
 	AWorldScapeRoot* StartHomePlanet;
@@ -151,19 +160,19 @@ public:
 
 	// STAR SYSTEM GENERATOR
 	UPROPERTY(VisibleAnywhere, Category = "Home System")
-	double StarSystemDeadZone{ 1 };
+	double StarSystemDeadZone{1};
 
 	UPROPERTY(VisibleAnywhere, Category = "Home System")
 	EHomeSystemPosition HomeSystemPosition;
 
 	UPROPERTY(VisibleAnywhere, Category = "Home System")
-	bool bFullScaledHomeSystem{ false };
+	bool bFullScaledHomeSystem{false};
 
 	UPROPERTY(VisibleAnywhere, Category = "Home System")
-	FVector HomeSystemRadius{ 0 };
+	FVector HomeSystemRadius{0};
 
 	UPROPERTY(EditAnywhere, Category = "Home System")
-	bool bRandomHomeSystem{ false };
+	bool bRandomHomeSystem{false};
 
 	UPROPERTY(EditAnywhere, Category = "Home System", meta = (EditCondition = "!bRandomHomeSystem"))
 	bool bRandomHomeSystemType;
@@ -172,41 +181,41 @@ public:
 	bool bRandomHomeStar;
 
 	UPROPERTY(EditAnywhere, Category = "Home System")
-	bool bNeedOrbitRotation{ true };
+	bool bNeedOrbitRotation{true};
 
 	UPROPERTY(EditAnywhere, Category = "Home System")
-	bool bOrbitRotationCheck{ true };
+	bool bOrbitRotationCheck{true};
 
 	UPROPERTY(EditAnywhere, Category = "Home System", meta = (EditCondition = "!bRandomHomeSystem"))
-	int PlanetsAmount{ 1 };
+	int PlanetsAmount{1};
 
 	UPROPERTY(EditAnywhere, Category = "Home System")
-	bool bRandomStartPlanetNumber{ true };
+	bool bRandomStartPlanetNumber{true};
 
 	UPROPERTY(EditAnywhere, Category = "Home System", meta = (EditCondition = "!bRandomStartPlanetNumber"))
-	int StartPlanetNumber{ 1 };
+	int StartPlanetNumber{1};
 
 	UPROPERTY(EditAnywhere, Category = "Home System", meta = (EditCondition = "!bRandomHomeSystem"))
-	EStarType HomeSystemStarType{ EStarType::SingleStar };
+	EStarType HomeSystemStarType{EStarType::SingleStar};
 
 	UPROPERTY(EditAnywhere, Category = "Home System", meta = (EditCondition = "!bRandomHomeSystem"))
-	EStellarType HomeStarStellarType{ EStellarType::MainSequence };
+	EStellarType HomeStarStellarType{EStellarType::MainSequence};
 
 	UPROPERTY(EditAnywhere, Category = "Home System", meta = (EditCondition = "!bRandomHomeSystem"))
-	ESpectralClass HomeStarSpectralClass{ ESpectralClass::G };
+	ESpectralClass HomeStarSpectralClass{ESpectralClass::G};
 
 	UPROPERTY(EditAnywhere, Category = "Home System", meta = (EditCondition = "!bRandomHomeSystem"))
-	EPlanetarySystemType HomeSystemPlanetaryType{ EPlanetarySystemType::MultiPlanetSystem };
+	EPlanetarySystemType HomeSystemPlanetaryType{EPlanetarySystemType::MultiPlanetSystem};
 
 	UPROPERTY(EditAnywhere, Category = "Home System", meta = (EditCondition = "!bRandomHomeSystem"))
-	EOrbitDistributionType HomeSystemOrbitDistributionType{ EOrbitDistributionType::Uniform };
+	EOrbitDistributionType HomeSystemOrbitDistributionType{EOrbitDistributionType::Uniform};
 
 	// STAR CLUSTER GENERATOR
 	UPROPERTY(EditAnywhere, Category = "Galaxy Cluster")
-	bool bGenerateRandomGalaxyCluster{ false };
+	bool bGenerateRandomGalaxyCluster{false};
 
 	UPROPERTY(EditAnywhere, Category = "Galaxy")
-	bool bGenerateRandomGalaxy{ false };
+	bool bGenerateRandomGalaxy{false};
 
 	UPROPERTY(EditAnywhere, Category = "Galaxy")
 	EGalaxyType GalaxyType;
@@ -215,7 +224,7 @@ public:
 	EGalaxyClass GalaxyGlass;
 
 	UPROPERTY(EditAnywhere, Category = "Star Cluster")
-	bool bGenerateRandomCluster{ false };
+	bool bGenerateRandomCluster{false};
 
 	UPROPERTY(EditAnywhere, Category = "Star Cluster", meta = (EditCondition = "!bGenerateRandomCluster"))
 	EStarClusterSize StarClusterSize;
@@ -230,19 +239,19 @@ public:
 	EStarClusterComposition StarClusterComposition;
 
 	UPROPERTY(EditAnywhere, Category = "Galaxy")
-	int GalaxySize{ 250 };
+	int GalaxySize{250};
 
 	UPROPERTY(EditAnywhere, Category = "Galaxy")
-	int GalaxyStarCount{ 100000 };
+	int GalaxyStarCount{100000};
 
 	UPROPERTY(EditAnywhere, Category = "Galaxy")
-	double GalaxyStarDensity{ 10.0 };
+	double GalaxyStarDensity{10.0};
 
 	UPROPERTY(EditAnywhere, Category = "Player Spawn")
-	bool bCharacterSpawn{ true };
+	bool bCharacterSpawn{true};
 
 	UPROPERTY(EditAnywhere, Category = "Player Spawn")
-	bool bCharacterSpawnAtRandomPlanet{ true };
+	bool bCharacterSpawnAtRandomPlanet{true};
 
 	UPROPERTY(EditAnywhere, Category = "Player Spawn")
 	ECharSpawnPlace CharSpawnPlace;
@@ -329,8 +338,9 @@ public:
 	UFUNCTION()
 	FVector GetHomeSystemSpawnLocationForStarCluster(TArray<AActor*> AttachedActors, int32 RandomIndex);
 
-	//UFUNCTION()
 	void GenerateStarSystem(AStarSystem* NewStarSystem, TSharedPtr<FStarSystemModel> StarSystemModel);
+	
 	void RotatePlanetOrbits(APlanetarySystem* NewPlanetarySystem);
+	
 	void ComputeHomeSystemPosition(FTransform& HomeSystemTransform, FVector& HomeSystemSpawnLocation);
 };
