@@ -12,6 +12,7 @@
 #include "GameFramework/Actor.h"
 #include "AstroGenerator.generated.h"
 
+class USpawnParameters;
 class AControlledPawn;
 class AAstroAnchor;
 class AMoon;
@@ -62,6 +63,9 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "World Generation")
 	UGeneratedWorld* GeneratedWorldModel;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "World Generation")
+	USpawnParameters* SpawnParameters;
+
 	void SetAutoStarSystemModel();
 
 	void GenerateRandomStarSystemModel();
@@ -87,6 +91,8 @@ protected:
 	void GenerateRandomWorld();
 
 	void InitAstroGenerators();
+	
+	void ApplySpawnParameters();
 
 	bool CheckGeneratorsFails();
 

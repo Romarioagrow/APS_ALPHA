@@ -1,6 +1,8 @@
 ﻿#include "SpawnClassPicker.h"
 #include "SpawnDropbox.h"
 #include "SpawnItem.h"
+#include "APS_ALPHA/Core/Instances/MainGameplayInstance.h"
+#include "APS_ALPHA/Core/Model/SpawnParameters.h"
 #include "Blueprint/WidgetTree.h"
 
 void USpawnClassPicker::NativeConstruct()
@@ -17,6 +19,7 @@ void USpawnClassPicker::InitializeClassPicker()
 	SpaceshipDropbox->ClearChildren();
 	SpaceStationDropbox->ClearChildren();
 	SpaceHeadquartersDropbox->ClearChildren();
+	ShipyardsDropbox->ClearChildren();
 
 	if (CharacterClasses.Num() > 0)
 	{
@@ -53,6 +56,15 @@ void USpawnClassPicker::InitializeClassPicker()
 			AddClassToDropbox(Class, SpaceHeadquartersDropbox);
 		}
 	}
+
+	if (ShipyardClasses.Num() > 0)
+	{
+		ShipyardsDropbox->SetContent(ShipyardClasses[0]);
+		for (const TSubclassOf<AActor> Class : ShipyardClasses)
+		{
+			AddClassToDropbox(Class, ShipyardsDropbox);
+		}
+	}
 }
 
 void USpawnClassPicker::AddClassToDropbox(const TSubclassOf<AActor> Class, USpawnDropbox* Dropbox)
@@ -63,6 +75,24 @@ void USpawnClassPicker::AddClassToDropbox(const TSubclassOf<AActor> Class, USpaw
 	{
 		SpawnItem->SetContent(Class);
 		Dropbox->AddChild(SpawnItem);
+	}
+}
+
+void USpawnClassPicker::CollectSelectedClasses() const
+{
+	if (!CharacterDropbox || !SpaceshipDropbox || !SpaceStationDropbox || !SpaceHeadquartersDropbox) return;
+
+	USpawnParameters* SpawnParams = NewObject<USpawnParameters>();
+
+	SpawnParams->BP_CharacterClass = CharacterDropbox->GetSelectedClass();
+	SpawnParams->BP_HomeSpaceship = SpaceshipDropbox->GetSelectedClass();
+	SpawnParams->BP_HomeSpaceStation = SpaceStationDropbox->GetSelectedClass();
+	SpawnParams->BP_HomeSpaceHeadquarters = SpaceHeadquartersDropbox->GetSelectedClass();
+	SpawnParams->BP_HomeSpaceShipyard = ShipyardsDropbox->GetSelectedClass();
+
+	if (UGameInstance* GameInstance = GetWorld()->GetGameInstance())
+	{
+		GameInstance->GetSubsystem<UMainGameplayInstance>()->SpawnParameters = SpawnParams;
 	}
 }
 

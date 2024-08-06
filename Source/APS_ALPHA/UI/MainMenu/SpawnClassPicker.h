@@ -34,6 +34,9 @@ public:
 	UPROPERTY(meta = (BindWidget))
 	USpawnDropbox* SpaceHeadquartersDropbox;
 
+	UPROPERTY(meta = (BindWidget))
+	USpawnDropbox* ShipyardsDropbox;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Classes")
 	TArray<TSubclassOf<AActor>> SpaceshipClasses;
 
@@ -46,7 +49,15 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Classes")
 	TArray<TSubclassOf<AActor>> SpaceHeadquartersClasses;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Classes")
+	TArray<TSubclassOf<AActor>> ShipyardClasses;
+
+	UFUNCTION()
 	void InitializeClassPicker();
-	
+
+	UFUNCTION()
 	void AddClassToDropbox(TSubclassOf<AActor> Class, USpawnDropbox* Dropbox);
+
+	UFUNCTION(BlueprintCallable, Category = "Class Picker")
+	void CollectSelectedClasses() const;
 };

@@ -22,6 +22,8 @@
 #include <unordered_map>
 #include <functional>
 #include "DrawDebugHelpers.h"
+#include "APS_ALPHA/Core/Instances/MainGameplayInstance.h"
+#include "APS_ALPHA/Core/Model/SpawnParameters.h"
 #include "APS_ALPHA/Core/Structs/PlanetAtmosphereModel.h"
 
 void AAstroGenerator::BeginPlay()
@@ -41,6 +43,8 @@ void AAstroGenerator::GenerateWorldByModel()
 	InitAstroGenerators();
 
 	ApplyWorldModel();
+
+	ApplySpawnParameters();
 
 	GenerateStarCluster();
 
@@ -70,6 +74,29 @@ void AAstroGenerator::InitAstroGenerators()
 	else
 	{
 		UE_LOG(LogTemp, Warning, TEXT("All generators OK!"));
+	}
+}
+
+void AAstroGenerator::ApplySpawnParameters()
+{
+	if (UWorld* World = GetWorld())
+	{
+		if (UGameInstance* GameInstance = World->GetGameInstance())
+		{
+			USpawnParameters* SpawnParams = GameInstance->GetSubsystem<UMainGameplayInstance>()->SpawnParameters;
+
+			if (SpawnParams)
+			{
+				// Присвоение параметров
+				BP_CharacterClass = SpawnParams->BP_CharacterClass;
+				BP_HomeSpaceStation = SpawnParams->BP_HomeSpaceStation;
+				BP_HomeSpaceship = SpawnParams->BP_HomeSpaceship;
+				BP_HomeSpaceShipyard = SpawnParams->BP_HomeSpaceShipyard;
+				BP_HomeSpaceHeadquarters = SpawnParams->BP_HomeSpaceHeadquarters;
+
+				UE_LOG(LogTemp, Log, TEXT("Spawn parameters applied"));
+			}
+		}
 	}
 }
 
