@@ -21,6 +21,6 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "SaveLoad")
 	void SaveGame();
 
-	/*UFUNCTION(BlueprintCallable, Category = "SaveLoad")
-	void LoadGame();*/
+	UFUNCTION(BlueprintCallable, Category = "SaveLoad")
+	void LoadGame();
 };
