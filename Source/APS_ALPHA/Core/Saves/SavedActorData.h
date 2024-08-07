@@ -4,15 +4,22 @@
 #include "SavedActorData.generated.h"
 
 USTRUCT(BlueprintType)
-struct FSavedActorData
+struct FActorSaveData
 {
 	GENERATED_BODY()
 
-	UPROPERTY(VisibleAnywhere, Category = "State")
-	FString ActorClassName;
+	UPROPERTY()
+	FString ActorName;
 
-	UPROPERTY(VisibleAnywhere, Category = "State")
-	FTransform Transform;
+	UPROPERTY()
+	FTransform ActorTransform;
 
-	// Add other properties you want to save here
+	UPROPERTY()
+	FString ActorClass;
+
+	UPROPERTY()
+	TArray<uint8> ActorData;
+
+	UPROPERTY()
+	FString ParentActorName;
 };

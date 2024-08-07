@@ -13,8 +13,4 @@ UCLASS()
 class APS_ALPHA_API AMainMenuController : public APlayerController
 {
 	GENERATED_BODY()
-
-	UFUNCTION(BlueprintCallable)
-	void LoadGame();
-	void OnLevelLoaded(UWorld* LoadedWorld);
 };
