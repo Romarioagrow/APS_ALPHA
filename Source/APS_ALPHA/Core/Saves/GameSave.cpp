@@ -1,11 +1,7 @@
 ﻿#include "GameSave.h"
+#include "GeneratedWorldData.h"
 
-UGeneratedWorld* UGameSave::GetGeneratedWorld()
+FGeneratedWorldData UGameSave::GetGeneratedWorld()
 {
-	return GeneratedWorld;
-}
-
-FString UGameSave::GetSaveSlotName()
-{
-	return SaveSlotName;
+	return GeneratedWorldsDataArray[0];
 }

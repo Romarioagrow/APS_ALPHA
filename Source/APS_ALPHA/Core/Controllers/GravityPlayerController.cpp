@@ -1,6 +1,6 @@
+#include "GravityPlayerController.h"
 #include <ctime> // Для использования std::time
 #include <random> // Для использования std::random
-#include "GravityPlayerController.h"
 #include "APS_ALPHA/Core/Saves/GameSave.h"
 #include "APS_ALPHA/Core/Saves/SavedActorData.h"
 #include "APS_ALPHA/Generation/AstroGenerator.h"
@@ -25,8 +25,10 @@ void AGravityPlayerController::SaveNewWorld(const EAstroGenerationLevel AstroGen
 
 		SaveGameInstance->SaveSlotName = SaveSlotName;
 		SaveGameInstance->UserIndex = 0;
-		SaveGameInstance->GeneratedWorld = GeneratedWorldModel;
-
+	
+		FGeneratedWorldData WorldSaveData = GeneratedWorldModel->SaveWorldData();
+		SaveGameInstance->GeneratedWorldsDataArray.Add(WorldSaveData);
+		
 		if (UWorld* World = GetWorld())
 		{
 			TArray<AActor*> AllActors;

@@ -7,12 +7,13 @@
 #include "APS_ALPHA/Core/Enums/StarSpectralClass.h"
 #include "APS_ALPHA/Core/Enums/StarType.h"
 #include "APS_ALPHA/Core/Enums/StellarType.h"
+#include "APS_ALPHA/Core/Saves/GeneratedWorldData.h"
 #include "GeneratedWorld.generated.h"
 
-enum class EPlanetType : uint8;
 class APlanetarySystem;
 class APlanet;
 
+enum class EPlanetType : uint8;
 enum class EHomeSystemPosition : uint8;
 enum class EStarClusterComposition : uint8;
 enum class EStarClusterPopulation : uint8;
@@ -145,4 +146,48 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Atmosphere")
 	FLinearColor AtmosphereColor {FLinearColor(3.8f, 13.5f, 33.0f, 0.0f)};
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Star Cluster")
+	int StarsAmount;
+
+	FGeneratedWorldData SaveWorldData() const
+	{
+		FGeneratedWorldData WorldData;
+		WorldData.bGenerateFullScaledWorld = bGenerateFullScaledWorld;
+		WorldData.bGenerateHomeSystem = bGenerateHomeSystem;
+		WorldData.bStartWithHomePlanet = bStartWithHomePlanet;
+		WorldData.bRandomHomeSystem = bRandomHomeSystem;
+		WorldData.bRandomHomeSystemType = bRandomHomeSystemType;
+		WorldData.bRandomHomeStar = bRandomHomeStar;
+		WorldData.bRandomStartPlanetNumber = bRandomStartPlanetNumber;
+		WorldData.AstroGenerationLevel = AstroGenerationLevel;
+		WorldData.GalaxyType = GalaxyType;
+		WorldData.GalaxyClass = GalaxyClass;
+		WorldData.StarClusterSize = StarClusterSize;
+		WorldData.StarClusterType = StarClusterType;
+		WorldData.StarClusterPopulation = StarClusterPopulation;
+		WorldData.StarClusterComposition = StarClusterComposition;
+		WorldData.StarType = StarType;
+		WorldData.StellarType = StellarType;
+		WorldData.SpectralClass = SpectralClass;
+		WorldData.PlanetarySystemType = PlanetarySystemType;
+		WorldData.OrbitDistributionType = OrbitDistributionType;
+		WorldData.HomeSystemPosition = HomeSystemPosition;
+		WorldData.PlanetType = PlanetType;
+		WorldData.GalaxySize = GalaxySize;
+		WorldData.GalaxyStarCount = GalaxyStarCount;
+		WorldData.PlanetsAmount = PlanetsAmount;
+		WorldData.MoonsAmount = MoonsAmount;
+		WorldData.StartPlanetIndex = StartPlanetIndex;
+		WorldData.GalaxyStarDensity = GalaxyStarDensity;
+		WorldData.PlanetRadius = PlanetRadius;
+		WorldData.AtmosphereHeight = AtmosphereHeight;
+		WorldData.AtmosphereOpacity = AtmosphereOpacity;
+		WorldData.AtmosphereMultiScattering = AtmosphereMultiScattering;
+		WorldData.AtmosphereRayleighScattering = AtmosphereRayleighScattering;
+		WorldData.AtmosphereColor = AtmosphereColor;
+		WorldData.StarsAmount = StarsAmount;
+
+		return WorldData;
+	}
 };
