@@ -38,7 +38,7 @@ public:
 	TSubclassOf<UExistingWorld> BP_ExistingWorldWidgetClass;
 
 	UFUNCTION(BlueprintCallable, Category = "Worlds")
-	void UpdateWorldDetails(const FString& SaveFileName);
+	void UpdateWorldDetails(FString SaveFileName);
 	
 protected:
 	virtual void NativeConstruct() override;
