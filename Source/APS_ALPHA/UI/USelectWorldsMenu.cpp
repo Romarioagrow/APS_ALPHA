@@ -1,9 +1,11 @@
 ﻿#include "USelectWorldsMenu.h"
 
 #include "APS_ALPHA/Core/Controllers/GravityPlayerController.h"
+#include "APS_ALPHA/Core/Saves/GameSave.h"
 #include "Components/UniformGridPanel.h"
 #include "Kismet/GameplayStatics.h"
 #include "MainMenu/ExistingWorld.h"
+#include "MainMenu/WorldDetailsCard.h"
 
 void USelectWorldsMenu::LoadWorld()
 {
@@ -27,9 +29,7 @@ void USelectWorldsMenu::NativeConstruct()
 
 void USelectWorldsMenu::GenerateWorld()
 {
-	
 }
-
 
 void USelectWorldsMenu::PopulateExistingWorlds()
 {
@@ -39,38 +39,54 @@ void USelectWorldsMenu::PopulateExistingWorlds()
 		return;
 	}
 
-	// Получаем все файлы сохранений
+	// Get all save files
 	FString SaveGameDir = FPaths::ProjectSavedDir() / TEXT("SaveGames");
 	TArray<FString> SaveFiles;
 	IFileManager::Get().FindFiles(SaveFiles, *SaveGameDir, TEXT("*.sav"));
 
-	// Очистка панели перед добавлением новых инстансов
+	// Clear the panel before adding new instances
 	UniformGridPanel_ExistingWorlds->ClearChildren();
 
-	// Переменные для размещения виджетов в сетке
+	// Variables for placing widgets in the grid
 	int32 Row = 0;
 	int32 Column = 0;
 
 	for (const FString& SaveFile : SaveFiles)
 	{
-		// Создаем инстанс виджета WBP_ExistingWorld
+		// Create an instance of the WBP_ExistingWorld widget
 		if (UExistingWorld* ExistingWorldWidget = CreateWidget<UExistingWorld>(GetWorld(), BP_ExistingWorldWidgetClass))
 		{
-			// Задаем необходимые данные для виджета
+			// Set the required data for the widget
 			ExistingWorldWidget->InitializeFromSave(SaveFile);
 
-			// Добавляем виджет в UniformGridPanel
-			UUniformGridSlot* GridSlot = UniformGridPanel_ExistingWorlds->AddChildToUniformGrid(ExistingWorldWidget, Row, Column);
+			// Add widget to UniformGridPanel
+			UniformGridPanel_ExistingWorlds->AddChildToUniformGrid(ExistingWorldWidget, Row, Column);
 
-			//UniformGridPanel_ExistingWorlds->AddChildToUniformGrid(ExistingWorldWidget, Row, Column);
-
-			// Обновляем позицию для следующего виджета
+			ExistingWorldWidget->OnClicked.AddDynamic(this, &USelectWorldsMenu::UpdateWorldDetails);
+			
+			// Update the position for the next widget
 			Column++;
-			if (Column >= 3) // Предположим, что в каждой строке будет по 3 элемента
+			if (Column >= 3) 
 			{
 				Column = 0;
 				Row++;
 			}
 		}
+	}
+}
+
+void USelectWorldsMenu::UpdateWorldDetails(const FString& SaveFileName)
+{
+	// Загружаем данные сохранения
+	UGameSave* LoadedGame = Cast<UGameSave>(
+		UGameplayStatics::LoadGameFromSlot(FPaths::GetBaseFilename(SaveFileName), 0));
+	if (LoadedGame)
+	{
+		GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("UpdateWorldDetails"));
+		
+		// Обновляем данные для карточек мира
+		if (ClusterDetailsCard) { ClusterDetailsCard->UpdateDetails(LoadedGame); }
+		if (StarDetailsCard) { StarDetailsCard->UpdateDetails(LoadedGame); }
+		if (PlanetDetailsCard) { PlanetDetailsCard->UpdateDetails(LoadedGame); }
 	}
 }
