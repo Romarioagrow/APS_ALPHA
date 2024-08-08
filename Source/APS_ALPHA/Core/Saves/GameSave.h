@@ -4,6 +4,7 @@
 #include "GameFramework/SaveGame.h"
 #include "GameSave.generated.h"
 
+class UGeneratedWorld;
 struct FActorSaveData;
 
 UCLASS()
@@ -20,4 +21,7 @@ public:
 
 	UPROPERTY(VisibleAnywhere, Category = "State")
 	TArray<FActorSaveData> ActorSaveDataArray;
+
+	UPROPERTY(VisibleAnywhere, Category = "World")
+	UGeneratedWorld* GeneratedWorld;
 };

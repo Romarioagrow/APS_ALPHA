@@ -289,10 +289,9 @@ void AAstroGenerator::GenerateHomeStarSystem()
 
 					if (APlayerController* PC = UGameplayStatics::GetPlayerController(GetWorld(), 0))
 					{
-						AGravityPlayerController* MyPC = Cast<AGravityPlayerController>(PC);
-						if (MyPC)
+						if (AGravityPlayerController* MainController = Cast<AGravityPlayerController>(PC))
 						{
-							MyPC->SaveGame();
+							MainController->SaveNewWorld(GeneratedWorldModel->AstroGenerationLevel, GeneratedWorldModel);
 						}
 					}
 				}

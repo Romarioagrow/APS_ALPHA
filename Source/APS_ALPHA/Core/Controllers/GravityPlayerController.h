@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "APS_ALPHA/Core/Model/GeneratedWorld.h"
 #include "GameFramework/PlayerController.h"
 #include "GravityPlayerController.generated.h"
 
@@ -19,8 +20,12 @@ protected:
 
 public:
 	UFUNCTION(BlueprintCallable, Category = "SaveLoad")
-	void SaveGame();
+	void SaveNewWorld(const EAstroGenerationLevel AstroGenerationLevel, UGeneratedWorld* GeneratedWorldModel);
 
 	UFUNCTION(BlueprintCallable, Category = "SaveLoad")
-	void LoadGame();
+	void LoadWorld();
+	
+	FString GenerateUniqueSaveSlotName(EAstroGenerationLevel AstroGenerationLevel) const;
+
+	FString CurrentSaveSlotName;
 };
