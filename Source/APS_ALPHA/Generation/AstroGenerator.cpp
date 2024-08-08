@@ -22,6 +22,7 @@
 #include <unordered_map>
 #include <functional>
 #include "DrawDebugHelpers.h"
+#include "APS_ALPHA/Core/Controllers/GravityPlayerController.h"
 #include "APS_ALPHA/Core/Instances/MainGameplayInstance.h"
 #include "APS_ALPHA/Core/Model/SpawnParameters.h"
 #include "APS_ALPHA/Core/Structs/PlanetAtmosphereModel.h"
@@ -282,9 +283,20 @@ void AAstroGenerator::GenerateHomeStarSystem()
 					                                                  HomePlanetModel, HomePlanetModel->Radius,
 					                                                  GeneratedWorldModel->MoonsAmount);
 
+					GeneratedWorldModel->StarsAmount = GeneratedStarCluster->StarAmount;
+
 					SpawnPlanetMoons(HomePlanetModel);
 
 					SpawnStartInteractiveActors(HomePlanetModel);
+
+					if (APlayerController* PC = UGameplayStatics::GetPlayerController(GetWorld(), 0))
+					{
+						if (AGravityPlayerController* MainController = Cast<AGravityPlayerController>(PC))
+						{
+							MainController->
+								SaveNewWorld(GeneratedWorldModel->AstroGenerationLevel, GeneratedWorldModel);
+						}
+					}
 				}
 			}
 		}
@@ -849,7 +861,8 @@ void AAstroGenerator::SpawnMoons(UWorld* World, APlanet* Planet, const int32 Num
 
 				// Set the orbital distance
 				const double OrbitDistanceUE = FMath::RandRange(MinOrbitDistanceUE, MaxOrbitDistanceUE);
-				const FVector OffsetLocation = FVector(0, OrbitDistanceUE, 0); // Orbit of the moon at a distance from the planet
+				const FVector OffsetLocation = FVector(0, OrbitDistanceUE, 0);
+				// Orbit of the moon at a distance from the planet
 				NewMoon->AddActorLocalOffset(OffsetLocation);
 				NewMoon->AttachToActor(NewMoonOrbit, FAttachmentTransformRules::KeepWorldTransform);
 				NewMoon->PlanetaryEnvironmentGenerator->InitAtmoScape(World, NewMoon->RadiusKM, NewMoon);

@@ -18,4 +18,10 @@ public:
 
 	UPROPERTY(BlueprintReadWrite, Category = "World Generation")
 	USpawnParameters* SpawnParameters;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Loading")
+	FString SaveSlotName;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Loading")
+	bool bIsLoadingMode{false};
 };
