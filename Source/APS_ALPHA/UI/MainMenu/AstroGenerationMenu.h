@@ -3,6 +3,8 @@
 #include "APS_ALPHA/UI/BaseWidget.h"
 #include "AstroGenerationMenu.generated.h"
 
+class USpawnClassPicker;
+class USpawnParameters;
 class UGenerationInput;
 class UGenerationSlider;
 class UGeneratedWorld;
@@ -50,6 +52,9 @@ public:
 
 	UPROPERTY(VisibleAnywhere)
 	UGeneratedWorld* NewGeneratedWorld;
+
+	UPROPERTY(VisibleAnywhere)
+	USpawnParameters* SpawnParameters;
 	
 	UPROPERTY(BlueprintReadWrite, meta = (BindWidget))
 	UGenerationSlider* GS_GenerationLevel;
