@@ -13,4 +13,11 @@ UCLASS()
 class APS_ALPHA_API AMainMenuController : public APlayerController
 {
 	GENERATED_BODY()
+	
+public:
+	UFUNCTION(BlueprintCallable, Category = "Saves")
+	void SetSaveSlotName(FString OutSaveSlotName);
+
+	UFUNCTION(BlueprintCallable, Category = "Saves")
+	void SetLoadingModeTrue();
 };

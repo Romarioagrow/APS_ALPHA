@@ -1,6 +1,7 @@
 #include "GravityPlayerController.h"
-#include <ctime> // Для использования std::time
-#include <random> // Для использования std::random
+#include <ctime> 
+#include <random>
+#include "APS_ALPHA/Core/Instances/MainGameplayInstance.h"
 #include "APS_ALPHA/Core/Saves/GameSave.h"
 #include "APS_ALPHA/Core/Saves/SavedActorData.h"
 #include "APS_ALPHA/Generation/AstroGenerator.h"
@@ -10,9 +11,18 @@
 void AGravityPlayerController::SetupInputComponent()
 {
 	Super::SetupInputComponent();
+}
 
-	//InputComponent->BindAction("SaveGame", IE_Pressed, this, &AGravityPlayerController::SaveNewWorld);
-	//InputComponent->BindAction("LoadGame", IE_Pressed, this, &AGravityPlayerController::LoadWorld);
+FString AGravityPlayerController::GetCurrentSaveSlotName() const
+{
+	if (const UGameInstance* GameInstance = GetWorld()->GetGameInstance())
+	{
+		if (const UMainGameplayInstance* MainGameplayInstance = GameInstance->GetSubsystem<UMainGameplayInstance>())
+		{
+			return FPaths::GetBaseFilename(MainGameplayInstance->SaveSlotName);
+		}
+	}
+	return FString();
 }
 
 void AGravityPlayerController::SaveNewWorld(const EAstroGenerationLevel AstroGenerationLevel,
@@ -68,10 +78,10 @@ void AGravityPlayerController::SaveNewWorld(const EAstroGenerationLevel AstroGen
 
 void AGravityPlayerController::LoadWorld()
 {
-	UWorld* World = GetWorld();
-	if (World)
+	if (UWorld* World = GetWorld())
 	{
-		if (UGameSave* LoadedGame = Cast<UGameSave>(UGameplayStatics::LoadGameFromSlot("CurrentSaveSlotName", 0)))
+		FString LoadingName = GetCurrentSaveSlotName();
+		if (UGameSave* LoadedGame = Cast<UGameSave>(UGameplayStatics::LoadGameFromSlot(LoadingName, 0)))
 		{
 			TMap<FString, AActor*> NameToActorMap;
 
@@ -191,4 +201,27 @@ FString AGravityPlayerController::GenerateUniqueSaveSlotName(const EAstroGenerat
     }
 
     return FString::Printf(TEXT("%s %s %05d"), *GeneratedName, *GenerationType, TimeStamp);
+}
+
+bool AGravityPlayerController::GetLoadingMode()
+{
+	if (const UGameInstance* GameInstance = GetWorld()->GetGameInstance())
+	{
+		if (const UMainGameplayInstance* MainGameplayInstance = GameInstance->GetSubsystem<UMainGameplayInstance>())
+		{
+			return MainGameplayInstance->bIsLoadingMode;
+		}
+	}
+	return false;
+}
+
+void AGravityPlayerController::SetLoadingModeFalse()
+{
+	if (UGameInstance* GameInstance = GetWorld()->GetGameInstance())
+	{
+		if (UMainGameplayInstance* MainGameplayInstance = GameInstance->GetSubsystem<UMainGameplayInstance>())
+		{
+			MainGameplayInstance->bIsLoadingMode = false;
+		}
+	}
 }

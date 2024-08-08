@@ -1,6 +1,7 @@
 ﻿#include "USelectWorldsMenu.h"
 
 #include "APS_ALPHA/Core/Controllers/GravityPlayerController.h"
+#include "APS_ALPHA/Core/Controllers/MainMenuController.h"
 #include "APS_ALPHA/Core/Saves/GameSave.h"
 #include "Components/UniformGridPanel.h"
 #include "Kismet/GameplayStatics.h"
@@ -75,12 +76,11 @@ void USelectWorldsMenu::PopulateExistingWorlds()
 	}
 }
 
-void USelectWorldsMenu::UpdateWorldDetails(const FString& SaveFileName)
+void USelectWorldsMenu::UpdateWorldDetails(FString SaveFileName)
 {
 	// Загружаем данные сохранения
-	UGameSave* LoadedGame = Cast<UGameSave>(
-		UGameplayStatics::LoadGameFromSlot(FPaths::GetBaseFilename(SaveFileName), 0));
-	if (LoadedGame)
+	if (UGameSave* LoadedGame = Cast<UGameSave>(
+		UGameplayStatics::LoadGameFromSlot(FPaths::GetBaseFilename(SaveFileName), 0)))
 	{
 		GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("UpdateWorldDetails"));
 		
@@ -88,5 +88,23 @@ void USelectWorldsMenu::UpdateWorldDetails(const FString& SaveFileName)
 		if (ClusterDetailsCard) { ClusterDetailsCard->UpdateDetails(LoadedGame); }
 		if (StarDetailsCard) { StarDetailsCard->UpdateDetails(LoadedGame); }
 		if (PlanetDetailsCard) { PlanetDetailsCard->UpdateDetails(LoadedGame); }
+
+		// Вызов метода из контроллера для установки SaveSlotName
+		if (APlayerController* PlayerController = UGameplayStatics::GetPlayerController(GetWorld(), 0))
+		{
+			if (AMainMenuController* MainMenuController = Cast<AMainMenuController>(PlayerController))
+			{
+				MainMenuController->SetSaveSlotName(SaveFileName);
+				UE_LOG(LogTemp, Log, TEXT("SaveSlotName set to: %s"), *SaveFileName);
+			}
+			else
+			{
+				UE_LOG(LogTemp, Warning, TEXT("Failed to cast to AMainMenuController"));
+			}
+		}
+		else
+		{
+			UE_LOG(LogTemp, Warning, TEXT("PlayerController is null"));
+		}
 	}
 }

@@ -17,6 +17,8 @@ class APS_ALPHA_API AGravityPlayerController : public APlayerController
 
 protected:
 	virtual void SetupInputComponent() override;
+	
+	FString GetCurrentSaveSlotName() const;
 
 public:
 	UFUNCTION(BlueprintCallable, Category = "SaveLoad")
@@ -28,4 +30,10 @@ public:
 	FString GenerateUniqueSaveSlotName(EAstroGenerationLevel AstroGenerationLevel) const;
 
 	FString CurrentSaveSlotName;
+
+	UFUNCTION(BlueprintPure, Category = "SaveLoad")
+	bool GetLoadingMode();
+
+	UFUNCTION(BlueprintCallable, Category = "SaveLoad")
+	void SetLoadingModeFalse();
 };
