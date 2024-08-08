@@ -23,7 +23,7 @@ void APlanet::CheckPlayerPawn()
 	}
 
 	// Если PlayerPawn найден, проверяем расстояние и останавливаем таймер
-	if (PlayerPawn != nullptr)
+	if (PlayerPawn != nullptr && PlanetaryEnvironmentGenerator != nullptr)
 	{
 		GetWorldTimerManager().ClearTimer(PlayerPawnTimerHandle);
 

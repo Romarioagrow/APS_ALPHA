@@ -6,6 +6,7 @@
 #include "PlanetaryProceduralGenerator.h"
 #include "WorldScapeCore/Public/WorldScapeRoot.h"
 #include "CoreMinimal.h"
+#include "APS_ALPHA/Actors/BaseActor.h"
 #include "APS_ALPHA/Core/Enums/AstroGenerationLevel.h"
 #include "APS_ALPHA/Core/Enums/PlanetarySystemType.h"
 #include "APS_ALPHA/Core/Enums/StarType.h"
@@ -30,7 +31,7 @@ struct FPlanetModel;
 struct FPlanetData;
 
 UCLASS()
-class APS_ALPHA_API AAstroGenerator : public AActor
+class APS_ALPHA_API AAstroGenerator : public ABaseActor
 {
 	GENERATED_BODY()
 
