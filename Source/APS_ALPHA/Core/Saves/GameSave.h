@@ -5,6 +5,7 @@
 #include "GameSave.generated.h"
 
 class UGeneratedWorld;
+struct FGeneratedWorldData;
 struct FActorSaveData;
 
 UCLASS()
@@ -21,14 +22,10 @@ public:
 
 	UPROPERTY(VisibleAnywhere, Category = "State")
 	TArray<FActorSaveData> ActorSaveDataArray;
-
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "World")
-	UGeneratedWorld* GeneratedWorld;
-
-	UFUNCTION(BlueprintCallable)
-	UGeneratedWorld* GetGeneratedWorld();
-
-	UFUNCTION(BlueprintCallable)
-	FString GetSaveSlotName();
 	
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "World")
+	TArray<FGeneratedWorldData> GeneratedWorldsDataArray;
+	
+	UFUNCTION(BlueprintCallable)
+	FGeneratedWorldData GetGeneratedWorld();
 };
