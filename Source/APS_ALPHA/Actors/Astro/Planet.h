@@ -59,7 +59,7 @@ public:
 	int PlanetRadiusKM;
 
 	UPROPERTY(VisibleAnywhere, Category = "Planet")
-	AStar* ParnetStar;
+	AStar* ParentStar;
 
 	UPROPERTY(VisibleAnywhere, Category = "Planet")
 	EPlanetaryZoneType PlanetZone;

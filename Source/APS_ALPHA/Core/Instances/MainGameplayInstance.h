@@ -4,6 +4,7 @@
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "MainGameplayInstance.generated.h"
 
+class USpawnParameters;
 class UGeneratedWorld;
 
 UCLASS()
@@ -14,4 +15,13 @@ class UMainGameplayInstance : public UGameInstanceSubsystem
 public:
 	UPROPERTY(BlueprintReadWrite, Category = "World Generation")
 	UGeneratedWorld* NewGeneratedWorld;
+
+	UPROPERTY(BlueprintReadWrite, Category = "World Generation")
+	USpawnParameters* SpawnParameters;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Loading")
+	FString SaveSlotName;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Loading")
+	bool bIsLoadingMode{false};
 };

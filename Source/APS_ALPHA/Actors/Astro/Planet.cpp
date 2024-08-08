@@ -23,7 +23,7 @@ void APlanet::CheckPlayerPawn()
 	}
 
 	// Если PlayerPawn найден, проверяем расстояние и останавливаем таймер
-	if (PlayerPawn != nullptr)
+	if (PlayerPawn != nullptr && PlanetaryEnvironmentGenerator != nullptr)
 	{
 		GetWorldTimerManager().ClearTimer(PlayerPawnTimerHandle);
 
@@ -163,7 +163,7 @@ void APlanet::SetMoonsList(TArray<TSharedPtr<FMoonData>> NewMoonsList)
 
 void APlanet::SetParentStar(AStar* Star)
 {
-	this->ParnetStar = Star;
+	this->ParentStar = Star;
 }
 
 void APlanet::SetupHomePlanetFromEditor(AWorldScapeRoot* StartHomePlanet)
