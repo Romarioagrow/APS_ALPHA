@@ -3,6 +3,8 @@
 #include "BaseWidget.h"
 #include "USelectWorldsMenu.generated.h"
 
+class UExistingWorld;
+class UUniformGridPanel;
 class UGeneratedWorld;
 class ABaseActor;
 class AAstroGenerator;
@@ -31,7 +33,17 @@ public:
 	UFUNCTION(BlueprintCallable)
 	void LoadWorld();
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worlds")
+	TSubclassOf<UExistingWorld> BP_ExistingWorldWidgetClass;
+	
 protected:
+	virtual void NativeConstruct() override;
+	
 	UFUNCTION()
 	void GenerateWorld();
+	
+	void PopulateExistingWorlds();
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, meta = (BindWidget))
+	UUniformGridPanel* UniformGridPanel_ExistingWorlds;
 };
