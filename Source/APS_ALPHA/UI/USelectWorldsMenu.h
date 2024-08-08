@@ -3,6 +3,7 @@
 #include "BaseWidget.h"
 #include "USelectWorldsMenu.generated.h"
 
+class UWorldDetailsCard;
 class UExistingWorld;
 class UUniformGridPanel;
 class UGeneratedWorld;
@@ -35,6 +36,9 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Worlds")
 	TSubclassOf<UExistingWorld> BP_ExistingWorldWidgetClass;
+
+	UFUNCTION(BlueprintCallable, Category = "Worlds")
+	void UpdateWorldDetails(const FString& SaveFileName);
 	
 protected:
 	virtual void NativeConstruct() override;
@@ -46,4 +50,13 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, meta = (BindWidget))
 	UUniformGridPanel* UniformGridPanel_ExistingWorlds;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, meta = (BindWidget))
+	UWorldDetailsCard* ClusterDetailsCard;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, meta = (BindWidget))
+	UWorldDetailsCard* StarDetailsCard;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, meta = (BindWidget))
+	UWorldDetailsCard* PlanetDetailsCard;
 };

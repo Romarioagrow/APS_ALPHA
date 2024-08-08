@@ -68,16 +68,16 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Galaxy")
 	EGalaxyClass GalaxyClass;
 
-	UPROPERTY(EditAnywhere, Category = "Star Cluster", meta = (EditCondition = "!bGenerateRandomCluster"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Star Cluster", meta = (EditCondition = "!bGenerateRandomCluster"))
 	EStarClusterSize StarClusterSize;
 
-	UPROPERTY(EditAnywhere, Category = "Star Cluster", meta = (EditCondition = "!bGenerateRandomCluster"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Star Cluster", meta = (EditCondition = "!bGenerateRandomCluster"))
 	EStarClusterType StarClusterType;
 
-	UPROPERTY(EditAnywhere, Category = "Star Cluster", meta = (EditCondition = "!bGenerateRandomCluster"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Star Cluster", meta = (EditCondition = "!bGenerateRandomCluster"))
 	EStarClusterPopulation StarClusterPopulation;
 
-	UPROPERTY(EditAnywhere, Category = "Star Cluster", meta = (EditCondition = "!bGenerateRandomCluster"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Star Cluster", meta = (EditCondition = "!bGenerateRandomCluster"))
 	EStarClusterComposition StarClusterComposition;
 
 	UPROPERTY(EditAnywhere, Category = "Home System", meta = (EditCondition = "!bRandomHomeSystem"))

@@ -13,7 +13,7 @@ class APS_ALPHA_API UGameSave : public USaveGame
 	GENERATED_BODY()
 
 public:
-	UPROPERTY(VisibleAnywhere, Category = "Basic")
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Basic")
 	FString SaveSlotName;
 
 	UPROPERTY(VisibleAnywhere, Category = "Basic")
@@ -22,6 +22,13 @@ public:
 	UPROPERTY(VisibleAnywhere, Category = "State")
 	TArray<FActorSaveData> ActorSaveDataArray;
 
-	UPROPERTY(VisibleAnywhere, Category = "World")
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "World")
 	UGeneratedWorld* GeneratedWorld;
+
+	UFUNCTION(BlueprintCallable)
+	UGeneratedWorld* GetGeneratedWorld();
+
+	UFUNCTION(BlueprintCallable)
+	FString GetSaveSlotName();
+	
 };
