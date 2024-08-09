@@ -38,16 +38,16 @@ struct FGeneratedWorldData
     UPROPERTY(VisibleAnywhere, Category = "Home System")
     bool bRandomHomeStar;
 
-    UPROPERTY(VisibleAnywhere, Category = "Home System")
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Home System")
     bool bRandomStartPlanetNumber;
 
-    UPROPERTY(VisibleAnywhere, Category = "Generation Params")
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Generation Params")
     EAstroGenerationLevel AstroGenerationLevel;
 
-    UPROPERTY(VisibleAnywhere, Category = "Galaxy")
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Galaxy")
     EGalaxyType GalaxyType;
 
-    UPROPERTY(VisibleAnywhere, Category = "Galaxy")
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Galaxy")
     EGalaxyClass GalaxyClass;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Star Cluster")
@@ -62,64 +62,82 @@ struct FGeneratedWorldData
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Star Cluster")
     EStarClusterComposition StarClusterComposition;
 
-    UPROPERTY(VisibleAnywhere, Category = "Home System")
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Home System")
     EStarType StarType;
 
-    UPROPERTY(VisibleAnywhere, Category = "Home System")
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Home System")
     EStellarType StellarType;
 
-    UPROPERTY(VisibleAnywhere, Category = "Home System")
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Home System")
     ESpectralClass SpectralClass;
 
-    UPROPERTY(VisibleAnywhere, Category = "Home System")
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Home System")
     EPlanetarySystemType PlanetarySystemType;
 
-    UPROPERTY(VisibleAnywhere, Category = "Home System")
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Home System")
     EOrbitDistributionType OrbitDistributionType;
 
-    UPROPERTY(VisibleAnywhere, Category = "Home System")
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Home System")
     EHomeSystemPosition HomeSystemPosition;
 
-    UPROPERTY(VisibleAnywhere, Category = "Home System")
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Home System")
     EPlanetType PlanetType;
 
-    UPROPERTY(VisibleAnywhere, Category = "Galaxy")
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Galaxy")
     int GalaxySize;
 
-    UPROPERTY(VisibleAnywhere, Category = "Galaxy")
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Galaxy")
     int GalaxyStarCount;
 
-    UPROPERTY(VisibleAnywhere, Category = "Home System")
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Home System")
     int PlanetsAmount;
 
-    UPROPERTY(VisibleAnywhere, Category = "Home System")
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Home System")
     int MoonsAmount;
 
-    UPROPERTY(VisibleAnywhere, Category = "Home System")
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Home System")
     int StartPlanetIndex;
 
-    UPROPERTY(VisibleAnywhere, Category = "Galaxy")
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Galaxy")
     double GalaxyStarDensity;
 
-    UPROPERTY(VisibleAnywhere, Category = "Galaxy")
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Galaxy")
     double PlanetRadius;
 
-    UPROPERTY(VisibleAnywhere, Category = "Atmosphere")
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Atmosphere")
     double AtmosphereHeight;
 
-    UPROPERTY(VisibleAnywhere, Category = "Atmosphere")
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Atmosphere")
     double AtmosphereOpacity;
 
-    UPROPERTY(VisibleAnywhere, Category = "Atmosphere")
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Atmosphere")
     double AtmosphereMultiScattering;
 
-    UPROPERTY(VisibleAnywhere, Category = "Atmosphere")
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Atmosphere")
     double AtmosphereRayleighScattering;
 
-    UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Atmosphere")
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Atmosphere")
     FLinearColor AtmosphereColor;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Star Cluster")
     int StarsAmount;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Star")
+    FName HomeStarName;
+    
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Planet")
+    FName HomePlanetName;
+    
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Star")
+    FName FullSpectralName;
+    
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Star")
+    double HomeStarMass;
+    
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Star")
+    double HomeStarRadius;
+    
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Star")
+    int HomeStarTemperature;
 };
 
