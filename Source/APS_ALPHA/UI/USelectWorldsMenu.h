@@ -58,5 +58,8 @@ protected:
 	UWorldDetailsCard* StarDetailsCard;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, meta = (BindWidget))
+	UWorldDetailsCard* StarSystemDetailsCard;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, meta = (BindWidget))
 	UWorldDetailsCard* PlanetDetailsCard;
 };

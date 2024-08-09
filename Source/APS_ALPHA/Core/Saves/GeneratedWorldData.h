@@ -139,5 +139,8 @@ struct FGeneratedWorldData
     
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Star")
     int HomeStarTemperature;
+    
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "StarSystem")
+    double StarSystemRadius;
 };
 

@@ -230,6 +230,7 @@ void AAstroGenerator::AddGeneratedWorldModelData()
 	GeneratedWorldModel->HomeStarRadius = HomeStar->Radius;
 	GeneratedWorldModel->HomeStarTemperature = HomeStar->SurfaceTemperature;
 	GeneratedWorldModel->HomePlanetName = HomePlanet->AstroName;
+	GeneratedWorldModel->StarSystemRadius = GeneratedHomeStarSystem->StarSystemRadius;
 }
 
 void AAstroGenerator::GenerateHomeStarSystem()
