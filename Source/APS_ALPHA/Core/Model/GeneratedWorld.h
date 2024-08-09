@@ -168,6 +168,9 @@ public:
 	
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Star Cluster")
 	double HomeStarMass;
+	
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Star System")
+	double StarSystemRadius;
 
 	FGeneratedWorldData SaveWorldData() const
 	{
@@ -212,6 +215,7 @@ public:
 		WorldData.HomeStarTemperature = HomeStarTemperature;
 		WorldData.HomeStarRadius = HomeStarRadius;
 		WorldData.HomeStarMass = HomeStarMass;
+		WorldData.StarSystemRadius = StarSystemRadius;
 
 		return WorldData;
 	}

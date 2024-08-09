@@ -87,6 +87,7 @@ void USelectWorldsMenu::UpdateWorldDetails(FString SaveFileName)
 		// Обновляем данные для карточек мира
 		if (ClusterDetailsCard) { ClusterDetailsCard->UpdateDetails(LoadedGame); }
 		if (StarDetailsCard) { StarDetailsCard->UpdateDetails(LoadedGame); }
+		if (StarSystemDetailsCard) { StarSystemDetailsCard->UpdateDetails(LoadedGame); }
 		if (PlanetDetailsCard) { PlanetDetailsCard->UpdateDetails(LoadedGame); }
 
 		// Вызов метода из контроллера для установки SaveSlotName
