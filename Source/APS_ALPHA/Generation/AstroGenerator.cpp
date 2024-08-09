@@ -221,6 +221,17 @@ void AAstroGenerator::GenerateStarCluster()
 	}
 }
 
+void AAstroGenerator::AddGeneratedWorldModelData()
+{
+	GeneratedWorldModel->StarsAmount = GeneratedStarCluster->StarAmount;
+	GeneratedWorldModel->HomeStarName = HomeStar->AstroName;
+	GeneratedWorldModel->FullSpectralName = HomeStar->FullSpectralName;
+	GeneratedWorldModel->HomeStarMass = HomeStar->Mass;
+	GeneratedWorldModel->HomeStarRadius = HomeStar->Radius;
+	GeneratedWorldModel->HomeStarTemperature = HomeStar->SurfaceTemperature;
+	GeneratedWorldModel->HomePlanetName = HomePlanet->AstroName;
+}
+
 void AAstroGenerator::GenerateHomeStarSystem()
 {
 	/*
@@ -258,7 +269,7 @@ void AAstroGenerator::GenerateHomeStarSystem()
 			HomePlanet = PlanetGenerator->GeneratePlanet(HomePlanetModel, BP_PlanetClass, GetWorld());
 			PlanetGenerator->GeneratePlanetAtmosphere(HomePlanet, PlanetAtmosphereModel);
 			HomePlanet->PlanetaryEnvironmentGenerator->GenerateWorldscapeSurfaceByModel(GetWorld(), HomePlanet);
-
+			HomePlanet->AstroName = AGravityPlayerController::GenerateUniqueName("Planet");
 
 			APlanetOrbit* NewHomePlanetOrbit = GeneratedHomeStarSystem->MainStar->PlanetarySystem->
 			                                                            PlanetOrbitsList[StartPlanetNumber - 1];
@@ -283,8 +294,8 @@ void AAstroGenerator::GenerateHomeStarSystem()
 					                                                  HomePlanetModel, HomePlanetModel->Radius,
 					                                                  GeneratedWorldModel->MoonsAmount);
 
-					GeneratedWorldModel->StarsAmount = GeneratedStarCluster->StarAmount;
-
+					AddGeneratedWorldModelData();
+					
 					SpawnPlanetMoons(HomePlanetModel);
 
 					SpawnStartInteractiveActors(HomePlanetModel);
@@ -391,6 +402,9 @@ void AAstroGenerator::GenerateStarSystemByModel()
 			NewStar->AttachToActor(NewStarSystem, FAttachmentTransformRules::KeepWorldTransform);
 			NewPlanetarySystem->AttachToActor(NewStar, FAttachmentTransformRules::KeepWorldTransform);
 			StarGenerator->ApplySpectralMaterial(NewStar, StarModel);
+			NewStar->AstroName = AGravityPlayerController::GenerateUniqueName("");
+			NewStar->FullSpectralName = NewStar->GenerateFullSpectralName();
+			HomeStar = NewStar;
 
 			// Generate planets for each star
 			FVector LastPlanetLocation{0};

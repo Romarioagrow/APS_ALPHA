@@ -156,8 +156,11 @@ public:
 	UPROPERTY(EditInstanceOnly, Category = "Generation Params")
 	APlanet* HomePlanet;
 
-	UPROPERTY()
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
 	APlanetarySystem* HomePlanetarySystem;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
+	AStar* HomeStar;
 
 	// STAR SYSTEM GENERATOR
 	UPROPERTY(VisibleAnywhere, Category = "Home System")
@@ -329,6 +332,8 @@ public:
 	int GetRandomValueFromStarAmountRange(EStarClusterType ClusterType);
 
 	void GenerateStarCluster();
+	
+	void AddGeneratedWorldModelData();
 
 	UFUNCTION()
 	FVector DetermineHomeSystemSpawnLocation();

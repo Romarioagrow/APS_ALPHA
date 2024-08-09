@@ -1,5 +1,6 @@
 ﻿#pragma once
 
+#include "APS_ALPHA/Actors/Astro/Star.h"
 #include "APS_ALPHA/Core/Enums/AstroGenerationLevel.h"
 #include "APS_ALPHA/Core/Enums/OrbitDistributionType.h"
 #include "APS_ALPHA/Core/Enums/PlanetarySystemType.h"
@@ -150,6 +151,24 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Star Cluster")
 	int StarsAmount;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Star Cluster")
+	FName HomeStarName;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Star Cluster")
+	FName HomePlanetName;
+	
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Star Cluster")
+	FName FullSpectralName;
+	
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Star Cluster")
+	int HomeStarTemperature;
+	
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Star Cluster")
+	double HomeStarRadius;
+	
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Star Cluster")
+	double HomeStarMass;
+
 	FGeneratedWorldData SaveWorldData() const
 	{
 		FGeneratedWorldData WorldData;
@@ -187,6 +206,12 @@ public:
 		WorldData.AtmosphereRayleighScattering = AtmosphereRayleighScattering;
 		WorldData.AtmosphereColor = AtmosphereColor;
 		WorldData.StarsAmount = StarsAmount;
+		WorldData.HomeStarName = HomeStarName;
+		WorldData.HomePlanetName = HomePlanetName;
+		WorldData.FullSpectralName = FullSpectralName;
+		WorldData.HomeStarTemperature = HomeStarTemperature;
+		WorldData.HomeStarRadius = HomeStarRadius;
+		WorldData.HomeStarMass = HomeStarMass;
 
 		return WorldData;
 	}

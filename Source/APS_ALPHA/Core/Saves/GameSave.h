@@ -17,6 +17,9 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Basic")
 	FString SaveSlotName;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Basic")
+	FString WorldName;
+
 	UPROPERTY(VisibleAnywhere, Category = "Basic")
 	uint32 UserIndex;
 
