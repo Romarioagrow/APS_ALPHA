@@ -1,7 +1,7 @@
 #include "Planet.h"
 #include "Moon.h"
 #include "APS_ALPHA/Core/Enums/PlanetType.h"
-#include "APS_ALPHA/Generation/PlanetaryEnvironmentGenerator.h"
+#include "APS_ALPHA/Generation/PlanetarySurfaceGenerator.h"
 
 void APlanet::Tick(float DeltaTime)
 {
@@ -28,7 +28,7 @@ void APlanet::CheckPlayerPawn()
 		GetWorldTimerManager().ClearTimer(PlayerPawnTimerHandle);
 
 		double Distance = FVector::Dist(PlayerPawn->GetActorLocation(), GetActorLocation());
-		if (Distance < AffectionRadiusKM * WSCZoneScale * 100000)
+		if (Distance < AffectionRadiusKM * WscZoneScale * 100000)
 		{
 			PlanetaryEnvironmentGenerator->SpawnWorldScapeRoot();
 			bEnvironmentSpawned = true;

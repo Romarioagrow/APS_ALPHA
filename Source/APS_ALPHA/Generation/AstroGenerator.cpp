@@ -1,6 +1,6 @@
 #include "AstroGenerator.h"
 #include <Kismet/GameplayStatics.h>
-#include "PlanetaryEnvironmentGenerator.h"
+#include "PlanetarySurfaceGenerator.h"
 #include "PlanetGenerator.h"
 #include "APS_ALPHA/Actors/Astro/AstroAnchor.h"
 #include "APS_ALPHA/Actors/Astro/Galaxy.h"
