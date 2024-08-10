@@ -4,6 +4,9 @@
 #include "GenerationModel.h"
 #include "APS_ALPHA/Core/Enums/OrbitDistributionType.h"
 #include "CoreMinimal.h"
+#include "APS_ALPHA/Actors/Planetary/PlanetAtmosphere.h"
+#include "APS_ALPHA/Actors/Planetary/PlanetBiosphere.h"
+#include "APS_ALPHA/Actors/Planetary/PlanetGeosphere.h"
 #include "PlanetarySystemGenerationModel.generated.h"
 
 enum class EPlanetarySystemType : uint8;
@@ -43,19 +46,64 @@ struct FPlanetData
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Mode")
 	double OrbitRadius;
 
+	// Модель планеты
 	TSharedPtr<FPlanetModel> PlanetModel;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Planet Mode")
+	FPlanetModel PlanetModelData;
+
+	// Структуры окружения
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Environment")
+	FPlanetAtmosphere PlanetAtmosphere;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Environment")
+	FPlanetBiosphere PlanetBiosphere;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Environment")
+	FPlanetGeosphere PlanetGeosphere;
+
+	// Дополнительные параметры планеты
+	UPROPERTY(EditAnywhere, Category = "Planet")
+	int PlanetRadiusKM;
+
+	UPROPERTY(VisibleAnywhere, Category = "Planet")
+	int32 Temperature{0};
+
+	UPROPERTY(VisibleAnywhere, Category = "Planet")
+	double PlanetDensity{0};
+
+	UPROPERTY(VisibleAnywhere, Category = "Planet")
+	double PlanetGravityStrength{0};
+
+	// Конструкторы
 	FPlanetData()
 	{
 		PlanetOrder = 0;
 		OrbitRadius = 0.0;
+		PlanetRadiusKM = 0;
+		Temperature = 0;
+		PlanetDensity = 0.0;
+		PlanetGravityStrength = 0.0;
 	}
 
-	FPlanetData(int PlanetOrder, double OrbitRadius, TSharedPtr<FPlanetModel> PlanetModel)
+	FPlanetData(int InPlanetOrder, double InOrbitRadius, TSharedPtr<FPlanetModel> InPlanetModel)
 	{
-		this->PlanetOrder = PlanetOrder;
-		this->OrbitRadius = OrbitRadius;
-		this->PlanetModel = PlanetModel;
+		this->PlanetOrder = InPlanetOrder;
+		this->OrbitRadius = InOrbitRadius;
+		this->PlanetModel = InPlanetModel;
+		PlanetRadiusKM = 0;
+		Temperature = 0;
+		PlanetDensity = 0.0;
+		PlanetGravityStrength = 0.0;
+	}
+
+	// Инициализация данных планеты
+	void InitializePlanetData(int InPlanetRadiusKM, int32 InTemperature, double InPlanetDensity, double InPlanetGravityStrength)
+	{
+		this->PlanetRadiusKM = InPlanetRadiusKM;
+		this->Temperature = InTemperature;
+		this->PlanetDensity = InPlanetDensity;
+		this->PlanetGravityStrength = InPlanetGravityStrength;
 	}
 };
 

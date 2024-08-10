@@ -3,6 +3,8 @@
 #include "CoreMinimal.h"
 #include "PlanetAtmosphere.generated.h"
 
+enum class EPressureLevel : uint8;
+enum class EHumidityLevel : uint8;
 enum class EWindSpeed : uint8;
 enum class ECO2Level : uint8;
 enum class EOxigenLevel : uint8;
@@ -34,6 +36,19 @@ struct FPlanetAtmosphere
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Atmosphere")
 	float WindSpeed; // Вычисляемое значение
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Environment")
+	EHumidityLevel HumidityLevel;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Environment")
+	float Humidity; // Вычисляемое значение
+
+	// Атмосферное давление
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Environment")
+	EPressureLevel PressureLevel;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Environment")
+	float AtmosphericPressure;
+
 	// Методы вычисления значений
 	void UpdateAtmosphereProperties();
 	
@@ -42,4 +57,8 @@ struct FPlanetAtmosphere
 	float CalculateCo2Concentration(ECO2Level Level);
 	
 	float CalculateWindSpeed(EWindSpeed Level);
+
+	float CalculateHumidity(EHumidityLevel Level);
+	
+	float CalculateAtmosphericPressure(EPressureLevel Level);
 };

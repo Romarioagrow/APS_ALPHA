@@ -1,6 +1,5 @@
 ﻿#pragma once
 
-#include "APS_ALPHA/Actors/Astro/Star.h"
 #include "APS_ALPHA/Core/Enums/AstroGenerationLevel.h"
 #include "APS_ALPHA/Core/Enums/OrbitDistributionType.h"
 #include "APS_ALPHA/Core/Enums/PlanetarySystemType.h"
@@ -11,6 +10,7 @@
 #include "APS_ALPHA/Core/Saves/GeneratedWorldData.h"
 #include "GeneratedWorld.generated.h"
 
+struct FPlanetData;
 class APlanetarySystem;
 class APlanet;
 
@@ -38,6 +38,14 @@ public:
 	UGeneratedWorld();
 	
 	void PrintAllValues() const;
+
+	UPROPERTY()
+	TArray<FPlanetData> InhabitedPlanets;
+
+	FGeneratedWorldData SaveWorldData() const;
+
+	// Метод для получения данных о заселенных планетах
+	const TArray<FPlanetData>& GetInhabitedPlanets() const { return InhabitedPlanets; }
 
 	UPROPERTY(EditAnywhere, Category = "Generation Params")
 	bool bGenerateFullScaledWorld{ true };
@@ -172,7 +180,7 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Star System")
 	double StarSystemRadius;
 
-	FGeneratedWorldData SaveWorldData() const
+	FGeneratedWorldData SaveWorldData()
 	{
 		FGeneratedWorldData WorldData;
 		WorldData.bGenerateFullScaledWorld = bGenerateFullScaledWorld;

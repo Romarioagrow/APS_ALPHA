@@ -7,6 +7,7 @@
 #include "APS_ALPHA/Actors/Planetary/PlanetBiosphere.h"
 #include "APS_ALPHA/Actors/Planetary/PlanetGeosphere.h"
 #include "Kismet/GameplayStatics.h"
+#include "APS_ALPHA/Core/Structs/PlanetarySystemGenerationModel.h"
 #include "PlanetaryBody.generated.h"
 
 class APlanetarySurfaceGenerator;
@@ -22,8 +23,12 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	
 
 public:
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Planet Data")
+	FPlanetData PlanetData;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Planet Body")
 	APlanetarySurfaceGenerator* PlanetaryEnvironmentGenerator;
 
@@ -45,6 +50,18 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Body")
 	double OrbitHeight{0.0};
 
+	UPROPERTY(EditAnywhere, Category = "Planet")
+	int PlanetRadiusKM;
+
+	UPROPERTY(VisibleAnywhere, Category = "Planet")
+	int32 Temperature{0};
+
+	UPROPERTY(VisibleAnywhere, Category = "Planet")
+	double PlanetDensity{0};
+
+	UPROPERTY(VisibleAnywhere, Category = "Planet")
+	double PlanetGravityStrength{0};
+
 	UPROPERTY(VisibleAnywhere, Category = "Planet")
 	EPlanetType PlanetType;
 
@@ -56,4 +73,7 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Environment")
 	FPlanetGeosphere PlanetGeosphere;
+
+	void FillPlanetData();
+
 };

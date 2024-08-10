@@ -54,30 +54,48 @@ struct FPlanetModel : public FOrbitalBodyModel
 	GENERATED_BODY()
 
 	FPlanetModel();
-
+	
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Planet")
 	TArray<FOrbitInfo> Orbits;
 
-	UPROPERTY(VisibleAnywhere, Category = "Planet")
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Planet")
 	EPlanetType PlanetType;
 
-	UPROPERTY(VisibleAnywhere, Category = "Planet")
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Planet")
 	int32 AmountOfMoons{0};
 
-	UPROPERTY(VisibleAnywhere, Category = "Planet")
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Planet")
 	int32 Temperature{0};
 
-	UPROPERTY(VisibleAnywhere, Category = "Planet")
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Planet")
 	EPlanetaryZoneType PlanetZone;
 
-	UPROPERTY(VisibleAnywhere, Category = "Planet")
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Planet")
 	double PlanetDensity{0};
 
-	UPROPERTY(VisibleAnywhere, Category = "Planet")
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Planet")
 	double PlanetGravityStrength{0};
+	
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Planet")
+	TArray<FMoonData> MoonsListData;
+	
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Planet")
+	double AtmosphereHeight{0};
 
 	TArray<TSharedPtr<FMoonData>> MoonsList;
 
 	TPair<double, double> MoonOrbitsRange;
-
-	double AtmosphereHeight{0};
+	
+	TArray<FMoonData> GetMoonsData() const
+	{
+		TArray<FMoonData> Result;
+		for (const TSharedPtr<FMoonData>& MoonPtr : MoonsList)
+		{
+			if (MoonPtr.IsValid())
+			{
+				Result.Add(*MoonPtr);
+			}
+		}
+		return Result;
+	}
 };
