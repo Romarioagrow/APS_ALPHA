@@ -3,11 +3,6 @@
 #include "APS_ALPHA/Core/Enums/PlanetType.h"
 #include "APS_ALPHA/Generation/PlanetarySurfaceGenerator.h"
 
-void APlanet::Tick(float DeltaTime)
-{
-	Super::Tick(DeltaTime);
-}
-
 void APlanet::HandleOnStellarMode()
 {
 	IsComputingWSCProximity = false;

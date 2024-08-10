@@ -223,6 +223,19 @@ void AAstroGenerator::GenerateStarCluster()
 
 void AAstroGenerator::AddGeneratedWorldModelData()
 {
+	if (!HomePlanet)
+	{
+		UE_LOG(LogTemp, Error, TEXT("HomePlanet is null!"));
+		return;
+	}
+
+	// Проверка валидности данных
+	if (!HomePlanet->PlanetData.PlanetModel.IsValid())
+	{
+		UE_LOG(LogTemp, Error, TEXT("HomePlanet's PlanetModel is invalid!"));
+		return;
+	}
+	
 	GeneratedWorldModel->StarsAmount = GeneratedStarCluster->StarAmount;
 	GeneratedWorldModel->HomeStarName = HomeStar->AstroName;
 	GeneratedWorldModel->FullSpectralName = HomeStar->FullSpectralName;
@@ -231,6 +244,9 @@ void AAstroGenerator::AddGeneratedWorldModelData()
 	GeneratedWorldModel->HomeStarTemperature = HomeStar->SurfaceTemperature;
 	GeneratedWorldModel->HomePlanetName = HomePlanet->AstroName;
 	GeneratedWorldModel->StarSystemRadius = GeneratedHomeStarSystem->StarSystemRadius;
+
+	HomePlanet->FillPlanetData();
+	GeneratedWorldModel->InhabitedPlanets.Add(HomePlanet->PlanetData);
 }
 
 void AAstroGenerator::GenerateHomeStarSystem()

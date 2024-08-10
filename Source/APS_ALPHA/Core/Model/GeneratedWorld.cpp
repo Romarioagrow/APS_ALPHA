@@ -7,6 +7,7 @@
 #include "APS_ALPHA/Core/Enums/StarClusterPopulation.h"
 #include "APS_ALPHA/Core/Enums/StarClusterSize.h"
 #include "APS_ALPHA/Core/Enums/StarClusterType.h"
+#include "APS_ALPHA/Core/Structs/PlanetarySystemGenerationModel.h"
 
 UGeneratedWorld::UGeneratedWorld(): GalaxyClass()
 {

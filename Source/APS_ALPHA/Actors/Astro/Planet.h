@@ -23,7 +23,7 @@ protected:
 	virtual void BeginPlay() override;
 
 public:
-	virtual void Tick(float DeltaTime) override;
+	APlanet();
 
 	void HandleOnStellarMode();
 
@@ -35,12 +35,10 @@ public:
 
 	void InitWSC();
 
-	APlanet();
-
 	bool IsNotGasGiant();
 
 	bool IsComputingWSCProximity{true};
-
+	
 	FTimerHandle PlayerPawnTimerHandle;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Setup")
@@ -55,9 +53,6 @@ public:
 	UPROPERTY(VisibleAnywhere, Category = "Planet")
 	USphereComponent* PlanetaryZone;
 
-	UPROPERTY(EditAnywhere, Category = "Planet")
-	int PlanetRadiusKM;
-
 	UPROPERTY(VisibleAnywhere, Category = "Planet")
 	AStar* ParentStar;
 
@@ -67,16 +62,6 @@ public:
 	// Число спутников
 	UPROPERTY(VisibleAnywhere, Category = "Planet")
 	int32 AmountOfMoons{0};
-
-	// Число спутников
-	UPROPERTY(VisibleAnywhere, Category = "Planet")
-	int32 Temperature{0};
-
-	UPROPERTY(VisibleAnywhere, Category = "Planet")
-	double PlanetDensity{0};
-
-	UPROPERTY(VisibleAnywhere, Category = "Planet")
-	double PlanetGravityStrength{0};
 
 	TArray<TSharedPtr<FMoonData>> MoonsList;
 

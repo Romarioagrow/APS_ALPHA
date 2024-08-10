@@ -7,17 +7,23 @@
 #include "APS_ALPHA/Core/Enums/BiomassLevel.h"
 #include "APS_ALPHA/Core/Enums/CO2Level.h"
 #include "APS_ALPHA/Core/Enums/CrustThicknessLevel.h"
+#include "APS_ALPHA/Core/Enums/HumidityLevel.h"
 #include "APS_ALPHA/Core/Enums/MagneticFieldStrength.h"
 #include "APS_ALPHA/Core/Enums/OxigenLevel.h"
+#include "APS_ALPHA/Core/Enums/PressureLevel.h"
 #include "APS_ALPHA/Core/Enums/SeismicActivityLevel.h"
 #include "APS_ALPHA/Core/Enums/WindSpeed.h"
 #include "APS_ALPHA/Generation/PlanetarySurfaceGenerator.h"
 
 APlanetaryBody::APlanetaryBody()
 {
+	PlanetData.PlanetModel = MakeShared<FPlanetModel>();
+	
 	PlanetAtmosphere.OxygenLevel = EOxigenLevel::NoOxigen;
 	PlanetAtmosphere.CO2Level = ECO2Level::NoCO2;
 	PlanetAtmosphere.WindSpeedLevel = EWindSpeed::NoWind;
+	PlanetAtmosphere.PressureLevel = EPressureLevel::NoPressure;
+	PlanetAtmosphere.HumidityLevel = EHumidityLevel::NoHumidity;
 
 	PlanetBiosphere.BiomassLevel = EBiomassLevel::NoBiomass;
 	PlanetBiosphere.BiodiversityLevel = EBiodiversityIndex::NoBiodiversity;
@@ -51,7 +57,7 @@ void APlanetaryBody::BeginPlay()
 			}
 			else
 			{
-				GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("World IS NULL!!!"));
+				GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("World IS NULL"));
 			}
 		}
 	}
@@ -69,3 +75,22 @@ void APlanetaryBody::BeginPlay()
 	PlayerPawn = UGameplayStatics::GetPlayerPawn(this, 0);
 }
 
+void APlanetaryBody::FillPlanetData()
+{
+	// Заполняем параметры планеты
+	//PlanetData.PlanetOrder = PlanetOrder;
+	//PlanetData.OrbitRadius = OrbitRadius;
+	PlanetData.PlanetRadiusKM = PlanetRadiusKM;
+	PlanetData.Temperature = Temperature;
+	PlanetData.PlanetDensity = PlanetDensity;
+	PlanetData.PlanetGravityStrength = PlanetGravityStrength;
+
+	// Заполняем данные окружения
+	PlanetData.PlanetAtmosphere = PlanetAtmosphere;
+	PlanetData.PlanetBiosphere = PlanetBiosphere;
+	PlanetData.PlanetGeosphere = PlanetGeosphere;
+	
+	PlanetData.PlanetModelData = *(PlanetData.PlanetModel); //PlanetData.Duplicate();
+	///PlanetData.PlanetModelData.MoonsListData = PlanetData.PlanetModelData.GetMoonsData(); //*(PlanetData.PlanetModelData.MoonsList); //PlanetData.Duplicate();
+	
+}

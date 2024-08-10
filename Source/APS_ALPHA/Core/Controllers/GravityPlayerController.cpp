@@ -6,6 +6,7 @@
 #include "APS_ALPHA/Core/Saves/SavedActorData.h"
 #include "APS_ALPHA/Generation/AstroGenerator.h"
 #include "Kismet/GameplayStatics.h"
+#include "APS_ALPHA/Core/Structs/PlanetarySystemGenerationModel.h"
 #include "Serialization/ObjectAndNameAsStringProxyArchive.h"
 
 void AGravityPlayerController::SetupInputComponent()
@@ -45,6 +46,10 @@ void AGravityPlayerController::SaveNewWorld(const EAstroGenerationLevel AstroGen
 		FGeneratedWorldData WorldSaveData = GeneratedWorldModel->SaveWorldData();
 		SaveGameInstance->GeneratedWorldsDataArray.Add(WorldSaveData);
 		SaveGameInstance->WorldName = WorldName;
+
+		// Получаем данные о заселенных планетах из UGeneratedWorld и добавляем их в сейв
+		const TArray<FPlanetData>& InhabitedPlanets = GeneratedWorldModel->GetInhabitedPlanets();
+		SaveGameInstance->InhabitedPlanetsDataArray.Append(InhabitedPlanets);
 		
 		if (UWorld* World = GetWorld())
 		{
