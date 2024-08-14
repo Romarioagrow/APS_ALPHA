@@ -6,6 +6,7 @@
 #include "APS_ALPHA/Core/Saves/SavedActorData.h"
 #include "APS_ALPHA/Generation/AstroGenerator.h"
 #include "Kismet/GameplayStatics.h"
+#include "APS_ALPHA/Core/Structs/PlanetarySystemGenerationModel.h"
 #include "Serialization/ObjectAndNameAsStringProxyArchive.h"
 
 void AGravityPlayerController::SetupInputComponent()
@@ -33,11 +34,22 @@ void AGravityPlayerController::SaveNewWorld(const EAstroGenerationLevel AstroGen
 	{
 		FString SaveSlotName = GenerateUniqueSaveSlotName(AstroGenerationLevel);
 
+		FString WorldName;
+		if (int32 LastSpaceIndex; SaveSlotName.FindLastChar(TEXT(' '), LastSpaceIndex))
+		{
+			WorldName = SaveSlotName.Left(LastSpaceIndex);
+		}
+
 		SaveGameInstance->SaveSlotName = SaveSlotName;
 		SaveGameInstance->UserIndex = 0;
 	
 		FGeneratedWorldData WorldSaveData = GeneratedWorldModel->SaveWorldData();
 		SaveGameInstance->GeneratedWorldsDataArray.Add(WorldSaveData);
+		SaveGameInstance->WorldName = WorldName;
+
+		// Получаем данные о заселенных планетах из UGeneratedWorld и добавляем их в сейв
+		const TArray<FPlanetData>& InhabitedPlanets = GeneratedWorldModel->GetInhabitedPlanets();
+		SaveGameInstance->InhabitedPlanetsDataArray.Append(InhabitedPlanets);
 		
 		if (UWorld* World = GetWorld())
 		{
@@ -138,6 +150,67 @@ void AGravityPlayerController::LoadWorld()
 }
 
 
+
+bool AGravityPlayerController::GetLoadingMode()
+{
+	if (const UGameInstance* GameInstance = GetWorld()->GetGameInstance())
+	{
+		if (const UMainGameplayInstance* MainGameplayInstance = GameInstance->GetSubsystem<UMainGameplayInstance>())
+		{
+			return MainGameplayInstance->bIsLoadingMode;
+		}
+	}
+	return false;
+}
+
+void AGravityPlayerController::SetLoadingModeFalse()
+{
+	if (UGameInstance* GameInstance = GetWorld()->GetGameInstance())
+	{
+		if (UMainGameplayInstance* MainGameplayInstance = GameInstance->GetSubsystem<UMainGameplayInstance>())
+		{
+			MainGameplayInstance->bIsLoadingMode = false;
+		}
+	}
+}
+
+FName AGravityPlayerController::GenerateUniqueName(const FString& ObjectType)
+{
+	// Генерация случайного слова по паттерну
+	FString GeneratedName;
+	const FString Vowels = TEXT("aeiou");
+	const FString Consonants = TEXT("bcdfghjklmnpqrstvwxyz");
+
+	std::random_device Rd;
+	std::mt19937 Generator(Rd());
+	const int32 MinLength = 3; 
+	const int32 MaxLength = 8;
+	std::uniform_int_distribution LengthDist(MinLength, MaxLength);
+	const int32 WordLength = LengthDist(Generator);
+
+	for (int32 i = 0; i < WordLength; i++)
+	{
+		if (i % 2 == 0)
+		{
+			GeneratedName += Consonants[Generator() % Consonants.Len()];
+		}
+		else
+		{
+			GeneratedName += Vowels[Generator() % Vowels.Len()];
+		}
+	}
+
+	// Приводим первую букву к заглавной
+	if (GeneratedName.Len() > 0)
+	{
+		GeneratedName[0] = FChar::ToUpper(GeneratedName[0]);
+	}
+
+	// Объединение случайного имени с типом объекта и таймштампом
+	FString FullName = FString::Printf(TEXT("%s %s"), *GeneratedName, *ObjectType);
+	return FName(*FullName);
+}
+
 FString AGravityPlayerController::GenerateUniqueSaveSlotName(const EAstroGenerationLevel AstroGenerationLevel) const
 {
     // Генерация случайного слова по паттерну
@@ -171,57 +244,22 @@ FString AGravityPlayerController::GenerateUniqueSaveSlotName(const EAstroGenerat
     }
 
     // Добавление случайного числа из диапазона и части таймштампа
-    int32 TimeStamp = static_cast<int32>(std::time(nullptr)) % 100000; // Берем последние 5 цифр от таймштапа
+    int32 TimeStamp = static_cast<int32>(std::time(nullptr)) % 10000; // Берем последние 5 цифр от таймштапа
 
-    // Определение типа генерации
-    FString GenerationType;
-    switch (AstroGenerationLevel)
-    {
-    case EAstroGenerationLevel::StarCluster:
-        GenerationType = TEXT("Cluster");
-        break;
-    case EAstroGenerationLevel::GalaxiesCluster:
-        GenerationType = TEXT("GalaxiesCluster");
-        break;
-    case EAstroGenerationLevel::Galaxy:
-        GenerationType = TEXT("Galaxy");
-        break;
-    case EAstroGenerationLevel::StarSystem:
-        GenerationType = TEXT("StarSystem");
-        break;
-    case EAstroGenerationLevel::PlanetSystem:
-        GenerationType = TEXT("PlanetSystem");
-        break;
-    case EAstroGenerationLevel::SinglePlanet:
-        GenerationType = TEXT("SinglePlanet");
-        break;
-    default:
-        GenerationType = TEXT("Unknown");
-        break;
-    }
-
-    return FString::Printf(TEXT("%s %s %05d"), *GeneratedName, *GenerationType, TimeStamp);
-}
-
-bool AGravityPlayerController::GetLoadingMode()
-{
-	if (const UGameInstance* GameInstance = GetWorld()->GetGameInstance())
+	auto GetGenerationType = [](EAstroGenerationLevel Level) -> FString
 	{
-		if (const UMainGameplayInstance* MainGameplayInstance = GameInstance->GetSubsystem<UMainGameplayInstance>())
+		switch (Level)
 		{
-			return MainGameplayInstance->bIsLoadingMode;
+		case EAstroGenerationLevel::StarCluster: return TEXT("Cluster");
+		case EAstroGenerationLevel::GalaxiesCluster: return TEXT("GalaxiesCluster");
+		case EAstroGenerationLevel::Galaxy: return TEXT("Galaxy");
+		case EAstroGenerationLevel::StarSystem: return TEXT("StarSystem");
+		case EAstroGenerationLevel::PlanetSystem: return TEXT("PlanetSystem");
+		case EAstroGenerationLevel::SinglePlanet: return TEXT("SinglePlanet");
+		default: return TEXT("Unknown");
 		}
-	}
-	return false;
-}
+	};
 
-void AGravityPlayerController::SetLoadingModeFalse()
-{
-	if (UGameInstance* GameInstance = GetWorld()->GetGameInstance())
-	{
-		if (UMainGameplayInstance* MainGameplayInstance = GameInstance->GetSubsystem<UMainGameplayInstance>())
-		{
-			MainGameplayInstance->bIsLoadingMode = false;
-		}
-	}
+	FString GenerationType = GetGenerationType(AstroGenerationLevel);
+    return FString::Printf(TEXT("%s %s %d"), *GeneratedName, *GenerationType, TimeStamp);
 }

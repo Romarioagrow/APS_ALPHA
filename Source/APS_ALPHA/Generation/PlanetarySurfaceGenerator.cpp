@@ -1,11 +1,11 @@
-#include "PlanetaryEnvironmentGenerator.h"
+#include "PlanetarySurfaceGenerator.h"
 #include "APS_ALPHA/Actors/Astro/Moon.h"
 #include "APS_ALPHA/Actors/Astro/Planet.h"
 #include "APS_ALPHA/Core/Enums/MoonType.h"
 #include "APS_ALPHA/Core/Enums/PlanetType.h"
 
 // Sets default values
-APlanetaryEnvironmentGenerator::APlanetaryEnvironmentGenerator()
+APlanetarySurfaceGenerator::APlanetarySurfaceGenerator()
 {
  	// Set this actor to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = true;
@@ -26,7 +26,7 @@ APlanetaryEnvironmentGenerator::APlanetaryEnvironmentGenerator()
 }
 
 // Called when the game starts or when spawned
-void APlanetaryEnvironmentGenerator::BeginPlay()
+void APlanetarySurfaceGenerator::BeginPlay()
 {
 	Super::BeginPlay();
     //MoonLikeNoise = StaticLoadObject(UWorldScapeNoiseClass::StaticClass(), nullptr, TEXT("/WorldScape/Ressources/Noise/MoonLike.MoonLike"));
@@ -77,7 +77,7 @@ void APlanetaryEnvironmentGenerator::BeginPlay()
 }
 
 // Called every frame
-void APlanetaryEnvironmentGenerator::Tick(float DeltaTime)
+void APlanetarySurfaceGenerator::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
@@ -87,7 +87,7 @@ void APlanetaryEnvironmentGenerator::Tick(float DeltaTime)
     /// if pawn.distance > planet-affectDistance * WSCScale -> Destroy planet environment
 }
 
-void APlanetaryEnvironmentGenerator::InitEnviroment(APlanet* NewPlanet, UWorld* World)
+void APlanetarySurfaceGenerator::InitEnviroment(APlanet* NewPlanet, UWorld* World)
 {
     /// TO DO: ONE COMMON SWITCH FOR EnviromentModel
 
@@ -186,7 +186,7 @@ void APlanetaryEnvironmentGenerator::InitEnviroment(APlanet* NewPlanet, UWorld* 
     }
 }
 
-void APlanetaryEnvironmentGenerator::InitAtmoScape(UWorld* World, double PlanetaryRadiusKM, APlanetaryBody* NewPlanetaryBody)
+void APlanetarySurfaceGenerator::InitAtmoScape(UWorld* World, double PlanetaryRadiusKM, APlanetaryBody* NewPlanetaryBody)
 {
     PlanetAtmosphere = World->SpawnActor<AAtmosphere>(AAtmosphere::StaticClass(), FTransform());
 
@@ -417,7 +417,7 @@ void APlanetaryEnvironmentGenerator::InitAtmoScape(UWorld* World, double Planeta
 }
 
 
-void APlanetaryEnvironmentGenerator::InitWorldScape(UWorld* World)
+void APlanetarySurfaceGenerator::InitWorldScape(UWorld* World)
 {
     GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Magenta, TEXT("InitWorldScape!"));
     FActorSpawnParameters SpawnParams;
@@ -453,7 +453,7 @@ void APlanetaryEnvironmentGenerator::InitWorldScape(UWorld* World)
 //
 //}
 
-void APlanetaryEnvironmentGenerator::GenerateWorldscapeSurfaceByModel(UWorld* World, APlanet* NewPlanet)
+void APlanetarySurfaceGenerator::GenerateWorldscapeSurfaceByModel(UWorld* World, APlanet* NewPlanet)
 {
 
     // /Script/WorldScapeNoise.IceWorldNoise'/Game/APS/WSC/WSCN_IceWorld.WSCN_IceWorld'
@@ -722,7 +722,7 @@ void APlanetaryEnvironmentGenerator::GenerateWorldscapeSurfaceByModel(UWorld* Wo
     }
 
 }
-void APlanetaryEnvironmentGenerator::GenerateWorldscapeSurfaceByModel(UWorld* World, AMoon* NewMoon)
+void APlanetarySurfaceGenerator::GenerateWorldscapeSurfaceByModel(UWorld* World, AMoon* NewMoon)
 {
     GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Magenta, TEXT("GenerateWorldscapeSurfaceByModel!"));
     FActorSpawnParameters SpawnParams;
@@ -798,7 +798,7 @@ void APlanetaryEnvironmentGenerator::GenerateWorldscapeSurfaceByModel(UWorld* Wo
 
 }
 
-void APlanetaryEnvironmentGenerator::SpawnWorldScapeRoot()
+void APlanetarySurfaceGenerator::SpawnWorldScapeRoot()
 {
     if (WorldScapeRootInstance)
     {
@@ -819,7 +819,7 @@ void APlanetaryEnvironmentGenerator::SpawnWorldScapeRoot()
     }
 }
 
-void APlanetaryEnvironmentGenerator::DestroyPlanetEnvironment()
+void APlanetarySurfaceGenerator::DestroyPlanetEnvironment()
 {
     if (WorldScapeRootInstance)
     {

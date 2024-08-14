@@ -21,6 +21,8 @@ protected:
 	FString GetCurrentSaveSlotName() const;
 
 public:
+	FString CurrentSaveSlotName;
+
 	UFUNCTION(BlueprintCallable, Category = "SaveLoad")
 	void SaveNewWorld(const EAstroGenerationLevel AstroGenerationLevel, UGeneratedWorld* GeneratedWorldModel);
 
@@ -29,11 +31,11 @@ public:
 	
 	FString GenerateUniqueSaveSlotName(EAstroGenerationLevel AstroGenerationLevel) const;
 
-	FString CurrentSaveSlotName;
-
 	UFUNCTION(BlueprintPure, Category = "SaveLoad")
 	bool GetLoadingMode();
 
 	UFUNCTION(BlueprintCallable, Category = "SaveLoad")
 	void SetLoadingModeFalse();
+
+	static FName GenerateUniqueName(const FString& ObjectType);
 };
