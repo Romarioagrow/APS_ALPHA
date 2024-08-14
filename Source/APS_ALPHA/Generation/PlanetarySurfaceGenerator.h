@@ -4,7 +4,7 @@
 #include "AtmoScape/Public/Atmosphere.h"
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
-#include "PlanetaryEnvironmentGenerator.generated.h"
+#include "PlanetarySurfaceGenerator.generated.h"
 
 class APlanet;
 class AMoon;
@@ -57,13 +57,13 @@ struct FPlanetColorParams
 };
 
 UCLASS()
-class APS_ALPHA_API APlanetaryEnvironmentGenerator : public AActor
+class APS_ALPHA_API APlanetarySurfaceGenerator : public AActor
 {
 	GENERATED_BODY()
 
 public:
 	// Sets default values for this actor's properties
-	APlanetaryEnvironmentGenerator();
+	APlanetarySurfaceGenerator();
 
 	FAmbientParameters AmbientParams;
 

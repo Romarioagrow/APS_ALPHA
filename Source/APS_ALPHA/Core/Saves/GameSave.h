@@ -4,7 +4,9 @@
 #include "GameFramework/SaveGame.h"
 #include "GameSave.generated.h"
 
+class APlanetaryBody;
 class UGeneratedWorld;
+struct FPlanetData;
 struct FGeneratedWorldData;
 struct FActorSaveData;
 
@@ -17,6 +19,9 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Basic")
 	FString SaveSlotName;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Basic")
+	FString WorldName;
+
 	UPROPERTY(VisibleAnywhere, Category = "Basic")
 	uint32 UserIndex;
 
@@ -25,6 +30,9 @@ public:
 	
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "World")
 	TArray<FGeneratedWorldData> GeneratedWorldsDataArray;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "World")
+	TArray<FPlanetData> InhabitedPlanetsDataArray;
 	
 	UFUNCTION(BlueprintCallable)
 	FGeneratedWorldData GetGeneratedWorld();

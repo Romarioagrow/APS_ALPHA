@@ -10,6 +10,7 @@
 #include "APS_ALPHA/Core/Saves/GeneratedWorldData.h"
 #include "GeneratedWorld.generated.h"
 
+struct FPlanetData;
 class APlanetarySystem;
 class APlanet;
 
@@ -37,6 +38,14 @@ public:
 	UGeneratedWorld();
 	
 	void PrintAllValues() const;
+
+	UPROPERTY()
+	TArray<FPlanetData> InhabitedPlanets;
+
+	FGeneratedWorldData SaveWorldData() const;
+
+	// Метод для получения данных о заселенных планетах
+	const TArray<FPlanetData>& GetInhabitedPlanets() const { return InhabitedPlanets; }
 
 	UPROPERTY(EditAnywhere, Category = "Generation Params")
 	bool bGenerateFullScaledWorld{ true };
@@ -150,7 +159,28 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Star Cluster")
 	int StarsAmount;
 
-	FGeneratedWorldData SaveWorldData() const
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Star Cluster")
+	FName HomeStarName;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Star Cluster")
+	FName HomePlanetName;
+	
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Star Cluster")
+	FName FullSpectralName;
+	
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Star Cluster")
+	int HomeStarTemperature;
+	
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Star Cluster")
+	double HomeStarRadius;
+	
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Star Cluster")
+	double HomeStarMass;
+	
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Star System")
+	double StarSystemRadius;
+
+	FGeneratedWorldData SaveWorldData()
 	{
 		FGeneratedWorldData WorldData;
 		WorldData.bGenerateFullScaledWorld = bGenerateFullScaledWorld;
@@ -187,6 +217,13 @@ public:
 		WorldData.AtmosphereRayleighScattering = AtmosphereRayleighScattering;
 		WorldData.AtmosphereColor = AtmosphereColor;
 		WorldData.StarsAmount = StarsAmount;
+		WorldData.HomeStarName = HomeStarName;
+		WorldData.HomePlanetName = HomePlanetName;
+		WorldData.FullSpectralName = FullSpectralName;
+		WorldData.HomeStarTemperature = HomeStarTemperature;
+		WorldData.HomeStarRadius = HomeStarRadius;
+		WorldData.HomeStarMass = HomeStarMass;
+		WorldData.StarSystemRadius = StarSystemRadius;
 
 		return WorldData;
 	}

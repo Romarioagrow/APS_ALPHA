@@ -1,7 +1,6 @@
 #include "PlanetGenerator.h"
 
 #include "Atmosphere.h"
-#include "PlanetaryEnvironmentGenerator.h"
 #include "APS_ALPHA/Actors/Astro/Planet.h"
 #include "APS_ALPHA/Core/Enums/OrbitHeight.h"
 #include "APS_ALPHA/Core/Model/GeneratedWorld.h"

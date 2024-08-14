@@ -46,7 +46,6 @@ public:
 
 	double MaxOrbit;
 
-private:
 	UPROPERTY(VisibleAnywhere, Category = "Star")
 	float Luminosity;
 
@@ -74,7 +73,6 @@ private:
 	UPROPERTY()
 	TArray<APlanet*> Planets;
 
-public:
 	void AddPlanet(APlanet* Planet);
 
 	void SetPlanetarySystem(APlanetarySystem* PlanetarySystem);
@@ -94,4 +92,6 @@ public:
 	void SetFullSpectralName(FName FullSpectralName);
 
 	void SetSpectralSubclass(int SpectralSubclass);
+	
+	FName GenerateFullSpectralName();
 };

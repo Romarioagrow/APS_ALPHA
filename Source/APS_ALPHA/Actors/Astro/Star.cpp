@@ -81,3 +81,12 @@ void AStar::SetSpectralSubclass(int NewSpectralSubclass)
 {
 	this->SpectralSubclass = NewSpectralSubclass;
 }
+
+FName AStar::GenerateFullSpectralName()
+{
+	FString SpectralClassName = UEnum::GetValueAsString(SpectralClass);
+	FString SpectralTypeName = UEnum::GetValueAsString(SpectralType);
+	SpectralClassName = SpectralClassName.RightChop(SpectralClassName.Find(TEXT("::")) + 2);
+	SpectralTypeName = SpectralTypeName.RightChop(SpectralTypeName.Find(TEXT("::")) + 2);
+	return FName(*FString::Printf(TEXT("%s%d%s"), *SpectralClassName, SpectralSubclass, *SpectralTypeName));
+}

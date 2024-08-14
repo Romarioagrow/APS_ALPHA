@@ -1,11 +1,14 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "APS_ALPHA/Actors/Astro/WorldActor.h"
+#include "EnvironmentActor.h"
 #include "Environment.generated.h"
 
 UCLASS()
-class APS_ALPHA_API AEnvironment : public AWorldActor
+class APS_ALPHA_API AEnvironment : public AEnvironmentActor
 {
 	GENERATED_BODY()
+
+public:
+
 };

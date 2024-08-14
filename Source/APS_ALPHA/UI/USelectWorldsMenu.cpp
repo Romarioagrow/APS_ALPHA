@@ -6,19 +6,11 @@
 #include "Components/UniformGridPanel.h"
 #include "Kismet/GameplayStatics.h"
 #include "MainMenu/ExistingWorld.h"
+#include "MainMenu/InhabitedPlanet.h"
 #include "MainMenu/WorldDetailsCard.h"
 
 void USelectWorldsMenu::LoadWorld()
 {
-	UWorld* World = GetWorld();
-	if (World)
-	{
-		APlayerController* PlayerController = UGameplayStatics::GetPlayerController(World, 0);
-		if (AGravityPlayerController* GravityPlayerController = Cast<AGravityPlayerController>(PlayerController))
-		{
-			//GravityPlayerController->LoadGame();
-		}
-	}
 }
 
 void USelectWorldsMenu::NativeConstruct()
@@ -64,6 +56,11 @@ void USelectWorldsMenu::PopulateExistingWorlds()
 			UniformGridPanel_ExistingWorlds->AddChildToUniformGrid(ExistingWorldWidget, Row, Column);
 
 			ExistingWorldWidget->OnClicked.AddDynamic(this, &USelectWorldsMenu::UpdateWorldDetails);
+
+			if (Row == 0 && Column == 0)
+			{
+				ExistingWorldWidget->OnClicked.Broadcast(SaveFile);
+			}
 			
 			// Update the position for the next widget
 			Column++;
@@ -87,8 +84,38 @@ void USelectWorldsMenu::UpdateWorldDetails(FString SaveFileName)
 		// Обновляем данные для карточек мира
 		if (ClusterDetailsCard) { ClusterDetailsCard->UpdateDetails(LoadedGame); }
 		if (StarDetailsCard) { StarDetailsCard->UpdateDetails(LoadedGame); }
+		if (StarSystemDetailsCard) { StarSystemDetailsCard->UpdateDetails(LoadedGame); }
 		if (PlanetDetailsCard) { PlanetDetailsCard->UpdateDetails(LoadedGame); }
+		if (PlanetInfoCard) { PlanetInfoCard->UpdateDetails(LoadedGame); }
 
+
+		if (UniformGridPanel_InhabitedPlanets)
+		{
+			UniformGridPanel_InhabitedPlanets->ClearChildren();
+
+			// Создаем виджеты для каждой заселенной планеты
+			for (int32 Index = 0; Index < LoadedGame->InhabitedPlanetsDataArray.Num(); ++Index)
+			{
+				const FPlanetData& PlanetData = LoadedGame->InhabitedPlanetsDataArray[Index];
+
+				// Создаем виджет
+				if (BP_InhabitedPlanetWidgetClass)
+				{
+					UInhabitedPlanet* PlanetWidget = CreateWidget<UInhabitedPlanet>(
+						GetWorld(), BP_InhabitedPlanetWidgetClass);
+
+					if (PlanetWidget)
+					{
+						// Настройте виджет на основе данных планеты
+						PlanetWidget->Setup(PlanetData);
+
+						// Добавляем виджет в панель
+						UniformGridPanel_InhabitedPlanets->AddChildToUniformGrid(PlanetWidget, Index / 2, Index % 2);
+					}
+				}
+			}
+		}
+		
 		// Вызов метода из контроллера для установки SaveSlotName
 		if (APlayerController* PlayerController = UGameplayStatics::GetPlayerController(GetWorld(), 0))
 		{
