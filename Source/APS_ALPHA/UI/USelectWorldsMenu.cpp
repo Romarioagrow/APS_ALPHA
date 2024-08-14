@@ -81,6 +81,7 @@ void USelectWorldsMenu::UpdateWorldDetails(FString SaveFileName)
 		if (StarDetailsCard) { StarDetailsCard->UpdateDetails(LoadedGame); }
 		if (StarSystemDetailsCard) { StarSystemDetailsCard->UpdateDetails(LoadedGame); }
 		if (PlanetDetailsCard) { PlanetDetailsCard->UpdateDetails(LoadedGame); }
+		if (PlanetInfoCard) { PlanetInfoCard->UpdateDetails(LoadedGame); }
 
 
 		if (UniformGridPanel_InhabitedPlanets)

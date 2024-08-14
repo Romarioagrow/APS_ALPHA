@@ -91,6 +91,6 @@ void APlanetaryBody::FillPlanetData()
 	PlanetData.PlanetGeosphere = PlanetGeosphere;
 	
 	PlanetData.PlanetModelData = *(PlanetData.PlanetModel); //PlanetData.Duplicate();
-	///PlanetData.PlanetModelData.MoonsListData = PlanetData.PlanetModelData.GetMoonsData(); //*(PlanetData.PlanetModelData.MoonsList); //PlanetData.Duplicate();
+	PlanetData.PlanetModelData.MoonsListData = PlanetData.PlanetModelData.GetMoonsData(); //*(PlanetData.PlanetModelData.MoonsList); //PlanetData.Duplicate();
 	
 }
