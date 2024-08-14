@@ -69,4 +69,7 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, meta = (BindWidget))
 	UWorldDetailsCard* PlanetDetailsCard;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, meta = (BindWidget))
+	UWorldDetailsCard* PlanetInfoCard;
 };
