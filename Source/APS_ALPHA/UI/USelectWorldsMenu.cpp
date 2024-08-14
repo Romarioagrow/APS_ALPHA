@@ -56,6 +56,11 @@ void USelectWorldsMenu::PopulateExistingWorlds()
 			UniformGridPanel_ExistingWorlds->AddChildToUniformGrid(ExistingWorldWidget, Row, Column);
 
 			ExistingWorldWidget->OnClicked.AddDynamic(this, &USelectWorldsMenu::UpdateWorldDetails);
+
+			if (Row == 0 && Column == 0)
+			{
+				ExistingWorldWidget->OnClicked.Broadcast(SaveFile);
+			}
 			
 			// Update the position for the next widget
 			Column++;
