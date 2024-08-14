@@ -15,11 +15,11 @@ enum class EPlanetarySystemType : uint8
     HabitableZoneSystem
     UMETA(DisplayName = "Habitable Zone System"),
 
-    GasGiantDominatedSystem
-    UMETA(DisplayName = "Gas Giant Dominated System"),
+    GasGiantsSystem
+    UMETA(DisplayName = "Gas Giant  System"),
 
     NoPlanetSystem
-    UMETA(DisplayName = "No Planet System"),
+    UMETA(DisplayName = "No Planets System"),
 
     Unknown
     UMETA(DisplayName = "Unknown"),
