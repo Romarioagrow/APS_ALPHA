@@ -1,8 +1,7 @@
 #include "PlanetGeosphere.h"
-
-#include "APS_ALPHA/Core/Enums/CrustThicknessLevel.h"
-#include "APS_ALPHA/Core/Enums/MagneticFieldStrength.h"
-#include "APS_ALPHA/Core/Enums/SeismicActivityLevel.h"
+#include "APS_ALPHA/Core/Enums/Planetary/CrustThicknessLevel.h"
+#include "APS_ALPHA/Core/Enums/Planetary/MagneticFieldStrength.h"
+#include "APS_ALPHA/Core/Enums/Planetary/SeismicActivityLevel.h"
 
 void FPlanetGeosphere::UpdateGeosphereProperties()
 {

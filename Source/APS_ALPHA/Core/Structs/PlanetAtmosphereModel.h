@@ -1,6 +1,6 @@
 ﻿#pragma once
 
-#include "APS_ALPHA/Core/Enums/PlanetAtmosphereType.h"
+#include "APS_ALPHA/Core/Enums/Planetary/PlanetAtmosphereType.h"
 #include "PlanetAtmosphereModel.generated.h"
 
 USTRUCT(BlueprintType)
