@@ -19,7 +19,7 @@ double press Lshift = increase engine mode
 
 void ASpaceship::UpdateNavigatableActorsForInterstellar()
 {
-	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("UpdateNavigatableActorsForInterstellar"));
+	GEngine->AddOnScreenDebugMessage(-1, 1.f, FColor::Green, TEXT("UpdateNavigatableActorsForInterstellar"));
 
 	WorldNavigatableActors.Empty();
 	if (LastFlightMode == EFlightMode::Stellar)
@@ -32,7 +32,7 @@ void ASpaceship::UpdateNavigatableActorsForInterstellar()
 
 void ASpaceship::UpdateNavigatableActorsForStellar()
 {
-	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("UpdateNavigatableActorsForStellar"));
+	GEngine->AddOnScreenDebugMessage(-1, 1.f, FColor::Green, TEXT("UpdateNavigatableActorsForStellar"));
 
 	TArray<AActor*> WorldActors;
 	UGameplayStatics::GetAllActorsOfClass(GetWorld(), AWorldActor::StaticClass(), WorldActors);
@@ -42,7 +42,7 @@ void ASpaceship::UpdateNavigatableActorsForStellar()
 		{
 			AWorldActor* WorldNavigatableActor = Cast<AWorldActor>(Actor);
 			WorldNavigatableActors.Add(WorldNavigatableActor);
-			GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Yellow,
+			GEngine->AddOnScreenDebugMessage(-1, 1.f, FColor::Yellow,
 			                                 FString::Printf(
 				                                 TEXT("WorldActor: %s"), *WorldNavigatableActor->GetName()));
 		}
@@ -68,7 +68,7 @@ void ASpaceship::UpdateNavigatableActorsForStellar()
 
 void ASpaceship::UpdateNavigatableActorsForInterplanetary()
 {
-	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("UpdateNavigatableActorsForInterplanetary"));
+	GEngine->AddOnScreenDebugMessage(-1, 1.f, FColor::Green, TEXT("UpdateNavigatableActorsForInterplanetary"));
 }
 
 ASpaceship::ASpaceship()
@@ -133,11 +133,13 @@ void ASpaceship::BeginPlay()
 		OffsetSystem = Cast<AStarSystem>(UGameplayStatics::GetActorOfClass(GetWorld(), AStarSystem::StaticClass()));
 		if (OffsetSystem)
 		{
-			GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("OffsetSystem successfully obtained!"));
+			UE_LOG(LogTemp, Error, TEXT("OffsetSystem successfully obtained!"));
+			//GEngine->AddOnScreenDebugMessage(-1, 1.f, FColor::Green, TEXT("OffsetSystem successfully obtained!"));
 		}
 		else
 		{
-			GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("Failed to obtain OffsetSystem."));
+			UE_LOG(LogTemp, Error, TEXT("Failed to obtain OffsetSystem!"));
+			//GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("Failed to obtain OffsetSystem."));
 		}
 	}
 
@@ -150,7 +152,7 @@ void ASpaceship::BeginPlay()
 		{
 			AWorldActor* WorldNavigatableActor = Cast<AWorldActor>(Actor);
 			WorldNavigatableActors.Add(WorldNavigatableActor);
-			GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Yellow,
+			GEngine->AddOnScreenDebugMessage(-1, 1.f, FColor::Yellow,
 			                                 FString::Printf(
 				                                 TEXT("WorldActor: %s"), *WorldNavigatableActor->GetName()));
 		}
@@ -886,7 +888,7 @@ void ASpaceship::ComputeProximity()
 
 void ASpaceship::UpdateNavigatableActors()
 {
-	GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Red, FString::Printf(TEXT("UpdateNavigatableActors!!!")));
+	GEngine->AddOnScreenDebugMessage(-1, 1.0f, FColor::Red, FString::Printf(TEXT("UpdateNavigatableActors!!!")));
 }
 
 void ASpaceship::CheckFlightModeChange()

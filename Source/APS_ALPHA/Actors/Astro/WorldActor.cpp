@@ -28,7 +28,7 @@ void AWorldActor::CalculateAffectionRadius()
 	this->AffectionRadiusKM = SphereRadius / 100000.0;
 
 	FString RadiusMessage = FString::Printf(TEXT("Actor %s has a radius of %f km"), *(this->GetName()), AffectionRadiusKM);
-	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Cyan, RadiusMessage);
+	GEngine->AddOnScreenDebugMessage(-1, 1.f, FColor::Cyan, RadiusMessage);
 }
 
 /*FText AWorldActor::GetInGameName_Implementation() const

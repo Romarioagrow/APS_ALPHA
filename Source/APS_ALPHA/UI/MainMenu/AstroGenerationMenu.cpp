@@ -147,8 +147,9 @@ void UAstroGenerationMenu::OnStartPlanetIndexChanged(const float InValue)
 
 void UAstroGenerationMenu::GenerateWorldByModel()
 {
-	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Yellow, FString::Printf(TEXT("GenerateWorldByModel")));
-	
+	UE_LOG(LogTemp, Warning, TEXT("GeneratingWorldByModel...")); // Логирование пропуска
+	//GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Yellow, FString::Printf(TEXT("GenerateWorldByModel")));
+
 	if (UWorld* World = GetWorld())
 	{
 
@@ -233,7 +234,8 @@ void UAstroGenerationMenu::UpdateGeneratedWorldEnumValue(const UEnum* EnumClass,
 {
 	if (!NewGeneratedWorld || !EnumClass || !GEngine)
 	{
-		GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("GeneratedWorld или EnumClass == nullptr"));
+		UE_LOG(LogTemp, Warning, TEXT("GeneratedWorld или EnumClass == nullptr!")); // Логирование пропуска
+		//GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("GeneratedWorld или EnumClass == nullptr"));
 		return;
 	}
 
