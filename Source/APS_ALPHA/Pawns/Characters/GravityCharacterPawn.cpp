@@ -250,7 +250,7 @@ void AGravityCharacterPawn::Tick(const float DeltaTime)
 
 				// Дополнительное сообщение для Closest Actor
 				FString DebugMessageClosest = FString::Printf(
-					TEXT("Closest Actor: %s, Distance to surface: %f km, AffectionRadiusKM: %f"),
+					TEXT("Closest Actor: %s \nDistance to surface: %f km \nAffectionRadiusKM: %f"),
 					*ClosestActor->GetFName().ToString(), ActorDistances[ClosestActor],
 					ClosestActor->AffectionRadiusKM);
 				GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Orange, DebugMessageClosest);
