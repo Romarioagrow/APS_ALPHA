@@ -15,14 +15,14 @@ UCLASS()
 class UGenerationSlider : public UBaseWidget
 {
 	GENERATED_BODY()
-	
+
 public:
 
 	UPROPERTY(BlueprintAssignable, Category = "Enum")
 	FOnGenerationSliderChanged OnGenerationSliderChanged;
 
 	UFUNCTION()
-	void PopulateEnumArray(const UEnum* Enum);
+	void PopulateEnumArray();
 
 	UFUNCTION()
 	float GetSliderValue();
@@ -45,17 +45,19 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Enum")
 	void OnSliderValueChanged(float Value);
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, meta = (AllowPrivateAccess = "true", BindWidget))
+	USlider* EnumSlider;
+
 protected:
 	virtual void NativeConstruct() override;
+	
+	//void FilterEnumValues();
 
 private:
 	int32 CurrentIndex;
 
 	UPROPERTY(meta = (BindWidget))
 	UImage* IconImage;
-
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, meta = (AllowPrivateAccess = "true", BindWidget))
-	USlider* EnumSlider;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, meta = (AllowPrivateAccess = "true", BindWidget))
 	UTextBlock* TextBlock_ValueText;

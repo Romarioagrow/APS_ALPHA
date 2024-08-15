@@ -1,10 +1,10 @@
 #include "PlanetAtmosphere.h"
 
-#include "APS_ALPHA/Core/Enums/CO2Level.h"
-#include "APS_ALPHA/Core/Enums/HumidityLevel.h"
-#include "APS_ALPHA/Core/Enums/OxigenLevel.h"
-#include "APS_ALPHA/Core/Enums/PressureLevel.h"
-#include "APS_ALPHA/Core/Enums/WindSpeed.h"
+#include "APS_ALPHA/Core/Enums/Planetary/CO2Level.h"
+#include "APS_ALPHA/Core/Enums/Planetary/HumidityLevel.h"
+#include "APS_ALPHA/Core/Enums/Planetary/OxigenLevel.h"
+#include "APS_ALPHA/Core/Enums/Planetary/PressureLevel.h"
+#include "APS_ALPHA/Core/Enums/Planetary/WindSpeed.h"
 
 void FPlanetAtmosphere::UpdateAtmosphereProperties()
 {

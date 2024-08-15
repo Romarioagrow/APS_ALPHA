@@ -79,7 +79,7 @@ void USelectWorldsMenu::UpdateWorldDetails(FString SaveFileName)
 	if (UGameSave* LoadedGame = Cast<UGameSave>(
 		UGameplayStatics::LoadGameFromSlot(FPaths::GetBaseFilename(SaveFileName), 0)))
 	{
-		GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("UpdateWorldDetails"));
+		//GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("UpdateWorldDetails"));
 		
 		// Обновляем данные для карточек мира
 		if (ClusterDetailsCard) { ClusterDetailsCard->UpdateDetails(LoadedGame); }
