@@ -8,6 +8,7 @@
 #include "APS_ALPHA/Core/Instances/MainGameplayInstance.h"
 #include "APS_ALPHA/Core/Model/GeneratedWorld.h"
 #include "APS_ALPHA/Generation/AstroGenerator.h"
+#include "Components/Slider.h"
 #include "Components/SpinBox.h"
 #include "Kismet/GameplayStatics.h"
 
@@ -186,7 +187,20 @@ void UAstroGenerationMenu::HandleGenerationSlider(const float Value, const UEnum
 		TArray<int32> EnumValues;
 		for (int32 i = 0; i < EnumClass->NumEnums() - 1; ++i)
 		{
-			EnumValues.Add(EnumClass->GetValueByIndex(i)); //TODO: by index directly
+			// Получение имени элемента Enum
+			FString EnumValueName = EnumClass->GetNameStringByIndex(i);
+
+			// Проверка, содержит ли имя строку "Unknown"
+			if (EnumValueName.Contains("Unknown"))
+			{
+				Slider->EnumSlider->SetMaxValue(EnumValues.Num() - 1);
+				UE_LOG(LogTemp, Warning, TEXT("Skipped enum: %s"), *EnumValueName); // Логирование пропуска
+				continue; // Пропускаем этот элемент, если он содержит "Unknown"
+			}
+
+			// Добавляем значение Enum только если оно не содержит "Unknown"
+			EnumValues.Add(EnumClass->GetValueByIndex(i));
+			
 		}
 
 		if (const int32 EnumIndex = static_cast<int32>(Value); EnumValues.IsValidIndex(EnumIndex))
@@ -196,7 +210,7 @@ void UAstroGenerationMenu::HandleGenerationSlider(const float Value, const UEnum
 			// Вывод значения Enum на экран
 			FString EnumValueName = EnumClass->GetNameStringByIndex(EnumIndex);
 
-			// Dynamically update the enam value in AGEneratedWorld
+			// Dynamically update the enum value in AGEneratedWorld
 			UpdateGeneratedWorldEnumValue(EnumClass, SelectedValue);
 
 			Slider->UpdateCurrentValueText(EnumValueName);

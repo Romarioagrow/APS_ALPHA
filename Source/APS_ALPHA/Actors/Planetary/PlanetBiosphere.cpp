@@ -1,7 +1,8 @@
 #include "PlanetBiosphere.h"
 
-#include "APS_ALPHA/Core/Enums/BiodiversityIndex.h"
-#include "APS_ALPHA/Core/Enums/BiomassLevel.h"
+#include "APS_ALPHA/Core/Enums/Planetary/BiodiversityIndex.h"
+#include "APS_ALPHA/Core/Enums/Planetary/BiomassLevel.h"
+
 
 void FPlanetBiosphere::UpdateBiosphereProperties()
 {
