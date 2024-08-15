@@ -1034,7 +1034,8 @@ void AAstroGenerator::SpawnStartInteractiveActors(TSharedPtr<FPlanetModel> Start
 		HomeSpaceHeadquartersRotation, SpawnParams);
 	HomeSpaceStation->AttachToActor(HomeSpaceHeadquarters,
 	                                FAttachmentTransformRules::KeepWorldTransform);
-	double HomeStationOffset = HomeSpaceStation->GravityCollisionZone->GetScaledSphereRadius() * 2;
+	//double HomeStationOffset = HomeSpaceStation->GravityCollisionZone->GetScaledSphereRadius() * 2;
+	double HomeStationOffset = 50000;
 	HomeSpaceStation->AddActorLocalOffset(FVector(0, HomeStationOffset, 0));
 	HomeSpaceStation->CalculateAffectionRadius();
 
@@ -1042,9 +1043,11 @@ void AAstroGenerator::SpawnStartInteractiveActors(TSharedPtr<FPlanetModel> Start
 	HomeSpaceShipyard = World->SpawnActor<ASpaceShipyard>(BP_HomeSpaceShipyard,
 	                                                      HomeSpaceHeadquartersLocation,
 	                                                      HomeSpaceHeadquartersRotation);
-	double HomeSpaceShipyardLocationOffset = HomeSpaceShipyard->GravityCollisionZone->
-	                                                            GetScaledSphereRadius() * 2;
-	HomeSpaceShipyard->AddActorLocalOffset(FVector(0, -HomeSpaceShipyardLocationOffset, 0));
+	/*double HomeSpaceShipyardLocationOffset = HomeSpaceShipyard->GravityCollisionZone->
+	                                                            GetScaledSphereRadius() * 2;*/
+	//double HomeSpaceShipyardLocationOffset = HomeSpaceShipyard->GetActorLocation();
+	//(X=6000.000000,Y=-15360.000001,Z=-500.000000)
+	HomeSpaceShipyard->AddActorLocalOffset(FVector(6000, -15360, -500));
 	HomeSpaceShipyard->AttachToActor(HomeSpaceHeadquarters,
 	                                 FAttachmentTransformRules::KeepWorldTransform);
 	HomeSpaceShipyard->CalculateAffectionRadius();
@@ -1103,7 +1106,14 @@ void AAstroGenerator::SpawnStartInteractiveActors(TSharedPtr<FPlanetModel> Start
 		FVector GeneratorLocation = this->GetActorLocation();
 		FVector NewGeneratorLocation = GeneratorLocation - PlayerLocation;
 		this->SetActorLocation(NewGeneratorLocation, false);
-		PlayerCharacter->SetActorLocation(FVector(0, 0, 1500), false);
+		// (X=2658.399507,Y=-5578.769877,Z=281.717353)
+
+		FVector SpawnLocation = HomeSpaceShipyard->SpawnPoint->GetComponentLocation();
+		
+		//PlayerCharacter->SetActorLocation(FVector(2600, -5578, 281), false);
+		PlayerCharacter->SetActorLocation(SpawnLocation, false);
+		PlayerCharacter->SetActorRotation(HomeSpaceShipyard->GetActorRotation());
+		PlayerCharacter->AddActorLocalRotation(FRotator(0, 180 , 0));
 	}
 	else
 	{

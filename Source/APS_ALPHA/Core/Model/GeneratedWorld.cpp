@@ -89,7 +89,7 @@ void UGeneratedWorld::PrintAllValues() const
 
         if (GEngine)
         {
-            GEngine->AddOnScreenDebugMessage(-1, 50.f, FColor::Red, FString::Printf(TEXT("%s: %s"), *PropertyName, *PropertyValue));
+            GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::Red, FString::Printf(TEXT("%s: %s"), *PropertyName, *PropertyValue));
         }
     }
 }
