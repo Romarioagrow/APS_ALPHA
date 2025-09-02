@@ -13,6 +13,23 @@ struct FStarModel :
 {
 	GENERATED_BODY()
 
+	// Конструктор по умолчанию для инициализации всех свойств
+	FStarModel()
+		: StellarType(EStellarType::MainSequence)
+		, SpectralClass(ESpectralClass::Unknown)
+		, SpectralType(ESpectralType::Unknown)
+		, Luminosity(0.0f)
+		, SurfaceTemperature(0)
+		, Age(TEXT(""))
+		, FullSpectralClass(NAME_None)
+		, FullSpectralName(NAME_None)
+		, SpectralSubclass(0)
+		, StarStellarClass(EStellarType::MainSequence)
+		, MinOrbit(0.0)
+		, MaxOrbit(0.0)
+	{
+	}
+
 	UPROPERTY(VisibleAnywhere)
 	EStellarType StellarType;
 

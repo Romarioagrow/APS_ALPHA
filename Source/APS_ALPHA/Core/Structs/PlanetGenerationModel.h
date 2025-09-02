@@ -3,6 +3,9 @@
 #include "MoonGenerationModel.h"
 #include "OrbitalBodyGenerationModel.h"
 #include "CoreMinimal.h"
+#include "APS_ALPHA/Core/Enums/OrbitHeight.h"
+#include "APS_ALPHA/Core/Enums/PlanetaryZoneType.h"
+#include "APS_ALPHA/Core/Enums/PlanetType.h"
 #include "PlanetGenerationModel.generated.h"
 
 enum class EPlanetaryZoneType : uint8;
@@ -19,6 +22,13 @@ struct FOrbitInfo
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet")
 	double OrbitHeight;
+
+	// Конструктор по умолчанию для инициализации всех свойств
+	FOrbitInfo()
+		: OrbitHeightType(EOrbitHeight::LowOrbit)
+		, OrbitHeight(0.0)
+	{
+	}
 };
 
 USTRUCT(BlueprintType)

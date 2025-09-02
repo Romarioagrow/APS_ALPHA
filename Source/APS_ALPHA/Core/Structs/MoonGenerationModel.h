@@ -2,6 +2,7 @@
 
 #include "OrbitalBodyGenerationModel.h"
 #include "CoreMinimal.h"
+#include "APS_ALPHA/Core/Enums/MoonType.h"
 #include "MoonGenerationModel.generated.h"
 
 enum class EMoonType : uint8;
@@ -22,4 +23,13 @@ struct FMoonModel :
 	double MoonGravity;
 
 	double MoonAtmosphereHeight{0.0};
+
+	// Конструктор по умолчанию для инициализации всех свойств
+	FMoonModel()
+		: Type(EMoonType::Unknown)
+		, MoonDensity(0.0)
+		, MoonGravity(0.0)
+		, MoonAtmosphereHeight(0.0)
+	{
+	}
 };
