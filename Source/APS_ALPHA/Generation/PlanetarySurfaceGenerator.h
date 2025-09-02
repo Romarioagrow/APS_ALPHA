@@ -42,6 +42,20 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Atmosphere")
 	FColor AbsorptionColor = FColor::Blue;
+
+	// Конструктор по умолчанию для инициализации всех свойств
+	FAmbientParameters()
+		: Opacity(1.0f)
+		, MultiScatering(1.0f)
+		, RayleighHeight(8.0f)
+		, MieHeight(1.2f)
+		, MiePhase(0.5f)
+		, OzoneContribution(0.5f)
+		, RayleighColor(FColor::Blue)
+		, MieColor(FColor::Blue)
+		, AbsorptionColor(FColor::Blue)
+	{
+	}
 };
 
 USTRUCT(BlueprintType)
@@ -54,6 +68,13 @@ struct FPlanetColorParams
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet")
 	FColor MaxColor;
+
+	// Конструктор по умолчанию для инициализации всех свойств
+	FPlanetColorParams()
+		: MinColor(FColor::White)
+		, MaxColor(FColor::White)
+	{
+	}
 };
 
 UCLASS()

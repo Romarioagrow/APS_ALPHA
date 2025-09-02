@@ -1,6 +1,9 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "APS_ALPHA/Core/Enums/Planetary/CrustThicknessLevel.h"
+#include "APS_ALPHA/Core/Enums/Planetary/MagneticFieldStrength.h"
+#include "APS_ALPHA/Core/Enums/Planetary/SeismicActivityLevel.h"
 #include "PlanetGeosphere.generated.h"
 
 enum class EMagneticFieldStrength : uint8;
@@ -12,28 +15,39 @@ struct FPlanetGeosphere //: public AEnvironmentActor
 {
 	GENERATED_BODY()
 
-	// Сейсмическая активность
+	// РљРѕРЅСЃС‚СЂСѓРєС‚РѕСЂ РїРѕ СѓРјРѕР»С‡Р°РЅРёСЋ РґР»СЏ РёРЅРёС†РёР°Р»РёР·Р°С†РёРё РІСЃРµС… СЃРІРѕР№СЃС‚РІ
+	FPlanetGeosphere()
+		: SeismicActivityLevel(ESeismicActivityLevel::Inactive)
+		, SeismicActivity(0.0f)
+		, CrustThicknessLevel(ECrustThicknessLevel::Thin)
+		, CrustThickness(0.0f)
+		, MagneticFieldStrengthLevel(EMagneticFieldStrength::NoField)
+		, MagneticFieldStrength(0.0f)
+	{
+	}
+
+	//  
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Geosphere")
 	ESeismicActivityLevel SeismicActivityLevel;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Geosphere")
-	float SeismicActivity; // Вычисляемое значение
+	float SeismicActivity; // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 
-	// Толщина коры
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Geosphere")
 	ECrustThicknessLevel CrustThicknessLevel;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Geosphere")
-	float CrustThickness; // Вычисляемое значение
+	float CrustThickness; // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 
-	// Сила магнитного поля
+	// пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Geosphere")
 	EMagneticFieldStrength MagneticFieldStrengthLevel;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Geosphere")
-	float MagneticFieldStrength; // Вычисляемое значение
+	float MagneticFieldStrength; // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 
-	// Методы вычисления значений
+	// пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 	void UpdateGeosphereProperties();
 	
 	float CalculateSeismicActivity(ESeismicActivityLevel Level);

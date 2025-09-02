@@ -171,9 +171,13 @@ void UAstroGenerationMenu::CreateNewGeneratedWorld()
 
 void UAstroGenerationMenu::SetupSlider(UGenerationSlider* Slider, UEnum* EnumType)
 {
-	if (Slider)
+	if (Slider && IsValid(Slider))
 	{
-		Slider->OnGenerationSliderChanged.AddDynamic(this, &UAstroGenerationMenu::HandleGenerationSlider);
+		// Проверяем, что делегат существует и не содержит уже нашу функцию
+		if (!Slider->OnGenerationSliderChanged.IsBound())
+		{
+			Slider->OnGenerationSliderChanged.AddDynamic(this, &UAstroGenerationMenu::HandleGenerationSlider);
+		}
 		Slider->SetEnumContent(EnumType);
 	}
 }
