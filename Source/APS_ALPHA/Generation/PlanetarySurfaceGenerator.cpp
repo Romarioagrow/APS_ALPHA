@@ -188,7 +188,7 @@ void APlanetarySurfaceGenerator::InitEnviroment(APlanet* NewPlanet, UWorld* Worl
 
 void APlanetarySurfaceGenerator::InitAtmoScape(UWorld* World, double PlanetaryRadiusKM, APlanetaryBody* NewPlanetaryBody)
 {
-    PlanetAtmosphere = World->SpawnActor<AAtmosphere>(AAtmosphere::StaticClass(), FTransform());
+    PlanetAtmosphere = World->SpawnActor<AAtmoScape>(AAtmoScape::StaticClass(), FTransform());
 
     if (PlanetAtmosphere)
     {

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "WorldScapeCore/Public/WorldScapeRoot.h"
-#include "AtmoScape/Public/Atmosphere.h"
+#include "AtmoScape/Public/PlanetaryAtmosphere.h"
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "PlanetarySurfaceGenerator.generated.h"
@@ -129,7 +129,7 @@ public:
 	AWorldScapeRoot* WorldScapeRootInstance;
 
 	UPROPERTY(VisibleAnywhere, Category = "Atmo Scape")
-	AAtmosphere* PlanetAtmosphere;
+	AAtmoScape* PlanetAtmosphere;
 
 	UPROPERTY(VisibleAnywhere, Category = "World Scape")
 	double RadiusKM;
