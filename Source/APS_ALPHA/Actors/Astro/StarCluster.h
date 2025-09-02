@@ -18,7 +18,7 @@ enum class EStarClusterComposition : uint8;
 enum class EStarClusterPopulation : uint8;
 enum class EStarClusterType : uint8;
 
-// ��������� ��� �������� ���������� ��������
+// Структура для хранения диапазона значений
 USTRUCT(BlueprintType)
 struct FRange
 {
@@ -29,9 +29,16 @@ struct FRange
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Range")
 	float UpperBound;
+
+	// Конструктор по умолчанию для инициализации всех свойств
+	FRange()
+		: LowerBound(0.0f)
+		, UpperBound(0.0f)
+	{
+	}
 };
 
-// ��������� ��� �������� ���������� ���������
+//     
 USTRUCT(BlueprintType)
 struct FStarClusterModel
 {
@@ -50,7 +57,7 @@ struct FStarClusterModel
 	UPROPERTY(VisibleAnywhere, Category = "Star Cluster")
 	FRange StarCountRange;
 
-	// ��������� �����
+	//  
 	UPROPERTY(VisibleAnywhere, Category = "Star Cluster")
 	FRange StarDensityRange;
 
@@ -93,35 +100,35 @@ public:
 
 	void AddStarToClusterModel(FVector StarLocation, TSharedPtr<FStarModel> StarModel);
 
-	// ��� ���������
+	//  
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star Cluster")
 	EStarClusterType ClusterType;
 
-	// ���������� �����
+	//  
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star Cluster")
 	int StarAmount;
 
-	// ��������� �����
+	//  
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star Cluster")
 	double StarDensity;
 
-	// ����������� ������������ �������
+	//   
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star Cluster")
 	TMap<ESpectralClass, float> SpectralClassProbabilities;
 
-	// ����������� ���������� �������
+	//   
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star Cluster")
 	TMap<EStellarType, float> StellarClassProbabilities;
 
-	// HISM ������ ��� �������� ���������
+	// HISM    
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star Cluster")
 	UHierarchicalInstancedStaticMeshComponent* StarMeshInstances;
 
-	// ������� ��������� ���������
+	//   
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star Cluster")
 	FVector ClusterBounds;
 
-	// ������� ��������� ���������
+	//   
 	UFUNCTION(BlueprintCallable, Category = "Star Cluster")
 	void GenerateCluster();
 };
