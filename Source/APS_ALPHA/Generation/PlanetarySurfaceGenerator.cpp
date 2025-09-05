@@ -455,11 +455,23 @@ void APlanetarySurfaceGenerator::InitWorldScape(UWorld* World)
 
 void APlanetarySurfaceGenerator::GenerateWorldscapeSurfaceByModel(UWorld* World, APlanet* NewPlanet)
 {
+	// Validate input parameters
+	if (!World)
+	{
+		UE_LOG(LogTemp, Error, TEXT("GenerateWorldscapeSurfaceByModel: World parameter is null!"));
+		return;
+	}
+	
+	if (!NewPlanet)
+	{
+		UE_LOG(LogTemp, Error, TEXT("GenerateWorldscapeSurfaceByModel: NewPlanet parameter is null!"));
+		return;
+	}
 
     // /Script/WorldScapeNoise.IceWorldNoise'/Game/APS/WSC/WSCN_IceWorld.WSCN_IceWorld'
 
     /*
-    
+
     / Script / WorldScapeNoise.WorldScapeCustomNoise'/Game/APS/WSC/WSCN_MoonLike.WSCN_MoonLike'
     /Script/WorldScapeNoise.TerraNoiseExample'/Game/APS/WSC/WSCN_LavaWorld.WSCN_LavaWorld'
     /Script/WorldScapeNoise.SelenaeNoise'/Game/APS/WSC/WSCN_Selenae.WSCN_Selenae'
@@ -724,6 +736,19 @@ void APlanetarySurfaceGenerator::GenerateWorldscapeSurfaceByModel(UWorld* World,
 }
 void APlanetarySurfaceGenerator::GenerateWorldscapeSurfaceByModel(UWorld* World, AMoon* NewMoon)
 {
+	// Validate input parameters
+	if (!World)
+	{
+		UE_LOG(LogTemp, Error, TEXT("GenerateWorldscapeSurfaceByModel: World parameter is null!"));
+		return;
+	}
+	
+	if (!NewMoon)
+	{
+		UE_LOG(LogTemp, Error, TEXT("GenerateWorldscapeSurfaceByModel: NewMoon parameter is null!"));
+		return;
+	}
+
     GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Magenta, TEXT("GenerateWorldscapeSurfaceByModel!"));
     FActorSpawnParameters SpawnParams;
     WorldScapeRootInstance = World->SpawnActor<AWorldScapeRoot>(AWorldScapeRoot::StaticClass(), FTransform(), SpawnParams);

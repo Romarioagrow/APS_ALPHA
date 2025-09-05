@@ -148,6 +148,9 @@ public:
 	bool bSpawnStarterPlanet{true};
 
 	UPROPERTY(EditAnywhere, Category = "Generation Params")
+	bool bIntegrateStartPlanet{false};
+
+	UPROPERTY(EditAnywhere, Category = "Generation Params")
 	EAstroGenerationLevel AstroGenerationLevel{EAstroGenerationLevel::StarCluster};
 
 	UPROPERTY(EditInstanceOnly, Category = "Generation Params")
@@ -349,4 +352,8 @@ public:
 	void RotatePlanetOrbits(APlanetarySystem* NewPlanetarySystem);
 	
 	void ComputeHomeSystemPosition(FTransform& HomeSystemTransform, FVector& HomeSystemSpawnLocation);
+	
+	void IntegrateStartPlanetIntoSystem();
+	
+	void GenerateStarSystemAndIntegratePlanet();
 };
