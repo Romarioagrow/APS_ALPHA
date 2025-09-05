@@ -88,7 +88,7 @@ void AAstroGenerator::ApplySpawnParameters()
 
 			if (SpawnParams)
 			{
-				// Присвоение параметров
+				// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 				BP_CharacterClass = SpawnParams->BP_CharacterClass;
 				BP_HomeSpaceStation = SpawnParams->BP_HomeSpaceStation;
 				BP_HomeSpaceship = SpawnParams->BP_HomeSpaceship;
@@ -229,7 +229,7 @@ void AAstroGenerator::AddGeneratedWorldModelData()
 		return;
 	}
 
-	// Проверка валидности данных
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ
 	if (!HomePlanet->PlanetData.PlanetModel.IsValid())
 	{
 		UE_LOG(LogTemp, Error, TEXT("HomePlanet's PlanetModel is invalid!"));
@@ -284,8 +284,36 @@ void AAstroGenerator::GenerateHomeStarSystem()
 			const TSharedPtr<FPlanetAtmosphereModel> PlanetAtmosphereModel = PlanetGenerator->
 				CreateAtmosphereModelFromGeneratedWorld(GeneratedWorldModel);
 			HomePlanet = PlanetGenerator->GeneratePlanet(HomePlanetModel, BP_PlanetClass, GetWorld());
+			
+			// Validate HomePlanet was created successfully
+			if (!HomePlanet)
+			{
+				UE_LOG(LogTemp, Error, TEXT("Failed to generate HomePlanet!"));
+				return;
+			}
+			
 			PlanetGenerator->GeneratePlanetAtmosphere(HomePlanet, PlanetAtmosphereModel);
-			HomePlanet->PlanetaryEnvironmentGenerator->GenerateWorldscapeSurfaceByModel(GetWorld(), HomePlanet);
+			
+			// Validate PlanetaryEnvironmentGenerator before calling GenerateWorldscapeSurfaceByModel
+			if (HomePlanet->PlanetaryEnvironmentGenerator)
+			{
+				HomePlanet->PlanetaryEnvironmentGenerator->GenerateWorldscapeSurfaceByModel(GetWorld(), HomePlanet);
+			}
+			else
+			{
+				UE_LOG(LogTemp, Error, TEXT("PlanetaryEnvironmentGenerator is null for HomePlanet!"));
+				// Try to initialize it manually
+				HomePlanet->PlanetaryEnvironmentGenerator = NewObject<APlanetarySurfaceGenerator>();
+				if (HomePlanet->PlanetaryEnvironmentGenerator)
+				{
+					HomePlanet->PlanetaryEnvironmentGenerator->GenerateWorldscapeSurfaceByModel(GetWorld(), HomePlanet);
+				}
+				else
+				{
+					UE_LOG(LogTemp, Error, TEXT("Failed to create PlanetaryEnvironmentGenerator!"));
+				}
+			}
+			
 			HomePlanet->AstroName = AGravityPlayerController::GenerateUniqueName("Planet");
 
 			APlanetOrbit* NewHomePlanetOrbit = GeneratedHomeStarSystem->MainStar->PlanetarySystem->
@@ -804,10 +832,10 @@ void AAstroGenerator::ShowPlanetsList(TArray<TSharedPtr<FPlanetData>> PlanetData
 			UE_LOG(LogTemp, Warning, TEXT("    Planet Order: %d"), PlanetData.PlanetOrder);
 			UE_LOG(LogTemp, Warning, TEXT("     Orbit Radius: %f"), PlanetData.OrbitRadius);
 
-			// Получаем модель планеты
+			// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 			TSharedPtr<FPlanetModel> PlanetModel = PlanetData.PlanetModel;
 
-			// Вывод данных модели планеты
+			// пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 			if (PlanetModel.IsValid())
 			{
 				UE_LOG(LogTemp, Warning, TEXT("     Planet Type: %s"),
@@ -820,7 +848,7 @@ void AAstroGenerator::ShowPlanetsList(TArray<TSharedPtr<FPlanetData>> PlanetData
 				       PlanetModel->PlanetGravityStrength);
 				UE_LOG(LogTemp, Warning, TEXT("     Amount of Moons: %d"), PlanetModel->AmountOfMoons);
 
-				// Вывод информации о спутниках
+				// пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 				TArray<TSharedPtr<FMoonData>> MoonsList = PlanetModel->MoonsList;
 				for (int32 i = 0; i < MoonsList.Num(); i++)
 				{
@@ -828,14 +856,14 @@ void AAstroGenerator::ShowPlanetsList(TArray<TSharedPtr<FPlanetData>> PlanetData
 					{
 						FMoonData MoonData = *(MoonsList[i].Get());
 
-						// Выводим данные спутника
+						// пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 						UE_LOG(LogTemp, Warning, TEXT("         Moon Order: %d"), MoonData.MoonOrder);
 						UE_LOG(LogTemp, Warning, TEXT("             Moon Orbit Radius: %f"), MoonData.OrbitRadius);
 
-						// Получаем модель Moon
+						// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ Moon
 						TSharedPtr<FMoonModel> MoonModel = MoonData.MoonModel;
 
-						// Вывод данных модели Moon
+						// пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ Moon
 						if (MoonModel.IsValid())
 						{
 							UE_LOG(LogTemp, Warning, TEXT("             Moon Type: %s"),
@@ -1509,35 +1537,35 @@ int AAstroGenerator::GetRandomValueFromStarAmountRange(const EStarClusterType Cl
 
 void AAstroGenerator::Test_GenerateFullscaled()
 {
-	// Задаем параметры звезд
+	// пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ
 	const double MinStarRadius = 0.1f;
 	const double MaxStarRadius = 10.0f;
 	const int StarCount = 100;
 
-	// Создаем актор-якорь для нашего мира
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ-пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ
 	AAstroAnchor* AstroAnchor = GetWorld()->SpawnActor<AAstroAnchor>(BP_AstroAnchorClass);
 
-	// Создаем актор кластера звезд и прикрепляем его к якорю
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅ
 	AStarCluster* StarCluster = GetWorld()->SpawnActor<AStarCluster>(BP_StarClusterClass);
 	StarCluster->AttachToActor(AstroAnchor, FAttachmentTransformRules::KeepRelativeTransform);
 
-	// Создаем кластер звезд
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ
 	for (int i = 0; i < StarCount; ++i)
 	{
-		// Генерируем случайные координаты и радиус для звезды
+		// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ
 		FVector StarPosition = FMath::VRand() * FMath::FRand() * 5.0f;
 		double StarRadius = FMath::RandRange(MinStarRadius, MaxStarRadius);
 
-		// Создаем преобразование для звезды
+		// пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ
 		FTransform StarTransform;
 		StarTransform.SetLocation(StarPosition * 10000);
 		StarTransform.SetScale3D(FVector(StarRadius));
 
-		// Добавляем инстанс звезды в HISM
+		// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅ HISM
 		StarCluster->StarMeshInstances->AddInstance(StarTransform);
 	}
 
-	// Запоминаем актор-якорь и актор кластера в классе генератора
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ-пїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 	GeneratedWorld = AstroAnchor;
 	GeneratedStarCluster = StarCluster;
 }
