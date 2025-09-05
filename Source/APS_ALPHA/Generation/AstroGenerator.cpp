@@ -1921,6 +1921,50 @@ void AAstroGenerator::IntegrateStartPlanetIntoSystem()
 		SpawnStartInteractiveActors(StartPlanetModel);
 	}
 
+	// Center world relative to player
+	UE_LOG(LogTemp, Warning, TEXT("=== CENTERING WORLD RELATIVE TO PLAYER ==="));
+	
+	AGravityCharacterPawn* PlayerPawn = Cast<AGravityCharacterPawn>(GetWorld()->GetFirstPlayerController()->GetPawn());
+	if (PlayerPawn && GeneratedHomeStarSystem)
+	{
+		FVector PlayerPosition = PlayerPawn->GetActorLocation();
+		FVector StarSystemPosition = GeneratedHomeStarSystem->GetActorLocation();
+		
+		UE_LOG(LogTemp, Warning, TEXT("Player position: %s"), *PlayerPosition.ToString());
+		UE_LOG(LogTemp, Warning, TEXT("StarSystem position: %s"), *StarSystemPosition.ToString());
+		
+		// Calculate the offset needed to move player to (0,0,0)
+		FVector OffsetToCenter = FVector::ZeroVector - PlayerPosition;
+		UE_LOG(LogTemp, Warning, TEXT("Offset to center player: %s"), *OffsetToCenter.ToString());
+		
+		// Move the entire StarSystem by the offset
+		FVector NewStarSystemPosition = StarSystemPosition + OffsetToCenter;
+		UE_LOG(LogTemp, Warning, TEXT("Moving StarSystem from %s to %s"), *StarSystemPosition.ToString(), *NewStarSystemPosition.ToString());
+		
+		GeneratedHomeStarSystem->SetActorLocation(NewStarSystemPosition);
+		
+		// Move the player to (0,0,0)
+		UE_LOG(LogTemp, Warning, TEXT("Moving player to (0,0,0)"));
+		PlayerPawn->SetActorLocation(FVector::ZeroVector);
+		
+		// Verify the centering worked
+		FVector FinalPlayerPosition = PlayerPawn->GetActorLocation();
+		FVector FinalStarSystemPosition = GeneratedHomeStarSystem->GetActorLocation();
+		
+		UE_LOG(LogTemp, Warning, TEXT("Final player position: %s"), *FinalPlayerPosition.ToString());
+		UE_LOG(LogTemp, Warning, TEXT("Final StarSystem position: %s"), *FinalStarSystemPosition.ToString());
+		
+		// Calculate distance between player and StarSystem to verify relative positioning is maintained
+		FVector DistanceBetween = FinalStarSystemPosition - FinalPlayerPosition;
+		UE_LOG(LogTemp, Warning, TEXT("Distance between player and StarSystem: %s (magnitude: %f)"), *DistanceBetween.ToString(), DistanceBetween.Size());
+		
+		UE_LOG(LogTemp, Warning, TEXT("World successfully centered relative to player!"));
+	}
+	else
+	{
+		UE_LOG(LogTemp, Error, TEXT("Cannot center world - PlayerPawn or GeneratedHomeStarSystem is null"));
+	}
+
 	UE_LOG(LogTemp, Warning, TEXT("BP_Planet successfully integrated into star system at orbit %d"), StartPlanetNumber);
 	UE_LOG(LogTemp, Warning, TEXT("=== IntegrateStartPlanetIntoSystem END ==="));
 }
