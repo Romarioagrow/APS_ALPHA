@@ -27,6 +27,7 @@
 #include "APS_ALPHA/Core/Model/SpawnParameters.h"
 #include "APS_ALPHA/Core/Structs/PlanetAtmosphereModel.h"
 #include "APS_ALPHA/Pawns/Characters/GravityCharacterPawn.h"
+#include "APS_ALPHA/Actors/Tech/SpaceHeadquarters.h"
 #include "Engine/World.h"
 
 void AAstroGenerator::BeginPlay()
@@ -1878,12 +1879,22 @@ void AAstroGenerator::IntegrateStartPlanetIntoSystem()
 			}
 		}
 		
-		// Calculate character position
+		// Calculate character position using StartPoint component if available
 		FVector TargetLocation;
 		if (Headquarters)
 		{
-			TargetLocation = Headquarters->GetActorLocation();
-			UE_LOG(LogTemp, Warning, TEXT("Using Headquarters location: %s"), *TargetLocation.ToString());
+			// Try to cast to ASpaceHeadquarters to get StartPoint position
+			ASpaceHeadquarters* SpaceHQ = Cast<ASpaceHeadquarters>(Headquarters);
+			if (SpaceHQ)
+			{
+				TargetLocation = SpaceHQ->GetStartPointPosition();
+				UE_LOG(LogTemp, Warning, TEXT("Using SpaceHeadquarters StartPoint location: %s"), *TargetLocation.ToString());
+			}
+			else
+			{
+				TargetLocation = Headquarters->GetActorLocation();
+				UE_LOG(LogTemp, Warning, TEXT("Using Headquarters location (no StartPoint): %s"), *TargetLocation.ToString());
+			}
 		}
 		else
 		{
@@ -1891,12 +1902,10 @@ void AAstroGenerator::IntegrateStartPlanetIntoSystem()
 			UE_LOG(LogTemp, Warning, TEXT("Headquarters not found, using planet center: %s"), *TargetLocation.ToString());
 		}
 		
-		// Position character slightly above the target location
-		FVector CharacterOffset = FVector(0, 0, 50); // 50 units above target
-		FVector NewCharacterPosition = TargetLocation + CharacterOffset;
+		// Position character at the target location (StartPoint should be positioned correctly)
+		FVector NewCharacterPosition = TargetLocation;
 		
 		UE_LOG(LogTemp, Warning, TEXT("Target location: %s"), *TargetLocation.ToString());
-		UE_LOG(LogTemp, Warning, TEXT("Character offset: %s"), *CharacterOffset.ToString());
 		UE_LOG(LogTemp, Warning, TEXT("Moving character to position: %s"), *NewCharacterPosition.ToString());
 		
 		CharacterPawn->SetActorLocation(NewCharacterPosition);
