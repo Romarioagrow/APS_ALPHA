@@ -26,17 +26,44 @@
 #include "APS_ALPHA/Core/Instances/MainGameplayInstance.h"
 #include "APS_ALPHA/Core/Model/SpawnParameters.h"
 #include "APS_ALPHA/Core/Structs/PlanetAtmosphereModel.h"
+#include "APS_ALPHA/Pawns/Characters/GravityCharacterPawn.h"
+#include "Engine/World.h"
 
 void AAstroGenerator::BeginPlay()
 {
 	Super::BeginPlay();
 
+	UE_LOG(LogTemp, Warning, TEXT("=== AAstroGenerator::BeginPlay START ==="));
+	UE_LOG(LogTemp, Warning, TEXT("bAutoGeneration: %s"), bAutoGeneration ? TEXT("true") : TEXT("false"));
+	UE_LOG(LogTemp, Warning, TEXT("bIntegrateStartPlanet: %s"), bIntegrateStartPlanet ? TEXT("true") : TEXT("false"));
+	UE_LOG(LogTemp, Warning, TEXT("StartHomePlanet: %s"), StartHomePlanet ? TEXT("Valid") : TEXT("NULL"));
+	UE_LOG(LogTemp, Warning, TEXT("StartPlanetNumber: %d"), StartPlanetNumber);
+
 	if (bAutoGeneration)
 	{
+		UE_LOG(LogTemp, Warning, TEXT("bAutoGeneration is true, initializing generators"));
 		InitAstroGenerators();
 
-		InitGenerationLevel();
+		// Check if we should generate star system and integrate planet
+		if (bIntegrateStartPlanet && StartHomePlanet)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("Both bAutoGeneration and bIntegrateStartPlanet are true - using special integration method"));
+			GenerateStarSystemAndIntegratePlanet();
+		}
+		else
+		{
+			UE_LOG(LogTemp, Warning, TEXT("bAutoGeneration = true, using InitGenerationLevel()"));
+			UE_LOG(LogTemp, Warning, TEXT("bIntegrateStartPlanet: %s"), bIntegrateStartPlanet ? TEXT("true") : TEXT("false"));
+			UE_LOG(LogTemp, Warning, TEXT("StartHomePlanet: %s"), StartHomePlanet ? TEXT("Valid") : TEXT("NULL"));
+			InitGenerationLevel();
+		}
 	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("bAutoGeneration is false, skipping generation"));
+	}
+
+	UE_LOG(LogTemp, Warning, TEXT("=== AAstroGenerator::BeginPlay END ==="));
 }
 
 void AAstroGenerator::GenerateWorldByModel()
@@ -279,42 +306,52 @@ void AAstroGenerator::GenerateHomeStarSystem()
 
 		if (bSpawnStarterPlanet && GeneratedHomeStarSystem)
 		{
-			const TSharedPtr<FPlanetModel> HomePlanetModel = PlanetGenerator->CreatePlanetModelFromGeneratedWorld(
-				GeneratedWorldModel);
-			const TSharedPtr<FPlanetAtmosphereModel> PlanetAtmosphereModel = PlanetGenerator->
-				CreateAtmosphereModelFromGeneratedWorld(GeneratedWorldModel);
-			HomePlanet = PlanetGenerator->GeneratePlanet(HomePlanetModel, BP_PlanetClass, GetWorld());
-			
-			// Validate HomePlanet was created successfully
-			if (!HomePlanet)
+			// Check if we should integrate StartPlanet instead of generating new one
+			if (bIntegrateStartPlanet && StartHomePlanet)
 			{
-				UE_LOG(LogTemp, Error, TEXT("Failed to generate HomePlanet!"));
-				return;
-			}
-			
-			PlanetGenerator->GeneratePlanetAtmosphere(HomePlanet, PlanetAtmosphereModel);
-			
-			// Validate PlanetaryEnvironmentGenerator before calling GenerateWorldscapeSurfaceByModel
-			if (HomePlanet->PlanetaryEnvironmentGenerator)
-			{
-				HomePlanet->PlanetaryEnvironmentGenerator->GenerateWorldscapeSurfaceByModel(GetWorld(), HomePlanet);
+				UE_LOG(LogTemp, Warning, TEXT("Integrating StartPlanet into generated star system"));
+				IntegrateStartPlanetIntoSystem();
 			}
 			else
 			{
-				UE_LOG(LogTemp, Error, TEXT("PlanetaryEnvironmentGenerator is null for HomePlanet!"));
-				// Try to initialize it manually
-				HomePlanet->PlanetaryEnvironmentGenerator = NewObject<APlanetarySurfaceGenerator>();
+				// Original planet generation logic
+				const TSharedPtr<FPlanetModel> HomePlanetModel = PlanetGenerator->CreatePlanetModelFromGeneratedWorld(
+					GeneratedWorldModel);
+				const TSharedPtr<FPlanetAtmosphereModel> PlanetAtmosphereModel = PlanetGenerator->
+					CreateAtmosphereModelFromGeneratedWorld(GeneratedWorldModel);
+				HomePlanet = PlanetGenerator->GeneratePlanet(HomePlanetModel, BP_PlanetClass, GetWorld());
+				
+				// Validate HomePlanet was created successfully
+				if (!HomePlanet)
+				{
+					UE_LOG(LogTemp, Error, TEXT("Failed to generate HomePlanet!"));
+					return;
+				}
+				
+				PlanetGenerator->GeneratePlanetAtmosphere(HomePlanet, PlanetAtmosphereModel);
+				
+				// Validate PlanetaryEnvironmentGenerator before calling GenerateWorldscapeSurfaceByModel
 				if (HomePlanet->PlanetaryEnvironmentGenerator)
 				{
 					HomePlanet->PlanetaryEnvironmentGenerator->GenerateWorldscapeSurfaceByModel(GetWorld(), HomePlanet);
 				}
 				else
 				{
-					UE_LOG(LogTemp, Error, TEXT("Failed to create PlanetaryEnvironmentGenerator!"));
+					UE_LOG(LogTemp, Error, TEXT("PlanetaryEnvironmentGenerator is null for HomePlanet!"));
+					// Try to initialize it manually
+					HomePlanet->PlanetaryEnvironmentGenerator = NewObject<APlanetarySurfaceGenerator>();
+					if (HomePlanet->PlanetaryEnvironmentGenerator)
+					{
+						HomePlanet->PlanetaryEnvironmentGenerator->GenerateWorldscapeSurfaceByModel(GetWorld(), HomePlanet);
+					}
+					else
+					{
+						UE_LOG(LogTemp, Error, TEXT("Failed to create PlanetaryEnvironmentGenerator!"));
+					}
 				}
+				
+				HomePlanet->AstroName = AGravityPlayerController::GenerateUniqueName("Planet");
 			}
-			
-			HomePlanet->AstroName = AGravityPlayerController::GenerateUniqueName("Planet");
 
 			APlanetOrbit* NewHomePlanetOrbit = GeneratedHomeStarSystem->MainStar->PlanetarySystem->
 			                                                            PlanetOrbitsList[StartPlanetNumber - 1];
@@ -334,6 +371,8 @@ void AAstroGenerator::GenerateHomeStarSystem()
 					HomePlanet->SetActorLocation(
 						NewHomePlanetOrbit->GetActorLocation() + OldPlanetLocalPosition);
 
+					// Create HomePlanetModel for operations
+					const TSharedPtr<FPlanetModel> HomePlanetModel = PlanetGenerator->CreatePlanetModelFromGeneratedWorld(GeneratedWorldModel);
 					HomePlanetModel->RadiusKM = HomePlanetModel->Radius;
 					PlanetarySystemGenerator->GeneratePlanetMoonsList(PlanetGenerator, MoonGenerator,
 					                                                  HomePlanetModel, HomePlanetModel->Radius,
@@ -1584,6 +1623,350 @@ void AAstroGenerator::GenerateRandomWorld()
 
 void AAstroGenerator::GenerateGalaxiesCluster()
 {
+}
+
+void AAstroGenerator::IntegrateStartPlanetIntoSystem()
+{
+	UE_LOG(LogTemp, Warning, TEXT("=== IntegrateStartPlanetIntoSystem START ==="));
+	
+	if (!StartHomePlanet || !GeneratedHomeStarSystem)
+	{
+		UE_LOG(LogTemp, Error, TEXT("IntegrateStartPlanetIntoSystem: StartHomePlanet or GeneratedHomeStarSystem is null!"));
+		UE_LOG(LogTemp, Error, TEXT("StartHomePlanet: %s"), StartHomePlanet ? TEXT("Valid") : TEXT("NULL"));
+		UE_LOG(LogTemp, Error, TEXT("GeneratedHomeStarSystem: %s"), GeneratedHomeStarSystem ? TEXT("Valid") : TEXT("NULL"));
+		return;
+	}
+
+	// NEW APPROACH: StartHomePlanet is likely a WorldScapeRoot component INSIDE a BP_Planet actor
+	// We need to find the BP_Planet actor that contains this StartHomePlanet
+	UE_LOG(LogTemp, Warning, TEXT("StartHomePlanet class: %s"), *StartHomePlanet->GetClass()->GetName());
+	UE_LOG(LogTemp, Warning, TEXT("StartHomePlanet name: %s"), *StartHomePlanet->GetName());
+	
+	AActor* BP_PlanetActor = nullptr;
+	
+	// Method 1: Check if StartHomePlanet is a component, get its owner
+	if (StartHomePlanet->GetOwner())
+	{
+		BP_PlanetActor = StartHomePlanet->GetOwner();
+		UE_LOG(LogTemp, Warning, TEXT("StartHomePlanet owner: %s"), *BP_PlanetActor->GetName());
+		UE_LOG(LogTemp, Warning, TEXT("StartHomePlanet owner class: %s"), *BP_PlanetActor->GetClass()->GetName());
+	}
+	
+	// Method 2: If owner is not BP_Planet, search in the world for BP_Planet actors
+	if (!BP_PlanetActor || !BP_PlanetActor->GetClass()->GetName().Contains(TEXT("BP_Planet")))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Owner is not BP_Planet, searching world for BP_Planet actors"));
+		
+		// Search all actors in the world using GetAllActorsOfClass
+		TArray<AActor*> AllActors;
+		UGameplayStatics::GetAllActorsOfClass(GetWorld(), AActor::StaticClass(), AllActors);
+		
+		for (AActor* Actor : AllActors)
+		{
+			if (Actor && Actor->GetClass()->GetName().Contains(TEXT("BP_Planet")))
+			{
+				UE_LOG(LogTemp, Warning, TEXT("Found BP_Planet in world: %s"), *Actor->GetName());
+				BP_PlanetActor = Actor;
+				break;
+			}
+		}
+	}
+	
+	// Method 3: If still not found, try to find by name pattern
+	if (!BP_PlanetActor)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("BP_Planet not found by class, trying to find by name pattern"));
+		
+		TArray<AActor*> AllActors;
+		UGameplayStatics::GetAllActorsOfClass(GetWorld(), AActor::StaticClass(), AllActors);
+		
+		for (AActor* Actor : AllActors)
+		{
+			if (Actor && Actor->GetName().Contains(TEXT("BP_Planet")))
+			{
+				UE_LOG(LogTemp, Warning, TEXT("Found actor with BP_Planet in name: %s"), *Actor->GetName());
+				BP_PlanetActor = Actor;
+				break;
+			}
+		}
+	}
+	
+	if (!BP_PlanetActor)
+	{
+		UE_LOG(LogTemp, Error, TEXT("Could not find any BP_Planet actor in the world!"));
+		return;
+	}
+
+	UE_LOG(LogTemp, Warning, TEXT("Found BP_Planet actor: %s"), *BP_PlanetActor->GetName());
+	UE_LOG(LogTemp, Warning, TEXT("BP_Planet class: %s"), *BP_PlanetActor->GetClass()->GetName());
+
+	// Check BP_Planet mobility
+	EComponentMobility::Type PlanetMobility = BP_PlanetActor->GetRootComponent()->Mobility;
+	UE_LOG(LogTemp, Warning, TEXT("BP_Planet mobility: %d"), (int32)PlanetMobility);
+	
+	if (PlanetMobility == EComponentMobility::Static)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("BP_Planet is Static - changing to Movable for integration"));
+		BP_PlanetActor->GetRootComponent()->SetMobility(EComponentMobility::Movable);
+	}
+
+	// Get the target orbit for the start planet
+	if (StartPlanetNumber < 1 || StartPlanetNumber > GeneratedHomeStarSystem->MainStar->PlanetarySystem->PlanetOrbitsList.Num())
+	{
+		UE_LOG(LogTemp, Error, TEXT("IntegrateStartPlanetIntoSystem: Invalid StartPlanetNumber %d! Available orbits: %d"), 
+			StartPlanetNumber, GeneratedHomeStarSystem->MainStar->PlanetarySystem->PlanetOrbitsList.Num());
+		return;
+	}
+
+	APlanetOrbit* TargetOrbit = GeneratedHomeStarSystem->MainStar->PlanetarySystem->PlanetOrbitsList[StartPlanetNumber - 1];
+	if (!TargetOrbit)
+	{
+		UE_LOG(LogTemp, Error, TEXT("IntegrateStartPlanetIntoSystem: Target orbit is null!"));
+		return;
+	}
+
+	UE_LOG(LogTemp, Warning, TEXT("Target orbit found: %s"), *TargetOrbit->GetName());
+	UE_LOG(LogTemp, Warning, TEXT("Target orbit location: %s"), *TargetOrbit->GetActorLocation().ToString());
+	UE_LOG(LogTemp, Warning, TEXT("BP_Planet current location: %s"), *BP_PlanetActor->GetActorLocation().ToString());
+
+	// Store the original planet's relative position if there's a planet in the orbit
+	FVector OriginalPlanetRelativePosition = FVector::ZeroVector;
+	FQuat OriginalPlanetRelativeRotation = FQuat::Identity;
+	
+	if (TargetOrbit->Planet)
+	{
+		OriginalPlanetRelativePosition = TargetOrbit->Planet->GetActorLocation() - TargetOrbit->GetActorLocation();
+		OriginalPlanetRelativeRotation = TargetOrbit->Planet->GetActorQuat() * TargetOrbit->GetActorQuat().Inverse();
+		UE_LOG(LogTemp, Warning, TEXT("Original planet found in orbit, relative position: %s"), *OriginalPlanetRelativePosition.ToString());
+	}
+	else
+	{
+		// Use a reasonable default distance for planet orbit (in Unreal units)
+		// Typical planet orbit distance is around 1000-10000 units
+		OriginalPlanetRelativePosition = FVector(5000.0f, 0.0f, 0.0f); // 5km from orbit center
+		UE_LOG(LogTemp, Warning, TEXT("No original planet in orbit, using default position: %s"), *OriginalPlanetRelativePosition.ToString());
+	}
+
+	// Clear children from the orbit
+	UE_LOG(LogTemp, Warning, TEXT("Clearing children from target orbit"));
+	TargetOrbit->TriggerClearChildren();
+
+	// Calculate new position using relative coordinates
+	FVector NewPosition = TargetOrbit->GetActorLocation() + OriginalPlanetRelativePosition;
+	FRotator NewRotation = (TargetOrbit->GetActorQuat() * OriginalPlanetRelativeRotation).Rotator();
+	
+	UE_LOG(LogTemp, Warning, TEXT("Target orbit location: %s"), *TargetOrbit->GetActorLocation().ToString());
+	UE_LOG(LogTemp, Warning, TEXT("Relative position offset: %s"), *OriginalPlanetRelativePosition.ToString());
+	UE_LOG(LogTemp, Warning, TEXT("Calculated new position: %s"), *NewPosition.ToString());
+	
+	UE_LOG(LogTemp, Warning, TEXT("Moving BP_Planet to position: %s"), *NewPosition.ToString());
+	UE_LOG(LogTemp, Warning, TEXT("Setting BP_Planet rotation: %s"), *NewRotation.ToString());
+
+	// Move the entire BP_Planet hierarchy to the target orbit position
+	UE_LOG(LogTemp, Warning, TEXT("BEFORE MOVE - BP_Planet position: %s"), *BP_PlanetActor->GetActorLocation().ToString());
+	UE_LOG(LogTemp, Warning, TEXT("BEFORE MOVE - BP_Planet rotation: %s"), *BP_PlanetActor->GetActorRotation().ToString());
+	
+	// Force enable movement
+	BP_PlanetActor->SetActorEnableCollision(true);
+	BP_PlanetActor->SetActorHiddenInGame(false);
+	BP_PlanetActor->SetActorTickEnabled(true);
+	
+	// Try to move with teleport (ignores physics)
+	BP_PlanetActor->SetActorLocation(NewPosition, false, nullptr, ETeleportType::TeleportPhysics);
+	BP_PlanetActor->SetActorRotation(NewRotation, ETeleportType::TeleportPhysics);
+	
+	// Force update
+	BP_PlanetActor->MarkComponentsRenderStateDirty();
+	BP_PlanetActor->UpdateComponentTransforms();
+	
+	UE_LOG(LogTemp, Warning, TEXT("AFTER MOVE - BP_Planet position: %s"), *BP_PlanetActor->GetActorLocation().ToString());
+	UE_LOG(LogTemp, Warning, TEXT("AFTER MOVE - BP_Planet rotation: %s"), *BP_PlanetActor->GetActorRotation().ToString());
+	
+	// Check if position actually changed
+	FVector PositionDiff = BP_PlanetActor->GetActorLocation() - NewPosition;
+	float Distance = PositionDiff.Size();
+	UE_LOG(LogTemp, Warning, TEXT("Position difference from target: %f units"), Distance);
+	
+	if (Distance > 1.0f)
+	{
+		UE_LOG(LogTemp, Error, TEXT("MOVEMENT FAILED! Planet did not move to target position!"));
+		UE_LOG(LogTemp, Error, TEXT("Trying alternative movement method..."));
+		
+		// Try alternative movement
+		BP_PlanetActor->TeleportTo(NewPosition, NewRotation);
+		UE_LOG(LogTemp, Warning, TEXT("AFTER TELEPORT - BP_Planet position: %s"), *BP_PlanetActor->GetActorLocation().ToString());
+	}
+
+	// Attach the entire BP_Planet hierarchy to the orbit
+	UE_LOG(LogTemp, Warning, TEXT("Attaching BP_Planet to target orbit"));
+	
+	// Use KeepRelativeTransform for proper relative positioning
+	bool bAttachResult = BP_PlanetActor->AttachToActor(TargetOrbit, FAttachmentTransformRules::KeepRelativeTransform);
+	UE_LOG(LogTemp, Warning, TEXT("Attach result (KeepRelativeTransform): %s"), bAttachResult ? TEXT("SUCCESS") : TEXT("FAILED"));
+	
+	// If first attempt failed, try alternative attachment method
+	if (!bAttachResult)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("First attach failed, trying SnapToTargetNotIncludingScale"));
+		bAttachResult = BP_PlanetActor->AttachToActor(TargetOrbit, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
+		UE_LOG(LogTemp, Warning, TEXT("Attach result (SnapToTargetNotIncludingScale): %s"), bAttachResult ? TEXT("SUCCESS") : TEXT("FAILED"));
+	}
+	
+	// If still failed, try KeepWorldTransform as last resort
+	if (!bAttachResult)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Second attach failed, trying KeepWorldTransform"));
+		bAttachResult = BP_PlanetActor->AttachToActor(TargetOrbit, FAttachmentTransformRules::KeepWorldTransform);
+		UE_LOG(LogTemp, Warning, TEXT("Attach result (KeepWorldTransform): %s"), bAttachResult ? TEXT("SUCCESS") : TEXT("FAILED"));
+	}
+
+	// Verify the attachment worked
+	FVector FinalPosition = BP_PlanetActor->GetActorLocation();
+	FRotator FinalRotation = BP_PlanetActor->GetActorRotation();
+	UE_LOG(LogTemp, Warning, TEXT("BP_Planet final position after attachment: %s"), *FinalPosition.ToString());
+	UE_LOG(LogTemp, Warning, TEXT("BP_Planet final rotation after attachment: %s"), *FinalRotation.ToString());
+	
+	// Check if BP_Planet is actually attached
+	AActor* AttachedParent = BP_PlanetActor->GetAttachParentActor();
+	UE_LOG(LogTemp, Warning, TEXT("BP_Planet attach parent: %s"), AttachedParent ? *AttachedParent->GetName() : TEXT("NULL"));
+
+	// Set HomePlanet reference to the BP_Planet for compatibility
+	HomePlanet = Cast<APlanet>(BP_PlanetActor);
+	if (!HomePlanet)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("BP_Planet is not an APlanet, but that's okay for integration"));
+	}
+
+	// Move character to the integrated planet
+	AGravityCharacterPawn* CharacterPawn = Cast<AGravityCharacterPawn>(GetWorld()->GetFirstPlayerController()->GetPawn());
+	if (CharacterPawn)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Found character pawn: %s"), *CharacterPawn->GetName());
+		
+		// Find Headquarters in the planet hierarchy
+		AActor* Headquarters = nullptr;
+		TArray<AActor*> ChildActors;
+		BP_PlanetActor->GetAttachedActors(ChildActors);
+		
+		UE_LOG(LogTemp, Warning, TEXT("Searching for Headquarters in planet hierarchy..."));
+		for (AActor* Child : ChildActors)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("Found child actor: %s, Class: %s"), *Child->GetName(), *Child->GetClass()->GetName());
+			if (Child->GetClass()->GetName().Contains(TEXT("Headquarters")) || Child->GetName().Contains(TEXT("Headquarters")))
+			{
+				Headquarters = Child;
+				UE_LOG(LogTemp, Warning, TEXT("Found Headquarters: %s"), *Headquarters->GetName());
+				break;
+			}
+		}
+		
+		// If not found in children, search in the world
+		if (!Headquarters)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("Headquarters not found in planet children, searching world..."));
+			TArray<AActor*> AllActors;
+			UGameplayStatics::GetAllActorsOfClass(GetWorld(), AActor::StaticClass(), AllActors);
+			
+			for (AActor* Actor : AllActors)
+			{
+				if (Actor && (Actor->GetClass()->GetName().Contains(TEXT("Headquarters")) || Actor->GetName().Contains(TEXT("Headquarters"))))
+				{
+					Headquarters = Actor;
+					UE_LOG(LogTemp, Warning, TEXT("Found Headquarters in world: %s"), *Headquarters->GetName());
+					break;
+				}
+			}
+		}
+		
+		// Calculate character position
+		FVector TargetLocation;
+		if (Headquarters)
+		{
+			TargetLocation = Headquarters->GetActorLocation();
+			UE_LOG(LogTemp, Warning, TEXT("Using Headquarters location: %s"), *TargetLocation.ToString());
+		}
+		else
+		{
+			TargetLocation = BP_PlanetActor->GetActorLocation();
+			UE_LOG(LogTemp, Warning, TEXT("Headquarters not found, using planet center: %s"), *TargetLocation.ToString());
+		}
+		
+		// Position character slightly above the target location
+		FVector CharacterOffset = FVector(0, 0, 50); // 50 units above target
+		FVector NewCharacterPosition = TargetLocation + CharacterOffset;
+		
+		UE_LOG(LogTemp, Warning, TEXT("Target location: %s"), *TargetLocation.ToString());
+		UE_LOG(LogTemp, Warning, TEXT("Character offset: %s"), *CharacterOffset.ToString());
+		UE_LOG(LogTemp, Warning, TEXT("Moving character to position: %s"), *NewCharacterPosition.ToString());
+		
+		CharacterPawn->SetActorLocation(NewCharacterPosition);
+		
+		// Make character face the target
+		FVector DirectionToTarget = (TargetLocation - NewCharacterPosition).GetSafeNormal();
+		FRotator NewCharacterRotation = DirectionToTarget.Rotation();
+		CharacterPawn->SetActorRotation(NewCharacterRotation);
+		
+		UE_LOG(LogTemp, Warning, TEXT("Character moved to integrated planet"));
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("No character pawn found to move"));
+	}
+
+	// Spawn interactive actors on the integrated planet
+	if (GeneratedWorldModel)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Spawning interactive actors on integrated planet"));
+		const TSharedPtr<FPlanetModel> StartPlanetModel = PlanetGenerator->CreatePlanetModelFromGeneratedWorld(GeneratedWorldModel);
+		SpawnStartInteractiveActors(StartPlanetModel);
+	}
+
+	UE_LOG(LogTemp, Warning, TEXT("BP_Planet successfully integrated into star system at orbit %d"), StartPlanetNumber);
+	UE_LOG(LogTemp, Warning, TEXT("=== IntegrateStartPlanetIntoSystem END ==="));
+}
+
+void AAstroGenerator::GenerateStarSystemAndIntegratePlanet()
+{
+	UE_LOG(LogTemp, Warning, TEXT("=== GenerateStarSystemAndIntegratePlanet START ==="));
+	UE_LOG(LogTemp, Warning, TEXT("bIntegrateStartPlanet: %s"), bIntegrateStartPlanet ? TEXT("true") : TEXT("false"));
+	UE_LOG(LogTemp, Warning, TEXT("StartHomePlanet: %s"), StartHomePlanet ? TEXT("Valid") : TEXT("NULL"));
+	UE_LOG(LogTemp, Warning, TEXT("StartPlanetNumber: %d"), StartPlanetNumber);
+	
+	// Check if we should integrate StartPlanet
+	if (!bIntegrateStartPlanet || !StartHomePlanet)
+	{
+		UE_LOG(LogTemp, Error, TEXT("GenerateStarSystemAndIntegratePlanet: bIntegrateStartPlanet is false or StartHomePlanet is null!"));
+		UE_LOG(LogTemp, Error, TEXT("bIntegrateStartPlanet: %s"), bIntegrateStartPlanet ? TEXT("true") : TEXT("false"));
+		UE_LOG(LogTemp, Error, TEXT("StartHomePlanet: %s"), StartHomePlanet ? TEXT("Valid") : TEXT("NULL"));
+		return;
+	}
+	
+	// Generate the star system first
+	UE_LOG(LogTemp, Warning, TEXT("Generating star system..."));
+	GenerateStarSystemByModel();
+	
+	// Check if star system was generated successfully
+	if (!GeneratedHomeStarSystem)
+	{
+		UE_LOG(LogTemp, Error, TEXT("GenerateStarSystemAndIntegratePlanet: Failed to generate star system!"));
+		return;
+	}
+	
+	UE_LOG(LogTemp, Warning, TEXT("Star system generated successfully!"));
+	UE_LOG(LogTemp, Warning, TEXT("GeneratedHomeStarSystem: %s"), *GeneratedHomeStarSystem->GetName());
+	UE_LOG(LogTemp, Warning, TEXT("MainStar: %s"), GeneratedHomeStarSystem->MainStar ? TEXT("Valid") : TEXT("NULL"));
+	
+	if (GeneratedHomeStarSystem->MainStar && GeneratedHomeStarSystem->MainStar->PlanetarySystem)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("PlanetarySystem: %s"), *GeneratedHomeStarSystem->MainStar->PlanetarySystem->GetName());
+		UE_LOG(LogTemp, Warning, TEXT("Available orbits: %d"), GeneratedHomeStarSystem->MainStar->PlanetarySystem->PlanetOrbitsList.Num());
+	}
+	
+	// Now integrate our planet
+	UE_LOG(LogTemp, Warning, TEXT("Integrating StartPlanet into generated star system"));
+	IntegrateStartPlanetIntoSystem();
+	
+	UE_LOG(LogTemp, Warning, TEXT("=== GenerateStarSystemAndIntegratePlanet END ==="));
 }
 
 void AAstroGenerator::SetAutoStarSystemModel()
