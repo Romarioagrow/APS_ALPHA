@@ -4,6 +4,10 @@
 #include "Components/HierarchicalInstancedStaticMeshComponent.h"
 #include "Star.h"
 #include "CoreMinimal.h"
+#include "APS_ALPHA/Core/Enums/StarClusterComposition.h"
+#include "APS_ALPHA/Core/Enums/StarClusterPopulation.h"
+#include "APS_ALPHA/Core/Enums/StarClusterSize.h"
+#include "APS_ALPHA/Core/Enums/StarClusterType.h"
 #include "StarCluster.generated.h"
 
 struct FStarModel;
@@ -14,7 +18,7 @@ enum class EStarClusterComposition : uint8;
 enum class EStarClusterPopulation : uint8;
 enum class EStarClusterType : uint8;
 
-// Структура для хранения диапазонов значений
+// РЎС‚СЂСѓРєС‚СѓСЂР° РґР»СЏ С…СЂР°РЅРµРЅРёСЏ РґРёР°РїР°Р·РѕРЅР° Р·РЅР°С‡РµРЅРёР№
 USTRUCT(BlueprintType)
 struct FRange
 {
@@ -25,19 +29,35 @@ struct FRange
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Range")
 	float UpperBound;
+
+	// РљРѕРЅСЃС‚СЂСѓРєС‚РѕСЂ РїРѕ СѓРјРѕР»С‡Р°РЅРёСЋ РґР»СЏ РёРЅРёС†РёР°Р»РёР·Р°С†РёРё РІСЃРµС… СЃРІРѕР№СЃС‚РІ
+	FRange()
+		: LowerBound(0.0f)
+		, UpperBound(0.0f)
+	{
+	}
 };
 
-// Структура для хранения параметров скопления
+//     
 USTRUCT(BlueprintType)
 struct FStarClusterModel
 {
 	GENERATED_BODY()
 
-	// Количество звезд
+	// РљРѕРЅСЃС‚СЂСѓРєС‚РѕСЂ РїРѕ СѓРјРѕР»С‡Р°РЅРёСЋ РґР»СЏ РёРЅРёС†РёР°Р»РёР·Р°С†РёРё РІСЃРµС… СЃРІРѕР№СЃС‚РІ
+	FStarClusterModel()
+		: StarClusterType(EStarClusterType::Unknown)
+		, StarClusterPopulation(EStarClusterPopulation::Unknown)
+		, StarClusterComposition(EStarClusterComposition::Unknown)
+		, StarClusterSize(EStarClusterSize::Unknown)
+	{
+	}
+
+	//  
 	UPROPERTY(VisibleAnywhere, Category = "Star Cluster")
 	FRange StarCountRange;
 
-	// Плотность звезд
+	//  
 	UPROPERTY(VisibleAnywhere, Category = "Star Cluster")
 	FRange StarDensityRange;
 
@@ -80,35 +100,35 @@ public:
 
 	void AddStarToClusterModel(FVector StarLocation, TSharedPtr<FStarModel> StarModel);
 
-	// Тип скопления
+	//  
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star Cluster")
 	EStarClusterType ClusterType;
 
-	// Количество звезд
+	//  
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star Cluster")
 	int StarAmount;
 
-	// Плотность звезд
+	//  
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star Cluster")
 	double StarDensity;
 
-	// Вероятности спектральных классов
+	//   
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star Cluster")
 	TMap<ESpectralClass, float> SpectralClassProbabilities;
 
-	// Вероятности стелларных классов
+	//   
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star Cluster")
 	TMap<EStellarType, float> StellarClassProbabilities;
 
-	// HISM звезды для создания инстансов
+	// HISM    
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star Cluster")
 	UHierarchicalInstancedStaticMeshComponent* StarMeshInstances;
 
-	// Границы звездного скопления
+	//   
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star Cluster")
 	FVector ClusterBounds;
 
-	// Функция генерации скопления
+	//   
 	UFUNCTION(BlueprintCallable, Category = "Star Cluster")
 	void GenerateCluster();
 };

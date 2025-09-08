@@ -17,7 +17,7 @@ class USelectWorldsMenu : public UBaseWidget
 	GENERATED_BODY()
 	
 public:
-	UPROPERTY()
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Worlds")
 	TArray<UGeneratedWorld*> ExistingWorlds;
 	
 	UPROPERTY()

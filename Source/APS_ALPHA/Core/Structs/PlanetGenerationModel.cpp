@@ -4,10 +4,12 @@
 #include "APS_ALPHA/Core/Enums/PlanetType.h"
 
 FPlanetModel::FPlanetModel()
+	: PlanetType(EPlanetType::Rocky)
+	, AmountOfMoons(0)
+	, Temperature(0)
+	, PlanetZone(EPlanetaryZoneType::Unknown)
+	, PlanetDensity(0.0)
+	, PlanetGravityStrength(0.0)
+	, AtmosphereHeight(0.0)
 {
-	this->AmountOfMoons = 0;
-	this->Temperature = 0;
-	this->PlanetZone = EPlanetaryZoneType::Unknown;
-	this->PlanetType = EPlanetType::Unknown;
-
 }

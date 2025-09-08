@@ -47,7 +47,7 @@ void AGravityPlayerController::SaveNewWorld(const EAstroGenerationLevel AstroGen
 		SaveGameInstance->GeneratedWorldsDataArray.Add(WorldSaveData);
 		SaveGameInstance->WorldName = WorldName;
 
-		// Получаем данные о заселенных планетах из UGeneratedWorld и добавляем их в сейв
+		// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ UGeneratedWorld пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅ пїЅпїЅпїЅпїЅ
 		const TArray<FPlanetData>& InhabitedPlanets = GeneratedWorldModel->GetInhabitedPlanets();
 		SaveGameInstance->InhabitedPlanetsDataArray.Append(InhabitedPlanets);
 		
@@ -58,7 +58,7 @@ void AGravityPlayerController::SaveNewWorld(const EAstroGenerationLevel AstroGen
 
 			for (AActor* Actor : AllActors)
 			{
-				if (Actor->IsValidLowLevel() && !Actor->IsPendingKill())
+				if (Actor->IsValidLowLevel() && IsValid(Actor))
 				{
 					FActorSaveData SaveData;
 					SaveData.ActorTransform = Actor->GetActorTransform();
@@ -97,12 +97,12 @@ void AGravityPlayerController::LoadWorld()
 		{
 			TMap<FString, AActor*> NameToActorMap;
 
-			// Первый проход: создание всех акторов
+			// пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ: пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 			for (const FActorSaveData& SaveData : LoadedGame->ActorSaveDataArray)
 			{
 				if (UClass* ActorClass = LoadClass<AActor>(nullptr, *SaveData.ActorClass))
 				{
-					// Генерация уникального имени для актора
+					// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ
 					FString UniqueName = SaveData.ActorName;
 					int32 Suffix = 1;
 					while (FindObject<AActor>(World, *UniqueName) != nullptr)
@@ -125,7 +125,7 @@ void AGravityPlayerController::LoadWorld()
 				}
 			}
 
-			// Второй проход: восстановление родительско-дочерних отношений
+			// пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ: пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ-пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 			for (const FActorSaveData& SaveData : LoadedGame->ActorSaveDataArray)
 			{
 				if (!SaveData.ParentActorName.IsEmpty())
@@ -176,7 +176,7 @@ void AGravityPlayerController::SetLoadingModeFalse()
 
 FName AGravityPlayerController::GenerateUniqueName(const FString& ObjectType)
 {
-	// Генерация случайного слова по паттерну
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 	FString GeneratedName;
 	const FString Vowels = TEXT("aeiou");
 	const FString Consonants = TEXT("bcdfghjklmnpqrstvwxyz");
@@ -200,20 +200,20 @@ FName AGravityPlayerController::GenerateUniqueName(const FString& ObjectType)
 		}
 	}
 
-	// Приводим первую букву к заглавной
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 	if (GeneratedName.Len() > 0)
 	{
 		GeneratedName[0] = FChar::ToUpper(GeneratedName[0]);
 	}
 
-	// Объединение случайного имени с типом объекта и таймштампом
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 	FString FullName = FString::Printf(TEXT("%s %s"), *GeneratedName, *ObjectType);
 	return FName(*FullName);
 }
 
 FString AGravityPlayerController::GenerateUniqueSaveSlotName(const EAstroGenerationLevel AstroGenerationLevel) const
 {
-    // Генерация случайного слова по паттерну
+    // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
     FString GeneratedName;
     const FString Vowels = TEXT("aeiou");
     const FString Consonants = TEXT("bcdfghjklmnpqrstvwxyz");
@@ -237,14 +237,14 @@ FString AGravityPlayerController::GenerateUniqueSaveSlotName(const EAstroGenerat
         }
     }
 
-    // Приводим первую букву к заглавной
+    // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
     if (GeneratedName.Len() > 0)
     {
         GeneratedName[0] = FChar::ToUpper(GeneratedName[0]);
     }
 
-    // Добавление случайного числа из диапазона и части таймштампа
-    int32 TimeStamp = static_cast<int32>(std::time(nullptr)) % 10000; // Берем последние 5 цифр от таймштапа
+    // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
+    int32 TimeStamp = static_cast<int32>(std::time(nullptr)) % 10000; // пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ 5 пїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 
 	auto GetGenerationType = [](EAstroGenerationLevel Level) -> FString
 	{

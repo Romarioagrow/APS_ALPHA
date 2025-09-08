@@ -132,6 +132,8 @@ protected:
 public:
 	TMap<int32, TSharedPtr<FStarModel>> StarIndexModelMap;
 
+	static void DestroyActorTree(AActor* Root);
+	
 	UPROPERTY(EditAnywhere, Category = "Generation Params")
 	bool bGenerateFullScaledWorld{true};
 
@@ -148,13 +150,19 @@ public:
 	bool bSpawnStarterPlanet{true};
 
 	UPROPERTY(EditAnywhere, Category = "Generation Params")
+	bool bIntegrateStartPlanet{false};
+
+	UPROPERTY(EditAnywhere, Category = "Generation Params")
 	EAstroGenerationLevel AstroGenerationLevel{EAstroGenerationLevel::StarCluster};
 
 	UPROPERTY(EditInstanceOnly, Category = "Generation Params")
-	AWorldScapeRoot* StartHomePlanet;
+	AWorldScapeRoot* WSR_StartHomePlanet;
 
 	UPROPERTY(EditInstanceOnly, Category = "Generation Params")
 	APlanet* HomePlanet;
+
+	UPROPERTY(EditInstanceOnly, Category = "Generation Params")
+	ASpaceHeadquarters* BP_Headquarters;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
 	APlanetarySystem* HomePlanetarySystem;
@@ -349,4 +357,8 @@ public:
 	void RotatePlanetOrbits(APlanetarySystem* NewPlanetarySystem);
 	
 	void ComputeHomeSystemPosition(FTransform& HomeSystemTransform, FVector& HomeSystemSpawnLocation);
+	
+	void IntegrateStartPlanetIntoSystem();
+	
+	void GenerateStarSystemAndIntegratePlanet();
 };

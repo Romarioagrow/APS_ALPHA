@@ -1,6 +1,8 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "APS_ALPHA/Core/Enums/Planetary/BiodiversityIndex.h"
+#include "APS_ALPHA/Core/Enums/Planetary/BiomassLevel.h"
 #include "PlanetBiosphere.generated.h"
 
 enum class EBiodiversityIndex : uint8;
@@ -11,21 +13,30 @@ struct FPlanetBiosphere //: public AEnvironmentActor
 {
 	GENERATED_BODY()
 	
-	// Биомасса
+	// РљРѕРЅСЃС‚СЂСѓРєС‚РѕСЂ РїРѕ СѓРјРѕР»С‡Р°РЅРёСЋ РґР»СЏ РёРЅРёС†РёР°Р»РёР·Р°С†РёРё РІСЃРµС… СЃРІРѕР№СЃС‚РІ
+	FPlanetBiosphere()
+		: BiomassLevel(EBiomassLevel::NoBiomass)
+		, Biomass(0.0f)
+		, BiodiversityLevel(EBiodiversityIndex::NoBiodiversity)
+		, BiodiversityIndexValue(0.0f)
+	{
+	}
+
+	// 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Biosphere")
 	EBiomassLevel BiomassLevel;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Biosphere")
-	float Biomass; // Вычисляемое значение
+	float Biomass; // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 
-	// Индекс биоразнообразия
+	// пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Biosphere")
 	EBiodiversityIndex BiodiversityLevel;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Biosphere")
-	float BiodiversityIndexValue; // Вычисляемое значение
+	float BiodiversityIndexValue; // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 
-	// Методы вычисления значений
+	// пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 	void UpdateBiosphereProperties();
 	
 	float CalculateBiomass(EBiomassLevel Level);
