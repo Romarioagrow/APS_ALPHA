@@ -3,6 +3,7 @@
 #include "PlanetGenerationModel.h"
 #include "GenerationModel.h"
 #include "APS_ALPHA/Core/Enums/OrbitDistributionType.h"
+#include "APS_ALPHA/Core/Enums/PlanetarySystemType.h"
 #include "CoreMinimal.h"
 #include "APS_ALPHA/Actors/Planetary/PlanetAtmosphere.h"
 #include "APS_ALPHA/Actors/Planetary/PlanetBiosphere.h"
@@ -23,15 +24,15 @@ struct FZoneRadius
 	double OuterRadius;
 
 	FZoneRadius()
+		: InnerRadius(0.0)
+		, OuterRadius(0.0)
 	{
-		InnerRadius = 0.0;
-		OuterRadius = 0.0;
 	}
 
 	FZoneRadius(double InnerRadius, double OuterRadius)
+		: InnerRadius(InnerRadius)
+		, OuterRadius(OuterRadius)
 	{
-		this->InnerRadius = InnerRadius;
-		this->OuterRadius = OuterRadius;
 	}
 };
 
@@ -46,13 +47,13 @@ struct FPlanetData
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Mode")
 	double OrbitRadius;
 
-	// Модель планеты
+	// пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 	TSharedPtr<FPlanetModel> PlanetModel;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Planet Mode")
 	FPlanetModel PlanetModelData;
 
-	// Структуры окружения
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Environment")
 	FPlanetAtmosphere PlanetAtmosphere;
 
@@ -62,7 +63,7 @@ struct FPlanetData
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Environment")
 	FPlanetGeosphere PlanetGeosphere;
 
-	// Дополнительные параметры планеты
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 	UPROPERTY(EditAnywhere, Category = "Planet")
 	int PlanetRadiusKM;
 
@@ -75,29 +76,30 @@ struct FPlanetData
 	UPROPERTY(VisibleAnywhere, Category = "Planet")
 	double PlanetGravityStrength{0};
 
-	// Конструкторы
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
+	// РљРѕРЅСЃС‚СЂСѓРєС‚РѕСЂ РїРѕ СѓРјРѕР»С‡Р°РЅРёСЋ
 	FPlanetData()
+		: PlanetOrder(0)
+		, OrbitRadius(0.0)
+		, PlanetRadiusKM(0)
+		, Temperature(0)
+		, PlanetDensity(0.0)
+		, PlanetGravityStrength(0.0)
 	{
-		PlanetOrder = 0;
-		OrbitRadius = 0.0;
-		PlanetRadiusKM = 0;
-		Temperature = 0;
-		PlanetDensity = 0.0;
-		PlanetGravityStrength = 0.0;
 	}
 
 	FPlanetData(int InPlanetOrder, double InOrbitRadius, TSharedPtr<FPlanetModel> InPlanetModel)
+		: PlanetOrder(InPlanetOrder)
+		, OrbitRadius(InOrbitRadius)
+		, PlanetModel(InPlanetModel)
+		, PlanetRadiusKM(0)
+		, Temperature(0)
+		, PlanetDensity(0.0)
+		, PlanetGravityStrength(0.0)
 	{
-		this->PlanetOrder = InPlanetOrder;
-		this->OrbitRadius = InOrbitRadius;
-		this->PlanetModel = InPlanetModel;
-		PlanetRadiusKM = 0;
-		Temperature = 0;
-		PlanetDensity = 0.0;
-		PlanetGravityStrength = 0.0;
 	}
 
-	// Инициализация данных планеты
+	//   
 	void InitializePlanetData(int InPlanetRadiusKM, int32 InTemperature, double InPlanetDensity, double InPlanetGravityStrength)
 	{
 		this->PlanetRadiusKM = InPlanetRadiusKM;
@@ -116,7 +118,7 @@ struct FPlanetarySystemModel :
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planetary System")
 	int AmountOfPlanets;
 
-	// Расстояние между планетами
+	//   
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planetary System")
 	double DistanceBetweenPlanets;
 
@@ -175,4 +177,24 @@ struct FPlanetarySystemModel :
 	double OuterZoneOuter;
 	double HabitableZoneOuter;
 	double StarDeadZoneOuter;
+
+	// РљРѕРЅСЃС‚СЂСѓРєС‚РѕСЂ РїРѕ СѓРјРѕР»С‡Р°РЅРёСЋ РґР»СЏ РёРЅРёС†РёР°Р»РёР·Р°С†РёРё РІСЃРµС… СЃРІРѕР№СЃС‚РІ
+	FPlanetarySystemModel()
+		: AmountOfPlanets(0)
+		, DistanceBetweenPlanets(0.0)
+		, PlanetarySystemType(EPlanetarySystemType::Unknown)
+		, OrbitDistributionType(EOrbitDistributionType::Uniform)
+		, FullSpectralName(NAME_None)
+		, HotZoneOuter(0.0)
+		, WarmZoneOuter(0.0)
+		, ColdZoneOuter(0.0)
+		, IceZoneOuter(0.0)
+		, GasGiantsZoneOuter(0.0)
+		, KuiperBeltZoneOuter(0.0)
+		, InnerZoneOuter(0.0)
+		, OuterZoneOuter(0.0)
+		, HabitableZoneOuter(0.0)
+		, StarDeadZoneOuter(0.0)
+	{
+	}
 };

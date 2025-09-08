@@ -1,6 +1,11 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "APS_ALPHA/Core/Enums/Planetary/CO2Level.h"
+#include "APS_ALPHA/Core/Enums/Planetary/HumidityLevel.h"
+#include "APS_ALPHA/Core/Enums/Planetary/OxigenLevel.h"
+#include "APS_ALPHA/Core/Enums/Planetary/PressureLevel.h"
+#include "APS_ALPHA/Core/Enums/Planetary/WindSpeed.h"
 #include "PlanetAtmosphere.generated.h"
 
 enum class EPressureLevel : uint8;
@@ -15,41 +20,56 @@ struct FPlanetAtmosphere
 {
 	GENERATED_BODY()
 
-	// Уровень кислорода
+	// РљРѕРЅСЃС‚СЂСѓРєС‚РѕСЂ РїРѕ СѓРјРѕР»С‡Р°РЅРёСЋ РґР»СЏ РёРЅРёС†РёР°Р»РёР·Р°С†РёРё РІСЃРµС… СЃРІРѕР№СЃС‚РІ
+	FPlanetAtmosphere()
+		: OxygenLevel(EOxigenLevel::NoOxigen)
+		, OxygenConcentration(0.0f)
+		, CO2Level(ECO2Level::NoCO2)
+		, CO2Concentration(0.0f)
+		, WindSpeedLevel(EWindSpeed::NoWind)
+		, WindSpeed(0.0f)
+		, HumidityLevel(EHumidityLevel::NoHumidity)
+		, Humidity(0.0f)
+		, PressureLevel(EPressureLevel::NoPressure)
+		, AtmosphericPressure(0.0f)
+	{
+	}
+
+	//  
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Atmosphere")
 	EOxigenLevel OxygenLevel;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Atmosphere")
-	float OxygenConcentration; // Вычисляемое значение
+	float OxygenConcentration; // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 
-	// Уровень CO2
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅ CO2
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Atmosphere")
 	ECO2Level CO2Level;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Atmosphere")
-	float CO2Concentration; // Вычисляемое значение
+	float CO2Concentration; // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 
-	// Скорость ветра
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Atmosphere")
 	EWindSpeed WindSpeedLevel;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Atmosphere")
-	float WindSpeed; // Вычисляемое значение
+	float WindSpeed; // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Environment")
 	EHumidityLevel HumidityLevel;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Environment")
-	float Humidity; // Вычисляемое значение
+	float Humidity; // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 
-	// Атмосферное давление
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Environment")
 	EPressureLevel PressureLevel;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Environment")
 	float AtmosphericPressure;
 
-	// Методы вычисления значений
+	// пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 	void UpdateAtmosphereProperties();
 	
 	float CalculateOxygenConcentration(EOxigenLevel Level);

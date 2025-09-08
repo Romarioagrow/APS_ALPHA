@@ -1,6 +1,6 @@
 #include "PlanetGenerator.h"
 
-#include "Atmosphere.h"
+#include "PlanetaryAtmosphere.h"
 #include "APS_ALPHA/Actors/Astro/Planet.h"
 #include "APS_ALPHA/Core/Enums/OrbitHeight.h"
 #include "APS_ALPHA/Core/Model/GeneratedWorld.h"
@@ -123,7 +123,7 @@ void UPlanetGenerator::GeneratePlanetAtmosphere(APlanet* Planet, const TSharedPt
 		return;
 	}
 
-	if (AAtmosphere* PlanetAtmosphere = World->SpawnActor<AAtmosphere>(AAtmosphere::StaticClass(), FTransform()))
+	if (AAtmoScape* PlanetAtmosphere = World->SpawnActor<AAtmoScape>(AAtmoScape::StaticClass(), FTransform()))
 	{
 		PlanetAtmosphere->SetActorLocation(Planet->GetActorLocation());
 		PlanetAtmosphere->AttachToActor(Planet, FAttachmentTransformRules::KeepWorldTransform);
