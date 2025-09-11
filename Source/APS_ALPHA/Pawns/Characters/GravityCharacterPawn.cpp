@@ -37,7 +37,7 @@ AGravityCharacterPawn::AGravityCharacterPawn()
 	PlayerCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("PlayerCamera"));
 	PlayerCamera->SetupAttachment(CameraSpringArm, USpringArmComponent::SocketName);
 
-	// Создайте Arrow компонент
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ Arrow пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 	ArrowComponent = CreateDefaultSubobject<UArrowComponent>(TEXT("ArrowComponent"));
 	ArrowComponent->SetupAttachment(CapsuleComponent);
 
@@ -63,7 +63,7 @@ void AGravityCharacterPawn::BeginPlay()
 void AGravityCharacterPawn::Tick(const float DeltaTime)
 {
 	Super::Tick(DeltaTime);
-	// Измеряем время выполнения блока кода
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ
 	double ElapsedTime = 0;
 
 	{
@@ -111,7 +111,7 @@ void AGravityCharacterPawn::Tick(const float DeltaTime)
 				}
 			}
 
-			// Если персонаж в зоне влияния источника гравитации, устанавливаем гравитацию в соответствии с этим источником
+			// пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ, пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 			if (ClosestGravitySource)
 			{
 				GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Red, FString::Printf(TEXT("ClosestGravityActor : %s"), *ClosestGravitySource->GetName()));
@@ -124,7 +124,7 @@ void AGravityCharacterPawn::Tick(const float DeltaTime)
 				UpdateGravityPhysicParams();
 			}*/
 
-			// Проверить каждого актера на наличие интерфейса UNavigatableBody
+			// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ UNavigatableBody
 			/*for (AActor* Actor : GravitySources)
 			{
 				if (Actor != nullptr && Actor->GetClass()->ImplementsInterface(UNavigatableBody::StaticClass()))
@@ -138,7 +138,7 @@ void AGravityCharacterPawn::Tick(const float DeltaTime)
 
 			AActor* ClosestGravitySource = nullptr;
 
-			// Шаг 1: Сортировка акторов по расстоянию до вашего актора
+			// пїЅпїЅпїЅ 1: пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ
 			WorldNavigatableActors.Sort([this](const AWorldActor& A, const AWorldActor& B)
 			{
 				double DistanceToA = FVector::Distance(this->GetActorLocation(), A.GetActorLocation());
@@ -148,7 +148,7 @@ void AGravityCharacterPawn::Tick(const float DeltaTime)
 
 			for (AWorldActor* GravitySourceActor : WorldNavigatableActors)
 			{
-				double DistanceToActor = FVector::Distance(this->GetActorLocation(), GravitySourceActor->GetActorLocation()) / 100000.0; // Преобразуем в километры
+				double DistanceToActor = FVector::Distance(this->GetActorLocation(), GravitySourceActor->GetActorLocation()) / 100000.0; // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 
 				FString DebugMessageActor = FString::Printf(
 					TEXT("Actor: %s, Distance: %f km"),
@@ -156,12 +156,12 @@ void AGravityCharacterPawn::Tick(const float DeltaTime)
 				GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Yellow, DebugMessageActor);
 			}
 			
-			// Шаг 2: Проверка на соответствие AffectionRadiusKM для самого ближайшего актора
+			// пїЅпїЅпїЅ 2: пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ AffectionRadiusKM пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ
 			if (WorldNavigatableActors.Num() > 0)
 			{
 				AWorldActor* ClosestActor = WorldNavigatableActors[0];
 				double DistanceToClosest =
-					FVector::Distance(this->GetActorLocation(), ClosestActor->GetActorLocation()) / 100000.0; // Преобразуем в километры
+					FVector::Distance(this->GetActorLocation(), ClosestActor->GetActorLocation()) / 100000.0; // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 
 				FString DebugMessage = FString::Printf(
 					TEXT("Closest Actor: %s, Distance: %f km, AffectionRadiusKM: %f"),
@@ -173,23 +173,23 @@ void AGravityCharacterPawn::Tick(const float DeltaTime)
 
 				if (DistanceToClosest <= ClosestActor->AffectionRadiusKM)
 				{
-					// Ваш код, если актор находится в AffectionRadiusKM
+					// пїЅпїЅпїЅ пїЅпїЅпїЅ, пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ AffectionRadiusKM
 					FString ActorName = ClosestActor->GetFName().ToString();
 					GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Purple,
 													 FString::Printf(TEXT("Affected Actor: %s"), *ActorName));
 
-					ClosestGravitySource = ClosestActor;  // Обновляем ClosestGravitySource
+					ClosestGravitySource = ClosestActor;  // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ ClosestGravitySource
 					SwitchGravityType(ClosestActor);
 				}
 				else
 				{
-					// Ваш код, если актор вне AffectionRadiusKM
+					// пїЅпїЅпїЅ пїЅпїЅпїЅ, пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ AffectionRadiusKM
 					GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, TEXT("No Actor within AffectionRadiusKM"));
 				}
 			}
 
 
-			// Если персонаж в зоне влияния источника гравитации, устанавливаем гравитацию в соответствии с этим источником
+			// пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ, пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 			if (ClosestGravitySource)
 			{
 				GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Red,
@@ -212,7 +212,7 @@ void AGravityCharacterPawn::Tick(const float DeltaTime)
 			UGameplayStatics::GetAllActorsOfClass(GetWorld(), AWorldActor::StaticClass(), GravitySources);
 			TMap<AWorldActor*, double> ActorDistances;
 
-			// Фильтрация акторов и расчет расстояний
+			// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 			for (AActor* Actor : GravitySources)
 			{
 				if (Actor && Actor->GetClass()->ImplementsInterface(UNavigatableBody::StaticClass()))
@@ -220,7 +220,7 @@ void AGravityCharacterPawn::Tick(const float DeltaTime)
 					AWorldActor* WorldNavigatableActor = Cast<AWorldActor>(Actor);
 					WorldNavigatableActors.Add(WorldNavigatableActor);
 
-					// Учитываем радиус объекта при расчете расстояния
+					// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 					double Distance = (FVector::Distance(this->GetActorLocation(),
 					                                     WorldNavigatableActor->GetActorLocation()) / 100000.0) -
 						WorldNavigatableActor->RadiusKM;
@@ -228,13 +228,13 @@ void AGravityCharacterPawn::Tick(const float DeltaTime)
 				}
 			}
 
-			// Сортировка акторов по расстоянию
+			// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 			WorldNavigatableActors.Sort([&](const AWorldActor& A, const AWorldActor& B)
 			{
 				return ActorDistances[&A] < ActorDistances[&B];
 			});
 
-			// Вывод на экран
+			// пїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅ
 			/*for (AWorldActor* Actor : WorldNavigatableActors)
 			{
 				GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Yellow,
@@ -243,12 +243,12 @@ void AGravityCharacterPawn::Tick(const float DeltaTime)
 					                                 *Actor->GetFName().ToString(), ActorDistances[Actor]));
 			}*/
 
-			// Проверка для самого ближайшего актора
+			// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ
 			if (WorldNavigatableActors.Num() > 0)
 			{
 				AWorldActor* ClosestActor = WorldNavigatableActors[0];
 
-				// Дополнительное сообщение для Closest Actor
+				// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ Closest Actor
 				FString DebugMessageClosest = FString::Printf(
 					TEXT("Closest Actor: %s \nDistance to surface: %f km \nAffectionRadiusKM: %f"),
 					*ClosestActor->GetFName().ToString(), ActorDistances[ClosestActor],
@@ -325,16 +325,16 @@ void AGravityCharacterPawn::SetupPlayerInputComponent(UInputComponent* PlayerInp
 {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
 
-	// Настройка параметров перемещения персонажа
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 	PlayerInputComponent->BindAxis("MoveForward", this, &AGravityCharacterPawn::MoveForward);
 	PlayerInputComponent->BindAxis("MoveRight", this, &AGravityCharacterPawn::MoveRight);
 	PlayerInputComponent->BindAxis("MoveUp", this, &AGravityCharacterPawn::MoveUp);
 
-	// Настройка параметров поворота камеры
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ
 	PlayerInputComponent->BindAxis("Turn", this, &AGravityCharacterPawn::Turn);
 	PlayerInputComponent->BindAxis("LookUp", this, &AGravityCharacterPawn::LookUp);
 
-	// Настройка параметров поворота персонажа
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 	PlayerInputComponent->BindAxis("RotatePitch", this, &AGravityCharacterPawn::RotatePitch);
 	PlayerInputComponent->BindAxis("RotateRoll", this, &AGravityCharacterPawn::RotateRoll);
 	PlayerInputComponent->BindAxis("RotateYaw", this, &AGravityCharacterPawn::RotateYaw);
@@ -528,7 +528,7 @@ void AGravityCharacterPawn::UpdateGravityType()
 	TArray<AActor*> OverlappingActors;
 	CapsuleComponent->GetOverlappingActors(OverlappingActors);
 
-	// Проверить каждого актера на наличие тега
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ
 	for (AActor* Actor : OverlappingActors)
 	{
 		if (Actor != nullptr && Actor->ActorHasTag(TagToCheck))
@@ -595,58 +595,58 @@ void AGravityCharacterPawn::SwitchGravityToZeroG(AActor* OtherActor)
 
 void AGravityCharacterPawn::UpdateAnimationState()
 {
-	// Получить строковое представление текущего состояния гравитации
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 	FString AnimationStateString = StaticEnum<EAnimationState>()->GetNameStringByValue(
 		static_cast<int32>(CurrentAnimationState));
 	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Blue,
 	                                 FString::Printf(TEXT("AnimationStateString: %s"), *AnimationStateString));
 
-	// Получить ссылку на мир
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅ
 	UWorld* World = GetWorld();
 
 	if (World)
 	{
-		// Расстояние, на котором должен быть объект, чтобы считаться под ногами персонажа
+		// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ, пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ, пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 		const float GroundDistanceThreshold = 10.0f;
 		const float JumpDistanceThreshold = 250.0f;
 
-		// Начальная позиция трассировки
+		// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 		FVector StartLocation = GetActorLocation();
 
-		// Конечная позиция трассировки
+		// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 		FVector EndLocation = StartLocation - (GetActorUpVector() * JumpDistanceThreshold);
 
-		// Результат трассировки для анимации
+		// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 		FHitResult AnimHitResult;
 
-		// Настройка коллизии
+		// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 		FCollisionQueryParams CollisionParams;
 		CollisionParams.AddIgnoredActor(this);
 
-		// Выполнение Line Trace для определения состояния анимации
+		// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ Line Trace пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 		bool bIsGrounded = World->LineTraceSingleByChannel(AnimHitResult, StartLocation, EndLocation, ECC_Visibility,
 		                                                   CollisionParams);
 
-		// Вывод значения AnimHitResult.Distance на экран
+		// пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ AnimHitResult.Distance пїЅпїЅ пїЅпїЅпїЅпїЅпїЅ
 		GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green,
 		                                 FString::Printf(TEXT("AnimHitResult.Distance: %f"), AnimHitResult.Distance));
 
 		float JumpDeadZone = 3.5f;
 
-		//c Определение состояния анимации
+		//c пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 		if (bIsGrounded && AnimHitResult.Distance < CapsuleComponent->GetScaledCapsuleHalfHeight() + JumpDeadZone)
 		{
-			// Персонаж стоит на поверхности
+			// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 			CurrentAnimationState = EAnimationState::OnGround;
 		}
 		else if (bIsGrounded && AnimHitResult.Distance > GroundDistanceThreshold)
 		{
-			// Персонаж прыгает
+			// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 			CurrentAnimationState = EAnimationState::Jumping;
 		}
 		else
 		{
-			// Персонаж падает (ничего не задето)
+			// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ (пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ)
 			CurrentAnimationState = EAnimationState::Falling;
 		}
 	}
@@ -654,37 +654,37 @@ void AGravityCharacterPawn::UpdateAnimationState()
 
 void AGravityCharacterPawn::UpdateGravityState()
 {
-	// Получить строковое представление текущего состояния гравитации
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 	FString GravityStateString = StaticEnum<EGravityState>()->GetNameStringByValue(
 		static_cast<int32>(CurrentGravityState));
 	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green,
 	                                 FString::Printf(TEXT("GravityStateString: %s"), *GravityStateString));
 
-	// Получить ссылку на мир
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅ
 	UWorld* World = GetWorld();
 
 	if (World)
 	{
 		const float GravityDistanceThreshold = 15000.0f; // TODO: Distance to gravity
 
-		// Начальная позиция трассировки
+		// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 		FVector StartLocation = GetActorLocation();
 
-		// Конечная позиция трассировки
+		// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 		FVector EndLocation = StartLocation - (GetActorUpVector() * GravityDistanceThreshold);
 
-		// Результат трассировки
+		// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 		FHitResult HitResult;
 
-		// Настройка коллизии
+		// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 		FCollisionQueryParams CollisionParams;
 		CollisionParams.AddIgnoredActor(this);
 
-		// Выполнение Line Trace By Channel
+		// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ Line Trace By Channel
 		bool bHit = World->LineTraceSingleByChannel(HitResult, StartLocation, EndLocation, ECC_Visibility,
 		                                            CollisionParams);
 
-		// Отображение отладочной линии трассировки
+		// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 		FColor DebugLineColor = bHit ? FColor::Green : FColor::Red;
 		DrawDebugLine(World, StartLocation, EndLocation, DebugLineColor, false, 2.0f, 0, 2.0f);
 
@@ -693,10 +693,10 @@ void AGravityCharacterPawn::UpdateGravityState()
 			CurrentGravityState = EGravityState::Attracting;
 			UpdateGravityPhysicParams();
 
-			// Получаем расстояние между начальной точкой и точкой столкновения
+			// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 			float DistanceToGround = (HitResult.ImpactPoint - StartLocation).Size();
 
-			// Вычитаем CapsuleHalfHeight из расстояния до земли
+			// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ CapsuleHalfHeight пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅ
 			HeightAboveGround = DistanceToGround - CapsuleComponent->GetScaledCapsuleHalfHeight();
 
 			GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Yellow,
@@ -746,8 +746,8 @@ void AGravityCharacterPawn::UpdateStationGravity()
 	// CHECK GRAVITY FORCE / EFFECT
 	if (CurrentGravityState != EGravityState::LowG)
 	{
-		// Добавление гравитационной силы к персонажу
-		const float GravityStrength = -980.0f; // Например, сила гравитации Земли
+		// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
+		const float GravityStrength = -980.0f; // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ, пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ
 		FVector GravityForce = GravityTargetActor->GetActorUpVector() * GravityStrength;
 		CapsuleComponent->AddForce(GravityForce, "none", true);
 	}
@@ -756,10 +756,10 @@ void AGravityCharacterPawn::UpdateStationGravity()
 	FRotator CamRot = CameraSpringArm->GetRelativeRotation();
 	CameraSpringArm->SetRelativeRotation(FRotator(CamRot.Pitch, CamRot.Yaw, 0.0f));
 
-	// Получить текущее вращение CameraSpringArm
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ CameraSpringArm
 	FRotator CameraSpringArmRotation = CameraSpringArm->GetRelativeRotation();
 
-	// Установить новое вращение Realtive Yaw для Arrow Component from CameraSpringArmRotation
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ Realtive Yaw пїЅпїЅпїЅ Arrow Component from CameraSpringArmRotation
 	FRotator NewArrowRotation(0.0f, CameraSpringArmRotation.Yaw, 0.0f);
 	ArrowComponent->SetRelativeRotation(NewArrowRotation);
 }
@@ -779,8 +779,8 @@ void AGravityCharacterPawn::UpdatePlanetGravity()
 	                                                 GetWorld()->GetDeltaSeconds(), 5.f);
 	SetActorRotation(ResultRotation);
 
-	// Добавление гравитационной силы к персонажу
-	const float GravityStrength = -980.0f; // Например, сила гравитации Земли
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
+	const float GravityStrength = -980.0f; // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ, пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ
 	GravityDirection = (GravityTargetActor->GetActorLocation() - GetActorLocation()).GetSafeNormal();
 	FVector GravityForce = GravityDirection * GravityStrength * -1;
 	CapsuleComponent->AddForce(GravityForce, "none", true);
@@ -792,10 +792,10 @@ void AGravityCharacterPawn::UpdatePlanetGravity()
 	FRotator CamRot = CameraSpringArm->GetRelativeRotation();
 	CameraSpringArm->SetRelativeRotation(FRotator(CamRot.Pitch, CamRot.Yaw, 0.0f));
 
-	// Получить текущее вращение CameraSpringArm
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ CameraSpringArm
 	FRotator CameraSpringArmRotation = CameraSpringArm->GetRelativeRotation();
 
-	// Установить новое вращение Realtive Yaw для Arrow Component from CameraSpringArmRotation
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ Realtive Yaw пїЅпїЅпїЅ Arrow Component from CameraSpringArmRotation
 	FRotator NewArrowRotation(0.0f, CameraSpringArmRotation.Yaw, 0.0f);
 	ArrowComponent->SetRelativeRotation(NewArrowRotation);
 }
@@ -821,8 +821,8 @@ void AGravityCharacterPawn::UpdateShipGravity()
 	// CHECK GRAVITY FORCE / EFFECT
 	if (CurrentGravityState != EGravityState::LowG)
 	{
-		// Добавление гравитационной силы к персонажу
-		const float GravityStrength = -980.0f; // Например, сила гравитации Земли
+		// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
+		const float GravityStrength = -980.0f; // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ, пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ
 		FVector GravityForce = GravityTargetActor->GetActorUpVector() * GravityStrength;
 		CapsuleComponent->AddForce(GravityForce, "none", true);
 	}
@@ -831,10 +831,10 @@ void AGravityCharacterPawn::UpdateShipGravity()
 	FRotator CamRot = CameraSpringArm->GetRelativeRotation();
 	CameraSpringArm->SetRelativeRotation(FRotator(CamRot.Pitch, CamRot.Yaw, 0.0f));
 
-	// Получить текущее вращение CameraSpringArm
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ CameraSpringArm
 	FRotator CameraSpringArmRotation = CameraSpringArm->GetRelativeRotation();
 
-	// Установить новое вращение Realtive Yaw для Arrow Component from CameraSpringArmRotation
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ Realtive Yaw пїЅпїЅпїЅ Arrow Component from CameraSpringArmRotation
 	FRotator NewArrowRotation(0.0f, CameraSpringArmRotation.Yaw, 0.0f);
 	ArrowComponent->SetRelativeRotation(NewArrowRotation);
 }
@@ -859,40 +859,40 @@ void AGravityCharacterPawn::LookUp(const float Value)
 
 void AGravityCharacterPawn::AlignCharacterToCameraZeroG()
 {
-	// Получаем текущий кватернион вращения камеры
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ
 	const FQuat CameraQuat = CameraSpringArm->GetComponentQuat();
 
-	// Вычисляем новый кватернион вращения персонажа, используя кватернион вращения камеры
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ, пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ
 	FQuat NewCharacterQuat = FQuat(CameraQuat.X, CameraQuat.Y, CameraQuat.Z, CameraQuat.W);
 
-	// Интерполируем вращение CapsuleComponent и персонажа к вращению камеры
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ CapsuleComponent пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ
 	FQuat InterpolatedQuat = FMath::QInterpTo(GetActorQuat(), NewCharacterQuat, GetWorld()->GetDeltaSeconds(),
 	                                          CameraInterpolationSpeed);
 	CapsuleComponent->SetWorldRotation(InterpolatedQuat);
 	SetActorRotation(InterpolatedQuat);
 
-	// Обнуляем вращение CameraSpringArm
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ CameraSpringArm
 	CameraSpringArm->SetWorldRotation(FRotator(CameraQuat.Rotator().Pitch, NewCharacterQuat.Rotator().Yaw,
 	                                           CameraQuat.Rotator().Roll));
 }
 
 void AGravityCharacterPawn::AlignCharacterToCameraOnStation()
 {
-	// Получаем текущий кватернион вращения капсулы
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 	const FQuat CapsuleQuat = CapsuleComponent->GetComponentQuat();
-	// Получаем текущий кватернион вращения SpringArm
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ SpringArm
 	const FQuat ArrowForwardVector = ArrowComponent->GetComponentQuat();
 
-	// Интерполируем вращение капсулы к целевому вращению SpringArm
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ SpringArm
 	FQuat InterpolatedQuat = FMath::QInterpTo(CapsuleQuat, ArrowForwardVector, GetWorld()->GetDeltaSeconds(), 5.0f);
-	// Вычисляем разницу между исходным и интерполированным вращением
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 	FQuat DifferenceQuat = CapsuleQuat.Inverse() * InterpolatedQuat;
 
-	// Устанавливаем новое вращение для актора и капсулы
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 	CapsuleComponent->SetWorldRotation(InterpolatedQuat);
 	SetActorRotation(InterpolatedQuat);
 
-	// Применяем обратную интерполяцию для SpringArm
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ SpringArm
 	FQuat NewSpringArmQuat = CameraSpringArm->GetComponentQuat() * DifferenceQuat.Inverse();
 	CameraSpringArm->SetWorldRotation(NewSpringArmQuat);
 }
@@ -968,21 +968,21 @@ void AGravityCharacterPawn::MoveRightOnStation(const float Value)
 
 void AGravityCharacterPawn::MoveForwardOnPlanet(const float Value)
 {
-	// Получаем текущий кватернион вращения капсулы
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 	const FQuat CapsuleQuat = CapsuleComponent->GetComponentQuat();
-	// Получаем текущий кватернион вращения SpringArm
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ SpringArm
 	const FQuat ArrowForwardVector = ArrowComponent->GetComponentQuat();
 
-	// Интерполируем вращение капсулы к целевому вращению SpringArm
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ SpringArm
 	FQuat InterpolatedQuat = FMath::QInterpTo(CapsuleQuat, ArrowForwardVector, GetWorld()->GetDeltaSeconds(), 5.0f);
-	// Вычисляем разницу между исходным и интерполированным вращением
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 	FQuat DifferenceQuat = CapsuleQuat.Inverse() * InterpolatedQuat;
 
-	// Устанавливаем новое вращение для актора и капсулы
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 	CapsuleComponent->SetWorldRotation(InterpolatedQuat);
 	SetActorRotation(InterpolatedQuat);
 
-	// Применяем обратную интерполяцию для SpringArm
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ SpringArm
 	FQuat NewSpringArmQuat = CameraSpringArm->GetComponentQuat() * DifferenceQuat.Inverse();
 	CameraSpringArm->SetWorldRotation(NewSpringArmQuat);
 
@@ -1006,21 +1006,21 @@ void AGravityCharacterPawn::MoveForwardZeroG(const float Value)
 
 void AGravityCharacterPawn::MoveRightOnPlanet(const float Value)
 {
-	// Получаем текущий кватернион вращения капсулы
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 	const FQuat CapsuleQuat = CapsuleComponent->GetComponentQuat();
-	// Получаем текущий кватернион вращения SpringArm
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ SpringArm
 	const FQuat ArrowForwardVector = ArrowComponent->GetComponentQuat();
 
-	// Интерполируем вращение капсулы к целевому вращению SpringArm
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ SpringArm
 	FQuat InterpolatedQuat = FMath::QInterpTo(CapsuleQuat, ArrowForwardVector, GetWorld()->GetDeltaSeconds(), 5.0f);
-	// Вычисляем разницу между исходным и интерполированным вращением
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 	FQuat DifferenceQuat = CapsuleQuat.Inverse() * InterpolatedQuat;
 
-	// Устанавливаем новое вращение для актора и капсулы
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 	CapsuleComponent->SetWorldRotation(InterpolatedQuat);
 	SetActorRotation(InterpolatedQuat);
 
-	// Применяем обратную интерполяцию для SpringArm
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ SpringArm
 	FQuat NewSpringArmQuat = CameraSpringArm->GetComponentQuat() * DifferenceQuat.Inverse();
 	CameraSpringArm->SetWorldRotation(NewSpringArmQuat);
 
@@ -1054,11 +1054,11 @@ void AGravityCharacterPawn::MoveUp(const float Value)
 			}
 		case EGravityType::OnPlanet:
 			{
-				// Получаем вектор гравитации (от персонажа к центру планеты)
+				// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ (пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ)
 				FVector JumpGravityDirection = (GravityTargetActor->GetActorLocation() - GetActorLocation()).
 					GetSafeNormal();
 
-				// Добавляем силу в направлении, противоположном гравитации
+				// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ, пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 				CapsuleComponent->AddForce(-JumpGravityDirection * CharacterJumpForce * Value, "none", true);
 				break;
 			}
