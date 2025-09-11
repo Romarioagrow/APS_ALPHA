@@ -1206,11 +1206,9 @@ void AAstroGenerator::SpawnStartInteractiveActors(TSharedPtr<FPlanetModel> Start
 		FVector GeneratorLocation = this->GetActorLocation();
 		FVector NewGeneratorLocation = GeneratorLocation - PlayerLocation;
 		this->SetActorLocation(NewGeneratorLocation, false);
-		// (X=2658.399507,Y=-5578.769877,Z=281.717353)
-
-		FVector SpawnLocation = HomeSpaceShipyard->SpawnPoint->GetComponentLocation();
 		
-		//PlayerCharacter->SetActorLocation(FVector(2600, -5578, 281), false);
+		FVector SpawnLocation = HomeSpaceHeadquarters->GetStartPointPosition();
+		
 		PlayerCharacter->SetActorLocation(SpawnLocation, false);
 		PlayerCharacter->SetActorRotation(HomeSpaceShipyard->GetActorRotation());
 		PlayerCharacter->AddActorLocalRotation(FRotator(0, 180 , 0));

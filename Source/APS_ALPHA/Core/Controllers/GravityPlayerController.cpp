@@ -47,7 +47,6 @@ void AGravityPlayerController::SaveNewWorld(const EAstroGenerationLevel AstroGen
 		SaveGameInstance->GeneratedWorldsDataArray.Add(WorldSaveData);
 		SaveGameInstance->WorldName = WorldName;
 
-		// �������� ������ � ���������� �������� �� UGeneratedWorld � ��������� �� � ����
 		const TArray<FPlanetData>& InhabitedPlanets = GeneratedWorldModel->GetInhabitedPlanets();
 		SaveGameInstance->InhabitedPlanetsDataArray.Append(InhabitedPlanets);
 		
@@ -97,12 +96,10 @@ void AGravityPlayerController::LoadWorld()
 		{
 			TMap<FString, AActor*> NameToActorMap;
 
-			// ������ ������: �������� ���� �������
 			for (const FActorSaveData& SaveData : LoadedGame->ActorSaveDataArray)
 			{
 				if (UClass* ActorClass = LoadClass<AActor>(nullptr, *SaveData.ActorClass))
 				{
-					// ��������� ����������� ����� ��� ������
 					FString UniqueName = SaveData.ActorName;
 					int32 Suffix = 1;
 					while (FindObject<AActor>(World, *UniqueName) != nullptr)
@@ -125,7 +122,6 @@ void AGravityPlayerController::LoadWorld()
 				}
 			}
 
-			// ������ ������: �������������� �����������-�������� ���������
 			for (const FActorSaveData& SaveData : LoadedGame->ActorSaveDataArray)
 			{
 				if (!SaveData.ParentActorName.IsEmpty())
@@ -176,7 +172,6 @@ void AGravityPlayerController::SetLoadingModeFalse()
 
 FName AGravityPlayerController::GenerateUniqueName(const FString& ObjectType)
 {
-	// ��������� ���������� ����� �� ��������
 	FString GeneratedName;
 	const FString Vowels = TEXT("aeiou");
 	const FString Consonants = TEXT("bcdfghjklmnpqrstvwxyz");
@@ -200,20 +195,17 @@ FName AGravityPlayerController::GenerateUniqueName(const FString& ObjectType)
 		}
 	}
 
-	// �������� ������ ����� � ���������
 	if (GeneratedName.Len() > 0)
 	{
 		GeneratedName[0] = FChar::ToUpper(GeneratedName[0]);
 	}
 
-	// ����������� ���������� ����� � ����� ������� � �����������
 	FString FullName = FString::Printf(TEXT("%s %s"), *GeneratedName, *ObjectType);
 	return FName(*FullName);
 }
 
 FString AGravityPlayerController::GenerateUniqueSaveSlotName(const EAstroGenerationLevel AstroGenerationLevel) const
 {
-    // ��������� ���������� ����� �� ��������
     FString GeneratedName;
     const FString Vowels = TEXT("aeiou");
     const FString Consonants = TEXT("bcdfghjklmnpqrstvwxyz");
@@ -237,13 +229,11 @@ FString AGravityPlayerController::GenerateUniqueSaveSlotName(const EAstroGenerat
         }
     }
 
-    // �������� ������ ����� � ���������
     if (GeneratedName.Len() > 0)
     {
         GeneratedName[0] = FChar::ToUpper(GeneratedName[0]);
     }
 
-    // ���������� ���������� ����� �� ��������� � ����� ����������
     int32 TimeStamp = static_cast<int32>(std::time(nullptr)) % 10000; // ����� ��������� 5 ���� �� ���������
 
 	auto GetGenerationType = [](EAstroGenerationLevel Level) -> FString
