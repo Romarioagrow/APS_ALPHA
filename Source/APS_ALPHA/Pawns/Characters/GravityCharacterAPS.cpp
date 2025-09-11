@@ -1,4 +1,4 @@
-#include "GravityCharacter.h"
+#include "GravityCharacterAPS.h"
 #include "Components/CapsuleComponent.h"
 #include <Kismet/GameplayStatics.h>
 #include "APS_ALPHA/Gameplay/Gravity/PlanetGravityActor.h"
@@ -6,7 +6,7 @@
 #include "APS_ALPHA/Gameplay/Gravity/StationGravityActor.h"
 
 // Sets default values
-AGravityCharacter::AGravityCharacter()
+AGravityCharacterAPS::AGravityCharacterAPS()
 {
 	// Set this character to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = true;
@@ -37,7 +37,7 @@ AGravityCharacter::AGravityCharacter()
 }
 
 // Called when the game starts or when spawned
-void AGravityCharacter::BeginPlay()
+void AGravityCharacterAPS::BeginPlay()
 {
 	Super::BeginPlay();
 
@@ -45,12 +45,12 @@ void AGravityCharacter::BeginPlay()
 	InputComponent = NewObject<UInputComponent>(this, TEXT("InputComponent"));
 
 	// Bind overlaps
-	GetCapsuleComponent()->OnComponentBeginOverlap.AddDynamic(this, &AGravityCharacter::OnBeginOverlap);
-	GetCapsuleComponent()->OnComponentEndOverlap.AddDynamic(this, &AGravityCharacter::OnEndOverlap);
+	GetCapsuleComponent()->OnComponentBeginOverlap.AddDynamic(this, &AGravityCharacterAPS::OnBeginOverlap);
+	GetCapsuleComponent()->OnComponentEndOverlap.AddDynamic(this, &AGravityCharacterAPS::OnEndOverlap);
 }
 
 // Called every frame
-void AGravityCharacter::Tick(float DeltaTime)
+void AGravityCharacterAPS::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
@@ -64,7 +64,7 @@ void AGravityCharacter::Tick(float DeltaTime)
 		                                 TEXT("CurrentGravityType: %s"), *GetGravityTypeAsString(CurrentGravityType)));
 }
 
-void AGravityCharacter::UpdateGravity()
+void AGravityCharacterAPS::UpdateGravity()
 {
 	// GravityDirection = -GetActorUpVector();
 
@@ -93,7 +93,7 @@ void AGravityCharacter::UpdateGravity()
 	}
 }
 
-void AGravityCharacter::OnBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor,
+void AGravityCharacterAPS::OnBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor,
                                        UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep,
                                        const FHitResult& SweepResult)
 {
@@ -115,7 +115,7 @@ void AGravityCharacter::OnBeginOverlap(UPrimitiveComponent* OverlappedComponent,
 	}
 }
 
-void AGravityCharacter::OnEndOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor,
+void AGravityCharacterAPS::OnEndOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor,
                                      UPrimitiveComponent* OtherComp, int32 OtherBodyIndex)
 {
 	UE_LOG(LogTemp, Warning, TEXT("EndOverlap with: %s"), *OtherActor->GetName());
@@ -129,7 +129,7 @@ void AGravityCharacter::OnEndOverlap(UPrimitiveComponent* OverlappedComponent, A
 	UpdateGravityStatus();
 }
 
-void AGravityCharacter::UpdateGravityStatus()
+void AGravityCharacterAPS::UpdateGravityStatus()
 {
 	GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Orange, FString::Printf(TEXT("UpdateGravityStatus")));
 
@@ -153,7 +153,7 @@ void AGravityCharacter::UpdateGravityStatus()
 	}
 }
 
-void AGravityCharacter::SwitchGravityToStation(AActor* OtherActor)
+void AGravityCharacterAPS::SwitchGravityToStation(AActor* OtherActor)
 {
 	GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Orange, FString::Printf(TEXT("SwitchGravityToStation")));
 
@@ -175,7 +175,7 @@ void AGravityCharacter::SwitchGravityToStation(AActor* OtherActor)
 	//RotateToStationGravity(CurrentGravityActor);
 }
 
-void AGravityCharacter::SwitchGravityToPlanet(AActor* OtherActor)
+void AGravityCharacterAPS::SwitchGravityToPlanet(AActor* OtherActor)
 {
 	GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Orange, FString::Printf(TEXT("SwitchGravityToPlanet")));
 
@@ -184,7 +184,7 @@ void AGravityCharacter::SwitchGravityToPlanet(AActor* OtherActor)
 	//RotateToPlanetGravity(CurrentGravityActor);
 }
 
-void AGravityCharacter::SwitchGravityToSpaceship(AActor* OtherActor)
+void AGravityCharacterAPS::SwitchGravityToSpaceship(AActor* OtherActor)
 {
 	GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Orange, FString::Printf(TEXT("SwitchGravityToSpaceship")));
 
@@ -211,17 +211,17 @@ void AGravityCharacter::SwitchGravityToSpaceship(AActor* OtherActor)
 //    //GetCapsuleComponent()->SetWorldRotation(InterpolatedRotation);
 //}
 
-void AGravityCharacter::RotateToPlanetGravity(APlanetGravityActor* StationGravityActor)
+void AGravityCharacterAPS::RotateToPlanetGravity(APlanetGravityActor* StationGravityActor)
 {
 	GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Orange, FString::Printf(TEXT("RotateToPlanetGravity")));
 }
 
-void AGravityCharacter::RotateToSpaceshipGravity(ASpaceshipGravityActor* StationGravityActor)
+void AGravityCharacterAPS::RotateToSpaceshipGravity(ASpaceshipGravityActor* StationGravityActor)
 {
 	GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Orange, FString::Printf(TEXT("RotateToShipGravity")));
 }
 
-void AGravityCharacter::RotateMeshTowardsForwardVector()
+void AGravityCharacterAPS::RotateMeshTowardsForwardVector()
 {
 	// Получаем текущий Z ротатор CapsuleComponent
 	FRotator MeshCurrentRotation = GetMesh()->GetRelativeRotation();
@@ -250,31 +250,31 @@ void AGravityCharacter::RotateMeshTowardsForwardVector()
 
 
 // Called to bind functionality to input
-void AGravityCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
+void AGravityCharacterAPS::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
 
 	// Настройка параметров перемещения персонажа
-	PlayerInputComponent->BindAxis("MoveForward", this, &AGravityCharacter::MoveForward);
-	PlayerInputComponent->BindAxis("MoveRight", this, &AGravityCharacter::MoveRight);
-	PlayerInputComponent->BindAxis("MoveUp", this, &AGravityCharacter::MoveUp);
+	PlayerInputComponent->BindAxis("MoveForward", this, &AGravityCharacterAPS::MoveForward);
+	PlayerInputComponent->BindAxis("MoveRight", this, &AGravityCharacterAPS::MoveRight);
+	PlayerInputComponent->BindAxis("MoveUp", this, &AGravityCharacterAPS::MoveUp);
 
 	// Настройка параметров поворота камеры
-	PlayerInputComponent->BindAxis("Turn", this, &AGravityCharacter::Turn);
-	PlayerInputComponent->BindAxis("LookUp", this, &AGravityCharacter::LookUp);
+	PlayerInputComponent->BindAxis("Turn", this, &AGravityCharacterAPS::Turn);
+	PlayerInputComponent->BindAxis("LookUp", this, &AGravityCharacterAPS::LookUp);
 
-	PlayerInputComponent->BindAxis("RotatePitch", this, &AGravityCharacter::RotatePitch);
-	PlayerInputComponent->BindAxis("RotateRoll", this, &AGravityCharacter::RotateRoll);
+	PlayerInputComponent->BindAxis("RotatePitch", this, &AGravityCharacterAPS::RotatePitch);
+	PlayerInputComponent->BindAxis("RotateRoll", this, &AGravityCharacterAPS::RotateRoll);
 }
 
-void AGravityCharacter::SetGravityType(EGravityType NewGravityType)
+void AGravityCharacterAPS::SetGravityType(EGravityType NewGravityType)
 {
 	CurrentGravityType = NewGravityType;
 	UpdateGravity();
 }
 
 
-void AGravityCharacter::Turn(float Value)
+void AGravityCharacterAPS::Turn(float Value)
 {
 	if (Value != 0.0f)
 	{
@@ -285,7 +285,7 @@ void AGravityCharacter::Turn(float Value)
 	}
 }
 
-void AGravityCharacter::LookUp(float Value)
+void AGravityCharacterAPS::LookUp(float Value)
 {
 	if (Value != 0.0f)
 	{
@@ -298,7 +298,7 @@ void AGravityCharacter::LookUp(float Value)
 	}
 }
 
-void AGravityCharacter::MoveForward(float Value)
+void AGravityCharacterAPS::MoveForward(float Value)
 {
 	if ((Controller != NULL) && (Value != 0.0f))
 	{
@@ -311,7 +311,7 @@ void AGravityCharacter::MoveForward(float Value)
 	}
 }
 
-void AGravityCharacter::MoveRight(float Value)
+void AGravityCharacterAPS::MoveRight(float Value)
 {
 	if ((Controller != NULL) && (Value != 0.0f))
 	{
@@ -324,7 +324,7 @@ void AGravityCharacter::MoveRight(float Value)
 	}
 }
 
-void AGravityCharacter::MoveUp(float Value)
+void AGravityCharacterAPS::MoveUp(float Value)
 {
 	if ((Controller != NULL) && (Value != 0.0f))
 	{
@@ -337,7 +337,7 @@ void AGravityCharacter::MoveUp(float Value)
 	}
 }
 
-void AGravityCharacter::RotatePitch(float Value)
+void AGravityCharacterAPS::RotatePitch(float Value)
 {
 	if ((Controller != NULL) && (Value != 0.0f))
 	{
@@ -348,7 +348,7 @@ void AGravityCharacter::RotatePitch(float Value)
 	}
 }
 
-void AGravityCharacter::RotateRoll(float Value)
+void AGravityCharacterAPS::RotateRoll(float Value)
 {
 	if ((Controller != NULL) && (Value != 0.0f))
 	{
@@ -363,7 +363,7 @@ void AGravityCharacter::RotateRoll(float Value)
 	}
 }
 
-void AGravityCharacter::UpdateZeroGGravity()
+void AGravityCharacterAPS::UpdateZeroGGravity()
 {
 	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("ZeroG Gravity")));
 }
@@ -372,7 +372,7 @@ void AGravityCharacter::UpdateZeroGGravity()
 //{
 //}
 
-void AGravityCharacter::UpdateStationGravity()
+void AGravityCharacterAPS::UpdateStationGravity()
 {
 	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Station Gravity")));
 
@@ -393,7 +393,7 @@ void AGravityCharacter::UpdateStationGravity()
 //{
 //}
 
-void AGravityCharacter::UpdatePlanetGravity()
+void AGravityCharacterAPS::UpdatePlanetGravity()
 {
 	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Planet Gravity")));
 
@@ -418,7 +418,7 @@ void AGravityCharacter::UpdatePlanetGravity()
 //{
 //}
 
-void AGravityCharacter::UpdateShipGravity()
+void AGravityCharacterAPS::UpdateShipGravity()
 {
 	GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Green, FString::Printf(TEXT("Ship Gravity")));
 }
@@ -427,14 +427,14 @@ void AGravityCharacter::UpdateShipGravity()
 //{
 //}
 
-FString AGravityCharacter::GetGravityTypeAsString(EGravityType GravityType)
+FString AGravityCharacterAPS::GetGravityTypeAsString(EGravityType GravityType)
 {
 	const UEnum* EnumPtr = StaticEnum<EGravityType>();
 	return EnumPtr ? EnumPtr->GetNameStringByValue(static_cast<int32>(GravityType)) : FString();
 }
 
 
-void AGravityCharacter::UpdateCameraOrientation()
+void AGravityCharacterAPS::UpdateCameraOrientation()
 {
 	// Вращение камеры в зависимости от типа гравитации
 	//switch (CurrentGravityType)

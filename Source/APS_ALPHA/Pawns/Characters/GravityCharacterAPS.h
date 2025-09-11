@@ -6,7 +6,7 @@
 #include "CoreMinimal.h"
 #include "APS_ALPHA/Core/Enums/GravityTypeEnum.h"
 #include "GameFramework/Character.h"
-#include "GravityCharacter.generated.h"
+#include "GravityCharacterAPS.generated.h"
 
 class AGravityActor;
 class ASpaceshipGravityActor;
@@ -14,13 +14,13 @@ class APlanetGravityActor;
 enum class EGravityType : uint8;
 
 UCLASS()
-class APS_ALPHA_API AGravityCharacter : public ACharacter
+class APS_ALPHA_API AGravityCharacterAPS : public ACharacter
 {
 	GENERATED_BODY()
 
 public:
 	// Sets default values for this character's properties
-	AGravityCharacter();
+	AGravityCharacterAPS();
 
 protected:
 	// Called when the game starts or when spawned
