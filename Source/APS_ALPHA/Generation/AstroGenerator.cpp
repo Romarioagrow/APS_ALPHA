@@ -1691,12 +1691,10 @@ void AAstroGenerator::IntegrateStartPlanetIntoSystem()
 	// Удаляем дефолтные акторы планеты
 	DestroyActorTree(TargetOrbit->Planet);
 
-
-	if (AGravityCharacterPawn* PlayerPawn = Cast<AGravityCharacterPawn>(GetWorld()->GetFirstPlayerController()->GetPawn()))
+	if (APawn* Pawn = UGameplayStatics::GetPlayerPawn(this, 0))
 	{
-		PlayerPawn->SetActorLocation(BP_Headquarters->GetStartPointPosition());
+		Pawn->SetActorLocation(BP_Headquarters->GetStartPointPosition());
 	}
-	
 	
 	UE_LOG(LogTemp, Warning, TEXT("=== IntegrateStartPlanetIntoSystem END ==="));
 }
