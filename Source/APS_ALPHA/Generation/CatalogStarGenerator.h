@@ -3,8 +3,8 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Components/HierarchicalInstancedStaticMeshComponent.h"
 #include "GameFramework/Actor.h"
-#include "Engine/Classes/Components/HierarchicalInstancedStaticMeshComponent.h"
 #include "CatalogStarGenerator.generated.h"
 
 UCLASS()
