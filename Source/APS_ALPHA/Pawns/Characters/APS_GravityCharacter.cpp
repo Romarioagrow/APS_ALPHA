@@ -35,10 +35,10 @@ void AAPS_GravityCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInp
 }
 
 
-void AAPS_GravityCharacter::EnableZeroG(ACharacter* C, float MaxSpeedZeroG = 600.f)
+void AAPS_GravityCharacter::EnableZeroG(ACharacter* Character, float MaxSpeedZeroG = 600.f)
 {
-	if (!C) return;
-	auto* Move = C->GetCharacterMovement();
+	if (!Character) return;
+	auto* Move = Character->GetCharacterMovement();
 	if (!Move) return;
 
 	// Полная невесомость
@@ -54,10 +54,10 @@ void AAPS_GravityCharacter::EnableZeroG(ACharacter* C, float MaxSpeedZeroG = 600
 }
 
 
-void AAPS_GravityCharacter::DisableZeroG(ACharacter* C, const FVector& GravityDir, float GravityScale = 1.f)
+void AAPS_GravityCharacter::DisableZeroG(ACharacter* Character, const FVector& GravityDir, float GravityScale = 1.f)
 {
-	if (!C) return;
-	auto* Move = C->GetCharacterMovement();
+	if (!Character) return;
+	auto* Move = Character->GetCharacterMovement();
 	if (!Move) return;
 
 	Move->SetMovementMode(MOVE_Walking);                 // или MOVE_Falling
