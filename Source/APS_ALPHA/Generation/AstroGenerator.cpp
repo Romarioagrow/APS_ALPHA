@@ -28,6 +28,7 @@
 #include "APS_ALPHA/Core/Structs/PlanetAtmosphereModel.h"
 #include "APS_ALPHA/Pawns/Characters/GravityCharacterPawn.h"
 #include "APS_ALPHA/Actors/Tech/SpaceHeadquarters.h"
+#include "Engine/OverlapResult.h"
 #include "Engine/World.h"
 
 void AAstroGenerator::BeginPlay()
@@ -1340,9 +1341,19 @@ void AAstroGenerator::GenerateStarSystem(AStarSystem* NewStarSystem, TSharedPtr<
 		{EStarType::MultipleStar, [&StarSystemModel]() { StarSystemModel->AmountOfStars = FMath::RandRange(4, 6); }}
 	};
 
-	StarTypeMap.find(HomeSystemStarType) != StarTypeMap.end()
+	/*StarTypeMap.find(HomeSystemStarType) != StarTypeMap.end()
 		? StarTypeMap[HomeSystemStarType]()
-		: StarSystemModel->AmountOfStars = 1;
+		: StarSystemModel->AmountOfStars = 1;*/
+
+	if (auto it = StarTypeMap.find(HomeSystemStarType); it != StarTypeMap.end())
+	{
+		it->second(); // вызываем колбэк
+	}
+	else
+	{
+		StarSystemModel->AmountOfStars = 1; // дефолт
+	}
+	
 
 	//FVector LastStarLocation{0};
 	for (int StarNumber = 0; StarNumber < StarSystemModel->AmountOfStars; StarNumber++)

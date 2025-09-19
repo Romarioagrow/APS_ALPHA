@@ -23,7 +23,7 @@ public class APS_ALPHA : ModuleRules
 			PublicDependencyModuleNames.Add("WorldScapeEditor");
 		}
 		
-		PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore", "DirGravity" });
+		PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore", "DirGravity", "EnhancedInput" });
 
 		// Uncomment if you are using Slate UI
 		// PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });
