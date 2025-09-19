@@ -3,7 +3,9 @@
 
 #include "APS_GravityCharacter.h"
 
+#include "Components/CapsuleComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "GameFramework/SpringArmComponent.h"
 
 // Sets default values
 AAPS_GravityCharacter::AAPS_GravityCharacter()
@@ -32,41 +34,84 @@ void AAPS_GravityCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInp
 {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
 
+	PlayerInputComponent->BindAxis("RotatePitch", this, &AAPS_GravityCharacter::RotatePitch);
+	PlayerInputComponent->BindAxis("RotateRoll", this, &AAPS_GravityCharacter::RotateRoll);
+	PlayerInputComponent->BindAxis("RotateYaw", this, &AAPS_GravityCharacter::RotateYaw);
+
 }
 
 
-void AAPS_GravityCharacter::EnableZeroG(ACharacter* Character, float MaxSpeedZeroG = 600.f)
+void AAPS_GravityCharacter::EnableZeroG(ACharacter* Character)
 {
-	if (!Character) return;
 	auto* Move = Character->GetCharacterMovement();
-	if (!Move) return;
+	Move->SetMovementMode(MOVE_Flying);
+	Move->GravityScale = 0.f;
+	Move->bOrientRotationToMovement = false;        // не крутить от движения
 
-	// Полная невесомость
-	Move->GravityScale = 0.0f;               // отключает падение
-	Move->SetMovementMode(MOVE_Flying);      // свободный полёт
-	Move->MaxFlySpeed = MaxSpeedZeroG;
+	// Поворачивать актёра по контроллеру
+	Character->bUseControllerRotationYaw   = true;
+	Character->bUseControllerRotationPitch = true;
+	Character->bUseControllerRotationRoll  = true;
 
-	// Без авто-торможения
-	Move->BrakingFriction = 0.f;
-	Move->BrakingFrictionFactor = 0.f;
-	Move->BrakingDecelerationFlying = 0.f;
-	Move->AirControl = 0.f;
+	// Камера-бум должен брать поворот из контроллера
+	if (USpringArmComponent* Boom = Character->FindComponentByClass<USpringArmComponent>())
+		Boom->bUsePawnControlRotation = true;
 }
 
 
-void AAPS_GravityCharacter::DisableZeroG(ACharacter* Character, const FVector& GravityDir, float GravityScale = 1.f)
+void AAPS_GravityCharacter::DisableZeroG(ACharacter* Character, float InGravityScale)
 {
 	if (!Character) return;
-	auto* Move = Character->GetCharacterMovement();
-	if (!Move) return;
 
-	Move->SetMovementMode(MOVE_Walking);                 // или MOVE_Falling
-	Move->GravityScale = GravityScale;                   // вернули силу g
-	Move->SetGravityDirection(GravityDir.GetSafeNormal()); // направление g (UE5.4 фича)
+	if (UCharacterMovementComponent* Move = Character->GetCharacterMovement())
+	{
+		Move->SetMovementMode(MOVE_Walking);
+		Move->GravityScale = InGravityScale;
+		Move->bOrientRotationToMovement = true;   // персонаж поворачивается по движению
+	}
 
-	// Вернём стандартные тормоза (по желанию)
-	Move->BrakingFriction = 2.f;
-	Move->BrakingFrictionFactor = 1.f;
-	Move->BrakingDecelerationFlying = 2048.f;
-	Move->AirControl = 0.35f;
+	// персонаж больше НЕ крутится от контроллера
+	Character->bUseControllerRotationYaw   = false;
+	Character->bUseControllerRotationPitch = false;
+	Character->bUseControllerRotationRoll  = false;
+
+	// камера продолжает крутиться от контроллера (как в стандартном Third Person)
+	if (USpringArmComponent* Boom = Character->FindComponentByClass<USpringArmComponent>())
+	{
+		Boom->bUsePawnControlRotation = true;     // ← ключевая правка
+	}
+}
+
+
+void AAPS_GravityCharacter::MoveUp(const float Value)
+{
+	if (Value != 0 && bIsZeroG)
+	{
+		GetCapsuleComponent()->AddImpulse(GetActorUpVector() * (Value * CharacterJumpForce), "None", true);
+	}
+}
+
+void AAPS_GravityCharacter::RotatePitch(float Value)
+{
+	if (bIsZeroG && !FMath::IsNearlyZero(Value))
+		AddControllerPitchInput(Value * CharacterRotationScale);
+}
+
+void AAPS_GravityCharacter::RotateYaw(float Value)
+{
+	if (bIsZeroG && !FMath::IsNearlyZero(Value))
+		AddControllerYawInput(Value * CharacterRotationScale);
+}
+
+// У PlayerController нет готового AddControllerRollInput, поэтому делаем вручную:
+void AAPS_GravityCharacter::RotateRoll(float Value)
+{
+	if (!(bIsZeroG && !FMath::IsNearlyZero(Value))) return;
+
+	if (AController* PC = Controller)
+	{
+		const FRotator Ctrl = PC->GetControlRotation();
+		const FRotator New  = FRotator(Ctrl.Pitch, Ctrl.Yaw, Ctrl.Roll + Value * CharacterRotationScale);
+		PC->SetControlRotation(New);
+	}
 }
