@@ -27,11 +27,15 @@ public:
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 
 	UFUNCTION(BlueprintCallable)
-	void EnableZeroG(ACharacter* C, float MaxSpeedZeroG);
+	void EnableZeroG(ACharacter* Character, float MaxSpeedZeroG);
 
 	UFUNCTION(BlueprintCallable)
-	void DisableZeroG(ACharacter* C, const FVector& GravityDir, float GravityScale);
+	void DisableZeroG(ACharacter* Character, const FVector& GravityDir, float GravityScale);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	FVector GravityDirection;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	bool bIsZeroG;
+	
 };
