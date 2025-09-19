@@ -26,4 +26,12 @@ public:
 	// Called to bind functionality to input
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 
+	UFUNCTION(BlueprintCallable)
+	void EnableZeroG(ACharacter* C, float MaxSpeedZeroG);
+
+	UFUNCTION(BlueprintCallable)
+	void DisableZeroG(ACharacter* C, const FVector& GravityDir, float GravityScale);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FVector GravityDirection;
 };
