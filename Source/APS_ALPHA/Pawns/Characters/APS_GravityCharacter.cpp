@@ -56,9 +56,9 @@ void AAPS_GravityCharacter::EnableZeroG(ACharacter* Character)
 		M->BrakingDecelerationFlying = 0.f;
 	}
 
-	bUseControllerRotationYaw   = true;
-	bUseControllerRotationPitch = true;
-	bUseControllerRotationRoll  = false;
+	/*bUseControllerRotationYaw   = false;
+	bUseControllerRotationPitch = false;
+	bUseControllerRotationRoll  = false;*/
 
 	if (USpringArmComponent* Boom = FindComponentByClass<USpringArmComponent>())
 	{
@@ -85,9 +85,9 @@ void AAPS_GravityCharacter::DisableZeroG(ACharacter* Character, float InGravityS
 	}
 
 	// ДЕФОЛТ: актёр не крутится от контроллера (камера — отдельно)
-	bUseControllerRotationYaw   = false;
+	/*bUseControllerRotationYaw   = false;
 	bUseControllerRotationPitch = false;
-	bUseControllerRotationRoll  = false;
+	bUseControllerRotationRoll  = false;*/
 
 	// Камера продолжает крутиться мышью
 	if (USpringArmComponent* Boom = FindComponentByClass<USpringArmComponent>())
@@ -104,30 +104,28 @@ void AAPS_GravityCharacter::DisableZeroG(ACharacter* Character, float InGravityS
 }
 
 
-// ========== INPUT: ПОВОРОТ КАМЕРОЙ ==========
 void AAPS_GravityCharacter::RotatePitch(float Value)
 {
-    if (FMath::IsNearlyZero(Value)) return;
-    AddControllerPitchInput(Value * CharacterRotationScale);
+    /*if (FMath::IsNearlyZero(Value)) return;
+    AddControllerPitchInput(Value * CharacterRotationScale);*/
 }
 
 void AAPS_GravityCharacter::RotateYaw(float Value)
 {
-    if (FMath::IsNearlyZero(Value)) return;
-    AddControllerYawInput(Value * CharacterRotationScale);
+    /*if (FMath::IsNearlyZero(Value)) return;
+    AddControllerYawInput(Value * CharacterRotationScale);*/
 }
 
 void AAPS_GravityCharacter::RotateRoll(float Value)
 {
-    if (FMath::IsNearlyZero(Value)) return;
+    /*if (FMath::IsNearlyZero(Value)) return;
     if (AController* PC = Controller)
     {
         const FRotator R = PC->GetControlRotation();
         PC->SetControlRotation(FRotator(R.Pitch, R.Yaw, R.Roll + Value * CharacterRotationScale));
-    }
+    }*/
 }
 
-// ========== INPUT: ДВИЖЕНИЕ ==========
 void AAPS_GravityCharacter::MoveForward(float Value)
 {
     if (FMath::IsNearlyZero(Value)) return;
@@ -142,13 +140,7 @@ void AAPS_GravityCharacter::MoveForward(float Value)
         const FRotator Target(Cam.Pitch, Cam.Yaw, GetActorRotation().Roll);
         Controller->SetControlRotation(Target);
         SetActorRotation(Target);
-        //return;
     }
-
-    /*// WALKING: движение по камере, проекция на «пол» (перпендикуляр к гравитации)
-    const FVector G = GetCharacterMovement()->GetGravityDirection(); // единичный "вниз"
-    const FVector FwdOnFloor = FVector::VectorPlaneProject(FRotationMatrix(Cam).GetUnitAxis(EAxis::X), G).GetSafeNormal();
-    AddMovementInput(FwdOnFloor, Value);*/
 }
 
 void AAPS_GravityCharacter::MoveRight(float Value)
@@ -161,13 +153,7 @@ void AAPS_GravityCharacter::MoveRight(float Value)
     {
         const FVector Right = FRotationMatrix(Cam).GetUnitAxis(EAxis::Y);
         AddMovementInput(Right, Value);
-        //return;
     }
-
-    /*// WALKING: чистый страйф — камера на полу
-    const FVector G = GetCharacterMovement()->GetGravityDirection();
-    const FVector RightOnFloor = FVector::VectorPlaneProject(FRotationMatrix(Cam).GetUnitAxis(EAxis::Y), G).GetSafeNormal();
-    AddMovementInput(RightOnFloor, Value);*/
 }
 
 void AAPS_GravityCharacter::MoveUp(float Value)
@@ -179,37 +165,5 @@ void AAPS_GravityCharacter::MoveUp(float Value)
         const FRotator Cam = (Controller ? Controller->GetControlRotation() : GetActorRotation());
         const FVector Up = FRotationMatrix(Cam).GetUnitAxis(EAxis::Z);
         AddMovementInput(Up, Value);
-        //return;
     }
-
-    // WALKING: по желанию — прыжок/ничего
 }
-
-/*void AAPS_GravityCharacter::CharacterAction()
-{
-	GEngine->AddOnScreenDebugMessage(-1, 1.0f, FColor::Green, FString::Printf(TEXT("CharacterAction!")));
-
-	if (CurrentGravityType == EGravityType::OnShip)
-	{
-		if (CurrentSpaceship && isAllowedToControlSpaceship)
-		{
-			APlayerController* PlayerController = GetWorld()->GetFirstPlayerController();
-			if (PlayerController)
-			{
-				CurrentSpaceship->TakeControl(this);
-				// Possess the spaceship
-				PlayerController->Possess(CurrentSpaceship);
-
-				// Attach the pawn to the PilotChair of the spaceship
-				FAttachmentTransformRules AttachmentRules(EAttachmentRule::SnapToTarget, true);
-				AttachToComponent(CurrentSpaceship->PilotChair, AttachmentRules);
-
-				// Disable pawn's input and movement
-				SetActorEnableCollision(false);
-				SetActorTickEnabled(false);
-				CapsuleComponent->SetSimulatePhysics(false);
-				AddActorLocalRotation(FRotator(0.0, 180.0, 0.0));
-			}
-		}
-	}
-}*/
