@@ -10,23 +10,20 @@
 // Sets default values
 AAPS_GravityCharacter::AAPS_GravityCharacter()
 {
- 	// Set this character to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
+	// Set this character to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = true;
-
 }
 
 // Called when the game starts or when spawned
 void AAPS_GravityCharacter::BeginPlay()
 {
 	Super::BeginPlay();
-	
 }
 
 // Called every frame
 void AAPS_GravityCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
-
 }
 
 // Called to bind functionality to input
@@ -41,7 +38,6 @@ void AAPS_GravityCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInp
 	PlayerInputComponent->BindAxis("RotatePitch", this, &AAPS_GravityCharacter::RotatePitch);
 	PlayerInputComponent->BindAxis("RotateRoll", this, &AAPS_GravityCharacter::RotateRoll);
 	PlayerInputComponent->BindAxis("RotateYaw", this, &AAPS_GravityCharacter::RotateYaw);
-
 }
 
 
@@ -104,66 +100,101 @@ void AAPS_GravityCharacter::DisableZeroG(ACharacter* Character, float InGravityS
 }
 
 
-void AAPS_GravityCharacter::RotatePitch(float Value)
-{
-    /*if (FMath::IsNearlyZero(Value)) return;
-    AddControllerPitchInput(Value * CharacterRotationScale);*/
-}
-
 void AAPS_GravityCharacter::RotateYaw(float Value)
 {
-    /*if (FMath::IsNearlyZero(Value)) return;
-    AddControllerYawInput(Value * CharacterRotationScale);*/
+	if (FMath::IsNearlyZero(Value)) return;
+
+	if (bIsZeroG)
+	{
+		const float Delta = Value * CharacterRotationScale;
+
+		// 1) крутим актёра (локальный yaw)
+		AddActorLocalRotation(FRotator(0.f, Delta, 0.f));
+
+		// 2) крутим камеру (контроллер) тем же дельта-углом
+		if (AController* PC = Controller)
+		{
+			FRotator Ctrl = PC->GetControlRotation();
+			Ctrl.Yaw = FRotator::NormalizeAxis(Ctrl.Yaw + Delta);
+			PC->SetControlRotation(Ctrl);
+		}
+	}
+}
+
+void AAPS_GravityCharacter::RotatePitch(float Value)
+{
+	/*if (FMath::IsNearlyZero(Value)) return;
+
+	const float Delta = Value * CharacterRotationScale;
+
+	// 1) крутим актёра (локальный yaw)
+	AddActorLocalRotation(FRotator(0.f, Delta, 0.f));
+
+	// 2) крутим камеру (контроллер) тем же дельта-углом
+	if (AController* PC = Controller)
+	{
+		FRotator Ctrl = PC->GetControlRotation();
+		Ctrl.Pitch = FRotator::NormalizeAxis(Ctrl.Pitch + Delta);
+		PC->SetControlRotation(Ctrl);
+	}*/
 }
 
 void AAPS_GravityCharacter::RotateRoll(float Value)
 {
-    /*if (FMath::IsNearlyZero(Value)) return;
-    if (AController* PC = Controller)
-    {
-        const FRotator R = PC->GetControlRotation();
-        PC->SetControlRotation(FRotator(R.Pitch, R.Yaw, R.Roll + Value * CharacterRotationScale));
-    }*/
+	/*if (FMath::IsNearlyZero(Value)) return;
+
+	const float Delta = Value * CharacterRotationScale;
+
+	// 1) крутим актёра (локальный yaw)
+	AddActorLocalRotation(FRotator(0.f, Delta, 0.f));
+
+	// 2) крутим камеру (контроллер) тем же дельта-углом
+	if (AController* PC = Controller)
+	{
+		FRotator Ctrl = PC->GetControlRotation();
+		Ctrl.Roll = FRotator::NormalizeAxis(Ctrl.Roll + Delta);
+		PC->SetControlRotation(Ctrl);
+	}*/
 }
 
 void AAPS_GravityCharacter::MoveForward(float Value)
 {
-    if (FMath::IsNearlyZero(Value)) return;
+	if (FMath::IsNearlyZero(Value)) return;
 
-    const FRotator Cam = (Controller ? Controller->GetControlRotation() : GetActorRotation());
+	const FRotator Cam = (Controller ? Controller->GetControlRotation() : GetActorRotation());
 
-    if (GetCharacterMovement()->MovementMode == MOVE_Flying) // ZERO-G
-    {
-        const FVector Fwd = FRotationMatrix(Cam).GetUnitAxis(EAxis::X);
-        AddMovementInput(Fwd, Value);
-        // мгновенно выровнять по камере по yaw+pitch (roll не трогаем)
-        const FRotator Target(Cam.Pitch, Cam.Yaw, GetActorRotation().Roll);
-        Controller->SetControlRotation(Target);
-        SetActorRotation(Target);
-    }
+	if (GetCharacterMovement()->MovementMode == MOVE_Flying) // ZERO-G
+	{
+		const FVector Fwd = FRotationMatrix(Cam).GetUnitAxis(EAxis::X);
+		AddMovementInput(Fwd, Value);
+		// мгновенно выровнять по камере по yaw+pitch (roll не трогаем)
+		const FRotator Target(Cam.Pitch, Cam.Yaw, GetActorRotation().Roll);
+		Controller->SetControlRotation(Target);
+		SetActorRotation(Target);
+	}
 }
 
 void AAPS_GravityCharacter::MoveRight(float Value)
 {
-    if (FMath::IsNearlyZero(Value)) return;
+	if (FMath::IsNearlyZero(Value)) return;
 
-    const FRotator Cam = (Controller ? Controller->GetControlRotation() : GetActorRotation());
+	const FRotator Cam = (Controller ? Controller->GetControlRotation() : GetActorRotation());
 
-    if (GetCharacterMovement()->MovementMode == MOVE_Flying) // ZERO-G
-    {
-        const FVector Right = FRotationMatrix(Cam).GetUnitAxis(EAxis::Y);
-        AddMovementInput(Right, Value);
-    }
+	if (GetCharacterMovement()->MovementMode == MOVE_Flying) // ZERO-G
+	{
+		const FVector Right = FRotationMatrix(Cam).GetUnitAxis(EAxis::Y);
+		AddMovementInput(Right, Value);
+	}
 }
 
 void AAPS_GravityCharacter::MoveUp(float Value)
 {
-    if (FMath::IsNearlyZero(Value)) return;
+	if (FMath::IsNearlyZero(Value)) return;
 
-    if (GetCharacterMovement()->MovementMode == MOVE_Flying) // ZERO-G
-    {
-        const FRotator Cam = (Controller ? Controller->GetControlRotation() : GetActorRotation());
-        const FVector Up = FRotationMatrix(Cam).GetUnitAxis(EAxis::Z);
-        AddMovementInput(Up, Value);
-    }
+	if (GetCharacterMovement()->MovementMode == MOVE_Flying) // ZERO-G
+	{
+		const FRotator Cam = (Controller ? Controller->GetControlRotation() : GetActorRotation());
+		const FVector Up = FRotationMatrix(Cam).GetUnitAxis(EAxis::Z);
+		AddMovementInput(Up, Value);
+	}
 }
