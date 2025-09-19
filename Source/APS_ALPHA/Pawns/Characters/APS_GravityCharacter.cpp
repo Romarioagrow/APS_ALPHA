@@ -34,6 +34,10 @@ void AAPS_GravityCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInp
 {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
 
+	PlayerInputComponent->BindAxis("MoveForward", this, &AAPS_GravityCharacter::MoveForward);
+	PlayerInputComponent->BindAxis("MoveRight", this, &AAPS_GravityCharacter::MoveRight);
+	PlayerInputComponent->BindAxis("MoveUp", this, &AAPS_GravityCharacter::MoveUp);
+
 	PlayerInputComponent->BindAxis("RotatePitch", this, &AAPS_GravityCharacter::RotatePitch);
 	PlayerInputComponent->BindAxis("RotateRoll", this, &AAPS_GravityCharacter::RotateRoll);
 	PlayerInputComponent->BindAxis("RotateYaw", this, &AAPS_GravityCharacter::RotateYaw);
@@ -43,75 +47,169 @@ void AAPS_GravityCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInp
 
 void AAPS_GravityCharacter::EnableZeroG(ACharacter* Character)
 {
-	auto* Move = Character->GetCharacterMovement();
-	Move->SetMovementMode(MOVE_Flying);
-	Move->GravityScale = 0.f;
-	Move->bOrientRotationToMovement = false;        // не крутить от движения
+	if (UCharacterMovementComponent* M = GetCharacterMovement())
+	{
+		M->SetMovementMode(MOVE_Flying);
+		M->GravityScale = 0.f;
+		M->bOrientRotationToMovement = false;
+		M->BrakingFriction = 0.f;
+		M->BrakingDecelerationFlying = 0.f;
+	}
 
-	// Поворачивать актёра по контроллеру
-	Character->bUseControllerRotationYaw   = true;
-	Character->bUseControllerRotationPitch = true;
-	Character->bUseControllerRotationRoll  = true;
+	bUseControllerRotationYaw   = true;
+	bUseControllerRotationPitch = true;
+	bUseControllerRotationRoll  = false;
 
-	// Камера-бум должен брать поворот из контроллера
-	if (USpringArmComponent* Boom = Character->FindComponentByClass<USpringArmComponent>())
+	if (USpringArmComponent* Boom = FindComponentByClass<USpringArmComponent>())
+	{
 		Boom->bUsePawnControlRotation = true;
+		Boom->bEnableCameraLag = false;
+		Boom->bEnableCameraRotationLag = false;
+	}
 }
 
 
 void AAPS_GravityCharacter::DisableZeroG(ACharacter* Character, float InGravityScale)
 {
-	if (!Character) return;
-
-	if (UCharacterMovementComponent* Move = Character->GetCharacterMovement())
+	if (UCharacterMovementComponent* M = GetCharacterMovement())
 	{
-		Move->SetMovementMode(MOVE_Walking);
-		Move->GravityScale = InGravityScale;
-		Move->bOrientRotationToMovement = true;   // персонаж поворачивается по движению
+		M->SetMovementMode(MOVE_Walking);
+		M->GravityScale = InGravityScale;
+
+		// ДЕФОЛТ: поворачиваемся по направлению движения (нормальная ходьба вбок работает)
+		M->bOrientRotationToMovement = true;
+
+		// Вернуть стандартные тормоза (если менял)
+		M->BrakingFriction = 2.f;
+		M->BrakingDecelerationWalking = 2048.f;
 	}
 
-	// персонаж больше НЕ крутится от контроллера
-	Character->bUseControllerRotationYaw   = false;
-	Character->bUseControllerRotationPitch = false;
-	Character->bUseControllerRotationRoll  = false;
+	// ДЕФОЛТ: актёр не крутится от контроллера (камера — отдельно)
+	bUseControllerRotationYaw   = false;
+	bUseControllerRotationPitch = false;
+	bUseControllerRotationRoll  = false;
 
-	// камера продолжает крутиться от контроллера (как в стандартном Third Person)
-	if (USpringArmComponent* Boom = Character->FindComponentByClass<USpringArmComponent>())
+	// Камера продолжает крутиться мышью
+	if (USpringArmComponent* Boom = FindComponentByClass<USpringArmComponent>())
 	{
-		Boom->bUsePawnControlRotation = true;     // ← ключевая правка
+		Boom->bUsePawnControlRotation = true;
+	}
+
+	// На всякий: убрать возможный крен камеры после Zero-G
+	if (AController* PC = Controller)
+	{
+		const FRotator R = PC->GetControlRotation();
+		PC->SetControlRotation(FRotator(R.Pitch, R.Yaw, 0.f));
 	}
 }
 
 
-void AAPS_GravityCharacter::MoveUp(const float Value)
-{
-	if (Value != 0 && bIsZeroG)
-	{
-		GetCapsuleComponent()->AddImpulse(GetActorUpVector() * (Value * CharacterJumpForce), "None", true);
-	}
-}
-
+// ========== INPUT: ПОВОРОТ КАМЕРОЙ ==========
 void AAPS_GravityCharacter::RotatePitch(float Value)
 {
-	if (bIsZeroG && !FMath::IsNearlyZero(Value))
-		AddControllerPitchInput(Value * CharacterRotationScale);
+    if (FMath::IsNearlyZero(Value)) return;
+    AddControllerPitchInput(Value * CharacterRotationScale);
 }
 
 void AAPS_GravityCharacter::RotateYaw(float Value)
 {
-	if (bIsZeroG && !FMath::IsNearlyZero(Value))
-		AddControllerYawInput(Value * CharacterRotationScale);
+    if (FMath::IsNearlyZero(Value)) return;
+    AddControllerYawInput(Value * CharacterRotationScale);
 }
 
-// У PlayerController нет готового AddControllerRollInput, поэтому делаем вручную:
 void AAPS_GravityCharacter::RotateRoll(float Value)
 {
-	if (!(bIsZeroG && !FMath::IsNearlyZero(Value))) return;
-
-	if (AController* PC = Controller)
-	{
-		const FRotator Ctrl = PC->GetControlRotation();
-		const FRotator New  = FRotator(Ctrl.Pitch, Ctrl.Yaw, Ctrl.Roll + Value * CharacterRotationScale);
-		PC->SetControlRotation(New);
-	}
+    if (FMath::IsNearlyZero(Value)) return;
+    if (AController* PC = Controller)
+    {
+        const FRotator R = PC->GetControlRotation();
+        PC->SetControlRotation(FRotator(R.Pitch, R.Yaw, R.Roll + Value * CharacterRotationScale));
+    }
 }
+
+// ========== INPUT: ДВИЖЕНИЕ ==========
+void AAPS_GravityCharacter::MoveForward(float Value)
+{
+    if (FMath::IsNearlyZero(Value)) return;
+
+    const FRotator Cam = (Controller ? Controller->GetControlRotation() : GetActorRotation());
+
+    if (GetCharacterMovement()->MovementMode == MOVE_Flying) // ZERO-G
+    {
+        const FVector Fwd = FRotationMatrix(Cam).GetUnitAxis(EAxis::X);
+        AddMovementInput(Fwd, Value);
+        // мгновенно выровнять по камере по yaw+pitch (roll не трогаем)
+        const FRotator Target(Cam.Pitch, Cam.Yaw, GetActorRotation().Roll);
+        Controller->SetControlRotation(Target);
+        SetActorRotation(Target);
+        //return;
+    }
+
+    /*// WALKING: движение по камере, проекция на «пол» (перпендикуляр к гравитации)
+    const FVector G = GetCharacterMovement()->GetGravityDirection(); // единичный "вниз"
+    const FVector FwdOnFloor = FVector::VectorPlaneProject(FRotationMatrix(Cam).GetUnitAxis(EAxis::X), G).GetSafeNormal();
+    AddMovementInput(FwdOnFloor, Value);*/
+}
+
+void AAPS_GravityCharacter::MoveRight(float Value)
+{
+    if (FMath::IsNearlyZero(Value)) return;
+
+    const FRotator Cam = (Controller ? Controller->GetControlRotation() : GetActorRotation());
+
+    if (GetCharacterMovement()->MovementMode == MOVE_Flying) // ZERO-G
+    {
+        const FVector Right = FRotationMatrix(Cam).GetUnitAxis(EAxis::Y);
+        AddMovementInput(Right, Value);
+        //return;
+    }
+
+    /*// WALKING: чистый страйф — камера на полу
+    const FVector G = GetCharacterMovement()->GetGravityDirection();
+    const FVector RightOnFloor = FVector::VectorPlaneProject(FRotationMatrix(Cam).GetUnitAxis(EAxis::Y), G).GetSafeNormal();
+    AddMovementInput(RightOnFloor, Value);*/
+}
+
+void AAPS_GravityCharacter::MoveUp(float Value)
+{
+    if (FMath::IsNearlyZero(Value)) return;
+
+    if (GetCharacterMovement()->MovementMode == MOVE_Flying) // ZERO-G
+    {
+        const FRotator Cam = (Controller ? Controller->GetControlRotation() : GetActorRotation());
+        const FVector Up = FRotationMatrix(Cam).GetUnitAxis(EAxis::Z);
+        AddMovementInput(Up, Value);
+        //return;
+    }
+
+    // WALKING: по желанию — прыжок/ничего
+}
+
+/*void AAPS_GravityCharacter::CharacterAction()
+{
+	GEngine->AddOnScreenDebugMessage(-1, 1.0f, FColor::Green, FString::Printf(TEXT("CharacterAction!")));
+
+	if (CurrentGravityType == EGravityType::OnShip)
+	{
+		if (CurrentSpaceship && isAllowedToControlSpaceship)
+		{
+			APlayerController* PlayerController = GetWorld()->GetFirstPlayerController();
+			if (PlayerController)
+			{
+				CurrentSpaceship->TakeControl(this);
+				// Possess the spaceship
+				PlayerController->Possess(CurrentSpaceship);
+
+				// Attach the pawn to the PilotChair of the spaceship
+				FAttachmentTransformRules AttachmentRules(EAttachmentRule::SnapToTarget, true);
+				AttachToComponent(CurrentSpaceship->PilotChair, AttachmentRules);
+
+				// Disable pawn's input and movement
+				SetActorEnableCollision(false);
+				SetActorTickEnabled(false);
+				CapsuleComponent->SetSimulatePhysics(false);
+				AddActorLocalRotation(FRotator(0.0, 180.0, 0.0));
+			}
+		}
+	}
+}*/

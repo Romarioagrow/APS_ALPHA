@@ -46,7 +46,9 @@ public:
 	
 	UFUNCTION()
 	void RotateRoll(float Value);
-	
+	void MoveForward(float Value);
+	void MoveRight(float Value);
+
 	UFUNCTION()
 	void RotateYaw(float Value);
 
