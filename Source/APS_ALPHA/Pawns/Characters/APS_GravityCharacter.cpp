@@ -3,15 +3,33 @@
 
 #include "APS_GravityCharacter.h"
 
+#include "APS_ALPHA/Actors/Astro/OrbitalBody.h"
+#include "APS_ALPHA/Actors/Astro/WorldActor.h"
+#include "APS_ALPHA/Actors/Tech/SpaceHeadquarters.h"
+#include "APS_ALPHA/Actors/Tech/SpaceStation.h"
+#include "APS_ALPHA/Core/Interfaces/NavigatableBody.h"
+#include "APS_ALPHA/Pawns/Spaceships/Spaceship.h"
+#include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/SpringArmComponent.h"
+#include "Kismet/GameplayStatics.h"
 
 // Sets default values
 AAPS_GravityCharacter::AAPS_GravityCharacter()
 {
 	// Set this character to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = true;
+
+	// Create and set up SpringArmComponent
+	CameraSpringArm = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraSpringArm"));
+	CameraSpringArm->SetupAttachment(GetCapsuleComponent());
+	CameraSpringArm->TargetArmLength = 300.0f;
+	CameraSpringArm->bUsePawnControlRotation = false;
+
+	// Create and set up CameraComponent
+	PlayerCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("PlayerCamera"));
+	PlayerCamera->SetupAttachment(CameraSpringArm, USpringArmComponent::SocketName);
 }
 
 // Called when the game starts or when spawned
@@ -24,6 +42,12 @@ void AAPS_GravityCharacter::BeginPlay()
 void AAPS_GravityCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+
+	if (!bIsManualZeroG)
+	{
+		UpdateGravityState();
+	}
+	
 }
 
 // Called to bind functionality to input
@@ -41,68 +65,133 @@ void AAPS_GravityCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInp
 }
 
 
-void AAPS_GravityCharacter::EnableZeroG(ACharacter* Character)
+void AAPS_GravityCharacter::EnableZeroG()
 {
-	if (UCharacterMovementComponent* M = GetCharacterMovement())
+	if (!bIsZeroG)
 	{
-		M->SetMovementMode(MOVE_Flying);
-		M->GravityScale = 0.f;
-		M->bOrientRotationToMovement = false;
-		M->BrakingFriction = 0.f;
-		M->BrakingDecelerationFlying = 0.f;
-	}
+		bIsZeroG = true;
+		GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Green, FString::Printf(TEXT("EnableZeroG")));
 
-	/*bUseControllerRotationYaw   = false;
-	bUseControllerRotationPitch = false;
-	bUseControllerRotationRoll  = false;*/
+		if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
+		{
+			MovementComponent->SetMovementMode(MOVE_Flying);
+			//MovementComponent->GravityScale = 0.f;
+			//MovementComponent->bOrientRotationToMovement = false;
+			//MovementComponent->BrakingFriction = 0.f;
+			//MovementComponent->BrakingDecelerationFlying = 0.f;
+		}
 
-	if (USpringArmComponent* Boom = FindComponentByClass<USpringArmComponent>())
-	{
-		Boom->bUsePawnControlRotation = true;
-		Boom->bEnableCameraLag = false;
-		Boom->bEnableCameraRotationLag = false;
+		/*bUseControllerRotationYaw   = false;
+		bUseControllerRotationPitch = false;
+		bUseControllerRotationRoll  = false;*/
+
+		/*if (USpringArmComponent* Boom = FindComponentByClass<USpringArmComponent>())
+		{
+			Boom->bUsePawnControlRotation = true;
+			Boom->bEnableCameraLag = false;
+			Boom->bEnableCameraRotationLag = false;
+		}*/
 	}
 }
 
 
-void AAPS_GravityCharacter::DisableZeroG(ACharacter* Character, float InGravityScale)
+void AAPS_GravityCharacter::DisableZeroG(float InGravityScale)
 {
-	if (UCharacterMovementComponent* M = GetCharacterMovement())
+	if (bIsZeroG)
 	{
-		M->SetMovementMode(MOVE_Walking);
-		M->GravityScale = InGravityScale;
+		bIsZeroG = false;
+		GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Red, FString::Printf(TEXT("DisableZeroG")));
 
-		// ДЕФОЛТ: поворачиваемся по направлению движения (нормальная ходьба вбок работает)
-		M->bOrientRotationToMovement = true;
 
-		// Вернуть стандартные тормоза (если менял)
-		M->BrakingFriction = 2.f;
-		M->BrakingDecelerationWalking = 2048.f;
-	}
+		if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
+		{
+			MovementComponent->SetMovementMode(MOVE_Walking);
+			//MovementComponent->GravityScale = InGravityScale;
 
-	// ДЕФОЛТ: актёр не крутится от контроллера (камера — отдельно)
-	/*bUseControllerRotationYaw   = false;
-	bUseControllerRotationPitch = false;
-	bUseControllerRotationRoll  = false;*/
+			// ДЕФОЛТ: поворачиваемся по направлению движения (нормальная ходьба вбок работает)
+			//MovementComponent->bOrientRotationToMovement = true;
 
-	// Камера продолжает крутиться мышью
-	if (USpringArmComponent* Boom = FindComponentByClass<USpringArmComponent>())
-	{
-		Boom->bUsePawnControlRotation = true;
-	}
+			// Вернуть стандартные тормоза (если менял)
+			//MovementComponent->BrakingFriction = 2.f;
+			//MovementComponent->BrakingDecelerationWalking = 2048.f;
+		}
 
-	// На всякий: убрать возможный крен камеры после Zero-G
-	if (AController* PC = Controller)
-	{
-		const FRotator R = PC->GetControlRotation();
-		PC->SetControlRotation(FRotator(R.Pitch, R.Yaw, 0.f));
+		// ДЕФОЛТ: актёр не крутится от контроллера (камера — отдельно)
+		/*bUseControllerRotationYaw   = false;
+		bUseControllerRotationPitch = false;
+		bUseControllerRotationRoll  = false;*/
+
+		// Камера продолжает крутиться мышью
+		/*if (USpringArmComponent* Boom = FindComponentByClass<USpringArmComponent>())
+		{
+			Boom->bUsePawnControlRotation = true;
+		}*/
+
+		// На всякий: убрать возможный крен камеры после Zero-G
+		/*if (AController* PC = Controller)
+		{
+			const FRotator R = PC->GetControlRotation();
+			PC->SetControlRotation(FRotator(R.Pitch, R.Yaw, 0.f));
+		}*/
 	}
 }
 
+
+void AAPS_GravityCharacter::UpdateGravityState()
+{
+	/*FString GravityStateString = StaticEnum<EGravityState>()->GetNameStringByValue(
+		static_cast<int32>(CurrentGravityState));
+	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green,
+									 FString::Printf(TEXT("GravityStateString: %s"), *GravityStateString));*/
+
+	if (UWorld* World = GetWorld())
+	{
+		const float GravityDistanceThreshold = 15000.0f; // TODO: Distance to gravity
+
+		FVector StartLocation = GetActorLocation();
+		FVector EndLocation = StartLocation - (GetActorUpVector() * GravityDistanceThreshold);
+		FHitResult HitResult;
+		FCollisionQueryParams CollisionParams;
+		CollisionParams.AddIgnoredActor(this);
+
+		bool bHit = World->LineTraceSingleByChannel(HitResult, StartLocation, EndLocation, ECC_Visibility,
+		                                            CollisionParams);
+
+		FColor DebugLineColor = bHit ? FColor::Green : FColor::Red;
+		DrawDebugLine(World, StartLocation, EndLocation, DebugLineColor, false, 2.0f, 0, 2.0f);
+
+		if (bHit)
+		{
+			/*CurrentGravityState = EGravityState::Attracting;
+			UpdateGravityPhysicParams();*/
+
+			float DistanceToGround = (HitResult.ImpactPoint - StartLocation).Size();
+			HeightAboveGround = DistanceToGround - GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+			GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Yellow,
+			                                 FString::Printf(TEXT("HeightAboveGround: %f"), HeightAboveGround));
+
+			//bIsZeroG = false;
+			DisableZeroG(1);
+		}
+		else
+		{
+			/*CurrentGravityState = EGravityState::LowG;
+			UpdateGravityPhysicParams();*/
+			//bIsZeroG = true;
+			EnableZeroG();
+		}
+	}
+}
 
 void AAPS_GravityCharacter::RotateYaw(float Value)
 {
-	if (FMath::IsNearlyZero(Value)) return;
+	if (Value != 0)
+	{
+		FRotator RotationToAdd(0.0f, 0.0f, 0.0f);
+		RotationToAdd.Yaw = Value * CharacterRotationScale;
+		AddActorLocalRotation(RotationToAdd);
+	}
+	/*if (FMath::IsNearlyZero(Value)) return;
 
 	if (bIsZeroG)
 	{
@@ -118,11 +207,21 @@ void AAPS_GravityCharacter::RotateYaw(float Value)
 			Ctrl.Yaw = FRotator::NormalizeAxis(Ctrl.Yaw + Delta);
 			PC->SetControlRotation(Ctrl);
 		}
-	}
+	}*/
 }
 
 void AAPS_GravityCharacter::RotatePitch(float Value)
 {
+	if (Value != 0)
+	{
+		FRotator RotationToAdd(0.0f, 0.0f, 0.0f);
+
+		RotationToAdd.Pitch = Value * CharacterRotationScale;
+		AddActorLocalRotation(RotationToAdd);
+		
+	}
+
+	
 	/*if (FMath::IsNearlyZero(Value)) return;
 
 	const float Delta = Value * CharacterRotationScale;
@@ -141,6 +240,15 @@ void AAPS_GravityCharacter::RotatePitch(float Value)
 
 void AAPS_GravityCharacter::RotateRoll(float Value)
 {
+
+	if (Value != 0)
+	{
+		FRotator RotationToAdd(0.0f, 0.0f, 0.0f);
+		RotationToAdd.Roll = Value * CharacterRotationScale;
+		AddActorLocalRotation(RotationToAdd);
+	}
+
+	
 	/*if (FMath::IsNearlyZero(Value)) return;
 
 	const float Delta = Value * CharacterRotationScale;
@@ -159,7 +267,7 @@ void AAPS_GravityCharacter::RotateRoll(float Value)
 
 void AAPS_GravityCharacter::MoveForward(float Value)
 {
-	if (FMath::IsNearlyZero(Value)) return;
+	/*if (FMath::IsNearlyZero(Value)) return;
 
 	const FRotator Cam = (Controller ? Controller->GetControlRotation() : GetActorRotation());
 
@@ -171,12 +279,12 @@ void AAPS_GravityCharacter::MoveForward(float Value)
 		const FRotator Target(Cam.Pitch, Cam.Yaw, GetActorRotation().Roll);
 		Controller->SetControlRotation(Target);
 		SetActorRotation(Target);
-	}
+	}*/
 }
 
 void AAPS_GravityCharacter::MoveRight(float Value)
 {
-	if (FMath::IsNearlyZero(Value)) return;
+	/*if (FMath::IsNearlyZero(Value)) return;
 
 	const FRotator Cam = (Controller ? Controller->GetControlRotation() : GetActorRotation());
 
@@ -184,7 +292,7 @@ void AAPS_GravityCharacter::MoveRight(float Value)
 	{
 		const FVector Right = FRotationMatrix(Cam).GetUnitAxis(EAxis::Y);
 		AddMovementInput(Right, Value);
-	}
+	}*/
 }
 
 void AAPS_GravityCharacter::MoveUp(float Value)
@@ -193,8 +301,108 @@ void AAPS_GravityCharacter::MoveUp(float Value)
 
 	if (GetCharacterMovement()->MovementMode == MOVE_Flying) // ZERO-G
 	{
-		const FRotator Cam = (Controller ? Controller->GetControlRotation() : GetActorRotation());
-		const FVector Up = FRotationMatrix(Cam).GetUnitAxis(EAxis::Z);
-		AddMovementInput(Up, Value);
+		const FRotator Rotation = (Controller ? Controller->GetControlRotation() : GetActorRotation());
+		const FVector VectorUp = FRotationMatrix(Rotation).GetUnitAxis(EAxis::Z);
+		AddMovementInput(VectorUp, Value);
 	}
+}
+
+void AAPS_GravityCharacter::RunGravityCheck(ACharacter* Self)
+{
+	if (!Self) return;
+
+	{
+		//FName TagToCheck = "GravitySource";
+		TArray<AActor*> GravitySources;
+		TArray<AWorldActor*> WorldNavigatableActors;
+		UGameplayStatics::GetAllActorsOfClass(Self->GetWorld(), AWorldActor::StaticClass(), GravitySources);
+		TMap<AWorldActor*, double> ActorDistances;
+
+		for (AActor* Actor : GravitySources)
+		{
+			if (Actor && Actor->GetClass()->ImplementsInterface(UNavigatableBody::StaticClass()))
+			{
+				AWorldActor* WorldNavigatableActor = Cast<AWorldActor>(Actor);
+				WorldNavigatableActors.Add(WorldNavigatableActor);
+
+				double Distance = (FVector::Distance(Self->GetActorLocation(),
+				                                     WorldNavigatableActor->GetActorLocation()) / 100000.0) -
+					WorldNavigatableActor->RadiusKM;
+				ActorDistances.Add(WorldNavigatableActor, Distance);
+			}
+		}
+
+		WorldNavigatableActors.Sort([&](const AWorldActor& A, const AWorldActor& B)
+		{
+			return ActorDistances[&A] < ActorDistances[&B];
+		});
+
+		if (WorldNavigatableActors.Num() > 0)
+		{
+			AWorldActor* ClosestActor = WorldNavigatableActors[0];
+
+			FString DebugMessageClosest = FString::Printf(
+				TEXT("Closest Actor: %s \nDistance to surface: %f km \nAffectionRadiusKM: %f"),
+				*ClosestActor->GetFName().ToString(), ActorDistances[ClosestActor],
+				ClosestActor->AffectionRadiusKM);
+			if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Orange, DebugMessageClosest);
+
+			if (ActorDistances[ClosestActor] <= ClosestActor->AffectionRadiusKM)
+			{
+				if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Green,
+					FString::Printf(TEXT("Affected Actor: %s"), *ClosestActor->GetFName().ToString()));
+				SwitchGravityType(ClosestActor);
+			}
+			else
+			{
+				if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, TEXT("No Actor within AffectionRadiusKM"));
+				CurrentGravityType = EGravityType::ZeroG;
+				//UpdateGravityPhysicParams();
+			}
+		}
+		else
+		{
+			if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Red, TEXT("No Closest Gravity Actor"));
+			CurrentGravityType = EGravityType::ZeroG;
+			//Self->UpdateGravityPhysicParams();
+		}
+	}
+}
+
+void AAPS_GravityCharacter::SwitchGravityType(AActor* GravitySourceActor)
+{
+	GravityTargetActor = GravitySourceActor;
+
+	//ClosestBody = NewClosest;
+	OnClosestGravityBodyChanged.Broadcast(GravitySourceActor);
+
+	if (GravitySourceActor->IsA(ASpaceStation::StaticClass()) || GravitySourceActor->IsA(
+		ASpaceHeadquarters::StaticClass()))
+	{
+		CurrentGravityType = EGravityType::OnStation;
+		//OnGravityPhysicsParamChanged.Broadcast();
+	}
+	else if (GravitySourceActor->IsA(AOrbitalBody::StaticClass()))
+	{
+		CurrentGravityType = EGravityType::OnPlanet;
+		//OnGravityPhysicsParamChanged.Broadcast();
+	}
+	else if (GravitySourceActor->IsA(ASpaceship::StaticClass()))
+	{
+		CurrentGravityType = EGravityType::OnShip;
+		ASpaceship* Spaceship = Cast<ASpaceship>(GravitySourceActor);
+		if (Spaceship != nullptr)
+		{
+			CurrentSpaceship = Spaceship;
+			//OnGravityPhysicsParamChanged.Broadcast();
+		}
+	}
+	// Remove ship
+	if (CurrentGravityType != EGravityType::OnShip)
+	{
+		CurrentSpaceship = nullptr;
+	}
+
+	// switch gravity param
+	//UpdateGravityPhysicParams();
 }
