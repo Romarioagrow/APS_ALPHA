@@ -7,6 +7,7 @@
 #include "APS_ALPHA/Actors/Astro/WorldActor.h"
 #include "APS_ALPHA/Actors/Tech/SpaceHeadquarters.h"
 #include "APS_ALPHA/Actors/Tech/SpaceStation.h"
+#include "APS_ALPHA/Core/Enums/GravityState.h"
 #include "APS_ALPHA/Core/Interfaces/NavigatableBody.h"
 #include "APS_ALPHA/Pawns/Spaceships/Spaceship.h"
 #include "Camera/CameraComponent.h"
@@ -43,7 +44,7 @@ void AAPS_GravityCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	if (!bIsManualZeroG)
+	if (!bIsManualZeroG && CurrentGravityType == EGravityType::OnStation)
 	{
 		UpdateGravityState();
 	}
@@ -178,14 +179,23 @@ void AAPS_GravityCharacter::UpdateGravityState()
 			                                 FString::Printf(TEXT("HeightAboveGround: %f"), HeightAboveGround));
 
 			//bIsZeroG = false;
-			DisableZeroG(1);
+			//DisableZeroG(1);
+
+			if (CurrentGravityState != EGravityState::Attracted)
+			{
+				CurrentGravityState = EGravityState::Attracting;
+			}
+			
+
 		}
 		else
 		{
+			CurrentGravityState = EGravityState::LowG;
+
 			/*CurrentGravityState = EGravityState::LowG;
 			UpdateGravityPhysicParams();*/
 			//bIsZeroG = true;
-			EnableZeroG();
+			//EnableZeroG();
 		}
 	}
 }
@@ -285,7 +295,7 @@ void AAPS_GravityCharacter::AlignCharacterToCameraZeroG()
 
 void AAPS_GravityCharacter::Turn(const float Value)
 {
-	if (bIsZeroG)
+	if (CurrentGravityState != EGravityState::Attracted)
 	{
 		FRotator TargetRotation = CameraSpringArm->GetRelativeRotation();
 		TargetRotation.Yaw += Value * CharacterRotationScale;
@@ -295,7 +305,7 @@ void AAPS_GravityCharacter::Turn(const float Value)
 
 void AAPS_GravityCharacter::LookUp(const float Value)
 {
-	if (bIsZeroG)
+	if (CurrentGravityState != EGravityState::Attracted)
 	{
 		FRotator TargetRotation = CameraSpringArm->GetRelativeRotation();
 		TargetRotation.Pitch += Value * CharacterRotationScale;
@@ -305,7 +315,7 @@ void AAPS_GravityCharacter::LookUp(const float Value)
 
 void AAPS_GravityCharacter::MoveForward(float Value)
 {
-	if (bIsZeroG)
+	if (CurrentGravityState != EGravityState::Attracted)
 	{
 		if (FMath::IsNearlyZero(Value)) return;
 
@@ -330,7 +340,8 @@ void AAPS_GravityCharacter::MoveForward(float Value)
 
 void AAPS_GravityCharacter::MoveRight(float Value)
 {
-	if (bIsZeroG)
+	
+	if (CurrentGravityState != EGravityState::Attracted)
 	{
 		if (FMath::IsNearlyZero(Value)) return;
 		AlignCharacterToCameraZeroG();

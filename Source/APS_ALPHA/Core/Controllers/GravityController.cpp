@@ -13,8 +13,15 @@ void AGravityController::UpdateRotation(float DeltaTime)
 	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green,
 	                                 FString::Printf(TEXT("Gravity Type: %s"), *CurrentGravityTypeString));
 	
-	if (!bIsZeroG)
+	//if (!bIsZeroG)
+	if (CurrentGravityState == EGravityState::Attracted)
 	{
+
+
+		GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green,
+									 FString::Printf(TEXT("UpdateRotation!!!")));
+
+		
 		FVector GravityDirection = FVector::DownVector;
 		if (ACharacter* PlayerCharacter = Cast<ACharacter>(GetPawn()))
 		{
@@ -113,6 +120,7 @@ void AGravityController::Tick(float DeltaSeconds)
 	if (GravityCharacter)
 	{
 		CurrentGravityType = GravityCharacter->CurrentGravityType;
+		CurrentGravityState = GravityCharacter->CurrentGravityState;
 		bIsZeroG = GravityCharacter->bIsZeroG;
 	}
 }

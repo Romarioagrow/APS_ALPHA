@@ -3,10 +3,12 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "APS_ALPHA/Core/Enums/GravityState.h"
 #include "APS_ALPHA/Core/Enums/GravityTypeEnum.h"
 #include "GameFramework/Character.h"
 #include "APS_GravityCharacter.generated.h"
 
+enum class EGravityState : uint8;
 class UCameraComponent;
 class USpringArmComponent;
 class ASpaceship;
@@ -92,6 +94,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gravity")
 	EGravityType CurrentGravityType{
 		EGravityType::ZeroG
+	};
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gravity")
+	EGravityState CurrentGravityState{
+		EGravityState::ZeroG
 	};
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Camera")
