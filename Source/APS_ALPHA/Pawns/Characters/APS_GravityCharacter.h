@@ -3,8 +3,15 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "APS_ALPHA/Core/Enums/GravityTypeEnum.h"
 #include "GameFramework/Character.h"
 #include "APS_GravityCharacter.generated.h"
+
+class UCameraComponent;
+class USpringArmComponent;
+class ASpaceship;
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnClosestGravityBody, AActor*, NewBody);
 
 UCLASS()
 class APS_ALPHA_API AAPS_GravityCharacter : public ACharacter
@@ -27,16 +34,23 @@ public:
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 
 	UFUNCTION(BlueprintCallable)
-	void EnableZeroG(ACharacter* Character);
+	void EnableZeroG();
 
 	UFUNCTION(BlueprintCallable)
-	void DisableZeroG(ACharacter* Character, float InGravityScale);
+	void DisableZeroG(float InGravityScale);
+
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	FVector GravityDirection;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	bool bIsZeroG;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	bool bIsManualZeroG;
+
+	UPROPERTY(BlueprintReadWrite, Category = "Movement")
+	float HeightAboveGround;
 
 	UFUNCTION()
 	void MoveUp(float Value);
@@ -46,11 +60,43 @@ public:
 	
 	UFUNCTION()
 	void RotateRoll(float Value);
+	
+	UFUNCTION()
 	void MoveForward(float Value);
+
+	UFUNCTION()
 	void MoveRight(float Value);
 
 	UFUNCTION()
 	void RotateYaw(float Value);
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	USpringArmComponent* CameraSpringArm;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	UCameraComponent* PlayerCamera;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gravity")
+	AActor* GravityTargetActor;
+
+	/*UPROPERTY(BlueprintAssignable, Category="Gravity|Events")
+	FOnGravityPhysicsParamChanged OnGravityPhysicsParamChanged;*/
+	
+	UPROPERTY(BlueprintAssignable, Category="Gravity|Events")
+	FOnClosestGravityBody OnClosestGravityBodyChanged;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gravity")
+	EGravityType CurrentGravityType{
+		EGravityType::ZeroG
+	};
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	ASpaceship* CurrentSpaceship;
+
+	UFUNCTION(BlueprintCallable, Category="Gravity")
+	void RunGravityCheck(ACharacter* Character);
+
+	void SwitchGravityType(AActor* GravitySourceActor);
 
 private:
 	double CameraYawScale{1.0};
@@ -62,5 +108,6 @@ private:
 	double CharacterMovementForce{25};
 	
 	double CharacterJumpForce{25.0};
-	
+
+	void UpdateGravityState();
 };

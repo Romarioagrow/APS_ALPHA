@@ -22,7 +22,7 @@ void UGravityDetectorComponent::RunGravityCheck(ACharacter* Self)
 	if (!Self) return;
 
 	{
-		FName TagToCheck = "GravitySource";
+		//FName TagToCheck = "GravitySource";
 		TArray<AActor*> GravitySources;
 		TArray<AWorldActor*> WorldNavigatableActors;
 		UGameplayStatics::GetAllActorsOfClass(Self->GetWorld(), AWorldActor::StaticClass(), GravitySources);
