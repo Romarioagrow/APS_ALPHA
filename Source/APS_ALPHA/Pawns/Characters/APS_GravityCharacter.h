@@ -61,6 +61,10 @@ public:
 	UFUNCTION()
 	void RotateRoll(float Value);
 	
+	void AlignCharacterToCameraZeroG();
+	void Turn(float Value);
+	void LookUp(float Value);
+
 	UFUNCTION()
 	void MoveForward(float Value);
 
@@ -90,6 +94,9 @@ public:
 		EGravityType::ZeroG
 	};
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Camera")
+	float CameraInterpolationSpeed = 5.0f;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	ASpaceship* CurrentSpaceship;
 
@@ -97,6 +104,12 @@ public:
 	void RunGravityCheck(ACharacter* Character);
 
 	void SwitchGravityType(AActor* GravitySourceActor);
+
+	UFUNCTION(BlueprintImplementableEvent)
+	void OnEnableZeroG();
+
+	UFUNCTION(BlueprintImplementableEvent)
+	void OnDisableZeroG();
 
 private:
 	double CameraYawScale{1.0};

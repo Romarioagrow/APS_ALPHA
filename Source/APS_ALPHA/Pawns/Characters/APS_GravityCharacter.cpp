@@ -47,7 +47,6 @@ void AAPS_GravityCharacter::Tick(float DeltaTime)
 	{
 		UpdateGravityState();
 	}
-	
 }
 
 // Called to bind functionality to input
@@ -62,11 +61,17 @@ void AAPS_GravityCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInp
 	PlayerInputComponent->BindAxis("RotatePitch", this, &AAPS_GravityCharacter::RotatePitch);
 	PlayerInputComponent->BindAxis("RotateRoll", this, &AAPS_GravityCharacter::RotateRoll);
 	PlayerInputComponent->BindAxis("RotateYaw", this, &AAPS_GravityCharacter::RotateYaw);
+
+	PlayerInputComponent->BindAxis("Turn", this, &AAPS_GravityCharacter::Turn);
+	PlayerInputComponent->BindAxis("LookUp", this, &AAPS_GravityCharacter::LookUp);
 }
 
 
 void AAPS_GravityCharacter::EnableZeroG()
 {
+
+	//OnEnableZeroG();
+	
 	if (!bIsZeroG)
 	{
 		bIsZeroG = true;
@@ -97,6 +102,8 @@ void AAPS_GravityCharacter::EnableZeroG()
 
 void AAPS_GravityCharacter::DisableZeroG(float InGravityScale)
 {
+	//OnDisableZeroG();
+	
 	if (bIsZeroG)
 	{
 		bIsZeroG = false;
@@ -218,10 +225,9 @@ void AAPS_GravityCharacter::RotatePitch(float Value)
 
 		RotationToAdd.Pitch = Value * CharacterRotationScale;
 		AddActorLocalRotation(RotationToAdd);
-		
 	}
 
-	
+
 	/*if (FMath::IsNearlyZero(Value)) return;
 
 	const float Delta = Value * CharacterRotationScale;
@@ -240,7 +246,6 @@ void AAPS_GravityCharacter::RotatePitch(float Value)
 
 void AAPS_GravityCharacter::RotateRoll(float Value)
 {
-
 	if (Value != 0)
 	{
 		FRotator RotationToAdd(0.0f, 0.0f, 0.0f);
@@ -248,7 +253,7 @@ void AAPS_GravityCharacter::RotateRoll(float Value)
 		AddActorLocalRotation(RotationToAdd);
 	}
 
-	
+
 	/*if (FMath::IsNearlyZero(Value)) return;
 
 	const float Delta = Value * CharacterRotationScale;
@@ -265,14 +270,54 @@ void AAPS_GravityCharacter::RotateRoll(float Value)
 	}*/
 }
 
+void AAPS_GravityCharacter::AlignCharacterToCameraZeroG()
+{
+	const FQuat CameraQuat = CameraSpringArm->GetComponentQuat();
+	FQuat NewCharacterQuat = FQuat(CameraQuat.X, CameraQuat.Y, CameraQuat.Z, CameraQuat.W);
+	FQuat InterpolatedQuat = FMath::QInterpTo(GetActorQuat(), NewCharacterQuat, GetWorld()->GetDeltaSeconds(),
+	                                          CameraInterpolationSpeed);
+	GetCapsuleComponent()->SetWorldRotation(InterpolatedQuat);
+	SetActorRotation(InterpolatedQuat);
+
+	CameraSpringArm->SetWorldRotation(FRotator(CameraQuat.Rotator().Pitch, NewCharacterQuat.Rotator().Yaw,
+	                                           CameraQuat.Rotator().Roll));
+}
+
+void AAPS_GravityCharacter::Turn(const float Value)
+{
+	if (bIsZeroG)
+	{
+		FRotator TargetRotation = CameraSpringArm->GetRelativeRotation();
+		TargetRotation.Yaw += Value * CharacterRotationScale;
+		CameraSpringArm->SetRelativeRotation(TargetRotation);
+	}
+}
+
+void AAPS_GravityCharacter::LookUp(const float Value)
+{
+	if (bIsZeroG)
+	{
+		FRotator TargetRotation = CameraSpringArm->GetRelativeRotation();
+		TargetRotation.Pitch += Value * CharacterRotationScale;
+		CameraSpringArm->SetRelativeRotation(TargetRotation);
+	}
+}
+
 void AAPS_GravityCharacter::MoveForward(float Value)
 {
-	/*if (FMath::IsNearlyZero(Value)) return;
-
-	const FRotator Cam = (Controller ? Controller->GetControlRotation() : GetActorRotation());
-
-	if (GetCharacterMovement()->MovementMode == MOVE_Flying) // ZERO-G
+	if (bIsZeroG)
 	{
+		if (FMath::IsNearlyZero(Value)) return;
+
+
+		AlignCharacterToCameraZeroG();
+		GetCapsuleComponent()->AddImpulse(GetActorForwardVector() * (Value * CharacterMovementForce), "None", true);
+	}
+
+
+	/*if (GetCharacterMovement()->MovementMode == MOVE_Flying) // ZERO-G
+	{
+		const FRotator Cam = (Controller ? Controller->GetControlRotation() : GetActorRotation());
 		const FVector Fwd = FRotationMatrix(Cam).GetUnitAxis(EAxis::X);
 		AddMovementInput(Fwd, Value);
 		// мгновенно выровнять по камере по yaw+pitch (roll не трогаем)
@@ -282,14 +327,22 @@ void AAPS_GravityCharacter::MoveForward(float Value)
 	}*/
 }
 
+
 void AAPS_GravityCharacter::MoveRight(float Value)
 {
+	if (bIsZeroG)
+	{
+		if (FMath::IsNearlyZero(Value)) return;
+		AlignCharacterToCameraZeroG();
+		GetCapsuleComponent()->AddImpulse(GetActorRightVector() * (Value * CharacterMovementForce), "None", true);
+	}
+
 	/*if (FMath::IsNearlyZero(Value)) return;
 
-	const FRotator Cam = (Controller ? Controller->GetControlRotation() : GetActorRotation());
 
 	if (GetCharacterMovement()->MovementMode == MOVE_Flying) // ZERO-G
 	{
+		const FRotator Cam = (Controller ? Controller->GetControlRotation() : GetActorRotation());
 		const FVector Right = FRotationMatrix(Cam).GetUnitAxis(EAxis::Y);
 		AddMovementInput(Right, Value);
 	}*/
@@ -301,9 +354,11 @@ void AAPS_GravityCharacter::MoveUp(float Value)
 
 	if (GetCharacterMovement()->MovementMode == MOVE_Flying) // ZERO-G
 	{
-		const FRotator Rotation = (Controller ? Controller->GetControlRotation() : GetActorRotation());
+		GetCapsuleComponent()->AddImpulse(GetActorUpVector() * (Value * CharacterJumpForce), "None", true);
+
+		/*const FRotator Rotation = (Controller ? Controller->GetControlRotation() : GetActorRotation());
 		const FVector VectorUp = FRotationMatrix(Rotation).GetUnitAxis(EAxis::Z);
-		AddMovementInput(VectorUp, Value);
+		AddMovementInput(VectorUp, Value * 10);*/
 	}
 }
 
@@ -349,13 +404,18 @@ void AAPS_GravityCharacter::RunGravityCheck(ACharacter* Self)
 
 			if (ActorDistances[ClosestActor] <= ClosestActor->AffectionRadiusKM)
 			{
-				if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Green,
-					FString::Printf(TEXT("Affected Actor: %s"), *ClosestActor->GetFName().ToString()));
+				if (GEngine)
+					GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Green,
+					                                 FString::Printf(
+						                                 TEXT("Affected Actor: %s"),
+						                                 *ClosestActor->GetFName().ToString()));
 				SwitchGravityType(ClosestActor);
 			}
 			else
 			{
-				if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, TEXT("No Actor within AffectionRadiusKM"));
+				if (GEngine)
+					GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red,
+					                                 TEXT("No Actor within AffectionRadiusKM"));
 				CurrentGravityType = EGravityType::ZeroG;
 				//UpdateGravityPhysicParams();
 			}
