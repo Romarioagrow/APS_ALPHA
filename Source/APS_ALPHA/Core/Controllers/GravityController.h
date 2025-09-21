@@ -34,6 +34,11 @@ public:
 		EGravityType::ZeroG
 	};
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gravity")
+	EGravityState CurrentGravityState{
+		EGravityState::ZeroG
+	};
+
 	UPROPERTY()
 	bool bIsZeroG;
 
