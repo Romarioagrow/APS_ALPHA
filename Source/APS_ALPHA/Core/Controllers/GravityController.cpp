@@ -8,10 +8,10 @@
 
 void AGravityController::UpdateRotation(float DeltaTime)
 {
-	FString CurrentGravityTypeString = StaticEnum<EGravityType>()->GetNameStringByValue(
+	/*FString CurrentGravityTypeString = StaticEnum<EGravityType>()->GetNameStringByValue(
 		static_cast<int32>(CurrentGravityType));
 	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green,
-	                                 FString::Printf(TEXT("Gravity Type: %s"), *CurrentGravityTypeString));
+	                                 FString::Printf(TEXT("Gravity Type: %s"), *CurrentGravityTypeString));*/
 	
 	//if (!bIsZeroG)
 	if (CurrentGravityState == EGravityState::Attracted)
