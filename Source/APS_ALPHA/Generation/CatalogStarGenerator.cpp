@@ -1,5 +1,4 @@
 #include "CatalogStarGenerator.h"
-#include "Engine/Classes/Components/HierarchicalInstancedStaticMeshComponent.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 #include "HAL/PlatformFilemanager.h"
@@ -24,8 +23,8 @@ void ACatalogStarGenerator::BeginPlay()
 
 	UE_LOG(LogTemp, Warning, TEXT("CatalogStarGenerator BeginPlay()"));
 
-	// Загружаем меш MaterialSphere для HISM-компонента
-	/*static ConstructorHelpers::FObjectFinder<UStaticMesh> SphereMeshAsset(TEXT("/Engine/Сontent/BasicShapes/Sphere"));
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ MaterialSphere пїЅпїЅпїЅ HISM-пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
+	/*static ConstructorHelpers::FObjectFinder<UStaticMesh> SphereMeshAsset(TEXT("/Engine/пїЅontent/BasicShapes/Sphere"));
 	if (SphereMeshAsset.Succeeded())
 	{
 		UStaticMesh* SphereMesh = SphereMeshAsset.Object;
@@ -43,55 +42,55 @@ void ACatalogStarGenerator::BeginPlay()
 		UE_LOG(LogTemp, Error, TEXT("Failed to find MaterialSphere mesh asset"));
 	}*/
 
-	// Чтение CSV-файла
+	// пїЅпїЅпїЅпїЅпїЅпїЅ CSV-пїЅпїЅпїЅпїЅпїЅ
 	FString CSVFilePath = FPaths::Combine(FPaths::ProjectDir(), TEXT("Source/APS_ALPHA/hyg_v35.csv"));
 	FString CSVData;
 
 	if (FFileHelper::LoadFileToString(CSVData, *CSVFilePath))
 	{
-		// Разбор CSV-данных
+		// пїЅпїЅпїЅпїЅпїЅпїЅ CSV-пїЅпїЅпїЅпїЅпїЅпїЅ
 		TArray<FString> Rows;
 		CSVData.ParseIntoArray(Rows, TEXT("\n"), true);
 
-		// Проходимся по каждой звезде в пределах первых 10000 записей
-		int32 NumStars = 1000; // Ограничиваем количество звезд до 10000
+		// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ 10000 пїЅпїЅпїЅпїЅпїЅпїЅпїЅ
+		int32 NumStars = 1000; // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅ 10000
 		for (int32 i = 2; i <= NumStars; i++)
 		{
 			TArray<FString> Columns;
 			Rows[i].ParseIntoArray(Columns, TEXT(","));
 
-			if (Columns.Num() < 16) // Измените это число на фактическое количество столбцов в вашем CSV-файле
+			if (Columns.Num() < 16) // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅ CSV-пїЅпїЅпїЅпїЅпїЅ
 			{
 				continue;
 			}
 
 
 			double RadiusSun = 696340000.0;
-			double SphereRadiusDefault = 1000.0; // Радиус сферы по умолчанию в игровом масштабе (1 метр)
+			double SphereRadiusDefault = 1000.0; // пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ (1 пїЅпїЅпїЅпїЅ)
 			double ScaleFactor = SphereRadiusDefault / RadiusSun;
-			//// Получаем радиус и координаты звезды
-			double Radius = FCString::Atof(*Columns[15]); // Замените 15 на фактический номер столбца для радиуса
+			//// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ
+			double Radius = FCString::Atof(*Columns[15]); // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ 15 пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 			//double ScaledRadius = Radius * ScaleFactor;
 			//double ScaledRadius = Radius * 696340000.0;
-			//float X = FCString::Atof(*Columns[17]); // Замените 17 на фактический номер столбца для координаты X
-			//float Y = FCString::Atof(*Columns[18]); // Замените 18 на фактический номер столбца для координаты Y
-			//float Z = FCString::Atof(*Columns[19]); // Замените 19 на фактический номер столбца для координаты Z
+			//float X = FCString::Atof(*Columns[17]); // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ 17 пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ X
+			//float Y = FCString::Atof(*Columns[18]); // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ 18 пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ Y
+			//float Z = FCString::Atof(*Columns[19]); // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ 19 пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ Z
 
-			// Преобразование координат из световых лет в масштаб UE
-			double LightYearToUEScale = 9.461e+12; // Коэффициент преобразования световых лет в масштаб UE
-			double LightYearScale = 100000.0; // Коэффициент масштабирования в световых годах
+			// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ UE
+			double LightYearToUEScale = 9.461e+12; // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ UE
+			double LightYearScale = 100000.0; // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ
 
 			double X = FCString::Atof(*Columns[17]);
-			// * 1000000;// * LightYearToUEScale / LightYearScale; // Замените 17 на фактический номер столбца для координаты X
+			// * 1000000;// * LightYearToUEScale / LightYearScale; // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ 17 пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ X
 			double Y = FCString::Atof(*Columns[18]);
-			// * 1000000;// * LightYearToUEScale / LightYearScale; // Замените 18 на фактический номер столбца для координаты Y
+			// * 1000000;// * LightYearToUEScale / LightYearScale; // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ 18 пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ Y
 			double Z = FCString::Atof(*Columns[19]);
-			// * 1000000;// * LightYearToUEScale / LightYearScale; // Замените 19 на фактический номер столбца для координаты Z
+			// * 1000000;// * LightYearToUEScale / LightYearScale; // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ 19 пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ Z
 			//UE_LOG(LogTemp, Warning, TEXT("ScaledRadius: %f"), ScaledRadius);
 
 
-			// Создаем экземпляр HISM с заданными координатами и масштабом
-			FVector Location(X, Y, Z); // Замените X, Y, Z на фактические значения координат
+			// пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ HISM пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
+			FVector Location(X, Y, Z); // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ X, Y, Z пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 			FTransform InstanceTransform(FQuat::Identity, Location, FVector(Radius));
 			HISMComponent->AddInstance(InstanceTransform);
 		}

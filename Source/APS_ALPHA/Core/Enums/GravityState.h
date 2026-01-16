@@ -10,6 +10,7 @@ enum class EGravityState : uint8
 	Attracting,
 	Jumping,
 	Falling,
-	Attracted
+	Attracted,
+	ZeroG
 };
 

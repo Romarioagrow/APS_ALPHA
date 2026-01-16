@@ -85,20 +85,28 @@ public:
 	UFUNCTION()
 	void MoveForward(float Value);
 	
+	UFUNCTION()
 	void MoveForwardOnStation(const float Value);
 	
+	UFUNCTION()
 	void MoveForwardOnPlanet(const float Value);
 	
+	UFUNCTION()
 	void MoveForwardOnShip(const float Value);
 	
+	UFUNCTION()
 	void MoveForwardZeroG(const float Value);
 	
+	UFUNCTION()
 	void MoveRightOnStation(const float Value);
 	
+	UFUNCTION()
 	void MoveRightOnPlanet(const float Value);
 	
+	UFUNCTION()
 	void MoveRightOnShip(const float Value);
 	
+	UFUNCTION()
 	void MoveRightZeroG(const float Value);
 	
 	UFUNCTION()
@@ -119,6 +127,7 @@ public:
 	UFUNCTION()
 	void AlignCharacterToCameraZeroG();
 
+	UFUNCTION()
 	void AlignCharacterToCameraOnStation();
 
 private:
@@ -165,6 +174,7 @@ protected:
 		EAnimationState::Floating
 	};
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gravity")
 	FVector GravityDirection{
 		0.0f, 0.0f, 0.0f
 	};
