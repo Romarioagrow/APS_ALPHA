@@ -11,20 +11,20 @@ AGravityCharacterAPS::AGravityCharacterAPS()
 	// Set this character to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = true;
 
-	// Создание и настройка InputComponent
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ InputComponent
 	AutoPossessPlayer = EAutoReceiveInput::Player0;
 
-	// Создание и настройка ArrowForwardVector
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ ArrowForwardVector
 	ArrowForwardVector = CreateDefaultSubobject<UArrowComponent>(TEXT("ArrowForwardVector"));
 	ArrowForwardVector->SetupAttachment(RootComponent);
 
-	// Создание и настройка SpringArmComponent
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ SpringArmComponent
 	CameraSpringArm = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraSpringArm"));
 	CameraSpringArm->SetupAttachment(ArrowForwardVector);
 	CameraSpringArm->TargetArmLength = 300.0f;
 	CameraSpringArm->bUsePawnControlRotation = false;
 
-	// Создание и настройка CameraComponent
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ CameraComponent
 	PlayerCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("PlayerCamera"));
 	PlayerCamera->SetupAttachment(CameraSpringArm, USpringArmComponent::SocketName);
 	GetCapsuleComponent()->SetPhysicsMaxAngularVelocityInDegrees(180.f);
@@ -59,9 +59,9 @@ void AGravityCharacterAPS::Tick(float DeltaTime)
 
 	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Blue,
 	                                 FString::Printf(TEXT("GravityDirection: %s"), *GravityDirection.ToString()));
-	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Blue,
+	/*GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Blue,
 	                                 FString::Printf(
-		                                 TEXT("CurrentGravityType: %s"), *GetGravityTypeAsString(CurrentGravityType)));
+		                                 TEXT("CurrentGravityType: %s"), *GetGravityTypeAsString(CurrentGravityType)));*/
 }
 
 void AGravityCharacterAPS::UpdateGravity()
@@ -71,22 +71,22 @@ void AGravityCharacterAPS::UpdateGravity()
 	switch (CurrentGravityType)
 	{
 	case EGravityType::ZeroG:
-		// Логика обновления гравитации в режиме невесомости
+		// пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 		UpdateZeroGGravity();
 	//UpdateZeroGCamera();
 		break;
 	case EGravityType::OnStation:
-		// Логика обновления гравитации на станции
+		// пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 		UpdateStationGravity();
 	// UpdateStationCamera();
 		break;
 	case EGravityType::OnPlanet:
-		// Логика обновления гравитации на планете
+		// пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 		UpdatePlanetGravity();
 	// UpdatePlanetCamera();
 		break;
 	case EGravityType::OnShip:
-		// Логика обновления гравитации на корабле
+		// пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 		UpdateShipGravity();
 	// UpdateShipCamera();
 		break;
@@ -204,8 +204,8 @@ void AGravityCharacterAPS::SwitchGravityToSpaceship(AActor* OtherActor)
 //
 //    //FQuat TargetRotation = FQuat::FindBetween(GetCapsuleComponent()->GetUpVector(), GravityUpVector) * GetCapsuleComponent()->GetComponentQuat();
 //
-//    //float InterpolationSpeed = 5.0f; // Задаем скорость интерполяции
-//    //float DeltaTime = GetWorld()->GetDeltaSeconds(); // Получаем время между кадрами
+//    //float InterpolationSpeed = 5.0f; // пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
+//    //float DeltaTime = GetWorld()->GetDeltaSeconds(); // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 //    //FQuat InterpolatedRotation = FQuat::Slerp(GetCapsuleComponent()->GetComponentQuat(), TargetRotation, DeltaTime * InterpolationSpeed);
 //
 //    //GetCapsuleComponent()->SetWorldRotation(InterpolatedRotation);
@@ -223,21 +223,21 @@ void AGravityCharacterAPS::RotateToSpaceshipGravity(ASpaceshipGravityActor* Stat
 
 void AGravityCharacterAPS::RotateMeshTowardsForwardVector()
 {
-	// Получаем текущий Z ротатор CapsuleComponent
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ Z пїЅпїЅпїЅпїЅпїЅпїЅпїЅ CapsuleComponent
 	FRotator MeshCurrentRotation = GetMesh()->GetRelativeRotation();
 
-	// Получаем направление ArrowForwardVector
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ ArrowForwardVector
 	FRotator ForwardRelativeRotation = ArrowForwardVector->GetRelativeRotation();
 
 	ForwardRelativeRotation.Yaw -= 90.0f;
 
-	// Интерполяция между текущим вращением меша и направлением ArrowForwardVector
-	float InterpolationSpeed = 5.0f; // Задаем скорость интерполяции
-	float DeltaTime = GetWorld()->GetDeltaSeconds(); // Получаем время между кадрами
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ ArrowForwardVector
+	float InterpolationSpeed = 5.0f; // пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
+	float DeltaTime = GetWorld()->GetDeltaSeconds(); // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 	FRotator InterpolatedRotation = FMath::RInterpTo(MeshCurrentRotation, ForwardRelativeRotation, DeltaTime,
 	                                                 InterpolationSpeed);
 
-	// Применяем интерполированное вращение к мешу
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅ
 	GetMesh()->SetRelativeRotation(InterpolatedRotation);
 
 	UE_LOG(LogTemp, Warning, TEXT("MeshCurrentRotation : %s"),
@@ -254,12 +254,12 @@ void AGravityCharacterAPS::SetupPlayerInputComponent(UInputComponent* PlayerInpu
 {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
 
-	// Настройка параметров перемещения персонажа
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 	PlayerInputComponent->BindAxis("MoveForward", this, &AGravityCharacterAPS::MoveForward);
 	PlayerInputComponent->BindAxis("MoveRight", this, &AGravityCharacterAPS::MoveRight);
 	PlayerInputComponent->BindAxis("MoveUp", this, &AGravityCharacterAPS::MoveUp);
 
-	// Настройка параметров поворота камеры
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ
 	PlayerInputComponent->BindAxis("Turn", this, &AGravityCharacterAPS::Turn);
 	PlayerInputComponent->BindAxis("LookUp", this, &AGravityCharacterAPS::LookUp);
 
@@ -278,7 +278,7 @@ void AGravityCharacterAPS::Turn(float Value)
 {
 	if (Value != 0.0f)
 	{
-		// Обновление смещения Yaw ArrowForwardVector
+		// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ Yaw ArrowForwardVector
 		float NewYaw = ArrowForwardVector->GetRelativeRotation().Yaw + Value * YawSpeed * GetWorld()->GetDeltaSeconds();
 		FRotator NewRotation = FRotator(0.f, NewYaw, 0.f);
 		ArrowForwardVector->SetRelativeRotation(NewRotation);
@@ -289,7 +289,7 @@ void AGravityCharacterAPS::LookUp(float Value)
 {
 	if (Value != 0.0f)
 	{
-		// Обновление смещения Pitch CameraSpringArm
+		// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ Pitch CameraSpringArm
 		float NewPitch = CameraSpringArm->GetRelativeRotation().Pitch + Value * PitchSpeed * GetWorld()->
 			GetDeltaSeconds();
 		NewPitch = FMath::Clamp<float>(NewPitch, -80.f, 80.f);
@@ -302,7 +302,7 @@ void AGravityCharacterAPS::MoveForward(float Value)
 {
 	if ((Controller != NULL) && (Value != 0.0f))
 	{
-		// Найти направление перемещения персонажа в зависимости от текущей ориентации камеры
+		// пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ
 		const FQuat RotationQuat = ArrowForwardVector->GetComponentTransform().GetRotation();
 		const FRotator Rotation = RotationQuat.Rotator();
 		const FVector Direction = FRotationMatrix(Rotation).GetScaledAxis(EAxis::X);
@@ -315,7 +315,7 @@ void AGravityCharacterAPS::MoveRight(float Value)
 {
 	if ((Controller != NULL) && (Value != 0.0f))
 	{
-		// Найти направление перемещения персонажа в зависимости от текущей ориентации камеры
+		// пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ
 		const FQuat RotationQuat = ArrowForwardVector->GetComponentTransform().GetRotation();
 		const FRotator Rotation = RotationQuat.Rotator();
 		const FVector Direction = FRotationMatrix(Rotation).GetScaledAxis(EAxis::Y);
@@ -328,7 +328,7 @@ void AGravityCharacterAPS::MoveUp(float Value)
 {
 	if ((Controller != NULL) && (Value != 0.0f))
 	{
-		// Найти направление перемещения персонажа в зависимости от текущей ориентации камеры
+		// пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ
 		const FQuat RotationQuat = ArrowForwardVector->GetComponentTransform().GetRotation();
 		const FRotator Rotation = RotationQuat.Rotator();
 		const FVector Direction = FRotationMatrix(Rotation).GetScaledAxis(EAxis::Z);
@@ -341,7 +341,7 @@ void AGravityCharacterAPS::RotatePitch(float Value)
 {
 	if ((Controller != NULL) && (Value != 0.0f))
 	{
-		// Найти направление перемещения персонажа в зависимости от текущей ориентации камеры
+		// пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ
 
 
 		GEngine->AddOnScreenDebugMessage(-1, 1.0f, FColor::Red, FString::Printf(TEXT("RotatePitch")));
@@ -352,7 +352,7 @@ void AGravityCharacterAPS::RotateRoll(float Value)
 {
 	if ((Controller != NULL) && (Value != 0.0f))
 	{
-		// Найти направление перемещения персонажа в зависимости от текущей ориентации камеры
+		// пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ
 
 		FVector NewRotation = GetCapsuleComponent()->GetRelativeRotation().Vector();
 		NewRotation.X += Value * PitchSpeed * GetWorld()->GetDeltaSeconds();
@@ -398,16 +398,16 @@ void AGravityCharacterAPS::UpdatePlanetGravity()
 	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Planet Gravity")));
 
 
-	//FVector PlanetCenter = GetPlanetCenter(); // Здесь должна быть функция, которая возвращает центр текущей планеты
+	//FVector PlanetCenter = GetPlanetCenter(); // пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ, пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 	//FVector GravityDirection = (GetActorLocation() - PlanetCenter).GetSafeNormal();
-	//FVector GravityForce = -GravityDirection * GetPlanetGravity(); // Здесь должна быть функция, которая возвращает гравитационную силу текущей планеты
+	//FVector GravityForce = -GravityDirection * GetPlanetGravity(); // пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ, пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 	//GetCharacterMovement()->AddForce(GravityForce);
 
 	//FVector NewUp = -GravityDirection;
 	//FRotator NewRotation = UKismetMathLibrary::MakeRotationFromAxes(GetActorForwardVector(), GetActorRightVector(), NewUp);
 	//SetActorRotation(NewRotation);
 
-	//// Обновление движения персонажа с учетом текущей гравитации
+	//// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 	//FVector InputDirection = FVector(InputComponent->GetAxisValue(TEXT("MoveForward")), InputComponent->GetAxisValue(TEXT("MoveRight")), 0.0f);
 	//FVector DesiredMovementDirection = GetActorRotation().RotateVector(InputDirection);
 	//FVector FinalMovement = DesiredMovementDirection * CharacterMovementSpeed;
@@ -436,23 +436,23 @@ FString AGravityCharacterAPS::GetGravityTypeAsString(EGravityType GravityType)
 
 void AGravityCharacterAPS::UpdateCameraOrientation()
 {
-	// Вращение камеры в зависимости от типа гравитации
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 	//switch (CurrentGravityType)
 	//{
 	//case EGravityType::ZeroG:
-	//    // Код для ориентации камеры в невесомости
+	//    // пїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 	//    break;
 
 	//case EGravityType::OnStation:
-	//    // Код для ориентации камеры на станции
+	//    // пїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 	//    break;
 
 	//case EGravityType::OnPlanet:
-	//    // Код для ориентации камеры на планете
+	//    // пїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 	//    break;
 
 	//case EGravityType::OnShip:
-	//    // Код для ориентации камеры на корабле
+	//    // пїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 	//    break;
 
 	//default:
