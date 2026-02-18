@@ -43,6 +43,9 @@ AGravityCharacterPawn::AGravityCharacterPawn()
 	// Set Gravity Collision Profile
 	CapsuleComponent->SetCollisionResponseToChannel(ECollisionChannel::ECC_EngineTraceChannel3,
 	                                                ECollisionResponse::ECR_Ignore);
+
+	// Required for sparse delegate (OnComponentBeginOverlap) to be properly initialized
+	CapsuleComponent->SetGenerateOverlapEvents(true);
 }
 
 // Called when the game starts or when spawned
@@ -51,8 +54,11 @@ void AGravityCharacterPawn::BeginPlay()
 	Super::BeginPlay();
 
 	// Bind overlaps
-	CapsuleComponent->OnComponentBeginOverlap.AddDynamic(this, &AGravityCharacterPawn::OnBeginOverlap);
-	CapsuleComponent->OnComponentEndOverlap.AddDynamic(this, &AGravityCharacterPawn::OnEndOverlap);
+	if (CapsuleComponent)
+	{
+		CapsuleComponent->OnComponentBeginOverlap.AddDynamic(this, &AGravityCharacterPawn::OnBeginOverlap);
+		CapsuleComponent->OnComponentEndOverlap.AddDynamic(this, &AGravityCharacterPawn::OnEndOverlap);
+	}
 
 	// Set initial gravity type
 	UpdateGravityType();
@@ -62,6 +68,12 @@ void AGravityCharacterPawn::BeginPlay()
 void AGravityCharacterPawn::Tick(const float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+
+	if (!CapsuleComponent) return;
+
+	UWorld* World = GetWorld();
+	if (!World) return;
+
 	double ElapsedTime = 0;
 
 	{
@@ -74,7 +86,7 @@ void AGravityCharacterPawn::Tick(const float DeltaTime)
 			FName TagToCheck = "GravitySource";
 			TArray<AActor*> GravitySources;
 			TArray<AWorldActor*> WorldNavigatableActors;
-			UGameplayStatics::GetAllActorsOfClass(GetWorld(), AWorldActor::StaticClass(), GravitySources);
+			UGameplayStatics::GetAllActorsOfClass(World, AWorldActor::StaticClass(), GravitySources);
 			TMap<AWorldActor*, double> ActorDistances;
 
 			for (AActor* Actor : GravitySources)
@@ -104,11 +116,11 @@ void AGravityCharacterPawn::Tick(const float DeltaTime)
 					TEXT("Closest Actor: %s \nDistance to surface: %f km \nAffectionRadiusKM: %f"),
 					*ClosestActor->GetFName().ToString(), ActorDistances[ClosestActor],
 					ClosestActor->AffectionRadiusKM);
-				GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Orange, DebugMessageClosest);
+				if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Orange, DebugMessageClosest);
 
 				if (ActorDistances[ClosestActor] <= ClosestActor->AffectionRadiusKM)
 				{
-					GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Green,
+					if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Green,
 					                                 FString::Printf(
 						                                 TEXT("Affected Actor: %s"),
 						                                 *ClosestActor->GetFName().ToString()));
@@ -116,19 +128,19 @@ void AGravityCharacterPawn::Tick(const float DeltaTime)
 				}
 				else
 				{
-					GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, TEXT("No Actor within AffectionRadiusKM"));
+					if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, TEXT("No Actor within AffectionRadiusKM"));
 					CurrentGravityType = EGravityType::ZeroG;
 					UpdateGravityPhysicParams();
 				}
 			}
 			else
 			{
-				GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Red, TEXT("No Closest Gravity Actor"));
+				if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Red, TEXT("No Closest Gravity Actor"));
 				CurrentGravityType = EGravityType::ZeroG;
 				UpdateGravityPhysicParams();
 			}
 		}
-		
+
 		// Apply Gravity by GravityType
 		UpdateGravity();
 
@@ -140,33 +152,36 @@ void AGravityCharacterPawn::Tick(const float DeltaTime)
 		float LinearDamping = CapsuleComponent->GetLinearDamping();
 		float AngularDamping = CapsuleComponent->GetAngularDamping();
 
-		GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Orange,
-		                                 FString::Printf(TEXT("ForwardSpeed: %f"), ForwardSpeed));
-		GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Orange, FString::Printf(TEXT("RightSpeed: %f"), RightSpeed));
-		GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Orange, FString::Printf(TEXT("UpSpeed: %f"), UpSpeed));
-		GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Purple,
-		                                 FString::Printf(TEXT("AngularDamping: %f"), AngularDamping));
-		GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Purple,
-		                                 FString::Printf(TEXT("LinearDamping: %f"), LinearDamping));
-		GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Yellow,
-		                                 FString::Printf(TEXT("CharacterJumpForce: %f"), CharacterJumpForce));
-		GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Yellow,
-		                                 FString::Printf(TEXT("CharacterMovementForce: %f"), CharacterMovementForce));
+		if (GEngine)
+		{
+			GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Orange,
+			                                 FString::Printf(TEXT("ForwardSpeed: %f"), ForwardSpeed));
+			GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Orange, FString::Printf(TEXT("RightSpeed: %f"), RightSpeed));
+			GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Orange, FString::Printf(TEXT("UpSpeed: %f"), UpSpeed));
+			GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Purple,
+			                                 FString::Printf(TEXT("AngularDamping: %f"), AngularDamping));
+			GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Purple,
+			                                 FString::Printf(TEXT("LinearDamping: %f"), LinearDamping));
+			GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Yellow,
+			                                 FString::Printf(TEXT("CharacterJumpForce: %f"), CharacterJumpForce));
+			GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Yellow,
+			                                 FString::Printf(TEXT("CharacterMovementForce: %f"), CharacterMovementForce));
 
-		// Char Location
-		FString LocationString = GetActorLocation().ToString();
-		GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red,
-		                                 FString::Printf(TEXT("PlayerCharacter Location: %s"), *LocationString));
+			// Char Location
+			FString LocationString = GetActorLocation().ToString();
+			GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red,
+			                                 FString::Printf(TEXT("PlayerCharacter Location: %s"), *LocationString));
+		}
 
 		// Current Ship
 		if (CurrentSpaceship)
 		{
 			FString SpaceshipName = CurrentSpaceship->GetName();
-			GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Purple,
+			if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Purple,
 			                                 FString::Printf(TEXT("Current Spaceship: %s"), *SpaceshipName));
 		}
 	}
-	GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red,
+	if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red,
 	                                 FString::Printf(TEXT("Time taken: %f seconds"), ElapsedTime));
 }
 
@@ -174,6 +189,8 @@ void AGravityCharacterPawn::Tick(const float DeltaTime)
 void AGravityCharacterPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
+
+	if (!PlayerInputComponent) return;
 
 	PlayerInputComponent->BindAxis("MoveForward", this, &AGravityCharacterPawn::MoveForward);
 	PlayerInputComponent->BindAxis("MoveRight", this, &AGravityCharacterPawn::MoveRight);
@@ -191,13 +208,16 @@ void AGravityCharacterPawn::SetupPlayerInputComponent(UInputComponent* PlayerInp
 
 void AGravityCharacterPawn::CharacterAction()
 {
-	GEngine->AddOnScreenDebugMessage(-1, 1.0f, FColor::Green, FString::Printf(TEXT("CharacterAction!")));
+	if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 1.0f, FColor::Green, FString::Printf(TEXT("CharacterAction!")));
 
 	if (CurrentGravityType == EGravityType::OnShip)
 	{
 		if (CurrentSpaceship && isAllowedToControlSpaceship)
 		{
-			APlayerController* PlayerController = GetWorld()->GetFirstPlayerController();
+			UWorld* World = GetWorld();
+			if (!World) return;
+
+			APlayerController* PlayerController = World->GetFirstPlayerController();
 			if (PlayerController)
 			{
 				CurrentSpaceship->TakeControl(this);
@@ -205,13 +225,16 @@ void AGravityCharacterPawn::CharacterAction()
 				PlayerController->Possess(CurrentSpaceship);
 
 				// Attach the pawn to the PilotChair of the spaceship
-				FAttachmentTransformRules AttachmentRules(EAttachmentRule::SnapToTarget, true);
-				AttachToComponent(CurrentSpaceship->PilotChair, AttachmentRules);
+				if (CurrentSpaceship->PilotChair)
+				{
+					FAttachmentTransformRules AttachmentRules(EAttachmentRule::SnapToTarget, true);
+					AttachToComponent(CurrentSpaceship->PilotChair, AttachmentRules);
+				}
 
 				// Disable pawn's input and movement
 				SetActorEnableCollision(false);
 				SetActorTickEnabled(false);
-				CapsuleComponent->SetSimulatePhysics(false);
+				if (CapsuleComponent) CapsuleComponent->SetSimulatePhysics(false);
 				AddActorLocalRotation(FRotator(0.0, 180.0, 0.0));
 			}
 		}
@@ -220,7 +243,7 @@ void AGravityCharacterPawn::CharacterAction()
 
 void AGravityCharacterPawn::ReleaseControl(APilotingVehicle* PilotingVehicle)
 {
-	GEngine->AddOnScreenDebugMessage(-1, 10.0f, FColor::Orange,
+	if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 10.0f, FColor::Orange,
 	                                 FString::Printf(TEXT("AGravityCharacterPawn ReleaseControl")));
 	CurrentGravityType = EGravityType::OnShip;
 
@@ -231,8 +254,11 @@ void AGravityCharacterPawn::ReleaseControl(APilotingVehicle* PilotingVehicle)
 	{
 		CurrentSpaceship = Spaceship;
 
-		CapsuleComponent->SetSimulatePhysics(true);
-		SetActorLocation(CurrentSpaceship->PilotChair->GetComponentLocation());
+		if (CapsuleComponent) CapsuleComponent->SetSimulatePhysics(true);
+		if (CurrentSpaceship->PilotChair)
+		{
+			SetActorLocation(CurrentSpaceship->PilotChair->GetComponentLocation());
+		}
 		AddActorLocalOffset(FVector(0.0, -160.0, 0.0));
 	}
 	else
@@ -262,6 +288,8 @@ void AGravityCharacterPawn::UpdateGravity()
 
 void AGravityCharacterPawn::UpdateGravityPhysicParams()
 {
+	if (!CapsuleComponent) return;
+
 	FGravityParamStruct GravityParams;
 	FGravityMovementStruct GravityMovements;
 	double AngularDamping{0}, LinearDamping{0};
@@ -319,25 +347,25 @@ void AGravityCharacterPawn::OnBeginOverlap(UPrimitiveComponent* OverlappedCompon
                                            UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep,
                                            const FHitResult& SweepResult)
 {
+	if (!OtherActor) return;
+
 	UE_LOG(LogTemp, Warning, TEXT("BeginOverlap with: %s"), *OtherActor->GetName());
-	GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Green,
+	if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Green,
 	                                 FString::Printf(TEXT("BeginOverlap with: %s"), *OtherActor->GetName()));
 
-	// if gravity object
-	if (OtherActor != nullptr)
+	if (OtherActor->GetClass()->ImplementsInterface(UGravitySource::StaticClass()))
 	{
-		if (OtherActor->GetClass()->ImplementsInterface(UGravitySource::StaticClass()))
-		{
-			SwitchGravityType(OtherActor);
-		}
+		SwitchGravityType(OtherActor);
 	}
 }
 
 void AGravityCharacterPawn::OnEndOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor,
                                          UPrimitiveComponent* OtherComp, int32 OtherBodyIndex)
 {
+	if (!OtherActor) return;
+
 	UE_LOG(LogTemp, Warning, TEXT("EndOverlap with: %s"), *OtherActor->GetName());
-	GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Red,
+	if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Red,
 	                                 FString::Printf(TEXT("EndOverlap with: %s"), *OtherActor->GetName()));
 
 	UpdateGravityType();
@@ -349,7 +377,9 @@ void AGravityCharacterPawn::OnEndOverlap(UPrimitiveComponent* OverlappedComponen
 
 void AGravityCharacterPawn::UpdateGravityType()
 {
-	GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Orange, FString::Printf(TEXT("UpdateGravityType")));
+	if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Orange, FString::Printf(TEXT("UpdateGravityType")));
+
+	if (!CapsuleComponent) return;
 
 	FName TagToCheck = "GravitySource";
 	TArray<AActor*> OverlappingActorsWithTag;
@@ -367,15 +397,15 @@ void AGravityCharacterPawn::UpdateGravityType()
 	if (OverlappingActorsWithTag.Num() > 0)
 	{
 		AActor* LastGravityActor = OverlappingActorsWithTag[OverlappingActorsWithTag.Num() - 1];
-		GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Red,
+		if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Red,
 		                                 FString::Printf(TEXT("LastGravityActor : %s"), *LastGravityActor->GetName()));
 
-		// switch gravity to first 
+		// switch gravity to first
 		SwitchGravityType(LastGravityActor);
 	}
 	else
 	{
-		GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Red, FString::Printf(TEXT("LastGravityActor 0")));
+		if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Red, FString::Printf(TEXT("LastGravityActor 0")));
 		CurrentGravityType = EGravityType::ZeroG;
 		UpdateGravityPhysicParams();
 	}
@@ -383,6 +413,8 @@ void AGravityCharacterPawn::UpdateGravityType()
 
 void AGravityCharacterPawn::SwitchGravityType(AActor* GravitySourceActor)
 {
+	if (!GravitySourceActor) return;
+
 	GravityTargetActor = GravitySourceActor;
 
 	if (GravitySourceActor->IsA(ASpaceStation::StaticClass()) || GravitySourceActor->IsA(
@@ -415,7 +447,7 @@ void AGravityCharacterPawn::SwitchGravityType(AActor* GravitySourceActor)
 
 void AGravityCharacterPawn::SwitchGravityToZeroG(AActor* OtherActor)
 {
-	GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Orange, FString::Printf(TEXT("SwitchGravityToZERO-G")));
+	if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Orange, FString::Printf(TEXT("SwitchGravityToZERO-G")));
 	CurrentGravityType = EGravityType::ZeroG;
 	GravityTargetActor = nullptr;
 }
@@ -424,8 +456,10 @@ void AGravityCharacterPawn::UpdateAnimationState()
 {
 	FString AnimationStateString = StaticEnum<EAnimationState>()->GetNameStringByValue(
 		static_cast<int32>(CurrentAnimationState));
-	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Blue,
+	if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Blue,
 	                                 FString::Printf(TEXT("AnimationStateString: %s"), *AnimationStateString));
+
+	if (!CapsuleComponent) return;
 
 	UWorld* World = GetWorld();
 
@@ -444,7 +478,7 @@ void AGravityCharacterPawn::UpdateAnimationState()
 		bool bIsGrounded = World->LineTraceSingleByChannel(AnimHitResult, StartLocation, EndLocation, ECC_Visibility,
 		                                                   CollisionParams);
 
-		GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green,
+		if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green,
 		                                 FString::Printf(TEXT("AnimHitResult.Distance: %f"), AnimHitResult.Distance));
 
 		float JumpDeadZone = 3.5f;
@@ -468,8 +502,10 @@ void AGravityCharacterPawn::UpdateGravityState()
 {
 	FString GravityStateString = StaticEnum<EGravityState>()->GetNameStringByValue(
 		static_cast<int32>(CurrentGravityState));
-	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green,
+	if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green,
 	                                 FString::Printf(TEXT("GravityStateString: %s"), *GravityStateString));
+
+	if (!CapsuleComponent) return;
 
 	UWorld* World = GetWorld();
 
@@ -498,7 +534,7 @@ void AGravityCharacterPawn::UpdateGravityState()
 
 			HeightAboveGround = DistanceToGround - CapsuleComponent->GetScaledCapsuleHalfHeight();
 
-			GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Yellow,
+			if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Yellow,
 			                                 FString::Printf(TEXT("HeightAboveGround: %f"), HeightAboveGround));
 		}
 		else
@@ -511,11 +547,13 @@ void AGravityCharacterPawn::UpdateGravityState()
 
 void AGravityCharacterPawn::UpdateZeroGGravity()
 {
-	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("ZeroG Gravity")));
+	if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("ZeroG Gravity")));
 }
 
 void AGravityCharacterPawn::UpdateStationRotation()
 {
+	if (!GravityTargetActor || !CapsuleComponent) return;
+
 	// Rotation Z and X
 	const FVector GravityRotZ = GravityTargetActor->GetActorUpVector();
 	const FVector GravityRotX = CapsuleComponent->GetForwardVector();
@@ -526,14 +564,16 @@ void AGravityCharacterPawn::UpdateStationRotation()
 
 	// Interp to Rot
 	const FRotator ActorRotation = GetActorRotation();
-	FRotator Result = FMath::RInterpTo(ActorRotation, Rotation, GetWorld()->GetDeltaSeconds(), 5.f);
+	UWorld* World = GetWorld();
+	if (!World) return;
+	FRotator Result = FMath::RInterpTo(ActorRotation, Rotation, World->GetDeltaSeconds(), 5.f);
 
 	SetActorRotation(Result);
 }
 
 void AGravityCharacterPawn::UpdateStationGravity()
 {
-	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Station Gravity")));
+	if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Station Gravity")));
 
 	UpdateStationRotation();
 
@@ -545,10 +585,15 @@ void AGravityCharacterPawn::UpdateStationGravity()
 	// CHECK GRAVITY FORCE / EFFECT
 	if (CurrentGravityState != EGravityState::LowG)
 	{
-		const float GravityStrength = -980.0f; 
-		FVector GravityForce = GravityTargetActor->GetActorUpVector() * GravityStrength;
-		CapsuleComponent->AddForce(GravityForce, "none", true);
+		if (GravityTargetActor && CapsuleComponent)
+		{
+			const float GravityStrength = -980.0f;
+			FVector GravityForce = GravityTargetActor->GetActorUpVector() * GravityStrength;
+			CapsuleComponent->AddForce(GravityForce, "none", true);
+		}
 	}
+
+	if (!CameraSpringArm || !ArrowComponent) return;
 
 	// Set SpringCameraArm Relative Roll always 0
 	FRotator CamRot = CameraSpringArm->GetRelativeRotation();
@@ -562,7 +607,12 @@ void AGravityCharacterPawn::UpdateStationGravity()
 
 void AGravityCharacterPawn::UpdatePlanetGravity()
 {
-	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Planet Gravity")));
+	if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Planet Gravity")));
+
+	if (!GravityTargetActor || !CapsuleComponent) return;
+
+	UWorld* World = GetWorld();
+	if (!World) return;
 
 	// align rotation with planet
 	const FVector GravityTargetLocation = GravityTargetActor->GetActorLocation();
@@ -572,16 +622,18 @@ void AGravityCharacterPawn::UpdatePlanetGravity()
 	const FMatrix RotationMatrix = FRotationMatrix::MakeFromZX(LookAtRotation.Vector(), CapsuleForwardVector);
 	const FRotator ActorRotation = GetActorRotation();
 	const FRotator ResultRotation = FMath::RInterpTo(ActorRotation, RotationMatrix.Rotator(),
-	                                                 GetWorld()->GetDeltaSeconds(), 5.f);
+	                                                 World->GetDeltaSeconds(), 5.f);
 	SetActorRotation(ResultRotation);
 
-	const float GravityStrength = -980.0f; 
+	const float GravityStrength = -980.0f;
 	GravityDirection = (GravityTargetActor->GetActorLocation() - GetActorLocation()).GetSafeNormal();
 	FVector GravityForce = GravityDirection * GravityStrength * -1;
 	CapsuleComponent->AddForce(GravityForce, "none", true);
 
-	// 
+	//
 	UpdateAnimationState();
+
+	if (!CameraSpringArm || !ArrowComponent) return;
 
 	// Set SpringCameraArm Relative Roll always 0
 	FRotator CamRot = CameraSpringArm->GetRelativeRotation();
@@ -589,20 +641,25 @@ void AGravityCharacterPawn::UpdatePlanetGravity()
 
 	FRotator CameraSpringArmRotation = CameraSpringArm->GetRelativeRotation();
 	FRotator NewArrowRotation(0.0f, CameraSpringArmRotation.Yaw, 0.0f);
-	
+
 	ArrowComponent->SetRelativeRotation(NewArrowRotation);
 }
 
 void AGravityCharacterPawn::UpdateShipGravity()
 {
-	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Ship Gravity")));
+	if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Ship Gravity")));
+
+	if (!GravityTargetActor || !CapsuleComponent) return;
+
+	UWorld* World = GetWorld();
+	if (!World) return;
 
 	const FVector GravityRotZ = GravityTargetActor->GetActorUpVector();
 	const FVector GravityRotX = CapsuleComponent->GetForwardVector();
 	const FMatrix RotationMatrix = FRotationMatrix::MakeFromZX(GravityRotZ, GravityRotX);
 	const FRotator Rotation = RotationMatrix.Rotator();
 	const FRotator ActorRotation = GetActorRotation();
-	const FRotator Result = FMath::RInterpTo(ActorRotation, Rotation, GetWorld()->GetDeltaSeconds(), 5.f);
+	const FRotator Result = FMath::RInterpTo(ActorRotation, Rotation, World->GetDeltaSeconds(), 5.f);
 	SetActorRotation(Result);
 
 	//
@@ -614,10 +671,12 @@ void AGravityCharacterPawn::UpdateShipGravity()
 	// CHECK GRAVITY FORCE / EFFECT
 	if (CurrentGravityState != EGravityState::LowG)
 	{
-		const float GravityStrength = -980.0f; 
+		const float GravityStrength = -980.0f;
 		FVector GravityForce = GravityTargetActor->GetActorUpVector() * GravityStrength;
 		CapsuleComponent->AddForce(GravityForce, "none", true);
 	}
+
+	if (!CameraSpringArm || !ArrowComponent) return;
 
 	// Set SpringCameraArm Relative Roll always 0
 	FRotator CamRot = CameraSpringArm->GetRelativeRotation();
@@ -635,6 +694,7 @@ void AGravityCharacterPawn::UpdateShipGravity()
 
 void AGravityCharacterPawn::Turn(const float Value)
 {
+	if (!CameraSpringArm) return;
 	FRotator TargetRotation = CameraSpringArm->GetRelativeRotation();
 	TargetRotation.Yaw += Value * CharacterRotationScale;
 	CameraSpringArm->SetRelativeRotation(TargetRotation);
@@ -642,6 +702,7 @@ void AGravityCharacterPawn::Turn(const float Value)
 
 void AGravityCharacterPawn::LookUp(const float Value)
 {
+	if (!CameraSpringArm) return;
 	FRotator TargetRotation = CameraSpringArm->GetRelativeRotation();
 	TargetRotation.Pitch += Value * CharacterRotationScale;
 	CameraSpringArm->SetRelativeRotation(TargetRotation);
@@ -649,9 +710,14 @@ void AGravityCharacterPawn::LookUp(const float Value)
 
 void AGravityCharacterPawn::AlignCharacterToCameraZeroG()
 {
+	if (!CameraSpringArm || !CapsuleComponent) return;
+
+	UWorld* World = GetWorld();
+	if (!World) return;
+
 	const FQuat CameraQuat = CameraSpringArm->GetComponentQuat();
 	FQuat NewCharacterQuat = FQuat(CameraQuat.X, CameraQuat.Y, CameraQuat.Z, CameraQuat.W);
-	FQuat InterpolatedQuat = FMath::QInterpTo(GetActorQuat(), NewCharacterQuat, GetWorld()->GetDeltaSeconds(),
+	FQuat InterpolatedQuat = FMath::QInterpTo(GetActorQuat(), NewCharacterQuat, World->GetDeltaSeconds(),
 	                                          CameraInterpolationSpeed);
 	CapsuleComponent->SetWorldRotation(InterpolatedQuat);
 	SetActorRotation(InterpolatedQuat);
@@ -662,10 +728,15 @@ void AGravityCharacterPawn::AlignCharacterToCameraZeroG()
 
 void AGravityCharacterPawn::AlignCharacterToCameraOnStation()
 {
+	if (!CapsuleComponent || !ArrowComponent || !CameraSpringArm) return;
+
+	UWorld* World = GetWorld();
+	if (!World) return;
+
 	const FQuat CapsuleQuat = CapsuleComponent->GetComponentQuat();
 	const FQuat ArrowForwardVector = ArrowComponent->GetComponentQuat();
 
-	FQuat InterpolatedQuat = FMath::QInterpTo(CapsuleQuat, ArrowForwardVector, GetWorld()->GetDeltaSeconds(), 5.0f);
+	FQuat InterpolatedQuat = FMath::QInterpTo(CapsuleQuat, ArrowForwardVector, World->GetDeltaSeconds(), 5.0f);
 	FQuat DifferenceQuat = CapsuleQuat.Inverse() * InterpolatedQuat;
 
 	CapsuleComponent->SetWorldRotation(InterpolatedQuat);
@@ -721,6 +792,8 @@ void AGravityCharacterPawn::MoveRight(const float Value)
 
 void AGravityCharacterPawn::MoveForwardOnStation(const float Value)
 {
+	if (!ArrowComponent || !CapsuleComponent) return;
+
 	AlignCharacterToCameraOnStation();
 
 	FVector ArrowForwardVector = ArrowComponent->GetForwardVector();
@@ -730,6 +803,8 @@ void AGravityCharacterPawn::MoveForwardOnStation(const float Value)
 
 void AGravityCharacterPawn::MoveRightOnStation(const float Value)
 {
+	if (!ArrowComponent || !CapsuleComponent) return;
+
 	AlignCharacterToCameraOnStation();
 
 	FVector ArrowRightVector = ArrowComponent->GetRightVector();
@@ -739,10 +814,15 @@ void AGravityCharacterPawn::MoveRightOnStation(const float Value)
 
 void AGravityCharacterPawn::MoveForwardOnPlanet(const float Value)
 {
+	if (!CapsuleComponent || !ArrowComponent || !CameraSpringArm) return;
+
+	UWorld* World = GetWorld();
+	if (!World) return;
+
 	const FQuat CapsuleQuat = CapsuleComponent->GetComponentQuat();
 	const FQuat ArrowForwardVector = ArrowComponent->GetComponentQuat();
 
-	FQuat InterpolatedQuat = FMath::QInterpTo(CapsuleQuat, ArrowForwardVector, GetWorld()->GetDeltaSeconds(), 5.0f);
+	FQuat InterpolatedQuat = FMath::QInterpTo(CapsuleQuat, ArrowForwardVector, World->GetDeltaSeconds(), 5.0f);
 	FQuat DifferenceQuat = CapsuleQuat.Inverse() * InterpolatedQuat;
 
 	CapsuleComponent->SetWorldRotation(InterpolatedQuat);
@@ -764,6 +844,7 @@ void AGravityCharacterPawn::MoveForwardOnShip(const float Value)
 
 void AGravityCharacterPawn::MoveForwardZeroG(const float Value)
 {
+	if (!CapsuleComponent) return;
 	AlignCharacterToCameraZeroG();
 	CapsuleComponent->AddImpulse(GetActorForwardVector() * (Value * CharacterMovementForce), "None", true);
 }
@@ -771,10 +852,15 @@ void AGravityCharacterPawn::MoveForwardZeroG(const float Value)
 
 void AGravityCharacterPawn::MoveRightOnPlanet(const float Value)
 {
+	if (!CapsuleComponent || !ArrowComponent || !CameraSpringArm) return;
+
+	UWorld* World = GetWorld();
+	if (!World) return;
+
 	const FQuat CapsuleQuat = CapsuleComponent->GetComponentQuat();
 	const FQuat ArrowForwardVector = ArrowComponent->GetComponentQuat();
 
-	FQuat InterpolatedQuat = FMath::QInterpTo(CapsuleQuat, ArrowForwardVector, GetWorld()->GetDeltaSeconds(), 5.0f);
+	FQuat InterpolatedQuat = FMath::QInterpTo(CapsuleQuat, ArrowForwardVector, World->GetDeltaSeconds(), 5.0f);
 	FQuat DifferenceQuat = CapsuleQuat.Inverse() * InterpolatedQuat;
 
 	CapsuleComponent->SetWorldRotation(InterpolatedQuat);
@@ -796,6 +882,7 @@ void AGravityCharacterPawn::MoveRightOnShip(const float Value)
 
 void AGravityCharacterPawn::MoveRightZeroG(const float Value)
 {
+	if (!CapsuleComponent) return;
 	AlignCharacterToCameraZeroG();
 	CapsuleComponent->AddImpulse(GetActorRightVector() * (Value * CharacterMovementForce), "None", true);
 }
@@ -804,6 +891,8 @@ void AGravityCharacterPawn::MoveUp(const float Value)
 {
 	if (Value != 0)
 	{
+		if (!CapsuleComponent) return;
+
 		switch (CurrentGravityType)
 		{
 		case EGravityType::OnStation:
@@ -813,6 +902,7 @@ void AGravityCharacterPawn::MoveUp(const float Value)
 			}
 		case EGravityType::OnPlanet:
 			{
+				if (!GravityTargetActor) break;
 				FVector JumpGravityDirection = (GravityTargetActor->GetActorLocation() - GetActorLocation()).
 					GetSafeNormal();
 

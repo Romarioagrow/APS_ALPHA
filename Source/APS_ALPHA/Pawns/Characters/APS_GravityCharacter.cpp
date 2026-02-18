@@ -55,6 +55,8 @@ void AAPS_GravityCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInp
 {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
 
+	if (!PlayerInputComponent) return;
+
 	PlayerInputComponent->BindAxis("MoveForward", this, &AAPS_GravityCharacter::MoveForward);
 	PlayerInputComponent->BindAxis("MoveRight", this, &AAPS_GravityCharacter::MoveRight);
 	PlayerInputComponent->BindAxis("MoveUp", this, &AAPS_GravityCharacter::MoveUp);
