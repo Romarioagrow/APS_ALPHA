@@ -21,7 +21,6 @@ public:
 protected:
 	virtual void NativeConstruct() override;
 
-protected:
 	UPROPERTY(meta=(BindWidget))
 	UWidgetSwitcher* Switcher_Content = nullptr;
 
