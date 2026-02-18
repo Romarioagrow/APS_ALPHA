@@ -51,13 +51,9 @@ void ASpaceship::UpdateNavigatableActorsForStellar()
 	if (LastFlightMode == EFlightMode::Interstellar)
 	{
 		// reorigin star system and ship to 0 0 0
-		// Получаем текущее положение игрока
 		FVector PlayerLocation = this->GetActorLocation();
-		// Вычисляем новое положение для OffsetSystem
 		FVector NewSystemLocation = OffsetSystem->GetActorLocation() - PlayerLocation;
-		// Устанавливаем новое положение для OffsetSystem
 		OffsetSystem->SetActorLocation(NewSystemLocation, false);
-		// Устанавливаем положение игрока на (0,0,0)
 		this->SetActorLocation(FVector(0, 0, 0), false);
 
 		ToggleScale();
@@ -73,29 +69,23 @@ void ASpaceship::UpdateNavigatableActorsForInterplanetary()
 
 ASpaceship::ASpaceship()
 {
-	// Создание компонента SpaceshipHull
 	SpaceshipHull = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("SpaceshipHull"));
 	RootComponent = SpaceshipHull;
 	SpaceshipHull->SetSimulatePhysics(true);
-
-	// Создание компонента SphereCollisionComponent и прикрепление его к SpaceshipHull
+	
 	SphereCollisionComponent = CreateDefaultSubobject<USphereComponent>(TEXT("SphereCollisionComponent"));
 	SphereCollisionComponent->SetupAttachment(SpaceshipHull);
 
-	// Создание компонента PilotChair и прикрепление его к SpaceshipHull
 	PilotChair = CreateDefaultSubobject<USceneComponent>(TEXT("PilotChair"));
 	PilotChair->SetupAttachment(SpaceshipHull);
 
 	ForwardVector = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ForwardVector"));
 	ForwardVector->SetupAttachment(SpaceshipHull);
 
-	// Привязка делегатов к функциям
 	OnInterstellarMode.AddDynamic(this, &ASpaceship::UpdateNavigatableActorsForInterstellar);
 	OnStellarMode.AddDynamic(this, &ASpaceship::UpdateNavigatableActorsForStellar);
 	OnInterplanetaryMode.AddDynamic(this, &ASpaceship::UpdateNavigatableActorsForInterplanetary);
-
-
-	// Создайте и настройте компонент SpringArm
+	
 	SpringArmComponent = CreateDefaultSubobject<USpringArmComponent>(TEXT("SpringArm"));
 	SpringArmComponent->SetupAttachment(RootComponent);
 	SpringArmComponent->TargetArmLength = 1000.0;
@@ -103,7 +93,6 @@ ASpaceship::ASpaceship()
 	//SpringArmComponent->SetWorldRotation(FRotator(0.0, -180.0, 0.0 ));
 	//SpringArmComponent->bUsePawnControlRotation = true;
 
-	// Создайте и настройте компонент камеры
 	CameraComponent = CreateDefaultSubobject<UCameraComponent>(TEXT("Camera"));
 	CameraComponent->SetupAttachment(SpringArmComponent, USpringArmComponent::SocketName);
 }
@@ -180,15 +169,15 @@ void ASpaceship::CalculateDistanceAndAddToZones(AWorldActor* WorldActor)
 		FVector ShipLocation = GetActorLocation();
 
 		double InfluenceRadius = WorldActor->AffectionRadiusKM * 100000;
-		// Конвертировать километры в юниты Unreal (1 unit = 1 cm)
+		// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅ Unreal (1 unit = 1 cm)
 		DistanceSquared = FVector::DistSquared(WorldActor->GetActorLocation(), ShipLocation) - FMath::Square(
 			InfluenceRadius);
 
-		// Получить родительского актора и вывести его на экран
+		// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅ
 		AActor* ParentActor = WorldActor->GetRootComponent()->GetAttachParent()->GetOwner();
 		FString ParentName = ParentActor ? *ParentActor->GetName() : FString("No Parent");
 
-		// Вывести сообщение на экран
+		// пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅ
 		double DistanceInKm = FMath::Sqrt(DistanceSquared) / 100000;
 		FString Message = FString::Printf(
 			TEXT("Distance to %s (orbiting %s): %f kilometers."), *WorldActor->GetName(), *ParentName, DistanceInKm);
@@ -222,7 +211,7 @@ TSharedPtr<FStarModel> FindNearestStar(TMap<FVector, TSharedPtr<FStarModel>>& St
 void ASpaceship::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
-	uint64 StartCycles = FPlatformTime::Cycles();
+	/*uint64 StartCycles = FPlatformTime::Cycles();
 
 	if (!bEngineRunning)
 	{
@@ -274,22 +263,22 @@ void ASpaceship::Tick(float DeltaTime)
 
 		ComputeProximity();
 
-		// Если мы в режиме Interstellar, проверить ближайшую звезду
+		// пїЅпїЅпїЅпїЅ пїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅ Interstellar, пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ
 		if (OnboardComputer->FlightSystem.CurrentFlightMode == EFlightMode::Interstellar)
 		{
-			//ComputeClosestStar(); // Обновить OffsetSystem
+			//ComputeClosestStar(); // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ OffsetSystem
 
 			if (!OffsetSystem) return;
 
 			double Distance = FVector::Dist(this->GetActorLocation(), OffsetSystem->GetActorLocation());
 			double AffectionRadiusUnits = OffsetSystem->AffectionRadiusKM * 100000 / 1000000000.0; /// CRASH PIE!!!
-			// Переводим км в юниты и учитываем масштабирование
+			// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 			GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Orange,
 			                                 FString::Printf(
 				                                 TEXT("Distance: %f, Affection Radius: %f"), Distance,
 				                                 AffectionRadiusUnits));
 
-			// Если мы в пределах зоны влияния, переключиться на Stellar
+			// пїЅпїЅпїЅпїЅ пїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ, пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ Stellar
 			if (Distance < AffectionRadiusUnits && LastFlightMode != EFlightMode::Stellar)
 			{
 				OnboardComputer->FlightSystem.CurrentFlightMode = EFlightMode::Stellar;
@@ -314,28 +303,28 @@ void ASpaceship::Tick(float DeltaTime)
 
 				//Planet->InitWSC();
 
-				// Получить позиции корабля и планеты.
+				// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ.
 				FVector ShipPosition = GetActorLocation();
 				FVector PlanetPosition = Planet->GetActorLocation();
-				// Вычислить расстояние между кораблем и планетой.
+				// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ.
 				double DistanceToPlanet = FVector::Dist(ShipPosition, PlanetPosition) - Planet->GetRadius();
 				DistanceToPlanet /= 100000.0;
-				// Выбор режима полета на основе расстояния до планеты.
+				// пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ.
 				if (DistanceToPlanet <= Planet->RadiusKM + Planet->AtmosphereHeight)
 				{
-					// Если корабль внутри атмосферы планеты.
+					// пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ.
 					if (DistanceToPlanet - Planet->RadiusKM <= 10.0)
 					{
 						GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, TEXT("Surface Flight!"));
 
-						// Если корабль ближе 10 км к поверхности планеты.
+						// пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ 10 пїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ.
 						OnboardComputer->FlightSystem.CurrentFlightMode = EFlightMode::Surface;
 						//OnboardComputer->FlightSystem.CurrentFlightType = EFlightType::Atmospheric;
 						OnboardComputer->SwitchEngineMode(EEngineMode::Impulse);
 					}
 					else
 					{
-						// Если корабль внутри атмосферы, но дальше 10 км от поверхности.
+						// пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ, пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ 10 пїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ.
 						GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, TEXT("Atmospheric Flight!"));
 
 						OnboardComputer->FlightSystem.CurrentFlightMode = EFlightMode::Atmospheric;
@@ -349,7 +338,7 @@ void ASpaceship::Tick(float DeltaTime)
 				}
 				else if (DistanceToPlanet <= Planet->RadiusKM + Planet->OrbitHeight)
 				{
-					// Если корабль внутри орбиты планеты, но за пределами атмосферы.
+					// пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ, пїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ.
 					OnboardComputer->FlightSystem.CurrentFlightMode = EFlightMode::Orbital;
 					//OnboardComputer->FlightSystem.CurrentFlightType = EFlightType::Orbital;
 					//OnboardComputer->SwitchEngineMode(EEngineMode::SpaceWrap);
@@ -462,7 +451,7 @@ void ASpaceship::Tick(float DeltaTime)
 	uint64 EndCycles = FPlatformTime::Cycles();
 	double ElapsedTime = FPlatformTime::ToSeconds(EndCycles - StartCycles);
 	GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red,
-	                                 FString::Printf(TEXT("Time elapsed: %f seconds"), ElapsedTime));
+	                                 FString::Printf(TEXT("Time elapsed: %f seconds"), ElapsedTime));*/
 }
 
 void ASpaceship::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -535,11 +524,11 @@ void ASpaceship::IncreaseFlightMode()
 		EEngineMode CurrentMode = OnboardComputer->EngineSystem.CurrentEngineMode;
 		int32 CurrentIndex = static_cast<int32>(CurrentMode);
 
-		// Увеличиваем индекс
+		// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ
 		CurrentIndex++;
-		if (CurrentIndex >= static_cast<int32>(EEngineMode::MaxValue)) // Проверяем, не вышли ли мы за пределы
+		if (CurrentIndex >= static_cast<int32>(EEngineMode::MaxValue)) // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ, пїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 		{
-			CurrentIndex = 0; // или установите его в другое значение по умолчанию
+			CurrentIndex = 0; // пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 		}
 
 		EEngineMode NewMode = static_cast<EEngineMode>(CurrentIndex);
@@ -572,12 +561,12 @@ void ASpaceship::DecreaseFlightMode()
 		EEngineMode CurrentMode = OnboardComputer->EngineSystem.CurrentEngineMode;
 		int32 CurrentIndex = static_cast<int32>(CurrentMode);
 
-		// Увеличиваем индекс
+		// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ
 		CurrentIndex--;
 		if (CurrentIndex < 0)
 		{
 			CurrentIndex = static_cast<int32>(EEngineMode::MaxValue) - 1;
-			// или установите его в другое значение по умолчанию
+			// пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 		}
 
 		EEngineMode NewMode = static_cast<EEngineMode>(CurrentIndex);
@@ -621,7 +610,7 @@ void ASpaceship::ToggleScale()
 			GEngine->AddOnScreenDebugMessage(-1, 15.0f, FColor::Green, FString::Printf(TEXT("Scaling to 1000000000")));
 		}
 
-		// Переключаем состояние масштабирования
+		// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 		bIsScaledUp = !bIsScaledUp;
 	}
 }
@@ -730,12 +719,12 @@ void ASpaceship::ThrustSide(float Value)
 	const FVector Direction = ForwardVector->GetRightVector();
 	if (OffsetSystem && OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::SpaceWrap)
 	{
-		// Сдвигаем StarSystem
+		// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ StarSystem
 		OffsetSystem->AddActorLocalOffset(-Direction * Value * OnboardComputer->GetEngineThrustForce());
 	}
 	else if (OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::Impulse)
 	{
-		// Получаем вектор вперед корабля.
+		// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ.
 		const FVector Impulse = Direction * Value * OnboardComputer->GetEngineThrustForce();
 		SpaceshipHull->AddImpulse(Impulse, NAME_None, true);
 	}
@@ -753,12 +742,12 @@ void ASpaceship::ThrustVertical(float Value)
 	const FVector Direction = ForwardVector->GetUpVector();
 	if (OffsetSystem && OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::SpaceWrap)
 	{
-		// Сдвигаем StarSystem
+		// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ StarSystem
 		OffsetSystem->AddActorLocalOffset(-Direction * Value * OnboardComputer->GetEngineThrustForce());
 	}
 	else if (OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::Impulse)
 	{
-		// Получаем вектор вперед корабля.
+		// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ.
 		const FVector Impulse = Direction * Value * OnboardComputer->GetEngineThrustForce();
 		SpaceshipHull->AddImpulse(Impulse, NAME_None, true);
 	}
@@ -773,7 +762,7 @@ void ASpaceship::ThrustYaw(float Value)
 {
 	if (!bEngineRunning || FMath::Abs(Value) < KINDA_SMALL_NUMBER) return;
 
-	float RotationAmount = Value * 0.5; // Вы можете изменить эту переменную для управления скоростью вращения
+	float RotationAmount = Value * 0.5; // пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 	if (OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::SpaceWrap || OnboardComputer->EngineSystem.
 		CurrentEngineMode == EEngineMode::Offset)
 	{
@@ -846,11 +835,11 @@ void ASpaceship::ComputeProximity()
 		double DistanceToActor = (ActorLocation - ShipLocation).Size() - SurfaceRadius;
 		double DistanceToAffectionZone = (ActorLocation - ShipLocation).Size();
 
-		// Выводим расстояние в километрах
+		// пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 		//FString DistanceMessage = FString::Printf(TEXT("Distance to actor %s is %f km"), *Actor->GetName(), DistanceToActor / 100000);
 		//GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Yellow, DistanceMessage);
 
-		// Если корабль находится в зоне действия актёра (т.е. расстояние меньше или равно нулю)
+		// пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ (пїЅ.пїЅ. пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ)
 		if (DistanceToAffectionZone <= AffectionRadius)
 		{
 			CurrentZonesInfluence.Add(Actor);
@@ -893,13 +882,13 @@ void ASpaceship::UpdateNavigatableActors()
 
 void ASpaceship::CheckFlightModeChange()
 {
-	// Если режим полета изменился
+	// пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 	if (OnboardComputer->FlightSystem.CurrentFlightMode != LastFlightMode)
 	{
-		// Обновляем список акторов
+		// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 		UpdateNavigatableActors();
 
-		// Обновляем LastFlightMode
+		// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ LastFlightMode
 		LastFlightMode = OnboardComputer->FlightSystem.CurrentFlightMode;
 	}
 }

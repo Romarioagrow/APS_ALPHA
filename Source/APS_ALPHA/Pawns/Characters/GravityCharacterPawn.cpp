@@ -69,7 +69,7 @@ void AGravityCharacterPawn::Tick(const float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	if (!CapsuleComponent) return;
+	/*if (!CapsuleComponent) return;
 
 	UWorld* World = GetWorld();
 	if (!World) return;
@@ -182,7 +182,7 @@ void AGravityCharacterPawn::Tick(const float DeltaTime)
 		}
 	}
 	if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red,
-	                                 FString::Printf(TEXT("Time taken: %f seconds"), ElapsedTime));
+	                                 FString::Printf(TEXT("Time taken: %f seconds"), ElapsedTime));*/
 }
 
 // Called to bind functionality to input
