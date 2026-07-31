@@ -30,11 +30,14 @@ void AMainMenuController::SetSaveSlotName(FString OutSaveSlotName)
 
 void AMainMenuController::SetLoadingModeTrue()
 {
-	if (UGameInstance* GameInstance = GetWorld()->GetGameInstance())
+	if (const UWorld* World = GetWorld())
 	{
-		if (UMainGameplayInstance* MainGameplayInstance = GameInstance->GetSubsystem<UMainGameplayInstance>())
+		if (UGameInstance* GameInstance = World->GetGameInstance())
 		{
-			MainGameplayInstance->bIsLoadingMode = true;
+			if (UMainGameplayInstance* MainGameplayInstance = GameInstance->GetSubsystem<UMainGameplayInstance>())
+			{
+				MainGameplayInstance->bIsLoadingMode = true;
+			}
 		}
 	}
 }

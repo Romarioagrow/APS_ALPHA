@@ -8,6 +8,8 @@ class USpawnParameters;
 class UGenerationInput;
 class UGenerationSlider;
 class UGeneratedWorld;
+class UWorldGenerationViewModel;
+class SWidget;
 enum class EStarClusterComposition : uint8;
 enum class EStarClusterPopulation : uint8;
 enum class EStarClusterType : uint8;
@@ -20,7 +22,11 @@ class UAstroGenerationMenu : public UBaseWidget
 	GENERATED_BODY()
 
 protected:
+	virtual TSharedRef<SWidget> RebuildWidget() override;
 	virtual void NativeConstruct() override;
+	virtual void NativeDestruct() override;
+	void EnsureGenerationViewModel();
+	bool bGenerationViewModelActive{false};
 	
 	UFUNCTION()
 	void SetupInputs();
@@ -47,6 +53,12 @@ protected:
 	void GenerateWorldByModel();
 
 public:
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "World Generation|UI")
+	bool bUseSlateLayout{false};
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "World Generation|MVVM")
+	UWorldGenerationViewModel* WorldGenerationViewModel;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astro Generation")
 	TArray<EAstroGenerationLevel> EAstroGenerationLevelArray;
 

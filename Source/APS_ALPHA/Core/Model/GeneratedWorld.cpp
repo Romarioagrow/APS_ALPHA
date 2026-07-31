@@ -12,7 +12,7 @@
 UGeneratedWorld::UGeneratedWorld(): GalaxyClass()
 {
 	bGenerateFullScaledWorld = true;
-	bGenerateHomeSystem = false;
+	bGenerateHomeSystem = true;
 	bStartWithHomePlanet = true;
 	bRandomHomeSystem = false;
 	bRandomHomeSystemType = false;
@@ -33,7 +33,8 @@ UGeneratedWorld::UGeneratedWorld(): GalaxyClass()
 	HomeSystemPosition = EHomeSystemPosition::DirectPosition;
 	GalaxySize = 250;
 	GalaxyStarCount = 100000;
-	PlanetsAmount = 0;
+	PlanetsAmount = 1;
+	StartPlanetIndex = 1;
 	GalaxyStarDensity = 10.0;
 	HomePlanetarySystem = nullptr;
 	HomePlanet = nullptr;

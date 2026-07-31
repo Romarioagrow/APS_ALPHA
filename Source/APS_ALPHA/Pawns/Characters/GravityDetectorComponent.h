@@ -20,6 +20,9 @@ class APS_ALPHA_API UGravityDetectorComponent : public UActorComponent
 
 public:
 	UGravityDetectorComponent();
+	virtual void BeginPlay() override;
+	virtual void TickComponent(float DeltaTime, ELevelTick TickType,
+		FActorComponentTickFunction* ThisTickFunction) override;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gravity")
 	AActor* GravityTargetActor;
@@ -38,8 +41,25 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	ASpaceship* CurrentSpaceship;
 
+	/** Full-scale source checks are throttled instead of scanning the world every frame. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gravity", meta = (ClampMin = "0.02"))
+	float DetectionInterval{0.1f};
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gravity")
+	bool bAutomaticDetection{true};
+
 	UFUNCTION(BlueprintCallable, Category="Gravity")
 	void RunGravityCheck(ACharacter* Character);
 
 	void SwitchGravityType(AActor* GravitySourceActor);
+
+	UFUNCTION(BlueprintPure, Category = "Gravity")
+	FVector GetGravityDirectionAtLocation(const FVector& WorldLocation) const;
+
+	UFUNCTION(BlueprintCallable, Category = "Gravity")
+	void ClearGravitySource();
+
+private:
+	AActor* FindBestOverlappingSource(ACharacter* Character) const;
+	AWorldActor* FindClosestFullScaleSource(ACharacter* Character) const;
 };

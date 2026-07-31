@@ -72,12 +72,23 @@ ASpaceship::ASpaceship()
 	SpaceshipHull = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("SpaceshipHull"));
 	RootComponent = SpaceshipHull;
 	SpaceshipHull->SetSimulatePhysics(true);
+
+	OnboardComputer = CreateDefaultSubobject<USpaceshipOnboardComputer>(TEXT("OnboardComputer"));
 	
 	SphereCollisionComponent = CreateDefaultSubobject<USphereComponent>(TEXT("SphereCollisionComponent"));
 	SphereCollisionComponent->SetupAttachment(SpaceshipHull);
+	SphereCollisionComponent->InitSphereRadius(1000.0f);
+	SphereCollisionComponent->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+	SphereCollisionComponent->SetCollisionResponseToAllChannels(ECR_Ignore);
+	SphereCollisionComponent->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);
+	SphereCollisionComponent->SetGenerateOverlapEvents(true);
 
 	PilotChair = CreateDefaultSubobject<USceneComponent>(TEXT("PilotChair"));
 	PilotChair->SetupAttachment(SpaceshipHull);
+
+	PilotExitPoint = CreateDefaultSubobject<USceneComponent>(TEXT("PilotExitPoint"));
+	PilotExitPoint->SetupAttachment(SpaceshipHull);
+	PilotExitPoint->SetRelativeLocation(FVector(0.0, -200.0, 100.0));
 
 	ForwardVector = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ForwardVector"));
 	ForwardVector->SetupAttachment(SpaceshipHull);
@@ -106,30 +117,27 @@ void ASpaceship::BeginPlay()
 	GeneratedStarCluster = Cast<AStarCluster>(
 		UGameplayStatics::GetActorOfClass(GetWorld(), AStarCluster::StaticClass()));
 
-	OnboardComputer = NewObject<USpaceshipOnboardComputer>(this, TEXT("OnboardComputer"));
-	if (OnboardComputer)
-	{
-		OnboardComputer->SpaceshipHull = SpaceshipHull;
-		OnboardComputer->OffsetSystem = OffsetSystem;
-	}
-	else
-	{
-		UE_LOG(LogTemp, Error, TEXT("OnboardComputer is nullptr!"));
-	}
-
 	if (!OffsetSystem)
 	{
 		OffsetSystem = Cast<AStarSystem>(UGameplayStatics::GetActorOfClass(GetWorld(), AStarSystem::StaticClass()));
 		if (OffsetSystem)
 		{
-			UE_LOG(LogTemp, Error, TEXT("OffsetSystem successfully obtained!"));
+			UE_LOG(LogTemp, Log, TEXT("OffsetSystem successfully obtained."));
 			//GEngine->AddOnScreenDebugMessage(-1, 1.f, FColor::Green, TEXT("OffsetSystem successfully obtained!"));
 		}
 		else
 		{
-			UE_LOG(LogTemp, Error, TEXT("Failed to obtain OffsetSystem!"));
+			UE_LOG(LogTemp, Verbose, TEXT("No OffsetSystem is present in this level."));
 			//GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("Failed to obtain OffsetSystem."));
 		}
+	}
+
+	if (OnboardComputer)
+	{
+		OnboardComputer->SpaceshipHull = SpaceshipHull;
+		OnboardComputer->OffsetSystem = OffsetSystem;
+		OnboardComputer->ComputeFlightParams();
+		OnboardComputer->ApplyEngineModeForCurrentFlightMode();
 	}
 
 	// UpdateNavigatableActors();	
@@ -211,6 +219,38 @@ TSharedPtr<FStarModel> FindNearestStar(TMap<FVector, TSharedPtr<FStarModel>>& St
 void ASpaceship::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+
+	if (!OnboardComputer || !SpaceshipHull)
+	{
+		return;
+	}
+
+	if (bIsAccelerating)
+	{
+		OnboardComputer->AccelerateBoost(DeltaTime);
+	}
+	else if (bIsDecelerating)
+	{
+		OnboardComputer->DecelerateBoost(DeltaTime);
+	}
+	else
+	{
+		OnboardComputer->RestoreNominalThrust(DeltaTime);
+	}
+
+	if (SpaceshipHull->IsSimulatingPhysics())
+	{
+		const FFlightParams& FlightParams = OnboardComputer->FlightSystem.FlightParams;
+		SpaceshipHull->SetLinearDamping(FlightParams.LinearResistance);
+		SpaceshipHull->SetAngularDamping(FlightParams.AngularResistance);
+
+		if (bIsDecelerating)
+		{
+			const FVector BrakedVelocity = FMath::VInterpTo(
+				SpaceshipHull->GetPhysicsLinearVelocity(), FVector::ZeroVector, DeltaTime, BrakingResponseSpeed);
+			SpaceshipHull->SetPhysicsLinearVelocity(BrakedVelocity);
+		}
+	}
 	/*uint64 StartCycles = FPlatformTime::Cycles();
 
 	if (!bEngineRunning)
@@ -519,61 +559,18 @@ void ASpaceship::HandleDecelerationBoost(float Value)
 
 void ASpaceship::IncreaseFlightMode()
 {
-	if (OnboardComputer != nullptr)
-	{
-		EEngineMode CurrentMode = OnboardComputer->EngineSystem.CurrentEngineMode;
-		int32 CurrentIndex = static_cast<int32>(CurrentMode);
+	if (!OnboardComputer) return;
 
-		// ����������� ������
-		CurrentIndex++;
-		if (CurrentIndex >= static_cast<int32>(EEngineMode::MaxValue)) // ���������, �� ����� �� �� �� �������
-		{
-			CurrentIndex = 0; // ��� ���������� ��� � ������ �������� �� ���������
-		}
-
-		EEngineMode NewMode = static_cast<EEngineMode>(CurrentIndex);
-
-		OnboardComputer->SwitchEngineMode(NewMode);
-		//OnboardComputer->FlightSystem.FlightParams.ThrustForce = 0.001;
-
-		CurrentMode = OnboardComputer->EngineSystem.CurrentEngineMode;
-		switch (CurrentMode)
-		{
-		case EEngineMode::Impulse:
-			OnboardComputer->FlightSystem.FlightParams.ThrustForce = 100;
-			break;
-		case EEngineMode::SpaceWrap:
-			OnboardComputer->FlightSystem.FlightParams.ThrustForce = 0.001;
-			break;
-		default:
-			OnboardComputer->FlightSystem.FlightParams.ThrustForce = 1.0;
-			break; // Although not necessary after default, it's a good practice to always include a break.
-		}
-
-		//OnboardComputer->IncreaseFlightMode();
-	}
+	OnboardComputer->IncreaseFlightMode();
+	CheckFlightModeChange();
 }
 
 void ASpaceship::DecreaseFlightMode()
 {
-	if (OnboardComputer != nullptr)
-	{
-		EEngineMode CurrentMode = OnboardComputer->EngineSystem.CurrentEngineMode;
-		int32 CurrentIndex = static_cast<int32>(CurrentMode);
+	if (!OnboardComputer) return;
 
-		// ����������� ������
-		CurrentIndex--;
-		if (CurrentIndex < 0)
-		{
-			CurrentIndex = static_cast<int32>(EEngineMode::MaxValue) - 1;
-			// ��� ���������� ��� � ������ �������� �� ���������
-		}
-
-		EEngineMode NewMode = static_cast<EEngineMode>(CurrentIndex);
-
-		OnboardComputer->SwitchEngineMode(NewMode);
-		//OnboardComputer->DecreaseFlightMode();
-	}
+	OnboardComputer->DecreaseFlightMode();
+	CheckFlightModeChange();
 }
 
 
@@ -690,79 +687,78 @@ void ASpaceship::SwitchEngines()
 
 void ASpaceship::ThrustForward(float Value)
 {
-	//if (!bEngineRunning) return;
-	if (!bEngineRunning || FMath::Abs(Value) < KINDA_SMALL_NUMBER) return;
+	if (!bEngineRunning || !OnboardComputer || !SpaceshipHull || FMath::Abs(Value) < KINDA_SMALL_NUMBER) return;
 
 	double EngineThrustForce = OnboardComputer->GetEngineThrustForce();
 	const FVector Direction = ForwardVector->GetForwardVector();
+	const float DeltaTime = GetWorld()->GetDeltaSeconds();
 
 	if (OffsetSystem && OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::SpaceWrap)
 	{
-		OffsetSystem->AddActorLocalOffset(-Direction * Value * EngineThrustForce); /// CRASHED PIE!
+		OffsetSystem->AddActorWorldOffset(-Direction * Value * EngineThrustForce * DeltaTime);
 	}
-	else if (OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::Impulse)
+	else if (OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::Impulse && SpaceshipHull->IsSimulatingPhysics())
 	{
-		const FVector Impulse = Direction * Value * EngineThrustForce;
-		SpaceshipHull->AddImpulse(Impulse, NAME_None, true);
+		SpaceshipHull->AddForce(Direction * Value * EngineThrustForce, NAME_None, true);
 	}
 	else if (OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::Offset)
 	{
-		const FVector Offset = Direction * Value * EngineThrustForce;
+		const FVector Offset = Direction * Value * EngineThrustForce * DeltaTime;
 		SpaceshipHull->AddWorldOffset(Offset, true);
 	}
 }
 
 void ASpaceship::ThrustSide(float Value)
 {
-	if (!bEngineRunning || FMath::Abs(Value) < KINDA_SMALL_NUMBER) return;
+	if (!bEngineRunning || !OnboardComputer || !SpaceshipHull || FMath::Abs(Value) < KINDA_SMALL_NUMBER) return;
 
 	const FVector Direction = ForwardVector->GetRightVector();
+	const float DeltaTime = GetWorld()->GetDeltaSeconds();
 	if (OffsetSystem && OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::SpaceWrap)
 	{
 		// �������� StarSystem
-		OffsetSystem->AddActorLocalOffset(-Direction * Value * OnboardComputer->GetEngineThrustForce());
+		OffsetSystem->AddActorWorldOffset(-Direction * Value * OnboardComputer->GetEngineThrustForce() * DeltaTime);
 	}
-	else if (OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::Impulse)
+	else if (OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::Impulse && SpaceshipHull->IsSimulatingPhysics())
 	{
 		// �������� ������ ������ �������.
-		const FVector Impulse = Direction * Value * OnboardComputer->GetEngineThrustForce();
-		SpaceshipHull->AddImpulse(Impulse, NAME_None, true);
+		SpaceshipHull->AddForce(Direction * Value * OnboardComputer->GetEngineThrustForce(), NAME_None, true);
 	}
 	else if (OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::Offset)
 	{
-		const FVector Offset = Direction * Value * OnboardComputer->GetEngineThrustForce();
+		const FVector Offset = Direction * Value * OnboardComputer->GetEngineThrustForce() * DeltaTime;
 		SpaceshipHull->AddWorldOffset(Offset, true);
 	}
 }
 
 void ASpaceship::ThrustVertical(float Value)
 {
-	if (!bEngineRunning || FMath::Abs(Value) < KINDA_SMALL_NUMBER) return;
+	if (!bEngineRunning || !OnboardComputer || !SpaceshipHull || FMath::Abs(Value) < KINDA_SMALL_NUMBER) return;
 
 	const FVector Direction = ForwardVector->GetUpVector();
+	const float DeltaTime = GetWorld()->GetDeltaSeconds();
 	if (OffsetSystem && OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::SpaceWrap)
 	{
 		// �������� StarSystem
-		OffsetSystem->AddActorLocalOffset(-Direction * Value * OnboardComputer->GetEngineThrustForce());
+		OffsetSystem->AddActorWorldOffset(-Direction * Value * OnboardComputer->GetEngineThrustForce() * DeltaTime);
 	}
-	else if (OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::Impulse)
+	else if (OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::Impulse && SpaceshipHull->IsSimulatingPhysics())
 	{
 		// �������� ������ ������ �������.
-		const FVector Impulse = Direction * Value * OnboardComputer->GetEngineThrustForce();
-		SpaceshipHull->AddImpulse(Impulse, NAME_None, true);
+		SpaceshipHull->AddForce(Direction * Value * OnboardComputer->GetEngineThrustForce(), NAME_None, true);
 	}
 	else if (OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::Offset)
 	{
-		const FVector Offset = Direction * Value * OnboardComputer->GetEngineThrustForce();
+		const FVector Offset = Direction * Value * OnboardComputer->GetEngineThrustForce() * DeltaTime;
 		SpaceshipHull->AddWorldOffset(Offset, true);
 	}
 }
 
 void ASpaceship::ThrustYaw(float Value)
 {
-	if (!bEngineRunning || FMath::Abs(Value) < KINDA_SMALL_NUMBER) return;
+	if (!bEngineRunning || !OnboardComputer || !SpaceshipHull || FMath::Abs(Value) < KINDA_SMALL_NUMBER) return;
 
-	float RotationAmount = Value * 0.5; // �� ������ �������� ��� ���������� ��� ���������� ��������� ��������
+	const float RotationAmount = Value * RotationSpeedDegreesPerSecond * GetWorld()->GetDeltaSeconds();
 	if (OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::SpaceWrap || OnboardComputer->EngineSystem.
 		CurrentEngineMode == EEngineMode::Offset)
 	{
@@ -771,16 +767,16 @@ void ASpaceship::ThrustYaw(float Value)
 	}
 	else if (OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::Impulse)
 	{
-		FVector TorqueVector = ForwardVector->GetUpVector() * RotationAmount;
+		FVector TorqueVector = ForwardVector->GetUpVector() * Value * ImpulseRotationAcceleration;
 		SpaceshipHull->AddTorqueInRadians(TorqueVector, NAME_None, true);
 	}
 }
 
 void ASpaceship::ThrustPitch(float Value)
 {
-	if (!bEngineRunning || FMath::Abs(Value) < KINDA_SMALL_NUMBER) return;
+	if (!bEngineRunning || !OnboardComputer || !SpaceshipHull || FMath::Abs(Value) < KINDA_SMALL_NUMBER) return;
 
-	float RotationAmount = Value * 0.5;
+	const float RotationAmount = Value * RotationSpeedDegreesPerSecond * GetWorld()->GetDeltaSeconds();
 	if (OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::SpaceWrap || OnboardComputer->EngineSystem.
 		CurrentEngineMode == EEngineMode::Offset)
 	{
@@ -789,16 +785,16 @@ void ASpaceship::ThrustPitch(float Value)
 	}
 	else if (OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::Impulse)
 	{
-		FVector TorqueVector = ForwardVector->GetRightVector() * RotationAmount;
+		FVector TorqueVector = ForwardVector->GetRightVector() * Value * ImpulseRotationAcceleration;
 		SpaceshipHull->AddTorqueInRadians(TorqueVector, NAME_None, true);
 	}
 }
 
 void ASpaceship::ThrustRoll(float Value)
 {
-	if (!bEngineRunning || FMath::Abs(Value) < KINDA_SMALL_NUMBER) return;
+	if (!bEngineRunning || !OnboardComputer || !SpaceshipHull || FMath::Abs(Value) < KINDA_SMALL_NUMBER) return;
 
-	float RotationAmount = Value * 0.5;
+	const float RotationAmount = Value * RotationSpeedDegreesPerSecond * GetWorld()->GetDeltaSeconds();
 
 	if (OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::SpaceWrap || OnboardComputer->EngineSystem.
 		CurrentEngineMode == EEngineMode::Offset)
@@ -808,13 +804,23 @@ void ASpaceship::ThrustRoll(float Value)
 	}
 	else if (OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::Impulse)
 	{
-		FVector TorqueVector = ForwardVector->GetForwardVector() * RotationAmount;
+		FVector TorqueVector = ForwardVector->GetForwardVector() * Value * ImpulseRotationAcceleration;
 		SpaceshipHull->AddTorqueInRadians(TorqueVector, NAME_None, true);
 	}
 }
 
 void ASpaceship::SetPilot(AGravityCharacterPawn* NewPilot)
 {
+}
+
+USceneComponent* ASpaceship::GetPilotSeatComponent() const
+{
+	return PilotChair ? PilotChair : Super::GetPilotSeatComponent();
+}
+
+FTransform ASpaceship::GetPilotExitTransform() const
+{
+	return PilotExitPoint ? PilotExitPoint->GetComponentTransform() : Super::GetPilotExitTransform();
 }
 
 void ASpaceship::ComputeProximity()

@@ -103,6 +103,10 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Components")
 	USceneComponent* PilotChair;
 
+	/** Safe character return point. Existing ship Blueprints inherit it automatically. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Components")
+	USceneComponent* PilotExitPoint;
+
 	UPROPERTY(VisibleAnywhere, Category = "Astro Actor")
 	AStarCluster* GeneratedStarCluster;
 
@@ -150,6 +154,15 @@ public:
 
 	bool bIsDecelerating{false};
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight|Handling", meta = (ClampMin = "0.0"))
+	float RotationSpeedDegreesPerSecond{30.0f};
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight|Handling", meta = (ClampMin = "0.0"))
+	float ImpulseRotationAcceleration{0.5f};
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight|Handling", meta = (ClampMin = "0.0"))
+	float BrakingResponseSpeed{1.5f};
+
 	void ComputeProximity();
 
 	void UpdateNavigatableActors();
@@ -193,4 +206,8 @@ public:
 	void IncreaseFlightMode();
 
 	void DecreaseFlightMode();
+
+protected:
+	virtual USceneComponent* GetPilotSeatComponent() const override;
+	virtual FTransform GetPilotExitTransform() const override;
 };

@@ -2,7 +2,9 @@
 
 #include "GenerationInput.h"
 #include "GenerationSlider.h"
+#include "SWorldGenerationPanel.h"
 #include "SpawnClassPicker.h"
+#include "WorldGenerationViewModel.h"
 #include "APS_ALPHA/Core/Enums/AstroGenerationLevel.h"
 #include "APS_ALPHA/Core/Enums/PlanetType.h"
 #include "APS_ALPHA/Core/Instances/MainGameplayInstance.h"
@@ -14,6 +16,18 @@
 
 class UMainGameplayInstance;
 
+TSharedRef<SWidget> UAstroGenerationMenu::RebuildWidget()
+{
+	if (bUseSlateLayout)
+	{
+		EnsureGenerationViewModel();
+		return SNew(SWorldGenerationPanel)
+			.ViewModel(WorldGenerationViewModel);
+	}
+
+	return Super::RebuildWidget();
+}
+
 void UAstroGenerationMenu::NativeConstruct()
 {
 	Super::NativeConstruct();
@@ -23,6 +37,40 @@ void UAstroGenerationMenu::NativeConstruct()
 	SetupSliders();
 
 	SetupInputs();
+
+	if (WorldGenerationViewModel)
+	{
+		WorldGenerationViewModel->RequestPreview();
+	}
+}
+
+void UAstroGenerationMenu::NativeDestruct()
+{
+	if (WorldGenerationViewModel)
+	{
+		WorldGenerationViewModel->Shutdown();
+		bGenerationViewModelActive = false;
+	}
+	Super::NativeDestruct();
+}
+
+void UAstroGenerationMenu::EnsureGenerationViewModel()
+{
+	if (!NewGeneratedWorld)
+	{
+		NewGeneratedWorld = NewObject<UGeneratedWorld>(this, UGeneratedWorld::StaticClass());
+	}
+
+	if (!WorldGenerationViewModel)
+	{
+		WorldGenerationViewModel = NewObject<UWorldGenerationViewModel>(this);
+	}
+
+	if (!bGenerationViewModelActive)
+	{
+		WorldGenerationViewModel->Initialize(this, NewGeneratedWorld);
+		bGenerationViewModelActive = true;
+	}
 }
 
 /*
@@ -56,55 +104,54 @@ void UAstroGenerationMenu::SetupSliders()
 
 	SetupSlider(GS_SystemPlanetaryType, StaticEnum<EPlanetarySystemType>());
 
-	SetupSlider(GS_StarClusterComposition, StaticEnum<EStarClusterComposition>());
 }
 
 void UAstroGenerationMenu::SetupInputs()
 {
 	if (GI_GalaxySize && GI_GalaxySize->SpinBox_Value)
 	{
-		GI_GalaxySize->SpinBox_Value->OnValueChanged.AddDynamic(this, &UAstroGenerationMenu::OnGalaxySizeChanged);
+		GI_GalaxySize->SpinBox_Value->OnValueChanged.AddUniqueDynamic(this, &UAstroGenerationMenu::OnGalaxySizeChanged);
 		OnGalaxySizeChanged(GI_GalaxySize->GetCurrentValue());
 	}
 
 	if (GI_GalaxyStarCount && GI_GalaxyStarCount->SpinBox_Value)
 	{
-		GI_GalaxyStarCount->SpinBox_Value->OnValueChanged.AddDynamic(this, &UAstroGenerationMenu::OnGalaxyStarCountChanged);
+		GI_GalaxyStarCount->SpinBox_Value->OnValueChanged.AddUniqueDynamic(this, &UAstroGenerationMenu::OnGalaxyStarCountChanged);
 		OnGalaxyStarCountChanged(GI_GalaxyStarCount->GetCurrentValue());
 
 	}
 
 	if (GI_GalaxyStarDensity && GI_GalaxyStarDensity->SpinBox_Value)
 	{
-		GI_GalaxyStarDensity->SpinBox_Value->OnValueChanged.AddDynamic(this, &UAstroGenerationMenu::OnGalaxyStarDensityChanged);
+		GI_GalaxyStarDensity->SpinBox_Value->OnValueChanged.AddUniqueDynamic(this, &UAstroGenerationMenu::OnGalaxyStarDensityChanged);
 		OnGalaxyStarDensityChanged(GI_GalaxyStarDensity->GetCurrentValue());
 
 	}
 
 	if (GI_PlanetRadius && GI_PlanetRadius->SpinBox_Value)
 	{
-		GI_PlanetRadius->SpinBox_Value->OnValueChanged.AddDynamic(this, &UAstroGenerationMenu::OnPlanetRadiusChanged);
+		GI_PlanetRadius->SpinBox_Value->OnValueChanged.AddUniqueDynamic(this, &UAstroGenerationMenu::OnPlanetRadiusChanged);
 		OnPlanetRadiusChanged(GI_PlanetRadius->GetCurrentValue());
 
 	}
 
 	if (GI_MoonsAmount && GI_MoonsAmount->SpinBox_Value)
 	{
-		GI_MoonsAmount->SpinBox_Value->OnValueChanged.AddDynamic(this, &UAstroGenerationMenu::OnMoonsAmountChanged);
+		GI_MoonsAmount->SpinBox_Value->OnValueChanged.AddUniqueDynamic(this, &UAstroGenerationMenu::OnMoonsAmountChanged);
 		OnMoonsAmountChanged(GI_MoonsAmount->GetCurrentValue());
 
 	}
 
 	if (GI_PlanetsAmount && GI_PlanetsAmount->SpinBox_Value)
 	{
-		GI_PlanetsAmount->SpinBox_Value->OnValueChanged.AddDynamic(this, &UAstroGenerationMenu::OnPlanetsAmountChanged);
+		GI_PlanetsAmount->SpinBox_Value->OnValueChanged.AddUniqueDynamic(this, &UAstroGenerationMenu::OnPlanetsAmountChanged);
 		OnPlanetsAmountChanged(GI_PlanetsAmount->GetCurrentValue());
 
 	}
 
 	if (GI_StartPlanetIndex && GI_StartPlanetIndex->SpinBox_Value)
 	{
-		GI_StartPlanetIndex->SpinBox_Value->OnValueChanged.AddDynamic(this, &UAstroGenerationMenu::OnStartPlanetIndexChanged);
+		GI_StartPlanetIndex->SpinBox_Value->OnValueChanged.AddUniqueDynamic(this, &UAstroGenerationMenu::OnStartPlanetIndexChanged);
 		OnStartPlanetIndexChanged(GI_StartPlanetIndex->GetCurrentValue());
 
 	}
@@ -112,61 +159,55 @@ void UAstroGenerationMenu::SetupInputs()
 
 void UAstroGenerationMenu::OnGalaxySizeChanged(const float InValue) 
 {
-	NewGeneratedWorld->GalaxySize = static_cast<int>(InValue);
+	EnsureGenerationViewModel();
+	WorldGenerationViewModel->SetGalaxySize(InValue);
 }
 
 void UAstroGenerationMenu::OnGalaxyStarCountChanged(const float InValue) 
 {
-	NewGeneratedWorld->GalaxyStarCount = static_cast<int>(InValue);
+	EnsureGenerationViewModel();
+	WorldGenerationViewModel->SetGalaxyStarCount(InValue);
 }
 
 void UAstroGenerationMenu::OnGalaxyStarDensityChanged(const float InValue) 
 {
-	NewGeneratedWorld->GalaxyStarDensity = static_cast<double>(InValue);
+	EnsureGenerationViewModel();
+	WorldGenerationViewModel->SetGalaxyStarDensity(InValue);
 }
 
 void UAstroGenerationMenu::OnPlanetRadiusChanged(const float InValue) 
 {
-	NewGeneratedWorld->PlanetRadius = static_cast<int>(InValue);
+	EnsureGenerationViewModel();
+	WorldGenerationViewModel->SetPlanetRadius(InValue);
 }
 
 void UAstroGenerationMenu::OnMoonsAmountChanged(const float InValue) 
 {
-	NewGeneratedWorld->MoonsAmount = static_cast<double>(InValue);
+	EnsureGenerationViewModel();
+	WorldGenerationViewModel->SetMoonsAmount(InValue);
 }
 
 void UAstroGenerationMenu::OnPlanetsAmountChanged(const float InValue) 
 {
-	NewGeneratedWorld->PlanetsAmount = static_cast<double>(InValue);
+	EnsureGenerationViewModel();
+	WorldGenerationViewModel->SetPlanetsAmount(InValue);
 }
 
 void UAstroGenerationMenu::OnStartPlanetIndexChanged(const float InValue) 
 {
-	NewGeneratedWorld->StartPlanetIndex = static_cast<double>(InValue);
+	EnsureGenerationViewModel();
+	WorldGenerationViewModel->SetStartPlanetIndex(InValue);
 }
 
 void UAstroGenerationMenu::GenerateWorldByModel()
 {
-	UE_LOG(LogTemp, Warning, TEXT("GeneratingWorldByModel...")); // Логирование пропуска
-	//GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Yellow, FString::Printf(TEXT("GenerateWorldByModel")));
-
-	if (UWorld* World = GetWorld())
-	{
-
-		// Saving NewGeneratedWorld in GameInstance for transfer to new level
-		if (UGameInstance* GameInstance = World->GetGameInstance())
-		{
-			GameInstance->GetSubsystem<UMainGameplayInstance>()->NewGeneratedWorld = NewGeneratedWorld;
-		}
-
-		// Loading a new level
-		UGameplayStatics::OpenLevel(World, FName(*LevelName));
-	}
+	EnsureGenerationViewModel();
+	WorldGenerationViewModel->CommitAndOpenLevel(FName(*LevelName));
 }
 
 void UAstroGenerationMenu::CreateNewGeneratedWorld()
 {
-	NewGeneratedWorld = NewObject<UGeneratedWorld>(this, UGeneratedWorld::StaticClass());
+	EnsureGenerationViewModel();
 }
 
 void UAstroGenerationMenu::SetupSlider(UGenerationSlider* Slider, UEnum* EnumType)
@@ -236,6 +277,13 @@ FString UAstroGenerationMenu::HandleEnumClassName(const UEnum* EnumClass)
 
 void UAstroGenerationMenu::UpdateGeneratedWorldEnumValue(const UEnum* EnumClass, int32 SelectedValue)
 {
+	EnsureGenerationViewModel();
+	if (WorldGenerationViewModel)
+	{
+		WorldGenerationViewModel->SetEnumValue(EnumClass, SelectedValue);
+		return;
+	}
+
 	if (!NewGeneratedWorld || !EnumClass || !GEngine)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("GeneratedWorld или EnumClass == nullptr!")); // Логирование пропуска

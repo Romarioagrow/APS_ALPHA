@@ -561,7 +561,11 @@ public:
 
 	void DecelerateBoost(float DeltaTime);
 
+	void RestoreNominalThrust(float DeltaTime);
+
 	void SwitchEngineMode(EEngineMode EngineMode);
+
+	void ApplyEngineModeForCurrentFlightMode();
 
 	void ComputeFlightStatus(AWorldActor* AffectedActor);
 
@@ -621,10 +625,20 @@ public:
 		{EFlightMode::Stellar, FFlightParams(1000000, 0.06, 0.2)},
 		//{EFlightMode::Interstellar, FFlightParams(15000000000, 0.08, 0.28)},
 		{EFlightMode::Interstellar, FFlightParams(10000000, 0.08, 0.28)},
-		//{EFlightMode::Intergalaxy, FFlightParams(100000000, 0.09, 0.32)}
+		{EFlightMode::Intergalaxy, FFlightParams(100000000, 0.09, 0.32)},
+		{EFlightMode::Basic, FFlightParams(100, 0.1, 0.1)}
 	};
 
 	bool IsBoosting{false};
+
+	UPROPERTY(EditAnywhere, Category = "Flight|Boost", meta = (ClampMin = "1.0"))
+	double BoostMultiplier{3.0};
+
+	UPROPERTY(EditAnywhere, Category = "Flight|Boost", meta = (ClampMin = "0.01", ClampMax = "1.0"))
+	double BrakingThrustMultiplier{0.15};
+
+	UPROPERTY(EditAnywhere, Category = "Flight|Boost", meta = (ClampMin = "0.1"))
+	double ThrustResponseSpeed{4.0};
 
 	bool CalculateProximity{true};
 
@@ -639,6 +653,10 @@ public:
 	AAstroActor* OffsetGalaxy;
 
 	bool bIsRescaling{false};
+
+	FVector CachedPhysicsVelocity{FVector::ZeroVector};
+	FVector CachedPhysicsAngularVelocity{FVector::ZeroVector};
+	bool bHasCachedPhysicsVelocity{false};
 
 	void ComputeInterstellarFlight();
 };

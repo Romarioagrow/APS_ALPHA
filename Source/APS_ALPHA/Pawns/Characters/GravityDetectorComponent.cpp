@@ -1,5 +1,6 @@
 ﻿#include "GravityDetectorComponent.h"
 
+#include "Components/CapsuleComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
@@ -8,111 +9,201 @@
 #include "APS_ALPHA/Actors/Astro/WorldActor.h"
 #include "APS_ALPHA/Actors/Tech/SpaceHeadquarters.h"
 #include "APS_ALPHA/Actors/Tech/SpaceStation.h"
-#include "APS_ALPHA/Core/Interfaces/NavigatableBody.h"
+#include "APS_ALPHA/Gameplay/Gravity/GravitySource.h"
 #include "APS_ALPHA/Pawns/Spaceships/Spaceship.h"
 #include "GameFramework/Character.h"
 
 UGravityDetectorComponent::UGravityDetectorComponent()
 {
-	
+	PrimaryComponentTick.bCanEverTick = true;
+	PrimaryComponentTick.TickInterval = DetectionInterval;
+}
+
+void UGravityDetectorComponent::BeginPlay()
+{
+	Super::BeginPlay();
+	PrimaryComponentTick.TickInterval = DetectionInterval;
+
+	if (bAutomaticDetection)
+	{
+		RunGravityCheck(Cast<ACharacter>(GetOwner()));
+	}
+}
+
+void UGravityDetectorComponent::TickComponent(float DeltaTime, ELevelTick TickType,
+	FActorComponentTickFunction* ThisTickFunction)
+{
+	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+
+	if (bAutomaticDetection)
+	{
+		RunGravityCheck(Cast<ACharacter>(GetOwner()));
+	}
 }
 
 void UGravityDetectorComponent::RunGravityCheck(ACharacter* Self)
 {
-	if (!Self) return;
-
+	if (!Self)
 	{
-		//FName TagToCheck = "GravitySource";
-		TArray<AActor*> GravitySources;
-		TArray<AWorldActor*> WorldNavigatableActors;
-		UGameplayStatics::GetAllActorsOfClass(Self->GetWorld(), AWorldActor::StaticClass(), GravitySources);
-		TMap<AWorldActor*, double> ActorDistances;
-
-		for (AActor* Actor : GravitySources)
-		{
-			if (Actor && Actor->GetClass()->ImplementsInterface(UNavigatableBody::StaticClass()))
-			{
-				AWorldActor* WorldNavigatableActor = Cast<AWorldActor>(Actor);
-				WorldNavigatableActors.Add(WorldNavigatableActor);
-
-				double Distance = (FVector::Distance(Self->GetActorLocation(),
-				                                     WorldNavigatableActor->GetActorLocation()) / 100000.0) -
-					WorldNavigatableActor->RadiusKM;
-				ActorDistances.Add(WorldNavigatableActor, Distance);
-			}
-		}
-
-		WorldNavigatableActors.Sort([&](const AWorldActor& A, const AWorldActor& B)
-		{
-			return ActorDistances[&A] < ActorDistances[&B];
-		});
-
-		if (WorldNavigatableActors.Num() > 0)
-		{
-			AWorldActor* ClosestActor = WorldNavigatableActors[0];
-
-			FString DebugMessageClosest = FString::Printf(
-				TEXT("Closest Actor: %s \nDistance to surface: %f km \nAffectionRadiusKM: %f"),
-				*ClosestActor->GetFName().ToString(), ActorDistances[ClosestActor],
-				ClosestActor->AffectionRadiusKM);
-			if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Orange, DebugMessageClosest);
-
-			if (ActorDistances[ClosestActor] <= ClosestActor->AffectionRadiusKM)
-			{
-				if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Green,
-					FString::Printf(TEXT("Affected Actor: %s"), *ClosestActor->GetFName().ToString()));
-				SwitchGravityType(ClosestActor);
-			}
-			else
-			{
-				if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, TEXT("No Actor within AffectionRadiusKM"));
-				CurrentGravityType = EGravityType::ZeroG;
-				//UpdateGravityPhysicParams();
-			}
-		}
-		else
-		{
-			if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Red, TEXT("No Closest Gravity Actor"));
-			CurrentGravityType = EGravityType::ZeroG;
-			//Self->UpdateGravityPhysicParams();
-		}
+		return;
 	}
+
+	if (AActor* OverlappingSource = FindBestOverlappingSource(Self))
+	{
+		SwitchGravityType(OverlappingSource);
+		return;
+	}
+
+	SwitchGravityType(FindClosestFullScaleSource(Self));
 }
 
 void UGravityDetectorComponent::SwitchGravityType(AActor* GravitySourceActor)
 {
-	GravityTargetActor = GravitySourceActor;
+	if (!IsValid(GravitySourceActor))
+	{
+		ClearGravitySource();
+		return;
+	}
 
-	//ClosestBody = NewClosest;
-	OnClosestGravityBodyChanged.Broadcast(GravitySourceActor);
+	const AActor* PreviousTarget = GravityTargetActor;
+	const EGravityType PreviousType = CurrentGravityType;
+	GravityTargetActor = GravitySourceActor;
 
 	if (GravitySourceActor->IsA(ASpaceStation::StaticClass()) || GravitySourceActor->IsA(
 		ASpaceHeadquarters::StaticClass()))
 	{
 		CurrentGravityType = EGravityType::OnStation;
-		OnGravityPhysicsParamChanged.Broadcast();
 	}
 	else if (GravitySourceActor->IsA(AOrbitalBody::StaticClass()))
 	{
 		CurrentGravityType = EGravityType::OnPlanet;
-		OnGravityPhysicsParamChanged.Broadcast();
 	}
 	else if (GravitySourceActor->IsA(ASpaceship::StaticClass()))
 	{
 		CurrentGravityType = EGravityType::OnShip;
-		ASpaceship* Spaceship = Cast<ASpaceship>(GravitySourceActor);
-		if (Spaceship != nullptr)
-		{
-			CurrentSpaceship = Spaceship;
-			OnGravityPhysicsParamChanged.Broadcast();
-		}
+		CurrentSpaceship = Cast<ASpaceship>(GravitySourceActor);
 	}
-	// Remove ship
+	else
+	{
+		ClearGravitySource();
+		return;
+	}
+
 	if (CurrentGravityType != EGravityType::OnShip)
 	{
 		CurrentSpaceship = nullptr;
 	}
 
-	// switch gravity param
-	//UpdateGravityPhysicParams();
+	if (PreviousTarget != GravityTargetActor || PreviousType != CurrentGravityType)
+	{
+		OnClosestGravityBodyChanged.Broadcast(GravityTargetActor);
+		OnGravityPhysicsParamChanged.Broadcast();
+	}
+}
+
+FVector UGravityDetectorComponent::GetGravityDirectionAtLocation(const FVector& WorldLocation) const
+{
+	if (!IsValid(GravityTargetActor))
+	{
+		return FVector::ZeroVector;
+	}
+
+	if (CurrentGravityType == EGravityType::OnPlanet)
+	{
+		return (GravityTargetActor->GetActorLocation() - WorldLocation).GetSafeNormal();
+	}
+
+	if (CurrentGravityType == EGravityType::OnStation || CurrentGravityType == EGravityType::OnShip)
+	{
+		return -GravityTargetActor->GetActorUpVector();
+	}
+
+	return FVector::ZeroVector;
+}
+
+void UGravityDetectorComponent::ClearGravitySource()
+{
+	if (!GravityTargetActor && CurrentGravityType == EGravityType::ZeroG)
+	{
+		return;
+	}
+
+	GravityTargetActor = nullptr;
+	CurrentSpaceship = nullptr;
+	CurrentGravityType = EGravityType::ZeroG;
+	OnClosestGravityBodyChanged.Broadcast(nullptr);
+	OnGravityPhysicsParamChanged.Broadcast();
+}
+
+AActor* UGravityDetectorComponent::FindBestOverlappingSource(ACharacter* Character) const
+{
+	if (!Character || !Character->GetCapsuleComponent())
+	{
+		return nullptr;
+	}
+
+	TArray<AActor*> OverlappingActors;
+	Character->GetCapsuleComponent()->GetOverlappingActors(OverlappingActors);
+
+	AActor* BestSource = nullptr;
+	int32 BestPriority = MIN_int32;
+	double BestDistanceSquared = DBL_MAX;
+
+	for (AActor* Candidate : OverlappingActors)
+	{
+		if (!IsValid(Candidate) || !Candidate->GetClass()->ImplementsInterface(UGravitySource::StaticClass()))
+		{
+			continue;
+		}
+
+		int32 Priority = 0;
+		if (Candidate->IsA(ASpaceship::StaticClass())) Priority = 300;
+		else if (Candidate->IsA(ASpaceStation::StaticClass())) Priority = 200;
+		else if (Candidate->IsA(AOrbitalBody::StaticClass())) Priority = 100;
+
+		const double DistanceSquared = FVector::DistSquared(Character->GetActorLocation(), Candidate->GetActorLocation());
+		if (Priority > BestPriority || (Priority == BestPriority && DistanceSquared < BestDistanceSquared))
+		{
+			BestSource = Candidate;
+			BestPriority = Priority;
+			BestDistanceSquared = DistanceSquared;
+		}
+	}
+
+	return BestSource;
+}
+
+AWorldActor* UGravityDetectorComponent::FindClosestFullScaleSource(ACharacter* Character) const
+{
+	if (!Character || !Character->GetWorld())
+	{
+		return nullptr;
+	}
+
+	TArray<AActor*> WorldActors;
+	UGameplayStatics::GetAllActorsOfClass(Character->GetWorld(), AWorldActor::StaticClass(), WorldActors);
+
+	AWorldActor* ClosestSource = nullptr;
+	double ClosestSurfaceDistanceKm = DBL_MAX;
+
+	for (AActor* Actor : WorldActors)
+	{
+		AWorldActor* Candidate = Cast<AWorldActor>(Actor);
+		if (!Candidate || !Candidate->GetClass()->ImplementsInterface(UGravitySource::StaticClass()))
+		{
+			continue;
+		}
+
+		const double CenterDistanceKm = FVector::Distance(Character->GetActorLocation(), Candidate->GetActorLocation()) / 100000.0;
+		const double SurfaceDistanceKm = FMath::Max(0.0, CenterDistanceKm - Candidate->RadiusKM);
+		if (SurfaceDistanceKm < ClosestSurfaceDistanceKm)
+		{
+			ClosestSource = Candidate;
+			ClosestSurfaceDistanceKm = SurfaceDistanceKm;
+		}
+	}
+
+	return ClosestSource && ClosestSurfaceDistanceKm <= ClosestSource->AffectionRadiusKM
+		? ClosestSource
+		: nullptr;
 }

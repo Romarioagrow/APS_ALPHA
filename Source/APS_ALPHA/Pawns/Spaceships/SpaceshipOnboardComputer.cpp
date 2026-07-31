@@ -266,8 +266,8 @@ void USpaceshipOnboardComputer::IncreaseFlightMode()
         {
             FlightSystem.FlightParams = FlightModeParams[FlightSystem.CurrentFlightMode];
 
-            /// TODO: Switch to unsafe flight mode
         }
+		ApplyEngineModeForCurrentFlightMode();
     }
 }
 
@@ -284,19 +284,34 @@ void USpaceshipOnboardComputer::DecreaseFlightMode()
         {
             FlightSystem.FlightParams = FlightModeParams[FlightSystem.CurrentFlightMode];
         }
+		ApplyEngineModeForCurrentFlightMode();
     }
 }
 
 void USpaceshipOnboardComputer::AccelerateBoost(float DeltaTime)
 {
     // Увеличиваем силу тяги на определенный процент. Здесь я использую 10% в качестве примера.
-    FlightSystem.FlightParams.ThrustForce += FlightSystem.FlightParams.ThrustForce * 1.1 * DeltaTime;
+	const FFlightParams* NominalParams = FlightModeParams.Find(FlightSystem.CurrentFlightMode);
+	const double NominalThrust = NominalParams ? NominalParams->ThrustForce : 100.0;
+	FlightSystem.FlightParams.ThrustForce = FMath::FInterpTo(
+		FlightSystem.FlightParams.ThrustForce, NominalThrust * BoostMultiplier, DeltaTime, ThrustResponseSpeed);
 }
 
 void USpaceshipOnboardComputer::DecelerateBoost(float DeltaTime)
 {
     // Уменьшаем силу тяги на определенный процент. Здесь я использую 10% в качестве примера.
-    FlightSystem.FlightParams.ThrustForce -= FlightSystem.FlightParams.ThrustForce * 1.1 * DeltaTime;
+	const FFlightParams* NominalParams = FlightModeParams.Find(FlightSystem.CurrentFlightMode);
+	const double NominalThrust = NominalParams ? NominalParams->ThrustForce : 100.0;
+	FlightSystem.FlightParams.ThrustForce = FMath::FInterpTo(
+		FlightSystem.FlightParams.ThrustForce, NominalThrust * BrakingThrustMultiplier, DeltaTime, ThrustResponseSpeed);
+}
+
+void USpaceshipOnboardComputer::RestoreNominalThrust(float DeltaTime)
+{
+	const FFlightParams* NominalParams = FlightModeParams.Find(FlightSystem.CurrentFlightMode);
+	const double NominalThrust = NominalParams ? NominalParams->ThrustForce : 100.0;
+	FlightSystem.FlightParams.ThrustForce = FMath::FInterpTo(
+		FlightSystem.FlightParams.ThrustForce, NominalThrust, DeltaTime, ThrustResponseSpeed);
 }
 
 void FEngineSystem::InitiateOffsetMode()
@@ -313,12 +328,30 @@ void FEngineSystem::InitiateImpulseMode()
 
 void USpaceshipOnboardComputer::SwitchEngineMode(EEngineMode EngineMode)
 {
+	if (!SpaceshipHull)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Cannot switch engine mode without a spaceship hull."));
+		return;
+	}
+
+	if (SpaceshipHull->IsSimulatingPhysics() && EngineMode != EEngineMode::Impulse)
+	{
+		CachedPhysicsVelocity = SpaceshipHull->GetPhysicsLinearVelocity();
+		CachedPhysicsAngularVelocity = SpaceshipHull->GetPhysicsAngularVelocityInRadians();
+		bHasCachedPhysicsVelocity = true;
+	}
+
     EngineSystem.CurrentEngineMode = EngineMode;
     switch (EngineMode)
     {
     case EEngineMode::Impulse:
         CurrentMovementStrategy = MakeUnique<ImpulseMovementStrategy>(SpaceshipHull);
         SpaceshipHull->SetSimulatePhysics(true);
+		if (bHasCachedPhysicsVelocity)
+		{
+			SpaceshipHull->SetPhysicsLinearVelocity(CachedPhysicsVelocity);
+			SpaceshipHull->SetPhysicsAngularVelocityInRadians(CachedPhysicsAngularVelocity);
+		}
         break;
     case EEngineMode::Offset:
         CurrentMovementStrategy = MakeUnique<OffsetMovementStrategy>(SpaceshipHull);
@@ -332,4 +365,22 @@ void USpaceshipOnboardComputer::SwitchEngineMode(EEngineMode EngineMode)
         break;
         // Добавьте больше случаев для других типов движения
     }
+}
+
+void USpaceshipOnboardComputer::ApplyEngineModeForCurrentFlightMode()
+{
+	switch (FlightSystem.CurrentFlightMode)
+	{
+	case EFlightMode::Interplanetary:
+	case EFlightMode::Stellar:
+		SwitchEngineMode(EEngineMode::SpaceWrap);
+		break;
+	case EFlightMode::Interstellar:
+	case EFlightMode::Intergalaxy:
+		SwitchEngineMode(EEngineMode::Offset);
+		break;
+	default:
+		SwitchEngineMode(EEngineMode::Impulse);
+		break;
+	}
 }

@@ -3,13 +3,15 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "BaseInterface.h"
 #include "UObject/Interface.h"
 #include "VehicleControlling.generated.h"
 
-// This class does not need to be modified.
-UINTERFACE(MinimalAPI)
-class UVehicleControlling : public UBaseInterface
+/**
+ * Native vehicle-control contract. Blueprint vehicle classes inherit the shared
+ * implementation from APilotingVehicle and can react through pilot lifecycle events.
+ */
+UINTERFACE(MinimalAPI, meta = (CannotImplementInterfaceInBlueprint))
+class UVehicleControlling : public UInterface
 {
 	GENERATED_BODY()
 };
@@ -21,8 +23,16 @@ class APS_ALPHA_API IVehicleControlling
 {
 	GENERATED_BODY()
 
-	// Add interface functions to this class. This is the class that will be inherited to implement this interface.
-
 public:
-	//virtual void TakeControl(APawn* Pawn);
+	/** Returns whether the pawn can start piloting this vehicle right now. */
+	UFUNCTION(BlueprintCallable, Category = "Vehicle|Interaction")
+	virtual bool CanRequestVehicleControl(APawn* RequestingPawn) const = 0;
+
+	/** Starts a vehicle-control session for the requesting pawn. */
+	UFUNCTION(BlueprintCallable, Category = "Vehicle|Interaction")
+	virtual bool RequestVehicleControl(APawn* RequestingPawn) = 0;
+
+	/** Ends the active vehicle-control session. */
+	UFUNCTION(BlueprintCallable, Category = "Vehicle|Interaction")
+	virtual bool RequestReleaseVehicleControl() = 0;
 };

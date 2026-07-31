@@ -30,6 +30,20 @@
 #include "APS_ALPHA/Actors/Tech/SpaceHeadquarters.h"
 #include "Engine/OverlapResult.h"
 #include "Engine/World.h"
+#include "Camera/CameraComponent.h"
+#include "Components/SceneComponent.h"
+#include "GameFramework/PlayerController.h"
+
+AAstroGenerator::AAstroGenerator()
+{
+	GenerationRoot = CreateDefaultSubobject<USceneComponent>(TEXT("GenerationRoot"));
+	SetRootComponent(GenerationRoot);
+
+	PreviewCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("PreviewCamera"));
+	PreviewCamera->SetupAttachment(GenerationRoot);
+	PreviewCamera->SetAbsolute(true, true, true);
+	PreviewCamera->SetFieldOfView(55.0f);
+}
 
 void AAstroGenerator::BeginPlay()
 {
@@ -70,9 +84,106 @@ void AAstroGenerator::GenerateWorldByModel()
 
 	ApplySpawnParameters();
 
-	GenerateStarCluster();
+	InitGenerationLevel();
+}
 
-	GenerateHomeStarSystem();
+bool AAstroGenerator::RegeneratePreview(UGeneratedWorld* InGeneratedWorld)
+{
+	if (!IsValid(InGeneratedWorld) || !GetWorld())
+	{
+		return false;
+	}
+
+	ClearGeneratedPreview();
+	SetActorScale3D(FVector::OneVector);
+	SetGeneratedWorld(InGeneratedWorld);
+
+	InitAstroGenerators();
+	ApplyWorldModel();
+
+	const bool bSavedStarterLocation = bSpawnStarterLocation;
+	const bool bSavedStarterPlanet = bSpawnStarterPlanet;
+	const bool bSavedCharacterSpawn = bCharacterSpawn;
+	bSpawnStarterLocation = false;
+	bSpawnStarterPlanet = false;
+	bCharacterSpawn = false;
+	bIsPreviewGeneration = true;
+
+	InitGenerationLevel();
+
+	bIsPreviewGeneration = false;
+	bSpawnStarterLocation = bSavedStarterLocation;
+	bSpawnStarterPlanet = bSavedStarterPlanet;
+	bCharacterSpawn = bSavedCharacterSpawn;
+
+	FocusPreviewCamera();
+	return IsValid(GeneratedStarCluster) || IsValid(GeneratedGalaxy) || IsValid(GeneratedHomeStarSystem);
+}
+
+void AAstroGenerator::ClearGeneratedPreview()
+{
+	TArray<AActor*> GeneratedRoots;
+	GeneratedRoots.AddUnique(GeneratedStarCluster);
+	GeneratedRoots.AddUnique(GeneratedGalaxy);
+	GeneratedRoots.AddUnique(GeneratedHomeStarSystem);
+	GeneratedRoots.AddUnique(GeneratedWorld);
+
+	for (AActor* GeneratedRoot : GeneratedRoots)
+	{
+		if (IsValid(GeneratedRoot) && GeneratedRoot != this)
+		{
+			DestroyActorTree(GeneratedRoot);
+		}
+	}
+
+	GeneratedStarCluster = nullptr;
+	GeneratedGalaxy = nullptr;
+	GeneratedHomeStarSystem = nullptr;
+	GeneratedWorld = nullptr;
+	HomePlanetarySystem = nullptr;
+	HomeStar = nullptr;
+	HomePlanet = nullptr;
+	StarIndexModelMap.Reset();
+}
+
+void AAstroGenerator::FocusPreviewCamera(APlayerController* PlayerController)
+{
+	if (!PreviewCamera || !GetWorld())
+	{
+		return;
+	}
+
+	FBox Bounds(EForceInit::ForceInit);
+	const AActor* PreviewRoots[] = {GeneratedStarCluster, GeneratedGalaxy, GeneratedHomeStarSystem, GeneratedWorld};
+	for (const AActor* PreviewRoot : PreviewRoots)
+	{
+		if (IsValid(PreviewRoot))
+		{
+			Bounds += PreviewRoot->GetComponentsBoundingBox(true);
+		}
+	}
+
+	if (!Bounds.IsValid)
+	{
+		Bounds = FBox(GetActorLocation() - FVector(500.0), GetActorLocation() + FVector(500.0));
+	}
+
+	const FVector Center = Bounds.GetCenter();
+	const double Radius = FMath::Max(Bounds.GetExtent().Size(), 500.0);
+	const double HalfFovRadians = FMath::DegreesToRadians(PreviewCamera->FieldOfView * 0.45);
+	const double Distance = FMath::Max(Radius / FMath::Tan(HalfFovRadians), 1000.0);
+	const FVector ViewDirection = FVector(-1.0, -1.0, 0.45).GetSafeNormal();
+	const FVector CameraLocation = Center - ViewDirection * Distance;
+
+	PreviewCamera->SetWorldLocation(CameraLocation);
+	PreviewCamera->SetWorldRotation((Center - CameraLocation).Rotation());
+	PreviewCamera->SetActive(true);
+
+	APlayerController* ResolvedController = PlayerController ? PlayerController : GetWorld()->GetFirstPlayerController();
+	if (ResolvedController)
+	{
+		ResolvedController->SetViewTargetWithBlend(this, 0.25f, VTBlend_Cubic);
+	}
 }
 
 void AAstroGenerator::InitAstroGenerators()
@@ -157,6 +268,8 @@ void AAstroGenerator::ApplyWorldModel()
 	GalaxyStarCount = GeneratedWorldModel->GalaxyStarCount;
 	PlanetsAmount = GeneratedWorldModel->PlanetsAmount;
 	StartPlanetNumber = GeneratedWorldModel->StartPlanetIndex;
+	PlanetsAmount = FMath::Max(1, PlanetsAmount);
+	StartPlanetNumber = FMath::Clamp(StartPlanetNumber, 1, PlanetsAmount);
 	GalaxyStarDensity = GeneratedWorldModel->GalaxyStarDensity;
 	HomePlanetarySystem = GeneratedWorldModel->HomePlanetarySystem;
 	HomePlanet = GeneratedWorldModel->HomePlanet;
@@ -184,10 +297,19 @@ void AAstroGenerator::GenerateStarCluster()
 	}
 	const EStarClusterType ClusterType = StarClusterModel->StarClusterType;
 	AStarCluster* NewStarCluster = GetWorld()->SpawnActor<AStarCluster>(BP_StarClusterClass);
+	if (!NewStarCluster)
+	{
+		UE_LOG(LogTemp, Error, TEXT("Failed to spawn star cluster."));
+		return;
+	}
 	NewStarCluster->AttachToActor(this, FAttachmentTransformRules::KeepWorldTransform);
 
 	// Calculate Cluster Params
 	NewStarCluster->StarAmount = StarClusterGenerator->GetStarsAmountByRange(StarClusterModel->StarClusterSize);
+	if (bIsPreviewGeneration)
+	{
+		NewStarCluster->StarAmount = FMath::Min(NewStarCluster->StarAmount, PreviewMaxInstances);
+	}
 	NewStarCluster->StarDensity = StarClusterGenerator->GetStarClusterDensityByRange();
 	NewStarCluster->ClusterBounds = StarClusterGenerator->GetStarClusterBoundsByRange(ClusterType);
 	NewStarCluster->ClusterType = ClusterType;
@@ -423,13 +545,13 @@ void AAstroGenerator::GenerateStarSystemByModel()
 		ComputeStarAmount(StarSystemModel, AmountOfStars);
 
 		AStarSystem* NewStarSystem = World->SpawnActor<AStarSystem>(BP_StarSystemClass, HomeSystemTransform);
-		NewStarSystem->AttachToActor(this, FAttachmentTransformRules::KeepWorldTransform);
-		NewStarSystem->SetActorLocation(HomeSystemSpawnLocation);
 		if (!NewStarSystem)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("NewStarSystem Falied!"));
+			UE_LOG(LogTemp, Error, TEXT("NewStarSystem failed!"));
 			return;
 		}
+		NewStarSystem->AttachToActor(this, FAttachmentTransformRules::KeepWorldTransform);
+		NewStarSystem->SetActorLocation(HomeSystemSpawnLocation);
 		StarSystemGenerator->ApplyModel(NewStarSystem, StarSystemModel);
 
 		FVector LastStarLocation{0};
@@ -797,6 +919,8 @@ void AAstroGenerator::DisplayNewGeneratedWorld()
 
 void AAstroGenerator::InitGenerationLevel()
 {
+	bool bGeneratedHomeSystemAsPrimaryLevel = false;
+
 	switch (AstroGenerationLevel)
 	{
 	case EAstroGenerationLevel::GalaxiesCluster:
@@ -809,20 +933,23 @@ void AAstroGenerator::InitGenerationLevel()
 		GenerateStarCluster();
 		break;
 	case EAstroGenerationLevel::StarSystem:
-		GenerateStarSystemByModel();
+		GenerateHomeStarSystem();
+		bGeneratedHomeSystemAsPrimaryLevel = true;
 		break;
 	case EAstroGenerationLevel::PlanetSystem:
 		GeneratePlanetSystem();
+		bGeneratedHomeSystemAsPrimaryLevel = true;
 		break;
 	case EAstroGenerationLevel::SinglePlanet:
 		GenerateSinglePlanet();
+		bGeneratedHomeSystemAsPrimaryLevel = true;
 		break;
 	default:
 		GenerateRandomWorld();
 		break;
 	}
 
-	if (bGenerateHomeSystem)
+	if (bGenerateHomeSystem && !bGeneratedHomeSystemAsPrimaryLevel)
 	{
 		GenerateHomeStarSystem();
 	}
@@ -840,7 +967,9 @@ void AAstroGenerator::GenerateGalaxy()
 	{
 		GalaxyModel->GalaxyClass = GalaxyGlass;
 		GalaxyModel->GalaxyType = GalaxyType;
-		GalaxyModel->StarsCount = GalaxyStarCount;
+		GalaxyModel->StarsCount = bIsPreviewGeneration
+			? FMath::Min(GalaxyStarCount, PreviewMaxInstances)
+			: GalaxyStarCount;
 		GalaxyModel->StarsDensity = GalaxyStarDensity;
 		GalaxyModel->GalaxySize = GalaxySize;
 	}
@@ -857,10 +986,7 @@ void AAstroGenerator::GenerateGalaxy()
 
 		if (bGenerateFullScaledWorld)
 		{
-			const double Scale = 1000000000.0;
-			FVector VectorScale = FVector(1000000000, 1000000000, 1000000000);
-			VectorScale = VectorScale * Scale;
-			this->SetActorScale3D(VectorScale);
+			this->SetActorScale3D(FVector(FullScaleValue));
 		}
 	}
 }
@@ -1653,10 +1779,18 @@ void AAstroGenerator::Test_GenerateFullscaled()
 
 void AAstroGenerator::GeneratePlanetSystem()
 {
+	GenerateStarSystemByModel();
 }
 
 void AAstroGenerator::GenerateSinglePlanet()
 {
+	const int32 SavedPlanetsAmount = PlanetsAmount;
+	const int32 SavedStartPlanetNumber = StartPlanetNumber;
+	PlanetsAmount = 1;
+	StartPlanetNumber = 1;
+	GenerateStarSystemByModel();
+	PlanetsAmount = SavedPlanetsAmount;
+	StartPlanetNumber = SavedStartPlanetNumber;
 }
 
 void AAstroGenerator::GenerateRandomWorld()

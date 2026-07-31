@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "APS_ALPHA/Core/Enums/GravityTypeEnum.h"
 #include "GameFramework/Character.h"
 #include "InputActionValue.h"
 #include "CustomGravityCharacter.generated.h"
@@ -11,6 +12,8 @@ class UInputMappingContext;
 class UInputAction;
 class USpringArmComponent;
 class UCameraComponent;
+class UGravityDetectorComponent;
+class SWidget;
 
 /**
  * Custom Gravity Character using UE 5.4 SetGravityDirection().
@@ -31,6 +34,7 @@ protected:
 public:
 	virtual void Tick(float DeltaTime) override;
 	virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	// ──────────────────────── Components ────────────────────────
 
@@ -39,6 +43,9 @@ public:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
 	UCameraComponent* FollowCamera;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Gravity")
+	UGravityDetectorComponent* GravityDetector;
 
 	// ──────────────────────── Enhanced Input ────────────────────────
 
@@ -60,6 +67,16 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gravity")
 	bool bUseCustomGravity = true;
 
+	/** Falling outside every configured gravity field becomes true zero-G. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gravity")
+	bool bUseZeroGWhenNoSource = true;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Gravity")
+	bool bIsZeroG = false;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Gravity")
+	EGravityType CurrentGravityType = EGravityType::ZeroG;
+
 	/** Actor to use as gravity center (e.g. planet). If null, uses DefaultGravityDirection. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gravity")
 	AActor* GravityTarget;
@@ -76,6 +93,15 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gravity")
 	float CameraAlignmentSpeed = 8.f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gravity|ZeroG")
+	float ZeroGMaxSpeed = 1200.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gravity|ZeroG")
+	float ZeroGAcceleration = 1400.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gravity|ZeroG")
+	float ZeroGBrakingDeceleration = 80.f;
+
 	// ──────────────────────── Camera Settings ────────────────────────
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera")
@@ -83,6 +109,9 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera")
 	float LookSensitivity = 1.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interaction", meta = (ClampMin = "50.0"))
+	float InteractionDistance = 600.f;
 
 	// ──────────────────────── Functions ────────────────────────
 
@@ -93,6 +122,12 @@ public:
 	/** Set a custom gravity direction directly */
 	UFUNCTION(BlueprintCallable, Category = "Gravity")
 	void SetCustomGravityDirection(const FVector& NewDirection);
+
+	UFUNCTION(BlueprintCallable, Category = "Gravity")
+	void SetZeroGravityEnabled(bool bEnabled);
+
+	UFUNCTION(BlueprintCallable, Category = "Interaction")
+	void TryInteract();
 
 	/** Get the current gravity direction (normalized) */
 	UFUNCTION(BlueprintPure, Category = "Gravity")
@@ -108,10 +143,19 @@ protected:
 	void HandleLook(const FInputActionValue& Value);
 	void HandleJumpStarted();
 	void HandleJumpCompleted();
+	void HandleZeroGVertical(float Value);
+	void UpdateInteractionCandidate();
+	AActor* FindInteractionCandidate();
+	static AActor* ResolveVehicleActor(AActor* Candidate);
+	void CreateInteractionPrompt();
+	void RemoveInteractionPrompt();
 
 	// Gravity
 	void UpdateGravityDirection();
 	void AlignCameraToGravity(float DeltaTime);
+
+	UFUNCTION()
+	void HandleGravitySourceChanged(AActor* NewSource);
 
 private:
 	/** Accumulated yaw/pitch for camera control */
@@ -120,4 +164,8 @@ private:
 
 	/** Current gravity direction (cached) */
 	FVector CurrentGravityDir = FVector(0.f, 0.f, -1.f);
+
+	bool bManualGravityOverride = false;
+	TWeakObjectPtr<AActor> CurrentInteractableActor;
+	TSharedPtr<SWidget> InteractionPromptWidget;
 };

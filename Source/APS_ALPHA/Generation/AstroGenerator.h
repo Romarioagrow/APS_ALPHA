@@ -14,6 +14,9 @@
 #include "AstroGenerator.generated.h"
 
 class USpawnParameters;
+class UCameraComponent;
+class USceneComponent;
+class APlayerController;
 class AControlledPawn;
 class AAstroAnchor;
 class AMoon;
@@ -36,6 +39,8 @@ class APS_ALPHA_API AAstroGenerator : public ABaseActor
 	GENERATED_BODY()
 
 public:
+	AAstroGenerator();
+
 	void SpawnStartInteractiveActors(TSharedPtr<FPlanetModel> StartPlanetModel);
 
 	void ComputeStarAmount(TSharedPtr<FStarSystemModel>& StarSystemModel, int& AmountOfStars);
@@ -60,7 +65,28 @@ public:
 	UFUNCTION()
 	void GenerateWorldByModel();
 
+	UFUNCTION(BlueprintCallable, Category = "World Generation|Preview")
+	bool RegeneratePreview(UGeneratedWorld* InGeneratedWorld);
+
+	UFUNCTION(BlueprintCallable, Category = "World Generation|Preview")
+	void FocusPreviewCamera(APlayerController* PlayerController = nullptr);
+
+	UFUNCTION(BlueprintCallable, Category = "World Generation|Preview")
+	void ClearGeneratedPreview();
+
 protected:
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "World Generation|Preview")
+	USceneComponent* GenerationRoot;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "World Generation|Preview")
+	UCameraComponent* PreviewCamera;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "World Generation|Preview")
+	bool bIsPreviewGeneration{false};
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "World Generation|Preview", meta = (ClampMin = "100", ClampMax = "50000"))
+	int32 PreviewMaxInstances{10000};
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "World Generation")
 	UGeneratedWorld* GeneratedWorldModel;
 

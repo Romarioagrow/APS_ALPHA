@@ -9,6 +9,9 @@
 #include "PilotingVehicle.generated.h"
 
 class AGravityCharacterPawn;
+class AController;
+class UPrimitiveComponent;
+class USceneComponent;
 /**
  * 
  */
@@ -18,11 +21,39 @@ class APS_ALPHA_API APilotingVehicle : public AControlledPawn, public IVehicleCo
 	GENERATED_BODY()
 
 public:
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Piloting")
-	AGravityCharacterPawn* Pilot{};
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Transient, Category = "Piloting")
+	TObjectPtr<APawn> Pilot{};
 
 	void TakeControl(APawn* Pawn);
 
 	void ReleaseControl();
-	//void TakeControl(APawn* Pawn) final;
+
+	virtual bool CanRequestVehicleControl(APawn* RequestingPawn) const override;
+	virtual bool RequestVehicleControl(APawn* RequestingPawn) override;
+	virtual bool RequestReleaseVehicleControl() override;
+
+	UFUNCTION(BlueprintPure, Category = "Piloting")
+	bool HasPilot() const { return IsValid(Pilot); }
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Piloting")
+	void OnPilotControlStarted(APawn* NewPilot);
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Piloting")
+	void OnPilotControlEnded(APawn* PreviousPilot);
+
+protected:
+	virtual USceneComponent* GetPilotSeatComponent() const;
+	virtual FTransform GetPilotExitTransform() const;
+
+private:
+	bool BeginVehicleControl(APawn* RequestingPawn);
+	bool EndVehicleControl();
+
+	UPROPERTY(Transient)
+	TObjectPtr<AController> PilotController{};
+
+	bool bPilotCollisionWasEnabled{true};
+	bool bPilotTickWasEnabled{true};
+	bool bPilotRootWasSimulatingPhysics{false};
+	uint8 PilotMovementMode{0};
 };
