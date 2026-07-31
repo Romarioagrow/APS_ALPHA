@@ -2,8 +2,10 @@
 
 #include "CustomGravityCharacter.h"
 
+#include "Animation/AnimInstance.h"
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "APS_ALPHA/Core/Interfaces/VehicleControlling.h"
@@ -16,6 +18,8 @@
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/SOverlay.h"
 #include "Widgets/Text/STextBlock.h"
+#include "UObject/ConstructorHelpers.h"
+#include "UObject/UnrealType.h"
 
 ACustomGravityCharacter::ACustomGravityCharacter()
 {
@@ -61,6 +65,13 @@ ACustomGravityCharacter::ACustomGravityCharacter()
 	FollowCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FollowCamera"));
 	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
 	FollowCamera->bUsePawnControlRotation = false;
+
+	static ConstructorHelpers::FClassFinder<UAnimInstance> ZeroGAnimationBlueprint(
+		TEXT("/Game/APS/APS_ALPHA/Blueprints/ABP_ZeroGAnim"));
+	if (ZeroGAnimationBlueprint.Succeeded())
+	{
+		ZeroGAnimationClass = ZeroGAnimationBlueprint.Class;
+	}
 }
 
 void ACustomGravityCharacter::BeginPlay()
@@ -78,6 +89,7 @@ void ACustomGravityCharacter::BeginPlay()
 	CameraBoom->bInheritYaw = false;
 	CameraBoom->bInheritRoll = false;
 	FollowCamera->bUsePawnControlRotation = false;
+	SurfaceAnimationClass = GetMesh() ? GetMesh()->GetAnimClass() : nullptr;
 
 	bManualGravityOverride = IsValid(GravityTarget);
 	if (GravityDetector)
@@ -125,6 +137,7 @@ void ACustomGravityCharacter::Tick(float DeltaTime)
 	if (bIsZeroG)
 	{
 		SynchronizeCharacterToCamera();
+		UpdateZeroGAnimationParameters();
 	}
 	AlignCameraToGravity(DeltaTime);
 	UpdateInteractionCandidate();
@@ -545,6 +558,7 @@ void ACustomGravityCharacter::SetCustomGravityDirection(const FVector& NewDirect
 
 void ACustomGravityCharacter::SetZeroGravityEnabled(bool bEnabled)
 {
+	const bool bStateChanged = bIsZeroG != bEnabled;
 	bIsZeroG = bEnabled;
 	UCharacterMovementComponent* Movement = GetCharacterMovement();
 	if (!Movement)
@@ -575,6 +589,106 @@ void ACustomGravityCharacter::SetZeroGravityEnabled(bool bEnabled)
 			Movement->SetMovementMode(MOVE_Falling);
 		}
 	}
+
+	if (bStateChanged)
+	{
+		ApplyAnimationMode();
+	}
+}
+
+void ACustomGravityCharacter::ApplyAnimationMode()
+{
+	if (!GetMesh())
+	{
+		return;
+	}
+
+	UClass* DesiredAnimationClass = bIsZeroG
+		? ZeroGAnimationClass.Get()
+		: SurfaceAnimationClass.Get();
+	if (!DesiredAnimationClass || GetMesh()->GetAnimClass() == DesiredAnimationClass)
+	{
+		return;
+	}
+
+	GetMesh()->SetAnimInstanceClass(DesiredAnimationClass);
+	UE_LOG(LogTemp, Warning, TEXT("[APS.Animation] character=%s mode=%s animClass=%s"),
+		*GetName(), bIsZeroG ? TEXT("ZeroG") : TEXT("Surface"),
+		*GetNameSafe(DesiredAnimationClass));
+	if (bIsZeroG)
+	{
+		UpdateZeroGAnimationParameters();
+	}
+}
+
+void ACustomGravityCharacter::UpdateZeroGAnimationParameters()
+{
+	if (!bIsZeroG || !GetMesh())
+	{
+		return;
+	}
+
+	UAnimInstance* AnimInstance = GetMesh()->GetAnimInstance();
+	if (!AnimInstance)
+	{
+		return;
+	}
+
+	const FVector LocalVelocity = GetActorQuat().UnrotateVector(GetVelocity());
+	const auto SetNumericProperty = [AnimInstance](const FName PropertyName, const double Value)
+	{
+		if (FNumericProperty* Property = FindFProperty<FNumericProperty>(
+			AnimInstance->GetClass(), PropertyName))
+		{
+			void* ValueAddress = Property->ContainerPtrToValuePtr<void>(AnimInstance);
+			if (Property->IsFloatingPoint())
+			{
+				Property->SetFloatingPointPropertyValue(ValueAddress, Value);
+			}
+			else
+			{
+				Property->SetIntPropertyValue(ValueAddress, static_cast<int64>(Value));
+			}
+		}
+	};
+	const auto SetBoolProperty = [AnimInstance](const FName PropertyName, const bool Value)
+	{
+		if (FBoolProperty* Property = FindFProperty<FBoolProperty>(
+			AnimInstance->GetClass(), PropertyName))
+		{
+			Property->SetPropertyValue_InContainer(AnimInstance, Value);
+		}
+	};
+	const auto SetGravityTypeProperty = [AnimInstance](const FName PropertyName)
+	{
+		const int64 ZeroGValue = static_cast<int64>(EGravityType::ZeroG);
+		if (FEnumProperty* Property = FindFProperty<FEnumProperty>(
+			AnimInstance->GetClass(), PropertyName))
+		{
+			void* ValueAddress = Property->ContainerPtrToValuePtr<void>(AnimInstance);
+			Property->GetUnderlyingProperty()->SetIntPropertyValue(ValueAddress, ZeroGValue);
+		}
+		else if (FByteProperty* ByteProperty = FindFProperty<FByteProperty>(
+			AnimInstance->GetClass(), PropertyName))
+		{
+			ByteProperty->SetPropertyValue_InContainer(
+				AnimInstance, static_cast<uint8>(EGravityType::ZeroG));
+		}
+	};
+
+	SetNumericProperty(TEXT("ForwardSpeed"), LocalVelocity.X);
+	SetNumericProperty(TEXT("RightSpeed"), LocalVelocity.Y);
+	SetNumericProperty(TEXT("UpSpeed"), LocalVelocity.Z);
+	SetNumericProperty(TEXT("Speed"), LocalVelocity.Size());
+	SetNumericProperty(TEXT("GroundSpeed"), LocalVelocity.Size2D());
+	SetNumericProperty(TEXT("Velocity_X"), LocalVelocity.X);
+	SetNumericProperty(TEXT("Velocity_Y"), LocalVelocity.Y);
+	SetNumericProperty(TEXT("Velocity_Z"), LocalVelocity.Z);
+	SetBoolProperty(TEXT("ZeroG"), true);
+	SetBoolProperty(TEXT("bIsZeroG"), true);
+	SetBoolProperty(TEXT("Falling"), false);
+	SetGravityTypeProperty(TEXT("GravityType"));
+	SetGravityTypeProperty(TEXT("CurrentGravityType"));
 }
 
 void ACustomGravityCharacter::HandleGravitySourceChanged(AActor* NewSource)

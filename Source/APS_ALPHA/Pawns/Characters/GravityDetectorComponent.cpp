@@ -50,11 +50,46 @@ void UGravityDetectorComponent::RunGravityCheck(ACharacter* Self)
 
 	if (AActor* OverlappingSource = FindBestOverlappingSource(Self))
 	{
+		if (OverlappingSource != GravityTargetActor)
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("[APS.Gravity] Select reason=LocalOverlap character=%s source=%s class=%s characterLocation=%s sourceLocation=%s sourceUp=%s"),
+				*GetNameSafe(Self), *GetNameSafe(OverlappingSource),
+				*GetNameSafe(OverlappingSource->GetClass()),
+				*Self->GetActorLocation().ToCompactString(),
+				*OverlappingSource->GetActorLocation().ToCompactString(),
+				*OverlappingSource->GetActorUpVector().ToCompactString());
+		}
 		SwitchGravityType(OverlappingSource);
 		return;
 	}
 
-	SwitchGravityType(FindClosestFullScaleSource(Self));
+	AActor* FullScaleSource = FindClosestFullScaleSource(Self);
+	if (FullScaleSource != GravityTargetActor)
+	{
+		TArray<AActor*> OverlappingActors;
+		Self->GetCapsuleComponent()->GetOverlappingActors(OverlappingActors);
+		FString SupportedOverlapNames;
+		for (AActor* Candidate : OverlappingActors)
+		{
+			if (IsValid(Candidate) &&
+				Candidate->GetClass()->ImplementsInterface(UGravitySource::StaticClass()))
+			{
+				if (!SupportedOverlapNames.IsEmpty())
+				{
+					SupportedOverlapNames += TEXT(",");
+				}
+				SupportedOverlapNames += Candidate->GetName();
+			}
+		}
+
+		UE_LOG(LogTemp, Warning,
+			TEXT("[APS.Gravity] Select reason=FullScaleFallback character=%s source=%s characterLocation=%s supportedOverlaps=[%s] totalOverlaps=%d"),
+			*GetNameSafe(Self), *GetNameSafe(FullScaleSource),
+			*Self->GetActorLocation().ToCompactString(), *SupportedOverlapNames,
+			OverlappingActors.Num());
+	}
+	SwitchGravityType(FullScaleSource);
 }
 
 void UGravityDetectorComponent::SwitchGravityType(AActor* GravitySourceActor)
@@ -96,6 +131,11 @@ void UGravityDetectorComponent::SwitchGravityType(AActor* GravitySourceActor)
 
 	if (PreviousTarget != GravityTargetActor || PreviousType != CurrentGravityType)
 	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[APS.Gravity] Active target=%s type=%s direction=%s"),
+			*GetNameSafe(GravityTargetActor),
+			*UEnum::GetValueAsString(CurrentGravityType),
+			*GetGravityDirectionAtLocation(GetOwner()->GetActorLocation()).ToCompactString());
 		OnClosestGravityBodyChanged.Broadcast(GravityTargetActor);
 		OnGravityPhysicsParamChanged.Broadcast();
 	}

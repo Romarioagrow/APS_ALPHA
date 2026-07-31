@@ -13,6 +13,7 @@ class UInputAction;
 class USpringArmComponent;
 class UCameraComponent;
 class UGravityDetectorComponent;
+class UAnimInstance;
 class SWidget;
 
 /**
@@ -166,6 +167,8 @@ protected:
 	void SynchronizeCharacterToCamera();
 	FVector GetCameraPlanarForward() const;
 	FQuat GetCameraViewRotation() const;
+	void ApplyAnimationMode();
+	void UpdateZeroGAnimationParameters();
 
 	UFUNCTION()
 	void HandleGravitySourceChanged(AActor* NewSource);
@@ -183,6 +186,13 @@ private:
 	FVector CurrentGravityDir = FVector(0.f, 0.f, -1.f);
 
 	bool bManualGravityOverride = false;
+
+	UPROPERTY(Transient)
+	TSubclassOf<UAnimInstance> SurfaceAnimationClass;
+
+	UPROPERTY(Transient)
+	TSubclassOf<UAnimInstance> ZeroGAnimationClass;
+
 	TWeakObjectPtr<AActor> CurrentInteractableActor;
 	TSharedPtr<SWidget> InteractionPromptWidget;
 };

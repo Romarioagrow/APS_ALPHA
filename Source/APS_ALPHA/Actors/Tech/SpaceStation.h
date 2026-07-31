@@ -17,6 +17,7 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	void ConfigureGravityVolume(bool bWriteDiagnosticLog);
 
 public:
 

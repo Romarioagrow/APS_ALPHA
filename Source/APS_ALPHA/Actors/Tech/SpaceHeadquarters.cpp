@@ -12,6 +12,7 @@ ASpaceHeadquarters::ASpaceHeadquarters()
 
 void ASpaceHeadquarters::BeginPlay()
 {
+	Super::BeginPlay();
 }
 
 FVector ASpaceHeadquarters::GetStartPointPosition()
