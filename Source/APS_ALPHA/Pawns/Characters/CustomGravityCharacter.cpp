@@ -28,6 +28,8 @@ ACustomGravityCharacter::ACustomGravityCharacter()
 
 	// Configure CharacterMovement for custom gravity
 	UCharacterMovementComponent* MoveComp = GetCharacterMovement();
+	// Standard third-person surface locomotion: input is camera-relative and the
+	// character turns toward the resulting movement vector.
 	MoveComp->bOrientRotationToMovement = true;
 	MoveComp->RotationRate = FRotator(0.f, 500.f, 0.f);
 	MoveComp->AirControl = 0.35f;
@@ -42,6 +44,10 @@ ACustomGravityCharacter::ACustomGravityCharacter()
 	// Camera Boom
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
 	CameraBoom->SetupAttachment(RootComponent);
+	// The capsule is rotated by CharacterMovement to remain vertical relative to
+	// custom gravity. Keep the view in world space so that rotation is not applied
+	// a second time through the attachment hierarchy.
+	CameraBoom->SetAbsolute(false, true, false);
 	CameraBoom->TargetArmLength = CameraBoomLength;
 	CameraBoom->bUsePawnControlRotation = false;
 	CameraBoom->bDoCollisionTest = true;
@@ -60,6 +66,18 @@ ACustomGravityCharacter::ACustomGravityCharacter()
 void ACustomGravityCharacter::BeginPlay()
 {
 	Super::BeginPlay();
+
+	// Blueprint component defaults from older character revisions must not enable
+	// a second, controller-driven camera/facing path at runtime.
+	bUseControllerRotationPitch = false;
+	bUseControllerRotationYaw = false;
+	bUseControllerRotationRoll = false;
+	CameraBoom->bUsePawnControlRotation = false;
+	CameraBoom->SetAbsolute(false, true, false);
+	CameraBoom->bInheritPitch = false;
+	CameraBoom->bInheritYaw = false;
+	CameraBoom->bInheritRoll = false;
+	FollowCamera->bUsePawnControlRotation = false;
 
 	bManualGravityOverride = IsValid(GravityTarget);
 	if (GravityDetector)
@@ -83,6 +101,14 @@ void ACustomGravityCharacter::BeginPlay()
 
 	// Initialize gravity
 	UpdateGravityDirection();
+	CameraReferenceUp = GetGravityUpVector();
+	CameraForwardOnGravityPlane = FVector::VectorPlaneProject(
+		GetActorForwardVector(), CameraReferenceUp).GetSafeNormal();
+	if (CameraForwardOnGravityPlane.IsNearlyZero())
+	{
+		CameraForwardOnGravityPlane = FVector::VectorPlaneProject(
+			FVector::ForwardVector, CameraReferenceUp).GetSafeNormal();
+	}
 	CreateInteractionPrompt();
 }
 
@@ -95,6 +121,11 @@ void ACustomGravityCharacter::Tick(float DeltaTime)
 		UpdateGravityDirection();
 	}
 
+	UpdateCameraReferenceFrame();
+	if (bIsZeroG)
+	{
+		SynchronizeCharacterToCamera();
+	}
 	AlignCameraToGravity(DeltaTime);
 	UpdateInteractionCandidate();
 	if (!InteractionPromptWidget.IsValid())
@@ -139,25 +170,20 @@ void ACustomGravityCharacter::SetupPlayerInputComponent(UInputComponent* PlayerI
 void ACustomGravityCharacter::HandleMove(const FInputActionValue& Value)
 {
 	const FVector2D MovementVector = Value.Get<FVector2D>();
+	UpdateCameraReferenceFrame();
 	if (bIsZeroG)
 	{
-		AddMovementInput(FollowCamera->GetForwardVector(), MovementVector.Y);
-		AddMovementInput(FollowCamera->GetRightVector(), MovementVector.X);
+		const FQuat ViewRotation = GetCameraViewRotation();
+		AddMovementInput(ViewRotation.GetForwardVector(), MovementVector.Y);
+		AddMovementInput(ViewRotation.GetRightVector(), MovementVector.X);
 		return;
 	}
 
-	// Get the camera's forward and right vectors, projected onto the gravity plane
 	const FVector GravityUp = GetGravityUpVector();
+	const FVector CamForward = GetCameraPlanarForward();
+	const FVector CamRight = FVector::CrossProduct(GravityUp, CamForward).GetSafeNormal();
 
-	const FRotator CameraWorldRot = CameraBoom->GetComponentRotation();
-	FVector CamForward = FRotationMatrix(CameraWorldRot).GetUnitAxis(EAxis::X);
-	FVector CamRight = FRotationMatrix(CameraWorldRot).GetUnitAxis(EAxis::Y);
-
-	// Project onto gravity plane (remove the gravity-up component)
-	CamForward = FVector::VectorPlaneProject(CamForward, GravityUp).GetSafeNormal();
-	CamRight = FVector::VectorPlaneProject(CamRight, GravityUp).GetSafeNormal();
-
-	// Apply movement input
+	// Movement and visible facing use exactly the same gravity-relative basis.
 	AddMovementInput(CamForward, MovementVector.Y);
 	AddMovementInput(CamRight, MovementVector.X);
 }
@@ -165,16 +191,30 @@ void ACustomGravityCharacter::HandleMove(const FInputActionValue& Value)
 void ACustomGravityCharacter::HandleLook(const FInputActionValue& Value)
 {
 	const FVector2D LookAxisVector = Value.Get<FVector2D>();
+	UpdateCameraReferenceFrame();
 
-	CameraYaw += LookAxisVector.X * LookSensitivity;
+	const float YawDelta = LookAxisVector.X * LookSensitivity;
+	if (!FMath::IsNearlyZero(YawDelta))
+	{
+		const FVector GravityUp = GetGravityUpVector();
+		CameraForwardOnGravityPlane = FQuat(
+			GravityUp, FMath::DegreesToRadians(YawDelta))
+			.RotateVector(CameraForwardOnGravityPlane);
+		CameraForwardOnGravityPlane = FVector::VectorPlaneProject(
+			CameraForwardOnGravityPlane, GravityUp).GetSafeNormal();
+	}
 	CameraPitch = FMath::Clamp(CameraPitch - LookAxisVector.Y * LookSensitivity, -80.f, 80.f);
+	if (bIsZeroG)
+	{
+		SynchronizeCharacterToCamera();
+	}
 }
 
 void ACustomGravityCharacter::HandleJumpStarted()
 {
 	if (bIsZeroG)
 	{
-		AddMovementInput(FollowCamera->GetUpVector(), 1.0f);
+		AddMovementInput(GetCameraViewRotation().GetUpVector(), 1.0f);
 		return;
 	}
 
@@ -193,7 +233,7 @@ void ACustomGravityCharacter::HandleZeroGVertical(float Value)
 {
 	if (bIsZeroG && !FMath::IsNearlyZero(Value))
 	{
-		AddMovementInput(FollowCamera->GetUpVector(), Value);
+		AddMovementInput(GetCameraViewRotation().GetUpVector(), Value);
 	}
 }
 
@@ -358,50 +398,131 @@ void ACustomGravityCharacter::UpdateGravityDirection()
 		NewGravityDir = FVector(0.f, 0.f, -1.f);
 	}
 
-	SetZeroGravityEnabled(false);
 	CurrentGravityDir = NewGravityDir;
 
 	// UE 5.4: Set custom gravity direction on CharacterMovementComponent
 	GetCharacterMovement()->SetGravityDirection(CurrentGravityDir);
+
+	const bool bRequiresNearbySurface =
+		CurrentGravityType == EGravityType::OnStation ||
+		CurrentGravityType == EGravityType::OnShip;
+	if (bRequiresNearbySurface && !HasSurfaceGravitySupport(CurrentGravityDir))
+	{
+		SetZeroGravityEnabled(true);
+		return;
+	}
+
+	SetZeroGravityEnabled(false);
+}
+
+bool ACustomGravityCharacter::HasSurfaceGravitySupport(const FVector& GravityDirection)
+{
+	if (!GravityTarget || !GetWorld() || GravityDirection.IsNearlyZero())
+	{
+		return false;
+	}
+
+	const UCharacterMovementComponent* Movement = GetCharacterMovement();
+	if (Movement && Movement->IsMovingOnGround())
+	{
+		return true;
+	}
+
+	const UCapsuleComponent* Capsule = GetCapsuleComponent();
+	const float CapsuleHalfHeight = Capsule ? Capsule->GetScaledCapsuleHalfHeight() : 88.f;
+	const float CapsuleRadius = Capsule ? Capsule->GetScaledCapsuleRadius() : 42.f;
+	const float ProbeRadius = FMath::Min(SurfaceGravityProbeRadius, CapsuleRadius * 0.8f);
+
+	const FVector Start = GetActorLocation();
+	const FVector End = Start + GravityDirection.GetSafeNormal() *
+		(CapsuleHalfHeight + SurfaceGravityAcquisitionDistance);
+	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(APSSurfaceGravityProbe), false, this);
+	FHitResult Hit;
+	const bool bHit = GetWorld()->SweepSingleByChannel(
+		Hit, Start, End, FQuat::Identity, ECC_Visibility,
+		FCollisionShape::MakeSphere(ProbeRadius), QueryParams);
+	if (!bHit)
+	{
+		return false;
+	}
+
+	const FVector GravityUp = -GravityDirection.GetSafeNormal();
+	const float WalkableFloorZ = Movement ? Movement->GetWalkableFloorZ() : 0.7f;
+	if (FVector::DotProduct(Hit.ImpactNormal.GetSafeNormal(), GravityUp) < WalkableFloorZ)
+	{
+		return false;
+	}
+
+	return true;
+}
+
+void ACustomGravityCharacter::UpdateCameraReferenceFrame()
+{
+	const FVector GravityUp = GetGravityUpVector();
+
+	if (!CameraReferenceUp.Equals(GravityUp, KINDA_SMALL_NUMBER))
+	{
+		CameraForwardOnGravityPlane = FQuat::FindBetweenNormals(
+			CameraReferenceUp, GravityUp).RotateVector(CameraForwardOnGravityPlane);
+		CameraReferenceUp = GravityUp;
+	}
+
+	CameraForwardOnGravityPlane = FVector::VectorPlaneProject(
+		CameraForwardOnGravityPlane, GravityUp).GetSafeNormal();
+	if (CameraForwardOnGravityPlane.IsNearlyZero())
+	{
+		CameraForwardOnGravityPlane = FVector::VectorPlaneProject(
+			GetActorForwardVector(), GravityUp).GetSafeNormal();
+	}
+	if (CameraForwardOnGravityPlane.IsNearlyZero())
+	{
+		CameraForwardOnGravityPlane = FVector::VectorPlaneProject(
+			FVector::ForwardVector, GravityUp).GetSafeNormal();
+	}
+}
+
+FVector ACustomGravityCharacter::GetCameraPlanarForward() const
+{
+	const FVector GravityUp = GetGravityUpVector();
+	FVector Forward = FVector::VectorPlaneProject(
+		CameraForwardOnGravityPlane, GravityUp).GetSafeNormal();
+	if (Forward.IsNearlyZero())
+	{
+		Forward = FVector::VectorPlaneProject(
+			GetActorForwardVector(), GravityUp).GetSafeNormal();
+	}
+	return Forward;
+}
+
+FQuat ACustomGravityCharacter::GetCameraViewRotation() const
+{
+	const FVector GravityUp = GetGravityUpVector();
+	const FVector PlanarForward = GetCameraPlanarForward();
+	const FVector CameraRight = FVector::CrossProduct(
+		GravityUp, PlanarForward).GetSafeNormal();
+	const FQuat PitchQuat(CameraRight, FMath::DegreesToRadians(CameraPitch));
+	const FVector ViewForward = PitchQuat.RotateVector(PlanarForward).GetSafeNormal();
+	return FRotationMatrix::MakeFromXZ(ViewForward, GravityUp).ToQuat();
+}
+
+void ACustomGravityCharacter::SynchronizeCharacterToCamera()
+{
+	const FQuat TargetRotation = bIsZeroG
+		? GetCameraViewRotation()
+		: FRotationMatrix::MakeFromXZ(
+			GetCameraPlanarForward(), GetGravityUpVector()).ToQuat();
+	SetActorRotation(TargetRotation);
 }
 
 void ACustomGravityCharacter::AlignCameraToGravity(float DeltaTime)
 {
-	const FVector GravityUp = GetGravityUpVector();
+	(void)DeltaTime;
+	UpdateCameraReferenceFrame();
+	const FQuat TargetRotation = GetCameraViewRotation();
 
-	// Build camera rotation:
-	// Yaw rotates around gravity-up axis
-	// Pitch tilts around the local right axis
-	const FQuat YawQuat = FQuat(GravityUp, FMath::DegreesToRadians(CameraYaw));
-
-	// Start with a base forward direction on the gravity plane
-	// Use the character's forward projected onto gravity plane as reference
-	FVector CharForward = GetActorForwardVector();
-	CharForward = FVector::VectorPlaneProject(CharForward, GravityUp).GetSafeNormal();
-	if (CharForward.IsNearlyZero())
-	{
-		CharForward = FVector::VectorPlaneProject(FVector::ForwardVector, GravityUp).GetSafeNormal();
-	}
-
-	// Camera forward after yaw
-	const FVector YawedForward = YawQuat.RotateVector(CharForward).GetSafeNormal();
-	const FVector YawedRight = FVector::CrossProduct(GravityUp, YawedForward).GetSafeNormal();
-
-	// Build rotation from yaw (around gravity-up) + pitch (around right)
-	const FQuat PitchQuat = FQuat(YawedRight, FMath::DegreesToRadians(CameraPitch));
-
-	// Final camera forward
-	const FVector FinalForward = PitchQuat.RotateVector(YawedForward);
-
-	// Build the full rotation matrix with gravity-up as the "up" reference
-	const FMatrix CameraMatrix = FRotationMatrix::MakeFromXZ(FinalForward, GravityUp);
-	const FQuat TargetRotation = CameraMatrix.ToQuat();
-
-	// Smoothly interpolate the camera boom rotation
-	const FQuat CurrentRot = CameraBoom->GetComponentQuat();
-	const FQuat InterpolatedRot = FQuat::Slerp(CurrentRot, TargetRotation, FMath::Clamp(CameraAlignmentSpeed * DeltaTime, 0.f, 1.f));
-
-	CameraBoom->SetWorldRotation(InterpolatedRot);
+	// Camera and character share one heading; no spring-arm yaw lag can make W
+	// disagree with what the player sees.
+	CameraBoom->SetWorldRotation(TargetRotation);
 }
 
 // ──────────────────────── Public API ────────────────────────
@@ -424,11 +545,6 @@ void ACustomGravityCharacter::SetCustomGravityDirection(const FVector& NewDirect
 
 void ACustomGravityCharacter::SetZeroGravityEnabled(bool bEnabled)
 {
-	if (bIsZeroG == bEnabled)
-	{
-		return;
-	}
-
 	bIsZeroG = bEnabled;
 	UCharacterMovementComponent* Movement = GetCharacterMovement();
 	if (!Movement)
@@ -438,7 +554,10 @@ void ACustomGravityCharacter::SetZeroGravityEnabled(bool bEnabled)
 
 	if (bIsZeroG)
 	{
-		CurrentGravityType = EGravityType::ZeroG;
+		if (!GravityDetector || !IsValid(GravityDetector->GravityTargetActor))
+		{
+			CurrentGravityType = EGravityType::ZeroG;
+		}
 		Movement->GravityScale = 0.0f;
 		Movement->bOrientRotationToMovement = false;
 		Movement->MaxFlySpeed = ZeroGMaxSpeed;

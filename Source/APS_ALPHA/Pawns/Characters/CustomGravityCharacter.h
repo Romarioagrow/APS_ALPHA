@@ -102,6 +102,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gravity|ZeroG")
 	float ZeroGBrakingDeceleration = 80.f;
 
+	/** Maximum distance searched along local gravity for a deck. If no deck is
+	 * directly below the character, station/ship movement remains true zero-G. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gravity|Surface", meta = (ClampMin = "100.0"))
+	float SurfaceGravityAcquisitionDistance = 100000.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gravity|Surface", meta = (ClampMin = "1.0"))
+	float SurfaceGravityProbeRadius = 24.f;
+
 	// ──────────────────────── Camera Settings ────────────────────────
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera")
@@ -152,14 +160,23 @@ protected:
 
 	// Gravity
 	void UpdateGravityDirection();
+	bool HasSurfaceGravitySupport(const FVector& GravityDirection);
+	void UpdateCameraReferenceFrame();
 	void AlignCameraToGravity(float DeltaTime);
+	void SynchronizeCharacterToCamera();
+	FVector GetCameraPlanarForward() const;
+	FQuat GetCameraViewRotation() const;
 
 	UFUNCTION()
 	void HandleGravitySourceChanged(AActor* NewSource);
 
 private:
-	/** Accumulated yaw/pitch for camera control */
-	float CameraYaw = 0.f;
+	/** Stable camera heading on the current gravity plane. It must not be rebuilt
+	 * from ActorForward every frame because movement also rotates the actor. */
+	FVector CameraForwardOnGravityPlane = FVector::ForwardVector;
+	FVector CameraReferenceUp = FVector::UpVector;
+
+	/** Accumulated pitch for camera control. */
 	float CameraPitch = 0.f;
 
 	/** Current gravity direction (cached) */

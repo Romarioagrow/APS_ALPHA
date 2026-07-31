@@ -15,6 +15,11 @@ class APS_ALPHA_API ASpaceStation : public ATechActor, public IGravitySource, pu
 public:
 	ASpaceStation();
 
+protected:
+	virtual void BeginPlay() override;
+
+public:
+
 	// TODO: To parent component
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Components")
 	USceneComponent* SpawnPoint;

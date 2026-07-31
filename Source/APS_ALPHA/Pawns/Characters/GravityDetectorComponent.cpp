@@ -189,7 +189,10 @@ AWorldActor* UGravityDetectorComponent::FindClosestFullScaleSource(ACharacter* C
 	for (AActor* Actor : WorldActors)
 	{
 		AWorldActor* Candidate = Cast<AWorldActor>(Actor);
-		if (!Candidate || !Candidate->GetClass()->ImplementsInterface(UGravitySource::StaticClass()))
+		// Stations and ships are finite artificial gravity volumes and must never
+		// be selected by the full-scale distance fallback after overlap ends.
+		if (!Candidate || !Candidate->IsA(AOrbitalBody::StaticClass()) ||
+			!Candidate->GetClass()->ImplementsInterface(UGravitySource::StaticClass()))
 		{
 			continue;
 		}
