@@ -11,6 +11,7 @@ class APS_ALPHA_API ASpaceHeadquarters : public ASpaceStation // AHeadquarters
 
 protected:
 	virtual void BeginPlay() override;
+	virtual float GetGravityVolumeRadiusMultiplier() const override { return 3.0f; }
 
 private:
 	UPROPERTY(EditAnywhere)

@@ -111,6 +111,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gravity|Surface", meta = (ClampMin = "1.0"))
 	float SurfaceGravityProbeRadius = 24.f;
 
+	/** Duration of the visible orientation blend when gravity mode/direction changes. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gravity|Transition", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float GravityTransitionDuration = 0.65f;
+
 	// ──────────────────────── Camera Settings ────────────────────────
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera")
@@ -160,13 +164,15 @@ protected:
 	void RemoveInteractionPrompt();
 
 	// Gravity
-	void UpdateGravityDirection();
+	void UpdateGravityDirection(float DeltaTime);
 	bool HasSurfaceGravitySupport(const FVector& GravityDirection);
 	void UpdateCameraReferenceFrame();
 	void AlignCameraToGravity(float DeltaTime);
-	void SynchronizeCharacterToCamera();
+	void SynchronizeCharacterToCamera(float DeltaTime);
 	FVector GetCameraPlanarForward() const;
 	FQuat GetCameraViewRotation() const;
+	void StartGravityDirectionTransition(const FVector& TargetGravityDirection, bool bStartFromActorUp);
+	void AdvanceGravityDirectionTransition(float DeltaTime);
 	void ApplyAnimationMode();
 	void UpdateZeroGAnimationParameters();
 
@@ -184,6 +190,12 @@ private:
 
 	/** Current gravity direction (cached) */
 	FVector CurrentGravityDir = FVector(0.f, 0.f, -1.f);
+	FVector DesiredGravityDir = FVector(0.f, 0.f, -1.f);
+	FVector GravityTransitionStartDir = FVector(0.f, 0.f, -1.f);
+	FVector GravityTransitionTargetDir = FVector(0.f, 0.f, -1.f);
+	float GravityTransitionElapsed = 0.f;
+	float ZeroGOrientationTransitionRemaining = 0.f;
+	bool bGravityDirectionInitialized = false;
 
 	bool bManualGravityOverride = false;
 

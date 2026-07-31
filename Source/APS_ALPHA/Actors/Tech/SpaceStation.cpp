@@ -122,7 +122,8 @@ void ASpaceStation::ConfigureGravityVolume(bool bWriteDiagnosticLog)
 	const float RequiredWorldRadius = FVector::Distance(VolumeCenter, BoundsCenter)
 		+ BoundsExtent.Size() + APSStationGravity::BoundsPadding;
 	const float DesiredWorldRadius = FMath::Max(
-		APSStationGravity::MinimumGravityRadius, RequiredWorldRadius);
+		APSStationGravity::MinimumGravityRadius,
+		RequiredWorldRadius * GetGravityVolumeRadiusMultiplier());
 
 	if (bGravityVolumeWasDetached)
 	{

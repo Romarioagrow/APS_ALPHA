@@ -112,7 +112,7 @@ void ACustomGravityCharacter::BeginPlay()
 	}
 
 	// Initialize gravity
-	UpdateGravityDirection();
+	UpdateGravityDirection(0.0f);
 	CameraReferenceUp = GetGravityUpVector();
 	CameraForwardOnGravityPlane = FVector::VectorPlaneProject(
 		GetActorForwardVector(), CameraReferenceUp).GetSafeNormal();
@@ -130,13 +130,13 @@ void ACustomGravityCharacter::Tick(float DeltaTime)
 
 	if (bUseCustomGravity)
 	{
-		UpdateGravityDirection();
+		UpdateGravityDirection(DeltaTime);
 	}
 
 	UpdateCameraReferenceFrame();
 	if (bIsZeroG)
 	{
-		SynchronizeCharacterToCamera();
+		SynchronizeCharacterToCamera(DeltaTime);
 		UpdateZeroGAnimationParameters();
 	}
 	AlignCameraToGravity(DeltaTime);
@@ -219,7 +219,7 @@ void ACustomGravityCharacter::HandleLook(const FInputActionValue& Value)
 	CameraPitch = FMath::Clamp(CameraPitch - LookAxisVector.Y * LookSensitivity, -80.f, 80.f);
 	if (bIsZeroG)
 	{
-		SynchronizeCharacterToCamera();
+		SynchronizeCharacterToCamera(0.0f);
 	}
 }
 
@@ -375,7 +375,7 @@ void ACustomGravityCharacter::RemoveInteractionPrompt()
 
 // ──────────────────────── Gravity ────────────────────────
 
-void ACustomGravityCharacter::UpdateGravityDirection()
+void ACustomGravityCharacter::UpdateGravityDirection(float DeltaTime)
 {
 	FVector NewGravityDir = FVector::ZeroVector;
 
@@ -411,21 +411,111 @@ void ACustomGravityCharacter::UpdateGravityDirection()
 		NewGravityDir = FVector(0.f, 0.f, -1.f);
 	}
 
-	CurrentGravityDir = NewGravityDir;
-
-	// UE 5.4: Set custom gravity direction on CharacterMovementComponent
-	GetCharacterMovement()->SetGravityDirection(CurrentGravityDir);
+	DesiredGravityDir = NewGravityDir.GetSafeNormal();
 
 	const bool bRequiresNearbySurface =
 		CurrentGravityType == EGravityType::OnStation ||
 		CurrentGravityType == EGravityType::OnShip;
-	if (bRequiresNearbySurface && !HasSurfaceGravitySupport(CurrentGravityDir))
+	if (bRequiresNearbySurface && !HasSurfaceGravitySupport(DesiredGravityDir))
 	{
 		SetZeroGravityEnabled(true);
 		return;
 	}
 
+	const bool bWasZeroG = bIsZeroG;
 	SetZeroGravityEnabled(false);
+
+	if (!bGravityDirectionInitialized)
+	{
+		CurrentGravityDir = DesiredGravityDir;
+		GravityTransitionStartDir = DesiredGravityDir;
+		GravityTransitionTargetDir = DesiredGravityDir;
+		GravityTransitionElapsed = GravityTransitionDuration;
+		bGravityDirectionInitialized = true;
+	}
+	else
+	{
+		const double TargetDot = FVector::DotProduct(
+			GravityTransitionTargetDir.GetSafeNormal(), DesiredGravityDir);
+		const bool bDirectionChanged = TargetDot <
+			FMath::Cos(FMath::DegreesToRadians(1.0));
+		if (bWasZeroG || bDirectionChanged)
+		{
+			StartGravityDirectionTransition(DesiredGravityDir, bWasZeroG);
+		}
+		else if (GravityTransitionElapsed >= GravityTransitionDuration)
+		{
+			CurrentGravityDir = DesiredGravityDir;
+			GravityTransitionTargetDir = DesiredGravityDir;
+		}
+		else
+		{
+			GravityTransitionTargetDir = DesiredGravityDir;
+		}
+	}
+
+	AdvanceGravityDirectionTransition(DeltaTime);
+
+	// UE 5.4 aligns the capsule and movement simulation to this direction. Feeding
+	// it the interpolated vector keeps physics, camera and the visible body in sync.
+	GetCharacterMovement()->SetGravityDirection(CurrentGravityDir);
+}
+
+void ACustomGravityCharacter::StartGravityDirectionTransition(
+	const FVector& TargetGravityDirection, bool bStartFromActorUp)
+{
+	const FVector SafeTarget = TargetGravityDirection.GetSafeNormal();
+	if (SafeTarget.IsNearlyZero())
+	{
+		return;
+	}
+
+	if (bStartFromActorUp)
+	{
+		CurrentGravityDir = -GetActorUpVector();
+	}
+	CurrentGravityDir = CurrentGravityDir.GetSafeNormal();
+	GravityTransitionStartDir = CurrentGravityDir;
+	GravityTransitionTargetDir = SafeTarget;
+	GravityTransitionElapsed = 0.0f;
+
+	if (GravityTransitionDuration <= UE_SMALL_NUMBER ||
+		GravityTransitionStartDir.Equals(GravityTransitionTargetDir, KINDA_SMALL_NUMBER))
+	{
+		CurrentGravityDir = GravityTransitionTargetDir;
+		GravityTransitionElapsed = GravityTransitionDuration;
+	}
+}
+
+void ACustomGravityCharacter::AdvanceGravityDirectionTransition(float DeltaTime)
+{
+	if (!bGravityDirectionInitialized ||
+		GravityTransitionElapsed >= GravityTransitionDuration)
+	{
+		return;
+	}
+
+	if (GravityTransitionDuration <= UE_SMALL_NUMBER)
+	{
+		CurrentGravityDir = GravityTransitionTargetDir;
+		GravityTransitionElapsed = GravityTransitionDuration;
+		return;
+	}
+
+	GravityTransitionElapsed = FMath::Min(
+		GravityTransitionElapsed + FMath::Max(DeltaTime, 0.0f),
+		GravityTransitionDuration);
+	const float LinearAlpha = GravityTransitionElapsed / GravityTransitionDuration;
+	const float SmoothAlpha = FMath::SmoothStep(0.0f, 1.0f, LinearAlpha);
+	const FQuat FullRotation = FQuat::FindBetweenNormals(
+		GravityTransitionStartDir, GravityTransitionTargetDir);
+	CurrentGravityDir = FQuat::Slerp(FQuat::Identity, FullRotation, SmoothAlpha)
+		.RotateVector(GravityTransitionStartDir).GetSafeNormal();
+
+	if (GravityTransitionElapsed >= GravityTransitionDuration)
+	{
+		CurrentGravityDir = GravityTransitionTargetDir;
+	}
 }
 
 bool ACustomGravityCharacter::HasSurfaceGravitySupport(const FVector& GravityDirection)
@@ -518,13 +608,25 @@ FQuat ACustomGravityCharacter::GetCameraViewRotation() const
 	return FRotationMatrix::MakeFromXZ(ViewForward, GravityUp).ToQuat();
 }
 
-void ACustomGravityCharacter::SynchronizeCharacterToCamera()
+void ACustomGravityCharacter::SynchronizeCharacterToCamera(float DeltaTime)
 {
 	const FQuat TargetRotation = bIsZeroG
 		? GetCameraViewRotation()
 		: FRotationMatrix::MakeFromXZ(
 			GetCameraPlanarForward(), GetGravityUpVector()).ToQuat();
-	SetActorRotation(TargetRotation);
+
+	if (ZeroGOrientationTransitionRemaining > UE_SMALL_NUMBER && DeltaTime > 0.0f)
+	{
+		const float Alpha = FMath::Clamp(
+			DeltaTime / ZeroGOrientationTransitionRemaining, 0.0f, 1.0f);
+		SetActorRotation(FQuat::Slerp(GetActorQuat(), TargetRotation, Alpha));
+		ZeroGOrientationTransitionRemaining = FMath::Max(
+			0.0f, ZeroGOrientationTransitionRemaining - DeltaTime);
+	}
+	else if (ZeroGOrientationTransitionRemaining <= UE_SMALL_NUMBER)
+	{
+		SetActorRotation(TargetRotation);
+	}
 }
 
 void ACustomGravityCharacter::AlignCameraToGravity(float DeltaTime)
@@ -544,7 +646,7 @@ void ACustomGravityCharacter::SetGravityTarget(AActor* NewTarget)
 {
 	GravityTarget = NewTarget;
 	bManualGravityOverride = IsValid(NewTarget);
-	UpdateGravityDirection();
+	UpdateGravityDirection(0.0f);
 }
 
 void ACustomGravityCharacter::SetCustomGravityDirection(const FVector& NewDirection)
@@ -553,7 +655,7 @@ void ACustomGravityCharacter::SetCustomGravityDirection(const FVector& NewDirect
 	bManualGravityOverride = true;
 	GravityTarget = nullptr;
 	DefaultGravityDirection = NewDirection.GetSafeNormal();
-	UpdateGravityDirection();
+	UpdateGravityDirection(0.0f);
 }
 
 void ACustomGravityCharacter::SetZeroGravityEnabled(bool bEnabled)
@@ -592,6 +694,9 @@ void ACustomGravityCharacter::SetZeroGravityEnabled(bool bEnabled)
 
 	if (bStateChanged)
 	{
+		ZeroGOrientationTransitionRemaining = bEnabled
+			? GravityTransitionDuration
+			: 0.0f;
 		ApplyAnimationMode();
 	}
 }
@@ -699,7 +804,7 @@ void ACustomGravityCharacter::HandleGravitySourceChanged(AActor* NewSource)
 	}
 
 	GravityTarget = NewSource;
-	UpdateGravityDirection();
+	UpdateGravityDirection(0.0f);
 }
 
 FVector ACustomGravityCharacter::GetCurrentGravityDirection() const

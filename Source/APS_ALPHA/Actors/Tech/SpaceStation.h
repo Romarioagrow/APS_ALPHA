@@ -18,6 +18,7 @@ public:
 protected:
 	virtual void BeginPlay() override;
 	void ConfigureGravityVolume(bool bWriteDiagnosticLog);
+	virtual float GetGravityVolumeRadiusMultiplier() const { return 1.0f; }
 
 public:
 
