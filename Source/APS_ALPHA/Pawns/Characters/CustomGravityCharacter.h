@@ -111,6 +111,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gravity|Surface", meta = (ClampMin = "1.0"))
 	float SurfaceGravityProbeRadius = 24.f;
 
+	/** Prevents a one-frame floor-probe miss from repeatedly toggling Flying/Falling. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gravity|Surface", meta = (ClampMin = "0.0", ClampMax = "0.5"))
+	float SurfaceSupportLossGracePeriod = 0.2f;
+
 	/** Duration of the visible orientation blend when gravity mode/direction changes. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gravity|Transition", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float GravityTransitionDuration = 0.65f;
@@ -174,7 +178,7 @@ protected:
 	void StartGravityDirectionTransition(const FVector& TargetGravityDirection, bool bStartFromActorUp);
 	void AdvanceGravityDirectionTransition(float DeltaTime);
 	void ApplyAnimationMode();
-	void UpdateZeroGAnimationParameters();
+	void UpdateGravityAnimationParameters();
 
 	UFUNCTION()
 	void HandleGravitySourceChanged(AActor* NewSource);
@@ -195,6 +199,7 @@ private:
 	FVector GravityTransitionTargetDir = FVector(0.f, 0.f, -1.f);
 	float GravityTransitionElapsed = 0.f;
 	float ZeroGOrientationTransitionRemaining = 0.f;
+	float SurfaceSupportLossElapsed = 0.f;
 	bool bGravityDirectionInitialized = false;
 
 	bool bManualGravityOverride = false;

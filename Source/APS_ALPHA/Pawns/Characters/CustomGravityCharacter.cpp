@@ -66,6 +66,13 @@ ACustomGravityCharacter::ACustomGravityCharacter()
 	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
 	FollowCamera->bUsePawnControlRotation = false;
 
+	static ConstructorHelpers::FClassFinder<UAnimInstance> SurfaceAnimationBlueprint(
+		TEXT("/Game/APS/APS_ALPHA/Blueprints/APS_ABP_Manny"));
+	if (SurfaceAnimationBlueprint.Succeeded())
+	{
+		SurfaceAnimationClass = SurfaceAnimationBlueprint.Class;
+	}
+
 	static ConstructorHelpers::FClassFinder<UAnimInstance> ZeroGAnimationBlueprint(
 		TEXT("/Game/APS/APS_ALPHA/Blueprints/ABP_ZeroGAnim"));
 	if (ZeroGAnimationBlueprint.Succeeded())
@@ -89,7 +96,11 @@ void ACustomGravityCharacter::BeginPlay()
 	CameraBoom->bInheritYaw = false;
 	CameraBoom->bInheritRoll = false;
 	FollowCamera->bUsePawnControlRotation = false;
-	SurfaceAnimationClass = GetMesh() ? GetMesh()->GetAnimClass() : nullptr;
+	if (!SurfaceAnimationClass && GetMesh())
+	{
+		SurfaceAnimationClass = GetMesh()->GetAnimClass();
+	}
+	ApplyAnimationMode();
 
 	bManualGravityOverride = IsValid(GravityTarget);
 	if (GravityDetector)
@@ -137,8 +148,8 @@ void ACustomGravityCharacter::Tick(float DeltaTime)
 	if (bIsZeroG)
 	{
 		SynchronizeCharacterToCamera(DeltaTime);
-		UpdateZeroGAnimationParameters();
 	}
+	UpdateGravityAnimationParameters();
 	AlignCameraToGravity(DeltaTime);
 	UpdateInteractionCandidate();
 	if (!InteractionPromptWidget.IsValid())
@@ -416,10 +427,30 @@ void ACustomGravityCharacter::UpdateGravityDirection(float DeltaTime)
 	const bool bRequiresNearbySurface =
 		CurrentGravityType == EGravityType::OnStation ||
 		CurrentGravityType == EGravityType::OnShip;
-	if (bRequiresNearbySurface && !HasSurfaceGravitySupport(DesiredGravityDir))
+	if (bRequiresNearbySurface)
 	{
-		SetZeroGravityEnabled(true);
-		return;
+		if (HasSurfaceGravitySupport(DesiredGravityDir))
+		{
+			SurfaceSupportLossElapsed = 0.0f;
+		}
+		else if (bIsZeroG)
+		{
+			SetZeroGravityEnabled(true);
+			return;
+		}
+		else
+		{
+			SurfaceSupportLossElapsed += FMath::Max(DeltaTime, 0.0f);
+			if (SurfaceSupportLossElapsed >= SurfaceSupportLossGracePeriod)
+			{
+				SetZeroGravityEnabled(true);
+				return;
+			}
+		}
+	}
+	else
+	{
+		SurfaceSupportLossElapsed = 0.0f;
 	}
 
 	const bool bWasZeroG = bIsZeroG;
@@ -698,6 +729,7 @@ void ACustomGravityCharacter::SetZeroGravityEnabled(bool bEnabled)
 			? GravityTransitionDuration
 			: 0.0f;
 		ApplyAnimationMode();
+		UpdateGravityAnimationParameters();
 	}
 }
 
@@ -720,15 +752,11 @@ void ACustomGravityCharacter::ApplyAnimationMode()
 	UE_LOG(LogTemp, Warning, TEXT("[APS.Animation] character=%s mode=%s animClass=%s"),
 		*GetName(), bIsZeroG ? TEXT("ZeroG") : TEXT("Surface"),
 		*GetNameSafe(DesiredAnimationClass));
-	if (bIsZeroG)
-	{
-		UpdateZeroGAnimationParameters();
-	}
 }
 
-void ACustomGravityCharacter::UpdateZeroGAnimationParameters()
+void ACustomGravityCharacter::UpdateGravityAnimationParameters()
 {
-	if (!bIsZeroG || !GetMesh())
+	if (!GetMesh())
 	{
 		return;
 	}
@@ -740,6 +768,12 @@ void ACustomGravityCharacter::UpdateZeroGAnimationParameters()
 	}
 
 	const FVector LocalVelocity = GetActorQuat().UnrotateVector(GetVelocity());
+	const FVector LocalAcceleration = GetCharacterMovement()
+		? GetActorQuat().UnrotateVector(GetCharacterMovement()->GetCurrentAcceleration())
+		: FVector::ZeroVector;
+	const float GroundSpeed = FVector(LocalVelocity.X, LocalVelocity.Y, 0.0).Size();
+	const float MovementDirection = FMath::RadiansToDegrees(
+		FMath::Atan2(LocalVelocity.Y, LocalVelocity.X));
 	const auto SetNumericProperty = [AnimInstance](const FName PropertyName, const double Value)
 	{
 		if (FNumericProperty* Property = FindFProperty<FNumericProperty>(
@@ -764,20 +798,32 @@ void ACustomGravityCharacter::UpdateZeroGAnimationParameters()
 			Property->SetPropertyValue_InContainer(AnimInstance, Value);
 		}
 	};
-	const auto SetGravityTypeProperty = [AnimInstance](const FName PropertyName)
+	const auto SetVectorProperty = [AnimInstance](const FName PropertyName, const FVector& Value)
 	{
-		const int64 ZeroGValue = static_cast<int64>(EGravityType::ZeroG);
+		if (FStructProperty* Property = FindFProperty<FStructProperty>(
+			AnimInstance->GetClass(), PropertyName);
+			Property && Property->Struct == TBaseStructure<FVector>::Get())
+		{
+			*Property->ContainerPtrToValuePtr<FVector>(AnimInstance) = Value;
+		}
+	};
+	const EGravityType AnimationGravityType = bIsZeroG
+		? EGravityType::ZeroG
+		: CurrentGravityType;
+	const auto SetGravityTypeProperty = [AnimInstance, AnimationGravityType](const FName PropertyName)
+	{
+		const int64 GravityTypeValue = static_cast<int64>(AnimationGravityType);
 		if (FEnumProperty* Property = FindFProperty<FEnumProperty>(
 			AnimInstance->GetClass(), PropertyName))
 		{
 			void* ValueAddress = Property->ContainerPtrToValuePtr<void>(AnimInstance);
-			Property->GetUnderlyingProperty()->SetIntPropertyValue(ValueAddress, ZeroGValue);
+			Property->GetUnderlyingProperty()->SetIntPropertyValue(ValueAddress, GravityTypeValue);
 		}
 		else if (FByteProperty* ByteProperty = FindFProperty<FByteProperty>(
 			AnimInstance->GetClass(), PropertyName))
 		{
 			ByteProperty->SetPropertyValue_InContainer(
-				AnimInstance, static_cast<uint8>(EGravityType::ZeroG));
+				AnimInstance, static_cast<uint8>(AnimationGravityType));
 		}
 	};
 
@@ -785,13 +831,22 @@ void ACustomGravityCharacter::UpdateZeroGAnimationParameters()
 	SetNumericProperty(TEXT("RightSpeed"), LocalVelocity.Y);
 	SetNumericProperty(TEXT("UpSpeed"), LocalVelocity.Z);
 	SetNumericProperty(TEXT("Speed"), LocalVelocity.Size());
-	SetNumericProperty(TEXT("GroundSpeed"), LocalVelocity.Size2D());
+	SetNumericProperty(TEXT("GroundSpeed"), GroundSpeed);
+	SetNumericProperty(TEXT("Direction"), MovementDirection);
+	SetNumericProperty(TEXT("MovementDirection"), MovementDirection);
 	SetNumericProperty(TEXT("Velocity_X"), LocalVelocity.X);
 	SetNumericProperty(TEXT("Velocity_Y"), LocalVelocity.Y);
 	SetNumericProperty(TEXT("Velocity_Z"), LocalVelocity.Z);
-	SetBoolProperty(TEXT("ZeroG"), true);
-	SetBoolProperty(TEXT("bIsZeroG"), true);
-	SetBoolProperty(TEXT("Falling"), false);
+	SetVectorProperty(TEXT("Velocity"), LocalVelocity);
+	SetVectorProperty(TEXT("Acceleration"), LocalAcceleration);
+	SetVectorProperty(TEXT("CurrentAcceleration"), LocalAcceleration);
+	SetBoolProperty(TEXT("ZeroG"), bIsZeroG);
+	SetBoolProperty(TEXT("bIsZeroG"), bIsZeroG);
+	SetBoolProperty(TEXT("ShouldMove"), GroundSpeed > 3.0f);
+	SetBoolProperty(TEXT("Moving"), GroundSpeed > 3.0f);
+	const bool bIsFalling = GetCharacterMovement() && GetCharacterMovement()->IsFalling();
+	SetBoolProperty(TEXT("Falling"), bIsFalling);
+	SetBoolProperty(TEXT("IsFalling"), bIsFalling);
 	SetGravityTypeProperty(TEXT("GravityType"));
 	SetGravityTypeProperty(TEXT("CurrentGravityType"));
 }
