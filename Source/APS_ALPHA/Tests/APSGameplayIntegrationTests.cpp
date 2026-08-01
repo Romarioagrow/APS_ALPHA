@@ -4,6 +4,9 @@
 
 #include "APS_ALPHA/Core/Interfaces/VehicleControlling.h"
 #include "APS_ALPHA/Core/Model/GeneratedWorld.h"
+#include "APS_ALPHA/Actors/Astro/Planet.h"
+#include "APS_ALPHA/Core/Enums/PlanetType.h"
+#include "APS_ALPHA/Generation/PlanetarySurfaceGenerator.h"
 #include "APS_ALPHA/Pawns/Characters/CustomGravityCharacter.h"
 #include "APS_ALPHA/Pawns/Spaceships/Spaceship.h"
 #include "APS_ALPHA/Pawns/Spaceships/ShipNavigationComponent.h"
@@ -72,6 +75,63 @@ bool FAPSGenerationViewModelConstraintsTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Start planet stays inside generated planet list"), Model->StartPlanetIndex, 4);
 	TestEqual(TEXT("Planet radius remains positive"), Model->PlanetRadius, 1.0);
 	TestEqual(TEXT("Moon count cannot be negative"), Model->MoonsAmount, 0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FAPSWorldScapeFamilyLifecycleTest,
+	"APS.Gameplay.World.WorldScapeFamilyLifecycle",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FAPSWorldScapeFamilyLifecycleTest::RunTest(const FString& Parameters)
+{
+	UWorld* World = APSGameplayIntegrationTests::CreateTestWorld();
+	if (!TestNotNull(TEXT("Test world"), World))
+	{
+		return false;
+	}
+
+	APlanet* Planet = World->SpawnActor<APlanet>();
+	if (!TestNotNull(TEXT("Streamed planet"), Planet))
+	{
+		APSGameplayIntegrationTests::DestroyTestWorld(World);
+		return false;
+	}
+	Planet->PlanetType = EPlanetType::Ocean;
+	Planet->RadiusKM = 1000.0;
+	Planet->PlanetRadiusKM = 1000;
+
+	TestTrue(TEXT("Preload begins outside activation"),
+		Planet->GetWorldScapePreloadRadiusCm() > Planet->GetWorldScapeActivationRadiusCm());
+	TestTrue(TEXT("Family unload radius exceeds preload radius"),
+		Planet->GetWorldScapeUnloadRadiusCm() > Planet->GetWorldScapePreloadRadiusCm());
+
+	Planet->SetWorldScapeStreamingState(EWorldScapeSurfaceState::Preloaded);
+	APlanetarySurfaceGenerator* Generator = Planet->PlanetaryEnvironmentGenerator;
+	AWorldScapeRoot* Root = Generator ? Generator->WorldScapeRootInstance : nullptr;
+	if (TestNotNull(TEXT("Preload creates a configured WorldScape root"), Root))
+	{
+		TestEqual(TEXT("Preloaded surface reports its state"), Planet->GetWorldScapeStreamingState(),
+			EWorldScapeSurfaceState::Preloaded);
+		TestFalse(TEXT("Preloaded root spends no generation time"), Root->bGenerateWorldScape);
+		TestTrue(TEXT("Ocean profile enables the ocean mesh"), Root->bOcean);
+		TestNotNull(TEXT("Ocean profile assigns an ocean material"), Root->OceanMaterial.DefaultMaterial);
+		TestNotNull(TEXT("Ocean profile assigns terrain noise"), Root->WorldScapeNoise);
+	}
+
+	Planet->SetWorldScapeStreamingState(EWorldScapeSurfaceState::Active);
+	TestTrue(TEXT("Active surface generates"), Planet->IsWorldScapeStreamingActive());
+	Planet->SetWorldScapeStreamingState(EWorldScapeSurfaceState::FrozenVisible);
+	TestEqual(TEXT("Generated sibling remains resident and frozen"), Planet->GetWorldScapeStreamingState(),
+		EWorldScapeSurfaceState::FrozenVisible);
+	TestTrue(TEXT("Frozen surface keeps generated data"), Root && Root->bGenerateWorldScape && Root->bFreezeGeneration);
+	TestFalse(TEXT("Frozen surface stays visible"), Root && Root->IsHidden());
+
+	Planet->SetWorldScapeStreamingState(EWorldScapeSurfaceState::Unloaded);
+	TestNull(TEXT("Leaving the family releases its transient root"),
+		Generator ? Generator->WorldScapeRootInstance : nullptr);
+
+	APSGameplayIntegrationTests::DestroyTestWorld(World);
 	return true;
 }
 

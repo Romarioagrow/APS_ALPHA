@@ -4,12 +4,13 @@
 #include "Subsystems/WorldSubsystem.h"
 #include "APSPlanetEnvironmentStreamingSubsystem.generated.h"
 
+class APlanet;
 class APlanetaryBody;
 
 /**
- * Keeps one nearby full-detail WorldScape surface active and leaves every distant
- * celestial body as its inexpensive placeholder mesh. Separate enter/exit radii
- * prevent streaming from oscillating near a boundary.
+ * Preloads one complete planet/moon family, updates one nearby WorldScape surface,
+ * and freezes already generated siblings instead of making them disappear. Separate
+ * preload, activation and retention radii prevent both traversal stalls and thrashing.
  */
 UCLASS()
 class APS_ALPHA_API UAPSPlanetEnvironmentStreamingSubsystem : public UTickableWorldSubsystem
@@ -23,8 +24,10 @@ public:
 
 private:
 	void UpdateActiveEnvironment();
+	APlanet* ResolveFamilyPlanet(APlanetaryBody* Body) const;
 
 	float UpdateElapsed{0.0f};
 	float UpdateInterval{0.5f};
 	TWeakObjectPtr<APlanetaryBody> ActiveBody;
+	TWeakObjectPtr<APlanet> ResidentFamily;
 };

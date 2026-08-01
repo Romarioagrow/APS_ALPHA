@@ -14,6 +14,15 @@ class APlanetarySurfaceGenerator;
 class AWorldScapeRoot;
 enum class EPlanetType : uint8;
 
+UENUM(BlueprintType)
+enum class EWorldScapeSurfaceState : uint8
+{
+	Unloaded,
+	Preloaded,
+	FrozenVisible,
+	Active
+};
+
 UCLASS()
 class APS_ALPHA_API APlanetaryBody : public AOrbitalBody, public IPlanetaryEnvironment
 {
@@ -50,11 +59,26 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Body|Streaming", meta=(ClampMin="1.2"))
 	double WorldScapeDeactivationRadiusMultiplier{18.0};
 
+	/** Configured WorldScape roots and their referenced assets are loaded before the body needs detailed terrain. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Body|Streaming", meta=(ClampMin="1.2"))
+	double WorldScapePreloadRadiusMultiplier{30.0};
+
+	/** A complete planet/moon family remains resident until every member is outside this radius. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Body|Streaming", meta=(ClampMin="1.2"))
+	double WorldScapeUnloadRadiusMultiplier{45.0};
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Body|Streaming")
 	bool bStreamWorldScapeSurface{true};
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Body")
 	bool bEnvironmentSpawned{false};
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Planet Body|Streaming")
+	EWorldScapeSurfaceState WorldScapeSurfaceState{EWorldScapeSurfaceState::Unloaded};
+
+	/** Stable procedural surface seed. Zero derives it once from the persistent body identity. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Body|Streaming")
+	int32 WorldScapeSeed{0};
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Body")
 	double AtmosphereHeight{0.0};
@@ -63,7 +87,7 @@ public:
 	double OrbitHeight{0.0};
 
 	UPROPERTY(EditAnywhere, Category = "Planet")
-	int PlanetRadiusKM;
+	int PlanetRadiusKM{0};
 
 	UPROPERTY(VisibleAnywhere, Category = "Planet")
 	int32 Temperature{0};
@@ -90,9 +114,13 @@ public:
 
 	APlanetarySurfaceGenerator* EnsurePlanetaryEnvironmentGenerator();
 	bool EnsureWorldScapeSurface();
+	void SetWorldScapeStreamingState(EWorldScapeSurfaceState NewState);
 	void SetWorldScapeStreamingActive(bool bActive);
 	bool IsWorldScapeStreamingActive() const;
+	EWorldScapeSurfaceState GetWorldScapeStreamingState() const { return WorldScapeSurfaceState; }
 	double GetWorldScapeActivationRadiusCm() const;
 	double GetWorldScapeDeactivationRadiusCm() const;
+	double GetWorldScapePreloadRadiusCm() const;
+	double GetWorldScapeUnloadRadiusCm() const;
 
 };

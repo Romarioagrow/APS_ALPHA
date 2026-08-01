@@ -149,6 +149,13 @@ public:
 	UPROPERTY(VisibleAnywhere, Category = "World Scape")
 	AWorldScapeRoot* WorldScapeRootInstance;
 
+	/** True only for transient roots created by this generator. Editor-authored home worlds are never destroyed by streaming. */
+	UPROPERTY(Transient)
+	bool bOwnsWorldScapeRootInstance{false};
+
+	UPROPERTY(Transient)
+	bool bSurfaceProfileApplied{false};
+
 	UPROPERTY(VisibleAnywhere, Category = "Atmo Scape")
 	AAtmoScape* PlanetAtmosphere;
 
@@ -163,7 +170,22 @@ public:
 
 	void GenerateWorldscapeSurfaceByModel(UWorld* World, AMoon* NewMoon);
 
+	/** Applies the deterministic terrain/ocean profile for the owning body before its first WorldScape tick. */
+	void ApplySurfaceProfile(APlanetaryBody* Body);
+
 	void SpawnWorldScapeRoot();
 
+	/** Keep assets and the configured root resident without spending generation time. */
+	void PreloadWorldScapeRoot();
+
+	/** Keep already generated chunks visible while another body in the same family updates. */
+	void FreezeWorldScapeRoot();
+
 	void DestroyPlanetEnvironment();
+
+	/** Release transient runtime roots when their complete planetary family leaves the retention zone. */
+	void UnloadWorldScapeRoot();
+
+private:
+	void LoadSurfaceAssets();
 };
