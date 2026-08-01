@@ -112,6 +112,12 @@ public:
 	float ZeroGSprintSpeed = 2500.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gravity|ZeroG", meta = (ClampMin = "1.0"))
+	float ZeroGSprintMaxSpeed = 6000.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gravity|ZeroG", meta = (ClampMin = "0.0"))
+	float ZeroGSprintGrowthRate = 350.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gravity|ZeroG", meta = (ClampMin = "1.0"))
 	float ZeroGRollSpeed = 90.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Sprint", meta = (ClampMin = "1.0"))
@@ -119,6 +125,12 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Sprint", meta = (ClampMin = "1.0"))
 	float SurfaceSprintSpeed = 900.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Sprint", meta = (ClampMin = "1.0"))
+	float SurfaceSprintMaxSpeed = 1500.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Sprint", meta = (ClampMin = "0.0"))
+	float SurfaceSprintGrowthRate = 120.f;
 
 	/** How quickly the speed cap moves between normal and sprint values. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Sprint", meta = (ClampMin = "1.0"))
@@ -209,7 +221,6 @@ protected:
 	void HandleSprintCompleted();
 	void UpdateMovementSpeed(float DeltaTime);
 	void UpdateBoostJump(float DeltaTime);
-	void UpdateCameraRoll(float DeltaTime);
 	void UpdateInteractionCandidate();
 	AActor* FindInteractionCandidate();
 	static AActor* ResolveVehicleActor(AActor* Candidate);
@@ -245,9 +256,11 @@ private:
 
 	/** Accumulated pitch for camera control. */
 	float CameraPitch = 0.f;
-	float CameraRoll = 0.f;
+	FQuat ZeroGViewRotation = FQuat::Identity;
+	bool bZeroGViewRotationInitialized = false;
 
 	float LastJumpPressTime = -1.f;
+	float SprintHoldDuration = 0.f;
 	bool bBoostJumpHeld = false;
 	bool bSprintHeld = false;
 
