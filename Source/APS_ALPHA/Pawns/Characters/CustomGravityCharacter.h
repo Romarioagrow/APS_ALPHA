@@ -117,7 +117,11 @@ public:
 
 	/** Duration of the visible orientation blend when gravity mode/direction changes. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gravity|Transition", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float GravityTransitionDuration = 0.65f;
+	float GravityTransitionDuration = 0.8f;
+
+	/** Time used to ramp gravity strength from zero to full after entering a field. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gravity|Transition", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float GravityCaptureBlendDuration = 0.45f;
 
 	// ──────────────────────── Camera Settings ────────────────────────
 
@@ -177,6 +181,7 @@ protected:
 	FQuat GetCameraViewRotation() const;
 	void StartGravityDirectionTransition(const FVector& TargetGravityDirection, bool bStartFromActorUp);
 	void AdvanceGravityDirectionTransition(float DeltaTime);
+	void AdvanceGravityStrengthTransition(float DeltaTime);
 	void ApplyAnimationMode();
 	void UpdateGravityAnimationParameters();
 
@@ -199,7 +204,9 @@ private:
 	FVector GravityTransitionTargetDir = FVector(0.f, 0.f, -1.f);
 	float GravityTransitionElapsed = 0.f;
 	float ZeroGOrientationTransitionRemaining = 0.f;
+	float GravityCaptureBlendElapsed = 0.f;
 	float SurfaceSupportLossElapsed = 0.f;
+	bool bGravityCaptureBlendActive = false;
 	bool bGravityDirectionInitialized = false;
 
 	bool bManualGravityOverride = false;

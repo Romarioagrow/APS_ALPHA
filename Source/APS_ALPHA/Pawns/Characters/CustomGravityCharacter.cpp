@@ -143,6 +143,7 @@ void ACustomGravityCharacter::Tick(float DeltaTime)
 	{
 		UpdateGravityDirection(DeltaTime);
 	}
+	AdvanceGravityStrengthTransition(DeltaTime);
 
 	UpdateCameraReferenceFrame();
 	if (bIsZeroG)
@@ -537,7 +538,10 @@ void ACustomGravityCharacter::AdvanceGravityDirectionTransition(float DeltaTime)
 		GravityTransitionElapsed + FMath::Max(DeltaTime, 0.0f),
 		GravityTransitionDuration);
 	const float LinearAlpha = GravityTransitionElapsed / GravityTransitionDuration;
-	const float SmoothAlpha = FMath::SmoothStep(0.0f, 1.0f, LinearAlpha);
+	// Quintic smootherstep keeps both angular velocity and acceleration continuous
+	// at the ends, which avoids a visible catch when the new gravity frame settles.
+	const float SmoothAlpha = LinearAlpha * LinearAlpha * LinearAlpha *
+		(LinearAlpha * (LinearAlpha * 6.0f - 15.0f) + 10.0f);
 	const FQuat FullRotation = FQuat::FindBetweenNormals(
 		GravityTransitionStartDir, GravityTransitionTargetDir);
 	CurrentGravityDir = FQuat::Slerp(FQuat::Identity, FullRotation, SmoothAlpha)
@@ -546,6 +550,42 @@ void ACustomGravityCharacter::AdvanceGravityDirectionTransition(float DeltaTime)
 	if (GravityTransitionElapsed >= GravityTransitionDuration)
 	{
 		CurrentGravityDir = GravityTransitionTargetDir;
+	}
+}
+
+void ACustomGravityCharacter::AdvanceGravityStrengthTransition(float DeltaTime)
+{
+	if (!bGravityCaptureBlendActive || bIsZeroG)
+	{
+		return;
+	}
+
+	UCharacterMovementComponent* Movement = GetCharacterMovement();
+	if (!Movement)
+	{
+		bGravityCaptureBlendActive = false;
+		return;
+	}
+
+	if (GravityCaptureBlendDuration <= UE_SMALL_NUMBER)
+	{
+		Movement->GravityScale = 1.0f;
+		bGravityCaptureBlendActive = false;
+		return;
+	}
+
+	GravityCaptureBlendElapsed = FMath::Min(
+		GravityCaptureBlendElapsed + FMath::Max(DeltaTime, 0.0f),
+		GravityCaptureBlendDuration);
+	const float LinearAlpha = GravityCaptureBlendElapsed / GravityCaptureBlendDuration;
+	const float SmoothAlpha = LinearAlpha * LinearAlpha * LinearAlpha *
+		(LinearAlpha * (LinearAlpha * 6.0f - 15.0f) + 10.0f);
+	Movement->GravityScale = SmoothAlpha;
+
+	if (GravityCaptureBlendElapsed >= GravityCaptureBlendDuration)
+	{
+		Movement->GravityScale = 1.0f;
+		bGravityCaptureBlendActive = false;
 	}
 }
 
@@ -701,6 +741,8 @@ void ACustomGravityCharacter::SetZeroGravityEnabled(bool bEnabled)
 
 	if (bIsZeroG)
 	{
+		bGravityCaptureBlendActive = false;
+		GravityCaptureBlendElapsed = 0.0f;
 		if (!GravityDetector || !IsValid(GravityDetector->GravityTargetActor))
 		{
 			CurrentGravityType = EGravityType::ZeroG;
@@ -714,7 +756,16 @@ void ACustomGravityCharacter::SetZeroGravityEnabled(bool bEnabled)
 	}
 	else
 	{
-		Movement->GravityScale = 1.0f;
+		if (bStateChanged)
+		{
+			GravityCaptureBlendElapsed = 0.0f;
+			bGravityCaptureBlendActive = GravityCaptureBlendDuration > UE_SMALL_NUMBER;
+			Movement->GravityScale = bGravityCaptureBlendActive ? 0.0f : 1.0f;
+		}
+		else if (!bGravityCaptureBlendActive)
+		{
+			Movement->GravityScale = 1.0f;
+		}
 		Movement->bOrientRotationToMovement = true;
 		Movement->MaxAcceleration = 2048.0f;
 		if (Movement->MovementMode == MOVE_Flying)
