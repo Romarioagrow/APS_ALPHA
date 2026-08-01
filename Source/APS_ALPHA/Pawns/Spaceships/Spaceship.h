@@ -567,7 +567,8 @@ private:
 	const APlanet* GetNavigationFocusPlanet() const;
 	bool IsInsideNavigationFocusGravity(const APlanet* FocusPlanet) const;
 	bool ShouldShowNavigationMarker(int32 ContactIndex) const;
-	bool ProjectWorldLocationToNavigationScreen(const FVector& WorldLocation, FVector2D& OutScreenPosition) const;
+	bool ProjectWorldLocationToNavigationScreen(const FVector& WorldLocation, FVector2D& OutScreenPosition,
+		bool bRequireInsideViewport = true) const;
 	bool ProjectNavigationContactToScreen(int32 ContactIndex, FVector2D& OutScreenPosition) const;
 	bool GetNavigationMarkerLayout(int32 ContactIndex, FVector2D& OutAnchorPosition,
 		FVector2D& OutLabelPosition) const;

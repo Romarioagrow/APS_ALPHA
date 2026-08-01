@@ -2098,9 +2098,27 @@ FText ASpaceship::GetNavigationMarkerText(int32 ContactIndex) const
 	{
 		return FText::GetEmpty();
 	}
-	return FText::FromString(FString::Printf(TEXT("%s  //  %s\n%s   |   %s"),
-		*Contact->TypeLabel, *Contact->DisplayName, *Contact->Detail,
-		*UShipNavigationComponent::FormatDistance(Contact->DistanceCentimeters)));
+	FString Detail = Contact->Detail;
+	FString FamilySummary;
+	if (const APlanet* Planet = Cast<APlanet>(Contact->Actor.Get());
+		Planet && !IsInsideNavigationFocusGravity(Planet) && ShipNavigation)
+	{
+		int32 MoonCount = 0;
+		for (const FShipNavigationContact& FamilyContact : ShipNavigation->GetContacts())
+		{
+			const AMoon* Moon = Cast<AMoon>(FamilyContact.Actor.Get());
+			MoonCount += Moon && Moon->ParentPlanet == Planet ? 1 : 0;
+		}
+		if (MoonCount > 0)
+		{
+			Detail.RemoveFromEnd(TEXT(" PLANET"));
+			FamilySummary = FString::Printf(TEXT("   |   %d MOONS"), MoonCount);
+		}
+	}
+
+	return FText::FromString(FString::Printf(TEXT("%s  //  %s\n%s   |   %s%s"),
+		*Contact->TypeLabel, *Contact->DisplayName, *Detail,
+		*UShipNavigationComponent::FormatDistance(Contact->DistanceCentimeters), *FamilySummary));
 }
 
 FVector ASpaceship::GetNavigationContactWorldAnchor(int32 ContactIndex) const
@@ -2203,16 +2221,22 @@ bool ASpaceship::ShouldShowNavigationMarker(int32 ContactIndex) const
 	}
 
 	const FShipNavigationContact* Contact = ShipNavigation->GetContact(ContactIndex);
-	if (Contact->Type == EShipNavigationContactType::Planet
-		|| Contact->Type == EShipNavigationContactType::Moon)
+	if (Contact->Type == EShipNavigationContactType::Planet)
 	{
 		return true;
+	}
+	if (const AMoon* Moon = Cast<AMoon>(Contact->Actor.Get()))
+	{
+		// At system scale a planet and all of its moons are one compact flag.
+		// Individual moon flags unfold only after gravity capture; an explicitly
+		// selected moon remains visible so target cycling never loses feedback.
+		return IsInsideNavigationFocusGravity(Moon->ParentPlanet);
 	}
 	return false;
 }
 
 bool ASpaceship::ProjectWorldLocationToNavigationScreen(const FVector& WorldLocation,
-	FVector2D& OutScreenPosition) const
+	FVector2D& OutScreenPosition, bool bRequireInsideViewport) const
 {
 	APlayerController* PlayerController = Cast<APlayerController>(GetController());
 	if (!PlayerController || !GEngine || !GEngine->GameViewport
@@ -2225,6 +2249,10 @@ bool ASpaceship::ProjectWorldLocationToNavigationScreen(const FVector& WorldLoca
 	const TSharedPtr<SViewport> ViewportWidget = GEngine->GameViewport->GetGameViewportWidget();
 	const FVector2D SlateViewportSize = ViewportWidget.IsValid()
 		? ViewportWidget->GetCachedGeometry().GetLocalSize() : FVector2D::ZeroVector;
+	if (!bRequireInsideViewport)
+	{
+		return SlateViewportSize.X > 0.0f && SlateViewportSize.Y > 0.0f;
+	}
 	return OutScreenPosition.X >= 8.0 && OutScreenPosition.Y >= 8.0
 		&& OutScreenPosition.X <= SlateViewportSize.X - 8.0
 		&& OutScreenPosition.Y <= SlateViewportSize.Y - 8.0;
@@ -2261,59 +2289,96 @@ bool ASpaceship::GetNavigationMarkerLayout(int32 ContactIndex, FVector2D& OutAnc
 		return false;
 	}
 
-	const FShipNavigationContact* Contact = ShipNavigation->GetContact(ContactIndex);
-	const APlanet* FocusPlanet = GetNavigationFocusPlanet();
-	const AMoon* Moon = Contact ? Cast<AMoon>(Contact->Actor.Get()) : nullptr;
-	// A marker reads as a flag planted into the celestial body: the label is
-	// biased left and its colored leading edge is the exact end of the leader.
-	FVector2D LabelPosition(
-		Anchor.X - LabelSize.X * APSNavigationHud::FlagHorizontalShift,
-		Anchor.Y - LabelSize.Y - APSNavigationHud::FlagPoleLength);
-
-	// Outside the focused planet's gravity well its moons read as one compact
-	// hierarchy beside the planet. Once captured by that family, every moon goes
-	// back to its own world anchor for local navigation.
-	if (Moon && FocusPlanet && Moon->ParentPlanet == FocusPlanet
-		&& !IsInsideNavigationFocusGravity(FocusPlanet))
+	struct FMarkerPlacement
 	{
-		FVector2D ParentAnchor;
-		bool bParentProjected = false;
-		for (int32 Index = 0; Index < ShipNavigation->GetContacts().Num(); ++Index)
+		int32 Index{INDEX_NONE};
+		FVector2D Anchor{FVector2D::ZeroVector};
+	};
+	TArray<FMarkerPlacement, TInlineAllocator<32>> Placements;
+	const int32 ContactCount = FMath::Min(ShipNavigation->GetContacts().Num(), MaximumNavigationMarkers);
+	for (int32 Index = 0; Index < ContactCount; ++Index)
+	{
+		FVector2D ProjectedAnchor;
+		if (ShouldShowNavigationMarker(Index) && ProjectNavigationContactToScreen(Index, ProjectedAnchor))
 		{
-			const FShipNavigationContact* ParentContact = ShipNavigation->GetContact(Index);
-			if (ParentContact && ParentContact->Actor.Get() == FocusPlanet)
-			{
-				bParentProjected = ProjectNavigationContactToScreen(Index, ParentAnchor);
-				break;
-			}
-		}
-		if (bParentProjected)
-		{
-			int32 MoonRank = 0;
-			int32 MoonCount = 0;
-			for (int32 Index = 0; Index < ShipNavigation->GetContacts().Num(); ++Index)
-			{
-				const FShipNavigationContact* SiblingContact = ShipNavigation->GetContact(Index);
-				const AMoon* SiblingMoon = SiblingContact ? Cast<AMoon>(SiblingContact->Actor.Get()) : nullptr;
-				if (!SiblingMoon || SiblingMoon->ParentPlanet != FocusPlanet) continue;
-				if (Index < ContactIndex) ++MoonRank;
-				++MoonCount;
-			}
-			const float ListHeight = MoonCount * LabelSize.Y
-				+ FMath::Max(0, MoonCount - 1) * APSNavigationHud::MarkerGap;
-			const float ListStartY = FMath::Clamp(
-				ParentAnchor.Y - LabelSize.Y - 18.0f, 10.0, ViewportSize.Y - ListHeight - 10.0);
-			const bool bListOnRight = ParentAnchor.X <= ViewportSize.X * 0.62f;
-			LabelPosition.X = ParentAnchor.X + (bListOnRight
-				? LabelSize.X * 0.5f + 14.0f : -LabelSize.X * 1.5f - 14.0f);
-			LabelPosition.Y = ListStartY + MoonRank * (LabelSize.Y + APSNavigationHud::MarkerGap);
+			Placements.Add({Index, ProjectedAnchor});
 		}
 	}
-	LabelPosition.X = FMath::Clamp(LabelPosition.X, 10.0, ViewportSize.X - LabelSize.X - 10.0);
-	LabelPosition.Y = FMath::Clamp(LabelPosition.Y, 10.0, ViewportSize.Y - LabelSize.Y - 10.0);
-	OutAnchorPosition = Anchor;
-	OutLabelPosition = LabelPosition;
-	return true;
+	const int32 SelectedIndex = ShipNavigation->GetSelectedContactIndex();
+	Placements.Sort([this, SelectedIndex](const FMarkerPlacement& Left, const FMarkerPlacement& Right)
+	{
+		if (Left.Index == Right.Index) return false;
+		const bool bLeftSelected = Left.Index == SelectedIndex;
+		const bool bRightSelected = Right.Index == SelectedIndex;
+		if (bLeftSelected != bRightSelected) return bLeftSelected;
+		const FShipNavigationContact* LeftContact = ShipNavigation->GetContact(Left.Index);
+		const FShipNavigationContact* RightContact = ShipNavigation->GetContact(Right.Index);
+		const bool bLeftPlanet = LeftContact && LeftContact->Type == EShipNavigationContactType::Planet;
+		const bool bRightPlanet = RightContact && RightContact->Type == EShipNavigationContactType::Planet;
+		return bLeftPlanet != bRightPlanet ? bLeftPlanet : Left.Index < Right.Index;
+	});
+
+	TArray<FSlateRect, TInlineAllocator<32>> OccupiedRects;
+	if (bNavigationPanelVisible)
+	{
+		OccupiedRects.Add(FSlateRect(
+			FMath::Max(0.0f, ViewportSize.X - 420.0f), 24.0f, ViewportSize.X - 20.0f, 275.0f));
+	}
+	constexpr float ScreenMargin = 10.0f;
+	const float StepX = LabelSize.X + 14.0f;
+	const float StepY = LabelSize.Y + APSNavigationHud::MarkerGap + 4.0f;
+	for (const FMarkerPlacement& Placement : Placements)
+	{
+		const FVector2D Desired(
+			Placement.Anchor.X - LabelSize.X * APSNavigationHud::FlagHorizontalShift,
+			Placement.Anchor.Y - LabelSize.Y - APSNavigationHud::FlagPoleLength);
+		FVector2D Chosen = Desired;
+		bool bFoundFreeSlot = false;
+		for (const int32 Column : {0, -1, 1})
+		{
+			for (int32 RowMagnitude = 0; RowMagnitude <= 7 && !bFoundFreeSlot; ++RowMagnitude)
+			{
+				const int32 SignCount = RowMagnitude == 0 ? 1 : 2;
+				for (int32 SignIndex = 0; SignIndex < SignCount; ++SignIndex)
+				{
+					const int32 SignedRow = RowMagnitude == 0 ? 0
+						: (SignIndex == 0 ? -RowMagnitude : RowMagnitude);
+					const FVector2D Candidate = Desired + FVector2D(Column * StepX, SignedRow * StepY);
+					if (Candidate.X < ScreenMargin || Candidate.Y < ScreenMargin
+						|| Candidate.X + LabelSize.X > ViewportSize.X - ScreenMargin
+						|| Candidate.Y + LabelSize.Y > ViewportSize.Y - ScreenMargin)
+					{
+						continue;
+					}
+					const FSlateRect CandidateRect(Candidate.X - 4.0f, Candidate.Y - 4.0f,
+						Candidate.X + LabelSize.X + 4.0f, Candidate.Y + LabelSize.Y + 4.0f);
+					const bool bOverlaps = OccupiedRects.ContainsByPredicate(
+						[&CandidateRect](const FSlateRect& Occupied)
+						{
+							return FSlateRect::DoRectanglesIntersect(CandidateRect, Occupied);
+						});
+					if (!bOverlaps)
+					{
+						Chosen = Candidate;
+						bFoundFreeSlot = true;
+						break;
+					}
+				}
+			}
+			if (bFoundFreeSlot) break;
+		}
+		Chosen.X = FMath::Clamp(Chosen.X, ScreenMargin, ViewportSize.X - LabelSize.X - ScreenMargin);
+		Chosen.Y = FMath::Clamp(Chosen.Y, ScreenMargin, ViewportSize.Y - LabelSize.Y - ScreenMargin);
+		OccupiedRects.Add(FSlateRect(Chosen.X - 4.0f, Chosen.Y - 4.0f,
+			Chosen.X + LabelSize.X + 4.0f, Chosen.Y + LabelSize.Y + 4.0f));
+		if (Placement.Index == ContactIndex)
+		{
+			OutAnchorPosition = Placement.Anchor;
+			OutLabelPosition = Chosen;
+			return true;
+		}
+	}
+	return false;
 }
 
 int32 ASpaceship::PaintNavigationOverlay(const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect,
@@ -2339,7 +2404,7 @@ int32 ASpaceship::PaintNavigationOverlay(const FGeometry& AllottedGeometry, cons
 		double Radius, const FLinearColor& Color, float Thickness, bool bDashed, int32 DrawLayer)
 	{
 		if (Radius <= UE_DOUBLE_SMALL_NUMBER) return;
-		constexpr int32 SegmentCount = 72;
+		constexpr int32 SegmentCount = 128;
 		TArray<FVector2D> ContinuousSegment;
 		FVector2D PreviousPoint;
 		bool bPreviousValid = false;
@@ -2349,7 +2414,7 @@ int32 ASpaceship::PaintNavigationOverlay(const FGeometry& AllottedGeometry, cons
 			const FVector WorldPoint = Center + AxisX * (FMath::Cos(Angle) * Radius)
 				+ AxisY * (FMath::Sin(Angle) * Radius);
 			FVector2D ScreenPoint;
-			const bool bValid = ProjectWorldLocationToNavigationScreen(WorldPoint, ScreenPoint);
+			const bool bValid = ProjectWorldLocationToNavigationScreen(WorldPoint, ScreenPoint, false);
 			if (bDashed)
 			{
 				if (bValid && bPreviousValid && SegmentIndex % 3 != 0)
