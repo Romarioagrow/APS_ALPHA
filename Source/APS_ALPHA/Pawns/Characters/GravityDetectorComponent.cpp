@@ -26,7 +26,7 @@ void UGravityDetectorComponent::BeginPlay()
 
 	if (bAutomaticDetection)
 	{
-		RunGravityCheck(Cast<ACharacter>(GetOwner()));
+		RunGravityCheckForActor(GetOwner());
 	}
 }
 
@@ -37,11 +37,17 @@ void UGravityDetectorComponent::TickComponent(float DeltaTime, ELevelTick TickTy
 
 	if (bAutomaticDetection)
 	{
-		RunGravityCheck(Cast<ACharacter>(GetOwner()));
+		RunGravityCheckForActor(GetOwner());
 	}
 }
 
 void UGravityDetectorComponent::RunGravityCheck(ACharacter* Self)
+
+{
+	RunGravityCheckForActor(Self);
+}
+
+void UGravityDetectorComponent::RunGravityCheckForActor(AActor* Self)
 {
 	if (!Self)
 	{
@@ -68,7 +74,7 @@ void UGravityDetectorComponent::RunGravityCheck(ACharacter* Self)
 	if (FullScaleSource != GravityTargetActor)
 	{
 		TArray<AActor*> OverlappingActors;
-		Self->GetCapsuleComponent()->GetOverlappingActors(OverlappingActors);
+		Self->GetOverlappingActors(OverlappingActors);
 		FString SupportedOverlapNames;
 		for (AActor* Candidate : OverlappingActors)
 		{
@@ -175,15 +181,48 @@ void UGravityDetectorComponent::ClearGravitySource()
 	OnGravityPhysicsParamChanged.Broadcast();
 }
 
-AActor* UGravityDetectorComponent::FindBestOverlappingSource(ACharacter* Character) const
+AActor* UGravityDetectorComponent::FindBestOverlappingSource(AActor* Actor) const
 {
-	if (!Character || !Character->GetCapsuleComponent())
+	if (!Actor)
 	{
 		return nullptr;
 	}
 
 	TArray<AActor*> OverlappingActors;
-	Character->GetCapsuleComponent()->GetOverlappingActors(OverlappingActors);
+	Actor->GetOverlappingActors(OverlappingActors);
+
+	// Vehicle collision is intentionally lightweight and may not overlap volumes
+	// configured only for ECC_Pawn. Supplement it with point-in-volume checks while
+	// keeping the character path unchanged and cheap.
+	if (!Actor->IsA(ACharacter::StaticClass()) && Actor->GetWorld())
+	{
+		TArray<AActor*> GravitySources;
+		UGameplayStatics::GetAllActorsWithInterface(
+			Actor->GetWorld(), UGravitySource::StaticClass(), GravitySources);
+		for (AActor* Candidate : GravitySources)
+		{
+			if (!IsValid(Candidate) || Candidate == Actor)
+			{
+				continue;
+			}
+
+			USphereComponent* GravitySphere = nullptr;
+			if (const ASpaceStation* Station = Cast<ASpaceStation>(Candidate))
+			{
+				GravitySphere = Station->GravityCollisionZone;
+			}
+			else if (const ASpaceship* Ship = Cast<ASpaceship>(Candidate))
+			{
+				GravitySphere = Ship->bProvidesArtificialGravity ? Ship->SphereCollisionComponent : nullptr;
+			}
+
+			if (GravitySphere && FVector::DistSquared(Actor->GetActorLocation(), GravitySphere->GetComponentLocation())
+				<= FMath::Square(GravitySphere->GetScaledSphereRadius()))
+			{
+				OverlappingActors.AddUnique(Candidate);
+			}
+		}
+	}
 
 	AActor* BestSource = nullptr;
 	int32 BestPriority = MIN_int32;
@@ -191,7 +230,12 @@ AActor* UGravityDetectorComponent::FindBestOverlappingSource(ACharacter* Charact
 
 	for (AActor* Candidate : OverlappingActors)
 	{
-		if (!IsValid(Candidate) || !Candidate->GetClass()->ImplementsInterface(UGravitySource::StaticClass()))
+		if (!IsValid(Candidate) || Candidate == Actor
+			|| !Candidate->GetClass()->ImplementsInterface(UGravitySource::StaticClass()))
+		{
+			continue;
+		}
+		if (const ASpaceship* Ship = Cast<ASpaceship>(Candidate); Ship && !Ship->bProvidesArtificialGravity)
 		{
 			continue;
 		}
@@ -201,7 +245,7 @@ AActor* UGravityDetectorComponent::FindBestOverlappingSource(ACharacter* Charact
 		else if (Candidate->IsA(ASpaceStation::StaticClass())) Priority = 200;
 		else if (Candidate->IsA(AOrbitalBody::StaticClass())) Priority = 100;
 
-		const double DistanceSquared = FVector::DistSquared(Character->GetActorLocation(), Candidate->GetActorLocation());
+		const double DistanceSquared = FVector::DistSquared(Actor->GetActorLocation(), Candidate->GetActorLocation());
 		if (Priority > BestPriority || (Priority == BestPriority && DistanceSquared < BestDistanceSquared))
 		{
 			BestSource = Candidate;
@@ -213,22 +257,22 @@ AActor* UGravityDetectorComponent::FindBestOverlappingSource(ACharacter* Charact
 	return BestSource;
 }
 
-AWorldActor* UGravityDetectorComponent::FindClosestFullScaleSource(ACharacter* Character) const
+AWorldActor* UGravityDetectorComponent::FindClosestFullScaleSource(AActor* Actor) const
 {
-	if (!Character || !Character->GetWorld())
+	if (!Actor || !Actor->GetWorld())
 	{
 		return nullptr;
 	}
 
 	TArray<AActor*> WorldActors;
-	UGameplayStatics::GetAllActorsOfClass(Character->GetWorld(), AWorldActor::StaticClass(), WorldActors);
+	UGameplayStatics::GetAllActorsOfClass(Actor->GetWorld(), AWorldActor::StaticClass(), WorldActors);
 
 	AWorldActor* ClosestSource = nullptr;
 	double ClosestSurfaceDistanceKm = DBL_MAX;
 
-	for (AActor* Actor : WorldActors)
+	for (AActor* CandidateActor : WorldActors)
 	{
-		AWorldActor* Candidate = Cast<AWorldActor>(Actor);
+		AWorldActor* Candidate = Cast<AWorldActor>(CandidateActor);
 		// Stations and ships are finite artificial gravity volumes and must never
 		// be selected by the full-scale distance fallback after overlap ends.
 		if (!Candidate || !Candidate->IsA(AOrbitalBody::StaticClass()) ||
@@ -237,7 +281,7 @@ AWorldActor* UGravityDetectorComponent::FindClosestFullScaleSource(ACharacter* C
 			continue;
 		}
 
-		const double CenterDistanceKm = FVector::Distance(Character->GetActorLocation(), Candidate->GetActorLocation()) / 100000.0;
+		const double CenterDistanceKm = FVector::Distance(Actor->GetActorLocation(), Candidate->GetActorLocation()) / 100000.0;
 		const double SurfaceDistanceKm = FMath::Max(0.0, CenterDistanceKm - Candidate->RadiusKM);
 		if (SurfaceDistanceKm < ClosestSurfaceDistanceKm)
 		{

@@ -51,6 +51,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Gravity")
 	void RunGravityCheck(ACharacter* Character);
 
+	/** Shared gravity query used by characters and actively piloted vehicles. */
+	UFUNCTION(BlueprintCallable, Category="Gravity")
+	void RunGravityCheckForActor(AActor* Actor);
+
 	void SwitchGravityType(AActor* GravitySourceActor);
 
 	UFUNCTION(BlueprintPure, Category = "Gravity")
@@ -60,6 +64,6 @@ public:
 	void ClearGravitySource();
 
 private:
-	AActor* FindBestOverlappingSource(ACharacter* Character) const;
-	AWorldActor* FindClosestFullScaleSource(ACharacter* Character) const;
+	AActor* FindBestOverlappingSource(AActor* Actor) const;
+	AWorldActor* FindClosestFullScaleSource(AActor* Actor) const;
 };

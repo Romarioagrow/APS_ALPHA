@@ -1,13 +1,16 @@
 #include "Spaceship.h"
 #include "APS_ALPHA/Actors/Astro/Moon.h"
+#include "APS_ALPHA/Actors/Astro/PlanetaryBody.h"
 #include "APS_ALPHA/Actors/Astro/StarCluster.h"
 #include "APS_ALPHA/Actors/Astro/StarSystem.h"
 #include "APS_ALPHA/Actors/Astro/WorldActor.h"
 #include "APS_ALPHA/Actors/Tech/TechActor.h"
+#include "APS_ALPHA/Actors/Tech/SpaceStation.h"
 #include "APS_ALPHA/Core/Interfaces/NavigatableBody.h"
 #include "APS_ALPHA/Core/Structs/StarGenerationModel.h"
 #include "APS_ALPHA/Generation/AstroGenerator.h"
 #include "APS_ALPHA/Pawns/Characters/GravityCharacterPawn.h"
+#include "APS_ALPHA/Pawns/Characters/GravityDetectorComponent.h"
 #include "Camera/CameraComponent.h"
 #include "Components/BoxComponent.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -165,6 +168,10 @@ ASpaceship::ASpaceship()
 	SphereCollisionComponent->SetGenerateOverlapEvents(true);
 	SphereCollisionComponent->SetAbsolute(false, false, true);
 
+	FlightGravityDetector = CreateDefaultSubobject<UGravityDetectorComponent>(TEXT("FlightGravityDetector"));
+	FlightGravityDetector->bAutomaticDetection = false;
+	FlightGravityDetector->PrimaryComponentTick.bStartWithTickEnabled = false;
+
 	InteractionBoundsComponent = CreateDefaultSubobject<UBoxComponent>(TEXT("InteractionBounds"));
 	InteractionBoundsComponent->SetupAttachment(SpaceshipHull);
 	InteractionBoundsComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
@@ -229,6 +236,7 @@ void ASpaceship::BeginPlay()
 	Super::BeginPlay();
 	ConfigureFromHull();
 	RefreshInteractionGeometry();
+	UpdateFlightEnvironment(0.0f, true);
 
 	GeneratedWorld = Cast<AAstroGenerator>(
 		UGameplayStatics::GetActorOfClass(GetWorld(), AAstroGenerator::StaticClass()));
@@ -254,6 +262,7 @@ void ASpaceship::BeginPlay()
 	{
 		OnboardComputer->SpaceshipHull = SpaceshipHull;
 		OnboardComputer->OffsetSystem = OffsetSystem;
+		OnboardComputer->FlightSystem.CurrentFlightMode = ResolveLegacyFlightModeForDriveMode(SelectedDriveMode);
 		OnboardComputer->ComputeFlightParams();
 		RequestEngineModeForFlightMode(true);
 	}
@@ -490,6 +499,8 @@ void ASpaceship::Tick(float DeltaTime)
 	{
 		return;
 	}
+
+	UpdateFlightEnvironment(DeltaTime);
 
 	const double TargetBoost = bEngineRunning && bIsAccelerating ? ActiveClassPreset.MaximumBoost : 1.0;
 	const double BoostResponse = bIsAccelerating
@@ -754,6 +765,7 @@ FSpaceshipClassPreset ASpaceship::GetPresetForSizeClass(ESpaceshipSizeClass InSi
 		Preset.ImpulseAcceleration = 1800.0;
 		Preset.MaxImpulseSpeed = 60000.0;
 		Preset.RotationSpeed = 105.0;
+		Preset.AngularAcceleration = 240.0;
 		Preset.LinearDamping = 0.08;
 		Preset.AngularDamping = 3.5;
 		Preset.MaximumBoost = 5.0;
@@ -768,6 +780,7 @@ FSpaceshipClassPreset ASpaceship::GetPresetForSizeClass(ESpaceshipSizeClass InSi
 		Preset.ImpulseAcceleration = 1500.0;
 		Preset.MaxImpulseSpeed = 85000.0;
 		Preset.RotationSpeed = 88.0;
+		Preset.AngularAcceleration = 180.0;
 		Preset.LinearDamping = 0.1;
 		Preset.AngularDamping = 3.2;
 		Preset.MaximumBoost = 5.0;
@@ -782,6 +795,7 @@ FSpaceshipClassPreset ASpaceship::GetPresetForSizeClass(ESpaceshipSizeClass InSi
 		Preset.ImpulseAcceleration = 1200.0;
 		Preset.MaxImpulseSpeed = 120000.0;
 		Preset.RotationSpeed = 70.0;
+		Preset.AngularAcceleration = 125.0;
 		Preset.LinearDamping = 0.13;
 		Preset.AngularDamping = 2.9;
 		Preset.MaximumBoost = 4.5;
@@ -796,6 +810,7 @@ FSpaceshipClassPreset ASpaceship::GetPresetForSizeClass(ESpaceshipSizeClass InSi
 		Preset.ImpulseAcceleration = 900.0;
 		Preset.MaxImpulseSpeed = 160000.0;
 		Preset.RotationSpeed = 55.0;
+		Preset.AngularAcceleration = 75.0;
 		Preset.LinearDamping = 0.18;
 		Preset.AngularDamping = 2.5;
 		Preset.MaximumBoost = 4.0;
@@ -810,6 +825,7 @@ FSpaceshipClassPreset ASpaceship::GetPresetForSizeClass(ESpaceshipSizeClass InSi
 		Preset.ImpulseAcceleration = 650.0;
 		Preset.MaxImpulseSpeed = 220000.0;
 		Preset.RotationSpeed = 36.0;
+		Preset.AngularAcceleration = 42.0;
 		Preset.LinearDamping = 0.22;
 		Preset.AngularDamping = 2.2;
 		Preset.MaximumBoost = 3.5;
@@ -824,6 +840,7 @@ FSpaceshipClassPreset ASpaceship::GetPresetForSizeClass(ESpaceshipSizeClass InSi
 		Preset.ImpulseAcceleration = 450.0;
 		Preset.MaxImpulseSpeed = 300000.0;
 		Preset.RotationSpeed = 25.0;
+		Preset.AngularAcceleration = 25.0;
 		Preset.LinearDamping = 0.27;
 		Preset.AngularDamping = 2.0;
 		Preset.MaximumBoost = 3.2;
@@ -838,6 +855,7 @@ FSpaceshipClassPreset ASpaceship::GetPresetForSizeClass(ESpaceshipSizeClass InSi
 		Preset.ImpulseAcceleration = 300.0;
 		Preset.MaxImpulseSpeed = 450000.0;
 		Preset.RotationSpeed = 16.0;
+		Preset.AngularAcceleration = 12.0;
 		Preset.LinearDamping = 0.32;
 		Preset.AngularDamping = 1.8;
 		Preset.MaximumBoost = 2.8;
@@ -852,6 +870,7 @@ FSpaceshipClassPreset ASpaceship::GetPresetForSizeClass(ESpaceshipSizeClass InSi
 		Preset.ImpulseAcceleration = 180.0;
 		Preset.MaxImpulseSpeed = 600000.0;
 		Preset.RotationSpeed = 9.0;
+		Preset.AngularAcceleration = 6.0;
 		Preset.LinearDamping = 0.38;
 		Preset.AngularDamping = 1.6;
 		Preset.MaximumBoost = 2.4;
@@ -941,7 +960,11 @@ void ASpaceship::ConfigureFromHull()
 		RebuildSimpleHullCollision();
 	}
 	RotationSpeedDegreesPerSecond = ActiveClassPreset.RotationSpeed;
-	ImpulseRotationAcceleration = FMath::DegreesToRadians(ActiveClassPreset.RotationSpeed);
+	ImpulseRotationAcceleration = FMath::DegreesToRadians(ActiveClassPreset.AngularAcceleration);
+	if (static_cast<uint8>(SelectedDriveMode) > static_cast<uint8>(GetMaximumDriveModeForClass()))
+	{
+		SelectedDriveMode = GetMaximumDriveModeForClass();
+	}
 
 	if (SpaceshipHull)
 	{
@@ -1054,11 +1077,16 @@ void ASpaceship::ConfigureCameraFromHull()
 	const FVector LocalExtent = (LocalMax - LocalMin) * 0.5;
 	const FVector ScaledExtent = LocalExtent * MainMesh->GetComponentScale().GetAbs();
 	const double WorldRadius = FMath::Max(ScaledExtent.Size(), 400.0);
-	BaseCameraArmLength = FMath::Max(1200.0, WorldRadius * 2.8);
+	BaseCameraArmLength = FMath::Max(820.0, WorldRadius * 1.82);
+	if (CameraComponent && !bCameraFieldOfViewInitialized)
+	{
+		BaseCameraFieldOfView = CameraComponent->FieldOfView;
+		bCameraFieldOfViewInitialized = true;
+	}
 	SpringArmComponent->TargetArmLength = BaseCameraArmLength;
 	SpringArmComponent->CameraLagMaxDistance = BaseCameraArmLength * 0.85;
 	SpringArmComponent->SetWorldLocation(
-		MainMesh->GetComponentTransform().TransformPosition(LocalCenter) + GetShipUpVector() * WorldRadius * 0.3);
+		MainMesh->GetComponentTransform().TransformPosition(LocalCenter) + GetShipUpVector() * WorldRadius * 0.2);
 	const FRotator FlightViewRotation = FRotationMatrix::MakeFromXZ(
 		FlightForwardLocalAxis, FlightUpLocalAxis).Rotator();
 	SpringArmComponent->SetRelativeRotation(FlightViewRotation + FRotator(-12.0, 0.0, 0.0));
@@ -1084,6 +1112,280 @@ FVector ASpaceship::GetShipRightVector() const
 	return FVector::CrossProduct(GetShipUpVector(), GetShipForwardVector()).GetSafeNormal();
 }
 
+EShipDriveMode ASpaceship::GetMaximumDriveModeForClass() const
+{
+	if (ActiveClassPreset.bSupportsOffset)
+	{
+		return EShipDriveMode::Interstellar;
+	}
+	if (ActiveClassPreset.bSupportsSpaceWrap)
+	{
+		return EShipDriveMode::Stellar;
+	}
+	// Even the smallest spaceworthy hull can travel between planets on impulse power.
+	return EShipDriveMode::Interplanetary;
+}
+
+EShipDriveMode ASpaceship::GetMaximumDriveModeForEnvironment() const
+{
+	// Environment affects drag and telemetry, never removes player authority.
+	return EShipDriveMode::Interstellar;
+}
+
+bool ASpaceship::CanUseDriveMode(EShipDriveMode DriveMode) const
+{
+	return static_cast<uint8>(DriveMode) <= static_cast<uint8>(GetMaximumDriveModeForClass())
+		&& static_cast<uint8>(DriveMode) <= static_cast<uint8>(GetMaximumDriveModeForEnvironment());
+}
+
+double ASpaceship::GetDriveSpeedScale(EShipDriveMode DriveMode)
+{
+	switch (DriveMode)
+	{
+	case EShipDriveMode::Local: return 1.0;
+	case EShipDriveMode::Orbital: return 64.0;
+	case EShipDriveMode::Interplanetary: return 512.0;
+	case EShipDriveMode::Stellar: return 4096.0;
+	case EShipDriveMode::Interstellar: return 32768.0;
+	case EShipDriveMode::Landing:
+	default: return 0.05;
+	}
+}
+
+double ASpaceship::GetDriveAccelerationScale(EShipDriveMode DriveMode)
+{
+	switch (DriveMode)
+	{
+	case EShipDriveMode::Local: return 4.0;
+	case EShipDriveMode::Orbital: return 256.0;
+	case EShipDriveMode::Interplanetary: return 2048.0;
+	case EShipDriveMode::Stellar: return 8192.0;
+	case EShipDriveMode::Interstellar: return 32768.0;
+	case EShipDriveMode::Landing:
+	default: return 0.75;
+	}
+}
+
+double ASpaceship::GetMinimumDriveAcceleration(EShipDriveMode DriveMode)
+{
+	switch (DriveMode)
+	{
+	case EShipDriveMode::Orbital: return 500000.0;
+	case EShipDriveMode::Interplanetary: return 2000000.0;
+	case EShipDriveMode::Stellar: return 10000000.0;
+	case EShipDriveMode::Interstellar: return 50000000.0;
+	case EShipDriveMode::Landing:
+	case EShipDriveMode::Local:
+	default: return 0.0;
+	}
+}
+
+EEngineMode ASpaceship::ResolveEngineModeForDriveMode(EShipDriveMode DriveMode) const
+{
+	if (DriveMode == EShipDriveMode::Interstellar && ActiveClassPreset.bSupportsOffset)
+	{
+		return EEngineMode::Offset;
+	}
+	if (DriveMode == EShipDriveMode::Stellar && ActiveClassPreset.bSupportsSpaceWrap)
+	{
+		return EEngineMode::SpaceWrap;
+	}
+	return EEngineMode::Impulse;
+}
+
+EFlightMode ASpaceship::ResolveLegacyFlightModeForDriveMode(EShipDriveMode DriveMode) const
+{
+	switch (DriveMode)
+	{
+	case EShipDriveMode::Local: return EFlightMode::Basic;
+	case EShipDriveMode::Orbital: return EFlightMode::Orbital;
+	case EShipDriveMode::Interplanetary: return EFlightMode::Interplanetary;
+	case EShipDriveMode::Stellar: return EFlightMode::Stellar;
+	case EShipDriveMode::Interstellar: return EFlightMode::Interstellar;
+	case EShipDriveMode::Landing:
+	default: return EFlightMode::Surface;
+	}
+}
+
+void ASpaceship::SetDriveMode(EShipDriveMode NewDriveMode, bool bImmediate)
+{
+	if (!OnboardComputer || !CanUseDriveMode(NewDriveMode))
+	{
+		return;
+	}
+
+	SelectedDriveMode = NewDriveMode;
+	OnboardComputer->FlightSystem.CurrentFlightMode = ResolveLegacyFlightModeForDriveMode(NewDriveMode);
+	OnboardComputer->ComputeFlightParams();
+	RequestEngineModeForFlightMode(bImmediate);
+	CheckFlightModeChange();
+}
+
+void ASpaceship::EnforceDriveModeForEnvironment()
+{
+	const uint8 Maximum = FMath::Min(
+		static_cast<uint8>(GetMaximumDriveModeForClass()),
+		static_cast<uint8>(GetMaximumDriveModeForEnvironment()));
+	if (static_cast<uint8>(SelectedDriveMode) > Maximum)
+	{
+		SetDriveMode(static_cast<EShipDriveMode>(Maximum), false);
+	}
+}
+
+bool ASpaceship::IsNearGravitySurface(const FVector& GravityDirection) const
+{
+	if (!GetWorld() || GravityDirection.IsNearlyZero())
+	{
+		return false;
+	}
+
+	const UPrimitiveComponent* MainMesh = GetPrimaryHullComponent();
+	const double ProbeDistance = MainMesh
+		? FMath::Max(static_cast<double>(MainMesh->Bounds.SphereRadius) * 1.25, 2000.0)
+		: 2000.0;
+	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(APSShipSurfaceProbe), false, this);
+	if (IsValid(Pilot))
+	{
+		QueryParams.AddIgnoredActor(Pilot);
+	}
+	FHitResult Hit;
+	return GetWorld()->LineTraceSingleByChannel(
+		Hit,
+		GetActorLocation(),
+		GetActorLocation() + GravityDirection.GetSafeNormal() * ProbeDistance,
+		ECC_Visibility,
+		QueryParams);
+}
+
+void ASpaceship::UpdateFlightEnvironment(float DeltaTime, bool bForce)
+{
+	EnvironmentDetectionElapsed += FMath::Max(DeltaTime, 0.0f);
+	if (!bForce && EnvironmentDetectionElapsed < EnvironmentDetectionInterval)
+	{
+		return;
+	}
+	EnvironmentDetectionElapsed = 0.0f;
+
+	const EShipFlightEnvironment PreviousEnvironment = CurrentFlightEnvironment;
+	AActor* PreviousSource = ActiveGravitySource.Get();
+	if (FlightGravityDetector)
+	{
+		FlightGravityDetector->RunGravityCheckForActor(this);
+		ActiveGravitySource = FlightGravityDetector->GravityTargetActor;
+		ActiveGravityDirection = FlightGravityDetector->GetGravityDirectionAtLocation(GetActorLocation());
+	}
+	else
+	{
+		ActiveGravitySource = nullptr;
+		ActiveGravityDirection = FVector::ZeroVector;
+	}
+
+	ActiveGravityAcceleration = 0.0;
+	CurrentFlightEnvironment = EShipFlightEnvironment::DeepSpace;
+	if (ActiveGravitySource && !ActiveGravityDirection.IsNearlyZero())
+	{
+		ActiveGravityAcceleration = 980.0;
+		if (const APlanetaryBody* Planet = Cast<APlanetaryBody>(ActiveGravitySource))
+		{
+			const double RadiusKm = Planet->RadiusKM > UE_SMALL_NUMBER
+				? Planet->RadiusKM : FMath::Max(static_cast<double>(Planet->PlanetRadiusKM), 0.0);
+			const double CenterDistanceKm = FVector::Distance(GetActorLocation(), Planet->GetActorLocation()) / 100000.0;
+			const double AltitudeKm = FMath::Max(0.0, CenterDistanceKm - RadiusKm);
+			const double AtmosphereHeightKm = Planet->AtmosphereHeight > UE_SMALL_NUMBER
+				? Planet->AtmosphereHeight : FMath::Max(RadiusKm / 30.0, 1.0);
+			const double SurfaceAcceleration = Planet->PlanetGravityStrength > UE_SMALL_NUMBER
+				? Planet->PlanetGravityStrength * 980.0 : 980.0;
+			const double DistanceFalloff = RadiusKm > UE_SMALL_NUMBER && CenterDistanceKm > RadiusKm
+				? FMath::Square(RadiusKm / CenterDistanceKm) : 1.0;
+			ActiveGravityAcceleration = FMath::Clamp(SurfaceAcceleration * DistanceFalloff, 5.0, 3000.0);
+
+			if (IsNearGravitySurface(ActiveGravityDirection))
+			{
+				CurrentFlightEnvironment = EShipFlightEnvironment::Surface;
+			}
+			else if (AltitudeKm <= AtmosphereHeightKm)
+			{
+				CurrentFlightEnvironment = EShipFlightEnvironment::Atmosphere;
+			}
+			else
+			{
+				CurrentFlightEnvironment = EShipFlightEnvironment::GravityWell;
+			}
+		}
+		else
+		{
+			CurrentFlightEnvironment = IsNearGravitySurface(ActiveGravityDirection)
+				? EShipFlightEnvironment::Surface : EShipFlightEnvironment::GravityWell;
+		}
+	}
+
+	if (PreviousEnvironment != CurrentFlightEnvironment || PreviousSource != ActiveGravitySource.Get())
+	{
+		EnforceDriveModeForEnvironment();
+		UE_LOG(LogTemp, Log, TEXT("[APS.Ships] Environment ship=%s environment=%s gravity=%s acceleration=%.2f m/s2"),
+			*GetName(), *GetFlightEnvironmentName(), *GetGravitySourceName(), ActiveGravityAcceleration / 100.0);
+	}
+	if (OnboardComputer)
+	{
+		switch (CurrentFlightEnvironment)
+		{
+		case EShipFlightEnvironment::Surface:
+			OnboardComputer->FlightSystem.CurrentFlightType = EFlightType::Landing;
+			break;
+		case EShipFlightEnvironment::Atmosphere:
+			OnboardComputer->FlightSystem.CurrentFlightType = EFlightType::Atmospheric;
+			break;
+		case EShipFlightEnvironment::GravityWell:
+			OnboardComputer->FlightSystem.CurrentFlightType = EFlightType::Orbital;
+			break;
+		case EShipFlightEnvironment::DeepSpace:
+		default:
+			OnboardComputer->FlightSystem.CurrentFlightType = EFlightType::ZeroG;
+			break;
+		}
+	}
+
+	if (SpaceshipHull && SpaceshipHull->IsSimulatingPhysics())
+	{
+		SpaceshipHull->SetLinearDamping(GetEnvironmentDrag());
+	}
+}
+
+double ASpaceship::GetEnvironmentDrag() const
+{
+	switch (CurrentFlightEnvironment)
+	{
+	case EShipFlightEnvironment::Surface: return SurfaceDrag;
+	case EShipFlightEnvironment::Atmosphere: return AtmosphericDrag;
+	case EShipFlightEnvironment::GravityWell: return GravityWellDrag;
+	case EShipFlightEnvironment::DeepSpace:
+	default: return 0.0;
+	}
+}
+
+void ASpaceship::ApplyEnvironmentForces(float DeltaTime)
+{
+	if (!bApplyExternalGravity || !ActiveGravitySource || ActiveGravityDirection.IsNearlyZero()
+		|| ActiveGravityAcceleration <= UE_SMALL_NUMBER)
+	{
+		return;
+	}
+	if (bEngineRunning && bFlightAssistCompensatesGravity)
+	{
+		return;
+	}
+
+	const FVector GravityAcceleration = ActiveGravityDirection.GetSafeNormal() * ActiveGravityAcceleration;
+	if (SpaceshipHull && SpaceshipHull->IsSimulatingPhysics())
+	{
+		SpaceshipHull->AddForce(GravityAcceleration, NAME_None, true);
+	}
+	else
+	{
+		KinematicVelocity += GravityAcceleration * DeltaTime;
+	}
+}
+
 void ASpaceship::UpdateAdaptiveFlightCamera(float DeltaTime)
 {
 	if (!bUseAdaptiveFlightCamera || !SpringArmComponent || !IsValid(Pilot))
@@ -1091,7 +1393,7 @@ void ASpaceship::UpdateAdaptiveFlightCamera(float DeltaTime)
 		return;
 	}
 	const double FlightScale = OnboardComputer
-		? GetFlightModeSpeedScale(OnboardComputer->FlightSystem.CurrentFlightMode) : 1.0;
+		? GetDriveSpeedScale(SelectedDriveMode) : 1.0;
 	const double ReferenceSpeed = FMath::Max(
 		ActiveClassPreset.MaxImpulseSpeed * FlightScale * FMath::Max(CurrentBoostMultiplier, 1.0), 1.0);
 	const double Speed = SpaceshipHull && SpaceshipHull->IsSimulatingPhysics()
@@ -1104,6 +1406,18 @@ void ASpaceship::UpdateAdaptiveFlightCamera(float DeltaTime)
 	SpringArmComponent->CameraLagSpeed = FMath::Lerp(6.0f, 20.0f, CameraAlpha);
 	SpringArmComponent->CameraRotationLagSpeed = FMath::Lerp(8.0f, 22.0f, CameraAlpha);
 	SpringArmComponent->CameraLagMaxDistance = BaseCameraArmLength * FMath::Lerp(0.85f, 1.8f, CameraAlpha);
+	if (CameraComponent)
+	{
+		const float MaximumDriveIndex = static_cast<float>(static_cast<uint8>(EShipDriveMode::Interstellar));
+		const float DriveAlpha = MaximumDriveIndex > 0.0f
+			? static_cast<float>(static_cast<uint8>(SelectedDriveMode)) / MaximumDriveIndex : 0.0f;
+		const float TransitionPulse = bEngineModeTransitionActive && EngineModeTransitionDuration > UE_SMALL_NUMBER
+			? FMath::Sin(PI * FMath::Clamp(EngineModeTransitionElapsed / EngineModeTransitionDuration, 0.0f, 1.0f)) * 4.0f
+			: 0.0f;
+		const float TargetFieldOfView = BaseCameraFieldOfView + DriveAlpha * CameraAlpha * 30.0f + TransitionPulse;
+		CameraComponent->SetFieldOfView(FMath::FInterpTo(
+			CameraComponent->FieldOfView, TargetFieldOfView, DeltaTime, 3.5f));
+	}
 }
 
 void ASpaceship::SetFlightCollisionOptimization(bool bEnabled)
@@ -1160,23 +1474,42 @@ void ASpaceship::ApplyFlightInput(float DeltaTime)
 		+ GetShipRightVector() * ClampedInput.Y
 		+ GetShipUpVector() * ClampedInput.Z;
 	const EEngineMode EngineMode = OnboardComputer->EngineSystem.CurrentEngineMode;
-	const double Scale = GetFlightModeSpeedScale(OnboardComputer->FlightSystem.CurrentFlightMode);
+	const double SpeedScale = GetDriveSpeedScale(SelectedDriveMode);
+	const double AccelerationScale = GetDriveAccelerationScale(SelectedDriveMode);
+	const double DriveAcceleration = FMath::Max(
+		ActiveClassPreset.ImpulseAcceleration * AccelerationScale,
+		GetMinimumDriveAcceleration(SelectedDriveMode));
 	const double TransitionAlpha = bEngineModeTransitionActive
 		? FMath::Clamp(FMath::Abs(EngineModeTransitionElapsed / EngineModeTransitionDuration - 0.5f) * 2.0f, 0.12f, 1.0f)
 		: 1.0;
+	const double SafeSteeringLimit = FMath::Max(static_cast<double>(SteeringInputLimit), 0.05);
+	const FVector WorldSteeringInput = (
+		GetShipRightVector() * FMath::Clamp(static_cast<double>(YawInput) / SafeSteeringLimit, -1.0, 1.0)
+		+ GetShipUpVector() * FMath::Clamp(static_cast<double>(PitchInput) / SafeSteeringLimit, -1.0, 1.0))
+		.GetClampedToMaxSize(1.0);
 
 	if (EngineMode == EEngineMode::Impulse && ActiveClassPreset.bUsesPhysicalImpulse
 		&& SpaceshipHull->IsSimulatingPhysics())
 	{
+		const double MaxSpeed = ActiveClassPreset.MaxImpulseSpeed * SpeedScale * CurrentBoostMultiplier;
 		if (!WorldInput.IsNearlyZero())
 		{
 			SpaceshipHull->AddForce(
-				WorldInput * ActiveClassPreset.ImpulseAcceleration * CurrentBoostMultiplier * TransitionAlpha,
+				WorldInput * DriveAcceleration * CurrentBoostMultiplier * TransitionAlpha,
 				NAME_None, true);
 		}
+		const double SteeringAuthority = FMath::Clamp(
+			SpaceshipHull->GetPhysicsLinearVelocity().Size() / FMath::Max(MaxSpeed * 0.15, 100.0), 0.0, 1.0);
+		if (!WorldSteeringInput.IsNearlyZero() && SteeringAuthority > UE_SMALL_NUMBER)
+		{
+			SpaceshipHull->AddForce(
+				WorldSteeringInput * DriveAcceleration * SteeringThrustFraction
+					* SteeringAuthority * CurrentBoostMultiplier * TransitionAlpha,
+				NAME_None, true);
+		}
+		ApplyEnvironmentForces(DeltaTime);
 
 		FVector Velocity = SpaceshipHull->GetPhysicsLinearVelocity();
-		const double MaxSpeed = ActiveClassPreset.MaxImpulseSpeed * CurrentBoostMultiplier;
 		if (Velocity.SizeSquared() > FMath::Square(MaxSpeed))
 		{
 			Velocity = Velocity.GetClampedToMaxSize(MaxSpeed);
@@ -1190,17 +1523,30 @@ void ASpaceship::ApplyFlightInput(float DeltaTime)
 		return;
 	}
 
-	const double MaxSpeed = ActiveClassPreset.MaxImpulseSpeed * Scale * CurrentBoostMultiplier;
+	const double MaxSpeed = ActiveClassPreset.MaxImpulseSpeed * SpeedScale * CurrentBoostMultiplier;
 	const FVector DesiredVelocity = WorldInput * MaxSpeed;
-	const double Acceleration = ActiveClassPreset.ImpulseAcceleration * Scale * CurrentBoostMultiplier * TransitionAlpha;
+	const double Acceleration = DriveAcceleration * CurrentBoostMultiplier * TransitionAlpha;
 	if (!WorldInput.IsNearlyZero())
 	{
 		KinematicVelocity = FMath::VInterpConstantTo(KinematicVelocity, DesiredVelocity, DeltaTime, Acceleration);
 	}
 	else
 	{
-		KinematicVelocity = FMath::VInterpTo(
-			KinematicVelocity, FVector::ZeroVector, DeltaTime, ActiveClassPreset.LinearDamping);
+		const double EnvironmentalDrag = GetEnvironmentDrag();
+		if (EnvironmentalDrag > UE_SMALL_NUMBER)
+		{
+			KinematicVelocity = FMath::VInterpTo(
+				KinematicVelocity, FVector::ZeroVector, DeltaTime, EnvironmentalDrag);
+		}
+	}
+	ApplyEnvironmentForces(DeltaTime);
+	const double SteeringAuthority = FMath::Clamp(
+		KinematicVelocity.Size() / FMath::Max(MaxSpeed * 0.15, 100.0), 0.0, 1.0);
+	if (!WorldSteeringInput.IsNearlyZero() && SteeringAuthority > UE_SMALL_NUMBER)
+	{
+		KinematicVelocity += WorldSteeringInput * Acceleration * SteeringThrustFraction
+			* SteeringAuthority * DeltaTime;
+		KinematicVelocity = KinematicVelocity.GetClampedToMaxSize(MaxSpeed);
 	}
 	if (bIsDecelerating)
 	{
@@ -1221,16 +1567,28 @@ void ASpaceship::ApplyRotationInput(float DeltaTime)
 {
 	if (!bEngineRunning || !SpaceshipHull)
 	{
+		CurrentAngularVelocityDegrees = FVector::ZeroVector;
 		return;
 	}
 
 	const float TransitionAlpha = bEngineModeTransitionActive
 		? FMath::Clamp(FMath::Abs(EngineModeTransitionElapsed / EngineModeTransitionDuration - 0.5f) * 2.0f, 0.15f, 1.0f)
 		: 1.0f;
-	const double RotationSpeed = ActiveClassPreset.RotationSpeed * TransitionAlpha;
-	const double YawRadians = FMath::DegreesToRadians(YawInput * RotationSpeed * DeltaTime);
-	const double PitchRadians = FMath::DegreesToRadians(PitchInput * RotationSpeed * DeltaTime);
-	const double RollRadians = FMath::DegreesToRadians(-RollInput * RotationSpeed * DeltaTime);
+	const double RotationSpeed = ActiveClassPreset.RotationSpeed * SteeringRateScale * TransitionAlpha;
+	const double SafeInputLimit = FMath::Max(static_cast<double>(SteeringInputLimit), 0.05);
+	const FVector DesiredAngularVelocityDegrees(
+		FMath::Clamp(static_cast<double>(PitchInput) / SafeInputLimit, -1.0, 1.0) * RotationSpeed,
+		FMath::Clamp(static_cast<double>(YawInput) / SafeInputLimit, -1.0, 1.0) * RotationSpeed,
+		FMath::Clamp(static_cast<double>(RollInput) / SafeInputLimit, -1.0, 1.0) * RotationSpeed);
+	CurrentAngularVelocityDegrees = FMath::VInterpConstantTo(
+		CurrentAngularVelocityDegrees,
+		DesiredAngularVelocityDegrees,
+		DeltaTime,
+		ActiveClassPreset.AngularAcceleration);
+
+	const double PitchRadians = FMath::DegreesToRadians(CurrentAngularVelocityDegrees.X * DeltaTime);
+	const double YawRadians = FMath::DegreesToRadians(CurrentAngularVelocityDegrees.Y * DeltaTime);
+	const double RollRadians = FMath::DegreesToRadians(CurrentAngularVelocityDegrees.Z * DeltaTime);
 	if (FMath::IsNearlyZero(YawRadians) && FMath::IsNearlyZero(PitchRadians) && FMath::IsNearlyZero(RollRadians))
 	{
 		return;
@@ -1285,8 +1643,8 @@ void ASpaceship::RequestEngineModeForFlightMode(bool bImmediate)
 	{
 		return;
 	}
-	PendingEngineMode = ResolveEngineModeForFlightMode(OnboardComputer->FlightSystem.CurrentFlightMode);
-	if (bImmediate || !bEngineRunning || PendingEngineMode == OnboardComputer->EngineSystem.CurrentEngineMode)
+	PendingEngineMode = ResolveEngineModeForDriveMode(SelectedDriveMode);
+	if (bImmediate || !bEngineRunning)
 	{
 		bEngineModeTransitionActive = false;
 		bEngineModeSwitchedAtMidpoint = false;
@@ -1340,6 +1698,7 @@ void ASpaceship::ApplyEngineState()
 		}
 		SpaceshipHull->SetSimulatePhysics(false);
 		KinematicVelocity = FVector::ZeroVector;
+		CurrentAngularVelocityDegrees = FVector::ZeroVector;
 		return;
 	}
 
@@ -1348,7 +1707,7 @@ void ASpaceship::ApplyEngineState()
 	if (bUsePhysics)
 	{
 		SpaceshipHull->SetSimulatePhysics(true);
-		SpaceshipHull->SetLinearDamping(ActiveClassPreset.LinearDamping);
+		SpaceshipHull->SetLinearDamping(GetEnvironmentDrag());
 		SpaceshipHull->SetAngularDamping(ActiveClassPreset.AngularDamping);
 		if (!KinematicVelocity.IsNearlyZero())
 		{
@@ -1376,7 +1735,47 @@ FString ASpaceship::GetSizeClassName() const
 
 FString ASpaceship::GetFlightModeName() const
 {
-	return OnboardComputer ? OnboardComputer->GetFlightModeAsString().Replace(TEXT("EFlightMode::"), TEXT("")) : TEXT("Unknown");
+	return GetDriveModeName();
+}
+
+FString ASpaceship::GetDriveModeName() const
+{
+	if (SelectedDriveMode == EShipDriveMode::Orbital
+		&& CurrentFlightEnvironment == EShipFlightEnvironment::Atmosphere)
+	{
+		return TEXT("EXIT ATMOSPHERE");
+	}
+	if (const UEnum* Enum = StaticEnum<EShipDriveMode>())
+	{
+		return Enum->GetDisplayNameTextByValue(static_cast<int64>(SelectedDriveMode)).ToString().ToUpper();
+	}
+	return TEXT("LANDING");
+}
+
+FString ASpaceship::GetFlightEnvironmentName() const
+{
+	if (const UEnum* Enum = StaticEnum<EShipFlightEnvironment>())
+	{
+		return Enum->GetDisplayNameTextByValue(static_cast<int64>(CurrentFlightEnvironment)).ToString().ToUpper();
+	}
+	return TEXT("DEEP SPACE");
+}
+
+FString ASpaceship::GetGravitySourceName() const
+{
+	if (!ActiveGravitySource)
+	{
+		return TEXT("NONE");
+	}
+	FString SourceName = ActiveGravitySource->GetName();
+	SourceName.RemoveFromStart(TEXT("BP_"));
+	const int32 ClassMarker = SourceName.Find(TEXT("_C_"));
+	if (ClassMarker != INDEX_NONE)
+	{
+		SourceName.LeftInline(ClassMarker);
+	}
+	SourceName.ReplaceInline(TEXT("_"), TEXT(" "));
+	return SourceName.ToUpper();
 }
 
 FString ASpaceship::GetEngineModeName() const
@@ -1396,14 +1795,21 @@ double ASpaceship::GetShipSpeedMetersPerSecond() const
 
 FText ASpaceship::GetShipStatusText() const
 {
-	return FText::FromString(FString::Printf(TEXT("SHIP %s   |   ENGINE %s\n%s   |   %.1f m/s   |   BOOST x%.2f"),
-		*GetSizeClassName(), *GetEngineModeName(), *GetFlightModeName(),
+	const int32 ModeNumber = static_cast<int32>(SelectedDriveMode) + 1;
+	const int32 MaximumModeNumber = static_cast<int32>(GetMaximumDriveModeForClass()) + 1;
+	const FString GravityAssist = !ActiveGravitySource
+		? TEXT("NONE")
+		: (bEngineRunning && bFlightAssistCompensatesGravity ? TEXT("COMPENSATED") : TEXT("ACTIVE"));
+	return FText::FromString(FString::Printf(
+		TEXT("SHIP %s   |   ENGINE %s\nMODE %d/%d: %s   |   ENVIRONMENT: %s\nGRAVITY: %s (%.2f m/s2, %s)   |   %.1f m/s   |   BOOST x%.2f"),
+		*GetSizeClassName(), *GetEngineModeName(), ModeNumber, MaximumModeNumber, *GetDriveModeName(),
+		*GetFlightEnvironmentName(), *GetGravitySourceName(), ActiveGravityAcceleration / 100.0, *GravityAssist,
 		GetShipSpeedMetersPerSecond(), CurrentBoostMultiplier));
 }
 
 FText ASpaceship::GetShipHintText() const
 {
-	return FText::FromString(TEXT("G ENGINE   F EXIT   |   WASD THRUST   SPACE/ALT VERTICAL   Q/E ROLL   MOUSE STEER\nLEFT SHIFT BOOST   LEFT CTRL BRAKE   |   RIGHT SHIFT/CTRL FLIGHT SCALE"));
+	return FText::FromString(TEXT("G ENGINE   F EXIT   |   WASD THRUST   SPACE/ALT VERTICAL   Q/E ROLL   MOUSE STEER\nLEFT SHIFT BOOST   LEFT CTRL BRAKE   |   RIGHT SHIFT NEXT MODE   RIGHT CTRL PREVIOUS MODE"));
 }
 
 void ASpaceship::CreateShipHud()
@@ -1471,6 +1877,7 @@ void ASpaceship::RemoveShipHud()
 void ASpaceship::PossessedBy(AController* NewController)
 {
 	Super::PossessedBy(NewController);
+	UpdateFlightEnvironment(0.0f, true);
 	SetFlightCollisionOptimization(true);
 	SetActorTickEnabled(true);
 	CreateShipHud();
@@ -1479,6 +1886,10 @@ void ASpaceship::PossessedBy(AController* NewController)
 void ASpaceship::UnPossessed()
 {
 	RemoveShipHud();
+	if (CameraComponent && bCameraFieldOfViewInitialized)
+	{
+		CameraComponent->SetFieldOfView(BaseCameraFieldOfView);
+	}
 	if (!bEngineRunning)
 	{
 		SetFlightCollisionOptimization(false);
@@ -1487,6 +1898,7 @@ void ASpaceship::UnPossessed()
 	bIsDecelerating = false;
 	ForwardInput = SideInput = VerticalInput = 0.0f;
 	YawInput = PitchInput = RollInput = 0.0f;
+	CurrentAngularVelocityDegrees = FVector::ZeroVector;
 	Super::UnPossessed();
 	SetActorTickEnabled(bEngineRunning);
 }
@@ -1559,24 +1971,20 @@ void ASpaceship::HandleDecelerationBoost(float Value)
 void ASpaceship::IncreaseFlightMode()
 {
 	if (!OnboardComputer) return;
-	const uint8 Current = static_cast<uint8>(OnboardComputer->FlightSystem.CurrentFlightMode);
-	const uint8 Maximum = static_cast<uint8>(ActiveClassPreset.MaximumFlightMode);
-	if (Current >= Maximum || Current >= static_cast<uint8>(EFlightMode::Intergalaxy)) return;
-	OnboardComputer->FlightSystem.CurrentFlightMode = static_cast<EFlightMode>(Current + 1);
-	OnboardComputer->ComputeFlightParams();
-	RequestEngineModeForFlightMode(false);
-	CheckFlightModeChange();
+	const uint8 Current = static_cast<uint8>(SelectedDriveMode);
+	const uint8 Maximum = FMath::Min(
+		static_cast<uint8>(GetMaximumDriveModeForClass()),
+		static_cast<uint8>(GetMaximumDriveModeForEnvironment()));
+	if (Current >= Maximum) return;
+	SetDriveMode(static_cast<EShipDriveMode>(Current + 1), false);
 }
 
 void ASpaceship::DecreaseFlightMode()
 {
 	if (!OnboardComputer) return;
-	const uint8 Current = static_cast<uint8>(OnboardComputer->FlightSystem.CurrentFlightMode);
-	if (Current <= static_cast<uint8>(EFlightMode::Station)) return;
-	OnboardComputer->FlightSystem.CurrentFlightMode = static_cast<EFlightMode>(Current - 1);
-	OnboardComputer->ComputeFlightParams();
-	RequestEngineModeForFlightMode(false);
-	CheckFlightModeChange();
+	const uint8 Current = static_cast<uint8>(SelectedDriveMode);
+	if (Current <= static_cast<uint8>(EShipDriveMode::Landing)) return;
+	SetDriveMode(static_cast<EShipDriveMode>(Current - 1), false);
 }
 
 
@@ -1687,6 +2095,8 @@ void ASpaceship::SwitchEngines()
 	bEngineRunning = !bEngineRunning;
 	if (bEngineRunning)
 	{
+		UpdateFlightEnvironment(0.0f, true);
+		EnforceDriveModeForEnvironment();
 		RequestEngineModeForFlightMode(true);
 	}
 	ApplyEngineState();

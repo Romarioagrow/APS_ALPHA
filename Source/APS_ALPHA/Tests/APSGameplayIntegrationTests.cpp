@@ -276,6 +276,10 @@ bool FAPSShipClassPresetTest::RunTest(const FString& Parameters)
 		XXS.bSupportsSpaceWrap || XXS.bSupportsOffset);
 	TestFalse(TEXT("Titan ships use stable kinematic impulse movement"), Titan.bUsesPhysicalImpulse);
 	TestTrue(TEXT("Titan ships turn slower than medium ships"), Titan.RotationSpeed < Medium.RotationSpeed);
+	TestTrue(TEXT("Titan ships build angular velocity slower than medium ships"),
+		Titan.AngularAcceleration < Medium.AngularAcceleration);
+	TestTrue(TEXT("XXS ships build angular velocity faster than medium ships"),
+		XXS.AngularAcceleration > Medium.AngularAcceleration);
 
 	TestEqual(TEXT("20 metre hull is XXS"),
 		ASpaceship::InferSizeClassFromLength(2000.0), ESpaceshipSizeClass::XXS);
@@ -292,6 +296,103 @@ bool FAPSShipClassPresetTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("AI_Shpis assets are whitelisted"),
 			ASpaceship::IsGeneratedShipMeshAsset(GeneratedShipMesh));
 	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FAPSShipDriveEnvironmentTest,
+	"APS.Gameplay.Vehicle.DriveEnvironmentAndSteering",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FAPSShipDriveEnvironmentTest::RunTest(const FString& Parameters)
+{
+	UWorld* World = APSGameplayIntegrationTests::CreateTestWorld();
+	if (!TestNotNull(TEXT("Test world"), World))
+	{
+		return false;
+	}
+
+	ASpaceship* Ship = World->SpawnActor<ASpaceship>();
+	if (!TestNotNull(TEXT("Spaceship"), Ship))
+	{
+		APSGameplayIntegrationTests::DestroyTestWorld(World);
+		return false;
+	}
+
+	Ship->SizeClass = ESpaceshipSizeClass::M;
+	Ship->ActiveClassPreset = ASpaceship::GetPresetForSizeClass(ESpaceshipSizeClass::M);
+	Ship->CurrentFlightEnvironment = EShipFlightEnvironment::DeepSpace;
+	TestTrue(TEXT("Every spaceworthy ship can select orbital power in deep space"),
+		Ship->CanUseDriveMode(EShipDriveMode::Orbital));
+	Ship->CurrentFlightEnvironment = EShipFlightEnvironment::GravityWell;
+	TestTrue(TEXT("Gravity well does not remove orbital power from the player"),
+		Ship->CanUseDriveMode(EShipDriveMode::Orbital));
+	Ship->CurrentFlightEnvironment = EShipFlightEnvironment::Atmosphere;
+	TestTrue(TEXT("Atmosphere permits landing power"), Ship->CanUseDriveMode(EShipDriveMode::Landing));
+	TestTrue(TEXT("Atmosphere permits explicit exit-atmosphere power"),
+		Ship->CanUseDriveMode(EShipDriveMode::Orbital));
+	Ship->SelectedDriveMode = EShipDriveMode::Orbital;
+	TestEqual(TEXT("Orbital power is labelled as exit atmosphere while atmospheric"),
+		Ship->GetDriveModeName(), FString(TEXT("EXIT ATMOSPHERE")));
+
+	TestEqual(TEXT("Landing mode has a precise low speed limit"),
+		ASpaceship::GetDriveSpeedScale(EShipDriveMode::Landing), 0.05);
+	TestEqual(TEXT("Local mode supports nearby travel"),
+		ASpaceship::GetDriveSpeedScale(EShipDriveMode::Local), 1.0);
+	TestEqual(TEXT("Orbital mode reaches escape-scale speed"),
+		ASpaceship::GetDriveSpeedScale(EShipDriveMode::Orbital), 64.0);
+	TestEqual(TEXT("Interplanetary mode continues beyond orbital flight"),
+		ASpaceship::GetDriveSpeedScale(EShipDriveMode::Interplanetary), 512.0);
+	TestTrue(TEXT("Orbital mode accelerates substantially faster than local mode"),
+		ASpaceship::GetDriveAccelerationScale(EShipDriveMode::Orbital)
+		> ASpaceship::GetDriveAccelerationScale(EShipDriveMode::Local));
+	TestTrue(TEXT("Atmosphere exit has a non-negotiable acceleration floor"),
+		ASpaceship::GetMinimumDriveAcceleration(EShipDriveMode::Orbital) >= 500000.0);
+	TestTrue(TEXT("Flight assist compensates gravity by default"), Ship->bFlightAssistCompensatesGravity);
+	Ship->SelectedDriveMode = EShipDriveMode::Landing;
+	Ship->IncreaseFlightMode();
+	TestEqual(TEXT("Right-shift progression advances landing to local even in atmosphere"),
+		Ship->SelectedDriveMode, EShipDriveMode::Local);
+	Ship->IncreaseFlightMode();
+	TestEqual(TEXT("Second progression selects exit-atmosphere power"),
+		Ship->SelectedDriveMode, EShipDriveMode::Orbital);
+	Ship->IncreaseFlightMode();
+	TestEqual(TEXT("Third progression continues to interplanetary impulse flight"),
+		Ship->SelectedDriveMode, EShipDriveMode::Interplanetary);
+	TestEqual(TEXT("Interplanetary travel still uses the impulse engine"),
+		Ship->OnboardComputer->EngineSystem.CurrentEngineMode, EEngineMode::Impulse);
+	Ship->IncreaseFlightMode();
+	TestEqual(TEXT("Fourth progression selects stellar flight"),
+		Ship->SelectedDriveMode, EShipDriveMode::Stellar);
+	TestEqual(TEXT("Stellar travel switches to the space-wrap engine"),
+		Ship->OnboardComputer->EngineSystem.CurrentEngineMode, EEngineMode::SpaceWrap);
+	Ship->IncreaseFlightMode();
+	TestEqual(TEXT("Fifth progression selects interstellar flight"),
+		Ship->SelectedDriveMode, EShipDriveMode::Interstellar);
+	TestEqual(TEXT("Interstellar travel switches to the offset engine"),
+		Ship->OnboardComputer->EngineSystem.CurrentEngineMode, EEngineMode::Offset);
+
+	Ship->ActiveClassPreset = ASpaceship::GetPresetForSizeClass(ESpaceshipSizeClass::XXS);
+	TestTrue(TEXT("Small ships retain interplanetary impulse travel"),
+		Ship->CanUseDriveMode(EShipDriveMode::Interplanetary));
+	TestFalse(TEXT("Small ships do not expose unsupported stellar engines"),
+		Ship->CanUseDriveMode(EShipDriveMode::Stellar));
+	Ship->ActiveClassPreset = ASpaceship::GetPresetForSizeClass(ESpaceshipSizeClass::M);
+
+	Ship->SwitchEngines();
+	Ship->ThrustYaw(1.0f);
+	Ship->Tick(1.0f / 60.0f);
+	const double FirstFrameYawRate = FMath::Abs(Ship->GetCurrentAngularVelocityDegrees().Y);
+	TestTrue(TEXT("Steering starts building angular velocity"), FirstFrameYawRate > 0.0);
+	TestTrue(TEXT("A single mouse frame cannot instantly reach maximum turn rate"),
+		FirstFrameYawRate < Ship->ActiveClassPreset.RotationSpeed);
+
+	Ship->ThrustYaw(0.0f);
+	Ship->Tick(1.0f / 60.0f);
+	TestTrue(TEXT("Released steering begins damping angular velocity"),
+		FMath::Abs(Ship->GetCurrentAngularVelocityDegrees().Y) < FirstFrameYawRate);
+
+	APSGameplayIntegrationTests::DestroyTestWorld(World);
 	return true;
 }
 
