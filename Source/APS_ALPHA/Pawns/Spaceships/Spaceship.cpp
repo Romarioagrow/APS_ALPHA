@@ -76,11 +76,11 @@ private:
 
 namespace APSNavigationHud
 {
-	constexpr float MarkerWidth = 188.0f;
-	constexpr float MarkerHeight = 42.0f;
-	constexpr int32 MaximumVisibleMarkers = 6;
-	constexpr int32 MaximumVisiblePlanets = 4;
-	constexpr int32 MaximumVisibleMoons = 2;
+	constexpr float MarkerWidth = 176.0f;
+	constexpr float MarkerHeight = 38.0f;
+	constexpr float MarkerGap = 5.0f;
+	constexpr int32 MaximumVisiblePlanets = 3;
+	constexpr int32 MaximumVisibleMoonsInFocusFamily = 8;
 }
 
 namespace APSAutomaticShipInteraction
@@ -1536,6 +1536,45 @@ void ASpaceship::SetFlightCollisionOptimization(bool bEnabled)
 	}
 }
 
+FVector ASpaceship::GetControlledFlightAcceleration(const FVector& WorldInput,
+	const FVector& CurrentVelocity, double RequestedAcceleration, double MaximumSpeed) const
+{
+	if (WorldInput.IsNearlyZero() || RequestedAcceleration <= UE_DOUBLE_SMALL_NUMBER)
+	{
+		return FVector::ZeroVector;
+	}
+
+	const FVector RawAcceleration = WorldInput.GetClampedToMaxSize(1.0) * RequestedAcceleration;
+	const double CurrentSpeed = CurrentVelocity.Size();
+	const double DriveReferenceScale = FMath::Clamp(
+		GetDriveSpeedScale(SelectedDriveMode), 1.0, 64.0);
+	const double ReferenceSpeed = FMath::Max(
+		CurrentSpeed, ActiveClassPreset.MaxImpulseSpeed * DriveReferenceScale);
+	const double MaximumParallelAcceleration = ReferenceSpeed
+		/ FMath::Max(static_cast<double>(HighSpeedVelocityResponseTime), 0.1);
+
+	if (CurrentSpeed <= 1.0)
+	{
+		return RawAcceleration.GetClampedToMaxSize(MaximumParallelAcceleration);
+	}
+
+	const FVector VelocityDirection = CurrentVelocity / CurrentSpeed;
+	double ParallelAcceleration = FVector::DotProduct(RawAcceleration, VelocityDirection);
+	FVector LateralAcceleration = RawAcceleration - VelocityDirection * ParallelAcceleration;
+	ParallelAcceleration = FMath::Clamp(
+		ParallelAcceleration, -MaximumParallelAcceleration, MaximumParallelAcceleration);
+	if (CurrentSpeed >= MaximumSpeed && ParallelAcceleration > 0.0)
+	{
+		ParallelAcceleration = 0.0;
+	}
+
+	const double MaximumHeadingRateRadians = FMath::DegreesToRadians(FMath::Max(
+		ActiveClassPreset.RotationSpeed * SteeringRateScale * HighSpeedHeadingResponseScale, 1.0));
+	const double MaximumLateralAcceleration = ReferenceSpeed * MaximumHeadingRateRadians;
+	LateralAcceleration = LateralAcceleration.GetClampedToMaxSize(MaximumLateralAcceleration);
+	return VelocityDirection * ParallelAcceleration + LateralAcceleration;
+}
+
 void ASpaceship::ApplyFlightInput(float DeltaTime)
 {
 	if (!bEngineRunning || !OnboardComputer || !SpaceshipHull)
@@ -1556,45 +1595,19 @@ void ASpaceship::ApplyFlightInput(float DeltaTime)
 		ActiveClassPreset.ImpulseAcceleration * AccelerationScale,
 		GetMinimumDriveAcceleration(SelectedDriveMode) * GetEngineAccelerationMultiplier(EngineMode));
 	const double TransitionAlpha = GetEngineTransitionAuthority();
-	const double SafeSteeringLimit = FMath::Max(static_cast<double>(SteeringInputLimit), 0.05);
-	const FVector WorldSteeringInput = (
-		GetShipRightVector() * FMath::Clamp(static_cast<double>(YawInput) / SafeSteeringLimit, -1.0, 1.0)
-		+ GetShipUpVector() * FMath::Clamp(static_cast<double>(PitchInput) / SafeSteeringLimit, -1.0, 1.0))
-		.GetClampedToMaxSize(1.0);
+	const double RequestedAcceleration = DriveAcceleration * CurrentBoostMultiplier * TransitionAlpha;
+	const double MaxSpeed = ActiveClassPreset.MaxImpulseSpeed * SpeedScale * CurrentBoostMultiplier;
 
 	if (EngineMode == EEngineMode::Impulse && ActiveClassPreset.bUsesPhysicalImpulse
 		&& SpaceshipHull->IsSimulatingPhysics())
 	{
-		const double MaxSpeed = ActiveClassPreset.MaxImpulseSpeed * SpeedScale * CurrentBoostMultiplier;
 		const FVector VelocityBeforeForces = SpaceshipHull->GetPhysicsLinearVelocity();
 		const double SpeedBeforeForces = VelocityBeforeForces.Size();
-		if (!WorldInput.IsNearlyZero())
+		const FVector ControlledAcceleration = GetControlledFlightAcceleration(
+			WorldInput, VelocityBeforeForces, RequestedAcceleration, MaxSpeed);
+		if (!ControlledAcceleration.IsNearlyZero())
 		{
-			FVector LimitedThrustInput = WorldInput;
-			if (SpeedBeforeForces >= MaxSpeed && SpeedBeforeForces > UE_SMALL_NUMBER)
-			{
-				const FVector VelocityDirection = VelocityBeforeForces / SpeedBeforeForces;
-				const double AcceleratingComponent = FVector::DotProduct(LimitedThrustInput, VelocityDirection);
-				if (AcceleratingComponent > 0.0)
-				{
-					LimitedThrustInput -= VelocityDirection * AcceleratingComponent;
-				}
-			}
-			if (!LimitedThrustInput.IsNearlyZero())
-			{
-				SpaceshipHull->AddForce(
-					LimitedThrustInput * DriveAcceleration * CurrentBoostMultiplier * TransitionAlpha,
-					NAME_None, true);
-			}
-		}
-		const double SteeringAuthority = FMath::Clamp(
-			SpaceshipHull->GetPhysicsLinearVelocity().Size() / FMath::Max(MaxSpeed * 0.15, 100.0), 0.0, 1.0);
-		if (!WorldSteeringInput.IsNearlyZero() && SteeringAuthority > UE_SMALL_NUMBER)
-		{
-			SpaceshipHull->AddForce(
-				WorldSteeringInput * DriveAcceleration * SteeringThrustFraction
-					* SteeringAuthority * CurrentBoostMultiplier * TransitionAlpha,
-				NAME_None, true);
+			SpaceshipHull->AddForce(ControlledAcceleration, NAME_None, true);
 		}
 		ApplyEnvironmentForces(DeltaTime);
 
@@ -1616,14 +1629,11 @@ void ASpaceship::ApplyFlightInput(float DeltaTime)
 		return;
 	}
 
-	const double MaxSpeed = ActiveClassPreset.MaxImpulseSpeed * SpeedScale * CurrentBoostMultiplier;
-	const double PreservedMomentumSpeed = bIsDecelerating
-		? MaxSpeed : FMath::Max(MaxSpeed, KinematicVelocity.Size());
-	const FVector DesiredVelocity = WorldInput * PreservedMomentumSpeed;
-	const double Acceleration = DriveAcceleration * CurrentBoostMultiplier * TransitionAlpha;
+	const double SpeedBeforeAcceleration = KinematicVelocity.Size();
 	if (!WorldInput.IsNearlyZero())
 	{
-		KinematicVelocity = FMath::VInterpConstantTo(KinematicVelocity, DesiredVelocity, DeltaTime, Acceleration);
+		KinematicVelocity += GetControlledFlightAcceleration(
+			WorldInput, KinematicVelocity, RequestedAcceleration, MaxSpeed) * DeltaTime;
 	}
 	else
 	{
@@ -1635,15 +1645,11 @@ void ASpaceship::ApplyFlightInput(float DeltaTime)
 		}
 	}
 	ApplyEnvironmentForces(DeltaTime);
-	const double SteeringAuthority = FMath::Clamp(
-		KinematicVelocity.Size() / FMath::Max(MaxSpeed * 0.15, 100.0), 0.0, 1.0);
-	if (!WorldSteeringInput.IsNearlyZero() && SteeringAuthority > UE_SMALL_NUMBER)
+	const double SpeedAfterAcceleration = KinematicVelocity.Size();
+	if (SpeedAfterAcceleration > MaxSpeed && SpeedAfterAcceleration > SpeedBeforeAcceleration)
 	{
-		const double SpeedBeforeSteering = KinematicVelocity.Size();
-		KinematicVelocity += WorldSteeringInput * Acceleration * SteeringThrustFraction
-			* SteeringAuthority * DeltaTime;
 		KinematicVelocity = KinematicVelocity.GetClampedToMaxSize(
-			FMath::Max(MaxSpeed, SpeedBeforeSteering));
+			FMath::Max(MaxSpeed, SpeedBeforeAcceleration));
 	}
 	if (bIsDecelerating)
 	{
@@ -1675,6 +1681,7 @@ void ASpaceship::ApplyRotationInput(float DeltaTime)
 		FMath::Clamp(static_cast<double>(PitchInput) / SafeInputLimit, -1.0, 1.0) * RotationSpeed,
 		FMath::Clamp(static_cast<double>(YawInput) / SafeInputLimit, -1.0, 1.0) * RotationSpeed,
 		FMath::Clamp(static_cast<double>(RollInput) / SafeInputLimit, -1.0, 1.0) * RotationSpeed);
+	const bool bHasRotationInput = !DesiredAngularVelocityDegrees.IsNearlyZero(0.001);
 
 	const bool bUsePhysicalRotation = OnboardComputer
 		&& OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::Impulse
@@ -1690,6 +1697,11 @@ void ASpaceship::ApplyRotationInput(float DeltaTime)
 			FMath::RadiansToDegrees(FVector::DotProduct(WorldAngularVelocityRadians, ShipRight)),
 			FMath::RadiansToDegrees(FVector::DotProduct(WorldAngularVelocityRadians, ShipUp)),
 			FMath::RadiansToDegrees(FVector::DotProduct(WorldAngularVelocityRadians, ShipForward)));
+		if (!bHasRotationInput)
+		{
+			CurrentAngularVelocityDegrees = MeasuredAngularVelocityDegrees;
+			return;
+		}
 		const FVector CommandedAngularVelocityDegrees = FMath::VInterpConstantTo(
 			MeasuredAngularVelocityDegrees,
 			DesiredAngularVelocityDegrees,
@@ -1710,11 +1722,14 @@ void ASpaceship::ApplyRotationInput(float DeltaTime)
 		return;
 	}
 
-	CurrentAngularVelocityDegrees = FMath::VInterpConstantTo(
-		CurrentAngularVelocityDegrees,
-		DesiredAngularVelocityDegrees,
-		DeltaTime,
-		ActiveClassPreset.AngularAcceleration * TransitionAlpha);
+	CurrentAngularVelocityDegrees = bHasRotationInput
+		? FMath::VInterpConstantTo(
+			CurrentAngularVelocityDegrees,
+			DesiredAngularVelocityDegrees,
+			DeltaTime,
+			ActiveClassPreset.AngularAcceleration * TransitionAlpha)
+		: FMath::VInterpTo(
+			CurrentAngularVelocityDegrees, FVector::ZeroVector, DeltaTime, PassiveAngularDamping);
 
 	const double PitchRadians = FMath::DegreesToRadians(CurrentAngularVelocityDegrees.X * DeltaTime);
 	const double YawRadians = FMath::DegreesToRadians(CurrentAngularVelocityDegrees.Y * DeltaTime);
@@ -1854,7 +1869,7 @@ void ASpaceship::ApplyEngineState()
 	{
 		SpaceshipHull->SetSimulatePhysics(true);
 		SpaceshipHull->SetLinearDamping(GetEnvironmentDrag());
-		SpaceshipHull->SetAngularDamping(ActiveClassPreset.AngularDamping);
+		SpaceshipHull->SetAngularDamping(PassiveAngularDamping);
 		if (!KinematicVelocity.IsNearlyZero())
 		{
 			SpaceshipHull->SetPhysicsLinearVelocity(KinematicVelocity);
@@ -2100,6 +2115,59 @@ FVector ASpaceship::GetNavigationContactWorldAnchor(int32 ContactIndex) const
 	return VisualCenter;
 }
 
+const APlanet* ASpaceship::GetNavigationFocusPlanet() const
+{
+	auto ResolvePlanetFamily = [](const AActor* Actor) -> const APlanet*
+	{
+		if (const APlanet* Planet = Cast<APlanet>(Actor))
+		{
+			return Planet;
+		}
+		if (const AMoon* Moon = Cast<AMoon>(Actor))
+		{
+			return Moon->ParentPlanet;
+		}
+		return nullptr;
+	};
+
+	if (const APlanet* ActivePlanet = ResolvePlanetFamily(ActiveGravitySource.Get()))
+	{
+		return ActivePlanet;
+	}
+	if (ShipNavigation)
+	{
+		if (const FShipNavigationContact* SelectedContact = ShipNavigation->GetSelectedContact())
+		{
+			if (const APlanet* SelectedPlanet = ResolvePlanetFamily(SelectedContact->Actor.Get()))
+			{
+				return SelectedPlanet;
+			}
+		}
+		for (const FShipNavigationContact& Contact : ShipNavigation->GetContacts())
+		{
+			if (const APlanet* Planet = Cast<APlanet>(Contact.Actor.Get()))
+			{
+				return Planet;
+			}
+		}
+	}
+	return nullptr;
+}
+
+bool ASpaceship::IsInsideNavigationFocusGravity(const APlanet* FocusPlanet) const
+{
+	if (!FocusPlanet || CurrentFlightEnvironment == EShipFlightEnvironment::DeepSpace)
+	{
+		return false;
+	}
+	if (ActiveGravitySource.Get() == FocusPlanet)
+	{
+		return true;
+	}
+	const AMoon* ActiveMoon = Cast<AMoon>(ActiveGravitySource.Get());
+	return ActiveMoon && ActiveMoon->ParentPlanet == FocusPlanet;
+}
+
 bool ASpaceship::ShouldShowNavigationMarker(int32 ContactIndex) const
 {
 	if (!ShipNavigation || ContactIndex < 0 || ContactIndex >= MaximumNavigationMarkers
@@ -2113,35 +2181,42 @@ bool ASpaceship::ShouldShowNavigationMarker(int32 ContactIndex) const
 		return true;
 	}
 
-	const int32 NonSelectedBudget = APSNavigationHud::MaximumVisibleMarkers - (SelectedIndex != INDEX_NONE ? 1 : 0);
-	int32 VisibleCount = 0;
-	int32 PlanetCount = 0;
-	int32 MoonCount = 0;
-	for (int32 Index = 0; Index <= ContactIndex; ++Index)
+	const APlanet* FocusPlanet = GetNavigationFocusPlanet();
+	const FShipNavigationContact* Contact = ShipNavigation->GetContact(ContactIndex);
+	if (const APlanet* Planet = Cast<APlanet>(Contact->Actor.Get()))
 	{
-		if (Index == SelectedIndex) continue;
-		const FShipNavigationContact* Contact = ShipNavigation->GetContact(Index);
-		if (!Contact) continue;
-
-		bool bAccepted = false;
-		if (Contact->Type == EShipNavigationContactType::Planet
-			&& PlanetCount < APSNavigationHud::MaximumVisiblePlanets)
+		if (Planet == FocusPlanet)
 		{
-			++PlanetCount;
-			bAccepted = true;
+			return true;
 		}
-		else if (Contact->Type == EShipNavigationContactType::Moon
-			&& MoonCount < APSNavigationHud::MaximumVisibleMoons)
+		int32 PlanetRank = 0;
+		for (int32 Index = 0; Index < ContactIndex; ++Index)
 		{
-			++MoonCount;
-			bAccepted = true;
+			const FShipNavigationContact* Previous = ShipNavigation->GetContact(Index);
+			if (Previous && Previous->Type == EShipNavigationContactType::Planet)
+			{
+				++PlanetRank;
+			}
 		}
-
-		if (bAccepted && VisibleCount < NonSelectedBudget)
+		return PlanetRank < APSNavigationHud::MaximumVisiblePlanets;
+	}
+	if (const AMoon* Moon = Cast<AMoon>(Contact->Actor.Get()))
+	{
+		if (!FocusPlanet || Moon->ParentPlanet != FocusPlanet)
 		{
-			++VisibleCount;
-			if (Index == ContactIndex) return true;
+			return false;
 		}
+		int32 MoonRank = 0;
+		for (int32 Index = 0; Index < ContactIndex; ++Index)
+		{
+			const FShipNavigationContact* Previous = ShipNavigation->GetContact(Index);
+			const AMoon* PreviousMoon = Previous ? Cast<AMoon>(Previous->Actor.Get()) : nullptr;
+			if (PreviousMoon && PreviousMoon->ParentPlanet == FocusPlanet)
+			{
+				++MoonRank;
+			}
+		}
+		return MoonRank < APSNavigationHud::MaximumVisibleMoonsInFocusFamily;
 	}
 	return false;
 }
@@ -2197,13 +2272,50 @@ bool ASpaceship::GetNavigationMarkerLayout(int32 ContactIndex, FVector2D& OutAnc
 	}
 
 	const FShipNavigationContact* Contact = ShipNavigation->GetContact(ContactIndex);
-	const bool bPlaceOnLeft = Contact && Contact->Type == EShipNavigationContactType::Planet;
-	const int32 LaneCount = Contact && Contact->Type == EShipNavigationContactType::Moon ? 3 : 5;
-	const uint32 StableHash = Contact ? GetTypeHash(Contact->StableId) : static_cast<uint32>(ContactIndex);
-	const int32 StableLane = static_cast<int32>(StableHash % LaneCount) - LaneCount / 2;
-	FVector2D LabelPosition(
-		Anchor.X + (bPlaceOnLeft ? -LabelSize.X - 18.0f : 18.0f),
-		Anchor.Y - LabelSize.Y * 0.5f + StableLane * (LabelSize.Y + 6.0f));
+	const APlanet* FocusPlanet = GetNavigationFocusPlanet();
+	const AMoon* Moon = Contact ? Cast<AMoon>(Contact->Actor.Get()) : nullptr;
+	FVector2D LabelPosition(Anchor.X - LabelSize.X * 0.5f, Anchor.Y - LabelSize.Y - 18.0f);
+
+	// Outside the focused planet's gravity well its moons read as one compact
+	// hierarchy beside the planet. Once captured by that family, every moon goes
+	// back to its own world anchor for local navigation.
+	if (Moon && FocusPlanet && Moon->ParentPlanet == FocusPlanet
+		&& !IsInsideNavigationFocusGravity(FocusPlanet))
+	{
+		FVector2D ParentAnchor;
+		bool bParentProjected = false;
+		for (int32 Index = 0; Index < ShipNavigation->GetContacts().Num(); ++Index)
+		{
+			const FShipNavigationContact* ParentContact = ShipNavigation->GetContact(Index);
+			if (ParentContact && ParentContact->Actor.Get() == FocusPlanet)
+			{
+				bParentProjected = ProjectNavigationContactToScreen(Index, ParentAnchor);
+				break;
+			}
+		}
+		if (bParentProjected)
+		{
+			int32 MoonRank = 0;
+			int32 MoonCount = 0;
+			for (int32 Index = 0; Index < ShipNavigation->GetContacts().Num(); ++Index)
+			{
+				const FShipNavigationContact* SiblingContact = ShipNavigation->GetContact(Index);
+				const AMoon* SiblingMoon = SiblingContact ? Cast<AMoon>(SiblingContact->Actor.Get()) : nullptr;
+				if (!SiblingMoon || SiblingMoon->ParentPlanet != FocusPlanet) continue;
+				if (Index < ContactIndex) ++MoonRank;
+				++MoonCount;
+			}
+			MoonCount = FMath::Min(MoonCount, APSNavigationHud::MaximumVisibleMoonsInFocusFamily);
+			const float ListHeight = MoonCount * LabelSize.Y
+				+ FMath::Max(0, MoonCount - 1) * APSNavigationHud::MarkerGap;
+			const float ListStartY = FMath::Clamp(
+				ParentAnchor.Y - LabelSize.Y - 18.0f, 10.0, ViewportSize.Y - ListHeight - 10.0);
+			const bool bListOnRight = ParentAnchor.X <= ViewportSize.X * 0.62f;
+			LabelPosition.X = ParentAnchor.X + (bListOnRight
+				? LabelSize.X * 0.5f + 14.0f : -LabelSize.X * 1.5f - 14.0f);
+			LabelPosition.Y = ListStartY + MoonRank * (LabelSize.Y + APSNavigationHud::MarkerGap);
+		}
+	}
 	LabelPosition.X = FMath::Clamp(LabelPosition.X, 10.0, ViewportSize.X - LabelSize.X - 10.0);
 	LabelPosition.Y = FMath::Clamp(LabelPosition.Y, 10.0, ViewportSize.Y - LabelSize.Y - 10.0);
 	OutAnchorPosition = Anchor;
@@ -2369,11 +2481,24 @@ int32 ASpaceship::PaintNavigationOverlay(const FGeometry& AllottedGeometry, cons
 			if (!GetNavigationMarkerLayout(ContactIndex, Anchor, Label)) continue;
 			const FLinearColor Color = GetNavigationMarkerColor(ContactIndex);
 			const bool bSelected = ContactIndex == ShipNavigation->GetSelectedContactIndex();
-			const float LabelEdgeX = Anchor.X < Label.X ? Label.X : Label.X + APSNavigationHud::MarkerWidth;
-			const FVector2D LabelEdge(LabelEdgeX, FMath::Clamp(Anchor.Y,
-				Label.Y + 6.0f, Label.Y + APSNavigationHud::MarkerHeight - 6.0f));
-			const FVector2D Bend(FMath::Lerp(Anchor.X, LabelEdge.X, 0.58f), Anchor.Y);
-			DrawScreenLine({Anchor, Bend, LabelEdge}, FLinearColor(Color.R, Color.G, Color.B,
+			const FVector2D LabelCenter = Label + FVector2D(
+				APSNavigationHud::MarkerWidth * 0.5f, APSNavigationHud::MarkerHeight * 0.5f);
+			const FVector2D ToAnchor = Anchor - LabelCenter;
+			FVector2D LabelEdge = LabelCenter;
+			if (FMath::Abs(ToAnchor.X) / APSNavigationHud::MarkerWidth
+				> FMath::Abs(ToAnchor.Y) / APSNavigationHud::MarkerHeight)
+			{
+				LabelEdge.X += FMath::Sign(ToAnchor.X) * APSNavigationHud::MarkerWidth * 0.5f;
+				LabelEdge.Y = FMath::Clamp(Anchor.Y, Label.Y + 5.0f,
+					Label.Y + APSNavigationHud::MarkerHeight - 5.0f);
+			}
+			else
+			{
+				LabelEdge.Y += FMath::Sign(ToAnchor.Y) * APSNavigationHud::MarkerHeight * 0.5f;
+				LabelEdge.X = FMath::Clamp(Anchor.X, Label.X + 7.0f,
+					Label.X + APSNavigationHud::MarkerWidth - 7.0f);
+			}
+			DrawScreenLine({Anchor, LabelEdge}, FLinearColor(Color.R, Color.G, Color.B,
 				bSelected ? 0.82f : 0.42f), bSelected ? 1.15f : 0.65f, LayerId + 2);
 			const float CrossExtent = bSelected ? 4.5f : 2.75f;
 			DrawScreenLine({Anchor + FVector2D(-CrossExtent, 0.0f), Anchor + FVector2D(CrossExtent, 0.0f)},

@@ -341,9 +341,21 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight|Handling", meta = (ClampMin = "0.1", ClampMax = "2.0"))
 	float SteeringRateScale{0.8f};
 
-	/** Lateral thruster authority that bends the velocity vector while mouse-steering. */
+	/** Legacy RCS tuning retained for asset compatibility; mouse steering now applies angular torque only. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight|Handling", meta = (ClampMin = "0.0", ClampMax = "2.0"))
 	float SteeringThrustFraction{0.65f};
+
+	/** Minimum time in which strategic propulsion may substantially change linear momentum. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight|Handling", meta = (ClampMin = "0.1", ClampMax = "5.0"))
+	float HighSpeedVelocityResponseTime{0.8f};
+
+	/** Fraction of the class turn rate available for bending a high-speed velocity vector. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight|Handling", meta = (ClampMin = "0.05", ClampMax = "1.0"))
+	float HighSpeedHeadingResponseScale{0.35f};
+
+	/** Small passive rotational drag; counter-steering remains the fast way to stop a turn. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight|Handling", meta = (ClampMin = "0.0", ClampMax = "2.0"))
+	float PassiveAngularDamping{0.22f};
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight|Handling", meta = (ClampMin = "0.0"))
 	float BrakingResponseSpeed{1.5f};
@@ -537,6 +549,8 @@ private:
 	bool IsNearGravitySurface(const FVector& GravityDirection) const;
 	void ApplyFlightInput(float DeltaTime);
 	void ApplyRotationInput(float DeltaTime);
+	FVector GetControlledFlightAcceleration(const FVector& WorldInput, const FVector& CurrentVelocity,
+		double RequestedAcceleration, double MaximumSpeed) const;
 	float GetEngineTransitionAuthority() const;
 	void ApplyEngineState();
 	void RequestEngineModeForFlightMode(bool bImmediate);
@@ -550,6 +564,8 @@ private:
 	FText GetNavigationPanelText() const;
 	FText GetNavigationMarkerText(int32 ContactIndex) const;
 	FVector GetNavigationContactWorldAnchor(int32 ContactIndex) const;
+	const APlanet* GetNavigationFocusPlanet() const;
+	bool IsInsideNavigationFocusGravity(const APlanet* FocusPlanet) const;
 	bool ShouldShowNavigationMarker(int32 ContactIndex) const;
 	bool ProjectWorldLocationToNavigationScreen(const FVector& WorldLocation, FVector2D& OutScreenPosition) const;
 	bool ProjectNavigationContactToScreen(int32 ContactIndex, FVector2D& OutScreenPosition) const;
