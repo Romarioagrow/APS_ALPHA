@@ -11,6 +11,7 @@
 #include "APS_ALPHA/Generation/AstroGenerator.h"
 #include "APS_ALPHA/Pawns/Characters/GravityCharacterPawn.h"
 #include "APS_ALPHA/Pawns/Characters/GravityDetectorComponent.h"
+#include "APS_ALPHA/Pawns/Spaceships/ShipNavigationComponent.h"
 #include "Camera/CameraComponent.h"
 #include "Components/BoxComponent.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -20,14 +21,18 @@
 #include "Engine/SkeletalMesh.h"
 #include "Engine/StaticMesh.h"
 #include "GameFramework/SpringArmComponent.h"
+#include "GameFramework/PlayerController.h"
+#include "InputCoreTypes.h"
 #include "Kismet/GameplayStatics.h"
 #include "Styling/CoreStyle.h"
 #include "Widgets/Images/SImage.h"
 #include "Widgets/Layout/SBackgroundBlur.h"
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/Layout/SBox.h"
+#include "Widgets/Layout/SConstraintCanvas.h"
 #include "Widgets/SBoxPanel.h"
 #include "Widgets/SOverlay.h"
+#include "Widgets/SViewport.h"
 #include "Widgets/Text/STextBlock.h"
 
 namespace APSAutomaticShipInteraction
@@ -172,6 +177,8 @@ ASpaceship::ASpaceship()
 	FlightGravityDetector->bAutomaticDetection = false;
 	FlightGravityDetector->PrimaryComponentTick.bStartWithTickEnabled = false;
 
+	ShipNavigation = CreateDefaultSubobject<UShipNavigationComponent>(TEXT("ShipNavigation"));
+
 	InteractionBoundsComponent = CreateDefaultSubobject<UBoxComponent>(TEXT("InteractionBounds"));
 	InteractionBoundsComponent->SetupAttachment(SpaceshipHull);
 	InteractionBoundsComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
@@ -262,26 +269,14 @@ void ASpaceship::BeginPlay()
 	{
 		OnboardComputer->SpaceshipHull = SpaceshipHull;
 		OnboardComputer->OffsetSystem = OffsetSystem;
+		SelectedEngineMode = EEngineMode::Impulse;
 		OnboardComputer->FlightSystem.CurrentFlightMode = ResolveLegacyFlightModeForDriveMode(SelectedDriveMode);
 		OnboardComputer->ComputeFlightParams();
 		RequestEngineModeForFlightMode(true);
 	}
 	ApplyEngineState();
 
-	// UpdateNavigatableActors();	
-	TArray<AActor*> WorldActors;
-	UGameplayStatics::GetAllActorsOfClass(GetWorld(), AWorldActor::StaticClass(), WorldActors);
-	for (AActor* Actor : WorldActors)
-	{
-		if (Actor->GetClass()->ImplementsInterface(UNavigatableBody::StaticClass()))
-		{
-			AWorldActor* WorldNavigatableActor = Cast<AWorldActor>(Actor);
-			WorldNavigatableActors.Add(WorldNavigatableActor);
-			GEngine->AddOnScreenDebugMessage(-1, 1.f, FColor::Yellow,
-			                                 FString::Printf(
-				                                 TEXT("WorldActor: %s"), *WorldNavigatableActor->GetName()));
-		}
-	}
+	// Parked fleet actors do not scan the universe. The possessed ship's navigation component owns that work.
 	SetActorTickEnabled(IsValid(Pilot) || bEngineRunning);
 
 	//ComputeProximity();
@@ -501,6 +496,10 @@ void ASpaceship::Tick(float DeltaTime)
 	}
 
 	UpdateFlightEnvironment(DeltaTime);
+	if (ShipNavigation && IsValid(Pilot) && (bNavigationMarkersVisible || bNavigationPanelVisible))
+	{
+		ShipNavigation->RefreshContacts(GetActorLocation());
+	}
 
 	const double TargetBoost = bEngineRunning && bIsAccelerating ? ActiveClassPreset.MaximumBoost : 1.0;
 	const double BoostResponse = bIsAccelerating
@@ -1114,16 +1113,8 @@ FVector ASpaceship::GetShipRightVector() const
 
 EShipDriveMode ASpaceship::GetMaximumDriveModeForClass() const
 {
-	if (ActiveClassPreset.bSupportsOffset)
-	{
-		return EShipDriveMode::Interstellar;
-	}
-	if (ActiveClassPreset.bSupportsSpaceWrap)
-	{
-		return EShipDriveMode::Stellar;
-	}
-	// Even the smallest spaceworthy hull can travel between planets on impulse power.
-	return EShipDriveMode::Interplanetary;
+	// All spacecraft keep the complete six-step power range. Engine availability is a separate axis.
+	return EShipDriveMode::Interstellar;
 }
 
 EShipDriveMode ASpaceship::GetMaximumDriveModeForEnvironment() const
@@ -1143,10 +1134,10 @@ double ASpaceship::GetDriveSpeedScale(EShipDriveMode DriveMode)
 	switch (DriveMode)
 	{
 	case EShipDriveMode::Local: return 1.0;
-	case EShipDriveMode::Orbital: return 64.0;
-	case EShipDriveMode::Interplanetary: return 512.0;
-	case EShipDriveMode::Stellar: return 4096.0;
-	case EShipDriveMode::Interstellar: return 32768.0;
+	case EShipDriveMode::Orbital: return 32.0;
+	case EShipDriveMode::Interplanetary: return 256.0;
+	case EShipDriveMode::Stellar: return 2048.0;
+	case EShipDriveMode::Interstellar: return 8192.0;
 	case EShipDriveMode::Landing:
 	default: return 0.05;
 	}
@@ -1157,10 +1148,10 @@ double ASpaceship::GetDriveAccelerationScale(EShipDriveMode DriveMode)
 	switch (DriveMode)
 	{
 	case EShipDriveMode::Local: return 4.0;
-	case EShipDriveMode::Orbital: return 256.0;
-	case EShipDriveMode::Interplanetary: return 2048.0;
-	case EShipDriveMode::Stellar: return 8192.0;
-	case EShipDriveMode::Interstellar: return 32768.0;
+	case EShipDriveMode::Orbital: return 192.0;
+	case EShipDriveMode::Interplanetary: return 1024.0;
+	case EShipDriveMode::Stellar: return 4096.0;
+	case EShipDriveMode::Interstellar: return 16384.0;
 	case EShipDriveMode::Landing:
 	default: return 0.75;
 	}
@@ -1171,26 +1162,51 @@ double ASpaceship::GetMinimumDriveAcceleration(EShipDriveMode DriveMode)
 	switch (DriveMode)
 	{
 	case EShipDriveMode::Orbital: return 500000.0;
-	case EShipDriveMode::Interplanetary: return 2000000.0;
-	case EShipDriveMode::Stellar: return 10000000.0;
-	case EShipDriveMode::Interstellar: return 50000000.0;
+	case EShipDriveMode::Interplanetary: return 1500000.0;
+	case EShipDriveMode::Stellar: return 6000000.0;
+	case EShipDriveMode::Interstellar: return 24000000.0;
 	case EShipDriveMode::Landing:
 	case EShipDriveMode::Local:
 	default: return 0.0;
 	}
 }
 
+bool ASpaceship::CanUseEngineMode(EEngineMode EngineMode) const
+{
+	switch (EngineMode)
+	{
+	case EEngineMode::Impulse: return true;
+	case EEngineMode::SpaceWrap: return ActiveClassPreset.bSupportsSpaceWrap;
+	case EEngineMode::Offset: return ActiveClassPreset.bSupportsOffset;
+	default: return false;
+	}
+}
+
+double ASpaceship::GetEngineSpeedMultiplier(EEngineMode EngineMode)
+{
+	switch (EngineMode)
+	{
+	case EEngineMode::SpaceWrap: return 64.0;
+	case EEngineMode::Offset: return 4096.0;
+	case EEngineMode::Impulse:
+	default: return 1.0;
+	}
+}
+
+double ASpaceship::GetEngineAccelerationMultiplier(EEngineMode EngineMode)
+{
+	switch (EngineMode)
+	{
+	case EEngineMode::SpaceWrap: return 24.0;
+	case EEngineMode::Offset: return 256.0;
+	case EEngineMode::Impulse:
+	default: return 1.0;
+	}
+}
+
 EEngineMode ASpaceship::ResolveEngineModeForDriveMode(EShipDriveMode DriveMode) const
 {
-	if (DriveMode == EShipDriveMode::Interstellar && ActiveClassPreset.bSupportsOffset)
-	{
-		return EEngineMode::Offset;
-	}
-	if (DriveMode == EShipDriveMode::Stellar && ActiveClassPreset.bSupportsSpaceWrap)
-	{
-		return EEngineMode::SpaceWrap;
-	}
-	return EEngineMode::Impulse;
+	return SelectedEngineMode;
 }
 
 EFlightMode ASpaceship::ResolveLegacyFlightModeForDriveMode(EShipDriveMode DriveMode) const
@@ -1217,8 +1233,19 @@ void ASpaceship::SetDriveMode(EShipDriveMode NewDriveMode, bool bImmediate)
 	SelectedDriveMode = NewDriveMode;
 	OnboardComputer->FlightSystem.CurrentFlightMode = ResolveLegacyFlightModeForDriveMode(NewDriveMode);
 	OnboardComputer->ComputeFlightParams();
-	RequestEngineModeForFlightMode(bImmediate);
+	// Power changes stay within the selected engine and therefore never masquerade as an engine transition.
+	RequestEngineModeForFlightMode(true);
 	CheckFlightModeChange();
+}
+
+void ASpaceship::SetEngineMode(EEngineMode NewEngineMode, bool bImmediate)
+{
+	if (!OnboardComputer || !CanUseEngineMode(NewEngineMode) || SelectedEngineMode == NewEngineMode)
+	{
+		return;
+	}
+	SelectedEngineMode = NewEngineMode;
+	RequestEngineModeForFlightMode(bImmediate);
 }
 
 void ASpaceship::EnforceDriveModeForEnvironment()
@@ -1393,19 +1420,20 @@ void ASpaceship::UpdateAdaptiveFlightCamera(float DeltaTime)
 		return;
 	}
 	const double FlightScale = OnboardComputer
-		? GetDriveSpeedScale(SelectedDriveMode) : 1.0;
+		? GetDriveSpeedScale(SelectedDriveMode) * GetEngineSpeedMultiplier(SelectedEngineMode) : 1.0;
 	const double ReferenceSpeed = FMath::Max(
 		ActiveClassPreset.MaxImpulseSpeed * FlightScale * FMath::Max(CurrentBoostMultiplier, 1.0), 1.0);
 	const double Speed = SpaceshipHull && SpaceshipHull->IsSimulatingPhysics()
 		? SpaceshipHull->GetPhysicsLinearVelocity().Size() : KinematicVelocity.Size();
 	const float SpeedAlpha = FMath::Clamp(static_cast<float>(Speed / ReferenceSpeed), 0.0f, 1.0f);
 	const float CameraAlpha = FMath::Sqrt(SpeedAlpha);
-	const float TargetArmLength = BaseCameraArmLength * FMath::Lerp(1.0f, 1.55f, CameraAlpha);
+	// FOV and lag carry most of the speed sensation; distance stays readable around large hulls.
+	const float TargetArmLength = BaseCameraArmLength * FMath::Lerp(1.0f, 1.38f, CameraAlpha);
 	SpringArmComponent->TargetArmLength = FMath::FInterpTo(
 		SpringArmComponent->TargetArmLength, TargetArmLength, DeltaTime, 3.5f);
 	SpringArmComponent->CameraLagSpeed = FMath::Lerp(6.0f, 20.0f, CameraAlpha);
 	SpringArmComponent->CameraRotationLagSpeed = FMath::Lerp(8.0f, 22.0f, CameraAlpha);
-	SpringArmComponent->CameraLagMaxDistance = BaseCameraArmLength * FMath::Lerp(0.85f, 1.8f, CameraAlpha);
+	SpringArmComponent->CameraLagMaxDistance = BaseCameraArmLength * FMath::Lerp(0.75f, 1.4f, CameraAlpha);
 	if (CameraComponent)
 	{
 		const float MaximumDriveIndex = static_cast<float>(static_cast<uint8>(EShipDriveMode::Interstellar));
@@ -1474,11 +1502,12 @@ void ASpaceship::ApplyFlightInput(float DeltaTime)
 		+ GetShipRightVector() * ClampedInput.Y
 		+ GetShipUpVector() * ClampedInput.Z;
 	const EEngineMode EngineMode = OnboardComputer->EngineSystem.CurrentEngineMode;
-	const double SpeedScale = GetDriveSpeedScale(SelectedDriveMode);
-	const double AccelerationScale = GetDriveAccelerationScale(SelectedDriveMode);
+	const double SpeedScale = GetDriveSpeedScale(SelectedDriveMode) * GetEngineSpeedMultiplier(EngineMode);
+	const double AccelerationScale = GetDriveAccelerationScale(SelectedDriveMode)
+		* GetEngineAccelerationMultiplier(EngineMode);
 	const double DriveAcceleration = FMath::Max(
 		ActiveClassPreset.ImpulseAcceleration * AccelerationScale,
-		GetMinimumDriveAcceleration(SelectedDriveMode));
+		GetMinimumDriveAcceleration(SelectedDriveMode) * GetEngineAccelerationMultiplier(EngineMode));
 	const double TransitionAlpha = bEngineModeTransitionActive
 		? FMath::Clamp(FMath::Abs(EngineModeTransitionElapsed / EngineModeTransitionDuration - 0.5f) * 2.0f, 0.12f, 1.0f)
 		: 1.0;
@@ -1644,6 +1673,13 @@ void ASpaceship::RequestEngineModeForFlightMode(bool bImmediate)
 		return;
 	}
 	PendingEngineMode = ResolveEngineModeForDriveMode(SelectedDriveMode);
+	if (OnboardComputer->EngineSystem.CurrentEngineMode == PendingEngineMode)
+	{
+		bEngineModeTransitionActive = false;
+		bEngineModeSwitchedAtMidpoint = false;
+		ApplyEngineState();
+		return;
+	}
 	if (bImmediate || !bEngineRunning)
 	{
 		bEngineModeTransitionActive = false;
@@ -1745,11 +1781,29 @@ FString ASpaceship::GetDriveModeName() const
 	{
 		return TEXT("EXIT ATMOSPHERE");
 	}
-	if (const UEnum* Enum = StaticEnum<EShipDriveMode>())
+
+	const int32 PowerIndex = FMath::Clamp(static_cast<int32>(SelectedDriveMode), 0, 5);
+	static const TCHAR* ImpulseLabels[] = {
+		TEXT("LANDING"), TEXT("LOCAL"), TEXT("ORBITAL"), TEXT("PLANETARY TRANSFER"),
+		TEXT("INTERPLANETARY"), TEXT("RAPID INTERPLANETARY")
+	};
+	static const TCHAR* SpaceWrapLabels[] = {
+		TEXT("PLANETARY ENTRY"), TEXT("LOCAL WARP"), TEXT("SYSTEM TRANSFER"), TEXT("SYSTEM CRUISE"),
+		TEXT("STELLAR APPROACH"), TEXT("STELLAR TRANSFER")
+	};
+	static const TCHAR* OffsetLabels[] = {
+		TEXT("LOCAL OFFSET"), TEXT("PLANETARY OFFSET"), TEXT("SYSTEM OFFSET"), TEXT("STELLAR OFFSET"),
+		TEXT("INTERSTELLAR OFFSET"), TEXT("DEEP OFFSET")
+	};
+	if (SelectedEngineMode == EEngineMode::SpaceWrap)
 	{
-		return Enum->GetDisplayNameTextByValue(static_cast<int64>(SelectedDriveMode)).ToString().ToUpper();
+		return SpaceWrapLabels[PowerIndex];
 	}
-	return TEXT("LANDING");
+	if (SelectedEngineMode == EEngineMode::Offset)
+	{
+		return OffsetLabels[PowerIndex];
+	}
+	return ImpulseLabels[PowerIndex];
 }
 
 FString ASpaceship::GetFlightEnvironmentName() const
@@ -1781,8 +1835,22 @@ FString ASpaceship::GetGravitySourceName() const
 FString ASpaceship::GetEngineModeName() const
 {
 	if (!bEngineRunning) return TEXT("OFF / PARKED");
-	if (bEngineModeTransitionActive) return TEXT("TRANSITION");
-	return OnboardComputer ? OnboardComputer->GetEngineTypeAsString().Replace(TEXT("EEngineMode::"), TEXT("")) : TEXT("Unknown");
+	if (bEngineModeTransitionActive)
+	{
+		const UEnum* EngineEnum = StaticEnum<EEngineMode>();
+		const FString PendingName = EngineEnum
+			? EngineEnum->GetDisplayNameTextByValue(static_cast<int64>(PendingEngineMode)).ToString().ToUpper()
+			: TEXT("ENGINE");
+		return FString::Printf(TEXT("TRANSITION -> %s"), *PendingName);
+	}
+	if (!OnboardComputer) return TEXT("UNKNOWN");
+	switch (OnboardComputer->EngineSystem.CurrentEngineMode)
+	{
+	case EEngineMode::Impulse: return TEXT("IMPULSE");
+	case EEngineMode::SpaceWrap: return TEXT("SPACE WRAP");
+	case EEngineMode::Offset: return TEXT("OFFSET");
+	default: return TEXT("UNKNOWN");
+	}
 }
 
 double ASpaceship::GetShipSpeedMetersPerSecond() const
@@ -1800,16 +1868,137 @@ FText ASpaceship::GetShipStatusText() const
 	const FString GravityAssist = !ActiveGravitySource
 		? TEXT("NONE")
 		: (bEngineRunning && bFlightAssistCompensatesGravity ? TEXT("COMPENSATED") : TEXT("ACTIVE"));
+	const double SpeedMetersPerSecond = GetShipSpeedMetersPerSecond();
+	FString SpeedText;
+	if (SpeedMetersPerSecond < 1000.0) SpeedText = FString::Printf(TEXT("%.1f m/s"), SpeedMetersPerSecond);
+	else if (SpeedMetersPerSecond < 1000000.0) SpeedText = FString::Printf(TEXT("%.2f km/s"), SpeedMetersPerSecond / 1000.0);
+	else if (SpeedMetersPerSecond < 299792458.0) SpeedText = FString::Printf(TEXT("%.2f Mm/s"), SpeedMetersPerSecond / 1000000.0);
+	else SpeedText = FString::Printf(TEXT("%.3f c"), SpeedMetersPerSecond / 299792458.0);
 	return FText::FromString(FString::Printf(
-		TEXT("SHIP %s   |   ENGINE %s\nMODE %d/%d: %s   |   ENVIRONMENT: %s\nGRAVITY: %s (%.2f m/s2, %s)   |   %.1f m/s   |   BOOST x%.2f"),
+		TEXT("SHIP %s   |   ENGINE %s\nPOWER %d/%d: %s   |   ENVIRONMENT: %s\nGRAVITY: %s (%.2f m/s2, %s)   |   %s   |   BOOST x%.2f"),
 		*GetSizeClassName(), *GetEngineModeName(), ModeNumber, MaximumModeNumber, *GetDriveModeName(),
 		*GetFlightEnvironmentName(), *GetGravitySourceName(), ActiveGravityAcceleration / 100.0, *GravityAssist,
-		GetShipSpeedMetersPerSecond(), CurrentBoostMultiplier));
+		*SpeedText, CurrentBoostMultiplier));
 }
 
 FText ASpaceship::GetShipHintText() const
 {
-	return FText::FromString(TEXT("G ENGINE   F EXIT   |   WASD THRUST   SPACE/ALT VERTICAL   Q/E ROLL   MOUSE STEER\nLEFT SHIFT BOOST   LEFT CTRL BRAKE   |   RIGHT SHIFT NEXT MODE   RIGHT CTRL PREVIOUS MODE"));
+	const TCHAR* SpaceWrapHint = CanUseEngineMode(EEngineMode::SpaceWrap) ? TEXT("2 SPACE WRAP") : TEXT("2 SPACE WRAP [N/A]");
+	const TCHAR* OffsetHint = CanUseEngineMode(EEngineMode::Offset) ? TEXT("3 OFFSET") : TEXT("3 OFFSET [N/A]");
+	return FText::FromString(FString::Printf(
+		TEXT("1 IMPULSE   %s   %s   |   G POWER   F EXIT   |   WASD / SPACE / ALT THRUST\nRIGHT SHIFT/CTRL POWER STEP   LEFT SHIFT BOOST   LEFT CTRL BRAKE   |   N MARKERS   M NAV LIST   TAB TARGET"),
+		SpaceWrapHint, OffsetHint));
+}
+
+FText ASpaceship::GetNavigationPanelText() const
+{
+	if (!ShipNavigation)
+	{
+		return FText::FromString(TEXT("NAVIGATION OFFLINE"));
+	}
+
+	FString Text = FString::Printf(TEXT("NAVIGATION / %s\nCONTACTS %d"),
+		*GetFlightEnvironmentName(), ShipNavigation->GetDiscoveredContactCount());
+	if (const FShipNavigationContact* Selected = ShipNavigation->GetSelectedContact())
+	{
+		const double SpeedCmPerSecond = GetShipSpeedMetersPerSecond() * 100.0;
+		FString Eta = TEXT("--");
+		if (SpeedCmPerSecond > 1.0)
+		{
+			const double Seconds = Selected->DistanceCentimeters / SpeedCmPerSecond;
+			if (Seconds < 120.0) Eta = FString::Printf(TEXT("%.0f s"), Seconds);
+			else if (Seconds < 7200.0) Eta = FString::Printf(TEXT("%.1f min"), Seconds / 60.0);
+			else if (Seconds < 172800.0) Eta = FString::Printf(TEXT("%.1f h"), Seconds / 3600.0);
+			else Eta = FString::Printf(TEXT("%.1f d"), Seconds / 86400.0);
+		}
+		Text += FString::Printf(TEXT("\n\nTARGET  %s\n%s / %s\nDISTANCE  %s   ETA  %s"),
+			*Selected->DisplayName, *Selected->TypeLabel, *Selected->Detail,
+			*UShipNavigationComponent::FormatDistance(Selected->DistanceCentimeters), *Eta);
+
+		if (AActor* TargetActor = Selected->Actor.Get())
+		{
+			TArray<FString> Hierarchy;
+			for (AActor* Parent = TargetActor->GetAttachParentActor(); Parent && Hierarchy.Num() < 4;
+				Parent = Parent->GetAttachParentActor())
+			{
+				FString ParentName = Parent->GetName();
+				ParentName.RemoveFromStart(TEXT("BP_"));
+				ParentName.ReplaceInline(TEXT("_"), TEXT(" "));
+				Hierarchy.Insert(ParentName.ToUpper(), 0);
+			}
+			if (!Hierarchy.IsEmpty())
+			{
+				Text += TEXT("\nLOCATION  ") + FString::Join(Hierarchy, TEXT(" > "));
+			}
+		}
+	}
+
+	Text += TEXT("\n\nNEAREST");
+	const TArray<FShipNavigationContact>& Contacts = ShipNavigation->GetContacts();
+	const int32 ListCount = FMath::Min(Contacts.Num(), 7);
+	for (int32 Index = 0; Index < ListCount; ++Index)
+	{
+		const TCHAR* Prefix = Index == ShipNavigation->GetSelectedContactIndex() ? TEXT(">") : TEXT(" ");
+		Text += FString::Printf(TEXT("\n%s %-12s  %-24s  %s"), Prefix, *Contacts[Index].TypeLabel,
+			*Contacts[Index].DisplayName, *UShipNavigationComponent::FormatDistance(Contacts[Index].DistanceCentimeters));
+	}
+	return FText::FromString(Text);
+}
+
+FText ASpaceship::GetNavigationMarkerText(int32 ContactIndex) const
+{
+	const FShipNavigationContact* Contact = ShipNavigation ? ShipNavigation->GetContact(ContactIndex) : nullptr;
+	if (!Contact)
+	{
+		return FText::GetEmpty();
+	}
+	return FText::FromString(FString::Printf(TEXT("%s  %s\n%s"), *Contact->TypeLabel, *Contact->DisplayName,
+		*UShipNavigationComponent::FormatDistance(Contact->DistanceCentimeters)));
+}
+
+bool ASpaceship::ProjectNavigationContactToScreen(int32 ContactIndex, FVector2D& OutScreenPosition) const
+{
+	const FShipNavigationContact* Contact = ShipNavigation ? ShipNavigation->GetContact(ContactIndex) : nullptr;
+	const APlayerController* PlayerController = Cast<APlayerController>(GetController());
+	if (!Contact || !PlayerController || !GEngine || !GEngine->GameViewport
+		|| !PlayerController->ProjectWorldLocationToScreen(Contact->GetWorldLocation(), OutScreenPosition, true))
+	{
+		return false;
+	}
+
+	FVector2D ViewportPixels;
+	GEngine->GameViewport->GetViewportSize(ViewportPixels);
+	const TSharedPtr<SViewport> ViewportWidget = GEngine->GameViewport->GetGameViewportWidget();
+	const FVector2D SlateViewportSize = ViewportWidget.IsValid()
+		? ViewportWidget->GetCachedGeometry().GetLocalSize() : ViewportPixels;
+	if (ViewportPixels.X > UE_SMALL_NUMBER && ViewportPixels.Y > UE_SMALL_NUMBER)
+	{
+		OutScreenPosition.X *= SlateViewportSize.X / ViewportPixels.X;
+		OutScreenPosition.Y *= SlateViewportSize.Y / ViewportPixels.Y;
+	}
+	return OutScreenPosition.X >= 8.0 && OutScreenPosition.Y >= 8.0
+		&& OutScreenPosition.X <= SlateViewportSize.X - 8.0
+		&& OutScreenPosition.Y <= SlateViewportSize.Y - 8.0;
+}
+
+FLinearColor ASpaceship::GetNavigationMarkerColor(int32 ContactIndex) const
+{
+	if (ShipNavigation && ContactIndex == ShipNavigation->GetSelectedContactIndex())
+	{
+		return FLinearColor(1.0f, 0.68f, 0.16f, 1.0f);
+	}
+	const FShipNavigationContact* Contact = ShipNavigation ? ShipNavigation->GetContact(ContactIndex) : nullptr;
+	if (!Contact) return FLinearColor::Transparent;
+	switch (Contact->Type)
+	{
+	case EShipNavigationContactType::Star: return FLinearColor(0.45f, 0.78f, 1.0f, 0.95f);
+	case EShipNavigationContactType::Planet:
+	case EShipNavigationContactType::Moon: return FLinearColor(0.25f, 1.0f, 0.82f, 0.95f);
+	case EShipNavigationContactType::Station:
+	case EShipNavigationContactType::Settlement:
+	case EShipNavigationContactType::Infrastructure: return FLinearColor(1.0f, 0.82f, 0.3f, 0.95f);
+	default: return FLinearColor(0.72f, 0.82f, 0.9f, 0.9f);
+	}
 }
 
 void ASpaceship::CreateShipHud()
@@ -1820,10 +2009,86 @@ void ASpaceship::CreateShipHud()
 		return;
 	}
 
+	if (ShipNavigation)
+	{
+		ShipNavigation->RefreshContacts(GetActorLocation(), true);
+	}
+
 	const TWeakObjectPtr<ASpaceship> WeakThis(this);
-	ShipHudWidget =
-		SNew(SOverlay)
-		+ SOverlay::Slot()
+	TSharedRef<SOverlay> RootOverlay = SNew(SOverlay);
+	TSharedRef<SConstraintCanvas> MarkerCanvas = SNew(SConstraintCanvas);
+	for (int32 MarkerIndex = 0; MarkerIndex < MaximumNavigationMarkers; ++MarkerIndex)
+	{
+		MarkerCanvas->AddSlot()
+		.Offset_Lambda([WeakThis, MarkerIndex]()
+		{
+			FVector2D Position(-10000.0, -10000.0);
+			if (WeakThis.IsValid()) WeakThis->ProjectNavigationContactToScreen(MarkerIndex, Position);
+			return FMargin(Position.X - 115.0, Position.Y - 24.0, 230.0, 48.0);
+		})
+		[
+			SNew(SBorder)
+			.Visibility_Lambda([WeakThis, MarkerIndex]()
+			{
+				FVector2D Position;
+				return WeakThis.IsValid() && WeakThis->bNavigationMarkersVisible
+					&& MarkerIndex < WeakThis->MaximumNavigationMarkers
+					&& WeakThis->ProjectNavigationContactToScreen(MarkerIndex, Position)
+					? EVisibility::HitTestInvisible : EVisibility::Collapsed;
+			})
+			.BorderBackgroundColor_Lambda([WeakThis, MarkerIndex]()
+			{
+				const FLinearColor Accent = WeakThis.IsValid()
+					? WeakThis->GetNavigationMarkerColor(MarkerIndex) : FLinearColor::Transparent;
+				return FSlateColor(FLinearColor(Accent.R * 0.08f, Accent.G * 0.08f, Accent.B * 0.08f, 0.84f));
+			})
+			.Padding(FMargin(9.0f, 5.0f))
+			[
+				SNew(STextBlock)
+				.Text_Lambda([WeakThis, MarkerIndex]()
+				{
+					return WeakThis.IsValid() ? WeakThis->GetNavigationMarkerText(MarkerIndex) : FText::GetEmpty();
+				})
+				.ColorAndOpacity_Lambda([WeakThis, MarkerIndex]()
+				{
+					return FSlateColor(WeakThis.IsValid()
+						? WeakThis->GetNavigationMarkerColor(MarkerIndex) : FLinearColor::Transparent);
+				})
+			]
+		];
+	}
+	RootOverlay->AddSlot()[MarkerCanvas];
+
+	RootOverlay->AddSlot()
+		.HAlign(HAlign_Right)
+		.VAlign(VAlign_Top)
+		.Padding(0.0f, 38.0f, 36.0f, 0.0f)
+		[
+			SNew(SBackgroundBlur)
+			.Visibility_Lambda([WeakThis]()
+			{
+				return WeakThis.IsValid() && WeakThis->bNavigationPanelVisible
+					? EVisibility::HitTestInvisible : EVisibility::Collapsed;
+			})
+			.BlurStrength(10.0f)
+			.BlurRadius(8)
+			.LowQualityFallbackBrush(FCoreStyle::Get().GetBrush("WhiteBrush"))
+			[
+				SNew(SBorder)
+				.BorderBackgroundColor(FLinearColor(0.005f, 0.018f, 0.035f, 0.86f))
+				.Padding(FMargin(18.0f, 13.0f))
+				[
+					SNew(STextBlock)
+					.Text_Lambda([WeakThis]()
+					{
+						return WeakThis.IsValid() ? WeakThis->GetNavigationPanelText() : FText::GetEmpty();
+					})
+					.ColorAndOpacity(FLinearColor(0.72f, 0.9f, 1.0f, 0.96f))
+				]
+			]
+		];
+
+	RootOverlay->AddSlot()
 		.HAlign(HAlign_Left)
 		.VAlign(VAlign_Bottom)
 		.Padding(36.0f, 0.0f, 0.0f, 34.0f)
@@ -1862,6 +2127,7 @@ void ASpaceship::CreateShipHud()
 				]
 			]
 		];
+	ShipHudWidget = RootOverlay;
 	GEngine->GameViewport->AddViewportWidgetContent(ShipHudWidget.ToSharedRef(), 60);
 }
 
@@ -1930,6 +2196,14 @@ void ASpaceship::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent
 	PlayerInputComponent->BindAction("AccelerationBoost", IE_Released, this, &ASpaceship::StopAccelerationBoost);
 	PlayerInputComponent->BindAction("DecelerationBoost", IE_Pressed, this, &ASpaceship::StartDecelerationBoost);
 	PlayerInputComponent->BindAction("DecelerationBoost", IE_Released, this, &ASpaceship::StopDecelerationBoost);
+
+	// Native bindings keep the sprint entirely C++-driven; no InputSettings or Blueprint edits are required.
+	PlayerInputComponent->BindKey(EKeys::One, IE_Pressed, this, &ASpaceship::SelectImpulseEngine);
+	PlayerInputComponent->BindKey(EKeys::Two, IE_Pressed, this, &ASpaceship::SelectSpaceWrapEngine);
+	PlayerInputComponent->BindKey(EKeys::Three, IE_Pressed, this, &ASpaceship::SelectOffsetEngine);
+	PlayerInputComponent->BindKey(EKeys::N, IE_Pressed, this, &ASpaceship::ToggleNavigationMarkers);
+	PlayerInputComponent->BindKey(EKeys::M, IE_Pressed, this, &ASpaceship::ToggleNavigationPanel);
+	PlayerInputComponent->BindKey(EKeys::Tab, IE_Pressed, this, &ASpaceship::SelectNextNavigationTarget);
 }
 
 void ASpaceship::StartAccelerationBoost()
@@ -1985,6 +2259,55 @@ void ASpaceship::DecreaseFlightMode()
 	const uint8 Current = static_cast<uint8>(SelectedDriveMode);
 	if (Current <= static_cast<uint8>(EShipDriveMode::Landing)) return;
 	SetDriveMode(static_cast<EShipDriveMode>(Current - 1), false);
+}
+
+void ASpaceship::SelectImpulseEngine()
+{
+	SetEngineMode(EEngineMode::Impulse, false);
+}
+
+void ASpaceship::SelectSpaceWrapEngine()
+{
+	SetEngineMode(EEngineMode::SpaceWrap, false);
+}
+
+void ASpaceship::SelectOffsetEngine()
+{
+	SetEngineMode(EEngineMode::Offset, false);
+}
+
+void ASpaceship::ToggleNavigationMarkers()
+{
+	bNavigationMarkersVisible = !bNavigationMarkersVisible;
+	if (bNavigationMarkersVisible && ShipNavigation)
+	{
+		ShipNavigation->RefreshContacts(GetActorLocation(), true);
+	}
+}
+
+void ASpaceship::ToggleNavigationPanel()
+{
+	bNavigationPanelVisible = !bNavigationPanelVisible;
+	if (bNavigationPanelVisible && ShipNavigation)
+	{
+		ShipNavigation->RefreshContacts(GetActorLocation(), true);
+	}
+}
+
+void ASpaceship::SelectNextNavigationTarget()
+{
+	if (ShipNavigation)
+	{
+		ShipNavigation->CycleTarget(1);
+	}
+}
+
+void ASpaceship::SelectPreviousNavigationTarget()
+{
+	if (ShipNavigation)
+	{
+		ShipNavigation->CycleTarget(-1);
+	}
 }
 
 

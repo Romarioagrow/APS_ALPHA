@@ -16,6 +16,7 @@ class USkeletalMesh;
 class USkeletalMeshComponent;
 class UPrimitiveComponent;
 class UGravityDetectorComponent;
+class UShipNavigationComponent;
 class AWorldActor;
 class SWidget;
 class UBoxComponent;
@@ -195,6 +196,10 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	UGravityDetectorComponent* FlightGravityDetector;
 
+	/** Native navigation bridge over live actors and generated star instances. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	UShipNavigationComponent* ShipNavigation;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Components")
 	UStaticMeshComponent* SpaceshipHull;
 
@@ -351,6 +356,10 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Flight|Drive")
 	EShipDriveMode SelectedDriveMode{EShipDriveMode::Landing};
 
+	/** Propulsion principle selected independently with keys 1/2/3. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Flight|Drive")
+	EEngineMode SelectedEngineMode{EEngineMode::Impulse};
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Flight|Environment")
 	EShipFlightEnvironment CurrentFlightEnvironment{EShipFlightEnvironment::DeepSpace};
 
@@ -423,6 +432,15 @@ public:
 	static double GetMinimumDriveAcceleration(EShipDriveMode DriveMode);
 
 	UFUNCTION(BlueprintPure, Category = "Ship|Flight")
+	bool CanUseEngineMode(EEngineMode EngineMode) const;
+
+	UFUNCTION(BlueprintPure, Category = "Ship|Flight")
+	static double GetEngineSpeedMultiplier(EEngineMode EngineMode);
+
+	UFUNCTION(BlueprintPure, Category = "Ship|Flight")
+	static double GetEngineAccelerationMultiplier(EEngineMode EngineMode);
+
+	UFUNCTION(BlueprintPure, Category = "Ship|Flight")
 	FVector GetCurrentAngularVelocityDegrees() const { return CurrentAngularVelocityDegrees; }
 
 	UFUNCTION(BlueprintPure, Category = "Ship|Flight")
@@ -478,6 +496,14 @@ public:
 
 	void DecreaseFlightMode();
 
+	void SelectImpulseEngine();
+	void SelectSpaceWrapEngine();
+	void SelectOffsetEngine();
+	void ToggleNavigationMarkers();
+	void ToggleNavigationPanel();
+	void SelectNextNavigationTarget();
+	void SelectPreviousNavigationTarget();
+
 protected:
 	virtual USceneComponent* GetPilotSeatComponent() const override;
 	virtual FTransform GetPilotExitTransform() const override;
@@ -497,6 +523,7 @@ private:
 	void ApplyEnvironmentForces(float DeltaTime);
 	void EnforceDriveModeForEnvironment();
 	void SetDriveMode(EShipDriveMode NewDriveMode, bool bImmediate);
+	void SetEngineMode(EEngineMode NewEngineMode, bool bImmediate);
 	EShipDriveMode GetMaximumDriveModeForClass() const;
 	EShipDriveMode GetMaximumDriveModeForEnvironment() const;
 	EEngineMode ResolveEngineModeForDriveMode(EShipDriveMode DriveMode) const;
@@ -514,6 +541,10 @@ private:
 	void RemoveShipHud();
 	FText GetShipStatusText() const;
 	FText GetShipHintText() const;
+	FText GetNavigationPanelText() const;
+	FText GetNavigationMarkerText(int32 ContactIndex) const;
+	bool ProjectNavigationContactToScreen(int32 ContactIndex, FVector2D& OutScreenPosition) const;
+	FLinearColor GetNavigationMarkerColor(int32 ContactIndex) const;
 
 	bool bSeatWasAutoConfigured{false};
 	bool bExitWasAutoConfigured{false};
@@ -547,6 +578,9 @@ private:
 	float EngineModeTransitionElapsed{0.0f};
 	bool bEngineModeTransitionActive{false};
 	bool bEngineModeSwitchedAtMidpoint{false};
+	bool bNavigationMarkersVisible{true};
+	bool bNavigationPanelVisible{true};
+	int32 MaximumNavigationMarkers{48};
 	TSharedPtr<SWidget> ShipHudWidget;
 
 	UPROPERTY(Transient)

@@ -6,6 +6,7 @@
 #include "APS_ALPHA/Core/Model/GeneratedWorld.h"
 #include "APS_ALPHA/Pawns/Characters/CustomGravityCharacter.h"
 #include "APS_ALPHA/Pawns/Spaceships/Spaceship.h"
+#include "APS_ALPHA/Pawns/Spaceships/ShipNavigationComponent.h"
 #include "APS_ALPHA/UI/MainMenu/WorldGenerationViewModel.h"
 #include "Engine/World.h"
 #include "Engine/StaticMesh.h"
@@ -340,14 +341,23 @@ bool FAPSShipDriveEnvironmentTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Local mode supports nearby travel"),
 		ASpaceship::GetDriveSpeedScale(EShipDriveMode::Local), 1.0);
 	TestEqual(TEXT("Orbital mode reaches escape-scale speed"),
-		ASpaceship::GetDriveSpeedScale(EShipDriveMode::Orbital), 64.0);
+		ASpaceship::GetDriveSpeedScale(EShipDriveMode::Orbital), 32.0);
 	TestEqual(TEXT("Interplanetary mode continues beyond orbital flight"),
-		ASpaceship::GetDriveSpeedScale(EShipDriveMode::Interplanetary), 512.0);
+		ASpaceship::GetDriveSpeedScale(EShipDriveMode::Interplanetary), 256.0);
 	TestTrue(TEXT("Orbital mode accelerates substantially faster than local mode"),
 		ASpaceship::GetDriveAccelerationScale(EShipDriveMode::Orbital)
 		> ASpaceship::GetDriveAccelerationScale(EShipDriveMode::Local));
 	TestTrue(TEXT("Atmosphere exit has a non-negotiable acceleration floor"),
 		ASpaceship::GetMinimumDriveAcceleration(EShipDriveMode::Orbital) >= 500000.0);
+	TestTrue(TEXT("Space-wrap is substantially faster than impulse at the same power step"),
+		ASpaceship::GetEngineSpeedMultiplier(EEngineMode::SpaceWrap)
+		> ASpaceship::GetEngineSpeedMultiplier(EEngineMode::Impulse));
+	TestTrue(TEXT("Offset is substantially faster than space-wrap at the same power step"),
+		ASpaceship::GetEngineSpeedMultiplier(EEngineMode::Offset)
+		> ASpaceship::GetEngineSpeedMultiplier(EEngineMode::SpaceWrap));
+	TestNotNull(TEXT("Every ship owns a native navigation component"), Ship->ShipNavigation);
+	TestEqual(TEXT("Navigation formats local distances in kilometres"),
+		UShipNavigationComponent::FormatDistance(150000.0), FString(TEXT("1.5 km")));
 	TestTrue(TEXT("Flight assist compensates gravity by default"), Ship->bFlightAssistCompensatesGravity);
 	Ship->SelectedDriveMode = EShipDriveMode::Landing;
 	Ship->IncreaseFlightMode();
@@ -359,24 +369,30 @@ bool FAPSShipDriveEnvironmentTest::RunTest(const FString& Parameters)
 	Ship->IncreaseFlightMode();
 	TestEqual(TEXT("Third progression continues to interplanetary impulse flight"),
 		Ship->SelectedDriveMode, EShipDriveMode::Interplanetary);
-	TestEqual(TEXT("Interplanetary travel still uses the impulse engine"),
+	TestEqual(TEXT("Power progression does not silently switch the selected engine"),
 		Ship->OnboardComputer->EngineSystem.CurrentEngineMode, EEngineMode::Impulse);
 	Ship->IncreaseFlightMode();
-	TestEqual(TEXT("Fourth progression selects stellar flight"),
+	TestEqual(TEXT("Fourth progression selects the fifth power step"),
 		Ship->SelectedDriveMode, EShipDriveMode::Stellar);
-	TestEqual(TEXT("Stellar travel switches to the space-wrap engine"),
-		Ship->OnboardComputer->EngineSystem.CurrentEngineMode, EEngineMode::SpaceWrap);
 	Ship->IncreaseFlightMode();
-	TestEqual(TEXT("Fifth progression selects interstellar flight"),
+	TestEqual(TEXT("Fifth progression selects the sixth power step"),
 		Ship->SelectedDriveMode, EShipDriveMode::Interstellar);
-	TestEqual(TEXT("Interstellar travel switches to the offset engine"),
+	TestEqual(TEXT("Sixth impulse power remains on impulse"),
+		Ship->OnboardComputer->EngineSystem.CurrentEngineMode, EEngineMode::Impulse);
+	Ship->SelectSpaceWrapEngine();
+	TestEqual(TEXT("Key 2 selection switches to the space-wrap engine"),
+		Ship->OnboardComputer->EngineSystem.CurrentEngineMode, EEngineMode::SpaceWrap);
+	Ship->SelectOffsetEngine();
+	TestEqual(TEXT("Key 3 selection switches to the offset engine"),
 		Ship->OnboardComputer->EngineSystem.CurrentEngineMode, EEngineMode::Offset);
 
 	Ship->ActiveClassPreset = ASpaceship::GetPresetForSizeClass(ESpaceshipSizeClass::XXS);
-	TestTrue(TEXT("Small ships retain interplanetary impulse travel"),
-		Ship->CanUseDriveMode(EShipDriveMode::Interplanetary));
-	TestFalse(TEXT("Small ships do not expose unsupported stellar engines"),
-		Ship->CanUseDriveMode(EShipDriveMode::Stellar));
+	TestTrue(TEXT("Small ships retain all six impulse power steps"),
+		Ship->CanUseDriveMode(EShipDriveMode::Interstellar));
+	TestFalse(TEXT("Small ships do not expose unsupported space-wrap engines"),
+		Ship->CanUseEngineMode(EEngineMode::SpaceWrap));
+	TestFalse(TEXT("Small ships do not expose unsupported offset engines"),
+		Ship->CanUseEngineMode(EEngineMode::Offset));
 	Ship->ActiveClassPreset = ASpaceship::GetPresetForSizeClass(ESpaceshipSizeClass::M);
 
 	Ship->SwitchEngines();
