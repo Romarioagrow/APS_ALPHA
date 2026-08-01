@@ -548,6 +548,8 @@ private:
 	FText GetShipHintText() const;
 	FText GetNavigationPanelText() const;
 	FText GetNavigationMarkerText(int32 ContactIndex) const;
+	FVector GetNavigationContactWorldAnchor(int32 ContactIndex) const;
+	bool ShouldShowNavigationMarker(int32 ContactIndex) const;
 	bool ProjectWorldLocationToNavigationScreen(const FVector& WorldLocation, FVector2D& OutScreenPosition) const;
 	bool ProjectNavigationContactToScreen(int32 ContactIndex, FVector2D& OutScreenPosition) const;
 	bool GetNavigationMarkerLayout(int32 ContactIndex, FVector2D& OutAnchorPosition,
