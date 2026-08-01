@@ -1,4 +1,6 @@
 #include "PlanetaryBody.h"
+#include "APS_ALPHA/Actors/Astro/Moon.h"
+#include "APS_ALPHA/Actors/Astro/Planet.h"
 #include "APS_ALPHA/Actors/Planetary/PlanetAtmosphere.h"
 #include "APS_ALPHA/Actors/Planetary/PlanetBiosphere.h"
 #include "APS_ALPHA/Actors/Planetary/PlanetGeosphere.h"
@@ -40,38 +42,126 @@ APlanetaryBody::APlanetaryBody()
 void APlanetaryBody::BeginPlay()
 {
 	Super::BeginPlay();
-	
-	PlanetaryEnvironmentGenerator = NewObject<APlanetarySurfaceGenerator>();
-	if (PlanetaryEnvironmentGenerator)
-	{
-		GEngine->AddOnScreenDebugMessage(-1, 1.f, FColor::Green, TEXT("PlanetSurfaceGenerator has been created successfully."));
 
-		if (bGenerateByDefault)
-		{
-			UWorld* World = GetWorld();
-			if (World)
-			{
-				PlanetaryEnvironmentGenerator->InitWorldScape(World);
-				GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("World Scape Initiated!"));
-			}
-			else
-			{
-				GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("World IS NULL"));
-			}
-		}
-	}
-	else
+	EnsurePlanetaryEnvironmentGenerator();
+	if (bGenerateByDefault && !bStreamWorldScapeSurface)
 	{
-		GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("Failed to create PlanetSurfaceGenerator."));
-		UE_LOG(LogTemp, Warning, TEXT("Failed to create PlanetSurfaceGenerator."));
-	}
-
-	if (bGenerateByDefault && !bEnvironmentSpawned)
-	{
-		bEnvironmentSpawned = true;
+		SetWorldScapeStreamingActive(true);
 	}
 	
 	PlayerPawn = UGameplayStatics::GetPlayerPawn(this, 0);
+}
+
+APlanetarySurfaceGenerator* APlanetaryBody::EnsurePlanetaryEnvironmentGenerator()
+{
+	if (IsValid(PlanetaryEnvironmentGenerator))
+	{
+		PlanetaryEnvironmentGenerator->PlanetaryBody = this;
+		return PlanetaryEnvironmentGenerator;
+	}
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return nullptr;
+	}
+
+	FActorSpawnParameters SpawnParameters;
+	SpawnParameters.Owner = this;
+	SpawnParameters.ObjectFlags |= RF_Transient;
+	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	PlanetaryEnvironmentGenerator = World->SpawnActor<APlanetarySurfaceGenerator>(
+		APlanetarySurfaceGenerator::StaticClass(), GetActorTransform(), SpawnParameters);
+	if (PlanetaryEnvironmentGenerator)
+	{
+		PlanetaryEnvironmentGenerator->PlanetaryBody = this;
+		PlanetaryEnvironmentGenerator->SetActorHiddenInGame(true);
+		PlanetaryEnvironmentGenerator->SetActorEnableCollision(false);
+	}
+	return PlanetaryEnvironmentGenerator;
+}
+
+bool APlanetaryBody::EnsureWorldScapeSurface()
+{
+	APlanetarySurfaceGenerator* Generator = EnsurePlanetaryEnvironmentGenerator();
+	if (!Generator || IsValid(Generator->WorldScapeRootInstance))
+	{
+		return Generator && IsValid(Generator->WorldScapeRootInstance);
+	}
+
+	if (APlanet* Planet = Cast<APlanet>(this))
+	{
+		if (!Planet->IsNotGasGiant())
+		{
+			return false;
+		}
+		Generator->GenerateWorldscapeSurfaceByModel(GetWorld(), Planet);
+	}
+	else if (AMoon* Moon = Cast<AMoon>(this))
+	{
+		Generator->GenerateWorldscapeSurfaceByModel(GetWorld(), Moon);
+	}
+	return IsValid(Generator->WorldScapeRootInstance);
+}
+
+void APlanetaryBody::SetWorldScapeStreamingActive(bool bActive)
+{
+	if (!bStreamWorldScapeSurface && !bGenerateByDefault)
+	{
+		return;
+	}
+
+	APlanetarySurfaceGenerator* Generator = EnsurePlanetaryEnvironmentGenerator();
+	if (!Generator)
+	{
+		return;
+	}
+	if (bActive)
+	{
+		if (EnsureWorldScapeSurface())
+		{
+			Generator->SpawnWorldScapeRoot();
+			if (APlanet* Planet = Cast<APlanet>(this)) Planet->DisableSphereMesh();
+			else if (AMoon* Moon = Cast<AMoon>(this)) Moon->DisableSphereMesh();
+			bEnvironmentSpawned = true;
+		}
+	}
+	else if (IsValid(Generator->WorldScapeRootInstance))
+	{
+		Generator->DestroyPlanetEnvironment();
+		if (APlanet* Planet = Cast<APlanet>(this)) Planet->EnableSphereMesh();
+		else if (AMoon* Moon = Cast<AMoon>(this)) Moon->EnableSphereMesh();
+		bEnvironmentSpawned = false;
+	}
+}
+
+bool APlanetaryBody::IsWorldScapeStreamingActive() const
+{
+	return IsValid(PlanetaryEnvironmentGenerator)
+		&& IsValid(PlanetaryEnvironmentGenerator->WorldScapeRootInstance)
+		&& PlanetaryEnvironmentGenerator->WorldScapeRootInstance->bGenerateWorldScape
+		&& !PlanetaryEnvironmentGenerator->WorldScapeRootInstance->bFreezeGeneration
+		&& !PlanetaryEnvironmentGenerator->WorldScapeRootInstance->IsHidden();
+}
+
+double APlanetaryBody::GetWorldScapeActivationRadiusCm() const
+{
+	double BodyRadiusCm = FMath::Max(RadiusKM, static_cast<double>(PlanetRadiusKM)) * 100000.0;
+	if (BodyRadiusCm <= UE_DOUBLE_SMALL_NUMBER)
+	{
+		FVector Origin;
+		FVector Extent;
+		GetActorBounds(false, Origin, Extent);
+		BodyRadiusCm = Extent.GetMax();
+	}
+	return FMath::Max(BodyRadiusCm * WorldScapeActivationRadiusMultiplier, BodyRadiusCm * 1.25);
+}
+
+double APlanetaryBody::GetWorldScapeDeactivationRadiusCm() const
+{
+	const double ActivationRadius = GetWorldScapeActivationRadiusCm();
+	const double BodyRadiusCm = ActivationRadius / FMath::Max(WorldScapeActivationRadiusMultiplier, 1.0);
+	return FMath::Max(ActivationRadius * 1.25, BodyRadiusCm * WorldScapeDeactivationRadiusMultiplier);
 }
 
 void APlanetaryBody::FillPlanetData()

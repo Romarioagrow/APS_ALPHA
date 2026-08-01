@@ -15,6 +15,11 @@ class APS_ALPHA_API AStarSystem : public ACelestialSystem, public INavigatableBo
 public:
 	AStarSystem();
 
+protected:
+	virtual void BeginPlay() override;
+
+public:
+
 	UPROPERTY(VisibleAnywhere, Category = "Star System")
 	AStar* MainStar;
 

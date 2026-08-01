@@ -19,6 +19,10 @@ class UGravityDetectorComponent;
 class UShipNavigationComponent;
 class AWorldActor;
 class SWidget;
+class SAPSShipNavigationOverlay;
+class FSlateWindowElementList;
+struct FGeometry;
+class FSlateRect;
 class UBoxComponent;
 
 /** Gameplay size class. The display names intentionally match the in-world ship taxonomy. */
@@ -501,6 +505,7 @@ public:
 	void SelectOffsetEngine();
 	void ToggleNavigationMarkers();
 	void ToggleNavigationPanel();
+	void ToggleNavigationGuides();
 	void SelectNextNavigationTarget();
 	void SelectPreviousNavigationTarget();
 
@@ -543,8 +548,14 @@ private:
 	FText GetShipHintText() const;
 	FText GetNavigationPanelText() const;
 	FText GetNavigationMarkerText(int32 ContactIndex) const;
+	bool ProjectWorldLocationToNavigationScreen(const FVector& WorldLocation, FVector2D& OutScreenPosition) const;
 	bool ProjectNavigationContactToScreen(int32 ContactIndex, FVector2D& OutScreenPosition) const;
+	bool GetNavigationMarkerLayout(int32 ContactIndex, FVector2D& OutAnchorPosition,
+		FVector2D& OutLabelPosition) const;
+	int32 PaintNavigationOverlay(const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect,
+		FSlateWindowElementList& OutDrawElements, int32 LayerId) const;
 	FLinearColor GetNavigationMarkerColor(int32 ContactIndex) const;
+	friend class SAPSShipNavigationOverlay;
 
 	bool bSeatWasAutoConfigured{false};
 	bool bExitWasAutoConfigured{false};
@@ -580,7 +591,8 @@ private:
 	bool bEngineModeSwitchedAtMidpoint{false};
 	bool bNavigationMarkersVisible{true};
 	bool bNavigationPanelVisible{true};
-	int32 MaximumNavigationMarkers{48};
+	bool bNavigationGuidesVisible{true};
+	int32 MaximumNavigationMarkers{24};
 	TSharedPtr<SWidget> ShipHudWidget;
 
 	UPROPERTY(Transient)

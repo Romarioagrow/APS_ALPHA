@@ -1,6 +1,9 @@
 #include "Spaceship.h"
 #include "APS_ALPHA/Actors/Astro/Moon.h"
+#include "APS_ALPHA/Actors/Astro/Planet.h"
+#include "APS_ALPHA/Actors/Astro/PlanetOrbit.h"
 #include "APS_ALPHA/Actors/Astro/PlanetaryBody.h"
+#include "APS_ALPHA/Actors/Astro/Star.h"
 #include "APS_ALPHA/Actors/Astro/StarCluster.h"
 #include "APS_ALPHA/Actors/Astro/StarSystem.h"
 #include "APS_ALPHA/Actors/Astro/WorldActor.h"
@@ -22,9 +25,12 @@
 #include "Engine/StaticMesh.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "GameFramework/PlayerController.h"
+#include "Camera/PlayerCameraManager.h"
 #include "InputCoreTypes.h"
 #include "Kismet/GameplayStatics.h"
+#include "Rendering/DrawElements.h"
 #include "Styling/CoreStyle.h"
+#include "Widgets/SLeafWidget.h"
 #include "Widgets/Images/SImage.h"
 #include "Widgets/Layout/SBackgroundBlur.h"
 #include "Widgets/Layout/SBorder.h"
@@ -34,6 +40,37 @@
 #include "Widgets/SOverlay.h"
 #include "Widgets/SViewport.h"
 #include "Widgets/Text/STextBlock.h"
+
+class SAPSShipNavigationOverlay final : public SLeafWidget
+{
+public:
+	SLATE_BEGIN_ARGS(SAPSShipNavigationOverlay) {}
+		SLATE_ARGUMENT(TWeakObjectPtr<ASpaceship>, Ship)
+	SLATE_END_ARGS()
+
+	void Construct(const FArguments& InArgs)
+	{
+		Ship = InArgs._Ship;
+		SetVisibility(EVisibility::HitTestInvisible);
+	}
+
+	virtual FVector2D ComputeDesiredSize(float) const override
+	{
+		return FVector2D(1.0f, 1.0f);
+	}
+
+	virtual int32 OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry,
+		const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId,
+		const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const override
+	{
+		return Ship.IsValid()
+			? Ship->PaintNavigationOverlay(AllottedGeometry, MyCullingRect, OutDrawElements, LayerId)
+			: LayerId;
+	}
+
+private:
+	TWeakObjectPtr<ASpaceship> Ship;
+};
 
 namespace APSAutomaticShipInteraction
 {
@@ -1886,7 +1923,7 @@ FText ASpaceship::GetShipHintText() const
 	const TCHAR* SpaceWrapHint = CanUseEngineMode(EEngineMode::SpaceWrap) ? TEXT("2 SPACE WRAP") : TEXT("2 SPACE WRAP [N/A]");
 	const TCHAR* OffsetHint = CanUseEngineMode(EEngineMode::Offset) ? TEXT("3 OFFSET") : TEXT("3 OFFSET [N/A]");
 	return FText::FromString(FString::Printf(
-		TEXT("1 IMPULSE   %s   %s   |   G POWER   F EXIT   |   WASD / SPACE / ALT THRUST\nRIGHT SHIFT/CTRL POWER STEP   LEFT SHIFT BOOST   LEFT CTRL BRAKE   |   N MARKERS   M NAV LIST   TAB TARGET"),
+		TEXT("1 IMPULSE   %s   %s   |   G POWER   F EXIT   |   WASD / SPACE / ALT THRUST\nRIGHT SHIFT/CTRL POWER STEP   LEFT SHIFT BOOST   LEFT CTRL BRAKE   |   N MARKERS   M NAV LIST   T TARGET   V ORBITS"),
 		SpaceWrapHint, OffsetHint));
 }
 
@@ -1897,7 +1934,7 @@ FText ASpaceship::GetNavigationPanelText() const
 		return FText::FromString(TEXT("NAVIGATION OFFLINE"));
 	}
 
-	FString Text = FString::Printf(TEXT("NAVIGATION / %s\nCONTACTS %d"),
+	FString Text = FString::Printf(TEXT("NAVIGATION // LOCAL SYSTEM\nENVIRONMENT  %s   |   CELESTIAL CONTACTS  %d"),
 		*GetFlightEnvironmentName(), ShipNavigation->GetDiscoveredContactCount());
 	if (const FShipNavigationContact* Selected = ShipNavigation->GetSelectedContact())
 	{
@@ -1911,29 +1948,16 @@ FText ASpaceship::GetNavigationPanelText() const
 			else if (Seconds < 172800.0) Eta = FString::Printf(TEXT("%.1f h"), Seconds / 3600.0);
 			else Eta = FString::Printf(TEXT("%.1f d"), Seconds / 86400.0);
 		}
-		Text += FString::Printf(TEXT("\n\nTARGET  %s\n%s / %s\nDISTANCE  %s   ETA  %s"),
+		Text += FString::Printf(TEXT("\n\nACTIVE TARGET\n%s\n%s  //  %s\nRANGE  %s   |   ETA  %s"),
 			*Selected->DisplayName, *Selected->TypeLabel, *Selected->Detail,
 			*UShipNavigationComponent::FormatDistance(Selected->DistanceCentimeters), *Eta);
-
-		if (AActor* TargetActor = Selected->Actor.Get())
+		if (!Selected->HierarchyLabel.IsEmpty())
 		{
-			TArray<FString> Hierarchy;
-			for (AActor* Parent = TargetActor->GetAttachParentActor(); Parent && Hierarchy.Num() < 4;
-				Parent = Parent->GetAttachParentActor())
-			{
-				FString ParentName = Parent->GetName();
-				ParentName.RemoveFromStart(TEXT("BP_"));
-				ParentName.ReplaceInline(TEXT("_"), TEXT(" "));
-				Hierarchy.Insert(ParentName.ToUpper(), 0);
-			}
-			if (!Hierarchy.IsEmpty())
-			{
-				Text += TEXT("\nLOCATION  ") + FString::Join(Hierarchy, TEXT(" > "));
-			}
+			Text += TEXT("\nSYSTEM  ") + Selected->HierarchyLabel;
 		}
 	}
 
-	Text += TEXT("\n\nNEAREST");
+	Text += TEXT("\n\nNEAREST CELESTIAL BODIES");
 	const TArray<FShipNavigationContact>& Contacts = ShipNavigation->GetContacts();
 	const int32 ListCount = FMath::Min(Contacts.Num(), 7);
 	for (int32 Index = 0; Index < ListCount; ++Index)
@@ -1952,16 +1976,17 @@ FText ASpaceship::GetNavigationMarkerText(int32 ContactIndex) const
 	{
 		return FText::GetEmpty();
 	}
-	return FText::FromString(FString::Printf(TEXT("%s  %s\n%s"), *Contact->TypeLabel, *Contact->DisplayName,
+	return FText::FromString(FString::Printf(TEXT("%s  //  %s\n%s   |   %s"),
+		*Contact->TypeLabel, *Contact->DisplayName, *Contact->Detail,
 		*UShipNavigationComponent::FormatDistance(Contact->DistanceCentimeters)));
 }
 
-bool ASpaceship::ProjectNavigationContactToScreen(int32 ContactIndex, FVector2D& OutScreenPosition) const
+bool ASpaceship::ProjectWorldLocationToNavigationScreen(const FVector& WorldLocation,
+	FVector2D& OutScreenPosition) const
 {
-	const FShipNavigationContact* Contact = ShipNavigation ? ShipNavigation->GetContact(ContactIndex) : nullptr;
 	const APlayerController* PlayerController = Cast<APlayerController>(GetController());
-	if (!Contact || !PlayerController || !GEngine || !GEngine->GameViewport
-		|| !PlayerController->ProjectWorldLocationToScreen(Contact->GetWorldLocation(), OutScreenPosition, true))
+	if (!PlayerController || !GEngine || !GEngine->GameViewport
+		|| !PlayerController->ProjectWorldLocationToScreen(WorldLocation, OutScreenPosition, true))
 	{
 		return false;
 	}
@@ -1979,6 +2004,201 @@ bool ASpaceship::ProjectNavigationContactToScreen(int32 ContactIndex, FVector2D&
 	return OutScreenPosition.X >= 8.0 && OutScreenPosition.Y >= 8.0
 		&& OutScreenPosition.X <= SlateViewportSize.X - 8.0
 		&& OutScreenPosition.Y <= SlateViewportSize.Y - 8.0;
+}
+
+bool ASpaceship::ProjectNavigationContactToScreen(int32 ContactIndex, FVector2D& OutScreenPosition) const
+{
+	const FShipNavigationContact* Contact = ShipNavigation ? ShipNavigation->GetContact(ContactIndex) : nullptr;
+	return Contact && ProjectWorldLocationToNavigationScreen(Contact->GetWorldLocation(), OutScreenPosition);
+}
+
+bool ASpaceship::GetNavigationMarkerLayout(int32 ContactIndex, FVector2D& OutAnchorPosition,
+	FVector2D& OutLabelPosition) const
+{
+	if (!ShipNavigation || ContactIndex < 0 || ContactIndex >= MaximumNavigationMarkers
+		|| !GEngine || !GEngine->GameViewport)
+	{
+		return false;
+	}
+
+	const FVector2D LabelSize(220.0f, 54.0f);
+	const FVector2D ViewportSize = GEngine->GameViewport->GetGameViewportWidget().IsValid()
+		? GEngine->GameViewport->GetGameViewportWidget()->GetCachedGeometry().GetLocalSize()
+		: FVector2D::ZeroVector;
+	if (ViewportSize.X <= LabelSize.X || ViewportSize.Y <= LabelSize.Y)
+	{
+		return false;
+	}
+
+	FVector2D Anchor;
+	if (!ProjectNavigationContactToScreen(ContactIndex, Anchor))
+	{
+		return false;
+	}
+
+	int32 NearbyRank = 0;
+	for (int32 PreviousIndex = 0; PreviousIndex < ContactIndex; ++PreviousIndex)
+	{
+		FVector2D PreviousAnchor;
+		if (ProjectNavigationContactToScreen(PreviousIndex, PreviousAnchor)
+			&& FVector2D::DistSquared(Anchor, PreviousAnchor) < FMath::Square(150.0f))
+		{
+			++NearbyRank;
+		}
+	}
+
+	const bool bPlaceOnLeft = Anchor.X > ViewportSize.X * 0.57f;
+	const int32 LaneMagnitude = (NearbyRank + 1) / 2;
+	const float LaneDirection = NearbyRank == 0 ? 0.0f : (NearbyRank % 2 == 1 ? 1.0f : -1.0f);
+	FVector2D LabelPosition(
+		Anchor.X + (bPlaceOnLeft ? -LabelSize.X - 28.0f : 28.0f),
+		Anchor.Y - LabelSize.Y * 0.5f + LaneDirection * LaneMagnitude * (LabelSize.Y + 9.0f));
+	LabelPosition.X = FMath::Clamp(LabelPosition.X, 10.0, ViewportSize.X - LabelSize.X - 10.0);
+	LabelPosition.Y = FMath::Clamp(LabelPosition.Y, 10.0, ViewportSize.Y - LabelSize.Y - 10.0);
+	OutAnchorPosition = Anchor;
+	OutLabelPosition = LabelPosition;
+	return true;
+}
+
+int32 ASpaceship::PaintNavigationOverlay(const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect,
+	FSlateWindowElementList& OutDrawElements, int32 LayerId) const
+{
+	if (!ShipNavigation)
+	{
+		return LayerId;
+	}
+
+	const FPaintGeometry PaintGeometry = AllottedGeometry.ToPaintGeometry();
+	auto DrawScreenLine = [&](const TArray<FVector2D>& Points, const FLinearColor& Color, float Thickness,
+		int32 DrawLayer)
+	{
+		if (Points.Num() >= 2)
+		{
+			FSlateDrawElement::MakeLines(OutDrawElements, DrawLayer, PaintGeometry, Points,
+				ESlateDrawEffect::None, Color, true, Thickness);
+		}
+	};
+
+	auto DrawProjectedRing = [&](const FVector& Center, const FVector& AxisX, const FVector& AxisY,
+		double Radius, const FLinearColor& Color, float Thickness, bool bDashed, int32 DrawLayer)
+	{
+		if (Radius <= UE_DOUBLE_SMALL_NUMBER) return;
+		constexpr int32 SegmentCount = 48;
+		TArray<FVector2D> ContinuousSegment;
+		FVector2D PreviousPoint;
+		bool bPreviousValid = false;
+		for (int32 SegmentIndex = 0; SegmentIndex <= SegmentCount; ++SegmentIndex)
+		{
+			const double Angle = UE_TWO_PI * static_cast<double>(SegmentIndex) / SegmentCount;
+			const FVector WorldPoint = Center + AxisX * (FMath::Cos(Angle) * Radius)
+				+ AxisY * (FMath::Sin(Angle) * Radius);
+			FVector2D ScreenPoint;
+			const bool bValid = ProjectWorldLocationToNavigationScreen(WorldPoint, ScreenPoint);
+			if (bDashed)
+			{
+				if (bValid && bPreviousValid && SegmentIndex % 3 != 0)
+				{
+					DrawScreenLine({PreviousPoint, ScreenPoint}, Color, Thickness, DrawLayer);
+				}
+			}
+			else if (bValid)
+			{
+				ContinuousSegment.Add(ScreenPoint);
+			}
+			else
+			{
+				DrawScreenLine(ContinuousSegment, Color, Thickness, DrawLayer);
+				ContinuousSegment.Reset();
+			}
+			PreviousPoint = ScreenPoint;
+			bPreviousValid = bValid;
+		}
+		DrawScreenLine(ContinuousSegment, Color, Thickness, DrawLayer);
+	};
+
+	if (bNavigationGuidesVisible)
+	{
+		TSet<const APlanetOrbit*> PaintedOrbits;
+		const int32 ContactCount = FMath::Min(ShipNavigation->GetContacts().Num(), 12);
+		for (int32 ContactIndex = 0; ContactIndex < ContactCount; ++ContactIndex)
+		{
+			const FShipNavigationContact* Contact = ShipNavigation->GetContact(ContactIndex);
+			const APlanetaryBody* Body = Contact ? Cast<APlanetaryBody>(Contact->Actor.Get()) : nullptr;
+			const APlanetOrbit* Orbit = Body ? Cast<APlanetOrbit>(Body->GetAttachParentActor()) : nullptr;
+			if (!Orbit || PaintedOrbits.Contains(Orbit)) continue;
+			PaintedOrbits.Add(Orbit);
+
+			const double OrbitRadius = FVector::Distance(Orbit->GetActorLocation(), Body->GetActorLocation());
+			const FLinearColor OrbitColor = Contact->Type == EShipNavigationContactType::Moon
+				? FLinearColor(0.28f, 0.62f, 1.0f, 0.34f)
+				: FLinearColor(0.15f, 0.95f, 0.78f, 0.32f);
+			DrawProjectedRing(Orbit->GetActorLocation(), Orbit->GetActorForwardVector(), Orbit->GetActorRightVector(),
+				OrbitRadius, OrbitColor, 1.1f, false, LayerId);
+		}
+
+		if (const FShipNavigationContact* Selected = ShipNavigation->GetSelectedContact())
+		{
+			const APlanetaryBody* SelectedBody = Cast<APlanetaryBody>(Selected->Actor.Get());
+			const APlayerController* PC = Cast<APlayerController>(GetController());
+			const APlayerCameraManager* CameraManager = PC ? PC->PlayerCameraManager : nullptr;
+			const FVector CameraRight = CameraManager ? CameraManager->GetActorRightVector() : FVector::RightVector;
+			const FVector CameraUp = CameraManager ? CameraManager->GetActorUpVector() : FVector::UpVector;
+
+			const AStar* ParentStar = nullptr;
+			if (const APlanet* Planet = Cast<APlanet>(SelectedBody)) ParentStar = Planet->ParentStar;
+			else if (const AMoon* Moon = Cast<AMoon>(SelectedBody))
+			{
+				ParentStar = Moon->ParentPlanet ? Moon->ParentPlanet->ParentStar : nullptr;
+			}
+
+			if (const APlanet* Planet = Cast<APlanet>(SelectedBody);
+				Planet && Planet->GravityCollisionZone && Planet->GravityCollisionZone->GetScaledSphereRadius() > 0.0f)
+			{
+				DrawProjectedRing(Planet->GravityCollisionZone->GetComponentLocation(), CameraRight, CameraUp,
+					Planet->GravityCollisionZone->GetScaledSphereRadius(),
+					FLinearColor(0.25f, 1.0f, 0.58f, 0.42f), 1.2f, true, LayerId + 1);
+			}
+			if (ParentStar && ParentStar->PlanetarySystemZone
+				&& ParentStar->PlanetarySystemZone->GetScaledSphereRadius() > 0.0f)
+			{
+				DrawProjectedRing(ParentStar->PlanetarySystemZone->GetComponentLocation(), CameraRight, CameraUp,
+					ParentStar->PlanetarySystemZone->GetScaledSphereRadius(),
+					FLinearColor(0.22f, 0.65f, 1.0f, 0.25f), 1.0f, true, LayerId);
+			}
+
+			const AActor* Ancestor = ParentStar;
+			while (Ancestor && !Ancestor->IsA<AStarSystem>()) Ancestor = Ancestor->GetAttachParentActor();
+			if (const AStarSystem* System = Cast<AStarSystem>(Ancestor);
+				System && System->StarSystemZone && System->StarSystemZone->GetScaledSphereRadius() > 0.0f)
+			{
+				DrawProjectedRing(System->StarSystemZone->GetComponentLocation(), CameraRight, CameraUp,
+					System->StarSystemZone->GetScaledSphereRadius(),
+					FLinearColor(0.65f, 0.42f, 1.0f, 0.22f), 1.0f, true, LayerId);
+			}
+		}
+	}
+
+	if (bNavigationMarkersVisible)
+	{
+		const int32 ContactCount = FMath::Min(ShipNavigation->GetContacts().Num(), MaximumNavigationMarkers);
+		for (int32 ContactIndex = 0; ContactIndex < ContactCount; ++ContactIndex)
+		{
+			FVector2D Anchor;
+			FVector2D Label;
+			if (!GetNavigationMarkerLayout(ContactIndex, Anchor, Label)) continue;
+			const FLinearColor Color = GetNavigationMarkerColor(ContactIndex);
+			const float LabelEdgeX = Anchor.X < Label.X ? Label.X : Label.X + 220.0f;
+			const FVector2D LabelEdge(LabelEdgeX, FMath::Clamp(Anchor.Y, Label.Y + 8.0f, Label.Y + 46.0f));
+			const FVector2D Bend(FMath::Lerp(Anchor.X, LabelEdge.X, 0.58f), Anchor.Y);
+			DrawScreenLine({Anchor, Bend, LabelEdge}, FLinearColor(Color.R, Color.G, Color.B, 0.58f),
+				1.2f, LayerId + 2);
+			DrawScreenLine({Anchor + FVector2D(-4.0f, 0.0f), Anchor + FVector2D(4.0f, 0.0f)},
+				Color, 1.4f, LayerId + 2);
+			DrawScreenLine({Anchor + FVector2D(0.0f, -4.0f), Anchor + FVector2D(0.0f, 4.0f)},
+				Color, 1.4f, LayerId + 2);
+		}
+	}
+	return LayerId + 2;
 }
 
 FLinearColor ASpaceship::GetNavigationMarkerColor(int32 ContactIndex) const
@@ -2016,44 +2236,80 @@ void ASpaceship::CreateShipHud()
 
 	const TWeakObjectPtr<ASpaceship> WeakThis(this);
 	TSharedRef<SOverlay> RootOverlay = SNew(SOverlay);
+	RootOverlay->AddSlot()
+	[
+		SNew(SAPSShipNavigationOverlay)
+		.Ship(WeakThis)
+	];
 	TSharedRef<SConstraintCanvas> MarkerCanvas = SNew(SConstraintCanvas);
 	for (int32 MarkerIndex = 0; MarkerIndex < MaximumNavigationMarkers; ++MarkerIndex)
 	{
 		MarkerCanvas->AddSlot()
 		.Offset_Lambda([WeakThis, MarkerIndex]()
 		{
-			FVector2D Position(-10000.0, -10000.0);
-			if (WeakThis.IsValid()) WeakThis->ProjectNavigationContactToScreen(MarkerIndex, Position);
-			return FMargin(Position.X - 115.0, Position.Y - 24.0, 230.0, 48.0);
+			FVector2D Anchor;
+			FVector2D Label(-10000.0, -10000.0);
+			if (WeakThis.IsValid()) WeakThis->GetNavigationMarkerLayout(MarkerIndex, Anchor, Label);
+			return FMargin(Label.X, Label.Y, 220.0, 54.0);
 		})
 		[
-			SNew(SBorder)
+			SNew(SBox)
+			.WidthOverride(220.0f)
+			.HeightOverride(54.0f)
 			.Visibility_Lambda([WeakThis, MarkerIndex]()
 			{
-				FVector2D Position;
+				FVector2D Anchor;
+				FVector2D Label;
 				return WeakThis.IsValid() && WeakThis->bNavigationMarkersVisible
 					&& MarkerIndex < WeakThis->MaximumNavigationMarkers
-					&& WeakThis->ProjectNavigationContactToScreen(MarkerIndex, Position)
+					&& WeakThis->GetNavigationMarkerLayout(MarkerIndex, Anchor, Label)
 					? EVisibility::HitTestInvisible : EVisibility::Collapsed;
 			})
-			.BorderBackgroundColor_Lambda([WeakThis, MarkerIndex]()
-			{
-				const FLinearColor Accent = WeakThis.IsValid()
-					? WeakThis->GetNavigationMarkerColor(MarkerIndex) : FLinearColor::Transparent;
-				return FSlateColor(FLinearColor(Accent.R * 0.08f, Accent.G * 0.08f, Accent.B * 0.08f, 0.84f));
-			})
-			.Padding(FMargin(9.0f, 5.0f))
 			[
-				SNew(STextBlock)
-				.Text_Lambda([WeakThis, MarkerIndex]()
+				SNew(SBorder)
+				.BorderBackgroundColor_Lambda([WeakThis, MarkerIndex]()
 				{
-					return WeakThis.IsValid() ? WeakThis->GetNavigationMarkerText(MarkerIndex) : FText::GetEmpty();
+					const FLinearColor Accent = WeakThis.IsValid()
+						? WeakThis->GetNavigationMarkerColor(MarkerIndex) : FLinearColor::Transparent;
+					return FSlateColor(FLinearColor(Accent.R * 0.055f, Accent.G * 0.055f,
+						Accent.B * 0.055f, 0.9f));
 				})
-				.ColorAndOpacity_Lambda([WeakThis, MarkerIndex]()
-				{
-					return FSlateColor(WeakThis.IsValid()
-						? WeakThis->GetNavigationMarkerColor(MarkerIndex) : FLinearColor::Transparent);
-				})
+				.Padding(0.0f)
+				[
+					SNew(SHorizontalBox)
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					[
+						SNew(SBox)
+						.WidthOverride(3.0f)
+						[
+							SNew(SImage)
+							.Image(FCoreStyle::Get().GetBrush("WhiteBrush"))
+							.ColorAndOpacity_Lambda([WeakThis, MarkerIndex]()
+							{
+								return WeakThis.IsValid()
+									? WeakThis->GetNavigationMarkerColor(MarkerIndex) : FLinearColor::Transparent;
+							})
+						]
+					]
+					+ SHorizontalBox::Slot()
+					.FillWidth(1.0f)
+					.Padding(10.0f, 6.0f, 8.0f, 5.0f)
+					[
+						SNew(STextBlock)
+						.Text_Lambda([WeakThis, MarkerIndex]()
+						{
+							return WeakThis.IsValid()
+								? WeakThis->GetNavigationMarkerText(MarkerIndex) : FText::GetEmpty();
+						})
+						.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+						.ColorAndOpacity_Lambda([WeakThis, MarkerIndex]()
+						{
+							return FSlateColor(WeakThis.IsValid()
+								? WeakThis->GetNavigationMarkerColor(MarkerIndex) : FLinearColor::Transparent);
+						})
+					]
+				]
 			]
 		];
 	}
@@ -2203,7 +2459,8 @@ void ASpaceship::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent
 	PlayerInputComponent->BindKey(EKeys::Three, IE_Pressed, this, &ASpaceship::SelectOffsetEngine);
 	PlayerInputComponent->BindKey(EKeys::N, IE_Pressed, this, &ASpaceship::ToggleNavigationMarkers);
 	PlayerInputComponent->BindKey(EKeys::M, IE_Pressed, this, &ASpaceship::ToggleNavigationPanel);
-	PlayerInputComponent->BindKey(EKeys::Tab, IE_Pressed, this, &ASpaceship::SelectNextNavigationTarget);
+	PlayerInputComponent->BindKey(EKeys::T, IE_Pressed, this, &ASpaceship::SelectNextNavigationTarget);
+	PlayerInputComponent->BindKey(EKeys::V, IE_Pressed, this, &ASpaceship::ToggleNavigationGuides);
 }
 
 void ASpaceship::StartAccelerationBoost()
@@ -2292,6 +2549,11 @@ void ASpaceship::ToggleNavigationPanel()
 	{
 		ShipNavigation->RefreshContacts(GetActorLocation(), true);
 	}
+}
+
+void ASpaceship::ToggleNavigationGuides()
+{
+	bNavigationGuidesVisible = !bNavigationGuidesVisible;
 }
 
 void ASpaceship::SelectNextNavigationTarget()

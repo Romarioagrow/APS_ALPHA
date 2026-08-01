@@ -30,6 +30,7 @@ struct FShipNavigationContact
 	FString DisplayName;
 	FString TypeLabel;
 	FString Detail;
+	FString HierarchyLabel;
 	EShipNavigationContactType Type{EShipNavigationContactType::Unknown};
 	double DistanceCentimeters{0.0};
 	bool bVirtualContact{false};
@@ -70,14 +71,30 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Navigation", meta=(ClampMin="8", ClampMax="512"))
 	int32 MaximumContacts{128};
 
-	/** Maximum generated HISM stars sampled into the live contact list. */
+	/** Generated HISM star markers are disabled until cluster identity/selection UX is finalized. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Navigation", meta=(ClampMin="0", ClampMax="512"))
-	int32 MaximumVirtualStars{96};
+	int32 MaximumVirtualStars{0};
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Navigation|Markers")
+	bool bShowPlanetMarkers{true};
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Navigation|Markers")
+	bool bShowMoonMarkers{true};
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Navigation|Markers")
+	bool bShowStarMarkers{false};
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Navigation|Markers")
+	bool bShowStationMarkers{false};
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Navigation|Markers")
+	bool bShowInfrastructureMarkers{false};
 
 private:
 	void AddActorContact(AActor* Actor, const FVector& ObserverLocation);
 	void AddGeneratedStarContacts(const FVector& ObserverLocation);
 	void RestoreSelection(const FString& PreviousStableId);
+	bool IsContactTypeVisible(EShipNavigationContactType Type) const;
 
 	TArray<FShipNavigationContact> Contacts;
 	int32 SelectedContactIndex{INDEX_NONE};

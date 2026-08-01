@@ -10,6 +10,8 @@
 #include "APS_ALPHA/Actors/Tech/Colony.h"
 #include "APS_ALPHA/Actors/Tech/SpaceStation.h"
 #include "APS_ALPHA/Actors/Tech/TechActor.h"
+#include "APS_ALPHA/Core/Enums/MoonType.h"
+#include "APS_ALPHA/Core/Enums/PlanetType.h"
 #include "APS_ALPHA/Core/Interfaces/ItemInfoInterface.h"
 #include "APS_ALPHA/Core/Interfaces/NavigatableBody.h"
 #include "APS_ALPHA/Core/Structs/StarGenerationModel.h"
@@ -22,11 +24,7 @@ namespace APSShipNavigation
 	FString SanitizeObjectName(FString Name)
 	{
 		Name.RemoveFromStart(TEXT("BP_"));
-		const int32 GeneratedClassMarker = Name.Find(TEXT("_C_"));
-		if (GeneratedClassMarker != INDEX_NONE)
-		{
-			Name.LeftInline(GeneratedClassMarker);
-		}
+		Name.ReplaceInline(TEXT("_C_"), TEXT("_"));
 		Name.ReplaceInline(TEXT("_"), TEXT(" "));
 		return Name.ToUpper();
 	}
@@ -113,13 +111,16 @@ void UShipNavigationComponent::AddActorContact(AActor* Actor, const FVector& Obs
 	{
 		Contact.DisplayName = Body->AstroName.ToString().ToUpper();
 	}
-	if (const AWorldActor* WorldActor = Cast<AWorldActor>(Actor);
-		WorldActor && WorldActor->GetClass()->ImplementsInterface(UItemInfoInterface::StaticClass()))
+	if (!Actor->IsA<ACelestialBody>())
 	{
-		const FText ItemName = IItemInfoInterface::Execute_GetInGameName(WorldActor);
-		if (!ItemName.IsEmpty())
+		if (const AWorldActor* WorldActor = Cast<AWorldActor>(Actor);
+			WorldActor && WorldActor->GetClass()->ImplementsInterface(UItemInfoInterface::StaticClass()))
 		{
-			Contact.DisplayName = ItemName.ToString().ToUpper();
+			const FText ItemName = IItemInfoInterface::Execute_GetInGameName(WorldActor);
+			if (!ItemName.IsEmpty())
+			{
+				Contact.DisplayName = ItemName.ToString().ToUpper();
+			}
 		}
 	}
 
@@ -132,13 +133,23 @@ void UShipNavigationComponent::AddActorContact(AActor* Actor, const FVector& Obs
 	}
 	else if (Actor->IsA<AMoon>())
 	{
+		const AMoon* Moon = CastChecked<AMoon>(Actor);
 		Contact.Type = EShipNavigationContactType::Moon;
 		Contact.TypeLabel = TEXT("MOON");
+		if (const UEnum* Enum = StaticEnum<EMoonType>())
+		{
+			Contact.Detail = Enum->GetDisplayNameTextByValue(static_cast<int64>(Moon->MoonType)).ToString().ToUpper();
+		}
 	}
 	else if (Actor->IsA<APlanet>())
 	{
+		const APlanet* Planet = CastChecked<APlanet>(Actor);
 		Contact.Type = EShipNavigationContactType::Planet;
 		Contact.TypeLabel = TEXT("PLANET");
+		if (const UEnum* Enum = StaticEnum<EPlanetType>())
+		{
+			Contact.Detail = Enum->GetDisplayNameTextByValue(static_cast<int64>(Planet->PlanetType)).ToString().ToUpper();
+		}
 	}
 	else if (Actor->IsA<ASpaceStation>())
 	{
@@ -169,6 +180,21 @@ void UShipNavigationComponent::AddActorContact(AActor* Actor, const FVector& Obs
 	{
 		Contact.TypeLabel = TEXT("NAV OBJECT");
 	}
+	if (!IsContactTypeVisible(Contact.Type))
+	{
+		return;
+	}
+
+	TArray<FString> Hierarchy;
+	for (AActor* Parent = Actor->GetAttachParentActor(); Parent && Hierarchy.Num() < 4;
+		Parent = Parent->GetAttachParentActor())
+	{
+		if (const ACelestialBody* ParentBody = Cast<ACelestialBody>(Parent); ParentBody && !ParentBody->AstroName.IsNone())
+		{
+			Hierarchy.Insert(ParentBody->AstroName.ToString().ToUpper(), 0);
+		}
+	}
+	Contact.HierarchyLabel = FString::Join(Hierarchy, TEXT(" > "));
 
 	Contacts.Add(MoveTemp(Contact));
 }
@@ -176,7 +202,7 @@ void UShipNavigationComponent::AddActorContact(AActor* Actor, const FVector& Obs
 void UShipNavigationComponent::AddGeneratedStarContacts(const FVector& ObserverLocation)
 {
 	const UWorld* World = GetWorld();
-	if (!World || MaximumVirtualStars <= 0)
+	if (!World || !bShowStarMarkers || MaximumVirtualStars <= 0)
 	{
 		return;
 	}
@@ -244,6 +270,20 @@ void UShipNavigationComponent::AddGeneratedStarContacts(const FVector& ObserverL
 		VirtualStars.SetNum(MaximumVirtualStars, EAllowShrinking::No);
 	}
 	Contacts.Append(MoveTemp(VirtualStars));
+}
+
+bool UShipNavigationComponent::IsContactTypeVisible(EShipNavigationContactType Type) const
+{
+	switch (Type)
+	{
+	case EShipNavigationContactType::Planet: return bShowPlanetMarkers;
+	case EShipNavigationContactType::Moon: return bShowMoonMarkers;
+	case EShipNavigationContactType::Star: return bShowStarMarkers;
+	case EShipNavigationContactType::Station: return bShowStationMarkers;
+	case EShipNavigationContactType::Settlement:
+	case EShipNavigationContactType::Infrastructure: return bShowInfrastructureMarkers;
+	default: return false;
+	}
 }
 
 void UShipNavigationComponent::RestoreSelection(const FString& PreviousStableId)

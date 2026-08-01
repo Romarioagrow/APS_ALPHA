@@ -158,6 +158,19 @@ void UAPSStarRenderStabilitySubsystem::StabilizeInstances(
 		return;
 	}
 
+	// HISM cluster bounds and instance transforms are single precision in UE 5.4. The
+	// translated tree mode exists specifically for large-coordinate precision loss.
+	const bool bNeedsTranslatedTreeRebuild = !Instances->bUseTranslatedInstanceSpace
+		&& Instances->GetInstanceCount() > 0;
+	Instances->bUseTranslatedInstanceSpace = true;
+	Instances->bEnableDensityScaling = false;
+	Instances->bNeverDistanceCull = true;
+	Instances->SetCullDistances(0, 0);
+	Instances->bDisableCollision = true;
+	Instances->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	Instances->SetGenerateOverlapEvents(false);
+	Instances->SetCanEverAffectNavigation(false);
+
 	// The legacy star material contains animated SimpleGrassWind/Noise WPO. That makes
 	// sub-pixel emissive stars change geometry independently on every temporal sample,
 	// which becomes severe flicker at relativistic camera velocities.
@@ -167,5 +180,9 @@ void UAPSStarRenderStabilitySubsystem::StabilizeInstances(
 	Instances->bAffectDynamicIndirectLighting = false;
 	Instances->bAffectDistanceFieldLighting = false;
 	Instances->SetReceivesDecals(false);
+	if (bNeedsTranslatedTreeRebuild)
+	{
+		Instances->BuildTreeIfOutdated(true, true);
+	}
 	Instances->MarkRenderStateDirty();
 }

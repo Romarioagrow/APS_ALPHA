@@ -457,7 +457,7 @@ void AAstroGenerator::GenerateHomeStarSystem()
 				{
 					UE_LOG(LogTemp, Error, TEXT("PlanetaryEnvironmentGenerator is null for HomePlanet!"));
 					// Try to initialize it manually
-					HomePlanet->PlanetaryEnvironmentGenerator = NewObject<APlanetarySurfaceGenerator>();
+					HomePlanet->PlanetaryEnvironmentGenerator = HomePlanet->EnsurePlanetaryEnvironmentGenerator();
 					if (HomePlanet->PlanetaryEnvironmentGenerator)
 					{
 						HomePlanet->PlanetaryEnvironmentGenerator->GenerateWorldscapeSurfaceByModel(GetWorld(), HomePlanet);
@@ -604,14 +604,22 @@ void AAstroGenerator::GenerateStarSystemByModel()
 			// TODO: PlanetarySystemGenerator->ConnectStar()
 			StarGenerator->ApplyModel(NewStar, StarModel);
 			PlanetarySystemGenerator->ApplyModel(NewPlanetarySystem, PlanetarySystemModel);
+			const FVector SystemCenter = NewStarSystem->GetActorLocation();
+			NewStar->SetActorLocation(SystemCenter);
+			NewPlanetarySystem->SetActorLocation(SystemCenter);
 			NewStar->SetActorScale3D(FVector(StarModel->Radius * 813684224.0));
 			NewStar->StarRadiusKM = StarModel->Radius * 696340;
 			NewStar->SetPlanetarySystem(NewPlanetarySystem);
+			NewPlanetarySystem->SetStar(NewStar);
+			NewStarSystem->AddNewStar(NewStar);
 			NewStar->AttachToActor(NewStarSystem, FAttachmentTransformRules::KeepWorldTransform);
 			NewPlanetarySystem->AttachToActor(NewStar, FAttachmentTransformRules::KeepWorldTransform);
 			StarGenerator->ApplySpectralMaterial(NewStar, StarModel);
-			NewStar->AstroName = AGravityPlayerController::GenerateUniqueName("");
 			NewStar->FullSpectralName = NewStar->GenerateFullSpectralName();
+			NewPlanetarySystem->SetStarFullSpectralName(NewStar->FullSpectralName);
+			const FString SpectralIdentity = NewStar->FullSpectralName.IsNone()
+				? TEXT("Star") : NewStar->FullSpectralName.ToString();
+			NewStar->AstroName = AGravityPlayerController::GenerateUniqueName(SpectralIdentity);
 			HomeStar = NewStar;
 
 			// Generate planets for each star
@@ -628,12 +636,15 @@ void AAstroGenerator::GenerateStarSystemByModel()
 				APlanet* NewPlanet = World->SpawnActor<APlanet>(BP_PlanetClass);
 
 				PlanetGenerator->ApplyModel(NewPlanet, PlanetModel);
+				NewPlanet->AstroName = AGravityPlayerController::GenerateUniqueName(TEXT("Planet"));
 				NewStar->AddPlanet(NewPlanet);
 				NewPlanet->SetParentStar(NewStar);
 
 				// Set planet full-scale
 				NewPlanet->SetActorScale3D(FVector(PlanetModel->Radius * 12742000));
-				FVector NewLocation = FVector(PlanetModel->OrbitDistance * 149600000000000 / 1000, 0, 0);
+				const FVector OrbitOffset(PlanetModel->OrbitDistance * 149600000000000 / 1000, 0, 0);
+				const FVector NewLocation = NewPlanetOrbit->GetActorLocation()
+					+ NewPlanetOrbit->GetActorQuat().RotateVector(OrbitOffset);
 				NewPlanet->PlanetRadiusKM = PlanetModel->Radius * 6371;
 				NewPlanet->SetActorLocation(NewLocation);
 				NewPlanet->AttachToActor(NewPlanetOrbit, FAttachmentTransformRules::KeepWorldTransform);
@@ -653,6 +664,7 @@ void AAstroGenerator::GenerateStarSystemByModel()
 
 					FVector MoonLocation = NewPlanet->GetActorLocation();
 					AMoon* NewMoon = World->SpawnActor<AMoon>(BP_MoonClass, MoonLocation, FRotator::ZeroRotator);
+					NewMoon->AstroName = AGravityPlayerController::GenerateUniqueName(TEXT("Moon"));
 					NewPlanet->AddMoon(NewMoon);
 					NewMoon->SetParentPlanet(NewPlanet);
 
@@ -1079,6 +1091,7 @@ void AAstroGenerator::SpawnMoons(UWorld* World, APlanet* Planet, const int32 Num
 			FVector MoonLocation = Planet->GetActorLocation();
 			if (AMoon* NewMoon = World->SpawnActor<AMoon>(BP_MoonClass, MoonLocation, FRotator::ZeroRotator))
 			{
+				NewMoon->AstroName = AGravityPlayerController::GenerateUniqueName(TEXT("Moon"));
 				Planet->AddMoon(NewMoon);
 				NewMoon->SetParentPlanet(Planet);
 
@@ -1143,6 +1156,7 @@ void AAstroGenerator::SpawnPlanetMoons(const TSharedPtr<FPlanetModel>& PlanetMod
 
 		FVector MoonLocation = HomePlanet->GetActorLocation();
 		AMoon* NewMoon = GetWorld()->SpawnActor<AMoon>(BP_MoonClass, MoonLocation, FRotator::ZeroRotator);
+		NewMoon->AstroName = AGravityPlayerController::GenerateUniqueName(TEXT("Moon"));
 		HomePlanet->AddMoon(NewMoon);
 		NewMoon->SetParentPlanet(HomePlanet);
 
@@ -1529,11 +1543,21 @@ void AAstroGenerator::GenerateStarSystem(AStarSystem* NewStarSystem, TSharedPtr<
 
 		StarGenerator->ApplyModel(NewStar, StarModel);
 		PlanetarySystemGenerator->ApplyModel(NewPlanetarySystem, PlanetarySystemModel);
+		const FVector SystemCenter = NewStarSystem->GetActorLocation();
+		NewStar->SetActorLocation(SystemCenter);
+		NewPlanetarySystem->SetActorLocation(SystemCenter);
 		NewStar->SetActorScale3D(FVector(StarModel->Radius * 813684224.0));
 		NewStar->StarRadiusKM = StarModel->Radius * 696340;
 		NewStar->SetPlanetarySystem(NewPlanetarySystem);
+		NewPlanetarySystem->SetStar(NewStar);
+		NewStarSystem->AddNewStar(NewStar);
 		NewStar->AttachToActor(NewStarSystem, FAttachmentTransformRules::KeepWorldTransform);
 		NewPlanetarySystem->AttachToActor(NewStar, FAttachmentTransformRules::KeepWorldTransform);
+		NewStar->FullSpectralName = NewStar->GenerateFullSpectralName();
+		NewPlanetarySystem->SetStarFullSpectralName(NewStar->FullSpectralName);
+		const FString SpectralIdentity = NewStar->FullSpectralName.IsNone()
+			? TEXT("Star") : NewStar->FullSpectralName.ToString();
+		NewStar->AstroName = AGravityPlayerController::GenerateUniqueName(SpectralIdentity);
 
 		StarGenerator->ApplySpectralMaterial(NewStar, StarModel);
 
@@ -1549,11 +1573,14 @@ void AAstroGenerator::GenerateStarSystem(AStarSystem* NewStarSystem, TSharedPtr<
 			APlanet* NewPlanet = World->SpawnActor<APlanet>(BP_PlanetClass);
 
 			PlanetGenerator->ApplyModel(NewPlanet, PlanetModel);
+			NewPlanet->AstroName = AGravityPlayerController::GenerateUniqueName(TEXT("Planet"));
 			NewStar->AddPlanet(NewPlanet);
 			NewPlanet->SetParentStar(NewStar);
 
 			NewPlanet->SetActorScale3D(FVector(PlanetModel->Radius * 12742000));
-			FVector NewLocation = FVector(PlanetModel->OrbitDistance * 149600000000000 / 1000, 0, 0);
+			const FVector OrbitOffset(PlanetModel->OrbitDistance * 149600000000000 / 1000, 0, 0);
+			const FVector NewLocation = NewPlanetOrbit->GetActorLocation()
+				+ NewPlanetOrbit->GetActorQuat().RotateVector(OrbitOffset);
 			NewPlanet->PlanetRadiusKM = PlanetModel->Radius * 6371;
 			NewPlanet->SetActorLocation(NewLocation);
 
@@ -1575,6 +1602,7 @@ void AAstroGenerator::GenerateStarSystem(AStarSystem* NewStarSystem, TSharedPtr<
 
 				FVector MoonLocation = NewPlanet->GetActorLocation();
 				AMoon* NewMoon = World->SpawnActor<AMoon>(BP_MoonClass, MoonLocation, FRotator::ZeroRotator);
+				NewMoon->AstroName = AGravityPlayerController::GenerateUniqueName(TEXT("Moon"));
 				NewPlanet->AddMoon(NewMoon);
 				NewMoon->SetParentPlanet(NewPlanet);
 
@@ -1582,8 +1610,10 @@ void AAstroGenerator::GenerateStarSystem(AStarSystem* NewStarSystem, TSharedPtr<
 				MoonGenerator->ConnectMoonWithPlanet(NewMoon, NewPlanet);
 
 				NewMoon->SetActorScale3D(FVector(MoonData->MoonModel->Radius * 12742000));
-				FVector Location = FVector(MoonData->MoonModel->OrbitDistance * 149600000000000 / 1000, 0, 0);
-				NewMoon->SetActorLocation(Location);
+				const FVector MoonOrbitOffset(
+					MoonData->MoonModel->OrbitDistance * 149600000000000 / 1000, 0, 0);
+				NewMoon->SetActorLocation(NewMoonOrbit->GetActorLocation()
+					+ NewMoonOrbit->GetActorQuat().RotateVector(MoonOrbitOffset));
 
 				NewMoon->AttachToActor(NewMoonOrbit, FAttachmentTransformRules::KeepWorldTransform);
 			}

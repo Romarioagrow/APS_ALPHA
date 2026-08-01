@@ -7,6 +7,15 @@ AStarSystem::AStarSystem()
 
 	StarSystemZone = CreateDefaultSubobject<USphereComponent>(TEXT("StarSystemZoneComponent"));
 	StarSystemZone->SetupAttachment(RootComponent);
+	StarSystemZone->SetVisibility(false);
+	StarSystemZone->SetHiddenInGame(true);
+}
+
+void AStarSystem::BeginPlay()
+{
+	Super::BeginPlay();
+	StarSystemZone->SetVisibility(false, true);
+	StarSystemZone->SetHiddenInGame(true, true);
 }
 
 void AStarSystem::SetStarsAmount(int Amount)

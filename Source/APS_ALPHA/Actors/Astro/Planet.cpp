@@ -42,6 +42,16 @@ void APlanet::CheckPlayerPawn()
 
 void APlanet::SetManualPlanet(AWorldScapeRoot* StartHomePlanet)
 {
+	if (!IsValid(StartHomePlanet))
+	{
+		return;
+	}
+	if (APlanetarySurfaceGenerator* Generator = EnsurePlanetaryEnvironmentGenerator())
+	{
+		Generator->PlanetaryBody = this;
+		Generator->WorldScapeRootInstance = StartHomePlanet;
+		bEnvironmentSpawned = StartHomePlanet->bGenerateWorldScape && !StartHomePlanet->bFreezeGeneration;
+	}
 }
 
 void APlanet::DestroyWSC()
@@ -91,8 +101,10 @@ void APlanet::InitWSC()
 void APlanet::BeginPlay()
 {
 	Super::BeginPlay();
-
-	GetWorldTimerManager().SetTimer(PlayerPawnTimerHandle, this, &APlanet::CheckPlayerPawn, 1.0f, true);
+	PlanetaryZone->SetVisibility(false, true);
+	PlanetaryZone->SetHiddenInGame(true, true);
+	GravityCollisionZone->SetVisibility(false, true);
+	GravityCollisionZone->SetHiddenInGame(true, true);
 }
 
 APlanet::APlanet()
@@ -104,9 +116,13 @@ APlanet::APlanet()
 
 	PlanetaryZone = CreateDefaultSubobject<USphereComponent>(TEXT("PlanetaryZoneComponent"));
 	PlanetaryZone->SetupAttachment(RootComponent);
+	PlanetaryZone->SetVisibility(false);
+	PlanetaryZone->SetHiddenInGame(true);
 
 	GravityCollisionZone = CreateDefaultSubobject<USphereComponent>(TEXT("PlanetGravityCollisionZoneComponent"));
 	GravityCollisionZone->SetupAttachment(RootComponent);
+	GravityCollisionZone->SetVisibility(false);
+	GravityCollisionZone->SetHiddenInGame(true);
 }
 
 bool APlanet::IsNotGasGiant()
@@ -170,6 +186,7 @@ void APlanet::SetupHomePlanetFromEditor(AWorldScapeRoot* StartHomePlanet)
 	FAttachmentTransformRules AttachmentRules(EAttachmentRule::KeepWorld, true);
 	StartHomePlanet->AttachToActor(this, AttachmentRules);
 	StartHomePlanet->SetActorRelativeLocation(FVector(0.0, 0.0, 0.0));
+	SetManualPlanet(StartHomePlanet);
 }
 
 void APlanet::RemoveAllChildrenRecursively(AActor* ParentActor)
@@ -228,6 +245,7 @@ void APlanet::DisableSphereMesh()
 
 void APlanet::ApplyNewPlanetParameters(AWorldScapeRoot* StartHomePlanet)
 {
+	SetManualPlanet(StartHomePlanet);
 	this->PlanetRadiusKM = StartHomePlanet->PlanetScale / 100000;
 	this->GravityCollisionZone->SetSphereRadius(0);
 	this->PlanetaryZone->SetSphereRadius(0);

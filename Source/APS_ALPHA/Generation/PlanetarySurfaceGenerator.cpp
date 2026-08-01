@@ -7,8 +7,7 @@
 // Sets default values
 APlanetarySurfaceGenerator::APlanetarySurfaceGenerator()
 {
- 	// Set this actor to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
-	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.bCanEverTick = false;
 
     /*MoonLikeNoise = LoadObject<UWorldScapeNoiseClass>(nullptr, TEXT("/WorldScape/Ressources/Noise/MoonLike.MoonLike"));
     LavaWorldNoise = LoadObject<UWorldScapeNoiseClass>(nullptr, TEXT("/WorldScape/Ressources/Noise/LavaWorld.LavaWorld"));
@@ -521,7 +520,7 @@ void APlanetarySurfaceGenerator::GenerateWorldscapeSurfaceByModel(UWorld* World,
 
         WorldScapeRootInstance->GenerationType = EWorldScapeType::Planet;
         WorldScapeRootInstance->PlanetScale = PlanetRadiusKM * 100000;
-        WorldScapeRootInstance->DistanceToFreezeGeneration = PlanetRadiusKM * 1000000;
+		WorldScapeRootInstance->DistanceToFreezeGeneration = NewPlanet->GetWorldScapeActivationRadiusCm();
 
 
         WorldScapeRootInstance->SetActorLocation(NewPlanet->GetActorLocation());
@@ -766,7 +765,7 @@ void APlanetarySurfaceGenerator::GenerateWorldscapeSurfaceByModel(UWorld* World,
 
         WorldScapeRootInstance->GenerationType = EWorldScapeType::Planet;
         WorldScapeRootInstance->PlanetScale = PlanetRadiusKM * 100000;
-        WorldScapeRootInstance->DistanceToFreezeGeneration = PlanetRadiusKM;
+		WorldScapeRootInstance->DistanceToFreezeGeneration = NewMoon->GetWorldScapeActivationRadiusCm();
 
 
         WorldScapeRootInstance->SetActorLocation(NewMoon->GetActorLocation());
@@ -827,10 +826,8 @@ void APlanetarySurfaceGenerator::SpawnWorldScapeRoot()
 {
     if (WorldScapeRootInstance)
     {
-
-        GEngine->AddOnScreenDebugMessage(-1, 15.f, FColor::Magenta, TEXT("SpawnPlanetEnvironment!"));
         WorldScapeRootInstance->bGenerateWorldScape = true;
-        WorldScapeRootInstance->bOcean = true;
+		WorldScapeRootInstance->bFreezeGeneration = false;
         WorldScapeRootInstance->SetActorHiddenInGame(false);    
         WorldScapeRootInstance->SetActorTickEnabled(true);
         WorldScapeRootInstance->SetActorEnableCollision(true);
@@ -839,7 +836,6 @@ void APlanetarySurfaceGenerator::SpawnWorldScapeRoot()
         {
             WorldScapeRootInstance->SetActorLocation(FVector(0.0, 0.0, 0.0));
             WorldScapeRootInstance->AttachToActor(PlanetaryBody, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
-            GEngine->AddOnScreenDebugMessage(-1, 15.f, FColor::Magenta, TEXT("WorldScapeRootInstance respawned!"));
         }
     }
 }
@@ -848,13 +844,11 @@ void APlanetarySurfaceGenerator::DestroyPlanetEnvironment()
 {
     if (WorldScapeRootInstance)
     {
-        GEngine->AddOnScreenDebugMessage(-1, 15.f, FColor::Magenta, TEXT("DestroyPlanetEnvironment!"));
         WorldScapeRootInstance->bGenerateWorldScape = false;
+		WorldScapeRootInstance->bFreezeGeneration = true;
         WorldScapeRootInstance->SetActorHiddenInGame(true);
         WorldScapeRootInstance->SetActorTickEnabled(false);
         WorldScapeRootInstance->SetActorEnableCollision(false);
-        //WorldScapeRootInstance->DetachRootComponentFromParent();
-        WorldScapeRootInstance->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
     }
 
 }

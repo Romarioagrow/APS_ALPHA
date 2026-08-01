@@ -7,6 +7,8 @@ AStar::AStar()
 
 	PlanetarySystemZone = CreateDefaultSubobject<USphereComponent>(TEXT("PlanetarySystemZoneComponent"));
 	PlanetarySystemZone->SetupAttachment(RootComponent);
+	PlanetarySystemZone->SetVisibility(false);
+	PlanetarySystemZone->SetHiddenInGame(true);
 
 	StarMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("StarMesh"));
 	StarMesh->SetupAttachment(RootComponent);
@@ -15,6 +17,8 @@ AStar::AStar()
 void AStar::BeginPlay()
 {
 	Super::BeginPlay();
+	PlanetarySystemZone->SetVisibility(false, true);
+	PlanetarySystemZone->SetHiddenInGame(true, true);
 
 	StarDynamicMaterial = UMaterialInstanceDynamic::Create(StarMesh->GetMaterial(0), this);
 	if (StarDynamicMaterial)
