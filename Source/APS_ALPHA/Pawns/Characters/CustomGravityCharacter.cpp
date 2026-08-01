@@ -63,6 +63,10 @@ ACustomGravityCharacter::ACustomGravityCharacter()
 	CameraBoom->bInheritRoll = false;
 	CameraBoom->bEnableCameraLag = true;
 	CameraBoom->CameraLagSpeed = 10.f;
+	CameraBoom->bUseCameraLagSubstepping = true;
+	CameraBoom->CameraLagMaxTimeStep = 1.0f / 120.0f;
+	CameraBoom->bClampToMaxPhysicsDeltaTime = true;
+	CameraBoom->CameraLagMaxDistance = 0.0f;
 
 	// Follow Camera
 	FollowCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FollowCamera"));
@@ -98,6 +102,13 @@ void ACustomGravityCharacter::BeginPlay()
 	CameraBoom->bInheritPitch = false;
 	CameraBoom->bInheritYaw = false;
 	CameraBoom->bInheritRoll = false;
+	// Old Blueprint defaults can override the native spring-arm settings. Force a
+	// frame-rate-independent camera at runtime so custom-gravity movement cannot
+	// appear to pulse while the capsule itself is moving smoothly.
+	CameraBoom->bUseCameraLagSubstepping = true;
+	CameraBoom->CameraLagMaxTimeStep = 1.0f / 120.0f;
+	CameraBoom->bClampToMaxPhysicsDeltaTime = true;
+	CameraBoom->CameraLagMaxDistance = 0.0f;
 	FollowCamera->bUsePawnControlRotation = false;
 	if (!SurfaceAnimationClass && GetMesh())
 	{

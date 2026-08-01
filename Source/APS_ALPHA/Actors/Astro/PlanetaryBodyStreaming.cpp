@@ -11,12 +11,6 @@ void APlanetaryBody::SetWorldScapeStreamingState(EWorldScapeSurfaceState NewStat
 		return;
 	}
 
-	APlanetarySurfaceGenerator* Generator = EnsurePlanetaryEnvironmentGenerator();
-	if (!Generator)
-	{
-		return;
-	}
-
 	auto SetPlaceholderVisible = [this](bool bVisible)
 	{
 		if (APlanet* Planet = Cast<APlanet>(this))
@@ -28,6 +22,37 @@ void APlanetaryBody::SetWorldScapeStreamingState(EWorldScapeSurfaceState NewStat
 			bVisible ? Moon->EnableSphereMesh() : Moon->DisableSphereMesh();
 		}
 	};
+
+	// Preload is intentionally metadata-only. Creating one WorldScape actor for
+	// every planet and moon in the resident family polluted the runtime Outliner
+	// and spent memory on surfaces the player was not approaching. Only Active is
+	// allowed to allocate a transient root; leaving Active releases that root.
+	if (NewState == EWorldScapeSurfaceState::Preloaded
+		|| NewState == EWorldScapeSurfaceState::Unloaded)
+	{
+		if (IsValid(PlanetaryEnvironmentGenerator))
+		{
+			if (NewState == EWorldScapeSurfaceState::Preloaded
+				&& !PlanetaryEnvironmentGenerator->bOwnsWorldScapeRootInstance)
+			{
+				PlanetaryEnvironmentGenerator->PreloadWorldScapeRoot();
+			}
+			else
+			{
+				PlanetaryEnvironmentGenerator->UnloadWorldScapeRoot();
+			}
+		}
+		SetPlaceholderVisible(true);
+		bEnvironmentSpawned = false;
+		WorldScapeSurfaceState = NewState;
+		return;
+	}
+
+	APlanetarySurfaceGenerator* Generator = EnsurePlanetaryEnvironmentGenerator();
+	if (!Generator)
+	{
+		return;
+	}
 
 	auto PrepareSurface = [this, Generator]() -> bool
 	{
@@ -79,21 +104,8 @@ void APlanetaryBody::SetWorldScapeStreamingState(EWorldScapeSurfaceState NewStat
 		break;
 
 	case EWorldScapeSurfaceState::Preloaded:
-		if (PrepareSurface())
-		{
-			Generator->PreloadWorldScapeRoot();
-			SetPlaceholderVisible(true);
-			bEnvironmentSpawned = false;
-			WorldScapeSurfaceState = EWorldScapeSurfaceState::Preloaded;
-		}
-		break;
-
 	case EWorldScapeSurfaceState::Unloaded:
 	default:
-		Generator->UnloadWorldScapeRoot();
-		SetPlaceholderVisible(true);
-		bEnvironmentSpawned = false;
-		WorldScapeSurfaceState = EWorldScapeSurfaceState::Unloaded;
 		break;
 	}
 }
@@ -101,13 +113,15 @@ void APlanetaryBody::SetWorldScapeStreamingState(EWorldScapeSurfaceState NewStat
 double APlanetaryBody::GetWorldScapePreloadRadiusCm() const
 {
 	const double ActivationRadius = GetWorldScapeActivationRadiusCm();
-	const double BodyRadiusCm = ActivationRadius / FMath::Max(WorldScapeActivationRadiusMultiplier, 1.0);
-	return FMath::Max(GetWorldScapeDeactivationRadiusCm(), BodyRadiusCm * WorldScapePreloadRadiusMultiplier);
+	const double BodyRadiusCm = ActivationRadius / FMath::Max(WorldScapeActivationRadiusMultiplier, 96.0);
+	return FMath::Max(GetWorldScapeDeactivationRadiusCm(),
+		BodyRadiusCm * FMath::Max(WorldScapePreloadRadiusMultiplier, 144.0));
 }
 
 double APlanetaryBody::GetWorldScapeUnloadRadiusCm() const
 {
 	const double ActivationRadius = GetWorldScapeActivationRadiusCm();
-	const double BodyRadiusCm = ActivationRadius / FMath::Max(WorldScapeActivationRadiusMultiplier, 1.0);
-	return FMath::Max(GetWorldScapePreloadRadiusCm() * 1.2, BodyRadiusCm * WorldScapeUnloadRadiusMultiplier);
+	const double BodyRadiusCm = ActivationRadius / FMath::Max(WorldScapeActivationRadiusMultiplier, 96.0);
+	return FMath::Max(GetWorldScapePreloadRadiusCm() * 1.2,
+		BodyRadiusCm * FMath::Max(WorldScapeUnloadRadiusMultiplier, 192.0));
 }

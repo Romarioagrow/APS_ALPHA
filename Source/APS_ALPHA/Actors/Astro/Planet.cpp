@@ -56,44 +56,16 @@ void APlanet::SetManualPlanet(AWorldScapeRoot* StartHomePlanet)
 
 void APlanet::DestroyWSC()
 {
-	if (!PlanetaryEnvironmentGenerator)
-	{
-		UE_LOG(LogTemp, Error, TEXT("PlanetaryEnvironmentGenerator is null!"));
-		return;
-	}
-
-	if (!PlanetaryEnvironmentGenerator->WorldScapeRootInstance)
-	{
-		UE_LOG(LogTemp, Error, TEXT("WorldScapeRootInstance is null!"));
-		return;
-	}
-
-	PlanetaryEnvironmentGenerator->WorldScapeRootInstance->Destroy();
-	EnableSphereMesh();
-
-	for (AMoon* Moon : Moons)
-	{
-		Moon->PlanetaryEnvironmentGenerator->WorldScapeRootInstance->Destroy();
-		Moon->EnableSphereMesh();
-	}
+	SetWorldScapeStreamingState(EWorldScapeSurfaceState::Unloaded);
 }
 
 void APlanet::InitWSC()
 {
-	UE_LOG(LogTemp, Warning, TEXT("InitWSC"));
-
-	UWorld* World = GetWorld();
-	if (World && IsNotGasGiant())
+	// Kept as a compatibility entry point. Streaming owns the single active root;
+	// it must never recursively create roots for every moon in the family.
+	if (IsNotGasGiant())
 	{
-		DisableSphereMesh();
-		PlanetaryEnvironmentGenerator->GenerateWorldscapeSurfaceByModel(World, this);
-	}
-
-	// for each moon init moon
-	for (AMoon* Moon : Moons)
-	{
-		Moon->PlanetaryEnvironmentGenerator->GenerateWorldscapeSurfaceByModel(World, Moon);
-		Moon->DisableSphereMesh();
+		SetWorldScapeStreamingState(EWorldScapeSurfaceState::Active);
 	}
 }
 

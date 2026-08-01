@@ -108,24 +108,29 @@ bool FAPSWorldScapeFamilyLifecycleTest::RunTest(const FString& Parameters)
 
 	Planet->SetWorldScapeStreamingState(EWorldScapeSurfaceState::Preloaded);
 	APlanetarySurfaceGenerator* Generator = Planet->PlanetaryEnvironmentGenerator;
+	TestEqual(TEXT("Preloaded surface reports its state"), Planet->GetWorldScapeStreamingState(),
+		EWorldScapeSurfaceState::Preloaded);
+	TestNull(TEXT("Preload does not allocate a runtime WorldScape actor"),
+		Generator ? Generator->WorldScapeRootInstance : nullptr);
+
+	Planet->SetWorldScapeStreamingState(EWorldScapeSurfaceState::Active);
+	Generator = Planet->PlanetaryEnvironmentGenerator;
 	AWorldScapeRoot* Root = Generator ? Generator->WorldScapeRootInstance : nullptr;
-	if (TestNotNull(TEXT("Preload creates a configured WorldScape root"), Root))
+	TestTrue(TEXT("Active surface generates"), Planet->IsWorldScapeStreamingActive());
+	if (TestNotNull(TEXT("Only activation creates the configured WorldScape root"), Root))
 	{
-		TestEqual(TEXT("Preloaded surface reports its state"), Planet->GetWorldScapeStreamingState(),
-			EWorldScapeSurfaceState::Preloaded);
-		TestFalse(TEXT("Preloaded root spends no generation time"), Root->bGenerateWorldScape);
 		TestTrue(TEXT("Ocean profile enables the ocean mesh"), Root->bOcean);
 		TestNotNull(TEXT("Ocean profile assigns an ocean material"), Root->OceanMaterial.DefaultMaterial);
 		TestNotNull(TEXT("Ocean profile assigns terrain noise"), Root->WorldScapeNoise);
 	}
-
-	Planet->SetWorldScapeStreamingState(EWorldScapeSurfaceState::Active);
-	TestTrue(TEXT("Active surface generates"), Planet->IsWorldScapeStreamingActive());
 	Planet->SetWorldScapeStreamingState(EWorldScapeSurfaceState::FrozenVisible);
 	TestEqual(TEXT("Generated sibling remains resident and frozen"), Planet->GetWorldScapeStreamingState(),
 		EWorldScapeSurfaceState::FrozenVisible);
 	TestTrue(TEXT("Frozen surface keeps generated data"), Root && Root->bGenerateWorldScape && Root->bFreezeGeneration);
 	TestFalse(TEXT("Frozen surface stays visible"), Root && Root->IsHidden());
+	Planet->SetWorldScapeStreamingState(EWorldScapeSurfaceState::Preloaded);
+	TestNull(TEXT("Leaving the nearest body releases its transient root"),
+		Generator ? Generator->WorldScapeRootInstance : nullptr);
 
 	Planet->SetWorldScapeStreamingState(EWorldScapeSurfaceState::Unloaded);
 	TestNull(TEXT("Leaving the family releases its transient root"),

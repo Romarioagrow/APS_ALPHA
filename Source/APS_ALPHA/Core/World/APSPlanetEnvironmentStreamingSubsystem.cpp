@@ -163,8 +163,8 @@ void UAPSPlanetEnvironmentStreamingSubsystem::UpdateActiveEnvironment()
 	{
 		if (ResolveFamilyPlanet(PreviousBody) == BestFamily)
 		{
-			PreviousBody->SetWorldScapeStreamingState(EWorldScapeSurfaceState::FrozenVisible);
-			UE_LOG(LogAPSWorldScapeStreaming, Log, TEXT("Froze resident WorldScape surface: %s"),
+			PreviousBody->SetWorldScapeStreamingState(EWorldScapeSurfaceState::Preloaded);
+			UE_LOG(LogAPSWorldScapeStreaming, Log, TEXT("Released previous WorldScape surface: %s"),
 				*PreviousBody->GetPathName());
 		}
 	}

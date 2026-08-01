@@ -3,11 +3,13 @@
 #include "APS_ALPHA/Actors/Astro/Planet.h"
 #include "APS_ALPHA/Core/Enums/MoonType.h"
 #include "APS_ALPHA/Core/Enums/PlanetType.h"
+#include "Components/SceneComponent.h"
 
 // Sets default values
 APlanetarySurfaceGenerator::APlanetarySurfaceGenerator()
 {
 	PrimaryActorTick.bCanEverTick = false;
+	RootComponent = CreateDefaultSubobject<USceneComponent>(TEXT("RuntimeSurfaceGeneratorRoot"));
 
     /*MoonLikeNoise = LoadObject<UWorldScapeNoiseClass>(nullptr, TEXT("/WorldScape/Ressources/Noise/MoonLike.MoonLike"));
     LavaWorldNoise = LoadObject<UWorldScapeNoiseClass>(nullptr, TEXT("/WorldScape/Ressources/Noise/LavaWorld.LavaWorld"));
@@ -191,7 +193,6 @@ void APlanetarySurfaceGenerator::InitAtmoScape(UWorld* World, double PlanetaryRa
 
     if (PlanetAtmosphere)
     {
-        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("PlanetAtmosphere AtmoScapeInstance has been created successfully."));
         
         
         // Установка параметров и свойств для объекта Atmosphere.
@@ -418,23 +419,19 @@ void APlanetarySurfaceGenerator::InitAtmoScape(UWorld* World, double PlanetaryRa
 
 void APlanetarySurfaceGenerator::InitWorldScape(UWorld* World)
 {
-    GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Magenta, TEXT("InitWorldScape!"));
     FActorSpawnParameters SpawnParams;
     WorldScapeRootInstance = World->SpawnActor<AWorldScapeRoot>(AWorldScapeRoot::StaticClass(), FTransform(), SpawnParams);
 
     if (WorldScapeRootInstance)
     {
-        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("InitWorldScape WorldScapeRootInstance has been created successfully."));
         UE_LOG(LogTemp, Warning, TEXT("InitWorldScape WorldScapeRootInstance has been created successfully."));
 
         WorldScapeRootInstance->GenerationType = EWorldScapeType::Planet;
         WorldScapeRootInstance->bGenerateWorldScape = true;
 
-        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Magenta, TEXT("GenerateWorldScape!"));
     }
     else
     {
-        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("InitWorldScape Failed to create WorldScapeRootInstance."));
         UE_LOG(LogTemp, Warning, TEXT("InitWorldScape Failed to create WorldScapeRootInstance."));
     }
 }
@@ -464,6 +461,11 @@ void APlanetarySurfaceGenerator::GenerateWorldscapeSurfaceByModel(UWorld* World,
 	if (!NewPlanet)
 	{
 		UE_LOG(LogTemp, Error, TEXT("GenerateWorldscapeSurfaceByModel: NewPlanet parameter is null!"));
+		return;
+	}
+	if (IsValid(WorldScapeRootInstance))
+	{
+		PlanetaryBody = NewPlanet;
 		return;
 	}
 
@@ -505,15 +507,17 @@ void APlanetarySurfaceGenerator::GenerateWorldscapeSurfaceByModel(UWorld* World,
     MI_Lava_Ocean = Cast<UMaterialInstance>(StaticLoadObject(UMaterialInstance::StaticClass(), nullptr, TEXT("/Game/APS/APS_ALPHA/WSC/WSC_MI_LavaOcean.WSC_MI_LavaOcean")));
 
 
-    GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Magenta, TEXT("GenerateWorldscapeSurfaceByModel!"));
     FActorSpawnParameters SpawnParams;
-    WorldScapeRootInstance = World->SpawnActor<AWorldScapeRoot>(AWorldScapeRoot::StaticClass(), FTransform(), SpawnParams);
+	SpawnParams.Owner = NewPlanet;
+	SpawnParams.ObjectFlags |= RF_Transient;
+	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+    WorldScapeRootInstance = World->SpawnActor<AWorldScapeRoot>(
+		AWorldScapeRoot::StaticClass(), NewPlanet->GetActorTransform(), SpawnParams);
 
     if (WorldScapeRootInstance)
     {
         PlanetaryBody = NewPlanet;
 
-        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("InitWorldScape WorldScapeRootInstance has been created successfully."));
         UE_LOG(LogTemp, Warning, TEXT("InitWorldScape WorldScapeRootInstance has been created successfully."));
 
         double PlanetRadiusKM = NewPlanet->PlanetRadiusKM;
@@ -724,11 +728,9 @@ void APlanetarySurfaceGenerator::GenerateWorldscapeSurfaceByModel(UWorld* World,
         SpawnWorldScapeRoot();
         
         //WorldScapeRootInstance->bGenerateWorldScape = true;
-        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Magenta, TEXT("GenerateWorldScape!"));
     }
     else
     {
-        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("InitWorldScape Failed to create WorldScapeRootInstance."));
         UE_LOG(LogTemp, Warning, TEXT("InitWorldScape Failed to create WorldScapeRootInstance."));
     }
 
@@ -747,15 +749,22 @@ void APlanetarySurfaceGenerator::GenerateWorldscapeSurfaceByModel(UWorld* World,
 		UE_LOG(LogTemp, Error, TEXT("GenerateWorldscapeSurfaceByModel: NewMoon parameter is null!"));
 		return;
 	}
+	if (IsValid(WorldScapeRootInstance))
+	{
+		PlanetaryBody = NewMoon;
+		return;
+	}
 
-    GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Magenta, TEXT("GenerateWorldscapeSurfaceByModel!"));
     FActorSpawnParameters SpawnParams;
-    WorldScapeRootInstance = World->SpawnActor<AWorldScapeRoot>(AWorldScapeRoot::StaticClass(), FTransform(), SpawnParams);
+	SpawnParams.Owner = NewMoon;
+	SpawnParams.ObjectFlags |= RF_Transient;
+	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+    WorldScapeRootInstance = World->SpawnActor<AWorldScapeRoot>(
+		AWorldScapeRoot::StaticClass(), NewMoon->GetActorTransform(), SpawnParams);
 
     if (WorldScapeRootInstance)
     {
 
-        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("InitWorldScape WorldScapeRootInstance has been created successfully."));
         UE_LOG(LogTemp, Warning, TEXT("InitWorldScape WorldScapeRootInstance has been created successfully."));
 
         PlanetaryBody = NewMoon;
@@ -812,11 +821,9 @@ void APlanetarySurfaceGenerator::GenerateWorldscapeSurfaceByModel(UWorld* World,
 
         SpawnWorldScapeRoot();
         
-        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Magenta, TEXT("GenerateWorldScape!"));
     }
     else
     {
-        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("InitWorldScape Failed to create WorldScapeRootInstance."));
         UE_LOG(LogTemp, Warning, TEXT("InitWorldScape Failed to create WorldScapeRootInstance."));
     }
 

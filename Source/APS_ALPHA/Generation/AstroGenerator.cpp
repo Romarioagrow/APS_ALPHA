@@ -447,26 +447,8 @@ void AAstroGenerator::GenerateHomeStarSystem()
 				}
 				
 				PlanetGenerator->GeneratePlanetAtmosphere(HomePlanet, PlanetAtmosphereModel);
-				
-				// Validate PlanetaryEnvironmentGenerator before calling GenerateWorldscapeSurfaceByModel
-				if (HomePlanet->PlanetaryEnvironmentGenerator)
-				{
-					HomePlanet->PlanetaryEnvironmentGenerator->GenerateWorldscapeSurfaceByModel(GetWorld(), HomePlanet);
-				}
-				else
-				{
-					UE_LOG(LogTemp, Error, TEXT("PlanetaryEnvironmentGenerator is null for HomePlanet!"));
-					// Try to initialize it manually
-					HomePlanet->PlanetaryEnvironmentGenerator = HomePlanet->EnsurePlanetaryEnvironmentGenerator();
-					if (HomePlanet->PlanetaryEnvironmentGenerator)
-					{
-						HomePlanet->PlanetaryEnvironmentGenerator->GenerateWorldscapeSurfaceByModel(GetWorld(), HomePlanet);
-					}
-					else
-					{
-						UE_LOG(LogTemp, Error, TEXT("Failed to create PlanetaryEnvironmentGenerator!"));
-					}
-				}
+				// Detailed terrain is created lazily by the WorldScape streaming
+				// subsystem. Generating it here left an unconditional root at startup.
 				
 				HomePlanet->AstroName = AGravityPlayerController::GenerateUniqueName("Planet");
 			}
@@ -1184,9 +1166,9 @@ void AAstroGenerator::SpawnPlanetMoons(const TSharedPtr<FPlanetModel>& PlanetMod
 
 		SetMoonRotation(NewMoonOrbit);
 
-		///Generate WSC
+		// Atmosphere metadata is independent from the streamed surface. Do not
+		// allocate a WorldScape root here; the nearest-body streamer owns it.
 		NewMoon->PlanetaryEnvironmentGenerator->InitAtmoScape(GetWorld(), NewMoon->RadiusKM, NewMoon);
-		NewMoon->PlanetaryEnvironmentGenerator->GenerateWorldscapeSurfaceByModel(GetWorld(), NewMoon);
 	}
 
 	if (DiameterOfLastMoon == 0)
@@ -1848,6 +1830,14 @@ void AAstroGenerator::IntegrateStartPlanetIntoSystem()
 	UE_LOG(LogTemp, Warning, TEXT("BP_Headquarters: %s"), *BP_Headquarters->GetName());
 	UE_LOG(LogTemp, Warning, TEXT("GeneratedHomeStarSystem: %s"), *GeneratedHomeStarSystem->GetName());
 	UE_LOG(LogTemp, Warning, TEXT("Using HomePlanet: %s"), *HomePlanet->GetName());
+
+	// Single Play integrates an editor-authored start world. Its WorldScapeRoot is
+	// already part of the level and must not be treated as another procedural body.
+	// Otherwise the runtime streamer creates a second terrain surface around the
+	// generated hierarchy planet as soon as play begins. Random-generation mode
+	// does not enter this integration path and keeps normal nearest-body streaming.
+	HomePlanet->bStreamWorldScapeSurface = false;
+	HomePlanet->bGenerateByDefault = false;
 	
 	// Находим нужную орбиту и перемещаем домашнюю планету (иерархия от станции)
 	APlanetOrbit* TargetOrbit = GeneratedHomeStarSystem->MainStar->PlanetarySystem->PlanetOrbitsList[StartPlanetNumber - 1];

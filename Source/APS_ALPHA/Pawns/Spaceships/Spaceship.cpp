@@ -266,6 +266,9 @@ ASpaceship::ASpaceship()
 	SpringArmComponent->CameraLagSpeed = 7.0f;
 	SpringArmComponent->bEnableCameraRotationLag = true;
 	SpringArmComponent->CameraRotationLagSpeed = 9.0f;
+	SpringArmComponent->bUseCameraLagSubstepping = true;
+	SpringArmComponent->CameraLagMaxTimeStep = 1.0f / 120.0f;
+	SpringArmComponent->bClampToMaxPhysicsDeltaTime = true;
 
 	CameraComponent = CreateDefaultSubobject<UCameraComponent>(TEXT("Camera"));
 	CameraComponent->SetupAttachment(SpringArmComponent, USpringArmComponent::SocketName);
@@ -650,7 +653,6 @@ void ASpaceship::Tick(float DeltaTime)
 				APlanet* Planet = Cast<APlanet>(AffectedActor);
 
 
-				//Planet->InitWSC();
 
 				// �������� ������� ������� � �������.
 				FVector ShipPosition = GetActorLocation();
@@ -751,20 +753,15 @@ void ASpaceship::Tick(float DeltaTime)
 			if (LastFlightMode == EFlightMode::Interplanetary && OnboardComputer->FlightSystem.CurrentFlightMode ==
 				EFlightMode::Planetary)
 			{
-				APlanet* Planet = Cast<APlanet>(AffectedActor);
-				Planet->InitWSC();
-				//APlanet
-				AffectedPlanet = Planet;
+				// WorldScape lifetime is owned by APSPlanetEnvironmentStreamingSubsystem.
+				// The legacy InitWSC path spawned another root for the planet and every
+				// moon whenever flight mode changed, leaving duplicate runtime actors.
+				AffectedPlanet = Cast<APlanet>(AffectedActor);
 			}
 			else if (LastFlightMode == EFlightMode::Planetary && OnboardComputer->FlightSystem.CurrentFlightMode ==
 				EFlightMode::Interplanetary)
 			{
-				if (AffectedPlanet)
-				{
-					AffectedPlanet->DestroyWSC();
-				}
-				//APlanet* Planet = Cast<APlanet>(AffectedActor);
-				//Planet->DestroyWSC();
+				AffectedPlanet = nullptr;
 			}
 
 
@@ -1131,7 +1128,13 @@ void ASpaceship::ConfigureCameraFromHull()
 		bCameraFieldOfViewInitialized = true;
 	}
 	SpringArmComponent->TargetArmLength = BaseCameraArmLength;
-	SpringArmComponent->CameraLagMaxDistance = BaseCameraArmLength * 0.85;
+	// Never hard-clamp the lagged camera origin. The spring-arm clamp produces a
+	// discontinuity whenever the moving ship crosses the limit, which looks like
+	// a periodic stop/go pulse even though the pawn trajectory itself is smooth.
+	SpringArmComponent->CameraLagMaxDistance = 0.0f;
+	SpringArmComponent->bUseCameraLagSubstepping = true;
+	SpringArmComponent->CameraLagMaxTimeStep = 1.0f / 120.0f;
+	SpringArmComponent->bClampToMaxPhysicsDeltaTime = true;
 	SpringArmComponent->SetWorldLocation(
 		MainMesh->GetComponentTransform().TransformPosition(LocalCenter) + GetShipUpVector() * WorldRadius * 0.2);
 	const FRotator FlightViewRotation = FRotationMatrix::MakeFromXZ(
@@ -1484,9 +1487,15 @@ void ASpaceship::UpdateAdaptiveFlightCamera(float DeltaTime)
 	const float TargetArmLength = BaseCameraArmLength * FMath::Lerp(1.0f, 1.22f, CameraAlpha);
 	SpringArmComponent->TargetArmLength = FMath::FInterpTo(
 		SpringArmComponent->TargetArmLength, TargetArmLength, DeltaTime, 2.6f);
-	SpringArmComponent->CameraLagSpeed = FMath::Lerp(7.0f, 18.0f, CameraAlpha);
+	// Keep a small, deterministic chase offset without the hard max-distance
+	// clamp. At very high velocity the response grows with speed, preventing the
+	// camera from being left kilometres behind the ship.
+	const double DesiredTranslationLag = FMath::Max(
+		static_cast<double>(BaseCameraArmLength) * FMath::Lerp(0.08, 0.18, CameraAlpha), 100.0);
+	SpringArmComponent->CameraLagSpeed = static_cast<float>(FMath::Clamp(
+		Speed / DesiredTranslationLag, 8.0, 10000000.0));
 	SpringArmComponent->CameraRotationLagSpeed = FMath::Lerp(7.0f, 12.0f, CameraAlpha);
-	SpringArmComponent->CameraLagMaxDistance = BaseCameraArmLength * FMath::Lerp(0.3f, 0.58f, CameraAlpha);
+	SpringArmComponent->CameraLagMaxDistance = 0.0f;
 	if (CameraComponent)
 	{
 		const float TargetFieldOfView = BaseCameraFieldOfView + CameraAlpha * 12.0f;
@@ -1662,7 +1671,17 @@ void ASpaceship::ApplyFlightInput(float DeltaTime)
 	AddActorWorldOffset(KinematicVelocity * DeltaTime, bSweep, &Hit, ETeleportType::None);
 	if (Hit.bBlockingHit)
 	{
-		KinematicVelocity = FVector::VectorPlaneProject(KinematicVelocity, Hit.ImpactNormal) * 0.25;
+		// A grazing contact must not consume the ship's whole impulse. Multiplying the
+		// projected velocity by 0.25 made a held thrust repeatedly accelerate the ship
+		// and then discard 75% of its speed on the next sweep, which was perceived as
+		// a regular stop/go pulse even while flying straight. Remove only the velocity
+		// directed into the obstacle and preserve both tangential and separating motion.
+		const FVector SurfaceNormal = Hit.ImpactNormal.GetSafeNormal();
+		const double VelocityIntoSurface = FVector::DotProduct(KinematicVelocity, SurfaceNormal);
+		if (!SurfaceNormal.IsNearlyZero() && VelocityIntoSurface < 0.0)
+		{
+			KinematicVelocity -= SurfaceNormal * VelocityIntoSurface;
+		}
 	}
 }
 

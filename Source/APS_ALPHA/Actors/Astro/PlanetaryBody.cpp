@@ -33,7 +33,7 @@ APlanetaryBody::APlanetaryBody()
 	PlanetGeosphere.CrustThicknessLevel = ECrustThicknessLevel::VeryThin;
 	PlanetGeosphere.MagneticFieldStrengthLevel = EMagneticFieldStrength::NoField;
 
-	// Применение вычисленных значений
+	// РџСЂРёРјРµРЅРµРЅРёРµ РІС‹С‡РёСЃР»РµРЅРЅС‹С… Р·РЅР°С‡РµРЅРёР№
 	PlanetAtmosphere.UpdateAtmosphereProperties();
 	PlanetBiosphere.UpdateBiosphereProperties();
 	PlanetGeosphere.UpdateGeosphereProperties();
@@ -43,6 +43,9 @@ void APlanetaryBody::BeginPlay()
 {
 	Super::BeginPlay();
 
+	// The legacy environment API still uses this helper for planetary atmosphere
+	// setup. It is attached below so it stays nested under its body in the Outliner;
+	// it no longer allocates a WorldScape root until the body becomes Active.
 	EnsurePlanetaryEnvironmentGenerator();
 	if (bGenerateByDefault && !bStreamWorldScapeSurface)
 	{
@@ -75,8 +78,10 @@ APlanetarySurfaceGenerator* APlanetaryBody::EnsurePlanetaryEnvironmentGenerator(
 	if (PlanetaryEnvironmentGenerator)
 	{
 		PlanetaryEnvironmentGenerator->PlanetaryBody = this;
+		PlanetaryEnvironmentGenerator->AttachToActor(this, FAttachmentTransformRules::KeepWorldTransform);
 		PlanetaryEnvironmentGenerator->SetActorHiddenInGame(true);
 		PlanetaryEnvironmentGenerator->SetActorEnableCollision(false);
+		PlanetaryEnvironmentGenerator->SetActorTickEnabled(false);
 	}
 	return PlanetaryEnvironmentGenerator;
 }
@@ -106,33 +111,9 @@ bool APlanetaryBody::EnsureWorldScapeSurface()
 
 void APlanetaryBody::SetWorldScapeStreamingActive(bool bActive)
 {
-	if (!bStreamWorldScapeSurface && !bGenerateByDefault)
-	{
-		return;
-	}
-
-	APlanetarySurfaceGenerator* Generator = EnsurePlanetaryEnvironmentGenerator();
-	if (!Generator)
-	{
-		return;
-	}
-	if (bActive)
-	{
-		if (EnsureWorldScapeSurface())
-		{
-			Generator->SpawnWorldScapeRoot();
-			if (APlanet* Planet = Cast<APlanet>(this)) Planet->DisableSphereMesh();
-			else if (AMoon* Moon = Cast<AMoon>(this)) Moon->DisableSphereMesh();
-			bEnvironmentSpawned = true;
-		}
-	}
-	else if (IsValid(Generator->WorldScapeRootInstance))
-	{
-		Generator->DestroyPlanetEnvironment();
-		if (APlanet* Planet = Cast<APlanet>(this)) Planet->EnableSphereMesh();
-		else if (AMoon* Moon = Cast<AMoon>(this)) Moon->EnableSphereMesh();
-		bEnvironmentSpawned = false;
-	}
+	SetWorldScapeStreamingState(bActive
+		? EWorldScapeSurfaceState::Active
+		: EWorldScapeSurfaceState::Unloaded);
 }
 
 bool APlanetaryBody::IsWorldScapeStreamingActive() const
@@ -154,19 +135,24 @@ double APlanetaryBody::GetWorldScapeActivationRadiusCm() const
 		GetActorBounds(false, Origin, Extent);
 		BodyRadiusCm = Extent.GetMax();
 	}
-	return FMath::Max(BodyRadiusCm * WorldScapeActivationRadiusMultiplier, BodyRadiusCm * 1.25);
+	// Existing Blueprint CDOs may still serialize the old near-field value. Keep
+	// the native far preload guarantee even before those assets are resaved.
+	const double EffectiveMultiplier = FMath::Max(WorldScapeActivationRadiusMultiplier, 96.0);
+	return FMath::Max(BodyRadiusCm * EffectiveMultiplier, BodyRadiusCm * 1.25);
 }
 
 double APlanetaryBody::GetWorldScapeDeactivationRadiusCm() const
 {
 	const double ActivationRadius = GetWorldScapeActivationRadiusCm();
-	const double BodyRadiusCm = ActivationRadius / FMath::Max(WorldScapeActivationRadiusMultiplier, 1.0);
-	return FMath::Max(ActivationRadius * 1.25, BodyRadiusCm * WorldScapeDeactivationRadiusMultiplier);
+	const double EffectiveActivationMultiplier = FMath::Max(WorldScapeActivationRadiusMultiplier, 96.0);
+	const double BodyRadiusCm = ActivationRadius / EffectiveActivationMultiplier;
+	return FMath::Max(ActivationRadius * 1.25,
+		BodyRadiusCm * FMath::Max(WorldScapeDeactivationRadiusMultiplier, 128.0));
 }
 
 void APlanetaryBody::FillPlanetData()
 {
-	// Заполняем параметры планеты
+	// Р—Р°РїРѕР»РЅСЏРµРј РїР°СЂР°РјРµС‚СЂС‹ РїР»Р°РЅРµС‚С‹
 	//PlanetData.PlanetOrder = PlanetOrder;
 	//PlanetData.OrbitRadius = OrbitRadius;
 	PlanetData.PlanetRadiusKM = PlanetRadiusKM;
@@ -174,7 +160,7 @@ void APlanetaryBody::FillPlanetData()
 	PlanetData.PlanetDensity = PlanetDensity;
 	PlanetData.PlanetGravityStrength = PlanetGravityStrength;
 
-	// Заполняем данные окружения
+	// Р—Р°РїРѕР»РЅСЏРµРј РґР°РЅРЅС‹Рµ РѕРєСЂСѓР¶РµРЅРёСЏ
 	PlanetData.PlanetAtmosphere = PlanetAtmosphere;
 	PlanetData.PlanetBiosphere = PlanetBiosphere;
 	PlanetData.PlanetGeosphere = PlanetGeosphere;

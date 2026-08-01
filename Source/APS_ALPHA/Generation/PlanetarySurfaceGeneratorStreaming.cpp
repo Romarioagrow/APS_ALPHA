@@ -182,12 +182,18 @@ void APlanetarySurfaceGenerator::ApplySurfaceProfile(APlanetaryBody* Body)
 	WorldScapeRootInstance->NoiseScale = Profile.NoiseScale;
 	WorldScapeRootInstance->NoiseIntensity = Profile.NoiseIntensity;
 	WorldScapeRootInstance->Seed = Body->WorldScapeSeed;
+	// WorldScape's default eight LODs cover only a small square around the pawn on
+	// a full-scale planet. From low orbit that square has visible straight edges.
+	// Extra coarse rings extend the mesh beyond the geometric horizon while the
+	// single-active-body streaming budget keeps the cost bounded.
+	WorldScapeRootInstance->MaxLod = 13;
 	WorldScapeRootInstance->LodResolution = 160;
 	WorldScapeRootInstance->TriangleSize = 100.0f;
+	WorldScapeRootInstance->OceanMaxLod = 13;
 	WorldScapeRootInstance->OceanLodResolution = 96;
 	WorldScapeRootInstance->OceanTriangleSize = 160.0f;
 	WorldScapeRootInstance->HeightAnchor = FMath::Clamp(
-		static_cast<float>(WorldScapeRootInstance->PlanetScale * 0.002), 50000.0f, 500000.0f);
+		static_cast<float>(WorldScapeRootInstance->PlanetScale * 0.00025), 50000.0f, 250000.0f);
 	bSurfaceProfileApplied = true;
 
 	// The legacy generator loads every available preset. Retain only the selected

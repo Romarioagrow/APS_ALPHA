@@ -51,21 +51,21 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Body")
 	double WscZoneScale{10.0};
 
-	/** Surface generation starts at this many body radii from the center. */
+	/** Surface generation starts while the body is still a small disk on screen. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Body|Streaming", meta=(ClampMin="1.1"))
-	double WorldScapeActivationRadiusMultiplier{12.0};
+	double WorldScapeActivationRadiusMultiplier{96.0};
 
 	/** Larger than the activation radius to prevent rapid load/unload oscillation. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Body|Streaming", meta=(ClampMin="1.2"))
-	double WorldScapeDeactivationRadiusMultiplier{18.0};
+	double WorldScapeDeactivationRadiusMultiplier{128.0};
 
-	/** Configured WorldScape roots and their referenced assets are loaded before the body needs detailed terrain. */
+	/** Family metadata becomes resident before the nearest body needs detailed terrain. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Body|Streaming", meta=(ClampMin="1.2"))
-	double WorldScapePreloadRadiusMultiplier{30.0};
+	double WorldScapePreloadRadiusMultiplier{144.0};
 
-	/** A complete planet/moon family remains resident until every member is outside this radius. */
+	/** A complete planet/moon family remains known until every member is outside this radius. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Body|Streaming", meta=(ClampMin="1.2"))
-	double WorldScapeUnloadRadiusMultiplier{45.0};
+	double WorldScapeUnloadRadiusMultiplier{192.0};
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Body|Streaming")
 	bool bStreamWorldScapeSurface{true};
