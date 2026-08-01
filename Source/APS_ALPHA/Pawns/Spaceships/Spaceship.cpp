@@ -2325,47 +2325,46 @@ bool ASpaceship::GetNavigationMarkerLayout(int32 ContactIndex, FVector2D& OutAnc
 			FMath::Max(0.0f, ViewportSize.X - 420.0f), 24.0f, ViewportSize.X - 20.0f, 275.0f));
 	}
 	constexpr float ScreenMargin = 10.0f;
-	const float StepX = LabelSize.X + 14.0f;
 	const float StepY = LabelSize.Y + APSNavigationHud::MarkerGap + 4.0f;
 	for (const FMarkerPlacement& Placement : Placements)
 	{
+		const bool bExtendFlagLeft = Placement.Anchor.X + LabelSize.X - 1.5f
+			> ViewportSize.X - ScreenMargin;
 		const FVector2D Desired(
-			Placement.Anchor.X - LabelSize.X * APSNavigationHud::FlagHorizontalShift,
+			bExtendFlagLeft
+				? Placement.Anchor.X - LabelSize.X + 1.5f
+				: Placement.Anchor.X - 1.5f,
 			Placement.Anchor.Y - LabelSize.Y - APSNavigationHud::FlagPoleLength);
 		FVector2D Chosen = Desired;
 		bool bFoundFreeSlot = false;
-		for (const int32 Column : {0, -1, 1})
+		for (int32 RowMagnitude = 0; RowMagnitude <= 16 && !bFoundFreeSlot; ++RowMagnitude)
 		{
-			for (int32 RowMagnitude = 0; RowMagnitude <= 7 && !bFoundFreeSlot; ++RowMagnitude)
+			const int32 SignCount = RowMagnitude == 0 ? 1 : 2;
+			for (int32 SignIndex = 0; SignIndex < SignCount; ++SignIndex)
 			{
-				const int32 SignCount = RowMagnitude == 0 ? 1 : 2;
-				for (int32 SignIndex = 0; SignIndex < SignCount; ++SignIndex)
+				const int32 SignedRow = RowMagnitude == 0 ? 0
+					: (SignIndex == 0 ? -RowMagnitude : RowMagnitude);
+				const FVector2D Candidate = Desired + FVector2D(0.0f, SignedRow * StepY);
+				if (Candidate.X < ScreenMargin || Candidate.Y < ScreenMargin
+					|| Candidate.X + LabelSize.X > ViewportSize.X - ScreenMargin
+					|| Candidate.Y + LabelSize.Y > ViewportSize.Y - ScreenMargin)
 				{
-					const int32 SignedRow = RowMagnitude == 0 ? 0
-						: (SignIndex == 0 ? -RowMagnitude : RowMagnitude);
-					const FVector2D Candidate = Desired + FVector2D(Column * StepX, SignedRow * StepY);
-					if (Candidate.X < ScreenMargin || Candidate.Y < ScreenMargin
-						|| Candidate.X + LabelSize.X > ViewportSize.X - ScreenMargin
-						|| Candidate.Y + LabelSize.Y > ViewportSize.Y - ScreenMargin)
+					continue;
+				}
+				const FSlateRect CandidateRect(Candidate.X - 4.0f, Candidate.Y - 4.0f,
+					Candidate.X + LabelSize.X + 4.0f, Candidate.Y + LabelSize.Y + 4.0f);
+				const bool bOverlaps = OccupiedRects.ContainsByPredicate(
+					[&CandidateRect](const FSlateRect& Occupied)
 					{
-						continue;
-					}
-					const FSlateRect CandidateRect(Candidate.X - 4.0f, Candidate.Y - 4.0f,
-						Candidate.X + LabelSize.X + 4.0f, Candidate.Y + LabelSize.Y + 4.0f);
-					const bool bOverlaps = OccupiedRects.ContainsByPredicate(
-						[&CandidateRect](const FSlateRect& Occupied)
-						{
-							return FSlateRect::DoRectanglesIntersect(CandidateRect, Occupied);
-						});
-					if (!bOverlaps)
-					{
-						Chosen = Candidate;
-						bFoundFreeSlot = true;
-						break;
-					}
+						return FSlateRect::DoRectanglesIntersect(CandidateRect, Occupied);
+					});
+				if (!bOverlaps)
+				{
+					Chosen = Candidate;
+					bFoundFreeSlot = true;
+					break;
 				}
 			}
-			if (bFoundFreeSlot) break;
 		}
 		Chosen.X = FMath::Clamp(Chosen.X, ScreenMargin, ViewportSize.X - LabelSize.X - ScreenMargin);
 		Chosen.Y = FMath::Clamp(Chosen.Y, ScreenMargin, ViewportSize.Y - LabelSize.Y - ScreenMargin);
@@ -2379,6 +2378,20 @@ bool ASpaceship::GetNavigationMarkerLayout(int32 ContactIndex, FVector2D& OutAnc
 		}
 	}
 	return false;
+}
+
+bool ASpaceship::IsNavigationMarkerRightEdgeFlag(int32 ContactIndex) const
+{
+	FVector2D Anchor;
+	FVector2D Label;
+	if (!GetNavigationMarkerLayout(ContactIndex, Anchor, Label))
+	{
+		return false;
+	}
+	const float LeftEdgeDistance = FMath::Abs(Anchor.X - (Label.X + 1.5f));
+	const float RightEdgeDistance = FMath::Abs(
+		Anchor.X - (Label.X + APSNavigationHud::MarkerWidth - 1.5f));
+	return RightEdgeDistance < LeftEdgeDistance;
 }
 
 int32 ASpaceship::PaintNavigationOverlay(const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect,
@@ -2539,8 +2552,10 @@ int32 ASpaceship::PaintNavigationOverlay(const FGeometry& AllottedGeometry, cons
 			if (!GetNavigationMarkerLayout(ContactIndex, Anchor, Label)) continue;
 			const FLinearColor Color = GetNavigationMarkerColor(ContactIndex);
 			const bool bSelected = ContactIndex == ShipNavigation->GetSelectedContactIndex();
+			const bool bRightEdgeFlag = IsNavigationMarkerRightEdgeFlag(ContactIndex);
 			const FVector2D FlagPoleEnd(
-				Label.X + 1.5f, Label.Y + APSNavigationHud::MarkerHeight);
+				Label.X + (bRightEdgeFlag ? APSNavigationHud::MarkerWidth - 1.5f : 1.5f),
+				Label.Y + APSNavigationHud::MarkerHeight);
 			DrawScreenLine({Anchor, FlagPoleEnd}, FLinearColor(Color.R, Color.G, Color.B,
 				bSelected ? 0.82f : 0.42f), bSelected ? 1.15f : 0.65f, LayerId + 2);
 			const float CrossExtent = bSelected ? 4.5f : 2.75f;
@@ -2704,8 +2719,11 @@ void ASpaceship::CreateShipHud()
 							.Image(FCoreStyle::Get().GetBrush("WhiteBrush"))
 							.ColorAndOpacity_Lambda([WeakThis, MarkerIndex]()
 							{
-								return WeakThis.IsValid()
-									? WeakThis->GetNavigationMarkerColor(MarkerIndex) : FLinearColor::Transparent;
+								if (!WeakThis.IsValid() || WeakThis->IsNavigationMarkerRightEdgeFlag(MarkerIndex))
+								{
+									return FLinearColor::Transparent;
+								}
+								return WeakThis->GetNavigationMarkerColor(MarkerIndex);
 							})
 						]
 					]
@@ -2729,6 +2747,24 @@ void ASpaceship::CreateShipHud()
 								FMath::Lerp(Accent.G, 0.94f, 0.38f),
 								FMath::Lerp(Accent.B, 0.98f, 0.38f), 0.96f));
 						})
+					]
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					[
+						SNew(SBox)
+						.WidthOverride(3.0f)
+						[
+							SNew(SImage)
+							.Image(FCoreStyle::Get().GetBrush("WhiteBrush"))
+							.ColorAndOpacity_Lambda([WeakThis, MarkerIndex]()
+							{
+								if (!WeakThis.IsValid() || !WeakThis->IsNavigationMarkerRightEdgeFlag(MarkerIndex))
+								{
+									return FLinearColor::Transparent;
+								}
+								return WeakThis->GetNavigationMarkerColor(MarkerIndex);
+							})
+						]
 					]
 				]
 			]

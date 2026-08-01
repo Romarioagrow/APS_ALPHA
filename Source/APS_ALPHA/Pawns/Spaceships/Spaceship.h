@@ -572,6 +572,7 @@ private:
 	bool ProjectNavigationContactToScreen(int32 ContactIndex, FVector2D& OutScreenPosition) const;
 	bool GetNavigationMarkerLayout(int32 ContactIndex, FVector2D& OutAnchorPosition,
 		FVector2D& OutLabelPosition) const;
+	bool IsNavigationMarkerRightEdgeFlag(int32 ContactIndex) const;
 	int32 PaintNavigationOverlay(const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect,
 		FSlateWindowElementList& OutDrawElements, int32 LayerId) const;
 	FLinearColor GetNavigationMarkerColor(int32 ContactIndex) const;
