@@ -55,6 +55,11 @@ void UAPSPlanetEnvironmentStreamingSubsystem::UpdateActiveEnvironment()
 	}
 
 	const FVector ObserverLocation = Observer->GetActorLocation();
+	auto GetSurfaceDistance = [&ObserverLocation](const APlanetaryBody* Body)
+	{
+		return FMath::Max(0.0,
+			FVector::Distance(ObserverLocation, Body->GetActorLocation()) - Body->GetWorldScapeBodyRadiusCm());
+	};
 	TArray<APlanetaryBody*> StreamedBodies;
 	TMap<APlanet*, TArray<APlanetaryBody*>> Families;
 	for (TActorIterator<APlanetaryBody> It(World); It; ++It)
@@ -86,7 +91,7 @@ void UAPSPlanetEnvironmentStreamingSubsystem::UpdateActiveEnvironment()
 			if (Limit > UE_DOUBLE_SMALL_NUMBER && Distance <= Limit)
 			{
 				const double ResidentBias = bResident ? 0.72 : 1.0;
-				FamilyScore = FMath::Min(FamilyScore, Distance / Limit * ResidentBias);
+				FamilyScore = FMath::Min(FamilyScore, GetSurfaceDistance(Body) * ResidentBias);
 			}
 		}
 		if (FamilyScore < BestFamilyScore)
@@ -151,7 +156,7 @@ void UAPSPlanetEnvironmentStreamingSubsystem::UpdateActiveEnvironment()
 		{
 			continue;
 		}
-		const double BodyScore = Distance / Limit * (bCurrentBody ? 0.8 : 1.0);
+		const double BodyScore = GetSurfaceDistance(Body) * (bCurrentBody ? 0.8 : 1.0);
 		if (BodyScore < BestBodyScore)
 		{
 			BestBodyScore = BodyScore;
@@ -179,5 +184,6 @@ void UAPSPlanetEnvironmentStreamingSubsystem::UpdateActiveEnvironment()
 			UE_LOG(LogAPSWorldScapeStreaming, Log, TEXT("Activated WorldScape surface: %s"),
 				*BestBody->GetPathName());
 		}
+		BestBody->RefreshWorldScapeSurfaceVisibility();
 	}
 }

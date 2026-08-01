@@ -612,7 +612,7 @@ private:
 	bool bNavigationMarkersVisible{true};
 	bool bNavigationPanelVisible{true};
 	bool bNavigationGuidesVisible{true};
-	int32 MaximumNavigationMarkers{24};
+	int32 MaximumNavigationMarkers{128};
 	TSharedPtr<SWidget> ShipHudWidget;
 
 	UPROPERTY(Transient)

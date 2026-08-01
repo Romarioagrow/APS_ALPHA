@@ -100,13 +100,8 @@ bool APlanetaryBody::EnsureWorldScapeSurface()
 		{
 			return false;
 		}
-		Generator->GenerateWorldscapeSurfaceByModel(GetWorld(), Planet);
 	}
-	else if (AMoon* Moon = Cast<AMoon>(this))
-	{
-		Generator->GenerateWorldscapeSurfaceByModel(GetWorld(), Moon);
-	}
-	return IsValid(Generator->WorldScapeRootInstance);
+	return Generator->CreateRuntimeWorldScapeRoot(this);
 }
 
 void APlanetaryBody::SetWorldScapeStreamingActive(bool bActive)
@@ -127,6 +122,15 @@ bool APlanetaryBody::IsWorldScapeStreamingActive() const
 
 double APlanetaryBody::GetWorldScapeActivationRadiusCm() const
 {
+	const double BodyRadiusCm = GetWorldScapeBodyRadiusCm();
+	// Existing Blueprint CDOs may still serialize the old near-field value. Keep
+	// the native far preload guarantee even before those assets are resaved.
+	const double EffectiveMultiplier = FMath::Max(WorldScapeActivationRadiusMultiplier, 96.0);
+	return FMath::Max(BodyRadiusCm * EffectiveMultiplier, BodyRadiusCm * 1.25);
+}
+
+double APlanetaryBody::GetWorldScapeBodyRadiusCm() const
+{
 	double BodyRadiusCm = FMath::Max(RadiusKM, static_cast<double>(PlanetRadiusKM)) * 100000.0;
 	if (BodyRadiusCm <= UE_DOUBLE_SMALL_NUMBER)
 	{
@@ -135,10 +139,7 @@ double APlanetaryBody::GetWorldScapeActivationRadiusCm() const
 		GetActorBounds(false, Origin, Extent);
 		BodyRadiusCm = Extent.GetMax();
 	}
-	// Existing Blueprint CDOs may still serialize the old near-field value. Keep
-	// the native far preload guarantee even before those assets are resaved.
-	const double EffectiveMultiplier = FMath::Max(WorldScapeActivationRadiusMultiplier, 96.0);
-	return FMath::Max(BodyRadiusCm * EffectiveMultiplier, BodyRadiusCm * 1.25);
+	return FMath::Max(BodyRadiusCm, 100000.0);
 }
 
 double APlanetaryBody::GetWorldScapeDeactivationRadiusCm() const

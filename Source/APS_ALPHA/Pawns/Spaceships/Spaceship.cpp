@@ -9,6 +9,8 @@
 #include "APS_ALPHA/Actors/Astro/WorldActor.h"
 #include "APS_ALPHA/Actors/Tech/TechActor.h"
 #include "APS_ALPHA/Actors/Tech/SpaceStation.h"
+#include "APS_ALPHA/Core/Enums/MoonType.h"
+#include "APS_ALPHA/Core/Enums/PlanetType.h"
 #include "APS_ALPHA/Core/Interfaces/NavigatableBody.h"
 #include "APS_ALPHA/Core/Structs/StarGenerationModel.h"
 #include "APS_ALPHA/Generation/AstroGenerator.h"
@@ -79,8 +81,6 @@ namespace APSNavigationHud
 	constexpr float MarkerWidth = 176.0f;
 	constexpr float MarkerHeight = 38.0f;
 	constexpr float MarkerGap = 5.0f;
-	constexpr int32 MaximumVisiblePlanets = 3;
-	constexpr int32 MaximumVisibleMoonsInFocusFamily = 8;
 }
 
 namespace APSAutomaticShipInteraction
@@ -2200,42 +2200,11 @@ bool ASpaceship::ShouldShowNavigationMarker(int32 ContactIndex) const
 		return true;
 	}
 
-	const APlanet* FocusPlanet = GetNavigationFocusPlanet();
 	const FShipNavigationContact* Contact = ShipNavigation->GetContact(ContactIndex);
-	if (const APlanet* Planet = Cast<APlanet>(Contact->Actor.Get()))
+	if (Contact->Type == EShipNavigationContactType::Planet
+		|| Contact->Type == EShipNavigationContactType::Moon)
 	{
-		if (Planet == FocusPlanet)
-		{
-			return true;
-		}
-		int32 PlanetRank = 0;
-		for (int32 Index = 0; Index < ContactIndex; ++Index)
-		{
-			const FShipNavigationContact* Previous = ShipNavigation->GetContact(Index);
-			if (Previous && Previous->Type == EShipNavigationContactType::Planet)
-			{
-				++PlanetRank;
-			}
-		}
-		return PlanetRank < APSNavigationHud::MaximumVisiblePlanets;
-	}
-	if (const AMoon* Moon = Cast<AMoon>(Contact->Actor.Get()))
-	{
-		if (!FocusPlanet || Moon->ParentPlanet != FocusPlanet)
-		{
-			return false;
-		}
-		int32 MoonRank = 0;
-		for (int32 Index = 0; Index < ContactIndex; ++Index)
-		{
-			const FShipNavigationContact* Previous = ShipNavigation->GetContact(Index);
-			const AMoon* PreviousMoon = Previous ? Cast<AMoon>(Previous->Actor.Get()) : nullptr;
-			if (PreviousMoon && PreviousMoon->ParentPlanet == FocusPlanet)
-			{
-				++MoonRank;
-			}
-		}
-		return MoonRank < APSNavigationHud::MaximumVisibleMoonsInFocusFamily;
+		return true;
 	}
 	return false;
 }
@@ -2324,7 +2293,6 @@ bool ASpaceship::GetNavigationMarkerLayout(int32 ContactIndex, FVector2D& OutAnc
 				if (Index < ContactIndex) ++MoonRank;
 				++MoonCount;
 			}
-			MoonCount = FMath::Min(MoonCount, APSNavigationHud::MaximumVisibleMoonsInFocusFamily);
 			const float ListHeight = MoonCount * LabelSize.Y
 				+ FMath::Max(0, MoonCount - 1) * APSNavigationHud::MarkerGap;
 			const float ListStartY = FMath::Clamp(
@@ -2442,9 +2410,9 @@ int32 ASpaceship::PaintNavigationOverlay(const FGeometry& AllottedGeometry, cons
 			const FVector OrbitRadial = RadialVector.GetSafeNormal();
 			FVector OrbitTangent = FVector::CrossProduct(Orbit->GetActorUpVector(), OrbitRadial).GetSafeNormal();
 			if (OrbitTangent.IsNearlyZero()) OrbitTangent = Orbit->GetActorRightVector();
-			FLinearColor OrbitColor = Contact->Type == EShipNavigationContactType::Moon
-				? FLinearColor(0.42f, 0.57f, 1.0f, bSelectedOrbit ? 0.62f : 0.16f)
-				: FLinearColor(0.12f, 0.82f, 0.67f, bSelectedOrbit ? 0.62f : 0.14f);
+			const FLinearColor MarkerColor = GetNavigationMarkerColor(ContactIndex);
+			FLinearColor OrbitColor(MarkerColor.R, MarkerColor.G, MarkerColor.B,
+				bSelectedOrbit ? 0.62f : (Contact->Type == EShipNavigationContactType::Moon ? 0.16f : 0.14f));
 			DrawProjectedRing(OrbitCenter, OrbitRadial, OrbitTangent, OrbitRadius,
 				OrbitColor, bSelectedOrbit ? 1.25f : 0.65f, false, LayerId);
 		}
@@ -2537,6 +2505,69 @@ FLinearColor ASpaceship::GetNavigationMarkerColor(int32 ContactIndex) const
 	}
 	const FShipNavigationContact* Contact = ShipNavigation ? ShipNavigation->GetContact(ContactIndex) : nullptr;
 	if (!Contact) return FLinearColor::Transparent;
+	if (const APlanet* Planet = Cast<APlanet>(Contact->Actor.Get()))
+	{
+		switch (Planet->PlanetType)
+		{
+		case EPlanetType::Ice:
+		case EPlanetType::Frozen:
+		case EPlanetType::Nordic:
+		case EPlanetType::Tundra:
+		case EPlanetType::IceGiant:
+			return FLinearColor(0.72f, 0.9f, 1.0f, 0.96f);
+		case EPlanetType::Ocean:
+		case EPlanetType::Water:
+		case EPlanetType::Archipelago:
+			return FLinearColor(0.16f, 0.62f, 1.0f, 0.96f);
+		case EPlanetType::Terrestrial:
+		case EPlanetType::Forest:
+		case EPlanetType::Oasis:
+		case EPlanetType::Pangea:
+		case EPlanetType::SuperEarth:
+			return FLinearColor(0.2f, 0.92f, 0.58f, 0.96f);
+		case EPlanetType::Desert:
+		case EPlanetType::Sand:
+			return FLinearColor(1.0f, 0.68f, 0.24f, 0.96f);
+		case EPlanetType::Volcanic:
+		case EPlanetType::Melted:
+		case EPlanetType::Lava:
+		case EPlanetType::HotGiant:
+			return FLinearColor(1.0f, 0.25f, 0.1f, 0.96f);
+		case EPlanetType::GasGiant:
+		case EPlanetType::Greenhouse:
+		case EPlanetType::Ammonia:
+			return FLinearColor(0.92f, 0.72f, 0.3f, 0.96f);
+		case EPlanetType::Metal:
+		case EPlanetType::Metallic:
+		case EPlanetType::Carbon:
+			return FLinearColor(0.74f, 0.72f, 0.88f, 0.96f);
+		default:
+			return FLinearColor(0.28f, 0.84f, 0.75f, 0.95f);
+		}
+	}
+	if (const AMoon* Moon = Cast<AMoon>(Contact->Actor.Get()))
+	{
+		switch (Moon->MoonType)
+		{
+		case EMoonType::Icy:
+			return FLinearColor(0.82f, 0.93f, 1.0f, 0.96f);
+		case EMoonType::Ocean:
+			return FLinearColor(0.22f, 0.64f, 1.0f, 0.96f);
+		case EMoonType::Continental:
+			return FLinearColor(0.38f, 0.84f, 0.65f, 0.96f);
+		case EMoonType::Desert:
+			return FLinearColor(0.96f, 0.67f, 0.34f, 0.96f);
+		case EMoonType::Volcanic:
+			return FLinearColor(1.0f, 0.31f, 0.12f, 0.96f);
+		case EMoonType::Iron:
+			return FLinearColor(0.68f, 0.74f, 0.82f, 0.96f);
+		case EMoonType::Gas:
+		case EMoonType::Peculiar:
+			return FLinearColor(0.72f, 0.52f, 1.0f, 0.96f);
+		default:
+			return FLinearColor(0.66f, 0.76f, 0.9f, 0.95f);
+		}
+	}
 	switch (Contact->Type)
 	{
 	case EShipNavigationContactType::Star: return FLinearColor(0.45f, 0.78f, 1.0f, 0.95f);

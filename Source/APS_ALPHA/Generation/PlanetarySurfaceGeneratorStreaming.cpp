@@ -4,6 +4,7 @@
 #include "APS_ALPHA/Actors/Astro/Planet.h"
 #include "APS_ALPHA/Core/Enums/MoonType.h"
 #include "APS_ALPHA/Core/Enums/PlanetType.h"
+#include "Kismet/GameplayStatics.h"
 #include "Materials/MaterialInstance.h"
 #include "UObject/UObjectGlobals.h"
 
@@ -19,6 +20,41 @@ namespace APSWorldScapeProfiles
 		float OceanHeight{0.0f};
 		bool bOcean{false};
 	};
+}
+
+bool APlanetarySurfaceGenerator::CreateRuntimeWorldScapeRoot(APlanetaryBody* Body)
+{
+	if (!IsValid(Body) || !GetWorld())
+	{
+		return false;
+	}
+	if (IsValid(WorldScapeRootInstance))
+	{
+		PlanetaryBody = Body;
+		return true;
+	}
+
+	PlanetaryBody = Body;
+	const FTransform RootTransform(Body->GetActorQuat(), Body->GetActorLocation(), FVector::OneVector);
+	WorldScapeRootInstance = GetWorld()->SpawnActorDeferred<AWorldScapeRoot>(
+		AWorldScapeRoot::StaticClass(), RootTransform, Body, nullptr,
+		ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+	if (!IsValid(WorldScapeRootInstance))
+	{
+		return false;
+	}
+
+	WorldScapeRootInstance->SetFlags(RF_Transient);
+	WorldScapeRootInstance->GenerationType = EWorldScapeType::Planet;
+	WorldScapeRootInstance->bGenerateWorldScape = false;
+	WorldScapeRootInstance->bFreezeGeneration = true;
+	UGameplayStatics::FinishSpawningActor(WorldScapeRootInstance, RootTransform);
+	WorldScapeRootInstance->SetActorScale3D(FVector::OneVector);
+	WorldScapeRootInstance->AttachToActor(Body, FAttachmentTransformRules::KeepWorldTransform);
+	WorldScapeRootInstance->SetActorHiddenInGame(true);
+	WorldScapeRootInstance->SetActorTickEnabled(false);
+	WorldScapeRootInstance->SetActorEnableCollision(false);
+	return true;
 }
 
 void APlanetarySurfaceGenerator::LoadSurfaceAssets()

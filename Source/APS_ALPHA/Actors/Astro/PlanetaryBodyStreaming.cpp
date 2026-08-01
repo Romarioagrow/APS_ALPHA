@@ -44,6 +44,7 @@ void APlanetaryBody::SetWorldScapeStreamingState(EWorldScapeSurfaceState NewStat
 		}
 		SetPlaceholderVisible(true);
 		bEnvironmentSpawned = false;
+		bWorldScapeSurfaceReady = false;
 		WorldScapeSurfaceState = NewState;
 		return;
 	}
@@ -79,10 +80,15 @@ void APlanetaryBody::SetWorldScapeStreamingState(EWorldScapeSurfaceState NewStat
 	case EWorldScapeSurfaceState::Active:
 		if (PrepareSurface())
 		{
+			// Do not expose an empty atmosphere while WorldScape is producing its
+			// first chunks. The lightweight globe is replaced only after real mesh
+			// geometry exists, which also makes slow machines transition cleanly.
+			SetPlaceholderVisible(true);
+			bWorldScapeSurfaceReady = false;
 			Generator->SpawnWorldScapeRoot();
-			SetPlaceholderVisible(false);
 			bEnvironmentSpawned = true;
 			WorldScapeSurfaceState = EWorldScapeSurfaceState::Active;
+			RefreshWorldScapeSurfaceVisibility();
 		}
 		break;
 
@@ -93,7 +99,7 @@ void APlanetaryBody::SetWorldScapeStreamingState(EWorldScapeSurfaceState NewStat
 				|| IsWorldScapeStreamingActive()))
 		{
 			Generator->FreezeWorldScapeRoot();
-			SetPlaceholderVisible(false);
+			RefreshWorldScapeSurfaceVisibility();
 			bEnvironmentSpawned = true;
 			WorldScapeSurfaceState = EWorldScapeSurfaceState::FrozenVisible;
 		}
@@ -108,6 +114,56 @@ void APlanetaryBody::SetWorldScapeStreamingState(EWorldScapeSurfaceState NewStat
 	default:
 		break;
 	}
+}
+
+bool APlanetaryBody::RefreshWorldScapeSurfaceVisibility()
+{
+	auto SetPlaceholderVisible = [this](bool bVisible)
+	{
+		if (APlanet* Planet = Cast<APlanet>(this))
+		{
+			bVisible ? Planet->EnableSphereMesh() : Planet->DisableSphereMesh();
+		}
+		else if (AMoon* Moon = Cast<AMoon>(this))
+		{
+			bVisible ? Moon->EnableSphereMesh() : Moon->DisableSphereMesh();
+		}
+	};
+
+	AWorldScapeRoot* Root = IsValid(PlanetaryEnvironmentGenerator)
+		? PlanetaryEnvironmentGenerator->WorldScapeRootInstance : nullptr;
+	bool bHasVisibleTerrain = false;
+	if (IsValid(Root) && WorldScapeSurfaceState == EWorldScapeSurfaceState::Active)
+	{
+		for (const UWorldScapeLod* Lod : Root->WorldScapeLod)
+		{
+			if (IsValid(Lod) && IsValid(Lod->Mesh) && Lod->Mesh->GetNumSections() > 0)
+			{
+				bHasVisibleTerrain = true;
+				break;
+			}
+		}
+		if (!bHasVisibleTerrain)
+		{
+			for (const UWorldScapeLod* Lod : Root->WorldScapeLodOcean)
+			{
+				if (IsValid(Lod) && IsValid(Lod->Mesh) && Lod->Mesh->GetNumSections() > 0)
+				{
+					bHasVisibleTerrain = true;
+					break;
+				}
+			}
+		}
+	}
+
+	if (bHasVisibleTerrain && !bWorldScapeSurfaceReady)
+	{
+		UE_LOG(LogTemp, Log, TEXT("[APS.WorldScape] Surface ready body=%s lods=%d oceanLods=%d"),
+			*GetName(), Root->WorldScapeLod.Num(), Root->WorldScapeLodOcean.Num());
+	}
+	bWorldScapeSurfaceReady = bHasVisibleTerrain;
+	SetPlaceholderVisible(!bWorldScapeSurfaceReady);
+	return bWorldScapeSurfaceReady;
 }
 
 double APlanetaryBody::GetWorldScapePreloadRadiusCm() const

@@ -76,6 +76,10 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Planet Body|Streaming")
 	EWorldScapeSurfaceState WorldScapeSurfaceState{EWorldScapeSurfaceState::Unloaded};
 
+	/** Becomes true only after WorldScape has produced an actual visible mesh section. */
+	UPROPERTY(Transient, VisibleAnywhere, BlueprintReadOnly, Category = "Planet Body|Streaming")
+	bool bWorldScapeSurfaceReady{false};
+
 	/** Stable procedural surface seed. Zero derives it once from the persistent body identity. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Body|Streaming")
 	int32 WorldScapeSeed{0};
@@ -117,8 +121,10 @@ public:
 	void SetWorldScapeStreamingState(EWorldScapeSurfaceState NewState);
 	void SetWorldScapeStreamingActive(bool bActive);
 	bool IsWorldScapeStreamingActive() const;
+	bool RefreshWorldScapeSurfaceVisibility();
 	EWorldScapeSurfaceState GetWorldScapeStreamingState() const { return WorldScapeSurfaceState; }
 	double GetWorldScapeActivationRadiusCm() const;
+	double GetWorldScapeBodyRadiusCm() const;
 	double GetWorldScapeDeactivationRadiusCm() const;
 	double GetWorldScapePreloadRadiusCm() const;
 	double GetWorldScapeUnloadRadiusCm() const;

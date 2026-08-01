@@ -833,6 +833,7 @@ void APlanetarySurfaceGenerator::SpawnWorldScapeRoot()
 {
     if (WorldScapeRootInstance)
     {
+		WorldScapeRootInstance->SetActorScale3D(FVector::OneVector);
         WorldScapeRootInstance->bGenerateWorldScape = true;
 		WorldScapeRootInstance->bFreezeGeneration = false;
         WorldScapeRootInstance->SetActorHiddenInGame(false);    
@@ -844,6 +845,8 @@ void APlanetarySurfaceGenerator::SpawnWorldScapeRoot()
             WorldScapeRootInstance->SetActorLocation(FVector(0.0, 0.0, 0.0));
             WorldScapeRootInstance->AttachToActor(PlanetaryBody, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
         }
+		WorldScapeRootInstance->SetActorScale3D(FVector::OneVector);
+		WorldScapeRootInstance->WS_ForceRegenerate();
     }
 }
 
