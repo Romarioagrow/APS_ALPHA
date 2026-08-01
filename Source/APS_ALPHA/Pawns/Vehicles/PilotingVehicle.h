@@ -12,6 +12,7 @@ class AGravityCharacterPawn;
 class AController;
 class UPrimitiveComponent;
 class USceneComponent;
+class USkeletalMeshComponent;
 /**
  * 
  */
@@ -35,6 +36,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Piloting")
 	bool HasPilot() const { return IsValid(Pilot); }
 
+	/** Functional default: no ship Blueprint needs a seated-character animation to be usable. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Piloting")
+	bool bHidePilotDuringControl{true};
+
 	UFUNCTION(BlueprintImplementableEvent, Category = "Piloting")
 	void OnPilotControlStarted(APawn* NewPilot);
 
@@ -54,6 +59,9 @@ private:
 
 	bool bPilotCollisionWasEnabled{true};
 	bool bPilotTickWasEnabled{true};
+	bool bPilotWasHiddenInGame{false};
 	bool bPilotRootWasSimulatingPhysics{false};
 	uint8 PilotMovementMode{0};
+	TArray<TWeakObjectPtr<USkeletalMeshComponent>> PilotSkeletalComponents;
+	TArray<bool> PilotSkeletalTickStates;
 };

@@ -12,7 +12,69 @@ class AStarSystem;
 class AStarCluster;
 class UCameraComponent;
 class USpringArmComponent;
+class USkeletalMesh;
+class USkeletalMeshComponent;
+class UPrimitiveComponent;
 class AWorldActor;
+class SWidget;
+class UBoxComponent;
+
+/** Gameplay size class. The display names intentionally match the in-world ship taxonomy. */
+UENUM(BlueprintType)
+enum class ESpaceshipSizeClass : uint8
+{
+	XXS UMETA(DisplayName = "XXS"),
+	XS UMETA(DisplayName = "XS"),
+	S UMETA(DisplayName = "S"),
+	M UMETA(DisplayName = "M"),
+	L UMETA(DisplayName = "L"),
+	XL UMETA(DisplayName = "XL"),
+	XXL UMETA(DisplayName = "XXL"),
+	Titan UMETA(DisplayName = "T")
+};
+
+/** Native, data-oriented handling preset used by every legacy BP and generated mesh ship. */
+USTRUCT(BlueprintType)
+struct FSpaceshipClassPreset
+{
+	GENERATED_BODY()
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
+	double ImpulseAcceleration{900.0};
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
+	double MaxImpulseSpeed{160000.0};
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
+	double RotationSpeed{55.0};
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
+	double LinearDamping{0.18};
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
+	double AngularDamping{2.5};
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
+	double MaximumBoost{4.0};
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
+	double BoostGrowthPerSecond{0.9};
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
+	bool bSupportsSpaceWrap{true};
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
+	bool bSupportsOffset{true};
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
+	bool bUsesPhysicalImpulse{true};
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
+	bool bHasInteriorByDefault{true};
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
+	EFlightMode MaximumFlightMode{EFlightMode::Interstellar};
+};
 
 struct FActorDistance
 {
@@ -68,9 +130,17 @@ public:
 
 	ASpaceship();
 
+	virtual void OnConstruction(const FTransform& Transform) override;
+
 	virtual void Tick(float DeltaTime) override;
 
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
+
+	virtual void PossessedBy(AController* NewController) override;
+
+	virtual void UnPossessed() override;
+
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 protected:
 	virtual void BeginPlay() override;
@@ -97,6 +167,14 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Components")
 	UStaticMeshComponent* SpaceshipHull;
 
+	/** Optional visual hull for AI-generated skeletal ships (for example Pack_1/24). */
+	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Components")
+	USkeletalMeshComponent* SkeletalSpaceshipHull;
+
+	/** Cheap query-only bounds used by the character's camera trace. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	UBoxComponent* InteractionBoundsComponent;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Components")
 	UStaticMeshComponent* ForwardVector;
 
@@ -106,6 +184,61 @@ public:
 	/** Safe character return point. Existing ship Blueprints inherit it automatically. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Components")
 	USceneComponent* PilotExitPoint;
+
+	/** Shared class preset. Existing BP_Spaceship_M* assets inherit M without asset edits. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Class")
+	ESpaceshipSizeClass SizeClass{ESpaceshipSizeClass::M};
+
+	/** Runtime mesh adapters enable this so full-scale generated hulls choose their class from bounds. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Class")
+	bool bInferSizeClassFromHull{false};
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Interior")
+	bool bHasInterior{true};
+
+	/** Temporary exterior interaction keeps generated hollow hulls playable. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Interior")
+	bool bAllowExteriorInteraction{true};
+
+	/** Hollow generated hulls keep this off until an interior gravity volume exists. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Gravity")
+	bool bProvidesArtificialGravity{true};
+
+	/** Replaces unsuitable generated-mesh collision with a cheap tapered box hull. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Collision")
+	bool bGenerateSimpleHullCollision{false};
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Collision", meta = (ClampMin = "3", ClampMax = "9"))
+	int32 SimpleCollisionSliceCount{5};
+
+	/** Existing detailed ships switch to lightweight proxies only while piloted. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Collision")
+	bool bOptimizeCollisionWhilePiloted{true};
+
+	UFUNCTION(BlueprintCallable, Category = "Ship|Collision")
+	void RebuildSimpleHullCollision();
+
+	UFUNCTION(BlueprintPure, Category = "Ship|Collision")
+	int32 GetGeneratedCollisionCount() const { return GeneratedCollisionBoxes.Num(); }
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ship|Class")
+	FSpaceshipClassPreset ActiveClassPreset;
+
+	/**
+	 * Configures interaction volume, seat and safe exit from mesh bounds/sockets.
+	 * Native defaults make every ASpaceship Blueprint usable without editing it.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Piloting|Automatic Setup")
+	void RefreshInteractionGeometry();
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Piloting|Automatic Setup")
+	bool bAutoConfigureInteractionGeometry{true};
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Piloting|Automatic Setup", meta = (ClampMin = "0.0"))
+	float AutoInteractionPadding{300.0f};
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Piloting|Automatic Setup", meta = (ClampMin = "0.0"))
+	float AutoExitClearance{180.0f};
 
 	UPROPERTY(VisibleAnywhere, Category = "Astro Actor")
 	AStarCluster* GeneratedStarCluster;
@@ -163,6 +296,42 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight|Handling", meta = (ClampMin = "0.0"))
 	float BrakingResponseSpeed{1.5f};
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight|Transition", meta = (ClampMin = "0.05"))
+	float EngineModeTransitionDuration{0.65f};
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight|Boost", meta = (ClampMin = "0.1"))
+	float BoostRecoverySpeed{2.0f};
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera")
+	bool bUseAdaptiveFlightCamera{true};
+
+	UFUNCTION(BlueprintPure, Category = "Ship|Class")
+	static FSpaceshipClassPreset GetPresetForSizeClass(ESpaceshipSizeClass InSizeClass);
+
+	UFUNCTION(BlueprintPure, Category = "Ship|Class")
+	static ESpaceshipSizeClass InferSizeClassFromLength(double LengthCentimeters);
+
+	UFUNCTION(BlueprintPure, Category = "Ship|Runtime Fleet")
+	static bool IsGeneratedShipMeshAsset(const UStaticMesh* Mesh);
+
+	UFUNCTION(BlueprintPure, Category = "Ship|Runtime Fleet")
+	static bool IsGeneratedShipSkeletalMeshAsset(const USkeletalMesh* Mesh);
+
+	UFUNCTION(BlueprintPure, Category = "Ship|Flight")
+	FString GetSizeClassName() const;
+
+	UFUNCTION(BlueprintPure, Category = "Ship|Flight")
+	FString GetFlightModeName() const;
+
+	UFUNCTION(BlueprintPure, Category = "Ship|Flight")
+	FString GetEngineModeName() const;
+
+	UFUNCTION(BlueprintPure, Category = "Ship|Flight")
+	double GetShipSpeedMetersPerSecond() const;
+
+	UFUNCTION(BlueprintPure, Category = "Ship|Flight")
+	double GetCurrentBoostMultiplier() const { return CurrentBoostMultiplier; }
+
 	void ComputeProximity();
 
 	void UpdateNavigatableActors();
@@ -210,4 +379,60 @@ public:
 protected:
 	virtual USceneComponent* GetPilotSeatComponent() const override;
 	virtual FTransform GetPilotExitTransform() const override;
+
+private:
+	UPrimitiveComponent* GetPrimaryHullComponent() const;
+	bool GetPrimaryHullLocalBounds(UPrimitiveComponent* Hull, FVector& OutMin, FVector& OutMax) const;
+	void ConfigureFromHull();
+	void ConfigureCameraFromHull();
+	void ConfigureFlightReferenceFromHull(UPrimitiveComponent* Hull, const FVector& LocalExtent);
+	void UpdateAdaptiveFlightCamera(float DeltaTime);
+	FVector GetShipForwardVector() const;
+	FVector GetShipRightVector() const;
+	FVector GetShipUpVector() const;
+	void SetFlightCollisionOptimization(bool bEnabled);
+	void ApplyFlightInput(float DeltaTime);
+	void ApplyRotationInput(float DeltaTime);
+	void ApplyEngineState();
+	void RequestEngineModeForFlightMode(bool bImmediate);
+	void AdvanceEngineModeTransition(float DeltaTime);
+	EEngineMode ResolveEngineModeForFlightMode(EFlightMode FlightMode) const;
+	double GetFlightModeSpeedScale(EFlightMode FlightMode) const;
+	void CreateShipHud();
+	void RemoveShipHud();
+	FText GetShipStatusText() const;
+	FText GetShipHintText() const;
+
+	bool bSeatWasAutoConfigured{false};
+	bool bExitWasAutoConfigured{false};
+	bool bInteractionZoneWasAutoConfigured{false};
+	FTransform LastAutoSeatRelativeTransform;
+	FTransform LastAutoExitRelativeTransform;
+	FVector LastAutoInteractionZoneRelativeLocation{FVector::ZeroVector};
+	float LastAutoInteractionRadius{1000.0f};
+	FVector FlightForwardLocalAxis{FVector::ForwardVector};
+	FVector FlightUpLocalAxis{FVector::UpVector};
+	float BaseCameraArmLength{1200.0f};
+	bool bFlightCollisionOptimizationActive{false};
+	FName OriginalHullCollisionProfile{NAME_None};
+	ECollisionEnabled::Type OriginalHullCollisionEnabled{ECollisionEnabled::QueryAndPhysics};
+	FCollisionResponseContainer OriginalHullCollisionResponses;
+	bool bOriginalHullSimulatesPhysics{false};
+
+	float ForwardInput{0.0f};
+	float SideInput{0.0f};
+	float VerticalInput{0.0f};
+	float YawInput{0.0f};
+	float PitchInput{0.0f};
+	float RollInput{0.0f};
+	double CurrentBoostMultiplier{1.0};
+	FVector KinematicVelocity{FVector::ZeroVector};
+	EEngineMode PendingEngineMode{EEngineMode::Impulse};
+	float EngineModeTransitionElapsed{0.0f};
+	bool bEngineModeTransitionActive{false};
+	bool bEngineModeSwitchedAtMidpoint{false};
+	TSharedPtr<SWidget> ShipHudWidget;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UBoxComponent>> GeneratedCollisionBoxes;
 };

@@ -21,6 +21,7 @@ public class APS_ALPHA : ModuleRules
 		if (Target.bBuildEditor)
 		{
 			PublicDependencyModuleNames.Add("WorldScapeEditor");
+			PrivateDependencyModuleNames.Add("UnrealEd");
 		}
 		
 		PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore", "DirGravity", "EnhancedInput" });

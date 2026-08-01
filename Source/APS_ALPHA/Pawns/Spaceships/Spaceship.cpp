@@ -9,8 +9,82 @@
 #include "APS_ALPHA/Generation/AstroGenerator.h"
 #include "APS_ALPHA/Pawns/Characters/GravityCharacterPawn.h"
 #include "Camera/CameraComponent.h"
+#include "Components/BoxComponent.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Components/StaticMeshComponent.h"
+#include "Engine/Engine.h"
+#include "Engine/GameViewportClient.h"
+#include "Engine/SkeletalMesh.h"
+#include "Engine/StaticMesh.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "Kismet/GameplayStatics.h"
+#include "Styling/CoreStyle.h"
+#include "Widgets/Images/SImage.h"
+#include "Widgets/Layout/SBackgroundBlur.h"
+#include "Widgets/Layout/SBorder.h"
+#include "Widgets/Layout/SBox.h"
+#include "Widgets/SBoxPanel.h"
+#include "Widgets/SOverlay.h"
+#include "Widgets/Text/STextBlock.h"
+
+namespace APSAutomaticShipInteraction
+{
+	const FVector NativeExitLocation(0.0, -200.0, 100.0);
+
+	bool IsNativeSeatTransform(const USceneComponent* Component)
+	{
+		return Component
+			&& Component->GetRelativeLocation().IsNearlyZero(0.1)
+			&& Component->GetRelativeRotation().IsNearlyZero(0.1);
+	}
+
+	bool IsNativeExitTransform(const USceneComponent* Component)
+	{
+		return Component
+			&& Component->GetRelativeLocation().Equals(NativeExitLocation, 0.1)
+			&& Component->GetRelativeRotation().IsNearlyZero(0.1);
+	}
+
+	UStaticMeshComponent* FindLargestMesh(const ASpaceship* Ship)
+	{
+		TArray<UStaticMeshComponent*> MeshComponents;
+		Ship->GetComponents(MeshComponents);
+
+		UStaticMeshComponent* BestMesh = nullptr;
+		double BestBoundsSizeSquared = 0.0;
+		for (UStaticMeshComponent* MeshComponent : MeshComponents)
+		{
+			if (!IsValid(MeshComponent) || !MeshComponent->GetStaticMesh() || MeshComponent == Ship->ForwardVector)
+			{
+				continue;
+			}
+
+			MeshComponent->UpdateBounds();
+			const double BoundsSizeSquared = MeshComponent->Bounds.BoxExtent.SizeSquared();
+			if (BoundsSizeSquared > BestBoundsSizeSquared)
+			{
+				BestMesh = MeshComponent;
+				BestBoundsSizeSquared = BoundsSizeSquared;
+			}
+		}
+
+		return BestMesh;
+	}
+
+	bool FindSocketTransform(const USceneComponent* MeshComponent, const TArray<FName>& SocketNames,
+		FTransform& OutTransform)
+	{
+		for (const FName SocketName : SocketNames)
+		{
+			if (MeshComponent->DoesSocketExist(SocketName))
+			{
+				OutTransform = MeshComponent->GetSocketTransform(SocketName, RTS_World);
+				return true;
+			}
+		}
+		return false;
+	}
+}
 
 /*
 press shift + hold Lshift = busting
@@ -71,7 +145,14 @@ ASpaceship::ASpaceship()
 {
 	SpaceshipHull = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("SpaceshipHull"));
 	RootComponent = SpaceshipHull;
-	SpaceshipHull->SetSimulatePhysics(true);
+	SpaceshipHull->SetMobility(EComponentMobility::Movable);
+	SpaceshipHull->SetEnableGravity(false);
+	SpaceshipHull->SetSimulatePhysics(false);
+
+	SkeletalSpaceshipHull = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("SkeletalSpaceshipHull"));
+	SkeletalSpaceshipHull->SetupAttachment(SpaceshipHull);
+	SkeletalSpaceshipHull->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	SkeletalSpaceshipHull->SetGenerateOverlapEvents(false);
 
 	OnboardComputer = CreateDefaultSubobject<USpaceshipOnboardComputer>(TEXT("OnboardComputer"));
 	
@@ -82,16 +163,31 @@ ASpaceship::ASpaceship()
 	SphereCollisionComponent->SetCollisionResponseToAllChannels(ECR_Ignore);
 	SphereCollisionComponent->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);
 	SphereCollisionComponent->SetGenerateOverlapEvents(true);
+	SphereCollisionComponent->SetAbsolute(false, false, true);
+
+	InteractionBoundsComponent = CreateDefaultSubobject<UBoxComponent>(TEXT("InteractionBounds"));
+	InteractionBoundsComponent->SetupAttachment(SpaceshipHull);
+	InteractionBoundsComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	InteractionBoundsComponent->SetCollisionResponseToAllChannels(ECR_Ignore);
+	InteractionBoundsComponent->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
+	InteractionBoundsComponent->SetGenerateOverlapEvents(false);
+	InteractionBoundsComponent->SetCanEverAffectNavigation(false);
 
 	PilotChair = CreateDefaultSubobject<USceneComponent>(TEXT("PilotChair"));
 	PilotChair->SetupAttachment(SpaceshipHull);
+	PilotChair->SetAbsolute(false, false, true);
 
 	PilotExitPoint = CreateDefaultSubobject<USceneComponent>(TEXT("PilotExitPoint"));
 	PilotExitPoint->SetupAttachment(SpaceshipHull);
-	PilotExitPoint->SetRelativeLocation(FVector(0.0, -200.0, 100.0));
+	PilotExitPoint->SetRelativeLocation(APSAutomaticShipInteraction::NativeExitLocation);
+	PilotExitPoint->SetAbsolute(false, false, true);
 
 	ForwardVector = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ForwardVector"));
 	ForwardVector->SetupAttachment(SpaceshipHull);
+	ForwardVector->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	ForwardVector->SetGenerateOverlapEvents(false);
+	ForwardVector->SetVisibility(false, true);
+	ForwardVector->SetHiddenInGame(true);
 
 	OnInterstellarMode.AddDynamic(this, &ASpaceship::UpdateNavigatableActorsForInterstellar);
 	OnStellarMode.AddDynamic(this, &ASpaceship::UpdateNavigatableActorsForStellar);
@@ -99,18 +195,40 @@ ASpaceship::ASpaceship()
 	
 	SpringArmComponent = CreateDefaultSubobject<USpringArmComponent>(TEXT("SpringArm"));
 	SpringArmComponent->SetupAttachment(RootComponent);
+	SpringArmComponent->SetAbsolute(false, false, true);
 	SpringArmComponent->TargetArmLength = 1000.0;
-	SpringArmComponent->SetWorldLocation(FVector(2340.0, 0.0, 1280.0));
-	//SpringArmComponent->SetWorldRotation(FRotator(0.0, -180.0, 0.0 ));
-	//SpringArmComponent->bUsePawnControlRotation = true;
+	SpringArmComponent->SetRelativeLocation(FVector::ZeroVector);
+	SpringArmComponent->SetRelativeRotation(FRotator(-12.0, 0.0, 0.0));
+	SpringArmComponent->bDoCollisionTest = false;
+	SpringArmComponent->bEnableCameraLag = true;
+	SpringArmComponent->CameraLagSpeed = 7.0f;
+	SpringArmComponent->bEnableCameraRotationLag = true;
+	SpringArmComponent->CameraRotationLagSpeed = 9.0f;
 
 	CameraComponent = CreateDefaultSubobject<UCameraComponent>(TEXT("Camera"));
 	CameraComponent->SetupAttachment(SpringArmComponent, USpringArmComponent::SocketName);
+	CameraComponent->SetAbsolute(false, false, true);
+	CameraComponent->bUsePawnControlRotation = false;
+#if WITH_EDITORONLY_DATA
+	CameraComponent->bDrawFrustumAllowed = false;
+	CameraComponent->bCameraMeshHiddenInGame = true;
+#endif
+	#if WITH_EDITOR
+	CameraComponent->SetCameraMesh(nullptr);
+	#endif
+}
+
+void ASpaceship::OnConstruction(const FTransform& Transform)
+{
+	Super::OnConstruction(Transform);
+	RefreshInteractionGeometry();
 }
 
 void ASpaceship::BeginPlay()
 {
 	Super::BeginPlay();
+	ConfigureFromHull();
+	RefreshInteractionGeometry();
 
 	GeneratedWorld = Cast<AAstroGenerator>(
 		UGameplayStatics::GetActorOfClass(GetWorld(), AAstroGenerator::StaticClass()));
@@ -137,8 +255,9 @@ void ASpaceship::BeginPlay()
 		OnboardComputer->SpaceshipHull = SpaceshipHull;
 		OnboardComputer->OffsetSystem = OffsetSystem;
 		OnboardComputer->ComputeFlightParams();
-		OnboardComputer->ApplyEngineModeForCurrentFlightMode();
+		RequestEngineModeForFlightMode(true);
 	}
+	ApplyEngineState();
 
 	// UpdateNavigatableActors();	
 	TArray<AActor*> WorldActors;
@@ -154,8 +273,155 @@ void ASpaceship::BeginPlay()
 				                                 TEXT("WorldActor: %s"), *WorldNavigatableActor->GetName()));
 		}
 	}
+	SetActorTickEnabled(IsValid(Pilot) || bEngineRunning);
 
 	//ComputeProximity();
+}
+
+UPrimitiveComponent* ASpaceship::GetPrimaryHullComponent() const
+{
+	if (SpaceshipHull && SpaceshipHull->GetStaticMesh())
+	{
+		return SpaceshipHull;
+	}
+	if (SkeletalSpaceshipHull && SkeletalSpaceshipHull->GetSkeletalMeshAsset())
+	{
+		return SkeletalSpaceshipHull;
+	}
+	return nullptr;
+}
+
+bool ASpaceship::GetPrimaryHullLocalBounds(UPrimitiveComponent* Hull, FVector& OutMin, FVector& OutMax) const
+{
+	if (!Hull)
+	{
+		return false;
+	}
+	const FBoxSphereBounds LocalBounds = Hull->CalcBounds(FTransform::Identity);
+	if (LocalBounds.BoxExtent.IsNearlyZero())
+	{
+		return false;
+	}
+	OutMin = LocalBounds.Origin - LocalBounds.BoxExtent;
+	OutMax = LocalBounds.Origin + LocalBounds.BoxExtent;
+	return true;
+}
+
+void ASpaceship::RefreshInteractionGeometry()
+{
+	if (!bAutoConfigureInteractionGeometry || !PilotChair || !PilotExitPoint || !SphereCollisionComponent
+		|| !InteractionBoundsComponent)
+	{
+		return;
+	}
+	SphereCollisionComponent->SetCollisionEnabled(
+		bProvidesArtificialGravity ? ECollisionEnabled::QueryOnly : ECollisionEnabled::NoCollision);
+
+	UPrimitiveComponent* InteractionMesh = GetPrimaryHullComponent();
+	if (!InteractionMesh)
+	{
+		return;
+	}
+
+	FVector LocalBoundsMin;
+	FVector LocalBoundsMax;
+	if (!GetPrimaryHullLocalBounds(InteractionMesh, LocalBoundsMin, LocalBoundsMax))
+	{
+		return;
+	}
+	const FVector LocalCenter = (LocalBoundsMin + LocalBoundsMax) * 0.5;
+	const FVector LocalExtent = (LocalBoundsMax - LocalBoundsMin) * 0.5;
+	const bool bForceGeneratedConfiguration = bGenerateSimpleHullCollision
+		|| Tags.Contains(TEXT("APS.GeneratedShip"));
+
+	static const TArray<FName> SeatSocketNames{
+		TEXT("PilotSeat"), TEXT("PilotChair"), TEXT("CockpitSeat"), TEXT("DriverSeat"), TEXT("Seat")};
+	static const TArray<FName> ExitSocketNames{
+		TEXT("PilotExit"), TEXT("ShipExit"), TEXT("RampExit"), TEXT("Entry"), TEXT("Door"), TEXT("Exit")};
+
+	const bool bSeatStillUsesLastAutoTransform = bSeatWasAutoConfigured
+		&& PilotChair->GetRelativeTransform().Equals(LastAutoSeatRelativeTransform, 0.1);
+	const bool bCanConfigureSeat = bForceGeneratedConfiguration || bSeatStillUsesLastAutoTransform
+		|| APSAutomaticShipInteraction::IsNativeSeatTransform(PilotChair);
+	if (bCanConfigureSeat)
+	{
+		FTransform SeatTransform;
+		if (!APSAutomaticShipInteraction::FindSocketTransform(InteractionMesh, SeatSocketNames, SeatTransform))
+		{
+			const FVector FallbackSeatLocation = LocalCenter
+				+ FVector(LocalExtent.X * 0.2, 0.0, LocalExtent.Z * 0.15);
+			SeatTransform = FTransform(
+				InteractionMesh->GetComponentQuat(),
+				InteractionMesh->GetComponentTransform().TransformPosition(FallbackSeatLocation),
+				FVector::OneVector);
+		}
+		PilotChair->SetWorldTransform(SeatTransform);
+		bSeatWasAutoConfigured = true;
+		LastAutoSeatRelativeTransform = PilotChair->GetRelativeTransform();
+	}
+
+	const bool bExitStillUsesLastAutoTransform = bExitWasAutoConfigured
+		&& PilotExitPoint->GetRelativeTransform().Equals(LastAutoExitRelativeTransform, 0.1);
+	const bool bCanConfigureExit = bForceGeneratedConfiguration || bExitStillUsesLastAutoTransform
+		|| APSAutomaticShipInteraction::IsNativeExitTransform(PilotExitPoint);
+	if (bCanConfigureExit)
+	{
+		FTransform ExitTransform;
+		if (!APSAutomaticShipInteraction::FindSocketTransform(InteractionMesh, ExitSocketNames, ExitTransform))
+		{
+			const double MeshYScale = FMath::Max(FMath::Abs(InteractionMesh->GetComponentScale().Y), 0.01);
+			const FVector FallbackExitLocation = LocalCenter
+				+ FVector(0.0, -(LocalExtent.Y + AutoExitClearance / MeshYScale), 0.0);
+			ExitTransform = FTransform(
+				InteractionMesh->GetComponentQuat(),
+				InteractionMesh->GetComponentTransform().TransformPosition(FallbackExitLocation),
+				FVector::OneVector);
+		}
+		PilotExitPoint->SetWorldTransform(ExitTransform);
+		bExitWasAutoConfigured = true;
+		LastAutoExitRelativeTransform = PilotExitPoint->GetRelativeTransform();
+	}
+
+	const bool bZoneUsesNativeDefaults = SphereCollisionComponent->GetRelativeLocation().IsNearlyZero(0.1)
+		&& FMath::IsNearlyEqual(SphereCollisionComponent->GetUnscaledSphereRadius(), 1000.0f, 0.1f);
+	const bool bZoneStillUsesLastAutoValues = bInteractionZoneWasAutoConfigured
+		&& SphereCollisionComponent->GetRelativeLocation().Equals(LastAutoInteractionZoneRelativeLocation, 0.1)
+		&& FMath::IsNearlyEqual(
+			SphereCollisionComponent->GetUnscaledSphereRadius(), LastAutoInteractionRadius, 0.1f);
+	if (bForceGeneratedConfiguration || bZoneStillUsesLastAutoValues || bZoneUsesNativeDefaults)
+	{
+		// The root is the visual hull and imported ships are commonly actor-scaled.
+		// Keep the interaction sphere in world units instead of inheriting that scale.
+		SphereCollisionComponent->SetAbsolute(false, false, true);
+		// Component bounds can still describe the previous mesh for one frame when a
+		// runtime fleet ship has just received its static mesh.  Local mesh bounds are
+		// available immediately, so derive the world-space interaction sphere from them.
+		SphereCollisionComponent->SetWorldLocation(
+			InteractionMesh->GetComponentTransform().TransformPosition(LocalCenter));
+		const FVector ScaledMeshExtent = LocalExtent * InteractionMesh->GetComponentScale().GetAbs();
+		const double MeshSphereRadius = ScaledMeshExtent.Size();
+		const double SphereScale = FMath::Max(SphereCollisionComponent->GetComponentScale().GetAbsMax(), 0.01);
+		const double InteractionRadius = (MeshSphereRadius + AutoInteractionPadding) / SphereScale;
+		SphereCollisionComponent->SetSphereRadius(FMath::Max(1000.0, InteractionRadius), true);
+		bInteractionZoneWasAutoConfigured = true;
+		LastAutoInteractionZoneRelativeLocation = SphereCollisionComponent->GetRelativeLocation();
+		LastAutoInteractionRadius = SphereCollisionComponent->GetUnscaledSphereRadius();
+	}
+
+	InteractionBoundsComponent->AttachToComponent(
+		InteractionMesh, FAttachmentTransformRules::KeepRelativeTransform);
+	InteractionBoundsComponent->SetRelativeLocation(LocalCenter);
+	InteractionBoundsComponent->SetRelativeRotation(FRotator::ZeroRotator);
+	const FVector MeshScale = InteractionMesh->GetComponentScale().GetAbs().ComponentMax(FVector(0.01));
+	const FVector LocalPadding(
+		AutoInteractionPadding / MeshScale.X,
+		AutoInteractionPadding / MeshScale.Y,
+		AutoInteractionPadding / MeshScale.Z);
+	InteractionBoundsComponent->SetBoxExtent(LocalExtent + LocalPadding, true);
+	InteractionBoundsComponent->SetCollisionEnabled(
+		bAllowExteriorInteraction ? ECollisionEnabled::QueryOnly : ECollisionEnabled::NoCollision);
+	InteractionBoundsComponent->SetCollisionResponseToAllChannels(ECR_Ignore);
+	InteractionBoundsComponent->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
 }
 
 void GetAttachedActorsRecursively(AActor* ParentActor, TArray<AActor*>& OutActors)
@@ -225,32 +491,17 @@ void ASpaceship::Tick(float DeltaTime)
 		return;
 	}
 
-	if (bIsAccelerating)
-	{
-		OnboardComputer->AccelerateBoost(DeltaTime);
-	}
-	else if (bIsDecelerating)
-	{
-		OnboardComputer->DecelerateBoost(DeltaTime);
-	}
-	else
-	{
-		OnboardComputer->RestoreNominalThrust(DeltaTime);
-	}
+	const double TargetBoost = bEngineRunning && bIsAccelerating ? ActiveClassPreset.MaximumBoost : 1.0;
+	const double BoostResponse = bIsAccelerating
+		? ActiveClassPreset.BoostGrowthPerSecond
+		: BoostRecoverySpeed;
+	CurrentBoostMultiplier = FMath::FInterpConstantTo(
+		CurrentBoostMultiplier, TargetBoost, DeltaTime, BoostResponse);
 
-	if (SpaceshipHull->IsSimulatingPhysics())
-	{
-		const FFlightParams& FlightParams = OnboardComputer->FlightSystem.FlightParams;
-		SpaceshipHull->SetLinearDamping(FlightParams.LinearResistance);
-		SpaceshipHull->SetAngularDamping(FlightParams.AngularResistance);
-
-		if (bIsDecelerating)
-		{
-			const FVector BrakedVelocity = FMath::VInterpTo(
-				SpaceshipHull->GetPhysicsLinearVelocity(), FVector::ZeroVector, DeltaTime, BrakingResponseSpeed);
-			SpaceshipHull->SetPhysicsLinearVelocity(BrakedVelocity);
-		}
-	}
+	AdvanceEngineModeTransition(DeltaTime);
+	ApplyFlightInput(DeltaTime);
+	ApplyRotationInput(DeltaTime);
+	UpdateAdaptiveFlightCamera(DeltaTime);
 	/*uint64 StartCycles = FPlatformTime::Cycles();
 
 	if (!bEngineRunning)
@@ -494,6 +745,758 @@ void ASpaceship::Tick(float DeltaTime)
 	                                 FString::Printf(TEXT("Time elapsed: %f seconds"), ElapsedTime));*/
 }
 
+FSpaceshipClassPreset ASpaceship::GetPresetForSizeClass(ESpaceshipSizeClass InSizeClass)
+{
+	FSpaceshipClassPreset Preset;
+	switch (InSizeClass)
+	{
+	case ESpaceshipSizeClass::XXS:
+		Preset.ImpulseAcceleration = 1800.0;
+		Preset.MaxImpulseSpeed = 60000.0;
+		Preset.RotationSpeed = 105.0;
+		Preset.LinearDamping = 0.08;
+		Preset.AngularDamping = 3.5;
+		Preset.MaximumBoost = 5.0;
+		Preset.BoostGrowthPerSecond = 1.35;
+		Preset.bSupportsSpaceWrap = false;
+		Preset.bSupportsOffset = false;
+		Preset.bUsesPhysicalImpulse = true;
+		Preset.bHasInteriorByDefault = false;
+		Preset.MaximumFlightMode = EFlightMode::Planetary;
+		break;
+	case ESpaceshipSizeClass::XS:
+		Preset.ImpulseAcceleration = 1500.0;
+		Preset.MaxImpulseSpeed = 85000.0;
+		Preset.RotationSpeed = 88.0;
+		Preset.LinearDamping = 0.1;
+		Preset.AngularDamping = 3.2;
+		Preset.MaximumBoost = 5.0;
+		Preset.BoostGrowthPerSecond = 1.2;
+		Preset.bSupportsSpaceWrap = false;
+		Preset.bSupportsOffset = false;
+		Preset.bUsesPhysicalImpulse = true;
+		Preset.bHasInteriorByDefault = false;
+		Preset.MaximumFlightMode = EFlightMode::Planetary;
+		break;
+	case ESpaceshipSizeClass::S:
+		Preset.ImpulseAcceleration = 1200.0;
+		Preset.MaxImpulseSpeed = 120000.0;
+		Preset.RotationSpeed = 70.0;
+		Preset.LinearDamping = 0.13;
+		Preset.AngularDamping = 2.9;
+		Preset.MaximumBoost = 4.5;
+		Preset.BoostGrowthPerSecond = 1.05;
+		Preset.bSupportsSpaceWrap = true;
+		Preset.bSupportsOffset = false;
+		Preset.bUsesPhysicalImpulse = true;
+		Preset.bHasInteriorByDefault = true;
+		Preset.MaximumFlightMode = EFlightMode::Stellar;
+		break;
+	case ESpaceshipSizeClass::M:
+		Preset.ImpulseAcceleration = 900.0;
+		Preset.MaxImpulseSpeed = 160000.0;
+		Preset.RotationSpeed = 55.0;
+		Preset.LinearDamping = 0.18;
+		Preset.AngularDamping = 2.5;
+		Preset.MaximumBoost = 4.0;
+		Preset.BoostGrowthPerSecond = 0.9;
+		Preset.bSupportsSpaceWrap = true;
+		Preset.bSupportsOffset = true;
+		Preset.bUsesPhysicalImpulse = true;
+		Preset.bHasInteriorByDefault = true;
+		Preset.MaximumFlightMode = EFlightMode::Interstellar;
+		break;
+	case ESpaceshipSizeClass::L:
+		Preset.ImpulseAcceleration = 650.0;
+		Preset.MaxImpulseSpeed = 220000.0;
+		Preset.RotationSpeed = 36.0;
+		Preset.LinearDamping = 0.22;
+		Preset.AngularDamping = 2.2;
+		Preset.MaximumBoost = 3.5;
+		Preset.BoostGrowthPerSecond = 0.72;
+		Preset.bSupportsSpaceWrap = true;
+		Preset.bSupportsOffset = true;
+		Preset.bUsesPhysicalImpulse = false;
+		Preset.bHasInteriorByDefault = true;
+		Preset.MaximumFlightMode = EFlightMode::Intergalaxy;
+		break;
+	case ESpaceshipSizeClass::XL:
+		Preset.ImpulseAcceleration = 450.0;
+		Preset.MaxImpulseSpeed = 300000.0;
+		Preset.RotationSpeed = 25.0;
+		Preset.LinearDamping = 0.27;
+		Preset.AngularDamping = 2.0;
+		Preset.MaximumBoost = 3.2;
+		Preset.BoostGrowthPerSecond = 0.58;
+		Preset.bSupportsSpaceWrap = true;
+		Preset.bSupportsOffset = true;
+		Preset.bUsesPhysicalImpulse = false;
+		Preset.bHasInteriorByDefault = true;
+		Preset.MaximumFlightMode = EFlightMode::Intergalaxy;
+		break;
+	case ESpaceshipSizeClass::XXL:
+		Preset.ImpulseAcceleration = 300.0;
+		Preset.MaxImpulseSpeed = 450000.0;
+		Preset.RotationSpeed = 16.0;
+		Preset.LinearDamping = 0.32;
+		Preset.AngularDamping = 1.8;
+		Preset.MaximumBoost = 2.8;
+		Preset.BoostGrowthPerSecond = 0.45;
+		Preset.bSupportsSpaceWrap = true;
+		Preset.bSupportsOffset = true;
+		Preset.bUsesPhysicalImpulse = false;
+		Preset.bHasInteriorByDefault = true;
+		Preset.MaximumFlightMode = EFlightMode::Intergalaxy;
+		break;
+	case ESpaceshipSizeClass::Titan:
+		Preset.ImpulseAcceleration = 180.0;
+		Preset.MaxImpulseSpeed = 600000.0;
+		Preset.RotationSpeed = 9.0;
+		Preset.LinearDamping = 0.38;
+		Preset.AngularDamping = 1.6;
+		Preset.MaximumBoost = 2.4;
+		Preset.BoostGrowthPerSecond = 0.32;
+		Preset.bSupportsSpaceWrap = true;
+		Preset.bSupportsOffset = true;
+		Preset.bUsesPhysicalImpulse = false;
+		Preset.bHasInteriorByDefault = true;
+		Preset.MaximumFlightMode = EFlightMode::Intergalaxy;
+		break;
+	}
+	return Preset;
+}
+
+ESpaceshipSizeClass ASpaceship::InferSizeClassFromLength(double LengthCentimeters)
+{
+	if (LengthCentimeters <= 2000.0) return ESpaceshipSizeClass::XXS;
+	if (LengthCentimeters <= 5000.0) return ESpaceshipSizeClass::XS;
+	if (LengthCentimeters <= 15000.0) return ESpaceshipSizeClass::S;
+	if (LengthCentimeters <= 50000.0) return ESpaceshipSizeClass::M;
+	if (LengthCentimeters <= 200000.0) return ESpaceshipSizeClass::L;
+	if (LengthCentimeters <= 1000000.0) return ESpaceshipSizeClass::XL;
+	if (LengthCentimeters <= 10000000.0) return ESpaceshipSizeClass::XXL;
+	return ESpaceshipSizeClass::Titan;
+}
+
+bool ASpaceship::IsGeneratedShipMeshAsset(const UStaticMesh* Mesh)
+{
+	return IsValid(Mesh)
+		&& Mesh->GetPathName().Contains(TEXT("/Game/APS/APS_ALPHA/Assets/AI_Shpis/"), ESearchCase::IgnoreCase);
+}
+
+bool ASpaceship::IsGeneratedShipSkeletalMeshAsset(const USkeletalMesh* Mesh)
+{
+	return IsValid(Mesh)
+		&& Mesh->GetPathName().Contains(TEXT("/Game/APS/APS_ALPHA/Assets/AI_Shpis/"), ESearchCase::IgnoreCase);
+}
+
+void ASpaceship::ConfigureFlightReferenceFromHull(UPrimitiveComponent* Hull, const FVector& LocalExtent)
+{
+	int32 ForwardAxisIndex = 0;
+	if (LocalExtent.Y > LocalExtent.X && LocalExtent.Y >= LocalExtent.Z)
+	{
+		ForwardAxisIndex = 1;
+	}
+	else if (LocalExtent.Z > LocalExtent.X && LocalExtent.Z > LocalExtent.Y)
+	{
+		ForwardAxisIndex = 2;
+	}
+
+	FlightForwardLocalAxis = FVector::ZeroVector;
+	FlightForwardLocalAxis[ForwardAxisIndex] = 1.0;
+	FlightUpLocalAxis = ForwardAxisIndex == 2 ? FVector::RightVector : FVector::UpVector;
+	if (Hull && Hull != SpaceshipHull)
+	{
+		const FQuat RelativeRotation = Hull->GetRelativeRotation().Quaternion();
+		FlightForwardLocalAxis = RelativeRotation.RotateVector(FlightForwardLocalAxis).GetSafeNormal();
+		FlightUpLocalAxis = RelativeRotation.RotateVector(FlightUpLocalAxis).GetSafeNormal();
+	}
+}
+
+void ASpaceship::ConfigureFromHull()
+{
+	UPrimitiveComponent* MainMesh = GetPrimaryHullComponent();
+	if (MainMesh)
+	{
+		MainMesh->UpdateBounds();
+		FVector LocalMin;
+		FVector LocalMax;
+		if (GetPrimaryHullLocalBounds(MainMesh, LocalMin, LocalMax))
+		{
+			ConfigureFlightReferenceFromHull(MainMesh, (LocalMax - LocalMin) * 0.5);
+		}
+		if (bInferSizeClassFromHull)
+		{
+			const FVector Size = MainMesh->Bounds.BoxExtent * 2.0;
+			SizeClass = InferSizeClassFromLength(Size.GetMax());
+		}
+	}
+
+	ActiveClassPreset = GetPresetForSizeClass(SizeClass);
+	if (bGenerateSimpleHullCollision)
+	{
+		// Generated AI hulls can have complex-as-simple or otherwise unusable bodies.
+		// Their lightweight proxy collision is moved kinematically with the actor.
+		ActiveClassPreset.bUsesPhysicalImpulse = false;
+		RebuildSimpleHullCollision();
+	}
+	RotationSpeedDegreesPerSecond = ActiveClassPreset.RotationSpeed;
+	ImpulseRotationAcceleration = FMath::DegreesToRadians(ActiveClassPreset.RotationSpeed);
+
+	if (SpaceshipHull)
+	{
+		SpaceshipHull->SetMobility(EComponentMobility::Movable);
+		SpaceshipHull->SetEnableGravity(false);
+		SpaceshipHull->SetLinearDamping(ActiveClassPreset.LinearDamping);
+		SpaceshipHull->SetAngularDamping(ActiveClassPreset.AngularDamping);
+	}
+	ConfigureCameraFromHull();
+}
+
+void ASpaceship::RebuildSimpleHullCollision()
+{
+	for (UBoxComponent* Box : GeneratedCollisionBoxes)
+	{
+		if (IsValid(Box))
+		{
+			Box->DestroyComponent();
+		}
+	}
+	GeneratedCollisionBoxes.Reset();
+
+	if (!bGenerateSimpleHullCollision)
+	{
+		return;
+	}
+
+	UPrimitiveComponent* MainMesh = GetPrimaryHullComponent();
+	if (!MainMesh)
+	{
+		return;
+	}
+
+	FVector LocalMin;
+	FVector LocalMax;
+	if (!GetPrimaryHullLocalBounds(MainMesh, LocalMin, LocalMax))
+	{
+		return;
+	}
+	const FVector Center = (LocalMin + LocalMax) * 0.5;
+	const FVector Extent = (LocalMax - LocalMin) * 0.5;
+	if (Extent.IsNearlyZero())
+	{
+		return;
+	}
+
+	int32 MajorAxis = 0;
+	if (Extent.Y > Extent.X && Extent.Y >= Extent.Z) MajorAxis = 1;
+	else if (Extent.Z > Extent.X && Extent.Z > Extent.Y) MajorAxis = 2;
+
+	const int32 SliceCount = FMath::Clamp(SimpleCollisionSliceCount, 3, 9);
+	const double HalfSliceLength = Extent[MajorAxis] / SliceCount;
+	for (int32 SliceIndex = 0; SliceIndex < SliceCount; ++SliceIndex)
+	{
+		const double Along01 = (static_cast<double>(SliceIndex) + 0.5) / SliceCount;
+		const double DistanceFromCenter = FMath::Abs(Along01 * 2.0 - 1.0);
+		const double Taper = FMath::Lerp(1.0, 0.58, FMath::Pow(DistanceFromCenter, 1.55));
+
+		FVector BoxExtent = Extent * Taper;
+		BoxExtent[MajorAxis] = HalfSliceLength * 1.03;
+		BoxExtent.X = FMath::Max(BoxExtent.X, 25.0);
+		BoxExtent.Y = FMath::Max(BoxExtent.Y, 25.0);
+		BoxExtent.Z = FMath::Max(BoxExtent.Z, 25.0);
+
+		FVector BoxCenter = Center;
+		BoxCenter[MajorAxis] = LocalMin[MajorAxis] + (SliceIndex * 2.0 + 1.0) * HalfSliceLength;
+		UBoxComponent* Box = NewObject<UBoxComponent>(this,
+			*FString::Printf(TEXT("SimpleHullCollision_%02d"), SliceIndex), RF_Transient);
+		Box->SetupAttachment(MainMesh);
+		Box->SetMobility(EComponentMobility::Movable);
+		Box->SetBoxExtent(BoxExtent, false);
+		Box->SetRelativeLocation(BoxCenter);
+		Box->SetCollisionProfileName(TEXT("BlockAll"));
+		Box->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+		Box->SetCollisionResponseToAllChannels(ECR_Block);
+		Box->SetGenerateOverlapEvents(false);
+		Box->SetCanEverAffectNavigation(false);
+		AddInstanceComponent(Box);
+		Box->RegisterComponent();
+		GeneratedCollisionBoxes.Add(Box);
+	}
+
+	// The imported body is never queried after the proxy hull exists.
+	MainMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	MainMesh->SetGenerateOverlapEvents(false);
+	UE_LOG(LogTemp, Verbose, TEXT("[APS.Ships] %s generated %d low-cost collision slices for %s"),
+		*GetName(), GeneratedCollisionBoxes.Num(), *GetNameSafe(MainMesh));
+}
+
+void ASpaceship::ConfigureCameraFromHull()
+{
+	if (!SpringArmComponent)
+	{
+		return;
+	}
+
+	UPrimitiveComponent* MainMesh = GetPrimaryHullComponent();
+	if (!MainMesh)
+	{
+		return;
+	}
+
+	FVector LocalMin;
+	FVector LocalMax;
+	if (!GetPrimaryHullLocalBounds(MainMesh, LocalMin, LocalMax))
+	{
+		return;
+	}
+	const FVector LocalCenter = (LocalMin + LocalMax) * 0.5;
+	const FVector LocalExtent = (LocalMax - LocalMin) * 0.5;
+	const FVector ScaledExtent = LocalExtent * MainMesh->GetComponentScale().GetAbs();
+	const double WorldRadius = FMath::Max(ScaledExtent.Size(), 400.0);
+	BaseCameraArmLength = FMath::Max(1200.0, WorldRadius * 2.8);
+	SpringArmComponent->TargetArmLength = BaseCameraArmLength;
+	SpringArmComponent->CameraLagMaxDistance = BaseCameraArmLength * 0.85;
+	SpringArmComponent->SetWorldLocation(
+		MainMesh->GetComponentTransform().TransformPosition(LocalCenter) + GetShipUpVector() * WorldRadius * 0.3);
+	const FRotator FlightViewRotation = FRotationMatrix::MakeFromXZ(
+		FlightForwardLocalAxis, FlightUpLocalAxis).Rotator();
+	SpringArmComponent->SetRelativeRotation(FlightViewRotation + FRotator(-12.0, 0.0, 0.0));
+	SpringArmComponent->bDoCollisionTest = false;
+}
+
+FVector ASpaceship::GetShipForwardVector() const
+{
+	return SpaceshipHull
+		? SpaceshipHull->GetComponentTransform().TransformVectorNoScale(FlightForwardLocalAxis).GetSafeNormal()
+		: GetActorForwardVector();
+}
+
+FVector ASpaceship::GetShipUpVector() const
+{
+	return SpaceshipHull
+		? SpaceshipHull->GetComponentTransform().TransformVectorNoScale(FlightUpLocalAxis).GetSafeNormal()
+		: GetActorUpVector();
+}
+
+FVector ASpaceship::GetShipRightVector() const
+{
+	return FVector::CrossProduct(GetShipUpVector(), GetShipForwardVector()).GetSafeNormal();
+}
+
+void ASpaceship::UpdateAdaptiveFlightCamera(float DeltaTime)
+{
+	if (!bUseAdaptiveFlightCamera || !SpringArmComponent || !IsValid(Pilot))
+	{
+		return;
+	}
+	const double FlightScale = OnboardComputer
+		? GetFlightModeSpeedScale(OnboardComputer->FlightSystem.CurrentFlightMode) : 1.0;
+	const double ReferenceSpeed = FMath::Max(
+		ActiveClassPreset.MaxImpulseSpeed * FlightScale * FMath::Max(CurrentBoostMultiplier, 1.0), 1.0);
+	const double Speed = SpaceshipHull && SpaceshipHull->IsSimulatingPhysics()
+		? SpaceshipHull->GetPhysicsLinearVelocity().Size() : KinematicVelocity.Size();
+	const float SpeedAlpha = FMath::Clamp(static_cast<float>(Speed / ReferenceSpeed), 0.0f, 1.0f);
+	const float CameraAlpha = FMath::Sqrt(SpeedAlpha);
+	const float TargetArmLength = BaseCameraArmLength * FMath::Lerp(1.0f, 1.55f, CameraAlpha);
+	SpringArmComponent->TargetArmLength = FMath::FInterpTo(
+		SpringArmComponent->TargetArmLength, TargetArmLength, DeltaTime, 3.5f);
+	SpringArmComponent->CameraLagSpeed = FMath::Lerp(6.0f, 20.0f, CameraAlpha);
+	SpringArmComponent->CameraRotationLagSpeed = FMath::Lerp(8.0f, 22.0f, CameraAlpha);
+	SpringArmComponent->CameraLagMaxDistance = BaseCameraArmLength * FMath::Lerp(0.85f, 1.8f, CameraAlpha);
+}
+
+void ASpaceship::SetFlightCollisionOptimization(bool bEnabled)
+{
+	UPrimitiveComponent* PrimaryHull = GetPrimaryHullComponent();
+	if (!bOptimizeCollisionWhilePiloted || bGenerateSimpleHullCollision || !PrimaryHull)
+	{
+		return;
+	}
+
+	if (bEnabled && !bFlightCollisionOptimizationActive)
+	{
+		OriginalHullCollisionProfile = PrimaryHull->GetCollisionProfileName();
+		OriginalHullCollisionEnabled = PrimaryHull->GetCollisionEnabled();
+		OriginalHullCollisionResponses = PrimaryHull->GetCollisionResponseToChannels();
+		bOriginalHullSimulatesPhysics = PrimaryHull->IsSimulatingPhysics();
+		bGenerateSimpleHullCollision = true;
+		RebuildSimpleHullCollision();
+		bGenerateSimpleHullCollision = false;
+		ActiveClassPreset.bUsesPhysicalImpulse = false;
+		bFlightCollisionOptimizationActive = true;
+		ApplyEngineState();
+	}
+	else if (!bEnabled && bFlightCollisionOptimizationActive)
+	{
+		for (UBoxComponent* Box : GeneratedCollisionBoxes)
+		{
+			if (IsValid(Box))
+			{
+				Box->DestroyComponent();
+			}
+		}
+		GeneratedCollisionBoxes.Reset();
+		PrimaryHull->SetCollisionProfileName(OriginalHullCollisionProfile);
+		PrimaryHull->SetCollisionEnabled(OriginalHullCollisionEnabled);
+		PrimaryHull->SetCollisionResponseToChannels(OriginalHullCollisionResponses);
+		PrimaryHull->SetSimulatePhysics(false);
+		bFlightCollisionOptimizationActive = false;
+		ConfigureFromHull();
+		ApplyEngineState();
+	}
+}
+
+void ASpaceship::ApplyFlightInput(float DeltaTime)
+{
+	if (!bEngineRunning || !OnboardComputer || !SpaceshipHull)
+	{
+		return;
+	}
+
+	const FVector LocalInput(ForwardInput, SideInput, VerticalInput);
+	const FVector ClampedInput = LocalInput.GetClampedToMaxSize(1.0);
+	const FVector WorldInput = GetShipForwardVector() * ClampedInput.X
+		+ GetShipRightVector() * ClampedInput.Y
+		+ GetShipUpVector() * ClampedInput.Z;
+	const EEngineMode EngineMode = OnboardComputer->EngineSystem.CurrentEngineMode;
+	const double Scale = GetFlightModeSpeedScale(OnboardComputer->FlightSystem.CurrentFlightMode);
+	const double TransitionAlpha = bEngineModeTransitionActive
+		? FMath::Clamp(FMath::Abs(EngineModeTransitionElapsed / EngineModeTransitionDuration - 0.5f) * 2.0f, 0.12f, 1.0f)
+		: 1.0;
+
+	if (EngineMode == EEngineMode::Impulse && ActiveClassPreset.bUsesPhysicalImpulse
+		&& SpaceshipHull->IsSimulatingPhysics())
+	{
+		if (!WorldInput.IsNearlyZero())
+		{
+			SpaceshipHull->AddForce(
+				WorldInput * ActiveClassPreset.ImpulseAcceleration * CurrentBoostMultiplier * TransitionAlpha,
+				NAME_None, true);
+		}
+
+		FVector Velocity = SpaceshipHull->GetPhysicsLinearVelocity();
+		const double MaxSpeed = ActiveClassPreset.MaxImpulseSpeed * CurrentBoostMultiplier;
+		if (Velocity.SizeSquared() > FMath::Square(MaxSpeed))
+		{
+			Velocity = Velocity.GetClampedToMaxSize(MaxSpeed);
+			SpaceshipHull->SetPhysicsLinearVelocity(Velocity);
+		}
+		if (bIsDecelerating)
+		{
+			SpaceshipHull->SetPhysicsLinearVelocity(FMath::VInterpTo(
+				Velocity, FVector::ZeroVector, DeltaTime, BrakingResponseSpeed));
+		}
+		return;
+	}
+
+	const double MaxSpeed = ActiveClassPreset.MaxImpulseSpeed * Scale * CurrentBoostMultiplier;
+	const FVector DesiredVelocity = WorldInput * MaxSpeed;
+	const double Acceleration = ActiveClassPreset.ImpulseAcceleration * Scale * CurrentBoostMultiplier * TransitionAlpha;
+	if (!WorldInput.IsNearlyZero())
+	{
+		KinematicVelocity = FMath::VInterpConstantTo(KinematicVelocity, DesiredVelocity, DeltaTime, Acceleration);
+	}
+	else
+	{
+		KinematicVelocity = FMath::VInterpTo(
+			KinematicVelocity, FVector::ZeroVector, DeltaTime, ActiveClassPreset.LinearDamping);
+	}
+	if (bIsDecelerating)
+	{
+		KinematicVelocity = FMath::VInterpTo(
+			KinematicVelocity, FVector::ZeroVector, DeltaTime, BrakingResponseSpeed);
+	}
+
+	FHitResult Hit;
+	const bool bSweep = EngineMode == EEngineMode::Impulse;
+	AddActorWorldOffset(KinematicVelocity * DeltaTime, bSweep, &Hit, ETeleportType::None);
+	if (Hit.bBlockingHit)
+	{
+		KinematicVelocity = FVector::VectorPlaneProject(KinematicVelocity, Hit.ImpactNormal) * 0.25;
+	}
+}
+
+void ASpaceship::ApplyRotationInput(float DeltaTime)
+{
+	if (!bEngineRunning || !SpaceshipHull)
+	{
+		return;
+	}
+
+	const float TransitionAlpha = bEngineModeTransitionActive
+		? FMath::Clamp(FMath::Abs(EngineModeTransitionElapsed / EngineModeTransitionDuration - 0.5f) * 2.0f, 0.15f, 1.0f)
+		: 1.0f;
+	const double RotationSpeed = ActiveClassPreset.RotationSpeed * TransitionAlpha;
+	const double YawRadians = FMath::DegreesToRadians(YawInput * RotationSpeed * DeltaTime);
+	const double PitchRadians = FMath::DegreesToRadians(PitchInput * RotationSpeed * DeltaTime);
+	const double RollRadians = FMath::DegreesToRadians(-RollInput * RotationSpeed * DeltaTime);
+	if (FMath::IsNearlyZero(YawRadians) && FMath::IsNearlyZero(PitchRadians) && FMath::IsNearlyZero(RollRadians))
+	{
+		return;
+	}
+
+	const FQuat Current = GetActorQuat();
+	const FQuat DeltaYaw(GetShipUpVector(), YawRadians);
+	const FQuat DeltaPitch(GetShipRightVector(), PitchRadians);
+	const FQuat DeltaRoll(GetShipForwardVector(), RollRadians);
+	const FQuat Target = (DeltaRoll * DeltaPitch * DeltaYaw * Current).GetNormalized();
+	SetActorRotation(Target, ETeleportType::TeleportPhysics);
+	if (SpaceshipHull->IsSimulatingPhysics())
+	{
+		SpaceshipHull->SetPhysicsAngularVelocityInRadians(FVector::ZeroVector);
+	}
+}
+
+EEngineMode ASpaceship::ResolveEngineModeForFlightMode(EFlightMode FlightMode) const
+{
+	if (static_cast<uint8>(FlightMode) >= static_cast<uint8>(EFlightMode::Interstellar)
+		&& ActiveClassPreset.bSupportsOffset)
+	{
+		return EEngineMode::Offset;
+	}
+	if (static_cast<uint8>(FlightMode) >= static_cast<uint8>(EFlightMode::Interplanetary)
+		&& ActiveClassPreset.bSupportsSpaceWrap)
+	{
+		return EEngineMode::SpaceWrap;
+	}
+	return EEngineMode::Impulse;
+}
+
+double ASpaceship::GetFlightModeSpeedScale(EFlightMode FlightMode) const
+{
+	switch (FlightMode)
+	{
+	case EFlightMode::Surface: return 1.25;
+	case EFlightMode::Atmospheric: return 2.0;
+	case EFlightMode::Orbital: return 4.0;
+	case EFlightMode::Planetary: return 8.0;
+	case EFlightMode::Interplanetary: return 200.0;
+	case EFlightMode::Stellar: return 1000.0;
+	case EFlightMode::Interstellar: return 10000.0;
+	case EFlightMode::Intergalaxy: return 100000.0;
+	default: return 1.0;
+	}
+}
+
+void ASpaceship::RequestEngineModeForFlightMode(bool bImmediate)
+{
+	if (!OnboardComputer)
+	{
+		return;
+	}
+	PendingEngineMode = ResolveEngineModeForFlightMode(OnboardComputer->FlightSystem.CurrentFlightMode);
+	if (bImmediate || !bEngineRunning || PendingEngineMode == OnboardComputer->EngineSystem.CurrentEngineMode)
+	{
+		bEngineModeTransitionActive = false;
+		bEngineModeSwitchedAtMidpoint = false;
+		OnboardComputer->SwitchEngineMode(PendingEngineMode);
+		ApplyEngineState();
+		return;
+	}
+
+	EngineModeTransitionElapsed = 0.0f;
+	bEngineModeTransitionActive = true;
+	bEngineModeSwitchedAtMidpoint = false;
+}
+
+void ASpaceship::AdvanceEngineModeTransition(float DeltaTime)
+{
+	if (!bEngineModeTransitionActive || !OnboardComputer)
+	{
+		return;
+	}
+	EngineModeTransitionElapsed += DeltaTime;
+	if (!bEngineModeSwitchedAtMidpoint && EngineModeTransitionElapsed >= EngineModeTransitionDuration * 0.5f)
+	{
+		OnboardComputer->SwitchEngineMode(PendingEngineMode);
+		bEngineModeSwitchedAtMidpoint = true;
+		ApplyEngineState();
+	}
+	if (EngineModeTransitionElapsed >= EngineModeTransitionDuration)
+	{
+		bEngineModeTransitionActive = false;
+		bEngineModeSwitchedAtMidpoint = false;
+		EngineModeTransitionElapsed = 0.0f;
+	}
+}
+
+void ASpaceship::ApplyEngineState()
+{
+	if (!SpaceshipHull || !OnboardComputer)
+	{
+		return;
+	}
+
+	SpaceshipHull->SetMobility(EComponentMobility::Movable);
+	SpaceshipHull->SetEnableGravity(false);
+	if (!bEngineRunning)
+	{
+		if (SpaceshipHull->IsSimulatingPhysics())
+		{
+			KinematicVelocity = SpaceshipHull->GetPhysicsLinearVelocity();
+			SpaceshipHull->SetPhysicsLinearVelocity(FVector::ZeroVector);
+			SpaceshipHull->SetPhysicsAngularVelocityInRadians(FVector::ZeroVector);
+		}
+		SpaceshipHull->SetSimulatePhysics(false);
+		KinematicVelocity = FVector::ZeroVector;
+		return;
+	}
+
+	const bool bUsePhysics = OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::Impulse
+		&& ActiveClassPreset.bUsesPhysicalImpulse;
+	if (bUsePhysics)
+	{
+		SpaceshipHull->SetSimulatePhysics(true);
+		SpaceshipHull->SetLinearDamping(ActiveClassPreset.LinearDamping);
+		SpaceshipHull->SetAngularDamping(ActiveClassPreset.AngularDamping);
+		if (!KinematicVelocity.IsNearlyZero())
+		{
+			SpaceshipHull->SetPhysicsLinearVelocity(KinematicVelocity);
+		}
+	}
+	else
+	{
+		if (SpaceshipHull->IsSimulatingPhysics())
+		{
+			KinematicVelocity = SpaceshipHull->GetPhysicsLinearVelocity();
+		}
+		SpaceshipHull->SetSimulatePhysics(false);
+	}
+}
+
+FString ASpaceship::GetSizeClassName() const
+{
+	if (const UEnum* Enum = StaticEnum<ESpaceshipSizeClass>())
+	{
+		return Enum->GetDisplayNameTextByValue(static_cast<int64>(SizeClass)).ToString();
+	}
+	return TEXT("M");
+}
+
+FString ASpaceship::GetFlightModeName() const
+{
+	return OnboardComputer ? OnboardComputer->GetFlightModeAsString().Replace(TEXT("EFlightMode::"), TEXT("")) : TEXT("Unknown");
+}
+
+FString ASpaceship::GetEngineModeName() const
+{
+	if (!bEngineRunning) return TEXT("OFF / PARKED");
+	if (bEngineModeTransitionActive) return TEXT("TRANSITION");
+	return OnboardComputer ? OnboardComputer->GetEngineTypeAsString().Replace(TEXT("EEngineMode::"), TEXT("")) : TEXT("Unknown");
+}
+
+double ASpaceship::GetShipSpeedMetersPerSecond() const
+{
+	const FVector Velocity = SpaceshipHull && SpaceshipHull->IsSimulatingPhysics()
+		? SpaceshipHull->GetPhysicsLinearVelocity()
+		: KinematicVelocity;
+	return Velocity.Size() / 100.0;
+}
+
+FText ASpaceship::GetShipStatusText() const
+{
+	return FText::FromString(FString::Printf(TEXT("SHIP %s   |   ENGINE %s\n%s   |   %.1f m/s   |   BOOST x%.2f"),
+		*GetSizeClassName(), *GetEngineModeName(), *GetFlightModeName(),
+		GetShipSpeedMetersPerSecond(), CurrentBoostMultiplier));
+}
+
+FText ASpaceship::GetShipHintText() const
+{
+	return FText::FromString(TEXT("G ENGINE   F EXIT   |   WASD THRUST   SPACE/ALT VERTICAL   Q/E ROLL   MOUSE STEER\nLEFT SHIFT BOOST   LEFT CTRL BRAKE   |   RIGHT SHIFT/CTRL FLIGHT SCALE"));
+}
+
+void ASpaceship::CreateShipHud()
+{
+	if (ShipHudWidget.IsValid() || !IsValid(Pilot) || !IsPlayerControlled()
+		|| !GEngine || !GEngine->GameViewport)
+	{
+		return;
+	}
+
+	const TWeakObjectPtr<ASpaceship> WeakThis(this);
+	ShipHudWidget =
+		SNew(SOverlay)
+		+ SOverlay::Slot()
+		.HAlign(HAlign_Left)
+		.VAlign(VAlign_Bottom)
+		.Padding(36.0f, 0.0f, 0.0f, 34.0f)
+		[
+			SNew(SBackgroundBlur)
+			.BlurStrength(12.0f)
+			.BlurRadius(10)
+			.LowQualityFallbackBrush(FCoreStyle::Get().GetBrush("WhiteBrush"))
+			[
+				SNew(SBorder)
+				.BorderBackgroundColor(FLinearColor(0.005f, 0.018f, 0.035f, 0.88f))
+				.Padding(FMargin(20.0f, 14.0f))
+				[
+					SNew(SVerticalBox)
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					[
+						SNew(STextBlock)
+						.Text_Lambda([WeakThis]()
+						{
+							return WeakThis.IsValid() ? WeakThis->GetShipStatusText() : FText::GetEmpty();
+						})
+						.ColorAndOpacity(FLinearColor(0.18f, 0.84f, 1.0f, 1.0f))
+					]
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					.Padding(0.0f, 7.0f, 0.0f, 0.0f)
+					[
+						SNew(STextBlock)
+						.Text_Lambda([WeakThis]()
+						{
+							return WeakThis.IsValid() ? WeakThis->GetShipHintText() : FText::GetEmpty();
+						})
+						.ColorAndOpacity(FLinearColor(0.78f, 0.86f, 0.92f, 0.95f))
+					]
+				]
+			]
+		];
+	GEngine->GameViewport->AddViewportWidgetContent(ShipHudWidget.ToSharedRef(), 60);
+}
+
+void ASpaceship::RemoveShipHud()
+{
+	if (ShipHudWidget.IsValid() && GEngine && GEngine->GameViewport)
+	{
+		GEngine->GameViewport->RemoveViewportWidgetContent(ShipHudWidget.ToSharedRef());
+	}
+	ShipHudWidget.Reset();
+}
+
+void ASpaceship::PossessedBy(AController* NewController)
+{
+	Super::PossessedBy(NewController);
+	SetFlightCollisionOptimization(true);
+	SetActorTickEnabled(true);
+	CreateShipHud();
+}
+
+void ASpaceship::UnPossessed()
+{
+	RemoveShipHud();
+	if (!bEngineRunning)
+	{
+		SetFlightCollisionOptimization(false);
+	}
+	bIsAccelerating = false;
+	bIsDecelerating = false;
+	ForwardInput = SideInput = VerticalInput = 0.0f;
+	YawInput = PitchInput = RollInput = 0.0f;
+	Super::UnPossessed();
+	SetActorTickEnabled(bEngineRunning);
+}
+
+void ASpaceship::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	RemoveShipHud();
+	Super::EndPlay(EndPlayReason);
+}
+
 void ASpaceship::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
@@ -520,25 +1523,21 @@ void ASpaceship::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent
 void ASpaceship::StartAccelerationBoost()
 {
 	bIsAccelerating = true;
-	OnboardComputer->IsBoosting = true;
 }
 
 void ASpaceship::StopAccelerationBoost()
 {
 	bIsAccelerating = false;
-	OnboardComputer->IsBoosting = false;
 }
 
 void ASpaceship::StartDecelerationBoost()
 {
 	bIsDecelerating = true;
-	OnboardComputer->IsBoosting = true;
 }
 
 void ASpaceship::StopDecelerationBoost()
 {
 	bIsDecelerating = false;
-	OnboardComputer->IsBoosting = false;
 }
 
 void ASpaceship::HandleAccelerationBoost(float Value)
@@ -560,16 +1559,23 @@ void ASpaceship::HandleDecelerationBoost(float Value)
 void ASpaceship::IncreaseFlightMode()
 {
 	if (!OnboardComputer) return;
-
-	OnboardComputer->IncreaseFlightMode();
+	const uint8 Current = static_cast<uint8>(OnboardComputer->FlightSystem.CurrentFlightMode);
+	const uint8 Maximum = static_cast<uint8>(ActiveClassPreset.MaximumFlightMode);
+	if (Current >= Maximum || Current >= static_cast<uint8>(EFlightMode::Intergalaxy)) return;
+	OnboardComputer->FlightSystem.CurrentFlightMode = static_cast<EFlightMode>(Current + 1);
+	OnboardComputer->ComputeFlightParams();
+	RequestEngineModeForFlightMode(false);
 	CheckFlightModeChange();
 }
 
 void ASpaceship::DecreaseFlightMode()
 {
 	if (!OnboardComputer) return;
-
-	OnboardComputer->DecreaseFlightMode();
+	const uint8 Current = static_cast<uint8>(OnboardComputer->FlightSystem.CurrentFlightMode);
+	if (Current <= static_cast<uint8>(EFlightMode::Station)) return;
+	OnboardComputer->FlightSystem.CurrentFlightMode = static_cast<EFlightMode>(Current - 1);
+	OnboardComputer->ComputeFlightParams();
+	RequestEngineModeForFlightMode(false);
 	CheckFlightModeChange();
 }
 
@@ -679,7 +1685,12 @@ void ASpaceship::SwitchCamera()
 void ASpaceship::SwitchEngines()
 {
 	bEngineRunning = !bEngineRunning;
-	//SpaceshipHull->SetSimulatePhysics(bEngineRunning);
+	if (bEngineRunning)
+	{
+		RequestEngineModeForFlightMode(true);
+	}
+	ApplyEngineState();
+	SetActorTickEnabled(IsValid(Pilot) || bEngineRunning);
 	GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Green,
 	                                 FString::Printf(
 		                                 TEXT("Engine running: %s"), bEngineRunning ? TEXT("true") : TEXT("false")));
@@ -687,29 +1698,13 @@ void ASpaceship::SwitchEngines()
 
 void ASpaceship::ThrustForward(float Value)
 {
-	if (!bEngineRunning || !OnboardComputer || !SpaceshipHull || FMath::Abs(Value) < KINDA_SMALL_NUMBER) return;
-
-	double EngineThrustForce = OnboardComputer->GetEngineThrustForce();
-	const FVector Direction = ForwardVector->GetForwardVector();
-	const float DeltaTime = GetWorld()->GetDeltaSeconds();
-
-	if (OffsetSystem && OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::SpaceWrap)
-	{
-		OffsetSystem->AddActorWorldOffset(-Direction * Value * EngineThrustForce * DeltaTime);
-	}
-	else if (OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::Impulse && SpaceshipHull->IsSimulatingPhysics())
-	{
-		SpaceshipHull->AddForce(Direction * Value * EngineThrustForce, NAME_None, true);
-	}
-	else if (OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::Offset)
-	{
-		const FVector Offset = Direction * Value * EngineThrustForce * DeltaTime;
-		SpaceshipHull->AddWorldOffset(Offset, true);
-	}
+	ForwardInput = Value;
 }
 
 void ASpaceship::ThrustSide(float Value)
 {
+	SideInput = Value;
+	#if 0 // Legacy per-axis movement is intentionally replaced by ApplyFlightInput.
 	if (!bEngineRunning || !OnboardComputer || !SpaceshipHull || FMath::Abs(Value) < KINDA_SMALL_NUMBER) return;
 
 	const FVector Direction = ForwardVector->GetRightVector();
@@ -729,10 +1724,13 @@ void ASpaceship::ThrustSide(float Value)
 		const FVector Offset = Direction * Value * OnboardComputer->GetEngineThrustForce() * DeltaTime;
 		SpaceshipHull->AddWorldOffset(Offset, true);
 	}
+	#endif
 }
 
 void ASpaceship::ThrustVertical(float Value)
 {
+	VerticalInput = Value;
+	#if 0 // Legacy per-axis movement is intentionally replaced by ApplyFlightInput.
 	if (!bEngineRunning || !OnboardComputer || !SpaceshipHull || FMath::Abs(Value) < KINDA_SMALL_NUMBER) return;
 
 	const FVector Direction = ForwardVector->GetUpVector();
@@ -752,10 +1750,13 @@ void ASpaceship::ThrustVertical(float Value)
 		const FVector Offset = Direction * Value * OnboardComputer->GetEngineThrustForce() * DeltaTime;
 		SpaceshipHull->AddWorldOffset(Offset, true);
 	}
+	#endif
 }
 
 void ASpaceship::ThrustYaw(float Value)
 {
+	YawInput = Value;
+	#if 0 // Legacy per-axis rotation is intentionally replaced by ApplyRotationInput.
 	if (!bEngineRunning || !OnboardComputer || !SpaceshipHull || FMath::Abs(Value) < KINDA_SMALL_NUMBER) return;
 
 	const float RotationAmount = Value * RotationSpeedDegreesPerSecond * GetWorld()->GetDeltaSeconds();
@@ -770,10 +1771,13 @@ void ASpaceship::ThrustYaw(float Value)
 		FVector TorqueVector = ForwardVector->GetUpVector() * Value * ImpulseRotationAcceleration;
 		SpaceshipHull->AddTorqueInRadians(TorqueVector, NAME_None, true);
 	}
+	#endif
 }
 
 void ASpaceship::ThrustPitch(float Value)
 {
+	PitchInput = Value;
+	#if 0 // Legacy per-axis rotation is intentionally replaced by ApplyRotationInput.
 	if (!bEngineRunning || !OnboardComputer || !SpaceshipHull || FMath::Abs(Value) < KINDA_SMALL_NUMBER) return;
 
 	const float RotationAmount = Value * RotationSpeedDegreesPerSecond * GetWorld()->GetDeltaSeconds();
@@ -788,10 +1792,13 @@ void ASpaceship::ThrustPitch(float Value)
 		FVector TorqueVector = ForwardVector->GetRightVector() * Value * ImpulseRotationAcceleration;
 		SpaceshipHull->AddTorqueInRadians(TorqueVector, NAME_None, true);
 	}
+	#endif
 }
 
 void ASpaceship::ThrustRoll(float Value)
 {
+	RollInput = Value;
+	#if 0 // Legacy per-axis rotation is intentionally replaced by ApplyRotationInput.
 	if (!bEngineRunning || !OnboardComputer || !SpaceshipHull || FMath::Abs(Value) < KINDA_SMALL_NUMBER) return;
 
 	const float RotationAmount = Value * RotationSpeedDegreesPerSecond * GetWorld()->GetDeltaSeconds();
@@ -807,6 +1814,7 @@ void ASpaceship::ThrustRoll(float Value)
 		FVector TorqueVector = ForwardVector->GetForwardVector() * Value * ImpulseRotationAcceleration;
 		SpaceshipHull->AddTorqueInRadians(TorqueVector, NAME_None, true);
 	}
+	#endif
 }
 
 void ASpaceship::SetPilot(AGravityCharacterPawn* NewPilot)

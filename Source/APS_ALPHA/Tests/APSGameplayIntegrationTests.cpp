@@ -8,6 +8,7 @@
 #include "APS_ALPHA/Pawns/Spaceships/Spaceship.h"
 #include "APS_ALPHA/UI/MainMenu/WorldGenerationViewModel.h"
 #include "Engine/World.h"
+#include "Engine/StaticMesh.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/PlayerController.h"
 
@@ -151,6 +152,7 @@ bool FAPSVehicleControlRoundTripTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Controller possesses the spaceship"), Controller->GetPawn(), static_cast<APawn*>(Ship));
 	TestEqual(TEXT("Spaceship remembers its pilot"), Ship->Pilot.Get(), static_cast<APawn*>(Character));
 	TestTrue(TEXT("Pilot is attached to the ship seat"), Character->IsAttachedTo(Ship));
+	TestTrue(TEXT("Pilot is hidden while no seated animation is configured"), Character->IsHidden());
 
 	const bool bExited = VehicleInterface && VehicleInterface->RequestReleaseVehicleControl();
 	TestTrue(TEXT("Unified vehicle interface releases the pilot"), bExited);
@@ -159,6 +161,7 @@ bool FAPSVehicleControlRoundTripTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("Pilot is detached after exit"), Character->IsAttachedTo(Ship));
 	TestTrue(TEXT("Pilot collision is restored"), Character->GetActorEnableCollision());
 	TestTrue(TEXT("Pilot ticking is restored"), Character->IsActorTickEnabled());
+	TestFalse(TEXT("Pilot visibility is restored"), Character->IsHidden());
 
 	APSGameplayIntegrationTests::DestroyTestWorld(World);
 	return true;
@@ -187,6 +190,27 @@ bool FAPSFlightModeEngineMappingTest::RunTest(const FString& Parameters)
 
 	USpaceshipOnboardComputer* Computer = Ship->OnboardComputer;
 	Computer->SpaceshipHull = Ship->SpaceshipHull;
+
+	UStaticMesh* TestHullMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
+	if (TestNotNull(TEXT("Engine test hull mesh"), TestHullMesh))
+	{
+		Ship->SpaceshipHull->SetStaticMesh(TestHullMesh);
+		Ship->SpaceshipHull->SetWorldScale3D(FVector(30.0, 10.0, 5.0));
+		Ship->RefreshInteractionGeometry();
+
+		TestTrue(TEXT("Ship derives an interaction radius from hull bounds"),
+			Ship->SphereCollisionComponent->GetUnscaledSphereRadius() > 1000.0f);
+		TestFalse(TEXT("Ship derives a pilot seat when no socket or Blueprint override exists"),
+			Ship->PilotChair->GetRelativeLocation().IsNearlyZero());
+		TestFalse(TEXT("Ship derives a safe exit when no socket or Blueprint override exists"),
+			Ship->PilotExitPoint->GetRelativeLocation().Equals(FVector(0.0, -200.0, 100.0), 0.1));
+
+		const FTransform ExplicitSeatOverride(FRotator(0.0, 15.0, 0.0), FVector(123.0, 456.0, 789.0));
+		Ship->PilotChair->SetRelativeTransform(ExplicitSeatOverride);
+		Ship->RefreshInteractionGeometry();
+		TestTrue(TEXT("Automatic setup preserves an explicit ship-specific seat override"),
+			Ship->PilotChair->GetRelativeTransform().Equals(ExplicitSeatOverride, 0.1));
+	}
 
 	Computer->FlightSystem.CurrentFlightMode = EFlightMode::Station;
 	Computer->ApplyEngineModeForCurrentFlightMode();
@@ -221,7 +245,53 @@ bool FAPSFlightModeEngineMappingTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Basic flight restores physical impulse mode"),
 		Computer->EngineSystem.CurrentEngineMode, EEngineMode::Impulse);
 
+	Ship->bGenerateSimpleHullCollision = true;
+	Ship->SimpleCollisionSliceCount = 5;
+	Ship->RebuildSimpleHullCollision();
+	TestEqual(TEXT("Generated hull uses a bounded number of simple collision slices"),
+		Ship->GetGeneratedCollisionCount(), 5);
+	TestEqual(TEXT("Imported mesh collision is disabled behind the proxy hull"),
+		Ship->SpaceshipHull->GetCollisionEnabled(), ECollisionEnabled::NoCollision);
+
 	APSGameplayIntegrationTests::DestroyTestWorld(World);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FAPSShipClassPresetTest,
+	"APS.Gameplay.Vehicle.ShipClassPresets",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FAPSShipClassPresetTest::RunTest(const FString& Parameters)
+{
+	const FSpaceshipClassPreset XXS = ASpaceship::GetPresetForSizeClass(ESpaceshipSizeClass::XXS);
+	const FSpaceshipClassPreset Medium = ASpaceship::GetPresetForSizeClass(ESpaceshipSizeClass::M);
+	const FSpaceshipClassPreset Titan = ASpaceship::GetPresetForSizeClass(ESpaceshipSizeClass::Titan);
+
+	TestTrue(TEXT("Small ships accelerate faster than medium ships"),
+		XXS.ImpulseAcceleration > Medium.ImpulseAcceleration);
+	TestTrue(TEXT("Medium ships support space-wrap"), Medium.bSupportsSpaceWrap);
+	TestTrue(TEXT("Medium ships support offset travel"), Medium.bSupportsOffset);
+	TestFalse(TEXT("XXS ships cannot use strategic travel engines"),
+		XXS.bSupportsSpaceWrap || XXS.bSupportsOffset);
+	TestFalse(TEXT("Titan ships use stable kinematic impulse movement"), Titan.bUsesPhysicalImpulse);
+	TestTrue(TEXT("Titan ships turn slower than medium ships"), Titan.RotationSpeed < Medium.RotationSpeed);
+
+	TestEqual(TEXT("20 metre hull is XXS"),
+		ASpaceship::InferSizeClassFromLength(2000.0), ESpaceshipSizeClass::XXS);
+	TestEqual(TEXT("60 metre generated hull is S"),
+		ASpaceship::InferSizeClassFromLength(6000.0), ESpaceshipSizeClass::S);
+	TestEqual(TEXT("Full-scale capital hull is T"),
+		ASpaceship::InferSizeClassFromLength(25000000.0), ESpaceshipSizeClass::Titan);
+
+	TestFalse(TEXT("Null mesh never becomes a runtime ship"), ASpaceship::IsGeneratedShipMeshAsset(nullptr));
+	UStaticMesh* GeneratedShipMesh = LoadObject<UStaticMesh>(nullptr,
+		TEXT("/Game/APS/APS_ALPHA/Assets/AI_Shpis/Pack_1/01/e5b238288cac3d44ede823f8f809396c.e5b238288cac3d44ede823f8f809396c"));
+	if (TestNotNull(TEXT("Whitelisted generated ship mesh exists"), GeneratedShipMesh))
+	{
+		TestTrue(TEXT("AI_Shpis assets are whitelisted"),
+			ASpaceship::IsGeneratedShipMeshAsset(GeneratedShipMesh));
+	}
 	return true;
 }
 

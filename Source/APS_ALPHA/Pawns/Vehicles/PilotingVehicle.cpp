@@ -4,6 +4,7 @@
 #include "PilotingVehicle.h"
 
 #include "Components/PrimitiveComponent.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/Controller.h"
@@ -56,6 +57,7 @@ bool APilotingVehicle::BeginVehicleControl(APawn* RequestingPawn)
 	PilotController = RequestingController;
 	bPilotCollisionWasEnabled = RequestingPawn->GetActorEnableCollision();
 	bPilotTickWasEnabled = RequestingPawn->IsActorTickEnabled();
+	bPilotWasHiddenInGame = RequestingPawn->IsHidden();
 
 	if (UPrimitiveComponent* PilotRoot = Cast<UPrimitiveComponent>(RequestingPawn->GetRootComponent()))
 	{
@@ -78,6 +80,24 @@ bool APilotingVehicle::BeginVehicleControl(APawn* RequestingPawn)
 
 	RequestingPawn->SetActorEnableCollision(false);
 	RequestingPawn->SetActorTickEnabled(false);
+	PilotSkeletalComponents.Reset();
+	PilotSkeletalTickStates.Reset();
+	TArray<USkeletalMeshComponent*> SkeletalComponents;
+	RequestingPawn->GetComponents(SkeletalComponents);
+	for (USkeletalMeshComponent* SkeletalComponent : SkeletalComponents)
+	{
+		if (!IsValid(SkeletalComponent))
+		{
+			continue;
+		}
+		PilotSkeletalComponents.Add(SkeletalComponent);
+		PilotSkeletalTickStates.Add(SkeletalComponent->IsComponentTickEnabled());
+		SkeletalComponent->SetComponentTickEnabled(false);
+	}
+	if (bHidePilotDuringControl)
+	{
+		RequestingPawn->SetActorHiddenInGame(true);
+	}
 
 	if (USceneComponent* PilotSeat = GetPilotSeatComponent())
 	{
@@ -132,6 +152,18 @@ bool APilotingVehicle::EndVehicleControl()
 
 	PreviousPilot->SetActorEnableCollision(bPilotCollisionWasEnabled);
 	PreviousPilot->SetActorTickEnabled(bPilotTickWasEnabled);
+	PreviousPilot->SetActorHiddenInGame(bPilotWasHiddenInGame);
+	for (int32 ComponentIndex = 0; ComponentIndex < PilotSkeletalComponents.Num(); ++ComponentIndex)
+	{
+		if (USkeletalMeshComponent* SkeletalComponent = PilotSkeletalComponents[ComponentIndex].Get())
+		{
+			const bool bWasTickEnabled = PilotSkeletalTickStates.IsValidIndex(ComponentIndex)
+				&& PilotSkeletalTickStates[ComponentIndex];
+			SkeletalComponent->SetComponentTickEnabled(bWasTickEnabled);
+		}
+	}
+	PilotSkeletalComponents.Reset();
+	PilotSkeletalTickStates.Reset();
 
 	if (ACharacter* Character = Cast<ACharacter>(PreviousPilot))
 	{
