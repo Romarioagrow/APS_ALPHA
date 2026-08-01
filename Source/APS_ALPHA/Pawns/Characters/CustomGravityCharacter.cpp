@@ -14,9 +14,11 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "Engine/GameViewportClient.h"
+#include "InputCoreTypes.h"
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/SOverlay.h"
+#include "Widgets/SBoxPanel.h"
 #include "Widgets/Text/STextBlock.h"
 #include "UObject/ConstructorHelpers.h"
 #include "UObject/UnrealType.h"
@@ -37,7 +39,7 @@ ACustomGravityCharacter::ACustomGravityCharacter()
 	MoveComp->bOrientRotationToMovement = true;
 	MoveComp->RotationRate = FRotator(0.f, 500.f, 0.f);
 	MoveComp->AirControl = 0.35f;
-	MoveComp->MaxWalkSpeed = 600.f;
+	MoveComp->MaxWalkSpeed = SurfaceWalkSpeed;
 	MoveComp->JumpZVelocity = 500.f;
 	MoveComp->BrakingDecelerationWalking = 2000.f;
 	MoveComp->MaxFlySpeed = ZeroGMaxSpeed;
@@ -133,6 +135,7 @@ void ACustomGravityCharacter::BeginPlay()
 			FVector::ForwardVector, CameraReferenceUp).GetSafeNormal();
 	}
 	CreateInteractionPrompt();
+	CreateTraversalHud();
 }
 
 void ACustomGravityCharacter::Tick(float DeltaTime)
@@ -144,6 +147,9 @@ void ACustomGravityCharacter::Tick(float DeltaTime)
 		UpdateGravityDirection(DeltaTime);
 	}
 	AdvanceGravityStrengthTransition(DeltaTime);
+	UpdateMovementSpeed(DeltaTime);
+	UpdateBoostJump(DeltaTime);
+	UpdateCameraRoll(DeltaTime);
 
 	UpdateCameraReferenceFrame();
 	if (bIsZeroG)
@@ -157,11 +163,16 @@ void ACustomGravityCharacter::Tick(float DeltaTime)
 	{
 		CreateInteractionPrompt();
 	}
+	if (!TraversalHudWidget.IsValid())
+	{
+		CreateTraversalHud();
+	}
 }
 
 void ACustomGravityCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	RemoveInteractionPrompt();
+	RemoveTraversalHud();
 	Super::EndPlay(EndPlayReason);
 }
 
@@ -187,7 +198,11 @@ void ACustomGravityCharacter::SetupPlayerInputComponent(UInputComponent* PlayerI
 	}
 
 	PlayerInputComponent->BindAction("Interact", IE_Pressed, this, &ACustomGravityCharacter::TryInteract);
+	PlayerInputComponent->BindAction("AccelerationBoost", IE_Pressed, this, &ACustomGravityCharacter::HandleSprintStarted);
+	PlayerInputComponent->BindAction("AccelerationBoost", IE_Released, this, &ACustomGravityCharacter::HandleSprintCompleted);
 	PlayerInputComponent->BindAxis("MoveUp", this, &ACustomGravityCharacter::HandleZeroGVertical);
+	PlayerInputComponent->BindAxis("RotateRoll", this, &ACustomGravityCharacter::HandleZeroGRoll);
+	PlayerInputComponent->BindKey(EKeys::G, IE_Pressed, this, &ACustomGravityCharacter::ToggleManualZeroGOverride);
 }
 
 // ──────────────────────── Input Handlers ────────────────────────
@@ -243,11 +258,32 @@ void ACustomGravityCharacter::HandleJumpStarted()
 		return;
 	}
 
+	const float Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0f;
+	const bool bDoubleTap = LastJumpPressTime >= 0.0f &&
+		Now - LastJumpPressTime <= DoubleTapJumpWindow;
+	LastJumpPressTime = bDoubleTap ? -1.0f : Now;
+
+	if (bDoubleTap)
+	{
+		UCharacterMovementComponent* Movement = GetCharacterMovement();
+		if (Movement)
+		{
+			const FVector GravityUp = GetGravityUpVector();
+			const float CurrentUpSpeed = FVector::DotProduct(Movement->Velocity, GravityUp);
+			Movement->Velocity += GravityUp *
+				FMath::Max(0.0f, DoubleTapJumpVelocity - CurrentUpSpeed);
+			Movement->SetMovementMode(MOVE_Falling);
+			bBoostJumpHeld = true;
+		}
+		return;
+	}
+
 	Jump();
 }
 
 void ACustomGravityCharacter::HandleJumpCompleted()
 {
+	bBoostJumpHeld = false;
 	if (!bIsZeroG)
 	{
 		StopJumping();
@@ -259,6 +295,84 @@ void ACustomGravityCharacter::HandleZeroGVertical(float Value)
 	if (bIsZeroG && !FMath::IsNearlyZero(Value))
 	{
 		AddMovementInput(GetCameraViewRotation().GetUpVector(), Value);
+	}
+}
+
+void ACustomGravityCharacter::HandleZeroGRoll(float Value)
+{
+	if (!bIsZeroG || FMath::IsNearlyZero(Value) || !GetWorld())
+	{
+		return;
+	}
+
+	CameraRoll = FMath::UnwindDegrees(
+		CameraRoll + Value * ZeroGRollSpeed * GetWorld()->GetDeltaSeconds());
+}
+
+void ACustomGravityCharacter::HandleSprintStarted()
+{
+	bSprintHeld = true;
+}
+
+void ACustomGravityCharacter::HandleSprintCompleted()
+{
+	bSprintHeld = false;
+}
+
+void ACustomGravityCharacter::UpdateMovementSpeed(float DeltaTime)
+{
+	UCharacterMovementComponent* Movement = GetCharacterMovement();
+	if (!Movement)
+	{
+		return;
+	}
+	if (bIsZeroG)
+	{
+		const float TargetSpeed = bSprintHeld ? ZeroGSprintSpeed : ZeroGMaxSpeed;
+		Movement->MaxFlySpeed = FMath::FInterpConstantTo(
+			Movement->MaxFlySpeed, TargetSpeed, DeltaTime, SprintSpeedChangeRate);
+	}
+	else
+	{
+		const float TargetSpeed = bSprintHeld ? SurfaceSprintSpeed : SurfaceWalkSpeed;
+		Movement->MaxWalkSpeed = FMath::FInterpConstantTo(
+			Movement->MaxWalkSpeed, TargetSpeed, DeltaTime, SprintSpeedChangeRate);
+	}
+}
+
+void ACustomGravityCharacter::UpdateBoostJump(float DeltaTime)
+{
+	if (!bBoostJumpHeld || bIsZeroG || DeltaTime <= 0.0f)
+	{
+		return;
+	}
+
+	UCharacterMovementComponent* Movement = GetCharacterMovement();
+	if (!Movement || Movement->IsMovingOnGround())
+	{
+		return;
+	}
+
+	const FVector GravityUp = GetGravityUpVector();
+	const float CurrentUpSpeed = FVector::DotProduct(Movement->Velocity, GravityUp);
+	if (CurrentUpSpeed < BoostJumpMaxUpSpeed)
+	{
+		const float AddedSpeed = FMath::Min(
+			BoostJumpAcceleration * DeltaTime,
+			BoostJumpMaxUpSpeed - CurrentUpSpeed);
+		Movement->Velocity += GravityUp * AddedSpeed;
+	}
+}
+
+void ACustomGravityCharacter::UpdateCameraRoll(float DeltaTime)
+{
+	if (!bIsZeroG && !FMath::IsNearlyZero(CameraRoll))
+	{
+		CameraRoll = FMath::FInterpTo(CameraRoll, 0.0f, DeltaTime, 5.0f);
+		if (FMath::Abs(CameraRoll) < 0.05f)
+		{
+			CameraRoll = 0.0f;
+		}
 	}
 }
 
@@ -387,8 +501,121 @@ void ACustomGravityCharacter::RemoveInteractionPrompt()
 
 // ──────────────────────── Gravity ────────────────────────
 
+void ACustomGravityCharacter::CreateTraversalHud()
+{
+	if (TraversalHudWidget.IsValid() || !IsLocallyControlled() || !GEngine || !GEngine->GameViewport)
+	{
+		return;
+	}
+
+	const TWeakObjectPtr<ACustomGravityCharacter> WeakThis(this);
+	TraversalHudWidget =
+		SNew(SOverlay)
+		+ SOverlay::Slot()
+		.HAlign(HAlign_Left)
+		.VAlign(VAlign_Bottom)
+		.Padding(28.0f, 0.0f, 0.0f, 28.0f)
+		[
+			SNew(SBorder)
+			.BorderBackgroundColor(FLinearColor(0.008f, 0.02f, 0.035f, 0.88f))
+			.Padding(FMargin(14.0f, 10.0f))
+			[
+				SNew(SVerticalBox)
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				[
+					SNew(STextBlock)
+					.Text_Lambda([WeakThis]()
+					{
+						const ACustomGravityCharacter* Character = WeakThis.Get();
+						return Character ? Character->GetTraversalStatusText() : FText::GetEmpty();
+					})
+					.ColorAndOpacity_Lambda([WeakThis]()
+					{
+						const ACustomGravityCharacter* Character = WeakThis.Get();
+						return Character && Character->bManualZeroGOverride
+							? FSlateColor(FLinearColor(1.0f, 0.55f, 0.18f, 1.0f))
+							: FSlateColor(FLinearColor(0.2f, 0.82f, 1.0f, 1.0f));
+					})
+				]
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				.Padding(0.0f, 5.0f, 0.0f, 0.0f)
+				[
+					SNew(STextBlock)
+					.Text_Lambda([WeakThis]()
+					{
+						const ACustomGravityCharacter* Character = WeakThis.Get();
+						return Character ? Character->GetTraversalHintText() : FText::GetEmpty();
+					})
+					.ColorAndOpacity(FLinearColor(0.72f, 0.79f, 0.86f, 0.9f))
+				]
+			]
+		];
+
+	GEngine->GameViewport->AddViewportWidgetContent(TraversalHudWidget.ToSharedRef(), 40);
+}
+
+void ACustomGravityCharacter::RemoveTraversalHud()
+{
+	if (TraversalHudWidget.IsValid() && GEngine && GEngine->GameViewport)
+	{
+		GEngine->GameViewport->RemoveViewportWidgetContent(TraversalHudWidget.ToSharedRef());
+	}
+	TraversalHudWidget.Reset();
+}
+
+FText ACustomGravityCharacter::GetTraversalStatusText() const
+{
+	FString Mode;
+	if (bManualZeroGOverride)
+	{
+		Mode = TEXT("MANUAL ZERO-G");
+	}
+	else if (bIsZeroG)
+	{
+		Mode = TEXT("ZERO-G / FREE FLIGHT");
+	}
+	else
+	{
+		switch (CurrentGravityType)
+		{
+		case EGravityType::OnPlanet:
+			Mode = TEXT("GRAVITY / PLANET");
+			break;
+		case EGravityType::OnShip:
+			Mode = TEXT("GRAVITY / SHIP");
+			break;
+		case EGravityType::OnStation:
+			Mode = TEXT("GRAVITY / STATION");
+			break;
+		default:
+			Mode = TEXT("GRAVITY / SURFACE");
+			break;
+		}
+	}
+
+	const float SpeedMetersPerSecond = GetVelocity().Size() / 100.0f;
+	const TCHAR* BoostStatus = bSprintHeld ? TEXT(" | BOOST") : TEXT("");
+	return FText::FromString(FString::Printf(
+		TEXT("%s | %.1f m/s%s"), *Mode, SpeedMetersPerSecond, BoostStatus));
+}
+
+FText ACustomGravityCharacter::GetTraversalHintText() const
+{
+	return bIsZeroG
+		? FText::FromString(TEXT("WASD FLY   SPACE / ALT VERTICAL   Q / E ROLL   SHIFT BOOST   G GRAVITY"))
+		: FText::FromString(TEXT("WASD MOVE   SHIFT SPRINT   SPACE JUMP / DOUBLE-TAP BOOST   G ZERO-G"));
+}
+
 void ACustomGravityCharacter::UpdateGravityDirection(float DeltaTime)
 {
+	if (bManualZeroGOverride)
+	{
+		SetZeroGravityEnabled(true);
+		return;
+	}
+
 	FVector NewGravityDir = FVector::ZeroVector;
 
 	if (bManualGravityOverride && GravityTarget)
@@ -676,7 +903,8 @@ FQuat ACustomGravityCharacter::GetCameraViewRotation() const
 		GravityUp, PlanarForward).GetSafeNormal();
 	const FQuat PitchQuat(CameraRight, FMath::DegreesToRadians(CameraPitch));
 	const FVector ViewForward = PitchQuat.RotateVector(PlanarForward).GetSafeNormal();
-	return FRotationMatrix::MakeFromXZ(ViewForward, GravityUp).ToQuat();
+	const FQuat BaseRotation = FRotationMatrix::MakeFromXZ(ViewForward, GravityUp).ToQuat();
+	return FQuat(ViewForward, FMath::DegreesToRadians(CameraRoll)) * BaseRotation;
 }
 
 void ACustomGravityCharacter::SynchronizeCharacterToCamera(float DeltaTime)
@@ -738,6 +966,10 @@ void ACustomGravityCharacter::SetZeroGravityEnabled(bool bEnabled)
 	{
 		return;
 	}
+	if (!bStateChanged)
+	{
+		return;
+	}
 
 	if (bIsZeroG)
 	{
@@ -784,6 +1016,37 @@ void ACustomGravityCharacter::SetZeroGravityEnabled(bool bEnabled)
 	}
 }
 
+void ACustomGravityCharacter::SetManualZeroGOverride(bool bEnabled)
+{
+	if (bManualZeroGOverride == bEnabled)
+	{
+		return;
+	}
+
+	bManualZeroGOverride = bEnabled;
+	if (bManualZeroGOverride)
+	{
+		SetZeroGravityEnabled(true);
+	}
+	else
+	{
+		if (GravityDetector)
+		{
+			GravityDetector->RunGravityCheck(this);
+		}
+		UpdateGravityDirection(0.0f);
+	}
+
+	UE_LOG(LogTemp, Warning, TEXT("[APS.Gravity] ManualZeroG=%s character=%s source=%s"),
+		bManualZeroGOverride ? TEXT("ON") : TEXT("OFF"),
+		*GetName(), *GetNameSafe(GravityDetector ? GravityDetector->GravityTargetActor : nullptr));
+}
+
+void ACustomGravityCharacter::ToggleManualZeroGOverride()
+{
+	SetManualZeroGOverride(!bManualZeroGOverride);
+}
+
 void ACustomGravityCharacter::ApplyAnimationMode()
 {
 	if (!GetMesh())
@@ -800,6 +1063,9 @@ void ACustomGravityCharacter::ApplyAnimationMode()
 	}
 
 	GetMesh()->SetAnimInstanceClass(DesiredAnimationClass);
+	GetMesh()->GlobalAnimRateScale = 1.0f;
+	CachedAnimationInstance.Reset();
+	AnimationPropertyCache.Reset();
 	UE_LOG(LogTemp, Warning, TEXT("[APS.Animation] character=%s mode=%s animClass=%s"),
 		*GetName(), bIsZeroG ? TEXT("ZeroG") : TEXT("Surface"),
 		*GetNameSafe(DesiredAnimationClass));
@@ -817,6 +1083,23 @@ void ACustomGravityCharacter::UpdateGravityAnimationParameters()
 	{
 		return;
 	}
+	if (CachedAnimationInstance.Get() != AnimInstance)
+	{
+		CachedAnimationInstance = AnimInstance;
+		AnimationPropertyCache.Reset();
+	}
+
+	const auto FindAnimationProperty = [this, AnimInstance](const FName PropertyName) -> FProperty*
+	{
+		if (FProperty** CachedProperty = AnimationPropertyCache.Find(PropertyName))
+		{
+			return *CachedProperty;
+		}
+
+		FProperty* Property = FindFProperty<FProperty>(AnimInstance->GetClass(), PropertyName);
+		AnimationPropertyCache.Add(PropertyName, Property);
+		return Property;
+	};
 
 	const FVector LocalVelocity = GetActorQuat().UnrotateVector(GetVelocity());
 	const FVector LocalAcceleration = GetCharacterMovement()
@@ -825,10 +1108,10 @@ void ACustomGravityCharacter::UpdateGravityAnimationParameters()
 	const float GroundSpeed = FVector(LocalVelocity.X, LocalVelocity.Y, 0.0).Size();
 	const float MovementDirection = FMath::RadiansToDegrees(
 		FMath::Atan2(LocalVelocity.Y, LocalVelocity.X));
-	const auto SetNumericProperty = [AnimInstance](const FName PropertyName, const double Value)
+	const auto SetNumericProperty = [AnimInstance, &FindAnimationProperty](const FName PropertyName, const double Value)
 	{
-		if (FNumericProperty* Property = FindFProperty<FNumericProperty>(
-			AnimInstance->GetClass(), PropertyName))
+		if (FNumericProperty* Property = CastField<FNumericProperty>(
+			FindAnimationProperty(PropertyName)))
 		{
 			void* ValueAddress = Property->ContainerPtrToValuePtr<void>(AnimInstance);
 			if (Property->IsFloatingPoint())
@@ -841,18 +1124,18 @@ void ACustomGravityCharacter::UpdateGravityAnimationParameters()
 			}
 		}
 	};
-	const auto SetBoolProperty = [AnimInstance](const FName PropertyName, const bool Value)
+	const auto SetBoolProperty = [AnimInstance, &FindAnimationProperty](const FName PropertyName, const bool Value)
 	{
-		if (FBoolProperty* Property = FindFProperty<FBoolProperty>(
-			AnimInstance->GetClass(), PropertyName))
+		if (FBoolProperty* Property = CastField<FBoolProperty>(
+			FindAnimationProperty(PropertyName)))
 		{
 			Property->SetPropertyValue_InContainer(AnimInstance, Value);
 		}
 	};
-	const auto SetVectorProperty = [AnimInstance](const FName PropertyName, const FVector& Value)
+	const auto SetVectorProperty = [AnimInstance, &FindAnimationProperty](const FName PropertyName, const FVector& Value)
 	{
-		if (FStructProperty* Property = FindFProperty<FStructProperty>(
-			AnimInstance->GetClass(), PropertyName);
+		if (FStructProperty* Property = CastField<FStructProperty>(
+			FindAnimationProperty(PropertyName));
 			Property && Property->Struct == TBaseStructure<FVector>::Get())
 		{
 			*Property->ContainerPtrToValuePtr<FVector>(AnimInstance) = Value;
@@ -861,17 +1144,17 @@ void ACustomGravityCharacter::UpdateGravityAnimationParameters()
 	const EGravityType AnimationGravityType = bIsZeroG
 		? EGravityType::ZeroG
 		: CurrentGravityType;
-	const auto SetGravityTypeProperty = [AnimInstance, AnimationGravityType](const FName PropertyName)
+	const auto SetGravityTypeProperty = [AnimInstance, AnimationGravityType, &FindAnimationProperty](const FName PropertyName)
 	{
 		const int64 GravityTypeValue = static_cast<int64>(AnimationGravityType);
-		if (FEnumProperty* Property = FindFProperty<FEnumProperty>(
-			AnimInstance->GetClass(), PropertyName))
+		if (FEnumProperty* Property = CastField<FEnumProperty>(
+			FindAnimationProperty(PropertyName)))
 		{
 			void* ValueAddress = Property->ContainerPtrToValuePtr<void>(AnimInstance);
 			Property->GetUnderlyingProperty()->SetIntPropertyValue(ValueAddress, GravityTypeValue);
 		}
-		else if (FByteProperty* ByteProperty = FindFProperty<FByteProperty>(
-			AnimInstance->GetClass(), PropertyName))
+		else if (FByteProperty* ByteProperty = CastField<FByteProperty>(
+			FindAnimationProperty(PropertyName)))
 		{
 			ByteProperty->SetPropertyValue_InContainer(
 				AnimInstance, static_cast<uint8>(AnimationGravityType));
@@ -881,6 +1164,11 @@ void ACustomGravityCharacter::UpdateGravityAnimationParameters()
 	SetNumericProperty(TEXT("ForwardSpeed"), LocalVelocity.X);
 	SetNumericProperty(TEXT("RightSpeed"), LocalVelocity.Y);
 	SetNumericProperty(TEXT("UpSpeed"), LocalVelocity.Z);
+	// The existing Zero-G BlendSpace uses Sides on X and Forward on Y, with
+	// authored samples at +/-2500 cm/s. Keep raw local speeds so lateral flight
+	// reaches the left/right poses instead of collapsing into the forward pose.
+	SetNumericProperty(TEXT("Sides"), LocalVelocity.Y);
+	SetNumericProperty(TEXT("Forward"), LocalVelocity.X);
 	SetNumericProperty(TEXT("Speed"), LocalVelocity.Size());
 	SetNumericProperty(TEXT("GroundSpeed"), GroundSpeed);
 	SetNumericProperty(TEXT("Direction"), MovementDirection);
@@ -895,11 +1183,20 @@ void ACustomGravityCharacter::UpdateGravityAnimationParameters()
 	SetBoolProperty(TEXT("bIsZeroG"), bIsZeroG);
 	SetBoolProperty(TEXT("ShouldMove"), GroundSpeed > 3.0f);
 	SetBoolProperty(TEXT("Moving"), GroundSpeed > 3.0f);
+	SetBoolProperty(TEXT("Sprinting"), bSprintHeld);
+	SetBoolProperty(TEXT("bIsSprinting"), bSprintHeld);
 	const bool bIsFalling = GetCharacterMovement() && GetCharacterMovement()->IsFalling();
 	SetBoolProperty(TEXT("Falling"), bIsFalling);
 	SetBoolProperty(TEXT("IsFalling"), bIsFalling);
 	SetGravityTypeProperty(TEXT("GravityType"));
 	SetGravityTypeProperty(TEXT("CurrentGravityType"));
+
+	const float TargetPlayRate = !bIsZeroG && bSprintHeld && SurfaceWalkSpeed > UE_SMALL_NUMBER
+		? FMath::Clamp(GroundSpeed / SurfaceWalkSpeed, 1.0f, 1.35f)
+		: 1.0f;
+	const float DeltaTime = GetWorld() ? GetWorld()->GetDeltaSeconds() : 0.0f;
+	GetMesh()->GlobalAnimRateScale = FMath::FInterpTo(
+		GetMesh()->GlobalAnimRateScale, TargetPlayRate, DeltaTime, 7.0f);
 }
 
 void ACustomGravityCharacter::HandleGravitySourceChanged(AActor* NewSource)

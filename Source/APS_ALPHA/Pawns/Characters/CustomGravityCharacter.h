@@ -15,6 +15,7 @@ class UCameraComponent;
 class UGravityDetectorComponent;
 class UAnimInstance;
 class SWidget;
+class FProperty;
 
 /**
  * Custom Gravity Character using UE 5.4 SetGravityDirection().
@@ -75,6 +76,10 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Gravity")
 	bool bIsZeroG = false;
 
+	/** Player override: ignore all gravity fields until G is pressed again. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Gravity|ZeroG")
+	bool bManualZeroGOverride = false;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Gravity")
 	EGravityType CurrentGravityType = EGravityType::ZeroG;
 
@@ -102,6 +107,34 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gravity|ZeroG")
 	float ZeroGBrakingDeceleration = 80.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gravity|ZeroG", meta = (ClampMin = "1.0"))
+	float ZeroGSprintSpeed = 2500.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gravity|ZeroG", meta = (ClampMin = "1.0"))
+	float ZeroGRollSpeed = 90.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Sprint", meta = (ClampMin = "1.0"))
+	float SurfaceWalkSpeed = 600.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Sprint", meta = (ClampMin = "1.0"))
+	float SurfaceSprintSpeed = 900.f;
+
+	/** How quickly the speed cap moves between normal and sprint values. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Sprint", meta = (ClampMin = "1.0"))
+	float SprintSpeedChangeRate = 900.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Jump", meta = (ClampMin = "0.1", ClampMax = "0.6"))
+	float DoubleTapJumpWindow = 0.3f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Jump", meta = (ClampMin = "1.0"))
+	float DoubleTapJumpVelocity = 900.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Jump", meta = (ClampMin = "0.0"))
+	float BoostJumpAcceleration = 1300.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Jump", meta = (ClampMin = "1.0"))
+	float BoostJumpMaxUpSpeed = 1800.f;
 
 	/** Maximum distance searched along local gravity for a deck. If no deck is
 	 * directly below the character, station/ship movement remains true zero-G. */
@@ -147,6 +180,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Gravity")
 	void SetZeroGravityEnabled(bool bEnabled);
 
+	UFUNCTION(BlueprintCallable, Category = "Gravity|ZeroG")
+	void SetManualZeroGOverride(bool bEnabled);
+
+	UFUNCTION(BlueprintCallable, Category = "Gravity|ZeroG")
+	void ToggleManualZeroGOverride();
+
 	UFUNCTION(BlueprintCallable, Category = "Interaction")
 	void TryInteract();
 
@@ -165,11 +204,21 @@ protected:
 	void HandleJumpStarted();
 	void HandleJumpCompleted();
 	void HandleZeroGVertical(float Value);
+	void HandleZeroGRoll(float Value);
+	void HandleSprintStarted();
+	void HandleSprintCompleted();
+	void UpdateMovementSpeed(float DeltaTime);
+	void UpdateBoostJump(float DeltaTime);
+	void UpdateCameraRoll(float DeltaTime);
 	void UpdateInteractionCandidate();
 	AActor* FindInteractionCandidate();
 	static AActor* ResolveVehicleActor(AActor* Candidate);
 	void CreateInteractionPrompt();
 	void RemoveInteractionPrompt();
+	void CreateTraversalHud();
+	void RemoveTraversalHud();
+	FText GetTraversalStatusText() const;
+	FText GetTraversalHintText() const;
 
 	// Gravity
 	void UpdateGravityDirection(float DeltaTime);
@@ -196,6 +245,11 @@ private:
 
 	/** Accumulated pitch for camera control. */
 	float CameraPitch = 0.f;
+	float CameraRoll = 0.f;
+
+	float LastJumpPressTime = -1.f;
+	bool bBoostJumpHeld = false;
+	bool bSprintHeld = false;
 
 	/** Current gravity direction (cached) */
 	FVector CurrentGravityDir = FVector(0.f, 0.f, -1.f);
@@ -217,6 +271,10 @@ private:
 	UPROPERTY(Transient)
 	TSubclassOf<UAnimInstance> ZeroGAnimationClass;
 
+	TWeakObjectPtr<UAnimInstance> CachedAnimationInstance;
+	TMap<FName, FProperty*> AnimationPropertyCache;
+
 	TWeakObjectPtr<AActor> CurrentInteractableActor;
 	TSharedPtr<SWidget> InteractionPromptWidget;
+	TSharedPtr<SWidget> TraversalHudWidget;
 };
