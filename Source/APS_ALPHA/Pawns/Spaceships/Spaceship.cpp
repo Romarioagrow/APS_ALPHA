@@ -81,6 +81,8 @@ namespace APSNavigationHud
 	constexpr float MarkerWidth = 176.0f;
 	constexpr float MarkerHeight = 38.0f;
 	constexpr float MarkerGap = 5.0f;
+	constexpr float FlagHorizontalShift = 0.62f;
+	constexpr float FlagPoleLength = 18.0f;
 }
 
 namespace APSAutomaticShipInteraction
@@ -2262,7 +2264,11 @@ bool ASpaceship::GetNavigationMarkerLayout(int32 ContactIndex, FVector2D& OutAnc
 	const FShipNavigationContact* Contact = ShipNavigation->GetContact(ContactIndex);
 	const APlanet* FocusPlanet = GetNavigationFocusPlanet();
 	const AMoon* Moon = Contact ? Cast<AMoon>(Contact->Actor.Get()) : nullptr;
-	FVector2D LabelPosition(Anchor.X - LabelSize.X * 0.5f, Anchor.Y - LabelSize.Y - 18.0f);
+	// A marker reads as a flag planted into the celestial body: the label is
+	// biased left and its colored leading edge is the exact end of the leader.
+	FVector2D LabelPosition(
+		Anchor.X - LabelSize.X * APSNavigationHud::FlagHorizontalShift,
+		Anchor.Y - LabelSize.Y - APSNavigationHud::FlagPoleLength);
 
 	// Outside the focused planet's gravity well its moons read as one compact
 	// hierarchy beside the planet. Once captured by that family, every moon goes
@@ -2468,24 +2474,9 @@ int32 ASpaceship::PaintNavigationOverlay(const FGeometry& AllottedGeometry, cons
 			if (!GetNavigationMarkerLayout(ContactIndex, Anchor, Label)) continue;
 			const FLinearColor Color = GetNavigationMarkerColor(ContactIndex);
 			const bool bSelected = ContactIndex == ShipNavigation->GetSelectedContactIndex();
-			const FVector2D LabelCenter = Label + FVector2D(
-				APSNavigationHud::MarkerWidth * 0.5f, APSNavigationHud::MarkerHeight * 0.5f);
-			const FVector2D ToAnchor = Anchor - LabelCenter;
-			FVector2D LabelEdge = LabelCenter;
-			if (FMath::Abs(ToAnchor.X) / APSNavigationHud::MarkerWidth
-				> FMath::Abs(ToAnchor.Y) / APSNavigationHud::MarkerHeight)
-			{
-				LabelEdge.X += FMath::Sign(ToAnchor.X) * APSNavigationHud::MarkerWidth * 0.5f;
-				LabelEdge.Y = FMath::Clamp(Anchor.Y, Label.Y + 5.0f,
-					Label.Y + APSNavigationHud::MarkerHeight - 5.0f);
-			}
-			else
-			{
-				LabelEdge.Y += FMath::Sign(ToAnchor.Y) * APSNavigationHud::MarkerHeight * 0.5f;
-				LabelEdge.X = FMath::Clamp(Anchor.X, Label.X + 7.0f,
-					Label.X + APSNavigationHud::MarkerWidth - 7.0f);
-			}
-			DrawScreenLine({Anchor, LabelEdge}, FLinearColor(Color.R, Color.G, Color.B,
+			const FVector2D FlagPoleEnd(
+				Label.X + 1.5f, Label.Y + APSNavigationHud::MarkerHeight);
+			DrawScreenLine({Anchor, FlagPoleEnd}, FLinearColor(Color.R, Color.G, Color.B,
 				bSelected ? 0.82f : 0.42f), bSelected ? 1.15f : 0.65f, LayerId + 2);
 			const float CrossExtent = bSelected ? 4.5f : 2.75f;
 			DrawScreenLine({Anchor + FVector2D(-CrossExtent, 0.0f), Anchor + FVector2D(CrossExtent, 0.0f)},
@@ -2808,8 +2799,6 @@ void ASpaceship::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent
 	PlayerInputComponent->BindAxis("ThrustYaw", this, &ASpaceship::ThrustYaw);
 	PlayerInputComponent->BindAxis("ThrustPitch", this, &ASpaceship::ThrustPitch);
 	PlayerInputComponent->BindAxis("ThrustRoll", this, &ASpaceship::ThrustRoll);
-
-	PlayerInputComponent->BindAction("ToggleScale", IE_Pressed, this, &ASpaceship::ToggleScale);
 
 	PlayerInputComponent->BindAction("IncreaseFlightMode", IE_Pressed, this, &ASpaceship::IncreaseFlightMode);
 	PlayerInputComponent->BindAction("DecreaseFlightMode", IE_Pressed, this, &ASpaceship::DecreaseFlightMode);
