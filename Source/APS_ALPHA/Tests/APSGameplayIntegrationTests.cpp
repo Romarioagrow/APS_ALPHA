@@ -104,7 +104,11 @@ bool FAPSCharacterGravityStateTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("Custom gravity exits zero-G"), Character->bIsZeroG);
 	TestTrue(TEXT("Custom gravity direction is normalized"),
 		Character->GetCurrentGravityDirection().Equals(FVector::DownVector, KINDA_SMALL_NUMBER));
-	TestEqual(TEXT("Leaving zero-G restores gravity scale"), Character->GetCharacterMovement()->GravityScale, 1.0f);
+	TestEqual(TEXT("Leaving zero-G begins with compensated gravity"),
+		Character->GetCharacterMovement()->GravityScale, 0.0f);
+	Character->Tick(1.0f);
+	TestEqual(TEXT("Gravity capture blend restores full gravity"),
+		Character->GetCharacterMovement()->GravityScale, 1.0f);
 
 	APSGameplayIntegrationTests::DestroyTestWorld(World);
 	return true;
@@ -380,11 +384,11 @@ bool FAPSShipDriveEnvironmentTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Sixth impulse power remains on impulse"),
 		Ship->OnboardComputer->EngineSystem.CurrentEngineMode, EEngineMode::Impulse);
 	Ship->SelectSpaceWrapEngine();
-	TestEqual(TEXT("Key 2 selection switches to the space-wrap engine"),
-		Ship->OnboardComputer->EngineSystem.CurrentEngineMode, EEngineMode::SpaceWrap);
+	TestEqual(TEXT("Key 2 selects the space-wrap engine transition"),
+		Ship->SelectedEngineMode, EEngineMode::SpaceWrap);
 	Ship->SelectOffsetEngine();
-	TestEqual(TEXT("Key 3 selection switches to the offset engine"),
-		Ship->OnboardComputer->EngineSystem.CurrentEngineMode, EEngineMode::Offset);
+	TestEqual(TEXT("Key 3 selects the offset engine transition"),
+		Ship->SelectedEngineMode, EEngineMode::Offset);
 
 	Ship->ActiveClassPreset = ASpaceship::GetPresetForSizeClass(ESpaceshipSizeClass::XXS);
 	TestTrue(TEXT("Small ships retain all six impulse power steps"),

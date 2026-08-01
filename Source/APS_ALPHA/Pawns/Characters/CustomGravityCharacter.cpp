@@ -747,17 +747,24 @@ void ACustomGravityCharacter::UpdateGravityDirection(float DeltaTime)
 			GravityTransitionTargetDir.GetSafeNormal(), DesiredGravityDir);
 		const bool bDirectionChanged = TargetDot <
 			FMath::Cos(FMath::DegreesToRadians(1.0));
-		if (bWasZeroG || bDirectionChanged)
+		if (bWasZeroG)
 		{
-			StartGravityDirectionTransition(DesiredGravityDir, bWasZeroG);
+			StartGravityDirectionTransition(DesiredGravityDir, true);
 		}
-		else if (GravityTransitionElapsed >= GravityTransitionDuration)
+		else if (GravityTransitionElapsed < GravityTransitionDuration)
 		{
-			CurrentGravityDir = DesiredGravityDir;
+			// A radial source changes direction continuously while the character
+			// travels. Retarget the active blend without restarting its timer every
+			// frame; repeated restarts were perceived as gravity/camera clipping.
 			GravityTransitionTargetDir = DesiredGravityDir;
+		}
+		else if (bDirectionChanged)
+		{
+			StartGravityDirectionTransition(DesiredGravityDir, false);
 		}
 		else
 		{
+			CurrentGravityDir = DesiredGravityDir;
 			GravityTransitionTargetDir = DesiredGravityDir;
 		}
 	}

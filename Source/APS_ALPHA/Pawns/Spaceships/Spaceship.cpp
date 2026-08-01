@@ -1467,32 +1467,31 @@ void ASpaceship::UpdateAdaptiveFlightCamera(float DeltaTime)
 	{
 		return;
 	}
-	const double FlightScale = OnboardComputer
-		? GetDriveSpeedScale(SelectedDriveMode) * GetEngineSpeedMultiplier(SelectedEngineMode) : 1.0;
-	const double ReferenceSpeed = FMath::Max(
-		ActiveClassPreset.MaxImpulseSpeed * FlightScale * FMath::Max(CurrentBoostMultiplier, 1.0), 1.0);
 	const double Speed = SpaceshipHull && SpaceshipHull->IsSimulatingPhysics()
 		? SpaceshipHull->GetPhysicsLinearVelocity().Size() : KinematicVelocity.Size();
-	const float SpeedAlpha = FMath::Clamp(static_cast<float>(Speed / ReferenceSpeed), 0.0f, 1.0f);
-	const float CameraAlpha = FMath::Sqrt(SpeedAlpha);
-	// FOV and lag carry most of the speed sensation; distance stays readable around large hulls.
-	const float TargetArmLength = BaseCameraArmLength * FMath::Lerp(1.0f, 1.38f, CameraAlpha);
+	// Camera response is driven only by continuous physical speed. Using the selected
+	// drive/engine limit here made the same velocity produce a different camera pose
+	// immediately after every mode change.
+	const double ClassReferenceSpeed = FMath::Max(ActiveClassPreset.MaxImpulseSpeed, 1.0);
+	const float TargetCameraAlpha = FMath::Clamp(static_cast<float>(
+		FMath::Log2(1.0 + Speed / ClassReferenceSpeed) / 8.0), 0.0f, 1.0f);
+	SmoothedCameraSpeedAlpha = FMath::FInterpTo(
+		SmoothedCameraSpeedAlpha, TargetCameraAlpha, DeltaTime, 2.0f);
+	const float CameraAlpha = SmoothedCameraSpeedAlpha;
+
+	// Hull bounds define the baseline. Speed adds a restrained pull-back while FOV
+	// and positional lag provide the remaining sensation without losing the ship.
+	const float TargetArmLength = BaseCameraArmLength * FMath::Lerp(1.0f, 1.22f, CameraAlpha);
 	SpringArmComponent->TargetArmLength = FMath::FInterpTo(
-		SpringArmComponent->TargetArmLength, TargetArmLength, DeltaTime, 3.5f);
-	SpringArmComponent->CameraLagSpeed = FMath::Lerp(6.0f, 20.0f, CameraAlpha);
-	SpringArmComponent->CameraRotationLagSpeed = FMath::Lerp(8.0f, 22.0f, CameraAlpha);
-	SpringArmComponent->CameraLagMaxDistance = BaseCameraArmLength * FMath::Lerp(0.75f, 1.4f, CameraAlpha);
+		SpringArmComponent->TargetArmLength, TargetArmLength, DeltaTime, 2.6f);
+	SpringArmComponent->CameraLagSpeed = FMath::Lerp(7.0f, 18.0f, CameraAlpha);
+	SpringArmComponent->CameraRotationLagSpeed = FMath::Lerp(7.0f, 12.0f, CameraAlpha);
+	SpringArmComponent->CameraLagMaxDistance = BaseCameraArmLength * FMath::Lerp(0.3f, 0.58f, CameraAlpha);
 	if (CameraComponent)
 	{
-		const float MaximumDriveIndex = static_cast<float>(static_cast<uint8>(EShipDriveMode::Interstellar));
-		const float DriveAlpha = MaximumDriveIndex > 0.0f
-			? static_cast<float>(static_cast<uint8>(SelectedDriveMode)) / MaximumDriveIndex : 0.0f;
-		const float TransitionPulse = bEngineModeTransitionActive && EngineModeTransitionDuration > UE_SMALL_NUMBER
-			? FMath::Sin(PI * FMath::Clamp(EngineModeTransitionElapsed / EngineModeTransitionDuration, 0.0f, 1.0f)) * 4.0f
-			: 0.0f;
-		const float TargetFieldOfView = BaseCameraFieldOfView + DriveAlpha * CameraAlpha * 30.0f + TransitionPulse;
+		const float TargetFieldOfView = BaseCameraFieldOfView + CameraAlpha * 12.0f;
 		CameraComponent->SetFieldOfView(FMath::FInterpTo(
-			CameraComponent->FieldOfView, TargetFieldOfView, DeltaTime, 3.5f));
+			CameraComponent->FieldOfView, TargetFieldOfView, DeltaTime, 2.6f));
 	}
 }
 
@@ -1556,9 +1555,7 @@ void ASpaceship::ApplyFlightInput(float DeltaTime)
 	const double DriveAcceleration = FMath::Max(
 		ActiveClassPreset.ImpulseAcceleration * AccelerationScale,
 		GetMinimumDriveAcceleration(SelectedDriveMode) * GetEngineAccelerationMultiplier(EngineMode));
-	const double TransitionAlpha = bEngineModeTransitionActive
-		? FMath::Clamp(FMath::Abs(EngineModeTransitionElapsed / EngineModeTransitionDuration - 0.5f) * 2.0f, 0.12f, 1.0f)
-		: 1.0;
+	const double TransitionAlpha = GetEngineTransitionAuthority();
 	const double SafeSteeringLimit = FMath::Max(static_cast<double>(SteeringInputLimit), 0.05);
 	const FVector WorldSteeringInput = (
 		GetShipRightVector() * FMath::Clamp(static_cast<double>(YawInput) / SafeSteeringLimit, -1.0, 1.0)
@@ -1569,11 +1566,26 @@ void ASpaceship::ApplyFlightInput(float DeltaTime)
 		&& SpaceshipHull->IsSimulatingPhysics())
 	{
 		const double MaxSpeed = ActiveClassPreset.MaxImpulseSpeed * SpeedScale * CurrentBoostMultiplier;
+		const FVector VelocityBeforeForces = SpaceshipHull->GetPhysicsLinearVelocity();
+		const double SpeedBeforeForces = VelocityBeforeForces.Size();
 		if (!WorldInput.IsNearlyZero())
 		{
-			SpaceshipHull->AddForce(
-				WorldInput * DriveAcceleration * CurrentBoostMultiplier * TransitionAlpha,
-				NAME_None, true);
+			FVector LimitedThrustInput = WorldInput;
+			if (SpeedBeforeForces >= MaxSpeed && SpeedBeforeForces > UE_SMALL_NUMBER)
+			{
+				const FVector VelocityDirection = VelocityBeforeForces / SpeedBeforeForces;
+				const double AcceleratingComponent = FVector::DotProduct(LimitedThrustInput, VelocityDirection);
+				if (AcceleratingComponent > 0.0)
+				{
+					LimitedThrustInput -= VelocityDirection * AcceleratingComponent;
+				}
+			}
+			if (!LimitedThrustInput.IsNearlyZero())
+			{
+				SpaceshipHull->AddForce(
+					LimitedThrustInput * DriveAcceleration * CurrentBoostMultiplier * TransitionAlpha,
+					NAME_None, true);
+			}
 		}
 		const double SteeringAuthority = FMath::Clamp(
 			SpaceshipHull->GetPhysicsLinearVelocity().Size() / FMath::Max(MaxSpeed * 0.15, 100.0), 0.0, 1.0);
@@ -1587,9 +1599,13 @@ void ASpaceship::ApplyFlightInput(float DeltaTime)
 		ApplyEnvironmentForces(DeltaTime);
 
 		FVector Velocity = SpaceshipHull->GetPhysicsLinearVelocity();
-		if (Velocity.SizeSquared() > FMath::Square(MaxSpeed))
+		const double SpeedAfterForces = Velocity.Size();
+		if (SpeedAfterForces > MaxSpeed && SpeedAfterForces > SpeedBeforeForces)
 		{
-			Velocity = Velocity.GetClampedToMaxSize(MaxSpeed);
+			// Boost and mode changes alter available thrust, not existing momentum.
+			// Clamp only newly added overspeed so releasing Shift cannot delete most
+			// of the ship velocity in a single frame.
+			Velocity = Velocity.GetClampedToMaxSize(FMath::Max(MaxSpeed, SpeedBeforeForces));
 			SpaceshipHull->SetPhysicsLinearVelocity(Velocity);
 		}
 		if (bIsDecelerating)
@@ -1601,7 +1617,9 @@ void ASpaceship::ApplyFlightInput(float DeltaTime)
 	}
 
 	const double MaxSpeed = ActiveClassPreset.MaxImpulseSpeed * SpeedScale * CurrentBoostMultiplier;
-	const FVector DesiredVelocity = WorldInput * MaxSpeed;
+	const double PreservedMomentumSpeed = bIsDecelerating
+		? MaxSpeed : FMath::Max(MaxSpeed, KinematicVelocity.Size());
+	const FVector DesiredVelocity = WorldInput * PreservedMomentumSpeed;
 	const double Acceleration = DriveAcceleration * CurrentBoostMultiplier * TransitionAlpha;
 	if (!WorldInput.IsNearlyZero())
 	{
@@ -1621,9 +1639,11 @@ void ASpaceship::ApplyFlightInput(float DeltaTime)
 		KinematicVelocity.Size() / FMath::Max(MaxSpeed * 0.15, 100.0), 0.0, 1.0);
 	if (!WorldSteeringInput.IsNearlyZero() && SteeringAuthority > UE_SMALL_NUMBER)
 	{
+		const double SpeedBeforeSteering = KinematicVelocity.Size();
 		KinematicVelocity += WorldSteeringInput * Acceleration * SteeringThrustFraction
 			* SteeringAuthority * DeltaTime;
-		KinematicVelocity = KinematicVelocity.GetClampedToMaxSize(MaxSpeed);
+		KinematicVelocity = KinematicVelocity.GetClampedToMaxSize(
+			FMath::Max(MaxSpeed, SpeedBeforeSteering));
 	}
 	if (bIsDecelerating)
 	{
@@ -1648,20 +1668,53 @@ void ASpaceship::ApplyRotationInput(float DeltaTime)
 		return;
 	}
 
-	const float TransitionAlpha = bEngineModeTransitionActive
-		? FMath::Clamp(FMath::Abs(EngineModeTransitionElapsed / EngineModeTransitionDuration - 0.5f) * 2.0f, 0.15f, 1.0f)
-		: 1.0f;
+	const float TransitionAlpha = GetEngineTransitionAuthority();
 	const double RotationSpeed = ActiveClassPreset.RotationSpeed * SteeringRateScale * TransitionAlpha;
 	const double SafeInputLimit = FMath::Max(static_cast<double>(SteeringInputLimit), 0.05);
 	const FVector DesiredAngularVelocityDegrees(
 		FMath::Clamp(static_cast<double>(PitchInput) / SafeInputLimit, -1.0, 1.0) * RotationSpeed,
 		FMath::Clamp(static_cast<double>(YawInput) / SafeInputLimit, -1.0, 1.0) * RotationSpeed,
 		FMath::Clamp(static_cast<double>(RollInput) / SafeInputLimit, -1.0, 1.0) * RotationSpeed);
+
+	const bool bUsePhysicalRotation = OnboardComputer
+		&& OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::Impulse
+		&& ActiveClassPreset.bUsesPhysicalImpulse
+		&& SpaceshipHull->IsSimulatingPhysics();
+	if (bUsePhysicalRotation)
+	{
+		const FVector ShipRight = GetShipRightVector();
+		const FVector ShipUp = GetShipUpVector();
+		const FVector ShipForward = GetShipForwardVector();
+		const FVector WorldAngularVelocityRadians = SpaceshipHull->GetPhysicsAngularVelocityInRadians();
+		const FVector MeasuredAngularVelocityDegrees(
+			FMath::RadiansToDegrees(FVector::DotProduct(WorldAngularVelocityRadians, ShipRight)),
+			FMath::RadiansToDegrees(FVector::DotProduct(WorldAngularVelocityRadians, ShipUp)),
+			FMath::RadiansToDegrees(FVector::DotProduct(WorldAngularVelocityRadians, ShipForward)));
+		const FVector CommandedAngularVelocityDegrees = FMath::VInterpConstantTo(
+			MeasuredAngularVelocityDegrees,
+			DesiredAngularVelocityDegrees,
+			DeltaTime,
+			ActiveClassPreset.AngularAcceleration * TransitionAlpha);
+
+		if (DeltaTime > UE_SMALL_NUMBER)
+		{
+			const FVector LocalAngularAccelerationDegrees =
+				(CommandedAngularVelocityDegrees - MeasuredAngularVelocityDegrees) / DeltaTime;
+			const FVector WorldAngularAccelerationRadians =
+				ShipRight * FMath::DegreesToRadians(LocalAngularAccelerationDegrees.X)
+				+ ShipUp * FMath::DegreesToRadians(LocalAngularAccelerationDegrees.Y)
+				+ ShipForward * FMath::DegreesToRadians(LocalAngularAccelerationDegrees.Z);
+			SpaceshipHull->AddTorqueInRadians(WorldAngularAccelerationRadians, NAME_None, true);
+		}
+		CurrentAngularVelocityDegrees = CommandedAngularVelocityDegrees;
+		return;
+	}
+
 	CurrentAngularVelocityDegrees = FMath::VInterpConstantTo(
 		CurrentAngularVelocityDegrees,
 		DesiredAngularVelocityDegrees,
 		DeltaTime,
-		ActiveClassPreset.AngularAcceleration);
+		ActiveClassPreset.AngularAcceleration * TransitionAlpha);
 
 	const double PitchRadians = FMath::DegreesToRadians(CurrentAngularVelocityDegrees.X * DeltaTime);
 	const double YawRadians = FMath::DegreesToRadians(CurrentAngularVelocityDegrees.Y * DeltaTime);
@@ -1676,11 +1729,20 @@ void ASpaceship::ApplyRotationInput(float DeltaTime)
 	const FQuat DeltaPitch(GetShipRightVector(), PitchRadians);
 	const FQuat DeltaRoll(GetShipForwardVector(), RollRadians);
 	const FQuat Target = (DeltaRoll * DeltaPitch * DeltaYaw * Current).GetNormalized();
-	SetActorRotation(Target, ETeleportType::TeleportPhysics);
-	if (SpaceshipHull->IsSimulatingPhysics())
+	SetActorRotation(Target, ETeleportType::None);
+}
+
+float ASpaceship::GetEngineTransitionAuthority() const
+{
+	if (!bEngineModeTransitionActive || EngineModeTransitionDuration <= UE_SMALL_NUMBER)
 	{
-		SpaceshipHull->SetPhysicsAngularVelocityInRadians(FVector::ZeroVector);
+		return 1.0f;
 	}
+
+	const float LinearAlpha = FMath::Clamp(
+		EngineModeTransitionElapsed / EngineModeTransitionDuration, 0.0f, 1.0f);
+	const float SmoothAlpha = LinearAlpha * LinearAlpha * (3.0f - 2.0f * LinearAlpha);
+	return 1.0f - FMath::Sin(PI * SmoothAlpha) * 0.18f;
 }
 
 EEngineMode ASpaceship::ResolveEngineModeForFlightMode(EFlightMode FlightMode) const
@@ -1797,12 +1859,25 @@ void ASpaceship::ApplyEngineState()
 		{
 			SpaceshipHull->SetPhysicsLinearVelocity(KinematicVelocity);
 		}
+		if (!CurrentAngularVelocityDegrees.IsNearlyZero())
+		{
+			const FVector WorldAngularVelocityRadians =
+				GetShipRightVector() * FMath::DegreesToRadians(CurrentAngularVelocityDegrees.X)
+				+ GetShipUpVector() * FMath::DegreesToRadians(CurrentAngularVelocityDegrees.Y)
+				+ GetShipForwardVector() * FMath::DegreesToRadians(CurrentAngularVelocityDegrees.Z);
+			SpaceshipHull->SetPhysicsAngularVelocityInRadians(WorldAngularVelocityRadians);
+		}
 	}
 	else
 	{
 		if (SpaceshipHull->IsSimulatingPhysics())
 		{
 			KinematicVelocity = SpaceshipHull->GetPhysicsLinearVelocity();
+			const FVector WorldAngularVelocityRadians = SpaceshipHull->GetPhysicsAngularVelocityInRadians();
+			CurrentAngularVelocityDegrees = FVector(
+				FMath::RadiansToDegrees(FVector::DotProduct(WorldAngularVelocityRadians, GetShipRightVector())),
+				FMath::RadiansToDegrees(FVector::DotProduct(WorldAngularVelocityRadians, GetShipUpVector())),
+				FMath::RadiansToDegrees(FVector::DotProduct(WorldAngularVelocityRadians, GetShipForwardVector())));
 		}
 		SpaceshipHull->SetSimulatePhysics(false);
 	}

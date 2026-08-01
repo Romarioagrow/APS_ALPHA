@@ -349,7 +349,7 @@ public:
 	float BrakingResponseSpeed{1.5f};
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight|Transition", meta = (ClampMin = "0.05"))
-	float EngineModeTransitionDuration{0.65f};
+	float EngineModeTransitionDuration{0.9f};
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight|Boost", meta = (ClampMin = "0.1"))
 	float BoostRecoverySpeed{2.0f};
@@ -537,6 +537,7 @@ private:
 	bool IsNearGravitySurface(const FVector& GravityDirection) const;
 	void ApplyFlightInput(float DeltaTime);
 	void ApplyRotationInput(float DeltaTime);
+	float GetEngineTransitionAuthority() const;
 	void ApplyEngineState();
 	void RequestEngineModeForFlightMode(bool bImmediate);
 	void AdvanceEngineModeTransition(float DeltaTime);
@@ -570,6 +571,7 @@ private:
 	FVector FlightUpLocalAxis{FVector::UpVector};
 	float BaseCameraArmLength{1200.0f};
 	float BaseCameraFieldOfView{90.0f};
+	float SmoothedCameraSpeedAlpha{0.0f};
 	bool bCameraFieldOfViewInitialized{false};
 	float EnvironmentDetectionElapsed{0.0f};
 	bool bFlightCollisionOptimizationActive{false};
