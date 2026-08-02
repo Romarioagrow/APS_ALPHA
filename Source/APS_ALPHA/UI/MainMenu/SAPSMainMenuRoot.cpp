@@ -22,6 +22,7 @@
 #include "HAL/FileManager.h"
 #include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetSystemLibrary.h"
+#include "Misc/ConfigCacheIni.h"
 #include "Misc/Paths.h"
 #include "Styling/AppStyle.h"
 #include "Styling/SlateBrush.h"
@@ -71,6 +72,39 @@ namespace APSMenu
 		return FText::FromString(MB >= 1.0
 			? FString::Printf(TEXT("%.1f MB"), MB)
 			: FString::Printf(TEXT("%.0f KB"), static_cast<double>(Bytes) / 1024.0));
+	}
+
+	bool LoadWorldMetadataSidecar(const FString& MetadataPath, FAPSExistingWorldEntry& Entry)
+	{
+		if (!IFileManager::Get().FileExists(*MetadataPath))
+		{
+			return false;
+		}
+
+		FConfigFile Metadata;
+		Metadata.Read(MetadataPath);
+		int64 Version = 0;
+		if (!Metadata.GetInt64(TEXT("APSWorld"), TEXT("Version"), Version) || Version < 1)
+		{
+			return false;
+		}
+
+		Metadata.GetString(TEXT("APSWorld"), TEXT("DisplayName"), Entry.DisplayName);
+		Metadata.GetString(TEXT("APSWorld"), TEXT("SystemType"), Entry.SystemType);
+		Metadata.GetString(TEXT("APSWorld"), TEXT("StarType"), Entry.StarType);
+		Metadata.GetString(TEXT("APSWorld"), TEXT("PlanetType"), Entry.PlanetType);
+		Metadata.GetString(TEXT("APSWorld"), TEXT("Environment"), Entry.Environment);
+		int64 Value = 0;
+		if (Metadata.GetInt64(TEXT("APSWorld"), TEXT("TotalPlanets"), Value))
+		{
+			Entry.TotalPlanets = FMath::Max<int32>(0, static_cast<int32>(Value));
+		}
+		if (Metadata.GetInt64(TEXT("APSWorld"), TEXT("InhabitedPlanets"), Value))
+		{
+			Entry.InhabitedPlanets = FMath::Max<int32>(0, static_cast<int32>(Value));
+		}
+		Entry.bMetadataLoaded = true;
+		return true;
 	}
 
 	template <typename T>
@@ -464,6 +498,9 @@ void SAPSMainMenuRoot::LoadExistingWorlds()
 		}
 		Entry->FileTimestamp = Stat.ModificationTime.ToUnixTimestamp();
 		Entry->FileSizeBytes = Stat.FileSize;
+		// Sidecars are tiny and contain only browser-facing fields. They let even a
+		// 100 MB gameplay save render a complete card without deserializing actors.
+		APSMenu::LoadWorldMetadataSidecar(SaveDirectory / (SlotName + TEXT(".apsmeta")), *Entry);
 		ExistingWorlds.Add(Entry);
 	}
 	ExistingWorlds.Sort([](const auto& A, const auto& B) { return A->FileTimestamp > B->FileTimestamp; });

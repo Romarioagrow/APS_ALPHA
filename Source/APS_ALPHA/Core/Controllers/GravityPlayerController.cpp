@@ -11,7 +11,51 @@
 #include "APS_ALPHA/UI/StrategicMap/SAPSStrategicMapPanel.h"
 #include "Engine/GameViewportClient.h"
 #include "InputCoreTypes.h"
+#include "Misc/ConfigCacheIni.h"
+#include "Misc/Paths.h"
 #include "Widgets/SWeakWidget.h"
+
+namespace
+{
+	template <typename T>
+	FString APSMetadataEnumLabel(T Value)
+	{
+		const UEnum* Enum = StaticEnum<T>();
+		return Enum ? Enum->GetDisplayNameTextByValue(static_cast<int64>(Value)).ToString() : TEXT("UNKNOWN");
+	}
+
+	void WriteWorldMetadataSidecar(const UGameSave* Save, const FGeneratedWorldData& WorldData)
+	{
+		if (!Save || Save->SaveSlotName.IsEmpty())
+		{
+			return;
+		}
+
+		FConfigFile Metadata;
+		Metadata.SetInt64(TEXT("APSWorld"), TEXT("Version"), 1);
+		Metadata.SetString(TEXT("APSWorld"), TEXT("DisplayName"),
+			*(Save->WorldName.IsEmpty() ? Save->SaveSlotName : Save->WorldName));
+		Metadata.SetString(TEXT("APSWorld"), TEXT("SystemType"),
+			*APSMetadataEnumLabel(WorldData.PlanetarySystemType));
+		Metadata.SetString(TEXT("APSWorld"), TEXT("StarType"),
+			*APSMetadataEnumLabel(WorldData.SpectralClass));
+		const FString PlanetType = APSMetadataEnumLabel(WorldData.PlanetType);
+		Metadata.SetString(TEXT("APSWorld"), TEXT("PlanetType"), *PlanetType);
+		Metadata.SetString(TEXT("APSWorld"), TEXT("Environment"),
+			*FString::Printf(TEXT("%s / %.0f KM"), *PlanetType, WorldData.PlanetRadius));
+		Metadata.SetInt64(TEXT("APSWorld"), TEXT("TotalPlanets"), WorldData.PlanetsAmount);
+		Metadata.SetInt64(TEXT("APSWorld"), TEXT("InhabitedPlanets"),
+			Save->InhabitedPlanetsDataArray.Num());
+
+		const FString MetadataPath = FPaths::ProjectSavedDir() / TEXT("SaveGames") /
+			(Save->SaveSlotName + TEXT(".apsmeta"));
+		if (!Metadata.Write(MetadataPath, false))
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[APS.Save] Could not write metadata sidecar: %s"),
+				*MetadataPath);
+		}
+	}
+}
 
 void AGravityPlayerController::SetupInputComponent()
 {
@@ -145,6 +189,7 @@ void AGravityPlayerController::SaveNewWorld(const EAstroGenerationLevel AstroGen
 			                                     SaveGameInstance->UserIndex))
 			{
 				CurrentSaveSlotName = SaveGameInstance->SaveSlotName;
+				WriteWorldMetadataSidecar(SaveGameInstance, WorldSaveData);
 				UE_LOG(LogTemp, Warning, TEXT("Game saved successfully to slot: %s"), *SaveGameInstance->SaveSlotName);
 			}
 		}
