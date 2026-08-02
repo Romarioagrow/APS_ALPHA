@@ -6,9 +6,11 @@
 #include "Widgets/SCompoundWidget.h"
 
 class AMainMenuController;
+struct FStreamableHandle;
 class SBox;
 class UClass;
 class UGameSave;
+class USpawnClassPicker;
 
 enum class EAPSMenuPage : uint8
 {
@@ -93,6 +95,9 @@ private:
 	FText GetWorldSortLabel() const;
 	FText GetWorldFilterLabel(EAPSWorldFilterKind Kind) const;
 	void LoadSpawnClassOptions();
+	void OnSpawnClassOptionsLoaded();
+	void MergeSpawnClassOptions(const USpawnClassPicker* Picker);
+	void SynchronizeSpawnClassOptions();
 	void RefreshSpawnClassBrush(EAPSStartAssetSlot Slot);
 	FText GetSpawnClassName(EAPSStartAssetSlot Slot) const;
 	const FSlateBrush* GetSpawnClassBrush(EAPSStartAssetSlot Slot) const;
@@ -138,6 +143,8 @@ private:
 	TMap<EAPSStartAssetSlot, TArray<TSubclassOf<AActor>>> SpawnClassOptions;
 	TMap<EAPSStartAssetSlot, int32> SpawnClassIndices;
 	TMap<EAPSStartAssetSlot, FSlateBrush> SpawnClassBrushes;
+	TSharedPtr<FStreamableHandle> SpawnPickerLoadHandle;
+	bool bSpawnClassOptionsRequested{false};
 
 	FSlateBrush SystemImage;
 	FSlateBrush PlanetImage;

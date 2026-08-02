@@ -17,6 +17,8 @@
 #include "APS_ALPHA/UI/MainMenu/SpawnClassPicker.h"
 #include "Engine/Texture2D.h"
 #include "Engine/Font.h"
+#include "Engine/AssetManager.h"
+#include "Engine/StreamableManager.h"
 #include "HAL/FileManager.h"
 #include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetSystemLibrary.h"
@@ -838,16 +840,80 @@ FReply SAPSMainMenuRoot::ToggleWorldDetails()
 
 void SAPSMainMenuRoot::LoadSpawnClassOptions()
 {
-	if (SpawnClassOptions.Num() > 0) return;
-	UClass* PickerClass = LoadClass<USpawnClassPicker>(nullptr,
+	if (SpawnClassOptions.Num() == 0)
+	{
+		SpawnClassOptions.Add(EAPSStartAssetSlot::Character, TArray<TSubclassOf<AActor>>());
+		SpawnClassOptions.Add(EAPSStartAssetSlot::Spaceship, TArray<TSubclassOf<AActor>>());
+		SpawnClassOptions.Add(EAPSStartAssetSlot::SpaceStation, TArray<TSubclassOf<AActor>>());
+		SpawnClassOptions.Add(EAPSStartAssetSlot::Headquarters, TArray<TSubclassOf<AActor>>());
+		SpawnClassOptions.Add(EAPSStartAssetSlot::Shipyard, TArray<TSubclassOf<AActor>>());
+		// Generator defaults are already resident and make the page immediately
+		// usable while the legacy option catalogue is streamed in.
+		SynchronizeSpawnClassOptions();
+	}
+
+	if (bSpawnClassOptionsRequested)
+	{
+		return;
+	}
+	bSpawnClassOptionsRequested = true;
+
+	const FSoftObjectPath PickerPath(
 		TEXT("/Game/APS/APS_ALPHA/UI/GenerationMenu/WBP_CivilizationMenu_UI.WBP_CivilizationMenu_UI_C"));
-	if (AMainMenuController* PC = Controller.Get()) PC->HoldSlateResource(PickerClass);
-	const USpawnClassPicker* Picker = PickerClass ? PickerClass->GetDefaultObject<USpawnClassPicker>() : nullptr;
-	SpawnClassOptions.Add(EAPSStartAssetSlot::Character, Picker ? Picker->CharacterClasses : TArray<TSubclassOf<AActor>>());
-	SpawnClassOptions.Add(EAPSStartAssetSlot::Spaceship, Picker ? Picker->SpaceshipClasses : TArray<TSubclassOf<AActor>>());
-	SpawnClassOptions.Add(EAPSStartAssetSlot::SpaceStation, Picker ? Picker->SpaceStationClasses : TArray<TSubclassOf<AActor>>());
-	SpawnClassOptions.Add(EAPSStartAssetSlot::Headquarters, Picker ? Picker->SpaceHeadquartersClasses : TArray<TSubclassOf<AActor>>());
-	SpawnClassOptions.Add(EAPSStartAssetSlot::Shipyard, Picker ? Picker->ShipyardClasses : TArray<TSubclassOf<AActor>>());
+	SpawnPickerLoadHandle = UAssetManager::GetStreamableManager().RequestAsyncLoad(
+		PickerPath,
+		FStreamableDelegate::CreateSP(this, &SAPSMainMenuRoot::OnSpawnClassOptionsLoaded));
+	if (!SpawnPickerLoadHandle.IsValid())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[APS.Menu] Could not start async spawn catalogue load"));
+	}
+}
+
+void SAPSMainMenuRoot::OnSpawnClassOptionsLoaded()
+{
+	const FSoftObjectPath PickerPath(
+		TEXT("/Game/APS/APS_ALPHA/UI/GenerationMenu/WBP_CivilizationMenu_UI.WBP_CivilizationMenu_UI_C"));
+	UClass* PickerClass = Cast<UClass>(PickerPath.ResolveObject());
+	if (AMainMenuController* PC = Controller.Get())
+	{
+		PC->HoldSlateResource(PickerClass);
+	}
+	const USpawnClassPicker* Picker = PickerClass
+		? PickerClass->GetDefaultObject<USpawnClassPicker>() : nullptr;
+	MergeSpawnClassOptions(Picker);
+	SynchronizeSpawnClassOptions();
+	SpawnPickerLoadHandle.Reset();
+	UE_LOG(LogTemp, Log, TEXT("[APS.Menu] Spawn catalogue loaded asynchronously: %s"),
+		Picker ? TEXT("true") : TEXT("false"));
+}
+
+void SAPSMainMenuRoot::MergeSpawnClassOptions(const USpawnClassPicker* Picker)
+{
+	if (!Picker)
+	{
+		return;
+	}
+
+	auto Merge = [this](EAPSStartAssetSlot Slot, const TArray<TSubclassOf<AActor>>& Source)
+	{
+		TArray<TSubclassOf<AActor>>& Target = SpawnClassOptions.FindOrAdd(Slot);
+		for (const TSubclassOf<AActor>& Candidate : Source)
+		{
+			if (Candidate)
+			{
+				Target.AddUnique(Candidate);
+			}
+		}
+	};
+	Merge(EAPSStartAssetSlot::Character, Picker->CharacterClasses);
+	Merge(EAPSStartAssetSlot::Spaceship, Picker->SpaceshipClasses);
+	Merge(EAPSStartAssetSlot::SpaceStation, Picker->SpaceStationClasses);
+	Merge(EAPSStartAssetSlot::Headquarters, Picker->SpaceHeadquartersClasses);
+	Merge(EAPSStartAssetSlot::Shipyard, Picker->ShipyardClasses);
+}
+
+void SAPSMainMenuRoot::SynchronizeSpawnClassOptions()
+{
 	for (auto& Pair : SpawnClassOptions)
 	{
 		UClass* CurrentClass = nullptr;
@@ -1111,7 +1177,7 @@ FReply SAPSMainMenuRoot::Back()
 FReply SAPSMainMenuRoot::OpenChoosePath() { Navigate(EAPSMenuPage::ChoosePath); return FReply::Handled(); }
 FReply SAPSMainMenuRoot::StartSingleGame() { if (AMainMenuController* PC = Controller.Get()) PC->LaunchSingleGame(); return FReply::Handled(); }
 FReply SAPSMainMenuRoot::OpenExistingWorlds() { Navigate(EAPSMenuPage::ExistingWorlds); return FReply::Handled(); }
-FReply SAPSMainMenuRoot::OpenAstronomicalGeneration(EAstroPreviewFocus Focus) { if (ViewModel.IsValid()) { ViewModel->SetPreviewFocus(Focus); ViewModel->RequestPreview(); } Navigate(EAPSMenuPage::AstronomicalGeneration); return FReply::Handled(); }
+FReply SAPSMainMenuRoot::OpenAstronomicalGeneration(EAstroPreviewFocus Focus) { Navigate(EAPSMenuPage::AstronomicalGeneration); if (ViewModel.IsValid()) ViewModel->SetPreviewFocus(Focus); return FReply::Handled(); }
 FReply SAPSMainMenuRoot::OpenCivilization() { Navigate(EAPSMenuPage::Civilization); return FReply::Handled(); }
 FReply SAPSMainMenuRoot::CommitCivilization() { if (ViewModel.IsValid()) ViewModel->CommitAndOpenLevel(); return FReply::Handled(); }
 FReply SAPSMainMenuRoot::ContinueExistingWorld() { if (SelectedWorld.IsValid()) if (AMainMenuController* PC = Controller.Get()) PC->LoadWorldSlot(SelectedWorld->SaveFileName); return FReply::Handled(); }
