@@ -1,11 +1,23 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "APS_ALPHA/Generation/AstroGenerator.h"
 #include "MVVMViewModelBase.h"
 #include "WorldGenerationViewModel.generated.h"
 
 class AAstroGenerator;
 class UGeneratedWorld;
+class USpawnParameters;
+
+UENUM(BlueprintType)
+enum class EAPSStartAssetSlot : uint8
+{
+	Character,
+	Spaceship,
+	SpaceStation,
+	Headquarters,
+	Shipyard
+};
 
 UCLASS(BlueprintType)
 class APS_ALPHA_API UWorldGenerationViewModel : public UMVVMViewModelBase
@@ -46,6 +58,22 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "World Generation")
 	void RequestPreview();
 
+	UFUNCTION(BlueprintCallable, Category = "World Generation|Preview")
+	void SetPreviewFocus(EAstroPreviewFocus NewFocus);
+
+	void OrbitPreview(FVector2D ScreenDelta);
+	void ZoomPreview(float WheelDelta);
+	bool FocusPreviewUnderCursor();
+
+	UFUNCTION(BlueprintCallable, Category = "World Generation|Civilization")
+	void SetSpawnClass(EAPSStartAssetSlot Slot, UClass* NewClass);
+
+	UFUNCTION(BlueprintCallable, Category = "World Generation|Civilization")
+	void SetCharacterSpawnPlace(int32 Value);
+
+	UFUNCTION(BlueprintCallable, Category = "World Generation|Civilization")
+	void SetStationOrbitHeight(int32 Value);
+
 	UFUNCTION(BlueprintCallable, Category = "World Generation")
 	void CommitAndOpenLevel(FName LevelName = TEXT("L_WorldGeneration"));
 
@@ -61,12 +89,19 @@ public:
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "World Generation|Preview")
 	FText PreviewStatus;
 
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "World Generation|Civilization")
+	TObjectPtr<USpawnParameters> SpawnParameters;
+
+	EAstroPreviewFocus GetPreviewFocus() const { return PreviewFocus; }
+
 private:
 	void ExecutePreview();
 	AAstroGenerator* FindOrCreatePreviewGenerator();
+	void InitializeSpawnDefaultsFromGenerator(AAstroGenerator* Generator);
 	void SetPreviewStatus(const FText& Status, bool bReady);
 
 	TWeakObjectPtr<UObject> WorldContext;
 	TWeakObjectPtr<AAstroGenerator> PreviewGenerator;
 	FTimerHandle PreviewTimerHandle;
+	EAstroPreviewFocus PreviewFocus{EAstroPreviewFocus::Overview};
 };

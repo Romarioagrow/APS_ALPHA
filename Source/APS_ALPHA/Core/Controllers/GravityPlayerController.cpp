@@ -8,10 +8,74 @@
 #include "Kismet/GameplayStatics.h"
 #include "APS_ALPHA/Core/Structs/PlanetarySystemGenerationModel.h"
 #include "Serialization/ObjectAndNameAsStringProxyArchive.h"
+#include "APS_ALPHA/UI/StrategicMap/SAPSStrategicMapPanel.h"
+#include "Engine/GameViewportClient.h"
+#include "InputCoreTypes.h"
+#include "Widgets/SWeakWidget.h"
 
 void AGravityPlayerController::SetupInputComponent()
 {
 	Super::SetupInputComponent();
+	if (InputComponent)
+	{
+		InputComponent->BindKey(EKeys::F10, IE_Pressed, this, &AGravityPlayerController::ToggleStrategicMap);
+	}
+}
+
+void AGravityPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	CloseStrategicMap(false);
+	Super::EndPlay(EndPlayReason);
+}
+
+void AGravityPlayerController::ToggleStrategicMap()
+{
+	if (StrategicMapWidget.IsValid())
+	{
+		CloseStrategicMap(true);
+		return;
+	}
+	if (!GEngine || !GEngine->GameViewport || !GetWorld()) return;
+
+	AAstroGenerator* Generator = Cast<AAstroGenerator>(
+		UGameplayStatics::GetActorOfClass(GetWorld(), AAstroGenerator::StaticClass()));
+	if (!Generator) return;
+
+	StrategicMapPreviousViewTarget = GetViewTarget();
+	StrategicMapWidget = SNew(SAPSStrategicMapPanel)
+		.Controller(this)
+		.Generator(Generator)
+		.OnClose(FSimpleDelegate::CreateUObject(this, &AGravityPlayerController::ToggleStrategicMap));
+	StrategicMapContainer = SNew(SWeakWidget).PossiblyNullContent(StrategicMapWidget.ToSharedRef());
+	GEngine->GameViewport->AddViewportWidgetContent(StrategicMapContainer.ToSharedRef(), 900);
+
+	bShowMouseCursor = true;
+	FInputModeGameAndUI InputMode;
+	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+	InputMode.SetHideCursorDuringCapture(false);
+	InputMode.SetWidgetToFocus(StrategicMapWidget);
+	SetInputMode(InputMode);
+	Generator->FocusPreviewTarget(EAstroPreviewFocus::Overview, this);
+}
+
+void AGravityPlayerController::CloseStrategicMap(bool bRestoreView)
+{
+	if (StrategicMapContainer.IsValid() && GEngine && GEngine->GameViewport)
+	{
+		GEngine->GameViewport->RemoveViewportWidgetContent(StrategicMapContainer.ToSharedRef());
+	}
+	StrategicMapContainer.Reset();
+	StrategicMapWidget.Reset();
+
+	if (bRestoreView)
+	{
+		AActor* RestoreTarget = StrategicMapPreviousViewTarget.Get();
+		if (!IsValid(RestoreTarget)) RestoreTarget = GetPawn();
+		if (IsValid(RestoreTarget)) SetViewTargetWithBlend(RestoreTarget, 0.30f, VTBlend_Cubic);
+		bShowMouseCursor = false;
+		SetInputMode(FInputModeGameOnly());
+	}
+	StrategicMapPreviousViewTarget.Reset();
 }
 
 FString AGravityPlayerController::GetCurrentSaveSlotName() const

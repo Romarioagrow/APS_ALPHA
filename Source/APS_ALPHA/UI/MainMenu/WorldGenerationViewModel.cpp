@@ -2,8 +2,22 @@
 
 #include "APS_ALPHA/Core/Instances/MainGameplayInstance.h"
 #include "APS_ALPHA/Core/Model/GeneratedWorld.h"
+#include "APS_ALPHA/Core/Model/SpawnParameters.h"
+#include "APS_ALPHA/Core/Enums/CharSpawnPlace.h"
+#include "APS_ALPHA/Core/Enums/OrbitHeight.h"
+#include "APS_ALPHA/Pawns/Base/ControlledPawn.h"
+#include "APS_ALPHA/Pawns/Spaceships/Spaceship.h"
+#include "APS_ALPHA/Actors/Tech/SpaceStation.h"
+#include "APS_ALPHA/Actors/Tech/SpaceHeadquarters.h"
+#include "APS_ALPHA/Actors/Tech/SpaceShipyard.h"
+#include "APS_ALPHA/Actors/Astro/Galaxy.h"
+#include "APS_ALPHA/Actors/Astro/Planet.h"
+#include "APS_ALPHA/Actors/Astro/Star.h"
+#include "APS_ALPHA/Actors/Astro/StarCluster.h"
+#include "APS_ALPHA/Actors/Astro/StarSystem.h"
 #include "APS_ALPHA/Generation/AstroGenerator.h"
 #include "Engine/World.h"
+#include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
 #include "TimerManager.h"
 
@@ -19,6 +33,18 @@ void UWorldGenerationViewModel::Initialize(UObject* InWorldContext, UGeneratedWo
 			InGeneratedWorld->StartPlanetIndex, 1, InGeneratedWorld->PlanetsAmount);
 	}
 	UE_MVVM_SET_PROPERTY_VALUE(GeneratedWorld, InGeneratedWorld);
+	if (UWorld* World = InWorldContext ? InWorldContext->GetWorld() : nullptr)
+	{
+		if (UMainGameplayInstance* GameplayInstance = World->GetGameInstance()
+			? World->GetGameInstance()->GetSubsystem<UMainGameplayInstance>() : nullptr)
+		{
+			if (!GameplayInstance->SpawnParameters)
+			{
+				GameplayInstance->SpawnParameters = NewObject<USpawnParameters>(GameplayInstance);
+			}
+			UE_MVVM_SET_PROPERTY_VALUE(SpawnParameters, GameplayInstance->SpawnParameters);
+		}
+	}
 	SetPreviewStatus(LOCTEXT("PreviewPending", "PREVIEW PENDING"), false);
 }
 
@@ -152,6 +178,114 @@ void UWorldGenerationViewModel::RequestPreview()
 		PreviewTimerHandle, this, &UWorldGenerationViewModel::ExecutePreview, 0.2f, false);
 }
 
+void UWorldGenerationViewModel::SetPreviewFocus(EAstroPreviewFocus NewFocus)
+{
+	PreviewFocus = NewFocus;
+	if (AAstroGenerator* Generator = PreviewGenerator.Get())
+	{
+		Generator->FocusPreviewTarget(NewFocus);
+	}
+}
+
+void UWorldGenerationViewModel::OrbitPreview(FVector2D ScreenDelta)
+{
+	if (AAstroGenerator* Generator = PreviewGenerator.Get())
+	{
+		Generator->OrbitPreviewCamera(ScreenDelta);
+	}
+}
+
+void UWorldGenerationViewModel::ZoomPreview(float WheelDelta)
+{
+	if (AAstroGenerator* Generator = PreviewGenerator.Get())
+	{
+		Generator->ZoomPreviewCamera(WheelDelta);
+	}
+}
+
+bool UWorldGenerationViewModel::FocusPreviewUnderCursor()
+{
+	UWorld* World = WorldContext.IsValid() ? WorldContext->GetWorld() : nullptr;
+	APlayerController* PlayerController = World ? World->GetFirstPlayerController() : nullptr;
+	if (!World || !PlayerController)
+	{
+		return false;
+	}
+
+	float MouseX = 0.0f;
+	float MouseY = 0.0f;
+	FVector RayOrigin;
+	FVector RayDirection;
+	if (!PlayerController->GetMousePosition(MouseX, MouseY)
+		|| !PlayerController->DeprojectScreenPositionToWorld(MouseX, MouseY, RayOrigin, RayDirection))
+	{
+		return false;
+	}
+
+	FHitResult Hit;
+	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(AstroPreviewPick), true);
+	QueryParams.bTraceComplex = false;
+	if (!World->LineTraceSingleByChannel(Hit, RayOrigin, RayOrigin + RayDirection * 1.0e15, ECC_Visibility, QueryParams))
+	{
+		return false;
+	}
+
+	for (AActor* Candidate = Hit.GetActor(); IsValid(Candidate); Candidate = Candidate->GetAttachParentActor())
+	{
+		if (Candidate->IsA<APlanet>()) { SetPreviewFocus(EAstroPreviewFocus::HomePlanet); return true; }
+		if (Candidate->IsA<AStar>()) { SetPreviewFocus(EAstroPreviewFocus::HomeStar); return true; }
+		if (Candidate->IsA<AStarSystem>()) { SetPreviewFocus(EAstroPreviewFocus::HomeSystem); return true; }
+		if (Candidate->IsA<AGalaxy>()) { SetPreviewFocus(EAstroPreviewFocus::Galaxy); return true; }
+		if (Candidate->IsA<AStarCluster>()) { SetPreviewFocus(EAstroPreviewFocus::StarCluster); return true; }
+	}
+	return false;
+}
+
+void UWorldGenerationViewModel::SetSpawnClass(EAPSStartAssetSlot Slot, UClass* NewClass)
+{
+	if (!SpawnParameters || !NewClass)
+	{
+		return;
+	}
+
+	switch (Slot)
+	{
+	case EAPSStartAssetSlot::Character:
+		if (NewClass->IsChildOf(AControlledPawn::StaticClass())) SpawnParameters->BP_CharacterClass = NewClass;
+		break;
+	case EAPSStartAssetSlot::Spaceship:
+		if (NewClass->IsChildOf(ASpaceship::StaticClass())) SpawnParameters->BP_HomeSpaceship = NewClass;
+		break;
+	case EAPSStartAssetSlot::SpaceStation:
+		if (NewClass->IsChildOf(ASpaceStation::StaticClass())) SpawnParameters->BP_HomeSpaceStation = NewClass;
+		break;
+	case EAPSStartAssetSlot::Headquarters:
+		if (NewClass->IsChildOf(ASpaceHeadquarters::StaticClass())) SpawnParameters->BP_HomeSpaceHeadquarters = NewClass;
+		break;
+	case EAPSStartAssetSlot::Shipyard:
+		if (NewClass->IsChildOf(ASpaceShipyard::StaticClass())) SpawnParameters->BP_HomeSpaceShipyard = NewClass;
+		break;
+	}
+}
+
+void UWorldGenerationViewModel::SetCharacterSpawnPlace(int32 Value)
+{
+	if (SpawnParameters)
+	{
+		const int32 MaxValue = StaticEnum<ECharSpawnPlace>()->NumEnums() - 2;
+		SpawnParameters->CharacterSpawnPlace = static_cast<ECharSpawnPlace>(FMath::Clamp(Value, 0, MaxValue));
+	}
+}
+
+void UWorldGenerationViewModel::SetStationOrbitHeight(int32 Value)
+{
+	if (SpawnParameters)
+	{
+		const int32 MaxValue = StaticEnum<EOrbitHeight>()->NumEnums() - 2;
+		SpawnParameters->HomeStationOrbitHeight = static_cast<EOrbitHeight>(FMath::Clamp(Value, 0, MaxValue));
+	}
+}
+
 void UWorldGenerationViewModel::ExecutePreview()
 {
 	AAstroGenerator* Generator = FindOrCreatePreviewGenerator();
@@ -162,6 +296,10 @@ void UWorldGenerationViewModel::ExecutePreview()
 	}
 
 	const bool bGenerated = Generator->RegeneratePreview(GeneratedWorld);
+	if (bGenerated)
+	{
+		Generator->FocusPreviewTarget(PreviewFocus);
+	}
 	SetPreviewStatus(
 		bGenerated ? LOCTEXT("PreviewReady", "LIVE FULL-SCALE PREVIEW") : LOCTEXT("PreviewFailed", "PREVIEW NEEDS GENERATOR ASSETS"),
 		bGenerated);
@@ -183,6 +321,7 @@ AAstroGenerator* UWorldGenerationViewModel::FindOrCreatePreviewGenerator()
 	if (AAstroGenerator* ExistingGenerator = Cast<AAstroGenerator>(
 		UGameplayStatics::GetActorOfClass(World, AAstroGenerator::StaticClass())))
 	{
+		InitializeSpawnDefaultsFromGenerator(ExistingGenerator);
 		PreviewGenerator = ExistingGenerator;
 		return ExistingGenerator;
 	}
@@ -199,16 +338,31 @@ AAstroGenerator* UWorldGenerationViewModel::FindOrCreatePreviewGenerator()
 		return nullptr;
 	}
 
-	FActorSpawnParameters SpawnParameters;
-	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	FActorSpawnParameters ActorSpawnParameters;
+	ActorSpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 	AAstroGenerator* NewGenerator = World->SpawnActor<AAstroGenerator>(
-		GeneratorClass, FVector::ZeroVector, FRotator::ZeroRotator, SpawnParameters);
+		GeneratorClass, FVector::ZeroVector, FRotator::ZeroRotator, ActorSpawnParameters);
 	if (NewGenerator)
 	{
 		NewGenerator->Tags.AddUnique(TEXT("WorldGenerationPreview"));
+		InitializeSpawnDefaultsFromGenerator(NewGenerator);
 		PreviewGenerator = NewGenerator;
 	}
 	return NewGenerator;
+}
+
+void UWorldGenerationViewModel::InitializeSpawnDefaultsFromGenerator(AAstroGenerator* Generator)
+{
+	if (!Generator || !SpawnParameters)
+	{
+		return;
+	}
+
+	if (!SpawnParameters->BP_CharacterClass) SpawnParameters->BP_CharacterClass = Generator->BP_CharacterClass;
+	if (!SpawnParameters->BP_HomeSpaceship) SpawnParameters->BP_HomeSpaceship = Generator->BP_HomeSpaceship;
+	if (!SpawnParameters->BP_HomeSpaceStation) SpawnParameters->BP_HomeSpaceStation = Generator->BP_HomeSpaceStation;
+	if (!SpawnParameters->BP_HomeSpaceHeadquarters) SpawnParameters->BP_HomeSpaceHeadquarters = Generator->BP_HomeSpaceHeadquarters;
+	if (!SpawnParameters->BP_HomeSpaceShipyard) SpawnParameters->BP_HomeSpaceShipyard = Generator->BP_HomeSpaceShipyard;
 }
 
 void UWorldGenerationViewModel::CommitAndOpenLevel(FName LevelName)

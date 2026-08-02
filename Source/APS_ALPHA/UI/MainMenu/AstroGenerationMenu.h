@@ -54,7 +54,7 @@ protected:
 
 public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "World Generation|UI")
-	bool bUseSlateLayout{false};
+	bool bUseSlateLayout{true};
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "World Generation|MVVM")
 	UWorldGenerationViewModel* WorldGenerationViewModel;

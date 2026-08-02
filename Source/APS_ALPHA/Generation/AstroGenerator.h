@@ -34,6 +34,17 @@ enum class EOrbitHeight : uint8;
 struct FPlanetModel;
 struct FPlanetData;
 
+UENUM(BlueprintType)
+enum class EAstroPreviewFocus : uint8
+{
+	Overview,
+	StarCluster,
+	Galaxy,
+	HomeSystem,
+	HomeStar,
+	HomePlanet
+};
+
 UCLASS()
 class APS_ALPHA_API AAstroGenerator : public ABaseActor
 {
@@ -73,6 +84,16 @@ public:
 	void FocusPreviewCamera(APlayerController* PlayerController = nullptr);
 
 	UFUNCTION(BlueprintCallable, Category = "World Generation|Preview")
+	void FocusPreviewTarget(EAstroPreviewFocus NewFocus, APlayerController* PlayerController = nullptr);
+
+	UFUNCTION(BlueprintCallable, Category = "World Generation|Preview")
+	void OrbitPreviewCamera(FVector2D ScreenDelta);
+
+	UFUNCTION(BlueprintCallable, Category = "World Generation|Preview")
+	void ZoomPreviewCamera(float WheelDelta);
+	UGeneratedWorld* GetGeneratedWorldModel() const { return GeneratedWorldModel; }
+
+	UFUNCTION(BlueprintCallable, Category = "World Generation|Preview")
 	void ClearGeneratedPreview();
 
 protected:
@@ -103,6 +124,19 @@ protected:
 	void SetMoonRotation(APlanetOrbit* NewMoonOrbit);
 
 	virtual void BeginPlay() override;
+	virtual void Tick(float DeltaSeconds) override;
+
+	FBox GetPreviewFocusBounds(EAstroPreviewFocus Focus) const;
+	void StartPreviewCameraTransition(const FVector& Center, double Radius, APlayerController* PlayerController);
+
+	EAstroPreviewFocus PreviewFocus{EAstroPreviewFocus::Overview};
+	FTransform PreviewCameraStartTransform;
+	FTransform PreviewCameraTargetTransform;
+	FVector PreviewOrbitCenter{FVector::ZeroVector};
+	double PreviewOrbitDistance{1000.0};
+	float PreviewCameraTransitionElapsed{0.0f};
+	float PreviewCameraTransitionDuration{0.55f};
+	bool bPreviewCameraTransitionActive{false};
 
 	void Test_GenerateFullscaled();
 

@@ -36,6 +36,8 @@
 
 AAstroGenerator::AAstroGenerator()
 {
+	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.bStartWithTickEnabled = false;
 	GenerationRoot = CreateDefaultSubobject<USceneComponent>(TEXT("GenerationRoot"));
 	SetRootComponent(GenerationRoot);
 
@@ -74,6 +76,30 @@ void AAstroGenerator::BeginPlay()
 	}
 
 	UE_LOG(LogTemp, Warning, TEXT("=== AAstroGenerator::BeginPlay END ==="));
+}
+
+void AAstroGenerator::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+	if (!bPreviewCameraTransitionActive || !PreviewCamera)
+	{
+		SetActorTickEnabled(false);
+		return;
+	}
+
+	PreviewCameraTransitionElapsed += FMath::Max(DeltaSeconds, 0.0f);
+	const float Alpha = FMath::Clamp(
+		PreviewCameraTransitionElapsed / FMath::Max(PreviewCameraTransitionDuration, 0.01f), 0.0f, 1.0f);
+	const float SmoothAlpha = FMath::InterpEaseInOut(0.0f, 1.0f, Alpha, 2.0f);
+	FTransform BlendedTransform;
+	BlendedTransform.Blend(PreviewCameraStartTransform, PreviewCameraTargetTransform, SmoothAlpha);
+	PreviewCamera->SetWorldTransform(BlendedTransform);
+
+	if (Alpha >= 1.0f)
+	{
+		bPreviewCameraTransitionActive = false;
+		SetActorTickEnabled(false);
+	}
 }
 
 void AAstroGenerator::GenerateWorldByModel()
@@ -148,12 +174,30 @@ void AAstroGenerator::ClearGeneratedPreview()
 
 void AAstroGenerator::FocusPreviewCamera(APlayerController* PlayerController)
 {
-	if (!PreviewCamera || !GetWorld())
+	FocusPreviewTarget(PreviewFocus, PlayerController);
+}
+
+FBox AAstroGenerator::GetPreviewFocusBounds(EAstroPreviewFocus Focus) const
+{
+	FBox Bounds(EForceInit::ForceInit);
+	const AActor* FocusActor = nullptr;
+	switch (Focus)
 	{
-		return;
+	case EAstroPreviewFocus::StarCluster: FocusActor = GeneratedStarCluster; break;
+	case EAstroPreviewFocus::Galaxy: FocusActor = GeneratedGalaxy; break;
+	case EAstroPreviewFocus::HomeSystem: FocusActor = GeneratedHomeStarSystem; break;
+	case EAstroPreviewFocus::HomeStar: FocusActor = HomeStar; break;
+	case EAstroPreviewFocus::HomePlanet: FocusActor = HomePlanet; break;
+	case EAstroPreviewFocus::Overview:
+	default: break;
 	}
 
-	FBox Bounds(EForceInit::ForceInit);
+	if (IsValid(FocusActor))
+	{
+		Bounds += FocusActor->GetComponentsBoundingBox(true);
+		return Bounds;
+	}
+
 	const AActor* PreviewRoots[] = {GeneratedStarCluster, GeneratedGalaxy, GeneratedHomeStarSystem, GeneratedWorld};
 	for (const AActor* PreviewRoot : PreviewRoots)
 	{
@@ -162,28 +206,79 @@ void AAstroGenerator::FocusPreviewCamera(APlayerController* PlayerController)
 			Bounds += PreviewRoot->GetComponentsBoundingBox(true);
 		}
 	}
+	return Bounds;
+}
 
+void AAstroGenerator::StartPreviewCameraTransition(const FVector& Center, double Radius,
+	APlayerController* PlayerController)
+{
+	if (!PreviewCamera || !GetWorld())
+	{
+		return;
+	}
+
+	const double HalfFovRadians = FMath::DegreesToRadians(PreviewCamera->FieldOfView * 0.5);
+	const double Distance = FMath::Max(Radius * 1.08 / FMath::Tan(HalfFovRadians), Radius * 1.25);
+	const FVector ViewDirection = FVector(-1.0, -1.0, 0.45).GetSafeNormal();
+	const FVector CameraLocation = Center - ViewDirection * Distance;
+
+	PreviewOrbitCenter = Center;
+	PreviewOrbitDistance = Distance;
+	PreviewCameraStartTransform = PreviewCamera->GetComponentTransform();
+	PreviewCameraTargetTransform = FTransform((Center - CameraLocation).Rotation(), CameraLocation);
+	PreviewCameraTransitionElapsed = 0.0f;
+	bPreviewCameraTransitionActive = true;
+	SetActorTickEnabled(true);
+	PreviewCamera->SetActive(true);
+
+	APlayerController* ResolvedController = PlayerController ? PlayerController : GetWorld()->GetFirstPlayerController();
+	if (ResolvedController && ResolvedController->GetViewTarget() != this)
+	{
+		ResolvedController->SetViewTargetWithBlend(this, 0.35f, VTBlend_Cubic);
+	}
+}
+
+void AAstroGenerator::FocusPreviewTarget(EAstroPreviewFocus NewFocus, APlayerController* PlayerController)
+{
+	PreviewFocus = NewFocus;
+	FBox Bounds = GetPreviewFocusBounds(NewFocus);
 	if (!Bounds.IsValid)
 	{
 		Bounds = FBox(GetActorLocation() - FVector(500.0), GetActorLocation() + FVector(500.0));
 	}
+	StartPreviewCameraTransition(
+		Bounds.GetCenter(), FMath::Max(Bounds.GetExtent().Size(), 500.0), PlayerController);
+}
 
-	const FVector Center = Bounds.GetCenter();
-	const double Radius = FMath::Max(Bounds.GetExtent().Size(), 500.0);
-	const double HalfFovRadians = FMath::DegreesToRadians(PreviewCamera->FieldOfView * 0.45);
-	const double Distance = FMath::Max(Radius / FMath::Tan(HalfFovRadians), 1000.0);
-	const FVector ViewDirection = FVector(-1.0, -1.0, 0.45).GetSafeNormal();
-	const FVector CameraLocation = Center - ViewDirection * Distance;
-
-	PreviewCamera->SetWorldLocation(CameraLocation);
-	PreviewCamera->SetWorldRotation((Center - CameraLocation).Rotation());
-	PreviewCamera->SetActive(true);
-
-	APlayerController* ResolvedController = PlayerController ? PlayerController : GetWorld()->GetFirstPlayerController();
-	if (ResolvedController)
+void AAstroGenerator::OrbitPreviewCamera(FVector2D ScreenDelta)
+{
+	if (!PreviewCamera || PreviewOrbitDistance <= UE_SMALL_NUMBER)
 	{
-		ResolvedController->SetViewTargetWithBlend(this, 0.25f, VTBlend_Cubic);
+		return;
 	}
+
+	bPreviewCameraTransitionActive = false;
+	const FVector Offset = PreviewCamera->GetComponentLocation() - PreviewOrbitCenter;
+	const FQuat Yaw(FVector::UpVector, FMath::DegreesToRadians(-ScreenDelta.X * 0.18));
+	const FQuat Pitch(PreviewCamera->GetRightVector(), FMath::DegreesToRadians(ScreenDelta.Y * 0.14));
+	const FVector NewOffset = (Pitch * Yaw).RotateVector(Offset).GetSafeNormal() * PreviewOrbitDistance;
+	const FVector NewLocation = PreviewOrbitCenter + NewOffset;
+	PreviewCamera->SetWorldLocationAndRotation(NewLocation, (PreviewOrbitCenter - NewLocation).Rotation());
+}
+
+void AAstroGenerator::ZoomPreviewCamera(float WheelDelta)
+{
+	if (!PreviewCamera || FMath::IsNearlyZero(WheelDelta))
+	{
+		return;
+	}
+
+	bPreviewCameraTransitionActive = false;
+	PreviewOrbitDistance = FMath::Clamp(
+		PreviewOrbitDistance * FMath::Pow(0.82, static_cast<double>(WheelDelta)), 100.0, 1.0e18);
+	const FVector ViewDirection = (PreviewCamera->GetComponentLocation() - PreviewOrbitCenter).GetSafeNormal();
+	const FVector NewLocation = PreviewOrbitCenter + ViewDirection * PreviewOrbitDistance;
+	PreviewCamera->SetWorldLocationAndRotation(NewLocation, (PreviewOrbitCenter - NewLocation).Rotation());
 }
 
 void AAstroGenerator::InitAstroGenerators()
@@ -223,6 +318,8 @@ void AAstroGenerator::ApplySpawnParameters()
 			if (SpawnParams)
 			{
 				// ���������� ����������
+				CharSpawnPlace = SpawnParams->CharacterSpawnPlace;
+				HomeSpaceStationOrbitHeight = SpawnParams->HomeStationOrbitHeight;
 				BP_CharacterClass = SpawnParams->BP_CharacterClass;
 				BP_HomeSpaceStation = SpawnParams->BP_HomeSpaceStation;
 				BP_HomeSpaceship = SpawnParams->BP_HomeSpaceship;

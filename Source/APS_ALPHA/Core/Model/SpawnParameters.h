@@ -1,4 +1,6 @@
 ﻿#pragma once
+#include "APS_ALPHA/Core/Enums/CharSpawnPlace.h"
+#include "APS_ALPHA/Core/Enums/OrbitHeight.h"
 #include "SpawnParameters.generated.h"
 
 class ASpaceHeadquarters;
@@ -13,6 +15,14 @@ class USpawnParameters : public UObject
 	GENERATED_BODY()
 	
 public:
+	/** Where the playable character enters the generated home system. */
+	UPROPERTY(EditAnywhere, Category = "Player Spawn")
+	ECharSpawnPlace CharacterSpawnPlace{ECharSpawnPlace::PlanetOrbit};
+
+	/** Shared orbital preset for the initial station/headquarters group. */
+	UPROPERTY(EditAnywhere, Category = "Player Spawn")
+	EOrbitHeight HomeStationOrbitHeight{EOrbitHeight::LowOrbit};
+
 	UPROPERTY(EditAnywhere, Category = "Player Spawn")
 	TSubclassOf<AControlledPawn> BP_CharacterClass;
 

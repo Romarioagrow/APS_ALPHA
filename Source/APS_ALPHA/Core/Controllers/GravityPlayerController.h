@@ -7,6 +7,9 @@
 #include "GameFramework/PlayerController.h"
 #include "GravityPlayerController.generated.h"
 
+class SAPSStrategicMapPanel;
+class SWidget;
+
 /**
  * 
  */
@@ -17,6 +20,7 @@ class APS_ALPHA_API AGravityPlayerController : public APlayerController
 
 protected:
 	virtual void SetupInputComponent() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	
 	FString GetCurrentSaveSlotName() const;
 
@@ -38,4 +42,14 @@ public:
 	void SetLoadingModeFalse();
 
 	static FName GenerateUniqueName(const FString& ObjectType);
+
+	UFUNCTION(BlueprintCallable, Category = "Strategic Map")
+	void ToggleStrategicMap();
+
+private:
+	void CloseStrategicMap(bool bRestoreView);
+
+	TSharedPtr<SAPSStrategicMapPanel> StrategicMapWidget;
+	TSharedPtr<SWidget> StrategicMapContainer;
+	TWeakObjectPtr<AActor> StrategicMapPreviousViewTarget;
 };
