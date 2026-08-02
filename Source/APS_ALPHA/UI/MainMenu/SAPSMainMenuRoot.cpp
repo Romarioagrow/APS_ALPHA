@@ -14,7 +14,9 @@
 #include "APS_ALPHA/Actors/Tech/SpaceShipyard.h"
 #include "APS_ALPHA/Actors/Tech/SpaceStation.h"
 #include "APS_ALPHA/UI/MainMenu/SWorldGenerationPanel.h"
-#include "APS_ALPHA/UI/MainMenu/SpawnClassPicker.h"
+#include "AssetRegistry/AssetRegistryModule.h"
+#include "Blueprint/BlueprintSupport.h"
+#include "Engine/Blueprint.h"
 #include "Engine/Texture2D.h"
 #include "Engine/Font.h"
 #include "Engine/AssetManager.h"
@@ -24,6 +26,7 @@
 #include "Kismet/KismetSystemLibrary.h"
 #include "Misc/ConfigCacheIni.h"
 #include "Misc/Paths.h"
+#include "Modules/ModuleManager.h"
 #include "Styling/AppStyle.h"
 #include "Styling/SlateBrush.h"
 #include "Widgets/Images/SImage.h"
@@ -55,6 +58,8 @@ namespace APSMenu
 	TWeakObjectPtr<UFont> BodyFont;
 	const FSlateRoundedBoxBrush PanelBrush(Panel, 10.0f, CyanDim, 1.0f);
 	const FSlateRoundedBoxBrush PanelSoftBrush(PanelSoft, 9.0f, CyanDim, 1.0f);
+	const FSlateRoundedBoxBrush InsetBrush(FLinearColor(0.001f, 0.012f, 0.022f, 0.96f), 6.0f, FLinearColor(0.04f, 0.22f, 0.31f, 1.0f), 1.0f);
+	const FSlateRoundedBoxBrush CyanBadgeBrush(FLinearColor(0.01f, 0.07f, 0.10f, 0.98f), 18.0f, Cyan, 1.25f);
 	const FSlateRoundedBoxBrush AmberPanelBrush(FLinearColor(0.11f, 0.045f, 0.002f, 0.96f), 9.0f, Amber, 1.4f);
 
 	FSlateFontInfo Font(const FName Typeface, int32 Size)
@@ -64,6 +69,35 @@ namespace APSMenu
 			return FSlateFontInfo(FontObject, Size, Typeface);
 		}
 		return FCoreStyle::GetDefaultFontStyle(Typeface, Size);
+	}
+
+	TSharedRef<SWidget> Badge(const FText& Glyph, const FLinearColor& Accent, float Size = 34.0f)
+	{
+		return SNew(SBox).WidthOverride(Size).HeightOverride(Size)
+		[
+			SNew(SBorder).BorderImage(&CyanBadgeBrush).BorderBackgroundColor(Accent).Padding(1.0f)
+			[
+				SNew(SBorder).BorderImage(&InsetBrush).Padding(0.0f)
+				[
+					SNew(STextBlock).Text(Glyph).Justification(ETextJustify::Center)
+					.Font(Font("Bold", FMath::RoundToInt(Size * 0.34f))).ColorAndOpacity(Accent)
+				]
+			]
+		];
+	}
+
+	TSharedRef<SWidget> SectionHeading(const FText& Glyph, const FText& Title)
+	{
+		return SNew(SVerticalBox)
+		+ SVerticalBox::Slot().AutoHeight()
+		[
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)[Badge(Glyph, Cyan, 30.0f)]
+			+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center).Padding(10.0f, 0.0f)
+			[SNew(STextBlock).Text(Title).Font(Font("Bold", 13)).ColorAndOpacity(Cyan)]
+		]
+		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 8.0f, 0.0f, 0.0f)
+		[SNew(SBox).HeightOverride(1.0f)[SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(CyanDim)]];
 	}
 
 	FText SaveSizeText(int64 Bytes)
@@ -250,15 +284,15 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildHeader(const FText& SectionTitle, boo
 	return SNew(SHorizontalBox)
 		+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
 		[
-			SNew(SBox).WidthOverride(180.0f).HeightOverride(54.0f)
+			SNew(SBox).WidthOverride(190.0f).HeightOverride(58.0f)
 			[
 				SNew(SButton)
 				.Visibility(bShowBack ? EVisibility::Visible : EVisibility::Collapsed)
 				.ButtonStyle(&SecondaryButtonStyle)
 				.OnClicked(this, &SAPSMainMenuRoot::Back)
-				.ContentPadding(FMargin(22.0f, 12.0f))
+				.ContentPadding(FMargin(22.0f, 13.0f))
 				[
-					SNew(STextBlock).Text(LOCTEXT("Back", "<  BACK")).Font(APSMenu::Font("Bold", 15)).ColorAndOpacity(APSMenu::White)
+					SNew(STextBlock).Text(LOCTEXT("Back", "<   BACK")).Font(APSMenu::Font("Bold", 15)).ColorAndOpacity(APSMenu::White)
 				]
 			]
 		]
@@ -267,11 +301,11 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildHeader(const FText& SectionTitle, boo
 			SNew(SVerticalBox)
 			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center)
 			[
-				SNew(STextBlock).Text(LOCTEXT("Brand", "A P O S F E R A")).Font(APSMenu::Font("Bold", 54)).ColorAndOpacity(APSMenu::White)
+				SNew(STextBlock).Text(LOCTEXT("Brand", "A P O S F E R A")).Font(APSMenu::Font("Bold", 58)).ColorAndOpacity(APSMenu::White)
 			]
 			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0.0f, 2.0f)
 			[
-				SNew(STextBlock).Text(LOCTEXT("SubBrand", "S P A C E T R I P S   G E N E R A T I O N")).Font(APSMenu::Font("Regular", 14)).ColorAndOpacity(APSMenu::White)
+				SNew(STextBlock).Text(LOCTEXT("SubBrand", "S P A C E T R I P S   G E N E R A T I O N")).Font(APSMenu::Font("Regular", 15)).ColorAndOpacity(APSMenu::White)
 			]
 			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0.0f, 8.0f, 0.0f, 0.0f)
 			[
@@ -279,20 +313,26 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildHeader(const FText& SectionTitle, boo
 				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
 				[SNew(SBox).WidthOverride(92.0f).HeightOverride(1.0f)[SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(APSMenu::Cyan)]]
 				+ SHorizontalBox::Slot().AutoWidth().Padding(18.0f, 0.0f)
-				[SNew(STextBlock).Text(SectionTitle).Font(APSMenu::Font("Bold", 17)).ColorAndOpacity(APSMenu::Cyan)]
+				[SNew(STextBlock).Text(SectionTitle).Font(APSMenu::Font("Bold", 18)).ColorAndOpacity(APSMenu::Cyan)]
 				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
 				[SNew(SBox).WidthOverride(92.0f).HeightOverride(1.0f)[SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(APSMenu::Cyan)]]
 			]
 		]
 		+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
 		[
-			SNew(SBox).WidthOverride(180.0f)
+			SNew(SBox).WidthOverride(190.0f)
 			[
 				SNew(SHorizontalBox)
-				+ SHorizontalBox::Slot().FillWidth(1.0f).Padding(4.0f)
-				[SNew(SButton).ButtonStyle(&SecondaryButtonStyle)[SNew(STextBlock).Text(LOCTEXT("Profile", "PROFILE")).Justification(ETextJustify::Center).Font(APSMenu::Font("Bold", 9)).ColorAndOpacity(APSMenu::White)]]
-				+ SHorizontalBox::Slot().FillWidth(1.0f).Padding(4.0f)
-				[SNew(SButton).ButtonStyle(&SecondaryButtonStyle)[SNew(STextBlock).Text(LOCTEXT("SettingsShort", "SETTINGS")).Justification(ETextJustify::Center).Font(APSMenu::Font("Bold", 9)).ColorAndOpacity(APSMenu::White)]]
+				+ SHorizontalBox::Slot().AutoWidth().Padding(5.0f)
+				[
+					SNew(SButton).ButtonStyle(&SecondaryButtonStyle).ContentPadding(4.0f).ToolTipText(LOCTEXT("ProfileTip", "PLAYER PROFILE"))
+					[APSMenu::Badge(LOCTEXT("ProfileGlyph", "ID"), APSMenu::Cyan, 38.0f)]
+				]
+				+ SHorizontalBox::Slot().AutoWidth().Padding(5.0f)
+				[
+					SNew(SButton).ButtonStyle(&SecondaryButtonStyle).ContentPadding(4.0f).ToolTipText(LOCTEXT("SettingsTip", "SETTINGS"))
+					[APSMenu::Badge(LOCTEXT("SettingsGlyph", "CFG"), APSMenu::Cyan, 38.0f)]
+				]
 			]
 		];
 }
@@ -331,6 +371,13 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildLandingPage()
 TSharedRef<SWidget> SAPSMainMenuRoot::BuildPathCard(const FText& Title, const FText& Description,
 	const FSlateBrush* Image, const FLinearColor& Accent, FSimpleDelegate Action, bool bLarge, bool bEnabled)
 {
+	const FString UpperTitle = Title.ToString().ToUpper();
+	const FText Glyph = FText::FromString(
+		UpperTitle.Contains(TEXT("START")) ? TEXT("*") :
+		UpperTitle.Contains(TEXT("VISIT")) ? TEXT("W") :
+		UpperTitle.Contains(TEXT("CIVILIZATION")) ? TEXT("C") :
+		UpperTitle.Contains(TEXT("SPACE")) ? TEXT("S") :
+		UpperTitle.Contains(TEXT("PLANET")) ? TEXT("P") : TEXT("X"));
 	return SNew(SButton)
 		.IsEnabled(bEnabled)
 		.ButtonStyle(!bEnabled ? &DisabledCardButtonStyle : (bLarge ? &PrimaryButtonStyle : &CardButtonStyle))
@@ -356,7 +403,15 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildPathCard(const FText& Title, const FT
 				[
 					SNew(SVerticalBox)
 					+ SVerticalBox::Slot().AutoHeight()
-					[SNew(STextBlock).Text(Title).Font(APSMenu::Font("Bold", bLarge ? 28 : 17)).ColorAndOpacity(bEnabled ? APSMenu::White : APSMenu::Muted)]
+					[
+						SNew(SHorizontalBox)
+						+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+						[APSMenu::Badge(Glyph, bEnabled ? Accent : APSMenu::Muted, bLarge ? 44.0f : 34.0f)]
+						+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center).Padding(12.0f, 0.0f)
+						[SNew(STextBlock).Text(Title).Font(APSMenu::Font("Bold", bLarge ? 28 : 17)).ColorAndOpacity(bEnabled ? APSMenu::White : APSMenu::Muted)]
+						+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+						[SNew(STextBlock).Text(FText::FromString(bEnabled ? TEXT(">") : TEXT("LOCK"))).Font(APSMenu::Font("Bold", bEnabled ? 22 : 9)).ColorAndOpacity(bEnabled ? Accent : APSMenu::Muted)]
+					]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 7.0f, 0.0f, 0.0f)
 					[SNew(STextBlock).Text(Description).AutoWrapText(true).Font(APSMenu::Font("Regular", bLarge ? 15 : 12)).ColorAndOpacity(bEnabled ? Accent : APSMenu::Muted)]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, bLarge ? 18.0f : 0.0f, 0.0f, 0.0f)
@@ -428,6 +483,7 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildExistingWorldsPage()
 
 	const auto NavRow = [this](const FText& Label, EAPSWorldCollection Collection, TFunction<int32()> CountGetter)
 	{
+		const FText Glyph = FText::FromString(Label.ToString().Left(1));
 		return SNew(SButton)
 			.ButtonStyle(&SecondaryButtonStyle)
 			.ButtonColorAndOpacity_Lambda([this, Collection]()
@@ -439,9 +495,11 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildExistingWorldsPage()
 			.OnClicked(this, &SAPSMainMenuRoot::SetWorldCollection, Collection)
 			[
 				SNew(SHorizontalBox)
-				+ SHorizontalBox::Slot().FillWidth(1.0f)
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.0f, 0.0f, 10.0f, 0.0f)
+				[APSMenu::Badge(Glyph, WorldCollection == Collection ? APSMenu::Amber : APSMenu::Cyan, 26.0f)]
+				+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
 				[SNew(STextBlock).Text(Label).Font(APSMenu::Font("Bold", 13)).ColorAndOpacity_Lambda([this, Collection](){ return WorldCollection == Collection ? APSMenu::Amber : APSMenu::White; })]
-				+ SHorizontalBox::Slot().AutoWidth()
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
 				[SNew(STextBlock).Text_Lambda([CountGetter](){ return FText::AsNumber(CountGetter()); }).Font(APSMenu::Font("Bold", 12)).ColorAndOpacity(APSMenu::Muted)]
 			];
 	};
@@ -945,79 +1003,106 @@ FReply SAPSMainMenuRoot::ToggleWorldDetails()
 	return FReply::Handled();
 }
 
-void SAPSMainMenuRoot::LoadSpawnClassOptions()
+void SAPSMainMenuRoot::DiscoverSpawnClassOptions()
 {
-	if (SpawnClassOptions.Num() == 0)
-	{
-		SpawnClassOptions.Add(EAPSStartAssetSlot::Character, TArray<TSubclassOf<AActor>>());
-		SpawnClassOptions.Add(EAPSStartAssetSlot::Spaceship, TArray<TSubclassOf<AActor>>());
-		SpawnClassOptions.Add(EAPSStartAssetSlot::SpaceStation, TArray<TSubclassOf<AActor>>());
-		SpawnClassOptions.Add(EAPSStartAssetSlot::Headquarters, TArray<TSubclassOf<AActor>>());
-		SpawnClassOptions.Add(EAPSStartAssetSlot::Shipyard, TArray<TSubclassOf<AActor>>());
-		// Generator defaults are already resident and make the page immediately
-		// usable while the legacy option catalogue is streamed in.
-		SynchronizeSpawnClassOptions();
-	}
-
-	if (bSpawnClassOptionsRequested)
+	if (bSpawnClassOptionsDiscovered)
 	{
 		return;
 	}
-	bSpawnClassOptionsRequested = true;
+	bSpawnClassOptionsDiscovered = true;
 
-	const FSoftObjectPath PickerPath(
-		TEXT("/Game/APS/APS_ALPHA/UI/GenerationMenu/WBP_CivilizationMenu_UI.WBP_CivilizationMenu_UI_C"));
-	SpawnPickerLoadHandle = UAssetManager::GetStreamableManager().RequestAsyncLoad(
-		PickerPath,
-		FStreamableDelegate::CreateSP(this, &SAPSMainMenuRoot::OnSpawnClassOptionsLoaded));
-	if (!SpawnPickerLoadHandle.IsValid())
-	{
-		UE_LOG(LogTemp, Warning, TEXT("[APS.Menu] Could not start async spawn catalogue load"));
-	}
-}
+	SpawnClassOptions.Add(EAPSStartAssetSlot::Character, TArray<TSoftClassPtr<AActor>>());
+	SpawnClassOptions.Add(EAPSStartAssetSlot::Spaceship, TArray<TSoftClassPtr<AActor>>());
+	SpawnClassOptions.Add(EAPSStartAssetSlot::SpaceStation, TArray<TSoftClassPtr<AActor>>());
+	SpawnClassOptions.Add(EAPSStartAssetSlot::Headquarters, TArray<TSoftClassPtr<AActor>>());
+	SpawnClassOptions.Add(EAPSStartAssetSlot::Shipyard, TArray<TSoftClassPtr<AActor>>());
 
-void SAPSMainMenuRoot::OnSpawnClassOptionsLoaded()
-{
-	const FSoftObjectPath PickerPath(
-		TEXT("/Game/APS/APS_ALPHA/UI/GenerationMenu/WBP_CivilizationMenu_UI.WBP_CivilizationMenu_UI_C"));
-	UClass* PickerClass = Cast<UClass>(PickerPath.ResolveObject());
-	if (AMainMenuController* PC = Controller.Get())
-	{
-		PC->HoldSlateResource(PickerClass);
-	}
-	const USpawnClassPicker* Picker = PickerClass
-		? PickerClass->GetDefaultObject<USpawnClassPicker>() : nullptr;
-	MergeSpawnClassOptions(Picker);
-	SynchronizeSpawnClassOptions();
-	Invalidate(EInvalidateWidgetReason::LayoutAndVolatility);
-	SpawnPickerLoadHandle.Reset();
-	UE_LOG(LogTemp, Log, TEXT("[APS.Menu] Spawn catalogue loaded asynchronously: %s"),
-		Picker ? TEXT("true") : TEXT("false"));
-}
+	FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry"));
+	IAssetRegistry& AssetRegistry = AssetRegistryModule.Get();
 
-void SAPSMainMenuRoot::MergeSpawnClassOptions(const USpawnClassPicker* Picker)
-{
-	if (!Picker)
+	const auto FindDerivedClasses = [&AssetRegistry](const UClass* BaseClass)
 	{
-		return;
-	}
-
-	auto Merge = [this](EAPSStartAssetSlot Slot, const TArray<TSubclassOf<AActor>>& Source)
-	{
-		TArray<TSubclassOf<AActor>>& Target = SpawnClassOptions.FindOrAdd(Slot);
-		for (const TSubclassOf<AActor>& Candidate : Source)
-		{
-			if (Candidate)
-			{
-				Target.AddUnique(Candidate);
-			}
-		}
+		TArray<FTopLevelAssetPath> BaseClassPaths;
+		BaseClassPaths.Add(BaseClass->GetClassPathName());
+		TSet<FTopLevelAssetPath> Result;
+		AssetRegistry.GetDerivedClassNames(BaseClassPaths, TSet<FTopLevelAssetPath>(), Result);
+		Result.Add(BaseClass->GetClassPathName());
+		return Result;
 	};
-	Merge(EAPSStartAssetSlot::Character, Picker->CharacterClasses);
-	Merge(EAPSStartAssetSlot::Spaceship, Picker->SpaceshipClasses);
-	Merge(EAPSStartAssetSlot::SpaceStation, Picker->SpaceStationClasses);
-	Merge(EAPSStartAssetSlot::Headquarters, Picker->SpaceHeadquartersClasses);
-	Merge(EAPSStartAssetSlot::Shipyard, Picker->ShipyardClasses);
+
+	const TSet<FTopLevelAssetPath> CharacterClassPaths = FindDerivedClasses(AControlledPawn::StaticClass());
+	const TSet<FTopLevelAssetPath> SpaceshipClassPaths = FindDerivedClasses(ASpaceship::StaticClass());
+	const TSet<FTopLevelAssetPath> StationClassPaths = FindDerivedClasses(ASpaceStation::StaticClass());
+	const TSet<FTopLevelAssetPath> HeadquartersClassPaths = FindDerivedClasses(ASpaceHeadquarters::StaticClass());
+	const TSet<FTopLevelAssetPath> ShipyardClassPaths = FindDerivedClasses(ASpaceShipyard::StaticClass());
+	TSet<FTopLevelAssetPath> DerivedClassPaths = CharacterClassPaths;
+	DerivedClassPaths.Append(SpaceshipClassPaths);
+	DerivedClassPaths.Append(StationClassPaths);
+	DerivedClassPaths.Append(HeadquartersClassPaths);
+	DerivedClassPaths.Append(ShipyardClassPaths);
+
+	FARFilter Filter;
+	Filter.PackagePaths.Add(FName(TEXT("/Game/APS")));
+	Filter.PackagePaths.Add(FName(TEXT("/Game/APS_PREA")));
+	Filter.ClassPaths.Add(UBlueprint::StaticClass()->GetClassPathName());
+	Filter.bRecursivePaths = true;
+	Filter.bRecursiveClasses = true;
+
+	TArray<FAssetData> BlueprintAssets;
+	AssetRegistry.GetAssets(Filter, BlueprintAssets);
+	for (const FAssetData& Asset : BlueprintAssets)
+	{
+		FString GeneratedClassExportPath;
+		if (!Asset.GetTagValue(FBlueprintTags::GeneratedClassPath, GeneratedClassExportPath))
+		{
+			continue;
+		}
+		const FString GeneratedClassObjectPath = FPackageName::ExportTextPathToObjectPath(GeneratedClassExportPath);
+		const FTopLevelAssetPath GeneratedClassPath(GeneratedClassObjectPath);
+		if (!DerivedClassPaths.Contains(GeneratedClassPath))
+		{
+			continue;
+		}
+
+		EAPSStartAssetSlot Slot;
+		if (HeadquartersClassPaths.Contains(GeneratedClassPath))
+		{
+			Slot = EAPSStartAssetSlot::Headquarters;
+		}
+		else if (ShipyardClassPaths.Contains(GeneratedClassPath))
+		{
+			Slot = EAPSStartAssetSlot::Shipyard;
+		}
+		else if (SpaceshipClassPaths.Contains(GeneratedClassPath))
+		{
+			Slot = EAPSStartAssetSlot::Spaceship;
+		}
+		else if (StationClassPaths.Contains(GeneratedClassPath))
+		{
+			Slot = EAPSStartAssetSlot::SpaceStation;
+		}
+		else
+		{
+			Slot = EAPSStartAssetSlot::Character;
+		}
+		SpawnClassOptions.FindOrAdd(Slot).AddUnique(TSoftClassPtr<AActor>(FSoftObjectPath(GeneratedClassObjectPath)));
+	}
+
+	for (auto& Pair : SpawnClassOptions)
+	{
+		Pair.Value.Sort([](const TSoftClassPtr<AActor>& A, const TSoftClassPtr<AActor>& B)
+		{
+			return A.ToSoftObjectPath().GetAssetName() < B.ToSoftObjectPath().GetAssetName();
+		});
+	}
+	SynchronizeSpawnClassOptions();
+	UE_LOG(LogTemp, Log,
+		TEXT("[APS.Menu] Blueprint spawn catalogue indexed without loading assets: characters=%d ships=%d stations=%d headquarters=%d shipyards=%d"),
+		SpawnClassOptions.FindRef(EAPSStartAssetSlot::Character).Num(),
+		SpawnClassOptions.FindRef(EAPSStartAssetSlot::Spaceship).Num(),
+		SpawnClassOptions.FindRef(EAPSStartAssetSlot::SpaceStation).Num(),
+		SpawnClassOptions.FindRef(EAPSStartAssetSlot::Headquarters).Num(),
+		SpawnClassOptions.FindRef(EAPSStartAssetSlot::Shipyard).Num());
 }
 
 void SAPSMainMenuRoot::SynchronizeSpawnClassOptions()
@@ -1041,20 +1126,62 @@ void SAPSMainMenuRoot::SynchronizeSpawnClassOptions()
 		// not require the user to reconnect anything in UMG.
 		if (CurrentClass && CurrentClass->IsChildOf(AActor::StaticClass()))
 		{
-			Pair.Value.AddUnique(CurrentClass);
+			Pair.Value.AddUnique(TSoftClassPtr<AActor>(CurrentClass));
 		}
-		int32 InitialIndex = Pair.Value.IndexOfByPredicate([CurrentClass](const TSubclassOf<AActor>& Candidate)
+		int32 InitialIndex = Pair.Value.IndexOfByPredicate([CurrentClass](const TSoftClassPtr<AActor>& Candidate)
 		{
-			return Candidate.Get() == CurrentClass;
+			return Candidate.Get() == CurrentClass
+				|| (CurrentClass && Candidate.ToSoftObjectPath() == FSoftObjectPath(CurrentClass));
 		});
 		if (InitialIndex == INDEX_NONE) InitialIndex = 0;
 		SpawnClassIndices.Add(Pair.Key, InitialIndex);
-		if (Pair.Value.IsValidIndex(InitialIndex) && ViewModel.IsValid())
-		{
-			ViewModel->SetSpawnClass(Pair.Key, Pair.Value[InitialIndex]);
-		}
+		ApplySpawnClassSelection(Pair.Key);
 		RefreshSpawnClassBrush(Pair.Key);
 	}
+}
+
+void SAPSMainMenuRoot::ApplySpawnClassSelection(EAPSStartAssetSlot Slot)
+{
+	const TArray<TSoftClassPtr<AActor>>* Options = SpawnClassOptions.Find(Slot);
+	const int32 Index = SpawnClassIndices.FindRef(Slot);
+	if (!Options || !Options->IsValidIndex(Index))
+	{
+		return;
+	}
+
+	const TSoftClassPtr<AActor> SelectedClass = (*Options)[Index];
+	if (UClass* LoadedClass = SelectedClass.Get())
+	{
+		if (ViewModel.IsValid())
+		{
+			ViewModel->SetSpawnClass(Slot, LoadedClass);
+		}
+		RefreshSpawnClassBrush(Slot);
+		Invalidate(EInvalidateWidgetReason::Paint);
+		return;
+	}
+
+	const FSoftObjectPath RequestedPath = SelectedClass.ToSoftObjectPath();
+	if (!RequestedPath.IsValid())
+	{
+		return;
+	}
+	SpawnSelectionLoadHandles.Add(Slot, UAssetManager::GetStreamableManager().RequestAsyncLoad(
+		RequestedPath,
+		FStreamableDelegate::CreateSP(this, &SAPSMainMenuRoot::OnSpawnClassSelectionLoaded, Slot, RequestedPath)));
+}
+
+void SAPSMainMenuRoot::OnSpawnClassSelectionLoaded(EAPSStartAssetSlot Slot, FSoftObjectPath RequestedPath)
+{
+	SpawnSelectionLoadHandles.Remove(Slot);
+	const TArray<TSoftClassPtr<AActor>>* Options = SpawnClassOptions.Find(Slot);
+	const int32 Index = SpawnClassIndices.FindRef(Slot);
+	if (!Options || !Options->IsValidIndex(Index)
+		|| (*Options)[Index].ToSoftObjectPath() != RequestedPath)
+	{
+		return;
+	}
+	ApplySpawnClassSelection(Slot);
 }
 
 void SAPSMainMenuRoot::RefreshSpawnClassBrush(EAPSStartAssetSlot Slot)
@@ -1062,10 +1189,12 @@ void SAPSMainMenuRoot::RefreshSpawnClassBrush(EAPSStartAssetSlot Slot)
 	FSlateBrush& Brush = SpawnClassBrushes.FindOrAdd(Slot);
 	Brush.SetResourceObject(nullptr);
 	Brush.DrawAs = ESlateBrushDrawType::NoDrawType;
-	const TArray<TSubclassOf<AActor>>* Options = SpawnClassOptions.Find(Slot);
+	const TArray<TSoftClassPtr<AActor>>* Options = SpawnClassOptions.Find(Slot);
 	const int32 Index = SpawnClassIndices.FindRef(Slot);
-	if (!Options || !Options->IsValidIndex(Index) || !(*Options)[Index]) return;
-	const AActor* DefaultActor = (*Options)[Index]->GetDefaultObject<AActor>();
+	if (!Options || !Options->IsValidIndex(Index)) return;
+	UClass* LoadedClass = (*Options)[Index].Get();
+	if (!LoadedClass) return;
+	const AActor* DefaultActor = LoadedClass->GetDefaultObject<AActor>();
 	if (!DefaultActor || !DefaultActor->Implements<UItemInfoInterface>()) return;
 	if (UTexture2D* Texture = IItemInfoInterface::Execute_GetAvatarPicture(DefaultActor))
 	{
@@ -1083,41 +1212,79 @@ const FSlateBrush* SAPSMainMenuRoot::GetSpawnClassBrush(EAPSStartAssetSlot Slot)
 
 FText SAPSMainMenuRoot::GetSpawnClassName(EAPSStartAssetSlot Slot) const
 {
-	const TArray<TSubclassOf<AActor>>* Options = SpawnClassOptions.Find(Slot);
+	const TArray<TSoftClassPtr<AActor>>* Options = SpawnClassOptions.Find(Slot);
 	const int32 Index = SpawnClassIndices.FindRef(Slot);
-	if (!Options || !Options->IsValidIndex(Index) || !(*Options)[Index]) return LOCTEXT("Unavailable", "NOT CONFIGURED");
-	const AActor* DefaultActor = (*Options)[Index]->GetDefaultObject<AActor>();
+	if (!Options || !Options->IsValidIndex(Index)) return LOCTEXT("Unavailable", "NOT CONFIGURED");
+	UClass* LoadedClass = (*Options)[Index].Get();
+	if (!LoadedClass)
+	{
+		FString AssetName = (*Options)[Index].ToSoftObjectPath().GetAssetName();
+		AssetName.RemoveFromEnd(TEXT("_C"));
+		return FText::FromString(AssetName.Replace(TEXT("BP_"), TEXT("")));
+	}
+	const AActor* DefaultActor = LoadedClass->GetDefaultObject<AActor>();
 	if (DefaultActor && DefaultActor->Implements<UItemInfoInterface>())
 	{
 		return IItemInfoInterface::Execute_GetInGameName(DefaultActor);
 	}
-	return FText::FromString((*Options)[Index]->GetName().Replace(TEXT("BP_"), TEXT("")));
+	return FText::FromString(LoadedClass->GetName().Replace(TEXT("BP_"), TEXT("")));
 }
 
 TSharedRef<SWidget> SAPSMainMenuRoot::BuildSpawnCard(EAPSStartAssetSlot Slot, const FText& Label)
 {
-	return SNew(SBorder).BorderImage(&APSMenu::PanelBrush).Padding(14.0f)
+	const FText SlotGlyph = FText::FromString(
+		Slot == EAPSStartAssetSlot::Character ? TEXT("PILOT") :
+		Slot == EAPSStartAssetSlot::Spaceship ? TEXT("SHIP") :
+		Slot == EAPSStartAssetSlot::SpaceStation ? TEXT("STATION") :
+		Slot == EAPSStartAssetSlot::Headquarters ? TEXT("HQ") : TEXT("YARD"));
+	return SNew(SBorder).BorderImage(&APSMenu::PanelBrush).Padding(12.0f)
 		[
 			SNew(SVerticalBox)
-			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center)[SNew(STextBlock).Text(Label).Font(APSMenu::Font("Bold", 15)).ColorAndOpacity(APSMenu::Cyan)]
-			+ SVerticalBox::Slot().FillHeight(1.0f).Padding(4.0f, 10.0f)
+			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0.0f, 2.0f, 0.0f, 8.0f)
+			[SNew(STextBlock).Text(Label).Font(APSMenu::Font("Bold", 15)).ColorAndOpacity(APSMenu::Cyan)]
+			+ SVerticalBox::Slot().FillHeight(1.0f).Padding(2.0f, 4.0f)
 			[
-				SNew(SBox).Clipping(EWidgetClipping::ClipToBounds)
-				[SNew(SScaleBox).Stretch(EStretch::ScaleToFit)[SNew(SImage).Image_Lambda([this, Slot]() { return GetSpawnClassBrush(Slot); })]]
+				SNew(SBorder).BorderImage(&APSMenu::InsetBrush).Padding(2.0f)
+				[
+					SNew(SOverlay)
+					+ SOverlay::Slot()
+					[
+						SNew(SBox).Clipping(EWidgetClipping::ClipToBounds)
+						[SNew(SScaleBox).Stretch(EStretch::ScaleToFit)[SNew(SImage).Image_Lambda([this, Slot]() { return GetSpawnClassBrush(Slot); })]]
+					]
+					+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Center)
+					[
+						SNew(STextBlock).Text(SlotGlyph).Font(APSMenu::Font("Bold", 22)).ColorAndOpacity(FLinearColor(0.20f, 0.62f, 0.78f, 0.42f))
+						.Visibility_Lambda([this, Slot]()
+						{
+							const FSlateBrush* Brush = GetSpawnClassBrush(Slot);
+							return Brush && Brush->GetResourceObject() ? EVisibility::Collapsed : EVisibility::Visible;
+						})
+					]
+				]
 			]
-			+ SVerticalBox::Slot().FillHeight(1.0f).HAlign(HAlign_Center).VAlign(VAlign_Center)[SNew(STextBlock).Text_Lambda([this, Slot]() { return GetSpawnClassName(Slot); }).Font(APSMenu::Font("Bold", 16)).ColorAndOpacity(APSMenu::White).Justification(ETextJustify::Center)]
-			+ SVerticalBox::Slot().AutoHeight()
+			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0.0f, 9.0f)
+			[SNew(STextBlock).Text_Lambda([this, Slot]() { return GetSpawnClassName(Slot); }).Font(APSMenu::Font("Bold", 14)).ColorAndOpacity(APSMenu::White).Justification(ETextJustify::Center)]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 3.0f)
 			[
 				SNew(SHorizontalBox)
-				+ SHorizontalBox::Slot().FillWidth(1.0f)[SNew(SButton).ButtonStyle(&SecondaryButtonStyle).OnClicked(this, &SAPSMainMenuRoot::CycleSpawnClass, Slot, -1)[SNew(STextBlock).Text(FText::FromString(TEXT("<"))).Justification(ETextJustify::Center)]]
-				+ SHorizontalBox::Slot().FillWidth(1.0f)[SNew(SButton).ButtonStyle(&SecondaryButtonStyle).OnClicked(this, &SAPSMainMenuRoot::CycleSpawnClass, Slot, 1)[SNew(STextBlock).Text(FText::FromString(TEXT(">"))).Justification(ETextJustify::Center)]]
+				+ SHorizontalBox::Slot().FillWidth(0.32f)[SNew(SButton).ButtonStyle(&SecondaryButtonStyle).OnClicked(this, &SAPSMainMenuRoot::CycleSpawnClass, Slot, -1)[SNew(STextBlock).Text(FText::FromString(TEXT("<"))).Justification(ETextJustify::Center).ColorAndOpacity(APSMenu::Cyan)]]
+				+ SHorizontalBox::Slot().FillWidth(0.36f).HAlign(HAlign_Center).VAlign(VAlign_Center)
+				[
+					SNew(STextBlock).Text_Lambda([this, Slot]()
+					{
+						const int32 Count = SpawnClassOptions.FindRef(Slot).Num();
+						return FText::FromString(FString::Printf(TEXT("%02d / %02d"), Count > 0 ? SpawnClassIndices.FindRef(Slot) + 1 : 0, Count));
+					}).Font(APSMenu::Font("Regular", 8)).ColorAndOpacity(APSMenu::Muted)
+				]
+				+ SHorizontalBox::Slot().FillWidth(0.32f)[SNew(SButton).ButtonStyle(&SecondaryButtonStyle).OnClicked(this, &SAPSMainMenuRoot::CycleSpawnClass, Slot, 1)[SNew(STextBlock).Text(FText::FromString(TEXT(">"))).Justification(ETextJustify::Center).ColorAndOpacity(APSMenu::Cyan)]]
 			]
 		];
 }
 
 TSharedRef<SWidget> SAPSMainMenuRoot::BuildCivilizationPage()
 {
-	LoadSpawnClassOptions();
+	DiscoverSpawnClassOptions();
 	const TWeakObjectPtr<UWorldGenerationViewModel> VM = ViewModel;
 
 	const auto EnumControl = [this](const FText& Label, const UEnum* Enum,
@@ -1134,11 +1301,14 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildCivilizationPage()
 			+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Text(Label).Font(APSMenu::Font("Regular", 10)).ColorAndOpacity(APSMenu::Muted)]
 			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 3.0f, 0.0f, 9.0f)
 			[
+				SNew(SBorder).BorderImage(&APSMenu::InsetBrush).Padding(FMargin(2.0f))
+				[
 				SNew(SHorizontalBox)
 				+ SHorizontalBox::Slot().AutoWidth()[SNew(SButton).ButtonStyle(&SecondaryButtonStyle).OnClicked_Lambda([Step](){ return Step(-1); })[SNew(STextBlock).Text(FText::FromString(TEXT("<"))).ColorAndOpacity(APSMenu::Cyan)]]
 				+ SHorizontalBox::Slot().FillWidth(1.0f).HAlign(HAlign_Center).VAlign(VAlign_Center)
 				[SNew(STextBlock).Text_Lambda([Enum, Getter](){ return Enum ? Enum->GetDisplayNameTextByValue(Getter()) : FText::FromString(TEXT("--")); }).Font(APSMenu::Font("Bold", 10)).ColorAndOpacity(APSMenu::White)]
 				+ SHorizontalBox::Slot().AutoWidth()[SNew(SButton).ButtonStyle(&SecondaryButtonStyle).OnClicked_Lambda([Step](){ return Step(1); })[SNew(STextBlock).Text(FText::FromString(TEXT(">"))).ColorAndOpacity(APSMenu::Cyan)]]
+				]
 			];
 	};
 
@@ -1149,23 +1319,26 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildCivilizationPage()
 			+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Text(Label).Font(APSMenu::Font("Regular", 10)).ColorAndOpacity(APSMenu::Muted)]
 			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 3.0f, 0.0f, 9.0f)
 			[
+				SNew(SBorder).BorderImage(&APSMenu::InsetBrush).Padding(2.0f)
+				[
 				SNew(SSpinBox<int32>).MinValue(MinValue).MaxValue(MaxValue).Delta(Delta)
 				.Value_Lambda([Getter](){ return Getter(); })
 				.OnValueChanged_Lambda([Setter](int32 Value){ Setter(Value); })
+				]
 			];
 	};
 
-	const auto InfoPanel = [](const FText& Title, TAttribute<FText> Body)
+	const auto InfoPanel = [](const FText& Glyph, const FText& Title, TAttribute<FText> Body)
 	{
 		return SNew(SBorder).BorderImage(&APSMenu::PanelBrush).Padding(16.0f)
 		[
 			SNew(SVerticalBox)
-			+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Text(Title).Font(APSMenu::Font("Bold", 13)).ColorAndOpacity(APSMenu::Cyan)]
+			+ SVerticalBox::Slot().AutoHeight()[APSMenu::SectionHeading(Glyph, Title)]
 			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 10.0f, 0.0f, 0.0f)[SNew(STextBlock).Text(Body).AutoWrapText(true).Font(APSMenu::Font("Regular", 10)).ColorAndOpacity(APSMenu::White)]
 		];
 	};
 
-	return SNew(SVerticalBox)
+	TSharedRef<SWidget> Page = SNew(SVerticalBox)
 		+ SVerticalBox::Slot().AutoHeight().Padding(28.0f, 18.0f, 28.0f, 6.0f)[BuildHeader(LOCTEXT("CivParameters", "CIVILIZATION PARAMETERS"))]
 		+ SVerticalBox::Slot().FillHeight(1.0f).Padding(34.0f, 10.0f, 34.0f, 8.0f)
 		[
@@ -1186,13 +1359,13 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildCivilizationPage()
 				[
 					SNew(SHorizontalBox)
 					+ SHorizontalBox::Slot().FillWidth(1.0f).Padding(4.0f)
-					[InfoPanel(LOCTEXT("CivilizationStatus", "CIVILIZATION STATUS"), TAttribute<FText>::CreateLambda([VM](){ const USpawnParameters* P=VM.IsValid()?VM->SpawnParameters.Get():nullptr; return P ? FText::FromString(FString::Printf(TEXT("Government: %s\nEconomy: %s\nSociety: %s\nPopulation: %s"), *APSMenu::EnumLabel(P->GovernmentType), *APSMenu::EnumLabel(P->EconomicSystem), *APSMenu::EnumLabel(P->SocietyType), *FText::AsNumber(P->FoundingPopulation).ToString())) : FText::GetEmpty(); }))]
+					[InfoPanel(LOCTEXT("CivGlyph", "CIV"), LOCTEXT("CivilizationStatus", "CIVILIZATION STATUS"), TAttribute<FText>::CreateLambda([VM](){ const USpawnParameters* P=VM.IsValid()?VM->SpawnParameters.Get():nullptr; return P ? FText::FromString(FString::Printf(TEXT("Government: %s\nEconomy: %s\nSociety: %s\nPopulation: %s"), *APSMenu::EnumLabel(P->GovernmentType), *APSMenu::EnumLabel(P->EconomicSystem), *APSMenu::EnumLabel(P->SocietyType), *FText::AsNumber(P->FoundingPopulation).ToString())) : FText::GetEmpty(); }))]
 					+ SHorizontalBox::Slot().FillWidth(1.0f).Padding(4.0f)
-					[InfoPanel(LOCTEXT("StarSystemInfo", "STAR SYSTEM INFO"), TAttribute<FText>::CreateLambda([VM](){ const UGeneratedWorld* W=VM.IsValid()?VM->GeneratedWorld.Get():nullptr; return W ? FText::FromString(FString::Printf(TEXT("System: %s\nStar: %s / %s\nPlanets: %d\nHome planet: %s / %.0f KM"), *APSMenu::EnumLabel(W->PlanetarySystemType), *APSMenu::EnumLabel(W->StellarType), *APSMenu::EnumLabel(W->SpectralClass), W->PlanetsAmount, *APSMenu::EnumLabel(W->PlanetType), W->PlanetRadius)) : FText::GetEmpty(); }))]
+					[InfoPanel(LOCTEXT("SystemGlyph", "SYS"), LOCTEXT("StarSystemInfo", "STAR SYSTEM INFO"), TAttribute<FText>::CreateLambda([VM](){ const UGeneratedWorld* W=VM.IsValid()?VM->GeneratedWorld.Get():nullptr; return W ? FText::FromString(FString::Printf(TEXT("System: %s\nStar: %s / %s\nPlanets: %d\nHome planet: %s / %.0f KM"), *APSMenu::EnumLabel(W->PlanetarySystemType), *APSMenu::EnumLabel(W->StellarType), *APSMenu::EnumLabel(W->SpectralClass), W->PlanetsAmount, *APSMenu::EnumLabel(W->PlanetType), W->PlanetRadius)) : FText::GetEmpty(); }))]
 					+ SHorizontalBox::Slot().FillWidth(1.0f).Padding(4.0f)
-					[InfoPanel(LOCTEXT("Infrastructure", "INFRASTRUCTURE"), TAttribute<FText>::CreateLambda([VM](){ const USpawnParameters* P=VM.IsValid()?VM->SpawnParameters.Get():nullptr; return P ? FText::FromString(FString::Printf(TEXT("Star outposts: %d\nPlanet outposts: %d\nOrbital stations: %d\nGround settlements: %d\nStarting fleet: %d"), P->StarOutposts, P->PlanetOutposts, P->OrbitalOutposts, P->GroundOutposts, P->StartingFleetSize)) : FText::GetEmpty(); }))]
+					[InfoPanel(LOCTEXT("InfraGlyph", "INF"), LOCTEXT("Infrastructure", "INFRASTRUCTURE"), TAttribute<FText>::CreateLambda([VM](){ const USpawnParameters* P=VM.IsValid()?VM->SpawnParameters.Get():nullptr; return P ? FText::FromString(FString::Printf(TEXT("Star outposts: %d\nPlanet outposts: %d\nOrbital stations: %d\nGround settlements: %d\nStarting fleet: %d"), P->StarOutposts, P->PlanetOutposts, P->OrbitalOutposts, P->GroundOutposts, P->StartingFleetSize)) : FText::GetEmpty(); }))]
 					+ SHorizontalBox::Slot().FillWidth(1.0f).Padding(4.0f)
-					[InfoPanel(LOCTEXT("Divisions", "DIVISIONS"), TAttribute<FText>::CreateLambda([VM](){ const USpawnParameters* P=VM.IsValid()?VM->SpawnParameters.Get():nullptr; return P ? FText::FromString(FString::Printf(TEXT("Exploration     Lv.%d\nIndustry          Lv.%d\nScience           Lv.%d\nCivil Affairs    Lv.%d\nMilitary           Lv.%d\nFleet                Lv.%d"), P->ExplorationDivisionLevel, P->IndustryDivisionLevel, P->ScienceDivisionLevel, P->CivilAffairsDivisionLevel, P->MilitaryDivisionLevel, P->FleetDivisionLevel)) : FText::GetEmpty(); }))]
+					[InfoPanel(LOCTEXT("DivisionGlyph", "DIV"), LOCTEXT("Divisions", "DIVISIONS"), TAttribute<FText>::CreateLambda([VM](){ const USpawnParameters* P=VM.IsValid()?VM->SpawnParameters.Get():nullptr; return P ? FText::FromString(FString::Printf(TEXT("Exploration     Lv.%d\nIndustry          Lv.%d\nScience           Lv.%d\nCivil Affairs    Lv.%d\nMilitary           Lv.%d\nFleet                Lv.%d"), P->ExplorationDivisionLevel, P->IndustryDivisionLevel, P->ScienceDivisionLevel, P->CivilAffairsDivisionLevel, P->MilitaryDivisionLevel, P->FleetDivisionLevel)) : FText::GetEmpty(); }))]
 				]
 			]
 			+ SHorizontalBox::Slot().FillWidth(0.26f).Padding(5.0f)
@@ -1203,7 +1376,7 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildCivilizationPage()
 					+ SScrollBox::Slot()
 					[
 						SNew(SVerticalBox)
-						+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 12.0f)[SNew(STextBlock).Text(LOCTEXT("SpawnParameters", "CIVILIZATION & SPAWN")).Font(APSMenu::Font("Bold", 15)).ColorAndOpacity(APSMenu::Cyan)]
+						+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 12.0f)[APSMenu::SectionHeading(LOCTEXT("SpawnGlyph", "CIV"), LOCTEXT("SpawnParameters", "CIVILIZATION & SPAWN"))]
 						+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Text(LOCTEXT("CivilizationName", "CIVILIZATION NAME")).Font(APSMenu::Font("Regular", 10)).ColorAndOpacity(APSMenu::Muted)]
 						+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 4.0f, 0.0f, 10.0f)[SNew(SEditableTextBox).Text_Lambda([VM](){ const USpawnParameters* P=VM.IsValid()?VM->SpawnParameters.Get():nullptr; return P?FText::FromString(P->CivilizationName):FText::GetEmpty(); }).OnTextCommitted_Lambda([VM](const FText& T,ETextCommit::Type){ if(VM.IsValid()&&VM->SpawnParameters) VM->SpawnParameters->CivilizationName=T.ToString(); })]
 						+ SVerticalBox::Slot().AutoHeight()[EnumControl(LOCTEXT("Archetype", "ARCHETYPE"), StaticEnum<EAPSCivilizationArchetype>(), [VM](){return VM.IsValid()&&VM->SpawnParameters?static_cast<int32>(VM->SpawnParameters->CivilizationArchetype):0;}, [VM](int32 V){if(VM.IsValid()&&VM->SpawnParameters)VM->SpawnParameters->CivilizationArchetype=static_cast<EAPSCivilizationArchetype>(V);})]
@@ -1215,13 +1388,13 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildCivilizationPage()
 						+ SVerticalBox::Slot().AutoHeight()[NumberControl(LOCTEXT("Technology", "TECHNOLOGY LEVEL"), 1, 10, 1, [VM](){return VM.IsValid()&&VM->SpawnParameters?VM->SpawnParameters->TechnologyLevel:1;}, [VM](int32 V){if(VM.IsValid()&&VM->SpawnParameters)VM->SpawnParameters->TechnologyLevel=V;})]
 						+ SVerticalBox::Slot().AutoHeight()[EnumControl(LOCTEXT("SpawnPlace", "START LOCATION"), StaticEnum<ECharSpawnPlace>(), [VM](){return VM.IsValid()&&VM->SpawnParameters?static_cast<int32>(VM->SpawnParameters->CharacterSpawnPlace):0;}, [VM](int32 V){if(VM.IsValid())VM->SetCharacterSpawnPlace(V);})]
 						+ SVerticalBox::Slot().AutoHeight()[EnumControl(LOCTEXT("OrbitHeight", "HOME ORBIT"), StaticEnum<EOrbitHeight>(), [VM](){return VM.IsValid()&&VM->SpawnParameters?static_cast<int32>(VM->SpawnParameters->HomeStationOrbitHeight):0;}, [VM](int32 V){if(VM.IsValid())VM->SetStationOrbitHeight(V);})]
-						+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 12.0f, 0.0f, 8.0f)[SNew(STextBlock).Text(LOCTEXT("InfrastructureSetup", "STARTING INFRASTRUCTURE")).Font(APSMenu::Font("Bold", 12)).ColorAndOpacity(APSMenu::Cyan)]
+						+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 12.0f, 0.0f, 8.0f)[APSMenu::SectionHeading(LOCTEXT("StartingInfraGlyph", "INF"), LOCTEXT("InfrastructureSetup", "STARTING INFRASTRUCTURE"))]
 						+ SVerticalBox::Slot().AutoHeight()[NumberControl(LOCTEXT("FleetSize", "STARTING FLEET"), 0, 1000, 1, [VM](){return VM.IsValid()&&VM->SpawnParameters?VM->SpawnParameters->StartingFleetSize:0;}, [VM](int32 V){if(VM.IsValid()&&VM->SpawnParameters)VM->SpawnParameters->StartingFleetSize=V;})]
 						+ SVerticalBox::Slot().AutoHeight()[NumberControl(LOCTEXT("StarOutposts", "STAR OUTPOSTS"), 0, 100, 1, [VM](){return VM.IsValid()&&VM->SpawnParameters?VM->SpawnParameters->StarOutposts:0;}, [VM](int32 V){if(VM.IsValid()&&VM->SpawnParameters)VM->SpawnParameters->StarOutposts=V;})]
 						+ SVerticalBox::Slot().AutoHeight()[NumberControl(LOCTEXT("PlanetOutposts", "PLANET OUTPOSTS"), 0, 100, 1, [VM](){return VM.IsValid()&&VM->SpawnParameters?VM->SpawnParameters->PlanetOutposts:0;}, [VM](int32 V){if(VM.IsValid()&&VM->SpawnParameters)VM->SpawnParameters->PlanetOutposts=V;})]
 						+ SVerticalBox::Slot().AutoHeight()[NumberControl(LOCTEXT("OrbitalOutposts", "ORBITAL STATIONS"), 0, 100, 1, [VM](){return VM.IsValid()&&VM->SpawnParameters?VM->SpawnParameters->OrbitalOutposts:0;}, [VM](int32 V){if(VM.IsValid()&&VM->SpawnParameters)VM->SpawnParameters->OrbitalOutposts=V;})]
 						+ SVerticalBox::Slot().AutoHeight()[NumberControl(LOCTEXT("GroundOutposts", "GROUND SETTLEMENTS"), 0, 100, 1, [VM](){return VM.IsValid()&&VM->SpawnParameters?VM->SpawnParameters->GroundOutposts:0;}, [VM](int32 V){if(VM.IsValid()&&VM->SpawnParameters)VM->SpawnParameters->GroundOutposts=V;})]
-						+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 12.0f, 0.0f, 8.0f)[SNew(STextBlock).Text(LOCTEXT("DivisionSetup", "DIVISION LEVELS")).Font(APSMenu::Font("Bold", 12)).ColorAndOpacity(APSMenu::Cyan)]
+						+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 12.0f, 0.0f, 8.0f)[APSMenu::SectionHeading(LOCTEXT("DivisionSetupGlyph", "DIV"), LOCTEXT("DivisionSetup", "DIVISION LEVELS"))]
 						+ SVerticalBox::Slot().AutoHeight()[NumberControl(LOCTEXT("ExplorationDivision", "EXPLORATION"), 0, 20, 1, [VM](){return VM.IsValid()&&VM->SpawnParameters?VM->SpawnParameters->ExplorationDivisionLevel:0;}, [VM](int32 V){if(VM.IsValid()&&VM->SpawnParameters)VM->SpawnParameters->ExplorationDivisionLevel=V;})]
 						+ SVerticalBox::Slot().AutoHeight()[NumberControl(LOCTEXT("IndustryDivision", "INDUSTRY"), 0, 20, 1, [VM](){return VM.IsValid()&&VM->SpawnParameters?VM->SpawnParameters->IndustryDivisionLevel:0;}, [VM](int32 V){if(VM.IsValid()&&VM->SpawnParameters)VM->SpawnParameters->IndustryDivisionLevel=V;})]
 						+ SVerticalBox::Slot().AutoHeight()[NumberControl(LOCTEXT("ScienceDivision", "SCIENCE / RESEARCH"), 0, 20, 1, [VM](){return VM.IsValid()&&VM->SpawnParameters?VM->SpawnParameters->ScienceDivisionLevel:0;}, [VM](int32 V){if(VM.IsValid()&&VM->SpawnParameters)VM->SpawnParameters->ScienceDivisionLevel=V;})]
@@ -1240,6 +1413,13 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildCivilizationPage()
 				[SNew(STextBlock).Text(LOCTEXT("GenerateWorld", "GENERATE WORLD  >")).Justification(ETextJustify::Center).Font(APSMenu::Font("Bold", 19)).ColorAndOpacity(APSMenu::White)]
 			]
 		];
+
+	return SNew(SOverlay)
+		+ SOverlay::Slot()
+		[SNew(SScaleBox).Stretch(EStretch::ScaleToFill)[SNew(SImage).Image(&BackgroundImage).ColorAndOpacity(FLinearColor(0.14f, 0.26f, 0.36f, 0.30f))]]
+		+ SOverlay::Slot()
+		[SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(FLinearColor(0.0f, 0.008f, 0.016f, 0.62f))]
+		+ SOverlay::Slot()[Page];
 }
 
 void SAPSMainMenuRoot::LoadVisualResources()
@@ -1301,12 +1481,11 @@ void SAPSMainMenuRoot::OnWorldSearchChanged(const FText& SearchText)
 
 FReply SAPSMainMenuRoot::CycleSpawnClass(EAPSStartAssetSlot Slot, int32 Direction)
 {
-	const TArray<TSubclassOf<AActor>>* Options = SpawnClassOptions.Find(Slot);
+	const TArray<TSoftClassPtr<AActor>>* Options = SpawnClassOptions.Find(Slot);
 	if (!Options || Options->Num() == 0) return FReply::Handled();
 	int32& Index = SpawnClassIndices.FindOrAdd(Slot);
 	Index = (Index + Direction + Options->Num()) % Options->Num();
-	if (ViewModel.IsValid()) ViewModel->SetSpawnClass(Slot, (*Options)[Index]);
-	RefreshSpawnClassBrush(Slot);
+	ApplySpawnClassSelection(Slot);
 	return FReply::Handled();
 }
 

@@ -40,6 +40,7 @@ namespace APSGenerationUI
 	TWeakObjectPtr<UFont> BodyFont;
 	const FSlateRoundedBoxBrush PanelBrush(Panel, 10.0f, CyanDim, 1.0f);
 	const FSlateRoundedBoxBrush ControlBrush(FLinearColor(0.003f, 0.016f, 0.028f, 0.94f), 6.0f, CyanDim, 1.0f);
+	const FSlateRoundedBoxBrush BadgeBrush(FLinearColor(0.005f, 0.045f, 0.070f, 0.98f), 16.0f, Cyan, 1.0f);
 
 	FSlateFontInfo Font(const FName Typeface, int32 Size)
 	{
@@ -68,7 +69,26 @@ namespace APSGenerationUI
 
 	TSharedRef<SWidget> SectionTitle(const FText& Text)
 	{
-		return SNew(STextBlock).Text(Text).Font(Font("Bold", 16)).ColorAndOpacity(Cyan);
+		const FString Upper = Text.ToString().ToUpper();
+		const FText Glyph = FText::FromString(
+			Upper.Contains(TEXT("ATMOSPHERE")) ? TEXT("ATM") :
+			Upper.Contains(TEXT("SYSTEM")) ? TEXT("SYS") :
+			Upper.Contains(TEXT("CLUSTER")) ? TEXT("CL") :
+			Upper.Contains(TEXT("GALAXY")) ? TEXT("GX") : TEXT("AST"));
+		return SNew(SVerticalBox)
+		+ SVerticalBox::Slot().AutoHeight()
+		[
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+			[
+				SNew(SBox).WidthOverride(30.0f).HeightOverride(30.0f)
+				[SNew(SBorder).BorderImage(&BadgeBrush).Padding(0.0f)[SNew(STextBlock).Text(Glyph).Justification(ETextJustify::Center).Font(Font("Bold", 8)).ColorAndOpacity(Cyan)]]
+			]
+			+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center).Padding(10.0f, 0.0f)
+			[SNew(STextBlock).Text(Text).Font(Font("Bold", 16)).ColorAndOpacity(Cyan)]
+		]
+		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 8.0f, 0.0f, 0.0f)
+		[SNew(SBox).HeightOverride(1.0f)[SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(CyanDim)]];
 	}
 
 	template <typename TEnum, typename TGetter>
@@ -82,6 +102,8 @@ namespace APSGenerationUI
 			]
 			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 3.0f, 0.0f, 8.0f)
 			[
+				SNew(SBorder).BorderImage(&ControlBrush).Padding(2.0f)
+				[
 				SNew(SHorizontalBox)
 				+ SHorizontalBox::Slot().AutoWidth()
 				[
@@ -126,6 +148,7 @@ namespace APSGenerationUI
 						return FReply::Handled();
 					})
 				]
+				]
 			];
 	}
 
@@ -140,6 +163,8 @@ namespace APSGenerationUI
 			]
 			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 3.0f, 0.0f, 9.0f)
 			[
+				SNew(SBorder).BorderImage(&ControlBrush).Padding(2.0f)
+				[
 				SNew(SSpinBox<TValue>)
 				.MinValue(Min).MaxValue(Max).Delta(Delta)
 				.Value_Lambda([ViewModel, Getter]()
@@ -154,6 +179,7 @@ namespace APSGenerationUI
 				{
 					if (UWorldGenerationViewModel* VM = ViewModel.Get()) Setter(VM, Value);
 				})
+				]
 			];
 	}
 
@@ -235,12 +261,19 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 	const auto BoolRow = [VM](const FText& Label, TFunction<bool(const UGeneratedWorld*)> Getter,
 		TFunction<void(UGeneratedWorld*, bool)> Setter)
 	{
-		return SNew(SHorizontalBox)
+		return SNew(SBorder).BorderImage(&ControlBrush).Padding(FMargin(10.0f, 4.0f))
+		[
+		SNew(SHorizontalBox)
 			+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
 			[SNew(STextBlock).Text(Label).Font(Font("Regular", 10)).ColorAndOpacity(Muted)]
 			+ SHorizontalBox::Slot().AutoWidth()
 			[
-				SNew(SButton).ButtonStyle(&SecondaryButton).ContentPadding(FMargin(12.0f, 5.0f))
+				SNew(SButton).ButtonStyle(&SecondaryButton).ContentPadding(FMargin(14.0f, 4.0f))
+				.ButtonColorAndOpacity_Lambda([VM, Getter]()
+				{
+					return VM.IsValid() && VM->GeneratedWorld && Getter(VM->GeneratedWorld)
+						? FLinearColor(0.0f, 0.52f, 0.68f, 1.0f) : FLinearColor(0.18f, 0.23f, 0.27f, 1.0f);
+				})
 				.OnClicked_Lambda([VM, Getter, Setter]()
 				{
 					if (UWorldGenerationViewModel* MutableVM = VM.Get(); MutableVM && MutableVM->GeneratedWorld)
@@ -255,7 +288,8 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 					.Text_Lambda([VM, Getter](){ return FText::FromString(VM.IsValid() && VM->GeneratedWorld && Getter(VM->GeneratedWorld) ? TEXT("ON") : TEXT("OFF")); })
 					.Font(Font("Bold", 10)).ColorAndOpacity(Cyan)
 				]
-			];
+			]
+		];
 	};
 
 	const TSharedRef<SWidget> LeftControls = SNew(SScrollBox)
@@ -310,7 +344,7 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 			+ SVerticalBox::Slot().AutoHeight()[NumberRow<double>(LOCTEXT("AtmosphereColorB", "COLOR / BLUE"), 0.0, 64.0, 0.1, VM, [](const UGeneratedWorld* W){ return static_cast<double>(W->AtmosphereColor.B); }, [](UWorldGenerationViewModel* V, double X){ if(V->GeneratedWorld){V->GeneratedWorld->AtmosphereColor.B=static_cast<float>(X); V->RequestPreview();} })]
 		];
 
-	const auto FocusButton = [this](const FText& Label, EAstroPreviewFocus Focus)
+	const auto FocusButton = [this](const FText& Glyph, const FText& Label, EAstroPreviewFocus Focus)
 	{
 		return SNew(SButton)
 			.ButtonStyle(&SecondaryButton)
@@ -320,9 +354,15 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 				return VMValue && VMValue->GetPreviewFocus() == Focus
 					? FLinearColor(0.32f, 0.13f, 0.005f, 1.0f) : FLinearColor::White;
 			})
-			.ContentPadding(FMargin(10.0f, 6.0f))
+			.ContentPadding(FMargin(12.0f, 8.0f))
 			.OnClicked(this, &SWorldGenerationPanel::FocusPreview, static_cast<uint8>(Focus))
-			[SNew(STextBlock).Text(Label).Font(APSGenerationUI::Font("Bold", 10)).ColorAndOpacity(APSGenerationUI::White)];
+			[
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.0f, 0.0f, 7.0f, 0.0f)
+				[SNew(STextBlock).Text(Glyph).Font(APSGenerationUI::Font("Bold", 9)).ColorAndOpacity(APSGenerationUI::Cyan)]
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+				[SNew(STextBlock).Text(Label).Font(APSGenerationUI::Font("Bold", 10)).ColorAndOpacity(APSGenerationUI::White)]
+			];
 	};
 
 	ChildSlot
@@ -341,8 +381,14 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 				+ SHorizontalBox::Slot().FillWidth(1.0f).HAlign(HAlign_Center)
 				[
 					SNew(SVerticalBox)
-					+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center)[SNew(STextBlock).Text(LOCTEXT("Title", "APOSFERA")).Font(Font("Bold", 32)).ColorAndOpacity(White)]
-					+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center)[SNew(STextBlock).Text(LOCTEXT("Subtitle", "ASTRONOMICAL GENERATION")).Font(Font("Bold", 14)).ColorAndOpacity(Cyan)]
+					+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center)[SNew(STextBlock).Text(LOCTEXT("Title", "A P O S F E R A")).Font(Font("Bold", 42)).ColorAndOpacity(White)]
+					+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0.0f, 2.0f)
+					[
+						SNew(SHorizontalBox)
+						+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)[SNew(SBox).WidthOverride(78.0f).HeightOverride(1.0f)[SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(Cyan)]]
+						+ SHorizontalBox::Slot().AutoWidth().Padding(16.0f, 0.0f)[SNew(STextBlock).Text(LOCTEXT("Subtitle", "A S T R O N O M I C A L   G E N E R A T I O N")).Font(Font("Bold", 13)).ColorAndOpacity(Cyan)]
+						+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)[SNew(SBox).WidthOverride(78.0f).HeightOverride(1.0f)[SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(Cyan)]]
+					]
 				]
 				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
 				[
@@ -360,17 +406,27 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 				+ SHorizontalBox::Slot().FillWidth(0.50f).Padding(6.0f, 0.0f)
 				[
 					SNew(SVerticalBox)
-					+ SVerticalBox::Slot().FillHeight(1.0f)[SNew(SPreviewInteractionSurface).ViewModel(VM)]
+					+ SVerticalBox::Slot().FillHeight(1.0f)
+					[
+						SNew(SOverlay)
+						+ SOverlay::Slot()[SNew(SPreviewInteractionSurface).ViewModel(VM)]
+						+ SOverlay::Slot().HAlign(HAlign_Left).VAlign(VAlign_Top).Padding(10.0f)
+						[SNew(STextBlock).Text(LOCTEXT("PreviewCornerTL", "+  LIVE FULL-SCALE PREVIEW")).Font(Font("Bold", 9)).ColorAndOpacity(FLinearColor(0.20f, 0.90f, 0.55f, 0.82f))]
+						+ SOverlay::Slot().HAlign(HAlign_Right).VAlign(VAlign_Bottom).Padding(10.0f)
+						[SNew(STextBlock).Text(LOCTEXT("PreviewCornerBR", "FULL SCALE  +")).Font(Font("Bold", 8)).ColorAndOpacity(FLinearColor(Cyan.R, Cyan.G, Cyan.B, 0.55f))]
+					]
 					+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0.0f, 10.0f)
 					[
 						SNew(SHorizontalBox)
-						+ SHorizontalBox::Slot().AutoWidth().Padding(2.0f)[FocusButton(LOCTEXT("FocusOverview", "OVERVIEW"), EAstroPreviewFocus::Overview)]
-						+ SHorizontalBox::Slot().AutoWidth().Padding(2.0f)[FocusButton(LOCTEXT("FocusCluster", "CLUSTER"), EAstroPreviewFocus::StarCluster)]
-						+ SHorizontalBox::Slot().AutoWidth().Padding(2.0f)[FocusButton(LOCTEXT("FocusGalaxy", "GALAXY"), EAstroPreviewFocus::Galaxy)]
-						+ SHorizontalBox::Slot().AutoWidth().Padding(2.0f)[FocusButton(LOCTEXT("FocusSystem", "SYSTEM"), EAstroPreviewFocus::HomeSystem)]
-						+ SHorizontalBox::Slot().AutoWidth().Padding(2.0f)[FocusButton(LOCTEXT("FocusStar", "STAR"), EAstroPreviewFocus::HomeStar)]
-						+ SHorizontalBox::Slot().AutoWidth().Padding(2.0f)[FocusButton(LOCTEXT("FocusPlanet", "PLANET"), EAstroPreviewFocus::HomePlanet)]
+						+ SHorizontalBox::Slot().AutoWidth().Padding(2.0f)[FocusButton(LOCTEXT("OverviewGlyph", "O"), LOCTEXT("FocusOverview", "OVERVIEW"), EAstroPreviewFocus::Overview)]
+						+ SHorizontalBox::Slot().AutoWidth().Padding(2.0f)[FocusButton(LOCTEXT("ClusterGlyph", "CL"), LOCTEXT("FocusCluster", "CLUSTER"), EAstroPreviewFocus::StarCluster)]
+						+ SHorizontalBox::Slot().AutoWidth().Padding(2.0f)[FocusButton(LOCTEXT("GalaxyGlyph", "GX"), LOCTEXT("FocusGalaxy", "GALAXY"), EAstroPreviewFocus::Galaxy)]
+						+ SHorizontalBox::Slot().AutoWidth().Padding(2.0f)[FocusButton(LOCTEXT("SystemGlyph", "SYS"), LOCTEXT("FocusSystem", "SYSTEM"), EAstroPreviewFocus::HomeSystem)]
+						+ SHorizontalBox::Slot().AutoWidth().Padding(2.0f)[FocusButton(LOCTEXT("StarGlyph", "*"), LOCTEXT("FocusStar", "STAR"), EAstroPreviewFocus::HomeStar)]
+						+ SHorizontalBox::Slot().AutoWidth().Padding(2.0f)[FocusButton(LOCTEXT("PlanetGlyph", "P"), LOCTEXT("FocusPlanet", "PLANET"), EAstroPreviewFocus::HomePlanet)]
 					]
+					+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0.0f, 7.0f, 0.0f, 0.0f)
+					[SNew(STextBlock).Text(LOCTEXT("PreviewHint", "RMB DRAG TO ROTATE   /   MOUSE WHEEL TO ZOOM   /   DOUBLE CLICK TO FOCUS")).Font(Font("Regular", 8)).ColorAndOpacity(Muted)]
 				]
 				+ SHorizontalBox::Slot().FillWidth(0.25f).Padding(10.0f, 0.0f, 0.0f, 0.0f)
 				[
@@ -387,7 +443,7 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 				+ SHorizontalBox::Slot().AutoWidth()
 				[
 					SNew(SButton).ButtonStyle(&PrimaryButton).OnClicked(this, &SWorldGenerationPanel::CommitWorld).ContentPadding(FMargin(52.0f, 13.0f))
-					[SNew(STextBlock).Text(LOCTEXT("Continue", "CONTINUE TO CIVILIZATION")).Font(Font("Bold", 14)).ColorAndOpacity(Amber)]
+					[SNew(STextBlock).Text(LOCTEXT("Continue", "CONTINUE TO CIVILIZATION   >")).Font(Font("Bold", 14)).ColorAndOpacity(White)]
 				]
 			]
 		]

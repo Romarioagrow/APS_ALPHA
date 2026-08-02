@@ -10,7 +10,6 @@ struct FStreamableHandle;
 class SBox;
 class UClass;
 class UGameSave;
-class USpawnClassPicker;
 
 enum class EAPSMenuPage : uint8
 {
@@ -94,10 +93,10 @@ private:
 	FText GetWorldCollectionLabel(EAPSWorldCollection Collection) const;
 	FText GetWorldSortLabel() const;
 	FText GetWorldFilterLabel(EAPSWorldFilterKind Kind) const;
-	void LoadSpawnClassOptions();
-	void OnSpawnClassOptionsLoaded();
-	void MergeSpawnClassOptions(const USpawnClassPicker* Picker);
+	void DiscoverSpawnClassOptions();
 	void SynchronizeSpawnClassOptions();
+	void ApplySpawnClassSelection(EAPSStartAssetSlot Slot);
+	void OnSpawnClassSelectionLoaded(EAPSStartAssetSlot Slot, FSoftObjectPath RequestedPath);
 	void RefreshSpawnClassBrush(EAPSStartAssetSlot Slot);
 	FText GetSpawnClassName(EAPSStartAssetSlot Slot) const;
 	const FSlateBrush* GetSpawnClassBrush(EAPSStartAssetSlot Slot) const;
@@ -140,11 +139,11 @@ private:
 	bool bShowTechnicalWorldDetails{false};
 	bool bCompactWorldList{false};
 
-	TMap<EAPSStartAssetSlot, TArray<TSubclassOf<AActor>>> SpawnClassOptions;
+	TMap<EAPSStartAssetSlot, TArray<TSoftClassPtr<AActor>>> SpawnClassOptions;
 	TMap<EAPSStartAssetSlot, int32> SpawnClassIndices;
 	TMap<EAPSStartAssetSlot, FSlateBrush> SpawnClassBrushes;
-	TSharedPtr<FStreamableHandle> SpawnPickerLoadHandle;
-	bool bSpawnClassOptionsRequested{false};
+	TMap<EAPSStartAssetSlot, TSharedPtr<FStreamableHandle>> SpawnSelectionLoadHandles;
+	bool bSpawnClassOptionsDiscovered{false};
 
 	FSlateBrush SystemImage;
 	FSlateBrush PlanetImage;
