@@ -10,6 +10,7 @@ class SAPSMainMenuRoot;
 class SWidget;
 class UGeneratedWorld;
 class UWorldGenerationViewModel;
+class USaveGame;
 
 /**
  * 
@@ -31,12 +32,15 @@ public:
 
 	void LaunchSingleGame();
 	void LoadWorldSlot(const FString& SaveFileName);
+	void LoadWorldMetadataAsync(const TArray<FString>& SlotNames);
 	UWorldGenerationViewModel* GetWorldGenerationViewModel() const { return WorldGenerationViewModel; }
 	void HoldSlateResource(UObject* Resource);
 
 private:
 	void InstallSlateMenu();
 	void RemoveSlateMenu();
+	void LoadNextWorldMetadata();
+	void OnWorldMetadataLoaded(const FString& SlotName, int32 UserIndex, USaveGame* LoadedGame);
 
 	UPROPERTY(Transient)
 	TObjectPtr<UGeneratedWorld> MenuGeneratedWorld;
@@ -50,4 +54,6 @@ private:
 	TSharedPtr<SAPSMainMenuRoot> SlateMenuRoot;
 	TSharedPtr<SWidget> SlateMenuContainer;
 	FTimerHandle InstallSlateMenuTimer;
+	TArray<FString> PendingMetadataSlots;
+	int32 PendingMetadataIndex{0};
 };

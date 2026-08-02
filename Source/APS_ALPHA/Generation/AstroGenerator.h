@@ -107,7 +107,7 @@ protected:
 	bool bIsPreviewGeneration{false};
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "World Generation|Preview", meta = (ClampMin = "100", ClampMax = "50000"))
-	int32 PreviewMaxInstances{10000};
+	int32 PreviewMaxInstances{3000};
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "World Generation")
 	UGeneratedWorld* GeneratedWorldModel;

@@ -1,6 +1,7 @@
 #include "MainMenuController.h"
 #include "APS_ALPHA/Core/Instances/MainGameplayInstance.h"
 #include "APS_ALPHA/Core/Model/GeneratedWorld.h"
+#include "APS_ALPHA/Core/Saves/GameSave.h"
 #include "APS_ALPHA/UI/MainMenu/WorldGenerationViewModel.h"
 #include "APS_ALPHA/UI/MainMenu/SAPSMainMenuRoot.h"
 #include "Blueprint/WidgetLayoutLibrary.h"
@@ -85,6 +86,36 @@ void AMainMenuController::LoadWorldSlot(const FString& SaveFileName)
 	SetSaveSlotName(SaveFileName);
 	SetLoadingModeTrue();
 	UGameplayStatics::OpenLevel(this, TEXT("L_WorldGeneration"));
+}
+
+void AMainMenuController::LoadWorldMetadataAsync(const TArray<FString>& SlotNames)
+{
+	PendingMetadataSlots = SlotNames;
+	PendingMetadataIndex = 0;
+	LoadNextWorldMetadata();
+}
+
+void AMainMenuController::LoadNextWorldMetadata()
+{
+	if (PendingMetadataIndex >= PendingMetadataSlots.Num())
+	{
+		PendingMetadataSlots.Reset();
+		return;
+	}
+
+	const FString SlotName = PendingMetadataSlots[PendingMetadataIndex++];
+	UGameplayStatics::AsyncLoadGameFromSlot(
+		SlotName, 0,
+		FAsyncLoadGameFromSlotDelegate::CreateUObject(this, &AMainMenuController::OnWorldMetadataLoaded));
+}
+
+void AMainMenuController::OnWorldMetadataLoaded(const FString& SlotName, int32 UserIndex, USaveGame* LoadedGame)
+{
+	if (SlateMenuRoot.IsValid())
+	{
+		SlateMenuRoot->ApplyExistingWorldMetadata(SlotName, Cast<UGameSave>(LoadedGame));
+	}
+	LoadNextWorldMetadata();
 }
 
 void AMainMenuController::HoldSlateResource(UObject* Resource)

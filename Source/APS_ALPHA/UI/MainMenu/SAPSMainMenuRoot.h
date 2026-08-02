@@ -8,6 +8,7 @@
 class AMainMenuController;
 class SBox;
 class UClass;
+class UGameSave;
 
 enum class EAPSMenuPage : uint8
 {
@@ -29,6 +30,8 @@ struct FAPSExistingWorldEntry
 	int32 TotalPlanets{0};
 	int32 InhabitedPlanets{0};
 	int64 FileTimestamp{0};
+	int64 FileSizeBytes{0};
+	bool bMetadataLoaded{false};
 };
 
 class SAPSMainMenuRoot final : public SCompoundWidget
@@ -42,6 +45,7 @@ public:
 	SAPSMainMenuRoot();
 	void Construct(const FArguments& InArgs);
 	virtual bool SupportsKeyboardFocus() const override { return true; }
+	void ApplyExistingWorldMetadata(const FString& SlotName, const UGameSave* Save);
 
 private:
 	void Navigate(EAPSMenuPage NewPage);
@@ -59,6 +63,7 @@ private:
 	void LoadExistingWorlds();
 	void RebuildExistingWorldGrid();
 	void RebuildExistingWorldDetails();
+	void BeginExistingWorldMetadataLoad();
 	void LoadSpawnClassOptions();
 	void RefreshSpawnClassBrush(EAPSStartAssetSlot Slot);
 	FText GetSpawnClassName(EAPSStartAssetSlot Slot) const;
@@ -74,6 +79,7 @@ private:
 	FReply CommitCivilization();
 	FReply ContinueExistingWorld();
 	FReply SelectExistingWorld(TSharedPtr<FAPSExistingWorldEntry> Entry);
+	FReply ChangeExistingWorldPage(int32 Delta);
 	FReply QuitGame();
 	void OnWorldSearchChanged(const FText& SearchText);
 
@@ -88,6 +94,7 @@ private:
 	TArray<TSharedPtr<FAPSExistingWorldEntry>> ExistingWorlds;
 	TSharedPtr<FAPSExistingWorldEntry> SelectedWorld;
 	FString WorldSearch;
+	int32 ExistingWorldPage{0};
 
 	TMap<EAPSStartAssetSlot, TArray<TSubclassOf<AActor>>> SpawnClassOptions;
 	TMap<EAPSStartAssetSlot, int32> SpawnClassIndices;
@@ -98,6 +105,7 @@ private:
 	FSlateBrush GalaxyImage;
 	FSlateBrush ClusterImage;
 	FSlateBrush CivilizationImage;
+	FSlateBrush BackgroundImage;
 
 	FButtonStyle PrimaryButtonStyle;
 	FButtonStyle SecondaryButtonStyle;

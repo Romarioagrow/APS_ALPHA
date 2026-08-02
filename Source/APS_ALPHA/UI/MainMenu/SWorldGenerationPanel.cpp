@@ -14,6 +14,7 @@
 #include "APS_ALPHA/Core/Enums/StellarType.h"
 #include "APS_ALPHA/Core/Model/GeneratedWorld.h"
 #include "APS_ALPHA/UI/MainMenu/WorldGenerationViewModel.h"
+#include "Engine/Font.h"
 #include "InputCoreTypes.h"
 #include "Styling/AppStyle.h"
 #include "Widgets/Input/SButton.h"
@@ -28,16 +29,29 @@
 
 namespace APSGenerationUI
 {
-	const FLinearColor Background(0.002f, 0.010f, 0.018f, 0.54f);
+	const FLinearColor Background(0.002f, 0.010f, 0.018f, 0.20f);
 	const FLinearColor Panel(0.008f, 0.030f, 0.047f, 0.91f);
 	const FLinearColor Cyan(0.12f, 0.82f, 1.0f, 1.0f);
 	const FLinearColor CyanDim(0.05f, 0.28f, 0.39f, 1.0f);
 	const FLinearColor Amber(1.0f, 0.56f, 0.04f, 1.0f);
 	const FLinearColor White(0.92f, 0.97f, 1.0f, 1.0f);
 	const FLinearColor Muted(0.46f, 0.61f, 0.69f, 1.0f);
+	TWeakObjectPtr<UFont> DisplayFont;
+	TWeakObjectPtr<UFont> BodyFont;
+	const FSlateRoundedBoxBrush PanelBrush(Panel, 10.0f, CyanDim, 1.0f);
+	const FSlateRoundedBoxBrush ControlBrush(FLinearColor(0.003f, 0.016f, 0.028f, 0.94f), 6.0f, CyanDim, 1.0f);
 
 	FSlateFontInfo Font(const FName Typeface, int32 Size)
 	{
+		if (!DisplayFont.IsValid())
+		{
+			DisplayFont = LoadObject<UFont>(nullptr, TEXT("/Game/APS/APS_ALPHA/UI/Fonts/Orbitron_Bold_Font.Orbitron_Bold_Font"));
+			BodyFont = LoadObject<UFont>(nullptr, TEXT("/Game/APS/APS_ALPHA/UI/Fonts/Orbitron_Medium_Font.Orbitron_Medium_Font"));
+		}
+		if (UFont* FontObject = (Typeface == TEXT("Bold") ? DisplayFont.Get() : BodyFont.Get()))
+		{
+			return FSlateFontInfo(FontObject, Size, Typeface);
+		}
 		return FCoreStyle::GetDefaultFontStyle(Typeface, Size);
 	}
 
@@ -48,6 +62,9 @@ namespace APSGenerationUI
 			.SetHovered(FSlateRoundedBoxBrush(FLinearColor(Fill.R + 0.025f, Fill.G + 0.05f, Fill.B + 0.07f, 0.98f), 6.0f, Cyan, 1.5f))
 			.SetPressed(FSlateRoundedBoxBrush(FLinearColor(0.02f, 0.14f, 0.20f, 1.0f), 6.0f, Cyan, 1.5f));
 	}
+
+	const FButtonStyle SecondaryButton = MakeButtonStyle(CyanDim, FLinearColor(0.003f, 0.022f, 0.038f, 0.94f));
+	const FButtonStyle PrimaryButton = MakeButtonStyle(Amber, FLinearColor(0.30f, 0.12f, 0.004f, 0.96f));
 
 	TSharedRef<SWidget> SectionTitle(const FText& Text)
 	{
@@ -69,6 +86,7 @@ namespace APSGenerationUI
 				+ SHorizontalBox::Slot().AutoWidth()
 				[
 					SNew(SButton).Text(FText::FromString(TEXT("<"))).ContentPadding(FMargin(9.0f, 4.0f))
+					.ButtonStyle(&SecondaryButton)
 					.OnClicked_Lambda([ViewModel, Getter, Enum]()
 					{
 						if (UWorldGenerationViewModel* VM = ViewModel.Get(); VM && VM->GeneratedWorld && Enum)
@@ -96,6 +114,7 @@ namespace APSGenerationUI
 				+ SHorizontalBox::Slot().AutoWidth()
 				[
 					SNew(SButton).Text(FText::FromString(TEXT(">"))).ContentPadding(FMargin(9.0f, 4.0f))
+					.ButtonStyle(&SecondaryButton)
 					.OnClicked_Lambda([ViewModel, Getter, Enum]()
 					{
 						if (UWorldGenerationViewModel* VM = ViewModel.Get(); VM && VM->GeneratedWorld && Enum)
@@ -150,23 +169,9 @@ namespace APSGenerationUI
 			ViewModel = InArgs._ViewModel;
 			ChildSlot
 			[
-				SNew(SBorder)
-				.BorderImage(FAppStyle::GetBrush("WhiteBrush"))
-				.BorderBackgroundColor(FLinearColor(0.0f, 0.025f, 0.045f, 0.08f))
-				.Padding(16.0f)
-				[
-					SNew(SVerticalBox)
-					+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center)
-					[
-						SNew(STextBlock).Text(LOCTEXT("LiveScene", "LIVE FULL-SCALE SCENE"))
-						.Font(Font("Bold", 13)).ColorAndOpacity(Cyan)
-					]
-					+ SVerticalBox::Slot().FillHeight(1.0f).VAlign(VAlign_Center).HAlign(HAlign_Center)
-					[
-						SNew(STextBlock).Text(LOCTEXT("PreviewHelp", "DRAG RMB TO ORBIT  /  WHEEL TO ZOOM\nSELECT A LEVEL BELOW TO FOCUS"))
-						.Justification(ETextJustify::Center).Font(Font("Regular", 10)).ColorAndOpacity(Muted)
-					]
-				]
+				// Intentionally empty: this hit-test surface sits over the real scene.
+				// No translucent card, labels or fake render target may cover the world.
+				SNew(SBox)
 			];
 		}
 
@@ -227,12 +232,40 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 	using namespace APSGenerationUI;
 	const TWeakObjectPtr<UWorldGenerationViewModel> VM = ViewModel;
 
+	const auto BoolRow = [VM](const FText& Label, TFunction<bool(const UGeneratedWorld*)> Getter,
+		TFunction<void(UGeneratedWorld*, bool)> Setter)
+	{
+		return SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
+			[SNew(STextBlock).Text(Label).Font(Font("Regular", 10)).ColorAndOpacity(Muted)]
+			+ SHorizontalBox::Slot().AutoWidth()
+			[
+				SNew(SButton).ButtonStyle(&SecondaryButton).ContentPadding(FMargin(12.0f, 5.0f))
+				.OnClicked_Lambda([VM, Getter, Setter]()
+				{
+					if (UWorldGenerationViewModel* MutableVM = VM.Get(); MutableVM && MutableVM->GeneratedWorld)
+					{
+						Setter(MutableVM->GeneratedWorld, !Getter(MutableVM->GeneratedWorld));
+						MutableVM->RequestPreview();
+					}
+					return FReply::Handled();
+				})
+				[
+					SNew(STextBlock)
+					.Text_Lambda([VM, Getter](){ return FText::FromString(VM.IsValid() && VM->GeneratedWorld && Getter(VM->GeneratedWorld) ? TEXT("ON") : TEXT("OFF")); })
+					.Font(Font("Bold", 10)).ColorAndOpacity(Cyan)
+				]
+			];
+	};
+
 	const TSharedRef<SWidget> LeftControls = SNew(SScrollBox)
 		+ SScrollBox::Slot()
 		[
 			SNew(SVerticalBox)
 			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 12.0f)[SectionTitle(LOCTEXT("Astro", "ASTRO GENERATION"))]
 			+ SVerticalBox::Slot().AutoHeight()[EnumRow<EAstroGenerationLevel>(LOCTEXT("Level", "GENERATION LEVEL"), VM, [](const UGeneratedWorld* W){ return W->AstroGenerationLevel; })]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 5.0f)[BoolRow(LOCTEXT("FullScale", "FULL-SCALE WORLD"), [](const UGeneratedWorld* W){return W->bGenerateFullScaledWorld;}, [](UGeneratedWorld* W, bool V){W->bGenerateFullScaledWorld=V;})]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 5.0f)[BoolRow(LOCTEXT("HomeSystemEnabled", "GENERATE HOME SYSTEM"), [](const UGeneratedWorld* W){return W->bGenerateHomeSystem;}, [](UGeneratedWorld* W, bool V){W->bGenerateHomeSystem=V;})]
 			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 12.0f, 0.0f, 10.0f)[SectionTitle(LOCTEXT("Cluster", "STAR CLUSTER"))]
 			+ SVerticalBox::Slot().AutoHeight()[EnumRow<EStarClusterSize>(LOCTEXT("ClusterSize", "SIZE"), VM, [](const UGeneratedWorld* W){ return W->StarClusterSize; })]
 			+ SVerticalBox::Slot().AutoHeight()[EnumRow<EStarClusterType>(LOCTEXT("ClusterType", "TYPE / PRESET FAMILY"), VM, [](const UGeneratedWorld* W){ return W->StarClusterType; })]
@@ -251,6 +284,7 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 		[
 			SNew(SVerticalBox)
 			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 12.0f)[SectionTitle(LOCTEXT("HomeStarSystem", "HOME STAR SYSTEM"))]
+			+ SVerticalBox::Slot().AutoHeight()[EnumRow<EStarType>(LOCTEXT("StarType", "STAR SYSTEM TYPE"), VM, [](const UGeneratedWorld* W){ return W->StarType; })]
 			+ SVerticalBox::Slot().AutoHeight()[EnumRow<EStellarType>(LOCTEXT("StellarType", "STELLAR TYPE"), VM, [](const UGeneratedWorld* W){ return W->StellarType; })]
 			+ SVerticalBox::Slot().AutoHeight()[EnumRow<ESpectralClass>(LOCTEXT("Spectral", "SPECTRAL CLASS"), VM, [](const UGeneratedWorld* W){ return W->SpectralClass; })]
 			+ SVerticalBox::Slot().AutoHeight()[EnumRow<EPlanetType>(LOCTEXT("PlanetType", "HOME PLANET TYPE"), VM, [](const UGeneratedWorld* W){ return W->PlanetType; })]
@@ -261,11 +295,23 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 			+ SVerticalBox::Slot().AutoHeight()[NumberRow<int32>(LOCTEXT("Planets", "PLANETS AMOUNT"), 1, 64, 1, VM, [](const UGeneratedWorld* W){ return FMath::Max(1, W->PlanetsAmount); }, [](UWorldGenerationViewModel* V, int32 X){ V->SetPlanetsAmount(X); })]
 			+ SVerticalBox::Slot().AutoHeight()[NumberRow<int32>(LOCTEXT("Moons", "MOONS AMOUNT"), 0, 32, 1, VM, [](const UGeneratedWorld* W){ return W->MoonsAmount; }, [](UWorldGenerationViewModel* V, int32 X){ V->SetMoonsAmount(X); })]
 			+ SVerticalBox::Slot().AutoHeight()[NumberRow<int32>(LOCTEXT("StartIndex", "START PLANET INDEX"), 1, 64, 1, VM, [](const UGeneratedWorld* W){ return FMath::Max(1, W->StartPlanetIndex); }, [](UWorldGenerationViewModel* V, int32 X){ V->SetStartPlanetIndex(X); })]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 12.0f, 0.0f, 10.0f)[SectionTitle(LOCTEXT("Atmosphere", "HOME PLANET ATMOSPHERE"))]
+			+ SVerticalBox::Slot().AutoHeight()[NumberRow<double>(LOCTEXT("AtmosphereHeight", "HEIGHT / KM"), 0.0, 2000.0, 5.0, VM, [](const UGeneratedWorld* W){ return W->AtmosphereHeight; }, [](UWorldGenerationViewModel* V, double X){ if(V->GeneratedWorld){V->GeneratedWorld->AtmosphereHeight=X; V->RequestPreview();} })]
+			+ SVerticalBox::Slot().AutoHeight()[NumberRow<double>(LOCTEXT("AtmosphereOpacity", "OPACITY"), 0.0, 10.0, 0.05, VM, [](const UGeneratedWorld* W){ return W->AtmosphereOpacity; }, [](UWorldGenerationViewModel* V, double X){ if(V->GeneratedWorld){V->GeneratedWorld->AtmosphereOpacity=X; V->RequestPreview();} })]
+			+ SVerticalBox::Slot().AutoHeight()[NumberRow<double>(LOCTEXT("AtmosphereMulti", "MULTI SCATTERING"), 0.0, 10.0, 0.05, VM, [](const UGeneratedWorld* W){ return W->AtmosphereMultiScattering; }, [](UWorldGenerationViewModel* V, double X){ if(V->GeneratedWorld){V->GeneratedWorld->AtmosphereMultiScattering=X; V->RequestPreview();} })]
+			+ SVerticalBox::Slot().AutoHeight()[NumberRow<double>(LOCTEXT("AtmosphereRayleigh", "RAYLEIGH SCATTERING"), 0.0, 64.0, 0.25, VM, [](const UGeneratedWorld* W){ return W->AtmosphereRayleighScattering; }, [](UWorldGenerationViewModel* V, double X){ if(V->GeneratedWorld){V->GeneratedWorld->AtmosphereRayleighScattering=X; V->RequestPreview();} })]
 		];
 
 	const auto FocusButton = [this](const FText& Label, EAstroPreviewFocus Focus)
 	{
 		return SNew(SButton)
+			.ButtonStyle(&SecondaryButton)
+			.ButtonColorAndOpacity_Lambda([this, Focus]()
+			{
+				const UWorldGenerationViewModel* VMValue = ViewModel.Get();
+				return VMValue && VMValue->GetPreviewFocus() == Focus
+					? FLinearColor(0.32f, 0.13f, 0.005f, 1.0f) : FLinearColor::White;
+			})
 			.ContentPadding(FMargin(10.0f, 6.0f))
 			.OnClicked(this, &SWorldGenerationPanel::FocusPreview, static_cast<uint8>(Focus))
 			[SNew(STextBlock).Text(Label).Font(APSGenerationUI::Font("Bold", 10)).ColorAndOpacity(APSGenerationUI::White)];
@@ -281,7 +327,7 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 				SNew(SHorizontalBox)
 				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
 				[
-					SNew(SButton).OnClicked(this, &SWorldGenerationPanel::GoBack).ContentPadding(FMargin(15.0f, 8.0f))
+					SNew(SButton).ButtonStyle(&SecondaryButton).OnClicked(this, &SWorldGenerationPanel::GoBack).ContentPadding(FMargin(15.0f, 8.0f))
 					[SNew(STextBlock).Text(LOCTEXT("Back", "<  BACK")).Font(Font("Bold", 12)).ColorAndOpacity(White)]
 				]
 				+ SHorizontalBox::Slot().FillWidth(1.0f).HAlign(HAlign_Center)
@@ -292,7 +338,7 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 				]
 				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
 				[
-					SNew(SButton).OnClicked(this, &SWorldGenerationPanel::RefreshPreview).ContentPadding(FMargin(14.0f, 8.0f))
+					SNew(SButton).ButtonStyle(&SecondaryButton).OnClicked(this, &SWorldGenerationPanel::RefreshPreview).ContentPadding(FMargin(14.0f, 8.0f))
 					[SNew(STextBlock).Text(LOCTEXT("Refresh", "REGENERATE")).Font(Font("Bold", 11)).ColorAndOpacity(Cyan)]
 				]
 			]
@@ -301,7 +347,7 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 				SNew(SHorizontalBox)
 				+ SHorizontalBox::Slot().FillWidth(0.25f).Padding(0.0f, 0.0f, 10.0f, 0.0f)
 				[
-					SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(Panel).Padding(16.0f)[LeftControls]
+					SNew(SBorder).BorderImage(&PanelBrush).Padding(16.0f)[LeftControls]
 				]
 				+ SHorizontalBox::Slot().FillWidth(0.50f).Padding(6.0f, 0.0f)
 				[
@@ -320,7 +366,7 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 				]
 				+ SHorizontalBox::Slot().FillWidth(0.25f).Padding(10.0f, 0.0f, 0.0f, 0.0f)
 				[
-					SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(Panel).Padding(16.0f)[RightControls]
+					SNew(SBorder).BorderImage(&PanelBrush).Padding(16.0f)[RightControls]
 				]
 			]
 			+ SVerticalBox::Slot().AutoHeight()
@@ -332,7 +378,7 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 				]
 				+ SHorizontalBox::Slot().AutoWidth()
 				[
-					SNew(SButton).OnClicked(this, &SWorldGenerationPanel::CommitWorld).ContentPadding(FMargin(52.0f, 13.0f))
+					SNew(SButton).ButtonStyle(&PrimaryButton).OnClicked(this, &SWorldGenerationPanel::CommitWorld).ContentPadding(FMargin(52.0f, 13.0f))
 					[SNew(STextBlock).Text(LOCTEXT("Continue", "CONTINUE TO CIVILIZATION")).Font(Font("Bold", 14)).ColorAndOpacity(Amber)]
 				]
 			]

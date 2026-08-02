@@ -32,6 +32,7 @@
 #include "Engine/World.h"
 #include "Camera/CameraComponent.h"
 #include "Components/SceneComponent.h"
+#include "Components/PrimitiveComponent.h"
 #include "GameFramework/PlayerController.h"
 
 AAstroGenerator::AAstroGenerator()
@@ -134,6 +135,10 @@ bool AAstroGenerator::RegeneratePreview(UGeneratedWorld* InGeneratedWorld)
 	bSpawnStarterPlanet = false;
 	bCharacterSpawn = false;
 	bIsPreviewGeneration = true;
+	// Existing Blueprint CDOs can retain the old 10k default even after the C++
+	// default changes. Enforce the UI-only cap at runtime; committed gameplay
+	// generation never enters this path.
+	PreviewMaxInstances = FMath::Clamp(PreviewMaxInstances, 100, 3000);
 
 	InitGenerationLevel();
 
@@ -180,6 +185,28 @@ void AAstroGenerator::FocusPreviewCamera(APlayerController* PlayerController)
 FBox AAstroGenerator::GetPreviewFocusBounds(EAstroPreviewFocus Focus) const
 {
 	FBox Bounds(EForceInit::ForceInit);
+	const auto AddVisibleActorTree = [&Bounds](const AActor* RootActor)
+	{
+		TArray<const AActor*> Pending;
+		if (IsValid(RootActor)) Pending.Add(RootActor);
+		while (Pending.Num() > 0)
+		{
+			const AActor* Actor = Pending.Pop(EAllowShrinking::No);
+			TInlineComponentArray<UPrimitiveComponent*> Components;
+			Actor->GetComponents(Components);
+			for (const UPrimitiveComponent* Component : Components)
+			{
+				if (IsValid(Component) && Component->IsRegistered() && Component->IsVisible()
+					&& !Component->bHiddenInGame && Component->Bounds.SphereRadius > UE_SMALL_NUMBER)
+				{
+					Bounds += Component->Bounds.GetBox();
+				}
+			}
+			TArray<AActor*> Children;
+			Actor->GetAttachedActors(Children, false, true);
+			for (const AActor* Child : Children) if (IsValid(Child)) Pending.Add(Child);
+		}
+	};
 	const AActor* FocusActor = nullptr;
 	switch (Focus)
 	{
@@ -194,7 +221,7 @@ FBox AAstroGenerator::GetPreviewFocusBounds(EAstroPreviewFocus Focus) const
 
 	if (IsValid(FocusActor))
 	{
-		Bounds += FocusActor->GetComponentsBoundingBox(true);
+		AddVisibleActorTree(FocusActor);
 		return Bounds;
 	}
 
@@ -203,7 +230,7 @@ FBox AAstroGenerator::GetPreviewFocusBounds(EAstroPreviewFocus Focus) const
 	{
 		if (IsValid(PreviewRoot))
 		{
-			Bounds += PreviewRoot->GetComponentsBoundingBox(true);
+			AddVisibleActorTree(PreviewRoot);
 		}
 	}
 	return Bounds;
@@ -370,6 +397,12 @@ void AAstroGenerator::ApplyWorldModel()
 	GalaxyStarDensity = GeneratedWorldModel->GalaxyStarDensity;
 	HomePlanetarySystem = GeneratedWorldModel->HomePlanetarySystem;
 	HomePlanet = GeneratedWorldModel->HomePlanet;
+
+	// The model-driven menu is explicit: every visible selector must deterministically
+	// affect the live scene. Blueprint defaults for the old Random buttons otherwise
+	// override cluster/galaxy selectors and make the Slate controls appear broken.
+	bGenerateRandomCluster = false;
+	bGenerateRandomGalaxy = false;
 }
 
 void AAstroGenerator::GenerateStarCluster()
@@ -803,6 +836,34 @@ void AAstroGenerator::GenerateStarSystemByModel()
 				PlanetarySystemModel->OrbitDistributionType = HomeSystemOrbitDistributionType;
 				PlanetarySystemGenerator->GenerateCustomPlanetarySystemModel(
 					PlanetarySystemModel, StarModel, PlanetGenerator, MoonGenerator);
+
+				// The menu preview must be driven by the user's model. The legacy
+				// generator only consumed PlanetType/Radius/Moons in the separate
+				// starter-planet path, which is deliberately disabled for previews.
+				// Replace the selected home-planet model in-place so changing a Slate
+				// control has an immediate, visible result without spawning gameplay
+				// infrastructure or WorldScape terrain in the menu level.
+				if (bIsPreviewGeneration && GeneratedWorldModel && PlanetarySystemModel->PlanetsList.Num() > 0)
+				{
+					const int32 PreviewHomeIndex = FMath::Clamp(
+						StartPlanetNumber - 1, 0, PlanetarySystemModel->PlanetsList.Num() - 1);
+					TSharedPtr<FPlanetData>& HomeData = PlanetarySystemModel->PlanetsList[PreviewHomeIndex];
+					if (!HomeData.IsValid())
+					{
+						HomeData = MakeShared<FPlanetData>();
+					}
+					const double ExistingOrbitRadius = HomeData->OrbitRadius;
+					HomeData->PlanetModel = PlanetGenerator->CreatePlanetModelFromGeneratedWorld(GeneratedWorldModel);
+					HomeData->PlanetOrder = PreviewHomeIndex + 1;
+					HomeData->OrbitRadius = ExistingOrbitRadius;
+					if (HomeData->PlanetModel.IsValid())
+					{
+						HomeData->PlanetModel->OrbitDistance = ExistingOrbitRadius;
+						PlanetarySystemGenerator->GeneratePlanetMoonsList(
+							PlanetGenerator, MoonGenerator, HomeData->PlanetModel,
+							HomeData->PlanetModel->Radius, GeneratedWorldModel->MoonsAmount);
+					}
+				}
 			}
 
 			AStar* NewStar = World->SpawnActor<AStar>(BP_StarClass);
@@ -839,10 +900,14 @@ void AAstroGenerator::GenerateStarSystemByModel()
 			const FString SpectralIdentity = NewStar->FullSpectralName.IsNone()
 				? TEXT("Star") : NewStar->FullSpectralName.ToString();
 			NewStar->AstroName = AGravityPlayerController::GenerateUniqueName(SpectralIdentity);
-			HomeStar = NewStar;
+			if (StarNumber == 0)
+			{
+				HomeStar = NewStar;
+			}
 
 			// Generate planets for each star
 			FVector LastPlanetLocation{0};
+			int32 PlanetIndex = 0;
 			for (const TSharedPtr<FPlanetData> FPlanetData : PlanetarySystemModel->PlanetsList)
 			{
 				APlanetOrbit* NewPlanetOrbit = World->SpawnActor<APlanetOrbit>(
@@ -869,6 +934,11 @@ void AAstroGenerator::GenerateStarSystemByModel()
 				NewPlanet->AttachToActor(NewPlanetOrbit, FAttachmentTransformRules::KeepWorldTransform);
 				NewPlanetarySystem->PlanetsActorsList.Add(NewPlanet);
 				NewPlanetOrbit->Planet = NewPlanet;
+				if (StarNumber == 0 && PlanetIndex == FMath::Clamp(
+					StartPlanetNumber - 1, 0, PlanetarySystemModel->PlanetsList.Num() - 1))
+				{
+					HomePlanet = NewPlanet;
+				}
 
 				// Generate Moons
 				double DiameterOfLastMoon = 0;
@@ -934,6 +1004,7 @@ void AAstroGenerator::GenerateStarSystemByModel()
 					NewPlanet->RadiusKM;
 
 				NewPlanet->PlanetaryEnvironmentGenerator->InitEnviroment(NewPlanet, World);
+				++PlanetIndex;
 			}
 
 			// Place Orbits

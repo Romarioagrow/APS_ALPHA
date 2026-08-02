@@ -181,9 +181,13 @@ void UWorldGenerationViewModel::RequestPreview()
 void UWorldGenerationViewModel::SetPreviewFocus(EAstroPreviewFocus NewFocus)
 {
 	PreviewFocus = NewFocus;
-	if (AAstroGenerator* Generator = PreviewGenerator.Get())
+	if (AAstroGenerator* Generator = FindOrCreatePreviewGenerator())
 	{
-		Generator->FocusPreviewTarget(NewFocus);
+		APlayerController* PC = WorldContext.IsValid() && WorldContext->GetWorld()
+			? WorldContext->GetWorld()->GetFirstPlayerController() : nullptr;
+		Generator->FocusPreviewTarget(NewFocus, PC);
+		UE_LOG(LogTemp, Log, TEXT("[APS.WorldGeneration] Focus=%d generator=%s"),
+			static_cast<int32>(NewFocus), *GetNameSafe(Generator));
 	}
 }
 
@@ -300,6 +304,11 @@ void UWorldGenerationViewModel::ExecutePreview()
 	{
 		Generator->FocusPreviewTarget(PreviewFocus);
 	}
+	UE_LOG(LogTemp, Log, TEXT("[APS.WorldGeneration] Preview generated=%s revision=%d focus=%d level=%d planets=%d moons=%d radius=%.0f"),
+		bGenerated ? TEXT("true") : TEXT("false"), PreviewRevision, static_cast<int32>(PreviewFocus),
+		GeneratedWorld ? static_cast<int32>(GeneratedWorld->AstroGenerationLevel) : -1,
+		GeneratedWorld ? GeneratedWorld->PlanetsAmount : 0, GeneratedWorld ? GeneratedWorld->MoonsAmount : 0,
+		GeneratedWorld ? GeneratedWorld->PlanetRadius : 0.0);
 	SetPreviewStatus(
 		bGenerated ? LOCTEXT("PreviewReady", "LIVE FULL-SCALE PREVIEW") : LOCTEXT("PreviewFailed", "PREVIEW NEEDS GENERATOR ASSETS"),
 		bGenerated);
