@@ -229,7 +229,7 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildPathCard(const FText& Title, const FT
 			[
 				SNew(SBox).Clipping(EWidgetClipping::ClipToBounds)
 				[
-					SNew(SScaleBox).Stretch(EStretch::ScaleToFill).StretchDirection(EStretchDirection::Both)
+					SNew(SScaleBox).Stretch(EStretch::ScaleToFit).StretchDirection(EStretchDirection::Both)
 					[
 						SNew(SImage).Image(Image).ColorAndOpacity(bEnabled ? FLinearColor::White : FLinearColor(0.18f, 0.22f, 0.25f, 0.42f))
 					]
@@ -541,7 +541,7 @@ void SAPSMainMenuRoot::RebuildExistingWorldGrid()
 				+ SOverlay::Slot()
 				[
 					SNew(SBox).HeightOverride(bCompactWorldList ? 125.0f : 205.0f).Clipping(EWidgetClipping::ClipToBounds)
-					[SNew(SScaleBox).Stretch(EStretch::ScaleToFill)[SNew(SImage).Image(Image)]]
+					[SNew(SScaleBox).Stretch(EStretch::ScaleToFit)[SNew(SImage).Image(Image)]]
 				]
 				+ SOverlay::Slot().HAlign(HAlign_Right).VAlign(VAlign_Top).Padding(10.0f)
 				[
@@ -585,13 +585,16 @@ void SAPSMainMenuRoot::RebuildExistingWorldDetails()
 			SelectedWorld->bMetadataLoaded ? TEXT("READY") : TEXT("DEFERRED UNTIL LAUNCH"),
 			*FDateTime::FromUnixTimestamp(SelectedWorld->FileTimestamp).ToString(TEXT("%Y-%m-%d  %H:%M")));
 	}
+	const uint32 StableImageIndex = GetTypeHash(SelectedWorld->SaveFileName) % 3u;
+	const FSlateBrush* DetailsImage = StableImageIndex == 0
+		? &PlanetImage : (StableImageIndex == 1 ? &GalaxyImage : &SystemImage);
 
 	ExistingWorldDetailsHost->SetContent(
 		SNew(SVerticalBox)
 		+ SVerticalBox::Slot().FillHeight(0.38f)
 		[
 			SNew(SBox).Clipping(EWidgetClipping::ClipToBounds)
-			[SNew(SScaleBox).Stretch(EStretch::ScaleToFill)[SNew(SImage).Image(&PlanetImage)]]
+			[SNew(SScaleBox).Stretch(EStretch::ScaleToFit)[SNew(SImage).Image(DetailsImage)]]
 		]
 		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 16.0f, 0.0f, 6.0f)[SNew(STextBlock).Text(FText::FromString(SelectedWorld->DisplayName)).Font(APSMenu::Font("Bold", 24)).ColorAndOpacity(APSMenu::White)]
 		+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Text(FText::FromString(SelectedWorld->SystemType)).ColorAndOpacity(APSMenu::Cyan)]

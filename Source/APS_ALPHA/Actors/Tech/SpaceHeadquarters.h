@@ -4,6 +4,8 @@
 #include "CoreMinimal.h"
 #include "SpaceHeadquarters.generated.h"
 
+class UCivilization;
+
 UCLASS()
 class APS_ALPHA_API ASpaceHeadquarters : public ASpaceStation // AHeadquarters
 {
@@ -22,6 +24,10 @@ private:
 
 public:
 	ASpaceHeadquarters();
+
+	/** Runtime civilization selected in the Slate generation flow. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Civilization")
+	TObjectPtr<UCivilization> Civilization;
 
 	FVector GetStartPointPosition();
 };

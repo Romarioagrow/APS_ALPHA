@@ -191,23 +191,31 @@ void AAstroGenerator::FocusPreviewCamera(APlayerController* PlayerController)
 FBox AAstroGenerator::GetPreviewFocusBounds(EAstroPreviewFocus Focus) const
 {
 	FBox Bounds(EForceInit::ForceInit);
-	const auto AddVisibleActorTree = [&Bounds](const AActor* RootActor)
+	const auto AddVisibleActorComponents = [&Bounds](const AActor* Actor)
+	{
+		if (!IsValid(Actor))
+		{
+			return;
+		}
+		TInlineComponentArray<UPrimitiveComponent*> Components;
+		Actor->GetComponents(Components);
+		for (const UPrimitiveComponent* Component : Components)
+		{
+			if (IsValid(Component) && Component->IsRegistered() && Component->IsVisible()
+				&& !Component->bHiddenInGame && Component->Bounds.SphereRadius > UE_SMALL_NUMBER)
+			{
+				Bounds += Component->Bounds.GetBox();
+			}
+		}
+	};
+	const auto AddVisibleActorTree = [&AddVisibleActorComponents](const AActor* RootActor)
 	{
 		TArray<const AActor*> Pending;
 		if (IsValid(RootActor)) Pending.Add(RootActor);
 		while (Pending.Num() > 0)
 		{
 			const AActor* Actor = Pending.Pop(EAllowShrinking::No);
-			TInlineComponentArray<UPrimitiveComponent*> Components;
-			Actor->GetComponents(Components);
-			for (const UPrimitiveComponent* Component : Components)
-			{
-				if (IsValid(Component) && Component->IsRegistered() && Component->IsVisible()
-					&& !Component->bHiddenInGame && Component->Bounds.SphereRadius > UE_SMALL_NUMBER)
-				{
-					Bounds += Component->Bounds.GetBox();
-				}
-			}
+			AddVisibleActorComponents(Actor);
 			TArray<AActor*> Children;
 			Actor->GetAttachedActors(Children, false, true);
 			for (const AActor* Child : Children) if (IsValid(Child)) Pending.Add(Child);
@@ -227,7 +235,21 @@ FBox AAstroGenerator::GetPreviewFocusBounds(EAstroPreviewFocus Focus) const
 
 	if (IsValid(FocusActor))
 	{
-		AddVisibleActorTree(FocusActor);
+		// STAR and PLANET are object-level inspections. Their system/orbits/moons
+		// are attached children, so recursively including them made these buttons
+		// frame almost exactly the same bounds as SYSTEM.
+		if (Focus == EAstroPreviewFocus::HomeStar || Focus == EAstroPreviewFocus::HomePlanet)
+		{
+			AddVisibleActorComponents(FocusActor);
+			if (!Bounds.IsValid)
+			{
+				AddVisibleActorTree(FocusActor);
+			}
+		}
+		else
+		{
+			AddVisibleActorTree(FocusActor);
+		}
 		return Bounds;
 	}
 
@@ -354,7 +376,8 @@ void AAstroGenerator::ApplySpawnParameters()
 	{
 		if (UGameInstance* GameInstance = World->GetGameInstance())
 		{
-			USpawnParameters* SpawnParams = GameInstance->GetSubsystem<UMainGameplayInstance>()->SpawnParameters;
+			UMainGameplayInstance* GameplayInstance = GameInstance->GetSubsystem<UMainGameplayInstance>();
+			USpawnParameters* SpawnParams = GameplayInstance ? GameplayInstance->SpawnParameters : nullptr;
 
 			if (SpawnParams)
 			{
@@ -1596,6 +1619,18 @@ void AAstroGenerator::SpawnStartInteractiveActors(TSharedPtr<FPlanetModel> Start
 
 	HomeSpaceHeadquarters = World->SpawnActor<ASpaceHeadquarters>(
 		BP_HomeSpaceHeadquarters, PlanetPosition, FRotator::ZeroRotator);
+	if (!HomeSpaceHeadquarters)
+	{
+		UE_LOG(LogTemp, Error, TEXT("Unable to spawn the selected home headquarters class"));
+		return;
+	}
+	if (UGameInstance* GameInstance = World->GetGameInstance())
+	{
+		if (UMainGameplayInstance* GameplayInstance = GameInstance->GetSubsystem<UMainGameplayInstance>())
+		{
+			HomeSpaceHeadquarters->Civilization = GameplayInstance->CurrentCivilization;
+		}
+	}
 	HomeSpaceHeadquarters->AttachToActor(HomePlanet, FAttachmentTransformRules::KeepWorldTransform);
 	HomeSpaceHeadquarters->SetActorRelativeRotation(FRotator(0, 0, 0));
 
