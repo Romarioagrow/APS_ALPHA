@@ -160,15 +160,21 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildHeader(const FText& SectionTitle, boo
 			SNew(SVerticalBox)
 			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center)
 			[
-				SNew(STextBlock).Text(LOCTEXT("Brand", "A P O S F E R A")).Font(APSMenu::Font("Bold", 42)).ColorAndOpacity(APSMenu::White)
+				SNew(STextBlock).Text(LOCTEXT("Brand", "A P O S F E R A")).Font(APSMenu::Font("Bold", 54)).ColorAndOpacity(APSMenu::White)
 			]
 			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0.0f, 2.0f)
 			[
-				SNew(STextBlock).Text(LOCTEXT("SubBrand", "S P A C E T R I P S   G E N E R A T I O N")).Font(APSMenu::Font("Regular", 13)).ColorAndOpacity(APSMenu::White)
+				SNew(STextBlock).Text(LOCTEXT("SubBrand", "S P A C E T R I P S   G E N E R A T I O N")).Font(APSMenu::Font("Regular", 14)).ColorAndOpacity(APSMenu::White)
 			]
 			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0.0f, 8.0f, 0.0f, 0.0f)
 			[
-				SNew(STextBlock).Text(SectionTitle).Font(APSMenu::Font("Bold", 17)).ColorAndOpacity(APSMenu::Cyan)
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+				[SNew(SBox).WidthOverride(92.0f).HeightOverride(1.0f)[SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(APSMenu::Cyan)]]
+				+ SHorizontalBox::Slot().AutoWidth().Padding(18.0f, 0.0f)
+				[SNew(STextBlock).Text(SectionTitle).Font(APSMenu::Font("Bold", 17)).ColorAndOpacity(APSMenu::Cyan)]
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+				[SNew(SBox).WidthOverride(92.0f).HeightOverride(1.0f)[SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(APSMenu::Cyan)]]
 			]
 		]
 		+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
@@ -177,9 +183,9 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildHeader(const FText& SectionTitle, boo
 			[
 				SNew(SHorizontalBox)
 				+ SHorizontalBox::Slot().FillWidth(1.0f).Padding(4.0f)
-				[SNew(SButton).ButtonStyle(&SecondaryButtonStyle)[SNew(STextBlock).Text(LOCTEXT("Profile", "USER")).Justification(ETextJustify::Center).Font(APSMenu::Font("Bold", 11)).ColorAndOpacity(APSMenu::White)]]
+				[SNew(SButton).ButtonStyle(&SecondaryButtonStyle)[SNew(STextBlock).Text(LOCTEXT("Profile", "PROFILE")).Justification(ETextJustify::Center).Font(APSMenu::Font("Bold", 9)).ColorAndOpacity(APSMenu::White)]]
 				+ SHorizontalBox::Slot().FillWidth(1.0f).Padding(4.0f)
-				[SNew(SButton).ButtonStyle(&SecondaryButtonStyle)[SNew(STextBlock).Text(LOCTEXT("SettingsShort", "SET")).Justification(ETextJustify::Center).Font(APSMenu::Font("Bold", 11)).ColorAndOpacity(APSMenu::White)]]
+				[SNew(SButton).ButtonStyle(&SecondaryButtonStyle)[SNew(STextBlock).Text(LOCTEXT("SettingsShort", "SETTINGS")).Justification(ETextJustify::Center).Font(APSMenu::Font("Bold", 9)).ColorAndOpacity(APSMenu::White)]]
 			]
 		];
 }
@@ -229,7 +235,7 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildPathCard(const FText& Title, const FT
 			[
 				SNew(SBox).Clipping(EWidgetClipping::ClipToBounds)
 				[
-					SNew(SScaleBox).Stretch(EStretch::ScaleToFit).StretchDirection(EStretchDirection::Both)
+					SNew(SScaleBox).Stretch(bLarge ? EStretch::ScaleToFitY : EStretch::ScaleToFitX).StretchDirection(EStretchDirection::Both)
 					[
 						SNew(SImage).Image(Image).ColorAndOpacity(bEnabled ? FLinearColor::White : FLinearColor(0.18f, 0.22f, 0.25f, 0.42f))
 					]
@@ -243,9 +249,9 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildPathCard(const FText& Title, const FT
 				[
 					SNew(SVerticalBox)
 					+ SVerticalBox::Slot().AutoHeight()
-					[SNew(STextBlock).Text(Title).Font(APSMenu::Font("Bold", bLarge ? 28 : 17)).ColorAndOpacity(bEnabled ? Accent : APSMenu::Muted)]
+					[SNew(STextBlock).Text(Title).Font(APSMenu::Font("Bold", bLarge ? 28 : 17)).ColorAndOpacity(bEnabled ? APSMenu::White : APSMenu::Muted)]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 7.0f, 0.0f, 0.0f)
-					[SNew(STextBlock).Text(Description).AutoWrapText(true).Font(APSMenu::Font("Regular", bLarge ? 15 : 12)).ColorAndOpacity(bEnabled ? APSMenu::White : APSMenu::Muted)]
+					[SNew(STextBlock).Text(Description).AutoWrapText(true).Font(APSMenu::Font("Regular", bLarge ? 15 : 12)).ColorAndOpacity(bEnabled ? Accent : APSMenu::Muted)]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, bLarge ? 18.0f : 0.0f, 0.0f, 0.0f)
 					[
 						SNew(SBorder).Visibility(bLarge ? EVisibility::Visible : EVisibility::Collapsed)
@@ -266,7 +272,7 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildPathCard(const FText& Title, const FT
 TSharedRef<SWidget> SAPSMainMenuRoot::BuildChoosePathPage()
 {
 	TSharedRef<SWidget> Foreground = SNew(SVerticalBox)
-		+ SVerticalBox::Slot().AutoHeight().Padding(30.0f, 20.0f, 30.0f, 10.0f)[BuildHeader(LOCTEXT("ChoosePath", "--  CHOOSE YOUR PATH  --"))]
+		+ SVerticalBox::Slot().AutoHeight().Padding(30.0f, 20.0f, 30.0f, 10.0f)[BuildHeader(LOCTEXT("ChoosePath", "CHOOSE YOUR PATH"))]
 		+ SVerticalBox::Slot().FillHeight(1.0f).Padding(58.0f, 18.0f, 58.0f, 46.0f)
 		[
 			SNew(SHorizontalBox)
@@ -287,7 +293,7 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildChoosePathPage()
 					+ SHorizontalBox::Slot().FillWidth(1.0f).Padding(6.0f)
 					[BuildPathCard(LOCTEXT("GenCiv", "GENERATE CIVILIZATION"), LOCTEXT("GenCivDesc", "Create a civilization and shape its astronomical home."), &CivilizationImage, APSMenu::Cyan, FSimpleDelegate::CreateLambda([this]() { OpenAstronomicalGeneration(EAstroPreviewFocus::HomeSystem); }))]
 					+ SHorizontalBox::Slot().FillWidth(1.0f).Padding(6.0f)
-					[BuildPathCard(LOCTEXT("GenSpace", "GENERATE SPACE"), LOCTEXT("GenSpaceDesc", "Procedurally generate stellar systems and clusters."), &ClusterImage, APSMenu::Cyan, FSimpleDelegate::CreateLambda([this]() { OpenAstronomicalGeneration(EAstroPreviewFocus::StarCluster); }))]
+					[BuildPathCard(LOCTEXT("GenSpace", "GENERATE SPACE"), LOCTEXT("GenSpaceDesc", "Procedurally generate stellar systems and clusters."), &GalaxyImage, APSMenu::Cyan, FSimpleDelegate::CreateLambda([this]() { OpenAstronomicalGeneration(EAstroPreviewFocus::StarCluster); }))]
 				]
 				+ SVerticalBox::Slot().FillHeight(0.5f)
 				[
@@ -345,7 +351,7 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildExistingWorldsPage()
 	};
 
 	TSharedRef<SWidget> Page = SNew(SVerticalBox)
-		+ SVerticalBox::Slot().AutoHeight().Padding(30.0f, 18.0f, 30.0f, 8.0f)[BuildHeader(LOCTEXT("VisitExisting", "--  VISIT EXISTING WORLD  --"))]
+		+ SVerticalBox::Slot().AutoHeight().Padding(30.0f, 18.0f, 30.0f, 8.0f)[BuildHeader(LOCTEXT("VisitExisting", "VISIT EXISTING WORLD"))]
 		+ SVerticalBox::Slot().FillHeight(1.0f).Padding(24.0f, 8.0f, 24.0f, 24.0f)
 		[
 			SNew(SHorizontalBox)
@@ -410,12 +416,13 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildExistingWorldsPage()
 
 void SAPSMainMenuRoot::LoadExistingWorlds()
 {
-	TSet<FString> FavoriteSlots;
+	TMap<FString, TSharedPtr<FAPSExistingWorldEntry>> CachedEntries;
+	const FString PreviouslySelectedSlot = SelectedWorld.IsValid() ? SelectedWorld->SaveFileName : FString();
 	for (const TSharedPtr<FAPSExistingWorldEntry>& ExistingEntry : ExistingWorlds)
 	{
-		if (ExistingEntry.IsValid() && ExistingEntry->bFavorite)
+		if (ExistingEntry.IsValid())
 		{
-			FavoriteSlots.Add(ExistingEntry->SaveFileName);
+			CachedEntries.Add(ExistingEntry->SaveFileName, ExistingEntry);
 		}
 	}
 	ExistingWorlds.Reset();
@@ -424,21 +431,39 @@ void SAPSMainMenuRoot::LoadExistingWorlds()
 	IFileManager::Get().FindFiles(SaveFiles, *SaveDirectory, TEXT("*.sav"));
 	for (const FString& SaveFile : SaveFiles)
 	{
-		TSharedPtr<FAPSExistingWorldEntry> Entry = MakeShared<FAPSExistingWorldEntry>();
-		Entry->SaveFileName = FPaths::GetBaseFilename(SaveFile);
-		Entry->DisplayName = Entry->SaveFileName;
-		Entry->SystemType = TEXT("FULL-SCALE STAR SYSTEM");
-		Entry->StarType = TEXT("GENERATED STAR");
-		Entry->PlanetType = TEXT("PERSISTENT WORLD");
-		Entry->Environment = TEXT("Legacy world - details load on launch");
+		const FString SlotName = FPaths::GetBaseFilename(SaveFile);
 		const FFileStatData Stat = IFileManager::Get().GetStatData(*(SaveDirectory / SaveFile));
+		TSharedPtr<FAPSExistingWorldEntry> Entry = CachedEntries.FindRef(SlotName);
+		const bool bCacheIsCurrent = Entry.IsValid()
+			&& Entry->FileTimestamp == Stat.ModificationTime.ToUnixTimestamp()
+			&& Entry->FileSizeBytes == Stat.FileSize;
+		if (!Entry.IsValid())
+		{
+			Entry = MakeShared<FAPSExistingWorldEntry>();
+		}
+		Entry->SaveFileName = SlotName;
+		if (!bCacheIsCurrent)
+		{
+			Entry->DisplayName = SlotName;
+			Entry->SystemType = TEXT("FULL-SCALE STAR SYSTEM");
+			Entry->StarType = TEXT("GENERATED STAR");
+			Entry->PlanetType = TEXT("PERSISTENT WORLD");
+			Entry->Environment = TEXT("Legacy world - details load on launch");
+			Entry->TotalPlanets = 0;
+			Entry->InhabitedPlanets = 0;
+			Entry->bMetadataLoaded = false;
+		}
 		Entry->FileTimestamp = Stat.ModificationTime.ToUnixTimestamp();
 		Entry->FileSizeBytes = Stat.FileSize;
-		Entry->bFavorite = FavoriteSlots.Contains(Entry->SaveFileName);
 		ExistingWorlds.Add(Entry);
 	}
 	ExistingWorlds.Sort([](const auto& A, const auto& B) { return A->FileTimestamp > B->FileTimestamp; });
-	SelectedWorld = ExistingWorlds.Num() > 0 ? ExistingWorlds[0] : nullptr;
+	const TSharedPtr<FAPSExistingWorldEntry>* RestoredSelection = ExistingWorlds.FindByPredicate(
+		[&PreviouslySelectedSlot](const TSharedPtr<FAPSExistingWorldEntry>& Entry)
+		{
+			return Entry.IsValid() && Entry->SaveFileName == PreviouslySelectedSlot;
+		});
+	SelectedWorld = RestoredSelection ? *RestoredSelection : (ExistingWorlds.Num() > 0 ? ExistingWorlds[0] : nullptr);
 }
 
 void SAPSMainMenuRoot::BeginExistingWorldMetadataLoad()
@@ -449,7 +474,8 @@ void SAPSMainMenuRoot::BeginExistingWorldMetadataLoad()
 		// Old saves can exceed 100 MB and deserialize on the game thread even when
 		// their file read is asynchronous. Keep the browser instant; large legacy
 		// worlds remain launchable and receive metadata after a future lightweight save.
-		if (Entry.IsValid() && Entry->FileSizeBytes <= 1ll * 1024ll * 1024ll)
+		if (Entry.IsValid() && !Entry->bMetadataLoaded
+			&& Entry->FileSizeBytes <= 1ll * 1024ll * 1024ll)
 		{
 			LightweightSlots.Add(Entry->SaveFileName);
 		}
@@ -541,7 +567,7 @@ void SAPSMainMenuRoot::RebuildExistingWorldGrid()
 				+ SOverlay::Slot()
 				[
 					SNew(SBox).HeightOverride(bCompactWorldList ? 125.0f : 205.0f).Clipping(EWidgetClipping::ClipToBounds)
-					[SNew(SScaleBox).Stretch(EStretch::ScaleToFit)[SNew(SImage).Image(Image)]]
+					[SNew(SScaleBox).Stretch(EStretch::ScaleToFitX)[SNew(SImage).Image(Image)]]
 				]
 				+ SOverlay::Slot().HAlign(HAlign_Right).VAlign(VAlign_Top).Padding(10.0f)
 				[
@@ -594,7 +620,7 @@ void SAPSMainMenuRoot::RebuildExistingWorldDetails()
 		+ SVerticalBox::Slot().FillHeight(0.38f)
 		[
 			SNew(SBox).Clipping(EWidgetClipping::ClipToBounds)
-			[SNew(SScaleBox).Stretch(EStretch::ScaleToFit)[SNew(SImage).Image(DetailsImage)]]
+			[SNew(SScaleBox).Stretch(EStretch::ScaleToFitX)[SNew(SImage).Image(DetailsImage)]]
 		]
 		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 16.0f, 0.0f, 6.0f)[SNew(STextBlock).Text(FText::FromString(SelectedWorld->DisplayName)).Font(APSMenu::Font("Bold", 24)).ColorAndOpacity(APSMenu::White)]
 		+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Text(FText::FromString(SelectedWorld->SystemType)).ColorAndOpacity(APSMenu::Cyan)]
@@ -810,12 +836,11 @@ void SAPSMainMenuRoot::LoadSpawnClassOptions()
 		TEXT("/Game/APS/APS_ALPHA/UI/GenerationMenu/WBP_CivilizationMenu_UI.WBP_CivilizationMenu_UI_C"));
 	if (AMainMenuController* PC = Controller.Get()) PC->HoldSlateResource(PickerClass);
 	const USpawnClassPicker* Picker = PickerClass ? PickerClass->GetDefaultObject<USpawnClassPicker>() : nullptr;
-	if (!Picker) return;
-	SpawnClassOptions.Add(EAPSStartAssetSlot::Character, Picker->CharacterClasses);
-	SpawnClassOptions.Add(EAPSStartAssetSlot::Spaceship, Picker->SpaceshipClasses);
-	SpawnClassOptions.Add(EAPSStartAssetSlot::SpaceStation, Picker->SpaceStationClasses);
-	SpawnClassOptions.Add(EAPSStartAssetSlot::Headquarters, Picker->SpaceHeadquartersClasses);
-	SpawnClassOptions.Add(EAPSStartAssetSlot::Shipyard, Picker->ShipyardClasses);
+	SpawnClassOptions.Add(EAPSStartAssetSlot::Character, Picker ? Picker->CharacterClasses : TArray<TSubclassOf<AActor>>());
+	SpawnClassOptions.Add(EAPSStartAssetSlot::Spaceship, Picker ? Picker->SpaceshipClasses : TArray<TSubclassOf<AActor>>());
+	SpawnClassOptions.Add(EAPSStartAssetSlot::SpaceStation, Picker ? Picker->SpaceStationClasses : TArray<TSubclassOf<AActor>>());
+	SpawnClassOptions.Add(EAPSStartAssetSlot::Headquarters, Picker ? Picker->SpaceHeadquartersClasses : TArray<TSubclassOf<AActor>>());
+	SpawnClassOptions.Add(EAPSStartAssetSlot::Shipyard, Picker ? Picker->ShipyardClasses : TArray<TSubclassOf<AActor>>());
 	for (auto& Pair : SpawnClassOptions)
 	{
 		UClass* CurrentClass = nullptr;
@@ -829,6 +854,13 @@ void SAPSMainMenuRoot::LoadSpawnClassOptions()
 			case EAPSStartAssetSlot::Headquarters: CurrentClass = ViewModel->SpawnParameters->BP_HomeSpaceHeadquarters; break;
 			case EAPSStartAssetSlot::Shipyard: CurrentClass = ViewModel->SpawnParameters->BP_HomeSpaceShipyard; break;
 			}
+		}
+		// Slate remains functional even if the legacy picker Blueprint is absent or
+		// has an empty array: generator defaults are valid runtime selections and do
+		// not require the user to reconnect anything in UMG.
+		if (CurrentClass && CurrentClass->IsChildOf(AActor::StaticClass()))
+		{
+			Pair.Value.AddUnique(CurrentClass);
 		}
 		int32 InitialIndex = Pair.Value.IndexOfByPredicate([CurrentClass](const TSubclassOf<AActor>& Candidate)
 		{
@@ -953,7 +985,7 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildCivilizationPage()
 	};
 
 	return SNew(SVerticalBox)
-		+ SVerticalBox::Slot().AutoHeight().Padding(28.0f, 18.0f, 28.0f, 6.0f)[BuildHeader(LOCTEXT("CivParameters", "--  CIVILIZATION PARAMETERS  --"))]
+		+ SVerticalBox::Slot().AutoHeight().Padding(28.0f, 18.0f, 28.0f, 6.0f)[BuildHeader(LOCTEXT("CivParameters", "CIVILIZATION PARAMETERS"))]
 		+ SVerticalBox::Slot().FillHeight(1.0f).Padding(34.0f, 10.0f, 34.0f, 8.0f)
 		[
 			SNew(SHorizontalBox)
