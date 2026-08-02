@@ -20,6 +20,8 @@ void AMainMenuController::BeginPlay()
 void AMainMenuController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	GetWorldTimerManager().ClearTimer(InstallSlateMenuTimer);
+	++MetadataRequestGeneration;
+	PendingMetadataSlots.Reset();
 	RemoveSlateMenu();
 	if (WorldGenerationViewModel)
 	{
@@ -77,12 +79,23 @@ void AMainMenuController::LaunchSingleGame()
 		? GetGameInstance()->GetSubsystem<UMainGameplayInstance>() : nullptr)
 	{
 		GameplayInstance->bIsLoadingMode = false;
+		GameplayInstance->SaveSlotName.Reset();
+		GameplayInstance->NewGeneratedWorld = nullptr;
+		GameplayInstance->CurrentCivilization = nullptr;
 	}
 	UGameplayStatics::OpenLevel(this, TEXT("L_APS_SinglePlay_StartLocation"));
 }
 
 void AMainMenuController::LoadWorldSlot(const FString& SaveFileName)
 {
+	if (UMainGameplayInstance* GameplayInstance = GetGameInstance()
+		? GetGameInstance()->GetSubsystem<UMainGameplayInstance>() : nullptr)
+	{
+		// A visit must never accidentally reuse a model committed by an earlier
+		// generation session in the same GameInstance.
+		GameplayInstance->NewGeneratedWorld = nullptr;
+		GameplayInstance->CurrentCivilization = nullptr;
+	}
 	SetSaveSlotName(SaveFileName);
 	SetLoadingModeTrue();
 	UGameplayStatics::OpenLevel(this, TEXT("L_WorldGeneration"));
@@ -90,9 +103,27 @@ void AMainMenuController::LoadWorldSlot(const FString& SaveFileName)
 
 void AMainMenuController::LoadWorldMetadataAsync(const TArray<FString>& SlotNames)
 {
-	PendingMetadataSlots = SlotNames;
+	// Opening the browser again replaces the previous request. Async save loading
+	// cannot be cancelled by the engine, so generation-tagged callbacks below are
+	// ignored instead of advancing a stale/replaced queue.
+	++MetadataRequestGeneration;
+	PendingMetadataSlots.Reset();
+	for (const FString& SlotName : SlotNames)
+	{
+		if (!SlotName.IsEmpty())
+		{
+			PendingMetadataSlots.AddUnique(SlotName);
+		}
+	}
 	PendingMetadataIndex = 0;
 	LoadNextWorldMetadata();
+}
+
+void AMainMenuController::CancelWorldMetadataLoad()
+{
+	++MetadataRequestGeneration;
+	PendingMetadataSlots.Reset();
+	PendingMetadataIndex = 0;
 }
 
 void AMainMenuController::LoadNextWorldMetadata()
@@ -104,13 +135,23 @@ void AMainMenuController::LoadNextWorldMetadata()
 	}
 
 	const FString SlotName = PendingMetadataSlots[PendingMetadataIndex++];
+	const uint64 RequestGeneration = MetadataRequestGeneration;
 	UGameplayStatics::AsyncLoadGameFromSlot(
 		SlotName, 0,
-		FAsyncLoadGameFromSlotDelegate::CreateUObject(this, &AMainMenuController::OnWorldMetadataLoaded));
+		FAsyncLoadGameFromSlotDelegate::CreateWeakLambda(this,
+			[this, RequestGeneration](const FString& LoadedSlotName, int32 UserIndex, USaveGame* LoadedGame)
+			{
+				OnWorldMetadataLoaded(RequestGeneration, LoadedSlotName, UserIndex, LoadedGame);
+			}));
 }
 
-void AMainMenuController::OnWorldMetadataLoaded(const FString& SlotName, int32 UserIndex, USaveGame* LoadedGame)
+void AMainMenuController::OnWorldMetadataLoaded(uint64 RequestGeneration, const FString& SlotName,
+	int32 UserIndex, USaveGame* LoadedGame)
 {
+	if (RequestGeneration != MetadataRequestGeneration)
+	{
+		return;
+	}
 	if (SlateMenuRoot.IsValid())
 	{
 		SlateMenuRoot->ApplyExistingWorldMetadata(SlotName, Cast<UGameSave>(LoadedGame));

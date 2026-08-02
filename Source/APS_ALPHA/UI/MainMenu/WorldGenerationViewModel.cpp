@@ -396,6 +396,10 @@ void UWorldGenerationViewModel::CommitAndOpenLevel(FName LevelName)
 	{
 		if (UMainGameplayInstance* GameplayInstance = GameInstance->GetSubsystem<UMainGameplayInstance>())
 		{
+			// This is a newly generated world, not a request to restore the last
+			// selected save slot. Explicitly reset both modes before travel.
+			GameplayInstance->bIsLoadingMode = false;
+			GameplayInstance->SaveSlotName.Reset();
 			// The editable model is owned by the menu controller. Duplicate it into
 			// the GameInstance subsystem before travel so it survives destruction of
 			// the menu world and remains the exact model consumed by gameplay.

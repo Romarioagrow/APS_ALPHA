@@ -33,6 +33,7 @@ public:
 	void LaunchSingleGame();
 	void LoadWorldSlot(const FString& SaveFileName);
 	void LoadWorldMetadataAsync(const TArray<FString>& SlotNames);
+	void CancelWorldMetadataLoad();
 	UWorldGenerationViewModel* GetWorldGenerationViewModel() const { return WorldGenerationViewModel; }
 	void HoldSlateResource(UObject* Resource);
 
@@ -40,7 +41,8 @@ private:
 	void InstallSlateMenu();
 	void RemoveSlateMenu();
 	void LoadNextWorldMetadata();
-	void OnWorldMetadataLoaded(const FString& SlotName, int32 UserIndex, USaveGame* LoadedGame);
+	void OnWorldMetadataLoaded(uint64 RequestGeneration, const FString& SlotName,
+		int32 UserIndex, USaveGame* LoadedGame);
 
 	UPROPERTY(Transient)
 	TObjectPtr<UGeneratedWorld> MenuGeneratedWorld;
@@ -56,4 +58,6 @@ private:
 	FTimerHandle InstallSlateMenuTimer;
 	TArray<FString> PendingMetadataSlots;
 	int32 PendingMetadataIndex{0};
+	/** Invalidates callbacks from an older browser page without blocking for I/O. */
+	uint64 MetadataRequestGeneration{0};
 };

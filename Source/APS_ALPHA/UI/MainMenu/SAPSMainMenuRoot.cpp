@@ -118,6 +118,13 @@ void SAPSMainMenuRoot::Construct(const FArguments& InArgs)
 
 void SAPSMainMenuRoot::Navigate(EAPSMenuPage NewPage)
 {
+	if (CurrentPage == EAPSMenuPage::ExistingWorlds && NewPage != EAPSMenuPage::ExistingWorlds)
+	{
+		if (AMainMenuController* PC = Controller.Get())
+		{
+			PC->CancelWorldMetadataLoad();
+		}
+	}
 	PreviousPage = CurrentPage;
 	CurrentPage = NewPage;
 	if (!ContentHost.IsValid()) return;
