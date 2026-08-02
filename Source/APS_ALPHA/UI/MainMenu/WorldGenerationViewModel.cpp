@@ -191,6 +191,13 @@ void UWorldGenerationViewModel::RegeneratePreviewVariant()
 void UWorldGenerationViewModel::SetPreviewFocus(EAstroPreviewFocus NewFocus)
 {
 	PreviewFocus = NewFocus;
+	// Before the first live model is ready an existing level generator may still
+	// contain its old background world. Remember the desired focus, but do not
+	// steer the camera toward an actor that RequestPreview is about to destroy.
+	if (!bPreviewReady)
+	{
+		return;
+	}
 	if (AAstroGenerator* Generator = FindOrCreatePreviewGenerator())
 	{
 		APlayerController* PC = WorldContext.IsValid() && WorldContext->GetWorld()

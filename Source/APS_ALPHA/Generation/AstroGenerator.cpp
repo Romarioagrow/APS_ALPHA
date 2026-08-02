@@ -153,7 +153,9 @@ bool AAstroGenerator::RegeneratePreview(UGeneratedWorld* InGeneratedWorld)
 	bSpawnStarterPlanet = bSavedStarterPlanet;
 	bCharacterSpawn = bSavedCharacterSpawn;
 
-	FocusPreviewCamera();
+	// The view model applies the requested focus after generation. Starting a
+	// transition here as well used to restart the same blend twice and produced
+	// a visible camera kick whenever a live parameter changed.
 	return IsValid(GeneratedStarCluster) || IsValid(GeneratedGalaxy) || IsValid(GeneratedHomeStarSystem);
 }
 
