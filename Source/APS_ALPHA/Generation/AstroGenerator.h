@@ -420,7 +420,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "World Generation|Star Cluster")
 	bool DematerializeClusterStarSystem(int32 InstanceIndex);
 	
-	void AddGeneratedWorldModelData();
+	bool AddGeneratedWorldModelData();
 
 	UFUNCTION()
 	FVector DetermineHomeSystemSpawnLocation();

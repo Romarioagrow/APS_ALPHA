@@ -714,34 +714,34 @@ bool AAstroGenerator::DematerializeClusterStarSystem(int32 InstanceIndex)
 	return true;
 }
 
-void AAstroGenerator::AddGeneratedWorldModelData()
+bool AAstroGenerator::AddGeneratedWorldModelData()
 {
 	if (!GeneratedWorldModel)
 	{
 		UE_LOG(LogTemp, Error, TEXT("Cannot store generated world data: GeneratedWorldModel is null"));
-		return;
+		return false;
 	}
 	if (!HomePlanet)
 	{
 		UE_LOG(LogTemp, Error, TEXT("HomePlanet is null!"));
-		return;
+		return false;
 	}
 	if (!HomeStar)
 	{
 		UE_LOG(LogTemp, Error, TEXT("Cannot store generated world data: HomeStar is null"));
-		return;
+		return false;
 	}
 	if (!GeneratedHomeStarSystem)
 	{
 		UE_LOG(LogTemp, Error, TEXT("Cannot store generated world data: home star system is null"));
-		return;
+		return false;
 	}
 
 	// �������� ���������� ������
 	if (!HomePlanet->PlanetData.PlanetModel.IsValid())
 	{
 		UE_LOG(LogTemp, Error, TEXT("HomePlanet's PlanetModel is invalid!"));
-		return;
+		return false;
 	}
 	
 	// A cluster is only created for the StarCluster generation level. Galaxy and
@@ -776,6 +776,7 @@ void AAstroGenerator::AddGeneratedWorldModelData()
 
 	HomePlanet->FillPlanetData();
 	GeneratedWorldModel->InhabitedPlanets.Add(HomePlanet->PlanetData);
+	return true;
 }
 
 void AAstroGenerator::GenerateHomeStarSystem()
@@ -870,7 +871,12 @@ void AAstroGenerator::GenerateHomeStarSystem()
 					                                                  HomePlanetModel, HomePlanetModel->Radius,
 					                                                  GeneratedWorldModel->MoonsAmount);
 
-					AddGeneratedWorldModelData();
+					if (!AddGeneratedWorldModelData())
+					{
+						UE_LOG(LogTemp, Error,
+							TEXT("Aborting generated-world handoff because its runtime model is incomplete"));
+						return;
+					}
 					
 					SpawnPlanetMoons(HomePlanetModel);
 
