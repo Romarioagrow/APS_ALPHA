@@ -21,6 +21,7 @@
 #include "Engine/StaticMesh.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/PlayerController.h"
+#include "Components/SpotLightComponent.h"
 
 namespace APSGameplayIntegrationTests
 {
@@ -225,6 +226,8 @@ bool FAPSVehicleControlRoundTripTest::RunTest(const FString& Parameters)
 		Ship->GetClass()->ImplementsInterface(UVehicleControlling::StaticClass()));
 	TestTrue(TEXT("Native vehicle eligibility accepts the pilot"),
 		Ship->CanRequestVehicleControl(Character));
+	TestTrue(TEXT("Uncontrolled fleet ship keeps its fill light disabled"),
+		Ship->PilotFillLight && !Ship->PilotFillLight->IsVisible());
 	IVehicleControlling* VehicleInterface = Cast<IVehicleControlling>(Ship);
 	TestNotNull(TEXT("Native vehicle interface address is available"), VehicleInterface);
 	TestTrue(TEXT("Interface vehicle eligibility accepts the pilot"),
@@ -236,6 +239,8 @@ bool FAPSVehicleControlRoundTripTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Spaceship remembers its pilot"), Ship->Pilot.Get(), static_cast<APawn*>(Character));
 	TestTrue(TEXT("Pilot is attached to the ship seat"), Character->IsAttachedTo(Ship));
 	TestTrue(TEXT("Pilot is hidden while no seated animation is configured"), Character->IsHidden());
+	TestTrue(TEXT("Controlled ship enables its camera-side fill light"),
+		Ship->PilotFillLight && Ship->PilotFillLight->IsVisible());
 
 	const bool bExited = VehicleInterface && VehicleInterface->RequestReleaseVehicleControl();
 	TestTrue(TEXT("Unified vehicle interface releases the pilot"), bExited);
@@ -245,6 +250,8 @@ bool FAPSVehicleControlRoundTripTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Pilot collision is restored"), Character->GetActorEnableCollision());
 	TestTrue(TEXT("Pilot ticking is restored"), Character->IsActorTickEnabled());
 	TestFalse(TEXT("Pilot visibility is restored"), Character->IsHidden());
+	TestTrue(TEXT("Released ship disables its camera-side fill light"),
+		Ship->PilotFillLight && !Ship->PilotFillLight->IsVisible());
 
 	APSGameplayIntegrationTests::DestroyTestWorld(World);
 	return true;
@@ -542,6 +549,16 @@ bool FAPSClusterSystemDataTest::RunTest(const FString& Parameters)
 
 	UWorld* World = APSGameplayIntegrationTests::CreateTestWorld();
 	AStarCluster* Cluster = World->SpawnActor<AStarCluster>();
+	Cluster->StarMeshInstances->bUseTranslatedInstanceSpace = false;
+	Cluster->StarMeshInstances->bAutoRebuildTreeOnInstanceChanges = true;
+	Cluster->StarMeshInstances->bEvaluateWorldPositionOffset = true;
+	Cluster->FinalizeGeneratedInstances();
+	TestTrue(TEXT("Finalized star instances use translated large-world space"),
+		Cluster->StarMeshInstances->bUseTranslatedInstanceSpace);
+	TestFalse(TEXT("Finalized star instances cannot restore animated WPO"),
+		Cluster->StarMeshInstances->bEvaluateWorldPositionOffset);
+	TestFalse(TEXT("Finalized star instances rebuild only as one explicit batch"),
+		Cluster->StarMeshInstances->bAutoRebuildTreeOnInstanceChanges);
 	Cluster->GenerationSeed = 77;
 	Cluster->RegisterPotentialSystem(0, FVector(100.0, 200.0, 300.0),
 		PrimaryStar, FirstSystem);

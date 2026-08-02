@@ -12,6 +12,7 @@ class AStarSystem;
 class AStarCluster;
 class UCameraComponent;
 class USpringArmComponent;
+class USpotLightComponent;
 class USkeletalMesh;
 class USkeletalMeshComponent;
 class UPrimitiveComponent;
@@ -183,6 +184,10 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Camera)
 	UCameraComponent* CameraComponent;
+
+	/** Camera-side fill active only on the controlled ship, keeping dark hull materials readable. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ship|Visuals")
+	USpotLightComponent* PilotFillLight;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Meshes")
 	UStaticMesh* SmallScaleHullMesh;
@@ -534,6 +539,7 @@ private:
 	bool GetPrimaryHullLocalBounds(UPrimitiveComponent* Hull, FVector& OutMin, FVector& OutMax) const;
 	void ConfigureFromHull();
 	void ConfigureCameraFromHull();
+	void ConfigurePilotFillLight();
 	void ConfigureFlightReferenceFromHull(UPrimitiveComponent* Hull, const FVector& LocalExtent);
 	void UpdateAdaptiveFlightCamera(float DeltaTime);
 	void InitializeFlightPostProcess();

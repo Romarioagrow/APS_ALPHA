@@ -19,13 +19,19 @@ public:
 	virtual void Deinitialize() override;
 	virtual void OnWorldBeginPlay(UWorld& InWorld) override;
 
+	/**
+	 * Applies the large-world/temporal rendering contract to a completed star instance set.
+	 * Generators must call this after their final AddInstance because actor-spawn callbacks run
+	 * before Blueprint construction and procedural instance population have finished.
+	 */
+	static void StabilizeInstances(UHierarchicalInstancedStaticMeshComponent* Instances);
+
 protected:
 	virtual bool DoesSupportWorldType(const EWorldType::Type WorldType) const override;
 
 private:
 	void HandleActorSpawned(AActor* Actor);
 	void StabilizeActor(AActor* Actor) const;
-	static void StabilizeInstances(UHierarchicalInstancedStaticMeshComponent* Instances);
 	static bool StabilizeTranslucentNaniteMesh(UStaticMeshComponent* Component);
 
 	FDelegateHandle ActorSpawnedHandle;

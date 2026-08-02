@@ -9,6 +9,7 @@
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
 #include "Materials/MaterialInterface.h"
+#include "TimerManager.h"
 
 namespace APSRenderStability
 {
@@ -95,6 +96,19 @@ void UAPSStarRenderStabilitySubsystem::OnWorldBeginPlay(UWorld& InWorld)
 void UAPSStarRenderStabilitySubsystem::HandleActorSpawned(AActor* Actor)
 {
 	StabilizeActor(Actor);
+
+	// AddOnActorSpawned is called before Blueprint construction and before procedural generation.
+	// Re-apply on the next game tick so serialized BP component defaults cannot restore animated WPO.
+	if (UWorld* World = GetWorld(); World && IsValid(Actor)
+		&& (Actor->IsA<AStarCluster>() || Actor->IsA<AGalaxy>()))
+	{
+		const TWeakObjectPtr<AActor> WeakActor(Actor);
+		World->GetTimerManager().SetTimerForNextTick(FTimerDelegate::CreateWeakLambda(this,
+			[this, WeakActor]()
+			{
+				StabilizeActor(WeakActor.Get());
+			}));
+	}
 }
 
 void UAPSStarRenderStabilitySubsystem::StabilizeActor(AActor* Actor) const
@@ -160,11 +174,10 @@ void UAPSStarRenderStabilitySubsystem::StabilizeInstances(
 
 	// HISM cluster bounds and instance transforms are single precision in UE 5.4. The
 	// translated tree mode exists specifically for large-coordinate precision loss.
-	const bool bNeedsTranslatedTreeRebuild = !Instances->bUseTranslatedInstanceSpace
-		&& Instances->GetInstanceCount() > 0;
 	Instances->bUseTranslatedInstanceSpace = true;
 	Instances->bEnableDensityScaling = false;
 	Instances->bNeverDistanceCull = true;
+	Instances->bAutoRebuildTreeOnInstanceChanges = false;
 	Instances->SetCullDistances(0, 0);
 	Instances->bDisableCollision = true;
 	Instances->SetCollisionEnabled(ECollisionEnabled::NoCollision);
@@ -180,9 +193,26 @@ void UAPSStarRenderStabilitySubsystem::StabilizeInstances(
 	Instances->bAffectDynamicIndirectLighting = false;
 	Instances->bAffectDistanceFieldLighting = false;
 	Instances->SetReceivesDecals(false);
-	if (bNeedsTranslatedTreeRebuild)
+	Instances->bUseAsOccluder = false;
+
+	// Cluster stars are sub-pixel impostors at gameplay distance. Switching AutoLOD sphere
+	// silhouettes while TSR jitters the projection creates visible pulses, so keep the cheapest
+	// authored LOD until the selected record is materialized as a real star actor.
+	UStaticMesh* Mesh = Instances->GetStaticMesh();
+	const int32 NumLODs = Mesh ? Mesh->GetNumLODs() : 0;
+	if (NumLODs > 1)
+	{
+		Instances->SetForcedLodModel(NumLODs);
+	}
+	// BuildTreeIfOutdated is cheap when the tree is current and mandatory after generators
+	// populated a component whose automatic rebuilds are deliberately disabled.
+	if (Instances->GetInstanceCount() > 0)
 	{
 		Instances->BuildTreeIfOutdated(true, true);
 	}
 	Instances->MarkRenderStateDirty();
+	UE_LOG(LogTemp, Log,
+		TEXT("[APS.Render] Stable star instances component=%s instances=%d mesh=%s lods=%d forced=%d translated=%d"),
+		*Instances->GetPathName(), Instances->GetInstanceCount(), *GetNameSafe(Mesh), NumLODs,
+		Instances->ForcedLodModel, Instances->bUseTranslatedInstanceSpace ? 1 : 0);
 }

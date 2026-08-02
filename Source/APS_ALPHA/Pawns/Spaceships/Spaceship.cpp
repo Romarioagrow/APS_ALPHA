@@ -43,6 +43,7 @@
 #include "Widgets/SViewport.h"
 #include "Widgets/Text/STextBlock.h"
 #include "Components/MeshComponent.h"
+#include "Components/SpotLightComponent.h"
 
 class SAPSShipNavigationOverlay final : public SLeafWidget
 {
@@ -286,6 +287,19 @@ ASpaceship::ASpaceship()
 	#if WITH_EDITOR
 	CameraComponent->SetCameraMesh(nullptr);
 	#endif
+
+	PilotFillLight = CreateDefaultSubobject<USpotLightComponent>(TEXT("PilotFillLight"));
+	PilotFillLight->SetupAttachment(CameraComponent);
+	PilotFillLight->SetRelativeLocation(FVector::ZeroVector);
+	PilotFillLight->SetRelativeRotation(FRotator::ZeroRotator);
+	PilotFillLight->SetMobility(EComponentMobility::Movable);
+	PilotFillLight->SetIntensity(3200.0f);
+	PilotFillLight->SetLightColor(FLinearColor(0.72f, 0.82f, 1.0f));
+	PilotFillLight->SetInnerConeAngle(38.0f);
+	PilotFillLight->SetOuterConeAngle(72.0f);
+	PilotFillLight->SetCastShadows(false);
+	PilotFillLight->SetAffectTranslucentLighting(false);
+	PilotFillLight->SetVisibility(false, true);
 }
 
 void ASpaceship::OnConstruction(const FTransform& Transform)
@@ -1043,6 +1057,7 @@ void ASpaceship::ConfigureFromHull()
 		SpaceshipHull->SetAngularDamping(ActiveClassPreset.AngularDamping);
 	}
 	ConfigureCameraFromHull();
+	ConfigurePilotFillLight();
 }
 
 void ASpaceship::RebuildSimpleHullCollision()
@@ -1167,6 +1182,20 @@ void ASpaceship::ConfigureCameraFromHull()
 		FlightForwardLocalAxis, FlightUpLocalAxis).Rotator();
 	SpringArmComponent->SetRelativeRotation(FlightViewRotation + FRotator(-12.0, 0.0, 0.0));
 	SpringArmComponent->bDoCollisionTest = false;
+}
+
+void ASpaceship::ConfigurePilotFillLight()
+{
+	if (!PilotFillLight)
+	{
+		return;
+	}
+
+	const UPrimitiveComponent* MainMesh = GetPrimaryHullComponent();
+	const float HullRadius = MainMesh ? FMath::Max(MainMesh->Bounds.SphereRadius, 400.0f) : 400.0f;
+	const float CameraDistance = FMath::Max(BaseCameraArmLength, 820.0f);
+	PilotFillLight->SetAttenuationRadius(CameraDistance + HullRadius * 2.5f);
+	PilotFillLight->SetIntensity(FMath::Clamp(2200.0f + HullRadius * 0.35f, 2600.0f, 8500.0f));
 }
 
 FVector ASpaceship::GetShipForwardVector() const
@@ -3070,6 +3099,11 @@ void ASpaceship::RemoveShipHud()
 void ASpaceship::PossessedBy(AController* NewController)
 {
 	Super::PossessedBy(NewController);
+	ConfigurePilotFillLight();
+	if (PilotFillLight)
+	{
+		PilotFillLight->SetVisibility(true, true);
+	}
 	UpdateFlightEnvironment(0.0f, true);
 	SetFlightCollisionOptimization(true);
 	SetActorTickEnabled(true);
@@ -3079,6 +3113,10 @@ void ASpaceship::PossessedBy(AController* NewController)
 void ASpaceship::UnPossessed()
 {
 	RemoveShipHud();
+	if (PilotFillLight)
+	{
+		PilotFillLight->SetVisibility(false, true);
+	}
 	RestoreFlightPostProcess();
 	if (CameraComponent && bCameraFieldOfViewInitialized)
 	{

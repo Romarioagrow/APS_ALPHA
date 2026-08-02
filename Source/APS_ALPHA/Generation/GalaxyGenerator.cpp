@@ -4,6 +4,7 @@
 #include "APS_ALPHA/Actors/Astro/Galaxy.h"
 #include "APS_ALPHA/Core/Enums/GalaxyClass.h"
 #include "APS_ALPHA/Core/Enums/GalaxyType.h"
+#include "APS_ALPHA/Core/Rendering/APSStarRenderStabilitySubsystem.h"
 #include "APS_ALPHA/Core/Structs/GalaxyModel.h"
 #include "APS_ALPHA/Core/Structs/StarGenerationModel.h"
 
@@ -90,8 +91,7 @@ void UGalaxyGenerator::GenerateGalaxyOctreeStars(UStarGenerator* StarGenerator, 
 		NewGalaxy->StarMeshInstances->SetCustomDataValue(StarInstIndex, 4, FMath::FRand(), false);
 		NewGalaxy->StarMeshInstances->SetCustomDataValue(StarInstIndex, 5, 0.0f, false);
 	}
-	NewGalaxy->StarMeshInstances->BuildTreeIfOutdated(true, true);
-	NewGalaxy->StarMeshInstances->MarkRenderStateDirty();
+	UAPSStarRenderStabilitySubsystem::StabilizeInstances(NewGalaxy->StarMeshInstances);
 	delete galaxyOctree;
 }
 

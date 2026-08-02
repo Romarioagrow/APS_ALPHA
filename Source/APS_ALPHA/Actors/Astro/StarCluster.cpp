@@ -1,6 +1,7 @@
 #include "StarCluster.h"
 #include "Star.h"
 #include "APS_ALPHA/Core/Enums/StarClusterType.h"
+#include "APS_ALPHA/Core/Rendering/APSStarRenderStabilitySubsystem.h"
 #include "Misc/Crc.h"
 
 AStarCluster::AStarCluster()
@@ -117,8 +118,7 @@ void AStarCluster::FinalizeGeneratedInstances()
 	{
 		return;
 	}
-	StarMeshInstances->BuildTreeIfOutdated(true, true);
-	StarMeshInstances->MarkRenderStateDirty();
+	UAPSStarRenderStabilitySubsystem::StabilizeInstances(StarMeshInstances);
 }
 
 // ������� ��������� ���������
