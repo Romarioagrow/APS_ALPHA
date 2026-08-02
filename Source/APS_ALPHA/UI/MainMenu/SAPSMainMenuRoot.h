@@ -32,6 +32,30 @@ struct FAPSExistingWorldEntry
 	int64 FileTimestamp{0};
 	int64 FileSizeBytes{0};
 	bool bMetadataLoaded{false};
+	bool bFavorite{false};
+};
+
+enum class EAPSWorldCollection : uint8
+{
+	All,
+	MyWorlds,
+	Favorites,
+	Recent
+};
+
+enum class EAPSWorldSortMode : uint8
+{
+	LastPlayed,
+	Name,
+	SaveSize
+};
+
+enum class EAPSWorldFilterKind : uint8
+{
+	StarType,
+	WorldType,
+	Inhabited,
+	Environment
 };
 
 class SAPSMainMenuRoot final : public SCompoundWidget
@@ -64,6 +88,10 @@ private:
 	void RebuildExistingWorldGrid();
 	void RebuildExistingWorldDetails();
 	void BeginExistingWorldMetadataLoad();
+	bool PassesExistingWorldFilters(const FAPSExistingWorldEntry& Entry) const;
+	FText GetWorldCollectionLabel(EAPSWorldCollection Collection) const;
+	FText GetWorldSortLabel() const;
+	FText GetWorldFilterLabel(EAPSWorldFilterKind Kind) const;
 	void LoadSpawnClassOptions();
 	void RefreshSpawnClassBrush(EAPSStartAssetSlot Slot);
 	FText GetSpawnClassName(EAPSStartAssetSlot Slot) const;
@@ -80,6 +108,12 @@ private:
 	FReply ContinueExistingWorld();
 	FReply SelectExistingWorld(TSharedPtr<FAPSExistingWorldEntry> Entry);
 	FReply ChangeExistingWorldPage(int32 Delta);
+	FReply SetWorldCollection(EAPSWorldCollection Collection);
+	FReply CycleWorldSort();
+	FReply ToggleWorldView();
+	FReply CycleWorldFilter(EAPSWorldFilterKind Kind);
+	FReply ToggleWorldFavorite(TSharedPtr<FAPSExistingWorldEntry> Entry);
+	FReply ToggleWorldDetails();
 	FReply QuitGame();
 	void OnWorldSearchChanged(const FText& SearchText);
 
@@ -95,6 +129,11 @@ private:
 	TSharedPtr<FAPSExistingWorldEntry> SelectedWorld;
 	FString WorldSearch;
 	int32 ExistingWorldPage{0};
+	EAPSWorldCollection WorldCollection{EAPSWorldCollection::All};
+	EAPSWorldSortMode WorldSortMode{EAPSWorldSortMode::LastPlayed};
+	TMap<EAPSWorldFilterKind, int32> WorldFilterIndices;
+	bool bShowTechnicalWorldDetails{false};
+	bool bCompactWorldList{false};
 
 	TMap<EAPSStartAssetSlot, TArray<TSubclassOf<AActor>>> SpawnClassOptions;
 	TMap<EAPSStartAssetSlot, int32> SpawnClassIndices;

@@ -229,7 +229,7 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildPathCard(const FText& Title, const FT
 			[
 				SNew(SBox).Clipping(EWidgetClipping::ClipToBounds)
 				[
-					SNew(SScaleBox).Stretch(EStretch::ScaleToFit).StretchDirection(EStretchDirection::Both)
+					SNew(SScaleBox).Stretch(EStretch::ScaleToFill).StretchDirection(EStretchDirection::Both)
 					[
 						SNew(SImage).Image(Image).ColorAndOpacity(bEnabled ? FLinearColor::White : FLinearColor(0.18f, 0.22f, 0.25f, 0.42f))
 					]
@@ -313,26 +313,35 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildExistingWorldsPage()
 	LoadExistingWorlds();
 	ExistingWorldPage = 0;
 
-	const auto NavRow = [](const FText& Label, const FText& Count, bool bActive)
+	const auto NavRow = [this](const FText& Label, EAPSWorldCollection Collection, TFunction<int32()> CountGetter)
 	{
-		return SNew(SBorder)
-			.BorderImage(FAppStyle::GetBrush("WhiteBrush"))
-			.BorderBackgroundColor(bActive ? FLinearColor(0.28f, 0.12f, 0.005f, 0.92f) : FLinearColor::Transparent)
-			.Padding(FMargin(14.0f, 11.0f))
+		return SNew(SButton)
+			.ButtonStyle(&SecondaryButtonStyle)
+			.ButtonColorAndOpacity_Lambda([this, Collection]()
+			{
+				return WorldCollection == Collection
+					? FLinearColor(0.72f, 0.32f, 0.03f, 1.0f) : FLinearColor::White;
+			})
+			.ContentPadding(FMargin(14.0f, 11.0f))
+			.OnClicked(this, &SAPSMainMenuRoot::SetWorldCollection, Collection)
 			[
 				SNew(SHorizontalBox)
 				+ SHorizontalBox::Slot().FillWidth(1.0f)
-				[SNew(STextBlock).Text(Label).Font(APSMenu::Font("Bold", 13)).ColorAndOpacity(bActive ? APSMenu::Amber : APSMenu::White)]
+				[SNew(STextBlock).Text(Label).Font(APSMenu::Font("Bold", 13)).ColorAndOpacity_Lambda([this, Collection](){ return WorldCollection == Collection ? APSMenu::Amber : APSMenu::White; })]
 				+ SHorizontalBox::Slot().AutoWidth()
-				[SNew(STextBlock).Text(Count).Font(APSMenu::Font("Bold", 12)).ColorAndOpacity(bActive ? APSMenu::Amber : APSMenu::Muted)]
+				[SNew(STextBlock).Text_Lambda([CountGetter](){ return FText::AsNumber(CountGetter()); }).Font(APSMenu::Font("Bold", 12)).ColorAndOpacity(APSMenu::Muted)]
 			];
 	};
 
-	const auto FilterRow = [](const FText& Label)
+	const auto FilterRow = [this](const FText& Label, EAPSWorldFilterKind Kind)
 	{
-		return SNew(SHorizontalBox)
-			+ SHorizontalBox::Slot().FillWidth(1.0f)[SNew(STextBlock).Text(Label).Font(APSMenu::Font("Regular", 10)).ColorAndOpacity(APSMenu::Muted)]
-			+ SHorizontalBox::Slot().AutoWidth()[SNew(STextBlock).Text(LOCTEXT("AnyFilter", "ANY  v")).Font(APSMenu::Font("Bold", 10)).ColorAndOpacity(APSMenu::Cyan)];
+		return SNew(SButton).ButtonStyle(&FAppStyle::Get().GetWidgetStyle<FButtonStyle>("NoBorder"))
+			.ContentPadding(FMargin(2.0f, 5.0f)).OnClicked(this, &SAPSMainMenuRoot::CycleWorldFilter, Kind)
+			[
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot().FillWidth(1.0f)[SNew(STextBlock).Text(Label).Font(APSMenu::Font("Regular", 10)).ColorAndOpacity(APSMenu::Muted)]
+				+ SHorizontalBox::Slot().AutoWidth()[SNew(STextBlock).Text_Lambda([this, Kind](){ return GetWorldFilterLabel(Kind); }).Font(APSMenu::Font("Bold", 10)).ColorAndOpacity(APSMenu::Cyan)]
+			];
 	};
 
 	TSharedRef<SWidget> Page = SNew(SVerticalBox)
@@ -345,18 +354,17 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildExistingWorldsPage()
 				SNew(SBorder).BorderImage(&APSMenu::PanelBrush).Padding(14.0f)
 				[
 					SNew(SVerticalBox)
-					+ SVerticalBox::Slot().AutoHeight()[NavRow(LOCTEXT("AllWorlds", "ALL WORLDS"), FText::AsNumber(ExistingWorlds.Num()), true)]
-					+ SVerticalBox::Slot().AutoHeight()[NavRow(LOCTEXT("MyWorlds", "MY WORLDS"), FText::AsNumber(ExistingWorlds.Num()), false)]
-					+ SVerticalBox::Slot().AutoHeight()[NavRow(LOCTEXT("Favorites", "FAVORITES"), FText::AsNumber(0), false)]
-					+ SVerticalBox::Slot().AutoHeight()[NavRow(LOCTEXT("Recent", "RECENT"), FText::AsNumber(FMath::Min(6, ExistingWorlds.Num())), false)]
+					+ SVerticalBox::Slot().AutoHeight()[NavRow(LOCTEXT("AllWorlds", "ALL WORLDS"), EAPSWorldCollection::All, [this](){ return ExistingWorlds.Num(); })]
+					+ SVerticalBox::Slot().AutoHeight()[NavRow(LOCTEXT("MyWorlds", "MY WORLDS"), EAPSWorldCollection::MyWorlds, [this](){ return ExistingWorlds.Num(); })]
+					+ SVerticalBox::Slot().AutoHeight()[NavRow(LOCTEXT("Favorites", "FAVORITES"), EAPSWorldCollection::Favorites, [this](){ int32 Count=0; for(const TSharedPtr<FAPSExistingWorldEntry>& E:ExistingWorlds){ if(E.IsValid()&&E->bFavorite){++Count;} } return Count; })]
+					+ SVerticalBox::Slot().AutoHeight()[NavRow(LOCTEXT("Recent", "RECENT"), EAPSWorldCollection::Recent, [this](){ return FMath::Min(6, ExistingWorlds.Num()); })]
 					+ SVerticalBox::Slot().AutoHeight().Padding(4.0f, 20.0f, 4.0f, 10.0f)[SNew(STextBlock).Text(LOCTEXT("Filters", "FILTERS")).Font(APSMenu::Font("Bold", 11)).ColorAndOpacity(APSMenu::Muted)]
-					+ SVerticalBox::Slot().AutoHeight().Padding(4.0f, 9.0f)[FilterRow(LOCTEXT("StarTypeFilter", "STAR TYPE"))]
-					+ SVerticalBox::Slot().AutoHeight().Padding(4.0f, 9.0f)[FilterRow(LOCTEXT("WorldTypeFilter", "WORLD TYPE"))]
-					+ SVerticalBox::Slot().AutoHeight().Padding(4.0f, 9.0f)[FilterRow(LOCTEXT("InhabitedFilter", "INHABITED"))]
-					+ SVerticalBox::Slot().AutoHeight().Padding(4.0f, 9.0f)[FilterRow(LOCTEXT("EnvironmentFilter", "ENVIRONMENT"))]
-					+ SVerticalBox::Slot().AutoHeight().Padding(4.0f, 9.0f)[FilterRow(LOCTEXT("DifficultyFilter", "DIFFICULTY"))]
+					+ SVerticalBox::Slot().AutoHeight().Padding(4.0f, 5.0f)[FilterRow(LOCTEXT("StarTypeFilter", "STAR TYPE"), EAPSWorldFilterKind::StarType)]
+					+ SVerticalBox::Slot().AutoHeight().Padding(4.0f, 5.0f)[FilterRow(LOCTEXT("WorldTypeFilter", "WORLD TYPE"), EAPSWorldFilterKind::WorldType)]
+					+ SVerticalBox::Slot().AutoHeight().Padding(4.0f, 5.0f)[FilterRow(LOCTEXT("InhabitedFilter", "INHABITED"), EAPSWorldFilterKind::Inhabited)]
+					+ SVerticalBox::Slot().AutoHeight().Padding(4.0f, 5.0f)[FilterRow(LOCTEXT("EnvironmentFilter", "ENVIRONMENT"), EAPSWorldFilterKind::Environment)]
 					+ SVerticalBox::Slot().FillHeight(1.0f)
-					+ SVerticalBox::Slot().AutoHeight()[SNew(SButton).ButtonStyle(&SecondaryButtonStyle).ContentPadding(FMargin(15.0f, 12.0f))[SNew(STextBlock).Text(LOCTEXT("ImportSave", "IMPORT SAVE")).Justification(ETextJustify::Center).Font(APSMenu::Font("Bold", 12)).ColorAndOpacity(APSMenu::Cyan)]]
+					+ SVerticalBox::Slot().AutoHeight()[SNew(SButton).IsEnabled(false).ToolTipText(LOCTEXT("ImportSaveHint", "Place .sav files in Saved/SaveGames; the browser discovers them without blocking.")).ButtonStyle(&SecondaryButtonStyle).ContentPadding(FMargin(15.0f, 12.0f))[SNew(STextBlock).Text(LOCTEXT("ImportSave", "IMPORT SAVE")).Justification(ETextJustify::Center).Font(APSMenu::Font("Bold", 12)).ColorAndOpacity(APSMenu::Muted)]]
 				]
 			]
 			+ SHorizontalBox::Slot().FillWidth(0.50f).Padding(5.0f)
@@ -366,8 +374,8 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildExistingWorldsPage()
 				[
 					SNew(SHorizontalBox)
 					+ SHorizontalBox::Slot().FillWidth(1.0f)[SNew(SSearchBox).HintText(LOCTEXT("SearchWorlds", "Search worlds...")).OnTextChanged(this, &SAPSMainMenuRoot::OnWorldSearchChanged)]
-					+ SHorizontalBox::Slot().AutoWidth().Padding(8.0f, 0.0f)[SNew(SButton).ButtonStyle(&SecondaryButtonStyle)[SNew(STextBlock).Text(LOCTEXT("SortRecent", "SORT: LAST PLAYED  v")).Font(APSMenu::Font("Bold", 10)).ColorAndOpacity(APSMenu::White)]]
-					+ SHorizontalBox::Slot().AutoWidth().Padding(2.0f, 0.0f)[SNew(SButton).ButtonStyle(&SecondaryButtonStyle)[SNew(STextBlock).Text(LOCTEXT("GridView", "GRID")).Font(APSMenu::Font("Bold", 10)).ColorAndOpacity(APSMenu::Cyan)]]
+					+ SHorizontalBox::Slot().AutoWidth().Padding(8.0f, 0.0f)[SNew(SButton).ButtonStyle(&SecondaryButtonStyle).OnClicked(this, &SAPSMainMenuRoot::CycleWorldSort)[SNew(STextBlock).Text_Lambda([this](){ return GetWorldSortLabel(); }).Font(APSMenu::Font("Bold", 10)).ColorAndOpacity(APSMenu::White)]]
+					+ SHorizontalBox::Slot().AutoWidth().Padding(2.0f, 0.0f)[SNew(SButton).ButtonStyle(&SecondaryButtonStyle).OnClicked(this, &SAPSMainMenuRoot::ToggleWorldView)[SNew(STextBlock).Text_Lambda([this](){ return FText::FromString(bCompactWorldList ? TEXT("LIST") : TEXT("GRID")); }).Font(APSMenu::Font("Bold", 10)).ColorAndOpacity(APSMenu::Cyan)]]
 				]
 				+ SVerticalBox::Slot().FillHeight(1.0f)
 				[
@@ -402,6 +410,14 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildExistingWorldsPage()
 
 void SAPSMainMenuRoot::LoadExistingWorlds()
 {
+	TSet<FString> FavoriteSlots;
+	for (const TSharedPtr<FAPSExistingWorldEntry>& ExistingEntry : ExistingWorlds)
+	{
+		if (ExistingEntry.IsValid() && ExistingEntry->bFavorite)
+		{
+			FavoriteSlots.Add(ExistingEntry->SaveFileName);
+		}
+	}
 	ExistingWorlds.Reset();
 	TArray<FString> SaveFiles;
 	const FString SaveDirectory = FPaths::ProjectSavedDir() / TEXT("SaveGames");
@@ -418,6 +434,7 @@ void SAPSMainMenuRoot::LoadExistingWorlds()
 		const FFileStatData Stat = IFileManager::Get().GetStatData(*(SaveDirectory / SaveFile));
 		Entry->FileTimestamp = Stat.ModificationTime.ToUnixTimestamp();
 		Entry->FileSizeBytes = Stat.FileSize;
+		Entry->bFavorite = FavoriteSlots.Contains(Entry->SaveFileName);
 		ExistingWorlds.Add(Entry);
 	}
 	ExistingWorlds.Sort([](const auto& A, const auto& B) { return A->FileTimestamp > B->FileTimestamp; });
@@ -477,10 +494,28 @@ void SAPSMainMenuRoot::RebuildExistingWorldGrid()
 	TArray<TSharedPtr<FAPSExistingWorldEntry>> Filtered;
 	for (const TSharedPtr<FAPSExistingWorldEntry>& Entry : ExistingWorlds)
 	{
-		if (Entry.IsValid() && (WorldSearch.IsEmpty() || Entry->DisplayName.Contains(WorldSearch, ESearchCase::IgnoreCase)))
+		if (Entry.IsValid()
+			&& (WorldSearch.IsEmpty() || Entry->DisplayName.Contains(WorldSearch, ESearchCase::IgnoreCase))
+			&& PassesExistingWorldFilters(*Entry))
 		{
 			Filtered.Add(Entry);
 		}
+	}
+	if (WorldCollection == EAPSWorldCollection::Recent && Filtered.Num() > 6)
+	{
+		Filtered.SetNum(6, EAllowShrinking::No);
+	}
+	if (WorldSortMode == EAPSWorldSortMode::Name)
+	{
+		Filtered.Sort([](const auto& A, const auto& B){ return A->DisplayName < B->DisplayName; });
+	}
+	else if (WorldSortMode == EAPSWorldSortMode::SaveSize)
+	{
+		Filtered.Sort([](const auto& A, const auto& B){ return A->FileSizeBytes > B->FileSizeBytes; });
+	}
+	else
+	{
+		Filtered.Sort([](const auto& A, const auto& B){ return A->FileTimestamp > B->FileTimestamp; });
 	}
 	constexpr int32 ItemsPerPage = 6;
 	const int32 MaxPage = FMath::Max(0, FMath::DivideAndRoundUp(Filtered.Num(), ItemsPerPage) - 1);
@@ -493,21 +528,27 @@ void SAPSMainMenuRoot::RebuildExistingWorldGrid()
 	{
 		const int32 VisibleIndex = SourceIndex - FirstIndex;
 		const TSharedPtr<FAPSExistingWorldEntry>& Entry = Filtered[SourceIndex];
-		const FSlateBrush* Image = (VisibleIndex % 3 == 0) ? &PlanetImage : ((VisibleIndex % 3 == 1) ? &GalaxyImage : &SystemImage);
+		const uint32 StableImageIndex = GetTypeHash(Entry->SaveFileName) % 3u;
+		const FSlateBrush* Image = StableImageIndex == 0 ? &PlanetImage : (StableImageIndex == 1 ? &GalaxyImage : &SystemImage);
 		const bool bSelected = SelectedWorld == Entry;
 		const FString LastPlayed = FDateTime::FromUnixTimestamp(Entry->FileTimestamp).ToString(TEXT("%Y-%m-%d  %H:%M"));
-		Grid->AddSlot(VisibleIndex % 2, VisibleIndex / 2)
+		const int32 ColumnCount = bCompactWorldList ? 1 : 2;
+		Grid->AddSlot(VisibleIndex % ColumnCount, VisibleIndex / ColumnCount)
 		[
 			SNew(SButton).ButtonStyle(bSelected ? &PrimaryButtonStyle : &CardButtonStyle).OnClicked(this, &SAPSMainMenuRoot::SelectExistingWorld, Entry).ContentPadding(0.0f)
 			[
 				SNew(SOverlay)
 				+ SOverlay::Slot()
 				[
-					SNew(SBox).HeightOverride(205.0f).Clipping(EWidgetClipping::ClipToBounds)
-					[SNew(SScaleBox).Stretch(EStretch::ScaleToFit)[SNew(SImage).Image(Image)]]
+					SNew(SBox).HeightOverride(bCompactWorldList ? 125.0f : 205.0f).Clipping(EWidgetClipping::ClipToBounds)
+					[SNew(SScaleBox).Stretch(EStretch::ScaleToFill)[SNew(SImage).Image(Image)]]
 				]
 				+ SOverlay::Slot().HAlign(HAlign_Right).VAlign(VAlign_Top).Padding(10.0f)
-				[SNew(STextBlock).Text(LOCTEXT("FavoriteStar", "*")).Font(APSMenu::Font("Bold", 21)).ColorAndOpacity(bSelected ? APSMenu::Amber : APSMenu::White)]
+				[
+					SNew(SButton).ButtonStyle(&FAppStyle::Get().GetWidgetStyle<FButtonStyle>("NoBorder"))
+					.OnClicked(this, &SAPSMainMenuRoot::ToggleWorldFavorite, Entry).ContentPadding(2.0f)
+					[SNew(STextBlock).Text(LOCTEXT("FavoriteStar", "*")).Font(APSMenu::Font("Bold", 21)).ColorAndOpacity(Entry->bFavorite ? APSMenu::Amber : APSMenu::White)]
+				]
 				+ SOverlay::Slot().VAlign(VAlign_Bottom)
 				[
 					SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(FLinearColor(0.002f, 0.01f, 0.02f, 0.94f)).Padding(12.0f)
@@ -533,22 +574,31 @@ void SAPSMainMenuRoot::RebuildExistingWorldDetails()
 		return;
 	}
 
+	FString DetailsText = FString::Printf(TEXT("SYSTEM TYPE                 %s\n\nSTAR TYPE                       %s\n\nTOTAL PLANETS               %d\n\nINHABITED PLANETS       %d\n\nENVIRONMENT                %s\n\nSAVE SIZE                       %s"),
+		*SelectedWorld->SystemType, *SelectedWorld->StarType, SelectedWorld->TotalPlanets,
+		SelectedWorld->InhabitedPlanets, *SelectedWorld->Environment,
+		*APSMenu::SaveSizeText(SelectedWorld->FileSizeBytes).ToString());
+	if (bShowTechnicalWorldDetails)
+	{
+		DetailsText += FString::Printf(TEXT("\n\nSAVE SLOT                       %s\n\nMETADATA                       %s\n\nLAST PLAYED                 %s"),
+			*SelectedWorld->SaveFileName,
+			SelectedWorld->bMetadataLoaded ? TEXT("READY") : TEXT("DEFERRED UNTIL LAUNCH"),
+			*FDateTime::FromUnixTimestamp(SelectedWorld->FileTimestamp).ToString(TEXT("%Y-%m-%d  %H:%M")));
+	}
+
 	ExistingWorldDetailsHost->SetContent(
 		SNew(SVerticalBox)
 		+ SVerticalBox::Slot().FillHeight(0.38f)
 		[
 			SNew(SBox).Clipping(EWidgetClipping::ClipToBounds)
-			[SNew(SScaleBox).Stretch(EStretch::ScaleToFit)[SNew(SImage).Image(&PlanetImage)]]
+			[SNew(SScaleBox).Stretch(EStretch::ScaleToFill)[SNew(SImage).Image(&PlanetImage)]]
 		]
 		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 16.0f, 0.0f, 6.0f)[SNew(STextBlock).Text(FText::FromString(SelectedWorld->DisplayName)).Font(APSMenu::Font("Bold", 24)).ColorAndOpacity(APSMenu::White)]
 		+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Text(FText::FromString(SelectedWorld->SystemType)).ColorAndOpacity(APSMenu::Cyan)]
 		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 16.0f)
 		[
 			SNew(STextBlock).AutoWrapText(true).ColorAndOpacity(APSMenu::Muted)
-			.Text(FText::FromString(FString::Printf(TEXT("SYSTEM TYPE                 %s\n\nSTAR TYPE                       %s\n\nTOTAL PLANETS               %d\n\nINHABITED PLANETS       %d\n\nENVIRONMENT                %s\n\nSAVE SIZE                       %s"),
-				*SelectedWorld->SystemType, *SelectedWorld->StarType, SelectedWorld->TotalPlanets,
-				SelectedWorld->InhabitedPlanets, *SelectedWorld->Environment,
-				*APSMenu::SaveSizeText(SelectedWorld->FileSizeBytes).ToString())))
+			.Text(FText::FromString(DetailsText))
 		]
 		+ SVerticalBox::Slot().FillHeight(1.0f)
 		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 12.0f)
@@ -560,7 +610,7 @@ void SAPSMainMenuRoot::RebuildExistingWorldDetails()
 		[
 			SNew(SHorizontalBox)
 			+ SHorizontalBox::Slot().FillWidth(1.0f).Padding(0.0f, 0.0f, 4.0f, 0.0f)
-			[SNew(SButton).ButtonStyle(&SecondaryButtonStyle).ContentPadding(FMargin(12.0f, 9.0f))[SNew(STextBlock).Text(LOCTEXT("WorldDetails", "WORLD DETAILS")).Justification(ETextJustify::Center).Font(APSMenu::Font("Bold", 10)).ColorAndOpacity(APSMenu::Cyan)]]
+			[SNew(SButton).ButtonStyle(&SecondaryButtonStyle).OnClicked(this, &SAPSMainMenuRoot::ToggleWorldDetails).ContentPadding(FMargin(12.0f, 9.0f))[SNew(STextBlock).Text_Lambda([this](){ return FText::FromString(bShowTechnicalWorldDetails ? TEXT("HIDE DETAILS") : TEXT("WORLD DETAILS")); }).Justification(ETextJustify::Center).Font(APSMenu::Font("Bold", 10)).ColorAndOpacity(APSMenu::Cyan)]]
 			+ SHorizontalBox::Slot().FillWidth(1.0f).Padding(4.0f, 0.0f, 0.0f, 0.0f)
 			[SNew(SButton).IsEnabled(false).ButtonStyle(&SecondaryButtonStyle).ContentPadding(FMargin(12.0f, 9.0f))[SNew(STextBlock).Text(LOCTEXT("DeleteWorld", "DELETE WORLD")).Justification(ETextJustify::Center).Font(APSMenu::Font("Bold", 10)).ColorAndOpacity(FLinearColor(0.88f, 0.19f, 0.14f, 1.0f))]]
 		]);
@@ -570,6 +620,183 @@ FReply SAPSMainMenuRoot::ChangeExistingWorldPage(int32 Delta)
 {
 	ExistingWorldPage = FMath::Max(0, ExistingWorldPage + Delta);
 	RebuildExistingWorldGrid();
+	return FReply::Handled();
+}
+
+bool SAPSMainMenuRoot::PassesExistingWorldFilters(const FAPSExistingWorldEntry& Entry) const
+{
+	if (WorldCollection == EAPSWorldCollection::Favorites && !Entry.bFavorite)
+	{
+		return false;
+	}
+
+	const int32 StarFilter = WorldFilterIndices.FindRef(EAPSWorldFilterKind::StarType);
+	if (StarFilter != 0)
+	{
+		const FString Star = Entry.StarType.ToUpper();
+		const bool bKnown = Entry.bMetadataLoaded;
+		const bool bHot = Star == TEXT("O") || Star == TEXT("B") || Star == TEXT("A");
+		const bool bSolar = Star == TEXT("F") || Star == TEXT("G") || Star == TEXT("K");
+		const bool bCool = Star == TEXT("M") || Star == TEXT("L") || Star == TEXT("T") || Star == TEXT("Y");
+		if ((StarFilter == 1 && !bHot) || (StarFilter == 2 && !bSolar)
+			|| (StarFilter == 3 && !bCool) || (StarFilter == 4 && bKnown))
+		{
+			return false;
+		}
+	}
+
+	const int32 WorldTypeFilter = WorldFilterIndices.FindRef(EAPSWorldFilterKind::WorldType);
+	if (WorldTypeFilter != 0)
+	{
+		const FString Type = Entry.SystemType.ToUpper();
+		const bool bMulti = Type.Contains(TEXT("MULTI"));
+		const bool bSingle = Type.Contains(TEXT("SINGLE"));
+		if ((WorldTypeFilter == 1 && !bMulti) || (WorldTypeFilter == 2 && !bSingle)
+			|| (WorldTypeFilter == 3 && (bMulti || bSingle)))
+		{
+			return false;
+		}
+	}
+
+	const int32 InhabitedFilter = WorldFilterIndices.FindRef(EAPSWorldFilterKind::Inhabited);
+	if ((InhabitedFilter == 1 && Entry.InhabitedPlanets <= 0)
+		|| (InhabitedFilter == 2 && Entry.InhabitedPlanets > 0))
+	{
+		return false;
+	}
+
+	const int32 EnvironmentFilter = WorldFilterIndices.FindRef(EAPSWorldFilterKind::Environment);
+	if (EnvironmentFilter != 0)
+	{
+		const FString EnvironmentValue = (Entry.Environment + TEXT(" ") + Entry.PlanetType).ToUpper();
+		const bool bRocky = EnvironmentValue.Contains(TEXT("ROCK")) || EnvironmentValue.Contains(TEXT("EARTH"));
+		const bool bGas = EnvironmentValue.Contains(TEXT("GAS"));
+		const bool bIce = EnvironmentValue.Contains(TEXT("ICE")) || EnvironmentValue.Contains(TEXT("FROZEN"));
+		if ((EnvironmentFilter == 1 && !bRocky) || (EnvironmentFilter == 2 && !bGas)
+			|| (EnvironmentFilter == 3 && !bIce)
+			|| (EnvironmentFilter == 4 && (bRocky || bGas || bIce)))
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
+FText SAPSMainMenuRoot::GetWorldCollectionLabel(EAPSWorldCollection Collection) const
+{
+	switch (Collection)
+	{
+	case EAPSWorldCollection::MyWorlds: return LOCTEXT("MyWorldsValue", "MY WORLDS");
+	case EAPSWorldCollection::Favorites: return LOCTEXT("FavoritesValue", "FAVORITES");
+	case EAPSWorldCollection::Recent: return LOCTEXT("RecentValue", "RECENT");
+	default: return LOCTEXT("AllWorldsValue", "ALL WORLDS");
+	}
+}
+
+FText SAPSMainMenuRoot::GetWorldSortLabel() const
+{
+	switch (WorldSortMode)
+	{
+	case EAPSWorldSortMode::Name: return LOCTEXT("SortName", "SORT: NAME  v");
+	case EAPSWorldSortMode::SaveSize: return LOCTEXT("SortSize", "SORT: SAVE SIZE  v");
+	default: return LOCTEXT("SortRecent", "SORT: LAST PLAYED  v");
+	}
+}
+
+FText SAPSMainMenuRoot::GetWorldFilterLabel(EAPSWorldFilterKind Kind) const
+{
+	static const TCHAR* StarLabels[] = {TEXT("ANY  v"), TEXT("HOT O/B/A  v"), TEXT("SOLAR F/G/K  v"), TEXT("COOL M/L/T/Y  v"), TEXT("UNKNOWN  v")};
+	static const TCHAR* TypeLabels[] = {TEXT("ANY  v"), TEXT("MULTI PLANET  v"), TEXT("SINGLE STAR  v"), TEXT("OTHER  v")};
+	static const TCHAR* InhabitedLabels[] = {TEXT("ANY  v"), TEXT("INHABITED  v"), TEXT("UNINHABITED  v")};
+	static const TCHAR* EnvironmentLabels[] = {TEXT("ANY  v"), TEXT("ROCKY  v"), TEXT("GAS  v"), TEXT("ICE  v"), TEXT("OTHER  v")};
+	const int32 Index = WorldFilterIndices.FindRef(Kind);
+	switch (Kind)
+	{
+	case EAPSWorldFilterKind::StarType: return FText::FromString(StarLabels[FMath::Clamp(Index, 0, UE_ARRAY_COUNT(StarLabels) - 1)]);
+	case EAPSWorldFilterKind::WorldType: return FText::FromString(TypeLabels[FMath::Clamp(Index, 0, UE_ARRAY_COUNT(TypeLabels) - 1)]);
+	case EAPSWorldFilterKind::Inhabited: return FText::FromString(InhabitedLabels[FMath::Clamp(Index, 0, UE_ARRAY_COUNT(InhabitedLabels) - 1)]);
+	default: return FText::FromString(EnvironmentLabels[FMath::Clamp(Index, 0, UE_ARRAY_COUNT(EnvironmentLabels) - 1)]);
+	}
+}
+
+FReply SAPSMainMenuRoot::SetWorldCollection(EAPSWorldCollection Collection)
+{
+	WorldCollection = Collection;
+	ExistingWorldPage = 0;
+	if (!SelectedWorld.IsValid() || !PassesExistingWorldFilters(*SelectedWorld))
+	{
+		const TSharedPtr<FAPSExistingWorldEntry>* FirstMatch = ExistingWorlds.FindByPredicate(
+			[this](const TSharedPtr<FAPSExistingWorldEntry>& Entry)
+			{
+				return Entry.IsValid() && PassesExistingWorldFilters(*Entry);
+			});
+		SelectedWorld = FirstMatch ? *FirstMatch : nullptr;
+	}
+	RebuildExistingWorldGrid();
+	RebuildExistingWorldDetails();
+	return FReply::Handled();
+}
+
+FReply SAPSMainMenuRoot::CycleWorldSort()
+{
+	WorldSortMode = static_cast<EAPSWorldSortMode>((static_cast<uint8>(WorldSortMode) + 1) % 3);
+	ExistingWorldPage = 0;
+	RebuildExistingWorldGrid();
+	return FReply::Handled();
+}
+
+FReply SAPSMainMenuRoot::ToggleWorldView()
+{
+	bCompactWorldList = !bCompactWorldList;
+	ExistingWorldPage = 0;
+	RebuildExistingWorldGrid();
+	return FReply::Handled();
+}
+
+FReply SAPSMainMenuRoot::CycleWorldFilter(EAPSWorldFilterKind Kind)
+{
+	static const int32 Counts[] = {5, 4, 3, 5};
+	int32& Index = WorldFilterIndices.FindOrAdd(Kind);
+	Index = (Index + 1) % Counts[static_cast<uint8>(Kind)];
+	ExistingWorldPage = 0;
+	if (!SelectedWorld.IsValid() || !PassesExistingWorldFilters(*SelectedWorld))
+	{
+		const TSharedPtr<FAPSExistingWorldEntry>* FirstMatch = ExistingWorlds.FindByPredicate(
+			[this](const TSharedPtr<FAPSExistingWorldEntry>& Entry)
+			{
+				return Entry.IsValid() && PassesExistingWorldFilters(*Entry);
+			});
+		SelectedWorld = FirstMatch ? *FirstMatch : nullptr;
+	}
+	RebuildExistingWorldGrid();
+	RebuildExistingWorldDetails();
+	return FReply::Handled();
+}
+
+FReply SAPSMainMenuRoot::ToggleWorldFavorite(TSharedPtr<FAPSExistingWorldEntry> Entry)
+{
+	if (Entry.IsValid())
+	{
+		Entry->bFavorite = !Entry->bFavorite;
+		if (WorldCollection == EAPSWorldCollection::Favorites && !Entry->bFavorite && SelectedWorld == Entry)
+		{
+			const TSharedPtr<FAPSExistingWorldEntry>* FirstMatch = ExistingWorlds.FindByPredicate(
+				[this](const TSharedPtr<FAPSExistingWorldEntry>& Candidate)
+				{
+					return Candidate.IsValid() && PassesExistingWorldFilters(*Candidate);
+				});
+			SelectedWorld = FirstMatch ? *FirstMatch : nullptr;
+			RebuildExistingWorldDetails();
+		}
+		RebuildExistingWorldGrid();
+	}
+	return FReply::Handled();
+}
+
+FReply SAPSMainMenuRoot::ToggleWorldDetails()
+{
+	bShowTechnicalWorldDetails = !bShowTechnicalWorldDetails;
+	RebuildExistingWorldDetails();
 	return FReply::Handled();
 }
 
@@ -779,12 +1006,12 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildCivilizationPage()
 						+ SVerticalBox::Slot().AutoHeight()[NumberControl(LOCTEXT("OrbitalOutposts", "ORBITAL STATIONS"), 0, 100, 1, [VM](){return VM.IsValid()&&VM->SpawnParameters?VM->SpawnParameters->OrbitalOutposts:0;}, [VM](int32 V){if(VM.IsValid()&&VM->SpawnParameters)VM->SpawnParameters->OrbitalOutposts=V;})]
 						+ SVerticalBox::Slot().AutoHeight()[NumberControl(LOCTEXT("GroundOutposts", "GROUND SETTLEMENTS"), 0, 100, 1, [VM](){return VM.IsValid()&&VM->SpawnParameters?VM->SpawnParameters->GroundOutposts:0;}, [VM](int32 V){if(VM.IsValid()&&VM->SpawnParameters)VM->SpawnParameters->GroundOutposts=V;})]
 						+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 12.0f, 0.0f, 8.0f)[SNew(STextBlock).Text(LOCTEXT("DivisionSetup", "DIVISION LEVELS")).Font(APSMenu::Font("Bold", 12)).ColorAndOpacity(APSMenu::Cyan)]
-						+ SVerticalBox::Slot().AutoHeight()[NumberControl(LOCTEXT("ExplorationDivision", "EXPLORATION"), 1, 20, 1, [VM](){return VM.IsValid()&&VM->SpawnParameters?VM->SpawnParameters->ExplorationDivisionLevel:1;}, [VM](int32 V){if(VM.IsValid()&&VM->SpawnParameters)VM->SpawnParameters->ExplorationDivisionLevel=V;})]
-						+ SVerticalBox::Slot().AutoHeight()[NumberControl(LOCTEXT("IndustryDivision", "INDUSTRY"), 1, 20, 1, [VM](){return VM.IsValid()&&VM->SpawnParameters?VM->SpawnParameters->IndustryDivisionLevel:1;}, [VM](int32 V){if(VM.IsValid()&&VM->SpawnParameters)VM->SpawnParameters->IndustryDivisionLevel=V;})]
-						+ SVerticalBox::Slot().AutoHeight()[NumberControl(LOCTEXT("ScienceDivision", "SCIENCE / RESEARCH"), 1, 20, 1, [VM](){return VM.IsValid()&&VM->SpawnParameters?VM->SpawnParameters->ScienceDivisionLevel:1;}, [VM](int32 V){if(VM.IsValid()&&VM->SpawnParameters)VM->SpawnParameters->ScienceDivisionLevel=V;})]
-						+ SVerticalBox::Slot().AutoHeight()[NumberControl(LOCTEXT("CivilDivision", "CIVIL AFFAIRS"), 1, 20, 1, [VM](){return VM.IsValid()&&VM->SpawnParameters?VM->SpawnParameters->CivilAffairsDivisionLevel:1;}, [VM](int32 V){if(VM.IsValid()&&VM->SpawnParameters)VM->SpawnParameters->CivilAffairsDivisionLevel=V;})]
-						+ SVerticalBox::Slot().AutoHeight()[NumberControl(LOCTEXT("MilitaryDivision", "MILITARY"), 1, 20, 1, [VM](){return VM.IsValid()&&VM->SpawnParameters?VM->SpawnParameters->MilitaryDivisionLevel:1;}, [VM](int32 V){if(VM.IsValid()&&VM->SpawnParameters)VM->SpawnParameters->MilitaryDivisionLevel=V;})]
-						+ SVerticalBox::Slot().AutoHeight()[NumberControl(LOCTEXT("FleetDivision", "FLEET COMMAND"), 1, 20, 1, [VM](){return VM.IsValid()&&VM->SpawnParameters?VM->SpawnParameters->FleetDivisionLevel:1;}, [VM](int32 V){if(VM.IsValid()&&VM->SpawnParameters)VM->SpawnParameters->FleetDivisionLevel=V;})]
+						+ SVerticalBox::Slot().AutoHeight()[NumberControl(LOCTEXT("ExplorationDivision", "EXPLORATION"), 0, 20, 1, [VM](){return VM.IsValid()&&VM->SpawnParameters?VM->SpawnParameters->ExplorationDivisionLevel:0;}, [VM](int32 V){if(VM.IsValid()&&VM->SpawnParameters)VM->SpawnParameters->ExplorationDivisionLevel=V;})]
+						+ SVerticalBox::Slot().AutoHeight()[NumberControl(LOCTEXT("IndustryDivision", "INDUSTRY"), 0, 20, 1, [VM](){return VM.IsValid()&&VM->SpawnParameters?VM->SpawnParameters->IndustryDivisionLevel:0;}, [VM](int32 V){if(VM.IsValid()&&VM->SpawnParameters)VM->SpawnParameters->IndustryDivisionLevel=V;})]
+						+ SVerticalBox::Slot().AutoHeight()[NumberControl(LOCTEXT("ScienceDivision", "SCIENCE / RESEARCH"), 0, 20, 1, [VM](){return VM.IsValid()&&VM->SpawnParameters?VM->SpawnParameters->ScienceDivisionLevel:0;}, [VM](int32 V){if(VM.IsValid()&&VM->SpawnParameters)VM->SpawnParameters->ScienceDivisionLevel=V;})]
+						+ SVerticalBox::Slot().AutoHeight()[NumberControl(LOCTEXT("CivilDivision", "CIVIL AFFAIRS"), 0, 20, 1, [VM](){return VM.IsValid()&&VM->SpawnParameters?VM->SpawnParameters->CivilAffairsDivisionLevel:0;}, [VM](int32 V){if(VM.IsValid()&&VM->SpawnParameters)VM->SpawnParameters->CivilAffairsDivisionLevel=V;})]
+						+ SVerticalBox::Slot().AutoHeight()[NumberControl(LOCTEXT("MilitaryDivision", "MILITARY"), 0, 20, 1, [VM](){return VM.IsValid()&&VM->SpawnParameters?VM->SpawnParameters->MilitaryDivisionLevel:0;}, [VM](int32 V){if(VM.IsValid()&&VM->SpawnParameters)VM->SpawnParameters->MilitaryDivisionLevel=V;})]
+						+ SVerticalBox::Slot().AutoHeight()[NumberControl(LOCTEXT("FleetDivision", "FLEET COMMAND"), 0, 20, 1, [VM](){return VM.IsValid()&&VM->SpawnParameters?VM->SpawnParameters->FleetDivisionLevel:0;}, [VM](int32 V){if(VM.IsValid()&&VM->SpawnParameters)VM->SpawnParameters->FleetDivisionLevel=V;})]
 					]
 				]
 			]

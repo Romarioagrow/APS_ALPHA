@@ -61,7 +61,7 @@ void UPlanetGenerator::CalculateLagrangePoints()
 
 	//        AAstroActor* NewAstroActor = GetWorld()->SpawnActor<AAstroActor>(BPAstroActorClass, LagrangePoint, FRotator::ZeroRotator, SpawnParams);
 
-	//        // Åñëè âû õîòèòå ïðèêðåïèòü åãî ê ïëàíåòå
+	//        // Ð•ÑÐ»Ð¸ Ð²Ñ‹ Ñ…Ð¾Ñ‚Ð¸Ñ‚Ðµ Ð¿Ñ€Ð¸ÐºÑ€ÐµÐ¿Ð¸Ñ‚ÑŒ ÐµÐ³Ð¾ Ðº Ð¿Ð»Ð°Ð½ÐµÑ‚Ðµ
 	//        if (NewAstroActor && NewPlanet)
 	//        {
 	//            NewAstroActor->AttachToActor(NewPlanet, FAttachmentTransformRules::KeepWorldTransform);
@@ -86,9 +86,9 @@ APlanet* UPlanetGenerator::GeneratePlanet(const TSharedPtr<FPlanetModel>& Planet
 	if (NewPlanet)
 	{
 		ApplyModel(NewPlanet, PlanetModel);
-		const double RadiusInCm = PlanetModel->Radius * KM_TO_CM * SCALE_FACTOR;
+		const double RadiusInCm = PlanetModel->RadiusKM * KM_TO_CM * SCALE_FACTOR;
 		NewPlanet->SetActorScale3D(FVector(RadiusInCm));
-		NewPlanet->PlanetRadiusKM = PlanetModel->Radius; 
+		NewPlanet->PlanetRadiusKM = FMath::RoundToInt(PlanetModel->RadiusKM);
 
 		
 	}
@@ -105,7 +105,14 @@ TSharedPtr<FPlanetModel> UPlanetGenerator::CreatePlanetModelFromGeneratedWorld(c
 	TSharedPtr<FPlanetModel> PlanetModel = MakeShared<FPlanetModel>();
 	PlanetModel->PlanetType = GeneratedWorld->PlanetType;
 	PlanetModel->AmountOfMoons = GeneratedWorld->MoonsAmount;
-	PlanetModel->Radius = GeneratedWorld->PlanetRadius;
+	// GeneratedWorld exposes the radius to the menu in kilometres, while the
+	// procedural astronomy model stores Radius in Earth-radius units. Feeding
+	// the UI value directly into Radius made a 6,750 km planet 6,750 Earth radii
+	// wide and broke both the preview framing and generated system spacing.
+	constexpr double EarthRadiusKm = 6371.0;
+	PlanetModel->RadiusKM = FMath::Max(1.0, static_cast<double>(GeneratedWorld->PlanetRadius));
+	PlanetModel->Radius = PlanetModel->RadiusKM / EarthRadiusKm;
+	PlanetModel->AtmosphereHeight = FMath::Max(0.0, GeneratedWorld->AtmosphereHeight);
 
 	return PlanetModel;
 }
@@ -128,7 +135,7 @@ void UPlanetGenerator::GeneratePlanetAtmosphere(APlanet* Planet, const TSharedPt
 		PlanetAtmosphere->SetActorLocation(Planet->GetActorLocation());
 		PlanetAtmosphere->AttachToActor(Planet, FAttachmentTransformRules::KeepWorldTransform);
 
-		// Íàñòðîéêà ïàðàìåòðîâ àòìîñôåðû
+		// ÐÐ°ÑÑ‚Ñ€Ð¾Ð¹ÐºÐ° Ð¿Ð°Ñ€Ð°Ð¼ÐµÑ‚Ñ€Ð¾Ð² Ð°Ñ‚Ð¼Ð¾ÑÑ„ÐµÑ€Ñ‹
 		PlanetAtmosphere->PlanetRadius = PlanetAtmosphereMode->AtmosphereRadiusKm;
 		PlanetAtmosphere->AtmosphereHeight = PlanetAtmosphereMode->AtmosphereHeight;
 		PlanetAtmosphere->AtmosphereOpacity = PlanetAtmosphereMode->AtmosphereOpacity;

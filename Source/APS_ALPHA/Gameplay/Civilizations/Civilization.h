@@ -3,8 +3,11 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "APS_ALPHA/Core/Model/SpawnParameters.h"
 #include "UObject/NoExportTypes.h"
 #include "Civilization.generated.h"
+
+class USpawnParameters;
 
 enum CivilizationType {
     Type1,
@@ -38,15 +41,15 @@ struct Infrastructure {
     //...
 };
 
-// Базовый класс подразделения
+// Р‘Р°Р·РѕРІС‹Р№ РєР»Р°СЃСЃ РїРѕРґСЂР°Р·РґРµР»РµРЅРёСЏ
 class Division {
 public:
 	FName name;
 	int level;
-	//virtual void Update() = 0; // Обновить состояние подразделения. Это абстрактный метод, который будет реализован в каждом конкретном подразделении
+	//virtual void Update() = 0; // РћР±РЅРѕРІРёС‚СЊ СЃРѕСЃС‚РѕСЏРЅРёРµ РїРѕРґСЂР°Р·РґРµР»РµРЅРёСЏ. Р­С‚Рѕ Р°Р±СЃС‚СЂР°РєС‚РЅС‹Р№ РјРµС‚РѕРґ, РєРѕС‚РѕСЂС‹Р№ Р±СѓРґРµС‚ СЂРµР°Р»РёР·РѕРІР°РЅ РІ РєР°Р¶РґРѕРј РєРѕРЅРєСЂРµС‚РЅРѕРј РїРѕРґСЂР°Р·РґРµР»РµРЅРёРё
 };
 
-// Подразделение планетарного обследования
+// РџРѕРґСЂР°Р·РґРµР»РµРЅРёРµ РїР»Р°РЅРµС‚Р°СЂРЅРѕРіРѕ РѕР±СЃР»РµРґРѕРІР°РЅРёСЏ
 class PlanetarySurveyDivision : public Division {
 public:
 	// Planetary Survey Division
@@ -176,7 +179,7 @@ public:
 	void	ExchangeCulturalIdeas();
 };
 
-// Подразделение военных операций
+// РџРѕРґСЂР°Р·РґРµР»РµРЅРёРµ РІРѕРµРЅРЅС‹С… РѕРїРµСЂР°С†РёР№
 class MilitaryDivision : public Division {
 public:
 	MilitaryDivision();
@@ -188,7 +191,7 @@ public:
 	void DevelopMilitaryTechnology();
 };
 
-// Флотское подразделение
+// Р¤Р»РѕС‚СЃРєРѕРµ РїРѕРґСЂР°Р·РґРµР»РµРЅРёРµ
 class FleetDivision : public Division {
 public:
 	FleetDivision();
@@ -200,31 +203,88 @@ public:
 	void UpgradeFleet();
 };
 
-/**
- * 
- */
-UCLASS()
+USTRUCT(BlueprintType)
+struct FAPSCivilizationInfrastructure
+{
+	GENERATED_BODY()
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
+	int32 StarOutposts{0};
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
+	int32 PlanetOutposts{0};
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
+	int32 OrbitalStations{0};
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
+	int32 GroundSettlements{0};
+};
+
+USTRUCT(BlueprintType)
+struct FAPSCivilizationDivisions
+{
+	GENERATED_BODY()
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
+	int32 Exploration{0};
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
+	int32 Industry{0};
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
+	int32 Science{0};
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
+	int32 CivilAffairs{0};
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
+	int32 Military{0};
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
+	int32 FleetCommand{0};
+};
+
+/** Runtime civilization model created from the generation menu and kept by the game-instance subsystem. */
+UCLASS(BlueprintType)
 class APS_ALPHA_API UCivilization : public UObject
 {
 	GENERATED_BODY()
 
 public:
-	UCivilization();  // Constructor
+	UCivilization();
+	void InitializeFromSpawnParameters(const USpawnParameters* Parameters);
 
-public:
-    FName name;
-    CivilizationType civilizationType;
-    GovernmentType governmentType;
-    EconomicSystem economicSystem;
-    SocietyType societyType;
-    int population;
-    int presenceInSystems;
-    int presenceInPlanets;
-    Infrastructure infrastructure;
-    TArray<Division> divisions;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Civilization")
+	FString Name;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Civilization")
+	EAPSCivilizationArchetype Archetype{EAPSCivilizationArchetype::Balanced};
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Civilization")
+	EAPSGovernmentType Government{EAPSGovernmentType::Democracy};
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Civilization")
+	EAPSEconomicSystem Economy{EAPSEconomicSystem::Mixed};
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Civilization")
+	EAPSSocietyType Society{EAPSSocietyType::Cooperative};
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Civilization")
+	int32 Population{1};
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Civilization")
+	int64 Credits{0};
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Civilization")
+	int32 TechnologyLevel{1};
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Civilization")
+	int32 FleetSize{0};
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Civilization")
+	FAPSCivilizationInfrastructure Infrastructure;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Civilization")
+	FAPSCivilizationDivisions Divisions;
 };

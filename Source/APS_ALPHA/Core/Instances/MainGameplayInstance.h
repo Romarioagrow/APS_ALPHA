@@ -6,6 +6,7 @@
 
 class USpawnParameters;
 class UGeneratedWorld;
+class UCivilization;
 
 UCLASS()
 class UMainGameplayInstance : public UGameInstanceSubsystem
@@ -18,6 +19,10 @@ public:
 
 	UPROPERTY(BlueprintReadWrite, Category = "World Generation")
 	USpawnParameters* SpawnParameters;
+
+	/** Runtime civilization selected in Slate and consumed by generated gameplay. */
+	UPROPERTY(BlueprintReadOnly, Category = "Civilization")
+	TObjectPtr<UCivilization> CurrentCivilization;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Loading")
 	FString SaveSlotName;

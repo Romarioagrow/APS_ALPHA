@@ -96,22 +96,22 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Civilization|Infrastructure", meta = (ClampMin = "0"))
 	int32 GroundOutposts{1};
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Civilization|Divisions", meta = (ClampMin = "0", ClampMax = "10"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Civilization|Divisions", meta = (ClampMin = "0", ClampMax = "20"))
 	int32 ExplorationDivisionLevel{1};
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Civilization|Divisions", meta = (ClampMin = "0", ClampMax = "10"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Civilization|Divisions", meta = (ClampMin = "0", ClampMax = "20"))
 	int32 IndustryDivisionLevel{1};
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Civilization|Divisions", meta = (ClampMin = "0", ClampMax = "10"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Civilization|Divisions", meta = (ClampMin = "0", ClampMax = "20"))
 	int32 ScienceDivisionLevel{1};
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Civilization|Divisions", meta = (ClampMin = "0", ClampMax = "10"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Civilization|Divisions", meta = (ClampMin = "0", ClampMax = "20"))
 	int32 CivilAffairsDivisionLevel{1};
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Civilization|Divisions", meta = (ClampMin = "0", ClampMax = "10"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Civilization|Divisions", meta = (ClampMin = "0", ClampMax = "20"))
 	int32 MilitaryDivisionLevel{0};
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Civilization|Divisions", meta = (ClampMin = "0", ClampMax = "10"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Civilization|Divisions", meta = (ClampMin = "0", ClampMax = "20"))
 	int32 FleetDivisionLevel{1};
 
 	/** Where the playable character enters the generated home system. */

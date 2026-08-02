@@ -59,6 +59,9 @@ public:
 	void RequestPreview();
 
 	UFUNCTION(BlueprintCallable, Category = "World Generation|Preview")
+	void RegeneratePreviewVariant();
+
+	UFUNCTION(BlueprintCallable, Category = "World Generation|Preview")
 	void SetPreviewFocus(EAstroPreviewFocus NewFocus);
 
 	void OrbitPreview(FVector2D ScreenDelta);

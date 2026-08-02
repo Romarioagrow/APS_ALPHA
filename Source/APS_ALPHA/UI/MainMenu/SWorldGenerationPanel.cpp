@@ -406,7 +406,7 @@ FReply SWorldGenerationPanel::CommitWorld()
 
 FReply SWorldGenerationPanel::RefreshPreview()
 {
-	if (UWorldGenerationViewModel* VM = ViewModel.Get()) VM->RequestPreview();
+	if (UWorldGenerationViewModel* VM = ViewModel.Get()) VM->RegeneratePreviewVariant();
 	return FReply::Handled();
 }
 

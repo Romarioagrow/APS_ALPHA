@@ -1,6 +1,7 @@
 #include "AstroGenerator.h"
 #include <Kismet/GameplayStatics.h>
 #include "PlanetarySurfaceGenerator.h"
+#include "PlanetaryAtmosphere.h"
 #include "PlanetGenerator.h"
 #include "APS_ALPHA/Actors/Astro/AstroAnchor.h"
 #include "APS_ALPHA/Actors/Astro/Galaxy.h"
@@ -139,6 +140,11 @@ bool AAstroGenerator::RegeneratePreview(UGeneratedWorld* InGeneratedWorld)
 	// default changes. Enforce the UI-only cap at runtime; committed gameplay
 	// generation never enters this path.
 	PreviewMaxInstances = FMath::Clamp(PreviewMaxInstances, 100, 3000);
+
+	// A live editor must be deterministic: changing planet radius must not also
+	// shuffle every star and orbit. Gameplay generation remains random because
+	// this seed is applied exclusively inside the preview path.
+	FMath::RandInit(PreviewGenerationSeed);
 
 	InitGenerationLevel();
 
@@ -306,6 +312,14 @@ void AAstroGenerator::ZoomPreviewCamera(float WheelDelta)
 	const FVector ViewDirection = (PreviewCamera->GetComponentLocation() - PreviewOrbitCenter).GetSafeNormal();
 	const FVector NewLocation = PreviewOrbitCenter + ViewDirection * PreviewOrbitDistance;
 	PreviewCamera->SetWorldLocationAndRotation(NewLocation, (PreviewOrbitCenter - NewLocation).Rotation());
+}
+
+void AAstroGenerator::AdvancePreviewGenerationSeed()
+{
+	// Deterministic LCG: explicit REGENERATE produces a new arrangement, while
+	// ordinary control changes keep that arrangement stable.
+	const uint32 CurrentSeed = static_cast<uint32>(PreviewGenerationSeed);
+	PreviewGenerationSeed = static_cast<int32>((CurrentSeed * 196314165u + 907633515u) & 0x7fffffffu);
 }
 
 void AAstroGenerator::InitAstroGenerators()
@@ -728,7 +742,6 @@ void AAstroGenerator::GenerateHomeStarSystem()
 
 					// Create HomePlanetModel for operations
 					const TSharedPtr<FPlanetModel> HomePlanetModel = PlanetGenerator->CreatePlanetModelFromGeneratedWorld(GeneratedWorldModel);
-					HomePlanetModel->RadiusKM = HomePlanetModel->Radius;
 					PlanetarySystemGenerator->GeneratePlanetMoonsList(PlanetGenerator, MoonGenerator,
 					                                                  HomePlanetModel, HomePlanetModel->Radius,
 					                                                  GeneratedWorldModel->MoonsAmount);
@@ -1004,6 +1017,18 @@ void AAstroGenerator::GenerateStarSystemByModel()
 					NewPlanet->RadiusKM;
 
 				NewPlanet->PlanetaryEnvironmentGenerator->InitEnviroment(NewPlanet, World);
+				if (NewPlanet == HomePlanet && GeneratedWorldModel)
+				{
+					// Apply the same atmosphere values edited in Slate to the live
+					// preview and to the generated gameplay home world.
+					if (AAtmoScape* Atmosphere = NewPlanet->PlanetaryEnvironmentGenerator->PlanetAtmosphere)
+					{
+						Atmosphere->AtmosphereHeight = GeneratedWorldModel->AtmosphereHeight;
+						Atmosphere->AtmosphereOpacity = GeneratedWorldModel->AtmosphereOpacity;
+						Atmosphere->MultiScatering = GeneratedWorldModel->AtmosphereMultiScattering;
+						Atmosphere->RayleighHeight = GeneratedWorldModel->AtmosphereRayleighScattering;
+					}
+				}
 				++PlanetIndex;
 			}
 

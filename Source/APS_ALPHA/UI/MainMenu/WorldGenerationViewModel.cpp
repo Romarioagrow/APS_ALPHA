@@ -16,6 +16,7 @@
 #include "APS_ALPHA/Actors/Astro/StarCluster.h"
 #include "APS_ALPHA/Actors/Astro/StarSystem.h"
 #include "APS_ALPHA/Generation/AstroGenerator.h"
+#include "APS_ALPHA/Gameplay/Civilizations/Civilization.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
@@ -176,6 +177,15 @@ void UWorldGenerationViewModel::RequestPreview()
 	SetPreviewStatus(LOCTEXT("PreviewUpdating", "UPDATING LIVE SCENE"), false);
 	World->GetTimerManager().SetTimer(
 		PreviewTimerHandle, this, &UWorldGenerationViewModel::ExecutePreview, 0.2f, false);
+}
+
+void UWorldGenerationViewModel::RegeneratePreviewVariant()
+{
+	if (AAstroGenerator* Generator = FindOrCreatePreviewGenerator())
+	{
+		Generator->AdvancePreviewGenerationSeed();
+	}
+	RequestPreview();
 }
 
 void UWorldGenerationViewModel::SetPreviewFocus(EAstroPreviewFocus NewFocus)
@@ -386,7 +396,20 @@ void UWorldGenerationViewModel::CommitAndOpenLevel(FName LevelName)
 	{
 		if (UMainGameplayInstance* GameplayInstance = GameInstance->GetSubsystem<UMainGameplayInstance>())
 		{
-			GameplayInstance->NewGeneratedWorld = GeneratedWorld;
+			// The editable model is owned by the menu controller. Duplicate it into
+			// the GameInstance subsystem before travel so it survives destruction of
+			// the menu world and remains the exact model consumed by gameplay.
+			GameplayInstance->NewGeneratedWorld = DuplicateObject<UGeneratedWorld>(GeneratedWorld, GameplayInstance);
+			if (!GameplayInstance->CurrentCivilization)
+			{
+				GameplayInstance->CurrentCivilization = NewObject<UCivilization>(GameplayInstance);
+			}
+			GameplayInstance->CurrentCivilization->InitializeFromSpawnParameters(SpawnParameters);
+			UE_LOG(LogTemp, Log, TEXT("[APS.Civilization] Committed '%s': population=%d tech=%d fleet=%d"),
+				*GameplayInstance->CurrentCivilization->Name,
+				GameplayInstance->CurrentCivilization->Population,
+				GameplayInstance->CurrentCivilization->TechnologyLevel,
+				GameplayInstance->CurrentCivilization->FleetSize);
 		}
 	}
 

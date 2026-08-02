@@ -91,6 +91,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "World Generation|Preview")
 	void ZoomPreviewCamera(float WheelDelta);
+
+	UFUNCTION(BlueprintCallable, Category = "World Generation|Preview")
+	void AdvancePreviewGenerationSeed();
 	UGeneratedWorld* GetGeneratedWorldModel() const { return GeneratedWorldModel; }
 
 	UFUNCTION(BlueprintCallable, Category = "World Generation|Preview")
@@ -108,6 +111,10 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "World Generation|Preview", meta = (ClampMin = "100", ClampMax = "50000"))
 	int32 PreviewMaxInstances{3000};
+
+	/** Keeps live menu regeneration spatially stable while individual controls change. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "World Generation|Preview")
+	int32 PreviewGenerationSeed{271828};
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "World Generation")
 	UGeneratedWorld* GeneratedWorldModel;
