@@ -148,6 +148,47 @@ bool AAstroGenerator::RegeneratePreview(UGeneratedWorld* InGeneratedWorld)
 
 	InitGenerationLevel();
 
+	// Full-scale generation deliberately places cluster instances and their materialized
+	// star systems at astronomical coordinates. That data is valid for gameplay, but a
+	// menu camera must not be moved tens of billions of centimetres away from the render
+	// origin: UE 5.4's directional-light Virtual Shadow Map clipmap narrows its page
+	// origin to int32 and asserts in that range. Keep the exact generated actor hierarchy
+	// and its relative scale, then uniformly shrink only this disposable live preview.
+	// The persisted model still has bGenerateFullScaledWorld and the gameplay level builds
+	// the real full-scale hierarchy from it after Continue.
+	constexpr double MaxSafePreviewRadius = 5.0e7; // 500 km in centimetres.
+	const FBox FullScalePreviewBounds = GetPreviewFocusBounds(EAstroPreviewFocus::Overview);
+	if (FullScalePreviewBounds.IsValid)
+	{
+		const FVector PreviewCenter = FullScalePreviewBounds.GetCenter();
+		const double PreviewRadius = FullScalePreviewBounds.GetExtent().Size();
+		if (!PreviewCenter.ContainsNaN() && FMath::IsFinite(PreviewRadius)
+			&& PreviewRadius > MaxSafePreviewRadius)
+		{
+			const double PreviewScaleFactor = MaxSafePreviewRadius / PreviewRadius;
+			SetActorScale3D(GetActorScale3D() * PreviewScaleFactor);
+			const FBox NormalizedBounds = GetPreviewFocusBounds(EAstroPreviewFocus::Overview);
+			const double NormalizedRadius = NormalizedBounds.IsValid
+				? NormalizedBounds.GetExtent().Size() : 0.0;
+			UE_LOG(LogTemp, Log,
+				TEXT("[APS.WorldGeneration] Normalized live preview radius %.3e -> %.3e cm (factor %.3e)"),
+				PreviewRadius, NormalizedRadius, PreviewScaleFactor);
+			if (!NormalizedBounds.IsValid || !FMath::IsFinite(NormalizedRadius)
+				|| NormalizedRadius > MaxSafePreviewRadius * 1.01)
+			{
+				UE_LOG(LogTemp, Error,
+					TEXT("[APS.WorldGeneration] Rejected unsafe live preview after normalization"));
+				ClearGeneratedPreview();
+			}
+		}
+		else if (PreviewCenter.ContainsNaN() || !FMath::IsFinite(PreviewRadius))
+		{
+			UE_LOG(LogTemp, Error,
+				TEXT("[APS.WorldGeneration] Rejected non-finite live preview bounds before camera focus"));
+			ClearGeneratedPreview();
+		}
+	}
+
 	bIsPreviewGeneration = false;
 	bSpawnStarterLocation = bSavedStarterLocation;
 	bSpawnStarterPlanet = bSavedStarterPlanet;
@@ -273,11 +314,24 @@ void AAstroGenerator::StartPreviewCameraTransition(const FVector& Center, double
 	{
 		return;
 	}
+	if (Center.ContainsNaN() || !FMath::IsFinite(Radius) || Radius <= UE_SMALL_NUMBER)
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[APS.WorldGeneration] Ignored invalid preview camera target center=%s radius=%.3e"),
+			*Center.ToString(), Radius);
+		return;
+	}
 
 	const double HalfFovRadians = FMath::DegreesToRadians(PreviewCamera->FieldOfView * 0.5);
 	const double Distance = FMath::Max(Radius * 1.08 / FMath::Tan(HalfFovRadians), Radius * 1.25);
 	const FVector ViewDirection = FVector(-1.0, -1.0, 0.45).GetSafeNormal();
 	const FVector CameraLocation = Center - ViewDirection * Distance;
+	if (CameraLocation.ContainsNaN() || !FMath::IsFinite(Distance))
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[APS.WorldGeneration] Ignored non-finite preview camera transform"));
+		return;
+	}
 
 	PreviewOrbitCenter = Center;
 	PreviewOrbitDistance = Distance;
