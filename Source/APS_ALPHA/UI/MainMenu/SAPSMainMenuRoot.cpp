@@ -107,6 +107,62 @@ namespace APSMenu
 		return true;
 	}
 
+	void WriteWorldMetadataSidecar(const FString& MetadataPath, const FAPSExistingWorldEntry& Entry)
+	{
+		FConfigFile Metadata;
+		Metadata.SetInt64(TEXT("APSWorld"), TEXT("Version"), 1);
+		Metadata.SetString(TEXT("APSWorld"), TEXT("DisplayName"), *Entry.DisplayName);
+		Metadata.SetString(TEXT("APSWorld"), TEXT("SystemType"), *Entry.SystemType);
+		Metadata.SetString(TEXT("APSWorld"), TEXT("StarType"), *Entry.StarType);
+		Metadata.SetString(TEXT("APSWorld"), TEXT("PlanetType"), *Entry.PlanetType);
+		Metadata.SetString(TEXT("APSWorld"), TEXT("Environment"), *Entry.Environment);
+		Metadata.SetInt64(TEXT("APSWorld"), TEXT("TotalPlanets"), Entry.TotalPlanets);
+		Metadata.SetInt64(TEXT("APSWorld"), TEXT("InhabitedPlanets"), Entry.InhabitedPlanets);
+		IFileManager::Get().MakeDirectory(*FPaths::GetPath(MetadataPath), true);
+		if (!Metadata.Write(MetadataPath, false))
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[APS.Menu] Could not cache save metadata: %s"),
+				*MetadataPath);
+		}
+	}
+
+	FString BrowserPreferencesPath()
+	{
+		return FPaths::ProjectSavedDir() / TEXT("Config") / TEXT("APSWorldBrowser.ini");
+	}
+
+	void LoadFavoriteSlots(TSet<FString>& OutSlots)
+	{
+		FConfigFile Preferences;
+		Preferences.Read(BrowserPreferencesPath());
+		TArray<FString> Slots;
+		Preferences.GetArray(TEXT("WorldBrowser"), TEXT("FavoriteSlots"), Slots);
+		for (const FString& Slot : Slots)
+		{
+			OutSlots.Add(Slot);
+		}
+	}
+
+	void SaveFavoriteSlots(const TArray<TSharedPtr<FAPSExistingWorldEntry>>& Entries)
+	{
+		TArray<FString> Slots;
+		for (const TSharedPtr<FAPSExistingWorldEntry>& Entry : Entries)
+		{
+			if (Entry.IsValid() && Entry->bFavorite)
+			{
+				Slots.Add(Entry->SaveFileName);
+			}
+		}
+		FConfigFile Preferences;
+		Preferences.SetArray(TEXT("WorldBrowser"), TEXT("FavoriteSlots"), Slots);
+		const FString PreferencesPath = BrowserPreferencesPath();
+		IFileManager::Get().MakeDirectory(*FPaths::GetPath(PreferencesPath), true);
+		if (!Preferences.Write(PreferencesPath, false))
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[APS.Menu] Could not persist world favorites"));
+		}
+	}
+
 	template <typename T>
 	FString EnumLabel(T Value)
 	{
@@ -469,6 +525,8 @@ void SAPSMainMenuRoot::LoadExistingWorlds()
 		}
 	}
 	ExistingWorlds.Reset();
+	TSet<FString> FavoriteSlots;
+	APSMenu::LoadFavoriteSlots(FavoriteSlots);
 	TArray<FString> SaveFiles;
 	const FString SaveDirectory = FPaths::ProjectSavedDir() / TEXT("SaveGames");
 	IFileManager::Get().FindFiles(SaveFiles, *SaveDirectory, TEXT("*.sav"));
@@ -498,6 +556,7 @@ void SAPSMainMenuRoot::LoadExistingWorlds()
 		}
 		Entry->FileTimestamp = Stat.ModificationTime.ToUnixTimestamp();
 		Entry->FileSizeBytes = Stat.FileSize;
+		Entry->bFavorite = FavoriteSlots.Contains(SlotName);
 		// Sidecars are tiny and contain only browser-facing fields. They let even a
 		// 100 MB gameplay save render a complete card without deserializing actors.
 		APSMenu::LoadWorldMetadataSidecar(SaveDirectory / (SlotName + TEXT(".apsmeta")), *Entry);
@@ -556,6 +615,8 @@ void SAPSMainMenuRoot::ApplyExistingWorldMetadata(const FString& SlotName, const
 		Entry.Environment = FString::Printf(TEXT("%s / %.0f KM"), *Entry.PlanetType, Data.PlanetRadius);
 		Entry.TotalPlanets = Data.PlanetsAmount;
 	}
+	APSMenu::WriteWorldMetadataSidecar(
+		FPaths::ProjectSavedDir() / TEXT("SaveGames") / (SlotName + TEXT(".apsmeta")), Entry);
 	RebuildExistingWorldGrid();
 	if (SelectedWorld == *Found) RebuildExistingWorldDetails();
 }
@@ -853,6 +914,7 @@ FReply SAPSMainMenuRoot::ToggleWorldFavorite(TSharedPtr<FAPSExistingWorldEntry> 
 	if (Entry.IsValid())
 	{
 		Entry->bFavorite = !Entry->bFavorite;
+		APSMenu::SaveFavoriteSlots(ExistingWorlds);
 		if (WorldCollection == EAPSWorldCollection::Favorites && !Entry->bFavorite && SelectedWorld == Entry)
 		{
 			const TSharedPtr<FAPSExistingWorldEntry>* FirstMatch = ExistingWorlds.FindByPredicate(
