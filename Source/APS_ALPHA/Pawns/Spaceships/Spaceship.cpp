@@ -34,11 +34,9 @@
 #include "Rendering/DrawElements.h"
 #include "Styling/CoreStyle.h"
 #include "Widgets/SLeafWidget.h"
-#include "Widgets/Images/SImage.h"
 #include "Widgets/Layout/SBackgroundBlur.h"
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/Layout/SBox.h"
-#include "Widgets/Layout/SConstraintCanvas.h"
 #include "Widgets/SBoxPanel.h"
 #include "Widgets/SOverlay.h"
 #include "Widgets/SViewport.h"
@@ -2316,9 +2314,10 @@ bool ASpaceship::ProjectNavigationContactToScreen(int32 ContactIndex, FVector2D&
 }
 
 bool ASpaceship::GetNavigationMarkerLayout(int32 ContactIndex, FVector2D& OutAnchorPosition,
-	FVector2D& OutLabelPosition) const
+	FVector2D& OutLabelPosition, const TSet<int32>* OccludedContacts) const
 {
 	if (!ShipNavigation || !ShouldShowNavigationMarker(ContactIndex)
+		|| (OccludedContacts && OccludedContacts->Contains(ContactIndex))
 		|| !GEngine || !GEngine->GameViewport)
 	{
 		return false;
@@ -2349,7 +2348,9 @@ bool ASpaceship::GetNavigationMarkerLayout(int32 ContactIndex, FVector2D& OutAnc
 	for (int32 Index = 0; Index < ContactCount; ++Index)
 	{
 		FVector2D ProjectedAnchor;
-		if (ShouldShowNavigationMarker(Index) && ProjectNavigationContactToScreen(Index, ProjectedAnchor))
+		if (ShouldShowNavigationMarker(Index)
+			&& (!OccludedContacts || !OccludedContacts->Contains(Index))
+			&& ProjectNavigationContactToScreen(Index, ProjectedAnchor))
 		{
 			Placements.Add({Index, ProjectedAnchor});
 		}
@@ -2432,20 +2433,6 @@ bool ASpaceship::GetNavigationMarkerLayout(int32 ContactIndex, FVector2D& OutAnc
 	return false;
 }
 
-bool ASpaceship::IsNavigationMarkerRightEdgeFlag(int32 ContactIndex) const
-{
-	FVector2D Anchor;
-	FVector2D Label;
-	if (!GetNavigationMarkerLayout(ContactIndex, Anchor, Label))
-	{
-		return false;
-	}
-	const float LeftEdgeDistance = FMath::Abs(Anchor.X - (Label.X + 1.5f));
-	const float RightEdgeDistance = FMath::Abs(
-		Anchor.X - (Label.X + APSNavigationHud::MarkerWidth - 1.5f));
-	return RightEdgeDistance < LeftEdgeDistance;
-}
-
 int32 ASpaceship::PaintNavigationOverlay(const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect,
 	FSlateWindowElementList& OutDrawElements, int32 LayerId) const
 {
@@ -2455,6 +2442,74 @@ int32 ASpaceship::PaintNavigationOverlay(const FGeometry& AllottedGeometry, cons
 	}
 
 	const FPaintGeometry PaintGeometry = AllottedGeometry.ToPaintGeometry();
+	struct FNavigationOccluder
+	{
+		const AActor* Actor{nullptr};
+		FVector Center{FVector::ZeroVector};
+		double Radius{0.0};
+	};
+	TArray<FNavigationOccluder, TInlineAllocator<32>> Occluders;
+	const int32 NavigationContactCount = FMath::Min(
+		ShipNavigation->GetContacts().Num(), MaximumNavigationMarkers);
+	for (int32 ContactIndex = 0; ContactIndex < NavigationContactCount; ++ContactIndex)
+	{
+		const FShipNavigationContact* Contact = ShipNavigation->GetContact(ContactIndex);
+		const APlanetaryBody* Body = Contact ? Cast<APlanetaryBody>(Contact->Actor.Get()) : nullptr;
+		if (!Body)
+		{
+			continue;
+		}
+		const double OcclusionRadius = Body->GetWorldScapeBodyRadiusCm() * 0.98;
+		if (OcclusionRadius > UE_DOUBLE_SMALL_NUMBER)
+		{
+			Occluders.Add({Body, GetNavigationContactWorldAnchor(ContactIndex), OcclusionRadius});
+		}
+	}
+
+	const APlayerController* NavigationPlayerController = Cast<APlayerController>(GetController());
+	const APlayerCameraManager* NavigationCameraManager = NavigationPlayerController
+		? NavigationPlayerController->PlayerCameraManager : nullptr;
+	const FVector NavigationCameraLocation = NavigationCameraManager
+		? NavigationCameraManager->GetCameraLocation() : FVector::ZeroVector;
+	auto IsWorldPointOccluded = [&](const FVector& WorldPoint, const AActor* IgnoredActor = nullptr)
+	{
+		if (!NavigationCameraManager)
+		{
+			return false;
+		}
+		const FVector CameraToPoint = WorldPoint - NavigationCameraLocation;
+		const double SegmentLengthSquared = CameraToPoint.SizeSquared();
+		if (SegmentLengthSquared <= UE_DOUBLE_SMALL_NUMBER)
+		{
+			return false;
+		}
+		for (const FNavigationOccluder& Occluder : Occluders)
+		{
+			if (Occluder.Actor == IgnoredActor)
+			{
+				continue;
+			}
+			const FVector CameraToCenter = Occluder.Center - NavigationCameraLocation;
+			const double RadiusSquared = FMath::Square(Occluder.Radius);
+			if (CameraToCenter.SizeSquared() <= RadiusSquared)
+			{
+				continue;
+			}
+			const double SegmentFraction = FVector::DotProduct(CameraToCenter, CameraToPoint)
+				/ SegmentLengthSquared;
+			if (SegmentFraction <= 0.0 || SegmentFraction >= 0.9995)
+			{
+				continue;
+			}
+			const FVector ClosestPoint = NavigationCameraLocation + CameraToPoint * SegmentFraction;
+			if (FVector::DistSquared(ClosestPoint, Occluder.Center) < RadiusSquared)
+			{
+				return true;
+			}
+		}
+		return false;
+	};
+
 	auto DrawScreenLine = [&](const TArray<FVector2D>& Points, const FLinearColor& Color, float Thickness,
 		int32 DrawLayer)
 	{
@@ -2479,7 +2534,8 @@ int32 ASpaceship::PaintNavigationOverlay(const FGeometry& AllottedGeometry, cons
 			const FVector WorldPoint = Center + AxisX * (FMath::Cos(Angle) * Radius)
 				+ AxisY * (FMath::Sin(Angle) * Radius);
 			FVector2D ScreenPoint;
-			const bool bValid = ProjectWorldLocationToNavigationScreen(WorldPoint, ScreenPoint, false);
+			const bool bValid = !IsWorldPointOccluded(WorldPoint)
+				&& ProjectWorldLocationToNavigationScreen(WorldPoint, ScreenPoint, false);
 			if (bDashed)
 			{
 				if (bValid && bPreviousValid && SegmentIndex % 3 != 0)
@@ -2596,28 +2652,71 @@ int32 ASpaceship::PaintNavigationOverlay(const FGeometry& AllottedGeometry, cons
 
 	if (bNavigationMarkersVisible)
 	{
-		const int32 ContactCount = FMath::Min(ShipNavigation->GetContacts().Num(), MaximumNavigationMarkers);
+		TSet<int32> OccludedContacts;
+		for (int32 ContactIndex = 0; ContactIndex < NavigationContactCount; ++ContactIndex)
+		{
+			const FShipNavigationContact* Contact = ShipNavigation->GetContact(ContactIndex);
+			if (Contact && IsWorldPointOccluded(
+				GetNavigationContactWorldAnchor(ContactIndex), Contact->Actor.Get()))
+			{
+				OccludedContacts.Add(ContactIndex);
+			}
+		}
+		const int32 ContactCount = NavigationContactCount;
 		for (int32 ContactIndex = 0; ContactIndex < ContactCount; ++ContactIndex)
 		{
 			FVector2D Anchor;
 			FVector2D Label;
-			if (!GetNavigationMarkerLayout(ContactIndex, Anchor, Label)) continue;
+			if (!GetNavigationMarkerLayout(ContactIndex, Anchor, Label, &OccludedContacts)) continue;
 			const FLinearColor Color = GetNavigationMarkerColor(ContactIndex);
 			const bool bSelected = ContactIndex == ShipNavigation->GetSelectedContactIndex();
-			const bool bRightEdgeFlag = IsNavigationMarkerRightEdgeFlag(ContactIndex);
-			const FVector2D FlagPoleEnd(
-				Label.X + (bRightEdgeFlag ? APSNavigationHud::MarkerWidth - 1.5f : 1.5f),
-				Label.Y + APSNavigationHud::MarkerHeight);
+			const bool bAccentOnRight = FMath::Abs(
+				Anchor.X - (Label.X + APSNavigationHud::MarkerWidth - 1.5f))
+				< FMath::Abs(Anchor.X - (Label.X + 1.5f));
+			const FVector2D FlagPoleEnd(Anchor.X, Label.Y + APSNavigationHud::MarkerHeight);
 			DrawScreenLine({Anchor, FlagPoleEnd}, FLinearColor(Color.R, Color.G, Color.B,
 				bSelected ? 0.82f : 0.42f), bSelected ? 1.15f : 0.65f, LayerId + 2);
+
+			// Draw the flag and its pole in the same OnPaint pass. A separate
+			// ConstraintCanvas was laid out before the post-physics camera update,
+			// so at high speed the card used an older projection than its pole.
+			const FVector2f LabelPosition(static_cast<float>(Label.X), static_cast<float>(Label.Y));
+			const FVector2f LabelSize(APSNavigationHud::MarkerWidth, APSNavigationHud::MarkerHeight);
+			const FPaintGeometry LabelGeometry = AllottedGeometry.ToPaintGeometry(
+				LabelSize, FSlateLayoutTransform(LabelPosition));
+			const FLinearColor BackgroundColor(
+				Color.R * 0.055f, Color.G * 0.055f, Color.B * 0.055f, bSelected ? 0.91f : 0.68f);
+			FSlateDrawElement::MakeBox(OutDrawElements, LayerId + 3, LabelGeometry,
+				FCoreStyle::Get().GetBrush("WhiteBrush"), ESlateDrawEffect::None, BackgroundColor);
+
+			const float AccentX = bAccentOnRight
+				? Label.X + APSNavigationHud::MarkerWidth - 3.0f : Label.X;
+			const FPaintGeometry AccentGeometry = AllottedGeometry.ToPaintGeometry(
+				FVector2f(3.0f, APSNavigationHud::MarkerHeight),
+				FSlateLayoutTransform(FVector2f(AccentX, Label.Y)));
+			FSlateDrawElement::MakeBox(OutDrawElements, LayerId + 4, AccentGeometry,
+				FCoreStyle::Get().GetBrush("WhiteBrush"), ESlateDrawEffect::None, Color);
+
+			const float TextLeftPadding = bAccentOnRight ? 8.0f : 11.0f;
+			const FPaintGeometry TextGeometry = AllottedGeometry.ToPaintGeometry(
+				FVector2f(APSNavigationHud::MarkerWidth - 18.0f, APSNavigationHud::MarkerHeight - 7.0f),
+				FSlateLayoutTransform(FVector2f(Label.X + TextLeftPadding, Label.Y + 4.0f)));
+			const FLinearColor TextColor(
+				FMath::Lerp(Color.R, 0.9f, 0.38f),
+				FMath::Lerp(Color.G, 0.94f, 0.38f),
+				FMath::Lerp(Color.B, 0.98f, 0.38f), 0.96f);
+			FSlateDrawElement::MakeText(OutDrawElements, LayerId + 5, TextGeometry,
+				GetNavigationMarkerText(ContactIndex), FCoreStyle::GetDefaultFontStyle("Regular", 8),
+				ESlateDrawEffect::None, TextColor);
+
 			const float CrossExtent = bSelected ? 4.5f : 2.75f;
 			DrawScreenLine({Anchor + FVector2D(-CrossExtent, 0.0f), Anchor + FVector2D(CrossExtent, 0.0f)},
-				Color, bSelected ? 1.35f : 0.8f, LayerId + 2);
+				Color, bSelected ? 1.35f : 0.8f, LayerId + 6);
 			DrawScreenLine({Anchor + FVector2D(0.0f, -CrossExtent), Anchor + FVector2D(0.0f, CrossExtent)},
-				Color, bSelected ? 1.35f : 0.8f, LayerId + 2);
+				Color, bSelected ? 1.35f : 0.8f, LayerId + 6);
 		}
 	}
-	return LayerId + 2;
+	return LayerId + 6;
 }
 
 FLinearColor ASpaceship::GetNavigationMarkerColor(int32 ContactIndex) const
@@ -2723,106 +2822,6 @@ void ASpaceship::CreateShipHud()
 		SNew(SAPSShipNavigationOverlay)
 		.Ship(WeakThis)
 	];
-	TSharedRef<SConstraintCanvas> MarkerCanvas = SNew(SConstraintCanvas);
-	for (int32 MarkerIndex = 0; MarkerIndex < MaximumNavigationMarkers; ++MarkerIndex)
-	{
-		MarkerCanvas->AddSlot()
-		.Offset_Lambda([WeakThis, MarkerIndex]()
-		{
-			FVector2D Anchor;
-			FVector2D Label(-10000.0, -10000.0);
-			if (WeakThis.IsValid()) WeakThis->GetNavigationMarkerLayout(MarkerIndex, Anchor, Label);
-			return FMargin(Label.X, Label.Y, APSNavigationHud::MarkerWidth, APSNavigationHud::MarkerHeight);
-		})
-		[
-			SNew(SBox)
-			.WidthOverride(APSNavigationHud::MarkerWidth)
-			.HeightOverride(APSNavigationHud::MarkerHeight)
-			.Visibility_Lambda([WeakThis, MarkerIndex]()
-			{
-				FVector2D Anchor;
-				FVector2D Label;
-				return WeakThis.IsValid() && WeakThis->bNavigationMarkersVisible
-					&& MarkerIndex < WeakThis->MaximumNavigationMarkers
-					&& WeakThis->GetNavigationMarkerLayout(MarkerIndex, Anchor, Label)
-					? EVisibility::HitTestInvisible : EVisibility::Collapsed;
-			})
-			[
-				SNew(SBorder)
-				.BorderBackgroundColor_Lambda([WeakThis, MarkerIndex]()
-				{
-					const FLinearColor Accent = WeakThis.IsValid()
-						? WeakThis->GetNavigationMarkerColor(MarkerIndex) : FLinearColor::Transparent;
-					const bool bSelected = WeakThis.IsValid() && WeakThis->ShipNavigation
-						&& MarkerIndex == WeakThis->ShipNavigation->GetSelectedContactIndex();
-					return FSlateColor(FLinearColor(Accent.R * 0.055f, Accent.G * 0.055f,
-						Accent.B * 0.055f, bSelected ? 0.91f : 0.68f));
-				})
-				.Padding(0.0f)
-				[
-					SNew(SHorizontalBox)
-					+ SHorizontalBox::Slot()
-					.AutoWidth()
-					[
-						SNew(SBox)
-						.WidthOverride(3.0f)
-						[
-							SNew(SImage)
-							.Image(FCoreStyle::Get().GetBrush("WhiteBrush"))
-							.ColorAndOpacity_Lambda([WeakThis, MarkerIndex]()
-							{
-								if (!WeakThis.IsValid() || WeakThis->IsNavigationMarkerRightEdgeFlag(MarkerIndex))
-								{
-									return FLinearColor::Transparent;
-								}
-								return WeakThis->GetNavigationMarkerColor(MarkerIndex);
-							})
-						]
-					]
-					+ SHorizontalBox::Slot()
-					.FillWidth(1.0f)
-					.Padding(8.0f, 4.0f, 7.0f, 3.0f)
-					[
-						SNew(STextBlock)
-						.Text_Lambda([WeakThis, MarkerIndex]()
-						{
-							return WeakThis.IsValid()
-								? WeakThis->GetNavigationMarkerText(MarkerIndex) : FText::GetEmpty();
-						})
-						.Font(FCoreStyle::GetDefaultFontStyle("Regular", 8))
-						.ColorAndOpacity_Lambda([WeakThis, MarkerIndex]()
-						{
-							if (!WeakThis.IsValid()) return FSlateColor(FLinearColor::Transparent);
-							const FLinearColor Accent = WeakThis->GetNavigationMarkerColor(MarkerIndex);
-							return FSlateColor(FLinearColor(
-								FMath::Lerp(Accent.R, 0.9f, 0.38f),
-								FMath::Lerp(Accent.G, 0.94f, 0.38f),
-								FMath::Lerp(Accent.B, 0.98f, 0.38f), 0.96f));
-						})
-					]
-					+ SHorizontalBox::Slot()
-					.AutoWidth()
-					[
-						SNew(SBox)
-						.WidthOverride(3.0f)
-						[
-							SNew(SImage)
-							.Image(FCoreStyle::Get().GetBrush("WhiteBrush"))
-							.ColorAndOpacity_Lambda([WeakThis, MarkerIndex]()
-							{
-								if (!WeakThis.IsValid() || !WeakThis->IsNavigationMarkerRightEdgeFlag(MarkerIndex))
-								{
-									return FLinearColor::Transparent;
-								}
-								return WeakThis->GetNavigationMarkerColor(MarkerIndex);
-							})
-						]
-					]
-				]
-			]
-		];
-	}
-	RootOverlay->AddSlot()[MarkerCanvas];
 
 	RootOverlay->AddSlot()
 		.HAlign(HAlign_Right)
