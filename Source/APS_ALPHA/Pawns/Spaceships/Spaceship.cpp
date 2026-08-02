@@ -264,13 +264,17 @@ ASpaceship::ASpaceship()
 	SpringArmComponent->SetRelativeLocation(FVector::ZeroVector);
 	SpringArmComponent->SetRelativeRotation(FRotator(-12.0, 0.0, 0.0));
 	SpringArmComponent->bDoCollisionTest = false;
-	SpringArmComponent->bEnableCameraLag = true;
-	SpringArmComponent->CameraLagSpeed = 7.0f;
+	// Translation lag becomes numerically unstable at full-scale travel speeds:
+	// the arm falls kilometres behind the root and periodically catches up. Arm
+	// length and FOV still communicate speed without allowing camera/ship separation.
+	SpringArmComponent->bEnableCameraLag = false;
+	SpringArmComponent->CameraLagSpeed = 12.0f;
 	SpringArmComponent->bEnableCameraRotationLag = true;
 	SpringArmComponent->CameraRotationLagSpeed = 9.0f;
-	SpringArmComponent->bUseCameraLagSubstepping = true;
+	SpringArmComponent->bUseCameraLagSubstepping = false;
 	SpringArmComponent->CameraLagMaxTimeStep = 1.0f / 120.0f;
-	SpringArmComponent->bClampToMaxPhysicsDeltaTime = true;
+	SpringArmComponent->bClampToMaxPhysicsDeltaTime = false;
+	SpringArmComponent->PrimaryComponentTick.TickGroup = TG_PostPhysics;
 
 	CameraComponent = CreateDefaultSubobject<UCameraComponent>(TEXT("Camera"));
 	CameraComponent->SetupAttachment(SpringArmComponent, USpringArmComponent::SocketName);
@@ -1134,9 +1138,10 @@ void ASpaceship::ConfigureCameraFromHull()
 	// discontinuity whenever the moving ship crosses the limit, which looks like
 	// a periodic stop/go pulse even though the pawn trajectory itself is smooth.
 	SpringArmComponent->CameraLagMaxDistance = 0.0f;
-	SpringArmComponent->bUseCameraLagSubstepping = true;
+	SpringArmComponent->bEnableCameraLag = false;
+	SpringArmComponent->bUseCameraLagSubstepping = false;
 	SpringArmComponent->CameraLagMaxTimeStep = 1.0f / 120.0f;
-	SpringArmComponent->bClampToMaxPhysicsDeltaTime = true;
+	SpringArmComponent->bClampToMaxPhysicsDeltaTime = false;
 	SpringArmComponent->SetWorldLocation(
 		MainMesh->GetComponentTransform().TransformPosition(LocalCenter) + GetShipUpVector() * WorldRadius * 0.2);
 	const FRotator FlightViewRotation = FRotationMatrix::MakeFromXZ(
@@ -1489,13 +1494,10 @@ void ASpaceship::UpdateAdaptiveFlightCamera(float DeltaTime)
 	const float TargetArmLength = BaseCameraArmLength * FMath::Lerp(1.0f, 1.22f, CameraAlpha);
 	SpringArmComponent->TargetArmLength = FMath::FInterpTo(
 		SpringArmComponent->TargetArmLength, TargetArmLength, DeltaTime, 2.6f);
-	// Keep a small, deterministic chase offset without the hard max-distance
-	// clamp. At very high velocity the response grows with speed, preventing the
-	// camera from being left kilometres behind the ship.
-	const double DesiredTranslationLag = FMath::Max(
-		static_cast<double>(BaseCameraArmLength) * FMath::Lerp(0.08, 0.18, CameraAlpha), 100.0);
-	SpringArmComponent->CameraLagSpeed = static_cast<float>(FMath::Clamp(
-		Speed / DesiredTranslationLag, 8.0, 10000000.0));
+	// Positional lag is intentionally disabled. At astronomical velocities a
+	// spring-arm positional integrator alternates between a huge error and a huge
+	// correction, while smoothly interpolated arm length/FOV retain the chase feel.
+	SpringArmComponent->bEnableCameraLag = false;
 	SpringArmComponent->CameraRotationLagSpeed = FMath::Lerp(7.0f, 12.0f, CameraAlpha);
 	SpringArmComponent->CameraLagMaxDistance = 0.0f;
 	if (CameraComponent)
@@ -1830,14 +1832,63 @@ void ASpaceship::RequestEngineModeForFlightMode(bool bImmediate)
 	{
 		bEngineModeTransitionActive = false;
 		bEngineModeSwitchedAtMidpoint = false;
-		OnboardComputer->SwitchEngineMode(PendingEngineMode);
-		ApplyEngineState();
+		CommitEngineModeSwitch(PendingEngineMode);
 		return;
 	}
 
 	EngineModeTransitionElapsed = 0.0f;
 	bEngineModeTransitionActive = true;
 	bEngineModeSwitchedAtMidpoint = false;
+}
+
+void ASpaceship::CommitEngineModeSwitch(EEngineMode NewEngineMode)
+{
+	if (!OnboardComputer || !SpaceshipHull)
+	{
+		return;
+	}
+
+	const EEngineMode PreviousMode = OnboardComputer->EngineSystem.CurrentEngineMode;
+	const FVector PreservedLinearVelocity = SpaceshipHull->IsSimulatingPhysics()
+		? SpaceshipHull->GetPhysicsLinearVelocity() : KinematicVelocity;
+	FVector PreservedAngularVelocityRadians = FVector::ZeroVector;
+	if (SpaceshipHull->IsSimulatingPhysics())
+	{
+		PreservedAngularVelocityRadians = SpaceshipHull->GetPhysicsAngularVelocityInRadians();
+	}
+	else
+	{
+		PreservedAngularVelocityRadians =
+			GetShipRightVector() * FMath::DegreesToRadians(CurrentAngularVelocityDegrees.X)
+			+ GetShipUpVector() * FMath::DegreesToRadians(CurrentAngularVelocityDegrees.Y)
+			+ GetShipForwardVector() * FMath::DegreesToRadians(CurrentAngularVelocityDegrees.Z);
+	}
+
+	// The onboard computer changes the simulation backend. Capture momentum before
+	// that happens, then explicitly seed whichever backend owns the next frame.
+	KinematicVelocity = PreservedLinearVelocity;
+	OnboardComputer->SwitchEngineMode(NewEngineMode);
+	ApplyEngineState();
+
+	if (SpaceshipHull->IsSimulatingPhysics())
+	{
+		SpaceshipHull->SetPhysicsLinearVelocity(PreservedLinearVelocity);
+		SpaceshipHull->SetPhysicsAngularVelocityInRadians(PreservedAngularVelocityRadians);
+	}
+	else
+	{
+		KinematicVelocity = PreservedLinearVelocity;
+		CurrentAngularVelocityDegrees = FVector(
+			FMath::RadiansToDegrees(FVector::DotProduct(PreservedAngularVelocityRadians, GetShipRightVector())),
+			FMath::RadiansToDegrees(FVector::DotProduct(PreservedAngularVelocityRadians, GetShipUpVector())),
+			FMath::RadiansToDegrees(FVector::DotProduct(PreservedAngularVelocityRadians, GetShipForwardVector())));
+	}
+
+	UE_LOG(LogTemp, Log,
+		TEXT("[APS.Ships] Engine handoff ship=%s from=%s to=%s speedBefore=%.2f m/s speedAfter=%.2f m/s physics=%s"),
+		*GetName(), *UEnum::GetValueAsString(PreviousMode), *UEnum::GetValueAsString(NewEngineMode),
+		PreservedLinearVelocity.Size() / 100.0, GetShipSpeedMetersPerSecond(),
+		SpaceshipHull->IsSimulatingPhysics() ? TEXT("true") : TEXT("false"));
 }
 
 void ASpaceship::AdvanceEngineModeTransition(float DeltaTime)
@@ -1849,9 +1900,8 @@ void ASpaceship::AdvanceEngineModeTransition(float DeltaTime)
 	EngineModeTransitionElapsed += DeltaTime;
 	if (!bEngineModeSwitchedAtMidpoint && EngineModeTransitionElapsed >= EngineModeTransitionDuration * 0.5f)
 	{
-		OnboardComputer->SwitchEngineMode(PendingEngineMode);
+		CommitEngineModeSwitch(PendingEngineMode);
 		bEngineModeSwitchedAtMidpoint = true;
-		ApplyEngineState();
 	}
 	if (EngineModeTransitionElapsed >= EngineModeTransitionDuration)
 	{
@@ -2328,12 +2378,14 @@ bool ASpaceship::GetNavigationMarkerLayout(int32 ContactIndex, FVector2D& OutAnc
 	const float StepY = LabelSize.Y + APSNavigationHud::MarkerGap + 4.0f;
 	for (const FMarkerPlacement& Placement : Placements)
 	{
-		const bool bExtendFlagLeft = Placement.Anchor.X + LabelSize.X - 1.5f
-			> ViewportSize.X - ScreenMargin;
+		// Default to a left-facing flag: the card sits to the left of the
+		// object's vertical pole. Only flip it when the left viewport edge
+		// cannot contain the full card.
+		const bool bExtendFlagRight = Placement.Anchor.X - LabelSize.X + 1.5f < ScreenMargin;
 		const FVector2D Desired(
-			bExtendFlagLeft
-				? Placement.Anchor.X - LabelSize.X + 1.5f
-				: Placement.Anchor.X - 1.5f,
+			bExtendFlagRight
+				? Placement.Anchor.X - 1.5f
+				: Placement.Anchor.X - LabelSize.X + 1.5f,
 			Placement.Anchor.Y - LabelSize.Y - APSNavigationHud::FlagPoleLength);
 		FVector2D Chosen = Desired;
 		bool bFoundFreeSlot = false;

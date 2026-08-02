@@ -23,29 +23,16 @@ void APlanetaryBody::SetWorldScapeStreamingState(EWorldScapeSurfaceState NewStat
 		}
 	};
 
-	// Preload is intentionally metadata-only. Creating one WorldScape actor for
-	// every planet and moon in the resident family polluted the runtime Outliner
-	// and spent memory on surfaces the player was not approaching. Only Active is
-	// allowed to allocate a transient root; leaving Active releases that root.
-	if (NewState == EWorldScapeSurfaceState::Preloaded
-		|| NewState == EWorldScapeSurfaceState::Unloaded)
+	if (NewState == EWorldScapeSurfaceState::Unloaded)
 	{
 		if (IsValid(PlanetaryEnvironmentGenerator))
 		{
-			if (NewState == EWorldScapeSurfaceState::Preloaded
-				&& !PlanetaryEnvironmentGenerator->bOwnsWorldScapeRootInstance)
-			{
-				PlanetaryEnvironmentGenerator->PreloadWorldScapeRoot();
-			}
-			else
-			{
-				PlanetaryEnvironmentGenerator->UnloadWorldScapeRoot();
-			}
+			PlanetaryEnvironmentGenerator->UnloadWorldScapeRoot();
 		}
 		SetPlaceholderVisible(true);
 		bEnvironmentSpawned = false;
 		bWorldScapeSurfaceReady = false;
-		WorldScapeSurfaceState = NewState;
+		WorldScapeSurfaceState = EWorldScapeSurfaceState::Unloaded;
 		return;
 	}
 
@@ -74,6 +61,22 @@ void APlanetaryBody::SetWorldScapeStreamingState(EWorldScapeSurfaceState NewStat
 		}
 		return true;
 	};
+
+	if (NewState == EWorldScapeSurfaceState::Preloaded)
+	{
+		if (PrepareSurface())
+		{
+			// Allocate and profile every member of the resident family early, but
+			// keep it hidden, frozen and collision-free until that body is selected.
+			// This makes planet/moon handoff immediate without updating every surface.
+			Generator->PreloadWorldScapeRoot();
+			SetPlaceholderVisible(true);
+			bEnvironmentSpawned = false;
+			bWorldScapeSurfaceReady = false;
+			WorldScapeSurfaceState = EWorldScapeSurfaceState::Preloaded;
+		}
+		return;
+	}
 
 	switch (NewState)
 	{
@@ -133,7 +136,9 @@ bool APlanetaryBody::RefreshWorldScapeSurfaceVisibility()
 	AWorldScapeRoot* Root = IsValid(PlanetaryEnvironmentGenerator)
 		? PlanetaryEnvironmentGenerator->WorldScapeRootInstance : nullptr;
 	bool bHasVisibleTerrain = false;
-	if (IsValid(Root) && WorldScapeSurfaceState == EWorldScapeSurfaceState::Active)
+	if (IsValid(Root)
+		&& (WorldScapeSurfaceState == EWorldScapeSurfaceState::Active
+			|| WorldScapeSurfaceState == EWorldScapeSurfaceState::FrozenVisible))
 	{
 		for (const UWorldScapeLod* Lod : Root->WorldScapeLod)
 		{

@@ -553,6 +553,7 @@ private:
 		double RequestedAcceleration, double MaximumSpeed) const;
 	float GetEngineTransitionAuthority() const;
 	void ApplyEngineState();
+	void CommitEngineModeSwitch(EEngineMode NewEngineMode);
 	void RequestEngineModeForFlightMode(bool bImmediate);
 	void AdvanceEngineModeTransition(float DeltaTime);
 	EEngineMode ResolveEngineModeForFlightMode(EFlightMode FlightMode) const;

@@ -110,14 +110,20 @@ bool FAPSWorldScapeFamilyLifecycleTest::RunTest(const FString& Parameters)
 	APlanetarySurfaceGenerator* Generator = Planet->PlanetaryEnvironmentGenerator;
 	TestEqual(TEXT("Preloaded surface reports its state"), Planet->GetWorldScapeStreamingState(),
 		EWorldScapeSurfaceState::Preloaded);
-	TestNull(TEXT("Preload does not allocate a runtime WorldScape actor"),
-		Generator ? Generator->WorldScapeRootInstance : nullptr);
+	AWorldScapeRoot* PreloadedRoot = Generator ? Generator->WorldScapeRootInstance : nullptr;
+	if (TestNotNull(TEXT("Preload allocates a configured WorldScape root"), PreloadedRoot))
+	{
+		TestTrue(TEXT("Preloaded root remains frozen"), PreloadedRoot->bFreezeGeneration);
+		TestFalse(TEXT("Preloaded root does not generate chunks"), PreloadedRoot->bGenerateWorldScape);
+		TestTrue(TEXT("Preloaded root remains hidden"), PreloadedRoot->IsHidden());
+	}
 
 	Planet->SetWorldScapeStreamingState(EWorldScapeSurfaceState::Active);
 	Generator = Planet->PlanetaryEnvironmentGenerator;
 	AWorldScapeRoot* Root = Generator ? Generator->WorldScapeRootInstance : nullptr;
 	TestTrue(TEXT("Active surface generates"), Planet->IsWorldScapeStreamingActive());
-	if (TestNotNull(TEXT("Only activation creates the configured WorldScape root"), Root))
+	TestEqual(TEXT("Activation reuses the preloaded WorldScape root"), Root, PreloadedRoot);
+	if (TestNotNull(TEXT("Activation owns a configured WorldScape root"), Root))
 	{
 		TestTrue(TEXT("Ocean profile enables the ocean mesh"), Root->bOcean);
 		TestNotNull(TEXT("Ocean profile assigns an ocean material"), Root->OceanMaterial.DefaultMaterial);
@@ -129,8 +135,9 @@ bool FAPSWorldScapeFamilyLifecycleTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Frozen surface keeps generated data"), Root && Root->bGenerateWorldScape && Root->bFreezeGeneration);
 	TestFalse(TEXT("Frozen surface stays visible"), Root && Root->IsHidden());
 	Planet->SetWorldScapeStreamingState(EWorldScapeSurfaceState::Preloaded);
-	TestNull(TEXT("Leaving the nearest body releases its transient root"),
-		Generator ? Generator->WorldScapeRootInstance : nullptr);
+	TestEqual(TEXT("Leaving the nearest body retains the family root"),
+		Generator ? Generator->WorldScapeRootInstance : nullptr, Root);
+	TestTrue(TEXT("Retained family root is hidden while only preloaded"), Root && Root->IsHidden());
 
 	Planet->SetWorldScapeStreamingState(EWorldScapeSurfaceState::Unloaded);
 	TestNull(TEXT("Leaving the family releases its transient root"),
@@ -476,6 +483,23 @@ bool FAPSShipDriveEnvironmentTest::RunTest(const FString& Parameters)
 	Ship->Tick(1.0f / 60.0f);
 	TestTrue(TEXT("Released steering begins damping angular velocity"),
 		FMath::Abs(Ship->GetCurrentAngularVelocityDegrees().Y) < FirstFrameYawRate);
+
+	// Engine backends must exchange momentum as one transaction. A stale
+	// kinematic/physics velocity here produces the visible forward/backward kick
+	// that used to occur halfway through every 1/2/3 engine transition.
+	Ship->SelectImpulseEngine();
+	Ship->Tick(1.0f);
+	const FVector TestCruiseVelocity(123400.0, -5000.0, 1200.0);
+	Ship->SpaceshipHull->SetPhysicsLinearVelocity(TestCruiseVelocity);
+	const double SpeedBeforeHandoff = Ship->GetShipSpeedMetersPerSecond();
+	Ship->SelectSpaceWrapEngine();
+	Ship->Tick(0.5f);
+	TestTrue(TEXT("Physics-to-kinematic engine handoff preserves speed"),
+		FMath::IsNearlyEqual(Ship->GetShipSpeedMetersPerSecond(), SpeedBeforeHandoff, 0.1));
+	Ship->SelectImpulseEngine();
+	Ship->Tick(0.5f);
+	TestTrue(TEXT("Kinematic-to-physics engine handoff preserves speed"),
+		FMath::IsNearlyEqual(Ship->GetShipSpeedMetersPerSecond(), SpeedBeforeHandoff, 0.1));
 
 	APSGameplayIntegrationTests::DestroyTestWorld(World);
 	return true;

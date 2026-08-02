@@ -168,8 +168,11 @@ void UAPSPlanetEnvironmentStreamingSubsystem::UpdateActiveEnvironment()
 	{
 		if (ResolveFamilyPlanet(PreviousBody) == BestFamily)
 		{
-			PreviousBody->SetWorldScapeStreamingState(EWorldScapeSurfaceState::Preloaded);
-			UE_LOG(LogAPSWorldScapeStreaming, Log, TEXT("Released previous WorldScape surface: %s"),
+			// Keep already generated siblings visible and collision-free. Only the
+			// nearest body updates its chunks, so approaching a moon never erases the
+			// parent planet and returning does not rebuild it from scratch.
+			PreviousBody->SetWorldScapeStreamingState(EWorldScapeSurfaceState::FrozenVisible);
+			UE_LOG(LogAPSWorldScapeStreaming, Log, TEXT("Froze resident WorldScape surface: %s"),
 				*PreviousBody->GetPathName());
 		}
 	}
