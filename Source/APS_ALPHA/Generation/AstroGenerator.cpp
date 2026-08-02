@@ -716,9 +716,24 @@ bool AAstroGenerator::DematerializeClusterStarSystem(int32 InstanceIndex)
 
 void AAstroGenerator::AddGeneratedWorldModelData()
 {
+	if (!GeneratedWorldModel)
+	{
+		UE_LOG(LogTemp, Error, TEXT("Cannot store generated world data: GeneratedWorldModel is null"));
+		return;
+	}
 	if (!HomePlanet)
 	{
 		UE_LOG(LogTemp, Error, TEXT("HomePlanet is null!"));
+		return;
+	}
+	if (!HomeStar)
+	{
+		UE_LOG(LogTemp, Error, TEXT("Cannot store generated world data: HomeStar is null"));
+		return;
+	}
+	if (!GeneratedHomeStarSystem)
+	{
+		UE_LOG(LogTemp, Error, TEXT("Cannot store generated world data: home star system is null"));
 		return;
 	}
 
@@ -729,7 +744,28 @@ void AAstroGenerator::AddGeneratedWorldModelData()
 		return;
 	}
 	
-	GeneratedWorldModel->StarsAmount = GeneratedStarCluster->StarAmount;
+	// A cluster is only created for the StarCluster generation level. Galaxy and
+	// direct StarSystem worlds legitimately reach this handoff without one, so
+	// the old unconditional dereference crashed after GENERATE WORLD.
+	if (GeneratedStarCluster)
+	{
+		GeneratedWorldModel->StarsAmount = GeneratedStarCluster->StarAmount;
+	}
+	else if (GeneratedGalaxy && GeneratedGalaxy->StarMeshInstances)
+	{
+		GeneratedWorldModel->StarsAmount = GeneratedGalaxy->StarMeshInstances->GetInstanceCount();
+	}
+	else
+	{
+		switch (GeneratedWorldModel->StarType)
+		{
+		case EStarType::DoubleStar: GeneratedWorldModel->StarsAmount = 2; break;
+		case EStarType::TripleStar: GeneratedWorldModel->StarsAmount = 3; break;
+		case EStarType::MultipleStar: GeneratedWorldModel->StarsAmount = 4; break;
+		case EStarType::SingleStar:
+		default: GeneratedWorldModel->StarsAmount = 1; break;
+		}
+	}
 	GeneratedWorldModel->HomeStarName = HomeStar->AstroName;
 	GeneratedWorldModel->FullSpectralName = HomeStar->FullSpectralName;
 	GeneratedWorldModel->HomeStarMass = HomeStar->Mass;
@@ -801,8 +837,17 @@ void AAstroGenerator::GenerateHomeStarSystem()
 				HomePlanet->AstroName = AGravityPlayerController::GenerateUniqueName("Planet");
 			}
 
-			APlanetOrbit* NewHomePlanetOrbit = GeneratedHomeStarSystem->MainStar->PlanetarySystem->
-			                                                            PlanetOrbitsList[StartPlanetNumber - 1];
+			const TArray<APlanetOrbit*>& PlanetOrbits =
+				GeneratedHomeStarSystem->MainStar->PlanetarySystem->PlanetOrbitsList;
+			const int32 StartOrbitIndex = StartPlanetNumber - 1;
+			if (!PlanetOrbits.IsValidIndex(StartOrbitIndex))
+			{
+				UE_LOG(LogTemp, Error,
+					TEXT("Cannot place home planet: start index %d is outside %d generated orbits"),
+					StartPlanetNumber, PlanetOrbits.Num());
+				return;
+			}
+			APlanetOrbit* NewHomePlanetOrbit = PlanetOrbits[StartOrbitIndex];
 			if (NewHomePlanetOrbit && NewHomePlanetOrbit->Planet)
 			{
 				NewHomePlanetOrbit->TriggerClearChildren();
