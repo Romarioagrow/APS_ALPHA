@@ -64,12 +64,21 @@ void AAstroGenerator::BeginPlay()
 		UE_LOG(LogTemp, Warning, TEXT("bAutoGeneration is true, initializing generators"));
 		InitAstroGenerators();
 
-		InitGenerationLevel();
-
 		if (bIntegrateStartPlanet && WSR_StartHomePlanet)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("Both bAutoGeneration and bIntegrateStartPlanet are true - using special integration method"));
+			// The authored Single Play level already owns its start planet,
+			// headquarters and station hierarchy. Generate exactly one star
+			// system and integrate that hierarchy into it. Running the normal
+			// generation path first leaves a second procedural surface behind
+			// and then moves the Blueprint hierarchy a second time.
+			UE_LOG(LogTemp, Warning,
+				TEXT("Single Play integration: skipping normal generation and preserving the authored start hierarchy"));
 			GenerateStarSystemAndIntegratePlanet();
+		}
+		else
+		{
+			UE_LOG(LogTemp, Warning, TEXT("Using normal astronomical generation path"));
+			InitGenerationLevel();
 		}
 	}
 	else
@@ -2334,12 +2343,23 @@ void AAstroGenerator::IntegrateStartPlanetIntoSystem()
 {
 	UE_LOG(LogTemp, Warning, TEXT("=== IntegrateStartPlanetIntoSystem START ==="));
 	
-	if (!WSR_StartHomePlanet || !GeneratedHomeStarSystem || !BP_Headquarters)
+	if (!WSR_StartHomePlanet || !HomePlanet || !GeneratedHomeStarSystem || !BP_Headquarters)
 	{
 		UE_LOG(LogTemp, Error, TEXT("IntegrateStartPlanetIntoSystem: Required references are null!"));
 		UE_LOG(LogTemp, Error, TEXT("StartHomePlanet: %s"), WSR_StartHomePlanet ? TEXT("Valid") : TEXT("NULL"));
+		UE_LOG(LogTemp, Error, TEXT("HomePlanet: %s"), HomePlanet ? TEXT("Valid") : TEXT("NULL"));
 		UE_LOG(LogTemp, Error, TEXT("GeneratedHomeStarSystem: %s"), GeneratedHomeStarSystem ? TEXT("Valid") : TEXT("NULL"));
 		UE_LOG(LogTemp, Error, TEXT("BP_Headquarters: %s"), BP_Headquarters ? TEXT("Valid") : TEXT("NULL"));
+		return;
+	}
+
+	if (!GeneratedHomeStarSystem->MainStar
+		|| !GeneratedHomeStarSystem->MainStar->PlanetarySystem
+		|| !GeneratedHomeStarSystem->MainStar->PlanetarySystem->PlanetOrbitsList.IsValidIndex(StartPlanetNumber - 1))
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("IntegrateStartPlanetIntoSystem: StartPlanetNumber %d has no valid generated orbit"),
+			StartPlanetNumber);
 		return;
 	}
 
