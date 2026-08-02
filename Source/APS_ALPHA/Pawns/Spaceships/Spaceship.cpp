@@ -1348,28 +1348,28 @@ void ASpaceship::UpdateFlightEnvironment(float DeltaTime, bool bForce)
 	{
 		return;
 	}
+	// A single long frame (for example while WorldScape allocates its first chunks)
+	// must not satisfy the whole transition window by itself. Count at most one
+	// detector interval so a new state still needs a repeated stable observation.
+	const float DetectionSampleTime = FMath::Min(
+		EnvironmentDetectionElapsed, FMath::Max(EnvironmentDetectionInterval, 0.01f));
 	EnvironmentDetectionElapsed = 0.0f;
 
-	const EShipFlightEnvironment PreviousEnvironment = CurrentFlightEnvironment;
-	AActor* PreviousSource = ActiveGravitySource.Get();
+	AActor* DetectedGravitySource = nullptr;
+	FVector DetectedGravityDirection = FVector::ZeroVector;
 	if (FlightGravityDetector)
 	{
 		FlightGravityDetector->RunGravityCheckForActor(this);
-		ActiveGravitySource = FlightGravityDetector->GravityTargetActor;
-		ActiveGravityDirection = FlightGravityDetector->GetGravityDirectionAtLocation(GetActorLocation());
-	}
-	else
-	{
-		ActiveGravitySource = nullptr;
-		ActiveGravityDirection = FVector::ZeroVector;
+		DetectedGravitySource = FlightGravityDetector->GravityTargetActor;
+		DetectedGravityDirection = FlightGravityDetector->GetGravityDirectionAtLocation(GetActorLocation());
 	}
 
-	ActiveGravityAcceleration = 0.0;
-	CurrentFlightEnvironment = EShipFlightEnvironment::DeepSpace;
-	if (ActiveGravitySource && !ActiveGravityDirection.IsNearlyZero())
+	double DetectedGravityAcceleration = 0.0;
+	EShipFlightEnvironment DetectedEnvironment = EShipFlightEnvironment::DeepSpace;
+	if (DetectedGravitySource && !DetectedGravityDirection.IsNearlyZero())
 	{
-		ActiveGravityAcceleration = 980.0;
-		if (const APlanetaryBody* Planet = Cast<APlanetaryBody>(ActiveGravitySource))
+		DetectedGravityAcceleration = 980.0;
+		if (const APlanetaryBody* Planet = Cast<APlanetaryBody>(DetectedGravitySource))
 		{
 			const double RadiusKm = Planet->RadiusKM > UE_SMALL_NUMBER
 				? Planet->RadiusKM : FMath::Max(static_cast<double>(Planet->PlanetRadiusKM), 0.0);
@@ -1381,33 +1381,75 @@ void ASpaceship::UpdateFlightEnvironment(float DeltaTime, bool bForce)
 				? Planet->PlanetGravityStrength * 980.0 : 980.0;
 			const double DistanceFalloff = RadiusKm > UE_SMALL_NUMBER && CenterDistanceKm > RadiusKm
 				? FMath::Square(RadiusKm / CenterDistanceKm) : 1.0;
-			ActiveGravityAcceleration = FMath::Clamp(SurfaceAcceleration * DistanceFalloff, 5.0, 3000.0);
+			DetectedGravityAcceleration = FMath::Clamp(SurfaceAcceleration * DistanceFalloff, 5.0, 3000.0);
 
-			if (IsNearGravitySurface(ActiveGravityDirection))
+			if (IsNearGravitySurface(DetectedGravityDirection))
 			{
-				CurrentFlightEnvironment = EShipFlightEnvironment::Surface;
+				DetectedEnvironment = EShipFlightEnvironment::Surface;
 			}
 			else if (AltitudeKm <= AtmosphereHeightKm)
 			{
-				CurrentFlightEnvironment = EShipFlightEnvironment::Atmosphere;
+				DetectedEnvironment = EShipFlightEnvironment::Atmosphere;
 			}
 			else
 			{
-				CurrentFlightEnvironment = EShipFlightEnvironment::GravityWell;
+				DetectedEnvironment = EShipFlightEnvironment::GravityWell;
 			}
 		}
 		else
 		{
-			CurrentFlightEnvironment = IsNearGravitySurface(ActiveGravityDirection)
+			DetectedEnvironment = IsNearGravitySurface(DetectedGravityDirection)
 				? EShipFlightEnvironment::Surface : EShipFlightEnvironment::GravityWell;
 		}
 	}
 
-	if (PreviousEnvironment != CurrentFlightEnvironment || PreviousSource != ActiveGravitySource.Get())
+	const bool bMatchesActiveState = bFlightEnvironmentInitialized
+		&& DetectedEnvironment == CurrentFlightEnvironment
+		&& DetectedGravitySource == ActiveGravitySource.Get();
+	bool bCommitDetectedState = bForce || !bFlightEnvironmentInitialized;
+	if (!bCommitDetectedState && bMatchesActiveState)
 	{
-		EnforceDriveModeForEnvironment();
-		UE_LOG(LogTemp, Log, TEXT("[APS.Ships] Environment ship=%s environment=%s gravity=%s acceleration=%.2f m/s2"),
-			*GetName(), *GetFlightEnvironmentName(), *GetGravitySourceName(), ActiveGravityAcceleration / 100.0);
+		// Direction and acceleration continuously change in a planetary field, but
+		// the source and environment remain stable and do not need debouncing.
+		ActiveGravityDirection = DetectedGravityDirection;
+		ActiveGravityAcceleration = DetectedGravityAcceleration;
+		PendingGravitySource.Reset();
+		PendingEnvironmentTransitionElapsed = 0.0f;
+	}
+	else if (!bCommitDetectedState)
+	{
+		const bool bMatchesPendingState = DetectedEnvironment == PendingFlightEnvironment
+			&& DetectedGravitySource == PendingGravitySource.Get();
+		if (!bMatchesPendingState)
+		{
+			PendingFlightEnvironment = DetectedEnvironment;
+			PendingGravitySource = DetectedGravitySource;
+			PendingEnvironmentTransitionElapsed = 0.0f;
+		}
+
+		PendingEnvironmentTransitionElapsed += DetectionSampleTime;
+		bCommitDetectedState = PendingEnvironmentTransitionElapsed
+			>= EnvironmentTransitionConfirmationTime;
+	}
+
+	if (bCommitDetectedState)
+	{
+		const EShipFlightEnvironment PreviousEnvironment = CurrentFlightEnvironment;
+		AActor* PreviousSource = ActiveGravitySource.Get();
+		CurrentFlightEnvironment = DetectedEnvironment;
+		ActiveGravitySource = DetectedGravitySource;
+		ActiveGravityDirection = DetectedGravityDirection;
+		ActiveGravityAcceleration = DetectedGravityAcceleration;
+		bFlightEnvironmentInitialized = true;
+		PendingGravitySource.Reset();
+		PendingEnvironmentTransitionElapsed = 0.0f;
+
+		if (PreviousEnvironment != CurrentFlightEnvironment || PreviousSource != ActiveGravitySource.Get())
+		{
+			EnforceDriveModeForEnvironment();
+			UE_LOG(LogTemp, Log, TEXT("[APS.Ships] Environment ship=%s environment=%s gravity=%s acceleration=%.2f m/s2"),
+				*GetName(), *GetFlightEnvironmentName(), *GetGravitySourceName(), ActiveGravityAcceleration / 100.0);
+		}
 	}
 	if (OnboardComputer)
 	{

@@ -392,6 +392,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight|Environment", meta = (ClampMin = "0.05"))
 	float EnvironmentDetectionInterval{0.2f};
 
+	/** A new gravity source/environment must remain stable for this long before it can alter flight physics. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight|Environment", meta = (ClampMin = "0.0", ClampMax = "2.0"))
+	float EnvironmentTransitionConfirmationTime{0.35f};
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight|Environment", meta = (ClampMin = "0.0"))
 	float GravityWellDrag{0.02f};
 
@@ -592,6 +596,10 @@ private:
 	float SmoothedCameraSpeedAlpha{0.0f};
 	bool bCameraFieldOfViewInitialized{false};
 	float EnvironmentDetectionElapsed{0.0f};
+	float PendingEnvironmentTransitionElapsed{0.0f};
+	EShipFlightEnvironment PendingFlightEnvironment{EShipFlightEnvironment::DeepSpace};
+	TWeakObjectPtr<AActor> PendingGravitySource;
+	bool bFlightEnvironmentInitialized{false};
 	bool bFlightCollisionOptimizationActive{false};
 	FName OriginalHullCollisionProfile{NAME_None};
 	ECollisionEnabled::Type OriginalHullCollisionEnabled{ECollisionEnabled::QueryAndPhysics};
