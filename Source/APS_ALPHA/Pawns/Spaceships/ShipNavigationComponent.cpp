@@ -15,7 +15,6 @@
 #include "APS_ALPHA/Core/Interfaces/ItemInfoInterface.h"
 #include "APS_ALPHA/Core/Interfaces/NavigatableBody.h"
 #include "APS_ALPHA/Core/Structs/StarGenerationModel.h"
-#include "APS_ALPHA/Generation/AstroGenerator.h"
 #include "Components/HierarchicalInstancedStaticMeshComponent.h"
 #include "EngineUtils.h"
 
@@ -223,17 +222,16 @@ void UShipNavigationComponent::AddGeneratedStarContacts(const FVector& ObserverL
 		return;
 	}
 
-	const AAstroGenerator* Generator = nullptr;
-	for (TActorIterator<AAstroGenerator> GeneratorIt(World); GeneratorIt; ++GeneratorIt)
-	{
-		Generator = *GeneratorIt;
-		break;
-	}
 	const UHierarchicalInstancedStaticMeshComponent* Instances = Cluster->StarMeshInstances;
 	const int32 InstanceCount = Instances->GetInstanceCount();
 	DiscoveredContactCount += InstanceCount;
 	for (int32 InstanceIndex = 0; InstanceIndex < InstanceCount; ++InstanceIndex)
 	{
+		const FClusterStarSystemRecord* Record = Cluster->FindPotentialSystem(InstanceIndex);
+		if (Record && Record->bMaterialized)
+		{
+			continue;
+		}
 		FTransform InstanceTransform;
 		if (!Instances->GetInstanceTransform(InstanceIndex, InstanceTransform, true))
 		{
@@ -242,21 +240,26 @@ void UShipNavigationComponent::AddGeneratedStarContacts(const FVector& ObserverL
 
 		FShipNavigationContact Contact;
 		Contact.FixedWorldLocation = InstanceTransform.GetLocation();
-		Contact.StableId = FString::Printf(TEXT("%s:STAR:%d"), *Cluster->GetPathName(), InstanceIndex);
-		Contact.DisplayName = FString::Printf(TEXT("STAR %04d"), InstanceIndex + 1);
+		Contact.StableId = Record
+			? FString::Printf(TEXT("CLUSTER_SYSTEM:%s"),
+				*Record->StableId.ToString(EGuidFormats::DigitsWithHyphensLower))
+			: FString::Printf(TEXT("%s:STAR:%d"), *Cluster->GetPathName(), InstanceIndex);
+		Contact.DisplayName = FString::Printf(TEXT("SYSTEM %04d"), InstanceIndex + 1);
 		Contact.TypeLabel = TEXT("STAR");
 		Contact.Detail = TEXT("GENERATED CLUSTER CONTACT");
+		Contact.HierarchyLabel = Cluster->GetName().ToUpper();
 		Contact.Type = EShipNavigationContactType::Star;
 		Contact.DistanceCentimeters = FVector::Distance(ObserverLocation, Contact.FixedWorldLocation);
 		Contact.bVirtualContact = true;
-		if (Generator)
+		if (Record)
 		{
-			if (const TSharedPtr<FStarModel>* Model = Generator->StarIndexModelMap.Find(InstanceIndex);
-				Model && Model->IsValid())
-			{
-				if (!(*Model)->FullSpectralName.IsNone()) Contact.DisplayName = (*Model)->FullSpectralName.ToString().ToUpper();
-				if (!(*Model)->FullSpectralClass.IsNone()) Contact.Detail = (*Model)->FullSpectralClass.ToString().ToUpper();
-			}
+			const UEnum* SpectralEnum = StaticEnum<ESpectralClass>();
+			const FString SpectralClass = SpectralEnum
+				? SpectralEnum->GetNameStringByValue(static_cast<int64>(Record->PrimaryStarModel.SpectralClass))
+				: TEXT("UNKNOWN");
+			Contact.Detail = FString::Printf(TEXT("%s%d // %d POTENTIAL PLANETS"),
+				*SpectralClass.ToUpper(), Record->PrimaryStarModel.SpectralSubclass,
+				Record->SystemModel.PotentialPlanetCount);
 		}
 		VirtualStars.Add(MoveTemp(Contact));
 	}

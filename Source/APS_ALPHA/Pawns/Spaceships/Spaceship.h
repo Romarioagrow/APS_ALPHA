@@ -536,6 +536,9 @@ private:
 	void ConfigureCameraFromHull();
 	void ConfigureFlightReferenceFromHull(UPrimitiveComponent* Hull, const FVector& LocalExtent);
 	void UpdateAdaptiveFlightCamera(float DeltaTime);
+	void InitializeFlightPostProcess();
+	void RestoreFlightPostProcess();
+	void StabilizeFullScaleVisualVelocity();
 	FVector GetShipForwardVector() const;
 	FVector GetShipRightVector() const;
 	FVector GetShipUpVector() const;
@@ -595,6 +598,18 @@ private:
 	float BaseCameraFieldOfView{90.0f};
 	float SmoothedCameraSpeedAlpha{0.0f};
 	bool bCameraFieldOfViewInitialized{false};
+	bool bCameraPostProcessInitialized{false};
+	float BaseCameraPostProcessBlendWeight{0.0f};
+	float BaseSceneFringeIntensity{0.0f};
+	float BaseChromaticAberrationStartOffset{0.0f};
+	float BaseVignetteIntensity{0.0f};
+	float BaseBloomIntensity{0.0f};
+	float BaseAutoExposureBias{0.0f};
+	bool bBaseOverrideSceneFringe{false};
+	bool bBaseOverrideChromaticStart{false};
+	bool bBaseOverrideVignette{false};
+	bool bBaseOverrideBloom{false};
+	bool bBaseOverrideExposureBias{false};
 	float EnvironmentDetectionElapsed{0.0f};
 	float PendingEnvironmentTransitionElapsed{0.0f};
 	EShipFlightEnvironment PendingFlightEnvironment{EShipFlightEnvironment::DeepSpace};

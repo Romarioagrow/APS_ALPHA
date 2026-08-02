@@ -19,6 +19,7 @@ class USceneComponent;
 class APlayerController;
 class AControlledPawn;
 class AAstroAnchor;
+class AStarCluster;
 class AMoon;
 class APlanetOrbit;
 class UGeneratedWorld;
@@ -134,6 +135,10 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, Category = "Generated Astro Actros")
 	AStarCluster* GeneratedStarCluster;
+
+	/** HISM point selected as the home system; retained until successful actor materialization. */
+	TWeakObjectPtr<AStarCluster> PendingHomeCluster;
+	int32 PendingHomeClusterInstanceIndex{INDEX_NONE};
 
 	UPROPERTY(VisibleAnywhere, Category = "Generated Astro Actros")
 	AStarSystem* GeneratedHomeStarSystem;
@@ -366,6 +371,13 @@ public:
 	int GetRandomValueFromStarAmountRange(EStarClusterType ClusterType);
 
 	void GenerateStarCluster();
+
+	/** Promotes one cheap HISM system record into an actor hierarchy on demand. */
+	UFUNCTION(BlueprintCallable, Category = "World Generation|Star Cluster")
+	AStarSystem* MaterializeClusterStarSystem(int32 InstanceIndex);
+
+	UFUNCTION(BlueprintCallable, Category = "World Generation|Star Cluster")
+	bool DematerializeClusterStarSystem(int32 InstanceIndex);
 	
 	void AddGeneratedWorldModelData();
 

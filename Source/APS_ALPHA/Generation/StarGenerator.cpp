@@ -11,28 +11,46 @@ UStarGenerator::UStarGenerator()
 
 void UStarGenerator::ApplySpectralMaterial(AStar* NewStar, TSharedPtr<FStarModel> StarModel)
 {
-	// Получить материал с меша звезды
+	if (!NewStar || !NewStar->StarMesh || !StarModel)
+	{
+		return;
+	}
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ
 	UMaterialInterface* Material = NewStar->StarMesh->GetMaterial(0);
+	if (!Material)
+	{
+		return;
+	}
 
-	// Попытаться привести материал к динамическому экземпляру
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 	UMaterialInstanceDynamic* StarDynamicMaterial = Cast<UMaterialInstanceDynamic>(Material);
 
 	if (StarDynamicMaterial == nullptr)
 	{
-		// Если это не динамический материал, создайте новый динамический экземпляр
-		StarDynamicMaterial = UMaterialInstanceDynamic::Create(Material, this);
+		// пїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ, пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
+		StarDynamicMaterial = UMaterialInstanceDynamic::Create(Material, NewStar);
+	}
+	if (!StarDynamicMaterial)
+	{
+		return;
 	}
 
-	// Установите скалярный параметр
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 	FName ParameterName1 = "Multiplier";
-	float MultiplierValue = 500 * StarModel->Luminosity;
+	const float MultiplierValue = static_cast<float>(CalculateEmission(StarModel->Luminosity * 25.0f));
+	StarDynamicMaterial->SetScalarParameterValue(ParameterName1, MultiplierValue);
 
-	// Установите векторный параметр
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 	FName ParameterName2 = "Color";
 	FLinearColor ColorValue = GetStarColor(StarModel->SpectralClass, StarModel->SpectralSubclass);
 	StarDynamicMaterial->SetVectorParameterValue(ParameterName2, ColorValue);
+	const float SurfaceSeed = FMath::Frac(
+		FMath::Abs(StarModel->SurfaceTemperature * 0.000173f + StarModel->Mass * 0.137f));
+	StarDynamicMaterial->SetScalarParameterValue(TEXT("SurfaceSeed"), SurfaceSeed);
+	StarDynamicMaterial->SetScalarParameterValue(TEXT("SurfaceVariation"), 0.18f);
+	StarDynamicMaterial->SetScalarParameterValue(TEXT("GranulationStrength"), 0.22f);
 
-	// Примените динамический материал к вашему объекту
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 	NewStar->StarMesh->SetMaterial(0, StarDynamicMaterial);
 }
 
@@ -79,10 +97,10 @@ void UStarGenerator::GenerateStarModelByProbability(TSharedPtr<FStarModel> StarM
 }
 
 
-// Закон Вина
+// пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ
 double UStarGenerator::WienLaw(double temperature)
 {
-	const double b = 2.897771955e-3; // Константа Вина, м*К
+	const double b = 2.897771955e-3; // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ, пїЅ*пїЅ
 	return b / temperature;
 }
 
@@ -133,7 +151,7 @@ FLinearColor UStarGenerator::WavelengthToRGB(double wavelength)
 		b = 0.0;
 	}
 
-	// Переводим волновую длину в нанометрах в цветовую температуру в Кельвинах
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 	double s = 1.0;
 	if (wavelength > 700.0)
 	{
@@ -155,65 +173,99 @@ FLinearColor UStarGenerator::TemperatureToColor(double temperature)
 
 FLinearColor UStarGenerator::GetStarColor(ESpectralClass SpectralClass, int Subclass)
 {
+	const FLinearColor OColor(0.56f, 0.70f, 1.00f);
+	const FLinearColor BColor(0.68f, 0.80f, 1.00f);
+	const FLinearColor AColor(0.90f, 0.94f, 1.00f);
+	const FLinearColor FColor(1.00f, 0.96f, 0.82f);
+	const FLinearColor GColor(1.00f, 0.86f, 0.58f);
+	const FLinearColor KColor(1.00f, 0.60f, 0.28f);
+	const FLinearColor MColor(1.00f, 0.30f, 0.18f);
+
+	FLinearColor HotColor;
+	FLinearColor CoolColor;
+	switch (SpectralClass)
+	{
+	case ESpectralClass::O: HotColor = OColor; CoolColor = BColor; break;
+	case ESpectralClass::B: HotColor = BColor; CoolColor = AColor; break;
+	case ESpectralClass::A: HotColor = AColor; CoolColor = FColor; break;
+	case ESpectralClass::F: HotColor = FColor; CoolColor = GColor; break;
+	case ESpectralClass::G: HotColor = GColor; CoolColor = KColor; break;
+	case ESpectralClass::K: HotColor = KColor; CoolColor = MColor; break;
+	case ESpectralClass::M: HotColor = MColor; CoolColor = FLinearColor(0.72f, 0.12f, 0.06f); break;
+	case ESpectralClass::L: return FLinearColor(0.58f, 0.24f, 0.08f);
+	case ESpectralClass::T: return FLinearColor(0.38f, 0.18f, 0.10f);
+	case ESpectralClass::Y: return FLinearColor(0.30f, 0.24f, 0.16f);
+	case ESpectralClass::NS: return FLinearColor(0.76f, 0.88f, 1.00f);
+	case ESpectralClass::PS: return FLinearColor(1.00f, 0.68f, 0.34f);
+	case ESpectralClass::BH: return FLinearColor(0.002f, 0.002f, 0.004f);
+	default: return FLinearColor(0.55f, 0.58f, 0.62f);
+	}
+
+	// Subclass 0 is hottest and 9 is coolest. Linear RGB avoids HSV's magenta detour.
+	const float StableInterpFactor = FMath::Clamp(Subclass, 0, 9) / 9.0f;
+	return FMath::Lerp(HotColor, CoolColor, StableInterpFactor);
+
+#if 0 // Replaced: enum-order HSV interpolation crossed into compact-object classes.
 	static const TMap<ESpectralClass, FLinearColor> BaseColors =
 	{
-		{ESpectralClass::O, FLinearColor(0.5, 0.5, 1)}, // Синий
-		{ESpectralClass::B, FLinearColor(0.6, 0.6, 1)}, // Голубой
-		{ESpectralClass::A, FLinearColor(1, 1, 1)}, // Белый
-		{ESpectralClass::F, FLinearColor(1, 1, 0.8)}, // Желто-белый
-		{ESpectralClass::G, FLinearColor(1, 1, 0.6)}, // Желтый
-		{ESpectralClass::K, FLinearColor(1, 0.6, 0.3)}, // Оранжевый
-		{ESpectralClass::M, FLinearColor(1, 0.3, 0.3)}, // Красный
-		{ESpectralClass::L, FLinearColor(0.5, 0.3, 0.1)}, // Бурый (для Brown Dwarf)
-		{ESpectralClass::T, FLinearColor(0.6, 0.3, 0.1)}, // Коричневый (для Tauri Dwarf)
-		{ESpectralClass::Y, FLinearColor(0.6, 0.5, 0.1)}, // Темно-желтый (для Cool Brown Dwarf)
-		{ESpectralClass::NS, FLinearColor(0.9, 0.9, 1)}, // Бело-голубой (для Neutron Star)
-		{ESpectralClass::PS, FLinearColor(1, 0.9, 0.6)}, // Желтоватый (для Proto Star)
-		{ESpectralClass::BH, FLinearColor(0, 0, 0)}, // Черный (для Black Hole)
-		{ESpectralClass::Unknown, FLinearColor(0.5, 0.5, 0.5)} // Серый (для Unknown)
+		{ESpectralClass::O, FLinearColor(0.5, 0.5, 1)}, // пїЅпїЅпїЅпїЅпїЅ
+		{ESpectralClass::B, FLinearColor(0.6, 0.6, 1)}, // пїЅпїЅпїЅпїЅпїЅпїЅпїЅ
+		{ESpectralClass::A, FLinearColor(1, 1, 1)}, // пїЅпїЅпїЅпїЅпїЅ
+		{ESpectralClass::F, FLinearColor(1, 1, 0.8)}, // пїЅпїЅпїЅпїЅпїЅ-пїЅпїЅпїЅпїЅпїЅ
+		{ESpectralClass::G, FLinearColor(1, 1, 0.6)}, // пїЅпїЅпїЅпїЅпїЅпїЅ
+		{ESpectralClass::K, FLinearColor(1, 0.6, 0.3)}, // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
+		{ESpectralClass::M, FLinearColor(1, 0.3, 0.3)}, // пїЅпїЅпїЅпїЅпїЅпїЅпїЅ
+		{ESpectralClass::L, FLinearColor(0.5, 0.3, 0.1)}, // пїЅпїЅпїЅпїЅпїЅ (пїЅпїЅпїЅ Brown Dwarf)
+		{ESpectralClass::T, FLinearColor(0.6, 0.3, 0.1)}, // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ (пїЅпїЅпїЅ Tauri Dwarf)
+		{ESpectralClass::Y, FLinearColor(0.6, 0.5, 0.1)}, // пїЅпїЅпїЅпїЅпїЅ-пїЅпїЅпїЅпїЅпїЅпїЅ (пїЅпїЅпїЅ Cool Brown Dwarf)
+		{ESpectralClass::NS, FLinearColor(0.9, 0.9, 1)}, // пїЅпїЅпїЅпїЅ-пїЅпїЅпїЅпїЅпїЅпїЅпїЅ (пїЅпїЅпїЅ Neutron Star)
+		{ESpectralClass::PS, FLinearColor(1, 0.9, 0.6)}, // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ (пїЅпїЅпїЅ Proto Star)
+		{ESpectralClass::BH, FLinearColor(0, 0, 0)}, // пїЅпїЅпїЅпїЅпїЅпїЅ (пїЅпїЅпїЅ Black Hole)
+		{ESpectralClass::Unknown, FLinearColor(0.5, 0.5, 0.5)} // пїЅпїЅпїЅпїЅпїЅ (пїЅпїЅпїЅ Unknown)
 	};
 
-	// Вычисляем коэффициент интерполяции
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 	float InterpFactor = static_cast<float>(Subclass) / 10.0f;
 
-	// Получаем базовый цвет для данного и следующего спектрального класса
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ
 	FLinearColor BaseColor = BaseColors[SpectralClass]; /// CRASH PIE
 	FLinearColor NextBaseColor;
-	if (SpectralClass != ESpectralClass::Unknown) // Проверяем, что текущий класс не последний
+	if (SpectralClass != ESpectralClass::Unknown) // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ, пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 	{
 		NextBaseColor = BaseColors[static_cast<ESpectralClass>(static_cast<int>(SpectralClass) + 1)];
 	}
 	else
 	{
-		NextBaseColor = BaseColor; // Если текущий класс уже последний, то следующий цвет просто равен текущему
+		NextBaseColor = BaseColor; // пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ, пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 	}
 
-	// Интерполируем между двумя цветами
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 	FLinearColor starColor = FLinearColor::LerpUsingHSV(BaseColor, NextBaseColor, InterpFactor);
 
 	return starColor;
+#endif
 }
 
 FLinearColor UStarGenerator::TemperatureToRGB(float temperature)
 {
 	float r, g, b;
 
-	// Обычно температура ниже 1000K не учитывается, но вы можете настроить этот порог как вам удобнее.
+	// пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ 1000K пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ, пїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ.
 	if (temperature < 1000)
 		temperature = 1000;
 
-	// Нормализовать температуру (диапазон 0-1)
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ (пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ 0-1)
 	temperature /= 10000;
 
 	if (temperature <= 0.66)
 	{
 		r = 1;
 		g = temperature;
-		g = 0.39008157876902 * pow(g, -0.93412075736856); // Корректировка гаммы для зеленого
+		g = 0.39008157876902 * pow(g, -0.93412075736856); // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 	}
 	else
 	{
-		r = 0.98866243976127 * pow(temperature - 0.66, -0.6841316279095123); // Корректировка гаммы для красного
+		r = 0.98866243976127 * pow(temperature - 0.66, -0.6841316279095123); // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 		g = 1 - r;
 	}
 
@@ -223,7 +275,7 @@ FLinearColor UStarGenerator::TemperatureToRGB(float temperature)
 	}
 	else if (temperature >= 0.25)
 	{
-		b = 0.94279106151537 * pow((0.5 - temperature) * 2, -0.70176690865074); // Корректировка гаммы для синего
+		b = 0.94279106151537 * pow((0.5 - temperature) * 2, -0.70176690865074); // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ
 	}
 	else
 	{
@@ -369,7 +421,7 @@ FString UStarGenerator::CalculateNonMainSequenceStarAge(double StarMass)
 
 FString UStarGenerator::CalculateMainSequenceStarAge(double Mass)
 {
-	// Применяем формулу T = M^(-2.5)
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ T = M^(-2.5)
 	double AgeInBillionYears = pow(Mass, -2.5);
 	FString FormattedAge{};
 
@@ -523,7 +575,7 @@ FName UStarGenerator::GenerateFullSpectralName(const TUniquePtr<FStarModel> Star
 		UE_LOG(LogTemp, Warning, TEXT("SpectralClassColorMap doesn't contain %s"),
 		       *UEnum::GetValueAsString(StarModel->SpectralClass));
 		SpectralClassColor = "UnknownSpectralClassColor";
-		// Возвращаем значение по умолчанию или обрабатываем ошибку иначе
+		// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ
 	}
 
 	FString SpectralTypeDescription;
@@ -536,7 +588,7 @@ FName UStarGenerator::GenerateFullSpectralName(const TUniquePtr<FStarModel> Star
 		UE_LOG(LogTemp, Warning, TEXT("SpectralTypeDescriptionMap doesn't contain %s"),
 		       *UEnum::GetValueAsString(StarModel->SpectralType));
 		SpectralTypeDescription = "UnknownSpectralTypeDescription";
-		// Возвращаем значение по умолчанию или обрабатываем ошибку иначе
+		// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ
 	}
 
 	FName SpectralClassColorName(*SpectralClassColor);
@@ -568,7 +620,7 @@ ESpectralType UStarGenerator::CalculateSpectralType(EStellarType StellarType, do
 	case EStellarType::SuperGiant:
 		{
 			FStarAttributeRanges& AttributeRanges = StarAttributeRanges[StellarType];
-			FLuminosityRange LuminosityRange = AttributeRanges.Luminosity; // получаем диапазон светимости
+			FLuminosityRange LuminosityRange = AttributeRanges.Luminosity; // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 
 			double LowerThird = (2.0 / 3.0) * LuminosityRange.Range.Key;
 			double MiddleThird = (2.0 / 3.0) * LuminosityRange.Range.Value;
@@ -675,7 +727,7 @@ double UStarGenerator::RandomMass(ESpectralClass SpectralClass)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("MainSequenceMassRanges doesn't contain %s"),
 		       *UEnum::GetValueAsString(SpectralClass));
-		return 0; // Возвращаем некоторое значение по умолчанию или обрабатываем ошибку иначе
+		return 0; // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ
 	}
 	//if (MainSequenceMassRanges.Contains(SpectralClass))
 	//{
@@ -685,7 +737,7 @@ double UStarGenerator::RandomMass(ESpectralClass SpectralClass)
 	//else
 	//{
 	//    UE_LOG(LogTemp, Warning, TEXT("MainSequenceMassRanges doesn't contain %s"), *UEnum::GetValueAsString(SpectralClass));
-	//    return 0; // Возвращаем некоторое значение по умолчанию или обрабатываем ошибку иначе
+	//    return 0; // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ
 	//}
 }
 
@@ -734,16 +786,16 @@ double UStarGenerator::CalculateSurfaceTemperature(double Luminosity, double Rad
 }
 
 /*
-Для начала, давайте определим, какие спектральные классы будут соответствовать каждому классу звезды(EStellarClass).
-Для этого мы можем использовать следующую таблицу :
+пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ, пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ, пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ(EStellarClass).
+пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ :
 
 EStellarClass	ESpectralClass
-Dwarf Star	M, K, G(можно добавить и другие классы, если вы хотите иметь карликовые звезды различных спектральных классов)
+Dwarf Star	M, K, G(пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ, пїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ)
 Main Sequence Star	O, B, A, F, G, K, M
 Giant Star	K, M
 Supergiant Star	O, B, A, F, G, K, M
 
-Используя эту информацию, мы можем начать писать функцию, которая будет случайно выбирать спектральный класс для заданного класса звезды.
+пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ, пїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ, пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ.
 
 EStellarClass	ESpectralClass
 HyperGiant	    O, B, A, F, G, K
@@ -760,7 +812,7 @@ BrownDwarf	    L, T, Y
 
 ESpectralClass UStarGenerator::ChooseSpectralClassByStellarClass(EStellarType StellarClass)
 {
-	// Массивы спектральных классов для каждого стеллярного класса
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ
 	// Spectral Classes O, B, A, F, G, K, M
 	const TArray<ESpectralClass> Spectral_OM = {
 		ESpectralClass::O, ESpectralClass::B, ESpectralClass::A, ESpectralClass::F, ESpectralClass::G,
@@ -779,7 +831,7 @@ ESpectralClass UStarGenerator::ChooseSpectralClassByStellarClass(EStellarType St
 	const TArray<int> Weights_OK = {3, 13, 22, 30, 20, 12}; // Weights for O, B, A, F, G, K
 	const TArray<int> Weights_LY = {20, 50, 30}; // Weights for L, T, Y
 
-	// Определение выборки и весов
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅ
 	const TArray<ESpectralClass>* SpectralArray;
 	const TArray<int>* WeightsArray;
 
@@ -805,10 +857,10 @@ ESpectralClass UStarGenerator::ChooseSpectralClassByStellarClass(EStellarType St
 		break;
 	default:
 		UE_LOG(LogTemp, Warning, TEXT("Unknown StellarClass!"));
-		return ESpectralClass::Unknown; // Возвращает O класс по умолчанию или можно выбрать другой класс
+		return ESpectralClass::Unknown; // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ O пїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ
 	}
 
-	// Создание кумулятивного массива весов
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ
 	TArray<int> CumulativeWeights;
 	int TotalWeight = 0;
 	for (int i = 0; i < WeightsArray->Num(); ++i)
@@ -817,10 +869,10 @@ ESpectralClass UStarGenerator::ChooseSpectralClassByStellarClass(EStellarType St
 		CumulativeWeights.Add(TotalWeight);
 	}
 
-	// Генерация случайного числа
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ
 	int RandWeight = FMath::RandRange(0, TotalWeight - 1);
 
-	// Нахождение соответствующего спектрального класса
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ
 	for (int i = 0; i < CumulativeWeights.Num(); ++i)
 	{
 		if (RandWeight < CumulativeWeights[i])
@@ -847,7 +899,7 @@ ESpectralClass UStarGenerator::DetermineSpectralClassByTemperature(EStellarType 
 		if (Temperature > 1300) return ESpectralClass::L;
 		else if (Temperature > 700) return ESpectralClass::T;
 		else return ESpectralClass::Y;
-	default: // Для всех остальных типов звезд мы проверяем температуру
+	default: // пїЅпїЅпїЅ пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 		if (Temperature > 30000) return ESpectralClass::O;
 		else if (Temperature > 10000) return ESpectralClass::B;
 		else if (Temperature > 7500) return ESpectralClass::A;

@@ -42,7 +42,8 @@ public:
 
 	FLinearColor TemperatureToColor(double temperature);
 
-	FLinearColor GetStarColor(ESpectralClass spectralClass, int subclass);
+	/** Stable explicit OBAFGKM palette; never interpolates into compact-object enum values. */
+	static FLinearColor GetStarColor(ESpectralClass spectralClass, int subclass);
 
 	FLinearColor TemperatureToRGB(float Temperature);
 
@@ -402,7 +403,7 @@ private:
 		{ESpectralClass::K, TEXT("Orange")},
 		{ESpectralClass::M, TEXT("Red")},
 		{ESpectralClass::L, TEXT("Red-Brown")},
-		{ESpectralClass::T, TEXT("Magenta")},
+		{ESpectralClass::T, TEXT("Red-Brown")},
 		{ESpectralClass::Y, TEXT("Cool-Brown")},
 		{ESpectralClass::Unknown, TEXT("Unknown ")},
 	};

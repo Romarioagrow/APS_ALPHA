@@ -23,6 +23,17 @@ public:
 	UPROPERTY(VisibleAnywhere, Category = "Star System")
 	AStar* MainStar;
 
+	/** Stable identity shared with the lightweight cluster record that produced this actor. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Star System|Generation")
+	FGuid StableSystemId;
+
+	/** Deterministic generation seed retained when a HISM point becomes a playable system. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Star System|Generation")
+	int32 GenerationSeed{0};
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Star System|Generation")
+	bool bMaterializedFromCluster{false};
+
 	void SetStarsAmount(int StarsAmount);
 
 	void AddNewStar(AStar* MewStar);

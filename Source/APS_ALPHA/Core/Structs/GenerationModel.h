@@ -7,5 +7,6 @@ struct FGenerationModel
 {
 	GENERATED_BODY()
 
-	FVector Location;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Generation")
+	FVector Location{FVector::ZeroVector};
 };

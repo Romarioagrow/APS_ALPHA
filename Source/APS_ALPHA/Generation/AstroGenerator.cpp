@@ -316,14 +316,21 @@ void AAstroGenerator::GenerateStarCluster()
 	NewStarCluster->StarClusterComposition = StarClusterModel->StarClusterComposition;
 	NewStarCluster->StarClusterPopulation = StarClusterModel->StarClusterPopulation;
 	NewStarCluster->StarClusterSize = StarClusterModel->StarClusterSize;
+	NewStarCluster->StarMeshInstances->NumCustomDataFloats = 6;
+	if (NewStarCluster->GenerationSeed == 0)
+	{
+		NewStarCluster->GenerationSeed = FMath::RandRange(1, MAX_int32);
+	}
 	NewStarCluster->CalculateAffectionRadius();
+	NewStarCluster->PotentialStarSystems.Reserve(NewStarCluster->StarAmount);
+	NewStarCluster->StarMeshInstances->PreAllocateInstancesMemory(NewStarCluster->StarAmount);
 
 	UE_LOG(LogTemp, Warning, TEXT("StarCount: %d"), NewStarCluster->StarAmount);
 	UE_LOG(LogTemp, Warning, TEXT("StarDensity: %f"), NewStarCluster->StarDensity);
 	UE_LOG(LogTemp, Warning, TEXT("ClusterBounds: %s"), *NewStarCluster->ClusterBounds.ToString());
 	UE_LOG(LogTemp, Warning, TEXT("ClusterType: %d"), static_cast<int>(NewStarCluster->ClusterType));
 
-	for (size_t i = 0; i < NewStarCluster->StarAmount; i++)
+	for (int32 i = 0; i < NewStarCluster->StarAmount; ++i)
 	{
 		// Create a star model
 		TSharedPtr<FStarModel> NewStarModel = MakeShared<FStarModel>();
@@ -339,24 +346,42 @@ void AAstroGenerator::GenerateStarCluster()
 
 		// Position the star in the cluster
 		FVector StarPosition = StarClusterGenerator->CalculateStarPosition(i, NewStarCluster, NewStarModel);
-		NewStarCluster->AddStarToClusterModel(StarPosition, NewStarModel);
 		NewStarModel->Location = StarPosition;
 
 		// Create a star instance and add it to the HISM component
 		FTransform StarTransform(StarPosition);
 		StarTransform.SetScale3D(FVector(NewStarModel->Radius));
-		int32 StarInstIndex = NewStarCluster->StarMeshInstances->AddInstance(StarTransform, true);
+		const int32 StarInstIndex = NewStarCluster->StarMeshInstances->AddInstance(StarTransform, true);
 		const FLinearColor ColorValue = StarGenerator->GetStarColor(NewStarModel->SpectralClass,
 		                                                            NewStarModel->SpectralSubclass);
-		NewStarCluster->StarMeshInstances->SetCustomDataValue(StarInstIndex, 0, ColorValue.R);
-		NewStarCluster->StarMeshInstances->SetCustomDataValue(StarInstIndex, 1, ColorValue.G);
-		NewStarCluster->StarMeshInstances->SetCustomDataValue(StarInstIndex, 2, ColorValue.B);
+		NewStarCluster->StarMeshInstances->SetCustomDataValue(StarInstIndex, 0, ColorValue.R, false);
+		NewStarCluster->StarMeshInstances->SetCustomDataValue(StarInstIndex, 1, ColorValue.G, false);
+		NewStarCluster->StarMeshInstances->SetCustomDataValue(StarInstIndex, 2, ColorValue.B, false);
 
 		const double StarEmission = StarGenerator->CalculateEmission(NewStarModel->Luminosity * 25);
-		NewStarCluster->StarMeshInstances->SetCustomDataValue(StarInstIndex, 3, StarEmission);
+		NewStarCluster->StarMeshInstances->SetCustomDataValue(StarInstIndex, 3, StarEmission, false);
 
-		StarIndexModelMap.Add(StarInstIndex, NewStarModel);
+		FStarSystemModel PotentialSystemModel;
+		const int32 SystemSeed = static_cast<int32>(HashCombine(
+			GetTypeHash(NewStarCluster->GenerationSeed), GetTypeHash(StarInstIndex)) & 0x7fffffffu);
+		StarSystemGenerator->GeneratePotentialStarSystemModel(
+			PotentialSystemModel, *NewStarModel, FMath::Max(SystemSeed, 1));
+
+		FTransform LocalInstanceTransform;
+		NewStarCluster->StarMeshInstances->GetInstanceTransform(
+			StarInstIndex, LocalInstanceTransform, false);
+		NewStarCluster->RegisterPotentialSystem(StarInstIndex, LocalInstanceTransform.GetLocation(),
+			*NewStarModel, PotentialSystemModel);
+
+		// Stable per-star surface seed and system occupancy are ready for the unlit HISM material.
+		FRandomStream VisualStream(PotentialSystemModel.GenerationSeed);
+		NewStarCluster->StarMeshInstances->SetCustomDataValue(
+			StarInstIndex, 4, VisualStream.FRand(), false);
+		NewStarCluster->StarMeshInstances->SetCustomDataValue(
+			StarInstIndex, 5, PotentialSystemModel.PotentialPlanetCount / 12.0f, false);
+
 	}
+	NewStarCluster->FinalizeGeneratedInstances();
 
 	GeneratedStarCluster = NewStarCluster;
 
@@ -364,6 +389,104 @@ void AAstroGenerator::GenerateStarCluster()
 	{
 		SetActorScale3D(FVector(FullScaleValue, FullScaleValue, FullScaleValue));
 	}
+}
+
+AStarSystem* AAstroGenerator::MaterializeClusterStarSystem(int32 InstanceIndex)
+{
+	if (!GeneratedStarCluster || !GeneratedStarCluster->StarMeshInstances || !StarGenerator
+		|| !StarSystemGenerator || !BP_StarSystemClass || !BP_StarClass)
+	{
+		return nullptr;
+	}
+
+	FClusterStarSystemRecord* Record = GeneratedStarCluster->FindPotentialSystemMutable(InstanceIndex);
+	if (!Record)
+	{
+		return nullptr;
+	}
+	if (Record->MaterializedSystem.IsValid())
+	{
+		return Record->MaterializedSystem.Get();
+	}
+
+	FTransform WorldTransform;
+	if (!GeneratedStarCluster->StarMeshInstances->GetInstanceTransform(InstanceIndex, WorldTransform, true))
+	{
+		return nullptr;
+	}
+	WorldTransform.SetScale3D(FVector::OneVector);
+
+	UWorld* World = GetWorld();
+	AStarSystem* StarSystem = World
+		? World->SpawnActor<AStarSystem>(BP_StarSystemClass, WorldTransform) : nullptr;
+	if (!StarSystem)
+	{
+		return nullptr;
+	}
+	StarSystem->AttachToActor(GeneratedStarCluster, FAttachmentTransformRules::KeepWorldTransform);
+	StarSystemGenerator->ApplyModel(StarSystem, MakeShared<FStarSystemModel>(Record->SystemModel));
+
+	AStar* Star = World->SpawnActor<AStar>(BP_StarClass, WorldTransform);
+	if (!Star)
+	{
+		StarSystem->Destroy();
+		return nullptr;
+	}
+	const TSharedPtr<FStarModel> StarModel = MakeShared<FStarModel>(Record->PrimaryStarModel);
+	StarGenerator->ApplyModel(Star, StarModel);
+	Star->SetActorLocation(WorldTransform.GetLocation());
+	Star->SetActorScale3D(FVector(StarModel->Radius * 813684224.0));
+	Star->StarRadiusKM = StarModel->Radius * 696340;
+	Star->FullSpectralName = Star->GenerateFullSpectralName();
+	Star->AstroName = FName(*FString::Printf(TEXT("STAR-%s"),
+		*Record->StableId.ToString(EGuidFormats::Short)));
+	StarGenerator->ApplySpectralMaterial(Star, StarModel);
+	StarSystem->MainStar = Star;
+	StarSystem->AddNewStar(Star);
+	Star->AttachToActor(StarSystem, FAttachmentTransformRules::KeepWorldTransform);
+
+	FTransform HiddenTransform;
+	if (GeneratedStarCluster->StarMeshInstances->GetInstanceTransform(
+		InstanceIndex, HiddenTransform, false))
+	{
+		HiddenTransform.SetScale3D(FVector::ZeroVector);
+		GeneratedStarCluster->StarMeshInstances->UpdateInstanceTransform(
+			InstanceIndex, HiddenTransform, false, true, true);
+		GeneratedStarCluster->StarMeshInstances->BuildTreeIfOutdated(true, true);
+	}
+	Record->bMaterialized = true;
+	Record->MaterializedSystem = StarSystem;
+
+	UE_LOG(LogTemp, Log, TEXT("[APS.Cluster] Materialized system %s at instance %d (%d potential planets)"),
+		*Record->StableId.ToString(EGuidFormats::DigitsWithHyphensLower), InstanceIndex,
+		Record->SystemModel.PotentialPlanetCount);
+	return StarSystem;
+}
+
+bool AAstroGenerator::DematerializeClusterStarSystem(int32 InstanceIndex)
+{
+	if (!GeneratedStarCluster || !GeneratedStarCluster->StarMeshInstances)
+	{
+		return false;
+	}
+	FClusterStarSystemRecord* Record = GeneratedStarCluster->FindPotentialSystemMutable(InstanceIndex);
+	if (!Record)
+	{
+		return false;
+	}
+	if (Record->MaterializedSystem.IsValid())
+	{
+		DestroyActorTree(Record->MaterializedSystem.Get());
+	}
+
+	const FTransform RestoredTransform(
+		FQuat::Identity, Record->ClusterLocalLocation, FVector(Record->PrimaryStarModel.Radius));
+	GeneratedStarCluster->StarMeshInstances->UpdateInstanceTransform(
+		InstanceIndex, RestoredTransform, false, true, true);
+	GeneratedStarCluster->StarMeshInstances->BuildTreeIfOutdated(true, true);
+	Record->bMaterialized = false;
+	Record->MaterializedSystem.Reset();
+	return true;
 }
 
 void AAstroGenerator::AddGeneratedWorldModelData()
@@ -526,6 +649,16 @@ void AAstroGenerator::GenerateStarSystemByModel()
 		int AmountOfStars;
 		ComputeStarAmount(StarSystemModel, AmountOfStars);
 
+		FClusterStarSystemRecord* HomeClusterRecord = PendingHomeCluster.IsValid()
+			? PendingHomeCluster->FindPotentialSystemMutable(PendingHomeClusterInstanceIndex)
+			: nullptr;
+		if (HomeClusterRecord)
+		{
+			StarSystemModel = MakeShared<FStarSystemModel>(HomeClusterRecord->SystemModel);
+			StarSystemModel->Location = HomeSystemSpawnLocation;
+			AmountOfStars = FMath::Max(1, StarSystemModel->AmountOfStars);
+		}
+
 		AStarSystem* NewStarSystem = World->SpawnActor<AStarSystem>(BP_StarSystemClass, HomeSystemTransform);
 		if (!NewStarSystem)
 		{
@@ -541,7 +674,12 @@ void AAstroGenerator::GenerateStarSystemByModel()
 		{
 			TSharedPtr<FStarModel> StarModel = MakeShared<FStarModel>();
 
-			if (bRandomHomeStar)
+			if (HomeClusterRecord && StarNumber == 0 && bRandomHomeStar)
+			{
+				*StarModel = HomeClusterRecord->PrimaryStarModel;
+				StarModel->Location = HomeSystemSpawnLocation;
+			}
+			else if (bRandomHomeStar)
 			{
 				StarGenerator->GenerateRandomStarModel(StarModel);
 			}
@@ -820,6 +958,27 @@ void AAstroGenerator::GenerateStarSystemByModel()
 		GeneratedHomeStarSystem = NewStarSystem;
 		UE_LOG(LogTemp, Warning, TEXT("GeneratedHomeStarSystem set to: %s"), *GeneratedHomeStarSystem->GetName());
 		NewStarSystem->CalculateAffectionRadius();
+
+		if (HomeClusterRecord && PendingHomeCluster.IsValid())
+		{
+			HomeClusterRecord->bMaterialized = true;
+			HomeClusterRecord->MaterializedSystem = NewStarSystem;
+			if (UHierarchicalInstancedStaticMeshComponent* Hism = PendingHomeCluster->StarMeshInstances)
+			{
+				FTransform HiddenTransform;
+				if (Hism->GetInstanceTransform(PendingHomeClusterInstanceIndex, HiddenTransform, false))
+				{
+					HiddenTransform.SetScale3D(FVector::ZeroVector);
+					Hism->UpdateInstanceTransform(
+						PendingHomeClusterInstanceIndex, HiddenTransform, false, true, true);
+					Hism->BuildTreeIfOutdated(true, true);
+				}
+			}
+			UE_LOG(LogTemp, Log,
+				TEXT("[APS.Cluster] Home system %s materialized from HISM instance %d"),
+				*HomeClusterRecord->StableId.ToString(EGuidFormats::DigitsWithHyphensLower),
+				PendingHomeClusterInstanceIndex);
+		}
 
 		if (NewStarSystem->StarSystemRadius == 0)
 		{
@@ -1636,6 +1795,8 @@ void AAstroGenerator::RotatePlanetOrbits(APlanetarySystem* NewPlanetarySystem)
 
 void AAstroGenerator::ComputeHomeSystemPosition(FTransform& HomeSystemTransform, FVector& HomeSystemSpawnLocation)
 {
+	PendingHomeCluster.Reset();
+	PendingHomeClusterInstanceIndex = INDEX_NONE;
 	HomeSystemSpawnLocation = {0, 0, 0};
 	switch (HomeSystemPosition)
 	{
@@ -1681,8 +1842,19 @@ void AAstroGenerator::ComputeHomeSystemPosition(FTransform& HomeSystemTransform,
 				}
 				else if (AstroGenerationLevel == EAstroGenerationLevel::StarCluster)
 				{
-					// Cast the actor to type AStarCluster
-					if (const AStarCluster* StarClusterActor = Cast<AStarCluster>(AttachedActors[RandomIndex]))
+					AStarCluster* StarClusterActor = GeneratedStarCluster;
+					if (!StarClusterActor)
+					{
+						for (AActor* AttachedActor : AttachedActors)
+						{
+							if (AStarCluster* Candidate = Cast<AStarCluster>(AttachedActor))
+							{
+								StarClusterActor = Candidate;
+								break;
+							}
+						}
+					}
+					if (StarClusterActor)
 					{
 						// If the actor is an instance of the AStarCluster class, retrieve its HISM component.
 						if (const UHierarchicalInstancedStaticMeshComponent* HismComponent = StarClusterActor->
@@ -1691,11 +1863,19 @@ void AAstroGenerator::ComputeHomeSystemPosition(FTransform& HomeSystemTransform,
 							// Get a random index from the range of available instances
 							const int32 RandomInstanceIndex =
 								FMath::RandRange(0, HismComponent->GetInstanceCount() - 1);
-							// Extract random instance transform
-							FTransform InstanceTransform;
-							HismComponent->GetInstanceTransform(RandomInstanceIndex, InstanceTransform, true);
-							// Use position from instance transform as HomeSystemSpawnLocation
-							HomeSystemSpawnLocation = InstanceTransform.GetLocation();
+							if (const FClusterStarSystemRecord* Record =
+								StarClusterActor->FindPotentialSystem(RandomInstanceIndex))
+							{
+								HomeSystemSpawnLocation = StarClusterActor->GetPotentialSystemWorldLocation(*Record);
+								PendingHomeCluster = StarClusterActor;
+								PendingHomeClusterInstanceIndex = RandomInstanceIndex;
+							}
+							else
+							{
+								FTransform InstanceTransform;
+								HismComponent->GetInstanceTransform(RandomInstanceIndex, InstanceTransform, true);
+								HomeSystemSpawnLocation = InstanceTransform.GetLocation();
+							}
 						}
 					}
 				}

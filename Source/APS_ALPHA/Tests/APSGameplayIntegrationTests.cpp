@@ -5,8 +5,14 @@
 #include "APS_ALPHA/Core/Interfaces/VehicleControlling.h"
 #include "APS_ALPHA/Core/Model/GeneratedWorld.h"
 #include "APS_ALPHA/Actors/Astro/Planet.h"
+#include "APS_ALPHA/Actors/Astro/StarCluster.h"
+#include "APS_ALPHA/Actors/Astro/StarSystem.h"
 #include "APS_ALPHA/Core/Enums/PlanetType.h"
+#include "APS_ALPHA/Core/Structs/StarGenerationModel.h"
+#include "APS_ALPHA/Core/Structs/StarSystemGenerationModel.h"
 #include "APS_ALPHA/Generation/PlanetarySurfaceGenerator.h"
+#include "APS_ALPHA/Generation/StarGenerator.h"
+#include "APS_ALPHA/Generation/StarSystemGenerator.h"
 #include "APS_ALPHA/Pawns/Characters/CustomGravityCharacter.h"
 #include "APS_ALPHA/Pawns/Spaceships/Spaceship.h"
 #include "APS_ALPHA/Pawns/Spaceships/ShipNavigationComponent.h"
@@ -501,6 +507,62 @@ bool FAPSShipDriveEnvironmentTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Kinematic-to-physics engine handoff preserves speed"),
 		FMath::IsNearlyEqual(Ship->GetShipSpeedMetersPerSecond(), SpeedBeforeHandoff, 0.1));
 
+	APSGameplayIntegrationTests::DestroyTestWorld(World);
+	return true;
+}
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FAPSClusterSystemDataTest,
+	"APS.Gameplay.Generation.ClusterSystemData",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FAPSClusterSystemDataTest::RunTest(const FString& Parameters)
+{
+	const FLinearColor OStar = UStarGenerator::GetStarColor(ESpectralClass::O, 0);
+	const FLinearColor TStar = UStarGenerator::GetStarColor(ESpectralClass::T, 5);
+	TestTrue(TEXT("O stars stay blue rather than crossing through magenta"),
+		OStar.B > OStar.R && OStar.G > OStar.R);
+	TestTrue(TEXT("T dwarfs use a red-brown palette rather than magenta"),
+		TStar.R > TStar.B && TStar.G >= TStar.B);
+
+	FStarModel PrimaryStar;
+	PrimaryStar.SpectralClass = ESpectralClass::G;
+	PrimaryStar.SpectralSubclass = 2;
+	PrimaryStar.Luminosity = 1.0f;
+	UStarSystemGenerator* Generator = NewObject<UStarSystemGenerator>();
+	FStarSystemModel FirstSystem;
+	FStarSystemModel SecondSystem;
+	Generator->GeneratePotentialStarSystemModel(FirstSystem, PrimaryStar, 424242);
+	Generator->GeneratePotentialStarSystemModel(SecondSystem, PrimaryStar, 424242);
+	TestEqual(TEXT("Potential-system multiplicity is deterministic"),
+		FirstSystem.AmountOfStars, SecondSystem.AmountOfStars);
+	TestEqual(TEXT("Potential planet count is deterministic"),
+		FirstSystem.PotentialPlanetCount, SecondSystem.PotentialPlanetCount);
+	TestTrue(TEXT("G-star potential planet count remains bounded"),
+		FirstSystem.PotentialPlanetCount >= 0 && FirstSystem.PotentialPlanetCount <= 12);
+
+	UWorld* World = APSGameplayIntegrationTests::CreateTestWorld();
+	AStarCluster* Cluster = World->SpawnActor<AStarCluster>();
+	Cluster->GenerationSeed = 77;
+	Cluster->RegisterPotentialSystem(0, FVector(100.0, 200.0, 300.0),
+		PrimaryStar, FirstSystem);
+	const FClusterStarSystemRecord* Record = Cluster->FindPotentialSystem(0);
+	TestNotNull(TEXT("HISM instance owns a lightweight system record"), Record);
+	if (Record)
+	{
+		TestTrue(TEXT("Cluster system gets a valid stable identity"), Record->StableId.IsValid());
+		TestEqual(TEXT("Cluster system retains its instance index"), Record->InstanceIndex, 0);
+		TestEqual(TEXT("Cluster system retains local full-scale position"),
+			Record->ClusterLocalLocation, FVector(100.0, 200.0, 300.0));
+
+		AStarSystem* MaterializedSystem = World->SpawnActor<AStarSystem>();
+		Generator->ApplyModel(MaterializedSystem, MakeShared<FStarSystemModel>(Record->SystemModel));
+		TestEqual(TEXT("Materialized actor retains the HISM system identity"),
+			MaterializedSystem->StableSystemId, Record->StableId);
+		TestEqual(TEXT("Materialized actor retains the deterministic seed"),
+			MaterializedSystem->GenerationSeed, Record->SystemModel.GenerationSeed);
+		TestTrue(TEXT("Actor knows it was materialized from a cluster record"),
+			MaterializedSystem->bMaterializedFromCluster);
+	}
 	APSGameplayIntegrationTests::DestroyTestWorld(World);
 	return true;
 }

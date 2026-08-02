@@ -52,6 +52,8 @@ void UGalaxyGenerator::GenerateGalaxyOctreeStars(UStarGenerator* StarGenerator, 
 	}
 
 	double StarsCount = GalaxyModel->StarsCount;
+	NewGalaxy->StarMeshInstances->NumCustomDataFloats = 6;
+	NewGalaxy->StarMeshInstances->PreAllocateInstancesMemory(FMath::Max(0, FMath::FloorToInt(StarsCount)));
 	for (int i = 0; i < StarsCount; i++)
 	{
 		TSharedPtr<FStarModel> StarModel = MakeShared<FStarModel>();
@@ -80,12 +82,16 @@ void UGalaxyGenerator::GenerateGalaxyOctreeStars(UStarGenerator* StarGenerator, 
 		int32 StarInstIndex = NewGalaxy->StarMeshInstances->AddInstance(StarTransform, true);
 
 		FLinearColor ColorValue = StarGenerator->GetStarColor(StarModel->SpectralClass, StarModel->SpectralSubclass);
-		NewGalaxy->StarMeshInstances->SetCustomDataValue(StarInstIndex, 0, ColorValue.R);
-		NewGalaxy->StarMeshInstances->SetCustomDataValue(StarInstIndex, 1, ColorValue.G);
-		NewGalaxy->StarMeshInstances->SetCustomDataValue(StarInstIndex, 2, ColorValue.B);
+		NewGalaxy->StarMeshInstances->SetCustomDataValue(StarInstIndex, 0, ColorValue.R, false);
+		NewGalaxy->StarMeshInstances->SetCustomDataValue(StarInstIndex, 1, ColorValue.G, false);
+		NewGalaxy->StarMeshInstances->SetCustomDataValue(StarInstIndex, 2, ColorValue.B, false);
 		double StarEmission = StarGenerator->CalculateEmission(StarModel->Luminosity * 25);
-		NewGalaxy->StarMeshInstances->SetCustomDataValue(StarInstIndex, 3, StarEmission);
+		NewGalaxy->StarMeshInstances->SetCustomDataValue(StarInstIndex, 3, StarEmission, false);
+		NewGalaxy->StarMeshInstances->SetCustomDataValue(StarInstIndex, 4, FMath::FRand(), false);
+		NewGalaxy->StarMeshInstances->SetCustomDataValue(StarInstIndex, 5, 0.0f, false);
 	}
+	NewGalaxy->StarMeshInstances->BuildTreeIfOutdated(true, true);
+	NewGalaxy->StarMeshInstances->MarkRenderStateDirty();
 	delete galaxyOctree;
 }
 

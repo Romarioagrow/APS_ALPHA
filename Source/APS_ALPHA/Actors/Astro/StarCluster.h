@@ -8,9 +8,11 @@
 #include "APS_ALPHA/Core/Enums/StarClusterPopulation.h"
 #include "APS_ALPHA/Core/Enums/StarClusterSize.h"
 #include "APS_ALPHA/Core/Enums/StarClusterType.h"
+#include "APS_ALPHA/Core/Structs/StarGenerationModel.h"
+#include "APS_ALPHA/Core/Structs/StarSystemGenerationModel.h"
 #include "StarCluster.generated.h"
 
-struct FStarModel;
+class AStarSystem;
 enum class EStellarType : uint8;
 enum class ESpectralClass : uint8;
 enum class EStarClusterSize : uint8;
@@ -74,6 +76,37 @@ struct FStarClusterModel
 	EStarClusterSize StarClusterSize;
 };
 
+/**
+ * Actor-free identity and generation data for one HISM star.
+ * The full actor hierarchy is materialized only when gameplay actually needs it.
+ */
+USTRUCT(BlueprintType)
+struct FClusterStarSystemRecord
+{
+	GENERATED_BODY()
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Star System")
+	FGuid StableId;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Star System")
+	int32 InstanceIndex{INDEX_NONE};
+
+	/** Location in StarMeshInstances local space; remains valid when the full-scale parent moves/scales. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Star System")
+	FVector ClusterLocalLocation{FVector::ZeroVector};
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Star System")
+	FStarSystemModel SystemModel;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Star System")
+	FStarModel PrimaryStarModel;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Star System")
+	bool bMaterialized{false};
+
+	TWeakObjectPtr<AStarSystem> MaterializedSystem;
+};
+
 UCLASS()
 class APS_ALPHA_API AStarCluster : public AAstroActor /*, public INavigatableBody*/
 {
@@ -99,6 +132,27 @@ public:
 	void AddStarToCluster(AStar* Star);
 
 	void AddStarToClusterModel(FVector StarLocation, TSharedPtr<FStarModel> StarModel);
+
+	/** Seed for stable system identities. Zero means "choose once during generation". */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star Cluster|Generation")
+	int32 GenerationSeed{0};
+
+	/** Ordered one-to-one with StarMeshInstances. No star/system actors are allocated here. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Star Cluster|Generation")
+	TArray<FClusterStarSystemRecord> PotentialStarSystems;
+
+	FGuid MakeStableSystemId(int32 InstanceIndex) const;
+	void RegisterPotentialSystem(int32 InstanceIndex, const FVector& ClusterLocalLocation,
+		const FStarModel& PrimaryStarModel, const FStarSystemModel& SystemModel);
+	const FClusterStarSystemRecord* FindPotentialSystem(int32 InstanceIndex) const;
+	FClusterStarSystemRecord* FindPotentialSystemMutable(int32 InstanceIndex);
+	FVector GetPotentialSystemWorldLocation(const FClusterStarSystemRecord& Record) const;
+
+	UFUNCTION(BlueprintCallable, Category = "Star Cluster|Generation")
+	bool GetPotentialSystemRecord(int32 InstanceIndex, FClusterStarSystemRecord& OutRecord) const;
+
+	/** Performs the one render-state update/tree build after all stars and custom data are present. */
+	void FinalizeGeneratedInstances();
 
 	//  
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star Cluster")

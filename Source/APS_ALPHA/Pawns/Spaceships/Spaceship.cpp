@@ -298,6 +298,7 @@ void ASpaceship::BeginPlay()
 {
 	Super::BeginPlay();
 	ConfigureFromHull();
+	InitializeFlightPostProcess();
 	RefreshInteractionGeometry();
 	UpdateFlightEnvironment(0.0f, true);
 
@@ -567,6 +568,7 @@ void ASpaceship::Tick(float DeltaTime)
 	AdvanceEngineModeTransition(DeltaTime);
 	ApplyFlightInput(DeltaTime);
 	ApplyRotationInput(DeltaTime);
+	StabilizeFullScaleVisualVelocity();
 	UpdateAdaptiveFlightCamera(DeltaTime);
 	/*uint64 StartCycles = FPlatformTime::Cycles();
 
@@ -960,6 +962,24 @@ bool ASpaceship::IsGeneratedShipSkeletalMeshAsset(const USkeletalMesh* Mesh)
 
 void ASpaceship::ConfigureFlightReferenceFromHull(UPrimitiveComponent* Hull, const FVector& LocalExtent)
 {
+	// Legacy interior ships already author their actual nose direction with this hidden arrow.
+	// Prefer it when authored; generated hulls keep the bounds-axis fallback below.
+	const bool bHasAuthoredForward = ForwardVector
+		&& (ForwardVector->GetStaticMesh() != nullptr
+			|| !ForwardVector->GetRelativeRotation().IsNearlyZero(0.1));
+	if (bHasAuthoredForward && SpaceshipHull)
+	{
+		const FTransform HullTransform = SpaceshipHull->GetComponentTransform();
+		FlightForwardLocalAxis = HullTransform.InverseTransformVectorNoScale(
+			ForwardVector->GetForwardVector()).GetSafeNormal();
+		FlightUpLocalAxis = HullTransform.InverseTransformVectorNoScale(
+			ForwardVector->GetUpVector()).GetSafeNormal();
+		if (!FlightForwardLocalAxis.IsNearlyZero() && !FlightUpLocalAxis.IsNearlyZero())
+		{
+			return;
+		}
+	}
+
 	int32 ForwardAxisIndex = 0;
 	if (LocalExtent.Y > LocalExtent.X && LocalExtent.Y >= LocalExtent.Z)
 	{
@@ -1546,6 +1566,87 @@ void ASpaceship::UpdateAdaptiveFlightCamera(float DeltaTime)
 		const float TargetFieldOfView = BaseCameraFieldOfView + CameraAlpha * 12.0f;
 		CameraComponent->SetFieldOfView(FMath::FInterpTo(
 			CameraComponent->FieldOfView, TargetFieldOfView, DeltaTime, 2.6f));
+
+		FPostProcessSettings& PostProcess = CameraComponent->PostProcessSettings;
+		PostProcess.bOverride_SceneFringeIntensity = true;
+		PostProcess.bOverride_ChromaticAberrationStartOffset = true;
+		PostProcess.bOverride_VignetteIntensity = true;
+		PostProcess.bOverride_BloomIntensity = true;
+		PostProcess.bOverride_AutoExposureBias = true;
+		const float CinematicAlpha = FMath::Square(CameraAlpha);
+		PostProcess.SceneFringeIntensity = FMath::FInterpTo(PostProcess.SceneFringeIntensity,
+			FMath::Max(BaseSceneFringeIntensity, CinematicAlpha * 1.1f), DeltaTime, 2.2f);
+		PostProcess.ChromaticAberrationStartOffset = FMath::FInterpTo(
+			PostProcess.ChromaticAberrationStartOffset,
+			FMath::Lerp(FMath::Max(BaseChromaticAberrationStartOffset, 0.45f), 0.28f, CinematicAlpha),
+			DeltaTime, 2.2f);
+		PostProcess.VignetteIntensity = FMath::FInterpTo(PostProcess.VignetteIntensity,
+			FMath::Max(BaseVignetteIntensity, 0.16f + CinematicAlpha * 0.12f), DeltaTime, 2.2f);
+		PostProcess.BloomIntensity = FMath::FInterpTo(PostProcess.BloomIntensity,
+			FMath::Max(BaseBloomIntensity, 0.45f + CinematicAlpha * 0.22f), DeltaTime, 2.2f);
+		// Exposure is intentionally speed-invariant; only the lens response changes with velocity.
+		PostProcess.AutoExposureBias = BaseAutoExposureBias;
+		CameraComponent->PostProcessBlendWeight = FMath::Max(BaseCameraPostProcessBlendWeight, 1.0f);
+	}
+}
+
+void ASpaceship::InitializeFlightPostProcess()
+{
+	if (!CameraComponent || bCameraPostProcessInitialized)
+	{
+		return;
+	}
+	const FPostProcessSettings& PostProcess = CameraComponent->PostProcessSettings;
+	BaseCameraPostProcessBlendWeight = CameraComponent->PostProcessBlendWeight;
+	BaseSceneFringeIntensity = PostProcess.SceneFringeIntensity;
+	BaseChromaticAberrationStartOffset = PostProcess.ChromaticAberrationStartOffset;
+	BaseVignetteIntensity = PostProcess.VignetteIntensity;
+	BaseBloomIntensity = PostProcess.BloomIntensity;
+	BaseAutoExposureBias = PostProcess.AutoExposureBias;
+	bBaseOverrideSceneFringe = PostProcess.bOverride_SceneFringeIntensity;
+	bBaseOverrideChromaticStart = PostProcess.bOverride_ChromaticAberrationStartOffset;
+	bBaseOverrideVignette = PostProcess.bOverride_VignetteIntensity;
+	bBaseOverrideBloom = PostProcess.bOverride_BloomIntensity;
+	bBaseOverrideExposureBias = PostProcess.bOverride_AutoExposureBias;
+	bCameraPostProcessInitialized = true;
+}
+
+void ASpaceship::RestoreFlightPostProcess()
+{
+	if (!CameraComponent || !bCameraPostProcessInitialized)
+	{
+		return;
+	}
+	FPostProcessSettings& PostProcess = CameraComponent->PostProcessSettings;
+	PostProcess.SceneFringeIntensity = BaseSceneFringeIntensity;
+	PostProcess.ChromaticAberrationStartOffset = BaseChromaticAberrationStartOffset;
+	PostProcess.VignetteIntensity = BaseVignetteIntensity;
+	PostProcess.BloomIntensity = BaseBloomIntensity;
+	PostProcess.AutoExposureBias = BaseAutoExposureBias;
+	PostProcess.bOverride_SceneFringeIntensity = bBaseOverrideSceneFringe;
+	PostProcess.bOverride_ChromaticAberrationStartOffset = bBaseOverrideChromaticStart;
+	PostProcess.bOverride_VignetteIntensity = bBaseOverrideVignette;
+	PostProcess.bOverride_BloomIntensity = bBaseOverrideBloom;
+	PostProcess.bOverride_AutoExposureBias = bBaseOverrideExposureBias;
+	CameraComponent->PostProcessBlendWeight = BaseCameraPostProcessBlendWeight;
+}
+
+void ASpaceship::StabilizeFullScaleVisualVelocity()
+{
+	if (!IsValid(Pilot) || (SpaceshipHull && SpaceshipHull->IsSimulatingPhysics()))
+	{
+		return;
+	}
+	TArray<UPrimitiveComponent*> PrimitiveComponents;
+	GetComponents(PrimitiveComponents);
+	for (UPrimitiveComponent* Component : PrimitiveComponents)
+	{
+		if (IsValid(Component) && Component->IsVisible())
+		{
+			// The camera shares the kinematic full-scale translation. Treating that offset as
+			// local object motion produces enormous invalid temporal velocities on the hull.
+			Component->ResetSceneVelocity();
+		}
 	}
 }
 
@@ -2978,6 +3079,7 @@ void ASpaceship::PossessedBy(AController* NewController)
 void ASpaceship::UnPossessed()
 {
 	RemoveShipHud();
+	RestoreFlightPostProcess();
 	if (CameraComponent && bCameraFieldOfViewInitialized)
 	{
 		CameraComponent->SetFieldOfView(BaseCameraFieldOfView);
