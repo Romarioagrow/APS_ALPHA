@@ -21,6 +21,7 @@ public:
 	virtual bool ShouldCreateSubsystem(UObject* Outer) const override;
 	virtual void Tick(float DeltaTime) override;
 	virtual TStatId GetStatId() const override;
+	APlanet* GetResidentFamily() const { return ResidentFamily.Get(); }
 
 private:
 	void UpdateActiveEnvironment();

@@ -78,8 +78,33 @@ void UAPSPlanetEnvironmentStreamingSubsystem::UpdateActiveEnvironment()
 
 	APlanet* BestFamily = nullptr;
 	double BestFamilyScore = TNumericLimits<double>::Max();
+	if (APlanet* CurrentFamily = ResidentFamily.Get())
+	{
+		if (const TArray<APlanetaryBody*>* CurrentFamilyBodies = Families.Find(CurrentFamily))
+		{
+			// While the observer remains inside the resident family's normal preload
+			// zone, keep the whole family stable. Without this lock an overlapping
+			// neighbour could win one update and unload every planet/moon root even
+			// though the player had not actually left the current planetary system.
+			const bool bInsideResidentCore = CurrentFamilyBodies->ContainsByPredicate(
+				[&ObserverLocation](const APlanetaryBody* Body)
+				{
+					return FVector::Distance(ObserverLocation, Body->GetActorLocation())
+						<= Body->GetWorldScapePreloadRadiusCm();
+				});
+			if (bInsideResidentCore)
+			{
+				BestFamily = CurrentFamily;
+				BestFamilyScore = 0.0;
+			}
+		}
+	}
 	for (const TPair<APlanet*, TArray<APlanetaryBody*>>& Pair : Families)
 	{
+		if (BestFamily)
+		{
+			break;
+		}
 		const bool bResident = ResidentFamily.Get() == Pair.Key;
 		double FamilyScore = TNumericLimits<double>::Max();
 		for (APlanetaryBody* Body : Pair.Value)

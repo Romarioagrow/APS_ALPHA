@@ -13,6 +13,7 @@
 #include "APS_ALPHA/Core/Enums/PlanetType.h"
 #include "APS_ALPHA/Core/Interfaces/NavigatableBody.h"
 #include "APS_ALPHA/Core/Structs/StarGenerationModel.h"
+#include "APS_ALPHA/Core/World/APSPlanetEnvironmentStreamingSubsystem.h"
 #include "APS_ALPHA/Generation/AstroGenerator.h"
 #include "APS_ALPHA/Pawns/Characters/GravityCharacterPawn.h"
 #include "APS_ALPHA/Pawns/Characters/GravityDetectorComponent.h"
@@ -2243,7 +2244,26 @@ const APlanet* ASpaceship::GetNavigationFocusPlanet() const
 
 bool ASpaceship::IsInsideNavigationFocusGravity(const APlanet* FocusPlanet) const
 {
-	if (!FocusPlanet || CurrentFlightEnvironment == EShipFlightEnvironment::DeepSpace)
+	if (!FocusPlanet)
+	{
+		return false;
+	}
+	// Marker expansion follows the complete resident WorldScape family rather
+	// than the momentary gravity source. Gravity can briefly drop while crossing
+	// empty space between a planet and its moons; that must not collapse every
+	// moon flag while the family is still loaded and retained by the streamer.
+	if (const UWorld* World = GetWorld())
+	{
+		if (const UAPSPlanetEnvironmentStreamingSubsystem* Streaming =
+			World->GetSubsystem<UAPSPlanetEnvironmentStreamingSubsystem>())
+		{
+			if (Streaming->GetResidentFamily() == FocusPlanet)
+			{
+				return true;
+			}
+		}
+	}
+	if (CurrentFlightEnvironment == EShipFlightEnvironment::DeepSpace)
 	{
 		return false;
 	}
