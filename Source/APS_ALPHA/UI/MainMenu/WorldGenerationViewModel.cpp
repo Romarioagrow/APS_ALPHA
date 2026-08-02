@@ -179,6 +179,14 @@ void UWorldGenerationViewModel::RequestPreview()
 		PreviewTimerHandle, this, &UWorldGenerationViewModel::ExecutePreview, 0.2f, false);
 }
 
+void UWorldGenerationViewModel::CancelPendingPreview()
+{
+	if (UWorld* World = WorldContext.IsValid() ? WorldContext->GetWorld() : nullptr)
+	{
+		World->GetTimerManager().ClearTimer(PreviewTimerHandle);
+	}
+}
+
 void UWorldGenerationViewModel::RegeneratePreviewVariant()
 {
 	if (AAstroGenerator* Generator = FindOrCreatePreviewGenerator())

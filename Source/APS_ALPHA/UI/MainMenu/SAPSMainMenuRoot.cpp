@@ -210,6 +210,14 @@ void SAPSMainMenuRoot::Construct(const FArguments& InArgs)
 
 void SAPSMainMenuRoot::Navigate(EAPSMenuPage NewPage)
 {
+	if (CurrentPage == EAPSMenuPage::AstronomicalGeneration
+		&& NewPage == EAPSMenuPage::ChoosePath && ViewModel.IsValid())
+	{
+		// A slider can leave a debounced regeneration queued for 0.2 seconds.
+		// Once Back hides the preview page that work is both wasteful and capable
+		// of moving the menu camera behind the newly visible screen.
+		ViewModel->CancelPendingPreview();
+	}
 	if (CurrentPage == EAPSMenuPage::ExistingWorlds && NewPage != EAPSMenuPage::ExistingWorlds)
 	{
 		if (AMainMenuController* PC = Controller.Get())
@@ -981,6 +989,7 @@ void SAPSMainMenuRoot::OnSpawnClassOptionsLoaded()
 		? PickerClass->GetDefaultObject<USpawnClassPicker>() : nullptr;
 	MergeSpawnClassOptions(Picker);
 	SynchronizeSpawnClassOptions();
+	Invalidate(EInvalidateWidgetReason::LayoutAndVolatility);
 	SpawnPickerLoadHandle.Reset();
 	UE_LOG(LogTemp, Log, TEXT("[APS.Menu] Spawn catalogue loaded asynchronously: %s"),
 		Picker ? TEXT("true") : TEXT("false"));

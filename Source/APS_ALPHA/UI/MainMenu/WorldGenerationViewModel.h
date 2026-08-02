@@ -58,6 +58,8 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "World Generation")
 	void RequestPreview();
 
+	void CancelPendingPreview();
+
 	UFUNCTION(BlueprintCallable, Category = "World Generation|Preview")
 	void RegeneratePreviewVariant();
 
