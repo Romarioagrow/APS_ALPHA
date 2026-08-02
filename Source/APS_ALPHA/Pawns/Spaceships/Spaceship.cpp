@@ -44,6 +44,7 @@
 #include "Widgets/Text/STextBlock.h"
 #include "Components/MeshComponent.h"
 #include "Components/SpotLightComponent.h"
+#include "Components/PointLightComponent.h"
 
 class SAPSShipNavigationOverlay final : public SLeafWidget
 {
@@ -300,6 +301,23 @@ ASpaceship::ASpaceship()
 	PilotFillLight->SetCastShadows(false);
 	PilotFillLight->SetAffectTranslucentLighting(false);
 	PilotFillLight->SetVisibility(false, true);
+
+	PilotFillPointLight = CreateDefaultSubobject<UPointLightComponent>(TEXT("PilotFillPointLight"));
+	PilotFillPointLight->SetupAttachment(CameraComponent);
+	PilotFillPointLight->SetRelativeLocation(FVector::ZeroVector);
+	PilotFillPointLight->SetMobility(EComponentMobility::Movable);
+	PilotFillPointLight->SetUseInverseSquaredFalloff(false);
+	PilotFillPointLight->SetLightFalloffExponent(2.0f);
+	PilotFillPointLight->SetIntensity(18.0f);
+	PilotFillPointLight->SetLightColor(FLinearColor(0.72f, 0.82f, 1.0f));
+	PilotFillPointLight->SetInverseExposureBlend(1.0f);
+	PilotFillPointLight->SetCastShadows(false);
+	PilotFillPointLight->SetAffectTranslucentLighting(false);
+	// Channel 2 is reserved for the controlled ship's readability fill. Keeping
+	// channel 0 disabled prevents the camera light from bleaching stations,
+	// planets and characters near the ship.
+	PilotFillPointLight->SetLightingChannels(false, false, true);
+	PilotFillPointLight->SetVisibility(false, true);
 }
 
 void ASpaceship::OnConstruction(const FTransform& Transform)
@@ -1186,16 +1204,51 @@ void ASpaceship::ConfigureCameraFromHull()
 
 void ASpaceship::ConfigurePilotFillLight()
 {
-	if (!PilotFillLight)
-	{
-		return;
-	}
-
 	const UPrimitiveComponent* MainMesh = GetPrimaryHullComponent();
 	const float HullRadius = MainMesh ? FMath::Max(MainMesh->Bounds.SphereRadius, 400.0f) : 400.0f;
 	const float CameraDistance = FMath::Max(BaseCameraArmLength, 820.0f);
-	PilotFillLight->SetAttenuationRadius(CameraDistance + HullRadius * 2.5f);
-	PilotFillLight->SetIntensity(FMath::Clamp(2200.0f + HullRadius * 0.35f, 2600.0f, 8500.0f));
+	if (PilotFillLight)
+	{
+		PilotFillLight->SetAttenuationRadius(CameraDistance + HullRadius * 2.5f);
+		PilotFillLight->SetIntensity(FMath::Clamp(2200.0f + HullRadius * 0.35f, 2600.0f, 8500.0f));
+	}
+	if (PilotFillPointLight)
+	{
+		PilotFillPointLight->SetAttenuationRadius(CameraDistance + HullRadius * 3.0f);
+		PilotFillPointLight->SetIntensity(FMath::Clamp(
+			12.0f + HullRadius / 900.0f, 14.0f, 32.0f));
+	}
+
+	TArray<UMeshComponent*> ShipMeshComponents;
+	GetComponents<UMeshComponent>(ShipMeshComponents);
+	for (UMeshComponent* ShipMesh : ShipMeshComponents)
+	{
+		if (IsValid(ShipMesh))
+		{
+			// Preserve normal world lighting and opt only this ship into the
+			// private camera-fill channel.
+			ShipMesh->SetLightingChannels(true, false, true);
+		}
+	}
+}
+
+void ASpaceship::UpdatePilotFillLightVisibility()
+{
+	if (PilotFillLight)
+	{
+		// Retained for serialized BP compatibility; the point fill is independent
+		// of legacy mesh-forward conventions and cannot accidentally light empty space.
+		PilotFillLight->SetVisibility(false, true);
+	}
+
+	if (PilotFillPointLight)
+	{
+		// The private fill is a readability fallback for interplanetary darkness,
+		// not a replacement for physically meaningful local star/planet lighting.
+		const bool bShouldUseFill = IsValid(Pilot)
+			&& CurrentFlightEnvironment == EShipFlightEnvironment::DeepSpace;
+		PilotFillPointLight->SetVisibility(bShouldUseFill, true);
+	}
 }
 
 FVector ASpaceship::GetShipForwardVector() const
@@ -1524,6 +1577,7 @@ void ASpaceship::UpdateFlightEnvironment(float DeltaTime, bool bForce)
 	{
 		SpaceshipHull->SetLinearDamping(GetEnvironmentDrag());
 	}
+	UpdatePilotFillLightVisibility();
 }
 
 double ASpaceship::GetEnvironmentDrag() const
@@ -3100,11 +3154,8 @@ void ASpaceship::PossessedBy(AController* NewController)
 {
 	Super::PossessedBy(NewController);
 	ConfigurePilotFillLight();
-	if (PilotFillLight)
-	{
-		PilotFillLight->SetVisibility(true, true);
-	}
 	UpdateFlightEnvironment(0.0f, true);
+	UpdatePilotFillLightVisibility();
 	SetFlightCollisionOptimization(true);
 	SetActorTickEnabled(true);
 	CreateShipHud();
@@ -3116,6 +3167,10 @@ void ASpaceship::UnPossessed()
 	if (PilotFillLight)
 	{
 		PilotFillLight->SetVisibility(false, true);
+	}
+	if (PilotFillPointLight)
+	{
+		PilotFillPointLight->SetVisibility(false, true);
 	}
 	RestoreFlightPostProcess();
 	if (CameraComponent && bCameraFieldOfViewInitialized)

@@ -45,6 +45,15 @@ public:
 	/** Stable explicit OBAFGKM palette; never interpolates into compact-object enum values. */
 	static FLinearColor GetStarColor(ESpectralClass spectralClass, int subclass);
 
+	/**
+	 * Render-only prefilter for cluster/galaxy HISM proxies. Physical/model radii remain untouched;
+	 * small distant stars are spread over a Sun-sized proxy so sub-pixel coverage stays stable.
+	 */
+	static double GetFarStarVisualRadius(double PhysicalRadius);
+
+	/** Preserves approximate luminous energy when GetFarStarVisualRadius expands a proxy. */
+	static double GetFarStarVisualEmission(double PhysicalRadius, double PhysicalEmission);
+
 	FLinearColor TemperatureToRGB(float Temperature);
 
 	void ApplyModel(AStar* NewStar, TSharedPtr<FStarModel> StarModel);

@@ -9,6 +9,28 @@ UStarGenerator::UStarGenerator()
 	RandomStream = FRandomStream(Time.ToUnixTimestamp());
 }
 
+double UStarGenerator::GetFarStarVisualRadius(const double PhysicalRadius)
+{
+	constexpr double MinimumStableVisualRadius = 1.0;
+	return FMath::Max(FMath::IsFinite(PhysicalRadius) ? PhysicalRadius : 0.0,
+		MinimumStableVisualRadius);
+}
+
+double UStarGenerator::GetFarStarVisualEmission(const double PhysicalRadius,
+	const double PhysicalEmission)
+{
+	if (!FMath::IsFinite(PhysicalRadius) || !FMath::IsFinite(PhysicalEmission)
+		|| PhysicalRadius <= 0.0 || PhysicalEmission <= 0.0)
+	{
+		return 0.0;
+	}
+
+	const double VisualRadius = GetFarStarVisualRadius(PhysicalRadius);
+	const double AreaCompensation = FMath::Square(
+		FMath::Clamp(PhysicalRadius / VisualRadius, 0.0, 1.0));
+	return PhysicalEmission * AreaCompensation;
+}
+
 void UStarGenerator::ApplySpectralMaterial(AStar* NewStar, TSharedPtr<FStarModel> StarModel)
 {
 	if (!NewStar || !NewStar->StarMesh || !StarModel)

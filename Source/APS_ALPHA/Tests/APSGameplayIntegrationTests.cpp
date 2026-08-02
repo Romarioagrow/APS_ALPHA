@@ -22,6 +22,7 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/PlayerController.h"
 #include "Components/SpotLightComponent.h"
+#include "Components/PointLightComponent.h"
 
 namespace APSGameplayIntegrationTests
 {
@@ -227,7 +228,12 @@ bool FAPSVehicleControlRoundTripTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Native vehicle eligibility accepts the pilot"),
 		Ship->CanRequestVehicleControl(Character));
 	TestTrue(TEXT("Uncontrolled fleet ship keeps its fill light disabled"),
-		Ship->PilotFillLight && !Ship->PilotFillLight->IsVisible());
+		Ship->PilotFillPointLight && !Ship->PilotFillPointLight->IsVisible());
+	TestTrue(TEXT("Ship fill light is isolated from world geometry"),
+		Ship->PilotFillPointLight
+		&& !Ship->PilotFillPointLight->LightingChannels.bChannel0
+		&& !Ship->PilotFillPointLight->LightingChannels.bChannel1
+		&& Ship->PilotFillPointLight->LightingChannels.bChannel2);
 	IVehicleControlling* VehicleInterface = Cast<IVehicleControlling>(Ship);
 	TestNotNull(TEXT("Native vehicle interface address is available"), VehicleInterface);
 	TestTrue(TEXT("Interface vehicle eligibility accepts the pilot"),
@@ -240,7 +246,7 @@ bool FAPSVehicleControlRoundTripTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Pilot is attached to the ship seat"), Character->IsAttachedTo(Ship));
 	TestTrue(TEXT("Pilot is hidden while no seated animation is configured"), Character->IsHidden());
 	TestTrue(TEXT("Controlled ship enables its camera-side fill light"),
-		Ship->PilotFillLight && Ship->PilotFillLight->IsVisible());
+		Ship->PilotFillPointLight && Ship->PilotFillPointLight->IsVisible());
 
 	const bool bExited = VehicleInterface && VehicleInterface->RequestReleaseVehicleControl();
 	TestTrue(TEXT("Unified vehicle interface releases the pilot"), bExited);
@@ -251,7 +257,7 @@ bool FAPSVehicleControlRoundTripTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Pilot ticking is restored"), Character->IsActorTickEnabled());
 	TestFalse(TEXT("Pilot visibility is restored"), Character->IsHidden());
 	TestTrue(TEXT("Released ship disables its camera-side fill light"),
-		Ship->PilotFillLight && !Ship->PilotFillLight->IsVisible());
+		Ship->PilotFillPointLight && !Ship->PilotFillPointLight->IsVisible());
 
 	APSGameplayIntegrationTests::DestroyTestWorld(World);
 	return true;
@@ -530,6 +536,16 @@ bool FAPSClusterSystemDataTest::RunTest(const FString& Parameters)
 		OStar.B > OStar.R && OStar.G > OStar.R);
 	TestTrue(TEXT("T dwarfs use a red-brown palette rather than magenta"),
 		TStar.R > TStar.B && TStar.G >= TStar.B);
+	const double SmallStarVisualRadius = UStarGenerator::GetFarStarVisualRadius(0.4);
+	const double SmallStarVisualEmission = UStarGenerator::GetFarStarVisualEmission(0.4, 100.0);
+	TestEqual(TEXT("Small far-star proxies receive a stable minimum radius"),
+		SmallStarVisualRadius, 1.0);
+	TestTrue(TEXT("Expanded far-star proxies preserve luminous area instead of saturating"),
+		FMath::IsNearlyEqual(SmallStarVisualEmission, 16.0));
+	TestEqual(TEXT("Sun-sized far-star proxies keep their physical visual radius"),
+		UStarGenerator::GetFarStarVisualRadius(1.2), 1.2);
+	TestEqual(TEXT("Sun-sized far-star proxies keep their physical emission"),
+		UStarGenerator::GetFarStarVisualEmission(1.2, 100.0), 100.0);
 
 	FStarModel PrimaryStar;
 	PrimaryStar.SpectralClass = ESpectralClass::G;

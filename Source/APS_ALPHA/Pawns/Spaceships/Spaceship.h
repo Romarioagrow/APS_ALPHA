@@ -13,6 +13,7 @@ class AStarCluster;
 class UCameraComponent;
 class USpringArmComponent;
 class USpotLightComponent;
+class UPointLightComponent;
 class USkeletalMesh;
 class USkeletalMeshComponent;
 class UPrimitiveComponent;
@@ -188,6 +189,10 @@ public:
 	/** Camera-side fill active only on the controlled ship, keeping dark hull materials readable. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ship|Visuals")
 	USpotLightComponent* PilotFillLight;
+
+	/** Direction-independent camera fill; the legacy spot could point past rotated hulls. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ship|Visuals")
+	UPointLightComponent* PilotFillPointLight;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Meshes")
 	UStaticMesh* SmallScaleHullMesh;
@@ -540,6 +545,7 @@ private:
 	void ConfigureFromHull();
 	void ConfigureCameraFromHull();
 	void ConfigurePilotFillLight();
+	void UpdatePilotFillLightVisibility();
 	void ConfigureFlightReferenceFromHull(UPrimitiveComponent* Hull, const FVector& LocalExtent);
 	void UpdateAdaptiveFlightCamera(float DeltaTime);
 	void InitializeFlightPostProcess();

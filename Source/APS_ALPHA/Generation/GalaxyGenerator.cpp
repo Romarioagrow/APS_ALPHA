@@ -79,14 +79,15 @@ void UGalaxyGenerator::GenerateGalaxyOctreeStars(UStarGenerator* StarGenerator, 
 
 		FTransform StarTransform;
 		StarTransform.SetLocation(position);
-		StarTransform.SetScale3D(FVector(StarModel->Radius));
+		StarTransform.SetScale3D(FVector(UStarGenerator::GetFarStarVisualRadius(StarModel->Radius)));
 		int32 StarInstIndex = NewGalaxy->StarMeshInstances->AddInstance(StarTransform, true);
 
 		FLinearColor ColorValue = StarGenerator->GetStarColor(StarModel->SpectralClass, StarModel->SpectralSubclass);
 		NewGalaxy->StarMeshInstances->SetCustomDataValue(StarInstIndex, 0, ColorValue.R, false);
 		NewGalaxy->StarMeshInstances->SetCustomDataValue(StarInstIndex, 1, ColorValue.G, false);
 		NewGalaxy->StarMeshInstances->SetCustomDataValue(StarInstIndex, 2, ColorValue.B, false);
-		double StarEmission = StarGenerator->CalculateEmission(StarModel->Luminosity * 25);
+		double StarEmission = UStarGenerator::GetFarStarVisualEmission(StarModel->Radius,
+			StarGenerator->CalculateEmission(StarModel->Luminosity * 25));
 		NewGalaxy->StarMeshInstances->SetCustomDataValue(StarInstIndex, 3, StarEmission, false);
 		NewGalaxy->StarMeshInstances->SetCustomDataValue(StarInstIndex, 4, FMath::FRand(), false);
 		NewGalaxy->StarMeshInstances->SetCustomDataValue(StarInstIndex, 5, 0.0f, false);

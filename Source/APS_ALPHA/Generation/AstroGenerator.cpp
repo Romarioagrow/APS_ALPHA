@@ -350,7 +350,8 @@ void AAstroGenerator::GenerateStarCluster()
 
 		// Create a star instance and add it to the HISM component
 		FTransform StarTransform(StarPosition);
-		StarTransform.SetScale3D(FVector(NewStarModel->Radius));
+		const double FarVisualRadius = UStarGenerator::GetFarStarVisualRadius(NewStarModel->Radius);
+		StarTransform.SetScale3D(FVector(FarVisualRadius));
 		const int32 StarInstIndex = NewStarCluster->StarMeshInstances->AddInstance(StarTransform, true);
 		const FLinearColor ColorValue = StarGenerator->GetStarColor(NewStarModel->SpectralClass,
 		                                                            NewStarModel->SpectralSubclass);
@@ -358,7 +359,8 @@ void AAstroGenerator::GenerateStarCluster()
 		NewStarCluster->StarMeshInstances->SetCustomDataValue(StarInstIndex, 1, ColorValue.G, false);
 		NewStarCluster->StarMeshInstances->SetCustomDataValue(StarInstIndex, 2, ColorValue.B, false);
 
-		const double StarEmission = StarGenerator->CalculateEmission(NewStarModel->Luminosity * 25);
+		const double StarEmission = UStarGenerator::GetFarStarVisualEmission(NewStarModel->Radius,
+			StarGenerator->CalculateEmission(NewStarModel->Luminosity * 25));
 		NewStarCluster->StarMeshInstances->SetCustomDataValue(StarInstIndex, 3, StarEmission, false);
 
 		FStarSystemModel PotentialSystemModel;
