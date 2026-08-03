@@ -47,6 +47,16 @@ APlanet* UAPSPlanetEnvironmentStreamingSubsystem::ResolveFamilyPlanet(APlanetary
 void UAPSPlanetEnvironmentStreamingSubsystem::UpdateActiveEnvironment()
 {
 	UWorld* World = GetWorld();
+	// L_APS_SinglePlay_StartLocation owns a pre-authored WorldScape hierarchy
+	// that is integrated by AAstroGenerator. The generic proximity streamer is
+	// intended for generated worlds; running it here creates a second transient
+	// planet/root over the authored level and can unload the authored hierarchy.
+	// Keep the legacy level isolated until it is explicitly migrated.
+	if (World && World->GetMapName().Contains(TEXT("L_APS_SinglePlay_StartLocation")))
+	{
+		return;
+	}
+
 	APlayerController* PlayerController = World ? World->GetFirstPlayerController() : nullptr;
 	APawn* Observer = PlayerController ? PlayerController->GetPawn() : nullptr;
 	if (!Observer)

@@ -10,6 +10,14 @@ class UGeneratedWorld;
 class USpawnParameters;
 
 UENUM(BlueprintType)
+enum class EAPSGenerationRoute : uint8
+{
+	Civilization,
+	Space,
+	Planet
+};
+
+UENUM(BlueprintType)
 enum class EAPSStartAssetSlot : uint8
 {
 	Character,
@@ -66,9 +74,15 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "World Generation|Preview")
 	void SetPreviewFocus(EAstroPreviewFocus NewFocus);
 
+	void SetGenerationRoute(EAPSGenerationRoute NewRoute);
+	EAPSGenerationRoute GetGenerationRoute() const { return GenerationRoute; }
+
 	void OrbitPreview(FVector2D ScreenDelta);
 	void ZoomPreview(float WheelDelta);
 	bool FocusPreviewUnderCursor();
+	void GetPreviewBodyEntries(TArray<FAPSPreviewBodyEntry>& OutEntries) const;
+	bool FocusPreviewBody(const TWeakObjectPtr<AActor>& BodyActor);
+	AActor* GetSelectedPreviewBody() const { return SelectedPreviewBody.Get(); }
 
 	UFUNCTION(BlueprintCallable, Category = "World Generation|Civilization")
 	void SetSpawnClass(EAPSStartAssetSlot Slot, UClass* NewClass);
@@ -109,4 +123,8 @@ private:
 	TWeakObjectPtr<AAstroGenerator> PreviewGenerator;
 	FTimerHandle PreviewTimerHandle;
 	EAstroPreviewFocus PreviewFocus{EAstroPreviewFocus::Overview};
+	EAPSGenerationRoute GenerationRoute{EAPSGenerationRoute::Civilization};
+	TWeakObjectPtr<AActor> SelectedPreviewBody;
+	bool bPreserveCameraOnNextPreview{false};
+	bool bForceRefocusOnNextPreview{false};
 };

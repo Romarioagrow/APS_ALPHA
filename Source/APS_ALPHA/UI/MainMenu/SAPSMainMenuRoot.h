@@ -10,6 +10,7 @@ struct FStreamableHandle;
 class SBox;
 class UClass;
 class UGameSave;
+class UUserWidget;
 
 enum class EAPSMenuPage : uint8
 {
@@ -17,7 +18,9 @@ enum class EAPSMenuPage : uint8
 	ChoosePath,
 	ExistingWorlds,
 	AstronomicalGeneration,
-	Civilization
+	Civilization,
+	Profile,
+	Settings
 };
 
 struct FAPSExistingWorldEntry
@@ -78,6 +81,11 @@ private:
 	TSharedRef<SWidget> BuildChoosePathPage();
 	TSharedRef<SWidget> BuildExistingWorldsPage();
 	TSharedRef<SWidget> BuildCivilizationPage();
+	TSharedRef<SWidget> BuildProfilePage();
+	TSharedRef<SWidget> BuildSettingsPage();
+	TSharedRef<SWidget> BuildAuxiliaryPage(const FText& SectionTitle,
+		TSoftClassPtr<UUserWidget>& WidgetClass, TWeakObjectPtr<UUserWidget>& WidgetInstance,
+		const FText& LoadingText);
 	TSharedRef<SWidget> BuildHeader(const FText& SectionTitle, bool bShowBack = true);
 	TSharedRef<SWidget> BuildPathCard(const FText& Title, const FText& Description,
 		const FSlateBrush* Image, const FLinearColor& Accent, FSimpleDelegate Action,
@@ -85,6 +93,8 @@ private:
 	TSharedRef<SWidget> BuildSpawnCard(EAPSStartAssetSlot Slot, const FText& Label);
 
 	void LoadVisualResources();
+	void BeginAuxiliaryMenuLoad();
+	void OnAuxiliaryMenuLoaded();
 	void LoadExistingWorlds();
 	void RebuildExistingWorldGrid();
 	void RebuildExistingWorldDetails();
@@ -99,15 +109,20 @@ private:
 	void OnSpawnClassSelectionLoaded(EAPSStartAssetSlot Slot, FSoftObjectPath RequestedPath);
 	void RefreshSpawnClassBrush(EAPSStartAssetSlot Slot);
 	FText GetSpawnClassName(EAPSStartAssetSlot Slot) const;
+	FText GetSpawnClassOptionName(EAPSStartAssetSlot Slot, int32 OptionIndex) const;
 	const FSlateBrush* GetSpawnClassBrush(EAPSStartAssetSlot Slot) const;
 	FReply CycleSpawnClass(EAPSStartAssetSlot Slot, int32 Direction);
+	FReply SelectSpawnClass(EAPSStartAssetSlot Slot, int32 OptionIndex);
 
 	FReply Back();
 	FReply OpenChoosePath();
 	FReply StartSingleGame();
 	FReply OpenExistingWorlds();
-	FReply OpenAstronomicalGeneration(EAstroPreviewFocus Focus);
+	FReply OpenAstronomicalGeneration(EAstroPreviewFocus Focus, EAPSGenerationRoute Route);
+	void ContinueAstronomicalGeneration();
 	FReply OpenCivilization();
+	FReply OpenProfile();
+	FReply OpenSettings();
 	FReply CommitCivilization();
 	FReply ContinueExistingWorld();
 	FReply SelectExistingWorld(TSharedPtr<FAPSExistingWorldEntry> Entry);
@@ -125,6 +140,8 @@ private:
 	TWeakObjectPtr<UWorldGenerationViewModel> ViewModel;
 	EAPSMenuPage CurrentPage{EAPSMenuPage::Landing};
 	EAPSMenuPage PreviousPage{EAPSMenuPage::Landing};
+	/** The enum defaults to Landing before the first widget tree is populated. */
+	bool bHasBuiltCurrentPage{false};
 
 	TSharedPtr<SBox> ContentHost;
 	TSharedPtr<SBox> ExistingWorldGridHost;
@@ -144,6 +161,12 @@ private:
 	TMap<EAPSStartAssetSlot, FSlateBrush> SpawnClassBrushes;
 	TMap<EAPSStartAssetSlot, TSharedPtr<FStreamableHandle>> SpawnSelectionLoadHandles;
 	bool bSpawnClassOptionsDiscovered{false};
+
+	TSoftClassPtr<UUserWidget> SettingsPanelClass;
+	TSoftClassPtr<UUserWidget> ProfilePanelClass;
+	TWeakObjectPtr<UUserWidget> SettingsPanelInstance;
+	TWeakObjectPtr<UUserWidget> ProfilePanelInstance;
+	TSharedPtr<FStreamableHandle> AuxiliaryMenuLoadHandle;
 
 	FSlateBrush SystemImage;
 	FSlateBrush PlanetImage;

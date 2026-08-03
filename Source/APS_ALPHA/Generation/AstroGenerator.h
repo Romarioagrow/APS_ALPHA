@@ -34,6 +34,14 @@ enum class EOrbitHeight : uint8;
 struct FPlanetModel;
 struct FPlanetData;
 
+struct APS_ALPHA_API FAPSPreviewBodyEntry
+{
+	TWeakObjectPtr<AActor> Actor;
+	FText Label;
+	FText Details;
+	int32 Depth{0};
+};
+
 UENUM(BlueprintType)
 enum class EAstroPreviewFocus : uint8
 {
@@ -61,7 +69,7 @@ public:
 
 	void SpawnPlanetMoons(const TSharedPtr<FPlanetModel>& PlanetModel);
 
-	void ResolveSpawnLocation(const ASpaceship* NewHomeSpaceship, FVector& CharSpawnLocation);
+	bool ResolveSpawnLocation(const ASpaceship* NewHomeSpaceship, FVector& CharSpawnLocation);
 
 	void SetGeneratedWorld(UGeneratedWorld* InGeneratedWorld);
 
@@ -85,6 +93,19 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "World Generation|Preview")
 	void FocusPreviewTarget(EAstroPreviewFocus NewFocus, APlayerController* PlayerController = nullptr);
+
+	/** Returns the materialized star-system hierarchy used by the live Slate browser. */
+	void GetPreviewBodyEntries(TArray<FAPSPreviewBodyEntry>& OutEntries) const;
+
+	/** Focuses the exact selected planet or moon instead of the generic home-body slot. */
+	bool FocusPreviewBodyActor(AActor* BodyActor, APlayerController* PlayerController = nullptr);
+
+	/**
+	 * Picks a visible actor-free cluster system in screen space. Cluster stars deliberately
+	 * have no collision, so a physics trace can never select them without this path.
+	 */
+	bool FocusPreviewClusterSystemAtScreenPosition(
+		APlayerController* PlayerController, const FVector2D& ScreenPosition, float MaxPixelDistance = 28.0f);
 
 	UFUNCTION(BlueprintCallable, Category = "World Generation|Preview")
 	void OrbitPreviewCamera(FVector2D ScreenDelta);
@@ -112,6 +133,15 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "World Generation|Preview", meta = (ClampMin = "100", ClampMax = "50000"))
 	int32 PreviewMaxInstances{3000};
 
+	/**
+	 * The world model may describe millions of stars, but a committed gameplay
+	 * world only needs a representative HISM sample. Keeping this independent
+	 * from GalaxyStarCount preserves full-scale data without blocking travel or
+	 * overflowing renderer instance indices.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "World Generation|Performance", meta = (ClampMin = "1000", ClampMax = "500000"))
+	int32 RuntimeMaxGalaxyInstances{25000};
+
 	/** Keeps live menu regeneration spatially stable while individual controls change. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "World Generation|Preview")
 	int32 PreviewGenerationSeed{271828};
@@ -137,6 +167,7 @@ protected:
 	void StartPreviewCameraTransition(const FVector& Center, double Radius, APlayerController* PlayerController);
 
 	EAstroPreviewFocus PreviewFocus{EAstroPreviewFocus::Overview};
+	int32 SelectedPreviewClusterSystemIndex{INDEX_NONE};
 	FTransform PreviewCameraStartTransform;
 	FTransform PreviewCameraTargetTransform;
 	FVector PreviewOrbitCenter{FVector::ZeroVector};
@@ -146,6 +177,8 @@ protected:
 	bool bPreviewCameraTransitionActive{false};
 
 	void Test_GenerateFullscaled();
+
+	void InitLegacyAuthoredGenerationLevel();
 
 	void InitGenerationLevel();
 
@@ -195,6 +228,10 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, Category = "Generated Tech Actros")
 	ASpaceShipyard* HomeSpaceShipyard;
+
+	/** Prevents a second generation callback from duplicating the committed civilization starter set. */
+	UPROPERTY(Transient)
+	bool bStarterHierarchySpawned{false};
 
 	UPROPERTY(VisibleAnywhere, Category = "Generated Astro Actros")
 	AActor* GeneratedWorld;

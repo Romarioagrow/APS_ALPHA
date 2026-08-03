@@ -53,14 +53,16 @@ void UGalaxyGenerator::GenerateGalaxyOctreeStars(UStarGenerator* StarGenerator, 
 	}
 
 	double StarsCount = GalaxyModel->StarsCount;
+	int32 SkippedStarCount = 0;
+	constexpr int32 MaxPlacementAttempts = 96;
 	NewGalaxy->StarMeshInstances->NumCustomDataFloats = 6;
 	NewGalaxy->StarMeshInstances->PreAllocateInstancesMemory(FMath::Max(0, FMath::FloorToInt(StarsCount)));
 	for (int i = 0; i < StarsCount; i++)
 	{
 		TSharedPtr<FStarModel> StarModel = MakeShared<FStarModel>();
 		StarGenerator->GenerateRandomStarModel(StarModel);
-		bool spaceOccupied = true;
-		FVector position;
+		bool bPositionAvailable = false;
+		FVector Position = FVector::ZeroVector;
 
 		double LightYearInKm = 9.461e12;
 		double UnitInKm = 6963.4;
@@ -68,17 +70,26 @@ void UGalaxyGenerator::GenerateGalaxyOctreeStars(UStarGenerator* StarGenerator, 
 		double AstroScaleCoeff = GalaxyModel->StarsDensity;
 		LightYearInUnrealUnits /= AstroScaleCoeff;
 
-		while (spaceOccupied)
+		for (int32 Attempt = 0; Attempt < MaxPlacementAttempts; ++Attempt)
 		{
-			position = (this->*generateStar)(GalaxyModel->GalaxyClass, LightYearInUnrealUnits, StarModel->Radius);
-			spaceOccupied = galaxyOctree->SpaceOccupied(position, StarModel->Radius);
+			Position = (this->*generateStar)(GalaxyModel->GalaxyClass, LightYearInUnrealUnits, StarModel->Radius);
+			if (!galaxyOctree->SpaceOccupied(Position, StarModel->Radius))
+			{
+				bPositionAvailable = true;
+				break;
+			}
+		}
+		if (!bPositionAvailable)
+		{
+			++SkippedStarCount;
+			continue;
 		}
 
 		// Вставляем звезду в октодерево
-		galaxyOctree->InsertStar(position, StarModel->Radius);
+		galaxyOctree->InsertStar(Position, StarModel->Radius);
 
 		FTransform StarTransform;
-		StarTransform.SetLocation(position);
+		StarTransform.SetLocation(Position);
 		StarTransform.SetScale3D(FVector(UStarGenerator::GetFarStarVisualRadius(StarModel->Radius)));
 		int32 StarInstIndex = NewGalaxy->StarMeshInstances->AddInstance(StarTransform, true);
 
@@ -91,6 +102,12 @@ void UGalaxyGenerator::GenerateGalaxyOctreeStars(UStarGenerator* StarGenerator, 
 		NewGalaxy->StarMeshInstances->SetCustomDataValue(StarInstIndex, 3, StarEmission, false);
 		NewGalaxy->StarMeshInstances->SetCustomDataValue(StarInstIndex, 4, FMath::FRand(), false);
 		NewGalaxy->StarMeshInstances->SetCustomDataValue(StarInstIndex, 5, 0.0f, false);
+	}
+	if (SkippedStarCount > 0)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[APS.WorldGeneration] Galaxy skipped %d visual stars after bounded placement retries"),
+			SkippedStarCount);
 	}
 	UAPSStarRenderStabilitySubsystem::StabilizeInstances(NewGalaxy->StarMeshInstances);
 	delete galaxyOctree;

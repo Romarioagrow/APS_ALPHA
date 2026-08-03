@@ -83,33 +83,31 @@ void UStarGenerator::GenerateStarModelByProbability(TSharedPtr<FStarModel> StarM
 	//FStarModel* StarModel = new FStarModel();
 	//TUniquePtr<FStarModel> StarModel = MakeUnique<FStarModel>();
 
-	EStellarType StellarType;
-	if (StarClusterPopulationWeights.Contains(FStarClusterModel->StarClusterPopulation))
-	{
-		TMap<EStellarType, float> StellarTypeMap = StarClusterPopulationWeights[FStarClusterModel->
-			StarClusterPopulation];
-		StellarType = GenerateStellarTypeByRandomWeights(StellarTypeMap);
-	}
-	else
-	{
-		UE_LOG(LogTemp, Warning, TEXT("StarClusterPopulationWeights doesn't contain %s"),
-		       *UEnum::GetValueAsString(FStarClusterModel->StarClusterPopulation));
-		StellarType = EStellarType::Unknown;
-	}
+	// Unknown means "use a broad natural mix". It must not turn every
+	// generated star into an invalid zero-data model.
+	const EStarClusterPopulation PopulationPreset =
+		StarClusterPopulationWeights.Contains(FStarClusterModel->StarClusterPopulation)
+			? FStarClusterModel->StarClusterPopulation
+			: EStarClusterPopulation::AllSequenses;
+	const TMap<EStellarType, float>& StellarTypeMap = StarClusterPopulationWeights.FindChecked(PopulationPreset);
+	const EStellarType StellarType = GenerateStellarTypeByRandomWeights(StellarTypeMap);
 	StarModel->StellarType = StellarType; //GenerateStarClassByRandomWeights();
 
-	ESpectralClass SpectralClass;
-	if (StarClusterCompositionWeights.Contains(FStarClusterModel->StarClusterComposition))
+	const EStarClusterComposition CompositionPreset =
+		StarClusterCompositionWeights.Contains(FStarClusterModel->StarClusterComposition)
+			? FStarClusterModel->StarClusterComposition
+			: EStarClusterComposition::AllSpectral;
+	const TMap<ESpectralClass, int>& SpectralClassMap = StarClusterCompositionWeights.FindChecked(CompositionPreset);
+	ESpectralClass SpectralClass = GenerateSpectralClassByProbability(SpectralClassMap);
+	if (StellarType == EStellarType::MainSequence && !MainSequenceMassRanges.Contains(SpectralClass))
 	{
-		TMap<ESpectralClass, int> SpectralClassMap = StarClusterCompositionWeights[FStarClusterModel->
-			StarClusterComposition];
-		SpectralClass = GenerateSpectralClassByProbability(SpectralClassMap);
-	}
-	else
-	{
-		UE_LOG(LogTemp, Warning, TEXT("StarClusterCompositionWeights doesn't contain %s"),
-		       *UEnum::GetValueAsString(FStarClusterModel->StarClusterComposition));
-		SpectralClass = ESpectralClass::Unknown;
+		// L/T/Y are substellar classes; compact-object classes are not main
+		// sequence stars. Keep a valid visible star instead of producing mass 0.
+		SpectralClass = SpectralClass == ESpectralClass::L
+			|| SpectralClass == ESpectralClass::T
+			|| SpectralClass == ESpectralClass::Y
+				? ESpectralClass::M
+				: ESpectralClass::G;
 	}
 	StarModel->SpectralClass = SpectralClass;
 	//GenerateSpectralClassByProbability()//ChooseSpectralClassByStellarClass(StarModel.StellarClass);
@@ -639,6 +637,12 @@ ESpectralType UStarGenerator::CalculateSpectralType(EStellarType StellarType, do
 		return ESpectralType::VII;
 	case EStellarType::BrownDwarf:
 		return ESpectralType::VIII;
+	case EStellarType::Neutron:
+	case EStellarType::Protostar:
+	case EStellarType::Pulsar:
+	case EStellarType::BlackHole:
+	case EStellarType::Unknown:
+		return ESpectralType::Unknown;
 	case EStellarType::SuperGiant:
 		{
 			FStarAttributeRanges& AttributeRanges = StarAttributeRanges[StellarType];
@@ -660,10 +664,9 @@ ESpectralType UStarGenerator::CalculateSpectralType(EStellarType StellarType, do
 				return ESpectralType::Ia;
 			}
 		}
-	// case EStellarClass::Unknown:
 	default:
-		UE_LOG(LogTemp, Warning, TEXT("Unexpected StellarType value"));
-		return ESpectralType::Unknown; // Return a default value
+		ensureMsgf(false, TEXT("Invalid EStellarType value: %d"), static_cast<int32>(StellarType));
+		return ESpectralType::Unknown;
 	}
 }
 
@@ -740,10 +743,9 @@ double UStarGenerator::RandomFromRange(TTuple<double, double> Range)
 
 double UStarGenerator::RandomMass(ESpectralClass SpectralClass)
 {
-	if (MainSequenceMassRanges.Contains(SpectralClass))
+	if (const TTuple<double, double>* Range = MainSequenceMassRanges.Find(SpectralClass))
 	{
-		auto Range = MainSequenceMassRanges[SpectralClass];
-		return RandomStream.FRandRange(Range.Get<0>(), Range.Get<1>());
+		return RandomStream.FRandRange(Range->Get<0>(), Range->Get<1>());
 	}
 	else
 	{

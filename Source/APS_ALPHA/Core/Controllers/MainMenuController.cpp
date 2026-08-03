@@ -5,6 +5,7 @@
 #include "APS_ALPHA/UI/MainMenu/WorldGenerationViewModel.h"
 #include "APS_ALPHA/UI/MainMenu/SAPSMainMenuRoot.h"
 #include "Blueprint/WidgetLayoutLibrary.h"
+#include "Engine/GameInstance.h"
 #include "Engine/GameViewportClient.h"
 #include "Engine/World.h"
 #include "Kismet/GameplayStatics.h"
@@ -13,6 +14,9 @@
 void AMainMenuController::BeginPlay()
 {
 	Super::BeginPlay();
+	UE_LOG(LogTemp, Log, TEXT("[APS.Menu] Main menu controller BeginPlay local=%s world=%s"),
+		IsLocalController() ? TEXT("true") : TEXT("false"), *GetNameSafe(GetWorld()));
+	SlateMenuInstallAttempts = 0;
 	InstallSlateMenuTimer = GetWorldTimerManager().SetTimerForNextTick(
 		this, &AMainMenuController::InstallSlateMenu);
 }
@@ -32,8 +36,25 @@ void AMainMenuController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 void AMainMenuController::InstallSlateMenu()
 {
-	if (!GEngine || !GEngine->GameViewport)
+	if (SlateMenuRoot.IsValid() && SlateMenuContainer.IsValid())
 	{
+		return;
+	}
+
+	++SlateMenuInstallAttempts;
+	UGameViewportClient* ViewportClient = GetGameInstance()
+		? GetGameInstance()->GetGameViewportClient() : nullptr;
+	if (!ViewportClient && GEngine)
+	{
+		ViewportClient = GEngine->GameViewport;
+	}
+	if (!IsLocalController() || !ViewportClient)
+	{
+		UE_LOG(LogTemp, Verbose,
+			TEXT("[APS.Menu] Slate install deferred attempt=%d local=%s viewport=%s"),
+			SlateMenuInstallAttempts, IsLocalController() ? TEXT("true") : TEXT("false"),
+			ViewportClient ? TEXT("ready") : TEXT("missing"));
+		ScheduleSlateMenuInstallRetry();
 		return;
 	}
 
@@ -54,20 +75,38 @@ void AMainMenuController::InstallSlateMenu()
 		.Controller(this)
 		.ViewModel(WorldGenerationViewModel);
 	SlateMenuContainer = SNew(SWeakWidget).PossiblyNullContent(SlateMenuRoot.ToSharedRef());
-	GEngine->GameViewport->AddViewportWidgetContent(SlateMenuContainer.ToSharedRef(), 1000);
+	ViewportClient->AddViewportWidgetContent(SlateMenuContainer.ToSharedRef(), 1000);
 
 	bShowMouseCursor = true;
 	FInputModeUIOnly InputMode;
 	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
 	InputMode.SetWidgetToFocus(SlateMenuRoot);
 	SetInputMode(InputMode);
+	UE_LOG(LogTemp, Log, TEXT("[APS.Menu] Slate root installed attempt=%d viewport=%s"),
+		SlateMenuInstallAttempts, *GetNameSafe(ViewportClient));
+}
+
+void AMainMenuController::ScheduleSlateMenuInstallRetry()
+{
+	if (!GetWorld() || GetWorld()->bIsTearingDown)
+	{
+		return;
+	}
+	GetWorldTimerManager().SetTimer(
+		InstallSlateMenuTimer, this, &AMainMenuController::InstallSlateMenu, 0.10f, false);
 }
 
 void AMainMenuController::RemoveSlateMenu()
 {
-	if (SlateMenuContainer.IsValid() && GEngine && GEngine->GameViewport)
+	UGameViewportClient* ViewportClient = GetGameInstance()
+		? GetGameInstance()->GetGameViewportClient() : nullptr;
+	if (!ViewportClient && GEngine)
 	{
-		GEngine->GameViewport->RemoveViewportWidgetContent(SlateMenuContainer.ToSharedRef());
+		ViewportClient = GEngine->GameViewport;
+	}
+	if (SlateMenuContainer.IsValid() && ViewportClient)
+	{
+		ViewportClient->RemoveViewportWidgetContent(SlateMenuContainer.ToSharedRef());
 	}
 	SlateMenuContainer.Reset();
 	SlateMenuRoot.Reset();
@@ -79,10 +118,15 @@ void AMainMenuController::LaunchSingleGame()
 		? GetGameInstance()->GetSubsystem<UMainGameplayInstance>() : nullptr)
 	{
 		GameplayInstance->bIsLoadingMode = false;
+		GameplayInstance->bUseAuthoredSinglePlayWorld = true;
+		GameplayInstance->bSpawnGeneratedCivilization = false;
 		GameplayInstance->SaveSlotName.Reset();
 		GameplayInstance->NewGeneratedWorld = nullptr;
+		GameplayInstance->SpawnParameters = nullptr;
 		GameplayInstance->CurrentCivilization = nullptr;
 	}
+	// Deliberately no generation/commit work here. This route is equivalent to
+	// pressing Play while L_APS_SinglePlay_StartLocation is open in the editor.
 	UGameplayStatics::OpenLevel(this, TEXT("L_APS_SinglePlay_StartLocation"));
 }
 

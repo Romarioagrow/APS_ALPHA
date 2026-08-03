@@ -32,9 +32,12 @@
 #include "Engine/OverlapResult.h"
 #include "Engine/World.h"
 #include "Camera/CameraComponent.h"
+#include "Camera/PlayerCameraManager.h"
 #include "Components/SceneComponent.h"
 #include "Components/PrimitiveComponent.h"
+#include "Engine/StaticMesh.h"
 #include "GameFramework/PlayerController.h"
+#include "Misc/ScopeExit.h"
 
 AAstroGenerator::AAstroGenerator()
 {
@@ -66,13 +69,13 @@ void AAstroGenerator::BeginPlay()
 
 		if (bIntegrateStartPlanet && WSR_StartHomePlanet)
 		{
-			// The authored Single Play level already owns its start planet,
-			// headquarters and station hierarchy. Generate exactly one star
-			// system and integrate that hierarchy into it. Running the normal
-			// generation path first leaves a second procedural surface behind
-			// and then moves the Blueprint hierarchy a second time.
+			// This is the legacy, authored SinglePlay contract. The placed
+			// generator first builds its configured astronomical background and
+			// home system, then integrates the serialized WorldScape/HQ hierarchy.
+			// Menu previews use a separate tagged generator and never enter here.
 			UE_LOG(LogTemp, Warning,
-				TEXT("Single Play integration: skipping normal generation and preserving the authored start hierarchy"));
+				TEXT("Single Play integration: running isolated legacy authored generation path"));
+			InitLegacyAuthoredGenerationLevel();
 			GenerateStarSystemAndIntegratePlanet();
 		}
 		else
@@ -87,6 +90,47 @@ void AAstroGenerator::BeginPlay()
 	}
 
 	UE_LOG(LogTemp, Warning, TEXT("=== AAstroGenerator::BeginPlay END ==="));
+}
+
+void AAstroGenerator::InitLegacyAuthoredGenerationLevel()
+{
+	// Keep the serialized SinglePlay generator equivalent to its pre-menu
+	// sequence. Galaxy and StarCluster intentionally remain separate levels;
+	// the modern preview is free to compose them on its own actor instance.
+	bool bGeneratedHomeSystemAsPrimaryLevel = false;
+
+	switch (AstroGenerationLevel)
+	{
+	case EAstroGenerationLevel::GalaxiesCluster:
+		GenerateGalaxiesCluster();
+		break;
+	case EAstroGenerationLevel::Galaxy:
+		GenerateGalaxy();
+		break;
+	case EAstroGenerationLevel::StarCluster:
+		GenerateStarCluster();
+		break;
+	case EAstroGenerationLevel::StarSystem:
+		GenerateHomeStarSystem();
+		bGeneratedHomeSystemAsPrimaryLevel = true;
+		break;
+	case EAstroGenerationLevel::PlanetSystem:
+		GeneratePlanetSystem();
+		bGeneratedHomeSystemAsPrimaryLevel = true;
+		break;
+	case EAstroGenerationLevel::SinglePlanet:
+		GenerateSinglePlanet();
+		bGeneratedHomeSystemAsPrimaryLevel = true;
+		break;
+	default:
+		GenerateRandomWorld();
+		break;
+	}
+
+	if (bGenerateHomeSystem && !bGeneratedHomeSystemAsPrimaryLevel)
+	{
+		GenerateHomeStarSystem();
+	}
 }
 
 void AAstroGenerator::Tick(float DeltaSeconds)
@@ -211,6 +255,7 @@ bool AAstroGenerator::RegeneratePreview(UGeneratedWorld* InGeneratedWorld)
 
 void AAstroGenerator::ClearGeneratedPreview()
 {
+	SelectedPreviewClusterSystemIndex = INDEX_NONE;
 	TArray<AActor*> GeneratedRoots;
 	GeneratedRoots.AddUnique(GeneratedStarCluster);
 	GeneratedRoots.AddUnique(GeneratedGalaxy);
@@ -360,6 +405,10 @@ void AAstroGenerator::StartPreviewCameraTransition(const FVector& Center, double
 
 void AAstroGenerator::FocusPreviewTarget(EAstroPreviewFocus NewFocus, APlayerController* PlayerController)
 {
+	// Explicit hierarchy buttons always return to the generated home hierarchy.
+	// A concrete HISM system selection is retained only while it is the active
+	// double-click target.
+	SelectedPreviewClusterSystemIndex = INDEX_NONE;
 	PreviewFocus = NewFocus;
 	FBox Bounds = GetPreviewFocusBounds(NewFocus);
 	if (!Bounds.IsValid)
@@ -368,6 +417,203 @@ void AAstroGenerator::FocusPreviewTarget(EAstroPreviewFocus NewFocus, APlayerCon
 	}
 	StartPreviewCameraTransition(
 		Bounds.GetCenter(), FMath::Max(Bounds.GetExtent().Size(), 500.0), PlayerController);
+}
+
+void AAstroGenerator::GetPreviewBodyEntries(TArray<FAPSPreviewBodyEntry>& OutEntries) const
+{
+	OutEntries.Reset();
+	if (IsValid(GeneratedStarCluster) && SelectedPreviewClusterSystemIndex != INDEX_NONE)
+	{
+		if (const FClusterStarSystemRecord* Record =
+			GeneratedStarCluster->FindPotentialSystem(SelectedPreviewClusterSystemIndex))
+		{
+			FAPSPreviewBodyEntry SystemEntry;
+			SystemEntry.Label = FText::FromString(FString::Printf(TEXT("SYSTEM %s"),
+				*Record->StableId.ToString(EGuidFormats::Short).ToUpper()));
+			SystemEntry.Details = FText::FromString(FString::Printf(
+				TEXT("%d STAR%s  /  %d POTENTIAL PLANET%s  /  LIGHTWEIGHT FULL-SCALE RECORD"),
+				Record->SystemModel.AmountOfStars,
+				Record->SystemModel.AmountOfStars == 1 ? TEXT("") : TEXT("S"),
+				Record->SystemModel.PotentialPlanetCount,
+				Record->SystemModel.PotentialPlanetCount == 1 ? TEXT("") : TEXT("S")));
+			SystemEntry.Depth = -1;
+			OutEntries.Add(MoveTemp(SystemEntry));
+			return;
+		}
+	}
+	if (!IsValid(HomeStar))
+	{
+		return;
+	}
+
+	FAPSPreviewBodyEntry StarEntry;
+	StarEntry.Actor = HomeStar;
+	StarEntry.Label = HomeStar->AstroName.IsNone()
+		? FText::FromString(TEXT("HOME STAR")) : FText::FromName(HomeStar->AstroName);
+	StarEntry.Details = FText::FromString(HomeStar->FullSpectralName.IsNone()
+		? TEXT("STELLAR PRIMARY") : HomeStar->FullSpectralName.ToString());
+	OutEntries.Add(MoveTemp(StarEntry));
+
+	const APlanetarySystem* PlanetarySystem = HomeStar->PlanetarySystem;
+	if (!IsValid(PlanetarySystem))
+	{
+		return;
+	}
+
+	for (int32 PlanetIndex = 0; PlanetIndex < PlanetarySystem->PlanetsActorsList.Num(); ++PlanetIndex)
+	{
+		const APlanet* Planet = PlanetarySystem->PlanetsActorsList[PlanetIndex];
+		if (!IsValid(Planet))
+		{
+			continue;
+		}
+
+		FAPSPreviewBodyEntry PlanetEntry;
+		PlanetEntry.Actor = const_cast<APlanet*>(Planet);
+		PlanetEntry.Label = Planet->AstroName.IsNone()
+			? FText::FromString(FString::Printf(TEXT("PLANET %02d"), PlanetIndex + 1))
+			: FText::FromName(Planet->AstroName);
+		PlanetEntry.Details = FText::FromString(FString::Printf(TEXT("%s  /  %d KM  /  %d MOONS"),
+			*UEnum::GetDisplayValueAsText(Planet->PlanetType).ToString().ToUpper(),
+			Planet->PlanetRadiusKM, Planet->Moons.Num()));
+		PlanetEntry.Depth = 1;
+		OutEntries.Add(MoveTemp(PlanetEntry));
+
+		for (int32 MoonIndex = 0; MoonIndex < Planet->Moons.Num(); ++MoonIndex)
+		{
+			const AMoon* Moon = Planet->Moons[MoonIndex];
+			if (!IsValid(Moon))
+			{
+				continue;
+			}
+			FAPSPreviewBodyEntry MoonEntry;
+			MoonEntry.Actor = const_cast<AMoon*>(Moon);
+			MoonEntry.Label = Moon->AstroName.IsNone()
+				? FText::FromString(FString::Printf(TEXT("MOON %02d.%02d"), PlanetIndex + 1, MoonIndex + 1))
+				: FText::FromName(Moon->AstroName);
+			MoonEntry.Details = FText::FromString(FString::Printf(TEXT("%s  /  %d KM"),
+				*UEnum::GetDisplayValueAsText(Moon->MoonType).ToString().ToUpper(), Moon->PlanetRadiusKM));
+			MoonEntry.Depth = 2;
+			OutEntries.Add(MoveTemp(MoonEntry));
+		}
+	}
+}
+
+bool AAstroGenerator::FocusPreviewBodyActor(AActor* BodyActor, APlayerController* PlayerController)
+{
+	if (!IsValid(BodyActor) || !BodyActor->IsAttachedTo(this))
+	{
+		return false;
+	}
+
+	FBox Bounds = BodyActor->GetComponentsBoundingBox(true);
+	if (!Bounds.IsValid)
+	{
+		Bounds = FBox(BodyActor->GetActorLocation() - FVector(500.0),
+			BodyActor->GetActorLocation() + FVector(500.0));
+	}
+
+	PreviewFocus = BodyActor->IsA<AStar>() ? EAstroPreviewFocus::HomeStar : EAstroPreviewFocus::HomePlanet;
+	StartPreviewCameraTransition(Bounds.GetCenter(), FMath::Max(Bounds.GetExtent().Size(), 500.0), PlayerController);
+	return true;
+}
+
+bool AAstroGenerator::FocusPreviewClusterSystemAtScreenPosition(
+	APlayerController* PlayerController, const FVector2D& ScreenPosition, float MaxPixelDistance)
+{
+	if (!IsValid(PlayerController) || !IsValid(GeneratedStarCluster)
+		|| !IsValid(GeneratedStarCluster->StarMeshInstances)
+		|| GeneratedStarCluster->PotentialStarSystems.IsEmpty())
+	{
+		return false;
+	}
+
+	const float SafePixelDistance = FMath::Clamp(MaxPixelDistance, 4.0f, 96.0f);
+	const double MaxDistanceSquared = FMath::Square(static_cast<double>(SafePixelDistance));
+	double BestScreenDistanceSquared = MaxDistanceSquared;
+	double BestWorldDistanceSquared = TNumericLimits<double>::Max();
+	int32 BestInstanceIndex = INDEX_NONE;
+	FVector BestWorldLocation = FVector::ZeroVector;
+	FTransform BestWorldTransform;
+
+	const FVector CameraLocation = PlayerController->PlayerCameraManager
+		? PlayerController->PlayerCameraManager->GetCameraLocation() : FVector::ZeroVector;
+	for (const FClusterStarSystemRecord& Record : GeneratedStarCluster->PotentialStarSystems)
+	{
+		if (Record.InstanceIndex == INDEX_NONE)
+		{
+			continue;
+		}
+
+		FTransform LocalTransform;
+		if (!GeneratedStarCluster->StarMeshInstances->GetInstanceTransform(
+			Record.InstanceIndex, LocalTransform, false)
+			|| LocalTransform.GetScale3D().GetAbsMax() <= UE_SMALL_NUMBER)
+		{
+			// The materialized home system hides its original HISM proxy.
+			continue;
+		}
+
+		const FVector WorldLocation = GeneratedStarCluster->GetPotentialSystemWorldLocation(Record);
+		FVector2D ProjectedPosition;
+		if (WorldLocation.ContainsNaN()
+			|| !PlayerController->ProjectWorldLocationToScreen(WorldLocation, ProjectedPosition, true))
+		{
+			continue;
+		}
+
+		const double ScreenDistanceSquared = FVector2D::DistSquared(ScreenPosition, ProjectedPosition);
+		if (ScreenDistanceSquared > MaxDistanceSquared)
+		{
+			continue;
+		}
+		const double WorldDistanceSquared = FVector::DistSquared(CameraLocation, WorldLocation);
+		const bool bCloserToCursor = ScreenDistanceSquared + 0.25 < BestScreenDistanceSquared;
+		const bool bSameScreenPointAndNearer = FMath::IsNearlyEqual(
+			ScreenDistanceSquared, BestScreenDistanceSquared, 0.25) && WorldDistanceSquared < BestWorldDistanceSquared;
+		if (!bCloserToCursor && !bSameScreenPointAndNearer)
+		{
+			continue;
+		}
+
+		FTransform WorldTransform;
+		if (!GeneratedStarCluster->StarMeshInstances->GetInstanceTransform(
+			Record.InstanceIndex, WorldTransform, true))
+		{
+			continue;
+		}
+		BestScreenDistanceSquared = ScreenDistanceSquared;
+		BestWorldDistanceSquared = WorldDistanceSquared;
+		BestInstanceIndex = Record.InstanceIndex;
+		BestWorldLocation = WorldLocation;
+		BestWorldTransform = WorldTransform;
+	}
+
+	const FClusterStarSystemRecord* SelectedRecord =
+		GeneratedStarCluster->FindPotentialSystem(BestInstanceIndex);
+	if (!SelectedRecord)
+	{
+		return false;
+	}
+
+	double ProxyRadius = 500.0;
+	if (const UStaticMesh* StarMesh = GeneratedStarCluster->StarMeshInstances->GetStaticMesh())
+	{
+		ProxyRadius = FMath::Max(
+			static_cast<double>(StarMesh->GetBounds().SphereRadius)
+				* BestWorldTransform.GetScale3D().GetAbsMax(), ProxyRadius);
+	}
+	// Keep the selected point legible without materializing a heavyweight star,
+	// planet terrain or collision hierarchy inside the menu.
+	const double FocusRadius = FMath::Clamp(ProxyRadius * 10.0, 500.0, 2.0e6);
+	SelectedPreviewClusterSystemIndex = BestInstanceIndex;
+	PreviewFocus = EAstroPreviewFocus::HomeSystem;
+	StartPreviewCameraTransition(BestWorldLocation, FocusRadius, PlayerController);
+	UE_LOG(LogTemp, Log,
+		TEXT("[APS.WorldGeneration] Selected cluster system %s at HISM instance %d (%d potential planets)"),
+		*SelectedRecord->StableId.ToString(EGuidFormats::DigitsWithHyphensLower), BestInstanceIndex,
+		SelectedRecord->SystemModel.PotentialPlanetCount);
+	return true;
 }
 
 void AAstroGenerator::OrbitPreviewCamera(FVector2D ScreenDelta)
@@ -431,7 +677,7 @@ void AAstroGenerator::InitAstroGenerators()
 	}
 	else
 	{
-		UE_LOG(LogTemp, Warning, TEXT("All generators OK!"));
+		UE_LOG(LogTemp, VeryVerbose, TEXT("All generators OK!"));
 	}
 }
 
@@ -443,6 +689,14 @@ void AAstroGenerator::ApplySpawnParameters()
 		{
 			UMainGameplayInstance* GameplayInstance = GameInstance->GetSubsystem<UMainGameplayInstance>();
 			USpawnParameters* SpawnParams = GameplayInstance ? GameplayInstance->SpawnParameters : nullptr;
+			if (GameplayInstance && GameplayInstance->NewGeneratedWorld)
+			{
+				// A committed route is explicit and must not depend on potentially stale
+				// Blueprint CDO defaults. Civilization always builds its selected starter
+				// hierarchy; Generate Space/Create Planet never inherit one accidentally.
+				bSpawnStarterLocation = GameplayInstance->bSpawnGeneratedCivilization;
+				bCharacterSpawn = GameplayInstance->bSpawnGeneratedCivilization;
+			}
 
 			if (SpawnParams)
 			{
@@ -473,6 +727,10 @@ void AAstroGenerator::ApplyWorldModel()
 	bGenerateFullScaledWorld = GeneratedWorldModel->bGenerateFullScaledWorld;
 	bGenerateHomeSystem = GeneratedWorldModel->bGenerateHomeSystem;
 	bStartWithHomePlanet = GeneratedWorldModel->bStartWithHomePlanet;
+	// The legacy generator exposed a second internal switch that was not copied
+	// from the menu model. Make START WITH HOME PLANET authoritative for committed
+	// gameplay as well as the live preview.
+	bSpawnStarterPlanet = bStartWithHomePlanet;
 	bRandomHomeSystem = GeneratedWorldModel->bRandomHomeSystem;
 	bRandomHomeSystemType = GeneratedWorldModel->bRandomHomeSystemType;
 	bRandomHomeStar = GeneratedWorldModel->bRandomHomeStar;
@@ -534,7 +792,13 @@ void AAstroGenerator::GenerateStarCluster()
 		UE_LOG(LogTemp, Error, TEXT("Failed to spawn star cluster."));
 		return;
 	}
-	NewStarCluster->AttachToActor(this, FAttachmentTransformRules::KeepWorldTransform);
+	// A generated cluster is part of the galaxy, not a second unrelated root.
+	// Keep relative transforms here: the generator may already carry the full-scale
+	// world transform after GenerateGalaxy(), and KeepWorld would silently cancel it
+	// on the newly spawned cluster.
+	AActor* ClusterParent = IsValid(GeneratedGalaxy)
+		? static_cast<AActor*>(GeneratedGalaxy) : static_cast<AActor*>(this);
+	NewStarCluster->AttachToActor(ClusterParent, FAttachmentTransformRules::KeepRelativeTransform);
 
 	// Calculate Cluster Params
 	NewStarCluster->StarAmount = StarClusterGenerator->GetStarsAmountByRange(StarClusterModel->StarClusterSize);
@@ -553,14 +817,31 @@ void AAstroGenerator::GenerateStarCluster()
 	{
 		NewStarCluster->GenerationSeed = FMath::RandRange(1, MAX_int32);
 	}
+	if (IsValid(GeneratedGalaxy) && IsValid(GeneratedGalaxy->StarMeshInstances)
+		&& GeneratedGalaxy->StarMeshInstances->GetInstanceCount() > 0)
+	{
+		const uint32 PlacementHash = HashCombine(
+			GetTypeHash(NewStarCluster->GenerationSeed), GetTypeHash(PreviewGenerationSeed));
+		const int32 GalaxyInstanceIndex = static_cast<int32>(
+			PlacementHash % static_cast<uint32>(GeneratedGalaxy->StarMeshInstances->GetInstanceCount()));
+		FTransform GalaxyLocalTransform;
+		if (GeneratedGalaxy->StarMeshInstances->GetInstanceTransform(
+			GalaxyInstanceIndex, GalaxyLocalTransform, false))
+		{
+			NewStarCluster->SetActorRelativeLocation(GalaxyLocalTransform.GetLocation());
+			UE_LOG(LogTemp, Log,
+				TEXT("[APS.Hierarchy] Cluster %s placed inside galaxy %s at instance %d"),
+				*GetNameSafe(NewStarCluster), *GetNameSafe(GeneratedGalaxy), GalaxyInstanceIndex);
+		}
+	}
 	NewStarCluster->CalculateAffectionRadius();
 	NewStarCluster->PotentialStarSystems.Reserve(NewStarCluster->StarAmount);
 	NewStarCluster->StarMeshInstances->PreAllocateInstancesMemory(NewStarCluster->StarAmount);
 
-	UE_LOG(LogTemp, Warning, TEXT("StarCount: %d"), NewStarCluster->StarAmount);
-	UE_LOG(LogTemp, Warning, TEXT("StarDensity: %f"), NewStarCluster->StarDensity);
-	UE_LOG(LogTemp, Warning, TEXT("ClusterBounds: %s"), *NewStarCluster->ClusterBounds.ToString());
-	UE_LOG(LogTemp, Warning, TEXT("ClusterType: %d"), static_cast<int>(NewStarCluster->ClusterType));
+	UE_LOG(LogTemp, VeryVerbose, TEXT("StarCount: %d"), NewStarCluster->StarAmount);
+	UE_LOG(LogTemp, VeryVerbose, TEXT("StarDensity: %f"), NewStarCluster->StarDensity);
+	UE_LOG(LogTemp, VeryVerbose, TEXT("ClusterBounds: %s"), *NewStarCluster->ClusterBounds.ToString());
+	UE_LOG(LogTemp, VeryVerbose, TEXT("ClusterType: %d"), static_cast<int>(NewStarCluster->ClusterType));
 
 	for (int32 i = 0; i < NewStarCluster->StarAmount; ++i)
 	{
@@ -753,16 +1034,16 @@ bool AAstroGenerator::AddGeneratedWorldModelData()
 		return false;
 	}
 	
-	// A cluster is only created for the StarCluster generation level. Galaxy and
-	// direct StarSystem worlds legitimately reach this handoff without one, so
-	// the old unconditional dereference crashed after GENERATE WORLD.
-	if (GeneratedStarCluster)
+	// Keep the modeled population independent from the representative HISM
+	// sample. A generated galaxy can contain millions of stars in save/model
+	// data while rendering only a bounded subset during gameplay.
+	if (GeneratedGalaxy)
+	{
+		GeneratedWorldModel->StarsAmount = FMath::Max(1, GeneratedWorldModel->GalaxyStarCount);
+	}
+	else if (GeneratedStarCluster)
 	{
 		GeneratedWorldModel->StarsAmount = GeneratedStarCluster->StarAmount;
-	}
-	else if (GeneratedGalaxy && GeneratedGalaxy->StarMeshInstances)
-	{
-		GeneratedWorldModel->StarsAmount = GeneratedGalaxy->StarMeshInstances->GetInstanceCount();
 	}
 	else
 	{
@@ -889,7 +1170,15 @@ void AAstroGenerator::GenerateHomeStarSystem()
 					
 					SpawnPlanetMoons(HomePlanetModel);
 
-					SpawnStartInteractiveActors(HomePlanetModel);
+					if (bSpawnStarterLocation)
+					{
+						SpawnStartInteractiveActors(HomePlanetModel);
+					}
+					else
+					{
+						UE_LOG(LogTemp, Log,
+							TEXT("[APS.WorldGeneration] Astronomical world committed without civilization starter actors"));
+					}
 
 					if (APlayerController* PC = UGameplayStatics::GetPlayerController(GetWorld(), 0))
 					{
@@ -907,7 +1196,7 @@ void AAstroGenerator::GenerateHomeStarSystem()
 
 void AAstroGenerator::GenerateStarSystemByModel()
 {
-	UE_LOG(LogTemp, Warning, TEXT("=== GenerateStarSystemByModel START ==="));
+	UE_LOG(LogTemp, VeryVerbose, TEXT("=== GenerateStarSystemByModel START ==="));
 	
 	if (CheckGeneratorsFails()) 
 	{
@@ -949,7 +1238,12 @@ void AAstroGenerator::GenerateStarSystemByModel()
 			UE_LOG(LogTemp, Error, TEXT("NewStarSystem failed!"));
 			return;
 		}
-		NewStarSystem->AttachToActor(this, FAttachmentTransformRules::KeepWorldTransform);
+		// Preserve the generated data hierarchy in the actor tree as well. KeepWorld
+		// retains the absolute centimetre scale of the materialized star system while
+		// its parent cluster can remain under the full-scale galaxy transform.
+		AActor* SystemParent = PendingHomeCluster.IsValid()
+			? static_cast<AActor*>(PendingHomeCluster.Get()) : static_cast<AActor*>(this);
+		NewStarSystem->AttachToActor(SystemParent, FAttachmentTransformRules::KeepWorldTransform);
 		NewStarSystem->SetActorLocation(HomeSystemSpawnLocation);
 		StarSystemGenerator->ApplyModel(NewStarSystem, StarSystemModel);
 
@@ -1086,7 +1380,13 @@ void AAstroGenerator::GenerateStarSystemByModel()
 				NewPlanet->AttachToActor(NewPlanetOrbit, FAttachmentTransformRules::KeepWorldTransform);
 				NewPlanetarySystem->PlanetsActorsList.Add(NewPlanet);
 				NewPlanetOrbit->Planet = NewPlanet;
-				if (StarNumber == 0 && PlanetIndex == FMath::Clamp(
+				// The authored SinglePlay integration already owns HomePlanet. Do not
+				// replace that legacy reference with the generated orbit placeholder:
+				// IntegrateStartPlanetIntoSystem destroys the placeholder tree after
+				// attaching the authored headquarters to HomePlanet. Overwriting this
+				// pointer therefore destroyed the headquarters and every attached
+				// station at startup.
+				if (!bIntegrateStartPlanet && StarNumber == 0 && PlanetIndex == FMath::Clamp(
 					StartPlanetNumber - 1, 0, PlanetarySystemModel->PlanetsList.Num() - 1))
 				{
 					HomePlanet = NewPlanet;
@@ -1391,7 +1691,7 @@ void AAstroGenerator::GenerateStarSystemByModel()
 		UE_LOG(LogTemp, Warning, TEXT("Falied to get World!"));
 	}
 	
-	UE_LOG(LogTemp, Warning, TEXT("=== GenerateStarSystemByModel END ==="));
+	UE_LOG(LogTemp, VeryVerbose, TEXT("=== GenerateStarSystemByModel END ==="));
 }
 
 void AAstroGenerator::SetGeneratedWorld(UGeneratedWorld* InGeneratedWorld)
@@ -1414,9 +1714,12 @@ void AAstroGenerator::InitGenerationLevel()
 		GenerateGalaxiesCluster();
 		break;
 	case EAstroGenerationLevel::Galaxy:
-		GenerateGalaxy();
-		break;
 	case EAstroGenerationLevel::StarCluster:
+		// The generation menu navigates one persistent hierarchy. Galaxy and
+		// StarCluster used to be mutually exclusive switch branches, so one of the
+		// corresponding focus buttons always framed a fallback root. Build both
+		// lightweight HISM layers and materialize the home system below them.
+		GenerateGalaxy();
 		GenerateStarCluster();
 		break;
 	case EAstroGenerationLevel::StarSystem:
@@ -1444,6 +1747,12 @@ void AAstroGenerator::InitGenerationLevel()
 
 void AAstroGenerator::GenerateGalaxy()
 {
+	if (!BP_GalaxyClass)
+	{
+		UE_LOG(LogTemp, Error, TEXT("BP_GalaxyClass is not set!"));
+		return;
+	}
+
 	TSharedPtr<FGalaxyModel> GalaxyModel = MakeShared<FGalaxyModel>();
 
 	if (bGenerateRandomGalaxy)
@@ -1454,11 +1763,23 @@ void AAstroGenerator::GenerateGalaxy()
 	{
 		GalaxyModel->GalaxyClass = GalaxyGlass;
 		GalaxyModel->GalaxyType = GalaxyType;
-		GalaxyModel->StarsCount = bIsPreviewGeneration
-			? FMath::Min(GalaxyStarCount, PreviewMaxInstances)
-			: GalaxyStarCount;
+		GalaxyModel->StarsCount = GalaxyStarCount;
 		GalaxyModel->StarsDensity = GalaxyStarDensity;
 		GalaxyModel->GalaxySize = GalaxySize;
+	}
+
+	const int32 ModeledStarCount = FMath::Max(1, GalaxyModel->StarsCount);
+	const int32 InstanceBudget = bIsPreviewGeneration
+		? FMath::Max(100, PreviewMaxInstances)
+		: FMath::Max(1000, RuntimeMaxGalaxyInstances);
+	GalaxyModel->StarsCount = FMath::Min(ModeledStarCount, InstanceBudget);
+	if (GalaxyModel->StarsCount < ModeledStarCount)
+	{
+		UE_LOG(LogTemp, Log,
+			TEXT("[APS.WorldGeneration] Galaxy uses %d rendered HISM stars for %d modeled stars (%s)"),
+			GalaxyModel->StarsCount,
+			ModeledStarCount,
+			bIsPreviewGeneration ? TEXT("preview") : TEXT("gameplay"));
 	}
 
 	UWorld* World = GetWorld();
@@ -1466,6 +1787,13 @@ void AAstroGenerator::GenerateGalaxy()
 	if (World)
 	{
 		AGalaxy* NewGalaxy = World->SpawnActor<AGalaxy>(BP_GalaxyClass);
+		if (!IsValid(NewGalaxy) || !IsValid(NewGalaxy->StarMeshInstances))
+		{
+			UE_LOG(LogTemp, Error, TEXT("Failed to spawn a usable galaxy actor"));
+			return;
+		}
+		NewGalaxy->GalaxyType = GalaxyModel->GalaxyType;
+		NewGalaxy->GalaxyGlass = GalaxyModel->GalaxyClass;
 		GalaxyGenerator->GenerateGalaxyOctreeStars(StarGenerator, NewGalaxy, GalaxyModel);
 		NewGalaxy->AttachToActor(this, FAttachmentTransformRules::KeepRelativeTransform);
 
@@ -1686,28 +2014,85 @@ void AAstroGenerator::SpawnPlanetMoons(const TSharedPtr<FPlanetModel>& PlanetMod
 	HomePlanet->PlanetaryEnvironmentGenerator->InitEnviroment(HomePlanet, GetWorld());
 }
 
-void AAstroGenerator::ResolveSpawnLocation(const ASpaceship* NewHomeSpaceship, FVector& CharSpawnLocation)
+bool AAstroGenerator::ResolveSpawnLocation(const ASpaceship* NewHomeSpaceship, FVector& CharSpawnLocation)
 {
 	CharSpawnLocation = {0, 0, 0};
+	const auto ResolveSurfaceLocation = [](const APlanetaryBody* Body, const FVector& PreferredOutward,
+		FVector& OutLocation)
+	{
+		if (!IsValid(Body))
+		{
+			return false;
+		}
+		const FVector Outward = PreferredOutward.GetSafeNormal(UE_DOUBLE_SMALL_NUMBER,
+			Body->GetActorUpVector());
+		// Two metres keeps the capsule above the placeholder/full-scale surface;
+		// custom gravity performs the final grounding once play resumes.
+		OutLocation = Body->GetActorLocation() + Outward * (Body->GetWorldScapeBodyRadiusCm() + 200.0);
+		return true;
+	};
+	const auto GetFirstHomeMoon = [this]() -> AMoon*
+	{
+		if (!IsValid(HomePlanet))
+		{
+			return nullptr;
+		}
+		for (AMoon* Moon : HomePlanet->Moons)
+		{
+			if (IsValid(Moon))
+			{
+				return Moon;
+			}
+		}
+		return nullptr;
+	};
 	switch (CharSpawnPlace)
 	{
 	case ECharSpawnPlace::PlanetOrbit:
-		CharSpawnLocation = HomeSpaceStation->SpawnPoint->GetComponentLocation();
+		if (IsValid(HomeSpaceStation) && IsValid(HomeSpaceStation->SpawnPoint))
+		{
+			CharSpawnLocation = HomeSpaceStation->SpawnPoint->GetComponentLocation();
+			return true;
+		}
 		break;
 	case ECharSpawnPlace::PlanetSurface:
+		if (IsValid(HomePlanet))
+		{
+			const FVector PreferredOutward = IsValid(HomeSpaceHeadquarters)
+				? HomeSpaceHeadquarters->GetActorLocation() - HomePlanet->GetActorLocation()
+				: HomePlanet->GetActorUpVector();
+			return ResolveSurfaceLocation(HomePlanet, PreferredOutward, CharSpawnLocation);
+		}
 		break;
 	case ECharSpawnPlace::MoonOrbit:
+		if (const AMoon* Moon = GetFirstHomeMoon())
+		{
+			const FVector Outward = (Moon->GetActorLocation() - HomePlanet->GetActorLocation())
+				.GetSafeNormal(UE_DOUBLE_SMALL_NUMBER, Moon->GetActorUpVector());
+			const double OrbitClearanceCm = FMath::Max(200000.0, Moon->GetWorldScapeBodyRadiusCm() * 0.10);
+			CharSpawnLocation = Moon->GetActorLocation()
+				+ Outward * (Moon->GetWorldScapeBodyRadiusCm() + OrbitClearanceCm);
+			return true;
+		}
 		break;
 	case ECharSpawnPlace::MoonSurface:
+		if (const AMoon* Moon = GetFirstHomeMoon())
+		{
+			const FVector Outward = Moon->GetActorLocation() - HomePlanet->GetActorLocation();
+			return ResolveSurfaceLocation(Moon, Outward, CharSpawnLocation);
+		}
 		break;
 	case ECharSpawnPlace::SpaceShip:
+		if (IsValid(NewHomeSpaceship))
 		{
 			CharSpawnLocation = NewHomeSpaceship->GetActorLocation();
+			return true;
 		}
 		break;
 	default:
 		break;
 	}
+	return false;
 }
 
 void AAstroGenerator::SpawnStartInteractiveActors(TSharedPtr<FPlanetModel> StartPlanetModel)
@@ -1721,10 +2106,69 @@ void AAstroGenerator::SpawnStartInteractiveActors(TSharedPtr<FPlanetModel> Start
 	 */
 
 	UWorld* World = GetWorld();
-	if (!World)
+	if (!World || !StartPlanetModel.IsValid() || !IsValid(HomePlanet) || !PlanetGenerator)
 	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[APS.Civilization] Cannot spawn starter hierarchy: World=%s PlanetModel=%s HomePlanet=%s PlanetGenerator=%s"),
+			World ? TEXT("OK") : TEXT("NULL"), StartPlanetModel.IsValid() ? TEXT("OK") : TEXT("NULL"),
+			IsValid(HomePlanet) ? TEXT("OK") : TEXT("NULL"), PlanetGenerator ? TEXT("OK") : TEXT("NULL"));
 		return;
 	}
+	if (bStarterHierarchySpawned || IsValid(HomeSpaceHeadquarters) || IsValid(HomeSpaceStation)
+		|| IsValid(HomeSpaceShipyard) || IsValid(HomeSpaceship))
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[APS.Civilization] Duplicate starter spawn rejected: committed=%s HQ=%s Station=%s Shipyard=%s Ship=%s"),
+			bStarterHierarchySpawned ? TEXT("true") : TEXT("false"),
+			*GetNameSafe(HomeSpaceHeadquarters), *GetNameSafe(HomeSpaceStation),
+			*GetNameSafe(HomeSpaceShipyard), *GetNameSafe(HomeSpaceship));
+		return;
+	}
+	if (!BP_HomeSpaceHeadquarters || !BP_HomeSpaceStation || !BP_HomeSpaceShipyard
+		|| !BP_HomeSpaceship || !BP_CharacterClass)
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[APS.Civilization] Starter class missing: HQ=%s Station=%s Shipyard=%s Ship=%s Character=%s"),
+			BP_HomeSpaceHeadquarters ? TEXT("OK") : TEXT("NULL"),
+			BP_HomeSpaceStation ? TEXT("OK") : TEXT("NULL"),
+			BP_HomeSpaceShipyard ? TEXT("OK") : TEXT("NULL"), BP_HomeSpaceship ? TEXT("OK") : TEXT("NULL"),
+			BP_CharacterClass ? TEXT("OK") : TEXT("NULL"));
+		return;
+	}
+
+	APawn* PreviousPlayerCharacter = UGameplayStatics::GetPlayerPawn(World, 0);
+	APawn* SpawnedSelectedPlayerCharacter = nullptr;
+	bool bStarterHierarchyCommitted = false;
+	ON_SCOPE_EXIT
+	{
+		if (bStarterHierarchyCommitted)
+		{
+			return;
+		}
+
+		// Starter creation is transactional. A missing SpawnPoint, failed class
+		// spawn or failed possession must not leave a half-built hierarchy that
+		// blocks the next attempt as a duplicate.
+		if (IsValid(SpawnedSelectedPlayerCharacter))
+		{
+			if (APlayerController* PlayerController = UGameplayStatics::GetPlayerController(World, 0);
+				PlayerController && PlayerController->GetPawn() == SpawnedSelectedPlayerCharacter
+				&& IsValid(PreviousPlayerCharacter))
+			{
+				PlayerController->Possess(PreviousPlayerCharacter);
+			}
+			SpawnedSelectedPlayerCharacter->Destroy();
+		}
+		if (IsValid(HomeSpaceship)) HomeSpaceship->Destroy();
+		if (IsValid(HomeSpaceShipyard)) HomeSpaceShipyard->Destroy();
+		if (IsValid(HomeSpaceStation)) HomeSpaceStation->Destroy();
+		if (IsValid(HomeSpaceHeadquarters)) HomeSpaceHeadquarters->Destroy();
+		HomeSpaceship = nullptr;
+		HomeSpaceShipyard = nullptr;
+		HomeSpaceStation = nullptr;
+		HomeSpaceHeadquarters = nullptr;
+		UE_LOG(LogTemp, Error, TEXT("[APS.Civilization] Partial starter hierarchy rolled back"));
+	};
 
 	FActorSpawnParameters SpawnParams;
 	SpawnParams.Owner = HomePlanet;
@@ -1734,7 +2178,7 @@ void AAstroGenerator::SpawnStartInteractiveActors(TSharedPtr<FPlanetModel> Start
 	FVector PlanetPosition = HomePlanet->GetActorLocation();
 
 	HomeSpaceHeadquarters = World->SpawnActor<ASpaceHeadquarters>(
-		BP_HomeSpaceHeadquarters, PlanetPosition, FRotator::ZeroRotator);
+		BP_HomeSpaceHeadquarters, PlanetPosition, FRotator::ZeroRotator, SpawnParams);
 	if (!HomeSpaceHeadquarters)
 	{
 		UE_LOG(LogTemp, Error, TEXT("Unable to spawn the selected home headquarters class"));
@@ -1760,6 +2204,11 @@ void AAstroGenerator::SpawnStartInteractiveActors(TSharedPtr<FPlanetModel> Start
 	HomeSpaceStation = World->SpawnActor<ASpaceStation>(
 		BP_HomeSpaceStation, HomeSpaceHeadquartersLocation,
 		HomeSpaceHeadquartersRotation, SpawnParams);
+	if (!IsValid(HomeSpaceStation))
+	{
+		UE_LOG(LogTemp, Error, TEXT("[APS.Civilization] Unable to spawn the selected home station class"));
+		return;
+	}
 	HomeSpaceStation->AttachToActor(HomeSpaceHeadquarters,
 	                                FAttachmentTransformRules::KeepWorldTransform);
 	//double HomeStationOffset = HomeSpaceStation->GravityCollisionZone->GetScaledSphereRadius() * 2;
@@ -1770,7 +2219,12 @@ void AAstroGenerator::SpawnStartInteractiveActors(TSharedPtr<FPlanetModel> Start
 	// Spawn HomeShipyard
 	HomeSpaceShipyard = World->SpawnActor<ASpaceShipyard>(BP_HomeSpaceShipyard,
 	                                                      HomeSpaceHeadquartersLocation,
-	                                                      HomeSpaceHeadquartersRotation);
+	                                                      HomeSpaceHeadquartersRotation, SpawnParams);
+	if (!IsValid(HomeSpaceShipyard))
+	{
+		UE_LOG(LogTemp, Error, TEXT("[APS.Civilization] Unable to spawn the selected home shipyard class"));
+		return;
+	}
 	/*double HomeSpaceShipyardLocationOffset = HomeSpaceShipyard->GravityCollisionZone->
 	                                                            GetScaledSphereRadius() * 2;*/
 	//double HomeSpaceShipyardLocationOffset = HomeSpaceShipyard->GetActorLocation();
@@ -1784,12 +2238,27 @@ void AAstroGenerator::SpawnStartInteractiveActors(TSharedPtr<FPlanetModel> Start
 	FActorSpawnParameters SpaceshipSpawnParams;
 	SpaceshipSpawnParams.SpawnCollisionHandlingOverride =
 		ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	if (!IsValid(HomeSpaceShipyard->SpawnPoint))
+	{
+		UE_LOG(LogTemp, Error, TEXT("[APS.Civilization] Home shipyard has no valid SpawnPoint"));
+		return;
+	}
 	FVector HomeSpaceshipLocation = HomeSpaceShipyard->SpawnPoint->GetComponentLocation();
 
 	HomeSpaceshipLocation.Z += 1000;
 	ASpaceship* NewHomeSpaceship = World->SpawnActor<ASpaceship>(
 		BP_HomeSpaceship, HomeSpaceshipLocation, HomeSpaceShipyard->GetActorRotation(),
 		SpaceshipSpawnParams);
+	HomeSpaceship = NewHomeSpaceship;
+
+	if (!IsValid(NewHomeSpaceship) || !IsValid(GeneratedHomeStarSystem))
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[APS.Civilization] Cannot complete starter hierarchy: Ship=%s HomeSystem=%s"),
+			IsValid(NewHomeSpaceship) ? TEXT("OK") : TEXT("NULL"),
+			IsValid(GeneratedHomeStarSystem) ? TEXT("OK") : TEXT("NULL"));
+		return;
+	}
 
 	if (NewHomeSpaceship && GeneratedHomeStarSystem)
 	{
@@ -1806,40 +2275,91 @@ void AAstroGenerator::SpawnStartInteractiveActors(TSharedPtr<FPlanetModel> Start
 			UE_LOG(LogTemp, Error, TEXT("Onboard Computer is nullptr!"));
 		}
 	}
-	else
+	APawn* PlayerCharacter = PreviousPlayerCharacter;
+	const bool bExistingPawnMatchesSelection = IsValid(PlayerCharacter)
+		&& BP_CharacterClass
+		&& PlayerCharacter->IsA(BP_CharacterClass);
+	if (!bExistingPawnMatchesSelection && BP_CharacterClass)
 	{
-		if (!NewHomeSpaceship)
+		const FVector InitialSpawnLocation = HomeSpaceHeadquarters->GetStartPointPosition();
+		APawn* SelectedPlayerCharacter = World->SpawnActor<APawn>(BP_CharacterClass, InitialSpawnLocation,
+			HomeSpaceShipyard->GetActorRotation(), SpawnParams);
+		if (IsValid(SelectedPlayerCharacter))
 		{
-			UE_LOG(LogTemp, Error, TEXT("NewHomeSpaceship is nullptr!"));
-		}
-
-		if (!GeneratedHomeStarSystem)
-		{
-			UE_LOG(LogTemp, Error, TEXT("GeneratedHomeStarSystem is nullptr!"));
+			SpawnedSelectedPlayerCharacter = SelectedPlayerCharacter;
+			PlayerCharacter = SelectedPlayerCharacter;
+			if (APlayerController* PlayerController = UGameplayStatics::GetPlayerController(World, 0))
+			{
+				PlayerController->Possess(SelectedPlayerCharacter);
+			}
 		}
 	}
-
-	if (APawn* PlayerCharacter = UGameplayStatics::GetPlayerPawn(World, 0))
+	if (IsValid(PlayerCharacter))
 	{
-		FVector CharSpawnLocation;
-		ResolveSpawnLocation(NewHomeSpaceship, CharSpawnLocation);
-
-		UE_LOG(LogTemp, Warning, TEXT("CharSpawnLocation: %s"), *CharSpawnLocation.ToString());
-		bool bTeleportSuccess = PlayerCharacter->SetActorLocation(CharSpawnLocation, false);
-		UE_LOG(LogTemp, Warning, TEXT("Teleport success: %s"),
-		       bTeleportSuccess ? TEXT("True") : TEXT("False"));
-
 		// Relocate spawned world to 000
 		FVector PlayerLocation = HomeSpaceHeadquarters->GetActorLocation();
 		FVector GeneratorLocation = this->GetActorLocation();
 		FVector NewGeneratorLocation = GeneratorLocation - PlayerLocation;
 		this->SetActorLocation(NewGeneratorLocation, false);
-		
-		FVector SpawnLocation = HomeSpaceHeadquarters->GetStartPointPosition();
-		
-		PlayerCharacter->SetActorLocation(SpawnLocation, false);
+
+		// Resolve after relocating the generated hierarchy. Resolving before the
+		// move produced a stale position and the old code then overwrote every
+		// START LOCATION choice with the Headquarters start point.
+		FVector SpawnLocation;
+		if (!ResolveSpawnLocation(NewHomeSpaceship, SpawnLocation))
+		{
+			SpawnLocation = HomeSpaceHeadquarters->GetStartPointPosition();
+			UE_LOG(LogTemp, Warning,
+				TEXT("[APS.Civilization] Start location %d has no runtime anchor; using Headquarters start point"),
+				static_cast<int32>(CharSpawnPlace));
+		}
+		const bool bTeleportSuccess = PlayerCharacter->SetActorLocation(SpawnLocation, false);
+		UE_LOG(LogTemp, Log, TEXT("[APS.Civilization] Character spawn location=%s success=%s"),
+			*SpawnLocation.ToString(), bTeleportSuccess ? TEXT("true") : TEXT("false"));
 		PlayerCharacter->SetActorRotation(HomeSpaceShipyard->GetActorRotation());
 		PlayerCharacter->AddActorLocalRotation(FRotator(0, 180 , 0));
+		const UMainGameplayInstance* GameplayInstance = World->GetGameInstance()
+			? World->GetGameInstance()->GetSubsystem<UMainGameplayInstance>() : nullptr;
+		const bool bSelectedCharacterPossessed =
+			UGameplayStatics::GetPlayerPawn(World, 0) == PlayerCharacter;
+		const bool bHierarchyValid =
+			HomeSpaceHeadquarters->GetAttachParentActor() == HomePlanet
+			&& HomeSpaceStation->GetAttachParentActor() == HomeSpaceHeadquarters
+			&& HomeSpaceShipyard->GetAttachParentActor() == HomeSpaceHeadquarters
+			&& HomeSpaceship->GetAttachParentActor() == HomeSpaceShipyard
+			&& HomeSpaceHeadquarters->IsA(BP_HomeSpaceHeadquarters)
+			&& HomeSpaceStation->IsA(BP_HomeSpaceStation)
+			&& HomeSpaceShipyard->IsA(BP_HomeSpaceShipyard)
+			&& HomeSpaceship->IsA(BP_HomeSpaceship)
+			&& PlayerCharacter->IsA(BP_CharacterClass)
+			&& bSelectedCharacterPossessed
+			&& (!GameplayInstance || HomeSpaceHeadquarters->Civilization == GameplayInstance->CurrentCivilization);
+		if (!bHierarchyValid)
+		{
+			UE_LOG(LogTemp, Error,
+				TEXT("[APS.Civilization] Starter hierarchy validation failed: HQParent=%s StationParent=%s ShipyardParent=%s ShipParent=%s CharacterClass=%s Possessed=%s Civilization=%s"),
+				*GetNameSafe(HomeSpaceHeadquarters->GetAttachParentActor()),
+				*GetNameSafe(HomeSpaceStation->GetAttachParentActor()),
+				*GetNameSafe(HomeSpaceShipyard->GetAttachParentActor()),
+				*GetNameSafe(HomeSpaceship->GetAttachParentActor()),
+				PlayerCharacter->IsA(BP_CharacterClass) ? TEXT("OK") : TEXT("MISMATCH"),
+				bSelectedCharacterPossessed ? TEXT("OK") : TEXT("NO"),
+				(!GameplayInstance || HomeSpaceHeadquarters->Civilization == GameplayInstance->CurrentCivilization)
+					? TEXT("OK") : TEXT("MISMATCH"));
+		}
+		else
+		{
+			bStarterHierarchyCommitted = true;
+			bStarterHierarchySpawned = true;
+			if (IsValid(PreviousPlayerCharacter) && PreviousPlayerCharacter != PlayerCharacter)
+			{
+				PreviousPlayerCharacter->Destroy();
+			}
+			UE_LOG(LogTemp, Log,
+				TEXT("[APS.Civilization] Starter hierarchy ready exactly once: Planet=%s HQ=%s Station=%s Shipyard=%s Ship=%s Character=%s"),
+				*GetNameSafe(HomePlanet), *GetNameSafe(HomeSpaceHeadquarters), *GetNameSafe(HomeSpaceStation),
+				*GetNameSafe(HomeSpaceShipyard), *GetNameSafe(HomeSpaceship), *GetNameSafe(PlayerCharacter));
+		}
 	}
 	else
 	{
@@ -2160,69 +2680,42 @@ void AAstroGenerator::ComputeHomeSystemPosition(FTransform& HomeSystemTransform,
 		break;
 	case EHomeSystemPosition::DirectPosition:
 		{
-			// Make sure there are actors attached
-			TArray<AActor*> AttachedActors;
-			GetAttachedActors(AttachedActors);
-			if (AttachedActors.Num() > 0)
+			// Prefer the selected system record inside the generated cluster. The old
+			// enum-based branch selected a raw galaxy point for Galaxy mode even when a
+			// real cluster existed, breaking Galaxy -> Cluster -> System continuity.
+			AStarCluster* StarClusterActor = GeneratedStarCluster;
+			if (IsValid(StarClusterActor))
 			{
-				const int32 RandomIndex = FMath::RandRange(0, AttachedActors.Num() - 1);
-				if (AstroGenerationLevel == EAstroGenerationLevel::Galaxy)
+				if (const UHierarchicalInstancedStaticMeshComponent* HismComponent =
+					StarClusterActor->StarMeshInstances;
+					HismComponent && HismComponent->GetInstanceCount() > 0)
 				{
-					// Cast the actor to type AGalaxy
-					if (const AGalaxy* GalaxyActor = Cast<AGalaxy>(AttachedActors[RandomIndex]))
+					const int32 RandomInstanceIndex = FMath::RandRange(0, HismComponent->GetInstanceCount() - 1);
+					if (const FClusterStarSystemRecord* Record =
+						StarClusterActor->FindPotentialSystem(RandomInstanceIndex))
 					{
-						// If the actor is an instance of the AGalaxy class, extract its HISM component
-						if (UHierarchicalInstancedStaticMeshComponent* HismComponent = GalaxyActor->
-							StarMeshInstances; HismComponent && HismComponent->GetInstanceCount() > 0)
-						{
-							// Get a random index from the range of available instances
-							const int32 RandomInstanceIndex =
-								FMath::RandRange(0, HismComponent->GetInstanceCount() - 1);
-							// Extract random instance transform
-							FTransform InstanceTransform;
-							HismComponent->GetInstanceTransform(RandomInstanceIndex, InstanceTransform, true);
-							// Use position from instance transform as HomeSystemSpawnLocation
-							HomeSystemSpawnLocation = InstanceTransform.GetLocation();
-						}
+						HomeSystemSpawnLocation = StarClusterActor->GetPotentialSystemWorldLocation(*Record);
+						PendingHomeCluster = StarClusterActor;
+						PendingHomeClusterInstanceIndex = RandomInstanceIndex;
+					}
+					else
+					{
+						FTransform InstanceTransform;
+						HismComponent->GetInstanceTransform(RandomInstanceIndex, InstanceTransform, true);
+						HomeSystemSpawnLocation = InstanceTransform.GetLocation();
 					}
 				}
-				else if (AstroGenerationLevel == EAstroGenerationLevel::StarCluster)
+			}
+			else if (IsValid(GeneratedGalaxy) && IsValid(GeneratedGalaxy->StarMeshInstances))
+			{
+				UHierarchicalInstancedStaticMeshComponent* HismComponent = GeneratedGalaxy->StarMeshInstances;
+				if (HismComponent->GetInstanceCount() > 0)
 				{
-					AStarCluster* StarClusterActor = GeneratedStarCluster;
-					if (!StarClusterActor)
+					const int32 RandomInstanceIndex = FMath::RandRange(0, HismComponent->GetInstanceCount() - 1);
+					FTransform InstanceTransform;
+					if (HismComponent->GetInstanceTransform(RandomInstanceIndex, InstanceTransform, true))
 					{
-						for (AActor* AttachedActor : AttachedActors)
-						{
-							if (AStarCluster* Candidate = Cast<AStarCluster>(AttachedActor))
-							{
-								StarClusterActor = Candidate;
-								break;
-							}
-						}
-					}
-					if (StarClusterActor)
-					{
-						// If the actor is an instance of the AStarCluster class, retrieve its HISM component.
-						if (const UHierarchicalInstancedStaticMeshComponent* HismComponent = StarClusterActor->
-							StarMeshInstances; HismComponent && HismComponent->GetInstanceCount() > 0)
-						{
-							// Get a random index from the range of available instances
-							const int32 RandomInstanceIndex =
-								FMath::RandRange(0, HismComponent->GetInstanceCount() - 1);
-							if (const FClusterStarSystemRecord* Record =
-								StarClusterActor->FindPotentialSystem(RandomInstanceIndex))
-							{
-								HomeSystemSpawnLocation = StarClusterActor->GetPotentialSystemWorldLocation(*Record);
-								PendingHomeCluster = StarClusterActor;
-								PendingHomeClusterInstanceIndex = RandomInstanceIndex;
-							}
-							else
-							{
-								FTransform InstanceTransform;
-								HismComponent->GetInstanceTransform(RandomInstanceIndex, InstanceTransform, true);
-								HomeSystemSpawnLocation = InstanceTransform.GetLocation();
-							}
-						}
+						HomeSystemSpawnLocation = InstanceTransform.GetLocation();
 					}
 				}
 			}
@@ -2266,6 +2759,9 @@ TMap<EStarClusterType, TPair<int, int>> ClusterStarAmount =
 	{EStarClusterType::GlobularCluster, {5000, 25000}},
 	{EStarClusterType::Supercluster, {25000, 50000}},
 	{EStarClusterType::Nebula, {10000, 20000}},
+	{EStarClusterType::ElongatedStream, {3000, 15000}},
+	{EStarClusterType::RingArc, {2000, 12000}},
+	{EStarClusterType::Hourglass, {5000, 20000}},
 	{EStarClusterType::Unknown, {0, 0}}
 };
 
@@ -2419,7 +2915,14 @@ void AAstroGenerator::GenerateStarSystemAndIntegratePlanet()
 	
 	// Generate the star system first
 	UE_LOG(LogTemp, Warning, TEXT("Generating star system..."));
+	APlanet* const AuthoredHomePlanet = HomePlanet;
 	GenerateStarSystemByModel();
+	// The SinglePlay map serializes its authored home-planet actor. Preview and
+	// procedural generation are allowed to select a generated HomePlanet, but
+	// this integration path must retain the serialized actor unconditionally.
+	HomePlanet = AuthoredHomePlanet;
+	UE_LOG(LogTemp, Warning, TEXT("Restored authored HomePlanet after generation: %s"),
+		*GetNameSafe(HomePlanet));
 
 	// Check if star system was generated successfully
 	if (!GeneratedHomeStarSystem)

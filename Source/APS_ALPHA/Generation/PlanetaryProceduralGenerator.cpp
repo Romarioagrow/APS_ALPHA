@@ -52,7 +52,7 @@ void UPlanetarySystemGenerator::GeneratePlanetMoonsList(
 		|| PlanetModel->PlanetType == EPlanetType::IceGiant
 		|| PlanetModel->PlanetType == EPlanetType::HotGiant)
 	{
-		// Распределение орбит от 1 до 10 радиусов планеты
+		// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅ 1 пїЅпїЅ 10 пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 		for (int i = 0; i < AmountOfMoons; i++)
 		{
 			double orbitRadius = FMath::RandRange(PlanetRadius * 1.0, PlanetRadius * 10.0);
@@ -64,7 +64,7 @@ void UPlanetarySystemGenerator::GeneratePlanetMoonsList(
 	{
 		double a = 1.5;
 		double d = 1.4;
-		// Коэффициенты закона Тициуса-Боде для остальных планет
+		// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ-пїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ
 		for (int i = 0; i < AmountOfMoons; i++)
 		{
 			double MoonOrbitRadius = a + d * pow(2, i);
@@ -81,14 +81,14 @@ void UPlanetarySystemGenerator::GeneratePlanetMoonsList(
 
 		EMoonType MoonType = MoonGenerator->GenerateMoonType(PlanetModel);
 
-		// Вычисляем физические параметры луны
+		// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ
 		double MoonMass = MoonGenerator->CalculateRandomMoonMass();
 		double MoonDensity = MoonGenerator->CalculateRandomMoonDensity(MoonType);
 		double MoonRadius = MoonGenerator->CalculateMoonRadius(MoonDensity, MoonMass);
 		double MoonGravity = MoonMass / FMath::Pow(MoonRadius, 2);
 		/// TODO: to MoonGenerator->CalculateGravitationalForce(PlanetModel.Mass, MoonMass, MoonOrbit);
 
-		// Создаем модель луны
+		// пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ
 		MoonModel->Type = MoonType;
 		MoonModel->Mass = MoonMass;
 		MoonModel->Radius = MoonRadius;
@@ -98,11 +98,11 @@ void UPlanetarySystemGenerator::GeneratePlanetMoonsList(
 		MoonModel->OrbitDistance = MoonOrbit;
 		MoonModel->MoonAtmosphereHeight = MoonModel->RadiusKM / 30;
 
-		// Создаем данные о луне
+		// пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅ
 		int MoonIndex = MoonOrbits.IndexOfByKey(MoonOrbit);
 		TSharedPtr<FMoonData> MoonData = MakeShared<FMoonData>(MoonIndex + 1, MoonOrbit, MoonModel);
 
-		// Добавляем данные о луне в список
+		// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅ
 		MoonsList.Add(MoonData);
 	}
 
@@ -128,30 +128,30 @@ void UPlanetarySystemGenerator::GenerateCustomPlanetarySystemModel(
 {
 	int32 FinalPlanetCount = PlanetarySystemModel->AmountOfPlanets; //FMath::RandRange(MinPlanetCount, MaxPlanetCount);
 
-	// Это могут быть константы или переменные, зависящие от стелларного класса
+	// пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ, пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ
 	double MinOrbitScalingFactor = 1.0f;
 	double MaxOrbitScalingFactor = 10.0f;
 
 	if (StarModel->StellarType == EStellarType::HyperGiant)
 	{
-		MaxOrbitScalingFactor = 5.0f; // Уменьшаем максимальную орбиту для гипергигантов
+		MaxOrbitScalingFactor = 5.0f; // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 	}
 	else if (StarModel->StellarType == EStellarType::SuperGiant)
 	{
-		MaxOrbitScalingFactor = 6.0f; // Уменьшаем максимальную орбиту для сверхгигантов
+		MaxOrbitScalingFactor = 6.0f; // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 	}
 
 	double MinOrbit = StarModel->Mass * MinOrbitScalingFactor;
 	double MaxOrbit = StarModel->Mass * MaxOrbitScalingFactor;
 	StarModel->MinOrbit = MinOrbit;
 	StarModel->MaxOrbit = MaxOrbit;
-	UE_LOG(LogTemp, Warning, TEXT("MAX Orbit: %f"), MaxOrbit);
+	UE_LOG(LogTemp, VeryVerbose, TEXT("MAX Orbit: %f"), MaxOrbit);
 
 
-	// Подбираем случайное распределение для нашей системы
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 	EOrbitDistributionType OrbitDistributionType = PlanetarySystemModel->OrbitDistributionType;
 	FString OrbitType = UEnum::GetValueAsString(OrbitDistributionType);
-	UE_LOG(LogTemp, Warning, TEXT("Orbit Distribution Type: %s"), *OrbitType);
+	UE_LOG(LogTemp, VeryVerbose, TEXT("Orbit Distribution Type: %s"), *OrbitType);
 
 	if (PlanetarySystemModel->PlanetarySystemType == EPlanetarySystemType::NoPlanetSystem)
 	{
@@ -204,21 +204,21 @@ void UPlanetarySystemGenerator::GenerateCustomPlanetarySystemModel(
 			OrbitRadius = FMath::Lerp(MinOrbit, MaxOrbit, OrbitDistributionValue);
 		}
 
-		// Применяем функцию распределения к нашему диапазону орбит
+		// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ
 		OrbitRadii.Add(OrbitRadius);
 	}
 	OrbitRadii.Sort();
-	UE_LOG(LogTemp, Warning, TEXT("OrbitRadii Num: %d "), OrbitRadii.Num());
-	UE_LOG(LogTemp, Warning, TEXT("MinOrbit: %f, MaxOrbit: %f"), MinOrbit, MaxOrbit);
+	UE_LOG(LogTemp, VeryVerbose, TEXT("OrbitRadii Num: %d "), OrbitRadii.Num());
+	UE_LOG(LogTemp, VeryVerbose, TEXT("MinOrbit: %f, MaxOrbit: %f"), MinOrbit, MaxOrbit);
 
-	// Вычисляем обитаемую зону
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ
 	double HabitableZoneInner = sqrt(StarModel->Luminosity / 1.1) * 2;
 	double HabitableZoneOuter = sqrt(StarModel->Luminosity / 0.53) * 2;
 
 	// Star Dead zone
-	double StarDeadZoneInner = 0; // Начинается от звезды
+	double StarDeadZoneInner = 0; // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ
 	double StarRadiusInAU = StarModel->Radius * 0.00465047;
-	double StarDeadZoneOuter = StarRadiusInAU * 2; // Заканчивается на расстоянии, равном двойному радиусу звезды в AU
+	double StarDeadZoneOuter = StarRadiusInAU * 2; // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ, пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅ AU
 
 	// Zones
 	double HotZoneInner = 0;
@@ -233,52 +233,52 @@ void UPlanetarySystemGenerator::GenerateCustomPlanetarySystemModel(
 	double GasGiantsZoneOuter = 0;
 	double KuiperBeltZoneInner = 0;
 	double KuiperBeltZoneOuter = 0;
-	double InnerZoneInner = 0; // Начинается от звезды
-	double InnerZoneOuter = 0; // Заканчивается границей горячей зоны
-	double OuterZoneInner = 0; // Начинается от границы зоны газовых гигантов
-	double OuterZoneOuter = 0; // Примерная формула
+	double InnerZoneInner = 0; // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ
+	double InnerZoneOuter = 0; // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ
+	double OuterZoneInner = 0; // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
+	double OuterZoneOuter = 0; // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 
 	if (HabitableZoneOuter < MaxOrbit)
 	{
-		// Вычисляем зону StarDeadZone
-		StarDeadZoneInner = 0; // Начинается от звезды
+		// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ StarDeadZone
+		StarDeadZoneInner = 0; // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ
 		StarRadiusInAU = StarModel->Radius * 0.00465047;
-		StarDeadZoneOuter = StarRadiusInAU; // Заканчивается на расстоянии, равном двойному радиусу звезды в AU
+		StarDeadZoneOuter = StarRadiusInAU; // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ, пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅ AU
 
-		// Вычисляем горячую зону
+		// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ
 		HotZoneInner = StarDeadZoneOuter;
 		HotZoneOuter = StarDeadZoneOuter + (HabitableZoneInner - StarDeadZoneOuter) / 2;
 
-		// Вычисляем теплую зону
+		// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ
 		WarmZoneInner = HotZoneOuter;
 		WarmZoneOuter = HabitableZoneInner;
 
-		// Вычисляем холодную зону
+		// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ
 		ColdZoneInner = HabitableZoneOuter; //FMath::Max(HabitableZoneOuter, MinOrbit);
 		ColdZoneOuter = (ColdZoneInner * 2 > MaxOrbit) ? MaxOrbit : ColdZoneInner * 2;
 
-		// Вычисляем ледяную зону
+		// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ
 		IceZoneInner = ColdZoneOuter; //FMath::Max(ColdZoneOuter, MinOrbit);
 		IceZoneOuter = (IceZoneInner * 2 > MaxOrbit) ? MaxOrbit : IceZoneInner * 2;
 
-		// Вычисляем зону газовых гигантов
+		// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 		GasGiantsZoneInner = FMath::Max(IceZoneOuter, MinOrbit);
 		GasGiantsZoneOuter = (GasGiantsZoneInner * 2 > MaxOrbit) ? MaxOrbit : GasGiantsZoneInner * 2;
 
-		// Вычисляем зону пояса Койпера
+		// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 		KuiperBeltZoneInner = FMath::Max(GasGiantsZoneOuter, MinOrbit);
 		KuiperBeltZoneOuter = (KuiperBeltZoneInner * 2 > MaxOrbit) ? MaxOrbit : KuiperBeltZoneInner * 2;
 
 
 		if (OrbitDistributionType == EOrbitDistributionType::InnerOuter)
 		{
-			// Вычисляем внутреннюю зону
-			InnerZoneInner = StarDeadZoneOuter; //0; // Начинается от звезды
-			InnerZoneOuter = HotZoneOuter; // Заканчивается границей горячей зоны
+			// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ
+			InnerZoneInner = StarDeadZoneOuter; //0; // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ
+			InnerZoneOuter = HotZoneOuter; // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ
 
-			// Вычисляем внешнюю зону
-			OuterZoneInner = GasGiantsZoneOuter; // Начинается от границы зоны газовых гигантов
-			OuterZoneOuter = OuterZoneInner * 2; // Примерная формула
+			// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ
+			OuterZoneInner = GasGiantsZoneOuter; // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
+			OuterZoneOuter = OuterZoneInner * 2; // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 
 			PlanetarySystemModel->InnerPlanetZoneRadius = FZoneRadius(InnerZoneInner, InnerZoneOuter);
 			PlanetarySystemModel->OuterPlanetZoneRadius = FZoneRadius(OuterZoneInner, OuterZoneOuter);
@@ -317,7 +317,7 @@ void UPlanetarySystemGenerator::GenerateCustomPlanetarySystemModel(
 		}
 	}
 
-	// Масштабируемые коэффициенты для разных зон
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ
 	//double scaleCoeff = 149597870 * 3000;
 
 	/* StarDeadZoneOuter = StarDeadZoneOuter * 149597870 * 3000;
@@ -367,53 +367,53 @@ void UPlanetarySystemGenerator::GenerateCustomPlanetarySystemModel(
 	PlanetarySystemModel->GasGiantsZoneRadius = FZoneRadius(GasGiantsZoneInner, GasGiantsZoneOuter);
 	PlanetarySystemModel->KuiperBeltZoneRadius = FZoneRadius(KuiperBeltZoneInner, KuiperBeltZoneOuter);
 
-	// Выводим обитаемую зону
-	UE_LOG(LogTemp, Warning, TEXT("Habitable Zone: %f AU - %f AU"), HabitableZoneInner, HabitableZoneOuter);
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ
+	UE_LOG(LogTemp, VeryVerbose, TEXT("Habitable Zone: %f AU - %f AU"), HabitableZoneInner, HabitableZoneOuter);
 
-	// Выводим коэффициент орбиты
-	// Выводим все орбиты планет
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ
 	for (int i = 0; i < OrbitRadii.Num(); ++i)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("Planet %d Orbit Radius: %f AU"), i + 1, OrbitRadii[i]);
+		UE_LOG(LogTemp, VeryVerbose, TEXT("Planet %d Orbit Radius: %f AU"), i + 1, OrbitRadii[i]);
 	}
 
-	UE_LOG(LogTemp, Warning, TEXT("Radius Dead Zone         - Inner: %f, Outer: %f AU"),
+	UE_LOG(LogTemp, VeryVerbose, TEXT("Radius Dead Zone         - Inner: %f, Outer: %f AU"),
 	       PlanetarySystemModel->DeadZoneRadius.InnerRadius, PlanetarySystemModel->DeadZoneRadius.OuterRadius);
-	UE_LOG(LogTemp, Warning, TEXT("Radius Hot Zone          - Inner: %f, Outer: %f AU"),
+	UE_LOG(LogTemp, VeryVerbose, TEXT("Radius Hot Zone          - Inner: %f, Outer: %f AU"),
 	       PlanetarySystemModel->HotZoneRadius.InnerRadius, PlanetarySystemModel->HotZoneRadius.OuterRadius);
-	UE_LOG(LogTemp, Warning, TEXT("Radius Warm Zone         - Inner: %f, Outer: %f AU"),
+	UE_LOG(LogTemp, VeryVerbose, TEXT("Radius Warm Zone         - Inner: %f, Outer: %f AU"),
 	       PlanetarySystemModel->WarmZoneRadius.InnerRadius, PlanetarySystemModel->WarmZoneRadius.OuterRadius);
-	UE_LOG(LogTemp, Warning, TEXT("Radius Habitable Zone    - Inner: %f, Outer: %f AU"),
+	UE_LOG(LogTemp, VeryVerbose, TEXT("Radius Habitable Zone    - Inner: %f, Outer: %f AU"),
 	       PlanetarySystemModel->HabitableZoneRadius.InnerRadius,
 	       PlanetarySystemModel->HabitableZoneRadius.OuterRadius);
-	UE_LOG(LogTemp, Warning, TEXT("Radius Cold Zone         - Inner: %f, Outer: %f AU"),
+	UE_LOG(LogTemp, VeryVerbose, TEXT("Radius Cold Zone         - Inner: %f, Outer: %f AU"),
 	       PlanetarySystemModel->ColdZoneRadius.InnerRadius, PlanetarySystemModel->ColdZoneRadius.OuterRadius);
-	UE_LOG(LogTemp, Warning, TEXT("Radius Ice Zone          - Inner: %f, Outer: %f AU"),
+	UE_LOG(LogTemp, VeryVerbose, TEXT("Radius Ice Zone          - Inner: %f, Outer: %f AU"),
 	       PlanetarySystemModel->IceZoneRadius.InnerRadius, PlanetarySystemModel->IceZoneRadius.OuterRadius);
-	UE_LOG(LogTemp, Warning, TEXT("Radius Gas Giants Zone   - Inner: %f, Outer: %f AU"),
+	UE_LOG(LogTemp, VeryVerbose, TEXT("Radius Gas Giants Zone   - Inner: %f, Outer: %f AU"),
 	       PlanetarySystemModel->GasGiantsZoneRadius.InnerRadius,
 	       PlanetarySystemModel->GasGiantsZoneRadius.OuterRadius);
-	UE_LOG(LogTemp, Warning, TEXT("Radius Kuiper Belt Zone  - Inner: %f, Outer: %f AU"),
+	UE_LOG(LogTemp, VeryVerbose, TEXT("Radius Kuiper Belt Zone  - Inner: %f, Outer: %f AU"),
 	       PlanetarySystemModel->KuiperBeltZoneRadius.InnerRadius,
 	       PlanetarySystemModel->KuiperBeltZoneRadius.OuterRadius);
-	UE_LOG(LogTemp, Warning, TEXT("Radius Inner Planet Zone - Inner: %f, Outer: %f AU"),
+	UE_LOG(LogTemp, VeryVerbose, TEXT("Radius Inner Planet Zone - Inner: %f, Outer: %f AU"),
 	       PlanetarySystemModel->InnerPlanetZoneRadius.InnerRadius,
 	       PlanetarySystemModel->InnerPlanetZoneRadius.OuterRadius);
-	UE_LOG(LogTemp, Warning, TEXT("Radius Outer Planet Zone - Inner: %f, Outer: %f AU"),
+	UE_LOG(LogTemp, VeryVerbose, TEXT("Radius Outer Planet Zone - Inner: %f, Outer: %f AU"),
 	       PlanetarySystemModel->OuterPlanetZoneRadius.InnerRadius,
 	       PlanetarySystemModel->OuterPlanetZoneRadius.OuterRadius);
 
 
-	UE_LOG(LogTemp, Warning, TEXT("Hot Zone Outer: %f"), PlanetarySystemModel->HotZoneOuter);
-	UE_LOG(LogTemp, Warning, TEXT("Warm Zone Outer: %f"), PlanetarySystemModel->WarmZoneOuter);
-	UE_LOG(LogTemp, Warning, TEXT("Cold Zone Outer: %f"), PlanetarySystemModel->ColdZoneOuter);
-	UE_LOG(LogTemp, Warning, TEXT("Ice Zone Outer: %f"), PlanetarySystemModel->IceZoneOuter);
-	UE_LOG(LogTemp, Warning, TEXT("Gas Giants Zone Outer: %f"), PlanetarySystemModel->GasGiantsZoneOuter);
-	UE_LOG(LogTemp, Warning, TEXT("Kuiper Belt Zone Outer: %f"), PlanetarySystemModel->KuiperBeltZoneOuter);
-	UE_LOG(LogTemp, Warning, TEXT("Inner Zone Outer: %f"), PlanetarySystemModel->InnerZoneOuter);
-	UE_LOG(LogTemp, Warning, TEXT("Outer Zone Outer: %f"), PlanetarySystemModel->OuterZoneOuter);
-	UE_LOG(LogTemp, Warning, TEXT("Habitable Zone Outer: %f"), PlanetarySystemModel->HabitableZoneOuter);
-	UE_LOG(LogTemp, Warning, TEXT("Star Dead Zone Outer: %f"), PlanetarySystemModel->StarDeadZoneOuter);
+	UE_LOG(LogTemp, VeryVerbose, TEXT("Hot Zone Outer: %f"), PlanetarySystemModel->HotZoneOuter);
+	UE_LOG(LogTemp, VeryVerbose, TEXT("Warm Zone Outer: %f"), PlanetarySystemModel->WarmZoneOuter);
+	UE_LOG(LogTemp, VeryVerbose, TEXT("Cold Zone Outer: %f"), PlanetarySystemModel->ColdZoneOuter);
+	UE_LOG(LogTemp, VeryVerbose, TEXT("Ice Zone Outer: %f"), PlanetarySystemModel->IceZoneOuter);
+	UE_LOG(LogTemp, VeryVerbose, TEXT("Gas Giants Zone Outer: %f"), PlanetarySystemModel->GasGiantsZoneOuter);
+	UE_LOG(LogTemp, VeryVerbose, TEXT("Kuiper Belt Zone Outer: %f"), PlanetarySystemModel->KuiperBeltZoneOuter);
+	UE_LOG(LogTemp, VeryVerbose, TEXT("Inner Zone Outer: %f"), PlanetarySystemModel->InnerZoneOuter);
+	UE_LOG(LogTemp, VeryVerbose, TEXT("Outer Zone Outer: %f"), PlanetarySystemModel->OuterZoneOuter);
+	UE_LOG(LogTemp, VeryVerbose, TEXT("Habitable Zone Outer: %f"), PlanetarySystemModel->HabitableZoneOuter);
+	UE_LOG(LogTemp, VeryVerbose, TEXT("Star Dead Zone Outer: %f"), PlanetarySystemModel->StarDeadZoneOuter);
 
 	/// TODO: To GeneratePlanetOrbits
 	{
@@ -432,7 +432,7 @@ void UPlanetarySystemGenerator::GenerateCustomPlanetarySystemModel(
 			double PlanetTemperature = StarModel->SurfaceTemperature * sqrt(StarModel->Radius / (2 * OrbitRadius));
 			PlanetModel->Temperature = PlanetTemperature; // to celestial body
 
-			// Определите, в какой зоне находится планета.
+			// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ, пїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ.
 			EPlanetaryZoneType PlanetZone = DeterminePlanetZone(OrbitRadius, PlanetarySystemModel);
 			//EPlanetaryZoneType::Unknown;//DeterminePlanetZone(OrbitRadius, PlanetarySystemModel);
 			PlanetModel->PlanetZone = PlanetZone;
@@ -452,7 +452,7 @@ void UPlanetarySystemGenerator::GenerateCustomPlanetarySystemModel(
 			// now calculate mass based on density and radius
 			PlanetModel->Mass = PlanetDensity * (4.0 / 3.0) * PI * FMath::Pow(PlanetRadius, 3);
 
-			const double EARTH_RADIUS_KM = 6371.0; // радиус Земли в километрах
+			const double EARTH_RADIUS_KM = 6371.0; // пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 			double RadiusKM = PlanetRadius * EARTH_RADIUS_KM;
 			PlanetModel->RadiusKM = RadiusKM;
 
@@ -466,10 +466,10 @@ void UPlanetarySystemGenerator::GenerateCustomPlanetarySystemModel(
 			double PlanetToStarDistance = PlanetModel->Radius;
 			double planetRadius = PlanetModel->Radius;
 
-			double PlanetAtmosphereHeight = PlanetModel->RadiusKM / 30; // высота атмосферы планеты
+			double PlanetAtmosphereHeight = PlanetModel->RadiusKM / 30; // пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 			PlanetModel->AtmosphereHeight = PlanetAtmosphereHeight;
 
-			// Минимальное расстояние - радиус планеты плюс высота атмосферы
+			// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ - пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 			const double MinOrbitRadius = planetRadius + PlanetAtmosphereHeight;
 			double Eccentricity = 0;
 			double RadiusHill = PlanetToStarDistance * (1 - Eccentricity) * pow(PlanetMass / (3 * StarMass), 1.0 / 3);
@@ -487,7 +487,7 @@ void UPlanetarySystemGenerator::GenerateCustomPlanetarySystemModel(
 			}
 
 			PlanetModel->MoonOrbitsRange = OrbitRadiusPair;
-			UE_LOG(LogTemp, Warning, TEXT("Planet Moons Orbit Radius    - Min: %f, Max: %f x"), OrbitRadiusPair.Key,
+			UE_LOG(LogTemp, VeryVerbose, TEXT("Planet Moons Orbit Radius    - Min: %f, Max: %f x"), OrbitRadiusPair.Key,
 			       OrbitRadiusPair.Value);
 
 			const int AmountOfMoons = PlanetModel->AmountOfMoons;
@@ -504,16 +504,16 @@ void UPlanetarySystemGenerator::GeneratePlanetarySystemModelByStar(
 	TSharedPtr<FPlanetarySystemModel> PlanetarySystemModel, TSharedPtr<FStarModel> StarModel,
 	UPlanetGenerator* PlanetGenerator, UMoonGenerator* MoonGenerator)
 {
-	// вычисляем вероятность что будут планеты
-	// находим макс и мин кол во планет
-	// опредлеяем расположение орбит планет  
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ  
 
 	//FPlanetarySystemModel PlanetarySystemModel;
 	PlanetarySystemModel->FullSpectralName = StarModel->FullSpectralName;
 
-	// Находим базовую вероятность для данного типа звезды
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ
 	PlanetProbability BaseProbability = BasePlanetProbabilities[StarModel->StellarType];
-	// Модифицируем вероятность на основе массы звезды.
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ.
 	PlanetProbability MassModifier;
 	if (StarModel->StellarType == EStellarType::MainSequence)
 	{
@@ -525,17 +525,17 @@ void UPlanetarySystemGenerator::GeneratePlanetarySystemModelByStar(
 	}
 
 	PlanetProbability FinalProbability = BaseProbability * MassModifier;
-	UE_LOG(LogTemp, Warning, TEXT("FinalProbability: %f"), FinalProbability);
+	UE_LOG(LogTemp, VeryVerbose, TEXT("FinalProbability: %f"), FinalProbability);
 	bool HasPlanets = true; //FMath::FRand() <= FinalProbability;
 	//bool HasPlanets = false;//FMath::FRand() <= FinalProbability;
 
-	// Выводим информацию о звезде
-	UE_LOG(LogTemp, Warning, TEXT("HasPlanets: %s"), HasPlanets ? TEXT("true") : TEXT("false"));
-	UE_LOG(LogTemp, Warning, TEXT("Star Information:"));
-	UE_LOG(LogTemp, Warning, TEXT("Spectral Class: %s"), *UEnum::GetValueAsString(StarModel->SpectralClass));
-	UE_LOG(LogTemp, Warning, TEXT("Stellar Class: %s"), *UEnum::GetValueAsString(StarModel->StellarType));
-	UE_LOG(LogTemp, Warning, TEXT("Mass: %f Solar Masses"), StarModel->Mass);
-	UE_LOG(LogTemp, Warning, TEXT("Radius: %f Solar Radii"), StarModel->Radius);
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅ
+	UE_LOG(LogTemp, VeryVerbose, TEXT("HasPlanets: %s"), HasPlanets ? TEXT("true") : TEXT("false"));
+	UE_LOG(LogTemp, VeryVerbose, TEXT("Star Information:"));
+	UE_LOG(LogTemp, VeryVerbose, TEXT("Spectral Class: %s"), *UEnum::GetValueAsString(StarModel->SpectralClass));
+	UE_LOG(LogTemp, VeryVerbose, TEXT("Stellar Class: %s"), *UEnum::GetValueAsString(StarModel->StellarType));
+	UE_LOG(LogTemp, VeryVerbose, TEXT("Mass: %f Solar Masses"), StarModel->Mass);
+	UE_LOG(LogTemp, VeryVerbose, TEXT("Radius: %f Solar Radii"), StarModel->Radius);
 
 	if (HasPlanets)
 	{
@@ -555,32 +555,32 @@ void UPlanetarySystemGenerator::GeneratePlanetarySystemModelByStar(
 		PlanetarySystemModel->AmountOfPlanets = FinalPlanetCount;
 		PlanetarySystemModel->PlanetarySystemType = EPlanetarySystemType::Unknown; ///
 
-		UE_LOG(LogTemp, Warning, TEXT("MinPlanetCount: %d"), MinPlanetCount);
-		UE_LOG(LogTemp, Warning, TEXT("MaxPlanetCount: %d"), MaxPlanetCount);
-		UE_LOG(LogTemp, Warning, TEXT("FinalPlanetCount: %d"), FinalPlanetCount);
+		UE_LOG(LogTemp, VeryVerbose, TEXT("MinPlanetCount: %d"), MinPlanetCount);
+		UE_LOG(LogTemp, VeryVerbose, TEXT("MaxPlanetCount: %d"), MaxPlanetCount);
+		UE_LOG(LogTemp, VeryVerbose, TEXT("FinalPlanetCount: %d"), FinalPlanetCount);
 
-		// Это могут быть константы или переменные, зависящие от стелларного класса
+		// пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ, пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ
 		double MinOrbitScalingFactor = 1.0f;
 		double MaxOrbitScalingFactor = 10.0f;
 
 		if (StarModel->StellarType == EStellarType::HyperGiant)
 		{
-			MaxOrbitScalingFactor = 5.0f; // Уменьшаем максимальную орбиту для гипергигантов
+			MaxOrbitScalingFactor = 5.0f; // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 		}
 		else if (StarModel->StellarType == EStellarType::SuperGiant)
 		{
-			MaxOrbitScalingFactor = 6.0f; // Уменьшаем максимальную орбиту для сверхгигантов
+			MaxOrbitScalingFactor = 6.0f; // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 		}
 
 		double MinOrbit = StarModel->Mass * MinOrbitScalingFactor;
 		double MaxOrbit = StarModel->Mass * MaxOrbitScalingFactor;
 
-		// Подбираем случайное распределение для нашей системы
+		// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 		EOrbitDistributionType OrbitDistributionType = ChooseOrbitDistribution(StarModel->StellarType);
 		PlanetarySystemModel->OrbitDistributionType = OrbitDistributionType;
 
 		FString OrbitType = UEnum::GetValueAsString(OrbitDistributionType);
-		UE_LOG(LogTemp, Warning, TEXT("Orbit Distribution Type: %s"), *OrbitType);
+		UE_LOG(LogTemp, VeryVerbose, TEXT("Orbit Distribution Type: %s"), *OrbitType);
 
 		for (int i = 0; i < FinalPlanetCount; i++)
 		{
@@ -622,25 +622,25 @@ void UPlanetarySystemGenerator::GeneratePlanetarySystemModelByStar(
 				OrbitRadius = FMath::Lerp(MinOrbit, MaxOrbit, OrbitDistributionValue);
 			}
 
-			// Применяем функцию распределения к нашему диапазону орбит
+			// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ
 			OrbitRadii.Add(OrbitRadius);
 		}
 
 		OrbitRadii.Sort();
-		UE_LOG(LogTemp, Warning, TEXT("OrbitRadii Num: %d "), OrbitRadii.Num());
+		UE_LOG(LogTemp, VeryVerbose, TEXT("OrbitRadii Num: %d "), OrbitRadii.Num());
 
-		// Выводим минимальную и максимальную орбиту
-		UE_LOG(LogTemp, Warning, TEXT("MinOrbit: %f, MaxOrbit: %f"), MinOrbit, MaxOrbit);
+		// пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ
+		UE_LOG(LogTemp, VeryVerbose, TEXT("MinOrbit: %f, MaxOrbit: %f"), MinOrbit, MaxOrbit);
 
-		// Вычисляем обитаемую зону
+		// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ
 		float HabitableZoneInner = sqrt(StarModel->Luminosity / 1.1);
 		float HabitableZoneOuter = sqrt(StarModel->Luminosity / 0.53);
 
 		// Star Dead zone
-		double StarDeadZoneInner = 0; // Начинается от звезды
+		double StarDeadZoneInner = 0; // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ
 		double StarRadiusInAU = StarModel->Radius * 0.00465047;
 		double StarDeadZoneOuter = StarRadiusInAU * 2;
-		// Заканчивается на расстоянии, равном двойному радиусу звезды в AU
+		// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ, пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅ AU
 
 		// Zones
 		double HotZoneInner = 0;
@@ -655,52 +655,52 @@ void UPlanetarySystemGenerator::GeneratePlanetarySystemModelByStar(
 		double GasGiantsZoneOuter = 0;
 		double KuiperBeltZoneInner = 0;
 		double KuiperBeltZoneOuter = 0;
-		double InnerZoneInner = 0; // Начинается от звезды
-		double InnerZoneOuter = 0; // Заканчивается границей горячей зоны
-		double OuterZoneInner = 0; // Начинается от границы зоны газовых гигантов
-		double OuterZoneOuter = 0; // Примерная формула
+		double InnerZoneInner = 0; // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ
+		double InnerZoneOuter = 0; // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ
+		double OuterZoneInner = 0; // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
+		double OuterZoneOuter = 0; // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 
 		if (HabitableZoneOuter < MaxOrbit)
 		{
-			// Вычисляем зону StarDeadZone
-			StarDeadZoneInner = 0; // Начинается от звезды
+			// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ StarDeadZone
+			StarDeadZoneInner = 0; // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ
 			StarRadiusInAU = StarModel->Radius * 0.00465047;
-			StarDeadZoneOuter = StarRadiusInAU * 2; // Заканчивается на расстоянии, равном двойному радиусу звезды в AU
+			StarDeadZoneOuter = StarRadiusInAU * 2; // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ, пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅ AU
 
-			// Вычисляем горячую зону
+			// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ
 			HotZoneInner = StarDeadZoneOuter;
 			HotZoneOuter = StarDeadZoneOuter + (HabitableZoneInner - StarDeadZoneOuter) / 2;
 
-			// Вычисляем теплую зону
+			// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ
 			WarmZoneInner = HotZoneOuter;
 			WarmZoneOuter = HabitableZoneInner;
 
-			// Вычисляем холодную зону
+			// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ
 			ColdZoneInner = HabitableZoneOuter; //FMath::Max(HabitableZoneOuter, MinOrbit);
 			ColdZoneOuter = (ColdZoneInner * 2 > MaxOrbit) ? MaxOrbit : ColdZoneInner * 2;
 
-			// Вычисляем ледяную зону
+			// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ
 			IceZoneInner = ColdZoneOuter; //FMath::Max(ColdZoneOuter, MinOrbit);
 			IceZoneOuter = (IceZoneInner * 2 > MaxOrbit) ? MaxOrbit : IceZoneInner * 2;
 
-			// Вычисляем зону газовых гигантов
+			// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 			GasGiantsZoneInner = FMath::Max(IceZoneOuter, MinOrbit);
 			GasGiantsZoneOuter = (GasGiantsZoneInner * 2 > MaxOrbit) ? MaxOrbit : GasGiantsZoneInner * 2;
 
-			// Вычисляем зону пояса Койпера
+			// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 			KuiperBeltZoneInner = FMath::Max(GasGiantsZoneOuter, MinOrbit);
 			KuiperBeltZoneOuter = (KuiperBeltZoneInner * 2 > MaxOrbit) ? MaxOrbit : KuiperBeltZoneInner * 2;
 
 
 			if (OrbitDistributionType == EOrbitDistributionType::InnerOuter)
 			{
-				// Вычисляем внутреннюю зону
-				InnerZoneInner = StarDeadZoneOuter; //0; // Начинается от звезды
-				InnerZoneOuter = HotZoneOuter; // Заканчивается границей горячей зоны
+				// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ
+				InnerZoneInner = StarDeadZoneOuter; //0; // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ
+				InnerZoneOuter = HotZoneOuter; // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ
 
-				// Вычисляем внешнюю зону
-				OuterZoneInner = GasGiantsZoneOuter; // Начинается от границы зоны газовых гигантов
-				OuterZoneOuter = OuterZoneInner * 2; // Примерная формула
+				// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ
+				OuterZoneInner = GasGiantsZoneOuter; // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
+				OuterZoneOuter = OuterZoneInner * 2; // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 
 				PlanetarySystemModel->InnerPlanetZoneRadius = FZoneRadius(InnerZoneInner, InnerZoneOuter);
 				PlanetarySystemModel->OuterPlanetZoneRadius = FZoneRadius(OuterZoneInner, OuterZoneOuter);
@@ -748,39 +748,39 @@ void UPlanetarySystemGenerator::GeneratePlanetarySystemModelByStar(
 		PlanetarySystemModel->GasGiantsZoneRadius = FZoneRadius(GasGiantsZoneInner, GasGiantsZoneOuter);
 		PlanetarySystemModel->KuiperBeltZoneRadius = FZoneRadius(KuiperBeltZoneInner, KuiperBeltZoneOuter);
 
-		// Выводим обитаемую зону
-		UE_LOG(LogTemp, Warning, TEXT("Habitable Zone: %f AU - %f AU"), HabitableZoneInner, HabitableZoneOuter);
+		// пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ
+		UE_LOG(LogTemp, VeryVerbose, TEXT("Habitable Zone: %f AU - %f AU"), HabitableZoneInner, HabitableZoneOuter);
 
-		// Выводим коэффициент орбиты
-		// Выводим все орбиты планет
+		// пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ
+		// пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ
 		for (int i = 0; i < OrbitRadii.Num(); ++i)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("Planet %d Orbit Radius: %f AU"), i + 1, OrbitRadii[i]);
+			UE_LOG(LogTemp, VeryVerbose, TEXT("Planet %d Orbit Radius: %f AU"), i + 1, OrbitRadii[i]);
 		}
 
-		UE_LOG(LogTemp, Warning, TEXT("Radius Dead Zone         - Inner: %f, Outer: %f AU"),
+		UE_LOG(LogTemp, VeryVerbose, TEXT("Radius Dead Zone         - Inner: %f, Outer: %f AU"),
 		       PlanetarySystemModel->DeadZoneRadius.InnerRadius, PlanetarySystemModel->DeadZoneRadius.OuterRadius);
-		UE_LOG(LogTemp, Warning, TEXT("Radius Hot Zone          - Inner: %f, Outer: %f AU"),
+		UE_LOG(LogTemp, VeryVerbose, TEXT("Radius Hot Zone          - Inner: %f, Outer: %f AU"),
 		       PlanetarySystemModel->HotZoneRadius.InnerRadius, PlanetarySystemModel->HotZoneRadius.OuterRadius);
-		UE_LOG(LogTemp, Warning, TEXT("Radius Warm Zone         - Inner: %f, Outer: %f AU"),
+		UE_LOG(LogTemp, VeryVerbose, TEXT("Radius Warm Zone         - Inner: %f, Outer: %f AU"),
 		       PlanetarySystemModel->WarmZoneRadius.InnerRadius, PlanetarySystemModel->WarmZoneRadius.OuterRadius);
-		UE_LOG(LogTemp, Warning, TEXT("Radius Habitable Zone    - Inner: %f, Outer: %f AU"),
+		UE_LOG(LogTemp, VeryVerbose, TEXT("Radius Habitable Zone    - Inner: %f, Outer: %f AU"),
 		       PlanetarySystemModel->HabitableZoneRadius.InnerRadius,
 		       PlanetarySystemModel->HabitableZoneRadius.OuterRadius);
-		UE_LOG(LogTemp, Warning, TEXT("Radius Cold Zone         - Inner: %f, Outer: %f AU"),
+		UE_LOG(LogTemp, VeryVerbose, TEXT("Radius Cold Zone         - Inner: %f, Outer: %f AU"),
 		       PlanetarySystemModel->ColdZoneRadius.InnerRadius, PlanetarySystemModel->ColdZoneRadius.OuterRadius);
-		UE_LOG(LogTemp, Warning, TEXT("Radius Ice Zone          - Inner: %f, Outer: %f AU"),
+		UE_LOG(LogTemp, VeryVerbose, TEXT("Radius Ice Zone          - Inner: %f, Outer: %f AU"),
 		       PlanetarySystemModel->IceZoneRadius.InnerRadius, PlanetarySystemModel->IceZoneRadius.OuterRadius);
-		UE_LOG(LogTemp, Warning, TEXT("Radius Gas Giants Zone   - Inner: %f, Outer: %f AU"),
+		UE_LOG(LogTemp, VeryVerbose, TEXT("Radius Gas Giants Zone   - Inner: %f, Outer: %f AU"),
 		       PlanetarySystemModel->GasGiantsZoneRadius.InnerRadius,
 		       PlanetarySystemModel->GasGiantsZoneRadius.OuterRadius);
-		UE_LOG(LogTemp, Warning, TEXT("Radius Kuiper Belt Zone  - Inner: %f, Outer: %f AU"),
+		UE_LOG(LogTemp, VeryVerbose, TEXT("Radius Kuiper Belt Zone  - Inner: %f, Outer: %f AU"),
 		       PlanetarySystemModel->KuiperBeltZoneRadius.InnerRadius,
 		       PlanetarySystemModel->KuiperBeltZoneRadius.OuterRadius);
-		UE_LOG(LogTemp, Warning, TEXT("Radius Inner Planet Zone - Inner: %f, Outer: %f AU"),
+		UE_LOG(LogTemp, VeryVerbose, TEXT("Radius Inner Planet Zone - Inner: %f, Outer: %f AU"),
 		       PlanetarySystemModel->InnerPlanetZoneRadius.InnerRadius,
 		       PlanetarySystemModel->InnerPlanetZoneRadius.OuterRadius);
-		UE_LOG(LogTemp, Warning, TEXT("Radius Outer Planet Zone - Inner: %f, Outer: %f AU"),
+		UE_LOG(LogTemp, VeryVerbose, TEXT("Radius Outer Planet Zone - Inner: %f, Outer: %f AU"),
 		       PlanetarySystemModel->OuterPlanetZoneRadius.InnerRadius,
 		       PlanetarySystemModel->OuterPlanetZoneRadius.OuterRadius);
 
@@ -801,7 +801,7 @@ void UPlanetarySystemGenerator::GeneratePlanetarySystemModelByStar(
 			double PlanetTemperature = StarModel->SurfaceTemperature * sqrt(StarModel->Radius / (2 * OrbitRadius));
 			PlanetModel->Temperature = PlanetTemperature; // to celestial body
 
-			// Определите, в какой зоне находится планета.
+			// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ, пїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ.
 			EPlanetaryZoneType PlanetZone = DeterminePlanetZone(OrbitRadius, PlanetarySystemModel);
 			PlanetModel->PlanetZone = PlanetZone;
 
@@ -820,7 +820,7 @@ void UPlanetarySystemGenerator::GeneratePlanetarySystemModelByStar(
 			// now calculate mass based on density and radius
 			PlanetModel->Mass = PlanetDensity * (4.0 / 3.0) * PI * FMath::Pow(PlanetRadius, 3);
 
-			const double EARTH_RADIUS_KM = 6371.0; // радиус Земли в километрах
+			const double EARTH_RADIUS_KM = 6371.0; // пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 			double RadiusKM = PlanetRadius * EARTH_RADIUS_KM;
 			PlanetModel->RadiusKM = RadiusKM;
 
@@ -834,16 +834,16 @@ void UPlanetarySystemGenerator::GeneratePlanetarySystemModelByStar(
 			double PlanetToStarDistance = PlanetModel->Radius;
 			double planetRadius = PlanetModel->Radius;
 
-			//const double EARTH_RADIUS_KM = 6371.0; // радиус Земли в километрах
-			//const double EARTH_MASS = 1.0; // масса Земли (в данном случае массы планеты измеряются в единицах массы Земли)
+			//const double EARTH_RADIUS_KM = 6371.0; // пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
+			//const double EARTH_MASS = 1.0; // пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ (пїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ)
 			// const double ATMOSPHERE_HEIGHT_COEFFICIENT = 100.0;
 			//double massFactor = FMath::Clamp(PlanetModel->Mass / EARTH_MASS, 0.1, 5.0);
 			//double PlanetAtmosphereHeight = (PlanetModel->Radius ) * massFactor * ATMOSPHERE_HEIGHT_COEFFICIENT;
-			/// TODO: PlanetAtmosphere //double planetAtmosphereHeight = PlanetModel.AtmosphereHeight; // высота атмосферы планеты
-			double PlanetAtmosphereHeight = PlanetModel->RadiusKM / 30; // высота атмосферы планеты
+			/// TODO: PlanetAtmosphere //double planetAtmosphereHeight = PlanetModel.AtmosphereHeight; // пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ
+			double PlanetAtmosphereHeight = PlanetModel->RadiusKM / 30; // пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 			PlanetModel->AtmosphereHeight = PlanetAtmosphereHeight;
 
-			// Минимальное расстояние - радиус планеты плюс высота атмосферы
+			// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ - пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 			const double MinOrbitRadius = planetRadius + PlanetAtmosphereHeight;
 			double eccentricity = 0;
 			double RadiusHill = PlanetToStarDistance * (1 - eccentricity) * pow(PlanetMass / (3 * StarMass), 1.0 / 3);
@@ -861,13 +861,13 @@ void UPlanetarySystemGenerator::GeneratePlanetarySystemModelByStar(
 			}
 
 			PlanetModel->MoonOrbitsRange = OrbitRadiusPair;
-			UE_LOG(LogTemp, Warning, TEXT("Planet Moons Orbit Radius    - Min: %f, Max: %f x"), OrbitRadiusPair.Key,
+			UE_LOG(LogTemp, VeryVerbose, TEXT("Planet Moons Orbit Radius    - Min: %f, Max: %f x"), OrbitRadiusPair.Key,
 			       OrbitRadiusPair.Value);
 
 			const int AmountOfMoons = PlanetModel->AmountOfMoons;
 			TArray<TSharedPtr<FMoonData>> MoonsList{};
 			TArray<float> MoonOrbits;
-			// Создаем массив со всеми возможными орбитами
+			// пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 			MoonOrbits.Reserve(AmountOfMoons);
 
 			if (PlanetModel->PlanetType == EPlanetType::GasGiant
@@ -876,7 +876,7 @@ void UPlanetarySystemGenerator::GeneratePlanetarySystemModelByStar(
 				|| PlanetModel->PlanetType == EPlanetType::Ocean
 			)
 			{
-				// Распределение орбит от 1 до 10 радиусов планеты
+				// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅ 1 пїЅпїЅ 10 пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 				for (int i = 0; i < AmountOfMoons; i++)
 				{
 					double orbitRadius = FMath::RandRange(PlanetRadius * 1.0, PlanetRadius * 10.0);
@@ -888,7 +888,7 @@ void UPlanetarySystemGenerator::GeneratePlanetarySystemModelByStar(
 			{
 				double a = 1.5;
 				double d = 1.4;
-				// Коэффициенты закона Тициуса-Боде для остальных планет
+				// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ-пїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ
 				for (int i = 0; i < AmountOfMoons; i++)
 				{
 					double orbitRadius = a + d * pow(2, i);
@@ -906,14 +906,14 @@ void UPlanetarySystemGenerator::GeneratePlanetarySystemModelByStar(
 
 				EMoonType MoonType = MoonGenerator->GenerateMoonType(PlanetModel);
 
-				// Вычисляем физические параметры луны
+				// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ
 				double MoonMass = MoonGenerator->CalculateRandomMoonMass();
 				double MoonDensity = MoonGenerator->CalculateRandomMoonDensity(MoonType);
 				double MoonRadius = MoonGenerator->CalculateMoonRadius(MoonDensity, MoonMass);
 				double MoonGravity = MoonMass / FMath::Pow(MoonRadius, 2);
 				/// TODO: to MoonGenerator->CalculateGravitationalForce(PlanetModel.Mass, MoonMass, MoonOrbit);
 
-				// Создаем модель луны
+				// пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ
 				MoonModel->Type = MoonType;
 				MoonModel->Mass = MoonMass;
 				MoonModel->Radius = MoonRadius;
@@ -923,16 +923,16 @@ void UPlanetarySystemGenerator::GeneratePlanetarySystemModelByStar(
 				MoonModel->OrbitDistance = MoonOrbit;
 				MoonModel->MoonAtmosphereHeight = MoonModel->RadiusKM / 30;
 
-				// Создаем данные о луне
+				// пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅ
 				int MoonIndex = MoonOrbits.IndexOfByKey(MoonOrbit);
 				TSharedPtr<FMoonData> MoonData = MakeShared<FMoonData>(MoonIndex + 1, MoonOrbit, MoonModel);
 
-				// Добавляем данные о луне в список
+				// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅ
 				MoonsList.Add(MoonData);
 			}
 
 
-			//// Вычисление позиций точек Лагранжа (это упрощенные формулы, в реальности они сложнее)
+			//// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ (пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ, пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ)
 			//FVector L1_Position = FVector(OrbitRadius * (1 - pow(PlanetMass / 3, 1.0 / 3.0)), 0, 0);
 			//FVector L2_Position = FVector(OrbitRadius * (1 + pow(PlanetMass / 3, 1.0 / 3.0)), 0, 0);
 			//FVector L3_Position = FVector(-OrbitRadius * (1 + 5 * PlanetMass / 12), 0, 0);
@@ -1018,7 +1018,7 @@ FRadiusRange UPlanetarySystemGenerator::GetPlanetRadiusRange(EPlanetType PlanetT
 		return PlanetRadiusRanges[PlanetType];
 	}
 
-	// Возвращаем значения по умолчанию или выбрасываем ошибку
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ
 	return FRadiusRange(0.2, 12.6);
 }
 
@@ -1122,20 +1122,20 @@ EPlanetaryZoneType UPlanetarySystemGenerator::DeterminePlanetZone(double OrbitRa
 	    return EPlanetaryZoneType::KuiperBeltZone;
 	}*/
 
-	// Если мы не нашли подходящую зону, возвращаем Unknown.
+	// пїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ, пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ Unknown.
 	return EPlanetaryZoneType::Unknown;
 }
 
 EPlanetType UPlanetarySystemGenerator::DeterminePlanetType(EPlanetaryZoneType PlanetZone)
 {
-	// Получите массив вероятностей для типов планет в этой зоне.
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ.
 	TArray<FPlanetTypeProbability> PlanetTypeProbabilities = ZonePlanetProbabilities[PlanetZone];
 	// try catch missed types, crashed 
 
-	// Генерируйте случайное число от 0 до 1.
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅ 0 пїЅпїЅ 1.
 	double RandomNumber = FMath::RandRange(0.0f, 1.0f);
 
-	// Пройдите через массив вероятностей, подсчитывая сумму, пока не достигнете числа, которое больше или равно случайному числу.
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ, пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ, пїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ, пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ.
 	double CumulativeProbability = 0.0f;
 	for (FPlanetTypeProbability PlanetTypeProbability : PlanetTypeProbabilities)
 	{
@@ -1146,7 +1146,7 @@ EPlanetType UPlanetarySystemGenerator::DeterminePlanetType(EPlanetaryZoneType Pl
 		}
 	}
 
-	// Если вы не нашли соответствующего типа планеты (что не должно произойти, если вероятности правильно нормированы), верните Unknown.
+	// пїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ (пїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ, пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ), пїЅпїЅпїЅпїЅпїЅпїЅпїЅ Unknown.
 	return EPlanetType::Unknown;
 }
 
@@ -1169,18 +1169,18 @@ EOrbitDistributionType UPlanetarySystemGenerator::ChooseDistributionType(
 	}
 	else if (StellarClass == EStellarType::WhiteDwarf || StellarClass == EStellarType::SubDwarf)
 	{
-		// Если у нас маленькая звезда, то предпочтем Dense
+		// пїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ, пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ Dense
 		OrbitDistributionType = EOrbitDistributionType::Dense;
 	}
 	else if (StellarClass == EStellarType::Giant || StellarClass == EStellarType::SuperGiant || StellarClass ==
 		EStellarType::HyperGiant)
 	{
-		// Если у нас большая звезда, то предпочтем InnerOuter
+		// пїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ, пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ InnerOuter
 		OrbitDistributionType = EOrbitDistributionType::InnerOuter;
 	}
 	else
 	{
-		// Если у нас звезда среднего размера, будем использовать разные типы распределения в зависимости от массы
+		// пїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ, пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅ
 		if (StarMass < 0.5f)
 		{
 			OrbitDistributionType = EOrbitDistributionType::Uniform;
@@ -1190,10 +1190,10 @@ EOrbitDistributionType UPlanetarySystemGenerator::ChooseDistributionType(
 			OrbitDistributionType = EOrbitDistributionType::Gaussian;
 		}
 		else if (MaxOrbit - MinOrbit < 5.0f)
-		// Проверим, насколько близко друг к другу минимальная и максимальная орбиты
+		// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ, пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ
 		{
 			OrbitDistributionType = EOrbitDistributionType::Dense;
-			// Если орбиты близки, будем использовать плотное распределение
+			// пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ, пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 		}
 		else
 		{
@@ -1206,26 +1206,26 @@ EOrbitDistributionType UPlanetarySystemGenerator::ChooseDistributionType(
 
 EOrbitDistributionType UPlanetarySystemGenerator::ChooseOrbitDistribution(EStellarType StellarClass)
 {
-	// Получаем мапу вероятностей для данного класса звезды
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ
 	auto probabilities = StellarOrbitDistributions[StellarClass];
 
-	// Генерируем случайное число в диапазоне от 0 до 1
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ 0 пїЅпїЅ 1
 	float randomValue = FMath::FRand();
 
-	// Идем по всем парам ключ-значение в словаре вероятностей
+	// пїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ-пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 	for (auto& keyValue : probabilities)
 	{
-		// Уменьшаем случайное число на вероятность текущего типа
+		// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ
 		randomValue -= keyValue.Value;
 
-		// Если случайное число стало меньше нуля, выбираем текущий тип
+		// пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ, пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ
 		if (randomValue < 0)
 		{
 			return keyValue.Key;
 		}
 	}
 
-	// Возвращаем последний тип, если что-то пошло не так
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ, пїЅпїЅпїЅпїЅ пїЅпїЅпїЅ-пїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅ
 	return probabilities.end().Key();
 }
 
@@ -1242,32 +1242,32 @@ int UPlanetarySystemGenerator::DetermineMaxPlanets(EStellarType StellarClass, FS
 {
 	int MaxPlanets;
 
-	// У некоторых типов звезд вообще нет планет
+	// пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ
 	if (StellarClass == EStellarType::WhiteDwarf || StellarClass == EStellarType::Neutron)
 	{
 		return 0;
 	}
 
-	// Задаем базовое количество планет в зависимости от класса звезды
+	// пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ
 	switch (StellarClass)
 	{
 	case EStellarType::HyperGiant:
 	case EStellarType::SuperGiant:
 	case EStellarType::Giant:
-		MaxPlanets = 10; // Базовое количество для гигантских звезд
+		MaxPlanets = 10; // пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ
 		break;
 	case EStellarType::MainSequence:
-		MaxPlanets = 5; // Базовое количество для звезд главной последовательности
+		MaxPlanets = 5; // пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 		break;
 	default:
-		MaxPlanets = 3; // Базовое количество для остальных типов звезд
+		MaxPlanets = 3; // пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ
 		break;
 	}
 
-	// Модифицируем количество планет в зависимости от массы и возраста звезды
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ
 	MaxPlanets = MaxPlanets + StarModel.Mass * 0.5 + 0.2 * 0.1;
 
-	// Ограничим максимальное количество планет, чтобы оно было разумным
+	// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ, пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 	if (MaxPlanets > 20)
 	{
 		MaxPlanets = 20;

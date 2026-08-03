@@ -20,8 +20,16 @@ void AGravityGameModeBase::BeginPlay()
 	{
 		if (const UGameInstance* GameInstance = World->GetGameInstance())
 		{
-			if (UGeneratedWorld* NewGeneratedWorld = GameInstance->GetSubsystem<UMainGameplayInstance>()->
-			                                                       NewGeneratedWorld)
+			const UMainGameplayInstance* GameplayState =
+				GameInstance->GetSubsystem<UMainGameplayInstance>();
+			if (GameplayState && GameplayState->bUseAuthoredSinglePlayWorld)
+			{
+				UE_LOG(LogTemp, Log,
+					TEXT("[APS.WorldGeneration] Authored SinglePlay route: using only actors serialized in the level"));
+				return;
+			}
+
+			if (UGeneratedWorld* NewGeneratedWorld = GameplayState ? GameplayState->NewGeneratedWorld : nullptr)
 			{
 				// Spawn AAstroGenerator and pass UGeneratedWorld
 				FActorSpawnParameters SpawnParams;

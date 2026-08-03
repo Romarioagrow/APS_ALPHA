@@ -4,6 +4,8 @@
 #include "Widgets/SCompoundWidget.h"
 
 class UWorldGenerationViewModel;
+class SVerticalBox;
+struct FAPSPreviewBodyEntry;
 
 class SWorldGenerationPanel : public SCompoundWidget
 {
@@ -18,12 +20,19 @@ public:
 
 private:
 	FText GetPreviewStatus() const;
+	FText GetContinueLabel() const;
 	FReply CommitWorld();
 	FReply RefreshPreview();
 	FReply GoBack();
 	FReply FocusPreview(uint8 FocusValue);
+	FReply FocusPreviewUp();
+	FReply FocusPreviewBody(TWeakObjectPtr<AActor> BodyActor);
+	EActiveTimerReturnType RefreshBodyHierarchy(double CurrentTime, float DeltaTime);
+	void RebuildBodyHierarchy(const TArray<FAPSPreviewBodyEntry>& Entries, uint32 Signature);
 
 	TWeakObjectPtr<UWorldGenerationViewModel> ViewModel;
 	FSimpleDelegate OnBack;
 	FSimpleDelegate OnContinue;
+	TSharedPtr<SVerticalBox> BodyHierarchyBox;
+	uint32 BodyHierarchySignature{0};
 };

@@ -39,6 +39,7 @@ public:
 
 private:
 	void InstallSlateMenu();
+	void ScheduleSlateMenuInstallRetry();
 	void RemoveSlateMenu();
 	void LoadNextWorldMetadata();
 	void OnWorldMetadataLoaded(uint64 RequestGeneration, const FString& SlotName,
@@ -56,6 +57,7 @@ private:
 	TSharedPtr<SAPSMainMenuRoot> SlateMenuRoot;
 	TSharedPtr<SWidget> SlateMenuContainer;
 	FTimerHandle InstallSlateMenuTimer;
+	int32 SlateMenuInstallAttempts{0};
 	TArray<FString> PendingMetadataSlots;
 	int32 PendingMetadataIndex{0};
 	/** Invalidates callbacks from an older browser page without blocking for I/O. */

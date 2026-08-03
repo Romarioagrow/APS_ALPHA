@@ -29,4 +29,20 @@ public:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Loading")
 	bool bIsLoadingMode{false};
+
+	/**
+	 * The Start Single Game route opens the authored showcase map exactly as it
+	 * is saved. Placed AstroGenerator actors must not reinterpret that map as a
+	 * procedural-generation request during BeginPlay.
+	 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "World Generation")
+	bool bUseAuthoredSinglePlayWorld{false};
+
+	/**
+	 * True only for a committed Generate Civilization handoff. Generate Space
+	 * and Create Planet share the astronomical model but must not inherit the
+	 * generator Blueprint's default headquarters/station/character classes.
+	 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "World Generation")
+	bool bSpawnGeneratedCivilization{false};
 };
