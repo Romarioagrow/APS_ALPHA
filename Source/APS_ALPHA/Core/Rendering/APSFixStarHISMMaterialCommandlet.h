@@ -3,7 +3,10 @@
 #include "Commandlets/Commandlet.h"
 #include "APSFixStarHISMMaterialCommandlet.generated.h"
 
-/** Removes temporal dither flags from the two legacy HISM star master materials. */
+/**
+ * Rebuilds the canonical stellar masters with one scale-independent procedural
+ * surface recipe and removes temporal features that make distant HISM stars flicker.
+ */
 UCLASS()
 class APS_ALPHA_API UAPSFixStarHISMMaterialCommandlet : public UCommandlet
 {

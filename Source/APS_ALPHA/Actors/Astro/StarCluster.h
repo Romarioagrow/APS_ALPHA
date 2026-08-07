@@ -162,6 +162,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star Cluster")
 	int StarAmount;
 
+	/** Complete logical population before the preview/runtime HISM budget is applied. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Star Cluster|Generation")
+	int32 ModeledStarAmount{0};
+
 	//  
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star Cluster")
 	double StarDensity;

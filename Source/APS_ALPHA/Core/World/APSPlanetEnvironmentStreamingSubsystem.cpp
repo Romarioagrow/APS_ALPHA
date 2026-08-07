@@ -3,11 +3,27 @@
 #include "APS_ALPHA/Actors/Astro/Moon.h"
 #include "APS_ALPHA/Actors/Astro/Planet.h"
 #include "APS_ALPHA/Actors/Astro/PlanetaryBody.h"
+#include "APS_ALPHA/Generation/PlanetarySurfaceGenerator.h"
 #include "EngineUtils.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogAPSWorldScapeStreaming, Log, All);
+
+namespace
+{
+	bool IsExplicitMenuPreviewBody(const AActor* Actor)
+	{
+		for (const AActor* Parent = Actor; IsValid(Parent); Parent = Parent->GetAttachParentActor())
+		{
+			if (Parent->ActorHasTag(TEXT("WorldGenerationPreview")))
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+}
 
 bool UAPSPlanetEnvironmentStreamingSubsystem::ShouldCreateSubsystem(UObject* Outer) const
 {
@@ -47,15 +63,11 @@ APlanet* UAPSPlanetEnvironmentStreamingSubsystem::ResolveFamilyPlanet(APlanetary
 void UAPSPlanetEnvironmentStreamingSubsystem::UpdateActiveEnvironment()
 {
 	UWorld* World = GetWorld();
-	// L_APS_SinglePlay_StartLocation owns a pre-authored WorldScape hierarchy
-	// that is integrated by AAstroGenerator. The generic proximity streamer is
-	// intended for generated worlds; running it here creates a second transient
-	// planet/root over the authored level and can unload the authored hierarchy.
-	// Keep the legacy level isolated until it is explicitly migrated.
-	if (World && World->GetMapName().Contains(TEXT("L_APS_SinglePlay_StartLocation")))
-	{
-		return;
-	}
+	// Do not disable streaming for the complete authored SinglePlay map. Its
+	// integrated home planet opts out explicitly (bStreamWorldScapeSurface=false),
+	// while the other generated planets and moons still need the same distant
+	// family preload and nearest-body activation used by generated gameplay.
+	// A map-wide early return made every remote atmosphere permanently empty.
 
 	APlayerController* PlayerController = World ? World->GetFirstPlayerController() : nullptr;
 	APawn* Observer = PlayerController ? PlayerController->GetPawn() : nullptr;
@@ -75,8 +87,15 @@ void UAPSPlanetEnvironmentStreamingSubsystem::UpdateActiveEnvironment()
 	for (TActorIterator<APlanetaryBody> It(World); It; ++It)
 	{
 		APlanetaryBody* Body = *It;
-		if (!IsValid(Body) || !Body->bStreamWorldScapeSurface)
+		if (!IsValid(Body) || !Body->bStreamWorldScapeSurface
+			|| IsExplicitMenuPreviewBody(Body))
 		{
+			continue;
+		}
+		if (const APlanet* Planet = Cast<APlanet>(Body); Planet && !Planet->IsNotGasGiant())
+		{
+			// Gas giants keep their lightweight volumetric/sphere renderer. Their
+			// solid moons still join the family through ParentPlanet below.
 			continue;
 		}
 		StreamedBodies.Add(Body);
@@ -161,16 +180,9 @@ void UAPSPlanetEnvironmentStreamingSubsystem::UpdateActiveEnvironment()
 
 	ResidentFamily = BestFamily;
 	TArray<APlanetaryBody*>& FamilyBodies = Families.FindChecked(BestFamily);
-	for (APlanetaryBody* Body : FamilyBodies)
-	{
-		if (Body->GetWorldScapeStreamingState() == EWorldScapeSurfaceState::Unloaded)
-		{
-			Body->SetWorldScapeStreamingState(EWorldScapeSurfaceState::Preloaded);
-		}
-	}
 	if (bFamilyChanged)
 	{
-		UE_LOG(LogAPSWorldScapeStreaming, Log, TEXT("Preloaded WorldScape family: %s (%d bodies)"),
+		UE_LOG(LogAPSWorldScapeStreaming, Log, TEXT("Selected WorldScape family: %s (%d bodies)"),
 			*BestFamily->GetName(), FamilyBodies.Num());
 	}
 
@@ -196,6 +208,43 @@ void UAPSPlanetEnvironmentStreamingSubsystem::UpdateActiveEnvironment()
 		{
 			BestBodyScore = BodyScore;
 			BestBody = Body;
+		}
+	}
+
+	// Preparing every planet and moon in one subsystem update synchronously loaded
+	// dozens of WorldScape profiles and spawned dozens of roots.  Keep the family
+	// resident contract, but activate the nearest body immediately and amortize its
+	// siblings across later updates. At the 0.5 s cadence the whole family is still
+	// warm well before normal inter-body travel can reach it.
+	if (BestBody && BestBody->GetWorldScapeStreamingState() == EWorldScapeSurfaceState::Unloaded)
+	{
+		BestBody->SetWorldScapeStreamingState(EWorldScapeSurfaceState::Preloaded);
+	}
+	if (BestBody && IsValid(BestBody->PlanetaryEnvironmentGenerator))
+	{
+		if (AWorldScapeRoot* ActiveRoot =
+			BestBody->PlanetaryEnvironmentGenerator->WorldScapeRootInstance)
+		{
+			// WorldScape's WITH_EDITOR path prefers the editor viewport camera even
+			// during PIE. Always supply the actual gameplay observer so chunks are
+			// generated under the player rather than elsewhere on the planet. The
+			// subsystem owns freezing explicitly, so disable the plugin's second,
+			// editor-camera-based distance freeze as well.
+			ActiveRoot->bOverridePlayerPosition = true;
+			ActiveRoot->OverridedPlayerPosition = ObserverLocation;
+			ActiveRoot->DistanceToFreezeGeneration = 0.0f;
+		}
+	}
+	constexpr int32 MaxSiblingPreloadsPerUpdate = 2;
+	int32 SiblingPreloads = 0;
+	for (APlanetaryBody* Body : FamilyBodies)
+	{
+		if (Body != BestBody
+			&& Body->GetWorldScapeStreamingState() == EWorldScapeSurfaceState::Unloaded
+			&& SiblingPreloads < MaxSiblingPreloadsPerUpdate)
+		{
+			Body->SetWorldScapeStreamingState(EWorldScapeSurfaceState::Preloaded);
+			++SiblingPreloads;
 		}
 	}
 

@@ -350,8 +350,6 @@ void AGravityCharacterPawn::OnBeginOverlap(UPrimitiveComponent* OverlappedCompon
 	if (!OtherActor) return;
 
 	UE_LOG(LogTemp, Warning, TEXT("BeginOverlap with: %s"), *OtherActor->GetName());
-	if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Green,
-	                                 FString::Printf(TEXT("BeginOverlap with: %s"), *OtherActor->GetName()));
 
 	if (OtherActor->GetClass()->ImplementsInterface(UGravitySource::StaticClass()))
 	{
@@ -365,8 +363,6 @@ void AGravityCharacterPawn::OnEndOverlap(UPrimitiveComponent* OverlappedComponen
 	if (!OtherActor) return;
 
 	UE_LOG(LogTemp, Warning, TEXT("EndOverlap with: %s"), *OtherActor->GetName());
-	if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Red,
-	                                 FString::Printf(TEXT("EndOverlap with: %s"), *OtherActor->GetName()));
 
 	UpdateGravityType();
 }
@@ -377,8 +373,6 @@ void AGravityCharacterPawn::OnEndOverlap(UPrimitiveComponent* OverlappedComponen
 
 void AGravityCharacterPawn::UpdateGravityType()
 {
-	if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Orange, FString::Printf(TEXT("UpdateGravityType")));
-
 	if (!CapsuleComponent) return;
 
 	FName TagToCheck = "GravitySource";
@@ -397,15 +391,11 @@ void AGravityCharacterPawn::UpdateGravityType()
 	if (OverlappingActorsWithTag.Num() > 0)
 	{
 		AActor* LastGravityActor = OverlappingActorsWithTag[OverlappingActorsWithTag.Num() - 1];
-		if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Red,
-		                                 FString::Printf(TEXT("LastGravityActor : %s"), *LastGravityActor->GetName()));
-
 		// switch gravity to first
 		SwitchGravityType(LastGravityActor);
 	}
 	else
 	{
-		if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Red, FString::Printf(TEXT("LastGravityActor 0")));
 		CurrentGravityType = EGravityType::ZeroG;
 		UpdateGravityPhysicParams();
 	}
@@ -500,11 +490,6 @@ void AGravityCharacterPawn::UpdateAnimationState()
 
 void AGravityCharacterPawn::UpdateGravityState()
 {
-	FString GravityStateString = StaticEnum<EGravityState>()->GetNameStringByValue(
-		static_cast<int32>(CurrentGravityState));
-	if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green,
-	                                 FString::Printf(TEXT("GravityStateString: %s"), *GravityStateString));
-
 	if (!CapsuleComponent) return;
 
 	UWorld* World = GetWorld();
@@ -522,9 +507,6 @@ void AGravityCharacterPawn::UpdateGravityState()
 		bool bHit = World->LineTraceSingleByChannel(HitResult, StartLocation, EndLocation, ECC_Visibility,
 		                                            CollisionParams);
 
-		FColor DebugLineColor = bHit ? FColor::Green : FColor::Red;
-		DrawDebugLine(World, StartLocation, EndLocation, DebugLineColor, false, 2.0f, 0, 2.0f);
-
 		if (bHit)
 		{
 			CurrentGravityState = EGravityState::Attracting;
@@ -534,8 +516,6 @@ void AGravityCharacterPawn::UpdateGravityState()
 
 			HeightAboveGround = DistanceToGround - CapsuleComponent->GetScaledCapsuleHalfHeight();
 
-			if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Yellow,
-			                                 FString::Printf(TEXT("HeightAboveGround: %f"), HeightAboveGround));
 		}
 		else
 		{
@@ -573,8 +553,6 @@ void AGravityCharacterPawn::UpdateStationRotation()
 
 void AGravityCharacterPawn::UpdateStationGravity()
 {
-	if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Station Gravity")));
-
 	UpdateStationRotation();
 
 	UpdateGravityState();
@@ -607,8 +585,6 @@ void AGravityCharacterPawn::UpdateStationGravity()
 
 void AGravityCharacterPawn::UpdatePlanetGravity()
 {
-	if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Planet Gravity")));
-
 	if (!GravityTargetActor || !CapsuleComponent) return;
 
 	UWorld* World = GetWorld();
@@ -647,8 +623,6 @@ void AGravityCharacterPawn::UpdatePlanetGravity()
 
 void AGravityCharacterPawn::UpdateShipGravity()
 {
-	if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("Ship Gravity")));
-
 	if (!GravityTargetActor || !CapsuleComponent) return;
 
 	UWorld* World = GetWorld();

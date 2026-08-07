@@ -113,6 +113,13 @@ TSharedPtr<FPlanetModel> UPlanetGenerator::CreatePlanetModelFromGeneratedWorld(c
 	PlanetModel->RadiusKM = FMath::Max(1.0, static_cast<double>(GeneratedWorld->PlanetRadius));
 	PlanetModel->Radius = PlanetModel->RadiusKM / EarthRadiusKm;
 	PlanetModel->AtmosphereHeight = FMath::Max(0.0, GeneratedWorld->AtmosphereHeight);
+	PlanetModel->SurfaceSeed = FMath::Max(0, GeneratedWorld->PlanetSurfaceSeed);
+	PlanetModel->SurfaceFeatureScale = FMath::Clamp(GeneratedWorld->SurfaceFeatureScale, 0.25, 4.0);
+	PlanetModel->SurfaceReliefScale = FMath::Clamp(GeneratedWorld->SurfaceReliefScale, 0.25, 2.5);
+	PlanetModel->SurfaceLandCoverageScale = FMath::Clamp(GeneratedWorld->SurfaceLandCoverageScale, 0.25, 2.0);
+	PlanetModel->SurfaceMountainScale = FMath::Clamp(GeneratedWorld->SurfaceMountainScale, 0.0, 2.0);
+	PlanetModel->SurfaceCraterScale = FMath::Clamp(GeneratedWorld->SurfaceCraterScale, 0.0, 2.0);
+	PlanetModel->SurfaceRoughnessScale = FMath::Clamp(GeneratedWorld->SurfaceRoughnessScale, 0.25, 2.0);
 
 	return PlanetModel;
 }
@@ -136,13 +143,15 @@ void UPlanetGenerator::GeneratePlanetAtmosphere(APlanet* Planet, const TSharedPt
 		PlanetAtmosphere->AttachToActor(Planet, FAttachmentTransformRules::KeepWorldTransform);
 
 		// Настройка параметров атмосферы
-		PlanetAtmosphere->PlanetRadius = PlanetAtmosphereMode->AtmosphereRadiusKm;
+		PlanetAtmosphere->bKeepRelativeScale = false;
+		PlanetAtmosphere->PlanetRadius = FMath::Max(PlanetAtmosphereMode->AtmosphereRadiusKm - 1.0, 0.5);
 		PlanetAtmosphere->AtmosphereHeight = PlanetAtmosphereMode->AtmosphereHeight;
 		PlanetAtmosphere->AtmosphereOpacity = PlanetAtmosphereMode->AtmosphereOpacity;
 		PlanetAtmosphere->MultiScatering = PlanetAtmosphereMode->AtmosphereMultiScattering;
 		PlanetAtmosphere->RayleighHeight = PlanetAtmosphereMode->AtmosphereRayleighScattering;
 		//PlanetAtmosphere->Ray = PlanetAtmosphereMode->AtmosphereColor;
 		PlanetAtmosphere->RayleighScattering = PlanetAtmosphereMode->AtmosphereColor;
+		PlanetAtmosphere->UpdateScale();
 	}
 }
 
@@ -178,6 +187,15 @@ FPlanetModel UPlanetGenerator::GenerateRandomPlanetModel()
 
 void UPlanetGenerator::ApplyModel(APlanet* PlanetActor, TSharedPtr<FPlanetModel> PlanetGenerationModel)
 {
+	if (!PlanetActor || !PlanetGenerationModel.IsValid())
+	{
+		return;
+	}
+	// Keep the actor and hierarchy data pointed at the exact model that was
+	// materialized.  FillPlanetData serializes through this shared model; leaving
+	// the constructor's empty placeholder here made the committed home world lose
+	// its type, radius and moons even though the visible actor had those values.
+	PlanetActor->PlanetData.PlanetModel = PlanetGenerationModel;
 	PlanetActor->SetPlanetType(PlanetGenerationModel->PlanetType);
 	PlanetActor->SetPlanetZone(PlanetGenerationModel->PlanetZone);
 	PlanetActor->SetPlanetDensity(PlanetGenerationModel->PlanetDensity);
@@ -193,4 +211,11 @@ void UPlanetGenerator::ApplyModel(APlanet* PlanetActor, TSharedPtr<FPlanetModel>
 	PlanetActor->RadiusKM = PlanetGenerationModel->RadiusKM;
 	PlanetActor->AffectionRadiusKM = PlanetGenerationModel->RadiusKM;
 	PlanetActor->AtmosphereHeight = PlanetGenerationModel->AtmosphereHeight;
+	PlanetActor->WorldScapeSeed = PlanetGenerationModel->SurfaceSeed;
+	PlanetActor->SurfaceFeatureScale = PlanetGenerationModel->SurfaceFeatureScale;
+	PlanetActor->SurfaceReliefScale = PlanetGenerationModel->SurfaceReliefScale;
+	PlanetActor->SurfaceLandCoverageScale = PlanetGenerationModel->SurfaceLandCoverageScale;
+	PlanetActor->SurfaceMountainScale = PlanetGenerationModel->SurfaceMountainScale;
+	PlanetActor->SurfaceCraterScale = PlanetGenerationModel->SurfaceCraterScale;
+	PlanetActor->SurfaceRoughnessScale = PlanetGenerationModel->SurfaceRoughnessScale;
 }

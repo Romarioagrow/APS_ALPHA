@@ -20,7 +20,9 @@ public:
 
 	FGalaxyModel GenerateGalaxyByParamsModel(EGalaxyType GalaxyType, EGalaxyClass GalaxyGlass);
 
-	void GenerateGalaxyOctreeStars(UStarGenerator* StarGenerator, AGalaxy* NewGalaxy, TSharedPtr<FGalaxyModel> GalaxyModel);
+	void GenerateGalaxyOctreeStars(UStarGenerator* StarGenerator, AGalaxy* NewGalaxy,
+		TSharedPtr<FGalaxyModel> GalaxyModel, int32 RenderedStarBudget, int32 GenerationSeed,
+		bool bUsePreviewPresentation = false);
 
 	FVector GenerateStarInEllipticalGalaxy(EGalaxyClass GalaxyClass, double StarDistance, double StarRadius);
 
@@ -37,4 +39,9 @@ public:
 	FVector GenerateStarInEllipticalGalaxy(EGalaxyClass GalaxyClass, float StarDistance);
 
 	FVector GenerateStarInEllipticalGalaxy(EGalaxyClass GalaxyClass);
+
+private:
+	/** Archived original placement path kept intact for compatibility and comparison. */
+	void GenerateLegacyGalaxyOctreeStars(UStarGenerator* StarGenerator, AGalaxy* NewGalaxy,
+		TSharedPtr<FGalaxyModel> GalaxyModel);
 };

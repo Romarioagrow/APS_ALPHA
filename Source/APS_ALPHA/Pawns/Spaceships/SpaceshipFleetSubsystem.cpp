@@ -1,6 +1,7 @@
 #include "SpaceshipFleetSubsystem.h"
 
 #include "APS_ALPHA/Pawns/Spaceships/Spaceship.h"
+#include "APS_ALPHA/Core/GameModes/MainMenuGameModeBase.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/SkeletalMesh.h"
@@ -29,6 +30,15 @@ bool USpaceshipFleetSubsystem::ShouldCreateSubsystem(UObject* Outer) const
 void USpaceshipFleetSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 {
 	Super::OnWorldBeginPlay(InWorld);
+	// The menu may contain a decorative ship mesh, but it has no playable fleet.
+	// Converting it to ASpaceship loads the complete gameplay hull graph and starts
+	// multi-gigabyte static-mesh compilation while the astronomical UI is being timed.
+	if (InWorld.GetAuthGameMode<AMainMenuGameModeBase>())
+	{
+		bFleetBuilt = true;
+		UE_LOG(LogTemp, Log, TEXT("[APS.Ships] Skipped runtime fleet conversion in MainMenu"));
+		return;
+	}
 	if (!bFleetBuilt)
 	{
 		BuildRuntimeShipFleet();

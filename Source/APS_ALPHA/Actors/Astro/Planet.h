@@ -35,7 +35,7 @@ public:
 
 	void InitWSC();
 
-	bool IsNotGasGiant();
+	bool IsNotGasGiant() const;
 
 	bool IsComputingWSCProximity{true};
 	

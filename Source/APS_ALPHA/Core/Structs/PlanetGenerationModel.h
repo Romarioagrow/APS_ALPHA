@@ -42,6 +42,10 @@ struct FMoonData
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Mode")
 	double OrbitRadius;
 
+	/** Serializable counterpart of the runtime shared pointer below. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Mode")
+	FMoonModel MoonModelData;
+
 	TSharedPtr<FMoonModel> MoonModel;
 
 	FMoonData()
@@ -55,6 +59,10 @@ struct FMoonData
 		this->MoonOrder = MoonOrder;
 		this->OrbitRadius = OrbitRadius;
 		this->MoonModel = MoonModel;
+		if (MoonModel.IsValid())
+		{
+			MoonModelData = *MoonModel;
+		}
 	}
 };
 
@@ -92,6 +100,27 @@ struct FPlanetModel : public FOrbitalBodyModel
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Planet")
 	double AtmosphereHeight{0};
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Planet Surface")
+	int32 SurfaceSeed{0};
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Planet Surface")
+	double SurfaceFeatureScale{1.0};
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Planet Surface")
+	double SurfaceReliefScale{1.0};
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Planet Surface")
+	double SurfaceLandCoverageScale{1.0};
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Planet Surface")
+	double SurfaceMountainScale{1.0};
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Planet Surface")
+	double SurfaceCraterScale{1.0};
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Planet Surface")
+	double SurfaceRoughnessScale{1.0};
+
 	TArray<TSharedPtr<FMoonData>> MoonsList;
 
 	TPair<double, double> MoonOrbitsRange;
@@ -103,7 +132,12 @@ struct FPlanetModel : public FOrbitalBodyModel
 		{
 			if (MoonPtr.IsValid())
 			{
-				Result.Add(*MoonPtr);
+				FMoonData Data = *MoonPtr;
+				if (Data.MoonModel.IsValid())
+				{
+					Data.MoonModelData = *Data.MoonModel;
+				}
+				Result.Add(MoveTemp(Data));
 			}
 		}
 		return Result;

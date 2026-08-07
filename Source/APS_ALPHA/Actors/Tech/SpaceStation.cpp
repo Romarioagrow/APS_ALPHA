@@ -19,6 +19,13 @@ ASpaceStation::ASpaceStation()
 	GravityCollisionZone->SetCollisionResponseToAllChannels(ECR_Ignore);
 	GravityCollisionZone->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);
 	GravityCollisionZone->SetGenerateOverlapEvents(true);
+	// Collision primitives are gameplay-only volumes. Several legacy station
+	// Blueprints serialized them as visible, which renders a huge red wire sphere
+	// around the spawned character in PIE (seen edge-on as a screen-sized cross).
+	// Visibility does not affect overlap/collision and is deliberately not
+	// propagated to the station meshes attached below this root component.
+	GravityCollisionZone->SetVisibility(false, false);
+	GravityCollisionZone->SetHiddenInGame(true, false);
 
 	SpawnPoint = CreateDefaultSubobject<USceneComponent>(TEXT("SpawnPoint"));
 	SpawnPoint->SetupAttachment(GravityCollisionZone);
@@ -79,6 +86,11 @@ void ASpaceStation::ConfigureGravityVolume(bool bWriteDiagnosticLog)
 	GravityCollisionZone->SetCollisionResponseToAllChannels(ECR_Ignore);
 	GravityCollisionZone->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);
 	GravityCollisionZone->SetGenerateOverlapEvents(true);
+	// Blueprint construction/startup can restore the old serialized visibility,
+	// so enforce the non-rendering collision-volume contract together with the
+	// collision profile on both sides of Blueprint BeginPlay.
+	GravityCollisionZone->SetVisibility(false, false);
+	GravityCollisionZone->SetHiddenInGame(true, false);
 
 	FBox VisualBounds(EForceInit::ForceInit);
 	TArray<UStaticMeshComponent*> MeshComponents;

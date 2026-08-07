@@ -8,7 +8,10 @@
 // Sets default values
 APlanetarySurfaceGenerator::APlanetarySurfaceGenerator()
 {
-	PrimaryActorTick.bCanEverTick = false;
+	// Normally dormant. Tick is enabled only while an owned WorldScape root is
+	// draining background generation jobs before a safe deferred destroy.
+	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.bStartWithTickEnabled = false;
 	RootComponent = CreateDefaultSubobject<USceneComponent>(TEXT("RuntimeSurfaceGeneratorRoot"));
 
     /*MoonLikeNoise = LoadObject<UWorldScapeNoiseClass>(nullptr, TEXT("/WorldScape/Ressources/Noise/MoonLike.MoonLike"));
@@ -81,11 +84,8 @@ void APlanetarySurfaceGenerator::BeginPlay()
 void APlanetarySurfaceGenerator::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
-
-    
-
-    /// if pawn.distance < planet-affectDistance * WSCScale -> Spawn planet environment
-    /// if pawn.distance > planet-affectDistance * WSCScale -> Destroy planet environment
+	TryFinalizeSurfaceProfileApply();
+	TryFinalizeWorldScapeUnload();
 }
 
 void APlanetarySurfaceGenerator::InitEnviroment(APlanet* NewPlanet, UWorld* World)
@@ -189,14 +189,27 @@ void APlanetarySurfaceGenerator::InitEnviroment(APlanet* NewPlanet, UWorld* Worl
 
 void APlanetarySurfaceGenerator::InitAtmoScape(UWorld* World, double PlanetaryRadiusKM, APlanetaryBody* NewPlanetaryBody)
 {
-    PlanetAtmosphere = World->SpawnActor<AAtmoScape>(AAtmoScape::StaticClass(), FTransform());
+	if (!IsValid(World) || !IsValid(NewPlanetaryBody))
+	{
+		return;
+	}
+
+	// InitEnvironment is reached by both generated and editor-authored integration
+	// paths. Re-entering it must update the same shell, not stack another opaque
+	// atmosphere over the first one.
+	if (!IsValid(PlanetAtmosphere))
+	{
+		PlanetAtmosphere = World->SpawnActor<AAtmoScape>(AAtmoScape::StaticClass(), FTransform());
+	}
 
     if (PlanetAtmosphere)
     {
+		PlanetAtmosphere->SetActorHiddenInGame(false);
         
         
         // Установка параметров и свойств для объекта Atmosphere.
-        PlanetAtmosphere->PlanetRadius = PlanetaryRadiusKM - 1; // Atm Dead Zone 
+		const double SafeRadiusKm = FMath::Max(PlanetaryRadiusKM, 1.0);
+		PlanetAtmosphere->PlanetRadius = FMath::Max(SafeRadiusKm - 1.0, 0.5); // Atm dead zone.
         PlanetAtmosphere->bKeepRelativeScale = false;
         PlanetAtmosphere->AtmosphereHeight = NewPlanetaryBody->AtmosphereHeight;
         PlanetAtmosphere->SetActorLocation(NewPlanetaryBody->GetActorLocation());
@@ -413,6 +426,10 @@ void APlanetarySurfaceGenerator::InitAtmoScape(UWorld* World, double PlanetaryRa
         RandomColor.A = FMath::RandRange(MinColor.A, MaxColor.A);
 
         PlanetAtmosphere->RayleighScattering = RandomColor;
+		// AtmoScape otherwise keeps its constructor scale until the first tick. On a
+		// full-scale body that produces an invisible first frame (and can briefly use
+		// the old relative-radius coefficients). Apply the physical km->cm scale now.
+		PlanetAtmosphere->UpdateScale();
     }
 }
 
@@ -463,277 +480,20 @@ void APlanetarySurfaceGenerator::GenerateWorldscapeSurfaceByModel(UWorld* World,
 		UE_LOG(LogTemp, Error, TEXT("GenerateWorldscapeSurfaceByModel: NewPlanet parameter is null!"));
 		return;
 	}
-	if (IsValid(WorldScapeRootInstance))
+	if (!UAPSPlanetSurfaceProfileResolver::SupportsWorldScape(NewPlanet->PlanetType))
 	{
-		PlanetaryBody = NewPlanet;
 		return;
 	}
 
-    // /Script/WorldScapeNoise.IceWorldNoise'/Game/APS/WSC/WSCN_IceWorld.WSCN_IceWorld'
-
-    /*
-
-    / Script / WorldScapeNoise.WorldScapeCustomNoise'/Game/APS/WSC/WSCN_MoonLike.WSCN_MoonLike'
-    /Script/WorldScapeNoise.TerraNoiseExample'/Game/APS/WSC/WSCN_LavaWorld.WSCN_LavaWorld'
-    /Script/WorldScapeNoise.SelenaeNoise'/Game/APS/WSC/WSCN_Selenae.WSCN_Selenae'
-    /Script/WorldScapeNoise.SelenaeNoise'/Game/APS/WSC/WSCN_Selenae_Metal.WSCN_Selenae_Metal'
-    /Script/WorldScapeNoise.WorldScapeCustomNoise'/Game/APS/WSC/WSCN_EarthLike.WSCN_EarthLike'
-
-    /Script/Engine.MaterialInstanceConstant'/Game/APS/WSC/WSC_MI_LavaOcean.WSC_MI_LavaOcean'
-    /Script/Engine.MaterialInstanceConstant'/Game/APS/WSC/WSC_MI_Magma.WSC_MI_Magma'
-    /Script/Engine.MaterialInstanceConstant'/Game/APS/WSC/WSC_MI_Planetary_Ocean.WSC_MI_Planetary_Ocean'
-    /Script/Engine.MaterialInstanceConstant'/Game/APS/WSC/WSC_MI_Selenae.WSC_MI_Selenae'
-    /Script/Engine.MaterialInstanceConstant'/Game/APS/WSC/WSC_MI_Terra.WSC_MI_Terra'
-
-    */
-
-
-    MoonLikeNoise = Cast<UWorldScapeNoiseClass>(StaticLoadObject(UWorldScapeNoiseClass::StaticClass(), nullptr, TEXT("/Game/APS/APS_ALPHA/WSC/WSCN_MoonLike.WSCN_MoonLike")));
-    LavaWorldNoise = Cast<UWorldScapeNoiseClass>(StaticLoadObject(UWorldScapeNoiseClass::StaticClass(), nullptr, TEXT("/Game/APS/APS_ALPHA/WSC/WSCN_LavaWorld.WSCN_LavaWorld")));
-    SelenaeNoise = Cast<UWorldScapeNoiseClass>(StaticLoadObject(UWorldScapeNoiseClass::StaticClass(), nullptr, TEXT("/Game/APS/APS_ALPHA/WSC/WSCN_Selenae.WSCN_Selenae")));
-    SelenaeMetalNoise = Cast<UWorldScapeNoiseClass>(StaticLoadObject(UWorldScapeNoiseClass::StaticClass(), nullptr, TEXT("/Game/APS/APS_ALPHA/WSC/WSCN_Selenae_Metal.WSCN_Selenae_Metal")));
-    EarthLikeNoise = Cast<UWorldScapeNoiseClass>(StaticLoadObject(UWorldScapeNoiseClass::StaticClass(), nullptr, TEXT("/Game/APS/APS_ALPHA/WSC/WSCN_EarthLike.WSCN_EarthLike")));
-    EarthNoise = Cast<UWorldScapeNoiseClass>(StaticLoadObject(UWorldScapeNoiseClass::StaticClass(), nullptr, TEXT("/Game/APS/APS_ALPHA/WSC/WSCN_EarthNoise.WSCN_EarthNoise")));
-    TerraNoise = Cast<UWorldScapeNoiseClass>(StaticLoadObject(UWorldScapeNoiseClass::StaticClass(), nullptr, TEXT("/Game/APS/APS_ALPHA/WSC/WSCN_Terra.WSCN_Terra")));
-    IceWorldNoise = Cast<UWorldScapeNoiseClass>(StaticLoadObject(UWorldScapeNoiseClass::StaticClass(), nullptr, TEXT("/Game/APS/APS_ALPHA/WSC/WSCN_IceWorld.WSCN_IceWorld")));
-    TerraDesert = Cast<UWorldScapeNoiseClass>(StaticLoadObject(UWorldScapeNoiseClass::StaticClass(), nullptr, TEXT("/Game/APS/APS_ALPHA/WSC/WSCN_Terra_Desert.WSCN_Terra_Desert")));
-    TerraForestNoise = Cast<UWorldScapeNoiseClass>(StaticLoadObject(UWorldScapeNoiseClass::StaticClass(), nullptr, TEXT("/Game/APS/APS_ALPHA/WSC/WSCN_Terra_Forest.WSCN_Terra_Forest")));
-
-    // Materials
-    MI_Terra = Cast<UMaterialInstance>(StaticLoadObject(UMaterialInstance::StaticClass(), nullptr, TEXT("/Game/APS/APS_ALPHA/WSC/WSC_MI_Terra.WSC_MI_Terra")));
-    MI_Selenae = Cast<UMaterialInstance>(StaticLoadObject(UMaterialInstance::StaticClass(), nullptr, TEXT("/Game/APS/APS_ALPHA/WSC/WSC_MI_Selenae.WSC_MI_Selenae")));
-    MI_Magma = Cast<UMaterialInstance>(StaticLoadObject(UMaterialInstance::StaticClass(), nullptr, TEXT("/Game/APS/APS_ALPHA/WSC/WSC_MI_Magma.WSC_MI_Magma")));
-    MI_Planetary_Ocean = Cast<UMaterialInstance>(StaticLoadObject(UMaterialInstance::StaticClass(), nullptr, TEXT("/Game/APS/APS_ALPHA/WSC/WSC_MI_Planetary_Ocean.WSC_MI_Planetary_Ocean")));
-    MI_Lava_Ocean = Cast<UMaterialInstance>(StaticLoadObject(UMaterialInstance::StaticClass(), nullptr, TEXT("/Game/APS/APS_ALPHA/WSC/WSC_MI_LavaOcean.WSC_MI_LavaOcean")));
-
-
-    FActorSpawnParameters SpawnParams;
-	SpawnParams.Owner = NewPlanet;
-	SpawnParams.ObjectFlags |= RF_Transient;
-	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-    WorldScapeRootInstance = World->SpawnActor<AWorldScapeRoot>(
-		AWorldScapeRoot::StaticClass(), NewPlanet->GetActorTransform(), SpawnParams);
-
-    if (WorldScapeRootInstance)
-    {
-        PlanetaryBody = NewPlanet;
-
-        UE_LOG(LogTemp, Warning, TEXT("InitWorldScape WorldScapeRootInstance has been created successfully."));
-
-        double PlanetRadiusKM = NewPlanet->PlanetRadiusKM;
-
-        WorldScapeRootInstance->GenerationType = EWorldScapeType::Planet;
-        WorldScapeRootInstance->PlanetScale = PlanetRadiusKM * 100000;
-		WorldScapeRootInstance->DistanceToFreezeGeneration = NewPlanet->GetWorldScapeActivationRadiusCm();
-
-
-        WorldScapeRootInstance->SetActorLocation(NewPlanet->GetActorLocation());
-        WorldScapeRootInstance->SetActorRotation(NewPlanet->GetActorRotation()); 
-        WorldScapeRootInstance->AttachToActor(NewPlanet, FAttachmentTransformRules::KeepWorldTransform);
-        //NewPlanet->Mesh
-        //NewPlanet->SetupWorldScapeRoot(WorldScapeRootInstance);
-        
-
-
-        WorldScapeRootInstance->LodResolution = 200;
-        WorldScapeRootInstance->TriangleSize = 75;
-        WorldScapeRootInstance->HeightAnchor = 50000.0;
-        WorldScapeRootInstance->WorldScapeNoise;
-
-        EPlanetType PlanetType = NewPlanet->PlanetType;
-        UWorldScapeNoiseClass* WorldScapeNoise = EarthLikeNoise;// = WorldScapeRootInstance->WorldScapeNoise;
-        UMaterialInstance* WorldScapeMaterial = MI_Terra;
-        UMaterialInstance* WorldScapeMaterialOcean = MI_Planetary_Ocean;
-        double NoiseScale{ 800.0 };
-        double NoiseIntensity{ 1200000.0 };
-        int NoiseSeed{ 10 };
-
-        //NoiseScale *= NewPlanet->Radius;
-       // NoiseIntensity *= NewPlanet->Radius;
-
-
-        /*switch (PlanetType)
-        {
-        case EPlanetType::Rocky:
-            WorldScapeNoise = MoonLikeNoise;
-            WorldScapeMaterial = MI_Selenae;
-            WorldScapeRootInstance->bOcean = false;
-            break;
-
-        case EPlanetType::Dwarf:
-            WorldScapeNoise = MoonLikeNoise;
-            WorldScapeMaterial = MI_Terra;
-            WorldScapeRootInstance->bOcean = false;
-            break;
-        
-        case EPlanetType::Greenhouse:
-        case EPlanetType::Terrestrial:
-            WorldScapeNoise = EarthNoise;
-            WorldScapeMaterial = MI_Terra;
-            WorldScapeMaterialOcean = MI_Planetary_Ocean;
-            WorldScapeRootInstance->bOcean = true;
-            break;
-        case EPlanetType::Forest:
-            WorldScapeNoise = TerraForestNoise;
-            WorldScapeMaterial = MI_Terra;
-            WorldScapeMaterialOcean = MI_Planetary_Ocean;
-            WorldScapeRootInstance->bOcean = true;
-            NoiseScale = FMath::RandRange(500.0, 800.0);
-            NoiseIntensity = FMath::RandRange(1000000.0, 1300000.0);//2200000.0;
-            NoiseSeed = FMath::RandRange(10.0, 1000.0);
-            break;
-
-        case EPlanetType::Volcanic:
-        case EPlanetType::Melted:
-        case EPlanetType::Lava:
-            WorldScapeNoise = LavaWorldNoise;
-            WorldScapeMaterial = MI_Magma;
-            WorldScapeMaterialOcean = MI_Lava_Ocean;
-            WorldScapeRootInstance->bOcean = true;
-            break;
-
-
-        /*case EPlanetType::HotGiant:
-            break;
-        case EPlanetType::GasGiant:
-            break;
-        case EPlanetType::IceGiant:
-            break;#1#
-        case EPlanetType::Ocean:
-            WorldScapeNoise = EarthNoise;
-            WorldScapeMaterial = MI_Terra;
-            WorldScapeMaterialOcean = MI_Planetary_Ocean;
-            WorldScapeRootInstance->bOcean = true;
-            NoiseScale = FMath::RandRange(50.0, 100.0);
-            NoiseIntensity = FMath::RandRange(1000000.0, 3000000.0);//2200000.0;
-            NoiseSeed = FMath::RandRange(10.0, 1000.0);
-
-            break;
-        case EPlanetType::Water:
-            WorldScapeNoise = TerraNoise;
-            WorldScapeMaterial = MI_Terra;
-            WorldScapeMaterialOcean = MI_Planetary_Ocean;
-            WorldScapeRootInstance->bOcean = true;
-            NoiseScale = FMath::RandRange(10.0, 100.0);
-            NoiseIntensity = FMath::RandRange(1000000.0, 12000000.0);//2200000.0;
-            NoiseSeed = FMath::RandRange(10.0, 100.0);
-            break;
-
-        case EPlanetType::Desert:
-            WorldScapeNoise = TerraDesert;
-            WorldScapeMaterial = MI_Terra;
-            WorldScapeMaterialOcean = MI_Planetary_Ocean;
-            WorldScapeRootInstance->bOcean = true;
-            NoiseScale = FMath::RandRange(10.0, 100.0);
-            NoiseIntensity = FMath::RandRange(1000000.0, 1300000.0);//2200000.0;
-            NoiseSeed = FMath::RandRange(10.0, 1000.0);
-            break;
-
-        
-
-        case EPlanetType::Ice:
-            WorldScapeNoise = IceWorldNoise;
-            WorldScapeMaterial = MI_Selenae;
-            //WorldScapeMaterialOcean = MI_Planetary_Ocean;
-            WorldScapeRootInstance->bOcean = false;
-            NoiseScale = FMath::RandRange(250.0, 800.0);
-            NoiseIntensity = FMath::RandRange(1000000.0, 1500000.0);//2200000.0;
-            NoiseSeed = FMath::RandRange(10.0, 1000.0);
-            break;
-
-        case EPlanetType::Frozen:
-            WorldScapeNoise = IceWorldNoise;
-            WorldScapeMaterial = MI_Terra;
-            WorldScapeRootInstance->bOcean = false;
-            NoiseScale = FMath::RandRange(100.0, 800.0);
-            NoiseIntensity = FMath::RandRange(1000000.0, 1500000.0);//2200000.0;
-            NoiseSeed = FMath::RandRange(1000000.0, 10000000.0);
-            break;
-
-        case EPlanetType::Ammonia:
-            WorldScapeNoise = SelenaeNoise;
-            WorldScapeMaterial = MI_Selenae;
-            WorldScapeRootInstance->bOcean = false;
-            NoiseScale = FMath::RandRange(100.0, 800.0);
-            NoiseIntensity = FMath::RandRange(1000000.0, 1500000.0);//2200000.0;
-            NoiseSeed = FMath::RandRange(10.0, 10000000.0);
-            break;
-
-
-        case EPlanetType::Metal:
-            WorldScapeNoise = SelenaeMetalNoise;
-            WorldScapeMaterial = MI_Selenae;
-            WorldScapeRootInstance->bOcean = false;
-            NoiseScale = FMath::RandRange(500.0, 1000.0);
-            NoiseIntensity = FMath::RandRange(800000.0, 1500000.0);//2200000.0;
-            NoiseSeed = FMath::RandRange(10.0, 100000.0);
-            break;
-
-
-        case EPlanetType::Carbon:
-            break;
-        case EPlanetType::SuperEarth:
-            break;
-            //break;
-        /*case EPlanetType::Metallic:
-            break;#1#
-        case EPlanetType::Nordic:
-            break;
-        case EPlanetType::Tundra:
-            break;
-        case EPlanetType::HighMountain:
-            break;
-        case EPlanetType::Sand:
-            break;
-        case EPlanetType::Oasis:
-            //NoiseScale = 123.0;
-            break;
-        case EPlanetType::Archipelago:
-            break;
-        case EPlanetType::Pangea:
-            NoiseScale = FMath::RandRange(50.0, 150.0);
-            NoiseIntensity = FMath::RandRange(1000000.0, 3000000.0);//2200000.0;
-            NoiseSeed = FMath::RandRange(10.0, 1000.0);
-            WorldScapeNoise = EarthLikeNoise;
-            WorldScapeMaterial = MI_Terra;
-            WorldScapeMaterialOcean = MI_Planetary_Ocean;
-            WorldScapeRootInstance->bOcean = true;
-            break;
-        case EPlanetType::Rogue:
-            break;
-        case EPlanetType::Exoplanet:
-            break;
-        case EPlanetType::Unknown:
-            break;
-        default:
-            WorldScapeNoise = MoonLikeNoise;
-            WorldScapeMaterial = MI_Selenae;
-            WorldScapeRootInstance->bOcean = false;
-            break;
-        }*/
-
-
-        /*WorldScapeNoise = EarthLikeNoise;
-        WorldScapeMaterial = MI_Terra;*/
-
-        WorldScapeRootInstance->WorldScapeNoise = WorldScapeNoise;
-        WorldScapeRootInstance->NoiseScale = FMath::RoundToInt(NoiseScale);
-        WorldScapeRootInstance->NoiseIntensity = FMath::RoundToInt(NoiseIntensity);
-        WorldScapeRootInstance->Seed = NoiseSeed;
-        WorldScapeRootInstance->TerrainMaterial.DefaultMaterial = WorldScapeMaterial;
-        WorldScapeRootInstance->OceanMaterial.DefaultMaterial = WorldScapeMaterialOcean;
-
-
-        
-        SpawnWorldScapeRoot();
-        
-        //WorldScapeRootInstance->bGenerateWorldScape = true;
-    }
-    else
-    {
-        UE_LOG(LogTemp, Warning, TEXT("InitWorldScape Failed to create WorldScapeRootInstance."));
-    }
-
+	// Compatibility entry point for old C++ callers. Solid planets are always
+	// routed through the same resolver-driven pipeline as menu preview and runtime
+	// streaming.
+	if (!IsValid(WorldScapeRootInstance) && !CreateRuntimeWorldScapeRoot(NewPlanet))
+	{
+		return;
+	}
+	PlanetaryBody = NewPlanet;
+	ApplySurfaceProfile(NewPlanet);
 }
 void APlanetarySurfaceGenerator::GenerateWorldscapeSurfaceByModel(UWorld* World, AMoon* NewMoon)
 {
@@ -749,90 +509,38 @@ void APlanetarySurfaceGenerator::GenerateWorldscapeSurfaceByModel(UWorld* World,
 		UE_LOG(LogTemp, Error, TEXT("GenerateWorldscapeSurfaceByModel: NewMoon parameter is null!"));
 		return;
 	}
-	if (IsValid(WorldScapeRootInstance))
+	if (!UAPSPlanetSurfaceProfileResolver::SupportsWorldScape(NewMoon->PlanetType))
 	{
-		PlanetaryBody = NewMoon;
 		return;
 	}
 
-    FActorSpawnParameters SpawnParams;
-	SpawnParams.Owner = NewMoon;
-	SpawnParams.ObjectFlags |= RF_Transient;
-	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-    WorldScapeRootInstance = World->SpawnActor<AWorldScapeRoot>(
-		AWorldScapeRoot::StaticClass(), NewMoon->GetActorTransform(), SpawnParams);
-
-    if (WorldScapeRootInstance)
-    {
-
-        UE_LOG(LogTemp, Warning, TEXT("InitWorldScape WorldScapeRootInstance has been created successfully."));
-
-        PlanetaryBody = NewMoon;
-
-        double PlanetRadiusKM = NewMoon->RadiusKM;
-        double PlanetRadius = NewMoon->Radius;
-
-        WorldScapeRootInstance->GenerationType = EWorldScapeType::Planet;
-        WorldScapeRootInstance->PlanetScale = PlanetRadiusKM * 100000;
-		WorldScapeRootInstance->DistanceToFreezeGeneration = NewMoon->GetWorldScapeActivationRadiusCm();
-
-
-        WorldScapeRootInstance->SetActorLocation(NewMoon->GetActorLocation());
-        WorldScapeRootInstance->SetActorRotation(NewMoon->GetActorRotation());
-        WorldScapeRootInstance->AttachToActor(NewMoon, FAttachmentTransformRules::KeepWorldTransform);
-        //NewPlanet->Mesh
-        //NewPlanet->SetupWorldScapeRoot(WorldScapeRootInstance);
-
-        int MoonNoiseScale = WorldScapeRootInstance->NoiseScale * PlanetRadius;
-        int MoonNoiseIntensity = WorldScapeRootInstance->NoiseIntensity * PlanetRadius;
-        WorldScapeRootInstance->NoiseScale = MoonNoiseScale;
-        WorldScapeRootInstance->NoiseIntensity = MoonNoiseIntensity;
-        WorldScapeRootInstance->Seed = FMath::FRandRange(10.0, 1000.0);
-
-
-        
-        MoonLikeNoise = Cast<UWorldScapeNoiseClass>(StaticLoadObject(UWorldScapeNoiseClass::StaticClass(), nullptr, TEXT("/Game/APS/APS_ALPHA/WSC/WSCN_MoonLike.WSCN_MoonLike")));
-        LavaWorldNoise = Cast<UWorldScapeNoiseClass>(StaticLoadObject(UWorldScapeNoiseClass::StaticClass(), nullptr, TEXT("/Game/APS/APS_ALPHA/WSC/WSCN_LavaWorld.WSCN_LavaWorld")));
-        SelenaeNoise = Cast<UWorldScapeNoiseClass>(StaticLoadObject(UWorldScapeNoiseClass::StaticClass(), nullptr, TEXT("/Game/APS/APS_ALPHA/WSC/WSCN_Selenae.WSCN_Selenae")));
-        SelenaeMetalNoise = Cast<UWorldScapeNoiseClass>(StaticLoadObject(UWorldScapeNoiseClass::StaticClass(), nullptr, TEXT("/Game/APS/APS_ALPHA/WSC/WSCN_Selenae_Metal.WSCN_Selenae_Metal")));
-        EarthLikeNoise = Cast<UWorldScapeNoiseClass>(StaticLoadObject(UWorldScapeNoiseClass::StaticClass(), nullptr, TEXT("/Game/APS/APS_ALPHA/WSC/WSCN_EarthLike.WSCN_EarthLike")));
-        EarthNoise = Cast<UWorldScapeNoiseClass>(StaticLoadObject(UWorldScapeNoiseClass::StaticClass(), nullptr, TEXT("/Game/APS/APS_ALPHA/WSC/WSCN_EarthNoise.WSCN_EarthNoise")));
-        TerraNoise = Cast<UWorldScapeNoiseClass>(StaticLoadObject(UWorldScapeNoiseClass::StaticClass(), nullptr, TEXT("/Game/APS/APS_ALPHA/WSC/WSCN_Terra.WSCN_Terra")));
-        IceWorldNoise = Cast<UWorldScapeNoiseClass>(StaticLoadObject(UWorldScapeNoiseClass::StaticClass(), nullptr, TEXT("/Game/APS/APS_ALPHA/WSC/WSCN_IceWorld.WSCN_IceWorld")));
-        TerraDesert = Cast<UWorldScapeNoiseClass>(StaticLoadObject(UWorldScapeNoiseClass::StaticClass(), nullptr, TEXT("/Game/APS/APS_ALPHA/WSC/WSCN_Terra_Desert.WSCN_Terra_Desert")));
-        TerraForestNoise = Cast<UWorldScapeNoiseClass>(StaticLoadObject(UWorldScapeNoiseClass::StaticClass(), nullptr, TEXT("/Game/APS/APS_ALPHA/WSC/WSCN_Terra_Forest.WSCN_Terra_Forest")));
-
-        // Materials
-        MI_Terra = Cast<UMaterialInstance>(StaticLoadObject(UMaterialInstance::StaticClass(), nullptr, TEXT("/Game/APS/APS_ALPHA/WSC/WSC_MI_Terra.WSC_MI_Terra")));
-        MI_Selenae = Cast<UMaterialInstance>(StaticLoadObject(UMaterialInstance::StaticClass(), nullptr, TEXT("/Game/APS/APS_ALPHA/WSC/WSC_MI_Selenae.WSC_MI_Selenae")));
-        MI_Magma = Cast<UMaterialInstance>(StaticLoadObject(UMaterialInstance::StaticClass(), nullptr, TEXT("/Game/APS/APS_ALPHA/WSC/WSC_MI_Magma.WSC_MI_Magma")));
-        MI_Planetary_Ocean = Cast<UMaterialInstance>(StaticLoadObject(UMaterialInstance::StaticClass(), nullptr, TEXT("/Game/APS/APS_ALPHA/WSC/WSC_MI_Planetary_Ocean.WSC_MI_Planetary_Ocean")));
-        MI_Lava_Ocean = Cast<UMaterialInstance>(StaticLoadObject(UMaterialInstance::StaticClass(), nullptr, TEXT("/Game/APS/APS_ALPHA/WSC/WSC_MI_LavaOcean.WSC_MI_LavaOcean")));
-
-        UWorldScapeNoiseClass* WorldScapeNoise = EarthLikeNoise;// = WorldScapeRootInstance->WorldScapeNoise;
-        UMaterialInstance* WorldScapeMaterial = MI_Terra;
-        UMaterialInstance* WorldScapeMaterialOcean = MI_Planetary_Ocean;
-        WorldScapeRootInstance->WorldScapeNoise = WorldScapeNoise;
-        WorldScapeRootInstance->TerrainMaterial.DefaultMaterial = WorldScapeMaterial;
-        WorldScapeRootInstance->OceanMaterial.DefaultMaterial = WorldScapeMaterialOcean;
-
-        //WorldScapeRootInstance->bGenerateWorldScape = true;
-
-
-        SpawnWorldScapeRoot();
-        
-    }
-    else
-    {
-        UE_LOG(LogTemp, Warning, TEXT("InitWorldScape Failed to create WorldScapeRootInstance."));
-    }
-
+	// Moons edited from the astronomical generator use the same EPlanetType-based
+	// profile as solid planets. Never restore the legacy EarthLikeNoise/MI_Terra
+	// defaults here: that would overwrite the resolver immediately after a selected
+	// moon was regenerated and make its surface controls appear ineffective.
+	if (!IsValid(WorldScapeRootInstance) && !CreateRuntimeWorldScapeRoot(NewMoon))
+	{
+		return;
+	}
+	PlanetaryBody = NewMoon;
+	ApplySurfaceProfile(NewMoon);
 }
 
 void APlanetarySurfaceGenerator::SpawnWorldScapeRoot()
 {
     if (WorldScapeRootInstance)
     {
+		if (bPendingSurfaceProfileApply)
+		{
+			DeferredWorldScapeRootState = EDeferredWorldScapeRootState::Active;
+			HoldWorldScapeRootForProfileDrain();
+			return;
+		}
+		// The player may return while a distant-family unload is waiting for the
+		// last worker. Reactivation owns the root again and must cancel that destroy.
+		bPendingWorldScapeUnload = false;
+		bDestroyWorldScapeRootAfterDrain = false;
+		SetActorTickEnabled(false);
 		WorldScapeRootInstance->SetActorScale3D(FVector::OneVector);
         WorldScapeRootInstance->bGenerateWorldScape = true;
 		WorldScapeRootInstance->bFreezeGeneration = false;
@@ -844,22 +552,23 @@ void APlanetarySurfaceGenerator::SpawnWorldScapeRoot()
         {
             WorldScapeRootInstance->SetActorLocation(FVector(0.0, 0.0, 0.0));
             WorldScapeRootInstance->AttachToActor(PlanetaryBody, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
-        }
+		}
 		WorldScapeRootInstance->SetActorScale3D(FVector::OneVector);
-		WorldScapeRootInstance->WS_ForceRegenerate();
+		// Never call WS_ForceRegenerate here. It destroys every existing LOD
+		// immediately, which is both unnecessary for a resident family and the exact
+		// lifetime hazard behind LodGenerationThread::DoWork -> SetData crashes. A new
+		// root has init=false and builds its base mesh on its first enabled tick; a
+		// resident root only needs to resume its existing queue/LOD set.
     }
 }
 
 void APlanetarySurfaceGenerator::DestroyPlanetEnvironment()
 {
-    if (WorldScapeRootInstance)
-    {
-        WorldScapeRootInstance->bGenerateWorldScape = false;
-		WorldScapeRootInstance->bFreezeGeneration = true;
-        WorldScapeRootInstance->SetActorHiddenInGame(true);
-        WorldScapeRootInstance->SetActorTickEnabled(false);
-        WorldScapeRootInstance->SetActorEnableCollision(false);
-    }
+	// Compatibility entry point for old Blueprint/C++ callers. Going through the
+	// drain-aware path is mandatory: bGenerateWorldScape=false makes WorldScape
+	// destroy its LOD components on the next tick, while background workers may
+	// still be writing those exact UWorldScapeLod objects.
+	UnloadWorldScapeRoot();
 
 }
 

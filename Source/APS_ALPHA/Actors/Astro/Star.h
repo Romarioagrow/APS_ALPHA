@@ -40,7 +40,7 @@ public:
 	int StarRadiusKM;
 
 	UPROPERTY(VisibleAnywhere, Category = "Star")
-	double StarAffectionZoneRadius;
+	double StarAffectionZoneRadius{0.0};
 
 	double MinOrbit;
 

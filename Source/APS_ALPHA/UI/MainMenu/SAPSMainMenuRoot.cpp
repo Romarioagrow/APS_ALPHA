@@ -8,7 +8,6 @@
 #include "APS_ALPHA/Core/Model/GeneratedWorld.h"
 #include "APS_ALPHA/Core/Saves/GameSave.h"
 #include "APS_ALPHA/Core/Saves/GeneratedWorldData.h"
-#include "APS_ALPHA/Pawns/Base/ControlledPawn.h"
 #include "APS_ALPHA/Pawns/Spaceships/Spaceship.h"
 #include "APS_ALPHA/Actors/Tech/SpaceHeadquarters.h"
 #include "APS_ALPHA/Actors/Tech/SpaceShipyard.h"
@@ -22,13 +21,18 @@
 #include "Engine/AssetManager.h"
 #include "Engine/StreamableManager.h"
 #include "Blueprint/UserWidget.h"
+#include "Framework/Application/SlateApplication.h"
+#include "GameFramework/Pawn.h"
 #include "HAL/FileManager.h"
+#include "Input/Events.h"
+#include "InputCoreTypes.h"
 #include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "Misc/ConfigCacheIni.h"
 #include "Misc/Paths.h"
 #include "Modules/ModuleManager.h"
 #include "Rendering/DrawElements.h"
+#include "Textures/SlateShaderResource.h"
 #include "Styling/AppStyle.h"
 #include "Styling/SlateBrush.h"
 #include "Widgets/Images/SImage.h"
@@ -214,7 +218,7 @@ namespace
 	{
 	public:
 		SLATE_BEGIN_ARGS(SChamferedFrame) {}
-			SLATE_ARGUMENT(FLinearColor, Color)
+			SLATE_ATTRIBUTE(FLinearColor, Color)
 			SLATE_ARGUMENT(float, Thickness)
 		SLATE_END_ARGS()
 
@@ -244,12 +248,12 @@ namespace
 				FVector2D(0.5f, Size.Y - Cut), FVector2D(0.5f, Cut), FVector2D(Cut, 0.5f)
 			};
 			FSlateDrawElement::MakeLines(OutDrawElements, LayerId, Geometry.ToPaintGeometry(),
-				Points, ESlateDrawEffect::None, Color, true, Thickness);
+				Points, ESlateDrawEffect::None, Color.Get(FLinearColor::White), true, Thickness);
 			return LayerId;
 		}
 
 	private:
-		FLinearColor Color{FLinearColor::White};
+		TAttribute<FLinearColor> Color{FLinearColor::White};
 		float Thickness{1.0f};
 	};
 
@@ -260,7 +264,7 @@ namespace
 	public:
 		SLATE_BEGIN_ARGS(SChamferedSurface) {}
 			SLATE_ARGUMENT(const FSlateBrush*, Brush)
-			SLATE_ARGUMENT(FLinearColor, Tint)
+			SLATE_ATTRIBUTE(FLinearColor, Tint)
 			SLATE_ARGUMENT(bool, ChamferTop)
 			SLATE_ARGUMENT(bool, ChamferBottom)
 		SLATE_END_ARGS()
@@ -301,7 +305,7 @@ namespace
 			const FSlateShaderResourceProxy* ResourceProxy = ResourceHandle.GetResourceProxy();
 			const FVector2f UVOrigin = ResourceProxy ? FVector2f(ResourceProxy->StartUV) : FVector2f::ZeroVector;
 			const FVector2f UVSize = ResourceProxy ? FVector2f(ResourceProxy->SizeUV) : FVector2f(1.0f, 1.0f);
-			const FColor VertexColor = Tint.ToFColor(true);
+			const FColor VertexColor = Tint.Get(FLinearColor::White).ToFColor(true);
 			TArray<FSlateVertex> Vertices;
 			Vertices.Reserve(LocalPoints.Num());
 			for (const FVector2f& Point : LocalPoints)
@@ -326,19 +330,306 @@ namespace
 
 	private:
 		const FSlateBrush* Brush{nullptr};
-		FLinearColor Tint{FLinearColor::White};
+		TAttribute<FLinearColor> Tint{FLinearColor::White};
 		bool bChamferTop{true};
 		bool bChamferBottom{true};
+	};
+
+	/** Animated, code-native mission diagram used by the Choose Your Path cards.
+	 * It deliberately has no texture/resource dependency: the card remains crisp
+	 * at every resolution and its meaning is carried by geometry, motion and data
+	 * rather than by an unrelated screenshot. */
+	class SPathCardVisual final : public SLeafWidget
+	{
+	public:
+		SLATE_BEGIN_ARGS(SPathCardVisual) {}
+			SLATE_ARGUMENT(EAPSPathVisual, Visual)
+			SLATE_ATTRIBUTE(FLinearColor, Accent)
+			SLATE_ATTRIBUTE(bool, Hovered)
+			SLATE_ARGUMENT(bool, Enabled)
+		SLATE_END_ARGS()
+
+		void Construct(const FArguments& InArgs)
+		{
+			Visual = InArgs._Visual;
+			Accent = InArgs._Accent;
+			Hovered = InArgs._Hovered;
+			bEnabled = InArgs._Enabled;
+			SetVisibility(EVisibility::HitTestInvisible);
+			RegisterActiveTimer(1.0f / 30.0f,
+				FWidgetActiveTimerDelegate::CreateSP(this, &SPathCardVisual::Animate));
+		}
+
+		virtual FVector2D ComputeDesiredSize(float) const override
+		{
+			return FVector2D::ZeroVector;
+		}
+
+		virtual int32 OnPaint(const FPaintArgs&, const FGeometry& Geometry,
+			const FSlateRect&, FSlateWindowElementList& OutDrawElements, int32 LayerId,
+			const FWidgetStyle&, bool) const override
+		{
+			const FVector2D Size = Geometry.GetLocalSize();
+			if (Size.X < 12.0f || Size.Y < 12.0f)
+			{
+				return LayerId;
+			}
+
+			const bool bCardHovered = bEnabled && Hovered.Get(false);
+			FLinearColor Main = Accent.Get(FLinearColor(0.12f, 0.82f, 1.0f));
+			if (!bEnabled)
+			{
+				Main = FLinearColor(0.30f, 0.40f, 0.46f, 1.0f);
+			}
+			const float Energy = bCardHovered ? 1.0f : 0.58f;
+			const float Pulse = 0.5f + 0.5f * FMath::Sin(AnimationSeconds * (bCardHovered ? 2.8f : 1.35f));
+			const FVector2D Center(Size.X * 0.5f, Size.Y * 0.43f);
+			const float Unit = FMath::Min(Size.X, Size.Y);
+
+			const auto DrawLine = [&](const TArray<FVector2D>& Points, const FLinearColor& Color,
+				float Width = 1.0f, int32 LayerOffset = 0, bool bAntialias = true)
+			{
+				if (Points.Num() >= 2)
+				{
+					FSlateDrawElement::MakeLines(OutDrawElements, LayerId + LayerOffset,
+						Geometry.ToPaintGeometry(), Points, ESlateDrawEffect::None,
+						Color, bAntialias, Width);
+				}
+			};
+			const auto DrawCircle = [&](const FVector2D& C, float RadiusX, float RadiusY,
+				const FLinearColor& Color, float Width = 1.0f, float Rotation = 0.0f, int32 Segments = 48)
+			{
+				TArray<FVector2D> Points;
+				Points.Reserve(Segments + 1);
+				const float CosR = FMath::Cos(Rotation);
+				const float SinR = FMath::Sin(Rotation);
+				for (int32 Index = 0; Index <= Segments; ++Index)
+				{
+					const float Angle = UE_TWO_PI * static_cast<float>(Index) / Segments;
+					const FVector2D P(FMath::Cos(Angle) * RadiusX, FMath::Sin(Angle) * RadiusY);
+					Points.Add(C + FVector2D(P.X * CosR - P.Y * SinR, P.X * SinR + P.Y * CosR));
+				}
+				DrawLine(Points, Color, Width, 2);
+			};
+			const auto DrawDot = [&](const FVector2D& P, float Radius, const FLinearColor& Color,
+				int32 LayerOffset = 3)
+			{
+				FSlateDrawElement::MakeBox(OutDrawElements, LayerId + LayerOffset,
+					Geometry.ToPaintGeometry(FVector2D(Radius * 2.0f),
+						FSlateLayoutTransform(P - FVector2D(Radius))),
+					FAppStyle::GetBrush("WhiteBrush"), ESlateDrawEffect::None, Color);
+			};
+			const auto DrawBracket = [&](const FVector2D& C, float Radius, const FLinearColor& Color)
+			{
+				const float Arm = Radius * 0.42f;
+				for (int32 XSign : {-1, 1})
+				{
+					for (int32 YSign : {-1, 1})
+					{
+						const FVector2D Corner = C + FVector2D(XSign * Radius, YSign * Radius);
+						DrawLine({Corner, Corner - FVector2D(XSign * Arm, 0.0f)}, Color, 1.25f, 3);
+						DrawLine({Corner, Corner - FVector2D(0.0f, YSign * Arm)}, Color, 1.25f, 3);
+					}
+				}
+			};
+
+			// Deep technical plate and sparse coordinate grid.  The alternating bands
+			// approximate a soft vignette without a bitmap or post-process material.
+			for (int32 Band = 0; Band < 6; ++Band)
+			{
+				const float Alpha = 0.80f - static_cast<float>(Band) * 0.075f;
+				const float Inset = static_cast<float>(Band) * 7.0f;
+				if (Size.X <= Inset * 2.0f + 1.0f || Size.Y <= Inset * 2.0f + 1.0f)
+				{
+					continue;
+				}
+				FSlateDrawElement::MakeBox(OutDrawElements, LayerId,
+					Geometry.ToPaintGeometry(Size - FVector2D(Inset * 2.0f),
+						FSlateLayoutTransform(FVector2D(Inset))),
+					FAppStyle::GetBrush("WhiteBrush"), ESlateDrawEffect::None,
+					FLinearColor(0.001f, 0.009f + 0.002f * Band, 0.018f + 0.003f * Band, Alpha));
+			}
+			const FLinearColor Grid(Main.R, Main.G, Main.B, 0.045f + (bCardHovered ? 0.025f : 0.0f));
+			for (float X = 24.0f; X < Size.X; X += 36.0f)
+			{
+				DrawLine({FVector2D(X, 0.0f), FVector2D(X, Size.Y)}, Grid, 0.55f, 1, false);
+			}
+			for (float Y = 20.0f; Y < Size.Y; Y += 32.0f)
+			{
+				DrawLine({FVector2D(0.0f, Y), FVector2D(Size.X, Y)}, Grid, 0.55f, 1, false);
+			}
+
+			const FLinearColor Trace(Main.R, Main.G, Main.B, 0.34f + Energy * 0.36f);
+			const FLinearColor Soft(Main.R, Main.G, Main.B, 0.10f + Energy * 0.13f);
+			const FLinearColor Bright(
+				FMath::Lerp(Main.R, 1.0f, 0.34f), FMath::Lerp(Main.G, 1.0f, 0.34f),
+				FMath::Lerp(Main.B, 1.0f, 0.34f), 0.74f + 0.22f * Pulse);
+
+			switch (Visual)
+			{
+			case EAPSPathVisual::LiveSystem:
+				{
+					const float Radius = Unit * 0.115f;
+					DrawCircle(Center, Radius * 0.45f, Radius * 0.45f, Soft, 7.0f);
+					DrawCircle(Center, Radius * 0.28f, Radius * 0.28f, Bright, 2.0f);
+					DrawDot(Center, Radius * 0.17f, Bright);
+					for (int32 Orbit = 1; Orbit <= 5; ++Orbit)
+					{
+						const float OrbitRadius = Radius * (0.80f + Orbit * 0.47f);
+						DrawCircle(Center, OrbitRadius, OrbitRadius * 0.38f, Soft, Orbit == 3 ? 1.2f : 0.75f, -0.08f);
+						const float Angle = AnimationSeconds * (0.23f + Orbit * 0.045f) + Orbit * 1.27f;
+						const FVector2D P = Center + FVector2D(FMath::Cos(Angle) * OrbitRadius,
+							FMath::Sin(Angle) * OrbitRadius * 0.38f);
+						DrawDot(P, Orbit == 3 ? 3.2f : 1.8f, Orbit == 3 ? Bright : Trace);
+						if (Orbit == 3) DrawBracket(P, 9.0f + 2.0f * Pulse, Bright);
+					}
+					DrawLine({Center + FVector2D(-Radius * 3.4f, 0.0f), Center + FVector2D(Radius * 3.4f, 0.0f)}, Soft, 0.65f, 1);
+					DrawLine({Center + FVector2D(0.0f, -Radius * 1.65f), Center + FVector2D(0.0f, Radius * 1.65f)}, Soft, 0.65f, 1);
+				}
+				break;
+			case EAPSPathVisual::WorldArchive:
+				{
+					const float Radius = Unit * 0.19f;
+					const FVector2D C = Center + FVector2D(0.0f, Unit * 0.015f);
+					DrawCircle(C, Radius * 1.08f + Pulse * 2.0f, Radius * 1.08f + Pulse * 2.0f, Soft, 3.0f);
+					DrawCircle(C, Radius, Radius, Trace, 1.6f);
+					for (int32 Latitude = -2; Latitude <= 2; ++Latitude)
+					{
+						const float Y = Latitude * Radius * 0.30f;
+						const float Width = FMath::Sqrt(FMath::Max(0.0f, Radius * Radius - Y * Y));
+						DrawCircle(C + FVector2D(0.0f, Y), Width, Radius * 0.085f, Soft, 0.75f);
+					}
+					DrawCircle(C, Radius * 0.42f, Radius, Soft, 0.9f);
+					DrawCircle(C, Radius * 1.48f, Radius * 0.28f, Trace, 1.0f, -0.28f);
+					const float MoonAngle = AnimationSeconds * 0.34f;
+					DrawDot(C + FVector2D(FMath::Cos(MoonAngle) * Radius * 1.48f,
+						FMath::Sin(MoonAngle) * Radius * 0.28f), 2.8f, Bright);
+					DrawBracket(C, Radius * 1.24f, FLinearColor(Main.R, Main.G, Main.B, 0.42f));
+				}
+				break;
+			case EAPSPathVisual::CivilizationNetwork:
+				{
+					const float Radius = Unit * 0.205f;
+					DrawCircle(Center, Radius, Radius, Soft, 1.0f);
+					DrawCircle(Center, Radius * 0.76f, Radius * 0.24f, Soft, 0.8f);
+					DrawCircle(Center, Radius * 0.42f, Radius, Soft, 0.8f);
+					TArray<FVector2D> Nodes;
+					for (int32 Index = 0; Index < 9; ++Index)
+					{
+						const float Angle = Index * 2.399963f + 0.14f * FMath::Sin(AnimationSeconds * 0.45f + Index);
+						const float R = Radius * (0.24f + 0.072f * Index);
+						Nodes.Add(Center + FVector2D(FMath::Cos(Angle) * R, FMath::Sin(Angle) * R * 0.74f));
+					}
+					for (int32 Index = 0; Index < Nodes.Num(); ++Index)
+					{
+						DrawLine({Nodes[Index], Nodes[(Index + 3) % Nodes.Num()]}, Soft, 0.8f, 2);
+						DrawDot(Nodes[Index], Index % 3 == 0 ? 3.0f : 1.8f,
+							Index == FMath::FloorToInt(AnimationSeconds * 1.4f) % Nodes.Num() ? Bright : Trace);
+					}
+					DrawDot(Center, 4.0f + Pulse * 1.2f, Bright);
+				}
+				break;
+			case EAPSPathVisual::GalaxySynthesis:
+				{
+					const float Radius = Unit * 0.225f;
+					DrawCircle(Center, Radius * 1.15f, Radius * 1.15f, Soft, 0.8f);
+					for (int32 Arm = 0; Arm < 3; ++Arm)
+					{
+						TArray<FVector2D> Spiral;
+						for (int32 Index = 0; Index < 42; ++Index)
+						{
+							const float Alpha = static_cast<float>(Index) / 41.0f;
+							const float Angle = Arm * UE_TWO_PI / 3.0f + Alpha * UE_TWO_PI * 1.65f + AnimationSeconds * 0.055f;
+							Spiral.Add(Center + FVector2D(FMath::Cos(Angle), FMath::Sin(Angle) * 0.55f) * Radius * Alpha);
+							if (Index > 8 && Index % 7 == 0)
+							{
+								DrawDot(Spiral.Last(), 1.0f + (Index % 3) * 0.45f, Index % 2 ? Trace : Bright);
+							}
+						}
+						DrawLine(Spiral, Trace, 1.1f, 2);
+					}
+					DrawCircle(Center, Radius * 0.13f, Radius * 0.09f, Bright, 4.0f);
+					DrawDot(Center, 3.0f + Pulse * 1.5f, Bright);
+				}
+				break;
+			case EAPSPathVisual::PlanetLaboratory:
+				{
+					const float Radius = Unit * 0.205f;
+					DrawCircle(Center, Radius + Pulse * 1.5f, Radius + Pulse * 1.5f, Trace, 1.5f);
+					for (int32 Latitude = -2; Latitude <= 2; ++Latitude)
+					{
+						const float Y = Latitude * Radius * 0.30f;
+						const float Width = FMath::Sqrt(FMath::Max(0.0f, Radius * Radius - Y * Y));
+						DrawCircle(Center + FVector2D(0.0f, Y), Width, Radius * 0.075f, Soft, 0.72f);
+					}
+					for (int32 Longitude = 0; Longitude <= 2; ++Longitude)
+					{
+						DrawCircle(Center, Radius * (0.20f + 0.19f * Longitude), Radius,
+							Soft, 0.72f);
+					}
+					const float ScanY = Center.Y - Radius + FMath::Fmod(AnimationSeconds * Radius * 0.38f, Radius * 2.0f);
+					const float Span = FMath::Sqrt(FMath::Max(0.0f, Radius * Radius - FMath::Square(ScanY - Center.Y)));
+					DrawLine({FVector2D(Center.X - Span, ScanY), FVector2D(Center.X + Span, ScanY)}, Bright, 1.3f, 3);
+					DrawBracket(Center, Radius * 1.22f, Trace);
+				}
+				break;
+			case EAPSPathVisual::StoryArchive:
+				{
+					const float Radius = Unit * 0.19f;
+					TArray<FVector2D> Nodes;
+					for (int32 Index = 0; Index < 8; ++Index)
+					{
+						const float Angle = Index * 0.91f + (Index % 2) * 0.37f;
+						const float R = Radius * (0.35f + 0.08f * Index);
+						Nodes.Add(Center + FVector2D(FMath::Cos(Angle) * R, FMath::Sin(Angle) * R * 0.72f));
+					}
+					for (int32 Index = 1; Index < Nodes.Num(); ++Index)
+					{
+						DrawLine({Nodes[Index - 1], Nodes[Index]}, Soft, 0.85f, 2);
+					}
+					for (const FVector2D& Node : Nodes) DrawDot(Node, 1.7f, Trace);
+					DrawCircle(Center + FVector2D(0.0f, -Radius * 0.13f), Radius * 0.32f, Radius * 0.38f, Trace, 1.2f);
+					DrawLine({Center + FVector2D(-Radius * 0.42f, -Radius * 0.02f), Center + FVector2D(Radius * 0.42f, -Radius * 0.02f),
+						Center + FVector2D(Radius * 0.42f, Radius * 0.52f), Center + FVector2D(-Radius * 0.42f, Radius * 0.52f),
+						Center + FVector2D(-Radius * 0.42f, -Radius * 0.02f)}, Trace, 1.4f, 3);
+				}
+				break;
+			}
+
+			// Persistent reticle makes every tile read as an interactive instrument.
+			DrawLine({FVector2D(18.0f, 18.0f), FVector2D(54.0f, 18.0f)}, Soft, 1.0f, 3);
+			DrawLine({FVector2D(18.0f, 18.0f), FVector2D(18.0f, 34.0f)}, Soft, 1.0f, 3);
+			DrawLine({FVector2D(Size.X - 54.0f, 18.0f), FVector2D(Size.X - 18.0f, 18.0f)}, Soft, 1.0f, 3);
+			DrawLine({FVector2D(Size.X - 18.0f, 18.0f), FVector2D(Size.X - 18.0f, 34.0f)}, Soft, 1.0f, 3);
+			return LayerId + 4;
+		}
+
+	private:
+		EActiveTimerReturnType Animate(double, float DeltaTime)
+		{
+			AnimationSeconds = FMath::Fmod(AnimationSeconds + DeltaTime, 4096.0f);
+			Invalidate(EInvalidateWidgetReason::Paint);
+			return EActiveTimerReturnType::Continue;
+		}
+
+		EAPSPathVisual Visual{EAPSPathVisual::LiveSystem};
+		TAttribute<FLinearColor> Accent{FLinearColor::White};
+		TAttribute<bool> Hovered{false};
+		bool bEnabled{true};
+		float AnimationSeconds{0.0f};
 	};
 }
 
 namespace APSMenu
 {
-	const FLinearColor Background(0.002f, 0.009f, 0.017f, 0.22f);
-	const FLinearColor Panel(0.004f, 0.025f, 0.041f, 0.94f);
-	const FLinearColor PanelSoft(0.012f, 0.055f, 0.083f, 0.88f);
+	// Landing and Choose Path sit over the real generated astronomical scene.
+	// Keep only a faint readability veil here; the old turquoise wash hid every
+	// small star in the live background.
+	const FLinearColor Background(0.001f, 0.004f, 0.009f, 0.07f);
+	const FLinearColor Panel(0.002f, 0.012f, 0.022f, 0.94f);
+	const FLinearColor PanelSoft(0.004f, 0.025f, 0.040f, 0.90f);
 	const FLinearColor Cyan(0.12f, 0.82f, 1.0f, 1.0f);
-	const FLinearColor CyanDim(0.05f, 0.30f, 0.42f, 1.0f);
+	const FLinearColor CyanDim(0.035f, 0.23f, 0.32f, 1.0f);
 	const FLinearColor Amber(1.0f, 0.55f, 0.04f, 1.0f);
 	const FLinearColor White(0.92f, 0.97f, 1.0f, 1.0f);
 	const FLinearColor Muted(0.48f, 0.62f, 0.70f, 1.0f);
@@ -455,11 +746,11 @@ namespace APSMenu
 		int64 Value = 0;
 		if (Metadata.GetInt64(TEXT("APSWorld"), TEXT("TotalPlanets"), Value))
 		{
-			Entry.TotalPlanets = FMath::Max<int32>(0, static_cast<int32>(Value));
+			Entry.TotalPlanets = static_cast<int32>(FMath::Clamp<int64>(Value, 0, MAX_int32));
 		}
 		if (Metadata.GetInt64(TEXT("APSWorld"), TEXT("InhabitedPlanets"), Value))
 		{
-			Entry.InhabitedPlanets = FMath::Max<int32>(0, static_cast<int32>(Value));
+			Entry.InhabitedPlanets = static_cast<int32>(FMath::Clamp<int64>(Value, 0, MAX_int32));
 		}
 		Entry.bMetadataLoaded = true;
 		return true;
@@ -592,6 +883,30 @@ void SAPSMainMenuRoot::Navigate(EAPSMenuPage NewPage)
 	PreviousPage = CurrentPage;
 	CurrentPage = NewPage;
 	if (!ContentHost.IsValid()) return;
+	if (CurrentPage != EAPSMenuPage::AstronomicalGeneration)
+	{
+		WorldGenerationPanel.Reset();
+	}
+	if ((CurrentPage == EAPSMenuPage::Landing || CurrentPage == EAPSMenuPage::ChoosePath)
+		&& ViewModel.IsValid())
+	{
+		bool bRestoredAstronomicalRoute = false;
+		if (ViewModel->GetGenerationRoute() == EAPSGenerationRoute::Planet)
+		{
+			// The dedicated PLANET route intentionally owns no galaxy/system. Rebuild
+			// the normal space hierarchy before it becomes the live menu background.
+			ViewModel->SetGenerationRoute(EAPSGenerationRoute::Space);
+			bRestoredAstronomicalRoute = true;
+		}
+		ViewModel->SetPreviewFocus(EAstroPreviewFocus::Galaxy);
+		// The clean menu map intentionally has no authored planet/station backdrop.
+		// Start the same bounded procedural hierarchy used by the editor so Landing
+		// and Choose Path share a real, live astronomical background.
+		if (!ViewModel->bPreviewReady && !bRestoredAstronomicalRoute)
+		{
+			ViewModel->RequestPreview();
+		}
+	}
 
 	switch (CurrentPage)
 	{
@@ -600,7 +915,7 @@ void SAPSMainMenuRoot::Navigate(EAPSMenuPage NewPage)
 	case EAPSMenuPage::ExistingWorlds: ContentHost->SetContent(BuildExistingWorldsPage()); break;
 	case EAPSMenuPage::AstronomicalGeneration:
 		ContentHost->SetContent(
-			SNew(SWorldGenerationPanel)
+			SAssignNew(WorldGenerationPanel, SWorldGenerationPanel)
 			.ViewModel(ViewModel)
 			.OnBack(FSimpleDelegate::CreateSP(this, &SAPSMainMenuRoot::Navigate, EAPSMenuPage::ChoosePath))
 			.OnContinue(FSimpleDelegate::CreateSP(this, &SAPSMainMenuRoot::ContinueAstronomicalGeneration)));
@@ -790,58 +1105,208 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildSettingsPage()
 }
 
 TSharedRef<SWidget> SAPSMainMenuRoot::BuildPathCard(const FText& Title, const FText& Description,
-	const FSlateBrush* Image, const FLinearColor& Accent, FSimpleDelegate Action, bool bLarge, bool bEnabled)
+	EAPSPathVisual Visual, const FLinearColor& Accent, FSimpleDelegate Action, bool bLarge, bool bEnabled)
 {
-	const FString UpperTitle = Title.ToString().ToUpper();
-	const FText Glyph = FText::FromString(
-		UpperTitle.Contains(TEXT("START")) ? TEXT("*") :
-		UpperTitle.Contains(TEXT("VISIT")) ? TEXT("W") :
-		UpperTitle.Contains(TEXT("CIVILIZATION")) ? TEXT("C") :
-		UpperTitle.Contains(TEXT("SPACE")) ? TEXT("S") :
-		UpperTitle.Contains(TEXT("PLANET")) ? TEXT("P") : TEXT("X"));
-	return SNew(SButton)
+	EAPSMenuGlyph Glyph = EAPSMenuGlyph::Compass;
+	FText RouteCode;
+	FText StateLabel;
+	switch (Visual)
+	{
+	case EAPSPathVisual::LiveSystem:
+		Glyph = EAPSMenuGlyph::Compass;
+		RouteCode = LOCTEXT("PathRouteLive", "01 / LIVE SYSTEM");
+		StateLabel = LOCTEXT("PathStateLaunch", "LAUNCH READY");
+		break;
+	case EAPSPathVisual::WorldArchive:
+		Glyph = EAPSMenuGlyph::World;
+		RouteCode = LOCTEXT("PathRouteArchive", "02 / WORLD ARCHIVE");
+		StateLabel = LOCTEXT("PathStateBrowse", "BROWSE SAVES");
+		break;
+	case EAPSPathVisual::CivilizationNetwork:
+		Glyph = EAPSMenuGlyph::Civilization;
+		RouteCode = LOCTEXT("PathRouteCivilization", "03 / CIVILIZATION LAB");
+		StateLabel = LOCTEXT("PathStateSynthesis", "SYNTHESIS READY");
+		break;
+	case EAPSPathVisual::GalaxySynthesis:
+		Glyph = EAPSMenuGlyph::Space;
+		RouteCode = LOCTEXT("PathRouteGalaxy", "04 / DEEP SPACE");
+		StateLabel = LOCTEXT("PathStateGenerate", "GENERATOR READY");
+		break;
+	case EAPSPathVisual::PlanetLaboratory:
+		Glyph = EAPSMenuGlyph::Planet;
+		RouteCode = LOCTEXT("PathRoutePlanet", "05 / PLANET LAB");
+		StateLabel = LOCTEXT("PathStateDesign", "DESIGN READY");
+		break;
+	case EAPSPathVisual::StoryArchive:
+		Glyph = EAPSMenuGlyph::Lock;
+		RouteCode = LOCTEXT("PathRouteStory", "06 / STORY ARCHIVE");
+		StateLabel = LOCTEXT("PathStateLocked", "LOCKED");
+		break;
+	}
+	TSharedRef<SButton> CardButton = SNew(SButton)
 		.IsEnabled(bEnabled)
+		.IsFocusable(bEnabled)
 		.ButtonStyle(&FAppStyle::Get().GetWidgetStyle<FButtonStyle>("NoBorder"))
 		.OnClicked_Lambda([Action]() mutable { Action.ExecuteIfBound(); return FReply::Handled(); })
-		.ContentPadding(0.0f)
-		[
+		.ContentPadding(0.0f);
+	const TWeakPtr<SButton> WeakCardButton = CardButton;
+#if WITH_DEV_AUTOMATION_TESTS
+	ChoosePathCardButtons.Add(CardButton);
+	++ChoosePathProceduralVisualCount;
+#endif
+	CardButton->SetContent(
 			SNew(SOverlay)
 			+ SOverlay::Slot()
 			[
 				SNew(SChamferedSurface)
-				.Brush(Image)
-				.Tint(bEnabled ? FLinearColor::White : FLinearColor(0.18f, 0.22f, 0.25f, 0.42f))
+				.Brush(FAppStyle::GetBrush("WhiteBrush"))
+				.Tint_Lambda([WeakCardButton, Accent, bEnabled]()
+				{
+					if (!bEnabled)
+					{
+						return FLinearColor(0.003f, 0.009f, 0.014f, 0.96f);
+					}
+					const TSharedPtr<SButton> Button = WeakCardButton.Pin();
+					const bool bActive = Button.IsValid()
+						&& (Button->IsHovered() || Button->HasKeyboardFocus());
+					return bActive
+						? FLinearColor(Accent.R * 0.055f, Accent.G * 0.055f, Accent.B * 0.055f, 0.98f)
+						: FLinearColor(0.001f, 0.007f, 0.014f, 0.97f);
+				})
+				.ChamferTop(true)
+				.ChamferBottom(true)
+			]
+			+ SOverlay::Slot()
+			[
+				SNew(SPathCardVisual)
+				.Visual(Visual)
+				.Accent(Accent)
+				.Hovered_Lambda([WeakCardButton]()
+				{
+					const TSharedPtr<SButton> Button = WeakCardButton.Pin();
+					return Button.IsValid() && (Button->IsHovered() || Button->HasKeyboardFocus());
+				})
+				.Enabled(bEnabled)
+			]
+			+ SOverlay::Slot().HAlign(HAlign_Left).VAlign(VAlign_Top)
+				.Padding(FMargin(bLarge ? 25.0f : 18.0f, bLarge ? 23.0f : 17.0f))
+			[
+				SNew(SBorder)
+				.BorderImage(&APSMenu::InsetBrush)
+				.Padding(FMargin(10.0f, 5.0f))
+				[
+					SNew(STextBlock)
+					.Text(RouteCode)
+					.Font(APSMenu::Font("Bold", bLarge ? 10 : 8))
+					.ColorAndOpacity(bEnabled ? Accent : APSMenu::Muted)
+				]
+			]
+			+ SOverlay::Slot().HAlign(HAlign_Right).VAlign(VAlign_Top)
+				.Padding(FMargin(bLarge ? 25.0f : 18.0f, bLarge ? 23.0f : 17.0f))
+			[
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.0f, 0.0f, 7.0f, 0.0f)
+				[
+					SNew(SBox).WidthOverride(5.0f).HeightOverride(5.0f)
+					[
+						SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush"))
+						.BorderBackgroundColor(bEnabled ? Accent : APSMenu::Muted)
+					]
+				]
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+				[
+					SNew(STextBlock)
+					.Text(StateLabel)
+					.Font(APSMenu::Font("Bold", bLarge ? 9 : 7))
+					.ColorAndOpacity(bEnabled ? APSMenu::White : APSMenu::Muted)
+				]
+			]
+			+ SOverlay::Slot()
+			[
+				SNew(SChamferedSurface)
+				.Brush(FAppStyle::GetBrush("WhiteBrush"))
+				.Tint_Lambda([WeakCardButton, Accent, bEnabled]()
+				{
+					const TSharedPtr<SButton> Button = WeakCardButton.Pin();
+					if (!bEnabled || !Button.IsValid()
+						|| (!Button->IsHovered() && !Button->HasKeyboardFocus()))
+					{
+						return FLinearColor::Transparent;
+					}
+					return FLinearColor(Accent.R, Accent.G, Accent.B, 0.075f);
+				})
 				.ChamferTop(true)
 				.ChamferBottom(true)
 			]
 			+ SOverlay::Slot().VAlign(VAlign_Bottom)
 			[
-				SNew(SBox).HeightOverride(bLarge ? 218.0f : 132.0f)
+				// Every compact card owns the same full-width information rail. Keeping
+				// this geometry identical prevents Story/Generate cards from looking
+				// like unrelated debug panels when their descriptions differ.
+				SNew(SBox).HeightOverride(bLarge ? 210.0f : 132.0f)
 				[
 				SNew(SOverlay)
 				+ SOverlay::Slot()
 				[
 					SNew(SChamferedSurface)
 					.Brush(FAppStyle::GetBrush("WhiteBrush"))
-					.Tint(FLinearColor(0.001f, 0.010f, 0.018f, 0.94f))
+					.Tint(FLinearColor(0.001f, 0.010f, 0.018f, 0.975f))
 					.ChamferTop(false)
 					.ChamferBottom(true)
 				]
-				+ SOverlay::Slot().Padding(FMargin(bLarge ? 30.0f : 22.0f, bLarge ? 24.0f : 16.0f))
+				+ SOverlay::Slot().VAlign(VAlign_Top)
+				[
+					SNew(SBox).HeightOverride(2.0f)
+					[
+						SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush"))
+						.BorderBackgroundColor(bEnabled ? Accent : APSMenu::Muted)
+					]
+				]
+				+ SOverlay::Slot().Padding(FMargin(bLarge ? 30.0f : 19.0f, bLarge ? 21.0f : 13.0f))
 				[
 					SNew(SVerticalBox)
 					+ SVerticalBox::Slot().AutoHeight()
 					[
-						SNew(SHorizontalBox)
-						+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
-						[APSMenu::Badge(Glyph, bEnabled ? Accent : APSMenu::Muted, bLarge ? 44.0f : 34.0f)]
-						+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center).Padding(12.0f, 0.0f)
-						[SNew(STextBlock).Text(Title).Font(APSMenu::Font("Bold", bLarge ? 28 : 17)).ColorAndOpacity(bEnabled ? APSMenu::White : APSMenu::Muted)]
-						+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
-						[SNew(STextBlock).Text(FText::FromString(bEnabled ? TEXT(">") : TEXT("LOCK"))).Font(APSMenu::Font("Bold", bEnabled ? 22 : 9)).ColorAndOpacity(bEnabled ? Accent : APSMenu::Muted)]
+						SNew(SBox).HeightOverride(bLarge ? 48.0f : 38.0f)
+						[
+							SNew(SOverlay)
+							+ SOverlay::Slot().HAlign(HAlign_Left).VAlign(VAlign_Center)
+							[
+								SNew(SHorizontalBox)
+								+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+								[APSMenu::IconBadge(Glyph, bEnabled ? Accent : APSMenu::Muted, bLarge ? 44.0f : 34.0f)]
+								+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(12.0f, 0.0f)
+								[
+									SNew(STextBlock).Text(Title).Justification(ETextJustify::Left)
+									.Font(APSMenu::Font("Bold", bLarge ? 28 : 17))
+									.ColorAndOpacity_Lambda([WeakCardButton, bEnabled, Accent]()
+									{
+										if (!bEnabled) return APSMenu::Muted;
+										const TSharedPtr<SButton> Button = WeakCardButton.Pin();
+										return Button.IsValid() && (Button->IsHovered() || Button->HasKeyboardFocus())
+											? Accent : APSMenu::White;
+									})
+								]
+							]
+							+ SOverlay::Slot().HAlign(HAlign_Right).VAlign(VAlign_Center)
+							[
+								SNew(STextBlock).Text(FText::FromString(bEnabled ? TEXT(">") : TEXT("LOCK")))
+								.Font(APSMenu::Font("Bold", bEnabled ? 22 : 9))
+								.ColorAndOpacity(bEnabled ? Accent : APSMenu::Muted)
+							]
+						]
 					]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 7.0f, 0.0f, 0.0f)
-					[SNew(STextBlock).Text(Description).AutoWrapText(true).Font(APSMenu::Font("Regular", bLarge ? 15 : 12)).ColorAndOpacity(bEnabled ? Accent : APSMenu::Muted)]
+					[
+						SNew(SBox).HeightOverride(bLarge ? 42.0f : 34.0f)
+						[
+							SNew(STextBlock).Text(Description).AutoWrapText(true)
+							.Justification(ETextJustify::Left)
+							.Font(APSMenu::Font("Regular", bLarge ? 15 : 12))
+							.ColorAndOpacity(bEnabled
+								? FLinearColor(0.68f, 0.79f, 0.85f, 1.0f) : APSMenu::Muted)
+						]
+					]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, bLarge ? 18.0f : 0.0f, 0.0f, 0.0f)
 					[
 						SNew(SBorder).Visibility(bLarge ? EVisibility::Visible : EVisibility::Collapsed)
@@ -860,14 +1325,45 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildPathCard(const FText& Title, const FT
 			+ SOverlay::Slot()
 			[
 				SNew(SChamferedFrame)
-				.Color(bEnabled ? Accent : APSMenu::Muted)
+				.Color_Lambda([WeakCardButton, Accent, bEnabled]()
+				{
+					if (!bEnabled)
+					{
+						return APSMenu::Muted;
+					}
+					const TSharedPtr<SButton> Button = WeakCardButton.Pin();
+					return Button.IsValid() && (Button->IsHovered() || Button->HasKeyboardFocus())
+						? FLinearColor::White
+						: Accent;
+				})
 				.Thickness(bLarge ? 1.8f : 1.2f)
 			]
-		];
+			+ SOverlay::Slot()
+			[
+				// A broad translucent trace reads as a restrained holographic glow
+				// and makes hover unambiguous without moving or resizing the card.
+				SNew(SChamferedFrame)
+				.Color_Lambda([WeakCardButton, Accent, bEnabled]()
+				{
+					const TSharedPtr<SButton> Button = WeakCardButton.Pin();
+					return bEnabled && Button.IsValid()
+						&& (Button->IsHovered() || Button->HasKeyboardFocus())
+						? FLinearColor(Accent.R, Accent.G, Accent.B, 0.48f)
+						: FLinearColor::Transparent;
+				})
+				.Thickness(bLarge ? 4.5f : 3.5f)
+			]
+		);
+	return CardButton;
 }
 
 TSharedRef<SWidget> SAPSMainMenuRoot::BuildChoosePathPage()
 {
+#if WITH_DEV_AUTOMATION_TESTS
+	ChoosePathCardButtons.Reset();
+	ChoosePathProceduralVisualCount = 0;
+	ChoosePathStaticTextureResourceCount = 0;
+#endif
 	TSharedRef<SWidget> Foreground = SNew(SVerticalBox)
 		+ SVerticalBox::Slot().AutoHeight().Padding(30.0f, 20.0f, 30.0f, 10.0f)[BuildHeader(LOCTEXT("ChoosePath", "CHOOSE YOUR PATH"))]
 		+ SVerticalBox::Slot().FillHeight(1.0f).Padding(58.0f, 18.0f, 58.0f, 46.0f)
@@ -876,7 +1372,7 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildChoosePathPage()
 			+ SHorizontalBox::Slot().FillWidth(0.31f).Padding(7.0f)
 			[
 				BuildPathCard(LOCTEXT("StartGame", "START SINGLE GAME"),
-					LOCTEXT("StartGameDesc", "Begin a new journey through the live full-scale world."), &SystemImage,
+					LOCTEXT("StartGameDesc", "Begin a new journey through the live full-scale world."), EAPSPathVisual::LiveSystem,
 					APSMenu::Amber, FSimpleDelegate::CreateLambda([this]() { StartSingleGame(); }), true)
 			]
 			+ SHorizontalBox::Slot().FillWidth(0.69f).Padding(7.0f)
@@ -886,28 +1382,26 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildChoosePathPage()
 				[
 					SNew(SHorizontalBox)
 					+ SHorizontalBox::Slot().FillWidth(1.0f).Padding(6.0f, 0.0f)
-					[BuildPathCard(LOCTEXT("VisitWorld", "VISIT EXISTING WORLD"), LOCTEXT("VisitDesc", "Explore worlds you have already created."), &PlanetImage, APSMenu::Cyan, FSimpleDelegate::CreateLambda([this]() { OpenExistingWorlds(); }))]
+					[BuildPathCard(LOCTEXT("VisitWorld", "VISIT EXISTING WORLD"), LOCTEXT("VisitDesc", "Explore worlds you have already created."), EAPSPathVisual::WorldArchive, APSMenu::Cyan, FSimpleDelegate::CreateLambda([this]() { OpenExistingWorlds(); }))]
 					+ SHorizontalBox::Slot().FillWidth(1.0f).Padding(6.0f, 0.0f)
-					[BuildPathCard(LOCTEXT("GenCiv", "GENERATE CIVILIZATION"), LOCTEXT("GenCivDesc", "Create a civilization and shape its astronomical home."), &CivilizationImage, APSMenu::Cyan, FSimpleDelegate::CreateLambda([this]() { OpenAstronomicalGeneration(EAstroPreviewFocus::HomeSystem, EAPSGenerationRoute::Civilization); }))]
+					[BuildPathCard(LOCTEXT("GenCiv", "GENERATE CIVILIZATION"), LOCTEXT("GenCivDesc", "Create a civilization and shape its astronomical home."), EAPSPathVisual::CivilizationNetwork, APSMenu::Cyan, FSimpleDelegate::CreateLambda([this]() { OpenAstronomicalGeneration(EAstroPreviewFocus::HomePlanet, EAPSGenerationRoute::Civilization); }))]
 					+ SHorizontalBox::Slot().FillWidth(1.0f).Padding(6.0f, 0.0f)
-					[BuildPathCard(LOCTEXT("GenSpace", "GENERATE SPACE"), LOCTEXT("GenSpaceDesc", "Procedurally generate stellar systems and clusters."), &GalaxyImage, APSMenu::Cyan, FSimpleDelegate::CreateLambda([this]() { OpenAstronomicalGeneration(EAstroPreviewFocus::StarCluster, EAPSGenerationRoute::Space); }))]
+					[BuildPathCard(LOCTEXT("GenSpace", "GENERATE SPACE"), LOCTEXT("GenSpaceDesc", "Procedurally generate stellar systems and clusters."), EAPSPathVisual::GalaxySynthesis, APSMenu::Cyan, FSimpleDelegate::CreateLambda([this]() { OpenAstronomicalGeneration(EAstroPreviewFocus::StarCluster, EAPSGenerationRoute::Space); }))]
 				]
 				+ SVerticalBox::Slot().FillHeight(0.5f).Padding(0.0f, 6.0f, 0.0f, 0.0f)
 				[
 					SNew(SHorizontalBox)
 					+ SHorizontalBox::Slot().FillWidth(1.0f).Padding(6.0f, 0.0f)
-					[BuildPathCard(LOCTEXT("CreatePlanet", "CREATE PLANET"), LOCTEXT("PlanetDesc", "Design a planet with atmosphere, terrain and moons."), &PlanetImage, APSMenu::Cyan, FSimpleDelegate::CreateLambda([this]() { OpenAstronomicalGeneration(EAstroPreviewFocus::HomePlanet, EAPSGenerationRoute::Planet); }))]
+					[BuildPathCard(LOCTEXT("CreatePlanet", "CREATE PLANET"), LOCTEXT("PlanetDesc", "Design a planet with atmosphere, terrain and moons."), EAPSPathVisual::PlanetLaboratory, APSMenu::Cyan, FSimpleDelegate::CreateLambda([this]() { OpenAstronomicalGeneration(EAstroPreviewFocus::HomePlanet, EAPSGenerationRoute::Planet); }))]
 					+ SHorizontalBox::Slot().FillWidth(1.0f).Padding(6.0f, 0.0f)
-					[BuildPathCard(LOCTEXT("Story", "STORY MODE"), LOCTEXT("StoryDesc", "Unravel the deeper story of Aposfera.  COMING SOON"), &GalaxyImage, APSMenu::Muted, FSimpleDelegate(), false, false)]
+					[BuildPathCard(LOCTEXT("Story", "STORY MODE"), LOCTEXT("StoryDesc", "Unravel the deeper story of Aposfera.  COMING SOON"), EAPSPathVisual::StoryArchive, APSMenu::Muted, FSimpleDelegate(), false, false)]
 				]
 			]
 		];
 
 	return SNew(SOverlay)
 		+ SOverlay::Slot()
-		[SNew(SScaleBox).Stretch(EStretch::ScaleToFill)[SNew(SImage).Image(&BackgroundImage).ColorAndOpacity(FLinearColor(0.22f, 0.34f, 0.44f, 0.32f))]]
-		+ SOverlay::Slot()
-		[SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(FLinearColor(0.0f, 0.012f, 0.024f, 0.44f))]
+		[SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(FLinearColor(0.0f, 0.004f, 0.010f, 0.16f))]
 		+ SOverlay::Slot()[Foreground];
 }
 
@@ -1490,7 +1984,9 @@ void SAPSMainMenuRoot::DiscoverSpawnClassOptions()
 		return Result;
 	};
 
-	const TSet<FTopLevelAssetPath> CharacterClassPaths = FindDerivedClasses(AControlledPawn::StaticClass());
+	// Match the GameMode contract: a playable start class may derive from APawn
+	// directly or through ACharacter (the authored SinglePlay character does).
+	const TSet<FTopLevelAssetPath> CharacterClassPaths = FindDerivedClasses(APawn::StaticClass());
 	const TSet<FTopLevelAssetPath> SpaceshipClassPaths = FindDerivedClasses(ASpaceship::StaticClass());
 	const TSet<FTopLevelAssetPath> StationClassPaths = FindDerivedClasses(ASpaceStation::StaticClass());
 	const TSet<FTopLevelAssetPath> HeadquartersClassPaths = FindDerivedClasses(ASpaceHeadquarters::StaticClass());
@@ -1609,6 +2105,16 @@ void SAPSMainMenuRoot::SynchronizeSpawnClassOptions()
 
 void SAPSMainMenuRoot::ApplySpawnClassSelection(EAPSStartAssetSlot Slot)
 {
+	if (TSharedPtr<FStreamableHandle>* ExistingHandle = SpawnSelectionLoadHandles.Find(Slot))
+	{
+		if (ExistingHandle->IsValid())
+		{
+			(*ExistingHandle)->CancelHandle();
+		}
+	}
+	SpawnSelectionLoadHandles.Remove(Slot);
+	SpawnSelectionRequestedPaths.Remove(Slot);
+
 	const TArray<TSoftClassPtr<AActor>>* Options = SpawnClassOptions.Find(Slot);
 	const int32 Index = SpawnClassIndices.FindRef(Slot);
 	if (!Options || !Options->IsValidIndex(Index))
@@ -1633,14 +2139,43 @@ void SAPSMainMenuRoot::ApplySpawnClassSelection(EAPSStartAssetSlot Slot)
 	{
 		return;
 	}
-	SpawnSelectionLoadHandles.Add(Slot, UAssetManager::GetStreamableManager().RequestAsyncLoad(
+	SpawnSelectionRequestedPaths.Add(Slot, RequestedPath);
+	const TSharedPtr<FStreamableHandle> RequestedHandle =
+		UAssetManager::GetStreamableManager().RequestAsyncLoad(
 		RequestedPath,
-		FStreamableDelegate::CreateSP(this, &SAPSMainMenuRoot::OnSpawnClassSelectionLoaded, Slot, RequestedPath)));
+		FStreamableDelegate::CreateSP(this, &SAPSMainMenuRoot::OnSpawnClassSelectionLoaded, Slot, RequestedPath));
+	// RequestAsyncLoad may invoke its delegate before returning for an already
+	// resident class. Only retain the handle if the same request is still active.
+	if (SpawnSelectionRequestedPaths.FindRef(Slot) == RequestedPath)
+	{
+		if (RequestedHandle.IsValid())
+		{
+			SpawnSelectionLoadHandles.Add(Slot, RequestedHandle);
+		}
+		else
+		{
+			// A stale picker entry must not leave the Continue button disabled
+			// forever. Keep the previously committed class and surface the failure;
+			// retrying the same missing soft path from its callback creates an
+			// unbounded async-load loop.
+			SpawnSelectionRequestedPaths.Remove(Slot);
+			UE_LOG(LogTemp, Error,
+				TEXT("[APS.Civilization] Failed to start class load for slot=%d path=%s"),
+				static_cast<int32>(Slot), *RequestedPath.ToString());
+			Invalidate(EInvalidateWidgetReason::Paint);
+		}
+	}
 }
 
 void SAPSMainMenuRoot::OnSpawnClassSelectionLoaded(EAPSStartAssetSlot Slot, FSoftObjectPath RequestedPath)
 {
+	const FSoftObjectPath* ActiveRequest = SpawnSelectionRequestedPaths.Find(Slot);
+	if (!ActiveRequest || *ActiveRequest != RequestedPath)
+	{
+		return;
+	}
 	SpawnSelectionLoadHandles.Remove(Slot);
+	SpawnSelectionRequestedPaths.Remove(Slot);
 	const TArray<TSoftClassPtr<AActor>>* Options = SpawnClassOptions.Find(Slot);
 	const int32 Index = SpawnClassIndices.FindRef(Slot);
 	if (!Options || !Options->IsValidIndex(Index)
@@ -1648,7 +2183,25 @@ void SAPSMainMenuRoot::OnSpawnClassSelectionLoaded(EAPSStartAssetSlot Slot, FSof
 	{
 		return;
 	}
-	ApplySpawnClassSelection(Slot);
+	UClass* LoadedClass = (*Options)[Index].Get();
+	if (!LoadedClass)
+	{
+		// Loading completed without resolving a class (deleted/corrupt asset).
+		// Do not recursively enqueue the identical request; the ViewModel keeps
+		// its last valid selection and Commit validation remains authoritative.
+		UE_LOG(LogTemp, Error,
+			TEXT("[APS.Civilization] Class load resolved no class for slot=%d path=%s"),
+			static_cast<int32>(Slot), *RequestedPath.ToString());
+		RefreshSpawnClassBrush(Slot);
+		Invalidate(EInvalidateWidgetReason::Paint);
+		return;
+	}
+	if (ViewModel.IsValid())
+	{
+		ViewModel->SetSpawnClass(Slot, LoadedClass);
+	}
+	RefreshSpawnClassBrush(Slot);
+	Invalidate(EInvalidateWidgetReason::Paint);
 }
 
 void SAPSMainMenuRoot::RefreshSpawnClassBrush(EAPSStartAssetSlot Slot)
@@ -2049,11 +2602,196 @@ FReply SAPSMainMenuRoot::StartSingleGame() { if (AMainMenuController* PC = Contr
 FReply SAPSMainMenuRoot::OpenExistingWorlds() { Navigate(EAPSMenuPage::ExistingWorlds); return FReply::Handled(); }
 FReply SAPSMainMenuRoot::OpenAstronomicalGeneration(EAstroPreviewFocus Focus, EAPSGenerationRoute Route)
 {
-	if (ViewModel.IsValid()) ViewModel->SetGenerationRoute(Route);
+	if (ViewModel.IsValid())
+	{
+		// Establish the route and its requested hierarchy focus before constructing
+		// the panel. This prevents a one-frame flash of the previous scope and makes
+		// Generate Civilization enter directly at PLANET as designed.
+		ViewModel->SetGenerationRoute(Route);
+		ViewModel->SetPreviewFocus(Focus);
+	}
 	Navigate(EAPSMenuPage::AstronomicalGeneration);
-	if (ViewModel.IsValid()) ViewModel->SetPreviewFocus(Focus);
 	return FReply::Handled();
 }
+#if WITH_DEV_AUTOMATION_TESTS
+void SAPSMainMenuRoot::OpenChoosePathForAutomation()
+{
+	Navigate(EAPSMenuPage::ChoosePath);
+}
+
+void SAPSMainMenuRoot::GetChoosePathDiagnosticsForAutomation(int32& OutCardCount,
+	int32& OutProceduralVisualCount, int32& OutStaticTextureResourceCount) const
+{
+	OutCardCount = 0;
+	for (const TWeakPtr<SButton>& WeakButton : ChoosePathCardButtons)
+	{
+		OutCardCount += WeakButton.IsValid() ? 1 : 0;
+	}
+	OutProceduralVisualCount = ChoosePathProceduralVisualCount;
+	OutStaticTextureResourceCount = ChoosePathStaticTextureResourceCount;
+}
+
+bool SAPSMainMenuRoot::FocusChoosePathCardForAutomation(const int32 CardIndex)
+{
+	if (!ChoosePathCardButtons.IsValidIndex(CardIndex)
+		|| !FSlateApplication::IsInitialized())
+	{
+		return false;
+	}
+	const TSharedPtr<SButton> Button = ChoosePathCardButtons[CardIndex].Pin();
+	return Button.IsValid() && Button->IsEnabled()
+		&& FSlateApplication::Get().SetKeyboardFocus(Button, EFocusCause::SetDirectly);
+}
+
+bool SAPSMainMenuRoot::HoverChoosePathCardForAutomation(const int32 CardIndex)
+{
+	if (!ChoosePathCardButtons.IsValidIndex(CardIndex)
+		|| !FSlateApplication::IsInitialized())
+	{
+		return false;
+	}
+	const TSharedPtr<SButton> Button = ChoosePathCardButtons[CardIndex].Pin();
+	if (!Button.IsValid() || !Button->IsEnabled())
+	{
+		return false;
+	}
+
+	FSlateApplication& SlateApplication = FSlateApplication::Get();
+	const FVector2D PreviousPosition = SlateApplication.GetCursorPos();
+	const FGeometry& Geometry = Button->GetCachedGeometry();
+	const FVector2D ScreenPosition = Geometry.LocalToAbsolute(Geometry.GetLocalSize() * 0.5f);
+	SlateApplication.SetCursorPos(ScreenPosition);
+	const FPointerEvent PointerEvent(
+		0, FSlateApplication::CursorPointerIndex, ScreenPosition, PreviousPosition,
+		SlateApplication.GetPressedMouseButtons(), EKeys::Invalid, 0.0f,
+		FModifierKeysState());
+	SlateApplication.ProcessMouseMoveEvent(PointerEvent, true);
+	return true;
+}
+
+bool SAPSMainMenuRoot::ClearChoosePathCardInteractionsForAutomation()
+{
+	if (!FSlateApplication::IsInitialized())
+	{
+		return false;
+	}
+
+	const FGeometry& RootGeometry = GetCachedGeometry();
+	const FVector2D RootSize = RootGeometry.GetLocalSize();
+	if (RootSize.X <= 1.0f || RootSize.Y <= 1.0f)
+	{
+		return false;
+	}
+
+	// Derive the neutral pointer position from the actual laid-out cards instead
+	// of assuming a resolution or DPI scale. The midpoint above their top edge is
+	// inside the non-interactive title/header band at every supported layout.
+	float FirstCardTop = RootSize.Y;
+	bool bFoundCard = false;
+	for (const TWeakPtr<SButton>& WeakButton : ChoosePathCardButtons)
+	{
+		const TSharedPtr<SButton> Button = WeakButton.Pin();
+		if (!Button.IsValid() || Button->GetCachedGeometry().GetLocalSize().Y <= 1.0f)
+		{
+			continue;
+		}
+		const FVector2D CardTopLeft = RootGeometry.AbsoluteToLocal(
+			Button->GetCachedGeometry().LocalToAbsolute(FVector2D::ZeroVector));
+		FirstCardTop = FMath::Min(FirstCardTop, static_cast<float>(CardTopLeft.Y));
+		bFoundCard = true;
+	}
+	if (!bFoundCard || FirstCardTop <= 4.0f)
+	{
+		return false;
+	}
+
+	FSlateApplication& SlateApplication = FSlateApplication::Get();
+	SlateApplication.ClearKeyboardFocus(EFocusCause::Cleared);
+	const FVector2D PreviousPosition = SlateApplication.GetCursorPos();
+	const FVector2D SafeScreenPosition = RootGeometry.LocalToAbsolute(FVector2D(
+		RootSize.X * 0.5f,
+		FMath::Clamp(FirstCardTop * 0.5f, 2.0f, FirstCardTop - 2.0f)));
+	SlateApplication.SetCursorPos(SafeScreenPosition);
+	const FPointerEvent PointerEvent(
+		0, FSlateApplication::CursorPointerIndex, SafeScreenPosition, PreviousPosition,
+		SlateApplication.GetPressedMouseButtons(), EKeys::Invalid, 0.0f,
+		FModifierKeysState());
+	SlateApplication.ProcessMouseMoveEvent(PointerEvent, true);
+	return true;
+}
+
+bool SAPSMainMenuRoot::GetChoosePathCardInteractionForAutomation(const int32 CardIndex,
+	bool& bOutHovered, bool& bOutFocused) const
+{
+	bOutHovered = false;
+	bOutFocused = false;
+	if (!ChoosePathCardButtons.IsValidIndex(CardIndex))
+	{
+		return false;
+	}
+	const TSharedPtr<SButton> Button = ChoosePathCardButtons[CardIndex].Pin();
+	if (!Button.IsValid())
+	{
+		return false;
+	}
+	bOutHovered = Button->IsHovered();
+	bOutFocused = Button->HasKeyboardFocus();
+	return true;
+}
+
+bool SAPSMainMenuRoot::GetChoosePathCardNormalizedRectForAutomation(
+	const int32 CardIndex, FSlateRect& OutRect) const
+{
+	if (!ChoosePathCardButtons.IsValidIndex(CardIndex))
+	{
+		return false;
+	}
+	const TSharedPtr<SButton> Button = ChoosePathCardButtons[CardIndex].Pin();
+	if (!Button.IsValid())
+	{
+		return false;
+	}
+
+	const FGeometry& RootGeometry = GetCachedGeometry();
+	const FGeometry& CardGeometry = Button->GetCachedGeometry();
+	const FVector2D RootSize = RootGeometry.GetLocalSize();
+	if (RootSize.X <= 1.0f || RootSize.Y <= 1.0f
+		|| CardGeometry.GetLocalSize().X <= 1.0f || CardGeometry.GetLocalSize().Y <= 1.0f)
+	{
+		return false;
+	}
+	const FVector2D TopLeft = RootGeometry.AbsoluteToLocal(
+		CardGeometry.LocalToAbsolute(FVector2D::ZeroVector));
+	const FVector2D BottomRight = RootGeometry.AbsoluteToLocal(
+		CardGeometry.LocalToAbsolute(CardGeometry.GetLocalSize()));
+	OutRect = FSlateRect(
+		TopLeft.X / RootSize.X, TopLeft.Y / RootSize.Y,
+		BottomRight.X / RootSize.X, BottomRight.Y / RootSize.Y);
+	return FMath::IsFinite(OutRect.Left) && FMath::IsFinite(OutRect.Top)
+		&& FMath::IsFinite(OutRect.Right) && FMath::IsFinite(OutRect.Bottom);
+}
+
+void SAPSMainMenuRoot::OpenAstronomicalGenerationForAutomation(
+	EAstroPreviewFocus Focus, EAPSGenerationRoute Route)
+{
+	OpenAstronomicalGeneration(Focus, Route);
+}
+
+bool SAPSMainMenuRoot::CommitSurfaceControlForAutomation(
+	const EAPSGenerationSurfaceControl Control, const double Value)
+{
+	return WorldGenerationPanel.IsValid()
+		&& WorldGenerationPanel->CommitSurfaceControlForAutomation(Control, Value);
+}
+
+double SAPSMainMenuRoot::GetSurfaceControlValueForAutomation(
+	const EAPSGenerationSurfaceControl Control) const
+{
+	return WorldGenerationPanel.IsValid()
+		? WorldGenerationPanel->GetSurfaceControlValueForAutomation(Control)
+		: TNumericLimits<double>::Lowest();
+}
+#endif
 void SAPSMainMenuRoot::ContinueAstronomicalGeneration()
 {
 	if (!ViewModel.IsValid()) return;

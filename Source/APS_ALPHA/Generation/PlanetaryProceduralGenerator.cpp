@@ -126,6 +126,12 @@ void UPlanetarySystemGenerator::GenerateCustomPlanetarySystemModel(
 	UMoonGenerator* MoonGenerator
 )
 {
+	// OrbitRadii is scratch storage owned by the reusable generator object.  It
+	// must describe this model only: retaining a previous star's radii created
+	// 15, then 30, then 45 planets in a triple-star preview and drew matching
+	// phantom-looking orbit rings.
+	OrbitRadii.Reset();
+	PlanetarySystemModel->PlanetsList.Reset();
 	int32 FinalPlanetCount = PlanetarySystemModel->AmountOfPlanets; //FMath::RandRange(MinPlanetCount, MaxPlanetCount);
 
 	// ��� ����� ���� ��������� ��� ����������, ��������� �� ����������� ������
@@ -504,6 +510,10 @@ void UPlanetarySystemGenerator::GeneratePlanetarySystemModelByStar(
 	TSharedPtr<FPlanetarySystemModel> PlanetarySystemModel, TSharedPtr<FStarModel> StarModel,
 	UPlanetGenerator* PlanetGenerator, UMoonGenerator* MoonGenerator)
 {
+	// The same generator services every star in the hierarchy.  Never leak
+	// scratch orbits/planets from the preceding system into this one.
+	OrbitRadii.Reset();
+	PlanetarySystemModel->PlanetsList.Reset();
 	// ��������� ����������� ��� ����� �������
 	// ������� ���� � ��� ��� �� ������
 	// ���������� ������������ ����� ������  

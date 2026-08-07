@@ -7,6 +7,32 @@
 #include "APS_ALPHA/Core/Enums/PlanetaryZoneType.h"
 #include "APS_ALPHA/Core/Structs/PlanetGenerationModel.h"
 
+namespace
+{
+	EPlanetType ResolveMoonSurfaceType(const FMoonModel& Model)
+	{
+		if (Model.PlanetType != EPlanetType::Unknown)
+		{
+			return Model.PlanetType;
+		}
+		switch (Model.Type)
+		{
+		case EMoonType::Rocky: return EPlanetType::Rocky;
+		case EMoonType::Icy: return EPlanetType::Frozen;
+		case EMoonType::Iron: return EPlanetType::Metal;
+		case EMoonType::Volcanic: return EPlanetType::Volcanic;
+		case EMoonType::Gas: return EPlanetType::GasGiant;
+		case EMoonType::Ocean: return EPlanetType::Ocean;
+		case EMoonType::Continental: return EPlanetType::Terrestrial;
+		case EMoonType::Desert: return EPlanetType::Desert;
+		case EMoonType::TidallyLocked: return EPlanetType::Rogue;
+		case EMoonType::Peculiar: return EPlanetType::Exoplanet;
+		case EMoonType::CapturedAsteroid: return EPlanetType::Dwarf;
+		default: return EPlanetType::Rocky;
+		}
+	}
+}
+
 UMoonGenerator::UMoonGenerator()
 {
 }
@@ -23,15 +49,34 @@ FMoonModel UMoonGenerator::GenerateRandomMoonModel()
 
 void UMoonGenerator::ApplyModel(AMoon* Moon, TSharedPtr<FMoonModel> MoonGenerationModel)
 {
+	if (!Moon || !MoonGenerationModel.IsValid())
+	{
+		return;
+	}
+	Moon->GenerationModel = MoonGenerationModel;
+	MoonGenerationModel->PlanetType = ResolveMoonSurfaceType(*MoonGenerationModel);
     Moon->SetMoonType(MoonGenerationModel->Type);
+	Moon->PlanetType = MoonGenerationModel->PlanetType;
     Moon->SetMass(MoonGenerationModel->Mass);
     Moon->SetRadius(MoonGenerationModel->Radius);
     Moon->SetMoonDensity(MoonGenerationModel->MoonDensity);
     Moon->SetMoonGravity(MoonGenerationModel->MoonGravity);
     Moon->SetOrbitDistance(MoonGenerationModel->OrbitDistance);
     Moon->RadiusKM = MoonGenerationModel->RadiusKM;
+    // APlanetaryBody still exposes the legacy integer radius used by the menu
+    // hierarchy and several presentation paths. Keep it synchronized with the
+    // authoritative generated radius; otherwise valid moons are labelled 0 KM.
+    Moon->PlanetRadiusKM = MoonGenerationModel->RadiusKM > 0.0
+        ? FMath::Max(1, FMath::RoundToInt(MoonGenerationModel->RadiusKM)) : 0;
     Moon->AffectionRadiusKM = MoonGenerationModel->RadiusKM;
     Moon->AtmosphereHeight = MoonGenerationModel->MoonAtmosphereHeight;
+	Moon->WorldScapeSeed = MoonGenerationModel->SurfaceSeed;
+	Moon->SurfaceFeatureScale = MoonGenerationModel->SurfaceFeatureScale;
+	Moon->SurfaceReliefScale = MoonGenerationModel->SurfaceReliefScale;
+	Moon->SurfaceLandCoverageScale = MoonGenerationModel->SurfaceLandCoverageScale;
+	Moon->SurfaceMountainScale = MoonGenerationModel->SurfaceMountainScale;
+	Moon->SurfaceCraterScale = MoonGenerationModel->SurfaceCraterScale;
+	Moon->SurfaceRoughnessScale = MoonGenerationModel->SurfaceRoughnessScale;
 }
 
 void UMoonGenerator::ConnectMoonWithPlanet(AMoon* NewMoon, APlanet* NewPlanet)

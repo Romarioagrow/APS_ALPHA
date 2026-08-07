@@ -7,6 +7,7 @@
 
 enum class EMoonType : uint8;
 class APlanet;
+struct FMoonModel;
 
 UCLASS()
 class APS_ALPHA_API AMoon : public APlanetaryBody, public INavigatableBody
@@ -27,6 +28,9 @@ public:
 
 	UPROPERTY(VisibleAnywhere, Category = "Moon Model")
 	double MoonGravity;
+
+	/** Exact authoritative generation record used by hierarchy selection/editing. */
+	TSharedPtr<FMoonModel> GenerationModel;
 
 	void SetParentPlanet(APlanet* Planet);
 

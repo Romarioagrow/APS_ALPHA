@@ -4,11 +4,14 @@
 #include "AtmoScape/Public/PlanetaryAtmosphere.h"
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "APS_ALPHA/Core/Planetary/APSPlanetSurfaceProfile.h"
 #include "PlanetarySurfaceGenerator.generated.h"
 
 class APlanet;
 class AMoon;
 class APlanetaryBody;
+class UAPSWorldScapePlanetNoise;
+class UMaterialInstanceDynamic;
 
 USTRUCT(BlueprintType)
 struct FAmbientParameters
@@ -156,6 +159,47 @@ public:
 	UPROPERTY(Transient)
 	bool bSurfaceProfileApplied{false};
 
+	/**
+	 * Signature of the body data used to configure the current runtime root.
+	 * A preview body can stay alive while its type, radius, seed or presentation
+	 * scale changes, so a plain boolean is not sufficient to detect a stale
+	 * WorldScape preset.
+	 */
+	UPROPERTY(Transient)
+	uint32 AppliedSurfaceProfileSignature{0};
+
+	/** Resolved model-driven profile shared by preview and gameplay WorldScape roots. */
+	UPROPERTY(Transient, VisibleAnywhere, Category = "World Scape")
+	FAPSResolvedPlanetSurfaceProfile ResolvedSurfaceProfile;
+
+	/** Unique immutable noise instance; shared mutable noise assets are unsafe with concurrently streamed planets. */
+	UPROPERTY(Transient)
+	UAPSWorldScapePlanetNoise* ResolvedNoiseInstance{nullptr};
+
+	/** Per-body material instances keep seeded palettes isolated between planets. */
+	UPROPERTY(Transient)
+	UMaterialInstanceDynamic* ResolvedTerrainMaterialInstance{nullptr};
+
+	UPROPERTY(Transient)
+	UMaterialInstanceDynamic* ResolvedOceanMaterialInstance{nullptr};
+
+	/** Optional authored catalog. Native definitions remain a safe fallback when the asset is unavailable. */
+	UPROPERTY(Transient)
+	UAPSPlanetSurfaceCatalog* SurfaceProfileCatalog{nullptr};
+
+	/**
+	 * WorldScape writes generated vertex arrays from background tasks. Destroying
+	 * its root while those tasks are in UWorldScapeLod::SetData is an immediate
+	 * access violation, so both owned runtime roots and borrowed/manual roots use a
+	 * two-phase shutdown. Owned roots are destroyed after the drain; borrowed roots
+	 * are only disabled and retained by their external owner.
+	 */
+	UPROPERTY(Transient)
+	bool bPendingWorldScapeUnload{false};
+
+	UPROPERTY(Transient)
+	bool bDestroyWorldScapeRootAfterDrain{false};
+
 	UPROPERTY(VisibleAnywhere, Category = "Atmo Scape")
 	AAtmoScape* PlanetAtmosphere;
 
@@ -176,6 +220,16 @@ public:
 	/** Applies the deterministic terrain/ocean profile for the owning body before its first WorldScape tick. */
 	void ApplySurfaceProfile(APlanetaryBody* Body);
 
+	/**
+	 * True while a live profile edit is waiting for the current WorldScape worker
+	 * batch to finish. During this window the old profile and all of its UObject
+	 * dependencies stay resident and the root producer remains frozen.
+	 */
+	bool IsSurfaceProfileApplyPending() const { return bPendingSurfaceProfileApply; }
+
+	/** True only when the current root was configured from this body's latest editable data. */
+	bool IsSurfaceProfileCurrent(const APlanetaryBody* Body) const;
+
 	void SpawnWorldScapeRoot();
 
 	/** Keep assets and the configured root resident without spending generation time. */
@@ -190,5 +244,24 @@ public:
 	void UnloadWorldScapeRoot();
 
 private:
-	void LoadSurfaceAssets();
+	enum class EDeferredWorldScapeRootState : uint8
+	{
+		Preloaded,
+		FrozenVisible,
+		Active
+	};
+
+	uint32 BuildSurfaceProfileSignature(const APlanetaryBody* Body) const;
+	void ApplySurfaceProfileNow(APlanetaryBody* Body);
+	void QueueSurfaceProfileApply(APlanetaryBody* Body);
+	void HoldWorldScapeRootForProfileDrain();
+	void TryFinalizeSurfaceProfileApply();
+	void CancelPendingSurfaceProfileApply();
+	void TryFinalizeWorldScapeUnload();
+
+	/** Latest body edit wins while one immutable WorldScape worker batch drains. */
+	TWeakObjectPtr<APlanetaryBody> PendingSurfaceProfileBody;
+	bool bPendingSurfaceProfileApply{false};
+	EDeferredWorldScapeRootState DeferredWorldScapeRootState{
+		EDeferredWorldScapeRootState::Preloaded};
 };

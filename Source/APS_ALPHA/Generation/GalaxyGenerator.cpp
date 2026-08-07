@@ -7,18 +7,215 @@
 #include "APS_ALPHA/Core/Rendering/APSStarRenderStabilitySubsystem.h"
 #include "APS_ALPHA/Core/Structs/GalaxyModel.h"
 #include "APS_ALPHA/Core/Structs/StarGenerationModel.h"
+#include "Engine/StaticMesh.h"
 
 void UGalaxyGenerator::GenerateRandomGalaxyModel(TSharedPtr<FGalaxyModel> GalaxyModel)
 {
-	//return FGalaxyModel();
+	if (!GalaxyModel.IsValid())
+	{
+		return;
+	}
+
+	static constexpr EGalaxyType GalaxyTypes[] = {
+		EGalaxyType::Elliptical,
+		EGalaxyType::Lenticular,
+		EGalaxyType::Spiral,
+		EGalaxyType::BarredSpiral,
+		EGalaxyType::Irregular,
+		EGalaxyType::Peculiar
+	};
+	GalaxyModel->GalaxyType = GalaxyTypes[FMath::RandRange(0, UE_ARRAY_COUNT(GalaxyTypes) - 1)];
+
+	switch (GalaxyModel->GalaxyType)
+	{
+	case EGalaxyType::Elliptical:
+		GalaxyModel->GalaxyClass = static_cast<EGalaxyClass>(FMath::RandRange(
+			static_cast<int32>(EGalaxyClass::E0), static_cast<int32>(EGalaxyClass::E7)));
+		break;
+	case EGalaxyType::Lenticular:
+		GalaxyModel->GalaxyClass = EGalaxyClass::S0;
+		break;
+	case EGalaxyType::Spiral:
+		GalaxyModel->GalaxyClass = static_cast<EGalaxyClass>(FMath::RandRange(
+			static_cast<int32>(EGalaxyClass::Sa), static_cast<int32>(EGalaxyClass::Sd)));
+		break;
+	case EGalaxyType::BarredSpiral:
+		GalaxyModel->GalaxyClass = static_cast<EGalaxyClass>(FMath::RandRange(
+			static_cast<int32>(EGalaxyClass::SBa), static_cast<int32>(EGalaxyClass::SBd)));
+		break;
+	case EGalaxyType::Irregular:
+	case EGalaxyType::Peculiar:
+	default:
+		GalaxyModel->GalaxyClass = EGalaxyClass::Irr;
+		break;
+	}
+
+	// The count describes the logical catalog. It does not allocate an actor or
+	// an array entry per star; rendering remains governed by the separate HISM budget.
+	GalaxyModel->StarsCount = FMath::RandRange(75000000, 350000000);
+	GalaxyModel->GalaxySize = FMath::RandRange(180, 900);
+	GalaxyModel->StarsDensity = FMath::FRandRange(4.0, 45.0);
 }
 
 FGalaxyModel UGalaxyGenerator::GenerateGalaxyByParamsModel(EGalaxyType GalaxyType, EGalaxyClass GalaxyGlass)
 {
-	return FGalaxyModel();
+	FGalaxyModel Model;
+	Model.GalaxyType = GalaxyType;
+	Model.GalaxyClass = GalaxyGlass;
+	Model.StarsCount = 100000000;
+	Model.GalaxySize = 250;
+	Model.StarsDensity = 10.0;
+	return Model;
+}
+
+namespace APSGalaxyVisuals
+{
+	double RadiusForSpectralClass(const ESpectralClass SpectralClass)
+	{
+		switch (SpectralClass)
+		{
+		case ESpectralClass::O: return 9.0;
+		case ESpectralClass::B: return 4.8;
+		case ESpectralClass::A: return 2.1;
+		case ESpectralClass::F: return 1.35;
+		case ESpectralClass::G: return 1.0;
+		case ESpectralClass::K: return 0.78;
+		case ESpectralClass::M: return 0.42;
+		case ESpectralClass::L: return 0.18;
+		case ESpectralClass::T: return 0.14;
+		case ESpectralClass::Y: return 0.11;
+		case ESpectralClass::NS: return 0.08;
+		case ESpectralClass::PS: return 2.8;
+		case ESpectralClass::BH: return 0.12;
+		default: return 1.0;
+		}
+	}
+
+	double LuminosityForSpectralClass(const ESpectralClass SpectralClass)
+	{
+		switch (SpectralClass)
+		{
+		case ESpectralClass::O: return 60000.0;
+		case ESpectralClass::B: return 1200.0;
+		case ESpectralClass::A: return 55.0;
+		case ESpectralClass::F: return 6.0;
+		case ESpectralClass::G: return 1.0;
+		case ESpectralClass::K: return 0.35;
+		case ESpectralClass::M: return 0.045;
+		case ESpectralClass::L: return 0.008;
+		case ESpectralClass::T: return 0.003;
+		case ESpectralClass::Y: return 0.001;
+		case ESpectralClass::NS: return 35.0;
+		case ESpectralClass::PS: return 140.0;
+		case ESpectralClass::BH: return 0.0;
+		default: return 1.0;
+		}
+	}
 }
 
 void UGalaxyGenerator::GenerateGalaxyOctreeStars(UStarGenerator* StarGenerator, AGalaxy* NewGalaxy,
+	TSharedPtr<FGalaxyModel> GalaxyModel, const int32 RenderedStarBudget, const int32 GenerationSeed,
+	const bool bUsePreviewPresentation)
+{
+	if (!IsValid(StarGenerator) || !IsValid(NewGalaxy) || !IsValid(NewGalaxy->StarMeshInstances)
+		|| !GalaxyModel.IsValid())
+	{
+		UE_LOG(LogTemp, Error, TEXT("[APS.WorldGeneration] Cannot generate galaxy: invalid input"));
+		return;
+	}
+
+	const int64 ModeledStarCount = FMath::Max<int64>(1, GalaxyModel->StarsCount);
+	const int32 RenderedStarCount = static_cast<int32>(FMath::Clamp<int64>(
+		RenderedStarBudget, 1, ModeledStarCount));
+	const double DensityScale = FMath::Sqrt(10.0 / FMath::Clamp(GalaxyModel->StarsDensity, 0.01, 1000.0));
+	const double GalaxyRadius = FMath::Max(50000.0,
+		static_cast<double>(FMath::Max(GalaxyModel->GalaxySize, 1)) * 50000.0) * DensityScale;
+
+	NewGalaxy->StarCatalog.GenerationSeed = GenerationSeed;
+	NewGalaxy->StarCatalog.ModeledStarCount = ModeledStarCount;
+	NewGalaxy->StarCatalog.RenderedSampleCount = 0;
+	NewGalaxy->StarCatalog.GalaxySize = GalaxyModel->GalaxySize;
+	NewGalaxy->StarCatalog.StarDensity = GalaxyModel->StarsDensity;
+	NewGalaxy->StarCatalog.GalaxyType = GalaxyModel->GalaxyType;
+	NewGalaxy->StarCatalog.GalaxyClass = GalaxyModel->GalaxyClass;
+	NewGalaxy->StarCatalog.CatalogHalfExtent = FVector(GalaxyRadius);
+
+	NewGalaxy->StarMeshInstances->ClearInstances();
+	NewGalaxy->StarMeshInstances->NumCustomDataFloats = 6;
+	NewGalaxy->StarMeshInstances->PreAllocateInstancesMemory(RenderedStarCount);
+
+	const UStaticMesh* ProxyMesh = NewGalaxy->StarMeshInstances->GetStaticMesh();
+	const double ProxyMeshRadius = IsValid(ProxyMesh)
+		? FMath::Max(static_cast<double>(ProxyMesh->GetBounds().SphereRadius), 1.0) : 50.0;
+	const double SparseSampleCompensation = FMath::Clamp(
+		FMath::Sqrt(1800.0 / FMath::Max(RenderedStarCount, 1)), 0.85, 1.60);
+	// Physical stellar radii are many orders of magnitude below the galaxy frame
+	// after full-scale preview normalization. Keep model radii untouched and apply
+	// a preview-only screen-stable impostor floor of roughly one rendered pixel.
+	const double MinimumPreviewProxyRadius = bUsePreviewPresentation
+		? GalaxyRadius * 0.00135 * SparseSampleCompensation : 0.0;
+	const double MinimumPreviewProxyScale = MinimumPreviewProxyRadius / ProxyMeshRadius;
+	FBox RenderedSampleBounds(EForceInit::ForceInit);
+
+	for (int32 RenderIndex = 0; RenderIndex < RenderedStarCount; ++RenderIndex)
+	{
+		// One deterministic sample per catalog stratum gives stable coverage of the
+		// entire logical galaxy even when only a tiny percentage is rendered.
+		const int64 StratumBegin = ModeledStarCount * RenderIndex / RenderedStarCount;
+		const int64 StratumEnd = ModeledStarCount * (RenderIndex + 1) / RenderedStarCount;
+		const int64 StratumSize = FMath::Max<int64>(1, StratumEnd - StratumBegin);
+		const uint32 SampleHash = HashCombine(GetTypeHash(GenerationSeed), GetTypeHash(RenderIndex));
+		const int64 CatalogIndex = StratumBegin
+			+ static_cast<int64>(static_cast<uint64>(SampleHash) % static_cast<uint64>(StratumSize));
+
+		FGalaxyCatalogStarRecord StarRecord;
+		if (!NewGalaxy->StarCatalog.ResolveStar(CatalogIndex, StarRecord))
+		{
+			continue;
+		}
+
+		const double PhysicalRadius = APSGalaxyVisuals::RadiusForSpectralClass(StarRecord.SpectralClass);
+		FTransform StarTransform;
+		StarTransform.SetLocation(StarRecord.GalaxyLocalLocation);
+		const double VisualScale = FMath::Max(
+			UStarGenerator::GetFarStarVisualRadius(PhysicalRadius), MinimumPreviewProxyScale);
+		StarTransform.SetScale3D(FVector(VisualScale));
+		RenderedSampleBounds += StarRecord.GalaxyLocalLocation;
+		// Catalog coordinates are galaxy-local.  Passing world-space here applies
+		// the parent transform twice once the generated hierarchy is moved.
+		const int32 InstanceIndex = NewGalaxy->StarMeshInstances->AddInstance(StarTransform, false);
+
+		const FLinearColor ColorValue = UStarGenerator::GetStarColor(
+			StarRecord.SpectralClass, StarRecord.SpectralSubclass);
+		const double PhysicalEmission = StarGenerator->CalculateEmission(
+			static_cast<float>(APSGalaxyVisuals::LuminosityForSpectralClass(StarRecord.SpectralClass) * 25.0));
+		const double VisualEmission = UStarGenerator::GetFarStarVisualEmission(PhysicalRadius, PhysicalEmission);
+		NewGalaxy->StarMeshInstances->SetCustomDataValue(InstanceIndex, 0, ColorValue.R, false);
+		NewGalaxy->StarMeshInstances->SetCustomDataValue(InstanceIndex, 1, ColorValue.G, false);
+		NewGalaxy->StarMeshInstances->SetCustomDataValue(InstanceIndex, 2, ColorValue.B, false);
+		NewGalaxy->StarMeshInstances->SetCustomDataValue(InstanceIndex, 3, VisualEmission, false);
+		NewGalaxy->StarMeshInstances->SetCustomDataValue(InstanceIndex, 4,
+			static_cast<float>((StarRecord.GenerationSeed & 0xffff) / 65535.0), false);
+		NewGalaxy->StarMeshInstances->SetCustomDataValue(InstanceIndex, 5,
+			StarRecord.bPotentialStarSystem ? 1.0f : 0.0f, false);
+	}
+
+	NewGalaxy->StarCatalog.RenderedSampleCount = NewGalaxy->StarMeshInstances->GetInstanceCount();
+	UAPSStarRenderStabilitySubsystem::StabilizeInstances(NewGalaxy->StarMeshInstances);
+	const FVector SampleCenter = RenderedSampleBounds.IsValid
+		? RenderedSampleBounds.GetCenter() : FVector::ZeroVector;
+	const FVector SampleExtent = RenderedSampleBounds.IsValid
+		? RenderedSampleBounds.GetExtent() : FVector::ZeroVector;
+	UE_LOG(LogTemp, Log,
+		TEXT("[APS.GalaxyPreview] type=%d modeled=%lld rendered=%d seed=%d catalogRadius=%.3e "
+			"sampleCenter=%s sampleExtent=%s minProxyRadius=%.3e minProxyScale=%.3e preview=%d"),
+		static_cast<int32>(GalaxyModel->GalaxyType), ModeledStarCount,
+		NewGalaxy->StarCatalog.RenderedSampleCount, GenerationSeed, GalaxyRadius,
+		*SampleCenter.ToCompactString(), *SampleExtent.ToCompactString(),
+		MinimumPreviewProxyRadius, MinimumPreviewProxyScale, bUsePreviewPresentation ? 1 : 0);
+}
+
+void UGalaxyGenerator::GenerateLegacyGalaxyOctreeStars(UStarGenerator* StarGenerator, AGalaxy* NewGalaxy,
                                                  TSharedPtr<FGalaxyModel> GalaxyModel)
 {
 	// Создаем октодерево
@@ -91,7 +288,7 @@ void UGalaxyGenerator::GenerateGalaxyOctreeStars(UStarGenerator* StarGenerator, 
 		FTransform StarTransform;
 		StarTransform.SetLocation(Position);
 		StarTransform.SetScale3D(FVector(UStarGenerator::GetFarStarVisualRadius(StarModel->Radius)));
-		int32 StarInstIndex = NewGalaxy->StarMeshInstances->AddInstance(StarTransform, true);
+		int32 StarInstIndex = NewGalaxy->StarMeshInstances->AddInstance(StarTransform, false);
 
 		FLinearColor ColorValue = StarGenerator->GetStarColor(StarModel->SpectralClass, StarModel->SpectralSubclass);
 		NewGalaxy->StarMeshInstances->SetCustomDataValue(StarInstIndex, 0, ColorValue.R, false);

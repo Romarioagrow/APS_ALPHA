@@ -11,6 +11,9 @@ class SWidget;
 class UGeneratedWorld;
 class UWorldGenerationViewModel;
 class USaveGame;
+enum class EAstroPreviewFocus : uint8;
+enum class EAPSGenerationRoute : uint8;
+enum class EAPSGenerationSurfaceControl : uint8;
 
 /**
  * 
@@ -36,6 +39,23 @@ public:
 	void CancelWorldMetadataLoad();
 	UWorldGenerationViewModel* GetWorldGenerationViewModel() const { return WorldGenerationViewModel; }
 	void HoldSlateResource(UObject* Resource);
+
+#if WITH_DEV_AUTOMATION_TESTS
+	/** Direct access is test-only and lets rendered UI tests exercise real Slate
+	 * hover/focus geometry without adding production controller surface area. */
+	TSharedPtr<SAPSMainMenuRoot> GetSlateMenuRootForAutomation() const
+	{
+		return SlateMenuRoot;
+	}
+
+	/** Enters the actual Slate generator page without relying on synthetic widget clicks. */
+	bool OpenAstronomicalGenerationForAutomation(
+		EAstroPreviewFocus Focus, EAPSGenerationRoute Route);
+	bool CommitSurfaceControlForAutomation(
+		EAPSGenerationSurfaceControl Control, double Value);
+	double GetSurfaceControlValueForAutomation(
+		EAPSGenerationSurfaceControl Control) const;
+#endif
 
 private:
 	void InstallSlateMenu();

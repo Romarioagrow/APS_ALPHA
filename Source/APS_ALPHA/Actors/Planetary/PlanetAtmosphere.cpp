@@ -11,6 +11,12 @@ void FPlanetAtmosphere::UpdateAtmosphereProperties()
 	OxygenConcentration = CalculateOxygenConcentration(OxygenLevel);
 	CO2Concentration = CalculateCo2Concentration(CO2Level);
 	WindSpeed = CalculateWindSpeed(WindSpeedLevel);
+	Humidity = HumidityLevel == EHumidityLevel::NoHumidity
+		? 0.0f
+		: CalculateHumidity(HumidityLevel);
+	AtmosphericPressure = PressureLevel == EPressureLevel::NoPressure
+		? 0.0f
+		: CalculateAtmosphericPressure(PressureLevel);
 }
 
 float FPlanetAtmosphere::CalculateOxygenConcentration(EOxigenLevel Level)

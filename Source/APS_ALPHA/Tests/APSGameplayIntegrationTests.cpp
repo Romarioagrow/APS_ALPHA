@@ -4,14 +4,22 @@
 
 #include "APS_ALPHA/Core/Interfaces/VehicleControlling.h"
 #include "APS_ALPHA/Core/Model/GeneratedWorld.h"
+#include "APS_ALPHA/Actors/Astro/Galaxy.h"
+#include "APS_ALPHA/Actors/Astro/Moon.h"
 #include "APS_ALPHA/Actors/Astro/Planet.h"
 #include "APS_ALPHA/Actors/Astro/StarCluster.h"
 #include "APS_ALPHA/Actors/Astro/StarSystem.h"
 #include "APS_ALPHA/Core/Enums/PlanetType.h"
+#include "APS_ALPHA/Core/Enums/StarClusterType.h"
 #include "APS_ALPHA/Core/Structs/StarGenerationModel.h"
 #include "APS_ALPHA/Core/Structs/StarSystemGenerationModel.h"
 #include "APS_ALPHA/Generation/PlanetarySurfaceGenerator.h"
+#include "APS_ALPHA/Generation/APSWorldScapePlanetNoise.h"
+#include "APS_ALPHA/Generation/PlanetaryProceduralGenerator.h"
+#include "APS_ALPHA/Generation/PlanetGenerator.h"
+#include "APS_ALPHA/Generation/MoonGenerator.h"
 #include "APS_ALPHA/Generation/StarGenerator.h"
+#include "APS_ALPHA/Generation/StarClusterGenerator.h"
 #include "APS_ALPHA/Generation/StarSystemGenerator.h"
 #include "APS_ALPHA/Pawns/Characters/CustomGravityCharacter.h"
 #include "APS_ALPHA/Pawns/Spaceships/Spaceship.h"
@@ -67,12 +75,26 @@ bool FAPSGenerationViewModelConstraintsTest::RunTest(const FString& Parameters)
 	UGeneratedWorld* Model = NewObject<UGeneratedWorld>();
 	Model->PlanetsAmount = 0;
 	Model->StartPlanetIndex = 99;
+	Model->PlanetSurfaceSeed = -5;
+	Model->SurfaceFeatureScale = 99.0;
+	Model->SurfaceReliefScale = 0.0;
+	Model->SurfaceLandCoverageScale = 99.0;
+	Model->SurfaceMountainScale = -1.0;
+	Model->SurfaceCraterScale = 99.0;
+	Model->SurfaceRoughnessScale = 0.0;
 
 	UWorldGenerationViewModel* ViewModel = NewObject<UWorldGenerationViewModel>();
 	ViewModel->Initialize(GetTransientPackage(), Model);
 
 	TestEqual(TEXT("Initialization guarantees at least one planet"), Model->PlanetsAmount, 1);
 	TestEqual(TEXT("Initialization clamps the start planet"), Model->StartPlanetIndex, 1);
+	TestEqual(TEXT("Surface seed cannot be negative"), Model->PlanetSurfaceSeed, 0);
+	TestEqual(TEXT("Surface feature scale is bounded"), Model->SurfaceFeatureScale, 4.0);
+	TestEqual(TEXT("Surface relief scale is bounded"), Model->SurfaceReliefScale, 0.25);
+	TestEqual(TEXT("Surface land coverage scale is bounded"), Model->SurfaceLandCoverageScale, 2.0);
+	TestEqual(TEXT("Surface mountain scale is bounded"), Model->SurfaceMountainScale, 0.0);
+	TestEqual(TEXT("Surface crater scale is bounded"), Model->SurfaceCraterScale, 2.0);
+	TestEqual(TEXT("Surface roughness scale is bounded"), Model->SurfaceRoughnessScale, 0.25);
 
 	ViewModel->SetPlanetsAmount(4.0);
 	ViewModel->SetStartPlanetIndex(12.0);
@@ -81,8 +103,31 @@ bool FAPSGenerationViewModelConstraintsTest::RunTest(const FString& Parameters)
 
 	TestEqual(TEXT("Planet amount accepts valid values"), Model->PlanetsAmount, 4);
 	TestEqual(TEXT("Start planet stays inside generated planet list"), Model->StartPlanetIndex, 4);
-	TestEqual(TEXT("Planet radius remains positive"), Model->PlanetRadius, 1.0);
+	TestEqual(TEXT("Planet radius respects the preview's 100 km minimum"), Model->PlanetRadius, 100.0);
 	TestEqual(TEXT("Moon count cannot be negative"), Model->MoonsAmount, 0);
+
+	Model->PlanetType = EPlanetType::HighMountain;
+	Model->PlanetSurfaceSeed = 7788;
+	Model->SurfaceFeatureScale = 1.35;
+	Model->SurfaceReliefScale = 1.45;
+	Model->SurfaceLandCoverageScale = 0.8;
+	Model->SurfaceMountainScale = 1.7;
+	Model->SurfaceCraterScale = 0.4;
+	Model->SurfaceRoughnessScale = 1.2;
+	UPlanetGenerator* PlanetGenerator = NewObject<UPlanetGenerator>();
+	const TSharedPtr<FPlanetModel> PlanetModel = PlanetGenerator->CreatePlanetModelFromGeneratedWorld(Model);
+	if (TestTrue(TEXT("UI model creates a planet-generation model"), PlanetModel.IsValid()))
+	{
+		TestEqual(TEXT("Selected EPlanetType reaches the surface pipeline"), PlanetModel->PlanetType,
+			EPlanetType::HighMountain);
+		TestEqual(TEXT("Surface seed reaches the body model"), PlanetModel->SurfaceSeed, 7788);
+		TestEqual(TEXT("Feature multiplier reaches the body model"), PlanetModel->SurfaceFeatureScale, 1.35);
+		TestEqual(TEXT("Relief multiplier reaches the body model"), PlanetModel->SurfaceReliefScale, 1.45);
+		TestEqual(TEXT("Land multiplier reaches the body model"), PlanetModel->SurfaceLandCoverageScale, 0.8);
+		TestEqual(TEXT("Mountain multiplier reaches the body model"), PlanetModel->SurfaceMountainScale, 1.7);
+		TestEqual(TEXT("Crater multiplier reaches the body model"), PlanetModel->SurfaceCraterScale, 0.4);
+		TestEqual(TEXT("Roughness multiplier reaches the body model"), PlanetModel->SurfaceRoughnessScale, 1.2);
+	}
 	return true;
 }
 
@@ -108,6 +153,10 @@ bool FAPSWorldScapeFamilyLifecycleTest::RunTest(const FString& Parameters)
 	Planet->PlanetType = EPlanetType::Ocean;
 	Planet->RadiusKM = 1000.0;
 	Planet->PlanetRadiusKM = 1000;
+	// Menu previews deliberately compress a physical planet. WorldScape 5.4
+	// compares this float against an int32 previous value, so the configured
+	// amplitude must remain integral or the plugin regenerates every frame.
+	Planet->WorldScapePresentationScale = 0.001337;
 
 	TestTrue(TEXT("Preload begins outside activation"),
 		Planet->GetWorldScapePreloadRadiusCm() > Planet->GetWorldScapeActivationRadiusCm());
@@ -119,11 +168,20 @@ bool FAPSWorldScapeFamilyLifecycleTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Preloaded surface reports its state"), Planet->GetWorldScapeStreamingState(),
 		EWorldScapeSurfaceState::Preloaded);
 	AWorldScapeRoot* PreloadedRoot = Generator ? Generator->WorldScapeRootInstance : nullptr;
+	UWorldScapeLod* RetainedLodSentinel = nullptr;
 	if (TestNotNull(TEXT("Preload allocates a configured WorldScape root"), PreloadedRoot))
 	{
 		TestTrue(TEXT("Preloaded root remains frozen"), PreloadedRoot->bFreezeGeneration);
 		TestFalse(TEXT("Preloaded root does not generate chunks"), PreloadedRoot->bGenerateWorldScape);
 		TestTrue(TEXT("Preloaded root remains hidden"), PreloadedRoot->IsHidden());
+		TestTrue(TEXT("Preview-scaled noise amplitude cannot trigger per-frame regeneration"),
+			FMath::IsNearlyEqual(PreloadedRoot->NoiseIntensity,
+				static_cast<float>(FMath::RoundToInt(PreloadedRoot->NoiseIntensity))));
+		// A resident family's completed LOD storage is authoritative until an actual
+		// profile change requests a drain/rebuild. Activation itself must not invoke
+		// WorldScape's destructive WS_ForceRegenerate path.
+		RetainedLodSentinel = NewObject<UWorldScapeLod>(PreloadedRoot, NAME_None, RF_Transient);
+		PreloadedRoot->WorldScapeLod.Add(RetainedLodSentinel);
 	}
 
 	Planet->SetWorldScapeStreamingState(EWorldScapeSurfaceState::Active);
@@ -131,26 +189,190 @@ bool FAPSWorldScapeFamilyLifecycleTest::RunTest(const FString& Parameters)
 	AWorldScapeRoot* Root = Generator ? Generator->WorldScapeRootInstance : nullptr;
 	TestTrue(TEXT("Active surface generates"), Planet->IsWorldScapeStreamingActive());
 	TestEqual(TEXT("Activation reuses the preloaded WorldScape root"), Root, PreloadedRoot);
+	TestTrue(TEXT("Worker-free activation preserves the resident LOD set"),
+		Root && Root->WorldScapeLod.Contains(RetainedLodSentinel));
 	if (TestNotNull(TEXT("Activation owns a configured WorldScape root"), Root))
 	{
 		TestTrue(TEXT("Ocean profile enables the ocean mesh"), Root->bOcean);
 		TestNotNull(TEXT("Ocean profile assigns an ocean material"), Root->OceanMaterial.DefaultMaterial);
 		TestNotNull(TEXT("Ocean profile assigns terrain noise"), Root->WorldScapeNoise);
+		Root->WorldScapeLodInGeneration.Add(nullptr, false);
+		Planet->bWorldScapeSurfaceReady = true;
+		TestFalse(TEXT("In-flight workers revoke a previously ready surface"),
+			Planet->RefreshWorldScapeSurfaceVisibility());
+		TestTrue(TEXT("In-flight surface remains hidden behind the fallback"), Root->IsHidden());
+		Root->WorldScapeLodInGeneration.Empty();
+		Planet->bWorldScapeSurfaceReady = true;
+		TestFalse(TEXT("Incomplete payload cannot retain a previous ready shortcut"),
+			Planet->RefreshWorldScapeSurfaceVisibility());
+	}
+
+	// A live body edit can arrive while WorldScape still owns a Lod result buffer.
+	// The entire old profile must remain immutable until that batch drains; changing
+	// its noise/material/regen properties early lets GenerateBaseMesh destroy the Lod
+	// while LodGenerationThread is still inside UWorldScapeLod::SetData.
+	if (Root && Generator)
+	{
+		const uint32 PreviousSignature = Generator->AppliedSurfaceProfileSignature;
+		UWorldScapeNoiseClass* PreviousNoise = Root->WorldScapeNoise;
+		auto* PreviousTerrain = Root->TerrainMaterial.DefaultMaterial;
+		Root->WorldScapeLodInGeneration.Add(nullptr, false);
+		Planet->PlanetType = EPlanetType::Desert;
+		++Planet->WorldScapeSeed;
+		Generator->ApplySurfaceProfile(Planet);
+
+		TestTrue(TEXT("In-flight live edit queues a deferred surface profile"),
+			Generator->IsSurfaceProfileApplyPending());
+		TestEqual(TEXT("Queued edit retains the worker's profile signature"),
+			Generator->AppliedSurfaceProfileSignature, PreviousSignature);
+		TestEqual(TEXT("Queued edit retains the worker's noise object"),
+			Root->WorldScapeNoise, PreviousNoise);
+		TestEqual(TEXT("Queued edit retains the worker's terrain material"),
+			Root->TerrainMaterial.DefaultMaterial, PreviousTerrain);
+		TestTrue(TEXT("Deferred reprofile freezes the WorldScape producer"),
+			Root->bGenerateWorldScape && Root->bFreezeGeneration);
+		TestFalse(TEXT("Deferred reprofile disables the WorldScape actor tick"),
+			Root->IsActorTickEnabled());
+		Planet->PlanetType = EPlanetType::Frozen;
+		++Planet->WorldScapeSeed;
+		Generator->ApplySurfaceProfile(Planet);
+		TestEqual(TEXT("Repeated queued edit still retains the worker's noise object"),
+			Root->WorldScapeNoise, PreviousNoise);
+
+		// An Active request during the drain records the continuation but must not
+		// unfreeze the producer before the profile can be swapped atomically.
+		Generator->SpawnWorldScapeRoot();
+		TestTrue(TEXT("Active continuation remains frozen until drain completes"),
+			Root->bFreezeGeneration);
+		Root->WorldScapeLodInGeneration.Empty();
+		Generator->Tick(0.0f);
+
+		TestFalse(TEXT("Drained live edit clears the deferred profile state"),
+			Generator->IsSurfaceProfileApplyPending());
+		TestTrue(TEXT("Drained live edit applies the latest resolver profile"),
+			Generator->IsSurfaceProfileCurrent(Planet));
+		TestEqual(TEXT("Latest queued body edit wins after one drain"),
+			Generator->ResolvedSurfaceProfile.PlanetType, EPlanetType::Frozen);
+		TestNotEqual(TEXT("Drained live edit changes the applied signature"),
+			Generator->AppliedSurfaceProfileSignature, PreviousSignature);
+		TestTrue(TEXT("Drained profile installs a new per-body noise object"),
+			Root->WorldScapeNoise == Generator->ResolvedNoiseInstance
+			&& Root->WorldScapeNoise != PreviousNoise);
+		TestTrue(TEXT("Drained profile keeps resolver terrain ownership"),
+			Root->TerrainMaterial.DefaultMaterial
+				== Generator->ResolvedTerrainMaterialInstance);
+		TestTrue(TEXT("Active continuation resumes generation after atomic apply"),
+			Root->bGenerateWorldScape && !Root->bFreezeGeneration
+			&& Root->IsActorTickEnabled());
 	}
 	Planet->SetWorldScapeStreamingState(EWorldScapeSurfaceState::FrozenVisible);
 	TestEqual(TEXT("Generated sibling remains resident and frozen"), Planet->GetWorldScapeStreamingState(),
 		EWorldScapeSurfaceState::FrozenVisible);
 	TestTrue(TEXT("Frozen surface keeps generated data"), Root && Root->bGenerateWorldScape && Root->bFreezeGeneration);
-	TestFalse(TEXT("Frozen surface stays visible"), Root && Root->IsHidden());
+	// This synthetic test world never runs a completed WorldScape noise worker.
+	// Atomic hand-off must therefore keep the unresolved root hidden and retain the
+	// fallback globe even after it is frozen; exposing it would reproduce the torn
+	// white/black shell seen in the menu and gameplay during first entry.
+	TestTrue(TEXT("Frozen unresolved surface stays hidden behind fallback"), Root && Root->IsHidden());
+	TestFalse(TEXT("Frozen unresolved surface is not reported ready"), Planet->bWorldScapeSurfaceReady);
 	Planet->SetWorldScapeStreamingState(EWorldScapeSurfaceState::Preloaded);
 	TestEqual(TEXT("Leaving the nearest body retains the family root"),
 		Generator ? Generator->WorldScapeRootInstance : nullptr, Root);
 	TestTrue(TEXT("Retained family root is hidden while only preloaded"), Root && Root->IsHidden());
 
+	// A family can leave the retention zone while the plugin's worker still owns a
+	// LOD result buffer. The root must disappear visually at once but remain alive
+	// until the generation map drains; destroying it immediately reproduces the
+	// reported LodGenerationThread::DoWork -> UWorldScapeLod::SetData crash.
+	if (Root)
+	{
+		Root->WorldScapeLodInGeneration.Add(nullptr, false);
+	}
 	Planet->SetWorldScapeStreamingState(EWorldScapeSurfaceState::Unloaded);
-	TestNull(TEXT("Leaving the family releases its transient root"),
+	TestEqual(TEXT("In-flight unload retains the WorldScape root safely"),
+		Generator ? Generator->WorldScapeRootInstance : nullptr, Root);
+	TestTrue(TEXT("In-flight unload hides the retained root"), Root && Root->IsHidden());
+	if (Root)
+	{
+		Root->WorldScapeLodInGeneration.Empty();
+	}
+	if (Generator)
+	{
+		Generator->Tick(0.0f);
+	}
+	TestNull(TEXT("Drained family releases its transient root"),
 		Generator ? Generator->WorldScapeRootInstance : nullptr);
 
+	APSGameplayIntegrationTests::DestroyTestWorld(World);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FAPSMoonSurfaceResolverPipelineTest,
+	"APS.Gameplay.World.MoonSurfaceResolverPipeline",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FAPSMoonSurfaceResolverPipelineTest::RunTest(const FString& Parameters)
+{
+	UWorld* World = APSGameplayIntegrationTests::CreateTestWorld();
+	if (!TestNotNull(TEXT("Moon surface test world"), World))
+	{
+		return false;
+	}
+
+	AMoon* Moon = World->SpawnActor<AMoon>();
+	if (!TestNotNull(TEXT("Editable solid moon"), Moon))
+	{
+		APSGameplayIntegrationTests::DestroyTestWorld(World);
+		return false;
+	}
+	Moon->PlanetType = EPlanetType::Frozen;
+	Moon->RadiusKM = 1737.4;
+	Moon->PlanetRadiusKM = 1737;
+	Moon->WorldScapeSeed = 67319;
+	Moon->SurfaceFeatureScale = 1.25;
+	Moon->SurfaceReliefScale = 1.40;
+	Moon->SurfaceLandCoverageScale = 0.85;
+	Moon->SurfaceMountainScale = 0.70;
+	Moon->SurfaceCraterScale = 1.30;
+	Moon->SurfaceRoughnessScale = 1.15;
+
+	Moon->SetWorldScapeStreamingState(EWorldScapeSurfaceState::Preloaded);
+	APlanetarySurfaceGenerator* Generator = Moon->PlanetaryEnvironmentGenerator;
+	AWorldScapeRoot* Root = Generator ? Generator->WorldScapeRootInstance : nullptr;
+	if (TestNotNull(TEXT("Moon resolver allocates a preloaded WorldScape root"), Root)
+		&& TestNotNull(TEXT("Moon owns a surface generator"), Generator))
+	{
+		TestTrue(TEXT("Moon profile is current after preload"),
+			Generator->IsSurfaceProfileCurrent(Moon));
+		TestEqual(TEXT("Moon keeps its selected EPlanetType subtype"),
+			Generator->ResolvedSurfaceProfile.PlanetType, EPlanetType::Frozen);
+		TestNotNull(TEXT("Moon uses an individual resolver-created noise instance"),
+			Cast<UAPSWorldScapePlanetNoise>(Generator->ResolvedNoiseInstance));
+		TestTrue(TEXT("WorldScape root uses the resolver noise without a legacy overwrite"),
+			Root->WorldScapeNoise == Generator->ResolvedNoiseInstance);
+		TestTrue(TEXT("WorldScape root uses the resolver terrain material"),
+			Root->TerrainMaterial.DefaultMaterial == Generator->ResolvedTerrainMaterialInstance);
+
+		const uint32 InitialSignature = Generator->AppliedSurfaceProfileSignature;
+		const float InitialMountains = Generator->ResolvedSurfaceProfile.MountainStrength;
+		Moon->SurfaceMountainScale = 1.80;
+		Generator->GenerateWorldscapeSurfaceByModel(World, Moon);
+		TestTrue(TEXT("Legacy moon entry point reapplies the resolver after an edit"),
+			Generator->IsSurfaceProfileCurrent(Moon));
+		TestNotEqual(TEXT("Moon surface edit changes the applied signature"),
+			Generator->AppliedSurfaceProfileSignature, InitialSignature);
+		TestTrue(TEXT("Moon mountain control changes the resolved terrain"),
+			Generator->ResolvedSurfaceProfile.MountainStrength > InitialMountains);
+		TestNotNull(TEXT("Moon edit still uses the custom per-body noise class"),
+			Cast<UAPSWorldScapePlanetNoise>(Generator->ResolvedNoiseInstance));
+	}
+
+	Moon->SetWorldScapeStreamingState(EWorldScapeSurfaceState::Unloaded);
+	if (Generator)
+	{
+		Generator->Tick(0.0f);
+	}
 	APSGameplayIntegrationTests::DestroyTestWorld(World);
 	return true;
 }
@@ -576,6 +798,36 @@ bool FAPSClusterSystemDataTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("Finalized star instances rebuild only as one explicit batch"),
 		Cluster->StarMeshInstances->bAutoRebuildTreeOnInstanceChanges);
 	Cluster->GenerationSeed = 77;
+	UStarClusterGenerator* ClusterGenerator = NewObject<UStarClusterGenerator>();
+	TSharedPtr<FStarModel> FormationStar = MakeShared<FStarModel>(PrimaryStar);
+	FormationStar->Radius = 1.0;
+	Cluster->ClusterBounds = FVector(160000.0, 160000.0, 18000.0);
+	Cluster->StarAmount = 1001;
+	Cluster->ClusterType = EStarClusterType::RingArc;
+	FBox RingBounds(EForceInit::ForceInit);
+	for (int32 Index = 0; Index < Cluster->StarAmount; ++Index)
+	{
+		RingBounds += ClusterGenerator->CalculateStarPosition(Index, Cluster, FormationStar);
+	}
+	TestTrue(TEXT("Ring/Arc formation bounds stay centred on the cluster origin"),
+		RingBounds.IsValid && RingBounds.GetCenter().Size() < 160000.0 * 100.0 * 0.025);
+
+	Cluster->ClusterBounds = FVector(160000.0, 160000.0, 25000.0);
+	Cluster->ClusterType = EStarClusterType::Nebula;
+	FVector NebulaSum = FVector::ZeroVector;
+	bool bNebulaInsideBounds = true;
+	for (int32 Index = 0; Index < Cluster->StarAmount; ++Index)
+	{
+		const FVector Position = ClusterGenerator->CalculateStarPosition(Index, Cluster, FormationStar);
+		NebulaSum += Position;
+		bNebulaInsideBounds &= FMath::Abs(Position.X) <= Cluster->ClusterBounds.X * 50.0 + 1.0;
+		bNebulaInsideBounds &= FMath::Abs(Position.Y) <= Cluster->ClusterBounds.Y * 50.0 + 1.0;
+		bNebulaInsideBounds &= FMath::Abs(Position.Z) <= Cluster->ClusterBounds.Z * 50.0 + 1.0;
+	}
+	TestTrue(TEXT("Nebula samples stay inside their logical cluster bounds"), bNebulaInsideBounds);
+	TestTrue(TEXT("Nebula antipodal sampling stays centred independently of render budget"),
+		(NebulaSum / Cluster->StarAmount).Size() < 1.0);
+
 	Cluster->RegisterPotentialSystem(0, FVector(100.0, 200.0, 300.0),
 		PrimaryStar, FirstSystem);
 	const FClusterStarSystemRecord* Record = Cluster->FindPotentialSystem(0);
@@ -597,6 +849,94 @@ bool FAPSClusterSystemDataTest::RunTest(const FString& Parameters)
 			MaterializedSystem->bMaterializedFromCluster);
 	}
 	APSGameplayIntegrationTests::DestroyTestWorld(World);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FAPSGalaxyCatalogVolumeTest,
+	"APS.Gameplay.Generation.GalaxyCatalogVolume",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FAPSGalaxyCatalogVolumeTest::RunTest(const FString& Parameters)
+{
+	FGalaxyCatalogDescriptor Catalog;
+	Catalog.GenerationSeed = 271828;
+	Catalog.ModeledStarCount = 100000000;
+	Catalog.GalaxySize = 250;
+	Catalog.StarDensity = 10.0;
+	Catalog.GalaxyType = EGalaxyType::Spiral;
+	Catalog.GalaxyClass = EGalaxyClass::Sc;
+	const double CatalogRadius = Catalog.GalaxySize * 50000.0;
+
+	constexpr int32 SampleCount = 2048;
+	FVector SampleSum = FVector::ZeroVector;
+	double MaximumAbsoluteZ = 0.0;
+	bool bAllSamplesResolved = true;
+	bool bAllSamplesInsideCatalog = true;
+	for (int32 SampleIndex = 0; SampleIndex < SampleCount; ++SampleIndex)
+	{
+		const int64 CatalogIndex = Catalog.ModeledStarCount * SampleIndex / SampleCount;
+		FGalaxyCatalogStarRecord Record;
+		if (!Catalog.ResolveStar(CatalogIndex, Record))
+		{
+			bAllSamplesResolved = false;
+			continue;
+		}
+		SampleSum += Record.GalaxyLocalLocation;
+		MaximumAbsoluteZ = FMath::Max(MaximumAbsoluteZ, FMath::Abs(Record.GalaxyLocalLocation.Z));
+		bAllSamplesInsideCatalog &= Record.GalaxyLocalLocation.Size() <= CatalogRadius * 1.001;
+	}
+
+	TestTrue(TEXT("Indexed galaxy samples resolve"), bAllSamplesResolved);
+	TestTrue(TEXT("Galaxy samples remain inside the logical catalog radius"), bAllSamplesInsideCatalog);
+	const FVector SampleCenter = SampleSum / SampleCount;
+	TestTrue(TEXT("Galaxy sample remains centered around the home cluster origin"),
+		SampleCenter.Size() < CatalogRadius * 0.08);
+	TestTrue(TEXT("Disk galaxy retains a visible three-dimensional stellar halo"),
+		MaximumAbsoluteZ > CatalogRadius * 0.50);
+
+	FGalaxyCatalogStarRecord FirstResolve;
+	FGalaxyCatalogStarRecord SecondResolve;
+	TestTrue(TEXT("Stable catalog record resolves first time"), Catalog.ResolveStar(1234567, FirstResolve));
+	TestTrue(TEXT("Stable catalog record resolves second time"), Catalog.ResolveStar(1234567, SecondResolve));
+	TestEqual(TEXT("Galaxy catalog location is deterministic"),
+		FirstResolve.GalaxyLocalLocation, SecondResolve.GalaxyLocalLocation);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FAPSPlanetaryOrbitIsolationTest,
+	"APS.Gameplay.Generation.PlanetaryOrbitIsolation",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FAPSPlanetaryOrbitIsolationTest::RunTest(const FString& Parameters)
+{
+	UPlanetarySystemGenerator* SystemGenerator = NewObject<UPlanetarySystemGenerator>();
+	UPlanetGenerator* PlanetGenerator = NewObject<UPlanetGenerator>();
+	UMoonGenerator* MoonGenerator = NewObject<UMoonGenerator>();
+	TSharedPtr<FStarModel> StarModel = MakeShared<FStarModel>();
+	StarModel->Mass = 1.0;
+	StarModel->Radius = 1.0;
+	StarModel->Luminosity = 1.0;
+	StarModel->SurfaceTemperature = 5772.0;
+	StarModel->StellarType = EStellarType::MainSequence;
+
+	const auto GenerateThreePlanetSystem = [&]()
+	{
+		TSharedPtr<FPlanetarySystemModel> Model = MakeShared<FPlanetarySystemModel>();
+		Model->AmountOfPlanets = 3;
+		Model->PlanetarySystemType = EPlanetarySystemType::MultiPlanetSystem;
+		Model->OrbitDistributionType = EOrbitDistributionType::Uniform;
+		SystemGenerator->GenerateCustomPlanetarySystemModel(
+			Model, StarModel, PlanetGenerator, MoonGenerator);
+		return Model;
+	};
+
+	const TSharedPtr<FPlanetarySystemModel> FirstSystem = GenerateThreePlanetSystem();
+	const TSharedPtr<FPlanetarySystemModel> SecondSystem = GenerateThreePlanetSystem();
+	TestEqual(TEXT("First star receives exactly its requested planets"), FirstSystem->PlanetsList.Num(), 3);
+	TestEqual(TEXT("Second star does not inherit the first star's orbit scratch data"),
+		SecondSystem->PlanetsList.Num(), 3);
 	return true;
 }
 

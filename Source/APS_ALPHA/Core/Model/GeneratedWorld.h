@@ -29,6 +29,59 @@ enum class EStellarType : uint8;
 enum class EStarType : uint8;
 enum class EAstroGenerationLevel : uint8;
 
+/**
+ * User-authored body values retained while the disposable main-menu hierarchy is
+ * rebuilt.  The map key is a deterministic star/planet/moon index path; actor
+ * pointers and generated display names are deliberately excluded.
+ */
+USTRUCT()
+struct FAPSPreviewBodyEditOverride
+{
+	GENERATED_BODY()
+
+	UPROPERTY()
+	EPlanetType PlanetType{EPlanetType::Frozen};
+
+	UPROPERTY()
+	double RadiusKm{6750.0};
+
+	UPROPERTY()
+	int32 SurfaceSeed{1337};
+
+	UPROPERTY()
+	double SurfaceFeatureScale{1.0};
+
+	UPROPERTY()
+	double SurfaceReliefScale{1.0};
+
+	UPROPERTY()
+	double SurfaceLandCoverageScale{1.0};
+
+	UPROPERTY()
+	double SurfaceMountainScale{1.0};
+
+	UPROPERTY()
+	double SurfaceCraterScale{1.0};
+
+	UPROPERTY()
+	double SurfaceRoughnessScale{1.0};
+
+	UPROPERTY()
+	double AtmosphereHeight{100.0};
+
+	UPROPERTY()
+	double AtmosphereOpacity{12.0};
+
+	UPROPERTY()
+	double AtmosphereMultiScattering{1.0};
+
+	UPROPERTY()
+	double AtmosphereRayleighScattering{8.0};
+
+	UPROPERTY()
+	FLinearColor AtmosphereColor{FLinearColor(3.8f, 13.5f, 33.0f, 0.0f)};
+};
+
 UCLASS()
 class UGeneratedWorld : public UObject
 {
@@ -39,10 +92,15 @@ public:
 	
 	void PrintAllValues() const;
 
+	/** Store a body edit under its stable hierarchy path. */
+	void SetPreviewBodyEditOverride(
+		const FString& StableBodyKey, const FAPSPreviewBodyEditOverride& BodyOverride);
+	const FAPSPreviewBodyEditOverride* FindPreviewBodyEditOverride(const FString& StableBodyKey) const;
+	void ClearPreviewBodyEditOverrides();
+	int32 GetPreviewBodyEditOverrideCount() const { return PreviewBodyEditOverrides.Num(); }
+
 	UPROPERTY()
 	TArray<FPlanetData> InhabitedPlanets;
-
-	FGeneratedWorldData SaveWorldData() const;
 
 	// Метод для получения данных о заселенных планетах
 	const TArray<FPlanetData>& GetInhabitedPlanets() const { return InhabitedPlanets; }
@@ -55,6 +113,10 @@ public:
 
 	UPROPERTY(EditAnywhere, Category = "Generation Params")
 	bool bStartWithHomePlanet{ false };
+
+	/** Deterministic seed shared by menu preview and the committed gameplay hierarchy. */
+	UPROPERTY(EditAnywhere, Category = "Generation Params")
+	int32 GenerationSeed{271828};
 
 	UPROPERTY(EditAnywhere, Category = "Home System")
 	bool bRandomHomeSystem{ false };
@@ -115,7 +177,7 @@ public:
 	int GalaxySize{ 250 };
 
 	UPROPERTY(EditAnywhere, Category = "Galaxy")
-	int GalaxyStarCount{ 100000 };
+	int GalaxyStarCount{ 100000000 };
 
 	UPROPERTY(EditAnywhere, Category = "Home System", meta = (EditCondition = "!bRandomHomeSystem"))
 	int PlanetsAmount{ 0 };
@@ -131,6 +193,29 @@ public:
 
 	UPROPERTY(EditAnywhere, Category = "Galaxy")
 	double PlanetRadius{ 6750.0 };
+
+	/** Stable input for the per-planet resolver. Zero lets the body derive a seed. */
+	UPROPERTY(EditAnywhere, Category = "Planet Surface", meta = (ClampMin = "0"))
+	int32 PlanetSurfaceSeed{ 1337 };
+
+	/** Safe multipliers applied after the selected EPlanetType profile is resolved. */
+	UPROPERTY(EditAnywhere, Category = "Planet Surface", meta = (ClampMin = "0.25", ClampMax = "4.0"))
+	double SurfaceFeatureScale{ 1.0 };
+
+	UPROPERTY(EditAnywhere, Category = "Planet Surface", meta = (ClampMin = "0.25", ClampMax = "2.5"))
+	double SurfaceReliefScale{ 1.0 };
+
+	UPROPERTY(EditAnywhere, Category = "Planet Surface", meta = (ClampMin = "0.25", ClampMax = "2.0"))
+	double SurfaceLandCoverageScale{ 1.0 };
+
+	UPROPERTY(EditAnywhere, Category = "Planet Surface", meta = (ClampMin = "0.0", ClampMax = "2.0"))
+	double SurfaceMountainScale{ 1.0 };
+
+	UPROPERTY(EditAnywhere, Category = "Planet Surface", meta = (ClampMin = "0.0", ClampMax = "2.0"))
+	double SurfaceCraterScale{ 1.0 };
+
+	UPROPERTY(EditAnywhere, Category = "Planet Surface", meta = (ClampMin = "0.25", ClampMax = "2.0"))
+	double SurfaceRoughnessScale{ 1.0 };
 		
 	
 	UPROPERTY()
@@ -145,7 +230,7 @@ public:
 	double AtmosphereHeight{ 100.0 };
 
 	UPROPERTY(EditAnywhere, Category = "Atmosphere")
-	double AtmosphereOpacity{ 1.0 };
+	double AtmosphereOpacity{ 12.0 };
 
 	UPROPERTY(EditAnywhere, Category = "Atmosphere")
 	double AtmosphereMultiScattering{ 1.0 };
@@ -155,6 +240,14 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Atmosphere")
 	FLinearColor AtmosphereColor {FLinearColor(3.8f, 13.5f, 33.0f, 0.0f)};
+
+	/**
+	 * Per-body editor state. It intentionally belongs to the transient generation
+	 * model rather than preview actors, which are destroyed on every structural
+	 * rebuild. Explicit REGENERATE clears the map before advancing the seed.
+	 */
+	UPROPERTY()
+	TMap<FString, FAPSPreviewBodyEditOverride> PreviewBodyEditOverrides;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Star Cluster")
 	int StarsAmount;
@@ -180,7 +273,7 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Star System")
 	double StarSystemRadius;
 
-	FGeneratedWorldData SaveWorldData()
+	FGeneratedWorldData SaveWorldData() const
 	{
 		FGeneratedWorldData WorldData;
 		WorldData.bGenerateFullScaledWorld = bGenerateFullScaledWorld;
@@ -211,6 +304,13 @@ public:
 		WorldData.StartPlanetIndex = StartPlanetIndex;
 		WorldData.GalaxyStarDensity = GalaxyStarDensity;
 		WorldData.PlanetRadius = PlanetRadius;
+		WorldData.PlanetSurfaceSeed = PlanetSurfaceSeed;
+		WorldData.SurfaceFeatureScale = SurfaceFeatureScale;
+		WorldData.SurfaceReliefScale = SurfaceReliefScale;
+		WorldData.SurfaceLandCoverageScale = SurfaceLandCoverageScale;
+		WorldData.SurfaceMountainScale = SurfaceMountainScale;
+		WorldData.SurfaceCraterScale = SurfaceCraterScale;
+		WorldData.SurfaceRoughnessScale = SurfaceRoughnessScale;
 		WorldData.AtmosphereHeight = AtmosphereHeight;
 		WorldData.AtmosphereOpacity = AtmosphereOpacity;
 		WorldData.AtmosphereMultiScattering = AtmosphereMultiScattering;

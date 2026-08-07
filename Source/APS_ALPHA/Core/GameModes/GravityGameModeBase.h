@@ -19,7 +19,12 @@ public:
 	AGravityGameModeBase();
 
 	virtual void BeginPlay() override;
+	virtual UClass* GetDefaultPawnClassForController_Implementation(AController* InController) override;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astro Object BP")
 	TSubclassOf<AAstroGenerator> BP_AstroGeneratorClass;
+
+private:
+	/** Clears one-shot PrintString output left by the legacy level graph. */
+	void ClearLegacyLevelScreenMessages();
 };

@@ -14,6 +14,7 @@
 #include "APS_ALPHA/Core/Enums/Planetary/PressureLevel.h"
 #include "APS_ALPHA/Core/Enums/Planetary/SeismicActivityLevel.h"
 #include "APS_ALPHA/Core/Enums/Planetary/WindSpeed.h"
+#include "APS_ALPHA/Core/Planetary/APSPlanetSurfaceProfile.h"
 #include "APS_ALPHA/Generation/PlanetarySurfaceGenerator.h"
 
 APlanetaryBody::APlanetaryBody()
@@ -88,19 +89,24 @@ APlanetarySurfaceGenerator* APlanetaryBody::EnsurePlanetaryEnvironmentGenerator(
 
 bool APlanetaryBody::EnsureWorldScapeSurface()
 {
+	if (!UAPSPlanetSurfaceProfileResolver::SupportsWorldScape(PlanetType))
+	{
+		// A preview/runtime type switch may leave the former solid world's root
+		// resident while its async jobs drain. This guard is body-generic because a
+		// generated Gas moon also carries PlanetType::GasGiant.
+		if (IsValid(PlanetaryEnvironmentGenerator))
+		{
+			PlanetaryEnvironmentGenerator->UnloadWorldScapeRoot();
+		}
+		return false;
+	}
+
 	APlanetarySurfaceGenerator* Generator = EnsurePlanetaryEnvironmentGenerator();
 	if (!Generator || IsValid(Generator->WorldScapeRootInstance))
 	{
 		return Generator && IsValid(Generator->WorldScapeRootInstance);
 	}
 
-	if (APlanet* Planet = Cast<APlanet>(this))
-	{
-		if (!Planet->IsNotGasGiant())
-		{
-			return false;
-		}
-	}
 	return Generator->CreateRuntimeWorldScapeRoot(this);
 }
 
@@ -116,8 +122,7 @@ bool APlanetaryBody::IsWorldScapeStreamingActive() const
 	return IsValid(PlanetaryEnvironmentGenerator)
 		&& IsValid(PlanetaryEnvironmentGenerator->WorldScapeRootInstance)
 		&& PlanetaryEnvironmentGenerator->WorldScapeRootInstance->bGenerateWorldScape
-		&& !PlanetaryEnvironmentGenerator->WorldScapeRootInstance->bFreezeGeneration
-		&& !PlanetaryEnvironmentGenerator->WorldScapeRootInstance->IsHidden();
+		&& !PlanetaryEnvironmentGenerator->WorldScapeRootInstance->bFreezeGeneration;
 }
 
 double APlanetaryBody::GetWorldScapeActivationRadiusCm() const

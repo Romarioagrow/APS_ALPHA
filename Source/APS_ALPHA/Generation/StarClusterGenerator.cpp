@@ -81,13 +81,45 @@ FVector UStarClusterGenerator::CalculateStarPosition(int StarIndex, AStarCluster
 			//StarCluster->ClusterBounds = FVector(10, 10, 10);
 
 			// ������������� ����� �� ������� � ������ ������� ������
-			double SpiralRadius = StarIndex * StarSize;
-			//double SpiralRadius = StarIndex * (StarSize + StarSize); // ����������� ������ ������� �� ������ ������
-			double SpiralAngle = 2 * PI * StarIndex / StarCluster->StarAmount;
-			StarPosition = FVector(SpiralRadius * FMath::Cos(SpiralAngle), SpiralRadius * FMath::Sin(SpiralAngle),
-			                       FMath::RandRange(-StarCluster->ClusterBounds.Z / 2,
-			                                        StarCluster->ClusterBounds.Z / 2));
-			//StarPosition /= 5;
+			// Build the nebula from deterministic antipodal pairs. The former
+			// StarIndex * StarSize radius made the formation depend on the HISM budget
+			// and allowed giant stars to escape far beyond the authored cluster bounds.
+			// Pairing every point with its inverse also keeps the visible formation
+			// centred on the cluster origin for every seed.
+			const int32 PairCount = StarCluster->StarAmount / 2;
+			const bool bUnpairedCentre = (StarCluster->StarAmount % 2) != 0
+				&& StarIndex == StarCluster->StarAmount - 1;
+			if (bUnpairedCentre || PairCount <= 0)
+			{
+				StarPosition = FVector::ZeroVector;
+				break;
+			}
+
+			const int32 PairIndex = StarIndex / 2;
+			const bool bOppositePoint = (StarIndex & 1) != 0;
+			const uint32 PairSeedHash = HashCombine(
+				GetTypeHash(StarCluster->GenerationSeed), GetTypeHash(PairIndex));
+			FRandomStream PairStream(FMath::Max(
+				1, static_cast<int32>(PairSeedHash & 0x7fffffffu)));
+
+			const double PairAlpha = (static_cast<double>(PairIndex) + 0.5)
+				/ static_cast<double>(PairCount);
+			const double MaxRadialExtent = FMath::Max(0.0,
+				FMath::Min(FMath::Abs(StarCluster->ClusterBounds.X),
+					FMath::Abs(StarCluster->ClusterBounds.Y)) * 0.5);
+			const double Radius = MaxRadialExtent * FMath::Sqrt(PairAlpha)
+				* PairStream.FRandRange(0.78f, 1.0f);
+			const double BaseAngle = PairAlpha * UE_TWO_PI * 3.25
+				+ PairStream.FRandRange(-0.16f, 0.16f);
+			const double Angle = BaseAngle + (bOppositePoint ? PI : 0.0);
+			const double HalfHeight = FMath::Abs(StarCluster->ClusterBounds.Z) * 0.5;
+			const double VerticalEnvelope = FMath::Lerp(1.0, 0.18, PairAlpha);
+			const double PairZ = PairStream.FRandRange(-HalfHeight, HalfHeight)
+				* VerticalEnvelope;
+			StarPosition = FVector(
+				FMath::Cos(Angle) * Radius,
+				FMath::Sin(Angle) * Radius,
+				bOppositePoint ? -PairZ : PairZ);
 		}
 		break;
 	case EStarClusterType::ElongatedStream:
@@ -106,16 +138,34 @@ FVector UStarClusterGenerator::CalculateStarPosition(int StarIndex, AStarCluster
 	case EStarClusterType::RingArc:
 		{
 			// Leave a readable gap in the ring so the preset is visually distinct
-			// from both a globular cluster and the continuous nebula spiral.
-			const double Angle = FMath::Lerp(-PI * 0.82, PI * 0.82, NormalizedIndex);
+			// from both a globular cluster and the continuous nebula spiral. Symmetric
+			// pairs share radial jitter and opposite height, while the nominal arc
+			// bounds are translated back to the cluster origin. This preserves the arc
+			// silhouette without making its camera focus drift toward the filled side.
+			const double ArcHalfAngle = PI * 0.82;
+			const double Angle = FMath::Lerp(-ArcHalfAngle, ArcHalfAngle, NormalizedIndex);
 			const double BaseRadius = FMath::Min(StarCluster->ClusterBounds.X,
 				StarCluster->ClusterBounds.Y) * 0.38;
-			const double RadiusJitter = FMath::RandRange(-BaseRadius * 0.14, BaseRadius * 0.14);
-			const double Radius = BaseRadius + RadiusJitter;
+			const int32 MirroredIndex = StarCluster->StarAmount - 1 - StarIndex;
+			const int32 PairIndex = FMath::Min(StarIndex, MirroredIndex);
+			const uint32 PairSeedHash = HashCombine(
+				GetTypeHash(StarCluster->GenerationSeed), GetTypeHash(PairIndex));
+			FRandomStream PairStream(FMath::Max(
+				1, static_cast<int32>(PairSeedHash & 0x7fffffffu)));
+			// Keep the nominal X extrema fixed so the translated arc remains centred.
+			const double JitterEnvelope = FMath::Square(FMath::Sin(UE_TWO_PI * NormalizedIndex));
+			const double Radius = BaseRadius * (1.0
+				+ PairStream.FRandRange(-0.14f, 0.14f) * JitterEnvelope);
+			const double ArcBoundsCentreX = BaseRadius
+				* (1.0 + FMath::Cos(ArcHalfAngle)) * 0.5;
+			const double HalfHeight = FMath::Abs(StarCluster->ClusterBounds.Z) * 0.5;
+			const double HeightMagnitude = PairStream.FRandRange(0.0f, HalfHeight);
+			const double Height = StarIndex == MirroredIndex ? 0.0
+				: (StarIndex < MirroredIndex ? -HeightMagnitude : HeightMagnitude);
 			StarPosition = FVector(
-				FMath::Cos(Angle) * Radius,
+				FMath::Cos(Angle) * Radius - ArcBoundsCentreX,
 				FMath::Sin(Angle) * Radius,
-				FMath::RandRange(-StarCluster->ClusterBounds.Z * 0.5, StarCluster->ClusterBounds.Z * 0.5));
+				Height);
 		}
 		break;
 	case EStarClusterType::Hourglass:

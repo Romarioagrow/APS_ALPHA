@@ -22,7 +22,10 @@ UGeneratedWorld::UGeneratedWorld(): GalaxyClass()
 	GalaxyType = EGalaxyType::Elliptical;
 	GalaxyClass = EGalaxyClass::E0;
 	StarClusterSize = EStarClusterSize::Giant;
-	StarClusterType = EStarClusterType::Nebula;
+	// Ring / Arc is spatially legible immediately and keeps the home-system point
+	// easy to locate. This is the transient menu model default; authored SinglePlay
+	// generators retain their serialized cluster preset.
+	StarClusterType = EStarClusterType::RingArc;
 	StarClusterPopulation = EStarClusterPopulation::Dwarfs;
 	StarClusterComposition = EStarClusterComposition::Unknown;
 	StarType = EStarType::SingleStar;
@@ -32,12 +35,36 @@ UGeneratedWorld::UGeneratedWorld(): GalaxyClass()
 	OrbitDistributionType = EOrbitDistributionType::Uniform;
 	HomeSystemPosition = EHomeSystemPosition::DirectPosition;
 	GalaxySize = 250;
-	GalaxyStarCount = 100000;
+	// The generated galaxy owns a virtual deterministic catalog. One hundred
+	// million logical stars therefore costs a fixed descriptor plus the bounded
+	// HISM visual sample, rather than one UObject/record per star.
+	GalaxyStarCount = 100000000;
 	PlanetsAmount = 1;
 	StartPlanetIndex = 1;
 	GalaxyStarDensity = 10.0;
 	HomePlanetarySystem = nullptr;
 	HomePlanet = nullptr;
+}
+
+void UGeneratedWorld::SetPreviewBodyEditOverride(
+	const FString& StableBodyKey, const FAPSPreviewBodyEditOverride& BodyOverride)
+{
+	if (StableBodyKey.IsEmpty())
+	{
+		return;
+	}
+	PreviewBodyEditOverrides.Add(StableBodyKey, BodyOverride);
+}
+
+const FAPSPreviewBodyEditOverride* UGeneratedWorld::FindPreviewBodyEditOverride(
+	const FString& StableBodyKey) const
+{
+	return StableBodyKey.IsEmpty() ? nullptr : PreviewBodyEditOverrides.Find(StableBodyKey);
+}
+
+void UGeneratedWorld::ClearPreviewBodyEditOverrides()
+{
+	PreviewBodyEditOverrides.Reset();
 }
 
 void UGeneratedWorld::PrintAllValues() const
@@ -88,9 +115,8 @@ void UGeneratedWorld::PrintAllValues() const
             PropertyValue = TEXT("Unsupported property type");
         }
 
-        if (GEngine)
-        {
-            GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::Red, FString::Printf(TEXT("%s: %s"), *PropertyName, *PropertyValue));
-        }
+        // Model dumps are useful for reproducing generation bugs, but they must not
+        // cover the first gameplay frame. Keep the same information in the log.
+        UE_LOG(LogTemp, Log, TEXT("[APS.WorldModel] %s=%s"), *PropertyName, *PropertyValue);
     }
 }

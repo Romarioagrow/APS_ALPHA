@@ -7,7 +7,7 @@ class ASpaceHeadquarters;
 class ASpaceShipyard;
 class ASpaceship;
 class ASpaceStation;
-class AControlledPawn;
+class APawn;
 
 UENUM(BlueprintType)
 enum class EAPSCivilizationArchetype : uint8
@@ -123,7 +123,7 @@ public:
 	EOrbitHeight HomeStationOrbitHeight{EOrbitHeight::LowOrbit};
 
 	UPROPERTY(EditAnywhere, Category = "Player Spawn")
-	TSubclassOf<AControlledPawn> BP_CharacterClass;
+	TSubclassOf<APawn> BP_CharacterClass;
 
 	UPROPERTY(EditAnywhere, Category = "Player Spawn")
 	TSubclassOf<ASpaceStation> BP_HomeSpaceStation;

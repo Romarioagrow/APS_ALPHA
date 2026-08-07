@@ -96,6 +96,34 @@ void AMainMenuController::ScheduleSlateMenuInstallRetry()
 		InstallSlateMenuTimer, this, &AMainMenuController::InstallSlateMenu, 0.10f, false);
 }
 
+#if WITH_DEV_AUTOMATION_TESTS
+bool AMainMenuController::OpenAstronomicalGenerationForAutomation(
+	EAstroPreviewFocus Focus, EAPSGenerationRoute Route)
+{
+	if (!SlateMenuRoot.IsValid())
+	{
+		return false;
+	}
+	SlateMenuRoot->OpenAstronomicalGenerationForAutomation(Focus, Route);
+	return true;
+}
+
+bool AMainMenuController::CommitSurfaceControlForAutomation(
+	const EAPSGenerationSurfaceControl Control, const double Value)
+{
+	return SlateMenuRoot.IsValid()
+		&& SlateMenuRoot->CommitSurfaceControlForAutomation(Control, Value);
+}
+
+double AMainMenuController::GetSurfaceControlValueForAutomation(
+	const EAPSGenerationSurfaceControl Control) const
+{
+	return SlateMenuRoot.IsValid()
+		? SlateMenuRoot->GetSurfaceControlValueForAutomation(Control)
+		: TNumericLimits<double>::Lowest();
+}
+#endif
+
 void AMainMenuController::RemoveSlateMenu()
 {
 	UGameViewportClient* ViewportClient = GetGameInstance()
@@ -137,7 +165,10 @@ void AMainMenuController::LoadWorldSlot(const FString& SaveFileName)
 	{
 		// A visit must never accidentally reuse a model committed by an earlier
 		// generation session in the same GameInstance.
+		GameplayInstance->bUseAuthoredSinglePlayWorld = false;
+		GameplayInstance->bSpawnGeneratedCivilization = false;
 		GameplayInstance->NewGeneratedWorld = nullptr;
+		GameplayInstance->SpawnParameters = nullptr;
 		GameplayInstance->CurrentCivilization = nullptr;
 	}
 	SetSaveSlotName(SaveFileName);

@@ -38,10 +38,13 @@ public:
 
 	void AddNewStar(AStar* MewStar);
 
+	/** Read-only generated hierarchy access for navigation/UI. */
+	const TArray<AStar*>& GetStars() const { return Stars; }
+
 	void SetStarSystemType(EStarType Type);
 
 	UPROPERTY(VisibleAnywhere, Category = "Star System")
-	double StarSystemRadius;
+	double StarSystemRadius{0.0};
 
 	UPROPERTY(VisibleAnywhere, Category = "Star System")
 	FVector StarSystemZoneRadius;

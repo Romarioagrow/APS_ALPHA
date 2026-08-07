@@ -97,7 +97,7 @@ APlanet::APlanet()
 	GravityCollisionZone->SetHiddenInGame(true);
 }
 
-bool APlanet::IsNotGasGiant()
+bool APlanet::IsNotGasGiant() const
 {
 	return PlanetType != EPlanetType::GasGiant
 		&& PlanetType != EPlanetType::HotGiant

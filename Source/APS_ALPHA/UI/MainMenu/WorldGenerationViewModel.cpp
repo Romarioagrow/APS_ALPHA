@@ -3,9 +3,9 @@
 #include "APS_ALPHA/Core/Instances/MainGameplayInstance.h"
 #include "APS_ALPHA/Core/Model/GeneratedWorld.h"
 #include "APS_ALPHA/Core/Model/SpawnParameters.h"
+#include "APS_ALPHA/Core/Planetary/APSPlanetSurfaceProfile.h"
 #include "APS_ALPHA/Core/Enums/CharSpawnPlace.h"
 #include "APS_ALPHA/Core/Enums/OrbitHeight.h"
-#include "APS_ALPHA/Pawns/Base/ControlledPawn.h"
 #include "APS_ALPHA/Pawns/Spaceships/Spaceship.h"
 #include "APS_ALPHA/Actors/Tech/SpaceStation.h"
 #include "APS_ALPHA/Actors/Tech/SpaceHeadquarters.h"
@@ -17,9 +17,11 @@
 #include "APS_ALPHA/Actors/Astro/StarCluster.h"
 #include "APS_ALPHA/Actors/Astro/StarSystem.h"
 #include "APS_ALPHA/Generation/AstroGenerator.h"
+#include "APS_ALPHA/Generation/PlanetarySurfaceGenerator.h"
 #include "APS_ALPHA/Gameplay/Civilizations/Civilization.h"
 #include "EngineUtils.h"
 #include "Engine/World.h"
+#include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
 #include "TimerManager.h"
@@ -34,6 +36,19 @@ void UWorldGenerationViewModel::Initialize(UObject* InWorldContext, UGeneratedWo
 		InGeneratedWorld->PlanetsAmount = FMath::Clamp(InGeneratedWorld->PlanetsAmount, 1, 20);
 		InGeneratedWorld->MoonsAmount = FMath::Clamp(InGeneratedWorld->MoonsAmount, 0, 10);
 		InGeneratedWorld->PlanetRadius = FMath::Clamp(InGeneratedWorld->PlanetRadius, 100.0, 20000.0);
+		InGeneratedWorld->PlanetSurfaceSeed = FMath::Clamp(InGeneratedWorld->PlanetSurfaceSeed, 0, 999983);
+		InGeneratedWorld->SurfaceFeatureScale = FMath::Clamp(InGeneratedWorld->SurfaceFeatureScale, 0.25, 4.0);
+		InGeneratedWorld->SurfaceReliefScale = FMath::Clamp(InGeneratedWorld->SurfaceReliefScale, 0.25, 2.5);
+		InGeneratedWorld->SurfaceLandCoverageScale = FMath::Clamp(InGeneratedWorld->SurfaceLandCoverageScale, 0.25, 2.0);
+		InGeneratedWorld->SurfaceMountainScale = FMath::Clamp(InGeneratedWorld->SurfaceMountainScale, 0.0, 2.0);
+		InGeneratedWorld->SurfaceCraterScale = FMath::Clamp(InGeneratedWorld->SurfaceCraterScale, 0.0, 2.0);
+		InGeneratedWorld->SurfaceRoughnessScale = FMath::Clamp(InGeneratedWorld->SurfaceRoughnessScale, 0.25, 2.0);
+		InGeneratedWorld->AtmosphereHeight = FMath::Clamp(InGeneratedWorld->AtmosphereHeight, 0.0, 2000.0);
+		InGeneratedWorld->AtmosphereOpacity = FMath::Clamp(InGeneratedWorld->AtmosphereOpacity, 0.0, 40.0);
+		InGeneratedWorld->AtmosphereMultiScattering = FMath::Clamp(
+			InGeneratedWorld->AtmosphereMultiScattering, 0.0, 10.0);
+		InGeneratedWorld->AtmosphereRayleighScattering = FMath::Clamp(
+			InGeneratedWorld->AtmosphereRayleighScattering, 0.0, 64.0);
 		InGeneratedWorld->StartPlanetIndex = FMath::Clamp(
 			InGeneratedWorld->StartPlanetIndex, 1, InGeneratedWorld->PlanetsAmount);
 	}
@@ -58,7 +73,10 @@ void UWorldGenerationViewModel::Shutdown()
 	if (UWorld* World = WorldContext.IsValid() ? WorldContext->GetWorld() : nullptr)
 	{
 		World->GetTimerManager().ClearTimer(PreviewTimerHandle);
+		World->GetTimerManager().ClearTimer(PlanetAppearanceTimerHandle);
+		World->GetTimerManager().ClearTimer(PreviewTravelTimerHandle);
 	}
+	bPendingSurfaceAppearanceRefresh = false;
 	WorldContext.Reset();
 	PreviewGenerator.Reset();
 }
@@ -97,59 +115,208 @@ void UWorldGenerationViewModel::SetEnumValue(const UEnum* EnumClass, int32 Selec
 		return;
 	}
 
+	if (EnumClass == StaticEnum<EPlanetType>())
+	{
+		const EPlanetType PlanetType = static_cast<EPlanetType>(SelectedValue);
+		const bool bWorldScape = UAPSPlanetSurfaceProfileResolver::SupportsWorldScape(PlanetType);
+		UE_LOG(LogTemp, Log,
+			TEXT("[APS.PlanetSurface.UI] subtype=%s family=%s worldscape=%s seed=%d"),
+			*UEnum::GetValueAsString(PlanetType),
+			bWorldScape
+				? *UEnum::GetValueAsString(
+					UAPSPlanetSurfaceProfileResolver::GetArchetypeForType(PlanetType))
+				: TEXT("GasGiant"),
+			bWorldScape ? TEXT("true") : TEXT("false"), GeneratedWorld->PlanetSurfaceSeed);
+		// Planet type changes are appearance/profile edits. Reusing the selected
+		// actor keeps its proportional camera distance and avoids rebuilding the
+		// surrounding galaxy, cluster and every stellar hierarchy.
+		RefreshPlanetAppearancePreview(true);
+		// A type/preset click is a discrete transaction, not a continuously emitted
+		// slider sample.  Commit its latest editor buffer before the next generator
+		// tick so an already queued edit for this body cannot consume the inactive
+		// globe buffer first and make the final type land back on the old buffer.
+		// Repeated clicks in one frame still coalesce because the generator has not
+		// sampled the shared body state yet.
+		if (UWorld* World = WorldContext.IsValid() ? WorldContext->GetWorld() : nullptr;
+			World && World->GetTimerManager().IsTimerActive(PlanetAppearanceTimerHandle))
+		{
+			World->GetTimerManager().ClearTimer(PlanetAppearanceTimerHandle);
+			ExecutePlanetAppearancePreviewRefresh();
+		}
+		return;
+	}
 	RequestPreview();
 }
 
 void UWorldGenerationViewModel::SetGalaxySize(double Value)
 {
-	if (GeneratedWorld && GeneratedWorld->GalaxySize != FMath::RoundToInt(Value))
+	if (!GeneratedWorld || !FMath::IsFinite(Value))
 	{
-		GeneratedWorld->GalaxySize = FMath::Max(1, FMath::RoundToInt(Value));
+		return;
+	}
+
+	const int32 NewValue = FMath::RoundToInt(FMath::Clamp(Value, 1.0, 100000.0));
+	if (GeneratedWorld->GalaxySize != NewValue)
+	{
+		GeneratedWorld->GalaxySize = NewValue;
 		RequestPreview();
 	}
 }
 
 void UWorldGenerationViewModel::SetGalaxyStarCount(double Value)
 {
-	if (GeneratedWorld && GeneratedWorld->GalaxyStarCount != FMath::RoundToInt(Value))
+	if (!GeneratedWorld || !FMath::IsFinite(Value))
 	{
-		GeneratedWorld->GalaxyStarCount = FMath::Max(1, FMath::RoundToInt(Value));
+		return;
+	}
+
+	// The persisted property remains int32-compatible for existing saves, while
+	// the generated galaxy exposes the value through its virtual int64 catalog.
+	// Clamp before conversion: RoundToInt on an unchecked Slate/Blueprint double
+	// can assert in IntFitsIn long before a later integer clamp is reached.
+	const int32 NewValue = FMath::RoundToInt(FMath::Clamp(Value, 1.0, 1000000000.0));
+	if (GeneratedWorld->GalaxyStarCount != NewValue)
+	{
+		GeneratedWorld->GalaxyStarCount = NewValue;
 		RequestPreview();
 	}
 }
 
 void UWorldGenerationViewModel::SetGalaxyStarDensity(double Value)
 {
-	if (GeneratedWorld && !FMath::IsNearlyEqual(GeneratedWorld->GalaxyStarDensity, Value))
+	if (!GeneratedWorld || !FMath::IsFinite(Value))
 	{
-		GeneratedWorld->GalaxyStarDensity = FMath::Max(0.01, Value);
+		return;
+	}
+
+	const double NewValue = FMath::Clamp(Value, 0.01, 1000.0);
+	if (!FMath::IsNearlyEqual(GeneratedWorld->GalaxyStarDensity, NewValue))
+	{
+		GeneratedWorld->GalaxyStarDensity = NewValue;
 		RequestPreview();
 	}
 }
 
 void UWorldGenerationViewModel::SetPlanetRadius(double Value)
 {
-	if (GeneratedWorld && !FMath::IsNearlyEqual(GeneratedWorld->PlanetRadius, Value))
+	if (!GeneratedWorld || !FMath::IsFinite(Value))
 	{
-		GeneratedWorld->PlanetRadius = FMath::Clamp(Value, 100.0, 20000.0);
-		RequestPreview();
+		return;
+	}
+
+	const double NewValue = FMath::Clamp(Value, 100.0, 20000.0);
+	if (!FMath::IsNearlyEqual(GeneratedWorld->PlanetRadius, NewValue))
+	{
+		GeneratedWorld->PlanetRadius = NewValue;
+		if (bPreviewReady && PreviewFocus == EAstroPreviewFocus::HomePlanet
+			&& IsValid(PreviewGenerator.Get())
+			&& IsValid(PreviewGenerator->GetActivePreviewWorldScapeBody()))
+		{
+			RefreshPlanetAppearancePreview(true);
+		}
+		else
+		{
+			RequestPreview();
+		}
 	}
 }
 
 void UWorldGenerationViewModel::SetMoonsAmount(double Value)
 {
-	if (GeneratedWorld && GeneratedWorld->MoonsAmount != FMath::RoundToInt(Value))
+	if (!GeneratedWorld || !FMath::IsFinite(Value))
 	{
-		GeneratedWorld->MoonsAmount = FMath::Clamp(FMath::RoundToInt(Value), 0, 10);
+		return;
+	}
+
+	const int32 NewValue = FMath::RoundToInt(FMath::Clamp(Value, 0.0, 10.0));
+	if (SelectedPreviewBody.IsValid() && SelectedPreviewBody->IsA<AMoon>())
+	{
+		// A moon cannot own another moon in the current hierarchy model. Keep the
+		// selected-moon editor buffer stable instead of rebuilding the home planet.
+		GeneratedWorld->MoonsAmount = 0;
+		return;
+	}
+	if (GeneratedWorld->MoonsAmount != NewValue)
+	{
+		GeneratedWorld->MoonsAmount = NewValue;
 		RequestPreview();
 	}
 }
 
+void UWorldGenerationViewModel::SetPlanetSurfaceSeed(const int32 Value)
+{
+	if (!GeneratedWorld) return;
+	const int32 Clamped = FMath::Clamp(Value, 0, 999983);
+	if (GeneratedWorld->PlanetSurfaceSeed == Clamped) return;
+	GeneratedWorld->PlanetSurfaceSeed = Clamped;
+	RefreshPlanetAppearancePreview(true);
+}
+
+void UWorldGenerationViewModel::SetSurfaceFeatureScale(const double Value)
+{
+	if (!GeneratedWorld || !FMath::IsFinite(Value)) return;
+	const double Clamped = FMath::Clamp(Value, 0.25, 4.0);
+	if (FMath::IsNearlyEqual(GeneratedWorld->SurfaceFeatureScale, Clamped)) return;
+	GeneratedWorld->SurfaceFeatureScale = Clamped;
+	RefreshPlanetAppearancePreview(true);
+}
+
+void UWorldGenerationViewModel::SetSurfaceReliefScale(const double Value)
+{
+	if (!GeneratedWorld || !FMath::IsFinite(Value)) return;
+	const double Clamped = FMath::Clamp(Value, 0.25, 2.5);
+	if (FMath::IsNearlyEqual(GeneratedWorld->SurfaceReliefScale, Clamped)) return;
+	GeneratedWorld->SurfaceReliefScale = Clamped;
+	RefreshPlanetAppearancePreview(true);
+}
+
+void UWorldGenerationViewModel::SetSurfaceLandCoverageScale(const double Value)
+{
+	if (!GeneratedWorld || !FMath::IsFinite(Value)) return;
+	const double Clamped = FMath::Clamp(Value, 0.25, 2.0);
+	if (FMath::IsNearlyEqual(GeneratedWorld->SurfaceLandCoverageScale, Clamped)) return;
+	GeneratedWorld->SurfaceLandCoverageScale = Clamped;
+	RefreshPlanetAppearancePreview(true);
+}
+
+void UWorldGenerationViewModel::SetSurfaceMountainScale(const double Value)
+{
+	if (!GeneratedWorld || !FMath::IsFinite(Value)) return;
+	const double Clamped = FMath::Clamp(Value, 0.0, 2.0);
+	if (FMath::IsNearlyEqual(GeneratedWorld->SurfaceMountainScale, Clamped)) return;
+	GeneratedWorld->SurfaceMountainScale = Clamped;
+	RefreshPlanetAppearancePreview(true);
+}
+
+void UWorldGenerationViewModel::SetSurfaceCraterScale(const double Value)
+{
+	if (!GeneratedWorld || !FMath::IsFinite(Value)) return;
+	const double Clamped = FMath::Clamp(Value, 0.0, 2.0);
+	if (FMath::IsNearlyEqual(GeneratedWorld->SurfaceCraterScale, Clamped)) return;
+	GeneratedWorld->SurfaceCraterScale = Clamped;
+	RefreshPlanetAppearancePreview(true);
+}
+
+void UWorldGenerationViewModel::SetSurfaceRoughnessScale(const double Value)
+{
+	if (!GeneratedWorld || !FMath::IsFinite(Value)) return;
+	const double Clamped = FMath::Clamp(Value, 0.25, 2.0);
+	if (FMath::IsNearlyEqual(GeneratedWorld->SurfaceRoughnessScale, Clamped)) return;
+	GeneratedWorld->SurfaceRoughnessScale = Clamped;
+	RefreshPlanetAppearancePreview(true);
+}
+
 void UWorldGenerationViewModel::SetPlanetsAmount(double Value)
 {
-	if (GeneratedWorld && GeneratedWorld->PlanetsAmount != FMath::RoundToInt(Value))
+	if (!GeneratedWorld || !FMath::IsFinite(Value))
 	{
-		GeneratedWorld->PlanetsAmount = FMath::Clamp(FMath::RoundToInt(Value), 1, 20);
+		return;
+	}
+
+	const int32 NewValue = FMath::RoundToInt(FMath::Clamp(Value, 1.0, 20.0));
+	if (GeneratedWorld->PlanetsAmount != NewValue)
+	{
+		GeneratedWorld->PlanetsAmount = NewValue;
 		GeneratedWorld->StartPlanetIndex = FMath::Clamp(
 			GeneratedWorld->StartPlanetIndex, 1, GeneratedWorld->PlanetsAmount);
 		RequestPreview();
@@ -158,15 +325,58 @@ void UWorldGenerationViewModel::SetPlanetsAmount(double Value)
 
 void UWorldGenerationViewModel::SetStartPlanetIndex(double Value)
 {
-	if (!GeneratedWorld) return;
+	if (!GeneratedWorld || !FMath::IsFinite(Value)) return;
 
 	const int32 MaxPlanetIndex = FMath::Max(1, GeneratedWorld->PlanetsAmount);
-	const int32 NewIndex = FMath::Clamp(FMath::RoundToInt(Value), 1, MaxPlanetIndex);
+	const int32 NewIndex = FMath::RoundToInt(FMath::Clamp(
+		Value, 1.0, static_cast<double>(MaxPlanetIndex)));
 	if (GeneratedWorld->StartPlanetIndex != NewIndex)
 	{
 		GeneratedWorld->StartPlanetIndex = NewIndex;
 		RequestPreview();
 	}
+}
+
+void UWorldGenerationViewModel::PreserveSelectedPreviewBodyEdit(const bool bFlushPendingActor)
+{
+	AAstroGenerator* Generator = PreviewGenerator.Get();
+	if (!IsValid(Generator) || !GeneratedWorld)
+	{
+		return;
+	}
+
+	// The panel owns one shared buffer, while the hierarchy owns many bodies. Only
+	// associate it with an explicit active/selected body. SaveSelected's HomePlanet
+	// fallback is useful for first entry, but unsafe after B -> GALAXY: at that point
+	// the still-B buffer must never overwrite HomePlanet's retained record.
+	APlanetaryBody* PreviousBody = Generator->GetActivePreviewWorldScapeBody();
+	if (!IsValid(PreviousBody))
+	{
+		PreviousBody = Cast<APlanetaryBody>(SelectedPreviewBody.Get());
+	}
+	if (!IsValid(PreviousBody))
+	{
+		return;
+	}
+	Generator->SavePreviewBodyEditOverride(GeneratedWorld, PreviousBody);
+	if (!bFlushPendingActor)
+	{
+		return;
+	}
+
+	UWorld* World = WorldContext.IsValid() ? WorldContext->GetWorld() : nullptr;
+	const bool bTimerActive = World
+		&& World->GetTimerManager().IsTimerActive(PlanetAppearanceTimerHandle);
+	if (bPendingSurfaceAppearanceRefresh || bTimerActive)
+	{
+		AAstroGenerator::ApplyPreviewBodyEditOverrideByKey(
+			GeneratedWorld, Generator->GetPreviewBodyStableKey(PreviousBody), PreviousBody);
+	}
+	if (World)
+	{
+		World->GetTimerManager().ClearTimer(PlanetAppearanceTimerHandle);
+	}
+	bPendingSurfaceAppearanceRefresh = false;
 }
 
 void UWorldGenerationViewModel::RequestPreview()
@@ -176,6 +386,19 @@ void UWorldGenerationViewModel::RequestPreview()
 	{
 		return;
 	}
+	if (bSkipBodyOverrideSnapshotOnce)
+	{
+		bSkipBodyOverrideSnapshotOnce = false;
+	}
+	else
+	{
+		PreserveSelectedPreviewBodyEdit(true);
+	}
+	// A structural rebuild already consumes the latest surface and atmosphere
+	// values, so a pending local shell refresh would only touch the soon-to-be
+	// replaced actor and can make a slider drag hitch twice.
+	World->GetTimerManager().ClearTimer(PlanetAppearanceTimerHandle);
+	bPendingSurfaceAppearanceRefresh = false;
 
 	// A parameter drag can enqueue many debounced rebuilds. Remember that a
 	// useful live camera already existed before PreviewStatus temporarily marks
@@ -191,7 +414,48 @@ void UWorldGenerationViewModel::RequestPreview()
 	UE_MVVM_SET_PROPERTY_VALUE(PreviewRevision, PreviewRevision + 1);
 	SetPreviewStatus(LOCTEXT("PreviewUpdating", "UPDATING LIVE SCENE"), false);
 	World->GetTimerManager().SetTimer(
-		PreviewTimerHandle, this, &UWorldGenerationViewModel::ExecutePreview, 0.2f, false);
+		PreviewTimerHandle, this, &UWorldGenerationViewModel::ExecutePreview, 0.45f, false);
+}
+
+void UWorldGenerationViewModel::RefreshPlanetAppearancePreview(const bool bRegenerateSurface)
+{
+	if (!GeneratedWorld)
+	{
+		return;
+	}
+	UWorld* World = WorldContext.IsValid() ? WorldContext->GetWorld() : nullptr;
+	if (!World || !bPreviewReady || !IsValid(PreviewGenerator.Get()))
+	{
+		RequestPreview();
+		return;
+	}
+	// Persist the exact selected-body editor buffer before debounce. A structural
+	// control may cancel this timer and rebuild the hierarchy before the actor ever
+	// receives the value, but its stable path must still retain the user's edit.
+	PreviewGenerator->SaveSelectedPreviewBodyEditOverride(GeneratedWorld);
+
+	// SSpinBox emits every intermediate drag value. WorldScape cannot safely and
+	// usefully rebuild a profile for all of them, so coalesce the burst while still
+	// keeping the preview perceptually live. Atmosphere-only changes share the same
+	// short window and never trigger a hierarchy rebuild or camera refocus.
+	bPendingSurfaceAppearanceRefresh = bPendingSurfaceAppearanceRefresh || bRegenerateSurface;
+	World->GetTimerManager().SetTimer(
+		PlanetAppearanceTimerHandle, this,
+		&UWorldGenerationViewModel::ExecutePlanetAppearancePreviewRefresh, 0.12f, false);
+}
+
+void UWorldGenerationViewModel::ExecutePlanetAppearancePreviewRefresh()
+{
+	const bool bRegenerateSurface = bPendingSurfaceAppearanceRefresh;
+	bPendingSurfaceAppearanceRefresh = false;
+	AAstroGenerator* Generator = PreviewGenerator.Get();
+	if (GeneratedWorld && bPreviewReady && IsValid(Generator)
+		&& Generator->RefreshPreviewPlanetAppearance(GeneratedWorld, bRegenerateSurface))
+	{
+		UE_MVVM_SET_PROPERTY_VALUE(PreviewRevision, PreviewRevision + 1);
+		return;
+	}
+	RequestPreview();
 }
 
 void UWorldGenerationViewModel::CancelPendingPreview()
@@ -199,11 +463,18 @@ void UWorldGenerationViewModel::CancelPendingPreview()
 	if (UWorld* World = WorldContext.IsValid() ? WorldContext->GetWorld() : nullptr)
 	{
 		World->GetTimerManager().ClearTimer(PreviewTimerHandle);
+		World->GetTimerManager().ClearTimer(PlanetAppearanceTimerHandle);
 	}
+	bPendingSurfaceAppearanceRefresh = false;
 }
 
 void UWorldGenerationViewModel::RegeneratePreviewVariant()
 {
+	if (GeneratedWorld)
+	{
+		GeneratedWorld->ClearPreviewBodyEditOverrides();
+		bSkipBodyOverrideSnapshotOnce = true;
+	}
 	if (AAstroGenerator* Generator = FindOrCreatePreviewGenerator())
 	{
 		Generator->AdvancePreviewGenerationSeed();
@@ -214,6 +485,23 @@ void UWorldGenerationViewModel::RegeneratePreviewVariant()
 
 void UWorldGenerationViewModel::SetPreviewFocus(EAstroPreviewFocus NewFocus)
 {
+	// Buttons and hierarchy navigation may outlive the actors for one debounce
+	// frame. Never move a ready preview to a scope that this generation level did
+	// not create; before the first build the requested focus is still allowed.
+	if (bPreviewReady && !IsPreviewFocusAvailable(NewFocus))
+	{
+		return;
+	}
+	if (bPreviewReady && NewFocus == EAstroPreviewFocus::HomeSystem
+		&& PreviewFocus == NewFocus && IsPreviewingClusterSystemProxy())
+	{
+		// SYSTEM is the current lightweight cluster record. Re-running the root
+		// focus command would clear that record before a materialized replacement
+		// exists and briefly frame the generator fallback.
+		return;
+	}
+	const bool bSelectionResets = NewFocus != PreviewFocus || SelectedPreviewBody.IsValid();
+	PreserveSelectedPreviewBodyEdit(bSelectionResets);
 	PreviewFocus = NewFocus;
 	SelectedPreviewBody.Reset();
 	// Before the first live model is ready an existing level generator may still
@@ -275,6 +563,22 @@ void UWorldGenerationViewModel::OrbitPreview(FVector2D ScreenDelta)
 	if (AAstroGenerator* Generator = PreviewGenerator.Get())
 	{
 		Generator->OrbitPreviewCamera(ScreenDelta);
+	}
+}
+
+void UWorldGenerationViewModel::BeginPreviewOrbit()
+{
+	if (AAstroGenerator* Generator = PreviewGenerator.Get())
+	{
+		Generator->BeginPreviewCameraOrbit();
+	}
+}
+
+void UWorldGenerationViewModel::EndPreviewOrbit()
+{
+	if (AAstroGenerator* Generator = PreviewGenerator.Get())
+	{
+		Generator->EndPreviewCameraOrbit();
 	}
 }
 
@@ -346,20 +650,282 @@ void UWorldGenerationViewModel::GetPreviewBodyEntries(TArray<FAPSPreviewBodyEntr
 	}
 }
 
+bool UWorldGenerationViewModel::GetPreviewPresentationLocation(
+	const AActor* Actor, FVector& OutLocation) const
+{
+	if (const AAstroGenerator* Generator = PreviewGenerator.Get())
+	{
+		return Generator->GetPreviewPresentationLocation(Actor, OutLocation);
+	}
+	return false;
+}
+
+bool UWorldGenerationViewModel::GetPreviewFocusSphere(FVector& OutCenter, double& OutRadius) const
+{
+	if (const AAstroGenerator* Generator = PreviewGenerator.Get())
+	{
+		return Generator->GetPreviewFocusSphere(PreviewFocus, OutCenter, OutRadius);
+	}
+	return false;
+}
+
+bool UWorldGenerationViewModel::GetPreviewFocusSphere(
+	EAstroPreviewFocus Focus, FVector& OutCenter, double& OutRadius) const
+{
+	if (const AAstroGenerator* Generator = PreviewGenerator.Get())
+	{
+		return Generator->GetPreviewFocusSphere(Focus, OutCenter, OutRadius);
+	}
+	return false;
+}
+
+bool UWorldGenerationViewModel::IsPreviewingClusterSystemProxy() const
+{
+	const AAstroGenerator* Generator = PreviewGenerator.Get();
+	return Generator && Generator->HasSelectedPreviewClusterSystem();
+}
+
+bool UWorldGenerationViewModel::IsPreviewFocusAvailable(const EAstroPreviewFocus Focus) const
+{
+	const AAstroGenerator* Generator = PreviewGenerator.Get();
+	return Generator && Generator->IsPreviewFocusAvailable(Focus);
+}
+
+void UWorldGenerationViewModel::HydratePreviewBodyEditorBuffer(APlanetaryBody* Body)
+{
+	if (!IsValid(Body) || !GeneratedWorld)
+	{
+		return;
+	}
+
+	GeneratedWorld->PlanetType = Body->PlanetType;
+	GeneratedWorld->PlanetRadius = FMath::Clamp(
+		FMath::Max(Body->RadiusKM, static_cast<double>(Body->PlanetRadiusKM)), 100.0, 20000.0);
+	GeneratedWorld->PlanetSurfaceSeed = FMath::Clamp(Body->WorldScapeSeed, 0, 999983);
+	GeneratedWorld->SurfaceFeatureScale = FMath::Clamp(Body->SurfaceFeatureScale, 0.25, 4.0);
+	GeneratedWorld->SurfaceReliefScale = FMath::Clamp(Body->SurfaceReliefScale, 0.25, 2.5);
+	GeneratedWorld->SurfaceLandCoverageScale = FMath::Clamp(
+		Body->SurfaceLandCoverageScale, 0.25, 2.0);
+	GeneratedWorld->SurfaceMountainScale = FMath::Clamp(Body->SurfaceMountainScale, 0.0, 2.0);
+	GeneratedWorld->SurfaceCraterScale = FMath::Clamp(Body->SurfaceCraterScale, 0.0, 2.0);
+	GeneratedWorld->SurfaceRoughnessScale = FMath::Clamp(Body->SurfaceRoughnessScale, 0.25, 2.0);
+	GeneratedWorld->AtmosphereHeight = FMath::Clamp(Body->AtmosphereHeight, 0.0, 2000.0);
+	// Bodies without a materialized AtmoScape must start from their own defaults,
+	// never from whichever planet happened to be selected immediately before them.
+	GeneratedWorld->AtmosphereOpacity = 12.0;
+	GeneratedWorld->AtmosphereMultiScattering = 1.0;
+	GeneratedWorld->AtmosphereRayleighScattering = 8.0;
+	GeneratedWorld->AtmosphereColor = FLinearColor(3.8f, 13.5f, 33.0f, 0.0f);
+	GeneratedWorld->MoonsAmount = Cast<APlanet>(Body)
+		? FMath::Clamp(CastChecked<APlanet>(Body)->AmountOfMoons, 0, 10) : 0;
+	if (IsValid(Body->PlanetaryEnvironmentGenerator)
+		&& IsValid(Body->PlanetaryEnvironmentGenerator->PlanetAtmosphere))
+	{
+		const AAtmoScape* Atmosphere = Body->PlanetaryEnvironmentGenerator->PlanetAtmosphere;
+		GeneratedWorld->AtmosphereHeight = FMath::Clamp(
+			static_cast<double>(Atmosphere->AtmosphereHeight), 0.0, 2000.0);
+		GeneratedWorld->AtmosphereOpacity = FMath::Clamp(
+			static_cast<double>(Atmosphere->AtmosphereOpacity), 0.0, 40.0);
+		GeneratedWorld->AtmosphereMultiScattering = FMath::Clamp(
+			static_cast<double>(Atmosphere->MultiScatering), 0.0, 10.0);
+		GeneratedWorld->AtmosphereRayleighScattering = FMath::Clamp(
+			static_cast<double>(Atmosphere->RayleighHeight), 0.0, 64.0);
+		GeneratedWorld->AtmosphereColor = Atmosphere->RayleighScattering;
+	}
+
+	// A materialized actor already owns retained terrain fields, while the shared
+	// editor buffer also contains atmosphere controls. A complete saved snapshot,
+	// when present, is authoritative over generated defaults.
+	if (AAstroGenerator* Generator = PreviewGenerator.Get())
+	{
+		Generator->LoadPreviewBodyEditOverride(GeneratedWorld, Body);
+	}
+}
+
 bool UWorldGenerationViewModel::FocusPreviewBody(const TWeakObjectPtr<AActor>& BodyActor)
 {
 	AAstroGenerator* Generator = PreviewGenerator.Get();
 	AActor* Actor = BodyActor.Get();
 	UWorld* World = WorldContext.IsValid() ? WorldContext->GetWorld() : nullptr;
 	APlayerController* PlayerController = World ? World->GetFirstPlayerController() : nullptr;
+	APlanetaryBody* PreviousBody = Generator
+		? Generator->GetActivePreviewWorldScapeBody() : nullptr;
+	if (!IsValid(PreviousBody))
+	{
+		PreviousBody = Cast<APlanetaryBody>(SelectedPreviewBody.Get());
+	}
+	const bool bSelectionChanges = IsValid(PreviousBody) && PreviousBody != Actor;
+	const bool bPendingPreviousSurface = bPendingSurfaceAppearanceRefresh;
+	const bool bPendingPreviousAppearance = bSelectionChanges && World
+		&& (bPendingSurfaceAppearanceRefresh
+			|| World->GetTimerManager().IsTimerActive(PlanetAppearanceTimerHandle));
+	// Snapshot A on every selection. Only a real A->B switch drains/cancels A's
+	// debounce; re-clicking A preserves its expected in-place WorldScape refresh.
+	if (IsValid(PreviousBody))
+	{
+		PreserveSelectedPreviewBodyEdit(bSelectionChanges);
+	}
+	else if (Generator && GeneratedWorld
+		&& GeneratedWorld->GetPreviewBodyEditOverrideCount() == 0)
+	{
+		// First hierarchy-body selection starts from the generated HomePlanet buffer;
+		// capture that one deliberate fallback before hydrating the clicked body.
+		Generator->SaveSelectedPreviewBodyEditOverride(GeneratedWorld);
+	}
+	if (bPendingPreviousAppearance && Generator && GeneratedWorld
+		&& Generator->GetActivePreviewWorldScapeBody() == PreviousBody)
+	{
+		// PreserveSelected applied the final coalesced A values to A's actor and
+		// cancelled its timer. Queue one atomic replacement for A before B becomes the
+		// editor target; B's hydration can no longer leak into that deferred rebuild,
+		// while A's last complete proxy remains visible until its replacement commits.
+		Generator->RefreshPreviewPlanetAppearance(
+			GeneratedWorld, bPendingPreviousSurface);
+	}
+	APlanetaryBody* NewBody = Cast<APlanetaryBody>(Actor);
+	if (IsValid(NewBody) && GeneratedWorld)
+	{
+		// Hydrate B before asking the generator to make B active. The surface build is
+		// deferred to the next generator tick, so this ordering publishes one atomic
+		// A -> B editor state instead of briefly exposing A's sliders on B's globe.
+		HydratePreviewBodyEditorBuffer(NewBody);
+	}
 	if (!Generator || !Actor || !Generator->FocusPreviewBodyActor(Actor, PlayerController))
 	{
+		if (IsValid(PreviousBody) && GeneratedWorld)
+		{
+			HydratePreviewBodyEditorBuffer(PreviousBody);
+		}
 		return false;
 	}
 
 	SelectedPreviewBody = Actor;
 	PreviewFocus = Actor->IsA<AStar>() ? EAstroPreviewFocus::HomeStar : EAstroPreviewFocus::HomePlanet;
+	if (IsValid(NewBody) && GeneratedWorld)
+	{
+		UE_MVVM_SET_PROPERTY_VALUE(PreviewRevision, PreviewRevision + 1);
+	}
 	return true;
+}
+
+bool UWorldGenerationViewModel::FocusPreviewClusterSystem(int32 InstanceIndex)
+{
+	AAstroGenerator* Generator = PreviewGenerator.Get();
+	UWorld* World = WorldContext.IsValid() ? WorldContext->GetWorld() : nullptr;
+	APlayerController* PlayerController = World ? World->GetFirstPlayerController() : nullptr;
+	PreserveSelectedPreviewBodyEdit(true);
+	if (!Generator || !Generator->FocusPreviewClusterSystem(InstanceIndex, PlayerController))
+	{
+		return false;
+	}
+
+	PreviewFocus = EAstroPreviewFocus::HomeSystem;
+	SelectedPreviewBody.Reset();
+	UE_MVVM_SET_PROPERTY_VALUE(PreviewRevision, PreviewRevision + 1);
+	return true;
+}
+
+FText UWorldGenerationViewModel::GetPreviewScopeSummary() const
+{
+	if (!GeneratedWorld)
+	{
+		return LOCTEXT("NoPreviewModel", "NO MODEL");
+	}
+
+	const AAstroGenerator* Generator = PreviewGenerator.Get();
+	const auto EnumText = [](const auto Value)
+	{
+		return UEnum::GetDisplayValueAsText(Value).ToString().ToUpper();
+	};
+
+	switch (PreviewFocus)
+	{
+	case EAstroPreviewFocus::Galaxy:
+		return FText::FromString(FString::Printf(
+			TEXT("GALAXY TYPE  %s\nCLASS  %s\nMODELED STARS  %lld\nRENDERED SAMPLE  %d\nSIZE  %d  /  DENSITY  %.2f"),
+			*EnumText(GeneratedWorld->GalaxyType), *EnumText(GeneratedWorld->GalaxyClass),
+			Generator ? Generator->GetPreviewGalaxyModeledStarCount()
+				: static_cast<int64>(GeneratedWorld->GalaxyStarCount),
+			Generator ? Generator->GetPreviewGalaxyRenderedStarCount() : 0,
+			GeneratedWorld->GalaxySize, GeneratedWorld->GalaxyStarDensity));
+
+	case EAstroPreviewFocus::StarCluster:
+		return FText::FromString(FString::Printf(
+			TEXT("FORMATION  %s\nSIZE  %s\nPOPULATION  %s\nCOMPOSITION  %s\nMODELED SYSTEMS  %d  /  RENDERED STARS  %d"),
+			*EnumText(GeneratedWorld->StarClusterType), *EnumText(GeneratedWorld->StarClusterSize),
+			*EnumText(GeneratedWorld->StarClusterPopulation), *EnumText(GeneratedWorld->StarClusterComposition),
+			Generator ? Generator->GetPreviewClusterModeledSystemCount() : 0,
+			Generator ? Generator->GetPreviewClusterRenderedStarCount() : 0));
+
+	case EAstroPreviewFocus::HomeSystem:
+	{
+		FString SelectedSystemId;
+		int32 SelectedSystemStars = 0;
+		int32 SelectedSystemPlanets = 0;
+		if (Generator && Generator->GetSelectedPreviewClusterSystemSummary(
+			SelectedSystemId, SelectedSystemStars, SelectedSystemPlanets))
+		{
+			return FText::FromString(FString::Printf(
+				TEXT("CLUSTER SYSTEM  %s\nSTARS  %d\nPOTENTIAL PLANETS  %d\nSTATE  LIGHTWEIGHT FULL-SCALE RECORD"),
+				*SelectedSystemId, SelectedSystemStars, SelectedSystemPlanets));
+		}
+		int32 StarCount = 1;
+		switch (GeneratedWorld->StarType)
+		{
+		case EStarType::DoubleStar: StarCount = 2; break;
+		case EStarType::TripleStar: StarCount = 3; break;
+		case EStarType::MultipleStar: StarCount = FMath::Max(4, GeneratedWorld->StarsAmount); break;
+		default: break;
+		}
+		return FText::FromString(FString::Printf(
+			TEXT("SYSTEM TYPE  %s\nORBIT DISTRIBUTION  %s\nSTARS  %d  /  PLANETS PER STAR  %d  /  TOTAL  %d\nHOME MOONS  %d\nSTART PLANET  %d"),
+			*EnumText(GeneratedWorld->StarType), *EnumText(GeneratedWorld->OrbitDistributionType),
+			StarCount, GeneratedWorld->PlanetsAmount, StarCount * GeneratedWorld->PlanetsAmount,
+			GeneratedWorld->MoonsAmount, GeneratedWorld->StartPlanetIndex));
+	}
+
+	case EAstroPreviewFocus::HomeStar:
+		return FText::FromString(FString::Printf(
+			TEXT("STELLAR TYPE  %s\nSPECTRAL CLASS  %s\nSYSTEM PLANETS  %d\nSAFE ORBIT CLEARANCE  LIVE"),
+			*EnumText(GeneratedWorld->StellarType), *EnumText(GeneratedWorld->SpectralClass),
+			GeneratedWorld->PlanetsAmount));
+
+	case EAstroPreviewFocus::HomePlanet:
+	{
+		const APlanetaryBody* SurfaceBody = Generator
+			? Generator->GetActivePreviewWorldScapeBody() : nullptr;
+		const TCHAR* SurfaceStatus = !IsValid(SurfaceBody)
+			? TEXT("UNAVAILABLE")
+			: SurfaceBody->bWorldScapeSurfaceReady ? TEXT("READY") : TEXT("GENERATING");
+		return FText::FromString(FString::Printf(
+			TEXT("PLANET TYPE  %s\nRADIUS  %.0f KM\nMOONS  %d\nWORLDSCAPE SURFACE  %s\nFULL-SCALE DATA  %s"),
+			*EnumText(GeneratedWorld->PlanetType), GeneratedWorld->PlanetRadius, GeneratedWorld->MoonsAmount,
+			SurfaceStatus,
+			GeneratedWorld->bGenerateFullScaledWorld ? TEXT("ON") : TEXT("OFF")));
+	}
+
+	case EAstroPreviewFocus::Overview:
+	default:
+		return FText::FromString(FString::Printf(
+			TEXT("GALAXY STARS  %d\nCLUSTER  %s / %s\nSYSTEM PLANETS  %d\nHOME MOONS  %d\nFULL SCALE  %s"),
+			GeneratedWorld->GalaxyStarCount, *EnumText(GeneratedWorld->StarClusterSize),
+			*EnumText(GeneratedWorld->StarClusterType), GeneratedWorld->PlanetsAmount,
+			GeneratedWorld->MoonsAmount, GeneratedWorld->bGenerateFullScaledWorld ? TEXT("ON") : TEXT("OFF")));
+	}
+}
+
+FText UWorldGenerationViewModel::GetPreviewHierarchyTitle() const
+{
+	switch (PreviewFocus)
+	{
+	case EAstroPreviewFocus::Galaxy: return LOCTEXT("GalaxyModelTitle", "GALAXY MODEL");
+	case EAstroPreviewFocus::StarCluster: return LOCTEXT("ClusterSystemsTitle", "CLUSTER STAR SYSTEMS");
+	case EAstroPreviewFocus::HomeSystem: return LOCTEXT("SystemBodiesTitle", "SYSTEM BODIES");
+	case EAstroPreviewFocus::HomeStar: return LOCTEXT("SelectedStarTitle", "SELECTED STAR");
+	case EAstroPreviewFocus::HomePlanet: return LOCTEXT("PlanetSatellitesTitle", "PLANET & SATELLITES");
+	case EAstroPreviewFocus::Overview: return LOCTEXT("WorldHierarchyTitle", "WORLD HIERARCHY");
+	default: return LOCTEXT("HierarchyTitle", "ASTRONOMICAL HIERARCHY");
+	}
 }
 
 void UWorldGenerationViewModel::SetSpawnClass(EAPSStartAssetSlot Slot, UClass* NewClass)
@@ -372,7 +938,7 @@ void UWorldGenerationViewModel::SetSpawnClass(EAPSStartAssetSlot Slot, UClass* N
 	switch (Slot)
 	{
 	case EAPSStartAssetSlot::Character:
-		if (NewClass->IsChildOf(AControlledPawn::StaticClass())) SpawnParameters->BP_CharacterClass = NewClass;
+		if (NewClass->IsChildOf(APawn::StaticClass())) SpawnParameters->BP_CharacterClass = NewClass;
 		break;
 	case EAPSStartAssetSlot::Spaceship:
 		if (NewClass->IsChildOf(ASpaceship::StaticClass())) SpawnParameters->BP_HomeSpaceship = NewClass;
@@ -424,10 +990,41 @@ void UWorldGenerationViewModel::ExecutePreview()
 		return;
 	}
 
-	const bool bGenerated = Generator->RegeneratePreview(GeneratedWorld);
+	// Set the requested hierarchy scope before generation.  On first launch the
+	// generator's historical PLANET default otherwise starts WorldScape work even
+	// when Landing/Choose Path explicitly asked for a Galaxy background.
+	const bool bGenerated = Generator->RegeneratePreview(GeneratedWorld, PreviewFocus);
 	if (bGenerated && !bPreserveCameraOnNextPreview)
 	{
-		Generator->FocusPreviewTarget(PreviewFocus);
+		// RegeneratePreview resolves an object selection by hierarchy indices. Use
+		// that new actor for a forced refocus as well; FocusPreviewTarget intentionally
+		// means "root button" and would otherwise replace Star B/Planet N with A/01.
+		AActor* RestoredBody = Generator->GetSelectedPreviewBodyActor();
+		if ((PreviewFocus == EAstroPreviewFocus::HomeStar
+			|| PreviewFocus == EAstroPreviewFocus::HomePlanet) && IsValid(RestoredBody))
+		{
+			Generator->FocusPreviewBodyActor(RestoredBody);
+		}
+		else
+		{
+			Generator->FocusPreviewTarget(PreviewFocus);
+		}
+	}
+	if (bGenerated && (PreviewFocus == EAstroPreviewFocus::HomeStar
+		|| PreviewFocus == EAstroPreviewFocus::HomePlanet))
+	{
+		SelectedPreviewBody = Generator->GetSelectedPreviewBodyActor();
+		if (APlanetaryBody* RestoredBody = Cast<APlanetaryBody>(SelectedPreviewBody.Get()))
+		{
+			// Structural edits can remove the previously selected planet/moon. The
+			// generator then selects the nearest valid fallback; hydrate from that new
+			// body before the next surface slider can write the removed body's buffer.
+			HydratePreviewBodyEditorBuffer(RestoredBody);
+		}
+	}
+	else if (bGenerated)
+	{
+		SelectedPreviewBody.Reset();
 	}
 	UE_LOG(LogTemp, Log, TEXT("[APS.WorldGeneration] Preview generated=%s revision=%d focus=%d level=%d planets=%d moons=%d radius=%.0f"),
 		bGenerated ? TEXT("true") : TEXT("false"), PreviewRevision, static_cast<int32>(PreviewFocus),
@@ -445,6 +1042,7 @@ AAstroGenerator* UWorldGenerationViewModel::FindOrCreatePreviewGenerator()
 {
 	if (PreviewGenerator.IsValid())
 	{
+		PreviewGenerator->WarmPreviewMaterialAssets();
 		return PreviewGenerator.Get();
 	}
 
@@ -464,6 +1062,7 @@ AAstroGenerator* UWorldGenerationViewModel::FindOrCreatePreviewGenerator()
 		if (IsValid(ExistingGenerator) && ExistingGenerator->ActorHasTag(TEXT("WorldGenerationPreview")))
 		{
 			InitializeSpawnDefaultsFromGenerator(ExistingGenerator);
+			ExistingGenerator->WarmPreviewMaterialAssets();
 			PreviewGenerator = ExistingGenerator;
 			return ExistingGenerator;
 		}
@@ -488,10 +1087,17 @@ AAstroGenerator* UWorldGenerationViewModel::FindOrCreatePreviewGenerator()
 	if (NewGenerator)
 	{
 		// Prevent Blueprint defaults from running the normal gameplay BeginPlay
-		// generation before the preview model has been supplied.
+		// generation before the preview model has been supplied. The authored
+		// integration flags belong only to the placed SinglePlay generator; carrying
+		// them into this transient actor prevents it from assigning HomePlanet.
 		NewGenerator->bAutoGeneration = false;
+		NewGenerator->bIntegrateStartPlanet = false;
+		NewGenerator->WSR_StartHomePlanet = nullptr;
 		NewGenerator->Tags.AddUnique(TEXT("WorldGenerationPreview"));
 		UGameplayStatics::FinishSpawningActor(NewGenerator, PreviewTransform);
+		// This first bounded preview request is the page warm-up. Resolve orbital
+		// materials before any later PLANET/body selection can enter globe commit.
+		NewGenerator->WarmPreviewMaterialAssets();
 		InitializeSpawnDefaultsFromGenerator(NewGenerator);
 		PreviewGenerator = NewGenerator;
 	}
@@ -520,6 +1126,10 @@ void UWorldGenerationViewModel::CommitAndOpenLevel(FName LevelName)
 		UE_LOG(LogTemp, Error, TEXT("[APS.WorldGeneration] Commit rejected: world context or generated model is missing"));
 		return;
 	}
+	// Flush the final selected body's debounced UI buffer before duplicating the
+	// model into GameInstance. Otherwise the last slider movement exists only in
+	// the menu actor and disappears during travel.
+	PreserveSelectedPreviewBodyEdit(true);
 	if (GenerationRoute == EAPSGenerationRoute::Civilization)
 	{
 		const auto IsSpawnableClass = [](const UClass* Class)
@@ -627,7 +1237,45 @@ void UWorldGenerationViewModel::CommitAndOpenLevel(FName LevelName)
 		return;
 	}
 
-	UGameplayStatics::OpenLevel(World, LevelName);
+	// L_WorldGeneration already authors BP_GravityGameModeBase, whose native parent
+	// performs the generated-model and selected-pawn handoff. The former URL option
+	// forced an unrelated Engine.GameModeBase asset and bypassed that entire path.
+	PendingTravelLevelName = LevelName;
+	PreviewTravelDrainAttempts = 0;
+	SetPreviewStatus(LOCTEXT("PreviewTravelDrain", "PREPARING GENERATED WORLD"), false);
+	TryOpenCommittedLevelAfterPreviewDrain();
+}
+
+void UWorldGenerationViewModel::TryOpenCommittedLevelAfterPreviewDrain()
+{
+	UWorld* World = WorldContext.IsValid() ? WorldContext->GetWorld() : nullptr;
+	if (!World || PendingTravelLevelName.IsNone())
+	{
+		return;
+	}
+	if (AAstroGenerator* Generator = PreviewGenerator.Get();
+		Generator && !Generator->PreparePreviewForTravel())
+	{
+		constexpr int32 MaxDrainAttempts = 400; // 20 seconds at 20 Hz.
+		if (++PreviewTravelDrainAttempts >= MaxDrainAttempts)
+		{
+			UE_LOG(LogTemp, Error,
+				TEXT("[APS.WorldGeneration] Travel cancelled: preview WorldScape workers did not drain safely"));
+			PendingTravelLevelName = NAME_None;
+			SetPreviewStatus(LOCTEXT("PreviewTravelDrainFailed", "WORLDSCAPE STILL BUSY - TRY AGAIN"), true);
+			return;
+		}
+		World->GetTimerManager().SetTimer(
+			PreviewTravelTimerHandle, this,
+			&UWorldGenerationViewModel::TryOpenCommittedLevelAfterPreviewDrain, 0.05f, false);
+		return;
+	}
+
+	const FName LevelToOpen = PendingTravelLevelName;
+	PendingTravelLevelName = NAME_None;
+	UE_LOG(LogTemp, Log, TEXT("[APS.WorldGeneration] Opening %s with its authored gravity GameMode"),
+		*LevelToOpen.ToString());
+	UGameplayStatics::OpenLevel(World, LevelToOpen, true);
 }
 
 void UWorldGenerationViewModel::SetPreviewStatus(const FText& Status, bool bReady)

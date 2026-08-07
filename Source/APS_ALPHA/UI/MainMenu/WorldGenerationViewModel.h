@@ -6,6 +6,7 @@
 #include "WorldGenerationViewModel.generated.h"
 
 class AAstroGenerator;
+class APlanetaryBody;
 class UGeneratedWorld;
 class USpawnParameters;
 
@@ -57,6 +58,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "World Generation")
 	void SetMoonsAmount(double Value);
 
+	void SetPlanetSurfaceSeed(int32 Value);
+	void SetSurfaceFeatureScale(double Value);
+	void SetSurfaceReliefScale(double Value);
+	void SetSurfaceLandCoverageScale(double Value);
+	void SetSurfaceMountainScale(double Value);
+	void SetSurfaceCraterScale(double Value);
+	void SetSurfaceRoughnessScale(double Value);
+
 	UFUNCTION(BlueprintCallable, Category = "World Generation")
 	void SetPlanetsAmount(double Value);
 
@@ -65,6 +74,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "World Generation")
 	void RequestPreview();
+
+	/** Updates only the selected planet shell; avoids regenerating cluster/system/camera for appearance controls. */
+	void RefreshPlanetAppearancePreview(bool bRegenerateSurface);
 
 	void CancelPendingPreview();
 
@@ -78,11 +90,22 @@ public:
 	EAPSGenerationRoute GetGenerationRoute() const { return GenerationRoute; }
 
 	void OrbitPreview(FVector2D ScreenDelta);
+	void BeginPreviewOrbit();
+	void EndPreviewOrbit();
 	void ZoomPreview(float WheelDelta);
 	bool FocusPreviewUnderCursor();
 	void GetPreviewBodyEntries(TArray<FAPSPreviewBodyEntry>& OutEntries) const;
+	/** Returns a mesh-only PLANET presentation centre without changing actor data. */
+	bool GetPreviewPresentationLocation(const AActor* Actor, FVector& OutLocation) const;
 	bool FocusPreviewBody(const TWeakObjectPtr<AActor>& BodyActor);
+	bool FocusPreviewClusterSystem(int32 InstanceIndex);
 	AActor* GetSelectedPreviewBody() const { return SelectedPreviewBody.Get(); }
+	FText GetPreviewScopeSummary() const;
+	FText GetPreviewHierarchyTitle() const;
+	bool GetPreviewFocusSphere(FVector& OutCenter, double& OutRadius) const;
+	bool GetPreviewFocusSphere(EAstroPreviewFocus Focus, FVector& OutCenter, double& OutRadius) const;
+	bool IsPreviewingClusterSystemProxy() const;
+	bool IsPreviewFocusAvailable(EAstroPreviewFocus Focus) const;
 
 	UFUNCTION(BlueprintCallable, Category = "World Generation|Civilization")
 	void SetSpawnClass(EAPSStartAssetSlot Slot, UClass* NewClass);
@@ -115,6 +138,10 @@ public:
 
 private:
 	void ExecutePreview();
+	void ExecutePlanetAppearancePreviewRefresh();
+	void TryOpenCommittedLevelAfterPreviewDrain();
+	void PreserveSelectedPreviewBodyEdit(bool bFlushPendingActor);
+	void HydratePreviewBodyEditorBuffer(APlanetaryBody* Body);
 	AAstroGenerator* FindOrCreatePreviewGenerator();
 	void InitializeSpawnDefaultsFromGenerator(AAstroGenerator* Generator);
 	void SetPreviewStatus(const FText& Status, bool bReady);
@@ -122,9 +149,16 @@ private:
 	TWeakObjectPtr<UObject> WorldContext;
 	TWeakObjectPtr<AAstroGenerator> PreviewGenerator;
 	FTimerHandle PreviewTimerHandle;
-	EAstroPreviewFocus PreviewFocus{EAstroPreviewFocus::Overview};
+	FTimerHandle PlanetAppearanceTimerHandle;
+	FTimerHandle PreviewTravelTimerHandle;
+	FName PendingTravelLevelName{NAME_None};
+	int32 PreviewTravelDrainAttempts{0};
+	EAstroPreviewFocus PreviewFocus{EAstroPreviewFocus::HomePlanet};
 	EAPSGenerationRoute GenerationRoute{EAPSGenerationRoute::Civilization};
 	TWeakObjectPtr<AActor> SelectedPreviewBody;
 	bool bPreserveCameraOnNextPreview{false};
 	bool bForceRefocusOnNextPreview{false};
+	bool bPendingSurfaceAppearanceRefresh{false};
+	/** Explicit REGENERATE intentionally discards the old hierarchy's per-body editor snapshots. */
+	bool bSkipBodyOverrideSnapshotOnce{false};
 };

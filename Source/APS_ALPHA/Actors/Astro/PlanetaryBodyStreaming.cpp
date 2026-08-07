@@ -2,7 +2,9 @@
 
 #include "APS_ALPHA/Actors/Astro/Moon.h"
 #include "APS_ALPHA/Actors/Astro/Planet.h"
+#include "APS_ALPHA/Core/Planetary/APSPlanetSurfaceProfile.h"
 #include "APS_ALPHA/Generation/PlanetarySurfaceGenerator.h"
+#include "APS_ALPHA/Generation/WorldScapePayloadValidation.h"
 
 void APlanetaryBody::SetWorldScapeStreamingState(EWorldScapeSurfaceState NewState)
 {
@@ -35,6 +37,18 @@ void APlanetaryBody::SetWorldScapeStreamingState(EWorldScapeSurfaceState NewStat
 		WorldScapeSurfaceState = EWorldScapeSurfaceState::Unloaded;
 		return;
 	}
+	if (!UAPSPlanetSurfaceProfileResolver::SupportsWorldScape(PlanetType))
+	{
+		if (IsValid(PlanetaryEnvironmentGenerator))
+		{
+			PlanetaryEnvironmentGenerator->UnloadWorldScapeRoot();
+		}
+		SetPlaceholderVisible(true);
+		bEnvironmentSpawned = false;
+		bWorldScapeSurfaceReady = false;
+		WorldScapeSurfaceState = EWorldScapeSurfaceState::Unloaded;
+		return;
+	}
 
 	APlanetarySurfaceGenerator* Generator = EnsurePlanetaryEnvironmentGenerator();
 	if (!Generator)
@@ -55,8 +69,11 @@ void APlanetaryBody::SetWorldScapeStreamingState(EWorldScapeSurfaceState NewStat
 			Generator->WorldScapeRootInstance->SetOwner(this);
 			Generator->WorldScapeRootInstance->SetFlags(RF_Transient);
 		}
-		if ((!Planet || !Planet->IsManual) && !Generator->bSurfaceProfileApplied)
+		if ((!Planet || !Planet->IsManual) && !Generator->IsSurfaceProfileCurrent(this))
 		{
+			// Planet type/radius edits in the generation menu reuse the selected
+			// body whenever possible. Reapply the preset whenever its source data
+			// changed instead of leaving the previous world's terrain/materials.
 			Generator->ApplySurfaceProfile(this);
 		}
 		return true;
@@ -89,6 +106,10 @@ void APlanetaryBody::SetWorldScapeStreamingState(EWorldScapeSurfaceState NewStat
 			SetPlaceholderVisible(true);
 			bWorldScapeSurfaceReady = false;
 			Generator->SpawnWorldScapeRoot();
+			// WorldScape creates its LOD meshes asynchronously. Keep the root itself
+			// hidden until the complete terrain set is ready, otherwise partially
+			// updated patches appear as the reported black/ripped planet.
+			Generator->WorldScapeRootInstance->SetActorHiddenInGame(true);
 			bEnvironmentSpawned = true;
 			WorldScapeSurfaceState = EWorldScapeSurfaceState::Active;
 			RefreshWorldScapeSurfaceVisibility();
@@ -135,38 +156,53 @@ bool APlanetaryBody::RefreshWorldScapeSurfaceVisibility()
 
 	AWorldScapeRoot* Root = IsValid(PlanetaryEnvironmentGenerator)
 		? PlanetaryEnvironmentGenerator->WorldScapeRootInstance : nullptr;
-	bool bHasVisibleTerrain = false;
+	bool bHasStableTerrainCoverage = false;
+	const bool bWasSurfaceReady = bWorldScapeSurfaceReady;
 	if (IsValid(Root)
 		&& (WorldScapeSurfaceState == EWorldScapeSurfaceState::Active
 			|| WorldScapeSurfaceState == EWorldScapeSurfaceState::FrozenVisible))
 	{
-		for (const UWorldScapeLod* Lod : Root->WorldScapeLod)
+		const bool bWorkersInFlight = Root->WorldScapeLodInGeneration.Num() > 0;
+		if (!bWorkersInFlight)
 		{
-			if (IsValid(Lod) && IsValid(Lod->Mesh) && Lod->Mesh->GetNumSections() > 0)
+			int32 ReadyTerrainLods = 0;
+			for (const UWorldScapeLod* Lod : Root->WorldScapeLod)
 			{
-				bHasVisibleTerrain = true;
-				break;
-			}
-		}
-		if (!bHasVisibleTerrain)
-		{
-			for (const UWorldScapeLod* Lod : Root->WorldScapeLodOcean)
-			{
-				if (IsValid(Lod) && IsValid(Lod->Mesh) && Lod->Mesh->GetNumSections() > 0)
+				if (APSWorldScapePayloadValidation::HasCompletePayload(Lod, true))
 				{
-					bHasVisibleTerrain = true;
-					break;
+					++ReadyTerrainLods;
 				}
 			}
+
+			int32 ReadyOceanLods = 0;
+			for (const UWorldScapeLod* Lod : Root->WorldScapeLodOcean)
+			{
+				if (APSWorldScapePayloadValidation::HasCompletePayload(Lod, false))
+				{
+					++ReadyOceanLods;
+				}
+			}
+
+			const int32 RequiredTerrainLods = Root->WorldScapeLod.Num();
+			const bool bTerrainReady = RequiredTerrainLods >= Root->MaxLod
+				&& ReadyTerrainLods == RequiredTerrainLods;
+			const bool bOceanReady = !Root->bOcean
+				|| (Root->WorldScapeLodOcean.Num() > 0
+					&& ReadyOceanLods == Root->WorldScapeLodOcean.Num());
+			bHasStableTerrainCoverage = bTerrainReady && bOceanReady;
 		}
 	}
 
-	if (bHasVisibleTerrain && !bWorldScapeSurfaceReady)
+	if (bHasStableTerrainCoverage && !bWasSurfaceReady)
 	{
 		UE_LOG(LogTemp, Log, TEXT("[APS.WorldScape] Surface ready body=%s lods=%d oceanLods=%d"),
 			*GetName(), Root->WorldScapeLod.Num(), Root->WorldScapeLodOcean.Num());
 	}
-	bWorldScapeSurfaceReady = bHasVisibleTerrain;
+	bWorldScapeSurfaceReady = bHasStableTerrainCoverage;
+	if (IsValid(Root))
+	{
+		Root->SetActorHiddenInGame(!bWorldScapeSurfaceReady);
+	}
 	SetPlaceholderVisible(!bWorldScapeSurfaceReady);
 	return bWorldScapeSurfaceReady;
 }

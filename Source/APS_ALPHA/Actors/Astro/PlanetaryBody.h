@@ -84,6 +84,33 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Body|Streaming")
 	int32 WorldScapeSeed{0};
 
+	/** Resolver multipliers copied from the selected planet model. Asset references
+	 * remain owned by UAPSPlanetSurfaceProfileResolver and are never exposed here. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Body|Surface", meta = (ClampMin = "0.25", ClampMax = "4.0"))
+	double SurfaceFeatureScale{1.0};
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Body|Surface", meta = (ClampMin = "0.25", ClampMax = "2.5"))
+	double SurfaceReliefScale{1.0};
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Body|Surface", meta = (ClampMin = "0.25", ClampMax = "2.0"))
+	double SurfaceLandCoverageScale{1.0};
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Body|Surface", meta = (ClampMin = "0.0", ClampMax = "2.0"))
+	double SurfaceMountainScale{1.0};
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Body|Surface", meta = (ClampMin = "0.0", ClampMax = "2.0"))
+	double SurfaceCraterScale{1.0};
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Body|Surface", meta = (ClampMin = "0.25", ClampMax = "2.0"))
+	double SurfaceRoughnessScale{1.0};
+
+	/**
+	 * Uniform presentation scale used only by disposable, normalized menu previews.
+	 * Runtime worlds keep 1.0, so the WorldScape radius remains physically full-scale.
+	 */
+	UPROPERTY(Transient)
+	double WorldScapePresentationScale{1.0};
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Body")
 	double AtmosphereHeight{0.0};
 

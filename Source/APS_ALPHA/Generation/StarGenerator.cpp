@@ -3,6 +3,29 @@
 #include "APS_ALPHA/Actors/Astro/StarCluster.h"
 #include "APS_ALPHA/Core/Structs/StarGenerationModel.h"
 
+namespace APSStellarSurface
+{
+	float TypeActivity(const EStellarType StellarType)
+	{
+		switch (StellarType)
+		{
+		case EStellarType::Protostar: return 1.00f;
+		case EStellarType::HyperGiant: return 0.92f;
+		case EStellarType::SuperGiant: return 0.84f;
+		case EStellarType::BrightGiant: return 0.76f;
+		case EStellarType::Giant: return 0.68f;
+		case EStellarType::SubGiant: return 0.58f;
+		case EStellarType::Pulsar: return 0.50f;
+		case EStellarType::Neutron: return 0.42f;
+		case EStellarType::WhiteDwarf: return 0.35f;
+		case EStellarType::BrownDwarf: return 0.62f;
+		case EStellarType::SubDwarf: return 0.44f;
+		case EStellarType::MainSequence: return 0.52f;
+		default: return 0.45f;
+		}
+	}
+}
+
 UStarGenerator::UStarGenerator()
 {
 	FDateTime Time = FDateTime::UtcNow();
@@ -68,9 +91,27 @@ void UStarGenerator::ApplySpectralMaterial(AStar* NewStar, TSharedPtr<FStarModel
 	StarDynamicMaterial->SetVectorParameterValue(ParameterName2, ColorValue);
 	const float SurfaceSeed = FMath::Frac(
 		FMath::Abs(StarModel->SurfaceTemperature * 0.000173f + StarModel->Mass * 0.137f));
+	const float TypeActivity = APSStellarSurface::TypeActivity(StarModel->StellarType);
+	const float Temperature01 = FMath::Clamp(
+		(static_cast<float>(StarModel->SurfaceTemperature) - 2200.0f) / 27800.0f,
+		0.0f, 1.0f);
+	const float Luminosity01 = FMath::Clamp(
+		FMath::Log2(1.0f + FMath::Max(StarModel->Luminosity, 0.0f)) / 14.0f,
+		0.0f, 1.0f);
 	StarDynamicMaterial->SetScalarParameterValue(TEXT("SurfaceSeed"), SurfaceSeed);
-	StarDynamicMaterial->SetScalarParameterValue(TEXT("SurfaceVariation"), 0.18f);
-	StarDynamicMaterial->SetScalarParameterValue(TEXT("GranulationStrength"), 0.22f);
+	StarDynamicMaterial->SetScalarParameterValue(TEXT("SurfaceVariation"),
+		FMath::Lerp(0.12f, 0.36f, TypeActivity));
+	StarDynamicMaterial->SetScalarParameterValue(TEXT("GranulationStrength"),
+		FMath::Lerp(0.16f, 0.42f, FMath::Clamp(TypeActivity * 0.72f + Luminosity01 * 0.28f,
+			0.0f, 1.0f)));
+	// Cooler convection zones tend to read with stronger dark spots; very hot and
+	// compact stars retain fine granulation without being covered by black patches.
+	StarDynamicMaterial->SetScalarParameterValue(TEXT("SpotStrength"),
+		FMath::Lerp(0.12f, 0.44f, FMath::Clamp((1.0f - Temperature01) * 0.68f
+			+ TypeActivity * 0.32f, 0.0f, 1.0f)));
+	StarDynamicMaterial->SetScalarParameterValue(TEXT("CoronaStrength"),
+		FMath::Lerp(0.22f, 0.58f, FMath::Clamp(TypeActivity * 0.55f
+			+ Luminosity01 * 0.45f, 0.0f, 1.0f)));
 
 	// ��������� ������������ �������� � ������ �������
 	NewStar->StarMesh->SetMaterial(0, StarDynamicMaterial);

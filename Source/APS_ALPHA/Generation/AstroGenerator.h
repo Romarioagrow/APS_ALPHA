@@ -16,14 +16,21 @@
 class USpawnParameters;
 class UCameraComponent;
 class USceneComponent;
+class UProceduralMeshComponent;
+class UStaticMeshComponent;
+class UMaterialInterface;
+class UMaterialInstanceDynamic;
 class APlayerController;
-class AControlledPawn;
+class APawn;
 class AAstroAnchor;
 class AStarCluster;
 class AMoon;
 class APlanetOrbit;
 class UGeneratedWorld;
 class APlanet;
+class APlanetaryBody;
+class APlanetarySurfaceGenerator;
+class UHierarchicalInstancedStaticMeshComponent;
 class ASpaceShipyard;
 class ASpaceship;
 class ASpaceStation;
@@ -33,13 +40,51 @@ enum class EHomeSystemPosition : uint8;
 enum class EOrbitHeight : uint8;
 struct FPlanetModel;
 struct FPlanetData;
+struct FClusterStarSystemRecord;
+struct FStarModel;
+struct FStarSystemModel;
 
 struct APS_ALPHA_API FAPSPreviewBodyEntry
 {
 	TWeakObjectPtr<AActor> Actor;
+	/**
+	 * Actor-free catalogue rows (and the materialized home row while CLUSTER is
+	 * visible) can publish the exact HISM address used by their rendered glyph.
+	 * Labels must never drift to an actor pivot that is hidden at this scope.
+	 */
+	FVector ExplicitWorldAnchor{FVector::ZeroVector};
+	bool bHasExplicitWorldAnchor{false};
 	FText Label;
 	FText Details;
 	int32 Depth{0};
+	/** Actor-free HISM system used by the cluster browser. */
+	int32 ClusterSystemInstanceIndex{INDEX_NONE};
+	/** Optional hierarchy focus for actor roots such as Galaxy or Cluster. */
+	int32 PreviewFocusValue{INDEX_NONE};
+};
+
+/**
+ * One retained, double-buffered orbital globe owned by a stable hierarchy body.
+ * These components are menu-only presentation data: gameplay WorldScape actors and
+ * resolved materials remain owned by APlanetarySurfaceGenerator.
+ */
+struct FAPSPreviewGlobeProxyState
+{
+	TWeakObjectPtr<APlanetaryBody> Body;
+	TWeakObjectPtr<UProceduralMeshComponent> TerrainA;
+	TWeakObjectPtr<UProceduralMeshComponent> TerrainB;
+	TWeakObjectPtr<UProceduralMeshComponent> OceanA;
+	TWeakObjectPtr<UProceduralMeshComponent> OceanB;
+	TWeakObjectPtr<UMaterialInstanceDynamic> TerrainMaterialA;
+	TWeakObjectPtr<UMaterialInstanceDynamic> TerrainMaterialB;
+	TWeakObjectPtr<UMaterialInstanceDynamic> OceanMaterialA;
+	TWeakObjectPtr<UMaterialInstanceDynamic> OceanMaterialB;
+	int32 ActiveBuffer{INDEX_NONE};
+	uint32 ProfileSignature{0};
+	int32 VertexCount{0};
+	int32 IndexCount{0};
+	bool bHasOcean{false};
+	bool bUsesDefaultBuffers{false};
 };
 
 UENUM(BlueprintType)
@@ -61,7 +106,8 @@ class APS_ALPHA_API AAstroGenerator : public ABaseActor
 public:
 	AAstroGenerator();
 
-	void SpawnStartInteractiveActors(TSharedPtr<FPlanetModel> StartPlanetModel);
+	/** Transactionally spawns and validates the selected starter hierarchy. */
+	bool SpawnStartInteractiveActors(TSharedPtr<FPlanetModel> StartPlanetModel);
 
 	void ComputeStarAmount(TSharedPtr<FStarSystemModel>& StarSystemModel, int& AmountOfStars);
 
@@ -86,7 +132,7 @@ public:
 	void GenerateWorldByModel();
 
 	UFUNCTION(BlueprintCallable, Category = "World Generation|Preview")
-	bool RegeneratePreview(UGeneratedWorld* InGeneratedWorld);
+	bool RegeneratePreview(UGeneratedWorld* InGeneratedWorld, EAstroPreviewFocus RequestedFocus);
 
 	UFUNCTION(BlueprintCallable, Category = "World Generation|Preview")
 	void FocusPreviewCamera(APlayerController* PlayerController = nullptr);
@@ -106,9 +152,89 @@ public:
 	 */
 	bool FocusPreviewClusterSystemAtScreenPosition(
 		APlayerController* PlayerController, const FVector2D& ScreenPosition, float MaxPixelDistance = 28.0f);
+	bool FocusPreviewClusterSystem(int32 InstanceIndex, APlayerController* PlayerController = nullptr);
+	int32 GetPreviewGalaxyRenderedStarCount() const;
+	int64 GetPreviewGalaxyModeledStarCount() const;
+	int32 GetPreviewClusterRenderedStarCount() const;
+	int32 GetPreviewClusterModeledSystemCount() const;
+	bool GetSelectedPreviewClusterSystemSummary(
+		FString& OutStableId, int32& OutStarCount, int32& OutPotentialPlanetCount) const;
+	/** True only when the requested hierarchy level exists in the current live preview. */
+	bool IsPreviewFocusAvailable(EAstroPreviewFocus Focus) const;
+	bool HasSelectedPreviewClusterSystem() const
+	{
+		return SelectedPreviewClusterSystemIndex != INDEX_NONE;
+	}
+	/** Newly materialized counterpart of the selected body after a structural preview rebuild. */
+	AActor* GetSelectedPreviewBodyActor() const { return SelectedPreviewBodyActor.Get(); }
+	/** World-space sphere used by Slate to draw a stable scope boundary. */
+	bool GetPreviewFocusSphere(EAstroPreviewFocus Focus, FVector& OutCenter, double& OutRadius) const;
+	/**
+	 * Rendered 3D guide shell diagnostics. HomeStar addresses the amber stellar
+	 * influence shell; HomeSystem addresses the coral system boundary shell.
+	 */
+	bool GetPreviewGuideShellState(EAstroPreviewFocus GuideFocus, FVector& OutCenter,
+		double& OutRadius, bool& bOutVisible) const;
+	/**
+	 * Preview-only rendered centre for a body. PLANET can spread a physically tiny
+	 * satellite family for readability without mutating generated actor/model transforms.
+	 */
+	bool GetPreviewPresentationLocation(const AActor* Actor, FVector& OutLocation) const;
+	/** Selected real body whose WorldScape surface is currently presented in the menu. */
+	APlanetaryBody* GetActivePreviewWorldScapeBody() const { return ActivePreviewWorldScapeBody.Get(); }
+	/** Number of resolved profiles committed by the persistent menu surface generator. */
+	int32 GetPreviewSurfaceProfileApplyCount() const { return PreviewSurfaceProfileApplyCount; }
+	/** Closed, camera-independent globe used only by the PLANET orbital preview. */
+	UProceduralMeshComponent* GetActivePreviewTerrainProxy() const;
+	UProceduralMeshComponent* GetActivePreviewOceanProxy() const;
+	/** Retained proxy for a concrete body, whether or not it is the current editor target. */
+	UProceduralMeshComponent* GetPreviewTerrainProxyForBody(const APlanetaryBody* Body) const;
+	UProceduralMeshComponent* GetPreviewOceanProxyForBody(const APlanetaryBody* Body) const;
+	int32 GetRetainedPreviewGlobeCount() const;
+	uint32 GetPreviewGlobeProfileSignature() const { return PreviewGlobeProfileSignature; }
+	int32 GetPreviewGlobeVertexCount() const { return PreviewGlobeVertexCount; }
+	int32 GetPreviewGlobeIndexCount() const { return PreviewGlobeIndexCount; }
+	/** Loads and retains every material used by the closed orbital globes. */
+	bool WarmPreviewMaterialAssets();
+	bool ArePreviewMaterialAssetsWarmed() const;
+	/** True after the selected planet and every supported moon have left the one-body-per-tick warm queue. */
+	bool IsPreviewGlobeFamilyWarmQueueDrained() const;
+	/** Applies surface/atmosphere controls to the selected preview planet without rebuilding its galaxy hierarchy. */
+	bool RefreshPreviewPlanetAppearance(UGeneratedWorld* InGeneratedWorld, bool bRegenerateSurface);
+	/** Deterministic index path used to retain body edits across disposable hierarchy rebuilds. */
+	FString GetPreviewBodyStableKey(const APlanetaryBody* Body) const;
+	/** Snapshots the current editor buffer for one body immediately, before the debounced surface refresh. */
+	bool SavePreviewBodyEditOverride(UGeneratedWorld* InGeneratedWorld, const APlanetaryBody* Body) const;
+	bool SaveSelectedPreviewBodyEditOverride(UGeneratedWorld* InGeneratedWorld) const;
+	/** Loads a previously retained body snapshot back into the shared UI editor buffer. */
+	bool LoadPreviewBodyEditOverride(UGeneratedWorld* InGeneratedWorld, const APlanetaryBody* Body) const;
+	/** Reapplies retained snapshots to newly materialized preview actors and their generation models. */
+	int32 ApplyPreviewBodyEditOverrides(UGeneratedWorld* InGeneratedWorld);
+	/** Narrow deterministic primitive used by the hierarchy pass and automation coverage. */
+	static bool ApplyPreviewBodyEditOverrideByKey(
+		const UGeneratedWorld* InGeneratedWorld, const FString& StableBodyKey, APlanetaryBody* Body);
+	/** Applies retained body values to a generated model before its actors/surfaces spawn. */
+	static int32 ApplyPreviewBodyEditOverridesToModels(
+		const UGeneratedWorld* InGeneratedWorld, int32 StarIndex,
+		FPlanetarySystemModel& PlanetarySystem);
+	/** Changes the physical body scale proportionally while keeping hierarchy normalization intact. */
+	static void ApplyPlanetaryBodyRadius(APlanetaryBody& Body, double RadiusKm);
+	/**
+	 * Commits the materialized home system back into its actor-free cluster record
+	 * without changing the record identity or its HISM-local anchor.  Keeping this
+	 * primitive deterministic lets the GALAXY/CLUSTER glyph and SYSTEM hierarchy
+	 * share one model even when the home system is randomized.
+	 */
+	static void SynchronizeHomeClusterRecord(
+		FClusterStarSystemRecord& Record, const FStarModel& PrimaryStar,
+		const FStarSystemModel& MaterializedSystem);
+	/** Hides the preview surface and succeeds only after its async WorldScape workers are drained. */
+	bool PreparePreviewForTravel();
 
 	UFUNCTION(BlueprintCallable, Category = "World Generation|Preview")
 	void OrbitPreviewCamera(FVector2D ScreenDelta);
+	void BeginPreviewCameraOrbit();
+	void EndPreviewCameraOrbit();
 
 	UFUNCTION(BlueprintCallable, Category = "World Generation|Preview")
 	void ZoomPreviewCamera(float WheelDelta);
@@ -130,8 +256,8 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "World Generation|Preview")
 	bool bIsPreviewGeneration{false};
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "World Generation|Preview", meta = (ClampMin = "100", ClampMax = "50000"))
-	int32 PreviewMaxInstances{3000};
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "World Generation|Preview", meta = (ClampMin = "100", ClampMax = "3000"))
+	int32 PreviewMaxInstances{1800};
 
 	/**
 	 * The world model may describe millions of stars, but a committed gameplay
@@ -164,10 +290,40 @@ protected:
 	virtual void Tick(float DeltaSeconds) override;
 
 	FBox GetPreviewFocusBounds(EAstroPreviewFocus Focus) const;
+	bool GetPreviewSystemPresentationSphere(FVector& OutCenter, double& OutRadius,
+		double* OutPositionScale = nullptr) const;
+	bool TryGetPreviewClusterSystemSphere(int32 InstanceIndex, FVector& OutCenter, double& OutRadius) const;
 	void StartPreviewCameraTransition(const FVector& Center, double Radius, APlayerController* PlayerController);
+	void ApplyPreviewFocusPresentation(EAstroPreviewFocus NewFocus);
+	void UpdatePreviewGuideShells(EAstroPreviewFocus NewFocus);
+	void SetPreviewGuideShellVisible(UStaticMeshComponent* Shell, bool bVisible);
+	void ApplyPreviewBackgroundContext(EAstroPreviewFocus NewFocus);
+	void ResetPreviewBackgroundContextCache();
+	void SetPreviewBodyBackingSphereVisible(APlanetaryBody* Body, bool bVisible);
+	void SetPreviewGlobeProxyVisible(bool bVisible);
+	UProceduralMeshComponent* CreatePreviewGlobeMeshComponent(FName BaseName);
+	FAPSPreviewGlobeProxyState* FindPreviewGlobeProxyState(const APlanetaryBody* Body);
+	const FAPSPreviewGlobeProxyState* FindPreviewGlobeProxyState(const APlanetaryBody* Body) const;
+	FAPSPreviewGlobeProxyState* FindOrAddPreviewGlobeProxyState(APlanetaryBody* Body);
+	void SyncPreviewGlobeProxyTransforms();
+	void UpdateActivePreviewGlobeCompatibilityState();
+	void InvalidatePreviewGlobeProxy(APlanetaryBody* Body);
+	void ClearPreviewGlobeProxyCache();
+	void QueuePreviewGlobeFamily(APlanetaryBody* Body);
+	bool BeginNextQueuedPreviewGlobeBuild();
+	bool BuildPreviewGlobeProxy(APlanetaryBody* Body,
+		APlanetarySurfaceGenerator* SurfaceGenerator, AWorldScapeRoot* ProfileRoot);
+	void SetPreviewWorldScapeBody(APlanetaryBody* Body);
+	void UpdatePreviewWorldScape();
 
-	EAstroPreviewFocus PreviewFocus{EAstroPreviewFocus::Overview};
+	EAstroPreviewFocus PreviewFocus{EAstroPreviewFocus::HomePlanet};
 	int32 SelectedPreviewClusterSystemIndex{INDEX_NONE};
+	/** Exact body selected from the hierarchy; root buttons fall back to the authored home body. */
+	TWeakObjectPtr<AActor> SelectedPreviewBodyActor;
+	/** Mesh-only PLANET presentation centres; generated actor transforms stay authoritative. */
+	TMap<TWeakObjectPtr<AActor>, FVector> PreviewBodyPresentationCenters;
+	/** Matching rendered radii used to frame the selected planet-and-satellite family. */
+	TMap<TWeakObjectPtr<AActor>, double> PreviewBodyPresentationRadii;
 	FTransform PreviewCameraStartTransform;
 	FTransform PreviewCameraTargetTransform;
 	FVector PreviewOrbitCenter{FVector::ZeroVector};
@@ -175,6 +331,96 @@ protected:
 	float PreviewCameraTransitionElapsed{0.0f};
 	float PreviewCameraTransitionDuration{0.55f};
 	bool bPreviewCameraTransitionActive{false};
+	TWeakObjectPtr<APlanetaryBody> ActivePreviewWorldScapeBody;
+	TWeakObjectPtr<APlanetarySurfaceGenerator> PersistentPreviewSurfaceGenerator;
+	TWeakObjectPtr<AWorldScapeRoot> PersistentPreviewWorldScapeRoot;
+	UPROPERTY(VisibleAnywhere, Transient, Category = "World Generation|Preview")
+	UProceduralMeshComponent* PreviewTerrainProxyA{nullptr};
+	UPROPERTY(VisibleAnywhere, Transient, Category = "World Generation|Preview")
+	UProceduralMeshComponent* PreviewTerrainProxyB{nullptr};
+	UPROPERTY(VisibleAnywhere, Transient, Category = "World Generation|Preview")
+	UProceduralMeshComponent* PreviewOceanProxyA{nullptr};
+	UPROPERTY(VisibleAnywhere, Transient, Category = "World Generation|Preview")
+	UProceduralMeshComponent* PreviewOceanProxyB{nullptr};
+	/** Amber, translucent, mesh-centred stellar influence shell. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "World Generation|Preview")
+	UStaticMeshComponent* PreviewStarInfluenceShell{nullptr};
+	/** Coral, translucent, barycentre-centred outer system boundary shell. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "World Generation|Preview")
+	UStaticMeshComponent* PreviewSystemBoundaryShell{nullptr};
+	UPROPERTY(Transient)
+	UMaterialInstanceDynamic* PreviewStarInfluenceMaterial{nullptr};
+	UPROPERTY(Transient)
+	UMaterialInstanceDynamic* PreviewSystemBoundaryMaterial{nullptr};
+	/** Strong page-lifetime references loaded before PLANET body-switch commits begin. */
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInterface> PreviewTerrainBaseMaterial{nullptr};
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInterface> PreviewLiquidBaseMaterial{nullptr};
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInterface> PreviewWaterBaseMaterial{nullptr};
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInterface> PreviewAmmoniaBaseMaterial{nullptr};
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInterface> PreviewLavaBaseMaterial{nullptr};
+	bool bPreviewMaterialPSOPrecacheRequested{false};
+	/**
+	 * Stable reference for the current non-stellar system layout, expressed in
+	 * AstroGenerator-root space.  The disposable preview root is uniformly scaled
+	 * when a full-scale hierarchy is normalized; keeping this value in world space
+	 * made the cached SYSTEM envelope immune to that normalization.
+	 */
+	mutable uint32 PreviewSystemLayoutSignature{0};
+	mutable double PreviewSystemReferenceRadiusInRootSpace{0.0};
+	/**
+	 * Orbital-preview-only MIDs.  The resolver's WorldScape materials remain on the
+	 * hidden WorldScape root; they use masked/tangent-patch assumptions and must not
+	 * be assigned to the closed procedural globe.
+	 */
+	UPROPERTY(Transient)
+	UMaterialInstanceDynamic* PreviewTerrainMaterialA{nullptr};
+	UPROPERTY(Transient)
+	UMaterialInstanceDynamic* PreviewTerrainMaterialB{nullptr};
+	UPROPERTY(Transient)
+	UMaterialInstanceDynamic* PreviewOceanMaterialA{nullptr};
+	UPROPERTY(Transient)
+	UMaterialInstanceDynamic* PreviewOceanMaterialB{nullptr};
+	TWeakObjectPtr<APlanetaryBody> PreviewGlobeProxyBody;
+	/** Stable-keyed orbital globes survive body selection changes inside one preview hierarchy. */
+	TMap<FString, FAPSPreviewGlobeProxyState> PreviewGlobeProxyStates;
+	TArray<TWeakObjectPtr<APlanetaryBody>> PendingPreviewGlobeBodies;
+	TWeakObjectPtr<APlanetaryBody> PreviewSurfaceBuildBody;
+	int32 ActivePreviewGlobeBuffer{INDEX_NONE};
+	uint32 PreviewGlobeProfileSignature{0};
+	int32 PreviewGlobeVertexCount{0};
+	int32 PreviewGlobeIndexCount{0};
+	bool bPreviewGlobeHasOcean{false};
+	bool bPreviewSurfaceUpdatePending{false};
+	bool bPreviewCameraOrbitDragging{false};
+	bool bPreviewSurfaceViewDirty{false};
+	bool bPreviewSurfaceViewRefreshInFlight{false};
+	/** Camera moves retain the last complete mesh; profile changes keep the atomic fallback. */
+	bool bPreviewSurfaceLiveRefresh{false};
+	/** WorldScape owns exactly one normal initialization tick after a drained profile change. */
+	bool bPreviewSurfaceRootInitializationPending{false};
+	/** Test/diagnostic counter: a coalesced slider burst must resolve exactly one new profile. */
+	int32 PreviewSurfaceProfileApplyCount{0};
+	FVector PendingPreviewSurfaceViewPosition{FVector::ZeroVector};
+	TWeakObjectPtr<UHierarchicalInstancedStaticMeshComponent> PreviewGalaxyContextOwner;
+	TWeakObjectPtr<UHierarchicalInstancedStaticMeshComponent> PreviewClusterContextOwner;
+	TArray<FVector> PreviewGalaxyBaseInstanceScales;
+	TArray<FVector> PreviewClusterBaseInstanceScales;
+	/** Original HISM emissive custom-data channel restored outside detail scopes. */
+	TArray<float> PreviewGalaxyBaseInstanceEmissions;
+	TArray<float> PreviewClusterBaseInstanceEmissions;
+	bool bPreviewBackgroundCullStateInitialized{false};
+	bool bPreviewBackgroundCullApplied{false};
+	EAstroPreviewFocus PreviewBackgroundContextFocus{EAstroPreviewFocus::Overview};
+	double PreviewBackgroundVisualScale{1.0};
+	FVector PreviewBackgroundCullCenter{FVector::ZeroVector};
+	double PreviewBackgroundCullRadius{0.0};
+	FVector PreviewBackgroundDetailCenter{FVector::ZeroVector};
+	float PreviewBackgroundEmissionCap{TNumericLimits<float>::Max()};
 
 	void Test_GenerateFullscaled();
 
@@ -213,6 +459,15 @@ protected:
 	/** HISM point selected as the home system; retained until successful actor materialization. */
 	TWeakObjectPtr<AStarCluster> PendingHomeCluster;
 	int32 PendingHomeClusterInstanceIndex{INDEX_NONE};
+	/**
+	 * Visible world-space radius of the home cluster HISM sample immediately before
+	 * materialization hides it. Galaxy/cluster presentation reuses this exact radius
+	 * on HomeStar, so the hierarchy transition resolves to one continuous point.
+	 */
+	double MaterializedHomeProxyWorldRadius{0.0};
+	/** Authored mesh transform restored after HomeStar temporarily represents its HISM proxy. */
+	FTransform HomeStarMeshBaseRelativeTransform{FTransform::Identity};
+	bool bHasHomeStarMeshBaseRelativeTransform{false};
 
 	UPROPERTY(VisibleAnywhere, Category = "Generated Astro Actros")
 	AStarSystem* GeneratedHomeStarSystem;
@@ -363,7 +618,7 @@ public:
 	int GalaxySize{250};
 
 	UPROPERTY(EditAnywhere, Category = "Galaxy")
-	int GalaxyStarCount{100000};
+	int GalaxyStarCount{100000000};
 
 	UPROPERTY(EditAnywhere, Category = "Galaxy")
 	double GalaxyStarDensity{10.0};
@@ -381,7 +636,7 @@ public:
 	EOrbitHeight HomeSpaceStationOrbitHeight;
 
 	UPROPERTY(EditAnywhere, Category = "Player Spawn")
-	TSubclassOf<AControlledPawn> BP_CharacterClass;
+	TSubclassOf<APawn> BP_CharacterClass;
 
 	UPROPERTY(EditAnywhere, Category = "Player Spawn")
 	TSubclassOf<ASpaceStation> BP_HomeSpaceStation;

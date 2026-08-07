@@ -50,8 +50,15 @@ struct FGeneratedWorldData
         , StartPlanetIndex(0)
         , GalaxyStarDensity(0.0)
         , PlanetRadius(0.0)
+		, PlanetSurfaceSeed(1337)
+		, SurfaceFeatureScale(1.0)
+		, SurfaceReliefScale(1.0)
+		, SurfaceLandCoverageScale(1.0)
+		, SurfaceMountainScale(1.0)
+		, SurfaceCraterScale(1.0)
+		, SurfaceRoughnessScale(1.0)
         , AtmosphereHeight(0.0)
-        , AtmosphereOpacity(0.0)
+		, AtmosphereOpacity(12.0)
         , AtmosphereMultiScattering(0.0)
         , AtmosphereRayleighScattering(0.0)
         , AtmosphereColor(FLinearColor::White)
@@ -149,6 +156,27 @@ struct FGeneratedWorldData
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Galaxy")
     double PlanetRadius;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Planet Surface")
+	int32 PlanetSurfaceSeed;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Planet Surface")
+	double SurfaceFeatureScale;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Planet Surface")
+	double SurfaceReliefScale;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Planet Surface")
+	double SurfaceLandCoverageScale;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Planet Surface")
+	double SurfaceMountainScale;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Planet Surface")
+	double SurfaceCraterScale;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Planet Surface")
+	double SurfaceRoughnessScale;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Atmosphere")
     double AtmosphereHeight;
