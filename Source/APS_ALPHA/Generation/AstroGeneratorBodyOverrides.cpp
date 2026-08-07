@@ -12,7 +12,10 @@
 
 namespace
 {
-	constexpr double EarthRadiusKm = 6371.0;
+	// Keep translation-unit constants uniquely named: Unreal unity builds concatenate
+	// several .cpp files, so a generic anonymous-namespace name can unexpectedly
+	// trigger C4459 in an otherwise unrelated source file.
+	constexpr double BodyOverrideEarthRadiusKm = 6371.0;
 
 	FString MakePlanetKey(const int32 StarIndex, const int32 PlanetIndex)
 	{
@@ -70,7 +73,8 @@ namespace
 		FPlanetModel& Model, const FAPSPreviewBodyEditOverride& BodyOverride)
 	{
 		Model.PlanetType = BodyOverride.PlanetType;
-		Model.Radius = static_cast<float>(BodyOverride.RadiusKm / EarthRadiusKm);
+		Model.Radius = static_cast<float>(
+			BodyOverride.RadiusKm / BodyOverrideEarthRadiusKm);
 		Model.RadiusKM = static_cast<float>(BodyOverride.RadiusKm);
 		Model.SurfaceSeed = BodyOverride.SurfaceSeed;
 		Model.SurfaceFeatureScale = BodyOverride.SurfaceFeatureScale;
@@ -86,7 +90,8 @@ namespace
 		FMoonModel& Model, const FAPSPreviewBodyEditOverride& BodyOverride)
 	{
 		Model.PlanetType = BodyOverride.PlanetType;
-		Model.Radius = static_cast<float>(BodyOverride.RadiusKm / EarthRadiusKm);
+		Model.Radius = static_cast<float>(
+			BodyOverride.RadiusKm / BodyOverrideEarthRadiusKm);
 		Model.RadiusKM = static_cast<float>(BodyOverride.RadiusKm);
 		Model.SurfaceSeed = BodyOverride.SurfaceSeed;
 		Model.SurfaceFeatureScale = BodyOverride.SurfaceFeatureScale;
@@ -193,7 +198,7 @@ void AAstroGenerator::ApplyPlanetaryBodyRadius(APlanetaryBody& Body, const doubl
 		Body.SetActorScale3D(CurrentScale * ScaleRatio);
 	}
 
-	Body.SetRadius(static_cast<float>(NewRadiusKm / EarthRadiusKm));
+	Body.SetRadius(static_cast<float>(NewRadiusKm / BodyOverrideEarthRadiusKm));
 	Body.RadiusKM = NewRadiusKm;
 	Body.PlanetRadiusKM = FMath::RoundToInt(NewRadiusKm);
 	Body.AffectionRadiusKM = NewRadiusKm;

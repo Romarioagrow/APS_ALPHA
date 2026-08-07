@@ -1,6 +1,10 @@
 #include "WorldScapePayloadValidation.h"
 
-#include "WorldScapeCore/Public/WorldScapeLod.h"
+// WorldScapeLod.h in the 5.4 marketplace plugin has no include guard. Including
+// it directly breaks Unreal unity builds when another source file has already
+// reached it through WorldScapeRoot.h. The root header is guarded and still
+// provides the complete UWorldScapeLod definition required below.
+#include "WorldScapeCore/Public/WorldScapeRoot.h"
 
 namespace APSWorldScapePayloadValidation
 {
