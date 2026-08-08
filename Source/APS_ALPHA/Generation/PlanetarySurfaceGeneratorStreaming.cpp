@@ -102,6 +102,74 @@ bool APlanetarySurfaceGenerator::CreateRuntimeWorldScapeRoot(APlanetaryBody* Bod
 	return true;
 }
 
+bool APlanetarySurfaceGenerator::ReplaceDrainedRuntimeWorldScapeRoot(APlanetaryBody* Body)
+{
+	if (!IsValid(Body) || !GetWorld())
+	{
+		return false;
+	}
+
+	AWorldScapeRoot* DrainedRootToReplace = WorldScapeRootInstance;
+	if (IsValid(DrainedRootToReplace))
+	{
+		// Stop the producer before inspecting its worker map. A non-empty map means
+		// LodGenerationThread can still write into one of this root's UWorldScapeLod
+		// buffers, so neither its profile references nor the actor may be retired yet.
+		DrainedRootToReplace->bGenerateWorldScape = true;
+		DrainedRootToReplace->bFreezeGeneration = true;
+		DrainedRootToReplace->SetActorTickEnabled(false);
+		DrainedRootToReplace->SetActorHiddenInGame(true);
+		DrainedRootToReplace->SetActorEnableCollision(false);
+		if (DrainedRootToReplace->WorldScapeLodInGeneration.Num() > 0)
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("[APS.WorldScape] Refused runtime root replacement body=%s workers=%d"),
+				*GetNameSafe(Body),
+				DrainedRootToReplace->WorldScapeLodInGeneration.Num());
+			return false;
+		}
+
+		DrainedRootToReplace->bGenerateWorldScape = false;
+		// AActor::Destroy returns true only after the world accepted destruction and
+		// marked the actor pending kill. Do not clear the generator pointer/profile
+		// state first: a rejected destroy must not create a hidden orphan root.
+		if (!DrainedRootToReplace->Destroy())
+		{
+			UE_LOG(LogTemp, Error,
+				TEXT("[APS.WorldScape] Failed to destroy drained runtime root body=%s root=%s"),
+				*GetNameSafe(Body), *GetNameSafe(DrainedRootToReplace));
+			return false;
+		}
+	}
+
+	WorldScapeRootInstance = nullptr;
+	bOwnsWorldScapeRootInstance = false;
+	CancelPendingSurfaceProfileApply();
+	bPendingWorldScapeUnload = false;
+	bDestroyWorldScapeRootAfterDrain = false;
+	SetActorTickEnabled(false);
+
+	// The resolved noise and material instances are outered to the retired root.
+	// Release every cached per-root reference before constructing its replacement.
+	bSurfaceProfileApplied = false;
+	AppliedSurfaceProfileSignature = 0;
+	ResolvedSurfaceProfile = FAPSResolvedPlanetSurfaceProfile{};
+	ResolvedNoiseInstance = nullptr;
+	ResolvedTerrainMaterialInstance = nullptr;
+	ResolvedOceanMaterialInstance = nullptr;
+	PlanetaryBody = nullptr;
+	Body->bWorldScapeSurfaceReady = false;
+
+	if (!CreateRuntimeWorldScapeRoot(Body))
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[APS.WorldScape] Failed to create replacement runtime root body=%s"),
+			*GetNameSafe(Body));
+		return false;
+	}
+	return true;
+}
+
 
 void APlanetarySurfaceGenerator::ApplySurfaceProfile(APlanetaryBody* Body)
 {

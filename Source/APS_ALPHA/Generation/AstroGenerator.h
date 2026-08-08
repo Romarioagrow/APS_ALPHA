@@ -180,6 +180,8 @@ public:
 	 * satellite family for readability without mutating generated actor/model transforms.
 	 */
 	bool GetPreviewPresentationLocation(const AActor* Actor, FVector& OutLocation) const;
+	/** Matching mesh-only radius used by PLANET presentation and atmosphere framing. */
+	bool GetPreviewPresentationRadius(const AActor* Actor, double& OutRadius) const;
 	/** Selected real body whose WorldScape surface is currently presented in the menu. */
 	APlanetaryBody* GetActivePreviewWorldScapeBody() const { return ActivePreviewWorldScapeBody.Get(); }
 	/** Number of resolved profiles committed by the persistent menu surface generator. */
@@ -403,6 +405,8 @@ protected:
 	bool bPreviewSurfaceLiveRefresh{false};
 	/** WorldScape owns exactly one normal initialization tick after a drained profile change. */
 	bool bPreviewSurfaceRootInitializationPending{false};
+	/** Frame that armed the root; prevents stale LODs from being accepted before its first real tick. */
+	uint64 PreviewSurfaceInitArmedFrame{0};
 	/** Test/diagnostic counter: a coalesced slider burst must resolve exactly one new profile. */
 	int32 PreviewSurfaceProfileApplyCount{0};
 	FVector PendingPreviewSurfaceViewPosition{FVector::ZeroVector};

@@ -217,6 +217,14 @@ public:
 	/** Creates a disabled, unit-scale runtime root so its profile can be applied before generation begins. */
 	bool CreateRuntimeWorldScapeRoot(APlanetaryBody* Body);
 
+	/**
+	 * Replaces the current runtime root only after its complete WorldScape worker
+	 * batch has drained. The previous root and its resolved profile references stay
+	 * intact when destruction is rejected, so callers can safely retain their
+	 * fallback instead of spawning a second producer beside a live orphan.
+	 */
+	bool ReplaceDrainedRuntimeWorldScapeRoot(APlanetaryBody* Body);
+
 	/** Applies the deterministic terrain/ocean profile for the owning body before its first WorldScape tick. */
 	void ApplySurfaceProfile(APlanetaryBody* Body);
 

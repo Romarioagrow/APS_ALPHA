@@ -630,7 +630,7 @@ void AAstroGenerator::Tick(float DeltaSeconds)
 	AWorldScapeRoot* PreviewSurface = PersistentPreviewWorldScapeRoot.Get();
 	const bool bSurfaceJobsRunning = IsValid(PreviewSurface)
 		&& PreviewSurface->WorldScapeLodInGeneration.Num() > 0;
-	const bool bSurfaceAwaitingReady = bPreviewSurfaceUpdatePending
+	const bool bSurfaceAwaitingReady = PreviewFocus == EAstroPreviewFocus::HomePlanet
 		&& ActivePreviewWorldScapeBody.IsValid()
 		&& UAPSPlanetSurfaceProfileResolver::SupportsWorldScape(
 			ActivePreviewWorldScapeBody->PlanetType)
@@ -640,7 +640,9 @@ void AAstroGenerator::Tick(float DeltaSeconds)
 	// A force-regeneration can spend one frame with no queued worker yet, so continue
 	// polling until the new resolved payload has actually replaced the fallback.
 	const bool bKeepSurfaceTick = bPreviewSurfaceUpdatePending || bSurfaceJobsRunning
-		|| bSurfaceAwaitingReady;
+		|| bSurfaceAwaitingReady || bPreviewCameraOrbitDragging
+		|| bPreviewSurfaceViewDirty || bPreviewSurfaceViewRefreshInFlight
+		|| bPreviewSurfaceRootInitializationPending;
 	if (!bPreviewCameraTransitionActive || !PreviewCamera)
 	{
 		SetActorTickEnabled(bKeepSurfaceTick);
@@ -1412,6 +1414,30 @@ bool AAstroGenerator::GetPreviewPresentationLocation(
 	}
 	OutLocation = Actor->GetActorLocation();
 	return !OutLocation.ContainsNaN();
+}
+
+bool AAstroGenerator::GetPreviewPresentationRadius(
+	const AActor* Actor, double& OutRadius) const
+{
+	if (!IsValid(Actor))
+	{
+		return false;
+	}
+	const TWeakObjectPtr<AActor> Key(const_cast<AActor*>(Actor));
+	if (const double* PresentationRadius = PreviewBodyPresentationRadii.Find(Key))
+	{
+		OutRadius = *PresentationRadius;
+		return FMath::IsFinite(OutRadius) && OutRadius > UE_SMALL_NUMBER;
+	}
+
+	const UStaticMeshComponent* Mesh = Cast<UStaticMeshComponent>(
+		Actor->GetComponentByClass(UStaticMeshComponent::StaticClass()));
+	if (!IsValid(Mesh))
+	{
+		return false;
+	}
+	OutRadius = Mesh->Bounds.SphereRadius;
+	return FMath::IsFinite(OutRadius) && OutRadius > UE_SMALL_NUMBER;
 }
 
 void AAstroGenerator::StartPreviewCameraTransition(const FVector& Center, double Radius,
@@ -2430,6 +2456,13 @@ void AAstroGenerator::ApplyPreviewFocusPresentation(EAstroPreviewFocus NewFocus)
 			{
 				AAtmoScape* Atmosphere =
 					SelectedBody->PlanetaryEnvironmentGenerator->PlanetAtmosphere;
+				const TWeakObjectPtr<AActor> SelectedBodyKey(SelectedBody);
+				const double PresentedPlanetRadius = PreviewBodyPresentationRadii.Contains(SelectedBodyKey)
+					? FMath::Max(PreviewBodyPresentationRadii[SelectedBodyKey], 1.0)
+					: PlanetPresentationRadius;
+				const FVector PresentedPlanetCenter = PreviewBodyPresentationCenters.Contains(SelectedBodyKey)
+					? PreviewBodyPresentationCenters[SelectedBodyKey]
+					: SelectedBody->GetActorLocation();
 				const double PhysicalRadiusKm = FMath::Max(
 					SelectedBody->RadiusKM, static_cast<double>(SelectedBody->PlanetRadiusKM));
 				Atmosphere->bKeepRelativeScale = false;
@@ -2472,25 +2505,57 @@ void AAstroGenerator::ApplyPreviewFocusPresentation(EAstroPreviewFocus NewFocus)
 				}
 				if (IsValid(SpaceAtmosphereMesh))
 				{
+					const double HeightRatio = FMath::Clamp(
+						Atmosphere->AtmosphereHeight / FMath::Max(PhysicalRadiusKm, 1.0), 0.06, 0.12);
+					const double TargetAtmosphereRadius = PresentedPlanetRadius * (1.0 + HeightRatio);
+					Atmosphere->PresentationPlanetRadiusCm = static_cast<float>(PresentedPlanetRadius);
+					Atmosphere->PresentationAtmosphereRadiusCm =
+						static_cast<float>(TargetAtmosphereRadius);
 					SpaceAtmosphereMesh->UpdateBounds();
 					const double CurrentRadius = SpaceAtmosphereMesh->Bounds.SphereRadius;
 					if (FMath::IsFinite(CurrentRadius) && CurrentRadius > UE_SMALL_NUMBER)
 					{
-						const double HeightRatio = FMath::Clamp(
-							Atmosphere->AtmosphereHeight / FMath::Max(PhysicalRadiusKm, 1.0), 0.06, 0.12);
 						const double Factor = FMath::Clamp(
-							(1.2e6 * (1.0 + HeightRatio)) / CurrentRadius, 1.0e-6, 1.0e6);
+							TargetAtmosphereRadius / CurrentRadius, 1.0e-12, 1.0e12);
 						Atmosphere->SetActorScale3D(Atmosphere->GetActorScale3D() * Factor);
-						Atmosphere->PresentationPlanetRadiusCm = 1.2e6f;
-						Atmosphere->PresentationAtmosphereRadiusCm =
-							static_cast<float>(1.2e6 * (1.0 + HeightRatio));
 						// Actor scale changes the shell geometry, while these overrides change the
 						// ray-march coordinate system. Refresh after both are coherent.
 						Atmosphere->UpdateScale();
-						UE_LOG(LogTemp, Verbose,
-							TEXT("[APS.Preview.Atmosphere] body=%s heightKm=%.1f physicalRadiusKm=%.1f presentationRatio=%.4f relativeScale=%s"),
+						SpaceAtmosphereMesh->UpdateBounds();
+						// Full-scale generated bodies can leave the attached AtmoScape actor with a
+						// world radius above 1e12 cm.  The previous 1e-6 lower clamp could not
+						// shrink that shell to the 1.2e6 cm menu globe and produced the giant blue
+						// bubble seen around small planets.  Converge once more after UpdateScale,
+						// then align rendered bounds rather than trusting an authored mesh pivot.
+						const double UpdatedRadius = SpaceAtmosphereMesh->Bounds.SphereRadius;
+						if (FMath::IsFinite(UpdatedRadius) && UpdatedRadius > UE_SMALL_NUMBER)
+						{
+							const double Correction = FMath::Clamp(
+								TargetAtmosphereRadius / UpdatedRadius, 1.0e-12, 1.0e12);
+							if (!FMath::IsNearlyEqual(Correction, 1.0, 1.0e-4))
+							{
+								Atmosphere->SetActorScale3D(
+									Atmosphere->GetActorScale3D() * Correction);
+								SpaceAtmosphereMesh->UpdateBounds();
+							}
+						}
+						const FVector AtmosphereCenterDelta =
+							PresentedPlanetCenter - SpaceAtmosphereMesh->Bounds.Origin;
+						if (!AtmosphereCenterDelta.ContainsNaN()
+							&& !AtmosphereCenterDelta.IsNearlyZero(0.01))
+						{
+							Atmosphere->SetActorLocation(
+								Atmosphere->GetActorLocation() + AtmosphereCenterDelta,
+								false, nullptr, ETeleportType::TeleportPhysics);
+							SpaceAtmosphereMesh->UpdateBounds();
+						}
+						UE_LOG(LogTemp, Display,
+							TEXT("[APS.Preview.Atmosphere] body=%s heightKm=%.1f physicalRadiusKm=%.1f planetRadius=%.0f shellRadius=%.0f presentationRatio=%.4f centerError=%.2f relativeScale=%s"),
 							*GetNameSafe(SelectedBody), Atmosphere->AtmosphereHeight, PhysicalRadiusKm,
-							HeightRatio, Atmosphere->bKeepRelativeScale ? TEXT("true") : TEXT("false"));
+							PresentedPlanetRadius, SpaceAtmosphereMesh->Bounds.SphereRadius,
+							HeightRatio, FVector::Distance(PresentedPlanetCenter,
+								SpaceAtmosphereMesh->Bounds.Origin),
+							Atmosphere->bKeepRelativeScale ? TEXT("true") : TEXT("false"));
 					}
 				}
 				if (bIsPreviewGeneration)
@@ -2734,8 +2799,13 @@ void AAstroGenerator::SetPreviewGlobeProxyVisible(const bool bVisible)
 		const bool bBelongsToVisibleFamily = IsValid(VisibleFamilyPlanet)
 			&& (Body == VisibleFamilyPlanet
 				|| (BodyMoon && BodyMoon->ParentPlanet == VisibleFamilyPlanet));
+		const AWorldScapeRoot* LiveSurface = PersistentPreviewWorldScapeRoot.Get();
+		const bool bSelectedLiveSurfaceVisible = IsValid(Body)
+			&& Body == ActivePreviewWorldScapeBody.Get() && Body->bWorldScapeSurfaceReady
+			&& IsValid(LiveSurface) && !LiveSurface->IsHidden();
 		const bool bShowState = bVisible && bBelongsToVisibleFamily
-			&& IsValid(Body) && IsValid(ActiveTerrain);
+			&& IsValid(Body) && IsValid(ActiveTerrain)
+			&& !bSelectedLiveSurfaceVisible;
 		for (UProceduralMeshComponent* Terrain : {
 			State.TerrainA.Get(), State.TerrainB.Get() })
 		{
@@ -2751,6 +2821,10 @@ void AAstroGenerator::SetPreviewGlobeProxyVisible(const bool bVisible)
 			const bool bShow = bShowState && State.bHasOcean && Ocean == ActiveOcean;
 			Ocean->SetHiddenInGame(!bShow, false);
 			Ocean->SetVisibility(bShow, false);
+		}
+		if (bSelectedLiveSurfaceVisible)
+		{
+			SetPreviewBodyBackingSphereVisible(Body, false);
 		}
 		if (bShowState)
 		{
@@ -3186,18 +3260,18 @@ void AAstroGenerator::SetPreviewWorldScapeBody(APlanetaryBody* Body)
 	{
 		SetPreviewGlobeProxyVisible(false);
 		ActivePreviewWorldScapeBody.Reset();
-		// A pending A edit is allowed to finish after the user opens STAR/SYSTEM. Its
-		// retained proxy stays hidden in those scopes and is immediately current when
-		// PLANET is reopened; selection never requires a STAR -> PLANET repair pass.
-		if (!PreviewSurfaceBuildBody.IsValid())
-		{
-			BeginNextQueuedPreviewGlobeBuild();
-		}
+		// A preview body switch is synchronous until WorldScape starts its worker batch.
+		// Cancel unstarted proxy warm-up here so an off-screen moon cannot overwrite the
+		// single persistent live root while STAR/SYSTEM is draining it.
+		PendingPreviewGlobeBodies.Reset();
+		PreviewSurfaceBuildBody.Reset();
+		bPreviewSurfaceUpdatePending = false;
 		bPreviewCameraOrbitDragging = false;
 		bPreviewSurfaceViewDirty = false;
 		bPreviewSurfaceViewRefreshInFlight = false;
 		bPreviewSurfaceLiveRefresh = false;
 		bPreviewSurfaceRootInitializationPending = false;
+		PreviewSurfaceInitArmedFrame = 0;
 		PendingPreviewSurfaceViewPosition = FVector::ZeroVector;
 		UpdateActivePreviewGlobeCompatibilityState();
 		if (IsValid(PreviewSurface))
@@ -3223,33 +3297,43 @@ void AAstroGenerator::SetPreviewWorldScapeBody(APlanetaryBody* Body)
 	}
 
 	const bool bSelectionChanged = ActivePreviewWorldScapeBody.Get() != Body;
+	// A single live WorldScape root is shared by every selectable body. Hide and
+	// freeze the previous body synchronously, before the selected proxy is exposed;
+	// otherwise the old root can enqueue one more batch and overlap the new globe.
+	if (IsValid(PreviewSurface))
+	{
+		PreviewSurface->SetActorHiddenInGame(true);
+		PreviewSurface->SetActorEnableCollision(false);
+		PreviewSurface->bFreezeGeneration = true;
+		PreviewSurface->SetActorTickEnabled(false);
+		PreviewSurface->bGenerateWorldScape =
+			PreviewSurface->WorldScapeLodInGeneration.Num() > 0;
+	}
 	ActivePreviewWorldScapeBody = Body;
 	bPreviewCameraOrbitDragging = false;
 	bPreviewSurfaceViewDirty = false;
 	bPreviewSurfaceViewRefreshInFlight = false;
 	bPreviewSurfaceLiveRefresh = false;
 	bPreviewSurfaceRootInitializationPending = false;
+	PreviewSurfaceInitArmedFrame = 0;
 	PendingPreviewSurfaceViewPosition = IsValid(PreviewCamera)
 		? PreviewCamera->GetComponentLocation() : FVector::ZeroVector;
-	Body->bStreamWorldScapeSurface = false; // the persistent proxy owns menu terrain
-	QueuePreviewGlobeFamily(Body);
+	Body->bStreamWorldScapeSurface = false; // one persistent root owns menu terrain
+	// The selected body alone needs an atomic closed-globe fallback. Other members of
+	// the family receive the same treatment when selected; keeping a moon warm queue
+	// active would continually reconfigure the one live WorldScape root.
+	PendingPreviewGlobeBodies.Reset();
 	const FAPSPreviewGlobeProxyState* CachedState = FindPreviewGlobeProxyState(Body);
 	const bool bHasCurrentProxy = CachedState && CachedState->ActiveBuffer != INDEX_NONE;
-	Body->bWorldScapeSurfaceReady = bHasCurrentProxy;
+	Body->bWorldScapeSurfaceReady = false;
 	UpdateActivePreviewGlobeCompatibilityState();
 
 	if (!UAPSPlanetSurfaceProfileResolver::SupportsWorldScape(Body->PlanetType))
 	{
+		PreviewSurfaceBuildBody.Reset();
+		PendingPreviewGlobeBodies.Reset();
+		bPreviewSurfaceUpdatePending = false;
 		InvalidatePreviewGlobeProxy(Body);
-		PendingPreviewGlobeBodies.RemoveAll(
-			[Body](const TWeakObjectPtr<APlanetaryBody>& Candidate)
-			{
-				return Candidate.Get() == Body;
-			});
-		if (!PreviewSurfaceBuildBody.IsValid())
-		{
-			BeginNextQueuedPreviewGlobeBuild();
-		}
 		SetPreviewGlobeProxyVisible(PreviewFocus == EAstroPreviewFocus::HomePlanet);
 		SetPreviewBodyBackingSphereVisible(Body, true);
 		SetActorTickEnabled(bPreviewSurfaceUpdatePending || bPreviewCameraTransitionActive);
@@ -3258,25 +3342,18 @@ void AAstroGenerator::SetPreviewWorldScapeBody(APlanetaryBody* Body)
 
 	if (!bHasCurrentProxy)
 	{
-		// The selected body always preempts a not-yet-started family build. The old
-		// candidate remains queued; no previously committed proxy is hidden or moved.
-		if (APlanetaryBody* InterruptedBody = PreviewSurfaceBuildBody.Get();
-			IsValid(InterruptedBody) && InterruptedBody != Body)
-		{
-			PendingPreviewGlobeBodies.AddUnique(InterruptedBody);
-		}
-		PendingPreviewGlobeBodies.RemoveAll(
-			[Body](const TWeakObjectPtr<APlanetaryBody>& Candidate)
-			{
-				return Candidate.Get() == Body;
-			});
+		// Build a closed fallback first. It remains visible until the selected live
+		// WorldScape root has a complete, validated LOD payload.
 		PreviewSurfaceBuildBody = Body;
 		bPreviewSurfaceUpdatePending = true;
 		Body->bWorldScapeSurfaceReady = false;
 	}
-	else if (!PreviewSurfaceBuildBody.IsValid())
+	else
 	{
-		BeginNextQueuedPreviewGlobeBuild();
+		PreviewSurfaceBuildBody.Reset();
+		// A cached fallback is not the final ready state. Wake the existing live-root
+		// state machine so selection/type changes resolve at full WorldScape detail.
+		bPreviewSurfaceUpdatePending = true;
 	}
 
 	SyncPreviewGlobeProxyTransforms();
@@ -3437,6 +3514,7 @@ bool AAstroGenerator::RefreshPreviewPlanetAppearance(
 		bPreviewSurfaceViewRefreshInFlight = false;
 		bPreviewSurfaceLiveRefresh = false;
 		bPreviewSurfaceRootInitializationPending = false;
+		PreviewSurfaceInitArmedFrame = 0;
 		if (AWorldScapeRoot* PreviewSurface = PersistentPreviewWorldScapeRoot.Get())
 		{
 			PreviewSurface->SetActorHiddenInGame(true);
@@ -3473,7 +3551,15 @@ void AAstroGenerator::UpdatePreviewWorldScape()
 	APlanetaryBody* Body = ActivePreviewWorldScapeBody.Get();
 	AWorldScapeRoot* PreviewSurface = PersistentPreviewWorldScapeRoot.Get();
 	APlanetarySurfaceGenerator* SurfaceGenerator = PersistentPreviewSurfaceGenerator.Get();
-	if (bIsPreviewGeneration)
+	const FAPSPreviewGlobeProxyState* InitialFocusedState =
+		FindPreviewGlobeProxyState(Body);
+	const bool bUseLivePreviewWorldScape = bIsPreviewGeneration
+		&& PreviewFocus == EAstroPreviewFocus::HomePlanet
+		&& IsValid(Body)
+		&& UAPSPlanetSurfaceProfileResolver::SupportsWorldScape(Body->PlanetType)
+		&& InitialFocusedState && InitialFocusedState->ActiveBuffer != INDEX_NONE
+		&& !PreviewSurfaceBuildBody.IsValid();
+	if (bIsPreviewGeneration && !bUseLivePreviewWorldScape)
 	{
 		const auto FreezeProfileRoot = [](AWorldScapeRoot* Root)
 		{
@@ -3527,13 +3613,23 @@ void AAstroGenerator::UpdatePreviewWorldScape()
 		const auto CompleteCurrentBuild = [this, FocusedBody, Body]()
 		{
 			PreviewSurfaceBuildBody.Reset();
-			bPreviewSurfaceUpdatePending = false;
-			const bool bStartedNextBuild = BeginNextQueuedPreviewGlobeBuild();
+			const FAPSPreviewGlobeProxyState* CompletedState =
+				FindPreviewGlobeProxyState(Body);
+			const bool bPromoteSelectedBodyToLive = Body == FocusedBody
+				&& PreviewFocus == EAstroPreviewFocus::HomePlanet
+				&& IsValid(Body)
+				&& UAPSPlanetSurfaceProfileResolver::SupportsWorldScape(Body->PlanetType)
+				&& CompletedState && CompletedState->ActiveBuffer != INDEX_NONE;
+			PendingPreviewGlobeBodies.Reset();
+			bPreviewSurfaceUpdatePending = bPromoteSelectedBodyToLive;
+			const bool bStartedNextBuild = !bPromoteSelectedBodyToLive
+				&& BeginNextQueuedPreviewGlobeBuild();
 			// Family warm-up intentionally reuses one resolver. Once the last moon has
 			// been sampled, restore the resolver/root payload to the editor target without
 			// rebuilding its retained proxy; diagnostics and subsequent edits then observe
 			// the selected body as authoritative.
-			if (!bStartedNextBuild && IsValid(FocusedBody) && FocusedBody != Body
+			if (!bPromoteSelectedBodyToLive && !bStartedNextBuild
+				&& IsValid(FocusedBody) && FocusedBody != Body
 				&& UAPSPlanetSurfaceProfileResolver::SupportsWorldScape(FocusedBody->PlanetType))
 			{
 				if (APlanetarySurfaceGenerator* Resolver = PersistentPreviewSurfaceGenerator.Get())
@@ -3800,6 +3896,12 @@ void AAstroGenerator::UpdatePreviewWorldScape()
 		SetPreviewBodyBackingSphereVisible(Body, false);
 		PreviewSurface->bOverridePlayerPosition = true;
 		PreviewSurface->OverridedPlayerPosition = PendingPreviewSurfaceViewPosition;
+		const double CameraSurfaceAltitude = FMath::Max(
+			FVector::Distance(PendingPreviewSurfaceViewPosition,
+				PreviewSurface->GetActorLocation()) - PreviewSurface->PlanetScale, 0.0);
+		PreviewSurface->HeightAnchor = static_cast<float>(FMath::Clamp(
+			FMath::Max(PreviewSurface->PlanetScale * 2.0, CameraSurfaceAltitude * 1.25),
+			50000.0, 1.0e9));
 		PreviewSurface->bGenerateWorldScape = true;
 		PreviewSurface->bFreezeGeneration = false;
 		PreviewSurface->SetActorTickEnabled(true);
@@ -3812,14 +3914,45 @@ void AAstroGenerator::UpdatePreviewWorldScape()
 		// tick is WorldScape's supported synchronization point: it rebuilds changed base
 		// LODs and enqueues their SetData jobs as one coherent batch. Freeze it before a
 		// second UpdatePosition can run; AstroGenerator owns completion polling below.
+		// The root was enabled from this actor's tick. Actor tick order is not a
+		// synchronization primitive, so wait through a complete subsequent frame;
+		// otherwise retained LODs from the prior body/profile look initialized and
+		// the root is disabled before it ever executes its regeneration tick.
+		// A fresh root needs two plugin ticks. The first creates its base LODs and
+		// CheckForHeightmapModifier only marks HMIForceUpdate at the end of that tick;
+		// the second consumes that flag and queues the resolved-noise SetData workers.
+		// Freezing after one tick leaves ten white/dummy LODs and permanently exposes
+		// the coarse fallback after every subtype or seed change.
+		if (GFrameCounter <= PreviewSurfaceInitArmedFrame + 2)
+		{
+			PreviewSurface->bGenerateWorldScape = true;
+			PreviewSurface->bFreezeGeneration = false;
+			PreviewSurface->SetActorTickEnabled(true);
+			return;
+		}
+
 		const bool bHasInitializedLods = PreviewSurface->WorldScapeLod.Num() > 0;
 		const bool bHasInitializationWorkers =
 			PreviewSurface->WorldScapeLodInGeneration.Num() > 0;
 		if (!bHasInitializedLods && !bHasInitializationWorkers)
 		{
-			PreviewSurface->bGenerateWorldScape = true;
-			PreviewSurface->bFreezeGeneration = false;
-			PreviewSurface->SetActorTickEnabled(true);
+			// Give a slow registration path a small bounded retry window. Keep the
+			// complete procedural fallback visible if the plugin never initializes.
+			if (GFrameCounter <= PreviewSurfaceInitArmedFrame + 8)
+			{
+				PreviewSurface->bGenerateWorldScape = true;
+				PreviewSurface->bFreezeGeneration = false;
+				PreviewSurface->SetActorTickEnabled(true);
+				return;
+			}
+			bPreviewSurfaceRootInitializationPending = false;
+			PreviewSurface->bGenerateWorldScape = false;
+			PreviewSurface->bFreezeGeneration = true;
+			PreviewSurface->SetActorTickEnabled(false);
+			SetPreviewGlobeProxyVisible(PreviewFocus == EAstroPreviewFocus::HomePlanet);
+			UE_LOG(LogTemp, Error,
+				TEXT("[APS.WorldGeneration] Preview WorldScape root failed to initialize body=%s"),
+				*GetNameSafe(Body));
 			return;
 		}
 
@@ -3834,17 +3967,21 @@ void AAstroGenerator::UpdatePreviewWorldScape()
 	{
 		if (bPreviewSurfaceLiveRefresh)
 		{
-			// Let WorldScape's normal tick own UpdatePosition and completion polling.
-			// Its worker map is replaced only after the complete moved batch is ready,
-			// so the previously committed globe remains drawable during the refresh.
+			// Preserve the last complete live mesh while the camera-centred batch
+			// drains. Freeze the producer on mouse release so it cannot immediately
+			// enqueue another stale camera position.
 			PreviewSurface->SetActorHiddenInGame(false);
 			SetPreviewBodyBackingSphereVisible(Body, false);
-			PreviewSurface->bGenerateWorldScape = true;
-			PreviewSurface->bFreezeGeneration = false;
-			PreviewSurface->SetActorTickEnabled(true);
 			if (PreviewSurface->WorldScapeLodInGeneration.Num() > 0)
 			{
-				return;
+				PreviewSurface->bGenerateWorldScape = true;
+				PreviewSurface->bFreezeGeneration = true;
+				PreviewSurface->SetActorTickEnabled(false);
+				PreviewSurface->CheckForLodGeneration();
+				if (PreviewSurface->WorldScapeLodInGeneration.Num() > 0)
+				{
+					return;
+				}
 			}
 		}
 		else
@@ -3877,6 +4014,12 @@ void AAstroGenerator::UpdatePreviewWorldScape()
 		SetPreviewBodyBackingSphereVisible(Body, false);
 		PreviewSurface->bOverridePlayerPosition = true;
 		PreviewSurface->OverridedPlayerPosition = PendingPreviewSurfaceViewPosition;
+		const double CameraSurfaceAltitude = FMath::Max(
+			FVector::Distance(PendingPreviewSurfaceViewPosition,
+				PreviewSurface->GetActorLocation()) - PreviewSurface->PlanetScale, 0.0);
+		PreviewSurface->HeightAnchor = static_cast<float>(FMath::Clamp(
+			FMath::Max(PreviewSurface->PlanetScale * 2.0, CameraSurfaceAltitude * 1.25),
+			50000.0, 1.0e9));
 		PreviewSurface->bGenerateWorldScape = true;
 		PreviewSurface->bFreezeGeneration = false;
 		PreviewSurface->SetActorTickEnabled(true);
@@ -3905,6 +4048,7 @@ void AAstroGenerator::UpdatePreviewWorldScape()
 				PreviewSurface->WorldScapeLodInGeneration.Num() > 0;
 		}
 		PreviewSurface->SetActorHiddenInGame(false);
+		SetPreviewGlobeProxyVisible(PreviewFocus == EAstroPreviewFocus::HomePlanet);
 		SetPreviewBodyBackingSphereVisible(Body, false);
 		if (IsValid(Body->PlanetaryEnvironmentGenerator)
 			&& IsValid(Body->PlanetaryEnvironmentGenerator->PlanetAtmosphere))
@@ -3917,6 +4061,7 @@ void AAstroGenerator::UpdatePreviewWorldScape()
 	if (bPreviewSurfaceUpdatePending)
 	{
 		PreviewSurface->SetActorHiddenInGame(true);
+		SetPreviewGlobeProxyVisible(PreviewFocus == EAstroPreviewFocus::HomePlanet);
 		if (PreviewSurface->WorldScapeLodInGeneration.Num() > 0)
 		{
 			// Consume completed results directly without running WorldScape's actor tick.
@@ -3937,11 +4082,139 @@ void AAstroGenerator::UpdatePreviewWorldScape()
 			Body->GetComponentByClass(UStaticMeshComponent::StaticClass()));
 		if (!IsValid(BodyMesh)) return;
 		BodyMesh->UpdateBounds();
-		const double VisualRadiusCm = BodyMesh->Bounds.SphereRadius;
+		FVector PresentedBodyCenter = BodyMesh->Bounds.Origin;
+		double VisualRadiusCm = BodyMesh->Bounds.SphereRadius;
+		GetPreviewPresentationLocation(Body, PresentedBodyCenter);
+		GetPreviewPresentationRadius(Body, VisualRadiusCm);
 		const double PhysicalRadiusCm = FMath::Max(
 			Body->RadiusKM, static_cast<double>(Body->PlanetRadiusKM)) * 100000.0;
 		Body->WorldScapePresentationScale = FMath::Clamp(
 			VisualRadiusCm / FMath::Max(PhysicalRadiusCm, 1.0), 1.0e-9, 1.0);
+		PreviewSurface->SetActorLocation(PresentedBodyCenter);
+		PreviewSurface->SetActorRotation(Body->GetActorRotation());
+		PreviewSurface->SetActorScale3D(FVector::OneVector);
+		const FVector PreviewViewPosition = bPreviewCameraTransitionActive
+			? PreviewCameraTargetTransform.GetLocation()
+			: IsValid(PreviewCamera) ? PreviewCamera->GetComponentLocation()
+				: PresentedBodyCenter + FVector(PreviewSurface->PlanetScale * 2.0, 0.0, 0.0);
+		PreviewSurface->bOverridePlayerPosition = true;
+		PreviewSurface->OverridedPlayerPosition = PreviewViewPosition;
+
+		// Returning from SYSTEM/CLUSTER to the same unchanged body must reveal the
+		// resident, already committed WorldScape payload. Reapplying the same profile
+		// here forced a second full async generation and could strand WorldScape 5.4's
+		// worker batch. Profile edits deliberately fail this predicate and continue to
+		// the normal atomic regeneration path below.
+		const FVector DesiredResidentNormal =
+			PreviewSurface->WorldToECEF(PreviewViewPosition).ToFVector().GetSafeNormal();
+		int32 ResidentTerrainLods = 0;
+		for (const UWorldScapeLod* Lod : PreviewSurface->WorldScapeLod)
+		{
+			if (APSWorldScapePayloadValidation::HasCompleteCenteredPayload(
+				Lod, DesiredResidentNormal, true))
+			{
+				++ResidentTerrainLods;
+			}
+		}
+		int32 ResidentOceanLods = 0;
+		for (const UWorldScapeLod* Lod : PreviewSurface->WorldScapeLodOcean)
+		{
+			if (APSWorldScapePayloadValidation::HasCompleteCenteredPayload(
+				Lod, DesiredResidentNormal, false))
+			{
+				++ResidentOceanLods;
+			}
+		}
+		const bool bResidentOceanReady = !PreviewSurface->bOcean
+			|| (PreviewSurface->WorldScapeLodOcean.Num() > 0
+				&& ResidentOceanLods == PreviewSurface->WorldScapeLodOcean.Num());
+		const bool bCanReuseResidentSurface = SurfaceGenerator->PlanetaryBody == Body
+			&& SurfaceGenerator->IsSurfaceProfileCurrent(Body)
+			&& !SurfaceGenerator->IsSurfaceProfileApplyPending()
+			&& PreviewSurface->WorldScapeLodInGeneration.Num() == 0
+			&& PreviewSurface->MaxLod >= 10
+			&& PreviewSurface->LodResolution >= 96
+			&& PreviewSurface->TriangleSize <= 180.0f
+			&& PreviewSurface->WorldScapeLod.Num() >= PreviewSurface->MaxLod
+			&& ResidentTerrainLods == PreviewSurface->WorldScapeLod.Num()
+			&& bResidentOceanReady;
+		if (bCanReuseResidentSurface)
+		{
+			bPreviewSurfaceRootInitializationPending = false;
+			bPreviewSurfaceViewRefreshInFlight = false;
+			bPreviewSurfaceLiveRefresh = false;
+			PreviewSurfaceInitArmedFrame = 0;
+			PreviewSurface->bGenerateWorldScape = false;
+			PreviewSurface->bFreezeGeneration = true;
+			PreviewSurface->SetActorTickEnabled(false);
+			const bool bCanShowResidentSurface = !bPreviewCameraTransitionActive;
+			// Keep this request pending until the camera reaches its final focus. Tick
+			// computes its continuation state after UpdatePreviewWorldScape; clearing the
+			// request during the transition would stop the actor one frame too early and
+			// leave the valid resident root hidden forever.
+			bPreviewSurfaceUpdatePending = !bCanShowResidentSurface;
+			Body->bWorldScapeSurfaceReady = bCanShowResidentSurface;
+			PreviewSurface->SetActorHiddenInGame(!bCanShowResidentSurface);
+			SetPreviewGlobeProxyVisible(PreviewFocus == EAstroPreviewFocus::HomePlanet);
+			SetPreviewBodyBackingSphereVisible(Body, false);
+			if (IsValid(Body->PlanetaryEnvironmentGenerator)
+				&& IsValid(Body->PlanetaryEnvironmentGenerator->PlanetAtmosphere))
+			{
+				Body->PlanetaryEnvironmentGenerator->PlanetAtmosphere->SetActorHiddenInGame(false);
+			}
+			if (bCanShowResidentSurface)
+			{
+				UE_LOG(LogTemp, Display,
+					TEXT("[APS.WorldGeneration] Reused resident preview WorldScape body=%s terrain=%d/%d ocean=%d/%d"),
+					*GetNameSafe(Body), ResidentTerrainLods, PreviewSurface->WorldScapeLod.Num(),
+					ResidentOceanLods, PreviewSurface->WorldScapeLodOcean.Num());
+			}
+			SetActorTickEnabled(!bCanShowResidentSurface);
+			return;
+		}
+
+		// WorldScape 5.4 does not reliably complete a second ForceRegenerate batch on
+		// an already populated planetary root (the same root can remain busy forever
+		// after an otherwise valid profile switch). The worker map is proven empty at
+		// the top of this branch, so retire only that drained root and create a clean
+		// producer. The closed selected-body proxy remains the atomic visible fallback.
+		const bool bReplacePopulatedRoot = PreviewSurface->WorldScapeLod.Num() > 0
+			|| PreviewSurface->WorldScapeLodOcean.Num() > 0;
+		if (bReplacePopulatedRoot)
+		{
+			// Keep destruction and per-root profile cleanup atomic. In particular, never
+			// clear the generator pointer before AActor::Destroy has accepted the drained
+			// root: that creates a hidden orphan which can later overlap a new producer.
+			if (!SurfaceGenerator->ReplaceDrainedRuntimeWorldScapeRoot(Body)
+				|| !IsValid(SurfaceGenerator->WorldScapeRootInstance))
+			{
+				bPreviewSurfaceUpdatePending = false;
+				Body->bWorldScapeSurfaceReady = false;
+				SetPreviewGlobeProxyVisible(PreviewFocus == EAstroPreviewFocus::HomePlanet);
+				SetPreviewBodyBackingSphereVisible(Body, false);
+				SetActorTickEnabled(bPreviewCameraTransitionActive);
+				UE_LOG(LogTemp, Error,
+					TEXT("[APS.WorldGeneration] Failed to replace drained preview WorldScape root body=%s"),
+					*GetNameSafe(Body));
+				return;
+			}
+
+			PreviewSurface = SurfaceGenerator->WorldScapeRootInstance;
+			PersistentPreviewWorldScapeRoot = PreviewSurface;
+			PreviewSurface->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+			PreviewSurface->SetOwner(this);
+			SurfaceGenerator->bOwnsWorldScapeRootInstance = false;
+			PreviewSurface->SetActorLocation(PresentedBodyCenter);
+			PreviewSurface->SetActorRotation(Body->GetActorRotation());
+			PreviewSurface->SetActorScale3D(FVector::OneVector);
+			PreviewSurface->bOverridePlayerPosition = true;
+			PreviewSurface->OverridedPlayerPosition = PreviewViewPosition;
+			PreviewSurface->SetActorHiddenInGame(true);
+			PreviewSurface->SetActorEnableCollision(false);
+			UE_LOG(LogTemp, Display,
+				TEXT("[APS.WorldGeneration] Replaced drained preview WorldScape root body=%s"),
+				*GetNameSafe(Body));
+		}
 
 		SurfaceGenerator->PlanetaryBody = Body;
 		const uint32 PreviousProfileSignature = SurfaceGenerator->AppliedSurfaceProfileSignature;
@@ -3966,24 +4239,32 @@ void AAstroGenerator::UpdatePreviewWorldScape()
 			PreviewSurface->bFreezeGeneration = true;
 			PreviewSurface->SetActorTickEnabled(false);
 			PreviewSurface->SetActorHiddenInGame(true);
-			SetPreviewBodyBackingSphereVisible(Body, true);
+			const FAPSPreviewGlobeProxyState* FallbackState =
+				FindPreviewGlobeProxyState(Body);
+			const bool bHasFallback = FallbackState
+				&& FallbackState->ActiveBuffer != INDEX_NONE;
+			Body->bWorldScapeSurfaceReady = bHasFallback;
+			SetPreviewGlobeProxyVisible(PreviewFocus == EAstroPreviewFocus::HomePlanet);
+			SetPreviewBodyBackingSphereVisible(Body, !bHasFallback);
 			if (IsValid(Body->PlanetaryEnvironmentGenerator)
 				&& IsValid(Body->PlanetaryEnvironmentGenerator->PlanetAtmosphere))
 			{
 				Body->PlanetaryEnvironmentGenerator->PlanetAtmosphere->SetActorHiddenInGame(false);
 			}
-			ActivePreviewWorldScapeBody.Reset();
+			SetActorTickEnabled(bPreviewCameraTransitionActive);
 			return;
 		}
-		// Index 7 was only ~2.76e6 cm across for a 2.4e6 cm preview globe and left
-		// almost no tangent/horizon padding, producing a visibly torn silhouette.
-		// Index 8 (~5.53e6 cm) is the smallest bounded ring that covers the full disc.
-		PreviewSurface->MaxLod = 9;
-		PreviewSurface->LodResolution = 48;
-		PreviewSurface->TriangleSize = 450.0f;
+		Body->bWorldScapeSurfaceReady = false;
+		// PLANET is the inspection scope, not the lightweight hierarchy glyph. Use the
+		// same terrain/ocean mesh density as a full-size streamed planet, while keeping
+		// collision/foliage disabled and only one selected root alive. This restores the
+		// orbital surface detail lost when the menu used half-resolution 48/32 patches.
+		PreviewSurface->MaxLod = 10;
+		PreviewSurface->LodResolution = 96;
+		PreviewSurface->TriangleSize = 180.0f;
 		PreviewSurface->OceanMaxLod = 9;
-		PreviewSurface->OceanLodResolution = 32;
-		PreviewSurface->OceanTriangleSize = 650.0f;
+		PreviewSurface->OceanLodResolution = 64;
+		PreviewSurface->OceanTriangleSize = 260.0f;
 		// This is a visual orbital preview: collision, foliage and volume sampling
 		// cannot contribute to the image, but WorldScape enables them by default and
 		// otherwise spends most of the entry hitch building invisible gameplay data.
@@ -3992,34 +4273,83 @@ void AAstroGenerator::UpdatePreviewWorldScape()
 		PreviewSurface->bGenerateFoliages = false;
 		PreviewSurface->bEnableVolumes = false;
 		PreviewSurface->EnabledGrid = false;
-		PreviewSurface->bGenerateTangents = false;
+		// The full WorldScape materials use terrain normals at orbital scale. The cheap
+		// radial tangent basis removes much of that relief and makes a dense mesh still
+		// look blurred/low-poly. Tangents cost only during the bounded async rebuild;
+		// the ready root is frozen, so retain the visual-quality path in PLANET mode.
+		PreviewSurface->bGenerateTangents = true;
 		// WorldScape's editor-only distance check ignores bOverridePlayerPosition and
 		// can freeze a PIE preview against the editor viewport camera. Zero disables
 		// only that automatic freeze; explicit focus changes still freeze the proxy.
 		PreviewSurface->DistanceToFreezeGeneration = 0.0f;
-		PreviewSurface->SetActorLocation(BodyMesh->Bounds.Origin);
-		PreviewSurface->SetActorRotation(Body->GetActorRotation());
-		PreviewSurface->SetActorScale3D(FVector::OneVector);
+		const double CameraSurfaceAltitude = FMath::Max(
+			FVector::Distance(PreviewViewPosition, PresentedBodyCenter)
+				- PreviewSurface->PlanetScale, 0.0);
+		// WorldScape adds round(log2(altitude / HeightAnchor)) to every mesh LOD. Its
+		// default 50k anchor made a normal orbital camera silently request LOD +5, so even
+		// a denser patch rendered like a coarse polygon. Keep the orbital
+		// altitude in the native LOD bucket and let MaxLod provide horizon coverage.
+		PreviewSurface->HeightAnchor = static_cast<float>(FMath::Clamp(
+			FMath::Max(PreviewSurface->PlanetScale * 2.0, CameraSurfaceAltitude * 1.25),
+			50000.0, 1.0e9));
 		PreviewSurface->SetActorEnableCollision(false);
 		// At this point the worker map is proven empty by the drain guard above. Give
 		// WorldScape exactly one normal tick so its own CheckForRegenerate ->
 		// GenerateBaseMesh -> UpdatePosition ordering creates the new profile safely.
-		// Never call WS_ForceRegenerate here: it can CleanComponents while an async
-		// SetData completion is crossing threads in WorldScape 5.4.
+		// Never call WS_ForceRegenerate while a worker is active: it can CleanComponents
+		// while an async SetData completion is crossing threads in WorldScape 5.4.
 		PreviewSurface->bGenerateWorldScape = true;
 		PreviewSurface->bFreezeGeneration = false;
+		// A retained empty root needs an explicit rebuild even when two profiles
+		// quantize to the same public settings. A replacement root is already fresh:
+		// its first tick builds from init=false, and ForceRegenerate would immediately
+		// clean/build that same base mesh a second time before scheduling workers.
+		if (bReplacePopulatedRoot)
+		{
+			// Seed WorldScape's private Prev_* snapshot after the complete profile and
+			// preview LOD budget have been applied. The fresh root still performs its
+			// normal init=false build, but the same tick no longer sees every configured
+			// value as a second change and immediately destroys/rebuilds that payload.
+			PreviewSurface->ForceRegenerate = false;
+			PreviewSurface->CheckForRegenerate(true);
+		}
+		else
+		{
+			PreviewSurface->ForceRegenerate = true;
+		}
 		PreviewSurface->SetActorTickEnabled(true);
 		bPreviewSurfaceRootInitializationPending = true;
+		PreviewSurfaceInitArmedFrame = GFrameCounter;
 		bPreviewSurfaceUpdatePending = false;
 		UE_LOG(LogTemp, Log,
-			TEXT("[APS.WorldGeneration] Persistent preview WorldScape body=%s scale=%.3e"),
-			*GetNameSafe(Body), Body->WorldScapePresentationScale);
+			TEXT("[APS.WorldGeneration] Persistent preview WorldScape body=%s scale=%.3e terrain=%dx%d@%.0f heightAnchor=%.0f"),
+			*GetNameSafe(Body), Body->WorldScapePresentationScale,
+			PreviewSurface->MaxLod, PreviewSurface->LodResolution,
+			PreviewSurface->TriangleSize, PreviewSurface->HeightAnchor);
 		// The root now owns its single initialization tick. Do not inspect/show the old
 		// LOD payload from the previous subtype during this hand-off frame.
 		return;
 	}
 
-	const bool bWorkersInFlight = PreviewSurface->WorldScapeLodInGeneration.Num() > 0;
+	bool bWorkersInFlight = PreviewSurface->WorldScapeLodInGeneration.Num() > 0;
+	if (bWorkersInFlight)
+	{
+		// SetData writes the LOD payload from WorldScape's worker completion path.
+		// Do not inspect terrain or ocean arrays until that entire batch is drained.
+		PreviewSurface->bGenerateWorldScape = true;
+		PreviewSurface->bFreezeGeneration = true;
+		PreviewSurface->SetActorTickEnabled(false);
+		PreviewSurface->CheckForLodGeneration();
+		bWorkersInFlight = PreviewSurface->WorldScapeLodInGeneration.Num() > 0;
+		if (bWorkersInFlight)
+		{
+			return;
+		}
+		// CheckForLodGeneration just committed the final worker payload. Validate and
+		// reveal it in this same generator tick: returning here lets Tick disable this
+		// actor with a complete but still-hidden root and leaves the coarse fallback on
+		// screen forever after a subtype/seed change.
+	}
 	const FVector DesiredSurfaceNormal = PreviewSurface->WorldToECEF(
 		PreviewSurface->OverridedPlayerPosition).ToFVector().GetSafeNormal();
 	int32 ExistingTerrainLods = 0;
@@ -4035,15 +4365,12 @@ void AAstroGenerator::UpdatePreviewWorldScape()
 			continue;
 		}
 		++ExistingTerrainLods;
-		if (!bWorkersInFlight)
+		const bool bHasGeneratedVertexData =
+			APSWorldScapePayloadValidation::HasCompleteCenteredPayload(
+				Lod, DesiredSurfaceNormal, true);
+		if (bHasGeneratedVertexData)
 		{
-			const bool bHasGeneratedVertexData =
-				APSWorldScapePayloadValidation::HasCompleteCenteredPayload(
-					Lod, DesiredSurfaceNormal, true);
-			if (bHasGeneratedVertexData)
-			{
-				++ReadyTerrainLods;
-			}
+			++ReadyTerrainLods;
 		}
 	}
 	const int32 RequiredTerrainLods = PreviewSurface->WorldScapeLod.Num();
@@ -4063,7 +4390,6 @@ void AAstroGenerator::UpdatePreviewWorldScape()
 	const bool bProfileCurrent = IsValid(SurfaceGenerator)
 		&& SurfaceGenerator->IsSurfaceProfileCurrent(Body);
 	const bool bSurfaceReady = !bPreviewSurfaceUpdatePending
-		&& !bWorkersInFlight
 		&& !bPreviewCameraTransitionActive
 		&& bProfileCurrent
 		&& RequiredTerrainLods >= PreviewSurface->MaxLod
@@ -4075,6 +4401,7 @@ void AAstroGenerator::UpdatePreviewWorldScape()
 	// Atomic hand-off: keep the fallback until the resolved-noise vertex payload is
 	// committed on a bounded terrain set and the current worker batch is idle.
 	PreviewSurface->SetActorHiddenInGame(!bSurfaceReady);
+	SetPreviewGlobeProxyVisible(PreviewFocus == EAstroPreviewFocus::HomePlanet);
 	if (bSurfaceReady && !bWasSurfaceReady)
 	{
 		UE_LOG(LogTemp, Log,
@@ -4631,6 +4958,7 @@ void AAstroGenerator::BeginPreviewCameraOrbit()
 	bPreviewSurfaceViewDirty = false;
 	PendingPreviewSurfaceViewPosition = PreviewCamera->GetComponentLocation();
 	SetPreviewGlobeProxyVisible(true);
+	SetActorTickEnabled(true);
 }
 
 void AAstroGenerator::EndPreviewCameraOrbit()
@@ -4641,9 +4969,25 @@ void AAstroGenerator::EndPreviewCameraOrbit()
 	}
 
 	bPreviewCameraOrbitDragging = false;
-	bPreviewSurfaceViewDirty = false;
-	bPreviewSurfaceViewRefreshInFlight = false;
-	bPreviewSurfaceLiveRefresh = false;
+	if (IsValid(PreviewCamera) && ActivePreviewWorldScapeBody.IsValid())
+	{
+		// Mouse-up can arrive before AstroGenerator sees the final drag delta. Preserve
+		// the exact released camera and schedule one bounded final WorldScape refresh.
+		PendingPreviewSurfaceViewPosition = PreviewCamera->GetComponentLocation();
+		bPreviewSurfaceViewDirty = true;
+		if (AWorldScapeRoot* PreviewSurface = PersistentPreviewWorldScapeRoot.Get())
+		{
+			const bool bHasWorkers =
+				PreviewSurface->WorldScapeLodInGeneration.Num() > 0;
+			bPreviewSurfaceViewRefreshInFlight =
+				bPreviewSurfaceViewRefreshInFlight || bHasWorkers;
+			bPreviewSurfaceLiveRefresh = bPreviewSurfaceViewRefreshInFlight;
+			PreviewSurface->bFreezeGeneration = true;
+			PreviewSurface->SetActorTickEnabled(false);
+			PreviewSurface->bGenerateWorldScape = bHasWorkers;
+		}
+		SetActorTickEnabled(true);
+	}
 	SetPreviewGlobeProxyVisible(ActivePreviewWorldScapeBody.IsValid());
 }
 
@@ -4716,10 +5060,12 @@ void AAstroGenerator::ZoomPreviewCamera(float WheelDelta)
 	if (PreviewFocus == EAstroPreviewFocus::HomePlanet
 		&& ActivePreviewWorldScapeBody.IsValid())
 	{
-		// The closed globe has no altitude or camera-normal LOD bucket. Wheel zoom only
-		// moves the camera; it never invalidates geometry or starts a worker.
+		// Re-centre the single live WorldScape patch at the new orbital altitude. The
+		// committed surface stays visible until WorldScape atomically replaces the batch.
 		PendingPreviewSurfaceViewPosition = NewLocation;
+		bPreviewSurfaceViewDirty = true;
 		SetPreviewGlobeProxyVisible(true);
+		SetActorTickEnabled(true);
 	}
 }
 
