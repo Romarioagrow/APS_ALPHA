@@ -1,5 +1,6 @@
 #include "APSFixStarHISMMaterialCommandlet.h"
 
+#if WITH_EDITOR
 #include "MaterialEditingLibrary.h"
 #include "MaterialDomain.h"
 #include "Materials/Material.h"
@@ -12,6 +13,7 @@
 #include "UObject/SavePackage.h"
 #include "UObject/UnrealType.h"
 #include "UObject/UObjectGlobals.h"
+#endif
 
 DEFINE_LOG_CATEGORY_STATIC(LogAPSStarMaterialFix, Log, All);
 
@@ -177,13 +179,13 @@ namespace APSStellarMaterial
 		UMaterialExpressionScalarParameter* SurfaceSeed = AddScalarParameter(
 			Material, TEXT("SurfaceSeed"), 0.371f, 0.0f, 1.0f, -1250, -420, 2);
 		UMaterialExpressionScalarParameter* SurfaceVariation = AddScalarParameter(
-			Material, TEXT("SurfaceVariation"), 0.40f, 0.0f, 1.0f, -1250, -320, 3);
+			Material, TEXT("SurfaceVariation"), 0.44f, 0.0f, 1.0f, -1250, -320, 3);
 		UMaterialExpressionScalarParameter* GranulationStrength = AddScalarParameter(
-			Material, TEXT("GranulationStrength"), 0.46f, 0.0f, 1.0f, -1250, -220, 4);
+			Material, TEXT("GranulationStrength"), 0.56f, 0.0f, 1.0f, -1250, -220, 4);
 		UMaterialExpressionScalarParameter* SpotStrength = AddScalarParameter(
-			Material, TEXT("SpotStrength"), 0.58f, 0.0f, 1.0f, -1250, -120, 5);
+			Material, TEXT("SpotStrength"), 0.50f, 0.0f, 1.0f, -1250, -120, 5);
 		UMaterialExpressionScalarParameter* CoronaStrength = AddScalarParameter(
-			Material, TEXT("CoronaStrength"), 0.44f, 0.0f, 1.5f, -1250, -20, 6);
+			Material, TEXT("CoronaStrength"), 0.16f, 0.0f, 0.45f, -1250, -20, 6);
 
 		// UE 5.4 declares these expression classes without ENGINE_API. Referencing
 		// their StaticClass symbols from a game module links on some source builds but
@@ -203,15 +205,17 @@ namespace APSStellarMaterial
 			TEXT("/Script/Engine.MaterialExpressionWorldPosition"), -950, -60);
 		UMaterialExpression* ObjectPosition = AddReflectedExpression(Material,
 			TEXT("/Script/Engine.MaterialExpressionObjectPositionWS"), -950, 30);
+		UMaterialExpression* GameTime = AddReflectedExpression(Material,
+			TEXT("/Script/Engine.MaterialExpressionTime"), -950, 120);
 		UMaterialExpressionCameraVectorWS* Camera =
-			AddExpression<UMaterialExpressionCameraVectorWS>(Material, -950, 120);
+			AddExpression<UMaterialExpressionCameraVectorWS>(Material, -950, 210);
 		UMaterialExpressionCustom* StellarSurface =
 			AddExpression<UMaterialExpressionCustom>(Material, -450, -320);
 
 		if (!Color || !Multiplier || !SurfaceSeed || !SurfaceVariation || !GranulationStrength
 			|| !SpotStrength || !CoronaStrength || !InstanceColor || !InstanceEmission
 			|| !InstanceSeed || !SystemHighlight || !Normal || !WorldPosition
-			|| !ObjectPosition || !Camera || !StellarSurface)
+			|| !ObjectPosition || !GameTime || !Camera || !StellarSurface)
 		{
 			return false;
 		}
@@ -235,11 +239,12 @@ namespace APSStellarMaterial
 		StellarSurface->Description = TEXT("APS unified scale-independent stellar surface");
 		StellarSurface->OutputType = CMOT_Float3;
 		// A fresh Custom node owns one unnamed placeholder input in UE 5.4.
-		// Canonicalize it before appending the fifteen explicit stellar inputs.
+		// Canonicalize it before appending the sixteen explicit stellar inputs.
 		StellarSurface->Inputs.Reset();
-		StellarSurface->Code = TEXT(R"APSSTELLAR(
+		const FString StellarPatternCode = TEXT(R"APSSTELLAR(
 float instanceEnergy = abs(InstanceColor.r) + abs(InstanceColor.g) + abs(InstanceColor.b);
 float useInstance = step(0.0001, instanceEnergy);
+float actorDetail = 1.0 - useInstance;
 float3 spectralColor = max(lerp(ParamColor.rgb, InstanceColor.rgb, useInstance), 0.001);
 float rawEmission = max(lerp(ParamEmission, InstanceEmission, useInstance), 0.0);
 float seed = frac(lerp(ParamSeed, InstanceSeed, useInstance));
@@ -312,58 +317,113 @@ float spotCore = smoothstep(0.67, 0.80, magneticField)
                * saturate(0.76 + microGranules * 0.24);
 float spotHalo = saturate(smoothstep(0.54, 0.68, magneticField)
                - smoothstep(0.68, 0.82, magneticField));
+)APSSTELLAR");
+		const FString StellarLightingCode = TEXT(R"APSSTELLAR(
 
-// Materialized stars and far HISM proxies both use the generator's stable 100..500
-// visual-emission range. Normalise that useful interval instead of treating even
-// the dimmest star as 74% active, which made every spectral class clip to white.
+// Materialized stars use the generator's stable 100..500 range. Far HISM proxies
+// may be energy-prefiltered far below 100, and the deep hierarchy deliberately
+// caps them at 6/12/24. Give the two paths separate logarithmic response curves so
+// those caps remain ordered instead of collapsing to one bright activity floor.
 float logEmission = log2(1.0 + rawEmission);
-float emissionActivity = saturate((logEmission - 6.65) / 2.32);
-float variation = saturate(Variation + useInstance * emissionActivity * 0.08);
+float actorActivity = saturate((logEmission - 6.65) / 2.32);
+float proxyActivity = saturate(logEmission / 8.97);
+float emissionActivity = lerp(actorActivity, proxyActivity, useInstance);
+// Distant HISM points intentionally discard alias-prone spatial contrast. Their
+// one-pixel representation keeps emission hierarchy and spectral colour, while the
+// materialized actor receives the complete procedural photosphere.
+float variation = saturate(Variation);
 float granuleRidges = (smoothstep(0.31, 0.69, microGranules * 0.5 + 0.5)
                      - 0.5) * 2.0;
-float granulation = (mesoCells * 0.34 + granuleRidges * 0.66)
-                  * Granulation * 0.26;
-float spots = spotCore * SpotAmount * lerp(0.72, 1.0, emissionActivity);
-float faculae = spotHalo * (0.075 + variation * 0.14);
-float surface = max(0.22, 1.0 + macroConvection * variation * 0.27
-                           + granulation + faculae - spots * 0.70);
+float granulation = (mesoCells * 0.40 + granuleRidges * 0.60)
+                  * Granulation * 0.33 * actorDetail;
+float spots = spotCore * SpotAmount * lerp(0.72, 1.0, emissionActivity)
+            * actorDetail;
+float faculae = spotHalo * (0.075 + variation * 0.14) * actorDetail;
+float surface = max(0.24, 1.0 + macroConvection * variation * 0.31 * actorDetail
+                           + granulation + faculae - spots * 0.68);
 
 // Limb darkening gives the disc volume.  The edge is brighter only in sparse
 // magnetic lobes, so post-process bloom reads as a soft corona with occasional
 // prominence hints rather than one large opaque halo.
-float limb = lerp(0.54, 1.03, pow(facing, 0.38));
-float rim = pow(1.0 - facing, 2.65);
+float limb = lerp(0.22, 1.0, pow(facing, 0.62));
+float rim = pow(1.0 - facing, 4.0);
 float prominenceField = 0.5 + 0.30 * sin(dot(n, float3(0.707, -0.236, 0.667)) * 17.0 + phase * 1.43)
                             + 0.20 * sin(dot(n, float3(-0.324, 0.811, 0.487)) * 31.0 - phase * 2.21);
 float prominenceMask = smoothstep(0.77, 0.93, prominenceField);
-float corona = CoronaAmount * rim * (0.26 + prominenceMask * 0.74)
+float resolvedProminence = prominenceMask * actorDetail;
+float corona = CoronaAmount * rim * (0.12 + resolvedProminence * 0.88)
              * (1.0 + saturate(SystemMarker) * 0.08);
 
-// Tone-safe compression is intentionally bounded.  The old 13..31 emissive
-// range was inevitably mapped to a featureless white disc, while 0.78..1.48
-// produced a dull non-stellar sphere with almost no bloom.  This moderate band
-// keeps spectral hue, granulation and spots readable while restoring a compact
-// halo at STAR/SYSTEM scale.
-float toneSafeEmission = lerp(1.15, 2.35, emissionActivity)
-                       * lerp(1.0, 1.18, useInstance);
+// A seeded two-frequency pulse keeps close stars alive without swimming the
+// surface coordinates. Far HISM points receive exactly zero temporal modulation,
+// preventing a cluster from sparkling while preserving its spectral response.
+float flickerPhase = GameTime * lerp(0.34, 0.49, seed) + phase;
+float flickerSignal = sin(flickerPhase) * 0.68
+                    + sin(flickerPhase * 0.413 + phase * 1.73) * 0.32;
+float flickerAmplitude = actorDetail * 0.012
+                       * lerp(0.72, 1.0, saturate(CoronaAmount));
+float temporalFlicker = 1.0 + flickerSignal * flickerAmplitude;
+
+// Tone-safe compression is intentionally bounded. Actor stars retain enough
+// headroom for readable granulation; HISM energy starts close to black and rises
+// logarithmically so proxy enlargement and the 6/12/24 caps have visible effect.
+float actorTone = lerp(0.78, 1.42, actorActivity);
+float proxyTone = lerp(0.08, 1.42, proxyActivity) * 1.03;
+float toneSafeEmission = lerp(actorTone, proxyTone, useInstance);
 float maxSpectral = max(max(spectralColor.r, spectralColor.g), spectralColor.b);
-float3 spectralTint = spectralColor / max(maxSpectral, 0.001);
-// Normalising preserves hue, while this visibility term keeps brown dwarfs dim
-// and prevents the deliberately near-black BH class from becoming a blue star.
-float spectralVisibility = lerp(0.08, 1.0, smoothstep(0.02, 0.55, maxSpectral));
-float3 quietTint = lerp(spectralTint * spectralTint, spectralTint, 0.74)
+float3 normalizedSpectralTint = spectralColor / max(maxSpectral, 0.001);
+// Partial normalization retains authored substellar brightness instead of making
+// every class equally bright. The explicit validity mask prevents the deliberately
+// near-black BH palette from being resurrected by spectral highlights or faculae.
+float3 spectralTint = lerp(spectralColor, normalizedSpectralTint, 0.55);
+float validStellarSpectrum = step(0.01, maxSpectral);
+float spectralVisibility = smoothstep(0.08, 0.90, maxSpectral)
+                         * validStellarSpectrum;
+float3 quietTint = lerp(spectralTint * spectralTint, spectralTint, 0.64)
                  * spectralVisibility;
-float cellHeat = saturate(granuleRidges * 0.5 + 0.5);
-float3 hotGranuleTint = lerp(quietTint * 1.04, float3(1.0, 1.0, 1.0), 0.09);
-float3 surfaceTint = lerp(quietTint * 0.82,
-                          hotGranuleTint, cellHeat * 0.34);
-surfaceTint = lerp(surfaceTint, quietTint * 0.20, saturate(spots * 1.18));
+float cellHeat = lerp(0.5, saturate(granuleRidges * 0.5 + 0.5), actorDetail);
+float3 spectralHighlightTint = normalizedSpectralTint * spectralVisibility;
+float3 hotGranuleTint = lerp(quietTint * 1.03,
+                             spectralHighlightTint * 1.08, 0.10);
+float3 surfaceTint = lerp(quietTint * 0.68,
+                          hotGranuleTint, cellHeat * 0.52);
+surfaceTint = lerp(surfaceTint, quietTint * 0.30, saturate(spots * 1.12));
 surfaceTint = lerp(surfaceTint,
-                   lerp(quietTint, float3(1.0, 1.0, 1.0), 0.38),
-                   saturate(faculae * 1.80));
-float visibleSurface = max(surface * limb + corona, 0.08);
-return surfaceTint * toneSafeEmission * visibleSurface;
+                   spectralHighlightTint * 1.08,
+                   saturate(faculae * 1.70));
+
+// Sparse actor-only highlights cross the HDR threshold without lifting the whole
+// disc. Their stationary cell mask preserves the procedural pattern while a local,
+// spatially phased pulse produces jewel-like twinkle. HISM points deliberately get
+// no additional lift, so galaxy and cluster hierarchy samples remain stable.
+float jewelMask = smoothstep(0.74, 0.94, cellHeat)
+                * lerp(0.45, 1.0, saturate(faculae * 5.0));
+float jewelPhase = GameTime * lerp(1.35, 1.85, seed)
+                 + phase * 0.61
+                 + mesoCells * 4.0;
+float jewelPulse = 0.5 + 0.5 * sin(jewelPhase);
+float jewelLift = actorDetail * jewelMask
+                * lerp(0.11, 0.21, jewelPulse);
+// A second sparse signal sits outside the limb-darkened photosphere but remains
+// inside the opaque sphere. Bloom turns these coloured magnetic lobes into a
+// compact jewel rim without ever adding literal white or destabilising HISM.
+float rimJewelMask = actorDetail * rim
+                   * lerp(0.18, 1.0, prominenceMask);
+float rimJewelLift = rimJewelMask
+                   * lerp(0.025, 0.075, jewelPulse);
+
+float visibleSurface = max(surface * limb + corona, 0.02);
+float stellarSignal = (toneSafeEmission + jewelLift) * visibleSurface
+                    + rimJewelLift;
+float3 preBloom = surfaceTint * stellarSignal
+                * temporalFlicker * validStellarSpectrum;
+// Preserve hue and local contrast while hard-bounding the signal that enters the
+// menu's fixed-exposure, full-resolution bloom pass.
+float outputCeiling = lerp(1.65, 1.50, useInstance);
+float peakChannel = max(max(preBloom.r, preBloom.g), preBloom.b);
+return preBloom * min(1.0, outputCeiling / max(peakChannel, 0.0001));
 )APSSTELLAR");
+		StellarSurface->Code = StellarPatternCode + StellarLightingCode;
 		AddCustomInput(StellarSurface, TEXT("ParamColor"), Color);
 		AddCustomInput(StellarSurface, TEXT("ParamEmission"), Multiplier);
 		AddCustomInput(StellarSurface, TEXT("ParamSeed"), SurfaceSeed);
@@ -378,6 +438,7 @@ return surfaceTint * toneSafeEmission * visibleSurface;
 		AddCustomInput(StellarSurface, TEXT("NormalWS"), Normal);
 		AddCustomInput(StellarSurface, TEXT("WorldPositionWS"), WorldPosition);
 		AddCustomInput(StellarSurface, TEXT("ObjectPositionWS"), ObjectPosition);
+		AddCustomInput(StellarSurface, TEXT("GameTime"), GameTime);
 		AddCustomInput(StellarSurface, TEXT("CameraWS"), Camera);
 		if (!UMaterialEditingLibrary::ConnectMaterialProperty(
 			StellarSurface, TEXT(""), MP_EmissiveColor))

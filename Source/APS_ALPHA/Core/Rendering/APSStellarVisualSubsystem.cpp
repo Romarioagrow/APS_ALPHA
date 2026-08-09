@@ -22,7 +22,11 @@ namespace
 {
 	const FName PreviewFillLightTag(TEXT("APSPreviewFillLight"));
 	const FName RuntimeStellarKeyLightTag(TEXT("APSRuntimeStellarKeyLight"));
-	constexpr float PreviewFillLightIntensity = 4.0f;
+	// PLANET uses a fixed-exposure camera and a camera-facing fill in addition to
+	// the generated-star key. Keep their combined energy near one ordinary scene
+	// directional light so bright terrain palettes retain colour and relief.
+	constexpr float PreviewFillLightIntensity = 0.65f;
+	constexpr float PreviewKeyLightIntensityScale = 0.25f;
 	const FLinearColor PreviewFillLightColor(0.72f, 0.82f, 1.0f, 1.0f);
 	const FName GameplayStationFillLightTag(TEXT("APSGameplayStationFillLight"));
 	constexpr float GameplayStationFillLightIntensity = 28.0f;
@@ -32,7 +36,7 @@ namespace
 	const FName GameplaySurfaceFillLightTag(TEXT("APSGameplaySurfaceFillLight"));
 	// Keep the generated star as the dominant key. This fill only lifts the
 	// fixed-exposure floor enough to retain readable normals on the night side.
-	constexpr float GameplaySurfaceFillLightIntensity = 0.65f;
+	constexpr float GameplaySurfaceFillLightIntensity = 1.15f;
 	constexpr double GameplaySurfaceFillMaximumAltitudeCm = 5000000.0;
 	const FLinearColor GameplaySurfaceFillLightColor(0.78f, 0.84f, 0.94f, 1.0f);
 }
@@ -147,11 +151,15 @@ void UAPSStellarVisualSubsystem::Tick(float DeltaTime)
 		UpdatedLightColor = TargetLightColor;
 	}
 	SmoothedLightColor = UpdatedLightColor;
+	const float EffectiveTargetLightIntensity = ActivePreviewBody
+		? TargetLightIntensity * PreviewKeyLightIntensityScale
+		: TargetLightIntensity;
 	float UpdatedLightIntensity = FMath::FInterpTo(
-		SmoothedLightIntensity, TargetLightIntensity, DeltaTime, 1.3f);
-	if (FMath::IsNearlyEqual(UpdatedLightIntensity, TargetLightIntensity, 0.002f))
+		SmoothedLightIntensity, EffectiveTargetLightIntensity, DeltaTime, 1.3f);
+	if (FMath::IsNearlyEqual(
+		UpdatedLightIntensity, EffectiveTargetLightIntensity, 0.002f))
 	{
-		UpdatedLightIntensity = TargetLightIntensity;
+		UpdatedLightIntensity = EffectiveTargetLightIntensity;
 	}
 	SmoothedLightIntensity = UpdatedLightIntensity;
 	if (!LightComponent->GetLightColor().Equals(SmoothedLightColor, 0.0005f))
@@ -617,6 +625,18 @@ void UAPSStellarVisualSubsystem::UpdateGameplaySurfaceFillLight(
 	if (!FillComponent->IsVisible())
 	{
 		FillComponent->SetVisibility(true);
+	}
+	// Keep hot-reloaded/editor worlds deterministic as well: an already-created
+	// transient fill must adopt the current readability contract without forcing a
+	// destroy/recreate cycle that would flash the terrain for one frame.
+	if (!FillComponent->GetLightColor().Equals(GameplaySurfaceFillLightColor, 0.0005f))
+	{
+		FillComponent->SetLightColor(GameplaySurfaceFillLightColor);
+	}
+	if (!FMath::IsNearlyEqual(
+		FillComponent->Intensity, GameplaySurfaceFillLightIntensity, 0.001f))
+	{
+		FillComponent->SetIntensity(GameplaySurfaceFillLightIntensity);
 	}
 	const FRotator CurrentRotation = FillLight->GetActorRotation();
 	FRotator UpdatedRotation = FMath::RInterpTo(

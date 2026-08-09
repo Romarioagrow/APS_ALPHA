@@ -779,6 +779,10 @@ bool FAPSClusterSystemDataTest::RunTest(const FString& Parameters)
 		SmallStarVisualRadius, 1.0);
 	TestTrue(TEXT("Expanded far-star proxies preserve luminous area instead of saturating"),
 		FMath::IsNearlyEqual(SmallStarVisualEmission, 16.0));
+	const double FlooredProxyEmission = UStarGenerator::GetFarStarVisualEmission(
+		0.4, 100.0, 10.0);
+	TestTrue(TEXT("Hierarchy proxy floors compensate against the final visual scale"),
+		FMath::IsNearlyEqual(FlooredProxyEmission, 0.16));
 	TestEqual(TEXT("Sun-sized far-star proxies keep their physical visual radius"),
 		UStarGenerator::GetFarStarVisualRadius(1.2), 1.2);
 	TestEqual(TEXT("Sun-sized far-star proxies keep their physical emission"),

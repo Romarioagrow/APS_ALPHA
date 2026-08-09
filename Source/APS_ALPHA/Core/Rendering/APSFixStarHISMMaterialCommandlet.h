@@ -5,7 +5,8 @@
 
 /**
  * Rebuilds the canonical stellar masters with one scale-independent procedural
- * surface recipe and removes temporal features that make distant HISM stars flicker.
+ * surface recipe. A deliberately subtle seeded pulse keeps materialized stars alive,
+ * while the unified shader strongly damps that temporal response for distant HISM stars.
  */
 UCLASS()
 class APS_ALPHA_API UAPSFixStarHISMMaterialCommandlet : public UCommandlet

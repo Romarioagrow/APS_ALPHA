@@ -5,6 +5,7 @@
 #include "APS_ALPHA/Core/Enums/MoonType.h"
 #include "APS_ALPHA/Core/Enums/PlanetType.h"
 #include "APS_ALPHA/Core/Planetary/APSPlanetSurfaceProfile.h"
+#include "APS_ALPHA/Core/Planetary/APSWorldScapeFoliagePolicy.h"
 #include "APSWorldScapePlanetNoise.h"
 #include "Kismet/GameplayStatics.h"
 #include "Materials/MaterialInstance.h"
@@ -89,6 +90,10 @@ bool APlanetarySurfaceGenerator::CreateRuntimeWorldScapeRoot(APlanetaryBody* Bod
 	WorldScapeRootInstance->GenerationType = EWorldScapeType::Planet;
 	WorldScapeRootInstance->bGenerateWorldScape = false;
 	WorldScapeRootInstance->bFreezeGeneration = true;
+	// WorldScape 5.4 defaults foliage to true in its constructor. APS owns the
+	// opposite invariant and may opt a fresh full-scale root in only after its
+	// resolved profile has been budgeted.
+	WorldScapeRootInstance->bGenerateFoliages = false;
 	UGameplayStatics::FinishSpawningActor(WorldScapeRootInstance, RootTransform);
 	bOwnsWorldScapeRootInstance = true;
 	CancelPendingSurfaceProfileApply();
@@ -177,6 +182,27 @@ void APlanetarySurfaceGenerator::ApplySurfaceProfile(APlanetaryBody* Body)
 	{
 		return;
 	}
+	if (bSurfaceProfileApplied)
+	{
+		const FAPSResolvedPlanetSurfaceProfile RequestedProfile =
+			UAPSPlanetSurfaceProfileResolver::ResolveForBody(Body, SurfaceProfileCatalog);
+		const bool bRootHasActivatedFoliage = WorldScapeRootInstance->bGenerateFoliages
+			&& !WorldScapeRootInstance->Foliages.IsEmpty();
+		// WorldScape 5.4 has no public foliage-worker drain. Once either the applied
+		// or requested profile opts into foliage, mutating noise, seeds, materials or
+		// root-owned transient collections in place is unsafe. A fresh root is the
+		// only supported transition boundary for foliage profiles.
+		if (FAPSWorldScapeFoliagePolicy::RequiresFreshRootForProfileTransition(
+			ResolvedSurfaceProfile, RequestedProfile, bRootHasActivatedFoliage))
+		{
+			UE_LOG(LogTemp, Error,
+				TEXT("[APS.WorldScape.Foliage] Rejected live profile apply body=%s "
+					"appliedSignature=%u requestedSignature=%u; recreate a fresh runtime root"),
+				*GetNameSafe(Body), AppliedSurfaceProfileSignature,
+				UAPSPlanetSurfaceProfileResolver::BuildProfileSignature(RequestedProfile));
+			return;
+		}
+	}
 
 	if (!UAPSPlanetSurfaceProfileResolver::SupportsWorldScape(Body->PlanetType))
 	{
@@ -234,8 +260,22 @@ void APlanetarySurfaceGenerator::ApplySurfaceProfileNow(APlanetaryBody* Body)
 	FSurfaceProfile Profile;
 	// PLANET UI exposes one EPlanetType surface pipeline for planets and moons.
 	// ResolveForBody is the sole owner of noise/material selection for both.
-	ResolvedSurfaceProfile = UAPSPlanetSurfaceProfileResolver::ResolveForBody(
+	const FAPSResolvedPlanetSurfaceProfile RequestedProfile =
+		UAPSPlanetSurfaceProfileResolver::ResolveForBody(
 		Body, SurfaceProfileCatalog);
+	const bool bRootHasActivatedFoliage = WorldScapeRootInstance->bGenerateFoliages
+		&& !WorldScapeRootInstance->Foliages.IsEmpty();
+	if (bSurfaceProfileApplied
+		&& FAPSWorldScapeFoliagePolicy::RequiresFreshRootForProfileTransition(
+			ResolvedSurfaceProfile, RequestedProfile, bRootHasActivatedFoliage))
+	{
+		// Defense in depth for deferred/internal callers that bypass ApplySurfaceProfile.
+		UE_LOG(LogTemp, Error,
+			TEXT("[APS.WorldScape.Foliage] Rejected internal live profile mutation body=%s"),
+			*GetNameSafe(Body));
+		return;
+	}
+	ResolvedSurfaceProfile = RequestedProfile;
 	{
 		UMaterialInstance* BaseTerrainMaterial = nullptr;
 		if (IsValid(SurfaceProfileCatalog))
@@ -398,6 +438,80 @@ void APlanetarySurfaceGenerator::ApplySurfaceProfileNow(APlanetaryBody* Body)
 	// normalized menu globe is identifiable by its presentation scale and uses the
 	// same lighter budget that its preview owner confirms after profile application.
 	const bool bScaledOrbitalPreview = PresentationScale < 0.999;
+	// Configure only a newly-created root. WorldScape 5.4 exposes no public drain
+	// for its foliage worker, so hot-swapping collections on a previously active
+	// root is intentionally outside this foundation. The cvar/profile gates default
+	// to off, and scaled menu/orbital roots are vetoed inside the policy as well.
+	if (bOwnsWorldScapeRootInstance && !bSurfaceProfileApplied)
+	{
+		FAPSWorldScapeFoliagePolicy::ApplyToFreshOwnedRuntimeRoot(
+			WorldScapeRootInstance, ResolvedSurfaceProfile, bScaledOrbitalPreview);
+	}
+	if (IsValid(ResolvedTerrainMaterialInstance) && IsValid(WorldScapeRootInstance))
+	{
+		const double SeedPhase = static_cast<double>(ResolvedSurfaceProfile.TerrainSeed % 104729)
+			* 0.000137;
+		ResolvedTerrainMaterialInstance->SetVectorParameterValue(
+			TEXT("OrbitalSeedOffset"),
+			FLinearColor(
+				static_cast<float>(3.0 + FMath::Sin(SeedPhase * 17.0 + 0.31) * 7.0),
+				static_cast<float>(9.0 + FMath::Cos(SeedPhase * 11.0 + 1.27) * 7.0),
+				static_cast<float>(15.0 + FMath::Sin(SeedPhase * 7.0 + 2.13) * 7.0),
+				0.0f));
+		ResolvedTerrainMaterialInstance->SetScalarParameterValue(
+			TEXT("OrbitalFeatureScale"),
+			FMath::Clamp(2.45f * ResolvedSurfaceProfile.ContinentalFrequencyMultiplier,
+				1.35f, 6.0f));
+		ResolvedTerrainMaterialInstance->SetScalarParameterValue(
+			TEXT("OrbitalDetailScale"),
+			FMath::Clamp(7.0f * ResolvedSurfaceProfile.RegionalFrequencyMultiplier,
+				3.5f, 18.0f));
+		ResolvedTerrainMaterialInstance->SetScalarParameterValue(
+			TEXT("OrbitalPresentationBlend"), bScaledOrbitalPreview ? 1.0f : 0.0f);
+		ResolvedTerrainMaterialInstance->SetScalarParameterValue(
+			TEXT("OrbitalNormalBlend"), bScaledOrbitalPreview ? 1.0f : 0.0f);
+	}
+	// The canonical terrain and liquid graphs contain centimetre-scale detail for
+	// walkable full-scale gameplay.  On the normalized menu globe the complete
+	// planet is only a few kilometres wide, so those same bands undersample against
+	// WorldScape's coarse orbital LODs and reveal the otherwise invisible patch
+	// topology as a regular grid.  Keep the authoritative WorldScape mesh and its
+	// macro/meso palette intact, but disable only the near-field shading bands for
+	// the scaled presentation.  A full-scale root receives the untouched profile
+	// values from ApplyMaterialParameters above.
+	if (bScaledOrbitalPreview && IsValid(ResolvedTerrainMaterialInstance))
+	{
+		// The WorldScape geometry remains authoritative.  Only its shading normal is
+		// represented as one continuous sphere from orbit, preventing independently
+		// streamed LOD patches from reading as a dark square grid.  Full-scale roots
+		// keep OrbitalNormalBlend=0 and use their physical terrain normals unchanged.
+		// The displaced WorldScape geometry and silhouette remain real; only its orbital
+		// shading normal is unified so independently-normalised patch seams cannot flash.
+		ResolvedTerrainMaterialInstance->SetScalarParameterValue(TEXT("OrbitalNormalBlend"), 1.0f);
+		// Temperature/humidity are vertex payloads too.  A tiny amount preserves broad
+		// climate identity without outlining the coarse orbital mesh topology.
+		ResolvedTerrainMaterialInstance->SetScalarParameterValue(TEXT("ClimateBlend"), 0.018f);
+		ResolvedTerrainMaterialInstance->SetScalarParameterValue(TEXT("NearColorStrength"), 0.0f);
+		ResolvedTerrainMaterialInstance->SetScalarParameterValue(TEXT("MacroColorStrength"), 0.0f);
+		ResolvedTerrainMaterialInstance->SetScalarParameterValue(TEXT("MesoColorStrength"), 0.0f);
+		ResolvedTerrainMaterialInstance->SetScalarParameterValue(TEXT("DetailNormalStrength"), 0.0f);
+		ResolvedTerrainMaterialInstance->SetScalarParameterValue(TEXT("DetailRoughnessStrength"), 0.0f);
+		ResolvedTerrainMaterialInstance->SetScalarParameterValue(TEXT("MesoRoughnessStrength"), 0.0f);
+	}
+	if (bScaledOrbitalPreview && IsValid(ResolvedOceanMaterialInstance))
+	{
+		// The ocean still belongs to the same WorldScape root.  Only its close-range
+		// waves are suppressed in the orbital presentation; this avoids a moire/grid
+		// pattern without introducing a proxy liquid sphere or a second collision
+		// surface.
+		ResolvedOceanMaterialInstance->SetScalarParameterValue(TEXT("WaveColorStrength"), 0.003f);
+		ResolvedOceanMaterialInstance->SetScalarParameterValue(TEXT("WaveNormalStrength"), 0.0f);
+		ResolvedOceanMaterialInstance->SetScalarParameterValue(TEXT("OrbitalNormalBlend"), 1.0f);
+	}
+	else if (IsValid(ResolvedOceanMaterialInstance))
+	{
+		ResolvedOceanMaterialInstance->SetScalarParameterValue(TEXT("OrbitalNormalBlend"), 0.0f);
+	}
 	WorldScapeRootInstance->MaxLod = bScaledOrbitalPreview ? 6 : 10;
 	WorldScapeRootInstance->LodResolution = bScaledOrbitalPreview ? 48 : 96;
 	WorldScapeRootInstance->TriangleSize = bScaledOrbitalPreview ? 450.0f : 120.0f;
@@ -421,10 +535,10 @@ void APlanetarySurfaceGenerator::ApplySurfaceProfileNow(APlanetaryBody* Body)
 	// Two-sided shadows stay disabled because the terrain is a closed outward-facing
 	// planet shell. Accurate tangents remain at the plugin default: its API documents
 	// that option as greatly slowing generation, so it is not safe for this fix.
-	WorldScapeRootInstance->TerrainContactShadow = true;
-	WorldScapeRootInstance->TerrainCastStaticShadow = true;
-	WorldScapeRootInstance->TerrainCastDynamicShadow = true;
-	WorldScapeRootInstance->TerrainFarShadow = true;
+	WorldScapeRootInstance->TerrainContactShadow = !bScaledOrbitalPreview;
+	WorldScapeRootInstance->TerrainCastStaticShadow = !bScaledOrbitalPreview;
+	WorldScapeRootInstance->TerrainCastDynamicShadow = !bScaledOrbitalPreview;
+	WorldScapeRootInstance->TerrainFarShadow = !bScaledOrbitalPreview;
 	WorldScapeRootInstance->TerrainTowSideShadow = false;
 	WorldScapeRootInstance->HeightAnchor = FMath::Clamp(
 		static_cast<float>(WorldScapeRootInstance->PlanetScale * 0.00025), 50000.0f, 250000.0f);

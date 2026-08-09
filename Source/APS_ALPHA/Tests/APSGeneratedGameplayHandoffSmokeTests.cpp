@@ -525,11 +525,53 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 		return Result;
 	}
 
+	bool IsEffectivelyPresented(const UPrimitiveComponent* Component)
+	{
+		const AActor* Owner = IsValid(Component) ? Component->GetOwner() : nullptr;
+		return IsValid(Component) && Component->IsRegistered()
+			&& Component->IsVisible() && !Component->bHiddenInGame
+			&& (!IsValid(Owner) || !Owner->IsHidden());
+	}
+
+	bool IgnoresEveryCollisionChannel(const UPrimitiveComponent* Component)
+	{
+		if (!IsValid(Component))
+		{
+			return false;
+		}
+		for (int32 ChannelIndex = 0;
+			ChannelIndex < static_cast<int32>(ECC_MAX); ++ChannelIndex)
+		{
+			if (Component->GetCollisionResponseToChannel(
+				static_cast<ECollisionChannel>(ChannelIndex)) != ECR_Ignore)
+			{
+				return false;
+			}
+		}
+		return true;
+	}
+
+	bool IsPreviewOceanProxy(const UProceduralMeshComponent* Component)
+	{
+		if (!IsValid(Component))
+		{
+			return false;
+		}
+		const FString ComponentName = Component->GetName();
+		return ComponentName.StartsWith(TEXT("PreviewOcean"), ESearchCase::CaseSensitive)
+			|| ComponentName.StartsWith(
+				TEXT("PreviewBodyOcean"), ESearchCase::CaseSensitive);
+	}
+
 	class FGeneratedCivilizationHandoffCommand final : public IAutomationLatentCommand
 	{
 	public:
-		explicit FGeneratedCivilizationHandoffCommand(FAutomationTestBase* InTest)
+		explicit FGeneratedCivilizationHandoffCommand(FAutomationTestBase* InTest,
+			EPlanetType InExpectedPlanetType = EPlanetType::Frozen,
+			bool bInValidateWetOceanContract = false)
 			: Test(InTest)
+			, ExpectedPlanetType(InExpectedPlanetType)
+			, bValidateWetOceanContract(bInValidateWetOceanContract)
 		{
 		}
 
@@ -644,9 +686,9 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			Model->PlanetsAmount = 1;
 			Model->MoonsAmount = 0;
 			Model->StartPlanetIndex = 1;
-			// Exercise the standard/default Cryogenic path users enter from the menu.
-			// HighMountain is intentionally not used as a relief-only special case.
-			Model->PlanetType = EPlanetType::Frozen;
+			// The default smoke exercises the standard Cryogenic path. The dedicated
+			// wet smoke reuses this production handoff with the Water resolver profile.
+			Model->PlanetType = ExpectedPlanetType;
 			Model->PlanetRadius = 6371.0;
 			Model->PlanetSurfaceSeed = 424242;
 			Model->SurfaceFeatureScale = 1.0;
@@ -667,8 +709,10 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			}
 
 			UE_LOG(LogTemp, Display,
-				TEXT("[APS.Handoff.Smoke] Civilization generator opened map=%s seed=%d level=StarCluster fullScale=true"),
-				*World->GetMapName(), Model->PlanetSurfaceSeed);
+				TEXT("[APS.Handoff.Smoke] Civilization generator opened map=%s seed=%d type=%d level=StarCluster fullScale=true wetOceanContract=%d"),
+				*World->GetMapName(), Model->PlanetSurfaceSeed,
+				static_cast<int32>(ExpectedPlanetType),
+				bValidateWetOceanContract ? 1 : 0);
 			Step = EStep::WaitForPreview;
 			StepStartSeconds = Now;
 			return false;
@@ -847,7 +891,7 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 				|| !Snapshot->bGenerateFullScaledWorld || !Snapshot->bGenerateHomeSystem
 				|| !Snapshot->bStartWithHomePlanet || Snapshot->StarType != EStarType::SingleStar
 				|| Snapshot->PlanetsAmount != 1 || Snapshot->MoonsAmount != 0
-				|| Snapshot->StartPlanetIndex != 1 || Snapshot->PlanetType != EPlanetType::Frozen
+				|| Snapshot->StartPlanetIndex != 1 || Snapshot->PlanetType != ExpectedPlanetType
 				|| Snapshot->PlanetSurfaceSeed != 424242)
 			{
 				return Fail(TEXT("committed generated-world snapshot differs from deterministic menu model"));
@@ -1077,6 +1121,303 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			return false;
 		}
 
+		bool ValidateWetOceanContract(UWorld* World, APlanet* Planet,
+			APlanetarySurfaceGenerator* Surface, AWorldScapeRoot* Root,
+			bool& bOutPending, FString& OutFailure)
+		{
+			bOutPending = false;
+			OutFailure.Reset();
+			if (!IsValid(World) || !IsValid(Planet) || !IsValid(Surface)
+				|| !IsValid(Root))
+			{
+				OutFailure = TEXT("wet-ocean contract lost its gameplay surface actors");
+				return false;
+			}
+
+			const TArray<AWorldScapeRoot*> Roots = FindActors<AWorldScapeRoot>(World);
+			const TArray<APlanetarySurfaceGenerator*> SurfaceGenerators =
+				FindActors<APlanetarySurfaceGenerator>(World);
+			if (Roots.Num() != 1 || Roots[0] != Root || SurfaceGenerators.Num() != 1
+				|| SurfaceGenerators[0] != Surface
+				|| Surface->WorldScapeRootInstance != Root
+				|| Root->GetOwner() != Planet || Root->GetAttachParentActor() != Planet)
+			{
+				OutFailure = FString::Printf(
+					TEXT("wet gameplay does not own exactly one authoritative WorldScape pair roots=%d rootMatch=%d generators=%d generatorMatch=%d owner=%s parent=%s"),
+					Roots.Num(), Roots.Num() == 1 && Roots[0] == Root ? 1 : 0,
+					SurfaceGenerators.Num(),
+					SurfaceGenerators.Num() == 1 && SurfaceGenerators[0] == Surface ? 1 : 0,
+					*GetNameSafe(Root->GetOwner()),
+					*GetNameSafe(Root->GetAttachParentActor()));
+				return false;
+			}
+
+			if (Surface->ResolvedSurfaceProfile.PlanetType != EPlanetType::Water
+				|| Surface->ResolvedSurfaceProfile.LiquidType != EAPSPlanetLiquidType::Water
+				|| !IsValid(Surface->ResolvedOceanMaterialInstance)
+				|| !Root->bOcean
+				|| Root->OceanMaterial.DefaultMaterial
+					!= Surface->ResolvedOceanMaterialInstance)
+			{
+				OutFailure = FString::Printf(
+					TEXT("Water handoff did not retain its resolved WorldScape ocean type=%d liquid=%d bOcean=%d resolvedMID=%s rootMID=%s"),
+					static_cast<int32>(Surface->ResolvedSurfaceProfile.PlanetType),
+					static_cast<int32>(Surface->ResolvedSurfaceProfile.LiquidType),
+					Root->bOcean ? 1 : 0,
+					*GetNameSafe(Surface->ResolvedOceanMaterialInstance),
+					*GetNameSafe(Root->OceanMaterial.DefaultMaterial));
+				return false;
+			}
+
+			if (Root->OceanMaxLod <= 0
+				|| Root->WorldScapeLodOcean.Num() > Root->OceanMaxLod)
+			{
+				OutFailure = FString::Printf(
+					TEXT("wet WorldScape owns an invalid/duplicate ocean LOD set oceanLods=%d expected=%d"),
+					Root->WorldScapeLodOcean.Num(), Root->OceanMaxLod);
+				return false;
+			}
+			if (Root->WorldScapeLodOcean.Num() < Root->OceanMaxLod)
+			{
+				bOutPending = true;
+				OutFailure = FString::Printf(
+					TEXT("wet WorldScape ocean LOD set is still incomplete oceanLods=%d expected=%d"),
+					Root->WorldScapeLodOcean.Num(), Root->OceanMaxLod);
+				return false;
+			}
+
+			for (const UWorldScapeLod* TerrainLod : Root->WorldScapeLod)
+			{
+				if (!IsValid(TerrainLod) || TerrainLod->WaterBody)
+				{
+					OutFailure = TEXT("authoritative terrain array contains an invalid/ocean LOD");
+					return false;
+				}
+			}
+
+			const FVector RenderObserverWorldPosition = Root->bOverridePlayerPosition
+				? Root->OverridedPlayerPosition : Root->PlayerWorldPos.ToFVector();
+			const FVector DesiredOceanNormal = Root->WorldToECEF(
+				RenderObserverWorldPosition).ToFVector().GetSafeNormal();
+			TSet<const UWorldScapeLod*> OceanLods;
+			TSet<const UPrimitiveComponent*> OceanComponents;
+			for (const UWorldScapeLod* OceanLod : Root->WorldScapeLodOcean)
+			{
+				if (!IsValid(OceanLod) || !OceanLod->WaterBody
+					|| Root->WorldScapeLod.Contains(OceanLod)
+					|| OceanLods.Contains(OceanLod) || !IsValid(OceanLod->Mesh))
+				{
+					OutFailure = TEXT("ocean geometry escaped or duplicated outside Root->WorldScapeLodOcean");
+					return false;
+				}
+				OceanLods.Add(OceanLod);
+				if (OceanComponents.Contains(OceanLod->Mesh)
+					|| OceanLod->Mesh->GetAttachParent() != Root->TransformKeeper)
+				{
+					OutFailure = TEXT("ocean LOD does not own a unique authoritative TransformKeeper mesh");
+					return false;
+				}
+				OceanComponents.Add(OceanLod->Mesh);
+
+				if (!APSWorldScapePayloadValidation::HasCompleteCenteredPayload(
+					OceanLod, DesiredOceanNormal, false)
+					|| !IsEffectivelyPresented(OceanLod->Mesh)
+					|| OceanLod->Mesh->GetNumSections() < 1
+					|| !OceanLod->Mesh->IsMeshSectionVisible(0))
+				{
+					bOutPending = true;
+					OutFailure = FString::Printf(
+						TEXT("authoritative ocean LOD is not yet centred/visible lod=%d mesh=%s"),
+						OceanLod->Lod, *GetNameSafe(OceanLod->Mesh));
+					return false;
+				}
+				if (OceanLod->Mesh->GetCollisionEnabled()
+						!= ECollisionEnabled::NoCollision
+					|| OceanLod->Mesh->GetGenerateOverlapEvents()
+					|| !IgnoresEveryCollisionChannel(OceanLod->Mesh))
+				{
+					OutFailure = FString::Printf(
+						TEXT("authoritative ocean LOD can affect gameplay collision lod=%d mesh=%s collision=%d overlaps=%d ignoreAll=%d"),
+						OceanLod->Lod, *GetNameSafe(OceanLod->Mesh),
+						static_cast<int32>(OceanLod->Mesh->GetCollisionEnabled()),
+						OceanLod->Mesh->GetGenerateOverlapEvents() ? 1 : 0,
+						IgnoresEveryCollisionChannel(OceanLod->Mesh) ? 1 : 0);
+					return false;
+				}
+			}
+
+			int32 PreviewOceanProxyCount = 0;
+			for (AAstroGenerator* Generator : FindActors<AAstroGenerator>(World))
+			{
+				TInlineComponentArray<UProceduralMeshComponent*> ProceduralMeshes;
+				Generator->GetComponents(ProceduralMeshes);
+				for (const UProceduralMeshComponent* Mesh : ProceduralMeshes)
+				{
+					if (!IsPreviewOceanProxy(Mesh))
+					{
+						continue;
+					}
+					++PreviewOceanProxyCount;
+					if (IsEffectivelyPresented(Mesh)
+						|| Mesh->GetCollisionEnabled() != ECollisionEnabled::NoCollision
+						|| Mesh->GetGenerateOverlapEvents()
+						|| !IgnoresEveryCollisionChannel(Mesh))
+					{
+						OutFailure = FString::Printf(
+							TEXT("gameplay retained a visible/collidable PreviewOcean or PreviewBodyOcean proxy generator=%s mesh=%s visible=%d collision=%d overlaps=%d ignoreAll=%d"),
+							*GetNameSafe(Generator), *GetNameSafe(Mesh),
+							IsEffectivelyPresented(Mesh) ? 1 : 0,
+							static_cast<int32>(Mesh->GetCollisionEnabled()),
+							Mesh->GetGenerateOverlapEvents() ? 1 : 0,
+							IgnoresEveryCollisionChannel(Mesh) ? 1 : 0);
+						return false;
+					}
+				}
+			}
+
+			TSet<const UPrimitiveComponent*> TerrainCollisionComponents;
+			for (const UWorldScapeLod* CollisionLod : Root->CollisionLods)
+			{
+				if (IsValid(CollisionLod) && IsValid(CollisionLod->Mesh)
+					&& CollisionLod->Mesh->GetCollisionEnabled()
+						!= ECollisionEnabled::NoCollision
+					&& !CollisionLod->Vertices.IsEmpty()
+					&& !CollisionLod->Triangles.IsEmpty())
+				{
+					TerrainCollisionComponents.Add(CollisionLod->Mesh);
+				}
+			}
+			if (TerrainCollisionComponents.IsEmpty())
+			{
+				bOutPending = true;
+				OutFailure = TEXT("wet WorldScape terrain CollisionLods are not cooked yet");
+				return false;
+			}
+
+			const FVector SurfaceCenter = Root->GetActorLocation();
+			const FVector TraceOutward = (RenderObserverWorldPosition - SurfaceCenter)
+				.GetSafeNormal(UE_DOUBLE_SMALL_NUMBER, Planet->GetActorUpVector());
+			const double OceanRadiusCm = Root->PlanetScale
+				+ static_cast<double>(Root->OceanHeight);
+			if (TraceOutward.IsNearlyZero() || !FMath::IsFinite(OceanRadiusCm)
+				|| OceanRadiusCm <= 0.0)
+			{
+				OutFailure = TEXT("wet WorldScape produced an invalid ocean trace frame");
+				return false;
+			}
+
+			FVector TangentA = FVector::ZeroVector;
+			FVector TangentB = FVector::ZeroVector;
+			TraceOutward.FindBestAxisVectors(TangentA, TangentB);
+			const double TangentScale = 1500.0 / Root->PlanetScale;
+			const FVector TraceDirections[] = {
+				TraceOutward,
+				(TraceOutward + TangentA * TangentScale).GetSafeNormal(),
+				(TraceOutward - TangentA * TangentScale).GetSafeNormal(),
+				(TraceOutward + TangentB * TangentScale).GetSafeNormal(),
+				(TraceOutward - TangentB * TangentScale).GetSafeNormal()};
+			const ECollisionChannel TraceChannels[] = {ECC_Visibility, ECC_Pawn};
+			const double TraceHalfSpanCm = FMath::Max(250000.0,
+				FMath::Abs(static_cast<double>(Root->NoiseIntensity)) * 2.0
+					+ 100000.0);
+			FCollisionQueryParams TraceParams(
+				SCENE_QUERY_STAT(APSGeneratedWetOceanHandoff), true,
+				RuntimeGravityPawn.Get());
+			// Starter infrastructure is a legitimate blocker but is not part of the
+			// planetary surface contract. Keep body shells/proxies queryable so a stale
+			// liquid or backing sphere still fails as a foreign blocking surface.
+			for (ASpaceStation* Station : FindActors<ASpaceStation>(World))
+			{
+				TraceParams.AddIgnoredActor(Station);
+			}
+			for (ASpaceship* Spaceship : FindActors<ASpaceship>(World))
+			{
+				TraceParams.AddIgnoredActor(Spaceship);
+			}
+			int32 TerrainTraceCount = 0;
+			for (const FVector& TraceDirection : TraceDirections)
+			{
+				const double GroundHeightCm = Root->GetGroundHeight(
+					SurfaceCenter + TraceDirection * Root->PlanetScale, false);
+				if (!FMath::IsFinite(GroundHeightCm))
+				{
+					OutFailure = TEXT("wet-ocean radial trace produced a non-finite terrain height");
+					return false;
+				}
+				const double OuterHeightCm = FMath::Max(
+					GroundHeightCm, static_cast<double>(Root->OceanHeight))
+					+ TraceHalfSpanCm;
+				const double InnerHeightCm = FMath::Min(
+					GroundHeightCm, static_cast<double>(Root->OceanHeight))
+					- TraceHalfSpanCm;
+				const FVector TraceStart = SurfaceCenter + TraceDirection
+					* (Root->PlanetScale + OuterHeightCm);
+				const FVector TraceEnd = SurfaceCenter + TraceDirection
+					* (Root->PlanetScale + InnerHeightCm);
+				if (FVector::Distance(TraceStart, SurfaceCenter) <= OceanRadiusCm
+					|| FVector::Distance(TraceEnd, SurfaceCenter) >= OceanRadiusCm)
+				{
+					OutFailure = TEXT("wet-ocean radial trace endpoints do not straddle the liquid shell");
+					return false;
+				}
+
+				for (const ECollisionChannel TraceChannel : TraceChannels)
+				{
+					TArray<FHitResult> Hits;
+					World->LineTraceMultiByChannel(Hits, TraceStart, TraceEnd,
+						TraceChannel, TraceParams);
+					bool bHitTerrain = false;
+					for (const FHitResult& Hit : Hits)
+					{
+						if (!Hit.bBlockingHit)
+						{
+							continue;
+						}
+						const UPrimitiveComponent* HitComponent = Hit.GetComponent();
+						if (OceanComponents.Contains(HitComponent))
+						{
+							OutFailure = FString::Printf(
+								TEXT("radial trace was blocked by authoritative ocean mesh=%s channel=%d"),
+								*GetNameSafe(HitComponent), static_cast<int32>(TraceChannel));
+							return false;
+						}
+						if (!TerrainCollisionComponents.Contains(HitComponent))
+						{
+							OutFailure = FString::Printf(
+								TEXT("wet-ocean radial trace hit a foreign blocking surface actor=%s component=%s channel=%d"),
+								*GetNameSafe(Hit.GetActor()), *GetNameSafe(HitComponent),
+								static_cast<int32>(TraceChannel));
+							return false;
+						}
+						bHitTerrain = true;
+						break;
+					}
+					if (bHitTerrain)
+					{
+						++TerrainTraceCount;
+					}
+				}
+			}
+
+			const int32 RequiredTraceCount = UE_ARRAY_COUNT(TraceDirections)
+				* UE_ARRAY_COUNT(TraceChannels);
+			if (TerrainTraceCount != RequiredTraceCount)
+			{
+				bOutPending = true;
+				OutFailure = FString::Printf(
+					TEXT("wet-ocean radial traces have not all reached authoritative terrain hits=%d required=%d collisionLods=%d"),
+					TerrainTraceCount, RequiredTraceCount, Root->CollisionLods.Num());
+				return false;
+			}
+
+			UE_LOG(LogTemp, Display,
+				TEXT("[APS.Handoff.WetOcean] Contract ready root=%s oceanLods=%d previewOceanProxies=%d terrainCollisionLods=%d passThroughTerrainTraces=%d liquid=Water"),
+				*GetNameSafe(Root), Root->WorldScapeLodOcean.Num(),
+				PreviewOceanProxyCount, TerrainCollisionComponents.Num(),
+				TerrainTraceCount);
+			return true;
+		}
+
 		bool UpdateWaitForGameplaySurface(UWorld* World, double Now)
 		{
 			APlanet* Planet = RuntimeHomePlanet.Get();
@@ -1123,7 +1464,7 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			const bool bInitialRenderLod0Ready = BuildVisibleWorldScapeRenderLod0Proof(
 				Root, RenderObserverWorldPosition, InitialRenderProof, InitialRenderFailure);
 			if (!Surface->IsSurfaceProfileCurrent(Planet)
-				|| Surface->ResolvedSurfaceProfile.PlanetType != EPlanetType::Frozen
+				|| Surface->ResolvedSurfaceProfile.PlanetType != ExpectedPlanetType
 				|| ExpectedSignature != AppliedSignature
 				|| !Cast<UAPSWorldScapePlanetNoise>(Surface->ResolvedNoiseInstance)
 				|| Root->WorldScapeNoise != Surface->ResolvedNoiseInstance
@@ -1168,6 +1509,28 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 						Root->IsHidden() ? 1 : 0, bInitialRenderLod0Ready ? 1 : 0,
 						*InitialRenderFailure));
 				}
+				return false;
+			}
+
+			if (bValidateWetOceanContract)
+			{
+				bool bWetContractPending = false;
+				FString WetContractFailure;
+				if (!ValidateWetOceanContract(World, Planet, Surface, Root,
+					bWetContractPending, WetContractFailure))
+				{
+					if (bWetContractPending
+						&& Now - StepStartSeconds <= PhysicalSurfaceTimeoutSeconds)
+					{
+						return false;
+					}
+					return Fail(WetContractFailure.IsEmpty()
+						? TEXT("wet-ocean gameplay contract failed without diagnostics")
+						: WetContractFailure);
+				}
+
+				Step = EStep::Cleanup;
+				StepStartSeconds = Now;
 				return false;
 			}
 
@@ -2790,13 +3153,23 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			}
 			else
 			{
-				UE_LOG(LogTemp, Display,
-					TEXT("[APS.Handoff.Smoke] PASS menu preview -> immutable handoff -> GravityGameMode -> exact hierarchy -> selected pawn -> starter attachments -> resolver WorldScape -> screenshot -> manual station/surface observer tracking -> physical terrain collision/relief -> safe worker drain"));
+				if (bValidateWetOceanContract)
+				{
+					UE_LOG(LogTemp, Display,
+						TEXT("[APS.Handoff.WetOcean] PASS menu preview -> immutable Water handoff -> one authoritative WorldScape root -> visible ocean LODs only -> collisionless/IgnoreAll liquid -> Visibility/Pawn traces reach terrain -> hidden non-colliding preview ocean proxies -> safe worker drain"));
+				}
+				else
+				{
+					UE_LOG(LogTemp, Display,
+						TEXT("[APS.Handoff.Smoke] PASS menu preview -> immutable handoff -> GravityGameMode -> exact hierarchy -> selected pawn -> starter attachments -> resolver WorldScape -> screenshot -> manual station/surface observer tracking -> physical terrain collision/relief -> safe worker drain"));
+				}
 			}
 			return true;
 		}
 
 		FAutomationTestBase* Test{nullptr};
+		EPlanetType ExpectedPlanetType{EPlanetType::Frozen};
+		bool bValidateWetOceanContract{false};
 		EStep Step{EStep::OpenGenerator};
 		double TestStartSeconds{0.0};
 		double StepStartSeconds{0.0};
@@ -2842,6 +3215,25 @@ bool FAPSGeneratedCivilizationHandoffSmokeTest::RunTest(const FString& Parameter
 	}
 	ADD_LATENT_AUTOMATION_COMMAND(
 		APSGeneratedGameplayHandoffSmokeTests::FGeneratedCivilizationHandoffCommand(this));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FAPSGeneratedCivilizationWetOceanHandoffSmokeTest,
+	"APS.Rendered.Gameplay.GeneratedCivilizationWetOceanHandoff",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FAPSGeneratedCivilizationWetOceanHandoffSmokeTest::RunTest(
+	const FString& Parameters)
+{
+	if (!AutomationOpenMap(TEXT("/Game/APS/APS_ALPHA/Menu/L_APS_MainMenu_Alpha"), true))
+	{
+		AddError(TEXT("[APS.Handoff.WetOcean] Could not open the current MainMenu map"));
+		return false;
+	}
+	ADD_LATENT_AUTOMATION_COMMAND(
+		APSGeneratedGameplayHandoffSmokeTests::FGeneratedCivilizationHandoffCommand(
+			this, EPlanetType::Water, true));
 	return true;
 }
 

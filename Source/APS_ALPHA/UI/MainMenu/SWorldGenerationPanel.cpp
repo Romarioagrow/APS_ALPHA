@@ -326,11 +326,16 @@ namespace APSGenerationUI
 	const FLinearColor Amber(1.0f, 0.56f, 0.04f, 1.0f);
 	const FLinearColor White(0.92f, 0.97f, 1.0f, 1.0f);
 	const FLinearColor Muted(0.46f, 0.61f, 0.69f, 1.0f);
+	const FLinearColor SecondaryText(0.58f, 0.72f, 0.78f, 1.0f);
 	TWeakObjectPtr<UFont> DisplayFont;
 	TWeakObjectPtr<UFont> BodyFont;
 	const FSlateRoundedBoxBrush PanelBrush(Panel, 10.0f, CyanDim, 1.0f);
 	const FSlateRoundedBoxBrush ControlBrush(FLinearColor(0.003f, 0.016f, 0.028f, 0.94f), 6.0f, CyanDim, 1.0f);
 	const FSlateRoundedBoxBrush BadgeBrush(FLinearColor(0.005f, 0.045f, 0.070f, 0.98f), 16.0f, Cyan, 1.0f);
+	const FLinearColor HierarchyRowFill(0.003f, 0.022f, 0.038f, 0.94f);
+	const FLinearColor HierarchyHoverFill(0.010f, 0.075f, 0.105f, 0.98f);
+	const FLinearColor HierarchyPressedFill(0.015f, 0.115f, 0.155f, 1.0f);
+	const FLinearColor SelectedFill(Amber.R, Amber.G, Amber.B, 0.12f);
 
 	FSlateFontInfo Font(const FName Typeface, int32 Size)
 	{
@@ -346,6 +351,23 @@ namespace APSGenerationUI
 		return FCoreStyle::GetDefaultFontStyle(Typeface, Size);
 	}
 
+	FSlateFontInfo ReadableFont(const FName Typeface, int32 Size)
+	{
+		// Reserve the display face for branding and compact technical headings.
+		// Long descriptions, generated names and metadata need a neutral UI face.
+		return FCoreStyle::GetDefaultFontStyle(Typeface, Size);
+	}
+
+	FText CompactLabel(const FText& Text, int32 MaxCharacters)
+	{
+		const FString Source = Text.ToString();
+		if (Source.Len() <= MaxCharacters || MaxCharacters < 4)
+		{
+			return Text;
+		}
+		return FText::FromString(Source.Left(MaxCharacters - 3).TrimEnd() + TEXT("..."));
+	}
+
 	FButtonStyle MakeButtonStyle(const FLinearColor& Outline, const FLinearColor& Fill)
 	{
 		return FButtonStyle()
@@ -356,6 +378,13 @@ namespace APSGenerationUI
 
 	const FButtonStyle SecondaryButton = MakeButtonStyle(CyanDim, FLinearColor(0.003f, 0.022f, 0.038f, 0.94f));
 	const FButtonStyle PrimaryButton = MakeButtonStyle(Amber, FLinearColor(0.30f, 0.12f, 0.004f, 0.96f));
+	const FButtonStyle HierarchyButton = FButtonStyle()
+		.SetNormal(FSlateRoundedBoxBrush(HierarchyRowFill, 5.0f, CyanDim, 1.0f))
+		.SetHovered(FSlateRoundedBoxBrush(HierarchyHoverFill, 5.0f, Cyan, 1.25f))
+		.SetPressed(FSlateRoundedBoxBrush(HierarchyPressedFill, 5.0f, Cyan, 1.5f))
+		.SetDisabled(FSlateRoundedBoxBrush(
+			FLinearColor(HierarchyRowFill.R, HierarchyRowFill.G, HierarchyRowFill.B, 0.55f),
+			5.0f, FLinearColor(CyanDim.R, CyanDim.G, CyanDim.B, 0.55f), 1.0f));
 
 	TSharedRef<SWidget> ChamferPanel(TSharedRef<SWidget> Content)
 	{
@@ -906,6 +935,11 @@ namespace APSGenerationUI
 			{
 				CachedEntries.Reset();
 				VM->GetPreviewBodyEntries(CachedEntries);
+				for (FAPSPreviewBodyEntry& Entry : CachedEntries)
+				{
+					Entry.Label = CompactLabel(Entry.Label, 23);
+					Entry.Details = CompactLabel(Entry.Details, 29);
+				}
 				CachedPreviewRevision = VM->PreviewRevision;
 				CachedPreviewFocus = Focus;
 				CachedSelectedBody = SelectedBody;
@@ -991,7 +1025,7 @@ namespace APSGenerationUI
 			}
 
 			TArray<FSlateRect> OccupiedLabels;
-			const FVector2D LabelSize(160.0f, 34.0f);
+			const FVector2D LabelSize(160.0f, 36.0f);
 			FVector ViewLocation = FVector::ZeroVector;
 			FRotator ViewRotation = FRotator::ZeroRotator;
 			PC->GetPlayerViewPoint(ViewLocation, ViewRotation);
@@ -1178,6 +1212,7 @@ namespace APSGenerationUI
 					}
 				}
 
+				const bool bSelected = Body && SelectedBody == Body;
 				FLinearColor MarkerColor = Entry.Depth == 0 ? Amber
 					: Entry.Depth == 1 ? Cyan : FLinearColor(0.44f, 0.72f, 1.0f, 1.0f);
 				if (const APlanet* Planet = Cast<APlanet>(Body))
@@ -1214,6 +1249,10 @@ namespace APSGenerationUI
 						break;
 					}
 				}
+				if (bSelected)
+				{
+					MarkerColor = Amber;
+				}
 				const FVector2D PoleEnd(LabelPosition.X + LabelSize.X * 0.5f, LabelPosition.Y + LabelSize.Y);
 				FSlateDrawElement::MakeLines(OutDrawElements, LayerId + 2, AllottedGeometry.ToPaintGeometry(),
 					TArray<FVector2D>{Anchor, PoleEnd}, ESlateDrawEffect::None,
@@ -1227,18 +1266,33 @@ namespace APSGenerationUI
 				FSlateDrawElement::MakeBox(OutDrawElements, LayerId + 3,
 					AllottedGeometry.ToPaintGeometry(LabelSize, FSlateLayoutTransform(LabelPosition)),
 					FAppStyle::GetBrush("WhiteBrush"), ESlateDrawEffect::None,
-					FLinearColor(0.002f, 0.014f, 0.026f, 0.94f));
+					FLinearColor(0.002f, 0.014f, 0.026f, 0.96f));
 				FSlateDrawElement::MakeBox(OutDrawElements, LayerId + 4,
 					AllottedGeometry.ToPaintGeometry(FVector2D(3.0f, LabelSize.Y), FSlateLayoutTransform(LabelPosition)),
 					FAppStyle::GetBrush("WhiteBrush"), ESlateDrawEffect::None, MarkerColor);
+				if (bSelected)
+				{
+					const TArray<FVector2D> SelectedOutline = {
+						LabelPosition,
+						LabelPosition + FVector2D(LabelSize.X, 0.0f),
+						LabelPosition + LabelSize,
+						LabelPosition + FVector2D(0.0f, LabelSize.Y),
+						LabelPosition
+					};
+					FSlateDrawElement::MakeLines(OutDrawElements, LayerId + 4,
+						AllottedGeometry.ToPaintGeometry(), SelectedOutline,
+						ESlateDrawEffect::None, Amber, true, 2.0f);
+				}
 				FSlateDrawElement::MakeText(OutDrawElements, LayerId + 5,
 					AllottedGeometry.ToPaintGeometry(FVector2D(LabelSize.X - 12.0f, 16.0f),
 						FSlateLayoutTransform(LabelPosition + FVector2D(7.0f, 4.0f))),
-					Entry.Label, Font("Bold", 9), ESlateDrawEffect::None, MarkerColor);
+					Entry.Label, ReadableFont("Bold", 10),
+					ESlateDrawEffect::None, bSelected ? Amber : White);
 				FSlateDrawElement::MakeText(OutDrawElements, LayerId + 5,
 					AllottedGeometry.ToPaintGeometry(FVector2D(LabelSize.X - 12.0f, 12.0f),
 						FSlateLayoutTransform(LabelPosition + FVector2D(7.0f, 21.0f))),
-					Entry.Details, Font("Regular", 7), ESlateDrawEffect::None, Muted);
+					Entry.Details, ReadableFont("Regular", 8),
+					ESlateDrawEffect::None, SecondaryText);
 			}
 
 			return LayerId + 5;
@@ -1491,7 +1545,7 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 11.0f, 0.0f, 0.0f)[SectionTitle(LOCTEXT("CurrentScope", "CURRENT SCOPE"))]
 		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 14.0f, 0.0f, 10.0f)
 		[
-			SNew(STextBlock).AutoWrapText(true).Font(Font("Regular", 11)).ColorAndOpacity(Muted)
+			SNew(STextBlock).AutoWrapText(true).Font(ReadableFont("Regular", 11)).ColorAndOpacity(SecondaryText)
 			.Text_Lambda([VM]()
 			{
 				if (!VM.IsValid()) return FText::GetEmpty();
@@ -1512,7 +1566,7 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 			SNew(SBorder).BorderImage(&ControlBrush).Padding(FMargin(12.0f, 10.0f))
 			[
 				SNew(STextBlock).AutoWrapText(true)
-				.Font(Font("Regular", 10)).ColorAndOpacity(White)
+				.Font(ReadableFont("Regular", 10)).ColorAndOpacity(White)
 				.Text_Lambda([VM]() { return VM.IsValid() ? VM->GetPreviewScopeSummary() : FText::GetEmpty(); })
 			]
 		]
@@ -1531,7 +1585,8 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 			]
 		]
 		+ SVerticalBox::Slot().AutoHeight()
-		[SNew(STextBlock).Text(LOCTEXT("PickHint", "DOUBLE CLICK A BODY TO FOCUS\nUSE HIERARCHY BUTTONS TO MOVE UP")).AutoWrapText(true).Font(Font("Bold", 9)).ColorAndOpacity(Cyan)];
+		[SNew(STextBlock).Text(LOCTEXT("PickHintReadable", "Double-click a body to focus. Use hierarchy controls to move up."))
+		.AutoWrapText(true).Font(ReadableFont("Regular", 9)).ColorAndOpacity(SecondaryText)];
 
 	const auto FocusButton = [this](const FText& Glyph, const FText& Label, EAstroPreviewFocus Focus)
 	{
@@ -1624,7 +1679,8 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 						+ SHorizontalBox::Slot().AutoWidth().Padding(2.0f)[FocusButton(LOCTEXT("PlanetGlyph", "P"), LOCTEXT("FocusPlanet", "PLANET"), EAstroPreviewFocus::HomePlanet)]
 					]
 					+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0.0f, 7.0f, 0.0f, 0.0f)
-					[SNew(STextBlock).Text(LOCTEXT("PreviewHint", "RMB DRAG TO ROTATE   /   MOUSE WHEEL TO ZOOM   /   DOUBLE CLICK TO FOCUS")).Font(Font("Regular", 8)).ColorAndOpacity(Muted)]
+					[SNew(STextBlock).Text(LOCTEXT("PreviewHintReadable", "RMB drag to rotate   /   Mouse wheel to zoom   /   Double-click to focus"))
+					.Font(ReadableFont("Regular", 9)).ColorAndOpacity(SecondaryText)]
 				]
 				+ SHorizontalBox::Slot().FillWidth(0.25f).Padding(10.0f, 0.0f, 0.0f, 0.0f)
 				[
@@ -1821,7 +1877,7 @@ void SWorldGenerationPanel::RebuildBodyHierarchy(const TArray<FAPSPreviewBodyEnt
 		BodyHierarchyBox->AddSlot().AutoHeight().Padding(0.0f, 6.0f)
 		[
 			SNew(STextBlock).Text(LOCTEXT("BodiesPending", "MATERIALIZING SYSTEM HIERARCHY..."))
-			.Font(Font("Regular", 9)).ColorAndOpacity(Muted).AutoWrapText(true)
+			.Font(ReadableFont("Regular", 10)).ColorAndOpacity(SecondaryText).AutoWrapText(true)
 		];
 		return;
 	}
@@ -1865,76 +1921,94 @@ void SWorldGenerationPanel::RebuildBodyHierarchy(const TArray<FAPSPreviewBodyEnt
 			}
 			return EHierarchyGlyph::System;
 		}();
-		BodyHierarchyBox->AddSlot().AutoHeight().Padding(0.0f, 1.0f)
+		const auto IsSelected = [this, BodyActor, PreviewFocusValue]()
+		{
+			const UWorldGenerationViewModel* VM = ViewModel.Get();
+			return VM && ((BodyActor.IsValid()
+				&& VM->GetSelectedPreviewBody() == BodyActor.Get())
+				|| (PreviewFocusValue != INDEX_NONE
+					&& static_cast<int32>(VM->GetPreviewFocus()) == PreviewFocusValue));
+		};
+		BodyHierarchyBox->AddSlot().AutoHeight().Padding(0.0f, 2.0f)
 		[
 			SNew(SButton)
-			.ButtonStyle(&SecondaryButton)
-			.ButtonColorAndOpacity_Lambda([this, BodyActor, PreviewFocusValue]()
-			{
-				const UWorldGenerationViewModel* VM = ViewModel.Get();
-				const bool bSelected = VM && ((BodyActor.IsValid()
-					&& VM->GetSelectedPreviewBody() == BodyActor.Get())
-					|| (PreviewFocusValue != INDEX_NONE
-						&& static_cast<int32>(VM->GetPreviewFocus()) == PreviewFocusValue));
-				return bSelected
-					? FLinearColor(0.32f, 0.13f, 0.005f, 1.0f) : FLinearColor::White;
-			})
-			.ContentPadding(FMargin(5.0f, 4.0f))
+			.ButtonStyle(&HierarchyButton)
+			.ContentPadding(FMargin(7.0f, 5.0f))
 			.IsEnabled(bCanFocus)
 			.OnClicked(this, &SWorldGenerationPanel::FocusPreviewHierarchyEntry,
 				BodyActor, ClusterSystemInstanceIndex, PreviewFocusValue)
 			[
-				SNew(SHorizontalBox)
-				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Fill)
+				SNew(SOverlay)
+				+ SOverlay::Slot()
 				[
-					SNew(SGenerationHierarchyBranch)
-					.Depth(VisualDepth)
-					.Color_Lambda([this, BodyActor, PreviewFocusValue]()
+					SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush"))
+					.BorderBackgroundColor_Lambda([IsSelected]()
 					{
-						const UWorldGenerationViewModel* VM = ViewModel.Get();
-						const bool bSelected = VM && ((BodyActor.IsValid()
-							&& VM->GetSelectedPreviewBody() == BodyActor.Get())
-							|| (PreviewFocusValue != INDEX_NONE
-								&& static_cast<int32>(VM->GetPreviewFocus()) == PreviewFocusValue));
-						return bSelected ? Amber : Cyan;
+						return IsSelected() ? SelectedFill : FLinearColor::Transparent;
 					})
+					.Visibility(EVisibility::HitTestInvisible)
 				]
-				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(2.0f, 0.0f, 6.0f, 0.0f)
+				+ SOverlay::Slot()
 				[
-					SNew(SGenerationHierarchyGlyph)
-					.Glyph(Glyph)
-					.Color_Lambda([this, BodyActor, PreviewFocusValue]()
-					{
-						const UWorldGenerationViewModel* VM = ViewModel.Get();
-						const bool bSelected = VM && ((BodyActor.IsValid()
-							&& VM->GetSelectedPreviewBody() == BodyActor.Get())
-							|| (PreviewFocusValue != INDEX_NONE
-								&& static_cast<int32>(VM->GetPreviewFocus()) == PreviewFocusValue));
-						return bSelected ? Amber : Cyan;
-					})
-				]
-				+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
-				[
-					SNew(SVerticalBox)
-					+ SVerticalBox::Slot().AutoHeight()
-					[SNew(STextBlock).Text(Entry.Label).Font(Font("Bold", 9)).ColorAndOpacity(White)]
-					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 1.0f, 0.0f, 0.0f)
-					[SNew(STextBlock).Text(Entry.Details).Font(Font("Regular", 7)).ColorAndOpacity(Muted)]
-				]
-				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(5.0f, 0.0f)
-				[
-					SNew(SBox).WidthOverride(25.0f).HeightOverride(20.0f)
-					.Visibility(ImmediateChildCount > 0 ? EVisibility::Visible : EVisibility::Collapsed)
+					SNew(SHorizontalBox)
+					+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Fill)
 					[
-						SNew(SBorder).BorderImage(&ControlBrush).Padding(0.0f)
+						SNew(SGenerationHierarchyBranch)
+						.Depth(VisualDepth)
+						.Color_Lambda([IsSelected]() { return IsSelected() ? Amber : Cyan; })
+					]
+					+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(2.0f, 0.0f, 6.0f, 0.0f)
+					[
+						SNew(SGenerationHierarchyGlyph)
+						.Glyph(Glyph)
+						.Color_Lambda([IsSelected]() { return IsSelected() ? Amber : Cyan; })
+					]
+					+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
+					[
+						SNew(SVerticalBox)
+						+ SVerticalBox::Slot().AutoHeight()
 						[
-							SNew(STextBlock).Text(FText::AsNumber(ImmediateChildCount))
-							.Justification(ETextJustify::Center).Font(Font("Bold", 8)).ColorAndOpacity(Cyan)
+							SNew(STextBlock).Text(Entry.Label).Font(ReadableFont("Bold", 10))
+							.ColorAndOpacity(White).OverflowPolicy(ETextOverflowPolicy::Ellipsis)
+							.ToolTipText(Entry.Label)
+						]
+						+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 2.0f, 0.0f, 0.0f)
+						[
+							SNew(STextBlock).Text(Entry.Details).Font(ReadableFont("Regular", 9))
+							.ColorAndOpacity(SecondaryText).OverflowPolicy(ETextOverflowPolicy::Ellipsis)
+							.ToolTipText(Entry.Details)
 						]
 					]
+					+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(7.0f, 0.0f)
+					[
+						SNew(SBox).WidthOverride(25.0f).HeightOverride(20.0f)
+						.Visibility(ImmediateChildCount > 0 ? EVisibility::Visible : EVisibility::Collapsed)
+						[
+							SNew(SBorder).BorderImage(&ControlBrush).Padding(0.0f)
+							[
+								SNew(STextBlock).Text(FText::AsNumber(ImmediateChildCount))
+								.Justification(ETextJustify::Center).Font(Font("Bold", 8)).ColorAndOpacity(Cyan)
+							]
+						]
+					]
+					+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+					[
+						SNew(STextBlock).Text(bCanFocus ? FText::FromString(TEXT(">")) : FText::GetEmpty())
+						.Font(Font("Bold", 9)).ColorAndOpacity_Lambda([IsSelected]()
+						{
+							return IsSelected() ? Amber : Cyan;
+						})
+					]
 				]
-				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
-				[SNew(STextBlock).Text(bCanFocus ? FText::FromString(TEXT(">")) : FText::GetEmpty()).Font(Font("Bold", 9)).ColorAndOpacity(Cyan)]
+				+ SOverlay::Slot().HAlign(HAlign_Left)
+				[
+					SNew(SBox).WidthOverride(3.0f)
+					.Visibility_Lambda([IsSelected]()
+					{
+						return IsSelected() ? EVisibility::HitTestInvisible : EVisibility::Collapsed;
+					})
+					[SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(Amber)]
+				]
 			]
 		];
 	}

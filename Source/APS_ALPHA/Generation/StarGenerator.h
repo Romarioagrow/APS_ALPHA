@@ -51,8 +51,12 @@ public:
 	 */
 	static double GetFarStarVisualRadius(double PhysicalRadius);
 
-	/** Preserves approximate luminous energy when GetFarStarVisualRadius expands a proxy. */
-	static double GetFarStarVisualEmission(double PhysicalRadius, double PhysicalEmission);
+	/**
+	 * Preserves approximate luminous energy when a far proxy is expanded. Pass the
+	 * final post-floor visual scale when a hierarchy applies an additional proxy floor.
+	 */
+	static double GetFarStarVisualEmission(double PhysicalRadius, double PhysicalEmission,
+		double ActualVisualRadius = 0.0);
 
 	FLinearColor TemperatureToRGB(float Temperature);
 

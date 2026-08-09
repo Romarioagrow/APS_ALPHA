@@ -51,8 +51,16 @@ namespace APSPlanetNoise
 		// authored above-sea span per profile so low-land Ocean worlds still reach
 		// the same material layers as dry worlds instead of rendering as an almost
 		// uniform black bottom layer.
+		// Do not pretend that a sparse-island Ocean body owns at least 25% land.
+		// Doing so widens the display span far beyond the height actually available
+		// above sea level and compresses every surviving island into the coast/lowest
+		// material band.  Eight percent is only a numerical floor for all-water edge
+		// cases; normal Ocean (9-13%) and Archipelago profiles now use their authored
+		// coverage and can reach the same readable lowland/highland palette layers as
+		// dry bodies.  This remains a material-channel mapping only: Data.Height and
+		// therefore WorldScape geometry/collision are deliberately unchanged.
 		const double CoverageAwareLandSpan = 0.13 * FMath::Max(
-			static_cast<double>(Profile.LandCoverage), 0.25);
+			static_cast<double>(Profile.LandCoverage), 0.08);
 		// Cryogenic's physically amplified broad bands legitimately exceed the common
 		// 0.13 authored land span. A hard linear map consequently pinned most vertices
 		// to red=0/1 and made real geometry look like one flat colour. Use a wider
@@ -204,6 +212,14 @@ FNoiseData UAPSWorldScapePlanetNoise::Evaluate(
 	const double PresentationRatio = FMath::Clamp(
 		FMath::Abs(NoiseIntensity) / ProfileIntensity, 1.0e-9, 1.0);
 	const double PhysicalPlanetScale = SafePlanetScale / PresentationRatio;
+	// A normalized PLANET-page globe is a presentation of the same resolved body,
+	// not a centimetre-for-centimetre gameplay planet. Reconstructing the physical
+	// 18 km..22 m bands on that tiny globe turns them into roughly 32 m..4 cm waves,
+	// far above the outer clipmap sampling rate. They then alias into the concentric
+	// rings and dots visible in the rendered gallery. Keep every physical band exactly
+	// as authored for a full-scale root; the scaled orbital root uses the bounded
+	// continental/regional silhouette of this same WorldScape surface.
+	const double PhysicalDetailWeight = PresentationRatio < 0.999 ? 0.0 : 1.0;
 	constexpr double GroundRegionalBaseWavelengthCm = 1800000.0; // 18 km base landform
 	constexpr double GroundReliefBaseWavelengthCm = 400000.0;    // 4 km terrain relief
 	constexpr double GroundRollingBaseWavelengthCm = 180000.0;   // 1.8 km rolling terrain
@@ -313,18 +329,20 @@ FNoiseData UAPSWorldScapePlanetNoise::Evaluate(
 	// break-up. Most energy is deliberately in the 1.8-18 km bands so a pawn sees
 	// coherent ridges and valleys rather than a displaced but visually flat tile.
 	// Their profile boosts stay finite so the strengthened relief remains traversable.
-	HeightNormalized += GroundRegional * 0.0200 * GroundRegionalShape
+	HeightNormalized += PhysicalDetailWeight * GroundRegional * 0.0200 * GroundRegionalShape
 		* GroundBroadLandformBoost * GroundSurfaceMask;
-	HeightNormalized += GroundRelief * 0.0280 * GroundRoughness
+	HeightNormalized += PhysicalDetailWeight * GroundRelief * 0.0280 * GroundRoughness
 		* GroundBroadLandformBoost * GroundSurfaceMask;
-	HeightNormalized += GroundRolling * 0.0155 * GroundRoughness
+	HeightNormalized += PhysicalDetailWeight * GroundRolling * 0.0155 * GroundRoughness
 		* GroundRollingLandformBoost * GroundSurfaceMask;
-	HeightNormalized += GroundMicro * 0.0050 * GroundRoughness
+	HeightNormalized += PhysicalDetailWeight * GroundMicro * 0.0050 * GroundRoughness
 		* GroundLocalLandformBoost * GroundSurfaceMask;
-	HeightNormalized += GroundWalk * 0.0026 * GroundRoughness
+	HeightNormalized += PhysicalDetailWeight * GroundWalk * 0.0026 * GroundRoughness
 		* GroundLocalLandformBoost * GroundSurfaceMask;
-	HeightNormalized += GroundFine * 0.00032 * GroundFineResponse * GroundSurfaceMask;
-	HeightNormalized += GroundFoot * 0.00010 * GroundFineResponse * GroundSurfaceMask;
+	HeightNormalized += PhysicalDetailWeight * GroundFine * 0.00032
+		* GroundFineResponse * GroundSurfaceMask;
+	HeightNormalized += PhysicalDetailWeight * GroundFoot * 0.00010
+		* GroundFineResponse * GroundSurfaceMask;
 	// Keep orbital colour classification on a deliberately low-pass terrain field.
 	// Feeding physical displacement or preset deformation into vertex R turns real
 	// relief into nested palette isolines; at mixed WorldScape LODs those isolines also
@@ -332,8 +350,8 @@ FNoiseData UAPSWorldScapePlanetNoise::Evaluate(
 	// Vertex R receives only broad continental/mountain structure plus a restrained
 	// share of the 18 km and 4 km fields. The 1.8 km and finer physical bands and all
 	// preset-only deformation remain geometry-only.
-	const double PalettePhysicalBandGain = bCryogenicGround
-		? 0.24 : (bHighMountainGround ? 0.26 : 0.22);
+	const double PalettePhysicalBandGain = PhysicalDetailWeight * (bCryogenicGround
+		? 0.24 : (bHighMountainGround ? 0.26 : 0.22));
 	const double PaletteMacroHeightNormalized =
 		static_cast<double>(SurfaceProfile.OceanLevel) + SignedLand * 0.13
 		+ Regional * 0.014 * static_cast<double>(SurfaceProfile.HillStrength) * DeepLandMask

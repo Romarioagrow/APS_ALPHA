@@ -153,7 +153,7 @@ void UGalaxyGenerator::GenerateGalaxyOctreeStars(UStarGenerator* StarGenerator, 
 	// after full-scale preview normalization. Keep model radii untouched and apply
 	// a preview-only screen-stable impostor floor of roughly one rendered pixel.
 	const double MinimumPreviewProxyRadius = bUsePreviewPresentation
-		? GalaxyRadius * 0.00135 * SparseSampleCompensation : 0.0;
+		? GalaxyRadius * 0.00055 * SparseSampleCompensation : 0.0;
 	const double MinimumPreviewProxyScale = MinimumPreviewProxyRadius / ProxyMeshRadius;
 	FBox RenderedSampleBounds(EForceInit::ForceInit);
 
@@ -189,7 +189,8 @@ void UGalaxyGenerator::GenerateGalaxyOctreeStars(UStarGenerator* StarGenerator, 
 			StarRecord.SpectralClass, StarRecord.SpectralSubclass);
 		const double PhysicalEmission = StarGenerator->CalculateEmission(
 			static_cast<float>(APSGalaxyVisuals::LuminosityForSpectralClass(StarRecord.SpectralClass) * 25.0));
-		const double VisualEmission = UStarGenerator::GetFarStarVisualEmission(PhysicalRadius, PhysicalEmission);
+		const double VisualEmission = UStarGenerator::GetFarStarVisualEmission(
+			PhysicalRadius, PhysicalEmission, VisualScale);
 		NewGalaxy->StarMeshInstances->SetCustomDataValue(InstanceIndex, 0, ColorValue.R, false);
 		NewGalaxy->StarMeshInstances->SetCustomDataValue(InstanceIndex, 1, ColorValue.G, false);
 		NewGalaxy->StarMeshInstances->SetCustomDataValue(InstanceIndex, 2, ColorValue.B, false);

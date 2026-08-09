@@ -182,7 +182,7 @@ public:
 	bool GetPreviewPresentationLocation(const AActor* Actor, FVector& OutLocation) const;
 	/** Matching mesh-only radius used by PLANET presentation and atmosphere framing. */
 	bool GetPreviewPresentationRadius(const AActor* Actor, double& OutRadius) const;
-	/** Selected real body whose WorldScape surface is currently presented in the menu. */
+	/** Selected real body whose closed globe is presented; WorldScape remains a hidden resolver. */
 	APlanetaryBody* GetActivePreviewWorldScapeBody() const { return ActivePreviewWorldScapeBody.Get(); }
 	/** Number of resolved profiles committed by the persistent menu surface generator. */
 	int32 GetPreviewSurfaceProfileApplyCount() const { return PreviewSurfaceProfileApplyCount; }
@@ -235,9 +235,11 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "World Generation|Preview")
 	void OrbitPreviewCamera(FVector2D ScreenDelta);
+	/** Arms PLANET RMB only when the selected body's committed terrain proxy is visible. */
 	void BeginPreviewCameraOrbit();
 	void EndPreviewCameraOrbit();
 
+	/** Moves only the preview camera; a PLANET zoom never advances the hidden resolver. */
 	UFUNCTION(BlueprintCallable, Category = "World Generation|Preview")
 	void ZoomPreviewCamera(float WheelDelta);
 

@@ -40,7 +40,7 @@ double UStarGenerator::GetFarStarVisualRadius(const double PhysicalRadius)
 }
 
 double UStarGenerator::GetFarStarVisualEmission(const double PhysicalRadius,
-	const double PhysicalEmission)
+	const double PhysicalEmission, const double ActualVisualRadius)
 {
 	if (!FMath::IsFinite(PhysicalRadius) || !FMath::IsFinite(PhysicalEmission)
 		|| PhysicalRadius <= 0.0 || PhysicalEmission <= 0.0)
@@ -48,7 +48,9 @@ double UStarGenerator::GetFarStarVisualEmission(const double PhysicalRadius,
 		return 0.0;
 	}
 
-	const double VisualRadius = GetFarStarVisualRadius(PhysicalRadius);
+	const double VisualRadius = FMath::IsFinite(ActualVisualRadius) && ActualVisualRadius > 0.0
+		? FMath::Max(ActualVisualRadius, PhysicalRadius)
+		: GetFarStarVisualRadius(PhysicalRadius);
 	const double AreaCompensation = FMath::Square(
 		FMath::Clamp(PhysicalRadius / VisualRadius, 0.0, 1.0));
 	return PhysicalEmission * AreaCompensation;
@@ -103,17 +105,17 @@ void UStarGenerator::ApplySpectralMaterial(AStar* NewStar, TSharedPtr<FStarModel
 		0.0f, 1.0f);
 	StarDynamicMaterial->SetScalarParameterValue(TEXT("SurfaceSeed"), SurfaceSeed);
 	StarDynamicMaterial->SetScalarParameterValue(TEXT("SurfaceVariation"),
-		FMath::Lerp(0.20f, 0.48f, TypeActivity));
+		FMath::Lerp(0.24f, 0.50f, TypeActivity));
 	StarDynamicMaterial->SetScalarParameterValue(TEXT("GranulationStrength"),
-		FMath::Lerp(0.30f, 0.58f, FMath::Clamp(TypeActivity * 0.72f + Luminosity01 * 0.28f,
+		FMath::Lerp(0.36f, 0.64f, FMath::Clamp(TypeActivity * 0.72f + Luminosity01 * 0.28f,
 			0.0f, 1.0f)));
 	// Cooler convection zones tend to read with stronger dark spots; very hot and
 	// compact stars retain fine granulation without being covered by black patches.
 	StarDynamicMaterial->SetScalarParameterValue(TEXT("SpotStrength"),
-		FMath::Lerp(0.18f, 0.56f, FMath::Clamp((1.0f - Temperature01) * 0.68f
+		FMath::Lerp(0.20f, 0.60f, FMath::Clamp((1.0f - Temperature01) * 0.68f
 			+ TypeActivity * 0.32f, 0.0f, 1.0f)));
 	StarDynamicMaterial->SetScalarParameterValue(TEXT("CoronaStrength"),
-		FMath::Lerp(0.28f, 0.58f, FMath::Clamp(TypeActivity * 0.55f
+		FMath::Lerp(0.10f, 0.24f, FMath::Clamp(TypeActivity * 0.55f
 			+ Luminosity01 * 0.45f, 0.0f, 1.0f)));
 
 	// ��������� ������������ �������� � ������ �������

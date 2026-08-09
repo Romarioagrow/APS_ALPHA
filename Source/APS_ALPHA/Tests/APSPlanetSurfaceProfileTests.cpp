@@ -10,10 +10,12 @@
 #include "Engine/World.h"
 #include "Materials/Material.h"
 #include "Materials/MaterialExpressionClamp.h"
+#include "Materials/MaterialExpressionConstant.h"
 #include "Materials/MaterialExpressionFresnel.h"
 #include "Materials/MaterialExpressionLinearInterpolate.h"
 #include "Materials/MaterialExpressionMultiply.h"
 #include "Materials/MaterialExpressionOneMinus.h"
+#include "Materials/MaterialExpressionScalarParameter.h"
 #include "Materials/MaterialExpressionSmoothStep.h"
 #include "Materials/MaterialExpressionTextureSample.h"
 #include "Materials/MaterialExpressionVertexColor.h"
@@ -982,13 +984,13 @@ bool FAPSPlanetSurfaceMaterialCatalogIntegrityTest::RunTest(const FString& Param
 					EmissiveHeightBand->ConstMax - EmissiveHeightBand->ConstMin >= 0.70f);
 			}
 		}
-		TestTrue(TEXT("Orbital terrain bounds emissive output"),
+		TestTrue(TEXT("Orbital terrain bounds authored lava glow below display white"),
 			OrbitalTerrain->GetExpressions().ContainsByPredicate([](const UMaterialExpression* Expression)
 			{
 				const UMaterialExpressionClamp* Clamp = Cast<UMaterialExpressionClamp>(Expression);
 				return Clamp && Clamp->ClampMode == CMODE_Clamp
 					&& FMath::IsNearlyEqual(Clamp->MinDefault, 0.0f)
-					&& FMath::IsNearlyEqual(Clamp->MaxDefault, 1.25f);
+					&& FMath::IsNearlyEqual(Clamp->MaxDefault, 0.38f);
 			}));
 		TestTrue(TEXT("Orbital terrain connects its generated colour graph to Base Color"),
 			APSPlanetSurfaceProfileTests::HasConnectedMaterialProperty(
@@ -1004,7 +1006,8 @@ bool FAPSPlanetSurfaceMaterialCatalogIntegrityTest::RunTest(const FString& Param
 				APSPlanetSurfaceProfileTests::HasVectorParameter(OrbitalTerrain, ParameterName));
 		}
 		for (const TCHAR* ParameterName :
-			{TEXT("ClimateBlend"), TEXT("Roughness"), TEXT("Metallic"), TEXT("Specular")})
+			{TEXT("ClimateBlend"), TEXT("TerrainAmbientFill"), TEXT("Roughness"),
+				TEXT("Metallic"), TEXT("Specular")})
 		{
 			TestTrue(*FString::Printf(TEXT("Orbital terrain exposes %s"), ParameterName),
 				APSPlanetSurfaceProfileTests::HasScalarParameter(OrbitalTerrain, ParameterName));
@@ -1124,11 +1127,36 @@ bool FAPSPlanetSurfaceMaterialCatalogIntegrityTest::RunTest(const FString& Param
 		TestTrue(TEXT("Orbital liquid connects its authored opacity control"),
 			APSPlanetSurfaceProfileTests::HasConnectedMaterialProperty(
 				OrbitalLiquid, MP_Opacity));
-		TestFalse(TEXT("Canonical liquid never treats WorldScape hole alpha as visibility"),
-			OrbitalLiquid->GetExpressions().ContainsByPredicate([](const UMaterialExpression* Expression)
+		// Physical WorldScape ocean meshes reserve vertex alpha for holes and therefore
+		// must remain fully visible.  The same master is also used by the closed orbital
+		// proxy, where OrbitalNormalBlend=1 deliberately selects the resolver-authored
+		// alpha water mask.  Validate that the mask is isolated behind that context
+		// switch instead of forbidding VertexColor anywhere in the shared graph.
+		const UMaterialExpressionLinearInterpolate* VisibilityContext = nullptr;
+		for (const UMaterialExpression* Expression : OrbitalLiquid->GetExpressions())
+		{
+			const UMaterialExpressionLinearInterpolate* Lerp =
+				Cast<UMaterialExpressionLinearInterpolate>(Expression);
+			const UMaterialExpressionScalarParameter* BlendParameter = Lerp
+				? Cast<UMaterialExpressionScalarParameter>(Lerp->Alpha.Expression) : nullptr;
+			if (BlendParameter
+				&& BlendParameter->ParameterName == TEXT("OrbitalNormalBlend"))
 			{
-				return Expression && Expression->IsA<UMaterialExpressionVertexColor>();
-			}));
+				const UMaterialExpressionConstant* PhysicalVisibility =
+					Cast<UMaterialExpressionConstant>(Lerp->A.Expression);
+				const UMaterialExpressionSmoothStep* OrbitalMask =
+					Cast<UMaterialExpressionSmoothStep>(Lerp->B.Expression);
+				if (PhysicalVisibility && FMath::IsNearlyEqual(PhysicalVisibility->R, 1.0f)
+					&& OrbitalMask && OrbitalMask->Value.Expression
+						&& OrbitalMask->Value.Expression->IsA<UMaterialExpressionVertexColor>())
+				{
+					VisibilityContext = Lerp;
+					break;
+				}
+			}
+		}
+		TestNotNull(TEXT("Canonical liquid isolates orbital water alpha from physical WorldScape visibility"),
+			VisibilityContext);
 		TestFalse(TEXT("Canonical liquid has no UV sampling that can reveal cube-patch grids"),
 			OrbitalLiquid->GetExpressions().ContainsByPredicate([](const UMaterialExpression* Expression)
 			{
@@ -1136,8 +1164,12 @@ bool FAPSPlanetSurfaceMaterialCatalogIntegrityTest::RunTest(const FString& Param
 			}));
 		const FExpressionInput* OpacityInput =
 			OrbitalLiquid->GetExpressionInputForProperty(MP_Opacity);
-		const UMaterialExpressionClamp* OpacityClamp = OpacityInput
-			? Cast<UMaterialExpressionClamp>(OpacityInput->Expression) : nullptr;
+		const UMaterialExpressionMultiply* VisibilityMaskedOpacity = OpacityInput
+			? Cast<UMaterialExpressionMultiply>(OpacityInput->Expression) : nullptr;
+		const UMaterialExpressionClamp* OpacityClamp = VisibilityMaskedOpacity
+			? Cast<UMaterialExpressionClamp>(VisibilityMaskedOpacity->A.Expression) : nullptr;
+		TestNotNull(TEXT("Canonical liquid applies its context visibility after opacity is bounded"),
+			VisibilityMaskedOpacity);
 		if (TestNotNull(TEXT("Canonical liquid opacity is clamped"), OpacityClamp))
 		{
 			TestTrue(TEXT("Canonical liquid opacity stays translucent but visible"),
@@ -1165,8 +1197,12 @@ bool FAPSPlanetSurfaceMaterialCatalogIntegrityTest::RunTest(const FString& Param
 		}
 		const FExpressionInput* EmissiveInput =
 			OrbitalLiquid->GetExpressionInputForProperty(MP_EmissiveColor);
-		const UMaterialExpressionClamp* EmissiveClamp = EmissiveInput
-			? Cast<UMaterialExpressionClamp>(EmissiveInput->Expression) : nullptr;
+		const UMaterialExpressionMultiply* VisibilityMaskedEmissive = EmissiveInput
+			? Cast<UMaterialExpressionMultiply>(EmissiveInput->Expression) : nullptr;
+		const UMaterialExpressionClamp* EmissiveClamp = VisibilityMaskedEmissive
+			? Cast<UMaterialExpressionClamp>(VisibilityMaskedEmissive->A.Expression) : nullptr;
+		TestNotNull(TEXT("Canonical liquid applies its context visibility after emissive is bounded"),
+			VisibilityMaskedEmissive);
 		if (TestNotNull(TEXT("Canonical liquid emissive is clamped"), EmissiveClamp))
 		{
 			TestTrue(TEXT("Canonical liquid emissive stays display-safe"),

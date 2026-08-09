@@ -39,63 +39,51 @@ namespace APSPlanetSurfaceGallerySmokeTests
 	constexpr double MinimumWarmFps = 75.0;
 	constexpr double MaximumFrameMilliseconds = 250.0;
 	constexpr double MinimumPlanetMeanBrightness = 4.0;
+	constexpr double MaximumPlanetMeanBrightness = 215.0;
 	constexpr double MinimumPlanetBrightnessVariance = 8.0;
 	constexpr double MinimumPlanetNonBlackRatio = 0.10;
-	constexpr double MaximumPlanetClippedRatio = 0.40;
+	constexpr double MaximumPlanetClippedRatio = 0.10;
 	constexpr double MaximumBackgroundMeanBrightness = 64.0;
 	constexpr double MaximumBackgroundClippedRatio = 0.10;
-	bool InheritsExpectedWorldScapeTerrainTemplate(UMaterialInterface* Material,
-		const EAPSPlanetSurfaceArchetype /*Archetype*/)
+	bool InheritsExpectedOrbitalTerrainTemplate(UMaterialInterface* Material)
 	{
-		// Every solid family now resolves through one project-owned WorldScape master.
-		// The old Terra/Selenae/Magma ancestry check made a ready 10/10 live payload
-		// wait for the full timeout after the canonical material migration.
+		// The closed hierarchy globe is geometry derived from the authoritative
+		// WorldScape profile, but it deliberately owns the orbital presentation master.
+		// Parenting it to the physical patch material makes ActorPositionWS, normals and
+		// liquid masks resolve against a streamed root and reintroduces cube-face seams.
 		if (!IsValid(Material) || Material->GetBlendMode() != BLEND_Opaque)
 		{
 			return false;
 		}
 		const UMaterial* Master = Material->GetMaterial();
 		return IsValid(Master)
-			&& Master->GetPathName().Contains(TEXT("M_APS_WorldScapeTerrain"));
+			&& Master->GetPathName().Contains(TEXT("M_APS_OrbitalTerrain"));
 	}
 
-	bool HasCompleteCenteredWorldScapeSurface(AWorldScapeRoot* Root)
+	bool HasReadyCanonicalOrbitalLod(AAstroGenerator* Generator,
+		APlanetarySurfaceGenerator* Surface, APlanet* Planet)
 	{
-		if (!IsValid(Root) || Root->WorldScapeLod.Num() != Root->MaxLod
-			|| Root->WorldScapeLodInGeneration.Num() != 0)
+		if (!IsValid(Generator) || !IsValid(Surface) || !IsValid(Planet)
+			|| !Planet->bWorldScapeSurfaceReady
+			|| !Surface->IsSurfaceProfileCurrent(Planet)
+			|| Generator->GetPreviewGlobeProfileSignature()
+				!= Surface->AppliedSurfaceProfileSignature)
 		{
 			return false;
 		}
-		const FVector DesiredNormal = Root->WorldToECEF(
-			Root->OverridedPlayerPosition).ToFVector().GetSafeNormal();
-		if (DesiredNormal.IsNearlyZero())
+		UProceduralMeshComponent* Terrain =
+			Generator->GetActivePreviewTerrainProxy();
+		if (!IsValid(Terrain) || Terrain->GetProcMeshSection(0) == nullptr
+			|| !Terrain->IsVisible() || Terrain->bHiddenInGame
+			|| Terrain->GetCollisionEnabled() != ECollisionEnabled::NoCollision
+			|| Generator->GetPreviewGlobeVertexCount() < 6 * 65 * 65
+			|| Generator->GetPreviewGlobeIndexCount() < 6 * 64 * 64 * 6)
 		{
 			return false;
 		}
-		for (const UWorldScapeLod* Lod : Root->WorldScapeLod)
-		{
-			if (!APSWorldScapePayloadValidation::HasCompleteCenteredPayload(
-				Lod, DesiredNormal, true))
-			{
-				return false;
-			}
-		}
-		if (!Root->bOcean)
-		{
-			return true;
-		}
-		if (Root->WorldScapeLodOcean.Num() != Root->OceanMaxLod)
-		{
-			return false;
-		}
-		for (const UWorldScapeLod* Lod : Root->WorldScapeLodOcean)
-		{
-			if (!APSWorldScapePayloadValidation::HasCompleteCenteredPayload(
-				Lod, DesiredNormal, false))
-			{
-				return false;
-			}
-		}
+		// Material ancestry is a semantic assertion, not an asynchronous readiness
+		// condition. Validate it immediately after this temporal gate so a bad MID
+		// fails with the exact contract instead of consuming the 150-second timeout.
 		return true;
 	}
 
@@ -363,13 +351,7 @@ namespace APSPlanetSurfaceGallerySmokeTests
 				&& Surface->ResolvedSurfaceProfile.PlanetType == GalleryCase.PlanetType
 				&& IsValid(Surface->ResolvedNoiseInstance)
 				&& IsValid(Surface->ResolvedTerrainMaterialInstance)
-				&& !Root->IsHidden()
-				&& Root->TerrainMaterial.DefaultMaterial
-					== Surface->ResolvedTerrainMaterialInstance
-				&& InheritsExpectedWorldScapeTerrainTemplate(
-					Surface->ResolvedTerrainMaterialInstance,
-					Surface->ResolvedSurfaceProfile.Archetype)
-				&& HasCompleteCenteredWorldScapeSurface(Root);
+				&& HasReadyCanonicalOrbitalLod(Generator, Surface, Planet);
 			if (!bRevisionReady || !bProfileReady)
 			{
 				return false;
@@ -401,73 +383,150 @@ namespace APSPlanetSurfaceGallerySmokeTests
 			bValid &= Test->TestTrue(FString::Printf(TEXT("%s uses the WorldScape resolver pipeline"),
 				GalleryCase.DisplayName),
 				UAPSPlanetSurfaceProfileResolver::SupportsWorldScape(GalleryCase.PlanetType));
-			bValid &= Test->TestFalse(FString::Printf(TEXT("%s presents the real WorldScape root"),
+			bValid &= Test->TestTrue(FString::Printf(TEXT("%s keeps the local WorldScape root inert in orbital view"),
 				GalleryCase.DisplayName), Root->IsHidden());
-			bValid &= Test->TestFalse(FString::Printf(TEXT("%s ready WorldScape root no longer ticks"),
+			bValid &= Test->TestFalse(FString::Printf(TEXT("%s inert resolver root no longer ticks"),
 				GalleryCase.DisplayName), Root->IsActorTickEnabled());
-			bValid &= Test->TestFalse(FString::Printf(TEXT("%s ready WorldScape root is frozen"),
+			bValid &= Test->TestFalse(FString::Printf(TEXT("%s inert resolver root launches no generation"),
 				GalleryCase.DisplayName), Root->bGenerateWorldScape);
-			bValid &= Test->TestEqual(FString::Printf(TEXT("%s has no WorldScape workers"),
+			bValid &= Test->TestEqual(FString::Printf(TEXT("%s has no preview WorldScape workers"),
 				GalleryCase.DisplayName), Root->WorldScapeLodInGeneration.Num(), 0);
-			bValid &= Test->TestTrue(FString::Printf(
-				TEXT("%s owns one complete centered WorldScape payload"),
-				GalleryCase.DisplayName), HasCompleteCenteredWorldScapeSurface(Root));
 			bValid &= Test->TestEqual(FString::Printf(
-				TEXT("%s real WorldScape root uses the exact resolver terrain MID"),
+				TEXT("%s resolver root uses the exact canonical terrain MID"),
 				GalleryCase.DisplayName), Root->TerrainMaterial.DefaultMaterial,
 				static_cast<UMaterialInterface*>(Surface->ResolvedTerrainMaterialInstance));
-			bValid &= Test->TestTrue(FString::Printf(
-				TEXT("%s resolved MID inherits its archetype WorldScape terrain template"),
-				GalleryCase.DisplayName), InheritsExpectedWorldScapeTerrainTemplate(
-					Surface->ResolvedTerrainMaterialInstance,
-					Surface->ResolvedSurfaceProfile.Archetype));
-
-			int32 CompleteTerrainLods = 0;
-			float MinimumHeightChannel = TNumericLimits<float>::Max();
-			float MaximumHeightChannel = -TNumericLimits<float>::Max();
-			for (const UWorldScapeLod* Lod : Root->WorldScapeLod)
-			{
-				if (!APSWorldScapePayloadValidation::HasCompletePayload(Lod, true))
-				{
-					continue;
-				}
-				++CompleteTerrainLods;
-				for (const FLinearColor& VertexColor : Lod->VertexColors)
-				{
-					MinimumHeightChannel = FMath::Min(MinimumHeightChannel, VertexColor.R);
-					MaximumHeightChannel = FMath::Max(MaximumHeightChannel, VertexColor.R);
-				}
-			}
-			bValid &= Test->TestEqual(FString::Printf(
-				TEXT("%s commits every real WorldScape LOD payload"), GalleryCase.DisplayName),
-				CompleteTerrainLods, Root->WorldScapeLod.Num());
-			bValid &= Test->TestTrue(FString::Printf(
-				TEXT("%s real WorldScape height channel is not flat"), GalleryCase.DisplayName),
-				MaximumHeightChannel > MinimumHeightChannel);
 
 			UProceduralMeshComponent* TerrainProxy =
 				PreviewGenerator->GetActivePreviewTerrainProxy();
-			const bool bCustomProxyVisible = IsValid(TerrainProxy)
+			const bool bOrbitalLodVisible = IsValid(TerrainProxy)
 				&& TerrainProxy->IsVisible() && !TerrainProxy->bHiddenInGame;
-			bValid &= Test->TestFalse(FString::Printf(
-				TEXT("%s never treats the selected-body custom proxy as the ready surface"),
-				GalleryCase.DisplayName), bCustomProxyVisible);
+			bValid &= Test->TestTrue(FString::Printf(
+				TEXT("%s presents one closed canonical orbital LOD"),
+				GalleryCase.DisplayName), bOrbitalLodVisible);
+			bValid &= Test->TestEqual(FString::Printf(
+				TEXT("%s orbital LOD has no collision"), GalleryCase.DisplayName),
+				TerrainProxy->GetCollisionEnabled(), ECollisionEnabled::NoCollision);
+			bValid &= Test->TestEqual(FString::Printf(
+				TEXT("%s orbital signature matches ResolveForBody"), GalleryCase.DisplayName),
+				PreviewGenerator->GetPreviewGlobeProfileSignature(),
+				Surface->AppliedSurfaceProfileSignature);
+			bValid &= Test->TestTrue(FString::Printf(
+				TEXT("%s orbital LOD uses the seam-safe orbital master"),
+				GalleryCase.DisplayName), InheritsExpectedOrbitalTerrainTemplate(
+					TerrainProxy->GetMaterial(0)));
+			bValid &= Test->TestTrue(FString::Printf(
+				TEXT("%s orbital LOD has full closed-sphere topology"),
+				GalleryCase.DisplayName),
+				PreviewGenerator->GetPreviewGlobeVertexCount() >= 6 * 65 * 65
+				&& PreviewGenerator->GetPreviewGlobeIndexCount() >= 6 * 64 * 64 * 6);
 
-			if (Root->bOcean)
+			const FProcMeshSection* TerrainSection = TerrainProxy->GetProcMeshSection(0);
+			double MinimumRadius = TNumericLimits<double>::Max();
+			double MaximumRadius = 0.0;
+			if (TerrainSection)
 			{
-				bValid &= Test->TestEqual(FString::Printf(
-					TEXT("%s WorldScape root retains the resolver liquid MID"),
-					GalleryCase.DisplayName), Root->OceanMaterial.DefaultMaterial,
-					static_cast<UMaterialInterface*>(Surface->ResolvedOceanMaterialInstance));
-				bValid &= Test->TestTrue(FString::Printf(
-					TEXT("%s commits real WorldScape ocean LODs"), GalleryCase.DisplayName),
-					Root->WorldScapeLodOcean.Num() > 0);
+				for (const FProcMeshVertex& Vertex : TerrainSection->ProcVertexBuffer)
+				{
+					const double Radius = Vertex.Position.Size();
+					MinimumRadius = FMath::Min(MinimumRadius, Radius);
+					MaximumRadius = FMath::Max(MaximumRadius, Radius);
+				}
 			}
-			else
+			bValid &= Test->TestTrue(FString::Printf(
+				TEXT("%s closed LOD samples non-flat WorldScape height"),
+				GalleryCase.DisplayName), TerrainSection
+				&& MaximumRadius - MinimumRadius > 0.01);
+
+			if (UProceduralMeshComponent* OceanProxy =
+				PreviewGenerator->GetActivePreviewOceanProxy())
 			{
-				bValid &= Test->TestNull(FString::Printf(
-					TEXT("%s has no stale WorldScape liquid material"), GalleryCase.DisplayName),
-					Root->OceanMaterial.DefaultMaterial);
+				bValid &= Test->TestTrue(FString::Printf(
+					TEXT("%s closed ocean is visible with committed terrain"),
+					GalleryCase.DisplayName), OceanProxy->IsVisible()
+					&& !OceanProxy->bHiddenInGame
+					&& OceanProxy->GetProcMeshSection(0) != nullptr);
+				bValid &= Test->TestEqual(FString::Printf(
+					TEXT("%s closed ocean has no collision"), GalleryCase.DisplayName),
+					OceanProxy->GetCollisionEnabled(), ECollisionEnabled::NoCollision);
+				const FProcMeshSection* OceanSection = OceanProxy->GetProcMeshSection(0);
+				bValid &= Test->TestTrue(FString::Printf(
+					TEXT("%s closed ocean keeps complete masked topology"),
+					GalleryCase.DisplayName), TerrainSection && OceanSection
+					&& OceanSection->ProcIndexBuffer.Num()
+						== TerrainSection->ProcIndexBuffer.Num());
+
+				UMaterialInstanceDynamic* PreviewLiquid =
+					Cast<UMaterialInstanceDynamic>(OceanProxy->GetMaterial(0));
+				UMaterialInstanceDynamic* ResolvedLiquid =
+					Surface->ResolvedOceanMaterialInstance;
+				bValid &= Test->TestNotNull(FString::Printf(
+					TEXT("%s closed ocean owns a flattened preview MID"),
+					GalleryCase.DisplayName), PreviewLiquid);
+				bValid &= Test->TestNotNull(FString::Printf(
+					TEXT("%s closed ocean retains its resolved source MID"),
+					GalleryCase.DisplayName), ResolvedLiquid);
+				if (PreviewLiquid && ResolvedLiquid)
+				{
+					bValid &= Test->TestEqual(FString::Printf(
+						TEXT("%s preview and resolved oceans share one master"),
+						GalleryCase.DisplayName), PreviewLiquid->GetMaterial(),
+						ResolvedLiquid->GetMaterial());
+					bValid &= Test->TestEqual(FString::Printf(
+						TEXT("%s preview MID directly parents the resolved MIC"),
+						GalleryCase.DisplayName), PreviewLiquid->Parent.Get(),
+						ResolvedLiquid->Parent.Get());
+					bValid &= Test->TestFalse(FString::Printf(
+						TEXT("%s preview MID never creates a MID parent chain"),
+						GalleryCase.DisplayName),
+						IsValid(PreviewLiquid->Parent.Get())
+							&& PreviewLiquid->Parent->IsA<UMaterialInstanceDynamic>());
+
+					const auto AssertOrbitalScalar = [this, &GalleryCase, PreviewLiquid,
+						ResolvedLiquid](const TCHAR* ParameterName, const float Expected)
+					{
+						float PreviewValue = 0.0f;
+						float ResolvedValue = 0.0f;
+						const FHashedMaterialParameterInfo ParameterInfo{
+							FName(ParameterName)};
+						const bool bHasPreviewValue = PreviewLiquid->GetScalarParameterValue(
+							ParameterInfo, PreviewValue);
+						const bool bHasResolvedValue = ResolvedLiquid->GetScalarParameterValue(
+							ParameterInfo, ResolvedValue);
+						bool bScalarValid = Test->TestTrue(FString::Printf(
+							TEXT("%s preview liquid exposes %s"), GalleryCase.DisplayName,
+							ParameterName), bHasPreviewValue);
+						bScalarValid &= Test->TestTrue(FString::Printf(
+							TEXT("%s resolved liquid exposes %s"), GalleryCase.DisplayName,
+							ParameterName), bHasResolvedValue);
+						if (bHasPreviewValue && bHasResolvedValue)
+						{
+							bScalarValid &= Test->TestTrue(FString::Printf(
+								TEXT("%s preview liquid applies orbital %s"),
+								GalleryCase.DisplayName, ParameterName),
+								FMath::IsNearlyEqual(PreviewValue, Expected, 1.0e-4f));
+							bScalarValid &= Test->TestTrue(FString::Printf(
+								TEXT("%s resolved liquid carries orbital %s"),
+								GalleryCase.DisplayName, ParameterName),
+								FMath::IsNearlyEqual(ResolvedValue, Expected, 1.0e-4f));
+						}
+						return bScalarValid;
+					};
+					bValid &= AssertOrbitalScalar(TEXT("WaveColorStrength"), 0.003f);
+					bValid &= AssertOrbitalScalar(TEXT("WaveNormalStrength"), 0.0f);
+					bValid &= AssertOrbitalScalar(TEXT("OrbitalNormalBlend"), 1.0f);
+
+					const float ExpectedPresentationOpacity =
+						Surface->ResolvedSurfaceProfile.LiquidType == EAPSPlanetLiquidType::Lava
+							? 0.54f
+							: Surface->ResolvedSurfaceProfile.LiquidType == EAPSPlanetLiquidType::Ammonia
+								? 0.50f : 0.52f;
+					const float PreviewOpacity = PreviewLiquid->K2_GetScalarParameterValue(
+						TEXT("Opacity"));
+					bValid &= Test->TestTrue(FString::Printf(
+						TEXT("%s preview liquid applies only its presentation opacity"),
+						GalleryCase.DisplayName), FMath::IsNearlyEqual(
+							PreviewOpacity, ExpectedPresentationOpacity, 1.0e-4f));
+				}
 			}
 
 			if (PreviousSurfaceSignature != 0)
@@ -536,11 +595,12 @@ namespace APSPlanetSurfaceGallerySmokeTests
 			const FGalleryCase& GalleryCase = GalleryCases[CurrentCaseIndex];
 			APlanetarySurfaceGenerator* Surface = PreviewGenerator.IsValid()
 				? FindPreviewSurfaceGenerator(World, PreviewGenerator.Get()) : nullptr;
-			AWorldScapeRoot* Root = Surface ? Surface->WorldScapeRootInstance : nullptr;
+			UProceduralMeshComponent* Terrain = PreviewGenerator.IsValid()
+				? PreviewGenerator->GetActivePreviewTerrainProxy() : nullptr;
 			FString CaptureFailure;
 			bool bScreenshotWritten = false;
 			const bool bCapturePassed = CaptureAndValidatePlanetViewport(World, Controller,
-				Root, GalleryCase, CaptureFailure, bScreenshotWritten);
+				Terrain, GalleryCase, CaptureFailure, bScreenshotWritten);
 			if (!bCapturePassed && !bScreenshotWritten && CaptureFailure.IsEmpty())
 			{
 				if (Now - StepStartSeconds < ScreenshotTimeoutSeconds)
@@ -581,7 +641,7 @@ namespace APSPlanetSurfaceGallerySmokeTests
 		}
 
 		bool CaptureAndValidatePlanetViewport(UWorld* World,
-			AMainMenuController* Controller, AWorldScapeRoot* Root,
+			AMainMenuController* Controller, UProceduralMeshComponent* Terrain,
 			const FGalleryCase& GalleryCase, FString& OutFailure,
 			bool& bOutScreenshotWritten)
 		{
@@ -615,9 +675,10 @@ namespace APSPlanetSurfaceGallerySmokeTests
 				return false;
 			}
 			bOutScreenshotWritten = true;
-			if (!IsValid(Root) || Root->IsHidden())
+			if (!IsValid(Terrain) || !Terrain->IsVisible() || Terrain->bHiddenInGame
+				|| Terrain->GetProcMeshSection(0) == nullptr)
 			{
-				OutFailure = FString::Printf(TEXT("%s frame has no committed WorldScape root"),
+				OutFailure = FString::Printf(TEXT("%s frame has no committed canonical orbital LOD"),
 					GalleryCase.DisplayName);
 				return false;
 			}
@@ -627,8 +688,10 @@ namespace APSPlanetSurfaceGallerySmokeTests
 			const FVector CameraRight = Controller->PlayerCameraManager
 				? Controller->PlayerCameraManager->GetCameraRotation().RotateVector(FVector::RightVector)
 				: FVector::RightVector;
-			const FVector PlanetCenter = Root->GetActorLocation();
-			const double PlanetRadius = FMath::Max(Root->PlanetScale, 1.0);
+			Terrain->UpdateBounds();
+			const FVector PlanetCenter = Terrain->Bounds.Origin;
+			const double PlanetRadius = FMath::Max(
+				static_cast<double>(Terrain->Bounds.BoxExtent.GetMax()), 1.0);
 			if (!Controller->ProjectWorldLocationToScreen(PlanetCenter,
 				PlanetScreenCenter, false)
 				|| !Controller->ProjectWorldLocationToScreen(PlanetCenter
@@ -763,16 +826,17 @@ namespace APSPlanetSurfaceGallerySmokeTests
 
 			TArray<FString> PixelFailures;
 			if (MeanBrightness < MinimumPlanetMeanBrightness
+				|| MeanBrightness > MaximumPlanetMeanBrightness
 				|| BrightnessVariance < MinimumPlanetBrightnessVariance
 				|| NonBlackRatio < MinimumPlanetNonBlackRatio
 				|| PlanetClippedRatio > MaximumPlanetClippedRatio)
 			{
 				PixelFailures.Add(FString::Printf(
-					TEXT("planet disk is black/flat/clipped (mean=%.3f variance=%.3f nonBlack=%.5f clipped=%.5f; contracts mean>=%.3f variance>=%.3f nonBlack>=%.3f clipped<=%.3f)"),
+					TEXT("planet disk is black/flat/overexposed/clipped (mean=%.3f variance=%.3f nonBlack=%.5f clipped=%.5f; contracts %.3f<=mean<=%.3f variance>=%.3f nonBlack>=%.3f clipped<=%.3f)"),
 					MeanBrightness, BrightnessVariance, NonBlackRatio,
 					PlanetClippedRatio, MinimumPlanetMeanBrightness,
-					MinimumPlanetBrightnessVariance, MinimumPlanetNonBlackRatio,
-					MaximumPlanetClippedRatio));
+					MaximumPlanetMeanBrightness, MinimumPlanetBrightnessVariance,
+					MinimumPlanetNonBlackRatio, MaximumPlanetClippedRatio));
 			}
 			if (BackgroundMeanBrightness > MaximumBackgroundMeanBrightness
 				|| BackgroundClippedRatio > MaximumBackgroundClippedRatio)

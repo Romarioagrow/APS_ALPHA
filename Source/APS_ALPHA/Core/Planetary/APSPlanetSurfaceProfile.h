@@ -9,6 +9,7 @@
 class APlanetaryBody;
 class UMaterialInstance;
 class UMaterialInstanceDynamic;
+class UWorldScapeFoliagesCollection;
 
 /** Broad surface generators. User-facing planet presets remain compatible and resolve into one of these families. */
 UENUM(BlueprintType)
@@ -110,6 +111,71 @@ struct APS_ALPHA_API FAPSPlanetSurfacePalette
 	FLinearColor Emissive = FLinearColor::Black;
 };
 
+/**
+ * Optional WorldScape foliage inputs for one surface archetype.
+ *
+ * Foliage is deliberately a two-key feature: this profile opt-in and the
+ * aps.WorldScapeFoliage.Enable runtime opt-in must both be enabled before a
+ * fresh gameplay root may consume these collections. Scaled orbital/menu roots
+ * are rejected independently of both keys.
+ */
+USTRUCT(BlueprintType)
+struct APS_ALPHA_API FAPSPlanetFoliageProfile
+{
+	GENERATED_BODY()
+
+	/** Archetype-level opt-in. Native definitions and migrated catalog assets remain off. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "WorldScape Foliage")
+	bool bEnabled = false;
+
+	/** Authored source collections. Runtime uses bounded transient copies and never mutates these assets. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "WorldScape Foliage",
+		meta = (EditCondition = "bEnabled", EditConditionHides))
+	TArray<TSoftObjectPtr<UWorldScapeFoliagesCollection>> Collections;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "WorldScape Foliage|Budget",
+		meta = (ClampMin = "1", ClampMax = "2", EditCondition = "bEnabled", EditConditionHides))
+	int32 MaxCollections = 1;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "WorldScape Foliage|Budget",
+		meta = (ClampMin = "1", ClampMax = "6", EditCondition = "bEnabled", EditConditionHides))
+	int32 MaxTypesPerCollection = 3;
+
+	/** Estimated upper bound after cluster expansion, per collection and active sector. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "WorldScape Foliage|Budget",
+		meta = (ClampMin = "16", ClampMax = "512", EditCondition = "bEnabled", EditConditionHides))
+	int32 MaxInstancesPerSectorPerCollection = 128;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "WorldScape Foliage|Budget",
+		meta = (ClampMin = "1", ClampMax = "4", EditCondition = "bEnabled", EditConditionHides))
+	int32 MaxClusterMeshesPerType = 2;
+
+	/** Larger sectors reduce the number of simultaneously active HISM components. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "WorldScape Foliage|Budget",
+		meta = (ClampMin = "2000.0", ClampMax = "100000.0", Units = "cm",
+			EditCondition = "bEnabled", EditConditionHides))
+	float MinSectorSizeCm = 12000.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "WorldScape Foliage|Budget",
+		meta = (ClampMin = "0.1", ClampMax = "1.5", EditCondition = "bEnabled", EditConditionHides))
+	float MaxCullDistanceMultiplier = 1.0f;
+
+	/** Bodies below this resolved habitat signal do not allocate foliage at all. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "WorldScape Foliage|Habitat",
+		meta = (ClampMin = "0.0", ClampMax = "1.0", EditCondition = "bEnabled", EditConditionHides))
+	float MinimumBiomass = 0.15f;
+
+	/** Reuses the deterministic foliage mask already emitted by APSWorldScapePlanetNoise. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "WorldScape Foliage|Habitat",
+		meta = (EditCondition = "bEnabled", EditConditionHides))
+	bool bUseNoiseMask = true;
+
+	/** Shadows stay opt-in because each foliage type creates another instanced component. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "WorldScape Foliage|Rendering",
+		meta = (EditCondition = "bEnabled", EditConditionHides))
+	bool bCastShadows = false;
+};
+
 /** Editable ranges for an archetype. A catalog asset may override the native defaults without changing C++. */
 USTRUCT(BlueprintType)
 struct APS_ALPHA_API FAPSPlanetSurfaceArchetypeDefinition
@@ -169,6 +235,10 @@ struct APS_ALPHA_API FAPSPlanetSurfaceArchetypeDefinition
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (ClampMin = "0.0", ClampMax = "30.0"))
 	float PaletteHueVariationDegrees = 8.0f;
+
+	/** Experimental foliage remains disabled unless this nested profile is explicitly opted in. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Foliage")
+	FAPSPlanetFoliageProfile Foliage;
 };
 
 /** Immutable per-body result consumed by WorldScape noise and material code. */
@@ -283,6 +353,10 @@ struct APS_ALPHA_API FAPSResolvedPlanetSurfaceProfile
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
 	FAPSPlanetSurfacePalette Palette;
+
+	/** Resolved foliage inputs. Activation is still vetoed for previews and by the runtime kill switch. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
+	FAPSPlanetFoliageProfile Foliage;
 
 	bool HasModifier(EAPSPlanetSurfaceModifier Modifier) const
 	{

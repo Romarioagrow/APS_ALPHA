@@ -770,6 +770,7 @@ FAPSResolvedPlanetSurfaceProfile UAPSPlanetSurfaceProfileResolver::ResolveForBod
 	P.EmissiveStrength = Draw(BiomeRandom, D.EmissiveStrength);
 	P.BiomeContrast = Draw(BiomeRandom, D.BiomeContrast);
 	P.Palette = D.Palette;
+	P.Foliage = D.Foliage;
 
 	FPlanetAtmosphere Atmosphere = Body->PlanetAtmosphere;
 	const float HumidityPercent = Atmosphere.Humidity > 0.0f
@@ -975,6 +976,126 @@ void UAPSPlanetSurfaceProfileResolver::ApplyMaterialParameters(
 		ResolveMaterialWarpScale(Profile.MaterialFamily));
 	Material->SetScalarParameterValue(TEXT("ClimateBlend"),
 		ResolveMaterialClimateBlend(Profile.Archetype));
+
+	// The physical terrain profile also drives the presentation hierarchy. These
+	// values never replace WorldScape displacement; they only keep palette identity
+	// and non-periodic macro/meso/near shading coherent from orbit to gameplay.
+	float PaletteGain = 1.0f;
+	float PaletteLift = 0.003f;
+	float PaletteSaturation = 1.05f;
+	float PaletteContrast = 1.08f;
+	float MacroColorStrength = 0.052f;
+	float MesoColorStrength = 0.036f;
+	float NearColorStrength = 0.038f;
+	float DetailNormalStrength = 0.075f;
+	float MesoRoughnessStrength = 0.032f;
+	float DetailRoughnessStrength = 0.045f;
+	float TerrainAmbientFill = 0.055f;
+	switch (Profile.Archetype)
+	{
+	case EAPSPlanetSurfaceArchetype::Temperate:
+		PaletteGain = 1.00f;
+		PaletteSaturation = 1.08f;
+		PaletteContrast = 1.11f;
+		MacroColorStrength = 0.045f;
+		TerrainAmbientFill = 0.050f;
+		break;
+	case EAPSPlanetSurfaceArchetype::Oceanic:
+		PaletteGain = 0.99f;
+		PaletteSaturation = 1.05f;
+		PaletteContrast = 1.10f;
+		MacroColorStrength = 0.040f;
+		MesoColorStrength = 0.030f;
+		DetailNormalStrength = 0.055f;
+		TerrainAmbientFill = 0.045f;
+		break;
+	case EAPSPlanetSurfaceArchetype::Biosphere:
+		PaletteGain = 1.00f;
+		PaletteSaturation = 1.12f;
+		PaletteContrast = 1.11f;
+		TerrainAmbientFill = 0.050f;
+		break;
+	case EAPSPlanetSurfaceArchetype::Desert:
+		PaletteGain = 0.97f;
+		PaletteSaturation = 1.00f;
+		PaletteContrast = 1.10f;
+		MesoColorStrength = 0.036f;
+		TerrainAmbientFill = 0.052f;
+		break;
+	case EAPSPlanetSurfaceArchetype::Cryogenic:
+		PaletteGain = 0.94f;
+		PaletteLift = 0.0f;
+		PaletteSaturation = 0.92f;
+		PaletteContrast = 1.15f;
+		MacroColorStrength = 0.036f;
+		DetailNormalStrength = 0.055f;
+		TerrainAmbientFill = 0.060f;
+		break;
+	case EAPSPlanetSurfaceArchetype::Magmatic:
+		PaletteGain = 0.94f;
+		PaletteSaturation = 1.06f;
+		PaletteContrast = 1.12f;
+		MacroColorStrength = 0.048f;
+		MesoColorStrength = 0.036f;
+		TerrainAmbientFill = 0.028f;
+		break;
+	case EAPSPlanetSurfaceArchetype::Rocky:
+		PaletteGain = 1.02f;
+		PaletteLift = 0.004f;
+		PaletteSaturation = 0.88f;
+		PaletteContrast = 1.11f;
+		MacroColorStrength = 0.048f;
+		MesoColorStrength = 0.036f;
+		TerrainAmbientFill = 0.055f;
+		break;
+	case EAPSPlanetSurfaceArchetype::Metallic:
+		PaletteGain = 1.06f;
+		PaletteLift = 0.010f;
+		PaletteSaturation = 0.82f;
+		PaletteContrast = 1.09f;
+		DetailNormalStrength = 0.038f;
+		MesoRoughnessStrength = 0.028f;
+		TerrainAmbientFill = 0.065f;
+		break;
+	case EAPSPlanetSurfaceArchetype::ExoticChemical:
+		PaletteGain = 1.00f;
+		PaletteSaturation = 1.08f;
+		PaletteContrast = 1.10f;
+		MacroColorStrength = 0.048f;
+		TerrainAmbientFill = 0.060f;
+		break;
+	default:
+		break;
+	}
+
+	const float PatternResponse = FMath::Clamp(Profile.TerrainPatternStrength, 0.0f, 1.0f);
+	const float RoughnessResponse = FMath::Clamp(Profile.Roughness, 0.08f, 1.0f);
+	MacroColorStrength *= FMath::Lerp(0.90f, 1.18f, PatternResponse);
+	MesoColorStrength *= FMath::Lerp(0.88f, 1.22f, PatternResponse);
+	NearColorStrength *= FMath::Lerp(0.78f, 1.18f, RoughnessResponse);
+	DetailNormalStrength *= FMath::Lerp(0.72f, 1.18f, RoughnessResponse);
+	DetailRoughnessStrength *= FMath::Lerp(0.82f, 1.12f, RoughnessResponse);
+
+	Material->SetScalarParameterValue(TEXT("PaletteGain"), PaletteGain);
+	Material->SetScalarParameterValue(TEXT("PaletteLift"), PaletteLift);
+	Material->SetScalarParameterValue(TEXT("PaletteSaturation"), PaletteSaturation);
+	Material->SetScalarParameterValue(TEXT("PaletteContrast"), PaletteContrast);
+	Material->SetScalarParameterValue(TEXT("MacroDetailScaleCm"), FMath::Clamp(
+		8000000.0f / FMath::Max(Profile.ContinentalFrequencyMultiplier, 0.25f),
+		1500000.0f, 20000000.0f));
+	Material->SetScalarParameterValue(TEXT("MesoDetailScaleCm"), FMath::Clamp(
+		450000.0f / FMath::Max(Profile.RegionalFrequencyMultiplier, 0.25f),
+		100000.0f, 1800000.0f));
+	Material->SetScalarParameterValue(TEXT("NearDetailScaleCm"), FMath::Clamp(
+		2400.0f / FMath::Max(Profile.DetailFrequencyMultiplier, 0.25f),
+		800.0f, 24000.0f));
+	Material->SetScalarParameterValue(TEXT("MacroColorStrength"), MacroColorStrength);
+	Material->SetScalarParameterValue(TEXT("MesoColorStrength"), MesoColorStrength);
+	Material->SetScalarParameterValue(TEXT("NearColorStrength"), NearColorStrength);
+	Material->SetScalarParameterValue(TEXT("DetailNormalStrength"), DetailNormalStrength);
+	Material->SetScalarParameterValue(TEXT("MesoRoughnessStrength"), MesoRoughnessStrength);
+	Material->SetScalarParameterValue(TEXT("DetailRoughnessStrength"), DetailRoughnessStrength);
+	Material->SetScalarParameterValue(TEXT("TerrainAmbientFill"), TerrainAmbientFill);
 	Material->SetScalarParameterValue(TEXT("MidVarient1Rough"), Profile.Roughness);
 	Material->SetScalarParameterValue(TEXT("MidVarient2Rough"), Profile.Roughness);
 	Material->SetScalarParameterValue(TEXT("MidVarient3Rough"), Profile.Roughness);
@@ -984,7 +1105,7 @@ void UAPSPlanetSurfaceProfileResolver::ApplyMaterialParameters(
 	Material->SetScalarParameterValue(TEXT("Roughness"), Profile.Roughness);
 	Material->SetScalarParameterValue(TEXT("Metallic"), Profile.Metallic);
 	Material->SetScalarParameterValue(TEXT("Specular"),
-		FMath::Lerp(0.28f, 0.72f, Profile.Metallic));
+		FMath::Lerp(0.24f, 0.48f, Profile.Metallic));
 }
 
 float UAPSPlanetSurfaceProfileResolver::ResolveMaterialWarpScale(
@@ -1060,9 +1181,35 @@ uint32 UAPSPlanetSurfaceProfileResolver::BuildProfileSignature(const FAPSResolve
 	Signature = HashCombine(Signature, GetTypeHash(FMath::RoundToInt(P.Temperature * 10000.0f)));
 	Signature = HashCombine(Signature, GetTypeHash(FMath::RoundToInt(P.Humidity * 10000.0f)));
 	Signature = HashCombine(Signature, GetTypeHash(FMath::RoundToInt(P.Biomass * 10000.0f)));
+	Signature = HashCombine(Signature, GetTypeHash(FMath::RoundToInt(P.Biodiversity * 10000.0f)));
 	Signature = HashCombine(Signature, GetTypeHash(FMath::RoundToInt(P.Metallic * 10000.0f)));
 	Signature = HashCombine(Signature, GetTypeHash(FMath::RoundToInt(P.EmissiveStrength * 10000.0f)));
 	Signature = HashCombine(Signature, GetTypeHash(FMath::RoundToInt(P.BiomeContrast * 10000.0f)));
+	Signature = HashCombine(Signature,
+		GetTypeHash(static_cast<uint8>(P.Foliage.bEnabled)));
+	Signature = HashCombine(Signature, GetTypeHash(P.Foliage.MaxCollections));
+	Signature = HashCombine(Signature, GetTypeHash(P.Foliage.MaxTypesPerCollection));
+	Signature = HashCombine(Signature,
+		GetTypeHash(P.Foliage.MaxInstancesPerSectorPerCollection));
+	Signature = HashCombine(Signature, GetTypeHash(P.Foliage.MaxClusterMeshesPerType));
+	Signature = HashCombine(Signature,
+		GetTypeHash(FMath::RoundToInt(P.Foliage.MinSectorSizeCm * 10.0f)));
+	Signature = HashCombine(Signature,
+		GetTypeHash(FMath::RoundToInt(P.Foliage.MaxCullDistanceMultiplier * 10000.0f)));
+	Signature = HashCombine(Signature,
+		GetTypeHash(FMath::RoundToInt(P.Foliage.MinimumBiomass * 10000.0f)));
+	Signature = HashCombine(Signature,
+		GetTypeHash(static_cast<uint8>(P.Foliage.bUseNoiseMask)));
+	Signature = HashCombine(Signature,
+		GetTypeHash(static_cast<uint8>(P.Foliage.bCastShadows)));
+	Signature = HashCombine(Signature, GetTypeHash(P.Foliage.Collections.Num()));
+	for (const TSoftObjectPtr<UWorldScapeFoliagesCollection>& Collection :
+		P.Foliage.Collections)
+	{
+		// Ordered soft paths are part of profile identity without loading the assets.
+		Signature = HashCombine(Signature,
+			GetTypeHash(Collection.ToSoftObjectPath().ToString()));
+	}
 	Signature = HashCombine(Signature, GetTypeHash(P.Palette.Coast.ToFColor(false).DWColor()));
 	Signature = HashCombine(Signature, GetTypeHash(P.Palette.Lowland.ToFColor(false).DWColor()));
 	Signature = HashCombine(Signature, GetTypeHash(P.Palette.MidLowland.ToFColor(false).DWColor()));
