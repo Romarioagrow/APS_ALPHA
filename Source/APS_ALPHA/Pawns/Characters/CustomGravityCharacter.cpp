@@ -66,7 +66,10 @@ ACustomGravityCharacter::ACustomGravityCharacter()
 	CameraBoom->bUseCameraLagSubstepping = true;
 	CameraBoom->CameraLagMaxTimeStep = 1.0f / 120.0f;
 	CameraBoom->bClampToMaxPhysicsDeltaTime = true;
-	CameraBoom->CameraLagMaxDistance = 0.0f;
+	// Generated-civilization handoff can teleport the pawn from its temporary
+	// station spawn to a full-scale planet in one frame. Never let camera lag
+	// retain an unlimited, planet-sized separation from the character.
+	CameraBoom->CameraLagMaxDistance = CameraBoomLength * 0.75f;
 
 	// Follow Camera
 	FollowCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FollowCamera"));
@@ -108,8 +111,8 @@ void ACustomGravityCharacter::BeginPlay()
 	CameraBoom->bUseCameraLagSubstepping = true;
 	CameraBoom->CameraLagMaxTimeStep = 1.0f / 120.0f;
 	CameraBoom->bClampToMaxPhysicsDeltaTime = true;
-	CameraBoom->CameraLagMaxDistance = 0.0f;
 	FollowCamera->bUsePawnControlRotation = false;
+	NormalizeThirdPersonCameraRig();
 	if (!SurfaceAnimationClass && GetMesh())
 	{
 		SurfaceAnimationClass = GetMesh()->GetAnimClass();
@@ -153,6 +156,27 @@ void ACustomGravityCharacter::BeginPlay()
 void ACustomGravityCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+
+	if (bSurfaceHandoffSuspended)
+	{
+		// WorldScape keys both visual and collision streaming to this pawn.  Even a
+		// small gravity/input displacement while its async batch is cooking can snap
+		// the two producers to different cells and leave a flat/stale collider under
+		// the rendered terrain.  Keep the observer physically invariant until the
+		// generator explicitly releases the handoff.
+		if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+		{
+			Movement->StopMovementImmediately();
+			if (Movement->MovementMode != MOVE_None)
+			{
+				Movement->DisableMovement();
+			}
+		}
+		UpdateCameraReferenceFrame();
+		AlignCameraToGravity(DeltaTime);
+		UpdateGravityAnimationParameters();
+		return;
+	}
 
 	if (bUseCustomGravity)
 	{
@@ -1012,11 +1036,101 @@ void ACustomGravityCharacter::AlignCameraToGravity(float DeltaTime)
 
 // ──────────────────────── Public API ────────────────────────
 
+void ACustomGravityCharacter::NormalizeThirdPersonCameraRig()
+{
+	if (!CameraBoom || !FollowCamera)
+	{
+		return;
+	}
+
+	const UCapsuleComponent* Capsule = GetCapsuleComponent();
+	const float CharacterHalfHeight = Capsule
+		? FMath::Max(Capsule->GetUnscaledCapsuleHalfHeight(), 40.0f)
+		: 88.0f;
+	const float MinimumArmLength = CharacterHalfHeight * 2.5f;
+	const float MaximumArmLength = CharacterHalfHeight * 5.0f;
+	const float RequestedArmLength = FMath::IsFinite(CameraBoomLength)
+		? CameraBoomLength : CharacterHalfHeight * 3.25f;
+	const float NormalizedArmLength = FMath::Clamp(
+		RequestedArmLength, MinimumArmLength, MaximumArmLength);
+
+	// Inherited Blueprint component defaults predate the full-scale handoff and
+	// may contain stale scale/offset/arm values. Re-establish a character-sized
+	// third-person rig after Blueprint BeginPlay, while retaining the absolute
+	// rotation used by the custom-gravity reference frame.
+	CameraBoomLength = NormalizedArmLength;
+	CameraBoom->SetRelativeScale3D(FVector::OneVector);
+	CameraBoom->SetRelativeLocation(FVector(0.0, 0.0, CharacterHalfHeight * 0.65f));
+	CameraBoom->TargetOffset = FVector::ZeroVector;
+	CameraBoom->SocketOffset = FVector::ZeroVector;
+	CameraBoom->TargetArmLength = NormalizedArmLength;
+	CameraBoom->bUsePawnControlRotation = false;
+	CameraBoom->SetAbsolute(false, true, false);
+	CameraBoom->bInheritPitch = false;
+	CameraBoom->bInheritYaw = false;
+	CameraBoom->bInheritRoll = false;
+	CameraBoom->bEnableCameraLag = true;
+	CameraBoom->CameraLagMaxDistance = FMath::Max(
+		CharacterHalfHeight, NormalizedArmLength * 0.75f);
+
+	FollowCamera->SetRelativeLocationAndRotation(
+		FVector::ZeroVector, FRotator::ZeroRotator);
+	FollowCamera->SetRelativeScale3D(FVector::OneVector);
+	FollowCamera->bUsePawnControlRotation = false;
+
+	UE_LOG(LogTemp, Display,
+		TEXT("[APS.CameraRig] character=%s capsuleHalfHeight=%.2fcm arm=%.2fcm maxLag=%.2fcm boomScale=%s cameraScale=%s"),
+		*GetName(), CharacterHalfHeight, CameraBoom->TargetArmLength,
+		CameraBoom->CameraLagMaxDistance,
+		*CameraBoom->GetRelativeScale3D().ToCompactString(),
+		*FollowCamera->GetRelativeScale3D().ToCompactString());
+}
+
 void ACustomGravityCharacter::SetGravityTarget(AActor* NewTarget)
 {
 	GravityTarget = NewTarget;
 	bManualGravityOverride = IsValid(NewTarget);
 	UpdateGravityDirection(0.0f);
+}
+
+void ACustomGravityCharacter::SetSurfaceHandoffSuspended(const bool bSuspended)
+{
+	if (bSurfaceHandoffSuspended == bSuspended)
+	{
+		if (bSuspended)
+		{
+			if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+			{
+				Movement->StopMovementImmediately();
+				Movement->DisableMovement();
+			}
+		}
+		return;
+	}
+
+	bSurfaceHandoffSuspended = bSuspended;
+	if (AController* OwningController = GetController())
+	{
+		OwningController->SetIgnoreMoveInput(bSuspended);
+	}
+
+	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+	{
+		Movement->StopMovementImmediately();
+		if (bSuspended)
+		{
+			Movement->DisableMovement();
+		}
+		else
+		{
+			Movement->SetMovementMode(bIsZeroG ? MOVE_Flying : MOVE_Falling);
+		}
+	}
+
+	UE_LOG(LogTemp, Display,
+		TEXT("[APS.Civilization.SurfaceSpawn] character streaming hold=%s character=%s location=%s"),
+		bSuspended ? TEXT("ON") : TEXT("OFF"), *GetName(),
+		*GetActorLocation().ToCompactString());
 }
 
 void ACustomGravityCharacter::SetCustomGravityDirection(const FVector& NewDirection)

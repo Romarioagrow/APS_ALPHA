@@ -185,6 +185,15 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Gravity")
 	void SetGravityTarget(AActor* NewTarget);
 
+	/**
+	 * Holds the character motionless while WorldScape publishes the render and
+	 * collision patches for a generated surface start.  Gravity/input are resumed
+	 * only after the handoff has validated that both patches describe the same
+	 * physical height field.
+	 */
+	void SetSurfaceHandoffSuspended(bool bSuspended);
+	bool IsSurfaceHandoffSuspended() const { return bSurfaceHandoffSuspended; }
+
 	/** Set a custom gravity direction directly */
 	UFUNCTION(BlueprintCallable, Category = "Gravity")
 	void SetCustomGravityDirection(const FVector& NewDirection);
@@ -236,6 +245,7 @@ protected:
 	bool HasSurfaceGravitySupport(const FVector& GravityDirection);
 	void UpdateCameraReferenceFrame();
 	void AlignCameraToGravity(float DeltaTime);
+	void NormalizeThirdPersonCameraRig();
 	void SynchronizeCharacterToCamera(float DeltaTime);
 	FVector GetCameraPlanarForward() const;
 	FQuat GetCameraViewRotation() const;
@@ -277,6 +287,7 @@ private:
 	bool bGravityDirectionInitialized = false;
 
 	bool bManualGravityOverride = false;
+	bool bSurfaceHandoffSuspended = false;
 
 	UPROPERTY(Transient)
 	TSubclassOf<UAnimInstance> SurfaceAnimationClass;

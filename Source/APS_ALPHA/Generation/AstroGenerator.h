@@ -289,7 +289,21 @@ protected:
 	void SetMoonRotation(APlanetOrbit* NewMoonOrbit);
 
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void Tick(float DeltaSeconds) override;
+
+	/** Waits for the authoritative WorldScape terrain collision, then grounds the pawn on it. */
+	void ScheduleSurfaceSpawnFinalization(APawn* Pawn, APlanetaryBody* Body,
+		const FVector& SurfaceOutward, const FVector& ViewDirection);
+	void TryFinalizeSurfaceSpawn(TWeakObjectPtr<APawn> WeakPawn,
+		TWeakObjectPtr<APlanetaryBody> WeakBody, FVector SurfaceOutward,
+		FVector ViewDirection, int32 AttemptIndex, uint64 FinalizationSerial);
+	uint64 SurfaceSpawnFinalizationSerial{0};
+
+	/** Surface patch selected by ResolveSpawnLocation and consumed by the gameplay handoff. */
+	TWeakObjectPtr<APlanetaryBody> ResolvedSurfaceSpawnBody;
+	FVector ResolvedSurfaceSpawnOutward{FVector::ZeroVector};
+	FVector ResolvedSurfaceSpawnViewDirection{FVector::ZeroVector};
 
 	FBox GetPreviewFocusBounds(EAstroPreviewFocus Focus) const;
 	bool GetPreviewSystemPresentationSphere(FVector& OutCenter, double& OutRadius,
@@ -297,8 +311,13 @@ protected:
 	bool TryGetPreviewClusterSystemSphere(int32 InstanceIndex, FVector& OutCenter, double& OutRadius) const;
 	void StartPreviewCameraTransition(const FVector& Center, double Radius, APlayerController* PlayerController);
 	void ApplyPreviewFocusPresentation(EAstroPreviewFocus NewFocus);
+	FQuat GetPreviewPlanetPresentationRotation(const APlanetaryBody* Body) const;
+	FQuat GetPreviewWorldScapePresentationRotation(const APlanetaryBody* Body) const;
+	void ReapplyPreviewPlanetPresentationRotation();
+	void RotatePreviewPlanetPresentation(const FQuat& DeltaRotation);
 	void UpdatePreviewGuideShells(EAstroPreviewFocus NewFocus);
-	void SetPreviewGuideShellVisible(UStaticMeshComponent* Shell, bool bVisible);
+	void SetPreviewGuideShellVisible(UProceduralMeshComponent* Shell, bool bVisible);
+	void HideLegacyPreviewGuideShells();
 	void ApplyPreviewBackgroundContext(EAstroPreviewFocus NewFocus);
 	void ResetPreviewBackgroundContextCache();
 	void SetPreviewBodyBackingSphereVisible(APlanetaryBody* Body, bool bVisible);
@@ -309,6 +328,7 @@ protected:
 	FAPSPreviewGlobeProxyState* FindOrAddPreviewGlobeProxyState(APlanetaryBody* Body);
 	void SyncPreviewGlobeProxyTransforms();
 	void UpdateActivePreviewGlobeCompatibilityState();
+	bool StabilizePreviewAtmosphere(APlanetaryBody* Body);
 	void InvalidatePreviewGlobeProxy(APlanetaryBody* Body);
 	void ClearPreviewGlobeProxyCache();
 	void QueuePreviewGlobeFamily(APlanetaryBody* Body);
@@ -326,6 +346,12 @@ protected:
 	TMap<TWeakObjectPtr<AActor>, FVector> PreviewBodyPresentationCenters;
 	/** Matching rendered radii used to frame the selected planet-and-satellite family. */
 	TMap<TWeakObjectPtr<AActor>, double> PreviewBodyPresentationRadii;
+	/**
+	 * Presentation-only orientation retained per selected solid body. The generated
+	 * hierarchy, camera and committed WorldScape tangent root remain immutable;
+	 * PLANET RMB rotates only the selected planet/moon context around its focus.
+	 */
+	TMap<TWeakObjectPtr<APlanetaryBody>, FQuat> PreviewPlanetPresentationRotations;
 	FTransform PreviewCameraStartTransform;
 	FTransform PreviewCameraTargetTransform;
 	FVector PreviewOrbitCenter{FVector::ZeroVector};
@@ -334,8 +360,19 @@ protected:
 	float PreviewCameraTransitionDuration{0.55f};
 	bool bPreviewCameraTransitionActive{false};
 	TWeakObjectPtr<APlanetaryBody> ActivePreviewWorldScapeBody;
+	/** Last fully validated pair currently presented in PLANET scope. */
 	TWeakObjectPtr<APlanetarySurfaceGenerator> PersistentPreviewSurfaceGenerator;
 	TWeakObjectPtr<AWorldScapeRoot> PersistentPreviewWorldScapeRoot;
+	/**
+	 * Hidden transaction pair used for a profile/type/seed edit. WorldScape 5.4
+	 * commits individual LOD workers independently, so mutating the presented root
+	 * exposes torn hemispheres. The previous complete pair stays visible until every
+	 * terrain/ocean payload in this pair validates; both pointers then swap in one
+	 * game-thread tick.
+	 */
+	TWeakObjectPtr<APlanetarySurfaceGenerator> StagingPreviewSurfaceGenerator;
+	TWeakObjectPtr<AWorldScapeRoot> StagingPreviewWorldScapeRoot;
+	bool bPreviewSurfaceSwapInFlight{false};
 	UPROPERTY(VisibleAnywhere, Transient, Category = "World Generation|Preview")
 	UProceduralMeshComponent* PreviewTerrainProxyA{nullptr};
 	UPROPERTY(VisibleAnywhere, Transient, Category = "World Generation|Preview")
@@ -344,12 +381,18 @@ protected:
 	UProceduralMeshComponent* PreviewOceanProxyA{nullptr};
 	UPROPERTY(VisibleAnywhere, Transient, Category = "World Generation|Preview")
 	UProceduralMeshComponent* PreviewOceanProxyB{nullptr};
-	/** Amber, translucent, mesh-centred stellar influence shell. */
+	/** Serialized compatibility component. Always hidden; retained so old maps load cleanly. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "World Generation|Preview")
 	UStaticMeshComponent* PreviewStarInfluenceShell{nullptr};
-	/** Coral, translucent, barycentre-centred outer system boundary shell. */
+	/** Serialized compatibility component. Always hidden; retained so old maps load cleanly. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "World Generation|Preview")
 	UStaticMeshComponent* PreviewSystemBoundaryShell{nullptr};
+	/** Amber, line-only, mesh-centred stellar influence guide. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "World Generation|Preview")
+	UProceduralMeshComponent* PreviewStarInfluenceWireGuide{nullptr};
+	/** Coral, line-only, barycentre-centred outer system boundary guide. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "World Generation|Preview")
+	UProceduralMeshComponent* PreviewSystemBoundaryWireGuide{nullptr};
 	UPROPERTY(Transient)
 	UMaterialInstanceDynamic* PreviewStarInfluenceMaterial{nullptr};
 	UPROPERTY(Transient)
@@ -409,6 +452,15 @@ protected:
 	uint64 PreviewSurfaceInitArmedFrame{0};
 	/** Test/diagnostic counter: a coalesced slider burst must resolve exactly one new profile. */
 	int32 PreviewSurfaceProfileApplyCount{0};
+	/**
+	 * Last atmosphere state committed to the live PLANET presentation.  Camera-only
+	 * interaction calls ApplyPreviewFocusPresentation repeatedly; retaining this key
+	 * lets StabilizePreviewAtmosphere prove that the already-correct shell can stay
+	 * visible instead of briefly restoring its full-scale transform every time.
+	 */
+	TWeakObjectPtr<APlanetaryBody> StabilizedPreviewAtmosphereBody;
+	TWeakObjectPtr<AWorldScapeRoot> StabilizedPreviewAtmosphereRoot;
+	uint32 StabilizedPreviewAtmosphereSignature{0};
 	FVector PendingPreviewSurfaceViewPosition{FVector::ZeroVector};
 	TWeakObjectPtr<UHierarchicalInstancedStaticMeshComponent> PreviewGalaxyContextOwner;
 	TWeakObjectPtr<UHierarchicalInstancedStaticMeshComponent> PreviewClusterContextOwner;

@@ -544,6 +544,21 @@ void APlanetarySurfaceGenerator::SpawnWorldScapeRoot()
 		WorldScapeRootInstance->SetActorScale3D(FVector::OneVector);
         WorldScapeRootInstance->bGenerateWorldScape = true;
 		WorldScapeRootInstance->bFreezeGeneration = false;
+		// WorldScape's WITH_EDITOR UpdatePosition path treats a PIE viewport as an
+		// editor camera and replaces bGenerateCollision with this second flag.  The
+		// runtime observer override only replaces the position afterwards; it does
+		// not restore the collision decision. A normal PIE PlayWorld uses the runtime
+		// branch, but editor-viewport previews and automation can still enter that
+		// editor path. Keep both switches authoritative for an active root, and ask
+		// WorldScape to include the possessed pawn in every supported net mode.
+		// Preload/frozen states still disable actor collision below their lifecycle
+		// boundary, so inactive siblings and ocean presentation meshes stay non-solid.
+		WorldScapeRootInstance->bGenerateCollision = true;
+		WorldScapeRootInstance->bGenerateCollisionForAllPlayer = true;
+#if WITH_EDITOR
+		WorldScapeRootInstance->bGenerateCollisionInEditor = true;
+		WorldScapeRootInstance->bStaticCollisionInEditor = false;
+#endif
         WorldScapeRootInstance->SetActorHiddenInGame(false);    
         WorldScapeRootInstance->SetActorTickEnabled(true);
         WorldScapeRootInstance->SetActorEnableCollision(true);

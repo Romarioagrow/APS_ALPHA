@@ -322,6 +322,21 @@ public:
 		const APlanetaryBody* Body, const UAPSPlanetSurfaceCatalog* Catalog = nullptr);
 
 	static FAPSPlanetSurfaceArchetypeDefinition GetNativeDefinition(EAPSPlanetSurfaceArchetype Archetype);
+	/**
+	 * Stable UV/warp scale for the inherited WorldScape terrain material graph.
+	 *
+	 * This is deliberately keyed only by the material-template family. Geometry
+	 * feature scale belongs to the noise resolver and must not retile the ground
+	 * material when the PLANET UI changes SurfaceFeatureScale.
+	 */
+	static float ResolveMaterialWarpScale(EAPSPlanetSurfaceMaterialFamily MaterialFamily);
+	/**
+	 * Subordinate climate tint for the canonical WorldScape terrain graph.
+	 *
+	 * Height and the authored family palette remain the primary orbital signal;
+	 * temperature/humidity only add enough variation to keep biomes legible.
+	 */
+	static float ResolveMaterialClimateBlend(EAPSPlanetSurfaceArchetype Archetype);
 	static void ApplyMaterialParameters(UMaterialInstanceDynamic* Material, const FAPSResolvedPlanetSurfaceProfile& Profile);
 	static uint32 BuildProfileSignature(const FAPSResolvedPlanetSurfaceProfile& Profile);
 };

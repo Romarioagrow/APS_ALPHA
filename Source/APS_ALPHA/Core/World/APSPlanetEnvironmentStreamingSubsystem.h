@@ -6,6 +6,8 @@
 
 class APlanet;
 class APlanetaryBody;
+class APawn;
+class AWorldScapeRoot;
 
 /**
  * Preloads one complete planet/moon family, updates one nearby WorldScape surface,
@@ -19,6 +21,7 @@ class APS_ALPHA_API UAPSPlanetEnvironmentStreamingSubsystem : public UTickableWo
 
 public:
 	virtual bool ShouldCreateSubsystem(UObject* Outer) const override;
+	virtual void Deinitialize() override;
 	virtual void Tick(float DeltaTime) override;
 	virtual TStatId GetStatId() const override;
 	APlanet* GetResidentFamily() const { return ResidentFamily.Get(); }
@@ -26,9 +29,14 @@ public:
 private:
 	void UpdateActiveEnvironment();
 	APlanet* ResolveFamilyPlanet(APlanetaryBody* Body) const;
+	void ApplyGameplayObserverContract(AWorldScapeRoot* Root, APawn* Observer);
+	void RefreshGameplayObserverPosition();
+	void ClearGameplayCollisionAnchor();
 
 	float UpdateElapsed{0.0f};
 	float UpdateInterval{0.5f};
 	TWeakObjectPtr<APlanetaryBody> ActiveBody;
 	TWeakObjectPtr<APlanet> ResidentFamily;
+	TWeakObjectPtr<AWorldScapeRoot> AnchoredWorldScapeRoot;
+	TWeakObjectPtr<APawn> CollisionAnchorPawn;
 };

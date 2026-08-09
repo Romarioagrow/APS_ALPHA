@@ -68,6 +68,19 @@ void AGravityCharacterPawn::BeginPlay()
 void AGravityCharacterPawn::Tick(const float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+	if (bSurfaceHandoffSuspended)
+	{
+		return;
+	}
+
+	// Gravity-source discovery remains event driven. Once a generated surface (or
+	// station/ship) has selected a source, only apply that source every frame; the
+	// old whole-world actor scan below was both noisy and prohibitively expensive.
+	if (CapsuleComponent && IsValid(GravityTargetActor)
+		&& CurrentGravityType != EGravityType::ZeroG)
+	{
+		UpdateGravity();
+	}
 
 	/*if (!CapsuleComponent) return;
 
@@ -264,6 +277,36 @@ void AGravityCharacterPawn::ReleaseControl(APilotingVehicle* PilotingVehicle)
 	else
 	{
 		UE_LOG(LogTemp, Warning, TEXT("Failed to cast APilotingVehicle to ASpaceship"));
+	}
+}
+
+void AGravityCharacterPawn::SetGravitySourceForSpawn(AActor* GravitySourceActor)
+{
+	SwitchGravityType(GravitySourceActor);
+}
+
+void AGravityCharacterPawn::SetSurfaceHandoffSuspended(const bool bSuspended)
+{
+	if (bSurfaceHandoffSuspended == bSuspended)
+	{
+		return;
+	}
+	bSurfaceHandoffSuspended = bSuspended;
+	if (!CapsuleComponent)
+	{
+		return;
+	}
+
+	CapsuleComponent->SetPhysicsLinearVelocity(FVector::ZeroVector);
+	CapsuleComponent->SetPhysicsAngularVelocityInDegrees(FVector::ZeroVector);
+	if (bSuspended)
+	{
+		bSurfaceHandoffWasSimulatingPhysics = CapsuleComponent->IsSimulatingPhysics();
+		CapsuleComponent->SetSimulatePhysics(false);
+	}
+	else
+	{
+		CapsuleComponent->SetSimulatePhysics(bSurfaceHandoffWasSimulatingPhysics);
 	}
 }
 

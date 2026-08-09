@@ -400,10 +400,32 @@ void APlanetarySurfaceGenerator::ApplySurfaceProfileNow(APlanetaryBody* Body)
 	const bool bScaledOrbitalPreview = PresentationScale < 0.999;
 	WorldScapeRootInstance->MaxLod = bScaledOrbitalPreview ? 6 : 10;
 	WorldScapeRootInstance->LodResolution = bScaledOrbitalPreview ? 48 : 96;
-	WorldScapeRootInstance->TriangleSize = bScaledOrbitalPreview ? 450.0f : 180.0f;
+	WorldScapeRootInstance->TriangleSize = bScaledOrbitalPreview ? 450.0f : 120.0f;
 	WorldScapeRootInstance->OceanMaxLod = bScaledOrbitalPreview ? 6 : 9;
 	WorldScapeRootInstance->OceanLodResolution = bScaledOrbitalPreview ? 32 : 64;
-	WorldScapeRootInstance->OceanTriangleSize = bScaledOrbitalPreview ? 650.0f : 260.0f;
+	WorldScapeRootInstance->OceanTriangleSize = bScaledOrbitalPreview ? 650.0f : 200.0f;
+	// Keep the gameplay collision sample spacing identical to terrain LOD0 so the
+	// pawn does not walk on the visibly smoother 2 m default collision sheet. A
+	// 64x64 padded patch gives roughly 74 m of full-scale coverage around each
+	// collision dependant actor without multiplying every visual LOD's vertex cost.
+	// Orbital preview roots never need collision and retain the inexpensive plugin
+	// defaults until AstroGenerator applies its presentation-only budget.
+	WorldScapeRootInstance->bGenerateCollision = !bScaledOrbitalPreview;
+	WorldScapeRootInstance->bPaddedCollision = true;
+	WorldScapeRootInstance->CollisionResolution = bScaledOrbitalPreview ? 16 : 64;
+	WorldScapeRootInstance->CollisionTriangleSize = bScaledOrbitalPreview
+		? 200.0f : WorldScapeRootInstance->TriangleSize;
+	// These properties are copied by WorldScape 5.4 into every generated terrain
+	// mesh. Contact and dynamic shadows are the near-field relief cues required by
+	// gameplay; static/far shadows keep the same surface coherent at wider views.
+	// Two-sided shadows stay disabled because the terrain is a closed outward-facing
+	// planet shell. Accurate tangents remain at the plugin default: its API documents
+	// that option as greatly slowing generation, so it is not safe for this fix.
+	WorldScapeRootInstance->TerrainContactShadow = true;
+	WorldScapeRootInstance->TerrainCastStaticShadow = true;
+	WorldScapeRootInstance->TerrainCastDynamicShadow = true;
+	WorldScapeRootInstance->TerrainFarShadow = true;
+	WorldScapeRootInstance->TerrainTowSideShadow = false;
 	WorldScapeRootInstance->HeightAnchor = FMath::Clamp(
 		static_cast<float>(WorldScapeRootInstance->PlanetScale * 0.00025), 50000.0f, 250000.0f);
 	bSurfaceProfileApplied = true;
@@ -416,15 +438,29 @@ void APlanetarySurfaceGenerator::ApplySurfaceProfileNow(APlanetaryBody* Body)
 	UE_LOG(LogTemp, Log,
 		TEXT("[APS.WorldScape] Profile body=%s subtype=%s archetype=%s ocean=%s seed=%d "
 			"noiseScale=%.0f noiseIntensity=%.0f presentationScale=%.6e planetScale=%.6e "
-			"terrainLod=%dx%d@%.0f oceanLod=%dx%d@%.0f noise=%s terrain=%s"),
+			"mode=%s terrainLod=%dx%d@%.0f oceanLod=%dx%d@%.0f "
+			"collision=%s/%dx%d@%.0f padded=%s tangents=%s heightAnchor=%.0f "
+			"shadows=contact:%s/static:%s/dynamic:%s/far:%s/twoSided:%s noise=%s terrain=%s"),
 		*Body->GetName(), *SurfaceSubtype, *SurfaceArchetype,
 		WorldScapeRootInstance->bOcean ? TEXT("true") : TEXT("false"), Body->WorldScapeSeed,
 		WorldScapeRootInstance->NoiseScale, WorldScapeRootInstance->NoiseIntensity,
 		PresentationScale, WorldScapeRootInstance->PlanetScale,
+		bScaledOrbitalPreview ? TEXT("scaled-preview") : TEXT("full-scale-gameplay"),
 		WorldScapeRootInstance->MaxLod, WorldScapeRootInstance->LodResolution,
 		WorldScapeRootInstance->TriangleSize,
 		WorldScapeRootInstance->OceanMaxLod, WorldScapeRootInstance->OceanLodResolution,
 		WorldScapeRootInstance->OceanTriangleSize,
+		WorldScapeRootInstance->bGenerateCollision ? TEXT("runtime") : TEXT("disabled"),
+		WorldScapeRootInstance->CollisionResolution, WorldScapeRootInstance->CollisionResolution,
+		WorldScapeRootInstance->CollisionTriangleSize,
+		WorldScapeRootInstance->bPaddedCollision ? TEXT("true") : TEXT("false"),
+		WorldScapeRootInstance->bGenerateTangents ? TEXT("true") : TEXT("false"),
+		WorldScapeRootInstance->HeightAnchor,
+		WorldScapeRootInstance->TerrainContactShadow ? TEXT("true") : TEXT("false"),
+		WorldScapeRootInstance->TerrainCastStaticShadow ? TEXT("true") : TEXT("false"),
+		WorldScapeRootInstance->TerrainCastDynamicShadow ? TEXT("true") : TEXT("false"),
+		WorldScapeRootInstance->TerrainFarShadow ? TEXT("true") : TEXT("false"),
+		WorldScapeRootInstance->TerrainTowSideShadow ? TEXT("true") : TEXT("false"),
 		*GetNameSafe(Profile.Noise), *GetNameSafe(Profile.TerrainMaterial));
 }
 

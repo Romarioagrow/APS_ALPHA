@@ -965,29 +965,78 @@ void UAPSPlanetSurfaceProfileResolver::ApplyMaterialParameters(
 	Material->SetVectorParameterValue(TEXT("SlopeColor"), Profile.Palette.Slope);
 	Material->SetVectorParameterValue(TEXT("Sedimentcolor"), Profile.Palette.Coast);
 	Material->SetVectorParameterValue(TEXT("EmissiveColor"), Profile.Palette.Emissive);
-	Material->SetVectorParameterValue(TEXT("ColotTint"), FLinearColor::White);
 
+	// The catalog's family MICs inherit the project-owned canonical WorldScape graph.
+	// It consumes the same normalized height/climate payload as every generated LOD;
+	// no proxy globe or second visual height field participates in this material.
 	Material->SetScalarParameterValue(TEXT("HeightContrast"), Profile.BiomeContrast);
 	Material->SetScalarParameterValue(TEXT("ContrastTemp"), Profile.BiomeContrast);
-	Material->SetScalarParameterValue(TEXT("TempInfluence"), FMath::Lerp(0.45f, 1.35f, Profile.Biodiversity));
-	Material->SetScalarParameterValue(TEXT("BottomLayerShift"), -Profile.OceanLevel);
-	Material->SetScalarParameterValue(TEXT("MidLayerShift"), 0.12f + Profile.Humidity * 0.12f);
-	Material->SetScalarParameterValue(TEXT("TopLayerShift"), 0.58f - Profile.Temperature * 0.28f);
-	Material->SetScalarParameterValue(TEXT("TopLayerTransition"), 0.08f + Profile.Humidity * 0.08f);
-	Material->SetScalarParameterValue(TEXT("WarpedScale"), Profile.NoiseScale / 650.0f);
+	Material->SetScalarParameterValue(TEXT("WarpedScale"),
+		ResolveMaterialWarpScale(Profile.MaterialFamily));
+	Material->SetScalarParameterValue(TEXT("ClimateBlend"),
+		ResolveMaterialClimateBlend(Profile.Archetype));
 	Material->SetScalarParameterValue(TEXT("MidVarient1Rough"), Profile.Roughness);
 	Material->SetScalarParameterValue(TEXT("MidVarient2Rough"), Profile.Roughness);
 	Material->SetScalarParameterValue(TEXT("MidVarient3Rough"), Profile.Roughness);
-	Material->SetScalarParameterValue(TEXT("TopVarient1Rough"), Profile.Roughness);
-	Material->SetScalarParameterValue(TEXT("MidVarient1Spec"), FMath::Lerp(0.2f, 0.8f, Profile.Metallic));
-	Material->SetScalarParameterValue(TEXT("MidVarient2Spec"), FMath::Lerp(0.2f, 0.8f, Profile.Metallic));
-	Material->SetScalarParameterValue(TEXT("MidVarient3Spec"), FMath::Lerp(0.2f, 0.8f, Profile.Metallic));
+
+	// Retain generic PBR writes for any compatible project template variants; they
+	// are harmless no-ops when a selected WorldScape graph does not expose them.
+	Material->SetScalarParameterValue(TEXT("Roughness"), Profile.Roughness);
+	Material->SetScalarParameterValue(TEXT("Metallic"), Profile.Metallic);
+	Material->SetScalarParameterValue(TEXT("Specular"),
+		FMath::Lerp(0.28f, 0.72f, Profile.Metallic));
+}
+
+float UAPSPlanetSurfaceProfileResolver::ResolveMaterialWarpScale(
+	EAPSPlanetSurfaceMaterialFamily MaterialFamily)
+{
+	// 1.0 is the neutral authored scale of the canonical WorldScape graph.
+	// Keep the mapping explicit so calibrated per-family values can be introduced
+	// later without ever coupling material UVs back to procedural terrain frequency.
+	constexpr float MinimumWarpScale = 0.75f;
+	constexpr float MaximumWarpScale = 1.25f;
+	float FamilyWarpScale = 1.0f;
+	switch (MaterialFamily)
+	{
+	case EAPSPlanetSurfaceMaterialFamily::Temperate:
+	case EAPSPlanetSurfaceMaterialFamily::Barren:
+	case EAPSPlanetSurfaceMaterialFamily::Magmatic:
+	default:
+		FamilyWarpScale = 1.0f;
+		break;
+	}
+	return FMath::Clamp(FamilyWarpScale, MinimumWarpScale, MaximumWarpScale);
+}
+
+float UAPSPlanetSurfaceProfileResolver::ResolveMaterialClimateBlend(
+	EAPSPlanetSurfaceArchetype Archetype)
+{
+	// Climate is intentionally weaker than the five broad elevation transitions.
+	// This keeps Pangea/desert/forest silhouettes readable while still allowing the
+	// temperature and humidity channels to distinguish living and oceanic worlds.
+	float Blend = 0.08f;
+	switch (Archetype)
+	{
+	case EAPSPlanetSurfaceArchetype::Biosphere: Blend = 0.18f; break;
+	case EAPSPlanetSurfaceArchetype::Temperate: Blend = 0.14f; break;
+	case EAPSPlanetSurfaceArchetype::Oceanic: Blend = 0.12f; break;
+	case EAPSPlanetSurfaceArchetype::ExoticChemical: Blend = 0.10f; break;
+	case EAPSPlanetSurfaceArchetype::Desert:
+	case EAPSPlanetSurfaceArchetype::Cryogenic: Blend = 0.08f; break;
+	case EAPSPlanetSurfaceArchetype::Rocky:
+	case EAPSPlanetSurfaceArchetype::Magmatic: Blend = 0.06f; break;
+	case EAPSPlanetSurfaceArchetype::Metallic: Blend = 0.04f; break;
+	default: break;
+	}
+	return FMath::Clamp(Blend, 0.04f, 0.20f);
 }
 
 uint32 UAPSPlanetSurfaceProfileResolver::BuildProfileSignature(const FAPSResolvedPlanetSurfaceProfile& P)
 {
 	uint32 Signature = GetTypeHash(static_cast<uint8>(P.PlanetType));
 	Signature = HashCombine(Signature, GetTypeHash(static_cast<uint8>(P.Archetype)));
+	Signature = HashCombine(Signature, GetTypeHash(static_cast<uint8>(P.MaterialFamily)));
+	Signature = HashCombine(Signature, GetTypeHash(static_cast<uint8>(P.LiquidType)));
 	Signature = HashCombine(Signature, GetTypeHash(P.ModifierMask));
 	Signature = HashCombine(Signature, GetTypeHash(P.TerrainSeed));
 	Signature = HashCombine(Signature, GetTypeHash(P.BiomeSeed));
@@ -1006,11 +1055,20 @@ uint32 UAPSPlanetSurfaceProfileResolver::BuildProfileSignature(const FAPSResolve
 	Signature = HashCombine(Signature, GetTypeHash(FMath::RoundToInt(P.CellularFrequencyMultiplier * 10000.0f)));
 	Signature = HashCombine(Signature, GetTypeHash(FMath::RoundToInt(P.TerrainPatternStrength * 10000.0f)));
 	Signature = HashCombine(Signature, GetTypeHash(FMath::RoundToInt(P.ClimatePatchStrength * 10000.0f)));
+	Signature = HashCombine(Signature, GetTypeHash(FMath::RoundToInt(P.LatitudeClimateStrength * 10000.0f)));
+	Signature = HashCombine(Signature, GetTypeHash(FMath::RoundToInt(P.OceanLevel * 10000.0f)));
 	Signature = HashCombine(Signature, GetTypeHash(FMath::RoundToInt(P.Temperature * 10000.0f)));
 	Signature = HashCombine(Signature, GetTypeHash(FMath::RoundToInt(P.Humidity * 10000.0f)));
 	Signature = HashCombine(Signature, GetTypeHash(FMath::RoundToInt(P.Biomass * 10000.0f)));
+	Signature = HashCombine(Signature, GetTypeHash(FMath::RoundToInt(P.Metallic * 10000.0f)));
+	Signature = HashCombine(Signature, GetTypeHash(FMath::RoundToInt(P.EmissiveStrength * 10000.0f)));
+	Signature = HashCombine(Signature, GetTypeHash(FMath::RoundToInt(P.BiomeContrast * 10000.0f)));
+	Signature = HashCombine(Signature, GetTypeHash(P.Palette.Coast.ToFColor(false).DWColor()));
 	Signature = HashCombine(Signature, GetTypeHash(P.Palette.Lowland.ToFColor(false).DWColor()));
+	Signature = HashCombine(Signature, GetTypeHash(P.Palette.MidLowland.ToFColor(false).DWColor()));
 	Signature = HashCombine(Signature, GetTypeHash(P.Palette.Highland.ToFColor(false).DWColor()));
 	Signature = HashCombine(Signature, GetTypeHash(P.Palette.Dryland.ToFColor(false).DWColor()));
+	Signature = HashCombine(Signature, GetTypeHash(P.Palette.Peak.ToFColor(false).DWColor()));
+	Signature = HashCombine(Signature, GetTypeHash(P.Palette.Emissive.ToFColor(false).DWColor()));
 	return Signature == 0 ? 1u : Signature;
 }

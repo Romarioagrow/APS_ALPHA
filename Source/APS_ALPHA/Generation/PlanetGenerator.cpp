@@ -3,8 +3,60 @@
 #include "PlanetaryAtmosphere.h"
 #include "APS_ALPHA/Actors/Astro/Planet.h"
 #include "APS_ALPHA/Core/Enums/OrbitHeight.h"
+#include "APS_ALPHA/Core/Enums/PlanetType.h"
 #include "APS_ALPHA/Core/Model/GeneratedWorld.h"
 #include "APS_ALPHA/Core/Structs/PlanetAtmosphereModel.h"
+
+namespace
+{
+	constexpr double PlanetGeneratorEarthRadiusKm = 6371.0;
+
+	double GetFallbackPlanetDensity(const EPlanetType PlanetType)
+	{
+		switch (PlanetType)
+		{
+		case EPlanetType::GasGiant:
+		case EPlanetType::HotGiant:
+			return 1.2;
+		case EPlanetType::IceGiant:
+			return 2.2;
+		case EPlanetType::Ice:
+		case EPlanetType::Frozen:
+		case EPlanetType::Ammonia:
+			return 2.8;
+		case EPlanetType::Metal:
+		case EPlanetType::Metallic:
+			return 7.0;
+		default:
+			return 5.0;
+		}
+	}
+
+	void EnsurePlanetPhysicalProperties(FPlanetModel& Model)
+	{
+		if (!FMath::IsFinite(Model.Radius) || Model.Radius <= UE_DOUBLE_SMALL_NUMBER)
+		{
+			Model.Radius = static_cast<float>(FMath::Max(
+				static_cast<double>(Model.RadiusKM) / PlanetGeneratorEarthRadiusKm, 0.01));
+		}
+		if (!FMath::IsFinite(Model.PlanetDensity)
+			|| Model.PlanetDensity <= UE_DOUBLE_SMALL_NUMBER)
+		{
+			Model.PlanetDensity = GetFallbackPlanetDensity(Model.PlanetType);
+		}
+		if (!FMath::IsFinite(Model.Mass) || Model.Mass <= UE_DOUBLE_SMALL_NUMBER)
+		{
+			Model.Mass = Model.PlanetDensity * (4.0 / 3.0) * UE_PI
+				* FMath::Pow(static_cast<double>(Model.Radius), 3.0);
+		}
+		if (!FMath::IsFinite(Model.PlanetGravityStrength)
+			|| Model.PlanetGravityStrength <= UE_DOUBLE_SMALL_NUMBER)
+		{
+			Model.PlanetGravityStrength = Model.Mass
+				/ FMath::Square(FMath::Max(static_cast<double>(Model.Radius), 0.01));
+		}
+	}
+}
 
 UPlanetGenerator::UPlanetGenerator()
 {
@@ -191,11 +243,17 @@ void UPlanetGenerator::ApplyModel(APlanet* PlanetActor, TSharedPtr<FPlanetModel>
 	{
 		return;
 	}
+	// UI-authored/single-body models legitimately start from FPlanetModel defaults.
+	// Radius/type overrides used to leave density, mass and surface gravity at zero,
+	// even though the generated WorldScape surface was physical. Complete only the
+	// missing physical fields here, preserving values produced by the procedural path.
+	EnsurePlanetPhysicalProperties(*PlanetGenerationModel);
 	// Keep the actor and hierarchy data pointed at the exact model that was
 	// materialized.  FillPlanetData serializes through this shared model; leaving
 	// the constructor's empty placeholder here made the committed home world lose
 	// its type, radius and moons even though the visible actor had those values.
 	PlanetActor->PlanetData.PlanetModel = PlanetGenerationModel;
+	PlanetActor->PlanetData.PlanetModelData = *PlanetGenerationModel;
 	PlanetActor->SetPlanetType(PlanetGenerationModel->PlanetType);
 	PlanetActor->SetPlanetZone(PlanetGenerationModel->PlanetZone);
 	PlanetActor->SetPlanetDensity(PlanetGenerationModel->PlanetDensity);

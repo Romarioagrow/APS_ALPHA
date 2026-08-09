@@ -5,9 +5,9 @@
 #include "APSStellarVisualSubsystem.generated.h"
 
 class ADirectionalLight;
-class AGravityCharacterPawn;
 class APlanetaryBody;
 class APointLight;
+class APawn;
 class ASpaceStation;
 
 /** Runtime-only bridge from the current generated star to playable global lighting. */
@@ -31,9 +31,14 @@ private:
 		bool bHasPreviewCameraLocation,
 		float DeltaTime);
 	void UpdateGameplayStationFillLight(
-		const AGravityCharacterPawn* CharacterPawn,
+		const APawn* CharacterPawn,
 		const FVector& CameraLocation,
 		bool bHasCameraLocation);
+	void UpdateGameplaySurfaceFillLight(
+		const APawn* CharacterPawn,
+		const FVector& ObserverLocation,
+		bool bHasObserverLocation,
+		float DeltaTime);
 
 	TWeakObjectPtr<ADirectionalLight> DirectionalLight;
 	/**
@@ -44,6 +49,14 @@ private:
 	/** Camera-local readability fill used only while a character is inside a station. */
 	TWeakObjectPtr<APointLight> GameplayStationFillLight;
 	TWeakObjectPtr<ASpaceStation> GameplayFillStation;
+	/**
+	 * Low-energy off-axis daylight fill used only while the gameplay pawn is close
+	 * to an active physical WorldScape surface. It does not own geometry, materials
+	 * or displacement; it only keeps the real mesh normals readable with the
+	 * project's fixed exposure when the generated star is at a grazing angle.
+	 */
+	TWeakObjectPtr<ADirectionalLight> GameplaySurfaceFillLight;
+	TWeakObjectPtr<APlanetaryBody> GameplayFillBody;
 	FVector TargetStarLocation{FVector::ZeroVector};
 	FLinearColor TargetLightColor{FLinearColor::White};
 	FLinearColor SmoothedLightColor{FLinearColor::White};
@@ -52,6 +65,8 @@ private:
 	float SearchElapsed{0.0f};
 	bool bHasTargetStar{false};
 	bool bCapturedOriginalLight{false};
+	/** True only for the transient gameplay key created when the level has no authored sun. */
+	bool bOwnsDirectionalLight{false};
 	FRotator OriginalLightRotation{FRotator::ZeroRotator};
 	FLinearColor OriginalLightColor{FLinearColor::White};
 	float OriginalLightIntensity{10.0f};

@@ -31,8 +31,20 @@ bool UAPSPlanetEnvironmentStreamingSubsystem::ShouldCreateSubsystem(UObject* Out
 	return World && (World->WorldType == EWorldType::Game || World->WorldType == EWorldType::PIE);
 }
 
+void UAPSPlanetEnvironmentStreamingSubsystem::Deinitialize()
+{
+	ClearGameplayCollisionAnchor();
+	Super::Deinitialize();
+}
+
 void UAPSPlanetEnvironmentStreamingSubsystem::Tick(float DeltaTime)
 {
+	// The active body/family search is intentionally amortized below, but WorldScape's
+	// visual producer must follow the possessed pawn every frame. Leaving this position
+	// on the half-second cadence lets a fast manual approach outrun the generated patch,
+	// while the visual chunk producer continues to target the pawn's previous location.
+	RefreshGameplayObserverPosition();
+
 	UpdateElapsed += DeltaTime;
 	if (UpdateElapsed < UpdateInterval)
 	{
@@ -58,6 +70,85 @@ APlanet* UAPSPlanetEnvironmentStreamingSubsystem::ResolveFamilyPlanet(APlanetary
 		return Moon->ParentPlanet;
 	}
 	return nullptr;
+}
+
+void UAPSPlanetEnvironmentStreamingSubsystem::ClearGameplayCollisionAnchor()
+{
+	AWorldScapeRoot* Root = AnchoredWorldScapeRoot.Get();
+	APawn* Pawn = CollisionAnchorPawn.Get();
+	if (IsValid(Root) && IsValid(Pawn))
+	{
+		Root->CollisionDependantActor.Remove(Pawn);
+	}
+	AnchoredWorldScapeRoot.Reset();
+	CollisionAnchorPawn.Reset();
+}
+
+void UAPSPlanetEnvironmentStreamingSubsystem::RefreshGameplayObserverPosition()
+{
+	AWorldScapeRoot* Root = AnchoredWorldScapeRoot.Get();
+	UWorld* World = GetWorld();
+	APlayerController* PlayerController = World ? World->GetFirstPlayerController() : nullptr;
+	APawn* Observer = PlayerController ? PlayerController->GetPawn() : nullptr;
+	if (!IsValid(Root) || !IsValid(Observer))
+	{
+		return;
+	}
+	if (CollisionAnchorPawn.Get() != Observer)
+	{
+		// Possession changes are cheap observer-contract changes, not a reason to run
+		// the global body/family search early. Rebind this already-active root now so
+		// neither its visual nor collision producer follows the previous pawn.
+		ApplyGameplayObserverContract(Root, Observer);
+		return;
+	}
+
+	Root->bOverridePlayerPosition = true;
+	Root->OverridedPlayerPosition = Observer->GetActorLocation();
+}
+
+void UAPSPlanetEnvironmentStreamingSubsystem::ApplyGameplayObserverContract(
+	AWorldScapeRoot* Root, APawn* Observer)
+{
+	if (!IsValid(Root) || !IsValid(Observer))
+	{
+		return;
+	}
+
+	const bool bAnchorChanged = AnchoredWorldScapeRoot.Get() != Root
+		|| CollisionAnchorPawn.Get() != Observer;
+	if (bAnchorChanged)
+	{
+		ClearGameplayCollisionAnchor();
+		AnchoredWorldScapeRoot = Root;
+		CollisionAnchorPawn = Observer;
+	}
+
+	// WorldScape uses OverridedPlayerPosition only for its visual LOD producer.
+	// CollisionLodHandler independently rebuilds a list from controllers/editor
+	// viewport state. During possession/handoff the controller entry can be transient
+	// while a detached editor camera remains present. Register the possessed pawn
+	// explicitly in that second contract as well. AddUnique also repairs a root that
+	// internally cleared the invoker list during regeneration without accumulating
+	// duplicate anchors on the subsystem's half-second refresh.
+	Root->CollisionDependantActor.AddUnique(Observer);
+	Root->bOverridePlayerPosition = true;
+	Root->OverridedPlayerPosition = Observer->GetActorLocation();
+	Root->DistanceToFreezeGeneration = 0.0f;
+	Root->bGenerateCollision = true;
+	Root->bGenerateCollisionForAllPlayer = true;
+#if WITH_EDITOR
+	Root->bGenerateCollisionInEditor = true;
+	Root->bStaticCollisionInEditor = false;
+#endif
+
+	if (bAnchorChanged)
+	{
+		UE_LOG(LogAPSWorldScapeStreaming, Log,
+			TEXT("Bound WorldScape gameplay anchor: root=%s pawn=%s location=%s"),
+			*Root->GetPathName(), *Observer->GetPathName(),
+			*Observer->GetActorLocation().ToCompactString());
+	}
 }
 
 void UAPSPlanetEnvironmentStreamingSubsystem::UpdateActiveEnvironment()
@@ -173,6 +264,7 @@ void UAPSPlanetEnvironmentStreamingSubsystem::UpdateActiveEnvironment()
 			UE_LOG(LogAPSWorldScapeStreaming, Log, TEXT("Unloaded WorldScape family: %s"),
 				*GetNameSafe(ResidentFamily.Get()));
 		}
+		ClearGameplayCollisionAnchor();
 		ActiveBody.Reset();
 		ResidentFamily.Reset();
 		return;
@@ -230,9 +322,7 @@ void UAPSPlanetEnvironmentStreamingSubsystem::UpdateActiveEnvironment()
 			// generated under the player rather than elsewhere on the planet. The
 			// subsystem owns freezing explicitly, so disable the plugin's second,
 			// editor-camera-based distance freeze as well.
-			ActiveRoot->bOverridePlayerPosition = true;
-			ActiveRoot->OverridedPlayerPosition = ObserverLocation;
-			ActiveRoot->DistanceToFreezeGeneration = 0.0f;
+			ApplyGameplayObserverContract(ActiveRoot, Observer);
 		}
 	}
 	constexpr int32 MaxSiblingPreloadsPerUpdate = 2;
@@ -271,6 +361,21 @@ void UAPSPlanetEnvironmentStreamingSubsystem::UpdateActiveEnvironment()
 			UE_LOG(LogAPSWorldScapeStreaming, Log, TEXT("Activated WorldScape surface: %s"),
 				*BestBody->GetPathName());
 		}
+		if (IsValid(BestBody->PlanetaryEnvironmentGenerator))
+		{
+			if (AWorldScapeRoot* ActiveRoot =
+				BestBody->PlanetaryEnvironmentGenerator->WorldScapeRootInstance)
+			{
+				// SetWorldScapeStreamingState(Active) can create/replace the root. Reapply
+				// the observer and collision contract to that final active instance in the
+				// same subsystem update rather than waiting another half second.
+				ApplyGameplayObserverContract(ActiveRoot, Observer);
+			}
+		}
 		BestBody->RefreshWorldScapeSurfaceVisibility();
+	}
+	else
+	{
+		ClearGameplayCollisionAnchor();
 	}
 }

@@ -51,14 +51,30 @@ namespace APSPlanetNoise
 		// authored above-sea span per profile so low-land Ocean worlds still reach
 		// the same material layers as dry worlds instead of rendering as an almost
 		// uniform black bottom layer.
-		const double AuthoredLandSpan = 0.13 * FMath::Max(
-			static_cast<double>(Profile.LandCoverage), 0.08);
+		const double CoverageAwareLandSpan = 0.13 * FMath::Max(
+			static_cast<double>(Profile.LandCoverage), 0.25);
+		// Cryogenic's physically amplified broad bands legitimately exceed the common
+		// 0.13 authored land span. A hard linear map consequently pinned most vertices
+		// to red=0/1 and made real geometry look like one flat colour. Use a wider
+		// display span for that family and a rational shoulder for every family. The
+		// shoulder remains monotonic, preserves the exact coast value and never changes
+		// Data.Height (the authoritative WorldScape displacement).
+		const double AuthoredLandSpan = Profile.Archetype
+			== EAPSPlanetSurfaceArchetype::Cryogenic
+			? FMath::Max(CoverageAwareLandSpan, 0.22)
+			: CoverageAwareLandSpan;
 		const double HeightAboveSea = PhysicalHeightNormalized
 			- static_cast<double>(Profile.OceanLevel);
-		return FMath::Clamp(
-			MaterialCoastHeight
-				+ HeightAboveSea / AuthoredLandSpan * MaterialLandHeightRange,
-			0.0, 1.0);
+		if (HeightAboveSea >= 0.0)
+		{
+			const double LandRatio = HeightAboveSea / FMath::Max(AuthoredLandSpan, 0.001);
+			return MaterialCoastHeight
+				+ MaterialLandHeightRange * LandRatio / (1.0 + LandRatio);
+		}
+
+		const double BasinRatio = -HeightAboveSea
+			/ FMath::Max(AuthoredLandSpan * 0.35, 0.001);
+		return MaterialCoastHeight / (1.0 + BasinRatio);
 	}
 }
 
@@ -82,7 +98,10 @@ FNoiseData UAPSWorldScapePlanetNoise::GetOceanNoise(
 {
 	FNoiseData Data;
 	const double SafePlanetScale = FMath::Max(PlanetScale, 1.0);
-	NoisePosition = ((Position - PlanetPosition) / SafePlanetScale) * FMath::Max(NoiseScale, 1.0);
+	// WorldScape supplies Position in root-local ECEF space. PlanetPosition is the
+	// root's world-placement metadata; subtracting it again offsets the sample when
+	// the root moves and makes ocean and terrain evaluate different directions.
+	NoisePosition = (Position / SafePlanetScale) * FMath::Max(NoiseScale, 1.0);
 	const double PhysicalOceanHeightNormalized = static_cast<double>(SurfaceProfile.OceanLevel);
 	Data.Height = PhysicalOceanHeightNormalized * NoiseIntensity;
 	// Keep the ocean displacement signed/physical in Height. HeightNormalize is
@@ -112,7 +131,9 @@ FNoiseData UAPSWorldScapePlanetNoise::Evaluate(
 	FNoiseData Data;
 	const double SafePlanetScale = FMath::Max(PlanetScale, 1.0);
 	const double EffectiveScale = FMath::Max(NoiseScale, 1.0);
-	const DVector PlanetVector = (Position - PlanetPosition) / SafePlanetScale;
+	// WorldScape Position is already root-local ECEF. PlanetPosition describes the
+	// actor's world placement and must not be subtracted a second time here.
+	const DVector PlanetVector = Position / SafePlanetScale;
 	const DVector PlanetDirection = APSPlanetNoise::SafePlanetDirection(PlanetVector);
 	NoisePosition = PlanetVector * EffectiveScale;
 
@@ -170,6 +191,69 @@ FNoiseData UAPSWorldScapePlanetNoise::Evaluate(
 		TerrainPosition * (0.018 * CellularFrequency), ECellularDistanceType::Euclidean,
 		ECellularType::Distance2Sub, 0.86), -1.0, 1.0);
 
+	// NoiseScale is intentionally an orbital-scale control. Even its former
+	// "micro" octave still spans many kilometres on an Earth-sized body, so a
+	// collision patch around a walking pawn could be mathematically almost flat.
+	// Add direction-space bands whose wavelength is expressed in physical
+	// centimetres instead. Deriving the unscaled radius from the intensity ratio
+	// keeps the exact same angular field in the compressed preview and full-scale
+	// gameplay worlds. All bands affect Data.Height; only the three kilometre-scale
+	// bands also feed the low-pass material classification below.
+	const double ProfileIntensity = FMath::Max(
+		FMath::Abs(static_cast<double>(SurfaceProfile.NoiseIntensity)), 1.0);
+	const double PresentationRatio = FMath::Clamp(
+		FMath::Abs(NoiseIntensity) / ProfileIntensity, 1.0e-9, 1.0);
+	const double PhysicalPlanetScale = SafePlanetScale / PresentationRatio;
+	constexpr double GroundRegionalBaseWavelengthCm = 1800000.0; // 18 km base landform
+	constexpr double GroundReliefBaseWavelengthCm = 400000.0;    // 4 km terrain relief
+	constexpr double GroundRollingBaseWavelengthCm = 180000.0;   // 1.8 km rolling terrain
+	constexpr double GroundMicroBaseWavelengthCm = 90000.0;      // 0.9 km local relief
+	constexpr double GroundWalkBaseWavelengthCm = 24000.0;       // 0.24 km walk-scale break-up
+	constexpr double GroundFineBaseWavelengthCm = 6000.0;        // 60 m readable ground shape
+	constexpr double GroundFootBaseWavelengthCm = 2200.0;        // 22 m restrained foot-scale cue
+	const double GroundRegionalFrequency = FMath::Clamp(
+		PhysicalPlanetScale / GroundRegionalBaseWavelengthCm, 0.25, 10000000.0);
+	const double GroundReliefFrequency = FMath::Clamp(
+		PhysicalPlanetScale / GroundReliefBaseWavelengthCm, 0.5, 10000000.0);
+	const double GroundRollingFrequency = FMath::Clamp(
+		PhysicalPlanetScale / GroundRollingBaseWavelengthCm, 1.0, 10000000.0);
+	const double GroundMicroFrequency = FMath::Clamp(
+		PhysicalPlanetScale / GroundMicroBaseWavelengthCm, 1.0, 10000000.0);
+	const double GroundWalkFrequency = FMath::Clamp(
+		PhysicalPlanetScale / GroundWalkBaseWavelengthCm, 1.0, 10000000.0);
+	const double GroundFineFrequency = FMath::Clamp(
+		PhysicalPlanetScale / GroundFineBaseWavelengthCm, 1.0, 10000000.0);
+	const double GroundFootFrequency = FMath::Clamp(
+		PhysicalPlanetScale / GroundFootBaseWavelengthCm, 1.0, 10000000.0);
+	const DVector GroundRegionalPosition = PlanetDirection * GroundRegionalFrequency
+		+ TerrainOffset * 1.19;
+	const DVector GroundReliefPosition = PlanetDirection * GroundReliefFrequency
+		+ TerrainOffset * 1.73;
+	const DVector GroundRollingPosition = PlanetDirection * GroundRollingFrequency
+		+ TerrainOffset * 2.03;
+	const DVector GroundMicroPosition = PlanetDirection * GroundMicroFrequency
+		+ TerrainOffset * 2.31;
+	const DVector GroundWalkPosition = PlanetDirection * GroundWalkFrequency
+		+ TerrainOffset * 2.89;
+	const DVector GroundFinePosition = PlanetDirection * GroundFineFrequency
+		+ TerrainOffset * 3.17;
+	const DVector GroundFootPosition = PlanetDirection * GroundFootFrequency
+		+ TerrainOffset * 3.71;
+	const double GroundRegional = FMath::Clamp(
+		NoiseClass.Fractal(GroundRegionalPosition, 2, 2.07, 0.48), 0.0, 1.0) - 0.5;
+	const double GroundRelief = FMath::Clamp(
+		NoiseClass.Fractal(GroundReliefPosition, 2, 2.03, 0.48), 0.0, 1.0) - 0.5;
+	const double GroundRolling = FMath::Clamp(
+		NoiseClass.Fractal(GroundRollingPosition, 2, 2.01, 0.46), 0.0, 1.0) - 0.5;
+	const double GroundMicro = FMath::Clamp(
+		NoiseClass.Fractal(GroundMicroPosition, 2, 2.07, 0.46), 0.0, 1.0) - 0.5;
+	const double GroundWalk = FMath::Clamp(
+		NoiseClass.Fractal(GroundWalkPosition, 2, 2.03, 0.46), 0.0, 1.0) - 0.5;
+	const double GroundFine = FMath::Clamp(
+		NoiseClass.Fractal(GroundFinePosition, 2, 2.05, 0.44), 0.0, 1.0) - 0.5;
+	const double GroundFoot = FMath::Clamp(
+		NoiseClass.Fractal(GroundFootPosition, 2, 2.01, 0.42), 0.0, 1.0) - 0.5;
+
 	// Height is authored relative to the liquid surface. OceanLevel therefore
 	// changes sea altitude but can no longer silently turn a terrestrial profile
 	// into an all-ocean world.
@@ -180,6 +264,33 @@ FNoiseData UAPSWorldScapePlanetNoise::Evaluate(
 	const double DeepLandMask = FMath::SmoothStep(0.025, 0.18, SignedLand);
 	const double MountainSignal = FMath::SmoothStep(0.56, 0.86, Ridges);
 	const double MountainMask = MountainSignal * DeepLandMask;
+	const double GroundSurfaceMask = FMath::Lerp(0.35, 1.0, LandMask);
+	const double GroundRoughness = FMath::Lerp(
+		0.62, 1.35, static_cast<double>(SurfaceProfile.Roughness));
+	const double GroundRegionalShape = FMath::Lerp(
+		0.72, 1.32, static_cast<double>(SurfaceProfile.HillStrength))
+		* FMath::Lerp(0.86, 1.18, static_cast<double>(SurfaceProfile.MountainStrength));
+	const bool bCryogenicGround =
+		SurfaceProfile.Archetype == EAPSPlanetSurfaceArchetype::Cryogenic;
+	const bool bHighMountainGround = SurfaceProfile.HasModifier(
+		EAPSPlanetSurfaceModifier::HighMountain);
+	// Cryogenic bodies used to retain their orbital silhouette while becoming almost
+	// planar inside a walking collision tile. Keep the boost in this same authoritative
+	// height field: broad and rolling bands make readable hills while the restrained
+	// sub-kilometre multiplier avoids replacing terrain with high-frequency ripples.
+	const double GroundBroadLandformBoost = bHighMountainGround
+		? 2.20 : (bCryogenicGround ? 3.50 : 1.0);
+	const double GroundRollingLandformBoost = bHighMountainGround
+		? 1.72 : (bCryogenicGround ? 3.90 : 1.0);
+	const double GroundLocalLandformBoost = bHighMountainGround
+		? 1.08 : (bCryogenicGround ? 2.70 : 1.0);
+	// Fine geometry is intentionally not multiplied by the large Cryogenic broad-band
+	// boost. Its job is to make a ten-metre walk visibly non-planar, not to create
+	// impassable procedural spikes. The bounded response keeps the same authored
+	// relief hierarchy while adding only a low-amplitude physical cue.
+	const double GroundFineResponse = FMath::Lerp(
+		0.72, 1.18, static_cast<double>(SurfaceProfile.Roughness))
+		* (bCryogenicGround ? 1.20 : (bHighMountainGround ? 1.12 : 1.0));
 	// Distance2Sub is -1 at cell boundaries and approaches 0 toward isolated cell
 	// centres. A fourth power made the useful cavity occupy too few samples to move
 	// even the first terrain percentile; the softer exponent produces recognisable
@@ -194,6 +305,45 @@ FNoiseData UAPSWorldScapePlanetNoise::Evaluate(
 		* FMath::Lerp(0.25, 1.25, static_cast<double>(SurfaceProfile.Roughness)) * DeepLandMask;
 	HeightNormalized += FMath::Square(MountainSignal) * 0.058
 		* static_cast<double>(SurfaceProfile.MountainStrength) * MountainMask;
+	// Put most displacement into broad landforms that remain recognisable both from
+	// orbit and while walking. High Mountain and Cryogenic profiles receive bounded
+	// profile-specific boosts, but still use the same single WorldScape height field
+	// as every other solid body.
+	// The five bounded physical bands cover regional silhouette through walk-scale
+	// break-up. Most energy is deliberately in the 1.8-18 km bands so a pawn sees
+	// coherent ridges and valleys rather than a displaced but visually flat tile.
+	// Their profile boosts stay finite so the strengthened relief remains traversable.
+	HeightNormalized += GroundRegional * 0.0200 * GroundRegionalShape
+		* GroundBroadLandformBoost * GroundSurfaceMask;
+	HeightNormalized += GroundRelief * 0.0280 * GroundRoughness
+		* GroundBroadLandformBoost * GroundSurfaceMask;
+	HeightNormalized += GroundRolling * 0.0155 * GroundRoughness
+		* GroundRollingLandformBoost * GroundSurfaceMask;
+	HeightNormalized += GroundMicro * 0.0050 * GroundRoughness
+		* GroundLocalLandformBoost * GroundSurfaceMask;
+	HeightNormalized += GroundWalk * 0.0026 * GroundRoughness
+		* GroundLocalLandformBoost * GroundSurfaceMask;
+	HeightNormalized += GroundFine * 0.00032 * GroundFineResponse * GroundSurfaceMask;
+	HeightNormalized += GroundFoot * 0.00010 * GroundFineResponse * GroundSurfaceMask;
+	// Keep orbital colour classification on a deliberately low-pass terrain field.
+	// Feeding physical displacement or preset deformation into vertex R turns real
+	// relief into nested palette isolines; at mixed WorldScape LODs those isolines also
+	// reveal the square patch topology. Geometry retains every band in Data.Height.
+	// Vertex R receives only broad continental/mountain structure plus a restrained
+	// share of the 18 km and 4 km fields. The 1.8 km and finer physical bands and all
+	// preset-only deformation remain geometry-only.
+	const double PalettePhysicalBandGain = bCryogenicGround
+		? 0.24 : (bHighMountainGround ? 0.26 : 0.22);
+	const double PaletteMacroHeightNormalized =
+		static_cast<double>(SurfaceProfile.OceanLevel) + SignedLand * 0.13
+		+ Regional * 0.014 * static_cast<double>(SurfaceProfile.HillStrength) * DeepLandMask
+		+ Detail * 0.002 * DeepLandMask
+		+ FMath::Square(MountainSignal) * 0.026
+			* static_cast<double>(SurfaceProfile.MountainStrength) * MountainMask
+		+ GroundRegional * 0.0200 * GroundRegionalShape * PalettePhysicalBandGain
+			* GroundBroadLandformBoost * GroundSurfaceMask
+		+ GroundRelief * 0.0280 * GroundRoughness * PalettePhysicalBandGain
+			* GroundBroadLandformBoost * GroundSurfaceMask;
 	// Impact basins do not stop at a sea-level classification. Applying a restrained
 	// floor below the land mask keeps submerged craters in the physical terrain and
 	// gives the crater control a robust lower-tail response without letting ocean-floor
@@ -201,7 +351,6 @@ FNoiseData UAPSWorldScapePlanetNoise::Evaluate(
 	const double CraterSurfaceMask = FMath::Lerp(0.55, 1.0, LandMask);
 	HeightNormalized += CraterCavity * 0.042
 		* static_cast<double>(SurfaceProfile.CraterStrength) * CraterSurfaceMask;
-
 	if (SurfaceProfile.HasModifier(EAPSPlanetSurfaceModifier::Pangea))
 	{
 		HeightNormalized += Regional * 0.006 * DeepLandMask;
@@ -303,7 +452,10 @@ FNoiseData UAPSWorldScapePlanetNoise::Evaluate(
 		}
 		if (SurfaceProfile.HasModifier(EAPSPlanetSurfaceModifier::ChemicalBands))
 		{
-			const double Bands = FMath::Sin((NoisePosition.X + NoisePosition.Y * 0.37) * 0.035);
+			// Latitude-warped bands are continuous in planet space. The former planar
+			// X/Y sine exposed cube-face orientation and looked like a technical grid.
+			const double Bands = FMath::Sin((PlanetDirection.Z * 4.5
+				+ Regional * 0.65 + Detail * 0.08) * UE_PI);
 			HeightNormalized += Bands * 0.012 * PatternStrength * LandMask;
 		}
 		if (SurfaceProfile.HasModifier(EAPSPlanetSurfaceModifier::MesaFields))
@@ -317,10 +469,11 @@ FNoiseData UAPSWorldScapePlanetNoise::Evaluate(
 		}
 		if (SurfaceProfile.HasModifier(EAPSPlanetSurfaceModifier::AlienTerrain))
 		{
-			const double AlienLattice = FMath::Sin(NoisePosition.X * 0.021)
-				* FMath::Sin(NoisePosition.Y * 0.017)
-				* FMath::Sin(NoisePosition.Z * 0.025);
-			HeightNormalized += AlienLattice * 0.022 * PatternStrength * LandMask;
+			// A coherent ridge/region mixture stays unfamiliar without producing the
+			// axis-aligned lattice that revealed WorldScape patch orientation.
+			const double AlienField = (Ridges - 0.5) * 0.62 + Regional * 0.74
+				+ Detail * 0.16;
+			HeightNormalized += AlienField * 0.020 * PatternStrength * LandMask;
 		}
 		if (SurfaceProfile.HasModifier(EAPSPlanetSurfaceModifier::VolcanicFissures))
 		{
@@ -343,8 +496,14 @@ FNoiseData UAPSWorldScapePlanetNoise::Evaluate(
 
 	const double PhysicalHeightNormalized = FMath::Clamp(HeightNormalized, -0.35, 0.65);
 	Data.Height = PhysicalHeightNormalized * NoiseIntensity;
+	// Palette classification is intentionally independent from the high-frequency and
+	// preset-specific displacement above. Preset identity is retained by the resolved
+	// family palette, climate channels and the physical silhouette, without drawing the
+	// displacement field a second time as coloured contour lines.
+	const double PaletteHeightNormalized = FMath::Clamp(
+		PaletteMacroHeightNormalized, -0.35, 0.65);
 	Data.HeightNormalize = APSPlanetNoise::NormalizeHeightForMaterial(
-		PhysicalHeightNormalized, SurfaceProfile);
+		PaletteHeightNormalized, SurfaceProfile);
 
 	const double ClampedLatitude = FMath::Clamp(Latitude, -1.0, 1.0);
 	const double EquatorialWarmth = 1.0 - FMath::Abs(FMath::Asin(ClampedLatitude) / UE_HALF_PI);

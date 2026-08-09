@@ -23,6 +23,7 @@ public:
 	virtual FReply OnMouseMove(const FGeometry& Geometry, const FPointerEvent& Event) override;
 	virtual FReply OnMouseWheel(const FGeometry& Geometry, const FPointerEvent& Event) override;
 	virtual FReply OnMouseButtonDoubleClick(const FGeometry& Geometry, const FPointerEvent& Event) override;
+	virtual void OnMouseCaptureLost(const FCaptureLostEvent& CaptureLostEvent) override;
 
 private:
 	FReply Close();

@@ -193,18 +193,33 @@ bool FAPSWorldScapeFamilyLifecycleTest::RunTest(const FString& Parameters)
 		Root && Root->WorldScapeLod.Contains(RetainedLodSentinel));
 	if (TestNotNull(TEXT("Activation owns a configured WorldScape root"), Root))
 	{
+		TestTrue(TEXT("Active root generates runtime collision"), Root->bGenerateCollision);
+		TestTrue(TEXT("Active root generates collision for possessed pawns"),
+			Root->bGenerateCollisionForAllPlayer);
+#if WITH_EDITOR
+		TestTrue(TEXT("Active root keeps editor-preview collision enabled"),
+			Root->bGenerateCollisionInEditor);
+		TestFalse(TEXT("Active root collision remains dynamically centred"),
+			Root->bStaticCollisionInEditor);
+#endif
 		TestTrue(TEXT("Ocean profile enables the ocean mesh"), Root->bOcean);
 		TestNotNull(TEXT("Ocean profile assigns an ocean material"), Root->OceanMaterial.DefaultMaterial);
 		TestNotNull(TEXT("Ocean profile assigns terrain noise"), Root->WorldScapeNoise);
 		Root->WorldScapeLodInGeneration.Add(nullptr, false);
 		Planet->bWorldScapeSurfaceReady = true;
-		TestFalse(TEXT("In-flight workers revoke a previously ready surface"),
+		TestTrue(TEXT("In-flight workers retain a previously ready surface"),
 			Planet->RefreshWorldScapeSurfaceVisibility());
-		TestTrue(TEXT("In-flight surface remains hidden behind the fallback"), Root->IsHidden());
+		TestFalse(TEXT("Incremental generation does not restore the fallback globe"), Root->IsHidden());
 		Root->WorldScapeLodInGeneration.Empty();
 		Planet->bWorldScapeSurfaceReady = true;
-		TestFalse(TEXT("Incomplete payload cannot retain a previous ready shortcut"),
+		TestTrue(TEXT("Ready latch survives a transiently incomplete resident LOD set"),
 			Planet->RefreshWorldScapeSurfaceVisibility());
+
+		// The synthetic root above never received a genuinely complete payload. Reset
+		// the test-only readiness injection before exercising the unresolved freeze
+		// path below; production invalidation does this in profile/root/state setters.
+		Planet->bWorldScapeSurfaceReady = false;
+		Root->SetActorHiddenInGame(true);
 	}
 
 	// A live body edit can arrive while WorldScape still owns a Lod result buffer.

@@ -10,7 +10,12 @@
 #include "Engine/World.h"
 #include "Materials/Material.h"
 #include "Materials/MaterialExpressionClamp.h"
+#include "Materials/MaterialExpressionFresnel.h"
+#include "Materials/MaterialExpressionLinearInterpolate.h"
+#include "Materials/MaterialExpressionMultiply.h"
+#include "Materials/MaterialExpressionOneMinus.h"
 #include "Materials/MaterialExpressionSmoothStep.h"
+#include "Materials/MaterialExpressionTextureSample.h"
 #include "Materials/MaterialExpressionVertexColor.h"
 #include "Materials/MaterialInstance.h"
 #include "Materials/MaterialInstanceDynamic.h"
@@ -63,6 +68,42 @@ namespace APSPlanetSurfaceProfileTests
 		double HeightP50 = 0.0;
 		double HeightP99 = 0.0;
 		double ClampFraction = 0.0;
+		double PaletteP10 = 0.0;
+		double PaletteP50 = 0.0;
+		double PaletteP90 = 0.0;
+		double PaletteSaturationFraction = 0.0;
+	};
+
+	struct FLocalReliefStats
+	{
+		bool bFoundLand = false;
+		int32 PatchCount = 0;
+		// 8 km regional window (legacy names retained for the existing contract).
+		double MinimumPatchRangeCm = 0.0;
+		double MedianPatchRangeCm = 0.0;
+		double MedianRmsSlope = 0.0;
+		double MaximumSlope = 0.0;
+		// 100 m walking window.
+		double MinimumWalkPatchRangeCm = 0.0;
+		double MedianWalkPatchRangeCm = 0.0;
+		double MedianWalkRmsSlope = 0.0;
+		double MaximumWalkSlope = 0.0;
+		// 10 m foot-scale window. This is the smallest range a player can inspect
+		// directly without relying on normal maps or material-only displacement.
+		double MinimumFootPatchRangeCm = 0.0;
+		double MedianFootPatchRangeCm = 0.0;
+		double MedianFootRmsSlope = 0.0;
+		double MaximumFootSlope = 0.0;
+		// 250 m near-field window visible from the third-person camera.
+		double MinimumNearPatchRangeCm = 0.0;
+		double MedianNearPatchRangeCm = 0.0;
+		double MedianNearRmsSlope = 0.0;
+		double MaximumNearSlope = 0.0;
+		// 1 km local-landform window.
+		double MinimumLocalPatchRangeCm = 0.0;
+		double MedianLocalPatchRangeCm = 0.0;
+		double MedianLocalRmsSlope = 0.0;
+		double MaximumLocalSlope = 0.0;
 	};
 
 	FSurfaceFieldStats SampleSurfaceFields(
@@ -242,8 +283,11 @@ namespace APSPlanetSurfaceProfileTests
 
 		TArray<double> Heights;
 		Heights.Reserve(SampleCount);
+		TArray<double> LandPaletteHeights;
+		LandPaletteHeights.Reserve(SampleCount);
 		int32 LandSamples = 0;
 		int32 ClampedSamples = 0;
+		int32 PaletteSaturatedSamples = 0;
 		for (int32 Index = 0; Index < SampleCount; ++Index)
 		{
 			const double Z = 1.0 - 2.0 * (static_cast<double>(Index) + 0.5) / SampleCount;
@@ -264,11 +308,20 @@ namespace APSPlanetSurfaceProfileTests
 			// selected dry subtype deliberately has no liquid renderer.
 			const bool bVisibleLand = Data.WaterMask < 0.5f;
 			LandSamples += bVisibleLand ? 1 : 0;
+			if (bVisibleLand)
+			{
+				const double PaletteHeight = FMath::Clamp(
+					static_cast<double>(Data.HeightNormalize), 0.0, 1.0);
+				LandPaletteHeights.Add(PaletteHeight);
+				PaletteSaturatedSamples += PaletteHeight <= 0.005
+					|| PaletteHeight >= 0.995 ? 1 : 0;
+			}
 			ClampedSamples += PhysicalHeightNormalized <= -0.349999
 				|| PhysicalHeightNormalized >= 0.649999 ? 1 : 0;
 		}
 
 		Heights.Sort();
+		LandPaletteHeights.Sort();
 		auto Percentile = [&Heights, SampleCount](double Fraction)
 		{
 			const int32 Index = FMath::Clamp(
@@ -282,6 +335,235 @@ namespace APSPlanetSurfaceProfileTests
 		Result.HeightP50 = Percentile(0.50);
 		Result.HeightP99 = Percentile(0.99);
 		Result.ClampFraction = static_cast<double>(ClampedSamples) / SampleCount;
+		if (LandPaletteHeights.Num() > 0)
+		{
+			auto PalettePercentile = [&LandPaletteHeights](double Fraction)
+			{
+				const int32 LastIndex = LandPaletteHeights.Num() - 1;
+				const int32 Index = FMath::Clamp(
+					FMath::RoundToInt(Fraction * static_cast<double>(LastIndex)), 0, LastIndex);
+				return LandPaletteHeights[Index];
+			};
+			Result.PaletteP10 = PalettePercentile(0.10);
+			Result.PaletteP50 = PalettePercentile(0.50);
+			Result.PaletteP90 = PalettePercentile(0.90);
+			Result.PaletteSaturationFraction = static_cast<double>(PaletteSaturatedSamples)
+				/ LandPaletteHeights.Num();
+		}
+		return Result;
+	}
+
+	FLocalReliefStats SampleLocalRelief(
+		const FAPSResolvedPlanetSurfaceProfile& Profile, int32 BodySeed)
+	{
+		// A full-scale Earth-radius body is deliberate: the regression was invisible
+		// to global spherical samples but obvious to a pawn moving over 2 m..8 km.
+		constexpr double PlanetScale = 637100000.0;
+		constexpr double GoldenAngle = 2.39996322972865332;
+		constexpr int32 CandidateCount = 384;
+		constexpr int32 DesiredPatchCount = 6;
+		const double SampleDistancesCm[] =
+		{
+			200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0,
+			25000.0, 50000.0, 100000.0, 200000.0, 400000.0, 800000.0
+		};
+		constexpr double WalkPatchRadiusCm = 10000.0;
+		constexpr double FootPatchRadiusCm = 1000.0;
+		constexpr double NearPatchRadiusCm = 25000.0;
+		constexpr double LocalPatchRadiusCm = 100000.0;
+
+		UAPSWorldScapePlanetNoise* Noise = NewObject<UAPSWorldScapePlanetNoise>();
+		Noise->Configure(Profile);
+		CustomNoise SampleNoise(BodySeed);
+		SampleNoise.SetSeed(BodySeed == MAX_int32 ? BodySeed - 1 : BodySeed + 1);
+		SampleNoise.SetSeed(BodySeed);
+
+		TArray<DVector> LandDirections;
+		LandDirections.Reserve(DesiredPatchCount);
+		for (int32 Index = 0;
+			Index < CandidateCount && LandDirections.Num() < DesiredPatchCount; ++Index)
+		{
+			const double Z = 1.0 - 2.0 * (static_cast<double>(Index) + 0.5) / CandidateCount;
+			const double RingRadius = FMath::Sqrt(FMath::Max(0.0, 1.0 - Z * Z));
+			const double Azimuth = GoldenAngle * Index;
+			const DVector Direction(
+				FMath::Cos(Azimuth) * RingRadius,
+				FMath::Sin(Azimuth) * RingRadius,
+				Z);
+			DVector NoisePosition;
+			const FNoiseData Data = Noise->GetNoise(
+				SampleNoise, Direction * PlanetScale, DVector(0.0), Profile.NoiseScale,
+				Profile.NoiseIntensity, PlanetScale, false, Z, NoisePosition, FNoiseData(), true);
+			if (Data.WaterMask <= 0.08f)
+			{
+				LandDirections.Add(Direction);
+			}
+		}
+
+		FLocalReliefStats Result;
+		Result.bFoundLand = LandDirections.Num() > 0;
+		TArray<double> PatchRanges;
+		TArray<double> WalkPatchRanges;
+		TArray<double> FootPatchRanges;
+		TArray<double> NearPatchRanges;
+		TArray<double> LocalPatchRanges;
+		TArray<double> PatchRmsSlopes;
+		TArray<double> WalkPatchRmsSlopes;
+		TArray<double> FootPatchRmsSlopes;
+		TArray<double> NearPatchRmsSlopes;
+		TArray<double> LocalPatchRmsSlopes;
+		for (DVector CenterDirection : LandDirections)
+		{
+			DVector Reference = FMath::Abs(CenterDirection.Z) < 0.82
+				? DVector(0.0, 0.0, 1.0)
+				: DVector(1.0, 0.0, 0.0);
+			DVector TangentU = CenterDirection ^ Reference;
+			TangentU.Normalize();
+			DVector TangentV = CenterDirection ^ TangentU;
+			TangentV.Normalize();
+
+			DVector NoisePosition;
+			const FNoiseData CenterData = Noise->GetNoise(
+				SampleNoise, CenterDirection * PlanetScale, DVector(0.0), Profile.NoiseScale,
+				Profile.NoiseIntensity, PlanetScale, false, CenterDirection.Z,
+				NoisePosition, FNoiseData(), true);
+			double MinimumHeight = CenterData.Height;
+			double MaximumHeight = CenterData.Height;
+			double MinimumWalkHeight = CenterData.Height;
+			double MaximumWalkHeight = CenterData.Height;
+			double MinimumFootHeight = CenterData.Height;
+			double MaximumFootHeight = CenterData.Height;
+			double MinimumNearHeight = CenterData.Height;
+			double MaximumNearHeight = CenterData.Height;
+			double MinimumLocalHeight = CenterData.Height;
+			double MaximumLocalHeight = CenterData.Height;
+			double SquaredSlopeSum = 0.0;
+			double WalkSquaredSlopeSum = 0.0;
+			double FootSquaredSlopeSum = 0.0;
+			double NearSquaredSlopeSum = 0.0;
+			double LocalSquaredSlopeSum = 0.0;
+			int32 SlopeCount = 0;
+			int32 WalkSlopeCount = 0;
+			int32 FootSlopeCount = 0;
+			int32 NearSlopeCount = 0;
+			int32 LocalSlopeCount = 0;
+
+			const DVector Tangents[] = {TangentU, TangentU * -1.0, TangentV, TangentV * -1.0};
+			for (const DVector& Tangent : Tangents)
+			{
+				double PreviousHeight = CenterData.Height;
+				double PreviousDistanceCm = 0.0;
+				for (const double DistanceCm : SampleDistancesCm)
+				{
+					DVector Direction = CenterDirection + Tangent * (DistanceCm / PlanetScale);
+					Direction.Normalize();
+					const FNoiseData Data = Noise->GetNoise(
+						SampleNoise, Direction * PlanetScale, DVector(0.0), Profile.NoiseScale,
+						Profile.NoiseIntensity, PlanetScale, false, Direction.Z,
+						NoisePosition, FNoiseData(), true);
+					MinimumHeight = FMath::Min(MinimumHeight, Data.Height);
+					MaximumHeight = FMath::Max(MaximumHeight, Data.Height);
+					if (DistanceCm <= WalkPatchRadiusCm)
+					{
+						MinimumWalkHeight = FMath::Min(MinimumWalkHeight, Data.Height);
+						MaximumWalkHeight = FMath::Max(MaximumWalkHeight, Data.Height);
+					}
+					if (DistanceCm <= FootPatchRadiusCm)
+					{
+						MinimumFootHeight = FMath::Min(MinimumFootHeight, Data.Height);
+						MaximumFootHeight = FMath::Max(MaximumFootHeight, Data.Height);
+					}
+					if (DistanceCm <= NearPatchRadiusCm)
+					{
+						MinimumNearHeight = FMath::Min(MinimumNearHeight, Data.Height);
+						MaximumNearHeight = FMath::Max(MaximumNearHeight, Data.Height);
+					}
+					if (DistanceCm <= LocalPatchRadiusCm)
+					{
+						MinimumLocalHeight = FMath::Min(MinimumLocalHeight, Data.Height);
+						MaximumLocalHeight = FMath::Max(MaximumLocalHeight, Data.Height);
+					}
+					const double SegmentLengthCm = DistanceCm - PreviousDistanceCm;
+					const double Slope = FMath::Abs(Data.Height - PreviousHeight)
+						/ FMath::Max(SegmentLengthCm, 1.0);
+					SquaredSlopeSum += Slope * Slope;
+					Result.MaximumSlope = FMath::Max(Result.MaximumSlope, Slope);
+					++SlopeCount;
+					if (DistanceCm <= WalkPatchRadiusCm)
+					{
+						WalkSquaredSlopeSum += Slope * Slope;
+						Result.MaximumWalkSlope = FMath::Max(Result.MaximumWalkSlope, Slope);
+						++WalkSlopeCount;
+					}
+					if (DistanceCm <= FootPatchRadiusCm)
+					{
+						FootSquaredSlopeSum += Slope * Slope;
+						Result.MaximumFootSlope = FMath::Max(Result.MaximumFootSlope, Slope);
+						++FootSlopeCount;
+					}
+					if (DistanceCm <= NearPatchRadiusCm)
+					{
+						NearSquaredSlopeSum += Slope * Slope;
+						Result.MaximumNearSlope = FMath::Max(Result.MaximumNearSlope, Slope);
+						++NearSlopeCount;
+					}
+					if (DistanceCm <= LocalPatchRadiusCm)
+					{
+						LocalSquaredSlopeSum += Slope * Slope;
+						Result.MaximumLocalSlope = FMath::Max(Result.MaximumLocalSlope, Slope);
+						++LocalSlopeCount;
+					}
+					PreviousHeight = Data.Height;
+					PreviousDistanceCm = DistanceCm;
+				}
+			}
+
+			PatchRanges.Add(MaximumHeight - MinimumHeight);
+			WalkPatchRanges.Add(MaximumWalkHeight - MinimumWalkHeight);
+			FootPatchRanges.Add(MaximumFootHeight - MinimumFootHeight);
+			NearPatchRanges.Add(MaximumNearHeight - MinimumNearHeight);
+			LocalPatchRanges.Add(MaximumLocalHeight - MinimumLocalHeight);
+			PatchRmsSlopes.Add(FMath::Sqrt(
+				SquaredSlopeSum / FMath::Max(SlopeCount, 1)));
+			WalkPatchRmsSlopes.Add(FMath::Sqrt(
+				WalkSquaredSlopeSum / FMath::Max(WalkSlopeCount, 1)));
+			FootPatchRmsSlopes.Add(FMath::Sqrt(
+				FootSquaredSlopeSum / FMath::Max(FootSlopeCount, 1)));
+			NearPatchRmsSlopes.Add(FMath::Sqrt(
+				NearSquaredSlopeSum / FMath::Max(NearSlopeCount, 1)));
+			LocalPatchRmsSlopes.Add(FMath::Sqrt(
+				LocalSquaredSlopeSum / FMath::Max(LocalSlopeCount, 1)));
+		}
+
+		PatchRanges.Sort();
+		WalkPatchRanges.Sort();
+		FootPatchRanges.Sort();
+		NearPatchRanges.Sort();
+		LocalPatchRanges.Sort();
+		PatchRmsSlopes.Sort();
+		WalkPatchRmsSlopes.Sort();
+		FootPatchRmsSlopes.Sort();
+		NearPatchRmsSlopes.Sort();
+		LocalPatchRmsSlopes.Sort();
+		Result.PatchCount = PatchRanges.Num();
+		if (PatchRanges.Num() > 0)
+		{
+			Result.MinimumPatchRangeCm = PatchRanges[0];
+			Result.MedianPatchRangeCm = PatchRanges[PatchRanges.Num() / 2];
+			Result.MinimumWalkPatchRangeCm = WalkPatchRanges[0];
+			Result.MedianWalkPatchRangeCm = WalkPatchRanges[WalkPatchRanges.Num() / 2];
+			Result.MinimumFootPatchRangeCm = FootPatchRanges[0];
+			Result.MedianFootPatchRangeCm = FootPatchRanges[FootPatchRanges.Num() / 2];
+			Result.MinimumNearPatchRangeCm = NearPatchRanges[0];
+			Result.MedianNearPatchRangeCm = NearPatchRanges[NearPatchRanges.Num() / 2];
+			Result.MinimumLocalPatchRangeCm = LocalPatchRanges[0];
+			Result.MedianLocalPatchRangeCm = LocalPatchRanges[LocalPatchRanges.Num() / 2];
+			Result.MedianRmsSlope = PatchRmsSlopes[PatchRmsSlopes.Num() / 2];
+			Result.MedianWalkRmsSlope = WalkPatchRmsSlopes[WalkPatchRmsSlopes.Num() / 2];
+			Result.MedianFootRmsSlope = FootPatchRmsSlopes[FootPatchRmsSlopes.Num() / 2];
+			Result.MedianNearRmsSlope = NearPatchRmsSlopes[NearPatchRmsSlopes.Num() / 2];
+			Result.MedianLocalRmsSlope = LocalPatchRmsSlopes[LocalPatchRmsSlopes.Num() / 2];
+		}
 		return Result;
 	}
 }
@@ -351,6 +633,186 @@ bool FAPSPlanetSurfaceAllSolidTypesTest::RunTest(const FString& Parameters)
 	}
 
 	APSPlanetSurfaceProfileTests::DestroyWorld(World);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FAPSPlanetSurfaceGroundScaleReliefTest,
+	"APS.Gameplay.World.PlanetSurface.GroundScaleRelief",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FAPSPlanetSurfaceGroundScaleReliefTest::RunTest(const FString& Parameters)
+{
+	using namespace APSPlanetSurfaceProfileTests;
+	UWorld* World = CreateWorld();
+	if (!TestNotNull(TEXT("Ground-relief world"), World)) return false;
+
+	APlanet* Planet = World->SpawnActor<APlanet>();
+	if (!TestNotNull(TEXT("Ground-relief planet"), Planet))
+	{
+		DestroyWorld(World);
+		return false;
+	}
+	Planet->RadiusKM = 6371.0;
+	Planet->PlanetRadiusKM = 6371;
+	Planet->Temperature = 288;
+	const UAPSPlanetSurfaceCatalog* Catalog = LoadObject<UAPSPlanetSurfaceCatalog>(nullptr,
+		TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/DA_PlanetSurfaceCatalog.DA_PlanetSurfaceCatalog"));
+	if (!TestNotNull(TEXT("Ground relief uses the runtime surface catalog"), Catalog))
+	{
+		Planet->Destroy();
+		DestroyWorld(World);
+		return false;
+	}
+
+	for (uint8 Value = 0; Value <= static_cast<uint8>(EPlanetType::Unknown); ++Value)
+	{
+		const EPlanetType Type = static_cast<EPlanetType>(Value);
+		if (!UAPSPlanetSurfaceProfileResolver::SupportsWorldScape(Type)) continue;
+
+		Planet->PlanetType = Type;
+		Planet->WorldScapeSeed = 62011 + Value * 131;
+		const FAPSResolvedPlanetSurfaceProfile Profile =
+			UAPSPlanetSurfaceProfileResolver::ResolveForBody(Planet, Catalog);
+		const FLocalReliefStats Stats = SampleLocalRelief(Profile, Planet->WorldScapeSeed);
+		const FString TypeName = StaticEnum<EPlanetType>()->GetNameStringByValue(Value);
+		UE_LOG(LogTemp, Display,
+			TEXT("[APS.GroundRelief] type=%s intensity=%.0fcm 10m[min=%.2fm median=%.2fm rmsSlope=%.5f maxSlope=%.5f] 100m[min=%.2fm median=%.2fm rmsSlope=%.5f maxSlope=%.5f] 250m[min=%.2fm median=%.2fm rmsSlope=%.5f maxSlope=%.5f] 1km[min=%.2fm median=%.2fm rmsSlope=%.5f maxSlope=%.5f] 8km[min=%.2fm median=%.2fm rmsSlope=%.5f maxSlope=%.5f]"),
+			*TypeName, static_cast<double>(Profile.NoiseIntensity),
+			Stats.MinimumFootPatchRangeCm / 100.0, Stats.MedianFootPatchRangeCm / 100.0,
+			Stats.MedianFootRmsSlope, Stats.MaximumFootSlope,
+			Stats.MinimumWalkPatchRangeCm / 100.0, Stats.MedianWalkPatchRangeCm / 100.0,
+			Stats.MedianWalkRmsSlope, Stats.MaximumWalkSlope,
+			Stats.MinimumNearPatchRangeCm / 100.0, Stats.MedianNearPatchRangeCm / 100.0,
+			Stats.MedianNearRmsSlope, Stats.MaximumNearSlope,
+			Stats.MinimumLocalPatchRangeCm / 100.0, Stats.MedianLocalPatchRangeCm / 100.0,
+			Stats.MedianLocalRmsSlope, Stats.MaximumLocalSlope,
+			Stats.MinimumPatchRangeCm / 100.0, Stats.MedianPatchRangeCm / 100.0,
+			Stats.MedianRmsSlope, Stats.MaximumSlope);
+
+		TestTrue(*(TypeName + TEXT(" has at least one sampled dry gameplay patch")),
+			Stats.bFoundLand && Stats.PatchCount > 0);
+		if (!Stats.bFoundLand || Stats.PatchCount == 0) continue;
+
+		// Require coherent ground geometry at every gameplay-relevant radius. The old
+		// non-zero contract accepted a texture-flat collision patch as soon as any two
+		// vertices differed by centimetres. These bounds scale with the user's Relief
+		// control and are sampled only on dry land, including oceanic islands.
+		const double RequiredFootRangeCm = FMath::Max(
+			8.0, static_cast<double>(Profile.NoiseIntensity) * 0.000015);
+		const double RequiredWalkRangeCm = FMath::Max(
+			300.0, static_cast<double>(Profile.NoiseIntensity) * 0.00030);
+		const double RequiredNearRangeCm = FMath::Max(
+			700.0, static_cast<double>(Profile.NoiseIntensity) * 0.00070);
+		const double RequiredLocalRangeCm = FMath::Max(
+			1800.0, static_cast<double>(Profile.NoiseIntensity) * 0.00180);
+		const double RequiredRegionalRangeCm = FMath::Max(
+			3500.0, static_cast<double>(Profile.NoiseIntensity) * 0.00350);
+		TestTrue(*FString::Printf(TEXT("%s has physical relief over an actual 0..10 m walk (%.2f cm)"),
+			*TypeName, Stats.MedianFootPatchRangeCm),
+			Stats.MedianFootPatchRangeCm >= RequiredFootRangeCm);
+		TestTrue(*FString::Printf(TEXT("%s has no mathematically flat 10 m ground patch (%.2f cm)"),
+			*TypeName, Stats.MinimumFootPatchRangeCm),
+			Stats.MinimumFootPatchRangeCm >= 2.0);
+		TestTrue(*FString::Printf(TEXT("%s has visible physical relief over 0..100 m (%.2f cm)"),
+			*TypeName, Stats.MedianWalkPatchRangeCm),
+			Stats.MedianWalkPatchRangeCm >= RequiredWalkRangeCm);
+		TestTrue(*FString::Printf(TEXT("%s has no flat 100 m gameplay patch (%.2f cm)"),
+			*TypeName, Stats.MinimumWalkPatchRangeCm),
+			Stats.MinimumWalkPatchRangeCm >= 100.0);
+		TestTrue(*FString::Printf(TEXT("%s has visible rolling relief over 0..250 m (%.2f cm)"),
+			*TypeName, Stats.MedianNearPatchRangeCm),
+			Stats.MedianNearPatchRangeCm >= RequiredNearRangeCm);
+		TestTrue(*FString::Printf(TEXT("%s has no flat 250 m near-field patch (%.2f cm)"),
+			*TypeName, Stats.MinimumNearPatchRangeCm),
+			Stats.MinimumNearPatchRangeCm >= 200.0);
+		TestTrue(*FString::Printf(TEXT("%s has regional landform variation over 0..8 km (%.2f cm)"),
+			*TypeName, Stats.MedianPatchRangeCm),
+			Stats.MedianPatchRangeCm >= RequiredRegionalRangeCm);
+		TestTrue(*FString::Printf(TEXT("%s has visible local-landform variation over 0..1 km (%.2f cm)"),
+			*TypeName, Stats.MedianLocalPatchRangeCm),
+			Stats.MedianLocalPatchRangeCm >= RequiredLocalRangeCm);
+		TestTrue(*FString::Printf(TEXT("%s sampled 8 km land does not contain a flat patch (%.2f cm)"),
+			*TypeName, Stats.MinimumPatchRangeCm),
+			Stats.MinimumPatchRangeCm >= 1500.0);
+		TestTrue(*FString::Printf(TEXT("%s has a readable walk-scale RMS slope (%.6f)"),
+			*TypeName, Stats.MedianWalkRmsSlope),
+			Stats.MedianWalkRmsSlope >= 0.0040);
+		TestTrue(*FString::Printf(TEXT("%s has a readable ten-metre RMS slope (%.6f)"),
+			*TypeName, Stats.MedianFootRmsSlope),
+			Stats.MedianFootRmsSlope >= 0.0020);
+		TestTrue(*FString::Printf(TEXT("%s exposes a visible local slope (%.6f)"),
+			*TypeName, Stats.MaximumSlope),
+			Stats.MaximumSlope >= 0.0050);
+		TestTrue(*FString::Printf(TEXT("%s does not turn local relief into impassable noise (%.6f)"),
+			*TypeName, Stats.MaximumWalkSlope),
+			Stats.MaximumWalkSlope <= 0.50);
+		TestTrue(*FString::Printf(TEXT("%s foot-scale detail remains traversable (%.6f)"),
+			*TypeName, Stats.MaximumFootSlope),
+			Stats.MaximumFootSlope <= 0.45);
+
+		if (Type == EPlanetType::Frozen)
+		{
+			TestTrue(TEXT("Frozen has at least 30 cm median physical relief across 10 m"),
+				Stats.MedianFootPatchRangeCm >= 30.0);
+			TestTrue(TEXT("Every sampled Frozen patch has at least 10 cm across 10 m"),
+				Stats.MinimumFootPatchRangeCm >= 10.0);
+			TestTrue(TEXT("Frozen ten-metre slope is readable"),
+				Stats.MedianFootRmsSlope >= 0.010);
+			TestTrue(TEXT("Frozen ten-metre slope remains traversable"),
+				Stats.MaximumFootSlope <= 0.35);
+			// Frozen is the standard generated-gameplay handoff profile. It must show
+			// rolling physical terrain at character scale without relying on a special
+			// HighMountain preset or on material-only displacement cues.
+			TestTrue(TEXT("Frozen has at least 15 m median relief across 100 m"),
+				Stats.MedianWalkPatchRangeCm >= 1500.0);
+			TestTrue(TEXT("Every sampled Frozen patch has at least 7 m across 100 m"),
+				Stats.MinimumWalkPatchRangeCm >= 700.0);
+			TestTrue(TEXT("Frozen has at least 25 m median relief across 250 m"),
+				Stats.MedianNearPatchRangeCm >= 2500.0);
+			TestTrue(TEXT("Every sampled Frozen patch has at least 12 m across 250 m"),
+				Stats.MinimumNearPatchRangeCm >= 1200.0);
+			TestTrue(TEXT("Frozen has at least 60 m median relief across 1 km"),
+				Stats.MedianLocalPatchRangeCm >= 6000.0);
+			TestTrue(TEXT("Every sampled Frozen patch has at least 30 m across 1 km"),
+				Stats.MinimumLocalPatchRangeCm >= 3000.0);
+			TestTrue(TEXT("Frozen has at least 150 m median relief across 8 km"),
+				Stats.MedianPatchRangeCm >= 15000.0);
+			TestTrue(TEXT("Every sampled Frozen patch has at least 90 m across 8 km"),
+				Stats.MinimumPatchRangeCm >= 9000.0);
+			TestTrue(TEXT("Frozen walk-scale slope is visible"),
+				Stats.MedianWalkRmsSlope >= 0.020);
+			TestTrue(TEXT("Frozen walk-scale slope remains traversable"),
+				Stats.MaximumWalkSlope <= 0.35);
+		}
+
+		if (Type == EPlanetType::HighMountain)
+		{
+			TestTrue(TEXT("High Mountain has at least 15 cm of physical relief across 10 m"),
+				Stats.MedianFootPatchRangeCm >= 15.0);
+			// High Mountain is the runtime handoff profile and must read as broad physical
+			// landforms from a pawn, not as a flat material or high-frequency ripple.
+			TestTrue(TEXT("High Mountain has at least 3 m of relief across 100 m"),
+				Stats.MedianWalkPatchRangeCm >= 300.0);
+			TestTrue(TEXT("Every sampled High Mountain patch has at least 1.5 m across 100 m"),
+				Stats.MinimumWalkPatchRangeCm >= 150.0);
+			TestTrue(TEXT("High Mountain has at least 35 m of relief across 1 km"),
+				Stats.MedianLocalPatchRangeCm >= 3500.0);
+			TestTrue(TEXT("Every sampled High Mountain patch has at least 10 m across 1 km"),
+				Stats.MinimumLocalPatchRangeCm >= 1000.0);
+			TestTrue(TEXT("High Mountain has at least 180 m of relief across 8 km"),
+				Stats.MedianPatchRangeCm >= 18000.0);
+			TestTrue(TEXT("Every sampled High Mountain patch has at least 120 m across 8 km"),
+				Stats.MinimumPatchRangeCm >= 12000.0);
+			TestTrue(TEXT("High Mountain walk-scale slope is visible"),
+				Stats.MedianWalkRmsSlope >= 0.015);
+			TestTrue(TEXT("High Mountain walk-scale slope is not noisy/rippled"),
+				Stats.MaximumWalkSlope <= 0.45);
+		}
+	}
+
+	Planet->Destroy();
+	DestroyWorld(World);
 	return true;
 }
 
@@ -448,10 +910,6 @@ bool FAPSPlanetSurfaceMaterialCatalogIntegrityTest::RunTest(const FString& Param
 		TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Materials/MI_APS_WS_Ammonia.MI_APS_WS_Ammonia"));
 	UMaterialInstance* LavaMaterial = LoadObject<UMaterialInstance>(nullptr,
 		TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Materials/MI_APS_WS_Lava.MI_APS_WS_Lava"));
-	UMaterialInstance* WaterTemplate = LoadObject<UMaterialInstance>(nullptr,
-		TEXT("/Game/APS/APS_ALPHA/WSC/WSC_MI_Planetary_Ocean.WSC_MI_Planetary_Ocean"));
-	UMaterialInstance* LavaTemplate = LoadObject<UMaterialInstance>(nullptr,
-		TEXT("/Game/APS/APS_ALPHA/WSC/WSC_MI_LavaOcean.WSC_MI_LavaOcean"));
 	TestNotNull(TEXT("Project water material"), WaterMaterial);
 	TestNotNull(TEXT("Project ammonia material"), AmmoniaMaterial);
 	TestNotNull(TEXT("Project lava material"), LavaMaterial);
@@ -462,6 +920,8 @@ bool FAPSPlanetSurfaceMaterialCatalogIntegrityTest::RunTest(const FString& Param
 
 	UMaterial* OrbitalTerrain = LoadObject<UMaterial>(nullptr,
 		TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Preview/M_APS_OrbitalTerrain.M_APS_OrbitalTerrain"));
+	UMaterial* WorldScapeTerrain = LoadObject<UMaterial>(nullptr,
+		TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Materials/M_APS_WorldScapeTerrain.M_APS_WorldScapeTerrain"));
 	UMaterial* OrbitalLiquid = LoadObject<UMaterial>(nullptr,
 		TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Preview/M_APS_OrbitalLiquid.M_APS_OrbitalLiquid"));
 	UMaterialInstance* OrbitalWater = LoadObject<UMaterialInstance>(nullptr,
@@ -483,13 +943,45 @@ bool FAPSPlanetSurfaceMaterialCatalogIntegrityTest::RunTest(const FString& Param
 		int32 HeightBandCount = 0;
 		for (const UMaterialExpression* Expression : OrbitalTerrain->GetExpressions())
 		{
-			if (Expression && Expression->IsA<UMaterialExpressionSmoothStep>())
+			if (const UMaterialExpressionSmoothStep* SmoothStep =
+				Cast<UMaterialExpressionSmoothStep>(Expression))
 			{
 				++HeightBandCount;
+				TestTrue(TEXT("Orbital terrain palette transitions are broad enough to hide LOD isolines"),
+					SmoothStep->ConstMax - SmoothStep->ConstMin >= 0.25f);
 			}
 		}
 		TestTrue(TEXT("Orbital terrain uses a separate smooth transition for every palette band"),
 			HeightBandCount >= 5);
+		TestFalse(TEXT("Canonical WorldScape terrain has no UV texture sampling that can expose patch grids"),
+			OrbitalTerrain->GetExpressions().ContainsByPredicate([](const UMaterialExpression* Expression)
+			{
+				return Expression && Expression->IsA<UMaterialExpressionTextureSample>();
+			}));
+		const UMaterialExpressionOneMinus* LowlandEmissiveMask = nullptr;
+		for (const UMaterialExpression* Expression : OrbitalTerrain->GetExpressions())
+		{
+			if (const UMaterialExpressionOneMinus* Candidate =
+				Cast<UMaterialExpressionOneMinus>(Expression))
+			{
+				LowlandEmissiveMask = Candidate;
+				break;
+			}
+		}
+		if (TestNotNull(TEXT("Orbital terrain derives emissive mask without WorldScape hole alpha"),
+			LowlandEmissiveMask))
+		{
+			const UMaterialExpressionSmoothStep* EmissiveHeightBand =
+				Cast<UMaterialExpressionSmoothStep>(LowlandEmissiveMask->Input.Expression);
+			if (TestNotNull(TEXT("Orbital emissive mask consumes a smooth height band"),
+				EmissiveHeightBand))
+			{
+				TestEqual(TEXT("Orbital emissive mask reads WorldScape normalized-height R, never hole alpha"),
+					EmissiveHeightBand->Value.OutputIndex, 1);
+				TestTrue(TEXT("Lava emissive transition is broad enough to suppress LOD vertex grids"),
+					EmissiveHeightBand->ConstMax - EmissiveHeightBand->ConstMin >= 0.70f);
+			}
+		}
 		TestTrue(TEXT("Orbital terrain bounds emissive output"),
 			OrbitalTerrain->GetExpressions().ContainsByPredicate([](const UMaterialExpression* Expression)
 			{
@@ -526,6 +1018,95 @@ bool FAPSPlanetSurfaceMaterialCatalogIntegrityTest::RunTest(const FString& Param
 				DefaultClimateBlend >= 0.08f && DefaultClimateBlend <= 0.25f);
 		}
 	}
+	if (TestNotNull(TEXT("Canonical full-scale WorldScape terrain master"), WorldScapeTerrain))
+	{
+		TestEqual(TEXT("WorldScape terrain is opaque"),
+			WorldScapeTerrain->GetBlendMode(), BLEND_Opaque);
+		TestTrue(TEXT("WorldScape terrain is lit"),
+			WorldScapeTerrain->GetShadingModels().HasShadingModel(MSM_DefaultLit));
+		TestTrue(TEXT("WorldScape terrain consumes the authoritative vertex payload"),
+			WorldScapeTerrain->GetExpressions().ContainsByPredicate(
+				[](const UMaterialExpression* Expression)
+				{
+					return Expression && Expression->IsA<UMaterialExpressionVertexColor>();
+				}));
+		TestFalse(TEXT("WorldScape terrain has no UV sampling that can reveal cube-patch grids"),
+			WorldScapeTerrain->GetExpressions().ContainsByPredicate(
+				[](const UMaterialExpression* Expression)
+				{
+					return Expression && Expression->IsA<UMaterialExpressionTextureSample>();
+				}));
+		int32 BroadHeightBandCount = 0;
+		for (const UMaterialExpression* Expression : WorldScapeTerrain->GetExpressions())
+		{
+			if (const UMaterialExpressionSmoothStep* SmoothStep =
+				Cast<UMaterialExpressionSmoothStep>(Expression))
+			{
+				if (SmoothStep->Value.OutputIndex == 1
+					&& SmoothStep->ConstMax - SmoothStep->ConstMin >= 0.25f)
+				{
+					++BroadHeightBandCount;
+				}
+			}
+		}
+		TestTrue(TEXT("WorldScape terrain softens per-vertex LOD transitions with broad bands"),
+			BroadHeightBandCount >= 5);
+		TestTrue(TEXT("WorldScape terrain connects its generated palette to Base Color"),
+			APSPlanetSurfaceProfileTests::HasConnectedMaterialProperty(
+				WorldScapeTerrain, MP_BaseColor));
+		TestTrue(TEXT("WorldScape terrain connects bounded lava glow to Emissive Color"),
+			APSPlanetSurfaceProfileTests::HasConnectedMaterialProperty(
+				WorldScapeTerrain, MP_EmissiveColor));
+	}
+
+	struct FCanonicalTerrainFamily
+	{
+		EAPSPlanetSurfaceArchetype Archetype;
+		const TCHAR* AssetName;
+	};
+	const FCanonicalTerrainFamily CanonicalTerrainFamilies[] =
+	{
+		{EAPSPlanetSurfaceArchetype::Rocky, TEXT("MI_APS_WS_Rocky")},
+		{EAPSPlanetSurfaceArchetype::Temperate, TEXT("MI_APS_WS_Temperate")},
+		{EAPSPlanetSurfaceArchetype::Oceanic, TEXT("MI_APS_WS_Oceanic")},
+		{EAPSPlanetSurfaceArchetype::Biosphere, TEXT("MI_APS_WS_Biosphere")},
+		{EAPSPlanetSurfaceArchetype::Desert, TEXT("MI_APS_WS_Desert")},
+		{EAPSPlanetSurfaceArchetype::Cryogenic, TEXT("MI_APS_WS_Cryogenic")},
+		{EAPSPlanetSurfaceArchetype::Magmatic, TEXT("MI_APS_WS_Magmatic")},
+		{EAPSPlanetSurfaceArchetype::Metallic, TEXT("MI_APS_WS_Metallic")},
+		{EAPSPlanetSurfaceArchetype::ExoticChemical, TEXT("MI_APS_WS_ExoticChemical")}
+	};
+	for (const FCanonicalTerrainFamily& Family : CanonicalTerrainFamilies)
+	{
+		const FString Context = FString::Printf(TEXT("Canonical terrain family %s"),
+			Family.AssetName);
+		const FString MaterialPath = FString::Printf(
+			TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Materials/%s.%s"),
+			Family.AssetName, Family.AssetName);
+		UMaterialInstance* FamilyMaterial = LoadObject<UMaterialInstance>(
+			nullptr, *MaterialPath);
+		if (!TestNotNull(*(Context + TEXT(" asset exists")), FamilyMaterial))
+		{
+			continue;
+		}
+
+		const FAPSPlanetSurfaceArchetypeDefinition* CatalogDefinition =
+			Catalog->Archetypes.Find(Family.Archetype);
+		if (!TestNotNull(*(Context + TEXT(" has a catalog definition")), CatalogDefinition))
+		{
+			continue;
+		}
+		TestEqual(*(Context + TEXT(" is selected by the catalog")),
+			CatalogDefinition->TerrainMaterial.LoadSynchronous(), FamilyMaterial);
+		if (WorldScapeTerrain)
+		{
+			TestEqual(*(Context + TEXT(" directly inherits the canonical WorldScape master")),
+				FamilyMaterial->Parent.Get(),
+				static_cast<UMaterialInterface*>(WorldScapeTerrain));
+			TestNotEqual(*(Context + TEXT(" never inherits the orbital preview master")),
+				FamilyMaterial->Parent.Get(), static_cast<UMaterialInterface*>(OrbitalTerrain));
+		}
+	}
 	if (TestNotNull(TEXT("Orbital liquid material"), OrbitalLiquid))
 	{
 		TestEqual(TEXT("Orbital liquid uses ordinary translucency"),
@@ -543,6 +1124,64 @@ bool FAPSPlanetSurfaceMaterialCatalogIntegrityTest::RunTest(const FString& Param
 		TestTrue(TEXT("Orbital liquid connects its authored opacity control"),
 			APSPlanetSurfaceProfileTests::HasConnectedMaterialProperty(
 				OrbitalLiquid, MP_Opacity));
+		TestFalse(TEXT("Canonical liquid never treats WorldScape hole alpha as visibility"),
+			OrbitalLiquid->GetExpressions().ContainsByPredicate([](const UMaterialExpression* Expression)
+			{
+				return Expression && Expression->IsA<UMaterialExpressionVertexColor>();
+			}));
+		TestFalse(TEXT("Canonical liquid has no UV sampling that can reveal cube-patch grids"),
+			OrbitalLiquid->GetExpressions().ContainsByPredicate([](const UMaterialExpression* Expression)
+			{
+				return Expression && Expression->IsA<UMaterialExpressionTextureSample>();
+			}));
+		const FExpressionInput* OpacityInput =
+			OrbitalLiquid->GetExpressionInputForProperty(MP_Opacity);
+		const UMaterialExpressionClamp* OpacityClamp = OpacityInput
+			? Cast<UMaterialExpressionClamp>(OpacityInput->Expression) : nullptr;
+		if (TestNotNull(TEXT("Canonical liquid opacity is clamped"), OpacityClamp))
+		{
+			TestTrue(TEXT("Canonical liquid opacity stays translucent but visible"),
+				FMath::IsNearlyEqual(OpacityClamp->MinDefault, 0.05f)
+					&& FMath::IsNearlyEqual(OpacityClamp->MaxDefault, 0.68f));
+			const UMaterialExpressionMultiply* FresnelOpacity =
+				Cast<UMaterialExpressionMultiply>(OpacityClamp->Input.Expression);
+			if (TestNotNull(TEXT("Canonical liquid attenuates opacity before its final clamp"),
+				FresnelOpacity))
+			{
+				const UMaterialExpressionLinearInterpolate* OpacityScale =
+					Cast<UMaterialExpressionLinearInterpolate>(FresnelOpacity->B.Expression);
+				if (TestNotNull(TEXT("Canonical liquid uses a Fresnel opacity scale"), OpacityScale))
+				{
+					TestTrue(TEXT("Face-on liquid preserves terrain relief"),
+						OpacityScale->ConstA < 0.7f
+							&& FMath::IsNearlyEqual(OpacityScale->ConstB, 1.0f));
+					const UMaterialExpressionClamp* OpacityFresnel =
+						Cast<UMaterialExpressionClamp>(OpacityScale->Alpha.Expression);
+					TestTrue(TEXT("Opacity uses the bounded Fresnel signal"),
+						OpacityFresnel && OpacityFresnel->Input.Expression
+							&& OpacityFresnel->Input.Expression->IsA<UMaterialExpressionFresnel>());
+				}
+			}
+		}
+		const FExpressionInput* EmissiveInput =
+			OrbitalLiquid->GetExpressionInputForProperty(MP_EmissiveColor);
+		const UMaterialExpressionClamp* EmissiveClamp = EmissiveInput
+			? Cast<UMaterialExpressionClamp>(EmissiveInput->Expression) : nullptr;
+		if (TestNotNull(TEXT("Canonical liquid emissive is clamped"), EmissiveClamp))
+		{
+			TestTrue(TEXT("Canonical liquid emissive stays display-safe"),
+				FMath::IsNearlyEqual(EmissiveClamp->MinDefault, 0.0f)
+					&& FMath::IsNearlyEqual(EmissiveClamp->MaxDefault, 1.25f));
+		}
+		TestTrue(TEXT("Canonical liquid bounds Fresnel before colour blending"),
+			OrbitalLiquid->GetExpressions().ContainsByPredicate([](const UMaterialExpression* Expression)
+			{
+				const UMaterialExpressionClamp* Clamp = Cast<UMaterialExpressionClamp>(Expression);
+				return Clamp && Clamp->Input.Expression
+					&& Clamp->Input.Expression->IsA<UMaterialExpressionFresnel>()
+					&& FMath::IsNearlyEqual(Clamp->MinDefault, 0.0f)
+					&& FMath::IsNearlyEqual(Clamp->MaxDefault, 1.0f);
+			}));
 		for (const TCHAR* ParameterName :
 			{TEXT("LiquidDeepColor"), TEXT("LiquidShallowColor"), TEXT("LiquidEmissiveColor")})
 		{
@@ -560,7 +1199,7 @@ bool FAPSPlanetSurfaceMaterialCatalogIntegrityTest::RunTest(const FString& Param
 	{
 		if (TestNotNull(TEXT("Orbital liquid preset"), Preset) && OrbitalLiquid)
 		{
-			TestEqual(TEXT("Orbital liquid preset keeps the preview-only parent"),
+			TestEqual(TEXT("Orbital liquid preset shares the canonical liquid parent"),
 				Preset->Parent.Get(), static_cast<UMaterialInterface*>(OrbitalLiquid));
 			TestEqual(TEXT("Orbital liquid preset authors its three colours"),
 				Preset->VectorParameterValues.Num(), 3);
@@ -585,68 +1224,54 @@ bool FAPSPlanetSurfaceMaterialCatalogIntegrityTest::RunTest(const FString& Param
 			}
 		}
 	}
-	if (WaterMaterial && AmmoniaMaterial && LavaMaterial && WaterTemplate && LavaTemplate)
+	if (WaterMaterial && AmmoniaMaterial && LavaMaterial && OrbitalLiquid)
 	{
-		TestEqual(TEXT("Water keeps the established WorldScape ocean graph"),
-			WaterMaterial->Parent.Get(), static_cast<UMaterialInterface*>(WaterTemplate));
-		TestEqual(TEXT("Ammonia reuses the water graph with real parameter overrides"),
-			AmmoniaMaterial->Parent.Get(), static_cast<UMaterialInterface*>(WaterTemplate));
-		TestEqual(TEXT("Lava keeps the established emissive WorldScape graph"),
-			LavaMaterial->Parent.Get(), static_cast<UMaterialInterface*>(LavaTemplate));
+		TestEqual(TEXT("Water directly inherits the canonical translucent liquid graph"),
+			WaterMaterial->Parent.Get(), static_cast<UMaterialInterface*>(OrbitalLiquid));
+		TestEqual(TEXT("Ammonia directly inherits the canonical translucent liquid graph"),
+			AmmoniaMaterial->Parent.Get(), static_cast<UMaterialInterface*>(OrbitalLiquid));
+		TestEqual(TEXT("Lava directly inherits the canonical translucent liquid graph"),
+			LavaMaterial->Parent.Get(), static_cast<UMaterialInterface*>(OrbitalLiquid));
+		TestEqual(TEXT("Water resolves the canonical project-owned graph"),
+			WaterMaterial->GetMaterial(), OrbitalLiquid);
+		TestEqual(TEXT("Ammonia resolves the canonical project-owned graph"),
+			AmmoniaMaterial->GetMaterial(), OrbitalLiquid);
+		TestEqual(TEXT("Lava resolves the canonical project-owned graph"),
+			LavaMaterial->GetMaterial(), OrbitalLiquid);
 
-		for (const TCHAR* ParameterName : {TEXT("Param"), TEXT("Param_1"), TEXT("Param_2")})
+		for (const TCHAR* ParameterName
+			: {TEXT("LiquidDeepColor"), TEXT("LiquidShallowColor"), TEXT("LiquidEmissiveColor")})
 		{
-			TestTrue(*FString::Printf(TEXT("Water graph exposes authored vector %s"), ParameterName),
+			TestTrue(*FString::Printf(TEXT("Water exposes canonical vector %s"), ParameterName),
 				APSPlanetSurfaceProfileTests::HasVectorParameter(WaterMaterial, ParameterName));
-			TestTrue(*FString::Printf(TEXT("Ammonia graph exposes authored vector %s"), ParameterName),
+			TestTrue(*FString::Printf(TEXT("Ammonia exposes canonical vector %s"), ParameterName),
 				APSPlanetSurfaceProfileTests::HasVectorParameter(AmmoniaMaterial, ParameterName));
+			TestTrue(*FString::Printf(TEXT("Lava exposes canonical vector %s"), ParameterName),
+				APSPlanetSurfaceProfileTests::HasVectorParameter(LavaMaterial, ParameterName));
 		}
 		for (const TCHAR* ParameterName
-			: {TEXT("ColorScaleBehindWater"), TEXT("Roughness"), TEXT("Specular")})
+			: {TEXT("Opacity"), TEXT("Roughness"), TEXT("Metallic"), TEXT("Specular")})
 		{
-			TestTrue(*FString::Printf(TEXT("Water graph exposes authored scalar %s"), ParameterName),
+			TestTrue(*FString::Printf(TEXT("Water exposes canonical scalar %s"), ParameterName),
 				APSPlanetSurfaceProfileTests::HasScalarParameter(WaterMaterial, ParameterName));
-			TestTrue(*FString::Printf(TEXT("Ammonia graph exposes authored scalar %s"), ParameterName),
+			TestTrue(*FString::Printf(TEXT("Ammonia exposes canonical scalar %s"), ParameterName),
 				APSPlanetSurfaceProfileTests::HasScalarParameter(AmmoniaMaterial, ParameterName));
+			TestTrue(*FString::Printf(TEXT("Lava exposes canonical scalar %s"), ParameterName),
+				APSPlanetSurfaceProfileTests::HasScalarParameter(LavaMaterial, ParameterName));
 		}
-		TestTrue(TEXT("Lava graph exposes authored EmissiveColor"),
-			APSPlanetSurfaceProfileTests::HasVectorParameter(LavaMaterial, TEXT("EmissiveColor")));
-		TestTrue(TEXT("Lava graph exposes authored Brightness"),
-			APSPlanetSurfaceProfileTests::HasScalarParameter(LavaMaterial, TEXT("Brightness")));
 
-		// The names below are labels on the WorldScape custom-expression inputs,
-		// not overridable material parameters. Keeping them absent protects against
-		// the inert overrides produced by the old asset/runtime paths.
-		for (const TCHAR* ParameterName
-			: {TEXT("BaseColor"), TEXT("AbsorptionCoefficients"), TEXT("ScatteringCoefficients")})
-		{
-			TestFalse(*FString::Printf(TEXT("Water does not invent vector %s"), ParameterName),
-				APSPlanetSurfaceProfileTests::HasVectorParameter(WaterMaterial, ParameterName));
-			TestFalse(*FString::Printf(TEXT("Ammonia does not invent vector %s"), ParameterName),
-				APSPlanetSurfaceProfileTests::HasVectorParameter(AmmoniaMaterial, ParameterName));
-		}
-		TestFalse(TEXT("ColorScaleBehindWater is not mis-authored as a vector"),
-			APSPlanetSurfaceProfileTests::HasVectorParameter(
-				AmmoniaMaterial, TEXT("ColorScaleBehindWater")));
-		TestFalse(TEXT("Lava does not invent BaseColor"),
-			APSPlanetSurfaceProfileTests::HasVectorParameter(LavaMaterial, TEXT("BaseColor")));
-		TestFalse(TEXT("Lava does not invent Roughness"),
-			APSPlanetSurfaceProfileTests::HasScalarParameter(LavaMaterial, TEXT("Roughness")));
-		TestFalse(TEXT("Lava does not invent Specular"),
-			APSPlanetSurfaceProfileTests::HasScalarParameter(LavaMaterial, TEXT("Specular")));
-
-		TestEqual(TEXT("Water adds no vector overrides over the established baseline"),
-			WaterMaterial->VectorParameterValues.Num(), 0);
-		TestEqual(TEXT("Water adds no scalar overrides over the established baseline"),
-			WaterMaterial->ScalarParameterValues.Num(), 0);
+		TestEqual(TEXT("Water authors exactly three real vector overrides"),
+			WaterMaterial->VectorParameterValues.Num(), 3);
+		TestEqual(TEXT("Water authors exactly four real scalar overrides"),
+			WaterMaterial->ScalarParameterValues.Num(), 4);
 		TestEqual(TEXT("Ammonia authors exactly three real vector overrides"),
 			AmmoniaMaterial->VectorParameterValues.Num(), 3);
-		TestEqual(TEXT("Ammonia authors exactly three real scalar overrides"),
-			AmmoniaMaterial->ScalarParameterValues.Num(), 3);
-		TestEqual(TEXT("Lava authors exactly one real vector override"),
-			LavaMaterial->VectorParameterValues.Num(), 1);
-		TestEqual(TEXT("Lava authors exactly one real scalar override"),
-			LavaMaterial->ScalarParameterValues.Num(), 1);
+		TestEqual(TEXT("Ammonia authors exactly four real scalar overrides"),
+			AmmoniaMaterial->ScalarParameterValues.Num(), 4);
+		TestEqual(TEXT("Lava authors exactly three real vector overrides"),
+			LavaMaterial->VectorParameterValues.Num(), 3);
+		TestEqual(TEXT("Lava authors exactly four real scalar overrides"),
+			LavaMaterial->ScalarParameterValues.Num(), 4);
 
 		auto TestVectorValue = [this](const TCHAR* Label, const UMaterialInterface* Material,
 			const TCHAR* ParameterName, const FLinearColor& Expected)
@@ -671,35 +1296,55 @@ bool FAPSPlanetSurfaceMaterialCatalogIntegrityTest::RunTest(const FString& Param
 			}
 		};
 
-		TestVectorValue(TEXT("Ammonia Param"), AmmoniaMaterial, TEXT("Param"),
-			FLinearColor(0.012f, 0.035f, 0.024f, 1.0f));
-		TestVectorValue(TEXT("Ammonia Param_1"), AmmoniaMaterial, TEXT("Param_1"),
-			FLinearColor(0.35f, 0.82f, 0.68f, 1.0f));
-		TestVectorValue(TEXT("Ammonia Param_2"), AmmoniaMaterial, TEXT("Param_2"),
-			FLinearColor(0.08f, 0.25f, 0.18f, 1.0f));
-		TestScalarValue(TEXT("Ammonia ColorScaleBehindWater"), AmmoniaMaterial,
-			TEXT("ColorScaleBehindWater"), 0.68f);
-		TestScalarValue(TEXT("Ammonia Roughness"), AmmoniaMaterial, TEXT("Roughness"), 0.18f);
+		TestVectorValue(TEXT("Water deep colour"), WaterMaterial, TEXT("LiquidDeepColor"),
+			FLinearColor(0.005f, 0.025f, 0.090f));
+		TestVectorValue(TEXT("Water shallow colour"), WaterMaterial, TEXT("LiquidShallowColor"),
+			FLinearColor(0.030f, 0.300f, 0.580f));
+		TestVectorValue(TEXT("Water emissive colour"), WaterMaterial, TEXT("LiquidEmissiveColor"),
+			FLinearColor(0.008f, 0.035f, 0.075f));
+		TestScalarValue(TEXT("Water Opacity"), WaterMaterial, TEXT("Opacity"), 0.34f);
+		TestScalarValue(TEXT("Water Roughness"), WaterMaterial, TEXT("Roughness"), 0.18f);
+		TestScalarValue(TEXT("Water Metallic"), WaterMaterial, TEXT("Metallic"), 0.0f);
+		TestScalarValue(TEXT("Water Specular"), WaterMaterial, TEXT("Specular"), 0.62f);
+		TestVectorValue(TEXT("Ammonia deep colour"), AmmoniaMaterial, TEXT("LiquidDeepColor"),
+			FLinearColor(0.008f, 0.055f, 0.025f));
+		TestVectorValue(TEXT("Ammonia shallow colour"), AmmoniaMaterial, TEXT("LiquidShallowColor"),
+			FLinearColor(0.160f, 0.480f, 0.250f));
+		TestVectorValue(TEXT("Ammonia emissive colour"), AmmoniaMaterial, TEXT("LiquidEmissiveColor"),
+			FLinearColor(0.006f, 0.035f, 0.015f));
+		TestScalarValue(TEXT("Ammonia Opacity"), AmmoniaMaterial, TEXT("Opacity"), 0.32f);
+		TestScalarValue(TEXT("Ammonia Roughness"), AmmoniaMaterial, TEXT("Roughness"), 0.22f);
+		TestScalarValue(TEXT("Ammonia Metallic"), AmmoniaMaterial, TEXT("Metallic"), 0.0f);
 		TestScalarValue(TEXT("Ammonia Specular"), AmmoniaMaterial, TEXT("Specular"), 0.58f);
-		TestVectorValue(TEXT("Lava EmissiveColor"), LavaMaterial, TEXT("EmissiveColor"),
-			FLinearColor(1.0f, 0.08f, 0.005f, 1.0f));
-		TestScalarValue(TEXT("Lava Brightness"), LavaMaterial, TEXT("Brightness"), 0.65f);
+		TestVectorValue(TEXT("Lava deep colour"), LavaMaterial, TEXT("LiquidDeepColor"),
+			FLinearColor(0.055f, 0.001f, 0.0005f));
+		TestVectorValue(TEXT("Lava shallow colour"), LavaMaterial, TEXT("LiquidShallowColor"),
+			FLinearColor(0.720f, 0.025f, 0.001f));
+		TestVectorValue(TEXT("Lava emissive colour"), LavaMaterial, TEXT("LiquidEmissiveColor"),
+			FLinearColor(0.420f, 0.018f, 0.001f));
+		TestScalarValue(TEXT("Lava Opacity"), LavaMaterial, TEXT("Opacity"), 0.42f);
+		TestScalarValue(TEXT("Lava Roughness"), LavaMaterial, TEXT("Roughness"), 0.42f);
+		TestScalarValue(TEXT("Lava Metallic"), LavaMaterial, TEXT("Metallic"), 0.04f);
+		TestScalarValue(TEXT("Lava Specular"), LavaMaterial, TEXT("Specular"), 0.30f);
 
-		for (const TCHAR* ParameterName : {TEXT("Param"), TEXT("Param_1"), TEXT("Param_2")})
+		for (UMaterialInstance* Liquid : {WaterMaterial, AmmoniaMaterial, LavaMaterial})
 		{
-			TestTrue(*FString::Printf(TEXT("Ammonia owns override %s"), ParameterName),
-				APSPlanetSurfaceProfileTests::HasOwnVectorOverride(AmmoniaMaterial, ParameterName));
+			const FString LiquidName = Liquid->GetName();
+			for (const TCHAR* ParameterName
+				: {TEXT("LiquidDeepColor"), TEXT("LiquidShallowColor"), TEXT("LiquidEmissiveColor")})
+			{
+				TestTrue(*FString::Printf(TEXT("%s owns vector override %s"),
+					*LiquidName, ParameterName),
+					APSPlanetSurfaceProfileTests::HasOwnVectorOverride(Liquid, ParameterName));
+			}
+			for (const TCHAR* ParameterName
+				: {TEXT("Opacity"), TEXT("Roughness"), TEXT("Metallic"), TEXT("Specular")})
+			{
+				TestTrue(*FString::Printf(TEXT("%s owns scalar override %s"),
+					*LiquidName, ParameterName),
+					APSPlanetSurfaceProfileTests::HasOwnScalarOverride(Liquid, ParameterName));
+			}
 		}
-		for (const TCHAR* ParameterName
-			: {TEXT("ColorScaleBehindWater"), TEXT("Roughness"), TEXT("Specular")})
-		{
-			TestTrue(*FString::Printf(TEXT("Ammonia owns override %s"), ParameterName),
-				APSPlanetSurfaceProfileTests::HasOwnScalarOverride(AmmoniaMaterial, ParameterName));
-		}
-		TestTrue(TEXT("Lava owns EmissiveColor override"),
-			APSPlanetSurfaceProfileTests::HasOwnVectorOverride(LavaMaterial, TEXT("EmissiveColor")));
-		TestTrue(TEXT("Lava owns Brightness override"),
-			APSPlanetSurfaceProfileTests::HasOwnScalarOverride(LavaMaterial, TEXT("Brightness")));
 	}
 
 	for (const TPair<EAPSPlanetSurfaceArchetype, FAPSPlanetSurfaceArchetypeDefinition>& Entry
@@ -709,8 +1354,6 @@ bool FAPSPlanetSurfaceMaterialCatalogIntegrityTest::RunTest(const FString& Param
 			static_cast<int32>(Entry.Key));
 		UMaterialInstance* FamilyMaterial = Entry.Value.TerrainMaterial.LoadSynchronous();
 		if (!TestNotNull(*(Context + TEXT(" has a terrain material")), FamilyMaterial)) continue;
-		TestNotNull(*(Context + TEXT(" inherits a material instance template")),
-			Cast<UMaterialInstance>(FamilyMaterial->Parent));
 		const UMaterial* BaseMaterial = FamilyMaterial->GetMaterial();
 		if (TestNotNull(*(Context + TEXT(" resolves a base material")), BaseMaterial))
 		{
@@ -732,10 +1375,21 @@ bool FAPSPlanetSurfaceMaterialCatalogIntegrityTest::RunTest(const FString& Param
 					: WaterMaterial;
 			TestEqual(*(Context + TEXT(" references the canonical material for its liquid")),
 				LiquidMaterial, ExpectedLiquidMaterial);
-			TestFalse(*(Context + TEXT(" does not invent ShallowColor")),
-				APSPlanetSurfaceProfileTests::HasVectorParameter(LiquidMaterial, TEXT("ShallowColor")));
-			TestFalse(*(Context + TEXT(" does not invent DeepColor")),
-				APSPlanetSurfaceProfileTests::HasVectorParameter(LiquidMaterial, TEXT("DeepColor")));
+			if (OrbitalLiquid)
+			{
+				TestEqual(*(Context + TEXT(" directly uses the project-owned liquid master")),
+					LiquidMaterial->Parent.Get(), static_cast<UMaterialInterface*>(OrbitalLiquid));
+				TestEqual(*(Context + TEXT(" resolves no marketplace or overlay graph")),
+					LiquidMaterial->GetMaterial(), OrbitalLiquid);
+			}
+			float GameplayOpacity = 0.0f;
+			if (TestTrue(*(Context + TEXT(" resolves bounded gameplay opacity")),
+				APSPlanetSurfaceProfileTests::GetScalarParameter(
+					LiquidMaterial, TEXT("Opacity"), GameplayOpacity)))
+			{
+				TestTrue(*(Context + TEXT(" keeps ground relief visible through the liquid")),
+					GameplayOpacity >= 0.05f && GameplayOpacity <= 0.42f);
+			}
 		}
 	}
 	return true;
@@ -1151,6 +1805,9 @@ bool FAPSPlanetSurfaceLandFractionCalibrationTest::RunTest(const FString& Parame
 		double MaximumSeedLand = 0.0;
 		double MaximumClampFraction = 0.0;
 		double MinimumReliefSpan = TNumericLimits<double>::Max();
+		double MinimumPaletteSpread = TNumericLimits<double>::Max();
+		double MaximumPaletteSaturation = 0.0;
+		bool bCryogenicTarget = false;
 		for (const int32 Seed : Seeds)
 		{
 			Planet->WorldScapeSeed = Seed;
@@ -1163,15 +1820,22 @@ bool FAPSPlanetSurfaceLandFractionCalibrationTest::RunTest(const FString& Parame
 			MaximumSeedLand = FMath::Max(MaximumSeedLand, Stats.LandFraction);
 			MaximumClampFraction = FMath::Max(MaximumClampFraction, Stats.ClampFraction);
 			MinimumReliefSpan = FMath::Min(MinimumReliefSpan, Stats.HeightP99 - Stats.HeightP01);
+			MinimumPaletteSpread = FMath::Min(
+				MinimumPaletteSpread, Stats.PaletteP90 - Stats.PaletteP10);
+			MaximumPaletteSaturation = FMath::Max(
+				MaximumPaletteSaturation, Stats.PaletteSaturationFraction);
+			bCryogenicTarget = bCryogenicTarget
+				|| Profile.Archetype == EAPSPlanetSurfaceArchetype::Cryogenic;
 		}
 
 		const double MeanLand = LandSum / UE_ARRAY_COUNT(Seeds);
 		const FString TypeName = StaticEnum<EPlanetType>()->GetNameStringByValue(
 			static_cast<int64>(Target.Type));
 		AddInfo(FString::Printf(
-			TEXT("Surface calibration %s land mean=%.4f seeds=[%.4f, %.4f] target=[%.2f, %.2f] p99-p01>=%.4f clamp<=%.4f"),
+			TEXT("Surface calibration %s land mean=%.4f seeds=[%.4f, %.4f] target=[%.2f, %.2f] p99-p01>=%.4f clamp<=%.4f palette[p90-p10>=%.4f saturation<=%.4f]"),
 			*TypeName, MeanLand, MinimumSeedLand, MaximumSeedLand,
-			Target.MinimumLand, Target.MaximumLand, MinimumReliefSpan, MaximumClampFraction));
+			Target.MinimumLand, Target.MaximumLand, MinimumReliefSpan, MaximumClampFraction,
+			MinimumPaletteSpread, MaximumPaletteSaturation));
 		TestTrue(*(TypeName + TEXT(" mean land fraction is in its authored band")),
 			MeanLand >= Target.MinimumLand && MeanLand <= Target.MaximumLand);
 		const double SeedToleranceMinimum = FMath::Max(0.0, Target.MinimumLand - 0.15);
@@ -1180,6 +1844,15 @@ bool FAPSPlanetSurfaceLandFractionCalibrationTest::RunTest(const FString& Parame
 			MinimumSeedLand >= SeedToleranceMinimum && MaximumSeedLand <= SeedToleranceMaximum);
 		TestTrue(*(TypeName + TEXT(" has a non-flat robust relief span")), MinimumReliefSpan >= 0.008);
 		TestTrue(*(TypeName + TEXT(" does not saturate the height clamp")), MaximumClampFraction <= 0.005);
+		TestTrue(*(TypeName + TEXT(" preserves material elevation contrast across dry terrain")),
+			MinimumPaletteSpread >= 0.08);
+		TestTrue(*(TypeName + TEXT(" does not pin the WorldScape height palette to 0/1")),
+			MaximumPaletteSaturation <= 0.02);
+		if (bCryogenicTarget)
+		{
+			TestTrue(*(TypeName + TEXT(" Cryogenic palette keeps a clearly readable elevation spread")),
+				MinimumPaletteSpread >= 0.14);
+		}
 	}
 
 	Planet->Destroy();
@@ -1245,6 +1918,29 @@ bool FAPSPlanetSurfaceControlSensitivityTest::RunTest(const FString& Parameters)
 		FeatureLowProfile.NoiseScale < FeatureHighProfile.NoiseScale);
 	TestNotEqual(TEXT("Feature endpoints produce different sampled terrain"),
 		FeatureLow.FieldHash, FeatureHigh.FieldHash);
+	const float FeatureLowMaterialWarpScale =
+		UAPSPlanetSurfaceProfileResolver::ResolveMaterialWarpScale(
+			FeatureLowProfile.MaterialFamily);
+	const float FeatureHighMaterialWarpScale =
+		UAPSPlanetSurfaceProfileResolver::ResolveMaterialWarpScale(
+			FeatureHighProfile.MaterialFamily);
+	TestEqual(TEXT("UI feature scale does not retile the WorldScape material"),
+		FeatureLowMaterialWarpScale, FeatureHighMaterialWarpScale);
+	TestTrue(TEXT("WorldScape material warp scale stays inside its display-safe bounds"),
+		FeatureLowMaterialWarpScale >= 0.75f && FeatureLowMaterialWarpScale <= 1.25f);
+	const float TemperateClimateBlend =
+		UAPSPlanetSurfaceProfileResolver::ResolveMaterialClimateBlend(
+			EAPSPlanetSurfaceArchetype::Temperate);
+	const float BiosphereClimateBlend =
+		UAPSPlanetSurfaceProfileResolver::ResolveMaterialClimateBlend(
+			EAPSPlanetSurfaceArchetype::Biosphere);
+	const float MetallicClimateBlend =
+		UAPSPlanetSurfaceProfileResolver::ResolveMaterialClimateBlend(
+			EAPSPlanetSurfaceArchetype::Metallic);
+	TestTrue(TEXT("Canonical terrain climate tint stays subordinate to elevation"),
+		TemperateClimateBlend >= 0.04f && TemperateClimateBlend <= 0.20f);
+	TestTrue(TEXT("Living worlds retain more climate variation than metallic worlds"),
+		BiosphereClimateBlend > MetallicClimateBlend);
 
 	ResetControls();
 	Planet->SurfaceReliefScale = 0.25;

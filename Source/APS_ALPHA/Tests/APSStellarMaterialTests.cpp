@@ -10,13 +10,12 @@
 #include "Materials/MaterialExpressionParameter.h"
 #include "Materials/MaterialExpressionScalarParameter.h"
 #include "Materials/MaterialExpressionVectorParameter.h"
-#include "Materials/MaterialExpressionVertexNormalWS.h"
 #include "UObject/UObjectGlobals.h"
 #include "UObject/UnrealType.h"
 
 namespace APSStellarMaterialTests
 {
-	constexpr int32 ExpectedExpressionCount = 14;
+	constexpr int32 ExpectedExpressionCount = 16;
 	constexpr int32 MaximumPixelInstructions = 320;
 
 	const TMap<FName, int32>& RequiredParameters()
@@ -48,6 +47,8 @@ namespace APSStellarMaterialTests
 			TEXT("InstanceSeed"),
 			TEXT("SystemMarker"),
 			TEXT("NormalWS"),
+			TEXT("WorldPositionWS"),
+			TEXT("ObjectPositionWS"),
 			TEXT("CameraWS")
 		};
 		return Inputs;
@@ -177,6 +178,8 @@ bool FAPSStellarMaterialTest::RunTest(const FString& Parameters)
 		int32 InstanceVectorCount = 0;
 		int32 InstanceScalarCount = 0;
 		int32 NormalCount = 0;
+		int32 WorldPositionCount = 0;
+		int32 ObjectPositionCount = 0;
 		int32 CameraCount = 0;
 		UMaterialExpressionCustom* StellarSurface = nullptr;
 		UMaterialExpression* InstanceColor = nullptr;
@@ -242,9 +245,20 @@ bool FAPSStellarMaterialTest::RunTest(const FString& Parameters)
 					InstanceScalars.Add(DataIndex, Expression);
 				}
 			}
-			else if (Cast<UMaterialExpressionVertexNormalWS>(Expression))
+			else if (Expression->GetClass()->GetFName() ==
+				TEXT("MaterialExpressionPixelNormalWS"))
 			{
 				++NormalCount;
+			}
+			else if (Expression->GetClass()->GetFName() ==
+				TEXT("MaterialExpressionWorldPosition"))
+			{
+				++WorldPositionCount;
+			}
+			else if (Expression->GetClass()->GetFName() ==
+				TEXT("MaterialExpressionObjectPositionWS"))
+			{
+				++ObjectPositionCount;
 			}
 			else if (Cast<UMaterialExpressionCameraVectorWS>(Expression))
 			{
@@ -262,8 +276,12 @@ bool FAPSStellarMaterialTest::RunTest(const FString& Parameters)
 			InstanceVectorCount, 1);
 		TestEqual(APSStellarMaterialTests::Context(Material, TEXT("instance-scalar count")),
 			InstanceScalarCount, 3);
-		TestEqual(APSStellarMaterialTests::Context(Material, TEXT("vertex-normal count")),
+		TestEqual(APSStellarMaterialTests::Context(Material, TEXT("pixel-normal count")),
 			NormalCount, 1);
+		TestEqual(APSStellarMaterialTests::Context(Material, TEXT("world-position count")),
+			WorldPositionCount, 1);
+		TestEqual(APSStellarMaterialTests::Context(Material, TEXT("object-position count")),
+			ObjectPositionCount, 1);
 		TestEqual(APSStellarMaterialTests::Context(Material, TEXT("camera-vector count")),
 			CameraCount, 1);
 		TestEqual(APSStellarMaterialTests::Context(Material, TEXT("required parameter count")),
@@ -343,16 +361,43 @@ bool FAPSStellarMaterialTest::RunTest(const FString& Parameters)
 					ActualInputs.Contains(RequiredInput));
 			}
 
-			TestTrue(APSStellarMaterialTests::Context(Material, TEXT("scale-free coarse cells")),
-				StellarSurface->Code.Contains(TEXT("coarseCell")));
-			TestTrue(APSStellarMaterialTests::Context(Material, TEXT("scale-free fine cells")),
-				StellarSurface->Code.Contains(TEXT("fineCell")));
+			TestTrue(APSStellarMaterialTests::Context(Material, TEXT("continuous macro convection")),
+				StellarSurface->Code.Contains(TEXT("macroConvection")));
+			TestTrue(APSStellarMaterialTests::Context(Material, TEXT("organic domain warp")),
+				StellarSurface->Code.Contains(TEXT("domainWarp")));
+			TestTrue(APSStellarMaterialTests::Context(Material, TEXT("continuous mesoscopic cells")),
+				StellarSurface->Code.Contains(TEXT("mesoCells")));
+			TestTrue(APSStellarMaterialTests::Context(Material, TEXT("continuous micro granules")),
+				StellarSurface->Code.Contains(TEXT("microGranules")));
+			TestTrue(APSStellarMaterialTests::Context(Material, TEXT("coherent dark spots")),
+				StellarSurface->Code.Contains(TEXT("spotCore")));
+			TestTrue(APSStellarMaterialTests::Context(Material, TEXT("rare prominence mask")),
+				StellarSurface->Code.Contains(TEXT("prominenceMask")));
 			TestTrue(APSStellarMaterialTests::Context(Material, TEXT("instance system marker")),
 				StellarSurface->Code.Contains(TEXT("SystemMarker")));
+			TestTrue(APSStellarMaterialTests::Context(Material, TEXT("mesh-normal-independent radial domain")),
+				StellarSurface->Code.Contains(TEXT("WorldPositionWS - ObjectPositionWS"))
+				&& StellarSurface->Code.Contains(TEXT("radialLengthSq")));
+			TestTrue(APSStellarMaterialTests::Context(Material, TEXT("physically oriented limb facing")),
+				StellarSurface->Code.Contains(TEXT("saturate(dot(n, v))")));
+			TestFalse(APSStellarMaterialTests::Context(Material, TEXT("no mirrored-normal workaround")),
+				StellarSurface->Code.Contains(TEXT("abs(dot(n, v))")));
 			TestTrue(APSStellarMaterialTests::Context(Material, TEXT("emission compression")),
 				StellarSurface->Code.Contains(TEXT("log2(1.0 + rawEmission)")));
+			TestTrue(APSStellarMaterialTests::Context(Material, TEXT("bounded tone-safe emission")),
+				StellarSurface->Code.Contains(TEXT("lerp(1.15, 2.35, emissionActivity)")));
+			TestTrue(APSStellarMaterialTests::Context(Material, TEXT("generator emission range normalization")),
+				StellarSurface->Code.Contains(TEXT("(logEmission - 6.65) / 2.32")));
+			TestTrue(APSStellarMaterialTests::Context(Material, TEXT("HISM point visibility compensation")),
+				StellarSurface->Code.Contains(TEXT("lerp(1.0, 1.18, useInstance)")));
+			TestTrue(APSStellarMaterialTests::Context(Material, TEXT("substellar visibility preservation")),
+				StellarSurface->Code.Contains(TEXT("spectralVisibility")));
 			TestTrue(APSStellarMaterialTests::Context(Material, TEXT("stellar output")),
-				StellarSurface->Code.Contains(TEXT("return hotCore")));
+				StellarSurface->Code.Contains(TEXT("return surfaceTint")));
+			TestFalse(APSStellarMaterialTests::Context(Material, TEXT("no quantised cell grid")),
+				StellarSurface->Code.Contains(TEXT("floor(")));
+			TestFalse(APSStellarMaterialTests::Context(Material, TEXT("no white clipping ceiling")),
+				StellarSurface->Code.Contains(TEXT("30.0")));
 			TestFalse(APSStellarMaterialTests::Context(Material, TEXT("no time dependency")),
 				StellarSurface->Code.Contains(TEXT("Time")));
 			TestFalse(APSStellarMaterialTests::Context(Material, TEXT("no texture sampling")),

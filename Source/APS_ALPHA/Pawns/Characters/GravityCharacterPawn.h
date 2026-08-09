@@ -45,6 +45,14 @@ public:
 	void ReleaseControl(APilotingVehicle* PilotingVehicle);
 
 	/**
+	 * Selects the authoritative gravity source used by a generated gameplay spawn.
+	 * Surface handoff cannot depend on an overlap event because WorldScape collision
+	 * is cooked asynchronously after the pawn has already been positioned.
+	 */
+	void SetGravitySourceForSpawn(AActor* GravitySourceActor);
+	void SetSurfaceHandoffSuspended(bool bSuspended);
+
+	/**
 	 * @brief Character Basic Components
 	*/
 	bool isAllowedToControlSpaceship{true}; /// false!
@@ -57,6 +65,9 @@ public:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	UCapsuleComponent* CapsuleComponent;
+
+	bool bSurfaceHandoffSuspended{false};
+	bool bSurfaceHandoffWasSimulatingPhysics{false};
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	USkeletalMeshComponent* MeshComponent;

@@ -105,14 +105,27 @@ FReply SAPSStrategicMapPanel::OnKeyDown(const FGeometry&, const FKeyEvent& Event
 FReply SAPSStrategicMapPanel::OnMouseButtonDown(const FGeometry&, const FPointerEvent& Event)
 {
 	if (Event.GetEffectingButton() == EKeys::RightMouseButton || Event.GetEffectingButton() == EKeys::MiddleMouseButton)
+	{
+		if (AAstroGenerator* Astro = Generator.Get()) Astro->BeginPreviewCameraOrbit();
 		return FReply::Handled().CaptureMouse(SharedThis(this));
+	}
 	return FReply::Unhandled();
 }
 
 FReply SAPSStrategicMapPanel::OnMouseButtonUp(const FGeometry&, const FPointerEvent&)
 {
-	if (HasMouseCapture()) return FReply::Handled().ReleaseMouseCapture();
+	if (HasMouseCapture())
+	{
+		if (AAstroGenerator* Astro = Generator.Get()) Astro->EndPreviewCameraOrbit();
+		return FReply::Handled().ReleaseMouseCapture();
+	}
 	return FReply::Unhandled();
+}
+
+void SAPSStrategicMapPanel::OnMouseCaptureLost(const FCaptureLostEvent& CaptureLostEvent)
+{
+	if (AAstroGenerator* Astro = Generator.Get()) Astro->EndPreviewCameraOrbit();
+	SCompoundWidget::OnMouseCaptureLost(CaptureLostEvent);
 }
 
 FReply SAPSStrategicMapPanel::OnMouseMove(const FGeometry&, const FPointerEvent& Event)

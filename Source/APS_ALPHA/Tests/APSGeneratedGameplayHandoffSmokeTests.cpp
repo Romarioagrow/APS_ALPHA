@@ -33,20 +33,28 @@
 #include "APS_ALPHA/Core/Model/GeneratedWorld.h"
 #include "APS_ALPHA/Core/Model/SpawnParameters.h"
 #include "APS_ALPHA/Core/Planetary/APSPlanetSurfaceProfile.h"
+#include "APS_ALPHA/Core/World/APSPlanetEnvironmentStreamingSubsystem.h"
 #include "APS_ALPHA/Generation/APSWorldScapePlanetNoise.h"
 #include "APS_ALPHA/Generation/AstroGenerator.h"
 #include "APS_ALPHA/Generation/PlanetarySurfaceGenerator.h"
 #include "APS_ALPHA/Generation/WorldScapePayloadValidation.h"
 #include "APS_ALPHA/Gameplay/Civilizations/Civilization.h"
+#include "APS_ALPHA/Pawns/Characters/CustomGravityCharacter.h"
 #include "APS_ALPHA/Pawns/Characters/GravityCharacterPawn.h"
 #include "APS_ALPHA/Pawns/Spaceships/Spaceship.h"
 #include "APS_ALPHA/UI/MainMenu/WorldGenerationViewModel.h"
 #include "Camera/PlayerCameraManager.h"
+#include "Camera/CameraComponent.h"
+#include "ProceduralMeshComponent.h"
+#include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/DirectionalLightComponent.h"
+#include "Engine/DirectionalLight.h"
 #include "Engine/GameViewportClient.h"
 #include "EngineUtils.h"
 #include "GameFramework/PlayerController.h"
+#include "GameFramework/SpringArmComponent.h"
 #include "ImageUtils.h"
 #include "HAL/FileManager.h"
 #include "Misc/FileHelper.h"
@@ -54,18 +62,318 @@
 #include "Kismet/GameplayStatics.h"
 #include "PlanetaryAtmosphere.h"
 #include "UnrealClient.h"
+#include "UObject/UnrealType.h"
 
 namespace APSGeneratedGameplayHandoffSmokeTests
 {
-	constexpr double WholeTestTimeoutSeconds = 120.0;
+	constexpr double WholeTestTimeoutSeconds = 150.0;
 	constexpr double ScreenshotTimeoutSeconds = 10.0;
+	constexpr double PhysicalSurfaceTimeoutSeconds = 30.0;
 	constexpr double CleanupTimeoutSeconds = 20.0;
-	constexpr double SpawnPointToleranceCm = 500.0;
 	constexpr double MinimumNonBlackPixelRatio = 0.005;
 	constexpr double MinimumBrightnessVariance = 4.0;
 	constexpr double MinimumSubjectMeanBrightness = 5.0;
 	constexpr double MinimumSubjectNonBlackPixelRatio = 0.08;
 	constexpr double MinimumSubjectBrightnessVariance = 24.0;
+	// The nine default WorldScape collision tiles cover roughly 80-90 metres around
+	// the pawn. Require real displaced geometry, but keep this local-patch guard below
+	// the last measured 11.33 m cooked range. The wider 100 m / 250 m / 1 km probes
+	// below remain the perceptual-relief contract and catch broadly flat profiles.
+	constexpr double MinimumCollisionReliefVariationCm = 500.0;
+	// These are geometric height-field deltas around the pawn's real production
+	// landing point, not material contrast thresholds.
+	constexpr double MinimumNaturalRange10mCm = 30.0;
+	constexpr double MinimumProofRange100mCm = 300.0;
+	constexpr double MinimumProofRange250mCm = 800.0;
+	constexpr double MinimumProofRange1kmCm = 2000.0;
+	// A single central trace can be satisfied by a flat fallback collider while the
+	// analytic WorldScape height field remains displaced.  The gameplay handoff must
+	// therefore prove the current cooked CollisionLods over the same local footprint.
+	constexpr double MinimumLocalCollisionRange5mCm = 5.0;
+	constexpr double MinimumLocalCollisionRange15mCm = 20.0;
+	constexpr double MinimumLocalCollisionRange30mCm = 50.0;
+	constexpr double MinimumLocalCollisionNoiseFraction = 0.45;
+	constexpr int32 MinimumLocalCollisionSamplesPerRing = 8;
+	constexpr double MaximumLocalCollisionNoiseDeltaCm = 250.0;
+	constexpr double MaximumProofSlope = 0.25;
+	constexpr double MaximumNaturalHeightfieldCollisionDeltaCm = 200.0;
+	constexpr int32 PhysicalProofDirectionCount = 12;
+	constexpr double MaximumSettledSpeedCmPerSecond = 75.0;
+	constexpr double MaximumFootClearanceCm = 50.0;
+	constexpr double MaximumManualObserverLagCm = 1.0;
+	constexpr double MinimumGroundMeanBrightness = 10.0;
+	constexpr double MinimumGroundNonBlackPixelRatio = 0.15;
+	constexpr double MinimumGroundBrightnessVariance = 12.0;
+	constexpr double MinimumGroundBrightnessSpread = 8.0;
+	constexpr double MinimumGroundMeanSpatialDelta = 0.35;
+	constexpr double MinimumVisibleRenderLodReliefVariationCm = 100.0;
+	constexpr double MaximumVisibleRenderNoiseDeltaCm = 250.0;
+	constexpr double MaximumVisibleRenderAnchorErrorCm = 2.0;
+	constexpr int32 RequiredNaturalSettleFrames = 8;
+
+	struct FVisibleWorldScapeRenderLodProof
+	{
+		const UWorldScapeLod* Lod0{nullptr};
+		int32 VertexCount{0};
+		double RelativeAnchorErrorCm{TNumericLimits<double>::Max()};
+		double WorldAnchorErrorCm{TNumericLimits<double>::Max()};
+		double ObserverCenterOffsetCm{TNumericLimits<double>::Max()};
+		double MaximumCenterOffsetCm{0.0};
+		double ReliefVariationCm{0.0};
+		double MaximumNoiseDeltaCm{TNumericLimits<double>::Max()};
+		double ClosestObserverSurfaceDistanceCm{TNumericLimits<double>::Max()};
+		double ClosestObserverHeightCm{TNumericLimits<double>::Max()};
+	};
+
+	bool BuildVisibleWorldScapeRenderLod0Proof(AWorldScapeRoot* Root,
+		const FVector& ObserverWorldPosition, FVisibleWorldScapeRenderLodProof& OutProof,
+		FString& OutFailure)
+	{
+		OutProof = FVisibleWorldScapeRenderLodProof{};
+		OutFailure.Reset();
+		if (!IsValid(Root) || ObserverWorldPosition.ContainsNaN())
+		{
+			OutFailure = TEXT("root or WorldScape observer is invalid");
+			return false;
+		}
+		if (Root->WorldScapeLodInGeneration.Num() != 0)
+		{
+			OutFailure = FString::Printf(TEXT("render workers remain in flight count=%d"),
+				Root->WorldScapeLodInGeneration.Num());
+			return false;
+		}
+
+		for (const UWorldScapeLod* Lod : Root->WorldScapeLod)
+		{
+			if (!IsValid(Lod) || Lod->WaterBody || Lod->Lod != 0)
+			{
+				continue;
+			}
+			if (OutProof.Lod0)
+			{
+				OutFailure = TEXT("terrain render hierarchy contains duplicate LOD0 components");
+				return false;
+			}
+			OutProof.Lod0 = Lod;
+		}
+
+		const FVector ObserverEcef = Root->WorldToECEF(ObserverWorldPosition).ToFVector();
+		const FVector ObserverEcefNormal = ObserverEcef.GetSafeNormal();
+		const FVector SurfaceCenter = Root->GetActorLocation();
+		const FVector ObserverWorldNormal = (ObserverWorldPosition - SurfaceCenter)
+			.GetSafeNormal();
+		const UWorldScapeLod* Lod0 = OutProof.Lod0;
+		if (!IsValid(Lod0) || ObserverEcefNormal.IsNearlyZero()
+			|| ObserverWorldNormal.IsNearlyZero())
+		{
+			OutFailure = TEXT("unique terrain render LOD0 or observer normal is unavailable");
+			return false;
+		}
+		if (!APSWorldScapePayloadValidation::HasCompleteCenteredPayload(
+			Lod0, ObserverEcefNormal, true))
+		{
+			OutFailure = TEXT("terrain render LOD0 payload is incomplete or snapped to a stale observer");
+			return false;
+		}
+		if (!IsValid(Lod0->Mesh) || !Lod0->Mesh->IsRegistered()
+			|| !Lod0->Mesh->IsVisible() || Lod0->Mesh->bHiddenInGame
+			|| Lod0->Mesh->GetNumSections() < 1
+			|| !Lod0->Mesh->IsMeshSectionVisible(0)
+			|| Root->IsHidden() || Lod0->Mesh->GetAttachParent() != Root->TransformKeeper
+			|| !Root->GetActorScale3D().Equals(FVector::OneVector, KINDA_SMALL_NUMBER)
+			|| !Lod0->Mesh->GetRelativeScale3D().Equals(
+				FVector::OneVector, KINDA_SMALL_NUMBER))
+		{
+			OutFailure = TEXT("terrain render LOD0 is not an effectively visible unit-scale TransformKeeper child");
+			return false;
+		}
+
+		const FVector AnchorEcef = Lod0->RelativePosition.ToFVector();
+		const FVector ExpectedAnchorWorld = Root->ECEFToWorld(AnchorEcef).ToFVector();
+		OutProof.RelativeAnchorErrorCm = FVector::Distance(
+			Lod0->Mesh->GetRelativeLocation(), AnchorEcef);
+		OutProof.WorldAnchorErrorCm = FVector::Distance(
+			Lod0->Mesh->GetComponentLocation(), ExpectedAnchorWorld);
+		if (!FMath::IsFinite(OutProof.RelativeAnchorErrorCm)
+			|| !FMath::IsFinite(OutProof.WorldAnchorErrorCm)
+			|| OutProof.RelativeAnchorErrorCm > MaximumVisibleRenderAnchorErrorCm
+			|| OutProof.WorldAnchorErrorCm > MaximumVisibleRenderAnchorErrorCm)
+		{
+			OutFailure = FString::Printf(
+				TEXT("terrain render LOD0 mesh transform is stale relativeError=%.3fcm worldError=%.3fcm"),
+				OutProof.RelativeAnchorErrorCm, OutProof.WorldAnchorErrorCm);
+			return false;
+		}
+
+		if (!FMath::IsFinite(Lod0->LodSize) || Lod0->LodSize <= 0.0)
+		{
+			OutFailure = TEXT("terrain render LOD0 has no finite generated footprint");
+			return false;
+		}
+		const FVector ObserverShellEcef = ObserverEcefNormal * Root->PlanetScaleCode;
+		OutProof.ObserverCenterOffsetCm = FVector::Distance(ObserverShellEcef, AnchorEcef);
+		OutProof.MaximumCenterOffsetCm = FMath::Max(
+			Lod0->LodSize * 0.75, static_cast<double>(Root->TriangleSize) * 4.0);
+		if (!FMath::IsFinite(OutProof.ObserverCenterOffsetCm)
+			|| OutProof.ObserverCenterOffsetCm > OutProof.MaximumCenterOffsetCm)
+		{
+			OutFailure = FString::Printf(
+				TEXT("terrain render LOD0 does not cover its current observer offset=%.3fcm maximum=%.3fcm"),
+				OutProof.ObserverCenterOffsetCm, OutProof.MaximumCenterOffsetCm);
+			return false;
+		}
+
+		const FTransform MeshTransform = Lod0->Mesh->GetComponentTransform();
+		const FWorldScapeMeshSection* VisibleRenderSection =
+			Lod0->Mesh->GetProcMeshSection(0);
+		if (!VisibleRenderSection
+			|| VisibleRenderSection->PlanetVertexBuffer.Num() < 3
+			|| VisibleRenderSection->PlanetIndexBuffer.Num() < 3
+			|| VisibleRenderSection->PlanetVertexBuffer.Num() != Lod0->Vertices.Num()
+			|| VisibleRenderSection->PlanetIndexBuffer.Num() != Lod0->Triangles.Num())
+		{
+			OutFailure = FString::Printf(
+				TEXT("terrain render LOD0 scene section is missing, empty, or stale sceneVertices=%d payloadVertices=%d sceneIndices=%d payloadIndices=%d"),
+				VisibleRenderSection
+					? VisibleRenderSection->PlanetVertexBuffer.Num() : 0,
+				Lod0->Vertices.Num(), VisibleRenderSection
+					? VisibleRenderSection->PlanetIndexBuffer.Num() : 0,
+				Lod0->Triangles.Num());
+			return false;
+		}
+		double MinimumRenderHeightCm = TNumericLimits<double>::Max();
+		double MaximumRenderHeightCm = -TNumericLimits<double>::Max();
+		double MaximumNoiseDeltaCm = 0.0;
+		const int32 NoiseSampleStride = FMath::Max(
+			1, VisibleRenderSection->PlanetVertexBuffer.Num() / 64);
+		for (int32 VertexIndex = 0;
+			VertexIndex < VisibleRenderSection->PlanetVertexBuffer.Num(); ++VertexIndex)
+		{
+			const FVector WorldVertex = MeshTransform.TransformPosition(
+				VisibleRenderSection->PlanetVertexBuffer[VertexIndex].Position);
+			const FVector VertexFromCenter = WorldVertex - SurfaceCenter;
+			const double RadialHeightCm = VertexFromCenter.Size() - Root->PlanetScaleCode;
+			if (WorldVertex.ContainsNaN() || !FMath::IsFinite(RadialHeightCm))
+			{
+				OutFailure = TEXT("terrain render LOD0 contains a non-finite transformed vertex");
+				return false;
+			}
+			MinimumRenderHeightCm = FMath::Min(MinimumRenderHeightCm, RadialHeightCm);
+			MaximumRenderHeightCm = FMath::Max(MaximumRenderHeightCm, RadialHeightCm);
+			++OutProof.VertexCount;
+
+			const FVector VertexNormal = VertexFromCenter.GetSafeNormal();
+			const double ObserverSurfaceDistanceCm = FVector::Distance(
+				VertexNormal * Root->PlanetScaleCode,
+				ObserverWorldNormal * Root->PlanetScaleCode);
+			if (ObserverSurfaceDistanceCm < OutProof.ClosestObserverSurfaceDistanceCm)
+			{
+				OutProof.ClosestObserverSurfaceDistanceCm = ObserverSurfaceDistanceCm;
+				OutProof.ClosestObserverHeightCm = RadialHeightCm;
+			}
+
+			if (VertexIndex % NoiseSampleStride == 0
+				|| VertexIndex == VisibleRenderSection->PlanetVertexBuffer.Num() - 1)
+			{
+				const double ExpectedHeightCm = Root->GetGroundHeight(WorldVertex, false);
+				if (!FMath::IsFinite(ExpectedHeightCm))
+				{
+					OutFailure = TEXT("terrain render LOD0 analytic height sample is non-finite");
+					return false;
+				}
+				MaximumNoiseDeltaCm = FMath::Max(MaximumNoiseDeltaCm,
+					FMath::Abs(RadialHeightCm - ExpectedHeightCm));
+			}
+		}
+
+		OutProof.ReliefVariationCm = MaximumRenderHeightCm - MinimumRenderHeightCm;
+		OutProof.MaximumNoiseDeltaCm = MaximumNoiseDeltaCm;
+		if (OutProof.VertexCount < 3
+			|| !FMath::IsFinite(OutProof.ReliefVariationCm)
+			|| OutProof.ReliefVariationCm < MinimumVisibleRenderLodReliefVariationCm)
+		{
+			OutFailure = FString::Printf(
+				TEXT("terrain render LOD0 is geometrically flat vertices=%d relief=%.3fcm minimum=%.3fcm"),
+				OutProof.VertexCount, OutProof.ReliefVariationCm,
+				MinimumVisibleRenderLodReliefVariationCm);
+			return false;
+		}
+		if (!FMath::IsFinite(OutProof.MaximumNoiseDeltaCm)
+			|| OutProof.MaximumNoiseDeltaCm > MaximumVisibleRenderNoiseDeltaCm)
+		{
+			OutFailure = FString::Printf(
+				TEXT("terrain render LOD0 geometry diverges from WorldScape noise maxDelta=%.3fcm maximum=%.3fcm"),
+				OutProof.MaximumNoiseDeltaCm, MaximumVisibleRenderNoiseDeltaCm);
+			return false;
+		}
+		return true;
+	}
+
+	UCapsuleComponent* FindPawnCapsule(const APawn* Pawn)
+	{
+		return IsValid(Pawn) ? Pawn->FindComponentByClass<UCapsuleComponent>() : nullptr;
+	}
+
+	UCameraComponent* FindPawnCamera(const APawn* Pawn)
+	{
+		return IsValid(Pawn) ? Pawn->FindComponentByClass<UCameraComponent>() : nullptr;
+	}
+
+	USpringArmComponent* FindPawnSpringArm(const APawn* Pawn)
+	{
+		return IsValid(Pawn) ? Pawn->FindComponentByClass<USpringArmComponent>() : nullptr;
+	}
+
+	bool ReadGravityContract(const APawn* Pawn,
+		EGravityType& OutType, FVector& OutDirection, AActor*& OutTarget)
+	{
+		if (!IsValid(Pawn))
+		{
+			return false;
+		}
+
+		if (const ACustomGravityCharacter* CustomCharacter =
+			Cast<ACustomGravityCharacter>(Pawn))
+		{
+			OutType = CustomCharacter->CurrentGravityType;
+			OutDirection = CustomCharacter->GetCurrentGravityDirection();
+			OutTarget = CustomCharacter->GravityTarget;
+			return !OutDirection.ContainsNaN();
+		}
+
+		const FProperty* TypeProperty = FindFProperty<FProperty>(
+			Pawn->GetClass(), TEXT("CurrentGravityType"));
+		const FStructProperty* DirectionProperty = FindFProperty<FStructProperty>(
+			Pawn->GetClass(), TEXT("GravityDirection"));
+		const FObjectPropertyBase* TargetProperty = FindFProperty<FObjectPropertyBase>(
+			Pawn->GetClass(), TEXT("GravityTargetActor"));
+		if (!TypeProperty || !DirectionProperty || !TargetProperty
+			|| DirectionProperty->Struct != TBaseStructure<FVector>::Get())
+		{
+			return false;
+		}
+
+		int64 TypeValue = 0;
+		if (const FEnumProperty* EnumProperty = CastField<FEnumProperty>(TypeProperty))
+		{
+			const void* Value = EnumProperty->ContainerPtrToValuePtr<void>(Pawn);
+			TypeValue = EnumProperty->GetUnderlyingProperty()
+				->GetSignedIntPropertyValue(Value);
+		}
+		else if (const FByteProperty* ByteProperty = CastField<FByteProperty>(TypeProperty))
+		{
+			TypeValue = ByteProperty->GetPropertyValue_InContainer(Pawn);
+		}
+		else
+		{
+			return false;
+		}
+
+		OutType = static_cast<EGravityType>(TypeValue);
+		OutDirection = *DirectionProperty->ContainerPtrToValuePtr<FVector>(Pawn);
+		OutTarget = Cast<AActor>(TargetProperty->GetObjectPropertyValue_InContainer(Pawn));
+		return !OutDirection.ContainsNaN();
+	}
 
 	template <typename TActorType>
 	TArray<TActorType*> FindActors(UWorld* World)
@@ -154,6 +462,69 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 		return Result;
 	}
 
+	int32 CountPresentedStaticMeshes(const AActor* Actor)
+	{
+		if (!IsValid(Actor) || Actor->IsHidden())
+		{
+			return 0;
+		}
+
+		int32 Result = 0;
+		TInlineComponentArray<UStaticMeshComponent*> Components;
+		Actor->GetComponents(Components);
+		for (const UStaticMeshComponent* Component : Components)
+		{
+			if (IsValid(Component) && Component->IsRegistered()
+				&& Component->IsVisible() && !Component->bHiddenInGame)
+			{
+				++Result;
+			}
+		}
+		return Result;
+	}
+
+	int32 CountCollidableStaticMeshes(const AActor* Actor)
+	{
+		if (!IsValid(Actor))
+		{
+			return 0;
+		}
+
+		int32 Result = 0;
+		TInlineComponentArray<UStaticMeshComponent*> Components;
+		Actor->GetComponents(Components);
+		for (const UStaticMeshComponent* Component : Components)
+		{
+			if (IsValid(Component) && Component->IsRegistered()
+				&& Component->GetCollisionEnabled() != ECollisionEnabled::NoCollision)
+			{
+				++Result;
+			}
+		}
+		return Result;
+	}
+
+	int32 CountPresentedProceduralMeshes(const AActor* Actor)
+	{
+		if (!IsValid(Actor) || Actor->IsHidden())
+		{
+			return 0;
+		}
+
+		int32 Result = 0;
+		TInlineComponentArray<UProceduralMeshComponent*> Components;
+		Actor->GetComponents(Components);
+		for (const UProceduralMeshComponent* Component : Components)
+		{
+			if (IsValid(Component) && Component->IsRegistered()
+				&& Component->IsVisible() && !Component->bHiddenInGame)
+			{
+				++Result;
+			}
+		}
+		return Result;
+	}
+
 	class FGeneratedCivilizationHandoffCommand final : public IAutomationLatentCommand
 	{
 	public:
@@ -173,7 +544,7 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			if (Step != EStep::Cleanup && Now - TestStartSeconds > WholeTestTimeoutSeconds)
 			{
 				return Fail(FString::Printf(
-					TEXT("120-second timeout at step %d"), static_cast<int32>(Step)));
+					TEXT("150-second timeout at step %d"), static_cast<int32>(Step)));
 			}
 
 			UWorld* World = AutomationCommon::GetAnyGameWorld();
@@ -191,6 +562,12 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 				return UpdateWaitForGameplaySurface(World, Now);
 			case EStep::WaitForScreenshot:
 				return UpdateWaitForScreenshot(World, Now);
+			case EStep::ValidateManualApproachObserver:
+				return UpdateValidateManualApproachObserver(World, Now);
+			case EStep::WaitForPhysicalSurface:
+				return UpdateWaitForPhysicalSurface(World, Now);
+			case EStep::WaitForPhysicalSurfaceScreenshot:
+				return UpdateWaitForPhysicalSurfaceScreenshot(World, Now);
 			case EStep::Cleanup:
 				return UpdateCleanup(World, Now);
 			default:
@@ -207,6 +584,9 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			ValidateGameplayHierarchy,
 			WaitForGameplaySurface,
 			WaitForScreenshot,
+			ValidateManualApproachObserver,
+			WaitForPhysicalSurface,
+			WaitForPhysicalSurfaceScreenshot,
 			Cleanup
 		};
 
@@ -264,15 +644,17 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			Model->PlanetsAmount = 1;
 			Model->MoonsAmount = 0;
 			Model->StartPlanetIndex = 1;
-			Model->PlanetType = EPlanetType::HighMountain;
+			// Exercise the standard/default Cryogenic path users enter from the menu.
+			// HighMountain is intentionally not used as a relief-only special case.
+			Model->PlanetType = EPlanetType::Frozen;
 			Model->PlanetRadius = 6371.0;
 			Model->PlanetSurfaceSeed = 424242;
-			Model->SurfaceFeatureScale = 1.15;
-			Model->SurfaceReliefScale = 1.10;
-			Model->SurfaceLandCoverageScale = 0.90;
-			Model->SurfaceMountainScale = 1.25;
-			Model->SurfaceCraterScale = 0.75;
-			Model->SurfaceRoughnessScale = 1.05;
+			Model->SurfaceFeatureScale = 1.0;
+			Model->SurfaceReliefScale = 1.0;
+			Model->SurfaceLandCoverageScale = 1.0;
+			Model->SurfaceMountainScale = 1.0;
+			Model->SurfaceCraterScale = 1.0;
+			Model->SurfaceRoughnessScale = 1.0;
 			Model->AtmosphereHeight = 140.0;
 			Model->AtmosphereOpacity = 12.0;
 			Model->AtmosphereMultiScattering = 1.0;
@@ -330,6 +712,22 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			{
 				return Fail(TEXT("Civilization route did not initialize all five selected spawn classes"));
 			}
+			UClass* ProductionCharacterClass = LoadClass<ACustomGravityCharacter>(nullptr,
+				TEXT("/Game/APS/APS_ALPHA/Blueprints/BP_CustomGravityCharacter.BP_CustomGravityCharacter_C"));
+			if (!ProductionCharacterClass
+				|| !ProductionCharacterClass->IsChildOf(ACustomGravityCharacter::StaticClass()))
+			{
+				return Fail(TEXT("production BP_CustomGravityCharacter class is unavailable"));
+			}
+			// The menu default still points at the deprecated AGravityCharacterPawn.
+			// Exercise the same ACustomGravityCharacter Blueprint used by the real
+			// generated-civilization flow instead of silently validating another pawn.
+			ViewModel->SetSpawnClass(
+				EAPSStartAssetSlot::Character, ProductionCharacterClass);
+			if (Spawn->BP_CharacterClass.Get() != ProductionCharacterClass)
+			{
+				return Fail(TEXT("menu did not accept BP_CustomGravityCharacter selection"));
+			}
 			SelectedPawnClass = Spawn->BP_CharacterClass.Get();
 			SelectedPawnClassPath = SelectedPawnClass.IsValid()
 				? SelectedPawnClass->GetPathName() : FString();
@@ -337,9 +735,11 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			{
 				return Fail(TEXT("selected pawn class is invalid before commit"));
 			}
-			ViewModel->SetSpawnClass(EAPSStartAssetSlot::Character, SelectedPawnClass.Get());
 			Spawn->CivilizationName = TEXT("APS HANDOFF SMOKE CIVILIZATION");
-			Spawn->CharacterSpawnPlace = ECharSpawnPlace::PlanetOrbit;
+			// Exercise the production gameplay contract directly. The pawn must be
+			// placed by AAstroGenerator::ResolveSpawnLocation and settle on the
+			// authoritative WorldScape collision without any test-side relocation.
+			Spawn->CharacterSpawnPlace = ECharSpawnPlace::PlanetSurface;
 			Spawn->HomeStationOrbitHeight = EOrbitHeight::LowOrbit;
 			EditableSpawnParametersAddress = Spawn;
 			PreviewProfileSignature = PreviewSurface->AppliedSurfaceProfileSignature;
@@ -447,10 +847,16 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 				|| !Snapshot->bGenerateFullScaledWorld || !Snapshot->bGenerateHomeSystem
 				|| !Snapshot->bStartWithHomePlanet || Snapshot->StarType != EStarType::SingleStar
 				|| Snapshot->PlanetsAmount != 1 || Snapshot->MoonsAmount != 0
-				|| Snapshot->StartPlanetIndex != 1 || Snapshot->PlanetType != EPlanetType::HighMountain
+				|| Snapshot->StartPlanetIndex != 1 || Snapshot->PlanetType != EPlanetType::Frozen
 				|| Snapshot->PlanetSurfaceSeed != 424242)
 			{
 				return Fail(TEXT("committed generated-world snapshot differs from deterministic menu model"));
+			}
+			if (!GameplayState->SpawnParameters
+				|| GameplayState->SpawnParameters->CharacterSpawnPlace
+					!= ECharSpawnPlace::PlanetSurface)
+			{
+				return Fail(TEXT("committed spawn snapshot did not preserve PlanetSurface"));
 			}
 			UClass* GameModePawnClass = GravityMode->GetDefaultPawnClassForController(PlayerController);
 			if (!GameplayState->SpawnParameters->BP_CharacterClass || !GameModePawnClass
@@ -467,7 +873,8 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			}
 			AGravityPlayerController* GravityController =
 				Cast<AGravityPlayerController>(PlayerController);
-			AGravityCharacterPawn* GravityPawn = Cast<AGravityCharacterPawn>(PlayerPawn);
+			ACustomGravityCharacter* GravityPawn =
+				Cast<ACustomGravityCharacter>(PlayerPawn);
 			if (!GravityController || !GravityPawn)
 			{
 				return Fail(FString::Printf(
@@ -475,20 +882,54 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 					*GetNameSafe(PlayerController ? PlayerController->GetClass() : nullptr),
 					*GetNameSafe(PlayerPawn ? PlayerPawn->GetClass() : nullptr)));
 			}
+			UCameraComponent* PawnCamera = FindPawnCamera(GravityPawn);
+			USpringArmComponent* PawnSpringArm = FindPawnSpringArm(GravityPawn);
+			UCapsuleComponent* PawnCapsuleForCamera = FindPawnCapsule(GravityPawn);
 			if (GravityController->GetViewTarget() != PlayerPawn
 				|| !IsValid(GravityController->PlayerCameraManager)
-				|| !IsValid(GravityPawn->PlayerCamera)
-				|| !GravityPawn->PlayerCamera->IsRegistered()
-				|| !GravityPawn->PlayerCamera->IsActive()
-				|| !IsFiniteTransform(GravityPawn->PlayerCamera->GetComponentTransform()))
+				|| !IsValid(PawnCamera)
+				|| !IsValid(PawnSpringArm)
+				|| !IsValid(PawnCapsuleForCamera)
+				|| !PawnCamera->IsRegistered()
+				|| !PawnCamera->IsActive()
+				|| !IsFiniteTransform(PawnCamera->GetComponentTransform()))
 			{
 				return Fail(FString::Printf(
 					TEXT("possessed pawn camera contract mismatch viewTarget=%s pawn=%s manager=%s camera=%s registered=%d active=%d"),
 					*GetNameSafe(GravityController->GetViewTarget()), *GetNameSafe(PlayerPawn),
 					*GetNameSafe(GravityController->PlayerCameraManager),
-					*GetNameSafe(GravityPawn->PlayerCamera),
-					IsValid(GravityPawn->PlayerCamera) && GravityPawn->PlayerCamera->IsRegistered() ? 1 : 0,
-					IsValid(GravityPawn->PlayerCamera) && GravityPawn->PlayerCamera->IsActive() ? 1 : 0));
+					*GetNameSafe(PawnCamera),
+					IsValid(PawnCamera) && PawnCamera->IsRegistered() ? 1 : 0,
+					IsValid(PawnCamera) && PawnCamera->IsActive() ? 1 : 0));
+			}
+			const double CameraCapsuleHalfHeightCm =
+				PawnCapsuleForCamera->GetScaledCapsuleHalfHeight();
+			const double MaximumThirdPersonDistanceCm = FMath::Max(
+				800.0, CameraCapsuleHalfHeightCm * 8.0);
+			const double PawnCameraDistanceCm = FVector::Distance(
+				PawnCamera->GetComponentLocation(), GravityPawn->GetActorLocation());
+			const double ManagedCameraDistanceCm = FVector::Distance(
+				GravityController->PlayerCameraManager->GetCameraLocation(),
+				GravityPawn->GetActorLocation());
+			const double CameraGravityUpAlignment = FVector::DotProduct(
+				PawnCamera->GetUpVector().GetSafeNormal(),
+				GravityPawn->GetGravityUpVector().GetSafeNormal());
+			if (PawnCameraDistanceCm > MaximumThirdPersonDistanceCm
+				|| ManagedCameraDistanceCm > MaximumThirdPersonDistanceCm
+				|| PawnSpringArm->TargetArmLength > MaximumThirdPersonDistanceCm
+				|| PawnSpringArm->CameraLagMaxDistance > MaximumThirdPersonDistanceCm
+				|| !PawnSpringArm->GetRelativeScale3D().Equals(FVector::OneVector, 0.001)
+				|| !PawnCamera->GetRelativeScale3D().Equals(FVector::OneVector, 0.001)
+				|| CameraGravityUpAlignment < 0.95)
+			{
+				return Fail(FString::Printf(
+					TEXT("BP_CustomGravityCharacter camera escaped character scale pawnDistance=%.2fcm managerDistance=%.2fcm maximum=%.2fcm arm=%.2fcm maxLag=%.2fcm boomScale=%s cameraScale=%s gravityUpDot=%.5f"),
+					PawnCameraDistanceCm, ManagedCameraDistanceCm,
+					MaximumThirdPersonDistanceCm, PawnSpringArm->TargetArmLength,
+					PawnSpringArm->CameraLagMaxDistance,
+					*PawnSpringArm->GetRelativeScale3D().ToCompactString(),
+					*PawnCamera->GetRelativeScale3D().ToCompactString(),
+					CameraGravityUpAlignment));
 			}
 
 			AAstroGenerator* Generator = Generators[0];
@@ -585,7 +1026,7 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			const int32 StationRenderComponentCount =
 				CountVisibleRegisteredRenderComponents(StationActor);
 			UE_LOG(LogTemp, Display,
-				TEXT("[APS.Handoff.Camera] controller=%s pawn=%s viewTarget=%s pawnLocation=%s stationLocation=%s spawnPoint=%s pawnToSpawn=%.2fcm cameraLocation=%s cameraRotation=%s characterRenderers=%d stationRenderers=%d"),
+				TEXT("[APS.Handoff.Camera] controller=%s pawn=%s viewTarget=%s pawnLocation=%s stationLocation=%s spawnPoint=%s pawnToSpawn=%.2fcm cameraLocation=%s cameraRotation=%s cameraDistance=%.2fcm managerDistance=%.2fcm arm=%.2fcm maxLag=%.2fcm gravityUpDot=%.5f characterRenderers=%d stationRenderers=%d"),
 				*GetNameSafe(GravityController->GetClass()), *GetNameSafe(PlayerPawn),
 				*GetNameSafe(GravityController->GetViewTarget()),
 				*PlayerPawn->GetActorLocation().ToCompactString(),
@@ -593,14 +1034,18 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 				*SpawnPointLocation.ToCompactString(), PawnToSpawnPointCm,
 				*GravityController->PlayerCameraManager->GetCameraLocation().ToCompactString(),
 				*GravityController->PlayerCameraManager->GetCameraRotation().ToCompactString(),
+				PawnCameraDistanceCm, ManagedCameraDistanceCm,
+				PawnSpringArm->TargetArmLength, PawnSpringArm->CameraLagMaxDistance,
+				CameraGravityUpAlignment,
 				CharacterRenderComponentCount, StationRenderComponentCount);
 			if (!bFinitePawnTransform || !bFiniteStationTransform || !bValidSpawnPoint
-				|| PawnToSpawnPointCm > SpawnPointToleranceCm)
+				|| Generator->CharSpawnPlace != ECharSpawnPlace::PlanetSurface)
 			{
 				return Fail(FString::Printf(
-					TEXT("starter spawn transform mismatch finitePawn=%d finiteStation=%d validSpawnPoint=%d pawnToSpawn=%.2fcm tolerance=%.2fcm"),
+					TEXT("starter spawn contract mismatch finitePawn=%d finiteStation=%d validStationSpawnPoint=%d pawnToStation=%.2fcm charSpawnPlace=%d"),
 					bFinitePawnTransform ? 1 : 0, bFiniteStationTransform ? 1 : 0,
-					bValidSpawnPoint ? 1 : 0, PawnToSpawnPointCm, SpawnPointToleranceCm));
+					bValidSpawnPoint ? 1 : 0, PawnToSpawnPointCm,
+					static_cast<int32>(Generator->CharSpawnPlace)));
 			}
 			if (CharacterRenderComponentCount == 0 || StationRenderComponentCount == 0)
 			{
@@ -618,6 +1063,7 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 				return Fail(TEXT("station gravity collision volume is rendering in gameplay"));
 			}
 
+			RuntimeGenerator = Generator;
 			RuntimeHomePlanet = Planet;
 			RuntimeGravityPawn = GravityPawn;
 			RuntimeStation = StationActor;
@@ -639,8 +1085,12 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			AWorldScapeRoot* Root = IsValid(Surface) ? Surface->WorldScapeRootInstance : nullptr;
 			AAtmoScape* Atmosphere = IsValid(Surface) ? Surface->PlanetAtmosphere : nullptr;
 			if (!World || World != GameplayWorld.Get() || !IsValid(Planet) || !IsValid(Surface)
-				|| !IsValid(Root) || !IsValid(Atmosphere) || !Planet->bWorldScapeSurfaceReady)
+				|| !IsValid(Root) || !IsValid(Atmosphere))
 			{
+				if (Now - StepStartSeconds > PhysicalSurfaceTimeoutSeconds)
+				{
+					return Fail(TEXT("gameplay WorldScape actors were unavailable for thirty seconds"));
+				}
 				return false;
 			}
 
@@ -661,8 +1111,19 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 					{
 						return !APSWorldScapePayloadValidation::HasCompletePayload(Lod, false);
 					}));
+			const int32 PresentedBodyBackingMeshes = CountPresentedStaticMeshes(Planet);
+			const int32 CollidableBodyBackingMeshes = CountCollidableStaticMeshes(Planet);
+			const TArray<AAstroGenerator*> RuntimeGenerators = FindActors<AAstroGenerator>(World);
+			const int32 PresentedRuntimePreviewMeshes = RuntimeGenerators.IsEmpty()
+				? 0 : CountPresentedProceduralMeshes(RuntimeGenerators[0]);
+			const FVector RenderObserverWorldPosition = Root->bOverridePlayerPosition
+				? Root->OverridedPlayerPosition : Root->PlayerWorldPos.ToFVector();
+			FVisibleWorldScapeRenderLodProof InitialRenderProof;
+			FString InitialRenderFailure;
+			const bool bInitialRenderLod0Ready = BuildVisibleWorldScapeRenderLod0Proof(
+				Root, RenderObserverWorldPosition, InitialRenderProof, InitialRenderFailure);
 			if (!Surface->IsSurfaceProfileCurrent(Planet)
-				|| Surface->ResolvedSurfaceProfile.PlanetType != EPlanetType::HighMountain
+				|| Surface->ResolvedSurfaceProfile.PlanetType != EPlanetType::Frozen
 				|| ExpectedSignature != AppliedSignature
 				|| !Cast<UAPSWorldScapePlanetNoise>(Surface->ResolvedNoiseInstance)
 				|| Root->WorldScapeNoise != Surface->ResolvedNoiseInstance
@@ -671,14 +1132,43 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 				|| Atmosphere->bKeepRelativeScale || Atmosphere->LightSource != Planet->ParentStar
 				|| !FMath::IsNearlyEqual(Planet->WorldScapePresentationScale, 1.0)
 				|| Planet->GetWorldScapeStreamingState() != EWorldScapeSurfaceState::Active
-				|| Root->WorldScapeLodInGeneration.Num() != 0
-				|| !bCompleteTerrainPayload || !bCompleteOceanPayload || Root->IsHidden())
+				|| PresentedBodyBackingMeshes != 0 || CollidableBodyBackingMeshes != 0
+				|| PresentedRuntimePreviewMeshes != 0)
 			{
 				return Fail(FString::Printf(
-					TEXT("gameplay surface bypassed resolver or is not stably rendered type=%d expectedSig=%u appliedSig=%u lods=%d workers=%d scale=%.9f"),
+					TEXT("gameplay surface bypassed resolver or is not the sole complete renderer/collider type=%d expectedSig=%u appliedSig=%u lods=%d workers=%d scale=%.9f backingMeshes=%d backingColliders=%d previewMeshes=%d renderLod0=%d renderFailure=%s renderVertices=%d renderRelief=%.3fcm renderNoiseDelta=%.3fcm renderCenterOffset=%.3fcm"),
 					static_cast<int32>(Surface->ResolvedSurfaceProfile.PlanetType), ExpectedSignature,
 					AppliedSignature, Root->WorldScapeLod.Num(),
-					Root->WorldScapeLodInGeneration.Num(), Planet->WorldScapePresentationScale));
+					Root->WorldScapeLodInGeneration.Num(), Planet->WorldScapePresentationScale,
+					PresentedBodyBackingMeshes, CollidableBodyBackingMeshes,
+					PresentedRuntimePreviewMeshes, bInitialRenderLod0Ready ? 1 : 0,
+					*InitialRenderFailure, InitialRenderProof.VertexCount,
+					InitialRenderProof.ReliefVariationCm,
+					InitialRenderProof.MaximumNoiseDeltaCm,
+					InitialRenderProof.ObserverCenterOffsetCm));
+			}
+
+			// Render and collision construction is asynchronous.  Workers in flight,
+			// incomplete payloads, a hidden root and a not-yet-centred LOD0 are transient
+			// states, not resolver failures.  The old immediate failure happened on the
+			// first frame after travel and never gave the production finalizer a chance to
+			// publish the pawn-centred surface it deliberately waits for.
+			const bool bGameplaySurfaceReady = Planet->bWorldScapeSurfaceReady
+				&& Root->WorldScapeLodInGeneration.Num() == 0
+				&& bCompleteTerrainPayload && bCompleteOceanPayload
+				&& !Root->IsHidden() && bInitialRenderLod0Ready;
+			if (!bGameplaySurfaceReady)
+			{
+				if (Now - StepStartSeconds > PhysicalSurfaceTimeoutSeconds)
+				{
+					return Fail(FString::Printf(
+						TEXT("gameplay WorldScape did not publish a pawn-centred render LOD0 in thirty seconds ready=%d lods=%d workers=%d hidden=%d renderLod0=%d renderFailure=%s"),
+						Planet->bWorldScapeSurfaceReady ? 1 : 0,
+						Root->WorldScapeLod.Num(), Root->WorldScapeLodInGeneration.Num(),
+						Root->IsHidden() ? 1 : 0, bInitialRenderLod0Ready ? 1 : 0,
+						*InitialRenderFailure));
+				}
+				return false;
 			}
 
 			ScreenshotPath = FPaths::Combine(FPaths::ProjectSavedDir(),
@@ -686,16 +1176,19 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			IFileManager::Get().MakeDirectory(*FPaths::GetPath(ScreenshotPath), true);
 			IFileManager::Get().Delete(*ScreenshotPath, false, true);
 			UE_LOG(LogTemp, Display,
-				TEXT("[APS.Handoff.Smoke] Gameplay WorldScape ready in %.2fs resolverSig=%u lods=%d; settling game viewport for %s"),
+				TEXT("[APS.Handoff.Smoke] Gameplay WorldScape ready in %.2fs resolverSig=%u lods=%d renderLod0Vertices=%d renderRelief=%.3fcm renderNoiseDelta=%.3fcm renderCenterOffset=%.3fcm; settling game viewport for %s"),
 				Now - StepStartSeconds, AppliedSignature, Root->WorldScapeLod.Num(),
-				*ScreenshotPath);
+				InitialRenderProof.VertexCount, InitialRenderProof.ReliefVariationCm,
+				InitialRenderProof.MaximumNoiseDeltaCm,
+				InitialRenderProof.ObserverCenterOffsetCm, *ScreenshotPath);
 			ScreenshotSettleFramesRemaining = 2;
 			Step = EStep::WaitForScreenshot;
 			StepStartSeconds = Now;
 			return false;
 		}
 
-		bool CaptureGameplayViewport(UWorld* World, FString& OutFailure)
+		bool CaptureGameplayViewport(UWorld* World, FString& OutFailure,
+			bool bValidateStationSubject = true, bool bValidateGroundLowerRegion = false)
 		{
 			OutFailure.Reset();
 			UGameViewportClient* GameViewportClient = AutomationCommon::GetAnyGameViewportClient();
@@ -756,8 +1249,105 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 					MinimumNonBlackPixelRatio, MinimumBrightnessVariance);
 				return false;
 			}
+			if (bValidateGroundLowerRegion)
+			{
+				// The middle/lower gameplay region is terrain in the generated
+				// PlanetSurface view. Ignore the outer panels and bottom HUD while
+				// ensuring a technically displaced surface is also visibly lit.
+				const int32 GroundMinX = FMath::FloorToInt(ViewportSize.X * 0.20);
+				const int32 GroundMaxX = FMath::CeilToInt(ViewportSize.X * 0.80);
+				const int32 GroundMinY = FMath::FloorToInt(ViewportSize.Y * 0.55);
+				const int32 GroundMaxY = FMath::CeilToInt(ViewportSize.Y * 0.88);
+				double GroundBrightnessSum = 0.0;
+				double GroundBrightnessSquaredSum = 0.0;
+				double GroundSpatialDeltaSum = 0.0;
+				int64 GroundNonBlackPixelCount = 0;
+				int64 GroundPixelCount = 0;
+				int64 GroundSpatialDeltaCount = 0;
+				TArray<uint8> GroundBrightnessValues;
+				GroundBrightnessValues.Reserve(
+					(GroundMaxX - GroundMinX) * (GroundMaxY - GroundMinY));
+				for (int32 Y = GroundMinY; Y < GroundMaxY; ++Y)
+				{
+					for (int32 X = GroundMinX; X < GroundMaxX; ++X)
+					{
+						const FColor& Pixel = Pixels[Y * ViewportSize.X + X];
+						const uint8 BrightnessByte = FMath::Max3(
+							Pixel.R, Pixel.G, Pixel.B);
+						const double Brightness = static_cast<double>(BrightnessByte);
+						GroundBrightnessSum += Brightness;
+						GroundBrightnessSquaredSum += Brightness * Brightness;
+						GroundNonBlackPixelCount += Brightness > 8.0 ? 1 : 0;
+						GroundBrightnessValues.Add(BrightnessByte);
+						if (X > GroundMinX)
+						{
+							const FColor& LeftPixel = Pixels[Y * ViewportSize.X + X - 1];
+							const double LeftBrightness = static_cast<double>(FMath::Max3(
+								LeftPixel.R, LeftPixel.G, LeftPixel.B));
+							GroundSpatialDeltaSum += FMath::Abs(Brightness - LeftBrightness);
+							++GroundSpatialDeltaCount;
+						}
+						if (Y > GroundMinY)
+						{
+							const FColor& UpperPixel = Pixels[(Y - 1) * ViewportSize.X + X];
+							const double UpperBrightness = static_cast<double>(FMath::Max3(
+								UpperPixel.R, UpperPixel.G, UpperPixel.B));
+							GroundSpatialDeltaSum += FMath::Abs(Brightness - UpperBrightness);
+							++GroundSpatialDeltaCount;
+						}
+						++GroundPixelCount;
+					}
+				}
+				const double GroundMeanBrightness = GroundPixelCount > 0
+					? GroundBrightnessSum / static_cast<double>(GroundPixelCount) : 0.0;
+				const double GroundBrightnessVariance = GroundPixelCount > 0
+					? FMath::Max(0.0,
+						GroundBrightnessSquaredSum / static_cast<double>(GroundPixelCount)
+						- GroundMeanBrightness * GroundMeanBrightness) : 0.0;
+				const double GroundNonBlackPixelRatio = GroundPixelCount > 0
+					? static_cast<double>(GroundNonBlackPixelCount)
+						/ static_cast<double>(GroundPixelCount) : 0.0;
+				const double GroundMeanSpatialDelta = GroundSpatialDeltaCount > 0
+					? GroundSpatialDeltaSum / static_cast<double>(GroundSpatialDeltaCount) : 0.0;
+				GroundBrightnessValues.Sort();
+				const int32 GroundLastIndex = GroundBrightnessValues.Num() - 1;
+				const double GroundP10 = GroundLastIndex >= 0
+					? static_cast<double>(GroundBrightnessValues[
+						FMath::FloorToInt(static_cast<double>(GroundLastIndex) * 0.10)]) : 0.0;
+				const double GroundP90 = GroundLastIndex >= 0
+					? static_cast<double>(GroundBrightnessValues[
+						FMath::FloorToInt(static_cast<double>(GroundLastIndex) * 0.90)]) : 0.0;
+				const double GroundBrightnessSpread = GroundP90 - GroundP10;
+				UE_LOG(LogTemp, Display,
+					TEXT("[APS.Handoff.PhysicalSurface] groundROI=(%d,%d)-(%d,%d) meanBrightness=%.3f variance=%.3f nonBlackRatio=%.5f p10=%.1f p90=%.1f spread=%.1f meanSpatialDelta=%.3f"),
+					GroundMinX, GroundMinY, GroundMaxX, GroundMaxY,
+					GroundMeanBrightness, GroundBrightnessVariance,
+					GroundNonBlackPixelRatio, GroundP10, GroundP90,
+					GroundBrightnessSpread, GroundMeanSpatialDelta);
+				if (GroundMeanBrightness < MinimumGroundMeanBrightness
+					|| GroundNonBlackPixelRatio < MinimumGroundNonBlackPixelRatio
+					|| GroundBrightnessVariance < MinimumGroundBrightnessVariance
+					|| GroundBrightnessSpread < MinimumGroundBrightnessSpread
+					|| GroundMeanSpatialDelta < MinimumGroundMeanSpatialDelta)
+				{
+					OutFailure = FString::Printf(
+						TEXT("settled WorldScape ground region is dark/flat mean=%.3f variance=%.3f nonBlack=%.5f spread=%.1f spatialDelta=%.3f (minimum mean=%.3f variance=%.3f ratio=%.3f spread=%.1f spatialDelta=%.3f)"),
+						GroundMeanBrightness, GroundBrightnessVariance,
+						GroundNonBlackPixelRatio, GroundBrightnessSpread,
+						GroundMeanSpatialDelta, MinimumGroundMeanBrightness,
+						MinimumGroundBrightnessVariance,
+						MinimumGroundNonBlackPixelRatio,
+						MinimumGroundBrightnessSpread,
+						MinimumGroundMeanSpatialDelta);
+					return false;
+				}
+			}
+			if (!bValidateStationSubject)
+			{
+				return true;
+			}
 
-			AGravityCharacterPawn* GravityPawn = RuntimeGravityPawn.Get();
+			APawn* GravityPawn = RuntimeGravityPawn.Get();
 			ASpaceStation* Station = RuntimeStation.Get();
 			APlayerController* PlayerController = World->GetFirstPlayerController();
 			if (!IsValid(GravityPawn) || !IsValid(Station) || !IsValid(Station->SpawnPoint)
@@ -873,7 +1463,7 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			}
 
 			FString CaptureFailure;
-			if (!CaptureGameplayViewport(World, CaptureFailure))
+			if (!CaptureGameplayViewport(World, CaptureFailure, false, false))
 			{
 				if (!CaptureFailure.IsEmpty())
 				{
@@ -887,7 +1477,1202 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			}
 
 			UE_LOG(LogTemp, Display,
-				TEXT("[APS.Handoff.Smoke] Non-blank game viewport screenshot written; freezing every WorldScape producer"));
+				TEXT("[APS.Handoff.Smoke] Non-blank game viewport screenshot written; probing natural physical WorldScape surface"));
+			Step = EStep::WaitForPhysicalSurface;
+			StepStartSeconds = Now;
+			return false;
+		}
+
+		bool UpdateValidateManualApproachObserver(UWorld* World, double Now)
+		{
+			APlanet* Planet = RuntimeHomePlanet.Get();
+			APawn* GravityPawn = RuntimeGravityPawn.Get();
+			ASpaceStation* Station = RuntimeStation.Get();
+			APlanetarySurfaceGenerator* Surface = IsValid(Planet)
+				? Planet->PlanetaryEnvironmentGenerator : nullptr;
+			AWorldScapeRoot* Root = IsValid(Surface) ? Surface->WorldScapeRootInstance : nullptr;
+			UAPSPlanetEnvironmentStreamingSubsystem* StreamingSubsystem = World
+				? World->GetSubsystem<UAPSPlanetEnvironmentStreamingSubsystem>() : nullptr;
+			if (!World || World != GameplayWorld.Get() || !IsValid(Planet)
+				|| !IsValid(GravityPawn) || !IsValid(Station) || !IsValid(Station->SpawnPoint)
+				|| !IsValid(Surface) || !IsValid(Root) || !IsValid(StreamingSubsystem))
+			{
+				if (Now - StepStartSeconds > ScreenshotTimeoutSeconds)
+				{
+					return Fail(TEXT("manual approach observer actors/root/subsystem were unavailable for ten seconds"));
+				}
+				return false;
+			}
+
+			UCapsuleComponent* PawnCapsule = FindPawnCapsule(GravityPawn);
+			auto TeleportAndRefreshObserver = [&](const FVector& TargetLocation,
+				const TCHAR* Stage, double& OutObserverDeltaCm, FString& OutFailure)
+			{
+				if (IsValid(PawnCapsule))
+				{
+					PawnCapsule->SetPhysicsLinearVelocity(FVector::ZeroVector);
+				}
+				if (!GravityPawn->SetActorLocation(TargetLocation, false, nullptr,
+					ETeleportType::TeleportPhysics))
+				{
+					OutFailure = FString::Printf(TEXT("manual %s teleport failed"), Stage);
+					return false;
+				}
+
+				// This zero-delta tick is a deterministic single-frame regression check.
+				// It must update only the already-bound visual observer; the expensive
+				// family/body selection remains governed by the subsystem's 0.5 s cadence.
+				StreamingSubsystem->Tick(0.0f);
+				Root = Surface->WorldScapeRootInstance;
+				if (!IsValid(Root))
+				{
+					OutFailure = FString::Printf(
+						TEXT("manual %s approach lost the active WorldScape root"), Stage);
+					return false;
+				}
+
+				OutObserverDeltaCm = FVector::Distance(
+					Root->OverridedPlayerPosition, GravityPawn->GetActorLocation());
+				const bool bCollisionObserverBound =
+					Root->CollisionDependantActor.Contains(GravityPawn);
+				if (!Root->bOverridePlayerPosition || !bCollisionObserverBound
+					|| OutObserverDeltaCm > MaximumManualObserverLagCm)
+				{
+					OutFailure = FString::Printf(
+						TEXT("manual %s observer did not follow pawn in one tick override=%d collisionBound=%d delta=%.3fcm maximum=%.3fcm"),
+						Stage, Root->bOverridePlayerPosition ? 1 : 0,
+						bCollisionObserverBound ? 1 : 0, OutObserverDeltaCm,
+						MaximumManualObserverLagCm);
+					return false;
+				}
+				return true;
+			};
+
+			// Recreate the user's route without ResolveSpawnLocation and without the
+			// later best-patch search: first visit the authored station/orbit point...
+			const FVector OrbitLocation = Station->SpawnPoint->GetComponentLocation();
+			double OrbitObserverDeltaCm = 0.0;
+			FString ManualApproachFailure;
+			if (!TeleportAndRefreshObserver(OrbitLocation, TEXT("station/orbit"),
+				OrbitObserverDeltaCm, ManualApproachFailure))
+			{
+				return Fail(ManualApproachFailure);
+			}
+
+			// ...then move to an arbitrary near-surface direction. The small tangent
+			// offset guarantees a real traversal while deliberately avoiding all terrain
+			// height/resolver sampling used by the physical-relief proof that follows.
+			FVector Outward = (OrbitLocation - Root->GetActorLocation()).GetSafeNormal();
+			if (Outward.IsNearlyZero())
+			{
+				Outward = Planet->GetActorUpVector().GetSafeNormal();
+			}
+			if (Outward.IsNearlyZero())
+			{
+				Outward = FVector::UpVector;
+			}
+			FVector TangentA = FVector::ZeroVector;
+			FVector TangentB = FVector::ZeroVector;
+			Outward.FindBestAxisVectors(TangentA, TangentB);
+			const FVector ApproachDirection =
+				(Outward + TangentA * 0.015 + TangentB * 0.007).GetSafeNormal();
+			const double ApproachClearanceCm = FMath::Max(
+				1000000.0, Root->PlanetScale * 0.002);
+			const FVector NearSurfaceLocation = Root->GetActorLocation()
+				+ ApproachDirection * (Root->PlanetScale + ApproachClearanceCm);
+			if (NearSurfaceLocation.ContainsNaN()
+				|| FVector::Distance(OrbitLocation, NearSurfaceLocation) < 100000.0)
+			{
+				return Fail(TEXT("manual station-to-surface route did not produce a finite meaningful traversal"));
+			}
+
+			double SurfaceObserverDeltaCm = 0.0;
+			if (!TeleportAndRefreshObserver(NearSurfaceLocation, TEXT("near-surface"),
+				SurfaceObserverDeltaCm, ManualApproachFailure))
+			{
+				return Fail(ManualApproachFailure);
+			}
+			if (Planet->GetWorldScapeStreamingState() != EWorldScapeSurfaceState::Active
+				|| Root->IsHidden())
+			{
+				return Fail(FString::Printf(
+					TEXT("manual approach hid/deactivated WorldScape state=%d hidden=%d"),
+					static_cast<int32>(Planet->GetWorldScapeStreamingState()),
+					Root->IsHidden() ? 1 : 0));
+			}
+
+			UE_LOG(LogTemp, Display,
+				TEXT("[APS.Handoff.ManualApproach] PASS route=station/orbit->near-surface resolver=not-called bestPatch=not-selected orbitDelta=%.3fcm surfaceDelta=%.3fcm traversal=%.2fkm collisionObserver=bound"),
+				OrbitObserverDeltaCm, SurfaceObserverDeltaCm,
+				FVector::Distance(OrbitLocation, NearSurfaceLocation) / 100000.0);
+			bManualApproachObserverValidated = true;
+			Step = EStep::WaitForPhysicalSurface;
+			StepStartSeconds = Now;
+			return false;
+		}
+
+		bool UpdateWaitForPhysicalSurface(UWorld* World, double Now)
+		{
+			AAstroGenerator* Generator = RuntimeGenerator.Get();
+			APlanet* Planet = RuntimeHomePlanet.Get();
+			APawn* GravityPawn = RuntimeGravityPawn.Get();
+			APlanetarySurfaceGenerator* Surface = IsValid(Planet)
+				? Planet->PlanetaryEnvironmentGenerator : nullptr;
+			AWorldScapeRoot* Root = IsValid(Surface) ? Surface->WorldScapeRootInstance : nullptr;
+			UCapsuleComponent* PawnCapsule = FindPawnCapsule(GravityPawn);
+			if (!World || World != GameplayWorld.Get() || !IsValid(Generator)
+				|| !IsValid(Planet) || !IsValid(GravityPawn) || !IsValid(Surface)
+				|| !IsValid(Root))
+			{
+				if (Now - StepStartSeconds > PhysicalSurfaceTimeoutSeconds)
+				{
+					return Fail(TEXT("physical surface actors/root were unavailable for 20 seconds"));
+				}
+				return false;
+			}
+
+			if (!bPhysicalSurfaceProbeInitialized)
+			{
+				// Authored body meshes and semantic influence/gravity volumes may provide
+				// visuals and overlaps, but they must never be the smooth walkable shell.
+				// WorldScape's displaced CollisionLods are the sole physical terrain.
+				const int32 AuthoredBodyColliderCount = CountCollidableStaticMeshes(Planet);
+				const bool bPlanetaryZoneBlocksPawn = !IsValid(Planet->PlanetaryZone)
+					|| Planet->PlanetaryZone->GetCollisionResponseToChannel(ECC_Pawn) == ECR_Block;
+				const bool bGravityZoneBlocksPawn = !IsValid(Planet->GravityCollisionZone)
+					|| Planet->GravityCollisionZone->GetCollisionResponseToChannel(ECC_Pawn) == ECR_Block;
+				if (AuthoredBodyColliderCount != 0 || bPlanetaryZoneBlocksPawn
+					|| bGravityZoneBlocksPawn)
+				{
+					return Fail(FString::Printf(
+						TEXT("authored planet shell/zone can still become smooth ground staticMeshColliders=%d planetaryZoneBlocksPawn=%d gravityZoneBlocksPawn=%d"),
+						AuthoredBodyColliderCount, bPlanetaryZoneBlocksPawn ? 1 : 0,
+						bGravityZoneBlocksPawn ? 1 : 0));
+				}
+
+				if (!Surface->IsSurfaceProfileCurrent(Planet)
+					|| !Cast<UAPSWorldScapePlanetNoise>(Surface->ResolvedNoiseInstance)
+					|| Root->WorldScapeNoise != Surface->ResolvedNoiseInstance
+					|| !Root->bGenerateCollision || !Root->bGenerateCollisionForAllPlayer
+#if WITH_EDITOR
+					|| !Root->bGenerateCollisionInEditor || Root->bStaticCollisionInEditor
+#endif
+					)
+				{
+					return Fail(FString::Printf(
+						TEXT("active WorldScape collision contract is invalid noise=%s rootNoise=%s runtime=%d allPlayers=%d"),
+						*GetNameSafe(Surface->ResolvedNoiseInstance),
+						*GetNameSafe(Root->WorldScapeNoise), Root->bGenerateCollision ? 1 : 0,
+						Root->bGenerateCollisionForAllPlayer ? 1 : 0));
+				}
+
+				// Validate the real handoff before the visual-proof code below is allowed
+				// to relocate the pawn. This specifically covers BP_CustomGravityCharacter:
+				// production must resolve, bind planet gravity and ground its capsule on an
+				// actual WorldScape CollisionLod without help from the automation test.
+				if (!bNaturalSurfaceLandingValidated)
+				{
+					if (!IsValid(PawnCapsule))
+					{
+						return Fail(TEXT("BP_CustomGravityCharacter has no capsule component"));
+					}
+
+					TSet<const UPrimitiveComponent*> NaturalCollisionComponents;
+					for (const UWorldScapeLod* CollisionLod : Root->CollisionLods)
+					{
+						if (IsValid(CollisionLod) && IsValid(CollisionLod->Mesh)
+							&& CollisionLod->Mesh->GetCollisionEnabled()
+								!= ECollisionEnabled::NoCollision
+							&& !CollisionLod->Vertices.IsEmpty()
+							&& !CollisionLod->Triangles.IsEmpty())
+						{
+							NaturalCollisionComponents.Add(CollisionLod->Mesh);
+						}
+					}
+					if (NaturalCollisionComponents.IsEmpty())
+					{
+						if (Now - StepStartSeconds > PhysicalSurfaceTimeoutSeconds)
+						{
+							return Fail(TEXT("natural surface start produced no WorldScape collision near BP_CustomGravityCharacter"));
+						}
+						return false;
+					}
+
+					const FVector SurfaceCenter = Root->GetActorLocation();
+					const FVector PawnOutward = (GravityPawn->GetActorLocation() - SurfaceCenter)
+						.GetSafeNormal(UE_DOUBLE_SMALL_NUMBER, Planet->GetActorUpVector());
+					const double ExpectedHeightCm = Root->GetGroundHeight(
+						SurfaceCenter + PawnOutward * Root->PlanetScale, false);
+					const double TraceHalfSpanCm = FMath::Max(250000.0,
+						FMath::Abs(static_cast<double>(Root->NoiseIntensity)) * 2.0
+							+ 100000.0);
+					const FVector TraceStart = SurfaceCenter + PawnOutward
+						* (Root->PlanetScale + ExpectedHeightCm + TraceHalfSpanCm);
+					const FVector TraceEnd = SurfaceCenter + PawnOutward
+						* (Root->PlanetScale + ExpectedHeightCm - TraceHalfSpanCm);
+					FCollisionQueryParams NaturalTraceParams(
+						SCENE_QUERY_STAT(APSGeneratedNaturalSurfaceStart), true, GravityPawn);
+					FHitResult NaturalTerrainHit;
+					// CollisionLods are a moving WorldScape pool: the plugin can destroy and
+					// replace their mesh components when its snapped player/camera cell changes.
+					// A component-local query is not a reliable proof of the live Chaos scene
+					// after such a replacement (and, in PIE, can keep returning false while a
+					// world query already resolves the freshly published component). Query the
+					// authoritative world scene, then require the returned component to belong
+					// to the CollisionLods collected in this same frame. This remains strict:
+					// authored shells, oceans and stale/replaced WorldScape components cannot
+					// satisfy the handoff contract.
+					TSet<const UPrimitiveComponent*> NaturalOceanComponents;
+					for (const UWorldScapeLod* OceanLod : Root->WorldScapeLodOcean)
+					{
+						if (IsValid(OceanLod) && IsValid(OceanLod->Mesh))
+						{
+							if (OceanLod->Mesh->GetCollisionEnabled()
+								!= ECollisionEnabled::NoCollision)
+							{
+								return Fail(TEXT("natural production landing exposed a collidable WorldScape ocean shell"));
+							}
+							NaturalOceanComponents.Add(OceanLod->Mesh);
+						}
+					}
+					TArray<FHitResult> NaturalWorldHits;
+					World->LineTraceMultiByChannel(NaturalWorldHits, TraceStart, TraceEnd,
+						ECC_Visibility, NaturalTraceParams);
+					for (const FHitResult& CandidateHit : NaturalWorldHits)
+					{
+						const UPrimitiveComponent* HitComponent = CandidateHit.GetComponent();
+						if (CandidateHit.bBlockingHit
+							&& !NaturalOceanComponents.Contains(HitComponent)
+							&& NaturalCollisionComponents.Contains(HitComponent))
+						{
+							NaturalTerrainHit = CandidateHit;
+							break;
+						}
+					}
+
+					EGravityType GravityType = EGravityType::ZeroG;
+					FVector GravityDirection = FVector::ZeroVector;
+					AActor* GravityTarget = nullptr;
+					const bool bGravityReady = ReadGravityContract(
+						GravityPawn, GravityType, GravityDirection, GravityTarget)
+						&& GravityType == EGravityType::OnPlanet
+						&& GravityTarget == Planet
+						&& FVector::DotProduct(GravityDirection.GetSafeNormal(), -PawnOutward) > 0.95;
+					const double CapsuleHalfHeightCm =
+						PawnCapsule->GetScaledCapsuleHalfHeight();
+					const double FootClearanceCm = NaturalTerrainHit.bBlockingHit
+						? FVector::Distance(GravityPawn->GetActorLocation(), SurfaceCenter)
+							- FVector::Distance(NaturalTerrainHit.ImpactPoint, SurfaceCenter)
+							- CapsuleHalfHeightCm
+						: TNumericLimits<double>::Max();
+					const double PawnSpeedCmPerSecond = GravityPawn->GetVelocity().Size();
+					const bool bNaturallyGrounded = NaturalTerrainHit.bBlockingHit
+						&& FMath::Abs(FootClearanceCm) <= MaximumFootClearanceCm
+						&& PawnSpeedCmPerSecond <= MaximumSettledSpeedCmPerSecond
+						&& bGravityReady;
+					NaturalSurfaceSettleFrames = bNaturallyGrounded
+						? NaturalSurfaceSettleFrames + 1 : 0;
+					if (NaturalSurfaceSettleFrames < RequiredNaturalSettleFrames)
+					{
+						if (Now - StepStartSeconds > PhysicalSurfaceTimeoutSeconds)
+						{
+							return Fail(FString::Printf(
+								TEXT("BP_CustomGravityCharacter did not naturally settle on production WorldScape terrain frames=%d hit=%d worldHits=%d currentTerrainComponents=%d footClearance=%.2fcm speed=%.2f gravityType=%d gravityTarget=%s"),
+								NaturalSurfaceSettleFrames,
+								NaturalTerrainHit.bBlockingHit ? 1 : 0,
+								NaturalWorldHits.Num(), NaturalCollisionComponents.Num(),
+								FootClearanceCm, PawnSpeedCmPerSecond,
+								static_cast<int32>(GravityType),
+								*GetNameSafe(GravityTarget)));
+						}
+						return false;
+					}
+
+					// Prove the untouched production landing itself is visibly displaced.
+					// The later physical-proof phase deliberately teleports to a best patch;
+					// it must not be able to hide a flat natural spawn. Sample the same
+					// UAPSWorldScapePlanetNoise heightfield used by collision at 10/100/250 m,
+					// and require both the published render LOD0 and cooked hit to agree
+					// with that field before any test relocation is allowed.
+					const double NaturalTraceHeightCm = FVector::Distance(
+						NaturalTerrainHit.ImpactPoint, SurfaceCenter) - Root->PlanetScale;
+					const double NaturalHeightfieldCollisionDeltaCm = FMath::Abs(
+						NaturalTraceHeightCm - ExpectedHeightCm);
+					FVisibleWorldScapeRenderLodProof NaturalRenderProof;
+					FString NaturalRenderFailure;
+					if (!BuildVisibleWorldScapeRenderLod0Proof(Root,
+						GravityPawn->GetActorLocation(), NaturalRenderProof,
+						NaturalRenderFailure))
+					{
+						return Fail(FString::Printf(
+							TEXT("natural production landing has no matching visible WorldScape LOD0: %s"),
+							*NaturalRenderFailure));
+					}
+					const double NaturalRenderCollisionDeltaCm = FMath::Abs(
+						NaturalRenderProof.ClosestObserverHeightCm - NaturalTraceHeightCm);
+					const double MaximumNaturalRenderSampleDistanceCm = FMath::Max(
+						static_cast<double>(Root->TriangleSize) * 4.0, 500.0);
+					if (!FMath::IsFinite(NaturalRenderCollisionDeltaCm)
+						|| NaturalRenderCollisionDeltaCm
+							> MaximumNaturalHeightfieldCollisionDeltaCm
+						|| NaturalRenderProof.ClosestObserverSurfaceDistanceCm
+							> MaximumNaturalRenderSampleDistanceCm)
+					{
+						return Fail(FString::Printf(
+							TEXT("natural production landing render/noise/collision diverged renderCollisionDelta=%.2fcm nearestRenderSample=%.2fcm maximumSample=%.2fcm"),
+							NaturalRenderCollisionDeltaCm,
+							NaturalRenderProof.ClosestObserverSurfaceDistanceCm,
+							MaximumNaturalRenderSampleDistanceCm));
+					}
+					const FVector NaturalReferenceAxis = FMath::Abs(PawnOutward.Z) < 0.82
+						? FVector::UpVector : FVector::ForwardVector;
+					const FVector NaturalTangentU = FVector::CrossProduct(
+						NaturalReferenceAxis, PawnOutward).GetSafeNormal(
+							UE_DOUBLE_SMALL_NUMBER, FVector::ForwardVector);
+					const FVector NaturalTangentV = FVector::CrossProduct(
+						PawnOutward, NaturalTangentU).GetSafeNormal(
+							UE_DOUBLE_SMALL_NUMBER, FVector::RightVector);
+					constexpr double NaturalProbeDistancesCm[3] = {
+						1000.0, 10000.0, 25000.0};
+					double NaturalMinHeightsCm[3] = {
+						ExpectedHeightCm, ExpectedHeightCm, ExpectedHeightCm};
+					double NaturalMaxHeightsCm[3] = {
+						ExpectedHeightCm, ExpectedHeightCm, ExpectedHeightCm};
+					double NaturalMaxSlope = 0.0;
+					for (int32 DirectionIndex = 0;
+						DirectionIndex < PhysicalProofDirectionCount; ++DirectionIndex)
+					{
+						const double Angle = UE_TWO_PI * static_cast<double>(DirectionIndex)
+							/ static_cast<double>(PhysicalProofDirectionCount);
+						const FVector Tangent = NaturalTangentU * FMath::Cos(Angle)
+							+ NaturalTangentV * FMath::Sin(Angle);
+						for (int32 DistanceIndex = 0; DistanceIndex < 3; ++DistanceIndex)
+						{
+							const double DistanceCm = NaturalProbeDistancesCm[DistanceIndex];
+							const FVector SampleDirection = (PawnOutward
+								+ Tangent * (DistanceCm / Root->PlanetScale)).GetSafeNormal();
+							const double SampleHeightCm = Root->GetGroundHeight(
+								SurfaceCenter + SampleDirection * Root->PlanetScale, false);
+							if (!FMath::IsFinite(SampleHeightCm))
+							{
+								return Fail(TEXT("natural production landing returned a non-finite WorldScape height sample"));
+							}
+							NaturalMinHeightsCm[DistanceIndex] = FMath::Min(
+								NaturalMinHeightsCm[DistanceIndex], SampleHeightCm);
+							NaturalMaxHeightsCm[DistanceIndex] = FMath::Max(
+								NaturalMaxHeightsCm[DistanceIndex], SampleHeightCm);
+							NaturalMaxSlope = FMath::Max(NaturalMaxSlope,
+								FMath::Abs(SampleHeightCm - ExpectedHeightCm) / DistanceCm);
+						}
+					}
+					const double NaturalRange10mCm =
+						NaturalMaxHeightsCm[0] - NaturalMinHeightsCm[0];
+					const double NaturalRange100mCm =
+						NaturalMaxHeightsCm[1] - NaturalMinHeightsCm[1];
+					const double NaturalRange250mCm =
+						NaturalMaxHeightsCm[2] - NaturalMinHeightsCm[2];
+					if (NaturalHeightfieldCollisionDeltaCm
+							> MaximumNaturalHeightfieldCollisionDeltaCm
+						|| NaturalRange10mCm < MinimumNaturalRange10mCm
+						|| NaturalRange100mCm < MinimumProofRange100mCm
+						|| NaturalRange250mCm < MinimumProofRange250mCm
+						|| NaturalMaxSlope > MaximumProofSlope)
+					{
+						return Fail(FString::Printf(
+							TEXT("natural production landing is not the same readable WorldScape heightfield collisionDelta=%.2fcm range10m=%.2fcm range100m=%.2fcm range250m=%.2fcm maxSlope=%.5f"),
+							NaturalHeightfieldCollisionDeltaCm, NaturalRange10mCm,
+							NaturalRange100mCm, NaturalRange250mCm,
+							NaturalMaxSlope));
+					}
+
+					// Preserve the exact production-selected patch before the independent
+					// manual approach regression moves the pawn away from it.  The final
+					// render/collision proof returns here; it never searches for or teleports
+					// to a more favourable automation-only relief patch.
+					PhysicalSurfaceProbeOutward = PawnOutward;
+					PhysicalSurfaceSpawnLocation = GravityPawn->GetActorLocation();
+					PhysicalSurfaceProofForward = FVector::VectorPlaneProject(
+						GravityPawn->GetActorForwardVector(), PawnOutward).GetSafeNormal();
+					if (PhysicalSurfaceProofForward.IsNearlyZero())
+					{
+						PhysicalSurfaceProofForward = NaturalTangentU;
+					}
+					bNaturalSurfaceLandingValidated = true;
+					UE_LOG(LogTemp, Display,
+						TEXT("[APS.Handoff.NaturalSurface] PASS pawn=%s body=%s terrainComponent=%s footClearance=%.2fcm speed=%.2f gravityType=%d frames=%d heightfieldDelta=%.2fcm renderCollisionDelta=%.2fcm relief=[%.2f,%.2f,%.2f]cm maxSlope=%.5f location=%s"),
+						*GetNameSafe(GravityPawn), *GetNameSafe(Planet),
+						*GetNameSafe(NaturalTerrainHit.GetComponent()), FootClearanceCm,
+						PawnSpeedCmPerSecond, static_cast<int32>(GravityType),
+						NaturalSurfaceSettleFrames, NaturalHeightfieldCollisionDeltaCm,
+						NaturalRenderCollisionDeltaCm, NaturalRange10mCm,
+						NaturalRange100mCm, NaturalRange250mCm, NaturalMaxSlope,
+						*GravityPawn->GetActorLocation().ToCompactString());
+				}
+
+				// Preserve the production landing proof above before simulating the user's
+				// separate station/orbit -> manual approach route. The manual phase returns
+				// here, then the existing resolver/best-patch visual proof may relocate the pawn.
+				if (!bManualApproachObserverValidated)
+				{
+					Step = EStep::ValidateManualApproachObserver;
+					StepStartSeconds = Now;
+					return false;
+				}
+
+				// The manual approach phase intentionally moved the pawn. Return to the
+				// exact direction selected and validated by production, not to an
+				// automation-only global best patch.
+				if (PhysicalSurfaceProbeOutward.IsNearlyZero())
+				{
+					return Fail(TEXT("natural production landing direction was not preserved"));
+				}
+				const FVector SurfaceCenter = Root->GetActorLocation();
+				PhysicalSurfaceProbeOutward = PhysicalSurfaceProbeOutward.GetSafeNormal();
+				const double NaturalSelectedHeightCm = Root->GetGroundHeight(
+					SurfaceCenter + PhysicalSurfaceProbeOutward * Root->PlanetScale, false);
+				const double CapsuleHalfHeightCm = IsValid(PawnCapsule)
+					? PawnCapsule->GetScaledCapsuleHalfHeight() : 0.0;
+				const double ProductionPatchClearanceCm = FMath::Max(
+					500.0, CapsuleHalfHeightCm + 100.0);
+				if (!FMath::IsFinite(NaturalSelectedHeightCm))
+				{
+					return Fail(TEXT("preserved production landing returned a non-finite WorldScape height"));
+				}
+				PhysicalSurfaceSpawnLocation = SurfaceCenter + PhysicalSurfaceProbeOutward
+					* (Root->PlanetScale + NaturalSelectedHeightCm
+						+ ProductionPatchClearanceCm);
+				if (IsValid(PawnCapsule))
+				{
+					PawnCapsule->SetPhysicsLinearVelocity(FVector::ZeroVector);
+				}
+				if (!GravityPawn->SetActorLocation(PhysicalSurfaceSpawnLocation, false,
+					nullptr, ETeleportType::TeleportPhysics))
+				{
+					return Fail(TEXT("could not return gameplay pawn to natural production landing"));
+				}
+				bPhysicalSurfaceProbeInitialized = true;
+				UE_LOG(LogTemp, Display,
+					TEXT("[APS.Handoff.PhysicalSurface] restored natural production patch spawn=%s height=%.2fcm clearance=%.2fcm capsuleHalf=%.2fcm"),
+					*PhysicalSurfaceSpawnLocation.ToCompactString(),
+					NaturalSelectedHeightCm, ProductionPatchClearanceCm,
+					CapsuleHalfHeightCm);
+				return false;
+
+#if 0 // Superseded: the smoke must never hide a flat production spawn with a best-patch teleport.
+				const ECharSpawnPlace PreviousSpawnPlace = Generator->CharSpawnPlace;
+				Generator->CharSpawnPlace = ECharSpawnPlace::PlanetSurface;
+				FVector ResolvedSurfaceSpawnLocation = FVector::ZeroVector;
+				const bool bResolvedSurfaceSpawn = Generator->ResolveSpawnLocation(
+					nullptr, ResolvedSurfaceSpawnLocation);
+				Generator->CharSpawnPlace = PreviousSpawnPlace;
+				Surface = Planet->PlanetaryEnvironmentGenerator;
+				Root = IsValid(Surface) ? Surface->WorldScapeRootInstance : nullptr;
+				if (!bResolvedSurfaceSpawn || !IsValid(Root)
+					|| ResolvedSurfaceSpawnLocation.ContainsNaN())
+				{
+					return Fail(TEXT("PlanetSurface spawn could not resolve against the active WorldScape root"));
+				}
+
+				const FVector SurfaceCenter = Root->GetActorLocation();
+				const FVector ResolvedSpawnOutward = (ResolvedSurfaceSpawnLocation - SurfaceCenter)
+					.GetSafeNormal(UE_DOUBLE_SMALL_NUMBER, Planet->GetActorUpVector());
+				const double ResolvedHeightCm = Root->GetGroundHeight(
+					SurfaceCenter + ResolvedSpawnOutward * Root->PlanetScale, false);
+				const double ResolvedSpawnClearanceCm = FVector::Distance(
+					ResolvedSurfaceSpawnLocation, SurfaceCenter)
+					- Root->PlanetScale - ResolvedHeightCm;
+				const double CapsuleHalfHeightCm = IsValid(PawnCapsule)
+					? PawnCapsule->GetScaledCapsuleHalfHeight() : 0.0;
+				if (!FMath::IsFinite(ResolvedHeightCm)
+					|| !FMath::IsFinite(ResolvedSpawnClearanceCm)
+					|| ResolvedSpawnClearanceCm < CapsuleHalfHeightCm + 25.0
+					|| ResolvedSpawnClearanceCm > 1000.0)
+				{
+					return Fail(FString::Printf(
+						TEXT("PlanetSurface spawn did not use WorldScape height plus capsule clearance height=%.2f clearance=%.2f capsuleHalf=%.2f"),
+						ResolvedHeightCm, ResolvedSpawnClearanceCm, CapsuleHalfHeightCm));
+				}
+
+				// ResolveSpawnLocation proves the production handoff. For the visual proof,
+				// deterministically choose a dry Cryogenic patch that contains measurable
+				// near-, mid- and far-field geometry. This is still the exact same
+				// UAPSWorldScapePlanetNoise queried by render and collision generation.
+				TArray<FVector> CandidateDirections;
+				CandidateDirections.Reserve(PhysicalProofCandidateCount + 1);
+				CandidateDirections.Add(ResolvedSpawnOutward);
+				const double GoldenAngle = UE_PI * (3.0 - FMath::Sqrt(5.0));
+				for (int32 CandidateIndex = 0;
+					CandidateIndex < PhysicalProofCandidateCount; ++CandidateIndex)
+				{
+					const double UnitZ = 1.0 - 2.0
+						* (static_cast<double>(CandidateIndex) + 0.5)
+						/ static_cast<double>(PhysicalProofCandidateCount);
+					const double UnitRadius = FMath::Sqrt(FMath::Max(0.0, 1.0 - UnitZ * UnitZ));
+					const double Azimuth = GoldenAngle * static_cast<double>(CandidateIndex);
+					CandidateDirections.Add(FVector(
+						UnitRadius * FMath::Cos(Azimuth),
+						UnitRadius * FMath::Sin(Azimuth), UnitZ));
+				}
+
+				constexpr double ProofDistancesCm[3] = {10000.0, 25000.0, 100000.0};
+				const double OceanHeightCm = static_cast<double>(
+					Surface->ResolvedSurfaceProfile.OceanLevel) * Root->NoiseIntensity;
+				double BestCandidateScore = -TNumericLimits<double>::Max();
+				double BestCandidateHeightCm = 0.0;
+				double BestCandidateRangesCm[3] = {0.0, 0.0, 0.0};
+				double BestCandidateMaxSlope = 0.0;
+				FVector BestCandidateOutward = FVector::ZeroVector;
+				FVector BestCandidateForward = FVector::ZeroVector;
+				TArray<double> DryCandidateRanges100mCm;
+				DryCandidateRanges100mCm.Reserve(CandidateDirections.Num());
+				for (const FVector& CandidateDirectionValue : CandidateDirections)
+				{
+					const FVector CandidateOutward = CandidateDirectionValue.GetSafeNormal();
+					const double CandidateHeightCm = Root->GetGroundHeight(
+						SurfaceCenter + CandidateOutward * Root->PlanetScale, false);
+					if (!FMath::IsFinite(CandidateHeightCm)
+						|| CandidateHeightCm - OceanHeightCm < 5000.0)
+					{
+						continue;
+					}
+
+					const FVector ReferenceAxis = FMath::Abs(CandidateOutward.Z) < 0.82
+						? FVector::UpVector : FVector::ForwardVector;
+					const FVector TangentU = FVector::CrossProduct(
+						ReferenceAxis, CandidateOutward).GetSafeNormal();
+					const FVector TangentV = FVector::CrossProduct(
+						CandidateOutward, TangentU).GetSafeNormal();
+					double MinHeightsCm[3] = {
+						CandidateHeightCm, CandidateHeightCm, CandidateHeightCm};
+					double MaxHeightsCm[3] = {
+						CandidateHeightCm, CandidateHeightCm, CandidateHeightCm};
+					double CandidateMaxSlope = 0.0;
+					double BestDirectionScore = -TNumericLimits<double>::Max();
+					FVector CandidateForward = TangentU;
+					for (int32 DirectionIndex = 0;
+						DirectionIndex < PhysicalProofDirectionCount; ++DirectionIndex)
+					{
+						const double Angle = UE_TWO_PI * static_cast<double>(DirectionIndex)
+							/ static_cast<double>(PhysicalProofDirectionCount);
+						const FVector Tangent = TangentU * FMath::Cos(Angle)
+							+ TangentV * FMath::Sin(Angle);
+						double DirectionScore = 0.0;
+						for (int32 DistanceIndex = 0; DistanceIndex < 3; ++DistanceIndex)
+						{
+							const double DistanceCm = ProofDistancesCm[DistanceIndex];
+							const FVector SampleDirection = (CandidateOutward
+								+ Tangent * (DistanceCm / Root->PlanetScale)).GetSafeNormal();
+							const double SampleHeightCm = Root->GetGroundHeight(
+								SurfaceCenter + SampleDirection * Root->PlanetScale, false);
+							if (!FMath::IsFinite(SampleHeightCm))
+							{
+								DirectionScore = -TNumericLimits<double>::Max();
+								break;
+							}
+							MinHeightsCm[DistanceIndex] = FMath::Min(
+								MinHeightsCm[DistanceIndex], SampleHeightCm);
+							MaxHeightsCm[DistanceIndex] = FMath::Max(
+								MaxHeightsCm[DistanceIndex], SampleHeightCm);
+							const double HeightDeltaCm = FMath::Abs(
+								SampleHeightCm - CandidateHeightCm);
+							CandidateMaxSlope = FMath::Max(
+								CandidateMaxSlope, HeightDeltaCm / DistanceCm);
+							const double TargetRangeCm = DistanceIndex == 0
+								? MinimumProofRange100mCm : (DistanceIndex == 1
+									? MinimumProofRange250mCm : MinimumProofRange1kmCm);
+							DirectionScore += HeightDeltaCm / TargetRangeCm;
+						}
+						if (DirectionScore > BestDirectionScore)
+						{
+							BestDirectionScore = DirectionScore;
+							CandidateForward = Tangent;
+						}
+					}
+
+					const double CandidateRangesCm[3] = {
+						MaxHeightsCm[0] - MinHeightsCm[0],
+						MaxHeightsCm[1] - MinHeightsCm[1],
+						MaxHeightsCm[2] - MinHeightsCm[2]};
+					const bool bDryNeighbourhood = MinHeightsCm[2] - OceanHeightCm >= 1000.0;
+					if (!bDryNeighbourhood || CandidateMaxSlope > MaximumProofSlope)
+					{
+						continue;
+					}
+					DryCandidateRanges100mCm.Add(CandidateRangesCm[0]);
+					const double CandidateScore =
+						CandidateRangesCm[0] / MinimumProofRange100mCm
+						+ CandidateRangesCm[1] / MinimumProofRange250mCm
+						+ CandidateRangesCm[2] / MinimumProofRange1kmCm
+						+ BestDirectionScore * 0.25;
+					if (CandidateScore > BestCandidateScore)
+					{
+						BestCandidateScore = CandidateScore;
+						BestCandidateHeightCm = CandidateHeightCm;
+						BestCandidateRangesCm[0] = CandidateRangesCm[0];
+						BestCandidateRangesCm[1] = CandidateRangesCm[1];
+						BestCandidateRangesCm[2] = CandidateRangesCm[2];
+						BestCandidateMaxSlope = CandidateMaxSlope;
+						BestCandidateOutward = CandidateOutward;
+						BestCandidateForward = CandidateForward;
+					}
+				}
+
+				DryCandidateRanges100mCm.Sort();
+				const int32 P10Index = DryCandidateRanges100mCm.IsEmpty() ? INDEX_NONE
+					: FMath::Clamp(FMath::FloorToInt(
+						static_cast<double>(DryCandidateRanges100mCm.Num() - 1) * 0.10),
+						0, DryCandidateRanges100mCm.Num() - 1);
+				const double DryPatchP10Range100mCm = P10Index == INDEX_NONE
+					? 0.0 : DryCandidateRanges100mCm[P10Index];
+				if (DryPatchP10Range100mCm < MinimumProofP10Range100mCm)
+				{
+					return Fail(FString::Printf(
+						TEXT("standard Frozen profile is broadly flat at 100m p10=%.2fcm minimum=%.2fcm dryPatches=%d"),
+						DryPatchP10Range100mCm, MinimumProofP10Range100mCm,
+						DryCandidateRanges100mCm.Num()));
+				}
+
+				if (BestCandidateOutward.IsNearlyZero()
+					|| BestCandidateRangesCm[0] < MinimumProofRange100mCm
+					|| BestCandidateRangesCm[1] < MinimumProofRange250mCm
+					|| BestCandidateRangesCm[2] < MinimumProofRange1kmCm)
+				{
+					return Fail(FString::Printf(
+						TEXT("standard Frozen profile has no dry readable relief patch range100m=%.2fcm range250m=%.2fcm range1km=%.2fcm maxSlope=%.5f"),
+						BestCandidateRangesCm[0], BestCandidateRangesCm[1],
+						BestCandidateRangesCm[2], BestCandidateMaxSlope));
+				}
+
+				PhysicalSurfaceProbeOutward = BestCandidateOutward;
+				PhysicalSurfaceProofForward = BestCandidateForward;
+				const double ProofSpawnClearanceCm = FMath::Max(
+					500.0, CapsuleHalfHeightCm + 100.0);
+				PhysicalSurfaceSpawnLocation = SurfaceCenter + BestCandidateOutward
+					* (Root->PlanetScale + BestCandidateHeightCm + ProofSpawnClearanceCm);
+
+				if (IsValid(PawnCapsule))
+				{
+					PawnCapsule->SetPhysicsLinearVelocity(FVector::ZeroVector);
+				}
+				if (!GravityPawn->SetActorLocation(PhysicalSurfaceSpawnLocation, false,
+					nullptr, ETeleportType::TeleportPhysics))
+				{
+					return Fail(TEXT("could not teleport gameplay pawn to resolved physical surface probe"));
+				}
+				bPhysicalSurfaceProbeInitialized = true;
+				UE_LOG(LogTemp, Display,
+					TEXT("[APS.Handoff.PhysicalSurface] resolverSpawn=%s resolverHeight=%.2fcm resolverClearance=%.2fcm proofSpawn=%s proofHeight=%.2fcm p10Range100m=%.2fcm dryPatches=%d ranges=[%.2f,%.2f,%.2f]cm maxSlope=%.5f capsuleHalf=%.2fcm"),
+					*ResolvedSurfaceSpawnLocation.ToCompactString(), ResolvedHeightCm,
+					ResolvedSpawnClearanceCm, *PhysicalSurfaceSpawnLocation.ToCompactString(),
+					BestCandidateHeightCm, DryPatchP10Range100mCm,
+					DryCandidateRanges100mCm.Num(), BestCandidateRangesCm[0],
+					BestCandidateRangesCm[1], BestCandidateRangesCm[2],
+					BestCandidateMaxSlope, CapsuleHalfHeightCm);
+				return false;
+#endif
+			}
+
+			// Keep the pawn at the selected landing point until WorldScape has cooked the
+			// first local collision patch. This isolates collision generation from the
+			// pawn's short gravity fall; the resulting trace still queries real physics.
+			if (IsValid(PawnCapsule))
+			{
+				PawnCapsule->SetPhysicsLinearVelocity(FVector::ZeroVector);
+			}
+			GravityPawn->SetActorLocation(PhysicalSurfaceSpawnLocation, false,
+				nullptr, ETeleportType::TeleportPhysics);
+			const FVector PhysicalRenderObserverWorldPosition = Root->bOverridePlayerPosition
+				? Root->OverridedPlayerPosition : Root->PlayerWorldPos.ToFVector();
+			FVisibleWorldScapeRenderLodProof PhysicalRenderProof;
+			FString PhysicalRenderFailure;
+			if (!BuildVisibleWorldScapeRenderLod0Proof(Root,
+				PhysicalRenderObserverWorldPosition, PhysicalRenderProof,
+				PhysicalRenderFailure))
+			{
+				if (Now - StepStartSeconds > PhysicalSurfaceTimeoutSeconds)
+				{
+					return Fail(FString::Printf(
+						TEXT("visible WorldScape terrain LOD0 never represented the physical probe: %s vertices=%d relief=%.3fcm noiseDelta=%.3fcm centerOffset=%.3fcm"),
+						*PhysicalRenderFailure, PhysicalRenderProof.VertexCount,
+						PhysicalRenderProof.ReliefVariationCm,
+						PhysicalRenderProof.MaximumNoiseDeltaCm,
+						PhysicalRenderProof.ObserverCenterOffsetCm));
+				}
+				return false;
+			}
+			if (Root->CollisionLods.IsEmpty())
+			{
+				if (Now - StepStartSeconds > PhysicalSurfaceTimeoutSeconds)
+				{
+					return Fail(FString::Printf(
+						TEXT("WorldScape produced no collision LOD near gameplay pawn in 20 seconds runtime=%d allPlayers=%d editor=%d"),
+						Root->bGenerateCollision ? 1 : 0,
+						Root->bGenerateCollisionForAllPlayer ? 1 : 0,
+#if WITH_EDITOR
+						Root->bGenerateCollisionInEditor ? 1 : 0));
+#else
+						0));
+#endif
+				}
+				return false;
+			}
+
+			TSet<UPrimitiveComponent*> CollisionComponents;
+			double MinCollisionHeightCm = TNumericLimits<double>::Max();
+			double MaxCollisionHeightCm = -TNumericLimits<double>::Max();
+			int32 CollisionVertexCount = 0;
+			for (const UWorldScapeLod* CollisionLod : Root->CollisionLods)
+			{
+				if (!IsValid(CollisionLod) || !IsValid(CollisionLod->Mesh)
+					|| CollisionLod->Mesh->GetCollisionEnabled() == ECollisionEnabled::NoCollision
+					|| CollisionLod->Vertices.IsEmpty() || CollisionLod->Triangles.IsEmpty())
+				{
+					continue;
+				}
+				CollisionComponents.Add(CollisionLod->Mesh);
+				const FTransform MeshTransform = CollisionLod->Mesh->GetComponentTransform();
+				for (const FVector& LocalVertex : CollisionLod->Vertices)
+				{
+					const double RadialHeightCm = FVector::Distance(
+						MeshTransform.TransformPosition(LocalVertex), Root->GetActorLocation())
+						- Root->PlanetScale;
+					if (FMath::IsFinite(RadialHeightCm))
+					{
+						MinCollisionHeightCm = FMath::Min(MinCollisionHeightCm, RadialHeightCm);
+						MaxCollisionHeightCm = FMath::Max(MaxCollisionHeightCm, RadialHeightCm);
+						++CollisionVertexCount;
+					}
+				}
+			}
+			if (CollisionComponents.IsEmpty() || CollisionVertexCount < 3)
+			{
+				if (Now - StepStartSeconds > PhysicalSurfaceTimeoutSeconds)
+				{
+					return Fail(TEXT("WorldScape collision LODs exist but contain no cooked terrain geometry"));
+				}
+				return false;
+			}
+
+			for (const UWorldScapeLod* OceanLod : Root->WorldScapeLodOcean)
+			{
+				if (IsValid(OceanLod) && IsValid(OceanLod->Mesh)
+					&& OceanLod->Mesh->GetCollisionEnabled() != ECollisionEnabled::NoCollision)
+				{
+					return Fail(TEXT("WorldScape ocean presentation LOD became a gameplay collider"));
+				}
+			}
+
+			const FVector SurfaceCenter = Root->GetActorLocation();
+			const FVector ProbeOutward = PhysicalSurfaceProbeOutward.GetSafeNormal(
+				UE_DOUBLE_SMALL_NUMBER, (PhysicalSurfaceSpawnLocation - SurfaceCenter)
+					.GetSafeNormal(UE_DOUBLE_SMALL_NUMBER, Planet->GetActorUpVector()));
+			const double ExpectedHeightCm = Root->GetGroundHeight(
+				SurfaceCenter + ProbeOutward * Root->PlanetScale, false);
+			const FVector TraceStart = SurfaceCenter + ProbeOutward
+				* (Root->PlanetScale + ExpectedHeightCm + 100000.0);
+			const FVector TraceEnd = SurfaceCenter + ProbeOutward
+				* (Root->PlanetScale + ExpectedHeightCm - 100000.0);
+			FCollisionQueryParams TraceParams(
+				SCENE_QUERY_STAT(APSGeneratedPhysicalWorldScapeSurface), true, GravityPawn);
+			FHitResult SurfaceHit;
+			if (!World->LineTraceSingleByChannel(
+				SurfaceHit, TraceStart, TraceEnd, ECC_Visibility, TraceParams)
+				|| !CollisionComponents.Contains(SurfaceHit.GetComponent()))
+			{
+				if (Now - StepStartSeconds > PhysicalSurfaceTimeoutSeconds)
+				{
+					return Fail(FString::Printf(
+						TEXT("ground trace did not hit WorldScape collision component hitActor=%s hitComponent=%s collisionLods=%d"),
+						*GetNameSafe(SurfaceHit.GetActor()), *GetNameSafe(SurfaceHit.GetComponent()),
+						Root->CollisionLods.Num()));
+				}
+				return false;
+			}
+
+			// Prove that the *current physical collision* around the production landing
+			// point is the same displaced surface as WorldScape noise.  The old global
+			// collision-vertex range plus one central trace could still pass when a broad
+			// flat shell happened to coexist with displaced geometry elsewhere.
+			const FVector LocalReferenceAxis = FMath::Abs(ProbeOutward.Z) < 0.82
+				? FVector::UpVector : FVector::ForwardVector;
+			const FVector LocalTangentU = FVector::CrossProduct(
+				LocalReferenceAxis, ProbeOutward).GetSafeNormal(
+					UE_DOUBLE_SMALL_NUMBER, FVector::ForwardVector);
+			const FVector LocalTangentV = FVector::CrossProduct(
+				ProbeOutward, LocalTangentU).GetSafeNormal(
+					UE_DOUBLE_SMALL_NUMBER, FVector::RightVector);
+			// The production collision patch is roughly 74 m wide.  Physical probes
+			// must stay inside that patch; wider relief remains covered by the
+			// independent analytic/render checks.
+			constexpr double LocalProbeDistancesCm[3] = {
+				500.0, 1500.0, 3000.0};
+			constexpr double MinimumLocalRangesCm[3] = {
+				MinimumLocalCollisionRange5mCm,
+				MinimumLocalCollisionRange15mCm,
+				MinimumLocalCollisionRange30mCm};
+			const double CentralCollisionHeightCm = FVector::Distance(
+				SurfaceHit.ImpactPoint, SurfaceCenter) - Root->PlanetScale;
+			const double CentralNoiseHeightCm = Root->GetGroundHeight(
+				SurfaceCenter + ProbeOutward * Root->PlanetScale, false);
+			if (!FMath::IsFinite(CentralCollisionHeightCm)
+				|| !FMath::IsFinite(CentralNoiseHeightCm)
+				|| FMath::Abs(CentralCollisionHeightCm - CentralNoiseHeightCm)
+					> MaximumLocalCollisionNoiseDeltaCm)
+			{
+				return Fail(FString::Printf(
+					TEXT("central WorldScape collision diverges from noise collision=%.2fcm noise=%.2fcm maximum=%.2fcm"),
+					CentralCollisionHeightCm, CentralNoiseHeightCm,
+					MaximumLocalCollisionNoiseDeltaCm));
+			}
+			double LocalMinimumCollisionHeightsCm[3] = {
+				CentralCollisionHeightCm, CentralCollisionHeightCm,
+				CentralCollisionHeightCm};
+			double LocalMaximumCollisionHeightsCm[3] = {
+				CentralCollisionHeightCm, CentralCollisionHeightCm,
+				CentralCollisionHeightCm};
+			double LocalMinimumNoiseHeightsCm[3] = {
+				CentralNoiseHeightCm, CentralNoiseHeightCm, CentralNoiseHeightCm};
+			double LocalMaximumNoiseHeightsCm[3] = {
+				CentralNoiseHeightCm, CentralNoiseHeightCm, CentralNoiseHeightCm};
+			int32 LocalCollisionSampleCounts[3] = {0, 0, 0};
+			double MaximumLocalNoiseDeltaCm = FMath::Abs(
+				CentralCollisionHeightCm - CentralNoiseHeightCm);
+			const double LocalTraceHalfSpanCm = FMath::Max(250000.0,
+				FMath::Abs(static_cast<double>(Root->NoiseIntensity)) * 2.0
+					+ 100000.0);
+			FCollisionQueryParams LocalTraceParams(
+				SCENE_QUERY_STAT(APSGeneratedLocalWorldScapeRelief), true, GravityPawn);
+			for (int32 DirectionIndex = 0;
+				DirectionIndex < PhysicalProofDirectionCount; ++DirectionIndex)
+			{
+				const double Angle = UE_TWO_PI * static_cast<double>(DirectionIndex)
+					/ static_cast<double>(PhysicalProofDirectionCount);
+				const FVector LocalTangent = LocalTangentU * FMath::Cos(Angle)
+					+ LocalTangentV * FMath::Sin(Angle);
+				for (int32 DistanceIndex = 0; DistanceIndex < 3; ++DistanceIndex)
+				{
+					const double DistanceCm = LocalProbeDistancesCm[DistanceIndex];
+					const FVector SampleDirection = (ProbeOutward
+						+ LocalTangent * (DistanceCm / Root->PlanetScale)).GetSafeNormal();
+					const double SampleNoiseHeightCm = Root->GetGroundHeight(
+						SurfaceCenter + SampleDirection * Root->PlanetScale, false);
+					if (SampleDirection.IsNearlyZero()
+						|| !FMath::IsFinite(SampleNoiseHeightCm))
+					{
+						return Fail(TEXT("local WorldScape collision proof produced a non-finite analytic sample"));
+					}
+
+					const FVector LocalTraceStart = SurfaceCenter + SampleDirection
+						* (Root->PlanetScale + SampleNoiseHeightCm + LocalTraceHalfSpanCm);
+					const FVector LocalTraceEnd = SurfaceCenter + SampleDirection
+						* (Root->PlanetScale + SampleNoiseHeightCm - LocalTraceHalfSpanCm);
+					FHitResult LocalTerrainHit;
+					TArray<FHitResult> LocalWorldHits;
+					World->LineTraceMultiByChannel(LocalWorldHits, LocalTraceStart,
+						LocalTraceEnd, ECC_Visibility, LocalTraceParams);
+					for (const FHitResult& CandidateHit : LocalWorldHits)
+					{
+						if (CandidateHit.bBlockingHit
+							&& CollisionComponents.Contains(CandidateHit.GetComponent()))
+						{
+							LocalTerrainHit = CandidateHit;
+							break;
+						}
+					}
+					if (!LocalTerrainHit.bBlockingHit)
+					{
+						continue;
+					}
+
+					const double CollisionHeightCm = FVector::Distance(
+						LocalTerrainHit.ImpactPoint, SurfaceCenter) - Root->PlanetScale;
+					if (!FMath::IsFinite(CollisionHeightCm))
+					{
+						return Fail(TEXT("local WorldScape collision proof produced a non-finite collision height"));
+					}
+					LocalMinimumCollisionHeightsCm[DistanceIndex] = FMath::Min(
+						LocalMinimumCollisionHeightsCm[DistanceIndex], CollisionHeightCm);
+					LocalMaximumCollisionHeightsCm[DistanceIndex] = FMath::Max(
+						LocalMaximumCollisionHeightsCm[DistanceIndex], CollisionHeightCm);
+					LocalMinimumNoiseHeightsCm[DistanceIndex] = FMath::Min(
+						LocalMinimumNoiseHeightsCm[DistanceIndex], SampleNoiseHeightCm);
+					LocalMaximumNoiseHeightsCm[DistanceIndex] = FMath::Max(
+						LocalMaximumNoiseHeightsCm[DistanceIndex], SampleNoiseHeightCm);
+					++LocalCollisionSampleCounts[DistanceIndex];
+					MaximumLocalNoiseDeltaCm = FMath::Max(MaximumLocalNoiseDeltaCm,
+						FMath::Abs(CollisionHeightCm - SampleNoiseHeightCm));
+				}
+			}
+
+			double LocalCollisionRangesCm[3] = {0.0, 0.0, 0.0};
+			double LocalNoiseRangesCm[3] = {0.0, 0.0, 0.0};
+			double RequiredLocalRangesCm[3] = {0.0, 0.0, 0.0};
+			bool bLocalCollisionProofComplete =
+				MaximumLocalNoiseDeltaCm <= MaximumLocalCollisionNoiseDeltaCm;
+			for (int32 DistanceIndex = 0; DistanceIndex < 3; ++DistanceIndex)
+			{
+				LocalCollisionRangesCm[DistanceIndex] =
+					LocalMaximumCollisionHeightsCm[DistanceIndex]
+						- LocalMinimumCollisionHeightsCm[DistanceIndex];
+				LocalNoiseRangesCm[DistanceIndex] =
+					LocalMaximumNoiseHeightsCm[DistanceIndex]
+						- LocalMinimumNoiseHeightsCm[DistanceIndex];
+				RequiredLocalRangesCm[DistanceIndex] = FMath::Max(
+					MinimumLocalRangesCm[DistanceIndex],
+					LocalNoiseRangesCm[DistanceIndex]
+						* MinimumLocalCollisionNoiseFraction);
+				bLocalCollisionProofComplete = bLocalCollisionProofComplete
+					&& LocalCollisionSampleCounts[DistanceIndex]
+						>= MinimumLocalCollisionSamplesPerRing
+					&& LocalCollisionRangesCm[DistanceIndex]
+						>= RequiredLocalRangesCm[DistanceIndex];
+			}
+			if (!bLocalCollisionProofComplete)
+			{
+				if (Now - StepStartSeconds > PhysicalSurfaceTimeoutSeconds)
+				{
+					return Fail(FString::Printf(
+						TEXT("local WorldScape collision is incomplete, flat, or diverges from noise samples=[%d,%d,%d]/%d collisionRanges=[%.2f,%.2f,%.2f]cm noiseRanges=[%.2f,%.2f,%.2f]cm required=[%.2f,%.2f,%.2f]cm maxNoiseDelta=%.2fcm maximum=%.2fcm"),
+						LocalCollisionSampleCounts[0], LocalCollisionSampleCounts[1],
+						LocalCollisionSampleCounts[2], MinimumLocalCollisionSamplesPerRing,
+						LocalCollisionRangesCm[0], LocalCollisionRangesCm[1],
+						LocalCollisionRangesCm[2], LocalNoiseRangesCm[0],
+						LocalNoiseRangesCm[1], LocalNoiseRangesCm[2],
+						RequiredLocalRangesCm[0], RequiredLocalRangesCm[1],
+						RequiredLocalRangesCm[2],
+						MaximumLocalNoiseDeltaCm, MaximumLocalCollisionNoiseDeltaCm));
+				}
+				return false;
+			}
+
+			const double CollisionReliefVariationCm =
+				MaxCollisionHeightCm - MinCollisionHeightCm;
+			if (CollisionReliefVariationCm < MinimumCollisionReliefVariationCm)
+			{
+				return Fail(FString::Printf(
+					TEXT("WorldScape collision surface is effectively flat localVariation=%.3fcm vertices=%d minimum=%.3fcm"),
+					CollisionReliefVariationCm, CollisionVertexCount,
+					MinimumCollisionReliefVariationCm));
+			}
+			if (Planet->PlanetGravityStrength <= UE_SMALL_NUMBER)
+			{
+				return Fail(FString::Printf(
+					TEXT("generated home planet has no positive gameplay gravity strength=%.6f"),
+					Planet->PlanetGravityStrength));
+			}
+
+			const double TraceHeightCm = FVector::Distance(
+				SurfaceHit.ImpactPoint, SurfaceCenter) - Root->PlanetScale;
+			const double RenderCollisionHeightDeltaCm = FMath::Abs(
+				PhysicalRenderProof.ClosestObserverHeightCm - TraceHeightCm);
+			const double MaximumRenderSampleDistanceCm = FMath::Max(
+				static_cast<double>(Root->TriangleSize) * 4.0, 500.0);
+			if (FMath::Abs(TraceHeightCm - ExpectedHeightCm) > 200.0
+				|| !FMath::IsFinite(RenderCollisionHeightDeltaCm)
+				|| RenderCollisionHeightDeltaCm > 200.0
+				|| PhysicalRenderProof.ClosestObserverSurfaceDistanceCm
+					> MaximumRenderSampleDistanceCm)
+			{
+				return Fail(FString::Printf(
+					TEXT("natural WorldScape render/noise/collision diverged expected=%.2fcm trace=%.2fcm noiseCollisionDelta=%.2fcm renderCollisionDelta=%.2fcm nearestRenderSample=%.2fcm maximumSample=%.2fcm renderRelief=%.2fcm renderNoiseDelta=%.2fcm"),
+					ExpectedHeightCm, TraceHeightCm,
+					FMath::Abs(TraceHeightCm - ExpectedHeightCm),
+					RenderCollisionHeightDeltaCm,
+					PhysicalRenderProof.ClosestObserverSurfaceDistanceCm,
+					MaximumRenderSampleDistanceCm,
+					PhysicalRenderProof.ReliefVariationCm,
+					PhysicalRenderProof.MaximumNoiseDeltaCm));
+			}
+			UE_LOG(LogTemp, Display,
+				TEXT("[APS.Handoff.PhysicalSurface] PASS source=natural-production-patch renderLod0Vertices=%d renderRelief=%.2fcm renderNoiseDelta=%.2fcm renderCenterOffset=%.2fcm renderClosestObserverVertex=%.2fcm renderCollisionDelta=%.2fcm collisionLods=%d traceActor=%s traceComponent=%s expectedHeight=%.2fcm traceHeight=%.2fcm collisionRelief=%.2fcm collisionVertices=%d localCollisionSamples=[%d,%d,%d] localCollisionRelief=[%.2f,%.2f,%.2f]cm localCollisionNoiseDelta=%.2fcm gravity=%.6f noise=%s"),
+				PhysicalRenderProof.VertexCount, PhysicalRenderProof.ReliefVariationCm,
+				PhysicalRenderProof.MaximumNoiseDeltaCm,
+				PhysicalRenderProof.ObserverCenterOffsetCm,
+				PhysicalRenderProof.ClosestObserverSurfaceDistanceCm,
+				RenderCollisionHeightDeltaCm,
+				Root->CollisionLods.Num(), *GetNameSafe(SurfaceHit.GetActor()),
+				*GetNameSafe(SurfaceHit.GetComponent()), ExpectedHeightCm, TraceHeightCm,
+				CollisionReliefVariationCm, CollisionVertexCount,
+				LocalCollisionSampleCounts[0], LocalCollisionSampleCounts[1],
+				LocalCollisionSampleCounts[2], LocalCollisionRangesCm[0],
+				LocalCollisionRangesCm[1], LocalCollisionRangesCm[2],
+				MaximumLocalNoiseDeltaCm, Planet->PlanetGravityStrength,
+				*GetNameSafe(Root->WorldScapeNoise));
+
+			// Put the capsule on the traced collision, not at the five-metre generation
+			// clearance used to wake WorldScape. This makes the character a useful scale
+			// reference instead of a visibly suspended zero-G subject.
+			const double CapsuleHalfHeightCm = IsValid(PawnCapsule)
+				? PawnCapsule->GetScaledCapsuleHalfHeight() : 0.0;
+			PhysicalSurfaceSpawnLocation = SurfaceHit.ImpactPoint
+				+ ProbeOutward * (CapsuleHalfHeightCm + 2.0);
+
+			// Aim the third-person camera along the strongest coherent 100 m / 250 m /
+			// 1 km profile. Selecting by absolute delta (rather than the old highest-only
+			// sample) also captures downhill relief and produces a readable grazing view.
+			const FVector ReferenceAxis = FMath::Abs(ProbeOutward.Z) < 0.82
+				? FVector::UpVector : FVector::ForwardVector;
+			const FVector TangentU = FVector::CrossProduct(ReferenceAxis, ProbeOutward)
+				.GetSafeNormal(UE_DOUBLE_SMALL_NUMBER, FVector::ForwardVector);
+			const FVector TangentV = FVector::CrossProduct(ProbeOutward, TangentU)
+				.GetSafeNormal(UE_DOUBLE_SMALL_NUMBER, FVector::RightVector);
+			constexpr double ViewDistancesCm[3] = {10000.0, 25000.0, 100000.0};
+			FVector BestForward = PhysicalSurfaceProofForward.IsNearlyZero()
+				? TangentU : PhysicalSurfaceProofForward;
+			double BestViewScore = -TNumericLimits<double>::Max();
+			double BestViewDeltasCm[3] = {0.0, 0.0, 0.0};
+			double BestViewMaxSlope = 0.0;
+			for (int32 DirectionIndex = 0;
+				DirectionIndex < PhysicalProofDirectionCount; ++DirectionIndex)
+			{
+				const double Angle = UE_TWO_PI * static_cast<double>(DirectionIndex)
+					/ static_cast<double>(PhysicalProofDirectionCount);
+				const FVector Tangent = TangentU * FMath::Cos(Angle)
+					+ TangentV * FMath::Sin(Angle);
+				double DirectionDeltasCm[3] = {0.0, 0.0, 0.0};
+				double DirectionScore = 0.0;
+				double DirectionMaxSlope = 0.0;
+				for (int32 DistanceIndex = 0; DistanceIndex < 3; ++DistanceIndex)
+				{
+					const double DistanceCm = ViewDistancesCm[DistanceIndex];
+					const FVector SampleDirection = (ProbeOutward
+						+ Tangent * (DistanceCm / Root->PlanetScale)).GetSafeNormal();
+					const double SampleHeightCm = Root->GetGroundHeight(
+						SurfaceCenter + SampleDirection * Root->PlanetScale, false);
+					if (!FMath::IsFinite(SampleHeightCm))
+					{
+						DirectionScore = -TNumericLimits<double>::Max();
+						break;
+					}
+					DirectionDeltasCm[DistanceIndex] = SampleHeightCm - ExpectedHeightCm;
+					DirectionMaxSlope = FMath::Max(DirectionMaxSlope,
+						FMath::Abs(DirectionDeltasCm[DistanceIndex]) / DistanceCm);
+					const double TargetRangeCm = DistanceIndex == 0
+						? MinimumProofRange100mCm : (DistanceIndex == 1
+							? MinimumProofRange250mCm : MinimumProofRange1kmCm);
+					DirectionScore += FMath::Abs(DirectionDeltasCm[DistanceIndex])
+						/ (TargetRangeCm * 0.5);
+				}
+				if (DirectionMaxSlope <= MaximumProofSlope && DirectionScore > BestViewScore)
+				{
+					BestViewScore = DirectionScore;
+					BestForward = Tangent;
+					BestViewDeltasCm[0] = DirectionDeltasCm[0];
+					BestViewDeltasCm[1] = DirectionDeltasCm[1];
+					BestViewDeltasCm[2] = DirectionDeltasCm[2];
+					BestViewMaxSlope = DirectionMaxSlope;
+				}
+			}
+			// The landing patch already proves its full ring range at 100 m, 250 m and
+			// 1 km. A single tangent is allowed to crest and descend before 1 km; forcing
+			// one monotonic direction at all three radii rejected real rolling terrain.
+			// For the screenshot, require the near field that is actually visible behind
+			// the pawn, while retaining the measured 1 km delta in diagnostics.
+			if (FMath::Abs(BestViewDeltasCm[0]) < MinimumProofRange100mCm * 0.5
+				|| FMath::Abs(BestViewDeltasCm[1]) < MinimumProofRange250mCm * 0.5)
+			{
+				return Fail(FString::Printf(
+					TEXT("selected Frozen proof direction has a visually flat near field delta100m=%.2fcm delta250m=%.2fcm delta1km=%.2fcm maxSlope=%.5f"),
+					BestViewDeltasCm[0], BestViewDeltasCm[1], BestViewDeltasCm[2],
+					BestViewMaxSlope));
+			}
+			PhysicalSurfaceViewRotation = FRotationMatrix::MakeFromXZ(
+				BestForward, ProbeOutward).Rotator();
+			GravityPawn->SetActorRotation(
+				PhysicalSurfaceViewRotation, ETeleportType::TeleportPhysics);
+			if (USpringArmComponent* CameraSpringArm = FindPawnSpringArm(GravityPawn))
+			{
+				CameraSpringArm->bUsePawnControlRotation = false;
+				CameraSpringArm->TargetArmLength = 500.0f;
+				CameraSpringArm->SetRelativeLocation(FVector(0.0, 0.0, 55.0));
+				CameraSpringArm->SetRelativeRotation(FRotator(-8.0, 0.0, 0.0));
+			}
+			if (UCameraComponent* PawnCamera = FindPawnCamera(GravityPawn))
+			{
+				PawnCamera->SetFieldOfView(72.0f);
+			}
+			ScreenshotPath = FPaths::Combine(FPaths::ProjectSavedDir(),
+				TEXT("Screenshots/Windows/APS_GeneratedCivilization_PhysicalSurface.png"));
+			IFileManager::Get().Delete(*ScreenshotPath, false, true);
+			ScreenshotSettleFramesRemaining = 16;
+			UE_LOG(LogTemp, Display,
+				TEXT("[APS.Handoff.PhysicalSurface] settling grounded proof screenshot=%s viewDelta=[%.2f,%.2f,%.2f]cm maxSlope=%.5f grounded=%s"),
+				*ScreenshotPath, BestViewDeltasCm[0], BestViewDeltasCm[1],
+				BestViewDeltasCm[2], BestViewMaxSlope,
+				*PhysicalSurfaceSpawnLocation.ToCompactString());
+			Step = EStep::WaitForPhysicalSurfaceScreenshot;
+			StepStartSeconds = Now;
+			return false;
+		}
+
+		bool UpdateWaitForPhysicalSurfaceScreenshot(UWorld* World, double Now)
+		{
+			APawn* GravityPawn = RuntimeGravityPawn.Get();
+			if (!World || World != GameplayWorld.Get() || !IsValid(GravityPawn))
+			{
+				if (Now - StepStartSeconds > ScreenshotTimeoutSeconds)
+				{
+					return Fail(TEXT("physical-surface proof camera became unavailable"));
+				}
+				return false;
+			}
+
+			UCapsuleComponent* PawnCapsule = FindPawnCapsule(GravityPawn);
+			if (IsValid(PawnCapsule))
+			{
+				PawnCapsule->SetPhysicsLinearVelocity(FVector::ZeroVector);
+			}
+			GravityPawn->SetActorLocationAndRotation(
+				PhysicalSurfaceSpawnLocation, PhysicalSurfaceViewRotation, false,
+				nullptr, ETeleportType::TeleportPhysics);
+			if (ScreenshotSettleFramesRemaining > 0)
+			{
+				--ScreenshotSettleFramesRemaining;
+				return false;
+			}
+
+			bool bHasActiveSurfaceFill = false;
+			for (TActorIterator<ADirectionalLight> It(World); It; ++It)
+			{
+				const ADirectionalLight* Candidate = *It;
+				const UDirectionalLightComponent* CandidateComponent = Candidate
+					? Cast<UDirectionalLightComponent>(Candidate->GetLightComponent()) : nullptr;
+				if (IsValid(Candidate)
+					&& Candidate->ActorHasTag(TEXT("APSGameplaySurfaceFillLight"))
+					&& IsValid(CandidateComponent)
+					&& CandidateComponent->IsVisible()
+					&& CandidateComponent->Intensity > 0.0f)
+				{
+					bHasActiveSurfaceFill = true;
+					break;
+				}
+			}
+			if (!bHasActiveSurfaceFill)
+			{
+				if (Now - StepStartSeconds > ScreenshotTimeoutSeconds)
+				{
+					return Fail(TEXT("physical WorldScape surface readability fill did not activate"));
+				}
+				return false;
+			}
+
+			FString CaptureFailure;
+			if (!CaptureGameplayViewport(World, CaptureFailure, false, true))
+			{
+				if (!CaptureFailure.IsEmpty())
+				{
+					return Fail(CaptureFailure);
+				}
+				if (Now - StepStartSeconds > ScreenshotTimeoutSeconds)
+				{
+					return Fail(TEXT("physical-surface viewport pixels were unavailable for ten seconds"));
+				}
+				return false;
+			}
+
+			UE_LOG(LogTemp, Display,
+				TEXT("[APS.Handoff.PhysicalSurface] ground proof screenshot written %s"),
+				*ScreenshotPath);
 			Step = EStep::Cleanup;
 			StepStartSeconds = Now;
 			return false;
@@ -1006,7 +2791,7 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			else
 			{
 				UE_LOG(LogTemp, Display,
-					TEXT("[APS.Handoff.Smoke] PASS menu preview -> immutable handoff -> GravityGameMode -> exact hierarchy -> selected pawn -> starter attachments -> resolver WorldScape -> screenshot -> safe worker drain"));
+					TEXT("[APS.Handoff.Smoke] PASS menu preview -> immutable handoff -> GravityGameMode -> exact hierarchy -> selected pawn -> starter attachments -> resolver WorldScape -> screenshot -> manual station/surface observer tracking -> physical terrain collision/relief -> safe worker drain"));
 			}
 			return true;
 		}
@@ -1018,8 +2803,9 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 		TWeakObjectPtr<UWorld> MenuWorld;
 		TWeakObjectPtr<UWorld> GameplayWorld;
 		TWeakObjectPtr<AAstroGenerator> PreviewGenerator;
+		TWeakObjectPtr<AAstroGenerator> RuntimeGenerator;
 		TWeakObjectPtr<APlanet> RuntimeHomePlanet;
-		TWeakObjectPtr<AGravityCharacterPawn> RuntimeGravityPawn;
+		TWeakObjectPtr<APawn> RuntimeGravityPawn;
 		TWeakObjectPtr<ASpaceStation> RuntimeStation;
 		TWeakObjectPtr<UClass> SelectedPawnClass;
 		const UGeneratedWorld* EditableGeneratedWorldAddress{nullptr};
@@ -1029,7 +2815,15 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 		FString ScreenshotPath;
 		FString PendingFailure;
 		uint32 PreviewProfileSignature{0};
+		FVector PhysicalSurfaceSpawnLocation{FVector::ZeroVector};
+		FVector PhysicalSurfaceProbeOutward{FVector::ZeroVector};
+		FVector PhysicalSurfaceProofForward{FVector::ZeroVector};
+		FRotator PhysicalSurfaceViewRotation{FRotator::ZeroRotator};
 		int32 ScreenshotSettleFramesRemaining{0};
+		bool bPhysicalSurfaceProbeInitialized{false};
+		bool bNaturalSurfaceLandingValidated{false};
+		bool bManualApproachObserverValidated{false};
+		int32 NaturalSurfaceSettleFrames{0};
 		bool bCleanupStarted{false};
 	};
 }

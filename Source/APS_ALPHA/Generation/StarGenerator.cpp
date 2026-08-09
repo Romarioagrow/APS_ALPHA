@@ -89,8 +89,11 @@ void UStarGenerator::ApplySpectralMaterial(AStar* NewStar, TSharedPtr<FStarModel
 	FName ParameterName2 = "Color";
 	FLinearColor ColorValue = GetStarColor(StarModel->SpectralClass, StarModel->SpectralSubclass);
 	StarDynamicMaterial->SetVectorParameterValue(ParameterName2, ColorValue);
-	const float SurfaceSeed = FMath::Frac(
-		FMath::Abs(StarModel->SurfaceTemperature * 0.000173f + StarModel->Mass * 0.137f));
+	const float SurfaceSeed = FMath::Frac(FMath::Abs(
+		StarModel->SurfaceTemperature * 0.000173f
+		+ StarModel->Mass * 0.137f
+		+ StarModel->Radius * 0.071f
+		+ StarModel->Luminosity * 0.019f));
 	const float TypeActivity = APSStellarSurface::TypeActivity(StarModel->StellarType);
 	const float Temperature01 = FMath::Clamp(
 		(static_cast<float>(StarModel->SurfaceTemperature) - 2200.0f) / 27800.0f,
@@ -100,20 +103,24 @@ void UStarGenerator::ApplySpectralMaterial(AStar* NewStar, TSharedPtr<FStarModel
 		0.0f, 1.0f);
 	StarDynamicMaterial->SetScalarParameterValue(TEXT("SurfaceSeed"), SurfaceSeed);
 	StarDynamicMaterial->SetScalarParameterValue(TEXT("SurfaceVariation"),
-		FMath::Lerp(0.12f, 0.36f, TypeActivity));
+		FMath::Lerp(0.20f, 0.48f, TypeActivity));
 	StarDynamicMaterial->SetScalarParameterValue(TEXT("GranulationStrength"),
-		FMath::Lerp(0.16f, 0.42f, FMath::Clamp(TypeActivity * 0.72f + Luminosity01 * 0.28f,
+		FMath::Lerp(0.30f, 0.58f, FMath::Clamp(TypeActivity * 0.72f + Luminosity01 * 0.28f,
 			0.0f, 1.0f)));
 	// Cooler convection zones tend to read with stronger dark spots; very hot and
 	// compact stars retain fine granulation without being covered by black patches.
 	StarDynamicMaterial->SetScalarParameterValue(TEXT("SpotStrength"),
-		FMath::Lerp(0.12f, 0.44f, FMath::Clamp((1.0f - Temperature01) * 0.68f
+		FMath::Lerp(0.18f, 0.56f, FMath::Clamp((1.0f - Temperature01) * 0.68f
 			+ TypeActivity * 0.32f, 0.0f, 1.0f)));
 	StarDynamicMaterial->SetScalarParameterValue(TEXT("CoronaStrength"),
-		FMath::Lerp(0.22f, 0.58f, FMath::Clamp(TypeActivity * 0.55f
+		FMath::Lerp(0.28f, 0.58f, FMath::Clamp(TypeActivity * 0.55f
 			+ Luminosity01 * 0.45f, 0.0f, 1.0f)));
 
 	// ��������� ������������ �������� � ������ �������
+	// Keep AStar's public runtime handle synchronized even when this function had
+	// to create the MID itself (for example before BeginPlay or after a material
+	// reset).  Later stellar edits must never target a stale instance.
+	NewStar->StarDynamicMaterial = StarDynamicMaterial;
 	NewStar->StarMesh->SetMaterial(0, StarDynamicMaterial);
 }
 

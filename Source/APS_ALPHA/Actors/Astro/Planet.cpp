@@ -2,6 +2,26 @@
 #include "Moon.h"
 #include "APS_ALPHA/Core/Enums/PlanetType.h"
 #include "APS_ALPHA/Generation/PlanetarySurfaceGenerator.h"
+#include "Components/StaticMeshComponent.h"
+
+namespace
+{
+	void ConfigureNonBlockingPlanetZone(USphereComponent* Zone)
+	{
+		if (!IsValid(Zone))
+		{
+			return;
+		}
+
+		// These components describe influence/gravity volumes.  They are queries,
+		// never terrain: a Blueprint collision override must not turn either sphere
+		// into the smooth inner floor below the displaced WorldScape surface.
+		Zone->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+		Zone->SetCollisionResponseToAllChannels(ECR_Ignore);
+		Zone->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);
+		Zone->SetGenerateOverlapEvents(true);
+	}
+}
 
 void APlanet::HandleOnStellarMode()
 {
@@ -73,6 +93,8 @@ void APlanet::InitWSC()
 void APlanet::BeginPlay()
 {
 	Super::BeginPlay();
+	ConfigureNonBlockingPlanetZone(PlanetaryZone);
+	ConfigureNonBlockingPlanetZone(GravityCollisionZone);
 	PlanetaryZone->SetVisibility(false, true);
 	PlanetaryZone->SetHiddenInGame(true, true);
 	GravityCollisionZone->SetVisibility(false, true);
@@ -88,11 +110,13 @@ APlanet::APlanet()
 
 	PlanetaryZone = CreateDefaultSubobject<USphereComponent>(TEXT("PlanetaryZoneComponent"));
 	PlanetaryZone->SetupAttachment(RootComponent);
+	ConfigureNonBlockingPlanetZone(PlanetaryZone);
 	PlanetaryZone->SetVisibility(false);
 	PlanetaryZone->SetHiddenInGame(true);
 
 	GravityCollisionZone = CreateDefaultSubobject<USphereComponent>(TEXT("PlanetGravityCollisionZoneComponent"));
 	GravityCollisionZone->SetupAttachment(RootComponent);
+	ConfigureNonBlockingPlanetZone(GravityCollisionZone);
 	GravityCollisionZone->SetVisibility(false);
 	GravityCollisionZone->SetHiddenInGame(true);
 }
@@ -183,35 +207,46 @@ void APlanet::RemoveAllChildrenRecursively(AActor* ParentActor)
 
 void APlanet::EnableSphereMesh()
 {
-	// Получаем первый статический меш компонент
-	UStaticMeshComponent* SphereMesh = Cast<UStaticMeshComponent>(
-		GetComponentByClass(UStaticMeshComponent::StaticClass()));
-
-	if (SphereMesh)
-	{
-		// Отключаем его (делаем невидимым, например)
-		SphereMesh->SetVisibility(true);
-	}
-	else
+	TInlineComponentArray<UStaticMeshComponent*> SphereMeshes;
+	GetComponents(SphereMeshes);
+	if (SphereMeshes.IsEmpty())
 	{
 		UE_LOG(LogTemp, Warning, TEXT("StaticMeshComponent not found!"));
+		return;
+	}
+
+	for (UStaticMeshComponent* SphereMesh : SphereMeshes)
+	{
+		if (!IsValid(SphereMesh)) continue;
+		// The authored globe is only a distant/loading visual. WorldScape owns all
+		// walkable terrain, so this mesh must never become a smooth false ground shell.
+		SphereMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		SphereMesh->SetCollisionResponseToAllChannels(ECR_Ignore);
+		SphereMesh->SetHiddenInGame(false, false);
+		SphereMesh->SetVisibility(true, false);
 	}
 }
 
 void APlanet::DisableSphereMesh()
 {
-	// Получаем первый статический меш компонент
-	UStaticMeshComponent* SphereMesh = Cast<UStaticMeshComponent>(
-		GetComponentByClass(UStaticMeshComponent::StaticClass()));
-
-	if (SphereMesh)
-	{
-		// Отключаем его (делаем невидимым, например)
-		SphereMesh->SetVisibility(false);
-	}
-	else
+	// Generated body Blueprints can contain more than one authored globe layer.
+	// Hiding only GetComponentByClass() left the remaining material shell rendered
+	// over the ready WorldScape root and visibly intersecting its terrain.
+	TInlineComponentArray<UStaticMeshComponent*> SphereMeshes;
+	GetComponents(SphereMeshes);
+	if (SphereMeshes.IsEmpty())
 	{
 		UE_LOG(LogTemp, Warning, TEXT("StaticMeshComponent not found!"));
+		return;
+	}
+
+	for (UStaticMeshComponent* SphereMesh : SphereMeshes)
+	{
+		if (!IsValid(SphereMesh)) continue;
+		SphereMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		SphereMesh->SetCollisionResponseToAllChannels(ECR_Ignore);
+		SphereMesh->SetHiddenInGame(true, false);
+		SphereMesh->SetVisibility(false, false);
 	}
 }
 

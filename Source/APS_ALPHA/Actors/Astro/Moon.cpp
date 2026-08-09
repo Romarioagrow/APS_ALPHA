@@ -1,4 +1,5 @@
 #include "Moon.h"
+#include "Components/StaticMeshComponent.h"
 
 AMoon::AMoon()
 {
@@ -28,33 +29,40 @@ void AMoon::SetMoonGravity(double NewMoonGravity)
 
 void AMoon::DisableSphereMesh()
 {
-	// Получаем первый статический меш компонент
-	UStaticMeshComponent* SphereMesh = Cast<UStaticMeshComponent>(
-		GetComponentByClass(UStaticMeshComponent::StaticClass()));
-
-	if (SphereMesh)
-	{
-		// Отключаем его (делаем невидимым, например)
-		SphereMesh->SetVisibility(false);
-	}
-	else
+	TInlineComponentArray<UStaticMeshComponent*> SphereMeshes;
+	GetComponents(SphereMeshes);
+	if (SphereMeshes.IsEmpty())
 	{
 		UE_LOG(LogTemp, Warning, TEXT("StaticMeshComponent not found!"));
+		return;
+	}
+
+	for (UStaticMeshComponent* SphereMesh : SphereMeshes)
+	{
+		if (!IsValid(SphereMesh)) continue;
+		SphereMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		SphereMesh->SetCollisionResponseToAllChannels(ECR_Ignore);
+		SphereMesh->SetHiddenInGame(true, false);
+		SphereMesh->SetVisibility(false, false);
 	}
 }
 
 void AMoon::EnableSphereMesh()
 {
-	// Получаем первый статический меш компонент
-	UStaticMeshComponent* SphereMesh = Cast<UStaticMeshComponent>(
-		GetComponentByClass(UStaticMeshComponent::StaticClass()));
-
-	if (SphereMesh)
-	{
-		SphereMesh->SetVisibility(true);
-	}
-	else
+	TInlineComponentArray<UStaticMeshComponent*> SphereMeshes;
+	GetComponents(SphereMeshes);
+	if (SphereMeshes.IsEmpty())
 	{
 		UE_LOG(LogTemp, Warning, TEXT("StaticMeshComponent not found!"));
+		return;
+	}
+
+	for (UStaticMeshComponent* SphereMesh : SphereMeshes)
+	{
+		if (!IsValid(SphereMesh)) continue;
+		SphereMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		SphereMesh->SetCollisionResponseToAllChannels(ECR_Ignore);
+		SphereMesh->SetHiddenInGame(false, false);
+		SphereMesh->SetVisibility(true, false);
 	}
 }

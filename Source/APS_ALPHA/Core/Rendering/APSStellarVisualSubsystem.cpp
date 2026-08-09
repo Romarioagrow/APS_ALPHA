@@ -6,7 +6,6 @@
 #include "APS_ALPHA/Actors/Tech/SpaceStation.h"
 #include "APS_ALPHA/Generation/AstroGenerator.h"
 #include "APS_ALPHA/Generation/StarGenerator.h"
-#include "APS_ALPHA/Pawns/Characters/GravityCharacterPawn.h"
 #include "Components/DirectionalLightComponent.h"
 #include "Components/PointLightComponent.h"
 #include "Components/SphereComponent.h"
@@ -22,6 +21,7 @@ DEFINE_LOG_CATEGORY_STATIC(LogAPSStellarVisuals, Log, All);
 namespace
 {
 	const FName PreviewFillLightTag(TEXT("APSPreviewFillLight"));
+	const FName RuntimeStellarKeyLightTag(TEXT("APSRuntimeStellarKeyLight"));
 	constexpr float PreviewFillLightIntensity = 4.0f;
 	const FLinearColor PreviewFillLightColor(0.72f, 0.82f, 1.0f, 1.0f);
 	const FName GameplayStationFillLightTag(TEXT("APSGameplayStationFillLight"));
@@ -29,6 +29,12 @@ namespace
 	constexpr float GameplayStationFillMinimumAttenuationRadiusCm = 4500.0f;
 	constexpr float GameplayStationFillMaximumAttenuationRadiusCm = 30000.0f;
 	const FLinearColor GameplayStationFillLightColor(0.72f, 0.82f, 1.0f, 1.0f);
+	const FName GameplaySurfaceFillLightTag(TEXT("APSGameplaySurfaceFillLight"));
+	// Keep the generated star as the dominant key. This fill only lifts the
+	// fixed-exposure floor enough to retain readable normals on the night side.
+	constexpr float GameplaySurfaceFillLightIntensity = 0.65f;
+	constexpr double GameplaySurfaceFillMaximumAltitudeCm = 5000000.0;
+	const FLinearColor GameplaySurfaceFillLightColor(0.78f, 0.84f, 0.94f, 1.0f);
 }
 
 bool UAPSStellarVisualSubsystem::ShouldCreateSubsystem(UObject* Outer) const
@@ -82,12 +88,13 @@ void UAPSStellarVisualSubsystem::Tick(float DeltaTime)
 		bHasPreviewCameraLocation,
 		DeltaTime);
 	UpdateGameplayStationFillLight(
-		ActivePreviewBody ? nullptr : Cast<AGravityCharacterPawn>(Observer),
+		ActivePreviewBody ? nullptr : Observer,
 		PreviewCameraLocation,
 		bHasPreviewCameraLocation);
 
 	if (!bHasObserverLocation)
 	{
+		UpdateGameplaySurfaceFillLight(nullptr, FVector::ZeroVector, false, DeltaTime);
 		return;
 	}
 
@@ -101,6 +108,11 @@ void UAPSStellarVisualSubsystem::Tick(float DeltaTime)
 		SearchElapsed = 0.0f;
 		ResolveNearestStar(ObserverLocation);
 	}
+	UpdateGameplaySurfaceFillLight(
+		ActivePreviewBody ? nullptr : Observer,
+		ObserverLocation,
+		bHasObserverLocation,
+		DeltaTime);
 
 	ADirectionalLight* Light = DirectionalLight.Get();
 	UDirectionalLightComponent* LightComponent = Light
@@ -170,8 +182,18 @@ void UAPSStellarVisualSubsystem::Deinitialize()
 	}
 	GameplayStationFillLight.Reset();
 	GameplayFillStation.Reset();
+	if (ADirectionalLight* FillLight = GameplaySurfaceFillLight.Get())
+	{
+		FillLight->Destroy();
+	}
+	GameplaySurfaceFillLight.Reset();
+	GameplayFillBody.Reset();
 
-	if (ADirectionalLight* Light = DirectionalLight.Get(); bCapturedOriginalLight && Light)
+	if (ADirectionalLight* Light = DirectionalLight.Get(); bOwnsDirectionalLight && Light)
+	{
+		Light->Destroy();
+	}
+	else if (bCapturedOriginalLight && Light)
 	{
 		if (UDirectionalLightComponent* Component = Cast<UDirectionalLightComponent>(Light->GetLightComponent()))
 		{
@@ -195,7 +217,9 @@ void UAPSStellarVisualSubsystem::ResolveDirectionalLight()
 	for (TActorIterator<ADirectionalLight> It(World); It; ++It)
 	{
 		ADirectionalLight* Candidate = *It;
-		if (IsValid(Candidate) && Candidate->ActorHasTag(PreviewFillLightTag))
+		if (IsValid(Candidate)
+			&& (Candidate->ActorHasTag(PreviewFillLightTag)
+				|| Candidate->ActorHasTag(GameplaySurfaceFillLightTag)))
 		{
 			continue;
 		}
@@ -222,6 +246,44 @@ void UAPSStellarVisualSubsystem::ResolveDirectionalLight()
 		UE_LOG(LogAPSStellarVisuals, Log, TEXT("Using existing directional light %s"), *Candidate->GetName());
 		break;
 	}
+
+	if (DirectionalLight.IsValid())
+	{
+		return;
+	}
+
+	// Generated gameplay levels are allowed to contain no authored sun. In that
+	// case the stellar subsystem still knows the generated parent-star direction,
+	// but previously had no light to drive, leaving physically displaced terrain
+	// visually indistinguishable from a flat dark texture. Create one transient key
+	// (not a proxy surface and not a camera fill) and let the normal nearest-star
+	// path below orient and colour it on the same tick.
+	FActorSpawnParameters SpawnParameters;
+	SpawnParameters.ObjectFlags |= RF_Transient;
+	SpawnParameters.SpawnCollisionHandlingOverride =
+		ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	ADirectionalLight* RuntimeKey = World->SpawnActor<ADirectionalLight>(
+		ADirectionalLight::StaticClass(), FVector::ZeroVector, FRotator(-35.0, -35.0, 0.0),
+		SpawnParameters);
+	UDirectionalLightComponent* RuntimeComponent = RuntimeKey
+		? Cast<UDirectionalLightComponent>(RuntimeKey->GetLightComponent()) : nullptr;
+	if (!RuntimeKey || !RuntimeComponent)
+	{
+		return;
+	}
+	RuntimeKey->Tags.AddUnique(RuntimeStellarKeyLightTag);
+	RuntimeKey->SetActorEnableCollision(false);
+	RuntimeComponent->SetMobility(EComponentMobility::Movable);
+	RuntimeComponent->SetAtmosphereSunLight(true);
+	RuntimeComponent->SetForwardShadingPriority(1);
+	RuntimeComponent->SetLightColor(FLinearColor::White);
+	RuntimeComponent->SetIntensity(10.0f);
+	DirectionalLight = RuntimeKey;
+	SmoothedLightColor = FLinearColor::White;
+	SmoothedLightIntensity = 10.0f;
+	bOwnsDirectionalLight = true;
+	UE_LOG(LogAPSStellarVisuals, Log,
+		TEXT("Created transient generated-star directional key %s"), *RuntimeKey->GetName());
 }
 
 void UAPSStellarVisualSubsystem::UpdatePreviewFillLight(
@@ -318,7 +380,7 @@ void UAPSStellarVisualSubsystem::UpdatePreviewFillLight(
 }
 
 void UAPSStellarVisualSubsystem::UpdateGameplayStationFillLight(
-	const AGravityCharacterPawn* CharacterPawn,
+	const APawn* CharacterPawn,
 	const FVector& CameraLocation,
 	bool bHasCameraLocation)
 {
@@ -439,6 +501,141 @@ void UAPSStellarVisualSubsystem::UpdateGameplayStationFillLight(
 			*GetNameSafe(CharacterPawn), *GetNameSafe(ContainingStation),
 			*CameraLocation.ToCompactString(), BestNormalizedDistanceSquared,
 			DesiredAttenuationRadius);
+	}
+}
+
+void UAPSStellarVisualSubsystem::UpdateGameplaySurfaceFillLight(
+	const APawn* CharacterPawn,
+	const FVector& ObserverLocation,
+	bool bHasObserverLocation,
+	float DeltaTime)
+{
+	ADirectionalLight* FillLight = GameplaySurfaceFillLight.Get();
+	UDirectionalLightComponent* FillComponent = FillLight
+		? Cast<UDirectionalLightComponent>(FillLight->GetLightComponent()) : nullptr;
+
+	APlanetaryBody* ClosestSurfaceBody = nullptr;
+	double ClosestSurfaceAltitudeCm = TNumericLimits<double>::Max();
+	UWorld* World = GetWorld();
+	if (World && IsValid(CharacterPawn) && bHasObserverLocation && bHasTargetStar)
+	{
+		for (TActorIterator<APlanetaryBody> It(World); It; ++It)
+		{
+			APlanetaryBody* Candidate = *It;
+			if (!IsValid(Candidate) || !Candidate->bWorldScapeSurfaceReady)
+			{
+				continue;
+			}
+			const double BodyRadiusCm = Candidate->GetWorldScapeBodyRadiusCm();
+			if (!FMath::IsFinite(BodyRadiusCm) || BodyRadiusCm <= UE_DOUBLE_SMALL_NUMBER)
+			{
+				continue;
+			}
+			const double RadialDistanceCm = FVector::Distance(
+				ObserverLocation, Candidate->GetActorLocation());
+			const double SurfaceAltitudeCm = FMath::Abs(RadialDistanceCm - BodyRadiusCm);
+			if (SurfaceAltitudeCm <= GameplaySurfaceFillMaximumAltitudeCm
+				&& SurfaceAltitudeCm < ClosestSurfaceAltitudeCm)
+			{
+				ClosestSurfaceBody = Candidate;
+				ClosestSurfaceAltitudeCm = SurfaceAltitudeCm;
+			}
+		}
+	}
+
+	if (!ClosestSurfaceBody)
+	{
+		if (FillComponent && FillComponent->IsVisible())
+		{
+			FillComponent->SetVisibility(false);
+			UE_LOG(LogAPSStellarVisuals, Log,
+				TEXT("Gameplay surface fill disabled previousBody=%s"),
+				*GetNameSafe(GameplayFillBody.Get()));
+		}
+		GameplayFillBody.Reset();
+		return;
+	}
+
+	const FVector SurfaceOutward = (ObserverLocation
+		- ClosestSurfaceBody->GetActorLocation()).GetSafeNormal();
+	if (SurfaceOutward.IsNearlyZero())
+	{
+		return;
+	}
+	const FVector StarRayDirection = (ObserverLocation - TargetStarLocation).GetSafeNormal();
+	FVector StarAzimuth = FVector::VectorPlaneProject(
+		StarRayDirection, SurfaceOutward).GetSafeNormal();
+	if (StarAzimuth.IsNearlyZero())
+	{
+		const FVector ReferenceAxis = FMath::Abs(SurfaceOutward.Z) < 0.82
+			? FVector::UpVector : FVector::ForwardVector;
+		StarAzimuth = FVector::CrossProduct(ReferenceAxis, SurfaceOutward)
+			.GetSafeNormal(UE_DOUBLE_SMALL_NUMBER, FVector::RightVector);
+	}
+	// Forty-five degree off-axis incidence exposes the real WorldScape vertex
+	// normals instead of front-lighting the material into a flat colour. The low
+	// intensity only lifts the fixed-exposure floor; the generated star remains the
+	// dominant key and continues to own shadows and atmosphere direction.
+	const FVector DesiredLightRayDirection =
+		(-SurfaceOutward * 0.72 + StarAzimuth * 0.69).GetSafeNormal();
+	const FRotator DesiredRotation = DesiredLightRayDirection.Rotation();
+
+	if (!FillComponent)
+	{
+		FActorSpawnParameters SpawnParameters;
+		SpawnParameters.ObjectFlags |= RF_Transient;
+		SpawnParameters.SpawnCollisionHandlingOverride =
+			ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		FillLight = World->SpawnActor<ADirectionalLight>(
+			ADirectionalLight::StaticClass(), FVector::ZeroVector, DesiredRotation,
+			SpawnParameters);
+		FillComponent = FillLight
+			? Cast<UDirectionalLightComponent>(FillLight->GetLightComponent()) : nullptr;
+		if (!FillLight || !FillComponent)
+		{
+			return;
+		}
+
+		FillLight->Tags.AddUnique(GameplaySurfaceFillLightTag);
+		FillLight->SetActorEnableCollision(false);
+		FillComponent->SetMobility(EComponentMobility::Movable);
+		// A secondary fill must not produce a second, conflicting terrain shadow.
+		// Relief remains defined by the shadow-casting generated-star key.
+		FillComponent->SetCastShadows(false);
+		FillComponent->SetAtmosphereSunLight(false);
+		FillComponent->SetForwardShadingPriority(0);
+		FillComponent->SetVolumetricScatteringIntensity(0.0f);
+		FillComponent->SetLightColor(GameplaySurfaceFillLightColor);
+		FillComponent->SetIntensity(GameplaySurfaceFillLightIntensity);
+		FillComponent->SetLightingChannels(true, false, false);
+		GameplaySurfaceFillLight = FillLight;
+		UE_LOG(LogAPSStellarVisuals, Log,
+			TEXT("Created transient gameplay surface fill intensity=%.2f"),
+			GameplaySurfaceFillLightIntensity);
+	}
+
+	if (!FillComponent->IsVisible())
+	{
+		FillComponent->SetVisibility(true);
+	}
+	const FRotator CurrentRotation = FillLight->GetActorRotation();
+	FRotator UpdatedRotation = FMath::RInterpTo(
+		CurrentRotation, DesiredRotation, DeltaTime, 8.0f);
+	if (UpdatedRotation.Equals(DesiredRotation, 0.05f))
+	{
+		UpdatedRotation = DesiredRotation;
+	}
+	if (!CurrentRotation.Equals(UpdatedRotation, 0.001f))
+	{
+		FillLight->SetActorRotation(UpdatedRotation);
+	}
+	if (GameplayFillBody.Get() != ClosestSurfaceBody)
+	{
+		GameplayFillBody = ClosestSurfaceBody;
+		UE_LOG(LogAPSStellarVisuals, Log,
+			TEXT("Gameplay surface fill enabled body=%s altitude=%.0fcm ray=%s"),
+			*GetNameSafe(ClosestSurfaceBody), ClosestSurfaceAltitudeCm,
+			*DesiredLightRayDirection.ToCompactString());
 	}
 }
 
