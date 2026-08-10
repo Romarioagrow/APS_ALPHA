@@ -18,6 +18,7 @@ namespace APSWorldScapeFoliage
 	constexpr float MaximumSectorSizeCm = 100000.0f;
 	constexpr float MinimumCullDistanceMultiplier = 0.1f;
 	constexpr float MaximumCullDistanceMultiplier = 1.5f;
+	constexpr double MaximumAuthoredDensityWeight = 1000000.0;
 
 	TAutoConsoleVariable<int32> CVarEnable(
 		TEXT("aps.WorldScapeFoliage.Enable"),
@@ -68,7 +69,9 @@ namespace APSWorldScapeFoliage
 
 	bool IsSupportedMeshEntry(const UWorldScapeFoliagesInterface* Entry)
 	{
-		if (!IsValid(Entry) || Entry->FoliagesCount <= 0.0f)
+		if (!IsValid(Entry)
+			|| !FMath::IsFinite(Entry->FoliagesCount)
+			|| Entry->FoliagesCount <= 0.0f)
 		{
 			return false;
 		}
@@ -98,14 +101,109 @@ namespace APSWorldScapeFoliage
 		return false;
 	}
 
+	double GetAuthoredDensityWeight(const UWorldScapeFoliagesInterface* Entry)
+	{
+		return IsValid(Entry) && FMath::IsFinite(Entry->FoliagesCount)
+			? FMath::Clamp(
+				static_cast<double>(Entry->FoliagesCount),
+				1.0,
+				MaximumAuthoredDensityWeight)
+			: 1.0;
+	}
+
+	double ResolveSectorSizeCm(
+		const double AuthoredSectorSizeCm,
+		const FAPSFoliageActivationPlan& Plan)
+	{
+		const double FiniteSectorSizeCm = FMath::IsFinite(AuthoredSectorSizeCm)
+			? AuthoredSectorSizeCm
+			: static_cast<double>(Plan.MinSectorSizeCm);
+		return FMath::Clamp(
+			FiniteSectorSizeCm,
+			static_cast<double>(Plan.MinSectorSizeCm),
+			static_cast<double>(MaximumSectorSizeCm));
+	}
+
+	float ResolveCullDistanceMultiplier(
+		const float AuthoredMultiplier,
+		const FAPSFoliageActivationPlan& Plan)
+	{
+		const float FiniteMultiplier = FMath::IsFinite(AuthoredMultiplier)
+			? AuthoredMultiplier
+			: MinimumCullDistanceMultiplier;
+		return FMath::Clamp(
+			FiniteMultiplier,
+			MinimumCullDistanceMultiplier,
+			Plan.MaxCullDistanceMultiplier);
+	}
+
+	TArray<int32> BuildPerTypeBudgets(
+		const TArray<UWorldScapeFoliagesInterface*>& Entries,
+		const int32 HabitatBudget)
+	{
+		TArray<int32> Budgets;
+		if (Entries.IsEmpty() || HabitatBudget < Entries.Num())
+		{
+			return Budgets;
+		}
+
+		Budgets.Init(1, Entries.Num());
+		const int32 RemainingBudget = HabitatBudget - Entries.Num();
+		if (RemainingBudget <= 0)
+		{
+			return Budgets;
+		}
+
+		TArray<double> Weights;
+		TArray<double> Fractions;
+		TArray<int32> FractionOrder;
+		Weights.Reserve(Entries.Num());
+		Fractions.Init(0.0, Entries.Num());
+		FractionOrder.Reserve(Entries.Num());
+		double TotalWeight = 0.0;
+		for (int32 Index = 0; Index < Entries.Num(); ++Index)
+		{
+			const double Weight = GetAuthoredDensityWeight(Entries[Index]);
+			Weights.Add(Weight);
+			TotalWeight += Weight;
+			FractionOrder.Add(Index);
+		}
+
+		int32 DistributedBudget = 0;
+		for (int32 Index = 0; Index < Entries.Num(); ++Index)
+		{
+			const double ExactShare = static_cast<double>(RemainingBudget)
+				* Weights[Index] / TotalWeight;
+			const int32 WholeShare = FMath::FloorToInt32(ExactShare);
+			Budgets[Index] += WholeShare;
+			DistributedBudget += WholeShare;
+			Fractions[Index] = ExactShare - static_cast<double>(WholeShare);
+		}
+
+		FractionOrder.Sort([&Fractions](const int32 Left, const int32 Right)
+		{
+			if (!FMath::IsNearlyEqual(Fractions[Left], Fractions[Right]))
+			{
+				return Fractions[Left] > Fractions[Right];
+			}
+			return Left < Right;
+		});
+		const int32 Remainder = RemainingBudget - DistributedBudget;
+		for (int32 Index = 0; Index < Remainder; ++Index)
+		{
+			++Budgets[FractionOrder[Index]];
+		}
+		return Budgets;
+	}
+
 	void ApplyCommonBudget(
 		UWorldScapeFoliagesInterface* Entry,
 		const FAPSFoliageActivationPlan& Plan,
 		int32 InstanceCount)
 	{
 		Entry->bGenerateOnServer = false;
-		Entry->FoliageSectorSize = FMath::Max(
-			Entry->FoliageSectorSize, static_cast<double>(Plan.MinSectorSizeCm));
+		Entry->FoliageSectorSize = ResolveSectorSizeCm(
+			Entry->FoliageSectorSize, Plan);
 		Entry->bUsePoissonDisc = false;
 		Entry->PoissonDiscDensityVariation = 0.0f;
 		Entry->FoliagesCount = static_cast<float>(FMath::Max(InstanceCount, 1));
@@ -127,10 +225,8 @@ namespace APSWorldScapeFoliage
 		Asset->bAffectDynamicIndirectLighting = false;
 		Asset->bAffectDistanceFieldLighting = false;
 		Asset->bNeverDistanceCull = false;
-		Asset->FoliageCullDistanceMultiplier = FMath::Clamp(
-			Asset->FoliageCullDistanceMultiplier,
-			0.1f,
-			Plan.MaxCullDistanceMultiplier);
+		Asset->FoliageCullDistanceMultiplier = ResolveCullDistanceMultiplier(
+			Asset->FoliageCullDistanceMultiplier, Plan);
 	}
 
 	int32 SanitizeCluster(
@@ -166,10 +262,8 @@ namespace APSWorldScapeFoliage
 			Unit.bAffectDynamicIndirectLighting = false;
 			Unit.bAffectDistanceFieldLighting = false;
 			Unit.bNeverDistanceCull = false;
-			Unit.FoliageCullDistanceMultiplier = FMath::Clamp(
-				Unit.FoliageCullDistanceMultiplier,
-				0.1f,
-				Plan.MaxCullDistanceMultiplier);
+			Unit.FoliageCullDistanceMultiplier = ResolveCullDistanceMultiplier(
+				Unit.FoliageCullDistanceMultiplier, Plan);
 			Units.Add(MoveTemp(Unit));
 		}
 
@@ -334,11 +428,21 @@ int32 FAPSWorldScapeFoliagePolicy::BuildBudgetedCollections(
 				* SafePlan.HabitatDensityScale),
 			1,
 			SafePlan.MaxInstancesPerSectorPerCollection);
-		const int32 BudgetPerType = FMath::Max(
-			HabitatBudget / SupportedEntries.Num(), 1);
-
-		for (UWorldScapeFoliagesInterface* SourceEntry : SupportedEntries)
+		// Preserve the authored palette's relative density instead of flattening every
+		// mesh type to the same cap. One slot per supported type keeps rare accent
+		// meshes viable; the remainder is apportioned deterministically by authored
+		// FoliagesCount and never exceeds the collection budget.
+		const TArray<int32> PerTypeBudgets =
+			APSWorldScapeFoliage::BuildPerTypeBudgets(SupportedEntries, HabitatBudget);
+		if (PerTypeBudgets.Num() != SupportedEntries.Num())
 		{
+			continue;
+		}
+
+		for (int32 EntryIndex = 0; EntryIndex < SupportedEntries.Num(); ++EntryIndex)
+		{
+			UWorldScapeFoliagesInterface* SourceEntry = SupportedEntries[EntryIndex];
+			const int32 BudgetPerType = PerTypeBudgets[EntryIndex];
 			UWorldScapeFoliagesInterface* Entry =
 				DuplicateObject<UWorldScapeFoliagesInterface>(SourceEntry, Collection);
 			if (!IsValid(Entry))
@@ -369,7 +473,9 @@ int32 FAPSWorldScapeFoliagePolicy::BuildBudgetedCollections(
 			}
 
 			const int32 AuthoredSpawnGroups = FMath::Max(
-				FMath::FloorToInt(SourceEntry->FoliagesCount), 1);
+				FMath::FloorToInt32(
+					APSWorldScapeFoliage::GetAuthoredDensityWeight(SourceEntry)),
+				1);
 			APSWorldScapeFoliage::ApplyCommonBudget(
 				Entry, SafePlan, FMath::Min(AuthoredSpawnGroups, MaximumSpawnGroups));
 			Collection->FoliageList.Add(Entry);

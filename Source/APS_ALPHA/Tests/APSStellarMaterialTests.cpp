@@ -595,12 +595,12 @@ bool FAPSStellarMaterialTest::RunTest(const FString& Parameters)
 				CompactCode.Contains(TEXT("actorDetail")));
 			TestTrue(APSStellarMaterialTests::Context(Material, TEXT("scale-aware granulation")),
 				CompactCode.Contains(
-					TEXT("granulation=(mesoCells*0.64+granuleRidges*0.36)*Granulation*0.14*spatialDetail")));
+					TEXT("granulation=(mesoCells*0.64+granuleRidges*0.36)*Granulation*0.17*spatialDetail")));
 			TestTrue(APSStellarMaterialTests::Context(Material, TEXT("scale-aware spots and faculae")),
 				CompactCode.Contains(
 					TEXT("spots=spotCore*SpotAmount*lerp(0.72,1.0,emissionActivity)*spatialDetail"))
 				&& CompactCode.Contains(
-					TEXT("faculae=spotHalo*(0.075+variation*0.14)*spatialDetail")));
+					TEXT("faculae=spotHalo*(0.095+variation*0.17)*spatialDetail")));
 			TestTrue(APSStellarMaterialTests::Context(Material, TEXT("scale-aware photosphere contrast")),
 				CompactCode.Contains(
 					TEXT("macroConvection*variation*0.12*spatialDetail"))
@@ -620,7 +620,7 @@ bool FAPSStellarMaterialTest::RunTest(const FString& Parameters)
 			TestTrue(APSStellarMaterialTests::Context(Material, TEXT("compact corona rim")),
 				CompactCode.Contains(TEXT("rim=pow(1.0-facing,3.15)"))
 				&& CompactCode.Contains(TEXT("resolvedProminence=prominenceMask*spatialDetail"))
-				&& CompactCode.Contains(TEXT("CoronaAmount*rim*(0.18+resolvedProminence*0.82)")));
+				&& CompactCode.Contains(TEXT("CoronaAmount*rim*(0.28+resolvedProminence*0.72)")));
 			TestTrue(APSStellarMaterialTests::Context(Material, TEXT("spectral normalization mix")),
 				CompactCode.Contains(
 					TEXT("spectralTint=lerp(spectralColor,normalizedSpectralTint,0.55)")));

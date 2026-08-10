@@ -984,13 +984,15 @@ void UAPSPlanetSurfaceProfileResolver::ApplyMaterialParameters(
 	float PaletteLift = 0.003f;
 	float PaletteSaturation = 1.05f;
 	float PaletteContrast = 1.08f;
-	float NearDetailScaleCm = 7000.0f;
+	float MacroDetailScaleCm = 8000000.0f;
+	float MesoDetailScaleCm = 450000.0f;
+	float NearDetailScaleCm = 1800.0f;
 	float MacroColorStrength = 0.060f;
 	float MesoColorStrength = 0.042f;
-	float NearColorStrength = 0.022f;
-	float DetailNormalStrength = 0.060f;
-	float MesoRoughnessStrength = 0.032f;
-	float DetailRoughnessStrength = 0.025f;
+	float NearColorStrength = 0.006f;
+	float DetailNormalStrength = 0.100f;
+	float MesoRoughnessStrength = 0.020f;
+	float DetailRoughnessStrength = 0.012f;
 	float TerrainAmbientFill = 0.090f;
 	float SlopeTintStrength = 0.20f;
 	switch (Profile.Archetype)
@@ -999,11 +1001,13 @@ void UAPSPlanetSurfaceProfileResolver::ApplyMaterialParameters(
 		PaletteGain = 1.00f;
 		PaletteSaturation = 1.12f;
 		PaletteContrast = 1.07f;
-		NearDetailScaleCm = 7500.0f;
+		MacroDetailScaleCm = 9000000.0f;
+		MesoDetailScaleCm = 600000.0f;
+		NearDetailScaleCm = 2200.0f;
 		MacroColorStrength = 0.052f;
 		MesoColorStrength = 0.038f;
-		NearColorStrength = 0.022f;
-		DetailNormalStrength = 0.065f;
+		NearColorStrength = 0.007f;
+		DetailNormalStrength = 0.095f;
 		TerrainAmbientFill = 0.105f;
 		SlopeTintStrength = 0.20f;
 		break;
@@ -1011,11 +1015,13 @@ void UAPSPlanetSurfaceProfileResolver::ApplyMaterialParameters(
 		PaletteGain = 0.99f;
 		PaletteSaturation = 1.10f;
 		PaletteContrast = 1.06f;
-		NearDetailScaleCm = 9000.0f;
+		MacroDetailScaleCm = 12000000.0f;
+		MesoDetailScaleCm = 700000.0f;
+		NearDetailScaleCm = 2600.0f;
 		MacroColorStrength = 0.040f;
 		MesoColorStrength = 0.028f;
-		NearColorStrength = 0.018f;
-		DetailNormalStrength = 0.045f;
+		NearColorStrength = 0.004f;
+		DetailNormalStrength = 0.075f;
 		TerrainAmbientFill = 0.095f;
 		SlopeTintStrength = 0.14f;
 		break;
@@ -1023,11 +1029,13 @@ void UAPSPlanetSurfaceProfileResolver::ApplyMaterialParameters(
 		PaletteGain = 1.00f;
 		PaletteSaturation = 1.18f;
 		PaletteContrast = 1.06f;
-		NearDetailScaleCm = 5500.0f;
+		MacroDetailScaleCm = 7500000.0f;
+		MesoDetailScaleCm = 320000.0f;
+		NearDetailScaleCm = 1600.0f;
 		MacroColorStrength = 0.048f;
 		MesoColorStrength = 0.034f;
-		NearColorStrength = 0.024f;
-		DetailNormalStrength = 0.070f;
+		NearColorStrength = 0.008f;
+		DetailNormalStrength = 0.110f;
 		TerrainAmbientFill = 0.115f;
 		SlopeTintStrength = 0.19f;
 		break;
@@ -1035,11 +1043,13 @@ void UAPSPlanetSurfaceProfileResolver::ApplyMaterialParameters(
 		PaletteGain = 0.97f;
 		PaletteSaturation = 1.10f;
 		PaletteContrast = 1.07f;
-		NearDetailScaleCm = 9500.0f;
+		MacroDetailScaleCm = 11000000.0f;
+		MesoDetailScaleCm = 900000.0f;
+		NearDetailScaleCm = 2500.0f;
 		MacroColorStrength = 0.052f;
 		MesoColorStrength = 0.036f;
-		NearColorStrength = 0.018f;
-		DetailNormalStrength = 0.050f;
+		NearColorStrength = 0.006f;
+		DetailNormalStrength = 0.085f;
 		TerrainAmbientFill = 0.100f;
 		SlopeTintStrength = 0.23f;
 		break;
@@ -1048,23 +1058,27 @@ void UAPSPlanetSurfaceProfileResolver::ApplyMaterialParameters(
 		PaletteLift = 0.0f;
 		PaletteSaturation = 1.03f;
 		PaletteContrast = 1.08f;
-		NearDetailScaleCm = 6500.0f;
+		MacroDetailScaleCm = 6000000.0f;
+		MesoDetailScaleCm = 350000.0f;
+		NearDetailScaleCm = 1600.0f;
 		MacroColorStrength = 0.050f;
 		MesoColorStrength = 0.040f;
-		NearColorStrength = 0.020f;
-		DetailNormalStrength = 0.060f;
-		TerrainAmbientFill = 0.140f;
-		SlopeTintStrength = 0.20f;
+		NearColorStrength = 0.004f;
+		DetailNormalStrength = 0.105f;
+		TerrainAmbientFill = 0.105f;
+		SlopeTintStrength = 0.14f;
 		break;
 	case EAPSPlanetSurfaceArchetype::Magmatic:
 		PaletteGain = 0.94f;
 		PaletteSaturation = 1.12f;
 		PaletteContrast = 1.08f;
-		NearDetailScaleCm = 6000.0f;
+		MacroDetailScaleCm = 5000000.0f;
+		MesoDetailScaleCm = 250000.0f;
+		NearDetailScaleCm = 1800.0f;
 		MacroColorStrength = 0.050f;
 		MesoColorStrength = 0.036f;
-		NearColorStrength = 0.018f;
-		DetailNormalStrength = 0.065f;
+		NearColorStrength = 0.005f;
+		DetailNormalStrength = 0.100f;
 		TerrainAmbientFill = 0.045f;
 		SlopeTintStrength = 0.23f;
 		break;
@@ -1073,11 +1087,13 @@ void UAPSPlanetSurfaceProfileResolver::ApplyMaterialParameters(
 		PaletteLift = 0.004f;
 		PaletteSaturation = 0.98f;
 		PaletteContrast = 1.07f;
-		NearDetailScaleCm = 7000.0f;
+		MacroDetailScaleCm = 7000000.0f;
+		MesoDetailScaleCm = 300000.0f;
+		NearDetailScaleCm = 1800.0f;
 		MacroColorStrength = 0.055f;
 		MesoColorStrength = 0.040f;
-		NearColorStrength = 0.020f;
-		DetailNormalStrength = 0.070f;
+		NearColorStrength = 0.005f;
+		DetailNormalStrength = 0.110f;
 		TerrainAmbientFill = 0.110f;
 		SlopeTintStrength = 0.27f;
 		break;
@@ -1086,12 +1102,14 @@ void UAPSPlanetSurfaceProfileResolver::ApplyMaterialParameters(
 		PaletteLift = 0.006f;
 		PaletteSaturation = 0.94f;
 		PaletteContrast = 1.05f;
-		NearDetailScaleCm = 8500.0f;
+		MacroDetailScaleCm = 10000000.0f;
+		MesoDetailScaleCm = 500000.0f;
+		NearDetailScaleCm = 2200.0f;
 		MacroColorStrength = 0.044f;
 		MesoColorStrength = 0.032f;
-		NearColorStrength = 0.016f;
-		DetailNormalStrength = 0.045f;
-		MesoRoughnessStrength = 0.028f;
+		NearColorStrength = 0.003f;
+		DetailNormalStrength = 0.080f;
+		MesoRoughnessStrength = 0.018f;
 		TerrainAmbientFill = 0.100f;
 		SlopeTintStrength = 0.18f;
 		break;
@@ -1099,11 +1117,13 @@ void UAPSPlanetSurfaceProfileResolver::ApplyMaterialParameters(
 		PaletteGain = 1.00f;
 		PaletteSaturation = 1.16f;
 		PaletteContrast = 1.06f;
-		NearDetailScaleCm = 7000.0f;
+		MacroDetailScaleCm = 6000000.0f;
+		MesoDetailScaleCm = 320000.0f;
+		NearDetailScaleCm = 1900.0f;
 		MacroColorStrength = 0.050f;
 		MesoColorStrength = 0.036f;
-		NearColorStrength = 0.019f;
-		DetailNormalStrength = 0.055f;
+		NearColorStrength = 0.006f;
+		DetailNormalStrength = 0.090f;
 		TerrainAmbientFill = 0.115f;
 		SlopeTintStrength = 0.19f;
 		break;
@@ -1138,14 +1158,14 @@ void UAPSPlanetSurfaceProfileResolver::ApplyMaterialParameters(
 	Material->SetScalarParameterValue(TEXT("PaletteSaturation"), PaletteSaturation);
 	Material->SetScalarParameterValue(TEXT("PaletteContrast"), PaletteContrast);
 	Material->SetScalarParameterValue(TEXT("MacroDetailScaleCm"), FMath::Clamp(
-		8000000.0f / FMath::Max(Profile.ContinentalFrequencyMultiplier, 0.25f),
+		MacroDetailScaleCm / FMath::Max(Profile.ContinentalFrequencyMultiplier, 0.25f),
 		1500000.0f, 20000000.0f));
 	Material->SetScalarParameterValue(TEXT("MesoDetailScaleCm"), FMath::Clamp(
-		450000.0f / FMath::Max(Profile.RegionalFrequencyMultiplier, 0.25f),
+		MesoDetailScaleCm / FMath::Max(Profile.RegionalFrequencyMultiplier, 0.25f),
 		100000.0f, 1800000.0f));
 	Material->SetScalarParameterValue(TEXT("NearDetailScaleCm"), FMath::Clamp(
 		NearDetailScaleCm / FMath::Max(Profile.DetailFrequencyMultiplier, 0.25f),
-		1200.0f, 30000.0f));
+		800.0f, 30000.0f));
 	Material->SetScalarParameterValue(TEXT("MacroColorStrength"), MacroColorStrength);
 	Material->SetScalarParameterValue(TEXT("MesoColorStrength"), MesoColorStrength);
 	Material->SetScalarParameterValue(TEXT("NearColorStrength"), NearColorStrength);

@@ -1184,21 +1184,27 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 				&& Surface->ResolvedOceanMaterialInstance->GetScalarParameterValue(
 					FHashedMaterialParameterInfo(FName(TEXT("OrbitalNormalBlend"))),
 					UnusedPhysicalOrbitalNormalBlend);
-			float UnusedPhysicalWaveColorStrength = -1.0f;
-			const bool bHasUnusedPhysicalWaveColor =
+			float PhysicalWaveColorStrength = -1.0f;
+			const bool bHasPhysicalWaveColor =
 				IsValid(Surface->ResolvedOceanMaterialInstance)
 				&& Surface->ResolvedOceanMaterialInstance->GetScalarParameterValue(
 					FHashedMaterialParameterInfo(FName(TEXT("WaveColorStrength"))),
-					UnusedPhysicalWaveColorStrength);
-			float UnusedPhysicalWaveNormalStrength = -1.0f;
-			const bool bHasUnusedPhysicalWaveNormal =
+					PhysicalWaveColorStrength);
+			float PhysicalWaveNormalStrength = -1.0f;
+			const bool bHasPhysicalWaveNormal =
 				IsValid(Surface->ResolvedOceanMaterialInstance)
 				&& Surface->ResolvedOceanMaterialInstance->GetScalarParameterValue(
 					FHashedMaterialParameterInfo(FName(TEXT("WaveNormalStrength"))),
-					UnusedPhysicalWaveNormalStrength);
+					PhysicalWaveNormalStrength);
+			float PhysicalSurfaceOpacity = -1.0f;
+			const bool bHasPhysicalSurfaceOpacity =
+				IsValid(Surface->ResolvedOceanMaterialInstance)
+				&& Surface->ResolvedOceanMaterialInstance->GetScalarParameterValue(
+					FHashedMaterialParameterInfo(FName(TEXT("WaterSurfaceOpacity"))),
+					PhysicalSurfaceOpacity);
 			UMaterial* ExpectedWorldScapeWaterMaster =
 				LoadObject<UMaterial>(nullptr,
-					TEXT("/WorldScape/Ressources/Materials/WorldScapeMaterials/Ocean/M_Water_WorldScape.M_Water_WorldScape"));
+					TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Materials/M_APS_WorldScapeLiquid.M_APS_WorldScapeLiquid"));
 			if (Surface->ResolvedSurfaceProfile.PlanetType != EPlanetType::Water
 				|| Surface->ResolvedSurfaceProfile.LiquidType != EAPSPlanetLiquidType::Water
 				|| !IsValid(Surface->ResolvedOceanMaterialInstance)
@@ -1208,14 +1214,19 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 					.HasShadingModel(MSM_SingleLayerWater)
 				|| Surface->ResolvedOceanMaterialInstance->GetMaterial()
 					!= ExpectedWorldScapeWaterMaster
-				|| bHasUnusedPhysicalNormalBlend || bHasUnusedPhysicalWaveColor
-				|| bHasUnusedPhysicalWaveNormal
+				|| bHasUnusedPhysicalNormalBlend
+				|| !bHasPhysicalWaveColor || PhysicalWaveColorStrength < 0.0f
+				|| PhysicalWaveColorStrength > 0.02f
+				|| !bHasPhysicalWaveNormal || PhysicalWaveNormalStrength < 0.0f
+				|| PhysicalWaveNormalStrength > 0.04f
+				|| !bHasPhysicalSurfaceOpacity || PhysicalSurfaceOpacity <= 0.0f
+				|| PhysicalSurfaceOpacity > 0.45f
 				|| !Root->bOcean
 				|| Root->OceanMaterial.DefaultMaterial
 					!= Surface->ResolvedOceanMaterialInstance)
 			{
 				OutFailure = FString::Printf(
-					TEXT("Water handoff did not retain the WorldScape SingleLayerWater ocean type=%d liquid=%d bOcean=%d blend=%d base=%s expectedBase=%s hasOrbitalBlend=%d hasProjectWaveColor=%d hasProjectWaveNormal=%d resolvedMID=%s rootMID=%s"),
+					TEXT("Water handoff did not retain the project WorldScape SingleLayerWater ocean type=%d liquid=%d bOcean=%d blend=%d base=%s expectedBase=%s hasOrbitalBlend=%d waveColor=%f waveNormal=%f surfaceOpacity=%f resolvedMID=%s rootMID=%s"),
 					static_cast<int32>(Surface->ResolvedSurfaceProfile.PlanetType),
 					static_cast<int32>(Surface->ResolvedSurfaceProfile.LiquidType),
 					Root->bOcean ? 1 : 0,
@@ -1226,8 +1237,9 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 						? Surface->ResolvedOceanMaterialInstance->GetMaterial() : nullptr),
 					*GetNameSafe(ExpectedWorldScapeWaterMaster),
 					bHasUnusedPhysicalNormalBlend ? 1 : 0,
-					bHasUnusedPhysicalWaveColor ? 1 : 0,
-					bHasUnusedPhysicalWaveNormal ? 1 : 0,
+					PhysicalWaveColorStrength,
+					PhysicalWaveNormalStrength,
+					PhysicalSurfaceOpacity,
 					*GetNameSafe(Surface->ResolvedOceanMaterialInstance),
 					*GetNameSafe(Root->OceanMaterial.DefaultMaterial));
 				return false;
@@ -1547,7 +1559,7 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			}
 
 			UE_LOG(LogTemp, Display,
-				TEXT("[APS.Handoff.WetOcean] Contract ready root=%s oceanLods=%d previewOceanProxies=%d terrainCollisionLods=%d passThroughTerrainTraces=%d liquid=Water base=M_Water_WorldScape materialSlots=27xResolvedMID"),
+				TEXT("[APS.Handoff.WetOcean] Contract ready root=%s oceanLods=%d previewOceanProxies=%d terrainCollisionLods=%d passThroughTerrainTraces=%d liquid=Water base=M_APS_WorldScapeLiquid materialSlots=27xResolvedMID"),
 				*GetNameSafe(Root), Root->WorldScapeLodOcean.Num(),
 				PreviewOceanProxyCount, TerrainCollisionComponents.Num(),
 				TerrainTraceCount);
@@ -3823,7 +3835,7 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 				if (bValidateWetOceanContract)
 				{
 					UE_LOG(LogTemp, Display,
-						TEXT("[APS.Handoff.WetOcean] PASS menu preview -> immutable Water handoff -> one authoritative WorldScape root -> exact 9x3 SingleLayerWater ocean material slots -> collisionless/IgnoreAll liquid -> Visibility/Pawn traces reach terrain -> one ground scattering shell without coplanar cap passes plus preserved orbital shell -> two re-centred rendered observer positions -> two distinct screenshots -> hidden non-colliding preview ocean proxies -> safe worker drain"));
+						TEXT("[APS.Handoff.WetOcean] PASS menu preview -> immutable Water handoff -> one authoritative WorldScape root -> exact 9x3 project-owned non-displacing SingleLayerWater ocean material slots -> collisionless/IgnoreAll liquid -> Visibility/Pawn traces reach terrain -> one ground scattering shell without coplanar cap passes plus preserved orbital shell -> two re-centred rendered observer positions -> two distinct screenshots -> hidden non-colliding preview ocean proxies -> safe worker drain"));
 				}
 				else
 				{

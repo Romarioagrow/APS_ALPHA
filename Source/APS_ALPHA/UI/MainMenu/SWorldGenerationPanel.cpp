@@ -325,7 +325,6 @@ namespace APSGenerationUI
 	const FLinearColor CyanDim(0.035f, 0.23f, 0.32f, 1.0f);
 	const FLinearColor Amber(1.0f, 0.56f, 0.04f, 1.0f);
 	const FLinearColor White(0.92f, 0.97f, 1.0f, 1.0f);
-	const FLinearColor Muted(0.46f, 0.61f, 0.69f, 1.0f);
 	const FLinearColor SecondaryText(0.58f, 0.72f, 0.78f, 1.0f);
 	TWeakObjectPtr<UFont> DisplayFont;
 	TWeakObjectPtr<UFont> BodyFont;
@@ -368,16 +367,21 @@ namespace APSGenerationUI
 		return FText::FromString(Source.Left(MaxCharacters - 3).TrimEnd() + TEXT("..."));
 	}
 
-	FButtonStyle MakeButtonStyle(const FLinearColor& Outline, const FLinearColor& Fill)
+	FButtonStyle MakeButtonStyle(const FLinearColor& Outline, const FLinearColor& Fill,
+		const FLinearColor& ActiveOutline, const FLinearColor& PressedFill)
 	{
 		return FButtonStyle()
 			.SetNormal(FSlateRoundedBoxBrush(Fill, 6.0f, Outline, 1.0f))
-			.SetHovered(FSlateRoundedBoxBrush(FLinearColor(Fill.R + 0.025f, Fill.G + 0.05f, Fill.B + 0.07f, 0.98f), 6.0f, Cyan, 1.5f))
-			.SetPressed(FSlateRoundedBoxBrush(FLinearColor(0.02f, 0.14f, 0.20f, 1.0f), 6.0f, Cyan, 1.5f));
+			.SetHovered(FSlateRoundedBoxBrush(FLinearColor(Fill.R + 0.025f, Fill.G + 0.05f, Fill.B + 0.07f, 0.98f), 6.0f, ActiveOutline, 1.5f))
+			.SetPressed(FSlateRoundedBoxBrush(PressedFill, 6.0f, ActiveOutline, 1.5f));
 	}
 
-	const FButtonStyle SecondaryButton = MakeButtonStyle(CyanDim, FLinearColor(0.003f, 0.022f, 0.038f, 0.94f));
-	const FButtonStyle PrimaryButton = MakeButtonStyle(Amber, FLinearColor(0.30f, 0.12f, 0.004f, 0.96f));
+	const FButtonStyle SecondaryButton = MakeButtonStyle(
+		CyanDim, FLinearColor(0.003f, 0.022f, 0.038f, 0.94f), Cyan,
+		FLinearColor(0.02f, 0.14f, 0.20f, 1.0f));
+	const FButtonStyle PrimaryButton = MakeButtonStyle(
+		Amber, FLinearColor(0.30f, 0.12f, 0.004f, 0.96f),
+		FLinearColor(1.0f, 0.76f, 0.18f, 1.0f), FLinearColor(0.52f, 0.22f, 0.006f, 1.0f));
 	const FButtonStyle HierarchyButton = FButtonStyle()
 		.SetNormal(FSlateRoundedBoxBrush(HierarchyRowFill, 5.0f, CyanDim, 1.0f))
 		.SetHovered(FSlateRoundedBoxBrush(HierarchyHoverFill, 5.0f, Cyan, 1.25f))
@@ -505,7 +509,7 @@ namespace APSGenerationUI
 		return SNew(SVerticalBox)
 			+ SVerticalBox::Slot().AutoHeight()
 			[
-				SNew(STextBlock).Text(Label).Font(Font("Regular", 11)).ColorAndOpacity(Muted)
+				SNew(STextBlock).Text(Label).Font(ReadableFont("Bold", 11)).ColorAndOpacity(SecondaryText)
 			]
 			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 3.0f, 0.0f, 8.0f)
 			[
@@ -589,7 +593,7 @@ namespace APSGenerationUI
 		return SNew(SVerticalBox)
 			+ SVerticalBox::Slot().AutoHeight()
 			[
-				SNew(STextBlock).Text(Label).Font(Font("Regular", 11)).ColorAndOpacity(Muted)
+				SNew(STextBlock).Text(Label).Font(ReadableFont("Bold", 11)).ColorAndOpacity(SecondaryText)
 			]
 			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 3.0f, 0.0f, 8.0f)
 			[
@@ -664,7 +668,7 @@ namespace APSGenerationUI
 		TSharedRef<SWidget> Row = SNew(SVerticalBox)
 			+ SVerticalBox::Slot().AutoHeight()
 			[
-				SNew(STextBlock).Text(Label).Font(Font("Regular", 11)).ColorAndOpacity(Muted)
+				SNew(STextBlock).Text(Label).Font(ReadableFont("Bold", 11)).ColorAndOpacity(SecondaryText)
 			]
 			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 3.0f, 0.0f, 9.0f)
 			[
@@ -1343,7 +1347,7 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 		[
 		SNew(SHorizontalBox)
 			+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
-			[SNew(STextBlock).Text(Label).Font(Font("Regular", 10)).ColorAndOpacity(Muted)]
+			[SNew(STextBlock).Text(Label).Font(ReadableFont("Bold", 10)).ColorAndOpacity(SecondaryText)]
 			+ SHorizontalBox::Slot().AutoWidth()
 			[
 				SNew(SButton).ButtonStyle(&SecondaryButton).ContentPadding(FMargin(14.0f, 4.0f))
@@ -1428,7 +1432,7 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 		[
 			SNew(STextBlock)
 			.Text(LOCTEXT("StarScopeHint", "STELLAR CHANGES UPDATE THIS STAR AND ITS SAFE ORBIT CLEARANCE WITHOUT REGENERATING THE PARENT SYSTEM."))
-			.AutoWrapText(true).Font(Font("Regular", 10)).ColorAndOpacity(Muted)
+			.AutoWrapText(true).Font(ReadableFont("Regular", 10)).ColorAndOpacity(SecondaryText)
 		]
 	];
 
@@ -1498,7 +1502,7 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 		[
 			SNew(STextBlock)
 			.Text(LOCTEXT("SurfaceSolidHint", "SOLID PLANETS ONLY — GAS GIANTS KEEP THEIR ASTRONOMICAL MATERIAL."))
-			.AutoWrapText(true).Font(Font("Regular", 9)).ColorAndOpacity(Muted)
+			.AutoWrapText(true).Font(ReadableFont("Regular", 9)).ColorAndOpacity(SecondaryText)
 		]
 		]
 		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 12.0f, 0.0f, 10.0f)[SectionTitle(LOCTEXT("Atmosphere", "PLANET ATMOSPHERE"))]

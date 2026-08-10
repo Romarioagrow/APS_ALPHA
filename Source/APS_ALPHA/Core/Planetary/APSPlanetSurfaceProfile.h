@@ -128,7 +128,11 @@ struct APS_ALPHA_API FAPSPlanetFoliageProfile
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "WorldScape Foliage")
 	bool bEnabled = false;
 
-	/** Authored source collections. Runtime uses bounded transient copies and never mutates these assets. */
+	/**
+	 * Ordered, preset-owned mesh palettes. Each WorldScape collection supplies the
+	 * mesh set plus its local elevation/temperature/humidity/slope biome gates.
+	 * Runtime uses bounded transient copies and never mutates these source assets.
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "WorldScape Foliage",
 		meta = (EditCondition = "bEnabled", EditConditionHides))
 	TArray<TSoftObjectPtr<UWorldScapeFoliagesCollection>> Collections;

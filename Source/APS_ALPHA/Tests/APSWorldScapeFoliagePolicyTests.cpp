@@ -271,7 +271,9 @@ bool FAPSWorldScapeFoliageTransientBudgetTest::RunTest(const FString& Parameters
 	UWorldScapeFoliagesAsset* Asset = NewObject<UWorldScapeFoliagesAsset>(Source);
 	Asset->StaticMesh = Mesh;
 	Asset->FoliagesCount = 1000.0f;
-	Asset->FoliageSectorSize = 1000.0;
+	// Authored palettes may be malformed or migrated from a much larger world.
+	// Runtime copies must still honor the absolute sector/cull budget.
+	Asset->FoliageSectorSize = 1000000.0;
 	Asset->bUsePoissonDisc = true;
 	Asset->bCollision = true;
 	Asset->Is_NaniteMesh = true;
@@ -291,7 +293,7 @@ bool FAPSWorldScapeFoliageTransientBudgetTest::RunTest(const FString& Parameters
 	Source->FoliageList.Add(ActorModeAsset);
 
 	UWorldScapeFoliagesCluster* Cluster = NewObject<UWorldScapeFoliagesCluster>(Source);
-	Cluster->FoliagesCount = 1000.0f;
+	Cluster->FoliagesCount = 100.0f;
 	for (int32 Index = 0; Index < 2; ++Index)
 	{
 		FWorldScapeFoliagesClusterUnit Unit;
@@ -305,6 +307,11 @@ bool FAPSWorldScapeFoliageTransientBudgetTest::RunTest(const FString& Parameters
 		Cluster->FoliagesClusterUnitList.Add(Unit);
 	}
 	Source->FoliageList.Add(Cluster);
+	Source->FoliageLayer = 3;
+	Source->Temperature.MinValue = 0.2f;
+	Source->Temperature.MaxValue = 0.8f;
+	Source->Humidity.MinValue = 0.35f;
+	Source->Humidity.MaxValue = 0.95f;
 
 	FAPSFoliageActivationPlan Plan;
 	Plan.bEnabled = true;
@@ -333,6 +340,12 @@ bool FAPSWorldScapeFoliageTransientBudgetTest::RunTest(const FString& Parameters
 	TestNotEqual(TEXT("Authored collection is never mutated in place"), Copy, Source);
 	TestTrue(TEXT("Runtime collection is transient"), Copy->HasAnyFlags(RF_Transient));
 	TestEqual(TEXT("Actor-mode and Blueprint foliage are rejected"), Copy->FoliageList.Num(), 2);
+	TestFalse(TEXT("Preset mesh palette keeps its temperature biome gate"),
+		Copy->Temperature.notEqual(Source->Temperature));
+	TestFalse(TEXT("Preset mesh palette keeps its humidity biome gate"),
+		Copy->Humidity.notEqual(Source->Humidity));
+	TestEqual(TEXT("Preset mesh palette keeps its authored foliage layer"),
+		Copy->FoliageLayer, Source->FoliageLayer);
 	TestTrue(TEXT("Authored asset retains collision"), Asset->bCollision);
 	TestTrue(TEXT("Authored asset retains its ISM flag"), Asset->Is_NaniteMesh);
 	TestTrue(TEXT("Authored asset retains Poisson sampling"), Asset->bUsePoissonDisc);
@@ -359,12 +372,16 @@ bool FAPSWorldScapeFoliageTransientBudgetTest::RunTest(const FString& Parameters
 		TestFalse(TEXT("Runtime mesh entry disables shadows by profile"), BudgetedAsset->bCastShadows);
 		TestTrue(TEXT("Runtime mesh entry uses the APS foliage mask"),
 			BudgetedAsset->bUseFoliageNoiseMask);
-		TestTrue(TEXT("Runtime mesh entry respects the type budget"),
-			BudgetedAsset->FoliagesCount <= 20.0f);
-		TestTrue(TEXT("Runtime sector size respects the floor"),
-			BudgetedAsset->FoliageSectorSize >= 8000.0);
+		TestTrue(TEXT("Runtime mesh entry respects the collection budget"),
+			BudgetedAsset->FoliagesCount <= 40.0f);
+		TestEqual(TEXT("Runtime sector size respects the hard ceiling"),
+			BudgetedAsset->FoliageSectorSize, 100000.0);
 		TestTrue(TEXT("Runtime cull multiplier respects the ceiling"),
 			BudgetedAsset->FoliageCullDistanceMultiplier <= 0.8f);
+		TestEqual(TEXT("The dominant authored mesh receives its proportional density budget"),
+			BudgetedAsset->FoliagesCount, 36.0f);
+		TestEqual(TEXT("Mesh palette identity survives transient sanitization"),
+			BudgetedAsset->StaticMesh, Mesh);
 	}
 
 	if (TestNotNull(TEXT("Budgeted cluster entry"), BudgetedCluster))
@@ -379,7 +396,14 @@ bool FAPSWorldScapeFoliageTransientBudgetTest::RunTest(const FString& Parameters
 			TestFalse(TEXT("Cluster unit disables shadows by profile"), Unit.bCastShadows);
 		}
 		TestTrue(TEXT("Cluster-expanded instances respect the type budget"),
-			BudgetedCluster->FoliagesCount * static_cast<float>(Expansion) <= 20.0f);
+			BudgetedCluster->FoliagesCount * static_cast<float>(Expansion) <= 4.0f);
+		TestEqual(TEXT("Rare cluster palette receives the remaining weighted budget"),
+			BudgetedCluster->FoliagesCount * static_cast<float>(Expansion), 4.0f);
+		if (!BudgetedCluster->FoliagesClusterUnitList.IsEmpty())
+		{
+			TestEqual(TEXT("Cluster mesh palette identity survives transient sanitization"),
+				BudgetedCluster->FoliagesClusterUnitList[0].StaticMesh, Mesh);
+		}
 	}
 
 	FAPSFoliageActivationPlan InvalidPlan = Plan;
@@ -414,6 +438,8 @@ bool FAPSWorldScapeFoliageTransientBudgetTest::RunTest(const FString& Parameters
 		{
 			TestTrue(TEXT("Normalized entry uses the hard sector floor"),
 				Entry->FoliageSectorSize >= 2000.0);
+			TestTrue(TEXT("Normalized entry uses the hard sector ceiling"),
+				Entry->FoliageSectorSize <= 100000.0);
 			TestTrue(TEXT("Normalized entry count cannot exceed the hard collection cap"),
 				Entry->FoliagesCount <= 512.0f);
 			if (const UWorldScapeFoliagesAsset* NormalizedAsset =
@@ -517,6 +543,8 @@ bool FAPSWorldScapeFoliageFreshRootApplicationTest::RunTest(const FString& Param
 			EnabledRoot, TransientProfile, false), 1);
 	TestTrue(TEXT("Explicit opt-in enables foliage only after a collection is sanitized"),
 		EnabledRoot->bGenerateFoliages);
+	TestEqual(TEXT("Profile sector budget drives the root WPO/LOD cutoff"),
+		EnabledRoot->WPO_FoliageDisabledDistance, 24000);
 	if (TestEqual(TEXT("Enabled root owns one budgeted collection"),
 		EnabledRoot->Foliages.Num(), 1))
 	{

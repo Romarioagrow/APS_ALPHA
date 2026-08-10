@@ -365,13 +365,13 @@ float microUnit = microGranules * 0.5 + 0.5;
 float granuleCell = smoothstep(0.22, 0.78, microUnit);
 float granuleRidges = (granuleCell - 0.5) * 2.0;
 float granulation = (mesoCells * 0.64 + granuleRidges * 0.36)
-                  * Granulation * 0.14 * spatialDetail;
+                  * Granulation * 0.17 * spatialDetail;
 // A narrow subset of the micro cells carries the faceted, jewel-like highlights.
 // Footprint attenuation preserves it on resolved HISM without sub-pixel aliasing.
 float granuleSpark = smoothstep(0.84, 0.97, microUnit) * spatialDetail;
 float spots = spotCore * SpotAmount * lerp(0.72, 1.0, emissionActivity)
             * spatialDetail;
-float faculae = spotHalo * (0.075 + variation * 0.14) * spatialDetail;
+float faculae = spotHalo * (0.095 + variation * 0.17) * spatialDetail;
 float surface = max(0.24, 1.0 + macroConvection * variation * 0.12 * spatialDetail
                            + granulation + faculae - spots * 0.72);
 surface *= lerp(0.96, 1.07, granuleSpark);
@@ -386,7 +386,7 @@ float rim = pow(1.0 - facing, 3.15);
 // of evaluating a second mask over the same photosphere.
 float prominenceMask = spotCore;
 float resolvedProminence = prominenceMask * spatialDetail;
-float corona = CoronaAmount * rim * (0.18 + resolvedProminence * 0.82)
+float corona = CoronaAmount * rim * (0.28 + resolvedProminence * 0.72)
              * (1.0 + saturate(SystemMarker) * 0.08);
 
 // A seeded two-harmonic pulse keeps close stars alive without swimming the
