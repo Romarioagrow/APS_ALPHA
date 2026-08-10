@@ -9,16 +9,22 @@
 #include "APS_ALPHA/Generation/PlanetarySurfaceGenerator.h"
 #include "Engine/World.h"
 #include "Materials/Material.h"
+#include "Materials/MaterialExpressionAdd.h"
 #include "Materials/MaterialExpressionClamp.h"
 #include "Materials/MaterialExpressionConstant.h"
 #include "Materials/MaterialExpressionFresnel.h"
 #include "Materials/MaterialExpressionLinearInterpolate.h"
 #include "Materials/MaterialExpressionMultiply.h"
+#include "Materials/MaterialExpressionNoise.h"
 #include "Materials/MaterialExpressionOneMinus.h"
 #include "Materials/MaterialExpressionScalarParameter.h"
+#include "Materials/MaterialExpressionSingleLayerWaterMaterialOutput.h"
 #include "Materials/MaterialExpressionSmoothStep.h"
 #include "Materials/MaterialExpressionTextureSample.h"
+#include "Materials/MaterialExpressionVectorNoise.h"
+#include "Materials/MaterialExpressionVectorParameter.h"
 #include "Materials/MaterialExpressionVertexColor.h"
+#include "Materials/MaterialExpressionVertexNormalWS.h"
 #include "Materials/MaterialInstance.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
@@ -194,6 +200,12 @@ namespace APSPlanetSurfaceProfileTests
 	{
 		if (!IsValid(Material)) return false;
 		const FName Name(ParameterName);
+		FLinearColor ResolvedValue = FLinearColor::Black;
+		if (Material->GetVectorParameterValue(
+			FHashedMaterialParameterInfo(Name), ResolvedValue))
+		{
+			return true;
+		}
 		TArray<FMaterialParameterInfo> ParameterInfos;
 		TArray<FGuid> ParameterIds;
 		Material->GetAllVectorParameterInfo(ParameterInfos, ParameterIds);
@@ -755,12 +767,12 @@ bool FAPSPlanetSurfaceGroundScaleReliefTest::RunTest(const FString& Parameters)
 
 		if (Type == EPlanetType::Frozen)
 		{
-			TestTrue(TEXT("Frozen has at least 30 cm median physical relief across 10 m"),
-				Stats.MedianFootPatchRangeCm >= 30.0);
-			TestTrue(TEXT("Every sampled Frozen patch has at least 10 cm across 10 m"),
-				Stats.MinimumFootPatchRangeCm >= 10.0);
+			TestTrue(TEXT("Frozen has at least 3 m median physical relief across 10 m"),
+				Stats.MedianFootPatchRangeCm >= 300.0);
+			TestTrue(TEXT("Every sampled Frozen patch has at least 70 cm across 10 m"),
+				Stats.MinimumFootPatchRangeCm >= 70.0);
 			TestTrue(TEXT("Frozen ten-metre slope is readable"),
-				Stats.MedianFootRmsSlope >= 0.010);
+				Stats.MedianFootRmsSlope >= 0.14);
 			TestTrue(TEXT("Frozen ten-metre slope remains traversable"),
 				Stats.MaximumFootSlope <= 0.35);
 			// Frozen is the standard generated-gameplay handoff profile. It must show
@@ -924,8 +936,18 @@ bool FAPSPlanetSurfaceMaterialCatalogIntegrityTest::RunTest(const FString& Param
 		TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Preview/M_APS_OrbitalTerrain.M_APS_OrbitalTerrain"));
 	UMaterial* WorldScapeTerrain = LoadObject<UMaterial>(nullptr,
 		TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Materials/M_APS_WorldScapeTerrain.M_APS_WorldScapeTerrain"));
-	UMaterial* WorldScapeLiquid = LoadObject<UMaterial>(nullptr,
-		TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Materials/M_APS_WorldScapeLiquid.M_APS_WorldScapeLiquid"));
+	UMaterialInstance* WorldScapeWaterTemplate = LoadObject<UMaterialInstance>(nullptr,
+		TEXT("/WorldScape/Ressources/Materials/WorldScapeMaterials/Ocean/MI_Planetary_Ocean.MI_Planetary_Ocean"));
+	UMaterial* WorldScapeWaterMaster = LoadObject<UMaterial>(nullptr,
+		TEXT("/WorldScape/Ressources/Materials/WorldScapeMaterials/Ocean/M_Water_WorldScape.M_Water_WorldScape"));
+	UMaterialInstance* OriginalWaterTemplate = LoadObject<UMaterialInstance>(nullptr,
+		TEXT("/WorldScape/Ressources/Materials/WorldScapeMaterials/Ocean/MI_Original_Water.MI_Original_Water"));
+	UMaterial* OriginalWaterMaster = LoadObject<UMaterial>(nullptr,
+		TEXT("/WorldScape/Ressources/Materials/WorldScapeMaterials/Ocean/M_OriginalWater_UE5.M_OriginalWater_UE5"));
+	UMaterialInstance* WorldScapeLavaTemplate = LoadObject<UMaterialInstance>(nullptr,
+		TEXT("/WorldScape/Ressources/Materials/WorldScapeMaterials/Ocean/MI_LavaOcean.MI_LavaOcean"));
+	UMaterial* WorldScapeLavaMaster = LoadObject<UMaterial>(nullptr,
+		TEXT("/WorldScape/Ressources/Materials/WorldScapeMaterials/Ocean/M_Lava_WorldScape.M_Lava_WorldScape"));
 	UMaterial* OrbitalLiquid = LoadObject<UMaterial>(nullptr,
 		TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Preview/M_APS_OrbitalLiquid.M_APS_OrbitalLiquid"));
 	UMaterialInstance* OrbitalWater = LoadObject<UMaterialInstance>(nullptr,
@@ -1041,6 +1063,73 @@ bool FAPSPlanetSurfaceMaterialCatalogIntegrityTest::RunTest(const FString& Param
 				{
 					return Expression && Expression->IsA<UMaterialExpressionTextureSample>();
 				}));
+		int32 NonTiledDetailNoiseCount = 0;
+		const UMaterialExpressionVectorParameter* TerrainSeedOffset = nullptr;
+		for (const UMaterialExpression* Expression : WorldScapeTerrain->GetExpressions())
+		{
+			if (const UMaterialExpressionNoise* Noise = Cast<UMaterialExpressionNoise>(Expression))
+			{
+				++NonTiledDetailNoiseCount;
+				TestFalse(TEXT("WorldScape scalar detail noise is explicitly non-tiled"),
+					Noise->bTiling);
+			}
+			else if (const UMaterialExpressionVectorNoise* VectorNoise =
+				Cast<UMaterialExpressionVectorNoise>(Expression))
+			{
+				++NonTiledDetailNoiseCount;
+				TestFalse(TEXT("WorldScape gradient detail noise is explicitly non-tiled"),
+					VectorNoise->bTiling);
+			}
+			else if (const UMaterialExpressionVectorParameter* Parameter =
+				Cast<UMaterialExpressionVectorParameter>(Expression))
+			{
+				if (Parameter->ParameterName == TEXT("OrbitalSeedOffset"))
+				{
+					TerrainSeedOffset = Parameter;
+				}
+			}
+		}
+		TestTrue(TEXT("WorldScape terrain keeps macro, meso and near non-tiled detail bands"),
+			NonTiledDetailNoiseCount >= 3);
+		int32 SeededDomainCount = 0;
+		if (TerrainSeedOffset)
+		{
+			for (const UMaterialExpression* Expression : WorldScapeTerrain->GetExpressions())
+			{
+				const UMaterialExpressionAdd* Add = Cast<UMaterialExpressionAdd>(Expression);
+				SeededDomainCount += Add && Add->B.Expression == TerrainSeedOffset ? 1 : 0;
+			}
+		}
+		TestTrue(TEXT("Resolved terrain seed phases every physical detail domain"),
+			SeededDomainCount >= 3);
+
+		const FExpressionInput* BaseColorInput =
+			WorldScapeTerrain->GetExpressionInputForProperty(MP_BaseColor);
+		const UMaterialExpressionLinearInterpolate* GeologicalSlopeBlend =
+			BaseColorInput
+				? Cast<UMaterialExpressionLinearInterpolate>(BaseColorInput->Expression)
+				: nullptr;
+		if (TestNotNull(TEXT("WorldScape Base Color terminates in a geological slope blend"),
+			GeologicalSlopeBlend))
+		{
+			TestNotNull(TEXT("Slope blend retains the resolved height/detail palette"),
+				GeologicalSlopeBlend->A.Expression);
+			TestNotNull(TEXT("Slope blend retains the authored geological tint"),
+				GeologicalSlopeBlend->B.Expression);
+			const UMaterialExpressionMultiply* WeightedSlope =
+				Cast<UMaterialExpressionMultiply>(GeologicalSlopeBlend->Alpha.Expression);
+			if (TestNotNull(TEXT("Slope blend alpha is bounded by authored strength"), WeightedSlope))
+			{
+				const UMaterialExpressionSmoothStep* SlopeMask =
+					Cast<UMaterialExpressionSmoothStep>(WeightedSlope->A.Expression);
+				if (TestNotNull(TEXT("Slope blend consumes a smooth physical steepness mask"),
+					SlopeMask))
+				{
+					TestTrue(TEXT("Slope cue starts on readable walkable relief"),
+						SlopeMask->ConstMin <= 0.01f && SlopeMask->ConstMax <= 0.16f);
+				}
+			}
+		}
 		int32 BroadHeightBandCount = 0;
 		for (const UMaterialExpression* Expression : WorldScapeTerrain->GetExpressions())
 		{
@@ -1117,46 +1206,138 @@ bool FAPSPlanetSurfaceMaterialCatalogIntegrityTest::RunTest(const FString& Param
 				FamilyMaterial, TEXT("SlopeTintStrength"), SlopeTintStrength)))
 		{
 			TestTrue(*(Context + TEXT(" keeps slope tint bounded")),
-				SlopeTintStrength >= 0.08f && SlopeTintStrength <= 0.28f);
+				SlopeTintStrength >= 0.12f && SlopeTintStrength <= 0.28f);
 		}
+		float NearScale = 0.0f;
 		for (const TCHAR* ScaleParameter :
 			{TEXT("MacroDetailScaleCm"), TEXT("MesoDetailScaleCm"), TEXT("NearDetailScaleCm")})
 		{
 			float ScaleValue = 0.0f;
+			const bool bResolvedScale = APSPlanetSurfaceProfileTests::GetScalarParameter(
+				FamilyMaterial, ScaleParameter, ScaleValue)
+				&& FMath::IsFinite(ScaleValue) && ScaleValue > 0.0f;
 			TestTrue(*FString::Printf(TEXT("%s resolves %s"), *Context, ScaleParameter),
+				bResolvedScale);
+			if (bResolvedScale && FCString::Strcmp(ScaleParameter, TEXT("NearDetailScaleCm")) == 0)
+			{
+				NearScale = ScaleValue;
+			}
+		}
+		TestTrue(*(Context + TEXT(" avoids metre-scale repeating micro detail")),
+			NearScale >= 5000.0f);
+		float MacroColorStrength = 0.0f;
+		float MesoColorStrength = 0.0f;
+		float NearColorStrength = 0.0f;
+		float NearRoughnessStrength = 0.0f;
+		const bool bResolvedHierarchy =
 				APSPlanetSurfaceProfileTests::GetScalarParameter(
-					FamilyMaterial, ScaleParameter, ScaleValue)
-					&& FMath::IsFinite(ScaleValue) && ScaleValue > 0.0f);
+					FamilyMaterial, TEXT("MacroColorStrength"), MacroColorStrength)
+			&& APSPlanetSurfaceProfileTests::GetScalarParameter(
+				FamilyMaterial, TEXT("MesoColorStrength"), MesoColorStrength)
+			&& APSPlanetSurfaceProfileTests::GetScalarParameter(
+				FamilyMaterial, TEXT("NearColorStrength"), NearColorStrength)
+			&& APSPlanetSurfaceProfileTests::GetScalarParameter(
+				FamilyMaterial, TEXT("DetailRoughnessStrength"), NearRoughnessStrength);
+		if (TestTrue(*(Context + TEXT(" resolves scale-separated colour hierarchy")),
+			bResolvedHierarchy))
+		{
+			TestTrue(*(Context + TEXT(" gives large form more contrast than micro detail")),
+				MacroColorStrength >= 0.040f
+				&& MesoColorStrength >= 0.028f
+				&& NearColorStrength <= 0.025f
+				&& MacroColorStrength >= NearColorStrength * 1.8f);
+			TestTrue(*(Context + TEXT(" keeps near roughness from becoming grey speckle")),
+				NearRoughnessStrength <= 0.03f);
 		}
 	}
-	if (TestNotNull(TEXT("Depth-writing WorldScape liquid material"), WorldScapeLiquid))
+	if (TestNotNull(TEXT("WorldScape planetary water template"), WorldScapeWaterTemplate)
+		&& TestNotNull(TEXT("WorldScape planetary water master"), WorldScapeWaterMaster))
 	{
-		TestEqual(TEXT("WorldScape liquid writes the opaque depth pass"),
-			WorldScapeLiquid->GetBlendMode(), BLEND_Opaque);
-		TestTrue(TEXT("WorldScape liquid remains lit"),
-			WorldScapeLiquid->GetShadingModels().HasShadingModel(MSM_DefaultLit));
-		TestFalse(TEXT("Safe baseline does not claim an incomplete SingleLayerWater graph"),
-			WorldScapeLiquid->GetShadingModels().HasShadingModel(MSM_SingleLayerWater));
-		TestTrue(TEXT("WorldScape liquid is robust across ring/stitch winding"),
-			WorldScapeLiquid->IsTwoSided());
-		TestFalse(TEXT("WorldScape liquid never reconnects translucent opacity"),
-			APSPlanetSurfaceProfileTests::HasConnectedMaterialProperty(
-				WorldScapeLiquid, MP_Opacity));
-		float WaveScaleCm = 0.0f;
-		float WaveColorStrength = 0.0f;
-		float WaveNormalStrength = 0.0f;
-		TestTrue(TEXT("WorldScape liquid exposes finite non-tiling wave scale"),
-			APSPlanetSurfaceProfileTests::GetScalarParameter(
-				WorldScapeLiquid, TEXT("WaveScaleCm"), WaveScaleCm)
-				&& FMath::IsNearlyEqual(WaveScaleCm, 18000.0f));
-		TestTrue(TEXT("WorldScape liquid keeps colour waves subtle"),
-			APSPlanetSurfaceProfileTests::GetScalarParameter(
-				WorldScapeLiquid, TEXT("WaveColorStrength"), WaveColorStrength)
-				&& WaveColorStrength > 0.0f && WaveColorStrength <= 0.01f);
-		TestTrue(TEXT("WorldScape liquid keeps readable bounded normal waves"),
-			APSPlanetSurfaceProfileTests::GetScalarParameter(
-				WorldScapeLiquid, TEXT("WaveNormalStrength"), WaveNormalStrength)
-				&& WaveNormalStrength >= 0.02f && WaveNormalStrength <= 0.04f);
+		TestEqual(TEXT("WorldScape planetary water template directly owns the procedural ocean master"),
+			WorldScapeWaterTemplate->Parent.Get(),
+			static_cast<UMaterialInterface*>(WorldScapeWaterMaster));
+		TestEqual(TEXT("WorldScape planetary water template resolves the procedural ocean master"),
+			WorldScapeWaterTemplate->GetMaterial(), WorldScapeWaterMaster);
+		TestEqual(TEXT("WorldScape planetary water template remains opaque"),
+			WorldScapeWaterTemplate->GetBlendMode(), BLEND_Opaque);
+		TestTrue(TEXT("WorldScape planetary water template retains SingleLayerWater"),
+			WorldScapeWaterTemplate->GetShadingModels().HasShadingModel(
+				MSM_SingleLayerWater));
+		TestEqual(TEXT("WorldScape procedural water writes the opaque depth pass"),
+			WorldScapeWaterMaster->GetBlendMode(), BLEND_Opaque);
+		TestTrue(TEXT("WorldScape procedural water uses the complete SingleLayerWater model"),
+			WorldScapeWaterMaster->GetShadingModels().HasShadingModel(
+				MSM_SingleLayerWater));
+		TestFalse(TEXT("WorldScape procedural water never falls back to project DefaultLit"),
+			WorldScapeWaterMaster->GetShadingModels().HasShadingModel(MSM_DefaultLit));
+		TestTrue(TEXT("WorldScape procedural water owns its SingleLayerWater output"),
+			WorldScapeWaterMaster->GetExpressions().ContainsByPredicate(
+				[](const UMaterialExpression* Expression)
+				{
+					return Expression && Expression->IsA<
+						UMaterialExpressionSingleLayerWaterMaterialOutput>();
+				}));
+		TestTrue(TEXT("WorldScape procedural water consumes plugin-authored radial vertex normals"),
+			WorldScapeWaterMaster->GetExpressions().ContainsByPredicate(
+				[](const UMaterialExpression* Expression)
+				{
+					return Expression && Expression->IsA<UMaterialExpressionVertexNormalWS>();
+				}));
+		TestFalse(TEXT("WorldScape procedural water never evaluates a section-local object centre"),
+			WorldScapeWaterMaster->GetExpressions().ContainsByPredicate(
+				[](const UMaterialExpression* Expression)
+				{
+					return Expression && Expression->GetClass()->GetFName()
+						== FName(TEXT("MaterialExpressionObjectPositionWS"));
+				}));
+		TestFalse(TEXT("WorldScape procedural water has no UV texture grid fallback"),
+			WorldScapeWaterMaster->GetExpressions().ContainsByPredicate(
+				[](const UMaterialExpression* Expression)
+				{
+					return Expression && Expression->IsA<UMaterialExpressionTextureSample>();
+				}));
+		TestTrue(TEXT("WorldScape procedural water exposes its first native coefficient vector"),
+			APSPlanetSurfaceProfileTests::HasVectorParameter(
+				WorldScapeWaterMaster, TEXT("Param_1")));
+		TestTrue(TEXT("WorldScape procedural water exposes its second native coefficient vector"),
+			APSPlanetSurfaceProfileTests::HasVectorParameter(
+				WorldScapeWaterMaster, TEXT("Param_2")));
+	}
+	if (TestNotNull(TEXT("WorldScape original Water-plugin template"), OriginalWaterTemplate)
+		&& TestNotNull(TEXT("WorldScape original Water-plugin master"), OriginalWaterMaster))
+	{
+		TestEqual(TEXT("Original Water template retains its distinct Water-plugin parent"),
+			OriginalWaterTemplate->Parent.Get(),
+			static_cast<UMaterialInterface*>(OriginalWaterMaster));
+		TestEqual(TEXT("Original Water graph remains masked and unsuitable for raw WorldScape sections"),
+			OriginalWaterMaster->GetBlendMode(), BLEND_Masked);
+		TestNotEqual(TEXT("Procedural WorldScape water never aliases the Water-plugin template"),
+			static_cast<UObject*>(WorldScapeWaterTemplate),
+			static_cast<UObject*>(OriginalWaterTemplate));
+		TestNotEqual(TEXT("Procedural WorldScape water never aliases the masked Water-plugin master"),
+			static_cast<UObject*>(WorldScapeWaterMaster),
+			static_cast<UObject*>(OriginalWaterMaster));
+	}
+	if (TestNotNull(TEXT("WorldScape lava template"), WorldScapeLavaTemplate)
+		&& TestNotNull(TEXT("WorldScape lava master"), WorldScapeLavaMaster))
+	{
+		TestEqual(TEXT("WorldScape lava template directly owns its procedural lava master"),
+			WorldScapeLavaTemplate->Parent.Get(),
+			static_cast<UMaterialInterface*>(WorldScapeLavaMaster));
+		TestEqual(TEXT("WorldScape lava template resolves its procedural lava master"),
+			WorldScapeLavaTemplate->GetMaterial(), WorldScapeLavaMaster);
+		TestEqual(TEXT("WorldScape lava template remains opaque"),
+			WorldScapeLavaTemplate->GetBlendMode(), BLEND_Opaque);
+		TestEqual(TEXT("WorldScape lava writes the opaque depth pass"),
+			WorldScapeLavaMaster->GetBlendMode(), BLEND_Opaque);
+		TestTrue(TEXT("WorldScape lava keeps its dedicated lit emissive model"),
+			WorldScapeLavaMaster->GetShadingModels().HasShadingModel(MSM_DefaultLit));
+		TestFalse(TEXT("WorldScape lava is not reinterpreted as water"),
+			WorldScapeLavaMaster->GetShadingModels().HasShadingModel(
+				MSM_SingleLayerWater));
+		TestTrue(TEXT("WorldScape lava exposes its authored emissive colour"),
+			APSPlanetSurfaceProfileTests::HasVectorParameter(
+				WorldScapeLavaMaster, TEXT("EmissiveColor")));
 	}
 	if (TestNotNull(TEXT("Orbital liquid material"), OrbitalLiquid))
 	{
@@ -1175,6 +1356,15 @@ bool FAPSPlanetSurfaceMaterialCatalogIntegrityTest::RunTest(const FString& Param
 		TestTrue(TEXT("Orbital liquid connects its authored opacity control"),
 			APSPlanetSurfaceProfileTests::HasConnectedMaterialProperty(
 				OrbitalLiquid, MP_Opacity));
+		TestTrue(TEXT("Orbital liquid retains its object-centred closed-globe path"),
+			APSPlanetSurfaceProfileTests::HasScalarParameter(
+				OrbitalLiquid, TEXT("OrbitalNormalBlend"))
+				&& OrbitalLiquid->GetExpressions().ContainsByPredicate(
+					[](const UMaterialExpression* Expression)
+					{
+						return Expression && Expression->GetClass()->GetFName()
+							== FName(TEXT("MaterialExpressionObjectPositionWS"));
+					}));
 		// The closed orbital proxy deliberately selects the resolver-authored alpha water
 		// mask with OrbitalNormalBlend=1.  Physical WorldScape oceans use the separate
 		// opaque master validated above and never depend on this translucent mask.
@@ -1306,57 +1496,62 @@ bool FAPSPlanetSurfaceMaterialCatalogIntegrityTest::RunTest(const FString& Param
 			}
 		}
 	}
-	if (WaterMaterial && AmmoniaMaterial && LavaMaterial && WorldScapeLiquid
-		&& OrbitalLiquid)
+	if (WaterMaterial && AmmoniaMaterial && LavaMaterial
+		&& WorldScapeWaterTemplate && WorldScapeWaterMaster
+		&& WorldScapeLavaTemplate && WorldScapeLavaMaster
+		&& OriginalWaterTemplate && OriginalWaterMaster && OrbitalLiquid)
 	{
-		TestNotEqual(TEXT("Physical and orbital liquid masters use separate render passes"),
-			WorldScapeLiquid, OrbitalLiquid);
-		TestEqual(TEXT("Water directly inherits the depth-writing WorldScape graph"),
-			WaterMaterial->Parent.Get(), static_cast<UMaterialInterface*>(WorldScapeLiquid));
-		TestEqual(TEXT("Ammonia directly inherits the depth-writing WorldScape graph"),
-			AmmoniaMaterial->Parent.Get(), static_cast<UMaterialInterface*>(WorldScapeLiquid));
-		TestEqual(TEXT("Lava directly inherits the depth-writing WorldScape graph"),
-			LavaMaterial->Parent.Get(), static_cast<UMaterialInterface*>(WorldScapeLiquid));
-		TestEqual(TEXT("Water resolves the project-owned WorldScape graph"),
-			WaterMaterial->GetMaterial(), WorldScapeLiquid);
-		TestEqual(TEXT("Ammonia resolves the project-owned WorldScape graph"),
-			AmmoniaMaterial->GetMaterial(), WorldScapeLiquid);
-		TestEqual(TEXT("Lava resolves the project-owned WorldScape graph"),
-			LavaMaterial->GetMaterial(), WorldScapeLiquid);
-
-		for (const TCHAR* ParameterName
-			: {TEXT("LiquidDeepColor"), TEXT("LiquidShallowColor"), TEXT("LiquidEmissiveColor")})
+		TestNotEqual(TEXT("WorldScape water and orbital liquid use separate render passes"),
+			static_cast<UMaterialInterface*>(WorldScapeWaterMaster),
+			static_cast<UMaterialInterface*>(OrbitalLiquid));
+		TestNotEqual(TEXT("WorldScape lava and orbital liquid use separate render passes"),
+			static_cast<UMaterialInterface*>(WorldScapeLavaMaster),
+			static_cast<UMaterialInterface*>(OrbitalLiquid));
+		TestEqual(TEXT("Water directly wraps the WorldScape planetary ocean template"),
+			WaterMaterial->Parent.Get(),
+			static_cast<UMaterialInterface*>(WorldScapeWaterTemplate));
+		TestEqual(TEXT("Ammonia directly wraps the WorldScape planetary ocean template"),
+			AmmoniaMaterial->Parent.Get(),
+			static_cast<UMaterialInterface*>(WorldScapeWaterTemplate));
+		TestEqual(TEXT("Lava directly wraps the WorldScape lava template"),
+			LavaMaterial->Parent.Get(),
+			static_cast<UMaterialInterface*>(WorldScapeLavaTemplate));
+		TestEqual(TEXT("Water resolves the WorldScape procedural ocean master"),
+			WaterMaterial->GetMaterial(), WorldScapeWaterMaster);
+		TestEqual(TEXT("Ammonia resolves the WorldScape procedural ocean master"),
+			AmmoniaMaterial->GetMaterial(), WorldScapeWaterMaster);
+		TestEqual(TEXT("Lava resolves the WorldScape procedural lava master"),
+			LavaMaterial->GetMaterial(), WorldScapeLavaMaster);
+		for (UMaterialInstance* Liquid : {WaterMaterial, AmmoniaMaterial, LavaMaterial})
 		{
-			TestTrue(*FString::Printf(TEXT("Water exposes canonical vector %s"), ParameterName),
-				APSPlanetSurfaceProfileTests::HasVectorParameter(WaterMaterial, ParameterName));
-			TestTrue(*FString::Printf(TEXT("Ammonia exposes canonical vector %s"), ParameterName),
-				APSPlanetSurfaceProfileTests::HasVectorParameter(AmmoniaMaterial, ParameterName));
-			TestTrue(*FString::Printf(TEXT("Lava exposes canonical vector %s"), ParameterName),
-				APSPlanetSurfaceProfileTests::HasVectorParameter(LavaMaterial, ParameterName));
+			const FString LiquidName = Liquid->GetName();
+			TestNotEqual(*FString::Printf(TEXT("%s never wraps MI_Original_Water"), *LiquidName),
+				Liquid->Parent.Get(), static_cast<UMaterialInterface*>(OriginalWaterTemplate));
+			TestNotEqual(*FString::Printf(TEXT("%s never resolves the masked Water-plugin graph"),
+				*LiquidName), Liquid->GetMaterial(), OriginalWaterMaster);
+			TestNotEqual(*FString::Printf(TEXT("%s never uses the orbital preview master"),
+				*LiquidName), static_cast<UMaterialInterface*>(Liquid->GetMaterial()),
+				static_cast<UMaterialInterface*>(OrbitalLiquid));
+			TestEqual(*FString::Printf(TEXT("%s writes the opaque physical depth pass"),
+				*LiquidName), Liquid->GetBlendMode(), BLEND_Opaque);
 		}
-		for (const TCHAR* ParameterName
-			: {TEXT("Opacity"), TEXT("Roughness"), TEXT("Metallic"), TEXT("Specular")})
-		{
-			TestTrue(*FString::Printf(TEXT("Water exposes canonical scalar %s"), ParameterName),
-				APSPlanetSurfaceProfileTests::HasScalarParameter(WaterMaterial, ParameterName));
-			TestTrue(*FString::Printf(TEXT("Ammonia exposes canonical scalar %s"), ParameterName),
-				APSPlanetSurfaceProfileTests::HasScalarParameter(AmmoniaMaterial, ParameterName));
-			TestTrue(*FString::Printf(TEXT("Lava exposes canonical scalar %s"), ParameterName),
-				APSPlanetSurfaceProfileTests::HasScalarParameter(LavaMaterial, ParameterName));
-		}
+		TestTrue(TEXT("Water retains WorldScape SingleLayerWater shading"),
+			WaterMaterial->GetShadingModels().HasShadingModel(MSM_SingleLayerWater));
+		TestTrue(TEXT("Ammonia retains WorldScape SingleLayerWater shading"),
+			AmmoniaMaterial->GetShadingModels().HasShadingModel(MSM_SingleLayerWater));
 
-		TestEqual(TEXT("Water authors exactly three real vector overrides"),
-			WaterMaterial->VectorParameterValues.Num(), 3);
-		TestEqual(TEXT("Water authors exactly four real scalar overrides"),
-			WaterMaterial->ScalarParameterValues.Num(), 4);
-		TestEqual(TEXT("Ammonia authors exactly three real vector overrides"),
-			AmmoniaMaterial->VectorParameterValues.Num(), 3);
-		TestEqual(TEXT("Ammonia authors exactly four real scalar overrides"),
-			AmmoniaMaterial->ScalarParameterValues.Num(), 4);
-		TestEqual(TEXT("Lava authors exactly three real vector overrides"),
-			LavaMaterial->VectorParameterValues.Num(), 3);
-		TestEqual(TEXT("Lava authors exactly four real scalar overrides"),
-			LavaMaterial->ScalarParameterValues.Num(), 4);
+		TestEqual(TEXT("Water inherits the tuned plugin template without local vectors"),
+			WaterMaterial->VectorParameterValues.Num(), 0);
+		TestEqual(TEXT("Water owns no local scalar overrides"),
+			WaterMaterial->ScalarParameterValues.Num(), 0);
+		TestEqual(TEXT("Ammonia authors only its two real chemistry vectors"),
+			AmmoniaMaterial->VectorParameterValues.Num(), 2);
+		TestEqual(TEXT("Ammonia owns no local scalar overrides"),
+			AmmoniaMaterial->ScalarParameterValues.Num(), 0);
+		TestEqual(TEXT("Lava authors only its real emissive vector"),
+			LavaMaterial->VectorParameterValues.Num(), 1);
+		TestEqual(TEXT("Lava owns no local scalar overrides"),
+			LavaMaterial->ScalarParameterValues.Num(), 0);
 
 		auto TestVectorValue = [this](const TCHAR* Label, const UMaterialInterface* Material,
 			const TCHAR* ParameterName, const FLinearColor& Expected)
@@ -1369,48 +1564,21 @@ bool FAPSPlanetSurfaceMaterialCatalogIntegrityTest::RunTest(const FString& Param
 					Actual.Equals(Expected, 1.0e-4f));
 			}
 		};
-		auto TestScalarValue = [this](const TCHAR* Label, const UMaterialInterface* Material,
-			const TCHAR* ParameterName, float Expected)
-		{
-			float Actual = 0.0f;
-			if (TestTrue(Label, APSPlanetSurfaceProfileTests::GetScalarParameter(
-				Material, ParameterName, Actual)))
-			{
-				TestTrue(*FString::Printf(TEXT("%s has the authored value"), Label),
-					FMath::IsNearlyEqual(Actual, Expected, 1.0e-4f));
-			}
-		};
-
-		TestVectorValue(TEXT("Water deep colour"), WaterMaterial, TEXT("LiquidDeepColor"),
-			FLinearColor(0.002f, 0.008f, 0.025f));
-		TestVectorValue(TEXT("Water shallow colour"), WaterMaterial, TEXT("LiquidShallowColor"),
-			FLinearColor(0.008f, 0.055f, 0.085f));
-		TestVectorValue(TEXT("Water emissive colour"), WaterMaterial, TEXT("LiquidEmissiveColor"),
-			FLinearColor(0.0005f, 0.002f, 0.004f));
-		TestScalarValue(TEXT("Water Opacity"), WaterMaterial, TEXT("Opacity"), 0.34f);
-		TestScalarValue(TEXT("Water Roughness"), WaterMaterial, TEXT("Roughness"), 0.30f);
-		TestScalarValue(TEXT("Water Metallic"), WaterMaterial, TEXT("Metallic"), 0.0f);
-		TestScalarValue(TEXT("Water Specular"), WaterMaterial, TEXT("Specular"), 0.42f);
-		TestVectorValue(TEXT("Ammonia deep colour"), AmmoniaMaterial, TEXT("LiquidDeepColor"),
-			FLinearColor(0.008f, 0.055f, 0.025f));
-		TestVectorValue(TEXT("Ammonia shallow colour"), AmmoniaMaterial, TEXT("LiquidShallowColor"),
-			FLinearColor(0.160f, 0.480f, 0.250f));
-		TestVectorValue(TEXT("Ammonia emissive colour"), AmmoniaMaterial, TEXT("LiquidEmissiveColor"),
-			FLinearColor(0.006f, 0.035f, 0.015f));
-		TestScalarValue(TEXT("Ammonia Opacity"), AmmoniaMaterial, TEXT("Opacity"), 0.32f);
-		TestScalarValue(TEXT("Ammonia Roughness"), AmmoniaMaterial, TEXT("Roughness"), 0.22f);
-		TestScalarValue(TEXT("Ammonia Metallic"), AmmoniaMaterial, TEXT("Metallic"), 0.0f);
-		TestScalarValue(TEXT("Ammonia Specular"), AmmoniaMaterial, TEXT("Specular"), 0.58f);
-		TestVectorValue(TEXT("Lava deep colour"), LavaMaterial, TEXT("LiquidDeepColor"),
-			FLinearColor(0.055f, 0.001f, 0.0005f));
-		TestVectorValue(TEXT("Lava shallow colour"), LavaMaterial, TEXT("LiquidShallowColor"),
-			FLinearColor(0.720f, 0.025f, 0.001f));
-		TestVectorValue(TEXT("Lava emissive colour"), LavaMaterial, TEXT("LiquidEmissiveColor"),
-			FLinearColor(0.420f, 0.018f, 0.001f));
-		TestScalarValue(TEXT("Lava Opacity"), LavaMaterial, TEXT("Opacity"), 0.42f);
-		TestScalarValue(TEXT("Lava Roughness"), LavaMaterial, TEXT("Roughness"), 0.42f);
-		TestScalarValue(TEXT("Lava Metallic"), LavaMaterial, TEXT("Metallic"), 0.04f);
-		TestScalarValue(TEXT("Lava Specular"), LavaMaterial, TEXT("Specular"), 0.30f);
+		TestTrue(TEXT("Ammonia owns the native WorldScape coefficient Param_1"),
+			APSPlanetSurfaceProfileTests::HasOwnVectorOverride(
+				AmmoniaMaterial, TEXT("Param_1")));
+		TestTrue(TEXT("Ammonia owns the native WorldScape coefficient Param_2"),
+			APSPlanetSurfaceProfileTests::HasOwnVectorOverride(
+				AmmoniaMaterial, TEXT("Param_2")));
+		TestTrue(TEXT("Lava owns EmissiveColor"),
+			APSPlanetSurfaceProfileTests::HasOwnVectorOverride(
+				LavaMaterial, TEXT("EmissiveColor")));
+		TestVectorValue(TEXT("Ammonia native coefficient Param_1"), AmmoniaMaterial,
+			TEXT("Param_1"), FLinearColor(0.720f, 1.000f, 0.800f, 1.0f));
+		TestVectorValue(TEXT("Ammonia native coefficient Param_2"), AmmoniaMaterial,
+			TEXT("Param_2"), FLinearColor(0.110f, 0.300f, 0.160f, 1.0f));
+		TestVectorValue(TEXT("Lava emissive colour"), LavaMaterial,
+			TEXT("EmissiveColor"), FLinearColor(0.420f, 0.018f, 0.001f, 1.0f));
 
 		for (UMaterialInstance* Liquid : {WaterMaterial, AmmoniaMaterial, LavaMaterial})
 		{
@@ -1418,20 +1586,22 @@ bool FAPSPlanetSurfaceMaterialCatalogIntegrityTest::RunTest(const FString& Param
 			for (const TCHAR* ParameterName
 				: {TEXT("LiquidDeepColor"), TEXT("LiquidShallowColor"), TEXT("LiquidEmissiveColor")})
 			{
-				TestTrue(*FString::Printf(TEXT("%s owns vector override %s"),
+				TestFalse(*FString::Printf(TEXT("%s owns no stale project vector %s"),
 					*LiquidName, ParameterName),
 					APSPlanetSurfaceProfileTests::HasOwnVectorOverride(Liquid, ParameterName));
 			}
 			for (const TCHAR* ParameterName
-				: {TEXT("Opacity"), TEXT("Roughness"), TEXT("Metallic"), TEXT("Specular")})
+				: {TEXT("WaveColorStrength"), TEXT("WaveNormalStrength"),
+					TEXT("OrbitalNormalBlend"), TEXT("Opacity")})
 			{
-				TestTrue(*FString::Printf(TEXT("%s owns scalar override %s"),
+				TestFalse(*FString::Printf(TEXT("%s owns no incompatible scalar %s"),
 					*LiquidName, ParameterName),
 					APSPlanetSurfaceProfileTests::HasOwnScalarOverride(Liquid, ParameterName));
 			}
 		}
 	}
 
+	TSet<EAPSPlanetLiquidType> CatalogLiquidTypes;
 	for (const TPair<EAPSPlanetSurfaceArchetype, FAPSPlanetSurfaceArchetypeDefinition>& Entry
 		: Catalog->Archetypes)
 	{
@@ -1448,6 +1618,7 @@ bool FAPSPlanetSurfaceMaterialCatalogIntegrityTest::RunTest(const FString& Param
 
 		if (Entry.Value.LiquidType != EAPSPlanetLiquidType::None)
 		{
+			CatalogLiquidTypes.Add(Entry.Value.LiquidType);
 			UMaterialInstance* LiquidMaterial = Entry.Value.OceanMaterial.LoadSynchronous();
 			if (!TestNotNull(*(Context + TEXT(" has its authored liquid material")), LiquidMaterial))
 			{
@@ -1460,23 +1631,38 @@ bool FAPSPlanetSurfaceMaterialCatalogIntegrityTest::RunTest(const FString& Param
 					: WaterMaterial;
 			TestEqual(*(Context + TEXT(" references the canonical material for its liquid")),
 				LiquidMaterial, ExpectedLiquidMaterial);
-			if (WorldScapeLiquid)
+			UMaterialInstance* ExpectedWorldScapeTemplate =
+				Entry.Value.LiquidType == EAPSPlanetLiquidType::Lava
+					? WorldScapeLavaTemplate : WorldScapeWaterTemplate;
+			UMaterial* ExpectedWorldScapeMaster =
+				Entry.Value.LiquidType == EAPSPlanetLiquidType::Lava
+					? WorldScapeLavaMaster : WorldScapeWaterMaster;
+			TestEqual(*(Context + TEXT(" directly wraps its WorldScape procedural template")),
+				LiquidMaterial->Parent.Get(),
+				static_cast<UMaterialInterface*>(ExpectedWorldScapeTemplate));
+			TestEqual(*(Context + TEXT(" resolves its WorldScape procedural master")),
+				LiquidMaterial->GetMaterial(), ExpectedWorldScapeMaster);
+			TestNotEqual(*(Context + TEXT(" never selects MI_Original_Water")),
+				LiquidMaterial->Parent.Get(),
+				static_cast<UMaterialInterface*>(OriginalWaterTemplate));
+			TestNotEqual(*(Context + TEXT(" never resolves the masked Water-plugin master")),
+				LiquidMaterial->GetMaterial(), OriginalWaterMaster);
+			TestEqual(*(Context + TEXT(" writes the opaque physical depth pass")),
+				LiquidMaterial->GetBlendMode(), BLEND_Opaque);
+			if (Entry.Value.LiquidType != EAPSPlanetLiquidType::Lava)
 			{
-				TestEqual(*(Context + TEXT(" directly uses the depth-writing WorldScape liquid master")),
-					LiquidMaterial->Parent.Get(), static_cast<UMaterialInterface*>(WorldScapeLiquid));
-				TestEqual(*(Context + TEXT(" resolves no marketplace or overlay graph")),
-					LiquidMaterial->GetMaterial(), WorldScapeLiquid);
-			}
-			float GameplayOpacity = 0.0f;
-			if (TestTrue(*(Context + TEXT(" resolves bounded gameplay opacity")),
-				APSPlanetSurfaceProfileTests::GetScalarParameter(
-					LiquidMaterial, TEXT("Opacity"), GameplayOpacity)))
-			{
-				TestTrue(*(Context + TEXT(" keeps ground relief visible through the liquid")),
-					GameplayOpacity >= 0.05f && GameplayOpacity <= 0.42f);
+				TestTrue(*(Context + TEXT(" retains WorldScape SingleLayerWater shading")),
+					LiquidMaterial->GetShadingModels().HasShadingModel(
+						MSM_SingleLayerWater));
 			}
 		}
 	}
+	TestTrue(TEXT("Catalog keeps at least one Water surface archetype"),
+		CatalogLiquidTypes.Contains(EAPSPlanetLiquidType::Water));
+	TestTrue(TEXT("Catalog keeps at least one Ammonia surface archetype"),
+		CatalogLiquidTypes.Contains(EAPSPlanetLiquidType::Ammonia));
+	TestTrue(TEXT("Catalog keeps at least one Lava surface archetype"),
+		CatalogLiquidTypes.Contains(EAPSPlanetLiquidType::Lava));
 	return true;
 }
 

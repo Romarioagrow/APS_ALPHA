@@ -61,6 +61,8 @@
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 #include "Kismet/GameplayStatics.h"
+#include "Materials/Material.h"
+#include "Materials/MaterialInterface.h"
 #include "PlanetaryAtmosphere.h"
 #include "UnrealClient.h"
 #include "UObject/UnrealType.h"
@@ -83,9 +85,9 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 	constexpr double MinimumCollisionReliefVariationCm = 500.0;
 	// These are geometric height-field deltas around the pawn's real production
 	// landing point, not material contrast thresholds.
-	constexpr double MinimumNaturalRange10mCm = 30.0;
-	constexpr double MinimumProofRange100mCm = 300.0;
-	constexpr double MinimumProofRange250mCm = 800.0;
+	constexpr double MinimumNaturalRange10mCm = 300.0;
+	constexpr double MinimumProofRange100mCm = 1500.0;
+	constexpr double MinimumProofRange250mCm = 2500.0;
 	constexpr double MinimumProofRange1kmCm = 2000.0;
 	// A single central trace can be satisfied by a flat fallback collider while the
 	// analytic WorldScape height field remains displaced.  The gameplay handoff must
@@ -102,15 +104,18 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 	constexpr double MaximumSettledSpeedCmPerSecond = 75.0;
 	constexpr double MaximumFootClearanceCm = 50.0;
 	constexpr double MaximumManualObserverLagCm = 1.0;
-	constexpr double MinimumGroundMeanBrightness = 10.0;
+	constexpr double MinimumGroundMeanBrightness = 30.0;
+	constexpr double MinimumGroundP10Brightness = 30.0;
 	constexpr double MinimumGroundNonBlackPixelRatio = 0.15;
 	constexpr double MinimumGroundBrightnessVariance = 12.0;
 	constexpr double MinimumGroundBrightnessSpread = 8.0;
 	constexpr double MinimumGroundMeanSpatialDelta = 0.35;
 	// Keep the physical-surface readability light strong enough to survive the
 	// fixed-exposure floor, but bounded so it cannot become a second sun.
-	constexpr float MinimumGameplaySurfaceFillIntensity = 1.35f;
-	constexpr float MaximumGameplaySurfaceFillIntensity = 1.50f;
+	constexpr float MinimumGameplaySurfaceFillIntensity = 2.10f;
+	constexpr float MaximumGameplaySurfaceFillIntensity = 2.30f;
+	constexpr double MinimumGameplaySurfaceFillIncidence = 0.65;
+	constexpr double MaximumGameplaySurfaceFillIncidence = 0.80;
 	constexpr double MinimumVisibleRenderLodReliefVariationCm = 100.0;
 	constexpr double MaximumVisibleRenderNoiseDeltaCm = 250.0;
 	constexpr double MaximumVisibleRenderAnchorErrorCm = 2.0;
@@ -1173,33 +1178,56 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 				return false;
 			}
 
-			float PhysicalOrbitalNormalBlend = -1.0f;
-			const bool bHasPhysicalNormalBlend =
+			float UnusedPhysicalOrbitalNormalBlend = -1.0f;
+			const bool bHasUnusedPhysicalNormalBlend =
 				IsValid(Surface->ResolvedOceanMaterialInstance)
 				&& Surface->ResolvedOceanMaterialInstance->GetScalarParameterValue(
 					FHashedMaterialParameterInfo(FName(TEXT("OrbitalNormalBlend"))),
-					PhysicalOrbitalNormalBlend);
+					UnusedPhysicalOrbitalNormalBlend);
+			float UnusedPhysicalWaveColorStrength = -1.0f;
+			const bool bHasUnusedPhysicalWaveColor =
+				IsValid(Surface->ResolvedOceanMaterialInstance)
+				&& Surface->ResolvedOceanMaterialInstance->GetScalarParameterValue(
+					FHashedMaterialParameterInfo(FName(TEXT("WaveColorStrength"))),
+					UnusedPhysicalWaveColorStrength);
+			float UnusedPhysicalWaveNormalStrength = -1.0f;
+			const bool bHasUnusedPhysicalWaveNormal =
+				IsValid(Surface->ResolvedOceanMaterialInstance)
+				&& Surface->ResolvedOceanMaterialInstance->GetScalarParameterValue(
+					FHashedMaterialParameterInfo(FName(TEXT("WaveNormalStrength"))),
+					UnusedPhysicalWaveNormalStrength);
+			UMaterial* ExpectedWorldScapeWaterMaster =
+				LoadObject<UMaterial>(nullptr,
+					TEXT("/WorldScape/Ressources/Materials/WorldScapeMaterials/Ocean/M_Water_WorldScape.M_Water_WorldScape"));
 			if (Surface->ResolvedSurfaceProfile.PlanetType != EPlanetType::Water
 				|| Surface->ResolvedSurfaceProfile.LiquidType != EAPSPlanetLiquidType::Water
 				|| !IsValid(Surface->ResolvedOceanMaterialInstance)
+				|| !IsValid(ExpectedWorldScapeWaterMaster)
 				|| Surface->ResolvedOceanMaterialInstance->GetBlendMode() != BLEND_Opaque
 				|| !Surface->ResolvedOceanMaterialInstance->GetShadingModels()
-					.HasShadingModel(MSM_DefaultLit)
-				|| !bHasPhysicalNormalBlend
-				|| !FMath::IsNearlyZero(PhysicalOrbitalNormalBlend)
+					.HasShadingModel(MSM_SingleLayerWater)
+				|| Surface->ResolvedOceanMaterialInstance->GetMaterial()
+					!= ExpectedWorldScapeWaterMaster
+				|| bHasUnusedPhysicalNormalBlend || bHasUnusedPhysicalWaveColor
+				|| bHasUnusedPhysicalWaveNormal
 				|| !Root->bOcean
 				|| Root->OceanMaterial.DefaultMaterial
 					!= Surface->ResolvedOceanMaterialInstance)
 			{
 				OutFailure = FString::Printf(
-					TEXT("Water handoff did not retain its depth-writing root-centred WorldScape ocean type=%d liquid=%d bOcean=%d blend=%d normalBlend=%.3f resolvedMID=%s rootMID=%s"),
+					TEXT("Water handoff did not retain the WorldScape SingleLayerWater ocean type=%d liquid=%d bOcean=%d blend=%d base=%s expectedBase=%s hasOrbitalBlend=%d hasProjectWaveColor=%d hasProjectWaveNormal=%d resolvedMID=%s rootMID=%s"),
 					static_cast<int32>(Surface->ResolvedSurfaceProfile.PlanetType),
 					static_cast<int32>(Surface->ResolvedSurfaceProfile.LiquidType),
 					Root->bOcean ? 1 : 0,
 					IsValid(Surface->ResolvedOceanMaterialInstance)
 						? static_cast<int32>(Surface->ResolvedOceanMaterialInstance->GetBlendMode())
 						: INDEX_NONE,
-					PhysicalOrbitalNormalBlend,
+					*GetNameSafe(IsValid(Surface->ResolvedOceanMaterialInstance)
+						? Surface->ResolvedOceanMaterialInstance->GetMaterial() : nullptr),
+					*GetNameSafe(ExpectedWorldScapeWaterMaster),
+					bHasUnusedPhysicalNormalBlend ? 1 : 0,
+					bHasUnusedPhysicalWaveColor ? 1 : 0,
+					bHasUnusedPhysicalWaveNormal ? 1 : 0,
 					*GetNameSafe(Surface->ResolvedOceanMaterialInstance),
 					*GetNameSafe(Root->OceanMaterial.DefaultMaterial));
 				return false;
@@ -1215,12 +1243,14 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 				return false;
 			}
 
-			if (Root->OceanMaxLod <= 0
+			constexpr int32 ExpectedOceanLodCount = 9;
+			if (Root->OceanMaxLod != ExpectedOceanLodCount
 				|| Root->WorldScapeLodOcean.Num() > Root->OceanMaxLod)
 			{
 				OutFailure = FString::Printf(
-					TEXT("wet WorldScape owns an invalid/duplicate ocean LOD set oceanLods=%d expected=%d"),
-					Root->WorldScapeLodOcean.Num(), Root->OceanMaxLod);
+					TEXT("wet WorldScape owns an invalid/duplicate ocean LOD set oceanLods=%d configured=%d expected=%d"),
+					Root->WorldScapeLodOcean.Num(), Root->OceanMaxLod,
+					ExpectedOceanLodCount);
 				return false;
 			}
 			if (Root->WorldScapeLodOcean.Num() < Root->OceanMaxLod)
@@ -1273,6 +1303,7 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			}
 			TSet<const UWorldScapeLod*> OceanLods;
 			TSet<const UPrimitiveComponent*> OceanComponents;
+			int32 ValidatedOceanMaterialSlotCount = 0;
 			for (const UWorldScapeLod* OceanLod : Root->WorldScapeLodOcean)
 			{
 				if (!IsValid(OceanLod) || !OceanLod->WaterBody
@@ -1290,20 +1321,44 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 					return false;
 				}
 				OceanComponents.Add(OceanLod->Mesh);
+				if (OceanLod->Mesh->GetNumSections() > 3)
+				{
+					OutFailure = FString::Printf(
+						TEXT("authoritative ocean LOD owns unexpected extra sections lod=%d sections=%d"),
+						OceanLod->Lod, OceanLod->Mesh->GetNumSections());
+					return false;
+				}
 
 				if (!APSWorldScapePayloadValidation::HasCompleteCenteredPayload(
 					OceanLod, DesiredOceanNormal, false)
 					|| !IsEffectivelyPresented(OceanLod->Mesh)
-					|| OceanLod->Mesh->GetNumSections() < 3
+					|| OceanLod->Mesh->GetNumSections() != 3
 					|| !OceanLod->Mesh->IsMeshSectionVisible(0)
 					|| !OceanLod->Mesh->IsMeshSectionVisible(1)
 					|| !OceanLod->Mesh->IsMeshSectionVisible(2))
 				{
 					bOutPending = true;
 					OutFailure = FString::Printf(
-						TEXT("authoritative ocean LOD is not yet centred/visible lod=%d mesh=%s"),
-						OceanLod->Lod, *GetNameSafe(OceanLod->Mesh));
+						TEXT("authoritative ocean LOD is not yet centred/visible with exactly three sections lod=%d sections=%d mesh=%s"),
+						OceanLod->Lod, IsValid(OceanLod->Mesh)
+							? OceanLod->Mesh->GetNumSections() : INDEX_NONE,
+						*GetNameSafe(OceanLod->Mesh));
 					return false;
+				}
+				for (int32 SectionIndex = 0; SectionIndex < 3; ++SectionIndex)
+				{
+					UMaterialInterface* SectionMaterial =
+						OceanLod->Mesh->GetMaterial(SectionIndex);
+					if (SectionMaterial != Surface->ResolvedOceanMaterialInstance)
+					{
+						OutFailure = FString::Printf(
+							TEXT("authoritative ocean LOD section lost the resolved Water MID lod=%d section=%d actual=%s expected=%s"),
+							OceanLod->Lod, SectionIndex,
+							*GetNameSafe(SectionMaterial),
+							*GetNameSafe(Surface->ResolvedOceanMaterialInstance));
+						return false;
+					}
+					++ValidatedOceanMaterialSlotCount;
 				}
 				if (OceanLod->Mesh->GetCollisionEnabled()
 						!= ECollisionEnabled::NoCollision
@@ -1318,6 +1373,13 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 						IgnoresEveryCollisionChannel(OceanLod->Mesh) ? 1 : 0);
 					return false;
 				}
+			}
+			if (ValidatedOceanMaterialSlotCount != ExpectedOceanLodCount * 3)
+			{
+				OutFailure = FString::Printf(
+					TEXT("wet WorldScape did not validate every ocean material slot validated=%d expected=%d"),
+					ValidatedOceanMaterialSlotCount, ExpectedOceanLodCount * 3);
+				return false;
 			}
 
 			int32 PreviewOceanProxyCount = 0;
@@ -1485,7 +1547,7 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			}
 
 			UE_LOG(LogTemp, Display,
-				TEXT("[APS.Handoff.WetOcean] Contract ready root=%s oceanLods=%d previewOceanProxies=%d terrainCollisionLods=%d passThroughTerrainTraces=%d liquid=Water"),
+				TEXT("[APS.Handoff.WetOcean] Contract ready root=%s oceanLods=%d previewOceanProxies=%d terrainCollisionLods=%d passThroughTerrainTraces=%d liquid=Water base=M_Water_WorldScape materialSlots=27xResolvedMID"),
 				*GetNameSafe(Root), Root->WorldScapeLodOcean.Num(),
 				PreviewOceanProxyCount, TerrainCollisionComponents.Num(),
 				TerrainTraceCount);
@@ -1923,7 +1985,12 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			int32 PresentedOuterAirglowShellCount = 0;
 			int32 HiddenOuterAirglowShellCount = 0;
 			int32 SkylightShellCount = 0;
+			int32 PresentedSkylightShellCount = 0;
 			int32 HiddenSkylightShellCount = 0;
+			int32 MainAtmosphereShellCount = 0;
+			int32 PresentedMainAtmosphereShellCount = 0;
+			int32 SpaceAtmosphereShellCount = 0;
+			int32 HiddenSpaceAtmosphereShellCount = 0;
 			TInlineComponentArray<UStaticMeshComponent*> AtmosphereMeshes;
 			Atmosphere->GetComponents(AtmosphereMeshes);
 			for (const UStaticMeshComponent* AtmosphereMesh : AtmosphereMeshes)
@@ -1956,9 +2023,29 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 				else if (ComponentName.Contains(TEXT("PlanetarySkylightMesh")))
 				{
 					++SkylightShellCount;
+					if (IsEffectivelyPresented(AtmosphereMesh))
+					{
+						++PresentedSkylightShellCount;
+					}
 					if (AtmosphereMesh->bHiddenInGame)
 					{
 						++HiddenSkylightShellCount;
+					}
+				}
+				else if (ComponentName.Contains(TEXT("SpacePlanetaryAtmoMesh")))
+				{
+					++SpaceAtmosphereShellCount;
+					if (AtmosphereMesh->bHiddenInGame)
+					{
+						++HiddenSpaceAtmosphereShellCount;
+					}
+				}
+				else if (ComponentName.Contains(TEXT("PlanetaryAtmoMesh")))
+				{
+					++MainAtmosphereShellCount;
+					if (IsEffectivelyPresented(AtmosphereMesh))
+					{
+						++PresentedMainAtmosphereShellCount;
 					}
 				}
 			}
@@ -1967,13 +2054,20 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 					|| PresentedOuterAirglowShellCount != 0
 					|| HiddenOuterAirglowShellCount != 1
 					|| SkylightShellCount != 1
-					|| HiddenSkylightShellCount != 0))
+					|| PresentedSkylightShellCount != 0
+					|| HiddenSkylightShellCount != 1
+					|| MainAtmosphereShellCount != 1
+					|| PresentedMainAtmosphereShellCount != 1
+					|| SpaceAtmosphereShellCount != 1
+					|| HiddenSpaceAtmosphereShellCount != 0))
 			{
 				return Fail(FString::Printf(
-					TEXT("wet-ocean ground atmosphere did not isolate the circular-cap outer airglow from the retained skylight outerShells=%d outerPresented=%d outerHidden=%d skylightShells=%d skylightHidden=%d"),
+					TEXT("wet-ocean ground atmosphere did not retain one physical scattering shell while suppressing coplanar cap passes and preserving the orbital shell outerShells=%d outerPresented=%d outerHidden=%d skylightShells=%d skylightPresented=%d skylightHidden=%d mainShells=%d mainPresented=%d spaceShells=%d spaceHidden=%d"),
 					OuterAirglowShellCount, PresentedOuterAirglowShellCount,
 					HiddenOuterAirglowShellCount, SkylightShellCount,
-					HiddenSkylightShellCount));
+					PresentedSkylightShellCount, HiddenSkylightShellCount,
+					MainAtmosphereShellCount, PresentedMainAtmosphereShellCount,
+					SpaceAtmosphereShellCount, HiddenSpaceAtmosphereShellCount));
 			}
 			FVisibleWorldScapeRenderLodProof InitialRenderProof;
 			FString InitialRenderFailure;
@@ -1990,7 +2084,6 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 				|| AbsorptionShellCount != 1 || PresentedAbsorptionShellCount != 0
 				|| !FMath::IsNearlyEqual(Planet->WorldScapePresentationScale, 1.0)
 				|| Planet->GetWorldScapeStreamingState() != EWorldScapeSurfaceState::Active
-				|| PresentedBodyBackingMeshes != 0 || CollidableBodyBackingMeshes != 0
 				|| PresentedRuntimePreviewMeshes != 0)
 			{
 				return Fail(FString::Printf(
@@ -2015,7 +2108,9 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			const bool bGameplaySurfaceReady = Planet->bWorldScapeSurfaceReady
 				&& Root->WorldScapeLodInGeneration.Num() == 0
 				&& bCompleteTerrainPayload && bCompleteOceanPayload
-				&& !Root->IsHidden() && bInitialRenderLod0Ready;
+				&& !Root->IsHidden() && bInitialRenderLod0Ready
+				&& PresentedBodyBackingMeshes == 0
+				&& CollidableBodyBackingMeshes == 0;
 			if (!bGameplaySurfaceReady)
 			{
 				if (Now - StepStartSeconds > PhysicalSurfaceTimeoutSeconds)
@@ -2224,16 +2319,18 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 					GroundNonBlackPixelRatio, GroundP10, GroundP90,
 					GroundBrightnessSpread, GroundMeanSpatialDelta);
 				if (GroundMeanBrightness < MinimumGroundMeanBrightness
+					|| GroundP10 < MinimumGroundP10Brightness
 					|| GroundNonBlackPixelRatio < MinimumGroundNonBlackPixelRatio
 					|| GroundBrightnessVariance < MinimumGroundBrightnessVariance
 					|| GroundBrightnessSpread < MinimumGroundBrightnessSpread
 					|| GroundMeanSpatialDelta < MinimumGroundMeanSpatialDelta)
 				{
 					OutFailure = FString::Printf(
-						TEXT("settled WorldScape ground region is dark/flat mean=%.3f variance=%.3f nonBlack=%.5f spread=%.1f spatialDelta=%.3f (minimum mean=%.3f variance=%.3f ratio=%.3f spread=%.1f spatialDelta=%.3f)"),
-						GroundMeanBrightness, GroundBrightnessVariance,
+						TEXT("settled WorldScape ground region is dark/flat mean=%.3f p10=%.1f variance=%.3f nonBlack=%.5f spread=%.1f spatialDelta=%.3f (minimum mean=%.3f p10=%.1f variance=%.3f ratio=%.3f spread=%.1f spatialDelta=%.3f)"),
+						GroundMeanBrightness, GroundP10, GroundBrightnessVariance,
 						GroundNonBlackPixelRatio, GroundBrightnessSpread,
 						GroundMeanSpatialDelta, MinimumGroundMeanBrightness,
+						MinimumGroundP10Brightness,
 						MinimumGroundBrightnessVariance,
 						MinimumGroundNonBlackPixelRatio,
 						MinimumGroundBrightnessSpread,
@@ -3554,8 +3651,19 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 				return false;
 			}
 			const FLightingChannels& FillChannels = ActiveSurfaceFillComponent->LightingChannels;
+			const APlanet* ActiveSurfaceBody = RuntimeHomePlanet.Get();
+			const FVector SurfaceOutward = IsValid(ActiveSurfaceBody)
+				? (GravityPawn->GetActorLocation() - ActiveSurfaceBody->GetActorLocation())
+					.GetSafeNormal()
+				: FVector::ZeroVector;
+			const double FillIncidence = SurfaceOutward.IsNearlyZero()
+				? -1.0
+				: -FVector::DotProduct(
+					ActiveSurfaceFillComponent->GetDirection(), SurfaceOutward);
 			if (ActiveSurfaceFillComponent->Intensity < MinimumGameplaySurfaceFillIntensity
 				|| ActiveSurfaceFillComponent->Intensity > MaximumGameplaySurfaceFillIntensity
+				|| FillIncidence < MinimumGameplaySurfaceFillIncidence
+				|| FillIncidence > MaximumGameplaySurfaceFillIncidence
 				|| ActiveSurfaceFillComponent->CastShadows
 				|| ActiveSurfaceFillComponent->IsUsedAsAtmosphereSunLight()
 				|| !FMath::IsNearlyZero(
@@ -3563,10 +3671,13 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 				|| !FillChannels.bChannel0 || FillChannels.bChannel1 || FillChannels.bChannel2)
 			{
 				return Fail(FString::Printf(
-					TEXT("physical WorldScape readability fill violated its bounded non-solar contract intensity=%.2f expected=[%.2f,%.2f] shadows=%d atmosphereSun=%d volumetric=%.3f channels=[%d,%d,%d]"),
+					TEXT("physical WorldScape readability fill violated its bounded non-solar contract intensity=%.2f expected=[%.2f,%.2f] incidence=%.4f expected=[%.2f,%.2f] shadows=%d atmosphereSun=%d volumetric=%.3f channels=[%d,%d,%d]"),
 					ActiveSurfaceFillComponent->Intensity,
 					MinimumGameplaySurfaceFillIntensity,
 					MaximumGameplaySurfaceFillIntensity,
+					FillIncidence,
+					MinimumGameplaySurfaceFillIncidence,
+					MaximumGameplaySurfaceFillIncidence,
 					ActiveSurfaceFillComponent->CastShadows ? 1 : 0,
 					ActiveSurfaceFillComponent->IsUsedAsAtmosphereSunLight() ? 1 : 0,
 					ActiveSurfaceFillComponent->VolumetricScatteringIntensity,
@@ -3712,7 +3823,7 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 				if (bValidateWetOceanContract)
 				{
 					UE_LOG(LogTemp, Display,
-						TEXT("[APS.Handoff.WetOcean] PASS menu preview -> immutable Water handoff -> one authoritative WorldScape root -> exact contiguous depth-writing ocean LODs -> collisionless/IgnoreAll liquid -> Visibility/Pawn traces reach terrain -> hidden ground outer-airglow with retained skylight -> two re-centred rendered observer positions -> two distinct screenshots -> hidden non-colliding preview ocean proxies -> safe worker drain"));
+						TEXT("[APS.Handoff.WetOcean] PASS menu preview -> immutable Water handoff -> one authoritative WorldScape root -> exact 9x3 SingleLayerWater ocean material slots -> collisionless/IgnoreAll liquid -> Visibility/Pawn traces reach terrain -> one ground scattering shell without coplanar cap passes plus preserved orbital shell -> two re-centred rendered observer positions -> two distinct screenshots -> hidden non-colliding preview ocean proxies -> safe worker drain"));
 				}
 				else
 				{

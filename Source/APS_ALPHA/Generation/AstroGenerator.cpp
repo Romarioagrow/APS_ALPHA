@@ -154,9 +154,9 @@ namespace APSPreviewGlobe
 		UMaterialInterface* OrbitalPresentationMaterial)
 	{
 		// The live WorldScape ocean is deliberately depth-writing while this closed
-		// one-component globe remains translucent. Copy only matching interpolatable
-		// profile parameters across those two project-owned masters; base properties
-		// and render-pass state stay owned by the orbital presentation MIC.
+		// one-component globe remains translucent. Liquid type selects an authored
+		// orbital MIC independently; physical WorldScape coefficients must never be
+		// copied into the incompatible closed-preview graph.
 		UMaterialInstance* ResolvedInstance = Cast<UMaterialInstance>(ResolvedMaterial);
 		if (!IsValid(ResolvedInstance) || !IsValid(OrbitalPresentationMaterial)
 			|| OrbitalPresentationMaterial->IsA<UMaterialInstanceDynamic>()
@@ -182,8 +182,6 @@ namespace APSPreviewGlobe
 		{
 			return nullptr;
 		}
-		Material->CopyInterpParameters(ResolvedInstance);
-
 		// The closed globe is always an orbital presentation, even if the retained
 		// resolver root was configured through a transient full-scale state.
 		Material->SetScalarParameterValue(TEXT("Opacity"),
@@ -3399,8 +3397,15 @@ void AAstroGenerator::SetPreviewBodyBackingSphereVisible(
 		if (!IsValid(SphereMesh)) continue;
 		// Blueprint bodies can contain more than one static-mesh layer. Hiding only the
 		// first component left an authored half-sphere visible over the real WorldScape
-		// terrain. Non-solid bodies may still use their authored mesh; a selected solid
-		// body never does.
+		// terrain. These meshes are menu/loading presentation only: this direct helper
+		// bypasses APlanet/AMoon::EnableSphereMesh(), so also clear any Blueprint-authored
+		// collision here. Otherwise a hidden fallback can remain a smooth collision shell
+		// underneath the closed terrain/ocean proxy.
+		// Non-solid bodies may still use their authored mesh; a selected solid body never
+		// does.
+		SphereMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		SphereMesh->SetCollisionResponseToAllChannels(ECR_Ignore);
+		SphereMesh->SetGenerateOverlapEvents(false);
 		SphereMesh->SetHiddenInGame(!bEffectiveVisible, false);
 		SphereMesh->SetVisibility(bEffectiveVisible, false);
 	}
@@ -6618,6 +6623,7 @@ void AAstroGenerator::GenerateStarCluster()
 		UE_LOG(LogTemp, Error, TEXT("Failed to spawn star cluster."));
 		return;
 	}
+	NewStarCluster->EnsureCanonicalStellarMaterial();
 	// A generated cluster is part of the galaxy, not a second unrelated root.
 	// Keep relative transforms here: the generator may already carry the full-scale
 	// world transform after GenerateGalaxy(), and KeepWorld would silently cancel it
@@ -7947,6 +7953,7 @@ void AAstroGenerator::GenerateGalaxy()
 			UE_LOG(LogTemp, Error, TEXT("Failed to spawn a usable galaxy actor"));
 			return;
 		}
+		NewGalaxy->EnsureCanonicalStellarMaterial();
 		NewGalaxy->GalaxyType = GalaxyModel->GalaxyType;
 		NewGalaxy->GalaxyGlass = GalaxyModel->GalaxyClass;
 		const int32 GalaxySeed = HashCombine(GetTypeHash(GalaxySize),
@@ -8257,12 +8264,19 @@ bool AAstroGenerator::ResolveSpawnLocation(const ASpaceship* NewHomeSpaceship, F
 			: -TNumericLimits<double>::Max();
 		constexpr double MinimumLandClearanceCm = 1000.0;
 		constexpr double MinimumNeighbourLandClearanceCm = 500.0;
-		// A gameplay start must expose readable physical terrain at walking, local
-		// and vista scales.  These are deliberately modest geometric thresholds:
-		// they reject a texture-only plane without forcing the player onto a cliff.
-		constexpr double MinimumRange10mCm = 30.0;
-		constexpr double MinimumRange100mCm = 300.0;
-		constexpr double MinimumRange250mCm = 800.0;
+		// A gameplay start is also the first hero view of the generated body. Reject
+		// technically non-flat but visually featureless basins and use the existing
+		// deterministic whole-body fallback to find readable, still-walkable terrain.
+		// Oceanic worlds deliberately use broad, low-relief shelves.  Requiring the
+		// same hero-relief amplitudes as rocky/cryogenic profiles rejects every
+		// otherwise valid dry island and aborts the generated-world handoff.  Keep a
+		// non-zero physical-relief gate for them, but tune it to their authored
+		// ground-scale envelope rather than weakening the invariant for all worlds.
+		const bool bOceanicSurface = Surface->ResolvedSurfaceProfile.Archetype
+			== EAPSPlanetSurfaceArchetype::Oceanic;
+		const double MinimumRange10mCm = bOceanicSurface ? 15.0 : 300.0;
+		const double MinimumRange100mCm = bOceanicSurface ? 150.0 : 1500.0;
+		const double MinimumRange250mCm = bOceanicSurface ? 350.0 : 2500.0;
 		constexpr double MaximumLandingSlope = 0.25;
 		constexpr int32 LandingDirectionCount = 12;
 		constexpr double ProbeDistancesCm[3] = {1000.0, 10000.0, 25000.0};
@@ -8465,8 +8479,11 @@ bool AAstroGenerator::ResolveSpawnLocation(const ASpaceship* NewHomeSpaceship, F
 		if (!BestCandidate.bValid)
 		{
 			UE_LOG(LogTemp, Error,
-				TEXT("[APS.Civilization.SurfaceSpawn] no dry, non-flat, bounded-slope WorldScape landing patch body=%s liquid=%d oceanHeight=%.2f"),
-				*GetNameSafe(Body), bHasLiquid ? 1 : 0, OceanHeightCm);
+				TEXT("[APS.Civilization.SurfaceSpawn] no dry, non-flat, bounded-slope WorldScape landing patch body=%s archetype=%s liquid=%d oceanHeight=%.2f requiredRelief=[%.0f,%.0f,%.0f]cm"),
+				*GetNameSafe(Body),
+				*UEnum::GetValueAsString(Surface->ResolvedSurfaceProfile.Archetype),
+				bHasLiquid ? 1 : 0, OceanHeightCm,
+				MinimumRange10mCm, MinimumRange100mCm, MinimumRange250mCm);
 			return false;
 		}
 
@@ -8708,6 +8725,44 @@ void AAstroGenerator::TryFinalizeSurfaceSpawn(TWeakObjectPtr<APawn> WeakPawn,
 		RetryOrReportFailure(TEXT("WorldScape profile/root not ready"));
 		return;
 	}
+	// ResolveSpawnLocation initially runs while the generated hierarchy is still
+	// transitioning out of the menu world.  The committed gameplay root rebuilds
+	// its WorldScape state during travel, and its exact height samples can differ
+	// from that transient pre-travel root.  Re-run the production selector once
+	// against the live root before accepting a CollisionLod landing so the final
+	// pawn direction satisfies the same 10 m / 100 m / 250 m relief gates that
+	// selected it.  This is selection, not an automation-only relocation.
+	if (AttemptIndex == 0)
+	{
+		FVector LiveSpawnLocation;
+		if (!ResolveSpawnLocation(nullptr, LiveSpawnLocation)
+			|| ResolvedSurfaceSpawnBody.Get() != Body
+			|| ResolvedSurfaceSpawnOutward.IsNearlyZero())
+		{
+			RetryOrReportFailure(TEXT("live WorldScape landing selector could not resolve a readable patch"));
+			return;
+		}
+
+		const FVector LiveOutward = ResolvedSurfaceSpawnOutward.GetSafeNormal(
+			UE_DOUBLE_SMALL_NUMBER, SurfaceOutward);
+		const FVector LiveViewDirection = ResolvedSurfaceSpawnViewDirection;
+		const double SurfaceShiftCm = Root->PlanetScale
+			* FVector::Dist(LiveOutward, SurfaceOutward.GetSafeNormal());
+		if (SurfaceShiftCm > 1.0)
+		{
+			UE_LOG(LogTemp, Display,
+				TEXT("[APS.Civilization.SurfaceSpawn] reselected live WorldScape landing body=%s shift=%.2fcm oldOutward=%s newOutward=%s"),
+				*GetNameSafe(Body), SurfaceShiftCm, *SurfaceOutward.ToCompactString(),
+				*LiveOutward.ToCompactString());
+		}
+		// Always restart once with the live selector result. RetryOrReportFailure was
+		// created above and therefore captured the pre-travel direction; continuing in
+		// this frame would let any later collision/streaming retry jump back to that
+		// stale (often flat) patch even though the live selector found readable relief.
+		TryFinalizeSurfaceSpawn(WeakPawn, WeakBody, LiveOutward,
+			LiveViewDirection, AttemptIndex + 1, FinalizationSerial);
+		return;
+	}
 	const FVector SurfaceCenter = Root->GetActorLocation();
 	SurfaceOutward = SurfaceOutward.GetSafeNormal(UE_DOUBLE_SMALL_NUMBER,
 		(Pawn->GetActorLocation() - SurfaceCenter).GetSafeNormal(
@@ -8739,10 +8794,36 @@ void AAstroGenerator::TryFinalizeSurfaceSpawn(TWeakObjectPtr<APawn> WeakPawn,
 	{
 		GravityPawn->SetSurfaceHandoffSuspended(true);
 	}
-	if (!Pawn->SetActorLocation(GenerationLocation, false, nullptr,
-		ETeleportType::TeleportPhysics))
+	// A reselected live patch can be tens of kilometres from the transient menu
+	// landing. Character SetActorLocation may report a failed move while its
+	// disabled movement component is processing the map-travel handoff, even with
+	// sweeping disabled. Use the no-check actor teleport first, then verify the
+	// physical root actually reached the requested pre-gravity generation anchor.
+	const bool bTeleportReported = Pawn->TeleportTo(GenerationLocation,
+		Pawn->GetActorRotation(), false, true);
+	double GenerationAnchorErrorCm = FVector::Distance(
+		Pawn->GetActorLocation(), GenerationLocation);
+	if (GenerationAnchorErrorCm > 1.0)
 	{
-		RetryOrReportFailure(TEXT("pawn teleport to WorldScape generation anchor failed"));
+		if (USceneComponent* PawnRoot = Pawn->GetRootComponent())
+		{
+			PawnRoot->SetWorldLocation(GenerationLocation, false, nullptr,
+				ETeleportType::TeleportPhysics);
+			GenerationAnchorErrorCm = FVector::Distance(
+				Pawn->GetActorLocation(), GenerationLocation);
+		}
+	}
+	if (!FMath::IsFinite(GenerationAnchorErrorCm) || GenerationAnchorErrorCm > 1.0)
+	{
+		if (AttemptIndex <= 1 || (AttemptIndex + 1) % 25 == 0)
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("[APS.Civilization.SurfaceSpawn] waiting for pre-gravity WorldScape anchor teleport=%d error=%.2fcm target=%s actual=%s"),
+				bTeleportReported ? 1 : 0, GenerationAnchorErrorCm,
+				*GenerationLocation.ToCompactString(),
+				*Pawn->GetActorLocation().ToCompactString());
+		}
+		RetryOrReportFailure(TEXT("pawn did not reach the WorldScape generation anchor"));
 		return;
 	}
 

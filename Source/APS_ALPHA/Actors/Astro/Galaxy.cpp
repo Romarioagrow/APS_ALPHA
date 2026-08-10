@@ -1,4 +1,6 @@
 #include "Galaxy.h"
+#include "APS_ALPHA/Core/Rendering/APSStellarMaterialContract.h"
+#include "UObject/ConstructorHelpers.h"
 
 namespace APSGalaxyCatalog
 {
@@ -246,6 +248,55 @@ AGalaxy::AGalaxy()
 	StarMeshInstances->bAffectDynamicIndirectLighting = false;
 	StarMeshInstances->bAffectDistanceFieldLighting = false;
 	StarMeshInstances->SetReceivesDecals(false);
+	static ConstructorHelpers::FObjectFinder<UMaterial> CanonicalHismMaterial(
+		APSStellarMaterialContract::HismBaseObjectPath);
+	if (CanonicalHismMaterial.Succeeded())
+	{
+		StarMeshInstances->SetMaterial(0, CanonicalHismMaterial.Object);
+	}
+}
+
+void AGalaxy::PostInitializeComponents()
+{
+	Super::PostInitializeComponents();
+	EnsureCanonicalStellarMaterial();
+}
+
+bool AGalaxy::EnsureCanonicalStellarMaterial()
+{
+	if (!IsValid(StarMeshInstances))
+	{
+		return false;
+	}
+
+	UMaterial* CanonicalBase = APSStellarMaterialContract::LoadCanonicalBase(
+		APSStellarMaterialContract::HismBaseObjectPath);
+	if (!IsValid(CanonicalBase))
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[APS.StellarMaterial] Canonical galaxy HISM master is unavailable: %s"),
+			APSStellarMaterialContract::HismBaseObjectPath);
+		return false;
+	}
+
+	UMaterialInterface* CurrentMaterial = StarMeshInstances->GetMaterial(0);
+	if (APSStellarMaterialContract::HasExactBase(
+		CurrentMaterial, APSStellarMaterialContract::HismBaseObjectPath))
+	{
+		return true;
+	}
+
+	UMaterial* CurrentBase = APSStellarMaterialContract::GetBaseMaterial(CurrentMaterial);
+	UE_LOG(LogTemp, Warning,
+		TEXT("[APS.StellarMaterial] Replacing %s galaxy HISM base %s with canonical %s%s"),
+		*GetNameSafe(this),
+		IsValid(CurrentBase) ? *CurrentBase->GetPathName() : TEXT("<null>"),
+		APSStellarMaterialContract::HismBaseObjectPath,
+		APSStellarMaterialContract::UsesWorldGrid(CurrentMaterial)
+			? TEXT(" (WorldGrid fallback)") : TEXT(""));
+	StarMeshInstances->SetMaterial(0, CanonicalBase);
+	return APSStellarMaterialContract::HasExactBase(
+		StarMeshInstances->GetMaterial(0), APSStellarMaterialContract::HismBaseObjectPath);
 }
 
 bool AGalaxy::GetCatalogStarRecord(const int64 CatalogIndex, FGalaxyCatalogStarRecord& OutRecord) const

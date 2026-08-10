@@ -22,6 +22,7 @@
 #include "APS_ALPHA/Core/Enums/StellarType.h"
 #include "APS_ALPHA/Core/Model/GeneratedWorld.h"
 #include "APS_ALPHA/Core/Planetary/APSPlanetSurfaceProfile.h"
+#include "APS_ALPHA/Core/Rendering/APSStellarMaterialContract.h"
 #include "APS_ALPHA/Generation/APSWorldScapePlanetNoise.h"
 #include "APS_ALPHA/Generation/AstroGenerator.h"
 #include "APS_ALPHA/Generation/PlanetarySurfaceGenerator.h"
@@ -3842,6 +3843,15 @@ namespace APSMainMenuPreviewSmokeTests
 			{
 				Test->TestTrue(TEXT("AStar runtime MID handle matches rendered mesh material"),
 					Star->StarDynamicMaterial == RuntimeStellarMaterial);
+				UMaterial* RuntimeStellarBase = RuntimeStellarMaterial->GetBaseMaterial();
+				Test->TestNotNull(TEXT("Generated star runtime MID has a base material"),
+					RuntimeStellarBase);
+				Test->TestTrue(TEXT("Generated star runtime MID uses exact canonical SUN base"),
+					IsValid(RuntimeStellarBase)
+					&& RuntimeStellarBase->GetPathName()
+						== APSStellarMaterialContract::ActorBaseObjectPath);
+				Test->TestFalse(TEXT("Generated star runtime MID never uses WorldGrid"),
+					APSStellarMaterialContract::UsesWorldGrid(RuntimeStellarMaterial));
 
 				TArray<FMaterialParameterInfo> ScalarParameters;
 				TArray<FGuid> ScalarParameterIds;

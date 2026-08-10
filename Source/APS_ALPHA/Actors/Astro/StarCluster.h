@@ -114,6 +114,12 @@ class APS_ALPHA_API AStarCluster : public AAstroActor /*, public INavigatableBod
 
 public:
 	AStarCluster();
+	bool EnsureCanonicalStellarMaterial();
+
+protected:
+	virtual void PostInitializeComponents() override;
+
+public:
 
 	UPROPERTY(VisibleAnywhere, Category = "Star Cluster")
 	EStarClusterPopulation StarClusterPopulation;

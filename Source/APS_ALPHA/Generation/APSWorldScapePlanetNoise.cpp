@@ -227,6 +227,7 @@ FNoiseData UAPSWorldScapePlanetNoise::Evaluate(
 	constexpr double GroundWalkBaseWavelengthCm = 24000.0;       // 0.24 km walk-scale break-up
 	constexpr double GroundFineBaseWavelengthCm = 6000.0;        // 60 m readable ground shape
 	constexpr double GroundFootBaseWavelengthCm = 2200.0;        // 22 m restrained foot-scale cue
+	constexpr double GroundSubFootBaseWavelengthCm = 1400.0;     // 14 m sparse local insurance
 	const double GroundRegionalFrequency = FMath::Clamp(
 		PhysicalPlanetScale / GroundRegionalBaseWavelengthCm, 0.25, 10000000.0);
 	const double GroundReliefFrequency = FMath::Clamp(
@@ -241,6 +242,8 @@ FNoiseData UAPSWorldScapePlanetNoise::Evaluate(
 		PhysicalPlanetScale / GroundFineBaseWavelengthCm, 1.0, 10000000.0);
 	const double GroundFootFrequency = FMath::Clamp(
 		PhysicalPlanetScale / GroundFootBaseWavelengthCm, 1.0, 10000000.0);
+	const double GroundSubFootFrequency = FMath::Clamp(
+		PhysicalPlanetScale / GroundSubFootBaseWavelengthCm, 1.0, 10000000.0);
 	const DVector GroundRegionalPosition = PlanetDirection * GroundRegionalFrequency
 		+ TerrainOffset * 1.19;
 	const DVector GroundReliefPosition = PlanetDirection * GroundReliefFrequency
@@ -255,6 +258,8 @@ FNoiseData UAPSWorldScapePlanetNoise::Evaluate(
 		+ TerrainOffset * 3.17;
 	const DVector GroundFootPosition = PlanetDirection * GroundFootFrequency
 		+ TerrainOffset * 3.71;
+	const DVector GroundSubFootPosition = PlanetDirection * GroundSubFootFrequency
+		+ TerrainOffset * 4.19;
 	const double GroundRegional = FMath::Clamp(
 		NoiseClass.Fractal(GroundRegionalPosition, 2, 2.07, 0.48), 0.0, 1.0) - 0.5;
 	const double GroundRelief = FMath::Clamp(
@@ -269,6 +274,8 @@ FNoiseData UAPSWorldScapePlanetNoise::Evaluate(
 		NoiseClass.Fractal(GroundFinePosition, 2, 2.05, 0.44), 0.0, 1.0) - 0.5;
 	const double GroundFoot = FMath::Clamp(
 		NoiseClass.Fractal(GroundFootPosition, 2, 2.01, 0.42), 0.0, 1.0) - 0.5;
+	const double GroundSubFoot = FMath::Clamp(
+		NoiseClass.Fractal(GroundSubFootPosition, 2, 2.09, 0.40), 0.0, 1.0) - 0.5;
 
 	// Height is authored relative to the liquid surface. OceanLevel therefore
 	// changes sea altitude but can no longer silently turn a terrestrial profile
@@ -337,12 +344,35 @@ FNoiseData UAPSWorldScapePlanetNoise::Evaluate(
 		* GroundRollingLandformBoost * GroundSurfaceMask;
 	HeightNormalized += PhysicalDetailWeight * GroundMicro * 0.0050 * GroundRoughness
 		* GroundLocalLandformBoost * GroundSurfaceMask;
-	HeightNormalized += PhysicalDetailWeight * GroundWalk * 0.0026 * GroundRoughness
-		* GroundLocalLandformBoost * GroundSurfaceMask;
-	HeightNormalized += PhysicalDetailWeight * GroundFine * 0.00032
-		* GroundFineResponse * GroundSurfaceMask;
-	HeightNormalized += PhysicalDetailWeight * GroundFoot * 0.00010
-		* GroundFineResponse * GroundSurfaceMask;
+	// Keep the authored 240 m band intact. Subtracting energy from it and adding
+	// unrelated 60/22 m noises looked conservative on paper, but the independent
+	// phases cancelled in typical Frozen patches and reduced both median relief and
+	// RMS slope. Add only bounded fine geometry on top of the coherent walk-scale
+	// landform. PhysicalDetailWeight still keeps compressed orbital previews on the
+	// existing low-pass path, so there is no second presentation surface.
+	const double WalkBandCoefficient =
+		0.0026 * GroundRoughness * GroundLocalLandformBoost
+		* (bCryogenicGround ? 1.70 : 1.0);
+	const double FineBandCoefficient = 0.00032 * GroundFineResponse;
+	const double FootBandCoefficient = 0.00010 * GroundFineResponse
+		+ (bCryogenicGround ? 0.00005 : 0.0);
+	const double SubFootBandCoefficient = bCryogenicGround ? 0.00011 : 0.0;
+	// Frozen ground must not collapse to a visually flat sheet in low continental
+	// mask pockets. Preserve the authored coast/ice classification, but keep a small
+	// physical relief floor for the local geometry bands. This changes the one
+	// authoritative WorldScape height field only; no material displacement or preview
+	// shell is introduced.
+	const double LocalPhysicalSurfaceMask = bCryogenicGround
+		? FMath::Max(GroundSurfaceMask, 0.48)
+		: GroundSurfaceMask;
+	HeightNormalized += PhysicalDetailWeight * GroundWalk * WalkBandCoefficient
+		* LocalPhysicalSurfaceMask;
+	HeightNormalized += PhysicalDetailWeight * GroundFine * FineBandCoefficient
+		* LocalPhysicalSurfaceMask;
+	HeightNormalized += PhysicalDetailWeight * GroundFoot * FootBandCoefficient
+		* LocalPhysicalSurfaceMask;
+	HeightNormalized += PhysicalDetailWeight * GroundSubFoot * SubFootBandCoefficient
+		* LocalPhysicalSurfaceMask;
 	// Keep orbital colour classification on a deliberately low-pass terrain field.
 	// Feeding physical displacement or preset deformation into vertex R turns real
 	// relief into nested palette isolines; at mixed WorldScape LODs those isolines also

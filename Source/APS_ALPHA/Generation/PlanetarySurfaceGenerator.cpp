@@ -440,9 +440,14 @@ void APlanetarySurfaceGenerator::InitAtmoScape(UWorld* World, double PlanetaryRa
 		//
 		// The inside-view outer-airglow material is another screen-space sphere pass.
 		// Its flipped ray/sphere mask and warm InsideColor produce a hard circular cap
-		// when the ground camera changes tangent frame. It is never selected by
-		// AtmoScape's outside-camera branch, and menu preview independently selects only
-		// the proper space shell, so suppress it only on a full-scale gameplay body.
+		// when the ground camera changes tangent frame. The plugin's skylight component
+		// also enables inside the atmosphere on the exact same SM_AtmosphereMesh and at
+		// the exact same scale as PlanetaryAtmoMesh. Keeping both coplanar sphere passes
+		// leaves a second camera-dependent blue cap even after outer airglow is hidden.
+		// Full-scale gameplay therefore retains only PlanetaryAtmoMesh as the physical
+		// inside scattering shell. SpacePlanetaryAtmoMesh remains untouched so the
+		// plugin can still select its orbital limb after the observer exits atmosphere;
+		// menu preview likewise keeps its independent space-shell presentation.
 		const bool bFullScaleGameplayBody = World->IsGameWorld()
 			&& FMath::IsNearlyEqual(NewPlanetaryBody->WorldScapePresentationScale, 1.0);
 		TInlineComponentArray<UStaticMeshComponent*> AtmosphereMeshes;
@@ -458,7 +463,10 @@ void APlanetarySurfaceGenerator::InitAtmoScape(UWorld* World, double PlanetaryRa
 				TEXT("PlanetaryAbsorptionMesh"));
 			const bool bGroundOuterAirglow = bFullScaleGameplayBody
 				&& ComponentName.Contains(TEXT("PlanetarOutterMesh"));
-			if (!bDuplicateAbsorption && !bGroundOuterAirglow)
+			const bool bGroundSkylightOverlay = bFullScaleGameplayBody
+				&& ComponentName.Contains(TEXT("PlanetarySkylightMesh"));
+			if (!bDuplicateAbsorption && !bGroundOuterAirglow
+				&& !bGroundSkylightOverlay)
 			{
 				continue;
 			}

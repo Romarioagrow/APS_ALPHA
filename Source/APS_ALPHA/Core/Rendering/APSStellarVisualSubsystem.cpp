@@ -36,11 +36,11 @@ namespace
 	const FName GameplaySurfaceFillLightTag(TEXT("APSGameplaySurfaceFillLight"));
 	// Keep the generated star as the dominant key. This fill only lifts the
 	// fixed-exposure floor enough to retain readable normals on the night side.
-	// The dry Frozen handoff still compressed the settled ground to a seven-level
-	// p10/p90 range at 1.15 lux.  A small calibrated lift keeps the off-axis normal
-	// response above display quantization while remaining far below the generated
-	// star key (about 9.5 lux in the standard handoff).
-	constexpr float GameplaySurfaceFillLightIntensity = 1.40f;
+	// The dry Frozen handoff still compressed the settled ground to a nine-level
+	// p10/p90 range at 1.40 lux. A calibrated lift keeps the off-axis normal
+	// response above display quantization while remaining below one quarter of the
+	// generated star key (about 9.5 lux in the standard handoff).
+	constexpr float GameplaySurfaceFillLightIntensity = 2.20f;
 	constexpr double GameplaySurfaceFillMaximumAltitudeCm = 5000000.0;
 	const FLinearColor GameplaySurfaceFillLightColor(0.78f, 0.84f, 0.94f, 1.0f);
 }

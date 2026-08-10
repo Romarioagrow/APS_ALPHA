@@ -523,10 +523,9 @@ namespace APSPlanetSurfaceGallerySmokeTests
 					GalleryCase.DisplayName), ResolvedLiquid);
 				if (PreviewLiquid && ResolvedLiquid)
 				{
-					// The live WorldScape ocean and the closed hierarchy globe deliberately
-					// share authored colour parameters, not a render pass.  The former must
-					// remain opaque/depth-writing so clipmap rings cannot sort through each
-					// other; the latter is a separate translucent orbital presentation.
+					// Liquid identity selects two independent authored graphs. The live
+					// WorldScape ocean must remain opaque/depth-writing so clipmap rings cannot
+					// sort through each other; the closed proxy keeps only orbital controls.
 					bValid &= Test->TestNotEqual(FString::Printf(
 						TEXT("%s preview and resolved oceans use independent masters"),
 						GalleryCase.DisplayName), PreviewLiquid->GetMaterial(),
@@ -552,40 +551,40 @@ namespace APSPlanetSurfaceGallerySmokeTests
 						IsValid(ResolvedLiquid->Parent.Get())
 							&& ResolvedLiquid->Parent->IsA<UMaterialInstanceDynamic>());
 
-					const auto AssertOrbitalScalar = [this, &GalleryCase, PreviewLiquid,
-						ResolvedLiquid](const TCHAR* ParameterName, const float PreviewExpected,
-							const float ResolvedExpected)
+					const auto AssertPreviewScalar = [this, &GalleryCase, PreviewLiquid](
+						const TCHAR* ParameterName, const float PreviewExpected)
 					{
 						float PreviewValue = 0.0f;
-						float ResolvedValue = 0.0f;
 						const FHashedMaterialParameterInfo ParameterInfo{
 							FName(ParameterName)};
 						const bool bHasPreviewValue = PreviewLiquid->GetScalarParameterValue(
 							ParameterInfo, PreviewValue);
-						const bool bHasResolvedValue = ResolvedLiquid->GetScalarParameterValue(
-							ParameterInfo, ResolvedValue);
 						bool bScalarValid = Test->TestTrue(FString::Printf(
 							TEXT("%s preview liquid exposes %s"), GalleryCase.DisplayName,
 							ParameterName), bHasPreviewValue);
-						bScalarValid &= Test->TestTrue(FString::Printf(
-							TEXT("%s resolved liquid exposes %s"), GalleryCase.DisplayName,
-							ParameterName), bHasResolvedValue);
-						if (bHasPreviewValue && bHasResolvedValue)
+						if (bHasPreviewValue)
 						{
 							bScalarValid &= Test->TestTrue(FString::Printf(
 								TEXT("%s preview liquid applies orbital %s"),
 								GalleryCase.DisplayName, ParameterName),
 								FMath::IsNearlyEqual(PreviewValue, PreviewExpected, 1.0e-4f));
-							bScalarValid &= Test->TestTrue(FString::Printf(
-								TEXT("%s resolved WorldScape liquid keeps physical %s"),
-								GalleryCase.DisplayName, ParameterName),
-								FMath::IsNearlyEqual(ResolvedValue, ResolvedExpected, 1.0e-4f));
 						}
 						return bScalarValid;
 					};
-					bValid &= AssertOrbitalScalar(TEXT("WaveColorStrength"), 0.003f, 0.003f);
-					bValid &= AssertOrbitalScalar(TEXT("WaveNormalStrength"), 0.0f, 0.0f);
-					bValid &= AssertOrbitalScalar(TEXT("OrbitalNormalBlend"), 1.0f, 0.0f);
+					bValid &= AssertPreviewScalar(TEXT("WaveColorStrength"), 0.003f);
+					bValid &= AssertPreviewScalar(TEXT("WaveNormalStrength"), 0.0f);
+					bValid &= AssertPreviewScalar(TEXT("OrbitalNormalBlend"), 1.0f);
+					for (const TCHAR* ParameterName :
+						{TEXT("WaveColorStrength"), TEXT("WaveNormalStrength"),
+							TEXT("OrbitalNormalBlend")})
+					{
+						float UnusedValue = 0.0f;
+						bValid &= Test->TestFalse(FString::Printf(
+							TEXT("%s physical WorldScape liquid exposes no orbital scalar %s"),
+							GalleryCase.DisplayName, ParameterName),
+							ResolvedLiquid->GetScalarParameterValue(
+								FHashedMaterialParameterInfo(FName(ParameterName)), UnusedValue));
+					}
 
 					const float ExpectedPresentationOpacity =
 						Surface->ResolvedSurfaceProfile.LiquidType == EAPSPlanetLiquidType::Lava

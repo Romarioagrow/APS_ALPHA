@@ -161,8 +161,17 @@ namespace APSStellarMaterial
 		// an existing master is idempotent and cannot retain old texture samples.
 		while (!Material->GetExpressions().IsEmpty())
 		{
-			UMaterialEditingLibrary::DeleteMaterialExpression(
-				Material, Material->GetExpressions().Last());
+			UMaterialExpression* Expression = Material->GetExpressions().Last();
+			// Material compilation can temporarily root a VertexInterpolator. The
+			// maintenance commandlet owns the old graph at this point, so release that
+			// transient root before DeleteMaterialExpression marks the node as garbage.
+			// Without this guard a second idempotent rebuild asserts in UE 5.4 after the
+			// first master has compiled successfully.
+			if (IsValid(Expression) && Expression->IsRooted())
+			{
+				Expression->RemoveFromRoot();
+			}
+			UMaterialEditingLibrary::DeleteMaterialExpression(Material, Expression);
 		}
 		Material->MaterialDomain = MD_Surface;
 		Material->BlendMode = BLEND_Opaque;
@@ -179,13 +188,13 @@ namespace APSStellarMaterial
 		UMaterialExpressionScalarParameter* SurfaceSeed = AddScalarParameter(
 			Material, TEXT("SurfaceSeed"), 0.371f, 0.0f, 1.0f, -1250, -420, 2);
 		UMaterialExpressionScalarParameter* SurfaceVariation = AddScalarParameter(
-			Material, TEXT("SurfaceVariation"), 0.44f, 0.0f, 1.0f, -1250, -320, 3);
+			Material, TEXT("SurfaceVariation"), 0.32f, 0.0f, 1.0f, -1250, -320, 3);
 		UMaterialExpressionScalarParameter* GranulationStrength = AddScalarParameter(
-			Material, TEXT("GranulationStrength"), 0.56f, 0.0f, 1.0f, -1250, -220, 4);
+			Material, TEXT("GranulationStrength"), 0.22f, 0.0f, 1.0f, -1250, -220, 4);
 		UMaterialExpressionScalarParameter* SpotStrength = AddScalarParameter(
-			Material, TEXT("SpotStrength"), 0.50f, 0.0f, 1.0f, -1250, -120, 5);
+			Material, TEXT("SpotStrength"), 0.68f, 0.0f, 1.0f, -1250, -120, 5);
 		UMaterialExpressionScalarParameter* CoronaStrength = AddScalarParameter(
-			Material, TEXT("CoronaStrength"), 0.16f, 0.0f, 0.45f, -1250, -20, 6);
+			Material, TEXT("CoronaStrength"), 0.20f, 0.0f, 0.45f, -1250, -20, 6);
 
 		// UE 5.4 declares these expression classes without ENGINE_API. Referencing
 		// their StaticClass symbols from a game module links on some source builds but
@@ -205,6 +214,8 @@ namespace APSStellarMaterial
 			TEXT("/Script/Engine.MaterialExpressionWorldPosition"), -950, -60);
 		UMaterialExpression* ObjectPosition = AddReflectedExpression(Material,
 			TEXT("/Script/Engine.MaterialExpressionObjectPositionWS"), -950, 30);
+		UMaterialExpression* InterpolatedObjectPosition = AddReflectedExpression(Material,
+			TEXT("/Script/Engine.MaterialExpressionVertexInterpolator"), -700, 30);
 		UMaterialExpression* GameTime = AddReflectedExpression(Material,
 			TEXT("/Script/Engine.MaterialExpressionTime"), -950, 120);
 		UMaterialExpressionCameraVectorWS* Camera =
@@ -215,7 +226,13 @@ namespace APSStellarMaterial
 		if (!Color || !Multiplier || !SurfaceSeed || !SurfaceVariation || !GranulationStrength
 			|| !SpotStrength || !CoronaStrength || !InstanceColor || !InstanceEmission
 			|| !InstanceSeed || !SystemHighlight || !Normal || !WorldPosition
-			|| !ObjectPosition || !GameTime || !Camera || !StellarSurface)
+			|| !ObjectPosition || !InterpolatedObjectPosition || !GameTime || !Camera
+			|| !StellarSurface)
+		{
+			return false;
+		}
+		if (!UMaterialEditingLibrary::ConnectMaterialExpressions(
+			ObjectPosition, TEXT(""), InterpolatedObjectPosition, TEXT("VS")))
 		{
 			return false;
 		}
@@ -254,8 +271,9 @@ float seed = frac(lerp(ParamSeed, InstanceSeed, useInstance));
 // legacy star sphere has faceted/mirrored normal islands, so a close STAR view
 // exposed a square checker even though the procedural waves themselves never
 // sampled a tiled texture. A radial coordinate reconstructed from position is
-// continuous across those triangles. ObjectPositionWS also resolves per HISM
-// instance, keeping GALAXY/CLUSTER and the materialized AStar on one recipe.
+// continuous across those triangles. Pixel-stage ObjectPositionWS is only the
+// HISM primitive centre in UE 5.4, so its vertex-stage per-instance value is
+// explicitly interpolated before it reaches this custom pixel expression.
 float3 radial = WorldPositionWS - ObjectPositionWS;
 float radialLengthSq = dot(radial, radial);
 float3 n = radialLengthSq > 1.0e-8
@@ -281,34 +299,44 @@ float facing = saturate(dot(n, v));
 // turn a close star into flat blocks while still reading as an untextured point
 // at cluster scale.
 float phase = seed * 37.6991118;
-// Cross-axis waves avoid the long parallel bands produced by axis-only planes.
-// Each octave uses a paired directional basis instead of recomputing three
-// nested trigonometric trees. The domain warp still breaks alignment between
-// scales, while the pairwise intersections retain convection cells and fine
-// granules at close range without UVs, cube projections or normal seams.
-float3 lowDomain = n * 4.2;
+// Each octave is a three-axis vector field. A weighted signed-volume term breaks
+// up the former gyroid-like pairwise pattern, while a small pairwise remainder
+// keeps neighbouring convection cells connected. Lower incommensurate frequencies
+// produce a few readable photospheric structures instead of dozens of identical
+// stretched grains. The same seamless direction-domain field remains stable on
+// HISM proxies and on the actor sphere.
+float3 lowDomain = n * 3.4;
 float3 domainWarp = sin(
     lowDomain
     + lowDomain.yzx * float3(1.31, -1.43, 1.27)
     + phase * float3(0.37, -0.29, 0.43));
-float3 p = normalize(n + domainWarp * 0.055);
+float3 p = normalize(n + domainWarp * 0.045);
 
-float3 macroP = p * 6.4 + domainWarp * 0.62;
-float macroA = sin(dot(macroP, float3(1.00, 0.83, 0.57)) + phase * 0.41);
-float macroB = cos(dot(macroP, float3(-0.49, 1.07, 0.71)) - phase * 0.33);
-float macroConvection = (macroA + macroB + macroA * macroB * 0.32) / 2.32;
+float macroConvection = (domainWarp.x * domainWarp.y
+                       + domainWarp.y * domainWarp.z
+                       + domainWarp.z * domainWarp.x) * 0.333333;
 
-float3 mesoP = p * 18.5 + domainWarp * 1.65
+float3 mesoP = p * 7.25 + domainWarp * 1.15
              + macroConvection * float3(0.73, -0.41, 0.29);
-float mesoA = sin(dot(mesoP, float3(1.00, 0.71, 0.47)) + phase * 0.73);
-float mesoB = cos(dot(mesoP, float3(-0.61, 1.09, 0.83)) - phase * 0.67);
-float mesoCells = mesoA * mesoB;
+float3 mesoWave = sin(mesoP
+                    + mesoP.yzx * float3(0.47, -0.61, 0.53)
+                    + phase * float3(0.73, -0.67, 0.59));
+float mesoPair = (mesoWave.x * mesoWave.y
+                + mesoWave.y * mesoWave.z
+                + mesoWave.z * mesoWave.x) * 0.333333;
+float mesoVolume = mesoWave.x * mesoWave.y * mesoWave.z;
+float mesoCells = mesoVolume * 0.68 + mesoPair * 0.32;
 
-float3 microP = p * 47.0 + domainWarp * 3.4
-              + mesoCells * float3(-1.3, 0.9, 1.1);
-float granuleA = sin(dot(microP, float3(1.00, 0.67, 0.43)) + phase * 1.31);
-float granuleB = cos(dot(microP, float3(-0.47, 1.13, 0.79)) - phase * 1.19);
-float microGranules = granuleA * granuleB;
+float3 microP = p * 18.5 + domainWarp * 2.10
+              + mesoCells * float3(-1.17, 0.83, 1.03);
+float3 granuleWave = sin(microP
+                       + microP.yzx * float3(-0.39, 0.51, 0.43)
+                       + phase * float3(1.31, -1.19, 1.07));
+float microPair = (granuleWave.x * granuleWave.y
+                 + granuleWave.y * granuleWave.z
+                 + granuleWave.z * granuleWave.x) * 0.333333;
+float microVolume = granuleWave.x * granuleWave.y * granuleWave.z;
+float microGranules = microVolume * 0.72 + microPair * 0.28;
 
 // Broad magnetic fields form a few coherent dark spots.  A narrow surrounding
 // facular band keeps them organic instead of looking like stamped black dots.
@@ -334,19 +362,19 @@ float emissionActivity = lerp(actorActivity, proxyActivity, useInstance);
 // stationary photosphere fields as the materialized actor.
 float variation = saturate(Variation);
 float microUnit = microGranules * 0.5 + 0.5;
-float granuleCell = smoothstep(0.31, 0.69, microUnit);
+float granuleCell = smoothstep(0.22, 0.78, microUnit);
 float granuleRidges = (granuleCell - 0.5) * 2.0;
-float granulation = (mesoCells * 0.40 + granuleRidges * 0.60)
-                  * Granulation * 0.33 * spatialDetail;
+float granulation = (mesoCells * 0.64 + granuleRidges * 0.36)
+                  * Granulation * 0.14 * spatialDetail;
 // A narrow subset of the micro cells carries the faceted, jewel-like highlights.
 // Footprint attenuation preserves it on resolved HISM without sub-pixel aliasing.
-float granuleSpark = smoothstep(0.62, 0.88, microUnit) * spatialDetail;
+float granuleSpark = smoothstep(0.84, 0.97, microUnit) * spatialDetail;
 float spots = spotCore * SpotAmount * lerp(0.72, 1.0, emissionActivity)
             * spatialDetail;
 float faculae = spotHalo * (0.075 + variation * 0.14) * spatialDetail;
-float surface = max(0.24, 1.0 + macroConvection * variation * 0.31 * spatialDetail
-                           + granulation + faculae - spots * 0.68);
-surface *= lerp(0.90, 1.13, granuleSpark);
+float surface = max(0.24, 1.0 + macroConvection * variation * 0.12 * spatialDetail
+                           + granulation + faculae - spots * 0.72);
+surface *= lerp(0.96, 1.07, granuleSpark);
 
 // Limb darkening gives the disc volume.  The edge is brighter only in sparse
 // magnetic lobes, so post-process bloom reads as a soft corona with occasional
@@ -384,19 +412,22 @@ float3 normalizedSpectralTint = spectralColor / max(maxSpectral, 0.001);
 // every class equally bright. The explicit validity mask prevents the deliberately
 // near-black BH palette from being resurrected by spectral highlights or faculae.
 float3 spectralTint = lerp(spectralColor, normalizedSpectralTint, 0.55);
-float validStellarSpectrum = step(0.01, maxSpectral);
-float spectralVisibility = smoothstep(0.08, 0.90, maxSpectral)
-                         * validStellarSpectrum;
+// The visibility ramp already evaluates to exactly zero below 0.08.  A second
+// 0.01 step and two later validity multiplies were therefore mathematically
+// redundant, while costing every hierarchy point several pixel instructions.
+// Keeping one continuous ramp also avoids a needless branch-like threshold on
+// very dark spectral classes without resurrecting their emission.
+float spectralVisibility = smoothstep(0.08, 0.90, maxSpectral);
 float3 quietTint = lerp(spectralTint * spectralTint, spectralTint, 0.64)
                  * spectralVisibility;
 float cellHeat = lerp(0.5, granuleCell, spatialDetail);
 float3 spectralHighlightTint = normalizedSpectralTint * spectralVisibility;
 float3 hotGranuleTint = lerp(quietTint * 1.02,
                              spectralHighlightTint * 1.16, 0.18);
-float resolvedCellHeat = cellHeat * 0.72 + granuleSpark * 0.28;
-float3 surfaceTint = lerp(quietTint * 0.54,
-                          hotGranuleTint, resolvedCellHeat * 0.74);
-surfaceTint = lerp(surfaceTint, quietTint * 0.30, saturate(spots * 1.12));
+float resolvedCellHeat = cellHeat * 0.84 + granuleSpark * 0.16;
+float3 surfaceTint = lerp(quietTint * 0.78,
+                          hotGranuleTint, resolvedCellHeat * 0.42);
+surfaceTint = lerp(surfaceTint, quietTint * 0.18, saturate(spots * 1.18));
 surfaceTint = lerp(surfaceTint,
                    spectralHighlightTint * 1.16,
                    faculae * 1.85 + granuleSpark * 0.10);
@@ -414,20 +445,20 @@ float actorJewelPulse = 0.5 + 0.5 * sin(jewelPhase);
 float instanceJewelPulse = lerp(0.58, 0.82, seed);
 float jewelPulse = lerp(actorJewelPulse, instanceJewelPulse, useInstance);
 float jewelLift = spatialDetail * jewelMask
-                * lerp(0.14, 0.30, jewelPulse);
+                * lerp(0.08, 0.18, jewelPulse);
 // A second sparse signal sits outside the limb-darkened photosphere but remains
 // inside the opaque sphere. Bloom turns these coloured magnetic lobes into a
 // compact jewel rim without ever adding literal white or destabilising HISM.
 float rimJewelMask = spatialDetail * rim
                    * lerp(0.18, 1.0, prominenceMask);
 float rimJewelLift = rimJewelMask
-                   * lerp(0.040, 0.110, jewelPulse);
+                   * lerp(0.035, 0.090, jewelPulse);
 
 float visibleSurface = max(surface * limb + corona, 0.02);
 float stellarSignal = (toneSafeEmission + jewelLift) * visibleSurface
                     + rimJewelLift;
 float3 preBloom = surfaceTint * stellarSignal
-                * temporalFlicker * validStellarSpectrum;
+                * temporalFlicker;
 // Preserve hue and local contrast while hard-bounding the signal that enters the
 // menu's fixed-exposure, full-resolution bloom pass.
 float outputCeiling = lerp(1.72, 1.50, useInstance);
@@ -448,7 +479,7 @@ return preBloom * min(1.0, outputCeiling / max(peakChannel, 0.0001));
 		AddCustomInput(StellarSurface, TEXT("SystemMarker"), SystemHighlight);
 		AddCustomInput(StellarSurface, TEXT("NormalWS"), Normal);
 		AddCustomInput(StellarSurface, TEXT("WorldPositionWS"), WorldPosition);
-		AddCustomInput(StellarSurface, TEXT("ObjectPositionWS"), ObjectPosition);
+		AddCustomInput(StellarSurface, TEXT("ObjectPositionWS"), InterpolatedObjectPosition);
 		AddCustomInput(StellarSurface, TEXT("GameTime"), GameTime);
 		AddCustomInput(StellarSurface, TEXT("CameraWS"), Camera);
 		if (!UMaterialEditingLibrary::ConnectMaterialProperty(

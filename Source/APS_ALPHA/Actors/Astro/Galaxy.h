@@ -81,6 +81,12 @@ class APS_ALPHA_API AGalaxy : public ACelestialSystem
 
 public:
 	AGalaxy();
+	bool EnsureCanonicalStellarMaterial();
+
+protected:
+	virtual void PostInitializeComponents() override;
+
+public:
 
 	UPROPERTY(VisibleAnywhere, Category = "Galaxy")
 	EGalaxyType GalaxyType;

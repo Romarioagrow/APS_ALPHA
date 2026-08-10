@@ -23,6 +23,7 @@ protected:
 
 public:
 	void SetStarProperties(FLinearColor Color, float Multiplier);
+	UMaterialInstanceDynamic* EnsureCanonicalStellarMaterial();
 
 	UPROPERTY(VisibleAnywhere, Category = "Star")
 	UStaticMeshComponent* StarMesh;

@@ -2,6 +2,10 @@
 
 #include "Misc/AutomationTest.h"
 
+#include "APS_ALPHA/Actors/Astro/Galaxy.h"
+#include "APS_ALPHA/Actors/Astro/Star.h"
+#include "APS_ALPHA/Actors/Astro/StarCluster.h"
+#include "APS_ALPHA/Core/Rendering/APSStellarMaterialContract.h"
 #include "APS_ALPHA/Generation/StarGenerator.h"
 #include "MaterialEditingLibrary.h"
 #include "MaterialDomain.h"
@@ -16,7 +20,7 @@
 
 namespace APSStellarMaterialTests
 {
-	constexpr int32 ExpectedExpressionCount = 17;
+	constexpr int32 ExpectedExpressionCount = 18;
 	constexpr int32 MaximumPixelInstructions = 320;
 	constexpr float MaximumActorPreBloom = 1.72f;
 	constexpr float MaximumHISMPreBloom = 1.50f;
@@ -31,10 +35,10 @@ namespace APSStellarMaterialTests
 	constexpr float RimExponent = 3.15f;
 	constexpr float ActorFlickerAmplitude = 0.020f;
 	constexpr float HISMProxyFlickerAmplitude = 0.0f;
-	constexpr float JewelLiftMinimum = 0.14f;
-	constexpr float JewelLiftMaximum = 0.30f;
-	constexpr float RimJewelLiftMinimum = 0.040f;
-	constexpr float RimJewelLiftMaximum = 0.110f;
+	constexpr float JewelLiftMinimum = 0.08f;
+	constexpr float JewelLiftMaximum = 0.18f;
+	constexpr float RimJewelLiftMinimum = 0.035f;
+	constexpr float RimJewelLiftMaximum = 0.090f;
 	constexpr float DetailFootprintFull = 0.18f;
 	constexpr float DetailFootprintNone = 0.65f;
 	constexpr float ResolvedHISMSampleFootprint = 0.30f;
@@ -314,10 +318,13 @@ bool FAPSStellarMaterialTest::RunTest(const FString& Parameters)
 		int32 NormalCount = 0;
 		int32 WorldPositionCount = 0;
 		int32 ObjectPositionCount = 0;
+		int32 VertexInterpolatorCount = 0;
 		int32 TimeCount = 0;
 		int32 CameraCount = 0;
 		UMaterialExpressionCustom* StellarSurface = nullptr;
 		UMaterialExpression* InstanceColor = nullptr;
+		UMaterialExpression* ObjectPositionExpression = nullptr;
+		UMaterialExpression* VertexInterpolatorExpression = nullptr;
 		TMap<uint32, UMaterialExpression*> InstanceScalars;
 
 		for (UMaterialExpression* Expression : Expressions)
@@ -394,6 +401,13 @@ bool FAPSStellarMaterialTest::RunTest(const FString& Parameters)
 				TEXT("MaterialExpressionObjectPositionWS"))
 			{
 				++ObjectPositionCount;
+				ObjectPositionExpression = Expression;
+			}
+			else if (Expression->GetClass()->GetFName() ==
+				TEXT("MaterialExpressionVertexInterpolator"))
+			{
+				++VertexInterpolatorCount;
+				VertexInterpolatorExpression = Expression;
 			}
 			else if (Expression->GetClass()->GetFName() ==
 				TEXT("MaterialExpressionTime"))
@@ -422,6 +436,21 @@ bool FAPSStellarMaterialTest::RunTest(const FString& Parameters)
 			WorldPositionCount, 1);
 		TestEqual(APSStellarMaterialTests::Context(Material, TEXT("object-position count")),
 			ObjectPositionCount, 1);
+		TestEqual(APSStellarMaterialTests::Context(Material, TEXT("vertex-interpolator count")),
+			VertexInterpolatorCount, 1);
+		if (TestNotNull(APSStellarMaterialTests::Context(
+			Material, TEXT("per-instance centre vertex interpolator")),
+			VertexInterpolatorExpression))
+		{
+			const FExpressionInput* VertexInput = VertexInterpolatorExpression->GetInput(0);
+			if (TestNotNull(APSStellarMaterialTests::Context(
+				Material, TEXT("vertex interpolator input")), VertexInput))
+			{
+				TestTrue(APSStellarMaterialTests::Context(
+					Material, TEXT("ObjectPositionWS is evaluated in vertex stage")),
+					VertexInput->Expression == ObjectPositionExpression);
+			}
+		}
 		TestEqual(APSStellarMaterialTests::Context(Material, TEXT("time-expression count")),
 			TimeCount, 1);
 		TestEqual(APSStellarMaterialTests::Context(Material, TEXT("camera-vector count")),
@@ -496,6 +525,12 @@ bool FAPSStellarMaterialTest::RunTest(const FString& Parameters)
 					APSStellarMaterialTests::Context(Material, *FString::Printf(
 						TEXT("connected custom input %s"), *Input.InputName.ToString())),
 					Input.Input.Expression);
+				if (Input.InputName == TEXT("ObjectPositionWS"))
+				{
+					TestTrue(APSStellarMaterialTests::Context(Material,
+						TEXT("pixel custom receives interpolated per-instance centre")),
+						Input.Input.Expression == VertexInterpolatorExpression);
+				}
 			}
 			for (const FName RequiredInput : APSStellarMaterialTests::RequiredCustomInputs())
 			{
@@ -513,6 +548,15 @@ bool FAPSStellarMaterialTest::RunTest(const FString& Parameters)
 				StellarSurface->Code.Contains(TEXT("mesoCells")));
 			TestTrue(APSStellarMaterialTests::Context(Material, TEXT("continuous micro granules")),
 				StellarSurface->Code.Contains(TEXT("microGranules")));
+			TestTrue(APSStellarMaterialTests::Context(Material, TEXT("three-axis cellular photosphere")),
+				StellarSurface->Code.Contains(TEXT("float3 mesoWave"))
+				&& StellarSurface->Code.Contains(TEXT("float3 granuleWave"))
+				&& StellarSurface->Code.Contains(TEXT("mesoVolume"))
+				&& StellarSurface->Code.Contains(TEXT("microVolume")));
+			TestFalse(APSStellarMaterialTests::Context(Material, TEXT("no scalar zebra-wave projection")),
+				StellarSurface->Code.Contains(TEXT("float macroA"))
+				|| StellarSurface->Code.Contains(TEXT("float mesoA"))
+				|| StellarSurface->Code.Contains(TEXT("float granuleA")));
 			TestTrue(APSStellarMaterialTests::Context(Material, TEXT("coherent dark spots")),
 				StellarSurface->Code.Contains(TEXT("spotCore")));
 			TestTrue(APSStellarMaterialTests::Context(Material, TEXT("rare prominence mask")),
@@ -551,7 +595,7 @@ bool FAPSStellarMaterialTest::RunTest(const FString& Parameters)
 				CompactCode.Contains(TEXT("actorDetail")));
 			TestTrue(APSStellarMaterialTests::Context(Material, TEXT("scale-aware granulation")),
 				CompactCode.Contains(
-					TEXT("granulation=(mesoCells*0.40+granuleRidges*0.60)*Granulation*0.33*spatialDetail")));
+					TEXT("granulation=(mesoCells*0.64+granuleRidges*0.36)*Granulation*0.14*spatialDetail")));
 			TestTrue(APSStellarMaterialTests::Context(Material, TEXT("scale-aware spots and faculae")),
 				CompactCode.Contains(
 					TEXT("spots=spotCore*SpotAmount*lerp(0.72,1.0,emissionActivity)*spatialDetail"))
@@ -559,7 +603,7 @@ bool FAPSStellarMaterialTest::RunTest(const FString& Parameters)
 					TEXT("faculae=spotHalo*(0.075+variation*0.14)*spatialDetail")));
 			TestTrue(APSStellarMaterialTests::Context(Material, TEXT("scale-aware photosphere contrast")),
 				CompactCode.Contains(
-					TEXT("macroConvection*variation*0.31*spatialDetail"))
+					TEXT("macroConvection*variation*0.12*spatialDetail"))
 				&& CompactCode.Contains(
 					TEXT("cellHeat=lerp(0.5,granuleCell,spatialDetail)")));
 			TestTrue(APSStellarMaterialTests::Context(Material, TEXT("bounded actor tone")),
@@ -582,11 +626,8 @@ bool FAPSStellarMaterialTest::RunTest(const FString& Parameters)
 					TEXT("spectralTint=lerp(spectralColor,normalizedSpectralTint,0.55)")));
 			TestTrue(APSStellarMaterialTests::Context(Material, TEXT("near-black spectral rejection")),
 				CompactCode.Contains(
-					TEXT("validStellarSpectrum=step(0.01,maxSpectral)"))
-				&& CompactCode.Contains(
-					TEXT("spectralVisibility=smoothstep(0.08,0.90,maxSpectral)*validStellarSpectrum"))
-				&& CompactCode.Contains(
-					TEXT("temporalFlicker*validStellarSpectrum")));
+					TEXT("spectralVisibility=smoothstep(0.08,0.90,maxSpectral)"))
+				&& !CompactCode.Contains(TEXT("validStellarSpectrum")));
 			TestTrue(APSStellarMaterialTests::Context(Material, TEXT("per-path pre-bloom ceiling")),
 				CompactCode.Contains(
 					TEXT("outputCeiling=lerp(1.72,1.50,useInstance)")));
@@ -604,9 +645,9 @@ bool FAPSStellarMaterialTest::RunTest(const FString& Parameters)
 				CompactCode.Contains(
 					TEXT("microUnit=microGranules*0.5+0.5"))
 				&& CompactCode.Contains(
-					TEXT("granuleCell=smoothstep(0.31,0.69,microUnit)"))
+					TEXT("granuleCell=smoothstep(0.22,0.78,microUnit)"))
 				&& CompactCode.Contains(
-					TEXT("granuleSpark=smoothstep(0.62,0.88,microUnit)*spatialDetail"))
+					TEXT("granuleSpark=smoothstep(0.84,0.97,microUnit)*spatialDetail"))
 				&& CompactCode.Contains(
 					TEXT("jewelCell=saturate((resolvedCellHeat-0.67)*4.166667)"))
 				&& CompactCode.Contains(
@@ -621,17 +662,17 @@ bool FAPSStellarMaterialTest::RunTest(const FString& Parameters)
 					TEXT("jewelPulse=lerp(actorJewelPulse,instanceJewelPulse,useInstance)")));
 			TestTrue(APSStellarMaterialTests::Context(Material, TEXT("scale-aware jewel lift")),
 				CompactCode.Contains(
-					TEXT("jewelLift=spatialDetail*jewelMask*lerp(0.14,0.30,jewelPulse)")));
+					TEXT("jewelLift=spatialDetail*jewelMask*lerp(0.08,0.18,jewelPulse)")));
 			TestTrue(APSStellarMaterialTests::Context(Material, TEXT("scale-aware spectral jewel rim")),
 				CompactCode.Contains(
 					TEXT("rimJewelMask=spatialDetail*rim*lerp(0.18,1.0,prominenceMask)"))
 				&& CompactCode.Contains(
-					TEXT("rimJewelLift=rimJewelMask*lerp(0.040,0.110,jewelPulse)")));
+					TEXT("rimJewelLift=rimJewelMask*lerp(0.035,0.090,jewelPulse)")));
 			TestTrue(APSStellarMaterialTests::Context(Material, TEXT("pre-bloom stellar output")),
 				CompactCode.Contains(
 					TEXT("stellarSignal=(toneSafeEmission+jewelLift)*visibleSurface+rimJewelLift"))
 				&& CompactCode.Contains(
-					TEXT("float3preBloom=surfaceTint*stellarSignal*temporalFlicker*validStellarSpectrum")));
+					TEXT("float3preBloom=surfaceTint*stellarSignal*temporalFlicker")));
 			TestFalse(APSStellarMaterialTests::Context(Material, TEXT("no literal-white highlights")),
 				CompactCode.Contains(TEXT("float3(1.0,1.0,1.0)")));
 			TestFalse(APSStellarMaterialTests::Context(Material, TEXT("no quantised cell grid")),
@@ -700,6 +741,75 @@ bool FAPSStellarMaterialTest::RunTest(const FString& Parameters)
 				*GetNameSafe(Material)));
 		}
 	}
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FAPSStellarRuntimeBindingTest,
+	"APS.Rendered.Materials.StellarRuntimeBindings",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FAPSStellarRuntimeBindingTest::RunTest(const FString& Parameters)
+{
+	const auto ValidateBinding = [this](const TCHAR* Context,
+		UMaterialInterface* Material, const TCHAR* ExpectedBasePath)
+	{
+		if (!TestNotNull(Context, Material))
+		{
+			return;
+		}
+		UMaterial* BaseMaterial = APSStellarMaterialContract::GetBaseMaterial(Material);
+		if (TestNotNull(*FString::Printf(TEXT("%s base material"), Context), BaseMaterial))
+		{
+			TestEqual(*FString::Printf(TEXT("%s exact canonical base"), Context),
+				BaseMaterial->GetPathName(), FString(ExpectedBasePath));
+		}
+		TestFalse(*FString::Printf(TEXT("%s never falls back to WorldGrid"), Context),
+			APSStellarMaterialContract::UsesWorldGrid(Material));
+	};
+
+	const AGalaxy* NativeGalaxy = GetDefault<AGalaxy>();
+	ValidateBinding(TEXT("Native galaxy HISM"),
+		NativeGalaxy && NativeGalaxy->StarMeshInstances
+			? NativeGalaxy->StarMeshInstances->GetMaterial(0) : nullptr,
+		APSStellarMaterialContract::HismBaseObjectPath);
+	const AStar* NativeStar = GetDefault<AStar>();
+	ValidateBinding(TEXT("Native star slot 0"),
+		NativeStar && NativeStar->StarMesh
+			? NativeStar->StarMesh->GetMaterial(0) : nullptr,
+		APSStellarMaterialContract::ActorBaseObjectPath);
+	const AStarCluster* NativeCluster = GetDefault<AStarCluster>();
+	ValidateBinding(TEXT("Native cluster HISM"),
+		NativeCluster && NativeCluster->StarMeshInstances
+			? NativeCluster->StarMeshInstances->GetMaterial(0) : nullptr,
+		APSStellarMaterialContract::HismBaseObjectPath);
+
+	UClass* StarClass = LoadClass<AStar>(nullptr,
+		TEXT("/Game/APS/APS_ALPHA/Core/BP_Star.BP_Star_C"));
+	const AStar* StarDefault = StarClass ? Cast<AStar>(StarClass->GetDefaultObject()) : nullptr;
+	ValidateBinding(TEXT("BP_Star slot 0"),
+		StarDefault && StarDefault->StarMesh
+			? StarDefault->StarMesh->GetMaterial(0) : nullptr,
+		APSStellarMaterialContract::ActorBaseObjectPath);
+
+	UClass* GalaxyClass = LoadClass<AGalaxy>(nullptr,
+		TEXT("/Game/APS/APS_ALPHA/Core/BP_Galaxy.BP_Galaxy_C"));
+	const AGalaxy* GalaxyDefault = GalaxyClass
+		? Cast<AGalaxy>(GalaxyClass->GetDefaultObject()) : nullptr;
+	ValidateBinding(TEXT("BP_Galaxy HISM slot 0"),
+		GalaxyDefault && GalaxyDefault->StarMeshInstances
+			? GalaxyDefault->StarMeshInstances->GetMaterial(0) : nullptr,
+		APSStellarMaterialContract::HismBaseObjectPath);
+
+	UClass* ClusterClass = LoadClass<AStarCluster>(nullptr,
+		TEXT("/Game/APS/APS_ALPHA/Core/BP_StarCluster.BP_StarCluster_C"));
+	const AStarCluster* ClusterDefault = ClusterClass
+		? Cast<AStarCluster>(ClusterClass->GetDefaultObject()) : nullptr;
+	ValidateBinding(TEXT("BP_StarCluster HISM slot 0"),
+		ClusterDefault && ClusterDefault->StarMeshInstances
+			? ClusterDefault->StarMeshInstances->GetMaterial(0) : nullptr,
+		APSStellarMaterialContract::HismBaseObjectPath);
 
 	return true;
 }

@@ -2,7 +2,9 @@
 #include "Star.h"
 #include "APS_ALPHA/Core/Enums/StarClusterType.h"
 #include "APS_ALPHA/Core/Rendering/APSStarRenderStabilitySubsystem.h"
+#include "APS_ALPHA/Core/Rendering/APSStellarMaterialContract.h"
 #include "Misc/Crc.h"
+#include "UObject/ConstructorHelpers.h"
 
 AStarCluster::AStarCluster()
 {
@@ -26,12 +28,61 @@ AStarCluster::AStarCluster()
 	StarMeshInstances->bAffectDynamicIndirectLighting = false;
 	StarMeshInstances->bAffectDistanceFieldLighting = false;
 	StarMeshInstances->SetReceivesDecals(false);
+	static ConstructorHelpers::FObjectFinder<UMaterial> CanonicalHismMaterial(
+		APSStellarMaterialContract::HismBaseObjectPath);
+	if (CanonicalHismMaterial.Succeeded())
+	{
+		StarMeshInstances->SetMaterial(0, CanonicalHismMaterial.Object);
+	}
 
     // ������������� �������� �� ���������
     StarAmount = 100;
     StarDensity = 1.0f;
     ClusterType = EStarClusterType::OpenCluster;
     ClusterBounds = FVector(1000.0f, 1000.0f, 1000.0f);
+}
+
+void AStarCluster::PostInitializeComponents()
+{
+	Super::PostInitializeComponents();
+	EnsureCanonicalStellarMaterial();
+}
+
+bool AStarCluster::EnsureCanonicalStellarMaterial()
+{
+	if (!IsValid(StarMeshInstances))
+	{
+		return false;
+	}
+
+	UMaterial* CanonicalBase = APSStellarMaterialContract::LoadCanonicalBase(
+		APSStellarMaterialContract::HismBaseObjectPath);
+	if (!IsValid(CanonicalBase))
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[APS.StellarMaterial] Canonical cluster HISM master is unavailable: %s"),
+			APSStellarMaterialContract::HismBaseObjectPath);
+		return false;
+	}
+
+	UMaterialInterface* CurrentMaterial = StarMeshInstances->GetMaterial(0);
+	if (APSStellarMaterialContract::HasExactBase(
+		CurrentMaterial, APSStellarMaterialContract::HismBaseObjectPath))
+	{
+		return true;
+	}
+
+	UMaterial* CurrentBase = APSStellarMaterialContract::GetBaseMaterial(CurrentMaterial);
+	UE_LOG(LogTemp, Warning,
+		TEXT("[APS.StellarMaterial] Replacing %s cluster HISM base %s with canonical %s%s"),
+		*GetNameSafe(this),
+		IsValid(CurrentBase) ? *CurrentBase->GetPathName() : TEXT("<null>"),
+		APSStellarMaterialContract::HismBaseObjectPath,
+		APSStellarMaterialContract::UsesWorldGrid(CurrentMaterial)
+			? TEXT(" (WorldGrid fallback)") : TEXT(""));
+	StarMeshInstances->SetMaterial(0, CanonicalBase);
+	return APSStellarMaterialContract::HasExactBase(
+		StarMeshInstances->GetMaterial(0), APSStellarMaterialContract::HismBaseObjectPath);
 }
 
 void AStarCluster::AddStarToCluster(AStar* Star)

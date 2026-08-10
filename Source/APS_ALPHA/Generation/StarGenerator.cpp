@@ -62,22 +62,12 @@ void UStarGenerator::ApplySpectralMaterial(AStar* NewStar, TSharedPtr<FStarModel
 	{
 		return;
 	}
-	// �������� �������� � ���� ������
-	UMaterialInterface* Material = NewStar->StarMesh->GetMaterial(0);
-	if (!Material)
-	{
-		return;
-	}
-
-	// ���������� �������� �������� � ������������� ����������
-	UMaterialInstanceDynamic* StarDynamicMaterial = Cast<UMaterialInstanceDynamic>(Material);
+	// Blueprint overrides and the mesh's WorldGrid fallback are not authoritative.
+	// Reuse a MID only when AStar verifies its ultimate alpha-master base.
+	UMaterialInstanceDynamic* StarDynamicMaterial =
+		NewStar->EnsureCanonicalStellarMaterial();
 
 	if (StarDynamicMaterial == nullptr)
-	{
-		// ���� ��� �� ������������ ��������, �������� ����� ������������ ���������
-		StarDynamicMaterial = UMaterialInstanceDynamic::Create(Material, NewStar);
-	}
-	if (!StarDynamicMaterial)
 	{
 		return;
 	}
