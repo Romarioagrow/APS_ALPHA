@@ -500,13 +500,14 @@ void APlanetarySurfaceGenerator::ApplySurfaceProfileNow(APlanetaryBody* Body)
 	}
 	if (bScaledOrbitalPreview && IsValid(ResolvedOceanMaterialInstance))
 	{
-		// The ocean still belongs to the same WorldScape root.  Only its close-range
-		// waves are suppressed in the orbital presentation; this avoids a moire/grid
-		// pattern without introducing a proxy liquid sphere or a second collision
-		// surface.
+		// This is still a live WorldScape clipmap made of independent LOD components.
+		// ObjectPositionWS would give every component a different radial centre and
+		// expose the ring/stitch boundaries, so physical WorldScape always keeps the
+		// shared actor/root centre. The separate closed proxy sets this parameter to one
+		// in AstroGenerator::CreateLiquidMaterial.
 		ResolvedOceanMaterialInstance->SetScalarParameterValue(TEXT("WaveColorStrength"), 0.003f);
 		ResolvedOceanMaterialInstance->SetScalarParameterValue(TEXT("WaveNormalStrength"), 0.0f);
-		ResolvedOceanMaterialInstance->SetScalarParameterValue(TEXT("OrbitalNormalBlend"), 1.0f);
+		ResolvedOceanMaterialInstance->SetScalarParameterValue(TEXT("OrbitalNormalBlend"), 0.0f);
 	}
 	else if (IsValid(ResolvedOceanMaterialInstance))
 	{

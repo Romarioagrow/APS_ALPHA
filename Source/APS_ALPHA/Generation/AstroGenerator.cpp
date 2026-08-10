@@ -48,7 +48,6 @@
 #include "Engine/StaticMesh.h"
 #include "GameFramework/PlayerController.h"
 #include "Materials/MaterialInstance.h"
-#include "Materials/MaterialInstanceConstant.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
 #include "LocalVertexFactory.h"
@@ -154,19 +153,17 @@ namespace APSPreviewGlobe
 		UObject* Outer, UMaterialInterface* ResolvedMaterial,
 		UMaterialInterface* OrbitalPresentationMaterial)
 	{
-		// Flatten the resolver's transient MID exactly one level, preserving the
-		// canonical liquid MIC (and its static/base-property state) as the new parent.
-		// A MID cannot parent another MID, and the separate orbital MIC is only a
-		// source for the intentional higher presentation opacity.
+		// The live WorldScape ocean is deliberately depth-writing while this closed
+		// one-component globe remains translucent. Copy only matching interpolatable
+		// profile parameters across those two project-owned masters; base properties
+		// and render-pass state stay owned by the orbital presentation MIC.
 		UMaterialInstance* ResolvedInstance = Cast<UMaterialInstance>(ResolvedMaterial);
-		UMaterialInstanceConstant* CanonicalParent = ResolvedInstance
-			? Cast<UMaterialInstanceConstant>(ResolvedInstance->Parent.Get()) : nullptr;
-		if (!IsValid(ResolvedInstance) || !IsValid(CanonicalParent)
-			|| !IsValid(OrbitalPresentationMaterial)
-			|| ResolvedMaterial->GetMaterial()
-				!= OrbitalPresentationMaterial->GetMaterial()
-			|| CanonicalParent->GetBlendMode() != BLEND_Translucent
-			|| !CanonicalParent->GetShadingModels().HasShadingModel(MSM_DefaultLit))
+		if (!IsValid(ResolvedInstance) || !IsValid(OrbitalPresentationMaterial)
+			|| OrbitalPresentationMaterial->IsA<UMaterialInstanceDynamic>()
+			|| ResolvedMaterial->GetBlendMode() != BLEND_Opaque
+			|| OrbitalPresentationMaterial->GetBlendMode() != BLEND_Translucent
+			|| !OrbitalPresentationMaterial->GetShadingModels().HasShadingModel(
+				MSM_DefaultLit))
 		{
 			return nullptr;
 		}
@@ -180,7 +177,7 @@ namespace APSPreviewGlobe
 		}
 
 		UMaterialInstanceDynamic* Material = UMaterialInstanceDynamic::Create(
-			CanonicalParent, Outer);
+			OrbitalPresentationMaterial, Outer);
 		if (!IsValid(Material))
 		{
 			return nullptr;
@@ -715,6 +712,15 @@ bool AAstroGenerator::WarmPreviewMaterialAssets()
 		*GetNameSafe(PreviewWaterBaseMaterial), *GetNameSafe(PreviewAmmoniaBaseMaterial),
 		*GetNameSafe(PreviewLavaBaseMaterial));
 	return bWarmed;
+}
+
+void AAstroGenerator::OnConstruction(const FTransform& Transform)
+{
+	Super::OnConstruction(Transform);
+	// Serialized map/Blueprint component payload is applied after the native
+	// constructor. Strip legacy filled-sphere data here so editor and pre-BeginPlay
+	// worlds observe the same line-only guide contract as runtime presentation.
+	HideLegacyPreviewGuideShells();
 }
 
 void AAstroGenerator::BeginPlay()
@@ -3052,7 +3058,12 @@ bool AAstroGenerator::StabilizePreviewAtmosphere(APlanetaryBody* Body)
 	if (bOrbitalLodReady)
 	{
 		PresentedPlanetRadius = APSPreviewGlobe::GetRadialBoundsRadius(OrbitalTerrain);
-		PresentedPlanetCenter = OrbitalTerrain->Bounds.Origin;
+		// The closed globe's AABB centre moves slightly as asymmetric procedural
+		// relief changes.  Its component/published origin is the actual planetary
+		// centre; binding the atmosphere to Bounds.Origin made the shell drift after
+		// every subtype or surface-control refresh.
+		PresentedPlanetCenter = OrbitalTerrain->GetComponentLocation();
+		GetPreviewPresentationLocation(Body, PresentedPlanetCenter);
 		PresentedPlanetRotation = OrbitalTerrain->GetComponentQuat();
 	}
 	else
@@ -4102,6 +4113,14 @@ void AAstroGenerator::SetPreviewWorldScapeBody(APlanetaryBody* Body)
 		SetPreviewGlobeProxyVisible(
 			PreviewFocus == EAstroPreviewFocus::HomePlanet);
 		SetPreviewBodyBackingSphereVisible(Body, !bHasCurrentProxy);
+		if (bHasCurrentProxy)
+		{
+			// ApplyPreviewFocusPresentation runs before this function restores the
+			// active body.  Its atmosphere pass therefore hides the shell when PLANET
+			// returns from another scope; a cached globe must republish the matching
+			// shell in the same transaction instead of waiting for a second refocus.
+			StabilizePreviewAtmosphere(Body);
+		}
 		if (bSelectionChanged && bHasCurrentProxy)
 		{
 			UE_LOG(LogTemp, Verbose,
@@ -6368,6 +6387,82 @@ void AAstroGenerator::ZoomPreviewCamera(float WheelDelta)
 		SetPreviewGlobeProxyVisible(PreviewFocus == EAstroPreviewFocus::HomePlanet);
 	}
 }
+
+#if WITH_DEV_AUTOMATION_TESTS
+bool AAstroGenerator::ApplyPreviewInspectionFramingForAutomation(
+	APlayerController* PlayerController, const FVector& BodyCenter,
+	double BodyRadius, const FIntPoint& ViewportSize,
+	double TargetRadiusFraction)
+{
+	APlayerCameraManager* CameraManager = IsValid(PlayerController)
+		? PlayerController->PlayerCameraManager : nullptr;
+	if (!IsValid(PreviewCamera) || !IsValid(PlayerController)
+		|| !IsValid(CameraManager) || PlayerController->GetViewTarget() != this
+		|| PreviewFocus != EAstroPreviewFocus::HomePlanet
+		|| BodyCenter.ContainsNaN() || !FMath::IsFinite(BodyRadius)
+		|| BodyRadius <= UE_SMALL_NUMBER || ViewportSize.X <= 0 || ViewportSize.Y <= 0
+		|| !FMath::IsFinite(TargetRadiusFraction)
+		|| TargetRadiusFraction <= 0.0 || TargetRadiusFraction >= 0.5)
+	{
+		return false;
+	}
+
+	const double HalfHorizontalFovRadians = FMath::DegreesToRadians(
+		static_cast<double>(CameraManager->GetFOVAngle()) * 0.5);
+	const double HalfFovTangent = FMath::Tan(HalfHorizontalFovRadians);
+	if (!FMath::IsFinite(HalfFovTangent) || HalfFovTangent <= UE_SMALL_NUMBER)
+	{
+		return false;
+	}
+
+	const double TargetRadiusPixels = TargetRadiusFraction
+		* static_cast<double>(FMath::Min(ViewportSize.X, ViewportSize.Y));
+	const double HorizontalFocalLengthPixels = 0.5 * static_cast<double>(ViewportSize.X)
+		/ HalfFovTangent;
+	const double InspectionDistance = FMath::Max(
+		BodyRadius * HorizontalFocalLengthPixels / TargetRadiusPixels,
+		BodyRadius * 1.25);
+	if (!FMath::IsFinite(InspectionDistance))
+	{
+		return false;
+	}
+
+	FVector ViewDirection = (CameraManager->GetCameraLocation() - BodyCenter).GetSafeNormal();
+	if (ViewDirection.IsNearlyZero() || ViewDirection.ContainsNaN())
+	{
+		ViewDirection = (PreviewCamera->GetComponentLocation() - BodyCenter).GetSafeNormal();
+	}
+	if (ViewDirection.IsNearlyZero() || ViewDirection.ContainsNaN())
+	{
+		ViewDirection = FVector(1.0, 1.0, -0.45).GetSafeNormal();
+	}
+
+	const FVector CameraLocation = BodyCenter + ViewDirection * InspectionDistance;
+	const FTransform InspectionTransform(
+		(BodyCenter - CameraLocation).Rotation(), CameraLocation);
+	// Keep every camera/orbit field coherent. A direct component move would be
+	// overwritten by an in-flight transition or leave the next focus starting from
+	// a stale orbit distance.
+	bPreviewCameraTransitionActive = false;
+	bPreviewCameraOrbitDragging = false;
+	PreviewCameraTransitionElapsed = 0.0f;
+	PreviewCameraTransitionDuration = 0.0f;
+	PreviewOrbitCenter = BodyCenter;
+	PreviewOrbitDistance = InspectionDistance;
+	PreviewCameraStartTransform = InspectionTransform;
+	PreviewCameraTargetTransform = InspectionTransform;
+	PreviewCamera->SetWorldTransform(InspectionTransform);
+	PreviewCamera->SetActive(true);
+	PendingPreviewSurfaceViewPosition = CameraLocation;
+	SetPreviewGlobeProxyVisible(true);
+
+	UE_LOG(LogTemp, Display,
+		TEXT("[APS.Gallery.Frame] viewport=%dx%d targetRadius=%.1fpx bodyRadius=%.3e distance=%.3e"),
+		ViewportSize.X, ViewportSize.Y, TargetRadiusPixels, BodyRadius,
+		InspectionDistance);
+	return true;
+}
+#endif
 
 void AAstroGenerator::AdvancePreviewGenerationSeed()
 {

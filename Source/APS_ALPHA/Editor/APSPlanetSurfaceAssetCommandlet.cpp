@@ -254,8 +254,10 @@ namespace APSPlanetSurfaceAssets
 			Material, TEXT("Color4"), FLinearColor(0.48f, 0.40f, 0.27f), -1500, -300, 4);
 		UMaterialExpressionVectorParameter* Peak = AddVectorParameter(
 			Material, TEXT("Color5"), FLinearColor(0.72f, 0.72f, 0.68f), -1500, -200, 5);
+		UMaterialExpressionVectorParameter* Slope = AddVectorParameter(
+			Material, TEXT("SlopeColor"), FLinearColor(0.10f, 0.09f, 0.08f), -1500, -100, 6);
 		UMaterialExpressionVectorParameter* Emissive = AddVectorParameter(
-			Material, TEXT("EmissiveColor"), FLinearColor::Black, -800, 650, 6);
+			Material, TEXT("EmissiveColor"), FLinearColor::Black, -800, 650, 7);
 		UMaterialExpressionScalarParameter* ClimateBlend = AddScalarParameter(
 			Material, TEXT("ClimateBlend"), 0.10f, 0.03f, 0.24f, -500, 300, 10);
 		UMaterialExpressionScalarParameter* Roughness = AddScalarParameter(
@@ -272,9 +274,12 @@ namespace APSPlanetSurfaceAssets
 			Material, TEXT("PaletteSaturation"), 1.0f, 0.65f, 1.40f, -180, 500, 16);
 		UMaterialExpressionScalarParameter* PaletteContrast = AddScalarParameter(
 			Material, TEXT("PaletteContrast"), 1.0f, 0.75f, 1.40f, -180, 600, 17);
+		UMaterialExpressionScalarParameter* SlopeTintStrength = AddScalarParameter(
+			Material, TEXT("SlopeTintStrength"), 0.16f, 0.0f, 0.35f, -180, 700, 18);
 		if (!Vertex || !Coast || !Lowland || !MidLowland || !Highland || !Dryland || !Peak
-			|| !Emissive || !ClimateBlend || !Roughness || !Metallic || !Specular
-			|| !PaletteGain || !PaletteLift || !PaletteSaturation || !PaletteContrast)
+			|| !Slope || !Emissive || !ClimateBlend || !Roughness || !Metallic || !Specular
+			|| !PaletteGain || !PaletteLift || !PaletteSaturation || !PaletteContrast
+			|| !SlopeTintStrength)
 		{
 			return nullptr;
 		}
@@ -506,7 +511,12 @@ namespace APSPlanetSurfaceAssets
 		// Palettes are already linear. Contrasting around 0.5 clipped most dark rocky,
 		// forest and metallic colours to black. A low-albedo pivot preserves chroma and
 		// still gives the authored contrast control useful headroom.
-		constexpr float LinearPaletteContrastPivot = 0.18f;
+		// Most terrain swatches are deliberately low-albedo linear colours (for example
+		// forest lowlands are around 0.01).  A photographic 0.18 pivot drove those hues
+		// below zero before the clamp and made unrelated families converge to grey/black.
+		// Keep contrast centred inside the actual terrain range so authored greens,
+		// ochres, ice blues and iron reds survive both orbit and ground lighting.
+		constexpr float LinearPaletteContrastPivot = 0.06f;
 		CenteredPaletteColor->ConstB = LinearPaletteContrastPivot;
 		ContrastedPaletteTerm->A.Connect(0, CenteredPaletteColor);
 		ContrastedPaletteTerm->B.Connect(0, PaletteContrast);
@@ -642,6 +652,17 @@ namespace APSPlanetSurfaceAssets
 				AddExpression<UMaterialExpressionAdd>(Material, 2460, 40);
 			UMaterialExpressionNormalize* NormalizedWorldNormal =
 				AddExpression<UMaterialExpressionNormalize>(Material, 2660, 40);
+			UMaterialExpressionDotProduct* SurfaceNormalAlignment =
+				AddExpression<UMaterialExpressionDotProduct>(Material, 2060, -500);
+			UMaterialExpressionOneMinus* SurfaceSteepness =
+				AddExpression<UMaterialExpressionOneMinus>(Material, 2260, -500);
+			UMaterialExpressionSmoothStep* GeologicalSlopeMask = AddSmoothStep(
+				Material, SurfaceSteepness, 0, 0.025f, 0.22f, 2460, -500);
+			UMaterialExpressionMultiply* WeightedSlopeMask =
+				AddExpression<UMaterialExpressionMultiply>(Material, 2660, -500);
+			UMaterialExpressionLinearInterpolate* SlopeTintedColor = AddLerp(
+				Material, BoundedDetailedColor, Slope, WeightedSlopeMask, 0,
+				2860, -500);
 
 			if (!WorldPosition || !MacroScale || !MesoScale || !NearScale
 				|| !MacroColorStrength || !MesoColorStrength || !NearColorStrength
@@ -659,7 +680,9 @@ namespace APSPlanetSurfaceAssets
 				|| !OrbitalNormalBlend || !BaseWorldNormal
 				|| !RadialGradient || !RadialGradientVector
 				|| !TangentGradient || !FadedNormalStrength || !NormalPerturbation
-				|| !PerturbedNormal || !NormalizedWorldNormal)
+				|| !PerturbedNormal || !NormalizedWorldNormal || !SurfaceNormalAlignment
+				|| !SurfaceSteepness || !GeologicalSlopeMask || !WeightedSlopeMask
+				|| !SlopeTintedColor)
 			{
 				return nullptr;
 			}
@@ -773,8 +796,17 @@ namespace APSPlanetSurfaceAssets
 			PerturbedNormal->A.Connect(0, BaseWorldNormal);
 			PerturbedNormal->B.Connect(0, NormalPerturbation);
 			NormalizedWorldNormal->VectorInput.Connect(0, PerturbedNormal);
+			// This is a material cue on the authoritative displaced mesh, not synthetic
+			// relief.  Comparing the streamed vertex normal to the root-radial normal
+			// darkens only genuinely steep WorldScape faces and makes mountains/readable
+			// crater walls survive the wide range of preview and gameplay exposure.
+			SurfaceNormalAlignment->A.Connect(0, VertexNormal);
+			SurfaceNormalAlignment->B.Connect(0, RadialNormal);
+			SurfaceSteepness->Input.Connect(0, SurfaceNormalAlignment);
+			WeightedSlopeMask->A.Connect(0, GeologicalSlopeMask);
+			WeightedSlopeMask->B.Connect(0, SlopeTintStrength);
 
-			SurfaceColor = BoundedDetailedColor;
+			SurfaceColor = SlopeTintedColor;
 			SurfaceRoughness = BoundedDetailedRoughness;
 			SurfaceNormal = NormalizedWorldNormal;
 		}
@@ -789,8 +821,8 @@ namespace APSPlanetSurfaceAssets
 			AddExpression<UMaterialExpressionMultiply>(Material, 0, 650);
 		UMaterialExpressionScalarParameter* TerrainAmbientFill = AddScalarParameter(
 			Material, TEXT("TerrainAmbientFill"),
-			bEnableNearFieldWorldDetail ? 0.055f : 0.035f,
-			0.0f, 0.12f, 0, 820, 31);
+			bEnableNearFieldWorldDetail ? 0.09f : 0.035f,
+			0.0f, 0.20f, 0, 820, 31);
 		UMaterialExpressionMultiply* AmbientEmissive =
 			AddExpression<UMaterialExpressionMultiply>(Material, 220, 760);
 		UMaterialExpressionAdd* CombinedEmissive =
@@ -863,22 +895,30 @@ namespace APSPlanetSurfaceAssets
 			AssetTools, PreviewMaterialPath, TEXT("M_APS_OrbitalTerrain"), false);
 	}
 
-	UMaterial* CreateCanonicalLiquidMaterial(IAssetTools& AssetTools)
+	UMaterial* CreateCanonicalLiquidMaterial(IAssetTools& AssetTools,
+		const FString& Path, const TCHAR* AssetName, const bool bOrbitalPresentation)
 	{
-		// Keep the established asset path because hierarchy preview MICs already refer
-		// to it, but make this one graph authoritative for WorldScape ocean LODs too.
-		// A project-owned graph avoids the marketplace materials' UV/custom-node
-		// assumptions that expose individual WorldScape cube patches from orbit.
+		// Gameplay WorldScape clipmaps and the closed hierarchy globe share the same
+		// authored optical parameters, but not the same render pass. Independent
+		// translucent LOD/stitch sections can be sorted and blended more than once at
+		// their boundaries, so the physical ocean uses an opaque depth-writing master.
+		// The single closed orbital component keeps ordinary translucency.
 		UMaterial* Material = LoadOrCreateMaterial(
-			AssetTools, PreviewMaterialPath, TEXT("M_APS_OrbitalLiquid"));
+			AssetTools, Path, AssetName);
 		if (!IsValid(Material)) return nullptr;
 		Material->Modify();
 		ClearMaterialExpressions(Material);
 		Material->MaterialDomain = MD_Surface;
-		Material->BlendMode = BLEND_Translucent;
+		Material->BlendMode = bOrbitalPresentation ? BLEND_Translucent : BLEND_Opaque;
 		Material->SetShadingModel(MSM_DefaultLit);
-		Material->TranslucencyLightingMode = TLM_SurfacePerPixelLighting;
-		Material->TwoSided = false;
+		if (bOrbitalPresentation)
+		{
+			Material->TranslucencyLightingMode = TLM_SurfacePerPixelLighting;
+		}
+		// WorldScape's outer rings and stitch strips are authored as independent
+		// sections. Keep the physical shell robust at grazing angles; the closed
+		// orbital sphere has consistent outward winding and remains one-sided.
+		Material->TwoSided = !bOrbitalPresentation;
 		Material->bScreenSpaceReflections = true;
 		Material->bTangentSpaceNormal = false;
 
@@ -915,13 +955,13 @@ namespace APSPlanetSurfaceAssets
 		UMaterialExpressionNormalize* LiquidRadialNormal =
 			AddExpression<UMaterialExpressionNormalize>(Material, -460, 440);
 		UMaterialExpressionScalarParameter* WaveScale = AddScalarParameter(
-			Material, TEXT("WaveScaleCm"), 85000.0f, 25000.0f, 350000.0f,
+			Material, TEXT("WaveScaleCm"), 18000.0f, 6000.0f, 350000.0f,
 			-900, 580, 20);
 		UMaterialExpressionScalarParameter* WaveColorStrength = AddScalarParameter(
-			Material, TEXT("WaveColorStrength"), 0.020f, 0.0f, 0.06f,
+			Material, TEXT("WaveColorStrength"), 0.006f, 0.0f, 0.06f,
 			-900, 680, 21);
 		UMaterialExpressionScalarParameter* WaveNormalStrength = AddScalarParameter(
-			Material, TEXT("WaveNormalStrength"), 0.018f, 0.0f, 0.08f,
+			Material, TEXT("WaveNormalStrength"), 0.025f, 0.0f, 0.08f,
 			-900, 780, 22);
 		if (!Deep || !Shallow || !Emissive || !Opacity || !Roughness || !Metallic
 			|| !Specular || !Fresnel || !WorldPosition || !LiquidActorPosition
@@ -1095,14 +1135,19 @@ namespace APSPlanetSurfaceAssets
 		// globe sets the blend to one and consumes its resolver-authored WaterMask,
 		// producing soft coastlines without a second terrain/ocean definition.
 
-		const bool bConnected =
+		bool bConnected =
 			UMaterialEditingLibrary::ConnectMaterialProperty(BoundedLiquidColor, TEXT(""), MP_BaseColor)
 			&& UMaterialEditingLibrary::ConnectMaterialProperty(MaskedEmissive, TEXT(""), MP_EmissiveColor)
-			&& UMaterialEditingLibrary::ConnectMaterialProperty(MaskedOpacity, TEXT(""), MP_Opacity)
 			&& UMaterialEditingLibrary::ConnectMaterialProperty(Roughness, TEXT(""), MP_Roughness)
 			&& UMaterialEditingLibrary::ConnectMaterialProperty(Metallic, TEXT(""), MP_Metallic)
 			&& UMaterialEditingLibrary::ConnectMaterialProperty(Specular, TEXT(""), MP_Specular)
 			&& UMaterialEditingLibrary::ConnectMaterialProperty(NormalizedLiquidNormal, TEXT(""), MP_Normal);
+		if (bOrbitalPresentation)
+		{
+			bConnected = bConnected
+				&& UMaterialEditingLibrary::ConnectMaterialProperty(
+					MaskedOpacity, TEXT(""), MP_Opacity);
+		}
 		return bConnected && FinalizePreviewMaterial(Material) ? Material : nullptr;
 	}
 
@@ -1225,79 +1270,139 @@ namespace APSPlanetSurfaceAssets
 		float NormalStrengthValue = 0.075f;
 		float MesoRoughnessStrengthValue = 0.032f;
 		float DetailRoughnessStrengthValue = 0.045f;
-		float TerrainAmbientFillValue = 0.055f;
+		float TerrainAmbientFillValue = 0.09f;
+		float SlopeTintStrengthValue = 0.16f;
 		switch (Archetype)
 		{
 		case EAPSPlanetSurfaceArchetype::Temperate:
 			PaletteGainValue = 1.00f;
-			PaletteSaturationValue = 1.08f;
-			PaletteContrastValue = 1.11f;
-			MacroColorStrengthValue = 0.045f;
-			TerrainAmbientFillValue = 0.050f;
+			PaletteSaturationValue = 1.12f;
+			PaletteContrastValue = 1.07f;
+			MacroScaleCm = 9000000.0f;
+			MesoScaleCm = 600000.0f;
+			NearScaleCm = 3000.0f;
+			MacroColorStrengthValue = 0.038f;
+			MesoColorStrengthValue = 0.028f;
+			NearColorStrengthValue = 0.038f;
+			NormalStrengthValue = 0.080f;
+			TerrainAmbientFillValue = 0.105f;
+			SlopeTintStrengthValue = 0.16f;
 			break;
 		case EAPSPlanetSurfaceArchetype::Oceanic:
 			PaletteGainValue = 0.99f;
-			PaletteSaturationValue = 1.05f;
-			PaletteContrastValue = 1.10f;
-			MacroColorStrengthValue = 0.040f;
-			MesoColorStrengthValue = 0.030f;
+			PaletteSaturationValue = 1.10f;
+			PaletteContrastValue = 1.06f;
+			MacroScaleCm = 12000000.0f;
+			MesoScaleCm = 700000.0f;
+			NearScaleCm = 3500.0f;
+			MacroColorStrengthValue = 0.030f;
+			MesoColorStrengthValue = 0.022f;
+			NearColorStrengthValue = 0.028f;
 			NormalStrengthValue = 0.055f;
-			TerrainAmbientFillValue = 0.045f;
+			TerrainAmbientFillValue = 0.095f;
+			SlopeTintStrengthValue = 0.12f;
 			break;
 		case EAPSPlanetSurfaceArchetype::Biosphere:
 			PaletteGainValue = 1.00f;
-			PaletteSaturationValue = 1.12f;
-			PaletteContrastValue = 1.11f;
-			TerrainAmbientFillValue = 0.050f;
+			PaletteSaturationValue = 1.18f;
+			PaletteContrastValue = 1.06f;
+			MacroScaleCm = 7500000.0f;
+			MesoScaleCm = 320000.0f;
+			NearScaleCm = 1800.0f;
+			MacroColorStrengthValue = 0.036f;
+			MesoColorStrengthValue = 0.026f;
+			NearColorStrengthValue = 0.042f;
+			NormalStrengthValue = 0.095f;
+			TerrainAmbientFillValue = 0.115f;
+			SlopeTintStrengthValue = 0.18f;
 			break;
 		case EAPSPlanetSurfaceArchetype::Desert:
 			PaletteGainValue = 0.97f;
-			PaletteSaturationValue = 1.00f;
-			PaletteContrastValue = 1.10f;
-			MesoColorStrengthValue = 0.036f;
-			TerrainAmbientFillValue = 0.052f;
+			PaletteSaturationValue = 1.10f;
+			PaletteContrastValue = 1.07f;
+			MacroScaleCm = 11000000.0f;
+			MesoScaleCm = 900000.0f;
+			NearScaleCm = 4500.0f;
+			MacroColorStrengthValue = 0.032f;
+			MesoColorStrengthValue = 0.024f;
+			NearColorStrengthValue = 0.032f;
+			NormalStrengthValue = 0.060f;
+			TerrainAmbientFillValue = 0.100f;
+			SlopeTintStrengthValue = 0.20f;
 			break;
 		case EAPSPlanetSurfaceArchetype::Cryogenic:
-			PaletteGainValue = 0.94f;
+			PaletteGainValue = 0.98f;
 			PaletteLiftValue = 0.0f;
-			PaletteSaturationValue = 0.92f;
-			PaletteContrastValue = 1.15f;
-			MacroColorStrengthValue = 0.036f;
-			NormalStrengthValue = 0.055f;
-			TerrainAmbientFillValue = 0.060f;
+			PaletteSaturationValue = 1.03f;
+			PaletteContrastValue = 1.08f;
+			MacroScaleCm = 6000000.0f;
+			MesoScaleCm = 350000.0f;
+			NearScaleCm = 2200.0f;
+			MacroColorStrengthValue = 0.030f;
+			MesoColorStrengthValue = 0.032f;
+			NearColorStrengthValue = 0.040f;
+			NormalStrengthValue = 0.085f;
+			TerrainAmbientFillValue = 0.140f;
+			SlopeTintStrengthValue = 0.14f;
 			break;
 		case EAPSPlanetSurfaceArchetype::Magmatic:
 			PaletteGainValue = 0.94f;
-			PaletteSaturationValue = 1.06f;
-			PaletteContrastValue = 1.12f;
-			MacroColorStrengthValue = 0.048f;
-			MesoColorStrengthValue = 0.036f;
-			TerrainAmbientFillValue = 0.028f;
+			PaletteSaturationValue = 1.12f;
+			PaletteContrastValue = 1.08f;
+			MacroScaleCm = 5000000.0f;
+			MesoScaleCm = 250000.0f;
+			NearScaleCm = 1800.0f;
+			MacroColorStrengthValue = 0.038f;
+			MesoColorStrengthValue = 0.028f;
+			NearColorStrengthValue = 0.035f;
+			NormalStrengthValue = 0.090f;
+			TerrainAmbientFillValue = 0.045f;
+			SlopeTintStrengthValue = 0.20f;
 			break;
 		case EAPSPlanetSurfaceArchetype::Rocky:
 			PaletteGainValue = 1.02f;
 			PaletteLiftValue = 0.004f;
-			PaletteSaturationValue = 0.88f;
-			PaletteContrastValue = 1.11f;
-			MacroColorStrengthValue = 0.048f;
-			MesoColorStrengthValue = 0.036f;
-			TerrainAmbientFillValue = 0.055f;
+			PaletteSaturationValue = 0.98f;
+			PaletteContrastValue = 1.07f;
+			MacroScaleCm = 7000000.0f;
+			MesoScaleCm = 300000.0f;
+			NearScaleCm = 1600.0f;
+			MacroColorStrengthValue = 0.036f;
+			MesoColorStrengthValue = 0.026f;
+			NearColorStrengthValue = 0.045f;
+			NormalStrengthValue = 0.115f;
+			TerrainAmbientFillValue = 0.110f;
+			SlopeTintStrengthValue = 0.24f;
 			break;
 		case EAPSPlanetSurfaceArchetype::Metallic:
 			PaletteGainValue = 1.06f;
-			PaletteLiftValue = 0.010f;
-			PaletteSaturationValue = 0.82f;
-			PaletteContrastValue = 1.09f;
-			NormalStrengthValue = 0.038f;
+			PaletteLiftValue = 0.006f;
+			PaletteSaturationValue = 0.94f;
+			PaletteContrastValue = 1.05f;
+			MacroScaleCm = 10000000.0f;
+			MesoScaleCm = 500000.0f;
+			NearScaleCm = 3000.0f;
+			MacroColorStrengthValue = 0.030f;
+			MesoColorStrengthValue = 0.020f;
+			NearColorStrengthValue = 0.030f;
+			NormalStrengthValue = 0.055f;
 			MesoRoughnessStrengthValue = 0.028f;
-			TerrainAmbientFillValue = 0.065f;
+			TerrainAmbientFillValue = 0.100f;
+			SlopeTintStrengthValue = 0.14f;
 			break;
 		case EAPSPlanetSurfaceArchetype::ExoticChemical:
 			PaletteGainValue = 1.00f;
-			PaletteSaturationValue = 1.08f;
-			PaletteContrastValue = 1.10f;
-			MacroColorStrengthValue = 0.048f;
-			TerrainAmbientFillValue = 0.060f;
+			PaletteSaturationValue = 1.16f;
+			PaletteContrastValue = 1.06f;
+			MacroScaleCm = 6000000.0f;
+			MesoScaleCm = 320000.0f;
+			NearScaleCm = 2000.0f;
+			MacroColorStrengthValue = 0.036f;
+			MesoColorStrengthValue = 0.024f;
+			NearColorStrengthValue = 0.035f;
+			NormalStrengthValue = 0.080f;
+			TerrainAmbientFillValue = 0.115f;
+			SlopeTintStrengthValue = 0.15f;
 			break;
 		default:
 			break;
@@ -1323,6 +1428,7 @@ namespace APSPlanetSurfaceAssets
 		Scalar(TEXT("MesoRoughnessStrength"), MesoRoughnessStrengthValue);
 		Scalar(TEXT("DetailRoughnessStrength"), DetailRoughnessStrengthValue);
 		Scalar(TEXT("TerrainAmbientFill"), TerrainAmbientFillValue);
+		Scalar(TEXT("SlopeTintStrength"), SlopeTintStrengthValue);
 		Scalar(TEXT("MidVarient1Rough"), MeanRoughness);
 		Scalar(TEXT("MidVarient2Rough"), MeanRoughness);
 		Scalar(TEXT("MidVarient3Rough"), MeanRoughness);
@@ -1377,9 +1483,13 @@ int32 UAPSPlanetSurfaceAssetCommandlet::Main(const FString& Params)
 	// asset remains separate only so hierarchy rendering can be tuned independently.
 	UMaterial* WorldScapeTerrain = CreateWorldScapeTerrainMaterial(AssetTools);
 	UMaterial* OrbitalTerrain = CreateOrbitalTerrainMaterial(AssetTools);
-	UMaterial* CanonicalLiquid = CreateCanonicalLiquidMaterial(AssetTools);
+	UMaterial* WorldScapeLiquid = CreateCanonicalLiquidMaterial(
+		AssetTools, MaterialPath, TEXT("M_APS_WorldScapeLiquid"), false);
+	UMaterial* OrbitalLiquid = CreateCanonicalLiquidMaterial(
+		AssetTools, PreviewMaterialPath, TEXT("M_APS_OrbitalLiquid"), true);
 	UMaterial* PreviewGuide = CreatePreviewGuideMaterial(AssetTools);
-	if (!WorldScapeTerrain || !OrbitalTerrain || !CanonicalLiquid || !PreviewGuide)
+	if (!WorldScapeTerrain || !OrbitalTerrain || !WorldScapeLiquid
+		|| !OrbitalLiquid || !PreviewGuide)
 	{
 		UE_LOG(LogTemp, Error,
 			TEXT("[APS.PlanetSurfaceAssets] Failed to create canonical WorldScape/preview masters"));
@@ -1419,36 +1529,36 @@ int32 UAPSPlanetSurfaceAssetCommandlet::Main(const FString& Params)
 		FamilyMaterials.Add(Family.Archetype, Material);
 	}
 
-	// These three MICs are the catalog's authoritative WorldScape ocean materials.
-	// Keep each liquid visually distinct while every scalar stays inside the master
-	// graph's display-safe clamps.
+	// These three MICs are the catalog's authoritative depth-writing WorldScape
+	// ocean materials. Keep each liquid visually distinct while every shared scalar
+	// stays inside the graph's display-safe clamps.
 	UMaterialInstanceConstant* Water = CreateLiquidPreset(
-		AssetTools, MaterialPath, TEXT("MI_APS_WS_Water"), CanonicalLiquid,
-		FLinearColor(0.005f, 0.025f, 0.090f), FLinearColor(0.030f, 0.300f, 0.580f),
-		FLinearColor(0.008f, 0.035f, 0.075f), 0.34f, 0.18f, 0.0f, 0.62f);
+		AssetTools, MaterialPath, TEXT("MI_APS_WS_Water"), WorldScapeLiquid,
+		FLinearColor(0.002f, 0.008f, 0.025f), FLinearColor(0.008f, 0.055f, 0.085f),
+		FLinearColor(0.0005f, 0.002f, 0.004f), 0.34f, 0.30f, 0.0f, 0.42f);
 	UMaterialInstanceConstant* Ammonia = CreateLiquidPreset(
-		AssetTools, MaterialPath, TEXT("MI_APS_WS_Ammonia"), CanonicalLiquid,
+		AssetTools, MaterialPath, TEXT("MI_APS_WS_Ammonia"), WorldScapeLiquid,
 		FLinearColor(0.008f, 0.055f, 0.025f), FLinearColor(0.160f, 0.480f, 0.250f),
 		FLinearColor(0.006f, 0.035f, 0.015f), 0.32f, 0.22f, 0.0f, 0.58f);
 	UMaterialInstanceConstant* Lava = CreateLiquidPreset(
-		AssetTools, MaterialPath, TEXT("MI_APS_WS_Lava"), CanonicalLiquid,
+		AssetTools, MaterialPath, TEXT("MI_APS_WS_Lava"), WorldScapeLiquid,
 		FLinearColor(0.055f, 0.001f, 0.0005f), FLinearColor(0.720f, 0.025f, 0.001f),
 		FLinearColor(0.420f, 0.018f, 0.001f), 0.42f, 0.42f, 0.04f, 0.30f);
 	if (!Water || !Ammonia || !Lava) return 4;
 
-	// The hierarchy globe assets share the exact master used by WorldScape. They
-	// remain separate MICs only because their small-scale presentation needs more
-	// opacity than a near-field gameplay ocean.
+	// The hierarchy globe uses its own translucent master. Matching parameter names
+	// let the closed proxy copy the resolved family colours without inheriting the
+	// clipmap render pass or creating a second authored liquid definition.
 	UMaterialInstanceConstant* OrbitalWater = CreateLiquidPreset(
-		AssetTools, PreviewMaterialPath, TEXT("MI_APS_OrbitalLiquid_Water"), CanonicalLiquid,
-		FLinearColor(0.005f, 0.025f, 0.090f), FLinearColor(0.030f, 0.300f, 0.580f),
-		FLinearColor(0.008f, 0.035f, 0.075f), 0.52f, 0.18f, 0.0f, 0.62f);
+		AssetTools, PreviewMaterialPath, TEXT("MI_APS_OrbitalLiquid_Water"), OrbitalLiquid,
+		FLinearColor(0.002f, 0.012f, 0.045f), FLinearColor(0.010f, 0.105f, 0.145f),
+		FLinearColor(0.001f, 0.004f, 0.009f), 0.52f, 0.24f, 0.0f, 0.50f);
 	UMaterialInstanceConstant* OrbitalAmmonia = CreateLiquidPreset(
-		AssetTools, PreviewMaterialPath, TEXT("MI_APS_OrbitalLiquid_Ammonia"), CanonicalLiquid,
+		AssetTools, PreviewMaterialPath, TEXT("MI_APS_OrbitalLiquid_Ammonia"), OrbitalLiquid,
 		FLinearColor(0.008f, 0.055f, 0.025f), FLinearColor(0.160f, 0.480f, 0.250f),
 		FLinearColor(0.006f, 0.035f, 0.015f), 0.50f, 0.22f, 0.0f, 0.58f);
 	UMaterialInstanceConstant* OrbitalLava = CreateLiquidPreset(
-		AssetTools, PreviewMaterialPath, TEXT("MI_APS_OrbitalLiquid_Lava"), CanonicalLiquid,
+		AssetTools, PreviewMaterialPath, TEXT("MI_APS_OrbitalLiquid_Lava"), OrbitalLiquid,
 		FLinearColor(0.055f, 0.001f, 0.0005f), FLinearColor(0.720f, 0.025f, 0.001f),
 		FLinearColor(0.420f, 0.018f, 0.001f), 0.54f, 0.42f, 0.04f, 0.30f);
 	if (!OrbitalWater || !OrbitalAmmonia || !OrbitalLava)

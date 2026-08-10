@@ -360,6 +360,10 @@ bool APlanetaryBody::RefreshWorldScapeSurfaceVisibility()
 		const bool bWorkersInFlight = Root->WorldScapeLodInGeneration.Num() > 0;
 		if (!bWorkersInFlight)
 		{
+			const FVector ObserverWorldPosition = Root->bOverridePlayerPosition
+				? Root->OverridedPlayerPosition : Root->PlayerWorldPos.ToFVector();
+			const FVector DesiredSurfaceNormal = Root->WorldToECEF(
+				ObserverWorldPosition).ToFVector().GetSafeNormal();
 			int32 ReadyTerrainLods = 0;
 			for (const UWorldScapeLod* Lod : Root->WorldScapeLod)
 			{
@@ -369,21 +373,13 @@ bool APlanetaryBody::RefreshWorldScapeSurfaceVisibility()
 				}
 			}
 
-			int32 ReadyOceanLods = 0;
-			for (const UWorldScapeLod* Lod : Root->WorldScapeLodOcean)
-			{
-				if (APSWorldScapePayloadValidation::HasCompletePayload(Lod, false))
-				{
-					++ReadyOceanLods;
-				}
-			}
-
 			const int32 RequiredTerrainLods = Root->WorldScapeLod.Num();
 			const bool bTerrainReady = RequiredTerrainLods >= Root->MaxLod
 				&& ReadyTerrainLods == RequiredTerrainLods;
 			const bool bOceanReady = !Root->bOcean
-				|| (Root->WorldScapeLodOcean.Num() > 0
-					&& ReadyOceanLods == Root->WorldScapeLodOcean.Num());
+				|| APSWorldScapePayloadValidation::HasExactCenteredPayloadSet(
+					Root->WorldScapeLodOcean, Root->OceanMaxLod, true,
+					DesiredSurfaceNormal, false);
 			bHasStableTerrainCoverage = bTerrainReady && bOceanReady;
 
 			const bool bRequiresStrictInitialGameplayRender = !bWasSurfaceReady

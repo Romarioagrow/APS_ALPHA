@@ -105,6 +105,7 @@ class APS_ALPHA_API AAstroGenerator : public ABaseActor
 
 public:
 	AAstroGenerator();
+	virtual void OnConstruction(const FTransform& Transform) override;
 
 	/** Transactionally spawns and validates the selected starter hierarchy. */
 	bool SpawnStartInteractiveActors(TSharedPtr<FPlanetModel> StartPlanetModel);
@@ -242,6 +243,18 @@ public:
 	/** Moves only the preview camera; a PLANET zoom never advances the hidden resolver. */
 	UFUNCTION(BlueprintCallable, Category = "World Generation|Preview")
 	void ZoomPreviewCamera(float WheelDelta);
+
+#if WITH_DEV_AUTOMATION_TESTS
+	/**
+	 * Atomically replaces a completed PLANET focus with a body-only inspection frame.
+	 * This is intentionally unavailable to production UI: rendered gallery tests use
+	 * it to exclude moon-orbit bounds without changing the authored PLANET transition.
+	 */
+	bool ApplyPreviewInspectionFramingForAutomation(
+		APlayerController* PlayerController, const FVector& BodyCenter,
+		double BodyRadius, const FIntPoint& ViewportSize,
+		double TargetRadiusFraction);
+#endif
 
 	UFUNCTION(BlueprintCallable, Category = "World Generation|Preview")
 	void AdvancePreviewGenerationSeed();

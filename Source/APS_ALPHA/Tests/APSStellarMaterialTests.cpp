@@ -18,7 +18,7 @@ namespace APSStellarMaterialTests
 {
 	constexpr int32 ExpectedExpressionCount = 17;
 	constexpr int32 MaximumPixelInstructions = 320;
-	constexpr float MaximumActorPreBloom = 1.65f;
+	constexpr float MaximumActorPreBloom = 1.72f;
 	constexpr float MaximumHISMPreBloom = 1.50f;
 	constexpr float ActorToneMinimum = 0.78f;
 	constexpr float ActorToneMaximum = 1.42f;
@@ -28,13 +28,20 @@ namespace APSStellarMaterialTests
 	constexpr float LimbEdgeIntensity = 0.22f;
 	constexpr float LimbCenterIntensity = 1.0f;
 	constexpr float LimbExponent = 0.62f;
-	constexpr float RimExponent = 4.0f;
-	constexpr float ActorFlickerAmplitude = 0.012f;
+	constexpr float RimExponent = 3.15f;
+	constexpr float ActorFlickerAmplitude = 0.020f;
 	constexpr float HISMProxyFlickerAmplitude = 0.0f;
-	constexpr float JewelLiftMinimum = 0.11f;
-	constexpr float JewelLiftMaximum = 0.21f;
-	constexpr float RimJewelLiftMinimum = 0.025f;
-	constexpr float RimJewelLiftMaximum = 0.075f;
+	constexpr float JewelLiftMinimum = 0.14f;
+	constexpr float JewelLiftMaximum = 0.30f;
+	constexpr float RimJewelLiftMinimum = 0.040f;
+	constexpr float RimJewelLiftMaximum = 0.110f;
+	constexpr float DetailFootprintFull = 0.18f;
+	constexpr float DetailFootprintNone = 0.65f;
+	constexpr float ResolvedHISMSampleFootprint = 0.30f;
+	constexpr float SubpixelHISMSampleFootprint = 0.75f;
+	constexpr float HISMStaticJewelPulseMinimum = 0.58f;
+	constexpr float HISMStaticJewelPulseMaximum = 0.82f;
+	constexpr float InstancePayloadThreshold = 0.0001f;
 	constexpr float MinimumProxyActivitySeparation = 0.08f;
 	constexpr float SpectralNormalizationMix = 0.55f;
 	constexpr float SpectralVisibilityMinimum = 0.08f;
@@ -147,6 +154,27 @@ namespace APSStellarMaterialTests
 			(Value - Minimum) / FMath::Max(Maximum - Minimum, UE_SMALL_NUMBER),
 			0.0f, 1.0f);
 		return Alpha * Alpha * (3.0f - 2.0f * Alpha);
+	}
+
+	float StellarSpatialDetail(const float UseInstance, const float NormalFootprint)
+	{
+		const float ResolvedInstanceDetail = FMath::Clamp(1.0f - SmoothStep(
+			DetailFootprintFull, DetailFootprintNone, NormalFootprint), 0.0f, 1.0f);
+		return FMath::Lerp(1.0f, ResolvedInstanceDetail,
+			FMath::Clamp(UseInstance, 0.0f, 1.0f));
+	}
+
+	float StellarTemporalDetail(const float UseInstance)
+	{
+		return 1.0f - FMath::Clamp(UseInstance, 0.0f, 1.0f);
+	}
+
+	float StellarUseInstance(const float ColorEnergy, const float Emission,
+		const float Seed, const float SystemMarker)
+	{
+		const float InstanceSignal = FMath::Abs(ColorEnergy) + FMath::Abs(Emission)
+			+ FMath::Abs(Seed) + FMath::Abs(SystemMarker);
+		return InstanceSignal >= InstancePayloadThreshold ? 1.0f : 0.0f;
 	}
 
 	float ShaderSpectralPeak(const FLinearColor& RawColor)
@@ -500,6 +528,10 @@ bool FAPSStellarMaterialTest::RunTest(const FString& Parameters)
 				StellarSurface->Code.Contains(TEXT("abs(dot(n, v))")));
 			TestTrue(APSStellarMaterialTests::Context(Material, TEXT("emission compression")),
 				CompactCode.Contains(TEXT("logEmission=log2(1.0+rawEmission)")));
+			TestTrue(APSStellarMaterialTests::Context(Material, TEXT("near-black-safe instance detection")),
+				CompactCode.Contains(
+					TEXT("instanceSignal=instanceEnergy+abs(InstanceEmission)+abs(InstanceSeed)+abs(SystemMarker)"))
+				&& CompactCode.Contains(TEXT("useInstance=step(0.0001,instanceSignal)")));
 			TestTrue(APSStellarMaterialTests::Context(Material, TEXT("actor emission normalization")),
 				CompactCode.Contains(
 					TEXT("actorActivity=saturate((logEmission-6.65)/2.32)")));
@@ -508,21 +540,28 @@ bool FAPSStellarMaterialTest::RunTest(const FString& Parameters)
 			TestTrue(APSStellarMaterialTests::Context(Material, TEXT("actor and HISM activity selection")),
 				CompactCode.Contains(
 					TEXT("emissionActivity=lerp(actorActivity,proxyActivity,useInstance)")));
-			TestTrue(APSStellarMaterialTests::Context(Material, TEXT("actor-only spatial detail mask")),
-				CompactCode.Contains(TEXT("actorDetail=1.0-useInstance")));
-			TestTrue(APSStellarMaterialTests::Context(Material, TEXT("actor-only granulation")),
+			TestTrue(APSStellarMaterialTests::Context(Material, TEXT("bounded scale-aware HISM detail")),
 				CompactCode.Contains(
-					TEXT("granulation=(mesoCells*0.40+granuleRidges*0.60)*Granulation*0.33*actorDetail")));
-			TestTrue(APSStellarMaterialTests::Context(Material, TEXT("actor-only spots and faculae")),
-				CompactCode.Contains(
-					TEXT("spots=spotCore*SpotAmount*lerp(0.72,1.0,emissionActivity)*actorDetail"))
+					TEXT("normalFootprint=max(length(ddx(n)),length(ddy(n)))"))
 				&& CompactCode.Contains(
-					TEXT("faculae=spotHalo*(0.075+variation*0.14)*actorDetail")));
-			TestTrue(APSStellarMaterialTests::Context(Material, TEXT("HISM-free photosphere contrast")),
-				CompactCode.Contains(
-					TEXT("macroConvection*variation*0.31*actorDetail"))
+					TEXT("resolvedInstanceDetail=1.0-smoothstep(0.18,0.65,normalFootprint)"))
 				&& CompactCode.Contains(
-					TEXT("cellHeat=lerp(0.5,saturate(granuleRidges*0.5+0.5),actorDetail)")));
+					TEXT("spatialDetail=lerp(1.0,resolvedInstanceDetail,useInstance)")));
+			TestFalse(APSStellarMaterialTests::Context(Material, TEXT("no binary actor-only spatial mask")),
+				CompactCode.Contains(TEXT("actorDetail")));
+			TestTrue(APSStellarMaterialTests::Context(Material, TEXT("scale-aware granulation")),
+				CompactCode.Contains(
+					TEXT("granulation=(mesoCells*0.40+granuleRidges*0.60)*Granulation*0.33*spatialDetail")));
+			TestTrue(APSStellarMaterialTests::Context(Material, TEXT("scale-aware spots and faculae")),
+				CompactCode.Contains(
+					TEXT("spots=spotCore*SpotAmount*lerp(0.72,1.0,emissionActivity)*spatialDetail"))
+				&& CompactCode.Contains(
+					TEXT("faculae=spotHalo*(0.075+variation*0.14)*spatialDetail")));
+			TestTrue(APSStellarMaterialTests::Context(Material, TEXT("scale-aware photosphere contrast")),
+				CompactCode.Contains(
+					TEXT("macroConvection*variation*0.31*spatialDetail"))
+				&& CompactCode.Contains(
+					TEXT("cellHeat=lerp(0.5,granuleCell,spatialDetail)")));
 			TestTrue(APSStellarMaterialTests::Context(Material, TEXT("bounded actor tone")),
 				CompactCode.Contains(TEXT("actorTone=lerp(0.78,1.42,actorActivity)")));
 			TestTrue(APSStellarMaterialTests::Context(Material, TEXT("bounded HISM proxy tone")),
@@ -535,9 +574,9 @@ bool FAPSStellarMaterialTest::RunTest(const FString& Parameters)
 				CompactCode.Contains(
 					TEXT("limb=lerp(0.22,1.0,pow(facing,0.62))")));
 			TestTrue(APSStellarMaterialTests::Context(Material, TEXT("compact corona rim")),
-				CompactCode.Contains(TEXT("rim=pow(1.0-facing,4.0)"))
-				&& CompactCode.Contains(TEXT("resolvedProminence=prominenceMask*actorDetail"))
-				&& CompactCode.Contains(TEXT("CoronaAmount*rim*(0.12+resolvedProminence*0.88)")));
+				CompactCode.Contains(TEXT("rim=pow(1.0-facing,3.15)"))
+				&& CompactCode.Contains(TEXT("resolvedProminence=prominenceMask*spatialDetail"))
+				&& CompactCode.Contains(TEXT("CoronaAmount*rim*(0.18+resolvedProminence*0.82)")));
 			TestTrue(APSStellarMaterialTests::Context(Material, TEXT("spectral normalization mix")),
 				CompactCode.Contains(
 					TEXT("spectralTint=lerp(spectralColor,normalizedSpectralTint,0.55)")));
@@ -550,7 +589,7 @@ bool FAPSStellarMaterialTest::RunTest(const FString& Parameters)
 					TEXT("temporalFlicker*validStellarSpectrum")));
 			TestTrue(APSStellarMaterialTests::Context(Material, TEXT("per-path pre-bloom ceiling")),
 				CompactCode.Contains(
-					TEXT("outputCeiling=lerp(1.65,1.50,useInstance)")));
+					TEXT("outputCeiling=lerp(1.72,1.50,useInstance)")));
 			TestTrue(APSStellarMaterialTests::Context(Material, TEXT("colour-preserving output ceiling")),
 				CompactCode.Contains(
 					TEXT("peakChannel=max(max(preBloom.r,preBloom.g),preBloom.b)"))
@@ -563,18 +602,31 @@ bool FAPSStellarMaterialTest::RunTest(const FString& Parameters)
 					TEXT("spectralHighlightTint=normalizedSpectralTint*spectralVisibility")));
 			TestTrue(APSStellarMaterialTests::Context(Material, TEXT("sparse jewel cell mask")),
 				CompactCode.Contains(
-					TEXT("jewelMask=smoothstep(0.74,0.94,cellHeat)*lerp(0.45,1.0,saturate(faculae*5.0))")));
-			TestTrue(APSStellarMaterialTests::Context(Material, TEXT("spatially phased jewel twinkle")),
+					TEXT("microUnit=microGranules*0.5+0.5"))
+				&& CompactCode.Contains(
+					TEXT("granuleCell=smoothstep(0.31,0.69,microUnit)"))
+				&& CompactCode.Contains(
+					TEXT("granuleSpark=smoothstep(0.62,0.88,microUnit)*spatialDetail"))
+				&& CompactCode.Contains(
+					TEXT("jewelCell=saturate((resolvedCellHeat-0.67)*4.166667)"))
+				&& CompactCode.Contains(
+					TEXT("jewelMask=jewelCell*lerp(0.52,1.0,saturate(faculae*5.0+granuleSpark))")));
+			TestTrue(APSStellarMaterialTests::Context(Material, TEXT("spatially phased actor jewel twinkle")),
 				CompactCode.Contains(
 					TEXT("jewelPhase=GameTime*lerp(1.35,1.85,seed)+phase*0.61+mesoCells*4.0")));
-			TestTrue(APSStellarMaterialTests::Context(Material, TEXT("actor-only jewel lift")),
+			TestTrue(APSStellarMaterialTests::Context(Material, TEXT("deterministic instance jewel pulse")),
 				CompactCode.Contains(
-					TEXT("jewelLift=actorDetail*jewelMask*lerp(0.11,0.21,jewelPulse)")));
-			TestTrue(APSStellarMaterialTests::Context(Material, TEXT("actor-only spectral jewel rim")),
-				CompactCode.Contains(
-					TEXT("rimJewelMask=actorDetail*rim*lerp(0.18,1.0,prominenceMask)"))
+					TEXT("instanceJewelPulse=lerp(0.58,0.82,seed)"))
 				&& CompactCode.Contains(
-					TEXT("rimJewelLift=rimJewelMask*lerp(0.025,0.075,jewelPulse)")));
+					TEXT("jewelPulse=lerp(actorJewelPulse,instanceJewelPulse,useInstance)")));
+			TestTrue(APSStellarMaterialTests::Context(Material, TEXT("scale-aware jewel lift")),
+				CompactCode.Contains(
+					TEXT("jewelLift=spatialDetail*jewelMask*lerp(0.14,0.30,jewelPulse)")));
+			TestTrue(APSStellarMaterialTests::Context(Material, TEXT("scale-aware spectral jewel rim")),
+				CompactCode.Contains(
+					TEXT("rimJewelMask=spatialDetail*rim*lerp(0.18,1.0,prominenceMask)"))
+				&& CompactCode.Contains(
+					TEXT("rimJewelLift=rimJewelMask*lerp(0.040,0.110,jewelPulse)")));
 			TestTrue(APSStellarMaterialTests::Context(Material, TEXT("pre-bloom stellar output")),
 				CompactCode.Contains(
 					TEXT("stellarSignal=(toneSafeEmission+jewelLift)*visibleSurface+rimJewelLift"))
@@ -590,7 +642,8 @@ bool FAPSStellarMaterialTest::RunTest(const FString& Parameters)
 				StellarSurface->Code.Contains(TEXT("flickerPhase = GameTime"))
 				&& StellarSurface->Code.Contains(TEXT("temporalFlicker")));
 			TestTrue(APSStellarMaterialTests::Context(Material, TEXT("actor-only temporal flicker")),
-				CompactCode.Contains(TEXT("flickerAmplitude=actorDetail*0.012")));
+				CompactCode.Contains(TEXT("temporalDetail=1.0-useInstance"))
+				&& CompactCode.Contains(TEXT("flickerAmplitude=temporalDetail*0.020")));
 			TestFalse(APSStellarMaterialTests::Context(Material, TEXT("no texture sampling")),
 				StellarSurface->Code.Contains(TEXT("Texture2DSample")));
 
@@ -616,6 +669,14 @@ bool FAPSStellarMaterialTest::RunTest(const FString& Parameters)
 		}
 
 		const FMaterialStatistics Statistics = UMaterialEditingLibrary::GetStatistics(Material);
+		AddInfo(FString::Printf(
+			TEXT("%s shader stats: pixel=%d vertex=%d samplers=%d vertexTextures=%d virtualTextures=%d"),
+			*GetNameSafe(Material),
+			Statistics.NumPixelShaderInstructions,
+			Statistics.NumVertexShaderInstructions,
+			Statistics.NumSamplers,
+			Statistics.NumVertexTextureSamples,
+			Statistics.NumVirtualTextureSamples));
 		TestEqual(APSStellarMaterialTests::Context(Material, TEXT("zero samplers")),
 			Statistics.NumSamplers, 0);
 		TestEqual(APSStellarMaterialTests::Context(Material, TEXT("zero vertex texture samples")),
@@ -694,13 +755,57 @@ bool FAPSStellarPerceptualSafetyTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Limb curve remains gradual rather than a hard-edged disc"),
 		APSStellarMaterialTests::LimbExponent >= 0.50f
 		&& APSStellarMaterialTests::LimbExponent <= 0.75f);
-	TestTrue(TEXT("Corona rim has fallen below eight percent by mid-disc"),
-		FMath::Pow(0.5f, APSStellarMaterialTests::RimExponent) <= 0.08f);
-	TestTrue(TEXT("Actor flicker remains visible but below a two-percent pulse"),
+	TestTrue(TEXT("Corona rim has fallen below twelve percent by mid-disc"),
+		FMath::Pow(0.5f, APSStellarMaterialTests::RimExponent) <= 0.12f);
+	TestTrue(TEXT("Actor flicker remains visible and bounded to a two-percent pulse"),
 		APSStellarMaterialTests::ActorFlickerAmplitude > 0.005f
-		&& APSStellarMaterialTests::ActorFlickerAmplitude < 0.02f);
+		&& APSStellarMaterialTests::ActorFlickerAmplitude <= 0.02f + UE_SMALL_NUMBER);
 	TestTrue(TEXT("HISM temporal flicker is exactly disabled"),
 		FMath::IsNearlyZero(APSStellarMaterialTests::HISMProxyFlickerAmplitude));
+
+	const float ActorSpatialDetail = APSStellarMaterialTests::StellarSpatialDetail(
+		0.0f, APSStellarMaterialTests::SubpixelHISMSampleFootprint);
+	const float ResolvedHISMSpatialDetail = APSStellarMaterialTests::StellarSpatialDetail(
+		1.0f, APSStellarMaterialTests::ResolvedHISMSampleFootprint);
+	const float SubpixelHISMSpatialDetail = APSStellarMaterialTests::StellarSpatialDetail(
+		1.0f, APSStellarMaterialTests::SubpixelHISMSampleFootprint);
+	TestTrue(*FString::Printf(
+		TEXT("Actor retains exact full spatial detail at every footprint (%.4f)"),
+		ActorSpatialDetail),
+		FMath::IsNearlyEqual(ActorSpatialDetail, 1.0f));
+	TestTrue(*FString::Printf(
+		TEXT("Resolved HISM retains strong nonzero spatial detail (%.4f)"),
+		ResolvedHISMSpatialDetail),
+		ResolvedHISMSpatialDetail > 0.5f && ResolvedHISMSpatialDetail < 1.0f);
+	TestTrue(*FString::Printf(
+		TEXT("Sub-pixel HISM removes alias-prone spatial detail (%.4f)"),
+		SubpixelHISMSpatialDetail),
+		FMath::IsNearlyZero(SubpixelHISMSpatialDetail));
+
+	const float ActorTemporalDetail = APSStellarMaterialTests::StellarTemporalDetail(0.0f);
+	const float ResolvedHISMTemporalDetail =
+		APSStellarMaterialTests::StellarTemporalDetail(1.0f);
+	const float SubpixelHISMTemporalDetail =
+		APSStellarMaterialTests::StellarTemporalDetail(1.0f);
+	TestTrue(TEXT("Actor retains the authored temporal pulse"),
+		FMath::IsNearlyEqual(ActorTemporalDetail, 1.0f));
+	TestTrue(TEXT("Resolved and sub-pixel HISM remain temporally stable"),
+		FMath::IsNearlyZero(ResolvedHISMTemporalDetail)
+		&& FMath::IsNearlyZero(SubpixelHISMTemporalDetail));
+	TestTrue(TEXT("HISM static jewel pulse is deterministic and bounded"),
+		APSStellarMaterialTests::HISMStaticJewelPulseMinimum > 0.0f
+		&& APSStellarMaterialTests::HISMStaticJewelPulseMinimum
+			< APSStellarMaterialTests::HISMStaticJewelPulseMaximum
+		&& APSStellarMaterialTests::HISMStaticJewelPulseMaximum < 1.0f);
+	const float ActorUseInstance = APSStellarMaterialTests::StellarUseInstance(
+		0.0f, 0.0f, 0.0f, 0.0f);
+	const float DarkHISMUseInstance = APSStellarMaterialTests::StellarUseInstance(
+		0.0f, 6.0f, 0.0f, 0.0f);
+	TestTrue(TEXT("Zero custom payload keeps a materialized actor on actor parameters"),
+		FMath::IsNearlyZero(ActorUseInstance));
+	TestTrue(TEXT("Near-black HISM still selects instance parameters through emission payload"),
+		FMath::IsNearlyEqual(DarkHISMUseInstance, 1.0f));
+
 	const float MinimumEmissionActorWithMaximumJewelResponse =
 		APSStellarMaterialTests::ActorTone(100.0f)
 		+ APSStellarMaterialTests::JewelLiftMaximum
@@ -709,7 +814,7 @@ bool FAPSStellarPerceptualSafetyTest::RunTest(const FString& Parameters)
 		TEXT("Sparse jewel response gives the minimum actor HDR headroom (%.4f > 1.0)"),
 		MinimumEmissionActorWithMaximumJewelResponse),
 		MinimumEmissionActorWithMaximumJewelResponse > 1.0f);
-	TestTrue(TEXT("Jewel lift stays below a thirty-percent local emission increase"),
+	TestTrue(TEXT("Combined jewel lift stays below a bounded 42-percent local increase"),
 		APSStellarMaterialTests::JewelLiftMinimum > 0.0f
 		&& APSStellarMaterialTests::JewelLiftMinimum
 			< APSStellarMaterialTests::JewelLiftMaximum
@@ -717,12 +822,19 @@ bool FAPSStellarPerceptualSafetyTest::RunTest(const FString& Parameters)
 		&& APSStellarMaterialTests::RimJewelLiftMinimum
 			< APSStellarMaterialTests::RimJewelLiftMaximum
 		&& APSStellarMaterialTests::JewelLiftMaximum
-			+ APSStellarMaterialTests::RimJewelLiftMaximum < 0.30f);
-	const float MaximumHISMJewelLift = (1.0f - 1.0f)
+			+ APSStellarMaterialTests::RimJewelLiftMaximum < 0.42f);
+	const float MaximumResolvedHISMJewelLift = ResolvedHISMSpatialDetail
 		* (APSStellarMaterialTests::JewelLiftMaximum
 			+ APSStellarMaterialTests::RimJewelLiftMaximum);
-	TestTrue(TEXT("HISM jewel lift remains exactly disabled for temporal stability"),
-		FMath::IsNearlyZero(MaximumHISMJewelLift));
+	const float MaximumSubpixelHISMJewelLift = SubpixelHISMSpatialDetail
+		* (APSStellarMaterialTests::JewelLiftMaximum
+			+ APSStellarMaterialTests::RimJewelLiftMaximum);
+	TestTrue(*FString::Printf(
+		TEXT("Resolved HISM receives nonzero static jewel headroom (%.4f)"),
+		MaximumResolvedHISMJewelLift),
+		MaximumResolvedHISMJewelLift > 0.0f);
+	TestTrue(TEXT("Sub-pixel HISM jewel lift collapses to a stable spectral point"),
+		FMath::IsNearlyZero(MaximumSubpixelHISMJewelLift));
 
 	const TArray<ESpectralClass> MainSequenceClasses{
 		ESpectralClass::O,

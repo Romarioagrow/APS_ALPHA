@@ -495,6 +495,13 @@ namespace APSGenerationUI
 	TSharedRef<SWidget> ChoiceRow(const FText& Label, TWeakObjectPtr<UWorldGenerationViewModel> ViewModel,
 		TTextGetter TextGetter, TStepper Stepper)
 	{
+		const auto ValueText = [ViewModel, TextGetter]()
+		{
+			const UWorldGenerationViewModel* VM = ViewModel.Get();
+			return VM && VM->GeneratedWorld ? TextGetter(VM->GeneratedWorld)
+				: FText::FromString(TEXT("--"));
+		};
+
 		return SNew(SVerticalBox)
 			+ SVerticalBox::Slot().AutoHeight()
 			[
@@ -507,32 +514,35 @@ namespace APSGenerationUI
 					SNew(SHorizontalBox)
 					+ SHorizontalBox::Slot().AutoWidth()
 					[
-						SNew(SButton).Text(FText::FromString(TEXT("<")))
-						.ContentPadding(FMargin(9.0f, 4.0f)).ButtonStyle(&SecondaryButton)
-						.OnClicked_Lambda([ViewModel, Stepper]()
-						{
-							if (UWorldGenerationViewModel* VM = ViewModel.Get()) Stepper(VM, -1);
-							return FReply::Handled();
-						})
+						SNew(SBox).MinDesiredWidth(36.0f).MinDesiredHeight(36.0f)
+						[
+							SNew(SButton).Text(FText::FromString(TEXT("<")))
+							.ContentPadding(FMargin(9.0f, 4.0f)).ButtonStyle(&SecondaryButton)
+							.OnClicked_Lambda([ViewModel, Stepper]()
+							{
+								if (UWorldGenerationViewModel* VM = ViewModel.Get()) Stepper(VM, -1);
+								return FReply::Handled();
+							})
+						]
 					]
 					+ SHorizontalBox::Slot().FillWidth(1.0f).HAlign(HAlign_Center).VAlign(VAlign_Center)
 					[
-						SNew(STextBlock).Text_Lambda([ViewModel, TextGetter]()
-						{
-							const UWorldGenerationViewModel* VM = ViewModel.Get();
-							return VM && VM->GeneratedWorld ? TextGetter(VM->GeneratedWorld)
-								: FText::FromString(TEXT("--"));
-						}).Font(Font("Bold", 11)).ColorAndOpacity(White)
+						SNew(STextBlock).Text_Lambda(ValueText).ToolTipText_Lambda(ValueText)
+						.OverflowPolicy(ETextOverflowPolicy::Ellipsis)
+						.Font(Font("Bold", 11)).ColorAndOpacity(White)
 					]
 					+ SHorizontalBox::Slot().AutoWidth()
 					[
-						SNew(SButton).Text(FText::FromString(TEXT(">")))
-						.ContentPadding(FMargin(9.0f, 4.0f)).ButtonStyle(&SecondaryButton)
-						.OnClicked_Lambda([ViewModel, Stepper]()
-						{
-							if (UWorldGenerationViewModel* VM = ViewModel.Get()) Stepper(VM, 1);
-							return FReply::Handled();
-						})
+						SNew(SBox).MinDesiredWidth(36.0f).MinDesiredHeight(36.0f)
+						[
+							SNew(SButton).Text(FText::FromString(TEXT(">")))
+							.ContentPadding(FMargin(9.0f, 4.0f)).ButtonStyle(&SecondaryButton)
+							.OnClicked_Lambda([ViewModel, Stepper]()
+							{
+								if (UWorldGenerationViewModel* VM = ViewModel.Get()) Stepper(VM, 1);
+								return FReply::Handled();
+							})
+						]
 					]
 				]
 			];
@@ -566,6 +576,16 @@ namespace APSGenerationUI
 	TSharedRef<SWidget> EnumRow(const FText& Label, TWeakObjectPtr<UWorldGenerationViewModel> ViewModel, TGetter Getter)
 	{
 		const UEnum* Enum = StaticEnum<TEnum>();
+		const auto ValueText = [ViewModel, Getter, Enum]()
+		{
+			if (const UWorldGenerationViewModel* VM = ViewModel.Get(); VM && VM->GeneratedWorld && Enum)
+			{
+				return GetGenerationEnumDisplayName(
+					Enum, static_cast<int64>(Getter(VM->GeneratedWorld)));
+			}
+			return FText::FromString(TEXT("--"));
+		};
+
 		return SNew(SVerticalBox)
 			+ SVerticalBox::Slot().AutoHeight()
 			[
@@ -578,59 +598,58 @@ namespace APSGenerationUI
 				SNew(SHorizontalBox)
 				+ SHorizontalBox::Slot().AutoWidth()
 				[
-					SNew(SButton).Text(FText::FromString(TEXT("<"))).ContentPadding(FMargin(9.0f, 4.0f))
-					.ButtonStyle(&SecondaryButton)
-					.OnClicked_Lambda([ViewModel, Getter, Enum]()
-					{
-						if (UWorldGenerationViewModel* VM = ViewModel.Get(); VM && VM->GeneratedWorld && Enum)
+					SNew(SBox).MinDesiredWidth(36.0f).MinDesiredHeight(36.0f)
+					[
+						SNew(SButton).Text(FText::FromString(TEXT("<"))).ContentPadding(FMargin(9.0f, 4.0f))
+						.ButtonStyle(&SecondaryButton)
+						.OnClicked_Lambda([ViewModel, Getter, Enum]()
 						{
-							const TArray<int64> Values = GetSelectableEnumValues(Enum);
-							if (!Values.IsEmpty())
+							if (UWorldGenerationViewModel* VM = ViewModel.Get(); VM && VM->GeneratedWorld && Enum)
 							{
-								const int64 Current = static_cast<int64>(Getter(VM->GeneratedWorld));
-								const int32 CurrentIndex = Values.IndexOfByKey(Current);
-								const int32 NewIndex = CurrentIndex == INDEX_NONE
-									? Values.Num() - 1 : (CurrentIndex - 1 + Values.Num()) % Values.Num();
-								VM->SetEnumValue(Enum, static_cast<int32>(Values[NewIndex]));
+								const TArray<int64> Values = GetSelectableEnumValues(Enum);
+								if (!Values.IsEmpty())
+								{
+									const int64 Current = static_cast<int64>(Getter(VM->GeneratedWorld));
+									const int32 CurrentIndex = Values.IndexOfByKey(Current);
+									const int32 NewIndex = CurrentIndex == INDEX_NONE
+										? Values.Num() - 1 : (CurrentIndex - 1 + Values.Num()) % Values.Num();
+									VM->SetEnumValue(Enum, static_cast<int32>(Values[NewIndex]));
+								}
 							}
-						}
-						return FReply::Handled();
-					})
+							return FReply::Handled();
+						})
+					]
 				]
 				+ SHorizontalBox::Slot().FillWidth(1.0f).HAlign(HAlign_Center).VAlign(VAlign_Center)
 				[
 					SNew(STextBlock)
-					.Text_Lambda([ViewModel, Getter, Enum]()
-					{
-						if (const UWorldGenerationViewModel* VM = ViewModel.Get(); VM && VM->GeneratedWorld && Enum)
-						{
-							return GetGenerationEnumDisplayName(
-								Enum, static_cast<int64>(Getter(VM->GeneratedWorld)));
-						}
-						return FText::FromString(TEXT("--"));
-					})
+					.Text_Lambda(ValueText).ToolTipText_Lambda(ValueText)
+					.OverflowPolicy(ETextOverflowPolicy::Ellipsis)
 					.Font(Font("Bold", 11)).ColorAndOpacity(White)
 				]
 				+ SHorizontalBox::Slot().AutoWidth()
 				[
-					SNew(SButton).Text(FText::FromString(TEXT(">"))).ContentPadding(FMargin(9.0f, 4.0f))
-					.ButtonStyle(&SecondaryButton)
-					.OnClicked_Lambda([ViewModel, Getter, Enum]()
-					{
-						if (UWorldGenerationViewModel* VM = ViewModel.Get(); VM && VM->GeneratedWorld && Enum)
+					SNew(SBox).MinDesiredWidth(36.0f).MinDesiredHeight(36.0f)
+					[
+						SNew(SButton).Text(FText::FromString(TEXT(">"))).ContentPadding(FMargin(9.0f, 4.0f))
+						.ButtonStyle(&SecondaryButton)
+						.OnClicked_Lambda([ViewModel, Getter, Enum]()
 						{
-							const TArray<int64> Values = GetSelectableEnumValues(Enum);
-							if (!Values.IsEmpty())
+							if (UWorldGenerationViewModel* VM = ViewModel.Get(); VM && VM->GeneratedWorld && Enum)
 							{
-								const int64 Current = static_cast<int64>(Getter(VM->GeneratedWorld));
-								const int32 CurrentIndex = Values.IndexOfByKey(Current);
-								const int32 NewIndex = CurrentIndex == INDEX_NONE
-									? 0 : (CurrentIndex + 1) % Values.Num();
-								VM->SetEnumValue(Enum, static_cast<int32>(Values[NewIndex]));
+								const TArray<int64> Values = GetSelectableEnumValues(Enum);
+								if (!Values.IsEmpty())
+								{
+									const int64 Current = static_cast<int64>(Getter(VM->GeneratedWorld));
+									const int32 CurrentIndex = Values.IndexOfByKey(Current);
+									const int32 NewIndex = CurrentIndex == INDEX_NONE
+										? 0 : (CurrentIndex + 1) % Values.Num();
+									VM->SetEnumValue(Enum, static_cast<int32>(Values[NewIndex]));
+								}
 							}
-						}
-						return FReply::Handled();
-					})
+							return FReply::Handled();
+						})
+					]
 				]
 				]
 			];

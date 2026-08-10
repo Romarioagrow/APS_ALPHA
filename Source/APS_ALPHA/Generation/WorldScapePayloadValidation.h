@@ -16,4 +16,15 @@ namespace APSWorldScapePayloadValidation
 
 	APS_ALPHA_API bool HasCompleteCenteredPayload(const UWorldScapeLod* Lod,
 		const FVector& DesiredSurfaceNormal, bool bRequireProfileColor);
+
+	/**
+	 * Validates one complete streamed clipmap generation rather than accepting an
+	 * arbitrary non-empty subset. Every expected LOD id must occur exactly once,
+	 * own a unique mesh, have the requested terrain/ocean role, and be centred on
+	 * the current observer.
+	 */
+	APS_ALPHA_API bool HasExactCenteredPayloadSet(
+		const TArray<UWorldScapeLod*>& Lods, int32 ExpectedCount,
+		bool bExpectedWaterBody, const FVector& DesiredSurfaceNormal,
+		bool bRequireProfileColor);
 }

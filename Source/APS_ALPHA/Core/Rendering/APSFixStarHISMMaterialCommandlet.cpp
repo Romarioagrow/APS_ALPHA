@@ -222,8 +222,9 @@ namespace APSStellarMaterial
 
 		// RGB, luminosity/emission, deterministic seed and the potential-system bit
 		// already occupy custom-data slots 0..5 on both Galaxy and Cluster HISM.
-		// A zero instance colour identifies an ordinary static-mesh star, allowing the
-		// exact same shader recipe to consume dynamic material parameters instead.
+		// A wholly zero instance payload identifies an ordinary static-mesh star. Using
+		// emission/seed/marker as well as colour keeps near-black HISM spectra on the
+		// instance path while the same shader consumes actor material parameters.
 		if (!SetUInt32Property(InstanceColor, TEXT("DataIndex"), 0)
 			|| !SetLinearColorProperty(InstanceColor, TEXT("ConstDefaultValue"), FLinearColor::Black)
 			|| !SetUInt32Property(InstanceEmission, TEXT("DataIndex"), 3)
@@ -243,8 +244,9 @@ namespace APSStellarMaterial
 		StellarSurface->Inputs.Reset();
 		const FString StellarPatternCode = TEXT(R"APSSTELLAR(
 float instanceEnergy = abs(InstanceColor.r) + abs(InstanceColor.g) + abs(InstanceColor.b);
-float useInstance = step(0.0001, instanceEnergy);
-float actorDetail = 1.0 - useInstance;
+float instanceSignal = instanceEnergy + abs(InstanceEmission)
+                     + abs(InstanceSeed) + abs(SystemMarker);
+float useInstance = step(0.0001, instanceSignal);
 float3 spectralColor = max(lerp(ParamColor.rgb, InstanceColor.rgb, useInstance), 0.001);
 float rawEmission = max(lerp(ParamEmission, InstanceEmission, useInstance), 0.0);
 float seed = frac(lerp(ParamSeed, InstanceSeed, useInstance));
@@ -259,6 +261,17 @@ float radialLengthSq = dot(radial, radial);
 float3 n = radialLengthSq > 1.0e-8
     ? radial * rsqrt(radialLengthSq)
     : normalize(NormalWS);
+// Normal variation per pixel is a projection-independent footprint estimate.
+// Actors keep the exact full-detail path. Resolved HISM spheres retain the same
+// stationary surface recipe, while footprints at and below point scale smoothly
+// discard alias-prone spatial contrast instead of switching every instance off.
+float normalFootprint = max(length(ddx(n)), length(ddy(n)));
+float resolvedInstanceDetail =
+    1.0 - smoothstep(0.18, 0.65, normalFootprint);
+float spatialDetail = lerp(1.0, resolvedInstanceDetail, useInstance);
+// Instance highlights are deterministic below; only a materialized actor may use
+// GameTime, so a sub-pixel hierarchy point cannot shimmer under temporal AA.
+float temporalDetail = 1.0 - useInstance;
 float3 v = normalize(CameraWS);
 float facing = saturate(dot(n, v));
 
@@ -268,55 +281,43 @@ float facing = saturate(dot(n, v));
 // turn a close star into flat blocks while still reading as an untextured point
 // at cluster scale.
 float phase = seed * 37.6991118;
-// Nested, cross-modulated waves avoid the long parallel bands produced by a
-// simple sum of high-frequency planes.  The resulting fields read as soft
-// convection cells at close range and collapse into stable spectral light at
-// HISM distance, without UVs, cube projections or mesh-normal seams.
+// Cross-axis waves avoid the long parallel bands produced by axis-only planes.
+// Each octave uses a paired directional basis instead of recomputing three
+// nested trigonometric trees. The domain warp still breaks alignment between
+// scales, while the pairwise intersections retain convection cells and fine
+// granules at close range without UVs, cube projections or normal seams.
 float3 lowDomain = n * 4.2;
-float3 domainWarp = float3(
-    sin(lowDomain.x + sin(lowDomain.y * 1.31 + phase * 0.37)
-                    + cos(lowDomain.z * 0.79 - phase * 0.23)),
-    sin(lowDomain.y * 1.11 + cos(lowDomain.z * 1.43 - phase * 0.29)
-                           - sin(lowDomain.x * 0.73 + phase * 0.19)),
-    sin(lowDomain.z * 0.93 + sin(lowDomain.x * 1.27 + phase * 0.43)
-                           + cos(lowDomain.y * 0.69 - phase * 0.31)));
+float3 domainWarp = sin(
+    lowDomain
+    + lowDomain.yzx * float3(1.31, -1.43, 1.27)
+    + phase * float3(0.37, -0.29, 0.43));
 float3 p = normalize(n + domainWarp * 0.055);
 
 float3 macroP = p * 6.4 + domainWarp * 0.62;
-float macroA = sin(macroP.x + sin(macroP.y * 0.83 + phase * 0.41)
-                            + cos(macroP.z * 0.57 - phase * 0.27));
-float macroB = cos(macroP.y * 1.07 + sin(macroP.z * 0.71 - phase * 0.33)
-                                   - cos(macroP.x * 0.49 + phase * 0.21));
+float macroA = sin(dot(macroP, float3(1.00, 0.83, 0.57)) + phase * 0.41);
+float macroB = cos(dot(macroP, float3(-0.49, 1.07, 0.71)) - phase * 0.33);
 float macroConvection = (macroA + macroB + macroA * macroB * 0.32) / 2.32;
 
 float3 mesoP = p * 18.5 + domainWarp * 1.65
              + macroConvection * float3(0.73, -0.41, 0.29);
-float mesoA = sin(mesoP.x + sin(mesoP.y * 0.71 + phase * 0.73)
-                          + cos(mesoP.z * 0.47 - phase * 0.51));
-float mesoB = cos(mesoP.y * 1.09 + sin(mesoP.z * 0.83 - phase * 0.67)
-                                  - cos(mesoP.x * 0.61 + phase * 0.43));
-float mesoC = sin(mesoP.z * 0.91 + cos(mesoP.x * 0.63 + phase * 0.59)
-                                  + sin(mesoP.y * 0.53 - phase * 0.37));
-float mesoCells = (mesoA * mesoB + mesoB * mesoC + mesoC * mesoA) * 0.3333333;
+float mesoA = sin(dot(mesoP, float3(1.00, 0.71, 0.47)) + phase * 0.73);
+float mesoB = cos(dot(mesoP, float3(-0.61, 1.09, 0.83)) - phase * 0.67);
+float mesoCells = mesoA * mesoB;
 
 float3 microP = p * 47.0 + domainWarp * 3.4
               + mesoCells * float3(-1.3, 0.9, 1.1);
-float granuleA = sin(microP.x + sin(microP.y * 0.67 + phase * 1.31)
-                             + cos(microP.z * 0.43 - phase * 1.07));
-float granuleB = cos(microP.y * 1.13 + sin(microP.z * 0.79 - phase * 1.19)
-                                     - cos(microP.x * 0.47 + phase * 0.83));
-float granuleC = sin(microP.z * 0.89 + cos(microP.x * 0.61 + phase * 1.43)
-                                     + sin(microP.y * 0.51 - phase * 0.97));
-float microGranules = (granuleA * granuleB + granuleB * granuleC
-                     + granuleC * granuleA) * 0.3333333;
+float granuleA = sin(dot(microP, float3(1.00, 0.67, 0.43)) + phase * 1.31);
+float granuleB = cos(dot(microP, float3(-0.47, 1.13, 0.79)) - phase * 1.19);
+float microGranules = granuleA * granuleB;
 
 // Broad magnetic fields form a few coherent dark spots.  A narrow surrounding
 // facular band keeps them organic instead of looking like stamped black dots.
 float magneticField = 0.5 + 0.32 * macroConvection + 0.14 * mesoCells;
-float spotCore = smoothstep(0.67, 0.80, magneticField)
-               * saturate(0.76 + microGranules * 0.24);
-float spotHalo = saturate(smoothstep(0.54, 0.68, magneticField)
-               - smoothstep(0.68, 0.82, magneticField));
+float spotCore = saturate((magneticField - 0.67) * 7.692308)
+               * (0.76 + microGranules * 0.24);
+// The two former smoothsteps described the same 0.54..0.82 facular band. A
+// triangular response preserves its centre and zero crossings with half the ALU.
+float spotHalo = saturate(1.0 - abs(magneticField - 0.68) * 7.142857);
 )APSSTELLAR");
 		const FString StellarLightingCode = TEXT(R"APSSTELLAR(
 
@@ -328,39 +329,46 @@ float logEmission = log2(1.0 + rawEmission);
 float actorActivity = saturate((logEmission - 6.65) / 2.32);
 float proxyActivity = saturate(logEmission / 8.97);
 float emissionActivity = lerp(actorActivity, proxyActivity, useInstance);
-// Distant HISM points intentionally discard alias-prone spatial contrast. Their
-// one-pixel representation keeps emission hierarchy and spectral colour, while the
-// materialized actor receives the complete procedural photosphere.
+// Spatial contrast follows the bounded footprint mask. One-pixel HISM keeps only
+// emission hierarchy and spectral colour; a resolved proxy receives the same
+// stationary photosphere fields as the materialized actor.
 float variation = saturate(Variation);
-float granuleRidges = (smoothstep(0.31, 0.69, microGranules * 0.5 + 0.5)
-                     - 0.5) * 2.0;
+float microUnit = microGranules * 0.5 + 0.5;
+float granuleCell = smoothstep(0.31, 0.69, microUnit);
+float granuleRidges = (granuleCell - 0.5) * 2.0;
 float granulation = (mesoCells * 0.40 + granuleRidges * 0.60)
-                  * Granulation * 0.33 * actorDetail;
+                  * Granulation * 0.33 * spatialDetail;
+// A narrow subset of the micro cells carries the faceted, jewel-like highlights.
+// Footprint attenuation preserves it on resolved HISM without sub-pixel aliasing.
+float granuleSpark = smoothstep(0.62, 0.88, microUnit) * spatialDetail;
 float spots = spotCore * SpotAmount * lerp(0.72, 1.0, emissionActivity)
-            * actorDetail;
-float faculae = spotHalo * (0.075 + variation * 0.14) * actorDetail;
-float surface = max(0.24, 1.0 + macroConvection * variation * 0.31 * actorDetail
+            * spatialDetail;
+float faculae = spotHalo * (0.075 + variation * 0.14) * spatialDetail;
+float surface = max(0.24, 1.0 + macroConvection * variation * 0.31 * spatialDetail
                            + granulation + faculae - spots * 0.68);
+surface *= lerp(0.90, 1.13, granuleSpark);
 
 // Limb darkening gives the disc volume.  The edge is brighter only in sparse
 // magnetic lobes, so post-process bloom reads as a soft corona with occasional
 // prominence hints rather than one large opaque halo.
 float limb = lerp(0.22, 1.0, pow(facing, 0.62));
-float rim = pow(1.0 - facing, 4.0);
-float prominenceField = 0.5 + 0.30 * sin(dot(n, float3(0.707, -0.236, 0.667)) * 17.0 + phase * 1.43)
-                            + 0.20 * sin(dot(n, float3(-0.324, 0.811, 0.487)) * 31.0 - phase * 2.21);
-float prominenceMask = smoothstep(0.77, 0.93, prominenceField);
-float resolvedProminence = prominenceMask * actorDetail;
-float corona = CoronaAmount * rim * (0.12 + resolvedProminence * 0.88)
+float rim = pow(1.0 - facing, 3.15);
+// The rare magnetic cores already identify coherent large-scale lobes. Reusing
+// that bounded field keeps prominences attached to the visible activity instead
+// of evaluating a second mask over the same photosphere.
+float prominenceMask = spotCore;
+float resolvedProminence = prominenceMask * spatialDetail;
+float corona = CoronaAmount * rim * (0.18 + resolvedProminence * 0.82)
              * (1.0 + saturate(SystemMarker) * 0.08);
 
-// A seeded two-frequency pulse keeps close stars alive without swimming the
-// surface coordinates. Far HISM points receive exactly zero temporal modulation,
-// preventing a cluster from sparkling while preserving its spectral response.
+// A seeded two-harmonic pulse keeps close stars alive without swimming the
+// surface coordinates. Cubic shaping supplies the higher harmonic without a
+// second trig evaluation. Every HISM receives exactly zero temporal modulation;
+// its resolved jewel pattern remains deterministic and sub-pixel points stay still.
 float flickerPhase = GameTime * lerp(0.34, 0.49, seed) + phase;
-float flickerSignal = sin(flickerPhase) * 0.68
-                    + sin(flickerPhase * 0.413 + phase * 1.73) * 0.32;
-float flickerAmplitude = actorDetail * 0.012
+float flickerBase = sin(flickerPhase);
+float flickerSignal = flickerBase * (0.84 + flickerBase * flickerBase * 0.16);
+float flickerAmplitude = temporalDetail * 0.020
                        * lerp(0.72, 1.0, saturate(CoronaAmount));
 float temporalFlicker = 1.0 + flickerSignal * flickerAmplitude;
 
@@ -381,36 +389,39 @@ float spectralVisibility = smoothstep(0.08, 0.90, maxSpectral)
                          * validStellarSpectrum;
 float3 quietTint = lerp(spectralTint * spectralTint, spectralTint, 0.64)
                  * spectralVisibility;
-float cellHeat = lerp(0.5, saturate(granuleRidges * 0.5 + 0.5), actorDetail);
+float cellHeat = lerp(0.5, granuleCell, spatialDetail);
 float3 spectralHighlightTint = normalizedSpectralTint * spectralVisibility;
-float3 hotGranuleTint = lerp(quietTint * 1.03,
-                             spectralHighlightTint * 1.08, 0.10);
-float3 surfaceTint = lerp(quietTint * 0.68,
-                          hotGranuleTint, cellHeat * 0.52);
+float3 hotGranuleTint = lerp(quietTint * 1.02,
+                             spectralHighlightTint * 1.16, 0.18);
+float resolvedCellHeat = cellHeat * 0.72 + granuleSpark * 0.28;
+float3 surfaceTint = lerp(quietTint * 0.54,
+                          hotGranuleTint, resolvedCellHeat * 0.74);
 surfaceTint = lerp(surfaceTint, quietTint * 0.30, saturate(spots * 1.12));
 surfaceTint = lerp(surfaceTint,
-                   spectralHighlightTint * 1.08,
-                   saturate(faculae * 1.70));
+                   spectralHighlightTint * 1.16,
+                   faculae * 1.85 + granuleSpark * 0.10);
 
-// Sparse actor-only highlights cross the HDR threshold without lifting the whole
-// disc. Their stationary cell mask preserves the procedural pattern while a local,
-// spatially phased pulse produces jewel-like twinkle. HISM points deliberately get
-// no additional lift, so galaxy and cluster hierarchy samples remain stable.
-float jewelMask = smoothstep(0.74, 0.94, cellHeat)
-                * lerp(0.45, 1.0, saturate(faculae * 5.0));
+// Sparse highlights cross the HDR threshold without lifting the whole disc. Actors
+// retain the existing spatially phased pulse. HISM selects a seed-bounded static
+// pulse and the footprint mask removes all jewel lift when the proxy is sub-pixel.
+float jewelCell = saturate((resolvedCellHeat - 0.67) * 4.166667);
+float jewelMask = jewelCell
+                * lerp(0.52, 1.0, saturate(faculae * 5.0 + granuleSpark));
 float jewelPhase = GameTime * lerp(1.35, 1.85, seed)
                  + phase * 0.61
                  + mesoCells * 4.0;
-float jewelPulse = 0.5 + 0.5 * sin(jewelPhase);
-float jewelLift = actorDetail * jewelMask
-                * lerp(0.11, 0.21, jewelPulse);
+float actorJewelPulse = 0.5 + 0.5 * sin(jewelPhase);
+float instanceJewelPulse = lerp(0.58, 0.82, seed);
+float jewelPulse = lerp(actorJewelPulse, instanceJewelPulse, useInstance);
+float jewelLift = spatialDetail * jewelMask
+                * lerp(0.14, 0.30, jewelPulse);
 // A second sparse signal sits outside the limb-darkened photosphere but remains
 // inside the opaque sphere. Bloom turns these coloured magnetic lobes into a
 // compact jewel rim without ever adding literal white or destabilising HISM.
-float rimJewelMask = actorDetail * rim
+float rimJewelMask = spatialDetail * rim
                    * lerp(0.18, 1.0, prominenceMask);
 float rimJewelLift = rimJewelMask
-                   * lerp(0.025, 0.075, jewelPulse);
+                   * lerp(0.040, 0.110, jewelPulse);
 
 float visibleSurface = max(surface * limb + corona, 0.02);
 float stellarSignal = (toneSafeEmission + jewelLift) * visibleSurface
@@ -419,7 +430,7 @@ float3 preBloom = surfaceTint * stellarSignal
                 * temporalFlicker * validStellarSpectrum;
 // Preserve hue and local contrast while hard-bounding the signal that enters the
 // menu's fixed-exposure, full-resolution bloom pass.
-float outputCeiling = lerp(1.65, 1.50, useInstance);
+float outputCeiling = lerp(1.72, 1.50, useInstance);
 float peakChannel = max(max(preBloom.r, preBloom.g), preBloom.b);
 return preBloom * min(1.0, outputCeiling / max(peakChannel, 0.0001));
 )APSSTELLAR");

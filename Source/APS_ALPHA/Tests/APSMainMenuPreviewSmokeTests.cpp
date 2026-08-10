@@ -481,8 +481,8 @@ namespace APSMainMenuPreviewSmokeTests
 				OrbitalTerrainMaterial)
 				&& IsValid(Surface->ResolvedTerrainMaterialInstance))
 			{
-				Test->TestEqual(FString::Printf(
-					TEXT("%s orbital and resolver terrain share the canonical master"), *Context),
+				Test->TestNotEqual(FString::Printf(
+					TEXT("%s orbital and physical terrain use distinct presentation masters"), *Context),
 					OrbitalTerrainMaterial->GetMaterial(),
 					Surface->ResolvedTerrainMaterialInstance->GetMaterial());
 				Test->TestEqual(FString::Printf(
@@ -511,8 +511,8 @@ namespace APSMainMenuPreviewSmokeTests
 						OrbitalOceanMaterial)
 						&& IsValid(Surface->ResolvedOceanMaterialInstance))
 					{
-						Test->TestEqual(FString::Printf(
-							TEXT("%s orbital and resolver oceans share the canonical master"), *Context),
+						Test->TestNotEqual(FString::Printf(
+							TEXT("%s orbital and physical oceans use distinct presentation masters"), *Context),
 							OrbitalOceanMaterial->GetMaterial(),
 							Surface->ResolvedOceanMaterialInstance->GetMaterial());
 					}
@@ -2091,8 +2091,11 @@ namespace APSMainMenuPreviewSmokeTests
 				if (Test->TestTrue(TEXT("PLANET publishes each moon's rendered presentation centre"),
 					PreviewGenerator->GetPreviewPresentationLocation(Moon, PresentationCenter)))
 				{
+					const FVector PresentedMoonCenter = bProceduralMoon
+						? PresentedMoonSurface->GetComponentLocation()
+						: PresentedMoonSurface->Bounds.Origin;
 					Test->TestTrue(TEXT("Moon surface is centred on its published presentation orbit"),
-						PresentedMoonSurface->Bounds.Origin.Equals(PresentationCenter, 1.0));
+						PresentedMoonCenter.Equals(PresentationCenter, 1.0));
 					Test->TestTrue(TEXT("PLANET satellite presentation stays outside the globe"),
 						FVector::Distance(PlanetPresentationCenter, PresentationCenter)
 							> PlanetPresentationRadius + PresentedMoonRadius);
@@ -3986,6 +3989,48 @@ namespace APSMainMenuPreviewSmokeTests
 				&& Star->PlanetarySystemZone->bHiddenInGame);
 			TInlineComponentArray<UPrimitiveComponent*> GeneratorMeshes;
 			Generator->GetComponents(GeneratorMeshes);
+
+			// Reproduce the stale map payload that originally rendered filled red spheres,
+			// then exercise the pre-BeginPlay migration hook directly. The structural
+			// assertions below also prove that construction cleanup leaves both wire guides
+			// visible, centred and backed by their line-only procedural sections.
+			UStaticMesh* LegacySphere = LoadObject<UStaticMesh>(nullptr,
+				TEXT("/Engine/BasicShapes/Sphere.Sphere"));
+			UMaterialInterface* LegacyMaterial = LoadObject<UMaterialInterface>(nullptr,
+				TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"));
+			Test->TestNotNull(TEXT("Legacy guide regression fixture loads Engine sphere"),
+				LegacySphere);
+			Test->TestNotNull(TEXT("Legacy guide regression fixture loads Engine material"),
+				LegacyMaterial);
+			int32 PrimedLegacyShellCount = 0;
+			for (UPrimitiveComponent* Mesh : GeneratorMeshes)
+			{
+				if (!IsValid(Mesh))
+				{
+					continue;
+				}
+				const bool bLegacyShell = Mesh->GetName().StartsWith(
+					TEXT("PreviewStarInfluenceShell"))
+					|| Mesh->GetName().StartsWith(TEXT("PreviewSystemBoundaryShell"));
+				UStaticMeshComponent* LegacyStaticMesh = bLegacyShell
+					? Cast<UStaticMeshComponent>(Mesh) : nullptr;
+				if (!LegacyStaticMesh)
+				{
+					continue;
+				}
+				LegacyStaticMesh->SetStaticMesh(LegacySphere);
+				LegacyStaticMesh->SetMaterial(0, LegacyMaterial);
+				LegacyStaticMesh->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+				LegacyStaticMesh->SetCollisionResponseToAllChannels(ECR_Block);
+				LegacyStaticMesh->SetCastShadow(true);
+				LegacyStaticMesh->SetVisibility(true, true);
+				LegacyStaticMesh->SetHiddenInGame(false, true);
+				++PrimedLegacyShellCount;
+			}
+			Test->TestTrue(TEXT("Regression fixture primes both serialized legacy guide spheres"),
+				PrimedLegacyShellCount >= 2);
+			Generator->OnConstruction(Generator->GetActorTransform());
+
 			int32 WireGuideCount = 0;
 			int32 VisibleWireGuideCount = 0;
 			int32 LegacyShellCount = 0;

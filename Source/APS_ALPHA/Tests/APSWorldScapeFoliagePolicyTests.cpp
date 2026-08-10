@@ -4,6 +4,9 @@
 
 #include "APS_ALPHA/Core/Planetary/APSWorldScapeFoliagePolicy.h"
 #include "Engine/StaticMesh.h"
+#include "Engine/World.h"
+#include "HAL/IConsoleManager.h"
+#include "WorldScapeCore/Public/WorldScapeRoot.h"
 #include "WorldScapeFoliages/Public/WorldScapeFoliagesAsset.h"
 #include "WorldScapeFoliages/Public/WorldScapeFoliagesBlueprint.h"
 #include "WorldScapeFoliages/Public/WorldScapeFoliagesCluster.h"
@@ -11,6 +14,70 @@
 
 namespace APSWorldScapeFoliagePolicyTests
 {
+	class FScopedFoliageRuntimeOptIn
+	{
+	public:
+		FScopedFoliageRuntimeOptIn()
+		{
+			Variable = IConsoleManager::Get().FindConsoleVariable(
+				TEXT("aps.WorldScapeFoliage.Enable"));
+			if (Variable)
+			{
+				SavedValue = Variable->GetString();
+				SavedFlags = Variable->GetFlags();
+				OverrideFlags = static_cast<EConsoleVariableFlags>(
+					(SavedFlags & ECVF_SetByMask) | ECVF_Set_SetOnly_Unsafe);
+			}
+		}
+
+		~FScopedFoliageRuntimeOptIn()
+		{
+			if (Variable)
+			{
+				Variable->Set(*SavedValue, OverrideFlags);
+			}
+		}
+
+		bool IsValid() const { return Variable != nullptr; }
+		void Set(const int32 Value) const
+		{
+			if (Variable)
+			{
+				Variable->Set(Value, OverrideFlags);
+			}
+		}
+
+	private:
+		IConsoleVariable* Variable{nullptr};
+		FString SavedValue;
+		EConsoleVariableFlags SavedFlags{ECVF_Default};
+		EConsoleVariableFlags OverrideFlags{ECVF_Set_SetOnly_Unsafe};
+	};
+
+	UWorld* CreateTestWorld()
+	{
+		const UWorld::InitializationValues Values = UWorld::InitializationValues()
+			.AllowAudioPlayback(false)
+			.RequiresHitProxies(false)
+			.CreatePhysicsScene(false)
+			.CreateNavigation(false)
+			.CreateAISystem(false)
+			.ShouldSimulatePhysics(false)
+			.SetTransactional(false);
+		return UWorld::CreateWorld(
+			EWorldType::Game, false, NAME_None, nullptr, false,
+			ERHIFeatureLevel::Num, &Values);
+	}
+
+	void DestroyTestWorld(UWorld*& World)
+	{
+		if (World)
+		{
+			World->DestroyWorld(false);
+			World = nullptr;
+		}
+	}
+
 	FAPSResolvedPlanetSurfaceProfile MakeOptedInProfile()
 	{
 		FAPSResolvedPlanetSurfaceProfile Profile;
@@ -24,6 +91,64 @@ namespace APSWorldScapeFoliagePolicyTests
 			FSoftObjectPath(TEXT("/Game/APS/Tests/DA_Foliage.DA_Foliage"))));
 		return Profile;
 	}
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FAPSWorldScapeFoliageCatalogDefaultsTest,
+	"APS.Gameplay.World.PlanetSurface.Foliage.CatalogDefaultsOff",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FAPSWorldScapeFoliageCatalogDefaultsTest::RunTest(const FString& Parameters)
+{
+	const EAPSPlanetSurfaceArchetype NativeArchetypes[] =
+	{
+		EAPSPlanetSurfaceArchetype::Rocky,
+		EAPSPlanetSurfaceArchetype::Temperate,
+		EAPSPlanetSurfaceArchetype::Oceanic,
+		EAPSPlanetSurfaceArchetype::Biosphere,
+		EAPSPlanetSurfaceArchetype::Desert,
+		EAPSPlanetSurfaceArchetype::Cryogenic,
+		EAPSPlanetSurfaceArchetype::Magmatic,
+		EAPSPlanetSurfaceArchetype::Metallic,
+		EAPSPlanetSurfaceArchetype::ExoticChemical,
+	};
+	for (const EAPSPlanetSurfaceArchetype Archetype : NativeArchetypes)
+	{
+		const FAPSPlanetSurfaceArchetypeDefinition Definition =
+			UAPSPlanetSurfaceProfileResolver::GetNativeDefinition(Archetype);
+		const FString Context = UEnum::GetValueAsString(Archetype);
+		TestFalse(*FString::Printf(TEXT("Native %s foliage remains disabled"), *Context),
+			Definition.Foliage.bEnabled);
+		if (!Definition.Foliage.Collections.IsEmpty())
+		{
+			AddWarning(FString::Printf(
+				TEXT("Native %s now preauthors disabled foliage collections; default-off safety is unchanged"),
+				*Context));
+		}
+	}
+
+	UAPSPlanetSurfaceCatalog* Catalog = LoadObject<UAPSPlanetSurfaceCatalog>(nullptr,
+		TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/DA_PlanetSurfaceCatalog.DA_PlanetSurfaceCatalog"));
+	if (!TestNotNull(TEXT("Production planet-surface catalog"), Catalog))
+	{
+		return false;
+	}
+	TestTrue(TEXT("Production catalog contains explicit archetype definitions"),
+		!Catalog->Archetypes.IsEmpty());
+	for (const TPair<EAPSPlanetSurfaceArchetype,
+		FAPSPlanetSurfaceArchetypeDefinition>& Entry : Catalog->Archetypes)
+	{
+		const FString Context = UEnum::GetValueAsString(Entry.Key);
+		TestFalse(*FString::Printf(TEXT("Catalog %s foliage remains disabled"), *Context),
+			Entry.Value.Foliage.bEnabled);
+		if (!Entry.Value.Foliage.Collections.IsEmpty())
+		{
+			AddWarning(FString::Printf(
+				TEXT("Catalog %s now preauthors disabled foliage collections; current empty baseline changed"),
+				*Context));
+		}
+	}
+	return true;
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
@@ -300,6 +425,126 @@ bool FAPSWorldScapeFoliageTransientBudgetTest::RunTest(const FString& Parameters
 		}
 	}
 
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FAPSWorldScapeFoliageFreshRootApplicationTest,
+	"APS.Gameplay.World.PlanetSurface.Foliage.FreshRootApplication",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FAPSWorldScapeFoliageFreshRootApplicationTest::RunTest(const FString& Parameters)
+{
+	using namespace APSWorldScapeFoliagePolicyTests;
+	FScopedFoliageRuntimeOptIn RuntimeOptIn;
+	if (!TestTrue(TEXT("Foliage runtime kill switch is registered"), RuntimeOptIn.IsValid()))
+	{
+		return false;
+	}
+
+	UWorld* World = CreateTestWorld();
+	if (!TestNotNull(TEXT("Fresh-root foliage test world"), World))
+	{
+		return false;
+	}
+
+	RuntimeOptIn.Set(0);
+	AWorldScapeRoot* DisabledRoot = World->SpawnActor<AWorldScapeRoot>();
+	if (!TestNotNull(TEXT("Default-off WorldScape root"), DisabledRoot))
+	{
+		DestroyTestWorld(World);
+		return false;
+	}
+	DisabledRoot->bGenerateFoliages = true;
+	DisabledRoot->DisableFoliageDedicatedServer = false;
+	DisabledRoot->Foliage_ForceDisabledCollision = false;
+	DisabledRoot->FoliageCollisionPooling_Enabled = true;
+	DisabledRoot->FoliageMeshIsOccluder = true;
+	DisabledRoot->FoliageRenderTreatAsBackGroundForOcclusion = false;
+	const FAPSResolvedPlanetSurfaceProfile OptedInProfile = MakeOptedInProfile();
+	TestEqual(TEXT("Runtime kill switch allocates no root collections"),
+		FAPSWorldScapeFoliagePolicy::ApplyToFreshOwnedRuntimeRoot(
+			DisabledRoot, OptedInProfile, false), 0);
+	TestFalse(TEXT("Default-off root cannot generate foliage"),
+		DisabledRoot->bGenerateFoliages);
+	TestTrue(TEXT("Default-off root clears authored foliage state"),
+		DisabledRoot->Foliages.IsEmpty());
+	TestTrue(TEXT("Fresh-root policy disables foliage on dedicated servers"),
+		DisabledRoot->DisableFoliageDedicatedServer);
+	TestTrue(TEXT("Fresh-root policy forces foliage collision off"),
+		DisabledRoot->Foliage_ForceDisabledCollision);
+	TestFalse(TEXT("Fresh-root policy disables collision pooling"),
+		DisabledRoot->FoliageCollisionPooling_Enabled);
+	TestFalse(TEXT("Fresh-root policy disables foliage occluders"),
+		DisabledRoot->FoliageMeshIsOccluder);
+	TestTrue(TEXT("Fresh-root policy treats foliage as background for occlusion"),
+		DisabledRoot->FoliageRenderTreatAsBackGroundForOcclusion);
+
+	UWorldScapeFoliagesCollection* Source =
+		NewObject<UWorldScapeFoliagesCollection>(GetTransientPackage());
+	UStaticMesh* Mesh = NewObject<UStaticMesh>(Source);
+	UWorldScapeFoliagesAsset* SourceAsset =
+		NewObject<UWorldScapeFoliagesAsset>(Source);
+	if (!TestNotNull(TEXT("Transient root-application collection"), Source)
+		|| !TestNotNull(TEXT("Transient root-application mesh"), Mesh)
+		|| !TestNotNull(TEXT("Transient root-application asset"), SourceAsset))
+	{
+		DestroyTestWorld(World);
+		return false;
+	}
+	SourceAsset->StaticMesh = Mesh;
+	SourceAsset->FoliagesCount = 1000.0f;
+	SourceAsset->FoliageSectorSize = 1000.0;
+	SourceAsset->bCollision = true;
+	SourceAsset->Is_NaniteMesh = true;
+	SourceAsset->bCastShadows = true;
+	Source->FoliageList.Add(SourceAsset);
+
+	FAPSResolvedPlanetSurfaceProfile TransientProfile = MakeOptedInProfile();
+	TransientProfile.Foliage.Collections.Reset();
+	TransientProfile.Foliage.Collections.Add(
+		TSoftObjectPtr<UWorldScapeFoliagesCollection>(Source));
+	RuntimeOptIn.Set(1);
+	AWorldScapeRoot* EnabledRoot = World->SpawnActor<AWorldScapeRoot>();
+	if (!TestNotNull(TEXT("Explicitly enabled WorldScape root"), EnabledRoot))
+	{
+		DestroyTestWorld(World);
+		return false;
+	}
+
+	TestEqual(TEXT("Explicit opt-in installs one transient root collection"),
+		FAPSWorldScapeFoliagePolicy::ApplyToFreshOwnedRuntimeRoot(
+			EnabledRoot, TransientProfile, false), 1);
+	TestTrue(TEXT("Explicit opt-in enables foliage only after a collection is sanitized"),
+		EnabledRoot->bGenerateFoliages);
+	if (TestEqual(TEXT("Enabled root owns one budgeted collection"),
+		EnabledRoot->Foliages.Num(), 1))
+	{
+		UWorldScapeFoliagesCollection* BudgetedCollection = EnabledRoot->Foliages[0];
+		TestNotEqual(TEXT("Enabled root never retains the authored collection"),
+			BudgetedCollection, Source);
+		TestTrue(TEXT("Enabled root collection is transient"),
+			BudgetedCollection->HasAnyFlags(RF_Transient));
+		if (TestEqual(TEXT("Enabled root retains one supported mesh type"),
+			BudgetedCollection->FoliageList.Num(), 1))
+		{
+			const UWorldScapeFoliagesAsset* BudgetedAsset =
+				Cast<UWorldScapeFoliagesAsset>(BudgetedCollection->FoliageList[0]);
+			if (TestNotNull(TEXT("Enabled root owns a budgeted mesh entry"), BudgetedAsset))
+			{
+				TestFalse(TEXT("Root mesh entry disables collision"), BudgetedAsset->bCollision);
+				TestFalse(TEXT("Root mesh entry forces the WorldScape HISM path"),
+					BudgetedAsset->Is_NaniteMesh);
+				TestFalse(TEXT("Root mesh entry disables shadows by default"),
+					BudgetedAsset->bCastShadows);
+				TestTrue(TEXT("Root mesh entry respects the profile instance budget"),
+					BudgetedAsset->FoliagesCount
+						<= TransientProfile.Foliage.MaxInstancesPerSectorPerCollection);
+			}
+		}
+	}
+
+	DestroyTestWorld(World);
 	return true;
 }
 

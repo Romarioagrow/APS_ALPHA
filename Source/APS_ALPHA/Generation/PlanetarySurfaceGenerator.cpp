@@ -4,6 +4,7 @@
 #include "APS_ALPHA/Core/Enums/MoonType.h"
 #include "APS_ALPHA/Core/Enums/PlanetType.h"
 #include "Components/SceneComponent.h"
+#include "Components/StaticMeshComponent.h"
 
 // Sets default values
 APlanetarySurfaceGenerator::APlanetarySurfaceGenerator()
@@ -430,6 +431,42 @@ void APlanetarySurfaceGenerator::InitAtmoScape(UWorld* World, double PlanetaryRa
 		// full-scale body that produces an invisible first frame (and can briefly use
 		// the old relative-radius coefficients). Apply the physical km->cm scale now.
 		PlanetAtmosphere->UpdateScale();
+
+		// AtmoScape's separate absorption sphere uses a modulate material and is not
+		// managed by the plugin's inside/outside visibility switch. At full scale it
+		// therefore becomes a second, planet-sized dark cap across the sky. The main
+		// atmosphere material already consumes the absorption coefficients, so retain
+		// the physical scattering shell and explicitly suppress the duplicate layer.
+		//
+		// The inside-view outer-airglow material is another screen-space sphere pass.
+		// Its flipped ray/sphere mask and warm InsideColor produce a hard circular cap
+		// when the ground camera changes tangent frame. It is never selected by
+		// AtmoScape's outside-camera branch, and menu preview independently selects only
+		// the proper space shell, so suppress it only on a full-scale gameplay body.
+		const bool bFullScaleGameplayBody = World->IsGameWorld()
+			&& FMath::IsNearlyEqual(NewPlanetaryBody->WorldScapePresentationScale, 1.0);
+		TInlineComponentArray<UStaticMeshComponent*> AtmosphereMeshes;
+		PlanetAtmosphere->GetComponents(AtmosphereMeshes);
+		for (UStaticMeshComponent* AtmosphereMesh : AtmosphereMeshes)
+		{
+			if (!IsValid(AtmosphereMesh))
+			{
+				continue;
+			}
+			const FString ComponentName = AtmosphereMesh->GetName();
+			const bool bDuplicateAbsorption = ComponentName.Contains(
+				TEXT("PlanetaryAbsorptionMesh"));
+			const bool bGroundOuterAirglow = bFullScaleGameplayBody
+				&& ComponentName.Contains(TEXT("PlanetarOutterMesh"));
+			if (!bDuplicateAbsorption && !bGroundOuterAirglow)
+			{
+				continue;
+			}
+			AtmosphereMesh->SetVisibility(false, true);
+			AtmosphereMesh->SetHiddenInGame(true, true);
+			AtmosphereMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			AtmosphereMesh->SetGenerateOverlapEvents(false);
+		}
     }
 }
 

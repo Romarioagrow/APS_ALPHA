@@ -45,6 +45,11 @@ namespace APSPlanetSurfaceGallerySmokeTests
 	constexpr double MaximumPlanetClippedRatio = 0.10;
 	constexpr double MaximumBackgroundMeanBrightness = 64.0;
 	constexpr double MaximumBackgroundClippedRatio = 0.10;
+	constexpr double TargetPlanetRadiusFraction = 0.34;
+	constexpr double MinimumPlanetRadiusFraction = 0.30;
+	constexpr double MaximumPlanetRadiusFraction = 0.44;
+	constexpr double MaximumPlanetCenterOffsetFraction = 0.04;
+	constexpr double MinimumPlanetEdgeMarginFraction = 0.02;
 	bool InheritsExpectedOrbitalTerrainTemplate(UMaterialInterface* Material)
 	{
 		// The closed hierarchy globe is geometry derived from the authoritative
@@ -141,6 +146,50 @@ namespace APSPlanetSurfaceGallerySmokeTests
 		return nullptr;
 	}
 
+	bool ApplyPlanetInspectionFraming(AMainMenuController* Controller,
+		AAstroGenerator* Generator, UProceduralMeshComponent* Terrain,
+		FString& OutFailure)
+	{
+		OutFailure.Reset();
+		UGameViewportClient* GameViewportClient = AutomationCommon::GetAnyGameViewportClient();
+		FViewport* Viewport = GameViewportClient ? GameViewportClient->Viewport : nullptr;
+		if (!IsValid(Controller) || !IsValid(Generator) || !IsValid(Terrain)
+			|| !Viewport)
+		{
+			OutFailure = TEXT("inspection framing prerequisites are unavailable");
+			return false;
+		}
+
+		const FIntPoint ViewportSize = Viewport->GetSizeXY();
+		if (ViewportSize.X <= 0 || ViewportSize.Y <= 0)
+		{
+			OutFailure = TEXT("inspection framing has no viewport extent");
+			return false;
+		}
+
+		Terrain->UpdateBounds();
+		const FVector PlanetCenter = Terrain->Bounds.Origin;
+		const double PlanetRadius = static_cast<double>(Terrain->Bounds.BoxExtent.GetMax());
+		if (PlanetCenter.ContainsNaN() || !FMath::IsFinite(PlanetRadius)
+			|| PlanetRadius <= UE_SMALL_NUMBER)
+		{
+			OutFailure = TEXT("inspection framing received invalid terrain bounds");
+			return false;
+		}
+
+		// This framing is deliberately local to the rendered gallery. Production PLANET
+		// focus continues to show the selected body's family, while the regression image
+		// uses only the committed terrain globe and never inherits a moon's orbit radius.
+		if (!Generator->ApplyPreviewInspectionFramingForAutomation(
+			Controller, PlanetCenter, PlanetRadius, ViewportSize,
+			TargetPlanetRadiusFraction))
+		{
+			OutFailure = TEXT("generator rejected inspection framing or its effective view target/FOV");
+			return false;
+		}
+		return true;
+	}
+
 	enum class EGalleryStep : uint8
 	{
 		Startup,
@@ -183,7 +232,7 @@ namespace APSPlanetSurfaceGallerySmokeTests
 			case EGalleryStep::Startup:
 				return UpdateStartup(World, Controller, ViewModel, Now);
 			case EGalleryStep::WaitForSurface:
-				return UpdateWaitForSurface(World, ViewModel, Now);
+				return UpdateWaitForSurface(World, Controller, ViewModel, Now);
 			case EGalleryStep::WarmSurface:
 				return UpdateWarmSurface(World, ViewModel, Now);
 			case EGalleryStep::CaptureSurface:
@@ -311,7 +360,7 @@ namespace APSPlanetSurfaceGallerySmokeTests
 			return false;
 		}
 
-		bool UpdateWaitForSurface(UWorld* World,
+		bool UpdateWaitForSurface(UWorld* World, AMainMenuController* Controller,
 			UWorldGenerationViewModel* ViewModel, double Now)
 		{
 			TrackOperationFrame();
@@ -323,7 +372,7 @@ namespace APSPlanetSurfaceGallerySmokeTests
 				StepStartSeconds = Now;
 				return false;
 			}
-			if (!World || !ViewModel)
+			if (!World || !Controller || !ViewModel)
 			{
 				return false;
 			}
@@ -367,6 +416,13 @@ namespace APSPlanetSurfaceGallerySmokeTests
 			if (!ValidateCommittedSurface(Planet, Surface, Root, GalleryCase))
 			{
 				RecordCaseFailure(TEXT("committed an incomplete canonical WorldScape surface"));
+			}
+			FString FramingFailure;
+			if (!ApplyPlanetInspectionFraming(Controller, Generator,
+				Generator->GetActivePreviewTerrainProxy(), FramingFailure))
+			{
+				RecordCaseFailure(FString::Printf(TEXT("inspection framing failed: %s"),
+					*FramingFailure));
 			}
 			AssertOperationFrameBudget(GalleryCase);
 			BeginWarmSample();
@@ -467,22 +523,38 @@ namespace APSPlanetSurfaceGallerySmokeTests
 					GalleryCase.DisplayName), ResolvedLiquid);
 				if (PreviewLiquid && ResolvedLiquid)
 				{
-					bValid &= Test->TestEqual(FString::Printf(
-						TEXT("%s preview and resolved oceans share one master"),
+					// The live WorldScape ocean and the closed hierarchy globe deliberately
+					// share authored colour parameters, not a render pass.  The former must
+					// remain opaque/depth-writing so clipmap rings cannot sort through each
+					// other; the latter is a separate translucent orbital presentation.
+					bValid &= Test->TestNotEqual(FString::Printf(
+						TEXT("%s preview and resolved oceans use independent masters"),
 						GalleryCase.DisplayName), PreviewLiquid->GetMaterial(),
 						ResolvedLiquid->GetMaterial());
-					bValid &= Test->TestEqual(FString::Printf(
-						TEXT("%s preview MID directly parents the resolved MIC"),
+					bValid &= Test->TestNotEqual(FString::Printf(
+						TEXT("%s preview and resolved oceans use independent MICs"),
 						GalleryCase.DisplayName), PreviewLiquid->Parent.Get(),
 						ResolvedLiquid->Parent.Get());
+					bValid &= Test->TestEqual(FString::Printf(
+						TEXT("%s preview ocean is translucent"), GalleryCase.DisplayName),
+						PreviewLiquid->GetBlendMode(), BLEND_Translucent);
+					bValid &= Test->TestEqual(FString::Printf(
+						TEXT("%s resolved WorldScape ocean writes depth"), GalleryCase.DisplayName),
+						ResolvedLiquid->GetBlendMode(), BLEND_Opaque);
 					bValid &= Test->TestFalse(FString::Printf(
 						TEXT("%s preview MID never creates a MID parent chain"),
 						GalleryCase.DisplayName),
 						IsValid(PreviewLiquid->Parent.Get())
 							&& PreviewLiquid->Parent->IsA<UMaterialInstanceDynamic>());
+					bValid &= Test->TestFalse(FString::Printf(
+						TEXT("%s resolved MID never creates a MID parent chain"),
+						GalleryCase.DisplayName),
+						IsValid(ResolvedLiquid->Parent.Get())
+							&& ResolvedLiquid->Parent->IsA<UMaterialInstanceDynamic>());
 
 					const auto AssertOrbitalScalar = [this, &GalleryCase, PreviewLiquid,
-						ResolvedLiquid](const TCHAR* ParameterName, const float Expected)
+						ResolvedLiquid](const TCHAR* ParameterName, const float PreviewExpected,
+							const float ResolvedExpected)
 					{
 						float PreviewValue = 0.0f;
 						float ResolvedValue = 0.0f;
@@ -503,17 +575,17 @@ namespace APSPlanetSurfaceGallerySmokeTests
 							bScalarValid &= Test->TestTrue(FString::Printf(
 								TEXT("%s preview liquid applies orbital %s"),
 								GalleryCase.DisplayName, ParameterName),
-								FMath::IsNearlyEqual(PreviewValue, Expected, 1.0e-4f));
+								FMath::IsNearlyEqual(PreviewValue, PreviewExpected, 1.0e-4f));
 							bScalarValid &= Test->TestTrue(FString::Printf(
-								TEXT("%s resolved liquid carries orbital %s"),
+								TEXT("%s resolved WorldScape liquid keeps physical %s"),
 								GalleryCase.DisplayName, ParameterName),
-								FMath::IsNearlyEqual(ResolvedValue, Expected, 1.0e-4f));
+								FMath::IsNearlyEqual(ResolvedValue, ResolvedExpected, 1.0e-4f));
 						}
 						return bScalarValid;
 					};
-					bValid &= AssertOrbitalScalar(TEXT("WaveColorStrength"), 0.003f);
-					bValid &= AssertOrbitalScalar(TEXT("WaveNormalStrength"), 0.0f);
-					bValid &= AssertOrbitalScalar(TEXT("OrbitalNormalBlend"), 1.0f);
+					bValid &= AssertOrbitalScalar(TEXT("WaveColorStrength"), 0.003f, 0.003f);
+					bValid &= AssertOrbitalScalar(TEXT("WaveNormalStrength"), 0.0f, 0.0f);
+					bValid &= AssertOrbitalScalar(TEXT("OrbitalNormalBlend"), 1.0f, 0.0f);
 
 					const float ExpectedPresentationOpacity =
 						Surface->ResolvedSurfaceProfile.LiquidType == EAPSPlanetLiquidType::Lava
@@ -704,10 +776,32 @@ namespace APSPlanetSurfaceGallerySmokeTests
 
 			const double ProjectedRadius = FVector2D::Distance(PlanetScreenCenter, PlanetScreenEdge);
 			const double SampleRadius = ProjectedRadius * 0.72;
-			if (!FMath::IsFinite(SampleRadius) || SampleRadius < 24.0)
+			const double MinimumViewportExtent = static_cast<double>(
+				FMath::Min(ViewportSize.X, ViewportSize.Y));
+			const double ProjectedRadiusFraction = ProjectedRadius / MinimumViewportExtent;
+			const FVector2D ViewportCenter(
+				static_cast<double>(ViewportSize.X) * 0.5,
+				static_cast<double>(ViewportSize.Y) * 0.5);
+			const double CenterOffsetFraction = FVector2D::Distance(
+				PlanetScreenCenter, ViewportCenter) / MinimumViewportExtent;
+			const double EdgeMargin = MinimumViewportExtent * MinimumPlanetEdgeMarginFraction;
+			const bool bGlobeInsideViewport = PlanetScreenCenter.X - ProjectedRadius >= EdgeMargin
+				&& PlanetScreenCenter.X + ProjectedRadius <= ViewportSize.X - EdgeMargin
+				&& PlanetScreenCenter.Y - ProjectedRadius >= EdgeMargin
+				&& PlanetScreenCenter.Y + ProjectedRadius <= ViewportSize.Y - EdgeMargin;
+			if (!FMath::IsFinite(SampleRadius)
+				|| !FMath::IsFinite(ProjectedRadiusFraction)
+				|| ProjectedRadiusFraction < MinimumPlanetRadiusFraction
+				|| ProjectedRadiusFraction > MaximumPlanetRadiusFraction
+				|| CenterOffsetFraction > MaximumPlanetCenterOffsetFraction
+				|| !bGlobeInsideViewport)
 			{
-				OutFailure = FString::Printf(TEXT("%s projected globe is too small (%.1f px)"),
-					GalleryCase.DisplayName, ProjectedRadius);
+				OutFailure = FString::Printf(
+					TEXT("%s inspection framing is invalid (radius=%.1f px/%.3f viewport, expected %.2f..%.2f; centerOffset=%.3f, maximum %.2f; inside=%s)"),
+					GalleryCase.DisplayName, ProjectedRadius, ProjectedRadiusFraction,
+					MinimumPlanetRadiusFraction, MaximumPlanetRadiusFraction,
+					CenterOffsetFraction, MaximumPlanetCenterOffsetFraction,
+					bGlobeInsideViewport ? TEXT("true") : TEXT("false"));
 				return false;
 			}
 
@@ -815,9 +909,11 @@ namespace APSPlanetSurfaceGallerySmokeTests
 			const double BackgroundToPlanetExposureRatio = BackgroundMeanBrightness
 				/ FMath::Max(MeanBrightness, 1.0);
 			UE_LOG(LogTemp, Display,
-				TEXT("[APS.Gallery.Pixel] type=%s viewport=%dx%d center=(%.1f,%.1f) radius=%.1f samples=%lld mean=%.3f variance=%.3f nonBlackRatio=%.5f clippedRatio=%.5f backgroundSamples=%lld backgroundMean=%.3f backgroundVariance=%.3f backgroundClippedRatio=%.5f backgroundToPlanet=%.5f screenshot=%s"),
+				TEXT("[APS.Gallery.Pixel] type=%s viewport=%dx%d center=(%.1f,%.1f) radius=%.1f radiusFraction=%.4f centerOffsetFraction=%.4f inside=%s samples=%lld mean=%.3f variance=%.3f nonBlackRatio=%.5f clippedRatio=%.5f backgroundSamples=%lld backgroundMean=%.3f backgroundVariance=%.3f backgroundClippedRatio=%.5f backgroundToPlanet=%.5f screenshot=%s"),
 				GalleryCase.DisplayName, ViewportSize.X, ViewportSize.Y,
 				PlanetScreenCenter.X, PlanetScreenCenter.Y, ProjectedRadius,
+				ProjectedRadiusFraction, CenterOffsetFraction,
+				bGlobeInsideViewport ? TEXT("true") : TEXT("false"),
 				SamplePixelCount, MeanBrightness, BrightnessVariance, NonBlackRatio,
 				PlanetClippedRatio, BackgroundPixelCount, BackgroundMeanBrightness,
 				BackgroundBrightnessVariance, BackgroundClippedRatio,

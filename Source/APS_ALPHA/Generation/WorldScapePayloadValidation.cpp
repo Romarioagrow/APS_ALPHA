@@ -78,4 +78,38 @@ namespace APSWorldScapePayloadValidation
 			&& FVector::DotProduct(SnappedNormal, DesiredSurfaceNormal) >= 0.995
 			&& HasCompletePayload(Lod, bRequireProfileColor);
 	}
+
+	bool HasExactCenteredPayloadSet(
+		const TArray<UWorldScapeLod*>& Lods, const int32 ExpectedCount,
+		const bool bExpectedWaterBody, const FVector& DesiredSurfaceNormal,
+		const bool bRequireProfileColor)
+	{
+		if (ExpectedCount <= 0 || Lods.Num() != ExpectedCount
+			|| DesiredSurfaceNormal.IsNearlyZero())
+		{
+			return false;
+		}
+
+		TBitArray<> SeenLodIds(false, ExpectedCount);
+		TSet<const UWorldScapeLod*> SeenLods;
+		TSet<const UWorldScapeMeshComponent*> SeenMeshes;
+		for (const UWorldScapeLod* Lod : Lods)
+		{
+			if (!IsValid(Lod) || !IsValid(Lod->Mesh)
+				|| Lod->WaterBody != bExpectedWaterBody
+				|| Lod->Lod < 0 || Lod->Lod >= ExpectedCount
+				|| SeenLodIds[Lod->Lod] || SeenLods.Contains(Lod)
+				|| SeenMeshes.Contains(Lod->Mesh)
+				|| !HasCompleteCenteredPayload(
+					Lod, DesiredSurfaceNormal, bRequireProfileColor))
+			{
+				return false;
+			}
+			SeenLodIds[Lod->Lod] = true;
+			SeenLods.Add(Lod);
+			SeenMeshes.Add(Lod->Mesh);
+		}
+		// Count equality plus in-range uniqueness means every id is represented.
+		return true;
+	}
 }
