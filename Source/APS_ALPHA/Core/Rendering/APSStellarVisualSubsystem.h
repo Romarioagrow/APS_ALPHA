@@ -21,6 +21,8 @@ public:
 	virtual void Tick(float DeltaTime) override;
 	virtual TStatId GetStatId() const override;
 	virtual void Deinitialize() override;
+	/** Snapshot used by runtime parity tests and diagnostics; never mutates selection. */
+	bool GetActiveStellarTarget(FVector& OutTargetLocation, FString& OutTargetIdentity) const;
 
 private:
 	void ResolveDirectionalLight();

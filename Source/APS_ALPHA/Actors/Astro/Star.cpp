@@ -10,6 +10,10 @@ AStar::AStar()
 
 	PlanetarySystemZone = CreateDefaultSubobject<USphereComponent>(TEXT("PlanetarySystemZoneComponent"));
 	PlanetarySystemZone->SetupAttachment(RootComponent);
+	PlanetarySystemZone->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	PlanetarySystemZone->SetCollisionResponseToAllChannels(ECR_Ignore);
+	PlanetarySystemZone->SetGenerateOverlapEvents(false);
+	PlanetarySystemZone->SetCanEverAffectNavigation(false);
 	PlanetarySystemZone->SetVisibility(false);
 	PlanetarySystemZone->SetHiddenInGame(true);
 
@@ -28,6 +32,12 @@ void AStar::BeginPlay()
 	Super::BeginPlay();
 	PlanetarySystemZone->SetVisibility(false, true);
 	PlanetarySystemZone->SetHiddenInGame(true, true);
+	// Blueprint component templates can retain an old blocking collision profile.
+	// This sphere is radius metadata for navigation/HUD only; it must never become
+	// an invisible wall around a generated system.
+	PlanetarySystemZone->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	PlanetarySystemZone->SetCollisionResponseToAllChannels(ECR_Ignore);
+	PlanetarySystemZone->SetGenerateOverlapEvents(false);
 
 	EnsureCanonicalStellarMaterial();
 }

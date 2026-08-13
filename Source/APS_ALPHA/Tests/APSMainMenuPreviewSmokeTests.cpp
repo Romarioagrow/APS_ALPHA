@@ -1136,6 +1136,25 @@ namespace APSMainMenuPreviewSmokeTests
 					if (const FClusterStarSystemRecord* HomeRecord =
 						Cluster->FindPotentialSystem(HomeClusterProxyIndex))
 					{
+						FTransform HomeGlyphWorldTransform;
+						const bool bHasHomeGlyphWorldTransform = Hism->GetInstanceTransform(
+							HomeClusterProxyIndex,
+							HomeGlyphWorldTransform,
+							true);
+						const FVector RecordWorldAnchor =
+							Cluster->GetPotentialSystemWorldLocation(*HomeRecord);
+						Test->TestTrue(
+							TEXT("Home-system catalogue record resolves to its exact HISM world anchor"),
+							bHasHomeGlyphWorldTransform
+								&& RecordWorldAnchor.Equals(HomeGlyphWorldTransform.GetLocation(), 0.01));
+						Test->TestEqual(
+							TEXT("Home-system catalogue record preserves its HISM instance address"),
+							HomeRecord->InstanceIndex,
+							HomeClusterProxyIndex);
+						Test->TestEqual(
+							TEXT("Materialized home system preserves the catalogue stable identity"),
+							StarSystem->StableSystemId,
+							HomeRecord->StableId);
 						Test->TestEqual(TEXT("Materialized cluster record keeps the actual star count"),
 							HomeRecord->SystemModel.AmountOfStars, 3);
 						Test->TestEqual(TEXT("Materialized cluster record keeps the actual total planet count"),
@@ -1181,6 +1200,7 @@ namespace APSMainMenuPreviewSmokeTests
 		void BeginFocus(UWorldGenerationViewModel* ViewModel, double Now)
 		{
 			static constexpr EAstroPreviewFocus FocusSequence[] = {
+				EAstroPreviewFocus::Overview,
 				EAstroPreviewFocus::Galaxy,
 				EAstroPreviewFocus::StarCluster,
 				EAstroPreviewFocus::HomeSystem,
@@ -1447,7 +1467,8 @@ namespace APSMainMenuPreviewSmokeTests
 
 			AStarSystem* System = FindGeneratedStarSystem(World, PreviewGenerator.Get());
 			if (!IsValid(System)) return;
-			const bool bDistantScope = Focus == EAstroPreviewFocus::Galaxy
+			const bool bDistantScope = Focus == EAstroPreviewFocus::Overview
+				|| Focus == EAstroPreviewFocus::Galaxy
 				|| Focus == EAstroPreviewFocus::StarCluster;
 			if (IsValid(Cluster) && IsValid(Cluster->StarMeshInstances)
 				&& HomeClusterProxyIndex != INDEX_NONE)
@@ -1497,6 +1518,7 @@ namespace APSMainMenuPreviewSmokeTests
 				return Fail(TEXT("Preview hierarchy disappeared while switching scopes"));
 			}
 			static constexpr EAstroPreviewFocus FocusSequence[] = {
+				EAstroPreviewFocus::Overview,
 				EAstroPreviewFocus::Galaxy,
 				EAstroPreviewFocus::StarCluster,
 				EAstroPreviewFocus::HomeSystem,

@@ -181,6 +181,18 @@ TStatId UAPSStellarVisualSubsystem::GetStatId() const
 	RETURN_QUICK_DECLARE_CYCLE_STAT(UAPSStellarVisualSubsystem, STATGROUP_Tickables);
 }
 
+bool UAPSStellarVisualSubsystem::GetActiveStellarTarget(
+	FVector& OutTargetLocation, FString& OutTargetIdentity) const
+{
+	if (!bHasTargetStar)
+	{
+		return false;
+	}
+	OutTargetLocation = TargetStarLocation;
+	OutTargetIdentity = ActiveStarIdentity;
+	return true;
+}
+
 void UAPSStellarVisualSubsystem::Deinitialize()
 {
 	if (ADirectionalLight* FillLight = PreviewFillLight.Get())
@@ -676,6 +688,7 @@ void UAPSStellarVisualSubsystem::ResolveNearestStar(const FVector& ObserverLocat
 	FLinearColor BestColor = FLinearColor::White;
 	float BestLuminosity = 1.0f;
 	FString BestIdentity;
+	bool bHasMaterializedStar = false;
 
 	for (TActorIterator<AStar> It(World); It; ++It)
 	{
@@ -684,6 +697,7 @@ void UAPSStellarVisualSubsystem::ResolveNearestStar(const FVector& ObserverLocat
 		{
 			continue;
 		}
+		bHasMaterializedStar = true;
 		const double DistanceSquared = FVector::DistSquared(ObserverLocation, Star->GetActorLocation());
 		if (DistanceSquared < BestDistanceSquared)
 		{
@@ -695,7 +709,10 @@ void UAPSStellarVisualSubsystem::ResolveNearestStar(const FVector& ObserverLocat
 		}
 	}
 
-	for (TActorIterator<AStarCluster> ClusterIt(World); ClusterIt; ++ClusterIt)
+	// Cluster HISM records live in a compressed presentation frame. They are a
+	// far-field fallback only and must never replace a materialized physical star
+	// when driving gameplay lighting.
+	for (TActorIterator<AStarCluster> ClusterIt(World); !bHasMaterializedStar && ClusterIt; ++ClusterIt)
 	{
 		const AStarCluster* Cluster = *ClusterIt;
 		if (!IsValid(Cluster) || !Cluster->StarMeshInstances)

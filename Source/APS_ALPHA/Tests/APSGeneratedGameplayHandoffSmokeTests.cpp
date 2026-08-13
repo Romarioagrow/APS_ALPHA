@@ -33,6 +33,7 @@
 #include "APS_ALPHA/Core/Model/GeneratedWorld.h"
 #include "APS_ALPHA/Core/Model/SpawnParameters.h"
 #include "APS_ALPHA/Core/Planetary/APSPlanetSurfaceProfile.h"
+#include "APS_ALPHA/Core/Rendering/APSStellarVisualSubsystem.h"
 #include "APS_ALPHA/Core/World/APSPlanetEnvironmentStreamingSubsystem.h"
 #include "APS_ALPHA/Generation/APSWorldScapePlanetNoise.h"
 #include "APS_ALPHA/Generation/AstroGenerator.h"
@@ -1131,6 +1132,69 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 				|| !ShipyardActor->GravityCollisionZone->bHiddenInGame)
 			{
 				return Fail(TEXT("station gravity collision volume is rendering in gameplay"));
+			}
+
+			Star->StarMesh->UpdateBounds();
+			const bool bPhotospherePresented = IsEffectivelyPresented(Star->StarMesh)
+				&& IsValid(Star->StarMesh->GetStaticMesh())
+				&& IsValid(Star->StarMesh->GetMaterial(0));
+			const bool bPlanetaryEnvelopeNonBlocking = IsValid(Star->PlanetarySystemZone)
+				&& Star->PlanetarySystemZone->GetCollisionEnabled()
+					== ECollisionEnabled::NoCollision
+				&& !Star->PlanetarySystemZone->GetGenerateOverlapEvents()
+				&& IgnoresEveryCollisionChannel(Star->PlanetarySystemZone);
+			const bool bSystemEnvelopeNonBlocking = IsValid(StarSystem->StarSystemZone)
+				&& StarSystem->StarSystemZone->GetCollisionEnabled()
+					== ECollisionEnabled::NoCollision
+				&& !StarSystem->StarSystemZone->GetGenerateOverlapEvents()
+				&& IgnoresEveryCollisionChannel(StarSystem->StarSystemZone);
+			const UAPSStellarVisualSubsystem* StellarVisuals =
+				World->GetSubsystem<UAPSStellarVisualSubsystem>();
+			FVector ActiveTargetLocation = FVector::ZeroVector;
+			FString ActiveTargetIdentity;
+			const bool bPhysicalStellarTarget = IsValid(StellarVisuals)
+				&& StellarVisuals->GetActiveStellarTarget(
+					ActiveTargetLocation, ActiveTargetIdentity)
+				&& ActiveTargetLocation.Equals(Star->GetActorLocation(), 1.0)
+				&& ActiveTargetIdentity == Star->GetPathName();
+			if (!bPhysicalStellarTarget && Now - StepStartSeconds < 2.0)
+			{
+				return false;
+			}
+			const UDirectionalLightComponent* ActiveStellarKey = nullptr;
+			for (TActorIterator<ADirectionalLight> It(World); It; ++It)
+			{
+				const ADirectionalLight* Candidate = *It;
+				const UDirectionalLightComponent* Component = Candidate
+					? Cast<UDirectionalLightComponent>(Candidate->GetLightComponent()) : nullptr;
+				if (IsValid(Candidate) && IsValid(Component) && Component->IsVisible()
+					&& Component->Intensity > 0.0f
+					&& !Candidate->ActorHasTag(TEXT("APSPreviewFillLight"))
+					&& !Candidate->ActorHasTag(TEXT("APSGameplaySurfaceFillLight")))
+				{
+					ActiveStellarKey = Component;
+					break;
+				}
+			}
+			UE_LOG(LogTemp, Display,
+				TEXT("[APS.Handoff.Stellar] star=%s location=%s target=%s targetIdentity=%s physicalTarget=%d photosphere=%d radius=%.3ecm key=%s keyIntensity=%.2f planetaryZoneCollision=%d systemZoneCollision=%d"),
+				*GetNameSafe(Star), *Star->GetActorLocation().ToCompactString(),
+				*ActiveTargetLocation.ToCompactString(), *ActiveTargetIdentity,
+				bPhysicalStellarTarget ? 1 : 0,
+				bPhotospherePresented ? 1 : 0, Star->StarMesh->Bounds.SphereRadius,
+				*GetNameSafe(ActiveStellarKey), ActiveStellarKey ? ActiveStellarKey->Intensity : 0.0f,
+				IsValid(Star->PlanetarySystemZone)
+					? static_cast<int32>(Star->PlanetarySystemZone->GetCollisionEnabled()) : -1,
+				IsValid(StarSystem->StarSystemZone)
+					? static_cast<int32>(StarSystem->StarSystemZone->GetCollisionEnabled()) : -1);
+			if (!bPhysicalStellarTarget || !bPhotospherePresented || !ActiveStellarKey
+				|| !bPlanetaryEnvelopeNonBlocking || !bSystemEnvelopeNonBlocking)
+			{
+				return Fail(FString::Printf(
+					TEXT("generated stellar gameplay contract failed physicalTarget=%d photosphere=%d directionalKey=%d planetaryEnvelopeNonBlocking=%d systemEnvelopeNonBlocking=%d"),
+					bPhysicalStellarTarget ? 1 : 0, bPhotospherePresented ? 1 : 0,
+					ActiveStellarKey ? 1 : 0, bPlanetaryEnvelopeNonBlocking ? 1 : 0,
+					bSystemEnvelopeNonBlocking ? 1 : 0));
 			}
 
 			RuntimeGenerator = Generator;

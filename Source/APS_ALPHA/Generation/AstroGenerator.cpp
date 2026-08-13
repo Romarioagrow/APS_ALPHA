@@ -2423,7 +2423,8 @@ void AAstroGenerator::ApplyPreviewFocusPresentation(EAstroPreviewFocus NewFocus)
 	}
 
 	const bool bUseDistantHomeSystemProxy =
-		(NewFocus == EAstroPreviewFocus::Galaxy
+		(NewFocus == EAstroPreviewFocus::Overview
+			|| NewFocus == EAstroPreviewFocus::Galaxy
 			|| NewFocus == EAstroPreviewFocus::StarCluster);
 	if (bUseDistantHomeSystemProxy)
 	{
