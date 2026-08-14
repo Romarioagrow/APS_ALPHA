@@ -72,8 +72,11 @@ TStatId UAPSPlanetSurfaceMaterialABSubsystem::GetStatId() const
 }
 
 UMaterialInstanceDynamic*
-UAPSPlanetSurfaceMaterialABSubsystem::ResolveAnchoredTerrainMaterial() const
+UAPSPlanetSurfaceMaterialABSubsystem::ResolveAnchoredTerrainMaterial(
+	AWorldScapeRoot*& OutRoot, UWorldScapeLod*& OutLod0) const
 {
+	OutRoot = nullptr;
+	OutLod0 = nullptr;
 	UWorld* World = GetWorld();
 	APlayerController* Controller = World ? World->GetFirstPlayerController() : nullptr;
 	APawn* Pawn = Controller ? Controller->GetPawn() : nullptr;
@@ -102,11 +105,73 @@ UAPSPlanetSurfaceMaterialABSubsystem::ResolveAnchoredTerrainMaterial() const
 	}
 	if (!IsValid(BestRoot) || !BestRoot->WorldScapeLod.IsValidIndex(0))
 	{
+		OutRoot = BestRoot;
 		return nullptr;
 	}
-	UWorldScapeLod* Lod0 = BestRoot->WorldScapeLod[0];
-	return IsValid(Lod0) && IsValid(Lod0->Mesh)
-		? Cast<UMaterialInstanceDynamic>(Lod0->Mesh->GetMaterial(0)) : nullptr;
+	OutRoot = BestRoot;
+	OutLod0 = BestRoot->WorldScapeLod[0];
+	return IsValid(OutLod0) && IsValid(OutLod0->Mesh)
+		? Cast<UMaterialInstanceDynamic>(OutLod0->Mesh->GetMaterial(0)) : nullptr;
+}
+
+void UAPSPlanetSurfaceMaterialABSubsystem::LogLodLifecycleState(
+	const AWorldScapeRoot* Root, const UWorldScapeLod* Lod0, const int32 Preset)
+{
+	UWorldScapeMeshComponent* Mesh = IsValid(Lod0) ? Lod0->Mesh : nullptr;
+	const bool bMeshValid = IsValid(Mesh);
+	const int32 SectionCount = bMeshValid ? Mesh->GetNumSections() : 0;
+	const FVector RootScale = IsValid(Root)
+		? Root->GetActorScale3D() : FVector::ZeroVector;
+	const FVector RelativeScale = bMeshValid
+		? Mesh->GetRelativeScale3D() : FVector::ZeroVector;
+	const bool bRegistered = bMeshValid && Mesh->IsRegistered();
+	const bool bVisible = bMeshValid && Mesh->IsVisible();
+	const bool bHiddenInGame = bMeshValid && Mesh->bHiddenInGame;
+	const bool bSection0Visible = bMeshValid && SectionCount > 0
+		&& Mesh->IsMeshSectionVisible(0);
+	const bool bRootHidden = IsValid(Root) && Root->IsHidden();
+	const bool bTransformKeeperParent = bMeshValid && IsValid(Root)
+		&& Mesh->GetAttachParent() == Root->TransformKeeper;
+	const bool bRootUnitScale = IsValid(Root)
+		&& RootScale.Equals(FVector::OneVector, KINDA_SMALL_NUMBER);
+	const bool bRelativeUnitScale = bMeshValid
+		&& RelativeScale.Equals(FVector::OneVector, KINDA_SMALL_NUMBER);
+
+	APawn* Pawn = GetWorld() && GetWorld()->GetFirstPlayerController()
+		? GetWorld()->GetFirstPlayerController()->GetPawn() : nullptr;
+	const bool bOverridePlayer = IsValid(Root) && Root->bOverridePlayerPosition;
+	const bool bPawnInvoker = IsValid(Root) && IsValid(Pawn)
+		&& Root->CollisionDependantActor.Contains(Pawn);
+	const double OverrideErrorCm = IsValid(Root) && IsValid(Pawn)
+		? FVector::Distance(Root->OverridedPlayerPosition, Pawn->GetActorLocation())
+		: TNumericLimits<double>::Max();
+
+	const uint32 RootId = IsValid(Root) ? Root->GetUniqueID() : 0;
+	const uint32 Lod0Id = IsValid(Lod0) ? Lod0->GetUniqueID() : 0;
+	const uint32 MeshId = bMeshValid ? Mesh->GetUniqueID() : 0;
+	const FString StateKey = FString::Printf(
+		TEXT("%d/%u/%u/%u/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d"),
+		Preset, RootId, Lod0Id, MeshId, bRegistered ? 1 : 0,
+		bVisible ? 1 : 0, bHiddenInGame ? 1 : 0, SectionCount,
+		bSection0Visible ? 1 : 0, bRootHidden ? 1 : 0,
+		bTransformKeeperParent ? 1 : 0, bRootUnitScale ? 1 : 0,
+		bRelativeUnitScale ? 1 : 0, bOverridePlayer ? 1 : 0,
+		bPawnInvoker ? 1 : 0);
+	const FString State = FString::Printf(
+		TEXT("preset=%d root=%s lod0=%s mesh=%s registered=%d visible=%d hiddenInGame=%d sections=%d section0Visible=%d rootHidden=%d transformKeeperParent=%d rootUnitScale=%d relativeUnitScale=%d rootScale=%s relativeScale=%s overridePlayer=%d pawnInvoker=%d overrideErrorCm=%.3f"),
+		Preset, *GetNameSafe(Root), *GetNameSafe(Lod0), *GetNameSafe(Mesh),
+		bRegistered ? 1 : 0, bVisible ? 1 : 0, bHiddenInGame ? 1 : 0,
+		SectionCount, bSection0Visible ? 1 : 0, bRootHidden ? 1 : 0,
+		bTransformKeeperParent ? 1 : 0, bRootUnitScale ? 1 : 0,
+		bRelativeUnitScale ? 1 : 0, *RootScale.ToCompactString(),
+		*RelativeScale.ToCompactString(), bOverridePlayer ? 1 : 0,
+		bPawnInvoker ? 1 : 0, OverrideErrorCm);
+	if (StateKey != LastLifecycleState)
+	{
+		UE_LOG(LogAPSPlanetSurfaceMaterialAB, Display,
+			TEXT("[APS.Surface.MaterialAB.Lifecycle] action=state-change %s"), *State);
+		LastLifecycleState = StateKey;
+	}
 }
 
 void UAPSPlanetSurfaceMaterialABSubsystem::CaptureOriginals(
@@ -191,6 +256,7 @@ void UAPSPlanetSurfaceMaterialABSubsystem::Tick(float DeltaTime)
 		{
 			RestoreActiveMaterial();
 		}
+		LastLifecycleState.Reset();
 		return;
 	}
 
@@ -200,7 +266,10 @@ void UAPSPlanetSurfaceMaterialABSubsystem::Tick(float DeltaTime)
 		return;
 	}
 	SampleElapsed = 0.0f;
-	UMaterialInstanceDynamic* Material = ResolveAnchoredTerrainMaterial();
+	AWorldScapeRoot* Root = nullptr;
+	UWorldScapeLod* Lod0 = nullptr;
+	UMaterialInstanceDynamic* Material = ResolveAnchoredTerrainMaterial(Root, Lod0);
+	LogLodLifecycleState(Root, Lod0, RequestedPreset);
 	if (!IsValid(Material))
 	{
 		return;

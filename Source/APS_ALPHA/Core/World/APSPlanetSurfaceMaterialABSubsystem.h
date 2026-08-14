@@ -5,6 +5,8 @@
 #include "APSPlanetSurfaceMaterialABSubsystem.generated.h"
 
 class UMaterialInstanceDynamic;
+class AWorldScapeRoot;
+class UWorldScapeLod;
 
 /**
  * Opt-in runtime A/B harness for classifying surface material crawl.
@@ -22,7 +24,10 @@ public:
 	virtual TStatId GetStatId() const override;
 
 private:
-	UMaterialInstanceDynamic* ResolveAnchoredTerrainMaterial() const;
+	UMaterialInstanceDynamic* ResolveAnchoredTerrainMaterial(
+		AWorldScapeRoot*& OutRoot, UWorldScapeLod*& OutLod0) const;
+	void LogLodLifecycleState(
+		const AWorldScapeRoot* Root, const UWorldScapeLod* Lod0, int32 Preset);
 	void CaptureOriginals(UMaterialInstanceDynamic* Material);
 	void ApplyPreset(UMaterialInstanceDynamic* Material, int32 Preset);
 	void RestoreActiveMaterial();
@@ -31,4 +36,5 @@ private:
 	int32 AppliedPreset{0};
 	TWeakObjectPtr<UMaterialInstanceDynamic> ActiveMaterial;
 	TMap<FName, float> OriginalScalars;
+	FString LastLifecycleState;
 };
