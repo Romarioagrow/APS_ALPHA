@@ -2,6 +2,7 @@
 
 #include "Misc/AutomationTest.h"
 
+#include "APS_ALPHA/Gameplay/Production/APSProductionEventSubsystem.h"
 #include "APS_ALPHA/Gameplay/Production/APSProductionSubsystem.h"
 #include "GameFramework/Actor.h"
 
@@ -22,6 +23,77 @@ namespace APSProductionQueueTest
 		FAPSProductionAmount Result;
 		Result.ItemId = FPrimaryAssetId(Type, Name);
 		Result.Quantity = Quantity;
+		return Result;
+	}
+
+	FAPSProductionDefinition StagedRecipe()
+	{
+		FAPSProductionDefinition Result;
+		Result.DefinitionId = FPrimaryAssetId(TEXT("Recipe"),
+			TEXT("Test.StagedPersistence"));
+		Result.Domain = EAPSProductionDomain::Crafting;
+		Result.Category = TEXT("Persistence");
+		Result.DisplayName = Text(TEXT("StagedPersistenceRecipe"),
+			TEXT("Staged Persistence Recipe"));
+		Result.DurationSeconds = 10.0;
+		return Result;
+	}
+
+	FAPSProductionContextRegistration ActorContext(const FGuid& ContextId,
+		const FGuid& OwnerId, AActor* Actor)
+	{
+		FAPSProductionContextRegistration Result;
+		Result.ContextStableId = ContextId;
+		Result.OwnerStableId = OwnerId;
+		Result.Domain = EAPSProductionDomain::Crafting;
+		Result.AccessMode = EAPSProductionAccessMode::ActorGated;
+		Result.ContextActor = Actor;
+		Result.QueueCapacity = 4;
+		Result.MaximumConcurrentJobs = 1;
+		return Result;
+	}
+
+	FAPSProductionPersistenceState StagedState(const FGuid& ContextId,
+		const FGuid& OwnerId, const FAPSProductionDefinition& Definition,
+		const FPrimaryAssetId& ItemId)
+	{
+		FAPSProductionPersistenceState Result;
+		Result.StateId = FGuid::NewGuid();
+		Result.EventStream.StreamId = FGuid::NewGuid();
+		Result.EventStream.LastSequence = 1;
+
+		FAPSProductionInventoryRecord& Inventory =
+			Result.Inventories.AddDefaulted_GetRef();
+		Inventory.OwnerStableId = OwnerId;
+		Inventory.ItemId = ItemId;
+		Inventory.Quantity = 7;
+
+		FAPSProductionJobRecord& Job = Result.Jobs.AddDefaulted_GetRef();
+		Job.JobId = FGuid::NewGuid();
+		Job.CorrelationId = FGuid::NewGuid();
+		Job.SubjectStableId = FGuid::NewGuid();
+		Job.SubjectIdentityDomain = EAPSSubjectIdentityDomain::GameplayEntity;
+		Job.ContextStableId = ContextId;
+		Job.OwnerStableId = OwnerId;
+		Job.DefinitionId = Definition.DefinitionId;
+		Job.DefinitionSchemaVersion = Definition.DefinitionSchemaVersion;
+		Job.Domain = Definition.Domain;
+		Job.Quantity = 1;
+		Job.State = EAPSProductionJobState::Queued;
+		Job.DurationSeconds = Definition.DurationSeconds;
+		Job.QueueOrdinal = 1;
+
+		FAPSProductionEventCorrelationRecord& Correlation =
+			Result.EventStream.Correlations.AddDefaulted_GetRef();
+		Correlation.CorrelationId = Job.CorrelationId;
+		Correlation.Verb = TEXT("APS.Crafting.Craft");
+		Correlation.SubjectStableId = Job.SubjectStableId;
+		Correlation.SubjectIdentityDomain = Job.SubjectIdentityDomain;
+		Correlation.TargetStableId = Job.JobId;
+		Correlation.DefinitionId = Job.DefinitionId;
+		Correlation.DefinitionSchemaVersion = Job.DefinitionSchemaVersion;
+		Correlation.Quantity = Job.Quantity;
+		Correlation.Result = EAPSProductionEventResult::Requested;
 		return Result;
 	}
 }
@@ -338,6 +410,221 @@ bool FAPSProductionActorRebindContractTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Replacement actor queries the preserved context"),
 		Production->QuerySnapshot(Context.ContextStableId, ReplacementActor,
 			EAPSProductionAccessMode::ActorGated, Snapshot, Failure));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAPSProductionStagedPersistenceContractTest,
+	"APS.Gameplay.Production.StagedPersistenceContract",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FAPSProductionStagedPersistenceContractTest::RunTest(const FString& Parameters)
+{
+	using namespace APSProductionQueueTest;
+	const FAPSProductionDefinition Definition = StagedRecipe();
+	const FPrimaryAssetId ItemId(TEXT("Item"), TEXT("Test.StagedInventory"));
+	FString Failure;
+
+	// Context-first path: readiness survives while its definition is unavailable,
+	// and old runtime data cannot service gameplay during the load quarantine.
+	UAPSProductionSubsystem* ContextFirst = NewObject<UAPSProductionSubsystem>();
+	AActor* OldActor = NewObject<AActor>();
+	AActor* ReadyActor = NewObject<AActor>();
+	if (!ContextFirst || !OldActor || !ReadyActor)
+	{
+		return false;
+	}
+	const FGuid OwnerId = FGuid::NewGuid();
+	const FGuid ContextId = FGuid::NewGuid();
+	FAPSProductionContextRegistration Context = ActorContext(ContextId,
+		OwnerId, OldActor);
+	TestTrue(TEXT("Old actor context starts bound"),
+		ContextFirst->RegisterContext(Context, Failure));
+	FAPSProductionInventoryRecord OldInventory;
+	OldInventory.OwnerStableId = OwnerId;
+	OldInventory.ItemId = ItemId;
+	OldInventory.Quantity = 99;
+	TestTrue(TEXT("Old runtime inventory starts populated"),
+		ContextFirst->SetInventoryAmount(OldInventory, Failure));
+
+	const FAPSProductionPersistenceState State = StagedState(ContextId,
+		OwnerId, Definition, ItemId);
+	const FGuid LoadGenerationId = FGuid::NewGuid();
+	TestTrue(TEXT("Valid projection stages structurally"),
+		ContextFirst->StagePersistenceState(State, LoadGenerationId, Failure));
+	TestTrue(TEXT("Valid staging enters mutation quarantine"),
+		ContextFirst->IsPersistenceLoadQuarantined());
+	FGuid PendingGeneration;
+	TestTrue(TEXT("Pending generation is observable to actor-ready adapters"),
+		ContextFirst->GetPendingLoadGenerationId(PendingGeneration));
+	TestEqual(TEXT("Pending generation is exact"), PendingGeneration,
+		LoadGenerationId);
+	TestTrue(TEXT("Identical same-generation restaging is idempotent"),
+		ContextFirst->StagePersistenceState(State, LoadGenerationId, Failure));
+
+	FAPSProductionSnapshot Snapshot;
+	TestFalse(TEXT("Quarantine rejects old actor snapshot access"),
+		ContextFirst->QuerySnapshot(ContextId, OldActor,
+			EAPSProductionAccessMode::ActorGated, Snapshot, Failure));
+	TestEqual(TEXT("Snapshot rejection identifies load quarantine"), Failure,
+		FString(TEXT("APS.Production.PersistenceLoadInProgress")));
+	TestEqual(TEXT("Rollback inventory is not visible during quarantine"),
+		ContextFirst->GetInventoryQuantity(OwnerId, ItemId), int64{0});
+	TestFalse(TEXT("Quarantine rejects direct inventory replacement"),
+		ContextFirst->SetInventoryAmount(OldInventory, Failure));
+	TestEqual(TEXT("Inventory rejection identifies load quarantine"), Failure,
+		FString(TEXT("APS.Production.PersistenceLoadInProgress")));
+	const FAPSProductionAmount Delta = Amount(TEXT("Item"),
+		TEXT("Test.StagedInventory"), 1);
+	TestFalse(TEXT("Quarantine rejects direct inventory delta"),
+		ContextFirst->ApplyInventoryDelta(OwnerId, Delta, true, Failure));
+	TestFalse(TEXT("Quarantine rejects materialization mutation"),
+		ContextFirst->ResolveMaterialization(ContextId, FGuid::NewGuid(),
+			FGuid::NewGuid(), FSoftClassPath{}, true, NAME_None, Failure));
+	FAPSProductionCommand Command;
+	Command.ActionId = TEXT("APS.Production.Enqueue");
+	Command.ContextStableId = ContextId;
+	Command.ContextActor = OldActor;
+	Command.AccessMode = EAPSProductionAccessMode::ActorGated;
+	const FAPSProductionCommandResult CommandResult =
+		ContextFirst->ExecuteCommand(Command);
+	TestEqual(TEXT("Quarantine rejects gameplay command semantically"),
+		CommandResult.FailureCode,
+		FName(TEXT("APS.Production.PersistenceLoadInProgress")));
+	ContextFirst->AdvanceProduction(100.0);
+	FAPSProductionPersistenceState RejectedExport;
+	TestFalse(TEXT("Coherent export rejects pending load projection"),
+		ContextFirst->TryExportPersistenceState(RejectedExport, Failure));
+	TestEqual(TEXT("Export rejection identifies load quarantine"), Failure,
+		FString(TEXT("APS.Production.PersistenceLoadInProgress")));
+
+	Context.ContextActor = ReadyActor;
+	TestTrue(TEXT("Same-generation actor-ready context registers before definition"),
+		ContextFirst->RegisterContextForLoad(Context, LoadGenerationId, Failure));
+	TestTrue(TEXT("Missing definition keeps runtime quarantined"),
+		ContextFirst->IsPersistenceLoadQuarantined());
+	TestTrue(TEXT("Explicit apply reports dependency wait without polling"),
+		ContextFirst->TryApplyStagedPersistenceState(Failure)
+			== EAPSProductionPersistenceApplyStatus::WaitingForDependencies);
+	TestTrue(TEXT("Later definition completes remembered generation atomically"),
+		ContextFirst->RegisterDefinition(Definition, Failure));
+	TestFalse(TEXT("Successful atomic apply exits quarantine"),
+		ContextFirst->IsPersistenceLoadQuarantined());
+	TestFalse(TEXT("Applied generation is no longer pending"),
+		ContextFirst->GetPendingLoadGenerationId(PendingGeneration));
+	TestTrue(TEXT("Applied context snapshot becomes available exactly after apply"),
+		ContextFirst->QuerySnapshot(ContextId, ReadyActor,
+			EAPSProductionAccessMode::ActorGated, Snapshot, Failure));
+	TestEqual(TEXT("Atomic apply exposes exactly one staged job"),
+		Snapshot.Jobs.Num(), 1);
+	TestTrue(TEXT("Quarantined tick did not advance the staged job"),
+		Snapshot.Jobs[0].State == EAPSProductionJobState::Queued
+			&& Snapshot.Jobs[0].ProgressNormalized == 0.0);
+	TestEqual(TEXT("Atomic apply replaces old inventory as one projection"),
+		ContextFirst->GetInventoryQuantity(OwnerId, ItemId), int64{7});
+
+	// Definition-first path cannot unlock without an exact actor-ready token;
+	// a newer generation replaces pending readiness without accepting stale actors.
+	UAPSProductionSubsystem* DefinitionFirst = NewObject<UAPSProductionSubsystem>();
+	AActor* DefinitionFirstActor = NewObject<AActor>();
+	if (!DefinitionFirst || !DefinitionFirstActor)
+	{
+		return false;
+	}
+	const FGuid OwnerId2 = FGuid::NewGuid();
+	const FGuid ContextId2 = FGuid::NewGuid();
+	const FGuid FirstGeneration = FGuid::NewGuid();
+	const FGuid SecondGeneration = FGuid::NewGuid();
+	const FAPSProductionPersistenceState FirstState = StagedState(ContextId2,
+		OwnerId2, Definition, ItemId);
+	FAPSProductionPersistenceState SecondState = FirstState;
+	SecondState.StateId = FGuid::NewGuid();
+	SecondState.EventStream.StreamId = FGuid::NewGuid();
+	TestTrue(TEXT("First load generation stages"),
+		DefinitionFirst->StagePersistenceState(FirstState,
+			FirstGeneration, Failure));
+	TestTrue(TEXT("New generation explicitly replaces pending projection"),
+		DefinitionFirst->StagePersistenceState(SecondState,
+			SecondGeneration, Failure));
+	TestTrue(TEXT("Replacement generation is now authoritative"),
+		DefinitionFirst->GetPendingLoadGenerationId(PendingGeneration));
+	TestEqual(TEXT("Replacement generation remains exact"), PendingGeneration,
+		SecondGeneration);
+	FAPSProductionContextRegistration Context2 = ActorContext(ContextId2,
+		OwnerId2, DefinitionFirstActor);
+	TestFalse(TEXT("Stale generation actor-ready registration is rejected"),
+		DefinitionFirst->RegisterContextForLoad(Context2,
+			FirstGeneration, Failure));
+	TestTrue(TEXT("Definition registration alone succeeds"),
+		DefinitionFirst->RegisterDefinition(Definition, Failure));
+	TestTrue(TEXT("Definition-only path remains quarantined"),
+		DefinitionFirst->IsPersistenceLoadQuarantined());
+	TestTrue(TEXT("Exact replacement-generation context unlocks apply"),
+		DefinitionFirst->RegisterContextForLoad(Context2,
+			SecondGeneration, Failure));
+	TestFalse(TEXT("Definition-first atomic apply exits quarantine"),
+		DefinitionFirst->IsPersistenceLoadQuarantined());
+
+	// Same-generation projection conflict rejects the load and sanitizes old
+	// actor-gated bindings/data instead of reactivating the previous world.
+	UAPSProductionSubsystem* ConflictRuntime = NewObject<UAPSProductionSubsystem>();
+	AActor* ConflictActor = NewObject<AActor>();
+	if (!ConflictRuntime || !ConflictActor)
+	{
+		return false;
+	}
+	const FGuid OwnerId3 = FGuid::NewGuid();
+	const FGuid ContextId3 = FGuid::NewGuid();
+	FAPSProductionContextRegistration Context3 = ActorContext(ContextId3,
+		OwnerId3, ConflictActor);
+	TestTrue(TEXT("Conflict fixture binds old actor"),
+		ConflictRuntime->RegisterContext(Context3, Failure));
+	OldInventory.OwnerStableId = OwnerId3;
+	TestTrue(TEXT("Conflict fixture seeds old inventory"),
+		ConflictRuntime->SetInventoryAmount(OldInventory, Failure));
+	const FGuid ConflictGeneration = FGuid::NewGuid();
+	const FAPSProductionPersistenceState ConflictState = StagedState(ContextId3,
+		OwnerId3, Definition, ItemId);
+	TestTrue(TEXT("Conflict fixture stages first projection"),
+		ConflictRuntime->StagePersistenceState(ConflictState,
+			ConflictGeneration, Failure));
+	FAPSProductionPersistenceState DriftedState = ConflictState;
+	DriftedState.StateId = FGuid::NewGuid();
+	DriftedState.Inventories[0].Quantity = 8;
+	TestFalse(TEXT("Same-generation different projection conflicts"),
+		ConflictRuntime->StagePersistenceState(DriftedState,
+			ConflictGeneration, Failure));
+	TestEqual(TEXT("Conflict is semantic"), Failure,
+		FString(TEXT("APS.Production.PersistenceProjectionConflict")));
+	TestFalse(TEXT("Rejected generation leaves no pending projection"),
+		ConflictRuntime->GetPendingLoadGenerationId(PendingGeneration));
+	TestFalse(TEXT("Rejected generation does not retain quarantine forever"),
+		ConflictRuntime->IsPersistenceLoadQuarantined());
+	TestEqual(TEXT("Rejected generation sanitizes old inventory"),
+		ConflictRuntime->GetInventoryQuantity(OwnerId3, ItemId), int64{0});
+	TestFalse(TEXT("Rejected generation never reactivates old actor binding"),
+		ConflictRuntime->QuerySnapshot(ContextId3, ConflictActor,
+			EAPSProductionAccessMode::ActorGated, Snapshot, Failure));
+
+	// Event stream replacement is atomic and never replays historical lifecycle events.
+	UAPSProductionEventSubsystem* Events =
+		NewObject<UAPSProductionEventSubsystem>();
+	if (!Events)
+	{
+		return false;
+	}
+	int32 ReplayCount = 0;
+	Events->OnEventPublished().AddLambda(
+		[&ReplayCount](const FAPSProductionEvent&)
+		{
+			++ReplayCount;
+		});
+	TestTrue(TEXT("Validated stream state replaces without replay"),
+		Events->ReplaceStreamStateForLoad(State.EventStream, Failure));
+	TestEqual(TEXT("Load replacement emits no lifecycle event"), ReplayCount, 0);
+	TestEqual(TEXT("Load replacement preserves persisted StreamId"),
+		Events->GetStreamId(), State.EventStream.StreamId);
+	TestEqual(TEXT("Load replacement preserves sequence"),
+		Events->GetLastSequence(), State.EventStream.LastSequence);
 	return true;
 }
 
