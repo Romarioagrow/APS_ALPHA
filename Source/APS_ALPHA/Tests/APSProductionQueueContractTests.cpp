@@ -225,4 +225,118 @@ bool FAPSShipyardMaterializationContractTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAPSDebugProductionLauncherContractTest,
+	"APS.Gameplay.Production.DebugLauncherContract",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FAPSDebugProductionLauncherContractTest::RunTest(const FString& Parameters)
+{
+	using namespace APSProductionQueueTest;
+	UAPSProductionSubsystem* Production = NewObject<UAPSProductionSubsystem>();
+	if (!Production)
+	{
+		return false;
+	}
+	FAPSProductionDefinition Recipe;
+	Recipe.DefinitionId = FPrimaryAssetId(TEXT("Recipe"), TEXT("Debug.FreeRecipe"));
+	Recipe.Domain = EAPSProductionDomain::Crafting;
+	Recipe.Category = TEXT("Debug");
+	Recipe.DisplayName = Text(TEXT("DebugRecipe"), TEXT("Debug Recipe"));
+	Recipe.MaximumBatchSize = 1;
+	FString Failure;
+	TestTrue(TEXT("Debug recipe registers through the same catalog contract"),
+		Production->RegisterDefinition(Recipe, Failure));
+
+	FAPSProductionContextRegistration DebugContext;
+	DebugContext.ContextStableId = FGuid::NewGuid();
+	DebugContext.OwnerStableId = FGuid::NewGuid();
+	DebugContext.Domain = EAPSProductionDomain::Crafting;
+	DebugContext.AccessMode = EAPSProductionAccessMode::DebugLauncher;
+	DebugContext.ContextActor = nullptr;
+	TestTrue(TEXT("Explicit debug-global context registers without an actor"),
+		Production->RegisterContext(DebugContext, Failure));
+
+	int32 PanelRequestCount = 0;
+	FAPSProductionSnapshot RequestedSnapshot;
+	Production->OnPanelRequested().AddLambda(
+		[&PanelRequestCount, &RequestedSnapshot](const FAPSProductionSnapshot& Snapshot)
+		{
+			++PanelRequestCount;
+			RequestedSnapshot = Snapshot;
+		});
+	TestTrue(TEXT("Debug launcher requests the controlled presenter boundary"),
+		Production->RequestPanel(DebugContext.ContextStableId, nullptr,
+			EAPSProductionAccessMode::DebugLauncher, Failure));
+	TestEqual(TEXT("Panel request broadcasts exactly once"), PanelRequestCount, 1);
+	TestTrue(TEXT("Debug snapshot is visibly classified"),
+		RequestedSnapshot.AccessMode == EAPSProductionAccessMode::DebugLauncher);
+
+	AActor* MasqueradingActor = NewObject<AActor>();
+	FAPSProductionSnapshot Snapshot;
+	TestFalse(TEXT("Debug context rejects actor-gated masquerading"),
+		Production->QuerySnapshot(DebugContext.ContextStableId, MasqueradingActor,
+			EAPSProductionAccessMode::ActorGated, Snapshot, Failure));
+
+	FAPSProductionCommand Command;
+	Command.ActionId = TEXT("APS.Production.Enqueue");
+	Command.ExpectedRevision = RequestedSnapshot.Revision;
+	Command.ContextStableId = DebugContext.ContextStableId;
+	Command.DefinitionId = Recipe.DefinitionId;
+	Command.AccessMode = EAPSProductionAccessMode::DebugLauncher;
+	const FAPSProductionCommandResult Enqueued = Production->ExecuteCommand(Command);
+	TestTrue(TEXT("Debug-only enqueue may omit canonical actor subject identity"),
+		Enqueued.Status == EAPSProductionCommandStatus::Accepted);
+	Production->AdvanceProduction(0.0);
+
+	FAPSProductionPersistenceState Persisted;
+	Production->ExportPersistenceState(Persisted);
+	TestEqual(TEXT("Debug jobs never enter production persistence"), Persisted.Jobs.Num(), 0);
+	TestEqual(TEXT("Debug inventories never enter production persistence"),
+		Persisted.Inventories.Num(), 0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAPSProductionActorRebindContractTest,
+	"APS.Gameplay.Production.ActorRebindContract",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FAPSProductionActorRebindContractTest::RunTest(const FString& Parameters)
+{
+	UAPSProductionSubsystem* Production = NewObject<UAPSProductionSubsystem>();
+	AActor* FirstActor = NewObject<AActor>();
+	AActor* ReplacementActor = NewObject<AActor>();
+	if (!Production || !FirstActor || !ReplacementActor)
+	{
+		return false;
+	}
+	FAPSProductionContextRegistration Context;
+	Context.ContextStableId = FGuid::NewGuid();
+	Context.OwnerStableId = FGuid::NewGuid();
+	Context.Domain = EAPSProductionDomain::Building;
+	Context.ContextActor = FirstActor;
+	FString Failure;
+	TestTrue(TEXT("First canonical actor binds production context"),
+		Production->RegisterContext(Context, Failure));
+	TestTrue(TEXT("Empty actor context detaches without deleting persisted state"),
+		Production->UnregisterContext(Context.ContextStableId, FirstActor,
+			EAPSProductionAccessMode::ActorGated, Failure));
+
+	FAPSProductionSnapshot Snapshot;
+	TestFalse(TEXT("Detached actor can no longer query context"),
+		Production->QuerySnapshot(Context.ContextStableId, FirstActor,
+			EAPSProductionAccessMode::ActorGated, Snapshot, Failure));
+	FAPSProductionContextRegistration WrongOwner = Context;
+	WrongOwner.ContextActor = ReplacementActor;
+	WrongOwner.OwnerStableId = FGuid::NewGuid();
+	TestFalse(TEXT("Rebind rejects ownership drift"),
+		Production->RegisterContext(WrongOwner, Failure));
+	Context.ContextActor = ReplacementActor;
+	TestTrue(TEXT("Compatible replacement actor rebinds same canonical context"),
+		Production->RegisterContext(Context, Failure));
+	TestTrue(TEXT("Replacement actor queries the preserved context"),
+		Production->QuerySnapshot(Context.ContextStableId, ReplacementActor,
+			EAPSProductionAccessMode::ActorGated, Snapshot, Failure));
+	return true;
+}
+
 #endif
