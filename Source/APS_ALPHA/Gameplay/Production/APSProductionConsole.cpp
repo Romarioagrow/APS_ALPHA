@@ -11,6 +11,7 @@ DEFINE_LOG_CATEGORY_STATIC(LogAPSProductionConsole, Log, All);
 namespace APSProductionConsoleRuntime
 {
 	const FName OpenAction(TEXT("APS.Production.Open"));
+	const FName OpenVerb(TEXT("APS.Interaction.Open"));
 	const FName PanelRequestedCode(TEXT("APS.Production.PanelRequested"));
 	const FName InvalidAction(TEXT("APS.Production.InvalidConsoleAction"));
 	const FName PanelRejected(TEXT("APS.Production.PanelRequestRejected"));
@@ -59,6 +60,7 @@ void AAPSProductionConsole::EndPlay(const EEndPlayReason::Type EndPlayReason)
 }
 
 bool AAPSProductionConsole::ConfigureCanonicalIdentity(const FGuid ContextStableId,
+	const EAPSTargetIdentityDomain ContextIdentityDomain,
 	const FGuid OwnerStableId, const FGuid SpawnPadStableId, FString& OutFailure)
 {
 	OutFailure.Reset();
@@ -67,7 +69,8 @@ bool AAPSProductionConsole::ConfigureCanonicalIdentity(const FGuid ContextStable
 		OutFailure = TEXT("APS.Production.ConsoleAlreadyRegistered");
 		return false;
 	}
-	if (!ContextStableId.IsValid() || !OwnerStableId.IsValid())
+	if (!ContextStableId.IsValid() || !OwnerStableId.IsValid()
+		|| ContextIdentityDomain == EAPSTargetIdentityDomain::None)
 	{
 		OutFailure = TEXT("APS.Production.ConsoleMissingCanonicalIdentity");
 		return false;
@@ -78,6 +81,7 @@ bool AAPSProductionConsole::ConfigureCanonicalIdentity(const FGuid ContextStable
 		return false;
 	}
 	ConfiguredContextStableId = ContextStableId;
+	ConfiguredContextIdentityDomain = ContextIdentityDomain;
 	ConfiguredOwnerStableId = OwnerStableId;
 	ConfiguredSpawnPadStableId = SpawnPadStableId;
 	return true;
@@ -91,14 +95,17 @@ const UAPSCivilizationIdentityComponent* AAPSProductionConsole::FindIdentity(
 }
 
 bool AAPSProductionConsole::ResolveCanonicalIdentity(FGuid& OutContextStableId,
+	EAPSTargetIdentityDomain& OutContextIdentityDomain,
 	FGuid& OutOwnerStableId, FGuid& OutSpawnPadStableId, FString& OutFailure) const
 {
 	OutContextStableId = ConfiguredContextStableId;
+	OutContextIdentityDomain = ConfiguredContextIdentityDomain;
 	OutOwnerStableId = ConfiguredOwnerStableId;
 	OutSpawnPadStableId = ConfiguredSpawnPadStableId;
 	OutFailure.Reset();
 
-	if (!OutContextStableId.IsValid() || !OutOwnerStableId.IsValid())
+	if (!OutContextStableId.IsValid() || !OutOwnerStableId.IsValid()
+		|| OutContextIdentityDomain == EAPSTargetIdentityDomain::None)
 	{
 		TArray<const AActor*> Candidates;
 		Candidates.Add(ContextIdentityActor.Get());
@@ -117,6 +124,7 @@ bool AAPSProductionConsole::ResolveCanonicalIdentity(FGuid& OutContextStableId,
 			{
 				OutContextStableId = Identity->StableEntityId;
 				OutOwnerStableId = Identity->OwnerCivilizationId;
+				OutContextIdentityDomain = EAPSTargetIdentityDomain::CivilizationEntity;
 				break;
 			}
 		}
@@ -129,7 +137,8 @@ bool AAPSProductionConsole::ResolveCanonicalIdentity(FGuid& OutContextStableId,
 			OutSpawnPadStableId = PadIdentity->StableEntityId;
 		}
 	}
-	if (!OutContextStableId.IsValid() || !OutOwnerStableId.IsValid())
+	if (!OutContextStableId.IsValid() || !OutOwnerStableId.IsValid()
+		|| OutContextIdentityDomain == EAPSTargetIdentityDomain::None)
 	{
 		OutFailure = TEXT("APS.Production.ConsoleMissingCanonicalIdentity");
 		return false;
@@ -161,9 +170,10 @@ bool AAPSProductionConsole::InitializeProductionContext(FString& OutFailure)
 		return true;
 	}
 	FGuid ContextStableId;
+	EAPSTargetIdentityDomain ContextIdentityDomain = EAPSTargetIdentityDomain::None;
 	FGuid OwnerStableId;
 	FGuid SpawnPadStableId;
-	if (!ResolveCanonicalIdentity(ContextStableId, OwnerStableId,
+	if (!ResolveCanonicalIdentity(ContextStableId, ContextIdentityDomain, OwnerStableId,
 		SpawnPadStableId, OutFailure))
 	{
 		return false;
@@ -186,6 +196,7 @@ bool AAPSProductionConsole::InitializeProductionContext(FString& OutFailure)
 		return false;
 	}
 	RegisteredContextStableId = ContextStableId;
+	RegisteredContextIdentityDomain = ContextIdentityDomain;
 	bContextRegistered = true;
 	UE_LOG(LogAPSProductionConsole, Display,
 		TEXT("[APS.Production.Console] registered actor=%s context=%s owner=%s domain=%d"),
@@ -253,10 +264,11 @@ void AAPSProductionConsole::HandleCivilizationMaterializationStateChanged(
 FGuid AAPSProductionConsole::GetInteractionTargetStableId_Implementation() const
 {
 	FGuid ContextStableId;
+	EAPSTargetIdentityDomain ContextIdentityDomain = EAPSTargetIdentityDomain::None;
 	FGuid OwnerStableId;
 	FGuid SpawnPadStableId;
 	FString Failure;
-	return ResolveCanonicalIdentity(ContextStableId, OwnerStableId,
+	return ResolveCanonicalIdentity(ContextStableId, ContextIdentityDomain, OwnerStableId,
 		SpawnPadStableId, Failure) ? ContextStableId : FGuid{};
 }
 
@@ -296,6 +308,7 @@ bool AAPSProductionConsole::QueryInteraction_Implementation(
 	OutPrompt.PromptKind = EAPSInteractionPromptKind::OpenPanel;
 	OutPrompt.ContextKind = PromptContextKind;
 	OutPrompt.TargetStableId = RegisteredContextStableId;
+	OutPrompt.TargetIdentityDomain = RegisteredContextIdentityDomain;
 	OutPrompt.ContextStableId = RegisteredContextStableId;
 	OutPrompt.DisplayName = DisplayName;
 	OutPrompt.RangeCm = InteractionRangeCm;
@@ -322,6 +335,7 @@ FAPSInteractionExecutionResult AAPSProductionConsole::ExecuteInteraction_Impleme
 		Result.FailureCode = APSProductionConsoleRuntime::InvalidAction;
 		return Result;
 	}
+	Result.Verb = APSProductionConsoleRuntime::OpenVerb;
 	UWorld* World = GetWorld();
 	UAPSProductionSubsystem* Production = World
 		? World->GetSubsystem<UAPSProductionSubsystem>() : nullptr;

@@ -56,6 +56,11 @@ bool FAPSInteractionPromptDescriptor::IsStructurallyValid(
 	{
 		return Reject(OutReason, TEXT("Production interaction prompt has no canonical TargetStableId."));
 	}
+	if (bRequireAuthoritativeTargetId
+		&& TargetIdentityDomain == EAPSTargetIdentityDomain::None)
+	{
+		return Reject(OutReason, TEXT("Production interaction prompt has no authoritative target identity domain."));
+	}
 	if (bRequireAuthoritativeTargetId && !ContextStableId.IsValid())
 	{
 		return Reject(OutReason,
@@ -127,6 +132,67 @@ bool FAPSInteractionExecutionRequest::IsStructurallyValid(
 	{
 		return Reject(OutReason,
 			TEXT("Production interaction request has no authoritative subject identity domain."));
+	}
+	if (bRequireAuthoritativeIds
+		&& TargetIdentityDomain == EAPSTargetIdentityDomain::None)
+	{
+		return Reject(OutReason,
+			TEXT("Production interaction request has no authoritative target identity domain."));
+	}
+	if (OutReason)
+	{
+		OutReason->Reset();
+	}
+	return true;
+}
+
+bool FAPSInteractionExecutionEvent::IsStructurallyValid(FString* OutReason) const
+{
+	if (!StreamId.IsValid() || !EventId.IsValid() || !CorrelationId.IsValid())
+	{
+		return Reject(OutReason,
+			TEXT("Interaction execution event is missing stream/event/correlation identity."));
+	}
+	if (Sequence <= 0)
+	{
+		return Reject(OutReason, TEXT("Interaction execution event sequence is not positive."));
+	}
+	if (Verb.IsNone() || ActionId.IsNone())
+	{
+		return Reject(OutReason, TEXT("Interaction execution event has no verb/action identity."));
+	}
+	if (Quantity < 1)
+	{
+		return Reject(OutReason, TEXT("Interaction execution event quantity must be positive."));
+	}
+	if (!bDebugOnly
+		&& (!SubjectStableId.IsValid() || !TargetStableId.IsValid()))
+	{
+		return Reject(OutReason,
+			TEXT("Production interaction execution event is missing canonical identities."));
+	}
+	if (!bDebugOnly && SubjectIdentityDomain == EAPSSubjectIdentityDomain::None)
+	{
+		return Reject(OutReason,
+			TEXT("Production interaction execution event has no subject identity domain."));
+	}
+	if (!bDebugOnly && TargetIdentityDomain == EAPSTargetIdentityDomain::None)
+	{
+		return Reject(OutReason,
+			TEXT("Production interaction execution event has no target identity domain."));
+	}
+	if (Status == EAPSInteractionExecutionStatus::Failed)
+	{
+		if (FailureCode.IsNone() || !ResultCode.IsNone())
+		{
+			return Reject(OutReason,
+				TEXT("Failed interaction execution event has invalid result/failure codes."));
+		}
+	}
+	else if (!FailureCode.IsNone() || ResultCode.IsNone())
+	{
+		return Reject(OutReason,
+			TEXT("Successful/deferred interaction execution event has invalid result/failure codes."));
 	}
 	if (OutReason)
 	{

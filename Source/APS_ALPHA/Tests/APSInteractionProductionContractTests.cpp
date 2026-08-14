@@ -5,6 +5,8 @@
 #include "APS_ALPHA/Gameplay/Interaction/APSInteractionSubsystem.h"
 #include "APS_ALPHA/Gameplay/Interaction/APSInteractionTypes.h"
 #include "APS_ALPHA/Gameplay/Production/APSProductionEventSubsystem.h"
+#include "APSInteractionContractTestActor.h"
+#include "Engine/World.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAPSInteractionDescriptorContractTest,
 	"APS.Gameplay.Interaction.DescriptorContract",
@@ -33,6 +35,7 @@ bool FAPSInteractionDescriptorContractTest::RunTest(const FString& Parameters)
 	Prompt.PromptId = FGuid::NewGuid();
 	Prompt.Revision = 3;
 	Prompt.TargetStableId = FGuid::NewGuid();
+	Prompt.TargetIdentityDomain = EAPSTargetIdentityDomain::CivilizationEntity;
 	Prompt.ContextStableId = Prompt.TargetStableId;
 	Prompt.DisplayName.Namespace = TEXT("APSInteraction");
 	Prompt.DisplayName.Key = TEXT("HeadquartersConsole");
@@ -42,6 +45,11 @@ bool FAPSInteractionDescriptorContractTest::RunTest(const FString& Parameters)
 	Prompt.Actions.Add(Action);
 	TestTrue(TEXT("Production prompt with canonical ID and action is valid"),
 		Prompt.IsStructurallyValid(true, &Reason));
+
+	Prompt.TargetIdentityDomain = EAPSTargetIdentityDomain::None;
+	TestFalse(TEXT("Production prompt rejects missing target identity domain"),
+		Prompt.IsStructurallyValid(true, &Reason));
+	Prompt.TargetIdentityDomain = EAPSTargetIdentityDomain::CivilizationEntity;
 
 	Prompt.TargetStableId.Invalidate();
 	TestFalse(TEXT("Production prompt rejects missing canonical TargetStableId"),
@@ -59,6 +67,9 @@ bool FAPSInteractionDescriptorContractTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("Production request rejects a GUID without identity domain"),
 		Request.IsStructurallyValid(true, &Reason));
 	Request.SubjectIdentityDomain = EAPSSubjectIdentityDomain::GameplayEntity;
+	TestFalse(TEXT("Production request also requires target identity domain"),
+		Request.IsStructurallyValid(true, &Reason));
+	Request.TargetIdentityDomain = EAPSTargetIdentityDomain::CivilizationEntity;
 	TestTrue(TEXT("Production request with canonical subject/target IDs is valid"),
 		Request.IsStructurallyValid(true, &Reason));
 	Request.Quantity = 0;
@@ -94,6 +105,172 @@ bool FAPSInteractionDescriptorContractTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("First valid focus candidate replaces empty score"),
 		UAPSInteractionSubsystem::IsFocusScorePreferred(Baseline, EmptyScore));
 
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAPSInteractionExecutionEventContractTest,
+	"APS.Gameplay.Interaction.ExecutionEventContract",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FAPSInteractionExecutionEventContractTest::RunTest(const FString& Parameters)
+{
+	const UWorld::InitializationValues InitializationValues = UWorld::InitializationValues()
+		.AllowAudioPlayback(false)
+		.RequiresHitProxies(false)
+		.CreatePhysicsScene(false)
+		.CreateNavigation(false)
+		.CreateAISystem(false)
+		.ShouldSimulatePhysics(false)
+		.SetTransactional(false);
+	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false, NAME_None,
+		nullptr, false, ERHIFeatureLevel::Num, &InitializationValues);
+	if (!TestNotNull(TEXT("Isolated Interaction test world exists"), World))
+	{
+		return false;
+	}
+	AAPSInteractionContractTestActor* Actor =
+		World->SpawnActor<AAPSInteractionContractTestActor>(
+			FVector(100.0, 0.0, 0.0), FRotator::ZeroRotator);
+	UAPSInteractionSubsystem* Interaction =
+		NewObject<UAPSInteractionSubsystem>(World);
+	if (!TestNotNull(TEXT("Contract interactable actor exists"), Actor)
+		|| !TestNotNull(TEXT("Interaction subsystem exists"), Interaction))
+	{
+		World->DestroyWorld(false);
+		return false;
+	}
+
+	Actor->TargetStableId = FGuid::NewGuid();
+	Actor->TargetIdentityDomain = EAPSTargetIdentityDomain::CivilizationEntity;
+	FAPSInteractionContext Context;
+	Context.InstigatorActor = Actor;
+	Context.SubjectStableId = FGuid::NewGuid();
+	Context.SubjectIdentityDomain = EAPSSubjectIdentityDomain::GameplayEntity;
+	Context.ViewOrigin = FVector::ZeroVector;
+	Context.ViewDirection = FVector::ForwardVector;
+	Context.MaximumRangeCm = 600.0;
+	Context.MinimumFocusDot = 0.5;
+
+	FAPSInteractionExecutionRequest Request;
+	Request.CorrelationId = FGuid::NewGuid();
+	Request.ActionId = Actor->ActionId;
+	Request.ExpectedRevision = Actor->Revision;
+	Request.SubjectStableId = Context.SubjectStableId;
+	Request.SubjectIdentityDomain = Context.SubjectIdentityDomain;
+	Request.TargetStableId = Actor->TargetStableId;
+	Request.TargetIdentityDomain = Actor->TargetIdentityDomain;
+	Request.Quantity = 1;
+	Request.InstigatorActor = Context.InstigatorActor;
+
+	int32 BroadcastCount = 0;
+	FAPSInteractionExecutionEvent LastEvent;
+	Interaction->OnExecutionPublished().AddLambda(
+		[&BroadcastCount, &LastEvent](const FAPSInteractionExecutionEvent& Event)
+		{
+			++BroadcastCount;
+			LastEvent = Event;
+		});
+	FAPSInteractionExecutionResult Result =
+		Interaction->ExecuteActor(Actor, Context, Request);
+	TestEqual(TEXT("Executed console result succeeds"), Result.Status,
+		EAPSInteractionExecutionStatus::Succeeded);
+	TestEqual(TEXT("Exactly one execution event broadcasts"), BroadcastCount, 1);
+	TestEqual(TEXT("Actor executes exactly once"), Actor->ExecutionCount, 1);
+	TestTrue(TEXT("Interaction stream identity is owner-generated"),
+		LastEvent.StreamId.IsValid());
+	TestEqual(TEXT("Published stream matches subsystem"), LastEvent.StreamId,
+		Interaction->GetExecutionStreamId());
+	TestTrue(TEXT("Event identity is owner-generated"), LastEvent.EventId.IsValid());
+	TestEqual(TEXT("First execution sequence is one"), LastEvent.Sequence, int64{1});
+	TestEqual(TEXT("Explicit verb is preserved"), LastEvent.Verb, Actor->Verb);
+	TestEqual(TEXT("Validated action identity is preserved"), LastEvent.ActionId,
+		Request.ActionId);
+	TestEqual(TEXT("Correlation identity is preserved"), LastEvent.CorrelationId,
+		Request.CorrelationId);
+	TestEqual(TEXT("Subject identity is preserved"), LastEvent.SubjectStableId,
+		Context.SubjectStableId);
+	TestEqual(TEXT("Subject domain is GameplayEntity"),
+		LastEvent.SubjectIdentityDomain, EAPSSubjectIdentityDomain::GameplayEntity);
+	TestEqual(TEXT("Base target identity is preserved"), LastEvent.TargetStableId,
+		Actor->TargetStableId);
+	TestEqual(TEXT("Base target domain is CivilizationEntity"),
+		LastEvent.TargetIdentityDomain, EAPSTargetIdentityDomain::CivilizationEntity);
+	TestEqual(TEXT("Executed quantity is preserved"), LastEvent.Quantity, 1);
+	TestEqual(TEXT("Execution result code is preserved"), LastEvent.ResultCode,
+		Actor->ResultCode);
+	TestFalse(TEXT("Production event is never debug-classified"), LastEvent.bDebugOnly);
+
+	FAPSInteractionExecutionRequest MismatchedDomain = Request;
+	MismatchedDomain.CorrelationId = FGuid::NewGuid();
+	MismatchedDomain.TargetIdentityDomain = EAPSTargetIdentityDomain::GameplayEntity;
+	Result = Interaction->ExecuteActor(Actor, Context, MismatchedDomain);
+	TestEqual(TEXT("Target-domain alias is rejected before execution"),
+		Result.Status, EAPSInteractionExecutionStatus::Failed);
+	TestEqual(TEXT("Target-domain alias does not execute actor"),
+		Actor->ExecutionCount, 1);
+	TestEqual(TEXT("Target-domain alias publishes no event"), BroadcastCount, 1);
+
+	Actor->ExecutionStatus = EAPSInteractionExecutionStatus::Deferred;
+	Actor->ResultCode = TEXT("APS.Interaction.Deferred");
+	Request.CorrelationId = FGuid::NewGuid();
+	Result = Interaction->ExecuteActor(Actor, Context, Request);
+	TestEqual(TEXT("Deferred result remains deferred"), Result.Status,
+		EAPSInteractionExecutionStatus::Deferred);
+	TestEqual(TEXT("Deferred event broadcasts once"), BroadcastCount, 2);
+	TestEqual(TEXT("Deferred is not reinterpreted as success"), LastEvent.Status,
+		EAPSInteractionExecutionStatus::Deferred);
+
+	Actor->ExecutionStatus = EAPSInteractionExecutionStatus::Failed;
+	Actor->ResultCode = NAME_None;
+	Actor->FailureCode = TEXT("APS.Interaction.ActorRejected");
+	Request.CorrelationId = FGuid::NewGuid();
+	Result = Interaction->ExecuteActor(Actor, Context, Request);
+	TestEqual(TEXT("Executed failure remains failed"), Result.Status,
+		EAPSInteractionExecutionStatus::Failed);
+	TestEqual(TEXT("Executed failure publishes once"), BroadcastCount, 3);
+	TestEqual(TEXT("Failure code is preserved"), LastEvent.FailureCode,
+		Actor->FailureCode);
+
+	Actor->ExecutionStatus = EAPSInteractionExecutionStatus::Succeeded;
+	Actor->ResultCode = TEXT("APS.Production.PanelRequested");
+	Actor->FailureCode = NAME_None;
+	Actor->Verb = NAME_None;
+	Request.CorrelationId = FGuid::NewGuid();
+	Result = Interaction->ExecuteActor(Actor, Context, Request);
+	TestEqual(TEXT("Actor result without explicit verb is rejected"), Result.FailureCode,
+		FName(TEXT("APS.Interaction.InvalidExecutionResult")));
+	TestEqual(TEXT("Invalid execution result publishes no event"), BroadcastCount, 3);
+
+	int32 LateSubscriberCount = 0;
+	Interaction->OnExecutionPublished().AddLambda(
+		[&LateSubscriberCount](const FAPSInteractionExecutionEvent&)
+		{
+			++LateSubscriberCount;
+		});
+	TestEqual(TEXT("Late subscriber receives no historical replay"), LateSubscriberCount, 0);
+
+	Actor->Verb = TEXT("APS.Interaction.Open");
+	Actor->TargetStableId.Invalidate();
+	Actor->TargetIdentityDomain = EAPSTargetIdentityDomain::None;
+	Context.SubjectStableId.Invalidate();
+	Context.SubjectIdentityDomain = EAPSSubjectIdentityDomain::None;
+	Context.bDebugIdentityOverride = true;
+	Request.CorrelationId = FGuid::NewGuid();
+	Request.SubjectStableId.Invalidate();
+	Request.SubjectIdentityDomain = EAPSSubjectIdentityDomain::None;
+	Request.TargetStableId.Invalidate();
+	Request.TargetIdentityDomain = EAPSTargetIdentityDomain::None;
+	Result = Interaction->ExecuteActor(Actor, Context, Request);
+	TestEqual(TEXT("Explicit debug execution succeeds"), Result.Status,
+		EAPSInteractionExecutionStatus::Succeeded);
+	TestEqual(TEXT("Debug result publishes exactly once"), BroadcastCount, 4);
+	TestTrue(TEXT("Debug publication remains explicitly classified"),
+		LastEvent.bDebugOnly);
+	TestEqual(TEXT("Sequence advances only for published events"),
+		Interaction->GetLastExecutionSequence(), int64{4});
+	TestEqual(TEXT("Late subscriber receives only the new event"), LateSubscriberCount, 1);
+
+	World->DestroyWorld(false);
 	return true;
 }
 

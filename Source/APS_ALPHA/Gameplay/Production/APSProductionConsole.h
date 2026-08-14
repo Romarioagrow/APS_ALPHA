@@ -23,7 +23,8 @@ public:
 
 	/** Canonical integration seam for non-Civilization actors. IDs are supplied, never hashed here. */
 	UFUNCTION(BlueprintCallable, Category="APS|Production Console")
-	bool ConfigureCanonicalIdentity(FGuid ContextStableId, FGuid OwnerStableId,
+	bool ConfigureCanonicalIdentity(FGuid ContextStableId,
+		EAPSTargetIdentityDomain ContextIdentityDomain, FGuid OwnerStableId,
 		FGuid SpawnPadStableId, FString& OutFailure);
 
 	/** Idempotent actor-ready registration. Useful for Blueprint-created child consoles. */
@@ -47,7 +48,8 @@ private:
 		const FAPSCivilizationRuntimeManifest& Manifest,
 		EAPSCivilizationMaterializationState Previous,
 		EAPSCivilizationMaterializationState Current);
-	bool ResolveCanonicalIdentity(FGuid& OutContextStableId, FGuid& OutOwnerStableId,
+	bool ResolveCanonicalIdentity(FGuid& OutContextStableId,
+		EAPSTargetIdentityDomain& OutContextIdentityDomain, FGuid& OutOwnerStableId,
 		FGuid& OutSpawnPadStableId, FString& OutFailure) const;
 	const class UAPSCivilizationIdentityComponent* FindIdentity(const AActor* Actor) const;
 	EAPSInteractionActionKind ResolveActionKind() const;
@@ -82,9 +84,11 @@ private:
 	TObjectPtr<AActor> SpawnPadIdentityActor;
 
 	FGuid ConfiguredContextStableId;
+	EAPSTargetIdentityDomain ConfiguredContextIdentityDomain{EAPSTargetIdentityDomain::None};
 	FGuid ConfiguredOwnerStableId;
 	FGuid ConfiguredSpawnPadStableId;
 	FGuid RegisteredContextStableId;
+	EAPSTargetIdentityDomain RegisteredContextIdentityDomain{EAPSTargetIdentityDomain::None};
 	FGuid PromptId;
 	TWeakObjectPtr<UAPSCivilizationMaterializationSubsystem> CivilizationSubsystem;
 	FDelegateHandle MaterializationStateChangedHandle;

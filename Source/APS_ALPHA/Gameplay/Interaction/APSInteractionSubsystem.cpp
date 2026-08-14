@@ -13,12 +13,27 @@ namespace APSInteractionFailures
 	const FName TargetMismatch(TEXT("APS.Interaction.TargetMismatch"));
 	const FName StaleRevision(TEXT("APS.Interaction.StaleRevision"));
 	const FName ActionUnavailable(TEXT("APS.Interaction.ActionUnavailable"));
+	const FName InvalidExecutionResult(TEXT("APS.Interaction.InvalidExecutionResult"));
 	const FName NoCandidates(TEXT("APS.Interaction.NoCandidates"));
 	const FName AllCandidatesInvalid(TEXT("APS.Interaction.AllCandidatesInvalid"));
 	const FName AllCandidatesOutOfRange(TEXT("APS.Interaction.AllCandidatesOutOfRange"));
 	const FName AllCandidatesOutOfFocus(TEXT("APS.Interaction.AllCandidatesOutOfFocus"));
 	const FName AllCandidatesGated(TEXT("APS.Interaction.AllCandidatesGated"));
 	const FName NoEligibleCandidate(TEXT("APS.Interaction.NoEligibleCandidate"));
+}
+
+void UAPSInteractionSubsystem::Initialize(FSubsystemCollectionBase& Collection)
+{
+	Super::Initialize(Collection);
+	EnsureExecutionStreamId();
+}
+
+void UAPSInteractionSubsystem::Deinitialize()
+{
+	ExecutionPublished.Clear();
+	ExecutionStreamId.Invalidate();
+	LastExecutionSequence = 0;
+	Super::Deinitialize();
 }
 
 double UAPSInteractionSubsystem::DistanceToActorBoundsCm(
@@ -285,7 +300,7 @@ bool UAPSInteractionSubsystem::ResolveFocus(
 
 FAPSInteractionExecutionResult UAPSInteractionSubsystem::ExecuteActor(
 	AActor* Candidate, const FAPSInteractionContext& Context,
-	const FAPSInteractionExecutionRequest& Request) const
+	const FAPSInteractionExecutionRequest& Request)
 {
 	FAPSInteractionExecutionResult Result;
 	Result.CorrelationId = Request.CorrelationId;
@@ -319,7 +334,8 @@ FAPSInteractionExecutionResult UAPSInteractionSubsystem::ExecuteActor(
 		Result.FailureCode = FName(*ValidationReason);
 		return Result;
 	}
-	if (CurrentPrompt.TargetStableId != Request.TargetStableId)
+	if (CurrentPrompt.TargetStableId != Request.TargetStableId
+		|| CurrentPrompt.TargetIdentityDomain != Request.TargetIdentityDomain)
 	{
 		Result.FailureCode = APSInteractionFailures::TargetMismatch;
 		return Result;
@@ -345,5 +361,66 @@ FAPSInteractionExecutionResult UAPSInteractionSubsystem::ExecuteActor(
 	{
 		Result.CorrelationId = Request.CorrelationId;
 	}
+	if (Result.CorrelationId != Request.CorrelationId
+		|| Result.Quantity != Request.Quantity || Result.Verb.IsNone())
+	{
+		Result.Status = EAPSInteractionExecutionStatus::Failed;
+		Result.Verb = NAME_None;
+		Result.ResultCode = NAME_None;
+		Result.FailureCode = APSInteractionFailures::InvalidExecutionResult;
+		Result.CorrelationId = Request.CorrelationId;
+		Result.Quantity = Request.Quantity;
+		return Result;
+	}
+	if (!PublishExecutionEvent(Context, Request, CurrentPrompt, Result,
+		ValidationReason))
+	{
+		Result.Status = EAPSInteractionExecutionStatus::Failed;
+		Result.Verb = NAME_None;
+		Result.ResultCode = NAME_None;
+		Result.FailureCode = APSInteractionFailures::InvalidExecutionResult;
+	}
 	return Result;
+}
+
+void UAPSInteractionSubsystem::EnsureExecutionStreamId()
+{
+	if (!ExecutionStreamId.IsValid())
+	{
+		ExecutionStreamId = FGuid::NewGuid();
+	}
+}
+
+bool UAPSInteractionSubsystem::PublishExecutionEvent(
+	const FAPSInteractionContext& Context,
+	const FAPSInteractionExecutionRequest& Request,
+	const FAPSInteractionPromptDescriptor& Prompt,
+	const FAPSInteractionExecutionResult& Result, FString& OutFailure)
+{
+	EnsureExecutionStreamId();
+	FAPSInteractionExecutionEvent Event;
+	Event.StreamId = ExecutionStreamId;
+	Event.EventId = FGuid::NewGuid();
+	Event.CorrelationId = Result.CorrelationId;
+	Event.Sequence = LastExecutionSequence + 1;
+	Event.Verb = Result.Verb;
+	Event.ActionId = Request.ActionId;
+	Event.SubjectStableId = Request.SubjectStableId;
+	Event.SubjectIdentityDomain = Request.SubjectIdentityDomain;
+	Event.TargetStableId = Prompt.TargetStableId;
+	Event.TargetIdentityDomain = Prompt.TargetIdentityDomain;
+	Event.Quantity = Result.Quantity;
+	Event.Status = Result.Status;
+	Event.ResultCode = Result.ResultCode;
+	Event.FailureCode = Result.FailureCode;
+	Event.bDebugOnly = Context.bDebugIdentityOverride;
+	if (!Event.IsStructurallyValid(&OutFailure))
+	{
+		return false;
+	}
+
+	LastExecutionSequence = Event.Sequence;
+	ExecutionPublished.Broadcast(Event);
+	OutFailure.Reset();
+	return true;
 }

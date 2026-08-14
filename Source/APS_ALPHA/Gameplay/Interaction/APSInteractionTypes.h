@@ -74,6 +74,15 @@ enum class EAPSSubjectIdentityDomain : uint8
 	Player
 };
 
+/** Semantic domain of the authoritative target StableId. */
+UENUM(BlueprintType)
+enum class EAPSTargetIdentityDomain : uint8
+{
+	None,
+	GameplayEntity,
+	CivilizationEntity
+};
+
 /** Presentation-neutral localization token. UI owns FText creation and styling. */
 USTRUCT(BlueprintType)
 struct APS_ALPHA_API FAPSLocalizedTextDescriptor
@@ -153,6 +162,9 @@ struct APS_ALPHA_API FAPSInteractionPromptDescriptor
 	/** Canonical actor/entity identity. Production prompts require a valid value. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Interaction")
 	FGuid TargetStableId;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Interaction")
+	EAPSTargetIdentityDomain TargetIdentityDomain{EAPSTargetIdentityDomain::None};
 
 	/** Stable gameplay context backing the prompt; may equal TargetStableId. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Interaction")
@@ -246,6 +258,9 @@ struct APS_ALPHA_API FAPSInteractionExecutionRequest
 	UPROPERTY(BlueprintReadWrite, Category="Interaction")
 	FGuid TargetStableId;
 
+	UPROPERTY(BlueprintReadWrite, Category="Interaction")
+	EAPSTargetIdentityDomain TargetIdentityDomain{EAPSTargetIdentityDomain::None};
+
 	UPROPERTY(BlueprintReadWrite, Category="Interaction", meta=(ClampMin="1"))
 	int32 Quantity{1};
 
@@ -267,6 +282,10 @@ struct APS_ALPHA_API FAPSInteractionExecutionResult
 	UPROPERTY(BlueprintReadOnly, Category="Interaction")
 	EAPSInteractionExecutionStatus Status{EAPSInteractionExecutionStatus::Failed};
 
+	/** Explicit semantic verb authored by the executed interactable. */
+	UPROPERTY(BlueprintReadOnly, Category="Interaction")
+	FName Verb;
+
 	UPROPERTY(BlueprintReadOnly, Category="Interaction")
 	FName ResultCode;
 
@@ -276,4 +295,63 @@ struct APS_ALPHA_API FAPSInteractionExecutionResult
 
 	UPROPERTY(BlueprintReadOnly, Category="Interaction")
 	int32 Quantity{0};
+};
+
+/** Immutable, presentation-neutral fact emitted only after an interaction executes. */
+USTRUCT(BlueprintType)
+struct APS_ALPHA_API FAPSInteractionExecutionEvent
+{
+	GENERATED_BODY()
+
+	/** Interaction-owned stream identity. It never aliases a manifest or world ID. */
+	UPROPERTY(BlueprintReadOnly, Category="Interaction")
+	FGuid StreamId;
+
+	UPROPERTY(BlueprintReadOnly, Category="Interaction")
+	FGuid EventId;
+
+	UPROPERTY(BlueprintReadOnly, Category="Interaction")
+	FGuid CorrelationId;
+
+	/** Monotonic within StreamId. Validation rejects non-positive values. */
+	UPROPERTY(BlueprintReadOnly, Category="Interaction")
+	int64 Sequence{0};
+
+	/** Explicit verb supplied by the interactable; never inferred from ActionId or UI state. */
+	UPROPERTY(BlueprintReadOnly, Category="Interaction")
+	FName Verb;
+
+	/** The already validated semantic action that caused execution. */
+	UPROPERTY(BlueprintReadOnly, Category="Interaction")
+	FName ActionId;
+
+	UPROPERTY(BlueprintReadOnly, Category="Interaction")
+	FGuid SubjectStableId;
+
+	UPROPERTY(BlueprintReadOnly, Category="Interaction")
+	EAPSSubjectIdentityDomain SubjectIdentityDomain{EAPSSubjectIdentityDomain::None};
+
+	UPROPERTY(BlueprintReadOnly, Category="Interaction")
+	FGuid TargetStableId;
+
+	UPROPERTY(BlueprintReadOnly, Category="Interaction")
+	EAPSTargetIdentityDomain TargetIdentityDomain{EAPSTargetIdentityDomain::None};
+
+	UPROPERTY(BlueprintReadOnly, Category="Interaction")
+	int32 Quantity{0};
+
+	UPROPERTY(BlueprintReadOnly, Category="Interaction")
+	EAPSInteractionExecutionStatus Status{EAPSInteractionExecutionStatus::Failed};
+
+	UPROPERTY(BlueprintReadOnly, Category="Interaction")
+	FName ResultCode;
+
+	UPROPERTY(BlueprintReadOnly, Category="Interaction")
+	FName FailureCode;
+
+	/** Explicit debug classification; Quest adapters must reject these events. */
+	UPROPERTY(BlueprintReadOnly, Category="Interaction")
+	bool bDebugOnly{false};
+
+	bool IsStructurallyValid(FString* OutReason = nullptr) const;
 };
