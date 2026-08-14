@@ -459,9 +459,10 @@ bool UAPSCivilizationMaterializationSubsystem::TryMaterializeEntities(
 	}
 	else
 	{
-		MaterializedPad->SetActorTransform(Placement.PadTransform, false, nullptr,
-			ETeleportType::TeleportPhysics);
-		MaterializedPad->SetActorScale3D(FVector(PadScale, PadScale, 1.0));
+		FTransform PadSupportTransform = Placement.PadTransform;
+		PadSupportTransform.SetScale3D(FVector(PadScale, PadScale, 1.0));
+		PlaceBoundsOnSupportPlane(MaterializedPad, PadSupportTransform,
+			SupportClearanceCm);
 	}
 	BindIdentity(MaterializedPad, *PadEntity);
 
