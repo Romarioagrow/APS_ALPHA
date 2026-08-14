@@ -328,7 +328,9 @@ bool UAPSProductionSubsystem::ValidateCommand(const FAPSProductionCommand& Comma
 		return false;
 	}
 	if (Context.AccessMode == EAPSProductionAccessMode::ActorGated
-		&& (!Command.SubjectStableId.IsValid() || !IsValid(Command.InstigatorActor)))
+		&& (!Command.SubjectStableId.IsValid()
+			|| Command.SubjectIdentityDomain == EAPSSubjectIdentityDomain::None
+			|| !IsValid(Command.InstigatorActor)))
 	{
 		OutFailure = TEXT("APS.Production.MissingCanonicalSubject");
 		return false;
@@ -475,6 +477,7 @@ FAPSProductionCommandResult UAPSProductionSubsystem::ExecuteCommand(
 	Job.CorrelationId = Command.CorrelationId.IsValid()
 		? Command.CorrelationId : FGuid::NewGuid();
 	Job.SubjectStableId = Command.SubjectStableId;
+	Job.SubjectIdentityDomain = Command.SubjectIdentityDomain;
 	Job.ContextStableId = Context->ContextStableId;
 	Job.OwnerStableId = Context->OwnerStableId;
 	Job.DefinitionId = Definition->DefinitionId;
@@ -705,6 +708,7 @@ bool UAPSProductionSubsystem::PublishJobEvent(const FContextState& Context,
 	Event.CorrelationId = Job.CorrelationId;
 	Event.Verb = VerbForDomain(Job.Domain);
 	Event.SubjectStableId = Job.SubjectStableId;
+	Event.SubjectIdentityDomain = Job.SubjectIdentityDomain;
 	Event.TargetStableId = Job.JobId;
 	Event.DefinitionId = Job.DefinitionId;
 	Event.DefinitionSchemaVersion = Job.DefinitionSchemaVersion;
@@ -983,13 +987,22 @@ void UAPSProductionSubsystem::ExportPersistenceState(
 		{
 			return Left.QueueOrdinal < Right.QueueOrdinal;
 		});
+	bool bExportedRuntimeEventStream = false;
 	if (UWorld* World = GetWorld())
 	{
 		if (const UAPSProductionEventSubsystem* Events =
 			World->GetSubsystem<UAPSProductionEventSubsystem>())
 		{
 			Events->ExportStreamState(OutState.EventStream);
+			bExportedRuntimeEventStream = true;
 		}
+	}
+	if (!bExportedRuntimeEventStream)
+	{
+		// Headless NewObject contract tests have no UWorld event subsystem. Keep
+		// their projection on the explicitly supported v1 migration path; runtime
+		// saves always export the authoritative v2 StreamId.
+		OutState.EventStream.SchemaVersion = 1;
 	}
 }
 
@@ -1051,6 +1064,7 @@ bool UAPSProductionSubsystem::RestorePersistenceState(
 			Record.CorrelationId = Job.CorrelationId;
 			Record.Verb = VerbForDomain(Job.Domain);
 			Record.SubjectStableId = Job.SubjectStableId;
+			Record.SubjectIdentityDomain = Job.SubjectIdentityDomain;
 			Record.TargetStableId = Job.JobId;
 			Record.DefinitionId = Job.DefinitionId;
 			Record.DefinitionSchemaVersion = Job.DefinitionSchemaVersion;
@@ -1100,6 +1114,7 @@ bool UAPSProductionSubsystem::RestorePersistenceState(
 		const FAPSProductionEventCorrelationRecord* Record = Found ? *Found : nullptr;
 		if (!Record || Record->Verb != VerbForDomain(Job.Domain)
 			|| Record->SubjectStableId != Job.SubjectStableId
+			|| Record->SubjectIdentityDomain != Job.SubjectIdentityDomain
 			|| Record->TargetStableId != Job.JobId
 			|| Record->DefinitionId != Job.DefinitionId
 			|| Record->DefinitionSchemaVersion != Job.DefinitionSchemaVersion

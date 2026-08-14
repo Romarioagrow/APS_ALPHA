@@ -153,6 +153,9 @@ struct APS_ALPHA_API FAPSProductionCommand
 	FGuid SubjectStableId;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="APS|Production")
+	EAPSSubjectIdentityDomain SubjectIdentityDomain{EAPSSubjectIdentityDomain::None};
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="APS|Production")
 	FGuid ContextStableId;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="APS|Production")
@@ -212,6 +215,9 @@ struct APS_ALPHA_API FAPSProductionJobRecord
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="APS|Production")
 	FGuid SubjectStableId;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="APS|Production")
+	EAPSSubjectIdentityDomain SubjectIdentityDomain{EAPSSubjectIdentityDomain::GameplayEntity};
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="APS|Production")
 	FGuid ContextStableId;

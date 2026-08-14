@@ -92,7 +92,9 @@ bool UAPSInteractionSubsystem::QueryActor(
 		OutFailure = APSInteractionFailures::NotInteractable.ToString();
 		return false;
 	}
-	if (!Context.bDebugIdentityOverride && !Context.SubjectStableId.IsValid())
+	if (!Context.bDebugIdentityOverride
+		&& (!Context.SubjectStableId.IsValid()
+			|| Context.SubjectIdentityDomain == EAPSSubjectIdentityDomain::None))
 	{
 		OutFailure = APSInteractionFailures::MissingIdentity.ToString();
 		return false;
@@ -305,6 +307,7 @@ FAPSInteractionExecutionResult UAPSInteractionSubsystem::ExecuteActor(
 		return Result;
 	}
 	if (Context.SubjectStableId != Request.SubjectStableId
+		|| Context.SubjectIdentityDomain != Request.SubjectIdentityDomain
 		|| Context.InstigatorActor != Request.InstigatorActor)
 	{
 		Result.FailureCode = APSInteractionFailures::SubjectMismatch;

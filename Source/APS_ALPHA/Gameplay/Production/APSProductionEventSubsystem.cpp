@@ -2,15 +2,31 @@
 
 #include "Engine/World.h"
 
+void UAPSProductionEventSubsystem::Initialize(FSubsystemCollectionBase& Collection)
+{
+	Super::Initialize(Collection);
+	EnsureStreamId();
+}
+
 void UAPSProductionEventSubsystem::RestoreLastSequence(const int64 PersistedLastSequence)
 {
 	LastSequence = FMath::Max(LastSequence, PersistedLastSequence);
 }
 
+void UAPSProductionEventSubsystem::EnsureStreamId() const
+{
+	if (!StreamId.IsValid())
+	{
+		StreamId = FGuid::NewGuid();
+	}
+}
+
 void UAPSProductionEventSubsystem::ExportStreamState(
 	FAPSProductionEventStreamState& OutState) const
 {
+	EnsureStreamId();
 	OutState = FAPSProductionEventStreamState{};
+	OutState.StreamId = StreamId;
 	OutState.LastSequence = LastSequence;
 	for (const TPair<FGuid, FCorrelationState>& Pair : CorrelationStates)
 	{
@@ -23,6 +39,7 @@ void UAPSProductionEventSubsystem::ExportStreamState(
 		Record.CorrelationId = Pair.Key;
 		Record.Verb = Pair.Value.Verb;
 		Record.SubjectStableId = Pair.Value.SubjectStableId;
+		Record.SubjectIdentityDomain = Pair.Value.SubjectIdentityDomain;
 		Record.TargetStableId = Pair.Value.TargetStableId;
 		Record.DefinitionId = Pair.Value.DefinitionId;
 		Record.DefinitionSchemaVersion = Pair.Value.DefinitionSchemaVersion;
@@ -63,12 +80,15 @@ bool UAPSProductionEventSubsystem::RestoreStreamState(
 		OutFailure = TEXT("APS.Production.EventStreamAlreadyInitialized");
 		return false;
 	}
+	StreamId = State.SchemaVersion >= 2 && State.StreamId.IsValid()
+		? State.StreamId : FGuid::NewGuid();
 	for (const FAPSProductionEventCorrelationRecord& Record : State.Correlations)
 	{
 		FCorrelationState& Restored = CorrelationStates.Add(Record.CorrelationId);
 		Restored.Result = Record.Result;
 		Restored.Verb = Record.Verb;
 		Restored.SubjectStableId = Record.SubjectStableId;
+		Restored.SubjectIdentityDomain = Record.SubjectIdentityDomain;
 		Restored.TargetStableId = Record.TargetStableId;
 		Restored.DefinitionId = Record.DefinitionId;
 		Restored.DefinitionSchemaVersion = Record.DefinitionSchemaVersion;
@@ -105,6 +125,7 @@ bool UAPSProductionEventSubsystem::ValidateTransition(
 	}
 	if (Previous->Verb != Event.Verb
 		|| Previous->SubjectStableId != Event.SubjectStableId
+		|| Previous->SubjectIdentityDomain != Event.SubjectIdentityDomain
 		|| Previous->TargetStableId != Event.TargetStableId
 		|| Previous->DefinitionId != Event.DefinitionId
 		|| Previous->DefinitionSchemaVersion != Event.DefinitionSchemaVersion
@@ -140,6 +161,13 @@ bool UAPSProductionEventSubsystem::PublishEvent(
 		// explicitly marked and cannot silently enter the production path.
 		Event.ContextTags.AddUnique(FName(TEXT("APS.DebugOnly")));
 	}
+	EnsureStreamId();
+	if (Event.StreamId.IsValid() && Event.StreamId != StreamId)
+	{
+		OutFailure = TEXT("APS.Production.EventStreamMismatch");
+		return false;
+	}
+	Event.StreamId = StreamId;
 	if (!Event.EventId.IsValid())
 	{
 		Event.EventId = FGuid::NewGuid();
@@ -175,6 +203,7 @@ bool UAPSProductionEventSubsystem::PublishEvent(
 	State.Result = Event.Result;
 	State.Verb = Event.Verb;
 	State.SubjectStableId = Event.SubjectStableId;
+	State.SubjectIdentityDomain = Event.SubjectIdentityDomain;
 	State.TargetStableId = Event.TargetStableId;
 	State.DefinitionId = Event.DefinitionId;
 	State.DefinitionSchemaVersion = Event.DefinitionSchemaVersion;

@@ -65,6 +65,15 @@ enum class EAPSInteractionExecutionStatus : uint8
 	Deferred
 };
 
+/** Semantic domain of an authoritative actor StableId. Gameplay never infers this from class/name. */
+UENUM(BlueprintType)
+enum class EAPSSubjectIdentityDomain : uint8
+{
+	None,
+	GameplayEntity,
+	Player
+};
+
 /** Presentation-neutral localization token. UI owns FText creation and styling. */
 USTRUCT(BlueprintType)
 struct APS_ALPHA_API FAPSLocalizedTextDescriptor
@@ -194,6 +203,9 @@ struct APS_ALPHA_API FAPSInteractionContext
 	FGuid SubjectStableId;
 
 	UPROPERTY(BlueprintReadWrite, Category="Interaction")
+	EAPSSubjectIdentityDomain SubjectIdentityDomain{EAPSSubjectIdentityDomain::None};
+
+	UPROPERTY(BlueprintReadWrite, Category="Interaction")
 	FVector ViewOrigin{FVector::ZeroVector};
 
 	UPROPERTY(BlueprintReadWrite, Category="Interaction")
@@ -227,6 +239,9 @@ struct APS_ALPHA_API FAPSInteractionExecutionRequest
 
 	UPROPERTY(BlueprintReadWrite, Category="Interaction")
 	FGuid SubjectStableId;
+
+	UPROPERTY(BlueprintReadWrite, Category="Interaction")
+	EAPSSubjectIdentityDomain SubjectIdentityDomain{EAPSSubjectIdentityDomain::None};
 
 	UPROPERTY(BlueprintReadWrite, Category="Interaction")
 	FGuid TargetStableId;

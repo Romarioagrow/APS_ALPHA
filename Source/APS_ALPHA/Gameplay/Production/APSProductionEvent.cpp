@@ -34,6 +34,11 @@ bool FAPSProductionEvent::IsStructurallyValid(
 	{
 		return RejectProductionEvent(OutReason, TEXT("Production event has no Verb."));
 	}
+	if ((bRequireSubjectId || bRequireTargetId) && !StreamId.IsValid())
+	{
+		return RejectProductionEvent(OutReason,
+			TEXT("Production event has no authoritative StreamId."));
+	}
 	if (Quantity < 1)
 	{
 		return RejectProductionEvent(OutReason, TEXT("Production event quantity must be at least one."));
@@ -45,6 +50,12 @@ bool FAPSProductionEvent::IsStructurallyValid(
 	if (bRequireSubjectId && !SubjectStableId.IsValid())
 	{
 		return RejectProductionEvent(OutReason, TEXT("Production event has no canonical SubjectStableId."));
+	}
+	if (bRequireSubjectId
+		&& SubjectIdentityDomain == EAPSSubjectIdentityDomain::None)
+	{
+		return RejectProductionEvent(OutReason,
+			TEXT("Production event has no authoritative subject identity domain."));
 	}
 	if (bRequireTargetId && !TargetStableId.IsValid())
 	{
@@ -91,6 +102,11 @@ bool FAPSProductionEventCorrelationRecord::IsStructurallyValid(
 		return RejectProductionEvent(OutReason,
 			TEXT("Persisted production correlation has no canonical subject or target ID."));
 	}
+	if (SubjectIdentityDomain == EAPSSubjectIdentityDomain::None)
+	{
+		return RejectProductionEvent(OutReason,
+			TEXT("Persisted production correlation has no subject identity domain."));
+	}
 	if (DefinitionId.IsValid() && DefinitionSchemaVersion < 1)
 	{
 		return RejectProductionEvent(OutReason,
@@ -122,10 +138,15 @@ bool FAPSProductionEventCorrelationRecord::IsStructurallyValid(
 
 bool FAPSProductionEventStreamState::IsStructurallyValid(FString* OutReason) const
 {
-	if (SchemaVersion != 1)
+	if (SchemaVersion < 1 || SchemaVersion > LatestSchemaVersion)
 	{
 		return RejectProductionEvent(OutReason,
 			TEXT("Unsupported production event stream schema."));
+	}
+	if (SchemaVersion >= 2 && !StreamId.IsValid())
+	{
+		return RejectProductionEvent(OutReason,
+			TEXT("Production event stream has no StreamId."));
 	}
 	if (LastSequence < 0 || LastSequence < Correlations.Num())
 	{

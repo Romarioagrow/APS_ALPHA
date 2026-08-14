@@ -56,6 +56,9 @@ bool FAPSInteractionDescriptorContractTest::RunTest(const FString& Parameters)
 	Request.SubjectStableId = FGuid::NewGuid();
 	Request.TargetStableId = FGuid::NewGuid();
 	Request.Quantity = 1;
+	TestFalse(TEXT("Production request rejects a GUID without identity domain"),
+		Request.IsStructurallyValid(true, &Reason));
+	Request.SubjectIdentityDomain = EAPSSubjectIdentityDomain::GameplayEntity;
 	TestTrue(TEXT("Production request with canonical subject/target IDs is valid"),
 		Request.IsStructurallyValid(true, &Reason));
 	Request.Quantity = 0;
@@ -125,10 +128,15 @@ bool FAPSProductionEventLifecycleContractTest::RunTest(const FString& Parameters
 	Requested.Result = EAPSProductionEventResult::Requested;
 
 	FString Failure;
+	TestFalse(TEXT("Actor-gated publication rejects a GUID without identity domain"),
+		Events->PublishEvent(Requested, Policy, Failure));
+	Requested.SubjectIdentityDomain = EAPSSubjectIdentityDomain::GameplayEntity;
 	TestTrue(TEXT("Requested event publishes"),
 		Events->PublishEvent(Requested, Policy, Failure));
 	TestTrue(TEXT("Publisher assigns EventId"), Requested.EventId.IsValid());
 	TestTrue(TEXT("Publisher assigns CorrelationId"), Requested.CorrelationId.IsValid());
+	TestTrue(TEXT("Publisher assigns Production-owned StreamId"), Requested.StreamId.IsValid());
+	TestEqual(TEXT("Subsystem exposes the same StreamId"), Events->GetStreamId(), Requested.StreamId);
 	TestEqual(TEXT("First event sequence is one"), Requested.Sequence, int64{1});
 
 	FAPSProductionEvent Started = Requested;
@@ -183,6 +191,7 @@ bool FAPSProductionEventPersistenceContractTest::RunTest(const FString& Paramete
 	FAPSProductionEvent Requested;
 	Requested.Verb = TEXT("APS.Building.Build");
 	Requested.SubjectStableId = FGuid::NewGuid();
+	Requested.SubjectIdentityDomain = EAPSSubjectIdentityDomain::GameplayEntity;
 	Requested.TargetStableId = FGuid::NewGuid();
 	Requested.DefinitionId = FPrimaryAssetId(TEXT("Buildable"), TEXT("APS.TestHQ"));
 	Requested.DefinitionSchemaVersion = 2;
@@ -211,6 +220,8 @@ bool FAPSProductionEventPersistenceContractTest::RunTest(const FString& Paramete
 	Source->ExportStreamState(Persisted);
 	TestEqual(TEXT("Global sequence includes accepted debug events"),
 		Persisted.LastSequence, int64{3});
+	TestTrue(TEXT("Persisted stream has Production-owned identity"), Persisted.StreamId.IsValid());
+	TestEqual(TEXT("Persisted stream identity matches source"), Persisted.StreamId, Requested.StreamId);
 	TestEqual(TEXT("Debug-only correlation is excluded from persistence"),
 		Persisted.Correlations.Num(), 1);
 	TestEqual(TEXT("Persisted correlation is the production lifecycle"),
@@ -232,6 +243,8 @@ bool FAPSProductionEventPersistenceContractTest::RunTest(const FString& Paramete
 		Restored->RestoreStreamState(Persisted, Failure));
 	TestEqual(TEXT("Restore never rebroadcasts historical events"),
 		RestoreBroadcastCount, 0);
+	TestEqual(TEXT("Restore keeps the same Production stream identity"),
+		Restored->GetStreamId(), Persisted.StreamId);
 
 	FAPSProductionEvent Succeeded = Started;
 	Succeeded.EventId.Invalidate();

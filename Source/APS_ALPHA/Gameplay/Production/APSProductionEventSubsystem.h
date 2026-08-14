@@ -15,6 +15,8 @@ class APS_ALPHA_API UAPSProductionEventSubsystem : public UWorldSubsystem
 	GENERATED_BODY()
 
 public:
+	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
+
 	UFUNCTION(BlueprintCallable, Category="APS|Production Event")
 	bool PublishEvent(UPARAM(ref) FAPSProductionEvent& Event,
 		const FAPSProductionEventPublishPolicy& Policy, FString& OutFailure);
@@ -23,6 +25,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category="APS|Production Event")
 	int64 GetLastSequence() const { return LastSequence; }
+
+	UFUNCTION(BlueprintPure, Category="APS|Production Event")
+	FGuid GetStreamId() const { return StreamId; }
 
 	/** Save integration restores the greatest sequence already committed to this stream. */
 	void RestoreLastSequence(int64 PersistedLastSequence);
@@ -37,6 +42,7 @@ private:
 		EAPSProductionEventResult Result{EAPSProductionEventResult::Requested};
 		FName Verb;
 		FGuid SubjectStableId;
+		EAPSSubjectIdentityDomain SubjectIdentityDomain{EAPSSubjectIdentityDomain::GameplayEntity};
 		FGuid TargetStableId;
 		FPrimaryAssetId DefinitionId;
 		int32 DefinitionSchemaVersion{1};
@@ -47,8 +53,10 @@ private:
 	bool ValidateTransition(const FAPSProductionEvent& Event, bool bDebugOnly,
 		FString& OutFailure) const;
 
+	void EnsureStreamId() const;
 	FOnAPSProductionEventPublished EventPublished;
 	TMap<FGuid, FCorrelationState> CorrelationStates;
 	TSet<FGuid> PublishedEventIds;
+	mutable FGuid StreamId;
 	int64 LastSequence{0};
 };

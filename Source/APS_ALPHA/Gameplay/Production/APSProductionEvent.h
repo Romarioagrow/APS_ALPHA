@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "UObject/PrimaryAssetId.h"
+#include "APS_ALPHA/Gameplay/Interaction/APSInteractionTypes.h"
 #include "APSProductionEvent.generated.h"
 
 UENUM(BlueprintType)
@@ -23,6 +24,10 @@ struct APS_ALPHA_API FAPSProductionEvent
 	UPROPERTY(BlueprintReadOnly, Category="APS|Production Event")
 	FGuid EventId;
 
+	/** Production-owned event stream identity. Never aliases Civilization ManifestId. */
+	UPROPERTY(BlueprintReadOnly, Category="APS|Production Event")
+	FGuid StreamId;
+
 	UPROPERTY(BlueprintReadWrite, Category="APS|Production Event")
 	FGuid CorrelationId;
 
@@ -32,6 +37,9 @@ struct APS_ALPHA_API FAPSProductionEvent
 
 	UPROPERTY(BlueprintReadWrite, Category="APS|Production Event")
 	FGuid SubjectStableId;
+
+	UPROPERTY(BlueprintReadWrite, Category="APS|Production Event")
+	EAPSSubjectIdentityDomain SubjectIdentityDomain{EAPSSubjectIdentityDomain::None};
 
 	UPROPERTY(BlueprintReadWrite, Category="APS|Production Event")
 	FGuid TargetStableId;
@@ -105,6 +113,9 @@ struct APS_ALPHA_API FAPSProductionEventCorrelationRecord
 	FGuid SubjectStableId;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="APS|Production Event")
+	EAPSSubjectIdentityDomain SubjectIdentityDomain{EAPSSubjectIdentityDomain::GameplayEntity};
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="APS|Production Event")
 	FGuid TargetStableId;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="APS|Production Event")
@@ -128,8 +139,13 @@ struct APS_ALPHA_API FAPSProductionEventStreamState
 {
 	GENERATED_BODY()
 
+	static constexpr int32 LatestSchemaVersion = 2;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="APS|Production Event")
-	int32 SchemaVersion{1};
+	int32 SchemaVersion{LatestSchemaVersion};
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="APS|Production Event")
+	FGuid StreamId;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="APS|Production Event")
 	int64 LastSequence{0};

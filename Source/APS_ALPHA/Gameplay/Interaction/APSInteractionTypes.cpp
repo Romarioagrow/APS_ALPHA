@@ -122,6 +122,12 @@ bool FAPSInteractionExecutionRequest::IsStructurallyValid(
 	{
 		return Reject(OutReason, TEXT("Production interaction request is missing canonical subject/target IDs."));
 	}
+	if (bRequireAuthoritativeIds
+		&& SubjectIdentityDomain == EAPSSubjectIdentityDomain::None)
+	{
+		return Reject(OutReason,
+			TEXT("Production interaction request has no authoritative subject identity domain."));
+	}
 	if (OutReason)
 	{
 		OutReason->Reset();

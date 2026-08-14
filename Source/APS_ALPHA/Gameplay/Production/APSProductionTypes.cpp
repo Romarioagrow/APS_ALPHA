@@ -159,7 +159,8 @@ bool FAPSProductionJobRecord::IsTerminal() const
 bool FAPSProductionJobRecord::IsStructurallyValid(FString* OutReason) const
 {
 	if (!JobId.IsValid() || !CorrelationId.IsValid()
-		|| (!bDebugOnly && !SubjectStableId.IsValid())
+		|| (!bDebugOnly && (!SubjectStableId.IsValid()
+			|| SubjectIdentityDomain == EAPSSubjectIdentityDomain::None))
 		|| !ContextStableId.IsValid() || !OwnerStableId.IsValid())
 	{
 		return RejectAPSProductionType(OutReason,

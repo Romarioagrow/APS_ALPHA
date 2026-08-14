@@ -91,6 +91,7 @@ bool FAPSCraftingQueueContractTest::RunTest(const FString& Parameters)
 	Command.ActionId = TEXT("APS.Production.Enqueue");
 	Command.ExpectedRevision = EnqueueRevision;
 	Command.SubjectStableId = SubjectId;
+	Command.SubjectIdentityDomain = EAPSSubjectIdentityDomain::GameplayEntity;
 	Command.ContextStableId = ContextId;
 	Command.DefinitionId = Recipe.DefinitionId;
 	Command.Quantity = 2;
@@ -184,6 +185,7 @@ bool FAPSShipyardMaterializationContractTest::RunTest(const FString& Parameters)
 	Command.ActionId = TEXT("APS.Production.Enqueue");
 	Command.ExpectedRevision = Snapshot.Revision;
 	Command.SubjectStableId = FGuid::NewGuid();
+	Command.SubjectIdentityDomain = EAPSSubjectIdentityDomain::GameplayEntity;
 	Command.ContextStableId = Context.ContextStableId;
 	Command.DefinitionId = Ship.DefinitionId;
 	Command.InstigatorActor = Instigator;
