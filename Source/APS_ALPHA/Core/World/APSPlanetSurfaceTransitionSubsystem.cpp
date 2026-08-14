@@ -1,7 +1,5 @@
 #include "APS_ALPHA/Core/World/APSPlanetSurfaceTransitionSubsystem.h"
 
-#include "Misc/LexFromString.h"
-
 namespace APSPlanetSurfaceTransition
 {
 	constexpr int32 KnownReadinessMask =
