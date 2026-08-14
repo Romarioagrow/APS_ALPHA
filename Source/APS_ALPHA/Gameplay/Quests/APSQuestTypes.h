@@ -72,6 +72,13 @@ enum class EAPSQuestRecoveryPolicy : uint8
 	DebugSkip
 };
 
+UENUM(BlueprintType)
+enum class EAPSQuestPromptState : uint8
+{
+	Active,
+	Cleared
+};
+
 /**
  * A typed canonical identity. Quest never converts actor names or transforms into
  * authoritative identity and never forces unlike identity domains into one fake GUID.
@@ -236,6 +243,25 @@ USTRUCT(BlueprintType)
 struct APS_ALPHA_API FAPSQuestPromptSnapshot
 {
 	GENERATED_BODY()
+
+	/** Changes on world travel so a late HUD cannot resurrect a previous-world prompt. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Quest")
+	FGuid SessionEpoch;
+
+	/** Stable for one quest-instance/node prompt across retries and presentation sessions. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Quest")
+	FGuid PromptStableId;
+
+	/** Quest InstanceId; no actor or widget identity participates. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Quest")
+	FGuid ContextStableId;
+
+	/** Monotonic within SessionEpoch, including clear tombstones. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Quest")
+	int64 Revision{0};
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Quest")
+	EAPSQuestPromptState State{EAPSQuestPromptState::Cleared};
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Quest")
 	FName PromptId;

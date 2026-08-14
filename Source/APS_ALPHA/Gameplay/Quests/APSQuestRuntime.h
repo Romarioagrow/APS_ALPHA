@@ -143,6 +143,8 @@ class APS_ALPHA_API FAPSQuestRuntime
 public:
 	static constexpr int32 MaximumDedupeEntries = 256;
 
+	FAPSQuestRuntime();
+
 	bool RegisterDefinition(const UAPSQuestDefinition* Definition, FString& OutReason);
 	bool StartQuest(FName QuestId, const FGuid& InstanceId, FString& OutReason);
 	bool BindEntity(FName QuestId, FName BindingName, const FAPSQuestEntityRef& Entity,
@@ -159,6 +161,10 @@ public:
 	bool RestoreSaveData(const FAPSQuestSaveData& SaveData, FString& OutReason);
 
 	const FAPSQuestInstanceSaveData* FindInstance(FName QuestId) const;
+	void BeginPromptSession(const FGuid& SessionEpoch);
+	void EndPromptSession(const FGuid& SessionEpoch);
+	bool TryGetCurrentPromptSnapshot(FAPSQuestPromptSnapshot& OutSnapshot) const;
+
 	FString DumpQuest(FName QuestId) const;
 
 	FAPSQuestInstanceChangedNative& OnInstanceChanged() { return InstanceChanged; }
@@ -182,6 +188,12 @@ private:
 		bool bRequireResult, FString& OutReason) const;
 	void PublishPrompt(const FAPSQuestInstanceSaveData& Instance,
 		const FAPSQuestObjectiveNodeDefinition& Node);
+	FAPSQuestPromptSnapshot BuildPromptSnapshot(
+		const FAPSQuestInstanceSaveData& Instance,
+		const FAPSQuestObjectiveNodeDefinition& Node) const;
+	void SetCurrentPrompt(FAPSQuestPromptSnapshot Snapshot, bool bBroadcast);
+	void RefreshCurrentPromptFromState(bool bBroadcast);
+	void SetPromptCleared(bool bBroadcast);
 	void RequestRewards(FAPSQuestInstanceSaveData& Instance,
 		const FAPSQuestObjectiveNodeDefinition& Node);
 	void CompleteNode(FAPSQuestInstanceSaveData& Instance,
@@ -190,6 +202,8 @@ private:
 		const UAPSQuestDefinition& Definition);
 	static FGuid MakeRewardTransactionId(const FAPSQuestInstanceSaveData& Instance,
 		FName NodeId, FName RewardId);
+	static FGuid MakePromptStableId(const FAPSQuestInstanceSaveData& Instance,
+		FName NodeId, FName PromptId);
 	static void AppendBoundedGuid(TArray<FGuid>& Values, const FGuid& Value);
 
 	TMap<FName, const UAPSQuestDefinition*> Definitions;
@@ -197,4 +211,7 @@ private:
 	FAPSQuestInstanceChangedNative InstanceChanged;
 	FAPSQuestPromptPublishedNative PromptPublished;
 	FAPSQuestRewardRequestedNative RewardRequested;
+	FGuid PromptSessionEpoch;
+	int64 PromptRevision{0};
+	TOptional<FAPSQuestPromptSnapshot> CurrentPrompt;
 };

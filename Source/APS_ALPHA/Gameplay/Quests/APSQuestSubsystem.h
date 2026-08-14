@@ -51,6 +51,13 @@ public:
 	UFUNCTION(BlueprintPure, Category="Quest|Debug")
 	FString DumpQuest(FName QuestId) const;
 
+	/** UI subscribes first, then copies this value to close the bootstrap race. */
+	UFUNCTION(BlueprintPure, Category="Quest|Prompt")
+	bool TryGetCurrentPromptSnapshot(FAPSQuestPromptSnapshot& OutSnapshot) const;
+
+	void BeginPromptPresentationSession(const FGuid& SessionEpoch);
+	void EndPromptPresentationSession(const FGuid& SessionEpoch);
+
 	FAPSQuestInstanceChangedNative& OnQuestInstanceChanged();
 	FAPSQuestPromptPublishedNative& OnQuestPromptPublished();
 	FAPSQuestRewardRequestedNative& OnQuestRewardRequested();

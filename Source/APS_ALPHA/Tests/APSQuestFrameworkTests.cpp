@@ -127,10 +127,32 @@ bool FAPSQuestDeterministicFlowTest::RunTest(const FString& Parameters)
 	FAPSQuestRuntime Runtime;
 	UAPSQuestDefinition* Definition = MakeTwoStepDefinition();
 	FString Reason;
+	const FGuid PromptEpoch = Guid(900);
+	Runtime.BeginPromptSession(PromptEpoch);
+	FAPSQuestPromptSnapshot CurrentPrompt;
+	TestTrue(TEXT("Presentation session exposes an initial clear tombstone"),
+		Runtime.TryGetCurrentPromptSnapshot(CurrentPrompt));
+	TestEqual(TEXT("Initial prompt state is cleared"), CurrentPrompt.State,
+		EAPSQuestPromptState::Cleared);
+	TestEqual(TEXT("Prompt epoch is explicit"), CurrentPrompt.SessionEpoch, PromptEpoch);
 	TestTrue(TEXT("Definition registers"), Runtime.RegisterDefinition(Definition, Reason));
 	TestTrue(TEXT("Quest starts"), Runtime.StartQuest(QuestId, Guid(1000), Reason));
+	TestTrue(TEXT("Current prompt is queryable after bootstrap"),
+		Runtime.TryGetCurrentPromptSnapshot(CurrentPrompt));
+	TestEqual(TEXT("Bootstrap prompt is active"), CurrentPrompt.State,
+		EAPSQuestPromptState::Active);
+	TestEqual(TEXT("Bootstrap prompt has semantic id"), CurrentPrompt.PromptId,
+		FName(TEXT("APS.Prompt.InspectBase")));
+	TestEqual(TEXT("Prompt context is the quest instance"), CurrentPrompt.ContextStableId,
+		Guid(1000));
+	TestTrue(TEXT("Prompt stable id is deterministic and valid"),
+		CurrentPrompt.PromptStableId.IsValid());
+	const int64 BootstrapRevision = CurrentPrompt.Revision;
 	TestTrue(TEXT("Matching quest bootstrap is idempotent"),
 		Runtime.StartQuest(QuestId, Guid(1000), Reason));
+	Runtime.TryGetCurrentPromptSnapshot(CurrentPrompt);
+	TestEqual(TEXT("Idempotent bootstrap does not republish prompt"),
+		CurrentPrompt.Revision, BootstrapRevision);
 	TestFalse(TEXT("Quest identity cannot silently retarget"),
 		Runtime.StartQuest(QuestId, Guid(1001), Reason));
 	TestTrue(TEXT("Identity conflict diagnostic is explicit"),
@@ -158,6 +180,12 @@ bool FAPSQuestDeterministicFlowTest::RunTest(const FString& Parameters)
 		EAPSQuestNodeState::Completed);
 	TestEqual(TEXT("Ship becomes active"), FindNode(Instance, ShipNodeId)->State,
 		EAPSQuestNodeState::Active);
+	Runtime.TryGetCurrentPromptSnapshot(CurrentPrompt);
+	TestEqual(TEXT("Successor prompt is current"), CurrentPrompt.PromptId,
+		FName(TEXT("APS.Prompt.TakeShip")));
+	TestTrue(TEXT("Prompt revision advances monotonically"),
+		CurrentPrompt.Revision > BootstrapRevision);
+	const int64 SuccessorRevision = CurrentPrompt.Revision;
 
 	TestTrue(TEXT("Exact duplicate is idempotently accepted"), Runtime.SubmitEvent(Inspect, Reason));
 	TestEqual(TEXT("Duplicate did not request reward"), RewardRequestCount, 0);
@@ -170,6 +198,11 @@ bool FAPSQuestDeterministicFlowTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Reward requested exactly once"), RewardRequestCount, 1);
 	TestTrue(TEXT("Reward transaction is stable"), LastReward.TransactionId.IsValid());
 	TestTrue(TEXT("Reward target resolves selected ship"), LastReward.Target.Matches(Ship));
+	Runtime.TryGetCurrentPromptSnapshot(CurrentPrompt);
+	TestEqual(TEXT("Completion publishes a clear tombstone"), CurrentPrompt.State,
+		EAPSQuestPromptState::Cleared);
+	TestTrue(TEXT("Clear tombstone has a newer revision"),
+		CurrentPrompt.Revision > SuccessorRevision);
 
 	TestTrue(TEXT("Terminal duplicate stays idempotent"), Runtime.SubmitEvent(TakeShip, Reason));
 	TestEqual(TEXT("Reward remains exactly once"), RewardRequestCount, 1);

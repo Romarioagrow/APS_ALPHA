@@ -98,6 +98,28 @@ FString UAPSQuestSubsystem::DumpQuest(FName QuestId) const
 	return GetRuntime() ? Runtime->DumpQuest(QuestId) : TEXT("Quest runtime is not initialized");
 }
 
+bool UAPSQuestSubsystem::TryGetCurrentPromptSnapshot(
+	FAPSQuestPromptSnapshot& OutSnapshot) const
+{
+	return GetRuntime() && Runtime->TryGetCurrentPromptSnapshot(OutSnapshot);
+}
+
+void UAPSQuestSubsystem::BeginPromptPresentationSession(const FGuid& SessionEpoch)
+{
+	if (GetRuntime())
+	{
+		Runtime->BeginPromptSession(SessionEpoch);
+	}
+}
+
+void UAPSQuestSubsystem::EndPromptPresentationSession(const FGuid& SessionEpoch)
+{
+	if (GetRuntime())
+	{
+		Runtime->EndPromptSession(SessionEpoch);
+	}
+}
+
 FAPSQuestInstanceChangedNative& UAPSQuestSubsystem::OnQuestInstanceChanged()
 {
 	check(GetRuntime());

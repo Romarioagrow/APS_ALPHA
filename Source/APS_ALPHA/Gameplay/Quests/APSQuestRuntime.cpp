@@ -18,6 +18,11 @@ namespace
 	}
 }
 
+FAPSQuestRuntime::FAPSQuestRuntime()
+{
+	BeginPromptSession(FGuid::NewGuid());
+}
+
 bool FAPSQuestRuntime::RegisterDefinition(const UAPSQuestDefinition* Definition,
 	FString& OutReason)
 {
@@ -350,6 +355,7 @@ bool FAPSQuestRuntime::SuspendQuest(FName QuestId, FName FailureCode,
 			Node.LastFailureCode = FailureCode;
 		}
 	}
+	RefreshCurrentPromptFromState(true);
 	InstanceChanged.Broadcast(QuestId, *Instance);
 	return true;
 }
@@ -514,12 +520,40 @@ bool FAPSQuestRuntime::RestoreSaveData(const FAPSQuestSaveData& SaveData,
 	{
 		InstanceChanged.Broadcast(Pair.Key, Pair.Value);
 	}
+	RefreshCurrentPromptFromState(true);
 	return true;
 }
 
 const FAPSQuestInstanceSaveData* FAPSQuestRuntime::FindInstance(FName QuestId) const
 {
 	return Instances.Find(QuestId);
+}
+
+void FAPSQuestRuntime::BeginPromptSession(const FGuid& SessionEpoch)
+{
+	PromptSessionEpoch = SessionEpoch.IsValid() ? SessionEpoch : FGuid::NewGuid();
+	PromptRevision = 0;
+	CurrentPrompt.Reset();
+	RefreshCurrentPromptFromState(false);
+}
+
+void FAPSQuestRuntime::EndPromptSession(const FGuid& SessionEpoch)
+{
+	if (SessionEpoch == PromptSessionEpoch)
+	{
+		SetPromptCleared(true);
+	}
+}
+
+bool FAPSQuestRuntime::TryGetCurrentPromptSnapshot(
+	FAPSQuestPromptSnapshot& OutSnapshot) const
+{
+	if (!CurrentPrompt.IsSet())
+	{
+		return false;
+	}
+	OutSnapshot = CurrentPrompt.GetValue();
+	return true;
 }
 
 FString FAPSQuestRuntime::DumpQuest(FName QuestId) const
@@ -640,7 +674,18 @@ void FAPSQuestRuntime::PublishPrompt(const FAPSQuestInstanceSaveData& Instance,
 	{
 		return;
 	}
+	SetCurrentPrompt(BuildPromptSnapshot(Instance, Node), true);
+}
+
+FAPSQuestPromptSnapshot FAPSQuestRuntime::BuildPromptSnapshot(
+	const FAPSQuestInstanceSaveData& Instance,
+	const FAPSQuestObjectiveNodeDefinition& Node) const
+{
 	FAPSQuestPromptSnapshot Snapshot;
+	Snapshot.PromptStableId = MakePromptStableId(
+		Instance, Node.NodeId, Node.Prompt.PromptId);
+	Snapshot.ContextStableId = Instance.InstanceId;
+	Snapshot.State = EAPSQuestPromptState::Active;
 	Snapshot.PromptId = Node.Prompt.PromptId;
 	Snapshot.QuestId = Instance.QuestId;
 	Snapshot.NodeId = Node.NodeId;
@@ -650,7 +695,91 @@ void FAPSQuestRuntime::PublishPrompt(const FAPSQuestInstanceSaveData& Instance,
 	Snapshot.Priority = Node.Prompt.Priority;
 	Snapshot.bModal = Node.Prompt.bModal;
 	Snapshot.bDismissible = Node.Prompt.bDismissible;
-	PromptPublished.Broadcast(Snapshot);
+	return Snapshot;
+}
+
+void FAPSQuestRuntime::SetCurrentPrompt(FAPSQuestPromptSnapshot Snapshot,
+	const bool bBroadcast)
+{
+	if (!PromptSessionEpoch.IsValid())
+	{
+		PromptSessionEpoch = FGuid::NewGuid();
+		PromptRevision = 0;
+	}
+	Snapshot.SessionEpoch = PromptSessionEpoch;
+	Snapshot.Revision = ++PromptRevision;
+	CurrentPrompt = MoveTemp(Snapshot);
+	if (bBroadcast)
+	{
+		PromptPublished.Broadcast(CurrentPrompt.GetValue());
+	}
+}
+
+void FAPSQuestRuntime::SetPromptCleared(const bool bBroadcast)
+{
+	FAPSQuestPromptSnapshot Tombstone;
+	Tombstone.State = EAPSQuestPromptState::Cleared;
+	if (CurrentPrompt.IsSet())
+	{
+		const FAPSQuestPromptSnapshot& Existing = CurrentPrompt.GetValue();
+		Tombstone.PromptStableId = Existing.PromptStableId;
+		Tombstone.ContextStableId = Existing.ContextStableId;
+		Tombstone.PromptId = Existing.PromptId;
+		Tombstone.QuestId = Existing.QuestId;
+		Tombstone.NodeId = Existing.NodeId;
+	}
+	SetCurrentPrompt(MoveTemp(Tombstone), bBroadcast);
+}
+
+void FAPSQuestRuntime::RefreshCurrentPromptFromState(const bool bBroadcast)
+{
+	const FAPSQuestInstanceSaveData* BestInstance = nullptr;
+	const FAPSQuestObjectiveNodeDefinition* BestNode = nullptr;
+	for (const TPair<FName, FAPSQuestInstanceSaveData>& Pair : Instances)
+	{
+		const FAPSQuestInstanceSaveData& Instance = Pair.Value;
+		if (Instance.State != EAPSQuestInstanceState::Running)
+		{
+			continue;
+		}
+		const UAPSQuestDefinition* Definition = FindDefinition(Instance.QuestId);
+		if (!Definition || Definition->DefinitionVersion != Instance.DefinitionVersion)
+		{
+			continue;
+		}
+		for (const FAPSQuestNodeRuntimeState& RuntimeNode : Instance.Nodes)
+		{
+			if (RuntimeNode.State != EAPSQuestNodeState::Active)
+			{
+				continue;
+			}
+			const FAPSQuestObjectiveNodeDefinition* Candidate =
+				Definition->FindNode(RuntimeNode.NodeId);
+			if (!Candidate || Candidate->Prompt.PromptId.IsNone())
+			{
+				continue;
+			}
+			const bool bPreferred = !BestNode
+				|| Candidate->Prompt.Priority > BestNode->Prompt.Priority
+				|| (Candidate->Prompt.Priority == BestNode->Prompt.Priority
+					&& (Instance.QuestId.LexicalLess(BestInstance->QuestId)
+						|| (Instance.QuestId == BestInstance->QuestId
+							&& Candidate->NodeId.LexicalLess(BestNode->NodeId))));
+			if (bPreferred)
+			{
+				BestInstance = &Instance;
+				BestNode = Candidate;
+			}
+		}
+	}
+	if (BestInstance && BestNode)
+	{
+		SetCurrentPrompt(BuildPromptSnapshot(*BestInstance, *BestNode), bBroadcast);
+	}
+	else
+	{
+		SetPromptCleared(bBroadcast);
+	}
 }
 
 void FAPSQuestRuntime::RequestRewards(FAPSQuestInstanceSaveData& Instance,
@@ -761,6 +890,7 @@ void FAPSQuestRuntime::RefreshInstanceCompletion(FAPSQuestInstanceSaveData& Inst
 	{
 		Instance.State = EAPSQuestInstanceState::Completed;
 		Instance.LastFailureCode = NAME_None;
+		RefreshCurrentPromptFromState(true);
 	}
 }
 
@@ -777,6 +907,28 @@ FGuid FAPSQuestRuntime::MakeRewardTransactionId(const FAPSQuestInstanceSaveData&
 	uint8 Digest[16];
 	Md5.Final(Digest);
 	auto ReadWord = [&Digest](int32 Offset)
+	{
+		return static_cast<uint32>(Digest[Offset]) << 24
+			| static_cast<uint32>(Digest[Offset + 1]) << 16
+			| static_cast<uint32>(Digest[Offset + 2]) << 8
+			| static_cast<uint32>(Digest[Offset + 3]);
+	};
+	return FGuid(ReadWord(0), ReadWord(4), ReadWord(8), ReadWord(12));
+}
+
+FGuid FAPSQuestRuntime::MakePromptStableId(const FAPSQuestInstanceSaveData& Instance,
+	FName NodeId, FName PromptId)
+{
+	const FString Canonical = FString::Printf(TEXT("APS.Quest.Prompt|%s|%s|%s|%s"),
+		*Instance.QuestId.ToString(),
+		*Instance.InstanceId.ToString(EGuidFormats::DigitsWithHyphensLower),
+		*NodeId.ToString(), *PromptId.ToString());
+	FTCHARToUTF8 Utf8(*Canonical);
+	FMD5 Md5;
+	Md5.Update(reinterpret_cast<const uint8*>(Utf8.Get()), Utf8.Length());
+	uint8 Digest[16];
+	Md5.Final(Digest);
+	auto ReadWord = [&Digest](const int32 Offset)
 	{
 		return static_cast<uint32>(Digest[Offset]) << 24
 			| static_cast<uint32>(Digest[Offset + 1]) << 16
