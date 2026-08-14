@@ -135,7 +135,8 @@ bool FAPSCivilizationMaterializationAcceptanceTest::RunTest(const FString& Param
 	Ship->bProvidesArtificialGravity = false;
 
 	AAPSCivilizationLandingPad* BlockingActor =
-		World->SpawnActor<AAPSCivilizationLandingPad>(Base->GetActorTransform());
+		World->SpawnActor<AAPSCivilizationLandingPad>(
+			AAPSCivilizationLandingPad::StaticClass(), Base->GetActorTransform());
 	TestNotNull(TEXT("blocking actor"), BlockingActor);
 	if (BlockingActor)
 	{
