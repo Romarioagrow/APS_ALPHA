@@ -160,11 +160,6 @@ bool UAPSCivilizationMaterializationSubsystem::ValidateMaterializedStarterSet(
 		}
 	}
 
-	FCollisionObjectQueryParams ObjectTypes;
-	ObjectTypes.AddObjectTypesToQuery(ECC_WorldStatic);
-	ObjectTypes.AddObjectTypesToQuery(ECC_WorldDynamic);
-	ObjectTypes.AddObjectTypesToQuery(ECC_Pawn);
-	ObjectTypes.AddObjectTypesToQuery(ECC_PhysicsBody);
 	FCollisionQueryParams QueryParams(
 		SCENE_QUERY_STAT(APSCivilizationActorClearance), false);
 	QueryParams.AddIgnoredActor(HomeBody);
@@ -182,11 +177,12 @@ bool UAPSCivilizationMaterializationSubsystem::ValidateMaterializedStarterSet(
 			FMath::Max(1.0, Extent.Y - 2.0),
 			FMath::Max(1.0, Extent.Z - 2.0));
 		TArray<FOverlapResult> Overlaps;
-		GetWorld()->OverlapMultiByObjectType(Overlaps, Origin, FQuat::Identity,
-			ObjectTypes, FCollisionShape::MakeBox(QueryExtent), QueryParams);
+		GetWorld()->OverlapMultiByChannel(Overlaps, Origin, FQuat::Identity,
+			ECC_Visibility, FCollisionShape::MakeBox(QueryExtent), QueryParams);
 		for (const FOverlapResult& Overlap : Overlaps)
 		{
-			if (const AActor* Blocker = Overlap.GetActor(); IsValid(Blocker))
+			if (const AActor* Blocker = Overlap.GetActor();
+				Overlap.bBlockingHit && IsValid(Blocker))
 			{
 				return Fail(FString::Printf(TEXT("role %d overlaps blocking actor %s"),
 					static_cast<int32>(Binding.Entity->Role), *GetNameSafe(Blocker)));
