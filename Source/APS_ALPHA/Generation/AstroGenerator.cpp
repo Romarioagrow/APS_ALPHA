@@ -1832,6 +1832,18 @@ void AAstroGenerator::ResetPreviewBackgroundContextCache()
 
 void AAstroGenerator::ApplyPreviewBackgroundContext(EAstroPreviewFocus NewFocus)
 {
+	// This routine rewrites HISM instance locations, scales and emissive custom data.
+	// It is therefore a menu presentation adapter, never a gameplay materializer.
+	// Applying it after GenerateWorldByModel compressed the authoritative runtime
+	// catalogue around the home system and made neighbouring systems disagree with
+	// both their canonical records and the accepted full-scale gameplay world.
+	if (!bIsPreviewGeneration)
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[APS.CanonicalProjection] Rejected preview background mutation in gameplay"));
+		return;
+	}
+
 	UHierarchicalInstancedStaticMeshComponent* GalaxyHism =
 		IsValid(GeneratedGalaxy) ? GeneratedGalaxy->StarMeshInstances : nullptr;
 	UHierarchicalInstancedStaticMeshComponent* ClusterHism =
@@ -7159,6 +7171,15 @@ void AAstroGenerator::GenerateStarSystemByModel()
 		FTransform HomeSystemTransform;
 		FVector HomeSystemSpawnLocation;
 		ComputeHomeSystemPosition(HomeSystemTransform, HomeSystemSpawnLocation);
+		// The cluster record retains the canonical full-scale address. Gameplay actors
+		// live in a detached local-system bubble so character/ship/camera transforms
+		// never inherit the 1e9 catalogue presentation scale. Preview still materializes
+		// at the catalogue address because its entire hierarchy receives one bounded
+		// view transform before the camera is exposed.
+		const bool bUseGameplayLocalFrame = !bIsPreviewGeneration && !bIntegrateStartPlanet;
+		const FVector MaterializedHomeSystemLocation = bUseGameplayLocalFrame
+			? FVector::ZeroVector : HomeSystemSpawnLocation;
+		HomeSystemTransform.SetLocation(MaterializedHomeSystemLocation);
 
 		/*RandomPosition:
 		get random index from hism array indexes
@@ -7200,13 +7221,16 @@ void AAstroGenerator::GenerateStarSystemByModel()
 		// Preserve the generated data hierarchy in the actor tree as well. KeepWorld
 		// retains the absolute centimetre scale of the materialized star system while
 		// its parent cluster can remain under the full-scale galaxy transform.
-		AActor* SystemParent = PendingHomeCluster.IsValid()
-			? static_cast<AActor*>(PendingHomeCluster.Get()) : static_cast<AActor*>(this);
-		NewStarSystem->AttachToActor(SystemParent, FAttachmentTransformRules::KeepWorldTransform);
-		NewStarSystem->SetActorLocation(HomeSystemSpawnLocation);
+		if (!bUseGameplayLocalFrame)
+		{
+			AActor* SystemParent = PendingHomeCluster.IsValid()
+				? static_cast<AActor*>(PendingHomeCluster.Get()) : static_cast<AActor*>(this);
+			NewStarSystem->AttachToActor(SystemParent, FAttachmentTransformRules::KeepWorldTransform);
+		}
+		NewStarSystem->SetActorLocation(MaterializedHomeSystemLocation);
 		StarSystemGenerator->ApplyModel(NewStarSystem, StarSystemModel);
 
-		FVector LastStarLocation = HomeSystemSpawnLocation;
+		FVector LastStarLocation = MaterializedHomeSystemLocation;
 		// The authored SinglePlay world intentionally keeps its legacy placement.
 		// Preview and newly committed procedural worlds must be able to inspect binary
 		// and multiple systems without stacking every stellar/planetary hierarchy at
@@ -7806,6 +7830,20 @@ void AAstroGenerator::GenerateStarSystemByModel()
 						{
 							MaterializedHomeProxyWorldRadius = 0.0;
 						}
+					}
+				}
+				// The gameplay local bubble is the materialized representation of this exact
+				// canonical record. Hide only its far proxy; all other catalogue instances
+				// retain their generated positions, physical class ratios and emission.
+				if (bUseGameplayLocalFrame)
+				{
+					FTransform LocalProxyTransform;
+					if (Hism->GetInstanceTransform(
+						PendingHomeClusterInstanceIndex, LocalProxyTransform, false))
+					{
+						LocalProxyTransform.SetScale3D(FVector::ZeroVector);
+						Hism->UpdateInstanceTransform(PendingHomeClusterInstanceIndex,
+							LocalProxyTransform, false, true, true);
 					}
 				}
 			}
@@ -9463,11 +9501,28 @@ bool AAstroGenerator::SpawnStartInteractiveActors(TSharedPtr<FPlanetModel> Start
 	}
 	if (IsValid(PlayerCharacter))
 	{
-		// Relocate spawned world to 000
+		// Relocate only the detached physical home-system bubble. Moving the scaled
+		// AAstroGenerator root used to drag the galaxy/cluster presentation hierarchy
+		// after physics actors and cameras had already spawned, leaving gameplay actors
+		// under 1e9 parents with ~1e-9 compensated relative transforms.
 		FVector PlayerLocation = HomeSpaceHeadquarters->GetActorLocation();
-		FVector GeneratorLocation = this->GetActorLocation();
-		FVector NewGeneratorLocation = GeneratorLocation - PlayerLocation;
-		this->SetActorLocation(NewGeneratorLocation, false);
+		const bool bUseGameplayLocalFrame = !bIsPreviewGeneration && !bIntegrateStartPlanet;
+		if (bUseGameplayLocalFrame && IsValid(GeneratedHomeStarSystem))
+		{
+			GeneratedHomeStarSystem->AddActorWorldOffset(-PlayerLocation, false, nullptr,
+				ETeleportType::TeleportPhysics);
+			UE_LOG(LogTemp, Log,
+				TEXT("[APS.FullScale.LocalFrame] Home system detached=%d anchorResidual=%.3fcm generatorScale=%.3e"),
+				GeneratedHomeStarSystem->GetAttachParentActor() == nullptr ? 1 : 0,
+				HomeSpaceHeadquarters->GetActorLocation().Size(),
+				GetActorTransform().GetScale3D().GetAbsMax());
+		}
+		else
+		{
+			const FVector GeneratorLocation = GetActorLocation();
+			SetActorLocation(GeneratorLocation - PlayerLocation, false, nullptr,
+				ETeleportType::TeleportPhysics);
+		}
 
 		// Resolve after relocating the generated hierarchy. Resolving before the
 		// move produced a stale position and the old code then overwrote every
