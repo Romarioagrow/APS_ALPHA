@@ -403,4 +403,3 @@ struct APS_ALPHA_API FAPSProductionPersistenceState
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="APS|Production")
 	TArray<FAPSProductionJobRecord> Jobs;
 };
-
