@@ -194,7 +194,9 @@ namespace APSStellarMaterial
 		UMaterialExpressionScalarParameter* SpotStrength = AddScalarParameter(
 			Material, TEXT("SpotStrength"), 0.68f, 0.0f, 1.0f, -1250, -120, 5);
 		UMaterialExpressionScalarParameter* CoronaStrength = AddScalarParameter(
-			Material, TEXT("CoronaStrength"), 0.20f, 0.0f, 0.45f, -1250, -20, 6);
+			Material, TEXT("CoronaStrength"), 0.16f, 0.10f, 0.24f, -1250, -20, 6);
+		UMaterialExpressionScalarParameter* StellarArchetype = AddScalarParameter(
+			Material, TEXT("StellarArchetype"), 0.0f, 0.0f, 6.0f, -1250, 80, 7);
 
 		// UE 5.4 declares these expression classes without ENGINE_API. Referencing
 		// their StaticClass symbols from a game module links on some source builds but
@@ -224,7 +226,8 @@ namespace APSStellarMaterial
 			AddExpression<UMaterialExpressionCustom>(Material, -450, -320);
 
 		if (!Color || !Multiplier || !SurfaceSeed || !SurfaceVariation || !GranulationStrength
-			|| !SpotStrength || !CoronaStrength || !InstanceColor || !InstanceEmission
+			|| !SpotStrength || !CoronaStrength || !StellarArchetype
+			|| !InstanceColor || !InstanceEmission
 			|| !InstanceSeed || !SystemHighlight || !Normal || !WorldPosition
 			|| !ObjectPosition || !InterpolatedObjectPosition || !GameTime || !Camera
 			|| !StellarSurface)
@@ -267,6 +270,17 @@ float useInstance = step(0.0001, instanceSignal);
 float3 spectralColor = max(lerp(ParamColor.rgb, InstanceColor.rgb, useInstance), 0.001);
 float rawEmission = max(lerp(ParamEmission, InstanceEmission, useInstance), 0.0);
 float seed = frac(lerp(ParamSeed, InstanceSeed, useInstance));
+// Actor-only archetypes keep every distant HISM on one cheap, stable point-star
+// presentation while allowing a selected star to communicate its actual stellar
+// type. Values: 0 photosphere, 1 giant, 2 protostar, 3 compact remnant,
+// 4 pulsar, 5 cool/sub dwarf, 6 black hole.
+float actorOnly = 1.0 - useInstance;
+float giantType = actorOnly * (1.0 - step(0.5, abs(StellarType - 1.0)));
+float protostarType = actorOnly * (1.0 - step(0.5, abs(StellarType - 2.0)));
+float compactType = actorOnly * (1.0 - step(0.5, abs(StellarType - 3.0)));
+float pulsarType = actorOnly * (1.0 - step(0.5, abs(StellarType - 4.0)));
+float coolDwarfType = actorOnly * (1.0 - step(0.5, abs(StellarType - 5.0)));
+float blackHoleType = actorOnly * step(5.5, StellarType);
 // The old shader used the authored PixelNormalWS as its pattern coordinate. The
 // legacy star sphere has faceted/mirrored normal islands, so a close STAR view
 // exposed a square checker even though the procedural waves themselves never
@@ -305,7 +319,10 @@ float phase = seed * 37.6991118;
 // produce a few readable photospheric structures instead of dozens of identical
 // stretched grains. The same seamless direction-domain field remains stable on
 // HISM proxies and on the actor sphere.
-float3 lowDomain = n * 3.4;
+float photosphereFrequency = clamp(1.0 - giantType * 0.40
+    - protostarType * 0.50 + compactType * 0.38
+    + pulsarType * 0.58 - coolDwarfType * 0.12, 0.45, 1.65);
+float3 lowDomain = n * (3.4 * photosphereFrequency);
 float3 domainWarp = sin(
     lowDomain
     + lowDomain.yzx * float3(1.31, -1.43, 1.27)
@@ -346,6 +363,13 @@ float spotCore = saturate((magneticField - 0.67) * 7.692308)
 // The two former smoothsteps described the same 0.54..0.82 facular band. A
 // triangular response preserves its centre and zero crossings with half the ALU.
 float spotHalo = saturate(1.0 - abs(magneticField - 0.68) * 7.142857);
+// A stable object-space axis supplies large-scale structures only to the one
+// materialized actor. It adds no temporal noise to galaxy/cluster points.
+float3 stellarAxis = normalize(float3(
+    seed * 2.0 - 0.83,
+    frac(seed * 7.13 + 0.31) * 2.0 - 1.0,
+    frac(seed * 13.71 + 0.73) * 2.0 - 1.0));
+float axisAlignment = abs(dot(n, stellarAxis));
 )APSSTELLAR");
 		const FString StellarLightingCode = TEXT(R"APSSTELLAR(
 
@@ -403,8 +427,12 @@ float temporalFlicker = 1.0 + flickerSignal * flickerAmplitude;
 // Tone-safe compression is intentionally bounded. Actor stars retain enough
 // headroom for readable granulation; HISM energy starts close to black and rises
 // logarithmically so proxy enlargement and the 6/12/24 caps have visible effect.
+// Keep the broad actor photosphere below the filmic shoulder so its procedural
+// contrast survives. Sparse core/limb emitters below provide the HDR bloom seed.
+// The raised HISM floor remains independent: it fixes energy-prefiltered galaxy
+// stars that were numerically present but visually black.
 float actorTone = lerp(0.78, 1.42, actorActivity);
-float proxyTone = lerp(0.08, 1.42, proxyActivity) * 1.03;
+float proxyTone = lerp(1.35, 3.80, proxyActivity);
 float toneSafeEmission = lerp(actorTone, proxyTone, useInstance);
 float maxSpectral = max(max(spectralColor.r, spectralColor.g), spectralColor.b);
 float3 normalizedSpectralTint = spectralColor / max(maxSpectral, 0.001);
@@ -431,6 +459,18 @@ surfaceTint = lerp(surfaceTint, quietTint * 0.18, saturate(spots * 1.18));
 surfaceTint = lerp(surfaceTint,
                    spectralHighlightTint * 1.16,
                    faculae * 1.85 + granuleSpark * 0.10);
+// Spectral temperature remains authoritative. Archetypes only bias it toward the
+// physically expected warm protostellar envelope or blue-white compact remnant.
+float3 protostarTint = float3(1.00, 0.56, 0.24);
+float3 compactTint = float3(0.62, 0.78, 1.00);
+surfaceTint = lerp(surfaceTint, surfaceTint * protostarTint,
+                   protostarType * 0.46);
+surfaceTint = lerp(surfaceTint, normalizedSpectralTint * compactTint,
+                   saturate(compactType * 0.40 + pulsarType * 0.55));
+)APSSTELLAR");
+		// MSVC limits a single wide string literal to 16,380 characters. Keep the
+		// authored shader as one final FString while splitting only its C++ storage.
+		const FString StellarOutputCode = TEXT(R"APSSTELLAR(
 
 // Sparse highlights cross the HDR threshold without lifting the whole disc. Actors
 // retain the existing spatially phased pulse. HISM selects a seed-bounded static
@@ -454,18 +494,59 @@ float rimJewelMask = spatialDetail * rim
 float rimJewelLift = rimJewelMask
                    * lerp(0.035, 0.090, jewelPulse);
 
-float visibleSurface = max(surface * limb + corona, 0.02);
+// The broad corona shapes the limb but intentionally stays below the HDR seed.
+// A narrow emitter below provides real post-process bloom without lifting the
+// whole opaque disc into the filmic shoulder.
+float typeCoronaGain = 1.0 + giantType * 0.24 + protostarType * 0.52
+                     + compactType * 0.16 + pulsarType * 0.34
+                     - coolDwarfType * 0.28;
+float coronaGain = lerp(1.0, lerp(1.35, 2.25, emissionActivity)
+                        * typeCoronaGain, actorOnly);
+float visibleSurface = max(surface * limb + corona * coronaGain, 0.02);
+float coreBloom = actorOnly * pow(facing, 8.0)
+                * lerp(0.10, 0.42, emissionActivity)
+                * (1.0 + giantType * 0.18 + protostarType * 0.28
+                   + pulsarType * 0.18 - coolDwarfType * 0.42);
+// Opaque geometry cannot draw outside its silhouette. A thin HDR edge is instead
+// fed directly into full-resolution bloom, which expands it into a soft exterior
+// halo while leaving the detailed photosphere in its high-contrast range.
+float coronaBloom = actorOnly * CoronaAmount * pow(rim, 1.35)
+                  * lerp(24.0, 38.0, emissionActivity) * typeCoronaGain
+                  * lerp(0.72, 1.0, resolvedProminence);
+float polarCap = pow(axisAlignment, 14.0);
+float compactLift = compactType * polarCap * 1.45;
+float pulsarPulse = 0.58 + 0.42 * sin(GameTime * 6.4 + phase);
+float pulsarLift = pulsarType * pow(axisAlignment, 28.0)
+                  * lerp(2.2, 4.8, pulsarPulse);
 float stellarSignal = (toneSafeEmission + jewelLift) * visibleSurface
-                    + rimJewelLift;
-float3 preBloom = surfaceTint * stellarSignal
-                * temporalFlicker;
-// Preserve hue and local contrast while hard-bounding the signal that enters the
-// menu's fixed-exposure, full-resolution bloom pass.
-float outputCeiling = lerp(1.72, 1.50, useInstance);
+                    + rimJewelLift + coreBloom + compactLift + pulsarLift;
+float3 ordinaryPreBloom = surfaceTint * stellarSignal * temporalFlicker
+                        + spectralHighlightTint * coronaBloom;
+
+// A black hole is deliberately not resurrected as a glowing sphere. The centre
+// stays dark while a thin hot accretion band and a sharp photon rim carry HDR.
+// Bloom expands those bounded structures beyond the mesh silhouette into the
+// expected compact halo without translucent overdraw on tens of thousands of HISM.
+float diskLatitude = abs(dot(n, stellarAxis));
+float accretionBand = exp2(-diskLatitude * diskLatitude * 92.0);
+float diskTangent = dot(n, normalize(cross(stellarAxis, v) + 0.0001));
+float dopplerAsymmetry = lerp(0.62, 1.38, diskTangent * 0.5 + 0.5);
+float photonRing = smoothstep(0.56, 0.94, 1.0 - facing);
+float blackHoleSignal = blackHoleType
+    * (accretionBand * dopplerAsymmetry * 5.4 + photonRing * 6.8);
+float3 blackHoleTint = lerp(float3(1.00, 0.26, 0.035),
+                            float3(1.00, 0.72, 0.28),
+                            saturate(accretionBand * 0.72 + photonRing * 0.28));
+float3 preBloom = ordinaryPreBloom * (1.0 - blackHoleType)
+                + blackHoleTint * blackHoleSignal;
+// Preserve hue and local contrast while retaining enough HDR energy for the
+// fixed-exposure full-resolution bloom pass. This is a safety ceiling, not the
+// normal disc intensity; only sparse peaks approach it.
+float outputCeiling = lerp(8.0, 5.0, useInstance);
 float peakChannel = max(max(preBloom.r, preBloom.g), preBloom.b);
 return preBloom * min(1.0, outputCeiling / max(peakChannel, 0.0001));
 )APSSTELLAR");
-		StellarSurface->Code = StellarPatternCode + StellarLightingCode;
+		StellarSurface->Code = StellarPatternCode + StellarLightingCode + StellarOutputCode;
 		AddCustomInput(StellarSurface, TEXT("ParamColor"), Color);
 		AddCustomInput(StellarSurface, TEXT("ParamEmission"), Multiplier);
 		AddCustomInput(StellarSurface, TEXT("ParamSeed"), SurfaceSeed);
@@ -473,6 +554,7 @@ return preBloom * min(1.0, outputCeiling / max(peakChannel, 0.0001));
 		AddCustomInput(StellarSurface, TEXT("Granulation"), GranulationStrength);
 		AddCustomInput(StellarSurface, TEXT("SpotAmount"), SpotStrength);
 		AddCustomInput(StellarSurface, TEXT("CoronaAmount"), CoronaStrength);
+		AddCustomInput(StellarSurface, TEXT("StellarType"), StellarArchetype);
 		AddCustomInput(StellarSurface, TEXT("InstanceColor"), InstanceColor);
 		AddCustomInput(StellarSurface, TEXT("InstanceEmission"), InstanceEmission);
 		AddCustomInput(StellarSurface, TEXT("InstanceSeed"), InstanceSeed);
@@ -484,6 +566,205 @@ return preBloom * min(1.0, outputCeiling / max(peakChannel, 0.0001));
 		AddCustomInput(StellarSurface, TEXT("CameraWS"), Camera);
 		if (!UMaterialEditingLibrary::ConnectMaterialProperty(
 			StellarSurface, TEXT(""), MP_EmissiveColor))
+		{
+			return false;
+		}
+
+		Material->UpdateCachedExpressionData();
+		Material->PostEditChange();
+		UMaterialEditingLibrary::RecompileMaterial(Material);
+		return true;
+	}
+
+	bool RebuildPointAndCoronaMaterial(UMaterial* Material)
+	{
+		if (!Material)
+		{
+			return false;
+		}
+
+		Material->Modify();
+		while (!Material->GetExpressions().IsEmpty())
+		{
+			UMaterialExpression* Expression = Material->GetExpressions().Last();
+			if (IsValid(Expression) && Expression->IsRooted())
+			{
+				Expression->RemoveFromRoot();
+			}
+			UMaterialEditingLibrary::DeleteMaterialExpression(Material, Expression);
+		}
+		Material->MaterialDomain = MD_Surface;
+		Material->BlendMode = BLEND_Additive;
+		Material->SetShadingModel(MSM_Unlit);
+		Material->TwoSided = false;
+		Material->DitheredLODTransition = false;
+		Material->DitherOpacityMask = false;
+		Material->bUsedWithInstancedStaticMeshes = true;
+
+		UMaterialExpressionVectorParameter* Color = AddVectorParameter(
+			Material, TEXT("Color"), FLinearColor(1.0f, 0.66f, 0.30f), -1050, -520, 0);
+		UMaterialExpressionScalarParameter* CoronaIntensity = AddScalarParameter(
+			Material, TEXT("CoronaIntensity"), 8.0f, 0.0f, 192.0f, -1050, -420, 1);
+		UMaterialExpressionScalarParameter* CoronaOpacity = AddScalarParameter(
+			Material, TEXT("CoronaOpacity"), 0.72f, 0.0f, 1.0f, -1050, -320, 2);
+		UMaterialExpressionScalarParameter* CoronaSeed = AddScalarParameter(
+			Material, TEXT("CoronaSeed"), 0.371f, 0.0f, 1.0f, -1050, -220, 3);
+		UMaterialExpressionScalarParameter* CoronaShellMode = AddScalarParameter(
+			Material, TEXT("CoronaShellMode"), 0.0f, 0.0f, 1.0f, -1050, -120, 4);
+		UMaterialExpressionScalarParameter* CoronaInnerRadius = AddScalarParameter(
+			Material, TEXT("CoronaInnerRadius"), 0.8928571f, 0.50f, 0.95f, -1050, -20, 5);
+
+		UMaterialExpression* InstanceColor = AddReflectedExpression(Material,
+			TEXT("/Script/Engine.MaterialExpressionPerInstanceCustomData3Vector"), -820, -520);
+		UMaterialExpression* InstanceEmission = AddReflectedExpression(Material,
+			TEXT("/Script/Engine.MaterialExpressionPerInstanceCustomData"), -820, -410);
+		UMaterialExpression* InstanceSeed = AddReflectedExpression(Material,
+			TEXT("/Script/Engine.MaterialExpressionPerInstanceCustomData"), -820, -300);
+		UMaterialExpression* SystemHighlight = AddReflectedExpression(Material,
+			TEXT("/Script/Engine.MaterialExpressionPerInstanceCustomData"), -820, -190);
+		UMaterialExpression* Normal = AddReflectedExpression(Material,
+			TEXT("/Script/Engine.MaterialExpressionPixelNormalWS"), -820, -80);
+		UMaterialExpression* WorldPosition = AddReflectedExpression(Material,
+			TEXT("/Script/Engine.MaterialExpressionWorldPosition"), -820, 30);
+		UMaterialExpression* ObjectPosition = AddReflectedExpression(Material,
+			TEXT("/Script/Engine.MaterialExpressionObjectPositionWS"), -820, 140);
+		UMaterialExpression* InterpolatedObjectPosition = AddReflectedExpression(Material,
+			TEXT("/Script/Engine.MaterialExpressionVertexInterpolator"), -600, 140);
+		UMaterialExpressionCameraVectorWS* Camera =
+			AddExpression<UMaterialExpressionCameraVectorWS>(Material, -820, 250);
+		UMaterialExpressionCustom* PointAndCorona =
+			AddExpression<UMaterialExpressionCustom>(Material, -430, -260);
+		if (!Color || !CoronaIntensity || !CoronaOpacity || !CoronaSeed
+			|| !CoronaShellMode || !CoronaInnerRadius
+			|| !InstanceColor || !InstanceEmission || !InstanceSeed
+			|| !SystemHighlight || !Normal || !WorldPosition || !ObjectPosition
+			|| !InterpolatedObjectPosition || !Camera || !PointAndCorona)
+		{
+			return false;
+		}
+		if (!UMaterialEditingLibrary::ConnectMaterialExpressions(
+			ObjectPosition, TEXT(""), InterpolatedObjectPosition, TEXT("VS")))
+		{
+			return false;
+		}
+		if (!SetUInt32Property(InstanceColor, TEXT("DataIndex"), 0)
+			|| !SetLinearColorProperty(InstanceColor, TEXT("ConstDefaultValue"), FLinearColor::Black)
+			|| !SetUInt32Property(InstanceEmission, TEXT("DataIndex"), 3)
+			|| !SetFloatProperty(InstanceEmission, TEXT("ConstDefaultValue"), 0.0f)
+			|| !SetUInt32Property(InstanceSeed, TEXT("DataIndex"), 4)
+			|| !SetFloatProperty(InstanceSeed, TEXT("ConstDefaultValue"), 0.0f)
+			|| !SetUInt32Property(SystemHighlight, TEXT("DataIndex"), 5)
+			|| !SetFloatProperty(SystemHighlight, TEXT("ConstDefaultValue"), 0.0f))
+		{
+			return false;
+		}
+
+		PointAndCorona->Description = TEXT("APS HDR point star and actor corona shell");
+		PointAndCorona->OutputType = CMOT_Float3;
+		PointAndCorona->Inputs.Reset();
+		PointAndCorona->Code = TEXT(R"APSPOINT(
+float shellMode = step(0.5, CoronaShellMode);
+float3 instanceTint = max(InstanceColor.rgb, 0.0);
+float maxSpectral = max(max(instanceTint.r, instanceTint.g), instanceTint.b);
+float spectralVisibility = smoothstep(0.025, 0.35, maxSpectral);
+float3 normalizedTint = instanceTint / max(maxSpectral, 0.001);
+float3 pointTint = lerp(instanceTint, normalizedTint, 0.72) * spectralVisibility;
+float rawEmission = max(InstanceEmission, 0.0);
+float activity = saturate(log2(1.0 + rawEmission) / 8.97);
+float marker = saturate(SystemMarker);
+float seed = frac(lerp(InstanceSeed, CoronaSeed, shellMode));
+float3 n = normalize(NormalWS);
+float3 v = normalize(CameraWS);
+float facing = saturate(abs(dot(n, v)));
+float projectedRadiusSq = saturate(1.0 - facing * facing);
+
+// A sphere is only the conservative HISM bound. Its visible signal is a compact
+// Gaussian point: a resolved hot HDR core plus a broader low-energy halo. Brighter
+// stars receive a wider halo, while black pixels in the additive material are
+// genuinely transparent instead of forming pastel opaque discs.
+float pointActivity = saturate(activity + marker * 0.14);
+// Parent-scope proxy spheres project to only a few pixels. Keep the neutral HDR
+// seed sub-pixel-to-one-pixel and the spectral halo close to one surrounding
+// pixel. The previous 12/4 and 3.60/1.35 profile filled too much of every proxy;
+// dense Ring/Arc samples then merged through bloom into white polygonal blobs.
+// The sphere remains only a conservative bound and its outer silhouette is black.
+float coreSharpness = lerp(28.0, 14.0, pointActivity);
+float haloSharpness = lerp(5.50, 3.00, pointActivity);
+float edgeFade = smoothstep(0.02, 0.28, facing);
+float hotCore = exp2(-projectedRadiusSq * coreSharpness) * edgeFade;
+float softHalo = exp2(-projectedRadiusSq * haloSharpness) * edgeFade;
+float seedGain = lerp(0.86, 1.14, frac(seed * 17.713 + 0.37));
+float coreEnergy = lerp(4.0, 11.0, activity) * seedGain * (1.0 + marker * 0.22);
+float haloEnergy = lerp(0.62, 2.6, activity) * seedGain * (1.0 + marker * 0.18);
+// Photographic point stars saturate toward a neutral core while their lower-energy
+// halo retains the spectral hue. Tinting both lobes identically made the numerous
+// M/K stars register as red pixels in max-channel tests but supplied very little
+// luminance to bloom. Preserve the authored energy and spectral halo; only split
+// the core chroma so unresolved stars read as white-hot light sources.
+float coreWhitening = lerp(0.58, 0.78, activity);
+float3 neutralCoreTint = float3(
+    spectralVisibility, spectralVisibility, spectralVisibility);
+float3 hotCoreTint = lerp(pointTint, neutralCoreTint, coreWhitening);
+float3 haloTint = lerp(pointTint, neutralCoreTint, 0.04);
+float3 pointSignal = hotCoreTint * (hotCore * coreEnergy)
+                   + haloTint * (softHalo * haloEnergy);
+
+// The actor corona runs on a second, slightly enlarged fallback mesh. Reconstruct
+// its radial normal from continuous position rather than the fallback proxy's
+// faceted normals. Its envelope starts at the opaque photosphere silhouette and
+// only decreases outwards: a detached local maximum reads as a geometric ring,
+// while a hot limb seed produces the broad optical bloom expected from a star.
+// Point/HISM mode continues to return the byte-identical pointSignal path above.
+float3 shellRadial = WorldPositionWS - ObjectPositionWS;
+float shellRadialLengthSq = dot(shellRadial, shellRadial);
+float3 shellNormal = shellRadialLengthSq > 1.0e-8
+    ? shellRadial * rsqrt(shellRadialLengthSq) : n;
+float shellFacing = saturate(abs(dot(shellNormal, v)));
+float shellProjectedRadiusSq = saturate(1.0 - shellFacing * shellFacing);
+float magneticField = 0.5 + 0.5 * sin(
+    dot(shellNormal, float3(7.3, 11.1, 5.7)) + seed * 37.699);
+float shellInnerRadius = saturate(CoronaInnerRadius);
+float shellInnerRadiusSq = shellInnerRadius * shellInnerRadius;
+float shellSpanSq = max(1.0 - shellInnerRadiusSq, 0.001);
+float shellRadiusUnclamped =
+    (shellProjectedRadiusSq - shellInnerRadiusSq) / shellSpanSq;
+float shellRadius01 = saturate(shellRadiusUnclamped);
+float photosphereOcclusion = smoothstep(0.0, 0.030, shellRadiusUnclamped);
+float outerBoundaryFade = 1.0 - smoothstep(0.72, 1.0, shellRadius01);
+// Preserve roughly the previous integrated HDR energy, but concentrate it into
+// a sub-pixel-to-few-pixel limb seed. A very low spectral tail communicates the
+// falloff on the shell without pushing the full 1.00..1.12 band through ACES white.
+float radialHdrSeed = exp2(-shellRadius01 * 32.0);
+float radialSpectralTail = 0.050 * exp2(-shellRadius01 * 1.6)
+                         * outerBoundaryFade;
+float radialLimbFalloff = radialHdrSeed + radialSpectralTail;
+float shellVariation = lerp(0.94, 1.06, magneticField);
+float shellSignal = photosphereOcclusion * radialLimbFalloff * shellVariation
+                  * saturate(CoronaOpacity);
+float3 rawShellTint = max(Color.rgb, 0.0);
+float shellTintPeak = max(max(rawShellTint.r, rawShellTint.g), rawShellTint.b);
+float3 normalizedShellTint = rawShellTint / max(shellTintPeak, 0.001);
+float3 spectralShellTint = pow(max(normalizedShellTint, 0.001), 1.20);
+float3 shellTint = lerp(spectralShellTint, float3(1.0, 0.90, 0.72), 0.10);
+float3 coronaSignal = shellTint * max(CoronaIntensity, 0.0) * shellSignal;
+return lerp(pointSignal, coronaSignal, shellMode);
+)APSPOINT");
+		AddCustomInput(PointAndCorona, TEXT("Color"), Color);
+		AddCustomInput(PointAndCorona, TEXT("CoronaIntensity"), CoronaIntensity);
+		AddCustomInput(PointAndCorona, TEXT("CoronaOpacity"), CoronaOpacity);
+		AddCustomInput(PointAndCorona, TEXT("CoronaSeed"), CoronaSeed);
+		AddCustomInput(PointAndCorona, TEXT("CoronaShellMode"), CoronaShellMode);
+		AddCustomInput(PointAndCorona, TEXT("CoronaInnerRadius"), CoronaInnerRadius);
+		AddCustomInput(PointAndCorona, TEXT("InstanceColor"), InstanceColor);
+		AddCustomInput(PointAndCorona, TEXT("InstanceEmission"), InstanceEmission);
+		AddCustomInput(PointAndCorona, TEXT("InstanceSeed"), InstanceSeed);
+		AddCustomInput(PointAndCorona, TEXT("SystemMarker"), SystemHighlight);
+		AddCustomInput(PointAndCorona, TEXT("NormalWS"), Normal);
+		AddCustomInput(PointAndCorona, TEXT("WorldPositionWS"), WorldPosition);
+		AddCustomInput(PointAndCorona, TEXT("ObjectPositionWS"), InterpolatedObjectPosition);
+		AddCustomInput(PointAndCorona, TEXT("CameraWS"), Camera);
+		if (!UMaterialEditingLibrary::ConnectMaterialProperty(
+			PointAndCorona, TEXT(""), MP_EmissiveColor))
 		{
 			return false;
 		}
@@ -527,10 +808,14 @@ int32 UAPSFixStarHISMMaterialCommandlet::Main(const FString& Params)
 			continue;
 		}
 
-		if (!APSStellarMaterial::RebuildUnifiedStellarMaterial(Material))
+		const bool bPointAndCoronaMaster = PackagePath.EndsWith(TEXT("_HISM"));
+		const bool bRebuilt = bPointAndCoronaMaster
+			? APSStellarMaterial::RebuildPointAndCoronaMaterial(Material)
+			: APSStellarMaterial::RebuildUnifiedStellarMaterial(Material);
+		if (!bRebuilt)
 		{
 			UE_LOG(LogAPSStarMaterialFix, Error,
-				TEXT("Could not rebuild unified stellar graph: %s"), *ObjectPath);
+				TEXT("Could not rebuild stellar graph: %s"), *ObjectPath);
 			++ErrorCount;
 			continue;
 		}
@@ -550,7 +835,9 @@ int32 UAPSFixStarHISMMaterialCommandlet::Main(const FString& Params)
 		}
 
 		UE_LOG(LogAPSStarMaterialFix, Display,
-			TEXT("Rebuilt scale-independent stellar surface: %s"), *ObjectPath);
+			TEXT("Rebuilt %s stellar material: %s"),
+			bPointAndCoronaMaster ? TEXT("additive point/corona") : TEXT("photosphere"),
+			*ObjectPath);
 		++ChangedCount;
 	}
 
