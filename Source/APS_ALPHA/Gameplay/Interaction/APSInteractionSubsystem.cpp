@@ -9,6 +9,10 @@ namespace APSInteractionFailures
 	const FName NotInteractable(TEXT("APS.Interaction.NotInteractable"));
 	const FName MissingIdentity(TEXT("APS.Interaction.MissingCanonicalIdentity"));
 	const FName InvalidRequest(TEXT("APS.Interaction.InvalidRequest"));
+	const FName SubjectMismatch(TEXT("APS.Interaction.SubjectMismatch"));
+	const FName TargetMismatch(TEXT("APS.Interaction.TargetMismatch"));
+	const FName StaleRevision(TEXT("APS.Interaction.StaleRevision"));
+	const FName ActionUnavailable(TEXT("APS.Interaction.ActionUnavailable"));
 }
 
 double UAPSInteractionSubsystem::DistanceToActorBoundsCm(
@@ -46,12 +50,29 @@ bool UAPSInteractionSubsystem::QueryActor(
 		OutFailure = APSInteractionFailures::MissingIdentity.ToString();
 		return false;
 	}
+	const FVector ViewDirection = Context.ViewDirection.GetSafeNormal();
+	if (ViewDirection.IsNearlyZero() || !FMath::IsFinite(Context.MinimumFocusDot)
+		|| Context.MinimumFocusDot < -1.0 || Context.MinimumFocusDot > 1.0)
+	{
+		OutFailure = TEXT("APS.Interaction.InvalidFocusContext");
+		return false;
+	}
 
 	const double DistanceCm = DistanceToActorBoundsCm(Candidate, Context.ViewOrigin);
 	if (!FMath::IsFinite(DistanceCm) || Context.MaximumRangeCm <= 0.0
 		|| DistanceCm > Context.MaximumRangeCm)
 	{
 		OutFailure = TEXT("APS.Interaction.OutOfRange");
+		return false;
+	}
+	FVector BoundsOrigin;
+	FVector BoundsExtent;
+	Candidate->GetActorBounds(true, BoundsOrigin, BoundsExtent);
+	const FVector ToCandidate = (BoundsOrigin - Context.ViewOrigin).GetSafeNormal();
+	if (!ToCandidate.IsNearlyZero()
+		&& FVector::DotProduct(ViewDirection, ToCandidate) < Context.MinimumFocusDot)
+	{
+		OutFailure = TEXT("APS.Interaction.OutOfFocus");
 		return false;
 	}
 	if (!IAPSInteractable::Execute_QueryInteraction(Candidate, Context, OutPrompt))
@@ -81,8 +102,8 @@ bool UAPSInteractionSubsystem::QueryActor(
 }
 
 FAPSInteractionExecutionResult UAPSInteractionSubsystem::ExecuteActor(
-	AActor* Candidate, const FAPSInteractionExecutionRequest& Request,
-	const bool bDebugIdentityOverride) const
+	AActor* Candidate, const FAPSInteractionContext& Context,
+	const FAPSInteractionExecutionRequest& Request) const
 {
 	FAPSInteractionExecutionResult Result;
 	Result.CorrelationId = Request.CorrelationId;
@@ -98,15 +119,42 @@ FAPSInteractionExecutionResult UAPSInteractionSubsystem::ExecuteActor(
 		return Result;
 	}
 	FString ValidationReason;
-	if (!Request.IsStructurallyValid(!bDebugIdentityOverride, &ValidationReason))
+	if (!Request.IsStructurallyValid(!Context.bDebugIdentityOverride, &ValidationReason))
 	{
 		Result.FailureCode = APSInteractionFailures::InvalidRequest;
 		return Result;
 	}
-	const FGuid TargetId = IAPSInteractable::Execute_GetInteractionTargetStableId(Candidate);
-	if (!bDebugIdentityOverride && (!TargetId.IsValid() || TargetId != Request.TargetStableId))
+	if (Context.SubjectStableId != Request.SubjectStableId
+		|| Context.InstigatorActor != Request.InstigatorActor)
 	{
-		Result.FailureCode = APSInteractionFailures::MissingIdentity;
+		Result.FailureCode = APSInteractionFailures::SubjectMismatch;
+		return Result;
+	}
+	FAPSInteractionPromptDescriptor CurrentPrompt;
+	if (!QueryActor(Candidate, Context, CurrentPrompt, ValidationReason))
+	{
+		Result.FailureCode = FName(*ValidationReason);
+		return Result;
+	}
+	if (CurrentPrompt.TargetStableId != Request.TargetStableId)
+	{
+		Result.FailureCode = APSInteractionFailures::TargetMismatch;
+		return Result;
+	}
+	if (CurrentPrompt.Revision != Request.ExpectedRevision)
+	{
+		Result.FailureCode = APSInteractionFailures::StaleRevision;
+		return Result;
+	}
+	const FAPSInteractionActionDescriptor* Action = CurrentPrompt.Actions.FindByPredicate(
+		[&Request](const FAPSInteractionActionDescriptor& CandidateAction)
+		{
+			return CandidateAction.ActionId == Request.ActionId;
+		});
+	if (!Action || !Action->bEnabled
+		|| CurrentPrompt.Availability != EAPSInteractionAvailability::Available)
+	{
+		Result.FailureCode = APSInteractionFailures::ActionUnavailable;
 		return Result;
 	}
 	Result = IAPSInteractable::Execute_ExecuteInteraction(Candidate, Request);

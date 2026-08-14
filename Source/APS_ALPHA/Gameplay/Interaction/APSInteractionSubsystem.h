@@ -18,8 +18,8 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category="APS|Interaction")
 	FAPSInteractionExecutionResult ExecuteActor(AActor* Candidate,
-		const FAPSInteractionExecutionRequest& Request,
-		bool bDebugIdentityOverride = false) const;
+		const FAPSInteractionContext& Context,
+		const FAPSInteractionExecutionRequest& Request) const;
 
 	static double DistanceToActorBoundsCm(const AActor* Candidate, const FVector& Origin);
 };

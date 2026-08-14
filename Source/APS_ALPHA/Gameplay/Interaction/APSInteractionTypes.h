@@ -198,6 +198,10 @@ struct APS_ALPHA_API FAPSInteractionContext
 	UPROPERTY(BlueprintReadWrite, Category="Interaction", meta=(ClampMin="0.0"))
 	double MaximumRangeCm{600.0};
 
+	/** Minimum camera-forward alignment to the candidate bounds centre. */
+	UPROPERTY(BlueprintReadWrite, Category="Interaction", meta=(ClampMin="-1.0", ClampMax="1.0"))
+	double MinimumFocusDot{0.70};
+
 	/** Permits invalid canonical IDs only for a visibly debug-only launcher path. */
 	UPROPERTY(BlueprintReadWrite, Category="Interaction")
 	bool bDebugIdentityOverride{false};

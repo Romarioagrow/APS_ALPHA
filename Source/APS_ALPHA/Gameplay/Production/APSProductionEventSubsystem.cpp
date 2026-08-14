@@ -10,7 +10,7 @@ void UAPSProductionEventSubsystem::RestoreLastSequence(const int64 PersistedLast
 bool UAPSProductionEventSubsystem::ValidateTransition(
 	const FAPSProductionEvent& Event, FString& OutFailure) const
 {
-	const EAPSProductionEventResult* Previous = CorrelationStates.Find(Event.CorrelationId);
+	const FCorrelationState* Previous = CorrelationStates.Find(Event.CorrelationId);
 	if (Event.Result == EAPSProductionEventResult::Requested)
 	{
 		if (Previous)
@@ -25,15 +25,23 @@ bool UAPSProductionEventSubsystem::ValidateTransition(
 		OutFailure = TEXT("APS.Production.MissingRequestedEvent");
 		return false;
 	}
-	if (*Previous == EAPSProductionEventResult::Succeeded
-		|| *Previous == EAPSProductionEventResult::Failed
-		|| *Previous == EAPSProductionEventResult::Cancelled)
+	if (Previous->Verb != Event.Verb
+		|| Previous->SubjectStableId != Event.SubjectStableId
+		|| Previous->TargetStableId != Event.TargetStableId
+		|| Previous->Quantity != Event.Quantity)
+	{
+		OutFailure = TEXT("APS.Production.CorrelationPayloadMismatch");
+		return false;
+	}
+	if (Previous->Result == EAPSProductionEventResult::Succeeded
+		|| Previous->Result == EAPSProductionEventResult::Failed
+		|| Previous->Result == EAPSProductionEventResult::Cancelled)
 	{
 		OutFailure = TEXT("APS.Production.CorrelationAlreadyTerminal");
 		return false;
 	}
 	if (Event.Result == EAPSProductionEventResult::Started
-		&& *Previous != EAPSProductionEventResult::Requested)
+		&& Previous->Result != EAPSProductionEventResult::Requested)
 	{
 		OutFailure = TEXT("APS.Production.InvalidStartedTransition");
 		return false;
@@ -50,7 +58,7 @@ bool UAPSProductionEventSubsystem::PublishEvent(
 	{
 		// Debug launcher callers may omit canonical actor IDs, but the event remains
 		// explicitly marked and cannot silently enter the production path.
-		Event.ContextTags.AddUnique(TEXT("APS.DebugOnly"));
+		Event.ContextTags.AddUnique(FName(TEXT("APS.DebugOnly")));
 	}
 	if (!Event.EventId.IsValid())
 	{
@@ -83,7 +91,12 @@ bool UAPSProductionEventSubsystem::PublishEvent(
 
 	LastSequence = Event.Sequence;
 	PublishedEventIds.Add(Event.EventId);
-	CorrelationStates.Add(Event.CorrelationId, Event.Result);
+	FCorrelationState& State = CorrelationStates.FindOrAdd(Event.CorrelationId);
+	State.Result = Event.Result;
+	State.Verb = Event.Verb;
+	State.SubjectStableId = Event.SubjectStableId;
+	State.TargetStableId = Event.TargetStableId;
+	State.Quantity = Event.Quantity;
 	EventPublished.Broadcast(Event);
 	return true;
 }

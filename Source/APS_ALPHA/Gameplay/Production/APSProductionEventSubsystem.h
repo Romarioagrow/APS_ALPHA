@@ -28,10 +28,19 @@ public:
 	void RestoreLastSequence(int64 PersistedLastSequence);
 
 private:
+	struct FCorrelationState
+	{
+		EAPSProductionEventResult Result{EAPSProductionEventResult::Requested};
+		FName Verb;
+		FGuid SubjectStableId;
+		FGuid TargetStableId;
+		int32 Quantity{1};
+	};
+
 	bool ValidateTransition(const FAPSProductionEvent& Event, FString& OutFailure) const;
 
 	FOnAPSProductionEventPublished EventPublished;
-	TMap<FGuid, EAPSProductionEventResult> CorrelationStates;
+	TMap<FGuid, FCorrelationState> CorrelationStates;
 	TSet<FGuid> PublishedEventIds;
 	int64 LastSequence{0};
 };
