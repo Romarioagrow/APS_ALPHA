@@ -141,6 +141,9 @@ bool FAPSInteractionExecutionEventContractTest::RunTest(const FString& Parameter
 	}
 
 	Actor->TargetStableId = FGuid::NewGuid();
+	TestEqual(TEXT("Scene-only interactable falls back to finite actor location"),
+		UAPSInteractionSubsystem::DistanceToActorBoundsCm(Actor, FVector::ZeroVector),
+		100.0);
 	Actor->TargetIdentityDomain = EAPSTargetIdentityDomain::CivilizationEntity;
 	FAPSInteractionContext Context;
 	Context.InstigatorActor = Actor;

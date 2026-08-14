@@ -43,11 +43,35 @@ double UAPSInteractionSubsystem::DistanceToActorBoundsCm(
 	{
 		return TNumericLimits<double>::Max();
 	}
-	FVector BoundsOrigin;
-	FVector BoundsExtent;
-	Candidate->GetActorBounds(true, BoundsOrigin, BoundsExtent);
-	const FBox Bounds(BoundsOrigin - BoundsExtent, BoundsOrigin + BoundsExtent);
-	return FMath::Sqrt(Bounds.ComputeSquaredDistanceToPoint(Origin));
+	const auto TryDistanceToBounds = [&Origin](const FBox& Bounds,
+		double& OutDistanceCm)
+	{
+		if (!Bounds.IsValid || Bounds.ContainsNaN())
+		{
+			return false;
+		}
+		const double SquaredDistance = Bounds.ComputeSquaredDistanceToPoint(Origin);
+		if (!FMath::IsFinite(SquaredDistance) || SquaredDistance < 0.0)
+		{
+			return false;
+		}
+		OutDistanceCm = FMath::Sqrt(SquaredDistance);
+		return FMath::IsFinite(OutDistanceCm);
+	};
+	double DistanceCm = 0.0;
+	if (TryDistanceToBounds(Candidate->GetComponentsBoundingBox(false), DistanceCm)
+		|| TryDistanceToBounds(Candidate->GetComponentsBoundingBox(true), DistanceCm))
+	{
+		return DistanceCm;
+	}
+	const FVector ActorLocation = Candidate->GetActorLocation();
+	if (ActorLocation.ContainsNaN())
+	{
+		return TNumericLimits<double>::Max();
+	}
+	const double ActorDistanceCm = FVector::Distance(ActorLocation, Origin);
+	return FMath::IsFinite(ActorDistanceCm)
+		? ActorDistanceCm : TNumericLimits<double>::Max();
 }
 
 bool UAPSInteractionSubsystem::IsFocusScorePreferred(

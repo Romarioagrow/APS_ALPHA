@@ -5,6 +5,8 @@
 #include "APS_ALPHA/Gameplay/Interaction/APSInteractable.h"
 #include "APSInteractionContractTestActor.generated.h"
 
+class USceneComponent;
+
 /** Minimal native fixture for the owner-published Interaction event contract. */
 UCLASS(Transient, NotBlueprintable)
 class APS_ALPHA_API AAPSInteractionContractTestActor : public AActor,
@@ -31,4 +33,9 @@ public:
 	FName ResultCode{TEXT("APS.Production.PanelRequested")};
 	FName FailureCode;
 	int32 ExecutionCount{0};
+
+private:
+	/** Mirrors the scene-only root shape of AAPSProductionConsole. */
+	UPROPERTY(VisibleAnywhere, Category="APS|Interaction Test")
+	TObjectPtr<USceneComponent> InteractionRoot;
 };

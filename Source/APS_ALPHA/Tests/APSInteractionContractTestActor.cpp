@@ -1,9 +1,13 @@
 #include "APSInteractionContractTestActor.h"
 
+#include "Components/SceneComponent.h"
+
 AAPSInteractionContractTestActor::AAPSInteractionContractTestActor()
 {
 	PrimaryActorTick.bCanEverTick = false;
 	PromptId = FGuid::NewGuid();
+	InteractionRoot = CreateDefaultSubobject<USceneComponent>(TEXT("InteractionRoot"));
+	RootComponent = InteractionRoot;
 }
 
 FGuid AAPSInteractionContractTestActor::GetInteractionTargetStableId_Implementation() const
