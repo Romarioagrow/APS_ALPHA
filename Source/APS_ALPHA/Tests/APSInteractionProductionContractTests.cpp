@@ -181,8 +181,8 @@ bool FAPSInteractionExecutionEventContractTest::RunTest(const FString& Parameter
 	Request.Quantity = 1;
 	Request.InstigatorActor = Context.InstigatorActor;
 
-	// Compare only canonical Execute_ dispatch. Direct _Implementation calls are
-	// intentionally forbidden so the probe cannot hide a production-wide seam.
+	// Contract both native implementers through canonical reflected Execute_ dispatch.
+	// Direct _Implementation calls remain forbidden.
 	FAPSInteractionPromptDescriptor FixtureInterfacePrompt;
 	const bool bFixtureInterfaceQuery = IAPSInteractable::Execute_QueryInteraction(
 		Actor, Context, FixtureInterfacePrompt);
@@ -212,7 +212,7 @@ bool FAPSInteractionExecutionEventContractTest::RunTest(const FString& Parameter
 		|| !bConsoleInitialized || !bConsoleInterfaceQuery || !bConsoleInterfaceExecute)
 	{
 		AddError(FString::Printf(
-			TEXT("Native Execute_ dispatch comparison failed: fixtureQuery=%d fixtureExecute=%d fixtureFailure=%s consoleSetup=%d consoleQuery=%d consoleExecute=%d consoleFailure=%s setupFailure=%s"),
+			TEXT("Native Execute_ dispatch contract failed: fixtureQuery=%d fixtureExecute=%d fixtureFailure=%s consoleSetup=%d consoleQuery=%d consoleExecute=%d consoleFailure=%s setupFailure=%s"),
 			bFixtureInterfaceQuery, bFixtureInterfaceExecute,
 			*FixtureInterfaceResult.FailureCode.ToString(), bConsoleInitialized,
 			bConsoleInterfaceQuery, bConsoleInterfaceExecute,

@@ -17,11 +17,17 @@ class APS_ALPHA_API AAPSInteractionContractTestActor : public AActor,
 public:
 	AAPSInteractionContractTestActor();
 
-	virtual FGuid GetInteractionTargetStableId_Implementation() const override;
-	virtual bool QueryInteraction_Implementation(const FAPSInteractionContext& Context,
-		FAPSInteractionPromptDescriptor& OutPrompt) const override;
-	virtual FAPSInteractionExecutionResult ExecuteInteraction_Implementation(
-		const FAPSInteractionExecutionRequest& Request) override;
+	/** Mirrors the class-owned reflected bindings required by native production actors. */
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category="APS|Interaction Test")
+	FGuid GetInteractionTargetStableId() const;
+
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category="APS|Interaction Test")
+	bool QueryInteraction(const FAPSInteractionContext& Context,
+		FAPSInteractionPromptDescriptor& OutPrompt) const;
+
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category="APS|Interaction Test")
+	FAPSInteractionExecutionResult ExecuteInteraction(
+		const FAPSInteractionExecutionRequest& Request);
 
 	FGuid TargetStableId;
 	EAPSTargetIdentityDomain TargetIdentityDomain{EAPSTargetIdentityDomain::CivilizationEntity};

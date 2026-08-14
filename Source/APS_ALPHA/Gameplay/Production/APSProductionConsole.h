@@ -31,11 +31,17 @@ public:
 	UFUNCTION(BlueprintCallable, Category="APS|Production Console")
 	bool InitializeProductionContext(FString& OutFailure);
 
-	virtual FGuid GetInteractionTargetStableId_Implementation() const override;
-	virtual bool QueryInteraction_Implementation(const FAPSInteractionContext& Context,
-		FAPSInteractionPromptDescriptor& OutPrompt) const override;
-	virtual FAPSInteractionExecutionResult ExecuteInteraction_Implementation(
-		const FAPSInteractionExecutionRequest& Request) override;
+	/** Concrete reflected bindings keep canonical Execute_ dispatch on this native actor. */
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category="APS|Production Console")
+	FGuid GetInteractionTargetStableId() const;
+
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category="APS|Production Console")
+	bool QueryInteraction(const FAPSInteractionContext& Context,
+		FAPSInteractionPromptDescriptor& OutPrompt) const;
+
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category="APS|Production Console")
+	FAPSInteractionExecutionResult ExecuteInteraction(
+		const FAPSInteractionExecutionRequest& Request);
 
 protected:
 	virtual void BeginPlay() override;
