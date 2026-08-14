@@ -4,6 +4,7 @@
 
 #include "APS_ALPHA/Gameplay/Interaction/APSInteractionSubsystem.h"
 #include "APS_ALPHA/Gameplay/Interaction/APSInteractionTypes.h"
+#include "APS_ALPHA/Gameplay/Production/APSProductionConsole.h"
 #include "APS_ALPHA/Gameplay/Production/APSProductionEventSubsystem.h"
 #include "APSInteractionContractTestActor.h"
 #include "Engine/World.h"
@@ -131,9 +132,12 @@ bool FAPSInteractionExecutionEventContractTest::RunTest(const FString& Parameter
 	AAPSInteractionContractTestActor* Actor =
 		World->SpawnActor<AAPSInteractionContractTestActor>(
 			FVector(100.0, 0.0, 0.0), FRotator::ZeroRotator);
+	AAPSProductionConsole* Console = World->SpawnActor<AAPSProductionConsole>(
+		FVector(200.0, 0.0, 0.0), FRotator::ZeroRotator);
 	UAPSInteractionSubsystem* Interaction =
 		NewObject<UAPSInteractionSubsystem>(World);
 	if (!TestNotNull(TEXT("Contract interactable actor exists"), Actor)
+		|| !TestNotNull(TEXT("Production console exists"), Console)
 		|| !TestNotNull(TEXT("Interaction subsystem exists"), Interaction))
 	{
 		World->DestroyWorld(false);
@@ -145,6 +149,18 @@ bool FAPSInteractionExecutionEventContractTest::RunTest(const FString& Parameter
 		UAPSInteractionSubsystem::DistanceToActorBoundsCm(Actor, FVector::ZeroVector),
 		100.0);
 	Actor->TargetIdentityDomain = EAPSTargetIdentityDomain::CivilizationEntity;
+	const FGuid ConsoleContextId = FGuid::NewGuid();
+	const FGuid ConsoleOwnerId = FGuid::NewGuid();
+	FString ConsoleSetupFailure;
+	const bool bConsoleConfigured = Console->ConfigureCanonicalIdentity(
+		ConsoleContextId, EAPSTargetIdentityDomain::CivilizationEntity,
+		ConsoleOwnerId, FGuid{}, ConsoleSetupFailure);
+	if (bConsoleConfigured)
+	{
+		Console->DispatchBeginPlay();
+	}
+	const bool bConsoleInitialized = bConsoleConfigured
+		&& Console->InitializeProductionContext(ConsoleSetupFailure);
 	FAPSInteractionContext Context;
 	Context.InstigatorActor = Actor;
 	Context.SubjectStableId = FGuid::NewGuid();
@@ -164,6 +180,46 @@ bool FAPSInteractionExecutionEventContractTest::RunTest(const FString& Parameter
 	Request.TargetIdentityDomain = Actor->TargetIdentityDomain;
 	Request.Quantity = 1;
 	Request.InstigatorActor = Context.InstigatorActor;
+
+	// Compare only canonical Execute_ dispatch. Direct _Implementation calls are
+	// intentionally forbidden so the probe cannot hide a production-wide seam.
+	FAPSInteractionPromptDescriptor FixtureInterfacePrompt;
+	const bool bFixtureInterfaceQuery = IAPSInteractable::Execute_QueryInteraction(
+		Actor, Context, FixtureInterfacePrompt);
+	const FAPSInteractionExecutionResult FixtureInterfaceResult =
+		IAPSInteractable::Execute_ExecuteInteraction(Actor, Request);
+	Actor->ExecutionCount = 0;
+
+	FAPSInteractionPromptDescriptor ConsoleInterfacePrompt;
+	const bool bConsoleInterfaceQuery = bConsoleInitialized
+		&& IAPSInteractable::Execute_QueryInteraction(
+			Console, Context, ConsoleInterfacePrompt);
+	FAPSInteractionExecutionRequest ConsoleRequest = Request;
+	ConsoleRequest.CorrelationId = FGuid::NewGuid();
+	ConsoleRequest.ActionId = TEXT("APS.Production.Open");
+	ConsoleRequest.ExpectedRevision = ConsoleInterfacePrompt.Revision;
+	ConsoleRequest.TargetStableId = ConsoleContextId;
+	ConsoleRequest.TargetIdentityDomain = EAPSTargetIdentityDomain::CivilizationEntity;
+	const FAPSInteractionExecutionResult ConsoleInterfaceResult = bConsoleInitialized
+		? IAPSInteractable::Execute_ExecuteInteraction(Console, ConsoleRequest)
+		: FAPSInteractionExecutionResult{};
+
+	const bool bFixtureInterfaceExecute = FixtureInterfaceResult.Status
+		== EAPSInteractionExecutionStatus::Succeeded;
+	const bool bConsoleInterfaceExecute = ConsoleInterfaceResult.Status
+		== EAPSInteractionExecutionStatus::Succeeded;
+	if (!bFixtureInterfaceQuery || !bFixtureInterfaceExecute
+		|| !bConsoleInitialized || !bConsoleInterfaceQuery || !bConsoleInterfaceExecute)
+	{
+		AddError(FString::Printf(
+			TEXT("Native Execute_ dispatch comparison failed: fixtureQuery=%d fixtureExecute=%d fixtureFailure=%s consoleSetup=%d consoleQuery=%d consoleExecute=%d consoleFailure=%s setupFailure=%s"),
+			bFixtureInterfaceQuery, bFixtureInterfaceExecute,
+			*FixtureInterfaceResult.FailureCode.ToString(), bConsoleInitialized,
+			bConsoleInterfaceQuery, bConsoleInterfaceExecute,
+			*ConsoleInterfaceResult.FailureCode.ToString(), *ConsoleSetupFailure));
+		World->DestroyWorld(false);
+		return false;
+	}
 
 	FAPSInteractionPromptDescriptor ProbePrompt;
 	FString ProbeFailure;
