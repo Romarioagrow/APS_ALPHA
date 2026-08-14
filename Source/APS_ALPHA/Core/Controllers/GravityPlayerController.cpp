@@ -44,8 +44,6 @@ namespace
 			*APSMetadataEnumLabel(WorldData.SpectralClass));
 		const FString PlanetType = APSMetadataEnumLabel(WorldData.PlanetType);
 		Metadata.SetString(TEXT("APSWorld"), TEXT("PlanetType"), *PlanetType);
-		Metadata.SetString(TEXT("APSWorld"), TEXT("Habitability"),
-			*APSMetadataEnumLabel(WorldData.PlanetHabitability));
 		Metadata.SetString(TEXT("APSWorld"), TEXT("Environment"),
 			*FString::Printf(TEXT("%s / %.0f KM"), *PlanetType, WorldData.PlanetRadius));
 		Metadata.SetInt64(TEXT("APSWorld"), TEXT("TotalPlanets"), WorldData.PlanetsAmount);
