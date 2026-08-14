@@ -16,6 +16,9 @@ bool FAPSQuestProductionAdapterTest::RunTest(const FString& Parameters)
 	Source.Verb = TEXT("APS.Build.Place");
 	Source.SubjectStableId = FGuid(9, 10, 11, 12);
 	Source.TargetStableId = FGuid(13, 14, 15, 16);
+	Source.DefinitionId = FPrimaryAssetId(
+		FPrimaryAssetType(TEXT("APSBuildable")), FName(TEXT("Foundation")));
+	Source.DefinitionSchemaVersion = 3;
 	Source.Quantity = 2;
 	Source.Result = EAPSProductionEventResult::Succeeded;
 	Source.ResultCode = TEXT("APS.Build.Foundation");
@@ -30,6 +33,10 @@ bool FAPSQuestProductionAdapterTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Correlation is preserved"), Normalized.CorrelationId, Source.CorrelationId);
 	TestEqual(TEXT("Sequence is authoritative"), Normalized.Sequence, Source.Sequence);
 	TestEqual(TEXT("Verb is preserved"), Normalized.Verb, Source.Verb);
+	TestEqual(TEXT("Authoritative definition identity is preserved"),
+		Normalized.DefinitionId, Source.DefinitionId);
+	TestEqual(TEXT("Definition schema version is preserved"),
+		Normalized.DefinitionSchemaVersion, Source.DefinitionSchemaVersion);
 	TestEqual(TEXT("Result is mapped"), Normalized.Result, EAPSQuestEventResult::Succeeded);
 	TestEqual(TEXT("Subject uses generic gameplay identity"), Normalized.Subject.Kind,
 		EAPSQuestEntityKind::GameplayEntity);

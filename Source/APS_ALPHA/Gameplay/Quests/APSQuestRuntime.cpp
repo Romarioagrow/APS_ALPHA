@@ -100,6 +100,27 @@ bool FAPSQuestRuntime::BindEntity(FName QuestId, FName BindingName,
 		OutReason = TEXT("Binding requires a quest instance, name and canonical entity");
 		return false;
 	}
+	const UAPSQuestDefinition* Definition = FindDefinition(QuestId);
+	if (!Definition || Definition->DefinitionVersion != Instance->DefinitionVersion)
+	{
+		OutReason = TEXT("Binding requires the registered matching quest definition");
+		return false;
+	}
+	const FAPSQuestBindingDefinition* BindingDefinition =
+		Definition->FindBindingDefinition(BindingName);
+	if (!BindingDefinition)
+	{
+		OutReason = FString::Printf(TEXT("Binding %s is not declared by quest %s"),
+			*BindingName.ToString(), *QuestId.ToString());
+		return false;
+	}
+	if (BindingDefinition->ExpectedKind != Entity.Kind)
+	{
+		OutReason = FString::Printf(TEXT("Binding %s requires identity kind %d but received %d"),
+			*BindingName.ToString(), static_cast<int32>(BindingDefinition->ExpectedKind),
+			static_cast<int32>(Entity.Kind));
+		return false;
+	}
 	if (FAPSQuestNamedEntityBinding* Existing = Instance->Bindings.FindByPredicate(
 		[BindingName](const FAPSQuestNamedEntityBinding& Binding)
 		{
@@ -440,12 +461,25 @@ bool FAPSQuestRuntime::RestoreSaveData(const FAPSQuestSaveData& SaveData,
 				}
 			}
 		}
+		TSet<FName> RestoredBindingNames;
 		for (const FAPSQuestNamedEntityBinding& Binding : Instance.Bindings)
 		{
-			if (Binding.BindingName.IsNone() || !Binding.Entity.IsValid())
+			if (Binding.BindingName.IsNone() || !Binding.Entity.IsValid()
+				|| RestoredBindingNames.Contains(Binding.BindingName))
 			{
-				OutReason = TEXT("Quest save contains invalid entity binding");
+				OutReason = TEXT("Quest save contains invalid or duplicate entity binding");
 				return false;
+			}
+			RestoredBindingNames.Add(Binding.BindingName);
+			if (Definition && Definition->DefinitionVersion == Instance.DefinitionVersion)
+			{
+				const FAPSQuestBindingDefinition* BindingDefinition =
+					Definition->FindBindingDefinition(Binding.BindingName);
+				if (!BindingDefinition || BindingDefinition->ExpectedKind != Binding.Entity.Kind)
+				{
+					OutReason = TEXT("Quest save contains undeclared or wrong-domain entity binding");
+					return false;
+				}
 			}
 		}
 		Restored.Add(Instance.QuestId, MoveTemp(Instance));
@@ -548,7 +582,10 @@ bool FAPSQuestRuntime::MatchesPredicate(const FAPSQuestInstanceSaveData& Instanc
 {
 	OutReason.Reset();
 	if (Event.Verb != Predicate.Verb || Event.Quantity < Predicate.MinimumQuantity
-		|| (bRequireResult && Event.Result != Predicate.RequiredResult))
+		|| (bRequireResult && Event.Result != Predicate.RequiredResult)
+		|| (Predicate.RequiredDefinitionId.IsValid()
+			&& Event.DefinitionId != Predicate.RequiredDefinitionId)
+		|| Event.DefinitionSchemaVersion < Predicate.MinimumDefinitionSchemaVersion)
 	{
 		return false;
 	}

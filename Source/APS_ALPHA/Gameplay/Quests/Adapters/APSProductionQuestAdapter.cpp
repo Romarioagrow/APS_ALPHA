@@ -20,6 +20,8 @@ bool FAPSProductionQuestAdapter::Normalize(const FAPSProductionEvent& Source,
 	Normalized.CorrelationId = Source.CorrelationId;
 	Normalized.Sequence = Source.Sequence;
 	Normalized.Verb = Source.Verb;
+	Normalized.DefinitionId = Source.DefinitionId;
+	Normalized.DefinitionSchemaVersion = Source.DefinitionSchemaVersion;
 	Normalized.Result = MapResult(Source.Result);
 	Normalized.Quantity = Source.Quantity;
 	Normalized.FailureCode = Source.FailureCode;

@@ -6,12 +6,34 @@
 #include "APSQuestDefinition.generated.h"
 
 USTRUCT(BlueprintType)
+struct APS_ALPHA_API FAPSQuestBindingDefinition
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Quest")
+	FName BindingName;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Quest")
+	EAPSQuestEntityKind ExpectedKind{EAPSQuestEntityKind::None};
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Quest")
+	bool bRequired{true};
+};
+
+USTRUCT(BlueprintType)
 struct APS_ALPHA_API FAPSQuestEventPredicate
 {
 	GENERATED_BODY()
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Quest")
 	FName Verb;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Quest")
+	FPrimaryAssetId RequiredDefinitionId;
+
+	/** Zero accepts unversioned facts; a typed RequiredDefinitionId requires at least one. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Quest", meta=(ClampMin="0"))
+	int32 MinimumDefinitionSchemaVersion{0};
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Quest")
 	EAPSQuestEventResult RequiredResult{EAPSQuestEventResult::Succeeded};
@@ -139,12 +161,17 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Quest")
 	FName EntryNodeId;
 
+	/** Declares the canonical identity domain accepted by every named binding. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Quest")
+	TArray<FAPSQuestBindingDefinition> BindingDefinitions;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Quest")
 	TArray<FAPSQuestObjectiveNodeDefinition> Nodes;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Quest")
 	TArray<FAPSQuestEdgeDefinition> SuccessEdges;
 
+	const FAPSQuestBindingDefinition* FindBindingDefinition(FName BindingName) const;
 	const FAPSQuestObjectiveNodeDefinition* FindNode(FName NodeId) const;
 	void GetSuccessors(FName NodeId, TArray<FName>& OutSuccessors) const;
 	bool ValidateDefinition(TArray<FString>& OutErrors) const;

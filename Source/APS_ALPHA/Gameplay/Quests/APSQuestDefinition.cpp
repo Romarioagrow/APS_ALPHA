@@ -22,6 +22,16 @@ namespace
 	}
 }
 
+const FAPSQuestBindingDefinition* UAPSQuestDefinition::FindBindingDefinition(
+	FName BindingName) const
+{
+	return BindingDefinitions.FindByPredicate(
+		[BindingName](const FAPSQuestBindingDefinition& Binding)
+		{
+			return Binding.BindingName == BindingName;
+		});
+}
+
 const FAPSQuestObjectiveNodeDefinition* UAPSQuestDefinition::FindNode(FName NodeId) const
 {
 	return Nodes.FindByPredicate([NodeId](const FAPSQuestObjectiveNodeDefinition& Node)
@@ -63,6 +73,22 @@ bool UAPSQuestDefinition::ValidateDefinition(TArray<FString>& OutErrors) const
 		return false;
 	}
 
+	TSet<FName> BindingNames;
+	for (const FAPSQuestBindingDefinition& Binding : BindingDefinitions)
+	{
+		if (Binding.BindingName.IsNone() || Binding.ExpectedKind == EAPSQuestEntityKind::None)
+		{
+			OutErrors.Add(TEXT("Binding definitions require a name and canonical identity kind"));
+			continue;
+		}
+		if (BindingNames.Contains(Binding.BindingName))
+		{
+			OutErrors.Add(FString::Printf(TEXT("Duplicate binding definition %s"),
+				*Binding.BindingName.ToString()));
+		}
+		BindingNames.Add(Binding.BindingName);
+	}
+
 	TSet<FName> NodeIds;
 	for (const FAPSQuestObjectiveNodeDefinition& Node : Nodes)
 	{
@@ -81,6 +107,13 @@ bool UAPSQuestDefinition::ValidateDefinition(TArray<FString>& OutErrors) const
 			OutErrors.Add(FString::Printf(TEXT("Node %s requires a trigger verb"),
 				*Node.NodeId.ToString()));
 		}
+		if (Node.Trigger.MinimumDefinitionSchemaVersion < 0
+			|| (Node.Trigger.RequiredDefinitionId.IsValid()
+				&& Node.Trigger.MinimumDefinitionSchemaVersion < 1))
+		{
+			OutErrors.Add(FString::Printf(TEXT("Node %s has an invalid definition identity schema"),
+				*Node.NodeId.ToString()));
+		}
 		if (Node.RequiredProgress < 1 || Node.Trigger.MinimumQuantity < 1)
 		{
 			OutErrors.Add(FString::Printf(TEXT("Node %s requires positive progress quantities"),
@@ -91,6 +124,19 @@ bool UAPSQuestDefinition::ValidateDefinition(TArray<FString>& OutErrors) const
 		ValidateMatch(TEXT("target"), Node.Trigger.TargetMatch, Node.Trigger.ExactTarget,
 			Node.Trigger.TargetBinding, OutErrors, Node.NodeId);
 
+		if (Node.Trigger.SubjectMatch == EAPSQuestBindingMatch::NamedBinding
+			&& !BindingNames.Contains(Node.Trigger.SubjectBinding))
+		{
+			OutErrors.Add(FString::Printf(TEXT("Node %s references undeclared subject binding %s"),
+				*Node.NodeId.ToString(), *Node.Trigger.SubjectBinding.ToString()));
+		}
+		if (Node.Trigger.TargetMatch == EAPSQuestBindingMatch::NamedBinding
+			&& !BindingNames.Contains(Node.Trigger.TargetBinding))
+		{
+			OutErrors.Add(FString::Printf(TEXT("Node %s references undeclared target binding %s"),
+				*Node.NodeId.ToString(), *Node.Trigger.TargetBinding.ToString()));
+		}
+
 		TSet<FName> RewardIds;
 		for (const FAPSQuestRewardDefinition& Reward : Node.Rewards)
 		{
@@ -98,6 +144,13 @@ bool UAPSQuestDefinition::ValidateDefinition(TArray<FString>& OutErrors) const
 			{
 				OutErrors.Add(FString::Printf(TEXT("Node %s has an invalid reward"),
 					*Node.NodeId.ToString()));
+			}
+			if (!Reward.TargetBinding.IsNone()
+				&& !BindingNames.Contains(Reward.TargetBinding))
+			{
+				OutErrors.Add(FString::Printf(TEXT("Node %s reward %s references undeclared binding %s"),
+					*Node.NodeId.ToString(), *Reward.RewardId.ToString(),
+					*Reward.TargetBinding.ToString()));
 			}
 			if (RewardIds.Contains(Reward.RewardId))
 			{

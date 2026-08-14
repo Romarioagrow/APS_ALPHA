@@ -33,6 +33,15 @@ namespace APSQuestTests
 		Definition->DefinitionVersion = 1;
 		Definition->EntryNodeId = BaseNodeId;
 
+		FAPSQuestBindingDefinition& BaseSchema =
+			Definition->BindingDefinitions.AddDefaulted_GetRef();
+		BaseSchema.BindingName = BaseBinding;
+		BaseSchema.ExpectedKind = EAPSQuestEntityKind::CivilizationEntity;
+		FAPSQuestBindingDefinition& ShipSchema =
+			Definition->BindingDefinitions.AddDefaulted_GetRef();
+		ShipSchema.BindingName = ShipBinding;
+		ShipSchema.ExpectedKind = EAPSQuestEntityKind::CivilizationEntity;
+
 		FAPSQuestObjectiveNodeDefinition& Base = Definition->Nodes.AddDefaulted_GetRef();
 		Base.NodeId = BaseNodeId;
 		Base.Trigger.Verb = TEXT("APS.Interaction.Inspect");
@@ -179,6 +188,12 @@ bool FAPSQuestIdentityAndOrderingTest::RunTest(const FString& Parameters)
 	Runtime.StartQuest(QuestId, Guid(5000), Reason);
 	const FAPSQuestEntityRef Base = CivilizationEntity(30);
 	const FAPSQuestEntityRef OtherBase = CivilizationEntity(31);
+	FAPSQuestEntityRef WrongDomain;
+	WrongDomain.Kind = EAPSQuestEntityKind::CelestialBody;
+	WrongDomain.StableKey = TEXT("SYS0/S0/P0");
+	TestFalse(TEXT("Binding rejects a different canonical identity domain"),
+		Runtime.BindEntity(QuestId, BaseBinding, WrongDomain, Reason));
+	TestTrue(TEXT("Wrong-domain diagnostic is explicit"), Reason.Contains(TEXT("identity kind")));
 	TestTrue(TEXT("Initial binding succeeds"), Runtime.BindEntity(
 		QuestId, BaseBinding, Base, Reason));
 	TestFalse(TEXT("Binding cannot silently retarget"), Runtime.BindEntity(

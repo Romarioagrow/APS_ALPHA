@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "UObject/PrimaryAssetId.h"
 #include "APSQuestTypes.generated.h"
 
 UENUM(BlueprintType)
@@ -145,6 +146,13 @@ struct APS_ALPHA_API FAPSQuestEvent
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category="Quest")
 	FName Verb;
 
+	/** Authoritative recipe/buildable/ship definition identity, never a display/class string. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category="Quest")
+	FPrimaryAssetId DefinitionId;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category="Quest")
+	int32 DefinitionSchemaVersion{0};
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category="Quest")
 	EAPSQuestEventResult Result{EAPSQuestEventResult::Succeeded};
 
@@ -193,6 +201,11 @@ struct APS_ALPHA_API FAPSQuestEvent
 		if (Quantity < 1)
 		{
 			return Fail(TEXT("Quest event quantity must be positive"));
+		}
+		if (DefinitionSchemaVersion < 0
+			|| (DefinitionId.IsValid() && DefinitionSchemaVersion < 1))
+		{
+			return Fail(TEXT("Quest event definition schema version is invalid"));
 		}
 		if (IsTerminal() && !CorrelationId.IsValid())
 		{
