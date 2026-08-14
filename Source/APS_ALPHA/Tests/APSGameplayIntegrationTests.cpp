@@ -167,6 +167,8 @@ bool FAPSWorldScapeFamilyLifecycleTest::RunTest(const FString& Parameters)
 	APlanetarySurfaceGenerator* Generator = Planet->PlanetaryEnvironmentGenerator;
 	TestEqual(TEXT("Preloaded surface reports its state"), Planet->GetWorldScapeStreamingState(),
 		EWorldScapeSurfaceState::Preloaded);
+	TestFalse(TEXT("Preloaded surface is not semantically active"),
+		Planet->IsWorldScapeStreamingActive());
 	AWorldScapeRoot* PreloadedRoot = Generator ? Generator->WorldScapeRootInstance : nullptr;
 	UWorldScapeLod* RetainedLodSentinel = nullptr;
 	if (TestNotNull(TEXT("Preload allocates a configured WorldScape root"), PreloadedRoot))
@@ -214,6 +216,36 @@ bool FAPSWorldScapeFamilyLifecycleTest::RunTest(const FString& Parameters)
 		Planet->bWorldScapeSurfaceReady = true;
 		TestTrue(TEXT("Ready latch survives a transiently incomplete resident LOD set"),
 			Planet->RefreshWorldScapeSurfaceVisibility());
+
+		// WorldScape legitimately freezes its producer after publishing a complete
+		// resident batch. The half-second streaming poll must still classify that
+		// ready Active root as active; otherwise it re-enters Active, clears the
+		// readiness latch and hides the root for a visible frame window.
+		Root->bGenerateWorldScape = true;
+		Root->bFreezeGeneration = true;
+		Root->SetActorHiddenInGame(false);
+		Planet->bWorldScapeSurfaceReady = true;
+		int32 RedundantActivationRequests = 0;
+		for (int32 PollIndex = 0; PollIndex < 3; ++PollIndex)
+		{
+			if (Planet->GetWorldScapeStreamingState() != EWorldScapeSurfaceState::Active
+				|| !Planet->IsWorldScapeStreamingActive())
+			{
+				++RedundantActivationRequests;
+				Planet->SetWorldScapeStreamingState(EWorldScapeSurfaceState::Active);
+			}
+		}
+		TestEqual(TEXT("Ready frozen Active root does not request redundant activation"),
+			RedundantActivationRequests, 0);
+		TestEqual(TEXT("Ready frozen polling preserves the same WorldScape root"),
+			Generator->WorldScapeRootInstance, Root);
+		TestTrue(TEXT("Ready frozen polling preserves the readiness latch"),
+			Planet->bWorldScapeSurfaceReady);
+		TestFalse(TEXT("Ready frozen polling never hides the published root"),
+			Root->IsHidden());
+		TestTrue(TEXT("Ready frozen polling retains resident LOD storage"),
+			Root->WorldScapeLod.Contains(RetainedLodSentinel));
+		Root->bFreezeGeneration = false;
 
 		// The synthetic root above never received a genuinely complete payload. Reset
 		// the test-only readiness injection before exercising the unresolved freeze
@@ -283,6 +315,8 @@ bool FAPSWorldScapeFamilyLifecycleTest::RunTest(const FString& Parameters)
 	Planet->SetWorldScapeStreamingState(EWorldScapeSurfaceState::FrozenVisible);
 	TestEqual(TEXT("Generated sibling remains resident and frozen"), Planet->GetWorldScapeStreamingState(),
 		EWorldScapeSurfaceState::FrozenVisible);
+	TestFalse(TEXT("Frozen-visible sibling is not the active streaming surface"),
+		Planet->IsWorldScapeStreamingActive());
 	TestTrue(TEXT("Frozen surface keeps generated data"), Root && Root->bGenerateWorldScape && Root->bFreezeGeneration);
 	// This synthetic test world never runs a completed WorldScape noise worker.
 	// Atomic hand-off must therefore keep the unresolved root hidden and retain the

@@ -119,10 +119,12 @@ void APlanetaryBody::SetWorldScapeStreamingActive(bool bActive)
 
 bool APlanetaryBody::IsWorldScapeStreamingActive() const
 {
-	return IsValid(PlanetaryEnvironmentGenerator)
-		&& IsValid(PlanetaryEnvironmentGenerator->WorldScapeRootInstance)
-		&& PlanetaryEnvironmentGenerator->WorldScapeRootInstance->bGenerateWorldScape
-		&& !PlanetaryEnvironmentGenerator->WorldScapeRootInstance->bFreezeGeneration;
+	const AWorldScapeRoot* Root = IsValid(PlanetaryEnvironmentGenerator)
+		? PlanetaryEnvironmentGenerator->WorldScapeRootInstance : nullptr;
+	return WorldScapeSurfaceState == EWorldScapeSurfaceState::Active
+		&& IsValid(Root)
+		&& (bWorldScapeSurfaceReady
+			|| (Root->bGenerateWorldScape && !Root->bFreezeGeneration));
 }
 
 double APlanetaryBody::GetWorldScapeActivationRadiusCm() const
