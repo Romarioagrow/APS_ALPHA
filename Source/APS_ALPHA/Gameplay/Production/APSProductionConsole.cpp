@@ -145,10 +145,6 @@ bool AAPSProductionConsole::ResolveCanonicalIdentity(FGuid& OutContextStableId,
 bool AAPSProductionConsole::InitializeProductionContext(FString& OutFailure)
 {
 	OutFailure.Reset();
-	if (bContextRegistered)
-	{
-		return true;
-	}
 	UWorld* World = GetWorld();
 	UAPSProductionSubsystem* Production = World
 		? World->GetSubsystem<UAPSProductionSubsystem>() : nullptr;
@@ -156,6 +152,13 @@ bool AAPSProductionConsole::InitializeProductionContext(FString& OutFailure)
 	{
 		OutFailure = TEXT("APS.Production.ConsoleSubsystemUnavailable");
 		return false;
+	}
+	FGuid PendingLoadGenerationId;
+	const bool bHasPendingLoad = Production->GetPendingLoadGenerationId(
+		PendingLoadGenerationId);
+	if (bContextRegistered && !bHasPendingLoad)
+	{
+		return true;
 	}
 	FGuid ContextStableId;
 	FGuid OwnerStableId;
@@ -174,7 +177,11 @@ bool AAPSProductionConsole::InitializeProductionContext(FString& OutFailure)
 	Registration.QueueCapacity = QueueCapacity;
 	Registration.MaximumConcurrentJobs = MaximumConcurrentJobs;
 	Registration.SpawnPadStableId = SpawnPadStableId;
-	if (!Production->RegisterContext(Registration, OutFailure))
+	const bool bRegistered = bHasPendingLoad
+		? Production->RegisterContextForLoad(Registration,
+			PendingLoadGenerationId, OutFailure)
+		: Production->RegisterContext(Registration, OutFailure);
+	if (!bRegistered)
 	{
 		return false;
 	}

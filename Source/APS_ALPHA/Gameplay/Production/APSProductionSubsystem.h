@@ -34,6 +34,10 @@ public:
 	bool RegisterContext(const FAPSProductionContextRegistration& Registration,
 		FString& OutFailure);
 
+	/** Actor-ready registration token scoped to one explicit LoadWorld attempt. */
+	bool RegisterContextForLoad(const FAPSProductionContextRegistration& Registration,
+		const FGuid& LoadGenerationId, FString& OutFailure);
+
 	UFUNCTION(BlueprintCallable, Category="APS|Production")
 	bool UnregisterContext(FGuid ContextStableId, AActor* ContextActor,
 		EAPSProductionAccessMode AccessMode, FString& OutFailure);
@@ -75,6 +79,20 @@ public:
 	bool RestorePersistenceState(const FAPSProductionPersistenceState& State,
 		FString& OutFailure);
 
+	/** Structural staging only. Valid staging quarantines mutating runtime access. */
+	bool StagePersistenceState(const FAPSProductionPersistenceState& State,
+		const FGuid& LoadGenerationId, FString& OutFailure);
+
+	EAPSProductionPersistenceApplyStatus TryApplyStagedPersistenceState(
+		FString& OutFailure);
+
+	bool GetPendingLoadGenerationId(FGuid& OutLoadGenerationId) const;
+	bool IsPersistenceLoadQuarantined() const { return bPersistenceLoadQuarantined; }
+
+	/** Save owner uses this coherent export seam; quarantined state is never saved. */
+	bool TryExportPersistenceState(FAPSProductionPersistenceState& OutState,
+		FString& OutFailure) const;
+
 	FOnAPSProductionSnapshotInvalidated& OnSnapshotInvalidated()
 	{
 		return SnapshotInvalidated;
@@ -107,8 +125,11 @@ private:
 		FPrimaryAssetId SelectedDefinitionId;
 		TArray<FAPSProductionJobRecord> Jobs;
 		int64 NextQueueOrdinal{1};
+		FGuid ReadyLoadGenerationId;
 	};
 
+	bool RegisterContextInternal(const FAPSProductionContextRegistration& Registration,
+		const FGuid* LoadGenerationId, FString& OutFailure);
 	bool ValidateAccess(const FContextState& Context, AActor* ContextActor,
 		EAPSProductionAccessMode AccessMode, FString& OutFailure) const;
 	bool ValidateCommand(const FAPSProductionCommand& Command,
@@ -134,10 +155,31 @@ private:
 	static bool CheckedScaleQuantity(int64 UnitQuantity, int32 Multiplier,
 		int64& OutQuantity);
 	static FName VerbForDomain(EAPSProductionDomain Domain);
+	static void NormalizePersistenceOrdering(FAPSProductionPersistenceState& State);
+	static bool ArePersistenceStatesIdentical(
+		const FAPSProductionPersistenceState& Left,
+		const FAPSProductionPersistenceState& Right);
+	bool NormalizeAndValidatePersistenceState(
+		const FAPSProductionPersistenceState& State,
+		const FGuid& MigrationStateId,
+		FAPSProductionPersistenceState& OutNormalized,
+		FString& OutFailure) const;
+	EAPSProductionPersistenceApplyStatus ValidatePersistenceDependencies(
+		const FAPSProductionPersistenceState& State, bool bRequireLoadReadiness,
+		FString& OutFailure) const;
+	bool ApplyValidatedPersistenceState(const FAPSProductionPersistenceState& State,
+		bool bReplaceEventStream, FString& OutFailure);
+	void RejectStagedPersistenceLoad();
 
 	TMap<FPrimaryAssetId, FAPSProductionDefinition> Definitions;
 	TMap<FGuid, FContextState> Contexts;
 	TMap<FGuid, TMap<FPrimaryAssetId, FInventoryEntry>> Inventories;
+	TOptional<FAPSProductionPersistenceState> PendingPersistenceState;
+	TOptional<FAPSProductionPersistenceState> ActiveRestoredProjection;
+	FGuid PendingLoadGenerationId;
+	FGuid ActiveLoadGenerationId;
+	TSet<FGuid> PendingReadyContextIds;
+	bool bPersistenceLoadQuarantined{false};
 	FOnAPSProductionSnapshotInvalidated SnapshotInvalidated;
 	FOnAPSProductionPanelRequested PanelRequested;
 };

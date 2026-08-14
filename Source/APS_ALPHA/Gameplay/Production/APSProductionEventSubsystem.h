@@ -36,6 +36,10 @@ public:
 	bool RestoreStreamState(const FAPSProductionEventStreamState& State,
 		FString& OutFailure);
 
+	/** Atomically replaces a validated persisted stream during a staged world load. */
+	bool ReplaceStreamStateForLoad(const FAPSProductionEventStreamState& State,
+		FString& OutFailure);
+
 private:
 	struct FCorrelationState
 	{
@@ -52,6 +56,9 @@ private:
 
 	bool ValidateTransition(const FAPSProductionEvent& Event, bool bDebugOnly,
 		FString& OutFailure) const;
+
+	bool ReplaceValidatedStreamState(const FAPSProductionEventStreamState& State,
+		FString& OutFailure);
 
 	void EnsureStreamId() const;
 	FOnAPSProductionEventPublished EventPublished;

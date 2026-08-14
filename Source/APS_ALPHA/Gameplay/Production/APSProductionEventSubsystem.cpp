@@ -80,11 +80,27 @@ bool UAPSProductionEventSubsystem::RestoreStreamState(
 		OutFailure = TEXT("APS.Production.EventStreamAlreadyInitialized");
 		return false;
 	}
-	StreamId = State.SchemaVersion >= 2 && State.StreamId.IsValid()
-		? State.StreamId : FGuid::NewGuid();
+	return ReplaceValidatedStreamState(State, OutFailure);
+}
+
+bool UAPSProductionEventSubsystem::ReplaceStreamStateForLoad(
+	const FAPSProductionEventStreamState& State, FString& OutFailure)
+{
+	OutFailure.Reset();
+	if (!State.IsStructurallyValid(&OutFailure))
+	{
+		return false;
+	}
+	return ReplaceValidatedStreamState(State, OutFailure);
+}
+
+bool UAPSProductionEventSubsystem::ReplaceValidatedStreamState(
+	const FAPSProductionEventStreamState& State, FString& OutFailure)
+{
+	TMap<FGuid, FCorrelationState> ReplacementCorrelations;
 	for (const FAPSProductionEventCorrelationRecord& Record : State.Correlations)
 	{
-		FCorrelationState& Restored = CorrelationStates.Add(Record.CorrelationId);
+		FCorrelationState& Restored = ReplacementCorrelations.Add(Record.CorrelationId);
 		Restored.Result = Record.Result;
 		Restored.Verb = Record.Verb;
 		Restored.SubjectStableId = Record.SubjectStableId;
@@ -95,7 +111,13 @@ bool UAPSProductionEventSubsystem::RestoreStreamState(
 		Restored.Quantity = Record.Quantity;
 		Restored.bDebugOnly = false;
 	}
+
+	CorrelationStates = MoveTemp(ReplacementCorrelations);
+	PublishedEventIds.Reset();
+	StreamId = State.SchemaVersion >= 2 && State.StreamId.IsValid()
+		? State.StreamId : FGuid::NewGuid();
 	LastSequence = State.LastSequence;
+	OutFailure.Reset();
 	return true;
 }
 

@@ -44,6 +44,15 @@ enum class EAPSProductionCommandStatus : uint8
 	Rejected
 };
 
+UENUM(BlueprintType)
+enum class EAPSProductionPersistenceApplyStatus : uint8
+{
+	NoPending,
+	WaitingForDependencies,
+	Applied,
+	Rejected
+};
+
 /** Integer inventory amount keyed by an authoritative primary-asset definition. */
 USTRUCT(BlueprintType)
 struct APS_ALPHA_API FAPSProductionAmount
@@ -401,8 +410,13 @@ struct APS_ALPHA_API FAPSProductionPersistenceState
 {
 	GENERATED_BODY()
 
+	static constexpr int32 LatestSchemaVersion = 2;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="APS|Production")
-	int32 SchemaVersion{1};
+	int32 SchemaVersion{LatestSchemaVersion};
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="APS|Production")
+	FGuid StateId;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="APS|Production")
 	TArray<FAPSProductionInventoryRecord> Inventories;

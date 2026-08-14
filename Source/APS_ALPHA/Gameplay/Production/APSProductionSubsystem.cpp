@@ -32,6 +32,7 @@ namespace APSProductionRuntime
 	const FName InvalidTransition(TEXT("APS.Production.InvalidTransition"));
 	const FName EventRejected(TEXT("APS.Production.EventRejected"));
 	const FName OutputOverflow(TEXT("APS.Production.OutputOverflow"));
+	const FName PersistenceLoadInProgress(TEXT("APS.Production.PersistenceLoadInProgress"));
 
 	FAPSLocalizedTextDescriptor ReasonDescriptor(const FName Key,
 		const TCHAR* DefaultText)
@@ -56,6 +57,12 @@ void UAPSProductionSubsystem::Deinitialize()
 	Definitions.Reset();
 	Contexts.Reset();
 	Inventories.Reset();
+	PendingPersistenceState.Reset();
+	ActiveRestoredProjection.Reset();
+	PendingLoadGenerationId.Invalidate();
+	ActiveLoadGenerationId.Invalidate();
+	PendingReadyContextIds.Reset();
+	bPersistenceLoadQuarantined = false;
 	SnapshotInvalidated.Clear();
 	PanelRequested.Clear();
 	Super::Deinitialize();
@@ -79,35 +86,78 @@ bool UAPSProductionSubsystem::RegisterDefinition(
 	{
 		return false;
 	}
-	if (Definitions.Contains(Definition.DefinitionId))
+	if (const FAPSProductionDefinition* Existing = Definitions.Find(
+		Definition.DefinitionId))
 	{
-		OutFailure = TEXT("APS.Production.DuplicateDefinition");
-		return false;
-	}
-	Definitions.Add(Definition.DefinitionId, Definition);
-	for (TPair<FGuid, FContextState>& Pair : Contexts)
-	{
-		if (Pair.Value.Domain == Definition.Domain)
+		if (!FAPSProductionDefinition::StaticStruct()->CompareScriptStruct(
+			Existing, &Definition, 0))
 		{
-			BumpRevision(Pair.Value);
+			OutFailure = TEXT("APS.Production.DuplicateDefinition");
+			return false;
 		}
 	}
+	else
+	{
+		Definitions.Add(Definition.DefinitionId, Definition);
+		for (TPair<FGuid, FContextState>& Pair : Contexts)
+		{
+			if (Pair.Value.Domain == Definition.Domain)
+			{
+				BumpRevision(Pair.Value);
+			}
+		}
+	}
+	const EAPSProductionPersistenceApplyStatus ApplyStatus =
+		TryApplyStagedPersistenceState(OutFailure);
+	if (ApplyStatus == EAPSProductionPersistenceApplyStatus::Rejected)
+	{
+		return false;
+	}
+	OutFailure.Reset();
 	return true;
 }
 
 bool UAPSProductionSubsystem::RegisterContext(
 	const FAPSProductionContextRegistration& Registration, FString& OutFailure)
 {
+	return RegisterContextInternal(Registration, nullptr, OutFailure);
+}
+
+bool UAPSProductionSubsystem::RegisterContextForLoad(
+	const FAPSProductionContextRegistration& Registration,
+	const FGuid& LoadGenerationId, FString& OutFailure)
+{
+	OutFailure.Reset();
+	if (!LoadGenerationId.IsValid() || !PendingPersistenceState.IsSet()
+		|| LoadGenerationId != PendingLoadGenerationId)
+	{
+		OutFailure = TEXT("APS.Production.PersistenceLoadGenerationMismatch");
+		return false;
+	}
+	return RegisterContextInternal(Registration, &LoadGenerationId, OutFailure);
+}
+
+bool UAPSProductionSubsystem::RegisterContextInternal(
+	const FAPSProductionContextRegistration& Registration,
+	const FGuid* LoadGenerationId, FString& OutFailure)
+{
 	OutFailure.Reset();
 	if (!Registration.IsStructurallyValid(&OutFailure))
 	{
+		return false;
+	}
+	if (LoadGenerationId
+		&& Registration.AccessMode != EAPSProductionAccessMode::ActorGated)
+	{
+		OutFailure = TEXT("APS.Production.PersistenceDebugContextRejected");
 		return false;
 	}
 	if (FContextState* Existing = Contexts.Find(Registration.ContextStableId))
 	{
 		const bool bCompatibleRebind = Existing->AccessMode == EAPSProductionAccessMode::ActorGated
 			&& Registration.AccessMode == EAPSProductionAccessMode::ActorGated
-			&& !Existing->ContextActor.IsValid()
+			&& (!Existing->ContextActor.IsValid()
+				|| Existing->ContextActor.Get() == Registration.ContextActor)
 			&& Existing->OwnerStableId == Registration.OwnerStableId
 			&& Existing->Domain == Registration.Domain
 			&& Existing->QueueCapacity == Registration.QueueCapacity
@@ -116,10 +166,26 @@ bool UAPSProductionSubsystem::RegisterContext(
 		if (bCompatibleRebind)
 		{
 			Existing->ContextActor = Registration.ContextActor;
+			if (LoadGenerationId)
+			{
+				Existing->ReadyLoadGenerationId = *LoadGenerationId;
+				PendingReadyContextIds.Add(Existing->ContextStableId);
+			}
 			BumpRevision(*Existing);
+			const EAPSProductionPersistenceApplyStatus ApplyStatus =
+				TryApplyStagedPersistenceState(OutFailure);
+			if (ApplyStatus == EAPSProductionPersistenceApplyStatus::Rejected)
+			{
+				return false;
+			}
+			OutFailure.Reset();
 			return true;
 		}
 		OutFailure = TEXT("APS.Production.DuplicateContext");
+		if (LoadGenerationId)
+		{
+			RejectStagedPersistenceLoad();
+		}
 		return false;
 	}
 
@@ -133,8 +199,20 @@ bool UAPSProductionSubsystem::RegisterContext(
 	Context.MaximumConcurrentJobs = Registration.MaximumConcurrentJobs;
 	Context.SpawnPadStableId = Registration.SpawnPadStableId;
 	Context.SnapshotId = FGuid::NewGuid();
+	if (LoadGenerationId)
+	{
+		Context.ReadyLoadGenerationId = *LoadGenerationId;
+		PendingReadyContextIds.Add(Context.ContextStableId);
+	}
 	Contexts.Add(Context.ContextStableId, MoveTemp(Context));
 	SnapshotInvalidated.Broadcast(Registration.ContextStableId);
+	const EAPSProductionPersistenceApplyStatus ApplyStatus =
+		TryApplyStagedPersistenceState(OutFailure);
+	if (ApplyStatus == EAPSProductionPersistenceApplyStatus::Rejected)
+	{
+		return false;
+	}
+	OutFailure.Reset();
 	return true;
 }
 
@@ -176,6 +254,11 @@ bool UAPSProductionSubsystem::ValidateAccess(const FContextState& Context,
 	AActor* ContextActor, const EAPSProductionAccessMode AccessMode,
 	FString& OutFailure) const
 {
+	if (bPersistenceLoadQuarantined)
+	{
+		OutFailure = APSProductionRuntime::PersistenceLoadInProgress.ToString();
+		return false;
+	}
 	if (Context.AccessMode != AccessMode)
 	{
 		OutFailure = APSProductionRuntime::InvalidAccess.ToString();
@@ -531,6 +614,10 @@ bool UAPSProductionSubsystem::CheckedScaleQuantity(const int64 UnitQuantity,
 int64 UAPSProductionSubsystem::GetInventoryQuantity(const FGuid& OwnerStableId,
 	const FPrimaryAssetId& ItemId) const
 {
+	if (bPersistenceLoadQuarantined)
+	{
+		return 0;
+	}
 	const TMap<FPrimaryAssetId, FInventoryEntry>* Inventory = Inventories.Find(OwnerStableId);
 	const FInventoryEntry* Entry = Inventory ? Inventory->Find(ItemId) : nullptr;
 	return Entry ? Entry->Quantity : 0;
@@ -630,6 +717,11 @@ bool UAPSProductionSubsystem::SetInventoryAmount(
 	const FAPSProductionInventoryRecord& Record, FString& OutFailure)
 {
 	OutFailure.Reset();
+	if (bPersistenceLoadQuarantined)
+	{
+		OutFailure = APSProductionRuntime::PersistenceLoadInProgress.ToString();
+		return false;
+	}
 	if (!Record.OwnerStableId.IsValid() || !Record.ItemId.IsValid()
 		|| Record.ItemSchemaVersion < 1 || Record.Quantity < 0)
 	{
@@ -654,6 +746,11 @@ bool UAPSProductionSubsystem::ApplyInventoryDelta(const FGuid& OwnerStableId,
 	const FAPSProductionAmount& Amount, const bool bAdd, FString& OutFailure)
 {
 	OutFailure.Reset();
+	if (bPersistenceLoadQuarantined)
+	{
+		OutFailure = APSProductionRuntime::PersistenceLoadInProgress.ToString();
+		return false;
+	}
 	if (!OwnerStableId.IsValid() || !Amount.IsStructurallyValid(&OutFailure))
 	{
 		return false;
@@ -844,6 +941,10 @@ void UAPSProductionSubsystem::CompleteJob(FContextState& Context,
 
 void UAPSProductionSubsystem::AdvanceProduction(const double DeltaSeconds)
 {
+	if (bPersistenceLoadQuarantined)
+	{
+		return;
+	}
 	if (!FMath::IsFinite(DeltaSeconds) || DeltaSeconds < 0.0)
 	{
 		return;
@@ -880,6 +981,11 @@ bool UAPSProductionSubsystem::ResolveMaterialization(const FGuid& ContextStableI
 {
 	using namespace APSProductionRuntime;
 	OutFailure.Reset();
+	if (bPersistenceLoadQuarantined)
+	{
+		OutFailure = PersistenceLoadInProgress.ToString();
+		return false;
+	}
 	FContextState* Context = Contexts.Find(ContextStableId);
 	FAPSProductionJobRecord* Job = Context
 		? Context->Jobs.FindByPredicate([&JobId](const FAPSProductionJobRecord& Candidate)
@@ -949,6 +1055,7 @@ void UAPSProductionSubsystem::ExportPersistenceState(
 	FAPSProductionPersistenceState& OutState) const
 {
 	OutState = FAPSProductionPersistenceState{};
+	OutState.StateId = FGuid::NewGuid();
 	TSet<FGuid> PersistedOwners;
 	for (const TPair<FGuid, FContextState>& Pair : Contexts)
 	{
@@ -1003,6 +1110,8 @@ void UAPSProductionSubsystem::ExportPersistenceState(
 		// their projection on the explicitly supported v1 migration path; runtime
 		// saves always export the authoritative v2 StreamId.
 		OutState.EventStream.SchemaVersion = 1;
+		OutState.SchemaVersion = 1;
+		OutState.StateId.Invalidate();
 	}
 }
 
@@ -1010,6 +1119,28 @@ bool UAPSProductionSubsystem::RestorePersistenceState(
 	const FAPSProductionPersistenceState& State, FString& OutFailure)
 {
 	OutFailure.Reset();
+	if (State.SchemaVersion == FAPSProductionPersistenceState::LatestSchemaVersion)
+	{
+		FAPSProductionPersistenceState Normalized;
+		const FGuid MigrationStateId = State.StateId.IsValid()
+			? State.StateId : FGuid::NewGuid();
+		if (!NormalizeAndValidatePersistenceState(State, MigrationStateId,
+			Normalized, OutFailure))
+		{
+			return false;
+		}
+		const EAPSProductionPersistenceApplyStatus DependencyStatus =
+			ValidatePersistenceDependencies(Normalized, false, OutFailure);
+		if (DependencyStatus != EAPSProductionPersistenceApplyStatus::Applied)
+		{
+			if (OutFailure.IsEmpty())
+			{
+				OutFailure = TEXT("APS.Production.PersistenceDependenciesPending");
+			}
+			return false;
+		}
+		return ApplyValidatedPersistenceState(Normalized, false, OutFailure);
+	}
 	if (State.SchemaVersion != 1)
 	{
 		OutFailure = TEXT("APS.Production.UnsupportedPersistenceSchema");
@@ -1173,6 +1304,573 @@ bool UAPSProductionSubsystem::RestorePersistenceState(
 		{
 			BumpRevision(Pair.Value);
 		}
+	}
+	return true;
+}
+
+void UAPSProductionSubsystem::NormalizePersistenceOrdering(
+	FAPSProductionPersistenceState& State)
+{
+	auto GuidBefore = [](const FGuid& Left, const FGuid& Right)
+	{
+		return Left.ToString(EGuidFormats::Digits).Compare(
+			Right.ToString(EGuidFormats::Digits), ESearchCase::CaseSensitive) < 0;
+	};
+	State.Inventories.Sort([&GuidBefore](
+		const FAPSProductionInventoryRecord& Left,
+		const FAPSProductionInventoryRecord& Right)
+		{
+			if (Left.OwnerStableId != Right.OwnerStableId)
+			{
+				return GuidBefore(Left.OwnerStableId, Right.OwnerStableId);
+			}
+			return Left.ItemId.ToString().Compare(Right.ItemId.ToString(),
+				ESearchCase::CaseSensitive) < 0;
+		});
+	State.Jobs.Sort([&GuidBefore](const FAPSProductionJobRecord& Left,
+		const FAPSProductionJobRecord& Right)
+		{
+			if (Left.ContextStableId != Right.ContextStableId)
+			{
+				return GuidBefore(Left.ContextStableId, Right.ContextStableId);
+			}
+			if (Left.QueueOrdinal != Right.QueueOrdinal)
+			{
+				return Left.QueueOrdinal < Right.QueueOrdinal;
+			}
+			return GuidBefore(Left.JobId, Right.JobId);
+		});
+	State.EventStream.Correlations.Sort([&GuidBefore](
+		const FAPSProductionEventCorrelationRecord& Left,
+		const FAPSProductionEventCorrelationRecord& Right)
+		{
+			return GuidBefore(Left.CorrelationId, Right.CorrelationId);
+		});
+}
+
+bool UAPSProductionSubsystem::ArePersistenceStatesIdentical(
+	const FAPSProductionPersistenceState& Left,
+	const FAPSProductionPersistenceState& Right)
+{
+	FAPSProductionPersistenceState NormalizedLeft = Left;
+	FAPSProductionPersistenceState NormalizedRight = Right;
+	NormalizePersistenceOrdering(NormalizedLeft);
+	NormalizePersistenceOrdering(NormalizedRight);
+	return FAPSProductionPersistenceState::StaticStruct()->CompareScriptStruct(
+		&NormalizedLeft, &NormalizedRight, 0);
+}
+
+bool UAPSProductionSubsystem::NormalizeAndValidatePersistenceState(
+	const FAPSProductionPersistenceState& State,
+	const FGuid& MigrationStateId,
+	FAPSProductionPersistenceState& OutNormalized,
+	FString& OutFailure) const
+{
+	OutFailure.Reset();
+	if (!MigrationStateId.IsValid() || State.SchemaVersion < 1
+		|| State.SchemaVersion > FAPSProductionPersistenceState::LatestSchemaVersion)
+	{
+		OutFailure = TEXT("APS.Production.UnsupportedPersistenceSchema");
+		return false;
+	}
+
+	OutNormalized = State;
+	const bool bLegacyProjection = State.SchemaVersion == 1;
+	if (bLegacyProjection)
+	{
+		OutNormalized.SchemaVersion = FAPSProductionPersistenceState::LatestSchemaVersion;
+		OutNormalized.StateId = MigrationStateId;
+	}
+	else if (!OutNormalized.StateId.IsValid())
+	{
+		OutFailure = TEXT("APS.Production.PersistenceStateIdMissing");
+		return false;
+	}
+
+	TSet<FString> InventoryKeys;
+	for (const FAPSProductionInventoryRecord& Record : OutNormalized.Inventories)
+	{
+		if (!Record.OwnerStableId.IsValid() || !Record.ItemId.IsValid()
+			|| Record.ItemSchemaVersion < 1 || Record.Quantity < 0)
+		{
+			OutFailure = TEXT("APS.Production.InvalidPersistedInventory");
+			return false;
+		}
+		const FString Key = Record.OwnerStableId.ToString(EGuidFormats::Digits)
+			+ TEXT("|") + Record.ItemId.ToString();
+		if (InventoryKeys.Contains(Key))
+		{
+			OutFailure = TEXT("APS.Production.DuplicatePersistedInventory");
+			return false;
+		}
+		InventoryKeys.Add(Key);
+	}
+
+	TSet<FGuid> JobIds;
+	TSet<FGuid> CorrelationIds;
+	TSet<FString> QueueOrdinals;
+	for (FAPSProductionJobRecord& Job : OutNormalized.Jobs)
+	{
+		if (bLegacyProjection
+			&& Job.SubjectIdentityDomain == EAPSSubjectIdentityDomain::None)
+		{
+			Job.SubjectIdentityDomain = EAPSSubjectIdentityDomain::GameplayEntity;
+		}
+		if (!Job.IsStructurallyValid(&OutFailure) || Job.bDebugOnly)
+		{
+			if (OutFailure.IsEmpty())
+			{
+				OutFailure = TEXT("APS.Production.InvalidPersistedJob");
+			}
+			return false;
+		}
+		const FString QueueKey = Job.ContextStableId.ToString(EGuidFormats::Digits)
+			+ TEXT("|") + LexToString(Job.QueueOrdinal);
+		if (JobIds.Contains(Job.JobId) || CorrelationIds.Contains(Job.CorrelationId)
+			|| QueueOrdinals.Contains(QueueKey))
+		{
+			OutFailure = TEXT("APS.Production.DuplicatePersistedJobIdentity");
+			return false;
+		}
+		JobIds.Add(Job.JobId);
+		CorrelationIds.Add(Job.CorrelationId);
+		QueueOrdinals.Add(QueueKey);
+	}
+
+	const bool bLegacyEventStream = OutNormalized.EventStream.SchemaVersion == 1;
+	if (bLegacyEventStream)
+	{
+		OutNormalized.EventStream.SchemaVersion =
+			FAPSProductionEventStreamState::LatestSchemaVersion;
+		OutNormalized.EventStream.StreamId = OutNormalized.StateId;
+	}
+	for (FAPSProductionEventCorrelationRecord& Correlation
+		: OutNormalized.EventStream.Correlations)
+	{
+		if (bLegacyProjection
+			&& Correlation.SubjectIdentityDomain == EAPSSubjectIdentityDomain::None)
+		{
+			Correlation.SubjectIdentityDomain = EAPSSubjectIdentityDomain::GameplayEntity;
+		}
+	}
+
+	if ((bLegacyProjection || bLegacyEventStream)
+		&& OutNormalized.EventStream.Correlations.IsEmpty()
+		&& !OutNormalized.Jobs.IsEmpty())
+	{
+		for (const FAPSProductionJobRecord& Job : OutNormalized.Jobs)
+		{
+			FAPSProductionEventCorrelationRecord& Correlation =
+				OutNormalized.EventStream.Correlations.AddDefaulted_GetRef();
+			Correlation.CorrelationId = Job.CorrelationId;
+			Correlation.Verb = VerbForDomain(Job.Domain);
+			Correlation.SubjectStableId = Job.SubjectStableId;
+			Correlation.SubjectIdentityDomain = Job.SubjectIdentityDomain;
+			Correlation.TargetStableId = Job.JobId;
+			Correlation.DefinitionId = Job.DefinitionId;
+			Correlation.DefinitionSchemaVersion = Job.DefinitionSchemaVersion;
+			Correlation.Quantity = Job.Quantity;
+			switch (Job.State)
+			{
+			case EAPSProductionJobState::Queued:
+				Correlation.Result = EAPSProductionEventResult::Requested;
+				break;
+			case EAPSProductionJobState::InProgress:
+			case EAPSProductionJobState::AwaitingMaterialization:
+				Correlation.Result = EAPSProductionEventResult::Started;
+				break;
+			case EAPSProductionJobState::Succeeded:
+				Correlation.Result = EAPSProductionEventResult::Succeeded;
+				break;
+			case EAPSProductionJobState::Failed:
+				Correlation.Result = EAPSProductionEventResult::Failed;
+				break;
+			case EAPSProductionJobState::Cancelled:
+				Correlation.Result = EAPSProductionEventResult::Cancelled;
+				break;
+			default:
+				OutFailure = TEXT("APS.Production.InvalidPersistedJobState");
+				return false;
+			}
+		}
+		OutNormalized.EventStream.LastSequence = FMath::Max(
+			OutNormalized.EventStream.LastSequence,
+			static_cast<int64>(OutNormalized.EventStream.Correlations.Num()));
+	}
+	if (!OutNormalized.EventStream.IsStructurallyValid(&OutFailure))
+	{
+		return false;
+	}
+
+	TMap<FGuid, const FAPSProductionEventCorrelationRecord*> Correlations;
+	for (const FAPSProductionEventCorrelationRecord& Correlation
+		: OutNormalized.EventStream.Correlations)
+	{
+		Correlations.Add(Correlation.CorrelationId, &Correlation);
+	}
+	for (const FAPSProductionJobRecord& Job : OutNormalized.Jobs)
+	{
+		const FAPSProductionEventCorrelationRecord* const* Found =
+			Correlations.Find(Job.CorrelationId);
+		const FAPSProductionEventCorrelationRecord* Correlation = Found ? *Found : nullptr;
+		EAPSProductionEventResult ExpectedResult = EAPSProductionEventResult::Requested;
+		switch (Job.State)
+		{
+		case EAPSProductionJobState::Queued:
+			ExpectedResult = EAPSProductionEventResult::Requested;
+			break;
+		case EAPSProductionJobState::InProgress:
+		case EAPSProductionJobState::AwaitingMaterialization:
+			ExpectedResult = EAPSProductionEventResult::Started;
+			break;
+		case EAPSProductionJobState::Succeeded:
+			ExpectedResult = EAPSProductionEventResult::Succeeded;
+			break;
+		case EAPSProductionJobState::Failed:
+			ExpectedResult = EAPSProductionEventResult::Failed;
+			break;
+		case EAPSProductionJobState::Cancelled:
+			ExpectedResult = EAPSProductionEventResult::Cancelled;
+			break;
+		default:
+			OutFailure = TEXT("APS.Production.InvalidPersistedJobState");
+			return false;
+		}
+		if (!Correlation || Correlation->Verb != VerbForDomain(Job.Domain)
+			|| Correlation->SubjectStableId != Job.SubjectStableId
+			|| Correlation->SubjectIdentityDomain != Job.SubjectIdentityDomain
+			|| Correlation->TargetStableId != Job.JobId
+			|| Correlation->DefinitionId != Job.DefinitionId
+			|| Correlation->DefinitionSchemaVersion != Job.DefinitionSchemaVersion
+			|| Correlation->Quantity != Job.Quantity)
+		{
+			OutFailure = TEXT("APS.Production.PersistedEventCorrelationMismatch");
+			return false;
+		}
+		if (Correlation->Result != ExpectedResult)
+		{
+			OutFailure = TEXT("APS.Production.PersistedEventLifecycleMismatch");
+			return false;
+		}
+	}
+
+	NormalizePersistenceOrdering(OutNormalized);
+	OutFailure.Reset();
+	return true;
+}
+
+EAPSProductionPersistenceApplyStatus
+UAPSProductionSubsystem::ValidatePersistenceDependencies(
+	const FAPSProductionPersistenceState& State,
+	const bool bRequireLoadReadiness, FString& OutFailure) const
+{
+	OutFailure.Reset();
+	bool bWaiting = bRequireLoadReadiness && PendingReadyContextIds.IsEmpty();
+	for (const FAPSProductionJobRecord& Job : State.Jobs)
+	{
+		const FAPSProductionDefinition* Definition = Definitions.Find(Job.DefinitionId);
+		const FContextState* Context = Contexts.Find(Job.ContextStableId);
+		if (!Definition || !Context)
+		{
+			bWaiting = true;
+			continue;
+		}
+		if (Definition->DefinitionSchemaVersion != Job.DefinitionSchemaVersion
+			|| Definition->Domain != Job.Domain
+			|| Context->AccessMode != EAPSProductionAccessMode::ActorGated
+			|| Context->OwnerStableId != Job.OwnerStableId
+			|| Context->Domain != Job.Domain
+			|| Context->SpawnPadStableId != Job.SpawnPadStableId)
+		{
+			OutFailure = TEXT("APS.Production.PersistenceDependencyMismatch");
+			return EAPSProductionPersistenceApplyStatus::Rejected;
+		}
+		if (!Context->ContextActor.IsValid())
+		{
+			bWaiting = true;
+		}
+		if (bRequireLoadReadiness
+			&& (Context->ReadyLoadGenerationId != PendingLoadGenerationId
+				|| !PendingReadyContextIds.Contains(Context->ContextStableId)))
+		{
+			bWaiting = true;
+		}
+	}
+
+	for (const FAPSProductionInventoryRecord& Record : State.Inventories)
+	{
+		bool bHasOwnerContext = false;
+		bool bHasReadyOwnerContext = false;
+		for (const TPair<FGuid, FContextState>& Pair : Contexts)
+		{
+			const FContextState& Context = Pair.Value;
+			if (Context.AccessMode != EAPSProductionAccessMode::ActorGated
+				|| Context.OwnerStableId != Record.OwnerStableId)
+			{
+				continue;
+			}
+			bHasOwnerContext = true;
+			if (Context.ContextActor.IsValid()
+				&& (!bRequireLoadReadiness
+					|| (Context.ReadyLoadGenerationId == PendingLoadGenerationId
+						&& PendingReadyContextIds.Contains(Context.ContextStableId))))
+			{
+				bHasReadyOwnerContext = true;
+				break;
+			}
+		}
+		if (!bHasOwnerContext || !bHasReadyOwnerContext)
+		{
+			bWaiting = true;
+		}
+	}
+
+	if (bWaiting)
+	{
+		OutFailure = TEXT("APS.Production.PersistenceDependenciesPending");
+		return EAPSProductionPersistenceApplyStatus::WaitingForDependencies;
+	}
+	return EAPSProductionPersistenceApplyStatus::Applied;
+}
+
+bool UAPSProductionSubsystem::ApplyValidatedPersistenceState(
+	const FAPSProductionPersistenceState& State,
+	const bool bReplaceEventStream, FString& OutFailure)
+{
+	TMap<FGuid, TMap<FPrimaryAssetId, FInventoryEntry>> ReplacementInventories;
+	for (const FAPSProductionInventoryRecord& Record : State.Inventories)
+	{
+		FInventoryEntry& Entry = ReplacementInventories.FindOrAdd(Record.OwnerStableId)
+			.FindOrAdd(Record.ItemId);
+		Entry.SchemaVersion = Record.ItemSchemaVersion;
+		Entry.Quantity = Record.Quantity;
+	}
+
+	TMap<FGuid, TArray<FAPSProductionJobRecord>> ReplacementJobs;
+	TMap<FGuid, int64> ReplacementOrdinals;
+	for (const FAPSProductionJobRecord& Job : State.Jobs)
+	{
+		ReplacementJobs.FindOrAdd(Job.ContextStableId).Add(Job);
+		int64& NextOrdinal = ReplacementOrdinals.FindOrAdd(Job.ContextStableId, 1);
+		NextOrdinal = FMath::Max(NextOrdinal, Job.QueueOrdinal + 1);
+	}
+
+	UAPSProductionEventSubsystem* Events = nullptr;
+	if (UWorld* World = GetWorld())
+	{
+		Events = World->GetSubsystem<UAPSProductionEventSubsystem>();
+	}
+	if (Events)
+	{
+		const bool bEventStateApplied = bReplaceEventStream
+			? Events->ReplaceStreamStateForLoad(State.EventStream, OutFailure)
+			: Events->RestoreStreamState(State.EventStream, OutFailure);
+		if (!bEventStateApplied)
+		{
+			return false;
+		}
+	}
+
+	Inventories = MoveTemp(ReplacementInventories);
+	for (TPair<FGuid, FContextState>& Pair : Contexts)
+	{
+		FContextState& Context = Pair.Value;
+		if (Context.AccessMode != EAPSProductionAccessMode::ActorGated)
+		{
+			continue;
+		}
+		Context.Jobs.Reset();
+		Context.NextQueueOrdinal = 1;
+		if (TArray<FAPSProductionJobRecord>* Jobs = ReplacementJobs.Find(Pair.Key))
+		{
+			Context.Jobs = MoveTemp(*Jobs);
+			Context.NextQueueOrdinal = ReplacementOrdinals.FindRef(Pair.Key);
+		}
+		if (Context.Revision == MAX_int64)
+		{
+			Context.SnapshotId = FGuid::NewGuid();
+			Context.Revision = 1;
+		}
+		else
+		{
+			++Context.Revision;
+		}
+	}
+	ActiveRestoredProjection = State;
+	if (!bReplaceEventStream)
+	{
+		for (const TPair<FGuid, FContextState>& Pair : Contexts)
+		{
+			if (Pair.Value.AccessMode == EAPSProductionAccessMode::ActorGated)
+			{
+				SnapshotInvalidated.Broadcast(Pair.Key);
+			}
+		}
+	}
+	OutFailure.Reset();
+	return true;
+}
+
+void UAPSProductionSubsystem::RejectStagedPersistenceLoad()
+{
+	bPersistenceLoadQuarantined = true;
+	for (TPair<FGuid, FContextState>& Pair : Contexts)
+	{
+		FContextState& Context = Pair.Value;
+		if (Context.AccessMode != EAPSProductionAccessMode::ActorGated)
+		{
+			continue;
+		}
+		Context.Jobs.Reset();
+		Context.NextQueueOrdinal = 1;
+		Context.SelectedDefinitionId = FPrimaryAssetId{};
+		Context.ContextActor.Reset();
+		Context.ReadyLoadGenerationId.Invalidate();
+		BumpRevision(Context);
+	}
+	Inventories.Reset();
+	if (UWorld* World = GetWorld())
+	{
+		if (UAPSProductionEventSubsystem* Events =
+			World->GetSubsystem<UAPSProductionEventSubsystem>())
+		{
+			FAPSProductionEventStreamState EmptyStream;
+			EmptyStream.StreamId = FGuid::NewGuid();
+			FString IgnoredFailure;
+			Events->ReplaceStreamStateForLoad(EmptyStream, IgnoredFailure);
+		}
+	}
+	PendingPersistenceState.Reset();
+	ActiveRestoredProjection.Reset();
+	PendingLoadGenerationId.Invalidate();
+	ActiveLoadGenerationId.Invalidate();
+	PendingReadyContextIds.Reset();
+	bPersistenceLoadQuarantined = false;
+}
+
+bool UAPSProductionSubsystem::StagePersistenceState(
+	const FAPSProductionPersistenceState& State,
+	const FGuid& LoadGenerationId, FString& OutFailure)
+{
+	OutFailure.Reset();
+	if (!LoadGenerationId.IsValid())
+	{
+		OutFailure = TEXT("APS.Production.InvalidLoadGeneration");
+		return false;
+	}
+
+	FAPSProductionPersistenceState Normalized;
+	if (!NormalizeAndValidatePersistenceState(State, LoadGenerationId,
+		Normalized, OutFailure))
+	{
+		RejectStagedPersistenceLoad();
+		return false;
+	}
+	if (PendingPersistenceState.IsSet()
+		&& PendingLoadGenerationId == LoadGenerationId)
+	{
+		if (PendingPersistenceState->StateId == Normalized.StateId
+			&& ArePersistenceStatesIdentical(*PendingPersistenceState, Normalized))
+		{
+			return true;
+		}
+		OutFailure = TEXT("APS.Production.PersistenceProjectionConflict");
+		RejectStagedPersistenceLoad();
+		return false;
+	}
+
+	bPersistenceLoadQuarantined = true;
+	PendingPersistenceState = MoveTemp(Normalized);
+	PendingLoadGenerationId = LoadGenerationId;
+	PendingReadyContextIds.Reset();
+	for (TPair<FGuid, FContextState>& Pair : Contexts)
+	{
+		FContextState& Context = Pair.Value;
+		if (Context.AccessMode == EAPSProductionAccessMode::ActorGated)
+		{
+			Context.ContextActor.Reset();
+			Context.ReadyLoadGenerationId.Invalidate();
+			BumpRevision(Context);
+		}
+	}
+	return true;
+}
+
+EAPSProductionPersistenceApplyStatus
+UAPSProductionSubsystem::TryApplyStagedPersistenceState(FString& OutFailure)
+{
+	OutFailure.Reset();
+	if (!PendingPersistenceState.IsSet())
+	{
+		return EAPSProductionPersistenceApplyStatus::NoPending;
+	}
+	const EAPSProductionPersistenceApplyStatus DependencyStatus =
+		ValidatePersistenceDependencies(*PendingPersistenceState, true, OutFailure);
+	if (DependencyStatus == EAPSProductionPersistenceApplyStatus::Rejected)
+	{
+		RejectStagedPersistenceLoad();
+		return DependencyStatus;
+	}
+	if (DependencyStatus == EAPSProductionPersistenceApplyStatus::WaitingForDependencies)
+	{
+		return DependencyStatus;
+	}
+	if (!ApplyValidatedPersistenceState(*PendingPersistenceState, true, OutFailure))
+	{
+		RejectStagedPersistenceLoad();
+		return EAPSProductionPersistenceApplyStatus::Rejected;
+	}
+
+	ActiveLoadGenerationId = PendingLoadGenerationId;
+	PendingPersistenceState.Reset();
+	PendingLoadGenerationId.Invalidate();
+	PendingReadyContextIds.Reset();
+	bPersistenceLoadQuarantined = false;
+	for (const TPair<FGuid, FContextState>& Pair : Contexts)
+	{
+		if (Pair.Value.AccessMode == EAPSProductionAccessMode::ActorGated)
+		{
+			SnapshotInvalidated.Broadcast(Pair.Key);
+		}
+	}
+	return EAPSProductionPersistenceApplyStatus::Applied;
+}
+
+bool UAPSProductionSubsystem::GetPendingLoadGenerationId(
+	FGuid& OutLoadGenerationId) const
+{
+	OutLoadGenerationId = PendingPersistenceState.IsSet()
+		? PendingLoadGenerationId : FGuid{};
+	return OutLoadGenerationId.IsValid();
+}
+
+bool UAPSProductionSubsystem::TryExportPersistenceState(
+	FAPSProductionPersistenceState& OutState, FString& OutFailure) const
+{
+	OutState = FAPSProductionPersistenceState{};
+	OutFailure.Reset();
+	if (bPersistenceLoadQuarantined || PendingPersistenceState.IsSet())
+	{
+		OutFailure = APSProductionRuntime::PersistenceLoadInProgress.ToString();
+		return false;
+	}
+	const UWorld* World = GetWorld();
+	if (!World || !World->GetSubsystem<UAPSProductionEventSubsystem>())
+	{
+		OutFailure = TEXT("APS.Production.PersistenceEventStreamUnavailable");
+		return false;
+	}
+	ExportPersistenceState(OutState);
+	if (OutState.SchemaVersion != FAPSProductionPersistenceState::LatestSchemaVersion
+		|| !OutState.StateId.IsValid()
+		|| !OutState.EventStream.IsStructurallyValid(&OutFailure))
+	{
+		if (OutFailure.IsEmpty())
+		{
+			OutFailure = TEXT("APS.Production.IncoherentPersistenceExport");
+		}
+		OutState = FAPSProductionPersistenceState{};
+		return false;
 	}
 	return true;
 }
