@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "UObject/PrimaryAssetId.h"
 #include "APSProductionEvent.generated.h"
 
 UENUM(BlueprintType)
@@ -34,6 +35,13 @@ struct APS_ALPHA_API FAPSProductionEvent
 
 	UPROPERTY(BlueprintReadWrite, Category="APS|Production Event")
 	FGuid TargetStableId;
+
+	/** Recipe/buildable/ship type identity; actor/job identity remains TargetStableId. */
+	UPROPERTY(BlueprintReadWrite, Category="APS|Production Event")
+	FPrimaryAssetId DefinitionId;
+
+	UPROPERTY(BlueprintReadWrite, Category="APS|Production Event", meta=(ClampMin="1"))
+	int32 DefinitionSchemaVersion{1};
 
 	UPROPERTY(BlueprintReadWrite, Category="APS|Production Event", meta=(ClampMin="1"))
 	int32 Quantity{1};

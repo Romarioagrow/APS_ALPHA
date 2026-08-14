@@ -34,6 +34,8 @@ private:
 		FName Verb;
 		FGuid SubjectStableId;
 		FGuid TargetStableId;
+		FPrimaryAssetId DefinitionId;
+		int32 DefinitionSchemaVersion{1};
 		int32 Quantity{1};
 	};
 

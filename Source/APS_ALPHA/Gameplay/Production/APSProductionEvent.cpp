@@ -2,7 +2,7 @@
 
 namespace
 {
-	bool Reject(FString* OutReason, const TCHAR* Reason)
+	bool RejectProductionEvent(FString* OutReason, const TCHAR* Reason)
 	{
 		if (OutReason)
 		{
@@ -24,43 +24,47 @@ bool FAPSProductionEvent::IsStructurallyValid(
 {
 	if (!EventId.IsValid())
 	{
-		return Reject(OutReason, TEXT("Production event has no EventId."));
+		return RejectProductionEvent(OutReason, TEXT("Production event has no EventId."));
 	}
 	if (!CorrelationId.IsValid())
 	{
-		return Reject(OutReason, TEXT("Production event has no CorrelationId."));
+		return RejectProductionEvent(OutReason, TEXT("Production event has no CorrelationId."));
 	}
 	if (Verb.IsNone())
 	{
-		return Reject(OutReason, TEXT("Production event has no Verb."));
+		return RejectProductionEvent(OutReason, TEXT("Production event has no Verb."));
 	}
 	if (Quantity < 1)
 	{
-		return Reject(OutReason, TEXT("Production event quantity must be at least one."));
+		return RejectProductionEvent(OutReason, TEXT("Production event quantity must be at least one."));
+	}
+	if (DefinitionId.IsValid() && DefinitionSchemaVersion < 1)
+	{
+		return RejectProductionEvent(OutReason, TEXT("Production event definition schema version is invalid."));
 	}
 	if (bRequireSubjectId && !SubjectStableId.IsValid())
 	{
-		return Reject(OutReason, TEXT("Production event has no canonical SubjectStableId."));
+		return RejectProductionEvent(OutReason, TEXT("Production event has no canonical SubjectStableId."));
 	}
 	if (bRequireTargetId && !TargetStableId.IsValid())
 	{
-		return Reject(OutReason, TEXT("Production event has no canonical TargetStableId."));
+		return RejectProductionEvent(OutReason, TEXT("Production event has no canonical TargetStableId."));
 	}
 	if (Result == EAPSProductionEventResult::Failed && FailureCode.IsNone())
 	{
-		return Reject(OutReason, TEXT("Failed production event has no FailureCode."));
+		return RejectProductionEvent(OutReason, TEXT("Failed production event has no FailureCode."));
 	}
 	if (Result != EAPSProductionEventResult::Failed && !FailureCode.IsNone())
 	{
-		return Reject(OutReason, TEXT("Non-failed production event carries a FailureCode."));
+		return RejectProductionEvent(OutReason, TEXT("Non-failed production event carries a FailureCode."));
 	}
 	if (Sequence < 1)
 	{
-		return Reject(OutReason, TEXT("Production event sequence is not assigned."));
+		return RejectProductionEvent(OutReason, TEXT("Production event sequence is not assigned."));
 	}
 	if (!FMath::IsFinite(TimestampWorldSeconds) || TimestampWorldSeconds < 0.0)
 	{
-		return Reject(OutReason, TEXT("Production event timestamp is invalid."));
+		return RejectProductionEvent(OutReason, TEXT("Production event timestamp is invalid."));
 	}
 	if (OutReason)
 	{

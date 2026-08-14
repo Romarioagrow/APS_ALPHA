@@ -88,6 +88,8 @@ bool FAPSProductionEventLifecycleContractTest::RunTest(const FString& Parameters
 	Requested.Verb = TEXT("APS.Shipyard.Enqueue");
 	Requested.SubjectStableId = FGuid::NewGuid();
 	Requested.TargetStableId = FGuid::NewGuid();
+	Requested.DefinitionId = FPrimaryAssetId(TEXT("Ship"), TEXT("APS.TestShip"));
+	Requested.DefinitionSchemaVersion = 1;
 	Requested.Quantity = 2;
 	Requested.Result = EAPSProductionEventResult::Requested;
 

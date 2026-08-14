@@ -28,6 +28,8 @@ bool UAPSProductionEventSubsystem::ValidateTransition(
 	if (Previous->Verb != Event.Verb
 		|| Previous->SubjectStableId != Event.SubjectStableId
 		|| Previous->TargetStableId != Event.TargetStableId
+		|| Previous->DefinitionId != Event.DefinitionId
+		|| Previous->DefinitionSchemaVersion != Event.DefinitionSchemaVersion
 		|| Previous->Quantity != Event.Quantity)
 	{
 		OutFailure = TEXT("APS.Production.CorrelationPayloadMismatch");
@@ -96,6 +98,8 @@ bool UAPSProductionEventSubsystem::PublishEvent(
 	State.Verb = Event.Verb;
 	State.SubjectStableId = Event.SubjectStableId;
 	State.TargetStableId = Event.TargetStableId;
+	State.DefinitionId = Event.DefinitionId;
+	State.DefinitionSchemaVersion = Event.DefinitionSchemaVersion;
 	State.Quantity = Event.Quantity;
 	EventPublished.Broadcast(Event);
 	return true;
