@@ -3,14 +3,12 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "APS_ALPHA/Gameplay/Interaction/APSInteractable.h"
+#include "APS_ALPHA/Gameplay/Civilizations/APSCivilizationRuntimeManifest.h"
 #include "APSProductionTypes.h"
 #include "APSProductionConsole.generated.h"
 
 class UAPSCivilizationMaterializationSubsystem;
 class USceneComponent;
-struct FAPSCivilizationRuntimeManifest;
-enum class EAPSCivilizationMaterializationState : uint8;
-
 /**
  * Reusable actor-driven access point for HQ, crafting, build and shipyard panels.
  * It consumes canonical identity from Civilization actors and never creates world IDs.
