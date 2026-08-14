@@ -8,6 +8,8 @@
 
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnAPSProductionSnapshotInvalidated,
 	const FGuid& /* ContextStableId */);
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnAPSProductionPanelRequested,
+	const FAPSProductionSnapshot&);
 
 /**
  * Authoritative, save-agnostic production runtime shared by Crafting, Building and Shipyard.
@@ -41,6 +43,11 @@ public:
 		EAPSProductionAccessMode AccessMode, FAPSProductionSnapshot& OutSnapshot,
 		FString& OutFailure) const;
 
+	/** Controlled UI boundary used by actor consoles and the explicit debug launcher. */
+	UFUNCTION(BlueprintCallable, Category="APS|Production")
+	bool RequestPanel(FGuid ContextStableId, AActor* ContextActor,
+		EAPSProductionAccessMode AccessMode, FString& OutFailure);
+
 	UFUNCTION(BlueprintCallable, Category="APS|Production")
 	FAPSProductionCommandResult ExecuteCommand(const FAPSProductionCommand& Command);
 
@@ -71,6 +78,11 @@ public:
 	FOnAPSProductionSnapshotInvalidated& OnSnapshotInvalidated()
 	{
 		return SnapshotInvalidated;
+	}
+
+	FOnAPSProductionPanelRequested& OnPanelRequested()
+	{
+		return PanelRequested;
 	}
 
 private:
@@ -127,4 +139,5 @@ private:
 	TMap<FGuid, FContextState> Contexts;
 	TMap<FGuid, TMap<FPrimaryAssetId, FInventoryEntry>> Inventories;
 	FOnAPSProductionSnapshotInvalidated SnapshotInvalidated;
+	FOnAPSProductionPanelRequested PanelRequested;
 };

@@ -57,6 +57,7 @@ void UAPSProductionSubsystem::Deinitialize()
 	Contexts.Reset();
 	Inventories.Reset();
 	SnapshotInvalidated.Clear();
+	PanelRequested.Clear();
 	Super::Deinitialize();
 }
 
@@ -102,8 +103,22 @@ bool UAPSProductionSubsystem::RegisterContext(
 	{
 		return false;
 	}
-	if (Contexts.Contains(Registration.ContextStableId))
+	if (FContextState* Existing = Contexts.Find(Registration.ContextStableId))
 	{
+		const bool bCompatibleRebind = Existing->AccessMode == EAPSProductionAccessMode::ActorGated
+			&& Registration.AccessMode == EAPSProductionAccessMode::ActorGated
+			&& !Existing->ContextActor.IsValid()
+			&& Existing->OwnerStableId == Registration.OwnerStableId
+			&& Existing->Domain == Registration.Domain
+			&& Existing->QueueCapacity == Registration.QueueCapacity
+			&& Existing->MaximumConcurrentJobs == Registration.MaximumConcurrentJobs
+			&& Existing->SpawnPadStableId == Registration.SpawnPadStableId;
+		if (bCompatibleRebind)
+		{
+			Existing->ContextActor = Registration.ContextActor;
+			BumpRevision(*Existing);
+			return true;
+		}
 		OutFailure = TEXT("APS.Production.DuplicateContext");
 		return false;
 	}
@@ -142,8 +157,18 @@ bool UAPSProductionSubsystem::UnregisterContext(const FGuid ContextStableId,
 		OutFailure = TEXT("APS.Production.ContextHasActiveJobs");
 		return false;
 	}
-	Contexts.Remove(ContextStableId);
-	SnapshotInvalidated.Broadcast(ContextStableId);
+	if (Context->AccessMode == EAPSProductionAccessMode::ActorGated)
+	{
+		// Keep persisted queue/history across actor streaming. A compatible canonical actor
+		// may rebind this same context later; world teardown clears the subsystem.
+		Context->ContextActor.Reset();
+		BumpRevision(*Context);
+	}
+	else
+	{
+		Contexts.Remove(ContextStableId);
+		SnapshotInvalidated.Broadcast(ContextStableId);
+	}
 	return true;
 }
 
@@ -272,6 +297,19 @@ bool UAPSProductionSubsystem::QuerySnapshot(const FGuid ContextStableId,
 				TEXT("Production job failed."));
 		}
 	}
+	return true;
+}
+
+bool UAPSProductionSubsystem::RequestPanel(const FGuid ContextStableId,
+	AActor* ContextActor, const EAPSProductionAccessMode AccessMode,
+	FString& OutFailure)
+{
+	FAPSProductionSnapshot Snapshot;
+	if (!QuerySnapshot(ContextStableId, ContextActor, AccessMode, Snapshot, OutFailure))
+	{
+		return false;
+	}
+	PanelRequested.Broadcast(Snapshot);
 	return true;
 }
 
