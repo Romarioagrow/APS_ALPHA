@@ -4,6 +4,9 @@
 #include "APS_ALPHA/Core/Instances/MainGameplayInstance.h"
 #include "APS_ALPHA/Core/Saves/GameSave.h"
 #include "APS_ALPHA/Core/Saves/SavedActorData.h"
+#include "APS_ALPHA/Gameplay/Civilizations/APSCivilizationIdentityComponent.h"
+#include "APS_ALPHA/Gameplay/Civilizations/APSCivilizationMaterializationSubsystem.h"
+#include "APS_ALPHA/Gameplay/Civilizations/APSCivilizationRuntimeManifest.h"
 #include "APS_ALPHA/Generation/AstroGenerator.h"
 #include "Kismet/GameplayStatics.h"
 #include "APS_ALPHA/Core/Structs/PlanetarySystemGenerationModel.h"
@@ -41,6 +44,8 @@ namespace
 			*APSMetadataEnumLabel(WorldData.SpectralClass));
 		const FString PlanetType = APSMetadataEnumLabel(WorldData.PlanetType);
 		Metadata.SetString(TEXT("APSWorld"), TEXT("PlanetType"), *PlanetType);
+		Metadata.SetString(TEXT("APSWorld"), TEXT("Habitability"),
+			*APSMetadataEnumLabel(WorldData.PlanetHabitability));
 		Metadata.SetString(TEXT("APSWorld"), TEXT("Environment"),
 			*FString::Printf(TEXT("%s / %.0f KM"), *PlanetType, WorldData.PlanetRadius));
 		Metadata.SetInt64(TEXT("APSWorld"), TEXT("TotalPlanets"), WorldData.PlanetsAmount);
@@ -160,6 +165,19 @@ void AGravityPlayerController::SaveNewWorld(const EAstroGenerationLevel AstroGen
 		
 		if (UWorld* World = GetWorld())
 		{
+			if (const UAPSCivilizationMaterializationSubsystem* CivilizationSubsystem =
+				World->GetSubsystem<UAPSCivilizationMaterializationSubsystem>())
+			{
+				const FAPSCivilizationRuntimeManifest& Manifest =
+					CivilizationSubsystem->GetRuntimeManifest();
+				FString ManifestValidationReason;
+				if (Manifest.IsStructurallyValid(&ManifestValidationReason))
+				{
+					SaveGameInstance->CivilizationManifest = Manifest;
+					SaveGameInstance->bHasCivilizationManifest = true;
+				}
+			}
+
 			TArray<AActor*> AllActors;
 			UGameplayStatics::GetAllActorsOfClass(World, ABaseActor::StaticClass(), AllActors);
 
@@ -171,6 +189,12 @@ void AGravityPlayerController::SaveNewWorld(const EAstroGenerationLevel AstroGen
 					SaveData.ActorTransform = Actor->GetActorTransform();
 					SaveData.ActorName = Actor->GetName();
 					SaveData.ActorClass = Actor->GetClass()->GetPathName();
+
+					if (const UAPSCivilizationIdentityComponent* Identity =
+						Actor->FindComponentByClass<UAPSCivilizationIdentityComponent>())
+					{
+						SaveData.StableEntityId = Identity->StableEntityId;
+					}
 
 					FMemoryWriter MemoryWriter(SaveData.ActorData, true);
 					FObjectAndNameAsStringProxyArchive Archive(MemoryWriter, true);
@@ -204,29 +228,112 @@ void AGravityPlayerController::LoadWorld()
 		if (UGameSave* LoadedGame = Cast<UGameSave>(UGameplayStatics::LoadGameFromSlot(LoadingName, 0)))
 		{
 			TMap<FString, AActor*> NameToActorMap;
+			TMap<FGuid, AActor*> StableIdToActorMap;
+
+			FAPSCivilizationRuntimeManifest LoadedManifest;
+			bool bHasValidManifest = false;
+			if (LoadedGame->bHasCivilizationManifest)
+			{
+				LoadedManifest = LoadedGame->CivilizationManifest;
+				FString MigrationReason;
+				bHasValidManifest = LoadedManifest.MigrateToLatest(&MigrationReason);
+				if (bHasValidManifest)
+				{
+					if (UAPSCivilizationMaterializationSubsystem* CivilizationSubsystem =
+						World->GetSubsystem<UAPSCivilizationMaterializationSubsystem>())
+					{
+						CivilizationSubsystem->RestoreRuntimeManifest(LoadedManifest);
+					}
+				}
+				else
+				{
+					UE_LOG(LogTemp, Warning,
+						TEXT("[APS.Save] Civilization manifest rejected during load: %s"),
+						*MigrationReason);
+				}
+			}
+
+			TArray<AActor*> ExistingActors;
+			UGameplayStatics::GetAllActorsOfClass(World, ABaseActor::StaticClass(), ExistingActors);
+			for (AActor* ExistingActor : ExistingActors)
+			{
+				if (!IsValid(ExistingActor))
+				{
+					continue;
+				}
+				NameToActorMap.FindOrAdd(ExistingActor->GetName()) = ExistingActor;
+				if (const UAPSCivilizationIdentityComponent* Identity =
+					ExistingActor->FindComponentByClass<UAPSCivilizationIdentityComponent>();
+					Identity && Identity->StableEntityId.IsValid())
+				{
+					StableIdToActorMap.FindOrAdd(Identity->StableEntityId) = ExistingActor;
+				}
+			}
 
 			for (const FActorSaveData& SaveData : LoadedGame->ActorSaveDataArray)
 			{
 				if (UClass* ActorClass = LoadClass<AActor>(nullptr, *SaveData.ActorClass))
 				{
-					FString UniqueName = SaveData.ActorName;
-					int32 Suffix = 1;
-					while (FindObject<AActor>(World, *UniqueName) != nullptr)
+					AActor* Actor = SaveData.StableEntityId.IsValid()
+						? StableIdToActorMap.FindRef(SaveData.StableEntityId) : nullptr;
+					if (!IsValid(Actor))
 					{
-						UniqueName = SaveData.ActorName + FString::Printf(TEXT("_%d"), Suffix++);
+						Actor = NameToActorMap.FindRef(SaveData.ActorName);
+					}
+					if (IsValid(Actor) && !Actor->IsA(ActorClass))
+					{
+						UE_LOG(LogTemp, Warning,
+							TEXT("[APS.Save] Refusing incompatible upsert name=%s existing=%s saved=%s"),
+							*SaveData.ActorName, *Actor->GetClass()->GetPathName(),
+							*ActorClass->GetPathName());
+						continue;
+					}
+					if (!IsValid(Actor))
+					{
+						FActorSpawnParameters SpawnParams;
+						SpawnParams.Name = FName(*SaveData.ActorName);
+						SpawnParams.SpawnCollisionHandlingOverride =
+							ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+						Actor = World->SpawnActor<AActor>(ActorClass,
+							SaveData.ActorTransform, SpawnParams);
 					}
 
-					FActorSpawnParameters SpawnParams;
-					SpawnParams.Name = FName(*UniqueName);
-
-					AActor* Actor = World->SpawnActor<AActor>(ActorClass, SaveData.ActorTransform, SpawnParams);
 					if (Actor)
 					{
 						FMemoryReader MemoryReader(SaveData.ActorData, true);
 						FObjectAndNameAsStringProxyArchive Archive(MemoryReader, true);
 						Actor->Serialize(Archive);
+						Actor->SetActorTransform(SaveData.ActorTransform, false, nullptr,
+							ETeleportType::TeleportPhysics);
+
+						if (SaveData.StableEntityId.IsValid() && bHasValidManifest)
+						{
+							const FAPSCivilizationManifestEntity* ManifestEntity =
+								LoadedManifest.Entities.FindByPredicate(
+									[&SaveData](const FAPSCivilizationManifestEntity& Entity)
+									{
+										return Entity.StableId == SaveData.StableEntityId;
+									});
+							if (ManifestEntity)
+							{
+								UAPSCivilizationIdentityComponent* Identity =
+									Actor->FindComponentByClass<UAPSCivilizationIdentityComponent>();
+								if (!Identity)
+								{
+									Identity = NewObject<UAPSCivilizationIdentityComponent>(Actor,
+										TEXT("CivilizationIdentity"));
+									Actor->AddInstanceComponent(Identity);
+									Identity->RegisterComponent();
+								}
+								Identity->InitializeFromManifest(LoadedManifest, *ManifestEntity);
+							}
+						}
 
 						NameToActorMap.Add(SaveData.ActorName, Actor);
+						if (SaveData.StableEntityId.IsValid())
+						{
+							StableIdToActorMap.Add(SaveData.StableEntityId, Actor);
+						}
 					}
 				}
 			}
