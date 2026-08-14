@@ -1,0 +1,725 @@
+#include "APSQuestRuntime.h"
+
+#include "Misc/SecureHash.h"
+
+namespace
+{
+	const FName MissingDefinitionCode(TEXT("Quest.Definition.Missing"));
+	const FName VersionMismatchCode(TEXT("Quest.Definition.VersionMismatch"));
+	const FName CancelledCode(TEXT("Quest.Action.Cancelled"));
+
+	FName EffectiveFailureCode(const FAPSQuestEvent& Event)
+	{
+		if (!Event.FailureCode.IsNone())
+		{
+			return Event.FailureCode;
+		}
+		return Event.Result == EAPSQuestEventResult::Cancelled ? CancelledCode : NAME_None;
+	}
+}
+
+bool FAPSQuestRuntime::RegisterDefinition(const UAPSQuestDefinition* Definition,
+	FString& OutReason)
+{
+	OutReason.Reset();
+	if (!IsValid(Definition))
+	{
+		OutReason = TEXT("Quest definition is invalid");
+		return false;
+	}
+	TArray<FString> Errors;
+	if (!Definition->ValidateDefinition(Errors))
+	{
+		OutReason = FString::Join(Errors, TEXT("; "));
+		return false;
+	}
+	if (const UAPSQuestDefinition* Existing = FindDefinition(Definition->QuestId))
+	{
+		if (Existing != Definition || Existing->DefinitionVersion != Definition->DefinitionVersion)
+		{
+			OutReason = FString::Printf(TEXT("Quest %s is already registered"),
+				*Definition->QuestId.ToString());
+			return false;
+		}
+		return true;
+	}
+	Definitions.Add(Definition->QuestId, Definition);
+	return true;
+}
+
+bool FAPSQuestRuntime::StartQuest(FName QuestId, const FGuid& InstanceId,
+	FString& OutReason)
+{
+	OutReason.Reset();
+	const UAPSQuestDefinition* Definition = FindDefinition(QuestId);
+	if (!Definition)
+	{
+		OutReason = TEXT("Quest definition is not registered");
+		return false;
+	}
+	if (!InstanceId.IsValid())
+	{
+		OutReason = TEXT("Quest instance requires a stable InstanceId");
+		return false;
+	}
+	if (Instances.Contains(QuestId))
+	{
+		OutReason = TEXT("Quest instance already exists");
+		return false;
+	}
+
+	FAPSQuestInstanceSaveData Instance;
+	Instance.QuestId = QuestId;
+	Instance.DefinitionVersion = Definition->DefinitionVersion;
+	Instance.InstanceId = InstanceId;
+	Instance.State = EAPSQuestInstanceState::Running;
+	for (const FAPSQuestObjectiveNodeDefinition& Node : Definition->Nodes)
+	{
+		FAPSQuestNodeRuntimeState& RuntimeNode = Instance.Nodes.AddDefaulted_GetRef();
+		RuntimeNode.NodeId = Node.NodeId;
+		RuntimeNode.State = Node.NodeId == Definition->EntryNodeId
+			? EAPSQuestNodeState::Active : EAPSQuestNodeState::Dormant;
+	}
+
+	FAPSQuestInstanceSaveData& Stored = Instances.Add(QuestId, MoveTemp(Instance));
+	InstanceChanged.Broadcast(QuestId, Stored);
+	if (const FAPSQuestObjectiveNodeDefinition* Entry = Definition->FindNode(Definition->EntryNodeId))
+	{
+		PublishPrompt(Stored, *Entry);
+	}
+	return true;
+}
+
+bool FAPSQuestRuntime::BindEntity(FName QuestId, FName BindingName,
+	const FAPSQuestEntityRef& Entity, FString& OutReason)
+{
+	OutReason.Reset();
+	FAPSQuestInstanceSaveData* Instance = FindMutableInstance(QuestId);
+	if (!Instance || BindingName.IsNone() || !Entity.IsValid())
+	{
+		OutReason = TEXT("Binding requires a quest instance, name and canonical entity");
+		return false;
+	}
+	if (FAPSQuestNamedEntityBinding* Existing = Instance->Bindings.FindByPredicate(
+		[BindingName](const FAPSQuestNamedEntityBinding& Binding)
+		{
+			return Binding.BindingName == BindingName;
+		}))
+	{
+		if (!Existing->Entity.Matches(Entity))
+		{
+			OutReason = FString::Printf(TEXT("Binding %s cannot silently retarget from %s to %s"),
+				*BindingName.ToString(), *Existing->Entity.ToDebugString(), *Entity.ToDebugString());
+			return false;
+		}
+		return true;
+	}
+
+	FAPSQuestNamedEntityBinding& Added = Instance->Bindings.AddDefaulted_GetRef();
+	Added.BindingName = BindingName;
+	Added.Entity = Entity;
+	InstanceChanged.Broadcast(QuestId, *Instance);
+	return true;
+}
+
+bool FAPSQuestRuntime::BeginEventStream(FName QuestId, const FGuid& StreamId,
+	FString& OutReason)
+{
+	OutReason.Reset();
+	FAPSQuestInstanceSaveData* Instance = FindMutableInstance(QuestId);
+	if (!Instance || !StreamId.IsValid())
+	{
+		OutReason = TEXT("Event stream requires a quest instance and valid StreamId");
+		return false;
+	}
+	if (Instance->EventStreamId == StreamId)
+	{
+		return true;
+	}
+	Instance->EventStreamId = StreamId;
+	Instance->LastConsumedSequence = 0;
+	InstanceChanged.Broadcast(QuestId, *Instance);
+	return true;
+}
+
+bool FAPSQuestRuntime::SubmitEvent(const FAPSQuestEvent& Event, FString& OutReason)
+{
+	OutReason.Reset();
+	if (!Event.IsStructurallyValid(&OutReason))
+	{
+		return false;
+	}
+
+	bool bAcceptedByAnyQuest = false;
+	for (TPair<FName, FAPSQuestInstanceSaveData>& Pair : Instances)
+	{
+		FAPSQuestInstanceSaveData& Instance = Pair.Value;
+		if (Instance.ConsumedEventIds.Contains(Event.EventId)
+			|| (Event.IsTerminal() && Instance.ConsumedTerminalCorrelations.Contains(Event.CorrelationId)))
+		{
+			// At-least-once delivery remains a successful no-op even after completion.
+			bAcceptedByAnyQuest = true;
+			continue;
+		}
+
+		if (Instance.State != EAPSQuestInstanceState::Running)
+		{
+			continue;
+		}
+		const UAPSQuestDefinition* Definition = FindDefinition(Instance.QuestId);
+		if (!Definition || Definition->DefinitionVersion != Instance.DefinitionVersion)
+		{
+			Instance.State = EAPSQuestInstanceState::Suspended;
+			Instance.LastFailureCode = Definition ? VersionMismatchCode : MissingDefinitionCode;
+			InstanceChanged.Broadcast(Instance.QuestId, Instance);
+			continue;
+		}
+
+		if (Event.Sequence > 0)
+		{
+			if (!Event.StreamId.IsValid())
+			{
+				OutReason = TEXT("Sequenced quest event requires StreamId");
+				return false;
+			}
+			if (!Instance.EventStreamId.IsValid())
+			{
+				Instance.EventStreamId = Event.StreamId;
+			}
+			if (Instance.EventStreamId != Event.StreamId)
+			{
+				OutReason = TEXT("Quest event belongs to a different stream; call BeginEventStream explicitly");
+				return false;
+			}
+			if (Event.Sequence <= Instance.LastConsumedSequence)
+			{
+				OutReason = TEXT("Out-of-order quest event rejected");
+				return false;
+			}
+		}
+
+		// Snapshot active nodes so one event cannot cascade into a successor that was
+		// activated by that same event.
+		TArray<FName> ActiveNodeIds;
+		for (const FAPSQuestNodeRuntimeState& Candidate : Instance.Nodes)
+		{
+			if (Candidate.State == EAPSQuestNodeState::Active)
+			{
+				ActiveNodeIds.Add(Candidate.NodeId);
+			}
+		}
+
+		bool bStateChanged = false;
+		for (FName ActiveNodeId : ActiveNodeIds)
+		{
+			FAPSQuestNodeRuntimeState* NodeState = FindMutableNode(Instance, ActiveNodeId);
+			if (!NodeState || NodeState->State != EAPSQuestNodeState::Active)
+			{
+				continue;
+			}
+			const FAPSQuestObjectiveNodeDefinition* Node = Definition->FindNode(NodeState->NodeId);
+			if (!Node)
+			{
+				continue;
+			}
+
+			FString MatchReason;
+			if ((Event.Result == EAPSQuestEventResult::Failed
+					|| Event.Result == EAPSQuestEventResult::Cancelled)
+				&& MatchesPredicate(Instance, Node->Trigger, Event, false, MatchReason))
+			{
+				NodeState->LastFailureCode = EffectiveFailureCode(Event);
+				bStateChanged = true;
+				continue;
+			}
+			if (!MatchesPredicate(Instance, Node->Trigger, Event, true, MatchReason))
+			{
+				continue;
+			}
+
+			NodeState->Progress = FMath::Min(Node->RequiredProgress,
+				NodeState->Progress + FMath::Max(1, Event.Quantity));
+			NodeState->LastFailureCode = NAME_None;
+			bStateChanged = true;
+			if (NodeState->Progress >= Node->RequiredProgress)
+			{
+				CompleteNode(Instance, *Definition, *NodeState);
+			}
+		}
+
+		AppendBoundedGuid(Instance.ConsumedEventIds, Event.EventId);
+		if (Event.IsTerminal())
+		{
+			AppendBoundedGuid(Instance.ConsumedTerminalCorrelations, Event.CorrelationId);
+		}
+		if (Event.Sequence > 0)
+		{
+			Instance.LastConsumedSequence = Event.Sequence;
+		}
+		RefreshInstanceCompletion(Instance, *Definition);
+		if (bStateChanged)
+		{
+			InstanceChanged.Broadcast(Instance.QuestId, Instance);
+		}
+		bAcceptedByAnyQuest = true;
+	}
+
+	if (!bAcceptedByAnyQuest)
+	{
+		OutReason = TEXT("No running quest accepted the event");
+	}
+	return bAcceptedByAnyQuest;
+}
+
+bool FAPSQuestRuntime::AcknowledgeReward(FName QuestId, const FGuid& TransactionId,
+	bool bApplied, FName FailureCode, FString& OutReason)
+{
+	OutReason.Reset();
+	FAPSQuestInstanceSaveData* Instance = FindMutableInstance(QuestId);
+	if (!Instance || !TransactionId.IsValid())
+	{
+		OutReason = TEXT("Reward acknowledgement requires quest and transaction");
+		return false;
+	}
+	FAPSQuestRewardLedgerEntry* Entry = Instance->RewardLedger.FindByPredicate(
+		[TransactionId](const FAPSQuestRewardLedgerEntry& Candidate)
+		{
+			return Candidate.TransactionId == TransactionId;
+		});
+	if (!Entry)
+	{
+		OutReason = TEXT("Reward transaction is unknown");
+		return false;
+	}
+	const EAPSQuestRewardState RequestedState = bApplied
+		? EAPSQuestRewardState::Applied : EAPSQuestRewardState::Failed;
+	if (Entry->State != EAPSQuestRewardState::Requested && Entry->State != RequestedState)
+	{
+		OutReason = TEXT("Reward transaction cannot change terminal state");
+		return false;
+	}
+	Entry->State = RequestedState;
+	Entry->FailureCode = bApplied ? NAME_None : FailureCode;
+	InstanceChanged.Broadcast(QuestId, *Instance);
+	return true;
+}
+
+bool FAPSQuestRuntime::SuspendQuest(FName QuestId, FName FailureCode,
+	FString& OutReason)
+{
+	OutReason.Reset();
+	FAPSQuestInstanceSaveData* Instance = FindMutableInstance(QuestId);
+	if (!Instance || FailureCode.IsNone())
+	{
+		OutReason = TEXT("Suspension requires quest and stable failure code");
+		return false;
+	}
+	Instance->State = EAPSQuestInstanceState::Suspended;
+	Instance->LastFailureCode = FailureCode;
+	for (FAPSQuestNodeRuntimeState& Node : Instance->Nodes)
+	{
+		if (Node.State == EAPSQuestNodeState::Active)
+		{
+			Node.State = EAPSQuestNodeState::Suspended;
+			Node.LastFailureCode = FailureCode;
+		}
+	}
+	InstanceChanged.Broadcast(QuestId, *Instance);
+	return true;
+}
+
+bool FAPSQuestRuntime::RecoverQuest(FName QuestId, FName NodeId,
+	EAPSQuestRecoveryPolicy Policy, FString& OutReason)
+{
+	OutReason.Reset();
+	FAPSQuestInstanceSaveData* Instance = FindMutableInstance(QuestId);
+	const UAPSQuestDefinition* Definition = FindDefinition(QuestId);
+	if (!Instance || !Definition)
+	{
+		OutReason = TEXT("Recovery requires quest instance and definition");
+		return false;
+	}
+	FAPSQuestNodeRuntimeState* Node = FindMutableNode(*Instance, NodeId);
+	if (!Node)
+	{
+		OutReason = TEXT("Recovery node does not exist");
+		return false;
+	}
+
+	if (Policy == EAPSQuestRecoveryPolicy::DebugSkip)
+	{
+#if UE_BUILD_SHIPPING
+		OutReason = TEXT("Debug skip is disabled in Shipping");
+		return false;
+#else
+		if (Node->State == EAPSQuestNodeState::Completed)
+		{
+			return true;
+		}
+		CompleteNode(*Instance, *Definition, *Node);
+		RefreshInstanceCompletion(*Instance, *Definition);
+		InstanceChanged.Broadcast(QuestId, *Instance);
+		return true;
+#endif
+	}
+
+	if (Node->State != EAPSQuestNodeState::Suspended
+		&& Node->State != EAPSQuestNodeState::Failed
+		&& Instance->State != EAPSQuestInstanceState::Suspended)
+	{
+		OutReason = TEXT("Quest node is not recoverable in its current state");
+		return false;
+	}
+	if (Policy == EAPSQuestRecoveryPolicy::RestartNode)
+	{
+		Node->Progress = 0;
+	}
+	Node->State = EAPSQuestNodeState::Active;
+	Node->LastFailureCode = NAME_None;
+	Instance->State = EAPSQuestInstanceState::Running;
+	Instance->LastFailureCode = NAME_None;
+	InstanceChanged.Broadcast(QuestId, *Instance);
+	if (const FAPSQuestObjectiveNodeDefinition* DefinitionNode = Definition->FindNode(NodeId))
+	{
+		PublishPrompt(*Instance, *DefinitionNode);
+	}
+	return true;
+}
+
+FAPSQuestSaveData FAPSQuestRuntime::ExportSaveData() const
+{
+	FAPSQuestSaveData SaveData;
+	Instances.GenerateValueArray(SaveData.Instances);
+	SaveData.Instances.Sort([](const FAPSQuestInstanceSaveData& Left,
+		const FAPSQuestInstanceSaveData& Right)
+	{
+		return Left.QuestId.LexicalLess(Right.QuestId);
+	});
+	return SaveData;
+}
+
+bool FAPSQuestRuntime::RestoreSaveData(const FAPSQuestSaveData& SaveData,
+	FString& OutReason)
+{
+	OutReason.Reset();
+	if (SaveData.SchemaVersion <= 0 || SaveData.SchemaVersion > FAPSQuestSaveData::LatestSchemaVersion)
+	{
+		OutReason = TEXT("Unsupported Quest save schema; existing runtime was preserved");
+		return false;
+	}
+
+	TMap<FName, FAPSQuestInstanceSaveData> Restored;
+	for (FAPSQuestInstanceSaveData Instance : SaveData.Instances)
+	{
+		if (Instance.QuestId.IsNone() || !Instance.InstanceId.IsValid()
+			|| Restored.Contains(Instance.QuestId))
+		{
+			OutReason = TEXT("Quest save contains invalid or duplicate instance identity");
+			return false;
+		}
+		const UAPSQuestDefinition* Definition = FindDefinition(Instance.QuestId);
+		if (!Definition)
+		{
+			Instance.State = EAPSQuestInstanceState::Suspended;
+			Instance.LastFailureCode = MissingDefinitionCode;
+		}
+		else if (Definition->DefinitionVersion != Instance.DefinitionVersion)
+		{
+			Instance.State = EAPSQuestInstanceState::Suspended;
+			Instance.LastFailureCode = VersionMismatchCode;
+		}
+		else
+		{
+			for (const FAPSQuestNodeRuntimeState& Node : Instance.Nodes)
+			{
+				if (!Definition->FindNode(Node.NodeId))
+				{
+					OutReason = FString::Printf(TEXT("Quest %s save references missing node %s"),
+						*Instance.QuestId.ToString(), *Node.NodeId.ToString());
+					return false;
+				}
+			}
+		}
+		for (const FAPSQuestNamedEntityBinding& Binding : Instance.Bindings)
+		{
+			if (Binding.BindingName.IsNone() || !Binding.Entity.IsValid())
+			{
+				OutReason = TEXT("Quest save contains invalid entity binding");
+				return false;
+			}
+		}
+		Restored.Add(Instance.QuestId, MoveTemp(Instance));
+	}
+
+	Instances = MoveTemp(Restored);
+	for (const TPair<FName, FAPSQuestInstanceSaveData>& Pair : Instances)
+	{
+		InstanceChanged.Broadcast(Pair.Key, Pair.Value);
+	}
+	return true;
+}
+
+const FAPSQuestInstanceSaveData* FAPSQuestRuntime::FindInstance(FName QuestId) const
+{
+	return Instances.Find(QuestId);
+}
+
+FString FAPSQuestRuntime::DumpQuest(FName QuestId) const
+{
+	const FAPSQuestInstanceSaveData* Instance = FindInstance(QuestId);
+	if (!Instance)
+	{
+		return FString::Printf(TEXT("Quest %s: missing"), *QuestId.ToString());
+	}
+	FString Result = FString::Printf(TEXT("Quest %s v%d instance=%s state=%d stream=%s seq=%lld"),
+		*Instance->QuestId.ToString(), Instance->DefinitionVersion,
+		*Instance->InstanceId.ToString(EGuidFormats::DigitsWithHyphensLower),
+		static_cast<int32>(Instance->State),
+		*Instance->EventStreamId.ToString(EGuidFormats::DigitsWithHyphensLower),
+		Instance->LastConsumedSequence);
+	for (const FAPSQuestNodeRuntimeState& Node : Instance->Nodes)
+	{
+		Result += FString::Printf(TEXT("\n  %s state=%d progress=%d failure=%s"),
+			*Node.NodeId.ToString(), static_cast<int32>(Node.State), Node.Progress,
+			*Node.LastFailureCode.ToString());
+	}
+	for (const FAPSQuestNamedEntityBinding& Binding : Instance->Bindings)
+	{
+		Result += FString::Printf(TEXT("\n  bind %s=%s"), *Binding.BindingName.ToString(),
+			*Binding.Entity.ToDebugString());
+	}
+	return Result;
+}
+
+const UAPSQuestDefinition* FAPSQuestRuntime::FindDefinition(FName QuestId) const
+{
+	const UAPSQuestDefinition* const* Found = Definitions.Find(QuestId);
+	return Found ? *Found : nullptr;
+}
+
+FAPSQuestInstanceSaveData* FAPSQuestRuntime::FindMutableInstance(FName QuestId)
+{
+	return Instances.Find(QuestId);
+}
+
+FAPSQuestNodeRuntimeState* FAPSQuestRuntime::FindMutableNode(
+	FAPSQuestInstanceSaveData& Instance, FName NodeId) const
+{
+	return Instance.Nodes.FindByPredicate([NodeId](const FAPSQuestNodeRuntimeState& Node)
+	{
+		return Node.NodeId == NodeId;
+	});
+}
+
+const FAPSQuestNamedEntityBinding* FAPSQuestRuntime::FindBinding(
+	const FAPSQuestInstanceSaveData& Instance, FName BindingName) const
+{
+	return Instance.Bindings.FindByPredicate([BindingName](const FAPSQuestNamedEntityBinding& Binding)
+	{
+		return Binding.BindingName == BindingName;
+	});
+}
+
+bool FAPSQuestRuntime::MatchesEntity(const FAPSQuestInstanceSaveData& Instance,
+	EAPSQuestBindingMatch Match, const FAPSQuestEntityRef& Exact, FName Binding,
+	const FAPSQuestEntityRef& Actual, FString& OutReason) const
+{
+	switch (Match)
+	{
+	case EAPSQuestBindingMatch::Any:
+		return true;
+	case EAPSQuestBindingMatch::Exact:
+		return Exact.Matches(Actual);
+	case EAPSQuestBindingMatch::NamedBinding:
+		if (const FAPSQuestNamedEntityBinding* Resolved = FindBinding(Instance, Binding))
+		{
+			return Resolved->Entity.Matches(Actual);
+		}
+		OutReason = FString::Printf(TEXT("Required binding %s is unresolved"), *Binding.ToString());
+		return false;
+	default:
+		return false;
+	}
+}
+
+bool FAPSQuestRuntime::MatchesPredicate(const FAPSQuestInstanceSaveData& Instance,
+	const FAPSQuestEventPredicate& Predicate, const FAPSQuestEvent& Event,
+	bool bRequireResult, FString& OutReason) const
+{
+	OutReason.Reset();
+	if (Event.Verb != Predicate.Verb || Event.Quantity < Predicate.MinimumQuantity
+		|| (bRequireResult && Event.Result != Predicate.RequiredResult))
+	{
+		return false;
+	}
+	return MatchesEntity(Instance, Predicate.SubjectMatch, Predicate.ExactSubject,
+			Predicate.SubjectBinding, Event.Subject, OutReason)
+		&& MatchesEntity(Instance, Predicate.TargetMatch, Predicate.ExactTarget,
+			Predicate.TargetBinding, Event.Target, OutReason);
+}
+
+void FAPSQuestRuntime::PublishPrompt(const FAPSQuestInstanceSaveData& Instance,
+	const FAPSQuestObjectiveNodeDefinition& Node)
+{
+	if (Node.Prompt.PromptId.IsNone())
+	{
+		return;
+	}
+	FAPSQuestPromptSnapshot Snapshot;
+	Snapshot.PromptId = Node.Prompt.PromptId;
+	Snapshot.QuestId = Instance.QuestId;
+	Snapshot.NodeId = Node.NodeId;
+	Snapshot.Title = Node.Prompt.Title;
+	Snapshot.Body = Node.Prompt.Body;
+	Snapshot.Actions = Node.Prompt.Actions;
+	Snapshot.Priority = Node.Prompt.Priority;
+	Snapshot.bModal = Node.Prompt.bModal;
+	Snapshot.bDismissible = Node.Prompt.bDismissible;
+	PromptPublished.Broadcast(Snapshot);
+}
+
+void FAPSQuestRuntime::RequestRewards(FAPSQuestInstanceSaveData& Instance,
+	const FAPSQuestObjectiveNodeDefinition& Node)
+{
+	for (const FAPSQuestRewardDefinition& Reward : Node.Rewards)
+	{
+		const FGuid TransactionId = MakeRewardTransactionId(Instance, Node.NodeId, Reward.RewardId);
+		if (Instance.RewardLedger.ContainsByPredicate(
+			[TransactionId](const FAPSQuestRewardLedgerEntry& Entry)
+			{
+				return Entry.TransactionId == TransactionId;
+			}))
+		{
+			continue;
+		}
+
+		FAPSQuestRewardLedgerEntry& Entry = Instance.RewardLedger.AddDefaulted_GetRef();
+		Entry.TransactionId = TransactionId;
+		Entry.NodeId = Node.NodeId;
+		Entry.RewardId = Reward.RewardId;
+		Entry.State = EAPSQuestRewardState::Requested;
+
+		FAPSQuestRewardCommand Command;
+		Command.TransactionId = TransactionId;
+		Command.QuestId = Instance.QuestId;
+		Command.NodeId = Node.NodeId;
+		Command.RewardId = Reward.RewardId;
+		Command.RewardType = Reward.RewardType;
+		Command.Quantity = Reward.Quantity;
+		Command.Parameters = Reward.Parameters;
+		if (!Reward.TargetBinding.IsNone())
+		{
+			if (const FAPSQuestNamedEntityBinding* Binding = FindBinding(Instance, Reward.TargetBinding))
+			{
+				Command.Target = Binding->Entity;
+			}
+		}
+		RewardRequested.Broadcast(Command);
+	}
+}
+
+void FAPSQuestRuntime::CompleteNode(FAPSQuestInstanceSaveData& Instance,
+	const UAPSQuestDefinition& Definition, FAPSQuestNodeRuntimeState& NodeState)
+{
+	if (NodeState.State == EAPSQuestNodeState::Completed)
+	{
+		return;
+	}
+	const FAPSQuestObjectiveNodeDefinition* Node = Definition.FindNode(NodeState.NodeId);
+	if (!Node)
+	{
+		Instance.State = EAPSQuestInstanceState::Suspended;
+		Instance.LastFailureCode = MissingDefinitionCode;
+		return;
+	}
+	NodeState.State = EAPSQuestNodeState::Satisfied;
+	RequestRewards(Instance, *Node);
+	NodeState.State = EAPSQuestNodeState::Completed;
+
+	TArray<FName> Successors;
+	Definition.GetSuccessors(NodeState.NodeId, Successors);
+	for (FName Successor : Successors)
+	{
+		if (FAPSQuestNodeRuntimeState* SuccessorState = FindMutableNode(Instance, Successor))
+		{
+			if (SuccessorState->State == EAPSQuestNodeState::Dormant)
+			{
+				SuccessorState->State = EAPSQuestNodeState::Active;
+				if (const FAPSQuestObjectiveNodeDefinition* SuccessorDefinition =
+					Definition.FindNode(Successor))
+				{
+					PublishPrompt(Instance, *SuccessorDefinition);
+				}
+			}
+		}
+	}
+}
+
+void FAPSQuestRuntime::RefreshInstanceCompletion(FAPSQuestInstanceSaveData& Instance,
+	const UAPSQuestDefinition& Definition)
+{
+	if (Instance.State != EAPSQuestInstanceState::Running)
+	{
+		return;
+	}
+	bool bHasActiveNode = false;
+	bool bAllRequiredComplete = true;
+	for (const FAPSQuestObjectiveNodeDefinition& DefinitionNode : Definition.Nodes)
+	{
+		const FAPSQuestNodeRuntimeState* RuntimeNode = Instance.Nodes.FindByPredicate(
+			[&DefinitionNode](const FAPSQuestNodeRuntimeState& Node)
+			{
+				return Node.NodeId == DefinitionNode.NodeId;
+			});
+		if (!RuntimeNode)
+		{
+			bAllRequiredComplete = false;
+			continue;
+		}
+		bHasActiveNode |= RuntimeNode->State == EAPSQuestNodeState::Active;
+		if (DefinitionNode.bRequired && RuntimeNode->State != EAPSQuestNodeState::Completed)
+		{
+			bAllRequiredComplete = false;
+		}
+	}
+	if (!bHasActiveNode && bAllRequiredComplete)
+	{
+		Instance.State = EAPSQuestInstanceState::Completed;
+		Instance.LastFailureCode = NAME_None;
+	}
+}
+
+FGuid FAPSQuestRuntime::MakeRewardTransactionId(const FAPSQuestInstanceSaveData& Instance,
+	FName NodeId, FName RewardId)
+{
+	const FString Canonical = FString::Printf(TEXT("APS.Quest.Reward|%s|%s|%s|%s"),
+		*Instance.QuestId.ToString(),
+		*Instance.InstanceId.ToString(EGuidFormats::DigitsWithHyphensLower),
+		*NodeId.ToString(), *RewardId.ToString());
+	FTCHARToUTF8 Utf8(*Canonical);
+	FMD5 Md5;
+	Md5.Update(reinterpret_cast<const uint8*>(Utf8.Get()), Utf8.Length());
+	uint8 Digest[16];
+	Md5.Final(Digest);
+	auto ReadWord = [&Digest](int32 Offset)
+	{
+		return static_cast<uint32>(Digest[Offset]) << 24
+			| static_cast<uint32>(Digest[Offset + 1]) << 16
+			| static_cast<uint32>(Digest[Offset + 2]) << 8
+			| static_cast<uint32>(Digest[Offset + 3]);
+	};
+	return FGuid(ReadWord(0), ReadWord(4), ReadWord(8), ReadWord(12));
+}
+
+void FAPSQuestRuntime::AppendBoundedGuid(TArray<FGuid>& Values, const FGuid& Value)
+{
+	if (!Value.IsValid() || Values.Contains(Value))
+	{
+		return;
+	}
+	Values.Add(Value);
+	if (Values.Num() > MaximumDedupeEntries)
+	{
+		Values.RemoveAt(0, Values.Num() - MaximumDedupeEntries, EAllowShrinking::No);
+	}
+}
