@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "UObject/PrimaryAssetId.h"
 #include "APS_ALPHA/Gameplay/Interaction/APSInteractionTypes.h"
+#include "APSProductionEvent.h"
 #include "APSProductionTypes.generated.h"
 
 class AActor;
@@ -402,4 +403,7 @@ struct APS_ALPHA_API FAPSProductionPersistenceState
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="APS|Production")
 	TArray<FAPSProductionJobRecord> Jobs;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="APS|Production")
+	FAPSProductionEventStreamState EventStream;
 };

@@ -72,3 +72,83 @@ bool FAPSProductionEvent::IsStructurallyValid(
 	}
 	return true;
 }
+
+bool FAPSProductionEventCorrelationRecord::IsStructurallyValid(
+	FString* OutReason) const
+{
+	if (!CorrelationId.IsValid())
+	{
+		return RejectProductionEvent(OutReason,
+			TEXT("Persisted production correlation has no CorrelationId."));
+	}
+	if (Verb.IsNone())
+	{
+		return RejectProductionEvent(OutReason,
+			TEXT("Persisted production correlation has no Verb."));
+	}
+	if (!SubjectStableId.IsValid() || !TargetStableId.IsValid())
+	{
+		return RejectProductionEvent(OutReason,
+			TEXT("Persisted production correlation has no canonical subject or target ID."));
+	}
+	if (DefinitionId.IsValid() && DefinitionSchemaVersion < 1)
+	{
+		return RejectProductionEvent(OutReason,
+			TEXT("Persisted production correlation definition schema is invalid."));
+	}
+	if (Quantity < 1)
+	{
+		return RejectProductionEvent(OutReason,
+			TEXT("Persisted production correlation quantity must be at least one."));
+	}
+	switch (Result)
+	{
+	case EAPSProductionEventResult::Requested:
+	case EAPSProductionEventResult::Started:
+	case EAPSProductionEventResult::Succeeded:
+	case EAPSProductionEventResult::Failed:
+	case EAPSProductionEventResult::Cancelled:
+		break;
+	default:
+		return RejectProductionEvent(OutReason,
+			TEXT("Persisted production correlation result is invalid."));
+	}
+	if (OutReason)
+	{
+		OutReason->Reset();
+	}
+	return true;
+}
+
+bool FAPSProductionEventStreamState::IsStructurallyValid(FString* OutReason) const
+{
+	if (SchemaVersion != 1)
+	{
+		return RejectProductionEvent(OutReason,
+			TEXT("Unsupported production event stream schema."));
+	}
+	if (LastSequence < 0 || LastSequence < Correlations.Num())
+	{
+		return RejectProductionEvent(OutReason,
+			TEXT("Production event stream sequence is invalid."));
+	}
+	TSet<FGuid> CorrelationIds;
+	for (const FAPSProductionEventCorrelationRecord& Record : Correlations)
+	{
+		if (!Record.IsStructurallyValid(OutReason)
+			|| CorrelationIds.Contains(Record.CorrelationId))
+		{
+			if (OutReason && OutReason->IsEmpty())
+			{
+				*OutReason = TEXT("Production event stream has a duplicate correlation.");
+			}
+			return false;
+		}
+		CorrelationIds.Add(Record.CorrelationId);
+	}
+	if (OutReason)
+	{
+		OutReason->Reset();
+	}
+	return true;
+}

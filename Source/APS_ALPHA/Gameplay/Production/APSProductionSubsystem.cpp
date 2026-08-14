@@ -983,6 +983,14 @@ void UAPSProductionSubsystem::ExportPersistenceState(
 		{
 			return Left.QueueOrdinal < Right.QueueOrdinal;
 		});
+	if (UWorld* World = GetWorld())
+	{
+		if (const UAPSProductionEventSubsystem* Events =
+			World->GetSubsystem<UAPSProductionEventSubsystem>())
+		{
+			Events->ExportStreamState(OutState.EventStream);
+		}
+	}
 }
 
 bool UAPSProductionSubsystem::RestorePersistenceState(
@@ -994,6 +1002,12 @@ bool UAPSProductionSubsystem::RestorePersistenceState(
 		OutFailure = TEXT("APS.Production.UnsupportedPersistenceSchema");
 		return false;
 	}
+	FAPSProductionEventStreamState RestoredEventStream = State.EventStream;
+	if (!RestoredEventStream.IsStructurallyValid(&OutFailure))
+	{
+		return false;
+	}
+
 	TSet<FGuid> JobIds;
 	TSet<FGuid> CorrelationIds;
 	for (const FAPSProductionJobRecord& Job : State.Jobs)
@@ -1023,6 +1037,96 @@ bool UAPSProductionSubsystem::RestorePersistenceState(
 			OutFailure = TEXT("APS.Production.InvalidPersistedInventory");
 			return false;
 		}
+	}
+
+	// V1 migration: queue persistence predated event correlation persistence.
+	// Reconstruct only generic job correlation identity; canonical actor IDs are
+	// consumed from the validated job and are never minted by Production.
+	if (RestoredEventStream.Correlations.IsEmpty() && !State.Jobs.IsEmpty())
+	{
+		for (const FAPSProductionJobRecord& Job : State.Jobs)
+		{
+			FAPSProductionEventCorrelationRecord& Record =
+				RestoredEventStream.Correlations.AddDefaulted_GetRef();
+			Record.CorrelationId = Job.CorrelationId;
+			Record.Verb = VerbForDomain(Job.Domain);
+			Record.SubjectStableId = Job.SubjectStableId;
+			Record.TargetStableId = Job.JobId;
+			Record.DefinitionId = Job.DefinitionId;
+			Record.DefinitionSchemaVersion = Job.DefinitionSchemaVersion;
+			Record.Quantity = Job.Quantity;
+			switch (Job.State)
+			{
+			case EAPSProductionJobState::Queued:
+				Record.Result = EAPSProductionEventResult::Requested;
+				break;
+			case EAPSProductionJobState::InProgress:
+			case EAPSProductionJobState::AwaitingMaterialization:
+				Record.Result = EAPSProductionEventResult::Started;
+				break;
+			case EAPSProductionJobState::Succeeded:
+				Record.Result = EAPSProductionEventResult::Succeeded;
+				break;
+			case EAPSProductionJobState::Failed:
+				Record.Result = EAPSProductionEventResult::Failed;
+				break;
+			case EAPSProductionJobState::Cancelled:
+				Record.Result = EAPSProductionEventResult::Cancelled;
+				break;
+			default:
+				OutFailure = TEXT("APS.Production.InvalidPersistedJobState");
+				return false;
+			}
+		}
+		RestoredEventStream.LastSequence = FMath::Max(
+			RestoredEventStream.LastSequence,
+			static_cast<int64>(RestoredEventStream.Correlations.Num()));
+	}
+	if (!RestoredEventStream.IsStructurallyValid(&OutFailure))
+	{
+		return false;
+	}
+
+	TMap<FGuid, const FAPSProductionEventCorrelationRecord*> StreamCorrelations;
+	for (const FAPSProductionEventCorrelationRecord& Record
+		: RestoredEventStream.Correlations)
+	{
+		StreamCorrelations.Add(Record.CorrelationId, &Record);
+	}
+	for (const FAPSProductionJobRecord& Job : State.Jobs)
+	{
+		const FAPSProductionEventCorrelationRecord* const* Found =
+			StreamCorrelations.Find(Job.CorrelationId);
+		const FAPSProductionEventCorrelationRecord* Record = Found ? *Found : nullptr;
+		if (!Record || Record->Verb != VerbForDomain(Job.Domain)
+			|| Record->SubjectStableId != Job.SubjectStableId
+			|| Record->TargetStableId != Job.JobId
+			|| Record->DefinitionId != Job.DefinitionId
+			|| Record->DefinitionSchemaVersion != Job.DefinitionSchemaVersion
+			|| Record->Quantity != Job.Quantity)
+		{
+			OutFailure = TEXT("APS.Production.PersistedEventCorrelationMismatch");
+			return false;
+		}
+		if ((Job.State == EAPSProductionJobState::Queued
+				&& Record->Result != EAPSProductionEventResult::Requested)
+			|| ((Job.State == EAPSProductionJobState::InProgress
+					|| Job.State == EAPSProductionJobState::AwaitingMaterialization)
+				&& Record->Result != EAPSProductionEventResult::Started))
+		{
+			OutFailure = TEXT("APS.Production.PersistedEventLifecycleMismatch");
+			return false;
+		}
+	}
+
+	UAPSProductionEventSubsystem* Events = nullptr;
+	if (UWorld* World = GetWorld())
+	{
+		Events = World->GetSubsystem<UAPSProductionEventSubsystem>();
+	}
+	if (Events && !Events->RestoreStreamState(RestoredEventStream, OutFailure))
+	{
+		return false;
 	}
 
 	for (TPair<FGuid, FContextState>& Pair : Contexts)

@@ -27,6 +27,10 @@ public:
 	/** Save integration restores the greatest sequence already committed to this stream. */
 	void RestoreLastSequence(int64 PersistedLastSequence);
 
+	void ExportStreamState(FAPSProductionEventStreamState& OutState) const;
+	bool RestoreStreamState(const FAPSProductionEventStreamState& State,
+		FString& OutFailure);
+
 private:
 	struct FCorrelationState
 	{
@@ -37,9 +41,11 @@ private:
 		FPrimaryAssetId DefinitionId;
 		int32 DefinitionSchemaVersion{1};
 		int32 Quantity{1};
+		bool bDebugOnly{false};
 	};
 
-	bool ValidateTransition(const FAPSProductionEvent& Event, FString& OutFailure) const;
+	bool ValidateTransition(const FAPSProductionEvent& Event, bool bDebugOnly,
+		FString& OutFailure) const;
 
 	FOnAPSProductionEventPublished EventPublished;
 	TMap<FGuid, FCorrelationState> CorrelationStates;

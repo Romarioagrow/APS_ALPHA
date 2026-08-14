@@ -135,4 +135,89 @@ bool FAPSProductionEventLifecycleContractTest::RunTest(const FString& Parameters
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAPSProductionEventPersistenceContractTest,
+	"APS.Gameplay.Production.EventPersistenceContract",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FAPSProductionEventPersistenceContractTest::RunTest(const FString& Parameters)
+{
+	UAPSProductionEventSubsystem* Source = NewObject<UAPSProductionEventSubsystem>();
+	TestNotNull(TEXT("Source event subsystem exists"), Source);
+	if (!Source)
+	{
+		return false;
+	}
+
+	FAPSProductionEventPublishPolicy ProductionPolicy;
+	FAPSProductionEvent Requested;
+	Requested.Verb = TEXT("APS.Building.Build");
+	Requested.SubjectStableId = FGuid::NewGuid();
+	Requested.TargetStableId = FGuid::NewGuid();
+	Requested.DefinitionId = FPrimaryAssetId(TEXT("Buildable"), TEXT("APS.TestHQ"));
+	Requested.DefinitionSchemaVersion = 2;
+	Requested.Quantity = 1;
+	Requested.Result = EAPSProductionEventResult::Requested;
+	FString Failure;
+	TestTrue(TEXT("Production request publishes before save"),
+		Source->PublishEvent(Requested, ProductionPolicy, Failure));
+
+	FAPSProductionEvent Started = Requested;
+	Started.EventId.Invalidate();
+	Started.Sequence = 0;
+	Started.Result = EAPSProductionEventResult::Started;
+	TestTrue(TEXT("Production lifecycle reaches Started before save"),
+		Source->PublishEvent(Started, ProductionPolicy, Failure));
+
+	FAPSProductionEventPublishPolicy DebugPolicy;
+	DebugPolicy.bDebugOnly = true;
+	FAPSProductionEvent DebugRequested;
+	DebugRequested.Verb = TEXT("APS.Crafting.Craft");
+	DebugRequested.Result = EAPSProductionEventResult::Requested;
+	TestTrue(TEXT("Explicit debug event publishes without canonical actor IDs"),
+		Source->PublishEvent(DebugRequested, DebugPolicy, Failure));
+
+	FAPSProductionEventStreamState Persisted;
+	Source->ExportStreamState(Persisted);
+	TestEqual(TEXT("Global sequence includes accepted debug events"),
+		Persisted.LastSequence, int64{3});
+	TestEqual(TEXT("Debug-only correlation is excluded from persistence"),
+		Persisted.Correlations.Num(), 1);
+	TestEqual(TEXT("Persisted correlation is the production lifecycle"),
+		Persisted.Correlations[0].CorrelationId, Requested.CorrelationId);
+
+	UAPSProductionEventSubsystem* Restored = NewObject<UAPSProductionEventSubsystem>();
+	TestNotNull(TEXT("Restored event subsystem exists"), Restored);
+	if (!Restored)
+	{
+		return false;
+	}
+	int32 RestoreBroadcastCount = 0;
+	Restored->OnEventPublished().AddLambda(
+		[&RestoreBroadcastCount](const FAPSProductionEvent&)
+		{
+			++RestoreBroadcastCount;
+		});
+	TestTrue(TEXT("Persisted event stream restores"),
+		Restored->RestoreStreamState(Persisted, Failure));
+	TestEqual(TEXT("Restore never rebroadcasts historical events"),
+		RestoreBroadcastCount, 0);
+
+	FAPSProductionEvent Succeeded = Started;
+	Succeeded.EventId.Invalidate();
+	Succeeded.Sequence = 0;
+	Succeeded.Result = EAPSProductionEventResult::Succeeded;
+	Succeeded.ResultCode = TEXT("APS.Building.JobCompleted");
+	TestTrue(TEXT("Restored Started correlation may complete"),
+		Restored->PublishEvent(Succeeded, ProductionPolicy, Failure));
+	TestEqual(TEXT("Sequence continues after restored stream"),
+		Succeeded.Sequence, int64{4});
+
+	FAPSProductionEvent DuplicateTerminal = Succeeded;
+	DuplicateTerminal.EventId.Invalidate();
+	DuplicateTerminal.Sequence = 0;
+	TestFalse(TEXT("Restored stream still rejects duplicate terminal result"),
+		Restored->PublishEvent(DuplicateTerminal, ProductionPolicy, Failure));
+	return true;
+}
+
 #endif
