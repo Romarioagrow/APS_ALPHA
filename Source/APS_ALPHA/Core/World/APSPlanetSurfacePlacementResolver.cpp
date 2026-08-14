@@ -249,7 +249,10 @@ bool UAPSPlanetSurfacePlacementResolver::TryResolveCivilizationFootprint(
 		HomeBody->WorldScapeSeed, static_cast<int32>(HomeBody->PlanetType),
 		HomeBody->PlanetRadiusKM);
 	OutResult.PlacementKey = static_cast<int64>(PlacementKey);
-	HomeBody->SetWorldScapeStreamingState(EWorldScapeSurfaceState::Active);
+	if (!HomeBody->IsWorldScapeStreamingActive())
+	{
+		HomeBody->SetWorldScapeStreamingState(EWorldScapeSurfaceState::Active);
+	}
 	APlanetarySurfaceGenerator* Surface = HomeBody->PlanetaryEnvironmentGenerator;
 	AWorldScapeRoot* Root = IsValid(Surface) ? Surface->WorldScapeRootInstance : nullptr;
 	if (!IsValid(Surface) || !IsValid(Root)
@@ -476,7 +479,10 @@ bool UAPSPlanetSurfacePlacementResolver::RequestPlacementAnchors(
 	{
 		return false;
 	}
-	HomeBody->SetWorldScapeStreamingState(EWorldScapeSurfaceState::Active);
+	if (!HomeBody->IsWorldScapeStreamingActive())
+	{
+		HomeBody->SetWorldScapeStreamingState(EWorldScapeSurfaceState::Active);
+	}
 	APlanetarySurfaceGenerator* Surface = HomeBody->PlanetaryEnvironmentGenerator;
 	AWorldScapeRoot* Root = IsValid(Surface) ? Surface->WorldScapeRootInstance : nullptr;
 	UWorld* World = HomeBody->GetWorld();
