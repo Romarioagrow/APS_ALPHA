@@ -10,6 +10,12 @@ class AAstroGenerator;
 class APlanetaryBody;
 class ASpaceship;
 
+DECLARE_MULTICAST_DELEGATE_ThreeParams(
+	FOnAPSCivilizationMaterializationStateChanged,
+	const FAPSCivilizationRuntimeManifest&,
+	EAPSCivilizationMaterializationState,
+	EAPSCivilizationMaterializationState);
+
 /**
  * Idempotently projects the committed menu civilization onto the Surface-owned
  * validated home-planet frame. Economy/NPC simulation remains a later hook.
@@ -33,11 +39,18 @@ public:
 	UFUNCTION(BlueprintPure, Category="Civilization|Materialization")
 	bool IsMaterializationComplete() const { return bMaterializationComplete; }
 
+	FOnAPSCivilizationMaterializationStateChanged& OnMaterializationStateChanged()
+	{
+		return MaterializationStateChanged;
+	}
+
 	/** Restores persisted IDs and planet-relative transforms before actor upsert. */
 	bool RestoreRuntimeManifest(const FAPSCivilizationRuntimeManifest& SavedManifest);
 
 private:
 	bool TryInitializeManifest(AAstroGenerator*& OutGenerator, APlanetaryBody*& OutHomeBody);
+	void TransitionMaterializationState(EAPSCivilizationMaterializationState NewState);
+
 	bool TryResolveSafeSite(APlanetaryBody* HomeBody,
 		FAPSCivilizationFootprintResult& OutResult);
 	bool TryMaterializeEntities(AAstroGenerator* Generator, APlanetaryBody* HomeBody,
@@ -66,6 +79,7 @@ private:
 	TObjectPtr<ASpaceship> MaterializedShip;
 
 	TWeakObjectPtr<APlanetaryBody> MaterializedHomeBody;
+	FOnAPSCivilizationMaterializationStateChanged MaterializationStateChanged;
 	float RetryAccumulator{0.0f};
 	bool bManifestInitialized{false};
 	bool bManifestRestoredFromSave{false};

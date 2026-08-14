@@ -75,10 +75,10 @@ void UAPSCivilizationMaterializationSubsystem::Tick(const float DeltaTime)
 	UAPSPlanetSurfacePlacementResolver::ReleasePlacementAnchors(
 		HomeBody, LastPlacementResult.PlacementKey);
 
-	RuntimeManifest.MaterializationState = bManifestRestoredFromSave
-		? EAPSCivilizationMaterializationState::LoadedFromSave
-		: EAPSCivilizationMaterializationState::Materialized;
 	bMaterializationComplete = true;
+	TransitionMaterializationState(bManifestRestoredFromSave
+		? EAPSCivilizationMaterializationState::LoadedFromSave
+		: EAPSCivilizationMaterializationState::Materialized);
 	UE_LOG(LogTemp, Log,
 		TEXT("[APS.Civilization.Materialization] complete manifest=%s civilization=%s home=%s candidate=%d base=%s pad=%s ship=%s loaded=%d"),
 		*RuntimeManifest.ManifestId.ToString(EGuidFormats::DigitsWithHyphens),
@@ -104,6 +104,19 @@ bool UAPSCivilizationMaterializationSubsystem::DoesSupportWorldType(
 	return WorldType == EWorldType::Game || WorldType == EWorldType::PIE;
 }
 
+void UAPSCivilizationMaterializationSubsystem::TransitionMaterializationState(
+	const EAPSCivilizationMaterializationState NewState)
+{
+	const EAPSCivilizationMaterializationState Previous =
+		RuntimeManifest.MaterializationState;
+	if (Previous == NewState)
+	{
+		return;
+	}
+	RuntimeManifest.MaterializationState = NewState;
+	MaterializationStateChanged.Broadcast(RuntimeManifest, Previous, NewState);
+}
+
 bool UAPSCivilizationMaterializationSubsystem::RestoreRuntimeManifest(
 	const FAPSCivilizationRuntimeManifest& SavedManifest)
 {
@@ -117,7 +130,7 @@ bool UAPSCivilizationMaterializationSubsystem::RestoreRuntimeManifest(
 		return false;
 	}
 	RuntimeManifest = MoveTemp(Migrated);
-	RuntimeManifest.MaterializationState = EAPSCivilizationMaterializationState::LoadedFromSave;
+	RuntimeManifest.MaterializationState = EAPSCivilizationMaterializationState::PendingPlacement;
 	bManifestInitialized = true;
 	bManifestRestoredFromSave = true;
 	bMaterializationComplete = false;
