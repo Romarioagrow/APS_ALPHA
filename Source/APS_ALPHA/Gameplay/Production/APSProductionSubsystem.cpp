@@ -685,19 +685,29 @@ bool UAPSProductionSubsystem::PublishJobEvent(const FContextState& Context,
 
 int32 UAPSProductionSubsystem::CountActiveJobs(const FContextState& Context) const
 {
-	return Context.Jobs.CountByPredicate([](const FAPSProductionJobRecord& Job)
+	int32 Count = 0;
+	for (const FAPSProductionJobRecord& Job : Context.Jobs)
+	{
+		if (!Job.IsTerminal())
 		{
-			return !Job.IsTerminal();
-		});
+			++Count;
+		}
+	}
+	return Count;
 }
 
 int32 UAPSProductionSubsystem::CountInProgressJobs(const FContextState& Context) const
 {
-	return Context.Jobs.CountByPredicate([](const FAPSProductionJobRecord& Job)
+	int32 Count = 0;
+	for (const FAPSProductionJobRecord& Job : Context.Jobs)
+	{
+		if (Job.State == EAPSProductionJobState::InProgress
+			|| Job.State == EAPSProductionJobState::AwaitingMaterialization)
 		{
-			return Job.State == EAPSProductionJobState::InProgress
-				|| Job.State == EAPSProductionJobState::AwaitingMaterialization;
-		});
+			++Count;
+		}
+	}
+	return Count;
 }
 
 void UAPSProductionSubsystem::StartQueuedJobs(FContextState& Context)
