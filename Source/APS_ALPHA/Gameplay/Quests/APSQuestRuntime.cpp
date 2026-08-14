@@ -153,12 +153,12 @@ bool FAPSQuestRuntime::BeginEventStream(FName QuestId, const FGuid& StreamId,
 		OutReason = TEXT("Event stream requires a quest instance and valid StreamId");
 		return false;
 	}
-	if (Instance->EventStreamId == StreamId)
+	if (FindMutableStreamCursor(*Instance, StreamId))
 	{
 		return true;
 	}
-	Instance->EventStreamId = StreamId;
-	Instance->LastConsumedSequence = 0;
+	FAPSQuestEventStreamCursor& Cursor = Instance->EventStreams.AddDefaulted_GetRef();
+	Cursor.StreamId = StreamId;
 	InstanceChanged.Broadcast(QuestId, *Instance);
 	return true;
 }
@@ -195,6 +195,7 @@ bool FAPSQuestRuntime::SubmitEvent(const FAPSQuestEvent& Event, FString& OutReas
 			InstanceChanged.Broadcast(Instance.QuestId, Instance);
 			continue;
 		}
+		FAPSQuestEventStreamCursor* EventStreamCursor = nullptr;
 
 		if (Event.Sequence > 0)
 		{
@@ -203,18 +204,15 @@ bool FAPSQuestRuntime::SubmitEvent(const FAPSQuestEvent& Event, FString& OutReas
 				OutReason = TEXT("Sequenced quest event requires StreamId");
 				return false;
 			}
-			if (!Instance.EventStreamId.IsValid())
+			EventStreamCursor = FindMutableStreamCursor(Instance, Event.StreamId);
+			if (!EventStreamCursor)
 			{
-				Instance.EventStreamId = Event.StreamId;
+				EventStreamCursor = &Instance.EventStreams.AddDefaulted_GetRef();
+				EventStreamCursor->StreamId = Event.StreamId;
 			}
-			if (Instance.EventStreamId != Event.StreamId)
+			if (Event.Sequence <= EventStreamCursor->LastConsumedSequence)
 			{
-				OutReason = TEXT("Quest event belongs to a different stream; call BeginEventStream explicitly");
-				return false;
-			}
-			if (Event.Sequence <= Instance.LastConsumedSequence)
-			{
-				OutReason = TEXT("Out-of-order quest event rejected");
+				OutReason = TEXT("Out-of-order quest event rejected for its stream");
 				return false;
 			}
 		}
@@ -273,9 +271,9 @@ bool FAPSQuestRuntime::SubmitEvent(const FAPSQuestEvent& Event, FString& OutReas
 		{
 			AppendBoundedGuid(Instance.ConsumedTerminalCorrelations, Event.CorrelationId);
 		}
-		if (Event.Sequence > 0)
+		if (EventStreamCursor)
 		{
-			Instance.LastConsumedSequence = Event.Sequence;
+			EventStreamCursor->LastConsumedSequence = Event.Sequence;
 		}
 		RefreshInstanceCompletion(Instance, *Definition);
 		if (bStateChanged)
@@ -438,6 +436,25 @@ bool FAPSQuestRuntime::RestoreSaveData(const FAPSQuestSaveData& SaveData,
 			OutReason = TEXT("Quest save contains invalid or duplicate instance identity");
 			return false;
 		}
+		if (SaveData.SchemaVersion == 1 && Instance.EventStreamId.IsValid())
+		{
+			FAPSQuestEventStreamCursor& Migrated = Instance.EventStreams.AddDefaulted_GetRef();
+			Migrated.StreamId = Instance.EventStreamId;
+			Migrated.LastConsumedSequence = Instance.LastConsumedSequence;
+			Instance.EventStreamId.Invalidate();
+			Instance.LastConsumedSequence = 0;
+		}
+		TSet<FGuid> RestoredStreamIds;
+		for (const FAPSQuestEventStreamCursor& Cursor : Instance.EventStreams)
+		{
+			if (!Cursor.StreamId.IsValid() || Cursor.LastConsumedSequence < 0
+				|| RestoredStreamIds.Contains(Cursor.StreamId))
+			{
+				OutReason = TEXT("Quest save contains invalid or duplicate event stream cursor");
+				return false;
+			}
+			RestoredStreamIds.Add(Cursor.StreamId);
+		}
 		const UAPSQuestDefinition* Definition = FindDefinition(Instance.QuestId);
 		if (!Definition)
 		{
@@ -505,12 +522,16 @@ FString FAPSQuestRuntime::DumpQuest(FName QuestId) const
 	{
 		return FString::Printf(TEXT("Quest %s: missing"), *QuestId.ToString());
 	}
-	FString Result = FString::Printf(TEXT("Quest %s v%d instance=%s state=%d stream=%s seq=%lld"),
+	FString Result = FString::Printf(TEXT("Quest %s v%d instance=%s state=%d streams=%d"),
 		*Instance->QuestId.ToString(), Instance->DefinitionVersion,
 		*Instance->InstanceId.ToString(EGuidFormats::DigitsWithHyphensLower),
-		static_cast<int32>(Instance->State),
-		*Instance->EventStreamId.ToString(EGuidFormats::DigitsWithHyphensLower),
-		Instance->LastConsumedSequence);
+		static_cast<int32>(Instance->State), Instance->EventStreams.Num());
+	for (const FAPSQuestEventStreamCursor& Cursor : Instance->EventStreams)
+	{
+		Result += FString::Printf(TEXT("\n  stream %s seq=%lld"),
+			*Cursor.StreamId.ToString(EGuidFormats::DigitsWithHyphensLower),
+			Cursor.LastConsumedSequence);
+	}
 	for (const FAPSQuestNodeRuntimeState& Node : Instance->Nodes)
 	{
 		Result += FString::Printf(TEXT("\n  %s state=%d progress=%d failure=%s"),
@@ -543,6 +564,16 @@ FAPSQuestNodeRuntimeState* FAPSQuestRuntime::FindMutableNode(
 	{
 		return Node.NodeId == NodeId;
 	});
+}
+
+FAPSQuestEventStreamCursor* FAPSQuestRuntime::FindMutableStreamCursor(
+	FAPSQuestInstanceSaveData& Instance, const FGuid& StreamId) const
+{
+	return Instance.EventStreams.FindByPredicate(
+		[&StreamId](const FAPSQuestEventStreamCursor& Cursor)
+		{
+			return Cursor.StreamId == StreamId;
+		});
 }
 
 const FAPSQuestNamedEntityBinding* FAPSQuestRuntime::FindBinding(

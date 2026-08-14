@@ -5,6 +5,18 @@
 #include "APSQuestRuntime.generated.h"
 
 USTRUCT(BlueprintType)
+struct APS_ALPHA_API FAPSQuestEventStreamCursor
+{
+	GENERATED_BODY()
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, SaveGame, Category="Quest")
+	FGuid StreamId;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, SaveGame, Category="Quest")
+	int64 LastConsumedSequence{0};
+};
+
+USTRUCT(BlueprintType)
 struct APS_ALPHA_API FAPSQuestNamedEntityBinding
 {
 	GENERATED_BODY()
@@ -78,6 +90,10 @@ struct APS_ALPHA_API FAPSQuestInstanceSaveData
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, SaveGame, Category="Quest")
 	int64 LastConsumedSequence{0};
 
+	/** Independent monotonic cursors for owner event streams (Production, Surface, etc.). */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, SaveGame, Category="Quest")
+	TArray<FAPSQuestEventStreamCursor> EventStreams;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, SaveGame, Category="Quest")
 	TArray<FAPSQuestNodeRuntimeState> Nodes;
 
@@ -102,7 +118,7 @@ struct APS_ALPHA_API FAPSQuestSaveData
 {
 	GENERATED_BODY()
 
-	static constexpr int32 LatestSchemaVersion = 1;
+	static constexpr int32 LatestSchemaVersion = 2;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, SaveGame, Category="Quest")
 	int32 SchemaVersion{LatestSchemaVersion};
@@ -154,6 +170,8 @@ private:
 	FAPSQuestInstanceSaveData* FindMutableInstance(FName QuestId);
 	FAPSQuestNodeRuntimeState* FindMutableNode(FAPSQuestInstanceSaveData& Instance,
 		FName NodeId) const;
+	FAPSQuestEventStreamCursor* FindMutableStreamCursor(
+		FAPSQuestInstanceSaveData& Instance, const FGuid& StreamId) const;
 	const FAPSQuestNamedEntityBinding* FindBinding(
 		const FAPSQuestInstanceSaveData& Instance, FName BindingName) const;
 	bool MatchesEntity(const FAPSQuestInstanceSaveData& Instance,

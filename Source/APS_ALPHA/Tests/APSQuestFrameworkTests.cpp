@@ -210,6 +210,13 @@ bool FAPSQuestIdentityAndOrderingTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Stable failure code is recorded"), BaseNode->LastFailureCode,
 		FName(TEXT("APS.Interaction.OutOfRange")));
 
+	const FAPSQuestEvent IndependentStream = MakeEvent(Guid(6001), 1,
+		TEXT("APS.Interaction.Inspect"), OtherBase, 6150);
+	TestTrue(TEXT("Independent owner stream starts at its own sequence one"),
+		Runtime.SubmitEvent(IndependentStream, Reason));
+	TestEqual(TEXT("Two independent stream cursors are retained"),
+		Runtime.FindInstance(QuestId)->EventStreams.Num(), 2);
+
 	const FAPSQuestEvent OutOfOrder = MakeEvent(StreamId, 1,
 		TEXT("APS.Interaction.Inspect"), Base, 6200);
 	TestFalse(TEXT("Unknown out-of-order event is rejected"), Runtime.SubmitEvent(OutOfOrder, Reason));
@@ -248,6 +255,19 @@ bool FAPSQuestPersistenceRecoveryTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Recovered quest is running"), Instance->State,
 		EAPSQuestInstanceState::Running);
 	TestEqual(TEXT("Bound identity survives save"), Instance->Bindings[0].Entity.Guid, Base.Guid);
+
+	FAPSQuestSaveData Legacy = SaveData;
+	Legacy.SchemaVersion = 1;
+	Legacy.Instances[0].EventStreams.Reset();
+	Legacy.Instances[0].EventStreamId = Guid(7050);
+	Legacy.Instances[0].LastConsumedSequence = 7;
+	FAPSQuestRuntime Migrated;
+	Migrated.RegisterDefinition(Definition, Reason);
+	TestTrue(TEXT("V1 single-stream save migrates"), Migrated.RestoreSaveData(Legacy, Reason));
+	const FAPSQuestInstanceSaveData* MigratedInstance = Migrated.FindInstance(QuestId);
+	TestEqual(TEXT("Migrated save has one stream cursor"), MigratedInstance->EventStreams.Num(), 1);
+	TestEqual(TEXT("Migrated stream sequence is preserved"),
+		MigratedInstance->EventStreams[0].LastConsumedSequence, static_cast<int64>(7));
 
 	FAPSQuestSaveData Unsupported = SaveData;
 	Unsupported.SchemaVersion = FAPSQuestSaveData::LatestSchemaVersion + 1;
