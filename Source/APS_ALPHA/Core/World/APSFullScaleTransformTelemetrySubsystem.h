@@ -4,6 +4,22 @@
 #include "Subsystems/WorldSubsystem.h"
 #include "APSFullScaleTransformTelemetrySubsystem.generated.h"
 
+class UHierarchicalInstancedStaticMeshComponent;
+
+/** Retains one deterministic far-field HISM probe between telemetry samples. */
+struct FAPSFullScaleHismSentinelState
+{
+	TWeakObjectPtr<UHierarchicalInstancedStaticMeshComponent> Component;
+	int32 InstanceCount{INDEX_NONE};
+	int32 InstanceIndex{INDEX_NONE};
+	bool bHasSample{false};
+	bool bHadRenderedView{false};
+	bool bHadProjectedNdc{false};
+	FVector LastWorldLocation{FVector::ZeroVector};
+	FVector LastViewRelativeLocation{FVector::ZeroVector};
+	FVector2D LastProjectedNdc{FVector2D::ZeroVector};
+};
+
 /**
  * Default-off P0 evidence collector for post-generation transform stability.
  * It never moves actors or changes presentation state.
@@ -32,4 +48,8 @@ private:
 	FVector LastHomeSystemLocation{FVector::ZeroVector};
 	FVector LastPawnLocation{FVector::ZeroVector};
 	FVector LastCameraLocation{FVector::ZeroVector};
+	bool bHadRenderedView{false};
+	FVector LastRenderedViewLocation{FVector::ZeroVector};
+	FAPSFullScaleHismSentinelState GalaxySentinel;
+	FAPSFullScaleHismSentinelState ClusterSentinel;
 };
