@@ -1032,15 +1032,71 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 					TEXT("expected exactly one generated home spaceship attached to shipyard, found %d (all ASpaceship actors=%d)"),
 					MatchingHomeShipCount, Spaceships.Num()));
 			}
+			const FClusterStarSystemRecord* MaterializedHomeRecord = nullptr;
+			int32 MatchingHomeRecordCount = 0;
+			for (const FClusterStarSystemRecord& CandidateRecord : Cluster->PotentialStarSystems)
+			{
+				if (CandidateRecord.StableId == StarSystem->StableSystemId)
+				{
+					MaterializedHomeRecord = &CandidateRecord;
+					++MatchingHomeRecordCount;
+				}
+			}
+
+			FTransform HomeProxyLocalTransform;
+			const bool bHasHomeProxyTransform = MaterializedHomeRecord
+				&& IsValid(Cluster->StarMeshInstances)
+				&& MaterializedHomeRecord->InstanceIndex >= 0
+				&& MaterializedHomeRecord->InstanceIndex
+					< Cluster->StarMeshInstances->GetInstanceCount()
+				&& Cluster->StarMeshInstances->GetInstanceTransform(
+					MaterializedHomeRecord->InstanceIndex, HomeProxyLocalTransform, false);
+			const bool bCanonicalHomeRecord = MaterializedHomeRecord
+				&& MaterializedHomeRecord->bMaterialized
+				&& MaterializedHomeRecord->MaterializedSystem.Get() == StarSystem
+				&& MaterializedHomeRecord->SystemModel.StableId == StarSystem->StableSystemId
+				&& Cluster->MakeStableSystemId(MaterializedHomeRecord->InstanceIndex)
+					== StarSystem->StableSystemId
+				&& MaterializedHomeRecord->SystemModel.Location.Equals(
+					MaterializedHomeRecord->ClusterLocalLocation, 0.01)
+				&& bHasHomeProxyTransform
+				&& HomeProxyLocalTransform.GetLocation().Equals(
+					MaterializedHomeRecord->ClusterLocalLocation, 0.01)
+				&& HomeProxyLocalTransform.GetScale3D().IsNearlyZero(UE_KINDA_SMALL_NUMBER);
+			if (MatchingHomeRecordCount != 1 || !bCanonicalHomeRecord)
+			{
+				return Fail(FString::Printf(
+					TEXT("detached gameplay home system does not retain one canonical suppressed cluster proxy: records=%d record=%d materialized=%d actor=%d stable=%d address=%d proxy=%d proxyScale=%s"),
+					MatchingHomeRecordCount, MaterializedHomeRecord ? 1 : 0,
+					MaterializedHomeRecord && MaterializedHomeRecord->bMaterialized ? 1 : 0,
+					MaterializedHomeRecord
+						&& MaterializedHomeRecord->MaterializedSystem.Get() == StarSystem ? 1 : 0,
+					MaterializedHomeRecord
+						&& MaterializedHomeRecord->SystemModel.StableId == StarSystem->StableSystemId ? 1 : 0,
+					MaterializedHomeRecord
+						&& MaterializedHomeRecord->SystemModel.Location.Equals(
+							MaterializedHomeRecord->ClusterLocalLocation, 0.01) ? 1 : 0,
+					bHasHomeProxyTransform ? 1 : 0,
+					bHasHomeProxyTransform
+						? *HomeProxyLocalTransform.GetScale3D().ToCompactString() : TEXT("None")));
+			}
 			if (Galaxy->GetAttachParentActor() != Generator
 				|| Cluster->GetAttachParentActor() != Galaxy
-				|| StarSystem->GetAttachParentActor() != Cluster
+				|| StarSystem->GetAttachParentActor() != nullptr
 				|| Star->GetAttachParentActor() != StarSystem
 				|| PlanetarySystem->GetAttachParentActor() != Star
 				|| Orbit->GetAttachParentActor() != PlanetarySystem
 				|| Planet->GetAttachParentActor() != Orbit)
 			{
-				return Fail(TEXT("Galaxy/cluster/system/star/planet attachment chain is not continuous"));
+				return Fail(FString::Printf(
+					TEXT("gameplay catalog/local-bubble hierarchy mismatch: galaxyParent=%s clusterParent=%s systemParent=%s starParent=%s planetaryParent=%s orbitParent=%s planetParent=%s"),
+					*GetNameSafe(Galaxy->GetAttachParentActor()),
+					*GetNameSafe(Cluster->GetAttachParentActor()),
+					*GetNameSafe(StarSystem->GetAttachParentActor()),
+					*GetNameSafe(Star->GetAttachParentActor()),
+					*GetNameSafe(PlanetarySystem->GetAttachParentActor()),
+					*GetNameSafe(Orbit->GetAttachParentActor()),
+					*GetNameSafe(Planet->GetAttachParentActor())));
 			}
 			if (!StarSystem->bMaterializedFromCluster || !StarSystem->StableSystemId.IsValid()
 				|| StarSystem->GetStars().Num() != 1 || StarSystem->GetStars()[0] != Star
