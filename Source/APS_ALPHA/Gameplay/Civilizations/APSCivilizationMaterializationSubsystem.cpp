@@ -72,6 +72,18 @@ void UAPSCivilizationMaterializationSubsystem::Tick(const float DeltaTime)
 	{
 		return;
 	}
+	FString AcceptanceFailure;
+	if (!ValidateMaterializedStarterSet(HomeBody, LastPlacementResult, AcceptanceFailure))
+	{
+		UAPSPlanetSurfacePlacementResolver::ReleasePlacementAnchors(
+			HomeBody, LastPlacementResult.PlacementKey);
+		TransitionMaterializationState(EAPSCivilizationMaterializationState::Blocked);
+		UE_LOG(LogTemp, Error,
+			TEXT("[APS.Civilization.Materialization] actor-ready validation blocked: %s"),
+			*AcceptanceFailure);
+		return;
+	}
+
 	UAPSPlanetSurfacePlacementResolver::ReleasePlacementAnchors(
 		HomeBody, LastPlacementResult.PlacementKey);
 
@@ -95,7 +107,8 @@ TStatId UAPSCivilizationMaterializationSubsystem::GetStatId() const
 
 bool UAPSCivilizationMaterializationSubsystem::IsTickable() const
 {
-	return !IsTemplate() && !bMaterializationComplete;
+	return !IsTemplate() && !bMaterializationComplete
+		&& RuntimeManifest.MaterializationState != EAPSCivilizationMaterializationState::Blocked;
 }
 
 bool UAPSCivilizationMaterializationSubsystem::DoesSupportWorldType(

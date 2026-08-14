@@ -48,8 +48,13 @@ public:
 	bool RestoreRuntimeManifest(const FAPSCivilizationRuntimeManifest& SavedManifest);
 
 private:
+	friend class FAPSCivilizationMaterializationAcceptanceTest;
+
 	bool TryInitializeManifest(AAstroGenerator*& OutGenerator, APlanetaryBody*& OutHomeBody);
 	void TransitionMaterializationState(EAPSCivilizationMaterializationState NewState);
+	bool ValidateMaterializedStarterSet(APlanetaryBody* HomeBody,
+		const FAPSCivilizationFootprintResult& Placement,
+		FString& OutFailureReason) const;
 
 	bool TryResolveSafeSite(APlanetaryBody* HomeBody,
 		FAPSCivilizationFootprintResult& OutResult);
