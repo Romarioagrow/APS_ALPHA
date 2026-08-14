@@ -675,7 +675,11 @@ float marker = saturate(SystemMarker);
 float seed = frac(lerp(InstanceSeed, CoronaSeed, shellMode));
 float3 n = normalize(NormalWS);
 float3 v = normalize(CameraWS);
-float facing = saturate(abs(dot(n, v)));
+float3 pointRadial = WorldPositionWS - ObjectPositionWS;
+float pointRadialLengthSq = dot(pointRadial, pointRadial);
+float3 pointNormal = pointRadialLengthSq > 1.0e-8
+    ? pointRadial * rsqrt(pointRadialLengthSq) : n;
+float facing = saturate(abs(dot(pointNormal, v)));
 float projectedRadiusSq = saturate(1.0 - facing * facing);
 
 // A sphere is only the conservative HISM bound. Its visible signal is a compact
@@ -691,8 +695,13 @@ float pointActivity = saturate(activity + marker * 0.14);
 float coreSharpness = lerp(28.0, 14.0, pointActivity);
 float haloSharpness = lerp(5.50, 3.00, pointActivity);
 float edgeFade = smoothstep(0.02, 0.28, facing);
-float hotCore = exp2(-projectedRadiusSq * coreSharpness) * edgeFade;
-float softHalo = exp2(-projectedRadiusSq * haloSharpness) * edgeFade;
+float normalFootprint = max(length(ddx(pointNormal)), length(ddy(pointNormal)));
+float unresolvedPoint = smoothstep(0.45, 0.95, normalFootprint);
+float hotCoreShape = exp2(-projectedRadiusSq * coreSharpness);
+float softHaloShape = exp2(-projectedRadiusSq * haloSharpness);
+float unresolvedCoverage = unresolvedPoint * lerp(0.18, 0.24, pointActivity);
+float hotCore = lerp(hotCoreShape * edgeFade, hotCoreShape, unresolvedPoint);
+float softHalo = max(softHaloShape * edgeFade, unresolvedCoverage);
 float seedGain = lerp(0.86, 1.14, frac(seed * 17.713 + 0.37));
 float coreEnergy = lerp(4.0, 11.0, activity) * seedGain * (1.0 + marker * 0.22);
 float haloEnergy = lerp(0.62, 2.6, activity) * seedGain * (1.0 + marker * 0.18);

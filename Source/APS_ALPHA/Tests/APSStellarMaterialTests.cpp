@@ -1176,17 +1176,33 @@ bool FAPSStellarPointCoronaMaterialTest::RunTest(const FString& Parameters)
 			&& CompactCode.Contains(
 				TEXT("returnlerp(pointSignal,coronaSignal,shellMode);")));
 		TestTrue(APSStellarMaterialTests::Context(
-			Material, TEXT("Gaussian hot core and soft halo")),
+			Material, TEXT("derivative-aware Gaussian hot core and soft halo")),
 			CompactCode.Contains(
 				TEXT("floatcoreSharpness=lerp(28.0,14.0,pointActivity);"))
 			&& CompactCode.Contains(
 				TEXT("floathaloSharpness=lerp(5.50,3.00,pointActivity);"))
 			&& CompactCode.Contains(
+				TEXT("float3pointRadial=WorldPositionWS-ObjectPositionWS;"))
+			&& CompactCode.Contains(
+				TEXT("float3pointNormal=pointRadialLengthSq>1.0e-8?pointRadial*rsqrt(pointRadialLengthSq):n;"))
+			&& CompactCode.Contains(
+				TEXT("floatfacing=saturate(abs(dot(pointNormal,v)));"))
+			&& CompactCode.Contains(
 				TEXT("floatedgeFade=smoothstep(0.02,0.28,facing);"))
 			&& CompactCode.Contains(
-				TEXT("floathotCore=exp2(-projectedRadiusSq*coreSharpness)*edgeFade;"))
+				TEXT("floatnormalFootprint=max(length(ddx(pointNormal)),length(ddy(pointNormal)));"))
 			&& CompactCode.Contains(
-				TEXT("floatsoftHalo=exp2(-projectedRadiusSq*haloSharpness)*edgeFade;"))
+				TEXT("floatunresolvedPoint=smoothstep(0.45,0.95,normalFootprint);"))
+			&& CompactCode.Contains(
+				TEXT("floathotCoreShape=exp2(-projectedRadiusSq*coreSharpness);"))
+			&& CompactCode.Contains(
+				TEXT("floatsoftHaloShape=exp2(-projectedRadiusSq*haloSharpness);"))
+			&& CompactCode.Contains(
+				TEXT("floatunresolvedCoverage=unresolvedPoint*lerp(0.18,0.24,pointActivity);"))
+			&& CompactCode.Contains(
+				TEXT("floathotCore=lerp(hotCoreShape*edgeFade,hotCoreShape,unresolvedPoint);"))
+			&& CompactCode.Contains(
+				TEXT("floatsoftHalo=max(softHaloShape*edgeFade,unresolvedCoverage);"))
 			&& CompactCode.Contains(
 				TEXT("floatcoreEnergy=lerp(4.0,11.0,activity)*seedGain*(1.0+marker*0.22);"))
 			&& CompactCode.Contains(
