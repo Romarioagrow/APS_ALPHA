@@ -44,11 +44,15 @@ bool FAPSCivilizationQuestAdapter::NormalizeReadyManifest(
 
 	auto CountRole = [&Manifest](const EAPSCivilizationEntityRole Role)
 	{
-		return Manifest.Entities.CountByPredicate(
-			[Role](const FAPSCivilizationManifestEntity& Entity)
+		int32 Count = 0;
+		for (const FAPSCivilizationManifestEntity& Entity : Manifest.Entities)
+		{
+			if (Entity.Role == Role)
 			{
-				return Entity.Role == Role;
-			});
+				++Count;
+			}
+		}
+		return Count;
 	};
 	if (CountRole(EAPSCivilizationEntityRole::BaseModule) != 1
 		|| CountRole(EAPSCivilizationEntityRole::LandingPad) != 1
