@@ -129,6 +129,12 @@ bool FAPSQuestDeterministicFlowTest::RunTest(const FString& Parameters)
 	FString Reason;
 	TestTrue(TEXT("Definition registers"), Runtime.RegisterDefinition(Definition, Reason));
 	TestTrue(TEXT("Quest starts"), Runtime.StartQuest(QuestId, Guid(1000), Reason));
+	TestTrue(TEXT("Matching quest bootstrap is idempotent"),
+		Runtime.StartQuest(QuestId, Guid(1000), Reason));
+	TestFalse(TEXT("Quest identity cannot silently retarget"),
+		Runtime.StartQuest(QuestId, Guid(1001), Reason));
+	TestTrue(TEXT("Identity conflict diagnostic is explicit"),
+		Reason.Contains(TEXT("different identity")));
 	const FAPSQuestEntityRef Base = CivilizationEntity(10);
 	const FAPSQuestEntityRef Ship = CivilizationEntity(20);
 	TestTrue(TEXT("Base binds"), Runtime.BindEntity(QuestId, BaseBinding, Base, Reason));

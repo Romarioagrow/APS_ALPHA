@@ -62,9 +62,16 @@ bool FAPSQuestRuntime::StartQuest(FName QuestId, const FGuid& InstanceId,
 		OutReason = TEXT("Quest instance requires a stable InstanceId");
 		return false;
 	}
-	if (Instances.Contains(QuestId))
+	if (const FAPSQuestInstanceSaveData* Existing = Instances.Find(QuestId))
 	{
-		OutReason = TEXT("Quest instance already exists");
+		if (Existing->InstanceId == InstanceId
+			&& Existing->DefinitionVersion == Definition->DefinitionVersion)
+		{
+			// World adapters may receive both their native delegate and the required
+			// late-read for one canonical fact. Matching bootstrap is a safe no-op.
+			return true;
+		}
+		OutReason = TEXT("Quest instance already exists with a different identity or version");
 		return false;
 	}
 

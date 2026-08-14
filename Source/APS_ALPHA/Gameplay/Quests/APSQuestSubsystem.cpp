@@ -1,9 +1,21 @@
 #include "APSQuestSubsystem.h"
 
+#include "APSEarlyAccessOnboardingDefinition.h"
+
 void UAPSQuestSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
 	Runtime = MakeUnique<FAPSQuestRuntime>();
+
+	UAPSEarlyAccessOnboardingDefinition* EarlyAccessDefinition =
+		NewObject<UAPSEarlyAccessOnboardingDefinition>(this);
+	FString RegistrationFailure;
+	if (!RegisterQuestDefinition(EarlyAccessDefinition, RegistrationFailure))
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[APS.Quest] built-in Early Access route registration failed: %s"),
+			*RegistrationFailure);
+	}
 }
 
 void UAPSQuestSubsystem::Deinitialize()
