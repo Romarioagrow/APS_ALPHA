@@ -14,7 +14,7 @@ namespace
 		{
 			return;
 		}
-		Component->SetMobility(EComponentMobility::Static);
+		Component->SetMobility(EComponentMobility::Movable);
 		Component->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 		Component->SetCollisionProfileName(UCollisionProfile::BlockAll_ProfileName);
 		Component->SetGenerateOverlapEvents(false);

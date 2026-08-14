@@ -124,8 +124,10 @@ bool FAPSCivilizationMaterializationAcceptanceTest::RunTest(const FString& Param
 	Subsystem->PersistRelativeTransform(Ship, HomeBody, *ShipEntity);
 
 	FString FailureReason;
-	TestTrue(TEXT("canonical starter set is actor-ready"),
-		Subsystem->ValidateMaterializedStarterSet(HomeBody, Placement, FailureReason));
+	const bool bCanonicalSetReady = Subsystem->ValidateMaterializedStarterSet(
+		HomeBody, Placement, FailureReason);
+	TestTrue(FString::Printf(TEXT("canonical starter set is actor-ready (%s)"),
+		*FailureReason), bCanonicalSetReady);
 	TestTrue(TEXT("accepted starter set has no failure reason"), FailureReason.IsEmpty());
 
 	Ship->bProvidesArtificialGravity = true;
@@ -143,7 +145,8 @@ bool FAPSCivilizationMaterializationAcceptanceTest::RunTest(const FString& Param
 		TestFalse(TEXT("blocking actor overlap is rejected"),
 			Subsystem->ValidateMaterializedStarterSet(HomeBody, Placement, FailureReason));
 		TestTrue(TEXT("overlap rejection is explicit"), FailureReason.Contains(TEXT("overlaps")));
-		BlockingActor->Destroy();
+		BlockingActor->SetActorLocation(FVector(160000.0, 0.0, 1000000.0),
+			false, nullptr, ETeleportType::TeleportPhysics);
 	}
 
 	AAPSCivilizationLandingPad* DuplicateIdentity =
@@ -158,7 +161,6 @@ bool FAPSCivilizationMaterializationAcceptanceTest::RunTest(const FString& Param
 			Subsystem->ValidateMaterializedStarterSet(HomeBody, Placement, FailureReason));
 		TestTrue(TEXT("duplicate rejection reports stable id cardinality"),
 			FailureReason.Contains(TEXT("resolves to 2 actors")));
-		DuplicateIdentity->Destroy();
 	}
 
 	int32 LifecycleCalls = 0;
