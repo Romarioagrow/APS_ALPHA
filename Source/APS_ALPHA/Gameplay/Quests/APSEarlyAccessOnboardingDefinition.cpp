@@ -82,7 +82,7 @@ UAPSEarlyAccessOnboardingDefinition::UAPSEarlyAccessOnboardingDefinition()
 	AddBinding(*this, Contract::BaseBinding, EAPSQuestEntityKind::CivilizationEntity);
 	AddBinding(*this, Contract::LandingPadBinding, EAPSQuestEntityKind::CivilizationEntity);
 	AddBinding(*this, Contract::SelectedShipBinding, EAPSQuestEntityKind::CivilizationEntity);
-	AddBinding(*this, Contract::PlayerCharacterBinding, EAPSQuestEntityKind::Player);
+	AddBinding(*this, Contract::PlayerCharacterBinding, EAPSQuestEntityKind::GameplayEntity);
 	AddBinding(*this, Contract::DestinationBodyBinding, EAPSQuestEntityKind::CelestialBody);
 	AddBinding(*this, Contract::LandingContextBinding, EAPSQuestEntityKind::LandingContext);
 	AddBinding(*this, Contract::HomeSystemBinding, EAPSQuestEntityKind::StarSystem);

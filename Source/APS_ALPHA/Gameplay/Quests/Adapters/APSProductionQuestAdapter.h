@@ -10,11 +10,13 @@ class APS_ALPHA_API FAPSProductionQuestAdapter
 public:
 	/**
 	 * Normalizes a committed production event without publishing or executing gameplay.
-	 * StreamId is supplied by the save/world integration owner; telemetry time is ignored.
+	 * Production owns StreamId and subject identity domain; telemetry time is ignored.
 	 */
-	static bool Normalize(const FAPSProductionEvent& Source, const FGuid& StreamId,
-		FAPSQuestEvent& OutEvent, FString& OutReason);
+	static bool Normalize(const FAPSProductionEvent& Source, FAPSQuestEvent& OutEvent,
+		FString& OutReason);
 
 private:
+	static bool MapSubjectKind(EAPSSubjectIdentityDomain Domain,
+		EAPSQuestEntityKind& OutKind, FString& OutReason);
 	static EAPSQuestEventResult MapResult(EAPSProductionEventResult Result);
 };

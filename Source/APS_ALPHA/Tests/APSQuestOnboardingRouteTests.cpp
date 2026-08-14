@@ -117,7 +117,7 @@ bool FAPSQuestFirstOnboardingRouteTest::RunTest(const FString& Parameters)
 	Bindings.Add(Contract::SelectedShipBinding,
 		GuidEntity(EAPSQuestEntityKind::CivilizationEntity, 30));
 	Bindings.Add(Contract::PlayerCharacterBinding,
-		GuidEntity(EAPSQuestEntityKind::Player, 40));
+		GuidEntity(EAPSQuestEntityKind::GameplayEntity, 40));
 	Bindings.Add(Contract::DestinationBodyBinding,
 		KeyEntity(EAPSQuestEntityKind::CelestialBody, TEXT("SYS0/S0/P0")));
 	Bindings.Add(Contract::LandingContextBinding,
@@ -212,8 +212,8 @@ bool FAPSQuestFirstOnboardingRouteTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("First onboarding route completes"), Completed->State,
 		EAPSQuestInstanceState::Completed);
 	TestEqual(TEXT("Completion reward is requested once"), RewardRequestCount, 1);
-	TestEqual(TEXT("Completion reward targets the bound player"), LastReward.Target.Kind,
-		EAPSQuestEntityKind::Player);
+	TestEqual(TEXT("Completion reward targets the bound gameplay character"),
+		LastReward.Target.Kind, EAPSQuestEntityKind::GameplayEntity);
 	TestTrue(TEXT("Completion reward target identity is exact"),
 		LastReward.Target.Matches(Bindings.FindChecked(Contract::PlayerCharacterBinding)));
 

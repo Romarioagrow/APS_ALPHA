@@ -12,9 +12,11 @@ bool FAPSQuestProductionAdapterTest::RunTest(const FString& Parameters)
 {
 	FAPSProductionEvent Source;
 	Source.EventId = FGuid(1, 2, 3, 4);
+	Source.StreamId = FGuid(17, 18, 19, 20);
 	Source.CorrelationId = FGuid(5, 6, 7, 8);
 	Source.Verb = TEXT("APS.Build.Place");
 	Source.SubjectStableId = FGuid(9, 10, 11, 12);
+	Source.SubjectIdentityDomain = EAPSSubjectIdentityDomain::GameplayEntity;
 	Source.TargetStableId = FGuid(13, 14, 15, 16);
 	Source.DefinitionId = FPrimaryAssetId(
 		FPrimaryAssetType(TEXT("APSBuildable")), FName(TEXT("Foundation")));
@@ -26,9 +28,10 @@ bool FAPSQuestProductionAdapterTest::RunTest(const FString& Parameters)
 
 	FAPSQuestEvent Normalized;
 	FString Reason;
-	const FGuid StreamId(17, 18, 19, 20);
 	TestTrue(TEXT("Committed production event normalizes"),
-		FAPSProductionQuestAdapter::Normalize(Source, StreamId, Normalized, Reason));
+		FAPSProductionQuestAdapter::Normalize(Source, Normalized, Reason));
+	TestEqual(TEXT("Production-owned StreamId is preserved"), Normalized.StreamId,
+		Source.StreamId);
 	TestEqual(TEXT("Event identity is preserved"), Normalized.EventId, Source.EventId);
 	TestEqual(TEXT("Correlation is preserved"), Normalized.CorrelationId, Source.CorrelationId);
 	TestEqual(TEXT("Sequence is authoritative"), Normalized.Sequence, Source.Sequence);
@@ -45,8 +48,29 @@ bool FAPSQuestProductionAdapterTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Stable result classification is retained"),
 		Normalized.ContextLabels.Contains(Source.ResultCode));
 
-	TestFalse(TEXT("Missing stream is rejected"),
-		FAPSProductionQuestAdapter::Normalize(Source, FGuid(), Normalized, Reason));
+	FAPSProductionEvent PlayerSource = Source;
+	PlayerSource.SubjectIdentityDomain = EAPSSubjectIdentityDomain::Player;
+	TestTrue(TEXT("Explicit account/controller Player domain normalizes"),
+		FAPSProductionQuestAdapter::Normalize(PlayerSource, Normalized, Reason));
+	TestEqual(TEXT("Player domain remains distinct"), Normalized.Subject.Kind,
+		EAPSQuestEntityKind::Player);
+
+	FAPSProductionEvent Invalid = Source;
+	Invalid.SubjectIdentityDomain = EAPSSubjectIdentityDomain::None;
+	TestFalse(TEXT("Missing subject domain is rejected"),
+		FAPSProductionQuestAdapter::Normalize(Invalid, Normalized, Reason));
+	Invalid = Source;
+	Invalid.SubjectStableId.Invalidate();
+	TestFalse(TEXT("Missing canonical subject ID is rejected"),
+		FAPSProductionQuestAdapter::Normalize(Invalid, Normalized, Reason));
+	Invalid = Source;
+	Invalid.StreamId.Invalidate();
+	TestFalse(TEXT("Missing Production-owned stream is rejected"),
+		FAPSProductionQuestAdapter::Normalize(Invalid, Normalized, Reason));
+	Invalid = Source;
+	Invalid.ContextTags.Add(FName(TEXT("APS.DebugOnly")));
+	TestFalse(TEXT("Debug-only event cannot advance Quest"),
+		FAPSProductionQuestAdapter::Normalize(Invalid, Normalized, Reason));
 	return true;
 }
 

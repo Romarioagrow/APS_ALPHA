@@ -1,12 +1,12 @@
 #include "APSProductionQuestAdapter.h"
 
 bool FAPSProductionQuestAdapter::Normalize(const FAPSProductionEvent& Source,
-	const FGuid& StreamId, FAPSQuestEvent& OutEvent, FString& OutReason)
+	FAPSQuestEvent& OutEvent, FString& OutReason)
 {
 	OutReason.Reset();
-	if (!StreamId.IsValid())
+	if (!Source.StreamId.IsValid())
 	{
-		OutReason = TEXT("Production Quest adapter requires a configured save/world StreamId");
+		OutReason = TEXT("Production Quest adapter requires the authoritative Production StreamId");
 		return false;
 	}
 	if (!Source.IsStructurallyValid(false, false, &OutReason))
@@ -14,8 +14,24 @@ bool FAPSProductionQuestAdapter::Normalize(const FAPSProductionEvent& Source,
 		return false;
 	}
 
+	if (Source.ContextTags.Contains(FName(TEXT("APS.DebugOnly"))))
+	{
+		OutReason = TEXT("Debug-only production events cannot advance Quest state");
+		return false;
+	}
+	if (!Source.SubjectStableId.IsValid())
+	{
+		OutReason = TEXT("Production Quest adapter requires a canonical SubjectStableId");
+		return false;
+	}
+	EAPSQuestEntityKind SubjectKind = EAPSQuestEntityKind::None;
+	if (!MapSubjectKind(Source.SubjectIdentityDomain, SubjectKind, OutReason))
+	{
+		return false;
+	}
+
 	FAPSQuestEvent Normalized;
-	Normalized.StreamId = StreamId;
+	Normalized.StreamId = Source.StreamId;
 	Normalized.EventId = Source.EventId;
 	Normalized.CorrelationId = Source.CorrelationId;
 	Normalized.Sequence = Source.Sequence;
@@ -32,7 +48,7 @@ bool FAPSProductionQuestAdapter::Normalize(const FAPSProductionEvent& Source,
 	}
 	if (Source.SubjectStableId.IsValid())
 	{
-		Normalized.Subject.Kind = EAPSQuestEntityKind::GameplayEntity;
+		Normalized.Subject.Kind = SubjectKind;
 		Normalized.Subject.Guid = Source.SubjectStableId;
 	}
 	if (Source.TargetStableId.IsValid())
@@ -47,6 +63,24 @@ bool FAPSProductionQuestAdapter::Normalize(const FAPSProductionEvent& Source,
 
 	OutEvent = MoveTemp(Normalized);
 	return true;
+}
+
+bool FAPSProductionQuestAdapter::MapSubjectKind(
+	const EAPSSubjectIdentityDomain Domain, EAPSQuestEntityKind& OutKind,
+	FString& OutReason)
+{
+	switch (Domain)
+	{
+	case EAPSSubjectIdentityDomain::GameplayEntity:
+		OutKind = EAPSQuestEntityKind::GameplayEntity;
+		return true;
+	case EAPSSubjectIdentityDomain::Player:
+		OutKind = EAPSQuestEntityKind::Player;
+		return true;
+	default:
+		OutReason = TEXT("Production Quest adapter rejects a missing subject identity domain");
+		return false;
+	}
 }
 
 EAPSQuestEventResult FAPSProductionQuestAdapter::MapResult(EAPSProductionEventResult Result)
