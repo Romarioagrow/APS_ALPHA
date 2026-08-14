@@ -274,7 +274,7 @@ bool FAPSQuestRuntime::SubmitEvent(const FAPSQuestEvent& Event, FString& OutReas
 			bStateChanged = true;
 			if (NodeState->Progress >= Node->RequiredProgress)
 			{
-				CompleteNode(Instance, *Definition, *NodeState);
+				CompleteNode(Instance, *Definition, *NodeState, true);
 			}
 		}
 
@@ -388,7 +388,8 @@ bool FAPSQuestRuntime::RecoverQuest(FName QuestId, FName NodeId,
 		{
 			return true;
 		}
-		CompleteNode(*Instance, *Definition, *Node);
+		// Debug traversal is intentionally side-effect free for production reward owners.
+		CompleteNode(*Instance, *Definition, *Node, false);
 		RefreshInstanceCompletion(*Instance, *Definition);
 		InstanceChanged.Broadcast(QuestId, *Instance);
 		return true;
@@ -823,7 +824,8 @@ void FAPSQuestRuntime::RequestRewards(FAPSQuestInstanceSaveData& Instance,
 }
 
 void FAPSQuestRuntime::CompleteNode(FAPSQuestInstanceSaveData& Instance,
-	const UAPSQuestDefinition& Definition, FAPSQuestNodeRuntimeState& NodeState)
+	const UAPSQuestDefinition& Definition, FAPSQuestNodeRuntimeState& NodeState,
+	const bool bRequestRewards)
 {
 	if (NodeState.State == EAPSQuestNodeState::Completed)
 	{
@@ -837,7 +839,10 @@ void FAPSQuestRuntime::CompleteNode(FAPSQuestInstanceSaveData& Instance,
 		return;
 	}
 	NodeState.State = EAPSQuestNodeState::Satisfied;
-	RequestRewards(Instance, *Node);
+	if (bRequestRewards)
+	{
+		RequestRewards(Instance, *Node);
+	}
 	NodeState.State = EAPSQuestNodeState::Completed;
 
 	TArray<FName> Successors;

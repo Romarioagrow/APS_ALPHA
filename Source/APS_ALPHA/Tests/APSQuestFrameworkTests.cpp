@@ -315,8 +315,23 @@ bool FAPSQuestPersistenceRecoveryTest::RunTest(const FString& Parameters)
 	TestNotNull(TEXT("Existing runtime remains after rejection"), Restored.FindInstance(QuestId));
 
 #if !UE_BUILD_SHIPPING
+	int32 DebugRewardRequestCount = 0;
+	Restored.OnRewardRequested().AddLambda(
+		[&DebugRewardRequestCount](const FAPSQuestRewardCommand&)
+		{
+			++DebugRewardRequestCount;
+		});
 	TestTrue(TEXT("Debug skip is available only in non-shipping test build"),
 		Restored.RecoverQuest(QuestId, BaseNodeId, EAPSQuestRecoveryPolicy::DebugSkip, Reason));
+	TestTrue(TEXT("Debug skip can traverse a reward-bearing node"),
+		Restored.RecoverQuest(QuestId, ShipNodeId, EAPSQuestRecoveryPolicy::DebugSkip, Reason));
+	Instance = Restored.FindInstance(QuestId);
+	TestEqual(TEXT("Debug skip never publishes production reward commands"),
+		DebugRewardRequestCount, 0);
+	TestEqual(TEXT("Debug skip never mutates the production reward ledger"),
+		Instance->RewardLedger.Num(), 0);
+	TestEqual(TEXT("Debug traversal still completes the quest"), Instance->State,
+		EAPSQuestInstanceState::Completed);
 #endif
 	return true;
 }

@@ -197,7 +197,8 @@ private:
 	void RequestRewards(FAPSQuestInstanceSaveData& Instance,
 		const FAPSQuestObjectiveNodeDefinition& Node);
 	void CompleteNode(FAPSQuestInstanceSaveData& Instance,
-		const UAPSQuestDefinition& Definition, FAPSQuestNodeRuntimeState& NodeState);
+		const UAPSQuestDefinition& Definition, FAPSQuestNodeRuntimeState& NodeState,
+		bool bRequestRewards);
 	void RefreshInstanceCompletion(FAPSQuestInstanceSaveData& Instance,
 		const UAPSQuestDefinition& Definition);
 	static FGuid MakeRewardTransactionId(const FAPSQuestInstanceSaveData& Instance,
