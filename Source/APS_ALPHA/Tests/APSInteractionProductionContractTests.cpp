@@ -4,10 +4,207 @@
 
 #include "APS_ALPHA/Gameplay/Interaction/APSInteractionSubsystem.h"
 #include "APS_ALPHA/Gameplay/Interaction/APSInteractionTypes.h"
+#include "APS_ALPHA/Gameplay/Interaction/APSInteractable.h"
 #include "APS_ALPHA/Gameplay/Production/APSProductionConsole.h"
 #include "APS_ALPHA/Gameplay/Production/APSProductionEventSubsystem.h"
 #include "APSInteractionContractTestActor.h"
 #include "Engine/World.h"
+#include "UObject/StructOnScope.h"
+#include "UObject/UnrealType.h"
+
+namespace APSInteractionReflectionDiagnostic
+{
+	struct FQueryProcessEventOutcome
+	{
+		bool bInvoked{false};
+		bool bReturnValue{false};
+		FAPSInteractionPromptDescriptor Prompt;
+		FString Failure;
+
+		FString Describe() const
+		{
+			return FString::Printf(
+				TEXT("invoked=%d return=%d promptId=%d revision=%lld target=%d actions=%d failure=%s"),
+				bInvoked, bReturnValue, Prompt.PromptId.IsValid(),
+				static_cast<long long>(Prompt.Revision), Prompt.TargetStableId.IsValid(),
+				Prompt.Actions.Num(), *Failure);
+		}
+	};
+
+	struct FExecuteProcessEventOutcome
+	{
+		bool bInvoked{false};
+		FAPSInteractionExecutionResult Result;
+		FString Failure;
+
+		FString Describe() const
+		{
+			return FString::Printf(
+				TEXT("invoked=%d status=%d correlation=%d verb=%s quantity=%d result=%s failureCode=%s probeFailure=%s"),
+				bInvoked, static_cast<int32>(Result.Status), Result.CorrelationId.IsValid(),
+				*Result.Verb.ToString(), Result.Quantity, *Result.ResultCode.ToString(),
+				*Result.FailureCode.ToString(), *Failure);
+		}
+	};
+
+	static FString DescribeFunction(
+		const UFunction* Function,
+		const UFunction* InterfaceFunction,
+		const UFunction* ClassLocalFunction)
+	{
+		const UClass* OwnerClass = Function ? Cast<UClass>(Function->GetOuter()) : nullptr;
+		const auto NativeFunction = Function ? Function->GetNativeFunc() : nullptr;
+		const bool bNativeMatchesInterface = Function && InterfaceFunction
+			&& NativeFunction && NativeFunction == InterfaceFunction->GetNativeFunc();
+		const bool bNativeMatchesClassLocal = Function && ClassLocalFunction
+			&& NativeFunction && NativeFunction == ClassLocalFunction->GetNativeFunc();
+		return FString::Printf(
+			TEXT("present=%d owner=%s flags=0x%08x native=%d sameInterface=%d sameLocal=%d nativeEqInterface=%d nativeEqLocal=%d"),
+			Function != nullptr, OwnerClass ? *OwnerClass->GetName() : TEXT("None"),
+			Function ? static_cast<uint32>(Function->FunctionFlags) : 0,
+			NativeFunction != nullptr, Function && Function == InterfaceFunction,
+			Function && Function == ClassLocalFunction, bNativeMatchesInterface,
+			bNativeMatchesClassLocal);
+	}
+
+	static FQueryProcessEventOutcome ProbeQueryProcessEvent(
+		UObject* Candidate,
+		UFunction* Function,
+		const FAPSInteractionContext& Context)
+	{
+		FQueryProcessEventOutcome Outcome;
+		if (!Candidate || !Function)
+		{
+			Outcome.Failure = TEXT("MissingCandidateOrFunction");
+			return Outcome;
+		}
+
+		FStructOnScope Parameters(Function);
+		uint8* ParameterMemory = Parameters.GetStructMemory();
+		FStructProperty* ContextProperty = FindFProperty<FStructProperty>(
+			Function, TEXT("Context"));
+		FStructProperty* PromptProperty = FindFProperty<FStructProperty>(
+			Function, TEXT("OutPrompt"));
+		FBoolProperty* ReturnProperty = CastField<FBoolProperty>(
+			Function->GetReturnProperty());
+		if (!ParameterMemory || !ContextProperty || !PromptProperty || !ReturnProperty)
+		{
+			Outcome.Failure = TEXT("IncompleteQueryParameterLayout");
+			return Outcome;
+		}
+
+		ContextProperty->CopyCompleteValue(
+			ContextProperty->ContainerPtrToValuePtr<void>(ParameterMemory), &Context);
+		Candidate->ProcessEvent(Function, ParameterMemory);
+		Outcome.bInvoked = true;
+		Outcome.bReturnValue = ReturnProperty->GetPropertyValue_InContainer(ParameterMemory);
+		PromptProperty->CopyCompleteValue(
+			&Outcome.Prompt,
+			PromptProperty->ContainerPtrToValuePtr<void>(ParameterMemory));
+		return Outcome;
+	}
+
+	static FExecuteProcessEventOutcome ProbeExecuteProcessEvent(
+		UObject* Candidate,
+		UFunction* Function,
+		const FAPSInteractionExecutionRequest& Request)
+	{
+		FExecuteProcessEventOutcome Outcome;
+		if (!Candidate || !Function)
+		{
+			Outcome.Failure = TEXT("MissingCandidateOrFunction");
+			return Outcome;
+		}
+
+		FStructOnScope Parameters(Function);
+		uint8* ParameterMemory = Parameters.GetStructMemory();
+		FStructProperty* RequestProperty = FindFProperty<FStructProperty>(
+			Function, TEXT("Request"));
+		FStructProperty* ReturnProperty = CastField<FStructProperty>(
+			Function->GetReturnProperty());
+		if (!ParameterMemory || !RequestProperty || !ReturnProperty)
+		{
+			Outcome.Failure = TEXT("IncompleteExecuteParameterLayout");
+			return Outcome;
+		}
+
+		RequestProperty->CopyCompleteValue(
+			RequestProperty->ContainerPtrToValuePtr<void>(ParameterMemory), &Request);
+		Candidate->ProcessEvent(Function, ParameterMemory);
+		Outcome.bInvoked = true;
+		ReturnProperty->CopyCompleteValue(
+			&Outcome.Result,
+			ReturnProperty->ContainerPtrToValuePtr<void>(ParameterMemory));
+		return Outcome;
+	}
+
+	static FString ProbeCandidate(
+		UObject* Candidate,
+		const FAPSInteractionContext& Context,
+		const FAPSInteractionExecutionRequest& RequestedExecution,
+		int64& OutObservedRevision)
+	{
+		OutObservedRevision = 0;
+		const FName QueryName(TEXT("QueryInteraction"));
+		const FName ExecuteName(TEXT("ExecuteInteraction"));
+		UClass* InterfaceClass = UAPSInteractable::StaticClass();
+		UClass* CandidateClass = Candidate ? Candidate->GetClass() : nullptr;
+		UFunction* InterfaceQuery = InterfaceClass
+			? InterfaceClass->FindFunctionByName(QueryName) : nullptr;
+		UFunction* ResolvedQuery = Candidate ? Candidate->FindFunction(QueryName) : nullptr;
+		UFunction* LocalQuery = CandidateClass
+			? CandidateClass->FindFunctionByName(QueryName, EIncludeSuperFlag::ExcludeSuper)
+			: nullptr;
+		UFunction* InterfaceExecute = InterfaceClass
+			? InterfaceClass->FindFunctionByName(ExecuteName) : nullptr;
+		UFunction* ResolvedExecute = Candidate ? Candidate->FindFunction(ExecuteName) : nullptr;
+		UFunction* LocalExecute = CandidateClass
+			? CandidateClass->FindFunctionByName(ExecuteName, EIncludeSuperFlag::ExcludeSuper)
+			: nullptr;
+
+		const FQueryProcessEventOutcome ResolvedQueryOutcome =
+			ProbeQueryProcessEvent(Candidate, ResolvedQuery, Context);
+		const bool bQueryFunctionsMatch = ResolvedQuery && ResolvedQuery == LocalQuery;
+		const FQueryProcessEventOutcome LocalQueryOutcome = bQueryFunctionsMatch
+			? ResolvedQueryOutcome
+			: ProbeQueryProcessEvent(Candidate, LocalQuery, Context);
+		if (LocalQueryOutcome.bReturnValue)
+		{
+			OutObservedRevision = LocalQueryOutcome.Prompt.Revision;
+		}
+		else if (ResolvedQueryOutcome.bReturnValue)
+		{
+			OutObservedRevision = ResolvedQueryOutcome.Prompt.Revision;
+		}
+
+		FAPSInteractionExecutionRequest ProbeRequest = RequestedExecution;
+		if (OutObservedRevision > 0)
+		{
+			ProbeRequest.ExpectedRevision = OutObservedRevision;
+		}
+		const FExecuteProcessEventOutcome ResolvedExecuteOutcome =
+			ProbeExecuteProcessEvent(Candidate, ResolvedExecute, ProbeRequest);
+		const bool bExecuteFunctionsMatch = ResolvedExecute && ResolvedExecute == LocalExecute;
+		const FExecuteProcessEventOutcome LocalExecuteOutcome = bExecuteFunctionsMatch
+			? ResolvedExecuteOutcome
+			: ProbeExecuteProcessEvent(Candidate, LocalExecute, ProbeRequest);
+
+		return FString::Printf(
+			TEXT("class=%s implements=%d query{interface=[%s] resolved=[%s] local=[%s] resolvedPE=[%s] localPE=[%s] same=%d} execute{interface=[%s] resolved=[%s] local=[%s] resolvedPE=[%s] localPE=[%s] same=%d}"),
+			CandidateClass ? *CandidateClass->GetName() : TEXT("None"),
+			CandidateClass && CandidateClass->ImplementsInterface(InterfaceClass),
+			*DescribeFunction(InterfaceQuery, InterfaceQuery, LocalQuery),
+			*DescribeFunction(ResolvedQuery, InterfaceQuery, LocalQuery),
+			*DescribeFunction(LocalQuery, InterfaceQuery, LocalQuery),
+			*ResolvedQueryOutcome.Describe(), *LocalQueryOutcome.Describe(),
+			bQueryFunctionsMatch,
+			*DescribeFunction(InterfaceExecute, InterfaceExecute, LocalExecute),
+			*DescribeFunction(ResolvedExecute, InterfaceExecute, LocalExecute),
+			*DescribeFunction(LocalExecute, InterfaceExecute, LocalExecute),
+			*ResolvedExecuteOutcome.Describe(), *LocalExecuteOutcome.Describe(),
+			bExecuteFunctionsMatch);
+	}
+}
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAPSInteractionDescriptorContractTest,
 	"APS.Gameplay.Interaction.DescriptorContract",
@@ -181,6 +378,33 @@ bool FAPSInteractionExecutionEventContractTest::RunTest(const FString& Parameter
 	Request.Quantity = 1;
 	Request.InstigatorActor = Context.InstigatorActor;
 
+	FAPSInteractionExecutionRequest ConsoleRequest = Request;
+	ConsoleRequest.CorrelationId = FGuid::NewGuid();
+	ConsoleRequest.ActionId = TEXT("APS.Production.Open");
+	ConsoleRequest.ExpectedRevision = 0;
+	ConsoleRequest.TargetStableId = ConsoleContextId;
+	ConsoleRequest.TargetIdentityDomain = EAPSTargetIdentityDomain::CivilizationEntity;
+
+	// Evidence-only reflection probe. It compares interface, runtime-resolved and
+	// class-local UFunctions and observes ProcessEvent parameter/result mutation.
+	// It never calls _Implementation directly and is not a gameplay fallback.
+	int64 FixtureObservedRevision = 0;
+	const FString FixtureReflectionProbe =
+		APSInteractionReflectionDiagnostic::ProbeCandidate(
+			Actor, Context, Request, FixtureObservedRevision);
+	Actor->ExecutionCount = 0;
+	int64 ConsoleObservedRevision = 0;
+	const FString ConsoleReflectionProbe = bConsoleInitialized
+		? APSInteractionReflectionDiagnostic::ProbeCandidate(
+			Console, Context, ConsoleRequest, ConsoleObservedRevision)
+		: FString::Printf(TEXT("consoleNotInitialized setupFailure=%s"),
+			*ConsoleSetupFailure);
+	if (ConsoleObservedRevision > 0)
+	{
+		ConsoleRequest.ExpectedRevision = ConsoleObservedRevision;
+	}
+	Actor->ExecutionCount = 0;
+
 	// Contract both native implementers through canonical reflected Execute_ dispatch.
 	// Direct _Implementation calls remain forbidden.
 	FAPSInteractionPromptDescriptor FixtureInterfacePrompt;
@@ -194,12 +418,10 @@ bool FAPSInteractionExecutionEventContractTest::RunTest(const FString& Parameter
 	const bool bConsoleInterfaceQuery = bConsoleInitialized
 		&& IAPSInteractable::Execute_QueryInteraction(
 			Console, Context, ConsoleInterfacePrompt);
-	FAPSInteractionExecutionRequest ConsoleRequest = Request;
-	ConsoleRequest.CorrelationId = FGuid::NewGuid();
-	ConsoleRequest.ActionId = TEXT("APS.Production.Open");
-	ConsoleRequest.ExpectedRevision = ConsoleInterfacePrompt.Revision;
-	ConsoleRequest.TargetStableId = ConsoleContextId;
-	ConsoleRequest.TargetIdentityDomain = EAPSTargetIdentityDomain::CivilizationEntity;
+	if (bConsoleInterfaceQuery)
+	{
+		ConsoleRequest.ExpectedRevision = ConsoleInterfacePrompt.Revision;
+	}
 	const FAPSInteractionExecutionResult ConsoleInterfaceResult = bConsoleInitialized
 		? IAPSInteractable::Execute_ExecuteInteraction(Console, ConsoleRequest)
 		: FAPSInteractionExecutionResult{};
@@ -212,11 +434,12 @@ bool FAPSInteractionExecutionEventContractTest::RunTest(const FString& Parameter
 		|| !bConsoleInitialized || !bConsoleInterfaceQuery || !bConsoleInterfaceExecute)
 	{
 		AddError(FString::Printf(
-			TEXT("Native Execute_ dispatch contract failed: fixtureQuery=%d fixtureExecute=%d fixtureFailure=%s consoleSetup=%d consoleQuery=%d consoleExecute=%d consoleFailure=%s setupFailure=%s"),
+			TEXT("Native Execute_ dispatch contract failed: fixtureQuery=%d fixtureExecute=%d fixtureFailure=%s consoleSetup=%d consoleQuery=%d consoleExecute=%d consoleFailure=%s setupFailure=%s fixtureReflection={%s} consoleReflection={%s}"),
 			bFixtureInterfaceQuery, bFixtureInterfaceExecute,
 			*FixtureInterfaceResult.FailureCode.ToString(), bConsoleInitialized,
 			bConsoleInterfaceQuery, bConsoleInterfaceExecute,
-			*ConsoleInterfaceResult.FailureCode.ToString(), *ConsoleSetupFailure));
+			*ConsoleInterfaceResult.FailureCode.ToString(), *ConsoleSetupFailure,
+			*FixtureReflectionProbe, *ConsoleReflectionProbe));
 		World->DestroyWorld(false);
 		return false;
 	}
