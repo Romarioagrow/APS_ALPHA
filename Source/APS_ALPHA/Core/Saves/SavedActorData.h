@@ -14,6 +14,10 @@ struct FActorSaveData
 	UPROPERTY()
 	FTransform ActorTransform;
 
+	/** Stable civilization identity; invalid for legacy/non-civilization actors. */
+	UPROPERTY()
+	FGuid StableEntityId;
+
 	UPROPERTY()
 	FString ActorClass;
 

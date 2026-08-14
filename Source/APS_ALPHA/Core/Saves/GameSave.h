@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/SaveGame.h"
+#include "APS_ALPHA/Gameplay/Civilizations/APSCivilizationRuntimeManifest.h"
 #include "GameSave.generated.h"
 
 class APlanetaryBody;
@@ -27,6 +28,12 @@ public:
 
 	UPROPERTY(VisibleAnywhere, Category = "State")
 	TArray<FActorSaveData> ActorSaveDataArray;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Civilization")
+	bool bHasCivilizationManifest{false};
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Civilization")
+	FAPSCivilizationRuntimeManifest CivilizationManifest;
 	
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "World")
 	TArray<FGeneratedWorldData> GeneratedWorldsDataArray;
