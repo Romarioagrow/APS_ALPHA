@@ -165,6 +165,23 @@ bool FAPSInteractionExecutionEventContractTest::RunTest(const FString& Parameter
 	Request.Quantity = 1;
 	Request.InstigatorActor = Context.InstigatorActor;
 
+	FAPSInteractionPromptDescriptor ProbePrompt;
+	FString ProbeFailure;
+	if (!Interaction->QueryActor(Actor, Context, ProbePrompt, ProbeFailure))
+	{
+		AddError(FString::Printf(
+			TEXT("Pre-execution QueryActor rejected the fixture: reason=%s"),
+			*ProbeFailure));
+		World->DestroyWorld(false);
+		return false;
+	}
+	TestEqual(TEXT("Probe target identity matches request"),
+		ProbePrompt.TargetStableId, Request.TargetStableId);
+	TestEqual(TEXT("Probe target domain matches request"),
+		ProbePrompt.TargetIdentityDomain, Request.TargetIdentityDomain);
+	TestEqual(TEXT("Probe revision matches request"),
+		ProbePrompt.Revision, Request.ExpectedRevision);
+
 	int32 BroadcastCount = 0;
 	FAPSInteractionExecutionEvent LastEvent;
 	Interaction->OnExecutionPublished().AddLambda(
@@ -175,8 +192,15 @@ bool FAPSInteractionExecutionEventContractTest::RunTest(const FString& Parameter
 		});
 	FAPSInteractionExecutionResult Result =
 		Interaction->ExecuteActor(Actor, Context, Request);
-	TestEqual(TEXT("Executed console result succeeds"), Result.Status,
-		EAPSInteractionExecutionStatus::Succeeded);
+	if (Result.Status != EAPSInteractionExecutionStatus::Succeeded)
+	{
+		AddError(FString::Printf(
+			TEXT("Pre-publication ExecuteActor rejected the fixture: status=%d failure=%s verb=%s quantity=%d"),
+			static_cast<int32>(Result.Status), *Result.FailureCode.ToString(),
+			*Result.Verb.ToString(), Result.Quantity));
+		World->DestroyWorld(false);
+		return false;
+	}
 	TestEqual(TEXT("Exactly one execution event broadcasts"), BroadcastCount, 1);
 	TestEqual(TEXT("Actor executes exactly once"), Actor->ExecutionCount, 1);
 	TestTrue(TEXT("Interaction stream identity is owner-generated"),
