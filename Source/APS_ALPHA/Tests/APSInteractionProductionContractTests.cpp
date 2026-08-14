@@ -2,6 +2,7 @@
 
 #include "Misc/AutomationTest.h"
 
+#include "APS_ALPHA/Gameplay/Interaction/APSInteractionSubsystem.h"
 #include "APS_ALPHA/Gameplay/Interaction/APSInteractionTypes.h"
 #include "APS_ALPHA/Gameplay/Production/APSProductionEventSubsystem.h"
 
@@ -32,6 +33,7 @@ bool FAPSInteractionDescriptorContractTest::RunTest(const FString& Parameters)
 	Prompt.PromptId = FGuid::NewGuid();
 	Prompt.Revision = 3;
 	Prompt.TargetStableId = FGuid::NewGuid();
+	Prompt.ContextStableId = Prompt.TargetStableId;
 	Prompt.DisplayName.Namespace = TEXT("APSInteraction");
 	Prompt.DisplayName.Key = TEXT("HeadquartersConsole");
 	Prompt.DistanceCm = 120.0;
@@ -59,6 +61,35 @@ bool FAPSInteractionDescriptorContractTest::RunTest(const FString& Parameters)
 	Request.Quantity = 0;
 	TestFalse(TEXT("Interaction request rejects zero quantity"),
 		Request.IsStructurallyValid(true, &Reason));
+
+	FAPSInteractionFocusScore Baseline;
+	Baseline.Priority = 10;
+	Baseline.FocusAlignment = 0.90;
+	Baseline.DistanceCm = 200.0;
+	Baseline.TargetStableId = FGuid(2, 0, 0, 0);
+	FAPSInteractionFocusScore Candidate = Baseline;
+	Candidate.Priority = 11;
+	TestTrue(TEXT("Focus ordering prefers semantic priority first"),
+		UAPSInteractionSubsystem::IsFocusScorePreferred(Candidate, Baseline));
+	Candidate = Baseline;
+	Candidate.FocusAlignment = 0.95;
+	TestTrue(TEXT("Focus ordering prefers alignment second"),
+		UAPSInteractionSubsystem::IsFocusScorePreferred(Candidate, Baseline));
+	Candidate = Baseline;
+	Candidate.DistanceCm = 150.0;
+	TestTrue(TEXT("Focus ordering prefers distance third"),
+		UAPSInteractionSubsystem::IsFocusScorePreferred(Candidate, Baseline));
+	Candidate = Baseline;
+	Candidate.TargetStableId = FGuid(1, 0, 0, 0);
+	TestTrue(TEXT("Focus ordering uses canonical binary StableId last"),
+		UAPSInteractionSubsystem::IsFocusScorePreferred(Candidate, Baseline));
+	Candidate = Baseline;
+	Candidate.TargetStableId.Invalidate();
+	TestFalse(TEXT("Focus ordering rejects unresolved canonical StableId"),
+		UAPSInteractionSubsystem::IsFocusScorePreferred(Candidate, Baseline));
+	FAPSInteractionFocusScore EmptyScore;
+	TestTrue(TEXT("First valid focus candidate replaces empty score"),
+		UAPSInteractionSubsystem::IsFocusScorePreferred(Baseline, EmptyScore));
 
 	return true;
 }

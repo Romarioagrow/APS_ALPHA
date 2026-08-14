@@ -289,6 +289,7 @@ bool AAPSProductionConsole::QueryInteraction_Implementation(
 	OutPrompt.PromptKind = EAPSInteractionPromptKind::OpenPanel;
 	OutPrompt.ContextKind = PromptContextKind;
 	OutPrompt.TargetStableId = RegisteredContextStableId;
+	OutPrompt.ContextStableId = RegisteredContextStableId;
 	OutPrompt.DisplayName = DisplayName;
 	OutPrompt.RangeCm = InteractionRangeCm;
 	OutPrompt.Availability = EAPSInteractionAvailability::Available;

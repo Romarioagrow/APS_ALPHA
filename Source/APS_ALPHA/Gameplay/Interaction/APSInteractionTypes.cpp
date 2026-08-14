@@ -56,6 +56,11 @@ bool FAPSInteractionPromptDescriptor::IsStructurallyValid(
 	{
 		return Reject(OutReason, TEXT("Production interaction prompt has no canonical TargetStableId."));
 	}
+	if (bRequireAuthoritativeTargetId && !ContextStableId.IsValid())
+	{
+		return Reject(OutReason,
+			TEXT("Production interaction prompt has no canonical ContextStableId."));
+	}
 	if (!DisplayName.IsSet())
 	{
 		return Reject(OutReason, TEXT("Interaction prompt has no display-name localization descriptor."));

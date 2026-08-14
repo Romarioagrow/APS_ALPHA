@@ -145,6 +145,10 @@ struct APS_ALPHA_API FAPSInteractionPromptDescriptor
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Interaction")
 	FGuid TargetStableId;
 
+	/** Stable gameplay context backing the prompt; may equal TargetStableId. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Interaction")
+	FGuid ContextStableId;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Interaction")
 	FAPSLocalizedTextDescriptor DisplayName;
 
