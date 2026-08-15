@@ -44,18 +44,22 @@
 #include "APS_ALPHA/Pawns/Characters/GravityCharacterPawn.h"
 #include "APS_ALPHA/Pawns/Spaceships/Spaceship.h"
 #include "APS_ALPHA/UI/MainMenu/WorldGenerationViewModel.h"
+#include "Camera/CameraActor.h"
 #include "Camera/PlayerCameraManager.h"
 #include "Camera/CameraComponent.h"
 #include "ProceduralMeshComponent.h"
 #include "Components/CapsuleComponent.h"
+#include "Components/HierarchicalInstancedStaticMeshComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/DirectionalLightComponent.h"
 #include "Engine/DirectionalLight.h"
 #include "Engine/GameViewportClient.h"
+#include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/SpringArmComponent.h"
+#include "HAL/IConsoleManager.h"
 #include "ImageUtils.h"
 #include "HAL/FileManager.h"
 #include "Misc/Crc.h"
@@ -134,6 +138,25 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 	// (dot >= 0.995, about 5.73 degrees), so one stale snapped normal cannot pass
 	// both rendered observer positions.
 	constexpr double MaximumWetOceanViewDirectionDot = 0.9659258262890683;
+
+	constexpr int32 ProjectionEvidenceWarmupFrames = 3;
+	constexpr int32 ProjectionEvidenceRequiredFrames = 32;
+	constexpr double ProjectionEvidencePhaseTimeoutSeconds = 20.0;
+	constexpr double ProjectionEvidenceViewPositionToleranceCm = 0.01;
+	constexpr double ProjectionEvidenceViewAngleToleranceDegrees = 0.01;
+	constexpr double ProjectionEvidenceProxyPositionToleranceCm = 0.01;
+	constexpr double ProjectionEvidenceProxyScaleTolerance = 1.0e-6;
+	constexpr double ProjectionEvidenceProxyRotationToleranceDegrees = 1.0e-6;
+	constexpr double ProjectionEvidenceRelativeVectorToleranceCm = 0.02;
+	constexpr double ProjectionEvidenceStationaryNdcTolerance = 0.0015;
+	constexpr double ProjectionEvidenceMovingClosureToleranceCm = 0.05;
+	constexpr double ProjectionEvidenceMovementPerFrameCm = 100.0;
+
+	static TAutoConsoleVariable<int32> CVarAPSTestsFullScaleProjectionEvidence(
+		TEXT("aps.Tests.FullScaleProjectionEvidence"),
+		0,
+		TEXT("Opt-in 32-frame stationary and controlled-movement canonical projection evidence."),
+		ECVF_Default);
 
 	struct FVisibleWorldScapeRenderLodProof
 	{
@@ -624,6 +647,10 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 				return UpdateWaitForGameplayTravel(World, Now);
 			case EStep::ValidateGameplayHierarchy:
 				return UpdateValidateGameplayHierarchy(World, Now);
+			case EStep::ProjectionEvidenceStationaryHold:
+				return UpdateProjectionEvidenceStationaryHold(World, Now);
+			case EStep::ProjectionEvidenceControlledMove:
+				return UpdateProjectionEvidenceControlledMove(World, Now);
 			case EStep::WaitForGameplaySurface:
 				return UpdateWaitForGameplaySurface(World, Now);
 			case EStep::WaitForScreenshot:
@@ -650,6 +677,8 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			WaitForPreview,
 			WaitForGameplayTravel,
 			ValidateGameplayHierarchy,
+			ProjectionEvidenceStationaryHold,
+			ProjectionEvidenceControlledMove,
 			WaitForGameplaySurface,
 			WaitForScreenshot,
 			WaitForWetOceanScreenshots,
@@ -659,8 +688,47 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			Cleanup
 		};
 
+		struct FProjectionEvidenceRenderedSample
+		{
+			uint64 RenderFrameCounter{0u};
+			double RenderTime{0.0};
+			FVector ViewLocation{FVector::ZeroVector};
+			FQuat ViewRotation{FQuat::Identity};
+			FVector GalaxyLocalPosition{FVector::ZeroVector};
+			FQuat GalaxyLocalRotation{FQuat::Identity};
+			FVector GalaxyLocalScale{FVector::OneVector};
+			FVector GalaxyWorldPosition{FVector::ZeroVector};
+			FVector ClusterLocalPosition{FVector::ZeroVector};
+			FQuat ClusterLocalRotation{FQuat::Identity};
+			FVector ClusterLocalScale{FVector::OneVector};
+			FVector ClusterWorldPosition{FVector::ZeroVector};
+			FVector2D ClusterNdc{FVector2D::ZeroVector};
+			bool bClusterNdcValid{false};
+			double GalaxyProjectionErrorCm{TNumericLimits<double>::Max()};
+			double ClusterProjectionErrorCm{TNumericLimits<double>::Max()};
+			double GalaxyMaxMatrixMagnitudeCm{TNumericLimits<double>::Max()};
+			double ClusterMaxMatrixMagnitudeCm{TNumericLimits<double>::Max()};
+			uint64 ProxyBuildSerial{0u};
+			uint64 InstanceUploadCount{0u};
+			uint64 TransformMutationSerial{0u};
+		};
+
 		bool Fail(const FString& Message)
 		{
+			if (bProjectionEvidencePhaseStarted
+				&& (Step == EStep::ProjectionEvidenceStationaryHold
+					|| Step == EStep::ProjectionEvidenceControlledMove))
+			{
+				const TCHAR* Phase = Step == EStep::ProjectionEvidenceStationaryHold
+					? TEXT("Stationary") : TEXT("Moving");
+				const TCHAR* Status = ProjectionEvidenceAcceptedFrameCount > 0
+					? TEXT("FAIL") : TEXT("NOT_COVERED");
+				UE_LOG(LogTemp, Error,
+					TEXT("[APS.P0.ProjectionPhase] source=directRuntime phase=%s event=End status=%s samples=%d reason=%s"),
+					Phase, Status, ProjectionEvidenceAcceptedFrameCount, *Message);
+				bProjectionEvidencePhaseStarted = false;
+			}
+			RestoreProjectionEvidenceCamera();
 			if (PendingFailure.IsEmpty())
 			{
 				PendingFailure = Message;
@@ -1533,6 +1601,1205 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 				TEXT("[APS.Handoff.Smoke] Gameplay hierarchy ready in %.2fs system=%s planet=%s pawn=%s saveSlot=%s starterAttachments=OK"),
 				Now - StepStartSeconds, *StarSystem->StableSystemId.ToString(),
 				*GetNameSafe(Planet), *SelectedPawnClassPath, *GeneratedSaveSlotName);
+			if (CVarAPSTestsFullScaleProjectionEvidence.GetValueOnGameThread() > 0)
+			{
+				FString EvidenceFailure;
+				if (!InitializeProjectionEvidence(World, Generator, Galaxy, Cluster,
+					PlayerController, GalaxySentinel, ClusterSentinel, EvidenceFailure))
+				{
+					return Fail(EvidenceFailure);
+				}
+				Step = EStep::ProjectionEvidenceStationaryHold;
+			}
+			else
+			{
+				Step = EStep::WaitForGameplaySurface;
+			}
+			StepStartSeconds = Now;
+			return false;
+		}
+
+		static bool ProjectionFramesMatch(
+			const FAPSCanonicalStellarProjectionFrame& A,
+			const FAPSCanonicalStellarProjectionFrame& B)
+		{
+			return A.ProjectionVersion == B.ProjectionVersion
+				&& A.ContextHash == B.ContextHash
+				&& A.LayerOriginCanonicalUnits == B.LayerOriginCanonicalUnits
+				&& A.LayerToRootPositionScale == B.LayerToRootPositionScale
+				&& A.CanonicalAnchorCm == B.CanonicalAnchorCm
+				&& A.RenderAnchorCm == B.RenderAnchorCm
+				&& A.CanonicalCmPerUnit == B.CanonicalCmPerUnit
+				&& A.PositionScale == B.PositionScale
+				&& A.CanonicalHalfExtentUnits == B.CanonicalHalfExtentUnits
+				&& A.ProxyHalfExtentCm == B.ProxyHalfExtentCm
+				&& A.MaxProxyCoordinateCm == B.MaxProxyCoordinateCm
+				&& A.RadiusPolicy == B.RadiusPolicy
+				&& A.VisualRadiusFloorFraction == B.VisualRadiusFloorFraction
+				&& A.VisualRadiusCeilingFraction == B.VisualRadiusCeilingFraction
+				&& A.VisualRadiusClassExponent == B.VisualRadiusClassExponent
+				&& A.VisualRadiusMinClassScale == B.VisualRadiusMinClassScale
+				&& A.VisualRadiusMaxClassScale == B.VisualRadiusMaxClassScale
+				&& A.bEnabled == B.bEnabled;
+		}
+
+		bool ProjectionDescriptorMatchesBaseline(
+			const FAPSCanonicalStellarProjectionDescriptor& Current) const
+		{
+			const FAPSCanonicalStellarProjectionDescriptor& Baseline =
+				ProjectionEvidenceBaselineDescriptor;
+			return Current.ProjectionVersion == Baseline.ProjectionVersion
+				&& Current.ContextHash == Baseline.ContextHash
+				&& Current.CanonicalDatasetHash == Baseline.CanonicalDatasetHash
+				&& Current.CanonicalDatasetVersion == Baseline.CanonicalDatasetVersion
+				&& Current.CanonicalDatasetInputHash == Baseline.CanonicalDatasetInputHash
+				&& Current.CanonicalDatasetBuildSerial == Baseline.CanonicalDatasetBuildSerial
+				&& Current.CanonicalDatasetRecordCount == Baseline.CanonicalDatasetRecordCount
+				&& Current.CanonicalIdentityHash == Baseline.CanonicalIdentityHash
+				&& Current.RenderedMappingHash == Baseline.RenderedMappingHash
+				&& ProjectionFramesMatch(Current.Galaxy, Baseline.Galaxy)
+				&& ProjectionFramesMatch(Current.StarCluster, Baseline.StarCluster)
+				&& Current.ProxyBuildSerial == Baseline.ProxyBuildSerial
+				&& Current.InstanceUploadCount == Baseline.InstanceUploadCount
+				&& Current.TransformMutationSerial == Baseline.TransformMutationSerial
+				&& Current.GalaxyModeledCount == Baseline.GalaxyModeledCount
+				&& Current.GalaxyRenderedCount == Baseline.GalaxyRenderedCount
+				&& Current.ClusterModeledCount == Baseline.ClusterModeledCount
+				&& Current.ClusterRenderedCount == Baseline.ClusterRenderedCount
+				&& Current.MaterializedHomeStableId == Baseline.MaterializedHomeStableId
+				&& Current.MaterializedHomeInstanceIndex
+					== Baseline.MaterializedHomeInstanceIndex
+				&& Current.MaxObservedMatrixMagnitudeCm
+					== Baseline.MaxObservedMatrixMagnitudeCm
+				&& Current.GalaxyMaxObservedMatrixMagnitudeCm
+					== Baseline.GalaxyMaxObservedMatrixMagnitudeCm
+				&& Current.ClusterMaxObservedMatrixMagnitudeCm
+					== Baseline.ClusterMaxObservedMatrixMagnitudeCm
+				&& Current.ClusterToGalaxyPositionScale
+					== Baseline.ClusterToGalaxyPositionScale
+				&& Current.ViewDistanceScale == Baseline.ViewDistanceScale
+				&& Current.GalaxyViewVisualScale == Baseline.GalaxyViewVisualScale
+				&& Current.ClusterViewVisualScale == Baseline.ClusterViewVisualScale
+				&& Current.ViewAnchorWorldCm == Baseline.ViewAnchorWorldCm
+				&& Current.bMaterializedHomeProxySuppressed
+					== Baseline.bMaterializedHomeProxySuppressed
+				&& Current.bConsumedFinalizedDataset == Baseline.bConsumedFinalizedDataset
+				&& Current.bMappingsComplete == Baseline.bMappingsComplete
+				&& Current.bUnitRoots == Baseline.bUnitRoots
+				&& Current.bBoundsValid == Baseline.bBoundsValid
+				&& Current.bProjectionValid == Baseline.bProjectionValid
+				&& Current.bFinalized == Baseline.bFinalized;
+		}
+
+		static bool ProjectProjectionEvidenceNdc(const FWorldCachedViewInfo& ViewInfo,
+			const FVector& WorldPosition, FVector2D& OutNdc)
+		{
+			const FVector4 Clip = ViewInfo.ViewProjectionMatrix.TransformFVector4(
+				FVector4(WorldPosition, 1.0));
+			if (!FMath::IsFinite(Clip.X) || !FMath::IsFinite(Clip.Y)
+				|| !FMath::IsFinite(Clip.W) || Clip.W <= UE_SMALL_NUMBER)
+			{
+				return false;
+			}
+			OutNdc = FVector2D(Clip.X / Clip.W, Clip.Y / Clip.W);
+			return FMath::IsFinite(OutNdc.X) && FMath::IsFinite(OutNdc.Y);
+		}
+
+		bool CaptureProjectionEvidenceDatasetBaseline(
+			AAstroGenerator* Generator, FString& OutFailure)
+		{
+			OutFailure.Reset();
+			const int32 RecordCount = ProjectionEvidenceBaselineDescriptor.
+				CanonicalDatasetRecordCount;
+			if (!IsValid(Generator) || RecordCount <= 0)
+			{
+				OutFailure = TEXT("projection evidence has no finalized canonical records");
+				return false;
+			}
+			ProjectionEvidenceDatasetStableIds.SetNum(RecordCount);
+			ProjectionEvidenceDatasetCanonicalPositions.SetNum(RecordCount);
+			ProjectionEvidenceDatasetCanonicalRadii.SetNum(RecordCount);
+			ProjectionEvidenceDatasetMinOrbits.SetNum(RecordCount);
+			ProjectionEvidenceDatasetMaxOrbits.SetNum(RecordCount);
+			for (int32 RecordIndex = 0; RecordIndex < RecordCount; ++RecordIndex)
+			{
+				FAPSCanonicalClusterSystemRecord Record;
+				if (!Generator->GetCanonicalClusterDatasetRecord(RecordIndex, Record)
+					|| Record.CanonicalIndex != RecordIndex
+					|| !Record.StableId.IsValid()
+					|| Record.SystemModel.StableId != Record.StableId
+					|| !Record.PrimaryStarModel.Location.Equals(
+						Record.ClusterLocalLocation, 0.001)
+					|| !Record.SystemModel.Location.Equals(
+						Record.ClusterLocalLocation, 0.001))
+				{
+					OutFailure = FString::Printf(
+						TEXT("projection evidence could not snapshot canonical record %d/%d"),
+						RecordIndex, RecordCount);
+					return false;
+				}
+				ProjectionEvidenceDatasetStableIds[RecordIndex] = Record.StableId;
+				ProjectionEvidenceDatasetCanonicalPositions[RecordIndex] =
+					Record.ClusterLocalLocation;
+				ProjectionEvidenceDatasetCanonicalRadii[RecordIndex] =
+					Record.PrimaryStarModel.Radius;
+				ProjectionEvidenceDatasetMinOrbits[RecordIndex] =
+					Record.PrimaryStarModel.MinOrbit;
+				ProjectionEvidenceDatasetMaxOrbits[RecordIndex] =
+					Record.PrimaryStarModel.MaxOrbit;
+			}
+			return true;
+		}
+
+		bool ValidateProjectionEvidenceDataset(
+			AAstroGenerator* Generator, FString& OutFailure) const
+		{
+			OutFailure.Reset();
+			const int32 RecordCount = ProjectionEvidenceDatasetStableIds.Num();
+			if (!IsValid(Generator) || RecordCount <= 0
+				|| ProjectionEvidenceDatasetCanonicalPositions.Num() != RecordCount
+				|| ProjectionEvidenceDatasetCanonicalRadii.Num() != RecordCount
+				|| ProjectionEvidenceDatasetMinOrbits.Num() != RecordCount
+				|| ProjectionEvidenceDatasetMaxOrbits.Num() != RecordCount)
+			{
+				OutFailure = TEXT("projection evidence canonical baseline is incomplete");
+				return false;
+			}
+			for (int32 RecordIndex = 0; RecordIndex < RecordCount; ++RecordIndex)
+			{
+				FAPSCanonicalClusterSystemRecord Record;
+				if (!Generator->GetCanonicalClusterDatasetRecord(RecordIndex, Record)
+					|| Record.CanonicalIndex != RecordIndex
+					|| Record.StableId != ProjectionEvidenceDatasetStableIds[RecordIndex]
+					|| Record.SystemModel.StableId != Record.StableId
+					|| Record.ClusterLocalLocation
+						!= ProjectionEvidenceDatasetCanonicalPositions[RecordIndex]
+					|| Record.PrimaryStarModel.Radius
+						!= ProjectionEvidenceDatasetCanonicalRadii[RecordIndex]
+					|| Record.PrimaryStarModel.MinOrbit
+						!= ProjectionEvidenceDatasetMinOrbits[RecordIndex]
+					|| Record.PrimaryStarModel.MaxOrbit
+						!= ProjectionEvidenceDatasetMaxOrbits[RecordIndex])
+				{
+					OutFailure = FString::Printf(
+						TEXT("canonical dataset/order/address changed at record %d/%d"),
+						RecordIndex, RecordCount);
+					return false;
+				}
+			}
+			return true;
+		}
+
+		static bool ProxyRecordsMatchIdentity(
+			const FAPSCanonicalStellarProxyRecord& Current,
+			const FAPSCanonicalStellarProxyRecord& Baseline)
+		{
+			return Current.Layer == Baseline.Layer
+				&& Current.StableId == Baseline.StableId
+				&& Current.CanonicalIndex == Baseline.CanonicalIndex
+				&& Current.InstanceIndex == Baseline.InstanceIndex
+				&& Current.CanonicalPositionUnits == Baseline.CanonicalPositionUnits
+				&& Current.CanonicalPhysicalRadiusSolar
+					== Baseline.CanonicalPhysicalRadiusSolar
+				&& Current.ExpectedPhysicalProxyRadiusCm
+					== Baseline.ExpectedPhysicalProxyRadiusCm
+				&& Current.AppliedVisualProxyRadiusCm
+					== Baseline.AppliedVisualProxyRadiusCm
+				&& Current.ExpectedBaseProxyPositionCm
+					== Baseline.ExpectedBaseProxyPositionCm
+				&& Current.ExpectedBaseProxyScale == Baseline.ExpectedBaseProxyScale
+				&& Current.ActualProxyPositionCm.Equals(
+					Baseline.ActualProxyPositionCm,
+					ProjectionEvidenceProxyPositionToleranceCm)
+				&& FMath::IsNearlyEqual(Current.ActualProxyScale,
+					Baseline.ActualProxyScale,
+					ProjectionEvidenceProxyScaleTolerance)
+				&& Current.bSuppressedMaterializedHome
+					== Baseline.bSuppressedMaterializedHome
+				&& Current.bSuppressedByView == Baseline.bSuppressedByView;
+		}
+
+		static bool CanonicalAddressesMatch(
+			const FAPSCanonicalClusterSystemAddress& Current,
+			const FAPSCanonicalClusterSystemAddress& Baseline)
+		{
+			return Current.ProjectionVersion == Baseline.ProjectionVersion
+				&& Current.ContextHash == Baseline.ContextHash
+				&& Current.CanonicalDatasetHash == Baseline.CanonicalDatasetHash
+				&& Current.StableId == Baseline.StableId
+				&& Current.CanonicalIndex == Baseline.CanonicalIndex
+				&& Current.InstanceIndex == Baseline.InstanceIndex
+				&& Current.CanonicalRootPositionCm == Baseline.CanonicalRootPositionCm
+				&& Current.CanonicalDeltaFromHomeCm == Baseline.CanonicalDeltaFromHomeCm
+				&& Current.CanonicalDistanceFromHomeCm
+					== Baseline.CanonicalDistanceFromHomeCm
+				&& Current.ImmutableProxyWorldLocationCm
+					== Baseline.ImmutableProxyWorldLocationCm
+				&& Current.CanonicalRadiusSolar == Baseline.CanonicalRadiusSolar
+				&& Current.bMaterializedHome == Baseline.bMaterializedHome;
+		}
+
+		bool ValidateProjectionEvidenceInvariants(UWorld* World,
+			const FWorldCachedViewInfo& ViewInfo, const FVector& ViewLocation,
+			const FQuat& ViewRotation, FProjectionEvidenceRenderedSample& OutSample,
+			FString& OutFailure) const
+		{
+			OutFailure.Reset();
+			AAstroGenerator* Generator = ProjectionEvidenceGenerator.Get();
+			AGalaxy* Galaxy = ProjectionEvidenceGalaxy.Get();
+			AStarCluster* Cluster = ProjectionEvidenceCluster.Get();
+			UHierarchicalInstancedStaticMeshComponent* GalaxyComponent =
+				ProjectionEvidenceGalaxyComponent.Get();
+			UHierarchicalInstancedStaticMeshComponent* ClusterComponent =
+				ProjectionEvidenceClusterComponent.Get();
+			if (!World || World != GameplayWorld.Get() || !IsValid(Generator)
+				|| !IsValid(Galaxy) || !IsValid(Cluster)
+				|| !IsValid(GalaxyComponent) || !IsValid(ClusterComponent)
+				|| !bProjectionEvidenceBaselineCaptured)
+			{
+				OutFailure = TEXT("projection evidence lost its gameplay generator/catalogue actors");
+				return false;
+			}
+
+			const FAPSCanonicalStellarProjectionDescriptor Current =
+				Generator->GetCanonicalStellarProjectionDescriptor();
+			if (!ProjectionDescriptorMatchesBaseline(Current)
+				|| !Current.bFinalized || !Current.bProjectionValid
+				|| !Current.bConsumedFinalizedDataset || !Current.bMappingsComplete
+				|| !Current.bUnitRoots || !Current.bBoundsValid
+				|| Current.ProjectionVersion
+					!= FAPSCanonicalStellarProjectionFrame::CurrentVersion
+				|| Current.CanonicalDatasetHash == 0u
+				|| Current.CanonicalDatasetHash != Current.CanonicalIdentityHash
+				|| Current.RenderedMappingHash == 0u
+				|| Current.ProxyBuildSerial == 0u
+				|| Current.InstanceUploadCount == 0u
+				|| GalaxyComponent->GetInstanceCount() != Current.GalaxyRenderedCount
+				|| ClusterComponent->GetInstanceCount() != Current.ClusterRenderedCount
+				|| Current.Galaxy.MaxProxyCoordinateCm
+					> APSCanonicalStellarProjection::GalaxyMaxProxyCoordinateCm
+				|| Current.StarCluster.MaxProxyCoordinateCm
+					> APSCanonicalStellarProjection::ClusterMaxProxyCoordinateCm
+				|| Current.GalaxyMaxObservedMatrixMagnitudeCm
+					> APSCanonicalStellarProjection::GalaxyMaxProxyCoordinateCm
+						+ ProjectionEvidenceProxyPositionToleranceCm
+				|| Current.ClusterMaxObservedMatrixMagnitudeCm
+					> APSCanonicalStellarProjection::ClusterMaxProxyCoordinateCm
+						+ ProjectionEvidenceProxyPositionToleranceCm
+				|| !Current.bMaterializedHomeProxySuppressed)
+			{
+				OutFailure = FString::Printf(
+					TEXT("projection descriptor/counters changed or became invalid build=%llu/%llu uploads=%llu/%llu mutations=%llu/%llu galaxyInstances=%d/%d clusterInstances=%d/%d dataset=%u mapping=%u"),
+					Current.ProxyBuildSerial,
+					ProjectionEvidenceBaselineDescriptor.ProxyBuildSerial,
+					Current.InstanceUploadCount,
+					ProjectionEvidenceBaselineDescriptor.InstanceUploadCount,
+					Current.TransformMutationSerial,
+					ProjectionEvidenceBaselineDescriptor.TransformMutationSerial,
+					GalaxyComponent->GetInstanceCount(), Current.GalaxyRenderedCount,
+					ClusterComponent->GetInstanceCount(), Current.ClusterRenderedCount,
+					Current.CanonicalDatasetHash, Current.RenderedMappingHash);
+				return false;
+			}
+			FAPSCanonicalStellarProxyRecord GalaxyRecord;
+			FAPSCanonicalStellarProxyRecord ClusterRecord;
+			FAPSCanonicalStellarProxyRecord HomeRecord;
+			if (!Generator->GetCanonicalStellarProxyRecord(
+					EAPSCanonicalStellarProxyLayer::Galaxy,
+					ProjectionEvidenceGalaxyStableId, GalaxyRecord)
+				|| !Generator->GetCanonicalStellarProxyRecord(
+					EAPSCanonicalStellarProxyLayer::StarCluster,
+					ProjectionEvidenceClusterStableId, ClusterRecord)
+				|| !Generator->GetCanonicalStellarProxyRecord(
+					EAPSCanonicalStellarProxyLayer::StarCluster,
+					ProjectionEvidenceHomeStableId, HomeRecord)
+				|| !ProxyRecordsMatchIdentity(
+					GalaxyRecord, ProjectionEvidenceGalaxyBaselineRecord)
+				|| !ProxyRecordsMatchIdentity(
+					ClusterRecord, ProjectionEvidenceClusterBaselineRecord)
+				|| !ProxyRecordsMatchIdentity(
+					HomeRecord, ProjectionEvidenceHomeBaselineRecord))
+			{
+				OutFailure = TEXT("projection sentinel StableId/index/canonical mapping changed");
+				return false;
+			}
+
+			FAPSCanonicalClusterSystemAddress HomeAddress;
+			FAPSCanonicalClusterSystemAddress ClusterAddress;
+			if (!Generator->ResolveCanonicalClusterSystemAddress(
+					ProjectionEvidenceHomeStableId, HomeAddress)
+				|| !Generator->ResolveCanonicalClusterSystemAddress(
+					ProjectionEvidenceClusterStableId, ClusterAddress)
+				|| !CanonicalAddressesMatch(
+					HomeAddress, ProjectionEvidenceHomeBaselineAddress)
+				|| !CanonicalAddressesMatch(
+					ClusterAddress, ProjectionEvidenceClusterBaselineAddress))
+			{
+				OutFailure = TEXT("projection canonical address/home-relative distance changed");
+				return false;
+			}
+
+			FTransform GalaxyLocalTransform;
+			FTransform GalaxyWorldTransform;
+			FTransform ClusterLocalTransform;
+			FTransform ClusterWorldTransform;
+			FTransform HomeLocalTransform;
+			FTransform HomeWorldTransform;
+			if (!GalaxyComponent->GetInstanceTransform(
+					GalaxyRecord.InstanceIndex, GalaxyLocalTransform, false)
+				|| !GalaxyComponent->GetInstanceTransform(
+					GalaxyRecord.InstanceIndex, GalaxyWorldTransform, true)
+				|| !ClusterComponent->GetInstanceTransform(
+					ClusterRecord.InstanceIndex, ClusterLocalTransform, false)
+				|| !ClusterComponent->GetInstanceTransform(
+					ClusterRecord.InstanceIndex, ClusterWorldTransform, true)
+				|| !ClusterComponent->GetInstanceTransform(
+					HomeRecord.InstanceIndex, HomeLocalTransform, false)
+				|| !ClusterComponent->GetInstanceTransform(
+					HomeRecord.InstanceIndex, HomeWorldTransform, true)
+				|| !IsFiniteTransform(GalaxyLocalTransform)
+				|| !IsFiniteTransform(GalaxyWorldTransform)
+				|| !IsFiniteTransform(ClusterLocalTransform)
+				|| !IsFiniteTransform(ClusterWorldTransform)
+				|| !IsFiniteTransform(HomeLocalTransform)
+				|| !IsFiniteTransform(HomeWorldTransform))
+			{
+				OutFailure = TEXT("projection evidence could not read finite local/world HISM transforms");
+				return false;
+			}
+
+			const double GalaxyMatrixMagnitude =
+				APSCanonicalStellarProjection::TransformMatrixMagnitude(GalaxyWorldTransform);
+			const double ClusterMatrixMagnitude =
+				APSCanonicalStellarProjection::TransformMatrixMagnitude(ClusterWorldTransform);
+			const FVector GalaxyExpectedWorldPosition = GalaxyComponent
+				->GetComponentTransform().TransformPosition(
+					GalaxyRecord.ExpectedBaseProxyPositionCm);
+			const FVector ClusterExpectedWorldPosition = ClusterComponent
+				->GetComponentTransform().TransformPosition(
+					ClusterRecord.ExpectedBaseProxyPositionCm);
+			const double GalaxyWorldProjectionError = FVector::Distance(
+				GalaxyWorldTransform.GetLocation(), GalaxyExpectedWorldPosition);
+			const double ClusterWorldProjectionError = FVector::Distance(
+				ClusterWorldTransform.GetLocation(), ClusterExpectedWorldPosition);
+			const bool bUnitRoots = Generator->GetActorScale3D().Equals(
+				FVector::OneVector, 1.0e-6)
+				&& Galaxy->GetActorScale3D().Equals(FVector::OneVector, 1.0e-6)
+				&& Cluster->GetActorScale3D().Equals(FVector::OneVector, 1.0e-6)
+				&& GalaxyComponent->GetComponentScale().Equals(FVector::OneVector, 1.0e-6)
+				&& ClusterComponent->GetComponentScale().Equals(FVector::OneVector, 1.0e-6);
+			const bool bProxyContract = bUnitRoots
+				&& !GalaxyRecord.bSuppressedMaterializedHome
+				&& !ClusterRecord.bSuppressedMaterializedHome
+				&& !GalaxyRecord.bSuppressedByView
+				&& !ClusterRecord.bSuppressedByView
+				&& GalaxyRecord.ActualProxyScale > 0.0
+				&& ClusterRecord.ActualProxyScale > 0.0
+				&& FMath::IsNearlyEqual(GalaxyRecord.ActualProxyScale,
+					GalaxyRecord.ExpectedBaseProxyScale,
+					ProjectionEvidenceProxyScaleTolerance)
+				&& FMath::IsNearlyEqual(ClusterRecord.ActualProxyScale,
+					ClusterRecord.ExpectedBaseProxyScale,
+					ProjectionEvidenceProxyScaleTolerance)
+				&& GalaxyRecord.ProjectionErrorCm
+					<= ProjectionEvidenceProxyPositionToleranceCm
+				&& ClusterRecord.ProjectionErrorCm
+					<= ProjectionEvidenceProxyPositionToleranceCm
+				&& GalaxyLocalTransform.GetLocation().Equals(
+					GalaxyRecord.ExpectedBaseProxyPositionCm,
+					ProjectionEvidenceProxyPositionToleranceCm)
+				&& ClusterLocalTransform.GetLocation().Equals(
+					ClusterRecord.ExpectedBaseProxyPositionCm,
+					ProjectionEvidenceProxyPositionToleranceCm)
+				&& GalaxyLocalTransform.GetLocation().Equals(
+					GalaxyRecord.ActualProxyPositionCm,
+					ProjectionEvidenceProxyPositionToleranceCm)
+				&& ClusterLocalTransform.GetLocation().Equals(
+					ClusterRecord.ActualProxyPositionCm,
+					ProjectionEvidenceProxyPositionToleranceCm)
+				&& GalaxyLocalTransform.GetLocation().Equals(
+					ProjectionEvidenceGalaxyBaselineRecord.ActualProxyPositionCm,
+					ProjectionEvidenceProxyPositionToleranceCm)
+				&& ClusterLocalTransform.GetLocation().Equals(
+					ProjectionEvidenceClusterBaselineRecord.ActualProxyPositionCm,
+					ProjectionEvidenceProxyPositionToleranceCm)
+				&& GalaxyLocalTransform.GetScale3D().Equals(
+					FVector(GalaxyRecord.ActualProxyScale),
+					ProjectionEvidenceProxyScaleTolerance)
+				&& ClusterLocalTransform.GetScale3D().Equals(
+					FVector(ClusterRecord.ActualProxyScale),
+					ProjectionEvidenceProxyScaleTolerance)
+				&& GalaxyLocalTransform.GetScale3D().Equals(
+					ProjectionEvidenceGalaxyBaselineLocalScale,
+					ProjectionEvidenceProxyScaleTolerance)
+				&& ClusterLocalTransform.GetScale3D().Equals(
+					ProjectionEvidenceClusterBaselineLocalScale,
+					ProjectionEvidenceProxyScaleTolerance)
+				&& FMath::RadiansToDegrees(
+					ProjectionEvidenceGalaxyBaselineLocalRotation.AngularDistance(
+						GalaxyLocalTransform.GetRotation()))
+					<= ProjectionEvidenceProxyRotationToleranceDegrees
+				&& FMath::RadiansToDegrees(
+					ProjectionEvidenceClusterBaselineLocalRotation.AngularDistance(
+						ClusterLocalTransform.GetRotation()))
+					<= ProjectionEvidenceProxyRotationToleranceDegrees
+				&& GalaxyWorldProjectionError
+					<= ProjectionEvidenceProxyPositionToleranceCm
+				&& ClusterWorldProjectionError
+					<= ProjectionEvidenceProxyPositionToleranceCm
+				&& HomeRecord.bSuppressedMaterializedHome
+				&& HomeRecord.ProjectionErrorCm
+					<= ProjectionEvidenceProxyPositionToleranceCm
+				&& HomeLocalTransform.GetLocation().Equals(
+					HomeRecord.ExpectedBaseProxyPositionCm,
+					ProjectionEvidenceProxyPositionToleranceCm)
+				&& HomeLocalTransform.GetLocation().Equals(
+					ProjectionEvidenceHomeBaselineRecord.ActualProxyPositionCm,
+					ProjectionEvidenceProxyPositionToleranceCm)
+				&& HomeRecord.ActualProxyScale == 0.0
+				&& HomeLocalTransform.GetScale3D() == FVector::ZeroVector
+				&& GalaxyMatrixMagnitude
+					<= APSCanonicalStellarProjection::GalaxyMaxProxyCoordinateCm
+						+ ProjectionEvidenceProxyPositionToleranceCm
+				&& ClusterMatrixMagnitude
+					<= APSCanonicalStellarProjection::ClusterMaxProxyCoordinateCm
+						+ ProjectionEvidenceProxyPositionToleranceCm
+				&& GalaxyRecord.MaxMatrixMagnitudeCm
+					<= APSCanonicalStellarProjection::GalaxyMaxProxyCoordinateCm
+						+ ProjectionEvidenceProxyPositionToleranceCm
+				&& ClusterRecord.MaxMatrixMagnitudeCm
+					<= APSCanonicalStellarProjection::ClusterMaxProxyCoordinateCm
+						+ ProjectionEvidenceProxyPositionToleranceCm;
+			if (!bProxyContract)
+			{
+				OutFailure = FString::Printf(
+					TEXT("projection local/world proxy contract changed roots=%d gError=%.6f cError=%.6f gMatrix=%.6e cMatrix=%.6e gScale=%.9g/%.9g cScale=%.9g/%.9g gViewSuppressed=%d cViewSuppressed=%d homeSuppressed=%d homeScale=%s"),
+					bUnitRoots ? 1 : 0, GalaxyRecord.ProjectionErrorCm,
+					ClusterRecord.ProjectionErrorCm, GalaxyMatrixMagnitude,
+					ClusterMatrixMagnitude, GalaxyRecord.ActualProxyScale,
+					GalaxyRecord.ExpectedBaseProxyScale,
+					ClusterRecord.ActualProxyScale,
+					ClusterRecord.ExpectedBaseProxyScale,
+					GalaxyRecord.bSuppressedByView ? 1 : 0,
+					ClusterRecord.bSuppressedByView ? 1 : 0,
+					HomeRecord.bSuppressedMaterializedHome ? 1 : 0,
+					*HomeLocalTransform.GetScale3D().ToCompactString());
+				return false;
+			}
+
+			OutSample.ViewLocation = ViewLocation;
+			OutSample.ViewRotation = ViewRotation;
+			OutSample.GalaxyLocalPosition = GalaxyLocalTransform.GetLocation();
+			OutSample.GalaxyLocalRotation = GalaxyLocalTransform.GetRotation();
+			OutSample.GalaxyLocalRotation.Normalize();
+			OutSample.GalaxyLocalScale = GalaxyLocalTransform.GetScale3D();
+			OutSample.GalaxyWorldPosition = GalaxyWorldTransform.GetLocation();
+			OutSample.ClusterLocalPosition = ClusterLocalTransform.GetLocation();
+			OutSample.ClusterLocalRotation = ClusterLocalTransform.GetRotation();
+			OutSample.ClusterLocalRotation.Normalize();
+			OutSample.ClusterLocalScale = ClusterLocalTransform.GetScale3D();
+			OutSample.ClusterWorldPosition = ClusterWorldTransform.GetLocation();
+			OutSample.bClusterNdcValid = ProjectProjectionEvidenceNdc(
+				ViewInfo, OutSample.ClusterWorldPosition, OutSample.ClusterNdc);
+			OutSample.GalaxyProjectionErrorCm = FMath::Max(
+				GalaxyRecord.ProjectionErrorCm, GalaxyWorldProjectionError);
+			OutSample.ClusterProjectionErrorCm = FMath::Max(
+				ClusterRecord.ProjectionErrorCm, ClusterWorldProjectionError);
+			OutSample.GalaxyMaxMatrixMagnitudeCm = GalaxyMatrixMagnitude;
+			OutSample.ClusterMaxMatrixMagnitudeCm = ClusterMatrixMagnitude;
+			OutSample.ProxyBuildSerial = Current.ProxyBuildSerial;
+			OutSample.InstanceUploadCount = Current.InstanceUploadCount;
+			OutSample.TransformMutationSerial = Current.TransformMutationSerial;
+			return true;
+		}
+
+		bool TryReadFreshProjectionEvidenceView(UWorld* World,
+			bool& bOutFresh, FVector& OutViewLocation, FQuat& OutViewRotation,
+			FWorldCachedViewInfo& OutViewInfo, FString& OutFailure)
+		{
+			bOutFresh = false;
+			OutFailure.Reset();
+			if (!World || World != GameplayWorld.Get())
+			{
+				OutFailure = TEXT("projection evidence lost its gameplay world");
+				return false;
+			}
+			if (World->LastRenderTime
+				<= ProjectionEvidenceLastAcceptedRenderTime + UE_DOUBLE_SMALL_NUMBER
+				|| GFrameCounter == ProjectionEvidenceLastAcceptedFrameCounter)
+			{
+				return true;
+			}
+			if (World->ViewLocationsRenderedLastFrame.Num() != 1
+				|| World->CachedViewInfoRenderedLastFrame.Num() != 1)
+			{
+				OutFailure = FString::Printf(
+					TEXT("projection evidence requires exactly one rendered view locations=%d cachedViews=%d"),
+					World->ViewLocationsRenderedLastFrame.Num(),
+					World->CachedViewInfoRenderedLastFrame.Num());
+				return false;
+			}
+			OutViewLocation = World->ViewLocationsRenderedLastFrame[0];
+			OutViewInfo = World->CachedViewInfoRenderedLastFrame[0];
+			OutViewRotation = OutViewInfo.ViewToWorld.ToQuat();
+			OutViewRotation.Normalize();
+			if (OutViewLocation.ContainsNaN() || OutViewRotation.ContainsNaN())
+			{
+				OutFailure = TEXT("projection evidence rendered view contains non-finite values");
+				return false;
+			}
+			ProjectionEvidenceLastAcceptedRenderTime = World->LastRenderTime;
+			ProjectionEvidenceLastAcceptedFrameCounter = GFrameCounter;
+			bOutFresh = true;
+			return true;
+		}
+
+		bool CaptureProjectionEvidenceBaseline(UWorld* World,
+			const FWorldCachedViewInfo& ViewInfo, const FVector& ViewLocation,
+			const FQuat& ViewRotation, FProjectionEvidenceRenderedSample& OutSample,
+			FString& OutFailure)
+		{
+			AAstroGenerator* Generator = ProjectionEvidenceGenerator.Get();
+			if (!IsValid(Generator))
+			{
+				OutFailure = TEXT("projection evidence generator is invalid at phase begin");
+				return false;
+			}
+			const FAPSCanonicalStellarProjectionDescriptor CurrentDescriptor =
+				Generator->GetCanonicalStellarProjectionDescriptor();
+			if (!ProjectionDescriptorMatchesBaseline(CurrentDescriptor))
+			{
+				OutFailure = TEXT("projection descriptor/counters changed between hierarchy-ready and stationary begin");
+				return false;
+			}
+			ProjectionEvidenceHomeStableId =
+				ProjectionEvidenceBaselineDescriptor.MaterializedHomeStableId;
+			if (!ProjectionEvidenceHomeStableId.IsValid()
+				|| !ValidateProjectionEvidenceDataset(Generator, OutFailure))
+			{
+				if (OutFailure.IsEmpty())
+				{
+					OutFailure = TEXT("projection evidence could not capture authoritative sentinel baselines");
+				}
+				return false;
+			}
+
+			ProjectionEvidenceBaselineRenderedViewRotation = ViewRotation;
+			ProjectionEvidenceBaselineRenderedViewRotation.Normalize();
+			bProjectionEvidenceBaselineCaptured = true;
+			if (!ValidateProjectionEvidenceInvariants(World, ViewInfo, ViewLocation,
+				ViewRotation, OutSample, OutFailure))
+			{
+				return false;
+			}
+			if (!OutSample.bClusterNdcValid
+				|| FMath::Abs(OutSample.ClusterNdc.X) > 1.0
+				|| FMath::Abs(OutSample.ClusterNdc.Y) > 1.0)
+			{
+				OutFailure = FString::Printf(
+					TEXT("deterministic cluster sentinel is not on-screen at stationary begin valid=%d ndc=(%.9f,%.9f)"),
+					OutSample.bClusterNdcValid ? 1 : 0,
+					OutSample.ClusterNdc.X, OutSample.ClusterNdc.Y);
+				return false;
+			}
+			return true;
+		}
+
+		bool InitializeProjectionEvidence(UWorld* World, AAstroGenerator* Generator,
+			AGalaxy* Galaxy, AStarCluster* Cluster, APlayerController* PlayerController,
+			const FAPSCanonicalStellarProxyRecord& GalaxySentinel,
+			const FAPSCanonicalStellarProxyRecord& ClusterSentinel,
+			FString& OutFailure)
+		{
+			OutFailure.Reset();
+			if (!World || !IsValid(Generator) || !IsValid(Galaxy) || !IsValid(Cluster)
+				|| !IsValid(PlayerController) || !IsValid(Galaxy->StarMeshInstances)
+				|| !IsValid(Cluster->StarMeshInstances)
+				|| !GalaxySentinel.StableId.IsValid()
+				|| !ClusterSentinel.StableId.IsValid())
+			{
+				OutFailure = TEXT("projection evidence cannot initialize its canonical actors/sentinels");
+				return false;
+			}
+			ProjectionEvidenceGenerator = Generator;
+			ProjectionEvidenceGalaxy = Galaxy;
+			ProjectionEvidenceCluster = Cluster;
+			ProjectionEvidenceGalaxyComponent = Galaxy->StarMeshInstances;
+			ProjectionEvidenceClusterComponent = Cluster->StarMeshInstances;
+			ProjectionEvidenceGalaxyStableId = GalaxySentinel.StableId;
+			ProjectionEvidenceClusterStableId = ClusterSentinel.StableId;
+			ProjectionEvidenceOriginalViewTarget = PlayerController->GetViewTarget();
+			ProjectionEvidenceBaselineDescriptor =
+				Generator->GetCanonicalStellarProjectionDescriptor();
+			ProjectionEvidenceHomeStableId =
+				ProjectionEvidenceBaselineDescriptor.MaterializedHomeStableId;
+			if (!ProjectionEvidenceBaselineDescriptor.bFinalized
+				|| !ProjectionEvidenceBaselineDescriptor.bProjectionValid
+				|| !ProjectionEvidenceBaselineDescriptor.bConsumedFinalizedDataset
+				|| !ProjectionEvidenceBaselineDescriptor.bMappingsComplete
+				|| !ProjectionEvidenceBaselineDescriptor.bUnitRoots
+				|| !ProjectionEvidenceBaselineDescriptor.bBoundsValid
+				|| ProjectionEvidenceBaselineDescriptor.ProxyBuildSerial == 0u
+				|| ProjectionEvidenceBaselineDescriptor.InstanceUploadCount == 0u
+				|| !ProjectionEvidenceHomeStableId.IsValid())
+			{
+				OutFailure = TEXT("projection evidence hierarchy-ready descriptor is incomplete");
+				return false;
+			}
+			ProjectionEvidenceGalaxyBaselineRecord = GalaxySentinel;
+			ProjectionEvidenceClusterBaselineRecord = ClusterSentinel;
+			ProjectionEvidenceDatasetStableIds.Reset();
+			ProjectionEvidenceDatasetCanonicalPositions.Reset();
+			ProjectionEvidenceDatasetCanonicalRadii.Reset();
+			ProjectionEvidenceDatasetMinOrbits.Reset();
+			ProjectionEvidenceDatasetMaxOrbits.Reset();
+			if (!Generator->GetCanonicalStellarProxyRecord(
+					EAPSCanonicalStellarProxyLayer::StarCluster,
+					ProjectionEvidenceHomeStableId,
+					ProjectionEvidenceHomeBaselineRecord)
+				|| !Generator->ResolveCanonicalClusterSystemAddress(
+					ProjectionEvidenceHomeStableId,
+					ProjectionEvidenceHomeBaselineAddress)
+				|| !Generator->ResolveCanonicalClusterSystemAddress(
+					ProjectionEvidenceClusterStableId,
+					ProjectionEvidenceClusterBaselineAddress)
+				|| !CaptureProjectionEvidenceDatasetBaseline(Generator, OutFailure))
+			{
+				if (OutFailure.IsEmpty())
+				{
+					OutFailure = TEXT("projection evidence could not capture hierarchy-ready identity/address baselines");
+				}
+				return false;
+			}
+
+			FTransform GalaxyLocalTransform;
+			FTransform ClusterLocalTransform;
+			if (!Galaxy->StarMeshInstances->GetInstanceTransform(
+					ProjectionEvidenceGalaxyBaselineRecord.InstanceIndex,
+					GalaxyLocalTransform, false)
+				|| !Cluster->StarMeshInstances->GetInstanceTransform(
+					ProjectionEvidenceClusterBaselineRecord.InstanceIndex,
+					ClusterLocalTransform, false)
+				|| !IsFiniteTransform(GalaxyLocalTransform)
+				|| !IsFiniteTransform(ClusterLocalTransform))
+			{
+				OutFailure = TEXT("projection evidence could not capture hierarchy-ready local transforms");
+				return false;
+			}
+			ProjectionEvidenceGalaxyBaselineLocalRotation =
+				GalaxyLocalTransform.GetRotation();
+			ProjectionEvidenceGalaxyBaselineLocalRotation.Normalize();
+			ProjectionEvidenceClusterBaselineLocalRotation =
+				ClusterLocalTransform.GetRotation();
+			ProjectionEvidenceClusterBaselineLocalRotation.Normalize();
+			ProjectionEvidenceGalaxyBaselineLocalScale =
+				GalaxyLocalTransform.GetScale3D();
+			ProjectionEvidenceClusterBaselineLocalScale =
+				ClusterLocalTransform.GetScale3D();
+
+			const FVector SentinelWorldLocation = Cluster->StarMeshInstances
+				->GetComponentTransform().TransformPosition(
+					ClusterSentinel.ActualProxyPositionCm);
+			const double CameraDistanceCm = FMath::Clamp(
+				ClusterSentinel.AppliedVisualProxyRadiusCm * 8.0,
+				250000.0, 2500000.0);
+			const FVector CameraOffsetDirection = FVector(1.0, 0.37, 0.19).GetSafeNormal();
+			const FVector CameraLocation = SentinelWorldLocation
+				- CameraOffsetDirection * CameraDistanceCm;
+			const FRotator CameraRotation =
+				(SentinelWorldLocation - CameraLocation).Rotation();
+			if (SentinelWorldLocation.ContainsNaN() || CameraLocation.ContainsNaN())
+			{
+				OutFailure = TEXT("projection evidence resolved a non-finite deterministic camera");
+				return false;
+			}
+
+			FActorSpawnParameters SpawnParameters;
+			SpawnParameters.ObjectFlags |= RF_Transient;
+			SpawnParameters.SpawnCollisionHandlingOverride =
+				ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			ACameraActor* TestCamera = World->SpawnActor<ACameraActor>(
+				ACameraActor::StaticClass(), CameraLocation, CameraRotation,
+				SpawnParameters);
+			if (!IsValid(TestCamera))
+			{
+				OutFailure = TEXT("projection evidence could not spawn its deterministic camera");
+				return false;
+			}
+			TestCamera->SetActorEnableCollision(false);
+			TestCamera->SetActorTickEnabled(false);
+			if (UCameraComponent* CameraComponent = TestCamera->GetCameraComponent())
+			{
+				CameraComponent->SetFieldOfView(70.0f);
+			}
+			ProjectionEvidenceCamera = TestCamera;
+			ProjectionEvidenceExpectedCameraLocation = CameraLocation;
+			PlayerController->SetViewTarget(TestCamera);
+
+			ProjectionEvidenceWarmupFramesRemaining = ProjectionEvidenceWarmupFrames;
+			ProjectionEvidenceAcceptedFrameCount = 0;
+			ProjectionEvidenceLastAcceptedRenderTime = World->LastRenderTime;
+			ProjectionEvidenceLastAcceptedFrameCounter = GFrameCounter;
+			bProjectionEvidencePhaseStarted = false;
+			bProjectionEvidenceBaselineCaptured = false;
+			return true;
+		}
+
+		void RestoreProjectionEvidenceCamera()
+		{
+			ACameraActor* TestCamera = ProjectionEvidenceCamera.Get();
+			UWorld* World = GameplayWorld.Get();
+			APlayerController* PlayerController = World
+				? World->GetFirstPlayerController() : nullptr;
+			if (IsValid(PlayerController) && PlayerController->GetViewTarget() == TestCamera)
+			{
+				AActor* RestoreTarget = ProjectionEvidenceOriginalViewTarget.Get();
+				if (!IsValid(RestoreTarget))
+				{
+					RestoreTarget = RuntimeGravityPawn.Get();
+				}
+				if (IsValid(RestoreTarget))
+				{
+					PlayerController->SetViewTarget(RestoreTarget);
+				}
+			}
+			if (IsValid(TestCamera) && IsValid(World)
+				&& TestCamera->GetWorld() == World)
+			{
+				World->DestroyActor(TestCamera);
+			}
+			ProjectionEvidenceCamera.Reset();
+			ProjectionEvidenceOriginalViewTarget.Reset();
+		}
+
+		bool UpdateProjectionEvidenceStationaryHold(UWorld* World, double Now)
+		{
+			if (Now - StepStartSeconds > ProjectionEvidencePhaseTimeoutSeconds)
+			{
+				return Fail(FString::Printf(
+					TEXT("projection stationary evidence incomplete samples=%d/%d"),
+					ProjectionEvidenceAcceptedFrameCount,
+					ProjectionEvidenceRequiredFrames));
+			}
+			bool bFresh = false;
+			FVector ViewLocation = FVector::ZeroVector;
+			FQuat ViewRotation = FQuat::Identity;
+			FWorldCachedViewInfo ViewInfo;
+			FString Failure;
+			if (!TryReadFreshProjectionEvidenceView(World, bFresh, ViewLocation,
+				ViewRotation, ViewInfo, Failure))
+			{
+				return Fail(Failure);
+			}
+			if (!bFresh)
+			{
+				return false;
+			}
+			const FAPSCanonicalStellarProjectionDescriptor WarmupDescriptor =
+				ProjectionEvidenceGenerator.IsValid()
+					? ProjectionEvidenceGenerator->GetCanonicalStellarProjectionDescriptor()
+					: FAPSCanonicalStellarProjectionDescriptor{};
+			if (!ProjectionDescriptorMatchesBaseline(WarmupDescriptor))
+			{
+				return Fail(TEXT("projection descriptor/counters changed after hierarchy-ready during camera warmup"));
+			}
+
+			const double ExpectedPositionError = FVector::Distance(
+				ViewLocation, ProjectionEvidenceExpectedCameraLocation);
+			if (ExpectedPositionError > ProjectionEvidenceViewPositionToleranceCm)
+			{
+				if (ProjectionEvidenceWarmupFramesRemaining > 0)
+				{
+					return false;
+				}
+				return Fail(FString::Printf(
+					TEXT("stationary evidence rendered view does not match deterministic camera positionError=%.6fcm"),
+					ExpectedPositionError));
+			}
+			if (ProjectionEvidenceWarmupFramesRemaining > 0)
+			{
+				--ProjectionEvidenceWarmupFramesRemaining;
+				return false;
+			}
+
+			FProjectionEvidenceRenderedSample Sample;
+			Sample.RenderFrameCounter = GFrameCounter;
+			Sample.RenderTime = World->LastRenderTime;
+			if (!bProjectionEvidencePhaseStarted)
+			{
+				if (!CaptureProjectionEvidenceBaseline(World, ViewInfo, ViewLocation,
+					ViewRotation, Sample, Failure))
+				{
+					return Fail(Failure);
+				}
+				ProjectionEvidencePreviousSample = Sample;
+				ProjectionEvidenceAcceptedFrameCount = 0;
+				bProjectionEvidencePhaseStarted = true;
+				UE_LOG(LogTemp, Display,
+					TEXT("[APS.P0.ProjectionPhase] source=directRuntime phase=Stationary event=Begin requiredSamples=%d warmup=%d version=%u context=%u dataset=%u datasetVersion=%u input=%u datasetBuild=%llu records=%d mapping=%u home=%s galaxy=%s cluster=%s proxyBuild=%llu uploads=%llu mutations=%llu"),
+					ProjectionEvidenceRequiredFrames, ProjectionEvidenceWarmupFrames,
+					ProjectionEvidenceBaselineDescriptor.ProjectionVersion,
+					ProjectionEvidenceBaselineDescriptor.ContextHash,
+					ProjectionEvidenceBaselineDescriptor.CanonicalDatasetHash,
+					ProjectionEvidenceBaselineDescriptor.CanonicalDatasetVersion,
+					ProjectionEvidenceBaselineDescriptor.CanonicalDatasetInputHash,
+					ProjectionEvidenceBaselineDescriptor.CanonicalDatasetBuildSerial,
+					ProjectionEvidenceBaselineDescriptor.CanonicalDatasetRecordCount,
+					ProjectionEvidenceBaselineDescriptor.RenderedMappingHash,
+					*ProjectionEvidenceHomeStableId.ToString(EGuidFormats::Digits),
+					*ProjectionEvidenceGalaxyStableId.ToString(EGuidFormats::Digits),
+					*ProjectionEvidenceClusterStableId.ToString(EGuidFormats::Digits),
+					ProjectionEvidenceBaselineDescriptor.ProxyBuildSerial,
+					ProjectionEvidenceBaselineDescriptor.InstanceUploadCount,
+					ProjectionEvidenceBaselineDescriptor.TransformMutationSerial);
+				return false;
+			}
+			if (!ValidateProjectionEvidenceInvariants(World, ViewInfo, ViewLocation,
+				ViewRotation, Sample, Failure))
+			{
+				return Fail(Failure);
+			}
+
+			const FProjectionEvidenceRenderedSample& Previous =
+				ProjectionEvidencePreviousSample;
+			const double ViewPositionDelta = FVector::Distance(
+				Previous.ViewLocation, Sample.ViewLocation);
+			const double ViewAngularDelta = FMath::RadiansToDegrees(
+				Previous.ViewRotation.AngularDistance(Sample.ViewRotation));
+			const double BaselineViewAngularDelta = FMath::RadiansToDegrees(
+				ProjectionEvidenceBaselineRenderedViewRotation.AngularDistance(
+					Sample.ViewRotation));
+			const bool bConsecutiveRenderedFrame = Sample.RenderFrameCounter
+				== Previous.RenderFrameCounter + 1u;
+			const double GalaxyLocalDelta = FVector::Distance(
+				Previous.GalaxyLocalPosition, Sample.GalaxyLocalPosition);
+			const double GalaxyLocalScaleDelta = FVector::Distance(
+				Previous.GalaxyLocalScale, Sample.GalaxyLocalScale);
+			const double GalaxyLocalRotationDelta = FMath::RadiansToDegrees(
+				Previous.GalaxyLocalRotation.AngularDistance(
+					Sample.GalaxyLocalRotation));
+			const double GalaxyWorldDelta = FVector::Distance(
+				Previous.GalaxyWorldPosition, Sample.GalaxyWorldPosition);
+			const double ClusterLocalDelta = FVector::Distance(
+				Previous.ClusterLocalPosition, Sample.ClusterLocalPosition);
+			const double ClusterLocalScaleDelta = FVector::Distance(
+				Previous.ClusterLocalScale, Sample.ClusterLocalScale);
+			const double ClusterLocalRotationDelta = FMath::RadiansToDegrees(
+				Previous.ClusterLocalRotation.AngularDistance(
+					Sample.ClusterLocalRotation));
+			const double ClusterWorldDelta = FVector::Distance(
+				Previous.ClusterWorldPosition, Sample.ClusterWorldPosition);
+			const double GalaxyRelativeDelta = FVector::Distance(
+				Previous.GalaxyWorldPosition - Previous.ViewLocation,
+				Sample.GalaxyWorldPosition - Sample.ViewLocation);
+			const double ClusterRelativeDelta = FVector::Distance(
+				Previous.ClusterWorldPosition - Previous.ViewLocation,
+				Sample.ClusterWorldPosition - Sample.ViewLocation);
+			const double NdcDelta = Previous.bClusterNdcValid && Sample.bClusterNdcValid
+				? FVector2D::Distance(Previous.ClusterNdc, Sample.ClusterNdc)
+				: TNumericLimits<double>::Max();
+			if (!bConsecutiveRenderedFrame
+				|| ViewPositionDelta > ProjectionEvidenceViewPositionToleranceCm
+				|| ViewAngularDelta > ProjectionEvidenceViewAngleToleranceDegrees
+				|| BaselineViewAngularDelta
+					> ProjectionEvidenceViewAngleToleranceDegrees
+				|| GalaxyLocalDelta > ProjectionEvidenceProxyPositionToleranceCm
+				|| GalaxyLocalScaleDelta > ProjectionEvidenceProxyScaleTolerance
+				|| GalaxyLocalRotationDelta
+					> ProjectionEvidenceProxyRotationToleranceDegrees
+				|| GalaxyWorldDelta > ProjectionEvidenceProxyPositionToleranceCm
+				|| ClusterLocalDelta > ProjectionEvidenceProxyPositionToleranceCm
+				|| ClusterLocalScaleDelta > ProjectionEvidenceProxyScaleTolerance
+				|| ClusterLocalRotationDelta
+					> ProjectionEvidenceProxyRotationToleranceDegrees
+				|| ClusterWorldDelta > ProjectionEvidenceProxyPositionToleranceCm
+				|| GalaxyRelativeDelta > ProjectionEvidenceRelativeVectorToleranceCm
+				|| ClusterRelativeDelta > ProjectionEvidenceRelativeVectorToleranceCm
+				|| NdcDelta > ProjectionEvidenceStationaryNdcTolerance
+				|| !Sample.bClusterNdcValid
+				|| FMath::Abs(Sample.ClusterNdc.X) > 1.0
+				|| FMath::Abs(Sample.ClusterNdc.Y) > 1.0)
+			{
+				return Fail(FString::Printf(
+					TEXT("stationary projection evidence drift consecutive=%d frame=%llu/%llu view=%.6fcm angle=%.9fdeg baselineAngle=%.9fdeg galaxyLocal=%.6fcm galaxyScale=%.9g galaxyRotation=%.9fdeg galaxyWorld=%.6fcm clusterLocal=%.6fcm clusterScale=%.9g clusterRotation=%.9fdeg clusterWorld=%.6fcm galaxyRelative=%.6fcm clusterRelative=%.6fcm ndc=%.9f valid=%d"),
+					bConsecutiveRenderedFrame ? 1 : 0, Previous.RenderFrameCounter,
+					Sample.RenderFrameCounter, ViewPositionDelta, ViewAngularDelta,
+					BaselineViewAngularDelta, GalaxyLocalDelta,
+					GalaxyLocalScaleDelta, GalaxyLocalRotationDelta,
+					GalaxyWorldDelta, ClusterLocalDelta, ClusterLocalScaleDelta,
+					ClusterLocalRotationDelta, ClusterWorldDelta,
+					GalaxyRelativeDelta, ClusterRelativeDelta, NdcDelta,
+					Sample.bClusterNdcValid ? 1 : 0));
+			}
+
+			++ProjectionEvidenceAcceptedFrameCount;
+			UE_LOG(LogTemp, Display,
+				TEXT("[APS.P0.ProjectionSample] source=directRuntime phase=Stationary sample=%d/%d frame=%llu consecutive=1 renderTime=%.9f view=%s viewDelta=%.6fcm angleDelta=%.9fdeg baselineAngle=%.9fdeg galaxy=%s gLocalDelta=%.6fcm gScaleDelta=%.9g gRotationDelta=%.9fdeg gWorldDelta=%.6fcm gRelativeDelta=%.6fcm gError=%.6fcm gMatrix=%.6e cluster=%s cLocalDelta=%.6fcm cScaleDelta=%.9g cRotationDelta=%.9fdeg cWorldDelta=%.6fcm cRelativeDelta=%.6fcm cError=%.6fcm cMatrix=%.6e ndc=(%.9f,%.9f) ndcDelta=%.9f dataset=%u mapping=%u proxyBuild=%llu uploads=%llu mutations=%llu"),
+				ProjectionEvidenceAcceptedFrameCount, ProjectionEvidenceRequiredFrames,
+				Sample.RenderFrameCounter, Sample.RenderTime,
+				*Sample.ViewLocation.ToCompactString(), ViewPositionDelta,
+				ViewAngularDelta, BaselineViewAngularDelta,
+				*ProjectionEvidenceGalaxyStableId.ToString(EGuidFormats::Digits),
+				GalaxyLocalDelta, GalaxyLocalScaleDelta, GalaxyLocalRotationDelta,
+				GalaxyWorldDelta, GalaxyRelativeDelta, Sample.GalaxyProjectionErrorCm,
+				Sample.GalaxyMaxMatrixMagnitudeCm,
+				*ProjectionEvidenceClusterStableId.ToString(EGuidFormats::Digits),
+				ClusterLocalDelta, ClusterLocalScaleDelta, ClusterLocalRotationDelta,
+				ClusterWorldDelta, ClusterRelativeDelta,
+				Sample.ClusterProjectionErrorCm,
+				Sample.ClusterMaxMatrixMagnitudeCm,
+				Sample.ClusterNdc.X, Sample.ClusterNdc.Y, NdcDelta,
+				ProjectionEvidenceBaselineDescriptor.CanonicalDatasetHash,
+				ProjectionEvidenceBaselineDescriptor.RenderedMappingHash,
+				Sample.ProxyBuildSerial, Sample.InstanceUploadCount,
+				Sample.TransformMutationSerial);
+			ProjectionEvidencePreviousSample = Sample;
+			if (ProjectionEvidenceAcceptedFrameCount < ProjectionEvidenceRequiredFrames)
+			{
+				return false;
+			}
+			if (!ValidateProjectionEvidenceDataset(
+				ProjectionEvidenceGenerator.Get(), Failure))
+			{
+				return Fail(Failure);
+			}
+
+			UE_LOG(LogTemp, Display,
+				TEXT("[APS.P0.ProjectionPhase] source=directRuntime phase=Stationary event=End status=PASS samples=%d proxyBuildDelta=0 uploadDelta=0 mutationDelta=0"),
+				ProjectionEvidenceAcceptedFrameCount);
+			bProjectionEvidencePhaseStarted = false;
+			ACameraActor* TestCamera = ProjectionEvidenceCamera.Get();
+			if (!IsValid(TestCamera))
+			{
+				return Fail(TEXT("projection evidence camera disappeared before controlled movement"));
+			}
+			ProjectionEvidenceMoveDelta = TestCamera->GetActorRightVector().GetSafeNormal()
+				* ProjectionEvidenceMovementPerFrameCm;
+			if (ProjectionEvidenceMoveDelta.IsNearlyZero())
+			{
+				return Fail(TEXT("projection evidence could not resolve controlled movement vector"));
+			}
+			ProjectionEvidenceAcceptedFrameCount = 0;
+			ProjectionEvidenceExpectedCameraLocation = Sample.ViewLocation
+				+ ProjectionEvidenceMoveDelta;
+			Step = EStep::ProjectionEvidenceControlledMove;
+			StepStartSeconds = Now;
+			bProjectionEvidencePhaseStarted = true;
+			UE_LOG(LogTemp, Display,
+				TEXT("[APS.P0.ProjectionPhase] source=directRuntime phase=Moving event=Begin requiredSamples=%d commandPerFrame=%s commandMagnitude=%.6fcm fixedRotation=1 ndcGate=disabled proxyBuild=%llu uploads=%llu mutations=%llu"),
+				ProjectionEvidenceRequiredFrames,
+				*ProjectionEvidenceMoveDelta.ToCompactString(),
+				ProjectionEvidenceMoveDelta.Size(),
+				ProjectionEvidenceBaselineDescriptor.ProxyBuildSerial,
+				ProjectionEvidenceBaselineDescriptor.InstanceUploadCount,
+				ProjectionEvidenceBaselineDescriptor.TransformMutationSerial);
+			if (!TestCamera->SetActorLocation(ProjectionEvidenceExpectedCameraLocation,
+				false, nullptr, ETeleportType::TeleportPhysics))
+			{
+				return Fail(TEXT("projection evidence could not command its first camera move"));
+			}
+			return false;
+		}
+
+		bool UpdateProjectionEvidenceControlledMove(UWorld* World, double Now)
+		{
+			if (Now - StepStartSeconds > ProjectionEvidencePhaseTimeoutSeconds)
+			{
+				return Fail(FString::Printf(
+					TEXT("projection moving evidence incomplete samples=%d/%d"),
+					ProjectionEvidenceAcceptedFrameCount,
+					ProjectionEvidenceRequiredFrames));
+			}
+			bool bFresh = false;
+			FVector ViewLocation = FVector::ZeroVector;
+			FQuat ViewRotation = FQuat::Identity;
+			FWorldCachedViewInfo ViewInfo;
+			FString Failure;
+			if (!TryReadFreshProjectionEvidenceView(World, bFresh, ViewLocation,
+				ViewRotation, ViewInfo, Failure))
+			{
+				return Fail(Failure);
+			}
+			if (!bFresh)
+			{
+				return false;
+			}
+
+			FProjectionEvidenceRenderedSample Sample;
+			Sample.RenderFrameCounter = GFrameCounter;
+			Sample.RenderTime = World->LastRenderTime;
+			if (!ValidateProjectionEvidenceInvariants(World, ViewInfo, ViewLocation,
+				ViewRotation, Sample, Failure))
+			{
+				return Fail(Failure);
+			}
+			const FProjectionEvidenceRenderedSample& Previous =
+				ProjectionEvidencePreviousSample;
+			const bool bConsecutiveRenderedFrame = Sample.RenderFrameCounter
+				== Previous.RenderFrameCounter + 1u;
+			const FVector ViewDelta = Sample.ViewLocation - Previous.ViewLocation;
+			const double CommandError = (ViewDelta - ProjectionEvidenceMoveDelta).Size();
+			const double CameraLocationError = FVector::Distance(
+				Sample.ViewLocation, ProjectionEvidenceExpectedCameraLocation);
+			const double PreviousCameraLocationError = FVector::Distance(
+				Sample.ViewLocation, Previous.ViewLocation);
+			const double ViewAngularDelta = FMath::RadiansToDegrees(
+				Previous.ViewRotation.AngularDistance(Sample.ViewRotation));
+			const double BaselineViewAngularDelta = FMath::RadiansToDegrees(
+				ProjectionEvidenceBaselineRenderedViewRotation.AngularDistance(
+					Sample.ViewRotation));
+			const double GalaxyLocalDelta = FVector::Distance(
+				Previous.GalaxyLocalPosition, Sample.GalaxyLocalPosition);
+			const double GalaxyLocalScaleDelta = FVector::Distance(
+				Previous.GalaxyLocalScale, Sample.GalaxyLocalScale);
+			const double GalaxyLocalRotationDelta = FMath::RadiansToDegrees(
+				Previous.GalaxyLocalRotation.AngularDistance(
+					Sample.GalaxyLocalRotation));
+			const double GalaxyWorldDelta = FVector::Distance(
+				Previous.GalaxyWorldPosition, Sample.GalaxyWorldPosition);
+			const double ClusterLocalDelta = FVector::Distance(
+				Previous.ClusterLocalPosition, Sample.ClusterLocalPosition);
+			const double ClusterLocalScaleDelta = FVector::Distance(
+				Previous.ClusterLocalScale, Sample.ClusterLocalScale);
+			const double ClusterLocalRotationDelta = FMath::RadiansToDegrees(
+				Previous.ClusterLocalRotation.AngularDistance(
+					Sample.ClusterLocalRotation));
+			const double ClusterWorldDelta = FVector::Distance(
+				Previous.ClusterWorldPosition, Sample.ClusterWorldPosition);
+			const FVector GalaxyClosure =
+				(Sample.GalaxyWorldPosition - Sample.ViewLocation)
+				- (Previous.GalaxyWorldPosition - Previous.ViewLocation)
+				+ ViewDelta;
+			const FVector ClusterClosure =
+				(Sample.ClusterWorldPosition - Sample.ViewLocation)
+				- (Previous.ClusterWorldPosition - Previous.ViewLocation)
+				+ ViewDelta;
+			if (!bConsecutiveRenderedFrame)
+			{
+				return Fail(FString::Printf(
+					TEXT("moving projection evidence skipped a rendered frame previous=%llu current=%llu"),
+					Previous.RenderFrameCounter, Sample.RenderFrameCounter));
+			}
+			if (ProjectionEvidenceAcceptedFrameCount == 0
+				&& PreviousCameraLocationError
+					<= ProjectionEvidenceViewPositionToleranceCm
+				&& CameraLocationError > ProjectionEvidenceViewPositionToleranceCm)
+			{
+				if (ViewAngularDelta > ProjectionEvidenceViewAngleToleranceDegrees
+					|| BaselineViewAngularDelta
+						> ProjectionEvidenceViewAngleToleranceDegrees
+					|| GalaxyLocalDelta > ProjectionEvidenceProxyPositionToleranceCm
+					|| GalaxyLocalScaleDelta > ProjectionEvidenceProxyScaleTolerance
+					|| GalaxyLocalRotationDelta
+						> ProjectionEvidenceProxyRotationToleranceDegrees
+					|| GalaxyWorldDelta > ProjectionEvidenceProxyPositionToleranceCm
+					|| ClusterLocalDelta > ProjectionEvidenceProxyPositionToleranceCm
+					|| ClusterLocalScaleDelta > ProjectionEvidenceProxyScaleTolerance
+					|| ClusterLocalRotationDelta
+						> ProjectionEvidenceProxyRotationToleranceDegrees
+					|| ClusterWorldDelta > ProjectionEvidenceProxyPositionToleranceCm
+					|| !Sample.bClusterNdcValid)
+				{
+					return Fail(FString::Printf(
+						TEXT("moving projection command-pending frame changed scene viewAngle=%.9fdeg baselineAngle=%.9fdeg galaxyLocal=%.6fcm galaxyScale=%.9g galaxyRotation=%.9fdeg galaxyWorld=%.6fcm clusterLocal=%.6fcm clusterScale=%.9g clusterRotation=%.9fdeg clusterWorld=%.6fcm ndcValid=%d"),
+						ViewAngularDelta, BaselineViewAngularDelta,
+						GalaxyLocalDelta, GalaxyLocalScaleDelta,
+						GalaxyLocalRotationDelta, GalaxyWorldDelta,
+						ClusterLocalDelta, ClusterLocalScaleDelta,
+						ClusterLocalRotationDelta, ClusterWorldDelta,
+						Sample.bClusterNdcValid ? 1 : 0));
+				}
+				ProjectionEvidencePreviousSample = Sample;
+				UE_LOG(LogTemp, Display,
+					TEXT("[APS.P0.ProjectionSample] source=directRuntime phase=Moving event=CommandPending frame=%llu consecutive=1 expected=%s actual=%s proxyBuild=%llu uploads=%llu mutations=%llu"),
+					Sample.RenderFrameCounter,
+					*ProjectionEvidenceExpectedCameraLocation.ToCompactString(),
+					*Sample.ViewLocation.ToCompactString(), Sample.ProxyBuildSerial,
+					Sample.InstanceUploadCount, Sample.TransformMutationSerial);
+				return false;
+			}
+			if (ViewDelta.Size() <= 1.0
+				|| CommandError > ProjectionEvidenceViewPositionToleranceCm
+				|| CameraLocationError > ProjectionEvidenceViewPositionToleranceCm
+				|| ViewAngularDelta > ProjectionEvidenceViewAngleToleranceDegrees
+				|| BaselineViewAngularDelta
+					> ProjectionEvidenceViewAngleToleranceDegrees
+				|| GalaxyLocalDelta > ProjectionEvidenceProxyPositionToleranceCm
+				|| GalaxyLocalScaleDelta > ProjectionEvidenceProxyScaleTolerance
+				|| GalaxyLocalRotationDelta
+					> ProjectionEvidenceProxyRotationToleranceDegrees
+				|| GalaxyWorldDelta > ProjectionEvidenceProxyPositionToleranceCm
+				|| ClusterLocalDelta > ProjectionEvidenceProxyPositionToleranceCm
+				|| ClusterLocalScaleDelta > ProjectionEvidenceProxyScaleTolerance
+				|| ClusterLocalRotationDelta
+					> ProjectionEvidenceProxyRotationToleranceDegrees
+				|| ClusterWorldDelta > ProjectionEvidenceProxyPositionToleranceCm
+				|| GalaxyClosure.Size()
+					> ProjectionEvidenceMovingClosureToleranceCm
+				|| ClusterClosure.Size()
+					> ProjectionEvidenceMovingClosureToleranceCm
+				|| !Sample.bClusterNdcValid)
+			{
+				return Fail(FString::Printf(
+					TEXT("moving projection evidence failed viewDelta=%s commandError=%.6fcm cameraError=%.6fcm angle=%.9fdeg baselineAngle=%.9fdeg galaxyLocal=%.6fcm galaxyScale=%.9g galaxyRotation=%.9fdeg galaxyWorld=%.6fcm galaxyClosure=%.6fcm clusterLocal=%.6fcm clusterScale=%.9g clusterRotation=%.9fdeg clusterWorld=%.6fcm clusterClosure=%.6fcm ndcValid=%d"),
+					*ViewDelta.ToCompactString(), CommandError, CameraLocationError,
+					ViewAngularDelta, BaselineViewAngularDelta, GalaxyLocalDelta,
+					GalaxyLocalScaleDelta, GalaxyLocalRotationDelta,
+					GalaxyWorldDelta, GalaxyClosure.Size(), ClusterLocalDelta,
+					ClusterLocalScaleDelta, ClusterLocalRotationDelta,
+					ClusterWorldDelta, ClusterClosure.Size(),
+					Sample.bClusterNdcValid ? 1 : 0));
+			}
+
+			++ProjectionEvidenceAcceptedFrameCount;
+			UE_LOG(LogTemp, Display,
+				TEXT("[APS.P0.ProjectionSample] source=directRuntime phase=Moving sample=%d/%d frame=%llu consecutive=1 renderTime=%.9f view=%s viewDelta=%s command=%s commandError=%.6fcm cameraError=%.6fcm angleDelta=%.9fdeg baselineAngle=%.9fdeg galaxy=%s gLocalDelta=%.6fcm gScaleDelta=%.9g gRotationDelta=%.9fdeg gWorldDelta=%.6fcm gClosure=%.6fcm gError=%.6fcm cluster=%s cLocalDelta=%.6fcm cScaleDelta=%.9g cRotationDelta=%.9fdeg cWorldDelta=%.6fcm cClosure=%.6fcm cError=%.6fcm ndc=(%.9f,%.9f) ndcGate=disabled dataset=%u mapping=%u proxyBuild=%llu uploads=%llu mutations=%llu"),
+				ProjectionEvidenceAcceptedFrameCount, ProjectionEvidenceRequiredFrames,
+				Sample.RenderFrameCounter, Sample.RenderTime,
+				*Sample.ViewLocation.ToCompactString(), *ViewDelta.ToCompactString(),
+				*ProjectionEvidenceMoveDelta.ToCompactString(), CommandError,
+				CameraLocationError, ViewAngularDelta, BaselineViewAngularDelta,
+				*ProjectionEvidenceGalaxyStableId.ToString(EGuidFormats::Digits),
+				GalaxyLocalDelta, GalaxyLocalScaleDelta, GalaxyLocalRotationDelta,
+				GalaxyWorldDelta, GalaxyClosure.Size(),
+				Sample.GalaxyProjectionErrorCm,
+				*ProjectionEvidenceClusterStableId.ToString(EGuidFormats::Digits),
+				ClusterLocalDelta, ClusterLocalScaleDelta, ClusterLocalRotationDelta,
+				ClusterWorldDelta, ClusterClosure.Size(),
+				Sample.ClusterProjectionErrorCm,
+				Sample.ClusterNdc.X, Sample.ClusterNdc.Y,
+				ProjectionEvidenceBaselineDescriptor.CanonicalDatasetHash,
+				ProjectionEvidenceBaselineDescriptor.RenderedMappingHash,
+				Sample.ProxyBuildSerial, Sample.InstanceUploadCount,
+				Sample.TransformMutationSerial);
+			ProjectionEvidencePreviousSample = Sample;
+			if (ProjectionEvidenceAcceptedFrameCount < ProjectionEvidenceRequiredFrames)
+			{
+				ACameraActor* TestCamera = ProjectionEvidenceCamera.Get();
+				if (!IsValid(TestCamera))
+				{
+					return Fail(TEXT("projection evidence camera disappeared during controlled movement"));
+				}
+				ProjectionEvidenceExpectedCameraLocation = Sample.ViewLocation
+					+ ProjectionEvidenceMoveDelta;
+				if (!TestCamera->SetActorLocation(ProjectionEvidenceExpectedCameraLocation,
+					false, nullptr, ETeleportType::TeleportPhysics))
+				{
+					return Fail(TEXT("projection evidence could not command the next camera move"));
+				}
+				return false;
+			}
+			if (!ValidateProjectionEvidenceDataset(
+				ProjectionEvidenceGenerator.Get(), Failure))
+			{
+				return Fail(Failure);
+			}
+
+			UE_LOG(LogTemp, Display,
+				TEXT("[APS.P0.ProjectionPhase] source=directRuntime phase=Moving event=End status=PASS samples=%d proxyBuildDelta=0 uploadDelta=0 mutationDelta=0 ndcGate=disabled"),
+				ProjectionEvidenceAcceptedFrameCount);
+			bProjectionEvidencePhaseStarted = false;
+			RestoreProjectionEvidenceCamera();
 			Step = EStep::WaitForGameplaySurface;
 			StepStartSeconds = Now;
 			return false;
@@ -4188,6 +5455,7 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			if (!bCleanupStarted)
 			{
 				bCleanupStarted = true;
+				RestoreProjectionEvidenceCamera();
 				if (World && World == GameplayWorld.Get())
 				{
 					BeginGameplayWorldScapeCleanup(World);
@@ -4250,6 +5518,43 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 		TWeakObjectPtr<APlanet> RuntimeHomePlanet;
 		TWeakObjectPtr<APawn> RuntimeGravityPawn;
 		TWeakObjectPtr<ASpaceStation> RuntimeStation;
+		TWeakObjectPtr<AAstroGenerator> ProjectionEvidenceGenerator;
+		TWeakObjectPtr<AGalaxy> ProjectionEvidenceGalaxy;
+		TWeakObjectPtr<AStarCluster> ProjectionEvidenceCluster;
+		TWeakObjectPtr<UHierarchicalInstancedStaticMeshComponent>
+			ProjectionEvidenceGalaxyComponent;
+		TWeakObjectPtr<UHierarchicalInstancedStaticMeshComponent>
+			ProjectionEvidenceClusterComponent;
+		TWeakObjectPtr<ACameraActor> ProjectionEvidenceCamera;
+		TWeakObjectPtr<AActor> ProjectionEvidenceOriginalViewTarget;
+		FAPSCanonicalStellarProjectionDescriptor ProjectionEvidenceBaselineDescriptor;
+		FAPSCanonicalStellarProxyRecord ProjectionEvidenceGalaxyBaselineRecord;
+		FAPSCanonicalStellarProxyRecord ProjectionEvidenceClusterBaselineRecord;
+		FAPSCanonicalStellarProxyRecord ProjectionEvidenceHomeBaselineRecord;
+		FAPSCanonicalClusterSystemAddress ProjectionEvidenceHomeBaselineAddress;
+		FAPSCanonicalClusterSystemAddress ProjectionEvidenceClusterBaselineAddress;
+		FProjectionEvidenceRenderedSample ProjectionEvidencePreviousSample;
+		FQuat ProjectionEvidenceBaselineRenderedViewRotation{FQuat::Identity};
+		FQuat ProjectionEvidenceGalaxyBaselineLocalRotation{FQuat::Identity};
+		FQuat ProjectionEvidenceClusterBaselineLocalRotation{FQuat::Identity};
+		FVector ProjectionEvidenceGalaxyBaselineLocalScale{FVector::OneVector};
+		FVector ProjectionEvidenceClusterBaselineLocalScale{FVector::OneVector};
+		TArray<FGuid> ProjectionEvidenceDatasetStableIds;
+		TArray<FVector> ProjectionEvidenceDatasetCanonicalPositions;
+		TArray<double> ProjectionEvidenceDatasetCanonicalRadii;
+		TArray<double> ProjectionEvidenceDatasetMinOrbits;
+		TArray<double> ProjectionEvidenceDatasetMaxOrbits;
+		FGuid ProjectionEvidenceHomeStableId;
+		FGuid ProjectionEvidenceGalaxyStableId;
+		FGuid ProjectionEvidenceClusterStableId;
+		FVector ProjectionEvidenceExpectedCameraLocation{FVector::ZeroVector};
+		FVector ProjectionEvidenceMoveDelta{FVector::ZeroVector};
+		double ProjectionEvidenceLastAcceptedRenderTime{0.0};
+		uint64 ProjectionEvidenceLastAcceptedFrameCounter{0u};
+		int32 ProjectionEvidenceWarmupFramesRemaining{0};
+		int32 ProjectionEvidenceAcceptedFrameCount{0};
+		bool bProjectionEvidencePhaseStarted{false};
+		bool bProjectionEvidenceBaselineCaptured{false};
 		TWeakObjectPtr<UClass> SelectedPawnClass;
 		const UGeneratedWorld* EditableGeneratedWorldAddress{nullptr};
 		const USpawnParameters* EditableSpawnParametersAddress{nullptr};
