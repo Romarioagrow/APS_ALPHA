@@ -1404,6 +1404,7 @@ uint32 AAstroGenerator::BuildCanonicalStellarDatasetInputHash() const
 	Hash = HashCombine(Hash, GetTypeHash(static_cast<uint8>(HomeSystemStarType)));
 	Hash = HashCombine(Hash, GetTypeHash(static_cast<uint8>(HomeStarStellarType)));
 	Hash = HashCombine(Hash, GetTypeHash(static_cast<uint8>(HomeStarSpectralClass)));
+	Hash = HashCombine(Hash, GetTypeHash(PlanetsAmount));
 	return Hash != 0u ? Hash : 1u;
 }
 
@@ -1918,6 +1919,7 @@ void AAstroGenerator::FinalizeCanonicalStellarProjectionBuild()
 					CanonicalStellarProjection.ClusterToGalaxyPositionScale, 1.0e-12)));
 	CanonicalStellarProjection.bProjectionValid = !IsCanonicalStellarProjectionEnabled()
 		|| (bCanonicalStellarProjectionComposed
+			&& !bCanonicalStellarDatasetRejected
 			&& CanonicalStellarProjection.CanonicalDatasetHash != 0u
 			&& CanonicalStellarProjection.bMappingsComplete
 			&& CanonicalStellarProjection.bUnitRoots
@@ -7625,19 +7627,19 @@ void AAstroGenerator::GenerateStarCluster()
 		IsCanonicalStellarProjectionEnabled() && IsValid(GeneratedWorldModel)
 			? &GeneratedWorldModel->CanonicalStellarDataset : nullptr;
 	if (CanonicalDataset && CanonicalDataset->InputHash != DatasetInputHash
-		&& (bIsPreviewGeneration || !CanonicalDataset->bFinalized))
+		&& bIsPreviewGeneration)
 	{
 		CanonicalDataset->ResetForInput(DatasetInputHash, PreviewGenerationSeed);
 	}
 	const bool bReuseFinalizedDataset = CanonicalDataset
 		&& ValidateCanonicalStellarDataset(*CanonicalDataset, DatasetInputHash);
 	bCanonicalStellarDatasetValidated = bReuseFinalizedDataset;
-	if (CanonicalDataset && CanonicalDataset->bFinalized && !bReuseFinalizedDataset
-		&& !bIsPreviewGeneration)
+	if (CanonicalDataset && !bReuseFinalizedDataset
+		&& (CanonicalDataset->bFinalized || !bIsPreviewGeneration))
 	{
 		bCanonicalStellarDatasetRejected = true;
 		UE_LOG(LogTemp, Error,
-			TEXT("[APS.CanonicalDataset] Gameplay rejected a finalized stellar dataset whose structure or content hash is invalid"));
+			TEXT("[APS.CanonicalDataset] Rejected missing, unsealed, or invalid canonical cluster dataset instead of regenerating it"));
 		return;
 	}
 	if (bReuseFinalizedDataset)
@@ -7888,10 +7890,19 @@ void AAstroGenerator::GenerateStarCluster()
 				CanonicalDataset->HomeStableId = CanonicalDataset->ClusterRecords[
 					CanonicalDataset->HomeCanonicalIndex].StableId;
 			}
-			CanonicalDataset->bFinalized = true;
-			CanonicalDataset->DatasetHash = BuildCanonicalStellarManifestHash(*CanonicalDataset);
+			// The canonical catalogue is still a construction draft until the selected
+			// home record has absorbed its preview-authored primary/system summary.
+			// Validate a sealed copy for safe materialization without publishing a hash
+			// that later home generation would have to rewrite.
+			CanonicalDataset->bFinalized = false;
+			CanonicalDataset->DatasetHash = 0u;
+			FAPSCanonicalStellarDataset ValidationCandidate = *CanonicalDataset;
+			ValidationCandidate.bFinalized = true;
+			ValidationCandidate.DatasetHash =
+				BuildCanonicalStellarManifestHash(ValidationCandidate);
 			bCanonicalStellarDatasetValidated = ValidateCanonicalStellarDataset(
-				*CanonicalDataset, DatasetInputHash);
+				ValidationCandidate, DatasetInputHash);
+			bCanonicalStellarDatasetRejected = !bCanonicalStellarDatasetValidated;
 		}
 
 		const int32 RecordsToRender = FMath::Min(
@@ -8171,6 +8182,12 @@ void AAstroGenerator::GenerateHomeStarSystem()
 	}
 
 	GenerateStarSystemByModel();
+	if (bCanonicalStellarDatasetRejected)
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[APS.CanonicalDataset] Aborting home-system handoff after immutable manifest rejection"));
+		return;
+	}
 
 	if (GeneratedHomeStarSystem
 		&& GeneratedHomeStarSystem->MainStar
@@ -8364,6 +8381,10 @@ void AAstroGenerator::GenerateStarSystemByModel()
 		FTransform HomeSystemTransform;
 		FVector HomeSystemSpawnLocation;
 		ComputeHomeSystemPosition(HomeSystemTransform, HomeSystemSpawnLocation);
+		if (bCanonicalStellarDatasetRejected)
+		{
+			return;
+		}
 		// The cluster record retains the canonical full-scale address. Gameplay actors
 		// live in a detached local-system bubble so character/ship/camera transforms
 		// never inherit a catalog parent. Preview materializes at the same deterministic
@@ -8396,7 +8417,13 @@ void AAstroGenerator::GenerateStarSystemByModel()
 		{
 			StarSystemModel = MakeShared<FStarSystemModel>(HomeClusterRecord->SystemModel);
 			StarSystemModel->Location = HomeClusterRecord->ClusterLocalLocation;
-			if (bRandomHomeSystem)
+			if (bConsumedFinalizedCanonicalStellarDataset)
+			{
+				// Gameplay materializes the exact preview-finalized record. Re-running
+				// selection logic here would reinterpret a sealed canonical system.
+				AmountOfStars = FMath::Max(1, StarSystemModel->AmountOfStars);
+			}
+			else if (bRandomHomeSystem)
 			{
 				AmountOfStars = FMath::Max(1, StarSystemModel->AmountOfStars);
 			}
@@ -8440,7 +8467,15 @@ void AAstroGenerator::GenerateStarSystemByModel()
 		{
 			TSharedPtr<FStarModel> StarModel = MakeShared<FStarModel>();
 
-			if (HomeClusterRecord && StarNumber == 0 && bRandomHomeStar)
+			if (HomeClusterRecord && StarNumber == 0
+				&& bConsumedFinalizedCanonicalStellarDataset)
+			{
+				// The finalized primary-star model is canonical input, not a seed for a
+				// second scope-specific generation pass.
+				*StarModel = HomeClusterRecord->PrimaryStarModel;
+				StarModel->Location = HomeClusterRecord->ClusterLocalLocation;
+			}
+			else if (HomeClusterRecord && StarNumber == 0 && bRandomHomeStar)
 			{
 				*StarModel = HomeClusterRecord->PrimaryStarModel;
 				StarModel->Location = HomeClusterRecord->ClusterLocalLocation;
@@ -8455,6 +8490,14 @@ void AAstroGenerator::GenerateStarSystemByModel()
 				StarModel->SpectralClass = HomeStarSpectralClass;
 				StarGenerator->GenerateStarModel(StarModel);
 			}
+			if (HomeClusterRecord && StarNumber == 0
+				&& bConsumedFinalizedCanonicalStellarDataset)
+			{
+				// A local presentation override must not reinterpret a transported canonical
+				// record. Restore every hashed primary field before runtime materialization.
+				*StarModel = HomeClusterRecord->PrimaryStarModel;
+				StarModel->Location = HomeClusterRecord->ClusterLocalLocation;
+			}
 
 			if (HomeClusterRecord && StarNumber == 0 && StarModel.IsValid())
 			{
@@ -8467,6 +8510,10 @@ void AAstroGenerator::GenerateStarSystemByModel()
 				SynchronizeHomeClusterRecord(
 					*HomeClusterRecord, *StarModel, *StarSystemModel);
 				SynchronizeCanonicalStellarManifestHomeRecord(*HomeClusterRecord);
+				if (bCanonicalStellarDatasetRejected)
+				{
+					return;
+				}
 				if (IsCanonicalStellarProjectionEnabled())
 				{
 					RefreshCanonicalClusterProxy(PendingHomeClusterInstanceIndex);
@@ -9012,6 +9059,10 @@ void AAstroGenerator::GenerateStarSystemByModel()
 			HomeClusterRecord->bMaterialized = true;
 			HomeClusterRecord->MaterializedSystem = NewStarSystem;
 			SynchronizeCanonicalStellarManifestHomeRecord(*HomeClusterRecord);
+			if (bCanonicalStellarDatasetRejected)
+			{
+				return;
+			}
 			// Keep the lightweight HISM point at this catalog address. It is the stable
 			// barycentric representation used by GALAXY/CLUSTER while the real stellar
 			// hierarchy stays hidden. Deep scopes cull this point together with every
@@ -9168,6 +9219,42 @@ void AAstroGenerator::InitGenerationLevel()
 	{
 		GenerateHomeStarSystem();
 	}
+	if (IsCanonicalStellarProjectionEnabled() && IsValid(GeneratedWorldModel))
+	{
+		FAPSCanonicalStellarDataset& Dataset = GeneratedWorldModel->CanonicalStellarDataset;
+		const FClusterStarSystemRecord* MaterializedHomeRecord = PendingHomeCluster.IsValid()
+			? PendingHomeCluster->FindPotentialSystem(PendingHomeClusterInstanceIndex) : nullptr;
+		const bool bHomeReadyToSeal = !bGenerateHomeSystem
+			|| (IsValid(GeneratedHomeStarSystem) && MaterializedHomeRecord
+				&& MaterializedHomeRecord->bMaterialized
+				&& MaterializedHomeRecord->MaterializedSystem.Get() == GeneratedHomeStarSystem
+				&& Dataset.HomeCanonicalIndex == MaterializedHomeRecord->InstanceIndex
+				&& Dataset.HomeStableId == MaterializedHomeRecord->StableId);
+		if (!bCanonicalStellarDatasetRejected && !bHomeReadyToSeal)
+		{
+			bCanonicalStellarDatasetValidated = false;
+			bCanonicalStellarDatasetRejected = true;
+			UE_LOG(LogTemp, Error,
+				TEXT("[APS.CanonicalDataset] Rejected canonical handoff before its exact home record was materialized"));
+		}
+		if (!Dataset.bFinalized && bCanonicalStellarDatasetValidated
+			&& !bCanonicalStellarDatasetRejected)
+		{
+			// Publish the canonical content hash exactly once, after the construction
+			// path has authored the home record. Consumers receive this sealed snapshot
+			// and are never allowed to regenerate or re-hash it.
+			Dataset.bFinalized = true;
+			Dataset.DatasetHash = BuildCanonicalStellarManifestHash(Dataset);
+			bCanonicalStellarDatasetValidated = ValidateCanonicalStellarDataset(
+				Dataset, Dataset.InputHash);
+			bCanonicalStellarDatasetRejected = !bCanonicalStellarDatasetValidated;
+		}
+	}
+	if (bCanonicalStellarDatasetRejected)
+	{
+		FinalizeCanonicalStellarProjectionBuild();
+		return;
+	}
 	FinalizeCanonicalStellarProjectionBuild();
 }
 
@@ -9197,15 +9284,22 @@ void AAstroGenerator::GenerateGalaxy()
 	FAPSCanonicalStellarDataset* CanonicalDataset =
 		IsCanonicalStellarProjectionEnabled() && IsValid(GeneratedWorldModel)
 			? &GeneratedWorldModel->CanonicalStellarDataset : nullptr;
+	bool bResetCanonicalDatasetForPreviewInput = false;
+	if (CanonicalDataset && bIsPreviewGeneration
+		&& CanonicalDataset->InputHash != DatasetInputHash)
+	{
+		CanonicalDataset->ResetForInput(DatasetInputHash, PreviewGenerationSeed);
+		bResetCanonicalDatasetForPreviewInput = true;
+	}
 	const bool bReuseFinalizedDataset = CanonicalDataset
 		&& ValidateCanonicalStellarDataset(*CanonicalDataset, DatasetInputHash);
 	bCanonicalStellarDatasetValidated = bReuseFinalizedDataset;
-	if (CanonicalDataset && CanonicalDataset->bFinalized && !bReuseFinalizedDataset
-		&& !bIsPreviewGeneration)
+	if (CanonicalDataset && !bReuseFinalizedDataset
+		&& (CanonicalDataset->bFinalized || !bIsPreviewGeneration))
 	{
 		bCanonicalStellarDatasetRejected = true;
 		UE_LOG(LogTemp, Error,
-			TEXT("[APS.CanonicalDataset] Gameplay rejected a finalized stellar dataset whose structure or content hash is invalid"));
+			TEXT("[APS.CanonicalDataset] Rejected missing, unsealed, or invalid canonical galaxy dataset instead of regenerating it"));
 		return;
 	}
 	if (bReuseFinalizedDataset)
@@ -9218,7 +9312,7 @@ void AAstroGenerator::GenerateGalaxy()
 		GalaxyModel->GalaxySize = CanonicalDataset->GalaxySize;
 		bConsumedFinalizedCanonicalStellarDataset = true;
 	}
-	else if (CanonicalDataset)
+	else if (CanonicalDataset && !bResetCanonicalDatasetForPreviewInput)
 	{
 		CanonicalDataset->ResetForInput(DatasetInputHash, PreviewGenerationSeed);
 	}
@@ -11276,26 +11370,68 @@ void AAstroGenerator::SynchronizeCanonicalStellarManifestHomeRecord(
 		return;
 	}
 	FAPSCanonicalStellarDataset& Dataset = GeneratedWorldModel->CanonicalStellarDataset;
-	if (!Dataset.bFinalized || Dataset.InputHash != BuildCanonicalStellarDatasetInputHash()
-		|| !Dataset.ClusterRecords.IsValidIndex(Dataset.HomeCanonicalIndex)
-		|| Dataset.HomeCanonicalIndex != Record.InstanceIndex
-		|| Dataset.HomeStableId != Record.StableId)
+	const bool bIdentityMatches = Dataset.InputHash == BuildCanonicalStellarDatasetInputHash()
+		&& Dataset.ClusterRecords.IsValidIndex(Dataset.HomeCanonicalIndex)
+		&& Dataset.HomeCanonicalIndex == Record.InstanceIndex
+		&& Dataset.HomeStableId == Record.StableId;
+	if (!bIdentityMatches)
 	{
+		bCanonicalStellarDatasetRejected = true;
+		bCanonicalStellarDatasetValidated = false;
+		UE_LOG(LogTemp, Error,
+			TEXT("[APS.CanonicalDataset] Rejected home materialization with mismatched immutable identity id=%s index=%d storedId=%s storedIndex=%d"),
+			*Record.StableId.ToString(EGuidFormats::Digits), Record.InstanceIndex,
+			*Dataset.HomeStableId.ToString(EGuidFormats::Digits), Dataset.HomeCanonicalIndex);
 		return;
 	}
-	FAPSCanonicalClusterSystemRecord& CanonicalRecord =
-		Dataset.ClusterRecords[Dataset.HomeCanonicalIndex];
-	CanonicalRecord.StableId = Record.StableId;
-	CanonicalRecord.CanonicalIndex = Record.InstanceIndex;
-	CanonicalRecord.ClusterLocalLocation = Record.ClusterLocalLocation;
-	CanonicalRecord.PrimaryStarModel = Record.PrimaryStarModel;
-	CanonicalRecord.PrimaryStarModel.Location = Record.ClusterLocalLocation;
-	CanonicalRecord.SystemModel = Record.SystemModel;
-	CanonicalRecord.SystemModel.StableId = Record.StableId;
-	CanonicalRecord.SystemModel.Location = Record.ClusterLocalLocation;
-	Dataset.DatasetHash = BuildCanonicalStellarManifestHash(Dataset);
-	bCanonicalStellarDatasetValidated = ValidateCanonicalStellarDataset(
-		Dataset, Dataset.InputHash);
+	FAPSCanonicalClusterSystemRecord CandidateRecord;
+	CandidateRecord.StableId = Record.StableId;
+	CandidateRecord.CanonicalIndex = Record.InstanceIndex;
+	CandidateRecord.ClusterLocalLocation = Record.ClusterLocalLocation;
+	CandidateRecord.PrimaryStarModel = Record.PrimaryStarModel;
+	CandidateRecord.PrimaryStarModel.Location = Record.ClusterLocalLocation;
+	CandidateRecord.SystemModel = Record.SystemModel;
+	CandidateRecord.SystemModel.StableId = Record.StableId;
+	CandidateRecord.SystemModel.Location = Record.ClusterLocalLocation;
+
+	if (bConsumedFinalizedCanonicalStellarDataset)
+	{
+		// Gameplay/preview rebuilds consume the sealed manifest. Verify that the
+		// materialized summary is byte-for-byte equivalent in canonical hash space,
+		// but never rewrite the transported record or normalize its hash afterward.
+		FAPSCanonicalStellarDataset CandidateDataset = Dataset;
+		CandidateDataset.ClusterRecords[Dataset.HomeCanonicalIndex] = CandidateRecord;
+		const uint32 CandidateHash = BuildCanonicalStellarManifestHash(CandidateDataset);
+		const bool bStoredDatasetValid = ValidateCanonicalStellarDataset(
+			Dataset, Dataset.InputHash);
+		const bool bMaterializationMatches = CandidateHash == Dataset.DatasetHash;
+		bCanonicalStellarDatasetValidated = bStoredDatasetValid && bMaterializationMatches;
+		if (!bCanonicalStellarDatasetValidated)
+		{
+			bCanonicalStellarDatasetRejected = true;
+			UE_LOG(LogTemp, Error,
+				TEXT("[APS.CanonicalDataset] Gameplay materialization diverged from immutable home record id=%s storedHash=%u candidateHash=%u storedValid=%d"),
+				*Record.StableId.ToString(EGuidFormats::Digits), Dataset.DatasetHash,
+				CandidateHash, bStoredDatasetValid ? 1 : 0);
+		}
+		return;
+	}
+
+	if (Dataset.bFinalized)
+	{
+		bCanonicalStellarDatasetRejected = true;
+		bCanonicalStellarDatasetValidated = false;
+		UE_LOG(LogTemp, Error,
+			TEXT("[APS.CanonicalDataset] Rejected non-consumer mutation of finalized home record id=%s"),
+			*Record.StableId.ToString(EGuidFormats::Digits));
+		return;
+	}
+
+	Dataset.ClusterRecords[Dataset.HomeCanonicalIndex] = MoveTemp(CandidateRecord);
+	// The construction draft is sealed and hashed exactly once by InitGenerationLevel.
+	// Keep its structural-ready state while both primary and system-summary passes run.
+	bCanonicalStellarDatasetValidated = true;
+	return;
 }
 
 void AAstroGenerator::RotatePlanetOrbits(APlanetarySystem* NewPlanetarySystem)
@@ -11349,6 +11485,8 @@ void AAstroGenerator::ComputeHomeSystemPosition(FTransform& HomeSystemTransform,
 			? StarClusterActor->FindPotentialSystem(HomeCanonicalIndex) : nullptr;
 		if (!Dataset || !HomeRecord || Dataset->HomeStableId != HomeRecord->StableId)
 		{
+			bCanonicalStellarDatasetValidated = false;
+			bCanonicalStellarDatasetRejected = true;
 			UE_LOG(LogTemp, Error,
 				TEXT("[APS.CanonicalDataset] Finalized home record is unavailable for materialization"));
 			HomeSystemTransform.SetLocation(FVector::ZeroVector);
@@ -11359,6 +11497,8 @@ void AAstroGenerator::ComputeHomeSystemPosition(FTransform& HomeSystemTransform,
 		PendingHomeClusterInstanceIndex = HomeCanonicalIndex;
 		if (!ComposeCanonicalStellarProjection(HomeRecord->ClusterLocalLocation))
 		{
+			bCanonicalStellarDatasetValidated = false;
+			bCanonicalStellarDatasetRejected = true;
 			UE_LOG(LogTemp, Error,
 				TEXT("[APS.CanonicalProjection] Failed to bind finalized home record %s"),
 				*HomeRecord->StableId.ToString(EGuidFormats::Digits));
