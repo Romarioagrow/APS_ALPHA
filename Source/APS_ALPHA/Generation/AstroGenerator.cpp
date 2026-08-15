@@ -2832,7 +2832,7 @@ void AAstroGenerator::ApplyPreviewBackgroundContext(EAstroPreviewFocus NewFocus)
 		// locations, scales or custom data and thereby create a second universe.
 		PreviewBackgroundContextFocus = NewFocus;
 		PreviewBackgroundVisualScale = 1.0;
-		PreviewBackgroundCullApplied = false;
+		bPreviewBackgroundCullApplied = false;
 		CanonicalStellarProjection.ViewDistanceScale = 1.0;
 		CanonicalStellarProjection.GalaxyViewVisualScale = 1.0;
 		CanonicalStellarProjection.ClusterViewVisualScale = 1.0;
@@ -8466,6 +8466,7 @@ void AAstroGenerator::GenerateStarSystemByModel()
 				// record and update the existing HISM payload in place.
 				SynchronizeHomeClusterRecord(
 					*HomeClusterRecord, *StarModel, *StarSystemModel);
+				SynchronizeCanonicalStellarManifestHomeRecord(*HomeClusterRecord);
 				if (IsCanonicalStellarProjectionEnabled())
 				{
 					RefreshCanonicalClusterProxy(PendingHomeClusterInstanceIndex);
@@ -11265,7 +11266,6 @@ void AAstroGenerator::SynchronizeHomeClusterRecord(
 	Record.StableId = StableId;
 	Record.InstanceIndex = InstanceIndex;
 	Record.ClusterLocalLocation = ClusterLocalLocation;
-	SynchronizeCanonicalStellarManifestHomeRecord(Record);
 }
 
 void AAstroGenerator::SynchronizeCanonicalStellarManifestHomeRecord(
