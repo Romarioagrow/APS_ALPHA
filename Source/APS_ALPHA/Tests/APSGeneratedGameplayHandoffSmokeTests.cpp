@@ -715,26 +715,36 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 
 		bool Fail(const FString& Message)
 		{
-			if (bProjectionEvidencePhaseStarted
-				&& (Step == EStep::ProjectionEvidenceStationaryHold
-					|| Step == EStep::ProjectionEvidenceControlledMove))
+			if (Step == EStep::ProjectionEvidenceStationaryHold
+				|| Step == EStep::ProjectionEvidenceControlledMove)
 			{
 				const TCHAR* Phase = Step == EStep::ProjectionEvidenceStationaryHold
 					? TEXT("Stationary") : TEXT("Moving");
-				const TCHAR* Status = ProjectionEvidenceAcceptedFrameCount > 0
+				const TCHAR* Status = bProjectionEvidencePhaseStarted
+					&& ProjectionEvidenceAcceptedFrameCount > 0
 					? TEXT("FAIL") : TEXT("NOT_COVERED");
 				UE_LOG(LogTemp, Error,
 					TEXT("[APS.P0.ProjectionPhase] source=directRuntime phase=%s event=End status=%s samples=%d reason=%s"),
 					Phase, Status, ProjectionEvidenceAcceptedFrameCount, *Message);
 				bProjectionEvidencePhaseStarted = false;
 			}
-			RestoreProjectionEvidenceCamera();
+			FString EffectiveMessage = Message;
+			FString CameraRestoreFailure;
+			if (bProjectionEvidenceCameraLeaseActive
+				&& !bProjectionEvidenceCameraRestored
+				&& !RestoreProjectionEvidenceCamera(&CameraRestoreFailure)
+				&& !CameraRestoreFailure.IsEmpty()
+				&& !EffectiveMessage.Contains(CameraRestoreFailure))
+			{
+				EffectiveMessage += TEXT("; ");
+				EffectiveMessage += CameraRestoreFailure;
+			}
 			if (PendingFailure.IsEmpty())
 			{
-				PendingFailure = Message;
+				PendingFailure = EffectiveMessage;
 				UE_LOG(LogTemp, Error,
 					TEXT("[APS.Handoff.Smoke] FAIL %s; beginning safe WorldScape drain"),
-					*Message);
+					*EffectiveMessage);
 			}
 			Step = EStep::Cleanup;
 			StepStartSeconds = FPlatformTime::Seconds();
@@ -1094,6 +1104,15 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 					TEXT("generated handoff controller/pawn types mismatch controller=%s pawn=%s"),
 					*GetNameSafe(PlayerController ? PlayerController->GetClass() : nullptr),
 					*GetNameSafe(PlayerPawn ? PlayerPawn->GetClass() : nullptr)));
+			}
+			if (CVarAPSTestsFullScaleProjectionEvidence.GetValueOnGameThread() > 0
+				&& GravityPawn->IsSurfaceHandoffSuspended())
+			{
+				// FinalizeGeneratedSurfaceSpawn clears this hold before it restores the
+				// production pawn view target.  Acquire the opt-in evidence camera only
+				// after that whole game-thread callback has completed, so its deliberate
+				// ownership handoff cannot invalidate the camera lease one frame later.
+				return false;
 			}
 			UCameraComponent* PawnCamera = FindPawnCamera(GravityPawn);
 			USpringArmComponent* PawnSpringArm = FindPawnSpringArm(GravityPawn);
@@ -1603,13 +1622,14 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 				*GetNameSafe(Planet), *SelectedPawnClassPath, *GeneratedSaveSlotName);
 			if (CVarAPSTestsFullScaleProjectionEvidence.GetValueOnGameThread() > 0)
 			{
+				Step = EStep::ProjectionEvidenceStationaryHold;
+				StepStartSeconds = Now;
 				FString EvidenceFailure;
 				if (!InitializeProjectionEvidence(World, Generator, Galaxy, Cluster,
 					PlayerController, GalaxySentinel, ClusterSentinel, EvidenceFailure))
 				{
 					return Fail(EvidenceFailure);
 				}
-				Step = EStep::ProjectionEvidenceStationaryHold;
 			}
 			else
 			{
@@ -2113,6 +2133,46 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			return true;
 		}
 
+		bool ValidateProjectionEvidenceCameraLease(UWorld* World, FString& OutFailure)
+		{
+			if (!World || World != GameplayWorld.Get())
+			{
+				OutFailure = TEXT("projection evidence camera lease lost its gameplay world");
+				return false;
+			}
+			APlayerController* PlayerController = ProjectionEvidencePlayerController.Get();
+			ACameraActor* TestCamera = ProjectionEvidenceCamera.Get();
+			if (!bProjectionEvidenceCameraLeaseActive
+				|| bProjectionEvidenceCameraRestored
+				|| !IsValid(PlayerController) || !IsValid(TestCamera)
+				|| PlayerController->GetWorld() != World
+				|| World->GetFirstPlayerController() != PlayerController)
+			{
+				OutFailure = FString::Printf(
+					TEXT("projection evidence camera lease is invalid active=%d restored=%d controller=%s firstController=%s camera=%s"),
+					bProjectionEvidenceCameraLeaseActive ? 1 : 0,
+					bProjectionEvidenceCameraRestored ? 1 : 0,
+					*GetNameSafe(PlayerController),
+					*GetNameSafe(World->GetFirstPlayerController()),
+					*GetNameSafe(TestCamera));
+				return false;
+			}
+			AActor* CurrentViewTarget = PlayerController->GetViewTarget();
+			if (CurrentViewTarget != TestCamera)
+			{
+				const TCHAR* Phase = Step == EStep::ProjectionEvidenceControlledMove
+					? TEXT("Moving") : TEXT("Stationary");
+				OutFailure = FString::Printf(
+					TEXT("projection evidence camera ownership stolen phase=%s phaseStarted=%d warmupRemaining=%d samples=%d expected=%s actual=%s"),
+					Phase, bProjectionEvidencePhaseStarted ? 1 : 0,
+					ProjectionEvidenceWarmupFramesRemaining,
+					ProjectionEvidenceAcceptedFrameCount,
+					*GetNameSafe(TestCamera), *GetNameSafe(CurrentViewTarget));
+				return false;
+			}
+			return true;
+		}
+
 		bool TryReadFreshProjectionEvidenceView(UWorld* World,
 			bool& bOutFresh, FVector& OutViewLocation, FQuat& OutViewRotation,
 			FWorldCachedViewInfo& OutViewInfo, FString& OutFailure)
@@ -2122,6 +2182,10 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			if (!World || World != GameplayWorld.Get())
 			{
 				OutFailure = TEXT("projection evidence lost its gameplay world");
+				return false;
+			}
+			if (!ValidateProjectionEvidenceCameraLease(World, OutFailure))
+			{
 				return false;
 			}
 			if (World->LastRenderTime
@@ -2228,7 +2292,22 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			ProjectionEvidenceClusterComponent = Cluster->StarMeshInstances;
 			ProjectionEvidenceGalaxyStableId = GalaxySentinel.StableId;
 			ProjectionEvidenceClusterStableId = ClusterSentinel.StableId;
-			ProjectionEvidenceOriginalViewTarget = PlayerController->GetViewTarget();
+			AActor* OriginalViewTarget = PlayerController->GetViewTarget();
+			if (!IsValid(OriginalViewTarget)
+				|| bProjectionEvidenceCameraLeaseActive
+				|| !bProjectionEvidenceCameraRestored
+				|| !bProjectionEvidenceCameraRestoreSucceeded)
+			{
+				OutFailure = FString::Printf(
+					TEXT("projection evidence cannot acquire camera lease original=%s active=%d restored=%d priorRestoreSucceeded=%d"),
+					*GetNameSafe(OriginalViewTarget),
+					bProjectionEvidenceCameraLeaseActive ? 1 : 0,
+					bProjectionEvidenceCameraRestored ? 1 : 0,
+					bProjectionEvidenceCameraRestoreSucceeded ? 1 : 0);
+				return false;
+			}
+			ProjectionEvidencePlayerController = PlayerController;
+			ProjectionEvidenceOriginalViewTarget = OriginalViewTarget;
 			ProjectionEvidenceBaselineDescriptor =
 				Generator->GetCanonicalStellarProjectionDescriptor();
 			ProjectionEvidenceHomeStableId =
@@ -2334,7 +2413,29 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			}
 			ProjectionEvidenceCamera = TestCamera;
 			ProjectionEvidenceExpectedCameraLocation = CameraLocation;
+			bProjectionEvidenceCameraLeaseActive = true;
+			bProjectionEvidenceCameraRestored = false;
+			bProjectionEvidenceCameraRestoreSucceeded = false;
 			PlayerController->SetViewTarget(TestCamera);
+			if (PlayerController->GetViewTarget() != TestCamera)
+			{
+				OutFailure = FString::Printf(
+					TEXT("projection evidence camera lease acquisition failed expected=%s actual=%s"),
+					*GetNameSafe(TestCamera),
+					*GetNameSafe(PlayerController->GetViewTarget()));
+				FString RestoreFailure;
+				if (!RestoreProjectionEvidenceCamera(&RestoreFailure)
+					&& !RestoreFailure.IsEmpty())
+				{
+					OutFailure += TEXT("; ");
+					OutFailure += RestoreFailure;
+				}
+				return false;
+			}
+			UE_LOG(LogTemp, Display,
+				TEXT("[APS.P0.ProjectionCamera] source=directRuntime event=Acquire target=%s prior=%s expected=%s warmup=%d acceptedSamples=0 intentionalHop=1 stationaryDriftAttribution=excluded"),
+				*GetNameSafe(TestCamera), *GetNameSafe(OriginalViewTarget),
+				*CameraLocation.ToCompactString(), ProjectionEvidenceWarmupFrames);
 
 			ProjectionEvidenceWarmupFramesRemaining = ProjectionEvidenceWarmupFrames;
 			ProjectionEvidenceAcceptedFrameCount = 0;
@@ -2345,31 +2446,65 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			return true;
 		}
 
-		void RestoreProjectionEvidenceCamera()
+		bool RestoreProjectionEvidenceCamera(FString* OutFailure = nullptr)
 		{
+			if (!bProjectionEvidenceCameraLeaseActive
+				|| bProjectionEvidenceCameraRestored)
+			{
+				if (!bProjectionEvidenceCameraRestoreSucceeded && OutFailure)
+				{
+					*OutFailure = TEXT("projection evidence exact prior view-target restore previously failed");
+				}
+				return bProjectionEvidenceCameraRestoreSucceeded;
+			}
+			bProjectionEvidenceCameraRestored = true;
+			bProjectionEvidenceCameraLeaseActive = false;
 			ACameraActor* TestCamera = ProjectionEvidenceCamera.Get();
 			UWorld* World = GameplayWorld.Get();
-			APlayerController* PlayerController = World
-				? World->GetFirstPlayerController() : nullptr;
-			if (IsValid(PlayerController) && PlayerController->GetViewTarget() == TestCamera)
+			APlayerController* PlayerController = ProjectionEvidencePlayerController.Get();
+			AActor* RestoreTarget = ProjectionEvidenceOriginalViewTarget.Get();
+			AActor* ViewTargetBeforeRestore = IsValid(PlayerController)
+				? PlayerController->GetViewTarget() : nullptr;
+			bool bRestoredExactTarget = false;
+			if (IsValid(PlayerController) && IsValid(RestoreTarget)
+				&& IsValid(World) && PlayerController->GetWorld() == World
+				&& World->GetFirstPlayerController() == PlayerController)
 			{
-				AActor* RestoreTarget = ProjectionEvidenceOriginalViewTarget.Get();
-				if (!IsValid(RestoreTarget))
-				{
-					RestoreTarget = RuntimeGravityPawn.Get();
-				}
-				if (IsValid(RestoreTarget))
-				{
-					PlayerController->SetViewTarget(RestoreTarget);
-				}
+				PlayerController->SetViewTarget(RestoreTarget);
+				bRestoredExactTarget = PlayerController->GetViewTarget() == RestoreTarget;
 			}
+			bool bDestroyedCamera = false;
 			if (IsValid(TestCamera) && IsValid(World)
 				&& TestCamera->GetWorld() == World)
 			{
-				World->DestroyActor(TestCamera);
+				bDestroyedCamera = World->DestroyActor(TestCamera);
+			}
+			bProjectionEvidenceCameraRestoreSucceeded =
+				bRestoredExactTarget && bDestroyedCamera;
+			const FString RestoreMessage = FString::Printf(
+				TEXT("projection evidence exact restore target=%s currentBefore=%s targetRestored=%d cameraDestroyed=%d"),
+				*GetNameSafe(RestoreTarget), *GetNameSafe(ViewTargetBeforeRestore),
+				bRestoredExactTarget ? 1 : 0, bDestroyedCamera ? 1 : 0);
+			if (bProjectionEvidenceCameraRestoreSucceeded)
+			{
+				UE_LOG(LogTemp, Display,
+					TEXT("[APS.P0.ProjectionCamera] source=directRuntime event=Restore prior=%s currentBefore=%s targetRestored=1 cameraDestroyed=1 attemptedOnce=1 exactRestore=1"),
+					*GetNameSafe(RestoreTarget), *GetNameSafe(ViewTargetBeforeRestore));
+			}
+			else
+			{
+				UE_LOG(LogTemp, Error,
+					TEXT("[APS.P0.ProjectionCamera] source=directRuntime event=Restore status=FAIL reason=%s attemptedOnce=1 exactRestore=0"),
+					*RestoreMessage);
+				if (OutFailure)
+				{
+					*OutFailure = RestoreMessage;
+				}
 			}
 			ProjectionEvidenceCamera.Reset();
+			ProjectionEvidencePlayerController.Reset();
 			ProjectionEvidenceOriginalViewTarget.Reset();
+			return bProjectionEvidenceCameraRestoreSucceeded;
 		}
 
 		bool UpdateProjectionEvidenceStationaryHold(UWorld* World, double Now)
@@ -2795,11 +2930,15 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 				return Fail(Failure);
 			}
 
+			FString CameraRestoreFailure;
+			if (!RestoreProjectionEvidenceCamera(&CameraRestoreFailure))
+			{
+				return Fail(CameraRestoreFailure);
+			}
 			UE_LOG(LogTemp, Display,
 				TEXT("[APS.P0.ProjectionPhase] source=directRuntime phase=Moving event=End status=PASS samples=%d proxyBuildDelta=0 uploadDelta=0 mutationDelta=0 ndcGate=disabled"),
 				ProjectionEvidenceAcceptedFrameCount);
 			bProjectionEvidencePhaseStarted = false;
-			RestoreProjectionEvidenceCamera();
 			Step = EStep::WaitForGameplaySurface;
 			StepStartSeconds = Now;
 			return false;
@@ -5455,7 +5594,12 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			if (!bCleanupStarted)
 			{
 				bCleanupStarted = true;
-				RestoreProjectionEvidenceCamera();
+				FString CameraRestoreFailure;
+				if (!RestoreProjectionEvidenceCamera(&CameraRestoreFailure)
+					&& PendingFailure.IsEmpty())
+				{
+					PendingFailure = CameraRestoreFailure;
+				}
 				if (World && World == GameplayWorld.Get())
 				{
 					BeginGameplayWorldScapeCleanup(World);
@@ -5555,6 +5699,10 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 		int32 ProjectionEvidenceAcceptedFrameCount{0};
 		bool bProjectionEvidencePhaseStarted{false};
 		bool bProjectionEvidenceBaselineCaptured{false};
+		bool bProjectionEvidenceCameraLeaseActive{false};
+		bool bProjectionEvidenceCameraRestored{true};
+		bool bProjectionEvidenceCameraRestoreSucceeded{true};
+		TWeakObjectPtr<APlayerController> ProjectionEvidencePlayerController;
 		TWeakObjectPtr<UClass> SelectedPawnClass;
 		const UGeneratedWorld* EditableGeneratedWorldAddress{nullptr};
 		const USpawnParameters* EditableSpawnParametersAddress{nullptr};
