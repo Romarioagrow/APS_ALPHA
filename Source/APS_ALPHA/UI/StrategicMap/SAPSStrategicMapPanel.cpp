@@ -7,9 +7,11 @@
 #include "APS_ALPHA/Actors/Astro/StarSystem.h"
 #include "APS_ALPHA/Core/Controllers/GravityPlayerController.h"
 #include "APS_ALPHA/Core/Model/GeneratedWorld.h"
+#include "APS_ALPHA/UI/Style/APSUIActionButton.h"
+#include "APS_ALPHA/UI/Style/APSUIComponents.h"
+#include "APS_ALPHA/UI/Style/APSUIStyle.h"
 #include "InputCoreTypes.h"
 #include "Styling/AppStyle.h"
-#include "Widgets/Input/SButton.h"
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/SBoxPanel.h"
@@ -19,10 +21,18 @@
 
 namespace APSMapUI
 {
-	const FLinearColor Cyan(0.12f, 0.82f, 1.0f, 1.0f);
-	const FLinearColor White(0.92f, 0.97f, 1.0f, 1.0f);
-	const FLinearColor Muted(0.46f, 0.61f, 0.69f, 1.0f);
-	FSlateFontInfo Font(const FName Typeface, int32 Size) { return FCoreStyle::GetDefaultFontStyle(Typeface, Size); }
+	const FAPSUIColorPalette& Palette()
+	{
+		static const FAPSUIColorPalette Value = FAPSUIStyle::GetPalette(FAPSUIStyle::GetRecommendedDisplayProfile());
+		return Value;
+	}
+
+	FSlateFontInfo Font(const FName Typeface, const int32 Size)
+	{
+		return Typeface == TEXT("Regular")
+			? FAPSUIStyle::BodyFont(Typeface, Size)
+			: FAPSUIStyle::DisplayFont(Typeface, Size);
+	}
 }
 
 void SAPSStrategicMapPanel::Construct(const FArguments& InArgs)
@@ -31,18 +41,29 @@ void SAPSStrategicMapPanel::Construct(const FArguments& InArgs)
 	Generator = InArgs._Generator;
 	OnClose = InArgs._OnClose;
 	using namespace APSMapUI;
-
-	const auto FocusButton = [this](const FText& Text, EAstroPreviewFocus FocusValue)
+	const FAPSUIColorPalette& Colors = Palette();
+	const FAPSUILayoutMetrics& Layout = FAPSUIStyle::Metrics();
+	const auto GetWorld = [this]() -> const UGeneratedWorld*
 	{
-		return SNew(SButton).OnClicked(this, &SAPSStrategicMapPanel::Focus, static_cast<uint8>(FocusValue))
-			.ContentPadding(FMargin(14.0f, 9.0f))
-			[SNew(STextBlock).Text(Text).Font(Font("Bold", 11)).ColorAndOpacity(White)];
+		const AAstroGenerator* Astro = Generator.Get();
+		return Astro ? Astro->GetGeneratedWorldModel() : nullptr;
+	};
+
+	const auto FocusButton = [this](const FText& Glyph, const FText& Text, const FText& Details,
+		const int32 Depth, const EAstroPreviewFocus FocusValue)
+	{
+		return SNew(SAPSUIHierarchyCard)
+			.Glyph(Glyph)
+			.Label(Text)
+			.Details(Details)
+			.Depth(Depth)
+			.OnClicked(this, &SAPSStrategicMapPanel::Focus, static_cast<uint8>(FocusValue));
 	};
 
 	ChildSlot
 	[
 		SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush"))
-		.BorderBackgroundColor(FLinearColor(0.002f, 0.01f, 0.02f, 0.38f)).Padding(22.0f)
+		.BorderBackgroundColor(FLinearColor::Transparent).Padding(Layout.Space5)
 		[
 			SNew(SVerticalBox)
 			+ SVerticalBox::Slot().AutoHeight()
@@ -51,44 +72,161 @@ void SAPSStrategicMapPanel::Construct(const FArguments& InArgs)
 				+ SHorizontalBox::Slot().FillWidth(1.0f)
 				[
 					SNew(SVerticalBox)
-					+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Text(LOCTEXT("Title", "STRATEGIC MAP // LIVE UNIVERSE")).Font(Font("Bold", 23)).ColorAndOpacity(White)]
-					+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Text(LOCTEXT("Subtitle", "FULL-SCALE HIERARCHY  /  F10 TO CLOSE")).Font(Font("Regular", 10)).ColorAndOpacity(Cyan)]
+					+ SVerticalBox::Slot().AutoHeight()
+					[
+						SNew(STextBlock).Text(LOCTEXT("Title", "STRATEGIC MAP // LIVE UNIVERSE"))
+						.Font(Font("Bold", 23)).ColorAndOpacity(Colors.TextPrimary)
+					]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, Layout.Space1, 0.0f, 0.0f)
+					[
+						SNew(STextBlock).Text(LOCTEXT("Subtitle", "FULL-SCALE HIERARCHY  /  READ-ONLY  /  F10 TO CLOSE"))
+						.Font(Font("Regular", 10)).ColorAndOpacity(Colors.FocusCyan)
+					]
 				]
-				+ SHorizontalBox::Slot().AutoWidth()[SNew(SButton).OnClicked(this, &SAPSStrategicMapPanel::Close).ContentPadding(FMargin(18.0f, 9.0f))[SNew(STextBlock).Text(LOCTEXT("Close", "CLOSE  X")).ColorAndOpacity(White)]]
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+				[
+					SNew(SBox).WidthOverride(170.0f)
+					[
+						SNew(SAPSUIActionButton)
+						.Label(LOCTEXT("Close", "RETURN TO GAME"))
+						.Shortcut(LOCTEXT("CloseShortcut", "F10"))
+						.OnClicked(this, &SAPSStrategicMapPanel::Close)
+					]
+				]
 			]
-			+ SVerticalBox::Slot().FillHeight(1.0f).Padding(0.0f, 16.0f)
+			+ SVerticalBox::Slot().FillHeight(1.0f).Padding(0.0f, Layout.Space4)
 			[
 				SNew(SHorizontalBox)
-				+ SHorizontalBox::Slot().AutoWidth().Padding(0.0f, 0.0f, 12.0f, 0.0f)
+				+ SHorizontalBox::Slot().AutoWidth().Padding(0.0f, 0.0f, Layout.Space3, 0.0f)
 				[
-					SNew(SBox).WidthOverride(210.0f)
+					SNew(SBox).WidthOverride(270.0f)
 					[
-						SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(FLinearColor(0.005f, 0.035f, 0.055f, 0.92f)).Padding(14.0f)
+						SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush"))
+						.BorderBackgroundColor(Colors.Panel).Padding(Layout.Space3)
 						[
 							SNew(SVerticalBox)
-							+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 4.0f)[FocusButton(LOCTEXT("Overview", "UNIVERSE OVERVIEW"), EAstroPreviewFocus::Overview)]
-							+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 4.0f)[FocusButton(LOCTEXT("Cluster", "STAR CLUSTER"), EAstroPreviewFocus::StarCluster)]
-							+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 4.0f)[FocusButton(LOCTEXT("Galaxy", "GALAXY"), EAstroPreviewFocus::Galaxy)]
-							+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 4.0f)[FocusButton(LOCTEXT("System", "HOME SYSTEM"), EAstroPreviewFocus::HomeSystem)]
-							+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 4.0f)[FocusButton(LOCTEXT("Star", "HOME STAR"), EAstroPreviewFocus::HomeStar)]
-							+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 4.0f)[FocusButton(LOCTEXT("Planet", "HOME PLANET"), EAstroPreviewFocus::HomePlanet)]
+							+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, Layout.Space2)
+							[
+								SNew(STextBlock).Text(LOCTEXT("HierarchyTitle", "CANONICAL HIERARCHY"))
+								.Font(Font("Bold", 10)).ColorAndOpacity(Colors.TextSecondary)
+							]
+							+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, Layout.Space1)
+							[
+								FocusButton(LOCTEXT("OverviewGlyph", "ALL"), LOCTEXT("Overview", "UNIVERSE OVERVIEW"),
+									LOCTEXT("OverviewDetails", "Full canonical universe"), 0, EAstroPreviewFocus::Overview)
+							]
+							+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, Layout.Space1)
+							[
+								FocusButton(LOCTEXT("ClusterGlyph", "CLS"), LOCTEXT("Cluster", "STAR CLUSTER"),
+									LOCTEXT("ClusterDetails", "Generated home cluster"), 1, EAstroPreviewFocus::StarCluster)
+							]
+							+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, Layout.Space1)
+							[
+								FocusButton(LOCTEXT("GalaxyGlyph", "GAL"), LOCTEXT("Galaxy", "GALAXY"),
+									LOCTEXT("GalaxyDetails", "Canonical home galaxy"), 2, EAstroPreviewFocus::Galaxy)
+							]
+							+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, Layout.Space1)
+							[
+								FocusButton(LOCTEXT("SystemGlyph", "SYS"), LOCTEXT("System", "HOME SYSTEM"),
+									LOCTEXT("SystemDetails", "Planets and satellites"), 3, EAstroPreviewFocus::HomeSystem)
+							]
+							+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, Layout.Space1)
+							[
+								FocusButton(LOCTEXT("StarGlyph", "STR"), LOCTEXT("Star", "HOME STAR"),
+									LOCTEXT("StarDetails", "Primary stellar body"), 4, EAstroPreviewFocus::HomeStar)
+							]
+							+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, Layout.Space1)
+							[
+								FocusButton(LOCTEXT("PlanetGlyph", "PLN"), LOCTEXT("Planet", "HOME PLANET"),
+									LOCTEXT("PlanetDetails", "Planet and satellite group"), 4, EAstroPreviewFocus::HomePlanet)
+							]
 						]
 					]
 				]
 				+ SHorizontalBox::Slot().FillWidth(1.0f)
 				[
-					SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(FLinearColor(0.0f, 0.02f, 0.035f, 0.07f)).Padding(20.0f)
+					SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush"))
+					.BorderBackgroundColor(FLinearColor::Transparent).Padding(Layout.Space5)
 					[
 						SNew(STextBlock).Text(LOCTEXT("Help", "RMB DRAG  //  ORBIT\nMOUSE WHEEL  //  SCALE\nDOUBLE CLICK OBJECT  //  FOCUS"))
-						.Justification(ETextJustify::Center).Font(Font("Bold", 11)).ColorAndOpacity(Muted)
+						.Justification(ETextJustify::Center).Font(Font("Bold", 11)).ColorAndOpacity(Colors.TextSecondary)
 					]
 				]
-				+ SHorizontalBox::Slot().AutoWidth().Padding(12.0f, 0.0f, 0.0f, 0.0f)
+				+ SHorizontalBox::Slot().AutoWidth().Padding(Layout.Space3, 0.0f, 0.0f, 0.0f)
 				[
-					SNew(SBox).WidthOverride(260.0f)
+					SNew(SBox).WidthOverride(300.0f)
 					[
-						SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(FLinearColor(0.005f, 0.035f, 0.055f, 0.92f)).Padding(16.0f)
-						[SNew(STextBlock).Text(this, &SAPSStrategicMapPanel::GetWorldSummary).AutoWrapText(true).Font(Font("Regular", 11)).ColorAndOpacity(White)]
+						SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush"))
+						.BorderBackgroundColor(Colors.Panel).Padding(Layout.Space4)
+						[
+							SNew(SVerticalBox)
+							+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, Layout.Space2)
+							[
+								SNew(STextBlock).Text(LOCTEXT("LiveModelTitle", "LIVE MODEL"))
+								.Font(Font("Bold", 10)).ColorAndOpacity(Colors.FocusCyan)
+							]
+							+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, Layout.Space1)
+							[
+								SNew(SAPSUIFactChip)
+								.Label(LOCTEXT("HomeStarLabel", "HOME STAR"))
+								.Value_Lambda([GetWorld]()
+								{
+									const UGeneratedWorld* World = GetWorld();
+									return World ? FText::FromName(World->HomeStarName) : LOCTEXT("UnavailableStar", "NOT AVAILABLE");
+								})
+							]
+							+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, Layout.Space1)
+							[
+								SNew(SAPSUIFactChip)
+								.Label(LOCTEXT("SpectrumLabel", "SPECTRUM / TEMPERATURE"))
+								.Value_Lambda([GetWorld]()
+								{
+									const UGeneratedWorld* World = GetWorld();
+									return World
+										? FText::Format(LOCTEXT("SpectrumValue", "{0} / {1} K"),
+											FText::FromName(World->FullSpectralName), FText::AsNumber(World->HomeStarTemperature))
+										: LOCTEXT("UnavailableSpectrum", "NOT AVAILABLE");
+								})
+							]
+							+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, Layout.Space1)
+							[
+								SNew(SAPSUIFactChip)
+								.Label(LOCTEXT("HomePlanetLabel", "HOME PLANET"))
+								.Value_Lambda([GetWorld]()
+								{
+									const UGeneratedWorld* World = GetWorld();
+									return World
+										? FText::Format(LOCTEXT("PlanetValue", "{0} / {1} KM"),
+											FText::FromName(World->HomePlanetName), FText::AsNumber(FMath::RoundToInt(World->PlanetRadius)))
+										: LOCTEXT("UnavailablePlanet", "NOT AVAILABLE");
+								})
+							]
+							+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, Layout.Space1)
+							[
+								SNew(SAPSUIFactChip)
+								.Label(LOCTEXT("SystemLabel", "PLANETS / SATELLITES"))
+								.Value_Lambda([GetWorld]()
+								{
+									const UGeneratedWorld* World = GetWorld();
+									return World
+										? FText::Format(LOCTEXT("SystemValue", "{0} PLANETS / {1} MOONS"),
+											FText::AsNumber(World->PlanetsAmount), FText::AsNumber(World->MoonsAmount))
+										: LOCTEXT("UnavailableSystem", "NOT AVAILABLE");
+								})
+							]
+							+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, Layout.Space1)
+							[
+								SNew(SAPSUIFactChip)
+								.Label(LOCTEXT("ClusterLabel", "HOME CLUSTER"))
+								.Value_Lambda([GetWorld]()
+								{
+									const UGeneratedWorld* World = GetWorld();
+									return World
+										? FText::Format(LOCTEXT("ClusterValue", "{0} STARS"), FText::AsNumber(World->StarsAmount))
+										: LOCTEXT("UnavailableCluster", "NOT AVAILABLE");
+								})
+							]
+						]
 					]
 				]
 			]
