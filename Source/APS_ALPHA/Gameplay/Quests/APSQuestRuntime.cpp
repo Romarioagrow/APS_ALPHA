@@ -182,8 +182,14 @@ bool FAPSQuestRuntime::SubmitEvent(const FAPSQuestEvent& Event, FString& OutReas
 	{
 		return false;
 	}
+	if (Event.Sequence > 0 && !Event.StreamId.IsValid())
+	{
+		OutReason = TEXT("Sequenced quest event requires StreamId");
+		return false;
+	}
 
 	bool bAcceptedByAnyQuest = false;
+	bool bRejectedByOrdering = false;
 	for (TPair<FName, FAPSQuestInstanceSaveData>& Pair : Instances)
 	{
 		FAPSQuestInstanceSaveData& Instance = Pair.Value;
@@ -207,27 +213,6 @@ bool FAPSQuestRuntime::SubmitEvent(const FAPSQuestEvent& Event, FString& OutReas
 			InstanceChanged.Broadcast(Instance.QuestId, Instance);
 			continue;
 		}
-		FAPSQuestEventStreamCursor* EventStreamCursor = nullptr;
-
-		if (Event.Sequence > 0)
-		{
-			if (!Event.StreamId.IsValid())
-			{
-				OutReason = TEXT("Sequenced quest event requires StreamId");
-				return false;
-			}
-			EventStreamCursor = FindMutableStreamCursor(Instance, Event.StreamId);
-			if (!EventStreamCursor)
-			{
-				EventStreamCursor = &Instance.EventStreams.AddDefaulted_GetRef();
-				EventStreamCursor->StreamId = Event.StreamId;
-			}
-			if (Event.Sequence <= EventStreamCursor->LastConsumedSequence)
-			{
-				OutReason = TEXT("Out-of-order quest event rejected for its stream");
-				return false;
-			}
-		}
 
 		// Snapshot active nodes so one event cannot cascade into a successor that was
 		// activated by that same event.
@@ -240,10 +225,15 @@ bool FAPSQuestRuntime::SubmitEvent(const FAPSQuestEvent& Event, FString& OutReas
 			}
 		}
 
-		bool bStateChanged = false;
+		// Owner events are transient until an active predicate recognizes them. An
+		// unrelated live event must not consume dedupe identity or advance a stream
+		// cursor that a later active objective still needs.
+		TArray<FName> RelevantNodeIds;
+		const bool bTerminalFailure = Event.Result == EAPSQuestEventResult::Failed
+			|| Event.Result == EAPSQuestEventResult::Cancelled;
 		for (FName ActiveNodeId : ActiveNodeIds)
 		{
-			FAPSQuestNodeRuntimeState* NodeState = FindMutableNode(Instance, ActiveNodeId);
+			const FAPSQuestNodeRuntimeState* NodeState = FindMutableNode(Instance, ActiveNodeId);
 			if (!NodeState || NodeState->State != EAPSQuestNodeState::Active)
 			{
 				continue;
@@ -255,19 +245,54 @@ bool FAPSQuestRuntime::SubmitEvent(const FAPSQuestEvent& Event, FString& OutReas
 			}
 
 			FString MatchReason;
-			if ((Event.Result == EAPSQuestEventResult::Failed
-					|| Event.Result == EAPSQuestEventResult::Cancelled)
-				&& MatchesPredicate(Instance, Node->Trigger, Event, false, MatchReason))
+			if ((bTerminalFailure
+					&& MatchesPredicate(Instance, Node->Trigger, Event, false, MatchReason))
+				|| MatchesPredicate(Instance, Node->Trigger, Event, true, MatchReason))
+			{
+				RelevantNodeIds.Add(ActiveNodeId);
+			}
+		}
+		if (RelevantNodeIds.IsEmpty())
+		{
+			continue;
+		}
+
+		FAPSQuestEventStreamCursor* EventStreamCursor = nullptr;
+		if (Event.Sequence > 0)
+		{
+			EventStreamCursor = FindMutableStreamCursor(Instance, Event.StreamId);
+			if (EventStreamCursor
+				&& Event.Sequence <= EventStreamCursor->LastConsumedSequence)
+			{
+				bRejectedByOrdering = true;
+				continue;
+			}
+			if (!EventStreamCursor)
+			{
+				EventStreamCursor = &Instance.EventStreams.AddDefaulted_GetRef();
+				EventStreamCursor->StreamId = Event.StreamId;
+			}
+		}
+
+		bool bStateChanged = false;
+		for (FName RelevantNodeId : RelevantNodeIds)
+		{
+			FAPSQuestNodeRuntimeState* NodeState = FindMutableNode(Instance, RelevantNodeId);
+			if (!NodeState || NodeState->State != EAPSQuestNodeState::Active)
+			{
+				continue;
+			}
+			const FAPSQuestObjectiveNodeDefinition* Node = Definition->FindNode(NodeState->NodeId);
+			if (!Node)
+			{
+				continue;
+			}
+			if (bTerminalFailure)
 			{
 				NodeState->LastFailureCode = EffectiveFailureCode(Event);
 				bStateChanged = true;
 				continue;
 			}
-			if (!MatchesPredicate(Instance, Node->Trigger, Event, true, MatchReason))
-			{
-				continue;
-			}
-
 			NodeState->Progress = FMath::Min(Node->RequiredProgress,
 				NodeState->Progress + FMath::Max(1, Event.Quantity));
 			NodeState->LastFailureCode = NAME_None;
@@ -297,7 +322,9 @@ bool FAPSQuestRuntime::SubmitEvent(const FAPSQuestEvent& Event, FString& OutReas
 
 	if (!bAcceptedByAnyQuest)
 	{
-		OutReason = TEXT("No running quest accepted the event");
+		OutReason = bRejectedByOrdering
+			? TEXT("Out-of-order quest event rejected for its stream")
+			: TEXT("No running quest accepted the event");
 	}
 	return bAcceptedByAnyQuest;
 }

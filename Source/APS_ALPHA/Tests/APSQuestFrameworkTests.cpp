@@ -249,17 +249,78 @@ bool FAPSQuestIdentityAndOrderingTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Stable failure code is recorded"), BaseNode->LastFailureCode,
 		FName(TEXT("APS.Interaction.OutOfRange")));
 
-	const FAPSQuestEvent IndependentStream = MakeEvent(Guid(6001), 1,
-		TEXT("APS.Interaction.Inspect"), OtherBase, 6150);
-	TestTrue(TEXT("Independent owner stream starts at its own sequence one"),
-		Runtime.SubmitEvent(IndependentStream, Reason));
-	TestEqual(TEXT("Two independent stream cursors are retained"),
-		Runtime.FindInstance(QuestId)->EventStreams.Num(), 2);
-
 	const FAPSQuestEvent OutOfOrder = MakeEvent(StreamId, 1,
 		TEXT("APS.Interaction.Inspect"), Base, 6200);
-	TestFalse(TEXT("Unknown out-of-order event is rejected"), Runtime.SubmitEvent(OutOfOrder, Reason));
+	TestFalse(TEXT("Relevant out-of-order event is rejected"),
+		Runtime.SubmitEvent(OutOfOrder, Reason));
 	TestTrue(TEXT("Ordering diagnostic is explicit"), Reason.Contains(TEXT("Out-of-order")));
+	TestFalse(TEXT("Rejected event does not enter dedupe"),
+		Runtime.FindInstance(QuestId)->ConsumedEventIds.Contains(OutOfOrder.EventId));
+
+	const FAPSQuestEvent IndependentStream = MakeEvent(Guid(6001), 1,
+		TEXT("APS.Interaction.Inspect"), OtherBase, 6150);
+	TestFalse(TEXT("Unmatched owner event remains a transient no-op"),
+		Runtime.SubmitEvent(IndependentStream, Reason));
+	TestEqual(TEXT("Unmatched event does not create a stream cursor"),
+		Runtime.FindInstance(QuestId)->EventStreams.Num(), 1);
+	TestFalse(TEXT("Unmatched event does not enter dedupe"),
+		Runtime.FindInstance(QuestId)->ConsumedEventIds.Contains(IndependentStream.EventId));
+
+	const FAPSQuestEvent MatchingIndependentStream = MakeEvent(Guid(6001), 1,
+		TEXT("APS.Interaction.Inspect"), Base, 6151);
+	TestTrue(TEXT("Later relevant fact can consume the untouched stream sequence"),
+		Runtime.SubmitEvent(MatchingIndependentStream, Reason));
+	TestEqual(TEXT("Relevant independent stream retains its own cursor"),
+		Runtime.FindInstance(QuestId)->EventStreams.Num(), 2);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAPSQuestMultiInstanceFanoutTest,
+	"APS.Quest.Runtime.MultiInstanceFanoutAndRelevance",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FAPSQuestMultiInstanceFanoutTest::RunTest(const FString& Parameters)
+{
+	using namespace APSQuestTests;
+	const FName SecondaryQuestId(TEXT("APS.Test.Onboarding.Secondary"));
+	FAPSQuestRuntime Runtime;
+	UAPSQuestDefinition* Primary = MakeTwoStepDefinition();
+	FString Reason;
+	TestTrue(TEXT("Primary definition registers"), Runtime.RegisterDefinition(Primary, Reason));
+	TestTrue(TEXT("Primary quest starts"), Runtime.StartQuest(QuestId, Guid(8000), Reason));
+	const FAPSQuestEntityRef Base = CivilizationEntity(50);
+	TestTrue(TEXT("Primary target binds"), Runtime.BindEntity(
+		QuestId, BaseBinding, Base, Reason));
+
+	const FGuid SharedStreamId = Guid(8100);
+	const FAPSQuestEvent PrimaryAdvance = MakeEvent(SharedStreamId, 2,
+		TEXT("APS.Interaction.Inspect"), Base, 8200, EAPSQuestEventResult::Failed);
+	TestTrue(TEXT("Primary quest advances its owner cursor"),
+		Runtime.SubmitEvent(PrimaryAdvance, Reason));
+
+	UAPSQuestDefinition* Secondary = MakeTwoStepDefinition();
+	Secondary->QuestId = SecondaryQuestId;
+	TestTrue(TEXT("Secondary definition registers"), Runtime.RegisterDefinition(Secondary, Reason));
+	TestTrue(TEXT("Secondary quest starts"), Runtime.StartQuest(
+		SecondaryQuestId, Guid(8300), Reason));
+	TestTrue(TEXT("Secondary target binds"), Runtime.BindEntity(
+		SecondaryQuestId, BaseBinding, Base, Reason));
+
+	const FAPSQuestEvent FanoutEvent = MakeEvent(SharedStreamId, 1,
+		TEXT("APS.Interaction.Inspect"), Base, 8400);
+	TestTrue(TEXT("Out-of-order rejection in one quest does not block another"),
+		Runtime.SubmitEvent(FanoutEvent, Reason));
+	TestTrue(TEXT("Accepted fanout has no global ordering error"), Reason.IsEmpty());
+	TestEqual(TEXT("Primary objective remains active"),
+		FindNode(Runtime.FindInstance(QuestId), BaseNodeId)->State,
+		EAPSQuestNodeState::Active);
+	TestEqual(TEXT("Secondary objective consumes the same owner fact"),
+		FindNode(Runtime.FindInstance(SecondaryQuestId), BaseNodeId)->State,
+		EAPSQuestNodeState::Completed);
+	TestFalse(TEXT("Primary dedupe excludes its rejected event"),
+		Runtime.FindInstance(QuestId)->ConsumedEventIds.Contains(FanoutEvent.EventId));
+	TestTrue(TEXT("Secondary dedupe records its accepted event"),
+		Runtime.FindInstance(SecondaryQuestId)->ConsumedEventIds.Contains(FanoutEvent.EventId));
 	return true;
 }
 
