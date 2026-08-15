@@ -54,7 +54,7 @@ struct APS_ALPHA_API FAPSPlanetSurfaceTransitionCommitRequest
 	FString Reason;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "APS|Planet Surface|Transition",
-		meta = (Bitmask, BitmaskEnum = "EAPSPlanetSurfaceReadiness"))
+		meta = (Bitmask, BitmaskEnum = "/Script/APS_ALPHA.EAPSPlanetSurfaceReadiness"))
 	int32 ReadinessBits{0};
 };
 
@@ -86,7 +86,7 @@ struct APS_ALPHA_API FAPSPlanetSurfaceTransitionFact
 	EAPSPlanetSurfaceTransitionPhase Phase{EAPSPlanetSurfaceTransitionPhase::ArrivalCommitted};
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "APS|Planet Surface|Transition",
-		meta = (Bitmask, BitmaskEnum = "EAPSPlanetSurfaceReadiness"))
+		meta = (Bitmask, BitmaskEnum = "/Script/APS_ALPHA.EAPSPlanetSurfaceReadiness"))
 	int32 ReadinessBits{0};
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "APS|Planet Surface|Transition")
