@@ -1040,6 +1040,17 @@ namespace APSMainMenuPreviewSmokeTests
 			CaptureExteriorSentinel(InitialCluster ? InitialCluster->StarMeshInstances : nullptr,
 				InitialClusterSentinelIndex, InitialClusterSentinelLocation,
 				InitialClusterSentinelScale, InitialClusterSentinelEmission, TEXT("Cluster"));
+			const FAPSCanonicalStellarProjectionDescriptor& InitialProjection =
+				Generator->GetCanonicalStellarProjectionDescriptor();
+			Test->TestTrue(TEXT("Canonical stellar projection is finalized before scope navigation"),
+				InitialProjection.bFinalized && InitialProjection.bMappingsComplete
+				&& InitialProjection.bUnitRoots && InitialProjection.bBoundsValid);
+			InitialProjectionBuildSerial = InitialProjection.ProxyBuildSerial;
+			InitialProjectionUploadCount = InitialProjection.InstanceUploadCount;
+			InitialProjectionMutationSerial = InitialProjection.TransformMutationSerial;
+			InitialProjectionContextHash = InitialProjection.ContextHash;
+			InitialProjectionDatasetHash = InitialProjection.CanonicalDatasetHash;
+			InitialProjectionMappingHash = InitialProjection.RenderedMappingHash;
 
 			AStarSystem* StarSystem = FindGeneratedStarSystem(World, Generator);
 			if (Test->TestNotNull(TEXT("Triple star system is materialized"), StarSystem))
@@ -1107,28 +1118,31 @@ namespace APSMainMenuPreviewSmokeTests
 
 			if (AStarCluster* Cluster = FindGeneratedCluster(World, Generator); Cluster && StarSystem)
 			{
-				double NearestInstanceDistance = TNumericLimits<double>::Max();
-				for (int32 InstanceIndex = 0;
-					InstanceIndex < Cluster->StarMeshInstances->GetInstanceCount(); ++InstanceIndex)
+				FAPSCanonicalStellarProxyRecord HomeProjectionRecord;
+				const bool bHasHomeProjectionRecord = Generator->GetCanonicalStellarProxyRecord(
+					EAPSCanonicalStellarProxyLayer::StarCluster,
+					StarSystem->StableSystemId, HomeProjectionRecord);
+				Test->TestTrue(TEXT("Materialized home system resolves by its canonical StableId"),
+					bHasHomeProjectionRecord);
+				if (bHasHomeProjectionRecord)
 				{
-					FTransform InstanceTransform;
-					if (Cluster->StarMeshInstances->GetInstanceTransform(
-						InstanceIndex, InstanceTransform, true))
+					HomeClusterProxyIndex = HomeProjectionRecord.InstanceIndex;
+					FTransform HomeProxyTransform;
+					const bool bHasHomeProxyTransform = Cluster->StarMeshInstances->GetInstanceTransform(
+						HomeClusterProxyIndex, HomeProxyTransform, true);
+					Test->TestTrue(TEXT("Materialized home keeps its same-ID cluster proxy record"),
+						bHasHomeProxyTransform);
+					if (bHasHomeProxyTransform)
 					{
-						const double CandidateDistance = FVector::Distance(
-							InstanceTransform.GetLocation(), StarSystem->GetActorLocation());
-						if (CandidateDistance < NearestInstanceDistance)
-						{
-							NearestInstanceDistance = CandidateDistance;
-							HomeClusterProxyIndex = InstanceIndex;
-							HomeClusterProxyScale = InstanceTransform.GetScale3D();
-						}
+						HomeClusterProxyScale = HomeProxyTransform.GetScale3D();
+						Test->TestTrue(TEXT("Home proxy stays at the deterministic render anchor"),
+							HomeProxyTransform.GetLocation().Equals(
+								HomeProjectionRecord.ExpectedBaseProxyPositionCm, 0.01));
+						Test->TestTrue(TEXT("Detached materialized home suppresses only its same-ID proxy"),
+							HomeProjectionRecord.bSuppressedMaterializedHome
+							&& HomeClusterProxyScale.Equals(FVector::ZeroVector, 1.0e-12));
 					}
 				}
-				Test->TestTrue(TEXT("Materialized home system coincides with a cluster HISM point"),
-					NearestInstanceDistance <= FMath::Max(10.0, ClusterRadius * 1.0e-5));
-				Test->TestTrue(TEXT("Distant materialized home system retains a visible HISM proxy"),
-					HomeClusterProxyIndex != INDEX_NONE && !HomeClusterProxyScale.IsNearlyZero());
 				if (HomeClusterProxyIndex != INDEX_NONE && IsValid(StarSystem->MainStar))
 				{
 					const UHierarchicalInstancedStaticMeshComponent* Hism =
@@ -1390,6 +1404,18 @@ namespace APSMainMenuPreviewSmokeTests
 		void AssertHierarchyPresentationInvariants(UWorld* World, EAstroPreviewFocus Focus)
 		{
 			const FString ScopeName = UEnum::GetValueAsString(Focus);
+			const FAPSCanonicalStellarProjectionDescriptor& Projection =
+				PreviewGenerator->GetCanonicalStellarProjectionDescriptor();
+			Test->TestTrue(FString::Printf(
+				TEXT("%s does not rebuild or rewrite canonical stellar proxy instances"), *ScopeName),
+				Projection.ProxyBuildSerial == InitialProjectionBuildSerial
+				&& Projection.InstanceUploadCount == InitialProjectionUploadCount
+				&& Projection.TransformMutationSerial == InitialProjectionMutationSerial);
+			Test->TestTrue(FString::Printf(
+				TEXT("%s preserves the finalized canonical projection identity"), *ScopeName),
+				Projection.ContextHash == InitialProjectionContextHash
+				&& Projection.CanonicalDatasetHash == InitialProjectionDatasetHash
+				&& Projection.RenderedMappingHash == InitialProjectionMappingHash);
 			Test->TestEqual(FString::Printf(TEXT("%s retains invariant hierarchy actor count"),
 				*ScopeName), InvariantHierarchyActors.Num(), InitialInvariantActorLocations.Num());
 			for (int32 ActorIndex = 0;
@@ -1423,12 +1449,11 @@ namespace APSMainMenuPreviewSmokeTests
 				{
 					return;
 				}
-				Test->TestTrue(FString::Printf(TEXT("%s keeps %s sentinel world location"),
-					*ScopeName, LayerName), WorldTransform.GetLocation().Equals(InitialLocation, 1.0));
+				Test->TestTrue(FString::Printf(
+					TEXT("%s keeps %s canonical proxy address immutable"),
+					*ScopeName, LayerName),
+					WorldTransform.GetLocation().Equals(InitialLocation, 0.01));
 				const double ScaleTolerance = FMath::Max(InitialScale.GetAbsMax() * 1.0e-6, 1.0e-9);
-				const bool bDistantProxyScope = Focus == EAstroPreviewFocus::Galaxy
-					|| Focus == EAstroPreviewFocus::StarCluster
-					|| Focus == EAstroPreviewFocus::Overview;
 				const int32 EmissionOffset = SentinelIndex * Hism->NumCustomDataFloats + 3;
 				const bool bHasEmission = Hism->NumCustomDataFloats > 3
 					&& Hism->PerInstanceSMCustomData.IsValidIndex(EmissionOffset);
@@ -1437,33 +1462,26 @@ namespace APSMainMenuPreviewSmokeTests
 					: TNumericLimits<float>::Max();
 				Test->TestTrue(FString::Printf(TEXT("%s retains %s sentinel emissive custom data"),
 					*ScopeName, LayerName), bHasEmission && FMath::IsFinite(CurrentEmission));
-				if (bDistantProxyScope)
-				{
-					Test->TestTrue(FString::Printf(TEXT("%s keeps distant %s sentinel apparent scale"),
-						*ScopeName, LayerName),
-						WorldTransform.GetScale3D().Equals(InitialScale, ScaleTolerance));
-					Test->TestTrue(FString::Printf(TEXT("%s restores distant %s sentinel emission"),
-						*ScopeName, LayerName), bHasEmission && FMath::IsNearlyEqual(
+				Test->TestTrue(FString::Printf(
+					TEXT("%s keeps %s canonical proxy scale immutable"),
+					*ScopeName, LayerName),
+					WorldTransform.GetScale3D().Equals(InitialScale, ScaleTolerance));
+				Test->TestTrue(FString::Printf(
+					TEXT("%s keeps %s canonical proxy emission immutable"),
+					*ScopeName, LayerName), bHasEmission && FMath::IsNearlyEqual(
 						CurrentEmission, InitialEmission, 1.0e-4f));
-				}
-				else
-				{
-					Test->TestTrue(FString::Printf(TEXT("%s only reduces %s sentinel for detail LOD"),
-						*ScopeName, LayerName),
-						!WorldTransform.GetScale3D().IsNearlyZero()
-						&& WorldTransform.GetScale3D().GetAbsMax()
-							<= InitialScale.GetAbsMax() + ScaleTolerance);
-				}
 			};
 
 			AGalaxy* Galaxy = FindGeneratedGalaxy(World, PreviewGenerator.Get());
 			AStarCluster* Cluster = FindGeneratedCluster(World, PreviewGenerator.Get());
 			CheckExteriorSentinel(Galaxy ? Galaxy->StarMeshInstances : nullptr,
 				InitialGalaxySentinelIndex, InitialGalaxySentinelLocation,
-				InitialGalaxySentinelScale, InitialGalaxySentinelEmission, TEXT("galaxy"));
+				InitialGalaxySentinelScale, InitialGalaxySentinelEmission,
+				TEXT("galaxy"));
 			CheckExteriorSentinel(Cluster ? Cluster->StarMeshInstances : nullptr,
 				InitialClusterSentinelIndex, InitialClusterSentinelLocation,
-				InitialClusterSentinelScale, InitialClusterSentinelEmission, TEXT("cluster"));
+				InitialClusterSentinelScale, InitialClusterSentinelEmission,
+				TEXT("cluster"));
 
 			AStarSystem* System = FindGeneratedStarSystem(World, PreviewGenerator.Get());
 			if (!IsValid(System)) return;
@@ -1477,19 +1495,13 @@ namespace APSMainMenuPreviewSmokeTests
 				if (Cluster->StarMeshInstances->GetInstanceTransform(
 					HomeClusterProxyIndex, HomeProxyTransform, true))
 				{
-					if (bDistantScope)
-					{
-						const double ScaleTolerance = FMath::Max(
-							HomeClusterProxyScale.GetAbsMax() * 1.0e-6, 1.0e-9);
-						Test->TestTrue(FString::Printf(TEXT("%s keeps the barycentric home HISM proxy"),
-							*ScopeName), HomeProxyTransform.GetScale3D().Equals(
-								HomeClusterProxyScale, ScaleTolerance));
-					}
-					else
-					{
-						Test->TestTrue(FString::Printf(TEXT("%s culls the duplicate home HISM proxy"),
-							*ScopeName), HomeProxyTransform.GetScale3D().IsNearlyZero());
-					}
+					const double ScaleTolerance = FMath::Max(
+						HomeClusterProxyScale.GetAbsMax() * 1.0e-6, 1.0e-9);
+					Test->TestTrue(FString::Printf(
+						TEXT("%s keeps the menu home proxy construction transform immutable"),
+						*ScopeName),
+						HomeProxyTransform.GetScale3D().Equals(
+							HomeClusterProxyScale, ScaleTolerance));
 				}
 			}
 
@@ -1937,23 +1949,21 @@ namespace APSMainMenuPreviewSmokeTests
 				FTransform Sentinel;
 				if (Hism->GetInstanceTransform(SentinelIndex, Sentinel, true))
 				{
-					Test->TestTrue(FString::Printf(TEXT("%s sentinel keeps one world address"), LayerName),
-						Sentinel.GetLocation().Equals(InitialLocation, 1.0));
+					Test->TestTrue(FString::Printf(
+						TEXT("%s sentinel keeps its canonical proxy address"), LayerName),
+						Sentinel.GetLocation().Equals(InitialLocation, 0.01));
 					const double ScaleTolerance = FMath::Max(
 						InitialScale.GetAbsMax() * 1.0e-6, 1.0e-9);
-					Test->TestTrue(FString::Printf(TEXT("%s sentinel uses only a smaller detail LOD scale"),
-						LayerName),
-						!Sentinel.GetScale3D().IsNearlyZero()
-						&& Sentinel.GetScale3D().GetAbsMax()
-							<= InitialScale.GetAbsMax() + ScaleTolerance);
+					Test->TestTrue(FString::Printf(
+						TEXT("%s sentinel keeps its construction scale"), LayerName),
+						Sentinel.GetScale3D().Equals(InitialScale, ScaleTolerance));
 				}
 				if (!bHasSystemSphere) return;
 				const UStaticMesh* ProxyMesh = Hism->GetStaticMesh();
 				const double MeshRadius = ProxyMesh
 					? FMath::Max(static_cast<double>(ProxyMesh->GetBounds().SphereRadius), 1.0) : 1.0;
 				int32 IntrudingVisibleProxyCount = 0;
-				int32 OversizedVisibleProxyCount = 0;
-				int32 OverbrightVisibleProxyCount = 0;
+				int32 InvalidProxyMetadataCount = 0;
 				for (int32 Index = 0; Index < Hism->GetInstanceCount(); ++Index)
 				{
 					FTransform WorldTransform;
@@ -1963,26 +1973,16 @@ namespace APSMainMenuPreviewSmokeTests
 						continue;
 					}
 					const double ProxyRadius = MeshRadius * WorldTransform.GetScale3D().GetAbsMax();
-					const double PlanetDistance = FVector::Distance(
-						WorldTransform.GetLocation(), Planet->GetActorLocation());
-					if (PlanetDistance > UE_SMALL_NUMBER)
-					{
-						const double AngularRadiusDegrees = FMath::RadiansToDegrees(
-							FMath::Atan2(ProxyRadius, PlanetDistance));
-						if (AngularRadiusDegrees > 0.051)
-						{
-							++OversizedVisibleProxyCount;
-						}
-					}
 					const int32 EmissionOffset = Index * Hism->NumCustomDataFloats + 3;
 					const bool bHasEmission = Hism->NumCustomDataFloats > 3
 						&& Hism->PerInstanceSMCustomData.IsValidIndex(EmissionOffset);
 					const float Emission = bHasEmission
 						? Hism->PerInstanceSMCustomData[EmissionOffset]
 						: TNumericLimits<float>::Max();
-					if (!bHasEmission || !FMath::IsFinite(Emission) || Emission > 6.01f)
+					if (!bHasEmission || !FMath::IsFinite(Emission)
+						|| !FMath::IsFinite(ProxyRadius) || ProxyRadius <= 0.0)
 					{
-						++OverbrightVisibleProxyCount;
+						++InvalidProxyMetadataCount;
 					}
 					if (FVector::Distance(WorldTransform.GetLocation(), SystemCenter) - ProxyRadius
 						<= SystemRadius * 1.099)
@@ -1994,11 +1994,8 @@ namespace APSMainMenuPreviewSmokeTests
 					FString::Printf(TEXT("%s has no visible proxy inside the home-system safe zone"),
 						LayerName), IntrudingVisibleProxyCount, 0);
 				Test->TestEqual(
-					FString::Printf(TEXT("%s has no oversized bright proxy in PLANET"), LayerName),
-					OversizedVisibleProxyCount, 0);
-				Test->TestEqual(
-					FString::Printf(TEXT("%s has no over-emissive background proxy in PLANET"), LayerName),
-					OverbrightVisibleProxyCount, 0);
+					FString::Printf(TEXT("%s keeps finite immutable proxy metadata in PLANET"), LayerName),
+					InvalidProxyMetadataCount, 0);
 			};
 			AGalaxy* Galaxy = FindGeneratedGalaxy(World, PreviewGenerator.Get());
 			AStarCluster* Cluster = FindGeneratedCluster(World, PreviewGenerator.Get());
@@ -3304,6 +3301,12 @@ namespace APSMainMenuPreviewSmokeTests
 		FVector InitialClusterSentinelScale{FVector::ZeroVector};
 		float InitialGalaxySentinelEmission{0.0f};
 		float InitialClusterSentinelEmission{0.0f};
+		uint64 InitialProjectionBuildSerial{0u};
+		uint64 InitialProjectionUploadCount{0u};
+		uint64 InitialProjectionMutationSerial{0u};
+		uint32 InitialProjectionContextHash{0u};
+		uint32 InitialProjectionDatasetHash{0u};
+		uint32 InitialProjectionMappingHash{0u};
 		int32 HomeClusterProxyIndex{INDEX_NONE};
 		FVector HomeClusterProxyScale{FVector::ZeroVector};
 		TArray<TWeakObjectPtr<AActor>> InvariantHierarchyActors;

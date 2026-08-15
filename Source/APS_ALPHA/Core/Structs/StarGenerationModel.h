@@ -60,7 +60,10 @@ struct FStarModel :
 	UPROPERTY(VisibleAnywhere)
 	EStellarType StarStellarClass;
 
+	/** Canonical orbital envelope; reflected so menu -> gameplay duplication preserves it. */
+	UPROPERTY(VisibleAnywhere)
 	double MinOrbit;
 
+	UPROPERTY(VisibleAnywhere)
 	double MaxOrbit;
 };

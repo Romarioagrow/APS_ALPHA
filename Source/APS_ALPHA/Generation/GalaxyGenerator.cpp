@@ -138,35 +138,37 @@ void UGalaxyGenerator::GenerateGalaxyOctreeStars(UStarGenerator* StarGenerator, 
 	NewGalaxy->StarCatalog.StarDensity = GalaxyModel->StarsDensity;
 	NewGalaxy->StarCatalog.GalaxyType = GalaxyModel->GalaxyType;
 	NewGalaxy->StarCatalog.GalaxyClass = GalaxyModel->GalaxyClass;
-	NewGalaxy->StarCatalog.CatalogHalfExtent = FVector(GalaxyRadius);
+	// Irregular lobes can reach slightly beyond the nominal radius. Consumers and
+	// the canonical projection must fingerprint the same conservative envelope.
+	NewGalaxy->StarCatalog.CatalogHalfExtent = FVector(GalaxyRadius * 1.05);
 
 	NewGalaxy->StarMeshInstances->ClearInstances();
+	NewGalaxy->RenderedCatalogIndices.Reset();
+	NewGalaxy->RenderedProxyBaseTransforms.Reset();
 	NewGalaxy->StarMeshInstances->NumCustomDataFloats = 6;
 	NewGalaxy->StarMeshInstances->PreAllocateInstancesMemory(RenderedStarCount);
+	NewGalaxy->RenderedCatalogIndices.Reserve(RenderedStarCount);
+	NewGalaxy->RenderedProxyBaseTransforms.Reserve(RenderedStarCount);
 
 	const UStaticMesh* ProxyMesh = NewGalaxy->StarMeshInstances->GetStaticMesh();
 	const double ProxyMeshRadius = IsValid(ProxyMesh)
 		? FMath::Max(static_cast<double>(ProxyMesh->GetBounds().SphereRadius), 1.0) : 50.0;
-	const double SparseSampleCompensation = FMath::Clamp(
-		FMath::Sqrt(1800.0 / FMath::Max(RenderedStarCount, 1)), 0.85, 1.60);
-	// Physical stellar radii are many orders of magnitude below the galaxy frame
-	// after full-scale preview normalization. Keep model radii untouched and apply
-	// a preview-only screen-stable impostor floor of roughly one rendered pixel.
-	const double MinimumPreviewProxyRadius = bUsePreviewPresentation
-		? GalaxyRadius * 0.00055 * SparseSampleCompensation : 0.0;
-	const double MinimumPreviewProxyScale = MinimumPreviewProxyRadius / ProxyMeshRadius;
+	// Readability is a versioned, render-budget-independent impostor policy. The
+	// physical radius remains available separately and the layer layout transform
+	// never participates in stellar-radius conversion.
+	const double MinimumVisualProxyRadiusCm =
+		NewGalaxy->CanonicalProjectionFrame.ProxyHalfExtentCm
+		* APSCanonicalStellarProjection::GalaxyImpostorFloorFraction;
+	const APSCanonicalStellarProjection::FNestedCatalogPermutation CatalogOrder =
+		APSCanonicalStellarProjection::MakeNestedCatalogPermutation(
+			GenerationSeed, ModeledStarCount);
 	FBox RenderedSampleBounds(EForceInit::ForceInit);
 
 	for (int32 RenderIndex = 0; RenderIndex < RenderedStarCount; ++RenderIndex)
 	{
-		// One deterministic sample per catalog stratum gives stable coverage of the
-		// entire logical galaxy even when only a tiny percentage is rendered.
-		const int64 StratumBegin = ModeledStarCount * RenderIndex / RenderedStarCount;
-		const int64 StratumEnd = ModeledStarCount * (RenderIndex + 1) / RenderedStarCount;
-		const int64 StratumSize = FMath::Max<int64>(1, StratumEnd - StratumBegin);
-		const uint32 SampleHash = HashCombine(GetTypeHash(GenerationSeed), GetTypeHash(RenderIndex));
-		const int64 CatalogIndex = StratumBegin
-			+ static_cast<int64>(static_cast<uint64>(SampleHash) % static_cast<uint64>(StratumSize));
+		// Every render budget consumes a prefix of the same full-cycle catalog order.
+		// A larger gameplay LOD therefore retains every menu StableId/index mapping.
+		const int64 CatalogIndex = CatalogOrder.Resolve(RenderIndex);
 
 		FGalaxyCatalogStarRecord StarRecord;
 		if (!NewGalaxy->StarCatalog.ResolveStar(CatalogIndex, StarRecord))
@@ -174,23 +176,39 @@ void UGalaxyGenerator::GenerateGalaxyOctreeStars(UStarGenerator* StarGenerator, 
 			continue;
 		}
 
-		const double PhysicalRadius = APSGalaxyVisuals::RadiusForSpectralClass(StarRecord.SpectralClass);
+		const double PhysicalRadius = APSCanonicalStellarProjection::GetCanonicalStellarRadiusSolar(
+			StarRecord.SpectralClass);
 		FTransform StarTransform;
-		StarTransform.SetLocation(StarRecord.GalaxyLocalLocation);
-		const double VisualScale = FMath::Max(
-			UStarGenerator::GetFarStarVisualRadius(PhysicalRadius), MinimumPreviewProxyScale);
-		StarTransform.SetScale3D(FVector(VisualScale));
-		RenderedSampleBounds += StarRecord.GalaxyLocalLocation;
+		StarTransform.SetLocation(NewGalaxy->CanonicalProjectionFrame.ProjectCanonicalUnits(
+			StarRecord.GalaxyLocalLocation));
+		const double AppliedVisualRadiusCm = APSCanonicalStellarProjection::GetAppliedVisualRadiusCm(
+			EAPSCanonicalStellarProxyLayer::Galaxy,
+			NewGalaxy->CanonicalProjectionFrame, PhysicalRadius);
+		const double AppliedInstanceScale = AppliedVisualRadiusCm / ProxyMeshRadius;
+		StarTransform.SetScale3D(FVector(AppliedInstanceScale));
+		RenderedSampleBounds += StarTransform.GetLocation();
 		// Catalog coordinates are galaxy-local.  Passing world-space here applies
 		// the parent transform twice once the generated hierarchy is moved.
 		const int32 InstanceIndex = NewGalaxy->StarMeshInstances->AddInstance(StarTransform, false);
+		if (InstanceIndex != NewGalaxy->RenderedCatalogIndices.Num())
+		{
+			UE_LOG(LogTemp, Error,
+				TEXT("[APS.Projection] Galaxy instance/catalog order diverged: instance=%d mapping=%d"),
+				InstanceIndex, NewGalaxy->RenderedCatalogIndices.Num());
+		}
+		NewGalaxy->RenderedCatalogIndices.Add(CatalogIndex);
+		NewGalaxy->RenderedProxyBaseTransforms.Add(StarTransform);
 
 		const FLinearColor ColorValue = UStarGenerator::GetStarColor(
 			StarRecord.SpectralClass, StarRecord.SpectralSubclass);
 		const double PhysicalEmission = StarGenerator->CalculateEmission(
-			static_cast<float>(APSGalaxyVisuals::LuminosityForSpectralClass(StarRecord.SpectralClass) * 25.0));
+			static_cast<float>(APSCanonicalStellarProjection::GetCanonicalStellarLuminositySolar(
+				StarRecord.SpectralClass) * 25.0));
+		const double AppliedVisualRadiusSolar =
+			APSCanonicalStellarProjection::UnprojectPhysicalRadiusSolar(
+				NewGalaxy->CanonicalProjectionFrame, AppliedVisualRadiusCm);
 		const double VisualEmission = UStarGenerator::GetFarStarVisualEmission(
-			PhysicalRadius, PhysicalEmission, VisualScale);
+			PhysicalRadius, PhysicalEmission, AppliedVisualRadiusSolar);
 		NewGalaxy->StarMeshInstances->SetCustomDataValue(InstanceIndex, 0, ColorValue.R, false);
 		NewGalaxy->StarMeshInstances->SetCustomDataValue(InstanceIndex, 1, ColorValue.G, false);
 		NewGalaxy->StarMeshInstances->SetCustomDataValue(InstanceIndex, 2, ColorValue.B, false);
@@ -202,18 +220,25 @@ void UGalaxyGenerator::GenerateGalaxyOctreeStars(UStarGenerator* StarGenerator, 
 	}
 
 	NewGalaxy->StarCatalog.RenderedSampleCount = NewGalaxy->StarMeshInstances->GetInstanceCount();
-	UAPSStarRenderStabilitySubsystem::StabilizeInstances(NewGalaxy->StarMeshInstances);
+	if (!NewGalaxy->CanonicalProjectionFrame.bEnabled)
+	{
+		UAPSStarRenderStabilitySubsystem::StabilizeInstances(NewGalaxy->StarMeshInstances);
+	}
 	const FVector SampleCenter = RenderedSampleBounds.IsValid
 		? RenderedSampleBounds.GetCenter() : FVector::ZeroVector;
 	const FVector SampleExtent = RenderedSampleBounds.IsValid
 		? RenderedSampleBounds.GetExtent() : FVector::ZeroVector;
 	UE_LOG(LogTemp, Log,
 		TEXT("[APS.GalaxyPreview] type=%d modeled=%lld rendered=%d seed=%d catalogRadius=%.3e "
-			"sampleCenter=%s sampleExtent=%s minProxyRadius=%.3e minProxyScale=%.3e preview=%d"),
+			"sampleCenter=%s sampleExtent=%s minProxyRadiusCm=%.3e "
+			"projectionScale=%.9e maxProxyCm=%.3e preview=%d"),
 		static_cast<int32>(GalaxyModel->GalaxyType), ModeledStarCount,
 		NewGalaxy->StarCatalog.RenderedSampleCount, GenerationSeed, GalaxyRadius,
 		*SampleCenter.ToCompactString(), *SampleExtent.ToCompactString(),
-		MinimumPreviewProxyRadius, MinimumPreviewProxyScale, bUsePreviewPresentation ? 1 : 0);
+		MinimumVisualProxyRadiusCm,
+		NewGalaxy->CanonicalProjectionFrame.PositionScale,
+		NewGalaxy->CanonicalProjectionFrame.MaxProxyCoordinateCm,
+		bUsePreviewPresentation ? 1 : 0);
 }
 
 void UGalaxyGenerator::GenerateLegacyGalaxyOctreeStars(UStarGenerator* StarGenerator, AGalaxy* NewGalaxy,

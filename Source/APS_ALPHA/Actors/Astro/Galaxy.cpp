@@ -303,3 +303,32 @@ bool AGalaxy::GetCatalogStarRecord(const int64 CatalogIndex, FGalaxyCatalogStarR
 {
 	return StarCatalog.ResolveStar(CatalogIndex, OutRecord);
 }
+
+bool AGalaxy::GetRenderedCatalogIndex(const int32 InstanceIndex, int64& OutCatalogIndex) const
+{
+	if (!RenderedCatalogIndices.IsValidIndex(InstanceIndex))
+	{
+		return false;
+	}
+	OutCatalogIndex = RenderedCatalogIndices[InstanceIndex];
+	return OutCatalogIndex >= 0 && OutCatalogIndex < StarCatalog.ModeledStarCount;
+}
+
+bool AGalaxy::GetRenderedCatalogRecord(
+	const int32 InstanceIndex, FGalaxyCatalogStarRecord& OutRecord) const
+{
+	int64 CatalogIndex = INDEX_NONE;
+	return GetRenderedCatalogIndex(InstanceIndex, CatalogIndex)
+		&& StarCatalog.ResolveStar(CatalogIndex, OutRecord);
+}
+
+bool AGalaxy::GetRenderedProxyBaseTransform(
+	const int32 InstanceIndex, FTransform& OutTransform) const
+{
+	if (!RenderedProxyBaseTransforms.IsValidIndex(InstanceIndex))
+	{
+		return false;
+	}
+	OutTransform = RenderedProxyBaseTransforms[InstanceIndex];
+	return true;
+}

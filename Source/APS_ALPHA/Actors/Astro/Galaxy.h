@@ -6,6 +6,7 @@
 #include "APS_ALPHA/Core/Enums/GalaxyClass.h"
 #include "APS_ALPHA/Core/Enums/GalaxyType.h"
 #include "APS_ALPHA/Core/Enums/StarSpectralClass.h"
+#include "APS_ALPHA/Core/Rendering/APSCanonicalStellarProjection.h"
 #include "Galaxy.generated.h"
 
 /** Lightweight, reproducible data for one logical galaxy star. */
@@ -39,7 +40,7 @@ struct FGalaxyCatalogStarRecord
 /**
  * The complete galaxy model is a deterministic indexed catalog, not a giant
  * array of actors. Any logical star can be reconstructed in O(1), while only
- * a bounded stratified sample is sent to HISM for rendering.
+ * a bounded prefix of one deterministic full-cycle order is sent to HISM.
  */
 USTRUCT(BlueprintType)
 struct FGalaxyCatalogDescriptor
@@ -101,6 +102,15 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Galaxy|Catalog")
 	FGalaxyCatalogDescriptor StarCatalog;
 
+	/** Immutable HISM instance -> canonical catalog mapping for the current render LOD. */
+	TArray<int64> RenderedCatalogIndices;
+	/** Immutable one-time projected transforms before any explicit view-only presentation pass. */
+	TArray<FTransform> RenderedProxyBaseTransforms;
+	FAPSCanonicalStellarProjectionFrame CanonicalProjectionFrame;
+
 	UFUNCTION(BlueprintCallable, Category = "Galaxy|Catalog")
 	bool GetCatalogStarRecord(int64 CatalogIndex, FGalaxyCatalogStarRecord& OutRecord) const;
+	bool GetRenderedCatalogIndex(int32 InstanceIndex, int64& OutCatalogIndex) const;
+	bool GetRenderedCatalogRecord(int32 InstanceIndex, FGalaxyCatalogStarRecord& OutRecord) const;
+	bool GetRenderedProxyBaseTransform(int32 InstanceIndex, FTransform& OutTransform) const;
 };

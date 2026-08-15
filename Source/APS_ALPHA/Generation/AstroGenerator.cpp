@@ -28,6 +28,7 @@
 #include "APS_ALPHA/Core/Structs/StarSystemGenerationModel.h"
 #include "APS_ALPHA/Pawns/Spaceships/Spaceship.h"
 #include "APS_ALPHA/Core/Model/GeneratedWorld.h"
+#include "APS_ALPHA/Core/Rendering/APSStarRenderStabilitySubsystem.h"
 #include <unordered_map>
 #include <functional>
 #include "APS_ALPHA/Core/Controllers/GravityPlayerController.h"
@@ -47,14 +48,21 @@
 #include "ProceduralMeshComponent.h"
 #include "Engine/StaticMesh.h"
 #include "GameFramework/PlayerController.h"
+#include "HAL/IConsoleManager.h"
 #include "Materials/MaterialInstance.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
 #include "LocalVertexFactory.h"
+#include "Misc/Crc.h"
 #include "Misc/ScopeExit.h"
 #include "TimerManager.h"
 #include "UObject/ConstructorHelpers.h"
 #include "UObject/UObjectGlobals.h"
+
+static TAutoConsoleVariable<int32> CVarAPSFullScaleProjectionTelemetry(
+	TEXT("aps.FullScale.ProjectionTelemetry"), 0,
+	TEXT("Logs the immutable canonical stellar projection descriptor when a generation build finalizes."),
+	ECVF_Default);
 
 namespace APSPreviewGlobe
 {
@@ -1113,7 +1121,7 @@ bool AAstroGenerator::RegeneratePreview(
 		return LogicalBounds;
 	};
 	const FBox FullScalePreviewBounds = GetLogicalPreviewBounds();
-	if (FullScalePreviewBounds.IsValid)
+	if (!IsCanonicalStellarProjectionEnabled() && FullScalePreviewBounds.IsValid)
 	{
 		const FVector PreviewCenter = FullScalePreviewBounds.GetCenter();
 		const double PreviewRadius = FullScalePreviewBounds.GetExtent().GetMax();
@@ -1285,6 +1293,946 @@ void AAstroGenerator::ClearGeneratedPreview()
 	StarIndexModelMap.Reset();
 }
 
+bool AAstroGenerator::IsCanonicalStellarProjectionEnabled() const
+{
+	return bGenerateFullScaledWorld && !bIntegrateStartPlanet;
+}
+
+void AAstroGenerator::BeginCanonicalStellarProjectionBuild()
+{
+	CanonicalStellarProjection = FAPSCanonicalStellarProjectionDescriptor{};
+	CanonicalStellarProjection.ProxyBuildSerial = ++CanonicalStellarProjectionBuildCounter;
+	bCanonicalStellarProjectionComposed = false;
+	bConsumedFinalizedCanonicalStellarDataset = false;
+	bCanonicalStellarDatasetValidated = false;
+	bCanonicalStellarDatasetRejected = false;
+	if (IsCanonicalStellarProjectionEnabled())
+	{
+		// Canonical centimeters never enter an actor/component matrix. Both HISM
+		// layers store already-projected local coordinates beneath unit roots.
+		SetActorScale3D(FVector::OneVector);
+		if (IsValid(GenerationRoot))
+		{
+			GenerationRoot->SetRelativeScale3D(FVector::OneVector);
+		}
+	}
+}
+
+void AAstroGenerator::NoteCanonicalStellarProxyUpload()
+{
+	++CanonicalStellarProjection.InstanceUploadCount;
+}
+
+void AAstroGenerator::NoteCanonicalStellarProxyMutation()
+{
+	++CanonicalStellarProjection.TransformMutationSerial;
+}
+
+uint32 AAstroGenerator::BuildCanonicalStellarProjectionContextHash() const
+{
+	uint32 Hash = HashCombine(
+		GetTypeHash(FAPSCanonicalStellarProjectionFrame::CurrentVersion),
+		GetTypeHash(PreviewGenerationSeed));
+	if (IsValid(GeneratedGalaxy))
+	{
+		Hash = HashCombine(Hash, GetTypeHash(GeneratedGalaxy->StarCatalog.GenerationSeed));
+		Hash = HashCombine(Hash, APSCanonicalStellarProjection::HashQuantizedDouble(
+			GeneratedGalaxy->CanonicalProjectionFrame.CanonicalHalfExtentUnits));
+		Hash = HashCombine(Hash, APSCanonicalStellarProjection::HashQuantizedDouble(
+			GeneratedGalaxy->CanonicalProjectionFrame.MaxProxyCoordinateCm));
+		Hash = HashCombine(Hash, APSCanonicalStellarProjection::HashQuantizedDouble(
+			GeneratedGalaxy->CanonicalProjectionFrame.PositionScale, 1.0e-15));
+		Hash = HashCombine(Hash, APSCanonicalStellarProjection::HashQuantizedDouble(
+			GeneratedGalaxy->CanonicalProjectionFrame.CanonicalAnchorCm.X, 0.01));
+		Hash = HashCombine(Hash, APSCanonicalStellarProjection::HashQuantizedDouble(
+			GeneratedGalaxy->CanonicalProjectionFrame.CanonicalAnchorCm.Y, 0.01));
+		Hash = HashCombine(Hash, APSCanonicalStellarProjection::HashQuantizedDouble(
+			GeneratedGalaxy->CanonicalProjectionFrame.CanonicalAnchorCm.Z, 0.01));
+		Hash = HashCombine(Hash, APSCanonicalStellarProjection::HashQuantizedDouble(
+			GeneratedGalaxy->CanonicalProjectionFrame.VisualRadiusFloorFraction, 1.0e-9));
+		Hash = HashCombine(Hash, APSCanonicalStellarProjection::HashQuantizedDouble(
+			GeneratedGalaxy->CanonicalProjectionFrame.VisualRadiusCeilingFraction, 1.0e-9));
+		Hash = HashCombine(Hash, APSCanonicalStellarProjection::HashQuantizedDouble(
+			GeneratedGalaxy->CanonicalProjectionFrame.VisualRadiusClassExponent, 1.0e-9));
+		Hash = HashCombine(Hash, APSCanonicalStellarProjection::HashQuantizedDouble(
+			GeneratedGalaxy->CanonicalProjectionFrame.VisualRadiusMinClassScale, 1.0e-9));
+		Hash = HashCombine(Hash, APSCanonicalStellarProjection::HashQuantizedDouble(
+			GeneratedGalaxy->CanonicalProjectionFrame.VisualRadiusMaxClassScale, 1.0e-9));
+	}
+	if (IsValid(GeneratedStarCluster))
+	{
+		Hash = HashCombine(Hash, GetTypeHash(GeneratedStarCluster->GenerationSeed));
+		Hash = HashCombine(Hash, APSCanonicalStellarProjection::HashQuantizedDouble(
+			GeneratedStarCluster->CanonicalProjectionFrame.CanonicalHalfExtentUnits));
+		Hash = HashCombine(Hash, APSCanonicalStellarProjection::HashQuantizedDouble(
+			GeneratedStarCluster->CanonicalProjectionFrame.MaxProxyCoordinateCm));
+		Hash = HashCombine(Hash, APSCanonicalStellarProjection::HashQuantizedDouble(
+			GeneratedStarCluster->CanonicalProjectionFrame.LayerToRootPositionScale, 1.0e-12));
+		Hash = HashCombine(Hash, APSCanonicalStellarProjection::HashQuantizedDouble(
+			GeneratedStarCluster->CanonicalProjectionFrame.VisualRadiusFloorFraction, 1.0e-9));
+		Hash = HashCombine(Hash, APSCanonicalStellarProjection::HashQuantizedDouble(
+			GeneratedStarCluster->CanonicalProjectionFrame.VisualRadiusCeilingFraction, 1.0e-9));
+		Hash = HashCombine(Hash, APSCanonicalStellarProjection::HashQuantizedDouble(
+			GeneratedStarCluster->CanonicalProjectionFrame.VisualRadiusClassExponent, 1.0e-9));
+		Hash = HashCombine(Hash, APSCanonicalStellarProjection::HashQuantizedDouble(
+			GeneratedStarCluster->CanonicalProjectionFrame.VisualRadiusMinClassScale, 1.0e-9));
+		Hash = HashCombine(Hash, APSCanonicalStellarProjection::HashQuantizedDouble(
+			GeneratedStarCluster->CanonicalProjectionFrame.VisualRadiusMaxClassScale, 1.0e-9));
+	}
+	return Hash;
+}
+
+uint32 AAstroGenerator::BuildCanonicalStellarDatasetInputHash() const
+{
+	uint32 Hash = GetTypeHash(FAPSCanonicalStellarDataset::CurrentVersion);
+	Hash = HashCombine(Hash, GetTypeHash(PreviewGenerationSeed));
+	Hash = HashCombine(Hash, GetTypeHash(bGenerateFullScaledWorld));
+	Hash = HashCombine(Hash, GetTypeHash(bGenerateHomeSystem));
+	Hash = HashCombine(Hash, GetTypeHash(bRandomHomeSystem));
+	Hash = HashCombine(Hash, GetTypeHash(bRandomHomeSystemType));
+	Hash = HashCombine(Hash, GetTypeHash(bRandomHomeStar));
+	Hash = HashCombine(Hash, GetTypeHash(static_cast<uint8>(GalaxyType)));
+	Hash = HashCombine(Hash, GetTypeHash(static_cast<uint8>(GalaxyGlass)));
+	Hash = HashCombine(Hash, GetTypeHash(GalaxySize));
+	Hash = HashCombine(Hash, GetTypeHash(GalaxyStarCount));
+	Hash = HashCombine(Hash,
+		APSCanonicalStellarProjection::HashQuantizedDouble(GalaxyStarDensity, 1.0e-9));
+	Hash = HashCombine(Hash, GetTypeHash(static_cast<uint8>(StarClusterSize)));
+	Hash = HashCombine(Hash, GetTypeHash(static_cast<uint8>(StarClusterType)));
+	Hash = HashCombine(Hash, GetTypeHash(static_cast<uint8>(StarClusterPopulation)));
+	Hash = HashCombine(Hash, GetTypeHash(static_cast<uint8>(StarClusterComposition)));
+	Hash = HashCombine(Hash, GetTypeHash(static_cast<uint8>(HomeSystemStarType)));
+	Hash = HashCombine(Hash, GetTypeHash(static_cast<uint8>(HomeStarStellarType)));
+	Hash = HashCombine(Hash, GetTypeHash(static_cast<uint8>(HomeStarSpectralClass)));
+	return Hash != 0u ? Hash : 1u;
+}
+
+uint32 AAstroGenerator::BuildCanonicalStellarManifestHash(
+	const FAPSCanonicalStellarDataset& Dataset) const
+{
+	uint32 Hash = GetTypeHash(Dataset.Version);
+	Hash = HashCombine(Hash, GetTypeHash(Dataset.InputHash));
+	Hash = HashCombine(Hash, GetTypeHash(Dataset.WorldGenerationSeed));
+	Hash = HashCombine(Hash, GetTypeHash(Dataset.GalaxyGenerationSeed));
+	Hash = HashCombine(Hash, GetTypeHash(Dataset.GalaxyModeledStarCount));
+	Hash = HashCombine(Hash, GetTypeHash(Dataset.GalaxySize));
+	Hash = HashCombine(Hash,
+		APSCanonicalStellarProjection::HashQuantizedDouble(Dataset.GalaxyStarDensity, 1.0e-9));
+	Hash = HashCombine(Hash, GetTypeHash(static_cast<uint8>(Dataset.GalaxyType)));
+	Hash = HashCombine(Hash, GetTypeHash(static_cast<uint8>(Dataset.GalaxyClass)));
+	Hash = HashCombine(Hash, GetTypeHash(Dataset.ClusterGenerationSeed));
+	Hash = HashCombine(Hash, GetTypeHash(Dataset.ClusterModeledCount));
+	Hash = HashCombine(Hash,
+		APSCanonicalStellarProjection::HashQuantizedDouble(Dataset.ClusterDensity, 1.0e-9));
+	Hash = HashCombine(Hash, GetTypeHash(static_cast<uint8>(Dataset.ClusterType)));
+	Hash = HashCombine(Hash, GetTypeHash(static_cast<uint8>(Dataset.ClusterSize)));
+	Hash = HashCombine(Hash, GetTypeHash(static_cast<uint8>(Dataset.ClusterPopulation)));
+	Hash = HashCombine(Hash, GetTypeHash(static_cast<uint8>(Dataset.ClusterComposition)));
+	Hash = HashCombine(Hash, GetTypeHash(Dataset.HomeCanonicalIndex));
+	Hash = HashCombine(Hash, GetTypeHash(Dataset.HomeStableId));
+	Hash = HashCombine(Hash, GetTypeHash(Dataset.ClusterRecords.Num()));
+	const auto HashVector = [](uint32 InHash, const FVector& Value)
+	{
+		InHash = HashCombine(InHash,
+			APSCanonicalStellarProjection::HashQuantizedDouble(Value.X, 0.001));
+		InHash = HashCombine(InHash,
+			APSCanonicalStellarProjection::HashQuantizedDouble(Value.Y, 0.001));
+		return HashCombine(InHash,
+			APSCanonicalStellarProjection::HashQuantizedDouble(Value.Z, 0.001));
+	};
+	Hash = HashVector(Hash, Dataset.GalaxyCatalogHalfExtent);
+	Hash = HashVector(Hash, Dataset.ClusterBounds);
+	for (const FAPSCanonicalClusterSystemRecord& Record : Dataset.ClusterRecords)
+	{
+		Hash = HashCombine(Hash, GetTypeHash(Record.StableId));
+		Hash = HashCombine(Hash, GetTypeHash(Record.CanonicalIndex));
+		Hash = HashVector(Hash, Record.ClusterLocalLocation);
+		Hash = HashCombine(Hash, APSCanonicalStellarProjection::HashQuantizedDouble(
+			Record.PrimaryStarModel.Radius, 1.0e-9));
+		Hash = HashCombine(Hash, APSCanonicalStellarProjection::HashQuantizedDouble(
+			Record.PrimaryStarModel.RadiusKM, 0.001));
+		Hash = HashCombine(Hash, APSCanonicalStellarProjection::HashQuantizedDouble(
+			Record.PrimaryStarModel.Mass, 1.0e-9));
+		Hash = HashCombine(Hash, APSCanonicalStellarProjection::HashQuantizedDouble(
+			Record.PrimaryStarModel.Luminosity, 1.0e-6));
+		Hash = HashCombine(Hash,
+			GetTypeHash(static_cast<uint8>(Record.PrimaryStarModel.SpectralClass)));
+		Hash = HashCombine(Hash,
+			GetTypeHash(static_cast<uint8>(Record.PrimaryStarModel.StellarType)));
+		Hash = HashCombine(Hash,
+			GetTypeHash(static_cast<uint8>(Record.PrimaryStarModel.SpectralType)));
+		Hash = HashCombine(Hash, GetTypeHash(Record.PrimaryStarModel.SpectralSubclass));
+		Hash = HashCombine(Hash, GetTypeHash(Record.PrimaryStarModel.SurfaceTemperature));
+		Hash = HashCombine(Hash, FCrc::StrCrc32(*Record.PrimaryStarModel.Age));
+		Hash = HashCombine(Hash, FCrc::StrCrc32(
+			*Record.PrimaryStarModel.FullSpectralClass.ToString()));
+		Hash = HashCombine(Hash, FCrc::StrCrc32(
+			*Record.PrimaryStarModel.FullSpectralName.ToString()));
+		Hash = HashCombine(Hash,
+			GetTypeHash(static_cast<uint8>(Record.PrimaryStarModel.StarStellarClass)));
+		Hash = HashCombine(Hash, APSCanonicalStellarProjection::HashQuantizedDouble(
+			Record.PrimaryStarModel.MinOrbit, 1.0e-9));
+		Hash = HashCombine(Hash, APSCanonicalStellarProjection::HashQuantizedDouble(
+			Record.PrimaryStarModel.MaxOrbit, 1.0e-9));
+		Hash = HashCombine(Hash, GetTypeHash(Record.SystemModel.GenerationSeed));
+		Hash = HashCombine(Hash, GetTypeHash(Record.SystemModel.AmountOfStars));
+		Hash = HashCombine(Hash, GetTypeHash(Record.SystemModel.StableId));
+		Hash = HashCombine(Hash,
+			GetTypeHash(static_cast<uint8>(Record.SystemModel.StarSystemType)));
+		Hash = HashCombine(Hash, GetTypeHash(Record.SystemModel.PotentialPlanetCount));
+		Hash = HashCombine(Hash, GetTypeHash(Record.SystemModel.bHasPlanetarySystem));
+	}
+	return Hash != 0u ? Hash : 1u;
+}
+
+bool AAstroGenerator::ValidateCanonicalStellarDataset(
+	const FAPSCanonicalStellarDataset& Dataset, const uint32 ExpectedInputHash) const
+{
+	return Dataset.IsUsable(ExpectedInputHash)
+		&& BuildCanonicalStellarManifestHash(Dataset) == Dataset.DatasetHash;
+}
+
+uint32 AAstroGenerator::BuildCanonicalStellarDatasetHash() const
+{
+	const uint32 InputHash = BuildCanonicalStellarDatasetInputHash();
+	if (IsCanonicalStellarProjectionEnabled())
+	{
+		return IsValid(GeneratedWorldModel) && bCanonicalStellarDatasetValidated
+			&& GeneratedWorldModel->CanonicalStellarDataset.IsUsable(InputHash)
+			? GeneratedWorldModel->CanonicalStellarDataset.DatasetHash : 0u;
+	}
+	// Dataset identity is deliberately independent of projection version, render
+	// budget and current hierarchy focus. Those belong to ContextHash/mapping hash.
+	uint32 Hash = GetTypeHash(PreviewGenerationSeed);
+	Hash = HashCombine(Hash, GetTypeHash(bGenerateFullScaledWorld));
+	Hash = HashCombine(Hash, GetTypeHash(bGenerateHomeSystem));
+	Hash = HashCombine(Hash, GetTypeHash(bRandomHomeSystem));
+	Hash = HashCombine(Hash, GetTypeHash(bRandomHomeStar));
+	Hash = HashCombine(Hash, GetTypeHash(static_cast<uint8>(HomeSystemStarType)));
+	Hash = HashCombine(Hash, GetTypeHash(static_cast<uint8>(HomeStarStellarType)));
+	Hash = HashCombine(Hash, GetTypeHash(static_cast<uint8>(HomeStarSpectralClass)));
+	if (IsValid(GeneratedGalaxy))
+	{
+		const FGalaxyCatalogDescriptor& Catalog = GeneratedGalaxy->StarCatalog;
+		Hash = HashCombine(Hash, GetTypeHash(Catalog.GenerationSeed));
+		Hash = HashCombine(Hash, GetTypeHash(Catalog.ModeledStarCount));
+		Hash = HashCombine(Hash, GetTypeHash(Catalog.GalaxySize));
+		Hash = HashCombine(Hash,
+			APSCanonicalStellarProjection::HashQuantizedDouble(Catalog.StarDensity));
+		Hash = HashCombine(Hash, GetTypeHash(static_cast<uint8>(Catalog.GalaxyType)));
+		Hash = HashCombine(Hash, GetTypeHash(static_cast<uint8>(Catalog.GalaxyClass)));
+	}
+	if (IsValid(GeneratedStarCluster))
+	{
+		Hash = HashCombine(Hash, GetTypeHash(GeneratedStarCluster->GenerationSeed));
+		Hash = HashCombine(Hash, GetTypeHash(GeneratedStarCluster->ModeledStarAmount));
+		Hash = HashCombine(Hash,
+			GetTypeHash(static_cast<uint8>(GeneratedStarCluster->ClusterType)));
+		Hash = HashCombine(Hash,
+			GetTypeHash(static_cast<uint8>(GeneratedStarCluster->StarClusterSize)));
+		Hash = HashCombine(Hash,
+			GetTypeHash(static_cast<uint8>(GeneratedStarCluster->StarClusterPopulation)));
+		Hash = HashCombine(Hash,
+			GetTypeHash(static_cast<uint8>(GeneratedStarCluster->StarClusterComposition)));
+		Hash = HashCombine(Hash, APSCanonicalStellarProjection::HashQuantizedDouble(
+			GeneratedStarCluster->ClusterBounds.X));
+		Hash = HashCombine(Hash, APSCanonicalStellarProjection::HashQuantizedDouble(
+			GeneratedStarCluster->ClusterBounds.Y));
+		Hash = HashCombine(Hash, APSCanonicalStellarProjection::HashQuantizedDouble(
+			GeneratedStarCluster->ClusterBounds.Z));
+		Hash = HashCombine(Hash, APSCanonicalStellarProjection::HashQuantizedDouble(
+			GeneratedStarCluster->StarDensity));
+	}
+	Hash = HashCombine(Hash, GetTypeHash(CanonicalStellarProjection.MaterializedHomeStableId));
+	if (PendingHomeCluster.IsValid() && PendingHomeClusterInstanceIndex != INDEX_NONE)
+	{
+		if (const FClusterStarSystemRecord* HomeRecord =
+			PendingHomeCluster->FindPotentialSystem(PendingHomeClusterInstanceIndex))
+		{
+			Hash = HashCombine(Hash, GetTypeHash(HomeRecord->StableId));
+			Hash = HashCombine(Hash, APSCanonicalStellarProjection::HashQuantizedDouble(
+				HomeRecord->ClusterLocalLocation.X));
+			Hash = HashCombine(Hash, APSCanonicalStellarProjection::HashQuantizedDouble(
+				HomeRecord->ClusterLocalLocation.Y));
+			Hash = HashCombine(Hash, APSCanonicalStellarProjection::HashQuantizedDouble(
+				HomeRecord->ClusterLocalLocation.Z));
+			Hash = HashCombine(Hash, APSCanonicalStellarProjection::HashQuantizedDouble(
+				HomeRecord->PrimaryStarModel.Radius, 1.0e-9));
+			Hash = HashCombine(Hash, GetTypeHash(static_cast<uint8>(
+				HomeRecord->PrimaryStarModel.SpectralClass)));
+			Hash = HashCombine(Hash, GetTypeHash(static_cast<uint8>(
+				HomeRecord->PrimaryStarModel.StellarType)));
+			Hash = HashCombine(Hash, GetTypeHash(HomeRecord->SystemModel.AmountOfStars));
+		}
+	}
+	return Hash;
+}
+
+bool AAstroGenerator::ComposeCanonicalStellarProjection(
+	const FVector& HomeClusterLocalUnits)
+{
+	if (!IsCanonicalStellarProjectionEnabled()
+		|| !IsValid(GeneratedGalaxy) || !IsValid(GeneratedStarCluster)
+		|| !IsValid(StarGenerator)
+		|| !IsValid(GeneratedGalaxy->StarMeshInstances)
+		|| !IsValid(GeneratedStarCluster->StarMeshInstances))
+	{
+		return false;
+	}
+
+	const double GalaxyHalfExtent = FMath::Max(
+		GeneratedGalaxy->StarCatalog.CatalogHalfExtent.GetAbs().GetMax(), 1.0);
+	const double ClusterHalfExtent = FMath::Max(
+		GeneratedStarCluster->CanonicalProjectionFrame.CanonicalHalfExtentUnits, 1.0);
+	// Preserve the established compact-central cluster relationship as canonical
+	// hierarchy metadata rather than a preview-only actor scale.
+	const double ClusterToGalaxyScale = FMath::Clamp(
+		GalaxyHalfExtent * 0.16 / ClusterHalfExtent, 1.0e-9, 1.0);
+	FAPSCanonicalStellarProjectionFrame GalaxyFrame;
+	FAPSCanonicalStellarProjectionFrame ClusterFrame;
+	if (!APSCanonicalStellarProjection::ConfigureSharedHomeCentredFrames(
+		GalaxyHalfExtent, ClusterHalfExtent, ClusterToGalaxyScale,
+		HomeClusterLocalUnits, 0u, GalaxyFrame, ClusterFrame))
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[APS.CanonicalProjection] Failed to compose shared home-centred frame"));
+		return false;
+	}
+
+	GeneratedGalaxy->CanonicalProjectionFrame = GalaxyFrame;
+	GeneratedStarCluster->CanonicalProjectionFrame = ClusterFrame;
+	CanonicalStellarProjection.ClusterToGalaxyPositionScale = ClusterToGalaxyScale;
+
+	const UStaticMesh* GalaxyMesh = GeneratedGalaxy->StarMeshInstances->GetStaticMesh();
+	const double GalaxyMeshRadius = IsValid(GalaxyMesh)
+		? FMath::Max(static_cast<double>(GalaxyMesh->GetBounds().SphereRadius), 1.0) : 50.0;
+	for (int32 InstanceIndex = 0;
+		InstanceIndex < GeneratedGalaxy->RenderedCatalogIndices.Num(); ++InstanceIndex)
+	{
+		FGalaxyCatalogStarRecord Record;
+		if (!GeneratedGalaxy->GetRenderedCatalogRecord(InstanceIndex, Record))
+		{
+			continue;
+		}
+		const double PhysicalRadius =
+			APSCanonicalStellarProjection::GetCanonicalStellarRadiusSolar(Record.SpectralClass);
+		const double AppliedRadiusCm = APSCanonicalStellarProjection::GetAppliedVisualRadiusCm(
+			EAPSCanonicalStellarProxyLayer::Galaxy, GalaxyFrame, PhysicalRadius);
+		FTransform Transform(FQuat::Identity,
+			GalaxyFrame.ProjectCanonicalUnits(Record.GalaxyLocalLocation),
+			FVector(AppliedRadiusCm / GalaxyMeshRadius));
+		if (GeneratedGalaxy->RenderedProxyBaseTransforms.IsValidIndex(InstanceIndex))
+		{
+			GeneratedGalaxy->RenderedProxyBaseTransforms[InstanceIndex] = Transform;
+		}
+		GeneratedGalaxy->StarMeshInstances->UpdateInstanceTransform(
+			InstanceIndex, Transform, false, false, true);
+		const double AppliedRadiusSolar =
+			APSCanonicalStellarProjection::UnprojectPhysicalRadiusSolar(
+				GalaxyFrame, AppliedRadiusCm);
+		const double Emission = UStarGenerator::GetFarStarVisualEmission(
+			PhysicalRadius,
+			StarGenerator->CalculateEmission(static_cast<float>(
+				APSCanonicalStellarProjection::GetCanonicalStellarLuminositySolar(
+					Record.SpectralClass) * 25.0)),
+			AppliedRadiusSolar);
+		GeneratedGalaxy->StarMeshInstances->SetCustomDataValue(
+			InstanceIndex, 3, Emission, false);
+	}
+
+	const UStaticMesh* ClusterMesh = GeneratedStarCluster->StarMeshInstances->GetStaticMesh();
+	const double ClusterMeshRadius = IsValid(ClusterMesh)
+		? FMath::Max(static_cast<double>(ClusterMesh->GetBounds().SphereRadius), 1.0) : 50.0;
+	for (const FClusterStarSystemRecord& Record : GeneratedStarCluster->PotentialStarSystems)
+	{
+		if (Record.InstanceIndex == INDEX_NONE)
+		{
+			continue;
+		}
+		const double AppliedRadiusCm = APSCanonicalStellarProjection::GetAppliedVisualRadiusCm(
+			EAPSCanonicalStellarProxyLayer::StarCluster, ClusterFrame,
+			Record.PrimaryStarModel.Radius);
+		FTransform Transform(FQuat::Identity,
+			ClusterFrame.ProjectCanonicalUnits(Record.ClusterLocalLocation),
+			FVector(AppliedRadiusCm / ClusterMeshRadius));
+		if (GeneratedStarCluster->SystemProxyBaseTransforms.IsValidIndex(Record.InstanceIndex))
+		{
+			GeneratedStarCluster->SystemProxyBaseTransforms[Record.InstanceIndex] = Transform;
+		}
+		GeneratedStarCluster->StarMeshInstances->UpdateInstanceTransform(
+			Record.InstanceIndex, Transform, false, false, true);
+		const double AppliedRadiusSolar =
+			APSCanonicalStellarProjection::UnprojectPhysicalRadiusSolar(
+				ClusterFrame, AppliedRadiusCm);
+		const double Emission = UStarGenerator::GetFarStarVisualEmission(
+			Record.PrimaryStarModel.Radius,
+			StarGenerator->CalculateEmission(Record.PrimaryStarModel.Luminosity * 25.0),
+			AppliedRadiusSolar);
+		GeneratedStarCluster->StarMeshInstances->SetCustomDataValue(
+			Record.InstanceIndex, 3, Emission, false);
+	}
+
+	UAPSStarRenderStabilitySubsystem::StabilizeInstances(
+		GeneratedGalaxy->StarMeshInstances);
+	UAPSStarRenderStabilitySubsystem::StabilizeInstances(
+		GeneratedStarCluster->StarMeshInstances);
+	// One construction-time batch reprojects both provisional catalog uploads once
+	// the finalized home anchor is known. Telemetry snapshots this serial after ready;
+	// scope/camera/tick paths must leave it unchanged thereafter.
+	NoteCanonicalStellarProxyMutation();
+	bCanonicalStellarProjectionComposed = true;
+	return true;
+}
+
+bool AAstroGenerator::RefreshCanonicalClusterProxy(const int32 InstanceIndex)
+{
+	if (!IsCanonicalStellarProjectionEnabled() || !bCanonicalStellarProjectionComposed
+		|| !IsValid(GeneratedStarCluster) || !IsValid(GeneratedStarCluster->StarMeshInstances)
+		|| !IsValid(StarGenerator))
+	{
+		return false;
+	}
+	FClusterStarSystemRecord* Record = GeneratedStarCluster->FindPotentialSystemMutable(InstanceIndex);
+	FTransform BaseTransform;
+	const UStaticMesh* Mesh = GeneratedStarCluster->StarMeshInstances->GetStaticMesh();
+	if (!Record || !GeneratedStarCluster->GetPotentialSystemBaseProxyTransform(
+		InstanceIndex, BaseTransform) || !IsValid(Mesh))
+	{
+		return false;
+	}
+	const double MeshRadius = FMath::Max(
+		static_cast<double>(Mesh->GetBounds().SphereRadius), 1.0);
+	const double AppliedRadiusCm = APSCanonicalStellarProjection::GetAppliedVisualRadiusCm(
+		EAPSCanonicalStellarProxyLayer::StarCluster,
+		GeneratedStarCluster->CanonicalProjectionFrame, Record->PrimaryStarModel.Radius);
+	BaseTransform.SetScale3D(FVector(AppliedRadiusCm / MeshRadius));
+	GeneratedStarCluster->SystemProxyBaseTransforms[InstanceIndex] = BaseTransform;
+	GeneratedStarCluster->StarMeshInstances->UpdateInstanceTransform(
+		InstanceIndex, BaseTransform, false, false, true);
+	NoteCanonicalStellarProxyMutation();
+	const double AppliedRadiusSolar = APSCanonicalStellarProjection::UnprojectPhysicalRadiusSolar(
+		GeneratedStarCluster->CanonicalProjectionFrame, AppliedRadiusCm);
+	const double Emission = UStarGenerator::GetFarStarVisualEmission(
+		Record->PrimaryStarModel.Radius,
+		StarGenerator->CalculateEmission(Record->PrimaryStarModel.Luminosity * 25.0),
+		AppliedRadiusSolar);
+	GeneratedStarCluster->StarMeshInstances->SetCustomDataValue(
+		InstanceIndex, 3, Emission, true);
+	return true;
+}
+
+void AAstroGenerator::FinalizeCanonicalStellarProjectionBuild()
+{
+	if (IsCanonicalStellarProjectionEnabled() && !bCanonicalStellarProjectionComposed)
+	{
+		// Non-home generation levels still receive the exact same bounded root map;
+		// their canonical anchor is the catalog origin.
+		ComposeCanonicalStellarProjection(FVector::ZeroVector);
+	}
+	CanonicalStellarProjection.ProjectionVersion =
+		FAPSCanonicalStellarProjectionFrame::CurrentVersion;
+	CanonicalStellarProjection.Galaxy = IsValid(GeneratedGalaxy)
+		? GeneratedGalaxy->CanonicalProjectionFrame : FAPSCanonicalStellarProjectionFrame{};
+	CanonicalStellarProjection.StarCluster = IsValid(GeneratedStarCluster)
+		? GeneratedStarCluster->CanonicalProjectionFrame : FAPSCanonicalStellarProjectionFrame{};
+	CanonicalStellarProjection.ContextHash = BuildCanonicalStellarProjectionContextHash();
+	CanonicalStellarProjection.Galaxy.ContextHash = CanonicalStellarProjection.ContextHash;
+	CanonicalStellarProjection.StarCluster.ContextHash = CanonicalStellarProjection.ContextHash;
+	if (IsValid(GeneratedGalaxy))
+	{
+		GeneratedGalaxy->CanonicalProjectionFrame.ContextHash =
+			CanonicalStellarProjection.ContextHash;
+	}
+	if (IsValid(GeneratedStarCluster))
+	{
+		GeneratedStarCluster->CanonicalProjectionFrame.ContextHash =
+			CanonicalStellarProjection.ContextHash;
+	}
+
+	uint32 RenderedMappingHash = GetTypeHash(CanonicalStellarProjection.ContextHash);
+	const auto HashVector = [](uint32 Hash, const FVector& Value)
+	{
+		Hash = HashCombine(Hash,
+			APSCanonicalStellarProjection::HashQuantizedDouble(Value.X, 0.001));
+		Hash = HashCombine(Hash,
+			APSCanonicalStellarProjection::HashQuantizedDouble(Value.Y, 0.001));
+		return HashCombine(Hash,
+			APSCanonicalStellarProjection::HashQuantizedDouble(Value.Z, 0.001));
+	};
+	double MaxMatrixMagnitude = APSCanonicalStellarProjection::TransformMatrixMagnitude(GetActorTransform());
+	double GalaxyMaxMatrixMagnitude = 0.0;
+	double ClusterMaxMatrixMagnitude = 0.0;
+	if (IsValid(GeneratedGalaxy) && IsValid(GeneratedGalaxy->StarMeshInstances))
+	{
+		CanonicalStellarProjection.GalaxyModeledCount = GeneratedGalaxy->StarCatalog.ModeledStarCount;
+		CanonicalStellarProjection.GalaxyRenderedCount =
+			GeneratedGalaxy->StarMeshInstances->GetInstanceCount();
+		GalaxyMaxMatrixMagnitude = APSCanonicalStellarProjection::TransformMatrixMagnitude(
+			GeneratedGalaxy->StarMeshInstances->GetComponentTransform());
+		MaxMatrixMagnitude = FMath::Max(MaxMatrixMagnitude, GalaxyMaxMatrixMagnitude);
+		for (int32 InstanceIndex = 0;
+			InstanceIndex < CanonicalStellarProjection.GalaxyRenderedCount; ++InstanceIndex)
+		{
+			FGalaxyCatalogStarRecord Record;
+			FTransform LocalTransform;
+			FTransform WorldTransform;
+			if (GeneratedGalaxy->GetRenderedCatalogRecord(InstanceIndex, Record))
+			{
+				RenderedMappingHash = HashCombine(RenderedMappingHash, GetTypeHash(Record.StableId));
+				RenderedMappingHash = HashCombine(RenderedMappingHash, GetTypeHash(Record.CatalogIndex));
+				RenderedMappingHash = HashVector(RenderedMappingHash, Record.GalaxyLocalLocation);
+			}
+			if (GeneratedGalaxy->RenderedProxyBaseTransforms.IsValidIndex(InstanceIndex))
+			{
+				const FTransform& BaseTransform =
+					GeneratedGalaxy->RenderedProxyBaseTransforms[InstanceIndex];
+				RenderedMappingHash = HashVector(RenderedMappingHash, BaseTransform.GetLocation());
+				RenderedMappingHash = HashVector(RenderedMappingHash, BaseTransform.GetScale3D());
+			}
+			if (GeneratedGalaxy->StarMeshInstances->GetInstanceTransform(
+				InstanceIndex, LocalTransform, false))
+			{
+				GalaxyMaxMatrixMagnitude = FMath::Max(GalaxyMaxMatrixMagnitude,
+					APSCanonicalStellarProjection::TransformMatrixMagnitude(LocalTransform));
+				MaxMatrixMagnitude = FMath::Max(MaxMatrixMagnitude, GalaxyMaxMatrixMagnitude);
+			}
+			if (GeneratedGalaxy->StarMeshInstances->GetInstanceTransform(
+				InstanceIndex, WorldTransform, true))
+			{
+				GalaxyMaxMatrixMagnitude = FMath::Max(GalaxyMaxMatrixMagnitude,
+					APSCanonicalStellarProjection::TransformMatrixMagnitude(WorldTransform));
+				MaxMatrixMagnitude = FMath::Max(MaxMatrixMagnitude, GalaxyMaxMatrixMagnitude);
+			}
+		}
+	}
+	if (IsValid(GeneratedStarCluster) && IsValid(GeneratedStarCluster->StarMeshInstances))
+	{
+		CanonicalStellarProjection.ClusterModeledCount = GeneratedStarCluster->ModeledStarAmount;
+		CanonicalStellarProjection.ClusterRenderedCount =
+			GeneratedStarCluster->StarMeshInstances->GetInstanceCount();
+		ClusterMaxMatrixMagnitude = APSCanonicalStellarProjection::TransformMatrixMagnitude(
+			GeneratedStarCluster->StarMeshInstances->GetComponentTransform());
+		MaxMatrixMagnitude = FMath::Max(MaxMatrixMagnitude, ClusterMaxMatrixMagnitude);
+		for (const FClusterStarSystemRecord& Record : GeneratedStarCluster->PotentialStarSystems)
+		{
+			RenderedMappingHash = HashCombine(RenderedMappingHash, GetTypeHash(Record.StableId));
+			RenderedMappingHash = HashCombine(RenderedMappingHash, GetTypeHash(Record.InstanceIndex));
+			RenderedMappingHash = HashVector(RenderedMappingHash, Record.ClusterLocalLocation);
+			RenderedMappingHash = HashCombine(RenderedMappingHash,
+				APSCanonicalStellarProjection::HashQuantizedDouble(
+					Record.PrimaryStarModel.Radius, 1.0e-9));
+			if (GeneratedStarCluster->SystemProxyBaseTransforms.IsValidIndex(Record.InstanceIndex))
+			{
+				const FTransform& BaseTransform =
+					GeneratedStarCluster->SystemProxyBaseTransforms[Record.InstanceIndex];
+				RenderedMappingHash = HashVector(RenderedMappingHash, BaseTransform.GetLocation());
+				RenderedMappingHash = HashVector(RenderedMappingHash, BaseTransform.GetScale3D());
+			}
+			FTransform LocalTransform;
+			FTransform WorldTransform;
+			if (GeneratedStarCluster->StarMeshInstances->GetInstanceTransform(
+				Record.InstanceIndex, LocalTransform, false))
+			{
+				ClusterMaxMatrixMagnitude = FMath::Max(ClusterMaxMatrixMagnitude,
+					APSCanonicalStellarProjection::TransformMatrixMagnitude(LocalTransform));
+				MaxMatrixMagnitude = FMath::Max(MaxMatrixMagnitude, ClusterMaxMatrixMagnitude);
+			}
+			if (GeneratedStarCluster->StarMeshInstances->GetInstanceTransform(
+				Record.InstanceIndex, WorldTransform, true))
+			{
+				ClusterMaxMatrixMagnitude = FMath::Max(ClusterMaxMatrixMagnitude,
+					APSCanonicalStellarProjection::TransformMatrixMagnitude(WorldTransform));
+				MaxMatrixMagnitude = FMath::Max(MaxMatrixMagnitude, ClusterMaxMatrixMagnitude);
+			}
+		}
+	}
+
+	if (PendingHomeCluster.IsValid() && PendingHomeClusterInstanceIndex != INDEX_NONE)
+	{
+		if (const FClusterStarSystemRecord* HomeRecord =
+			PendingHomeCluster->FindPotentialSystem(PendingHomeClusterInstanceIndex))
+		{
+			CanonicalStellarProjection.MaterializedHomeStableId = HomeRecord->StableId;
+			CanonicalStellarProjection.MaterializedHomeInstanceIndex = HomeRecord->InstanceIndex;
+			FTransform HomeTransform;
+			CanonicalStellarProjection.bMaterializedHomeProxySuppressed =
+				PendingHomeCluster->StarMeshInstances
+				&& PendingHomeCluster->StarMeshInstances->GetInstanceTransform(
+					HomeRecord->InstanceIndex, HomeTransform, false)
+				&& HomeTransform.GetScale3D() == FVector::ZeroVector;
+		}
+	}
+	const uint32 CanonicalDatasetHash = BuildCanonicalStellarDatasetHash();
+	CanonicalStellarProjection.CanonicalDatasetHash = CanonicalDatasetHash;
+	CanonicalStellarProjection.CanonicalIdentityHash = CanonicalDatasetHash;
+	if (IsValid(GeneratedWorldModel))
+	{
+		const FAPSCanonicalStellarDataset& Dataset =
+			GeneratedWorldModel->CanonicalStellarDataset;
+		CanonicalStellarProjection.CanonicalDatasetVersion = Dataset.Version;
+		CanonicalStellarProjection.CanonicalDatasetInputHash = Dataset.InputHash;
+		CanonicalStellarProjection.CanonicalDatasetBuildSerial = Dataset.BuildSerial;
+		CanonicalStellarProjection.CanonicalDatasetRecordCount = Dataset.ClusterRecords.Num();
+	}
+	CanonicalStellarProjection.bConsumedFinalizedDataset =
+		bConsumedFinalizedCanonicalStellarDataset;
+	CanonicalStellarProjection.RenderedMappingHash = RenderedMappingHash;
+	CanonicalStellarProjection.MaxObservedMatrixMagnitudeCm = MaxMatrixMagnitude;
+	CanonicalStellarProjection.GalaxyMaxObservedMatrixMagnitudeCm = GalaxyMaxMatrixMagnitude;
+	CanonicalStellarProjection.ClusterMaxObservedMatrixMagnitudeCm = ClusterMaxMatrixMagnitude;
+	CanonicalStellarProjection.bMappingsComplete =
+		(!IsValid(GeneratedGalaxy)
+			|| (GeneratedGalaxy->RenderedCatalogIndices.Num()
+				== CanonicalStellarProjection.GalaxyRenderedCount
+				&& GeneratedGalaxy->RenderedProxyBaseTransforms.Num()
+					== CanonicalStellarProjection.GalaxyRenderedCount))
+		&& (!IsValid(GeneratedStarCluster)
+			|| (GeneratedStarCluster->PotentialStarSystems.Num()
+				== CanonicalStellarProjection.ClusterRenderedCount
+				&& GeneratedStarCluster->SystemProxyBaseTransforms.Num()
+					== CanonicalStellarProjection.ClusterRenderedCount));
+	CanonicalStellarProjection.bUnitRoots = GetActorScale3D().Equals(FVector::OneVector, 1.0e-6)
+		&& (!IsValid(GeneratedGalaxy)
+			|| (GeneratedGalaxy->GetActorScale3D().Equals(FVector::OneVector, 1.0e-6)
+				&& GeneratedGalaxy->StarMeshInstances
+				&& GeneratedGalaxy->StarMeshInstances->GetComponentScale().Equals(
+					FVector::OneVector, 1.0e-6)))
+		&& (!IsValid(GeneratedStarCluster)
+			|| (GeneratedStarCluster->GetActorScale3D().Equals(FVector::OneVector, 1.0e-6)
+				&& GeneratedStarCluster->StarMeshInstances
+				&& GeneratedStarCluster->StarMeshInstances->GetComponentScale().Equals(
+					FVector::OneVector, 1.0e-6)));
+	CanonicalStellarProjection.bBoundsValid = FMath::IsFinite(MaxMatrixMagnitude)
+		&& FMath::IsFinite(GalaxyMaxMatrixMagnitude)
+		&& FMath::IsFinite(ClusterMaxMatrixMagnitude)
+		&& GalaxyMaxMatrixMagnitude <= APSCanonicalStellarProjection::GalaxyMaxProxyCoordinateCm
+		&& ClusterMaxMatrixMagnitude <= APSCanonicalStellarProjection::ClusterMaxProxyCoordinateCm
+		&& (!CanonicalStellarProjection.Galaxy.bEnabled
+			|| CanonicalStellarProjection.Galaxy.IsFinite())
+		&& (!CanonicalStellarProjection.StarCluster.bEnabled
+			|| (CanonicalStellarProjection.StarCluster.IsFinite()
+				&& CanonicalStellarProjection.Galaxy.PositionScale
+					== CanonicalStellarProjection.StarCluster.PositionScale
+				&& FMath::IsNearlyEqual(
+					CanonicalStellarProjection.StarCluster.LayerToRootPositionScale,
+					CanonicalStellarProjection.ClusterToGalaxyPositionScale, 1.0e-12)));
+	CanonicalStellarProjection.bProjectionValid = !IsCanonicalStellarProjectionEnabled()
+		|| (bCanonicalStellarProjectionComposed
+			&& CanonicalStellarProjection.CanonicalDatasetHash != 0u
+			&& CanonicalStellarProjection.bMappingsComplete
+			&& CanonicalStellarProjection.bUnitRoots
+			&& CanonicalStellarProjection.bBoundsValid);
+	CanonicalStellarProjection.bFinalized = CanonicalStellarProjection.bProjectionValid;
+
+	if (CVarAPSFullScaleProjectionTelemetry.GetValueOnGameThread() > 0)
+	{
+		UE_LOG(LogTemp, Log,
+			TEXT("[APS.FullScale.Projection] version=%u context=%u dataset=%u datasetVersion=%u input=%u "
+				"datasetBuild=%llu records=%d consumed=%d mapping=%u build=%llu uploads=%llu "
+				"mutations=%llu galaxy=%lld/%d cluster=%d/%d galaxyScale=%.9e clusterScale=%.9e "
+				"clusterToGalaxy=%.9e anchor=%s radiusPolicy=%d radiusLod=%.6f/%.6f/%.6f "
+				"radiusClass=%.6f/%.6f/%.6f "
+				"galaxyMax=%.3e clusterMax=%.3e "
+				"observedMatrix=%.3e observedGalaxy=%.3e observedCluster=%.3e home=%s homeIndex=%d "
+				"suppressed=%d mappings=%d unitRoots=%d bounds=%d valid=%d"),
+			CanonicalStellarProjection.ProjectionVersion,
+			CanonicalStellarProjection.ContextHash,
+			CanonicalStellarProjection.CanonicalDatasetHash,
+			CanonicalStellarProjection.CanonicalDatasetVersion,
+			CanonicalStellarProjection.CanonicalDatasetInputHash,
+			CanonicalStellarProjection.CanonicalDatasetBuildSerial,
+			CanonicalStellarProjection.CanonicalDatasetRecordCount,
+			CanonicalStellarProjection.bConsumedFinalizedDataset ? 1 : 0,
+			CanonicalStellarProjection.RenderedMappingHash,
+			CanonicalStellarProjection.ProxyBuildSerial,
+			CanonicalStellarProjection.InstanceUploadCount,
+			CanonicalStellarProjection.TransformMutationSerial,
+			CanonicalStellarProjection.GalaxyModeledCount,
+			CanonicalStellarProjection.GalaxyRenderedCount,
+			CanonicalStellarProjection.ClusterModeledCount,
+			CanonicalStellarProjection.ClusterRenderedCount,
+			CanonicalStellarProjection.Galaxy.PositionScale,
+			CanonicalStellarProjection.StarCluster.PositionScale,
+			CanonicalStellarProjection.ClusterToGalaxyPositionScale,
+			*CanonicalStellarProjection.Galaxy.CanonicalAnchorCm.ToCompactString(),
+			static_cast<int32>(CanonicalStellarProjection.Galaxy.RadiusPolicy),
+			CanonicalStellarProjection.Galaxy.VisualRadiusFloorFraction,
+			CanonicalStellarProjection.StarCluster.VisualRadiusFloorFraction,
+			CanonicalStellarProjection.Galaxy.VisualRadiusCeilingFraction,
+			CanonicalStellarProjection.Galaxy.VisualRadiusClassExponent,
+			CanonicalStellarProjection.Galaxy.VisualRadiusMinClassScale,
+			CanonicalStellarProjection.Galaxy.VisualRadiusMaxClassScale,
+			CanonicalStellarProjection.Galaxy.MaxProxyCoordinateCm,
+			CanonicalStellarProjection.StarCluster.MaxProxyCoordinateCm,
+			CanonicalStellarProjection.MaxObservedMatrixMagnitudeCm,
+			CanonicalStellarProjection.GalaxyMaxObservedMatrixMagnitudeCm,
+			CanonicalStellarProjection.ClusterMaxObservedMatrixMagnitudeCm,
+			*CanonicalStellarProjection.MaterializedHomeStableId.ToString(EGuidFormats::Digits),
+			CanonicalStellarProjection.MaterializedHomeInstanceIndex,
+			CanonicalStellarProjection.bMaterializedHomeProxySuppressed ? 1 : 0,
+			CanonicalStellarProjection.bMappingsComplete ? 1 : 0,
+			CanonicalStellarProjection.bUnitRoots ? 1 : 0,
+			CanonicalStellarProjection.bBoundsValid ? 1 : 0,
+			CanonicalStellarProjection.bProjectionValid ? 1 : 0);
+	}
+}
+
+bool AAstroGenerator::GetCanonicalStellarProxyRecord(
+	const EAPSCanonicalStellarProxyLayer Layer, const int32 InstanceIndex,
+	FAPSCanonicalStellarProxyRecord& OutRecord) const
+{
+	OutRecord = FAPSCanonicalStellarProxyRecord{};
+	OutRecord.Layer = Layer;
+	const UHierarchicalInstancedStaticMeshComponent* Component = nullptr;
+	FTransform BaseTransform;
+	FTransform ActualLocalTransform;
+	FTransform ActualWorldTransform;
+	const FAPSCanonicalStellarProjectionFrame* ProjectionFrame = nullptr;
+	if (Layer == EAPSCanonicalStellarProxyLayer::Galaxy)
+	{
+		if (!IsValid(GeneratedGalaxy) || !IsValid(GeneratedGalaxy->StarMeshInstances))
+		{
+			return false;
+		}
+		FGalaxyCatalogStarRecord Record;
+		if (!GeneratedGalaxy->GetRenderedCatalogRecord(InstanceIndex, Record)
+			|| !GeneratedGalaxy->GetRenderedProxyBaseTransform(InstanceIndex, BaseTransform))
+		{
+			return false;
+		}
+		Component = GeneratedGalaxy->StarMeshInstances;
+		ProjectionFrame = &GeneratedGalaxy->CanonicalProjectionFrame;
+		OutRecord.StableId = Record.StableId;
+		OutRecord.CanonicalIndex = Record.CatalogIndex;
+		OutRecord.CanonicalPositionUnits = Record.GalaxyLocalLocation;
+		OutRecord.CanonicalPhysicalRadiusSolar =
+			APSCanonicalStellarProjection::GetCanonicalStellarRadiusSolar(Record.SpectralClass);
+	}
+	else
+	{
+		if (!IsValid(GeneratedStarCluster) || !IsValid(GeneratedStarCluster->StarMeshInstances))
+		{
+			return false;
+		}
+		const FClusterStarSystemRecord* Record =
+			GeneratedStarCluster->FindPotentialSystem(InstanceIndex);
+		if (!Record || !GeneratedStarCluster->GetPotentialSystemBaseProxyTransform(
+			InstanceIndex, BaseTransform))
+		{
+			return false;
+		}
+		Component = GeneratedStarCluster->StarMeshInstances;
+		ProjectionFrame = &GeneratedStarCluster->CanonicalProjectionFrame;
+		OutRecord.StableId = Record->StableId;
+		OutRecord.CanonicalIndex = Record->InstanceIndex;
+		OutRecord.CanonicalPositionUnits = Record->ClusterLocalLocation;
+		OutRecord.CanonicalPhysicalRadiusSolar = Record->PrimaryStarModel.Radius;
+	}
+
+	if (!Component
+		|| !Component->GetInstanceTransform(InstanceIndex, ActualLocalTransform, false)
+		|| !Component->GetInstanceTransform(InstanceIndex, ActualWorldTransform, true))
+	{
+		return false;
+	}
+	OutRecord.InstanceIndex = InstanceIndex;
+	OutRecord.ExpectedPhysicalProxyRadiusCm = ProjectionFrame
+		? APSCanonicalStellarProjection::ProjectPhysicalRadiusSolar(
+			*ProjectionFrame, OutRecord.CanonicalPhysicalRadiusSolar) : 0.0;
+	OutRecord.AppliedVisualProxyRadiusCm = ProjectionFrame
+		? APSCanonicalStellarProjection::GetAppliedVisualRadiusCm(
+			Layer, *ProjectionFrame, OutRecord.CanonicalPhysicalRadiusSolar) : 0.0;
+	const UStaticMesh* ProxyMesh = Component->GetStaticMesh();
+	const double ProxyMeshRadius = IsValid(ProxyMesh)
+		? FMath::Max(static_cast<double>(ProxyMesh->GetBounds().SphereRadius), 1.0) : 1.0;
+	OutRecord.ExpectedBaseProxyPositionCm = ProjectionFrame && ProjectionFrame->bEnabled
+		? ProjectionFrame->ProjectCanonicalUnits(OutRecord.CanonicalPositionUnits)
+		: BaseTransform.GetLocation();
+	OutRecord.ExpectedBaseProxyScale = ProjectionFrame && ProjectionFrame->bEnabled
+		? OutRecord.AppliedVisualProxyRadiusCm / ProxyMeshRadius
+		: BaseTransform.GetScale3D().GetAbsMax();
+	OutRecord.ActualProxyPositionCm = ActualLocalTransform.GetLocation();
+	OutRecord.ActualProxyScale = ActualLocalTransform.GetScale3D().GetAbsMax();
+
+	OutRecord.ProjectionErrorCm = FMath::Max(
+		FVector::Distance(ActualLocalTransform.GetLocation(),
+			OutRecord.ExpectedBaseProxyPositionCm),
+		FVector::Distance(BaseTransform.GetLocation(),
+			OutRecord.ExpectedBaseProxyPositionCm));
+	OutRecord.bSuppressedMaterializedHome =
+		Layer == EAPSCanonicalStellarProxyLayer::StarCluster
+		&& CanonicalStellarProjection.MaterializedHomeInstanceIndex == InstanceIndex
+		&& CanonicalStellarProjection.MaterializedHomeStableId == OutRecord.StableId
+		&& ActualLocalTransform.GetScale3D() == FVector::ZeroVector;
+	OutRecord.bSuppressedByView = !OutRecord.bSuppressedMaterializedHome
+		&& ActualLocalTransform.GetScale3D() == FVector::ZeroVector
+		&& BaseTransform.GetScale3D() != FVector::ZeroVector;
+	OutRecord.MaxMatrixMagnitudeCm = FMath::Max3(
+		APSCanonicalStellarProjection::TransformMatrixMagnitude(Component->GetComponentTransform()),
+		APSCanonicalStellarProjection::TransformMatrixMagnitude(ActualLocalTransform),
+		APSCanonicalStellarProjection::TransformMatrixMagnitude(ActualWorldTransform));
+	return OutRecord.StableId.IsValid();
+}
+
+bool AAstroGenerator::GetCanonicalStellarProxyRecord(
+	const EAPSCanonicalStellarProxyLayer Layer, const FGuid& StableId,
+	FAPSCanonicalStellarProxyRecord& OutRecord) const
+{
+	if (!StableId.IsValid())
+	{
+		return false;
+	}
+	if (Layer == EAPSCanonicalStellarProxyLayer::Galaxy && IsValid(GeneratedGalaxy))
+	{
+		for (int32 InstanceIndex = 0;
+			InstanceIndex < GeneratedGalaxy->RenderedCatalogIndices.Num(); ++InstanceIndex)
+		{
+			FGalaxyCatalogStarRecord Record;
+			if (GeneratedGalaxy->GetRenderedCatalogRecord(InstanceIndex, Record)
+				&& Record.StableId == StableId)
+			{
+				return GetCanonicalStellarProxyRecord(Layer, InstanceIndex, OutRecord);
+			}
+		}
+		return false;
+	}
+	if (Layer == EAPSCanonicalStellarProxyLayer::StarCluster
+		&& IsValid(GeneratedStarCluster))
+	{
+		for (const FClusterStarSystemRecord& Record : GeneratedStarCluster->PotentialStarSystems)
+		{
+			if (Record.StableId == StableId)
+			{
+				return GetCanonicalStellarProxyRecord(
+					Layer, Record.InstanceIndex, OutRecord);
+			}
+		}
+	}
+	return false;
+}
+
+bool AAstroGenerator::ResolveCanonicalClusterSystemAddress(
+	const int32 InstanceIndex, FAPSCanonicalClusterSystemAddress& OutAddress) const
+{
+	OutAddress = FAPSCanonicalClusterSystemAddress{};
+	if (!IsCanonicalStellarProjectionEnabled() || !CanonicalStellarProjection.bFinalized
+		|| !CanonicalStellarProjection.bProjectionValid
+		|| !IsValid(GeneratedStarCluster) || !IsValid(GeneratedWorldModel)
+		|| PendingHomeCluster.Get() != GeneratedStarCluster
+		|| CanonicalStellarProjection.MaterializedHomeInstanceIndex == INDEX_NONE
+		|| !CanonicalStellarProjection.MaterializedHomeStableId.IsValid()
+		|| CanonicalStellarProjection.CanonicalDatasetHash
+			!= GeneratedWorldModel->CanonicalStellarDataset.DatasetHash)
+	{
+		return false;
+	}
+
+	const FClusterStarSystemRecord* TargetRecord =
+		GeneratedStarCluster->FindPotentialSystem(InstanceIndex);
+	const FClusterStarSystemRecord* HomeRecord = GeneratedStarCluster->FindPotentialSystem(
+		CanonicalStellarProjection.MaterializedHomeInstanceIndex);
+	if (!TargetRecord || !HomeRecord
+		|| HomeRecord->StableId != CanonicalStellarProjection.MaterializedHomeStableId)
+	{
+		return false;
+	}
+
+	FVector TargetCanonicalRootCm;
+	FVector HomeCanonicalRootCm;
+	FTransform TargetBaseTransform;
+	if (!GeneratedStarCluster->GetPotentialSystemCanonicalRootLocationCm(
+			*TargetRecord, TargetCanonicalRootCm)
+		|| !GeneratedStarCluster->GetPotentialSystemCanonicalRootLocationCm(
+			*HomeRecord, HomeCanonicalRootCm)
+		|| !GeneratedStarCluster->GetPotentialSystemBaseProxyTransform(
+			TargetRecord->InstanceIndex, TargetBaseTransform)
+		|| !IsValid(GeneratedStarCluster->StarMeshInstances))
+	{
+		return false;
+	}
+
+	OutAddress.ProjectionVersion = CanonicalStellarProjection.ProjectionVersion;
+	OutAddress.ContextHash = CanonicalStellarProjection.ContextHash;
+	OutAddress.CanonicalDatasetHash = CanonicalStellarProjection.CanonicalDatasetHash;
+	OutAddress.StableId = TargetRecord->StableId;
+	OutAddress.CanonicalIndex = TargetRecord->InstanceIndex;
+	OutAddress.InstanceIndex = TargetRecord->InstanceIndex;
+	OutAddress.CanonicalRootPositionCm = TargetCanonicalRootCm;
+	OutAddress.CanonicalDeltaFromHomeCm = TargetCanonicalRootCm - HomeCanonicalRootCm;
+	OutAddress.CanonicalDistanceFromHomeCm = OutAddress.CanonicalDeltaFromHomeCm.Size();
+	OutAddress.ImmutableProxyWorldLocationCm =
+		GeneratedStarCluster->StarMeshInstances->GetComponentTransform().TransformPosition(
+			TargetBaseTransform.GetLocation());
+	OutAddress.CanonicalRadiusSolar = TargetRecord->PrimaryStarModel.Radius;
+	OutAddress.bMaterializedHome = TargetRecord->StableId == HomeRecord->StableId;
+	return OutAddress.StableId.IsValid()
+		&& !OutAddress.CanonicalRootPositionCm.ContainsNaN()
+		&& !OutAddress.CanonicalDeltaFromHomeCm.ContainsNaN()
+		&& FMath::IsFinite(OutAddress.CanonicalDistanceFromHomeCm)
+		&& !OutAddress.ImmutableProxyWorldLocationCm.ContainsNaN();
+}
+
+bool AAstroGenerator::ResolveCanonicalClusterSystemAddress(
+	const FGuid& StableId, FAPSCanonicalClusterSystemAddress& OutAddress) const
+{
+	if (!StableId.IsValid() || !IsValid(GeneratedStarCluster))
+	{
+		return false;
+	}
+	for (const FClusterStarSystemRecord& Record : GeneratedStarCluster->PotentialStarSystems)
+	{
+		if (Record.StableId == StableId)
+		{
+			return ResolveCanonicalClusterSystemAddress(Record.InstanceIndex, OutAddress);
+		}
+	}
+	return false;
+}
+
+bool AAstroGenerator::GetCanonicalClusterDatasetRecord(
+	const int32 CanonicalIndex, FAPSCanonicalClusterSystemRecord& OutRecord) const
+{
+	if (!IsCanonicalStellarProjectionEnabled() || !IsValid(GeneratedWorldModel))
+	{
+		return false;
+	}
+	const FAPSCanonicalStellarDataset& Dataset = GeneratedWorldModel->CanonicalStellarDataset;
+	if (!bCanonicalStellarDatasetValidated
+		|| !Dataset.IsUsable(BuildCanonicalStellarDatasetInputHash())
+		|| !Dataset.ClusterRecords.IsValidIndex(CanonicalIndex)
+		|| Dataset.ClusterRecords[CanonicalIndex].CanonicalIndex != CanonicalIndex)
+	{
+		return false;
+	}
+	OutRecord = Dataset.ClusterRecords[CanonicalIndex];
+	return OutRecord.StableId.IsValid();
+}
+
+bool AAstroGenerator::GetCanonicalClusterDatasetRecord(
+	const FGuid& StableId, FAPSCanonicalClusterSystemRecord& OutRecord) const
+{
+	if (!StableId.IsValid() || !IsCanonicalStellarProjectionEnabled()
+		|| !IsValid(GeneratedWorldModel))
+	{
+		return false;
+	}
+	const FAPSCanonicalStellarDataset& Dataset = GeneratedWorldModel->CanonicalStellarDataset;
+	if (!bCanonicalStellarDatasetValidated
+		|| !Dataset.IsUsable(BuildCanonicalStellarDatasetInputHash()))
+	{
+		return false;
+	}
+	for (const FAPSCanonicalClusterSystemRecord& Record : Dataset.ClusterRecords)
+	{
+		if (Record.StableId == StableId)
+		{
+			OutRecord = Record;
+			return true;
+		}
+	}
+	return false;
+}
+
 void AAstroGenerator::FocusPreviewCamera(APlayerController* PlayerController)
 {
 	FocusPreviewTarget(PreviewFocus, PlayerController);
@@ -1298,21 +2246,28 @@ bool AAstroGenerator::TryGetPreviewClusterSystemSphere(
 		return false;
 	}
 	const FClusterStarSystemRecord* Record = GeneratedStarCluster->FindPotentialSystem(InstanceIndex);
-	FTransform WorldTransform;
-	if (!Record || !GeneratedStarCluster->StarMeshInstances->GetInstanceTransform(
-		InstanceIndex, WorldTransform, true)
-		|| WorldTransform.GetScale3D().GetAbsMax() <= UE_SMALL_NUMBER)
+	FTransform ProxyTransform;
+	const bool bHasProxyTransform = Record && (IsCanonicalStellarProjectionEnabled()
+		? GeneratedStarCluster->GetPotentialSystemBaseProxyTransform(
+			InstanceIndex, ProxyTransform)
+		: GeneratedStarCluster->StarMeshInstances->GetInstanceTransform(
+			InstanceIndex, ProxyTransform, false));
+	if (!bHasProxyTransform || ProxyTransform.GetScale3D().GetAbsMax() <= UE_SMALL_NUMBER)
 	{
 		return false;
 	}
 
+	const FTransform ComponentTransform =
+		GeneratedStarCluster->StarMeshInstances->GetComponentTransform();
+	const FVector WorldScale = ProxyTransform.GetScale3D()
+		* ComponentTransform.GetScale3D();
 	double ProxyRadius = 500.0;
 	if (const UStaticMesh* StarMesh = GeneratedStarCluster->StarMeshInstances->GetStaticMesh())
 	{
 		ProxyRadius = FMath::Max(static_cast<double>(StarMesh->GetBounds().SphereRadius)
-			* WorldTransform.GetScale3D().GetAbsMax(), ProxyRadius);
+			* WorldScale.GetAbsMax(), ProxyRadius);
 	}
-	OutCenter = GeneratedStarCluster->GetPotentialSystemWorldLocation(*Record);
+	OutCenter = ComponentTransform.TransformPosition(ProxyTransform.GetLocation());
 	OutRadius = FMath::Clamp(ProxyRadius * 10.0, 500.0, 2.0e6);
 	return !OutCenter.ContainsNaN() && FMath::IsFinite(OutRadius);
 }
@@ -1528,6 +2483,17 @@ FBox AAstroGenerator::GetPreviewFocusBounds(EAstroPreviewFocus Focus) const
 		// Use the logical catalog extent, not the extrema of the current HISM LOD.
 		// Otherwise changing the render budget visibly changes the galaxy boundary.
 		const FVector Extent = GeneratedGalaxy->StarCatalog.CatalogHalfExtent;
+		if (GeneratedGalaxy->CanonicalProjectionFrame.bEnabled
+			&& IsValid(GeneratedGalaxy->StarMeshInstances))
+		{
+			const FVector ProjectedA = GeneratedGalaxy->CanonicalProjectionFrame
+				.ProjectCanonicalUnits(-Extent);
+			const FVector ProjectedB = GeneratedGalaxy->CanonicalProjectionFrame
+				.ProjectCanonicalUnits(Extent);
+			return FBox(ProjectedA.ComponentMin(ProjectedB),
+				ProjectedA.ComponentMax(ProjectedB)).TransformBy(
+					GeneratedGalaxy->StarMeshInstances->GetComponentTransform());
+		}
 		return FBox(-Extent, Extent).TransformBy(GeneratedGalaxy->GetActorTransform());
 	}
 	if (Focus == EAstroPreviewFocus::StarCluster && IsValid(GeneratedStarCluster))
@@ -1538,10 +2504,21 @@ FBox AAstroGenerator::GetPreviewFocusBounds(EAstroPreviewFocus Focus) const
 			// extrema depend on the render budget and on the hidden materialized-home
 			// instance, which previously shifted Ring/Arc framing between regenerations.
 			// ClusterBounds is authored in generator units and star positions use * 100.
-			const FVector HalfExtent = GeneratedStarCluster->ClusterBounds.GetAbs() * 50.0;
+			const FVector HalfExtent = GeneratedStarCluster->CanonicalProjectionFrame.bEnabled
+				? FVector(GeneratedStarCluster->CanonicalProjectionFrame.CanonicalHalfExtentUnits)
+				: GeneratedStarCluster->ClusterBounds.GetAbs() * 50.0;
 			const FTransform ClusterTransform = IsValid(GeneratedStarCluster->StarMeshInstances)
 				? GeneratedStarCluster->StarMeshInstances->GetComponentTransform()
 				: GeneratedStarCluster->GetActorTransform();
+			if (GeneratedStarCluster->CanonicalProjectionFrame.bEnabled)
+			{
+				const FVector ProjectedA = GeneratedStarCluster->CanonicalProjectionFrame
+					.ProjectCanonicalUnits(-HalfExtent);
+				const FVector ProjectedB = GeneratedStarCluster->CanonicalProjectionFrame
+					.ProjectCanonicalUnits(HalfExtent);
+				return FBox(ProjectedA.ComponentMin(ProjectedB),
+					ProjectedA.ComponentMax(ProjectedB)).TransformBy(ClusterTransform);
+			}
 			return FBox(-HalfExtent, HalfExtent).TransformBy(ClusterTransform);
 		}
 		// Legacy assets without logical bounds still get a useful visible fallback.
@@ -1848,6 +2825,20 @@ void AAstroGenerator::ApplyPreviewBackgroundContext(EAstroPreviewFocus NewFocus)
 		IsValid(GeneratedGalaxy) ? GeneratedGalaxy->StarMeshInstances : nullptr;
 	UHierarchicalInstancedStaticMeshComponent* ClusterHism =
 		IsValid(GeneratedStarCluster) ? GeneratedStarCluster->StarMeshInstances : nullptr;
+	if (IsCanonicalStellarProjectionEnabled())
+	{
+		// Canonical catalogues are uploaded once through the shared affine frame.
+		// Scope changes are camera/view operations; they must not rewrite instance
+		// locations, scales or custom data and thereby create a second universe.
+		PreviewBackgroundContextFocus = NewFocus;
+		PreviewBackgroundVisualScale = 1.0;
+		PreviewBackgroundCullApplied = false;
+		CanonicalStellarProjection.ViewDistanceScale = 1.0;
+		CanonicalStellarProjection.GalaxyViewVisualScale = 1.0;
+		CanonicalStellarProjection.ClusterViewVisualScale = 1.0;
+		CanonicalStellarProjection.ViewAnchorWorldCm = FVector::ZeroVector;
+		return;
+	}
 
 	const auto CaptureBaseScales = [](
 		UHierarchicalInstancedStaticMeshComponent* Component,
@@ -2222,7 +3213,7 @@ void AAstroGenerator::UpdatePreviewGuideShells(EAstroPreviewFocus NewFocus)
 
 void AAstroGenerator::ApplyPreviewFocusPresentation(EAstroPreviewFocus NewFocus)
 {
-	if (!bIsPreviewGeneration && !IsValid(GeneratedHomeStarSystem))
+	if (!bIsPreviewGeneration)
 	{
 		return;
 	}
@@ -6629,6 +7620,34 @@ void AAstroGenerator::GenerateStarCluster()
 		StarClusterModel->StarClusterPopulation = StarClusterPopulation;
 		StarClusterModel->StarClusterComposition = StarClusterComposition;
 	}
+	const uint32 DatasetInputHash = BuildCanonicalStellarDatasetInputHash();
+	FAPSCanonicalStellarDataset* CanonicalDataset =
+		IsCanonicalStellarProjectionEnabled() && IsValid(GeneratedWorldModel)
+			? &GeneratedWorldModel->CanonicalStellarDataset : nullptr;
+	if (CanonicalDataset && CanonicalDataset->InputHash != DatasetInputHash
+		&& (bIsPreviewGeneration || !CanonicalDataset->bFinalized))
+	{
+		CanonicalDataset->ResetForInput(DatasetInputHash, PreviewGenerationSeed);
+	}
+	const bool bReuseFinalizedDataset = CanonicalDataset
+		&& ValidateCanonicalStellarDataset(*CanonicalDataset, DatasetInputHash);
+	bCanonicalStellarDatasetValidated = bReuseFinalizedDataset;
+	if (CanonicalDataset && CanonicalDataset->bFinalized && !bReuseFinalizedDataset
+		&& !bIsPreviewGeneration)
+	{
+		bCanonicalStellarDatasetRejected = true;
+		UE_LOG(LogTemp, Error,
+			TEXT("[APS.CanonicalDataset] Gameplay rejected a finalized stellar dataset whose structure or content hash is invalid"));
+		return;
+	}
+	if (bReuseFinalizedDataset)
+	{
+		StarClusterModel->StarClusterSize = CanonicalDataset->ClusterSize;
+		StarClusterModel->StarClusterType = CanonicalDataset->ClusterType;
+		StarClusterModel->StarClusterPopulation = CanonicalDataset->ClusterPopulation;
+		StarClusterModel->StarClusterComposition = CanonicalDataset->ClusterComposition;
+		bConsumedFinalizedCanonicalStellarDataset = true;
+	}
 	const EStarClusterType ClusterType = StarClusterModel->StarClusterType;
 	AStarCluster* NewStarCluster = GetWorld()->SpawnActor<AStarCluster>(BP_StarClusterClass);
 	if (!NewStarCluster)
@@ -6646,8 +7665,9 @@ void AAstroGenerator::GenerateStarCluster()
 	NewStarCluster->AttachToActor(ClusterParent, FAttachmentTransformRules::KeepRelativeTransform);
 
 	// Calculate Cluster Params
-	NewStarCluster->ModeledStarAmount = StarClusterGenerator->GetStarsAmountByRange(
-		StarClusterModel->StarClusterSize);
+	NewStarCluster->ModeledStarAmount = bReuseFinalizedDataset
+		? CanonicalDataset->ClusterModeledCount
+		: StarClusterGenerator->GetStarsAmountByRange(StarClusterModel->StarClusterSize);
 	NewStarCluster->StarAmount = NewStarCluster->ModeledStarAmount;
 	if (bIsPreviewGeneration)
 	{
@@ -6665,15 +7685,20 @@ void AAstroGenerator::GenerateStarCluster()
 		NewStarCluster->StarAmount = FMath::Min(NewStarCluster->StarAmount,
 			FMath::Min(PreviewMaxInstances, FormationBudget));
 	}
-	NewStarCluster->StarDensity = StarClusterGenerator->GetStarClusterDensityByRange();
-	NewStarCluster->ClusterBounds = StarClusterGenerator->GetStarClusterBoundsByRange(ClusterType);
+	NewStarCluster->StarDensity = bReuseFinalizedDataset
+		? CanonicalDataset->ClusterDensity
+		: StarClusterGenerator->GetStarClusterDensityByRange();
+	NewStarCluster->ClusterBounds = bReuseFinalizedDataset
+		? CanonicalDataset->ClusterBounds
+		: StarClusterGenerator->GetStarClusterBoundsByRange(ClusterType);
 	NewStarCluster->ClusterType = ClusterType;
 	NewStarCluster->StarClusterComposition = StarClusterModel->StarClusterComposition;
 	NewStarCluster->StarClusterPopulation = StarClusterModel->StarClusterPopulation;
 	NewStarCluster->StarClusterSize = StarClusterModel->StarClusterSize;
 	NewStarCluster->StarMeshInstances->NumCustomDataFloats = 6;
 	double PreviewClusterToGalaxyScale = 1.0;
-	if (bIsPreviewGeneration && IsValid(GeneratedGalaxy)
+	if (!IsCanonicalStellarProjectionEnabled()
+		&& bIsPreviewGeneration && IsValid(GeneratedGalaxy)
 		&& !GeneratedGalaxy->StarCatalog.CatalogHalfExtent.IsNearlyZero())
 	{
 		const double GalaxyRadius = GeneratedGalaxy->StarCatalog.CatalogHalfExtent.GetAbs().GetMax();
@@ -6688,7 +7713,23 @@ void AAstroGenerator::GenerateStarCluster()
 			NewStarCluster->SetActorRelativeScale3D(FVector(PreviewClusterToGalaxyScale));
 		}
 	}
-	if (NewStarCluster->GenerationSeed == 0)
+	if (IsCanonicalStellarProjectionEnabled())
+	{
+		if (bReuseFinalizedDataset)
+		{
+			NewStarCluster->GenerationSeed = CanonicalDataset->ClusterGenerationSeed;
+		}
+		else
+		{
+			const uint32 StableClusterSeed = HashCombine(
+				GetTypeHash(PreviewGenerationSeed),
+				HashCombine(GetTypeHash(static_cast<uint8>(StarClusterModel->StarClusterSize)),
+					GetTypeHash(static_cast<uint8>(ClusterType))));
+			NewStarCluster->GenerationSeed = FMath::Max(
+				static_cast<int32>(StableClusterSeed & 0x7fffffffu), 1);
+		}
+	}
+	else if (NewStarCluster->GenerationSeed == 0)
 	{
 		NewStarCluster->GenerationSeed = FMath::RandRange(1, MAX_int32);
 	}
@@ -6696,18 +7737,45 @@ void AAstroGenerator::GenerateStarCluster()
 	// at the galaxy origin so the surrounding catalog remains balanced in 360°
 	// and every deeper level can retain an exact, stable world-space address.
 	NewStarCluster->SetActorRelativeLocation(FVector::ZeroVector);
+	if (IsCanonicalStellarProjectionEnabled())
+	{
+		NewStarCluster->SetActorRelativeScale3D(FVector::OneVector);
+	}
 	NewStarCluster->CalculateAffectionRadius();
+	// Blueprint assets may serialize preview instances. Canonical ordinal, StableId,
+	// record and base-transform arrays must all restart at exact index zero.
+	NewStarCluster->StarMeshInstances->ClearInstances();
+	NewStarCluster->PotentialStarSystems.Reset();
 	NewStarCluster->PotentialStarSystems.Reserve(NewStarCluster->StarAmount);
+	NewStarCluster->SystemProxyBaseTransforms.Reset();
+	NewStarCluster->SystemProxyBaseTransforms.Reserve(NewStarCluster->StarAmount);
+	NewStarCluster->StarsModel.Reset();
 	NewStarCluster->StarMeshInstances->PreAllocateInstancesMemory(NewStarCluster->StarAmount);
 	const UStaticMesh* ClusterProxyMesh = NewStarCluster->StarMeshInstances->GetStaticMesh();
 	const double ClusterProxyMeshRadius = IsValid(ClusterProxyMesh)
 		? FMath::Max(static_cast<double>(ClusterProxyMesh->GetBounds().SphereRadius), 1.0) : 50.0;
-	const double LogicalClusterHalfExtent = NewStarCluster->ClusterBounds.GetAbs().GetMax() * 50.0;
-	const double SparseSampleCompensation = FMath::Clamp(
-		FMath::Sqrt(1600.0 / FMath::Max(NewStarCluster->StarAmount, 1)), 0.90, 1.75);
-	const double MinimumPreviewProxyRadius = bIsPreviewGeneration
-		? LogicalClusterHalfExtent * 0.00060 * SparseSampleCompensation : 0.0;
-	const double MinimumPreviewProxyScale = MinimumPreviewProxyRadius / ClusterProxyMeshRadius;
+	double LogicalClusterHalfExtent = NewStarCluster->ClusterBounds.GetAbs().GetMax() * 50.0;
+	if (ClusterType == EStarClusterType::GlobularCluster)
+	{
+		// The legacy globular formula adds StarRadius*100 before its final *100
+		// catalog conversion. Use the physical generator maximum as a conservative
+		// affine envelope; never clamp or distort an outlying canonical record.
+		constexpr double MaximumGeneratedStarRadiusSolar = 1000.0;
+		const double GlobularHalfExtent =
+			(NewStarCluster->ClusterBounds.GetAbs().GetMax() * 0.5
+				+ MaximumGeneratedStarRadiusSolar * 100.0) * 100.0;
+		LogicalClusterHalfExtent = FMath::Max(LogicalClusterHalfExtent, GlobularHalfExtent);
+	}
+	const uint32 ClusterProjectionHash = HashCombine(
+		GetTypeHash(NewStarCluster->GenerationSeed),
+		APSCanonicalStellarProjection::HashQuantizedDouble(LogicalClusterHalfExtent));
+	NewStarCluster->CanonicalProjectionFrame = APSCanonicalStellarProjection::MakeBoundedFrame(
+		LogicalClusterHalfExtent,
+		APSCanonicalStellarProjection::ClusterMaxProxyCoordinateCm,
+		ClusterProjectionHash, IsCanonicalStellarProjectionEnabled());
+	const double MinimumVisualProxyRadiusCm =
+		NewStarCluster->CanonicalProjectionFrame.ProxyHalfExtentCm
+		* APSCanonicalStellarProjection::ClusterImpostorFloorFraction;
 	FBox RenderedClusterBounds(EForceInit::ForceInit);
 
 	UE_LOG(LogTemp, VeryVerbose, TEXT("StarCount: %d"), NewStarCluster->StarAmount);
@@ -6715,82 +7783,181 @@ void AAstroGenerator::GenerateStarCluster()
 	UE_LOG(LogTemp, VeryVerbose, TEXT("ClusterBounds: %s"), *NewStarCluster->ClusterBounds.ToString());
 	UE_LOG(LogTemp, VeryVerbose, TEXT("ClusterType: %d"), static_cast<int>(NewStarCluster->ClusterType));
 
-	for (int32 i = 0; i < NewStarCluster->StarAmount; ++i)
+	const auto AddRenderedClusterRecord = [&](const int32 CanonicalIndex,
+		const FVector& StarPosition, const FStarModel& StarModel,
+		const FStarSystemModel& PotentialSystemModel)
 	{
-		// Create a star model
-		TSharedPtr<FStarModel> NewStarModel = MakeShared<FStarModel>();
-
-		if (bGenerateRandomCluster)
+		FTransform StarTransform(
+			NewStarCluster->CanonicalProjectionFrame.ProjectCanonicalUnits(StarPosition));
+		const double AppliedVisualRadiusCm = APSCanonicalStellarProjection::GetAppliedVisualRadiusCm(
+			EAPSCanonicalStellarProxyLayer::StarCluster,
+			NewStarCluster->CanonicalProjectionFrame, StarModel.Radius);
+		const double AppliedInstanceScale = AppliedVisualRadiusCm / ClusterProxyMeshRadius;
+		StarTransform.SetScale3D(FVector(AppliedInstanceScale));
+		RenderedClusterBounds += StarTransform.GetLocation();
+		const int32 StarInstIndex = NewStarCluster->StarMeshInstances->AddInstance(
+			StarTransform, false);
+		if (StarInstIndex != CanonicalIndex)
 		{
-			StarGenerator->GenerateRandomStarModel(NewStarModel);
+			UE_LOG(LogTemp, Error,
+				TEXT("[APS.CanonicalDataset] Cluster instance/canonical order diverged: instance=%d canonical=%d"),
+				StarInstIndex, CanonicalIndex);
 		}
-		else
-		{
-			StarGenerator->GenerateStarModelByProbability(NewStarModel, StarClusterModel);
-		}
-
-		// Position the star in the cluster
-		FVector StarPosition = StarClusterGenerator->CalculateStarPosition(i, NewStarCluster, NewStarModel);
-		NewStarModel->Location = StarPosition;
-
-		// Create a star instance and add it to the HISM component
-		FTransform StarTransform(StarPosition);
-		const double FarVisualRadius = FMath::Max(
-			UStarGenerator::GetFarStarVisualRadius(NewStarModel->Radius), MinimumPreviewProxyScale);
-		StarTransform.SetScale3D(FVector(FarVisualRadius));
-		RenderedClusterBounds += StarPosition;
-		// CalculateStarPosition returns cluster-local coordinates. Supplying them as
-		// world-space after the cluster has been nested inside a galaxy displaces the
-		// entire render sample away from its logical bounds and camera target.
-		const int32 StarInstIndex = NewStarCluster->StarMeshInstances->AddInstance(StarTransform, false);
-		const FLinearColor ColorValue = StarGenerator->GetStarColor(NewStarModel->SpectralClass,
-		                                                            NewStarModel->SpectralSubclass);
+		const FLinearColor ColorValue = StarGenerator->GetStarColor(
+			StarModel.SpectralClass, StarModel.SpectralSubclass);
 		NewStarCluster->StarMeshInstances->SetCustomDataValue(StarInstIndex, 0, ColorValue.R, false);
 		NewStarCluster->StarMeshInstances->SetCustomDataValue(StarInstIndex, 1, ColorValue.G, false);
 		NewStarCluster->StarMeshInstances->SetCustomDataValue(StarInstIndex, 2, ColorValue.B, false);
 
+		const double AppliedVisualRadiusSolar =
+			APSCanonicalStellarProjection::UnprojectPhysicalRadiusSolar(
+				NewStarCluster->CanonicalProjectionFrame, AppliedVisualRadiusCm);
 		const double StarEmission = UStarGenerator::GetFarStarVisualEmission(
-			NewStarModel->Radius,
-			StarGenerator->CalculateEmission(NewStarModel->Luminosity * 25),
-			FarVisualRadius);
-		NewStarCluster->StarMeshInstances->SetCustomDataValue(StarInstIndex, 3, StarEmission, false);
-
-		FStarSystemModel PotentialSystemModel;
-		const int32 SystemSeed = static_cast<int32>(HashCombine(
-			GetTypeHash(NewStarCluster->GenerationSeed), GetTypeHash(StarInstIndex)) & 0x7fffffffu);
-		StarSystemGenerator->GeneratePotentialStarSystemModel(
-			PotentialSystemModel, *NewStarModel, FMath::Max(SystemSeed, 1));
-
-		FTransform LocalInstanceTransform;
-		NewStarCluster->StarMeshInstances->GetInstanceTransform(
-			StarInstIndex, LocalInstanceTransform, false);
-		NewStarCluster->RegisterPotentialSystem(StarInstIndex, LocalInstanceTransform.GetLocation(),
-			*NewStarModel, PotentialSystemModel);
-
-		// Stable per-star surface seed and system occupancy are ready for the unlit HISM material.
+			StarModel.Radius,
+			StarGenerator->CalculateEmission(StarModel.Luminosity * 25),
+			AppliedVisualRadiusSolar);
+		NewStarCluster->StarMeshInstances->SetCustomDataValue(
+			StarInstIndex, 3, StarEmission, false);
+		NewStarCluster->RegisterPotentialSystem(
+			StarInstIndex, StarPosition, StarTransform, StarModel, PotentialSystemModel);
 		FRandomStream VisualStream(PotentialSystemModel.GenerationSeed);
 		NewStarCluster->StarMeshInstances->SetCustomDataValue(
 			StarInstIndex, 4, VisualStream.FRand(), false);
 		NewStarCluster->StarMeshInstances->SetCustomDataValue(
 			StarInstIndex, 5, PotentialSystemModel.PotentialPlanetCount / 12.0f, false);
+	};
 
+	if (CanonicalDataset)
+	{
+		if (!bReuseFinalizedDataset)
+		{
+			CanonicalDataset->ClusterGenerationSeed = NewStarCluster->GenerationSeed;
+			CanonicalDataset->ClusterModeledCount = NewStarCluster->ModeledStarAmount;
+			CanonicalDataset->ClusterDensity = NewStarCluster->StarDensity;
+			CanonicalDataset->ClusterBounds = NewStarCluster->ClusterBounds;
+			CanonicalDataset->ClusterType = NewStarCluster->ClusterType;
+			CanonicalDataset->ClusterSize = NewStarCluster->StarClusterSize;
+			CanonicalDataset->ClusterPopulation = NewStarCluster->StarClusterPopulation;
+			CanonicalDataset->ClusterComposition = NewStarCluster->StarClusterComposition;
+			CanonicalDataset->ClusterRecords.Reset(NewStarCluster->ModeledStarAmount);
+			CanonicalDataset->ClusterRecords.Reserve(NewStarCluster->ModeledStarAmount);
+
+			const int32 RenderedPopulationCount = NewStarCluster->StarAmount;
+			NewStarCluster->StarAmount = NewStarCluster->ModeledStarAmount;
+			for (int32 CanonicalIndex = 0;
+				CanonicalIndex < NewStarCluster->ModeledStarAmount; ++CanonicalIndex)
+			{
+				TSharedPtr<FStarModel> StarModel = MakeShared<FStarModel>();
+				if (bGenerateRandomCluster)
+				{
+					StarGenerator->GenerateRandomStarModel(StarModel);
+				}
+				else
+				{
+					StarGenerator->GenerateStarModelByProbability(StarModel, StarClusterModel);
+				}
+				const FVector StarPosition = StarClusterGenerator->CalculateStarPosition(
+					CanonicalIndex, NewStarCluster, StarModel);
+				StarModel->Location = StarPosition;
+				FStarSystemModel PotentialSystemModel;
+				const int32 SystemSeed = static_cast<int32>(HashCombine(
+					GetTypeHash(NewStarCluster->GenerationSeed), GetTypeHash(CanonicalIndex))
+					& 0x7fffffffu);
+				StarSystemGenerator->GeneratePotentialStarSystemModel(
+					PotentialSystemModel, *StarModel, FMath::Max(SystemSeed, 1));
+
+				FAPSCanonicalClusterSystemRecord& Record =
+					CanonicalDataset->ClusterRecords.AddDefaulted_GetRef();
+				Record.StableId = NewStarCluster->MakeStableSystemId(CanonicalIndex);
+				Record.CanonicalIndex = CanonicalIndex;
+				Record.ClusterLocalLocation = StarPosition;
+				Record.PrimaryStarModel = *StarModel;
+				Record.PrimaryStarModel.Location = StarPosition;
+				Record.SystemModel = PotentialSystemModel;
+				Record.SystemModel.StableId = Record.StableId;
+				Record.SystemModel.Location = StarPosition;
+			}
+			NewStarCluster->StarAmount = RenderedPopulationCount;
+			CanonicalDataset->HomeCanonicalIndex =
+				APSCanonicalStellarProjection::SelectSharedHomeInstanceIndex(
+					PreviewGenerationSeed, NewStarCluster->GenerationSeed,
+					NewStarCluster->ModeledStarAmount);
+			if (CanonicalDataset->ClusterRecords.IsValidIndex(
+				CanonicalDataset->HomeCanonicalIndex))
+			{
+				CanonicalDataset->HomeStableId = CanonicalDataset->ClusterRecords[
+					CanonicalDataset->HomeCanonicalIndex].StableId;
+			}
+			CanonicalDataset->bFinalized = true;
+			CanonicalDataset->DatasetHash = BuildCanonicalStellarManifestHash(*CanonicalDataset);
+			bCanonicalStellarDatasetValidated = ValidateCanonicalStellarDataset(
+				*CanonicalDataset, DatasetInputHash);
+		}
+
+		const int32 RecordsToRender = FMath::Min(
+			NewStarCluster->StarAmount, CanonicalDataset->ClusterRecords.Num());
+		for (int32 RenderIndex = 0; RenderIndex < RecordsToRender; ++RenderIndex)
+		{
+			const FAPSCanonicalClusterSystemRecord& Record =
+				CanonicalDataset->ClusterRecords[RenderIndex];
+			AddRenderedClusterRecord(Record.CanonicalIndex, Record.ClusterLocalLocation,
+				Record.PrimaryStarModel, Record.SystemModel);
+		}
 	}
-	NewStarCluster->FinalizeGeneratedInstances();
+	else
+	{
+		for (int32 CanonicalIndex = 0; CanonicalIndex < NewStarCluster->StarAmount;
+			++CanonicalIndex)
+		{
+			TSharedPtr<FStarModel> StarModel = MakeShared<FStarModel>();
+			if (bGenerateRandomCluster)
+			{
+				StarGenerator->GenerateRandomStarModel(StarModel);
+			}
+			else
+			{
+				StarGenerator->GenerateStarModelByProbability(StarModel, StarClusterModel);
+			}
+			const int32 RenderedPopulationCount = NewStarCluster->StarAmount;
+			NewStarCluster->StarAmount = NewStarCluster->ModeledStarAmount;
+			const FVector StarPosition = StarClusterGenerator->CalculateStarPosition(
+				CanonicalIndex, NewStarCluster, StarModel);
+			NewStarCluster->StarAmount = RenderedPopulationCount;
+			StarModel->Location = StarPosition;
+			FStarSystemModel PotentialSystemModel;
+			const int32 SystemSeed = static_cast<int32>(HashCombine(
+				GetTypeHash(NewStarCluster->GenerationSeed), GetTypeHash(CanonicalIndex))
+				& 0x7fffffffu);
+			StarSystemGenerator->GeneratePotentialStarSystemModel(
+				PotentialSystemModel, *StarModel, FMath::Max(SystemSeed, 1));
+			AddRenderedClusterRecord(CanonicalIndex, StarPosition, *StarModel,
+				PotentialSystemModel);
+		}
+	}
+	if (!NewStarCluster->CanonicalProjectionFrame.bEnabled)
+	{
+		NewStarCluster->FinalizeGeneratedInstances();
+	}
+	NoteCanonicalStellarProxyUpload();
 	const FVector RenderedClusterCenter = RenderedClusterBounds.IsValid
 		? RenderedClusterBounds.GetCenter() : FVector::ZeroVector;
 	const FVector RenderedClusterExtent = RenderedClusterBounds.IsValid
 		? RenderedClusterBounds.GetExtent() : FVector::ZeroVector;
 	UE_LOG(LogTemp, Log,
 		TEXT("[APS.ClusterPreview] type=%d modeled=%d rendered=%d logicalHalfExtent=%.3e galaxyScale=%.3e "
-			"sampleCenter=%s sampleExtent=%s minProxyRadius=%.3e minProxyScale=%.3e preview=%d"),
+			"sampleCenter=%s sampleExtent=%s minProxyRadiusCm=%.3e "
+			"projectionScale=%.9e maxProxyCm=%.3e preview=%d"),
 		static_cast<int32>(ClusterType), NewStarCluster->ModeledStarAmount,
 		NewStarCluster->StarAmount, LogicalClusterHalfExtent, PreviewClusterToGalaxyScale,
 		*RenderedClusterCenter.ToCompactString(), *RenderedClusterExtent.ToCompactString(),
-		MinimumPreviewProxyRadius, MinimumPreviewProxyScale, bIsPreviewGeneration ? 1 : 0);
+		MinimumVisualProxyRadiusCm,
+		NewStarCluster->CanonicalProjectionFrame.PositionScale,
+		NewStarCluster->CanonicalProjectionFrame.MaxProxyCoordinateCm,
+		bIsPreviewGeneration ? 1 : 0);
 
 	GeneratedStarCluster = NewStarCluster;
 
-	if (bGenerateFullScaledWorld)
+	if (bGenerateFullScaledWorld && !IsCanonicalStellarProjectionEnabled())
 	{
 		SetActorScale3D(FVector(FullScaleValue, FullScaleValue, FullScaleValue));
 	}
@@ -6815,7 +7982,23 @@ AStarSystem* AAstroGenerator::MaterializeClusterStarSystem(int32 InstanceIndex)
 	}
 
 	FTransform WorldTransform;
-	if (!GeneratedStarCluster->StarMeshInstances->GetInstanceTransform(InstanceIndex, WorldTransform, true))
+	if (IsCanonicalStellarProjectionEnabled())
+	{
+		FTransform BaseLocalTransform;
+		if (!GeneratedStarCluster->GetPotentialSystemBaseProxyTransform(
+			InstanceIndex, BaseLocalTransform))
+		{
+			return nullptr;
+		}
+		const FTransform ComponentTransform =
+			GeneratedStarCluster->StarMeshInstances->GetComponentTransform();
+		WorldTransform = FTransform(
+			ComponentTransform.TransformRotation(BaseLocalTransform.GetRotation()),
+			ComponentTransform.TransformPosition(BaseLocalTransform.GetLocation()),
+			FVector::OneVector);
+	}
+	else if (!GeneratedStarCluster->StarMeshInstances->GetInstanceTransform(
+		InstanceIndex, WorldTransform, true))
 	{
 		return nullptr;
 	}
@@ -6828,7 +8011,11 @@ AStarSystem* AAstroGenerator::MaterializeClusterStarSystem(int32 InstanceIndex)
 	{
 		return nullptr;
 	}
-	StarSystem->AttachToActor(GeneratedStarCluster, FAttachmentTransformRules::KeepWorldTransform);
+	if (!IsCanonicalStellarProjectionEnabled())
+	{
+		StarSystem->AttachToActor(
+			GeneratedStarCluster, FAttachmentTransformRules::KeepWorldTransform);
+	}
 	StarSystemGenerator->ApplyModel(StarSystem, MakeShared<FStarSystemModel>(Record->SystemModel));
 
 	AStar* Star = World->SpawnActor<AStar>(BP_StarClass, WorldTransform);
@@ -6841,7 +8028,7 @@ AStarSystem* AAstroGenerator::MaterializeClusterStarSystem(int32 InstanceIndex)
 	StarGenerator->ApplyModel(Star, StarModel);
 	Star->SetActorLocation(WorldTransform.GetLocation());
 	Star->SetActorScale3D(FVector(StarModel->Radius * 813684224.0));
-	Star->StarRadiusKM = StarModel->Radius * 696340;
+	Star->StarRadiusKM = FMath::RoundToInt(StarModel->RadiusKM);
 	Star->FullSpectralName = Star->GenerateFullSpectralName();
 	Star->AstroName = FName(*FString::Printf(TEXT("STAR-%s"),
 		*Record->StableId.ToString(EGuidFormats::Short)));
@@ -6858,6 +8045,7 @@ AStarSystem* AAstroGenerator::MaterializeClusterStarSystem(int32 InstanceIndex)
 		GeneratedStarCluster->StarMeshInstances->UpdateInstanceTransform(
 			InstanceIndex, HiddenTransform, false, true, true);
 		GeneratedStarCluster->StarMeshInstances->BuildTreeIfOutdated(true, true);
+		NoteCanonicalStellarProxyMutation();
 	}
 	Record->bMaterialized = true;
 	Record->MaterializedSystem = StarSystem;
@@ -6884,11 +8072,16 @@ bool AAstroGenerator::DematerializeClusterStarSystem(int32 InstanceIndex)
 		DestroyActorTree(Record->MaterializedSystem.Get());
 	}
 
-	const FTransform RestoredTransform(
-		FQuat::Identity, Record->ClusterLocalLocation, FVector(Record->PrimaryStarModel.Radius));
+	FTransform RestoredTransform;
+	if (!GeneratedStarCluster->GetPotentialSystemBaseProxyTransform(
+		InstanceIndex, RestoredTransform))
+	{
+		return false;
+	}
 	GeneratedStarCluster->StarMeshInstances->UpdateInstanceTransform(
 		InstanceIndex, RestoredTransform, false, true, true);
 	GeneratedStarCluster->StarMeshInstances->BuildTreeIfOutdated(true, true);
+	NoteCanonicalStellarProxyMutation();
 	Record->bMaterialized = false;
 	Record->MaterializedSystem.Reset();
 	return true;
@@ -7173,9 +8366,8 @@ void AAstroGenerator::GenerateStarSystemByModel()
 		ComputeHomeSystemPosition(HomeSystemTransform, HomeSystemSpawnLocation);
 		// The cluster record retains the canonical full-scale address. Gameplay actors
 		// live in a detached local-system bubble so character/ship/camera transforms
-		// never inherit the 1e9 catalogue presentation scale. Preview still materializes
-		// at the catalogue address because its entire hierarchy receives one bounded
-		// view transform before the camera is exposed.
+		// never inherit a catalog parent. Preview materializes at the same deterministic
+		// bounded render anchor; neither path moves the immutable catalog instances.
 		const bool bUseGameplayLocalFrame = !bIsPreviewGeneration && !bIntegrateStartPlanet;
 		const FVector MaterializedHomeSystemLocation = bUseGameplayLocalFrame
 			? FVector::ZeroVector : HomeSystemSpawnLocation;
@@ -7187,17 +8379,23 @@ void AAstroGenerator::GenerateStarSystemByModel()
 		from hism index to star model map get random pair*/
 
 		// Create a new star system
+		FClusterStarSystemRecord* HomeClusterRecord = PendingHomeCluster.IsValid()
+			? PendingHomeCluster->FindPotentialSystemMutable(PendingHomeClusterInstanceIndex)
+			: nullptr;
+		if (IsCanonicalStellarProjectionEnabled() && HomeClusterRecord)
+		{
+			// Cluster render budgets consume different amounts of legacy global RNG.
+			// The canonical home record owns its downstream system stream instead.
+			FMath::RandInit(FMath::Max(HomeClusterRecord->SystemModel.GenerationSeed, 1));
+		}
 		TSharedPtr<FStarSystemModel> StarSystemModel;
 		int AmountOfStars;
 		ComputeStarAmount(StarSystemModel, AmountOfStars);
 
-		FClusterStarSystemRecord* HomeClusterRecord = PendingHomeCluster.IsValid()
-			? PendingHomeCluster->FindPotentialSystemMutable(PendingHomeClusterInstanceIndex)
-			: nullptr;
 		if (HomeClusterRecord)
 		{
 			StarSystemModel = MakeShared<FStarSystemModel>(HomeClusterRecord->SystemModel);
-			StarSystemModel->Location = HomeSystemSpawnLocation;
+			StarSystemModel->Location = HomeClusterRecord->ClusterLocalLocation;
 			if (bRandomHomeSystem)
 			{
 				AmountOfStars = FMath::Max(1, StarSystemModel->AmountOfStars);
@@ -7245,7 +8443,7 @@ void AAstroGenerator::GenerateStarSystemByModel()
 			if (HomeClusterRecord && StarNumber == 0 && bRandomHomeStar)
 			{
 				*StarModel = HomeClusterRecord->PrimaryStarModel;
-				StarModel->Location = HomeSystemSpawnLocation;
+				StarModel->Location = HomeClusterRecord->ClusterLocalLocation;
 			}
 			else if (bRandomHomeStar)
 			{
@@ -7260,6 +8458,7 @@ void AAstroGenerator::GenerateStarSystemByModel()
 
 			if (HomeClusterRecord && StarNumber == 0 && StarModel.IsValid())
 			{
+				StarModel->Location = HomeClusterRecord->ClusterLocalLocation;
 				// The materialized home system and its distant CLUSTER glyph are one
 				// astronomical object.  A user-selected star used to replace only the
 				// actor model, leaving the catalogue point with its old random (often
@@ -7267,6 +8466,10 @@ void AAstroGenerator::GenerateStarSystemByModel()
 				// record and update the existing HISM payload in place.
 				SynchronizeHomeClusterRecord(
 					*HomeClusterRecord, *StarModel, *StarSystemModel);
+				if (IsCanonicalStellarProjectionEnabled())
+				{
+					RefreshCanonicalClusterProxy(PendingHomeClusterInstanceIndex);
+				}
 
 				if (UHierarchicalInstancedStaticMeshComponent* HomeClusterHism =
 					PendingHomeCluster->StarMeshInstances)
@@ -7280,20 +8483,23 @@ void AAstroGenerator::GenerateStarSystemByModel()
 						PendingHomeClusterInstanceIndex, 1, HomeColor.G, false);
 					HomeClusterHism->SetCustomDataValue(
 						PendingHomeClusterInstanceIndex, 2, HomeColor.B, false);
-					double HomeVisualRadius = 0.0;
-					FTransform HomeProxyTransform;
-					if (HomeClusterHism->GetInstanceTransform(
-						PendingHomeClusterInstanceIndex, HomeProxyTransform, false))
+					if (!IsCanonicalStellarProjectionEnabled())
 					{
-						HomeVisualRadius = HomeProxyTransform.GetScale3D().GetAbsMax();
+						double HomeVisualRadius = 0.0;
+						FTransform HomeProxyTransform;
+						if (HomeClusterHism->GetInstanceTransform(
+							PendingHomeClusterInstanceIndex, HomeProxyTransform, false))
+						{
+							HomeVisualRadius = HomeProxyTransform.GetScale3D().GetAbsMax();
+						}
+						const double HomeEmission = UStarGenerator::GetFarStarVisualEmission(
+							HomeClusterRecord->PrimaryStarModel.Radius,
+							StarGenerator->CalculateEmission(
+								HomeClusterRecord->PrimaryStarModel.Luminosity * 25.0),
+							HomeVisualRadius);
+						HomeClusterHism->SetCustomDataValue(
+							PendingHomeClusterInstanceIndex, 3, HomeEmission, true);
 					}
-					const double HomeEmission = UStarGenerator::GetFarStarVisualEmission(
-						HomeClusterRecord->PrimaryStarModel.Radius,
-						StarGenerator->CalculateEmission(
-							HomeClusterRecord->PrimaryStarModel.Luminosity * 25.0),
-						HomeVisualRadius);
-					HomeClusterHism->SetCustomDataValue(
-						PendingHomeClusterInstanceIndex, 3, HomeEmission, true);
 				}
 			}
 
@@ -7369,7 +8575,7 @@ void AAstroGenerator::GenerateStarSystemByModel()
 			NewStar->SetActorLocation(SystemCenter);
 			NewPlanetarySystem->SetActorLocation(SystemCenter);
 			NewStar->SetActorScale3D(FVector(StarModel->Radius * 813684224.0));
-			NewStar->StarRadiusKM = StarModel->Radius * 696340;
+			NewStar->StarRadiusKM = FMath::RoundToInt(StarModel->RadiusKM);
 			NewStar->SetPlanetarySystem(NewPlanetarySystem);
 			NewPlanetarySystem->SetStar(NewStar);
 			NewStarSystem->AddNewStar(NewStar);
@@ -7804,6 +9010,7 @@ void AAstroGenerator::GenerateStarSystemByModel()
 			HomeClusterRecord->SystemModel.bHasPlanetarySystem = MaterializedPlanetCount > 0;
 			HomeClusterRecord->bMaterialized = true;
 			HomeClusterRecord->MaterializedSystem = NewStarSystem;
+			SynchronizeCanonicalStellarManifestHomeRecord(*HomeClusterRecord);
 			// Keep the lightweight HISM point at this catalog address. It is the stable
 			// barycentric representation used by GALAXY/CLUSTER while the real stellar
 			// hierarchy stays hidden. Deep scopes cull this point together with every
@@ -7841,9 +9048,14 @@ void AAstroGenerator::GenerateStarSystemByModel()
 					if (Hism->GetInstanceTransform(
 						PendingHomeClusterInstanceIndex, LocalProxyTransform, false))
 					{
-						LocalProxyTransform.SetScale3D(FVector::ZeroVector);
-						Hism->UpdateInstanceTransform(PendingHomeClusterInstanceIndex,
-							LocalProxyTransform, false, true, true);
+						if (APSCanonicalStellarProjection::SuppressExactMaterializedProxy(
+							HomeClusterRecord->StableId, NewStarSystem->StableSystemId,
+							LocalProxyTransform))
+						{
+							Hism->UpdateInstanceTransform(PendingHomeClusterInstanceIndex,
+								LocalProxyTransform, false, true, true);
+							NoteCanonicalStellarProxyMutation();
+						}
 					}
 				}
 			}
@@ -7906,6 +9118,7 @@ void AAstroGenerator::DisplayNewGeneratedWorld()
 
 void AAstroGenerator::InitGenerationLevel()
 {
+	BeginCanonicalStellarProjectionBuild();
 	bool bGeneratedHomeSystemAsPrimaryLevel = false;
 
 	switch (AstroGenerationLevel)
@@ -7920,6 +9133,11 @@ void AAstroGenerator::InitGenerationLevel()
 		// corresponding focus buttons always framed a fallback root. Build both
 		// lightweight HISM layers and materialize the home system below them.
 		GenerateGalaxy();
+		if (bCanonicalStellarDatasetRejected)
+		{
+			FinalizeCanonicalStellarProjectionBuild();
+			return;
+		}
 		GenerateStarCluster();
 		break;
 	case EAstroGenerationLevel::StarSystem:
@@ -7939,10 +9157,17 @@ void AAstroGenerator::InitGenerationLevel()
 		break;
 	}
 
+	if (bCanonicalStellarDatasetRejected)
+	{
+		FinalizeCanonicalStellarProjectionBuild();
+		return;
+	}
+
 	if (bGenerateHomeSystem && !bGeneratedHomeSystemAsPrimaryLevel)
 	{
 		GenerateHomeStarSystem();
 	}
+	FinalizeCanonicalStellarProjectionBuild();
 }
 
 void AAstroGenerator::GenerateGalaxy()
@@ -7966,6 +9191,35 @@ void AAstroGenerator::GenerateGalaxy()
 		GalaxyModel->StarsCount = GalaxyStarCount;
 		GalaxyModel->StarsDensity = GalaxyStarDensity;
 		GalaxyModel->GalaxySize = GalaxySize;
+	}
+	const uint32 DatasetInputHash = BuildCanonicalStellarDatasetInputHash();
+	FAPSCanonicalStellarDataset* CanonicalDataset =
+		IsCanonicalStellarProjectionEnabled() && IsValid(GeneratedWorldModel)
+			? &GeneratedWorldModel->CanonicalStellarDataset : nullptr;
+	const bool bReuseFinalizedDataset = CanonicalDataset
+		&& ValidateCanonicalStellarDataset(*CanonicalDataset, DatasetInputHash);
+	bCanonicalStellarDatasetValidated = bReuseFinalizedDataset;
+	if (CanonicalDataset && CanonicalDataset->bFinalized && !bReuseFinalizedDataset
+		&& !bIsPreviewGeneration)
+	{
+		bCanonicalStellarDatasetRejected = true;
+		UE_LOG(LogTemp, Error,
+			TEXT("[APS.CanonicalDataset] Gameplay rejected a finalized stellar dataset whose structure or content hash is invalid"));
+		return;
+	}
+	if (bReuseFinalizedDataset)
+	{
+		GalaxyModel->GalaxyClass = CanonicalDataset->GalaxyClass;
+		GalaxyModel->GalaxyType = CanonicalDataset->GalaxyType;
+		GalaxyModel->StarsCount = static_cast<int32>(FMath::Clamp<int64>(
+			CanonicalDataset->GalaxyModeledStarCount, 1, MAX_int32));
+		GalaxyModel->StarsDensity = CanonicalDataset->GalaxyStarDensity;
+		GalaxyModel->GalaxySize = CanonicalDataset->GalaxySize;
+		bConsumedFinalizedCanonicalStellarDataset = true;
+	}
+	else if (CanonicalDataset)
+	{
+		CanonicalDataset->ResetForInput(DatasetInputHash, PreviewGenerationSeed);
 	}
 
 	const int32 ModeledStarCount = FMath::Max(1, GalaxyModel->StarsCount);
@@ -7995,16 +9249,55 @@ void AAstroGenerator::GenerateGalaxy()
 		NewGalaxy->EnsureCanonicalStellarMaterial();
 		NewGalaxy->GalaxyType = GalaxyModel->GalaxyType;
 		NewGalaxy->GalaxyGlass = GalaxyModel->GalaxyClass;
-		const int32 GalaxySeed = HashCombine(GetTypeHash(GalaxySize),
-			HashCombine(GetTypeHash(GalaxyStarCount), GetTypeHash(static_cast<uint8>(GalaxyType))));
+		const int32 GalaxySeed = bReuseFinalizedDataset
+			? CanonicalDataset->GalaxyGenerationSeed
+			: FMath::Max(1, static_cast<int32>(HashCombine(
+				GetTypeHash(PreviewGenerationSeed),
+				HashCombine(GetTypeHash(GalaxyModel->GalaxySize),
+					HashCombine(GetTypeHash(GalaxyModel->StarsCount),
+						GetTypeHash(static_cast<uint8>(GalaxyModel->GalaxyType)))))
+				& 0x7fffffffu));
+		const double DensityScale = FMath::Sqrt(
+			10.0 / FMath::Clamp(GalaxyModel->StarsDensity, 0.01, 1000.0));
+		const double GalaxyCatalogRadius = FMath::Max(50000.0,
+			static_cast<double>(FMath::Max(GalaxyModel->GalaxySize, 1)) * 50000.0)
+			* DensityScale;
+		// Irregular lobes can reach 1.03 of the nominal radius. Keep a conservative
+		// envelope so the affine map never clips or changes their pairwise topology.
+		const double GalaxyCatalogHalfExtent = bReuseFinalizedDataset
+			? CanonicalDataset->GalaxyCatalogHalfExtent.GetAbs().GetMax()
+			: GalaxyCatalogRadius * 1.05;
+		if (CanonicalDataset && !bReuseFinalizedDataset)
+		{
+			CanonicalDataset->GalaxyGenerationSeed = GalaxySeed;
+			CanonicalDataset->GalaxyModeledStarCount = GalaxyModel->StarsCount;
+			CanonicalDataset->GalaxySize = GalaxyModel->GalaxySize;
+			CanonicalDataset->GalaxyStarDensity = GalaxyModel->StarsDensity;
+			CanonicalDataset->GalaxyType = GalaxyModel->GalaxyType;
+			CanonicalDataset->GalaxyClass = GalaxyModel->GalaxyClass;
+			CanonicalDataset->GalaxyCatalogHalfExtent = FVector(GalaxyCatalogHalfExtent);
+		}
+		const uint32 GalaxyProjectionHash = HashCombine(
+			GetTypeHash(GalaxySeed),
+			APSCanonicalStellarProjection::HashQuantizedDouble(GalaxyCatalogHalfExtent));
+		NewGalaxy->CanonicalProjectionFrame = APSCanonicalStellarProjection::MakeBoundedFrame(
+			GalaxyCatalogHalfExtent,
+			APSCanonicalStellarProjection::GalaxyMaxProxyCoordinateCm,
+			GalaxyProjectionHash, IsCanonicalStellarProjectionEnabled());
 		GalaxyGenerator->GenerateGalaxyOctreeStars(
 			StarGenerator, NewGalaxy, GalaxyModel, RenderedStarCount, GalaxySeed,
 			bIsPreviewGeneration);
 		NewGalaxy->AttachToActor(this, FAttachmentTransformRules::KeepRelativeTransform);
+		if (IsCanonicalStellarProjectionEnabled())
+		{
+			NewGalaxy->SetActorRelativeLocation(FVector::ZeroVector);
+			NewGalaxy->SetActorRelativeScale3D(FVector::OneVector);
+		}
 
 		GeneratedGalaxy = NewGalaxy;
+		NoteCanonicalStellarProxyUpload();
 
-		if (bGenerateFullScaledWorld)
+		if (bGenerateFullScaledWorld && !IsCanonicalStellarProjectionEnabled())
 		{
 			this->SetActorScale3D(FVector(FullScaleValue));
 		}
@@ -9972,6 +11265,37 @@ void AAstroGenerator::SynchronizeHomeClusterRecord(
 	Record.StableId = StableId;
 	Record.InstanceIndex = InstanceIndex;
 	Record.ClusterLocalLocation = ClusterLocalLocation;
+	SynchronizeCanonicalStellarManifestHomeRecord(Record);
+}
+
+void AAstroGenerator::SynchronizeCanonicalStellarManifestHomeRecord(
+	const FClusterStarSystemRecord& Record)
+{
+	if (!IsCanonicalStellarProjectionEnabled() || !IsValid(GeneratedWorldModel))
+	{
+		return;
+	}
+	FAPSCanonicalStellarDataset& Dataset = GeneratedWorldModel->CanonicalStellarDataset;
+	if (!Dataset.bFinalized || Dataset.InputHash != BuildCanonicalStellarDatasetInputHash()
+		|| !Dataset.ClusterRecords.IsValidIndex(Dataset.HomeCanonicalIndex)
+		|| Dataset.HomeCanonicalIndex != Record.InstanceIndex
+		|| Dataset.HomeStableId != Record.StableId)
+	{
+		return;
+	}
+	FAPSCanonicalClusterSystemRecord& CanonicalRecord =
+		Dataset.ClusterRecords[Dataset.HomeCanonicalIndex];
+	CanonicalRecord.StableId = Record.StableId;
+	CanonicalRecord.CanonicalIndex = Record.InstanceIndex;
+	CanonicalRecord.ClusterLocalLocation = Record.ClusterLocalLocation;
+	CanonicalRecord.PrimaryStarModel = Record.PrimaryStarModel;
+	CanonicalRecord.PrimaryStarModel.Location = Record.ClusterLocalLocation;
+	CanonicalRecord.SystemModel = Record.SystemModel;
+	CanonicalRecord.SystemModel.StableId = Record.StableId;
+	CanonicalRecord.SystemModel.Location = Record.ClusterLocalLocation;
+	Dataset.DatasetHash = BuildCanonicalStellarManifestHash(Dataset);
+	bCanonicalStellarDatasetValidated = ValidateCanonicalStellarDataset(
+		Dataset, Dataset.InputHash);
 }
 
 void AAstroGenerator::RotatePlanetOrbits(APlanetarySystem* NewPlanetarySystem)
@@ -10010,6 +11334,41 @@ void AAstroGenerator::ComputeHomeSystemPosition(FTransform& HomeSystemTransform,
 	PendingHomeCluster.Reset();
 	PendingHomeClusterInstanceIndex = INDEX_NONE;
 	HomeSystemSpawnLocation = {0, 0, 0};
+	if (IsCanonicalStellarProjectionEnabled())
+	{
+		// WorldCenter/RandomPosition are legacy actor-presentation options. They must
+		// never choose a different canonical system or reintroduce a large physical
+		// address. Preview materializes the finalized home record at its bounded proxy;
+		// gameplay later detaches that same StableId into the local zero-centred bubble.
+		const FAPSCanonicalStellarDataset* Dataset = IsValid(GeneratedWorldModel)
+			? &GeneratedWorldModel->CanonicalStellarDataset : nullptr;
+		AStarCluster* StarClusterActor = GeneratedStarCluster;
+		const int32 HomeCanonicalIndex = Dataset && bCanonicalStellarDatasetValidated
+			? Dataset->HomeCanonicalIndex : INDEX_NONE;
+		const FClusterStarSystemRecord* HomeRecord = IsValid(StarClusterActor)
+			? StarClusterActor->FindPotentialSystem(HomeCanonicalIndex) : nullptr;
+		if (!Dataset || !HomeRecord || Dataset->HomeStableId != HomeRecord->StableId)
+		{
+			UE_LOG(LogTemp, Error,
+				TEXT("[APS.CanonicalDataset] Finalized home record is unavailable for materialization"));
+			HomeSystemTransform.SetLocation(FVector::ZeroVector);
+			return;
+		}
+
+		PendingHomeCluster = StarClusterActor;
+		PendingHomeClusterInstanceIndex = HomeCanonicalIndex;
+		if (!ComposeCanonicalStellarProjection(HomeRecord->ClusterLocalLocation))
+		{
+			UE_LOG(LogTemp, Error,
+				TEXT("[APS.CanonicalProjection] Failed to bind finalized home record %s"),
+				*HomeRecord->StableId.ToString(EGuidFormats::Digits));
+			HomeSystemTransform.SetLocation(FVector::ZeroVector);
+			return;
+		}
+		HomeSystemSpawnLocation = StarClusterActor->GetPotentialSystemWorldLocation(*HomeRecord);
+		HomeSystemTransform.SetLocation(HomeSystemSpawnLocation);
+		return;
+	}
 	switch (HomeSystemPosition)
 	{
 	case EHomeSystemPosition::WorldCenter:
@@ -10183,6 +11542,10 @@ void AAstroGenerator::GenerateGalaxiesCluster()
 	// navigable parent hierarchy as the modern Galaxy/StarCluster preview so old
 	// save/config values cannot produce a completely empty astronomical scene.
 	GenerateGalaxy();
+	if (bCanonicalStellarDatasetRejected)
+	{
+		return;
+	}
 	GenerateStarCluster();
 }
 

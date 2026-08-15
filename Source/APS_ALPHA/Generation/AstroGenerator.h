@@ -10,6 +10,7 @@
 #include "APS_ALPHA/Core/Enums/AstroGenerationLevel.h"
 #include "APS_ALPHA/Core/Enums/PlanetarySystemType.h"
 #include "APS_ALPHA/Core/Enums/StarType.h"
+#include "APS_ALPHA/Core/Rendering/APSCanonicalStellarProjection.h"
 #include "GameFramework/Actor.h"
 #include "AstroGenerator.generated.h"
 
@@ -41,6 +42,8 @@ enum class EOrbitHeight : uint8;
 struct FPlanetModel;
 struct FPlanetData;
 struct FClusterStarSystemRecord;
+struct FAPSCanonicalStellarDataset;
+struct FAPSCanonicalClusterSystemRecord;
 struct FStarModel;
 struct FStarSystemModel;
 
@@ -158,6 +161,29 @@ public:
 	int64 GetPreviewGalaxyModeledStarCount() const;
 	int32 GetPreviewClusterRenderedStarCount() const;
 	int32 GetPreviewClusterModeledSystemCount() const;
+	/** Immutable canonical-to-proxy descriptor shared by menu, gameplay and diagnostics. */
+	const FAPSCanonicalStellarProjectionDescriptor& GetCanonicalStellarProjectionDescriptor() const
+	{
+		return CanonicalStellarProjection;
+	}
+	/** Resolves one exact rendered instance back to its canonical record and base projection. */
+	bool GetCanonicalStellarProxyRecord(
+		EAPSCanonicalStellarProxyLayer Layer, int32 InstanceIndex,
+		FAPSCanonicalStellarProxyRecord& OutRecord) const;
+	/** StableId lookup is authoritative across different menu/gameplay render budgets. */
+	bool GetCanonicalStellarProxyRecord(
+		EAPSCanonicalStellarProxyLayer Layer, const FGuid& StableId,
+		FAPSCanonicalStellarProxyRecord& OutRecord) const;
+	/** Authoritative physical address/distance and immutable proxy location for one cluster system. */
+	bool ResolveCanonicalClusterSystemAddress(
+		int32 InstanceIndex, FAPSCanonicalClusterSystemAddress& OutAddress) const;
+	bool ResolveCanonicalClusterSystemAddress(
+		const FGuid& StableId, FAPSCanonicalClusterSystemAddress& OutAddress) const;
+	/** Full finalized dataset lookup; independent of the current HISM LOD subset. */
+	bool GetCanonicalClusterDatasetRecord(
+		int32 CanonicalIndex, FAPSCanonicalClusterSystemRecord& OutRecord) const;
+	bool GetCanonicalClusterDatasetRecord(
+		const FGuid& StableId, FAPSCanonicalClusterSystemRecord& OutRecord) const;
 	bool GetSelectedPreviewClusterSystemSummary(
 		FString& OutStableId, int32& OutStarCount, int32& OutPotentialPlanetCount) const;
 	/** True only when the requested hierarchy level exists in the current live preview. */
@@ -224,7 +250,7 @@ public:
 	static void ApplyPlanetaryBodyRadius(APlanetaryBody& Body, double RadiusKm);
 	/**
 	 * Commits the materialized home system back into its actor-free cluster record
-	 * without changing the record identity or its HISM-local anchor.  Keeping this
+	 * without changing the record identity or canonical catalog anchor. Keeping this
 	 * primitive deterministic lets the GALAXY/CLUSTER glyph and SYSTEM hierarchy
 	 * share one model even when the home system is randomized.
 	 */
@@ -498,6 +524,21 @@ protected:
 	void InitLegacyAuthoredGenerationLevel();
 
 	void InitGenerationLevel();
+	bool IsCanonicalStellarProjectionEnabled() const;
+	void BeginCanonicalStellarProjectionBuild();
+	void FinalizeCanonicalStellarProjectionBuild();
+	void NoteCanonicalStellarProxyUpload();
+	void NoteCanonicalStellarProxyMutation();
+	uint32 BuildCanonicalStellarProjectionContextHash() const;
+	uint32 BuildCanonicalStellarDatasetInputHash() const;
+	uint32 BuildCanonicalStellarManifestHash(const FAPSCanonicalStellarDataset& Dataset) const;
+	bool ValidateCanonicalStellarDataset(
+		const FAPSCanonicalStellarDataset& Dataset, uint32 ExpectedInputHash) const;
+	uint32 BuildCanonicalStellarDatasetHash() const;
+	void SynchronizeCanonicalStellarManifestHomeRecord(
+		const FClusterStarSystemRecord& Record);
+	bool ComposeCanonicalStellarProjection(const FVector& HomeClusterLocalUnits);
+	bool RefreshCanonicalClusterProxy(int32 InstanceIndex);
 
 	void GenerateGalaxiesCluster();
 
@@ -523,6 +564,12 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, Category = "Generated Astro Actros")
 	AGalaxy* GeneratedGalaxy;
+	FAPSCanonicalStellarProjectionDescriptor CanonicalStellarProjection;
+	uint64 CanonicalStellarProjectionBuildCounter{0u};
+	bool bCanonicalStellarProjectionComposed{false};
+	bool bConsumedFinalizedCanonicalStellarDataset{false};
+	bool bCanonicalStellarDatasetValidated{false};
+	bool bCanonicalStellarDatasetRejected{false};
 
 	UPROPERTY(VisibleAnywhere, Category = "Generated Astro Actros")
 	AStarCluster* GeneratedStarCluster;

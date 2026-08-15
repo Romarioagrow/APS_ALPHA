@@ -7,6 +7,7 @@
 #include "APS_ALPHA/Core/Enums/StarSpectralClass.h"
 #include "APS_ALPHA/Core/Enums/StarType.h"
 #include "APS_ALPHA/Core/Enums/StellarType.h"
+#include "APS_ALPHA/Core/Model/APSCanonicalStellarDataset.h"
 #include "APS_ALPHA/Core/Saves/GeneratedWorldData.h"
 #include "GeneratedWorld.generated.h"
 
@@ -117,6 +118,10 @@ public:
 	/** Deterministic seed shared by menu preview and the committed gameplay hierarchy. */
 	UPROPERTY(EditAnywhere, Category = "Generation Params")
 	int32 GenerationSeed{271828};
+
+	/** Finalized stellar truth duplicated unchanged into the gameplay GameInstance. */
+	UPROPERTY()
+	FAPSCanonicalStellarDataset CanonicalStellarDataset;
 
 	UPROPERTY(EditAnywhere, Category = "Home System")
 	bool bRandomHomeSystem{ false };

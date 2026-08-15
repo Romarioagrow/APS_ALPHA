@@ -814,10 +814,84 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			Spawn->HomeStationOrbitHeight = EOrbitHeight::LowOrbit;
 			EditableSpawnParametersAddress = Spawn;
 			PreviewProfileSignature = PreviewSurface->AppliedSurfaceProfileSignature;
+			const FAPSCanonicalStellarProjectionDescriptor& PreviewProjection =
+				PreviewGenerator->GetCanonicalStellarProjectionDescriptor();
+			FAPSCanonicalStellarProxyRecord PreviewHomeRecord;
+			FAPSCanonicalStellarProxyRecord PreviewGalaxyRecord;
+			if (!PreviewProjection.bFinalized
+				|| !PreviewProjection.CanonicalDatasetHash
+				|| !PreviewProjection.ContextHash
+				|| !PreviewProjection.MaterializedHomeStableId.IsValid()
+				|| !PreviewGenerator->GetCanonicalStellarProxyRecord(
+					EAPSCanonicalStellarProxyLayer::StarCluster,
+					PreviewProjection.MaterializedHomeStableId, PreviewHomeRecord)
+				|| !PreviewGenerator->GetCanonicalStellarProxyRecord(
+					EAPSCanonicalStellarProxyLayer::Galaxy, 0, PreviewGalaxyRecord))
+			{
+				return Fail(TEXT("menu preview has no finalized canonical home projection snapshot"));
+			}
+			bHasPreviewProjectionSnapshot = true;
+			PreviewProjectionVersion = PreviewProjection.ProjectionVersion;
+			PreviewProjectionContextHash = PreviewProjection.ContextHash;
+			PreviewCanonicalDatasetHash = PreviewProjection.CanonicalDatasetHash;
+			PreviewCanonicalDatasetVersion = PreviewProjection.CanonicalDatasetVersion;
+			PreviewCanonicalDatasetInputHash = PreviewProjection.CanonicalDatasetInputHash;
+			PreviewCanonicalDatasetBuildSerial = PreviewProjection.CanonicalDatasetBuildSerial;
+			PreviewCanonicalDatasetRecordCount = PreviewProjection.CanonicalDatasetRecordCount;
+			PreviewHomeStableId = PreviewHomeRecord.StableId;
+			PreviewHomeCanonicalPosition = PreviewHomeRecord.CanonicalPositionUnits;
+			PreviewHomeExpectedProxyPosition = PreviewHomeRecord.ExpectedBaseProxyPositionCm;
+			PreviewHomeCanonicalRadiusSolar = PreviewHomeRecord.CanonicalPhysicalRadiusSolar;
+			PreviewGalaxyStableId = PreviewGalaxyRecord.StableId;
+			PreviewGalaxyCanonicalPosition = PreviewGalaxyRecord.CanonicalPositionUnits;
+			PreviewGalaxyExpectedProxyPosition =
+				PreviewGalaxyRecord.ExpectedBaseProxyPositionCm;
+			PreviewGalaxyCanonicalRadiusSolar =
+				PreviewGalaxyRecord.CanonicalPhysicalRadiusSolar;
+			bool bHasPreviewClusterSentinel = false;
+			for (int32 InstanceIndex = 0;
+				InstanceIndex < PreviewProjection.ClusterRenderedCount; ++InstanceIndex)
+			{
+				FAPSCanonicalStellarProxyRecord Candidate;
+				if (PreviewGenerator->GetCanonicalStellarProxyRecord(
+						EAPSCanonicalStellarProxyLayer::StarCluster, InstanceIndex, Candidate)
+					&& Candidate.StableId != PreviewHomeStableId)
+				{
+					PreviewClusterStableId = Candidate.StableId;
+					PreviewClusterCanonicalPosition = Candidate.CanonicalPositionUnits;
+					PreviewClusterExpectedProxyPosition = Candidate.ExpectedBaseProxyPositionCm;
+					PreviewClusterCanonicalRadiusSolar = Candidate.CanonicalPhysicalRadiusSolar;
+					bHasPreviewClusterSentinel = true;
+					break;
+				}
+			}
+			if (!bHasPreviewClusterSentinel)
+			{
+				return Fail(TEXT("menu preview has no non-home canonical cluster sentinel"));
+			}
+			if (PreviewProjection.CanonicalDatasetRecordCount
+				> PreviewProjection.ClusterRenderedCount)
+			{
+				FAPSCanonicalClusterSystemRecord DatasetOnlyRecord;
+				bHasPreviewDatasetOnlyRecord = PreviewGenerator->GetCanonicalClusterDatasetRecord(
+					PreviewProjection.ClusterRenderedCount, DatasetOnlyRecord);
+				if (!bHasPreviewDatasetOnlyRecord)
+				{
+					return Fail(TEXT("menu preview cannot resolve finalized record outside its HISM LOD"));
+				}
+				PreviewDatasetOnlyStableId = DatasetOnlyRecord.StableId;
+				PreviewDatasetOnlyCanonicalPosition = DatasetOnlyRecord.ClusterLocalLocation;
+				PreviewDatasetOnlyCanonicalRadiusSolar = DatasetOnlyRecord.PrimaryStarModel.Radius;
+				PreviewDatasetOnlyMinOrbit = DatasetOnlyRecord.PrimaryStarModel.MinOrbit;
+				PreviewDatasetOnlyMaxOrbit = DatasetOnlyRecord.PrimaryStarModel.MaxOrbit;
+			}
 
 			UE_LOG(LogTemp, Display,
-				TEXT("[APS.Handoff.Smoke] Preview ready in %.2fs pawn=%s profile=%u; committing L_WorldGeneration"),
-				Now - StepStartSeconds, *SelectedPawnClassPath, PreviewProfileSignature);
+				TEXT("[APS.Handoff.Smoke] Preview ready in %.2fs pawn=%s profile=%u projection=%u/%u dataset=%u home=%s; committing L_WorldGeneration"),
+				Now - StepStartSeconds, *SelectedPawnClassPath, PreviewProfileSignature,
+				PreviewProjectionVersion, PreviewProjectionContextHash,
+				PreviewCanonicalDatasetHash,
+				*PreviewHomeStableId.ToString(EGuidFormats::Digits));
 			ViewModel->CommitAndOpenLevel(TEXT("L_WorldGeneration"));
 			Step = EStep::WaitForGameplayTravel;
 			StepStartSeconds = Now;
@@ -1051,7 +1125,13 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 					< Cluster->StarMeshInstances->GetInstanceCount()
 				&& Cluster->StarMeshInstances->GetInstanceTransform(
 					MaterializedHomeRecord->InstanceIndex, HomeProxyLocalTransform, false);
-			const bool bCanonicalHomeRecord = MaterializedHomeRecord
+			FAPSCanonicalStellarProxyRecord HomeProjectionRecord;
+			const bool bHasHomeProjectionRecord = MaterializedHomeRecord
+				&& Generator->GetCanonicalStellarProxyRecord(
+					EAPSCanonicalStellarProxyLayer::StarCluster,
+					MaterializedHomeRecord->InstanceIndex, HomeProjectionRecord);
+			const bool bCanonicalHomeRecord = bHasHomeProjectionRecord
+				&& MaterializedHomeRecord
 				&& MaterializedHomeRecord->bMaterialized
 				&& MaterializedHomeRecord->MaterializedSystem.Get() == StarSystem
 				&& MaterializedHomeRecord->SystemModel.StableId == StarSystem->StableSystemId
@@ -1061,8 +1141,14 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 					MaterializedHomeRecord->ClusterLocalLocation, 0.01)
 				&& bHasHomeProxyTransform
 				&& HomeProxyLocalTransform.GetLocation().Equals(
+					HomeProjectionRecord.ExpectedBaseProxyPositionCm, 0.01)
+				&& HomeProjectionRecord.StableId == MaterializedHomeRecord->StableId
+				&& HomeProjectionRecord.CanonicalPositionUnits.Equals(
 					MaterializedHomeRecord->ClusterLocalLocation, 0.01)
-				&& HomeProxyLocalTransform.GetScale3D().IsNearlyZero(UE_KINDA_SMALL_NUMBER);
+				&& HomeProjectionRecord.bSuppressedMaterializedHome
+				&& HomeProjectionRecord.ProjectionErrorCm <=
+					APSCanonicalStellarProjection::ProjectionToleranceCm
+				&& HomeProxyLocalTransform.GetScale3D() == FVector::ZeroVector;
 			if (MatchingHomeRecordCount != 1 || !bCanonicalHomeRecord)
 			{
 				return Fail(FString::Printf(
@@ -1079,6 +1165,191 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 					bHasHomeProxyTransform ? 1 : 0,
 					bHasHomeProxyTransform
 						? *HomeProxyLocalTransform.GetScale3D().ToCompactString() : TEXT("None")));
+			}
+
+			const FAPSCanonicalStellarProjectionDescriptor& Projection =
+				Generator->GetCanonicalStellarProjectionDescriptor();
+			FAPSCanonicalStellarProxyRecord GalaxySentinel;
+			const bool bHasGalaxySentinel = PreviewGalaxyStableId.IsValid()
+				&& Generator->GetCanonicalStellarProxyRecord(
+					EAPSCanonicalStellarProxyLayer::Galaxy,
+					PreviewGalaxyStableId, GalaxySentinel);
+			FAPSCanonicalStellarProxyRecord ClusterSentinel;
+			const bool bHasClusterSentinel = PreviewClusterStableId.IsValid()
+				&& Generator->GetCanonicalStellarProxyRecord(
+					EAPSCanonicalStellarProxyLayer::StarCluster,
+					PreviewClusterStableId, ClusterSentinel);
+			FAPSCanonicalClusterSystemAddress HomeAddress;
+			FAPSCanonicalClusterSystemAddress ClusterAddress;
+			const FClusterStarSystemRecord* ClusterAddressRecord = bHasClusterSentinel
+				? Cluster->FindPotentialSystem(ClusterSentinel.InstanceIndex) : nullptr;
+			const bool bHasCanonicalAddresses = ClusterAddressRecord
+				&& Generator->ResolveCanonicalClusterSystemAddress(
+					PreviewHomeStableId, HomeAddress)
+				&& Generator->ResolveCanonicalClusterSystemAddress(
+					PreviewClusterStableId, ClusterAddress);
+			FAPSCanonicalClusterSystemRecord DatasetOnlyRecord;
+			const bool bHasGameplayDatasetOnlyRecord = !bHasPreviewDatasetOnlyRecord
+				|| Generator->GetCanonicalClusterDatasetRecord(
+					PreviewDatasetOnlyStableId, DatasetOnlyRecord);
+			const bool bUnitProjectionRoots = Generator->GetActorScale3D().Equals(
+				FVector::OneVector, 1.0e-6)
+				&& Galaxy->GetActorScale3D().Equals(FVector::OneVector, 1.0e-6)
+				&& Cluster->GetActorScale3D().Equals(FVector::OneVector, 1.0e-6)
+				&& Galaxy->StarMeshInstances->GetComponentScale().Equals(
+					FVector::OneVector, 1.0e-6)
+				&& Cluster->StarMeshInstances->GetComponentScale().Equals(
+					FVector::OneVector, 1.0e-6);
+			const uint64 ExpectedUploadCount =
+				(IsValid(Galaxy->StarMeshInstances) ? 1u : 0u)
+				+ (IsValid(Cluster->StarMeshInstances) ? 1u : 0u);
+			const bool bPreviewGameplayProjectionParity = bHasPreviewProjectionSnapshot
+				&& Projection.ProjectionVersion == PreviewProjectionVersion
+				&& Projection.ContextHash == PreviewProjectionContextHash
+				&& Projection.CanonicalDatasetHash == PreviewCanonicalDatasetHash
+				&& Projection.CanonicalDatasetVersion == PreviewCanonicalDatasetVersion
+				&& Projection.CanonicalDatasetInputHash == PreviewCanonicalDatasetInputHash
+				&& Projection.CanonicalDatasetBuildSerial == PreviewCanonicalDatasetBuildSerial
+				&& Projection.CanonicalDatasetRecordCount == PreviewCanonicalDatasetRecordCount
+				&& Projection.bConsumedFinalizedDataset
+				&& bHasGameplayDatasetOnlyRecord
+				&& (!bHasPreviewDatasetOnlyRecord
+					|| (DatasetOnlyRecord.StableId == PreviewDatasetOnlyStableId
+						&& DatasetOnlyRecord.ClusterLocalLocation.Equals(
+							PreviewDatasetOnlyCanonicalPosition, 0.01)
+						&& FMath::IsNearlyEqual(
+							DatasetOnlyRecord.PrimaryStarModel.Radius,
+							PreviewDatasetOnlyCanonicalRadiusSolar, 1.0e-9)
+						&& FMath::IsNearlyEqual(
+							DatasetOnlyRecord.PrimaryStarModel.MinOrbit,
+							PreviewDatasetOnlyMinOrbit, 1.0e-9)
+						&& FMath::IsNearlyEqual(
+							DatasetOnlyRecord.PrimaryStarModel.MaxOrbit,
+							PreviewDatasetOnlyMaxOrbit, 1.0e-9)))
+				&& HomeProjectionRecord.StableId == PreviewHomeStableId
+				&& HomeProjectionRecord.CanonicalPositionUnits.Equals(
+					PreviewHomeCanonicalPosition, 0.01)
+				&& HomeProjectionRecord.ExpectedBaseProxyPositionCm.Equals(
+					PreviewHomeExpectedProxyPosition, 0.01)
+				&& FMath::IsNearlyEqual(HomeProjectionRecord.CanonicalPhysicalRadiusSolar,
+					PreviewHomeCanonicalRadiusSolar, 1.0e-9)
+				&& GalaxySentinel.StableId == PreviewGalaxyStableId
+				&& GalaxySentinel.CanonicalPositionUnits.Equals(
+					PreviewGalaxyCanonicalPosition, 0.01)
+				&& GalaxySentinel.ExpectedBaseProxyPositionCm.Equals(
+					PreviewGalaxyExpectedProxyPosition, 0.01)
+				&& FMath::IsNearlyEqual(GalaxySentinel.CanonicalPhysicalRadiusSolar,
+					PreviewGalaxyCanonicalRadiusSolar, 1.0e-9)
+				&& ClusterSentinel.StableId == PreviewClusterStableId
+				&& ClusterSentinel.CanonicalPositionUnits.Equals(
+					PreviewClusterCanonicalPosition, 0.01)
+				&& ClusterSentinel.ExpectedBaseProxyPositionCm.Equals(
+					PreviewClusterExpectedProxyPosition, 0.01)
+				&& FMath::IsNearlyEqual(ClusterSentinel.CanonicalPhysicalRadiusSolar,
+					PreviewClusterCanonicalRadiusSolar, 1.0e-9);
+			const bool bProjectionContract = Projection.bFinalized
+				&& Projection.bProjectionValid
+				&& Projection.ProjectionVersion
+					== FAPSCanonicalStellarProjectionFrame::CurrentVersion
+				&& Projection.ContextHash != 0u
+				&& Projection.CanonicalDatasetHash != 0u
+				&& Projection.CanonicalIdentityHash == Projection.CanonicalDatasetHash
+				&& Projection.CanonicalDatasetVersion
+					== FAPSCanonicalStellarDataset::CurrentVersion
+				&& Projection.CanonicalDatasetRecordCount == Projection.ClusterModeledCount
+				&& Projection.RenderedMappingHash != 0u
+				&& Projection.InstanceUploadCount == ExpectedUploadCount
+				&& Projection.bMappingsComplete
+				&& Projection.bUnitRoots
+				&& Projection.bBoundsValid
+				&& Projection.Galaxy.bEnabled
+				&& Projection.StarCluster.bEnabled
+				&& Projection.Galaxy.PositionScale
+					== Projection.StarCluster.PositionScale
+				&& FMath::IsNearlyEqual(
+					Projection.StarCluster.LayerToRootPositionScale,
+					Projection.ClusterToGalaxyPositionScale, 1.0e-12)
+				&& FMath::IsNearlyEqual(
+					Projection.Galaxy.VisualRadiusFloorFraction,
+					APSCanonicalStellarProjection::GalaxyImpostorFloorFraction, 1.0e-12)
+				&& FMath::IsNearlyEqual(
+					Projection.StarCluster.VisualRadiusFloorFraction,
+					APSCanonicalStellarProjection::ClusterImpostorFloorFraction, 1.0e-12)
+				&& FMath::IsNearlyEqual(
+					Projection.Galaxy.VisualRadiusCeilingFraction,
+					APSCanonicalStellarProjection::ImpostorCeilingFraction, 1.0e-12)
+				&& Projection.Galaxy.MaxProxyCoordinateCm
+					<= APSCanonicalStellarProjection::GalaxyMaxProxyCoordinateCm
+				&& Projection.StarCluster.MaxProxyCoordinateCm
+					<= APSCanonicalStellarProjection::ClusterMaxProxyCoordinateCm
+				&& Projection.MaxObservedMatrixMagnitudeCm
+					<= APSCanonicalStellarProjection::GalaxyMaxProxyCoordinateCm
+				&& Projection.GalaxyMaxObservedMatrixMagnitudeCm
+					<= APSCanonicalStellarProjection::GalaxyMaxProxyCoordinateCm
+				&& Projection.ClusterMaxObservedMatrixMagnitudeCm
+					<= APSCanonicalStellarProjection::ClusterMaxProxyCoordinateCm
+				&& Projection.MaterializedHomeStableId == StarSystem->StableSystemId
+				&& Projection.MaterializedHomeInstanceIndex
+					== MaterializedHomeRecord->InstanceIndex
+				&& Projection.bMaterializedHomeProxySuppressed
+				&& bHasCanonicalAddresses
+				&& HomeAddress.bMaterializedHome
+				&& FMath::IsNearlyZero(HomeAddress.CanonicalDistanceFromHomeCm, 0.01)
+				&& !ClusterAddress.bMaterializedHome
+				&& ClusterAddress.CanonicalDistanceFromHomeCm > 0.01
+				&& FMath::IsNearlyEqual(
+					ClusterAddress.CanonicalDistanceFromHomeCm,
+					ClusterAddress.CanonicalDeltaFromHomeCm.Size(), 0.01)
+				&& ClusterAddress.ImmutableProxyWorldLocationCm.Equals(
+					Cluster->GetPotentialSystemWorldLocation(*ClusterAddressRecord), 0.01)
+				&& bPreviewGameplayProjectionParity
+				&& bUnitProjectionRoots
+				&& bHasGalaxySentinel
+				&& GalaxySentinel.StableId.IsValid()
+				&& GalaxySentinel.ProjectionErrorCm
+					<= APSCanonicalStellarProjection::ProjectionToleranceCm
+				&& APSCanonicalStellarProjection::MaxAbsComponent(
+					GalaxySentinel.ActualProxyPositionCm)
+					<= APSCanonicalStellarProjection::GalaxyMaxProxyCoordinateCm
+				&& bHasClusterSentinel
+				&& ClusterSentinel.StableId == PreviewClusterStableId
+				&& ClusterSentinel.CanonicalPositionUnits.Equals(
+					PreviewClusterCanonicalPosition, 0.01)
+				&& !ClusterSentinel.bSuppressedMaterializedHome
+				&& ClusterSentinel.ActualProxyScale > 0.0
+				&& ClusterSentinel.ProjectionErrorCm
+					<= APSCanonicalStellarProjection::ProjectionToleranceCm
+				&& APSCanonicalStellarProjection::MaxAbsComponent(
+					ClusterSentinel.ActualProxyPositionCm)
+					<= APSCanonicalStellarProjection::ClusterMaxProxyCoordinateCm;
+			if (!bProjectionContract)
+			{
+				return Fail(FString::Printf(
+					TEXT("canonical stellar projection contract failed: finalized=%d valid=%d version=%u context=%u dataset=%u datasetVersion=%u input=%u datasetBuild=%llu records=%d consumed=%d mapping=%u uploads=%llu expectedUploads=%llu mutations=%llu parity=%d roots=%d matrix=%.6e galaxyMatrix=%.6e clusterMatrix=%.6e galaxy=%d gError=%.6f gPos=%.6e cluster=%d cError=%.6f cPos=%.6e cScale=%.6e home=%s/%d suppressed=%d"),
+					Projection.bFinalized ? 1 : 0, Projection.bProjectionValid ? 1 : 0,
+					Projection.ProjectionVersion,
+					Projection.ContextHash, Projection.CanonicalDatasetHash,
+					Projection.CanonicalDatasetVersion,
+					Projection.CanonicalDatasetInputHash,
+					Projection.CanonicalDatasetBuildSerial,
+					Projection.CanonicalDatasetRecordCount,
+					Projection.bConsumedFinalizedDataset ? 1 : 0,
+					Projection.RenderedMappingHash,
+					Projection.InstanceUploadCount, ExpectedUploadCount,
+					Projection.TransformMutationSerial,
+					bPreviewGameplayProjectionParity ? 1 : 0,
+					bUnitProjectionRoots ? 1 : 0, Projection.MaxObservedMatrixMagnitudeCm,
+					Projection.GalaxyMaxObservedMatrixMagnitudeCm,
+					Projection.ClusterMaxObservedMatrixMagnitudeCm,
+					bHasGalaxySentinel ? 1 : 0, GalaxySentinel.ProjectionErrorCm,
+					APSCanonicalStellarProjection::MaxAbsComponent(
+						GalaxySentinel.ActualProxyPositionCm),
+					bHasClusterSentinel ? 1 : 0, ClusterSentinel.ProjectionErrorCm,
+					APSCanonicalStellarProjection::MaxAbsComponent(
+						ClusterSentinel.ActualProxyPositionCm), ClusterSentinel.ActualProxyScale,
+					*Projection.MaterializedHomeStableId.ToString(EGuidFormats::Digits),
+					Projection.MaterializedHomeInstanceIndex,
+					Projection.bMaterializedHomeProxySuppressed ? 1 : 0));
 			}
 			if (Galaxy->GetAttachParentActor() != Generator
 				|| Cluster->GetAttachParentActor() != Galaxy
@@ -3997,6 +4268,32 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 		uint32 WetOceanFirstFrameCrc{0};
 		bool bWetOceanCaptureContractReady{false};
 		uint32 PreviewProfileSignature{0};
+		bool bHasPreviewProjectionSnapshot{false};
+		uint32 PreviewProjectionVersion{0};
+		uint32 PreviewProjectionContextHash{0};
+		uint32 PreviewCanonicalDatasetHash{0};
+		uint32 PreviewCanonicalDatasetVersion{0};
+		uint32 PreviewCanonicalDatasetInputHash{0};
+		uint64 PreviewCanonicalDatasetBuildSerial{0};
+		int32 PreviewCanonicalDatasetRecordCount{0};
+		bool bHasPreviewDatasetOnlyRecord{false};
+		FGuid PreviewDatasetOnlyStableId;
+		FVector PreviewDatasetOnlyCanonicalPosition{FVector::ZeroVector};
+		double PreviewDatasetOnlyCanonicalRadiusSolar{0.0};
+		double PreviewDatasetOnlyMinOrbit{0.0};
+		double PreviewDatasetOnlyMaxOrbit{0.0};
+		FGuid PreviewHomeStableId;
+		FVector PreviewHomeCanonicalPosition{FVector::ZeroVector};
+		FVector PreviewHomeExpectedProxyPosition{FVector::ZeroVector};
+		double PreviewHomeCanonicalRadiusSolar{0.0};
+		FGuid PreviewGalaxyStableId;
+		FVector PreviewGalaxyCanonicalPosition{FVector::ZeroVector};
+		FVector PreviewGalaxyExpectedProxyPosition{FVector::ZeroVector};
+		double PreviewGalaxyCanonicalRadiusSolar{0.0};
+		FGuid PreviewClusterStableId;
+		FVector PreviewClusterCanonicalPosition{FVector::ZeroVector};
+		FVector PreviewClusterExpectedProxyPosition{FVector::ZeroVector};
+		double PreviewClusterCanonicalRadiusSolar{0.0};
 		FVector PhysicalSurfaceSpawnLocation{FVector::ZeroVector};
 		FVector PhysicalSurfaceProbeOutward{FVector::ZeroVector};
 		FVector PhysicalSurfaceProofForward{FVector::ZeroVector};

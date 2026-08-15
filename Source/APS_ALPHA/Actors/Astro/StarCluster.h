@@ -8,6 +8,7 @@
 #include "APS_ALPHA/Core/Enums/StarClusterPopulation.h"
 #include "APS_ALPHA/Core/Enums/StarClusterSize.h"
 #include "APS_ALPHA/Core/Enums/StarClusterType.h"
+#include "APS_ALPHA/Core/Rendering/APSCanonicalStellarProjection.h"
 #include "APS_ALPHA/Core/Structs/StarGenerationModel.h"
 #include "APS_ALPHA/Core/Structs/StarSystemGenerationModel.h"
 #include "StarCluster.generated.h"
@@ -91,7 +92,7 @@ struct FClusterStarSystemRecord
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Star System")
 	int32 InstanceIndex{INDEX_NONE};
 
-	/** Location in StarMeshInstances local space; remains valid when the full-scale parent moves/scales. */
+	/** Canonical cluster-catalog location. It is never overwritten with a render proxy coordinate. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Star System")
 	FVector ClusterLocalLocation{FVector::ZeroVector};
 
@@ -146,13 +147,27 @@ public:
 	/** Ordered one-to-one with StarMeshInstances. No star/system actors are allocated here. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Star Cluster|Generation")
 	TArray<FClusterStarSystemRecord> PotentialStarSystems;
+	/** One immutable projected transform per canonical record, before view-only LOD changes. */
+	TArray<FTransform> SystemProxyBaseTransforms;
+	FAPSCanonicalStellarProjectionFrame CanonicalProjectionFrame;
 
 	FGuid MakeStableSystemId(int32 InstanceIndex) const;
+	/** Compatibility overload for isolated model tests and legacy callers. */
 	void RegisterPotentialSystem(int32 InstanceIndex, const FVector& ClusterLocalLocation,
 		const FStarModel& PrimaryStarModel, const FStarSystemModel& SystemModel);
+	void RegisterPotentialSystem(int32 InstanceIndex, const FVector& ClusterLocalLocation,
+		const FTransform& ProxyBaseTransform, const FStarModel& PrimaryStarModel,
+		const FStarSystemModel& SystemModel);
 	const FClusterStarSystemRecord* FindPotentialSystem(int32 InstanceIndex) const;
 	FClusterStarSystemRecord* FindPotentialSystemMutable(int32 InstanceIndex);
+	/** Immutable base-projection address for model/materialization consumers. */
 	FVector GetPotentialSystemWorldLocation(const FClusterStarSystemRecord& Record) const;
+	/** Current view-only HISM address for picking and presentation diagnostics. */
+	FVector GetPotentialSystemPresentedWorldLocation(const FClusterStarSystemRecord& Record) const;
+	/** Canonical root address; not a render-world coordinate. */
+	bool GetPotentialSystemCanonicalRootLocationCm(
+		const FClusterStarSystemRecord& Record, FVector& OutCanonicalRootCm) const;
+	bool GetPotentialSystemBaseProxyTransform(int32 InstanceIndex, FTransform& OutTransform) const;
 
 	UFUNCTION(BlueprintCallable, Category = "Star Cluster|Generation")
 	bool GetPotentialSystemRecord(int32 InstanceIndex, FClusterStarSystemRecord& OutRecord) const;

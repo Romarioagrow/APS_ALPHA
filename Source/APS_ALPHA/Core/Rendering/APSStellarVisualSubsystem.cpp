@@ -720,35 +720,34 @@ void UAPSStellarVisualSubsystem::ResolveNearestStar(const FVector& ObserverLocat
 			continue;
 		}
 
-		// Compare records in component-local space. Full-scale clusters use uniform scale, so this
-		// preserves nearest ordering while avoiding tens of thousands of world transforms per search.
-		const FTransform ClusterTransform = Cluster->StarMeshInstances->GetComponentTransform();
-		const FVector LocalObserverLocation = ClusterTransform.InverseTransformPosition(ObserverLocation);
 		const FClusterStarSystemRecord* ClosestClusterRecord = nullptr;
-		double ClosestLocalDistanceSquared = TNumericLimits<double>::Max();
+		FVector ClosestProxyWorldLocation = FVector::ZeroVector;
+		double ClosestDistanceSquared = TNumericLimits<double>::Max();
 		for (const FClusterStarSystemRecord& Record : Cluster->PotentialStarSystems)
 		{
 			if (Record.bMaterialized || Record.InstanceIndex == INDEX_NONE)
 			{
 				continue;
 			}
-			const double LocalDistanceSquared = FVector::DistSquared(
-				LocalObserverLocation, Record.ClusterLocalLocation);
-			if (LocalDistanceSquared < ClosestLocalDistanceSquared)
+			// The record location is canonical cluster space, not component-local cm.
+			// Resolve the immutable projected base instead of reading a mutable HISM
+			// presentation transform or transforming canonical units as centimeters.
+			const FVector ProxyWorldLocation = Cluster->GetPotentialSystemWorldLocation(Record);
+			const double DistanceSquared = FVector::DistSquared(
+				ObserverLocation, ProxyWorldLocation);
+			if (DistanceSquared < ClosestDistanceSquared)
 			{
-				ClosestLocalDistanceSquared = LocalDistanceSquared;
+				ClosestDistanceSquared = DistanceSquared;
+				ClosestProxyWorldLocation = ProxyWorldLocation;
 				ClosestClusterRecord = &Record;
 			}
 		}
 		if (ClosestClusterRecord)
 		{
-			const FVector WorldLocation = ClusterTransform.TransformPosition(
-				ClosestClusterRecord->ClusterLocalLocation);
-			const double DistanceSquared = FVector::DistSquared(ObserverLocation, WorldLocation);
-			if (DistanceSquared < BestDistanceSquared)
+			if (ClosestDistanceSquared < BestDistanceSquared)
 			{
-				BestDistanceSquared = DistanceSquared;
-				BestLocation = WorldLocation;
+				BestDistanceSquared = ClosestDistanceSquared;
+				BestLocation = ClosestProxyWorldLocation;
 				BestColor = UStarGenerator::GetStarColor(
 					ClosestClusterRecord->PrimaryStarModel.SpectralClass,
 					ClosestClusterRecord->PrimaryStarModel.SpectralSubclass);
