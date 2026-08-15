@@ -151,6 +151,8 @@ public:
 		FString& OutReason);
 	bool BeginEventStream(FName QuestId, const FGuid& StreamId, FString& OutReason);
 	bool SubmitEvent(const FAPSQuestEvent& Event, FString& OutReason);
+	/** Non-authoritative development ingress. Unavailable in Shipping and never requests rewards. */
+	bool DebugInjectEvent(const FAPSQuestEvent& Event, FString& OutReason);
 	bool AcknowledgeReward(FName QuestId, const FGuid& TransactionId, bool bApplied,
 		FName FailureCode, FString& OutReason);
 	bool SuspendQuest(FName QuestId, FName FailureCode, FString& OutReason);
@@ -199,6 +201,8 @@ private:
 	void CompleteNode(FAPSQuestInstanceSaveData& Instance,
 		const UAPSQuestDefinition& Definition, FAPSQuestNodeRuntimeState& NodeState,
 		bool bRequestRewards);
+	bool SubmitEventInternal(const FAPSQuestEvent& Event, bool bRequestRewards,
+		FString& OutReason);
 	void RefreshInstanceCompletion(FAPSQuestInstanceSaveData& Instance,
 		const UAPSQuestDefinition& Definition);
 	static FGuid MakeRewardTransactionId(const FAPSQuestInstanceSaveData& Instance,

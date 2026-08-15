@@ -324,6 +324,72 @@ bool FAPSQuestMultiInstanceFanoutTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAPSQuestAuthoritativeIngressTest,
+	"APS.Quest.Runtime.AuthoritativeIngressGuardrails",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FAPSQuestAuthoritativeIngressTest::RunTest(const FString& Parameters)
+{
+	using namespace APSQuestTests;
+	FAPSQuestRuntime Runtime;
+	UAPSQuestDefinition* Definition = MakeTwoStepDefinition();
+	FString Reason;
+	TestTrue(TEXT("Definition registers"), Runtime.RegisterDefinition(Definition, Reason));
+	TestTrue(TEXT("Quest starts"), Runtime.StartQuest(QuestId, Guid(8500), Reason));
+	const FAPSQuestEntityRef Base = CivilizationEntity(60);
+	const FAPSQuestEntityRef Ship = CivilizationEntity(61);
+	TestTrue(TEXT("Base binds"), Runtime.BindEntity(QuestId, BaseBinding, Base, Reason));
+	TestTrue(TEXT("Ship binds"), Runtime.BindEntity(QuestId, ShipBinding, Ship, Reason));
+
+	int32 RewardRequestCount = 0;
+	Runtime.OnRewardRequested().AddLambda(
+		[&RewardRequestCount](const FAPSQuestRewardCommand&)
+		{
+			++RewardRequestCount;
+		});
+
+	const FAPSQuestEvent UnsequencedInspect = MakeEvent(FGuid(), 0,
+		TEXT("APS.Interaction.Inspect"), Base, 8600);
+	TestFalse(TEXT("Production ingress rejects an unsequenced event"),
+		Runtime.SubmitEvent(UnsequencedInspect, Reason));
+	TestTrue(TEXT("Authoritative ingress diagnostic is explicit"),
+		Reason.Contains(TEXT("Authoritative")));
+	const FAPSQuestInstanceSaveData* Instance = Runtime.FindInstance(QuestId);
+	TestEqual(TEXT("Rejected event leaves objective active"),
+		FindNode(Instance, BaseNodeId)->State, EAPSQuestNodeState::Active);
+	TestFalse(TEXT("Rejected event does not enter dedupe"),
+		Instance->ConsumedEventIds.Contains(UnsequencedInspect.EventId));
+	TestEqual(TEXT("Rejected event creates no rewards"), Instance->RewardLedger.Num(), 0);
+
+#if !UE_BUILD_SHIPPING
+	const FAPSQuestEvent SequencedInspect = MakeEvent(Guid(8650), 1,
+		TEXT("APS.Interaction.Inspect"), Base, 8651);
+	TestFalse(TEXT("Debug ingress rejects an authoritative owner event"),
+		Runtime.DebugInjectEvent(SequencedInspect, Reason));
+	TestTrue(TEXT("Debug ingress diagnostic requires its zero-sequence domain"),
+		Reason.Contains(TEXT("zero Sequence")));
+	TestTrue(TEXT("Non-shipping debug ingress accepts only the zero-sequence event"),
+		Runtime.DebugInjectEvent(UnsequencedInspect, Reason));
+	Instance = Runtime.FindInstance(QuestId);
+	TestEqual(TEXT("Debug ingress completes the first objective"),
+		FindNode(Instance, BaseNodeId)->State, EAPSQuestNodeState::Completed);
+	TestEqual(TEXT("Debug ingress activates the successor"),
+		FindNode(Instance, ShipNodeId)->State, EAPSQuestNodeState::Active);
+
+	const FAPSQuestEvent UnsequencedRewardNode = MakeEvent(FGuid(), 0,
+		TEXT("APS.Interaction.TakeControl"), Ship, 8700);
+	TestTrue(TEXT("Debug ingress can traverse the reward-bearing objective"),
+		Runtime.DebugInjectEvent(UnsequencedRewardNode, Reason));
+	Instance = Runtime.FindInstance(QuestId);
+	TestEqual(TEXT("Debug ingress still completes the quest"), Instance->State,
+		EAPSQuestInstanceState::Completed);
+	TestEqual(TEXT("Debug ingress never publishes reward commands"), RewardRequestCount, 0);
+	TestEqual(TEXT("Debug ingress never mutates the reward ledger"),
+		Instance->RewardLedger.Num(), 0);
+#endif
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAPSQuestPersistenceRecoveryTest,
 	"APS.Quest.Runtime.PersistenceAndRecovery",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)

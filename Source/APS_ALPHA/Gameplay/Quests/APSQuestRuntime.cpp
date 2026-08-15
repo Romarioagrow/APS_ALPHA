@@ -178,6 +178,35 @@ bool FAPSQuestRuntime::BeginEventStream(FName QuestId, const FGuid& StreamId,
 bool FAPSQuestRuntime::SubmitEvent(const FAPSQuestEvent& Event, FString& OutReason)
 {
 	OutReason.Reset();
+	if (!Event.StreamId.IsValid() || Event.Sequence <= 0)
+	{
+		OutReason = TEXT("Authoritative quest event requires StreamId and positive Sequence");
+		return false;
+	}
+	return SubmitEventInternal(Event, true, OutReason);
+}
+
+bool FAPSQuestRuntime::DebugInjectEvent(const FAPSQuestEvent& Event, FString& OutReason)
+{
+	OutReason.Reset();
+#if UE_BUILD_SHIPPING
+	(void)Event;
+	OutReason = TEXT("Quest debug event injection is unavailable in Shipping");
+	return false;
+#else
+	if (Event.StreamId.IsValid() || Event.Sequence != 0)
+	{
+		OutReason = TEXT("Quest debug event requires an empty StreamId and zero Sequence");
+		return false;
+	}
+	return SubmitEventInternal(Event, false, OutReason);
+#endif
+}
+
+bool FAPSQuestRuntime::SubmitEventInternal(const FAPSQuestEvent& Event,
+	const bool bRequestRewards, FString& OutReason)
+{
+	OutReason.Reset();
 	if (!Event.IsStructurallyValid(&OutReason))
 	{
 		return false;
@@ -299,7 +328,7 @@ bool FAPSQuestRuntime::SubmitEvent(const FAPSQuestEvent& Event, FString& OutReas
 			bStateChanged = true;
 			if (NodeState->Progress >= Node->RequiredProgress)
 			{
-				CompleteNode(Instance, *Definition, *NodeState, true);
+				CompleteNode(Instance, *Definition, *NodeState, bRequestRewards);
 			}
 		}
 

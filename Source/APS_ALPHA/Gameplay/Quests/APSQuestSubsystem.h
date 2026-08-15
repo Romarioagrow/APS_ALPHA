@@ -28,8 +28,11 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Quest")
 	bool BeginQuestEventStream(FName QuestId, FGuid StreamId, FString& OutReason);
 
-	UFUNCTION(BlueprintCallable, Category="Quest")
+	/** C++-only authoritative ingress for owner adapters. */
 	bool SubmitQuestEvent(const FAPSQuestEvent& Event, FString& OutReason);
+
+	/** C++-only development ingress; runtime rejects it in Shipping and suppresses rewards. */
+	bool DebugInjectQuestEvent(const FAPSQuestEvent& Event, FString& OutReason);
 
 	UFUNCTION(BlueprintCallable, Category="Quest")
 	bool AcknowledgeQuestReward(FName QuestId, FGuid TransactionId, bool bApplied,

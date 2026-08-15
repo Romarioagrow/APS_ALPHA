@@ -173,7 +173,7 @@ bool FAPSQuestFirstOnboardingRouteTest::RunTest(const FString& Parameters)
 				Node, Bindings, StreamId, Sequence++, EventSeed++);
 			WrongDefinition.DefinitionId = FPrimaryAssetId(
 				FPrimaryAssetType(TEXT("APSBuildable")), FName(TEXT("WrongType")));
-			TestTrue(TEXT("Unrelated typed success is safely consumed"),
+			TestFalse(TEXT("Unrelated typed success remains a transient no-op"),
 				Runtime->SubmitEvent(WrongDefinition, Reason));
 			TestEqual(TEXT("Wrong definition does not advance build"),
 				FindNode(Runtime->FindInstance(Contract::QuestId), Node.NodeId)->State,

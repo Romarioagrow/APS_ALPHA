@@ -63,6 +63,12 @@ bool UAPSQuestSubsystem::SubmitQuestEvent(const FAPSQuestEvent& Event, FString& 
 	return GetRuntime() && Runtime->SubmitEvent(Event, OutReason);
 }
 
+bool UAPSQuestSubsystem::DebugInjectQuestEvent(const FAPSQuestEvent& Event,
+	FString& OutReason)
+{
+	return GetRuntime() && Runtime->DebugInjectEvent(Event, OutReason);
+}
+
 bool UAPSQuestSubsystem::AcknowledgeQuestReward(FName QuestId, FGuid TransactionId,
 	bool bApplied, FName FailureCode, FString& OutReason)
 {
