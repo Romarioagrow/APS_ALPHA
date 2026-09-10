@@ -8594,6 +8594,8 @@ void AAstroGenerator::GenerateStarCluster()
 		UE_LOG(LogTemp, Error, TEXT("BP_StarClusterClass is not set!"));
 		return;
 	}
+	const bool bUseLegacyAuthoredClusterPresentation = bIntegrateStartPlanet
+		&& IsValid(WSR_StartHomePlanet) && !bIsPreviewGeneration;
 
 	const TSharedPtr<FStarClusterModel> StarClusterModel = MakeShared<FStarClusterModel>();
 	if (bGenerateRandomCluster)
@@ -8777,12 +8779,17 @@ void AAstroGenerator::GenerateStarCluster()
 		const FVector& StarPosition, const FStarModel& StarModel,
 		const FStarSystemModel& PotentialSystemModel)
 	{
-		FTransform StarTransform(
-			NewStarCluster->CanonicalProjectionFrame.ProjectCanonicalUnits(StarPosition));
-		const double AppliedVisualRadiusCm = APSCanonicalStellarProjection::GetAppliedVisualRadiusCm(
-			EAPSCanonicalStellarProxyLayer::StarCluster,
-			NewStarCluster->CanonicalProjectionFrame, StarModel.Radius);
-		const double AppliedInstanceScale = AppliedVisualRadiusCm / ClusterProxyMeshRadius;
+		FTransform StarTransform(bUseLegacyAuthoredClusterPresentation
+			? StarPosition
+			: NewStarCluster->CanonicalProjectionFrame.ProjectCanonicalUnits(StarPosition));
+		const double AppliedVisualRadiusCm = bUseLegacyAuthoredClusterPresentation
+			? 0.0
+			: APSCanonicalStellarProjection::GetAppliedVisualRadiusCm(
+				EAPSCanonicalStellarProxyLayer::StarCluster,
+				NewStarCluster->CanonicalProjectionFrame, StarModel.Radius);
+		const double AppliedInstanceScale = bUseLegacyAuthoredClusterPresentation
+			? UStarGenerator::GetFarStarVisualRadius(StarModel.Radius)
+			: AppliedVisualRadiusCm / ClusterProxyMeshRadius;
 		StarTransform.SetScale3D(FVector(AppliedInstanceScale));
 		RenderedClusterBounds += StarTransform.GetLocation();
 		const int32 StarInstIndex = NewStarCluster->StarMeshInstances->AddInstance(
@@ -8799,13 +8806,14 @@ void AAstroGenerator::GenerateStarCluster()
 		NewStarCluster->StarMeshInstances->SetCustomDataValue(StarInstIndex, 1, ColorValue.G, false);
 		NewStarCluster->StarMeshInstances->SetCustomDataValue(StarInstIndex, 2, ColorValue.B, false);
 
-		const double AppliedVisualRadiusSolar =
-			APSCanonicalStellarProjection::UnprojectPhysicalRadiusSolar(
-				NewStarCluster->CanonicalProjectionFrame, AppliedVisualRadiusCm);
-		const double StarEmission = UStarGenerator::GetFarStarVisualEmission(
-			StarModel.Radius,
-			StarGenerator->CalculateEmission(StarModel.Luminosity * 25),
-			AppliedVisualRadiusSolar);
+		const double PhysicalEmission =
+			StarGenerator->CalculateEmission(StarModel.Luminosity * 25);
+		const double StarEmission = bUseLegacyAuthoredClusterPresentation
+			? UStarGenerator::GetFarStarVisualEmission(StarModel.Radius, PhysicalEmission)
+			: UStarGenerator::GetFarStarVisualEmission(
+				StarModel.Radius, PhysicalEmission,
+				APSCanonicalStellarProjection::UnprojectPhysicalRadiusSolar(
+					NewStarCluster->CanonicalProjectionFrame, AppliedVisualRadiusCm));
 		NewStarCluster->StarMeshInstances->SetCustomDataValue(
 			StarInstIndex, 3, StarEmission, false);
 		NewStarCluster->RegisterPotentialSystem(
@@ -9677,7 +9685,9 @@ void AAstroGenerator::GenerateStarSystemByModel()
 				const FString PlanetStableKey = FString::Printf(
 					TEXT("SYS0/S%d/P%d"), StarNumber, PlanetModelIndex);
 				if (const FAPSPreviewBodyEditOverride* PlanetOverride =
-					GeneratedWorldModel->FindPreviewBodyEditOverride(PlanetStableKey);
+					IsValid(GeneratedWorldModel)
+						? GeneratedWorldModel->FindPreviewBodyEditOverride(PlanetStableKey)
+						: nullptr;
 					PlanetOverride && PlanetOverride->MoonCount != INDEX_NONE)
 				{
 					const int32 EditedMoonCount = FMath::Clamp(
