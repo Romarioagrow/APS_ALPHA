@@ -1,0 +1,1340 @@
+﻿{
+	"devices": [
+		{
+			"deviceName": "RIO-PC",
+			"instance": "07E1894F40EC9B135EEFAE924CD52BF0",
+			"instanceName": "RIO-PC-43084",
+			"platform": "WindowsEditor",
+			"oSVersion": "Windows 11 (25H2) [10.0.26200.7623] ",
+			"model": "Default",
+			"gPU": "NVIDIA GeForce RTX 5080",
+			"cPUModel": "Intel(R) Core(TM) i9-10900KF CPU @ 3.70GHz",
+			"rAMInGB": 32,
+			"renderMode": "D3D12_SM6",
+			"rHI": "DirectX 12 (SM6)",
+			"appInstanceLog": ""
+		}
+	],
+	"reportCreatedOn": "2026.08.08-09.59.50",
+	"succeeded": 0,
+	"succeededWithWarnings": 1,
+	"failed": 0,
+	"notRun": 0,
+	"inProcess": 0,
+	"totalDuration": 29.151304244995117,
+	"comparisonExported": false,
+	"comparisonExportDirectory": "",
+	"tests": [
+		{
+			"testDisplayName": "PlanetSurfaceGallery",
+			"fullTestPath": "APS.Rendered.MainMenu.PlanetSurfaceGallery",
+			"state": "Success",
+			"deviceInstance": [
+				"07E1894F40EC9B135EEFAE924CD52BF0"
+			],
+			"duration": 29.151304244995117,
+			"dateTime": "0001.01.01-00.00.00",
+			"entries": [
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogViewport: Viewport MouseLockMode Changed, LockOnCapture -> DoNotLock [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.59.21"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogViewport: Viewport MouseCaptureMode Changed, CapturePermanently_IncludingInitialMouseDown -> NoCapture [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.59.21"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogStreaming: FlushAsyncLoading(): 2 QueuedPackages, 0 AsyncPackages [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.59.21"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: === AAstroGenerator::BeginPlay START === [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.08-04.59.22"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: bAutoGeneration: false [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.08-04.59.22"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: bIntegrateStartPlanet: false [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.08-04.59.22"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: StartHomePlanet: NULL [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.08-04.59.22"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: StartPlanetNumber: 1 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.08-04.59.22"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: bAutoGeneration is false, skipping generation [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.08-04.59.22"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: === AAstroGenerator::BeginPlay END === [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.08-04.59.22"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: Generate Star System! [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "C:\\Users\\Rio\\Documents\\APOSFERA SPACETRIPS\\.aps_project\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6044,
+					"timestamp": "2026.08.08-04.59.22"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: NewPlanetarySystem->PlanetsActorsList: 1 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "C:\\Users\\Rio\\Documents\\APOSFERA SPACETRIPS\\.aps_project\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6044,
+					"timestamp": "2026.08.08-04.59.22"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: GeneratedHomeStarSystem set to: BP_StarSystem_C_0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "C:\\Users\\Rio\\Documents\\APOSFERA SPACETRIPS\\.aps_project\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6044,
+					"timestamp": "2026.08.08-04.59.22"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: Planet List -  [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "C:\\Users\\Rio\\Documents\\APOSFERA SPACETRIPS\\.aps_project\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6972,
+					"timestamp": "2026.08.08-04.59.22"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: Planet Amount: 1 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "C:\\Users\\Rio\\Documents\\APOSFERA SPACETRIPS\\.aps_project\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6972,
+					"timestamp": "2026.08.08-04.59.22"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:     Planet Order: 1 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "C:\\Users\\Rio\\Documents\\APOSFERA SPACETRIPS\\.aps_project\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6051,
+					"timestamp": "2026.08.08-04.59.22"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Orbit Radius: 4.837766 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "C:\\Users\\Rio\\Documents\\APOSFERA SPACETRIPS\\.aps_project\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6051,
+					"timestamp": "2026.08.08-04.59.22"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Type: EPlanetType::Frozen [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "C:\\Users\\Rio\\Documents\\APOSFERA SPACETRIPS\\.aps_project\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6051,
+					"timestamp": "2026.08.08-04.59.22"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Zone: EPlanetaryZoneType::Unknown [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "C:\\Users\\Rio\\Documents\\APOSFERA SPACETRIPS\\.aps_project\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6051,
+					"timestamp": "2026.08.08-04.59.22"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Temperature: 0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "C:\\Users\\Rio\\Documents\\APOSFERA SPACETRIPS\\.aps_project\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6051,
+					"timestamp": "2026.08.08-04.59.22"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Density: 2.800000 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "C:\\Users\\Rio\\Documents\\APOSFERA SPACETRIPS\\.aps_project\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6051,
+					"timestamp": "2026.08.08-04.59.22"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Gravity Strength: 12.426328 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "C:\\Users\\Rio\\Documents\\APOSFERA SPACETRIPS\\.aps_project\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6051,
+					"timestamp": "2026.08.08-04.59.22"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Amount of Moons: 0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "C:\\Users\\Rio\\Documents\\APOSFERA SPACETRIPS\\.aps_project\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6051,
+					"timestamp": "2026.08.08-04.59.22"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.Gallery] Opened real PLANET page; cases=8 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.59.29"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: Generate Star System! [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "C:\\Users\\Rio\\Documents\\APOSFERA SPACETRIPS\\.aps_project\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6044,
+					"timestamp": "2026.08.08-04.59.29"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: NewPlanetarySystem->PlanetsActorsList: 3 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "C:\\Users\\Rio\\Documents\\APOSFERA SPACETRIPS\\.aps_project\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6044,
+					"timestamp": "2026.08.08-04.59.29"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: CurrentPlanet->Moons.Num(): 0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "C:\\Users\\Rio\\Documents\\APOSFERA SPACETRIPS\\.aps_project\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6044,
+					"timestamp": "2026.08.08-04.59.29"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: CurrentPlanet->Moons.Num(): 0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "C:\\Users\\Rio\\Documents\\APOSFERA SPACETRIPS\\.aps_project\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6044,
+					"timestamp": "2026.08.08-04.59.29"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: GeneratedHomeStarSystem set to: BP_StarSystem_C_1 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "C:\\Users\\Rio\\Documents\\APOSFERA SPACETRIPS\\.aps_project\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6044,
+					"timestamp": "2026.08.08-04.59.29"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: Planet List -  [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "C:\\Users\\Rio\\Documents\\APOSFERA SPACETRIPS\\.aps_project\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6972,
+					"timestamp": "2026.08.08-04.59.29"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: Planet Amount: 3 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "C:\\Users\\Rio\\Documents\\APOSFERA SPACETRIPS\\.aps_project\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6972,
+					"timestamp": "2026.08.08-04.59.29"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:     Planet Order: 1 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "C:\\Users\\Rio\\Documents\\APOSFERA SPACETRIPS\\.aps_project\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6051,
+					"timestamp": "2026.08.08-04.59.29"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Orbit Radius: 5.276791 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "C:\\Users\\Rio\\Documents\\APOSFERA SPACETRIPS\\.aps_project\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6051,
+					"timestamp": "2026.08.08-04.59.29"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Type: EPlanetType::Ice [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "C:\\Users\\Rio\\Documents\\APOSFERA SPACETRIPS\\.aps_project\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6051,
+					"timestamp": "2026.08.08-04.59.29"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Zone: EPlanetaryZoneType::Unknown [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "C:\\Users\\Rio\\Documents\\APOSFERA SPACETRIPS\\.aps_project\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6051,
+					"timestamp": "2026.08.08-04.59.29"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Temperature: 0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "C:\\Users\\Rio\\Documents\\APOSFERA SPACETRIPS\\.aps_project\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6051,
+					"timestamp": "2026.08.08-04.59.29"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Density: 2.800000 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "C:\\Users\\Rio\\Documents\\APOSFERA SPACETRIPS\\.aps_project\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6051,
+					"timestamp": "2026.08.08-04.59.29"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Gravity Strength: 12.426328 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "C:\\Users\\Rio\\Documents\\APOSFERA SPACETRIPS\\.aps_project\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6051,
+					"timestamp": "2026.08.08-04.59.29"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Amount of Moons: 1 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "C:\\Users\\Rio\\Documents\\APOSFERA SPACETRIPS\\.aps_project\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6051,
+					"timestamp": "2026.08.08-04.59.29"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:          Moon Order: 1 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "C:\\Users\\Rio\\Documents\\APOSFERA SPACETRIPS\\.aps_project\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6051,
+					"timestamp": "2026.08.08-04.59.29"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:              Moon Orbit Radius: 3.305108 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "C:\\Users\\Rio\\Documents\\APOSFERA SPACETRIPS\\.aps_project\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6051,
+					"timestamp": "2026.08.08-04.59.29"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:              Moon Type: EMoonType::Rocky [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "C:\\Users\\Rio\\Documents\\APOSFERA SPACETRIPS\\.aps_project\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6051,
+					"timestamp": "2026.08.08-04.59.29"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:              Moon Density: 2.698843 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "C:\\Users\\Rio\\Documents\\APOSFERA SPACETRIPS\\.aps_project\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6051,
+					"timestamp": "2026.08.08-04.59.29"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:              Moon Gravity: 1.397602 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "C:\\Users\\Rio\\Documents\\APOSFERA SPACETRIPS\\.aps_project\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6051,
+					"timestamp": "2026.08.08-04.59.29"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:     Planet Order: 1 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "C:\\Users\\Rio\\Documents\\APOSFERA SPACETRIPS\\.aps_project\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6051,
+					"timestamp": "2026.08.08-04.59.29"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Orbit Radius: 5.508825 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "C:\\Users\\Rio\\Documents\\APOSFERA SPACETRIPS\\.aps_project\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6051,
+					"timestamp": "2026.08.08-04.59.29"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Type: EPlanetType::Frozen [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "C:\\Users\\Rio\\Documents\\APOSFERA SPACETRIPS\\.aps_project\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6051,
+					"timestamp": "2026.08.08-04.59.29"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Zone: EPlanetaryZoneType::IceZone [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "C:\\Users\\Rio\\Documents\\APOSFERA SPACETRIPS\\.aps_project\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6051,
+					"timestamp": "2026.08.08-04.59.29"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Temperature: 1654 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "C:\\Users\\Rio\\Documents\\APOSFERA SPACETRIPS\\.aps_project\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6051,
+					"timestamp": "2026.08.08-04.59.29"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Density: 2.624226 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "C:\\Users\\Rio\\Documents\\APOSFERA SPACETRIPS\\.aps_project\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6051,
+					"timestamp": "2026.08.08-04.59.29"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Gravity Strength: 3.599790 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "C:\\Users\\Rio\\Documents\\APOSFERA SPACETRIPS\\.aps_project\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6051,
+					"timestamp": "2026.08.08-04.59.29"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Amount of Moons: 0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "C:\\Users\\Rio\\Documents\\APOSFERA SPACETRIPS\\.aps_project\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6051,
+					"timestamp": "2026.08.08-04.59.29"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:     Planet Order: 2 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "C:\\Users\\Rio\\Documents\\APOSFERA SPACETRIPS\\.aps_project\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6051,
+					"timestamp": "2026.08.08-04.59.29"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Orbit Radius: 8.961040 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "C:\\Users\\Rio\\Documents\\APOSFERA SPACETRIPS\\.aps_project\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6051,
+					"timestamp": "2026.08.08-04.59.29"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Type: EPlanetType::Ice [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "C:\\Users\\Rio\\Documents\\APOSFERA SPACETRIPS\\.aps_project\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6051,
+					"timestamp": "2026.08.08-04.59.29"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Zone: EPlanetaryZoneType::IceZone [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "C:\\Users\\Rio\\Documents\\APOSFERA SPACETRIPS\\.aps_project\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6051,
+					"timestamp": "2026.08.08-04.59.29"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Temperature: 1297 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "C:\\Users\\Rio\\Documents\\APOSFERA SPACETRIPS\\.aps_project\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6051,
+					"timestamp": "2026.08.08-04.59.29"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Density: 3.022034 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "C:\\Users\\Rio\\Documents\\APOSFERA SPACETRIPS\\.aps_project\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6051,
+					"timestamp": "2026.08.08-04.59.29"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Gravity Strength: 6.924505 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "C:\\Users\\Rio\\Documents\\APOSFERA SPACETRIPS\\.aps_project\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6051,
+					"timestamp": "2026.08.08-04.59.29"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Amount of Moons: 0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "C:\\Users\\Rio\\Documents\\APOSFERA SPACETRIPS\\.aps_project\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6051,
+					"timestamp": "2026.08.08-04.59.29"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.WorldGeneration] Preview surface profile apply #1 body=BP_Planet_C_1 old=0 new=3135506171 seed=73991 feature=1.000 relief=1.000 land=1.000 mountain=1.000 crater=1.000 roughness=1.000 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.59.29"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.Preview.Atmosphere] Stabilized body=BP_Planet_C_1 planetRadius=1200000 shellRadius=1272000 ratio=1.0600 centerError=0.00 source=WorldScape [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.59.30"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.Gallery.Perf] type=ICE / FROZEN switchMaxFrameMs=80.04 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.59.32"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.Gallery.Perf] type=ICE / FROZEN frames=92 seconds=0.85 avgFps=108.2 maxFrameMs=11.82 targetFps=120 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.59.33"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.Gallery.Pixel] type=ICE / FROZEN viewport=1274x682 center=(637.0,341.0) radius=143.3 samples=31478 mean=227.756 variance=50.701 nonBlackRatio=1.00000 clippedRatio=0.00000 backgroundSamples=768015 backgroundMean=0.123 backgroundVariance=17.781 backgroundClippedRatio=0.00000 backgroundToPlanet=0.00054 screenshot=../../../../../../../Users/Rio/Documents/APOSFERA SPACETRIPS/.aps_project/Saved/Screenshots/Windows/APS_PlanetGallery_Ice.png [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.59.33"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.WorldGeneration] Replaced drained preview WorldScape root body=BP_Planet_C_1 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.59.33"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.WorldGeneration] Preview surface profile apply #2 body=BP_Planet_C_1 old=0 new=484908923 seed=73991 feature=1.000 relief=1.000 land=1.000 mountain=1.000 crater=1.000 roughness=1.000 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.59.33"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.Preview.Atmosphere] Stabilized body=BP_Planet_C_1 planetRadius=1200000 shellRadius=1272000 ratio=1.0600 centerError=0.00 source=WorldScape [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.59.33"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.Gallery.Perf] type=DESERT switchMaxFrameMs=21.70 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.59.34"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.Gallery.Perf] type=DESERT frames=88 seconds=0.85 avgFps=102.9 maxFrameMs=13.06 targetFps=120 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.59.35"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.Gallery.Pixel] type=DESERT viewport=1274x682 center=(637.0,341.0) radius=143.3 samples=31478 mean=208.223 variance=234.234 nonBlackRatio=1.00000 clippedRatio=0.00000 backgroundSamples=768015 backgroundMean=0.104 backgroundVariance=17.819 backgroundClippedRatio=0.00000 backgroundToPlanet=0.00050 screenshot=../../../../../../../Users/Rio/Documents/APOSFERA SPACETRIPS/.aps_project/Saved/Screenshots/Windows/APS_PlanetGallery_Desert.png [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.59.35"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.WorldGeneration] Replaced drained preview WorldScape root body=BP_Planet_C_1 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.59.35"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.WorldGeneration] Preview surface profile apply #3 body=BP_Planet_C_1 old=0 new=1760007460 seed=73991 feature=1.000 relief=1.000 land=1.000 mountain=1.000 crater=1.000 roughness=1.000 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.59.35"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.Preview.Atmosphere] Stabilized body=BP_Planet_C_1 planetRadius=1200000 shellRadius=1272000 ratio=1.0600 centerError=0.00 source=WorldScape [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.59.36"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.Gallery.Perf] type=OCEAN / WATER switchMaxFrameMs=46.26 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.59.37"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.Gallery.Perf] type=OCEAN / WATER frames=87 seconds=0.85 avgFps=102.2 maxFrameMs=11.81 targetFps=120 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.59.38"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.Gallery.Pixel] type=OCEAN / WATER viewport=1274x682 center=(637.0,341.0) radius=143.3 samples=31478 mean=26.011 variance=557.626 nonBlackRatio=0.83239 clippedRatio=0.00000 backgroundSamples=768015 backgroundMean=0.104 backgroundVariance=17.816 backgroundClippedRatio=0.00000 backgroundToPlanet=0.00398 screenshot=../../../../../../../Users/Rio/Documents/APOSFERA SPACETRIPS/.aps_project/Saved/Screenshots/Windows/APS_PlanetGallery_Water.png [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.59.38"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.WorldGeneration] Replaced drained preview WorldScape root body=BP_Planet_C_1 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.59.38"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.WorldGeneration] Preview surface profile apply #4 body=BP_Planet_C_1 old=0 new=703467268 seed=73991 feature=1.000 relief=1.000 land=1.000 mountain=1.000 crater=1.000 roughness=1.000 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.59.38"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.Preview.Atmosphere] Stabilized body=BP_Planet_C_1 planetRadius=1200000 shellRadius=1272000 ratio=1.0600 centerError=0.00 source=WorldScape [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.59.39"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.Gallery.Perf] type=FOREST / BIOSPHERE switchMaxFrameMs=26.59 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.59.39"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.Gallery.Perf] type=FOREST / BIOSPHERE frames=87 seconds=0.85 avgFps=101.8 maxFrameMs=12.91 targetFps=120 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.59.40"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.Gallery.Pixel] type=FOREST / BIOSPHERE viewport=1274x682 center=(637.0,341.0) radius=143.3 samples=31478 mean=26.386 variance=584.392 nonBlackRatio=0.83830 clippedRatio=0.00000 backgroundSamples=768015 backgroundMean=0.103 backgroundVariance=17.796 backgroundClippedRatio=0.00000 backgroundToPlanet=0.00391 screenshot=../../../../../../../Users/Rio/Documents/APOSFERA SPACETRIPS/.aps_project/Saved/Screenshots/Windows/APS_PlanetGallery_Forest.png [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.59.40"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.WorldGeneration] Replaced drained preview WorldScape root body=BP_Planet_C_1 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.59.40"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.WorldGeneration] Preview surface profile apply #5 body=BP_Planet_C_1 old=0 new=2779395744 seed=73991 feature=1.000 relief=1.000 land=1.000 mountain=1.000 crater=1.000 roughness=1.000 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.59.40"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.Preview.Atmosphere] Stabilized body=BP_Planet_C_1 planetRadius=1200000 shellRadius=1272000 ratio=1.0600 centerError=0.00 source=WorldScape [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.59.41"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.Gallery.Perf] type=METALLIC switchMaxFrameMs=22.27 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.59.42"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.Gallery.Perf] type=METALLIC frames=89 seconds=0.86 avgFps=104.0 maxFrameMs=12.69 targetFps=120 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.59.43"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.Gallery.Pixel] type=METALLIC viewport=1274x682 center=(637.0,341.0) radius=143.3 samples=31478 mean=92.611 variance=3330.533 nonBlackRatio=1.00000 clippedRatio=0.00600 backgroundSamples=768015 backgroundMean=0.118 backgroundVariance=17.827 backgroundClippedRatio=0.00000 backgroundToPlanet=0.00127 screenshot=../../../../../../../Users/Rio/Documents/APOSFERA SPACETRIPS/.aps_project/Saved/Screenshots/Windows/APS_PlanetGallery_Metallic.png [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.59.43"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.WorldGeneration] Replaced drained preview WorldScape root body=BP_Planet_C_1 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.59.43"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.WorldGeneration] Preview surface profile apply #6 body=BP_Planet_C_1 old=0 new=187227976 seed=73991 feature=1.000 relief=1.000 land=1.000 mountain=1.000 crater=1.000 roughness=1.000 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.59.43"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.Preview.Atmosphere] Stabilized body=BP_Planet_C_1 planetRadius=1200000 shellRadius=1272000 ratio=1.0600 centerError=0.00 source=WorldScape [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.59.44"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.Gallery.Perf] type=LAVA / VOLCANIC switchMaxFrameMs=35.69 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.59.44"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.Gallery.Perf] type=LAVA / VOLCANIC frames=89 seconds=0.86 avgFps=103.4 maxFrameMs=11.48 targetFps=120 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.59.45"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.Gallery.Pixel] type=LAVA / VOLCANIC viewport=1274x682 center=(637.0,341.0) radius=143.3 samples=31478 mean=124.098 variance=6877.385 nonBlackRatio=0.91674 clippedRatio=0.10769 backgroundSamples=768015 backgroundMean=0.106 backgroundVariance=17.767 backgroundClippedRatio=0.00000 backgroundToPlanet=0.00085 screenshot=../../../../../../../Users/Rio/Documents/APOSFERA SPACETRIPS/.aps_project/Saved/Screenshots/Windows/APS_PlanetGallery_Lava.png [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.59.45"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.WorldGeneration] Replaced drained preview WorldScape root body=BP_Planet_C_1 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.59.45"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.WorldGeneration] Preview surface profile apply #7 body=BP_Planet_C_1 old=0 new=1364397892 seed=73991 feature=1.000 relief=1.000 land=1.000 mountain=1.000 crater=1.000 roughness=1.000 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.59.45"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.Preview.Atmosphere] Stabilized body=BP_Planet_C_1 planetRadius=1200000 shellRadius=1272000 ratio=1.0600 centerError=0.00 source=WorldScape [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.59.46"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.Gallery.Perf] type=PANGEA / TEMPERATE switchMaxFrameMs=25.69 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.59.47"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.Gallery.Perf] type=PANGEA / TEMPERATE frames=78 seconds=0.85 avgFps=91.7 maxFrameMs=16.35 targetFps=120 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.59.48"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.Gallery.Pixel] type=PANGEA / TEMPERATE viewport=1274x682 center=(637.0,341.0) radius=143.3 samples=31478 mean=36.373 variance=1659.119 nonBlackRatio=0.91715 clippedRatio=0.00000 backgroundSamples=768015 backgroundMean=0.104 backgroundVariance=17.785 backgroundClippedRatio=0.00000 backgroundToPlanet=0.00286 screenshot=../../../../../../../Users/Rio/Documents/APOSFERA SPACETRIPS/.aps_project/Saved/Screenshots/Windows/APS_PlanetGallery_Pangea.png [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.59.48"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.WorldGeneration] Replaced drained preview WorldScape root body=BP_Planet_C_1 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.59.48"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.WorldGeneration] Preview surface profile apply #8 body=BP_Planet_C_1 old=0 new=3919589272 seed=73991 feature=1.000 relief=1.000 land=1.000 mountain=1.000 crater=1.000 roughness=1.000 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.59.48"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.Preview.Atmosphere] Stabilized body=BP_Planet_C_1 planetRadius=1200000 shellRadius=1272000 ratio=1.0600 centerError=0.00 source=WorldScape [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.59.49"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.Gallery.Perf] type=HIGH MOUNTAIN switchMaxFrameMs=27.06 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.59.49"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.Gallery.Perf] type=HIGH MOUNTAIN frames=79 seconds=0.86 avgFps=92.0 maxFrameMs=13.30 targetFps=120 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.59.50"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.Gallery.Pixel] type=HIGH MOUNTAIN viewport=1274x682 center=(637.0,341.0) radius=143.3 samples=31478 mean=73.806 variance=5812.378 nonBlackRatio=0.99749 clippedRatio=0.00000 backgroundSamples=768015 backgroundMean=0.104 backgroundVariance=17.820 backgroundClippedRatio=0.00000 backgroundToPlanet=0.00140 screenshot=../../../../../../../Users/Rio/Documents/APOSFERA SPACETRIPS/.aps_project/Saved/Screenshots/Windows/APS_PlanetGallery_HighMountain.png [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.59.50"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.Gallery] PASS wrote 8 resolved WorldScape screenshots [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.59.50"
+				}
+			],
+			"warnings": 56,
+			"errors": 0,
+			"artifacts": []
+		}
+	]
+}

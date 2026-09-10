@@ -50,6 +50,7 @@
 #include "ProceduralMeshComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/HierarchicalInstancedStaticMeshComponent.h"
+#include "Components/PointLightComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/DirectionalLightComponent.h"
@@ -62,12 +63,15 @@
 #include "HAL/IConsoleManager.h"
 #include "ImageUtils.h"
 #include "HAL/FileManager.h"
+#include "Misc/CommandLine.h"
 #include "Misc/Crc.h"
 #include "Misc/FileHelper.h"
+#include "Misc/Parse.h"
 #include "Misc/Paths.h"
 #include "Kismet/GameplayStatics.h"
 #include "Materials/Material.h"
 #include "Materials/MaterialInterface.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "PlanetaryAtmosphere.h"
 #include "UnrealClient.h"
 #include "UObject/UnrealType.h"
@@ -134,11 +138,25 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 	// reaches one. Keep the observer comfortably below that sqrt(2) boundary.
 	constexpr double WetOceanCollisionCookHeightAnchorFraction = 1.2;
 	constexpr double MinimumWetOceanCameraMovementCm = 100000.0;
+	constexpr float MinimumWetOceanLowerRegionBlueDominance = 0.015f;
+	// Prove that the lower gameplay frame is actually authored by WorldScape's
+	// ocean LOD set.  This catches the visually identical failure mode where a
+	// terrain patch or legacy shell sits in front of the real liquid surface.
+	constexpr float MinimumWetOceanVisibilityMeanDelta = 0.02f;
+	constexpr int32 WetOceanIsolationSettleFrames = 2;
+	// A near-normal open-water view must be replaced by the production ocean across
+	// almost the complete centre of the frame.  L1 > 12 rejects only identical / one-
+	// code-value pixels; the high coverage and blue-dominance gates below remain the
+	// actual perceptual contract and cannot be satisfied by sparse clipmap seams.
+	constexpr int32 WetOceanIsolationMaskMinimumRgbDelta = 12;
+	constexpr double MinimumWetOceanIsolationScreenCoverage = 0.80;
+	constexpr float MinimumWetOceanIsolationBlueDominance = 0.05f;
+	constexpr double WetOceanCaptureDownwardAngleDegrees = 72.0;
+	constexpr double MaximumWetOceanCaptureForwardOutwardDot = -0.90;
 	// A 15-degree separation is wider than twice the centred-payload tolerance
 	// (dot >= 0.995, about 5.73 degrees), so one stale snapped normal cannot pass
 	// both rendered observer positions.
 	constexpr double MaximumWetOceanViewDirectionDot = 0.9659258262890683;
-
 	constexpr int32 ProjectionEvidenceWarmupFrames = 3;
 	constexpr int32 ProjectionEvidenceRequiredFrames = 32;
 	constexpr double ProjectionEvidencePhaseTimeoutSeconds = 20.0;
@@ -172,9 +190,25 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 		double ClosestObserverHeightCm{TNumericLimits<double>::Max()};
 	};
 
+	struct FWetOceanGeometryProof
+	{
+		const UWorldScapeLod* OceanLod0{nullptr};
+		int32 OceanVertexCount{0};
+		double MinimumOceanHeightCm{TNumericLimits<double>::Max()};
+		double MaximumOceanHeightCm{-TNumericLimits<double>::Max()};
+		double MaximumOceanHeightErrorCm{TNumericLimits<double>::Max()};
+		double ClosestObserverSurfaceDistanceCm{TNumericLimits<double>::Max()};
+		double ClosestObserverOceanHeightCm{TNumericLimits<double>::Max()};
+		double ClosestObserverTerrainHeightCm{TNumericLimits<double>::Max()};
+		double ExpectedTerrainHeightCm{TNumericLimits<double>::Max()};
+		double ExpectedWaterDepthCm{TNumericLimits<double>::Max()};
+		double ActualLayerSeparationCm{TNumericLimits<double>::Max()};
+	};
+
 	bool BuildVisibleWorldScapeRenderLod0Proof(AWorldScapeRoot* Root,
 		const FVector& ObserverWorldPosition, FVisibleWorldScapeRenderLodProof& OutProof,
-		FString& OutFailure)
+		FString& OutFailure,
+		const double MinimumReliefVariationCm = MinimumVisibleRenderLodReliefVariationCm)
 	{
 		OutProof = FVisibleWorldScapeRenderLodProof{};
 		OutFailure.Reset();
@@ -337,12 +371,12 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 		OutProof.MaximumNoiseDeltaCm = MaximumNoiseDeltaCm;
 		if (OutProof.VertexCount < 3
 			|| !FMath::IsFinite(OutProof.ReliefVariationCm)
-			|| OutProof.ReliefVariationCm < MinimumVisibleRenderLodReliefVariationCm)
+			|| OutProof.ReliefVariationCm < MinimumReliefVariationCm)
 		{
 			OutFailure = FString::Printf(
 				TEXT("terrain render LOD0 is geometrically flat vertices=%d relief=%.3fcm minimum=%.3fcm"),
 				OutProof.VertexCount, OutProof.ReliefVariationCm,
-				MinimumVisibleRenderLodReliefVariationCm);
+				MinimumReliefVariationCm);
 			return false;
 		}
 		if (!FMath::IsFinite(OutProof.MaximumNoiseDeltaCm)
@@ -351,6 +385,163 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			OutFailure = FString::Printf(
 				TEXT("terrain render LOD0 geometry diverges from WorldScape noise maxDelta=%.3fcm maximum=%.3fcm"),
 				OutProof.MaximumNoiseDeltaCm, MaximumVisibleRenderNoiseDeltaCm);
+			return false;
+		}
+		return true;
+	}
+
+	bool BuildWetOceanGeometryProof(AWorldScapeRoot* Root,
+		const FVector& ObserverWorldPosition, FWetOceanGeometryProof& OutProof,
+		FString& OutFailure)
+	{
+		OutProof = FWetOceanGeometryProof{};
+		OutFailure.Reset();
+		if (!IsValid(Root) || !Root->bOcean || ObserverWorldPosition.ContainsNaN())
+		{
+			OutFailure = TEXT("wet-ocean geometry proof has no valid root/observer");
+			return false;
+		}
+		if (Root->WorldScapeLodInGeneration.Num() != 0)
+		{
+			OutFailure = FString::Printf(TEXT("wet-ocean geometry workers remain in flight count=%d"),
+				Root->WorldScapeLodInGeneration.Num());
+			return false;
+		}
+
+		FVisibleWorldScapeRenderLodProof TerrainProof;
+		if (!BuildVisibleWorldScapeRenderLod0Proof(Root, ObserverWorldPosition,
+			TerrainProof, OutFailure, 0.0))
+		{
+			OutFailure = FString::Printf(TEXT("terrain half of wet-ocean geometry proof failed: %s"),
+				*OutFailure);
+			return false;
+		}
+		OutProof.ClosestObserverTerrainHeightCm = TerrainProof.ClosestObserverHeightCm;
+
+		for (const UWorldScapeLod* OceanLod : Root->WorldScapeLodOcean)
+		{
+			if (!IsValid(OceanLod) || !OceanLod->WaterBody || OceanLod->Lod != 0)
+			{
+				continue;
+			}
+			if (OutProof.OceanLod0)
+			{
+				OutFailure = TEXT("ocean render hierarchy contains duplicate LOD0 components");
+				return false;
+			}
+			OutProof.OceanLod0 = OceanLod;
+		}
+
+		const UWorldScapeLod* OceanLod0 = OutProof.OceanLod0;
+		if (!IsValid(OceanLod0) || !IsValid(OceanLod0->Mesh)
+			|| !OceanLod0->Mesh->IsRegistered() || !OceanLod0->Mesh->IsVisible()
+			|| OceanLod0->Mesh->bHiddenInGame || OceanLod0->Mesh->GetNumSections() != 3)
+		{
+			OutFailure = TEXT("unique ocean render LOD0 is not effectively available");
+			return false;
+		}
+
+		const FVector SurfaceCenter = Root->GetActorLocation();
+		const FVector ObserverNormal = (ObserverWorldPosition - SurfaceCenter).GetSafeNormal();
+		if (ObserverNormal.IsNearlyZero())
+		{
+			OutFailure = TEXT("wet-ocean observer normal is invalid");
+			return false;
+		}
+		const FTransform MeshTransform = OceanLod0->Mesh->GetComponentTransform();
+		const double ExpectedOceanHeightCm = static_cast<double>(Root->OceanHeight);
+		for (int32 SectionIndex = 0; SectionIndex < 3; ++SectionIndex)
+		{
+			const FWorldScapeMeshSection* Section =
+				OceanLod0->Mesh->GetProcMeshSection(SectionIndex);
+			if (!Section || Section->PlanetVertexBuffer.IsEmpty()
+				|| Section->PlanetIndexBuffer.IsEmpty())
+			{
+				OutFailure = FString::Printf(
+					TEXT("ocean render LOD0 section is empty section=%d"), SectionIndex);
+				return false;
+			}
+
+			for (const FWorldScapeMeshVertex& Vertex : Section->PlanetVertexBuffer)
+			{
+				const FVector WorldVertex = MeshTransform.TransformPosition(Vertex.Position);
+				const FVector VertexFromCenter = WorldVertex - SurfaceCenter;
+				const double RadialHeightCm = VertexFromCenter.Size() - Root->PlanetScaleCode;
+				if (WorldVertex.ContainsNaN() || !FMath::IsFinite(RadialHeightCm))
+				{
+					OutFailure = TEXT("ocean render LOD0 contains a non-finite transformed vertex");
+					return false;
+				}
+				OutProof.MinimumOceanHeightCm = FMath::Min(
+					OutProof.MinimumOceanHeightCm, RadialHeightCm);
+				OutProof.MaximumOceanHeightCm = FMath::Max(
+					OutProof.MaximumOceanHeightCm, RadialHeightCm);
+				OutProof.MaximumOceanHeightErrorCm = FMath::Min(
+					OutProof.MaximumOceanHeightErrorCm,
+					FMath::Abs(RadialHeightCm - ExpectedOceanHeightCm));
+				++OutProof.OceanVertexCount;
+
+				const FVector VertexNormal = VertexFromCenter.GetSafeNormal();
+				const double ObserverSurfaceDistanceCm = FVector::Distance(
+					VertexNormal * Root->PlanetScaleCode,
+					ObserverNormal * Root->PlanetScaleCode);
+				if (ObserverSurfaceDistanceCm
+					< OutProof.ClosestObserverSurfaceDistanceCm)
+				{
+					OutProof.ClosestObserverSurfaceDistanceCm = ObserverSurfaceDistanceCm;
+					OutProof.ClosestObserverOceanHeightCm = RadialHeightCm;
+				}
+			}
+		}
+
+		// Recompute the maximum error after validating all vertices. The first pass
+		// above deliberately records a finite sample even when the mesh is malformed.
+		OutProof.MaximumOceanHeightErrorCm = 0.0;
+		for (int32 SectionIndex = 0; SectionIndex < 3; ++SectionIndex)
+		{
+			const FWorldScapeMeshSection* Section =
+				OceanLod0->Mesh->GetProcMeshSection(SectionIndex);
+			for (const FWorldScapeMeshVertex& Vertex : Section->PlanetVertexBuffer)
+			{
+				const FVector WorldVertex = MeshTransform.TransformPosition(Vertex.Position);
+				const double RadialHeightCm = (WorldVertex - SurfaceCenter).Size()
+					- Root->PlanetScaleCode;
+				OutProof.MaximumOceanHeightErrorCm = FMath::Max(
+					OutProof.MaximumOceanHeightErrorCm,
+					FMath::Abs(RadialHeightCm - ExpectedOceanHeightCm));
+			}
+		}
+
+		OutProof.ExpectedTerrainHeightCm = Root->GetGroundHeight(
+			SurfaceCenter + ObserverNormal * Root->PlanetScaleCode, false);
+		OutProof.ExpectedWaterDepthCm = ExpectedOceanHeightCm
+			- OutProof.ExpectedTerrainHeightCm;
+		OutProof.ActualLayerSeparationCm = OutProof.ClosestObserverOceanHeightCm
+			- OutProof.ClosestObserverTerrainHeightCm;
+		if (OutProof.OceanVertexCount < 3
+			|| !FMath::IsFinite(OutProof.MaximumOceanHeightErrorCm)
+			|| OutProof.MaximumOceanHeightErrorCm > MaximumVisibleRenderNoiseDeltaCm)
+		{
+			OutFailure = FString::Printf(
+				TEXT("ocean render LOD0 does not lie on OceanHeight vertices=%d range=[%.3f,%.3f]cm expected=%.3fcm maxError=%.3fcm"),
+				OutProof.OceanVertexCount, OutProof.MinimumOceanHeightCm,
+				OutProof.MaximumOceanHeightCm, ExpectedOceanHeightCm,
+				OutProof.MaximumOceanHeightErrorCm);
+			return false;
+		}
+		const double LayerSeparationDeltaCm = FMath::Abs(
+			OutProof.ActualLayerSeparationCm - OutProof.ExpectedWaterDepthCm);
+		if (!FMath::IsFinite(OutProof.ExpectedWaterDepthCm)
+			|| !FMath::IsFinite(OutProof.ActualLayerSeparationCm)
+			|| !FMath::IsFinite(LayerSeparationDeltaCm)
+			|| LayerSeparationDeltaCm > MaximumVisibleRenderNoiseDeltaCm)
+		{
+			OutFailure = FString::Printf(
+				TEXT("wet WorldScape layer separation diverges expectedDepth=%.3fcm actualSeparation=%.3fcm delta=%.3fcm terrainActual=%.3fcm oceanActual=%.3fcm"),
+				OutProof.ExpectedWaterDepthCm, OutProof.ActualLayerSeparationCm,
+				LayerSeparationDeltaCm,
+				OutProof.ClosestObserverTerrainHeightCm,
+				OutProof.ClosestObserverOceanHeightCm);
 			return false;
 		}
 		return true;
@@ -619,6 +810,8 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			: Test(InTest)
 			, ExpectedPlanetType(InExpectedPlanetType)
 			, bValidateWetOceanContract(bInValidateWetOceanContract)
+			, bEnableWaterIsolation(bInValidateWetOceanContract
+				&& FParse::Param(FCommandLine::Get(), TEXT("APSWaterIsolation")))
 		{
 		}
 
@@ -688,6 +881,32 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			Cleanup
 		};
 
+		enum class EWetOceanIsolationState : uint8
+		{
+			Inactive,
+			AtmosphereHiddenProductionWater,
+			AtmosphereHiddenLegacyMaster,
+			AtmosphereHiddenLegacyAmmonia,
+			AtmosphereHiddenLegacyLava,
+			AtmosphereHiddenStockWorldScapeOcean,
+			AtmosphereHiddenCurrentMic,
+			AtmosphereHiddenCurrentMaster,
+			AtmosphereHiddenNoOcean
+		};
+
+		struct FWetOceanIsolationMaterialSlot
+		{
+			TWeakObjectPtr<UWorldScapeMeshComponent> Mesh;
+			TWeakObjectPtr<UMaterialInterface> OriginalMaterial;
+			int32 MaterialIndex{INDEX_NONE};
+		};
+
+		struct FWetOceanIsolationVisibilityState
+		{
+			TWeakObjectPtr<UWorldScapeMeshComponent> Mesh;
+			bool bWasVisible{true};
+		};
+
 		struct FProjectionEvidenceRenderedSample
 		{
 			uint64 RenderFrameCounter{0u};
@@ -739,6 +958,8 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 				EffectiveMessage += TEXT("; ");
 				EffectiveMessage += CameraRestoreFailure;
 			}
+			RestoreWetOceanIsolationState();
+			RestoreWetOceanRenderCamera();
 			if (PendingFailure.IsEmpty())
 			{
 				PendingFailure = EffectiveMessage;
@@ -804,7 +1025,7 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			Model->SurfaceRoughnessScale = 1.0;
 			Model->AtmosphereHeight = 140.0;
 			Model->AtmosphereOpacity = 12.0;
-			Model->AtmosphereMultiScattering = 1.0;
+			Model->AtmosphereMultiScattering = 5.0;
 			Model->AtmosphereRayleighScattering = 8.0;
 
 			if (!Controller->OpenAstronomicalGenerationForAutomation(
@@ -891,7 +1112,13 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			Spawn->CharacterSpawnPlace = ECharSpawnPlace::PlanetSurface;
 			Spawn->HomeStationOrbitHeight = EOrbitHeight::LowOrbit;
 			EditableSpawnParametersAddress = Spawn;
-			PreviewProfileSignature = PreviewSurface->AppliedSurfaceProfileSignature;
+			// AppliedSurfaceProfileSignature also fingerprints preview-only presentation
+			// scale and body geometry.  Gameplay deliberately restores full physical
+			// scale, so compare the immutable resolved terrain/material profile itself.
+			PreviewProfileSignature =
+				UAPSPlanetSurfaceProfileResolver::BuildProfileSignature(
+					PreviewSurface->ResolvedSurfaceProfile);
+			PreviewWorldGenerationSeed = EditableGeneratedWorldAddress->GenerationSeed;
 			const FAPSCanonicalStellarProjectionDescriptor& PreviewProjection =
 				PreviewGenerator->GetCanonicalStellarProjectionDescriptor();
 			FAPSCanonicalStellarProxyRecord PreviewHomeRecord;
@@ -899,14 +1126,38 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			if (!PreviewProjection.bFinalized
 				|| !PreviewProjection.CanonicalDatasetHash
 				|| !PreviewProjection.ContextHash
+				|| !PreviewProjection.RenderedMappingHash
 				|| !PreviewProjection.MaterializedHomeStableId.IsValid()
 				|| !PreviewGenerator->GetCanonicalStellarProxyRecord(
 					EAPSCanonicalStellarProxyLayer::StarCluster,
-					PreviewProjection.MaterializedHomeStableId, PreviewHomeRecord)
-				|| !PreviewGenerator->GetCanonicalStellarProxyRecord(
-					EAPSCanonicalStellarProxyLayer::Galaxy, 0, PreviewGalaxyRecord))
+					PreviewProjection.MaterializedHomeStableId, PreviewHomeRecord))
 			{
 				return Fail(TEXT("menu preview has no finalized canonical home projection snapshot"));
+			}
+			bool bHasPreviewGalaxySentinel = false;
+			double PreviewGalaxySentinelDistanceSquared = -1.0;
+			for (int32 InstanceIndex = 0;
+				InstanceIndex < PreviewProjection.GalaxyRenderedCount; ++InstanceIndex)
+			{
+				FAPSCanonicalStellarProxyRecord Candidate;
+				if (PreviewGenerator->GetCanonicalStellarProxyRecord(
+						EAPSCanonicalStellarProxyLayer::Galaxy, InstanceIndex, Candidate)
+					&& Candidate.StableId.IsValid()
+					&& !Candidate.bSuppressedMaterializedHome
+					&& !Candidate.bSuppressedByView
+					&& Candidate.ActualProxyScale > 0.0
+					&& Candidate.ActualProxyPositionCm.SizeSquared()
+						> PreviewGalaxySentinelDistanceSquared)
+				{
+					PreviewGalaxyRecord = Candidate;
+					PreviewGalaxySentinelDistanceSquared =
+						Candidate.ActualProxyPositionCm.SizeSquared();
+					bHasPreviewGalaxySentinel = true;
+				}
+			}
+			if (!bHasPreviewGalaxySentinel)
+			{
+				return Fail(TEXT("menu preview has no visible canonical galaxy sentinel"));
 			}
 			bHasPreviewProjectionSnapshot = true;
 			PreviewProjectionVersion = PreviewProjection.ProjectionVersion;
@@ -916,6 +1167,8 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			PreviewCanonicalDatasetInputHash = PreviewProjection.CanonicalDatasetInputHash;
 			PreviewCanonicalDatasetBuildSerial = PreviewProjection.CanonicalDatasetBuildSerial;
 			PreviewCanonicalDatasetRecordCount = PreviewProjection.CanonicalDatasetRecordCount;
+			PreviewGalaxyRenderedCount = PreviewProjection.GalaxyRenderedCount;
+			PreviewClusterRenderedCount = PreviewProjection.ClusterRenderedCount;
 			PreviewHomeStableId = PreviewHomeRecord.StableId;
 			PreviewHomeCanonicalPosition = PreviewHomeRecord.CanonicalPositionUnits;
 			PreviewHomeExpectedProxyPosition = PreviewHomeRecord.ExpectedBaseProxyPositionCm;
@@ -926,21 +1179,33 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 				PreviewGalaxyRecord.ExpectedBaseProxyPositionCm;
 			PreviewGalaxyCanonicalRadiusSolar =
 				PreviewGalaxyRecord.CanonicalPhysicalRadiusSolar;
+			PreviewGalaxyActualProxyScale = PreviewGalaxyRecord.ActualProxyScale;
 			bool bHasPreviewClusterSentinel = false;
+			double PreviewClusterSentinelDistanceSquared = -1.0;
 			for (int32 InstanceIndex = 0;
 				InstanceIndex < PreviewProjection.ClusterRenderedCount; ++InstanceIndex)
 			{
 				FAPSCanonicalStellarProxyRecord Candidate;
 				if (PreviewGenerator->GetCanonicalStellarProxyRecord(
 						EAPSCanonicalStellarProxyLayer::StarCluster, InstanceIndex, Candidate)
-					&& Candidate.StableId != PreviewHomeStableId)
+					&& Candidate.StableId.IsValid()
+					&& Candidate.StableId != PreviewHomeStableId
+					&& !Candidate.bSuppressedMaterializedHome
+					&& !Candidate.bSuppressedByView
+					&& Candidate.ActualProxyScale > 0.0
+					&& (Candidate.ActualProxyPositionCm
+						- PreviewHomeRecord.ActualProxyPositionCm).SizeSquared()
+						> PreviewClusterSentinelDistanceSquared)
 				{
 					PreviewClusterStableId = Candidate.StableId;
 					PreviewClusterCanonicalPosition = Candidate.CanonicalPositionUnits;
 					PreviewClusterExpectedProxyPosition = Candidate.ExpectedBaseProxyPositionCm;
 					PreviewClusterCanonicalRadiusSolar = Candidate.CanonicalPhysicalRadiusSolar;
+					PreviewClusterActualProxyScale = Candidate.ActualProxyScale;
+					PreviewClusterSentinelDistanceSquared =
+						(Candidate.ActualProxyPositionCm
+							- PreviewHomeRecord.ActualProxyPositionCm).SizeSquared();
 					bHasPreviewClusterSentinel = true;
-					break;
 				}
 			}
 			if (!bHasPreviewClusterSentinel)
@@ -1071,7 +1336,9 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 				|| !Snapshot->bStartWithHomePlanet || Snapshot->StarType != EStarType::SingleStar
 				|| Snapshot->PlanetsAmount != 1 || Snapshot->MoonsAmount != 0
 				|| Snapshot->StartPlanetIndex != 1 || Snapshot->PlanetType != ExpectedPlanetType
-				|| Snapshot->PlanetSurfaceSeed != 424242)
+				|| Snapshot->GenerationSeed != PreviewWorldGenerationSeed
+				|| Snapshot->PlanetSurfaceSeed != 424242
+				|| !FMath::IsNearlyEqual(Snapshot->PlanetRadius, 6371.0, 1.0e-9))
 			{
 				return Fail(TEXT("committed generated-world snapshot differs from deterministic menu model"));
 			}
@@ -1298,6 +1565,11 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 				&& Projection.CanonicalDatasetInputHash == PreviewCanonicalDatasetInputHash
 				&& Projection.CanonicalDatasetBuildSerial == PreviewCanonicalDatasetBuildSerial
 				&& Projection.CanonicalDatasetRecordCount == PreviewCanonicalDatasetRecordCount
+				// Full RenderedMappingHash is intentionally LOD-specific. Gameplay may
+				// render a larger immutable prefix than the menu, so compare counts and
+				// exact shared records instead of requiring two different LOD hashes equal.
+				&& Projection.GalaxyRenderedCount >= PreviewGalaxyRenderedCount
+				&& Projection.ClusterRenderedCount >= PreviewClusterRenderedCount
 				&& Projection.bConsumedFinalizedDataset
 				&& bHasGameplayDatasetOnlyRecord
 				&& (!bHasPreviewDatasetOnlyRecord
@@ -1327,13 +1599,17 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 					PreviewGalaxyExpectedProxyPosition, 0.01)
 				&& FMath::IsNearlyEqual(GalaxySentinel.CanonicalPhysicalRadiusSolar,
 					PreviewGalaxyCanonicalRadiusSolar, 1.0e-9)
+				&& FMath::IsNearlyEqual(GalaxySentinel.ActualProxyScale,
+					PreviewGalaxyActualProxyScale, 1.0e-9)
 				&& ClusterSentinel.StableId == PreviewClusterStableId
 				&& ClusterSentinel.CanonicalPositionUnits.Equals(
 					PreviewClusterCanonicalPosition, 0.01)
 				&& ClusterSentinel.ExpectedBaseProxyPositionCm.Equals(
 					PreviewClusterExpectedProxyPosition, 0.01)
 				&& FMath::IsNearlyEqual(ClusterSentinel.CanonicalPhysicalRadiusSolar,
-					PreviewClusterCanonicalRadiusSolar, 1.0e-9);
+					PreviewClusterCanonicalRadiusSolar, 1.0e-9)
+				&& FMath::IsNearlyEqual(ClusterSentinel.ActualProxyScale,
+					PreviewClusterActualProxyScale, 1.0e-9);
 			const bool bProjectionContract = Projection.bFinalized
 				&& Projection.bProjectionValid
 				&& Projection.ProjectionVersion
@@ -1393,6 +1669,9 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 				&& bUnitProjectionRoots
 				&& bHasGalaxySentinel
 				&& GalaxySentinel.StableId.IsValid()
+				&& !GalaxySentinel.bSuppressedMaterializedHome
+				&& !GalaxySentinel.bSuppressedByView
+				&& GalaxySentinel.ActualProxyScale > 0.0
 				&& GalaxySentinel.ProjectionErrorCm
 					<= APSCanonicalStellarProjection::ProjectionToleranceCm
 				&& APSCanonicalStellarProjection::MaxAbsComponent(
@@ -1403,6 +1682,7 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 				&& ClusterSentinel.CanonicalPositionUnits.Equals(
 					PreviewClusterCanonicalPosition, 0.01)
 				&& !ClusterSentinel.bSuppressedMaterializedHome
+				&& !ClusterSentinel.bSuppressedByView
 				&& ClusterSentinel.ActualProxyScale > 0.0
 				&& ClusterSentinel.ProjectionErrorCm
 					<= APSCanonicalStellarProjection::ProjectionToleranceCm
@@ -1552,6 +1832,13 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			const bool bPhotospherePresented = IsEffectivelyPresented(Star->StarMesh)
 				&& IsValid(Star->StarMesh->GetStaticMesh())
 				&& IsValid(Star->StarMesh->GetMaterial(0));
+			const bool bCoronaPresented = Star->StellarClass == EStellarType::BlackHole
+				|| IsEffectivelyPresented(Star->CoronaMesh);
+			const bool bLocalStellarLightActive = IsValid(Star->StellarLight)
+				&& Star->StellarLight->IsRegistered() && Star->StellarLight->IsVisible()
+				&& Star->StellarLight->Intensity > 0.0f
+				&& Star->StellarLight->AttenuationRadius
+					> Star->StarMesh->Bounds.SphereRadius;
 			const bool bPlanetaryEnvelopeNonBlocking = IsValid(Star->PlanetarySystemZone)
 				&& Star->PlanetarySystemZone->GetCollisionEnabled()
 					== ECollisionEnabled::NoCollision
@@ -1591,23 +1878,30 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 				}
 			}
 			UE_LOG(LogTemp, Display,
-				TEXT("[APS.Handoff.Stellar] star=%s location=%s target=%s targetIdentity=%s physicalTarget=%d photosphere=%d radius=%.3ecm key=%s keyIntensity=%.2f planetaryZoneCollision=%d systemZoneCollision=%d"),
+				TEXT("[APS.Handoff.Stellar] star=%s location=%s target=%s targetIdentity=%s physicalTarget=%d photosphere=%d radius=%.3ecm corona=%d localLight=%d intensity=%.2f attenuation=%.3ecm key=%s keyIntensity=%.2f planetaryZoneCollision=%d systemZoneCollision=%d"),
 				*GetNameSafe(Star), *Star->GetActorLocation().ToCompactString(),
 				*ActiveTargetLocation.ToCompactString(), *ActiveTargetIdentity,
 				bPhysicalStellarTarget ? 1 : 0,
 				bPhotospherePresented ? 1 : 0, Star->StarMesh->Bounds.SphereRadius,
+				bCoronaPresented ? 1 : 0, bLocalStellarLightActive ? 1 : 0,
+				IsValid(Star->StellarLight) ? Star->StellarLight->Intensity : 0.0f,
+				IsValid(Star->StellarLight) ? Star->StellarLight->AttenuationRadius : 0.0f,
 				*GetNameSafe(ActiveStellarKey), ActiveStellarKey ? ActiveStellarKey->Intensity : 0.0f,
 				IsValid(Star->PlanetarySystemZone)
 					? static_cast<int32>(Star->PlanetarySystemZone->GetCollisionEnabled()) : -1,
 				IsValid(StarSystem->StarSystemZone)
 					? static_cast<int32>(StarSystem->StarSystemZone->GetCollisionEnabled()) : -1);
-			if (!bPhysicalStellarTarget || !bPhotospherePresented || !ActiveStellarKey
-				|| !bPlanetaryEnvelopeNonBlocking || !bSystemEnvelopeNonBlocking)
+			if (!bPhysicalStellarTarget || !bPhotospherePresented || !bCoronaPresented
+				|| !bLocalStellarLightActive
+				|| !ActiveStellarKey || !bPlanetaryEnvelopeNonBlocking
+				|| !bSystemEnvelopeNonBlocking)
 			{
 				return Fail(FString::Printf(
-					TEXT("generated stellar gameplay contract failed physicalTarget=%d photosphere=%d directionalKey=%d planetaryEnvelopeNonBlocking=%d systemEnvelopeNonBlocking=%d"),
-					bPhysicalStellarTarget ? 1 : 0, bPhotospherePresented ? 1 : 0,
-					ActiveStellarKey ? 1 : 0, bPlanetaryEnvelopeNonBlocking ? 1 : 0,
+					TEXT("generated stellar gameplay contract failed physicalTarget=%d photosphere=%d corona=%d localLight=%d directionalKey=%d planetaryEnvelopeNonBlocking=%d systemEnvelopeNonBlocking=%d"),
+					bPhysicalStellarTarget ? 1 : 0,
+					bPhotospherePresented ? 1 : 0, bCoronaPresented ? 1 : 0,
+					bLocalStellarLightActive ? 1 : 0, ActiveStellarKey ? 1 : 0,
+					bPlanetaryEnvelopeNonBlocking ? 1 : 0,
 					bSystemEnvelopeNonBlocking ? 1 : 0));
 			}
 
@@ -2981,49 +3275,60 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 				&& Surface->ResolvedOceanMaterialInstance->GetScalarParameterValue(
 					FHashedMaterialParameterInfo(FName(TEXT("OrbitalNormalBlend"))),
 					UnusedPhysicalOrbitalNormalBlend);
-			float PhysicalWaveColorStrength = -1.0f;
-			const bool bHasPhysicalWaveColor =
-				IsValid(Surface->ResolvedOceanMaterialInstance)
-				&& Surface->ResolvedOceanMaterialInstance->GetScalarParameterValue(
-					FHashedMaterialParameterInfo(FName(TEXT("WaveColorStrength"))),
-					PhysicalWaveColorStrength);
-			float PhysicalWaveNormalStrength = -1.0f;
-			const bool bHasPhysicalWaveNormal =
+			float UnusedPhysicalWaveNormalStrength = -1.0f;
+			const bool bHasUnusedPhysicalWaveNormal =
 				IsValid(Surface->ResolvedOceanMaterialInstance)
 				&& Surface->ResolvedOceanMaterialInstance->GetScalarParameterValue(
 					FHashedMaterialParameterInfo(FName(TEXT("WaveNormalStrength"))),
-					PhysicalWaveNormalStrength);
-			float PhysicalSurfaceOpacity = -1.0f;
-			const bool bHasPhysicalSurfaceOpacity =
+					UnusedPhysicalWaveNormalStrength);
+			FLinearColor PhysicalDeepColor = FLinearColor::Black;
+			const bool bHasPhysicalDeepColor =
 				IsValid(Surface->ResolvedOceanMaterialInstance)
-				&& Surface->ResolvedOceanMaterialInstance->GetScalarParameterValue(
-					FHashedMaterialParameterInfo(FName(TEXT("WaterSurfaceOpacity"))),
-					PhysicalSurfaceOpacity);
+				&& Surface->ResolvedOceanMaterialInstance->GetVectorParameterValue(
+					FHashedMaterialParameterInfo(FName(TEXT("WaterDeepColor"))),
+					PhysicalDeepColor);
+			FLinearColor PhysicalShallowColor = FLinearColor::Black;
+			const bool bHasPhysicalShallowColor =
+				IsValid(Surface->ResolvedOceanMaterialInstance)
+				&& Surface->ResolvedOceanMaterialInstance->GetVectorParameterValue(
+					FHashedMaterialParameterInfo(FName(TEXT("WaterShallowColor"))),
+					PhysicalShallowColor);
+			FLinearColor PhysicalRadianceFloor = FLinearColor::Black;
+			const bool bHasPhysicalRadianceFloor =
+				IsValid(Surface->ResolvedOceanMaterialInstance)
+				&& Surface->ResolvedOceanMaterialInstance->GetVectorParameterValue(
+					FHashedMaterialParameterInfo(FName(TEXT("WaterRadianceFloor"))),
+					PhysicalRadianceFloor);
 			UMaterial* ExpectedWorldScapeWaterMaster =
 				LoadObject<UMaterial>(nullptr,
-					TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Materials/M_APS_WorldScapeLiquid.M_APS_WorldScapeLiquid"));
+					TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Materials/M_APS_WorldScapeLivingWater.M_APS_WorldScapeLivingWater"));
 			if (Surface->ResolvedSurfaceProfile.PlanetType != EPlanetType::Water
 				|| Surface->ResolvedSurfaceProfile.LiquidType != EAPSPlanetLiquidType::Water
 				|| !IsValid(Surface->ResolvedOceanMaterialInstance)
 				|| !IsValid(ExpectedWorldScapeWaterMaster)
 				|| Surface->ResolvedOceanMaterialInstance->GetBlendMode() != BLEND_Opaque
 				|| !Surface->ResolvedOceanMaterialInstance->GetShadingModels()
-					.HasShadingModel(MSM_SingleLayerWater)
+					.HasShadingModel(MSM_Unlit)
 				|| Surface->ResolvedOceanMaterialInstance->GetMaterial()
 					!= ExpectedWorldScapeWaterMaster
 				|| bHasUnusedPhysicalNormalBlend
-				|| !bHasPhysicalWaveColor || PhysicalWaveColorStrength < 0.0f
-				|| PhysicalWaveColorStrength > 0.02f
-				|| !bHasPhysicalWaveNormal || PhysicalWaveNormalStrength < 0.0f
-				|| PhysicalWaveNormalStrength > 0.04f
-				|| !bHasPhysicalSurfaceOpacity || PhysicalSurfaceOpacity <= 0.0f
-				|| PhysicalSurfaceOpacity > 0.45f
+				|| bHasUnusedPhysicalWaveNormal
+				|| !bHasPhysicalDeepColor
+				|| PhysicalDeepColor.B <= PhysicalDeepColor.G
+				|| PhysicalDeepColor.G <= PhysicalDeepColor.R
+				|| !bHasPhysicalShallowColor
+				|| PhysicalShallowColor.B <= PhysicalShallowColor.G
+				|| PhysicalShallowColor.G <= PhysicalShallowColor.R
+				|| PhysicalShallowColor.GetLuminance() <= PhysicalDeepColor.GetLuminance()
+				|| !bHasPhysicalRadianceFloor
+				|| PhysicalRadianceFloor.B <= PhysicalRadianceFloor.G
+				|| PhysicalRadianceFloor.G <= PhysicalRadianceFloor.R
 				|| !Root->bOcean
 				|| Root->OceanMaterial.DefaultMaterial
 					!= Surface->ResolvedOceanMaterialInstance)
 			{
 				OutFailure = FString::Printf(
-					TEXT("Water handoff did not retain the project WorldScape SingleLayerWater ocean type=%d liquid=%d bOcean=%d blend=%d base=%s expectedBase=%s hasOrbitalBlend=%d waveColor=%f waveNormal=%f surfaceOpacity=%f resolvedMID=%s rootMID=%s"),
+					TEXT("Water handoff did not retain the project controlled opaque water ocean type=%d liquid=%d bOcean=%d blend=%d base=%s expectedBase=%s hasOrbitalBlend=%d hasWaveNormal=%d deep=%s shallow=%s radiance=%s resolvedMID=%s rootMID=%s"),
 					static_cast<int32>(Surface->ResolvedSurfaceProfile.PlanetType),
 					static_cast<int32>(Surface->ResolvedSurfaceProfile.LiquidType),
 					Root->bOcean ? 1 : 0,
@@ -3034,9 +3339,10 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 						? Surface->ResolvedOceanMaterialInstance->GetMaterial() : nullptr),
 					*GetNameSafe(ExpectedWorldScapeWaterMaster),
 					bHasUnusedPhysicalNormalBlend ? 1 : 0,
-					PhysicalWaveColorStrength,
-					PhysicalWaveNormalStrength,
-					PhysicalSurfaceOpacity,
+					bHasUnusedPhysicalWaveNormal ? 1 : 0,
+					*PhysicalDeepColor.ToString(),
+					*PhysicalShallowColor.ToString(),
+					*PhysicalRadianceFloor.ToString(),
 					*GetNameSafe(Surface->ResolvedOceanMaterialInstance),
 					*GetNameSafe(Root->OceanMaterial.DefaultMaterial));
 				return false;
@@ -3190,6 +3496,28 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 					ValidatedOceanMaterialSlotCount, ExpectedOceanLodCount * 3);
 				return false;
 			}
+
+			FWetOceanGeometryProof LayerGeometryProof;
+			FString LayerGeometryFailure;
+			if (!BuildWetOceanGeometryProof(Root, RenderObserverWorldPosition,
+				LayerGeometryProof, LayerGeometryFailure))
+			{
+				OutFailure = FString::Printf(
+					TEXT("authoritative wet WorldScape render layers diverged: %s"),
+					*LayerGeometryFailure);
+				return false;
+			}
+			UE_LOG(LogTemp, Display,
+				TEXT("[APS.Handoff.WetOcean.Geometry] terrainActual=%.3fcm terrainExpected=%.3fcm oceanActual=%.3fcm oceanRange=[%.3f,%.3f]cm oceanMaxError=%.3fcm expectedDepth=%.3fcm actualSeparation=%.3fcm oceanVertices=%d"),
+				LayerGeometryProof.ClosestObserverTerrainHeightCm,
+				LayerGeometryProof.ExpectedTerrainHeightCm,
+				LayerGeometryProof.ClosestObserverOceanHeightCm,
+				LayerGeometryProof.MinimumOceanHeightCm,
+				LayerGeometryProof.MaximumOceanHeightCm,
+				LayerGeometryProof.MaximumOceanHeightErrorCm,
+				LayerGeometryProof.ExpectedWaterDepthCm,
+				LayerGeometryProof.ActualLayerSeparationCm,
+				LayerGeometryProof.OceanVertexCount);
 
 			int32 PreviewOceanProxyCount = 0;
 			for (AAstroGenerator* Generator : FindActors<AAstroGenerator>(World))
@@ -3356,7 +3684,7 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			}
 
 			UE_LOG(LogTemp, Display,
-				TEXT("[APS.Handoff.WetOcean] Contract ready root=%s oceanLods=%d previewOceanProxies=%d terrainCollisionLods=%d passThroughTerrainTraces=%d liquid=Water base=M_APS_WorldScapeLiquid materialSlots=27xResolvedMID"),
+				TEXT("[APS.Handoff.WetOcean] Contract ready root=%s oceanLods=%d previewOceanProxies=%d terrainCollisionLods=%d passThroughTerrainTraces=%d liquid=Water base=M_APS_WorldScapeLivingWater shading=ControlledUnlit materialSlots=27xResolvedMID"),
 				*GetNameSafe(Root), Root->WorldScapeLodOcean.Num(),
 				PreviewOceanProxyCount, TerrainCollisionComponents.Num(),
 				TerrainTraceCount);
@@ -3521,6 +3849,32 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			return true;
 		}
 
+		void RestoreWetOceanRenderCamera()
+		{
+			ACameraActor* TestCamera = WetOceanRenderCamera.Get();
+			UWorld* World = GameplayWorld.Get();
+			APlayerController* PlayerController = World
+				? World->GetFirstPlayerController() : nullptr;
+			if (IsValid(PlayerController) && PlayerController->GetViewTarget() == TestCamera)
+			{
+				AActor* RestoreTarget = WetOceanOriginalViewTarget.Get();
+				if (!IsValid(RestoreTarget))
+				{
+					RestoreTarget = RuntimeGravityPawn.Get();
+				}
+				if (IsValid(RestoreTarget))
+				{
+					PlayerController->SetViewTarget(RestoreTarget);
+				}
+			}
+			if (IsValid(TestCamera))
+			{
+				TestCamera->Destroy();
+			}
+			WetOceanRenderCamera.Reset();
+			WetOceanOriginalViewTarget.Reset();
+		}
+
 		bool PinWetOceanRenderView(UWorld* World, FString& OutFailure)
 		{
 			OutFailure.Reset();
@@ -3541,6 +3895,12 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 				OutFailure = TEXT("wet-ocean render view lost its pawn/root/streaming subsystem");
 				return false;
 			}
+			APlayerController* PlayerController = World->GetFirstPlayerController();
+			if (!IsValid(PlayerController))
+			{
+				OutFailure = TEXT("wet-ocean render view lost its player controller");
+				return false;
+			}
 
 			if (UCapsuleComponent* PawnCapsule = FindPawnCapsule(GravityPawn))
 			{
@@ -3555,21 +3915,75 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 				OutFailure = TEXT("wet-ocean render camera teleport failed");
 				return false;
 			}
+			const FVector CaptureOutward = (CaptureTransform.GetLocation()
+				- Root->GetActorLocation()).GetSafeNormal();
+			FVector CaptureTangent = FVector::VectorPlaneProject(
+				CaptureTransform.TransformVectorNoScale(FVector::ForwardVector),
+				CaptureOutward).GetSafeNormal();
+			if (CaptureOutward.IsNearlyZero() || CaptureTangent.IsNearlyZero())
+			{
+				OutFailure = TEXT("wet-ocean render camera could not resolve its open-water tangent frame");
+				return false;
+			}
+			const double DownwardAngleRadians = FMath::DegreesToRadians(
+				WetOceanCaptureDownwardAngleDegrees);
+			const FVector CameraForward = (
+				CaptureTangent * FMath::Cos(DownwardAngleRadians)
+				- CaptureOutward * FMath::Sin(DownwardAngleRadians)).GetSafeNormal();
+			const FVector CameraLocation = CaptureTransform.GetLocation()
+				- CameraForward * 500.0 + CaptureOutward * 55.0;
+			const FRotator CameraRotation = FRotationMatrix::MakeFromXZ(
+				CameraForward, CaptureOutward).Rotator();
+			ACameraActor* TestCamera = WetOceanRenderCamera.Get();
+			if (!IsValid(TestCamera))
+			{
+				WetOceanOriginalViewTarget = PlayerController->GetViewTarget();
+				FActorSpawnParameters SpawnParameters;
+				SpawnParameters.ObjectFlags |= RF_Transient;
+				SpawnParameters.SpawnCollisionHandlingOverride =
+					ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+				TestCamera = World->SpawnActor<ACameraActor>(
+					ACameraActor::StaticClass(), CameraLocation, CameraRotation,
+					SpawnParameters);
+				WetOceanRenderCamera = TestCamera;
+			}
+			if (!IsValid(TestCamera))
+			{
+				OutFailure = TEXT("wet-ocean render proof could not spawn its deterministic camera");
+				return false;
+			}
+			TestCamera->SetActorLocationAndRotation(CameraLocation, CameraRotation,
+				false, nullptr, ETeleportType::TeleportPhysics);
+			if (UCameraComponent* TestCameraComponent = TestCamera->GetCameraComponent())
+			{
+				TestCameraComponent->SetFieldOfView(72.0f);
+				// Keep all direct-material captures on one deterministic exposure.  Even
+				// with project auto exposure disabled, PIE/editor post-process volumes can
+				// otherwise leak state across successive diagnostic view targets.
+				TestCameraComponent->PostProcessBlendWeight = 1.0f;
+				FPostProcessSettings& PostProcess =
+					TestCameraComponent->PostProcessSettings;
+				PostProcess.bOverride_AutoExposureMethod = true;
+				PostProcess.AutoExposureMethod = EAutoExposureMethod::AEM_Manual;
+				PostProcess.bOverride_AutoExposureApplyPhysicalCameraExposure = true;
+				PostProcess.AutoExposureApplyPhysicalCameraExposure = false;
+				PostProcess.bOverride_AutoExposureBias = true;
+				PostProcess.AutoExposureBias = 0.0f;
+			}
+			PlayerController->SetViewTarget(TestCamera);
 			if (USpringArmComponent* CameraSpringArm = FindPawnSpringArm(GravityPawn))
 			{
 				CameraSpringArm->bUsePawnControlRotation = false;
 				CameraSpringArm->TargetArmLength = 500.0f;
 				CameraSpringArm->SetRelativeLocation(FVector(0.0, 0.0, 55.0));
-				CameraSpringArm->SetRelativeRotation(FRotator(-22.0, 0.0, 0.0));
+				CameraSpringArm->SetRelativeRotation(FRotator(
+					WetOceanCaptureIndex == 0 ? -22.0 : -58.0, 0.0, 0.0));
 			}
 			if (UCameraComponent* PawnCamera = FindPawnCamera(GravityPawn))
 			{
 				PawnCamera->SetFieldOfView(72.0f);
 			}
-			if (APlayerController* PlayerController = World->GetFirstPlayerController())
-			{
-				PlayerController->SetControlRotation(CaptureTransform.Rotator());
-			}
+			PlayerController->SetControlRotation(CameraRotation);
 
 			StreamingSubsystem->Tick(0.0f);
 			Root = Surface->WorldScapeRootInstance;
@@ -3613,12 +4027,918 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			return PinWetOceanRenderView(World, OutFailure);
 		}
 
+		void SetWetOceanLodVisibility(const bool bVisible)
+		{
+			APlanet* Planet = RuntimeHomePlanet.Get();
+			APlanetarySurfaceGenerator* Surface = IsValid(Planet)
+				? Planet->PlanetaryEnvironmentGenerator : nullptr;
+			AWorldScapeRoot* Root = IsValid(Surface)
+				? Surface->WorldScapeRootInstance : nullptr;
+			if (!IsValid(Root))
+			{
+				return;
+			}
+			for (UWorldScapeLod* OceanLod : Root->WorldScapeLodOcean)
+			{
+				if (IsValid(OceanLod) && IsValid(OceanLod->Mesh))
+				{
+					OceanLod->Mesh->SetVisibility(bVisible, false);
+				}
+			}
+		}
+
+		void RestoreWetOceanIsolationState()
+		{
+			const bool bHadIsolationState = WetOceanIsolationState
+				!= EWetOceanIsolationState::Inactive
+				|| !WetOceanIsolationMaterialSlots.IsEmpty()
+				|| !WetOceanIsolationVisibilityStates.IsEmpty()
+				|| bWetOceanIsolationAtmosphereStateCaptured;
+			for (const FWetOceanIsolationMaterialSlot& Slot :
+				WetOceanIsolationMaterialSlots)
+			{
+				UWorldScapeMeshComponent* Mesh = Slot.Mesh.Get();
+				UMaterialInterface* OriginalMaterial = Slot.OriginalMaterial.Get();
+				if (IsValid(Mesh) && IsValid(OriginalMaterial)
+					&& Slot.MaterialIndex != INDEX_NONE)
+				{
+					Mesh->SetMaterial(Slot.MaterialIndex, OriginalMaterial);
+					Mesh->MarkRenderStateDirty();
+				}
+			}
+			WetOceanIsolationMaterialSlots.Reset();
+			WetOceanIsolationAssignedMaterial.Reset();
+
+			if (!WetOceanIsolationVisibilityStates.IsEmpty())
+			{
+				for (const FWetOceanIsolationVisibilityState& VisibilityState :
+					WetOceanIsolationVisibilityStates)
+				{
+					if (UWorldScapeMeshComponent* Mesh = VisibilityState.Mesh.Get())
+					{
+						Mesh->SetVisibility(VisibilityState.bWasVisible, false);
+					}
+				}
+			}
+			else if (bHadIsolationState)
+			{
+				SetWetOceanLodVisibility(true);
+			}
+			WetOceanIsolationVisibilityStates.Reset();
+			if (bWetOceanIsolationAtmosphereStateCaptured)
+			{
+				if (AAtmoScape* Atmosphere = WetOceanIsolationAtmosphere.Get())
+				{
+					Atmosphere->SetActorHiddenInGame(
+						bWetOceanIsolationOriginalAtmosphereHidden);
+				}
+			}
+			WetOceanIsolationAtmosphere.Reset();
+			bWetOceanIsolationAtmosphereStateCaptured = false;
+			WetOceanIsolationState = EWetOceanIsolationState::Inactive;
+			WetOceanIsolationSettleFramesRemaining = 0;
+			WetOceanIsolationProductionWaterPixels.Reset();
+			WetOceanIsolationNoOceanPixels.Reset();
+			WetOceanIsolationViewportSize = FIntPoint::ZeroValue;
+		}
+
+		bool BeginWetOceanIsolation(UWorld* World, const double Now,
+			FString& OutFailure)
+		{
+			OutFailure.Reset();
+			APlanet* Planet = RuntimeHomePlanet.Get();
+			APlanetarySurfaceGenerator* Surface = IsValid(Planet)
+				? Planet->PlanetaryEnvironmentGenerator : nullptr;
+			AWorldScapeRoot* Root = IsValid(Surface)
+				? Surface->WorldScapeRootInstance : nullptr;
+			AAtmoScape* Atmosphere = IsValid(Surface)
+				? Surface->PlanetAtmosphere : nullptr;
+			if (!World || World != GameplayWorld.Get() || !IsValid(Root)
+				|| !IsValid(Atmosphere))
+			{
+				OutFailure = TEXT("water isolation could not resolve the gameplay ocean/atmosphere");
+				return false;
+			}
+
+			WetOceanIsolationAtmosphere = Atmosphere;
+			bWetOceanIsolationOriginalAtmosphereHidden = Atmosphere->IsHidden();
+			bWetOceanIsolationAtmosphereStateCaptured = true;
+			WetOceanIsolationVisibilityStates.Reset();
+			for (UWorldScapeLod* OceanLod : Root->WorldScapeLodOcean)
+			{
+				if (!IsValid(OceanLod) || !IsValid(OceanLod->Mesh))
+				{
+					continue;
+				}
+				FWetOceanIsolationVisibilityState& SavedVisibility =
+					WetOceanIsolationVisibilityStates.AddDefaulted_GetRef();
+				SavedVisibility.Mesh = OceanLod->Mesh;
+				SavedVisibility.bWasVisible = OceanLod->Mesh->IsVisible();
+			}
+			Atmosphere->SetActorHiddenInGame(true);
+			if (!RefreshWetOceanProductionMaterial(OutFailure))
+			{
+				return false;
+			}
+			WetOceanIsolationState =
+				EWetOceanIsolationState::AtmosphereHiddenProductionWater;
+			WetOceanIsolationSettleFramesRemaining = WetOceanIsolationSettleFrames;
+			StepStartSeconds = Now;
+			UE_LOG(LogTemp, Display,
+				TEXT("[APS.Handoff.WetOcean.Isolation] enabled; atmosphere hidden, camera pinned, settling %d frames before direct-material A/B captures"),
+				WetOceanIsolationSettleFrames);
+			return true;
+		}
+
+		bool AssignWetOceanIsolationMaterial(UMaterialInterface* DiagnosticMaterial,
+			const bool bCaptureOriginalSlots, const TCHAR* DiagnosticLabel,
+			FString& OutFailure)
+		{
+			OutFailure.Reset();
+			APlanet* Planet = RuntimeHomePlanet.Get();
+			APlanetarySurfaceGenerator* Surface = IsValid(Planet)
+				? Planet->PlanetaryEnvironmentGenerator : nullptr;
+			AWorldScapeRoot* Root = IsValid(Surface)
+				? Surface->WorldScapeRootInstance : nullptr;
+			if (!IsValid(Root) || !IsValid(DiagnosticMaterial))
+			{
+				OutFailure = FString::Printf(
+					TEXT("water isolation could not assign direct material %s"),
+					DiagnosticLabel);
+				return false;
+			}
+
+			if (bCaptureOriginalSlots)
+			{
+				WetOceanIsolationMaterialSlots.Reset();
+			}
+			int32 OverriddenSlotCount = 0;
+			for (UWorldScapeLod* OceanLod : Root->WorldScapeLodOcean)
+			{
+				if (!IsValid(OceanLod) || !IsValid(OceanLod->Mesh))
+				{
+					continue;
+				}
+				const int32 SectionCount = OceanLod->Mesh->GetNumSections();
+				for (int32 MaterialIndex = 0; MaterialIndex < SectionCount;
+					++MaterialIndex)
+				{
+					UMaterialInterface* ExistingMaterial =
+						OceanLod->Mesh->GetMaterial(MaterialIndex);
+					if (!IsValid(ExistingMaterial))
+					{
+						OutFailure = FString::Printf(
+							TEXT("water isolation found an empty ocean material slot lod=%d slot=%d"),
+							OceanLod->Lod, MaterialIndex);
+						return false;
+					}
+					if (bCaptureOriginalSlots)
+					{
+						FWetOceanIsolationMaterialSlot& SavedSlot =
+							WetOceanIsolationMaterialSlots.AddDefaulted_GetRef();
+						SavedSlot.Mesh = OceanLod->Mesh;
+						SavedSlot.OriginalMaterial = ExistingMaterial;
+						SavedSlot.MaterialIndex = MaterialIndex;
+					}
+					OceanLod->Mesh->SetMaterial(MaterialIndex, DiagnosticMaterial);
+					++OverriddenSlotCount;
+				}
+				OceanLod->Mesh->MarkRenderStateDirty();
+			}
+
+			if (OverriddenSlotCount <= 0)
+			{
+				OutFailure = FString::Printf(
+					TEXT("water isolation did not find slots for direct material %s"),
+					DiagnosticLabel);
+				return false;
+			}
+			UE_LOG(LogTemp, Display,
+				TEXT("[APS.Handoff.WetOcean.Isolation] direct valid material assigned label=%s material=%s slots=%d renderStateDirty=1"),
+				DiagnosticLabel, *GetNameSafe(DiagnosticMaterial), OverriddenSlotCount);
+			WetOceanIsolationAssignedMaterial = DiagnosticMaterial;
+			return true;
+		}
+
+		bool RefreshWetOceanProductionMaterial(FString& OutFailure)
+		{
+			OutFailure.Reset();
+			APlanet* Planet = RuntimeHomePlanet.Get();
+			APlanetarySurfaceGenerator* Surface = IsValid(Planet)
+				? Planet->PlanetaryEnvironmentGenerator : nullptr;
+			AWorldScapeRoot* Root = IsValid(Surface)
+				? Surface->WorldScapeRootInstance : nullptr;
+			if (!IsValid(Root) || !IsValid(Surface)
+				|| !IsValid(Surface->ResolvedOceanMaterialInstance))
+			{
+				OutFailure = TEXT("water isolation could not refresh the production ocean material");
+				return false;
+			}
+			Root->OceanMaterial.DefaultMaterial =
+				Surface->ResolvedOceanMaterialInstance;
+			Root->UpdateOceanMaterial(Root->OceanMaterial);
+			int32 RefreshedSlots = 0;
+			for (UWorldScapeLod* OceanLod : Root->WorldScapeLodOcean)
+			{
+				if (!IsValid(OceanLod) || !IsValid(OceanLod->Mesh)) continue;
+				OceanLod->Mesh->MarkRenderStateDirty();
+				RefreshedSlots += OceanLod->Mesh->GetNumSections();
+			}
+			UE_LOG(LogTemp, Display,
+				TEXT("[APS.Handoff.WetOcean.Isolation] production material explicitly refreshed slots=%d material=%s"),
+				RefreshedSlots, *GetNameSafe(Surface->ResolvedOceanMaterialInstance));
+			return RefreshedSlots > 0;
+		}
+
+		bool LoadAndAssignWetOceanIsolationMaterial(const TCHAR* ObjectPath,
+			const bool bCaptureOriginalSlots, const TCHAR* DiagnosticLabel,
+			FString& OutFailure)
+		{
+			UMaterialInterface* Material = LoadObject<UMaterialInterface>(nullptr, ObjectPath);
+			if (!IsValid(Material))
+			{
+				OutFailure = FString::Printf(
+					TEXT("water isolation could not load %s at %s"),
+					DiagnosticLabel, ObjectPath);
+				return false;
+			}
+			return AssignWetOceanIsolationMaterial(Material, bCaptureOriginalSlots,
+				DiagnosticLabel, OutFailure);
+		}
+
+		bool ValidateWetOceanIsolationMaterialAssignment(
+			const TCHAR* DiagnosticLabel, FString& OutFailure) const
+		{
+			OutFailure.Reset();
+			APlanet* Planet = RuntimeHomePlanet.Get();
+			APlanetarySurfaceGenerator* Surface = IsValid(Planet)
+				? Planet->PlanetaryEnvironmentGenerator : nullptr;
+			AWorldScapeRoot* Root = IsValid(Surface)
+				? Surface->WorldScapeRootInstance : nullptr;
+			UMaterialInterface* ExpectedMaterial =
+				WetOceanIsolationAssignedMaterial.Get();
+			if (!IsValid(Root) || !IsValid(ExpectedMaterial))
+			{
+				OutFailure = FString::Printf(
+					TEXT("water isolation lost direct assignment %s"), DiagnosticLabel);
+				return false;
+			}
+			int32 MatchingSlots = 0;
+			for (const UWorldScapeLod* OceanLod : Root->WorldScapeLodOcean)
+			{
+				if (!IsValid(OceanLod) || !IsValid(OceanLod->Mesh))
+				{
+					continue;
+				}
+				for (int32 MaterialIndex = 0;
+					MaterialIndex < OceanLod->Mesh->GetNumSections(); ++MaterialIndex)
+				{
+					if (OceanLod->Mesh->GetMaterial(MaterialIndex) != ExpectedMaterial)
+					{
+						OutFailure = FString::Printf(
+							TEXT("water isolation direct assignment %s was overwritten lod=%d slot=%d actual=%s expected=%s"),
+							DiagnosticLabel, OceanLod->Lod, MaterialIndex,
+							*GetNameSafe(OceanLod->Mesh->GetMaterial(MaterialIndex)),
+							*GetNameSafe(ExpectedMaterial));
+						return false;
+					}
+					++MatchingSlots;
+				}
+			}
+			if (MatchingSlots != Root->OceanMaxLod * 3)
+			{
+				OutFailure = FString::Printf(
+					TEXT("water isolation direct assignment %s matched %d slots expected=%d"),
+					DiagnosticLabel, MatchingSlots, Root->OceanMaxLod * 3);
+				return false;
+			}
+			return true;
+		}
+
+		bool CaptureWetOceanIsolationFrame(UWorld* World, const TCHAR* FileName,
+			const TCHAR* StateLabel, FString& OutFailure, FLinearColor& OutMean,
+			TArray<FColor>* OutPixels = nullptr,
+			FIntPoint* OutViewportSize = nullptr)
+		{
+			const FString MainScreenshotPath = ScreenshotPath;
+			ScreenshotPath = FPaths::Combine(FPaths::ProjectSavedDir(),
+				TEXT("Screenshots/Windows"), FileName);
+			IFileManager::Get().MakeDirectory(*FPaths::GetPath(ScreenshotPath), true);
+			IFileManager::Get().Delete(*ScreenshotPath, false, true);
+			uint32 FrameCrc = 0;
+			const bool bCaptured = CaptureGameplayViewport(
+				World, OutFailure, false, false, &FrameCrc, &OutMean,
+				OutPixels, OutViewportSize);
+			const FString IsolationScreenshotPath = ScreenshotPath;
+			ScreenshotPath = MainScreenshotPath;
+			if (bCaptured)
+			{
+				UE_LOG(LogTemp, Display,
+					TEXT("[APS.Handoff.WetOcean.Isolation] state=%s mean=%s crc=%u screenshot=%s"),
+					StateLabel, *OutMean.ToString(), FrameCrc,
+					*IsolationScreenshotPath);
+			}
+			return bCaptured;
+		}
+
+		bool LogWetOceanIsolationCameraAndBounds(UWorld* World,
+			const TCHAR* StateLabel, FString& OutFailure) const
+		{
+			OutFailure.Reset();
+			APlanet* Planet = RuntimeHomePlanet.Get();
+			APlanetarySurfaceGenerator* Surface = IsValid(Planet)
+				? Planet->PlanetaryEnvironmentGenerator : nullptr;
+			AWorldScapeRoot* Root = IsValid(Surface)
+				? Surface->WorldScapeRootInstance : nullptr;
+			APlayerController* Controller = World
+				? World->GetFirstPlayerController() : nullptr;
+			APlayerCameraManager* CameraManager = IsValid(Controller)
+				? Controller->PlayerCameraManager : nullptr;
+			if (!IsValid(Root) || !IsValid(CameraManager))
+			{
+				OutFailure = TEXT("water isolation lost its root/camera diagnostic inputs");
+				return false;
+			}
+
+			const FVector CameraLocation = CameraManager->GetCameraLocation();
+			const FVector CameraForward = CameraManager->GetCameraRotation()
+				.Vector().GetSafeNormal();
+			const FVector SphereCenter = Root->GetActorLocation();
+			const FVector CameraOutward = (CameraLocation - SphereCenter).GetSafeNormal();
+			const double ForwardOutwardDot = FVector::DotProduct(
+				CameraForward, CameraOutward);
+			const double OceanRadiusCm = Root->PlanetScale
+				+ static_cast<double>(Root->OceanHeight);
+			const FVector RayOriginToCenter = CameraLocation - SphereCenter;
+			const double RayB = 2.0 * FVector::DotProduct(
+				CameraForward, RayOriginToCenter);
+			const double RayC = RayOriginToCenter.SizeSquared()
+				- OceanRadiusCm * OceanRadiusCm;
+			const double Discriminant = RayB * RayB - 4.0 * RayC;
+			double NearHitCm = TNumericLimits<double>::Max();
+			double FarHitCm = TNumericLimits<double>::Max();
+			if (Discriminant >= 0.0)
+			{
+				const double SquareRootDiscriminant = FMath::Sqrt(Discriminant);
+				NearHitCm = (-RayB - SquareRootDiscriminant) * 0.5;
+				FarHitCm = (-RayB + SquareRootDiscriminant) * 0.5;
+			}
+			const bool bForwardRayHitsOcean = Discriminant >= 0.0
+				&& FMath::IsFinite(FarHitCm) && FarHitCm >= 0.0;
+			const double ForwardHitDistanceCm = bForwardRayHitsOcean
+				? (NearHitCm >= 0.0 ? NearHitCm : FarHitCm)
+				: TNumericLimits<double>::Max();
+
+			int32 RegisteredLods = 0;
+			int32 CameraInsideBounds = 0;
+			int32 RecentlyRenderedLods = 0;
+			double MinimumBoundsDistanceCm = TNumericLimits<double>::Max();
+			int32 OceanLodIndex = 0;
+			for (const UWorldScapeLod* OceanLod : Root->WorldScapeLodOcean)
+			{
+				if (!IsValid(OceanLod) || !IsValid(OceanLod->Mesh)
+					|| !OceanLod->Mesh->IsRegistered())
+				{
+					UE_LOG(LogTemp, Display,
+						TEXT("[APS.Handoff.WetOcean.Isolation.Geometry.LOD] state=%s lod=%d valid=%d meshValid=%d registered=0"),
+						StateLabel, OceanLodIndex,
+						IsValid(OceanLod) ? 1 : 0,
+						IsValid(OceanLod) && IsValid(OceanLod->Mesh) ? 1 : 0);
+					++OceanLodIndex;
+					continue;
+				}
+				++RegisteredLods;
+				const FBox BoundsBox = OceanLod->Mesh->Bounds.GetBox();
+				const bool bCameraInside = BoundsBox.IsInsideOrOn(CameraLocation);
+				const double BoundsDistanceCm = FMath::Sqrt(
+					BoundsBox.ComputeSquaredDistanceToPoint(CameraLocation));
+				const bool bRecentlyRendered = OceanLod->Mesh->WasRecentlyRendered(1.0f);
+				CameraInsideBounds += bCameraInside ? 1 : 0;
+				MinimumBoundsDistanceCm = FMath::Min(MinimumBoundsDistanceCm,
+					BoundsDistanceCm);
+				RecentlyRenderedLods += bRecentlyRendered ? 1 : 0;
+				UE_LOG(LogTemp, Display,
+					TEXT("[APS.Handoff.WetOcean.Isolation.Geometry.LOD] state=%s lod=%d mesh=%s boundsOrigin=%s boundsExtent=%s sphereRadius=%.3fcm cameraDistance=%.3fcm cameraInside=%d visible=%d recentlyRendered=%d"),
+					StateLabel, OceanLodIndex, *GetNameSafe(OceanLod->Mesh),
+					*OceanLod->Mesh->Bounds.Origin.ToCompactString(),
+					*OceanLod->Mesh->Bounds.BoxExtent.ToCompactString(),
+					OceanLod->Mesh->Bounds.SphereRadius, BoundsDistanceCm,
+					bCameraInside ? 1 : 0, OceanLod->Mesh->IsVisible() ? 1 : 0,
+					bRecentlyRendered ? 1 : 0);
+				++OceanLodIndex;
+			}
+
+			UE_LOG(LogTemp, Display,
+				TEXT("[APS.Handoff.WetOcean.Isolation.Geometry] state=%s camera=%s forward=%s center=%s radius=%.3fcm cameraAltitude=%.3fcm forwardOutwardDot=%.6f rayDisc=%.6e nearHit=%.3fcm farHit=%.3fcm forwardHitDistance=%.3fcm forwardHit=%d lodsRegistered=%d cameraInsideBounds=%d recentlyRendered=%d minBoundsDistance=%.3fcm"),
+				StateLabel, *CameraLocation.ToCompactString(),
+				*CameraForward.ToCompactString(), *SphereCenter.ToCompactString(),
+				OceanRadiusCm, RayOriginToCenter.Size() - OceanRadiusCm,
+				ForwardOutwardDot, Discriminant, NearHitCm, FarHitCm,
+				ForwardHitDistanceCm,
+				bForwardRayHitsOcean ? 1 : 0,
+				RegisteredLods, CameraInsideBounds, RecentlyRenderedLods,
+				MinimumBoundsDistanceCm);
+			if (!bForwardRayHitsOcean
+				|| ForwardOutwardDot > MaximumWetOceanCaptureForwardOutwardDot
+				|| RegisteredLods != Root->OceanMaxLod
+				|| CameraInsideBounds <= 0 || RecentlyRenderedLods <= 0)
+			{
+				OutFailure = FString::Printf(
+					TEXT("water isolation deterministic-camera/render-state proof failed forwardHit=%d forwardOutwardDot=%.6f maximum=%.6f registered=%d expected=%d cameraInsideBounds=%d recentlyRendered=%d"),
+					bForwardRayHitsOcean ? 1 : 0, ForwardOutwardDot,
+					MaximumWetOceanCaptureForwardOutwardDot, RegisteredLods,
+					Root->OceanMaxLod, CameraInsideBounds, RecentlyRenderedLods);
+				return false;
+			}
+			return true;
+		}
+
+		bool LogWetOceanIsolationDifferenceMask(FString& OutFailure) const
+		{
+			OutFailure.Reset();
+			const int64 ExpectedPixelCount = static_cast<int64>(
+				WetOceanIsolationViewportSize.X) * WetOceanIsolationViewportSize.Y;
+			if (WetOceanIsolationViewportSize.X <= 0
+				|| WetOceanIsolationViewportSize.Y <= 0
+				|| WetOceanIsolationProductionWaterPixels.Num() != ExpectedPixelCount
+				|| WetOceanIsolationNoOceanPixels.Num() != ExpectedPixelCount)
+			{
+				OutFailure = TEXT("water isolation raw diagnostic frames have incompatible dimensions");
+				return false;
+			}
+
+			// The 72-degree inward camera has no horizon in this centre crop.  Exclude
+			// viewport edges and UI while retaining enough area that one LOD ring, the pawn
+			// silhouette, or a handful of crack pixels cannot fake visible water.
+			const int32 MinX = FMath::FloorToInt(
+				WetOceanIsolationViewportSize.X * 0.18);
+			const int32 MaxX = FMath::CeilToInt(
+				WetOceanIsolationViewportSize.X * 0.82);
+			const int32 MinY = FMath::FloorToInt(
+				WetOceanIsolationViewportSize.Y * 0.15);
+			const int32 MaxY = FMath::CeilToInt(
+				WetOceanIsolationViewportSize.Y * 0.85);
+			int64 RegionPixelCount = 0;
+			int64 MaskedPixelCount = 0;
+			double BlueSumR = 0.0;
+			double BlueSumG = 0.0;
+			double BlueSumB = 0.0;
+			double NoOceanSumR = 0.0;
+			double NoOceanSumG = 0.0;
+			double NoOceanSumB = 0.0;
+			double MaskedRgbDeltaSum = 0.0;
+			for (int32 Y = MinY; Y < MaxY; ++Y)
+			{
+				for (int32 X = MinX; X < MaxX; ++X)
+				{
+					const int32 PixelIndex = Y
+						* WetOceanIsolationViewportSize.X + X;
+					const FColor& BluePixel =
+						WetOceanIsolationProductionWaterPixels[PixelIndex];
+					const FColor& NoOceanPixel =
+						WetOceanIsolationNoOceanPixels[PixelIndex];
+					const int32 RgbDelta = FMath::Abs(
+						static_cast<int32>(BluePixel.R) - NoOceanPixel.R)
+						+ FMath::Abs(static_cast<int32>(BluePixel.G) - NoOceanPixel.G)
+						+ FMath::Abs(static_cast<int32>(BluePixel.B) - NoOceanPixel.B);
+					++RegionPixelCount;
+					if (RgbDelta <= WetOceanIsolationMaskMinimumRgbDelta)
+					{
+						continue;
+					}
+					++MaskedPixelCount;
+					BlueSumR += BluePixel.R;
+					BlueSumG += BluePixel.G;
+					BlueSumB += BluePixel.B;
+					NoOceanSumR += NoOceanPixel.R;
+					NoOceanSumG += NoOceanPixel.G;
+					NoOceanSumB += NoOceanPixel.B;
+					MaskedRgbDeltaSum += RgbDelta;
+				}
+			}
+
+			const double MaskCoverage = RegionPixelCount > 0
+				? static_cast<double>(MaskedPixelCount) / RegionPixelCount : 0.0;
+			FLinearColor BlueMaskedMean = FLinearColor::Black;
+			FLinearColor NoOceanMaskedMean = FLinearColor::Black;
+			double MeanRgbDelta = 0.0;
+			if (MaskedPixelCount > 0)
+			{
+				const double ColorScale = 1.0
+					/ (255.0 * static_cast<double>(MaskedPixelCount));
+				BlueMaskedMean = FLinearColor(
+					static_cast<float>(BlueSumR * ColorScale),
+					static_cast<float>(BlueSumG * ColorScale),
+					static_cast<float>(BlueSumB * ColorScale), 1.0f);
+				NoOceanMaskedMean = FLinearColor(
+					static_cast<float>(NoOceanSumR * ColorScale),
+					static_cast<float>(NoOceanSumG * ColorScale),
+					static_cast<float>(NoOceanSumB * ColorScale), 1.0f);
+				MeanRgbDelta = MaskedRgbDeltaSum
+					/ static_cast<double>(MaskedPixelCount);
+			}
+			const float BlueDominance = BlueMaskedMean.B
+				- FMath::Max(BlueMaskedMean.R, BlueMaskedMean.G);
+			UE_LOG(LogTemp, Display,
+				TEXT("[APS.Handoff.WetOcean.Isolation] production-water-vs-hidden centralROI thresholdL1=%d coverage=%.5f maskedPixels=%lld/%lld productionMean=%s noOceanMean=%s blueDominance=%.5f meanL1DisplayDelta=%.3f"),
+				WetOceanIsolationMaskMinimumRgbDelta, MaskCoverage,
+				MaskedPixelCount, RegionPixelCount,
+				*BlueMaskedMean.ToString(), *NoOceanMaskedMean.ToString(),
+				BlueDominance, MeanRgbDelta);
+			if (RegionPixelCount <= 0
+				|| !FMath::IsFinite(MaskCoverage)
+				|| MaskCoverage < MinimumWetOceanIsolationScreenCoverage)
+			{
+				OutFailure = FString::Printf(
+					TEXT("production water does not cover the central open-water frame coverage=%.5f minimum=%.5f thresholdL1=%d masked=%lld/%lld"),
+					MaskCoverage, MinimumWetOceanIsolationScreenCoverage,
+					WetOceanIsolationMaskMinimumRgbDelta, MaskedPixelCount,
+					RegionPixelCount);
+				return false;
+			}
+			if (!FMath::IsFinite(BlueDominance)
+				|| BlueDominance < MinimumWetOceanIsolationBlueDominance)
+			{
+				OutFailure = FString::Printf(
+					TEXT("production water is not visibly marine-blue in the central open-water frame mean=%s blueDominance=%.5f minimum=%.5f"),
+					*BlueMaskedMean.ToString(), BlueDominance,
+					MinimumWetOceanIsolationBlueDominance);
+				return false;
+			}
+			return true;
+		}
+
+		bool UpdateWetOceanIsolation(UWorld* World, const double Now)
+		{
+			APawn* GravityPawn = RuntimeGravityPawn.Get();
+			if (!IsValid(GravityPawn)
+				|| !GravityPawn->GetActorTransform().Equals(
+					WetOceanCaptureTransforms[WetOceanCaptureIndex], 1.0))
+			{
+				return Fail(TEXT("water isolation pawn/camera anchor moved between direct-material captures"));
+			}
+			if (WetOceanIsolationSettleFramesRemaining > 0)
+			{
+				--WetOceanIsolationSettleFramesRemaining;
+				return false;
+			}
+			AAtmoScape* Atmosphere = WetOceanIsolationAtmosphere.Get();
+			if (!IsValid(Atmosphere) || !Atmosphere->IsHidden())
+			{
+				return Fail(TEXT("water isolation atmosphere did not remain hidden during capture"));
+			}
+
+			FString IsolationFailure;
+			switch (WetOceanIsolationState)
+			{
+			case EWetOceanIsolationState::AtmosphereHiddenProductionWater:
+				if (!LogWetOceanIsolationCameraAndBounds(
+					World, TEXT("production-water"), IsolationFailure))
+				{
+					return Fail(IsolationFailure);
+				}
+				if (!CaptureWetOceanIsolationFrame(
+					World,
+					TEXT("APS_GeneratedCivilization_WetOcean_Isolation_AtmosphereHidden.png"),
+					TEXT("B-atmosphere-hidden-production-water"), IsolationFailure,
+					WetOceanIsolationAtmosphereHiddenMean,
+					&WetOceanIsolationProductionWaterPixels,
+					&WetOceanIsolationViewportSize))
+				{
+					if (!IsolationFailure.IsEmpty()
+						|| Now - StepStartSeconds > ScreenshotTimeoutSeconds)
+					{
+						return Fail(IsolationFailure.IsEmpty()
+							? TEXT("water isolation B pixels were unavailable for ten seconds")
+							: IsolationFailure);
+					}
+					return false;
+				}
+				if (!LoadAndAssignWetOceanIsolationMaterial(
+					TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Materials/M_APS_WorldScapeLiquid.M_APS_WorldScapeLiquid"),
+					true, TEXT("legacy-master"), IsolationFailure))
+				{
+					return Fail(IsolationFailure);
+				}
+				WetOceanIsolationState =
+					EWetOceanIsolationState::AtmosphereHiddenLegacyMaster;
+				WetOceanIsolationSettleFramesRemaining = WetOceanIsolationSettleFrames;
+				StepStartSeconds = Now;
+				return false;
+
+			case EWetOceanIsolationState::AtmosphereHiddenLegacyMaster:
+				if (!ValidateWetOceanIsolationMaterialAssignment(
+					TEXT("legacy-master"), IsolationFailure)
+					|| !LogWetOceanIsolationCameraAndBounds(
+					World, TEXT("legacy-master"), IsolationFailure))
+				{
+					return Fail(IsolationFailure);
+				}
+				if (!CaptureWetOceanIsolationFrame(
+					World,
+					TEXT("APS_GeneratedCivilization_WetOcean_Isolation_LegacyMaster.png"),
+					TEXT("C-atmosphere-hidden-legacy-master"), IsolationFailure,
+					WetOceanIsolationLegacyMasterMean))
+				{
+					if (!IsolationFailure.IsEmpty()
+						|| Now - StepStartSeconds > ScreenshotTimeoutSeconds)
+					{
+						return Fail(IsolationFailure.IsEmpty()
+							? TEXT("water isolation legacy-master pixels were unavailable for ten seconds")
+							: IsolationFailure);
+					}
+					return false;
+				}
+				if (!LoadAndAssignWetOceanIsolationMaterial(
+					TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Materials/MI_APS_WS_Ammonia.MI_APS_WS_Ammonia"),
+					false, TEXT("legacy-ammonia-MIC"), IsolationFailure))
+				{
+					return Fail(IsolationFailure);
+				}
+				WetOceanIsolationState =
+					EWetOceanIsolationState::AtmosphereHiddenLegacyAmmonia;
+				WetOceanIsolationSettleFramesRemaining = WetOceanIsolationSettleFrames;
+				StepStartSeconds = Now;
+				return false;
+
+			case EWetOceanIsolationState::AtmosphereHiddenLegacyAmmonia:
+				if (!ValidateWetOceanIsolationMaterialAssignment(
+					TEXT("legacy-ammonia-MIC"), IsolationFailure)
+					|| !LogWetOceanIsolationCameraAndBounds(
+					World, TEXT("legacy-ammonia-MIC"), IsolationFailure))
+				{
+					return Fail(IsolationFailure);
+				}
+				if (!CaptureWetOceanIsolationFrame(
+					World,
+					TEXT("APS_GeneratedCivilization_WetOcean_Isolation_LegacyAmmonia.png"),
+					TEXT("D-atmosphere-hidden-legacy-ammonia-MIC"), IsolationFailure,
+					WetOceanIsolationLegacyAmmoniaMean))
+				{
+					if (!IsolationFailure.IsEmpty()
+						|| Now - StepStartSeconds > ScreenshotTimeoutSeconds)
+					{
+						return Fail(IsolationFailure.IsEmpty()
+							? TEXT("water isolation legacy-ammonia pixels were unavailable for ten seconds")
+							: IsolationFailure);
+					}
+					return false;
+				}
+				if (!LoadAndAssignWetOceanIsolationMaterial(
+					TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Materials/MI_APS_WS_Lava.MI_APS_WS_Lava"),
+					false, TEXT("legacy-lava-MIC"), IsolationFailure))
+				{
+					return Fail(IsolationFailure);
+				}
+				WetOceanIsolationState =
+					EWetOceanIsolationState::AtmosphereHiddenLegacyLava;
+				WetOceanIsolationSettleFramesRemaining = WetOceanIsolationSettleFrames;
+				StepStartSeconds = Now;
+				return false;
+
+			case EWetOceanIsolationState::AtmosphereHiddenLegacyLava:
+				if (!ValidateWetOceanIsolationMaterialAssignment(
+					TEXT("legacy-lava-MIC"), IsolationFailure)
+					|| !LogWetOceanIsolationCameraAndBounds(
+					World, TEXT("legacy-lava-MIC"), IsolationFailure))
+				{
+					return Fail(IsolationFailure);
+				}
+				if (!CaptureWetOceanIsolationFrame(
+					World,
+					TEXT("APS_GeneratedCivilization_WetOcean_Isolation_LegacyLava.png"),
+					TEXT("E-atmosphere-hidden-legacy-lava-MIC"), IsolationFailure,
+					WetOceanIsolationLegacyLavaMean))
+				{
+					if (!IsolationFailure.IsEmpty()
+						|| Now - StepStartSeconds > ScreenshotTimeoutSeconds)
+					{
+						return Fail(IsolationFailure.IsEmpty()
+							? TEXT("water isolation legacy-lava pixels were unavailable for ten seconds")
+							: IsolationFailure);
+					}
+					return false;
+				}
+				if (!LoadAndAssignWetOceanIsolationMaterial(
+					TEXT("/WorldScape/Ressources/Materials/WorldScapeMaterials/Ocean/MI_Planetary_Ocean.MI_Planetary_Ocean"),
+					false, TEXT("stock-WorldScape-ocean-MIC"), IsolationFailure))
+				{
+					return Fail(IsolationFailure);
+				}
+				WetOceanIsolationState =
+					EWetOceanIsolationState::AtmosphereHiddenStockWorldScapeOcean;
+				WetOceanIsolationSettleFramesRemaining = WetOceanIsolationSettleFrames;
+				StepStartSeconds = Now;
+				return false;
+
+			case EWetOceanIsolationState::AtmosphereHiddenStockWorldScapeOcean:
+				if (!ValidateWetOceanIsolationMaterialAssignment(
+					TEXT("stock-WorldScape-ocean-MIC"), IsolationFailure)
+					|| !LogWetOceanIsolationCameraAndBounds(
+					World, TEXT("stock-WorldScape-ocean-MIC"), IsolationFailure))
+				{
+					return Fail(IsolationFailure);
+				}
+				if (!CaptureWetOceanIsolationFrame(
+					World,
+					TEXT("APS_GeneratedCivilization_WetOcean_Isolation_StockWorldScapeOcean.png"),
+					TEXT("F-atmosphere-hidden-stock-WorldScape-ocean-MIC"),
+					IsolationFailure, WetOceanIsolationStockWorldScapeOceanMean))
+				{
+					if (!IsolationFailure.IsEmpty()
+						|| Now - StepStartSeconds > ScreenshotTimeoutSeconds)
+					{
+						return Fail(IsolationFailure.IsEmpty()
+							? TEXT("water isolation stock WorldScape ocean pixels were unavailable for ten seconds")
+							: IsolationFailure);
+					}
+					return false;
+				}
+				if (!LoadAndAssignWetOceanIsolationMaterial(
+					TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Materials/MI_APS_WS_Water.MI_APS_WS_Water"),
+					false, TEXT("current-water-MIC"), IsolationFailure))
+				{
+					return Fail(IsolationFailure);
+				}
+				WetOceanIsolationState =
+					EWetOceanIsolationState::AtmosphereHiddenCurrentMic;
+				WetOceanIsolationSettleFramesRemaining = WetOceanIsolationSettleFrames;
+				StepStartSeconds = Now;
+				return false;
+
+			case EWetOceanIsolationState::AtmosphereHiddenCurrentMic:
+				if (!ValidateWetOceanIsolationMaterialAssignment(
+					TEXT("current-water-MIC"), IsolationFailure)
+					|| !LogWetOceanIsolationCameraAndBounds(
+					World, TEXT("current-water-MIC"), IsolationFailure))
+				{
+					return Fail(IsolationFailure);
+				}
+				if (!CaptureWetOceanIsolationFrame(
+					World,
+					TEXT("APS_GeneratedCivilization_WetOcean_Isolation_CurrentMIC.png"),
+					TEXT("G-atmosphere-hidden-current-water-MIC"), IsolationFailure,
+					WetOceanIsolationCurrentMicMean))
+				{
+					if (!IsolationFailure.IsEmpty()
+						|| Now - StepStartSeconds > ScreenshotTimeoutSeconds)
+					{
+						return Fail(IsolationFailure.IsEmpty()
+							? TEXT("water isolation current-MIC pixels were unavailable for ten seconds")
+							: IsolationFailure);
+					}
+					return false;
+				}
+				if (!LoadAndAssignWetOceanIsolationMaterial(
+					TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Materials/M_APS_WorldScapeLivingWater.M_APS_WorldScapeLivingWater"),
+					false, TEXT("current-water-master"), IsolationFailure))
+				{
+					return Fail(IsolationFailure);
+				}
+				WetOceanIsolationState =
+					EWetOceanIsolationState::AtmosphereHiddenCurrentMaster;
+				WetOceanIsolationSettleFramesRemaining = WetOceanIsolationSettleFrames;
+				StepStartSeconds = Now;
+				return false;
+
+			case EWetOceanIsolationState::AtmosphereHiddenCurrentMaster:
+				if (!ValidateWetOceanIsolationMaterialAssignment(
+					TEXT("current-water-master"), IsolationFailure)
+					|| !LogWetOceanIsolationCameraAndBounds(
+					World, TEXT("current-water-master"), IsolationFailure))
+				{
+					return Fail(IsolationFailure);
+				}
+				if (!CaptureWetOceanIsolationFrame(
+					World,
+					TEXT("APS_GeneratedCivilization_WetOcean_Isolation_CurrentMaster.png"),
+					TEXT("H-atmosphere-hidden-current-water-master"), IsolationFailure,
+					WetOceanIsolationCurrentMasterMean))
+				{
+					if (!IsolationFailure.IsEmpty()
+						|| Now - StepStartSeconds > ScreenshotTimeoutSeconds)
+					{
+						return Fail(IsolationFailure.IsEmpty()
+							? TEXT("water isolation current-master pixels were unavailable for ten seconds")
+							: IsolationFailure);
+					}
+					return false;
+				}
+				SetWetOceanLodVisibility(false);
+				WetOceanIsolationState =
+					EWetOceanIsolationState::AtmosphereHiddenNoOcean;
+				WetOceanIsolationSettleFramesRemaining = WetOceanIsolationSettleFrames;
+				StepStartSeconds = Now;
+				return false;
+
+			case EWetOceanIsolationState::AtmosphereHiddenNoOcean:
+			{
+				FIntPoint NoOceanViewportSize = FIntPoint::ZeroValue;
+				if (!CaptureWetOceanIsolationFrame(
+					World,
+					TEXT("APS_GeneratedCivilization_WetOcean_Isolation_NoOcean.png"),
+					TEXT("I-atmosphere-hidden-no-ocean"), IsolationFailure,
+					WetOceanIsolationNoOceanMean,
+					&WetOceanIsolationNoOceanPixels, &NoOceanViewportSize))
+				{
+					if (!IsolationFailure.IsEmpty()
+						|| Now - StepStartSeconds > ScreenshotTimeoutSeconds)
+					{
+						return Fail(IsolationFailure.IsEmpty()
+							? TEXT("water isolation D pixels were unavailable for ten seconds")
+							: IsolationFailure);
+					}
+					return false;
+				}
+				if (NoOceanViewportSize != WetOceanIsolationViewportSize)
+				{
+					return Fail(TEXT("water isolation viewport changed between E and F"));
+				}
+				if (!LogWetOceanIsolationDifferenceMask(IsolationFailure))
+				{
+					return Fail(IsolationFailure);
+				}
+				RestoreWetOceanIsolationState();
+				// Preserve the original acceptance probe: compare the baseline water
+				// against terrain with the production atmosphere restored.
+				SetWetOceanLodVisibility(false);
+				bWetOceanHiddenProbeActive = true;
+				WetOceanHiddenProbeSettleFramesRemaining = 2;
+				StepStartSeconds = Now;
+				return false;
+			}
+
+			case EWetOceanIsolationState::Inactive:
+			default:
+				return false;
+			}
+		}
+
 		bool UpdateWaitForWetOceanScreenshots(UWorld* World, double Now)
 		{
 			FString ViewFailure;
 			if (!PinWetOceanRenderView(World, ViewFailure))
 			{
 				return Fail(ViewFailure);
+			}
+			if (WetOceanIsolationState != EWetOceanIsolationState::Inactive)
+			{
+				return UpdateWetOceanIsolation(World, Now);
+			}
+
+			if (bWetOceanHiddenProbeActive)
+			{
+				if (WetOceanHiddenProbeSettleFramesRemaining > 0)
+				{
+					--WetOceanHiddenProbeSettleFramesRemaining;
+					return false;
+				}
+
+				const FString VisibleScreenshotPath = ScreenshotPath;
+				ScreenshotPath = FPaths::Combine(FPaths::ProjectSavedDir(),
+					TEXT("Screenshots/Windows/APS_GeneratedCivilization_WetOcean_NoOcean.png"));
+				FString HiddenCaptureFailure;
+				uint32 HiddenFrameCrc = 0;
+				FLinearColor HiddenMean = FLinearColor::Black;
+				const bool bCapturedHiddenFrame = CaptureGameplayViewport(
+					World, HiddenCaptureFailure, false, false, &HiddenFrameCrc, &HiddenMean);
+				ScreenshotPath = VisibleScreenshotPath;
+				if (!bCapturedHiddenFrame)
+				{
+					if (!HiddenCaptureFailure.IsEmpty()
+						|| Now - StepStartSeconds > ScreenshotTimeoutSeconds)
+					{
+						SetWetOceanLodVisibility(true);
+						bWetOceanHiddenProbeActive = false;
+						return Fail(HiddenCaptureFailure.IsEmpty()
+							? TEXT("wet-ocean hidden-layer diagnostic pixels were unavailable for ten seconds")
+							: HiddenCaptureFailure);
+					}
+					return false;
+				}
+
+				SetWetOceanLodVisibility(true);
+				bWetOceanHiddenProbeActive = false;
+				const FLinearColor& VisibleMean = WetOceanLowerRegionMeanColors[0];
+				const float MeanDelta = FMath::Abs(VisibleMean.R - HiddenMean.R)
+					+ FMath::Abs(VisibleMean.G - HiddenMean.G)
+					+ FMath::Abs(VisibleMean.B - HiddenMean.B);
+				UE_LOG(LogTemp, Display,
+					TEXT("[APS.Handoff.WetOcean.Render] ocean-visibility probe visibleMean=%s hiddenMean=%s delta=%.5f visibleCrc=%u hiddenCrc=%u"),
+					*VisibleMean.ToString(), *HiddenMean.ToString(), MeanDelta,
+					WetOceanFirstFrameCrc, HiddenFrameCrc);
+				if (!FMath::IsFinite(MeanDelta)
+					|| MeanDelta < MinimumWetOceanVisibilityMeanDelta)
+				{
+					return Fail(FString::Printf(
+						TEXT("wet-ocean LODs do not visibly contribute to the lower gameplay frame delta=%.5f minimum=%.5f; the authoritative liquid is optically absent or too transparent and terrain dominates the frame"),
+						MeanDelta, MinimumWetOceanVisibilityMeanDelta));
+				}
+				if (!BeginWetOceanRenderView(World, 1, Now, ViewFailure))
+				{
+					return Fail(ViewFailure);
+				}
+				return false;
 			}
 
 			APlanet* Planet = RuntimeHomePlanet.Get();
@@ -3688,7 +5008,8 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			uint32 CapturedFrameCrc = 0;
 			FString CaptureFailure;
 			if (!CaptureGameplayViewport(
-				World, CaptureFailure, false, false, &CapturedFrameCrc))
+				World, CaptureFailure, false, false, &CapturedFrameCrc,
+				&WetOceanLowerRegionMeanColors[WetOceanCaptureIndex]))
 			{
 				if (!CaptureFailure.IsEmpty())
 				{
@@ -3719,15 +5040,43 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			if (WetOceanCaptureIndex == 0)
 			{
 				WetOceanFirstFrameCrc = CapturedFrameCrc;
-				if (!BeginWetOceanRenderView(World, 1, Now, ViewFailure))
+				UE_LOG(LogTemp, Display,
+					TEXT("[APS.Handoff.WetOcean.Isolation] state=A-baseline-atmosphere-water mean=%s crc=%u screenshot=%s optional=%d"),
+					*WetOceanLowerRegionMeanColors[0].ToString(),
+					WetOceanFirstFrameCrc, *ScreenshotPath,
+					bEnableWaterIsolation ? 1 : 0);
+				if (bEnableWaterIsolation)
 				{
-					return Fail(ViewFailure);
+					FString IsolationFailure;
+					if (!BeginWetOceanIsolation(World, Now, IsolationFailure))
+					{
+						return Fail(IsolationFailure);
+					}
+					return false;
 				}
+				SetWetOceanLodVisibility(false);
+				bWetOceanHiddenProbeActive = true;
+				WetOceanHiddenProbeSettleFramesRemaining = 2;
+				StepStartSeconds = Now;
 				return false;
 			}
 
 			const double CameraMovementCm = FVector::Distance(
 				WetOceanCapturedCameraLocations[0], WetOceanCapturedCameraLocations[1]);
+			for (int32 ViewIndex = 0; ViewIndex < WetOceanRenderViewCount; ++ViewIndex)
+			{
+				const FLinearColor& MeanColor = WetOceanLowerRegionMeanColors[ViewIndex];
+				const float BlueDominance = MeanColor.B - FMath::Max(MeanColor.R, MeanColor.G);
+				if (!FMath::IsFinite(MeanColor.R) || !FMath::IsFinite(MeanColor.G)
+					|| !FMath::IsFinite(MeanColor.B)
+					|| BlueDominance < MinimumWetOceanLowerRegionBlueDominance)
+				{
+					return Fail(FString::Printf(
+						TEXT("wet-ocean lower rendered region is still grey/unsaturated view=%d mean=%s blueDominance=%.5f minimum=%.5f"),
+						ViewIndex, *MeanColor.ToString(), BlueDominance,
+						MinimumWetOceanLowerRegionBlueDominance));
+				}
+			}
 			if (CapturedFrameCrc == 0 || CapturedFrameCrc == WetOceanFirstFrameCrc
 				|| !FMath::IsFinite(CameraMovementCm)
 				|| CameraMovementCm < MinimumWetOceanCameraMovementCm)
@@ -3885,6 +5234,7 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			if (!Surface->IsSurfaceProfileCurrent(Planet)
 				|| Surface->ResolvedSurfaceProfile.PlanetType != ExpectedPlanetType
 				|| ExpectedSignature != AppliedSignature
+				|| AppliedSignature != PreviewProfileSignature
 				|| !Cast<UAPSWorldScapePlanetNoise>(Surface->ResolvedNoiseInstance)
 				|| Root->WorldScapeNoise != Surface->ResolvedNoiseInstance
 				|| !Surface->ResolvedTerrainMaterialInstance
@@ -3896,9 +5246,10 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 				|| PresentedRuntimePreviewMeshes != 0)
 			{
 				return Fail(FString::Printf(
-					TEXT("gameplay surface bypassed resolver or is not the sole complete renderer/collider type=%d expectedSig=%u appliedSig=%u lods=%d workers=%d scale=%.9f backingMeshes=%d backingColliders=%d previewMeshes=%d absorptionShells=%d absorptionPresented=%d renderLod0=%d renderFailure=%s renderVertices=%d renderRelief=%.3fcm renderNoiseDelta=%.3fcm renderCenterOffset=%.3fcm"),
-					static_cast<int32>(Surface->ResolvedSurfaceProfile.PlanetType), ExpectedSignature,
-					AppliedSignature, Root->WorldScapeLod.Num(),
+					TEXT("gameplay surface bypassed resolver or is not the sole complete renderer/collider type=%d previewSig=%u expectedSig=%u appliedSig=%u lods=%d workers=%d scale=%.9f backingMeshes=%d backingColliders=%d previewMeshes=%d absorptionShells=%d absorptionPresented=%d renderLod0=%d renderFailure=%s renderVertices=%d renderRelief=%.3fcm renderNoiseDelta=%.3fcm renderCenterOffset=%.3fcm"),
+					static_cast<int32>(Surface->ResolvedSurfaceProfile.PlanetType),
+					PreviewProfileSignature, ExpectedSignature, AppliedSignature,
+					Root->WorldScapeLod.Num(),
 					Root->WorldScapeLodInGeneration.Num(), Planet->WorldScapePresentationScale,
 					PresentedBodyBackingMeshes, CollidableBodyBackingMeshes,
 					PresentedRuntimePreviewMeshes, AbsorptionShellCount,
@@ -3981,12 +5332,27 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 
 		bool CaptureGameplayViewport(UWorld* World, FString& OutFailure,
 			bool bValidateStationSubject = true, bool bValidateGroundLowerRegion = false,
-			uint32* OutFrameCrc = nullptr)
+			uint32* OutFrameCrc = nullptr,
+			FLinearColor* OutLowerRegionMeanColor = nullptr,
+			TArray<FColor>* OutPixels = nullptr,
+			FIntPoint* OutViewportSize = nullptr)
 		{
 			OutFailure.Reset();
 			if (OutFrameCrc)
 			{
 				*OutFrameCrc = 0;
+			}
+			if (OutLowerRegionMeanColor)
+			{
+				*OutLowerRegionMeanColor = FLinearColor::Black;
+			}
+			if (OutPixels)
+			{
+				OutPixels->Reset();
+			}
+			if (OutViewportSize)
+			{
+				*OutViewportSize = FIntPoint::ZeroValue;
 			}
 			UGameViewportClient* GameViewportClient = AutomationCommon::GetAnyGameViewportClient();
 			FViewport* GameViewport = GameViewportClient ? GameViewportClient->Viewport : nullptr;
@@ -4012,6 +5378,36 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			{
 				*OutFrameCrc = FrameCrc;
 			}
+			if (OutLowerRegionMeanColor)
+			{
+				const int32 MinX = FMath::FloorToInt(ViewportSize.X * 0.15);
+				const int32 MaxX = FMath::CeilToInt(ViewportSize.X * 0.85);
+				const int32 MinY = FMath::FloorToInt(ViewportSize.Y * 0.55);
+				const int32 MaxY = FMath::CeilToInt(ViewportSize.Y * 0.92);
+				double SumR = 0.0;
+				double SumG = 0.0;
+				double SumB = 0.0;
+				int64 SampleCount = 0;
+				for (int32 Y = MinY; Y < MaxY; ++Y)
+				{
+					for (int32 X = MinX; X < MaxX; ++X)
+					{
+						const FColor& Pixel = Pixels[Y * ViewportSize.X + X];
+						SumR += Pixel.R;
+						SumG += Pixel.G;
+						SumB += Pixel.B;
+						++SampleCount;
+					}
+				}
+				if (SampleCount > 0)
+				{
+					const double Scale = 1.0 / (255.0 * static_cast<double>(SampleCount));
+					*OutLowerRegionMeanColor = FLinearColor(
+						static_cast<float>(SumR * Scale),
+						static_cast<float>(SumG * Scale),
+						static_cast<float>(SumB * Scale), 1.0f);
+				}
+			}
 
 			TArray64<uint8> PngData;
 			FImageUtils::PNGCompressImageArray(ViewportSize.X, ViewportSize.Y,
@@ -4021,6 +5417,14 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 				OutFailure = FString::Printf(
 					TEXT("could not encode/write gameplay viewport screenshot %s"), *ScreenshotPath);
 				return false;
+			}
+			if (OutPixels)
+			{
+				*OutPixels = Pixels;
+			}
+			if (OutViewportSize)
+			{
+				*OutViewportSize = ViewportSize;
 			}
 
 			double BrightnessSum = 0.0;
@@ -5600,6 +7004,10 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 				{
 					PendingFailure = CameraRestoreFailure;
 				}
+				RestoreWetOceanIsolationState();
+				RestoreWetOceanRenderCamera();
+				SetWetOceanLodVisibility(true);
+				bWetOceanHiddenProbeActive = false;
 				if (World && World == GameplayWorld.Get())
 				{
 					BeginGameplayWorldScapeCleanup(World);
@@ -5638,7 +7046,7 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 				if (bValidateWetOceanContract)
 				{
 					UE_LOG(LogTemp, Display,
-						TEXT("[APS.Handoff.WetOcean] PASS menu preview -> immutable Water handoff -> one authoritative WorldScape root -> exact 9x3 project-owned non-displacing SingleLayerWater ocean material slots -> collisionless/IgnoreAll liquid -> Visibility/Pawn traces reach terrain -> one ground scattering shell without coplanar cap passes plus preserved orbital shell -> two re-centred rendered observer positions -> two distinct screenshots -> hidden non-colliding preview ocean proxies -> safe worker drain"));
+						TEXT("[APS.Handoff.WetOcean] PASS menu preview -> immutable Water handoff -> one authoritative WorldScape root -> exact 9x3 project-owned non-displacing dedicated opaque water material slots -> collisionless/IgnoreAll liquid -> Visibility/Pawn traces reach terrain -> one ground scattering shell without coplanar cap passes plus preserved orbital shell -> two re-centred rendered observer positions -> two distinct screenshots -> hidden non-colliding preview ocean proxies -> safe worker drain"));
 				}
 				else
 				{
@@ -5652,6 +7060,7 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 		FAutomationTestBase* Test{nullptr};
 		EPlanetType ExpectedPlanetType{EPlanetType::Frozen};
 		bool bValidateWetOceanContract{false};
+		bool bEnableWaterIsolation{false};
 		EStep Step{EStep::OpenGenerator};
 		double TestStartSeconds{0.0};
 		double StepStartSeconds{0.0};
@@ -5703,6 +7112,8 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 		bool bProjectionEvidenceCameraRestored{true};
 		bool bProjectionEvidenceCameraRestoreSucceeded{true};
 		TWeakObjectPtr<APlayerController> ProjectionEvidencePlayerController;
+		TWeakObjectPtr<ACameraActor> WetOceanRenderCamera;
+		TWeakObjectPtr<AActor> WetOceanOriginalViewTarget;
 		TWeakObjectPtr<UClass> SelectedPawnClass;
 		const UGeneratedWorld* EditableGeneratedWorldAddress{nullptr};
 		const USpawnParameters* EditableSpawnParametersAddress{nullptr};
@@ -5716,11 +7127,36 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 		double WetOceanCaptureClearancesCm[WetOceanRenderViewCount]{0.0, 0.0};
 		FVector WetOceanCapturedCameraLocations[WetOceanRenderViewCount]{
 			FVector::ZeroVector, FVector::ZeroVector};
+		FLinearColor WetOceanLowerRegionMeanColors[WetOceanRenderViewCount]{
+			FLinearColor::Black, FLinearColor::Black};
 		int32 WetOceanCaptureIndex{0};
 		int32 WetOceanStableFramesRemaining{0};
 		uint32 WetOceanFirstFrameCrc{0};
 		bool bWetOceanCaptureContractReady{false};
+		bool bWetOceanHiddenProbeActive{false};
+		int32 WetOceanHiddenProbeSettleFramesRemaining{0};
+		EWetOceanIsolationState WetOceanIsolationState{
+			EWetOceanIsolationState::Inactive};
+		int32 WetOceanIsolationSettleFramesRemaining{0};
+		TWeakObjectPtr<AAtmoScape> WetOceanIsolationAtmosphere;
+		bool bWetOceanIsolationAtmosphereStateCaptured{false};
+		bool bWetOceanIsolationOriginalAtmosphereHidden{false};
+		TArray<FWetOceanIsolationMaterialSlot> WetOceanIsolationMaterialSlots;
+		TWeakObjectPtr<UMaterialInterface> WetOceanIsolationAssignedMaterial;
+		TArray<FWetOceanIsolationVisibilityState> WetOceanIsolationVisibilityStates;
+		FLinearColor WetOceanIsolationAtmosphereHiddenMean{FLinearColor::Black};
+		FLinearColor WetOceanIsolationLegacyMasterMean{FLinearColor::Black};
+		FLinearColor WetOceanIsolationLegacyAmmoniaMean{FLinearColor::Black};
+		FLinearColor WetOceanIsolationLegacyLavaMean{FLinearColor::Black};
+		FLinearColor WetOceanIsolationStockWorldScapeOceanMean{FLinearColor::Black};
+		FLinearColor WetOceanIsolationCurrentMicMean{FLinearColor::Black};
+		FLinearColor WetOceanIsolationCurrentMasterMean{FLinearColor::Black};
+		FLinearColor WetOceanIsolationNoOceanMean{FLinearColor::Black};
+		TArray<FColor> WetOceanIsolationProductionWaterPixels;
+		TArray<FColor> WetOceanIsolationNoOceanPixels;
+		FIntPoint WetOceanIsolationViewportSize{FIntPoint::ZeroValue};
 		uint32 PreviewProfileSignature{0};
+		int32 PreviewWorldGenerationSeed{0};
 		bool bHasPreviewProjectionSnapshot{false};
 		uint32 PreviewProjectionVersion{0};
 		uint32 PreviewProjectionContextHash{0};
@@ -5729,6 +7165,8 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 		uint32 PreviewCanonicalDatasetInputHash{0};
 		uint64 PreviewCanonicalDatasetBuildSerial{0};
 		int32 PreviewCanonicalDatasetRecordCount{0};
+		int32 PreviewGalaxyRenderedCount{0};
+		int32 PreviewClusterRenderedCount{0};
 		bool bHasPreviewDatasetOnlyRecord{false};
 		FGuid PreviewDatasetOnlyStableId;
 		FVector PreviewDatasetOnlyCanonicalPosition{FVector::ZeroVector};
@@ -5743,10 +7181,12 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 		FVector PreviewGalaxyCanonicalPosition{FVector::ZeroVector};
 		FVector PreviewGalaxyExpectedProxyPosition{FVector::ZeroVector};
 		double PreviewGalaxyCanonicalRadiusSolar{0.0};
+		double PreviewGalaxyActualProxyScale{0.0};
 		FGuid PreviewClusterStableId;
 		FVector PreviewClusterCanonicalPosition{FVector::ZeroVector};
 		FVector PreviewClusterExpectedProxyPosition{FVector::ZeroVector};
 		double PreviewClusterCanonicalRadiusSolar{0.0};
+		double PreviewClusterActualProxyScale{0.0};
 		FVector PhysicalSurfaceSpawnLocation{FVector::ZeroVector};
 		FVector PhysicalSurfaceProbeOutward{FVector::ZeroVector};
 		FVector PhysicalSurfaceProofForward{FVector::ZeroVector};

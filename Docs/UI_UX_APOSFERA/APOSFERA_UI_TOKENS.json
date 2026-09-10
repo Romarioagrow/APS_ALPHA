@@ -1,0 +1,139 @@
+{
+  "meta": {
+    "name": "APOSFERA UI evolution tokens",
+    "version": "draft-2026-08-14",
+    "status": "proposal-only",
+    "recommended_profile": "balanced_2_2",
+    "implementation_note": "Proposed sRGB values must be converted with FLinearColor::FromSRGBColor. Do not apply these profiles to the scene viewport, exposure, post-process, materials, or render gamma."
+  },
+  "current_reference_linear_rgba": {
+    "generation.background": [0.0, 0.0, 0.0, 0.0],
+    "generation.panel": [0.002, 0.014, 0.024, 0.93],
+    "generation.cyan": [0.12, 0.82, 1.0, 1.0],
+    "generation.cyan_dim": [0.035, 0.23, 0.32, 1.0],
+    "generation.amber": [1.0, 0.56, 0.04, 1.0],
+    "generation.text_primary": [0.92, 0.97, 1.0, 1.0],
+    "generation.text_secondary": [0.58, 0.72, 0.78, 1.0],
+    "generation.hierarchy_row": [0.003, 0.022, 0.038, 0.94],
+    "generation.hierarchy_hover": [0.01, 0.075, 0.105, 0.98],
+    "generation.hierarchy_pressed": [0.015, 0.115, 0.155, 1.0]
+  },
+  "profiles": {
+    "balanced_2_2": {
+      "label": "Balanced / standard display",
+      "target_display_gamma": 2.2,
+      "recommended": true,
+      "srgb": {
+        "root_transparent": "#00000000",
+        "scrim": "#02080DC7",
+        "panel": "#061923F0",
+        "panel_raised": "#0A2532FA",
+        "control": "#071E29F7",
+        "hierarchy_row": "#08232FFA",
+        "hierarchy_hover": "#0C3444FF",
+        "border_quiet": "#2D6F84",
+        "focus_cyan": "#35D4FF",
+        "action_amber": "#FF9C2A",
+        "text_primary": "#EDF8FC",
+        "text_secondary": "#A5C3CD",
+        "success": "#5EE4B1",
+        "warning": "#FFC15A",
+        "danger": "#FF657A"
+      }
+    },
+    "cinematic_2_4": {
+      "label": "Cinematic / dim room",
+      "target_display_gamma": 2.4,
+      "recommended": false,
+      "srgb": {
+        "root_transparent": "#00000000",
+        "scrim": "#01050AD6",
+        "panel": "#03121CF2",
+        "panel_raised": "#061B27FA",
+        "control": "#041720F7",
+        "hierarchy_row": "#061C27FA",
+        "hierarchy_hover": "#092D3CFF",
+        "border_quiet": "#245D70",
+        "focus_cyan": "#2ACFFF",
+        "action_amber": "#FF9722",
+        "text_primary": "#E9F7FA",
+        "text_secondary": "#A0BDC8",
+        "success": "#55DDA9",
+        "warning": "#FFBC50",
+        "danger": "#FF6177"
+      }
+    },
+    "bright_2_0": {
+      "label": "Bright room / capture review",
+      "target_display_gamma": 2.0,
+      "recommended": false,
+      "srgb": {
+        "root_transparent": "#00000000",
+        "scrim": "#071720B8",
+        "panel": "#102A36F5",
+        "panel_raised": "#153744FA",
+        "control": "#102F3BFA",
+        "hierarchy_row": "#12333FFA",
+        "hierarchy_hover": "#19495AFF",
+        "border_quiet": "#4A8FA3",
+        "focus_cyan": "#58DDFF",
+        "action_amber": "#FFAC45",
+        "text_primary": "#F5FBFD",
+        "text_secondary": "#BAD0D8",
+        "success": "#72E9BD",
+        "warning": "#FFD071",
+        "danger": "#FF788A"
+      }
+    }
+  },
+  "typography": {
+    "display_family": "Orbitron Bold/Medium assets already present in /Game/APS/APS_ALPHA/UI/Fonts",
+    "body_family": "FCoreStyle default UI font",
+    "brand": { "size": 42, "weight": "bold", "case": "uppercase", "tracking": "wide" },
+    "page_title": { "size": 24, "weight": "bold", "case": "uppercase" },
+    "section": { "size": 16, "weight": "bold", "case": "uppercase" },
+    "action": { "size": 14, "weight": "bold", "case": "uppercase" },
+    "value": { "size": 13, "weight": "bold", "case": "natural" },
+    "label": { "size": 12, "weight": "bold", "case": "uppercase" },
+    "body": { "size": 12, "weight": "regular", "case": "natural" },
+    "micro": { "size": 11, "weight": "regular", "case": "natural", "essential": false }
+  },
+  "spacing_px": {
+    "1": 4,
+    "2": 8,
+    "3": 12,
+    "4": 16,
+    "5": 24,
+    "6": 32
+  },
+  "geometry_px": {
+    "panel_radius": 10,
+    "control_radius": 6,
+    "hierarchy_radius": 5,
+    "quiet_border": 1,
+    "focus_ring": 2,
+    "selected_rail": 3,
+    "control_min_height": 44,
+    "hierarchy_row_min_height": 44,
+    "slider_hit_height": 32,
+    "slider_track_height": 4,
+    "slider_handle_size": 20,
+    "icon_button_target": 40
+  },
+  "layout": {
+    "generation_columns": [0.25, 0.5, 0.25],
+    "outer_padding": 22,
+    "column_gap": 12,
+    "panel_padding": 16,
+    "narrow_behavior": "Stack controls, preview, and context; never shrink persistent text below the typography floor."
+  },
+  "semantic_rules": {
+    "cyan": "Navigation, focus, technical/live state",
+    "amber": "One primary action or current selection per local group",
+    "success": "Confirmed ready/pass only",
+    "warning": "Conditional state with visible text",
+    "danger": "Blocking/error/destructive state only",
+    "color_independence": "Every state also uses text, shape, rail, icon, or border pattern."
+  }
+}
+

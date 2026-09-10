@@ -22,17 +22,20 @@ public:
 
     double CalculateGravitationalForce(double MassPlanet, double MassMoon, double Distance);
 
-    double CalculateRandomMoonDensity(EMoonType MoonType);
+    double CalculateRandomMoonDensity(EMoonType MoonType, FRandomStream* Random = nullptr);
 
 	void ApplyModel(AMoon* Moon, TSharedPtr<FMoonModel> MoonGenerationModel);
+
+	/** Resolve the visual surface independently from gameplay habitability. */
+	static EPlanetType ResolveSurfaceType(const FMoonModel& Model);
 
 	FMoonModel GenerateMoonModel();
 
 	FMoonModel GenerateRandomMoonModel();
 
-	EMoonType GenerateMoonType(TSharedPtr<FPlanetModel> PlanetModel);
+	EMoonType GenerateMoonType(TSharedPtr<FPlanetModel> PlanetModel, FRandomStream* Random = nullptr);
 
-    double CalculateRandomMoonMass();
+    double CalculateRandomMoonMass(FRandomStream* Random = nullptr);
 
 	double CalculateMoonRadius(double MoonDensity, double MoonMass);
 

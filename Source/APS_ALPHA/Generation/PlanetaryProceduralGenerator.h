@@ -77,10 +77,14 @@ class APS_ALPHA_API UPlanetarySystemGenerator : public UBaseProceduralGenerator
 	GENERATED_BODY()
 
 public:
+	/** Own the canonical model's randomness; actor/UI random draws cannot affect it. */
+	void SetGenerationSeed(int32 Seed) { GenerationSeed = Seed; bSeededGeneration = true; GenerationRandom.Initialize(Seed); }
+	void ClearGenerationSeed() { bSeededGeneration = false; }
+
 	void GeneratePlanetMoonsList(
 		UPlanetGenerator* PlanetGenerator, UMoonGenerator* MoonGenerator,
 		TSharedPtr<FPlanetModel> PlanetModel, const double PlanetRadius,
-		const int AmountOfMoons);
+		const int AmountOfMoons, int32 StablePlanetIndex = INDEX_NONE);
 
 	void SetAstroLocation(int StarNumber, APlanetarySystem* NewPlanetarySystem);
 
@@ -100,6 +104,17 @@ public:
 
 	void GeneratePlanetOrbits();
 
+	/** Keep generated planet orbit rings distinct inside the stellar envelope. */
+	static void EnforceMinimumPlanetOrbitSpacing(
+		TArray<double>& InOutOrbitRadii, double MinOrbit, double MaxOrbit,
+		double StellarRadiusSolar, EOrbitDistributionType DistributionType);
+
+	/** Enforce surface-to-surface clearance after the concrete planet radii exist. */
+	static void EnforcePlanetSurfaceClearance(FPlanetarySystemModel& PlanetarySystemModel);
+
+	/** Keep generated/edited moons outside the parent and one another. */
+	static void EnforceSafeMoonOrbitSpacing(FPlanetModel& PlanetModel);
+
 	int CalculateMoons(double PlanetMass, EPlanetType PlanetType);
 
 	FRadiusRange GetPlanetRadiusRange(EPlanetType PlanetType);
@@ -107,6 +122,20 @@ public:
 	FDensityRange GetPlanetDensityRange(EPlanetType PlanetType);
 
 private:
+	FRandomStream GenerationRandom;
+	int32 GenerationSeed{0};
+	bool bSeededGeneration{false};
+	float GenerationRand() { return bSeededGeneration ? GenerationRandom.FRand() : FMath::FRand(); }
+	int32 GenerationRandRange(int32 Min, int32 Max) { return bSeededGeneration ? GenerationRandom.RandRange(Min, Max) : FMath::RandRange(Min, Max); }
+	float GenerationRandRange(float Min, float Max) { return bSeededGeneration ? GenerationRandom.FRandRange(Min, Max) : FMath::RandRange(Min, Max); }
+	double GenerationRandRange(double Min, double Max) { return bSeededGeneration ? Min + (Max - Min) * GenerationRandom.FRand() : FMath::RandRange(Min, Max); }
+	FRandomStream* GetGenerationRandom() { return bSeededGeneration ? &GenerationRandom : nullptr; }
+	void ResetBodyRandom(int32 PlanetIndex, uint32 Channel)
+	{
+		if (bSeededGeneration) GenerationRandom.Initialize(static_cast<int32>(HashCombineFast(
+			GetTypeHash(GenerationSeed), HashCombineFast(GetTypeHash(PlanetIndex), Channel))));
+	}
+
 	EPlanetaryZoneType DeterminePlanetZone(double OrbitRadius, TSharedPtr<FPlanetarySystemModel> PlanetarySystemModel);
 
 	EPlanetType DeterminePlanetType(EPlanetaryZoneType PlanetZone);
@@ -360,7 +389,7 @@ private:
 			TotalWeight += Pair.Value;
 		}
 
-		int32 RandomValue = FMath::RandRange(0, TotalWeight - 1);
+		int32 RandomValue = GenerationRandRange(0, TotalWeight - 1);
 
 		for (auto const& Pair : Probabilities)
 		{

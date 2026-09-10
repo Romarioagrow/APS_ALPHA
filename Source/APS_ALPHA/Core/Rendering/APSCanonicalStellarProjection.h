@@ -82,10 +82,10 @@ struct APS_ALPHA_API FAPSCanonicalStellarProjectionFrame
 
 	FVector UnprojectToCanonicalUnits(const FVector& ProxyPositionCm) const
 	{
-		const double SafeScale = FMath::Abs(PositionScale) > UE_DOUBLE_SMALL_NUMBER
+		const double SafeScale = FMath::IsFinite(PositionScale) && PositionScale > 0.0
 			? PositionScale : 1.0;
-		const double SafeCmPerUnit = FMath::Abs(CanonicalCmPerUnit) > UE_DOUBLE_SMALL_NUMBER
-			? CanonicalCmPerUnit : 1.0;
+		const double SafeCmPerUnit = FMath::IsFinite(CanonicalCmPerUnit)
+			&& CanonicalCmPerUnit > 0.0 ? CanonicalCmPerUnit : 1.0;
 		const FVector RootCanonicalUnits(
 			(CanonicalAnchorCm.X + (ProxyPositionCm.X - RenderAnchorCm.X) / SafeScale)
 				/ SafeCmPerUnit,
@@ -93,8 +93,8 @@ struct APS_ALPHA_API FAPSCanonicalStellarProjectionFrame
 				/ SafeCmPerUnit,
 			(CanonicalAnchorCm.Z + (ProxyPositionCm.Z - RenderAnchorCm.Z) / SafeScale)
 				/ SafeCmPerUnit);
-		const double SafeLayerScale = FMath::Abs(LayerToRootPositionScale)
-			> UE_DOUBLE_SMALL_NUMBER ? LayerToRootPositionScale : 1.0;
+		const double SafeLayerScale = FMath::IsFinite(LayerToRootPositionScale)
+			&& LayerToRootPositionScale > 0.0 ? LayerToRootPositionScale : 1.0;
 		return (RootCanonicalUnits - LayerOriginCanonicalUnits) / SafeLayerScale;
 	}
 
@@ -108,7 +108,7 @@ struct APS_ALPHA_API FAPSCanonicalStellarProjectionFrame
 	{
 		const double Denominator = LayerToRootPositionScale
 			* CanonicalCmPerUnit * PositionScale;
-		return FMath::Abs(Denominator) > UE_DOUBLE_SMALL_NUMBER
+		return FMath::IsFinite(Denominator) && Denominator > 0.0
 			? ProxyLengthCm / Denominator : 0.0;
 	}
 
@@ -230,6 +230,14 @@ namespace APSCanonicalStellarProjection
 	inline constexpr double ClusterMaxProxyCoordinateCm = 1.6e7;
 	inline constexpr double ProjectionToleranceCm = 0.01;
 	inline constexpr int32 SharedHomeSelectionWindow = 100;
+	// Versioned SYSTEM presentation/exclusion policy. These values participate in
+	// the projection context hash, while the resulting suppression bitmap is folded
+	// into RenderedMappingHash so preview and gameplay cannot silently diverge.
+	inline constexpr uint32 SystemPresentationPolicyVersion = 2u;
+	inline constexpr double SystemPresentationMaximumRadiusCm = 1.2e7;
+	inline constexpr double SystemPresentationClusterRadiusFraction = 0.05;
+	inline constexpr double SystemProxyExclusionPadding = 1.10;
+	inline constexpr double SystemProxyMaximumSuppressedFraction = 0.10;
 	// Immutable equivalents of the accepted parent-scope point sizes. They replace
 	// the legacy per-focus O(N) HISM scale rewrites with one construction-time LOD.
 	inline constexpr double GalaxyImpostorFloorFraction = 0.00896;
@@ -346,6 +354,8 @@ namespace APSCanonicalStellarProjection
 	 * Composes both catalog layers through one home-centred root affine mapping.
 	 * ClusterToGalaxyPositionScale applies to layout coordinates only; physical
 	 * stellar radii use ProjectPhysicalRadiusSolar and therefore remain comparable.
+	 * Positive sub-epsilon scales are expected at astronomical extents and must
+	 * remain exact so projection and inverse projection share one affine frame.
 	 */
 	inline bool ConfigureSharedHomeCentredFrames(
 		const double GalaxyHalfExtentUnits, const double ClusterHalfExtentUnits,
@@ -355,8 +365,12 @@ namespace APSCanonicalStellarProjection
 	{
 		const double SafeGalaxyExtent = FMath::Max(GalaxyHalfExtentUnits, 0.0);
 		const double SafeClusterExtent = FMath::Max(ClusterHalfExtentUnits, 0.0);
-		const double SafeClusterScale = FMath::Max(ClusterToGalaxyPositionScale,
-			UE_DOUBLE_SMALL_NUMBER);
+		if (!FMath::IsFinite(ClusterToGalaxyPositionScale)
+			|| ClusterToGalaxyPositionScale <= 0.0)
+		{
+			return false;
+		}
+		const double SafeClusterScale = ClusterToGalaxyPositionScale;
 		const FVector HomeRootUnits = HomeClusterLocalUnits * SafeClusterScale;
 		const double HomeRootMagnitude = MaxAbsComponent(HomeRootUnits);
 		const double AnchoredGalaxyExtent = SafeGalaxyExtent + HomeRootMagnitude;
@@ -373,7 +387,7 @@ namespace APSCanonicalStellarProjection
 		const double ClusterScale = ClusterMaxProxyCoordinateCm
 			/ (AnchoredClusterExtent * FullScaleCanonicalCmPerUnit);
 		const double SharedRootScale = FMath::Min(GalaxyScale, ClusterScale);
-		if (!FMath::IsFinite(SharedRootScale) || SharedRootScale <= UE_DOUBLE_SMALL_NUMBER)
+		if (!FMath::IsFinite(SharedRootScale) || SharedRootScale <= 0.0)
 		{
 			return false;
 		}

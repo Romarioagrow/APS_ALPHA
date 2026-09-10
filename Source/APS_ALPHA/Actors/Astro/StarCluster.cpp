@@ -12,6 +12,11 @@ AStarCluster::AStarCluster()
 
     StarMeshInstances = CreateDefaultSubobject<UHierarchicalInstancedStaticMeshComponent>(TEXT("StarMeshInstances"));
     RootComponent = Cast<USceneComponent>(StarMeshInstances);
+	// Stellar points use an additive material. Nanite does not support that blend
+	// mode, so make the fallback an invariant of the component rather than relying
+	// on the later world-level stabilization pass.
+	StarMeshInstances->bDisallowNanite = true;
+	StarMeshInstances->SetForceDisableNanite(true);
 	StarMeshInstances->NumCustomDataFloats = 6;
 	StarMeshInstances->bAutoRebuildTreeOnInstanceChanges = false;
 	StarMeshInstances->bUseTranslatedInstanceSpace = true;
@@ -54,6 +59,12 @@ bool AStarCluster::EnsureCanonicalStellarMaterial()
 	{
 		return false;
 	}
+
+	// Blueprint defaults can serialize the mesh/material after the native
+	// constructor. Reassert the additive-rendering contract once components are
+	// initialized and before every material-validation early return.
+	StarMeshInstances->bDisallowNanite = true;
+	StarMeshInstances->SetForceDisableNanite(true);
 
 	UMaterial* CanonicalBase = APSStellarMaterialContract::LoadCanonicalBase(
 		APSStellarMaterialContract::HismBaseObjectPath);

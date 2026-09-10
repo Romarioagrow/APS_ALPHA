@@ -1657,12 +1657,13 @@ void ASpaceship::UpdateAdaptiveFlightCamera(float DeltaTime)
 		PostProcess.bOverride_BloomIntensity = true;
 		PostProcess.bOverride_AutoExposureBias = true;
 		const float CinematicAlpha = FMath::Square(CameraAlpha);
-		PostProcess.SceneFringeIntensity = FMath::FInterpTo(PostProcess.SceneFringeIntensity,
-			FMath::Max(BaseSceneFringeIntensity, CinematicAlpha * 1.1f), DeltaTime, 2.2f);
-		PostProcess.ChromaticAberrationStartOffset = FMath::FInterpTo(
-			PostProcess.ChromaticAberrationStartOffset,
-			FMath::Lerp(FMath::Max(BaseChromaticAberrationStartOffset, 0.45f), 0.28f, CinematicAlpha),
-			DeltaTime, 2.2f);
+		// Chromatic aberration splits every high-contrast HDR point into red/green/
+		// blue copies. At interplanetary boost this turned the galaxy into a fringe
+		// test chart and destroyed the physically authored spectral colour. Keep the
+		// speed sensation in FOV, arm length, vignette and bloom; stellar light must
+		// remain spectrally coherent at every velocity.
+		PostProcess.SceneFringeIntensity = 0.0f;
+		PostProcess.ChromaticAberrationStartOffset = 0.0f;
 		PostProcess.VignetteIntensity = FMath::FInterpTo(PostProcess.VignetteIntensity,
 			FMath::Max(BaseVignetteIntensity, 0.16f + CinematicAlpha * 0.12f), DeltaTime, 2.2f);
 		PostProcess.BloomIntensity = FMath::FInterpTo(PostProcess.BloomIntensity,

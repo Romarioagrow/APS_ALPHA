@@ -534,9 +534,12 @@ namespace APSPlanetSurfaceGallerySmokeTests
 						TEXT("%s preview and resolved oceans use independent MICs"),
 						GalleryCase.DisplayName), PreviewLiquid->Parent.Get(),
 						ResolvedLiquid->Parent.Get());
+					const bool bLivingWater =
+						Surface->ResolvedSurfaceProfile.LiquidType == EAPSPlanetLiquidType::Water;
 					bValid &= Test->TestEqual(FString::Printf(
-						TEXT("%s preview ocean is translucent"), GalleryCase.DisplayName),
-						PreviewLiquid->GetBlendMode(), BLEND_Translucent);
+						TEXT("%s preview ocean uses the type-correct depth pass"),
+						GalleryCase.DisplayName), PreviewLiquid->GetBlendMode(),
+						bLivingWater ? BLEND_Masked : BLEND_Translucent);
 					bValid &= Test->TestEqual(FString::Printf(
 						TEXT("%s resolved WorldScape ocean writes depth"), GalleryCase.DisplayName),
 						ResolvedLiquid->GetBlendMode(), BLEND_Opaque);
@@ -571,9 +574,27 @@ namespace APSPlanetSurfaceGallerySmokeTests
 						}
 						return bScalarValid;
 					};
-					bValid &= AssertPreviewScalar(TEXT("WaveColorStrength"), 0.003f);
-					bValid &= AssertPreviewScalar(TEXT("WaveNormalStrength"), 0.0f);
-					bValid &= AssertPreviewScalar(TEXT("OrbitalNormalBlend"), 1.0f);
+					if (bLivingWater)
+					{
+						// Living-water is a dedicated masked PBR shell. Its constant-radius
+						// geometry hides terrain relief below sea level; it intentionally owns
+						// neither the translucent opacity control nor chemistry-wave controls.
+						bValid &= AssertPreviewScalar(TEXT("Roughness"), 0.10f);
+						bValid &= AssertPreviewScalar(TEXT("Metallic"), 0.0f);
+						bValid &= AssertPreviewScalar(TEXT("Specular"), 0.25f);
+						float UnusedOpacity = 0.0f;
+						bValid &= Test->TestFalse(FString::Printf(
+							TEXT("%s masked living-water exposes no translucent opacity"),
+							GalleryCase.DisplayName), PreviewLiquid->GetScalarParameterValue(
+								FHashedMaterialParameterInfo(FName(TEXT("Opacity"))),
+								UnusedOpacity));
+					}
+					else
+					{
+						bValid &= AssertPreviewScalar(TEXT("WaveColorStrength"), 0.003f);
+						bValid &= AssertPreviewScalar(TEXT("WaveNormalStrength"), 0.0f);
+						bValid &= AssertPreviewScalar(TEXT("OrbitalNormalBlend"), 1.0f);
+					}
 					for (const TCHAR* ParameterName :
 						{TEXT("WaveColorStrength"), TEXT("WaveNormalStrength"),
 							TEXT("OrbitalNormalBlend")})
@@ -586,17 +607,18 @@ namespace APSPlanetSurfaceGallerySmokeTests
 								FHashedMaterialParameterInfo(FName(ParameterName)), UnusedValue));
 					}
 
-					const float ExpectedPresentationOpacity =
-						Surface->ResolvedSurfaceProfile.LiquidType == EAPSPlanetLiquidType::Lava
-							? 0.54f
-							: Surface->ResolvedSurfaceProfile.LiquidType == EAPSPlanetLiquidType::Ammonia
-								? 0.50f : 0.52f;
-					const float PreviewOpacity = PreviewLiquid->K2_GetScalarParameterValue(
-						TEXT("Opacity"));
-					bValid &= Test->TestTrue(FString::Printf(
-						TEXT("%s preview liquid applies only its presentation opacity"),
-						GalleryCase.DisplayName), FMath::IsNearlyEqual(
-							PreviewOpacity, ExpectedPresentationOpacity, 1.0e-4f));
+					if (!bLivingWater)
+					{
+						const float ExpectedPresentationOpacity =
+							Surface->ResolvedSurfaceProfile.LiquidType == EAPSPlanetLiquidType::Lava
+								? 0.54f : 0.50f;
+						const float PreviewOpacity = PreviewLiquid->K2_GetScalarParameterValue(
+							TEXT("Opacity"));
+						bValid &= Test->TestTrue(FString::Printf(
+							TEXT("%s preview chemistry liquid applies only presentation opacity"),
+							GalleryCase.DisplayName), FMath::IsNearlyEqual(
+								PreviewOpacity, ExpectedPresentationOpacity, 1.0e-4f));
+					}
 				}
 			}
 

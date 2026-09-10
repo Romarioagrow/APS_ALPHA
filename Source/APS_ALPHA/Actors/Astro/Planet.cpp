@@ -3,6 +3,9 @@
 #include "APS_ALPHA/Core/Enums/PlanetType.h"
 #include "APS_ALPHA/Generation/PlanetarySurfaceGenerator.h"
 #include "Components/StaticMeshComponent.h"
+#include "Engine/StaticMesh.h"
+#include "Materials/MaterialInstanceDynamic.h"
+#include "UObject/ConstructorHelpers.h"
 
 namespace
 {
@@ -119,6 +122,24 @@ APlanet::APlanet()
 	ConfigureNonBlockingPlanetZone(GravityCollisionZone);
 	GravityCollisionZone->SetVisibility(false);
 	GravityCollisionZone->SetHiddenInGame(true);
+
+	GasGiantVisualComponent = CreateDefaultSubobject<UStaticMeshComponent>(
+		TEXT("GasGiantVisualComponent"));
+	GasGiantVisualComponent->SetupAttachment(RootComponent);
+	GasGiantVisualComponent->ComponentTags.Add(TEXT("APS.GasGiantVisual"));
+	GasGiantVisualComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	GasGiantVisualComponent->SetCollisionResponseToAllChannels(ECR_Ignore);
+	GasGiantVisualComponent->SetGenerateOverlapEvents(false);
+	GasGiantVisualComponent->SetCanEverAffectNavigation(false);
+	GasGiantVisualComponent->CastShadow = true;
+	GasGiantVisualComponent->SetVisibility(false);
+	GasGiantVisualComponent->SetHiddenInGame(true);
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> GasGiantMesh(
+		TEXT("/Game/APS/APS_ALPHA/Assets/AI_PLanetss/giant_icosphere_jupiter1to1_sub6.giant_icosphere_jupiter1to1_sub6"));
+	if (GasGiantMesh.Succeeded())
+	{
+		GasGiantVisualComponent->SetStaticMesh(GasGiantMesh.Object);
+	}
 }
 
 bool APlanet::IsNotGasGiant() const
@@ -136,6 +157,90 @@ void APlanet::AddMoon(AMoon* Moon)
 void APlanet::SetPlanetType(EPlanetType NewPlanetType)
 {
 	this->PlanetType = NewPlanetType;
+	RefreshGasGiantVisual();
+	if (!IsNotGasGiant())
+	{
+		// Gas giants never enter WorldScape, so their lightweight mesh is the
+		// authoritative surface from the first frame.
+		EnableSphereMesh();
+	}
+}
+
+void APlanet::RefreshGasGiantVisual()
+{
+	if (!IsValid(GasGiantVisualComponent)
+		|| !IsValid(GasGiantVisualComponent->GetStaticMesh()))
+	{
+		return;
+	}
+
+	// The restored legacy Jupiter mesh was imported at a physical authoring scale.
+	// Normalize it to the same local radius as the Blueprint sphere so all existing
+	// actor kilometre/presentation scaling remains authoritative.
+	double ReferenceLocalRadius = 50.0;
+	TInlineComponentArray<UStaticMeshComponent*> Meshes;
+	GetComponents(Meshes);
+	for (UStaticMeshComponent* Mesh : Meshes)
+	{
+		if (!IsValid(Mesh) || Mesh == GasGiantVisualComponent
+			|| !IsValid(Mesh->GetStaticMesh()))
+		{
+			continue;
+		}
+		const double CandidateRadius = Mesh->GetStaticMesh()->GetBounds().SphereRadius
+			* Mesh->GetRelativeScale3D().GetAbsMax();
+		if (FMath::IsFinite(CandidateRadius) && CandidateRadius > UE_SMALL_NUMBER)
+		{
+			ReferenceLocalRadius = CandidateRadius;
+			break;
+		}
+	}
+	const double SourceRadius = GasGiantVisualComponent->GetStaticMesh()
+		->GetBounds().SphereRadius;
+	if (FMath::IsFinite(SourceRadius) && SourceRadius > UE_SMALL_NUMBER)
+	{
+		GasGiantVisualComponent->SetRelativeScale3D(FVector(
+			ReferenceLocalRadius / SourceRadius));
+	}
+	GasGiantVisualComponent->SetRelativeLocation(FVector::ZeroVector);
+
+	if (!IsValid(GasGiantMaterialInstance))
+	{
+		UMaterialInterface* BaseMaterial = GasGiantVisualComponent->GetMaterial(0);
+		if (IsValid(BaseMaterial))
+		{
+			GasGiantMaterialInstance = UMaterialInstanceDynamic::Create(
+				BaseMaterial, this, TEXT("MID_APS_GasGiantVisual"));
+			GasGiantVisualComponent->SetMaterial(0, GasGiantMaterialInstance);
+		}
+	}
+	if (IsValid(GasGiantMaterialInstance))
+	{
+		FLinearColor TypeTint(0.93f, 0.76f, 0.56f, 1.0f);
+		switch (PlanetType)
+		{
+		case EPlanetType::HotGiant:
+			TypeTint = FLinearColor(1.00f, 0.47f, 0.20f, 1.0f);
+			break;
+		case EPlanetType::IceGiant:
+			TypeTint = FLinearColor(0.42f, 0.72f, 1.00f, 1.0f);
+			break;
+		default:
+			break;
+		}
+		const uint32 StableHash = HashCombine(GetTypeHash(WorldScapeSeed),
+			GetTypeHash(static_cast<uint8>(PlanetType)));
+		const float SeedVariation = 0.92f
+			+ static_cast<float>(StableHash % 1000u) / 1000.0f * 0.16f;
+		TypeTint *= SeedVariation;
+		TypeTint.A = 1.0f;
+		GasGiantMaterialInstance->SetVectorParameterValue(
+			TEXT("BaseColorFactor"), TypeTint);
+		GasGiantMaterialInstance->SetVectorParameterValue(
+			TEXT("BaseColorFactor_RGB"), TypeTint);
+		GasGiantMaterialInstance->SetScalarParameterValue(
+			TEXT("RoughnessFactor"), PlanetType == EPlanetType::IceGiant ? 0.36f : 0.42f);
+	}
 }
 
 void APlanet::SetPlanetZone(EPlanetaryZoneType NewPlanetZone)
@@ -222,8 +327,10 @@ void APlanet::EnableSphereMesh()
 		// walkable terrain, so this mesh must never become a smooth false ground shell.
 		SphereMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		SphereMesh->SetCollisionResponseToAllChannels(ECR_Ignore);
-		SphereMesh->SetHiddenInGame(false, false);
-		SphereMesh->SetVisibility(true, false);
+		const bool bGasVisual = SphereMesh->ComponentHasTag(TEXT("APS.GasGiantVisual"));
+		const bool bShow = IsNotGasGiant() ? !bGasVisual : bGasVisual;
+		SphereMesh->SetHiddenInGame(!bShow, false);
+		SphereMesh->SetVisibility(bShow, false);
 	}
 }
 

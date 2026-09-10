@@ -13,6 +13,8 @@ struct FMoonData;
 enum class EPlanetaryZoneType : uint8;
 class AMoon;
 class AStar;
+class UMaterialInstanceDynamic;
+class UStaticMeshComponent;
 
 UCLASS()
 class APS_ALPHA_API APlanet : public APlanetaryBody, public INavigatableBody
@@ -53,6 +55,13 @@ public:
 	UPROPERTY(VisibleAnywhere, Category = "Planet")
 	USphereComponent* PlanetaryZone;
 
+	/** Lightweight non-WorldScape renderer for Gas/Hot/Ice giants. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Planet|Visual")
+	UStaticMeshComponent* GasGiantVisualComponent{nullptr};
+
+	UPROPERTY(Transient)
+	UMaterialInstanceDynamic* GasGiantMaterialInstance{nullptr};
+
 	UPROPERTY(VisibleAnywhere, Category = "Planet")
 	AStar* ParentStar;
 
@@ -79,6 +88,9 @@ public:
 	void AddMoon(AMoon* Moon);
 
 	void SetPlanetType(EPlanetType PlanetType);
+
+	/** Rebinds the type-specific giant mesh and deterministic natural tint. */
+	void RefreshGasGiantVisual();
 
 	void SetPlanetZone(EPlanetaryZoneType PlanetZone);
 

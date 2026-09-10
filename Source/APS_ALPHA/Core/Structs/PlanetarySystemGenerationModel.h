@@ -4,6 +4,7 @@
 #include "GenerationModel.h"
 #include "APS_ALPHA/Core/Enums/OrbitDistributionType.h"
 #include "APS_ALPHA/Core/Enums/PlanetarySystemType.h"
+#include "APS_ALPHA/Core/Enums/PlanetHabitability.h"
 #include "CoreMinimal.h"
 #include "APS_ALPHA/Actors/Planetary/PlanetAtmosphere.h"
 #include "APS_ALPHA/Actors/Planetary/PlanetBiosphere.h"
@@ -53,6 +54,10 @@ struct FPlanetData
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Planet Mode")
 	FPlanetModel PlanetModelData;
 
+	/** Direct serialized gameplay query, mirrored from PlanetModelData. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Planet Mode")
+	EPlanetHabitability PlanetHabitability;
+
 	// ��������� ���������
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Environment")
 	FPlanetAtmosphere PlanetAtmosphere;
@@ -81,6 +86,7 @@ struct FPlanetData
 	FPlanetData()
 		: PlanetOrder(0)
 		, OrbitRadius(0.0)
+		, PlanetHabitability(EPlanetHabitability::Uninhabitable)
 		, PlanetRadiusKM(0)
 		, Temperature(0)
 		, PlanetDensity(0.0)
@@ -92,6 +98,9 @@ struct FPlanetData
 		: PlanetOrder(InPlanetOrder)
 		, OrbitRadius(InOrbitRadius)
 		, PlanetModel(InPlanetModel)
+		, PlanetHabitability(InPlanetModel.IsValid()
+			? InPlanetModel->PlanetHabitability
+			: EPlanetHabitability::Uninhabitable)
 		, PlanetRadiusKM(0)
 		, Temperature(0)
 		, PlanetDensity(0.0)

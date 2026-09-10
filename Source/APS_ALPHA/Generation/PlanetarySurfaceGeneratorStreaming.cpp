@@ -7,9 +7,13 @@
 #include "APS_ALPHA/Core/Planetary/APSPlanetSurfaceProfile.h"
 #include "APS_ALPHA/Core/Planetary/APSWorldScapeFoliagePolicy.h"
 #include "APSWorldScapePlanetNoise.h"
+#include "Engine/World.h"
 #include "Kismet/GameplayStatics.h"
+#include "LocalVertexFactory.h"
+#include "Materials/Material.h"
 #include "Materials/MaterialInstance.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "MaterialShared.h"
 #include "UObject/UObjectGlobals.h"
 
 namespace APSWorldScapeProfiles
@@ -64,6 +68,175 @@ bool APlanetarySurfaceGenerator::IsSurfaceProfileCurrent(const APlanetaryBody* B
 		&& AppliedSurfaceProfileSignature == BuildSurfaceProfileSignature(Body);
 }
 
+bool APlanetarySurfaceGenerator::FinalizeStableWaterMaterial()
+{
+	AWorldScapeRoot* Root = WorldScapeRootInstance;
+	if (!IsValid(Root) || !bSurfaceProfileApplied
+		|| AppliedSurfaceProfileSignature == 0
+		|| Root->WorldScapeLodInGeneration.Num() > 0)
+	{
+		return false;
+	}
+
+	// Ammonia and lava intentionally retain their established material families.
+	// A Water profile without an actual ocean has no streamed liquid slots to publish.
+	if (ResolvedSurfaceProfile.LiquidType != EAPSPlanetLiquidType::Water
+		|| !Root->bOcean)
+	{
+		return true;
+	}
+
+	auto HasExactWaterSlots = [Root](UMaterialInterface* ExpectedMaterial)
+	{
+		if (!IsValid(ExpectedMaterial)
+			|| Root->WorldScapeLodOcean.Num() != Root->OceanMaxLod)
+		{
+			return false;
+		}
+
+		int32 MatchingSlotCount = 0;
+		for (const UWorldScapeLod* OceanLod : Root->WorldScapeLodOcean)
+		{
+			if (!IsValid(OceanLod) || !IsValid(OceanLod->Mesh)
+				|| OceanLod->Mesh->GetNumSections() != 3)
+			{
+				return false;
+			}
+			for (int32 MaterialIndex = 0; MaterialIndex < 3; ++MaterialIndex)
+			{
+				if (OceanLod->Mesh->GetMaterial(MaterialIndex) != ExpectedMaterial)
+				{
+					return false;
+				}
+				++MatchingSlotCount;
+			}
+		}
+		return MatchingSlotCount == Root->OceanMaxLod * 3;
+	};
+
+	if (FinalizedWaterMaterialRoot.Get() == Root
+		&& FinalizedWaterMaterialProfileSignature == AppliedSurfaceProfileSignature
+		&& Root->OceanMaterial.DefaultMaterial == ResolvedOceanMaterialInstance)
+	{
+		return HasExactWaterSlots(ResolvedOceanMaterialInstance);
+	}
+
+	UMaterialInstanceDynamic* PreviousWaterMID = ResolvedOceanMaterialInstance;
+	if (!IsValid(PreviousWaterMID)
+		|| Root->OceanMaterial.DefaultMaterial != PreviousWaterMID
+		|| !HasExactWaterSlots(PreviousWaterMID))
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[APS.WorldScape.Water] Stable material finalization lost the exact configured MID set root=%s resolved=%s rootDefault=%s"),
+			*GetNameSafe(Root), *GetNameSafe(PreviousWaterMID),
+			*GetNameSafe(Root->OceanMaterial.DefaultMaterial));
+		return false;
+	}
+
+	UMaterial* WaterMaster = PreviousWaterMID->GetMaterial();
+	UWorld* World = Root->GetWorld();
+	if (!IsValid(WaterMaster) || !IsValid(World))
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[APS.WorldScape.Water] Missing Water master/world root=%s master=%s"),
+			*GetNameSafe(Root), *GetNameSafe(WaterMaster));
+		return false;
+	}
+
+	// UE 5.4's public synchronous material barrier. In editor builds it submits
+	// incomplete render feature-level jobs with ForceLocal priority and waits for
+	// completion; in cooked builds the validation below still rejects a missing map.
+	WaterMaster->EnsureIsComplete();
+	FMaterialResource* WaterResource = WaterMaster->GetMaterialResource(
+		World->GetFeatureLevel());
+	FMaterialShaderMap* WaterShaderMap = WaterResource
+		? WaterResource->GetGameThreadShaderMap()
+		: nullptr;
+	const bool bShaderMapComplete = WaterResource
+		&& WaterResource->IsGameThreadShaderMapComplete();
+	const bool bLocalVertexFactoryReady = WaterShaderMap
+		&& WaterShaderMap->GetMeshShaderMap(&FLocalVertexFactory::StaticType) != nullptr;
+	if (!bShaderMapComplete || !bLocalVertexFactoryReady)
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[APS.WorldScape.Water] Water shader map not render-ready root=%s master=%s featureLevel=%d complete=%d localVF=%d"),
+			*GetNameSafe(Root), *GetNameSafe(WaterMaster),
+			static_cast<int32>(World->GetFeatureLevel()),
+			bShaderMapComplete ? 1 : 0, bLocalVertexFactoryReady ? 1 : 0);
+		return false;
+	}
+
+	UMaterialInstanceDynamic* StableWaterMID =
+		UMaterialInstanceDynamic::Create(WaterMaster, Root);
+	if (!IsValid(StableWaterMID))
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[APS.WorldScape.Water] Could not create stable Water MID root=%s master=%s"),
+			*GetNameSafe(Root), *GetNameSafe(WaterMaster));
+		return false;
+	}
+
+	auto CopyWaterColor = [PreviousWaterMID, StableWaterMID](const FName ParameterName)
+	{
+		FLinearColor Value = FLinearColor::Black;
+		if (!PreviousWaterMID->GetVectorParameterValue(
+			FHashedMaterialParameterInfo(ParameterName), Value))
+		{
+			return false;
+		}
+		StableWaterMID->SetVectorParameterValue(ParameterName, Value);
+		return true;
+	};
+	if (!CopyWaterColor(TEXT("WaterDeepColor"))
+		|| !CopyWaterColor(TEXT("WaterShallowColor"))
+		|| !CopyWaterColor(TEXT("WaterRadianceFloor")))
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[APS.WorldScape.Water] Stable Water MID could not copy the authored marine palette root=%s source=%s"),
+			*GetNameSafe(Root), *GetNameSafe(PreviousWaterMID));
+		return false;
+	}
+	// Publish only after the complete worker batch exists. UpdateOceanMaterial is
+	// synchronous on the game thread; validation below makes the pointer swap atomic
+	// from the readiness hand-off's perspective.
+	Root->OceanMaterial.DefaultMaterial = StableWaterMID;
+	Root->UpdateOceanMaterial(Root->OceanMaterial);
+	for (const UWorldScapeLod* OceanLod : Root->WorldScapeLodOcean)
+	{
+		if (IsValid(OceanLod) && IsValid(OceanLod->Mesh))
+		{
+			OceanLod->Mesh->MarkRenderStateDirty();
+		}
+	}
+	if (!HasExactWaterSlots(StableWaterMID))
+	{
+		// Never expose a partially swapped material set. Restore the original root
+		// contract and let the next readiness refresh retry finalization.
+		Root->OceanMaterial.DefaultMaterial = PreviousWaterMID;
+		Root->UpdateOceanMaterial(Root->OceanMaterial);
+		for (const UWorldScapeLod* OceanLod : Root->WorldScapeLodOcean)
+		{
+			if (IsValid(OceanLod) && IsValid(OceanLod->Mesh))
+			{
+				OceanLod->Mesh->MarkRenderStateDirty();
+			}
+		}
+		UE_LOG(LogTemp, Error,
+			TEXT("[APS.WorldScape.Water] Stable Water MID did not reach the exact ocean slot set root=%s lods=%d expected=%d"),
+			*GetNameSafe(Root), Root->WorldScapeLodOcean.Num(), Root->OceanMaxLod);
+		return false;
+	}
+
+	ResolvedOceanMaterialInstance = StableWaterMID;
+	FinalizedWaterMaterialRoot = Root;
+	FinalizedWaterMaterialProfileSignature = AppliedSurfaceProfileSignature;
+	UE_LOG(LogTemp, Log,
+		TEXT("[APS.WorldScape.Water] Stable Water MID published root=%s signature=%u master=%s slots=%d"),
+		*GetNameSafe(Root), AppliedSurfaceProfileSignature, *GetNameSafe(WaterMaster),
+		Root->OceanMaxLod * 3);
+	return true;
+}
+
 bool APlanetarySurfaceGenerator::CreateRuntimeWorldScapeRoot(APlanetaryBody* Body)
 {
 	if (!IsValid(Body) || !GetWorld())
@@ -104,6 +277,8 @@ bool APlanetarySurfaceGenerator::CreateRuntimeWorldScapeRoot(APlanetaryBody* Bod
 	WorldScapeRootInstance->SetActorHiddenInGame(true);
 	WorldScapeRootInstance->SetActorTickEnabled(false);
 	WorldScapeRootInstance->SetActorEnableCollision(false);
+	FinalizedWaterMaterialRoot.Reset();
+	FinalizedWaterMaterialProfileSignature = 0;
 	return true;
 }
 
@@ -162,6 +337,8 @@ bool APlanetarySurfaceGenerator::ReplaceDrainedRuntimeWorldScapeRoot(APlanetaryB
 	ResolvedNoiseInstance = nullptr;
 	ResolvedTerrainMaterialInstance = nullptr;
 	ResolvedOceanMaterialInstance = nullptr;
+	FinalizedWaterMaterialRoot.Reset();
+	FinalizedWaterMaterialProfileSignature = 0;
 	PlanetaryBody = nullptr;
 	Body->bWorldScapeSurfaceReady = false;
 
@@ -275,6 +452,8 @@ void APlanetarySurfaceGenerator::ApplySurfaceProfileNow(APlanetaryBody* Body)
 			*GetNameSafe(Body));
 		return;
 	}
+	FinalizedWaterMaterialRoot.Reset();
+	FinalizedWaterMaterialProfileSignature = 0;
 	ResolvedSurfaceProfile = RequestedProfile;
 	{
 		UMaterialInstance* BaseTerrainMaterial = nullptr;
@@ -522,6 +701,14 @@ void APlanetarySurfaceGenerator::ApplySurfaceProfileNow(APlanetaryBody* Body)
 	WorldScapeRootInstance->TerrainCastDynamicShadow = !bScaledOrbitalPreview;
 	WorldScapeRootInstance->TerrainFarShadow = !bScaledOrbitalPreview;
 	WorldScapeRootInstance->TerrainTowSideShadow = false;
+	// A streamed ocean is a colour/depth presentation shell, never a shadow caster
+	// or an occlusion source.  WorldScape's defaults otherwise let independently
+	// stitched clipmap sections cast their rectangular boundaries onto the terrain,
+	// reproducing the reported raised/grid-like "water" despite a perfectly constant
+	// ocean radius.  The ocean remains opaque/depth-writing, but cannot project its
+	// section topology into the scene lighting or HZB.
+	WorldScapeRootInstance->OceanMeshIsOccluder = false;
+	WorldScapeRootInstance->OceanMeshTreatAsBackGroundForOcclusion = false;
 	WorldScapeRootInstance->HeightAnchor = FMath::Clamp(
 		static_cast<float>(WorldScapeRootInstance->PlanetScale * 0.00025), 50000.0f, 250000.0f);
 	bSurfaceProfileApplied = true;
@@ -632,6 +819,8 @@ void APlanetarySurfaceGenerator::UnloadWorldScapeRoot()
 		ResolvedNoiseInstance = nullptr;
 		ResolvedTerrainMaterialInstance = nullptr;
 		ResolvedOceanMaterialInstance = nullptr;
+		FinalizedWaterMaterialRoot.Reset();
+		FinalizedWaterMaterialProfileSignature = 0;
 		bPendingWorldScapeUnload = false;
 		bDestroyWorldScapeRootAfterDrain = false;
 		SetActorTickEnabled(false);
@@ -797,6 +986,8 @@ void APlanetarySurfaceGenerator::TryFinalizeWorldScapeUnload()
 	if (!IsValid(WorldScapeRootInstance))
 	{
 		WorldScapeRootInstance = nullptr;
+		FinalizedWaterMaterialRoot.Reset();
+		FinalizedWaterMaterialProfileSignature = 0;
 		bPendingWorldScapeUnload = false;
 		bDestroyWorldScapeRootAfterDrain = false;
 		SetActorTickEnabled(false);
@@ -825,6 +1016,8 @@ void APlanetarySurfaceGenerator::TryFinalizeWorldScapeUnload()
 	ResolvedNoiseInstance = nullptr;
 	ResolvedTerrainMaterialInstance = nullptr;
 	ResolvedOceanMaterialInstance = nullptr;
+	FinalizedWaterMaterialRoot.Reset();
+	FinalizedWaterMaterialProfileSignature = 0;
 	bPendingWorldScapeUnload = false;
 	bDestroyWorldScapeRootAfterDrain = false;
 	MoonLikeNoise = nullptr;

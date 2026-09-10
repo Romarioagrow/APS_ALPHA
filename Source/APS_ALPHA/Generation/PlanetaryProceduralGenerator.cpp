@@ -6,8 +6,193 @@
 #include "APS_ALPHA/Core/Enums/OrbitHeight.h"
 #include "APS_ALPHA/Core/Enums/PlanetarySystemType.h"
 #include "APS_ALPHA/Core/Enums/StarSpectralClass.h"
+#include "APS_ALPHA/Core/Planetary/APSPlanetHabitability.h"
 #include "APS_ALPHA/Core/Structs/PlanetarySystemGenerationModel.h"
 #include "APS_ALPHA/Core/Structs/StarGenerationModel.h"
+
+namespace APSOrbitGeneration
+{
+	constexpr double SolarRadiusInAu = 0.00465047;
+	constexpr double AstronomicalUnitKm = 149597870.7;
+
+	double DistributionPacking(const EOrbitDistributionType DistributionType)
+	{
+		switch (DistributionType)
+		{
+		case EOrbitDistributionType::Uniform: return 0.72;
+		case EOrbitDistributionType::Gaussian: return 0.58;
+		case EOrbitDistributionType::Chaotic: return 0.46;
+		case EOrbitDistributionType::InnerOuter: return 0.60;
+		case EOrbitDistributionType::Dense: return 0.36;
+		default: return 0.50;
+		}
+	}
+}
+
+void UPlanetarySystemGenerator::EnforcePlanetSurfaceClearance(
+	FPlanetarySystemModel& PlanetarySystemModel)
+{
+	TArray<int32> OrderedPlanetIndices;
+	for (int32 PlanetIndex = 0;
+		PlanetIndex < PlanetarySystemModel.PlanetsList.Num(); ++PlanetIndex)
+	{
+		const TSharedPtr<FPlanetData>& PlanetData =
+			PlanetarySystemModel.PlanetsList[PlanetIndex];
+		if (PlanetData.IsValid() && PlanetData->PlanetModel.IsValid())
+		{
+			OrderedPlanetIndices.Add(PlanetIndex);
+		}
+	}
+	OrderedPlanetIndices.Sort([&PlanetarySystemModel](const int32 LeftIndex, const int32 RightIndex)
+	{
+		const double LeftOrbit = PlanetarySystemModel.PlanetsList[LeftIndex]->OrbitRadius;
+		const double RightOrbit = PlanetarySystemModel.PlanetsList[RightIndex]->OrbitRadius;
+		return (FMath::IsFinite(LeftOrbit) ? LeftOrbit : 0.0)
+			< (FMath::IsFinite(RightOrbit) ? RightOrbit : 0.0);
+	});
+
+	double PreviousOrbitAu = 0.0;
+	double PreviousRadiusKm = 0.0;
+	bool bHasPreviousPlanet = false;
+	for (const int32 PlanetIndex : OrderedPlanetIndices)
+	{
+		TSharedPtr<FPlanetData>& PlanetData = PlanetarySystemModel.PlanetsList[PlanetIndex];
+		FPlanetModel& PlanetModel = *PlanetData->PlanetModel;
+		const double PlanetRadiusKm = FMath::Max3(
+			FMath::Max(0.0, static_cast<double>(PlanetModel.RadiusKM)),
+			FMath::Max(0.0, static_cast<double>(PlanetData->PlanetRadiusKM)),
+			FMath::Max(0.0, static_cast<double>(PlanetModel.Radius) * 6371.0));
+		double OrbitAu = FMath::IsFinite(PlanetData->OrbitRadius)
+			? FMath::Max(PlanetData->OrbitRadius, 0.0) : PreviousOrbitAu;
+		if (bHasPreviousPlanet)
+		{
+			const double CombinedRadiusKm = PreviousRadiusKm + PlanetRadiusKm;
+			const double SurfaceClearanceKm = FMath::Max(
+				1000.0, CombinedRadiusKm * 0.10);
+			const double RequiredCenterGapAu =
+				(CombinedRadiusKm + SurfaceClearanceKm)
+				/ APSOrbitGeneration::AstronomicalUnitKm;
+			OrbitAu = FMath::Max(OrbitAu, PreviousOrbitAu + RequiredCenterGapAu);
+		}
+
+		PlanetData->OrbitRadius = OrbitAu;
+		PlanetModel.OrbitDistance = OrbitAu;
+		PlanetData->PlanetModelData = PlanetModel;
+		PlanetData->PlanetHabitability = PlanetModel.PlanetHabitability;
+		PreviousOrbitAu = OrbitAu;
+		PreviousRadiusKm = PlanetRadiusKm;
+		bHasPreviousPlanet = true;
+	}
+}
+
+void UPlanetarySystemGenerator::EnforceMinimumPlanetOrbitSpacing(
+	TArray<double>& InOutOrbitRadii, const double MinOrbit, const double MaxOrbit,
+	const double StellarRadiusSolar, const EOrbitDistributionType DistributionType)
+{
+	if (InOutOrbitRadii.IsEmpty())
+	{
+		return;
+	}
+
+	const double PhotosphereClearanceAu = FMath::Max(
+		0.001, FMath::Max(0.0, StellarRadiusSolar)
+			* APSOrbitGeneration::SolarRadiusInAu * 1.35);
+	const double EffectiveMin = FMath::Max(
+		FMath::IsFinite(MinOrbit) ? MinOrbit : 0.0, PhotosphereClearanceAu);
+	const double RequestedSpan = FMath::Max(
+		FMath::IsFinite(MaxOrbit - MinOrbit) ? MaxOrbit - MinOrbit : 0.0, 0.25);
+	const double EffectiveMax = FMath::Max(
+		FMath::IsFinite(MaxOrbit) ? MaxOrbit : EffectiveMin,
+		EffectiveMin + RequestedSpan);
+
+	for (double& OrbitRadius : InOutOrbitRadii)
+	{
+		if (!FMath::IsFinite(OrbitRadius))
+		{
+			OrbitRadius = EffectiveMin;
+		}
+		OrbitRadius = FMath::Clamp(OrbitRadius, EffectiveMin, EffectiveMax);
+	}
+	InOutOrbitRadii.Sort();
+	if (InOutOrbitRadii.Num() == 1)
+	{
+		return;
+	}
+
+	const double AvailableSpan = EffectiveMax - EffectiveMin;
+	const double CapacityGap = AvailableSpan / (InOutOrbitRadii.Num() - 1);
+	const double CharacterGap = AvailableSpan / (InOutOrbitRadii.Num() + 1)
+		* APSOrbitGeneration::DistributionPacking(DistributionType);
+	const double MinimumGap = FMath::Min(
+		CapacityGap, FMath::Max(CharacterGap, 0.01));
+
+	InOutOrbitRadii[0] = FMath::Max(InOutOrbitRadii[0], EffectiveMin);
+	for (int32 OrbitIndex = 1; OrbitIndex < InOutOrbitRadii.Num(); ++OrbitIndex)
+	{
+		InOutOrbitRadii[OrbitIndex] = FMath::Max(
+			InOutOrbitRadii[OrbitIndex], InOutOrbitRadii[OrbitIndex - 1] + MinimumGap);
+	}
+	if (InOutOrbitRadii.Last() > EffectiveMax)
+	{
+		InOutOrbitRadii.Last() = EffectiveMax;
+		for (int32 OrbitIndex = InOutOrbitRadii.Num() - 2; OrbitIndex >= 0; --OrbitIndex)
+		{
+			InOutOrbitRadii[OrbitIndex] = FMath::Min(
+				InOutOrbitRadii[OrbitIndex], InOutOrbitRadii[OrbitIndex + 1] - MinimumGap);
+		}
+	}
+}
+
+void UPlanetarySystemGenerator::EnforceSafeMoonOrbitSpacing(
+	FPlanetModel& PlanetModel)
+{
+	if (PlanetModel.MoonsList.IsEmpty())
+	{
+		return;
+	}
+
+	const double ParentRadius = FMath::Max(PlanetModel.Radius, 0.01);
+	double PreviousCenterInParentRadii = 0.0;
+	double PreviousMoonRadiusRatio = 0.0;
+	for (int32 MoonIndex = 0; MoonIndex < PlanetModel.MoonsList.Num(); ++MoonIndex)
+	{
+		TSharedPtr<FMoonData>& MoonData = PlanetModel.MoonsList[MoonIndex];
+		if (!MoonData.IsValid())
+		{
+			continue;
+		}
+		if (!MoonData->MoonModel.IsValid())
+		{
+			MoonData->MoonModel = MakeShared<FMoonModel>(MoonData->MoonModelData);
+		}
+
+		FMoonModel& MoonModel = *MoonData->MoonModel;
+		const double MoonRadiusRatio = FMath::Clamp(
+			FMath::Max(MoonModel.Radius, 0.001) / ParentRadius, 0.001, 2.0);
+		const double RequestedAltitude = FMath::Max(
+			FMath::IsFinite(MoonData->OrbitRadius) ? MoonData->OrbitRadius : 0.0,
+			FMath::IsFinite(MoonModel.OrbitDistance) ? MoonModel.OrbitDistance : 0.0);
+		double SafeCenter = FMath::Max(
+			1.0 + RequestedAltitude,
+			1.0 + MoonRadiusRatio + FMath::Max(0.45, MoonRadiusRatio * 0.75));
+		if (PreviousCenterInParentRadii > 0.0)
+		{
+			const double InterMoonGap = FMath::Max(
+				0.28, (PreviousMoonRadiusRatio + MoonRadiusRatio) * 0.50);
+			SafeCenter = FMath::Max(SafeCenter,
+				PreviousCenterInParentRadii + PreviousMoonRadiusRatio
+				+ MoonRadiusRatio + InterMoonGap);
+		}
+
+		MoonData->MoonOrder = MoonIndex + 1;
+		MoonData->OrbitRadius = SafeCenter - 1.0;
+		MoonModel.OrbitDistance = MoonData->OrbitRadius;
+		MoonData->MoonModelData = MoonModel;
+		PreviousCenterInParentRadii = SafeCenter;
+		PreviousMoonRadiusRatio = MoonRadiusRatio;
+	}
+	PlanetModel.MoonsListData = PlanetModel.GetMoonsData();
+}
 
 void UPlanetarySystemGenerator::ApplyModel(APlanetarySystem* NewPlanetarySystem,
                                            TSharedPtr<FPlanetarySystemModel> PlanetraySystemModel)
@@ -42,20 +227,27 @@ void UPlanetarySystemGenerator::GeneratePlanetMoonsList(
 	UPlanetGenerator* PlanetGenerator,
 	UMoonGenerator* MoonGenerator,
 	TSharedPtr<FPlanetModel> PlanetModel,
-	const double PlanetRadius, const int AmountOfMoons)
+	const double PlanetRadius, const int AmountOfMoons, const int32 StablePlanetIndex)
 {
+	if (!PlanetModel.IsValid())
+	{
+		return;
+	}
+	const int32 FinalMoonCount = FMath::Max(AmountOfMoons, 0);
+	if (StablePlanetIndex != INDEX_NONE) ResetBodyRandom(StablePlanetIndex, 0x4d4f4f4e);
+	PlanetModel->AmountOfMoons = FinalMoonCount;
 	TArray<TSharedPtr<FMoonData>> MoonsList{};
 	TArray<double> MoonOrbits;
-	MoonOrbits.Reserve(AmountOfMoons);
+	MoonOrbits.Reserve(FinalMoonCount);
 
 	if (PlanetModel->PlanetType == EPlanetType::GasGiant
 		|| PlanetModel->PlanetType == EPlanetType::IceGiant
 		|| PlanetModel->PlanetType == EPlanetType::HotGiant)
 	{
 		// ������������� ����� �� 1 �� 10 �������� �������
-		for (int i = 0; i < AmountOfMoons; i++)
+		for (int i = 0; i < FinalMoonCount; i++)
 		{
-			double orbitRadius = FMath::RandRange(PlanetRadius * 1.0, PlanetRadius * 10.0);
+			double orbitRadius = GenerationRandRange(PlanetRadius * 1.0, PlanetRadius * 10.0);
 			orbitRadius /= 40;
 			MoonOrbits.Add(orbitRadius);
 		}
@@ -65,10 +257,10 @@ void UPlanetarySystemGenerator::GeneratePlanetMoonsList(
 		double a = 1.5;
 		double d = 1.4;
 		// ������������ ������ �������-���� ��� ��������� ������
-		for (int i = 0; i < AmountOfMoons; i++)
+		for (int i = 0; i < FinalMoonCount; i++)
 		{
 			double MoonOrbitRadius = a + d * pow(2, i);
-			MoonOrbitRadius = FMath::RandRange(MoonOrbitRadius * 0.9, MoonOrbitRadius * 1.3);
+			MoonOrbitRadius = GenerationRandRange(MoonOrbitRadius * 0.9, MoonOrbitRadius * 1.3);
 			MoonOrbits.Add(MoonOrbitRadius);
 		}
 	}
@@ -79,11 +271,11 @@ void UPlanetarySystemGenerator::GeneratePlanetMoonsList(
 		//FMoonGenerationModel MoonModel;
 		TSharedPtr<FMoonModel> MoonModel = MakeShared<FMoonModel>();
 
-		EMoonType MoonType = MoonGenerator->GenerateMoonType(PlanetModel);
+		EMoonType MoonType = MoonGenerator->GenerateMoonType(PlanetModel, GetGenerationRandom());
 
 		// ��������� ���������� ��������� ����
-		double MoonMass = MoonGenerator->CalculateRandomMoonMass();
-		double MoonDensity = MoonGenerator->CalculateRandomMoonDensity(MoonType);
+		double MoonMass = MoonGenerator->CalculateRandomMoonMass(GetGenerationRandom());
+		double MoonDensity = MoonGenerator->CalculateRandomMoonDensity(MoonType, GetGenerationRandom());
 		double MoonRadius = MoonGenerator->CalculateMoonRadius(MoonDensity, MoonMass);
 		double MoonGravity = MoonMass / FMath::Pow(MoonRadius, 2);
 		/// TODO: to MoonGenerator->CalculateGravitationalForce(PlanetModel.Mass, MoonMass, MoonOrbit);
@@ -97,6 +289,11 @@ void UPlanetarySystemGenerator::GeneratePlanetMoonsList(
 		MoonModel->MoonGravity = MoonGravity;
 		MoonModel->OrbitDistance = MoonOrbit;
 		MoonModel->MoonAtmosphereHeight = MoonModel->RadiusKM / 30;
+		MoonModel->PlanetType = UMoonGenerator::ResolveSurfaceType(*MoonModel);
+		MoonModel->PlanetHabitability =
+			UAPSPlanetHabitabilityLibrary::ResolveDefaultHabitability(
+				MoonModel->PlanetType, PlanetModel->PlanetZone,
+				MoonModel->MoonAtmosphereHeight);
 
 		// ������� ������ � ����
 		int MoonIndex = MoonOrbits.IndexOfByKey(MoonOrbit);
@@ -106,6 +303,7 @@ void UPlanetarySystemGenerator::GeneratePlanetMoonsList(
 		MoonsList.Add(MoonData);
 	}
 
+	PlanetModel->Orbits.Reset();
 	for (int32 i = 0; i <= (int32)EOrbitHeight::VeryHighOrbit; ++i)
 	{
 		FOrbitInfo OrbitInfo{};
@@ -115,6 +313,8 @@ void UPlanetarySystemGenerator::GeneratePlanetMoonsList(
 	}
 
 	PlanetModel->MoonsList = MoonsList;
+	EnforceSafeMoonOrbitSpacing(*PlanetModel);
+	PlanetModel->MoonsListData = PlanetModel->GetMoonsData();
 	/*TSharedPtr<FPlanetData> PlanetData = MakeShared<FPlanetData>(PlanetIndex, OrbitRadius, PlanetModel);
 	PlanetarySystemModel->PlanetsList.Add(PlanetData);*/
 }
@@ -132,7 +332,8 @@ void UPlanetarySystemGenerator::GenerateCustomPlanetarySystemModel(
 	// phantom-looking orbit rings.
 	OrbitRadii.Reset();
 	PlanetarySystemModel->PlanetsList.Reset();
-	int32 FinalPlanetCount = PlanetarySystemModel->AmountOfPlanets; //FMath::RandRange(MinPlanetCount, MaxPlanetCount);
+	if (bSeededGeneration) GenerationRandom.Initialize(GenerationSeed);
+	int32 FinalPlanetCount = PlanetarySystemModel->AmountOfPlanets; //GenerationRandRange(MinPlanetCount, MaxPlanetCount);
 
 	// ��� ����� ���� ��������� ��� ����������, ��������� �� ����������� ������
 	double MinOrbitScalingFactor = 1.0f;
@@ -175,7 +376,7 @@ void UPlanetarySystemGenerator::GenerateCustomPlanetarySystemModel(
 		switch (OrbitDistributionType)
 		{
 		case EOrbitDistributionType::Uniform:
-			OrbitDistributionValue = FMath::RandRange(0.1, 1.0);
+			OrbitDistributionValue = GenerationRandRange(0.1, 1.0);
 		// next orbit - PlanetAffection Zone + Star Radius
 			break;
 		case EOrbitDistributionType::Gaussian:
@@ -184,7 +385,7 @@ void UPlanetarySystemGenerator::GenerateCustomPlanetarySystemModel(
 			break;
 		case EOrbitDistributionType::Chaotic:
 			{
-				OrbitDistributionValue = FMath::RandRange(MinOrbit, MaxOrbit);
+				OrbitDistributionValue = GenerationRandRange(MinOrbit, MaxOrbit);
 				OrbitRadius = OrbitDistributionValue;
 				break;
 			}
@@ -192,16 +393,16 @@ void UPlanetarySystemGenerator::GenerateCustomPlanetarySystemModel(
 			{
 				if (i < FinalPlanetCount / 2.0)
 				{
-					OrbitDistributionValue = FMath::RandRange(0.01, 0.5);
+					OrbitDistributionValue = GenerationRandRange(0.01, 0.5);
 				}
 				else
 				{
-					OrbitDistributionValue = FMath::RandRange(0.5, 1.0);
+					OrbitDistributionValue = GenerationRandRange(0.5, 1.0);
 				}
 				break;
 			}
 		case EOrbitDistributionType::Dense:
-			OrbitDistributionValue = FMath::RandRange(0.05, 0.5);
+			OrbitDistributionValue = GenerationRandRange(0.05, 0.5);
 			break;
 		}
 
@@ -214,12 +415,22 @@ void UPlanetarySystemGenerator::GenerateCustomPlanetarySystemModel(
 		OrbitRadii.Add(OrbitRadius);
 	}
 	OrbitRadii.Sort();
+	EnforceMinimumPlanetOrbitSpacing(
+		OrbitRadii, MinOrbit, MaxOrbit, StarModel->Radius, OrbitDistributionType);
+	if (!OrbitRadii.IsEmpty())
+	{
+		MaxOrbit = FMath::Max(MaxOrbit, OrbitRadii.Last());
+		StarModel->MinOrbit = FMath::Min(MinOrbit, OrbitRadii[0]);
+		StarModel->MaxOrbit = MaxOrbit;
+	}
 	UE_LOG(LogTemp, VeryVerbose, TEXT("OrbitRadii Num: %d "), OrbitRadii.Num());
 	UE_LOG(LogTemp, VeryVerbose, TEXT("MinOrbit: %f, MaxOrbit: %f"), MinOrbit, MaxOrbit);
 
 	// ��������� ��������� ����
-	double HabitableZoneInner = sqrt(StarModel->Luminosity / 1.1) * 2;
-	double HabitableZoneOuter = sqrt(StarModel->Luminosity / 0.53) * 2;
+	// AU equilibrium bounds. The random-system path uses the same equations;
+	// the legacy extra x2 here mislabeled temperate worlds as cold/ice planets.
+	double HabitableZoneInner = sqrt(StarModel->Luminosity / 1.1);
+	double HabitableZoneOuter = sqrt(StarModel->Luminosity / 0.53);
 
 	// Star Dead zone
 	double StarDeadZoneInner = 0; // ���������� �� ������
@@ -426,6 +637,7 @@ void UPlanetarySystemGenerator::GenerateCustomPlanetarySystemModel(
 		for (double OrbitRadius : OrbitRadii)
 		{
 			int PlanetIndex = OrbitRadii.IndexOfByKey(OrbitRadius);
+			ResetBodyRandom(PlanetIndex, 0x504c4e54);
 
 			//FPlanetModel PlanetModel; /// TODO: PlanetGenerator->GeneratePlanetModel(PlanetarySystemModel, OrbitRadius);
 			TSharedPtr<FPlanetModel> PlanetModel = MakeShared<FPlanetModel>();
@@ -447,12 +659,12 @@ void UPlanetarySystemGenerator::GenerateCustomPlanetarySystemModel(
 			PlanetModel->PlanetType = PlanetType;
 
 			FDensityRange PlanetDensityRange = GetPlanetDensityRange(PlanetType);
-			double PlanetDensity = FMath::RandRange(PlanetDensityRange.MinDensity, PlanetDensityRange.MaxDensity);
+			double PlanetDensity = GenerationRandRange(PlanetDensityRange.MinDensity, PlanetDensityRange.MaxDensity);
 			PlanetModel->PlanetDensity = PlanetDensity;
 
 			// assuming that radius is random in the range 1 - 2 Earth radii (this can be adjusted)
 			FRadiusRange PlanetRadiusRange = GetPlanetRadiusRange(PlanetType);
-			double PlanetRadius = FMath::RandRange(PlanetRadiusRange.MinRadius, PlanetRadiusRange.MaxRadius);
+			double PlanetRadius = GenerationRandRange(PlanetRadiusRange.MinRadius, PlanetRadiusRange.MaxRadius);
 			PlanetModel->Radius = PlanetRadius;
 
 			// now calculate mass based on density and radius
@@ -474,6 +686,10 @@ void UPlanetarySystemGenerator::GenerateCustomPlanetarySystemModel(
 
 			double PlanetAtmosphereHeight = PlanetModel->RadiusKM / 30; // ������ ��������� �������
 			PlanetModel->AtmosphereHeight = PlanetAtmosphereHeight;
+			PlanetModel->PlanetHabitability =
+				UAPSPlanetHabitabilityLibrary::ResolveDefaultHabitability(
+					PlanetModel->PlanetType, PlanetModel->PlanetZone,
+					PlanetModel->AtmosphereHeight);
 
 			// ����������� ���������� - ������ ������� ���� ������ ���������
 			const double MinOrbitRadius = planetRadius + PlanetAtmosphereHeight;
@@ -498,11 +714,12 @@ void UPlanetarySystemGenerator::GenerateCustomPlanetarySystemModel(
 
 			const int AmountOfMoons = PlanetModel->AmountOfMoons;
 
-			GeneratePlanetMoonsList(PlanetGenerator, MoonGenerator, PlanetModel, PlanetRadius, AmountOfMoons);
+			GeneratePlanetMoonsList(PlanetGenerator, MoonGenerator, PlanetModel, PlanetRadius, AmountOfMoons, PlanetIndex);
 			TSharedPtr<FPlanetData> PlanetData = MakeShared<FPlanetData>(PlanetIndex, OrbitRadius, PlanetModel);
 			PlanetarySystemModel->PlanetsList.Add(PlanetData);
 		}
 	}
+	EnforcePlanetSurfaceClearance(*PlanetarySystemModel);
 }
 
 
@@ -510,6 +727,7 @@ void UPlanetarySystemGenerator::GeneratePlanetarySystemModelByStar(
 	TSharedPtr<FPlanetarySystemModel> PlanetarySystemModel, TSharedPtr<FStarModel> StarModel,
 	UPlanetGenerator* PlanetGenerator, UMoonGenerator* MoonGenerator)
 {
+	if (bSeededGeneration) GenerationRandom.Initialize(GenerationSeed);
 	// The same generator services every star in the hierarchy.  Never leak
 	// scratch orbits/planets from the preceding system into this one.
 	OrbitRadii.Reset();
@@ -536,8 +754,8 @@ void UPlanetarySystemGenerator::GeneratePlanetarySystemModelByStar(
 
 	PlanetProbability FinalProbability = BaseProbability * MassModifier;
 	UE_LOG(LogTemp, VeryVerbose, TEXT("FinalProbability: %f"), FinalProbability);
-	bool HasPlanets = true; //FMath::FRand() <= FinalProbability;
-	//bool HasPlanets = false;//FMath::FRand() <= FinalProbability;
+	bool HasPlanets = true; //GenerationRand() <= FinalProbability;
+	//bool HasPlanets = false;//GenerationRand() <= FinalProbability;
 
 	// ������� ���������� � ������
 	UE_LOG(LogTemp, VeryVerbose, TEXT("HasPlanets: %s"), HasPlanets ? TEXT("true") : TEXT("false"));
@@ -561,7 +779,7 @@ void UPlanetarySystemGenerator::GeneratePlanetarySystemModelByStar(
 			MaxPlanetCount = 5;
 		}
 
-		int32 FinalPlanetCount = FMath::RandRange(MinPlanetCount, MaxPlanetCount);
+		int32 FinalPlanetCount = GenerationRandRange(MinPlanetCount, MaxPlanetCount);
 		PlanetarySystemModel->AmountOfPlanets = FinalPlanetCount;
 		PlanetarySystemModel->PlanetarySystemType = EPlanetarySystemType::Unknown; ///
 
@@ -599,14 +817,14 @@ void UPlanetarySystemGenerator::GeneratePlanetarySystemModelByStar(
 			switch (OrbitDistributionType)
 			{
 			case EOrbitDistributionType::Uniform:
-				OrbitDistributionValue = FMath::RandRange(0.0, 1.0);
+				OrbitDistributionValue = GenerationRandRange(0.0, 1.0);
 				break;
 			case EOrbitDistributionType::Gaussian:
 				OrbitDistributionValue = RandGauss();
 				break;
 			case EOrbitDistributionType::Chaotic:
 				{
-					OrbitDistributionValue = FMath::RandRange(MinOrbit, MaxOrbit);
+					OrbitDistributionValue = GenerationRandRange(MinOrbit, MaxOrbit);
 					OrbitRadius = OrbitDistributionValue;
 					break;
 				}
@@ -614,16 +832,16 @@ void UPlanetarySystemGenerator::GeneratePlanetarySystemModelByStar(
 				{
 					if (i < FinalPlanetCount / 2.0)
 					{
-						OrbitDistributionValue = FMath::RandRange(0.01, 0.5);
+						OrbitDistributionValue = GenerationRandRange(0.01, 0.5);
 					}
 					else
 					{
-						OrbitDistributionValue = FMath::RandRange(0.5, 1.0);
+						OrbitDistributionValue = GenerationRandRange(0.5, 1.0);
 					}
 					break;
 				}
 			case EOrbitDistributionType::Dense:
-				OrbitDistributionValue = FMath::RandRange(0.01, 0.5);
+				OrbitDistributionValue = GenerationRandRange(0.01, 0.5);
 				break;
 			}
 
@@ -637,6 +855,14 @@ void UPlanetarySystemGenerator::GeneratePlanetarySystemModelByStar(
 		}
 
 		OrbitRadii.Sort();
+		EnforceMinimumPlanetOrbitSpacing(
+			OrbitRadii, MinOrbit, MaxOrbit, StarModel->Radius, OrbitDistributionType);
+		if (!OrbitRadii.IsEmpty())
+		{
+			MaxOrbit = FMath::Max(MaxOrbit, OrbitRadii.Last());
+			StarModel->MinOrbit = FMath::Min(MinOrbit, OrbitRadii[0]);
+			StarModel->MaxOrbit = MaxOrbit;
+		}
 		UE_LOG(LogTemp, VeryVerbose, TEXT("OrbitRadii Num: %d "), OrbitRadii.Num());
 
 		// ������� ����������� � ������������ ������
@@ -799,6 +1025,7 @@ void UPlanetarySystemGenerator::GeneratePlanetarySystemModelByStar(
 		for (double OrbitRadius : OrbitRadii)
 		{
 			int PlanetIndex = OrbitRadii.IndexOfByKey(OrbitRadius);
+			ResetBodyRandom(PlanetIndex, 0x504c4e54);
 
 			//FPlanetModel PlanetModel; /// TODO: PlanetGenerator->GeneratePlanetModel(PlanetarySystemModel, OrbitRadius);
 			TSharedPtr<FPlanetModel> PlanetModel = MakeShared<FPlanetModel>();
@@ -819,12 +1046,12 @@ void UPlanetarySystemGenerator::GeneratePlanetarySystemModelByStar(
 			PlanetModel->PlanetType = PlanetType;
 
 			FDensityRange PlanetDensityRange = GetPlanetDensityRange(PlanetType);
-			double PlanetDensity = FMath::RandRange(PlanetDensityRange.MinDensity, PlanetDensityRange.MaxDensity);
+			double PlanetDensity = GenerationRandRange(PlanetDensityRange.MinDensity, PlanetDensityRange.MaxDensity);
 			PlanetModel->PlanetDensity = PlanetDensity;
 
 			// assuming that radius is random in the range 1 - 2 Earth radii (this can be adjusted)
 			FRadiusRange PlanetRadiusRange = GetPlanetRadiusRange(PlanetType);
-			double PlanetRadius = FMath::RandRange(PlanetRadiusRange.MinRadius, PlanetRadiusRange.MaxRadius);
+			double PlanetRadius = GenerationRandRange(PlanetRadiusRange.MinRadius, PlanetRadiusRange.MaxRadius);
 			PlanetModel->Radius = PlanetRadius;
 
 			// now calculate mass based on density and radius
@@ -852,6 +1079,10 @@ void UPlanetarySystemGenerator::GeneratePlanetarySystemModelByStar(
 			/// TODO: PlanetAtmosphere //double planetAtmosphereHeight = PlanetModel.AtmosphereHeight; // ������ ��������� �������
 			double PlanetAtmosphereHeight = PlanetModel->RadiusKM / 30; // ������ ��������� �������
 			PlanetModel->AtmosphereHeight = PlanetAtmosphereHeight;
+			PlanetModel->PlanetHabitability =
+				UAPSPlanetHabitabilityLibrary::ResolveDefaultHabitability(
+					PlanetModel->PlanetType, PlanetModel->PlanetZone,
+					PlanetModel->AtmosphereHeight);
 
 			// ����������� ���������� - ������ ������� ���� ������ ���������
 			const double MinOrbitRadius = planetRadius + PlanetAtmosphereHeight;
@@ -889,7 +1120,7 @@ void UPlanetarySystemGenerator::GeneratePlanetarySystemModelByStar(
 				// ������������� ����� �� 1 �� 10 �������� �������
 				for (int i = 0; i < AmountOfMoons; i++)
 				{
-					double orbitRadius = FMath::RandRange(PlanetRadius * 1.0, PlanetRadius * 10.0);
+					double orbitRadius = GenerationRandRange(PlanetRadius * 1.0, PlanetRadius * 10.0);
 					orbitRadius /= 40;
 					MoonOrbits.Add(orbitRadius);
 				}
@@ -902,7 +1133,7 @@ void UPlanetarySystemGenerator::GeneratePlanetarySystemModelByStar(
 				for (int i = 0; i < AmountOfMoons; i++)
 				{
 					double orbitRadius = a + d * pow(2, i);
-					orbitRadius = FMath::RandRange(orbitRadius * 0.9, orbitRadius * 1.3);
+					orbitRadius = GenerationRandRange(orbitRadius * 0.9, orbitRadius * 1.3);
 					MoonOrbits.Add(orbitRadius);
 				}
 			}
@@ -914,11 +1145,11 @@ void UPlanetarySystemGenerator::GeneratePlanetarySystemModelByStar(
 				TSharedPtr<FMoonModel> MoonModel = MakeShared<FMoonModel>();
 
 
-				EMoonType MoonType = MoonGenerator->GenerateMoonType(PlanetModel);
+				EMoonType MoonType = MoonGenerator->GenerateMoonType(PlanetModel, GetGenerationRandom());
 
 				// ��������� ���������� ��������� ����
-				double MoonMass = MoonGenerator->CalculateRandomMoonMass();
-				double MoonDensity = MoonGenerator->CalculateRandomMoonDensity(MoonType);
+				double MoonMass = MoonGenerator->CalculateRandomMoonMass(GetGenerationRandom());
+				double MoonDensity = MoonGenerator->CalculateRandomMoonDensity(MoonType, GetGenerationRandom());
 				double MoonRadius = MoonGenerator->CalculateMoonRadius(MoonDensity, MoonMass);
 				double MoonGravity = MoonMass / FMath::Pow(MoonRadius, 2);
 				/// TODO: to MoonGenerator->CalculateGravitationalForce(PlanetModel.Mass, MoonMass, MoonOrbit);
@@ -932,6 +1163,11 @@ void UPlanetarySystemGenerator::GeneratePlanetarySystemModelByStar(
 				MoonModel->MoonGravity = MoonGravity;
 				MoonModel->OrbitDistance = MoonOrbit;
 				MoonModel->MoonAtmosphereHeight = MoonModel->RadiusKM / 30;
+				MoonModel->PlanetType = UMoonGenerator::ResolveSurfaceType(*MoonModel);
+				MoonModel->PlanetHabitability =
+					UAPSPlanetHabitabilityLibrary::ResolveDefaultHabitability(
+						MoonModel->PlanetType, PlanetModel->PlanetZone,
+						MoonModel->MoonAtmosphereHeight);
 
 				// ������� ������ � ����
 				int MoonIndex = MoonOrbits.IndexOfByKey(MoonOrbit);
@@ -963,6 +1199,7 @@ void UPlanetarySystemGenerator::GeneratePlanetarySystemModelByStar(
 			}
 
 			PlanetModel->MoonsList = MoonsList;
+			EnforceSafeMoonOrbitSpacing(*PlanetModel);
 			TSharedPtr<FPlanetData> PlanetData = MakeShared<FPlanetData>(PlanetIndex, OrbitRadius, PlanetModel);
 			PlanetarySystemModel->PlanetsList.Add(PlanetData);
 		}
@@ -972,6 +1209,7 @@ void UPlanetarySystemGenerator::GeneratePlanetarySystemModelByStar(
 		PlanetarySystemModel->AmountOfPlanets = 0;
 		PlanetarySystemModel->PlanetarySystemType = EPlanetarySystemType::NoPlanetSystem;
 	}
+	EnforcePlanetSurfaceClearance(*PlanetarySystemModel);
 
 	OrbitRadii.Reset();
 	//return PlanetarySystemModel;
@@ -989,16 +1227,16 @@ int UPlanetarySystemGenerator::CalculateMoons(double PlanetMass, EPlanetType Pla
 	int BaseMoonCount = PlanetMass / 10.0;
 
 	// Generate a random number between 0 and 1
-	double RandomNumber = FMath::FRand();
+	double RandomNumber = GenerationRand();
 
 	if (PlanetType == EPlanetType::Unknown)
 	{
-		return FMath::RandRange(0, 3);
+		return GenerationRandRange(0, 3);
 	}
 
 	if (PlanetType == EPlanetType::Ocean || PlanetType == EPlanetType::SuperEarth)
 	{
-		return FMath::RandRange(0, 1);
+		return GenerationRandRange(0, 1);
 	}
 
 	// Apply the chance to have no moons
@@ -1012,12 +1250,12 @@ int UPlanetarySystemGenerator::CalculateMoons(double PlanetMass, EPlanetType Pla
 			PlanetType == EPlanetType::GasGiant ||
 			PlanetType == EPlanetType::IceGiant ||
 			PlanetType == EPlanetType::HotGiant
-				? FMath::RandRange(0, 10)
-				: FMath::RandRange(0, 5);
+				? GenerationRandRange(0, 10)
+				: GenerationRandRange(0, 5);
 	}
 	{
 		// Otherwise, the number of moons is the base moon count plus a random number
-		return BaseMoonCount + FMath::RandRange(0, 3);
+		return BaseMoonCount + GenerationRandRange(0, 3);
 	}
 }
 
@@ -1139,31 +1377,52 @@ EPlanetaryZoneType UPlanetarySystemGenerator::DeterminePlanetZone(double OrbitRa
 EPlanetType UPlanetarySystemGenerator::DeterminePlanetType(EPlanetaryZoneType PlanetZone)
 {
 	// �������� ������ ������������ ��� ����� ������ � ���� ����.
-	TArray<FPlanetTypeProbability> PlanetTypeProbabilities = ZonePlanetProbabilities[PlanetZone];
-	// try catch missed types, crashed 
-
-	// ����������� ��������� ����� �� 0 �� 1.
-	double RandomNumber = FMath::RandRange(0.0f, 1.0f);
-
-	// �������� ����� ������ ������������, ����������� �����, ���� �� ���������� �����, ������� ������ ��� ����� ���������� �����.
-	double CumulativeProbability = 0.0f;
-	for (FPlanetTypeProbability PlanetTypeProbability : PlanetTypeProbabilities)
+	const TArray<FPlanetTypeProbability>* PlanetTypeProbabilities =
+		ZonePlanetProbabilities.Find(PlanetZone);
+	if (!PlanetTypeProbabilities || PlanetTypeProbabilities->IsEmpty())
 	{
-		CumulativeProbability += PlanetTypeProbability.Probability;
-		if (RandomNumber <= CumulativeProbability)
-		{
-			return PlanetTypeProbability.PlanetType;
-		}
+		return EPlanetType::Unknown;
 	}
 
-	// ���� �� �� ����� ���������������� ���� ������� (��� �� ������ ���������, ���� ����������� ��������� �����������), ������� Unknown.
-	return EPlanetType::Unknown;
+	// The tables contain relative weights; several intentionally do not sum to 1.
+	// Sampling them as absolute thresholds produced Unknown planets and biased the
+	// first entry, so normalize against the actual positive weight sum.
+	double TotalWeight = 0.0;
+	for (const FPlanetTypeProbability& Entry : *PlanetTypeProbabilities)
+	{
+		if (FMath::IsFinite(Entry.Probability) && Entry.Probability > 0.0f)
+		{
+			TotalWeight += Entry.Probability;
+		}
+	}
+	if (TotalWeight <= UE_DOUBLE_SMALL_NUMBER)
+	{
+		return EPlanetType::Unknown;
+	}
+
+	const double RandomWeight = GenerationRandRange(0.0, TotalWeight);
+	double CumulativeWeight = 0.0;
+	EPlanetType LastConcreteType = EPlanetType::Unknown;
+	for (const FPlanetTypeProbability& Entry : *PlanetTypeProbabilities)
+	{
+		if (!FMath::IsFinite(Entry.Probability) || Entry.Probability <= 0.0f)
+		{
+			continue;
+		}
+		LastConcreteType = Entry.PlanetType;
+		CumulativeWeight += Entry.Probability;
+		if (RandomWeight <= CumulativeWeight)
+		{
+			return Entry.PlanetType;
+		}
+	}
+	return LastConcreteType;
 }
 
 double UPlanetarySystemGenerator::RandGauss()
 {
-	double U = FMath::FRand();
-	double V = FMath::FRand();
+	double U = GenerationRand();
+	double V = GenerationRand();
 	double X = sqrt(-2.0 * log(U)) * cos(2.0 * PI * V);
 	return X * 0.15 + 0.5;
 }
@@ -1220,7 +1479,7 @@ EOrbitDistributionType UPlanetarySystemGenerator::ChooseOrbitDistribution(EStell
 	auto probabilities = StellarOrbitDistributions[StellarClass];
 
 	// ���������� ��������� ����� � ��������� �� 0 �� 1
-	float randomValue = FMath::FRand();
+	float randomValue = GenerationRand();
 
 	// ���� �� ���� ����� ����-�������� � ������� ������������
 	for (auto& keyValue : probabilities)

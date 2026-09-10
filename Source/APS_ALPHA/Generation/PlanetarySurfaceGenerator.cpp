@@ -206,6 +206,20 @@ void APlanetarySurfaceGenerator::InitAtmoScape(UWorld* World, double PlanetaryRa
     if (PlanetAtmosphere)
     {
 		PlanetAtmosphere->SetActorHiddenInGame(false);
+		const bool bFullScaleGameplayBody = World->IsGameWorld()
+			&& FMath::IsNearlyEqual(NewPlanetaryBody->WorldScapePresentationScale, 1.0);
+		if (bFullScaleGameplayBody)
+		{
+			// AtmoScape's AtmosOpacity is a final linear material multiplier on top of its
+			// integrated camera/light optical depths. The former 0.20 presentation scale
+			// still resolved to roughly 2.0-3.6 for generated atmospheres, clipping the
+			// ray-march into a nearly uniform pale veil over opaque terrain and water. Keep
+			// the effective multiplier below one across the authored 4.5-18.0 opacity range.
+			// Rayleigh/Mie coefficients, shell geometry and sample counts remain untouched,
+			// so the sky and orbital limb retain their spectral scattering instead of being
+			// replaced by a post-scattering white fill.
+			PlanetAtmosphere->PresentationOpacityScale = 0.055f;
+		}
         
         
         // Установка параметров и свойств для объекта Atmosphere.
@@ -238,19 +252,28 @@ void APlanetarySurfaceGenerator::InitAtmoScape(UWorld* World, double PlanetaryRa
         PlanetAtmosphere->MiePhase = AmbientParams.MiePhase * AtmCoeff;
         PlanetAtmosphere->OzoneContribution = AmbientParams.OzoneContribution; //* AtmCoeff;
 
-        FLinearColor MinColor{};// = AmbientParams->RayleighColor;  // Replace with actual values
-        FLinearColor MaxColor{};// AmbientParams->RayleighColor;
-        APlanet* NewPlanet = Cast<APlanet>(NewPlanetaryBody);
-        if (NewPlanet)
-        {
+		FLinearColor MinColor{};// = AmbientParams->RayleighColor;  // Replace with actual values
+		FLinearColor MaxColor{};// AmbientParams->RayleighColor;
+		// Atmosphere variation is part of the authored body, not process-global state.
+		// Hash the same Surface Seed that owns terrain/biomes with the concrete subtype;
+		// regenerating one body is now stable while changing either input remains visible.
+		const int32 AtmosphereBaseSeed = NewPlanetaryBody->WorldScapeSeed > 0
+			? NewPlanetaryBody->WorldScapeSeed
+			: static_cast<int32>(GetTypeHash(NewPlanetaryBody->GetFName()) & 0x7fffffffu);
+		uint32 AtmosphereSubtypeHash = 0;
+		APlanet* NewPlanet = Cast<APlanet>(NewPlanetaryBody);
+		if (NewPlanet)
+		{
 
-            EPlanetType PlanetType = NewPlanet->PlanetType;
-            switch (PlanetType)
-            {
-            case EPlanetType::Terrestrial:
-                MinColor = FLinearColor(0.066f, 0.5f, 0.529f, 1.0f);  // Replace with actual values
-                MaxColor = FLinearColor(0.4f, 0.2f, 0.1f, 1.0f);
-                break;
+			EPlanetType PlanetType = NewPlanet->PlanetType;
+			AtmosphereSubtypeHash = GetTypeHash(static_cast<uint8>(PlanetType));
+			switch (PlanetType)
+			{
+			case EPlanetType::Terrestrial:
+			case EPlanetType::Pangea:
+				MinColor = FLinearColor(0.066f, 0.5f, 0.529f, 1.0f);  // Replace with actual values
+				MaxColor = FLinearColor(0.4f, 0.2f, 0.1f, 1.0f);
+				break;
             case EPlanetType::Rocky:
                 MinColor = FLinearColor(0.1f, 0.1f, 0.1f, 1.0f);  // Replace with actual values
                 MaxColor = FLinearColor(0.5f, 0.3f, 0.2f, 1.0f);
@@ -287,17 +310,20 @@ void APlanetarySurfaceGenerator::InitAtmoScape(UWorld* World, double PlanetaryRa
                 MinColor = FLinearColor(0.02f, 0.02f, 0.02f, 1.0f);  // Replace with actual values
                 MaxColor = FLinearColor(0.02f, 0.02f, 0.02f, 1.0f);
                 break;
-            case EPlanetType::Ocean:
-                MinColor = FLinearColor(0.0f, 0.0f, 0.7f, 1.0f);
-                MaxColor = FLinearColor(0.0f, 0.0f, 1.0f, 1.0f);
-                break;
-            case EPlanetType::Water:
-                MinColor = FLinearColor(0.0f, 0.3f, 0.7f, 1.0f);
-                MaxColor = FLinearColor(0.0f, 0.5f, 1.0f, 1.0f);
-                break;
-            case EPlanetType::Desert:
-                MinColor = FLinearColor(0.7f, 0.5f, 0.2f, 1.0f);
-                MaxColor = FLinearColor(1.0f, 0.7f, 0.3f, 1.0f);
+			case EPlanetType::Ocean:
+			case EPlanetType::Archipelago:
+				MinColor = FLinearColor(0.0f, 0.0f, 0.7f, 1.0f);
+				MaxColor = FLinearColor(0.0f, 0.0f, 1.0f, 1.0f);
+				break;
+			case EPlanetType::Water:
+			case EPlanetType::Oasis:
+				MinColor = FLinearColor(0.0f, 0.3f, 0.7f, 1.0f);
+				MaxColor = FLinearColor(0.0f, 0.5f, 1.0f, 1.0f);
+				break;
+			case EPlanetType::Desert:
+			case EPlanetType::Sand:
+				MinColor = FLinearColor(0.7f, 0.5f, 0.2f, 1.0f);
+				MaxColor = FLinearColor(1.0f, 0.7f, 0.3f, 1.0f);
                 break;
             case EPlanetType::Forest:
                 MinColor = FLinearColor(0.0f, 0.6f, 0.0f, 1.0f);
@@ -307,13 +333,16 @@ void APlanetarySurfaceGenerator::InitAtmoScape(UWorld* World, double PlanetaryRa
                 MinColor = FLinearColor(0.7f, 0.0f, 0.0f, 1.0f);
                 MaxColor = FLinearColor(1.0f, 0.3f, 0.0f, 1.0f);
                 break;
-            case EPlanetType::Ice:
-                MinColor = FLinearColor(0.8f, 0.8f, 1.0f, 1.0f);
-                MaxColor = FLinearColor(1.0f, 1.0f, 1.0f, 1.0f);
-                break;
-            case EPlanetType::Frozen:
-                MinColor = FLinearColor(0.7f, 0.8f, 1.0f, 1.0f);
-                MaxColor = FLinearColor(0.9f, 0.9f, 1.0f, 1.0f);
+			case EPlanetType::Ice:
+			case EPlanetType::Nordic:
+				MinColor = FLinearColor(0.8f, 0.8f, 1.0f, 1.0f);
+				MaxColor = FLinearColor(1.0f, 1.0f, 1.0f, 1.0f);
+				break;
+			case EPlanetType::Frozen:
+			case EPlanetType::Tundra:
+			case EPlanetType::HighMountain:
+				MinColor = FLinearColor(0.7f, 0.8f, 1.0f, 1.0f);
+				MaxColor = FLinearColor(0.9f, 0.9f, 1.0f, 1.0f);
                 break;
             case EPlanetType::Ammonia:
                 MinColor = FLinearColor(0.7f, 0.7f, 0.0f, 1.0f);
@@ -362,11 +391,13 @@ void APlanetarySurfaceGenerator::InitAtmoScape(UWorld* World, double PlanetaryRa
         }
         else
         {
-            AMoon* NewMoon = Cast<AMoon>(NewPlanetaryBody);
-            if (NewMoon)
-            {
-                EMoonType MoonType = NewMoon->MoonType;
-                switch (MoonType)
+			AMoon* NewMoon = Cast<AMoon>(NewPlanetaryBody);
+			if (NewMoon)
+			{
+				EMoonType MoonType = NewMoon->MoonType;
+				AtmosphereSubtypeHash = HashCombine(
+					0x4D4F4F4Eu, GetTypeHash(static_cast<uint8>(MoonType)));
+				switch (MoonType)
                 {
                 case EMoonType::Continental:
                     MinColor = FLinearColor(0.4f, 0.7f, 1.0f, 1.0f);
@@ -419,14 +450,123 @@ void APlanetarySurfaceGenerator::InitAtmoScape(UWorld* World, double PlanetaryRa
             }
         }
 
-        FLinearColor RandomColor;
+		const uint32 AtmosphereSeedHash = HashCombine(
+			GetTypeHash(AtmosphereBaseSeed), AtmosphereSubtypeHash);
+		FRandomStream AtmosphereRandom(
+			1 + static_cast<int32>(AtmosphereSeedHash % static_cast<uint32>(MAX_int32 - 1)));
+		FLinearColor RandomColor;
 
-        RandomColor.R = FMath::RandRange(MinColor.R, MaxColor.R);
-        RandomColor.G = FMath::RandRange(MinColor.G, MaxColor.G);
-        RandomColor.B = FMath::RandRange(MinColor.B, MaxColor.B);
-        RandomColor.A = FMath::RandRange(MinColor.A, MaxColor.A);
+		RandomColor.R = AtmosphereRandom.FRandRange(MinColor.R, MaxColor.R);
+		RandomColor.G = AtmosphereRandom.FRandRange(MinColor.G, MaxColor.G);
+		RandomColor.B = AtmosphereRandom.FRandRange(MinColor.B, MaxColor.B);
+		RandomColor.A = AtmosphereRandom.FRandRange(MinColor.A, MaxColor.A);
 
-        PlanetAtmosphere->RayleighScattering = RandomColor;
+		// AtmoScape expects Rayleigh coefficients in the same 10^-6-scale range as
+		// its Earth defaults (roughly 5/11/33), not display-linear 0..1 colours. The
+		// old direct assignment reduced the physical signal by up to two orders of
+		// magnitude, leaving only a pale uniform opacity layer. Preserve the seeded
+		// subtype tint as a bounded modulation of a physically useful spectral basis.
+		const float TintMaximum = FMath::Max3(
+			RandomColor.R, RandomColor.G, FMath::Max(RandomColor.B, 0.001f));
+		const FLinearColor NormalizedTint(
+			FMath::Clamp(RandomColor.R / TintMaximum, 0.0f, 1.0f),
+			FMath::Clamp(RandomColor.G / TintMaximum, 0.0f, 1.0f),
+			FMath::Clamp(RandomColor.B / TintMaximum, 0.0f, 1.0f), 0.0f);
+		const FLinearColor RayleighBasis(5.267816f, 10.828321f, 33.099998f, 0.0f);
+		const FLinearColor RayleighTintResponse(
+			FMath::Lerp(0.62f, 1.18f, NormalizedTint.R),
+			FMath::Lerp(0.62f, 1.18f, NormalizedTint.G),
+			FMath::Lerp(0.62f, 1.18f, NormalizedTint.B), 0.0f);
+		PlanetAtmosphere->RayleighScattering = FLinearColor(
+			RayleighBasis.R * RayleighTintResponse.R,
+			RayleighBasis.G * RayleighTintResponse.G,
+			RayleighBasis.B * RayleighTintResponse.B, 0.0f);
+
+		// Preserve one ray-march and the existing sample counts, but stop every subtype
+		// from sharing the same uniform haze. Humidity controls droplet/aerosol height,
+		// pressure controls optical density, and the material family supplies a bounded
+		// dust bias. The seeded term is intentionally small: it provides repeatable body
+		// identity without overwhelming the generated physical model or UI overrides.
+		if (UAPSPlanetSurfaceProfileResolver::SupportsWorldScape(
+			NewPlanetaryBody->PlanetType))
+		{
+			const FAPSResolvedPlanetSurfaceProfile AtmosphereProfile =
+				UAPSPlanetSurfaceProfileResolver::ResolveForBody(NewPlanetaryBody);
+			const float HumidityResponse = FMath::Clamp(
+				AtmosphereProfile.Humidity, 0.0f, 1.0f);
+			const float PressureResponse = FMath::Clamp(
+				AtmosphereProfile.AtmosphericPressure / 4.0f, 0.0f, 1.0f);
+			const float PressureRoot = FMath::Sqrt(PressureResponse);
+			const float SeededResponse = AtmosphereRandom.FRandRange(-1.0f, 1.0f);
+			float DustResponse = 0.10f;
+			switch (AtmosphereProfile.Archetype)
+			{
+			case EAPSPlanetSurfaceArchetype::Desert: DustResponse = 0.78f; break;
+			case EAPSPlanetSurfaceArchetype::Magmatic: DustResponse = 0.68f; break;
+			case EAPSPlanetSurfaceArchetype::ExoticChemical: DustResponse = 0.52f; break;
+			case EAPSPlanetSurfaceArchetype::Rocky: DustResponse = 0.38f; break;
+			case EAPSPlanetSurfaceArchetype::Metallic: DustResponse = 0.26f; break;
+			case EAPSPlanetSurfaceArchetype::Cryogenic: DustResponse = 0.08f; break;
+			case EAPSPlanetSurfaceArchetype::Oceanic: DustResponse = 0.06f; break;
+			case EAPSPlanetSurfaceArchetype::Biosphere: DustResponse = 0.05f; break;
+			case EAPSPlanetSurfaceArchetype::Temperate:
+			default: DustResponse = 0.10f; break;
+			}
+			DustResponse = FMath::Clamp(
+				DustResponse + (1.0f - HumidityResponse) * 0.12f
+					+ SeededResponse * 0.025f,
+				0.02f, 0.88f);
+			PlanetAtmosphere->AtmosphereParticulatesDensity = FMath::Clamp(
+				4.0f + HumidityResponse * 11.0f + PressureResponse * 8.0f
+					+ DustResponse * 6.0f + SeededResponse * 1.5f,
+				2.0f, 30.0f);
+			PlanetAtmosphere->MieHeight = FMath::Clamp(
+				AmbientParams.MieHeight
+					* FMath::Lerp(0.72f, 1.34f, HumidityResponse)
+					* FMath::Lerp(0.86f, 1.18f, PressureResponse),
+				0.05f, 15.0f);
+			PlanetAtmosphere->MiePhase = FMath::Clamp(
+				0.22f + HumidityResponse * 0.38f + DustResponse * 0.12f
+					+ SeededResponse * 0.025f,
+				0.08f, 0.82f);
+			const FLinearColor MoistAerosol(0.72f, 0.84f, 1.00f, 1.0f);
+			const FLinearColor DustAerosol(1.00f, 0.56f, 0.26f, 1.0f);
+			PlanetAtmosphere->MieScattering = FMath::Lerp(
+				MoistAerosol, DustAerosol, DustResponse)
+				* FMath::Lerp(0.78f, 1.20f, PressureResponse);
+			// Optical density is pressure-led, while humidity only shapes the lower haze.
+			// Keeping both values in a narrow physical range restores a visible limb and
+			// terminator without reverting to the old planet-filling uniform colour cap.
+			PlanetAtmosphere->AtmosphereOpacity = FMath::Clamp(
+				5.5f + PressureRoot * 8.0f + HumidityResponse * 1.5f
+					+ SeededResponse * 0.35f,
+				4.5f, 18.0f);
+			PlanetAtmosphere->MultiScatering = FMath::Clamp(
+				3.8f + PressureResponse * 4.2f + HumidityResponse * 0.8f
+					+ SeededResponse * 0.15f,
+				3.5f, 10.0f);
+			PlanetAtmosphere->AirGlowIntensity = FMath::Clamp(
+				0.020f + PressureResponse * 0.030f + HumidityResponse * 0.010f
+					+ (1.0f - DustResponse) * 0.005f + SeededResponse * 0.002f,
+				0.018f, 0.070f);
+			const float RayleighMaximum = FMath::Max3(
+				PlanetAtmosphere->RayleighScattering.R,
+				PlanetAtmosphere->RayleighScattering.G,
+				FMath::Max(PlanetAtmosphere->RayleighScattering.B, 0.001f));
+			const FLinearColor RayleighHue(
+				PlanetAtmosphere->RayleighScattering.R / RayleighMaximum,
+				PlanetAtmosphere->RayleighScattering.G / RayleighMaximum,
+				PlanetAtmosphere->RayleighScattering.B / RayleighMaximum, 1.0f);
+			PlanetAtmosphere->OutterColor = FLinearColor(
+				FMath::Lerp(0.12f, 0.42f, RayleighHue.R),
+				FMath::Lerp(0.28f, 0.66f, RayleighHue.G),
+				FMath::Lerp(0.68f, 1.00f, RayleighHue.B), 1.0f);
+			PlanetAtmosphere->InsideColor = FMath::Lerp(
+				FLinearColor(1.00f, 0.26f, 0.045f, 1.0f),
+				FLinearColor(1.00f, 0.62f, 0.28f, 1.0f),
+				FMath::Clamp(HumidityResponse * 0.45f
+					+ (1.0f - DustResponse) * 0.20f, 0.0f, 0.65f));
+		}
 		// AtmoScape otherwise keeps its constructor scale until the first tick. On a
 		// full-scale body that produces an invisible first frame (and can briefly use
 		// the old relative-radius coefficients). Apply the physical km->cm scale now.
@@ -448,8 +588,13 @@ void APlanetarySurfaceGenerator::InitAtmoScape(UWorld* World, double PlanetaryRa
 		// inside scattering shell. SpacePlanetaryAtmoMesh remains untouched so the
 		// plugin can still select its orbital limb after the observer exits atmosphere;
 		// menu preview likewise keeps its independent space-shell presentation.
-		const bool bFullScaleGameplayBody = World->IsGameWorld()
-			&& FMath::IsNearlyEqual(NewPlanetaryBody->WorldScapePresentationScale, 1.0);
+		//
+		// AtmoScape owns the Visible flag and may toggle it again when the camera crosses
+		// the shell. APS owns HiddenInGame for these suppressed passes. The plugin never
+		// clears that flag, so even a later SetVisibility(true) cannot resurrect the cap;
+		// repeated InitAtmoScape calls restore both flags for deterministic inspection.
+		const FName SuppressedAtmospherePassTag(
+			TEXT("APS.SuppressedAtmospherePass"));
 		TInlineComponentArray<UStaticMeshComponent*> AtmosphereMeshes;
 		PlanetAtmosphere->GetComponents(AtmosphereMeshes);
 		for (UStaticMeshComponent* AtmosphereMesh : AtmosphereMeshes)
@@ -472,6 +617,7 @@ void APlanetarySurfaceGenerator::InitAtmoScape(UWorld* World, double PlanetaryRa
 			}
 			AtmosphereMesh->SetVisibility(false, true);
 			AtmosphereMesh->SetHiddenInGame(true, true);
+			AtmosphereMesh->ComponentTags.AddUnique(SuppressedAtmospherePassTag);
 			AtmosphereMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 			AtmosphereMesh->SetGenerateOverlapEvents(false);
 		}

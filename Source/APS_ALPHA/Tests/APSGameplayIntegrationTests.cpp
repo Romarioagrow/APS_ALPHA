@@ -864,6 +864,27 @@ bool FAPSClusterSystemDataTest::RunTest(const FString& Parameters)
 	}
 	TestTrue(TEXT("Ring/Arc formation bounds stay centred on the cluster origin"),
 		RingBounds.IsValid && RingBounds.GetCenter().Size() < 160000.0 * 100.0 * 0.025);
+	// The real Giant preview budget is even (1600). Its two central samples and
+	// both open-arc endpoints are mirrored pairs, so their Z must be identical;
+	// opposite signs created the visible full-thickness join discontinuity.
+	Cluster->StarAmount = 1600;
+	const int32 LowerMiddleIndex = Cluster->StarAmount / 2 - 1;
+	const int32 UpperMiddleIndex = Cluster->StarAmount / 2;
+	const FVector LowerMiddle = ClusterGenerator->CalculateStarPosition(
+		LowerMiddleIndex, Cluster, FormationStar);
+	const FVector UpperMiddle = ClusterGenerator->CalculateStarPosition(
+		UpperMiddleIndex, Cluster, FormationStar);
+	const FVector FirstArcPoint = ClusterGenerator->CalculateStarPosition(
+		0, Cluster, FormationStar);
+	const FVector LastArcPoint = ClusterGenerator->CalculateStarPosition(
+		Cluster->StarAmount - 1, Cluster, FormationStar);
+	TestTrue(TEXT("Ring/Arc central mirrored pair has continuous ribbon height"),
+		FMath::IsNearlyEqual(LowerMiddle.Z, UpperMiddle.Z, 1.0e-6));
+	TestTrue(TEXT("Ring/Arc open endpoints have continuous mirrored height"),
+		FMath::IsNearlyEqual(FirstArcPoint.Z, LastArcPoint.Z, 1.0e-6));
+	TestEqual(TEXT("Ring/Arc position remains deterministic for the same seed/index"),
+		LowerMiddle, ClusterGenerator->CalculateStarPosition(
+			LowerMiddleIndex, Cluster, FormationStar));
 
 	Cluster->ClusterBounds = FVector(160000.0, 160000.0, 25000.0);
 	Cluster->ClusterType = EStarClusterType::Nebula;
@@ -990,6 +1011,129 @@ bool FAPSPlanetaryOrbitIsolationTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("First star receives exactly its requested planets"), FirstSystem->PlanetsList.Num(), 3);
 	TestEqual(TEXT("Second star does not inherit the first star's orbit scratch data"),
 		SecondSystem->PlanetsList.Num(), 3);
+	for (const TSharedPtr<FPlanetData>& PlanetData : FirstSystem->PlanetsList)
+	{
+		if (!TestTrue(TEXT("Generated planet retains its orbit model"),
+			PlanetData.IsValid() && PlanetData->PlanetModel.IsValid()))
+		{
+			continue;
+		}
+		const EPlanetaryZoneType Zone = PlanetData->PlanetModel->PlanetZone;
+		TestNotEqual(TEXT("Every generated orbit resolves to an astronomical zone"),
+			Zone, EPlanetaryZoneType::Unknown);
+		TestNotEqual(TEXT("Every resolved zone produces a concrete planet type"),
+			PlanetData->PlanetModel->PlanetType, EPlanetType::Unknown);
+		FZoneRadius ZoneRadius;
+		switch (Zone)
+		{
+		case EPlanetaryZoneType::DeadZone: ZoneRadius = FirstSystem->DeadZoneRadius; break;
+		case EPlanetaryZoneType::HotZone: ZoneRadius = FirstSystem->HotZoneRadius; break;
+		case EPlanetaryZoneType::WarmZone: ZoneRadius = FirstSystem->WarmZoneRadius; break;
+		case EPlanetaryZoneType::HabitableZone: ZoneRadius = FirstSystem->HabitableZoneRadius; break;
+		case EPlanetaryZoneType::ColdZone: ZoneRadius = FirstSystem->ColdZoneRadius; break;
+		case EPlanetaryZoneType::IceZone: ZoneRadius = FirstSystem->IceZoneRadius; break;
+		case EPlanetaryZoneType::GasGiantsZone: ZoneRadius = FirstSystem->GasGiantsZoneRadius; break;
+		case EPlanetaryZoneType::KuiperBeltZone: ZoneRadius = FirstSystem->KuiperBeltZoneRadius; break;
+		default: continue;
+		}
+		TestTrue(TEXT("Planet zone label contains its actual orbit radius"),
+			PlanetData->OrbitRadius >= ZoneRadius.InnerRadius - UE_DOUBLE_SMALL_NUMBER
+			&& PlanetData->OrbitRadius <= ZoneRadius.OuterRadius + UE_DOUBLE_SMALL_NUMBER);
+	}
+
+	TArray<double> CoincidentOrbits{1.0, 1.0001, 1.0002};
+	UPlanetarySystemGenerator::EnforceMinimumPlanetOrbitSpacing(
+		CoincidentOrbits, 1.0, 10.0, 1.0, EOrbitDistributionType::Uniform);
+	TestEqual(TEXT("Orbit relaxation preserves the requested planet count"),
+		CoincidentOrbits.Num(), 3);
+	for (int32 OrbitIndex = 1; OrbitIndex < CoincidentOrbits.Num(); ++OrbitIndex)
+	{
+		TestTrue(TEXT("Nearly coincident planet orbits receive a visible radial gap"),
+			CoincidentOrbits[OrbitIndex] - CoincidentOrbits[OrbitIndex - 1] > 1.0);
+	}
+
+	TArray<double> GiantStarOrbits{1.0, 1.2};
+	UPlanetarySystemGenerator::EnforceMinimumPlanetOrbitSpacing(
+		GiantStarOrbits, 1.0, 2.0, 1000.0, EOrbitDistributionType::Dense);
+	TestTrue(TEXT("Planet orbits remain outside a giant stellar photosphere"),
+		GiantStarOrbits[0] > 1000.0 * 0.00465047 * 1.34);
+
+	FPlanetarySystemModel RadiusAwareSystem;
+	TSharedPtr<FPlanetModel> GiantPlanetModel = MakeShared<FPlanetModel>();
+	GiantPlanetModel->RadiusKM = 70000.0f;
+	GiantPlanetModel->Radius = GiantPlanetModel->RadiusKM / 6371.0f;
+	TSharedPtr<FPlanetModel> SmallPlanetModel = MakeShared<FPlanetModel>();
+	SmallPlanetModel->RadiusKM = 6000.0f;
+	SmallPlanetModel->Radius = SmallPlanetModel->RadiusKM / 6371.0f;
+	RadiusAwareSystem.PlanetsList.Add(
+		MakeShared<FPlanetData>(0, 1.0, GiantPlanetModel));
+	RadiusAwareSystem.PlanetsList.Add(
+		MakeShared<FPlanetData>(1, 1.0001, SmallPlanetModel));
+	UPlanetarySystemGenerator::EnforcePlanetSurfaceClearance(RadiusAwareSystem);
+	constexpr double AstronomicalUnitKm = 149597870.7;
+	const double RadiusAwareGapKm =
+		(RadiusAwareSystem.PlanetsList[1]->OrbitRadius
+			- RadiusAwareSystem.PlanetsList[0]->OrbitRadius) * AstronomicalUnitKm;
+	const double CombinedPlanetRadiusKm = 76000.0;
+	const double RequiredPlanetGapKm = CombinedPlanetRadiusKm
+		+ FMath::Max(1000.0, CombinedPlanetRadiusKm * 0.10);
+	TestTrue(TEXT("Giant and small planet surfaces receive radius-aware clearance"),
+		RadiusAwareGapKm >= RequiredPlanetGapKm - 0.01);
+	TestTrue(TEXT("Radius-aware orbit reaches the shared orbital model"),
+		FMath::IsNearlyEqual(SmallPlanetModel->OrbitDistance,
+			RadiusAwareSystem.PlanetsList[1]->OrbitRadius, 1.0e-12));
+	TestTrue(TEXT("Radius-aware orbit reaches the serial planet snapshot"),
+		FMath::IsNearlyEqual(
+			RadiusAwareSystem.PlanetsList[1]->PlanetModelData.OrbitDistance,
+			RadiusAwareSystem.PlanetsList[1]->OrbitRadius, 1.0e-12));
+
+	TSharedPtr<FPlanetModel> MoonSystem = MakeShared<FPlanetModel>();
+	MoonSystem->Radius = 1.0;
+	for (const double MoonRadius : {0.20, 0.15, 0.10})
+	{
+		TSharedPtr<FMoonModel> MoonModel = MakeShared<FMoonModel>();
+		MoonModel->Radius = MoonRadius;
+		MoonModel->OrbitDistance = 0.05;
+		MoonSystem->MoonsList.Add(MakeShared<FMoonData>(
+			MoonSystem->MoonsList.Num() + 1, 0.05, MoonModel));
+	}
+	UPlanetarySystemGenerator::EnforceSafeMoonOrbitSpacing(*MoonSystem);
+	TestEqual(TEXT("Moon spacing preserves every generated satellite"),
+		MoonSystem->MoonsList.Num(), 3);
+	double PreviousMoonCenter = 0.0;
+	double PreviousMoonRadius = 0.0;
+	for (const TSharedPtr<FMoonData>& MoonData : MoonSystem->MoonsList)
+	{
+		if (!TestTrue(TEXT("Sanitized moon data remains materialized"),
+			MoonData.IsValid() && MoonData->MoonModel.IsValid()))
+		{
+			continue;
+		}
+		const double MoonCenter = 1.0 + MoonData->OrbitRadius;
+		const double MoonRadius = MoonData->MoonModel->Radius;
+		TestTrue(TEXT("Every moon clears the parent surface"),
+			MoonCenter - MoonRadius >= 1.45 - UE_DOUBLE_SMALL_NUMBER);
+		if (PreviousMoonCenter > 0.0)
+		{
+			TestTrue(TEXT("Adjacent moon surfaces retain a safe gap"),
+				MoonCenter - PreviousMoonCenter
+					>= PreviousMoonRadius + MoonRadius + 0.28 - UE_DOUBLE_SMALL_NUMBER);
+		}
+		PreviousMoonCenter = MoonCenter;
+		PreviousMoonRadius = MoonRadius;
+	}
+	TestEqual(TEXT("Moon sanitizer refreshes every serial moon snapshot"),
+		MoonSystem->MoonsListData.Num(), MoonSystem->MoonsList.Num());
+	for (int32 MoonIndex = 0; MoonIndex < MoonSystem->MoonsList.Num(); ++MoonIndex)
+	{
+		TestTrue(TEXT("Moon serial and shared orbit radii stay identical"),
+			MoonSystem->MoonsListData.IsValidIndex(MoonIndex)
+			&& FMath::IsNearlyEqual(MoonSystem->MoonsListData[MoonIndex].OrbitRadius,
+				MoonSystem->MoonsList[MoonIndex]->OrbitRadius, 1.0e-12)
+			&& FMath::IsNearlyEqual(
+				MoonSystem->MoonsListData[MoonIndex].MoonModelData.OrbitDistance,
+				MoonSystem->MoonsList[MoonIndex]->MoonModel->OrbitDistance, 1.0e-12));
+	}
 	return true;
 }
 

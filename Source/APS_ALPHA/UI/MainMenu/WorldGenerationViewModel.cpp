@@ -6,6 +6,8 @@
 #include "APS_ALPHA/Core/Planetary/APSPlanetSurfaceProfile.h"
 #include "APS_ALPHA/Core/Enums/CharSpawnPlace.h"
 #include "APS_ALPHA/Core/Enums/OrbitHeight.h"
+#include "APS_ALPHA/Core/Enums/PlanetHabitability.h"
+#include "APS_ALPHA/Pawns/Characters/CustomGravityCharacter.h"
 #include "APS_ALPHA/Pawns/Spaceships/Spaceship.h"
 #include "APS_ALPHA/Actors/Tech/SpaceStation.h"
 #include "APS_ALPHA/Actors/Tech/SpaceHeadquarters.h"
@@ -13,11 +15,13 @@
 #include "APS_ALPHA/Actors/Astro/Galaxy.h"
 #include "APS_ALPHA/Actors/Astro/Moon.h"
 #include "APS_ALPHA/Actors/Astro/Planet.h"
+#include "APS_ALPHA/Actors/Astro/PlanetarySystem.h"
 #include "APS_ALPHA/Actors/Astro/Star.h"
 #include "APS_ALPHA/Actors/Astro/StarCluster.h"
 #include "APS_ALPHA/Actors/Astro/StarSystem.h"
 #include "APS_ALPHA/Generation/AstroGenerator.h"
 #include "APS_ALPHA/Generation/PlanetarySurfaceGenerator.h"
+#include "APS_ALPHA/Generation/StarGenerator.h"
 #include "APS_ALPHA/Gameplay/Civilizations/Civilization.h"
 #include "EngineUtils.h"
 #include "Engine/World.h"
@@ -28,6 +32,17 @@
 
 #define LOCTEXT_NAMESPACE "WorldGenerationViewModel"
 
+namespace APSCivilizationPilot
+{
+	constexpr const TCHAR* ProductionClassPath =
+		TEXT("/Game/APS/APS_ALPHA/Blueprints/BP_CustomGravityCharacter.BP_CustomGravityCharacter_C");
+
+	UClass* LoadProductionClass()
+	{
+		return LoadClass<ACustomGravityCharacter>(nullptr, ProductionClassPath);
+	}
+}
+
 void UWorldGenerationViewModel::Initialize(UObject* InWorldContext, UGeneratedWorld* InGeneratedWorld)
 {
 	WorldContext = InWorldContext;
@@ -35,7 +50,13 @@ void UWorldGenerationViewModel::Initialize(UObject* InWorldContext, UGeneratedWo
 	{
 		InGeneratedWorld->PlanetsAmount = FMath::Clamp(InGeneratedWorld->PlanetsAmount, 1, 20);
 		InGeneratedWorld->MoonsAmount = FMath::Clamp(InGeneratedWorld->MoonsAmount, 0, 10);
-		InGeneratedWorld->PlanetRadius = FMath::Clamp(InGeneratedWorld->PlanetRadius, 100.0, 20000.0);
+		if (!FMath::IsFinite(InGeneratedWorld->PlanetRadius) || InGeneratedWorld->PlanetRadius <= 0.0)
+			InGeneratedWorld->PlanetRadius = 6371.0;
+		InGeneratedWorld->HomeStarRadiusOverrideSolar =
+			FMath::IsFinite(InGeneratedWorld->HomeStarRadiusOverrideSolar)
+			&& InGeneratedWorld->HomeStarRadiusOverrideSolar > 0.0
+				? FMath::Clamp(InGeneratedWorld->HomeStarRadiusOverrideSolar, 1.0e-5, 1000.0)
+				: 0.0;
 		InGeneratedWorld->PlanetSurfaceSeed = FMath::Clamp(InGeneratedWorld->PlanetSurfaceSeed, 0, 999983);
 		InGeneratedWorld->SurfaceFeatureScale = FMath::Clamp(InGeneratedWorld->SurfaceFeatureScale, 0.25, 4.0);
 		InGeneratedWorld->SurfaceReliefScale = FMath::Clamp(InGeneratedWorld->SurfaceReliefScale, 0.25, 2.5);
@@ -61,6 +82,13 @@ void UWorldGenerationViewModel::Initialize(UObject* InWorldContext, UGeneratedWo
 			if (!GameplayInstance->SpawnParameters)
 			{
 				GameplayInstance->SpawnParameters = NewObject<USpawnParameters>(GameplayInstance);
+			}
+			// Only the production custom-gravity pawn currently satisfies the full
+			// generated-world movement/camera contract. Keep experimental pawns out
+			// of the committed civilization route until they are explicitly certified.
+			if (UClass* ProductionPilot = APSCivilizationPilot::LoadProductionClass())
+			{
+				GameplayInstance->SpawnParameters->BP_CharacterClass = ProductionPilot;
 			}
 			UE_MVVM_SET_PROPERTY_VALUE(SpawnParameters, GameplayInstance->SpawnParameters);
 		}
@@ -89,6 +117,10 @@ void UWorldGenerationViewModel::SetEnumValue(const UEnum* EnumClass, int32 Selec
 	}
 
 	FString PropertyName = EnumClass->GetName();
+	if ((EnumClass == StaticEnum<EStellarType>() || EnumClass == StaticEnum<ESpectralClass>())
+		&& SetSelectedStarEnum(EnumClass, SelectedValue)) return;
+	if ((EnumClass == StaticEnum<EStarType>() || EnumClass == StaticEnum<EPlanetarySystemType>()
+		|| EnumClass == StaticEnum<EOrbitDistributionType>()) && SetSelectedSystemEnum(EnumClass, SelectedValue)) return;
 	if (PropertyName.StartsWith(TEXT("E")))
 	{
 		PropertyName.RightChopInline(1);
@@ -145,6 +177,19 @@ void UWorldGenerationViewModel::SetEnumValue(const UEnum* EnumClass, int32 Selec
 		}
 		return;
 	}
+	if (EnumClass == StaticEnum<EPlanetHabitability>())
+	{
+		// Habitability is gameplay metadata. Persist it on the selected body without
+		// rebuilding the astronomical hierarchy or changing its visual subtype.
+		RefreshPlanetAppearancePreview(false);
+		if (UWorld* World = WorldContext.IsValid() ? WorldContext->GetWorld() : nullptr;
+			World && World->GetTimerManager().IsTimerActive(PlanetAppearanceTimerHandle))
+		{
+			World->GetTimerManager().ClearTimer(PlanetAppearanceTimerHandle);
+			ExecutePlanetAppearancePreviewRefresh();
+		}
+		return;
+	}
 	RequestPreview();
 }
 
@@ -161,6 +206,245 @@ void UWorldGenerationViewModel::SetGalaxySize(double Value)
 		GeneratedWorld->GalaxySize = NewValue;
 		RequestPreview();
 	}
+}
+
+void UWorldGenerationViewModel::SetHomeStarRadiusOverrideSolar(const double Value)
+{
+	if (!GeneratedWorld || !FMath::IsFinite(Value))
+	{
+		return;
+	}
+
+	const double NewValue = Value <= 0.0
+		? 0.0 : FMath::Clamp(Value, 1.0e-5, 1000.0);
+	if (!FMath::IsNearlyEqual(
+		GeneratedWorld->HomeStarRadiusOverrideSolar, NewValue, 1.0e-8))
+	{
+		GeneratedWorld->HomeStarRadiusOverrideSolar = NewValue;
+		RequestPreview();
+	}
+}
+
+bool UWorldGenerationViewModel::SetSelectedStarEnum(const UEnum* EnumClass, const int32 SelectedValue)
+{
+	FString Address;
+	FStarModel Current;
+	if (!GeneratedWorld || !PreviewGenerator.IsValid()
+		|| !PreviewGenerator->GetPreviewStarEditContext(Address, Current)) return false;
+	if (!EnumClass->IsValidEnumValue(SelectedValue) || SelectedValue == EnumClass->GetMaxEnumValue()) return true;
+	const bool bStellar = EnumClass == StaticEnum<EStellarType>();
+	if ((bStellar ? static_cast<int32>(Current.StellarType) : static_cast<int32>(Current.SpectralClass))
+		== SelectedValue) return true;
+	FAPSPreviewStarEditOverride Edit;
+	if (const FAPSPreviewStarEditOverride* Existing = GeneratedWorld->FindPreviewStarEditOverride(Address)) Edit = *Existing;
+	else Edit.AutomaticModel = Edit.Model = Current;
+	TSharedPtr<FStarModel> NewModel = MakeShared<FStarModel>();
+	NewModel->StellarType = bStellar ? static_cast<EStellarType>(SelectedValue) : Current.StellarType;
+	NewModel->SpectralClass = bStellar ? Current.SpectralClass : static_cast<ESpectralClass>(SelectedValue);
+	UStarGenerator* Stars = NewObject<UStarGenerator>(this);
+	Stars->SetGenerationSeed(static_cast<int32>(HashCombine(
+		GetTypeHash(GeneratedWorld->GenerationSeed), FCrc::StrCrc32(*Address)) & 0x7fffffffu));
+	Stars->GenerateStarModel(NewModel);
+	Edit.AutomaticModel = *NewModel;
+	if (Edit.RadiusOverrideSolar > 0.0) Stars->ApplyRadiusOverrideSolar(*NewModel, Edit.RadiusOverrideSolar);
+	Edit.Model = *NewModel;
+	GeneratedWorld->SetPreviewStarEditOverride(Address, Edit);
+	RequestPreview();
+	return true;
+}
+
+void UWorldGenerationViewModel::SetSelectedStarRadiusOverrideSolar(const double Value)
+{
+	if (!GeneratedWorld || !FMath::IsFinite(Value)) return;
+	FString Address;
+	FStarModel Current;
+	if (!PreviewGenerator.IsValid() || !PreviewGenerator->GetPreviewStarEditContext(Address, Current))
+	{
+		// No selected astronomical object exists before the initial preview.
+		SetHomeStarRadiusOverrideSolar(Value);
+		return;
+	}
+	FAPSPreviewStarEditOverride Edit;
+	if (const FAPSPreviewStarEditOverride* Existing = GeneratedWorld->FindPreviewStarEditOverride(Address)) Edit = *Existing;
+	else Edit.AutomaticModel = Edit.Model = Current;
+	const double NewValue = Value <= 0.0 ? 0.0 : FMath::Clamp(Value, 1.0e-5, 1000.0);
+	if (FMath::IsNearlyEqual(Edit.RadiusOverrideSolar, NewValue, 1.0e-8)) return;
+	Edit.RadiusOverrideSolar = NewValue;
+	Edit.Model = Edit.AutomaticModel;
+	if (NewValue > 0.0)
+	{
+		UStarGenerator* Stars = NewObject<UStarGenerator>(this);
+		if (!Stars->ApplyRadiusOverrideSolar(Edit.Model, NewValue)) return;
+	}
+	GeneratedWorld->SetPreviewStarEditOverride(Address, Edit);
+	RequestPreview();
+}
+
+double UWorldGenerationViewModel::GetSelectedStarRadiusOverrideSolar() const
+{
+	FString Address;
+	FStarModel Current;
+	if (GeneratedWorld && PreviewGenerator.IsValid()
+		&& PreviewGenerator->GetPreviewStarEditContext(Address, Current))
+	{
+		const FAPSPreviewStarEditOverride* Edit = GeneratedWorld->FindPreviewStarEditOverride(Address);
+		return Edit ? Edit->RadiusOverrideSolar : 0.0;
+	}
+	return GeneratedWorld ? GeneratedWorld->HomeStarRadiusOverrideSolar : 0.0;
+}
+
+EStellarType UWorldGenerationViewModel::GetSelectedStellarType() const
+{
+	FString Address;
+	FStarModel Current;
+	if (PreviewGenerator.IsValid() && PreviewGenerator->GetPreviewStarEditContext(Address, Current)) return Current.StellarType;
+	return GeneratedWorld ? GeneratedWorld->StellarType : EStellarType::MainSequence;
+}
+
+ESpectralClass UWorldGenerationViewModel::GetSelectedSpectralClass() const
+{
+	FString Address;
+	FStarModel Current;
+	if (PreviewGenerator.IsValid() && PreviewGenerator->GetPreviewStarEditContext(Address, Current)) return Current.SpectralClass;
+	return GeneratedWorld ? GeneratedWorld->SpectralClass : ESpectralClass::G;
+}
+
+bool UWorldGenerationViewModel::SetSelectedSystemEnum(const UEnum* EnumClass, const int32 SelectedValue)
+{
+	FString Address;
+	FStarSystemModel Current;
+	if (!GeneratedWorld || !PreviewGenerator.IsValid()) return false;
+	// A ready but unresolved legacy catalog selection is not permission to edit
+	// home defaults. Its disabled controls must also be safe for direct callers.
+	if (!PreviewGenerator->GetPreviewSystemEditContext(Address, Current)) return bPreviewReady;
+	if (!EnumClass->IsValidEnumValue(SelectedValue) || SelectedValue == EnumClass->GetMaxEnumValue()) return true;
+	FAPSPreviewSystemEditOverride Edit;
+	if (const FAPSPreviewSystemEditOverride* Existing = GeneratedWorld->FindPreviewSystemEditOverride(Address)) Edit = *Existing;
+	if (EnumClass == StaticEnum<EStarType>())
+	{
+		const EStarType Type = static_cast<EStarType>(SelectedValue);
+		if (Current.StarSystemType == Type) return true;
+		Edit.StarType = Type;
+		FRandomStream CountStream(static_cast<int32>(HashCombine(GetTypeHash(Current.GenerationSeed), FCrc::StrCrc32(*Address))));
+		Edit.StarCount = Type == EStarType::SingleStar ? 1 : Type == EStarType::DoubleStar ? 2
+			: Type == EStarType::TripleStar ? 3 : CountStream.RandRange(4, 6);
+		// Changing stellar multiplicity redistributes the SAME total, not a hidden
+		// per-star multiplier. Independent stellar streams retain surviving stars.
+		Edit.TotalPlanets = Current.PotentialPlanetCount;
+		if (GetSelectedSystemPlanetaryType() == EPlanetarySystemType::SinglePlanetSystem
+			&& Edit.TotalPlanets > Edit.StarCount)
+		{
+			Edit.bOverridePlanetaryType = true;
+			Edit.PlanetaryType = EPlanetarySystemType::MultiPlanetSystem;
+		}
+	}
+	else if (EnumClass == StaticEnum<EPlanetarySystemType>())
+	{
+		const EPlanetarySystemType Type = static_cast<EPlanetarySystemType>(SelectedValue);
+		if (Type == EPlanetarySystemType::Unknown || GetSelectedSystemPlanetaryType() == Type) return true;
+		Edit.bOverridePlanetaryType = true;
+		Edit.PlanetaryType = Type;
+		Edit.TotalPlanets = Type == EPlanetarySystemType::NoPlanetSystem ? 0
+			: Type == EPlanetarySystemType::SinglePlanetSystem ? Current.AmountOfStars
+			: FMath::Max(Current.PotentialPlanetCount, Current.AmountOfStars);
+	}
+	else
+	{
+		const EOrbitDistributionType Type = static_cast<EOrbitDistributionType>(SelectedValue);
+		if (GetSelectedSystemOrbitDistribution() == Type) return true;
+		Edit.bOverrideOrbitDistribution = true;
+		Edit.OrbitDistribution = Type;
+	}
+	GeneratedWorld->SetPreviewSystemEditOverride(Address, Edit);
+	if (Address == TEXT("SYS0")) GeneratedWorld->StartPlanetIndex = FMath::Clamp(
+		GeneratedWorld->StartPlanetIndex, 1, FMath::Max(1, GetHomeStartPlanetCount()));
+	RequestPreview();
+	return true;
+}
+
+EStarType UWorldGenerationViewModel::GetSelectedSystemStarType() const
+{
+	FString Address;
+	FStarSystemModel Current;
+	if (PreviewGenerator.IsValid() && PreviewGenerator->GetPreviewSystemEditContext(Address, Current)) return Current.StarSystemType;
+	return GeneratedWorld ? GeneratedWorld->StarType : EStarType::SingleStar;
+}
+
+EPlanetarySystemType UWorldGenerationViewModel::GetSelectedSystemPlanetaryType() const
+{
+	FString Address;
+	FStarSystemModel Current;
+	if (GeneratedWorld && PreviewGenerator.IsValid() && PreviewGenerator->GetPreviewSystemEditContext(Address, Current))
+	{
+		const FAPSPreviewSystemEditOverride* Edit = GeneratedWorld->FindPreviewSystemEditOverride(Address);
+		if (Edit && Edit->bOverridePlanetaryType) return Edit->PlanetaryType;
+		const AStarSystem* System = PreviewGenerator->GetContinuousPreviewActiveSystem();
+		if (System && IsValid(System->MainStar) && IsValid(System->MainStar->PlanetarySystem))
+			return System->MainStar->PlanetarySystem->PlanetarySystemType;
+	}
+	return GeneratedWorld ? GeneratedWorld->PlanetarySystemType : EPlanetarySystemType::MultiPlanetSystem;
+}
+
+EOrbitDistributionType UWorldGenerationViewModel::GetSelectedSystemOrbitDistribution() const
+{
+	FString Address;
+	FStarSystemModel Current;
+	if (GeneratedWorld && PreviewGenerator.IsValid() && PreviewGenerator->GetPreviewSystemEditContext(Address, Current))
+	{
+		const FAPSPreviewSystemEditOverride* Edit = GeneratedWorld->FindPreviewSystemEditOverride(Address);
+		if (Edit && Edit->bOverrideOrbitDistribution) return Edit->OrbitDistribution;
+		const AStarSystem* System = PreviewGenerator->GetContinuousPreviewActiveSystem();
+		if (System && IsValid(System->MainStar) && IsValid(System->MainStar->PlanetarySystem))
+			return System->MainStar->PlanetarySystem->OrbitDistributionType;
+	}
+	return GeneratedWorld ? GeneratedWorld->OrbitDistributionType : EOrbitDistributionType::Uniform;
+}
+
+int32 UWorldGenerationViewModel::GetSelectedSystemPlanetCount() const
+{
+	FString Address;
+	FStarSystemModel Current;
+	if (PreviewGenerator.IsValid() && PreviewGenerator->GetPreviewSystemEditContext(Address, Current)) return Current.PotentialPlanetCount;
+	const EStarType Type = GetSelectedSystemStarType();
+	const int32 Count = Type == EStarType::SingleStar ? 1 : Type == EStarType::DoubleStar ? 2 : Type == EStarType::TripleStar ? 3 : 4;
+	return GeneratedWorld ? GeneratedWorld->PlanetsAmount * Count : 0;
+}
+
+void UWorldGenerationViewModel::SetSelectedSystemPlanetCount(const double Value)
+{
+	if (!GeneratedWorld || !FMath::IsFinite(Value)) return;
+	FString Address;
+	FStarSystemModel Current;
+	if (!PreviewGenerator.IsValid() || !PreviewGenerator->GetPreviewSystemEditContext(Address, Current)) return;
+	const int32 Total = FMath::RoundToInt(FMath::Clamp(Value, 0.0, 120.0));
+	if (Current.PotentialPlanetCount == Total) return;
+	FAPSPreviewSystemEditOverride Edit;
+	if (const FAPSPreviewSystemEditOverride* Existing = GeneratedWorld->FindPreviewSystemEditOverride(Address)) Edit = *Existing;
+	Edit.TotalPlanets = Total;
+	const EPlanetarySystemType Type = GetSelectedSystemPlanetaryType();
+	if (Total == 0 || Type == EPlanetarySystemType::NoPlanetSystem
+		|| (Type == EPlanetarySystemType::SinglePlanetSystem && Total > Current.AmountOfStars))
+	{
+		Edit.bOverridePlanetaryType = true;
+		Edit.PlanetaryType = Total == 0 ? EPlanetarySystemType::NoPlanetSystem : EPlanetarySystemType::MultiPlanetSystem;
+	}
+	GeneratedWorld->SetPreviewSystemEditOverride(Address, Edit);
+	if (Address == TEXT("SYS0")) GeneratedWorld->StartPlanetIndex = FMath::Clamp(
+		GeneratedWorld->StartPlanetIndex, 1, FMath::Max(1, GetHomeStartPlanetCount()));
+	RequestPreview();
+}
+
+int32 UWorldGenerationViewModel::GetHomeStartPlanetCount() const
+{
+	return PreviewGenerator.IsValid() ? PreviewGenerator->GetPreviewHomePlanetCount()
+		: GeneratedWorld ? GeneratedWorld->PlanetsAmount : 0;
+}
+
+bool UWorldGenerationViewModel::CanEditSelectedSystem() const
+{
+	FString Address;
+	FStarSystemModel Current;
+	return PreviewGenerator.IsValid() && PreviewGenerator->GetPreviewSystemEditContext(Address, Current);
 }
 
 void UWorldGenerationViewModel::SetGalaxyStarCount(double Value)
@@ -204,7 +488,9 @@ void UWorldGenerationViewModel::SetPlanetRadius(double Value)
 		return;
 	}
 
-	const double NewValue = FMath::Clamp(Value, 100.0, 20000.0);
+	// Reading/recommitting a generated value is not an authored radius change.
+	if (Value == GeneratedWorld->PlanetRadius) return;
+	const double NewValue = FMath::Clamp(Value, 1.0, 200000.0);
 	if (!FMath::IsNearlyEqual(GeneratedWorld->PlanetRadius, NewValue))
 	{
 		GeneratedWorld->PlanetRadius = NewValue;
@@ -241,6 +527,59 @@ void UWorldGenerationViewModel::SetMoonsAmount(double Value)
 		GeneratedWorld->MoonsAmount = NewValue;
 		RequestPreview();
 	}
+}
+
+void UWorldGenerationViewModel::SetSelectedMoonOrbitRadiusKm(const double Value)
+{
+	AMoon* Moon = Cast<AMoon>(SelectedPreviewBody.Get());
+	if (!GeneratedWorld || !IsValid(Moon) || !IsValid(Moon->ParentPlanet)
+		|| !FMath::IsFinite(Value))
+	{
+		return;
+	}
+
+	const double ParentRadiusKm = FMath::Max(
+		Moon->ParentPlanet->RadiusKM,
+		static_cast<double>(Moon->ParentPlanet->PlanetRadiusKM));
+	const double MoonRadiusKm = FMath::Max(
+		Moon->RadiusKM, static_cast<double>(Moon->PlanetRadiusKM));
+	const double SurfaceClearanceKm = FMath::Max(
+		ParentRadiusKm * 0.45, MoonRadiusKm * 0.75);
+	double MinimumCenterRadiusKm = FMath::Max(
+		100.0, ParentRadiusKm + MoonRadiusKm + SurfaceClearanceKm);
+	const int32 MoonIndex = Moon->ParentPlanet->Moons.IndexOfByKey(Moon);
+	if (MoonIndex > 0 && Moon->ParentPlanet->PlanetData.PlanetModel.IsValid())
+	{
+		const FPlanetModel& ParentModel = *Moon->ParentPlanet->PlanetData.PlanetModel;
+		const int32 PreviousMoonIndex = MoonIndex - 1;
+		if (ParentModel.MoonsList.IsValidIndex(PreviousMoonIndex)
+			&& ParentModel.MoonsList[PreviousMoonIndex].IsValid())
+		{
+			const TSharedPtr<FMoonData>& PreviousMoonData =
+				ParentModel.MoonsList[PreviousMoonIndex];
+			const FMoonModel& PreviousMoonModel = PreviousMoonData->MoonModel.IsValid()
+				? *PreviousMoonData->MoonModel : PreviousMoonData->MoonModelData;
+			const double PreviousMoonRadiusKm = FMath::Max(
+				static_cast<double>(PreviousMoonModel.RadiusKM),
+				static_cast<double>(PreviousMoonModel.Radius) * 6371.0);
+			const double PreviousCenterRadiusKm = ParentRadiusKm
+				* FMath::Max(1.0 + PreviousMoonData->OrbitRadius, 1.0);
+			const double InterMoonClearanceKm = FMath::Max(
+				ParentRadiusKm * 0.28,
+				(PreviousMoonRadiusKm + MoonRadiusKm) * 0.50);
+			MinimumCenterRadiusKm = FMath::Max(MinimumCenterRadiusKm,
+				PreviousCenterRadiusKm + PreviousMoonRadiusKm
+					+ MoonRadiusKm + InterMoonClearanceKm);
+		}
+	}
+	const double Clamped = FMath::Clamp(Value, MinimumCenterRadiusKm, 100000000.0);
+	if (FMath::IsNearlyEqual(GeneratedWorld->MoonOrbitRadiusKm, Clamped))
+	{
+		return;
+	}
+
+	GeneratedWorld->MoonOrbitRadiusKm = Clamped;
+	RefreshPlanetAppearancePreview(false);
 }
 
 void UWorldGenerationViewModel::SetPlanetSurfaceSeed(const int32 Value)
@@ -327,7 +666,7 @@ void UWorldGenerationViewModel::SetStartPlanetIndex(double Value)
 {
 	if (!GeneratedWorld || !FMath::IsFinite(Value)) return;
 
-	const int32 MaxPlanetIndex = FMath::Max(1, GeneratedWorld->PlanetsAmount);
+	const int32 MaxPlanetIndex = FMath::Max(1, GetHomeStartPlanetCount());
 	const int32 NewIndex = FMath::RoundToInt(FMath::Clamp(
 		Value, 1.0, static_cast<double>(MaxPlanetIndex)));
 	if (GeneratedWorld->StartPlanetIndex != NewIndex)
@@ -473,6 +812,8 @@ void UWorldGenerationViewModel::RegeneratePreviewVariant()
 	if (GeneratedWorld)
 	{
 		GeneratedWorld->ClearPreviewBodyEditOverrides();
+		GeneratedWorld->ClearPreviewStarEditOverrides();
+		GeneratedWorld->ClearPreviewSystemEditOverrides();
 		bSkipBodyOverrideSnapshotOnce = true;
 	}
 	if (AAstroGenerator* Generator = FindOrCreatePreviewGenerator())
@@ -516,6 +857,12 @@ void UWorldGenerationViewModel::SetPreviewFocus(EAstroPreviewFocus NewFocus)
 		APlayerController* PC = WorldContext.IsValid() && WorldContext->GetWorld()
 			? WorldContext->GetWorld()->GetFirstPlayerController() : nullptr;
 		Generator->FocusPreviewTarget(NewFocus, PC);
+		if (Generator->UsesContinuousPreviewFrame())
+		{
+			SelectedPreviewBody = Generator->GetSelectedPreviewBodyActor();
+			if (APlanetaryBody* Body = Cast<APlanetaryBody>(SelectedPreviewBody.Get()))
+				HydratePreviewBodyEditorBuffer(Body);
+		}
 		UE_LOG(LogTemp, Log, TEXT("[APS.WorldGeneration] Focus=%d generator=%s"),
 			static_cast<int32>(NewFocus), *GetNameSafe(Generator));
 	}
@@ -593,19 +940,71 @@ void UWorldGenerationViewModel::ZoomPreview(float WheelDelta)
 bool UWorldGenerationViewModel::FocusPreviewUnderCursor()
 {
 	UWorld* World = WorldContext.IsValid() ? WorldContext->GetWorld() : nullptr;
+	APlayerController* Controller = World ? World->GetFirstPlayerController() : nullptr;
+	float MouseX = 0.0f;
+	float MouseY = 0.0f;
+	return Controller && Controller->GetMousePosition(MouseX, MouseY)
+		&& FocusPreviewAtScreenPosition(FVector2D(MouseX, MouseY));
+}
+
+bool UWorldGenerationViewModel::FocusPreviewAtScreenPosition(const FVector2D& ScreenPosition)
+{
+	UWorld* World = WorldContext.IsValid() ? WorldContext->GetWorld() : nullptr;
 	APlayerController* PlayerController = World ? World->GetFirstPlayerController() : nullptr;
 	if (!World || !PlayerController)
 	{
 		return false;
 	}
 
-	float MouseX = 0.0f;
-	float MouseY = 0.0f;
+	const double MouseX = ScreenPosition.X;
+	const double MouseY = ScreenPosition.Y;
 	FVector RayOrigin;
 	FVector RayDirection;
-	if (!PlayerController->GetMousePosition(MouseX, MouseY)
-		|| !PlayerController->DeprojectScreenPositionToWorld(MouseX, MouseY, RayOrigin, RayDirection))
+	if (!PlayerController->DeprojectScreenPositionToWorld(MouseX, MouseY, RayOrigin, RayDirection))
 	{
+		return false;
+	}
+	if (AAstroGenerator* ContinuousGenerator = PreviewGenerator.Get();
+		ContinuousGenerator && ContinuousGenerator->UsesContinuousPreviewFrame())
+	{
+		// Presentation meshes deliberately have no physical collision. Picking their
+		// old actor-space volumes would select invisible zones or a background system.
+		FVector CameraLocation;
+		FRotator CameraRotation;
+		PlayerController->GetPlayerViewPoint(CameraLocation, CameraRotation);
+		const FVector CameraRight = FRotationMatrix(CameraRotation).GetUnitAxis(EAxis::Y);
+		AActor* PickedBody = nullptr;
+		double BestDepth = TNumericLimits<double>::Max();
+		for (TActorIterator<ACelestialBody> It(World); It; ++It)
+		{
+			AActor* Candidate = *It;
+			if ((!Candidate->IsA<AStar>() && !Candidate->IsA<APlanetaryBody>())
+				|| !Candidate->IsAttachedTo(ContinuousGenerator)) continue;
+			FVector Center;
+			double Radius = 0.0;
+			if (!ContinuousGenerator->GetPreviewPresentationLocation(Candidate, Center)
+				|| !ContinuousGenerator->GetPreviewPresentationRadius(Candidate, Radius)) continue;
+			FVector2D ScreenCenter, ScreenLimb;
+			if (!PlayerController->ProjectWorldLocationToScreen(Center, ScreenCenter, true)
+				|| !PlayerController->ProjectWorldLocationToScreen(Center + CameraRight * Radius, ScreenLimb, true)) continue;
+			const double PickRadius = FMath::Max(8.0, FVector2D::Distance(ScreenCenter, ScreenLimb) * 1.05);
+			if (FVector2D::DistSquared(FVector2D(MouseX, MouseY), ScreenCenter) > PickRadius * PickRadius) continue;
+			const double Depth = FVector::DotProduct(Center - RayOrigin, RayDirection) - Radius;
+			if (Depth < BestDepth)
+			{
+				BestDepth = Depth;
+				PickedBody = Candidate;
+			}
+		}
+		if (PickedBody) return FocusPreviewBody(PickedBody);
+		PreserveSelectedPreviewBodyEdit(true);
+		if (ContinuousGenerator->FocusPreviewClusterSystemAtScreenPosition(PlayerController, FVector2D(MouseX, MouseY)))
+		{
+			PreviewFocus = EAstroPreviewFocus::HomeSystem;
+			SelectedPreviewBody.Reset();
+			UE_MVVM_SET_PROPERTY_VALUE(PreviewRevision, PreviewRevision + 1);
+			return true;
+		}
 		return false;
 	}
 
@@ -682,7 +1081,8 @@ bool UWorldGenerationViewModel::GetPreviewFocusSphere(
 bool UWorldGenerationViewModel::IsPreviewingClusterSystemProxy() const
 {
 	const AAstroGenerator* Generator = PreviewGenerator.Get();
-	return Generator && Generator->HasSelectedPreviewClusterSystem();
+	return Generator && Generator->HasSelectedPreviewClusterSystem()
+		&& !Generator->UsesContinuousPreviewFrame();
 }
 
 bool UWorldGenerationViewModel::IsPreviewFocusAvailable(const EAstroPreviewFocus Focus) const
@@ -699,8 +1099,32 @@ void UWorldGenerationViewModel::HydratePreviewBodyEditorBuffer(APlanetaryBody* B
 	}
 
 	GeneratedWorld->PlanetType = Body->PlanetType;
-	GeneratedWorld->PlanetRadius = FMath::Clamp(
-		FMath::Max(Body->RadiusKM, static_cast<double>(Body->PlanetRadiusKM)), 100.0, 20000.0);
+	GeneratedWorld->PlanetHabitability = Body->PlanetHabitability;
+	// The generated physical radius is authoritative, including sub-kilometre
+	// precision and gas giants larger than the old terrestrial authoring range.
+	GeneratedWorld->PlanetRadius = FMath::IsFinite(Body->RadiusKM) && Body->RadiusKM > 0.0
+		? Body->RadiusKM : FMath::Max(static_cast<double>(Body->PlanetRadiusKM), 1.0);
+	GeneratedWorld->MoonOrbitRadiusKm = 0.0;
+	if (const AMoon* Moon = Cast<AMoon>(Body); IsValid(Moon) && IsValid(Moon->ParentPlanet))
+	{
+		const APlanet* ParentPlanet = Moon->ParentPlanet;
+		const int32 MoonIndex = ParentPlanet->Moons.IndexOfByKey(Moon);
+		if (ParentPlanet->PlanetData.PlanetModel.IsValid()
+			&& ParentPlanet->PlanetData.PlanetModel->MoonsList.IsValidIndex(MoonIndex)
+			&& ParentPlanet->PlanetData.PlanetModel->MoonsList[MoonIndex].IsValid())
+		{
+			const double ParentRadiusKm = FMath::Max(
+				static_cast<double>(ParentPlanet->PlanetData.PlanetModel->RadiusKM),
+				ParentPlanet->RadiusKM);
+			GeneratedWorld->MoonOrbitRadiusKm = ParentRadiusKm *
+				(1.0 + ParentPlanet->PlanetData.PlanetModel->MoonsList[MoonIndex]->OrbitRadius);
+		}
+		else
+		{
+			GeneratedWorld->MoonOrbitRadiusKm = FVector::Distance(
+				Moon->GetActorLocation(), ParentPlanet->GetActorLocation()) / 100000.0;
+		}
+	}
 	GeneratedWorld->PlanetSurfaceSeed = FMath::Clamp(Body->WorldScapeSeed, 0, 999983);
 	GeneratedWorld->SurfaceFeatureScale = FMath::Clamp(Body->SurfaceFeatureScale, 0.25, 4.0);
 	GeneratedWorld->SurfaceReliefScale = FMath::Clamp(Body->SurfaceReliefScale, 0.25, 2.5);
@@ -713,7 +1137,7 @@ void UWorldGenerationViewModel::HydratePreviewBodyEditorBuffer(APlanetaryBody* B
 	// Bodies without a materialized AtmoScape must start from their own defaults,
 	// never from whichever planet happened to be selected immediately before them.
 	GeneratedWorld->AtmosphereOpacity = 12.0;
-	GeneratedWorld->AtmosphereMultiScattering = 1.0;
+	GeneratedWorld->AtmosphereMultiScattering = 5.0;
 	GeneratedWorld->AtmosphereRayleighScattering = 8.0;
 	GeneratedWorld->AtmosphereColor = FLinearColor(3.8f, 13.5f, 33.0f, 0.0f);
 	GeneratedWorld->MoonsAmount = Cast<APlanet>(Body)
@@ -740,6 +1164,11 @@ void UWorldGenerationViewModel::HydratePreviewBodyEditorBuffer(APlanetaryBody* B
 	{
 		Generator->LoadPreviewBodyEditOverride(GeneratedWorld, Body);
 	}
+}
+
+bool UWorldGenerationViewModel::IsSelectedPreviewBodyMoon() const
+{
+	return IsValid(Cast<AMoon>(SelectedPreviewBody.Get()));
 }
 
 bool UWorldGenerationViewModel::FocusPreviewBody(const TWeakObjectPtr<AActor>& BodyActor)
@@ -859,12 +1288,44 @@ FText UWorldGenerationViewModel::GetPreviewScopeSummary() const
 
 	case EAstroPreviewFocus::HomeSystem:
 	{
+		const AStarSystem* LiveSystem = Generator ? Generator->GetContinuousPreviewActiveSystem() : nullptr;
+		if (IsValid(LiveSystem))
+		{
+			if (!bPreviewReady) return LOCTEXT("SystemUpdating", "UPDATING SELECTED SYSTEM...");
+			int32 PlanetCount = 0;
+			for (const AStar* Star : LiveSystem->GetStars())
+				if (IsValid(Star) && IsValid(Star->PlanetarySystem)) PlanetCount += Star->PlanetarySystem->PlanetsActorsList.Num();
+			const int32 Stars = LiveSystem->GetStars().Num();
+			const EStarType Type = Stars == 1 ? EStarType::SingleStar : Stars == 2 ? EStarType::DoubleStar
+				: Stars == 3 ? EStarType::TripleStar : EStarType::MultipleStar;
+			const APlanetarySystem* Family = IsValid(LiveSystem->MainStar) ? LiveSystem->MainStar->PlanetarySystem : nullptr;
+			const FString Context = LiveSystem->StableSystemId == GeneratedWorld->CanonicalStellarDataset.HomeStableId
+				? FString::Printf(TEXT("HOME START PLANET  %d"), GeneratedWorld->StartPlanetIndex)
+				: TEXT("CLUSTER SYSTEM  ") + LiveSystem->StableSystemId.ToString(EGuidFormats::Short);
+			return FText::FromString(FString::Printf(
+				TEXT("SYSTEM TYPE  %s\nORBIT DISTRIBUTION  %s\nSTARS  %d  /  TOTAL PLANETS  %d\n%s\nSTATE  LIVE PHYSICAL HIERARCHY"),
+				*EnumText(Type), Family ? *EnumText(Family->OrbitDistributionType) : TEXT("--"), Stars, PlanetCount, *Context));
+		}
 		FString SelectedSystemId;
 		int32 SelectedSystemStars = 0;
 		int32 SelectedSystemPlanets = 0;
 		if (Generator && Generator->GetSelectedPreviewClusterSystemSummary(
 			SelectedSystemId, SelectedSystemStars, SelectedSystemPlanets))
 		{
+			if (Generator->UsesContinuousPreviewFrame())
+			{
+				const AStarSystem* System = Generator->GetContinuousPreviewActiveSystem();
+				if (IsValid(System))
+				{
+					int32 PlanetCount = 0;
+					for (const AStar* Star : System->GetStars())
+						if (IsValid(Star) && IsValid(Star->PlanetarySystem))
+							PlanetCount += Star->PlanetarySystem->PlanetsActorsList.Num();
+					return FText::FromString(FString::Printf(
+						TEXT("CLUSTER SYSTEM  %s\nSTARS  %d\nPLANETS  %d\nSTATE  LIVE PHYSICAL HIERARCHY"),
+						*SelectedSystemId, System->GetStars().Num(), PlanetCount));
+				}
+			}
 			return FText::FromString(FString::Printf(
 				TEXT("CLUSTER SYSTEM  %s\nSTARS  %d\nPOTENTIAL PLANETS  %d\nSTATE  LIGHTWEIGHT FULL-SCALE RECORD"),
 				*SelectedSystemId, SelectedSystemStars, SelectedSystemPlanets));
@@ -885,6 +1346,13 @@ FText UWorldGenerationViewModel::GetPreviewScopeSummary() const
 	}
 
 	case EAstroPreviewFocus::HomeStar:
+		if (const AStar* Star = Generator ? Cast<AStar>(Generator->GetSelectedPreviewBodyActor()) : nullptr)
+		{
+			return FText::FromString(FString::Printf(
+				TEXT("STELLAR TYPE  %s\nSPECTRAL CLASS  %s\nRADIUS  %.3f KM\nPLANETS  %d\nSAFE ORBIT CLEARANCE  LIVE"),
+				*EnumText(Star->StellarClass), *EnumText(Star->SpectralClass), Star->RadiusKM,
+				IsValid(Star->PlanetarySystem) ? Star->PlanetarySystem->PlanetsActorsList.Num() : 0));
+		}
 		return FText::FromString(FString::Printf(
 			TEXT("STELLAR TYPE  %s\nSPECTRAL CLASS  %s\nSYSTEM PLANETS  %d\nSAFE ORBIT CLEARANCE  LIVE"),
 			*EnumText(GeneratedWorld->StellarType), *EnumText(GeneratedWorld->SpectralClass),
@@ -898,19 +1366,27 @@ FText UWorldGenerationViewModel::GetPreviewScopeSummary() const
 			? TEXT("UNAVAILABLE")
 			: SurfaceBody->bWorldScapeSurfaceReady ? TEXT("READY") : TEXT("GENERATING");
 		return FText::FromString(FString::Printf(
-			TEXT("PLANET TYPE  %s\nRADIUS  %.0f KM\nMOONS  %d\nWORLDSCAPE SURFACE  %s\nFULL-SCALE DATA  %s"),
-			*EnumText(GeneratedWorld->PlanetType), GeneratedWorld->PlanetRadius, GeneratedWorld->MoonsAmount,
+			TEXT("PLANET TYPE  %s\nHABITABILITY  %s\nRADIUS  %.0f KM\nMOONS  %d\nWORLDSCAPE SURFACE  %s\nFULL-SCALE DATA  %s"),
+			*EnumText(GeneratedWorld->PlanetType), *EnumText(GeneratedWorld->PlanetHabitability),
+			GeneratedWorld->PlanetRadius, GeneratedWorld->MoonsAmount,
 			SurfaceStatus,
 			GeneratedWorld->bGenerateFullScaledWorld ? TEXT("ON") : TEXT("OFF")));
 	}
 
 	case EAstroPreviewFocus::Overview:
 	default:
+	{
+		const AStarSystem* Home = Generator ? Generator->GetPreviewHomeSystem() : nullptr;
+		int32 HomePlanetCount = 0;
+		if (IsValid(Home))
+			for (const AStar* Star : Home->GetStars())
+				if (IsValid(Star) && IsValid(Star->PlanetarySystem)) HomePlanetCount += Star->PlanetarySystem->PlanetsActorsList.Num();
 		return FText::FromString(FString::Printf(
-			TEXT("GALAXY STARS  %d\nCLUSTER  %s / %s\nSYSTEM PLANETS  %d\nHOME MOONS  %d\nFULL SCALE  %s"),
+			TEXT("GALAXY STARS  %d\nCLUSTER  %s / %s\nHOME SYSTEM PLANETS  %d\nHOME START PLANET  %d\nFULL SCALE  %s"),
 			GeneratedWorld->GalaxyStarCount, *EnumText(GeneratedWorld->StarClusterSize),
-			*EnumText(GeneratedWorld->StarClusterType), GeneratedWorld->PlanetsAmount,
-			GeneratedWorld->MoonsAmount, GeneratedWorld->bGenerateFullScaledWorld ? TEXT("ON") : TEXT("OFF")));
+			*EnumText(GeneratedWorld->StarClusterType), HomePlanetCount,
+			GeneratedWorld->StartPlanetIndex, GeneratedWorld->bGenerateFullScaledWorld ? TEXT("ON") : TEXT("OFF")));
+	}
 	}
 }
 
@@ -994,7 +1470,8 @@ void UWorldGenerationViewModel::ExecutePreview()
 	// generator's historical PLANET default otherwise starts WorldScape work even
 	// when Landing/Choose Path explicitly asked for a Galaxy background.
 	const bool bGenerated = Generator->RegeneratePreview(GeneratedWorld, PreviewFocus);
-	if (bGenerated && !bPreserveCameraOnNextPreview)
+	if (bGenerated && Generator->UsesContinuousPreviewFrame()) PreviewFocus = Generator->GetCurrentPreviewFocus();
+	if (bGenerated && !bPreserveCameraOnNextPreview && !Generator->UsesContinuousPreviewFrame())
 	{
 		// RegeneratePreview resolves an object selection by hierarchy indices. Use
 		// that new actor for a forced refocus as well; FocusPreviewTarget intentionally
@@ -1031,8 +1508,9 @@ void UWorldGenerationViewModel::ExecutePreview()
 		GeneratedWorld ? static_cast<int32>(GeneratedWorld->AstroGenerationLevel) : -1,
 		GeneratedWorld ? GeneratedWorld->PlanetsAmount : 0, GeneratedWorld ? GeneratedWorld->MoonsAmount : 0,
 		GeneratedWorld ? GeneratedWorld->PlanetRadius : 0.0);
+	// Keep the failure text accurate for missing targets and rejected projection data.
 	SetPreviewStatus(
-		bGenerated ? LOCTEXT("PreviewReady", "LIVE FULL-SCALE PREVIEW") : LOCTEXT("PreviewFailed", "PREVIEW NEEDS GENERATOR ASSETS"),
+		bGenerated ? LOCTEXT("PreviewReady", "LIVE FULL-SCALE PREVIEW") : LOCTEXT("PreviewFailed", "PREVIEW GENERATION INCOMPLETE"),
 		bGenerated);
 	bPreserveCameraOnNextPreview = false;
 	bForceRefocusOnNextPreview = false;
@@ -1111,7 +1589,14 @@ void UWorldGenerationViewModel::InitializeSpawnDefaultsFromGenerator(AAstroGener
 		return;
 	}
 
-	if (!SpawnParameters->BP_CharacterClass) SpawnParameters->BP_CharacterClass = Generator->BP_CharacterClass;
+	if (UClass* ProductionPilot = APSCivilizationPilot::LoadProductionClass())
+	{
+		SpawnParameters->BP_CharacterClass = ProductionPilot;
+	}
+	else if (!SpawnParameters->BP_CharacterClass)
+	{
+		SpawnParameters->BP_CharacterClass = Generator->BP_CharacterClass;
+	}
 	if (!SpawnParameters->BP_HomeSpaceship) SpawnParameters->BP_HomeSpaceship = Generator->BP_HomeSpaceship;
 	if (!SpawnParameters->BP_HomeSpaceStation) SpawnParameters->BP_HomeSpaceStation = Generator->BP_HomeSpaceStation;
 	if (!SpawnParameters->BP_HomeSpaceHeadquarters) SpawnParameters->BP_HomeSpaceHeadquarters = Generator->BP_HomeSpaceHeadquarters;
@@ -1130,14 +1615,47 @@ void UWorldGenerationViewModel::CommitAndOpenLevel(FName LevelName)
 	// model into GameInstance. Otherwise the last slider movement exists only in
 	// the menu actor and disappears during travel.
 	PreserveSelectedPreviewBodyEdit(true);
+	AAstroGenerator* ReadyPreviewGenerator = PreviewGenerator.Get();
+	if (!bPreviewReady || !IsValid(ReadyPreviewGenerator))
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[APS.WorldGeneration] Commit rejected: preview hierarchy is not ready"));
+		return;
+	}
+	const FAPSCanonicalStellarProjectionDescriptor& Projection =
+		ReadyPreviewGenerator->GetCanonicalStellarProjectionDescriptor();
+	const FAPSCanonicalStellarDataset& Dataset = GeneratedWorld->CanonicalStellarDataset;
+	const bool bCanonicalStatePresent = Dataset.bFinalized
+		|| Projection.CanonicalDatasetHash != 0u;
+	const bool bCanonicalReady = !bCanonicalStatePresent
+		|| (Projection.bFinalized && Projection.bProjectionValid
+			&& Projection.bMappingsComplete && Projection.bUnitRoots
+			&& Projection.bBoundsValid
+			&& Dataset.IsUsable(Projection.CanonicalDatasetInputHash)
+			&& Dataset.DatasetHash == Projection.CanonicalDatasetHash);
+	if (!bCanonicalReady)
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[APS.WorldGeneration] Commit rejected: canonical preview dataset/projection is incomplete"));
+		return;
+	}
 	if (GenerationRoute == EAPSGenerationRoute::Civilization)
 	{
+		if (SpawnParameters)
+		{
+			SpawnParameters->SanitizeForGeneration();
+			if (UClass* ProductionPilot = APSCivilizationPilot::LoadProductionClass())
+			{
+				SpawnParameters->BP_CharacterClass = ProductionPilot;
+			}
+		}
 		const auto IsSpawnableClass = [](const UClass* Class)
 		{
 			return Class && !Class->HasAnyClassFlags(
 				CLASS_Abstract | CLASS_Deprecated | CLASS_NewerVersionExists | CLASS_NotPlaceable);
 		};
 		const bool bClassesReady = SpawnParameters
+			&& SpawnParameters->BP_CharacterClass.Get() == APSCivilizationPilot::LoadProductionClass()
 			&& IsSpawnableClass(SpawnParameters->BP_CharacterClass)
 			&& IsSpawnableClass(SpawnParameters->BP_HomeSpaceship)
 			&& IsSpawnableClass(SpawnParameters->BP_HomeSpaceStation)
@@ -1145,9 +1663,9 @@ void UWorldGenerationViewModel::CommitAndOpenLevel(FName LevelName)
 			&& IsSpawnableClass(SpawnParameters->BP_HomeSpaceShipyard);
 		const bool bHierarchyReady = GeneratedWorld->bGenerateHomeSystem
 			&& GeneratedWorld->bStartWithHomePlanet
-			&& GeneratedWorld->PlanetsAmount > 0
+			&& GetHomeStartPlanetCount() > 0
 			&& GeneratedWorld->StartPlanetIndex > 0
-			&& GeneratedWorld->StartPlanetIndex <= GeneratedWorld->PlanetsAmount;
+			&& GeneratedWorld->StartPlanetIndex <= GetHomeStartPlanetCount();
 		if (!bClassesReady || !bHierarchyReady)
 		{
 			UE_LOG(LogTemp, Error,

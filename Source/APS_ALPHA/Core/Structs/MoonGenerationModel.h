@@ -3,6 +3,7 @@
 #include "OrbitalBodyGenerationModel.h"
 #include "CoreMinimal.h"
 #include "APS_ALPHA/Core/Enums/MoonType.h"
+#include "APS_ALPHA/Core/Enums/PlanetHabitability.h"
 #include "APS_ALPHA/Core/Enums/PlanetType.h"
 #include "MoonGenerationModel.generated.h"
 
@@ -20,6 +21,10 @@ struct FMoonModel :
 	/** Surface resolver input retained independently from the astronomical moon class. */
 	UPROPERTY(EditAnywhere, Category = "Moon Generation Model")
 	EPlanetType PlanetType;
+
+	/** Gameplay habitability remains distinct from the moon's visual surface type. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Moon Generation Model")
+	EPlanetHabitability PlanetHabitability;
 
 	UPROPERTY(EditAnywhere, Category = "Moon Generation Model")
 	double MoonDensity;
@@ -55,6 +60,7 @@ struct FMoonModel :
 	FMoonModel()
 		: Type(EMoonType::Unknown)
 		, PlanetType(EPlanetType::Unknown)
+		, PlanetHabitability(EPlanetHabitability::Uninhabitable)
 		, MoonDensity(0.0)
 		, MoonGravity(0.0)
 		, MoonAtmosphereHeight(0.0)

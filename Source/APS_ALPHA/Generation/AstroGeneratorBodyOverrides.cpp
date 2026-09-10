@@ -1,8 +1,10 @@
 #include "AstroGenerator.h"
 
 #include "PlanetarySurfaceGenerator.h"
+#include "PlanetaryProceduralGenerator.h"
 #include "APS_ALPHA/Actors/Astro/Moon.h"
 #include "APS_ALPHA/Actors/Astro/Planet.h"
+#include "APS_ALPHA/Actors/Astro/PlanetOrbit.h"
 #include "APS_ALPHA/Actors/Astro/PlanetarySystem.h"
 #include "APS_ALPHA/Actors/Astro/Star.h"
 #include "APS_ALPHA/Actors/Astro/StarSystem.h"
@@ -17,22 +19,31 @@ namespace
 	// trigger C4459 in an otherwise unrelated source file.
 	constexpr double BodyOverrideEarthRadiusKm = 6371.0;
 
-	FString MakePlanetKey(const int32 StarIndex, const int32 PlanetIndex)
+	FString MakePlanetKey(const int32 StarIndex, const int32 PlanetIndex, const FString& SystemPrefix = TEXT("SYS0"))
 	{
-		return FString::Printf(TEXT("SYS0/S%d/P%d"), StarIndex, PlanetIndex);
+		return FString::Printf(TEXT("%s/S%d/P%d"), *SystemPrefix, StarIndex, PlanetIndex);
 	}
 
-	FString MakeMoonKey(const int32 StarIndex, const int32 PlanetIndex, const int32 MoonIndex)
+	FString MakeMoonKey(const int32 StarIndex, const int32 PlanetIndex, const int32 MoonIndex,
+		const FString& SystemPrefix = TEXT("SYS0"))
 	{
-		return FString::Printf(TEXT("SYS0/S%d/P%d/M%d"), StarIndex, PlanetIndex, MoonIndex);
+		return FString::Printf(TEXT("%s/S%d/P%d/M%d"), *SystemPrefix, StarIndex, PlanetIndex, MoonIndex);
 	}
 
-	FAPSPreviewBodyEditOverride CaptureEditorBuffer(const UGeneratedWorld& WorldModel)
+	FAPSPreviewBodyEditOverride CaptureEditorBuffer(
+		const UGeneratedWorld& WorldModel, const FString& StableBodyKey)
 	{
 		FAPSPreviewBodyEditOverride Result;
 		Result.PlanetType = WorldModel.PlanetType;
-		Result.RadiusKm = FMath::Clamp(WorldModel.PlanetRadius, 100.0, 20000.0);
-		Result.SurfaceSeed = FMath::Clamp(WorldModel.PlanetSurfaceSeed, 0, 999983);
+		Result.PlanetHabitability = WorldModel.PlanetHabitability;
+		// Retained physical data is not an authoring slider. Merely selecting a
+		// generated gas giant must not shrink it to a terrestrial editor limit.
+		Result.RadiusKm = FMath::IsFinite(WorldModel.PlanetRadius) && WorldModel.PlanetRadius > 0.0
+			? WorldModel.PlanetRadius : BodyOverrideEarthRadiusKm;
+		Result.MoonOrbitRadiusKm = FMath::Clamp(
+			WorldModel.MoonOrbitRadiusKm, 0.0, 100000000.0);
+		Result.SurfaceSeed = UGeneratedWorld::ResolveCanonicalSurfaceSeed(
+			WorldModel.PlanetSurfaceSeed, WorldModel.GenerationSeed, StableBodyKey);
 		Result.SurfaceFeatureScale = FMath::Clamp(WorldModel.SurfaceFeatureScale, 0.25, 4.0);
 		Result.SurfaceReliefScale = FMath::Clamp(WorldModel.SurfaceReliefScale, 0.25, 2.5);
 		Result.SurfaceLandCoverageScale = FMath::Clamp(
@@ -54,7 +65,13 @@ namespace
 		UGeneratedWorld& WorldModel, const FAPSPreviewBodyEditOverride& BodyOverride)
 	{
 		WorldModel.PlanetType = BodyOverride.PlanetType;
+		WorldModel.PlanetHabitability = BodyOverride.PlanetHabitability;
 		WorldModel.PlanetRadius = BodyOverride.RadiusKm;
+		WorldModel.MoonOrbitRadiusKm = BodyOverride.MoonOrbitRadiusKm;
+		if (BodyOverride.MoonCount != INDEX_NONE)
+		{
+			WorldModel.MoonsAmount = FMath::Clamp(BodyOverride.MoonCount, 0, 10);
+		}
 		WorldModel.PlanetSurfaceSeed = BodyOverride.SurfaceSeed;
 		WorldModel.SurfaceFeatureScale = BodyOverride.SurfaceFeatureScale;
 		WorldModel.SurfaceReliefScale = BodyOverride.SurfaceReliefScale;
@@ -73,6 +90,7 @@ namespace
 		FPlanetModel& Model, const FAPSPreviewBodyEditOverride& BodyOverride)
 	{
 		Model.PlanetType = BodyOverride.PlanetType;
+		Model.PlanetHabitability = BodyOverride.PlanetHabitability;
 		Model.Radius = static_cast<float>(
 			BodyOverride.RadiusKm / BodyOverrideEarthRadiusKm);
 		Model.RadiusKM = static_cast<float>(BodyOverride.RadiusKm);
@@ -86,10 +104,100 @@ namespace
 		Model.AtmosphereHeight = BodyOverride.AtmosphereHeight;
 	}
 
+	bool ApplyToPlanetModelDataPreservingMoonCenters(
+		FPlanetModel& Model, const FAPSPreviewBodyEditOverride& BodyOverride)
+	{
+		const double PreviousParentRadiusKm = Model.RadiusKM > 0.0f
+			? static_cast<double>(Model.RadiusKM)
+			: static_cast<double>(Model.Radius) * BodyOverrideEarthRadiusKm;
+		const bool bParentRadiusChanged = !FMath::IsNearlyEqual(
+			PreviousParentRadiusKm, BodyOverride.RadiusKm,
+			FMath::Max(PreviousParentRadiusKm * 1.0e-9, 1.0e-6));
+		if (!bParentRadiusChanged)
+		{
+			// Surface/atmosphere-only edits must not rewrite moon orbit models. Apart
+			// from being unnecessary, even a numerically equivalent rewrite used to
+			// trigger the actor layout path and visibly move a moon on selection.
+			ApplyToPlanetModelData(Model, BodyOverride);
+			return false;
+		}
+
+		TArray<double> PreviousOrbitRadii;
+		PreviousOrbitRadii.Reserve(Model.MoonsList.Num());
+		for (const TSharedPtr<FMoonData>& MoonData : Model.MoonsList)
+		{
+			PreviousOrbitRadii.Add(MoonData.IsValid() ? MoonData->OrbitRadius : -1.0);
+		}
+		TArray<double> MoonCenterRadiiKm;
+		MoonCenterRadiiKm.Init(-1.0, Model.MoonsList.Num());
+		if (FMath::IsFinite(PreviousParentRadiusKm)
+			&& PreviousParentRadiusKm > UE_DOUBLE_SMALL_NUMBER)
+		{
+			for (int32 MoonIndex = 0; MoonIndex < Model.MoonsList.Num(); ++MoonIndex)
+			{
+				const TSharedPtr<FMoonData>& MoonData = Model.MoonsList[MoonIndex];
+				if (MoonData.IsValid() && FMath::IsFinite(MoonData->OrbitRadius))
+				{
+					MoonCenterRadiiKm[MoonIndex] = PreviousParentRadiusKm
+						* FMath::Max(1.0 + MoonData->OrbitRadius, 1.0);
+				}
+			}
+		}
+
+		ApplyToPlanetModelData(Model, BodyOverride);
+		const double NewParentRadiusKm = FMath::Max(
+			static_cast<double>(Model.RadiusKM),
+			static_cast<double>(Model.Radius) * BodyOverrideEarthRadiusKm);
+		if (!FMath::IsFinite(NewParentRadiusKm)
+			|| NewParentRadiusKm <= UE_DOUBLE_SMALL_NUMBER)
+		{
+			return false;
+		}
+
+		bool bRestoredAnyCenter = false;
+		for (int32 MoonIndex = 0; MoonIndex < Model.MoonsList.Num(); ++MoonIndex)
+		{
+			TSharedPtr<FMoonData>& MoonData = Model.MoonsList[MoonIndex];
+			if (!MoonData.IsValid() || !MoonCenterRadiiKm.IsValidIndex(MoonIndex)
+				|| MoonCenterRadiiKm[MoonIndex] <= 0.0)
+			{
+				continue;
+			}
+
+			MoonData->OrbitRadius = FMath::Max(
+				MoonCenterRadiiKm[MoonIndex] / NewParentRadiusKm - 1.0, 0.0);
+			if (MoonData->MoonModel.IsValid())
+			{
+				MoonData->MoonModel->OrbitDistance = MoonData->OrbitRadius;
+				MoonData->MoonModelData = *MoonData->MoonModel;
+			}
+			bRestoredAnyCenter = true;
+		}
+		if (bRestoredAnyCenter)
+		{
+			// Preserve authored centre distances whenever they are still safe. If a
+			// larger parent would intersect a moon, move only that orbit outward.
+			UPlanetarySystemGenerator::EnforceSafeMoonOrbitSpacing(Model);
+		}
+
+		for (int32 MoonIndex = 0; MoonIndex < Model.MoonsList.Num(); ++MoonIndex)
+		{
+			const TSharedPtr<FMoonData>& MoonData = Model.MoonsList[MoonIndex];
+			if (MoonData.IsValid() && PreviousOrbitRadii.IsValidIndex(MoonIndex)
+				&& !FMath::IsNearlyEqual(MoonData->OrbitRadius,
+					PreviousOrbitRadii[MoonIndex], 1.0e-12))
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
 	void ApplyToMoonModelData(
 		FMoonModel& Model, const FAPSPreviewBodyEditOverride& BodyOverride)
 	{
 		Model.PlanetType = BodyOverride.PlanetType;
+		Model.PlanetHabitability = BodyOverride.PlanetHabitability;
 		Model.Radius = static_cast<float>(
 			BodyOverride.RadiusKm / BodyOverrideEarthRadiusKm);
 		Model.RadiusKM = static_cast<float>(BodyOverride.RadiusKm);
@@ -103,7 +211,107 @@ namespace
 		Model.MoonAtmosphereHeight = BodyOverride.AtmosphereHeight;
 	}
 
-	void ApplyToGenerationModel(
+	bool ApplyMoonOrbitToParentModel(
+		FPlanetModel& ParentModel, const int32 MoonIndex,
+		const FAPSPreviewBodyEditOverride& BodyOverride)
+	{
+		if (!ParentModel.MoonsList.IsValidIndex(MoonIndex)
+			|| !ParentModel.MoonsList[MoonIndex].IsValid())
+		{
+			return false;
+		}
+
+		const double ParentRadiusKm = FMath::Max(
+			static_cast<double>(ParentModel.RadiusKM),
+			static_cast<double>(ParentModel.Radius) * BodyOverrideEarthRadiusKm);
+		if (!FMath::IsFinite(ParentRadiusKm) || ParentRadiusKm <= UE_DOUBLE_SMALL_NUMBER)
+		{
+			return false;
+		}
+
+		TArray<double> PreviousOrbitRadii;
+		PreviousOrbitRadii.Reserve(ParentModel.MoonsList.Num());
+		for (const TSharedPtr<FMoonData>& ExistingMoonData : ParentModel.MoonsList)
+		{
+			PreviousOrbitRadii.Add(
+				ExistingMoonData.IsValid() ? ExistingMoonData->OrbitRadius : -1.0);
+		}
+
+		TSharedPtr<FMoonData>& MoonData = ParentModel.MoonsList[MoonIndex];
+		if (BodyOverride.MoonOrbitRadiusKm > 0.0)
+		{
+			const double RequestedAltitudeInParentRadii = FMath::Max(
+				BodyOverride.MoonOrbitRadiusKm / ParentRadiusKm - 1.0, 0.0);
+			MoonData->OrbitRadius = RequestedAltitudeInParentRadii;
+			if (MoonData->MoonModel.IsValid())
+			{
+				MoonData->MoonModel->OrbitDistance = RequestedAltitudeInParentRadii;
+				MoonData->MoonModelData = *MoonData->MoonModel;
+			}
+		}
+		UPlanetarySystemGenerator::EnforceSafeMoonOrbitSpacing(ParentModel);
+		for (int32 ExistingMoonIndex = 0;
+			ExistingMoonIndex < ParentModel.MoonsList.Num(); ++ExistingMoonIndex)
+		{
+			const TSharedPtr<FMoonData>& ExistingMoonData =
+				ParentModel.MoonsList[ExistingMoonIndex];
+			if (ExistingMoonData.IsValid()
+				&& PreviousOrbitRadii.IsValidIndex(ExistingMoonIndex)
+				&& !FMath::IsNearlyEqual(ExistingMoonData->OrbitRadius,
+					PreviousOrbitRadii[ExistingMoonIndex], 1.0e-12))
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	void ApplyMoonOrbitLayoutToActors(APlanet& ParentPlanet)
+	{
+		if (!ParentPlanet.PlanetData.PlanetModel.IsValid())
+		{
+			return;
+		}
+
+		const FPlanetModel& ParentModel = *ParentPlanet.PlanetData.PlanetModel;
+		const double ParentRadiusKm = FMath::Max(
+			static_cast<double>(ParentModel.RadiusKM), ParentPlanet.RadiusKM);
+		for (int32 MoonIndex = 0; MoonIndex < ParentPlanet.Moons.Num(); ++MoonIndex)
+		{
+			AMoon* Moon = ParentPlanet.Moons[MoonIndex];
+			APlanetOrbit* MoonOrbit = ParentPlanet.MoonOrbitsList.IsValidIndex(MoonIndex)
+				? ParentPlanet.MoonOrbitsList[MoonIndex] : nullptr;
+			if (!IsValid(Moon) || !IsValid(MoonOrbit)
+				|| !ParentModel.MoonsList.IsValidIndex(MoonIndex)
+				|| !ParentModel.MoonsList[MoonIndex].IsValid())
+			{
+				continue;
+			}
+
+			const double CenterRadiusCm = ParentRadiusKm
+				* (1.0 + ParentModel.MoonsList[MoonIndex]->OrbitRadius) * 100000.0;
+			const FTransform OrbitTransform = MoonOrbit->GetActorTransform();
+			FVector LocalOrbitDirection = FVector::VectorPlaneProject(
+				OrbitTransform.InverseTransformPosition(Moon->GetActorLocation()),
+				FVector::UpVector).GetSafeNormal();
+			if (LocalOrbitDirection.IsNearlyZero())
+			{
+				LocalOrbitDirection = FVector::YAxisVector;
+			}
+			// CenterRadiusCm is authored in the orbit actor's physical local space.
+			// TransformPosition composes the preview root's uniform normalization; adding
+			// the raw centimetres in world space made a surface-only edit fling moons away.
+			const FVector TargetWorldLocation = OrbitTransform.TransformPosition(
+				LocalOrbitDirection * CenterRadiusCm);
+			if (!Moon->GetActorLocation().Equals(TargetWorldLocation, 0.001))
+			{
+				Moon->SetActorLocation(TargetWorldLocation,
+					false, nullptr, ETeleportType::TeleportPhysics);
+			}
+		}
+	}
+
+	bool ApplyToGenerationModel(
 		APlanetaryBody& Body, const FAPSPreviewBodyEditOverride& BodyOverride)
 	{
 		if (APlanet* Planet = Cast<APlanet>(&Body))
@@ -115,9 +323,12 @@ namespace
 			}
 
 			FPlanetModel& Model = *Planet->PlanetData.PlanetModel;
-			ApplyToPlanetModelData(Model, BodyOverride);
+			const bool bMoonLayoutChanged =
+				ApplyToPlanetModelDataPreservingMoonCenters(Model, BodyOverride);
 			Planet->PlanetData.PlanetModelData = Model;
+			Planet->PlanetData.PlanetHabitability = Model.PlanetHabitability;
 			Planet->PlanetData.PlanetRadiusKM = FMath::RoundToInt(BodyOverride.RadiusKm);
+			return bMoonLayoutChanged;
 		}
 		else if (AMoon* Moon = Cast<AMoon>(&Body))
 		{
@@ -128,6 +339,7 @@ namespace
 
 			FMoonModel& Model = *Moon->GenerationModel;
 			ApplyToMoonModelData(Model, BodyOverride);
+			Moon->PlanetData.PlanetHabitability = Model.PlanetHabitability;
 
 			// Keep the serializable parent snapshots in sync with the shared model.
 			if (IsValid(Moon->ParentPlanet)
@@ -141,20 +353,24 @@ namespace
 					ParentModel.MoonsList[MoonIndex]->MoonModel = Moon->GenerationModel;
 					ParentModel.MoonsList[MoonIndex]->MoonModelData = Model;
 				}
-				if (ParentModel.MoonsListData.IsValidIndex(MoonIndex))
-				{
-					ParentModel.MoonsListData[MoonIndex].MoonModel = Moon->GenerationModel;
-					ParentModel.MoonsListData[MoonIndex].MoonModelData = Model;
-				}
+				const bool bMoonLayoutChanged = ApplyMoonOrbitToParentModel(
+					ParentModel, MoonIndex, BodyOverride);
+				// The sanitizer can move this moon and every moon outside it. Rebuild
+				// the complete serial snapshot after it runs; writing the pre-sanitize
+				// local Model here restored a stale OrbitDistance on the edited entry.
+				ParentModel.MoonsListData = ParentModel.GetMoonsData();
 				Moon->ParentPlanet->PlanetData.PlanetModelData = ParentModel;
+				return bMoonLayoutChanged;
 			}
 		}
+		return false;
 	}
 
 	void ApplyToBody(APlanetaryBody& Body, const FAPSPreviewBodyEditOverride& BodyOverride)
 	{
 		AAstroGenerator::ApplyPlanetaryBodyRadius(Body, BodyOverride.RadiusKm);
 		Body.PlanetType = BodyOverride.PlanetType;
+		Body.PlanetHabitability = BodyOverride.PlanetHabitability;
 		Body.WorldScapeSeed = BodyOverride.SurfaceSeed;
 		Body.SurfaceFeatureScale = BodyOverride.SurfaceFeatureScale;
 		Body.SurfaceReliefScale = BodyOverride.SurfaceReliefScale;
@@ -163,7 +379,19 @@ namespace
 		Body.SurfaceCraterScale = BodyOverride.SurfaceCraterScale;
 		Body.SurfaceRoughnessScale = BodyOverride.SurfaceRoughnessScale;
 		Body.AtmosphereHeight = BodyOverride.AtmosphereHeight;
-		ApplyToGenerationModel(Body, BodyOverride);
+		const bool bMoonLayoutChanged = ApplyToGenerationModel(Body, BodyOverride);
+		if (bMoonLayoutChanged)
+		{
+			if (APlanet* Planet = Cast<APlanet>(&Body); IsValid(Planet))
+			{
+				ApplyMoonOrbitLayoutToActors(*Planet);
+			}
+			else if (AMoon* Moon = Cast<AMoon>(&Body);
+				IsValid(Moon) && IsValid(Moon->ParentPlanet))
+			{
+				ApplyMoonOrbitLayoutToActors(*Moon->ParentPlanet);
+			}
+		}
 
 		if (IsValid(Body.PlanetaryEnvironmentGenerator)
 			&& IsValid(Body.PlanetaryEnvironmentGenerator->PlanetAtmosphere))
@@ -183,11 +411,44 @@ namespace
 
 void AAstroGenerator::ApplyPlanetaryBodyRadius(APlanetaryBody& Body, const double RadiusKm)
 {
-	const double NewRadiusKm = FMath::Clamp(RadiusKm, 100.0, 20000.0);
-	const double PreviousRadiusKm = FMath::Max(
-		Body.RadiusKM, static_cast<double>(Body.PlanetRadiusKM));
+	if (!FMath::IsFinite(RadiusKm) || RadiusKm <= 0.0) return;
+	const double NewRadiusKm = RadiusKm;
+	const double PreviousRadiusKm = FMath::IsFinite(Body.RadiusKM) && Body.RadiusKM > 0.0
+		? Body.RadiusKM : static_cast<double>(Body.PlanetRadiusKM);
 	const FVector CurrentScale = Body.GetActorScale3D();
-	if (FMath::IsFinite(PreviousRadiusKm) && PreviousRadiusKm > UE_DOUBLE_SMALL_NUMBER
+	const bool bRadiusChanged = !FMath::IsNearlyEqual(
+		NewRadiusKm, PreviousRadiusKm,
+		FMath::Max(PreviousRadiusKm * 1.0e-9, 1.0e-6));
+
+	// Moon-orbit roots are attached to their planet so orbital rotation remains
+	// hierarchical. They are not part of the planet's physical radius, however:
+	// changing the planet scale must not multiply a moon's size or orbital radius.
+	// Preserve the world transforms of both the orbit roots and their bodies while
+	// the parent scale changes, then let Unreal recompute their relative transforms.
+	TArray<TPair<TWeakObjectPtr<APlanetOrbit>, FTransform>> MoonOrbitTransforms;
+	TArray<TPair<TWeakObjectPtr<AMoon>, FTransform>> MoonTransforms;
+	if (bRadiusChanged)
+	{
+		if (APlanet* Planet = Cast<APlanet>(&Body))
+		{
+			for (APlanetOrbit* MoonOrbit : Planet->MoonOrbitsList)
+			{
+				if (IsValid(MoonOrbit))
+				{
+					MoonOrbitTransforms.Emplace(MoonOrbit, MoonOrbit->GetActorTransform());
+				}
+			}
+			for (AMoon* Moon : Planet->Moons)
+			{
+				if (IsValid(Moon))
+				{
+					MoonTransforms.Emplace(Moon, Moon->GetActorTransform());
+				}
+			}
+		}
+	}
+	if (bRadiusChanged && FMath::IsFinite(PreviousRadiusKm)
+		&& PreviousRadiusKm > UE_DOUBLE_SMALL_NUMBER
 		&& !CurrentScale.ContainsNaN())
 	{
 		// Scale by the radius ratio instead of assigning an absolute value. Preview
@@ -196,6 +457,24 @@ void AAstroGenerator::ApplyPlanetaryBodyRadius(APlanetaryBody& Body, const doubl
 		const double ScaleRatio = FMath::Clamp(
 			NewRadiusKm / PreviousRadiusKm, 1.0e-6, 1.0e6);
 		Body.SetActorScale3D(CurrentScale * ScaleRatio);
+
+		for (const TPair<TWeakObjectPtr<APlanetOrbit>, FTransform>& Snapshot
+			: MoonOrbitTransforms)
+		{
+			if (APlanetOrbit* MoonOrbit = Snapshot.Key.Get())
+			{
+				MoonOrbit->SetActorTransform(
+					Snapshot.Value, false, nullptr, ETeleportType::TeleportPhysics);
+			}
+		}
+		for (const TPair<TWeakObjectPtr<AMoon>, FTransform>& Snapshot : MoonTransforms)
+		{
+			if (AMoon* Moon = Snapshot.Key.Get())
+			{
+				Moon->SetActorTransform(
+					Snapshot.Value, false, nullptr, ETeleportType::TeleportPhysics);
+			}
+		}
 	}
 
 	Body.SetRadius(static_cast<float>(NewRadiusKm / BodyOverrideEarthRadiusKm));
@@ -206,7 +485,7 @@ void AAstroGenerator::ApplyPlanetaryBodyRadius(APlanetaryBody& Body, const doubl
 
 int32 AAstroGenerator::ApplyPreviewBodyEditOverridesToModels(
 	const UGeneratedWorld* InGeneratedWorld, const int32 StarIndex,
-	FPlanetarySystemModel& PlanetarySystem)
+	FPlanetarySystemModel& PlanetarySystem, const FString& SystemPrefix)
 {
 	if (!IsValid(InGeneratedWorld) || StarIndex < 0
 		|| InGeneratedWorld->GetPreviewBodyEditOverrideCount() == 0)
@@ -229,10 +508,15 @@ int32 AAstroGenerator::ApplyPreviewBodyEditOverridesToModels(
 		FPlanetModel& PlanetModel = *PlanetData->PlanetModel;
 		if (const FAPSPreviewBodyEditOverride* PlanetOverride =
 			InGeneratedWorld->FindPreviewBodyEditOverride(
-				MakePlanetKey(StarIndex, PlanetIndex)))
+				MakePlanetKey(StarIndex, PlanetIndex, SystemPrefix)))
 		{
-			ApplyToPlanetModelData(PlanetModel, *PlanetOverride);
-			PlanetData->PlanetRadiusKM = FMath::RoundToInt(PlanetOverride->RadiusKm);
+			FAPSPreviewBodyEditOverride ResolvedOverride = *PlanetOverride;
+			ResolvedOverride.SurfaceSeed = UGeneratedWorld::ResolveCanonicalSurfaceSeed(
+				ResolvedOverride.SurfaceSeed, InGeneratedWorld->GenerationSeed,
+				MakePlanetKey(StarIndex, PlanetIndex, SystemPrefix));
+			ApplyToPlanetModelDataPreservingMoonCenters(PlanetModel, ResolvedOverride);
+			PlanetData->PlanetRadiusKM = FMath::RoundToInt(ResolvedOverride.RadiusKm);
+			PlanetData->PlanetHabitability = PlanetModel.PlanetHabitability;
 			++AppliedCount;
 		}
 
@@ -249,10 +533,15 @@ int32 AAstroGenerator::ApplyPreviewBodyEditOverridesToModels(
 			}
 			if (const FAPSPreviewBodyEditOverride* MoonOverride =
 				InGeneratedWorld->FindPreviewBodyEditOverride(
-					MakeMoonKey(StarIndex, PlanetIndex, MoonIndex)))
+					MakeMoonKey(StarIndex, PlanetIndex, MoonIndex, SystemPrefix)))
 			{
-				ApplyToMoonModelData(*MoonData->MoonModel, *MoonOverride);
+				FAPSPreviewBodyEditOverride ResolvedOverride = *MoonOverride;
+				ResolvedOverride.SurfaceSeed = UGeneratedWorld::ResolveCanonicalSurfaceSeed(
+					ResolvedOverride.SurfaceSeed, InGeneratedWorld->GenerationSeed,
+					MakeMoonKey(StarIndex, PlanetIndex, MoonIndex, SystemPrefix));
+				ApplyToMoonModelData(*MoonData->MoonModel, ResolvedOverride);
 				MoonData->MoonModelData = *MoonData->MoonModel;
+				ApplyMoonOrbitToParentModel(PlanetModel, MoonIndex, ResolvedOverride);
 				++AppliedCount;
 			}
 			if (PlanetModel.MoonsListData.IsValidIndex(MoonIndex))
@@ -260,6 +549,7 @@ int32 AAstroGenerator::ApplyPreviewBodyEditOverridesToModels(
 				PlanetModel.MoonsListData[MoonIndex] = *MoonData;
 			}
 		}
+		PlanetModel.MoonsListData = PlanetModel.GetMoonsData();
 		PlanetData->PlanetModelData = PlanetModel;
 	}
 	return AppliedCount;
@@ -280,10 +570,13 @@ FString AAstroGenerator::GetPreviewBodyStableKey(const APlanetaryBody* Body) con
 	}
 
 	const AStar* ParentStar = Planet->ParentStar;
+	const AStarSystem* OwningSystem = IsValid(ParentStar) ? Cast<AStarSystem>(ParentStar->GetAttachParentActor()) : nullptr;
+	const FString SystemPrefix = IsValid(OwningSystem) && OwningSystem != GeneratedHomeStarSystem
+		? TEXT("SYS-") + OwningSystem->StableSystemId.ToString(EGuidFormats::Digits) : TEXT("SYS0");
 	int32 StarIndex = INDEX_NONE;
-	if (IsValid(GeneratedHomeStarSystem) && IsValid(ParentStar))
+	if (IsValid(OwningSystem) && IsValid(ParentStar))
 	{
-		StarIndex = GeneratedHomeStarSystem->GetStars().IndexOfByKey(ParentStar);
+		StarIndex = OwningSystem->GetStars().IndexOfByKey(ParentStar);
 	}
 	if (StarIndex == INDEX_NONE && (ParentStar == HomeStar || Planet == HomePlanet))
 	{
@@ -306,11 +599,12 @@ FString AAstroGenerator::GetPreviewBodyStableKey(const APlanetaryBody* Body) con
 
 	if (!Moon)
 	{
-		return MakePlanetKey(StarIndex, PlanetIndex);
+		return FString::Printf(TEXT("%s/S%d/P%d"), *SystemPrefix, StarIndex, PlanetIndex);
 	}
 
 	const int32 MoonIndex = Planet->Moons.IndexOfByKey(Moon);
-	return MoonIndex == INDEX_NONE ? FString() : MakeMoonKey(StarIndex, PlanetIndex, MoonIndex);
+	return MoonIndex == INDEX_NONE ? FString()
+		: FString::Printf(TEXT("%s/S%d/P%d/M%d"), *SystemPrefix, StarIndex, PlanetIndex, MoonIndex);
 }
 
 bool AAstroGenerator::SavePreviewBodyEditOverride(
@@ -327,7 +621,11 @@ bool AAstroGenerator::SavePreviewBodyEditOverride(
 		return false;
 	}
 
-	InGeneratedWorld->SetPreviewBodyEditOverride(StableKey, CaptureEditorBuffer(*InGeneratedWorld));
+	FAPSPreviewBodyEditOverride BodyOverride = CaptureEditorBuffer(
+		*InGeneratedWorld, StableKey);
+	BodyOverride.MoonCount = Cast<APlanet>(Body)
+		? FMath::Clamp(InGeneratedWorld->MoonsAmount, 0, 10) : INDEX_NONE;
+	InGeneratedWorld->SetPreviewBodyEditOverride(StableKey, BodyOverride);
 	UE_LOG(LogTemp, Verbose,
 		TEXT("[APS.PreviewBodyEdit] Saved %s seed=%d feature=%.3f relief=%.3f land=%.3f mountain=%.3f crater=%.3f roughness=%.3f"),
 		*StableKey, InGeneratedWorld->PlanetSurfaceSeed, InGeneratedWorld->SurfaceFeatureScale,
@@ -386,7 +684,10 @@ bool AAstroGenerator::ApplyPreviewBodyEditOverrideByKey(
 		return false;
 	}
 
-	ApplyToBody(*Body, *BodyOverride);
+	FAPSPreviewBodyEditOverride ResolvedOverride = *BodyOverride;
+	ResolvedOverride.SurfaceSeed = UGeneratedWorld::ResolveCanonicalSurfaceSeed(
+		ResolvedOverride.SurfaceSeed, InGeneratedWorld->GenerationSeed, StableBodyKey);
+	ApplyToBody(*Body, ResolvedOverride);
 	return true;
 }
 

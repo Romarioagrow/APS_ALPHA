@@ -1,5 +1,7 @@
 #include "Star.h"
+#include "APS_ALPHA/Core/Enums/StellarType.h"
 #include "APS_ALPHA/Core/Rendering/APSStellarMaterialContract.h"
+#include "Components/PointLightComponent.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "UObject/ConstructorHelpers.h"
 
@@ -25,6 +27,42 @@ AStar::AStar()
 	{
 		StarMesh->SetMaterial(0, CanonicalActorMaterial.Object);
 	}
+
+	// The photosphere stays opaque and detailed. This second shell is the geometry
+	// that can actually extend beyond that silhouette; post-process bloom alone
+	// cannot manufacture a broad physical corona from an opaque sphere.
+	CoronaMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("CoronaMesh"));
+	// UE 5.4 rejects the additive corona MID on a Nanite copy of the photosphere
+	// mesh. Force only this shell through the regular fallback proxy before a mesh
+	// or material can create its render state; the opaque photosphere keeps Nanite.
+	CoronaMesh->bDisallowNanite = true;
+	CoronaMesh->SetForceDisableNanite(true);
+	CoronaMesh->SetupAttachment(StarMesh);
+	CoronaMesh->SetRelativeScale3D(FVector(1.12));
+	CoronaMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	CoronaMesh->SetGenerateOverlapEvents(false);
+	CoronaMesh->SetCanEverAffectNavigation(false);
+	CoronaMesh->SetCastShadow(false);
+	CoronaMesh->bAffectDynamicIndirectLighting = false;
+	CoronaMesh->bAffectDistanceFieldLighting = false;
+	CoronaMesh->SetReceivesDecals(false);
+	CoronaMesh->SetTranslucentSortPriority(2);
+
+	// This is deliberately a small, unshadowed local emitter. Long-range physical
+	// daylight remains owned by UAPSStellarVisualSubsystem's directional key, while
+	// the component proves that a materialized star contributes real scene light.
+	StellarLight = CreateDefaultSubobject<UPointLightComponent>(TEXT("StellarLight"));
+	StellarLight->SetupAttachment(StarMesh);
+	StellarLight->SetAbsolute(false, false, true);
+	StellarLight->SetMobility(EComponentMobility::Movable);
+	StellarLight->SetUseInverseSquaredFalloff(false);
+	StellarLight->SetLightFalloffExponent(2.0f);
+	StellarLight->SetIntensity(8.0f);
+	StellarLight->SetAttenuationRadius(500000.0f);
+	StellarLight->SetInverseExposureBlend(1.0f);
+	StellarLight->SetCastShadows(false);
+	StellarLight->SetAffectTranslucentLighting(false);
+	StellarLight->SetVolumetricScatteringIntensity(0.05f);
 }
 
 void AStar::BeginPlay()
@@ -103,7 +141,127 @@ UMaterialInstanceDynamic* AStar::EnsureCanonicalStellarMaterial()
 
 	StarDynamicMaterial = CanonicalDynamic;
 	StarMesh->SetMaterial(0, CanonicalDynamic);
+
+	if (IsValid(CoronaMesh))
+	{
+		// Reassert the native default for pre-existing Blueprint component templates
+		// before assigning the Nanite photosphere mesh and additive corona material.
+		CoronaMesh->bDisallowNanite = true;
+		CoronaMesh->SetForceDisableNanite(true);
+		CoronaMesh->SetStaticMesh(StarMesh->GetStaticMesh());
+		UMaterial* CoronaBase = APSStellarMaterialContract::LoadCanonicalBase(
+			APSStellarMaterialContract::CoronaBaseObjectPath);
+		if (IsValid(CoronaBase))
+		{
+			CoronaDynamicMaterial = UMaterialInstanceDynamic::Create(CoronaBase, this);
+			CoronaMesh->SetMaterial(0, CoronaDynamicMaterial);
+		}
+		else
+		{
+			CoronaDynamicMaterial = nullptr;
+			CoronaMesh->SetVisibility(false, true);
+			UE_LOG(LogTemp, Error,
+				TEXT("[APS.StellarMaterial] Canonical corona master is unavailable: %s"),
+				APSStellarMaterialContract::CoronaBaseObjectPath);
+		}
+	}
 	return CanonicalDynamic;
+}
+
+void AStar::ConfigureStellarPresentation(
+	const FLinearColor& Color, const float Emission, const float SurfaceSeed,
+	const EStellarType StellarType)
+{
+	ConfigureStellarPresentationComponents(StarMesh, CoronaMesh, CoronaDynamicMaterial,
+		StellarLight, Color, Emission, SurfaceSeed, StellarType);
+}
+
+void AStar::ConfigureStellarPresentationComponents(
+	UStaticMeshComponent* StarMesh, UStaticMeshComponent* CoronaMesh,
+	UMaterialInstanceDynamic* CoronaDynamicMaterial, UPointLightComponent* StellarLight,
+	const FLinearColor& Color, const float Emission, const float SurfaceSeed,
+	const EStellarType StellarType)
+{
+	if (!IsValid(StarMesh))
+	{
+		return;
+	}
+
+	StarMesh->UpdateBounds();
+	const bool bBlackHole = StellarType == EStellarType::BlackHole;
+	// The fallback proxy stays close enough to the photosphere that it cannot read
+	// as a second globe. Its material receives the exact reciprocal below and emits
+	// a monotonic limb-to-space falloff, concentrating HDR at the photosphere edge
+	// instead of drawing a detached geometric crown.
+	float CoronaScale = 1.12f;
+	float TypeGain = 1.0f;
+	switch (StellarType)
+	{
+	case EStellarType::Protostar: CoronaScale = 1.14f; TypeGain = 1.40f; break;
+	case EStellarType::HyperGiant: CoronaScale = 1.14f; TypeGain = 1.35f; break;
+	case EStellarType::SuperGiant: CoronaScale = 1.13f; TypeGain = 1.28f; break;
+	case EStellarType::BrightGiant: CoronaScale = 1.13f; TypeGain = 1.20f; break;
+	case EStellarType::Giant: CoronaScale = 1.12f; TypeGain = 1.14f; break;
+	case EStellarType::SubGiant: CoronaScale = 1.11f; TypeGain = 1.08f; break;
+	case EStellarType::Neutron: CoronaScale = 1.08f; TypeGain = 1.18f; break;
+	case EStellarType::Pulsar: CoronaScale = 1.10f; TypeGain = 1.34f; break;
+	case EStellarType::WhiteDwarf: CoronaScale = 1.08f; TypeGain = 0.92f; break;
+	case EStellarType::SubDwarf: CoronaScale = 1.09f; TypeGain = 0.82f; break;
+	case EStellarType::BrownDwarf: CoronaScale = 1.08f; TypeGain = 0.42f; break;
+	default: break;
+	}
+
+	const float EmissionActivity = FMath::Clamp(
+		FMath::Log2(1.0f + FMath::Max(Emission, 0.0f)) / 8.97f, 0.0f, 1.0f);
+	if (IsValid(CoronaMesh))
+	{
+		CoronaMesh->SetStaticMesh(StarMesh->GetStaticMesh());
+		CoronaMesh->SetRelativeScale3D(FVector(CoronaScale));
+		CoronaMesh->SetVisibility(!bBlackHole && IsValid(CoronaDynamicMaterial), true);
+	}
+	if (IsValid(CoronaDynamicMaterial) && !bBlackHole)
+	{
+		CoronaDynamicMaterial->SetVectorParameterValue(TEXT("Color"), Color);
+		CoronaDynamicMaterial->SetScalarParameterValue(TEXT("CoronaShellMode"), 1.0f);
+		CoronaDynamicMaterial->SetScalarParameterValue(TEXT("CoronaInnerRadius"),
+			1.0f / CoronaScale);
+		CoronaDynamicMaterial->SetScalarParameterValue(TEXT("CoronaSeed"), SurfaceSeed);
+		CoronaDynamicMaterial->SetScalarParameterValue(TEXT("CoronaIntensity"),
+			FMath::Min(FMath::Lerp(128.0f, 160.0f, EmissionActivity) * TypeGain, 192.0f));
+		CoronaDynamicMaterial->SetScalarParameterValue(TEXT("CoronaOpacity"),
+			FMath::Lerp(0.68f, 0.76f, EmissionActivity));
+	}
+
+	if (IsValid(StellarLight))
+	{
+		StellarLight->SetVisibility(!bBlackHole);
+		StellarLight->SetLightColor(Color.GetClamped());
+		StellarLight->SetIntensity(bBlackHole ? 0.0f
+			: FMath::Lerp(6.0f, 24.0f, EmissionActivity) * TypeGain);
+		SyncStellarLightToBounds(StarMesh, StellarLight);
+		if (const UStaticMesh* Mesh = StarMesh->GetStaticMesh())
+		{
+			StellarLight->SetRelativeLocation(Mesh->GetBounds().Origin);
+		}
+	}
+}
+
+void AStar::SyncStellarLightToPresentedBounds()
+{
+	SyncStellarLightToBounds(StarMesh, StellarLight);
+}
+
+void AStar::SyncStellarLightToBounds(UStaticMeshComponent* StarMesh, UPointLightComponent* StellarLight)
+{
+	if (!IsValid(StarMesh) || !IsValid(StellarLight))
+	{
+		return;
+	}
+	StarMesh->UpdateBounds();
+	const double VisualRadius = FMath::Max(
+		static_cast<double>(StarMesh->Bounds.SphereRadius), 100.0);
+	StellarLight->SetAttenuationRadius(static_cast<float>(FMath::Clamp(
+		VisualRadius * 96.0, 500000.0, 2.0e13)));
 }
 
 void AStar::SetStarProperties(FLinearColor Color, float Multiplier)

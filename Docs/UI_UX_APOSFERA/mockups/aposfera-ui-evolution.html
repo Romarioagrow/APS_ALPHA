@@ -1,0 +1,585 @@
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500&display=swap');
+
+#aposfera-ui-evolution-mockup {
+  width: 100%;
+  color: #edf8fc;
+  font-family: "Segoe UI", Arial, sans-serif;
+}
+
+#aposfera-ui-evolution-mockup * { box-sizing: border-box; }
+#aposfera-ui-evolution-mockup button,
+#aposfera-ui-evolution-mockup input { font: inherit; }
+
+#aposfera-ui-evolution-mockup .aposfera-demo-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0 0 12px;
+  color: var(--foreground);
+}
+
+#aposfera-ui-evolution-mockup .aposfera-control-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+#aposfera-ui-evolution-mockup .aposfera-control-caption {
+  color: var(--muted-foreground);
+  font-weight: 500;
+}
+
+#aposfera-ui-evolution-mockup .aposfera-demo-button {
+  min-height: 34px;
+  padding: 7px 11px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--foreground);
+  background: var(--background);
+  cursor: pointer;
+}
+
+#aposfera-ui-evolution-mockup .aposfera-demo-button[aria-pressed="true"] {
+  color: var(--primary-foreground);
+  background: var(--primary);
+  border-color: var(--primary);
+}
+
+#aposfera-ui-evolution-mockup .aposfera-product {
+  width: 100%;
+  min-height: 620px;
+  border: 1px solid #2d6f84;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, .32);
+}
+
+#aposfera-ui-evolution-mockup.profile-balanced .aposfera-product { background: #02080d; color: #edf8fc; border-color: #2d6f84; }
+#aposfera-ui-evolution-mockup.profile-balanced .aposfera-panel { background: rgba(6,25,35,.95); border-color: #2d6f84; }
+#aposfera-ui-evolution-mockup.profile-balanced .aposfera-raised,
+#aposfera-ui-evolution-mockup.profile-balanced .aposfera-row,
+#aposfera-ui-evolution-mockup.profile-balanced .aposfera-field { background: #0a2532; border-color: #2d6f84; }
+#aposfera-ui-evolution-mockup.profile-balanced .aposfera-muted { color: #a5c3cd; }
+#aposfera-ui-evolution-mockup.profile-balanced .aposfera-cyan { color: #35d4ff; }
+#aposfera-ui-evolution-mockup.profile-balanced .aposfera-cyan-border { border-color: #35d4ff; }
+#aposfera-ui-evolution-mockup.profile-balanced .aposfera-amber { color: #ff9c2a; }
+#aposfera-ui-evolution-mockup.profile-balanced .aposfera-primary { background: #7b3d08; border-color: #ff9c2a; color: #fff7ec; }
+#aposfera-ui-evolution-mockup.profile-balanced .aposfera-selected { background: #2f291c; border-color: #ff9c2a; }
+#aposfera-ui-evolution-mockup.profile-balanced input[type="range"] { accent-color: #35d4ff; }
+
+#aposfera-ui-evolution-mockup.profile-cinematic .aposfera-product { background: #01050a; color: #e9f7fa; border-color: #245d70; }
+#aposfera-ui-evolution-mockup.profile-cinematic .aposfera-panel { background: rgba(3,18,28,.95); border-color: #245d70; }
+#aposfera-ui-evolution-mockup.profile-cinematic .aposfera-raised,
+#aposfera-ui-evolution-mockup.profile-cinematic .aposfera-row,
+#aposfera-ui-evolution-mockup.profile-cinematic .aposfera-field { background: #061b27; border-color: #245d70; }
+#aposfera-ui-evolution-mockup.profile-cinematic .aposfera-muted { color: #a0bdc8; }
+#aposfera-ui-evolution-mockup.profile-cinematic .aposfera-cyan { color: #2acfff; }
+#aposfera-ui-evolution-mockup.profile-cinematic .aposfera-cyan-border { border-color: #2acfff; }
+#aposfera-ui-evolution-mockup.profile-cinematic .aposfera-amber { color: #ff9722; }
+#aposfera-ui-evolution-mockup.profile-cinematic .aposfera-primary { background: #693407; border-color: #ff9722; color: #fff5e9; }
+#aposfera-ui-evolution-mockup.profile-cinematic .aposfera-selected { background: #282117; border-color: #ff9722; }
+#aposfera-ui-evolution-mockup.profile-cinematic input[type="range"] { accent-color: #2acfff; }
+
+#aposfera-ui-evolution-mockup.profile-bright .aposfera-product { background: #071720; color: #f5fbfd; border-color: #4a8fa3; }
+#aposfera-ui-evolution-mockup.profile-bright .aposfera-panel { background: rgba(16,42,54,.97); border-color: #4a8fa3; }
+#aposfera-ui-evolution-mockup.profile-bright .aposfera-raised,
+#aposfera-ui-evolution-mockup.profile-bright .aposfera-row,
+#aposfera-ui-evolution-mockup.profile-bright .aposfera-field { background: #153744; border-color: #4a8fa3; }
+#aposfera-ui-evolution-mockup.profile-bright .aposfera-muted { color: #bad0d8; }
+#aposfera-ui-evolution-mockup.profile-bright .aposfera-cyan { color: #58ddff; }
+#aposfera-ui-evolution-mockup.profile-bright .aposfera-cyan-border { border-color: #58ddff; }
+#aposfera-ui-evolution-mockup.profile-bright .aposfera-amber { color: #ffac45; }
+#aposfera-ui-evolution-mockup.profile-bright .aposfera-primary { background: #7c470f; border-color: #ffac45; color: #fffaf2; }
+#aposfera-ui-evolution-mockup.profile-bright .aposfera-selected { background: #3d3324; border-color: #ffac45; }
+#aposfera-ui-evolution-mockup.profile-bright input[type="range"] { accent-color: #58ddff; }
+
+#aposfera-ui-evolution-mockup .aposfera-product-header {
+  display: grid;
+  grid-template-columns: minmax(110px, 1fr) auto minmax(110px, 1fr);
+  align-items: center;
+  gap: 16px;
+  min-height: 82px;
+  padding: 12px 18px;
+  border-bottom: 1px solid rgba(76, 176, 204, .34);
+  background: linear-gradient(180deg, rgba(4, 20, 29, .96), rgba(2, 10, 16, .9));
+}
+
+#aposfera-ui-evolution-mockup .aposfera-product-header-end { text-align: right; }
+#aposfera-ui-evolution-mockup .aposfera-brand { text-align: center; font-family: Orbitron, sans-serif; }
+#aposfera-ui-evolution-mockup .aposfera-brand-name { font-size: 27px; font-weight: 500; letter-spacing: .28em; line-height: 1.05; }
+#aposfera-ui-evolution-mockup .aposfera-brand-subtitle { margin-top: 4px; font-size: 9px; letter-spacing: .22em; }
+
+#aposfera-ui-evolution-mockup .aposfera-action {
+  min-height: 40px;
+  padding: 8px 13px;
+  border: 1px solid currentColor;
+  border-radius: 6px;
+  color: inherit;
+  background: rgba(5, 27, 38, .86);
+  font-family: Orbitron, sans-serif;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: .05em;
+  cursor: pointer;
+}
+
+#aposfera-ui-evolution-mockup .aposfera-primary { min-height: 44px; padding: 10px 18px; }
+#aposfera-ui-evolution-mockup .aposfera-screen { padding: 14px; }
+#aposfera-ui-evolution-mockup .aposfera-screen[hidden] { display: none; }
+
+#aposfera-ui-evolution-mockup .aposfera-generation-grid {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(330px, 2fr) minmax(235px, 1fr);
+  gap: 12px;
+  align-items: stretch;
+}
+
+#aposfera-ui-evolution-mockup .aposfera-panel {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid;
+  border-radius: 10px;
+}
+
+#aposfera-ui-evolution-mockup .aposfera-section-heading {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0 0 12px;
+  font-family: Orbitron, sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+#aposfera-ui-evolution-mockup .aposfera-section-code {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  font-size: 8px;
+}
+
+#aposfera-ui-evolution-mockup .aposfera-divider { height: 1px; margin: 10px 0 14px; background: rgba(66, 181, 211, .32); }
+#aposfera-ui-evolution-mockup .aposfera-field { margin-bottom: 10px; padding: 9px 10px; border: 1px solid; border-radius: 6px; }
+#aposfera-ui-evolution-mockup .aposfera-field-label { display: block; margin-bottom: 5px; font-size: 10px; font-weight: 500; letter-spacing: .06em; text-transform: uppercase; }
+#aposfera-ui-evolution-mockup .aposfera-choice { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+#aposfera-ui-evolution-mockup .aposfera-choice-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: Orbitron, sans-serif; font-size: 11px; }
+#aposfera-ui-evolution-mockup .aposfera-stepper { display: inline-flex; gap: 4px; }
+#aposfera-ui-evolution-mockup .aposfera-stepper button { width: 31px; height: 31px; border: 1px solid rgba(64,182,212,.55); border-radius: 5px; color: inherit; background: rgba(2,18,27,.78); cursor: pointer; }
+
+#aposfera-ui-evolution-mockup .aposfera-slider-field { margin-bottom: 12px; }
+#aposfera-ui-evolution-mockup .aposfera-slider-header { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+#aposfera-ui-evolution-mockup .aposfera-slider-title { font-size: 11px; font-weight: 500; text-transform: uppercase; }
+#aposfera-ui-evolution-mockup .aposfera-slider-value { font-family: Orbitron, sans-serif; font-size: 11px; white-space: nowrap; }
+#aposfera-ui-evolution-mockup .aposfera-slider-line { display: grid; grid-template-columns: minmax(80px, 1fr) 72px; align-items: center; gap: 10px; min-height: 36px; }
+#aposfera-ui-evolution-mockup input[type="range"] { width: 100%; min-height: 32px; cursor: pointer; }
+#aposfera-ui-evolution-mockup .aposfera-number-box { padding: 7px 8px; border: 1px solid currentColor; border-radius: 5px; text-align: right; font-variant-numeric: tabular-nums; }
+
+#aposfera-ui-evolution-mockup .aposfera-preview-column { display: flex; flex-direction: column; min-width: 0; }
+#aposfera-ui-evolution-mockup .aposfera-preview-stage {
+  position: relative;
+  flex: 1;
+  min-height: 410px;
+  overflow: hidden;
+  border: 1px solid rgba(53, 212, 255, .28);
+  background-color: #00050a;
+  background-image:
+    radial-gradient(circle at 13% 22%, rgba(255,255,255,.85) 0 1px, transparent 1.5px),
+    radial-gradient(circle at 77% 18%, rgba(94,212,255,.9) 0 1px, transparent 1.8px),
+    radial-gradient(circle at 84% 71%, rgba(255,182,102,.8) 0 1px, transparent 1.5px),
+    radial-gradient(circle at 29% 81%, rgba(255,255,255,.65) 0 1px, transparent 1.4px),
+    radial-gradient(circle at 56% 47%, rgba(38,118,148,.25), transparent 43%);
+}
+
+#aposfera-ui-evolution-mockup .aposfera-preview-label { position: absolute; top: 10px; left: 12px; font-family: Orbitron, sans-serif; font-size: 9px; letter-spacing: .08em; }
+#aposfera-ui-evolution-mockup .aposfera-orbit { position: absolute; left: 50%; top: 49%; width: 72%; height: 30%; transform: translate(-50%,-50%) rotate(-9deg); border: 1px solid rgba(53,212,255,.2); border-radius: 50%; }
+#aposfera-ui-evolution-mockup .aposfera-orbit-second { width: 52%; height: 20%; transform: translate(-50%,-50%) rotate(13deg); }
+#aposfera-ui-evolution-mockup .aposfera-planet {
+  position: absolute;
+  left: 50%;
+  top: 48%;
+  width: 118px;
+  aspect-ratio: 1;
+  transform: translate(-50%,-50%);
+  border-radius: 50%;
+  box-shadow: -18px 7px 25px rgba(0,0,0,.8), 0 0 28px rgba(70,190,228,.18);
+  background:
+    radial-gradient(ellipse at 65% 20%, rgba(216,236,221,.62) 0 5%, transparent 6%),
+    radial-gradient(ellipse at 43% 59%, #6c8651 0 13%, transparent 14%),
+    radial-gradient(ellipse at 66% 53%, #536f42 0 16%, transparent 17%),
+    radial-gradient(ellipse at 38% 26%, #4f7542 0 12%, transparent 13%),
+    radial-gradient(circle at 60% 35%, #3d90b5, #174c72 58%, #07111d 76%);
+}
+#aposfera-ui-evolution-mockup .aposfera-moon { position: absolute; left: calc(50% + 94px); top: 39%; width: 17px; height: 17px; border-radius: 50%; background: #bbc8c6; box-shadow: 0 0 10px rgba(215,239,255,.28); }
+#aposfera-ui-evolution-mockup .aposfera-target-tag { position: absolute; left: calc(50% + 38px); top: 52%; padding: 5px 7px; border: 1px solid #ff9c2a; color: #ffe3bd; background: rgba(47,27,5,.86); font-size: 9px; }
+
+#aposfera-ui-evolution-mockup .aposfera-scope-nav { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 5px; margin-top: 10px; }
+#aposfera-ui-evolution-mockup .aposfera-scope-button { min-height: 38px; padding: 6px 4px; border: 1px solid rgba(60,168,196,.46); border-radius: 5px; color: inherit; background: rgba(3,23,33,.88); font-family: Orbitron, sans-serif; font-size: 8px; cursor: pointer; }
+
+#aposfera-ui-evolution-mockup .aposfera-breadcrumb { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; font-family: Orbitron, sans-serif; font-size: 9px; }
+#aposfera-ui-evolution-mockup .aposfera-context-copy { margin: 0 0 14px; font-size: 12px; line-height: 1.45; }
+#aposfera-ui-evolution-mockup .aposfera-fact-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 7px; margin-bottom: 14px; }
+#aposfera-ui-evolution-mockup .aposfera-fact { min-width: 0; padding: 8px; border: 1px solid; border-radius: 6px; }
+#aposfera-ui-evolution-mockup .aposfera-fact-label { display: block; font-size: 9px; letter-spacing: .05em; text-transform: uppercase; }
+#aposfera-ui-evolution-mockup .aposfera-fact-value { display: block; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; font-family: Orbitron, sans-serif; font-size: 11px; font-weight: 500; white-space: nowrap; }
+
+#aposfera-ui-evolution-mockup .aposfera-hierarchy { display: grid; gap: 6px; }
+#aposfera-ui-evolution-mockup .aposfera-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 24px minmax(0,1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 7px 8px;
+  border: 1px solid;
+  border-radius: 5px;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+#aposfera-ui-evolution-mockup .aposfera-row-depth-1 { margin-left: 14px; }
+#aposfera-ui-evolution-mockup .aposfera-row-depth-2 { margin-left: 28px; }
+#aposfera-ui-evolution-mockup .aposfera-row-depth-3 { margin-left: 42px; }
+#aposfera-ui-evolution-mockup .aposfera-selected::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 3px; background: #ff9c2a; }
+#aposfera-ui-evolution-mockup .aposfera-body-glyph { display: grid; place-items: center; width: 22px; height: 22px; border: 1px solid currentColor; border-radius: 50%; font-family: Orbitron, sans-serif; font-size: 8px; }
+#aposfera-ui-evolution-mockup .aposfera-row-title { display: block; overflow: hidden; text-overflow: ellipsis; font-size: 11px; font-weight: 500; white-space: nowrap; }
+#aposfera-ui-evolution-mockup .aposfera-row-detail { display: block; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; font-size: 10px; white-space: nowrap; }
+#aposfera-ui-evolution-mockup .aposfera-row-count { min-width: 25px; padding: 3px 5px; border: 1px solid currentColor; border-radius: 10px; text-align: center; font-size: 9px; }
+
+#aposfera-ui-evolution-mockup .aposfera-readiness-mini { margin-top: 14px; padding: 10px; border: 1px solid #ffc15a; border-radius: 6px; background: rgba(76,48,7,.32); }
+#aposfera-ui-evolution-mockup .aposfera-readiness-title { display: flex; justify-content: space-between; gap: 8px; font-size: 10px; font-weight: 500; text-transform: uppercase; }
+#aposfera-ui-evolution-mockup .aposfera-readiness-note { margin-top: 5px; font-size: 11px; line-height: 1.4; }
+
+#aposfera-ui-evolution-mockup .aposfera-generation-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; padding: 10px 2px 0; }
+#aposfera-ui-evolution-mockup .aposfera-status-line { font-family: Orbitron, sans-serif; font-size: 10px; }
+
+#aposfera-ui-evolution-mockup .aposfera-colonization-layout { display: grid; grid-template-columns: minmax(260px,.9fr) minmax(320px,1.35fr); gap: 14px; }
+#aposfera-ui-evolution-mockup .aposfera-colonization-title { margin: 0; font-family: Orbitron, sans-serif; font-size: 23px; font-weight: 500; letter-spacing: .08em; }
+#aposfera-ui-evolution-mockup .aposfera-kicker { margin-bottom: 6px; font-family: Orbitron, sans-serif; font-size: 9px; letter-spacing: .12em; text-transform: uppercase; }
+#aposfera-ui-evolution-mockup .aposfera-readiness-hero { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 18px 0; padding: 14px; border: 1px solid #ffc15a; border-radius: 8px; background: rgba(93,57,4,.28); }
+#aposfera-ui-evolution-mockup .aposfera-readiness-state { font-family: Orbitron, sans-serif; font-size: 18px; font-weight: 500; color: #ffc15a; }
+#aposfera-ui-evolution-mockup .aposfera-score { font-family: Orbitron, sans-serif; font-size: 24px; }
+#aposfera-ui-evolution-mockup .aposfera-check-list { display: grid; gap: 7px; }
+#aposfera-ui-evolution-mockup .aposfera-check { display: grid; grid-template-columns: 52px minmax(0,1fr) auto; align-items: center; gap: 10px; min-height: 44px; padding: 8px 10px; border: 1px solid; border-radius: 6px; }
+#aposfera-ui-evolution-mockup .aposfera-check-code { font-family: Orbitron, sans-serif; font-size: 9px; font-weight: 500; }
+#aposfera-ui-evolution-mockup .aposfera-check-name { font-size: 12px; font-weight: 500; }
+#aposfera-ui-evolution-mockup .aposfera-check-note { display: block; margin-top: 2px; font-size: 10px; }
+#aposfera-ui-evolution-mockup .aposfera-pass { color: #5ee4b1; }
+#aposfera-ui-evolution-mockup .aposfera-warn { color: #ffc15a; }
+#aposfera-ui-evolution-mockup .aposfera-resource-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 8px; margin-top: 14px; }
+#aposfera-ui-evolution-mockup .aposfera-resource { padding: 10px; border: 1px solid; border-radius: 6px; text-align: center; }
+#aposfera-ui-evolution-mockup .aposfera-resource strong { display: block; margin-top: 4px; font-family: Orbitron, sans-serif; font-size: 13px; font-weight: 500; }
+#aposfera-ui-evolution-mockup .aposfera-doctrine-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
+#aposfera-ui-evolution-mockup .aposfera-doctrine { min-height: 62px; padding: 10px; border: 1px solid; border-radius: 6px; color: inherit; background: transparent; text-align: left; cursor: pointer; }
+#aposfera-ui-evolution-mockup .aposfera-doctrine strong { display: block; font-family: Orbitron, sans-serif; font-size: 10px; font-weight: 500; }
+#aposfera-ui-evolution-mockup .aposfera-doctrine span { display: block; margin-top: 5px; font-size: 10px; }
+#aposfera-ui-evolution-mockup .aposfera-division-list { display: grid; gap: 7px; margin-top: 14px; }
+#aposfera-ui-evolution-mockup .aposfera-division { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 10px; padding: 10px; border: 1px solid; border-radius: 6px; }
+#aposfera-ui-evolution-mockup .aposfera-colonization-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+
+#aposfera-ui-evolution-mockup .aposfera-gameplay-stage {
+  min-height: 510px;
+  display: grid;
+  place-items: center;
+  padding: 30px;
+  background:
+    linear-gradient(rgba(0,6,11,.42),rgba(0,6,11,.8)),
+    radial-gradient(circle at 65% 45%, rgba(35,116,146,.55), transparent 22%),
+    radial-gradient(circle at 63% 46%, #d7ebef 0 2px, transparent 3px),
+    #02080d;
+}
+#aposfera-ui-evolution-mockup .aposfera-gameplay-menu { width: min(720px,100%); display: grid; grid-template-columns: 210px minmax(0,1fr); border: 1px solid; border-radius: 10px; overflow: hidden; box-shadow: 0 24px 70px rgba(0,0,0,.5); }
+#aposfera-ui-evolution-mockup .aposfera-gameplay-actions { padding: 18px; border-right: 1px solid; }
+#aposfera-ui-evolution-mockup .aposfera-gameplay-actions h2 { margin: 0 0 18px; font-family: Orbitron, sans-serif; font-size: 20px; font-weight: 500; letter-spacing: .1em; }
+#aposfera-ui-evolution-mockup .aposfera-menu-stack { display: grid; gap: 8px; }
+#aposfera-ui-evolution-mockup .aposfera-menu-stack .aposfera-action { width: 100%; text-align: left; }
+#aposfera-ui-evolution-mockup .aposfera-danger-action { margin-top: 16px; border-color: #ff657a; color: #ffd5dc; background: rgba(80,16,29,.32); }
+#aposfera-ui-evolution-mockup .aposfera-gameplay-context { padding: 22px; }
+#aposfera-ui-evolution-mockup .aposfera-gameplay-context h3 { margin: 0 0 5px; font-family: Orbitron, sans-serif; font-size: 17px; font-weight: 500; }
+#aposfera-ui-evolution-mockup .aposfera-run-facts { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; margin: 18px 0; }
+#aposfera-ui-evolution-mockup .aposfera-toggle-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; padding: 8px 10px; border: 1px solid; border-radius: 6px; }
+
+#aposfera-ui-evolution-mockup .aposfera-annotations { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 8px; margin-top: 12px; }
+#aposfera-ui-evolution-mockup .aposfera-annotation-item { min-height: 44px; padding: 8px 9px; border: 1px solid var(--border); border-radius: 6px; color: var(--foreground); background: transparent; text-align: left; cursor: pointer; }
+#aposfera-ui-evolution-mockup .aposfera-annotation-number { display: inline-grid; place-items: center; width: 22px; height: 22px; margin-right: 7px; border-radius: 50%; color: #241406; background: #ff9c2a; font-weight: 500; }
+#aposfera-ui-evolution-mockup .is-callout { outline: 2px solid #ff9c2a; outline-offset: 3px; }
+
+@media (max-width: 860px) {
+  #aposfera-ui-evolution-mockup .aposfera-generation-grid { grid-template-columns: 1fr; }
+  #aposfera-ui-evolution-mockup .aposfera-preview-column { order: -1; }
+  #aposfera-ui-evolution-mockup .aposfera-preview-stage { min-height: 360px; }
+  #aposfera-ui-evolution-mockup .aposfera-colonization-layout { grid-template-columns: 1fr; }
+  #aposfera-ui-evolution-mockup .aposfera-annotations { grid-template-columns: repeat(2,minmax(0,1fr)); }
+}
+
+@media (max-width: 560px) {
+  #aposfera-ui-evolution-mockup .aposfera-demo-controls { align-items: stretch; }
+  #aposfera-ui-evolution-mockup .aposfera-control-group { width: 100%; }
+  #aposfera-ui-evolution-mockup .aposfera-demo-button { flex: 1 1 auto; }
+  #aposfera-ui-evolution-mockup .aposfera-product-header { grid-template-columns: 1fr auto; }
+  #aposfera-ui-evolution-mockup .aposfera-brand { grid-column: 1 / -1; grid-row: 1; }
+  #aposfera-ui-evolution-mockup .aposfera-product-header-start { grid-column: 1; grid-row: 2; }
+  #aposfera-ui-evolution-mockup .aposfera-product-header-end { grid-column: 2; grid-row: 2; }
+  #aposfera-ui-evolution-mockup .aposfera-brand-name { font-size: 21px; }
+  #aposfera-ui-evolution-mockup .aposfera-screen { padding: 9px; }
+  #aposfera-ui-evolution-mockup .aposfera-scope-nav { grid-template-columns: repeat(3,minmax(0,1fr)); }
+  #aposfera-ui-evolution-mockup .aposfera-fact-grid,
+  #aposfera-ui-evolution-mockup .aposfera-resource-grid,
+  #aposfera-ui-evolution-mockup .aposfera-doctrine-grid,
+  #aposfera-ui-evolution-mockup .aposfera-run-facts { grid-template-columns: 1fr; }
+  #aposfera-ui-evolution-mockup .aposfera-generation-footer,
+  #aposfera-ui-evolution-mockup .aposfera-colonization-actions { align-items: stretch; flex-direction: column; }
+  #aposfera-ui-evolution-mockup .aposfera-primary { width: 100%; }
+  #aposfera-ui-evolution-mockup .aposfera-gameplay-stage { padding: 10px; }
+  #aposfera-ui-evolution-mockup .aposfera-gameplay-menu { grid-template-columns: 1fr; }
+  #aposfera-ui-evolution-mockup .aposfera-gameplay-actions { border-right: 0; border-bottom: 1px solid; }
+  #aposfera-ui-evolution-mockup .aposfera-annotations { grid-template-columns: 1fr; }
+}
+</style>
+
+<div id="aposfera-ui-evolution-mockup" class="profile-balanced">
+  <div class="aposfera-demo-controls">
+    <div class="aposfera-control-group" role="group" aria-label="Mockup screen">
+      <span class="aposfera-control-caption">Screen</span>
+      <button type="button" class="aposfera-demo-button" data-view="generation" aria-pressed="true">Generation</button>
+      <button type="button" class="aposfera-demo-button" data-view="colonization" aria-pressed="false">Colonization</button>
+      <button type="button" class="aposfera-demo-button" data-view="gameplay" aria-pressed="false">Gameplay menu</button>
+    </div>
+    <div class="aposfera-control-group" role="group" aria-label="Display calibration profile">
+      <span class="aposfera-control-caption">Palette / display</span>
+      <button type="button" class="aposfera-demo-button" data-profile="balanced" aria-pressed="true">Balanced 2.2</button>
+      <button type="button" class="aposfera-demo-button" data-profile="cinematic" aria-pressed="false">Cinematic 2.4</button>
+      <button type="button" class="aposfera-demo-button" data-profile="bright" aria-pressed="false">Bright 2.0</button>
+    </div>
+  </div>
+
+  <section class="aposfera-product" aria-label="APOSFERA UI evolution mockup">
+    <header class="aposfera-product-header">
+      <div class="aposfera-product-header-start"><button type="button" class="aposfera-action">‹ Back</button></div>
+      <div class="aposfera-brand">
+        <div class="aposfera-brand-name">APOSFERA</div>
+        <div class="aposfera-brand-subtitle aposfera-cyan">SPACETRIPS GENERATION</div>
+      </div>
+      <div class="aposfera-product-header-end"><button type="button" class="aposfera-action aposfera-cyan">Regenerate</button></div>
+    </header>
+
+    <div class="aposfera-screen" data-screen="generation">
+      <div class="aposfera-generation-grid">
+        <aside class="aposfera-panel" data-annotated="type">
+          <h2 class="aposfera-section-heading aposfera-cyan"><span class="aposfera-section-code">PL</span>Selected planet</h2>
+          <div class="aposfera-divider"></div>
+          <div class="aposfera-field">
+            <span class="aposfera-field-label aposfera-muted">Surface family</span>
+            <div class="aposfera-choice"><span class="aposfera-choice-value">Temperate worlds</span><span class="aposfera-stepper"><button type="button" aria-label="Previous surface family">‹</button><button type="button" aria-label="Next surface family">›</button></span></div>
+          </div>
+          <div class="aposfera-field">
+            <span class="aposfera-field-label aposfera-muted">Surface preset / subtype</span>
+            <div class="aposfera-choice"><span class="aposfera-choice-value">High Mountain Planet</span><span class="aposfera-stepper"><button type="button" aria-label="Previous subtype">‹</button><button type="button" aria-label="Next subtype">›</button></span></div>
+          </div>
+          <div class="aposfera-field">
+            <span class="aposfera-field-label aposfera-muted">Habitability</span>
+            <div class="aposfera-choice"><span class="aposfera-choice-value">Conditional</span><span class="aposfera-warn">△ engineering</span></div>
+          </div>
+
+          <div data-annotated="sliders">
+            <div class="aposfera-slider-field">
+              <div class="aposfera-slider-header"><span class="aposfera-slider-title aposfera-muted">Planet radius</span><output class="aposfera-slider-value" data-output="radius">6,210 km</output></div>
+              <div class="aposfera-slider-line"><input type="range" min="100" max="20000" value="6210" step="100" data-slider="radius" aria-label="Planet radius in kilometers"><span class="aposfera-number-box">6210</span></div>
+            </div>
+            <div class="aposfera-slider-field">
+              <div class="aposfera-slider-header"><span class="aposfera-slider-title aposfera-muted">Moon orbit</span><output class="aposfera-slider-value" data-output="orbit">184,000 km</output></div>
+              <div class="aposfera-slider-line"><input type="range" min="30000" max="500000" value="184000" step="1000" data-slider="orbit" aria-label="Moon orbit radius in kilometers"><span class="aposfera-number-box">184k</span></div>
+            </div>
+          </div>
+
+          <h3 class="aposfera-section-heading aposfera-cyan"><span class="aposfera-section-code">SRF</span>Planet surface</h3>
+          <div class="aposfera-slider-field"><div class="aposfera-slider-header"><span class="aposfera-slider-title aposfera-muted">Feature scale</span><output class="aposfera-slider-value" data-output="feature">1.25×</output></div><input type="range" min="25" max="400" value="125" step="5" data-slider="feature" aria-label="Surface feature scale"></div>
+          <div class="aposfera-slider-field"><div class="aposfera-slider-header"><span class="aposfera-slider-title aposfera-muted">Relief</span><output class="aposfera-slider-value" data-output="relief">1.10×</output></div><input type="range" min="25" max="250" value="110" step="5" data-slider="relief" aria-label="Surface relief"></div>
+          <div class="aposfera-slider-field"><div class="aposfera-slider-header"><span class="aposfera-slider-title aposfera-muted">Land coverage</span><output class="aposfera-slider-value" data-output="land">0.85×</output></div><input type="range" min="25" max="200" value="85" step="5" data-slider="land" aria-label="Land coverage"></div>
+        </aside>
+
+        <main class="aposfera-preview-column" data-annotated="calibration">
+          <div class="aposfera-preview-stage" role="img" aria-label="Live full-scale preview of Eos Prime and one moon">
+            <span class="aposfera-preview-label aposfera-cyan">+ LIVE FULL-SCALE PREVIEW</span>
+            <div class="aposfera-orbit"></div><div class="aposfera-orbit aposfera-orbit-second"></div>
+            <div class="aposfera-planet"></div><div class="aposfera-moon"></div>
+            <div class="aposfera-target-tag">SELECTED / EOS PRIME</div>
+          </div>
+          <nav class="aposfera-scope-nav" aria-label="Preview scope">
+            <button type="button" class="aposfera-scope-button">O Overview</button><button type="button" class="aposfera-scope-button">GX Galaxy</button><button type="button" class="aposfera-scope-button">CL Cluster</button><button type="button" class="aposfera-scope-button">SYS System</button><button type="button" class="aposfera-scope-button">S Star</button><button type="button" class="aposfera-scope-button aposfera-selected">P Planet</button>
+          </nav>
+          <p class="aposfera-muted" style="margin:8px 0 0;text-align:center;font-size:11px">RMB drag to rotate · Mouse wheel to zoom · Double-click to focus</p>
+        </main>
+
+        <aside class="aposfera-panel">
+          <div class="aposfera-breadcrumb"><span class="aposfera-cyan">GALAXY / CLUSTER / SYSTEM / BODY</span><button type="button" class="aposfera-action">↑ Up</button></div>
+          <h2 class="aposfera-section-heading aposfera-cyan"><span class="aposfera-section-code">AST</span>Current scope</h2>
+          <p class="aposfera-context-copy aposfera-muted">Edit the selected planet and atmosphere without randomizing its parent system.</p>
+
+          <div data-annotated="live-model">
+            <h3 class="aposfera-section-heading aposfera-cyan"><span class="aposfera-section-code">LIVE</span>Live model</h3>
+            <div class="aposfera-fact-grid">
+              <div class="aposfera-fact aposfera-raised"><span class="aposfera-fact-label aposfera-muted">Stable ID</span><span class="aposfera-fact-value">PL-07A2</span></div>
+              <div class="aposfera-fact aposfera-raised"><span class="aposfera-fact-label aposfera-muted">Habitability</span><span class="aposfera-fact-value aposfera-warn">Conditional</span></div>
+              <div class="aposfera-fact aposfera-raised"><span class="aposfera-fact-label aposfera-muted">Radius</span><span class="aposfera-fact-value">6,210 km</span></div>
+              <div class="aposfera-fact aposfera-raised"><span class="aposfera-fact-label aposfera-muted">Satellites</span><span class="aposfera-fact-value">2 moons</span></div>
+            </div>
+          </div>
+
+          <div data-annotated="hierarchy">
+            <h3 class="aposfera-section-heading aposfera-cyan"><span class="aposfera-section-code">SYS</span>Planet &amp; satellites</h3>
+            <div class="aposfera-hierarchy">
+              <button type="button" class="aposfera-row aposfera-cyan-border" data-hierarchy-row><span class="aposfera-body-glyph aposfera-cyan">SYS</span><span><span class="aposfera-row-title">Helios system</span><span class="aposfera-row-detail aposfera-muted">G2 V · 6 planets</span></span><span class="aposfera-row-count">6</span></button>
+              <button type="button" class="aposfera-row aposfera-row-depth-1 aposfera-cyan-border" data-hierarchy-row><span class="aposfera-body-glyph aposfera-cyan">S</span><span><span class="aposfera-row-title">Helios</span><span class="aposfera-row-detail aposfera-muted">Main sequence star</span></span><span class="aposfera-row-count">6</span></button>
+              <button type="button" class="aposfera-row aposfera-row-depth-2 aposfera-selected" data-hierarchy-row><span class="aposfera-body-glyph aposfera-amber">P</span><span><span class="aposfera-row-title">Eos Prime · selected</span><span class="aposfera-row-detail aposfera-muted">High Mountain · 2 moons</span></span><span class="aposfera-row-count">2</span></button>
+              <button type="button" class="aposfera-row aposfera-row-depth-3 aposfera-cyan-border" data-hierarchy-row><span class="aposfera-body-glyph aposfera-cyan">M</span><span><span class="aposfera-row-title">Kestrel</span><span class="aposfera-row-detail aposfera-muted">Rocky moon · 184,000 km</span></span><span>›</span></button>
+            </div>
+          </div>
+
+          <div class="aposfera-readiness-mini" data-annotated="colonization">
+            <div class="aposfera-readiness-title"><span>Colonization readiness</span><span class="aposfera-warn">△ Conditional</span></div>
+            <div class="aposfera-readiness-note">Thermal variance needs early habitat engineering. Water, gravity and atmosphere are within operational range.</div>
+          </div>
+        </aside>
+      </div>
+      <footer class="aposfera-generation-footer"><span class="aposfera-status-line aposfera-cyan">PREVIEW READY · MODEL STABLE</span><button type="button" class="aposfera-action aposfera-primary">Generate planet ›</button></footer>
+    </div>
+
+    <div class="aposfera-screen" data-screen="colonization" hidden>
+      <div class="aposfera-colonization-layout">
+        <section class="aposfera-panel" data-annotated="colonization">
+          <div class="aposfera-kicker aposfera-cyan">COLONIZATION / SELECTED BODY</div>
+          <h2 class="aposfera-colonization-title">EOS PRIME</h2>
+          <p class="aposfera-muted">High Mountain Planet · Helios system · PL-07A2</p>
+          <div class="aposfera-readiness-hero"><div><div class="aposfera-muted" style="font-size:10px;text-transform:uppercase">Readiness</div><div class="aposfera-readiness-state">△ Conditional</div></div><div class="aposfera-score">74<span class="aposfera-muted" style="font-size:11px"> / 100</span></div></div>
+          <div class="aposfera-check-list">
+            <div class="aposfera-check aposfera-raised"><span class="aposfera-check-code aposfera-pass">PASS</span><span><span class="aposfera-check-name">Atmosphere</span><span class="aposfera-check-note aposfera-muted">Breathable with local filtration</span></span><span class="aposfera-pass">✓</span></div>
+            <div class="aposfera-check aposfera-raised"><span class="aposfera-check-code aposfera-pass">PASS</span><span><span class="aposfera-check-name">Surface water</span><span class="aposfera-check-note aposfera-muted">Stable accessible reserves</span></span><span class="aposfera-pass">✓</span></div>
+            <div class="aposfera-check aposfera-raised"><span class="aposfera-check-code aposfera-warn">WARN</span><span><span class="aposfera-check-name">Thermal variance</span><span class="aposfera-check-note aposfera-muted">Habitat insulation required</span></span><span class="aposfera-warn">△</span></div>
+            <div class="aposfera-check aposfera-raised"><span class="aposfera-check-code aposfera-pass">PASS</span><span><span class="aposfera-check-name">Gravity</span><span class="aposfera-check-note aposfera-muted">0.94 g · operational range</span></span><span class="aposfera-pass">✓</span></div>
+          </div>
+          <div class="aposfera-resource-grid"><div class="aposfera-resource aposfera-raised"><span class="aposfera-muted">Water</span><strong>High</strong></div><div class="aposfera-resource aposfera-raised"><span class="aposfera-muted">Metals</span><strong>Medium</strong></div><div class="aposfera-resource aposfera-raised"><span class="aposfera-muted">Biosphere</span><strong>Stable</strong></div></div>
+        </section>
+
+        <section class="aposfera-panel">
+          <h2 class="aposfera-section-heading aposfera-cyan"><span class="aposfera-section-code">CIV</span>Colonization profile</h2>
+          <p class="aposfera-context-copy aposfera-muted">Choose an operational emphasis. This changes starting priorities, not the generated planet.</p>
+          <div class="aposfera-doctrine-grid">
+            <button type="button" class="aposfera-doctrine aposfera-selected"><strong>Balanced expedition</strong><span class="aposfera-muted">Science, infrastructure and resilience</span></button>
+            <button type="button" class="aposfera-doctrine aposfera-cyan-border"><strong>Science mission</strong><span class="aposfera-muted">Research output and anomaly study</span></button>
+            <button type="button" class="aposfera-doctrine aposfera-cyan-border"><strong>Industrial foothold</strong><span class="aposfera-muted">Extraction and orbital logistics</span></button>
+            <button type="button" class="aposfera-doctrine aposfera-cyan-border"><strong>Biosphere stewardship</strong><span class="aposfera-muted">Ecology and long-term habitability</span></button>
+          </div>
+          <h3 class="aposfera-section-heading aposfera-cyan" style="margin-top:18px"><span class="aposfera-section-code">DIV</span>Initial divisions</h3>
+          <div class="aposfera-division-list">
+            <div class="aposfera-division aposfera-raised"><span><strong>Habitat Engineering</strong><span class="aposfera-row-detail aposfera-muted">Mitigates thermal variance</span></span><span class="aposfera-warn">Priority 1</span></div>
+            <div class="aposfera-division aposfera-raised"><span><strong>Planetary Science</strong><span class="aposfera-row-detail aposfera-muted">Surface and atmosphere survey</span></span><span>Priority 2</span></div>
+            <div class="aposfera-division aposfera-raised"><span><strong>Orbital Logistics</strong><span class="aposfera-row-detail aposfera-muted">Moon and station supply chain</span></span><span>Priority 3</span></div>
+          </div>
+          <div class="aposfera-colonization-actions"><button type="button" class="aposfera-action">Back to planet</button><button type="button" class="aposfera-action aposfera-primary">Start colony on Eos Prime ›</button></div>
+        </section>
+      </div>
+    </div>
+
+    <div class="aposfera-screen" data-screen="gameplay" hidden style="padding:0">
+      <div class="aposfera-gameplay-stage">
+        <section class="aposfera-gameplay-menu aposfera-panel" data-annotated="gameplay-menu" aria-label="Paused game menu">
+          <aside class="aposfera-gameplay-actions">
+            <div class="aposfera-kicker aposfera-cyan">GAMEPLAY MENU</div>
+            <h2>Paused</h2>
+            <div class="aposfera-menu-stack"><button type="button" class="aposfera-action aposfera-primary">Resume</button><button type="button" class="aposfera-action">Save game</button><button type="button" class="aposfera-action">Settings</button><button type="button" class="aposfera-action">Accessibility</button></div>
+            <button type="button" class="aposfera-action aposfera-danger-action">Return to main menu</button>
+          </aside>
+          <div class="aposfera-gameplay-context">
+            <div class="aposfera-kicker aposfera-cyan">CURRENT EXPEDITION</div>
+            <h3>Eos Prime · Helios system</h3>
+            <p class="aposfera-muted">Surface operation · Colony day 18</p>
+            <div class="aposfera-run-facts"><div class="aposfera-fact aposfera-raised"><span class="aposfera-fact-label aposfera-muted">Objective</span><span class="aposfera-fact-value">Stabilize habitat</span></div><div class="aposfera-fact aposfera-raised"><span class="aposfera-fact-label aposfera-muted">Last save</span><span class="aposfera-fact-value">2 min ago</span></div></div>
+            <h4 class="aposfera-section-heading aposfera-cyan"><span class="aposfera-section-code">QA</span>Quick accessibility</h4>
+            <label class="aposfera-toggle-row aposfera-raised"><span><strong>High-contrast focus</strong><span class="aposfera-row-detail aposfera-muted">Strengthen keyboard/controller focus ring</span></span><input type="checkbox" checked></label>
+            <label class="aposfera-toggle-row aposfera-raised" style="margin-top:7px"><span><strong>Reduced UI motion</strong><span class="aposfera-row-detail aposfera-muted">Disable decorative transitions</span></span><input type="checkbox"></label>
+            <p class="aposfera-muted" style="margin:16px 0 0;font-size:11px">Esc / B resumes · Navigation bindings remain unchanged.</p>
+          </div>
+        </section>
+      </div>
+    </div>
+  </section>
+
+  <div class="aposfera-annotations" aria-label="Annotated evolution points">
+    <button type="button" class="aposfera-annotation-item" data-callout="calibration"><span class="aposfera-annotation-number">1</span>Chrome-only gamma profiles</button>
+    <button type="button" class="aposfera-annotation-item" data-callout="type"><span class="aposfera-annotation-number">2</span>Display/body type split</button>
+    <button type="button" class="aposfera-annotation-item" data-callout="sliders"><span class="aposfera-annotation-number">3</span>Comfortable slider + exact value</button>
+    <button type="button" class="aposfera-annotation-item" data-callout="live-model"><span class="aposfera-annotation-number">4</span>Scannable Live Model facts</button>
+    <button type="button" class="aposfera-annotation-item" data-callout="hierarchy"><span class="aposfera-annotation-number">5</span>44 px hierarchy rows</button>
+    <button type="button" class="aposfera-annotation-item" data-callout="colonization"><span class="aposfera-annotation-number">6</span>Text-paired readiness state</button>
+    <button type="button" class="aposfera-annotation-item" data-callout="gameplay-menu"><span class="aposfera-annotation-number">7</span>Existing gameplay flow, shared shell</button>
+  </div>
+</div>
+
+<script>
+(() => {
+  const root = document.getElementById('aposfera-ui-evolution-mockup');
+  if (!root) return;
+
+  const activateView = (view) => {
+    root.querySelectorAll('[data-screen]').forEach((screen) => { screen.hidden = screen.dataset.screen !== view; });
+    root.querySelectorAll('[data-view]').forEach((button) => { button.setAttribute('aria-pressed', String(button.dataset.view === view)); });
+  };
+
+  root.querySelectorAll('[data-view]').forEach((button) => {
+    button.addEventListener('click', () => activateView(button.dataset.view));
+  });
+
+  root.querySelectorAll('[data-profile]').forEach((button) => {
+    button.addEventListener('click', () => {
+      root.classList.remove('profile-balanced', 'profile-cinematic', 'profile-bright');
+      root.classList.add(`profile-${button.dataset.profile}`);
+      root.querySelectorAll('[data-profile]').forEach((peer) => { peer.setAttribute('aria-pressed', String(peer === button)); });
+    });
+  });
+
+  const formatters = {
+    radius: (value) => `${Number(value).toLocaleString('en-US')} km`,
+    orbit: (value) => `${Number(value).toLocaleString('en-US')} km`,
+    feature: (value) => `${(Number(value) / 100).toFixed(2)}×`,
+    relief: (value) => `${(Number(value) / 100).toFixed(2)}×`,
+    land: (value) => `${(Number(value) / 100).toFixed(2)}×`
+  };
+
+  root.querySelectorAll('[data-slider]').forEach((slider) => {
+    slider.addEventListener('input', () => {
+      const output = root.querySelector(`[data-output="${slider.dataset.slider}"]`);
+      if (output && formatters[slider.dataset.slider]) output.textContent = formatters[slider.dataset.slider](slider.value);
+    });
+  });
+
+  root.querySelectorAll('[data-hierarchy-row]').forEach((row) => {
+    row.addEventListener('click', () => {
+      root.querySelectorAll('[data-hierarchy-row]').forEach((peer) => peer.classList.remove('aposfera-selected'));
+      row.classList.add('aposfera-selected');
+    });
+  });
+
+  root.querySelectorAll('[data-callout]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const targetName = button.dataset.callout;
+      const target = root.querySelector(`[data-annotated="${targetName}"]`);
+      root.querySelectorAll('.is-callout').forEach((node) => node.classList.remove('is-callout'));
+      if (target) {
+        const targetScreen = target.closest('[data-screen]');
+        if (targetScreen) activateView(targetScreen.dataset.screen);
+        target.classList.add('is-callout');
+      }
+    });
+  });
+})();
+</script>

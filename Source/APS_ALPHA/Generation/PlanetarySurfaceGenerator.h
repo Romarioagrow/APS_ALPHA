@@ -238,6 +238,14 @@ public:
 	/** True only when the current root was configured from this body's latest editable data. */
 	bool IsSurfaceProfileCurrent(const APlanetaryBody* Body) const;
 
+	/**
+	 * Rebuilds Water's runtime MID only after WorldScape has published one complete
+	 * ocean batch. This keeps the first visible frame off the material resource that
+	 * was created before the procedural section proxies existed. Other liquids keep
+	 * their authored runtime instances unchanged.
+	 */
+	bool FinalizeStableWaterMaterial();
+
 	void SpawnWorldScapeRoot();
 
 	/** Keep assets and the configured root resident without spending generation time. */
@@ -272,4 +280,11 @@ private:
 	bool bPendingSurfaceProfileApply{false};
 	EDeferredWorldScapeRootState DeferredWorldScapeRootState{
 		EDeferredWorldScapeRootState::Preloaded};
+
+	/** Root/profile pair whose stable Water MID has already been published. */
+	UPROPERTY(Transient)
+	TWeakObjectPtr<AWorldScapeRoot> FinalizedWaterMaterialRoot;
+
+	UPROPERTY(Transient)
+	uint32 FinalizedWaterMaterialProfileSignature{0};
 };

@@ -5,6 +5,7 @@
 
 FPlanetModel::FPlanetModel()
 	: PlanetType(EPlanetType::Rocky)
+	, PlanetHabitability(EPlanetHabitability::Uninhabitable)
 	, AmountOfMoons(0)
 	, Temperature(0)
 	, PlanetZone(EPlanetaryZoneType::Unknown)

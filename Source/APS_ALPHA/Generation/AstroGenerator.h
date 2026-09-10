@@ -11,10 +11,12 @@
 #include "APS_ALPHA/Core/Enums/PlanetarySystemType.h"
 #include "APS_ALPHA/Core/Enums/StarType.h"
 #include "APS_ALPHA/Core/Rendering/APSCanonicalStellarProjection.h"
+#include "APS_ALPHA/Core/Rendering/APSContinuousPreviewFrame.h"
 #include "GameFramework/Actor.h"
 #include "AstroGenerator.generated.h"
 
 class USpawnParameters;
+class UStarGenerator;
 class UCameraComponent;
 class USceneComponent;
 class UProceduralMeshComponent;
@@ -32,6 +34,7 @@ class APlanet;
 class APlanetaryBody;
 class APlanetarySurfaceGenerator;
 class UHierarchicalInstancedStaticMeshComponent;
+class UInstancedStaticMeshComponent;
 class ASpaceShipyard;
 class ASpaceship;
 class ASpaceStation;
@@ -46,6 +49,37 @@ struct FAPSCanonicalStellarDataset;
 struct FAPSCanonicalClusterSystemRecord;
 struct FStarModel;
 struct FStarSystemModel;
+
+/** Existing physical generation recipe, resolved without spawning its actor tree. */
+struct FAPSContinuousPreviewStarLayout
+{
+	TSharedPtr<FStarModel> StarModel;
+	TSharedPtr<FPlanetarySystemModel> FamilyModel;
+	FVector OffsetCm{FVector::ZeroVector};
+	double EnvelopeCm{0.0};
+	TArray<double> PlanetOrbitRadiiCm;
+	TArray<double> MoonEnvelopesCm;
+};
+
+/** View-only copy of a canonical catalog address, never fed back into generation. */
+struct FAPSContinuousPreviewPoint
+{
+	FVector CenterCm{FVector::ZeroVector};
+	double RadiusCm{0.0};
+	int32 SourceInstanceIndex{INDEX_NONE};
+	FGuid StableId;
+	/** Stable star slot within StableId; retained after its heavy actor is retired. */
+	int32 SystemStarIndex{INDEX_NONE};
+	TWeakObjectPtr<AStar> MaterializedStar;
+	/** Retained appearance recipe, independent of the disposable physical hierarchy. */
+	TSharedPtr<FStarModel> StarModel;
+};
+
+struct FAPSContinuousResolvedStarView
+{
+	TWeakObjectPtr<UStaticMeshComponent> Photosphere;
+	TWeakObjectPtr<UStaticMeshComponent> Corona;
+};
 
 struct APS_ALPHA_API FAPSPreviewBodyEntry
 {
@@ -84,6 +118,9 @@ struct FAPSPreviewGlobeProxyState
 	TWeakObjectPtr<UMaterialInstanceDynamic> OceanMaterialB;
 	int32 ActiveBuffer{INDEX_NONE};
 	uint32 ProfileSignature{0};
+	/** Profile + topology quality. Unlike ProfileSignature this changes across LOD tiers. */
+	uint32 MeshSignature{0};
+	int32 FaceResolution{0};
 	int32 VertexCount{0};
 	int32 IndexCount{0};
 	bool bHasOcean{false};
@@ -113,6 +150,12 @@ public:
 	/** Transactionally spawns and validates the selected starter hierarchy. */
 	bool SpawnStartInteractiveActors(TSharedPtr<FPlanetModel> StartPlanetModel);
 
+	UFUNCTION(BlueprintPure, Category = "World Generation|Civilization")
+	int32 GetGeneratedStartingFleetSize() const { return GeneratedStartingFleet.Num(); }
+
+	UFUNCTION(BlueprintPure, Category = "World Generation|Civilization")
+	int32 GetGeneratedInfrastructureCount() const { return GeneratedCivilizationInfrastructure.Num(); }
+
 	void ComputeStarAmount(TSharedPtr<FStarSystemModel>& StarSystemModel, int& AmountOfStars);
 
 	TSharedPtr<FPlanetarySystemModel> PlanetarySystemModel;
@@ -140,6 +183,38 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "World Generation|Preview")
 	void FocusPreviewCamera(APlayerController* PlayerController = nullptr);
+	/** Read-only access for rendered preview diagnostics and automation contracts. */
+	const UCameraComponent* GetPreviewCameraComponent() const { return PreviewCamera; }
+	bool UsesContinuousPreviewFrame() const;
+	const FAPSContinuousPreviewFrame& GetContinuousPreviewFrame() const { return ContinuousPreviewFrame; }
+	const FAPSContinuousPreviewOrbit& GetContinuousPreviewOrbit() const { return ContinuousPreviewOrbit; }
+	/** Angular space available around the optical axis inside the actual menu panel. */
+	void SetContinuousPreviewFramingTangent(double Tangent);
+	bool GetContinuousPreviewClusterLocation(int32 InstanceIndex, FVector& OutLocation) const;
+	bool ProjectContinuousPreviewWorldPosition(const FVector& PhysicalWorldPosition, FVector& OutLocation,
+		const AActor* CoordinateOwner = nullptr) const;
+	/** Resolve a local physical hierarchy into the same canonical observer frame as the catalogs. */
+	FVector GetContinuousPreviewPhysicalPosition(const AActor* Actor) const;
+	AStarSystem* GetContinuousPreviewActiveSystem() const;
+	/** Home is always resident. In-flight/resolved bodies may temporarily exceed this target. */
+	static constexpr int32 ContinuousPreviewSystemCacheLimit = 4;
+	int32 GetContinuousPreviewResidentSystemCount() const { return ContinuousMaterializedSystems.Num(); }
+	const TArray<FAPSContinuousPreviewPoint>& GetContinuousPreviewClusterPoints() const { return ContinuousClusterPoints; }
+	UStaticMeshComponent* GetContinuousPreviewResolvedStarMesh(int32 PointIndex) const;
+	int32 GetContinuousPreviewResolvedStarCount() const { return ContinuousResolvedStarViews.Num(); }
+	/** Inactive render-only pairs; they own no catalog address, light or physical hierarchy. */
+	static constexpr int32 ContinuousResolvedStarPoolLimit = 1024;
+	static constexpr int32 ContinuousResolvedStarPreparePairLimit = 16;
+	int32 GetContinuousPreviewResolvedStarPoolCount() const { return ContinuousResolvedStarPool.Num(); }
+	int32 GetContinuousPreviewResolvedStarAllocationCount() const { return ContinuousResolvedStarAllocations; }
+	int32 GetContinuousPreviewResolvedStarReuseCount() const { return ContinuousResolvedStarReuses; }
+	int32 GetContinuousPreviewResolvedStarPreparationCount() const { return ContinuousResolvedStarPreparations; }
+	bool IsContinuousResolvedStarPoolHidden() const;
+	/** Current star (including a selected body's owner), addressed independently of its disposable actor. */
+	bool GetPreviewStarEditContext(FString& OutAddress, FStarModel& OutModel) const;
+	bool GetPreviewSystemEditContext(FString& OutAddress, FStarSystemModel& OutModel) const;
+	int32 GetPreviewHomePlanetCount() const;
+	AStarSystem* GetPreviewHomeSystem() const { return GeneratedHomeStarSystem; }
 
 	UFUNCTION(BlueprintCallable, Category = "World Generation|Preview")
 	void FocusPreviewTarget(EAstroPreviewFocus NewFocus, APlayerController* PlayerController = nullptr);
@@ -188,6 +263,7 @@ public:
 		FString& OutStableId, int32& OutStarCount, int32& OutPotentialPlanetCount) const;
 	/** True only when the requested hierarchy level exists in the current live preview. */
 	bool IsPreviewFocusAvailable(EAstroPreviewFocus Focus) const;
+	EAstroPreviewFocus GetCurrentPreviewFocus() const { return PreviewFocus; }
 	bool HasSelectedPreviewClusterSystem() const
 	{
 		return SelectedPreviewClusterSystemIndex != INDEX_NONE;
@@ -221,6 +297,9 @@ public:
 	UProceduralMeshComponent* GetPreviewOceanProxyForBody(const APlanetaryBody* Body) const;
 	int32 GetRetainedPreviewGlobeCount() const;
 	uint32 GetPreviewGlobeProfileSignature() const { return PreviewGlobeProfileSignature; }
+	uint32 GetPreviewGlobeMeshSignature() const { return PreviewGlobeMeshSignature; }
+	int32 GetPreviewGlobeFaceResolution() const { return PreviewGlobeFaceResolution; }
+	int32 GetPreviewGlobeFaceResolutionForBody(const APlanetaryBody* Body) const;
 	int32 GetPreviewGlobeVertexCount() const { return PreviewGlobeVertexCount; }
 	int32 GetPreviewGlobeIndexCount() const { return PreviewGlobeIndexCount; }
 	/** Loads and retains every material used by the closed orbital globes. */
@@ -245,9 +324,18 @@ public:
 	/** Applies retained body values to a generated model before its actors/surfaces spawn. */
 	static int32 ApplyPreviewBodyEditOverridesToModels(
 		const UGeneratedWorld* InGeneratedWorld, int32 StarIndex,
-		FPlanetarySystemModel& PlanetarySystem);
+		FPlanetarySystemModel& PlanetarySystem, const FString& SystemPrefix = TEXT("SYS0"));
 	/** Changes the physical body scale proportionally while keeping hierarchy normalization intact. */
 	static void ApplyPlanetaryBodyRadius(APlanetaryBody& Body, double RadiusKm);
+	/** Stable world-space preview radius derived only from this body's own physical radius. */
+	static double CalculatePreviewBodyPresentationRadius(double RadiusKm);
+	/**
+	 * Monotonic SYSTEM-only readability mapping. The canonical primary and largest
+	 * endpoints remain unchanged while compact luminous companions retain a bounded
+	 * fraction of the primary's angular footprint. Physical radii are never mutated.
+	 */
+	static double CalculateSystemStarReadabilityRatio(
+		double StarRadiusKm, double PrimaryRadiusKm, double LargestRadiusKm);
 	/**
 	 * Commits the materialized home system back into its actor-free cluster record
 	 * without changing the record identity or canonical catalog anchor. Keeping this
@@ -262,7 +350,7 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "World Generation|Preview")
 	void OrbitPreviewCamera(FVector2D ScreenDelta);
-	/** Arms PLANET RMB only when the selected body's committed terrain proxy is visible. */
+	/** Arms camera orbit around the current immutable focus centre. */
 	void BeginPreviewCameraOrbit();
 	void EndPreviewCameraOrbit();
 
@@ -352,6 +440,51 @@ protected:
 	bool TryGetPreviewClusterSystemSphere(int32 InstanceIndex, FVector& OutCenter, double& OutRadius) const;
 	void StartPreviewCameraTransition(const FVector& Center, double Radius, APlayerController* PlayerController);
 	void ApplyPreviewFocusPresentation(EAstroPreviewFocus NewFocus);
+	bool GetContinuousPreviewPhysicalFocus(EAstroPreviewFocus Focus, FVector& CenterCm, double& RadiusCm) const;
+	void EnsureContinuousPreviewPresentation();
+	void ClearContinuousPreviewPresentation();
+	void ApplyContinuousPreviewFrame();
+	void StartContinuousPreviewTransition(APlayerController* PlayerController, double DistanceRatio = 0.0);
+	void RememberContinuousPreviewBody(AActor* Body);
+	void FocusContinuousPreviewTarget(EAstroPreviewFocus NewFocus, APlayerController* PlayerController);
+	AStarSystem* MaterializeContinuousPreviewSystem(int32 InstanceIndex);
+	bool BuildContinuousPreviewSystemLayout(const FClusterStarSystemRecord& Record,
+		UStarGenerator* Stars, UPlanetarySystemGenerator* Families,
+		TArray<FAPSContinuousPreviewStarLayout>& OutStars, double& OutRadiusCm);
+	void TrimContinuousPreviewSystemCache(double PixelTangent);
+	void PresentContinuousResolvedStars(double PixelTangent);
+	FAPSContinuousResolvedStarView AllocateContinuousResolvedStarPair(UStaticMeshComponent* Template,
+		UMaterialInterface* SurfaceBase, UMaterialInterface* CoronaBase);
+	void PrepareContinuousResolvedStarPool(double PixelTangent);
+	AStarSystem* GetContinuousPreviewOwningSystem(const AActor* Actor) const;
+	FVector GetContinuousPreviewSystemCenter(const AStarSystem* System) const;
+	UPROPERTY(Transient)
+	TMap<int32, TObjectPtr<AStarSystem>> ContinuousMaterializedSystems;
+	TArray<int32> ContinuousSystemRecency;
+	TMap<FString, FQuat> ContinuousRetiredBodyRotations;
+	FAPSContinuousPreviewFrame ContinuousPreviewFrame;
+	FAPSContinuousPreviewOrbit ContinuousPreviewOrbit;
+	FAPSContinuousPreviewOrbit ContinuousPreviewStartOrbit;
+	FAPSContinuousPreviewOrbit ContinuousPreviewTargetOrbit;
+	bool bContinuousPreviewInitialized{false};
+	double ContinuousPreviewFramingTangent{0.0};
+	bool bContinuousPreviewAutoFraming{true};
+	TArray<TWeakObjectPtr<AActor>> ContinuousPreviewBodies;
+	TArray<FAPSContinuousPreviewPoint> ContinuousGalaxyPoints;
+	TArray<FAPSContinuousPreviewPoint> ContinuousClusterPoints;
+	TMap<int32, FAPSContinuousResolvedStarView> ContinuousResolvedStarViews;
+	TArray<FAPSContinuousResolvedStarView> ContinuousResolvedStarPool;
+	int32 ContinuousResolvedStarAllocations{0};
+	int32 ContinuousResolvedStarReuses{0};
+	int32 ContinuousResolvedStarPreparations{0};
+	int32 ContinuousResolvedForecastStep{0}, ContinuousResolvedForecastCapacity{0};
+	uint64 ContinuousResolvedLastPreparationFrame{MAX_uint64};
+	TWeakObjectPtr<APlanetaryBody> ContinuousSelectedPlanet;
+	TWeakObjectPtr<AStar> ContinuousSelectedStar;
+	UPROPERTY(Transient)
+	TObjectPtr<UInstancedStaticMeshComponent> ContinuousGalaxyView{nullptr};
+	UPROPERTY(Transient)
+	TObjectPtr<UInstancedStaticMeshComponent> ContinuousClusterView{nullptr};
 	FQuat GetPreviewPlanetPresentationRotation(const APlanetaryBody* Body) const;
 	FQuat GetPreviewWorldScapePresentationRotation(const APlanetaryBody* Body) const;
 	void ReapplyPreviewPlanetPresentationRotation();
@@ -373,6 +506,7 @@ protected:
 	void InvalidatePreviewGlobeProxy(APlanetaryBody* Body);
 	void ClearPreviewGlobeProxyCache();
 	void QueuePreviewGlobeFamily(APlanetaryBody* Body);
+	int32 GetDesiredPreviewGlobeFaceResolution(const APlanetaryBody* Body) const;
 	bool BeginNextQueuedPreviewGlobeBuild();
 	bool BuildPreviewGlobeProxy(APlanetaryBody* Body,
 		APlanetarySurfaceGenerator* SurfaceGenerator, AWorldScapeRoot* ProfileRoot);
@@ -397,6 +531,8 @@ protected:
 	FTransform PreviewCameraTargetTransform;
 	FVector PreviewOrbitCenter{FVector::ZeroVector};
 	double PreviewOrbitDistance{1000.0};
+	double PreviewOrbitYawDegrees{0.0};
+	double PreviewOrbitPitchDegrees{0.0};
 	float PreviewCameraTransitionElapsed{0.0f};
 	float PreviewCameraTransitionDuration{0.55f};
 	bool bPreviewCameraTransitionActive{false};
@@ -478,6 +614,8 @@ protected:
 	TWeakObjectPtr<APlanetaryBody> PreviewSurfaceBuildBody;
 	int32 ActivePreviewGlobeBuffer{INDEX_NONE};
 	uint32 PreviewGlobeProfileSignature{0};
+	uint32 PreviewGlobeMeshSignature{0};
+	int32 PreviewGlobeFaceResolution{0};
 	int32 PreviewGlobeVertexCount{0};
 	int32 PreviewGlobeIndexCount{0};
 	bool bPreviewGlobeHasOcean{false};
@@ -505,6 +643,9 @@ protected:
 	FVector PendingPreviewSurfaceViewPosition{FVector::ZeroVector};
 	TWeakObjectPtr<UHierarchicalInstancedStaticMeshComponent> PreviewGalaxyContextOwner;
 	TWeakObjectPtr<UHierarchicalInstancedStaticMeshComponent> PreviewClusterContextOwner;
+	/** Immutable generated local addresses used by reversible presentation-only field scaling. */
+	TArray<FVector> PreviewGalaxyBaseInstanceLocations;
+	TArray<FVector> PreviewClusterBaseInstanceLocations;
 	TArray<FVector> PreviewGalaxyBaseInstanceScales;
 	TArray<FVector> PreviewClusterBaseInstanceScales;
 	/** Original HISM emissive custom-data channel restored outside detail scopes. */
@@ -514,6 +655,7 @@ protected:
 	bool bPreviewBackgroundCullApplied{false};
 	EAstroPreviewFocus PreviewBackgroundContextFocus{EAstroPreviewFocus::Overview};
 	double PreviewBackgroundVisualScale{1.0};
+	double PreviewBackgroundDistanceScale{1.0};
 	FVector PreviewBackgroundCullCenter{FVector::ZeroVector};
 	double PreviewBackgroundCullRadius{0.0};
 	FVector PreviewBackgroundDetailCenter{FVector::ZeroVector};
@@ -562,6 +704,9 @@ protected:
 
 	void SpawnMoons(UWorld* World, APlanet* Planet, int32 NumberOfMoons);
 
+	bool SpawnConfiguredCivilizationAssets(const USpawnParameters* Parameters);
+	void DestroyConfiguredCivilizationAssets();
+
 	UPROPERTY(VisibleAnywhere, Category = "Generated Astro Actros")
 	AGalaxy* GeneratedGalaxy;
 	FAPSCanonicalStellarProjectionDescriptor CanonicalStellarProjection;
@@ -602,6 +747,14 @@ protected:
 	UPROPERTY(VisibleAnywhere, Category = "Generated Tech Actros")
 	ASpaceShipyard* HomeSpaceShipyard;
 
+	/** Full requested fleet; index zero is HomeSpaceship. */
+	UPROPERTY(VisibleAnywhere, Category = "Generated Tech Actros")
+	TArray<ASpaceship*> GeneratedStartingFleet;
+
+	/** Physical star/planet/orbital/ground nodes created from the civilization manifest. */
+	UPROPERTY(VisibleAnywhere, Category = "Generated Tech Actros")
+	TArray<AActor*> GeneratedCivilizationInfrastructure;
+
 	/** Prevents a second generation callback from duplicating the committed civilization starter set. */
 	UPROPERTY(Transient)
 	bool bStarterHierarchySpawned{false};
@@ -613,6 +766,7 @@ protected:
 
 public:
 	TMap<int32, TSharedPtr<FStarModel>> StarIndexModelMap;
+	TMap<FString, TSharedPtr<FStarModel>> PreviewResolvedStarModels;
 
 	static void DestroyActorTree(AActor* Root);
 	

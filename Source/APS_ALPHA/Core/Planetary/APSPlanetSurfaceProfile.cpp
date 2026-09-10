@@ -974,8 +974,21 @@ void UAPSPlanetSurfaceProfileResolver::ApplyMaterialParameters(
 	Material->SetScalarParameterValue(TEXT("ContrastTemp"), Profile.BiomeContrast);
 	Material->SetScalarParameterValue(TEXT("WarpedScale"),
 		ResolveMaterialWarpScale(Profile.MaterialFamily));
-	Material->SetScalarParameterValue(TEXT("ClimateBlend"),
-		ResolveMaterialClimateBlend(Profile.Archetype));
+	// The vertex payload already contains deterministic temperature and moisture
+	// fields. Let profiles with strong biome/climate structure expose more of that
+	// signal instead of reducing Forest, Oasis, Tundra and chemical subtypes to a
+	// palette-only change. Elevation remains dominant and the bounded blend adds no
+	// material samples or geometry.
+	const float BaseClimateBlend = ResolveMaterialClimateBlend(Profile.Archetype);
+	const float BiomeResponse = FMath::Clamp(
+		(Profile.BiomeContrast - 0.60f) / 0.90f, 0.0f, 1.0f);
+	const float ClimateResponse = FMath::Clamp(
+		Profile.ClimatePatchStrength, 0.0f, 1.0f);
+	const float ResolvedClimateBlend = FMath::Clamp(
+		BaseClimateBlend * FMath::Lerp(0.90f, 1.18f, BiomeResponse)
+			+ ClimateResponse * 0.035f,
+		0.04f, 0.24f);
+	Material->SetScalarParameterValue(TEXT("ClimateBlend"), ResolvedClimateBlend);
 
 	// The physical terrain profile also drives the presentation hierarchy. These
 	// values never replace WorldScape displacement; they only keep palette identity
@@ -989,10 +1002,10 @@ void UAPSPlanetSurfaceProfileResolver::ApplyMaterialParameters(
 	float NearDetailScaleCm = 1800.0f;
 	float MacroColorStrength = 0.060f;
 	float MesoColorStrength = 0.042f;
-	float NearColorStrength = 0.006f;
-	float DetailNormalStrength = 0.100f;
+	float NearColorStrength = 0.018f;
+	float DetailNormalStrength = 0.130f;
 	float MesoRoughnessStrength = 0.020f;
-	float DetailRoughnessStrength = 0.012f;
+	float DetailRoughnessStrength = 0.024f;
 	float TerrainAmbientFill = 0.090f;
 	float SlopeTintStrength = 0.20f;
 	switch (Profile.Archetype)
@@ -1006,8 +1019,8 @@ void UAPSPlanetSurfaceProfileResolver::ApplyMaterialParameters(
 		NearDetailScaleCm = 2200.0f;
 		MacroColorStrength = 0.052f;
 		MesoColorStrength = 0.038f;
-		NearColorStrength = 0.007f;
-		DetailNormalStrength = 0.095f;
+		NearColorStrength = 0.018f;
+		DetailNormalStrength = 0.135f;
 		TerrainAmbientFill = 0.105f;
 		SlopeTintStrength = 0.20f;
 		break;
@@ -1020,8 +1033,8 @@ void UAPSPlanetSurfaceProfileResolver::ApplyMaterialParameters(
 		NearDetailScaleCm = 2600.0f;
 		MacroColorStrength = 0.040f;
 		MesoColorStrength = 0.028f;
-		NearColorStrength = 0.004f;
-		DetailNormalStrength = 0.075f;
+		NearColorStrength = 0.012f;
+		DetailNormalStrength = 0.110f;
 		TerrainAmbientFill = 0.095f;
 		SlopeTintStrength = 0.14f;
 		break;
@@ -1034,8 +1047,8 @@ void UAPSPlanetSurfaceProfileResolver::ApplyMaterialParameters(
 		NearDetailScaleCm = 1600.0f;
 		MacroColorStrength = 0.048f;
 		MesoColorStrength = 0.034f;
-		NearColorStrength = 0.008f;
-		DetailNormalStrength = 0.110f;
+		NearColorStrength = 0.021f;
+		DetailNormalStrength = 0.150f;
 		TerrainAmbientFill = 0.115f;
 		SlopeTintStrength = 0.19f;
 		break;
@@ -1048,8 +1061,8 @@ void UAPSPlanetSurfaceProfileResolver::ApplyMaterialParameters(
 		NearDetailScaleCm = 2500.0f;
 		MacroColorStrength = 0.052f;
 		MesoColorStrength = 0.036f;
-		NearColorStrength = 0.006f;
-		DetailNormalStrength = 0.085f;
+		NearColorStrength = 0.019f;
+		DetailNormalStrength = 0.130f;
 		TerrainAmbientFill = 0.100f;
 		SlopeTintStrength = 0.23f;
 		break;
@@ -1063,8 +1076,8 @@ void UAPSPlanetSurfaceProfileResolver::ApplyMaterialParameters(
 		NearDetailScaleCm = 1600.0f;
 		MacroColorStrength = 0.050f;
 		MesoColorStrength = 0.040f;
-		NearColorStrength = 0.004f;
-		DetailNormalStrength = 0.105f;
+		NearColorStrength = 0.015f;
+		DetailNormalStrength = 0.140f;
 		TerrainAmbientFill = 0.105f;
 		SlopeTintStrength = 0.14f;
 		break;
@@ -1077,8 +1090,8 @@ void UAPSPlanetSurfaceProfileResolver::ApplyMaterialParameters(
 		NearDetailScaleCm = 1800.0f;
 		MacroColorStrength = 0.050f;
 		MesoColorStrength = 0.036f;
-		NearColorStrength = 0.005f;
-		DetailNormalStrength = 0.100f;
+		NearColorStrength = 0.018f;
+		DetailNormalStrength = 0.145f;
 		TerrainAmbientFill = 0.045f;
 		SlopeTintStrength = 0.23f;
 		break;
@@ -1092,8 +1105,8 @@ void UAPSPlanetSurfaceProfileResolver::ApplyMaterialParameters(
 		NearDetailScaleCm = 1800.0f;
 		MacroColorStrength = 0.055f;
 		MesoColorStrength = 0.040f;
-		NearColorStrength = 0.005f;
-		DetailNormalStrength = 0.110f;
+		NearColorStrength = 0.019f;
+		DetailNormalStrength = 0.155f;
 		TerrainAmbientFill = 0.110f;
 		SlopeTintStrength = 0.27f;
 		break;
@@ -1107,8 +1120,8 @@ void UAPSPlanetSurfaceProfileResolver::ApplyMaterialParameters(
 		NearDetailScaleCm = 2200.0f;
 		MacroColorStrength = 0.044f;
 		MesoColorStrength = 0.032f;
-		NearColorStrength = 0.003f;
-		DetailNormalStrength = 0.080f;
+		NearColorStrength = 0.012f;
+		DetailNormalStrength = 0.115f;
 		MesoRoughnessStrength = 0.018f;
 		TerrainAmbientFill = 0.100f;
 		SlopeTintStrength = 0.18f;
@@ -1122,8 +1135,8 @@ void UAPSPlanetSurfaceProfileResolver::ApplyMaterialParameters(
 		NearDetailScaleCm = 1900.0f;
 		MacroColorStrength = 0.050f;
 		MesoColorStrength = 0.036f;
-		NearColorStrength = 0.006f;
-		DetailNormalStrength = 0.090f;
+		NearColorStrength = 0.017f;
+		DetailNormalStrength = 0.130f;
 		TerrainAmbientFill = 0.115f;
 		SlopeTintStrength = 0.19f;
 		break;
@@ -1137,6 +1150,7 @@ void UAPSPlanetSurfaceProfileResolver::ApplyMaterialParameters(
 	MesoColorStrength *= FMath::Lerp(0.88f, 1.22f, PatternResponse);
 	NearColorStrength *= FMath::Lerp(0.78f, 1.18f, RoughnessResponse);
 	DetailNormalStrength *= FMath::Lerp(0.72f, 1.18f, RoughnessResponse);
+	MesoRoughnessStrength *= FMath::Lerp(0.88f, 1.16f, PatternResponse);
 	DetailRoughnessStrength *= FMath::Lerp(0.82f, 1.12f, RoughnessResponse);
 	// Dry terrain has no liquid shell to supply broad visual separation. Bias its
 	// material response toward real height/slope and regional structure, while the
@@ -1148,7 +1162,7 @@ void UAPSPlanetSurfaceProfileResolver::ApplyMaterialParameters(
 		NearDetailScaleCm *= 1.15f;
 		MacroColorStrength *= 1.06f;
 		MesoColorStrength *= 1.05f;
-		NearColorStrength *= 0.82f;
+		NearColorStrength *= 0.95f;
 		DetailNormalStrength *= 0.90f;
 		SlopeTintStrength = FMath::Min(SlopeTintStrength + 0.02f, 0.28f);
 	}
@@ -1168,12 +1182,29 @@ void UAPSPlanetSurfaceProfileResolver::ApplyMaterialParameters(
 		800.0f, 30000.0f));
 	Material->SetScalarParameterValue(TEXT("MacroColorStrength"), MacroColorStrength);
 	Material->SetScalarParameterValue(TEXT("MesoColorStrength"), MesoColorStrength);
-	Material->SetScalarParameterValue(TEXT("NearColorStrength"), NearColorStrength);
-	Material->SetScalarParameterValue(TEXT("DetailNormalStrength"), DetailNormalStrength);
-	Material->SetScalarParameterValue(TEXT("MesoRoughnessStrength"), MesoRoughnessStrength);
-	Material->SetScalarParameterValue(TEXT("DetailRoughnessStrength"), DetailRoughnessStrength);
+	Material->SetScalarParameterValue(TEXT("NearColorStrength"),
+		FMath::Clamp(NearColorStrength, 0.0f, 0.024f));
+	Material->SetScalarParameterValue(TEXT("DetailNormalStrength"),
+		FMath::Clamp(DetailNormalStrength, 0.0f, 0.18f));
+	Material->SetScalarParameterValue(TEXT("MesoRoughnessStrength"),
+		FMath::Clamp(MesoRoughnessStrength, 0.0f, 0.03f));
+	Material->SetScalarParameterValue(TEXT("DetailRoughnessStrength"),
+		FMath::Clamp(DetailRoughnessStrength, 0.0f, 0.03f));
 	Material->SetScalarParameterValue(TEXT("TerrainAmbientFill"), TerrainAmbientFill);
 	Material->SetScalarParameterValue(TEXT("SlopeTintStrength"), SlopeTintStrength);
+	// The closed selected-body renderer evaluates one object-centred GradientALU
+	// sample per pixel. Scale and response follow the same resolved profile while
+	// remaining independent of the compressed globe radius, so close PLANET framing
+	// does not fall back to interpolated vertex-colour blobs. Materials that do
+	// not expose this orbital-only contract simply ignore these writes.
+	Material->SetScalarParameterValue(TEXT("OrbitalMicroDetailScale"), FMath::Clamp(
+		28.0f * Profile.DetailFrequencyMultiplier, 20.0f, 64.0f));
+	Material->SetScalarParameterValue(TEXT("OrbitalMicroColorStrength"), FMath::Clamp(
+		0.018f + PatternResponse * 0.014f, 0.015f, 0.035f));
+	Material->SetScalarParameterValue(TEXT("OrbitalMicroNormalStrength"), FMath::Clamp(
+		0.025f + RoughnessResponse * 0.025f, 0.020f, 0.055f));
+	Material->SetScalarParameterValue(TEXT("OrbitalMicroRoughnessStrength"), FMath::Clamp(
+		0.006f + RoughnessResponse * 0.008f, 0.005f, 0.016f));
 	Material->SetScalarParameterValue(TEXT("MidVarient1Rough"), Profile.Roughness);
 	Material->SetScalarParameterValue(TEXT("MidVarient2Rough"), Profile.Roughness);
 	Material->SetScalarParameterValue(TEXT("MidVarient3Rough"), Profile.Roughness);

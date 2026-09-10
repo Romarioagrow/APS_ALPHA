@@ -24,7 +24,7 @@ public class APS_ALPHA : ModuleRules
 			PrivateDependencyModuleNames.AddRange(new string[] { "UnrealEd", "AssetTools", "MaterialEditor" });
 		}
 		
-		PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore", "DirGravity", "EnhancedInput", "AssetRegistry" });
+		PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore", "DirGravity", "EnhancedInput", "AssetRegistry", "RenderCore" });
 
 		// Uncomment if you are using Slate UI
 		// PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });

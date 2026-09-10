@@ -43,7 +43,9 @@ struct FAPSCanonicalStellarDataset
 {
 	GENERATED_BODY()
 
-	static constexpr uint32 CurrentVersion = 2u;
+	// Version 3 distributes every rendered RingArc prefix across the complete
+	// formation through the same deterministic full-cycle policy used by galaxies.
+	static constexpr uint32 CurrentVersion = 3u;
 
 	UPROPERTY()
 	uint32 Version{CurrentVersion};

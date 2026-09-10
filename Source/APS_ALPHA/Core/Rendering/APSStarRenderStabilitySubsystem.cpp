@@ -195,6 +195,31 @@ void UAPSStarRenderStabilitySubsystem::StabilizeInstances(
 	Instances->SetReceivesDecals(false);
 	Instances->bUseAsOccluder = false;
 
+	// Nanite cannot render additive/translucent material sections in UE 5.4. Generated
+	// galaxy and cluster glyphs use the additive stellar point master, so force the
+	// regular fallback proxy before the instance tree/render state is built. Do not
+	// blanket-disable Nanite for opaque HISM content handled by this stability path.
+	bool bHasUnsupportedNaniteBlend = false;
+	// A freshly constructed HISM can own an override material before its static mesh
+	// (and therefore its material-slot count) is assigned. Slot zero is the canonical
+	// stellar slot in both native and Blueprint actors, so inspect at least that slot.
+	const int32 MaterialCount = FMath::Max(Instances->GetNumMaterials(), 1);
+	for (int32 MaterialIndex = 0; MaterialIndex < MaterialCount; ++MaterialIndex)
+	{
+		const UMaterialInterface* Material = Instances->GetMaterial(MaterialIndex);
+		if (Material && Material->GetBlendMode() != BLEND_Opaque
+			&& Material->GetBlendMode() != BLEND_Masked)
+		{
+			bHasUnsupportedNaniteBlend = true;
+			break;
+		}
+	}
+	if (bHasUnsupportedNaniteBlend)
+	{
+		Instances->bDisallowNanite = true;
+		Instances->SetForceDisableNanite(true);
+	}
+
 	// Cluster stars are sub-pixel impostors at gameplay distance. Switching AutoLOD sphere
 	// silhouettes while TSR jitters the projection creates visible pulses, so keep the cheapest
 	// authored LOD until the selected record is materialized as a real star actor.

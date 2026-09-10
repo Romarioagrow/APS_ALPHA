@@ -10,6 +10,7 @@ class SWorldGenerationPanel;
 struct FStreamableHandle;
 class SBox;
 class SButton;
+class SWidgetSwitcher;
 class UClass;
 class UGameSave;
 class UUserWidget;
@@ -46,6 +47,7 @@ struct FAPSExistingWorldEntry
 	FString SystemType;
 	FString StarType;
 	FString PlanetType;
+	FString Habitability{TEXT("UNKNOWN")};
 	FString Environment;
 	int32 TotalPlanets{0};
 	int32 InhabitedPlanets{0};
@@ -145,10 +147,8 @@ private:
 	void SynchronizeSpawnClassOptions();
 	void ApplySpawnClassSelection(EAPSStartAssetSlot Slot);
 	void OnSpawnClassSelectionLoaded(EAPSStartAssetSlot Slot, FSoftObjectPath RequestedPath);
-	void RefreshSpawnClassBrush(EAPSStartAssetSlot Slot);
 	FText GetSpawnClassName(EAPSStartAssetSlot Slot) const;
 	FText GetSpawnClassOptionName(EAPSStartAssetSlot Slot, int32 OptionIndex) const;
-	const FSlateBrush* GetSpawnClassBrush(EAPSStartAssetSlot Slot) const;
 	FReply CycleSpawnClass(EAPSStartAssetSlot Slot, int32 Direction);
 	FReply SelectSpawnClass(EAPSStartAssetSlot Slot, int32 OptionIndex);
 
@@ -197,11 +197,12 @@ private:
 
 	TMap<EAPSStartAssetSlot, TArray<TSoftClassPtr<AActor>>> SpawnClassOptions;
 	TMap<EAPSStartAssetSlot, int32> SpawnClassIndices;
-	TMap<EAPSStartAssetSlot, FSlateBrush> SpawnClassBrushes;
 	TMap<EAPSStartAssetSlot, TSharedPtr<FStreamableHandle>> SpawnSelectionLoadHandles;
 	/** Identity guard for async picker loads; stale callbacks must not clear a newer slot request. */
 	TMap<EAPSStartAssetSlot, FSoftObjectPath> SpawnSelectionRequestedPaths;
 	bool bSpawnClassOptionsDiscovered{false};
+	TSharedPtr<SWidgetSwitcher> CivilizationEditorSwitcher;
+	int32 CivilizationEditorSection{0};
 
 	TSoftClassPtr<UUserWidget> SettingsPanelClass;
 	TSoftClassPtr<UUserWidget> ProfilePanelClass;

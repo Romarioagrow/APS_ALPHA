@@ -51,11 +51,25 @@ enum class EAPSSocietyType : uint8
 };
 
 UCLASS()
-class USpawnParameters : public UObject
+class APS_ALPHA_API USpawnParameters : public UObject
 {
 	GENERATED_BODY()
 	
 public:
+	static constexpr int32 MaxStartingFleetSize = 24;
+	static constexpr int32 MaxInfrastructurePerCategory = 16;
+
+	/** Normalizes menu/save input before it is frozen into a generated session. */
+	UFUNCTION(BlueprintCallable, Category = "Civilization")
+	void SanitizeForGeneration();
+
+	/** Number of physical civilization actors requested by the current manifest. */
+	UFUNCTION(BlueprintPure, Category = "Civilization")
+	int32 GetPlannedPhysicalActorCount() const;
+
+	UFUNCTION(BlueprintPure, Category = "Civilization")
+	int32 GetPlannedInfrastructureActorCount() const;
+
 	/** Persistent civilization setup shared by generation UI and generated gameplay level. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Civilization")
 	FString CivilizationName{TEXT("APOSFERA CIVILIZATION")};
@@ -72,28 +86,30 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Civilization")
 	EAPSSocietyType SocietyType{EAPSSocietyType::Cooperative};
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Civilization", meta = (ClampMin = "1"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Civilization", meta = (ClampMin = "1", ClampMax = "100000000"))
 	int32 FoundingPopulation{12000};
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Civilization", meta = (ClampMin = "0"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Civilization", meta = (ClampMin = "0", ClampMax = "2000000000"))
 	int64 StartingCredits{1250000};
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Civilization", meta = (ClampMin = "1", ClampMax = "10"))
 	int32 TechnologyLevel{1};
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Civilization", meta = (ClampMin = "0"))
+	/** Total starting ships, including the home ship required by the starter hierarchy. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Civilization", meta = (ClampMin = "1", ClampMax = "24"))
 	int32 StartingFleetSize{1};
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Civilization|Infrastructure", meta = (ClampMin = "0"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Civilization|Infrastructure", meta = (ClampMin = "0", ClampMax = "16"))
 	int32 StarOutposts{0};
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Civilization|Infrastructure", meta = (ClampMin = "0"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Civilization|Infrastructure", meta = (ClampMin = "0", ClampMax = "16"))
 	int32 PlanetOutposts{1};
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Civilization|Infrastructure", meta = (ClampMin = "0"))
+	/** Total orbital stations, including the mandatory home station. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Civilization|Infrastructure", meta = (ClampMin = "1", ClampMax = "16"))
 	int32 OrbitalOutposts{1};
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Civilization|Infrastructure", meta = (ClampMin = "0"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Civilization|Infrastructure", meta = (ClampMin = "0", ClampMax = "16"))
 	int32 GroundOutposts{1};
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Civilization|Divisions", meta = (ClampMin = "0", ClampMax = "20"))

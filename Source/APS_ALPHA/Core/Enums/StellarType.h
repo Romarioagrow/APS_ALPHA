@@ -3,18 +3,18 @@
 UENUM(BlueprintType)
 enum class EStellarType : uint8
 {
-	MainSequence	UMETA(DisplayName = "Main Sequence"), // Главная последовательность (как наше Солнце)
-	SubDwarf		UMETA(DisplayName = "Subdwarf"), // Субкарлики (звезды с малой яркостью и размером)
+	MainSequence	UMETA(DisplayName = "Main Sequence"), // Р“Р»Р°РІРЅР°СЏ РїРѕСЃР»РµРґРѕРІР°С‚РµР»СЊРЅРѕСЃС‚СЊ (РєР°Рє РЅР°С€Рµ РЎРѕР»РЅС†Рµ)
+	SubDwarf		UMETA(DisplayName = "Subdwarf"), // РЎСѓР±РєР°СЂР»РёРєРё (Р·РІРµР·РґС‹ СЃ РјР°Р»РѕР№ СЏСЂРєРѕСЃС‚СЊСЋ Рё СЂР°Р·РјРµСЂРѕРј)
 	SubGiant		UMETA(DisplayName = "SubGiant"), // SubGiant 
-	Giant			UMETA(DisplayName = "Giant"), // Гиганты (большие звезды)
+	Giant			UMETA(DisplayName = "Giant"), // Р“РёРіР°РЅС‚С‹ (Р±РѕР»СЊС€РёРµ Р·РІРµР·РґС‹)
 	BrightGiant		UMETA(DisplayName = "Bright Giant"), // BrightGiant
-	SuperGiant		UMETA(DisplayName = "Super Giant"), // Супергиганты (наибольшие звезды)
-	HyperGiant		UMETA(DisplayName = "Hypergiant"), // Гипергиганты (экстремально большие звезды)
-	WhiteDwarf		UMETA(DisplayName = "White Dwarf"), // Белые карлики (маленькие, горячие звезды)
-	BrownDwarf		UMETA(DisplayName = "Brown Dwarf"), // Коричневые карлики (не достаточно массы для начала термоядерных реакций)
-	Neutron			UMETA(DisplayName = "Neutron Star"), // Нейтронные звезды (остатки взрывов суперновых, очень плотные)
-	Protostar		UMETA(DisplayName = "Protostar"), // Протозвезды (молодые звезды, которые еще не начали основную термоядерную реакцию)
-	Pulsar			UMETA(DisplayName = "Pulsar"), // Пульсары (вращающиеся нейтронные звезды, которые излучают импульсы радиоволн)
-	BlackHole		UMETA(DisplayName = "Black Hole"), // Черные дыры (объекты с такой сильной гравитацией, что даже свет не может уйти)
-	Unknown			UMETA(DisplayName = "Black Hole") // Черные дыры (объекты с такой сильной гравитацией, что даже свет не может уйти)
+	SuperGiant		UMETA(DisplayName = "Super Giant"), // РЎСѓРїРµСЂРіРёРіР°РЅС‚С‹ (РЅР°РёР±РѕР»СЊС€РёРµ Р·РІРµР·РґС‹)
+	HyperGiant		UMETA(DisplayName = "Hypergiant"), // Р“РёРїРµСЂРіРёРіР°РЅС‚С‹ (СЌРєСЃС‚СЂРµРјР°Р»СЊРЅРѕ Р±РѕР»СЊС€РёРµ Р·РІРµР·РґС‹)
+	WhiteDwarf		UMETA(DisplayName = "White Dwarf"), // Р‘РµР»С‹Рµ РєР°СЂР»РёРєРё (РјР°Р»РµРЅСЊРєРёРµ, РіРѕСЂСЏС‡РёРµ Р·РІРµР·РґС‹)
+	BrownDwarf		UMETA(DisplayName = "Brown Dwarf"), // РљРѕСЂРёС‡РЅРµРІС‹Рµ РєР°СЂР»РёРєРё (РЅРµ РґРѕСЃС‚Р°С‚РѕС‡РЅРѕ РјР°СЃСЃС‹ РґР»СЏ РЅР°С‡Р°Р»Р° С‚РµСЂРјРѕСЏРґРµСЂРЅС‹С… СЂРµР°РєС†РёР№)
+	Neutron			UMETA(DisplayName = "Neutron Star"), // РќРµР№С‚СЂРѕРЅРЅС‹Рµ Р·РІРµР·РґС‹ (РѕСЃС‚Р°С‚РєРё РІР·СЂС‹РІРѕРІ СЃСѓРїРµСЂРЅРѕРІС‹С…, РѕС‡РµРЅСЊ РїР»РѕС‚РЅС‹Рµ)
+	Protostar		UMETA(DisplayName = "Protostar"), // РџСЂРѕС‚РѕР·РІРµР·РґС‹ (РјРѕР»РѕРґС‹Рµ Р·РІРµР·РґС‹, РєРѕС‚РѕСЂС‹Рµ РµС‰Рµ РЅРµ РЅР°С‡Р°Р»Рё РѕСЃРЅРѕРІРЅСѓСЋ С‚РµСЂРјРѕСЏРґРµСЂРЅСѓСЋ СЂРµР°РєС†РёСЋ)
+	Pulsar			UMETA(DisplayName = "Pulsar"), // РџСѓР»СЊСЃР°СЂС‹ (РІСЂР°С‰Р°СЋС‰РёРµСЃСЏ РЅРµР№С‚СЂРѕРЅРЅС‹Рµ Р·РІРµР·РґС‹, РєРѕС‚РѕСЂС‹Рµ РёР·Р»СѓС‡Р°СЋС‚ РёРјРїСѓР»СЊСЃС‹ СЂР°РґРёРѕРІРѕР»РЅ)
+	BlackHole		UMETA(DisplayName = "Black Hole"), // Р§РµСЂРЅС‹Рµ РґС‹СЂС‹ (РѕР±СЉРµРєС‚С‹ СЃ С‚Р°РєРѕР№ СЃРёР»СЊРЅРѕР№ РіСЂР°РІРёС‚Р°С†РёРµР№, С‡С‚Рѕ РґР°Р¶Рµ СЃРІРµС‚ РЅРµ РјРѕР¶РµС‚ СѓР№С‚Рё)
+	Unknown			UMETA(DisplayName = "Unknown") // РќРµРёР·РІРµСЃС‚РЅС‹Р№ РёР»Рё РµС‰С‘ РЅРµ РєР»Р°СЃСЃРёС„РёС†РёСЂРѕРІР°РЅРЅС‹Р№ РѕР±СЉРµРєС‚
 };

@@ -4,6 +4,7 @@
 #include "OrbitalBodyGenerationModel.h"
 #include "CoreMinimal.h"
 #include "APS_ALPHA/Core/Enums/OrbitHeight.h"
+#include "APS_ALPHA/Core/Enums/PlanetHabitability.h"
 #include "APS_ALPHA/Core/Enums/PlanetaryZoneType.h"
 #include "APS_ALPHA/Core/Enums/PlanetType.h"
 #include "PlanetGenerationModel.generated.h"
@@ -78,6 +79,10 @@ struct FPlanetModel : public FOrbitalBodyModel
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Planet")
 	EPlanetType PlanetType;
+
+	/** Explicit gameplay classification; intentionally independent of visual PlanetType. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet")
+	EPlanetHabitability PlanetHabitability;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Planet")
 	int32 AmountOfMoons{0};

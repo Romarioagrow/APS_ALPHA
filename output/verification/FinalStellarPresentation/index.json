@@ -1,0 +1,3836 @@
+﻿{
+	"devices": [
+		{
+			"deviceName": "RIO-PC",
+			"instance": "DC9B57714040BAFEF7532D8FA9AEC2CF",
+			"instanceName": "RIO-PC-1380",
+			"platform": "WindowsEditor",
+			"oSVersion": "Windows 11 (25H2) [10.0.26200.7623] ",
+			"model": "Default",
+			"gPU": "NVIDIA GeForce RTX 5080",
+			"cPUModel": "Intel(R) Core(TM) i9-10900KF CPU @ 3.70GHz",
+			"rAMInGB": 32,
+			"renderMode": "D3D12_SM6",
+			"rHI": "DirectX 12 (SM6)",
+			"appInstanceLog": ""
+		}
+	],
+	"reportCreatedOn": "2026.08.07-06.08.58",
+	"succeeded": 0,
+	"succeededWithWarnings": 0,
+	"failed": 1,
+	"notRun": 0,
+	"inProcess": 0,
+	"totalDuration": 5.2940363883972168,
+	"comparisonExported": false,
+	"comparisonExportDirectory": "",
+	"tests": [
+		{
+			"testDisplayName": "StellarPresentation",
+			"fullTestPath": "APS.Rendered.MainMenu.StellarPresentation",
+			"state": "Fail",
+			"deviceInstance": [
+				"DC9B57714040BAFEF7532D8FA9AEC2CF"
+			],
+			"duration": 5.2940363883972168,
+			"dateTime": "0001.01.01-00.00.00",
+			"entries": [
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogViewport: Viewport MouseCaptureMode Changed, CapturePermanently_IncludingInitialMouseDown -> NoCapture [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.07-01.08.53"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: === AAstroGenerator::BeginPlay START === [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.07-01.08.53"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: bAutoGeneration: false [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.07-01.08.53"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: bIntegrateStartPlanet: false [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.07-01.08.53"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: StartHomePlanet: NULL [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.07-01.08.53"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: StartPlanetNumber: 1 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.07-01.08.53"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: bAutoGeneration is false, skipping generation [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.07-01.08.53"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: === AAstroGenerator::BeginPlay END === [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.07-01.08.53"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogStreaming: FlushAsyncLoading(): 0 QueuedPackages, 67 AsyncPackages [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.07-01.08.53"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: Generate Star System! [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5227,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: NewPlanetarySystem->PlanetsActorsList: 5 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5227,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: CurrentPlanet->Moons.Num(): 0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5227,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: CurrentPlanet->Moons.Num(): 0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5227,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: CurrentPlanet->Moons.Num(): 0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5227,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: CurrentPlanet->Moons.Num(): 0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5227,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: GeneratedHomeStarSystem set to: BP_StarSystem_C_0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5227,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: Planet List -  [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6137,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: Planet Amount: 5 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6137,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:     Planet Order: 1 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Orbit Radius: 2.542374 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Type: EPlanetType::Frozen [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Zone: EPlanetaryZoneType::Unknown [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Temperature: 0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Density: 0.000000 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Gravity Strength: 0.000000 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Amount of Moons: 1 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:          Moon Order: 1 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:              Moon Orbit Radius: 3.727341 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:              Moon Type: EMoonType::Iron [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:              Moon Density: 6.148167 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:              Moon Gravity: 1.734400 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:     Planet Order: 1 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Orbit Radius: 3.260726 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Type: EPlanetType::Ice [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Zone: EPlanetaryZoneType::ColdZone [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Temperature: 2020 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Density: 3.198737 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Gravity Strength: 9.645470 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Amount of Moons: 0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:     Planet Order: 2 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Orbit Radius: 5.803078 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Type: EPlanetType::Ice [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Zone: EPlanetaryZoneType::ColdZone [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Temperature: 1514 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Density: 2.888501 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Gravity Strength: 7.513604 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Amount of Moons: 0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:     Planet Order: 3 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Orbit Radius: 7.612763 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Type: EPlanetType::Ice [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Zone: EPlanetaryZoneType::IceZone [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Temperature: 1322 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Density: 2.941145 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Gravity Strength: 7.630991 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Amount of Moons: 0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:     Planet Order: 4 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Orbit Radius: 10.234108 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Type: EPlanetType::Frozen [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Zone: EPlanetaryZoneType::IceZone [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Temperature: 1140 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Density: 2.761650 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Gravity Strength: 6.711275 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Amount of Moons: 0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: Generate Star System! [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5227,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: NewPlanetarySystem->PlanetsActorsList: 5 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5227,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: CurrentPlanet->Moons.Num(): 0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5227,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: CurrentPlanet->Moons.Num(): 0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5227,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: CurrentPlanet->Moons.Num(): 0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5227,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: CurrentPlanet->Moons.Num(): 0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5227,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: GeneratedHomeStarSystem set to: BP_StarSystem_C_1 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5227,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: Planet List -  [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6137,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: Planet Amount: 5 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6137,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:     Planet Order: 1 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Orbit Radius: 134.065806 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Type: EPlanetType::Frozen [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Zone: EPlanetaryZoneType::Unknown [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Temperature: 0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Density: 0.000000 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Gravity Strength: 0.000000 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Amount of Moons: 1 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:          Moon Order: 1 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:              Moon Orbit Radius: 3.713641 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:              Moon Type: EMoonType::Rocky [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:              Moon Density: 2.680074 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:              Moon Gravity: 1.308161 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:     Planet Order: 1 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Orbit Radius: 171.946316 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Type: EPlanetType::Frozen [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Zone: EPlanetaryZoneType::ColdZone [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Temperature: 2070 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Density: 2.884518 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Gravity Strength: 6.194571 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Amount of Moons: 0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:     Planet Order: 2 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Orbit Radius: 401.440173 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Type: EPlanetType::Ice [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Zone: EPlanetaryZoneType::IceZone [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Temperature: 1355 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Density: 3.259621 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Gravity Strength: 10.121164 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Amount of Moons: 0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:     Planet Order: 3 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Orbit Radius: 404.918169 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Type: EPlanetType::Ice [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Zone: EPlanetaryZoneType::IceZone [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Temperature: 1349 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Density: 2.888501 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Gravity Strength: 7.513604 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Amount of Moons: 0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:     Planet Order: 4 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Orbit Radius: 409.690316 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Type: EPlanetType::Ice [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Zone: EPlanetaryZoneType::IceZone [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Temperature: 1341 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Density: 2.941145 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Gravity Strength: 7.630991 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Amount of Moons: 0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.54"
+				},
+				{
+					"event":
+					{
+						"type": "Error",
+						"message": "Expected 'Stellar type switch keeps SYSTEM framing in bounded preview range' to be true.",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Tests\\APSMainMenuPreviewSmokeTests.cpp",
+					"lineNumber": 2841,
+					"timestamp": "2026.08.07-01.08.55"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: Generate Star System! [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5227,
+					"timestamp": "2026.08.07-01.08.55"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: NewPlanetarySystem->PlanetsActorsList: 5 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5227,
+					"timestamp": "2026.08.07-01.08.55"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: CurrentPlanet->Moons.Num(): 0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5227,
+					"timestamp": "2026.08.07-01.08.55"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: CurrentPlanet->Moons.Num(): 0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5227,
+					"timestamp": "2026.08.07-01.08.55"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: CurrentPlanet->Moons.Num(): 1 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5227,
+					"timestamp": "2026.08.07-01.08.55"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: CurrentPlanet->Moons.Num(): 2 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5227,
+					"timestamp": "2026.08.07-01.08.55"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: GeneratedHomeStarSystem set to: BP_StarSystem_C_2 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5227,
+					"timestamp": "2026.08.07-01.08.55"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: Planet List -  [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6137,
+					"timestamp": "2026.08.07-01.08.55"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: Planet Amount: 5 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6137,
+					"timestamp": "2026.08.07-01.08.55"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:     Planet Order: 1 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.55"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Orbit Radius: 187.287992 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.55"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Type: EPlanetType::Frozen [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.55"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Zone: EPlanetaryZoneType::Unknown [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.55"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Temperature: 0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.55"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Density: 0.000000 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.55"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Gravity Strength: 0.000000 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.55"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Amount of Moons: 1 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.55"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:          Moon Order: 1 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.55"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:              Moon Orbit Radius: 3.158263 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.55"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:              Moon Type: EMoonType::Rocky [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.55"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:              Moon Density: 2.826258 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.55"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:              Moon Gravity: 1.629764 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.55"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:     Planet Order: 1 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.55"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Orbit Radius: 222.369251 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.55"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Type: EPlanetType::Metal [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.55"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Zone: EPlanetaryZoneType::HotZone [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.55"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Temperature: 8133 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.55"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Density: 7.179357 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.55"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Gravity Strength: 27.895853 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.55"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Amount of Moons: 0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.55"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:     Planet Order: 2 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.55"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Orbit Radius: 434.904229 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.55"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Type: EPlanetType::Metal [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.55"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Zone: EPlanetaryZoneType::HotZone [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.55"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Temperature: 5816 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.55"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Density: 7.679495 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.55"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Gravity Strength: 34.250988 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.55"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Amount of Moons: 0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.55"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:     Planet Order: 3 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.55"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Orbit Radius: 438.125212 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.55"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Type: EPlanetType::Lava [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.55"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Zone: EPlanetaryZoneType::HotZone [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.55"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Temperature: 5794 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.55"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Density: 4.777001 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.55"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Gravity Strength: 19.861708 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.55"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Amount of Moons: 1 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.55"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:          Moon Order: 1 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.55"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:              Moon Orbit Radius: 3.205913 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.55"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:              Moon Type: EMoonType::Iron [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.55"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:              Moon Density: 6.088107 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.55"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:              Moon Gravity: 2.361007 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.55"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:     Planet Order: 4 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.55"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Orbit Radius: 442.544713 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.55"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Type: EPlanetType::Metal [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.55"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Zone: EPlanetaryZoneType::HotZone [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.56"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Temperature: 5765 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.56"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Density: 7.015534 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.56"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Gravity Strength: 28.449049 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.56"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Amount of Moons: 2 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.56"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:          Moon Order: 1 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.56"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:              Moon Orbit Radius: 3.727341 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.56"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:              Moon Type: EMoonType::Rocky [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.56"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:              Moon Density: 2.875225 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.56"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:              Moon Gravity: 1.102787 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.56"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:          Moon Order: 2 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.56"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:              Moon Orbit Radius: 5.512680 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.56"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:              Moon Type: EMoonType::Rocky [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.56"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:              Moon Density: 2.951186 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.56"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:              Moon Gravity: 0.942392 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.56"
+				},
+				{
+					"event":
+					{
+						"type": "Error",
+						"message": "Expected 'Stellar type switch keeps SYSTEM framing in bounded preview range' to be true.",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Tests\\APSMainMenuPreviewSmokeTests.cpp",
+					"lineNumber": 2841,
+					"timestamp": "2026.08.07-01.08.56"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: Generate Star System! [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5227,
+					"timestamp": "2026.08.07-01.08.56"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: NewPlanetarySystem->PlanetsActorsList: 5 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5227,
+					"timestamp": "2026.08.07-01.08.56"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: CurrentPlanet->Moons.Num(): 0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5227,
+					"timestamp": "2026.08.07-01.08.56"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: CurrentPlanet->Moons.Num(): 0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5227,
+					"timestamp": "2026.08.07-01.08.56"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: CurrentPlanet->Moons.Num(): 3 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5227,
+					"timestamp": "2026.08.07-01.08.56"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: CurrentPlanet->Moons.Num(): 1 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5227,
+					"timestamp": "2026.08.07-01.08.56"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: GeneratedHomeStarSystem set to: BP_StarSystem_C_3 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5227,
+					"timestamp": "2026.08.07-01.08.56"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: Planet List -  [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6137,
+					"timestamp": "2026.08.07-01.08.56"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: Planet Amount: 5 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6137,
+					"timestamp": "2026.08.07-01.08.56"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:     Planet Order: 1 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.56"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Orbit Radius: 1.564360 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.56"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Type: EPlanetType::Frozen [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.56"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Zone: EPlanetaryZoneType::Unknown [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.56"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Temperature: 0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.56"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Density: 0.000000 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.56"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Gravity Strength: 0.000000 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.56"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Amount of Moons: 1 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.56"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:          Moon Order: 1 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.56"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:              Moon Orbit Radius: 3.144810 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.56"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:              Moon Type: EMoonType::Rocky [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.56"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:              Moon Density: 2.532533 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.56"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:              Moon Gravity: 0.982372 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.56"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:     Planet Order: 1 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.56"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Orbit Radius: 2.006372 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.56"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Type: EPlanetType::Metal [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.56"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Zone: EPlanetaryZoneType::WarmZone [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.56"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Temperature: 3834 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.56"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Density: 7.179357 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.56"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Gravity Strength: 27.895853 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.56"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Amount of Moons: 0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.56"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:     Planet Order: 2 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.56"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Orbit Radius: 4.684244 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.56"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Type: EPlanetType::Desert [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.56"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Zone: EPlanetaryZoneType::HabitableZone [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.56"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Temperature: 2509 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.56"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Density: 4.179495 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.56"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Gravity Strength: 18.640787 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.56"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Amount of Moons: 0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.56"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:     Planet Order: 3 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.56"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Orbit Radius: 4.724827 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.56"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Type: EPlanetType::Forest [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.56"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Zone: EPlanetaryZoneType::HabitableZone [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.56"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Temperature: 2498 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.56"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Density: 5.184667 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.56"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Gravity Strength: 25.122675 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.56"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Amount of Moons: 3 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.56"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:          Moon Order: 1 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:              Moon Orbit Radius: 3.205913 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:              Moon Type: EMoonType::Iron [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:              Moon Density: 6.409320 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:              Moon Gravity: 2.788776 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:          Moon Order: 2 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:              Moon Orbit Radius: 4.949180 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:              Moon Type: EMoonType::Desert [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:              Moon Density: 2.110218 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:              Moon Gravity: 0.963642 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:          Moon Order: 3 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:              Moon Orbit Radius: 8.204230 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:              Moon Type: EMoonType::Peculiar [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:              Moon Density: 1.307242 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:              Moon Gravity: 0.967519 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:     Planet Order: 4 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Orbit Radius: 4.780512 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Type: EPlanetType::Ocean [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Zone: EPlanetaryZoneType::HabitableZone [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Temperature: 2484 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Density: 4.500900 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Gravity Strength: 15.418050 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Amount of Moons: 1 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:          Moon Order: 1 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:              Moon Orbit Radius: 3.158263 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:              Moon Type: EMoonType::Rocky [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:              Moon Density: 2.826258 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:              Moon Gravity: 1.629764 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: Generate Star System! [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5227,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: NewPlanetarySystem->PlanetsActorsList: 5 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5227,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: CurrentPlanet->Moons.Num(): 0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5227,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: CurrentPlanet->Moons.Num(): 0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5227,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: CurrentPlanet->Moons.Num(): 0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5227,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: CurrentPlanet->Moons.Num(): 0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5227,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: GeneratedHomeStarSystem set to: BP_StarSystem_C_4 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5227,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: Planet List -  [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6137,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: Planet Amount: 5 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6137,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:     Planet Order: 1 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Orbit Radius: 2.033258 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Type: EPlanetType::Frozen [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Zone: EPlanetaryZoneType::Unknown [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Temperature: 0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Density: 0.000000 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Gravity Strength: 0.000000 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Amount of Moons: 1 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:          Moon Order: 1 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:              Moon Orbit Radius: 3.713641 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:              Moon Type: EMoonType::Rocky [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:              Moon Density: 2.680074 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:              Moon Gravity: 1.308161 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:     Planet Order: 1 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Orbit Radius: 2.607759 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Type: EPlanetType::Ice [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Zone: EPlanetaryZoneType::ColdZone [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Temperature: 2065 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Density: 3.187384 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Gravity Strength: 7.941868 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Amount of Moons: 0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:     Planet Order: 2 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Orbit Radius: 4.641000 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Type: EPlanetType::Ice [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Zone: EPlanetaryZoneType::IceZone [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Temperature: 1548 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Density: 3.259621 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Gravity Strength: 10.121164 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Amount of Moons: 0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:     Planet Order: 3 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Orbit Radius: 6.088291 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Type: EPlanetType::Ice [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Zone: EPlanetaryZoneType::IceZone [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.57"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Temperature: 1351 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.58"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Density: 2.888501 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.58"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Gravity Strength: 7.513604 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.58"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Amount of Moons: 0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.58"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:     Planet Order: 4 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.58"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Orbit Radius: 8.184706 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.58"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Type: EPlanetType::IceGiant [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.58"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Zone: EPlanetaryZoneType::GasGiantsZone [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.58"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Temperature: 1166 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.58"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Density: 2.441145 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.58"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Gravity Strength: 63.053207 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.58"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Amount of Moons: 0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5234,
+					"timestamp": "2026.08.07-01.08.58"
+				}
+			],
+			"warnings": 312,
+			"errors": 2,
+			"artifacts": []
+		}
+	]
+}

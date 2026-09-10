@@ -1,0 +1,428 @@
+﻿{
+	"devices": [
+		{
+			"deviceName": "RIO-PC",
+			"instance": "F810D71D476570699D20A3B36A0623FC",
+			"instanceName": "RIO-PC-29748",
+			"platform": "WindowsEditor",
+			"oSVersion": "Windows 11 (25H2) [10.0.26200.7623] ",
+			"model": "Default",
+			"gPU": "NVIDIA GeForce RTX 5080",
+			"cPUModel": "Intel(R) Core(TM) i9-10900KF CPU @ 3.70GHz",
+			"rAMInGB": 32,
+			"renderMode": "D3D12_SM6",
+			"rHI": "DirectX 12 (SM6)",
+			"appInstanceLog": ""
+		}
+	],
+	"reportCreatedOn": "2026.08.07-06.47.21",
+	"succeeded": 0,
+	"succeededWithWarnings": 1,
+	"failed": 0,
+	"notRun": 0,
+	"inProcess": 0,
+	"totalDuration": 1.8471710681915283,
+	"comparisonExported": false,
+	"comparisonExportDirectory": "",
+	"tests": [
+		{
+			"testDisplayName": "ChoosePathProcedural",
+			"fullTestPath": "APS.Rendered.MainMenu.ChoosePathProcedural",
+			"state": "Success",
+			"deviceInstance": [
+				"F810D71D476570699D20A3B36A0623FC"
+			],
+			"duration": 1.8471710681915283,
+			"dateTime": "0001.01.01-00.00.00",
+			"entries": [
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogViewport: Viewport MouseCaptureMode Changed, CapturePermanently_IncludingInitialMouseDown -> NoCapture [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.07-01.47.19"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: === AAstroGenerator::BeginPlay START === [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.07-01.47.19"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: bAutoGeneration: false [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.07-01.47.19"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: bIntegrateStartPlanet: false [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.07-01.47.19"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: StartHomePlanet: NULL [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.07-01.47.19"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: StartPlanetNumber: 1 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.07-01.47.19"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: bAutoGeneration is false, skipping generation [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.07-01.47.19"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: === AAstroGenerator::BeginPlay END === [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.07-01.47.19"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogStreaming: FlushAsyncLoading(): 0 QueuedPackages, 54 AsyncPackages [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.07-01.47.19"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: Generate Star System! [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5222,
+					"timestamp": "2026.08.07-01.47.20"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: NewPlanetarySystem->PlanetsActorsList: 1 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5222,
+					"timestamp": "2026.08.07-01.47.20"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: GeneratedHomeStarSystem set to: BP_StarSystem_C_0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5222,
+					"timestamp": "2026.08.07-01.47.20"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: Planet List -  [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6150,
+					"timestamp": "2026.08.07-01.47.20"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: Planet Amount: 1 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6150,
+					"timestamp": "2026.08.07-01.47.20"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:     Planet Order: 1 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5229,
+					"timestamp": "2026.08.07-01.47.20"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Orbit Radius: 5.092693 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5229,
+					"timestamp": "2026.08.07-01.47.20"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Type: EPlanetType::Frozen [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5229,
+					"timestamp": "2026.08.07-01.47.20"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Zone: EPlanetaryZoneType::Unknown [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5229,
+					"timestamp": "2026.08.07-01.47.20"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Temperature: 0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5229,
+					"timestamp": "2026.08.07-01.47.20"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Density: 0.000000 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5229,
+					"timestamp": "2026.08.07-01.47.20"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Gravity Strength: 0.000000 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5229,
+					"timestamp": "2026.08.07-01.47.20"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Amount of Moons: 0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 5229,
+					"timestamp": "2026.08.07-01.47.20"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.ChoosePath] focusDelta=0.94145 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.07-01.47.20"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.ChoosePath] hoverDelta=0.97509 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.07-01.47.20"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogCore: Tracing Screenshot \"APS_ChoosePath_Procedural\" taken with size: 1280 x 720 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.07-01.47.21"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.ChoosePath] card=0 mean=38.01 variance=1406.52 dark=0.874 bright=0.0518 color=0.9685 railBright=0.0949 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.07-01.47.21"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.ChoosePath] card=1 mean=38.23 variance=1435.97 dark=0.854 bright=0.0635 color=0.9655 railBright=0.0980 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.07-01.47.21"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.ChoosePath] card=2 mean=37.51 variance=1501.30 dark=0.892 bright=0.0658 color=0.9640 railBright=0.1143 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.07-01.47.21"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.ChoosePath] card=3 mean=37.89 variance=1494.68 dark=0.885 bright=0.0717 color=0.9681 railBright=0.1041 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.07-01.47.21"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.ChoosePath] card=4 mean=35.33 variance=1117.48 dark=0.900 bright=0.0517 color=0.9786 railBright=0.0820 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.07-01.47.21"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.ChoosePath] card=5 mean=31.16 variance=372.20 dark=0.935 bright=0.0366 color=0.9841 railBright=0.0187 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.07-01.47.21"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.ChoosePath] rendered contract passed screenshot=F:/Rio/Projects/Unreal Projects/APS/APS_ALPHA/Saved/Screenshots/Windows/APS_ChoosePath_Procedural.png [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.07-01.47.21"
+				}
+			],
+			"warnings": 20,
+			"errors": 0,
+			"artifacts": []
+		}
+	]
+}

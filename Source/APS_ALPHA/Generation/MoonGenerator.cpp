@@ -7,29 +7,26 @@
 #include "APS_ALPHA/Core/Enums/PlanetaryZoneType.h"
 #include "APS_ALPHA/Core/Structs/PlanetGenerationModel.h"
 
-namespace
+EPlanetType UMoonGenerator::ResolveSurfaceType(const FMoonModel& Model)
 {
-	EPlanetType ResolveMoonSurfaceType(const FMoonModel& Model)
+	if (Model.PlanetType != EPlanetType::Unknown)
 	{
-		if (Model.PlanetType != EPlanetType::Unknown)
-		{
-			return Model.PlanetType;
-		}
-		switch (Model.Type)
-		{
-		case EMoonType::Rocky: return EPlanetType::Rocky;
-		case EMoonType::Icy: return EPlanetType::Frozen;
-		case EMoonType::Iron: return EPlanetType::Metal;
-		case EMoonType::Volcanic: return EPlanetType::Volcanic;
-		case EMoonType::Gas: return EPlanetType::GasGiant;
-		case EMoonType::Ocean: return EPlanetType::Ocean;
-		case EMoonType::Continental: return EPlanetType::Terrestrial;
-		case EMoonType::Desert: return EPlanetType::Desert;
-		case EMoonType::TidallyLocked: return EPlanetType::Rogue;
-		case EMoonType::Peculiar: return EPlanetType::Exoplanet;
-		case EMoonType::CapturedAsteroid: return EPlanetType::Dwarf;
-		default: return EPlanetType::Rocky;
-		}
+		return Model.PlanetType;
+	}
+	switch (Model.Type)
+	{
+	case EMoonType::Rocky: return EPlanetType::Rocky;
+	case EMoonType::Icy: return EPlanetType::Frozen;
+	case EMoonType::Iron: return EPlanetType::Metal;
+	case EMoonType::Volcanic: return EPlanetType::Volcanic;
+	case EMoonType::Gas: return EPlanetType::GasGiant;
+	case EMoonType::Ocean: return EPlanetType::Ocean;
+	case EMoonType::Continental: return EPlanetType::Terrestrial;
+	case EMoonType::Desert: return EPlanetType::Desert;
+	case EMoonType::TidallyLocked: return EPlanetType::Rogue;
+	case EMoonType::Peculiar: return EPlanetType::Exoplanet;
+	case EMoonType::CapturedAsteroid: return EPlanetType::Dwarf;
+	default: return EPlanetType::Rocky;
 	}
 }
 
@@ -54,9 +51,11 @@ void UMoonGenerator::ApplyModel(AMoon* Moon, TSharedPtr<FMoonModel> MoonGenerati
 		return;
 	}
 	Moon->GenerationModel = MoonGenerationModel;
-	MoonGenerationModel->PlanetType = ResolveMoonSurfaceType(*MoonGenerationModel);
+	MoonGenerationModel->PlanetType = ResolveSurfaceType(*MoonGenerationModel);
     Moon->SetMoonType(MoonGenerationModel->Type);
 	Moon->PlanetType = MoonGenerationModel->PlanetType;
+	Moon->PlanetHabitability = MoonGenerationModel->PlanetHabitability;
+	Moon->PlanetData.PlanetHabitability = MoonGenerationModel->PlanetHabitability;
     Moon->SetMass(MoonGenerationModel->Mass);
     Moon->SetRadius(MoonGenerationModel->Radius);
     Moon->SetMoonDensity(MoonGenerationModel->MoonDensity);
@@ -104,13 +103,14 @@ double UMoonGenerator::CalculateGravitationalForce(double MassPlanet, double Mas
     return Force;
 }
 
-double UMoonGenerator::CalculateRandomMoonDensity(EMoonType MoonType)
+double UMoonGenerator::CalculateRandomMoonDensity(EMoonType MoonType, FRandomStream* Random)
 {
     TPair<double, double> DensityRange = MoonDensityRanges[MoonType];
-    return FMath::RandRange(DensityRange.Key, DensityRange.Value);
+    return Random ? FMath::Lerp(DensityRange.Key, DensityRange.Value, static_cast<double>(Random->FRand()))
+        : FMath::RandRange(DensityRange.Key, DensityRange.Value);
 }
 
-EMoonType UMoonGenerator::GenerateMoonType(TSharedPtr<FPlanetModel> PlanetModel)
+EMoonType UMoonGenerator::GenerateMoonType(TSharedPtr<FPlanetModel> PlanetModel, FRandomStream* Random)
 {
     EPlanetaryZoneType PlanetZone = PlanetModel->PlanetZone;
     TMap<EMoonType, float> PlanetMoonTypeProbabilities;
@@ -201,7 +201,7 @@ EMoonType UMoonGenerator::GenerateMoonType(TSharedPtr<FPlanetModel> PlanetModel)
     }
 
     // ���������� ��������� ����� � ��������� �� 0 �� TotalWeight
-    float RandomValue = FMath::FRand() * TotalWeight;
+    float RandomValue = (Random ? Random->FRand() : FMath::FRand()) * TotalWeight;
 
     EMoonType ChosenMoonType{};
     for (auto const& Pair : PlanetMoonTypeProbabilities) {
@@ -215,14 +215,15 @@ EMoonType UMoonGenerator::GenerateMoonType(TSharedPtr<FPlanetModel> PlanetModel)
     return ChosenMoonType;
 }
 
-double UMoonGenerator::CalculateRandomMoonMass()
+double UMoonGenerator::CalculateRandomMoonMass(FRandomStream* Random)
 {
     // Convert the range from a logarithmic scale to a linear scale
     double minMass = FMath::Pow(10.0, -4.0);
     double maxMass = FMath::Pow(10.0, -1.5);
 
     // Generate a random mass within the range
-    double moonMass = FMath::RandRange(minMass, maxMass);
+    double moonMass = Random ? FMath::Lerp(minMass, maxMass, static_cast<double>(Random->FRand()))
+        : FMath::RandRange(minMass, maxMass);
 
     return moonMass;
 }

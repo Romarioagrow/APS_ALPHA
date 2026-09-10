@@ -55,8 +55,28 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "World Generation")
 	void SetPlanetRadius(double Value);
 
+	/** Sets the primary home-star radius in solar radii; zero restores AUTO/type defaults. */
+	UFUNCTION(BlueprintCallable, Category = "World Generation")
+	void SetHomeStarRadiusOverrideSolar(double Value);
+
+	/** Selected-star controls; legacy home recipe remains available before generation. */
+	void SetSelectedStarRadiusOverrideSolar(double Value);
+	double GetSelectedStarRadiusOverrideSolar() const;
+	EStellarType GetSelectedStellarType() const;
+	ESpectralClass GetSelectedSpectralClass() const;
+	EStarType GetSelectedSystemStarType() const;
+	EPlanetarySystemType GetSelectedSystemPlanetaryType() const;
+	EOrbitDistributionType GetSelectedSystemOrbitDistribution() const;
+	int32 GetSelectedSystemPlanetCount() const;
+	void SetSelectedSystemPlanetCount(double Value);
+	int32 GetHomeStartPlanetCount() const;
+	bool CanEditSelectedSystem() const;
+
 	UFUNCTION(BlueprintCallable, Category = "World Generation")
 	void SetMoonsAmount(double Value);
+
+	/** Edit the selected moon's center-to-parent orbit radius in kilometres. */
+	void SetSelectedMoonOrbitRadiusKm(double Value);
 
 	void SetPlanetSurfaceSeed(int32 Value);
 	void SetSurfaceFeatureScale(double Value);
@@ -94,12 +114,15 @@ public:
 	void EndPreviewOrbit();
 	void ZoomPreview(float WheelDelta);
 	bool FocusPreviewUnderCursor();
+	/** Same scene hit test as mouse focus, with viewport-pixel coordinates. */
+	bool FocusPreviewAtScreenPosition(const FVector2D& ScreenPosition);
 	void GetPreviewBodyEntries(TArray<FAPSPreviewBodyEntry>& OutEntries) const;
 	/** Returns a mesh-only PLANET presentation centre without changing actor data. */
 	bool GetPreviewPresentationLocation(const AActor* Actor, FVector& OutLocation) const;
 	bool FocusPreviewBody(const TWeakObjectPtr<AActor>& BodyActor);
 	bool FocusPreviewClusterSystem(int32 InstanceIndex);
 	AActor* GetSelectedPreviewBody() const { return SelectedPreviewBody.Get(); }
+	bool IsSelectedPreviewBodyMoon() const;
 	FText GetPreviewScopeSummary() const;
 	FText GetPreviewHierarchyTitle() const;
 	bool GetPreviewFocusSphere(FVector& OutCenter, double& OutRadius) const;
@@ -142,6 +165,8 @@ private:
 	void TryOpenCommittedLevelAfterPreviewDrain();
 	void PreserveSelectedPreviewBodyEdit(bool bFlushPendingActor);
 	void HydratePreviewBodyEditorBuffer(APlanetaryBody* Body);
+	bool SetSelectedStarEnum(const UEnum* EnumClass, int32 SelectedValue);
+	bool SetSelectedSystemEnum(const UEnum* EnumClass, int32 SelectedValue);
 	AAstroGenerator* FindOrCreatePreviewGenerator();
 	void InitializeSpawnDefaultsFromGenerator(AAstroGenerator* Generator);
 	void SetPreviewStatus(const FText& Status, bool bReady);

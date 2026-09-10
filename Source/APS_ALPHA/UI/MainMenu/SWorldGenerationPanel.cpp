@@ -1,9 +1,14 @@
 #include "SWorldGenerationPanel.h"
+#include "APSPreviewAnnotationLayout.h"
+#include "ProfilingDebugging/CsvProfiler.h"
+
+CSV_DECLARE_CATEGORY_EXTERN(APSPreview);
 
 #include "APS_ALPHA/Core/Enums/AstroGenerationLevel.h"
 #include "APS_ALPHA/Core/Enums/GalaxyClass.h"
 #include "APS_ALPHA/Core/Enums/GalaxyType.h"
 #include "APS_ALPHA/Core/Enums/OrbitDistributionType.h"
+#include "APS_ALPHA/Core/Enums/PlanetHabitability.h"
 #include "APS_ALPHA/Core/Enums/PlanetarySystemType.h"
 #include "APS_ALPHA/Core/Enums/PlanetType.h"
 #include "APS_ALPHA/Core/Enums/StarClusterComposition.h"
@@ -17,10 +22,15 @@
 #include "APS_ALPHA/Actors/Astro/Moon.h"
 #include "APS_ALPHA/Actors/Astro/Planet.h"
 #include "APS_ALPHA/Actors/Astro/PlanetOrbit.h"
+#include "APS_ALPHA/Core/Rendering/APSPreviewVisibility.h"
 #include "APS_ALPHA/Actors/Astro/Star.h"
 #include "APS_ALPHA/UI/MainMenu/WorldGenerationViewModel.h"
 #include "Engine/Font.h"
+#include "Fonts/FontMeasure.h"
+#include "Framework/Application/SlateApplication.h"
+#include "Rendering/SlateRenderer.h"
 #include "Engine/GameViewportClient.h"
+#include "Engine/LocalPlayer.h"
 #include "Engine/Engine.h"
 #include "Camera/PlayerCameraManager.h"
 #include "Components/StaticMeshComponent.h"
@@ -28,6 +38,7 @@
 #include "InputCoreTypes.h"
 #include "Math/RotationMatrix.h"
 #include "Rendering/DrawElements.h"
+#include "SceneView.h"
 #include "Styling/AppStyle.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Input/SSlider.h"
@@ -357,14 +368,12 @@ namespace APSGenerationUI
 		return FCoreStyle::GetDefaultFontStyle(Typeface, Size);
 	}
 
-	FText CompactLabel(const FText& Text, int32 MaxCharacters)
+	FText CompactLabel(const FText& Text, const FSlateFontInfo& FontInfo)
 	{
-		const FString Source = Text.ToString();
-		if (Source.Len() <= MaxCharacters || MaxCharacters < 4)
-		{
-			return Text;
-		}
-		return FText::FromString(Source.Left(MaxCharacters - 3).TrimEnd() + TEXT("..."));
+		const auto Measure = FSlateApplication::Get().GetRenderer()->GetFontMeasureService();
+		return FText::FromString(APSPreviewAnnotationLayout::ElideText(Text.ToString(),
+			APSPreviewAnnotationLayout::LabelSize().X - 12.0,
+			[&](const FString& Value) { return static_cast<double>(Measure->Measure(Value, FontInfo).X); }));
 	}
 
 	FButtonStyle MakeButtonStyle(const FLinearColor& Outline, const FLinearColor& Fill,
@@ -827,6 +836,7 @@ namespace APSGenerationUI
 		{
 			ViewModel = InArgs._ViewModel;
 			SetVisibility(EVisibility::HitTestInvisible);
+			SetClipping(EWidgetClipping::ClipToBounds);
 		}
 
 		virtual FVector2D ComputeDesiredSize(float) const override
@@ -834,10 +844,40 @@ namespace APSGenerationUI
 			return FVector2D(100.0f, 100.0f);
 		}
 
+		virtual void Tick(const FGeometry& AllottedGeometry, const double InCurrentTime, const float InDeltaTime) override
+		{
+			SLeafWidget::Tick(AllottedGeometry, InCurrentTime, InDeltaTime);
+			const UWorldGenerationViewModel* VM = ViewModel.Get();
+			UWorld* World = VM ? VM->GetWorld() : nullptr;
+			APlayerController* PC = World ? World->GetFirstPlayerController() : nullptr;
+			AAstroGenerator* Generator = PC ? Cast<AAstroGenerator>(PC->GetViewTarget()) : nullptr;
+			const ULocalPlayer* Player = PC ? PC->GetLocalPlayer() : nullptr;
+			if (!Generator || !Generator->UsesContinuousPreviewFrame() || !Player || !Player->ViewportClient) return;
+			const TSharedPtr<SViewport> Viewport = Player->ViewportClient->GetGameViewportWidget();
+			FSceneViewProjectionData Projection;
+			if (!Viewport || !Player->GetProjectionData(Player->ViewportClient->Viewport, Projection)) return;
+			const FGeometry ViewGeometry = Viewport->GetCachedGeometry();
+			const FVector2D ViewSize = ViewGeometry.GetLocalSize();
+			int32 Width = 0, Height = 0;
+			PC->GetViewportSize(Width, Height);
+			if (ViewSize.X <= 0 || ViewSize.Y <= 0 || Width <= 0 || Height <= 0) return;
+			const FVector2D PixelScale(Width / ViewSize.X, Height / ViewSize.Y);
+			const FVector2D Min = ViewGeometry.AbsoluteToLocal(AllottedGeometry.LocalToAbsolute(FVector2D::ZeroVector)) * PixelScale;
+			const FVector2D Max = ViewGeometry.AbsoluteToLocal(AllottedGeometry.LocalToAbsolute(AllottedGeometry.GetLocalSize())) * PixelScale;
+			const FIntRect Rect = Projection.GetConstrainedViewRect();
+			const FVector2D Center((Rect.Min.X + Rect.Max.X) * 0.5, (Rect.Min.Y + Rect.Max.Y) * 0.5);
+			const double Horizontal = FMath::Min(Center.X - Min.X, Max.X - Center.X)
+				/ (Rect.Width() * 0.5 * Projection.ProjectionMatrix.M[0][0]);
+			const double Vertical = FMath::Min(Center.Y - Min.Y, Max.Y - Center.Y)
+				/ (Rect.Height() * 0.5 * Projection.ProjectionMatrix.M[1][1]);
+			Generator->SetContinuousPreviewFramingTangent(FMath::Min(Horizontal, Vertical));
+		}
+
 		virtual int32 OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry,
 			const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements,
 			int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const override
 		{
+			CSV_SCOPED_TIMING_STAT(APSPreview, AnnotationPaint);
 			const UWorldGenerationViewModel* VM = ViewModel.Get();
 			if (!VM || !VM->bPreviewReady)
 			{
@@ -867,14 +907,25 @@ namespace APSGenerationUI
 			const FGeometry ViewportGeometry = ViewportWidget->GetCachedGeometry();
 			const FVector2D ViewportLocalSize = ViewportGeometry.GetLocalSize();
 			const FVector2D PanelSize = AllottedGeometry.GetLocalSize();
+			const ULocalPlayer* LocalPlayer = PC->GetLocalPlayer();
+			FSceneViewProjectionData Projection;
+			if (!LocalPlayer || !LocalPlayer->ViewportClient
+				|| !LocalPlayer->GetProjectionData(LocalPlayer->ViewportClient->Viewport, Projection)) return LayerId;
+			// Same projection contract as UGameplayStatics::ProjectWorldToScreen,
+			// captured once for the complete paint rather than recalculated for each
+			// orbit vertex/clip endpoint. All guides then share one camera snapshot.
+			const FMatrix ViewProjection = Projection.ComputeViewProjectionMatrix();
+			const FIntRect ViewRect = Projection.GetConstrainedViewRect();
 
 			const auto ProjectToPanel = [&](const FVector& WorldPosition, FVector2D& OutPanelPosition)
 			{
 				FVector2D ScreenPosition;
-				if (!PC->ProjectWorldLocationToScreen(WorldPosition, ScreenPosition, true))
+				if (!FSceneView::ProjectWorldToScreen(WorldPosition, ViewRect, ViewProjection, ScreenPosition))
 				{
 					return false;
 				}
+				ScreenPosition -= FVector2D(ViewRect.Min);
+				if (!PC->PostProcessWorldToScreen(WorldPosition, ScreenPosition, true)) return false;
 				const FVector2D ViewportLocal(
 					ScreenPosition.X * ViewportLocalSize.X / static_cast<float>(ViewWidth),
 					ScreenPosition.Y * ViewportLocalSize.Y / static_cast<float>(ViewHeight));
@@ -890,6 +941,9 @@ namespace APSGenerationUI
 				}
 				return Location;
 			};
+			const AAstroGenerator* PreviewGenerator = Cast<AAstroGenerator>(PC->GetViewTarget());
+			const AAstroGenerator* ContinuousGenerator = PreviewGenerator;
+			if (ContinuousGenerator && !ContinuousGenerator->UsesContinuousPreviewFrame()) ContinuousGenerator = nullptr;
 
 			// Galaxy and cluster retain one low-cost projected outline. STAR/SYSTEM use
 			// real translucent 3D shells owned by AAstroGenerator, so Slate must never
@@ -960,8 +1014,8 @@ namespace APSGenerationUI
 				VM->GetPreviewBodyEntries(CachedEntries);
 				for (FAPSPreviewBodyEntry& Entry : CachedEntries)
 				{
-					Entry.Label = CompactLabel(Entry.Label, 23);
-					Entry.Details = CompactLabel(Entry.Details, 29);
+					Entry.Label = CompactLabel(Entry.Label, ReadableFont("Bold", 10));
+					Entry.Details = CompactLabel(Entry.Details, ReadableFont("Regular", 8));
 				}
 				CachedPreviewRevision = VM->PreviewRevision;
 				CachedPreviewFocus = Focus;
@@ -972,6 +1026,29 @@ namespace APSGenerationUI
 			{
 				return LayerId;
 			}
+			FVector ViewLocation = FVector::ZeroVector;
+			FRotator ViewRotation = FRotator::ZeroRotator;
+			PC->GetPlayerViewPoint(ViewLocation, ViewRotation);
+			const FQuat ViewQuaternion = ViewRotation.Quaternion();
+			const FVector CameraRight = ViewQuaternion.GetRightVector();
+			const FVector CameraUp = ViewQuaternion.GetUpVector();
+			const FVector CameraForward = ViewQuaternion.GetForwardVector();
+			TArray<FAPSPreviewOccluder> Occluders;
+			TArray<const AActor*> OccluderBodies;
+			for (const FAPSPreviewBodyEntry& Entry : Entries)
+			{
+				const AActor* Body = Entry.Actor.Get();
+				if (!Body || OccluderBodies.Contains(Body)) continue;
+				double Radius = 0.0;
+				if (!PreviewGenerator || !PreviewGenerator->GetPreviewPresentationRadius(Body, Radius)) continue;
+				const FVector Center = PresentationLocation(Body) - ViewLocation;
+				// Ignore unresolved subpixel discs, not their optical glow. Neither an
+				// atmosphere nor an invisible gravity-zone component is an opaque body.
+				if (Radius <= 0.0 || Radius * ViewHeight < Center.Size() * 0.1
+					|| FVector::DotProduct(Center, CameraForward) + Radius <= 0.0) continue;
+				Occluders.Add({Center, Radius});
+				OccluderBodies.Add(Body);
+			}
 
 			// World-space orbit planes are sampled and projected every paint. They remain
 			// locked to the generated actors while the preview camera orbits and zooms.
@@ -981,6 +1058,7 @@ namespace APSGenerationUI
 				? UnitCircleSamples<64>() : UnitCircleSamples<80>();
 			TArray<FVector2D> OrbitSegment;
 			OrbitSegment.Reserve(OrbitCircle.Num());
+			TArray<FVector2D> VisibleIntervals;
 			for (const FAPSPreviewBodyEntry& Entry : Entries)
 			{
 				if (Focus == EAstroPreviewFocus::HomeSystem && Entry.Depth > 1)
@@ -1019,95 +1097,71 @@ namespace APSGenerationUI
 				}
 				const FVector AxisX = Orbit->GetActorQuat().GetAxisX();
 				const FVector AxisY = Orbit->GetActorQuat().GetAxisY();
+				FVector PhysicalOrbitCenter = Orbit->GetActorLocation();
+				if (const AMoon* Moon = Cast<AMoon>(Body); Moon && IsValid(Moon->ParentPlanet))
+					PhysicalOrbitCenter = Moon->ParentPlanet->GetActorLocation();
+				else if (const APlanet* Planet = Cast<APlanet>(Body); Planet && IsValid(Planet->ParentStar))
+					PhysicalOrbitCenter = Planet->ParentStar->GetActorLocation();
+				const double PhysicalOrbitRadius = FVector::Distance(PhysicalOrbitCenter, Body->GetActorLocation());
 				OrbitSegment.Reset();
-				for (const FVector2D& UnitPoint : OrbitCircle)
+				const auto FlushOrbit = [&]()
 				{
-					FVector2D Point;
-					if (ProjectToPanel(Center + (AxisX * UnitPoint.X + AxisY * UnitPoint.Y) * Radius, Point)
-						&& Point.X > -PanelSize.X && Point.X < PanelSize.X * 2.0f
-						&& Point.Y > -PanelSize.Y && Point.Y < PanelSize.Y * 2.0f)
-					{
-						OrbitSegment.Add(Point);
-					}
-					else if (OrbitSegment.Num() > 1)
-					{
+					if (OrbitSegment.Num() > 1)
 						FSlateDrawElement::MakeLines(OutDrawElements, LayerId + 1,
 							AllottedGeometry.ToPaintGeometry(), OrbitSegment, ESlateDrawEffect::None,
 							Entry.Depth > 1 ? FLinearColor(0.36f, 0.65f, 1.0f, 0.22f)
 								: FLinearColor(Cyan.R, Cyan.G, Cyan.B, 0.30f), true, Entry.Depth > 1 ? 0.65f : 1.0f);
-						OrbitSegment.Reset();
-					}
-				}
-				if (OrbitSegment.Num() > 1)
+					OrbitSegment.Reset();
+				};
+				FVector PreviousPoint = FVector::ZeroVector;
+				bool bPreviousValid = false;
+				for (const FVector2D& UnitPoint : OrbitCircle)
 				{
-					FSlateDrawElement::MakeLines(OutDrawElements, LayerId + 1,
-						AllottedGeometry.ToPaintGeometry(), OrbitSegment, ESlateDrawEffect::None,
-						Entry.Depth > 1 ? FLinearColor(0.36f, 0.65f, 1.0f, 0.22f)
-							: FLinearColor(Cyan.R, Cyan.G, Cyan.B, 0.30f), true, Entry.Depth > 1 ? 0.65f : 1.0f);
+					const FVector PlaneDirection = AxisX * UnitPoint.X + AxisY * UnitPoint.Y;
+					FVector PresentedOrbitPoint = Center + PlaneDirection * Radius;
+					const bool bValid = !ContinuousGenerator || ContinuousGenerator->ProjectContinuousPreviewWorldPosition(
+						PhysicalOrbitCenter + PlaneDirection * PhysicalOrbitRadius, PresentedOrbitPoint, Body);
+					const FVector CurrentPoint = PresentedOrbitPoint - ViewLocation;
+					if (bValid && bPreviousValid)
+					{
+						FVector A = PreviousPoint;
+						FVector B = CurrentPoint;
+						const double DepthA = FVector::DotProduct(A, CameraForward);
+						const double DepthB = FVector::DotProduct(B, CameraForward);
+						// Clip at the camera plane before projecting; a curve straddling
+						// the observer must never connect across the back of the screen.
+						if (FMath::Max(DepthA, DepthB) > 1.0)
+						{
+							if (DepthA <= 1.0) A = FMath::Lerp(A, B, (1.0 - DepthA) / (DepthB - DepthA));
+							else if (DepthB <= 1.0) B = FMath::Lerp(A, B, (1.0 - DepthA) / (DepthB - DepthA));
+							APSPreviewVisibility::VisibleIntervals(A, B, Occluders, VisibleIntervals);
+							if (VisibleIntervals.IsEmpty()) FlushOrbit();
+							for (const FVector2D& Interval : VisibleIntervals)
+							{
+								FVector2D Start, End;
+								if (!ProjectToPanel(ViewLocation + FMath::Lerp(A, B, Interval.X), Start)
+									|| !ProjectToPanel(ViewLocation + FMath::Lerp(A, B, Interval.Y), End)
+									|| !APSPreviewVisibility::ClipToPanel(Start, End, PanelSize))
+								{ FlushOrbit(); continue; }
+								if (!OrbitSegment.IsEmpty() && !OrbitSegment.Last().Equals(Start, 0.01)) FlushOrbit();
+								if (OrbitSegment.IsEmpty()) OrbitSegment.Add(Start);
+								OrbitSegment.Add(End);
+								if (Interval.Y < 1.0) FlushOrbit();
+							}
+						}
+						else FlushOrbit();
+					}
+					else FlushOrbit();
+					PreviousPoint = CurrentPoint;
+					bPreviousValid = bValid;
 				}
+				FlushOrbit();
 			}
 
-			TArray<FSlateRect> OccupiedLabels;
-			const FVector2D LabelSize(160.0f, 36.0f);
-			FVector ViewLocation = FVector::ZeroVector;
-			FRotator ViewRotation = FRotator::ZeroRotator;
-			PC->GetPlayerViewPoint(ViewLocation, ViewRotation);
-			const FQuat ViewQuaternion = ViewRotation.Quaternion();
-			const FVector CameraRight = ViewQuaternion.GetRightVector();
-			const FVector CameraUp = ViewQuaternion.GetUpVector();
-			const auto OverlapsExistingLabel = [&OccupiedLabels](const FSlateRect& Candidate)
+			TArray<FAPSPreviewAnnotationCandidate> AnnotationCandidates;
+			for (int32 EntryIndex = 0; EntryIndex < Entries.Num(); ++EntryIndex)
 			{
-				for (const FSlateRect& Existing : OccupiedLabels)
-				{
-					if (FSlateRect::DoRectanglesIntersect(Candidate, Existing))
-					{
-						return true;
-					}
-				}
-				return false;
-			};
-
-			// The overflow rack is a finite screen-space grid. Enumerating columns
-			// left/right toward the centre is deterministic, checks labels already
-			// placed near bodies, and never wraps onto an occupied slot.
-			constexpr float RackGap = 3.0f;
-			const int32 RackRows = FMath::Max(1,
-				FMath::FloorToInt((PanelSize.Y - 8.0f + RackGap) / (LabelSize.Y + RackGap)));
-			const int32 RackColumns = FMath::Max(1,
-				FMath::FloorToInt((PanelSize.X - 8.0f + RackGap) / (LabelSize.X + RackGap)));
-			const int32 RackCapacity = RackRows * RackColumns;
-			int32 NextRackSlot = 0;
-			const auto TryPlaceInRack = [&](FVector2D& OutPosition)
-			{
-				for (int32 Offset = 0; Offset < RackCapacity; ++Offset)
-				{
-					const int32 Slot = (NextRackSlot + Offset) % RackCapacity;
-					const int32 SequenceColumn = Slot / RackRows;
-					const int32 Column = SequenceColumn % 2 == 0
-						? SequenceColumn / 2
-						: RackColumns - 1 - SequenceColumn / 2;
-					if (Column < 0 || Column >= RackColumns)
-					{
-						continue;
-					}
-					const int32 Row = Slot % RackRows;
-					const FVector2D CandidatePosition(
-						4.0f + Column * (LabelSize.X + RackGap),
-						4.0f + Row * (LabelSize.Y + RackGap));
-					const FSlateRect Candidate(CandidatePosition.X, CandidatePosition.Y,
-						CandidatePosition.X + LabelSize.X, CandidatePosition.Y + LabelSize.Y);
-					if (!OverlapsExistingLabel(Candidate))
-					{
-						OutPosition = CandidatePosition;
-						OccupiedLabels.Add(Candidate);
-						NextRackSlot = (Slot + 1) % RackCapacity;
-						return true;
-					}
-				}
-				return false;
-			};
-			for (const FAPSPreviewBodyEntry& Entry : Entries)
-			{
+				const FAPSPreviewBodyEntry& Entry = Entries[EntryIndex];
 				if (Focus == EAstroPreviewFocus::HomeSystem && Entry.Depth > 1)
 				{
 					continue;
@@ -1118,8 +1172,10 @@ namespace APSGenerationUI
 					continue;
 				}
 				FVector2D Anchor;
-				const FVector BodyCenter = Entry.bHasExplicitWorldAnchor
+				FVector BodyCenter = Entry.bHasExplicitWorldAnchor
 					? Entry.ExplicitWorldAnchor : PresentationLocation(Body);
+				if (ContinuousGenerator && Entry.ClusterSystemInstanceIndex != INDEX_NONE)
+					ContinuousGenerator->GetContinuousPreviewClusterLocation(Entry.ClusterSystemInstanceIndex, BodyCenter);
 				const bool bProjected = ProjectToPanel(BodyCenter, Anchor);
 				const bool bAnchorInside = bProjected
 					&& Anchor.X >= 0.0f && Anchor.X <= PanelSize.X
@@ -1127,8 +1183,8 @@ namespace APSGenerationUI
 				if (!bAnchorInside)
 				{
 					// Object inspection stays intentionally local. SYSTEM, however, promises
-					// one marker per planet, so an off-screen/behind-camera body enters the
-					// rack with a leader anchored to the nearest panel edge.
+					// one marker per planet, so an off-screen/behind-camera body keeps a
+					// marker at the nearest panel edge, not another floating text rack.
 					if (Focus != EAstroPreviewFocus::HomeSystem)
 					{
 						continue;
@@ -1150,49 +1206,18 @@ namespace APSGenerationUI
 					}
 				}
 
-				// Screen-space body discs provide a stable and cheap occlusion test.
-				// This avoids visibility traces for every label on every Slate paint,
-				// while still hiding a moon/planet marker behind a nearer celestial body.
+				// Labels use the same exact opaque spheres as orbit visibility. Hidden
+				// mesh/zone bounds and a camera-facing radius approximation disagree
+				// with the rendered limb, especially when looking past a close planet.
 				bool bOccluded = false;
 				if (bAnchorInside && Focus != EAstroPreviewFocus::HomeSystem)
 				{
-					const double TargetDistance = FVector::Distance(ViewLocation, BodyCenter);
-					for (const FAPSPreviewBodyEntry& OccluderEntry : Entries)
+					for (int32 Index = 0; Index < Occluders.Num(); ++Index)
 					{
-						const AActor* Occluder = OccluderEntry.Actor.Get();
-						const FVector OccluderPresentationCenter = PresentationLocation(Occluder);
-						if (!Occluder || Occluder == Body
-							|| FVector::Distance(ViewLocation, OccluderPresentationCenter) >= TargetDistance)
+						if (OccluderBodies[Index] != Body && Occluders[Index].Occludes(BodyCenter - ViewLocation))
 						{
-							continue;
-						}
-						// Actor bounds also include physical gravity/safe-zone components at the
-						// invariant data address. In PLANET a moon mesh can be presentation-spread,
-						// so build the screen disc from rendered meshes at the published centre.
-						const FVector OccluderCenter = OccluderPresentationCenter;
-						double OccluderRadius = 0.0;
-						TInlineComponentArray<UStaticMeshComponent*> OccluderMeshes;
-						Occluder->GetComponents(OccluderMeshes);
-						for (UStaticMeshComponent* OccluderMesh : OccluderMeshes)
-						{
-							if (!IsValid(OccluderMesh)) continue;
-							OccluderMesh->UpdateBounds();
-							OccluderRadius = FMath::Max(OccluderRadius,
-								static_cast<double>(OccluderMesh->Bounds.SphereRadius));
-						}
-						FVector2D OccluderScreen;
-						FVector2D OccluderEdgeScreen;
-						if (OccluderRadius > UE_SMALL_NUMBER
-							&& ProjectToPanel(OccluderCenter, OccluderScreen)
-							&& ProjectToPanel(OccluderCenter + CameraRight * OccluderRadius, OccluderEdgeScreen))
-						{
-							const double RadiusPixels = FVector2D::Distance(OccluderScreen, OccluderEdgeScreen);
-							if (RadiusPixels > 2.0
-								&& FVector2D::Distance(Anchor, OccluderScreen) < RadiusPixels * 0.86)
-							{
-								bOccluded = true;
-								break;
-							}
+							bOccluded = true;
+							break;
 						}
 					}
 				}
@@ -1201,41 +1226,18 @@ namespace APSGenerationUI
 					continue;
 				}
 
-				FVector2D LabelPosition(
-					FMath::Clamp(Anchor.X - LabelSize.X * 0.5f, 4.0f, FMath::Max(4.0f, PanelSize.X - LabelSize.X - 4.0f)),
-					FMath::Clamp(Anchor.Y - LabelSize.Y - 34.0f, 4.0f, FMath::Max(4.0f, PanelSize.Y - LabelSize.Y - 4.0f)));
-				bool bPlacedLabel = false;
-				const float OriginalLabelY = LabelPosition.Y;
-				for (int32 Attempt = 0; bAnchorInside && Attempt < 13; ++Attempt)
-				{
-					if (Attempt > 0)
-					{
-						const int32 Lane = (Attempt + 1) / 2;
-						const float Direction = Attempt % 2 == 1 ? 1.0f : -1.0f;
-						LabelPosition.Y = FMath::Clamp(
-							OriginalLabelY + Direction * Lane * (LabelSize.Y + 5.0f),
-							4.0f, FMath::Max(4.0f, PanelSize.Y - LabelSize.Y - 4.0f));
-					}
-					const FSlateRect Candidate(LabelPosition.X, LabelPosition.Y,
-						LabelPosition.X + LabelSize.X, LabelPosition.Y + LabelSize.Y);
-					if (!OverlapsExistingLabel(Candidate))
-					{
-						OccupiedLabels.Add(Candidate);
-						bPlacedLabel = true;
-						break;
-					}
-				}
-				if (!bPlacedLabel)
-				{
-					// If every finite slot is occupied, stop at the deterministic screen
-					// capacity instead of wrapping and drawing labels over one another.
-					if (!TryPlaceInRack(LabelPosition))
-					{
-						continue;
-					}
-				}
-
-				const bool bSelected = Body && SelectedBody == Body;
+				AnnotationCandidates.Add({EntryIndex, Anchor, Body && SelectedBody == Body, Body && Body->IsA<AStar>()});
+			}
+			const auto Placements = APSPreviewAnnotationLayout::Arrange(MoveTemp(AnnotationCandidates), PanelSize);
+			const FVector2D LabelSize = APSPreviewAnnotationLayout::LabelSize();
+			int32 FullLabelCount = 0;
+			for (const FAPSPreviewAnnotationPlacement& Placement : Placements)
+			{
+				const FAPSPreviewBodyEntry& Entry = Entries[Placement.Candidate.EntryIndex];
+				const AActor* Body = Entry.Actor.Get();
+				const FVector2D Anchor = Placement.Candidate.Anchor;
+				const FVector2D LabelPosition = Placement.LabelPosition;
+				const bool bSelected = Placement.Candidate.bSelected;
 				FLinearColor MarkerColor = Entry.Depth == 0 ? Amber
 					: Entry.Depth == 1 ? Cyan : FLinearColor(0.44f, 0.72f, 1.0f, 1.0f);
 				if (const APlanet* Planet = Cast<APlanet>(Body))
@@ -1276,16 +1278,20 @@ namespace APSGenerationUI
 				{
 					MarkerColor = Amber;
 				}
-				const FVector2D PoleEnd(LabelPosition.X + LabelSize.X * 0.5f, LabelPosition.Y + LabelSize.Y);
-				FSlateDrawElement::MakeLines(OutDrawElements, LayerId + 2, AllottedGeometry.ToPaintGeometry(),
-					TArray<FVector2D>{Anchor, PoleEnd}, ESlateDrawEffect::None,
-					FLinearColor(MarkerColor.R, MarkerColor.G, MarkerColor.B, 0.72f), true, 1.0f);
+				// Markers are independent of the text budget. Suppressing an annotation
+				// box must never hide a body or move its physical selection anchor.
 				FSlateDrawElement::MakeLines(OutDrawElements, LayerId + 3, AllottedGeometry.ToPaintGeometry(),
 					TArray<FVector2D>{Anchor - FVector2D(4.0f, 0.0f), Anchor + FVector2D(4.0f, 0.0f)},
 					ESlateDrawEffect::None, MarkerColor, true, 1.0f);
 				FSlateDrawElement::MakeLines(OutDrawElements, LayerId + 3, AllottedGeometry.ToPaintGeometry(),
 					TArray<FVector2D>{Anchor - FVector2D(0.0f, 4.0f), Anchor + FVector2D(0.0f, 4.0f)},
 					ESlateDrawEffect::None, MarkerColor, true, 1.0f);
+				if (!Placement.bHasLabel) continue;
+				++FullLabelCount;
+				const FVector2D PoleEnd(LabelPosition.X + LabelSize.X * 0.5f, LabelPosition.Y + LabelSize.Y);
+				FSlateDrawElement::MakeLines(OutDrawElements, LayerId + 2, AllottedGeometry.ToPaintGeometry(),
+					TArray<FVector2D>{Anchor, PoleEnd}, ESlateDrawEffect::None,
+					FLinearColor(MarkerColor.R, MarkerColor.G, MarkerColor.B, 0.72f), true, 1.0f);
 				FSlateDrawElement::MakeBox(OutDrawElements, LayerId + 3,
 					AllottedGeometry.ToPaintGeometry(LabelSize, FSlateLayoutTransform(LabelPosition)),
 					FAppStyle::GetBrush("WhiteBrush"), ESlateDrawEffect::None,
@@ -1316,6 +1322,15 @@ namespace APSGenerationUI
 						FSlateLayoutTransform(LabelPosition + FVector2D(7.0f, 21.0f))),
 					Entry.Details, ReadableFont("Regular", 8),
 					ESlateDrawEffect::None, SecondaryText);
+			}
+			if (FullLabelCount < Placements.Num())
+			{
+				FSlateDrawElement::MakeText(OutDrawElements, LayerId + 5,
+					AllottedGeometry.ToPaintGeometry(FVector2D(PanelSize.X - 8.0, 16.0),
+						FSlateLayoutTransform(FVector2D(4.0, FMath::Max(0.0, PanelSize.Y - 18.0)))),
+					FText::Format(LOCTEXT("PreviewDensityHint", "{0} markers / {1} labels — full body list on the right"),
+						FText::AsNumber(Placements.Num()), FText::AsNumber(FullLabelCount)),
+					ReadableFont("Regular", 8), ESlateDrawEffect::None, SecondaryText);
 			}
 
 			return LayerId + 5;
@@ -1408,30 +1423,48 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 	const TSharedRef<SWidget> SystemControls = SNew(SScrollBox) + SScrollBox::Slot()
 	[
 		SNew(SVerticalBox)
-		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 12.0f)[SectionTitle(LOCTEXT("HomeStarSystem", "STAR SYSTEM"))]
-		+ SVerticalBox::Slot().AutoHeight()[EnumRow<EStarType>(LOCTEXT("StarType", "STAR SYSTEM TYPE"), VM, [](const UGeneratedWorld* W){ return W->StarType; })]
-		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 12.0f, 0.0f, 10.0f)[SectionTitle(LOCTEXT("SystemLayout", "SYSTEM LAYOUT"))]
+		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 12.0f)[SectionTitle(LOCTEXT("SelectedSystem", "SELECTED SYSTEM"))]
+		+ SVerticalBox::Slot().AutoHeight()
+		[
+			SNew(SVerticalBox).IsEnabled_Lambda([VM](){ return VM.IsValid() && VM->CanEditSelectedSystem(); })
+			+ SVerticalBox::Slot().AutoHeight()[EnumRow<EStarType>(LOCTEXT("StarType", "STAR SYSTEM TYPE"), VM, [VM](const UGeneratedWorld* W){ return VM.IsValid() ? VM->GetSelectedSystemStarType() : W->StarType; })]
+			+ SVerticalBox::Slot().AutoHeight()[EnumRow<EPlanetarySystemType>(LOCTEXT("SelectedFamilyType", "PLANET FAMILY TYPE"), VM, [VM](const UGeneratedWorld* W){ return VM.IsValid() ? VM->GetSelectedSystemPlanetaryType() : W->PlanetarySystemType; })]
+			+ SVerticalBox::Slot().AutoHeight()[EnumRow<EOrbitDistributionType>(LOCTEXT("Distribution", "ORBIT DISTRIBUTION"), VM, [VM](const UGeneratedWorld* W){ return VM.IsValid() ? VM->GetSelectedSystemOrbitDistribution() : W->OrbitDistributionType; })]
+			+ SVerticalBox::Slot().AutoHeight()[NumberRow<int32>(LOCTEXT("TotalPlanets", "TOTAL PLANETS IN SYSTEM"), 0, 120, 1, VM, [VM](const UGeneratedWorld* W){ return VM.IsValid() ? VM->GetSelectedSystemPlanetCount() : W->PlanetsAmount; }, [](UWorldGenerationViewModel* V, int32 X){ V->SetSelectedSystemPlanetCount(X); })]
+		]
+		+ SVerticalBox::Slot().AutoHeight()
+		[
+			SNew(STextBlock).Text(LOCTEXT("SelectedSystemHint", "EDITS APPLY TO THIS SYSTEM ONLY. THE TOTAL IS SHARED BETWEEN ITS STARS; CHANGING STAR COUNT KEEPS THAT TOTAL."))
+			.AutoWrapText(true).Font(ReadableFont("Regular", 10)).ColorAndOpacity(SecondaryText)
+		]
+		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 16.0f, 0.0f, 10.0f)[SectionTitle(LOCTEXT("HomeStartDefaults", "HOME START DEFAULTS"))]
 		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 5.0f)[BoolRow(LOCTEXT("RandomHomeSystem", "RANDOM HOME SYSTEM"), [](const UGeneratedWorld* W){return W->bRandomHomeSystem;}, [](UGeneratedWorld* W, bool V){W->bRandomHomeSystem=V;})]
 		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 5.0f)[BoolRow(LOCTEXT("RandomSystemType", "RANDOM SYSTEM TYPE"), [](const UGeneratedWorld* W){return W->bRandomHomeSystemType;}, [](UGeneratedWorld* W, bool V){W->bRandomHomeSystemType=V;})]
 		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 5.0f)[BoolRow(LOCTEXT("RandomHomeStar", "RANDOM HOME STAR"), [](const UGeneratedWorld* W){return W->bRandomHomeStar;}, [](UGeneratedWorld* W, bool V){W->bRandomHomeStar=V;})]
 		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 5.0f)[BoolRow(LOCTEXT("RandomStartPlanet", "RANDOM START PLANET"), [](const UGeneratedWorld* W){return W->bRandomStartPlanetNumber;}, [](UGeneratedWorld* W, bool V){W->bRandomStartPlanetNumber=V;})]
-		+ SVerticalBox::Slot().AutoHeight()[EnumRow<EPlanetarySystemType>(LOCTEXT("SystemType", "PLANETARY TYPE"), VM, [](const UGeneratedWorld* W){ return W->PlanetarySystemType; })]
-		+ SVerticalBox::Slot().AutoHeight()[EnumRow<EOrbitDistributionType>(LOCTEXT("Distribution", "ORBIT DISTRIBUTION"), VM, [](const UGeneratedWorld* W){ return W->OrbitDistributionType; })]
-		+ SVerticalBox::Slot().AutoHeight()[NumberRow<int32>(LOCTEXT("Planets", "PLANETS / STAR"), 1, 20, 1, VM, [](const UGeneratedWorld* W){ return FMath::Clamp(W->PlanetsAmount, 1, 20); }, [](UWorldGenerationViewModel* V, int32 X){ V->SetPlanetsAmount(X); })]
-		+ SVerticalBox::Slot().AutoHeight()[NumberRow<int32>(LOCTEXT("Moons", "HOME PLANET MOONS"), 0, 10, 1, VM, [](const UGeneratedWorld* W){ return FMath::Clamp(W->MoonsAmount, 0, 10); }, [](UWorldGenerationViewModel* V, int32 X){ V->SetMoonsAmount(X); })]
-		+ SVerticalBox::Slot().AutoHeight()[NumberRow<int32>(LOCTEXT("StartIndex", "START PLANET INDEX"), 1, 20, 1, VM, [](const UGeneratedWorld* W){ return FMath::Clamp(W->StartPlanetIndex, 1, FMath::Max(1, W->PlanetsAmount)); }, [](UWorldGenerationViewModel* V, int32 X){ V->SetStartPlanetIndex(X); })]
+		+ SVerticalBox::Slot().AutoHeight()
+		[
+			SNew(SBox).IsEnabled_Lambda([VM](){ return VM.IsValid() && VM->GetHomeStartPlanetCount() > 0; })
+			[NumberRow<int32>(LOCTEXT("HomeStartIndex", "HOME START PLANET INDEX"), 1, 120, 1, VM, [VM](const UGeneratedWorld* W){ return FMath::Clamp(W->StartPlanetIndex, 1, FMath::Max(1, VM.IsValid() ? VM->GetHomeStartPlanetCount() : W->PlanetsAmount)); }, [](UWorldGenerationViewModel* V, int32 X){ V->SetStartPlanetIndex(X); })]
+		]
+		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 8.0f, 0.0f, 0.0f)
+		[
+			SNew(STextBlock).Text(LOCTEXT("HomeDefaultsHint", "THESE DEFAULTS BELONG TO THE HOME SYSTEM. EXPLICIT OBJECT EDITS ARE RETAINED UNTIL REGENERATE. EDIT MOONS ON THEIR PLANET PAGE."))
+			.AutoWrapText(true).Font(ReadableFont("Regular", 10)).ColorAndOpacity(SecondaryText)
+		]
 	];
 
 	const TSharedRef<SWidget> StarControls = SNew(SScrollBox) + SScrollBox::Slot()
 	[
 		SNew(SVerticalBox)
 		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 12.0f)[SectionTitle(LOCTEXT("SelectedStar", "SELECTED STAR"))]
-		+ SVerticalBox::Slot().AutoHeight()[EnumRow<EStellarType>(LOCTEXT("StellarType", "STELLAR TYPE"), VM, [](const UGeneratedWorld* W){ return W->StellarType; })]
-		+ SVerticalBox::Slot().AutoHeight()[EnumRow<ESpectralClass>(LOCTEXT("Spectral", "SPECTRAL CLASS"), VM, [](const UGeneratedWorld* W){ return W->SpectralClass; })]
+		+ SVerticalBox::Slot().AutoHeight()[EnumRow<EStellarType>(LOCTEXT("StellarType", "STELLAR TYPE"), VM, [VM](const UGeneratedWorld* W){ return VM.IsValid() ? VM->GetSelectedStellarType() : W->StellarType; })]
+		+ SVerticalBox::Slot().AutoHeight()[EnumRow<ESpectralClass>(LOCTEXT("Spectral", "SPECTRAL CLASS"), VM, [VM](const UGeneratedWorld* W){ return VM.IsValid() ? VM->GetSelectedSpectralClass() : W->SpectralClass; })]
+		+ SVerticalBox::Slot().AutoHeight()[NumberRow<double>(LOCTEXT("SelectedStarRadius", "SIZE / SOLAR RADII (0 = AUTO)"), 0.0, 1000.0, 0.1, VM, [VM](const UGeneratedWorld* W){ return VM.IsValid() ? VM->GetSelectedStarRadiusOverrideSolar() : W->HomeStarRadiusOverrideSolar; }, [](UWorldGenerationViewModel* V, double X){ V->SetSelectedStarRadiusOverrideSolar(X); })]
 		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 14.0f, 0.0f, 0.0f)
 		[
 			SNew(STextBlock)
-			.Text(LOCTEXT("StarScopeHint", "STELLAR CHANGES UPDATE THIS STAR AND ITS SAFE ORBIT CLEARANCE WITHOUT REGENERATING THE PARENT SYSTEM."))
+			.Text(LOCTEXT("SelectedStarScopeHint", "EDITS APPLY TO THIS STAR ONLY AND SURVIVE NAVIGATION. SAFE ORBITS USE ITS NEW PHYSICAL SIZE. SET 0 TO REMOVE THE SIZE OVERRIDE."))
 			.AutoWrapText(true).Font(ReadableFont("Regular", 10)).ColorAndOpacity(SecondaryText)
 		]
 	];
@@ -1480,7 +1513,27 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 					V->SetEnumValue(StaticEnum<EPlanetType>(), static_cast<int32>(Presets[Next]));
 				})
 		]
-		+ SVerticalBox::Slot().AutoHeight()[NumberRow<double>(LOCTEXT("Radius", "PLANET RADIUS / KM"), 100.0, 20000.0, 100.0, VM, [](const UGeneratedWorld* W){ return FMath::Clamp(W->PlanetRadius, 100.0, 20000.0); }, [](UWorldGenerationViewModel* V, double X){ V->SetPlanetRadius(X); })]
+		+ SVerticalBox::Slot().AutoHeight()
+		[
+			EnumRow<EPlanetHabitability>(LOCTEXT("Habitability", "HABITABILITY"), VM,
+				[](const UGeneratedWorld* W){ return W->PlanetHabitability; })
+		]
+		+ SVerticalBox::Slot().AutoHeight()[NumberRow<double>(LOCTEXT("Radius", "PLANET RADIUS / KM"), 1.0, 200000.0, 100.0, VM, [](const UGeneratedWorld* W){ return W->PlanetRadius; }, [](UWorldGenerationViewModel* V, double X){ V->SetPlanetRadius(X); })]
+		+ SVerticalBox::Slot().AutoHeight()
+		[
+			SNew(SBox)
+			.Visibility_Lambda([VM]()
+			{
+				return VM.IsValid() && VM->IsSelectedPreviewBodyMoon()
+					? EVisibility::Visible : EVisibility::Collapsed;
+			})
+			[
+				NumberRow<double>(LOCTEXT("MoonOrbitRadius", "MOON ORBIT RADIUS / KM"),
+					100.0, 100000000.0, 1000.0, VM,
+					[](const UGeneratedWorld* W){ return FMath::Max(100.0, W->MoonOrbitRadiusKm); },
+					[](UWorldGenerationViewModel* V, double X){ V->SetSelectedMoonOrbitRadiusKm(X); })
+			]
+		]
 		+ SVerticalBox::Slot().AutoHeight()[NumberRow<int32>(LOCTEXT("PlanetMoons", "MOONS AMOUNT"), 0, 10, 1, VM, [](const UGeneratedWorld* W){ return FMath::Clamp(W->MoonsAmount, 0, 10); }, [](UWorldGenerationViewModel* V, int32 X){ V->SetMoonsAmount(X); })]
 		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 12.0f, 0.0f, 10.0f)[SectionTitle(LOCTEXT("PlanetSurface", "PLANET SURFACE"))]
 		+ SVerticalBox::Slot().AutoHeight()
@@ -1683,13 +1736,21 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 					SNew(SVerticalBox)
 					+ SVerticalBox::Slot().FillHeight(1.0f)
 					[
-					SNew(SOverlay)
+						SNew(SOverlay)
 						+ SOverlay::Slot()[SNew(SPreviewInteractionSurface).ViewModel(VM)]
-						+ SOverlay::Slot()[SNew(SPreviewSystemOverlay).ViewModel(VM)]
-						+ SOverlay::Slot().HAlign(HAlign_Left).VAlign(VAlign_Top).Padding(10.0f)
-						[SNew(STextBlock).Text(LOCTEXT("PreviewCornerTL", "+  LIVE FULL-SCALE PREVIEW")).Font(Font("Bold", 9)).ColorAndOpacity(FLinearColor(0.20f, 0.90f, 0.55f, 0.82f))]
-						+ SOverlay::Slot().HAlign(HAlign_Right).VAlign(VAlign_Bottom).Padding(10.0f)
-						[SNew(STextBlock).Text(LOCTEXT("PreviewCornerBR", "FULL SCALE  +")).Font(Font("Bold", 8)).ColorAndOpacity(FLinearColor(Cyan.R, Cyan.G, Cyan.B, 0.55f))]
+						+ SOverlay::Slot()
+						[
+							// Status text owns real layout space. The annotation layer is
+							// clipped between these rows, and still projects world positions
+							// through its absolute geometry. Camera/input bounds do not move.
+							SNew(SVerticalBox).Visibility(EVisibility::HitTestInvisible)
+							+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Left).Padding(10.0f)
+							[SNew(STextBlock).Tag(TEXT("PreviewStatusHeading")).Text(LOCTEXT("PreviewCornerTL", "+  LIVE FULL-SCALE PREVIEW")).Font(Font("Bold", 9)).ColorAndOpacity(FLinearColor(0.20f, 0.90f, 0.55f, 0.82f))]
+							+ SVerticalBox::Slot().FillHeight(1.0f)
+							[SNew(SPreviewSystemOverlay).ViewModel(VM)]
+							+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Right).Padding(10.0f)
+							[SNew(STextBlock).Tag(TEXT("PreviewStatusFooter")).Text(LOCTEXT("PreviewCornerBR", "FULL SCALE  +")).Font(Font("Bold", 8)).ColorAndOpacity(FLinearColor(Cyan.R, Cyan.G, Cyan.B, 0.55f))]
+						]
 					]
 					+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0.0f, 10.0f)
 					[
@@ -1720,7 +1781,10 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 				+ SHorizontalBox::Slot().AutoWidth()
 				[
 					SNew(SButton).ButtonStyle(&PrimaryButton).OnClicked(this, &SWorldGenerationPanel::CommitWorld)
-					.IsEnabled_Lambda([VM]() { return VM.IsValid() && VM->bPreviewReady; })
+					.IsEnabled_Lambda([VM]() { return VM.IsValid() && VM->bPreviewReady
+						&& (VM->GetGenerationRoute() != EAPSGenerationRoute::Civilization || VM->GetHomeStartPlanetCount() > 0); })
+					.ToolTipText_Lambda([VM]() { return VM.IsValid() && VM->GetGenerationRoute() == EAPSGenerationRoute::Civilization
+						&& VM->GetHomeStartPlanetCount() == 0 ? LOCTEXT("HomePlanetRequiredHint", "A civilization needs a planet in the home system.") : FText::GetEmpty(); })
 					.ContentPadding(FMargin(52.0f, 13.0f))
 					[SNew(STextBlock).Text(this, &SWorldGenerationPanel::GetContinueLabel).Font(Font("Bold", 14)).ColorAndOpacity(White)]
 				]
@@ -1768,6 +1832,8 @@ FText SWorldGenerationPanel::GetContinueLabel() const
 {
 	const UWorldGenerationViewModel* VM = ViewModel.Get();
 	if (!VM) return LOCTEXT("ContinueUnavailable", "CONTINUE   >");
+	if (VM->GetGenerationRoute() == EAPSGenerationRoute::Civilization && VM->GetHomeStartPlanetCount() == 0)
+		return LOCTEXT("HomePlanetRequired", "HOME PLANET REQUIRED");
 	switch (VM->GetGenerationRoute())
 	{
 	case EAPSGenerationRoute::Space: return LOCTEXT("GenerateSpace", "GENERATE SPACE WORLD   >");

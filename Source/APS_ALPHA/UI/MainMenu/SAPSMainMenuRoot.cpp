@@ -45,6 +45,8 @@
 #include "Widgets/Layout/SScaleBox.h"
 #include "Widgets/Layout/SScrollBox.h"
 #include "Widgets/Layout/SUniformGridPanel.h"
+#include "Widgets/Layout/SWidgetSwitcher.h"
+#include "Widgets/Notifications/SProgressBar.h"
 #include "Widgets/SLeafWidget.h"
 #include "Widgets/SBoxPanel.h"
 #include "Widgets/Text/STextBlock.h"
@@ -65,7 +67,16 @@ namespace
 		Settings,
 		Collection,
 		Favorite,
-		Recent
+		Recent,
+		Pilot,
+		Ship,
+		Station,
+		Headquarters,
+		Shipyard,
+		Fleet,
+		Infrastructure,
+		Divisions,
+		System
 	};
 
 	/** Small code-native line icons keep the Slate-only menu readable before the
@@ -203,6 +214,74 @@ namespace
 				Circle(Center, Radius, Radius);
 				Draw({Center, Center + FVector2D(0.0f, -Radius * 0.58f)});
 				Draw({Center, Center + FVector2D(Radius * 0.48f, Radius * 0.28f)});
+				break;
+			case EAPSMenuGlyph::Pilot:
+				Circle(Center + FVector2D(0.0f, -Radius * 0.48f), Radius * 0.32f, Radius * 0.32f);
+				Draw({Center + FVector2D(-Radius * 0.68f, Radius * 0.82f),
+					Center + FVector2D(-Radius * 0.42f, Radius * 0.10f),
+					Center + FVector2D(0.0f, -Radius * 0.02f),
+					Center + FVector2D(Radius * 0.42f, Radius * 0.10f),
+					Center + FVector2D(Radius * 0.68f, Radius * 0.82f)}, false);
+				break;
+			case EAPSMenuGlyph::Ship:
+				Draw({Center + FVector2D(0.0f, -Radius),
+					Center + FVector2D(Radius * 0.62f, Radius * 0.78f), Center,
+					Center + FVector2D(-Radius * 0.62f, Radius * 0.78f)}, true);
+				Draw({Center + FVector2D(-Radius * 0.24f, Radius * 0.66f),
+					Center + FVector2D(-Radius * 0.38f, Radius),
+					Center + FVector2D(0.0f, Radius * 0.78f),
+					Center + FVector2D(Radius * 0.38f, Radius)});
+				break;
+			case EAPSMenuGlyph::Station:
+				Circle(Center, Radius * 0.38f, Radius * 0.38f);
+				Circle(Center, Radius, Radius * 0.38f, -0.22f);
+				Draw({Center + FVector2D(0.0f, -Radius), Center + FVector2D(0.0f, Radius)});
+				break;
+			case EAPSMenuGlyph::Headquarters:
+				Draw({Center + FVector2D(0.0f, -Radius), Center + FVector2D(Radius * 0.82f, -Radius * 0.35f),
+					Center + FVector2D(Radius * 0.68f, Radius * 0.82f), Center + FVector2D(-Radius * 0.68f, Radius * 0.82f),
+					Center + FVector2D(-Radius * 0.82f, -Radius * 0.35f)}, true);
+				Draw({Center + FVector2D(-Radius * 0.34f, Radius * 0.82f), Center + FVector2D(-Radius * 0.34f, 0.0f),
+					Center + FVector2D(Radius * 0.34f, 0.0f), Center + FVector2D(Radius * 0.34f, Radius * 0.82f)});
+				break;
+			case EAPSMenuGlyph::Shipyard:
+				Draw({Center + FVector2D(-Radius, -Radius), Center + FVector2D(-Radius, Radius),
+					Center + FVector2D(-Radius * 0.55f, Radius), Center + FVector2D(-Radius * 0.55f, -Radius * 0.55f),
+					Center + FVector2D(Radius * 0.55f, -Radius * 0.55f), Center + FVector2D(Radius * 0.55f, Radius),
+					Center + FVector2D(Radius, Radius), Center + FVector2D(Radius, -Radius)});
+				Draw({Center + FVector2D(0.0f, -Radius * 0.82f), Center + FVector2D(Radius * 0.28f, Radius * 0.28f),
+					Center, Center + Radius * FVector2D(-0.28f, 0.28f)}, true, 0.8f);
+				break;
+			case EAPSMenuGlyph::Fleet:
+				for (int32 Index = -1; Index <= 1; ++Index)
+				{
+					const FVector2D C = Center + FVector2D(Index * Radius * 0.62f, FMath::Abs(Index) * Radius * 0.32f);
+					Draw({C + FVector2D(0.0f, -Radius * 0.58f), C + FVector2D(Radius * 0.28f, Radius * 0.42f),
+						C + FVector2D(0.0f, Radius * 0.22f), C + FVector2D(-Radius * 0.28f, Radius * 0.42f)}, true, 0.75f);
+				}
+				break;
+			case EAPSMenuGlyph::Infrastructure:
+				Circle(Center, Radius * 0.22f, Radius * 0.22f);
+				for (int32 Index = 0; Index < 4; ++Index)
+				{
+					const float Angle = UE_TWO_PI * static_cast<float>(Index) / 4.0f + UE_PI * 0.25f;
+					const FVector2D Direction(FMath::Cos(Angle), FMath::Sin(Angle));
+					Draw({Center + Direction * Radius * 0.22f, Center + Direction * Radius * 0.85f});
+					Circle(Center + Direction * Radius * 0.85f, Radius * 0.15f, Radius * 0.15f);
+				}
+				break;
+			case EAPSMenuGlyph::Divisions:
+				for (int32 Row = -1; Row <= 1; ++Row)
+				{
+					const float Y = Center.Y + Row * Radius * 0.62f;
+					Circle(FVector2D(Center.X - Radius * 0.72f, Y), Radius * 0.12f, Radius * 0.12f);
+					Draw({FVector2D(Center.X - Radius * 0.42f, Y), FVector2D(Center.X + Radius, Y)});
+				}
+				break;
+			case EAPSMenuGlyph::System:
+				Circle(Center, Radius * 0.20f, Radius * 0.20f);
+				Circle(Center, Radius * 0.72f, Radius * 0.46f, -0.28f);
+				Circle(Center + FVector2D(Radius * 0.68f, -Radius * 0.23f), Radius * 0.12f, Radius * 0.12f);
 				break;
 			}
 			return LayerId;
@@ -633,6 +712,10 @@ namespace APSMenu
 	const FLinearColor Amber(1.0f, 0.55f, 0.04f, 1.0f);
 	const FLinearColor White(0.92f, 0.97f, 1.0f, 1.0f);
 	const FLinearColor Muted(0.48f, 0.62f, 0.70f, 1.0f);
+	const FLinearColor Success(0.35f, 0.94f, 0.78f, 1.0f);
+	const FLinearColor CivPanel(0.003f, 0.015f, 0.027f, 0.975f);
+	const FLinearColor CivRaised(0.008f, 0.034f, 0.052f, 0.985f);
+	const FLinearColor CivControl(0.004f, 0.023f, 0.038f, 0.99f);
 	TWeakObjectPtr<UFont> DisplayFont;
 	TWeakObjectPtr<UFont> BodyFont;
 	const FSlateRoundedBoxBrush PanelBrush(Panel, 10.0f, CyanDim, 1.0f);
@@ -640,6 +723,12 @@ namespace APSMenu
 	const FSlateRoundedBoxBrush InsetBrush(FLinearColor(0.001f, 0.012f, 0.022f, 0.96f), 6.0f, FLinearColor(0.04f, 0.22f, 0.31f, 1.0f), 1.0f);
 	const FSlateRoundedBoxBrush CyanBadgeBrush(FLinearColor(0.01f, 0.07f, 0.10f, 0.98f), 18.0f, Cyan, 1.25f);
 	const FSlateRoundedBoxBrush AmberPanelBrush(FLinearColor(0.11f, 0.045f, 0.002f, 0.96f), 9.0f, Amber, 1.4f);
+	const FSlateRoundedBoxBrush CivCardBrush(CivRaised, 9.0f, FLinearColor(0.045f, 0.30f, 0.40f, 0.95f), 1.0f);
+	const FSlateRoundedBoxBrush CivControlBrush(CivControl, 6.0f, FLinearColor(0.025f, 0.18f, 0.25f, 0.95f), 1.0f);
+	const FSlateRoundedBoxBrush CivMetricBrush(FLinearColor(0.005f, 0.028f, 0.044f, 0.98f), 6.0f,
+		FLinearColor(0.035f, 0.23f, 0.31f, 0.88f), 1.0f);
+	const FSlateRoundedBoxBrush CivStatusBrush(FLinearColor(0.004f, 0.04f, 0.06f, 0.96f), 5.0f,
+		FLinearColor(0.06f, 0.45f, 0.57f, 0.95f), 1.0f);
 
 	TSharedRef<SWidget> ChamferPanel(TSharedRef<SWidget> Content, const FMargin& Padding,
 		const FLinearColor& Accent = CyanDim, float Thickness = 1.0f)
@@ -715,6 +804,31 @@ namespace APSMenu
 		[SNew(SBox).HeightOverride(1.0f)[SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(CyanDim)]];
 	}
 
+	TSharedRef<SWidget> IconSectionHeading(EAPSMenuGlyph Glyph, const FText& Title,
+		const FText& Subtitle = FText::GetEmpty())
+	{
+		return SNew(SVerticalBox)
+		+ SVerticalBox::Slot().AutoHeight()
+		[
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+			[IconBadge(Glyph, Cyan, 34.0f)]
+			+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center).Padding(11.0f, 0.0f)
+			[
+				SNew(SVerticalBox)
+				+ SVerticalBox::Slot().AutoHeight()
+				[SNew(STextBlock).Text(Title).Font(Font("Bold", 14)).ColorAndOpacity(White)]
+				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 2.0f, 0.0f, 0.0f)
+				[
+					SNew(STextBlock).Text(Subtitle).Font(Font("Regular", 9)).ColorAndOpacity(Muted)
+					.Visibility(Subtitle.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible)
+				]
+			]
+		]
+		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 9.0f, 0.0f, 0.0f)
+		[SNew(SBox).HeightOverride(1.0f)[SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(CyanDim)]];
+	}
+
 	FText SaveSizeText(int64 Bytes)
 	{
 		const double MB = static_cast<double>(Bytes) / (1024.0 * 1024.0);
@@ -742,6 +856,8 @@ namespace APSMenu
 		Metadata.GetString(TEXT("APSWorld"), TEXT("SystemType"), Entry.SystemType);
 		Metadata.GetString(TEXT("APSWorld"), TEXT("StarType"), Entry.StarType);
 		Metadata.GetString(TEXT("APSWorld"), TEXT("PlanetType"), Entry.PlanetType);
+		Entry.Habitability = TEXT("UNKNOWN");
+		Metadata.GetString(TEXT("APSWorld"), TEXT("Habitability"), Entry.Habitability);
 		Metadata.GetString(TEXT("APSWorld"), TEXT("Environment"), Entry.Environment);
 		int64 Value = 0;
 		if (Metadata.GetInt64(TEXT("APSWorld"), TEXT("TotalPlanets"), Value))
@@ -764,6 +880,7 @@ namespace APSMenu
 		Metadata.SetString(TEXT("APSWorld"), TEXT("SystemType"), *Entry.SystemType);
 		Metadata.SetString(TEXT("APSWorld"), TEXT("StarType"), *Entry.StarType);
 		Metadata.SetString(TEXT("APSWorld"), TEXT("PlanetType"), *Entry.PlanetType);
+		Metadata.SetString(TEXT("APSWorld"), TEXT("Habitability"), *Entry.Habitability);
 		Metadata.SetString(TEXT("APSWorld"), TEXT("Environment"), *Entry.Environment);
 		Metadata.SetInt64(TEXT("APSWorld"), TEXT("TotalPlanets"), Entry.TotalPlanets);
 		Metadata.SetInt64(TEXT("APSWorld"), TEXT("InhabitedPlanets"), Entry.InhabitedPlanets);
@@ -1550,6 +1667,7 @@ void SAPSMainMenuRoot::LoadExistingWorlds()
 			Entry->SystemType = TEXT("FULL-SCALE STAR SYSTEM");
 			Entry->StarType = TEXT("GENERATED STAR");
 			Entry->PlanetType = TEXT("PERSISTENT WORLD");
+			Entry->Habitability = TEXT("UNKNOWN");
 			Entry->Environment = TEXT("Legacy world - details load on launch");
 			Entry->TotalPlanets = 0;
 			Entry->InhabitedPlanets = 0;
@@ -1613,6 +1731,7 @@ void SAPSMainMenuRoot::ApplyExistingWorldMetadata(const FString& SlotName, const
 		Entry.SystemType = APSMenu::EnumLabel(Data.PlanetarySystemType);
 		Entry.StarType = APSMenu::EnumLabel(Data.SpectralClass);
 		Entry.PlanetType = APSMenu::EnumLabel(Data.PlanetType);
+		Entry.Habitability = APSMenu::EnumLabel(Data.PlanetHabitability);
 		Entry.Environment = FString::Printf(TEXT("%s / %.0f KM"), *Entry.PlanetType, Data.PlanetRadius);
 		Entry.TotalPlanets = Data.PlanetsAmount;
 	}
@@ -1730,6 +1849,7 @@ void SAPSMainMenuRoot::RebuildExistingWorldDetails()
 		+ SVerticalBox::Slot().AutoHeight()[DetailRow(LOCTEXT("DetailStarType", "STAR TYPE"), FText::FromString(SelectedWorld->StarType))]
 		+ SVerticalBox::Slot().AutoHeight()[DetailRow(LOCTEXT("DetailTotalPlanets", "TOTAL PLANETS"), FText::AsNumber(SelectedWorld->TotalPlanets))]
 		+ SVerticalBox::Slot().AutoHeight()[DetailRow(LOCTEXT("DetailInhabited", "INHABITED PLANETS"), FText::AsNumber(SelectedWorld->InhabitedPlanets))]
+		+ SVerticalBox::Slot().AutoHeight()[DetailRow(LOCTEXT("DetailHabitability", "HABITABILITY"), FText::FromString(SelectedWorld->Habitability))]
 		+ SVerticalBox::Slot().AutoHeight()[DetailRow(LOCTEXT("DetailEnvironment", "ENVIRONMENT"), FText::FromString(SelectedWorld->Environment))]
 		+ SVerticalBox::Slot().AutoHeight()[DetailRow(LOCTEXT("DetailSaveSize", "SAVE SIZE"), APSMenu::SaveSizeText(SelectedWorld->FileSizeBytes))];
 	if (bShowTechnicalWorldDetails)
@@ -1970,6 +2090,8 @@ void SAPSMainMenuRoot::DiscoverSpawnClassOptions()
 	SpawnClassOptions.Add(EAPSStartAssetSlot::SpaceStation, TArray<TSoftClassPtr<AActor>>());
 	SpawnClassOptions.Add(EAPSStartAssetSlot::Headquarters, TArray<TSoftClassPtr<AActor>>());
 	SpawnClassOptions.Add(EAPSStartAssetSlot::Shipyard, TArray<TSoftClassPtr<AActor>>());
+	const FSoftObjectPath ProductionPilotClassPath(
+		TEXT("/Game/APS/APS_ALPHA/Blueprints/BP_CustomGravityCharacter.BP_CustomGravityCharacter_C"));
 
 	FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry"));
 	IAssetRegistry& AssetRegistry = AssetRegistryModule.Get();
@@ -2046,10 +2168,18 @@ void SAPSMainMenuRoot::DiscoverSpawnClassOptions()
 		}
 		else
 		{
+			if (FSoftObjectPath(GeneratedClassObjectPath) != ProductionPilotClassPath)
+			{
+				continue;
+			}
 			Slot = EAPSStartAssetSlot::Character;
 		}
 		SpawnClassOptions.FindOrAdd(Slot).AddUnique(TSoftClassPtr<AActor>(FSoftObjectPath(GeneratedClassObjectPath)));
 	}
+	// Keep one stable entry even if the asset registry is still discovering files;
+	// the async picker load and commit validation remain authoritative.
+	SpawnClassOptions.FindOrAdd(EAPSStartAssetSlot::Character).AddUnique(
+		TSoftClassPtr<AActor>(ProductionPilotClassPath));
 
 	for (auto& Pair : SpawnClassOptions)
 	{
@@ -2099,7 +2229,6 @@ void SAPSMainMenuRoot::SynchronizeSpawnClassOptions()
 		if (InitialIndex == INDEX_NONE) InitialIndex = 0;
 		SpawnClassIndices.Add(Pair.Key, InitialIndex);
 		ApplySpawnClassSelection(Pair.Key);
-		RefreshSpawnClassBrush(Pair.Key);
 	}
 }
 
@@ -2129,7 +2258,6 @@ void SAPSMainMenuRoot::ApplySpawnClassSelection(EAPSStartAssetSlot Slot)
 		{
 			ViewModel->SetSpawnClass(Slot, LoadedClass);
 		}
-		RefreshSpawnClassBrush(Slot);
 		Invalidate(EInvalidateWidgetReason::Paint);
 		return;
 	}
@@ -2192,7 +2320,6 @@ void SAPSMainMenuRoot::OnSpawnClassSelectionLoaded(EAPSStartAssetSlot Slot, FSof
 		UE_LOG(LogTemp, Error,
 			TEXT("[APS.Civilization] Class load resolved no class for slot=%d path=%s"),
 			static_cast<int32>(Slot), *RequestedPath.ToString());
-		RefreshSpawnClassBrush(Slot);
 		Invalidate(EInvalidateWidgetReason::Paint);
 		return;
 	}
@@ -2200,34 +2327,7 @@ void SAPSMainMenuRoot::OnSpawnClassSelectionLoaded(EAPSStartAssetSlot Slot, FSof
 	{
 		ViewModel->SetSpawnClass(Slot, LoadedClass);
 	}
-	RefreshSpawnClassBrush(Slot);
 	Invalidate(EInvalidateWidgetReason::Paint);
-}
-
-void SAPSMainMenuRoot::RefreshSpawnClassBrush(EAPSStartAssetSlot Slot)
-{
-	FSlateBrush& Brush = SpawnClassBrushes.FindOrAdd(Slot);
-	Brush.SetResourceObject(nullptr);
-	Brush.DrawAs = ESlateBrushDrawType::NoDrawType;
-	const TArray<TSoftClassPtr<AActor>>* Options = SpawnClassOptions.Find(Slot);
-	const int32 Index = SpawnClassIndices.FindRef(Slot);
-	if (!Options || !Options->IsValidIndex(Index)) return;
-	UClass* LoadedClass = (*Options)[Index].Get();
-	if (!LoadedClass) return;
-	const AActor* DefaultActor = LoadedClass->GetDefaultObject<AActor>();
-	if (!DefaultActor || !DefaultActor->Implements<UItemInfoInterface>()) return;
-	if (UTexture2D* Texture = IItemInfoInterface::Execute_GetAvatarPicture(DefaultActor))
-	{
-		if (AMainMenuController* PC = Controller.Get()) PC->HoldSlateResource(Texture);
-		Brush.SetResourceObject(Texture);
-		Brush.ImageSize = FVector2D(256.0f, 180.0f);
-		Brush.DrawAs = ESlateBrushDrawType::Image;
-	}
-}
-
-const FSlateBrush* SAPSMainMenuRoot::GetSpawnClassBrush(EAPSStartAssetSlot Slot) const
-{
-	return SpawnClassBrushes.Find(Slot);
 }
 
 FText SAPSMainMenuRoot::GetSpawnClassName(EAPSStartAssetSlot Slot) const
@@ -2258,17 +2358,25 @@ FText SAPSMainMenuRoot::GetSpawnClassOptionName(EAPSStartAssetSlot Slot, int32 O
 
 TSharedRef<SWidget> SAPSMainMenuRoot::BuildSpawnCard(EAPSStartAssetSlot Slot, const FText& Label)
 {
-	const FText SlotGlyph = FText::FromString(
-		Slot == EAPSStartAssetSlot::Character ? TEXT("PILOT") :
-		Slot == EAPSStartAssetSlot::Spaceship ? TEXT("SHIP") :
-		Slot == EAPSStartAssetSlot::SpaceStation ? TEXT("STATION") :
-		Slot == EAPSStartAssetSlot::Headquarters ? TEXT("HQ") : TEXT("YARD"));
+	const EAPSMenuGlyph SlotGlyph =
+		Slot == EAPSStartAssetSlot::Character ? EAPSMenuGlyph::Pilot :
+		Slot == EAPSStartAssetSlot::Spaceship ? EAPSMenuGlyph::Ship :
+		Slot == EAPSStartAssetSlot::SpaceStation ? EAPSMenuGlyph::Station :
+		Slot == EAPSStartAssetSlot::Headquarters ? EAPSMenuGlyph::Headquarters : EAPSMenuGlyph::Shipyard;
+	const bool bLockedProductionPilot = Slot == EAPSStartAssetSlot::Character;
+	const int32 SlotNumber = static_cast<int32>(Slot) + 1;
+	const FText SlotDescription =
+		Slot == EAPSStartAssetSlot::Character ? LOCTEXT("PilotCardRole", "CERTIFIED SURFACE & EVA OPERATOR") :
+		Slot == EAPSStartAssetSlot::Spaceship ? LOCTEXT("ShipCardRole", "PRIMARY FLEET HULL") :
+		Slot == EAPSStartAssetSlot::SpaceStation ? LOCTEXT("StationCardRole", "ORBITAL HABITAT CLASS") :
+		Slot == EAPSStartAssetSlot::Headquarters ? LOCTEXT("HeadquartersCardRole", "CIVILIZATION COMMAND NODE") :
+		LOCTEXT("ShipyardCardRole", "FLEET CONSTRUCTION NODE");
 	TSharedRef<SUniformGridPanel> OptionGrid = SNew(SUniformGridPanel).SlotPadding(FMargin(2.0f));
 	const TArray<TSoftClassPtr<AActor>>& Options = SpawnClassOptions.FindRef(Slot);
 	for (int32 OptionIndex = 0; OptionIndex < Options.Num(); ++OptionIndex)
 	{
 		const int32 CapturedIndex = OptionIndex;
-		OptionGrid->AddSlot(OptionIndex % 2, OptionIndex / 2)
+		OptionGrid->AddSlot(0, OptionIndex)
 		[
 			SNew(SButton)
 			.ButtonStyle(&CardButtonStyle)
@@ -2282,23 +2390,33 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildSpawnCard(EAPSStartAssetSlot Slot, co
 			.ToolTipText(FText::FromString(Options[OptionIndex].ToSoftObjectPath().ToString()))
 			.OnClicked(this, &SAPSMainMenuRoot::SelectSpawnClass, Slot, OptionIndex)
 			[
-				SNew(SVerticalBox)
-				+ SVerticalBox::Slot().AutoHeight()
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
 				[
 					SNew(STextBlock)
 					.Text(FText::FromString(FString::Printf(TEXT("%02d"), OptionIndex + 1)))
-					.Font(APSMenu::Font("Bold", 7))
+					.Font(APSMenu::Font("Bold", 8))
 					.ColorAndOpacity_Lambda([this, Slot, CapturedIndex]()
 					{
 						return SpawnClassIndices.FindRef(Slot) == CapturedIndex ? APSMenu::Amber : APSMenu::Cyan;
 					})
 				]
-				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 2.0f)
+				+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center).Padding(7.0f, 0.0f)
 				[
 					SNew(STextBlock)
 					.Text_Lambda([this, Slot, CapturedIndex]() { return GetSpawnClassOptionName(Slot, CapturedIndex); })
-					.Font(APSMenu::Font("Bold", 8)).ColorAndOpacity(APSMenu::White)
-					.AutoWrapText(true)
+					.Font(APSMenu::Font("Bold", 9)).ColorAndOpacity(APSMenu::White)
+					.OverflowPolicy(ETextOverflowPolicy::Ellipsis)
+				]
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+				[
+					SNew(STextBlock).Text(LOCTEXT("SpawnOptionActive", "ACTIVE"))
+					.Font(APSMenu::Font("Bold", 7)).ColorAndOpacity(APSMenu::Success)
+					.Visibility_Lambda([this, Slot, CapturedIndex]()
+					{
+						return SpawnClassIndices.FindRef(Slot) == CapturedIndex
+							? EVisibility::Visible : EVisibility::Collapsed;
+					})
 				]
 			]
 		];
@@ -2307,56 +2425,106 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildSpawnCard(EAPSStartAssetSlot Slot, co
 	return SNew(SOverlay)
 		+ SOverlay::Slot()
 		[
-			SNew(SBorder).BorderImage(&APSMenu::PanelBrush).Padding(10.0f)
+			SNew(SBorder).BorderImage(&APSMenu::CivCardBrush).Padding(0.0f)
 			[
-			SNew(SVerticalBox)
-			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0.0f, 2.0f, 0.0f, 8.0f)
-			[SNew(STextBlock).Text(Label).Font(APSMenu::Font("Bold", 15)).ColorAndOpacity(APSMenu::Cyan)]
-			+ SVerticalBox::Slot().FillHeight(0.58f).Padding(2.0f, 4.0f)
-			[
-				SNew(SBorder).BorderImage(&APSMenu::InsetBrush).Padding(2.0f)
+				SNew(SOverlay)
+				+ SOverlay::Slot().Padding(11.0f)
 				[
-					SNew(SOverlay)
-					+ SOverlay::Slot()
+					SNew(SVerticalBox)
+					+ SVerticalBox::Slot().AutoHeight()
 					[
-						SNew(SBox).Clipping(EWidgetClipping::ClipToBounds)
-						[SNew(SScaleBox).Stretch(EStretch::ScaleToFit)[SNew(SImage).Image_Lambda([this, Slot]() { return GetSpawnClassBrush(Slot); })]]
+						SNew(SHorizontalBox)
+						+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+						[APSMenu::IconBadge(SlotGlyph, bLockedProductionPilot ? APSMenu::Amber : APSMenu::Cyan, 30.0f)]
+						+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center).Padding(9.0f, 0.0f)
+						[
+							SNew(SVerticalBox)
+							+ SVerticalBox::Slot().AutoHeight()
+							[SNew(STextBlock).Text(Label).Font(APSMenu::Font("Bold", 13)).ColorAndOpacity(APSMenu::White)]
+							+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 1.0f, 0.0f, 0.0f)
+							[SNew(STextBlock).Text(SlotDescription).Font(APSMenu::Font("Regular", 8)).ColorAndOpacity(APSMenu::Muted).OverflowPolicy(ETextOverflowPolicy::Ellipsis)]
+						]
+						+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+						[
+							SNew(SBorder).BorderImage(&APSMenu::CivStatusBrush).Padding(FMargin(6.0f, 3.0f))
+							[
+								SNew(STextBlock)
+								.Text(bLockedProductionPilot ? LOCTEXT("PilotCardLocked", "LOCKED")
+									: FText::FromString(FString::Printf(TEXT("%02d"), SlotNumber)))
+								.Font(APSMenu::Font("Bold", 8))
+								.ColorAndOpacity(bLockedProductionPilot ? APSMenu::Amber : APSMenu::Cyan)
+							]
+						]
 					]
-					+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Center)
+					+ SVerticalBox::Slot().FillHeight(0.56f).Padding(0.0f, 10.0f, 0.0f, 8.0f)
 					[
-						SNew(STextBlock).Text(SlotGlyph).Font(APSMenu::Font("Bold", 22)).ColorAndOpacity(FLinearColor(0.20f, 0.62f, 0.78f, 0.42f))
-						.Visibility_Lambda([this, Slot]()
-						{
-							const FSlateBrush* Brush = GetSpawnClassBrush(Slot);
-							return Brush && Brush->GetResourceObject() ? EVisibility::Collapsed : EVisibility::Visible;
-						})
+						SNew(SBorder).BorderImage(&APSMenu::InsetBrush).Padding(2.0f)
+						[
+							SNew(SOverlay)
+							+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Center)
+							[
+								SNew(SBox).WidthOverride(96.0f).HeightOverride(96.0f)
+								[SNew(SVectorMenuGlyph).Glyph(SlotGlyph).Color(FLinearColor(0.03f, 0.28f, 0.38f, 0.32f)).StrokeWidth(4.8f)]
+							]
+							+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Center)
+							[
+								SNew(SBox).WidthOverride(62.0f).HeightOverride(62.0f)
+								[SNew(SVectorMenuGlyph).Glyph(SlotGlyph).Color(bLockedProductionPilot ? APSMenu::Amber : APSMenu::Cyan).StrokeWidth(1.9f)]
+							]
+							+ SOverlay::Slot().HAlign(HAlign_Left).VAlign(VAlign_Bottom).Padding(8.0f)
+							[
+								SNew(STextBlock).Text(LOCTEXT("SpawnCardLoadout", "LOADOUT CLASS"))
+								.Font(APSMenu::Font("Bold", 8)).ColorAndOpacity(APSMenu::Muted)
+							]
+						]
+					]
+					+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center)
+					[
+						SNew(STextBlock).Text_Lambda([this, Slot]() { return GetSpawnClassName(Slot); })
+						.Font(APSMenu::Font("Bold", 14)).ColorAndOpacity(APSMenu::White)
+						.Justification(ETextJustify::Center).AutoWrapText(true)
+					]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 7.0f, 0.0f, 5.0f)
+					[
+						SNew(SHorizontalBox)
+						.Visibility(bLockedProductionPilot ? EVisibility::Collapsed : EVisibility::Visible)
+						+ SHorizontalBox::Slot().FillWidth(0.28f)
+						[SNew(SButton).ButtonStyle(&SecondaryButtonStyle).ContentPadding(FMargin(5.0f, 4.0f)).OnClicked(this, &SAPSMainMenuRoot::CycleSpawnClass, Slot, -1)[SNew(STextBlock).Text(FText::FromString(TEXT("<"))).Justification(ETextJustify::Center).Font(APSMenu::Font("Bold", 11)).ColorAndOpacity(APSMenu::Cyan)]]
+						+ SHorizontalBox::Slot().FillWidth(0.44f).HAlign(HAlign_Center).VAlign(VAlign_Center)
+						[
+							SNew(STextBlock).Text_Lambda([this, Slot]()
+							{
+								const int32 Count = SpawnClassOptions.FindRef(Slot).Num();
+								return FText::FromString(FString::Printf(TEXT("CLASS %02d / %02d"), Count > 0 ? SpawnClassIndices.FindRef(Slot) + 1 : 0, Count));
+							}).Justification(ETextJustify::Center).Font(APSMenu::Font("Bold", 8)).ColorAndOpacity(APSMenu::Muted)
+						]
+						+ SHorizontalBox::Slot().FillWidth(0.28f)
+						[SNew(SButton).ButtonStyle(&SecondaryButtonStyle).ContentPadding(FMargin(5.0f, 4.0f)).OnClicked(this, &SAPSMainMenuRoot::CycleSpawnClass, Slot, 1)[SNew(STextBlock).Text(FText::FromString(TEXT(">"))).Justification(ETextJustify::Center).Font(APSMenu::Font("Bold", 11)).ColorAndOpacity(APSMenu::Cyan)]]
+					]
+					+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0.0f, 5.0f, 0.0f, 8.0f)
+					[
+						SNew(SBorder).BorderImage(&APSMenu::CivStatusBrush).Padding(FMargin(8.0f, 4.0f))
+						.Visibility(bLockedProductionPilot ? EVisibility::Visible : EVisibility::Collapsed)
+						[
+							SNew(STextBlock).Text(LOCTEXT("ProductionPilotLocked", "VERIFIED GRAVITY PILOT"))
+							.Font(APSMenu::Font("Bold", 8)).ColorAndOpacity(APSMenu::Amber)
+						]
+					]
+					+ SVerticalBox::Slot().FillHeight(0.44f)
+					[
+						SNew(SBox).MaxDesiredHeight(98.0f)
+						.Visibility(bLockedProductionPilot ? EVisibility::Collapsed : EVisibility::Visible)
+						[
+							SNew(SBorder).BorderImage(&APSMenu::InsetBrush).Padding(4.0f)
+							[SNew(SScrollBox) + SScrollBox::Slot()[OptionGrid]]
+						]
 					]
 				]
-			]
-			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0.0f, 9.0f)
-			[SNew(STextBlock).Text_Lambda([this, Slot]() { return GetSpawnClassName(Slot); }).Font(APSMenu::Font("Bold", 14)).ColorAndOpacity(APSMenu::White).Justification(ETextJustify::Center)]
-			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 3.0f, 0.0f, 5.0f)
-			[
-				SNew(SHorizontalBox)
-				+ SHorizontalBox::Slot().FillWidth(0.32f)[SNew(SButton).ButtonStyle(&SecondaryButtonStyle).OnClicked(this, &SAPSMainMenuRoot::CycleSpawnClass, Slot, -1)[SNew(STextBlock).Text(FText::FromString(TEXT("<"))).Justification(ETextJustify::Center).ColorAndOpacity(APSMenu::Cyan)]]
-				+ SHorizontalBox::Slot().FillWidth(0.36f).HAlign(HAlign_Center).VAlign(VAlign_Center)
+				+ SOverlay::Slot().HAlign(HAlign_Fill).VAlign(VAlign_Top)
 				[
-					SNew(STextBlock).Text_Lambda([this, Slot]()
-					{
-						const int32 Count = SpawnClassOptions.FindRef(Slot).Num();
-						return FText::FromString(FString::Printf(TEXT("%02d / %02d"), Count > 0 ? SpawnClassIndices.FindRef(Slot) + 1 : 0, Count));
-					}).Font(APSMenu::Font("Regular", 8)).ColorAndOpacity(APSMenu::Muted)
+					SNew(SBox).HeightOverride(2.0f)
+					[SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(bLockedProductionPilot ? APSMenu::Amber : APSMenu::Cyan)]
 				]
-				+ SHorizontalBox::Slot().FillWidth(0.32f)[SNew(SButton).ButtonStyle(&SecondaryButtonStyle).OnClicked(this, &SAPSMainMenuRoot::CycleSpawnClass, Slot, 1)[SNew(STextBlock).Text(FText::FromString(TEXT(">"))).Justification(ETextJustify::Center).ColorAndOpacity(APSMenu::Cyan)]]
-			]
-			+ SVerticalBox::Slot().FillHeight(0.42f)
-			[
-				SNew(SBorder).BorderImage(&APSMenu::InsetBrush).Padding(3.0f)
-				[
-					SNew(SScrollBox)
-					+ SScrollBox::Slot()[OptionGrid]
-				]
-			]
 			]
 		]
 		+ SOverlay::Slot()
@@ -2369,6 +2537,7 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildCivilizationPage()
 {
 	DiscoverSpawnClassOptions();
 	const TWeakObjectPtr<UWorldGenerationViewModel> VM = ViewModel;
+	CivilizationEditorSection = FMath::Clamp(CivilizationEditorSection, 0, 2);
 
 	const auto EnumControl = [this](const FText& Label, const UEnum* Enum,
 		TFunction<int32()> Getter, TFunction<void(int32)> Setter)
@@ -2380,55 +2549,368 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildCivilizationPage()
 			Setter((Getter() + Direction + Count) % Count);
 			return FReply::Handled();
 		};
-		return SNew(SVerticalBox)
-			+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Text(Label).Font(APSMenu::Font("Regular", 10)).ColorAndOpacity(APSMenu::Muted)]
-			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 3.0f, 0.0f, 9.0f)
+		return SNew(SBorder).BorderImage(&APSMenu::CivControlBrush).Padding(FMargin(10.0f, 7.0f))
+		[
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot().FillWidth(0.44f).VAlign(VAlign_Center)
+			[
+				SNew(SVerticalBox)
+				+ SVerticalBox::Slot().AutoHeight()
+				[SNew(STextBlock).Text(Label).Font(APSMenu::Font("Bold", 10)).ColorAndOpacity(APSMenu::White)]
+				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 2.0f, 0.0f, 0.0f)
+				[SNew(STextBlock).Text(LOCTEXT("EnumControlType", "SELECTED PROFILE")).Font(APSMenu::Font("Regular", 8)).ColorAndOpacity(APSMenu::Muted)]
+			]
+			+ SHorizontalBox::Slot().FillWidth(0.56f).VAlign(VAlign_Center).Padding(10.0f, 0.0f, 0.0f, 0.0f)
 			[
 				SNew(SBorder).BorderImage(&APSMenu::InsetBrush).Padding(FMargin(2.0f))
 				[
-				SNew(SHorizontalBox)
-				+ SHorizontalBox::Slot().AutoWidth()[SNew(SButton).ButtonStyle(&SecondaryButtonStyle).OnClicked_Lambda([Step](){ return Step(-1); })[SNew(STextBlock).Text(FText::FromString(TEXT("<"))).ColorAndOpacity(APSMenu::Cyan)]]
-				+ SHorizontalBox::Slot().FillWidth(1.0f).HAlign(HAlign_Center).VAlign(VAlign_Center)
-				[SNew(STextBlock).Text_Lambda([Enum, Getter](){ return Enum ? Enum->GetDisplayNameTextByValue(Getter()) : FText::FromString(TEXT("--")); }).Font(APSMenu::Font("Bold", 10)).ColorAndOpacity(APSMenu::White)]
-				+ SHorizontalBox::Slot().AutoWidth()[SNew(SButton).ButtonStyle(&SecondaryButtonStyle).OnClicked_Lambda([Step](){ return Step(1); })[SNew(STextBlock).Text(FText::FromString(TEXT(">"))).ColorAndOpacity(APSMenu::Cyan)]]
+					SNew(SHorizontalBox)
+					+ SHorizontalBox::Slot().AutoWidth()[SNew(SButton).ButtonStyle(&SecondaryButtonStyle).ContentPadding(FMargin(8.0f, 5.0f)).OnClicked_Lambda([Step](){ return Step(-1); })[SNew(STextBlock).Text(FText::FromString(TEXT("<"))).Font(APSMenu::Font("Bold", 10)).ColorAndOpacity(APSMenu::Cyan)]]
+					+ SHorizontalBox::Slot().FillWidth(1.0f).HAlign(HAlign_Center).VAlign(VAlign_Center)
+					[SNew(STextBlock).Text_Lambda([Enum, Getter](){ return Enum ? Enum->GetDisplayNameTextByValue(Getter()) : FText::FromString(TEXT("--")); }).Font(APSMenu::Font("Bold", 10)).ColorAndOpacity(APSMenu::White).OverflowPolicy(ETextOverflowPolicy::Ellipsis)]
+					+ SHorizontalBox::Slot().AutoWidth()[SNew(SButton).ButtonStyle(&SecondaryButtonStyle).ContentPadding(FMargin(8.0f, 5.0f)).OnClicked_Lambda([Step](){ return Step(1); })[SNew(STextBlock).Text(FText::FromString(TEXT(">"))).Font(APSMenu::Font("Bold", 10)).ColorAndOpacity(APSMenu::Cyan)]]
 				]
-			];
+			]
+		];
 	};
 
 	const auto NumberControl = [](const FText& Label, int32 MinValue, int32 MaxValue, int32 Delta,
 		TFunction<int32()> Getter, TFunction<void(int32)> Setter)
 	{
-		return SNew(SVerticalBox)
-			+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Text(Label).Font(APSMenu::Font("Regular", 10)).ColorAndOpacity(APSMenu::Muted)]
-			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 3.0f, 0.0f, 9.0f)
+		return SNew(SBorder).BorderImage(&APSMenu::CivControlBrush).Padding(FMargin(10.0f, 7.0f))
+		[
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot().FillWidth(0.58f).VAlign(VAlign_Center)
 			[
-				SNew(SBorder).BorderImage(&APSMenu::InsetBrush).Padding(2.0f)
+				SNew(SVerticalBox)
+				+ SVerticalBox::Slot().AutoHeight()
+				[SNew(STextBlock).Text(Label).Font(APSMenu::Font("Bold", 10)).ColorAndOpacity(APSMenu::White)]
+				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 2.0f, 0.0f, 0.0f)
+				[SNew(STextBlock).Text(FText::FromString(FString::Printf(TEXT("RANGE  %s - %s"), *FText::AsNumber(MinValue).ToString(), *FText::AsNumber(MaxValue).ToString()))).Font(APSMenu::Font("Regular", 8)).ColorAndOpacity(APSMenu::Muted)]
+			]
+			+ SHorizontalBox::Slot().FillWidth(0.42f).VAlign(VAlign_Center).Padding(10.0f, 0.0f, 0.0f, 0.0f)
+			[
+				SNew(SBorder).BorderImage(&APSMenu::InsetBrush).Padding(3.0f)
 				[
-				SNew(SSpinBox<int32>).MinValue(MinValue).MaxValue(MaxValue).Delta(Delta)
-				.Value_Lambda([Getter](){ return Getter(); })
-				.OnValueChanged_Lambda([Setter](int32 Value){ Setter(Value); })
+					SNew(SSpinBox<int32>).MinValue(MinValue).MaxValue(MaxValue).Delta(Delta)
+					.MinDesiredWidth(116.0f).Font(APSMenu::Font("Bold", 11))
+					.Value_Lambda([Getter](){ return Getter(); })
+					.OnValueChanged_Lambda([Setter](int32 Value){ Setter(Value); })
+				]
+			]
+		];
+	};
+
+	const auto ReadinessControl = [this](const FText& Label, TFunction<int32()> Getter,
+		TFunction<void(int32)> Setter)
+	{
+		const auto Step = [Getter, Setter](int32 Direction)
+		{
+			Setter(FMath::Clamp(Getter() + Direction, 0, 20));
+			return FReply::Handled();
+		};
+		return SNew(SBorder).BorderImage(&APSMenu::CivControlBrush).Padding(FMargin(10.0f, 7.0f))
+		[
+			SNew(SVerticalBox)
+			+ SVerticalBox::Slot().AutoHeight()
+			[
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
+				[SNew(STextBlock).Text(Label).Font(APSMenu::Font("Bold", 10)).ColorAndOpacity(APSMenu::White)]
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+				[SNew(SButton).ButtonStyle(&SecondaryButtonStyle).ContentPadding(FMargin(8.0f, 2.0f)).OnClicked_Lambda([Step](){ return Step(-1); })[SNew(STextBlock).Text(FText::FromString(TEXT("-"))).Font(APSMenu::Font("Bold", 11)).ColorAndOpacity(APSMenu::Cyan)]]
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(9.0f, 0.0f)
+				[SNew(STextBlock).Text_Lambda([Getter](){ return FText::FromString(FString::Printf(TEXT("%02d / 20"), Getter())); }).Font(APSMenu::Font("Bold", 10)).ColorAndOpacity(APSMenu::Cyan)]
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+				[SNew(SButton).ButtonStyle(&SecondaryButtonStyle).ContentPadding(FMargin(8.0f, 2.0f)).OnClicked_Lambda([Step](){ return Step(1); })[SNew(STextBlock).Text(FText::FromString(TEXT("+"))).Font(APSMenu::Font("Bold", 11)).ColorAndOpacity(APSMenu::Cyan)]]
+			]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 7.0f, 0.0f, 0.0f)
+			[
+				SNew(SBox).HeightOverride(4.0f)
+				[
+					SNew(SProgressBar)
+					.Percent_Lambda([Getter](){ return TOptional<float>(FMath::Clamp(Getter() / 20.0f, 0.0f, 1.0f)); })
+					.FillColorAndOpacity(APSMenu::Cyan)
+				]
+			]
+		];
+	};
+
+	const auto InfoPanel = [](EAPSMenuGlyph Glyph, const FText& Title,
+		const FText& Subtitle, TAttribute<FText> Body)
+	{
+		return APSMenu::ChamferPanel(
+			SNew(SVerticalBox)
+			+ SVerticalBox::Slot().AutoHeight()
+			[
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)[APSMenu::IconBadge(Glyph, APSMenu::Cyan, 30.0f)]
+				+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center).Padding(9.0f, 0.0f)
+				[
+					SNew(SVerticalBox)
+					+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Text(Title).Font(APSMenu::Font("Bold", 12)).ColorAndOpacity(APSMenu::White)]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 1.0f, 0.0f, 0.0f)[SNew(STextBlock).Text(Subtitle).Font(APSMenu::Font("Regular", 8)).ColorAndOpacity(APSMenu::Muted)]
+				]
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+				[SNew(STextBlock).Text(LOCTEXT("CivInfoLive", "LIVE")).Font(APSMenu::Font("Bold", 8)).ColorAndOpacity(APSMenu::Success)]
+			]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 9.0f, 0.0f, 0.0f)
+			[SNew(SBox).HeightOverride(1.0f)[SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(APSMenu::CyanDim)]]
+			+ SVerticalBox::Slot().FillHeight(1.0f).Padding(0.0f, 10.0f, 0.0f, 0.0f)
+			[SNew(STextBlock).Text(Body).AutoWrapText(true).Font(APSMenu::Font("Regular", 11)).ColorAndOpacity(APSMenu::White)]
+		, FMargin(15.0f), FLinearColor(0.035f, 0.28f, 0.37f, 0.95f), 1.0f);
+	};
+
+	const auto PresetButton = [this](const FText& Label, const FText& ToolTip,
+		TFunction<bool()> IsActive, TFunction<void()> Apply)
+	{
+		return SNew(SButton).ButtonStyle(&SecondaryButtonStyle).ToolTipText(ToolTip)
+			.ContentPadding(FMargin(8.0f, 7.0f))
+			.ButtonColorAndOpacity_Lambda([IsActive]()
+			{
+				return IsActive() ? FLinearColor(0.45f, 0.18f, 0.01f, 1.0f)
+					: FLinearColor(0.015f, 0.09f, 0.12f, 0.96f);
+			})
+			.OnClicked_Lambda([Apply](){ Apply(); return FReply::Handled(); })
+			[
+				SNew(SVerticalBox)
+				+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center)
+				[SNew(STextBlock).Text(Label).Justification(ETextJustify::Center).Font(APSMenu::Font("Bold", 9)).ColorAndOpacity(APSMenu::White)]
+				+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0.0f, 2.0f, 0.0f, 0.0f)
+				[
+					SNew(STextBlock).Text_Lambda([IsActive](){ return IsActive() ? LOCTEXT("PresetActive", "ACTIVE") : LOCTEXT("PresetProfile", "PROFILE"); })
+					.Font(APSMenu::Font("Bold", 8)).ColorAndOpacity_Lambda([IsActive](){ return IsActive() ? APSMenu::Amber : APSMenu::Muted; })
 				]
 			];
 	};
 
-	const auto InfoPanel = [](const FText& Glyph, const FText& Title, TAttribute<FText> Body)
+	const auto MetricTile = [](const FText& Label, TAttribute<FText> Value,
+		const FLinearColor& Accent = APSMenu::Cyan)
 	{
-		return APSMenu::ChamferPanel(
+		return SNew(SBorder).BorderImage(&APSMenu::CivMetricBrush).Padding(FMargin(8.0f, 7.0f))
+		[
 			SNew(SVerticalBox)
-			+ SVerticalBox::Slot().AutoHeight()[APSMenu::SectionHeading(Glyph, Title)]
-			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 10.0f, 0.0f, 0.0f)[SNew(STextBlock).Text(Body).AutoWrapText(true).Font(APSMenu::Font("Regular", 10)).ColorAndOpacity(APSMenu::White)]
-		, FMargin(16.0f));
+			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center)
+			[SNew(STextBlock).Text(Value).Font(APSMenu::Font("Bold", 15)).ColorAndOpacity(Accent).Justification(ETextJustify::Center)]
+			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0.0f, 2.0f, 0.0f, 0.0f)
+			[SNew(STextBlock).Text(Label).Font(APSMenu::Font("Bold", 8)).ColorAndOpacity(APSMenu::Muted).Justification(ETextJustify::Center)]
+		];
 	};
 
-	TSharedRef<SWidget> Page = SNew(SVerticalBox)
-		+ SVerticalBox::Slot().AutoHeight().Padding(28.0f, 18.0f, 28.0f, 6.0f)[BuildHeader(LOCTEXT("CivParameters", "CIVILIZATION PARAMETERS"))]
-		+ SVerticalBox::Slot().FillHeight(1.0f).Padding(34.0f, 10.0f, 34.0f, 8.0f)
+	const auto ApplyInfrastructurePreset = [VM](int32 Fleet, int32 Star, int32 Planet,
+		int32 Orbital, int32 Ground)
+	{
+		if (!VM.IsValid() || !VM->SpawnParameters) return;
+		USpawnParameters* P = VM->SpawnParameters;
+		P->StartingFleetSize = Fleet;
+		P->StarOutposts = Star;
+		P->PlanetOutposts = Planet;
+		P->OrbitalOutposts = Orbital;
+		P->GroundOutposts = Ground;
+		P->SanitizeForGeneration();
+	};
+	const auto ApplyDivisionPreset = [VM](int32 Exploration, int32 Industry, int32 Science,
+		int32 Civil, int32 Military, int32 Fleet)
+	{
+		if (!VM.IsValid() || !VM->SpawnParameters) return;
+		USpawnParameters* P = VM->SpawnParameters;
+		P->ExplorationDivisionLevel = Exploration;
+		P->IndustryDivisionLevel = Industry;
+		P->ScienceDivisionLevel = Science;
+		P->CivilAffairsDivisionLevel = Civil;
+		P->MilitaryDivisionLevel = Military;
+		P->FleetDivisionLevel = Fleet;
+		P->SanitizeForGeneration();
+	};
+
+	const auto EditorTab = [this](int32 Index, EAPSMenuGlyph Glyph, const FText& Label)
+	{
+		return SNew(SButton).ButtonStyle(&SecondaryButtonStyle).ContentPadding(FMargin(6.0f, 7.0f))
+		.ButtonColorAndOpacity_Lambda([this, Index]()
+		{
+			return CivilizationEditorSection == Index
+				? FLinearColor(0.38f, 0.16f, 0.01f, 1.0f)
+				: FLinearColor(0.015f, 0.08f, 0.11f, 0.95f);
+		})
+		.OnClicked_Lambda([this, Index]()
+		{
+			CivilizationEditorSection = Index;
+			if (CivilizationEditorSwitcher.IsValid())
+			{
+				CivilizationEditorSwitcher->SetActiveWidgetIndex(Index);
+			}
+			return FReply::Handled();
+		})
 		[
-			SNew(SHorizontalBox)
-			+ SHorizontalBox::Slot().FillWidth(0.74f).Padding(5.0f)
+			SNew(SOverlay)
+			+ SOverlay::Slot().Padding(2.0f, 0.0f, 2.0f, 3.0f)
 			[
 				SNew(SVerticalBox)
-				+ SVerticalBox::Slot().FillHeight(0.56f)
+				+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center)
+				[SNew(STextBlock).Text(FText::FromString(FString::Printf(TEXT("STEP %02d"), Index + 1))).Font(APSMenu::Font("Bold", 8)).ColorAndOpacity_Lambda([this, Index](){ return CivilizationEditorSection == Index ? APSMenu::Amber : APSMenu::Muted; })]
+				+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0.0f, 5.0f, 0.0f, 0.0f)
+				[
+					SNew(SHorizontalBox)
+					+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+					[SNew(SBox).WidthOverride(18.0f).HeightOverride(18.0f)[SNew(SVectorMenuGlyph).Glyph(Glyph).Color(APSMenu::Cyan).StrokeWidth(1.3f)]]
+					+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(5.0f, 0.0f)
+					[SNew(STextBlock).Text(Label).Font(APSMenu::Font("Bold", 8)).ColorAndOpacity(APSMenu::White)]
+				]
+			]
+			+ SOverlay::Slot().HAlign(HAlign_Fill).VAlign(VAlign_Bottom)
+			[
+				SNew(SBox).HeightOverride(2.0f)
+				.Visibility_Lambda([this, Index](){ return CivilizationEditorSection == Index ? EVisibility::Visible : EVisibility::Collapsed; })
+				[SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(APSMenu::Amber)]
+			]
+		];
+	};
+
+	TSharedRef<SWidget> IdentityEditor = SNew(SScrollBox)
+		+ SScrollBox::Slot()
+		[
+			SNew(SVerticalBox)
+			+ SVerticalBox::Slot().AutoHeight()[APSMenu::IconSectionHeading(EAPSMenuGlyph::Civilization,
+				LOCTEXT("IdentitySetup", "IDENTITY & SOCIETY"), LOCTEXT("IdentitySetupHint", "Define who arrives in the home system."))]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 14.0f, 0.0f, 6.0f)
+			[
+				SNew(SBorder).BorderImage(&APSMenu::CivControlBrush).Padding(FMargin(10.0f, 7.0f))
+				[
+					SNew(SHorizontalBox)
+					+ SHorizontalBox::Slot().FillWidth(0.44f).VAlign(VAlign_Center)
+					[
+						SNew(SVerticalBox)
+						+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Text(LOCTEXT("CivilizationName", "CIVILIZATION NAME")).Font(APSMenu::Font("Bold", 10)).ColorAndOpacity(APSMenu::White)]
+						+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 2.0f, 0.0f, 0.0f)[SNew(STextBlock).Text(LOCTEXT("CivilizationNameHint", "ARRIVAL REGISTRY")).Font(APSMenu::Font("Regular", 8)).ColorAndOpacity(APSMenu::Muted)]
+					]
+					+ SHorizontalBox::Slot().FillWidth(0.56f).VAlign(VAlign_Center).Padding(10.0f, 0.0f, 0.0f, 0.0f)
+					[SNew(SEditableTextBox).Text_Lambda([VM](){ const USpawnParameters* P=VM.IsValid()?VM->SpawnParameters.Get():nullptr; return P?FText::FromString(P->CivilizationName):FText::GetEmpty(); }).Font(APSMenu::Font("Bold", 11)).SelectAllTextWhenFocused(true).OnTextCommitted_Lambda([VM](const FText& T,ETextCommit::Type){ if(VM.IsValid()&&VM->SpawnParameters) VM->SpawnParameters->CivilizationName=T.ToString(); })]
+				]
+			]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 6.0f)[EnumControl(LOCTEXT("Archetype", "ARCHETYPE"), StaticEnum<EAPSCivilizationArchetype>(), [VM](){return VM.IsValid()&&VM->SpawnParameters?static_cast<int32>(VM->SpawnParameters->CivilizationArchetype):0;}, [VM](int32 V){if(VM.IsValid()&&VM->SpawnParameters)VM->SpawnParameters->CivilizationArchetype=static_cast<EAPSCivilizationArchetype>(V);})]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 6.0f)[EnumControl(LOCTEXT("Government", "GOVERNMENT"), StaticEnum<EAPSGovernmentType>(), [VM](){return VM.IsValid()&&VM->SpawnParameters?static_cast<int32>(VM->SpawnParameters->GovernmentType):0;}, [VM](int32 V){if(VM.IsValid()&&VM->SpawnParameters)VM->SpawnParameters->GovernmentType=static_cast<EAPSGovernmentType>(V);})]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 6.0f)[EnumControl(LOCTEXT("Economy", "ECONOMY"), StaticEnum<EAPSEconomicSystem>(), [VM](){return VM.IsValid()&&VM->SpawnParameters?static_cast<int32>(VM->SpawnParameters->EconomicSystem):0;}, [VM](int32 V){if(VM.IsValid()&&VM->SpawnParameters)VM->SpawnParameters->EconomicSystem=static_cast<EAPSEconomicSystem>(V);})]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 6.0f)[EnumControl(LOCTEXT("Society", "SOCIETY"), StaticEnum<EAPSSocietyType>(), [VM](){return VM.IsValid()&&VM->SpawnParameters?static_cast<int32>(VM->SpawnParameters->SocietyType):0;}, [VM](int32 V){if(VM.IsValid()&&VM->SpawnParameters)VM->SpawnParameters->SocietyType=static_cast<EAPSSocietyType>(V);})]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 6.0f)[NumberControl(LOCTEXT("FoundingPopulation", "FOUNDING POPULATION"), 1, 100000000, 1000, [VM](){return VM.IsValid()&&VM->SpawnParameters?VM->SpawnParameters->FoundingPopulation:1;}, [VM](int32 V){if(VM.IsValid()&&VM->SpawnParameters)VM->SpawnParameters->FoundingPopulation=V;})]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 6.0f)[NumberControl(LOCTEXT("StartingCredits", "STARTING CREDITS"), 0, 2000000000, 10000, [VM](){return VM.IsValid()&&VM->SpawnParameters?static_cast<int32>(FMath::Min<int64>(VM->SpawnParameters->StartingCredits, MAX_int32)):0;}, [VM](int32 V){if(VM.IsValid()&&VM->SpawnParameters)VM->SpawnParameters->StartingCredits=V;})]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 6.0f)[NumberControl(LOCTEXT("Technology", "TECHNOLOGY LEVEL"), 1, 10, 1, [VM](){return VM.IsValid()&&VM->SpawnParameters?VM->SpawnParameters->TechnologyLevel:1;}, [VM](int32 V){if(VM.IsValid()&&VM->SpawnParameters)VM->SpawnParameters->TechnologyLevel=V;})]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 6.0f)[EnumControl(LOCTEXT("SpawnPlace", "PILOT START LOCATION"), StaticEnum<ECharSpawnPlace>(), [VM](){return VM.IsValid()&&VM->SpawnParameters?static_cast<int32>(VM->SpawnParameters->CharacterSpawnPlace):0;}, [VM](int32 V){if(VM.IsValid())VM->SetCharacterSpawnPlace(V);})]
+			+ SVerticalBox::Slot().AutoHeight()[EnumControl(LOCTEXT("OrbitHeight", "HOME COMPLEX ORBIT"), StaticEnum<EOrbitHeight>(), [VM](){return VM.IsValid()&&VM->SpawnParameters?static_cast<int32>(VM->SpawnParameters->HomeStationOrbitHeight):0;}, [VM](int32 V){if(VM.IsValid())VM->SetStationOrbitHeight(V);})]
+		];
+
+	TSharedRef<SWidget> InfrastructureEditor = SNew(SScrollBox)
+		+ SScrollBox::Slot()
+		[
+			SNew(SVerticalBox)
+			+ SVerticalBox::Slot().AutoHeight()[APSMenu::IconSectionHeading(EAPSMenuGlyph::Infrastructure,
+				LOCTEXT("InfrastructureSetup", "PHYSICAL MANIFEST"), LOCTEXT("InfrastructureSetupHint", "Every count creates actors in the generated system."))]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 14.0f, 0.0f, 10.0f)
+			[
+				SNew(SUniformGridPanel).SlotPadding(FMargin(3.0f))
+				+ SUniformGridPanel::Slot(0, 0)[PresetButton(LOCTEXT("PresetScout", "SCOUT"), LOCTEXT("PresetScoutTip", "1 ship and the mandatory home station."), [VM](){const USpawnParameters* P=VM.IsValid()?VM->SpawnParameters.Get():nullptr;return P&&P->StartingFleetSize==1&&P->StarOutposts==0&&P->PlanetOutposts==0&&P->OrbitalOutposts==1&&P->GroundOutposts==0;}, [ApplyInfrastructurePreset](){ApplyInfrastructurePreset(1,0,0,1,0);})]
+				+ SUniformGridPanel::Slot(1, 0)[PresetButton(LOCTEXT("PresetFrontier", "FRONTIER"), LOCTEXT("PresetFrontierTip", "A compact expansion-ready settlement."), [VM](){const USpawnParameters* P=VM.IsValid()?VM->SpawnParameters.Get():nullptr;return P&&P->StartingFleetSize==4&&P->StarOutposts==1&&P->PlanetOutposts==2&&P->OrbitalOutposts==2&&P->GroundOutposts==2;}, [ApplyInfrastructurePreset](){ApplyInfrastructurePreset(4,1,2,2,2);})]
+				+ SUniformGridPanel::Slot(2, 0)[PresetButton(LOCTEXT("PresetCore", "CORE"), LOCTEXT("PresetCoreTip", "An established system with a task force."), [VM](){const USpawnParameters* P=VM.IsValid()?VM->SpawnParameters.Get():nullptr;return P&&P->StartingFleetSize==10&&P->StarOutposts==3&&P->PlanetOutposts==5&&P->OrbitalOutposts==5&&P->GroundOutposts==8;}, [ApplyInfrastructurePreset](){ApplyInfrastructurePreset(10,3,5,5,8);})]
+			]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 6.0f)[NumberControl(LOCTEXT("FleetSize", "TOTAL FLEET SHIPS"), 1, USpawnParameters::MaxStartingFleetSize, 1, [VM](){return VM.IsValid()&&VM->SpawnParameters?VM->SpawnParameters->StartingFleetSize:1;}, [VM](int32 V){if(VM.IsValid()&&VM->SpawnParameters)VM->SpawnParameters->StartingFleetSize=V;})]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 6.0f)[NumberControl(LOCTEXT("StarOutposts", "STAR OUTPOSTS"), 0, USpawnParameters::MaxInfrastructurePerCategory, 1, [VM](){return VM.IsValid()&&VM->SpawnParameters?VM->SpawnParameters->StarOutposts:0;}, [VM](int32 V){if(VM.IsValid()&&VM->SpawnParameters)VM->SpawnParameters->StarOutposts=V;})]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 6.0f)[NumberControl(LOCTEXT("PlanetOutposts", "PLANET OUTPOSTS"), 0, USpawnParameters::MaxInfrastructurePerCategory, 1, [VM](){return VM.IsValid()&&VM->SpawnParameters?VM->SpawnParameters->PlanetOutposts:0;}, [VM](int32 V){if(VM.IsValid()&&VM->SpawnParameters)VM->SpawnParameters->PlanetOutposts=V;})]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 6.0f)[NumberControl(LOCTEXT("OrbitalOutposts", "TOTAL ORBITAL STATIONS"), 1, USpawnParameters::MaxInfrastructurePerCategory, 1, [VM](){return VM.IsValid()&&VM->SpawnParameters?VM->SpawnParameters->OrbitalOutposts:1;}, [VM](int32 V){if(VM.IsValid()&&VM->SpawnParameters)VM->SpawnParameters->OrbitalOutposts=V;})]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 6.0f)[NumberControl(LOCTEXT("GroundOutposts", "GROUND SETTLEMENTS"), 0, USpawnParameters::MaxInfrastructurePerCategory, 1, [VM](){return VM.IsValid()&&VM->SpawnParameters?VM->SpawnParameters->GroundOutposts:0;}, [VM](int32 V){if(VM.IsValid()&&VM->SpawnParameters)VM->SpawnParameters->GroundOutposts=V;})]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 4.0f, 0.0f, 0.0f)
+			[
+				SNew(SBorder).BorderImage(&APSMenu::AmberPanelBrush).Padding(10.0f)
+				[
+					SNew(SVerticalBox)
+					+ SVerticalBox::Slot().AutoHeight()
+					[
+						SNew(SHorizontalBox)
+						+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
+						[SNew(STextBlock).Text(LOCTEXT("DeploymentPlanTitle", "DEPLOYMENT PLAN")).Font(APSMenu::Font("Bold", 9)).ColorAndOpacity(APSMenu::Amber)]
+						+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+						[SNew(STextBlock).Text(LOCTEXT("DeploymentPlanPhysical", "PHYSICAL SPAWN")).Font(APSMenu::Font("Bold", 8)).ColorAndOpacity(APSMenu::Success)]
+					]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 8.0f, 0.0f, 0.0f)
+					[
+						SNew(SUniformGridPanel).SlotPadding(FMargin(2.0f))
+						+ SUniformGridPanel::Slot(0,0)[MetricTile(LOCTEXT("MetricActors", "TOTAL ACTORS"),TAttribute<FText>::CreateLambda([VM](){const USpawnParameters* P=VM.IsValid()?VM->SpawnParameters.Get():nullptr;return FText::AsNumber(P?P->GetPlannedPhysicalActorCount():0);}),APSMenu::Amber)]
+						+ SUniformGridPanel::Slot(1,0)[MetricTile(LOCTEXT("MetricShips", "FLEET"),TAttribute<FText>::CreateLambda([VM](){const USpawnParameters* P=VM.IsValid()?VM->SpawnParameters.Get():nullptr;return FText::AsNumber(P?P->StartingFleetSize:0);}))]
+						+ SUniformGridPanel::Slot(2,0)[MetricTile(LOCTEXT("MetricInfra", "INFRA NODES"),TAttribute<FText>::CreateLambda([VM](){const USpawnParameters* P=VM.IsValid()?VM->SpawnParameters.Get():nullptr;return FText::AsNumber(P?P->GetPlannedInfrastructureActorCount():0);}))]
+					]
+				]
+			]
+		];
+
+	TSharedRef<SWidget> DivisionsEditor = SNew(SScrollBox)
+		+ SScrollBox::Slot()
+		[
+			SNew(SVerticalBox)
+			+ SVerticalBox::Slot().AutoHeight()[APSMenu::IconSectionHeading(EAPSMenuGlyph::Divisions,
+				LOCTEXT("DivisionSetup", "DIVISION READINESS"), LOCTEXT("DivisionSetupHint", "Set the starting capability of each command branch."))]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 14.0f, 0.0f, 10.0f)
+			[
+				SNew(SUniformGridPanel).SlotPadding(FMargin(3.0f))
+				+ SUniformGridPanel::Slot(0, 0)[PresetButton(LOCTEXT("PresetCivil", "CIVIL"), LOCTEXT("PresetCivilTip", "Population, logistics and administration."), [VM](){const USpawnParameters* P=VM.IsValid()?VM->SpawnParameters.Get():nullptr;return P&&P->ExplorationDivisionLevel==2&&P->IndustryDivisionLevel==4&&P->ScienceDivisionLevel==3&&P->CivilAffairsDivisionLevel==8&&P->MilitaryDivisionLevel==1&&P->FleetDivisionLevel==2;}, [ApplyDivisionPreset](){ApplyDivisionPreset(2,4,3,8,1,2);})]
+				+ SUniformGridPanel::Slot(1, 0)[PresetButton(LOCTEXT("PresetScience", "SCIENCE"), LOCTEXT("PresetScienceTip", "Exploration and research priority."), [VM](){const USpawnParameters* P=VM.IsValid()?VM->SpawnParameters.Get():nullptr;return P&&P->ExplorationDivisionLevel==5&&P->IndustryDivisionLevel==3&&P->ScienceDivisionLevel==10&&P->CivilAffairsDivisionLevel==4&&P->MilitaryDivisionLevel==1&&P->FleetDivisionLevel==3;}, [ApplyDivisionPreset](){ApplyDivisionPreset(5,3,10,4,1,3);})]
+				+ SUniformGridPanel::Slot(0, 1)[PresetButton(LOCTEXT("PresetExpansion", "EXPAND"), LOCTEXT("PresetExpansionTip", "Exploration, industry and fleet growth."), [VM](){const USpawnParameters* P=VM.IsValid()?VM->SpawnParameters.Get():nullptr;return P&&P->ExplorationDivisionLevel==8&&P->IndustryDivisionLevel==7&&P->ScienceDivisionLevel==4&&P->CivilAffairsDivisionLevel==5&&P->MilitaryDivisionLevel==4&&P->FleetDivisionLevel==7;}, [ApplyDivisionPreset](){ApplyDivisionPreset(8,7,4,5,4,7);})]
+				+ SUniformGridPanel::Slot(1, 1)[PresetButton(LOCTEXT("PresetDefense", "DEFENSE"), LOCTEXT("PresetDefenseTip", "Military and fleet-command readiness."), [VM](){const USpawnParameters* P=VM.IsValid()?VM->SpawnParameters.Get():nullptr;return P&&P->ExplorationDivisionLevel==4&&P->IndustryDivisionLevel==6&&P->ScienceDivisionLevel==3&&P->CivilAffairsDivisionLevel==4&&P->MilitaryDivisionLevel==10&&P->FleetDivisionLevel==10;}, [ApplyDivisionPreset](){ApplyDivisionPreset(4,6,3,4,10,10);})]
+			]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 6.0f)[ReadinessControl(LOCTEXT("ExplorationDivision", "EXPLORATION"), [VM](){return VM.IsValid()&&VM->SpawnParameters?VM->SpawnParameters->ExplorationDivisionLevel:0;}, [VM](int32 V){if(VM.IsValid()&&VM->SpawnParameters)VM->SpawnParameters->ExplorationDivisionLevel=V;})]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 6.0f)[ReadinessControl(LOCTEXT("IndustryDivision", "INDUSTRY"), [VM](){return VM.IsValid()&&VM->SpawnParameters?VM->SpawnParameters->IndustryDivisionLevel:0;}, [VM](int32 V){if(VM.IsValid()&&VM->SpawnParameters)VM->SpawnParameters->IndustryDivisionLevel=V;})]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 6.0f)[ReadinessControl(LOCTEXT("ScienceDivision", "SCIENCE / RESEARCH"), [VM](){return VM.IsValid()&&VM->SpawnParameters?VM->SpawnParameters->ScienceDivisionLevel:0;}, [VM](int32 V){if(VM.IsValid()&&VM->SpawnParameters)VM->SpawnParameters->ScienceDivisionLevel=V;})]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 6.0f)[ReadinessControl(LOCTEXT("CivilDivision", "CIVIL AFFAIRS"), [VM](){return VM.IsValid()&&VM->SpawnParameters?VM->SpawnParameters->CivilAffairsDivisionLevel:0;}, [VM](int32 V){if(VM.IsValid()&&VM->SpawnParameters)VM->SpawnParameters->CivilAffairsDivisionLevel=V;})]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 6.0f)[ReadinessControl(LOCTEXT("MilitaryDivision", "MILITARY"), [VM](){return VM.IsValid()&&VM->SpawnParameters?VM->SpawnParameters->MilitaryDivisionLevel:0;}, [VM](int32 V){if(VM.IsValid()&&VM->SpawnParameters)VM->SpawnParameters->MilitaryDivisionLevel=V;})]
+			+ SVerticalBox::Slot().AutoHeight()[ReadinessControl(LOCTEXT("FleetDivision", "FLEET COMMAND"), [VM](){return VM.IsValid()&&VM->SpawnParameters?VM->SpawnParameters->FleetDivisionLevel:0;}, [VM](int32 V){if(VM.IsValid()&&VM->SpawnParameters)VM->SpawnParameters->FleetDivisionLevel=V;})]
+		];
+
+	TSharedRef<SWidgetSwitcher> EditorSwitcher = SAssignNew(CivilizationEditorSwitcher, SWidgetSwitcher)
+		.WidgetIndex(CivilizationEditorSection)
+		+ SWidgetSwitcher::Slot()[IdentityEditor]
+		+ SWidgetSwitcher::Slot()[InfrastructureEditor]
+		+ SWidgetSwitcher::Slot()[DivisionsEditor];
+
+	TSharedRef<SWidget> Page = SNew(SVerticalBox)
+		+ SVerticalBox::Slot().AutoHeight().Padding(28.0f, 18.0f, 28.0f, 3.0f)[BuildHeader(LOCTEXT("CivParameters", "CIVILIZATION GENERATION"))]
+		+ SVerticalBox::Slot().AutoHeight().Padding(32.0f, 2.0f, 32.0f, 7.0f)
+		[
+			SNew(SBorder).BorderImage(&APSMenu::CivStatusBrush).Padding(FMargin(12.0f, 7.0f))
+			[
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+				[SNew(SBox).WidthOverride(18.0f).HeightOverride(18.0f)[SNew(SVectorMenuGlyph).Glyph(EAPSMenuGlyph::Civilization).Color(APSMenu::Cyan).StrokeWidth(1.2f)]]
+				+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center).Padding(8.0f, 0.0f)
+				[
+					SNew(SVerticalBox)
+					+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Text(LOCTEXT("CivManifestHint", "ARRIVAL ARCHITECT  /  LIVE CIVILIZATION MANIFEST")).Font(APSMenu::Font("Bold", 9)).ColorAndOpacity(APSMenu::White)]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 1.0f, 0.0f, 0.0f)[SNew(STextBlock).Text(LOCTEXT("CivManifestSubHint", "Fleet and infrastructure values create persistent gameplay actors in the generated system.")).Font(APSMenu::Font("Regular", 8)).ColorAndOpacity(APSMenu::Muted)]
+				]
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+				[
+					SNew(SVerticalBox)
+					+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Right)
+					[
+						SNew(STextBlock).Text_Lambda([this](){return SpawnSelectionLoadHandles.IsEmpty()?LOCTEXT("CivManifestReady", "MANIFEST READY"):LOCTEXT("CivManifestResolving", "RESOLVING ASSETS");})
+						.Font(APSMenu::Font("Bold", 8)).ColorAndOpacity_Lambda([this](){return SpawnSelectionLoadHandles.IsEmpty()?APSMenu::Success:APSMenu::Amber;})
+					]
+					+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Right).Padding(0.0f, 1.0f, 0.0f, 0.0f)
+					[SNew(STextBlock).Text_Lambda([VM](){const USpawnParameters* P=VM.IsValid()?VM->SpawnParameters.Get():nullptr;return FText::FromString(FString::Printf(TEXT("%d PHYSICAL ACTORS"),P?P->GetPlannedPhysicalActorCount():0));}).Font(APSMenu::Font("Bold", 11)).ColorAndOpacity(APSMenu::Amber)]
+				]
+			]
+		]
+		+ SVerticalBox::Slot().FillHeight(1.0f).Padding(26.0f, 8.0f, 26.0f, 6.0f)
+		[
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot().FillWidth(0.66f).Padding(5.0f)
+			[
+				SNew(SVerticalBox)
+				+ SVerticalBox::Slot().AutoHeight().Padding(4.0f, 0.0f, 4.0f, 6.0f)
+				[
+					SNew(SHorizontalBox)
+					+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
+					[SNew(STextBlock).Text(LOCTEXT("FoundingRegistryTitle", "FOUNDING ASSET REGISTRY")).Font(APSMenu::Font("Bold", 10)).ColorAndOpacity(APSMenu::White)]
+					+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+					[SNew(STextBlock).Text(LOCTEXT("FoundingRegistryStatus", "5 CLASS SLOTS  /  PILOT VERIFIED")).Font(APSMenu::Font("Bold", 8)).ColorAndOpacity(APSMenu::Success)]
+				]
+				+ SVerticalBox::Slot().FillHeight(0.60f)
 				[
 					SNew(SHorizontalBox)
 					+ SHorizontalBox::Slot().FillWidth(1.0f).Padding(4.0f)[BuildSpawnCard(EAPSStartAssetSlot::Character, LOCTEXT("Character", "CHARACTER"))]
@@ -2437,71 +2919,70 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildCivilizationPage()
 					+ SHorizontalBox::Slot().FillWidth(1.0f).Padding(4.0f)[BuildSpawnCard(EAPSStartAssetSlot::Headquarters, LOCTEXT("HQ", "HEADQUARTERS"))]
 					+ SHorizontalBox::Slot().FillWidth(1.0f).Padding(4.0f)[BuildSpawnCard(EAPSStartAssetSlot::Shipyard, LOCTEXT("Shipyard", "SHIPYARD"))]
 				]
-				+ SVerticalBox::Slot().FillHeight(0.44f).Padding(0.0f, 10.0f, 0.0f, 0.0f)
+				+ SVerticalBox::Slot().FillHeight(0.40f).Padding(0.0f, 10.0f, 0.0f, 0.0f)
 				[
 					SNew(SHorizontalBox)
 					+ SHorizontalBox::Slot().FillWidth(1.0f).Padding(4.0f)
-					[InfoPanel(LOCTEXT("CivGlyph", "CIV"), LOCTEXT("CivilizationStatus", "CIVILIZATION STATUS"), TAttribute<FText>::CreateLambda([VM](){ const USpawnParameters* P=VM.IsValid()?VM->SpawnParameters.Get():nullptr; return P ? FText::FromString(FString::Printf(TEXT("Government: %s\nEconomy: %s\nSociety: %s\nPopulation: %s"), *APSMenu::EnumLabel(P->GovernmentType), *APSMenu::EnumLabel(P->EconomicSystem), *APSMenu::EnumLabel(P->SocietyType), *FText::AsNumber(P->FoundingPopulation).ToString())) : FText::GetEmpty(); }))]
+					[InfoPanel(EAPSMenuGlyph::Civilization, LOCTEXT("CivilizationStatus", "CIVILIZATION"), LOCTEXT("CivilizationStatusHint", "Identity snapshot"), TAttribute<FText>::CreateLambda([VM](){ const USpawnParameters* P=VM.IsValid()?VM->SpawnParameters.Get():nullptr; return P ? FText::FromString(FString::Printf(TEXT("%s\n%s  /  %s\n%s  /  %s\nPopulation  %s  /  Tech T%d"), *P->CivilizationName, *APSMenu::EnumLabel(P->CivilizationArchetype), *APSMenu::EnumLabel(P->GovernmentType), *APSMenu::EnumLabel(P->EconomicSystem), *APSMenu::EnumLabel(P->SocietyType), *FText::AsNumber(P->FoundingPopulation).ToString(), P->TechnologyLevel)) : FText::GetEmpty(); }))]
 					+ SHorizontalBox::Slot().FillWidth(1.0f).Padding(4.0f)
-					[InfoPanel(LOCTEXT("SystemGlyph", "SYS"), LOCTEXT("StarSystemInfo", "STAR SYSTEM INFO"), TAttribute<FText>::CreateLambda([VM](){ const UGeneratedWorld* W=VM.IsValid()?VM->GeneratedWorld.Get():nullptr; return W ? FText::FromString(FString::Printf(TEXT("System: %s\nStar: %s / %s\nPlanets: %d\nHome planet: %s / %.0f KM"), *APSMenu::EnumLabel(W->PlanetarySystemType), *APSMenu::EnumLabel(W->StellarType), *APSMenu::EnumLabel(W->SpectralClass), W->PlanetsAmount, *APSMenu::EnumLabel(W->PlanetType), W->PlanetRadius)) : FText::GetEmpty(); }))]
+					[InfoPanel(EAPSMenuGlyph::System, LOCTEXT("StarSystemInfo", "HOME SYSTEM"), LOCTEXT("StarSystemInfoHint", "Astronomical handoff"), TAttribute<FText>::CreateLambda([VM](){ const UGeneratedWorld* W=VM.IsValid()?VM->GeneratedWorld.Get():nullptr; return W ? FText::FromString(FString::Printf(TEXT("%s\n%s  /  %s\n%d planets\nHome  %s  /  %.0f KM"), *APSMenu::EnumLabel(W->PlanetarySystemType), *APSMenu::EnumLabel(W->StellarType), *APSMenu::EnumLabel(W->SpectralClass), W->PlanetsAmount, *APSMenu::EnumLabel(W->PlanetType), W->PlanetRadius)) : FText::GetEmpty(); }))]
 					+ SHorizontalBox::Slot().FillWidth(1.0f).Padding(4.0f)
-					[InfoPanel(LOCTEXT("InfraGlyph", "INF"), LOCTEXT("Infrastructure", "INFRASTRUCTURE"), TAttribute<FText>::CreateLambda([VM](){ const USpawnParameters* P=VM.IsValid()?VM->SpawnParameters.Get():nullptr; return P ? FText::FromString(FString::Printf(TEXT("Star outposts: %d\nPlanet outposts: %d\nOrbital stations: %d\nGround settlements: %d\nStarting fleet: %d"), P->StarOutposts, P->PlanetOutposts, P->OrbitalOutposts, P->GroundOutposts, P->StartingFleetSize)) : FText::GetEmpty(); }))]
-					+ SHorizontalBox::Slot().FillWidth(1.0f).Padding(4.0f)
-					[InfoPanel(LOCTEXT("DivisionGlyph", "DIV"), LOCTEXT("Divisions", "DIVISIONS"), TAttribute<FText>::CreateLambda([VM](){ const USpawnParameters* P=VM.IsValid()?VM->SpawnParameters.Get():nullptr; return P ? FText::FromString(FString::Printf(TEXT("Exploration     Lv.%d\nIndustry          Lv.%d\nScience           Lv.%d\nCivil Affairs    Lv.%d\nMilitary           Lv.%d\nFleet                Lv.%d"), P->ExplorationDivisionLevel, P->IndustryDivisionLevel, P->ScienceDivisionLevel, P->CivilAffairsDivisionLevel, P->MilitaryDivisionLevel, P->FleetDivisionLevel)) : FText::GetEmpty(); }))]
+					[InfoPanel(EAPSMenuGlyph::Infrastructure, LOCTEXT("Infrastructure", "DEPLOYMENT"), LOCTEXT("InfrastructureHint", "Physical actor manifest"), TAttribute<FText>::CreateLambda([VM](){ const USpawnParameters* P=VM.IsValid()?VM->SpawnParameters.Get():nullptr; return P ? FText::FromString(FString::Printf(TEXT("%d total actors\nFleet  %d ships\nInfrastructure  %d nodes\nPilot  Custom Gravity"), P->GetPlannedPhysicalActorCount(), P->StartingFleetSize, P->GetPlannedInfrastructureActorCount())) : FText::GetEmpty(); }))]
 				]
 			]
-			+ SHorizontalBox::Slot().FillWidth(0.26f).Padding(5.0f)
+			+ SHorizontalBox::Slot().FillWidth(0.34f).Padding(5.0f)
 			[
 				APSMenu::ChamferPanel(
-					SNew(SScrollBox)
-					+ SScrollBox::Slot()
+					SNew(SVerticalBox)
+					+ SVerticalBox::Slot().AutoHeight().Padding(1.0f, 0.0f, 1.0f, 9.0f)
 					[
-						SNew(SVerticalBox)
-						+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 12.0f)[APSMenu::SectionHeading(LOCTEXT("SpawnGlyph", "CIV"), LOCTEXT("SpawnParameters", "CIVILIZATION & SPAWN"))]
-						+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Text(LOCTEXT("CivilizationName", "CIVILIZATION NAME")).Font(APSMenu::Font("Regular", 10)).ColorAndOpacity(APSMenu::Muted)]
-						+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 4.0f, 0.0f, 10.0f)[SNew(SEditableTextBox).Text_Lambda([VM](){ const USpawnParameters* P=VM.IsValid()?VM->SpawnParameters.Get():nullptr; return P?FText::FromString(P->CivilizationName):FText::GetEmpty(); }).OnTextCommitted_Lambda([VM](const FText& T,ETextCommit::Type){ if(VM.IsValid()&&VM->SpawnParameters) VM->SpawnParameters->CivilizationName=T.ToString(); })]
-						+ SVerticalBox::Slot().AutoHeight()[EnumControl(LOCTEXT("Archetype", "ARCHETYPE"), StaticEnum<EAPSCivilizationArchetype>(), [VM](){return VM.IsValid()&&VM->SpawnParameters?static_cast<int32>(VM->SpawnParameters->CivilizationArchetype):0;}, [VM](int32 V){if(VM.IsValid()&&VM->SpawnParameters)VM->SpawnParameters->CivilizationArchetype=static_cast<EAPSCivilizationArchetype>(V);})]
-						+ SVerticalBox::Slot().AutoHeight()[EnumControl(LOCTEXT("Government", "GOVERNMENT"), StaticEnum<EAPSGovernmentType>(), [VM](){return VM.IsValid()&&VM->SpawnParameters?static_cast<int32>(VM->SpawnParameters->GovernmentType):0;}, [VM](int32 V){if(VM.IsValid()&&VM->SpawnParameters)VM->SpawnParameters->GovernmentType=static_cast<EAPSGovernmentType>(V);})]
-						+ SVerticalBox::Slot().AutoHeight()[EnumControl(LOCTEXT("Economy", "ECONOMY"), StaticEnum<EAPSEconomicSystem>(), [VM](){return VM.IsValid()&&VM->SpawnParameters?static_cast<int32>(VM->SpawnParameters->EconomicSystem):0;}, [VM](int32 V){if(VM.IsValid()&&VM->SpawnParameters)VM->SpawnParameters->EconomicSystem=static_cast<EAPSEconomicSystem>(V);})]
-						+ SVerticalBox::Slot().AutoHeight()[EnumControl(LOCTEXT("Society", "SOCIETY"), StaticEnum<EAPSSocietyType>(), [VM](){return VM.IsValid()&&VM->SpawnParameters?static_cast<int32>(VM->SpawnParameters->SocietyType):0;}, [VM](int32 V){if(VM.IsValid()&&VM->SpawnParameters)VM->SpawnParameters->SocietyType=static_cast<EAPSSocietyType>(V);})]
-						+ SVerticalBox::Slot().AutoHeight()[NumberControl(LOCTEXT("FoundingPopulation", "FOUNDING POPULATION"), 1, 100000000, 1000, [VM](){return VM.IsValid()&&VM->SpawnParameters?VM->SpawnParameters->FoundingPopulation:1;}, [VM](int32 V){if(VM.IsValid()&&VM->SpawnParameters)VM->SpawnParameters->FoundingPopulation=V;})]
-						+ SVerticalBox::Slot().AutoHeight()[NumberControl(LOCTEXT("StartingCredits", "STARTING CREDITS"), 0, 2000000000, 10000, [VM](){return VM.IsValid()&&VM->SpawnParameters?static_cast<int32>(FMath::Min<int64>(VM->SpawnParameters->StartingCredits, MAX_int32)):0;}, [VM](int32 V){if(VM.IsValid()&&VM->SpawnParameters)VM->SpawnParameters->StartingCredits=V;})]
-						+ SVerticalBox::Slot().AutoHeight()[NumberControl(LOCTEXT("Technology", "TECHNOLOGY LEVEL"), 1, 10, 1, [VM](){return VM.IsValid()&&VM->SpawnParameters?VM->SpawnParameters->TechnologyLevel:1;}, [VM](int32 V){if(VM.IsValid()&&VM->SpawnParameters)VM->SpawnParameters->TechnologyLevel=V;})]
-						+ SVerticalBox::Slot().AutoHeight()[EnumControl(LOCTEXT("SpawnPlace", "START LOCATION"), StaticEnum<ECharSpawnPlace>(), [VM](){return VM.IsValid()&&VM->SpawnParameters?static_cast<int32>(VM->SpawnParameters->CharacterSpawnPlace):0;}, [VM](int32 V){if(VM.IsValid())VM->SetCharacterSpawnPlace(V);})]
-						+ SVerticalBox::Slot().AutoHeight()[EnumControl(LOCTEXT("OrbitHeight", "HOME ORBIT"), StaticEnum<EOrbitHeight>(), [VM](){return VM.IsValid()&&VM->SpawnParameters?static_cast<int32>(VM->SpawnParameters->HomeStationOrbitHeight):0;}, [VM](int32 V){if(VM.IsValid())VM->SetStationOrbitHeight(V);})]
-						+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 12.0f, 0.0f, 8.0f)[APSMenu::SectionHeading(LOCTEXT("StartingInfraGlyph", "INF"), LOCTEXT("InfrastructureSetup", "STARTING INFRASTRUCTURE"))]
-						+ SVerticalBox::Slot().AutoHeight()[NumberControl(LOCTEXT("FleetSize", "STARTING FLEET"), 0, 1000, 1, [VM](){return VM.IsValid()&&VM->SpawnParameters?VM->SpawnParameters->StartingFleetSize:0;}, [VM](int32 V){if(VM.IsValid()&&VM->SpawnParameters)VM->SpawnParameters->StartingFleetSize=V;})]
-						+ SVerticalBox::Slot().AutoHeight()[NumberControl(LOCTEXT("StarOutposts", "STAR OUTPOSTS"), 0, 100, 1, [VM](){return VM.IsValid()&&VM->SpawnParameters?VM->SpawnParameters->StarOutposts:0;}, [VM](int32 V){if(VM.IsValid()&&VM->SpawnParameters)VM->SpawnParameters->StarOutposts=V;})]
-						+ SVerticalBox::Slot().AutoHeight()[NumberControl(LOCTEXT("PlanetOutposts", "PLANET OUTPOSTS"), 0, 100, 1, [VM](){return VM.IsValid()&&VM->SpawnParameters?VM->SpawnParameters->PlanetOutposts:0;}, [VM](int32 V){if(VM.IsValid()&&VM->SpawnParameters)VM->SpawnParameters->PlanetOutposts=V;})]
-						+ SVerticalBox::Slot().AutoHeight()[NumberControl(LOCTEXT("OrbitalOutposts", "ORBITAL STATIONS"), 0, 100, 1, [VM](){return VM.IsValid()&&VM->SpawnParameters?VM->SpawnParameters->OrbitalOutposts:0;}, [VM](int32 V){if(VM.IsValid()&&VM->SpawnParameters)VM->SpawnParameters->OrbitalOutposts=V;})]
-						+ SVerticalBox::Slot().AutoHeight()[NumberControl(LOCTEXT("GroundOutposts", "GROUND SETTLEMENTS"), 0, 100, 1, [VM](){return VM.IsValid()&&VM->SpawnParameters?VM->SpawnParameters->GroundOutposts:0;}, [VM](int32 V){if(VM.IsValid()&&VM->SpawnParameters)VM->SpawnParameters->GroundOutposts=V;})]
-						+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 12.0f, 0.0f, 8.0f)[APSMenu::SectionHeading(LOCTEXT("DivisionSetupGlyph", "DIV"), LOCTEXT("DivisionSetup", "DIVISION LEVELS"))]
-						+ SVerticalBox::Slot().AutoHeight()[NumberControl(LOCTEXT("ExplorationDivision", "EXPLORATION"), 0, 20, 1, [VM](){return VM.IsValid()&&VM->SpawnParameters?VM->SpawnParameters->ExplorationDivisionLevel:0;}, [VM](int32 V){if(VM.IsValid()&&VM->SpawnParameters)VM->SpawnParameters->ExplorationDivisionLevel=V;})]
-						+ SVerticalBox::Slot().AutoHeight()[NumberControl(LOCTEXT("IndustryDivision", "INDUSTRY"), 0, 20, 1, [VM](){return VM.IsValid()&&VM->SpawnParameters?VM->SpawnParameters->IndustryDivisionLevel:0;}, [VM](int32 V){if(VM.IsValid()&&VM->SpawnParameters)VM->SpawnParameters->IndustryDivisionLevel=V;})]
-						+ SVerticalBox::Slot().AutoHeight()[NumberControl(LOCTEXT("ScienceDivision", "SCIENCE / RESEARCH"), 0, 20, 1, [VM](){return VM.IsValid()&&VM->SpawnParameters?VM->SpawnParameters->ScienceDivisionLevel:0;}, [VM](int32 V){if(VM.IsValid()&&VM->SpawnParameters)VM->SpawnParameters->ScienceDivisionLevel=V;})]
-						+ SVerticalBox::Slot().AutoHeight()[NumberControl(LOCTEXT("CivilDivision", "CIVIL AFFAIRS"), 0, 20, 1, [VM](){return VM.IsValid()&&VM->SpawnParameters?VM->SpawnParameters->CivilAffairsDivisionLevel:0;}, [VM](int32 V){if(VM.IsValid()&&VM->SpawnParameters)VM->SpawnParameters->CivilAffairsDivisionLevel=V;})]
-						+ SVerticalBox::Slot().AutoHeight()[NumberControl(LOCTEXT("MilitaryDivision", "MILITARY"), 0, 20, 1, [VM](){return VM.IsValid()&&VM->SpawnParameters?VM->SpawnParameters->MilitaryDivisionLevel:0;}, [VM](int32 V){if(VM.IsValid()&&VM->SpawnParameters)VM->SpawnParameters->MilitaryDivisionLevel=V;})]
-						+ SVerticalBox::Slot().AutoHeight()[NumberControl(LOCTEXT("FleetDivision", "FLEET COMMAND"), 0, 20, 1, [VM](){return VM.IsValid()&&VM->SpawnParameters?VM->SpawnParameters->FleetDivisionLevel:0;}, [VM](int32 V){if(VM.IsValid()&&VM->SpawnParameters)VM->SpawnParameters->FleetDivisionLevel=V;})]
+						SNew(SHorizontalBox)
+						+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
+						[
+							SNew(SVerticalBox)
+							+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Text(LOCTEXT("CivilizationConsole", "CONFIGURATION CONSOLE")).Font(APSMenu::Font("Bold", 11)).ColorAndOpacity(APSMenu::White)]
+							+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 2.0f, 0.0f, 0.0f)[SNew(STextBlock).Text(LOCTEXT("CivilizationConsoleHint", "Tune the colony package before system handoff.")).Font(APSMenu::Font("Regular", 8)).ColorAndOpacity(APSMenu::Muted)]
+						]
+						+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+						[
+							SNew(SBorder).BorderImage(&APSMenu::CivStatusBrush).Padding(FMargin(7.0f, 4.0f))
+							[SNew(STextBlock).Text(LOCTEXT("CivilizationConsoleOnline", "ONLINE")).Font(APSMenu::Font("Bold", 8)).ColorAndOpacity(APSMenu::Success)]
+						]
 					]
-				, FMargin(16.0f))
+					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 12.0f)
+					[
+						SNew(SUniformGridPanel).SlotPadding(FMargin(3.0f))
+						+ SUniformGridPanel::Slot(0, 0)[EditorTab(0, EAPSMenuGlyph::Civilization, LOCTEXT("IdentityTab", "IDENTITY"))]
+						+ SUniformGridPanel::Slot(1, 0)[EditorTab(1, EAPSMenuGlyph::Infrastructure, LOCTEXT("ManifestTab", "MANIFEST"))]
+						+ SUniformGridPanel::Slot(2, 0)[EditorTab(2, EAPSMenuGlyph::Divisions, LOCTEXT("DivisionsTab", "DIVISIONS"))]
+					]
+					+ SVerticalBox::Slot().FillHeight(1.0f)[EditorSwitcher]
+				, FMargin(16.0f), FLinearColor(0.05f, 0.34f, 0.43f, 0.95f), 1.2f)
 			]
 		]
-		+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0.0f, 8.0f, 0.0f, 24.0f)
+		+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0.0f, 8.0f, 0.0f, 22.0f)
 		[
-			SNew(SBox).WidthOverride(440.0f)
+			SNew(SBox).WidthOverride(500.0f)
 			[
 				SNew(SButton).ButtonStyle(&PrimaryButtonStyle).OnClicked(this, &SAPSMainMenuRoot::CommitCivilization)
 				.IsEnabled_Lambda([this]() { return SpawnSelectionLoadHandles.IsEmpty(); })
-				.ContentPadding(FMargin(24.0f, 16.0f))
+				.ContentPadding(FMargin(24.0f, 13.0f))
 				[
-					SNew(STextBlock)
-					.Text_Lambda([this]()
-					{
-						return SpawnSelectionLoadHandles.IsEmpty()
-							? LOCTEXT("GenerateWorld", "GENERATE WORLD  >")
-							: LOCTEXT("LoadingSpawnSelections", "LOADING SELECTIONS...");
-					})
-					.Justification(ETextJustify::Center).Font(APSMenu::Font("Bold", 19)).ColorAndOpacity(APSMenu::White)
+					SNew(SVerticalBox)
+					+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center)
+					[
+						SNew(STextBlock)
+						.Text_Lambda([this]()
+						{
+							if (!SpawnSelectionLoadHandles.IsEmpty()) return LOCTEXT("LoadingSpawnSelections", "LOADING SELECTED ASSETS...");
+							const USpawnParameters* P = ViewModel.IsValid() ? ViewModel->SpawnParameters.Get() : nullptr;
+							return P ? FText::FromString(FString::Printf(TEXT("GENERATE CIVILIZATION  /  %d ACTORS  >"), P->GetPlannedPhysicalActorCount()))
+								: LOCTEXT("GenerateWorld", "GENERATE CIVILIZATION  >");
+						})
+						.Justification(ETextJustify::Center).Font(APSMenu::Font("Bold", 18)).ColorAndOpacity(APSMenu::White)
+					]
+					+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0.0f, 3.0f, 0.0f, 0.0f)
+					[SNew(STextBlock).Text(LOCTEXT("GenerateCivilizationSafety", "VALIDATED MANIFEST  /  TRANSACTIONAL SPAWN")).Font(APSMenu::Font("Bold", 8)).ColorAndOpacity(APSMenu::Cyan)]
 				]
 			]
 		];

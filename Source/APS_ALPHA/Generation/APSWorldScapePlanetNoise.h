@@ -41,10 +41,25 @@ public:
 		CustomNoise& NoiseClass, const DVector& Position, const DVector& PlanetPosition,
 		double NoiseScale, double NoiseIntensity, double PlanetScale, double Latitude,
 		DVector& NoisePosition) const;
+	/**
+	 * Thread-safe value sampler for preview mesh workers. The caller supplies an
+	 * immutable profile snapshot and task-local noise state, so this path never reads
+	 * or writes a UObject while preserving the exact resolved-profile math.
+	 */
+	static FNoiseData SampleResolvedProfile(
+		const FAPSResolvedPlanetSurfaceProfile& SurfaceProfile,
+		CustomNoise& NoiseClass, const DVector& Position, const DVector& PlanetPosition,
+		double NoiseScale, double NoiseIntensity, double PlanetScale, double Latitude,
+		DVector& NoisePosition);
 
 private:
 	FNoiseData Evaluate(
 		CustomNoise& NoiseClass, const DVector& Position, const DVector& PlanetPosition,
 		double NoiseScale, double NoiseIntensity, double PlanetScale, double Latitude,
 		DVector& NoisePosition) const;
+	static FNoiseData EvaluateProfile(
+		const FAPSResolvedPlanetSurfaceProfile& SurfaceProfile,
+		CustomNoise& NoiseClass, const DVector& Position, const DVector& PlanetPosition,
+		double NoiseScale, double NoiseIntensity, double PlanetScale, double Latitude,
+		DVector& NoisePosition);
 };

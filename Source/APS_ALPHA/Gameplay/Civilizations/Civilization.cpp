@@ -22,12 +22,17 @@ void UCivilization::InitializeFromSpawnParameters(const USpawnParameters* Parame
 	Population = FMath::Max(1, Parameters->FoundingPopulation);
 	Credits = FMath::Max<int64>(0, Parameters->StartingCredits);
 	TechnologyLevel = FMath::Clamp(Parameters->TechnologyLevel, 1, 10);
-	FleetSize = FMath::Max(0, Parameters->StartingFleetSize);
+	FleetSize = FMath::Clamp(Parameters->StartingFleetSize, 1,
+		USpawnParameters::MaxStartingFleetSize);
 
-	Infrastructure.StarOutposts = FMath::Max(0, Parameters->StarOutposts);
-	Infrastructure.PlanetOutposts = FMath::Max(0, Parameters->PlanetOutposts);
-	Infrastructure.OrbitalStations = FMath::Max(0, Parameters->OrbitalOutposts);
-	Infrastructure.GroundSettlements = FMath::Max(0, Parameters->GroundOutposts);
+	Infrastructure.StarOutposts = FMath::Clamp(Parameters->StarOutposts, 0,
+		USpawnParameters::MaxInfrastructurePerCategory);
+	Infrastructure.PlanetOutposts = FMath::Clamp(Parameters->PlanetOutposts, 0,
+		USpawnParameters::MaxInfrastructurePerCategory);
+	Infrastructure.OrbitalStations = FMath::Clamp(Parameters->OrbitalOutposts, 1,
+		USpawnParameters::MaxInfrastructurePerCategory);
+	Infrastructure.GroundSettlements = FMath::Clamp(Parameters->GroundOutposts, 0,
+		USpawnParameters::MaxInfrastructurePerCategory);
 
 	Divisions.Exploration = FMath::Clamp(Parameters->ExplorationDivisionLevel, 0, 20);
 	Divisions.Industry = FMath::Clamp(Parameters->IndustryDivisionLevel, 0, 20);

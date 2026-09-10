@@ -6,6 +6,7 @@
 #include "APS_ALPHA/Actors/Astro/Galaxy.h"
 #include "APS_ALPHA/Actors/Astro/Moon.h"
 #include "APS_ALPHA/Actors/Astro/Planet.h"
+#include "APS_ALPHA/Actors/Astro/PlanetOrbit.h"
 #include "APS_ALPHA/Actors/Astro/PlanetarySystem.h"
 #include "APS_ALPHA/Actors/Astro/Star.h"
 #include "APS_ALPHA/Actors/Astro/StarCluster.h"
@@ -31,8 +32,10 @@
 #include "APS_ALPHA/UI/MainMenu/WorldGenerationViewModel.h"
 #include "AssetCompilingManager.h"
 #include "EngineUtils.h"
+#include "Camera/CameraComponent.h"
 #include "Camera/PlayerCameraManager.h"
 #include "Components/HierarchicalInstancedStaticMeshComponent.h"
+#include "Components/PointLightComponent.h"
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/GameViewportClient.h"
@@ -59,8 +62,9 @@ namespace APSMainMenuPreviewSmokeTests
 	constexpr double ScreenshotTimeoutSeconds = 10.0;
 	constexpr double CleanupTimeoutSeconds = 20.0;
 	constexpr int32 SliderSurfaceSeed = 94094;
-	constexpr int32 RequiredPreviewGlobeVertexCount = 6 * 65 * 65;
-	constexpr int32 RequiredPreviewGlobeIndexCount = 6 * 64 * 64 * 6;
+	constexpr int32 SelectedPreviewGlobeFaceResolution = 128;
+	constexpr int32 RequiredPreviewGlobeVertexCount = 6 * 129 * 129;
+	constexpr int32 RequiredPreviewGlobeIndexCount = 6 * 128 * 128 * 6;
 	// Exactly representable values keep the float-backed Slate slider and the
 	// double model comparison deterministic.
 	constexpr double SliderFeatureScale = 1.75;
@@ -364,6 +368,9 @@ namespace APSMainMenuPreviewSmokeTests
 				&& TerrainProxy->GetProcMeshSection(0) != nullptr
 				&& PreviewGenerator->GetPreviewGlobeProfileSignature()
 					== Surface->AppliedSurfaceProfileSignature
+				&& PreviewGenerator->GetPreviewGlobeMeshSignature() != 0
+				&& PreviewGenerator->GetPreviewGlobeFaceResolutionForBody(Body)
+					== SelectedPreviewGlobeFaceResolution
 				&& Root->IsHidden() && !Root->IsActorTickEnabled()
 				&& !Root->bGenerateWorldScape
 				&& Root->WorldScapeLodInGeneration.Num() == 0;
@@ -397,6 +404,39 @@ namespace APSMainMenuPreviewSmokeTests
 			Test->TestNotNull(FString::Printf(
 				TEXT("%s resolver owns an immutable noise instance"), *Context),
 				Surface->ResolvedNoiseInstance);
+			if (UAPSWorldScapePlanetNoise* ResolvedNoise =
+				Surface->ResolvedNoiseInstance)
+			{
+				const FVector SampleDirection = FVector(0.37, -0.51, 0.78).GetSafeNormal();
+				const DVector SamplePosition(SampleDirection * Root->PlanetScale);
+				const DVector PlanetPosition(0.0, 0.0, 0.0);
+				CustomNoise MemberNoise = Root->PlanetNoise;
+				CustomNoise SnapshotNoise = Root->PlanetNoise;
+				DVector MemberNoisePosition;
+				DVector SnapshotNoisePosition;
+				const FNoiseData MemberSample = ResolvedNoise->SampleResolved(
+					MemberNoise, SamplePosition, PlanetPosition, Root->NoiseScale,
+					Root->NoiseIntensity, Root->PlanetScale, SampleDirection.Z,
+					MemberNoisePosition);
+				const FNoiseData SnapshotSample =
+					UAPSWorldScapePlanetNoise::SampleResolvedProfile(
+						ResolvedNoise->SurfaceProfile, SnapshotNoise, SamplePosition,
+						PlanetPosition, Root->NoiseScale, Root->NoiseIntensity,
+						Root->PlanetScale, SampleDirection.Z, SnapshotNoisePosition);
+				Test->TestTrue(FString::Printf(
+					TEXT("%s value-snapshot sampler is bit-exact with the member sampler"),
+					*Context),
+					MemberSample.Height == SnapshotSample.Height
+					&& MemberSample.HeightNormalize == SnapshotSample.HeightNormalize
+					&& MemberSample.Temperature == SnapshotSample.Temperature
+					&& MemberSample.Humidity == SnapshotSample.Humidity
+					&& MemberSample.WaterMask == SnapshotSample.WaterMask
+					&& MemberSample.FoliageMask == SnapshotSample.FoliageMask
+					&& MemberSample.Hole == SnapshotSample.Hole
+					&& MemberNoisePosition.X == SnapshotNoisePosition.X
+					&& MemberNoisePosition.Y == SnapshotNoisePosition.Y
+					&& MemberNoisePosition.Z == SnapshotNoisePosition.Z);
+			}
 			Test->TestNotNull(FString::Printf(
 				TEXT("%s resolver owns the canonical terrain MID"), *Context),
 				Surface->ResolvedTerrainMaterialInstance);
@@ -470,6 +510,13 @@ namespace APSMainMenuPreviewSmokeTests
 				TEXT("%s orbital signature matches the resolved body profile"), *Context),
 				PreviewGenerator->GetPreviewGlobeProfileSignature(),
 				Surface->AppliedSurfaceProfileSignature);
+			Test->TestEqual(FString::Printf(
+				TEXT("%s selected body owns the high-detail orbital mesh"), *Context),
+				PreviewGenerator->GetPreviewGlobeFaceResolutionForBody(Body),
+				SelectedPreviewGlobeFaceResolution);
+			Test->TestTrue(FString::Printf(
+				TEXT("%s mesh cache signature includes a committed LOD"), *Context),
+				PreviewGenerator->GetPreviewGlobeMeshSignature() != 0);
 			Test->TestTrue(FString::Printf(
 				TEXT("%s orbital proxy has full closed-sphere topology"), *Context),
 				PreviewGenerator->GetPreviewGlobeVertexCount() >= RequiredPreviewGlobeVertexCount
@@ -846,7 +893,11 @@ namespace APSMainMenuPreviewSmokeTests
 				PendingFailure = Message;
 				UE_LOG(LogTemp, Error, TEXT("[APS.Smoke] %s; draining WorldScape before exit"), *Message);
 			}
-			Step = 8;
+			// A failed probe must skip the unsupported-body assertions and move
+			// directly to the bounded worker-drain path. Re-entering step 8 here
+			// recursively calls Fail when its probe state was never initialized and
+			// resets the timeout every frame, leaving the commandlet hung forever.
+			Step = 9;
 			StepStartSeconds = FPlatformTime::Seconds();
 			return false;
 		}
@@ -936,22 +987,33 @@ namespace APSMainMenuPreviewSmokeTests
 				InitialClusterInstanceCount = Cluster->StarMeshInstances->GetInstanceCount();
 			}
 
+			FVector OverviewCenter;
 			FVector GalaxyCenter;
 			FVector ClusterCenter;
 			FVector SystemCenter;
+			double OverviewRadius = 0.0;
 			double GalaxyRadius = 0.0;
 			double ClusterRadius = 0.0;
 			double SystemRadius = 0.0;
+			const bool bOverviewSphere = Generator->GetPreviewFocusSphere(
+				EAstroPreviewFocus::Overview, OverviewCenter, OverviewRadius);
 			const bool bGalaxySphere = Generator->GetPreviewFocusSphere(
 				EAstroPreviewFocus::Galaxy, GalaxyCenter, GalaxyRadius);
 			const bool bClusterSphere = Generator->GetPreviewFocusSphere(
 				EAstroPreviewFocus::StarCluster, ClusterCenter, ClusterRadius);
 			const bool bSystemSphere = Generator->GetPreviewFocusSphere(
 				EAstroPreviewFocus::HomeSystem, SystemCenter, SystemRadius);
+			Test->TestTrue(TEXT("Overview focus sphere is valid"), bOverviewSphere);
 			Test->TestTrue(TEXT("Galaxy focus sphere is valid"), bGalaxySphere);
 			Test->TestTrue(TEXT("Cluster focus sphere is valid"), bClusterSphere);
 			Test->TestTrue(TEXT("System focus sphere is valid"), bSystemSphere);
 			constexpr double MaxNormalizedPreviewRadius = 5.05e10;
+			if (bOverviewSphere)
+			{
+				Test->TestTrue(TEXT("Full-scale overview uses the normalized presentation envelope"),
+					!OverviewCenter.ContainsNaN() && FMath::IsFinite(OverviewRadius)
+					&& OverviewRadius <= MaxNormalizedPreviewRadius);
+			}
 			if (bGalaxySphere)
 			{
 				Test->TestTrue(TEXT("Full-scale galaxy is normalized into the safe preview envelope"),
@@ -983,9 +1045,9 @@ namespace APSMainMenuPreviewSmokeTests
 					SystemRadius < ClusterRadius);
 			}
 
-			// Pick one non-culled address from each parent point field. These sentinels
-			// prove that focus changes preserve catalogue locations while detail scopes
-			// are free to reduce the proxy's mesh-only angular LOD. Index zero alone can
+			// Pick one non-suppressed address from each parent point field. These sentinels
+			// prove that focus changes do not rewrite the immutable catalogue instances;
+			// any later angular LOD is a separate view policy. Index zero alone can
 			// legitimately fall inside the system safe zone.
 			const auto CaptureExteriorSentinel = [&](UHierarchicalInstancedStaticMeshComponent* Hism,
 				int32& OutIndex, FVector& OutLocation, FVector& OutScale,
@@ -1106,6 +1168,34 @@ namespace APSMainMenuPreviewSmokeTests
 							Orbit ? Orbit->Planet : nullptr);
 						if (Orbit && Orbit->Planet)
 						{
+							Test->TestTrue(TEXT("Every planet remains attached to its displayed orbit"),
+								Orbit->Planet->GetAttachParentActor() == Orbit);
+							const FVector PlanetOrbitOffset =
+								Orbit->Planet->GetActorLocation() - Orbit->GetActorLocation();
+							const FVector PlanetOrbitLocalOffset =
+								Orbit->GetActorTransform().InverseTransformPosition(
+									Orbit->Planet->GetActorLocation());
+							const double PlanetOrbitPlaneError = FMath::Abs(FVector::DotProduct(
+								PlanetOrbitOffset, Orbit->GetActorQuat().GetAxisZ()));
+							Test->TestTrue(TEXT("Every planet lies on its displayed orbit plane"),
+								PlanetOrbitPlaneError <= FMath::Max(
+									PlanetOrbitOffset.Size() * 1.0e-4, 1.0));
+							if (Orbit->Planet->PlanetData.PlanetModel.IsValid())
+							{
+								constexpr double AstronomicalUnitToCentimetres = 14960000000000.0;
+								const double ModelOrbitRadius = Orbit->Planet->PlanetData.PlanetModel->OrbitDistance
+									* AstronomicalUnitToCentimetres;
+								Test->TestTrue(TEXT("Planet body radius matches its displayed orbit model"),
+									FMath::IsNearlyEqual(PlanetOrbitLocalOffset.Size(), ModelOrbitRadius,
+										FMath::Max(ModelOrbitRadius * 1.0e-9, 1.0)));
+								Test->TestTrue(TEXT("Planet actor and serial orbit radii match the shared model"),
+									FMath::IsNearlyEqual(
+										Orbit->Planet->PlanetData.OrbitRadius,
+										Orbit->Planet->PlanetData.PlanetModel->OrbitDistance, 1.0e-12)
+									&& FMath::IsNearlyEqual(
+										Orbit->Planet->PlanetData.PlanetModelData.OrbitDistance,
+										Orbit->Planet->PlanetData.PlanetModel->OrbitDistance, 1.0e-12));
+							}
 							Test->TestFalse(TEXT("No planet is duplicated between orbit records"),
 								UniquePlanets.Contains(Orbit->Planet));
 							UniquePlanets.Add(Orbit->Planet);
@@ -1241,7 +1331,11 @@ namespace APSMainMenuPreviewSmokeTests
 			}
 			BeginOperationFrameTracking(Now);
 			ViewModel->SetPreviewFocus(FocusSequence[FocusIndex]);
-			StepStartSeconds = Now;
+			// SetPreviewFocus performs synchronous presentation/cache work before it
+			// starts the timed camera blend. Measure settling from the actual return
+			// point; using the pre-call timestamp could assert halfway through a valid
+			// transition after a cold focus build.
+			StepStartSeconds = FPlatformTime::Seconds();
 			bSampling = false;
 		}
 
@@ -1285,33 +1379,6 @@ namespace APSMainMenuPreviewSmokeTests
 			{
 				return;
 			}
-			FVector DetailFocusCenter = SystemCenter;
-			if ((Focus == EAstroPreviewFocus::HomeStar
-				|| Focus == EAstroPreviewFocus::HomePlanet)
-				&& PreviewGenerator->GetSelectedPreviewBodyActor())
-			{
-				PreviewGenerator->GetPreviewPresentationLocation(
-					PreviewGenerator->GetSelectedPreviewBodyActor(), DetailFocusCenter);
-			}
-			double AngularRadiusLimitDegrees = 0.0;
-			float EmissionLimit = TNumericLimits<float>::Max();
-			switch (Focus)
-			{
-			case EAstroPreviewFocus::HomeSystem:
-				AngularRadiusLimitDegrees = 0.035;
-				EmissionLimit = 24.0f;
-				break;
-			case EAstroPreviewFocus::HomeStar:
-				AngularRadiusLimitDegrees = 0.022;
-				EmissionLimit = 12.0f;
-				break;
-			case EAstroPreviewFocus::HomePlanet:
-				AngularRadiusLimitDegrees = 0.015;
-				EmissionLimit = 6.0f;
-				break;
-			default: break;
-			}
-
 			const auto CheckLayer = [&](UHierarchicalInstancedStaticMeshComponent* Hism,
 				const TCHAR* LayerName)
 			{
@@ -1332,8 +1399,7 @@ namespace APSMainMenuPreviewSmokeTests
 					: 1.0;
 				int32 VisibleExteriorProxyCount = 0;
 				int32 IntrudingVisibleProxyCount = 0;
-				int32 OversizedVisibleProxyCount = 0;
-				int32 OverbrightVisibleProxyCount = 0;
+				int32 InvalidProxyMetadataCount = 0;
 				for (int32 InstanceIndex = 0;
 					InstanceIndex < Hism->GetInstanceCount(); ++InstanceIndex)
 				{
@@ -1345,17 +1411,6 @@ namespace APSMainMenuPreviewSmokeTests
 					}
 					const double ProxyRadius = MeshRadius
 						* InstanceTransform.GetScale3D().GetAbsMax();
-					const double DetailDistance = FVector::Distance(
-						InstanceTransform.GetLocation(), DetailFocusCenter);
-					if (AngularRadiusLimitDegrees > 0.0 && DetailDistance > UE_SMALL_NUMBER)
-					{
-						const double AngularRadiusDegrees = FMath::RadiansToDegrees(
-							FMath::Atan2(ProxyRadius, DetailDistance));
-						if (AngularRadiusDegrees > AngularRadiusLimitDegrees + 0.001)
-						{
-							++OversizedVisibleProxyCount;
-						}
-					}
 					const int32 EmissionOffset = InstanceIndex * Hism->NumCustomDataFloats + 3;
 					const bool bHasEmission = Hism->NumCustomDataFloats > 3
 						&& Hism->PerInstanceSMCustomData.IsValidIndex(EmissionOffset);
@@ -1363,9 +1418,9 @@ namespace APSMainMenuPreviewSmokeTests
 						? Hism->PerInstanceSMCustomData[EmissionOffset]
 						: TNumericLimits<float>::Max();
 					if (!bHasEmission || !FMath::IsFinite(Emission)
-						|| Emission > EmissionLimit + 0.01f)
+						|| !FMath::IsFinite(ProxyRadius) || ProxyRadius <= 0.0)
 					{
-						++OverbrightVisibleProxyCount;
+						++InvalidProxyMetadataCount;
 					}
 					if (FVector::Distance(InstanceTransform.GetLocation(), SystemCenter)
 						- ProxyRadius > SystemRadius * 1.099)
@@ -1381,18 +1436,24 @@ namespace APSMainMenuPreviewSmokeTests
 					FString::Printf(TEXT("%s keeps a visible nonzero-scale %s proxy outside the home-system safe zone"),
 						*ScopeName, LayerName),
 					VisibleExteriorProxyCount > 0);
+				const double MinimumRetainedFraction = FMath::Max(0.0,
+					1.0 - APSCanonicalStellarProjection::SystemProxyMaximumSuppressedFraction
+						- 0.05);
+				const int32 MinimumRetainedProxyCount = FMath::FloorToInt(
+					static_cast<double>(Hism->GetInstanceCount()) * MinimumRetainedFraction);
+				Test->TestTrue(
+					FString::Printf(TEXT("%s retains the %s catalogue context outside SYSTEM (%d/%d, minimum %d)"),
+						*ScopeName, LayerName, VisibleExteriorProxyCount,
+						Hism->GetInstanceCount(), MinimumRetainedProxyCount),
+					VisibleExteriorProxyCount >= MinimumRetainedProxyCount);
 				Test->TestEqual(
-					FString::Printf(TEXT("%s culls every %s proxy intersecting the home-system safe zone"),
+					FString::Printf(TEXT("%s keeps every non-home %s proxy outside the home-system safe zone"),
 						*ScopeName, LayerName),
 					IntrudingVisibleProxyCount, 0);
 				Test->TestEqual(
-					FString::Printf(TEXT("%s caps every visible %s proxy to its detail-scope angular radius"),
+					FString::Printf(TEXT("%s keeps every visible %s proxy finite without scope mutation"),
 						*ScopeName, LayerName),
-					OversizedVisibleProxyCount, 0);
-				Test->TestEqual(
-					FString::Printf(TEXT("%s caps every visible %s proxy emission for its detail scope"),
-						*ScopeName, LayerName),
-					OverbrightVisibleProxyCount, 0);
+					InvalidProxyMetadataCount, 0);
 			};
 
 			AGalaxy* Galaxy = FindGeneratedGalaxy(World, PreviewGenerator.Get());
@@ -1474,6 +1535,23 @@ namespace APSMainMenuPreviewSmokeTests
 
 			AGalaxy* Galaxy = FindGeneratedGalaxy(World, PreviewGenerator.Get());
 			AStarCluster* Cluster = FindGeneratedCluster(World, PreviewGenerator.Get());
+			if (IsValid(Galaxy) && IsValid(Galaxy->StarMeshInstances))
+			{
+				const bool bGalaxyCataloguePresented =
+					Galaxy->StarMeshInstances->IsVisible()
+					&& !Galaxy->StarMeshInstances->bHiddenInGame;
+				Test->TestEqual(FString::Printf(
+					TEXT("%s presents the galaxy catalogue only outside isolated CLUSTER focus"),
+					*ScopeName), bGalaxyCataloguePresented,
+					Focus != EAstroPreviewFocus::StarCluster);
+			}
+			if (IsValid(Cluster) && IsValid(Cluster->StarMeshInstances))
+			{
+				Test->TestTrue(FString::Printf(
+					TEXT("%s keeps the cluster catalogue presented"), *ScopeName),
+					Cluster->StarMeshInstances->IsVisible()
+						&& !Cluster->StarMeshInstances->bHiddenInGame);
+			}
 			CheckExteriorSentinel(Galaxy ? Galaxy->StarMeshInstances : nullptr,
 				InitialGalaxySentinelIndex, InitialGalaxySentinelLocation,
 				InitialGalaxySentinelScale, InitialGalaxySentinelEmission,
@@ -1516,10 +1594,178 @@ namespace APSMainMenuPreviewSmokeTests
 				}
 				if (!Star->StarMesh->IsVisible()) continue;
 				Star->StarMesh->UpdateBounds();
-				Test->TestTrue(FString::Printf(TEXT("%s centres rendered star %s on its semantic actor"),
+				FVector ExpectedPresentationCenter = Star->GetActorLocation();
+				if (Focus == EAstroPreviewFocus::HomeSystem)
+				{
+					Test->TestTrue(FString::Printf(
+						TEXT("%s publishes presentation centre for rendered star %s"),
+						*ScopeName, *Star->GetName()),
+						PreviewGenerator->GetPreviewPresentationLocation(
+							Star, ExpectedPresentationCenter));
+				}
+				Test->TestTrue(FString::Printf(
+					TEXT("%s centres rendered star %s on its published presentation centre"),
 					*ScopeName, *Star->GetName()),
-					Star->StarMesh->Bounds.Origin.Equals(Star->GetActorLocation(), 1.0));
+					Star->StarMesh->Bounds.Origin.Equals(ExpectedPresentationCenter, 1.0));
 			}
+		}
+
+		bool CaptureDistantStellarScreenshot(UWorld* World,
+			EAstroPreviewFocus Focus, FString& OutFailure) const
+		{
+			OutFailure.Reset();
+			UGameViewportClient* GameViewportClient =
+				AutomationCommon::GetAnyGameViewportClient();
+			FViewport* Viewport = GameViewportClient ? GameViewportClient->Viewport : nullptr;
+			if (!World || !Viewport || GameViewportClient->GetWorld() != World)
+			{
+				OutFailure = TEXT("Distant stellar screenshot has no active game viewport");
+				return false;
+			}
+			const FIntPoint ViewportSize = Viewport->GetSizeXY();
+			TArray<FColor> Pixels;
+			if (ViewportSize.X <= 0 || ViewportSize.Y <= 0
+				|| !Viewport->ReadPixels(Pixels)
+				|| Pixels.Num() != static_cast<int64>(ViewportSize.X) * ViewportSize.Y)
+			{
+				OutFailure = TEXT("Distant stellar screenshot pixels could not be read");
+				return false;
+			}
+			const bool bWideScope = Focus == EAstroPreviewFocus::Overview
+				|| Focus == EAstroPreviewFocus::Galaxy;
+			const TCHAR* ScopeName = Focus == EAstroPreviewFocus::Overview
+				? TEXT("Overview")
+				: (Focus == EAstroPreviewFocus::Galaxy ? TEXT("Galaxy") : TEXT("Cluster"));
+			constexpr uint8 BrightPixelThreshold = 12;
+			const int64 MinimumBrightPixelCount = bWideScope
+				? 500 : 1000;
+			const uint8 MinimumPeakChannel = bWideScope
+				? 64 : 96;
+			int64 BrightPixelCount = 0;
+			int64 NeutralBrightPixelCount = 0;
+			int64 CoolBrightPixelCount = 0;
+			double LuminanceSum = 0.0;
+			uint8 PeakChannel = 0;
+			int32 MaximumSceneBrightRun = 0;
+			int32 ConsecutiveLongRunRows = 0;
+			int32 MaximumLongRunRowStreak = 0;
+			const int32 SceneMinX = FMath::FloorToInt(ViewportSize.X * 0.18);
+			const int32 SceneMaxX = FMath::CeilToInt(ViewportSize.X * 0.82);
+			const int32 SceneMinY = FMath::FloorToInt(ViewportSize.Y * 0.18);
+			const int32 SceneMaxY = FMath::CeilToInt(ViewportSize.Y * 0.88);
+			for (int32 PixelIndex = 0; PixelIndex < Pixels.Num(); ++PixelIndex)
+			{
+				const FColor& Pixel = Pixels[PixelIndex];
+				const uint8 PixelPeak = FMath::Max3(Pixel.R, Pixel.G, Pixel.B);
+				PeakChannel = FMath::Max(PeakChannel, PixelPeak);
+				LuminanceSum += static_cast<double>(Pixel.R) * 0.2126
+					+ static_cast<double>(Pixel.G) * 0.7152
+					+ static_cast<double>(Pixel.B) * 0.0722;
+				if (PixelPeak > BrightPixelThreshold)
+				{
+					++BrightPixelCount;
+					const uint8 PixelFloor = FMath::Min3(Pixel.R, Pixel.G, Pixel.B);
+					NeutralBrightPixelCount +=
+						static_cast<int32>(PixelFloor) * 100
+							>= static_cast<int32>(PixelPeak) * 55 ? 1 : 0;
+					CoolBrightPixelCount += Pixel.B > 16
+						&& static_cast<int32>(Pixel.B) * 100
+							>= static_cast<int32>(Pixel.R) * 105 ? 1 : 0;
+				}
+			}
+			// A readable catalogue star is a sub-pixel HDR seed plus bloom. Giant
+			// flat discs produce long saturated runs even if global bright/luma gates
+			// pass. Measure only the central scene so Slate chrome/title cannot mask it.
+			for (int32 Y = SceneMinY; Y < SceneMaxY; ++Y)
+			{
+				int32 CurrentRun = 0;
+				int32 RowMaximumRun = 0;
+				for (int32 X = SceneMinX; X < SceneMaxX; ++X)
+				{
+					const FColor& Pixel = Pixels[Y * ViewportSize.X + X];
+					const uint8 Peak = FMath::Max3(Pixel.R, Pixel.G, Pixel.B);
+					const uint8 Floor = FMath::Min3(Pixel.R, Pixel.G, Pixel.B);
+					const bool bSaturatedStellarCore = Peak >= 230
+						&& static_cast<int32>(Floor) * 100
+							>= static_cast<int32>(Peak) * 45;
+					CurrentRun = bSaturatedStellarCore ? CurrentRun + 1 : 0;
+					RowMaximumRun = FMath::Max(RowMaximumRun, CurrentRun);
+				}
+				MaximumSceneBrightRun = FMath::Max(MaximumSceneBrightRun, RowMaximumRun);
+				ConsecutiveLongRunRows = RowMaximumRun > 18 ? ConsecutiveLongRunRows + 1 : 0;
+				MaximumLongRunRowStreak = FMath::Max(MaximumLongRunRowStreak,
+					ConsecutiveLongRunRows);
+			}
+			const double BrightPixelRatio = Pixels.IsEmpty()
+				? 0.0 : static_cast<double>(BrightPixelCount) / Pixels.Num();
+			const double NeutralBrightPixelRatio = BrightPixelCount <= 0
+				? 0.0 : static_cast<double>(NeutralBrightPixelCount) / BrightPixelCount;
+			const int64 ChromaticBrightPixelCount = FMath::Max<int64>(
+				BrightPixelCount - NeutralBrightPixelCount, 0);
+			const double ChromaticBrightPixelRatio = BrightPixelCount <= 0
+				? 0.0 : static_cast<double>(ChromaticBrightPixelCount) / BrightPixelCount;
+			const double MeanPixelLuminance = Pixels.IsEmpty()
+				? 0.0 : LuminanceSum / Pixels.Num();
+			constexpr double MinimumNeutralBrightPixelRatio = 0.28;
+			// A white-hot centre is expected, but it must not consume the whole catalogue.
+			// The accepted Ring/Arc density stays unchanged; this upper bound catches a
+			// spatially broad neutral core/ACES bloom that erases the spectral halo.
+			constexpr double MaximumNeutralBrightPixelRatio = 0.88;
+
+			const int64 MinimumCoolBrightPixelCount = Focus == EAstroPreviewFocus::Galaxy
+				? 8 : 16;
+			const double MinimumMeanPixelLuminance = Focus == EAstroPreviewFocus::Galaxy
+				? 0.30 : 0.45;
+			const FString DistantScreenshotPath = FPaths::Combine(FPaths::ProjectSavedDir(),
+				FString::Printf(TEXT("Screenshots/Windows/APS_MainMenu_%sSmoke.png"), ScopeName));
+			IFileManager::Get().MakeDirectory(*FPaths::GetPath(DistantScreenshotPath), true);
+			IFileManager::Get().Delete(*DistantScreenshotPath, false, true);
+			TArray64<uint8> PngData;
+			FImageUtils::PNGCompressImageArray(ViewportSize.X, ViewportSize.Y,
+				TArrayView64<const FColor>(Pixels.GetData(), Pixels.Num()), PngData);
+			if (PngData.IsEmpty() || !FFileHelper::SaveArrayToFile(PngData, *DistantScreenshotPath))
+			{
+				OutFailure = FString::Printf(TEXT("Could not write %s preview screenshot %s"),
+					ScopeName, *DistantScreenshotPath);
+				return false;
+			}
+			UE_LOG(LogTemp, Display,
+				TEXT("[APS.Smoke.StellarScreenshot] focus=%s bright=%lld ratio=%.6f "
+					"neutral=%lld neutral_ratio=%.6f chromatic=%lld chromatic_ratio=%.6f "
+					"cool=%lld mean_luma=%.6f peak=%u "
+					"max_run=%d long_run_row_streak=%d path=%s"),
+				ScopeName, BrightPixelCount, BrightPixelRatio,
+				NeutralBrightPixelCount, NeutralBrightPixelRatio,
+				ChromaticBrightPixelCount, ChromaticBrightPixelRatio, CoolBrightPixelCount,
+				MeanPixelLuminance, static_cast<uint32>(PeakChannel), MaximumSceneBrightRun,
+				MaximumLongRunRowStreak, *DistantScreenshotPath);
+			if (BrightPixelCount < MinimumBrightPixelCount
+				|| PeakChannel < MinimumPeakChannel
+				|| NeutralBrightPixelRatio > MaximumNeutralBrightPixelRatio
+				|| NeutralBrightPixelRatio < MinimumNeutralBrightPixelRatio
+				|| CoolBrightPixelCount < MinimumCoolBrightPixelCount
+				|| MeanPixelLuminance < MinimumMeanPixelLuminance
+				|| MaximumLongRunRowStreak >= 6)
+			{
+				OutFailure = FString::Printf(
+					TEXT("%s stellar field lost readable energy/chroma: bright=%lld (minimum %lld), "
+						"ratio=%.6f, neutral=%lld, neutral_ratio=%.6f (range %.6f..%.6f), "
+						"chromatic=%lld chromatic_ratio=%.6f, "
+						"cool=%lld (minimum %lld), mean_luma=%.6f (minimum %.6f), "
+						"peak=%u (minimum %u), max saturated run=%d, "
+						"long-run row streak=%d (maximum 5)"),
+					ScopeName, BrightPixelCount, MinimumBrightPixelCount, BrightPixelRatio,
+					NeutralBrightPixelCount, NeutralBrightPixelRatio,
+					MinimumNeutralBrightPixelRatio, MaximumNeutralBrightPixelRatio,
+					ChromaticBrightPixelCount, ChromaticBrightPixelRatio, CoolBrightPixelCount,
+					MinimumCoolBrightPixelCount, MeanPixelLuminance,
+					MinimumMeanPixelLuminance,
+					static_cast<uint32>(PeakChannel),
+					static_cast<uint32>(MinimumPeakChannel), MaximumSceneBrightRun,
+					MaximumLongRunRowStreak);
+				return false;
+			}
+			return true;
 		}
 
 		bool UpdateFocusSequence(UWorld* World, UWorldGenerationViewModel* ViewModel,
@@ -1611,16 +1857,11 @@ namespace APSMainMenuPreviewSmokeTests
 							FVector ShellCenter;
 							double ShellRadius = 0.0;
 							bool bShellVisible = false;
-							Test->TestTrue(TEXT("STAR focus owns a real influence shell"),
+							Test->TestTrue(TEXT("STAR focus retains the disabled influence-guide component"),
 								PreviewGenerator->GetPreviewGuideShellState(
 									EAstroPreviewFocus::HomeStar, ShellCenter, ShellRadius, bShellVisible));
-							Test->TestTrue(TEXT("STAR influence shell is visible"), bShellVisible);
-							Test->TestTrue(TEXT("STAR influence shell shares rendered mesh centre"),
-								ShellCenter.Equals(FocusedStar->StarMesh->Bounds.Origin, 1.0));
-							Test->TestTrue(TEXT("STAR influence shell is exactly 1.36 rendered radii"),
-								FMath::IsNearlyEqual(ShellRadius,
-									FocusedStar->StarMesh->Bounds.SphereRadius * 1.36,
-									FMath::Max(2.0, ShellRadius * 1.0e-5)));
+							Test->TestFalse(TEXT("STAR focus hides the redundant inner influence guide"),
+								bShellVisible);
 							FVector SystemShellCenter;
 							double SystemShellRadius = 0.0;
 							bool bSystemShellVisible = true;
@@ -1675,6 +1916,34 @@ namespace APSMainMenuPreviewSmokeTests
 								FMath::IsNearlyEqual(BoundaryRadius, SystemGuideRadius,
 									FMath::Max(2.0, SystemGuideRadius * 1.0e-5)));
 						}
+						// The SYSTEM curve is a presentation adapter only: canonical physical
+						// radii remain ordered, the primary and largest endpoints stay exact,
+						// and compact luminous companions retain a readable angular footprint.
+						const double CompactRatio = AAstroGenerator::
+							CalculateSystemStarReadabilityRatio(100.0, 10000.0, 10000.0);
+						const double SmallRatio = AAstroGenerator::
+							CalculateSystemStarReadabilityRatio(1000.0, 10000.0, 10000.0);
+						const double PrimaryRatio = AAstroGenerator::
+							CalculateSystemStarReadabilityRatio(10000.0, 10000.0, 10000.0);
+						Test->TestTrue(TEXT("SYSTEM readability keeps compact stars above the bounded primary floor"),
+							CompactRatio > 0.16 && CompactRatio < SmallRatio);
+						Test->TestTrue(TEXT("SYSTEM readability remains strictly monotonic below the primary"),
+							SmallRatio < PrimaryRatio);
+						Test->TestTrue(TEXT("SYSTEM readability leaves a largest primary unchanged"),
+							FMath::IsNearlyEqual(PrimaryRatio, 1.0, 1.0e-9));
+						const double SmallerPrimaryRatio = AAstroGenerator::
+							CalculateSystemStarReadabilityRatio(5000.0, 5000.0, 10000.0);
+						const double LargerCompanionRatio = AAstroGenerator::
+							CalculateSystemStarReadabilityRatio(7500.0, 5000.0, 10000.0);
+						const double LargestCompanionRatio = AAstroGenerator::
+							CalculateSystemStarReadabilityRatio(10000.0, 5000.0, 10000.0);
+						Test->TestTrue(TEXT("SYSTEM readability keeps a non-largest primary endpoint unchanged"),
+							FMath::IsNearlyEqual(SmallerPrimaryRatio, 0.5, 1.0e-9));
+						Test->TestTrue(TEXT("SYSTEM readability preserves ordering above a smaller primary"),
+							LargerCompanionRatio > SmallerPrimaryRatio
+							&& LargerCompanionRatio < LargestCompanionRatio);
+						Test->TestTrue(TEXT("SYSTEM readability leaves the largest companion endpoint unchanged"),
+							FMath::IsNearlyEqual(LargestCompanionRatio, 1.0, 1.0e-9));
 						double SmallestPhysicalRadius = TNumericLimits<double>::Max();
 						double LargestPhysicalRadius = 0.0;
 						double SmallestPresentedRadius = TNumericLimits<double>::Max();
@@ -1694,6 +1963,12 @@ namespace APSMainMenuPreviewSmokeTests
 							LargestPhysicalRadius = FMath::Max(LargestPhysicalRadius, PhysicalRadius);
 							SmallestPresentedRadius = FMath::Min(SmallestPresentedRadius, PresentedRadius);
 							LargestPresentedRadius = FMath::Max(LargestPresentedRadius, PresentedRadius);
+							double PublishedPresentedRadius = 0.0;
+							Test->TestTrue(TEXT("SYSTEM publishes every stellar presentation radius"),
+								PreviewGenerator->GetPreviewPresentationRadius(
+									Star, PublishedPresentedRadius));
+							Test->TestTrue(TEXT("SYSTEM published radius owns the rendered stellar bound"),
+								FMath::IsNearlyEqual(PublishedPresentedRadius, PresentedRadius, 2.0));
 							if (IsValid(Star->PlanetarySystem))
 							{
 								for (const APlanet* OrbitPlanet : Star->PlanetarySystem->PlanetsActorsList)
@@ -1725,15 +2000,12 @@ namespace APSMainMenuPreviewSmokeTests
 								FVector InfluenceCenter;
 								double InfluenceRadius = 0.0;
 								bool bInfluenceVisible = false;
-								Test->TestTrue(TEXT("SYSTEM owns one real stellar influence shell"),
+								Test->TestTrue(TEXT("SYSTEM retains the disabled stellar influence guide"),
 									PreviewGenerator->GetPreviewGuideShellState(
 										EAstroPreviewFocus::HomeStar, InfluenceCenter,
 										InfluenceRadius, bInfluenceVisible));
-								Test->TestTrue(TEXT("SYSTEM stellar influence shell is visible"),
+								Test->TestFalse(TEXT("SYSTEM hides the redundant stellar influence guide"),
 									bInfluenceVisible);
-								Test->TestTrue(TEXT("SYSTEM stellar shell uses rendered mesh centre"),
-									InfluenceCenter.Equals(
-										GuideStar->StarMesh->Bounds.Origin, 1.0));
 							}
 						}
 						if (LargestPhysicalRadius > SmallestPhysicalRadius * 1.05)
@@ -1764,6 +2036,14 @@ namespace APSMainMenuPreviewSmokeTests
 				UEnum::GetValueAsString(Focus)))
 			{
 				return false;
+			}
+			if (FocusIndex <= 2)
+			{
+				FString CaptureFailure;
+				if (!CaptureDistantStellarScreenshot(World, Focus, CaptureFailure))
+				{
+					return Fail(CaptureFailure);
+				}
 			}
 			++FocusIndex;
 			BeginFocus(ViewModel, Now);
@@ -2068,11 +2348,37 @@ namespace APSMainMenuPreviewSmokeTests
 			Test->TestTrue(TEXT("PLANET publishes its nominal presentation centre"),
 				PreviewGenerator->GetPreviewPresentationLocation(
 					Planet, PlanetPresentationCenter));
+			FVector PlanetFamilyFocusCenter = FVector::ZeroVector;
+			double PlanetFamilyFocusRadius = 0.0;
+			const bool bHasPlanetFamilyFocus = Test->TestTrue(
+				TEXT("Selected planet publishes a satellite-family camera sphere"),
+				PreviewGenerator->GetPreviewFocusSphere(EAstroPreviewFocus::HomePlanet,
+					PlanetFamilyFocusCenter, PlanetFamilyFocusRadius));
+			if (bHasPlanetFamilyFocus)
+			{
+				Test->TestTrue(TEXT("Planet family camera remains centred on the selected planet"),
+					PlanetFamilyFocusCenter.Equals(PlanetPresentationCenter, 1.0));
+			}
+			TArray<TPair<FVector, double>> PublishedMoonSpheres;
 			for (const AMoon* Moon : Planet->Moons)
 			{
 				if (!IsValid(Moon)) continue;
 				Test->TestTrue(TEXT("Generated moon keeps a nonzero legacy hierarchy radius"),
 					Moon->PlanetRadiusKM > 0);
+				const APlanetOrbit* MoonOrbit =
+					Cast<APlanetOrbit>(Moon->GetAttachParentActor());
+				Test->TestNotNull(TEXT("Generated moon remains attached to its own orbit"),
+					MoonOrbit);
+				if (MoonOrbit)
+				{
+					const FVector PhysicalOrbitOffset =
+						Moon->GetActorLocation() - MoonOrbit->GetActorLocation();
+					const double PhysicalPlaneError = FMath::Abs(FVector::DotProduct(
+						PhysicalOrbitOffset, MoonOrbit->GetActorQuat().GetAxisZ()));
+					Test->TestTrue(TEXT("Generated moon lies on its physical orbit plane"),
+						PhysicalPlaneError <= FMath::Max(
+							PhysicalOrbitOffset.Size() * 1.0e-4, 1.0));
+				}
 				UStaticMeshComponent* MoonMesh = Cast<UStaticMeshComponent>(
 					Moon->GetComponentByClass(UStaticMeshComponent::StaticClass()));
 				if (!Test->TestNotNull(TEXT("PLANET moon retains its authored backing mesh"), MoonMesh))
@@ -2105,12 +2411,29 @@ namespace APSMainMenuPreviewSmokeTests
 				const double PresentedMoonRadius = bProceduralMoon
 					? PresentedMoonSurface->Bounds.BoxExtent.GetMax()
 					: PresentedMoonSurface->Bounds.SphereRadius;
-				Test->TestTrue(TEXT("PLANET presents moons at a readable bounded radius"),
-					PresentedMoonRadius >= 3.5e4 && PresentedMoonRadius <= 1.81e5);
+				const double ExpectedMoonPresentationRadius =
+					AAstroGenerator::CalculatePreviewBodyPresentationRadius(FMath::Max(
+						Moon->RadiusKM, static_cast<double>(Moon->PlanetRadiusKM)));
+				double PublishedMoonRadius = 0.0;
+				Test->TestTrue(TEXT("PLANET publishes each moon's own presentation radius"),
+					PreviewGenerator->GetPreviewPresentationRadius(Moon, PublishedMoonRadius));
+				Test->TestTrue(TEXT("Moon presentation radius comes from the moon model"),
+					FMath::IsNearlyEqual(PublishedMoonRadius, ExpectedMoonPresentationRadius,
+						FMath::Max(ExpectedMoonPresentationRadius * 0.01, 1.0)));
+				Test->TestTrue(TEXT("Moon surface matches its own published radius"),
+					FMath::IsNearlyEqual(PresentedMoonRadius, PublishedMoonRadius,
+						FMath::Max(PublishedMoonRadius * 0.025, 1.0)));
 				FVector PresentationCenter;
 				if (Test->TestTrue(TEXT("PLANET publishes each moon's rendered presentation centre"),
 					PreviewGenerator->GetPreviewPresentationLocation(Moon, PresentationCenter)))
 				{
+					for (const TPair<FVector, double>& PreviousMoonSphere : PublishedMoonSpheres)
+					{
+						Test->TestTrue(TEXT("PLANET presentation keeps moon surfaces disjoint"),
+							FVector::Distance(PresentationCenter, PreviousMoonSphere.Key)
+								>= PublishedMoonRadius + PreviousMoonSphere.Value - 1.0);
+					}
+					PublishedMoonSpheres.Emplace(PresentationCenter, PublishedMoonRadius);
 					const FVector PresentedMoonCenter = bProceduralMoon
 						? PresentedMoonSurface->GetComponentLocation()
 						: PresentedMoonSurface->Bounds.Origin;
@@ -2119,6 +2442,27 @@ namespace APSMainMenuPreviewSmokeTests
 					Test->TestTrue(TEXT("PLANET satellite presentation stays outside the globe"),
 						FVector::Distance(PlanetPresentationCenter, PresentationCenter)
 							> PlanetPresentationRadius + PresentedMoonRadius);
+					if (bHasPlanetFamilyFocus)
+					{
+						constexpr double SatelliteFramePadding = 1.12;
+						const double MoonOuterEdge = FVector::Distance(
+							PlanetFamilyFocusCenter, PresentationCenter)
+							+ FMath::Max(PublishedMoonRadius, 500.0)
+								* SatelliteFramePadding;
+						Test->TestTrue(TEXT("Planet camera sphere contains every satellite surface"),
+							MoonOuterEdge <= PlanetFamilyFocusRadius
+								+ FMath::Max(PlanetFamilyFocusRadius * 1.0e-6, 1.0));
+					}
+					if (MoonOrbit)
+					{
+						const FVector PresentationOrbitOffset =
+							PresentationCenter - PlanetPresentationCenter;
+						const double PresentationPlaneError = FMath::Abs(FVector::DotProduct(
+							PresentationOrbitOffset, MoonOrbit->GetActorQuat().GetAxisZ()));
+						Test->TestTrue(TEXT("Displayed moon lies on the displayed orbit plane"),
+							PresentationPlaneError <= FMath::Max(
+								PresentationOrbitOffset.Size() * 1.0e-4, 1.0));
+					}
 					FVector2D MoonScreen;
 					int32 ViewWidth = 0;
 					int32 ViewHeight = 0;
@@ -2148,6 +2492,8 @@ namespace APSMainMenuPreviewSmokeTests
 					Atmosphere->CameraSamplesCount, 8);
 				Test->TestEqual(TEXT("Orbital atmosphere uses the bounded light sample budget"),
 					Atmosphere->LightSamplesCount, 4);
+				Test->TestTrue(TEXT("Orbital atmosphere uses a thin limb presentation multiplier"),
+					FMath::IsNearlyEqual(Atmosphere->PresentationOpacityScale, 0.075f, 1.0e-6f));
 				if (VisibleSpaceShell)
 				{
 					VisibleSpaceShell->UpdateBounds();
@@ -2194,8 +2540,8 @@ namespace APSMainMenuPreviewSmokeTests
 							CustomLightSource < 0.5f);
 						Test->TestTrue(TEXT("Atmosphere preview has explicit nonzero light intensity"),
 							LightIntensity >= 0.5f);
-						Test->TestTrue(TEXT("Atmosphere opacity reaches the ray-march material"),
-							AtmosphereOpacity > 0.5f && AtmosphereOpacity < 3.0f);
+						Test->TestTrue(TEXT("Atmosphere opacity reaches the ray-march material without a pale disc wash"),
+							AtmosphereOpacity > 0.15f && AtmosphereOpacity < 1.5f);
 						Test->TestTrue(TEXT("Atmosphere Rayleigh coefficient remains nonzero"),
 							RayleighCoefficient.R > 0.0f || RayleighCoefficient.G > 0.0f
 							|| RayleighCoefficient.B > 0.0f);
@@ -2226,6 +2572,12 @@ namespace APSMainMenuPreviewSmokeTests
 			{
 				const double MoonFeatureBeforeSelection = SelectionProbeMoon->SurfaceFeatureScale;
 				const int32 MoonSeedBeforeSelection = SelectionProbeMoon->WorldScapeSeed;
+				const FTransform MoonTransformBeforeSelection =
+					SelectionProbeMoon->GetActorTransform();
+				double MoonPresentationRadiusBeforeSelection = 0.0;
+				Test->TestTrue(TEXT("Moon has a presentation radius before selection"),
+					PreviewGenerator->GetPreviewPresentationRadius(
+						SelectionProbeMoon, MoonPresentationRadiusBeforeSelection));
 				const double PendingPlanetFeature = FMath::Clamp(
 					Planet->SurfaceFeatureScale > 2.0
 						? Planet->SurfaceFeatureScale - 0.25
@@ -2243,6 +2595,31 @@ namespace APSMainMenuPreviewSmokeTests
 					ViewModel->GeneratedWorld->PlanetSurfaceSeed, MoonSeedBeforeSelection);
 				Test->TestEqual(TEXT("Moon hydration publishes the moon's own feature scale"),
 					ViewModel->GeneratedWorld->SurfaceFeatureScale, MoonFeatureBeforeSelection);
+				double MoonPresentationRadiusAfterSelection = 0.0;
+				Test->TestTrue(TEXT("Moon retains a presentation radius after selection"),
+					PreviewGenerator->GetPreviewPresentationRadius(
+						SelectionProbeMoon, MoonPresentationRadiusAfterSelection));
+				Test->TestTrue(TEXT("Selecting a moon never changes its rendered size"),
+					FMath::IsNearlyEqual(MoonPresentationRadiusAfterSelection,
+						MoonPresentationRadiusBeforeSelection,
+						FMath::Max(MoonPresentationRadiusBeforeSelection * 0.01, 1.0)));
+				Test->TestTrue(TEXT("Selecting a moon never mutates its actor transform"),
+					SelectionProbeMoon->GetActorTransform().Equals(
+						MoonTransformBeforeSelection, 0.001));
+				FVector MoonFocusCenter = FVector::ZeroVector;
+				double MoonFocusRadius = 0.0;
+				Test->TestTrue(TEXT("Selected moon owns its camera focus sphere"),
+					PreviewGenerator->GetPreviewFocusSphere(
+						EAstroPreviewFocus::HomePlanet, MoonFocusCenter, MoonFocusRadius));
+				FVector MoonPresentationCenter = FVector::ZeroVector;
+				PreviewGenerator->GetPreviewPresentationLocation(
+					SelectionProbeMoon, MoonPresentationCenter);
+				Test->TestTrue(TEXT("Moon focus sphere is centred on that moon"),
+					MoonFocusCenter.Equals(MoonPresentationCenter, 1.0));
+				Test->TestTrue(TEXT("Moon camera distance derives from the moon's own bounds"),
+					FMath::IsNearlyEqual(MoonFocusRadius,
+						FMath::Max(MoonPresentationRadiusAfterSelection, 500.0) * 1.12,
+						FMath::Max(MoonFocusRadius * 0.01, 1.0)));
 				AssertSelectedBodyOrbitalLayersPresented(
 					SelectionProbeMoon, TEXT("Selected moon hand-off"));
 
@@ -2503,6 +2880,7 @@ namespace APSMainMenuPreviewSmokeTests
 					PreviewGenerator->GetPreviewFocusSphere(
 						EAstroPreviewFocus::HomePlanet, PlanetCenter, PlanetRadius));
 				OrbitCameraDistanceBefore = FVector::Distance(CameraAfterSliders, PlanetCenter);
+				OrbitPlanetTransformBefore = Planet->GetActorTransform();
 				OrbitResolverRootBefore = Root;
 				OrbitResolverRotationBefore = Root->GetActorQuat();
 				OrbitResolverLocationBefore = Root->GetActorLocation();
@@ -2519,6 +2897,7 @@ namespace APSMainMenuPreviewSmokeTests
 				if (Planet->Moons.Num() > 0 && IsValid(Planet->Moons[0]))
 				{
 					OrbitFamilyBody = Planet->Moons[0];
+					OrbitFamilyBodyTransformBefore = Planet->Moons[0]->GetActorTransform();
 					PreviewGenerator->GetPreviewPresentationLocation(
 						Planet->Moons[0], OrbitFamilyBodyLocationBefore);
 					OrbitFamilyBodyDistanceBefore = FVector::Distance(
@@ -2531,7 +2910,7 @@ namespace APSMainMenuPreviewSmokeTests
 				// rebuild the committed closed globe.
 				PreviewGenerator->SetActorTickEnabled(true);
 				// Exercise a complete horizontal revolution before ending at a distinct
-				// orientation. No intermediate delta may move the fixed camera or rebuild the proxy.
+				// camera orientation. No delta may rotate a body or rebuild its proxy.
 				for (int32 QuarterTurn = 0; QuarterTurn < 4; ++QuarterTurn)
 				{
 					ViewModel->OrbitPreview(FVector2D(500.0, 0.0));
@@ -2758,8 +3137,8 @@ namespace APSMainMenuPreviewSmokeTests
 						EAstroPreviewFocus::HomePlanet, PlanetCenter, PlanetRadius));
 				const FVector OrbitCameraLocation = Controller->PlayerCameraManager
 					? Controller->PlayerCameraManager->GetCameraLocation() : FVector::ZeroVector;
-				Test->TestTrue(TEXT("PLANET RMB keeps the preview camera fixed"),
-					OrbitCameraLocation.Equals(OrbitCameraLocationBefore, 1.0));
+				Test->TestTrue(TEXT("PLANET RMB orbits the preview camera around the body"),
+					!OrbitCameraLocation.Equals(OrbitCameraLocationBefore, 1.0));
 				ZoomCameraDistanceBefore = FVector::Distance(OrbitCameraLocation, PlanetCenter);
 				LastOrbitDistanceError = FMath::Abs(
 					ZoomCameraDistanceBefore - OrbitCameraDistanceBefore)
@@ -2772,10 +3151,12 @@ namespace APSMainMenuPreviewSmokeTests
 					Root->GetActorLocation().Equals(OrbitResolverLocationBefore, 1.0));
 				Test->TestTrue(TEXT("PLANET RMB keeps the resolver observer fixed"),
 					Root->OverridedPlayerPosition.Equals(OrbitOverridePositionBefore, 1.0));
+				Test->TestTrue(TEXT("PLANET RMB never rotates or scales the selected body"),
+					Planet->GetActorTransform().Equals(OrbitPlanetTransformBefore, 0.001));
 				if (IsValid(TerrainProxy))
 				{
-					Test->TestTrue(TEXT("PLANET RMB rotates the selected closed globe"),
-						!TerrainProxy->GetComponentQuat().Equals(
+					Test->TestTrue(TEXT("PLANET RMB keeps the selected closed globe rotation fixed"),
+						TerrainProxy->GetComponentQuat().Equals(
 							OrbitTerrainRotationBefore, 1.0e-4));
 					Test->TestTrue(TEXT("PLANET RMB keeps the selected globe centred"),
 						TerrainProxy->GetComponentLocation().Equals(
@@ -2787,8 +3168,11 @@ namespace APSMainMenuPreviewSmokeTests
 					Test->TestTrue(TEXT("PLANET RMB retains a presentation centre for its moon"),
 						PreviewGenerator->GetPreviewPresentationLocation(
 							FamilyBody, FamilyBodyLocationAfter));
-					Test->TestTrue(TEXT("PLANET RMB rotates the selected planet/moon family"),
-						!FamilyBodyLocationAfter.Equals(OrbitFamilyBodyLocationBefore, 1.0));
+					Test->TestTrue(TEXT("PLANET RMB keeps the planet/moon presentation fixed"),
+						FamilyBodyLocationAfter.Equals(OrbitFamilyBodyLocationBefore, 1.0));
+					Test->TestTrue(TEXT("PLANET RMB never mutates a moon actor transform"),
+						FamilyBody->GetActorTransform().Equals(
+							OrbitFamilyBodyTransformBefore, 0.001));
 					const double FamilyDistanceAfter = FVector::Distance(
 						FamilyBodyLocationAfter, PlanetCenter);
 					Test->TestTrue(TEXT("PLANET RMB preserves the moon presentation orbit radius"),
@@ -3119,6 +3503,22 @@ namespace APSMainMenuPreviewSmokeTests
 			}
 			Test->TestFalse(TEXT("Gas giant is outside the WorldScape solid-body pipeline"),
 				UAPSPlanetSurfaceProfileResolver::SupportsWorldScape(Body->PlanetType));
+			if (APlanet* GasPlanet = Cast<APlanet>(Body))
+			{
+				Test->TestNotNull(TEXT("Gas giant owns its lightweight legacy icosphere"),
+					GasPlanet->GasGiantVisualComponent);
+				if (IsValid(GasPlanet->GasGiantVisualComponent))
+				{
+					Test->TestNotNull(TEXT("Gas giant legacy icosphere asset resolves"),
+						GasPlanet->GasGiantVisualComponent->GetStaticMesh().Get());
+					Test->TestTrue(TEXT("Gas giant legacy icosphere is the visible backing layer"),
+						GasPlanet->GasGiantVisualComponent->IsVisible()
+						&& !GasPlanet->GasGiantVisualComponent->bHiddenInGame);
+					Test->TestEqual(TEXT("Gas giant visual never blocks gameplay"),
+						GasPlanet->GasGiantVisualComponent->GetCollisionEnabled(),
+						ECollisionEnabled::NoCollision);
+				}
+			}
 			APlanetarySurfaceGenerator* Resolver = Topology.Generators.Num() == 1
 				? Topology.Generators[0] : nullptr;
 			AWorldScapeRoot* ResolverRoot = Topology.Roots.Num() == 1
@@ -3318,6 +3718,7 @@ namespace APSMainMenuPreviewSmokeTests
 		double InitialPlanetCameraDistance{0.0};
 		FVector OrbitCameraLocationBefore{FVector::ZeroVector};
 		double OrbitCameraDistanceBefore{0.0};
+		FTransform OrbitPlanetTransformBefore{FTransform::Identity};
 		TWeakObjectPtr<AWorldScapeRoot> OrbitResolverRootBefore;
 		FQuat OrbitResolverRotationBefore{FQuat::Identity};
 		FVector OrbitResolverLocationBefore{FVector::ZeroVector};
@@ -3326,6 +3727,7 @@ namespace APSMainMenuPreviewSmokeTests
 		FQuat OrbitTerrainRotationBefore{FQuat::Identity};
 		FVector OrbitTerrainLocationBefore{FVector::ZeroVector};
 		TWeakObjectPtr<APlanetaryBody> OrbitFamilyBody;
+		FTransform OrbitFamilyBodyTransformBefore{FTransform::Identity};
 		FVector OrbitFamilyBodyLocationBefore{FVector::ZeroVector};
 		double OrbitFamilyBodyDistanceBefore{0.0};
 		uint32 OrbitSurfaceProfileSignatureBefore{0};
@@ -3484,6 +3886,32 @@ namespace APSMainMenuPreviewSmokeTests
 				{
 					return Fail(TEXT("Rendered STAR focus has no readable stellar mesh"));
 				}
+				const UCameraComponent* PreviewCamera =
+					Generator->GetPreviewCameraComponent();
+				if (!Test->TestNotNull(TEXT("Astronomical preview owns its HDR camera"),
+					PreviewCamera))
+				{
+					return Fail(TEXT("Astronomical preview has no camera post-process contract"));
+				}
+				const FPostProcessSettings& PreviewPostProcess =
+					PreviewCamera->PostProcessSettings;
+				Test->TestTrue(TEXT("Preview camera explicitly enables standard stellar bloom"),
+					PreviewPostProcess.bOverride_BloomMethod
+					&& PreviewPostProcess.BloomMethod == EBloomMethod::BM_SOG);
+				Test->TestTrue(TEXT("Preview camera owns a visible but bounded stellar bloom intensity"),
+					PreviewPostProcess.bOverride_BloomIntensity
+					&& FMath::IsNearlyEqual(PreviewPostProcess.BloomIntensity, 1.35f));
+				Test->TestTrue(TEXT("Preview camera preserves thresholdless bloom for spectral points"),
+					PreviewPostProcess.bOverride_BloomThreshold
+					&& FMath::IsNearlyEqual(PreviewPostProcess.BloomThreshold, -1.0f));
+				Test->TestTrue(TEXT("Preview camera applies its complete post-process contract"),
+					FMath::IsNearlyEqual(PreviewCamera->PostProcessBlendWeight, 1.0f));
+				if (UGameViewportClient* GameViewportClient =
+					AutomationCommon::GetAnyGameViewportClient())
+				{
+					Test->TestTrue(TEXT("Rendered game viewport keeps bloom enabled"),
+						GameViewportClient->EngineShowFlags.Bloom);
+				}
 				Star->StarMesh->UpdateBounds();
 				FVector InfluenceCenter;
 				double InfluenceRadius = 0.0;
@@ -3491,16 +3919,10 @@ namespace APSMainMenuPreviewSmokeTests
 				if (!Generator->GetPreviewGuideShellState(EAstroPreviewFocus::HomeStar,
 					InfluenceCenter, InfluenceRadius, bInfluenceVisible))
 				{
-					return Fail(TEXT("Rendered STAR focus has no line-only influence guide"));
+					return Fail(TEXT("Rendered STAR focus lost its compatibility guide component"));
 				}
-				Test->TestTrue(TEXT("STAR focus keeps its compact influence guide visible"),
+				Test->TestFalse(TEXT("STAR focus hides the redundant inner influence guide"),
 					bInfluenceVisible);
-				Test->TestTrue(TEXT("STAR focus guide stays centred on rendered star"),
-					InfluenceCenter.Equals(Star->StarMesh->Bounds.Origin, 1.0));
-				Test->TestTrue(TEXT("STAR focus guide is exactly 1.36 visible star radii"),
-					FMath::IsNearlyEqual(InfluenceRadius,
-						Star->StarMesh->Bounds.SphereRadius * 1.36,
-						FMath::Max(2.0, InfluenceRadius * 1.0e-5)));
 				FVector StarFrameCenter;
 				double StarFrameRadius = 0.0;
 				if (!Generator->GetPreviewFocusSphere(EAstroPreviewFocus::HomeStar,
@@ -3508,36 +3930,10 @@ namespace APSMainMenuPreviewSmokeTests
 				{
 					return Fail(TEXT("Rendered STAR focus has no camera framing sphere"));
 				}
-				Test->TestTrue(TEXT("STAR camera frame shares the guide centre"),
-					StarFrameCenter.Equals(InfluenceCenter, 1.0));
-				Test->TestTrue(TEXT("STAR camera frame contains the complete influence guide"),
-					StarFrameRadius >= InfluenceRadius * 1.04);
-				if (IsValid(Controller->PlayerCameraManager))
-				{
-					int32 ViewWidth = 0;
-					int32 ViewHeight = 0;
-					Controller->GetViewportSize(ViewWidth, ViewHeight);
-					const FRotator ViewRotation =
-						Controller->PlayerCameraManager->GetCameraRotation();
-					const FVector GuideExtrema[] =
-					{
-						InfluenceCenter + ViewRotation.RotateVector(FVector::RightVector) * InfluenceRadius,
-						InfluenceCenter - ViewRotation.RotateVector(FVector::RightVector) * InfluenceRadius,
-						InfluenceCenter + ViewRotation.RotateVector(FVector::UpVector) * InfluenceRadius,
-						InfluenceCenter - ViewRotation.RotateVector(FVector::UpVector) * InfluenceRadius
-					};
-					for (int32 ExtremeIndex = 0; ExtremeIndex < UE_ARRAY_COUNT(GuideExtrema); ++ExtremeIndex)
-					{
-						FVector2D ScreenPosition;
-						const bool bProjected = ViewWidth > 0 && ViewHeight > 0
-							&& Controller->ProjectWorldLocationToScreen(
-								GuideExtrema[ExtremeIndex], ScreenPosition, true);
-						Test->TestTrue(*FString::Printf(
-							TEXT("STAR guide extremum %d projects into the viewport"), ExtremeIndex),
-							bProjected && ScreenPosition.X >= 0.0 && ScreenPosition.X <= ViewWidth
-							&& ScreenPosition.Y >= 0.0 && ScreenPosition.Y <= ViewHeight);
-					}
-				}
+				Test->TestTrue(TEXT("STAR camera frame shares the rendered photosphere centre"),
+					StarFrameCenter.Equals(Star->StarMesh->Bounds.Origin, 1.0));
+				Test->TestTrue(TEXT("STAR camera frame contains the complete photosphere"),
+					StarFrameRadius >= Star->StarMesh->Bounds.SphereRadius * 1.20);
 				FVector SystemBoundaryCenter;
 				double SystemBoundaryRadius = 0.0;
 				bool bSystemBoundaryVisible = true;
@@ -3689,6 +4085,14 @@ namespace APSMainMenuPreviewSmokeTests
 			const double StellarCenterRadiusSq = FMath::Square(MinimumViewportExtent * 0.10);
 			const double StellarLimbInnerRadiusSq = FMath::Square(MinimumViewportExtent * 0.20);
 			const double StellarLimbOuterRadiusSq = FMath::Square(MinimumViewportExtent * 0.24);
+			// STAR framing is deterministic: the photosphere ends near 0.28 and the
+			// ordinary actor corona ends below 0.38 of the minimum viewport extent.
+			// Sample beyond both silhouettes, with a gap between rings, so this measures
+			// decaying post-process bloom rather than additive corona geometry.
+			const double StellarHaloInnerMinRadiusSq = FMath::Square(MinimumViewportExtent * 0.390);
+			const double StellarHaloInnerMaxRadiusSq = FMath::Square(MinimumViewportExtent * 0.412);
+			const double StellarHaloOuterMinRadiusSq = FMath::Square(MinimumViewportExtent * 0.430);
+			const double StellarHaloOuterMaxRadiusSq = FMath::Square(MinimumViewportExtent * 0.456);
 			int64 StellarCorePixelCount = 0;
 			int64 StellarWhiteClipPixelCount = 0;
 			int64 StellarPeakClipPixelCount = 0;
@@ -3701,6 +4105,8 @@ namespace APSMainMenuPreviewSmokeTests
 			int64 StellarLimbPixelCount = 0;
 			double StellarCenterPeakSum = 0.0;
 			double StellarLimbPeakSum = 0.0;
+			TArray<uint8> StellarInnerHaloBrightness;
+			TArray<uint8> StellarOuterHaloBrightness;
 			for (int32 PixelIndex = 0; PixelIndex < Pixels.Num(); ++PixelIndex)
 			{
 				const FColor& Pixel = Pixels[PixelIndex];
@@ -3717,6 +4123,18 @@ namespace APSMainMenuPreviewSmokeTests
 				const double DeltaX = PixelX - static_cast<double>(ViewportSize.X) * 0.5;
 				const double DeltaY = PixelY - static_cast<double>(ViewportSize.Y) * 0.5;
 				const double RadiusSq = DeltaX * DeltaX + DeltaY * DeltaY;
+				const bool bOrangeGuidePixel = Pixel.R > 60 && Pixel.G > 20
+					&& Pixel.B < 20 && static_cast<double>(Pixel.R) > Pixel.G * 1.8;
+				if (!bOrangeGuidePixel && RadiusSq >= StellarHaloInnerMinRadiusSq
+					&& RadiusSq < StellarHaloInnerMaxRadiusSq)
+				{
+					StellarInnerHaloBrightness.Add(Brightness);
+				}
+				else if (!bOrangeGuidePixel && RadiusSq >= StellarHaloOuterMinRadiusSq
+					&& RadiusSq < StellarHaloOuterMaxRadiusSq)
+				{
+					StellarOuterHaloBrightness.Add(Brightness);
+				}
 				if (RadiusSq <= StellarCenterRadiusSq)
 				{
 					++StellarCenterPixelCount;
@@ -3798,10 +4216,32 @@ namespace APSMainMenuPreviewSmokeTests
 					/ StellarCorePixelCount;
 				const double CenterPeak = StellarCenterPeakSum / StellarCenterPixelCount;
 				const double LimbPeak = StellarLimbPeakSum / StellarLimbPixelCount;
+				StellarInnerHaloBrightness.Sort();
+				StellarOuterHaloBrightness.Sort();
+				const uint8 InnerHaloMedian = StellarInnerHaloBrightness.IsEmpty()
+					? 0 : StellarInnerHaloBrightness[StellarInnerHaloBrightness.Num() / 2];
+				const uint8 OuterHaloMedian = StellarOuterHaloBrightness.IsEmpty()
+					? 0 : StellarOuterHaloBrightness[StellarOuterHaloBrightness.Num() / 2];
 				UE_LOG(LogTemp, Display,
 					TEXT("[APS.StellarPresentation.Surface] core=%lld rgb=%.2f/%.2f/%.2f peak=%.2f contrast=%.2f whiteClip=%.5f peakClip=%.5f center=%.2f limb=%.2f"),
 					StellarCorePixelCount, MeanRed, MeanGreen, MeanBlue, MeanPeak,
 					SurfaceContrast, WhiteClipRatio, PeakClipRatio, CenterPeak, LimbPeak);
+				UE_LOG(LogTemp, Display,
+					TEXT("[APS.StellarPresentation.Halo] innerSamples=%d outerSamples=%d innerMedian=%u outerMedian=%u"),
+					StellarInnerHaloBrightness.Num(), StellarOuterHaloBrightness.Num(),
+					InnerHaloMedian, OuterHaloMedian);
+				if (StellarInnerHaloBrightness.Num() < 1000
+					|| StellarOuterHaloBrightness.Num() < 1000
+					|| InnerHaloMedian < 12 || OuterHaloMedian < 5
+					|| InnerHaloMedian > 220
+					|| InnerHaloMedian <= static_cast<int32>(OuterHaloMedian) + 4)
+				{
+					OutFailure = FString::Printf(
+						TEXT("STAR exterior bloom is not visible and decaying (samples %d/%d, medians %u/%u; minima 1000/1000 and 12/5, inner maximum 220, falloff minimum 5); diagnostic screenshot=%s"),
+						StellarInnerHaloBrightness.Num(), StellarOuterHaloBrightness.Num(),
+						InnerHaloMedian, OuterHaloMedian, *ScreenshotPath);
+					return false;
+				}
 
 				if (SurfaceContrast < 4.0)
 				{
@@ -3941,6 +4381,113 @@ namespace APSMainMenuPreviewSmokeTests
 				Test->TestTrue(TEXT("Runtime stellar spectral colour reaches the MID"),
 					RuntimeColor.Equals(ExpectedColor, 1.0e-3f));
 			}
+
+			UMaterialInstanceDynamic* RuntimeCoronaMaterial = IsValid(Star->CoronaMesh)
+				? Cast<UMaterialInstanceDynamic>(Star->CoronaMesh->GetMaterial(0)) : nullptr;
+			Test->TestNotNull(TEXT("Generated star owns an actor-only corona MID"),
+				RuntimeCoronaMaterial);
+			if (RuntimeCoronaMaterial)
+			{
+				Test->TestTrue(TEXT("AStar corona MID handle matches rendered shell material"),
+					Star->CoronaDynamicMaterial == RuntimeCoronaMaterial);
+				UMaterial* RuntimeCoronaBase = RuntimeCoronaMaterial->GetBaseMaterial();
+				Test->TestTrue(TEXT("Actor corona reuses the exact canonical point/corona base"),
+					IsValid(RuntimeCoronaBase)
+					&& RuntimeCoronaBase->GetPathName()
+						== APSStellarMaterialContract::HismBaseObjectPath);
+
+				TArray<FMaterialParameterInfo> CoronaScalarParameters;
+				TArray<FGuid> CoronaScalarParameterIds;
+				RuntimeCoronaMaterial->GetAllScalarParameterInfo(
+					CoronaScalarParameters, CoronaScalarParameterIds);
+				static constexpr const TCHAR* RequiredCoronaScalars[] = {
+					TEXT("CoronaIntensity"), TEXT("CoronaOpacity"), TEXT("CoronaSeed"),
+					TEXT("CoronaShellMode"), TEXT("CoronaInnerRadius")
+				};
+				for (const TCHAR* ParameterName : RequiredCoronaScalars)
+				{
+					Test->TestTrue(*FString::Printf(
+						TEXT("Runtime corona MID exposes %s"), ParameterName),
+						CoronaScalarParameters.ContainsByPredicate(
+							[ParameterName](const FMaterialParameterInfo& Info)
+							{
+								return Info.Name == FName(ParameterName);
+							}));
+				}
+
+				const FVector CoronaScale3D = Star->CoronaMesh->GetRelativeScale3D();
+				const float CoronaScale = static_cast<float>(CoronaScale3D.GetAbsMax());
+				float ExpectedCoronaScale = 1.12f;
+				switch (ExpectedType)
+				{
+				case EStellarType::Protostar:
+				case EStellarType::HyperGiant: ExpectedCoronaScale = 1.14f; break;
+				case EStellarType::SuperGiant:
+				case EStellarType::BrightGiant: ExpectedCoronaScale = 1.13f; break;
+				case EStellarType::Giant: ExpectedCoronaScale = 1.12f; break;
+				case EStellarType::SubGiant: ExpectedCoronaScale = 1.11f; break;
+				case EStellarType::Pulsar: ExpectedCoronaScale = 1.10f; break;
+				case EStellarType::SubDwarf: ExpectedCoronaScale = 1.09f; break;
+				case EStellarType::Neutron:
+				case EStellarType::WhiteDwarf:
+				case EStellarType::BrownDwarf: ExpectedCoronaScale = 1.08f; break;
+				default: break;
+				}
+				Test->TestTrue(TEXT("Actor corona shell remains uniformly scaled"),
+					FMath::IsNearlyEqual(CoronaScale3D.X, CoronaScale3D.Y, 1.0e-6)
+					&& FMath::IsNearlyEqual(CoronaScale3D.Y, CoronaScale3D.Z, 1.0e-6)
+					&& FMath::IsNearlyEqual(CoronaScale, ExpectedCoronaScale, 1.0e-6f));
+				Test->TestTrue(TEXT("Actor corona stays inside the compact fallback-proxy band"),
+					CoronaScale >= 1.08f && CoronaScale <= 1.14f);
+				const float RuntimeShellMode = RuntimeCoronaMaterial->K2_GetScalarParameterValue(
+					TEXT("CoronaShellMode"));
+				const float RuntimeInnerRadius = RuntimeCoronaMaterial->K2_GetScalarParameterValue(
+					TEXT("CoronaInnerRadius"));
+				Test->TestTrue(TEXT("Actor corona selects shell mode exactly"),
+					FMath::IsNearlyEqual(RuntimeShellMode, 1.0f));
+				Test->TestTrue(TEXT("Actor corona cutout exactly matches the photosphere projection"),
+					FMath::IsNearlyEqual(RuntimeInnerRadius, 1.0f / CoronaScale, 1.0e-5f));
+
+				if (RuntimeStellarMaterial)
+				{
+					const float RuntimeEmission = RuntimeStellarMaterial->K2_GetScalarParameterValue(
+						TEXT("Multiplier"));
+					const float EmissionActivity = FMath::Clamp(
+						FMath::Log2(1.0f + FMath::Max(RuntimeEmission, 0.0f)) / 8.97f,
+						0.0f, 1.0f);
+					float ExpectedTypeGain = 1.0f;
+					switch (ExpectedType)
+					{
+					case EStellarType::Protostar: ExpectedTypeGain = 1.40f; break;
+					case EStellarType::HyperGiant: ExpectedTypeGain = 1.35f; break;
+					case EStellarType::SuperGiant: ExpectedTypeGain = 1.28f; break;
+					case EStellarType::BrightGiant: ExpectedTypeGain = 1.20f; break;
+					case EStellarType::Giant: ExpectedTypeGain = 1.14f; break;
+					case EStellarType::SubGiant: ExpectedTypeGain = 1.08f; break;
+					case EStellarType::Neutron: ExpectedTypeGain = 1.18f; break;
+					case EStellarType::Pulsar: ExpectedTypeGain = 1.34f; break;
+					case EStellarType::WhiteDwarf: ExpectedTypeGain = 0.92f; break;
+					case EStellarType::SubDwarf: ExpectedTypeGain = 0.82f; break;
+					case EStellarType::BrownDwarf: ExpectedTypeGain = 0.42f; break;
+					default: break;
+					}
+					const float ExpectedCoronaIntensity =
+						FMath::Min(FMath::Lerp(128.0f, 160.0f, EmissionActivity)
+							* ExpectedTypeGain, 192.0f);
+					const float ExpectedCoronaOpacity =
+						FMath::Lerp(0.68f, 0.76f, EmissionActivity);
+					Test->TestTrue(TEXT("Actor corona uses the limb-seeded HDR gain"),
+						FMath::IsNearlyEqual(
+							RuntimeCoronaMaterial->K2_GetScalarParameterValue(
+								TEXT("CoronaIntensity")),
+							ExpectedCoronaIntensity, 1.0e-4f));
+					Test->TestTrue(TEXT("Actor corona uses the exact monotonic-falloff opacity"),
+						FMath::IsNearlyEqual(
+							RuntimeCoronaMaterial->K2_GetScalarParameterValue(
+								TEXT("CoronaOpacity")),
+							ExpectedCoronaOpacity, 1.0e-4f));
+				}
+			}
 			Test->TestEqual(TEXT("Requested stellar class reaches generated star"),
 				static_cast<int32>(Star->StellarClass), static_cast<int32>(ExpectedType));
 			if (ExpectedType == EStellarType::HyperGiant)
@@ -3991,14 +4538,29 @@ namespace APSMainMenuPreviewSmokeTests
 					FMath::Max(2.0, SystemRadius * 1.0e-5)));
 
 			Star->StarMesh->UpdateBounds();
+			if (IsValid(Star->CoronaMesh))
+			{
+				Star->CoronaMesh->UpdateBounds();
+			}
 			FVector PresentedStarCenter = Star->GetActorLocation();
 			Generator->GetPreviewPresentationLocation(Star, PresentedStarCenter);
 			Test->TestTrue(TEXT("Rendered star mesh follows its presentation centre"),
 				Star->StarMesh->Bounds.Origin.Equals(PresentedStarCenter, 1.0));
 			const double PresentedStarRadius = Star->StarMesh->Bounds.SphereRadius;
+			const double PresentedCoronaRadius = IsValid(Star->CoronaMesh)
+				? static_cast<double>(Star->CoronaMesh->Bounds.SphereRadius)
+				: 0.0;
+			UE_LOG(LogTemp, Display,
+				TEXT("[APS.StellarPresentation.Radius] type=%s photosphere=%.3e corona=%.3e system=%.3e ratios=%.5f/%.5f"),
+				*UEnum::GetValueAsString(ExpectedType), PresentedStarRadius,
+				PresentedCoronaRadius, SystemRadius, PresentedStarRadius / SystemRadius,
+				PresentedCoronaRadius / SystemRadius);
 			Test->TestTrue(TEXT("Rendered star remains legible without consuming its system"),
 				PresentedStarRadius >= SystemRadius * 0.01
 				&& PresentedStarRadius <= SystemRadius * 0.12);
+			Test->TestTrue(TEXT("Rendered corona also remains inside the SYSTEM safe band"),
+				PresentedCoronaRadius > PresentedStarRadius
+				&& PresentedCoronaRadius <= SystemRadius * 0.12);
 
 			FVector InfluenceCenter;
 			double InfluenceRadius = 0.0;
@@ -4008,13 +4570,8 @@ namespace APSMainMenuPreviewSmokeTests
 			{
 				return false;
 			}
-			Test->TestTrue(TEXT("STAR influence shell stays visible in SYSTEM"),
+			Test->TestFalse(TEXT("SYSTEM hides the redundant stellar influence shell"),
 				bInfluenceVisible);
-			Test->TestTrue(TEXT("STAR influence shell never drifts from rendered star"),
-				InfluenceCenter.Equals(Star->StarMesh->Bounds.Origin, 1.0));
-			Test->TestTrue(TEXT("STAR influence shell remains 1.5 rendered radii"),
-				FMath::IsNearlyEqual(InfluenceRadius, PresentedStarRadius * 1.5,
-					FMath::Max(2.0, InfluenceRadius * 1.0e-5)));
 
 			Test->TestTrue(TEXT("Native system safe-zone stays hidden behind preview shell"),
 				IsValid(System->StarSystemZone) && !System->StarSystemZone->IsVisible()
@@ -4191,8 +4748,8 @@ namespace APSMainMenuPreviewSmokeTests
 			}
 			Test->TestEqual(TEXT("Generator owns exactly two line-only guide components"),
 				WireGuideCount, 2);
-			Test->TestEqual(TEXT("SYSTEM renders exactly two line-only guides"),
-				VisibleWireGuideCount, 2);
+			Test->TestEqual(TEXT("SYSTEM renders only the outer line guide"),
+				VisibleWireGuideCount, 1);
 			Test->TestTrue(TEXT("Generator retains and neutralizes serialized guide placeholders"),
 				LegacyShellCount >= 2);
 

@@ -354,6 +354,17 @@ bool APlanetaryBody::RefreshWorldScapeSurfaceVisibility()
 				OceanLod->Mesh->SetGenerateOverlapEvents(false);
 				OceanLod->Mesh->SetCollisionResponseToAllChannels(ECR_Ignore);
 				OceanLod->Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				// Ocean sections are a level colour/depth shell.  Letting the independently
+				// stitched clipmap strips cast/occlude projects their square topology onto
+				// the scene and makes flat water look physically displaced.
+				OceanLod->Mesh->SetCastShadow(false);
+				OceanLod->Mesh->bCastContactShadow = false;
+				OceanLod->Mesh->bCastStaticShadow = false;
+				OceanLod->Mesh->bCastDynamicShadow = false;
+				OceanLod->Mesh->bCastFarShadow = false;
+				OceanLod->Mesh->bCastShadowAsTwoSided = false;
+				OceanLod->Mesh->bUseAsOccluder = false;
+				OceanLod->Mesh->bTreatAsBackgroundForOcclusion = false;
 			}
 		}
 
@@ -391,6 +402,13 @@ bool APlanetaryBody::RefreshWorldScapeSurfaceVisibility()
 				bHasStableTerrainCoverage = HasInitialFullScaleGameplayRenderContract(Root);
 			}
 		}
+	}
+	if (bHasStableTerrainCoverage && !bWasSurfaceReady
+		&& !PlanetaryEnvironmentGenerator->FinalizeStableWaterMaterial())
+	{
+		// Keep the placeholder for one more refresh rather than exposing a partially
+		// published or pre-stream material proxy as the first gameplay frame.
+		bHasStableTerrainCoverage = false;
 	}
 
 	if (bHasStableTerrainCoverage && !bWasSurfaceReady)

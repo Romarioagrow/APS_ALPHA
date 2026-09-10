@@ -1,6 +1,7 @@
 #include "APSStellarVisualSubsystem.h"
 
 #include "APS_ALPHA/Actors/Astro/Star.h"
+#include "APS_ALPHA/Actors/Astro/StarSystem.h"
 #include "APS_ALPHA/Actors/Astro/StarCluster.h"
 #include "APS_ALPHA/Actors/Astro/PlanetaryBody.h"
 #include "APS_ALPHA/Actors/Tech/SpaceStation.h"
@@ -330,8 +331,22 @@ void UAPSStellarVisualSubsystem::UpdatePreviewFillLight(
 		return;
 	}
 
+	FVector PresentedBodyCenter = PreviewBody->GetActorLocation();
+	bool bContinuousPreview = false;
+	if (UWorld* World = GetWorld())
+	{
+		for (TActorIterator<AAstroGenerator> It(World); It; ++It)
+		{
+			if (It->UsesContinuousPreviewFrame() && PreviewBody->IsAttachedTo(*It))
+			{
+				bContinuousPreview = true;
+				It->GetPreviewPresentationLocation(PreviewBody, PresentedBodyCenter);
+				break;
+			}
+		}
+	}
 	const FVector LightRayDirection =
-		(PreviewBody->GetActorLocation() - PreviewCameraLocation).GetSafeNormal();
+		(PresentedBodyCenter - PreviewCameraLocation).GetSafeNormal();
 	if (LightRayDirection.IsNearlyZero())
 	{
 		if (FillComponent && FillComponent->IsVisible())
@@ -356,7 +371,7 @@ void UAPSStellarVisualSubsystem::UpdatePreviewFillLight(
 			ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 		FillLight = World->SpawnActor<ADirectionalLight>(
 			ADirectionalLight::StaticClass(),
-			PreviewBody->GetActorLocation(),
+			PresentedBodyCenter,
 			DesiredRotation,
 			SpawnParameters);
 		FillComponent = FillLight
@@ -386,6 +401,10 @@ void UAPSStellarVisualSubsystem::UpdatePreviewFillLight(
 			PreviewFillLightIntensity);
 	}
 
+	// The camera-facing inspection fill is not a physical emitter. A specular
+	// contribution puts an artificial, camera-locked "star" at the globe's centre.
+	// Actual stellar lights retain their specular reflections.
+	FillComponent->SetSpecularScale(bContinuousPreview ? 0.0f : 1.0f);
 	if (!FillComponent->IsVisible())
 	{
 		FillComponent->SetVisibility(true);
@@ -689,11 +708,14 @@ void UAPSStellarVisualSubsystem::ResolveNearestStar(const FVector& ObserverLocat
 	float BestLuminosity = 1.0f;
 	FString BestIdentity;
 	bool bHasMaterializedStar = false;
+	const AStarSystem* PreviewSystem = nullptr;
+	for (TActorIterator<AAstroGenerator> It(World); It; ++It)
+		if (It->UsesContinuousPreviewFrame()) { PreviewSystem = It->GetContinuousPreviewActiveSystem(); break; }
 
 	for (TActorIterator<AStar> It(World); It; ++It)
 	{
 		const AStar* Star = *It;
-		if (!IsValid(Star))
+		if (!IsValid(Star) || (PreviewSystem && !Star->IsAttachedTo(PreviewSystem)))
 		{
 			continue;
 		}

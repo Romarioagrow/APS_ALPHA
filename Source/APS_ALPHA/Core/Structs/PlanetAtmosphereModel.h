@@ -13,7 +13,7 @@ struct FPlanetAtmosphereModel
 		  AtmosphereRadiusKm(6378.0),
 		  AtmosphereHeight(100.0),
 		  AtmosphereOpacity(1.0),
-		  AtmosphereMultiScattering(1.0),
+		  AtmosphereMultiScattering(5.0),
 		  AtmosphereRayleighScattering(8.0),
 		  AtmosphereColor(FLinearColor(3.8f, 13.5f, 33.0f, 0.0f)) 
 	{

@@ -5,6 +5,15 @@
 
 namespace APSStellarSurface
 {
+	struct FVisualPreset
+	{
+		float Archetype;
+		float SurfaceVariation;
+		float Granulation;
+		float Spots;
+		float Corona;
+	};
+
 	float TypeActivity(const EStellarType StellarType)
 	{
 		switch (StellarType)
@@ -21,7 +30,59 @@ namespace APSStellarSurface
 		case EStellarType::BrownDwarf: return 0.62f;
 		case EStellarType::SubDwarf: return 0.44f;
 		case EStellarType::MainSequence: return 0.52f;
+		case EStellarType::BlackHole: return 0.00f;
 		default: return 0.45f;
+		}
+	}
+
+	FVisualPreset GetVisualPreset(const EStellarType StellarType)
+	{
+		switch (StellarType)
+		{
+		case EStellarType::SubGiant:
+			return {1.0f, 0.58f, 0.58f, 0.44f, 0.14f};
+		case EStellarType::Giant:
+			return {1.0f, 0.70f, 0.64f, 0.48f, 0.16f};
+		case EStellarType::BrightGiant:
+			return {1.0f, 0.76f, 0.69f, 0.52f, 0.18f};
+		case EStellarType::SuperGiant:
+			return {1.0f, 0.82f, 0.74f, 0.56f, 0.20f};
+		case EStellarType::HyperGiant:
+			return {1.0f, 0.88f, 0.79f, 0.60f, 0.22f};
+		case EStellarType::Protostar:
+			return {2.0f, 0.68f, 0.40f, 0.18f, 0.24f};
+		case EStellarType::WhiteDwarf:
+			return {3.0f, 0.18f, 0.22f, 0.06f, 0.13f};
+		case EStellarType::Neutron:
+			return {3.0f, 0.10f, 0.12f, 0.02f, 0.18f};
+		case EStellarType::Pulsar:
+			return {4.0f, 0.08f, 0.10f, 0.00f, 0.24f};
+		case EStellarType::SubDwarf:
+			return {5.0f, 0.30f, 0.34f, 0.30f, 0.11f};
+		case EStellarType::BrownDwarf:
+			return {5.0f, 0.36f, 0.28f, 0.42f, 0.10f};
+		case EStellarType::BlackHole:
+			return {6.0f, 0.00f, 0.00f, 0.00f, 0.20f};
+		case EStellarType::MainSequence:
+		case EStellarType::Unknown:
+		default:
+			return {0.0f, 0.42f, 0.54f, 0.42f, 0.14f};
+		}
+	}
+
+	ESpectralClass GetCompactObjectSpectralFallback(const EStellarType StellarType)
+	{
+		switch (StellarType)
+		{
+		case EStellarType::Neutron:
+		case EStellarType::Pulsar:
+			return ESpectralClass::NS;
+		case EStellarType::Protostar:
+			return ESpectralClass::PS;
+		case EStellarType::BlackHole:
+			return ESpectralClass::BH;
+		default:
+			return ESpectralClass::Unknown;
 		}
 	}
 }
@@ -30,6 +91,14 @@ UStarGenerator::UStarGenerator()
 {
 	FDateTime Time = FDateTime::UtcNow();
 	RandomStream = FRandomStream(Time.ToUnixTimestamp());
+}
+
+void UStarGenerator::SetGenerationSeed(const int32 Seed)
+{
+	// Hash-derived seeds can be negative. Collapsing them all to one aliases half
+	// the canonical addresses; FRandomStream accepts every signed 32-bit seed.
+	RandomStream.Initialize(Seed);
+	bSeededGeneration = true;
 }
 
 double UStarGenerator::GetFarStarVisualRadius(const double PhysicalRadius)
@@ -71,6 +140,17 @@ void UStarGenerator::ApplySpectralMaterial(AStar* NewStar, TSharedPtr<FStarModel
 	{
 		return;
 	}
+	const FAPSStellarMaterialParameters Parameters = ApplySpectralMaterialParameters(StarDynamicMaterial, StarModel);
+	NewStar->StarDynamicMaterial = StarDynamicMaterial;
+	NewStar->StarMesh->SetMaterial(0, StarDynamicMaterial);
+	NewStar->ConfigureStellarPresentation(
+		Parameters.Color, Parameters.Emission, Parameters.SurfaceSeed, StarModel->StellarType);
+}
+
+FAPSStellarMaterialParameters UStarGenerator::ApplySpectralMaterialParameters(
+	UMaterialInstanceDynamic* StarDynamicMaterial, TSharedPtr<FStarModel> StarModel)
+{
+	if (!IsValid(StarDynamicMaterial) || !StarModel.IsValid()) return {};
 
 	// ���������� ��������� ��������
 	FName ParameterName1 = "Multiplier";
@@ -87,6 +167,8 @@ void UStarGenerator::ApplySpectralMaterial(AStar* NewStar, TSharedPtr<FStarModel
 		+ StarModel->Radius * 0.071f
 		+ StarModel->Luminosity * 0.019f));
 	const float TypeActivity = APSStellarSurface::TypeActivity(StarModel->StellarType);
+	const APSStellarSurface::FVisualPreset VisualPreset =
+		APSStellarSurface::GetVisualPreset(StarModel->StellarType);
 	const float Temperature01 = FMath::Clamp(
 		(static_cast<float>(StarModel->SurfaceTemperature) - 2200.0f) / 27800.0f,
 		0.0f, 1.0f);
@@ -94,26 +176,27 @@ void UStarGenerator::ApplySpectralMaterial(AStar* NewStar, TSharedPtr<FStarModel
 		FMath::Log2(1.0f + FMath::Max(StarModel->Luminosity, 0.0f)) / 14.0f,
 		0.0f, 1.0f);
 	StarDynamicMaterial->SetScalarParameterValue(TEXT("SurfaceSeed"), SurfaceSeed);
+	StarDynamicMaterial->SetScalarParameterValue(TEXT("StellarArchetype"),
+		VisualPreset.Archetype);
 	StarDynamicMaterial->SetScalarParameterValue(TEXT("SurfaceVariation"),
-		FMath::Lerp(0.24f, 0.50f, TypeActivity));
+		FMath::Clamp(VisualPreset.SurfaceVariation
+			+ (TypeActivity - 0.5f) * 0.04f, 0.0f, 1.0f));
 	StarDynamicMaterial->SetScalarParameterValue(TEXT("GranulationStrength"),
-		FMath::Lerp(0.36f, 0.64f, FMath::Clamp(TypeActivity * 0.72f + Luminosity01 * 0.28f,
-			0.0f, 1.0f)));
+		FMath::Clamp(VisualPreset.Granulation + Luminosity01 * 0.06f, 0.0f, 1.0f));
 	// Cooler convection zones tend to read with stronger dark spots; very hot and
 	// compact stars retain fine granulation without being covered by black patches.
 	StarDynamicMaterial->SetScalarParameterValue(TEXT("SpotStrength"),
-		FMath::Lerp(0.20f, 0.60f, FMath::Clamp((1.0f - Temperature01) * 0.68f
-			+ TypeActivity * 0.32f, 0.0f, 1.0f)));
+		FMath::Clamp(VisualPreset.Spots + (1.0f - Temperature01) * 0.08f,
+			0.0f, 1.0f));
 	StarDynamicMaterial->SetScalarParameterValue(TEXT("CoronaStrength"),
-		FMath::Lerp(0.10f, 0.24f, FMath::Clamp(TypeActivity * 0.55f
-			+ Luminosity01 * 0.45f, 0.0f, 1.0f)));
+		FMath::Clamp(VisualPreset.Corona * FMath::Lerp(0.92f, 1.14f, Luminosity01),
+			0.10f, 0.24f));
 
 	// ��������� ������������ �������� � ������ �������
 	// Keep AStar's public runtime handle synchronized even when this function had
 	// to create the MID itself (for example before BeginPlay or after a material
 	// reset).  Later stellar edits must never target a stale instance.
-	NewStar->StarDynamicMaterial = StarDynamicMaterial;
-	NewStar->StarMesh->SetMaterial(0, StarDynamicMaterial);
+	return { ColorValue, MultiplierValue, SurfaceSeed };
 }
 
 /*TUniquePtr<FStarModel>*/
@@ -403,6 +486,42 @@ void UStarGenerator::ApplyModel(AStar* NewStar, TSharedPtr<FStarModel> StarModel
 
 void UStarGenerator::GenerateStarModel(TSharedPtr<FStarModel> StarModel)
 {
+	if (!StarModel)
+	{
+		return;
+	}
+
+	// Compact objects have dedicated spectral identities. Older generation paths
+	// left these as Unknown, which selected a zero-temperature grey fallback and
+	// made protostars, neutron stars, pulsars and black holes visually identical.
+	// Preserve an explicit user-selected spectrum, but make an omitted one
+	// deterministic and physically meaningful.
+	const ESpectralClass CompactFallback =
+		APSStellarSurface::GetCompactObjectSpectralFallback(StarModel->StellarType);
+	if (CompactFallback != ESpectralClass::Unknown
+		&& StarModel->SpectralClass != CompactFallback)
+	{
+		// Stellar type owns compact-object physics. A stale/default UI G class must
+		// not turn a neutron star, pulsar, protostar or black hole into a yellow sun.
+		StarModel->SpectralClass = CompactFallback;
+	}
+	else if (StarModel->StellarType == EStellarType::BrownDwarf
+		&& StarModel->SpectralClass != ESpectralClass::L
+		&& StarModel->SpectralClass != ESpectralClass::T
+		&& StarModel->SpectralClass != ESpectralClass::Y)
+	{
+		StarModel->SpectralClass = ESpectralClass::L;
+	}
+	else if (StarModel->SpectralClass == ESpectralClass::Unknown)
+	{
+		StarModel->SpectralClass = CompactFallback != ESpectralClass::Unknown
+			? CompactFallback : ChooseSpectralClassByStellarClass(StarModel->StellarType);
+		if (StarModel->SpectralClass == ESpectralClass::Unknown)
+		{
+			StarModel->SpectralClass = ESpectralClass::G;
+		}
+	}
+
 	if (StarModel->StellarType == EStellarType::MainSequence)
 	{
 		// Get the mass from the spectral class
@@ -416,7 +535,7 @@ void UStarGenerator::GenerateStarModel(TSharedPtr<FStarModel> StarModel)
 		// Generate a star model
 		StarModel->Mass = Mass;
 		StarModel->Radius = Radius;
-		StarModel->RadiusKM = Radius * 6.957e+5;
+		StarModel->RadiusKM = Radius * SolarRadiusKm;
 		StarModel->Luminosity = Luminosity;
 		StarModel->SurfaceTemperature = SurfaceTemperature;
 		StarModel->Age = CalculateMainSequenceStarAge(Mass);
@@ -430,17 +549,46 @@ void UStarGenerator::GenerateStarModel(TSharedPtr<FStarModel> StarModel)
 		}
 
 		FStarAttributeRanges& AttributeRanges = StarAttributeRanges[StarModel->StellarType];
-		StarModel->Mass = FMath::RandRange(AttributeRanges.Mass.Range.Get<0>(), AttributeRanges.Mass.Range.Get<1>());
+		StarModel->Mass = GenerationRandRange(AttributeRanges.Mass.Range.Get<0>(), AttributeRanges.Mass.Range.Get<1>());
 		/// TODO: Refactor with Key/Val
-		StarModel->Radius = FMath::RandRange(AttributeRanges.Radius.Range.Get<0>(),
+		StarModel->Radius = GenerationRandRange(AttributeRanges.Radius.Range.Get<0>(),
 		                                     AttributeRanges.Radius.Range.Get<1>());
 		StarModel->SurfaceTemperature = GenerateRandomTemperatureBySpectralClass(StarModel->SpectralClass);
 		StarModel->Luminosity = CalculateLuminosity(StarModel->Radius, StarModel->SurfaceTemperature);
 		StarModel->Age = CalculateNonMainSequenceStarAge(StarModel->Mass);
 	}
+	// RadiusKM is consumed by preview scaling, focus bounds and lighting for every
+	// stellar type. The legacy branch populated it only for MainSequence, collapsing
+	// Giant/Protostar/compact classes to the same one-unit presentation fallback.
+	if (FMath::IsFinite(StarModel->Radius) && StarModel->Radius > 0.0)
+	{
+		StarModel->RadiusKM = StarModel->Radius * SolarRadiusKm;
+	}
 
 	StarModel->SpectralSubclass = CalculateSpectralSubclass(StarModel->SurfaceTemperature, StarModel->SpectralClass);
 	StarModel->SpectralType = CalculateSpectralType(StarModel->StellarType, StarModel->Luminosity);
+}
+
+bool UStarGenerator::ApplyRadiusOverrideSolar(
+	FStarModel& StarModel, const double RadiusSolar)
+{
+	if (!FMath::IsFinite(RadiusSolar) || RadiusSolar <= 0.0)
+	{
+		return false;
+	}
+
+	// The limits span stellar-mass compact objects through the largest stable
+	// hypergiant presentation while preventing invalid UI text from poisoning the
+	// orbital model. This runs before planetary generation, so every safe radius and
+	// orbit consumes the same authored physical star.
+	StarModel.Radius = FMath::Clamp(RadiusSolar, 1.0e-5, 1000.0);
+	StarModel.RadiusKM = StarModel.Radius * SolarRadiusKm;
+	StarModel.Luminosity = CalculateLuminosity(
+		StarModel.Radius, FMath::Max(StarModel.SurfaceTemperature, 0));
+	StarModel.SpectralType = CalculateSpectralType(
+		StarModel.StellarType, StarModel.Luminosity);
+	return FMath::IsFinite(StarModel.RadiusKM)
+		&& FMath::IsFinite(StarModel.Luminosity);
 }
 
 
@@ -511,7 +659,7 @@ ESpectralClass UStarGenerator::GenerateSpectralClassByProbability(
 	{
 		TotalWeight += Pair.Value;
 	}
-	int RandomValue = FMath::RandRange(0, TotalWeight - 1);
+	int RandomValue = GenerationRandRange(0, TotalWeight - 1);
 	ESpectralClass ChosenSpectralClass{};
 	for (auto const& pair : StarSpectralClassProbabilities)
 	{
@@ -532,7 +680,7 @@ EStellarType UStarGenerator::GenerateStellarTypeByRandomWeights(TMap<EStellarTyp
 	{
 		TotalWeight += Pair.Value;
 	}
-	float RandomValue = FMath::RandRange(0.f, TotalWeight - 1.f);
+	float RandomValue = GenerationRandRange(0.f, TotalWeight - 1.f);
 	EStellarType ChosenStellarClass{};
 	for (auto const& pair : StarTypeProbabilities)
 	{
@@ -553,7 +701,7 @@ EStellarType UStarGenerator::GenerateStellarTypeByRandomWeights()
 	{
 		TotalWeight += Pair.Value;
 	}
-	int RandomValue = FMath::RandRange(0, TotalWeight - 1);
+	int RandomValue = GenerationRandRange(0, TotalWeight - 1);
 	EStellarType ChosenStellarClass{};
 	for (auto const& pair : DefaultStarTypeWeights)
 	{
@@ -718,9 +866,14 @@ int UStarGenerator::CalculateSpectralSubclass(double StarTemperature, ESpectralC
 	}
 
 	const TTuple<double, double>& TempRange = StarTypeTemperatureRanges[SpectralClass];
+	const double TemperatureSpan = TempRange.Get<1>() - TempRange.Get<0>();
+	if (!FMath::IsFinite(TemperatureSpan) || FMath::IsNearlyZero(TemperatureSpan))
+	{
+		return 0;
+	}
 
 	// Linear interpolation between the temperature range of the spectral class
-	double TempRatio = (StarTemperature - TempRange.Get<0>()) / (TempRange.Get<1>() - TempRange.Get<0>());
+	double TempRatio = (StarTemperature - TempRange.Get<0>()) / TemperatureSpan;
 
 	// Multiply by 10 to get subclass (0-9)
 	int Subclass = 9 - FMath::RoundToInt(TempRatio * 10.0);
@@ -770,7 +923,7 @@ double UStarGenerator::CalculateLuminosityByMass(double Mass)
 	if (Luminosity > 100000.0)
 	{
 		// Set a maximum luminosity
-		Luminosity = FMath::FRandRange(100000.0, 200000.0);
+		Luminosity = GenerationRandRange(100000.0, 200000.0);
 	}
 
 	return Luminosity;
@@ -778,7 +931,7 @@ double UStarGenerator::CalculateLuminosityByMass(double Mass)
 
 double UStarGenerator::RandomFromRange(TTuple<double, double> Range)
 {
-	return FMath::RandRange(Range.Key, Range.Value);
+	return GenerationRandRange(Range.Key, Range.Value);
 }
 
 double UStarGenerator::RandomMass(ESpectralClass SpectralClass)
@@ -808,7 +961,7 @@ double UStarGenerator::RandomMass(ESpectralClass SpectralClass)
 double UStarGenerator::RandomRadius(ESpectralClass SpectralClass)
 {
 	auto Range = MainSequenceRadiusRanges[SpectralClass];
-	return FMath::FRandRange(Range.Get<0>(), Range.Get<1>());
+	return GenerationRandRange(Range.Get<0>(), Range.Get<1>());
 }
 
 double UStarGenerator::CalculateLuminosity(double Radius, double SurfaceTemperature)
@@ -825,7 +978,9 @@ double UStarGenerator::CalculateLuminosity(double Radius, double SurfaceTemperat
 	if (Luminosity < 0.0001)
 	{
 		// Set a minimum luminosity
-		Luminosity = FMath::FRandRange(0.00001, 0.000001);
+		// Reapplying the same radius/temperature must be idempotent. A random floor
+		// changed compact-object luminosity on every repeated property application.
+		Luminosity = bSeededGeneration ? 0.000001 : FMath::FRandRange(0.00001, 0.000001);
 	}
 	if (Luminosity > 100000.0)
 	{
@@ -901,6 +1056,13 @@ ESpectralClass UStarGenerator::ChooseSpectralClassByStellarClass(EStellarType St
 
 	switch (StellarClass)
 	{
+	case EStellarType::Neutron:
+	case EStellarType::Pulsar:
+		return ESpectralClass::NS;
+	case EStellarType::Protostar:
+		return ESpectralClass::PS;
+	case EStellarType::BlackHole:
+		return ESpectralClass::BH;
 	case EStellarType::HyperGiant:
 	case EStellarType::SuperGiant:
 	case EStellarType::BrightGiant:
@@ -934,7 +1096,7 @@ ESpectralClass UStarGenerator::ChooseSpectralClassByStellarClass(EStellarType St
 	}
 
 	// ��������� ���������� �����
-	int RandWeight = FMath::RandRange(0, TotalWeight - 1);
+	int RandWeight = GenerationRandRange(0, TotalWeight - 1);
 
 	// ���������� ���������������� ������������� ������
 	for (int i = 0; i < CumulativeWeights.Num(); ++i)
@@ -977,5 +1139,5 @@ ESpectralClass UStarGenerator::DetermineSpectralClassByTemperature(EStellarType 
 double UStarGenerator::GenerateRandomTemperatureBySpectralClass(ESpectralClass SpectralClass)
 {
 	TTuple<double, double> TemperatureRange = StarTypeTemperatureRanges[SpectralClass];
-	return FMath::RandRange(TemperatureRange.Get<0>(), TemperatureRange.Get<1>());
+	return GenerationRandRange(TemperatureRange.Get<0>(), TemperatureRange.Get<1>());
 }

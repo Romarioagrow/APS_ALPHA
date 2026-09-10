@@ -139,9 +139,10 @@ FVector UStarClusterGenerator::CalculateStarPosition(int StarIndex, AStarCluster
 		{
 			// Leave a readable gap in the ring so the preset is visually distinct
 			// from both a globular cluster and the continuous nebula spiral. Symmetric
-			// pairs share radial jitter and opposite height, while the nominal arc
-			// bounds are translated back to the cluster origin. This preserves the arc
-			// silhouette without making its camera focus drift toward the filled side.
+			// pairs share radial jitter and height, while the nominal arc bounds are
+			// translated back to the cluster origin. Using opposite height signs split
+			// the two middle neighbours by the full ribbon thickness and exposed a hard
+			// technical seam. Pair-coherent height preserves the same volume and seed.
 			const double ArcHalfAngle = PI * 0.82;
 			const double Angle = FMath::Lerp(-ArcHalfAngle, ArcHalfAngle, NormalizedIndex);
 			const double BaseRadius = FMath::Min(StarCluster->ClusterBounds.X,
@@ -160,8 +161,8 @@ FVector UStarClusterGenerator::CalculateStarPosition(int StarIndex, AStarCluster
 				* (1.0 + FMath::Cos(ArcHalfAngle)) * 0.5;
 			const double HalfHeight = FMath::Abs(StarCluster->ClusterBounds.Z) * 0.5;
 			const double HeightMagnitude = PairStream.FRandRange(0.0f, HalfHeight);
-			const double Height = StarIndex == MirroredIndex ? 0.0
-				: (StarIndex < MirroredIndex ? -HeightMagnitude : HeightMagnitude);
+			const double HeightSign = (PairSeedHash & 1u) != 0u ? 1.0 : -1.0;
+			const double Height = HeightMagnitude * HeightSign;
 			StarPosition = FVector(
 				FMath::Cos(Angle) * Radius - ArcBoundsCentreX,
 				FMath::Sin(Angle) * Radius,

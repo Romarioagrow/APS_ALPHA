@@ -167,12 +167,14 @@ void APlanetaryBody::FillPlanetData()
 	PlanetData.Temperature = Temperature;
 	PlanetData.PlanetDensity = PlanetDensity;
 	PlanetData.PlanetGravityStrength = PlanetGravityStrength;
+	PlanetData.PlanetHabitability = PlanetHabitability;
 
 	// Заполняем данные окружения
 	PlanetData.PlanetAtmosphere = PlanetAtmosphere;
 	PlanetData.PlanetBiosphere = PlanetBiosphere;
 	PlanetData.PlanetGeosphere = PlanetGeosphere;
 	
+	PlanetData.PlanetModel->PlanetHabitability = PlanetHabitability;
 	PlanetData.PlanetModelData = *(PlanetData.PlanetModel); //PlanetData.Duplicate();
 	PlanetData.PlanetModelData.MoonsListData = PlanetData.PlanetModelData.GetMoonsData(); //*(PlanetData.PlanetModelData.MoonsList); //PlanetData.Duplicate();
 	

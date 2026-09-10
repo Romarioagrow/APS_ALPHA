@@ -6,6 +6,7 @@
 #include "APS_ALPHA/Core/Enums/OrbitDistributionType.h"
 #include "APS_ALPHA/Core/Enums/PlanetarySystemType.h"
 #include "APS_ALPHA/Core/Enums/PlanetType.h"
+#include "APS_ALPHA/Core/Enums/PlanetHabitability.h"
 #include "APS_ALPHA/Core/Enums/StarClusterComposition.h"
 #include "APS_ALPHA/Core/Enums/StarClusterPopulation.h"
 #include "APS_ALPHA/Core/Enums/StarClusterSize.h"
@@ -39,10 +40,12 @@ struct FGeneratedWorldData
         , StarType(EStarType::SingleStar)
         , StellarType(EStellarType::Unknown)
         , SpectralClass(ESpectralClass::Unknown)
+		, HomeStarRadiusOverrideSolar(0.0)
         , PlanetarySystemType(EPlanetarySystemType::Unknown)
         , OrbitDistributionType(EOrbitDistributionType::Uniform)
         , HomeSystemPosition(EHomeSystemPosition::WorldCenter)
         , PlanetType(EPlanetType::Unknown)
+		, PlanetHabitability(EPlanetHabitability::Uninhabitable)
         , GalaxySize(0)
         , GalaxyStarCount(0)
         , PlanetsAmount(0)
@@ -57,11 +60,11 @@ struct FGeneratedWorldData
 		, SurfaceMountainScale(1.0)
 		, SurfaceCraterScale(1.0)
 		, SurfaceRoughnessScale(1.0)
-        , AtmosphereHeight(0.0)
+		, AtmosphereHeight(100.0)
 		, AtmosphereOpacity(12.0)
-        , AtmosphereMultiScattering(0.0)
-        , AtmosphereRayleighScattering(0.0)
-        , AtmosphereColor(FLinearColor::White)
+		, AtmosphereMultiScattering(5.0)
+		, AtmosphereRayleighScattering(8.0)
+		, AtmosphereColor(FLinearColor(3.8f, 13.5f, 33.0f, 0.0f))
         , StarsAmount(0)
         , HomeStarName(NAME_None)
         , HomePlanetName(NAME_None)
@@ -124,6 +127,10 @@ struct FGeneratedWorldData
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Home System")
     ESpectralClass SpectralClass;
 
+	/** Authored primary-star radius; zero means generation/type default. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Home System")
+	double HomeStarRadiusOverrideSolar;
+
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Home System")
     EPlanetarySystemType PlanetarySystemType;
 
@@ -135,6 +142,9 @@ struct FGeneratedWorldData
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Home System")
     EPlanetType PlanetType;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Home System")
+	EPlanetHabitability PlanetHabitability;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Galaxy")
     int GalaxySize;

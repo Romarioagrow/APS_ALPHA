@@ -1,0 +1,392 @@
+﻿{
+	"devices": [
+		{
+			"deviceName": "RIO-PC",
+			"instance": "4E57FDD84BA079E26D2F36AD2962C777",
+			"instanceName": "RIO-PC-45504",
+			"platform": "WindowsEditor",
+			"oSVersion": "Windows 11 (25H2) [10.0.26200.7623] ",
+			"model": "Default",
+			"gPU": "NVIDIA GeForce RTX 5080",
+			"cPUModel": "Intel(R) Core(TM) i9-10900KF CPU @ 3.70GHz",
+			"rAMInGB": 32,
+			"renderMode": "SM5",
+			"rHI": "",
+			"appInstanceLog": ""
+		}
+	],
+	"reportCreatedOn": "2026.08.08-09.53.35",
+	"succeeded": 0,
+	"succeededWithWarnings": 1,
+	"failed": 0,
+	"notRun": 0,
+	"inProcess": 0,
+	"totalDuration": 0.031125199049711227,
+	"comparisonExported": false,
+	"comparisonExportDirectory": "",
+	"tests": [
+		{
+			"testDisplayName": "GroundScaleRelief",
+			"fullTestPath": "APS.Gameplay.World.PlanetSurface.GroundScaleRelief",
+			"state": "Success",
+			"deviceInstance": [
+				"4E57FDD84BA079E26D2F36AD2962C777"
+			],
+			"duration": 0.031125199049711227,
+			"dateTime": "0001.01.01-00.00.00",
+			"entries": [
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.GroundRelief] type=Rocky intensity=1022170cm 100m[min=9.02m median=11.76m rmsSlope=0.07548 maxSlope=0.16887] 1km[min=27.20m median=49.90m rmsSlope=0.06606 maxSlope=0.16887] 8km[min=104.68m median=136.44m rmsSlope=0.05769 maxSlope=0.16887] [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.53.35"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.GroundRelief] type=Terrestrial intensity=799191cm 100m[min=8.70m median=11.60m rmsSlope=0.07395 maxSlope=0.18240] 1km[min=28.19m median=65.47m rmsSlope=0.06253 maxSlope=0.18240] 8km[min=72.93m median=126.90m rmsSlope=0.05492 maxSlope=0.18240] [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.53.35"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.GroundRelief] type=Greenhouse intensity=927314cm 100m[min=7.58m median=13.24m rmsSlope=0.07002 maxSlope=0.14227] 1km[min=35.82m median=57.53m rmsSlope=0.06048 maxSlope=0.14227] 8km[min=85.33m median=129.05m rmsSlope=0.05285 maxSlope=0.14227] [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.53.35"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.GroundRelief] type=Melted intensity=1253695cm 100m[min=6.70m median=17.66m rmsSlope=0.08545 maxSlope=0.16087] 1km[min=48.05m median=72.61m rmsSlope=0.08433 maxSlope=0.17759] 8km[min=119.49m median=172.48m rmsSlope=0.07514 maxSlope=0.17759] [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.53.35"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.GroundRelief] type=Dwarf intensity=845955cm 100m[min=6.23m median=18.63m rmsSlope=0.09737 maxSlope=0.14759] 1km[min=34.89m median=50.38m rmsSlope=0.08239 maxSlope=0.15933] 8km[min=81.27m median=121.32m rmsSlope=0.07192 maxSlope=0.15933] [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.53.35"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.GroundRelief] type=Ocean intensity=415815cm 100m[min=2.63m median=5.43m rmsSlope=0.02051 maxSlope=0.06185] 1km[min=20.41m median=23.20m rmsSlope=0.02024 maxSlope=0.06185] 8km[min=36.58m median=41.28m rmsSlope=0.01778 maxSlope=0.06185] [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.53.35"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.GroundRelief] type=Water intensity=423893cm 100m[min=4.39m median=5.55m rmsSlope=0.02178 maxSlope=0.07739] 1km[min=12.98m median=25.81m rmsSlope=0.02025 maxSlope=0.07739] 8km[min=27.82m median=53.39m rmsSlope=0.01781 maxSlope=0.07739] [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.53.35"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.GroundRelief] type=Desert intensity=1106720cm 100m[min=4.64m median=16.43m rmsSlope=0.08695 maxSlope=0.19940] 1km[min=49.87m median=73.02m rmsSlope=0.07748 maxSlope=0.19940] 8km[min=113.58m median=135.95m rmsSlope=0.06860 maxSlope=0.19940] [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.53.35"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.GroundRelief] type=Forest intensity=1039308cm 100m[min=10.39m median=12.46m rmsSlope=0.08554 maxSlope=0.19001] 1km[min=34.78m median=63.60m rmsSlope=0.07500 maxSlope=0.19001] 8km[min=111.22m median=140.94m rmsSlope=0.06554 maxSlope=0.19001] [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.53.35"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.GroundRelief] type=Volcanic intensity=858296cm 100m[min=3.01m median=14.02m rmsSlope=0.06437 maxSlope=0.14365] 1km[min=42.94m median=59.12m rmsSlope=0.05884 maxSlope=0.14365] 8km[min=63.71m median=117.99m rmsSlope=0.05147 maxSlope=0.14365] [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.53.35"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.GroundRelief] type=Ice intensity=403037cm 100m[min=6.71m median=12.16m rmsSlope=0.05642 maxSlope=0.13721] 1km[min=20.92m median=35.08m rmsSlope=0.05278 maxSlope=0.13721] 8km[min=51.83m median=68.81m rmsSlope=0.04603 maxSlope=0.13721] [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.53.35"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.GroundRelief] type=Frozen intensity=595410cm 100m[min=9.69m median=16.18m rmsSlope=0.07454 maxSlope=0.16239] 1km[min=29.05m median=40.05m rmsSlope=0.06589 maxSlope=0.16239] 8km[min=87.77m median=103.09m rmsSlope=0.05793 maxSlope=0.16239] [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.53.35"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.GroundRelief] type=Ammonia intensity=653259cm 100m[min=3.17m median=6.76m rmsSlope=0.03942 maxSlope=0.08767] 1km[min=17.01m median=22.69m rmsSlope=0.03748 maxSlope=0.08767] 8km[min=49.73m median=78.26m rmsSlope=0.03278 maxSlope=0.08767] [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.53.35"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.GroundRelief] type=Metal intensity=1197308cm 100m[min=12.94m median=17.94m rmsSlope=0.08229 maxSlope=0.15947] 1km[min=33.60m median=64.39m rmsSlope=0.07236 maxSlope=0.15947] 8km[min=97.42m median=145.99m rmsSlope=0.06374 maxSlope=0.15947] [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.53.35"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.GroundRelief] type=Carbon intensity=1044256cm 100m[min=6.43m median=15.01m rmsSlope=0.06767 maxSlope=0.15027] 1km[min=33.55m median=57.65m rmsSlope=0.05882 maxSlope=0.15150] 8km[min=100.95m median=137.13m rmsSlope=0.05174 maxSlope=0.15150] [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.53.35"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.GroundRelief] type=SuperEarth intensity=1350000cm 100m[min=5.85m median=12.27m rmsSlope=0.08038 maxSlope=0.18981] 1km[min=35.46m median=52.13m rmsSlope=0.07374 maxSlope=0.18981] 8km[min=119.93m median=166.70m rmsSlope=0.06493 maxSlope=0.18981] [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.53.35"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.GroundRelief] type=Lava intensity=1111614cm 100m[min=9.93m median=14.88m rmsSlope=0.09674 maxSlope=0.19646] 1km[min=33.10m median=76.78m rmsSlope=0.08712 maxSlope=0.19646] 8km[min=76.78m median=151.75m rmsSlope=0.07643 maxSlope=0.19646] [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.53.35"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.GroundRelief] type=Metallic intensity=789222cm 100m[min=3.23m median=6.30m rmsSlope=0.03470 maxSlope=0.06289] 1km[min=11.18m median=28.74m rmsSlope=0.03169 maxSlope=0.08731] 8km[min=49.25m median=71.46m rmsSlope=0.02814 maxSlope=0.08731] [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.53.35"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.GroundRelief] type=Nordic intensity=1188069cm 100m[min=9.64m median=12.56m rmsSlope=0.08518 maxSlope=0.15321] 1km[min=37.67m median=77.49m rmsSlope=0.08127 maxSlope=0.15321] 8km[min=97.32m median=164.54m rmsSlope=0.07169 maxSlope=0.15321] [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.53.35"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.GroundRelief] type=Tundra intensity=939669cm 100m[min=7.80m median=17.28m rmsSlope=0.08680 maxSlope=0.22035] 1km[min=32.55m median=53.84m rmsSlope=0.07908 maxSlope=0.22035] 8km[min=107.40m median=149.34m rmsSlope=0.06984 maxSlope=0.22035] [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.53.35"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.GroundRelief] type=HighMountain intensity=1650000cm 100m[min=6.28m median=22.59m rmsSlope=0.11504 maxSlope=0.29342] 1km[min=82.89m median=168.44m rmsSlope=0.11001 maxSlope=0.29342] 8km[min=310.15m median=462.19m rmsSlope=0.10414 maxSlope=0.29342] [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.53.35"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.GroundRelief] type=Sand intensity=966173cm 100m[min=8.93m median=12.57m rmsSlope=0.06578 maxSlope=0.18615] 1km[min=38.91m median=45.89m rmsSlope=0.05785 maxSlope=0.18615] 8km[min=87.20m median=114.27m rmsSlope=0.05090 maxSlope=0.18615] [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.53.35"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.GroundRelief] type=Oasis intensity=848634cm 100m[min=6.71m median=10.80m rmsSlope=0.05870 maxSlope=0.12313] 1km[min=35.40m median=58.91m rmsSlope=0.05332 maxSlope=0.12313] 8km[min=90.32m median=111.88m rmsSlope=0.04723 maxSlope=0.12313] [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.53.35"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.GroundRelief] type=Archipelago intensity=657261cm 100m[min=4.52m median=8.26m rmsSlope=0.04277 maxSlope=0.09354] 1km[min=15.32m median=35.02m rmsSlope=0.04039 maxSlope=0.09354] 8km[min=57.33m median=85.91m rmsSlope=0.03561 maxSlope=0.09354] [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.53.35"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.GroundRelief] type=Pangea intensity=1086804cm 100m[min=6.76m median=9.40m rmsSlope=0.05285 maxSlope=0.13355] 1km[min=25.53m median=48.23m rmsSlope=0.05208 maxSlope=0.13355] 8km[min=103.98m median=128.97m rmsSlope=0.04652 maxSlope=0.13355] [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.53.35"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.GroundRelief] type=Rogue intensity=813341cm 100m[min=6.70m median=10.61m rmsSlope=0.05852 maxSlope=0.15860] 1km[min=51.64m median=68.89m rmsSlope=0.06177 maxSlope=0.15896] 8km[min=78.96m median=124.55m rmsSlope=0.05436 maxSlope=0.15896] [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.53.35"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.GroundRelief] type=Exoplanet intensity=799248cm 100m[min=3.45m median=5.74m rmsSlope=0.04092 maxSlope=0.11171] 1km[min=25.55m median=39.00m rmsSlope=0.04538 maxSlope=0.12771] 8km[min=62.83m median=81.01m rmsSlope=0.03983 maxSlope=0.12771] [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.53.35"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.GroundRelief] type=Unknown intensity=1051004cm 100m[min=8.49m median=15.36m rmsSlope=0.06137 maxSlope=0.13066] 1km[min=31.87m median=60.07m rmsSlope=0.06062 maxSlope=0.13670] 8km[min=122.52m median=148.67m rmsSlope=0.05331 maxSlope=0.13670] [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.53.35"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogSpawn: UWorld::DestroyActor: World has no context! World: Untitled, Actor: /Temp/Untitled_1.Untitled:PersistentLevel.Planet_0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.08-04.53.35"
+				}
+			],
+			"warnings": 1,
+			"errors": 0,
+			"artifacts": []
+		}
+	]
+}

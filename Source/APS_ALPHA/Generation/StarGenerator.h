@@ -14,6 +14,13 @@ struct FStarClusterModel;
 struct FStarModel;
 enum class EStarClusterComposition : uint8;
 
+struct FAPSStellarMaterialParameters
+{
+	FLinearColor Color{FLinearColor::White};
+	float Emission{0.0f};
+	float SurfaceSeed{0.0f};
+};
+
 UCLASS()
 class APS_ALPHA_API UStarGenerator : public UBaseProceduralGenerator
 {
@@ -21,9 +28,26 @@ class APS_ALPHA_API UStarGenerator : public UBaseProceduralGenerator
 
 public:
 	UStarGenerator();
+	/** Resets the generator-owned stream for a canonical generation domain. */
+	void SetGenerationSeed(int32 Seed);
+	/** Restore the legacy unseeded path when leaving canonical generation. */
+	void ClearGenerationSeed() { bSeededGeneration = false; }
 
 private:
 	FRandomStream RandomStream;
+	bool bSeededGeneration{false};
+	int32 GenerationRandRange(int32 Min, int32 Max)
+	{
+		return bSeededGeneration ? RandomStream.RandRange(Min, Max) : FMath::RandRange(Min, Max);
+	}
+	float GenerationRandRange(float Min, float Max)
+	{
+		return bSeededGeneration ? RandomStream.FRandRange(Min, Max) : FMath::RandRange(Min, Max);
+	}
+	double GenerationRandRange(double Min, double Max)
+	{
+		return bSeededGeneration ? Min + (Max - Min) * RandomStream.FRand() : FMath::RandRange(Min, Max);
+	}
 
 public:
 	const double SolarEmissiveLuminosity = 1.0;
@@ -31,8 +55,12 @@ public:
 	
 	
 	const double MaxStarLuminosity = 500;
+	static constexpr double SolarRadiusKm = 695700.0;
 
 	void ApplySpectralMaterial(AStar* NewStar, TSharedPtr<FStarModel> StarModel);
+	/** Same surface recipe for actor meshes and actor-free resolved preview stars. */
+	FAPSStellarMaterialParameters ApplySpectralMaterialParameters(
+		UMaterialInstanceDynamic* Material, TSharedPtr<FStarModel> StarModel);
 
 	void GenerateStarModelByProbability(TSharedPtr<FStarModel> NewStarModel, TSharedPtr<FStarClusterModel> FStarClusterModel);
 
@@ -63,6 +91,9 @@ public:
 	void ApplyModel(AStar* NewStar, TSharedPtr<FStarModel> StarModel);
 
 	void GenerateStarModel(TSharedPtr<FStarModel> StarModel);
+
+	/** Applies an authored radius before orbit generation and updates derived data. */
+	bool ApplyRadiusOverrideSolar(FStarModel& StarModel, double RadiusSolar);
 
 	void GenerateRandomStarModel(TSharedPtr<FStarModel> StarModel);
 
@@ -543,12 +574,16 @@ private:
 		{EStellarType::BrownDwarf, FStarAttributeRanges(
 			{FLuminosityRange({90000.0, 100000.0}), FMassRange({0.005, 0.075}), FRadiusRange({0.01, 0.1}), FAgeRange({1.0e5, 1.0e6}), FAbsoluteMagnitudeRange({-8.0, -10.0})})},
 		{EStellarType::Neutron, FStarAttributeRanges(
-			{FLuminosityRange({90000.0, 100000.0}), FMassRange({100, 250}), FRadiusRange({40, 1000}), FAgeRange({1.0e5, 1.0e6}), FAbsoluteMagnitudeRange({-8.0, -10.0})})},
+			// Radius is stored in solar radii: 10..15 km for a 1.1..2.4 solar-mass remnant.
+			{FLuminosityRange({90000.0, 100000.0}), FMassRange({1.1, 2.4}), FRadiusRange({10.0 / SolarRadiusKm, 15.0 / SolarRadiusKm}), FAgeRange({1.0e5, 1.0e6}), FAbsoluteMagnitudeRange({-8.0, -10.0})})},
 		{EStellarType::Protostar, FStarAttributeRanges(
 			{FLuminosityRange({90000.0, 100000.0}), FMassRange({0.1, 150}), FRadiusRange({10, 20}), FAgeRange({1.0e5, 1.0e6}), FAbsoluteMagnitudeRange({-8.0, -10.0})})},
 		{EStellarType::Pulsar, FStarAttributeRanges(
-			{FLuminosityRange({90000.0, 100000.0}), FMassRange({2, 200}), FRadiusRange({0.0001, 0.001}), FAgeRange({1.0e5, 1.0e6}), FAbsoluteMagnitudeRange({-8.0, -10.0})})},
+			// A pulsar is a rotating neutron star, so it shares the compact physical range.
+			{FLuminosityRange({90000.0, 100000.0}), FMassRange({1.1, 2.4}), FRadiusRange({10.0 / SolarRadiusKm, 15.0 / SolarRadiusKm}), FAgeRange({1.0e5, 1.0e6}), FAbsoluteMagnitudeRange({-8.0, -10.0})})},
 		{EStellarType::BlackHole, FStarAttributeRanges(
-			{FLuminosityRange({0.0, 0.0}), FMassRange({3, 100}), FRadiusRange({0.001, 1000}), FAgeRange({1.0e5, 1.0e6}), FAbsoluteMagnitudeRange({-8.0, -10.0})})},
+			// The render radius follows the 9..300 km event/photon-scale envelope for
+			// stellar black holes of 3..100 solar masses; the shader owns the accretion ring.
+			{FLuminosityRange({0.0, 0.0}), FMassRange({3, 100}), FRadiusRange({9.0 / SolarRadiusKm, 300.0 / SolarRadiusKm}), FAgeRange({1.0e5, 1.0e6}), FAbsoluteMagnitudeRange({-8.0, -10.0})})},
 	};
 };

@@ -1,0 +1,1539 @@
+﻿{
+	"devices": [
+		{
+			"deviceName": "RIO-PC",
+			"instance": "5B420A854ACC6005E58082B8BC299AC4",
+			"instanceName": "RIO-PC-8304",
+			"platform": "WindowsEditor",
+			"oSVersion": "Windows 11 (25H2) [10.0.26200.7623] ",
+			"model": "Default",
+			"gPU": "NVIDIA GeForce RTX 5080",
+			"cPUModel": "Intel(R) Core(TM) i9-10900KF CPU @ 3.70GHz",
+			"rAMInGB": 32,
+			"renderMode": "D3D12_SM6",
+			"rHI": "DirectX 12 (SM6)",
+			"appInstanceLog": ""
+		}
+	],
+	"reportCreatedOn": "2026.08.07-06.42.16",
+	"succeeded": 11,
+	"succeededWithWarnings": 12,
+	"failed": 0,
+	"notRun": 0,
+	"inProcess": 0,
+	"totalDuration": 2.3319244384765625,
+	"comparisonExported": false,
+	"comparisonExportDirectory": "",
+	"tests": [
+		{
+			"testDisplayName": "GravityStateTransitions",
+			"fullTestPath": "APS.Gameplay.Character.GravityStateTransitions",
+			"state": "Success",
+			"deviceInstance": [
+				"5B420A854ACC6005E58082B8BC299AC4"
+			],
+			"duration": 0.16037949919700623,
+			"dateTime": "0001.01.01-00.00.00",
+			"entries": [
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: [APS.Animation] character=CustomGravityCharacter_0 mode=ZeroG animClass=ABP_ZeroGAnim_C [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Pawns\\Characters\\CustomGravityCharacter.cpp",
+					"lineNumber": 1118,
+					"timestamp": "2026.08.07-01.42.13"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: [APS.Animation] character=CustomGravityCharacter_0 mode=Surface animClass=APS_ABP_Manny_C [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Pawns\\Characters\\CustomGravityCharacter.cpp",
+					"lineNumber": 1118,
+					"timestamp": "2026.08.07-01.42.13"
+				}
+			],
+			"warnings": 2,
+			"errors": 0,
+			"artifacts": []
+		},
+		{
+			"testDisplayName": "DriveEnvironmentAndSteering",
+			"fullTestPath": "APS.Gameplay.Vehicle.DriveEnvironmentAndSteering",
+			"state": "Success",
+			"deviceInstance": [
+				"5B420A854ACC6005E58082B8BC299AC4"
+			],
+			"duration": 0.015961699187755585,
+			"dateTime": "0001.01.01-00.00.00",
+			"entries": [
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: Cannot switch engine mode without a spaceship hull. [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Tests\\APSGameplayIntegrationTests.cpp",
+					"lineNumber": 700,
+					"timestamp": "2026.08.07-01.42.14"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: Cannot switch engine mode without a spaceship hull. [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Tests\\APSGameplayIntegrationTests.cpp",
+					"lineNumber": 703,
+					"timestamp": "2026.08.07-01.42.14"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: Cannot switch engine mode without a spaceship hull. [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Pawns\\Spaceships\\Spaceship.cpp",
+					"lineNumber": 3450,
+					"timestamp": "2026.08.07-01.42.14"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: Cannot switch engine mode without a spaceship hull. [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Pawns\\Spaceships\\Spaceship.cpp",
+					"lineNumber": 2129,
+					"timestamp": "2026.08.07-01.42.14"
+				}
+			],
+			"warnings": 4,
+			"errors": 0,
+			"artifacts": []
+		},
+		{
+			"testDisplayName": "FlightModeEngineMapping",
+			"fullTestPath": "APS.Gameplay.Vehicle.FlightModeEngineMapping",
+			"state": "Success",
+			"deviceInstance": [
+				"5B420A854ACC6005E58082B8BC299AC4"
+			],
+			"duration": 0.012554299086332321,
+			"dateTime": "0001.01.01-00.00.00",
+			"entries": [
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "PIE: Недопустимые настройки симуляции: для тела (Spaceship_0.SpaceshipHull Cube) задана симуляция физики, но параметру 'Столкновение включено' присвоено несовместимое значение [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.07-01.42.14"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "PIE: Недопустимые настройки симуляции: для тела (Spaceship_0.SpaceshipHull Cube) задана симуляция физики, но параметру 'Столкновение включено' присвоено несовместимое значение [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.07-01.42.14"
+				}
+			],
+			"warnings": 2,
+			"errors": 0,
+			"artifacts": []
+		},
+		{
+			"testDisplayName": "MoonSurfaceResolverPipeline",
+			"fullTestPath": "APS.Gameplay.World.MoonSurfaceResolverPipeline",
+			"state": "Success",
+			"deviceInstance": [
+				"5B420A854ACC6005E58082B8BC299AC4"
+			],
+			"duration": 0.012405697256326675,
+			"dateTime": "0001.01.01-00.00.00",
+			"entries": [
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: StaticMeshComponent not found! [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Tests\\APSGameplayIntegrationTests.cpp",
+					"lineNumber": 341,
+					"timestamp": "2026.08.07-01.42.16"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogSpawn: UWorld::DestroyActor: World has no context! World: Untitled, Actor: /Temp/Untitled_16.Untitled:PersistentLevel.WorldScapeRoot_0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.07-01.42.16"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: StaticMeshComponent not found! [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Tests\\APSGameplayIntegrationTests.cpp",
+					"lineNumber": 372,
+					"timestamp": "2026.08.07-01.42.16"
+				}
+			],
+			"warnings": 3,
+			"errors": 0,
+			"artifacts": []
+		},
+		{
+			"testDisplayName": "AllSolidTypesResolve",
+			"fullTestPath": "APS.Gameplay.World.PlanetSurface.AllSolidTypesResolve",
+			"state": "Success",
+			"deviceInstance": [
+				"5B420A854ACC6005E58082B8BC299AC4"
+			],
+			"duration": 0.044497199356555939,
+			"dateTime": "0001.01.01-00.00.00",
+			"entries": [
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogSpawn: UWorld::DestroyActor: World has no context! World: Untitled, Actor: /Temp/Untitled_8.Untitled:PersistentLevel.Planet_0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.07-01.42.14"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogSpawn: UWorld::DestroyActor: World has no context! World: Untitled, Actor: /Temp/Untitled_8.Untitled:PersistentLevel.Planet_1 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.07-01.42.14"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogSpawn: UWorld::DestroyActor: World has no context! World: Untitled, Actor: /Temp/Untitled_8.Untitled:PersistentLevel.Planet_2 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.07-01.42.14"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogSpawn: UWorld::DestroyActor: World has no context! World: Untitled, Actor: /Temp/Untitled_8.Untitled:PersistentLevel.Planet_3 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.07-01.42.14"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: StaticMeshComponent not found! [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Tests\\APSPlanetSurfaceProfileTests.cpp",
+					"lineNumber": 314,
+					"timestamp": "2026.08.07-01.42.14"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogSpawn: UWorld::DestroyActor: World has no context! World: Untitled, Actor: /Temp/Untitled_8.Untitled:PersistentLevel.Planet_4 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.07-01.42.14"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: StaticMeshComponent not found! [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Tests\\APSPlanetSurfaceProfileTests.cpp",
+					"lineNumber": 314,
+					"timestamp": "2026.08.07-01.42.14"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogSpawn: UWorld::DestroyActor: World has no context! World: Untitled, Actor: /Temp/Untitled_8.Untitled:PersistentLevel.Planet_5 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.07-01.42.14"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: StaticMeshComponent not found! [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Tests\\APSPlanetSurfaceProfileTests.cpp",
+					"lineNumber": 314,
+					"timestamp": "2026.08.07-01.42.14"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogSpawn: UWorld::DestroyActor: World has no context! World: Untitled, Actor: /Temp/Untitled_8.Untitled:PersistentLevel.Planet_6 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.07-01.42.14"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogSpawn: UWorld::DestroyActor: World has no context! World: Untitled, Actor: /Temp/Untitled_8.Untitled:PersistentLevel.Planet_7 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.07-01.42.14"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogSpawn: UWorld::DestroyActor: World has no context! World: Untitled, Actor: /Temp/Untitled_8.Untitled:PersistentLevel.Planet_8 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.07-01.42.14"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogSpawn: UWorld::DestroyActor: World has no context! World: Untitled, Actor: /Temp/Untitled_8.Untitled:PersistentLevel.Planet_9 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.07-01.42.14"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogSpawn: UWorld::DestroyActor: World has no context! World: Untitled, Actor: /Temp/Untitled_8.Untitled:PersistentLevel.Planet_10 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.07-01.42.14"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogSpawn: UWorld::DestroyActor: World has no context! World: Untitled, Actor: /Temp/Untitled_8.Untitled:PersistentLevel.Planet_11 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.07-01.42.14"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogSpawn: UWorld::DestroyActor: World has no context! World: Untitled, Actor: /Temp/Untitled_8.Untitled:PersistentLevel.Planet_12 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.07-01.42.14"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogSpawn: UWorld::DestroyActor: World has no context! World: Untitled, Actor: /Temp/Untitled_8.Untitled:PersistentLevel.Planet_13 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.07-01.42.14"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogSpawn: UWorld::DestroyActor: World has no context! World: Untitled, Actor: /Temp/Untitled_8.Untitled:PersistentLevel.Planet_14 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.07-01.42.14"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogSpawn: UWorld::DestroyActor: World has no context! World: Untitled, Actor: /Temp/Untitled_8.Untitled:PersistentLevel.Planet_15 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.07-01.42.14"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogSpawn: UWorld::DestroyActor: World has no context! World: Untitled, Actor: /Temp/Untitled_8.Untitled:PersistentLevel.Planet_16 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.07-01.42.14"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogSpawn: UWorld::DestroyActor: World has no context! World: Untitled, Actor: /Temp/Untitled_8.Untitled:PersistentLevel.Planet_17 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.07-01.42.14"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogSpawn: UWorld::DestroyActor: World has no context! World: Untitled, Actor: /Temp/Untitled_8.Untitled:PersistentLevel.Planet_18 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.07-01.42.14"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogSpawn: UWorld::DestroyActor: World has no context! World: Untitled, Actor: /Temp/Untitled_8.Untitled:PersistentLevel.Planet_19 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.07-01.42.14"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogSpawn: UWorld::DestroyActor: World has no context! World: Untitled, Actor: /Temp/Untitled_8.Untitled:PersistentLevel.Planet_20 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.07-01.42.14"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogSpawn: UWorld::DestroyActor: World has no context! World: Untitled, Actor: /Temp/Untitled_8.Untitled:PersistentLevel.Planet_21 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.07-01.42.14"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogSpawn: UWorld::DestroyActor: World has no context! World: Untitled, Actor: /Temp/Untitled_8.Untitled:PersistentLevel.Planet_22 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.07-01.42.14"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogSpawn: UWorld::DestroyActor: World has no context! World: Untitled, Actor: /Temp/Untitled_8.Untitled:PersistentLevel.Planet_23 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.07-01.42.14"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogSpawn: UWorld::DestroyActor: World has no context! World: Untitled, Actor: /Temp/Untitled_8.Untitled:PersistentLevel.Planet_24 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.07-01.42.14"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogSpawn: UWorld::DestroyActor: World has no context! World: Untitled, Actor: /Temp/Untitled_8.Untitled:PersistentLevel.Planet_25 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.07-01.42.14"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogSpawn: UWorld::DestroyActor: World has no context! World: Untitled, Actor: /Temp/Untitled_8.Untitled:PersistentLevel.Planet_26 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.07-01.42.14"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogSpawn: UWorld::DestroyActor: World has no context! World: Untitled, Actor: /Temp/Untitled_8.Untitled:PersistentLevel.Planet_27 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.07-01.42.14"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogSpawn: UWorld::DestroyActor: World has no context! World: Untitled, Actor: /Temp/Untitled_8.Untitled:PersistentLevel.Planet_28 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.07-01.42.14"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogSpawn: UWorld::DestroyActor: World has no context! World: Untitled, Actor: /Temp/Untitled_8.Untitled:PersistentLevel.Planet_29 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.07-01.42.14"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogSpawn: UWorld::DestroyActor: World has no context! World: Untitled, Actor: /Temp/Untitled_8.Untitled:PersistentLevel.Planet_30 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.07-01.42.14"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: StaticMeshComponent not found! [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Tests\\APSPlanetSurfaceProfileTests.cpp",
+					"lineNumber": 345,
+					"timestamp": "2026.08.07-01.42.14"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogSpawn: UWorld::DestroyActor: World has no context! World: Untitled, Actor: /Temp/Untitled_8.Untitled:PersistentLevel.Moon_0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.07-01.42.14"
+				}
+			],
+			"warnings": 36,
+			"errors": 0,
+			"artifacts": []
+		},
+		{
+			"testDisplayName": "LandFractionCalibration",
+			"fullTestPath": "APS.Gameplay.World.PlanetSurface.LandFractionCalibration",
+			"state": "Success",
+			"deviceInstance": [
+				"5B420A854ACC6005E58082B8BC299AC4"
+			],
+			"duration": 1.5840624570846558,
+			"dateTime": "0001.01.01-00.00.00",
+			"entries": [
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "Surface calibration Rocky land mean=1.0000 seeds=[1.0000, 1.0000] target=[0.97, 1.00] p99-p01>=0.1399 clamp<=0.0000",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.07-01.42.14"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "Surface calibration Terrestrial land mean=0.6183 seeds=[0.5334, 0.6814] target=[0.50, 0.65] p99-p01>=0.1398 clamp<=0.0000",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.07-01.42.14"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "Surface calibration Greenhouse land mean=1.0000 seeds=[1.0000, 1.0000] target=[0.97, 1.00] p99-p01>=0.1237 clamp<=0.0000",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.07-01.42.14"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "Surface calibration Melted land mean=0.3663 seeds=[0.3259, 0.4355] target=[0.35, 0.48] p99-p01>=0.1175 clamp<=0.0000",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.07-01.42.14"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "Surface calibration Dwarf land mean=1.0000 seeds=[1.0000, 1.0000] target=[0.97, 1.00] p99-p01>=0.1380 clamp<=0.0000",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.07-01.42.14"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "Surface calibration Ocean land mean=0.0579 seeds=[0.0288, 0.1038] target=[0.04, 0.12] p99-p01>=0.1130 clamp<=0.0000",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.07-01.42.14"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "Surface calibration Water land mean=0.3273 seeds=[0.2947, 0.3428] target=[0.30, 0.45] p99-p01>=0.1284 clamp<=0.0000",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.07-01.42.14"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "Surface calibration Desert land mean=1.0000 seeds=[1.0000, 1.0000] target=[0.97, 1.00] p99-p01>=0.1406 clamp<=0.0000",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.07-01.42.14"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "Surface calibration Forest land mean=0.7252 seeds=[0.6228, 0.8081] target=[0.58, 0.75] p99-p01>=0.1317 clamp<=0.0000",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.07-01.42.14"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "Surface calibration Volcanic land mean=0.8965 seeds=[0.8809, 0.9224] target=[0.82, 0.94] p99-p01>=0.1555 clamp<=0.0000",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.07-01.42.14"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "Surface calibration Ice land mean=1.0000 seeds=[1.0000, 1.0000] target=[0.97, 1.00] p99-p01>=0.1253 clamp<=0.0000",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.07-01.42.14"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "Surface calibration Frozen land mean=1.0000 seeds=[1.0000, 1.0000] target=[0.97, 1.00] p99-p01>=0.1439 clamp<=0.0000",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.07-01.42.14"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "Surface calibration Ammonia land mean=0.5398 seeds=[0.5088, 0.5557] target=[0.42, 0.58] p99-p01>=0.1339 clamp<=0.0000",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.07-01.42.14"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "Surface calibration Metal land mean=1.0000 seeds=[1.0000, 1.0000] target=[0.97, 1.00] p99-p01>=0.1531 clamp<=0.0000",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.07-01.42.15"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "Surface calibration Carbon land mean=1.0000 seeds=[1.0000, 1.0000] target=[0.97, 1.00] p99-p01>=0.1785 clamp<=0.0000",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.07-01.42.15"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "Surface calibration SuperEarth land mean=0.7277 seeds=[0.6819, 0.7593] target=[0.60, 0.78] p99-p01>=0.1529 clamp<=0.0000",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.07-01.42.15"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "Surface calibration Lava land mean=0.2542 seeds=[0.2173, 0.2996] target=[0.18, 0.30] p99-p01>=0.1298 clamp<=0.0000",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.07-01.42.15"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "Surface calibration Metallic land mean=1.0000 seeds=[1.0000, 1.0000] target=[0.97, 1.00] p99-p01>=0.1199 clamp<=0.0000",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.07-01.42.15"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "Surface calibration Nordic land mean=0.6635 seeds=[0.5967, 0.7695] target=[0.55, 0.70] p99-p01>=0.1496 clamp<=0.0000",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.07-01.42.15"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "Surface calibration Tundra land mean=0.9170 seeds=[0.9077, 0.9224] target=[0.82, 0.95] p99-p01>=0.1337 clamp<=0.0000",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.07-01.42.15"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "Surface calibration HighMountain land mean=0.7751 seeds=[0.7573, 0.8074] target=[0.68, 0.84] p99-p01>=0.1782 clamp<=0.0000",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.07-01.42.15"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "Surface calibration Sand land mean=1.0000 seeds=[1.0000, 1.0000] target=[0.97, 1.00] p99-p01>=0.1263 clamp<=0.0000",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.07-01.42.15"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "Surface calibration Oasis land mean=0.9539 seeds=[0.9329, 0.9741] target=[0.90, 0.97] p99-p01>=0.1306 clamp<=0.0000",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.07-01.42.15"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "Surface calibration Archipelago land mean=0.1960 seeds=[0.1443, 0.2551] target=[0.18, 0.30] p99-p01>=0.1408 clamp<=0.0000",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.07-01.42.15"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "Surface calibration Pangea land mean=0.8422 seeds=[0.8286, 0.8608] target=[0.75, 0.88] p99-p01>=0.1501 clamp<=0.0000",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.07-01.42.15"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "Surface calibration Rogue land mean=1.0000 seeds=[1.0000, 1.0000] target=[0.97, 1.00] p99-p01>=0.1356 clamp<=0.0000",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.07-01.42.15"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "Surface calibration Exoplanet land mean=0.8677 seeds=[0.8052, 0.9446] target=[0.72, 0.90] p99-p01>=0.1417 clamp<=0.0000",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.07-01.42.15"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "Surface calibration Unknown land mean=0.7886 seeds=[0.7708, 0.8052] target=[0.55, 0.80] p99-p01>=0.1447 clamp<=0.0000",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.07-01.42.15"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogSpawn: UWorld::DestroyActor: World has no context! World: Untitled, Actor: /Temp/Untitled_10.Untitled:PersistentLevel.Planet_0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.07-01.42.15"
+				}
+			],
+			"warnings": 1,
+			"errors": 0,
+			"artifacts": []
+		},
+		{
+			"testDisplayName": "MaterialHeightChannelContract",
+			"fullTestPath": "APS.Gameplay.World.PlanetSurface.MaterialHeightChannelContract",
+			"state": "Success",
+			"deviceInstance": [
+				"5B420A854ACC6005E58082B8BC299AC4"
+			],
+			"duration": 0.058884799480438232,
+			"dateTime": "0001.01.01-00.00.00",
+			"entries": [
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogSpawn: UWorld::DestroyActor: World has no context! World: Untitled, Actor: /Temp/Untitled_11.Untitled:PersistentLevel.Planet_0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.07-01.42.16"
+				}
+			],
+			"warnings": 1,
+			"errors": 0,
+			"artifacts": []
+		},
+		{
+			"testDisplayName": "PresetFieldDiversity",
+			"fullTestPath": "APS.Gameplay.World.PlanetSurface.PresetFieldDiversity",
+			"state": "Success",
+			"deviceInstance": [
+				"5B420A854ACC6005E58082B8BC299AC4"
+			],
+			"duration": 0.042248599231243134,
+			"dateTime": "0001.01.01-00.00.00",
+			"entries": [
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogSpawn: UWorld::DestroyActor: World has no context! World: Untitled, Actor: /Temp/Untitled_12.Untitled:PersistentLevel.Planet_0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.07-01.42.16"
+				}
+			],
+			"warnings": 1,
+			"errors": 0,
+			"artifacts": []
+		},
+		{
+			"testDisplayName": "RuntimeIsolation",
+			"fullTestPath": "APS.Gameplay.World.PlanetSurface.RuntimeIsolation",
+			"state": "Success",
+			"deviceInstance": [
+				"5B420A854ACC6005E58082B8BC299AC4"
+			],
+			"duration": 0.032522097229957581,
+			"dateTime": "0001.01.01-00.00.00",
+			"entries": [
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: StaticMeshComponent not found! [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Tests\\APSPlanetSurfaceProfileTests.cpp",
+					"lineNumber": 1362,
+					"timestamp": "2026.08.07-01.42.16"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: StaticMeshComponent not found! [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Tests\\APSPlanetSurfaceProfileTests.cpp",
+					"lineNumber": 1363,
+					"timestamp": "2026.08.07-01.42.16"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: StaticMeshComponent not found! [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Tests\\APSPlanetSurfaceProfileTests.cpp",
+					"lineNumber": 1364,
+					"timestamp": "2026.08.07-01.42.16"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogSpawn: UWorld::DestroyActor: World has no context! World: Untitled, Actor: /Temp/Untitled_13.Untitled:PersistentLevel.WorldScapeRoot_0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.07-01.42.16"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: StaticMeshComponent not found! [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Tests\\APSPlanetSurfaceProfileTests.cpp",
+					"lineNumber": 1394,
+					"timestamp": "2026.08.07-01.42.16"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogSpawn: UWorld::DestroyActor: World has no context! World: Untitled, Actor: /Temp/Untitled_13.Untitled:PersistentLevel.WorldScapeRoot_1 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.07-01.42.16"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: StaticMeshComponent not found! [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Tests\\APSPlanetSurfaceProfileTests.cpp",
+					"lineNumber": 1395,
+					"timestamp": "2026.08.07-01.42.16"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogSpawn: UWorld::DestroyActor: World has no context! World: Untitled, Actor: /Temp/Untitled_13.Untitled:PersistentLevel.WorldScapeRoot_2 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.07-01.42.16"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: StaticMeshComponent not found! [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Tests\\APSPlanetSurfaceProfileTests.cpp",
+					"lineNumber": 1396,
+					"timestamp": "2026.08.07-01.42.16"
+				}
+			],
+			"warnings": 9,
+			"errors": 0,
+			"artifacts": []
+		},
+		{
+			"testDisplayName": "SurfaceControlSensitivity",
+			"fullTestPath": "APS.Gameplay.World.PlanetSurface.SurfaceControlSensitivity",
+			"state": "Success",
+			"deviceInstance": [
+				"5B420A854ACC6005E58082B8BC299AC4"
+			],
+			"duration": 0.15865670144557953,
+			"dateTime": "0001.01.01-00.00.00",
+			"entries": [
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogSpawn: UWorld::DestroyActor: World has no context! World: Untitled, Actor: /Temp/Untitled_14.Untitled:PersistentLevel.Planet_0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.07-01.42.16"
+				}
+			],
+			"warnings": 1,
+			"errors": 0,
+			"artifacts": []
+		},
+		{
+			"testDisplayName": "ThermalSubtypeBounds",
+			"fullTestPath": "APS.Gameplay.World.PlanetSurface.ThermalSubtypeBounds",
+			"state": "Success",
+			"deviceInstance": [
+				"5B420A854ACC6005E58082B8BC299AC4"
+			],
+			"duration": 0.01426360011100769,
+			"dateTime": "0001.01.01-00.00.00",
+			"entries": [
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogSpawn: UWorld::DestroyActor: World has no context! World: Untitled, Actor: /Temp/Untitled_15.Untitled:PersistentLevel.Planet_0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.07-01.42.16"
+				}
+			],
+			"warnings": 1,
+			"errors": 0,
+			"artifacts": []
+		},
+		{
+			"testDisplayName": "WorldScapeFamilyLifecycle",
+			"fullTestPath": "APS.Gameplay.World.WorldScapeFamilyLifecycle",
+			"state": "Success",
+			"deviceInstance": [
+				"5B420A854ACC6005E58082B8BC299AC4"
+			],
+			"duration": 0.016842499375343323,
+			"dateTime": "0001.01.01-00.00.00",
+			"entries": [
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: StaticMeshComponent not found! [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Tests\\APSGameplayIntegrationTests.cpp",
+					"lineNumber": 167,
+					"timestamp": "2026.08.07-01.42.16"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: StaticMeshComponent not found! [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Tests\\APSGameplayIntegrationTests.cpp",
+					"lineNumber": 188,
+					"timestamp": "2026.08.07-01.42.16"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: StaticMeshComponent not found! [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Tests\\APSGameplayIntegrationTests.cpp",
+					"lineNumber": 188,
+					"timestamp": "2026.08.07-01.42.16"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: StaticMeshComponent not found! [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Tests\\APSGameplayIntegrationTests.cpp",
+					"lineNumber": 201,
+					"timestamp": "2026.08.07-01.42.16"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: StaticMeshComponent not found! [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Tests\\APSGameplayIntegrationTests.cpp",
+					"lineNumber": 206,
+					"timestamp": "2026.08.07-01.42.16"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: StaticMeshComponent not found! [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Actors\\Astro\\PlanetaryBodyStreaming.cpp",
+					"lineNumber": 127,
+					"timestamp": "2026.08.07-01.42.16"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: StaticMeshComponent not found! [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Tests\\APSGameplayIntegrationTests.cpp",
+					"lineNumber": 279,
+					"timestamp": "2026.08.07-01.42.16"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: StaticMeshComponent not found! [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Tests\\APSGameplayIntegrationTests.cpp",
+					"lineNumber": 292,
+					"timestamp": "2026.08.07-01.42.16"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogSpawn: UWorld::DestroyActor: World has no context! World: Untitled, Actor: /Temp/Untitled_17.Untitled:PersistentLevel.WorldScapeRoot_0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.07-01.42.16"
+				}
+			],
+			"warnings": 9,
+			"errors": 0,
+			"artifacts": []
+		},
+		{
+			"testDisplayName": "ClusterSystemData",
+			"fullTestPath": "APS.Gameplay.Generation.ClusterSystemData",
+			"state": "Success",
+			"deviceInstance": [
+				"5B420A854ACC6005E58082B8BC299AC4"
+			],
+			"duration": 0.01049409806728363,
+			"dateTime": "0001.01.01-00.00.00",
+			"entries": [],
+			"warnings": 0,
+			"errors": 0,
+			"artifacts": []
+		},
+		{
+			"testDisplayName": "GalaxyCatalogVolume",
+			"fullTestPath": "APS.Gameplay.Generation.GalaxyCatalogVolume",
+			"state": "Success",
+			"deviceInstance": [
+				"5B420A854ACC6005E58082B8BC299AC4"
+			],
+			"duration": 0.0079596973955631256,
+			"dateTime": "0001.01.01-00.00.00",
+			"entries": [],
+			"warnings": 0,
+			"errors": 0,
+			"artifacts": []
+		},
+		{
+			"testDisplayName": "HomeSystemContinuity",
+			"fullTestPath": "APS.Gameplay.Generation.HomeSystemContinuity",
+			"state": "Success",
+			"deviceInstance": [
+				"5B420A854ACC6005E58082B8BC299AC4"
+			],
+			"duration": 0.0089158006012439728,
+			"dateTime": "0001.01.01-00.00.00",
+			"entries": [],
+			"warnings": 0,
+			"errors": 0,
+			"artifacts": []
+		},
+		{
+			"testDisplayName": "PlanetaryOrbitIsolation",
+			"fullTestPath": "APS.Gameplay.Generation.PlanetaryOrbitIsolation",
+			"state": "Success",
+			"deviceInstance": [
+				"5B420A854ACC6005E58082B8BC299AC4"
+			],
+			"duration": 0.0085427984595298767,
+			"dateTime": "0001.01.01-00.00.00",
+			"entries": [],
+			"warnings": 0,
+			"errors": 0,
+			"artifacts": []
+		},
+		{
+			"testDisplayName": "PreviewBodyEditPersistence",
+			"fullTestPath": "APS.Gameplay.Generation.PreviewBodyEditPersistence",
+			"state": "Success",
+			"deviceInstance": [
+				"5B420A854ACC6005E58082B8BC299AC4"
+			],
+			"duration": 0.0075144022703170776,
+			"dateTime": "0001.01.01-00.00.00",
+			"entries": [],
+			"warnings": 0,
+			"errors": 0,
+			"artifacts": []
+		},
+		{
+			"testDisplayName": "ViewModelConstraints",
+			"fullTestPath": "APS.Gameplay.Generation.ViewModelConstraints",
+			"state": "Success",
+			"deviceInstance": [
+				"5B420A854ACC6005E58082B8BC299AC4"
+			],
+			"duration": 0.0086349993944168091,
+			"dateTime": "0001.01.01-00.00.00",
+			"entries": [],
+			"warnings": 0,
+			"errors": 0,
+			"artifacts": []
+		},
+		{
+			"testDisplayName": "ControlRoundTrip",
+			"fullTestPath": "APS.Gameplay.Vehicle.ControlRoundTrip",
+			"state": "Success",
+			"deviceInstance": [
+				"5B420A854ACC6005E58082B8BC299AC4"
+			],
+			"duration": 0.042151998728513718,
+			"dateTime": "0001.01.01-00.00.00",
+			"entries": [],
+			"warnings": 0,
+			"errors": 0,
+			"artifacts": []
+		},
+		{
+			"testDisplayName": "ShipClassPresets",
+			"fullTestPath": "APS.Gameplay.Vehicle.ShipClassPresets",
+			"state": "Success",
+			"deviceInstance": [
+				"5B420A854ACC6005E58082B8BC299AC4"
+			],
+			"duration": 0.0082481019198894501,
+			"dateTime": "0001.01.01-00.00.00",
+			"entries": [],
+			"warnings": 0,
+			"errors": 0,
+			"artifacts": []
+		},
+		{
+			"testDisplayName": "DeterminismAndModifiers",
+			"fullTestPath": "APS.Gameplay.World.PlanetSurface.DeterminismAndModifiers",
+			"state": "Success",
+			"deviceInstance": [
+				"5B420A854ACC6005E58082B8BC299AC4"
+			],
+			"duration": 0.0083790980279445648,
+			"dateTime": "0001.01.01-00.00.00",
+			"entries": [],
+			"warnings": 0,
+			"errors": 0,
+			"artifacts": []
+		},
+		{
+			"testDisplayName": "LandCoverageResponse",
+			"fullTestPath": "APS.Gameplay.World.PlanetSurface.LandCoverageResponse",
+			"state": "Success",
+			"deviceInstance": [
+				"5B420A854ACC6005E58082B8BC299AC4"
+			],
+			"duration": 0.0081964991986751556,
+			"dateTime": "0001.01.01-00.00.00",
+			"entries": [],
+			"warnings": 0,
+			"errors": 0,
+			"artifacts": []
+		},
+		{
+			"testDisplayName": "MaterialCatalogIntegrity",
+			"fullTestPath": "APS.Gameplay.World.PlanetSurface.MaterialCatalogIntegrity",
+			"state": "Success",
+			"deviceInstance": [
+				"5B420A854ACC6005E58082B8BC299AC4"
+			],
+			"duration": 0.059607896953821182,
+			"dateTime": "0001.01.01-00.00.00",
+			"entries": [],
+			"warnings": 0,
+			"errors": 0,
+			"artifacts": []
+		}
+	]
+}

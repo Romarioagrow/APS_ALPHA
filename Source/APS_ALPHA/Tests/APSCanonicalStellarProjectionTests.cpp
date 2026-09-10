@@ -73,6 +73,86 @@ bool FAPSCanonicalStellarProjectionContractTest::RunTest(const FString& Paramete
 	TestTrue(TEXT("cluster inverse preserves canonical address"),
 		ClusterMenu.UnprojectToCanonicalUnits(ClusterProxy).Equals(ClusterCanonical, 1.0e-6));
 
+	// The production catalogue includes a 5% conservative galaxy envelope. With
+	// the default 8e6-unit cluster this yields a valid shared render scale below
+	// UE_DOUBLE_SMALL_NUMBER. That constant is a comparison tolerance, not a
+	// minimum representable projection scale.
+	constexpr double ProductionGalaxyHalfExtent = 1.3125e7;
+	constexpr double ProductionClusterHalfExtent = 8.0e6;
+	constexpr double ProductionClusterToGalaxyScale = 0.2625;
+	const FVector ProductionHomeClusterLocal(6.25e6, -4.0e6, 1.5e6);
+	FAPSCanonicalStellarProjectionFrame ProductionGalaxy;
+	FAPSCanonicalStellarProjectionFrame ProductionCluster;
+	const bool bProductionCatalogConfigured =
+		APSCanonicalStellarProjection::ConfigureSharedHomeCentredFrames(
+			ProductionGalaxyHalfExtent, ProductionClusterHalfExtent,
+			ProductionClusterToGalaxyScale, ProductionHomeClusterLocal,
+			ContextHash, ProductionGalaxy, ProductionCluster);
+	TestTrue(TEXT("production-sized catalogue accepts a positive sub-epsilon root scale"),
+		bProductionCatalogConfigured);
+	if (bProductionCatalogConfigured)
+	{
+		TestTrue(TEXT("production root scale is finite and below the math tolerance"),
+			FMath::IsFinite(ProductionGalaxy.PositionScale)
+				&& ProductionGalaxy.PositionScale > 0.0
+				&& ProductionGalaxy.PositionScale < UE_DOUBLE_SMALL_NUMBER);
+		TestEqual(TEXT("production layers retain one shared root scale"),
+			ProductionGalaxy.PositionScale, ProductionCluster.PositionScale);
+		TestTrue(TEXT("production home remains the exact render anchor"),
+			ProductionCluster.ProjectCanonicalUnits(ProductionHomeClusterLocal)
+				.Equals(ProductionCluster.RenderAnchorCm, 0.0));
+
+		const FVector ProductionGalaxyAddress(1.1e7, -7.5e6, 2.25e6);
+		const FVector ProductionClusterAddress(-6.75e6, 5.5e6, -1.25e6);
+		TestTrue(TEXT("production galaxy projection round-trips below epsilon"),
+			ProductionGalaxy.UnprojectToCanonicalUnits(
+				ProductionGalaxy.ProjectCanonicalUnits(ProductionGalaxyAddress))
+				.Equals(ProductionGalaxyAddress, 1.0e-5));
+		TestTrue(TEXT("production cluster projection round-trips below epsilon"),
+			ProductionCluster.UnprojectToCanonicalUnits(
+				ProductionCluster.ProjectCanonicalUnits(ProductionClusterAddress))
+				.Equals(ProductionClusterAddress, 1.0e-5));
+	}
+
+	// ComposeCanonicalStellarProjection permits a 1e-9 nested layout scale. Keep
+	// that exact affine mapping instead of silently replacing it with 1e-8 or 1.
+	constexpr double SubEpsilonLayerScale = 1.0e-9;
+	FAPSCanonicalStellarProjectionFrame TinyLayerGalaxy;
+	FAPSCanonicalStellarProjectionFrame TinyLayerCluster;
+	const bool bTinyLayerConfigured =
+		APSCanonicalStellarProjection::ConfigureSharedHomeCentredFrames(
+			ProductionGalaxyHalfExtent, ProductionClusterHalfExtent,
+			SubEpsilonLayerScale, FVector::ZeroVector, ContextHash,
+			TinyLayerGalaxy, TinyLayerCluster);
+	TestTrue(TEXT("positive sub-epsilon layer scale remains valid"), bTinyLayerConfigured);
+	if (bTinyLayerConfigured)
+	{
+		TestEqual(TEXT("sub-epsilon layer scale is not clamped"),
+			TinyLayerCluster.LayerToRootPositionScale, SubEpsilonLayerScale);
+		const FVector TinyLayerAddress(5.0e6, -3.0e6, 1.0e6);
+		TestTrue(TEXT("sub-epsilon layer projection round-trips"),
+			TinyLayerCluster.UnprojectToCanonicalUnits(
+				TinyLayerCluster.ProjectCanonicalUnits(TinyLayerAddress))
+				.Equals(TinyLayerAddress, 1.0e-4));
+		constexpr double TinyLayerLengthUnits = 2.5e6;
+		TestTrue(TEXT("sub-epsilon projected length round-trips"),
+			FMath::IsNearlyEqual(
+				TinyLayerCluster.UnprojectProxyLengthCm(
+					TinyLayerCluster.ProjectCanonicalLengthUnits(TinyLayerLengthUnits)),
+				TinyLayerLengthUnits, 1.0e-6));
+	}
+
+	FAPSCanonicalStellarProjectionFrame InvalidGalaxy;
+	FAPSCanonicalStellarProjectionFrame InvalidCluster;
+	TestFalse(TEXT("zero nested layout scale is rejected"),
+		APSCanonicalStellarProjection::ConfigureSharedHomeCentredFrames(
+			ProductionGalaxyHalfExtent, ProductionClusterHalfExtent, 0.0,
+			FVector::ZeroVector, ContextHash, InvalidGalaxy, InvalidCluster));
+	TestFalse(TEXT("negative nested layout scale is rejected"),
+		APSCanonicalStellarProjection::ConfigureSharedHomeCentredFrames(
+			ProductionGalaxyHalfExtent, ProductionClusterHalfExtent, -1.0e-9,
+			FVector::ZeroVector, ContextHash, InvalidGalaxy, InvalidCluster));
+
 	const FVector HomeRoot = HomeClusterLocal * ClusterToGalaxyScale;
 	const FVector GalaxyRoot = GalaxyCanonical;
 	const FVector ClusterRoot = ClusterCanonical * ClusterToGalaxyScale;
@@ -242,6 +322,36 @@ bool FAPSCanonicalStellarProjectionContractTest::RunTest(const FString& Paramete
 			TestEqual(TEXT("larger LOD retains smaller LOD prefix"),
 				CatalogIndex, SmallLod.Resolve(Index));
 		}
+	}
+	constexpr int32 RingArcModeledCount = 36455;
+	constexpr int32 RingArcPreviewCount = 1600;
+	constexpr int32 RingArcCoverageBins = 16;
+	const APSCanonicalStellarProjection::FNestedCatalogPermutation RingArcOrder =
+		APSCanonicalStellarProjection::MakeNestedCatalogPermutation(
+			2030576230, RingArcModeledCount);
+	TArray<int32> RingArcBins;
+	RingArcBins.SetNumZeroed(RingArcCoverageBins);
+	int64 RingArcMinimumIndex = RingArcModeledCount;
+	int64 RingArcMaximumIndex = INDEX_NONE;
+	for (int32 RenderIndex = 0; RenderIndex < RingArcPreviewCount; ++RenderIndex)
+	{
+		const int64 FormationIndex = RingArcOrder.Resolve(RenderIndex);
+		RingArcMinimumIndex = FMath::Min(RingArcMinimumIndex, FormationIndex);
+		RingArcMaximumIndex = FMath::Max(RingArcMaximumIndex, FormationIndex);
+		const int32 CoverageBin = FMath::Clamp(static_cast<int32>(
+			FormationIndex * RingArcCoverageBins / RingArcModeledCount),
+			0, RingArcCoverageBins - 1);
+		++RingArcBins[CoverageBin];
+	}
+	TestTrue(TEXT("RingArc preview prefix reaches the first formation sector"),
+		RingArcMinimumIndex < RingArcModeledCount / RingArcCoverageBins);
+	TestTrue(TEXT("RingArc preview prefix reaches the final formation sector"),
+		RingArcMaximumIndex >= RingArcModeledCount
+			- RingArcModeledCount / RingArcCoverageBins);
+	for (const int32 BinPopulation : RingArcBins)
+	{
+		TestTrue(TEXT("RingArc preview prefix covers every formation sector"),
+			BinPopulation >= 75 && BinPopulation <= 125);
 	}
 
 	TestEqual(TEXT("empty canonical catalog has no home"),

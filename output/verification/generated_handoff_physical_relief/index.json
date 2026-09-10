@@ -1,0 +1,1220 @@
+﻿{
+	"devices": [
+		{
+			"deviceName": "RIO-PC",
+			"instance": "C94648754C70D3B1B73E98AF66A5F11A",
+			"instanceName": "RIO-PC-41308",
+			"platform": "WindowsEditor",
+			"oSVersion": "Windows 11 (25H2) [10.0.26200.7623] ",
+			"model": "Default",
+			"gPU": "NVIDIA GeForce RTX 5080",
+			"cPUModel": "Intel(R) Core(TM) i9-10900KF CPU @ 3.70GHz",
+			"rAMInGB": 32,
+			"renderMode": "D3D12_SM6",
+			"rHI": "DirectX 12 (SM6)",
+			"appInstanceLog": ""
+		}
+	],
+	"reportCreatedOn": "2026.08.08-09.26.01",
+	"succeeded": 0,
+	"succeededWithWarnings": 1,
+	"failed": 0,
+	"notRun": 0,
+	"inProcess": 0,
+	"totalDuration": 10.032115936279297,
+	"comparisonExported": false,
+	"comparisonExportDirectory": "",
+	"tests": [
+		{
+			"testDisplayName": "GeneratedCivilizationHandoff",
+			"fullTestPath": "APS.Rendered.Gameplay.GeneratedCivilizationHandoff",
+			"state": "Success",
+			"deviceInstance": [
+				"C94648754C70D3B1B73E98AF66A5F11A"
+			],
+			"duration": 10.032115936279297,
+			"dateTime": "0001.01.01-00.00.00",
+			"entries": [
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogAudio: Audio Device unregistered from world 'None'. [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.25.51"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogAudio: Audio Device (ID: 1) registered with world 'L_APS_MainMenu_Alpha'. [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.25.51"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogAudio: Creating Audio Device:                 Id: 2, Scope: Unique, Realtime: True [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.25.51"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogAudioMixer: Audio Mixer Platform Settings: [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.25.51"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogAudioMixer: \tSample Rate:\t\t\t\t\t\t  48000 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.25.51"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogAudioMixer: \tCallback Buffer Frame Size Requested: 1024 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.25.51"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogAudioMixer: \tCallback Buffer Frame Size To Use:\t  1024 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.25.51"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogAudioMixer: \tNumber of buffers to queue:\t\t\t  1 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.25.51"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogAudioMixer: \tMax Channels (voices):\t\t\t\t  32 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.25.51"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogAudioMixer: \tNumber of Async Source Workers:\t\t  4 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.25.51"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogAudio: AudioDevice MaxSources: 32 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.25.51"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogAudio: Audio Spatialization Plugin: None (built-in). [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.25.51"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogAudio: Audio Reverb Plugin: None (built-in). [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.25.51"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogAudio: Audio Occlusion Plugin: None (built-in). [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.25.51"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogAudioMixer: Initializing audio mixer using platform API: 'XAudio2' [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.25.51"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogAudioMixer: Using Audio Hardware Device 27A510Q (NVIDIA High Definition Audio) [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.25.51"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogAudioMixer: Initializing Sound Submixes... [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.25.51"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogAudioMixer: Creating Master Submix 'MasterSubmixDefault' [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.25.51"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogAudioMixer: Creating Master Submix 'MasterReverbSubmixDefault' [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.25.51"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogAudioMixer: Output buffers initialized: Frames=1024, Channels=2, Samples=2048, InstanceID=2 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.25.51"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogAudioMixer: Starting AudioMixerPlatformInterface::RunInternal(), InstanceID=2 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.25.51"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogAudio: Audio Device (ID: 2) registered with world 'L_APS_MainMenu_Alpha'. [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.25.51"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogAudioMixer: FMixerPlatformXAudio2::SubmitBuffer() called for the first time. InstanceID=2 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.25.51"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogViewport: Viewport MouseCaptureMode Changed, CapturePermanently_IncludingInitialMouseDown -> NoCapture [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.25.51"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.Handoff.Smoke] Civilization generator opened map=UEDPIE_0_L_APS_MainMenu_Alpha seed=424242 level=StarCluster fullScale=true [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.25.51"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: === AAstroGenerator::BeginPlay START === [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.08-04.25.51"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: bAutoGeneration: false [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.08-04.25.51"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: bIntegrateStartPlanet: false [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.08-04.25.51"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: StartHomePlanet: NULL [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.08-04.25.51"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: StartPlanetNumber: 1 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.08-04.25.51"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: bAutoGeneration is false, skipping generation [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.08-04.25.51"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: === AAstroGenerator::BeginPlay END === [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.08-04.25.51"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogStreaming: FlushAsyncLoading(): 0 QueuedPackages, 48 AsyncPackages [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.25.51"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: Generate Star System! [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6044,
+					"timestamp": "2026.08.08-04.25.52"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: NewPlanetarySystem->PlanetsActorsList: 1 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6044,
+					"timestamp": "2026.08.08-04.25.52"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: GeneratedHomeStarSystem set to: BP_StarSystem_C_0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6044,
+					"timestamp": "2026.08.08-04.25.52"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: Planet List -  [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6972,
+					"timestamp": "2026.08.08-04.25.52"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: Planet Amount: 1 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6972,
+					"timestamp": "2026.08.08-04.25.52"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:     Planet Order: 1 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6051,
+					"timestamp": "2026.08.08-04.25.52"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Orbit Radius: 4.576247 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6051,
+					"timestamp": "2026.08.08-04.25.52"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Type: EPlanetType::HighMountain [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6051,
+					"timestamp": "2026.08.08-04.25.52"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Zone: EPlanetaryZoneType::Unknown [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6051,
+					"timestamp": "2026.08.08-04.25.52"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Temperature: 0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6051,
+					"timestamp": "2026.08.08-04.25.52"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Density: 5.000000 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6051,
+					"timestamp": "2026.08.08-04.25.52"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Gravity Strength: 20.943951 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6051,
+					"timestamp": "2026.08.08-04.25.52"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Amount of Moons: 0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6051,
+					"timestamp": "2026.08.08-04.25.52"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.WorldGeneration] Preview surface profile apply #1 body=BP_Planet_C_0 old=0 new=45842903 seed=424242 feature=1.150 relief=1.100 land=0.900 mountain=1.250 crater=0.750 roughness=1.050 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.25.52"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.Preview.Atmosphere] Stabilized body=BP_Planet_C_0 planetRadius=1200000 shellRadius=1272000 ratio=1.0600 centerError=0.00 source=WorldScape [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.25.53"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.Handoff.Smoke] Preview ready in 1.92s pawn=/Game/APS/APS_ALPHA/Blueprints/BP_GravityCharacterPawn.BP_GravityCharacterPawn_C profile=45842903; committing L_WorldGeneration [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.25.53"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogAudio: Audio Device unregistered from world 'None'. [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.25.53"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogAudio: Audio Device (ID: 2) registered with world 'L_WorldGeneration'. [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.25.58"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: [APS.Ships] Fleet subsystem world=L_WorldGeneration type=PIE converted=0 total_ships=0 source=/Game/APS/APS_ALPHA/Assets/AI_Shpis [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Pawns\\Spaceships\\SpaceshipFleetSubsystem.cpp",
+					"lineNumber": 45,
+					"timestamp": "2026.08.08-04.25.58"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: === AAstroGenerator::BeginPlay START === [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.08-04.25.58"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: bAutoGeneration: false [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.08-04.25.58"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: bIntegrateStartPlanet: false [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.08-04.25.58"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: StartHomePlanet: NULL [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.08-04.25.58"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: StartPlanetNumber: 1 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.08-04.25.58"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: bAutoGeneration is false, skipping generation [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.08-04.25.58"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: === AAstroGenerator::BeginPlay END === [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.08-04.25.58"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: Generate Star System! [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6044,
+					"timestamp": "2026.08.08-04.25.58"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: NewPlanetarySystem->PlanetsActorsList: 1 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6044,
+					"timestamp": "2026.08.08-04.25.58"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: GeneratedHomeStarSystem set to: BP_StarSystem_C_0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6044,
+					"timestamp": "2026.08.08-04.25.58"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: Planet List -  [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6972,
+					"timestamp": "2026.08.08-04.25.58"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: Planet Amount: 1 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6972,
+					"timestamp": "2026.08.08-04.25.58"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:     Planet Order: 1 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6051,
+					"timestamp": "2026.08.08-04.25.58"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Orbit Radius: 4.919834 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6051,
+					"timestamp": "2026.08.08-04.25.58"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Type: EPlanetType::HighMountain [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6051,
+					"timestamp": "2026.08.08-04.25.58"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Zone: EPlanetaryZoneType::Unknown [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6051,
+					"timestamp": "2026.08.08-04.25.58"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Temperature: 0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6051,
+					"timestamp": "2026.08.08-04.25.58"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Density: 5.000000 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6051,
+					"timestamp": "2026.08.08-04.25.58"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Planet Gravity Strength: 20.943951 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6051,
+					"timestamp": "2026.08.08-04.25.58"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp:      Amount of Moons: 0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6051,
+					"timestamp": "2026.08.08-04.25.58"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: [APS.Gravity] Select reason=LocalOverlap character=ChildActor_GEN_VARIABLE_BP_Spaceship_M3_C_CAT_0 source=BP_SpaceHeadquarters_C_0 class=BP_SpaceHeadquarters_C characterLocation=V(X=-2917442678616375.50, Y=-1091491207773632.75, Z=-3161344316594616.00) sourceLocation=V(X=-2917442678614771.00, Y=-1091491207771549.62, Z=-3161344316591335.00) sourceUp=V(Z=1.00) [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Pawns\\Spaceships\\Spaceship.cpp",
+					"lineNumber": 1465,
+					"timestamp": "2026.08.08-04.25.58"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: [APS.Gravity] Active target=BP_SpaceHeadquarters_C_0 type=EGravityType::OnStation direction=V(Z=-1.00) [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Pawns\\Characters\\GravityDetectorComponent.cpp",
+					"lineNumber": 99,
+					"timestamp": "2026.08.08-04.25.58"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: [APS.Gravity] StationVolume actor=BP_SpaceHeadquarters_C_0 class=BP_SpaceHeadquarters_C detached=0 root=HQ actorLocation=V(X=-2917442678614771.00, Y=-1091491207771549.62, Z=-3161344316591335.00) actorUp=V(Z=1.00) volumeLocation=V(X=-2917442678617756.50, Y=-1091491207789144.75, Z=-3161344316592766.50) volumeRadius=72675.8 boundsCenter=V(X=-2917442678617756.50, Y=-1091491207789144.75, Z=-3161344316592766.50) boundsExtent=V(X=12634.50, Y=19865.50, Z=2936.00) [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.08-04.25.58"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: [APS.Gravity] StationVolume actor=BP_SpaceStation_C_0 class=BP_SpaceStation_C detached=0 root=StationGravitySphereCollisionComponent actorLocation=V(X=-2917442678614771.00, Y=-1091490506961534.38, Z=-3161344316591335.00) actorUp=V(X=-0.24, Y=0.00, Z=0.97) volumeLocation=V(X=-2917442678614771.00, Y=-1091490506961534.38, Z=-3161344316591335.00) volumeRadius=436092.4 boundsCenter=V(X=-2917442678612316.50, Y=-1091490506961512.88, Z=-3161344316590634.00) boundsExtent=V(X=94076.00, Y=302461.25, Z=295280.00) [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.08-04.25.58"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: [APS.Gravity] StationVolume actor=BP_SpaceShipyard_1_C_0 has no registered static-mesh bounds; location=V(X=-2917442678614771.00, Y=-1091490506961534.38, Z=-3161344316591335.00) up=V(X=-0.24, Y=0.00, Z=0.97) [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": 0,
+					"timestamp": "2026.08.08-04.25.58"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: [APS.Gravity] Select reason=LocalOverlap character=BP_Spaceship_M3_C_1 source=BP_SpaceShipyard_1_C_0 class=BP_SpaceShipyard_1_C characterLocation=V(X=-2917442678609382.00, Y=-1091490506977004.88, Z=-3161344316588386.00) sourceLocation=V(X=-2917442678609138.00, Y=-1091490506977009.75, Z=-3161344316590356.00) sourceUp=V(X=-0.24, Y=0.00, Z=0.97) [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Pawns\\Spaceships\\Spaceship.cpp",
+					"lineNumber": 1465,
+					"timestamp": "2026.08.08-04.25.58"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: [APS.Gravity] Active target=BP_SpaceShipyard_1_C_0 type=EGravityType::OnStation direction=V(X=0.24, Y=-0.00, Z=-0.97) [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Pawns\\Characters\\GravityDetectorComponent.cpp",
+					"lineNumber": 99,
+					"timestamp": "2026.08.08-04.25.58"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: Game saved successfully to slot: Xoxew Cluster 3158 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Source\\APS_ALPHA\\Generation\\AstroGenerator.cpp",
+					"lineNumber": 6106,
+					"timestamp": "2026.08.08-04.25.58"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogViewport: Viewport MouseLockMode Changed, DoNotLock -> LockOnCapture [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.25.58"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogViewport: Viewport MouseCaptureMode Changed, NoCapture -> CapturePermanently [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.25.58"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: EndOverlap with: BP_SpaceHeadquarters_C_0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Intermediate\\Build\\Win64\\UnrealEditor\\Inc\\APS_ALPHA\\UHT\\GravityCharacterPawn.gen.cpp",
+					"lineNumber": 762,
+					"timestamp": "2026.08.08-04.25.58"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.Handoff.Smoke] Travel complete in 5.27s map=UEDPIE_0_L_WorldGeneration gameMode=BP_GravityGameModeBase_C_0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.25.58"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.Handoff.Camera] controller=BP_GravityPlayerController_C pawn=BP_GravityCharacterPawn_C_0 viewTarget=BP_GravityCharacterPawn_C_0 pawnLocation=V(X=1198.35, Y=61298.27, Z=97.21) stationLocation=V(X=997.20, Y=49990.03, Z=0.23) spawnPoint=V(X=1198.35, Y=61298.27, Z=97.21) pawnToSpawn=0.00cm cameraLocation=V(X=1186.75, Y=61568.10, Z=143.35) cameraRotation=R(P=-0.00, Y=-90.00, R=-14.12) characterRenderers=1 stationRenderers=1 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.25.58"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.Handoff.Smoke] Gameplay hierarchy ready in 0.04s system=41C00C34D319C4D6A6E0B7D82D7512D4 planet=BP_Planet_C_0 pawn=/Game/APS/APS_ALPHA/Blueprints/BP_GravityCharacterPawn.BP_GravityCharacterPawn_C saveSlot=Xoxew Cluster 3158 starterAttachments=OK [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.25.58"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.Handoff.Smoke] Gameplay WorldScape ready in 1.98s resolverSig=3905719976 lods=10; settling game viewport for ../../../../../../../Users/Rio/Documents/APOSFERA SPACETRIPS/.aps_project/Saved/Screenshots/Windows/APS_GeneratedCivilization_Handoff.png [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.26.00"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.Handoff.Camera] captured GAME viewport=1274x682 meanBrightness=87.531 variance=4145.740 nonBlackRatio=0.86629 screenshot=../../../../../../../Users/Rio/Documents/APOSFERA SPACETRIPS/.aps_project/Saved/Screenshots/Windows/APS_GeneratedCivilization_Handoff.png [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.26.00"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.Handoff.Camera] subjectROI=(510,324)-(764,571) pawnScreen=X=637.000 Y=447.893 stationSpawnScreen=X=637.000 Y=447.893 meanBrightness=94.836 variance=2587.491 nonBlackRatio=0.94225 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.26.00"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.Handoff.Smoke] Non-blank game viewport screenshot written; probing physical WorldScape surface [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.26.00"
+				},
+				{
+					"event":
+					{
+						"type": "Warning",
+						"message": "LogTemp: EndOverlap with: BP_SpaceStation_C_0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "F:\\Rio\\Projects\\Unreal Projects\\APS\\APS_ALPHA\\Intermediate\\Build\\Win64\\UnrealEditor\\Inc\\APS_ALPHA\\UHT\\GravityCharacterPawn.gen.cpp",
+					"lineNumber": 762,
+					"timestamp": "2026.08.08-04.26.00"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.Handoff.PhysicalSurface] spawn=V(X=0.21, Y=-63524961.35, Z=-75021.55) sampledHeight=184526.28cm clearance=500.00cm capsuleHalf=86.00cm [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.26.00"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.Handoff.PhysicalSurface] PASS collisionLods=9 traceActor=WorldScapeRoot_0 traceComponent=WorldScapeMeshCollision expectedHeight=184526.28cm traceHeight=184526.28cm localRelief=179.37cm vertices=2601 gravity=20.943951 noise=APSWorldScapePlanetNoise_0 [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.26.00"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.Handoff.PhysicalSurface] settling ground proof screenshot=../../../../../../../Users/Rio/Documents/APOSFERA SPACETRIPS/.aps_project/Saved/Screenshots/Windows/APS_GeneratedCivilization_PhysicalSurface.png viewToward1kmHeight=184661.88cm [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.26.00"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.Handoff.Camera] captured GAME viewport=1274x682 meanBrightness=88.076 variance=410.301 nonBlackRatio=0.99933 screenshot=../../../../../../../Users/Rio/Documents/APOSFERA SPACETRIPS/.aps_project/Saved/Screenshots/Windows/APS_GeneratedCivilization_PhysicalSurface.png [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.26.01"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.Handoff.PhysicalSurface] ground proof screenshot written ../../../../../../../Users/Rio/Documents/APOSFERA SPACETRIPS/.aps_project/Saved/Screenshots/Windows/APS_GeneratedCivilization_PhysicalSurface.png [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.26.01"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.Handoff.Smoke] Removed generated smoke save slot=Xoxew Cluster 3158 save=deleted sidecar=deleted/missing [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.26.01"
+				},
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "LogTemp: [APS.Handoff.Smoke] PASS menu preview -> immutable handoff -> GravityGameMode -> exact hierarchy -> selected pawn -> starter attachments -> resolver WorldScape -> screenshot -> physical terrain collision/relief -> safe worker drain [log]",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.08.08-04.26.01"
+				}
+			],
+			"warnings": 51,
+			"errors": 0,
+			"artifacts": []
+		}
+	]
+}

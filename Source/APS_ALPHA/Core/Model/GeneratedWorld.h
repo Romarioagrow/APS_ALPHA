@@ -4,6 +4,7 @@
 #include "APS_ALPHA/Core/Enums/OrbitDistributionType.h"
 #include "APS_ALPHA/Core/Enums/PlanetarySystemType.h"
 #include "APS_ALPHA/Core/Enums/PlanetType.h"
+#include "APS_ALPHA/Core/Enums/PlanetHabitability.h"
 #include "APS_ALPHA/Core/Enums/StarSpectralClass.h"
 #include "APS_ALPHA/Core/Enums/StarType.h"
 #include "APS_ALPHA/Core/Enums/StellarType.h"
@@ -12,6 +13,7 @@
 #include "GeneratedWorld.generated.h"
 
 struct FPlanetData;
+struct FPlanetarySystemModel;
 class APlanetarySystem;
 class APlanet;
 
@@ -44,7 +46,18 @@ struct FAPSPreviewBodyEditOverride
 	EPlanetType PlanetType{EPlanetType::Frozen};
 
 	UPROPERTY()
+	EPlanetHabitability PlanetHabitability{EPlanetHabitability::Uninhabitable};
+
+	UPROPERTY()
 	double RadiusKm{6750.0};
+
+	/** Selected moon center-to-parent distance; zero for planets. */
+	UPROPERTY()
+	double MoonOrbitRadiusKm{0.0};
+
+	/** Edited moon count owned by a planet; INDEX_NONE for moon/body-neutral edits. */
+	UPROPERTY()
+	int32 MoonCount{INDEX_NONE};
 
 	UPROPERTY()
 	int32 SurfaceSeed{1337};
@@ -74,13 +87,55 @@ struct FAPSPreviewBodyEditOverride
 	double AtmosphereOpacity{12.0};
 
 	UPROPERTY()
-	double AtmosphereMultiScattering{1.0};
+	double AtmosphereMultiScattering{5.0};
 
 	UPROPERTY()
 	double AtmosphereRayleighScattering{8.0};
 
 	UPROPERTY()
 	FLinearColor AtmosphereColor{FLinearColor(3.8f, 13.5f, 33.0f, 0.0f)};
+};
+
+/** An explicit, actor-free edit of one addressed star, including its AUTO baseline. */
+USTRUCT()
+struct FAPSPreviewStarEditOverride
+{
+	GENERATED_BODY()
+
+	UPROPERTY()
+	FStarModel AutomaticModel;
+
+	UPROPERTY()
+	FStarModel Model;
+
+	/** Zero removes the size override without rerolling the baseline star. */
+	UPROPERTY()
+	double RadiusOverrideSolar{0.0};
+};
+
+/** Partial system recipe: untouched fields keep their original generation inputs. */
+USTRUCT()
+struct FAPSPreviewSystemEditOverride
+{
+	GENERATED_BODY()
+
+	UPROPERTY()
+	int32 StarCount{INDEX_NONE};
+	UPROPERTY()
+	EStarType StarType{EStarType::SingleStar};
+	UPROPERTY()
+	int32 TotalPlanets{INDEX_NONE};
+	UPROPERTY()
+	bool bOverridePlanetaryType{false};
+	UPROPERTY()
+	EPlanetarySystemType PlanetaryType{EPlanetarySystemType::MultiPlanetSystem};
+	UPROPERTY()
+	bool bOverrideOrbitDistribution{false};
+	UPROPERTY()
+	EOrbitDistributionType OrbitDistribution{EOrbitDistributionType::Uniform};
+
+	void ApplyToSystem(FStarSystemModel& Model) const;
+	void ApplyToFamily(FPlanetarySystemModel& Model, int32 StarIndex, int32 ActualStarCount) const;
 };
 
 UCLASS()
@@ -99,6 +154,21 @@ public:
 	const FAPSPreviewBodyEditOverride* FindPreviewBodyEditOverride(const FString& StableBodyKey) const;
 	void ClearPreviewBodyEditOverrides();
 	int32 GetPreviewBodyEditOverrideCount() const { return PreviewBodyEditOverrides.Num(); }
+
+	void SetPreviewStarEditOverride(const FString& StableStarKey, const FAPSPreviewStarEditOverride& Edit);
+	const FAPSPreviewStarEditOverride* FindPreviewStarEditOverride(const FString& StableStarKey) const;
+	bool ApplyPreviewStarEditOverride(const FString& StableStarKey, FStarModel& Model) const;
+	void ClearPreviewStarEditOverrides() { PreviewStarEditOverrides.Reset(); }
+	/** Sorted by address: insertion order and UObject duplication cannot change the manifest input. */
+	uint32 GetPreviewStarEditHash() const;
+	void SetPreviewSystemEditOverride(const FString& Address, const FAPSPreviewSystemEditOverride& Edit);
+	const FAPSPreviewSystemEditOverride* FindPreviewSystemEditOverride(const FString& Address) const;
+	void ClearPreviewSystemEditOverrides() { PreviewSystemEditOverrides.Reset(); }
+	uint32 GetPreviewSystemEditHash() const;
+
+	/** Resolves UI seed zero from stable world/body identity, never actor transform/name. */
+	static int32 ResolveCanonicalSurfaceSeed(
+		int32 AuthoredSeed, int32 WorldGenerationSeed, const FString& StableBodyKey);
 
 	UPROPERTY()
 	TArray<FPlanetData> InhabitedPlanets;
@@ -166,6 +236,11 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Home System", meta = (EditCondition = "!bRandomHomeSystem"))
 	ESpectralClass SpectralClass{ ESpectralClass::G };
 
+	/** Authored primary-star radius in solar radii; zero keeps the generated type default. */
+	UPROPERTY(EditAnywhere, Category = "Home System",
+		meta = (EditCondition = "!bRandomHomeSystem", ClampMin = "0.0", ClampMax = "1000.0"))
+	double HomeStarRadiusOverrideSolar{ 0.0 };
+
 	UPROPERTY(EditAnywhere, Category = "Home System", meta = (EditCondition = "!bRandomHomeSystem"))
 	EPlanetarySystemType PlanetarySystemType{ EPlanetarySystemType::MultiPlanetSystem };
 
@@ -177,6 +252,10 @@ public:
 	
 	UPROPERTY(EditAnywhere, Category = "Home System", meta = (EditCondition = "!bRandomHomeSystem"))
 	EPlanetType PlanetType{ EPlanetType::Frozen };
+
+	/** Explicit gameplay classification for the selected planet or moon. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Home System")
+	EPlanetHabitability PlanetHabitability{ EPlanetHabitability::Uninhabitable };
 
 	UPROPERTY(EditAnywhere, Category = "Galaxy")
 	int GalaxySize{ 250 };
@@ -199,7 +278,11 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Galaxy")
 	double PlanetRadius{ 6750.0 };
 
-	/** Stable input for the per-planet resolver. Zero lets the body derive a seed. */
+	/** Editor buffer for the selected moon's center-to-parent orbit radius. */
+	UPROPERTY(EditAnywhere, Category = "Home System", meta = (ClampMin = "0.0"))
+	double MoonOrbitRadiusKm{ 0.0 };
+
+	/** Stable input for the per-planet resolver. Zero derives from world seed + body path. */
 	UPROPERTY(EditAnywhere, Category = "Planet Surface", meta = (ClampMin = "0"))
 	int32 PlanetSurfaceSeed{ 1337 };
 
@@ -238,7 +321,7 @@ public:
 	double AtmosphereOpacity{ 12.0 };
 
 	UPROPERTY(EditAnywhere, Category = "Atmosphere")
-	double AtmosphereMultiScattering{ 1.0 };
+	double AtmosphereMultiScattering{ 5.0 };
 
 	UPROPERTY(EditAnywhere, Category = "Atmosphere")
 	double AtmosphereRayleighScattering{ 8.0 };
@@ -253,6 +336,13 @@ public:
 	 */
 	UPROPERTY()
 	TMap<FString, FAPSPreviewBodyEditOverride> PreviewBodyEditOverrides;
+
+	/** Explicit stellar authoring is copied with the finalized world into gameplay. */
+	UPROPERTY()
+	TMap<FString, FAPSPreviewStarEditOverride> PreviewStarEditOverrides;
+
+	UPROPERTY()
+	TMap<FString, FAPSPreviewSystemEditOverride> PreviewSystemEditOverrides;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Star Cluster")
 	int StarsAmount;
@@ -278,6 +368,8 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Star System")
 	double StarSystemRadius;
 
+	EPlanetHabitability ResolveHomePlanetHabitabilityForSave() const;
+
 	FGeneratedWorldData SaveWorldData() const
 	{
 		FGeneratedWorldData WorldData;
@@ -298,10 +390,12 @@ public:
 		WorldData.StarType = StarType;
 		WorldData.StellarType = StellarType;
 		WorldData.SpectralClass = SpectralClass;
+		WorldData.HomeStarRadiusOverrideSolar = HomeStarRadiusOverrideSolar;
 		WorldData.PlanetarySystemType = PlanetarySystemType;
 		WorldData.OrbitDistributionType = OrbitDistributionType;
 		WorldData.HomeSystemPosition = HomeSystemPosition;
 		WorldData.PlanetType = PlanetType;
+		WorldData.PlanetHabitability = ResolveHomePlanetHabitabilityForSave();
 		WorldData.GalaxySize = GalaxySize;
 		WorldData.GalaxyStarCount = GalaxyStarCount;
 		WorldData.PlanetsAmount = PlanetsAmount;

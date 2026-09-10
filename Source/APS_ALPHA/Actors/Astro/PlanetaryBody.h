@@ -8,6 +8,7 @@
 #include "APS_ALPHA/Actors/Planetary/PlanetGeosphere.h"
 #include "Kismet/GameplayStatics.h"
 #include "APS_ALPHA/Core/Structs/PlanetarySystemGenerationModel.h"
+#include "APS_ALPHA/Core/Enums/PlanetHabitability.h"
 #include "PlanetaryBody.generated.h"
 
 class APlanetarySurfaceGenerator;
@@ -131,6 +132,10 @@ public:
 
 	UPROPERTY(VisibleAnywhere, Category = "Planet")
 	EPlanetType PlanetType;
+
+	/** Gameplay classification shared by planets and moons, independent of visuals. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet")
+	EPlanetHabitability PlanetHabitability{EPlanetHabitability::Uninhabitable};
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Environment")
 	FPlanetAtmosphere PlanetAtmosphere;

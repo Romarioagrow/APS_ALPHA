@@ -156,6 +156,7 @@ TSharedPtr<FPlanetModel> UPlanetGenerator::CreatePlanetModelFromGeneratedWorld(c
 
 	TSharedPtr<FPlanetModel> PlanetModel = MakeShared<FPlanetModel>();
 	PlanetModel->PlanetType = GeneratedWorld->PlanetType;
+	PlanetModel->PlanetHabitability = GeneratedWorld->PlanetHabitability;
 	PlanetModel->AmountOfMoons = GeneratedWorld->MoonsAmount;
 	// GeneratedWorld exposes the radius to the menu in kilometres, while the
 	// procedural astronomy model stores Radius in Earth-radius units. Feeding
@@ -254,7 +255,9 @@ void UPlanetGenerator::ApplyModel(APlanet* PlanetActor, TSharedPtr<FPlanetModel>
 	// its type, radius and moons even though the visible actor had those values.
 	PlanetActor->PlanetData.PlanetModel = PlanetGenerationModel;
 	PlanetActor->PlanetData.PlanetModelData = *PlanetGenerationModel;
+	PlanetActor->PlanetData.PlanetHabitability = PlanetGenerationModel->PlanetHabitability;
 	PlanetActor->SetPlanetType(PlanetGenerationModel->PlanetType);
+	PlanetActor->PlanetHabitability = PlanetGenerationModel->PlanetHabitability;
 	PlanetActor->SetPlanetZone(PlanetGenerationModel->PlanetZone);
 	PlanetActor->SetPlanetDensity(PlanetGenerationModel->PlanetDensity);
 	PlanetActor->SetPlanetGravityStrength(PlanetGenerationModel->PlanetGravityStrength);
@@ -276,4 +279,7 @@ void UPlanetGenerator::ApplyModel(APlanet* PlanetActor, TSharedPtr<FPlanetModel>
 	PlanetActor->SurfaceMountainScale = PlanetGenerationModel->SurfaceMountainScale;
 	PlanetActor->SurfaceCraterScale = PlanetGenerationModel->SurfaceCraterScale;
 	PlanetActor->SurfaceRoughnessScale = PlanetGenerationModel->SurfaceRoughnessScale;
+	// SetPlanetType runs before the authored surface seed is copied. Rebind the
+	// deterministic gas palette once the complete model is present.
+	PlanetActor->RefreshGasGiantVisual();
 }

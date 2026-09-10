@@ -1,0 +1,43 @@
+﻿{
+	"devices": [
+		{
+			"deviceName": "RIO-PC",
+			"instance": "9483DD754D43789B38EDE9ACA0C3B17C",
+			"instanceName": "RIO-PC-22888",
+			"platform": "WindowsEditor",
+			"oSVersion": "Windows 11 (25H2) [10.0.26200.7623] ",
+			"model": "Default",
+			"gPU": "NVIDIA GeForce RTX 5080",
+			"cPUModel": "Intel(R) Core(TM) i9-10900KF CPU @ 3.70GHz",
+			"rAMInGB": 32,
+			"renderMode": "D3D12_SM6",
+			"rHI": "DirectX 12 (SM6)",
+			"appInstanceLog": ""
+		}
+	],
+	"reportCreatedOn": "2026.08.07-06.36.20",
+	"succeeded": 1,
+	"succeededWithWarnings": 0,
+	"failed": 0,
+	"notRun": 0,
+	"inProcess": 0,
+	"totalDuration": 13.066340446472168,
+	"comparisonExported": false,
+	"comparisonExportDirectory": "",
+	"tests": [
+		{
+			"testDisplayName": "UnifiedStellarMasters",
+			"fullTestPath": "APS.Rendered.Materials.UnifiedStellarMasters",
+			"state": "Success",
+			"deviceInstance": [
+				"9483DD754D43789B38EDE9ACA0C3B17C"
+			],
+			"duration": 13.066340446472168,
+			"dateTime": "0001.01.01-00.00.00",
+			"entries": [],
+			"warnings": 0,
+			"errors": 0,
+			"artifacts": []
+		}
+	]
+}
