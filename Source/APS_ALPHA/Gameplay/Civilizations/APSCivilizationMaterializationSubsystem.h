@@ -51,6 +51,7 @@ private:
 	friend class FAPSCivilizationMaterializationAcceptanceTest;
 
 	bool TryInitializeManifest(AAstroGenerator*& OutGenerator, APlanetaryBody*& OutHomeBody);
+	void ResetPlacementSearch();
 	void TransitionMaterializationState(EAPSCivilizationMaterializationState NewState);
 	bool ValidateMaterializedStarterSet(APlanetaryBody* HomeBody,
 		const FAPSCivilizationFootprintResult& Placement,
@@ -84,6 +85,11 @@ private:
 	TObjectPtr<ASpaceship> MaterializedShip;
 
 	TWeakObjectPtr<APlanetaryBody> MaterializedHomeBody;
+	TWeakObjectPtr<APlanetaryBody> PlacementHomeBody;
+	TWeakObjectPtr<ASpaceship> PlacementEnvelopeShip;
+	FVector PlacementEnvelopeScale{FVector::ZeroVector};
+	double PlacementShipEnvelopeDiameterCm{0.0};
+	FAPSCivilizationFootprintSearch PlacementSearch;
 	FOnAPSCivilizationMaterializationStateChanged MaterializationStateChanged;
 	float RetryAccumulator{0.0f};
 	bool bManifestInitialized{false};

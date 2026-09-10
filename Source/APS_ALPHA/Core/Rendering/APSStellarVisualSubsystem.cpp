@@ -54,6 +54,7 @@ bool UAPSStellarVisualSubsystem::ShouldCreateSubsystem(UObject* Outer) const
 
 void UAPSStellarVisualSubsystem::Tick(float DeltaTime)
 {
+	UpdateGameplayStellarView();
 	UWorld* World = GetWorld();
 	APlayerController* PlayerController = World ? World->GetFirstPlayerController() : nullptr;
 	APawn* Observer = PlayerController ? PlayerController->GetPawn() : nullptr;
@@ -196,6 +197,7 @@ bool UAPSStellarVisualSubsystem::GetActiveStellarTarget(
 
 void UAPSStellarVisualSubsystem::Deinitialize()
 {
+	ResetGameplayStellarView();
 	if (ADirectionalLight* FillLight = PreviewFillLight.Get())
 	{
 		FillLight->Destroy();

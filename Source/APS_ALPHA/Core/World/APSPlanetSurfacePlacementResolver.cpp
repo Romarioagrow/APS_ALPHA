@@ -5,7 +5,9 @@
 #include "Components/PrimitiveComponent.h"
 #include "Components/SceneComponent.h"
 #include "Engine/World.h"
+#include "HAL/PlatformTime.h"
 #include "Math/RotationMatrix.h"
+#include "ProfilingDebugging/CpuProfilerTrace.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogAPSPlanetSurfacePlacement, Log, All);
 
@@ -204,6 +206,47 @@ namespace APSPlanetSurfacePlacement
 	}
 }
 
+struct FAPSCivilizationFootprintSearchState
+{
+	TWeakObjectPtr<APlanetaryBody> Body;
+	TWeakObjectPtr<APlanetarySurfaceGenerator> Surface;
+	TWeakObjectPtr<AWorldScapeRoot> Root;
+	TWeakObjectPtr<UObject> Noise;
+	FAPSCivilizationFootprintRequest Request;
+	uint32 PlacementKey{0};
+	uint32 ProfileSignature{0};
+	double RadiusCm{0.0};
+	double NoiseScale{0.0};
+	double NoiseIntensity{0.0};
+	int32 NoiseSeed{0};
+	FVector NoiseOffset{FVector::ZeroVector};
+	double OceanHeightCm{0.0};
+	bool bHasLiquid{false};
+	FQuat RootRotation{FQuat::Identity};
+	FVector RootScale{FVector::OneVector};
+	FVector PreferredUp{FVector::UpVector};
+	double SeedPhase{0.0};
+	TArray<FVector> Directions;
+	APSPlanetSurfacePlacement::FCandidate Best;
+	int32 NextCandidate{0};
+};
+
+bool FAPSCivilizationFootprintSearch::IsSearching() const
+{
+	return State && State->NextCandidate
+		< State->Directions.Num() * APSPlanetSurfacePlacement::HeadingCount;
+}
+
+int32 FAPSCivilizationFootprintSearch::GetEvaluatedCandidateCount() const
+{
+	return State ? State->NextCandidate : 0;
+}
+
+void FAPSCivilizationFootprintSearch::Reset()
+{
+	State.Reset();
+}
+
 uint32 UAPSPlanetSurfacePlacementResolver::BuildPlacementKey(
 	const int32 ManifestSeed, const int32 SurfaceSeed,
 	const int32 PlanetTypeValue, const int32 PlanetRadiusKm)
@@ -233,15 +276,30 @@ bool UAPSPlanetSurfacePlacementResolver::TryResolveCivilizationFootprint(
 	APlanetaryBody* HomeBody, const FAPSCivilizationFootprintRequest& Request,
 	FAPSCivilizationFootprintResult& OutResult)
 {
+	// Retain the synchronous Blueprint/test contract; runtime uses the bounded path.
+	FAPSCivilizationFootprintSearch Search;
+	return AdvanceCivilizationFootprint(HomeBody, Request, Search, OutResult,
+		MAX_int32, TNumericLimits<double>::Max());
+}
+
+bool UAPSPlanetSurfacePlacementResolver::AdvanceCivilizationFootprint(
+	APlanetaryBody* HomeBody, const FAPSCivilizationFootprintRequest& Request,
+	FAPSCivilizationFootprintSearch& Search,
+	FAPSCivilizationFootprintResult& OutResult,
+	const int32 MaxCandidates, const double TimeBudgetSeconds)
+{
+	TRACE_CPUPROFILER_EVENT_SCOPE(APS_CivilizationFootprintAdvance);
 	using namespace APSPlanetSurfacePlacement;
 	OutResult = FAPSCivilizationFootprintResult{};
 	if (!IsValid(HomeBody))
 	{
+		Search.Reset();
 		OutResult.FailureReason = TEXT("Home body is invalid");
 		return false;
 	}
 	if (!ValidateRequest(Request, OutResult.FailureReason))
 	{
+		Search.Reset();
 		return false;
 	}
 
@@ -259,6 +317,7 @@ bool UAPSPlanetSurfacePlacementResolver::TryResolveCivilizationFootprint(
 		|| !Surface->IsSurfaceProfileCurrent(HomeBody)
 		|| !IsValid(Root->WorldScapeNoise) || Root->PlanetScale <= 0.0)
 	{
+		Search.Reset();
 		OutResult.FailureReason = TEXT("Canonical WorldScape profile is not ready");
 		return false;
 	}
@@ -271,43 +330,83 @@ bool UAPSPlanetSurfacePlacementResolver::TryResolveCivilizationFootprint(
 		? static_cast<double>(Surface->ResolvedSurfaceProfile.OceanLevel)
 			* Root->NoiseIntensity
 		: -TNumericLimits<double>::Max();
-	FVector PreferredUp;
-	FVector SeedForward;
-	BuildSeedFrame(PlacementKey, PreferredUp, SeedForward);
-	FVector TangentA;
-	FVector TangentB;
-	PreferredUp.FindBestAxisVectors(TangentA, TangentB);
-	const double SeedPhase = FMath::Atan2(
-		FVector::DotProduct(SeedForward, TangentB),
-		FVector::DotProduct(SeedForward, TangentA));
-
-	TArray<FVector> Directions;
-	Directions.Reserve(1 + RingDirections * 5 + GlobalDirections);
-	Directions.Add(PreferredUp);
-	constexpr double SearchRadiiCm[] = {
-		10000.0, 25000.0, 50000.0, 100000.0, 500000.0};
-	for (const double SearchRadiusCm : SearchRadiiCm)
+	// Translation is intentionally not an invalidator: candidates are radial and
+	// all support/trace locations below are rebuilt from the live root centre.
+	const auto* Previous = Search.State.Get();
+	if (!Previous || Previous->Body != HomeBody || Previous->Surface != Surface
+		|| Previous->Root != Root || Previous->Noise != Root->WorldScapeNoise
+		|| Previous->PlacementKey != PlacementKey
+		|| Previous->ProfileSignature != Surface->AppliedSurfaceProfileSignature
+		|| Previous->RadiusCm != RadiusCm || Previous->NoiseScale != Root->NoiseScale
+		|| Previous->NoiseIntensity != Root->NoiseIntensity
+		|| Previous->NoiseSeed != Root->Seed || Previous->NoiseOffset != Root->NoiseOffset
+		|| Previous->bHasLiquid != bHasLiquid || Previous->OceanHeightCm != OceanHeightCm
+		|| Previous->RootRotation != Root->GetActorQuat()
+		|| Previous->RootScale != Root->GetActorScale3D()
+		|| !FAPSCivilizationFootprintRequest::StaticStruct()->CompareScriptStruct(
+			&Previous->Request, &Request, 0))
 	{
-		const double Angle = FMath::Clamp(SearchRadiusCm / RadiusCm, 1.0e-6, 0.35);
-		for (int32 Index = 0; Index < RingDirections; ++Index)
-		{
-			const double Azimuth = SeedPhase + UE_TWO_PI * Index / RingDirections;
-			const FVector RingTangent = TangentA * FMath::Cos(Azimuth)
-				+ TangentB * FMath::Sin(Azimuth);
-			Directions.Add((PreferredUp * FMath::Cos(Angle)
-				+ RingTangent * FMath::Sin(Angle)).GetSafeNormal());
-		}
+		Search.State = MakeShared<FAPSCivilizationFootprintSearchState>();
+		auto& NewState = *Search.State;
+		NewState.Body = HomeBody;
+		NewState.Surface = Surface;
+		NewState.Root = Root;
+		NewState.Noise = Root->WorldScapeNoise;
+		NewState.Request = Request;
+		NewState.PlacementKey = PlacementKey;
+		NewState.ProfileSignature = Surface->AppliedSurfaceProfileSignature;
+		NewState.RadiusCm = RadiusCm;
+		NewState.NoiseScale = Root->NoiseScale;
+		NewState.NoiseIntensity = Root->NoiseIntensity;
+		NewState.NoiseSeed = Root->Seed;
+		NewState.NoiseOffset = Root->NoiseOffset;
+		NewState.bHasLiquid = bHasLiquid;
+		NewState.OceanHeightCm = OceanHeightCm;
+		NewState.RootRotation = Root->GetActorQuat();
+		NewState.RootScale = Root->GetActorScale3D();
 	}
-	const double GoldenAngle = UE_PI * (3.0 - FMath::Sqrt(5.0));
-	for (int32 Index = 0; Index < GlobalDirections; ++Index)
+	auto& State = *Search.State;
+	FVector& PreferredUp = State.PreferredUp;
+	double& SeedPhase = State.SeedPhase;
+	TArray<FVector>& Directions = State.Directions;
+	if (Directions.IsEmpty())
 	{
-		const int32 Rotated = (Index
-			+ static_cast<int32>(PlacementKey % GlobalDirections)) % GlobalDirections;
-		const double Z = 1.0 - 2.0 * (Rotated + 0.5) / GlobalDirections;
-		const double Ring = FMath::Sqrt(FMath::Max(0.0, 1.0 - Z * Z));
-		const double Azimuth = SeedPhase + GoldenAngle * Rotated;
-		Directions.Add({Ring * FMath::Cos(Azimuth),
-			Ring * FMath::Sin(Azimuth), Z});
+		FVector SeedForward;
+		BuildSeedFrame(PlacementKey, PreferredUp, SeedForward);
+		FVector TangentA;
+		FVector TangentB;
+		PreferredUp.FindBestAxisVectors(TangentA, TangentB);
+		SeedPhase = FMath::Atan2(
+			FVector::DotProduct(SeedForward, TangentB),
+			FVector::DotProduct(SeedForward, TangentA));
+
+		Directions.Reserve(1 + RingDirections * 5 + GlobalDirections);
+		Directions.Add(PreferredUp);
+		constexpr double SearchRadiiCm[] = {
+			10000.0, 25000.0, 50000.0, 100000.0, 500000.0};
+		for (const double SearchRadiusCm : SearchRadiiCm)
+		{
+			const double Angle = FMath::Clamp(SearchRadiusCm / RadiusCm, 1.0e-6, 0.35);
+			for (int32 Index = 0; Index < RingDirections; ++Index)
+			{
+				const double Azimuth = SeedPhase + UE_TWO_PI * Index / RingDirections;
+				const FVector RingTangent = TangentA * FMath::Cos(Azimuth)
+					+ TangentB * FMath::Sin(Azimuth);
+				Directions.Add((PreferredUp * FMath::Cos(Angle)
+					+ RingTangent * FMath::Sin(Angle)).GetSafeNormal());
+			}
+		}
+		const double GoldenAngle = UE_PI * (3.0 - FMath::Sqrt(5.0));
+		for (int32 Index = 0; Index < GlobalDirections; ++Index)
+		{
+			const int32 Rotated = (Index
+				+ static_cast<int32>(PlacementKey % GlobalDirections)) % GlobalDirections;
+			const double Z = 1.0 - 2.0 * (Rotated + 0.5) / GlobalDirections;
+			const double Ring = FMath::Sqrt(FMath::Max(0.0, 1.0 - Z * Z));
+			const double Azimuth = SeedPhase + GoldenAngle * Rotated;
+			Directions.Add({Ring * FMath::Cos(Azimuth),
+				Ring * FMath::Sin(Azimuth), Z});
+		}
 	}
 
 	const TArray<FVector2D> BaseOffsets = RectangleOffsets(Request.BaseSizeCm);
@@ -315,15 +414,28 @@ bool UAPSPlanetSurfacePlacementResolver::TryResolveCivilizationFootprint(
 	const TArray<FVector2D> PadOffsets = DiscOffsets(PadRadiusCm);
 	const double RouteStartCm = Request.BaseSizeCm.X * 0.5 + 150.0;
 	const double RouteEndCm = Request.SeparationCm - PadRadiusCm - 150.0;
-	FCandidate Best;
-	for (int32 DirectionIndex = 0; DirectionIndex < Directions.Num(); ++DirectionIndex)
+	FCandidate& Best = State.Best;
+	const double SliceStart = FPlatformTime::Seconds();
+	int32 EvaluatedThisCall = 0;
+	for (int32 DirectionIndex = State.NextCandidate / HeadingCount;
+		DirectionIndex < Directions.Num(); ++DirectionIndex)
 	{
 		const FVector BaseUp = Directions[DirectionIndex].GetSafeNormal();
 		FVector AxisA;
 		FVector AxisB;
 		BaseUp.FindBestAxisVectors(AxisA, AxisB);
-		for (int32 HeadingIndex = 0; HeadingIndex < HeadingCount; ++HeadingIndex)
+		for (int32 HeadingIndex = State.NextCandidate % HeadingCount;
+			HeadingIndex < HeadingCount; ++HeadingIndex)
 		{
+			if (EvaluatedThisCall >= FMath::Max(0, MaxCandidates)
+				|| (EvaluatedThisCall > 0
+					&& FPlatformTime::Seconds() - SliceStart >= TimeBudgetSeconds))
+			{
+				OutResult.FailureReason = TEXT("Deterministic footprint search in progress");
+				return false;
+			}
+			++State.NextCandidate;
+			++EvaluatedThisCall;
 			const double Heading = SeedPhase + UE_TWO_PI * HeadingIndex / HeadingCount;
 			const FVector Forward = (AxisA * FMath::Cos(Heading)
 				+ AxisB * FMath::Sin(Heading)).GetSafeNormal();

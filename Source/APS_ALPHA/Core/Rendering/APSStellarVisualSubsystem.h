@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Subsystems/WorldSubsystem.h"
+#include "APSPreviewVisibility.h"
 #include "APSStellarVisualSubsystem.generated.h"
 
 class ADirectionalLight;
@@ -9,6 +10,29 @@ class APlanetaryBody;
 class APointLight;
 class APawn;
 class ASpaceStation;
+class AAstroGenerator;
+class UInstancedStaticMeshComponent;
+class UHierarchicalInstancedStaticMeshComponent;
+
+struct FAPSGameplayStellarPoint
+{
+	FVector CenterFromHomeCm{FVector::ZeroVector};
+	double RadiusCm{0.0};
+	int32 InstanceIndex{INDEX_NONE};
+	FTransform ProjectedTransform{FTransform::Identity};
+	bool bOccluded{true};
+};
+
+/** Disposable optical view; the source catalog and its identity mapping stay immutable. */
+struct FAPSGameplayStellarLayer
+{
+	TWeakObjectPtr<UHierarchicalInstancedStaticMeshComponent> Source;
+	TWeakObjectPtr<UInstancedStaticMeshComponent> View;
+	TArray<FAPSGameplayStellarPoint> Points;
+	TArray<FTransform> Transforms;
+	bool bSourceVisible{true};
+	bool bSourceHidden{false};
+};
 
 /** Runtime-only bridge from the current generated star to playable global lighting. */
 UCLASS()
@@ -25,6 +49,17 @@ public:
 	bool GetActiveStellarTarget(FVector& OutTargetLocation, FString& OutTargetIdentity) const;
 
 private:
+	void UpdateGameplayStellarView();
+	void ResetGameplayStellarView();
+	TWeakObjectPtr<AAstroGenerator> GameplayStellarGenerator;
+	TArray<FAPSGameplayStellarLayer> GameplayStellarLayers;
+	FVector LastStellarObserverFromHome{FVector::ZeroVector};
+	double ClosestStellarPointCm{0.0};
+	double ClosestStellarRenderDistanceCm{0.0};
+	FVector LastStellarMaskObserver{FVector::ZeroVector};
+	TArray<FAPSPreviewOccluder> LastStellarOccluders;
+	double LastStellarPixelTangent{-1.0};
+	uint64 GameplayStellarBuildSerial{0u};
 	void ResolveDirectionalLight();
 	void ResolveNearestStar(const FVector& ObserverLocation);
 	void UpdatePreviewFillLight(

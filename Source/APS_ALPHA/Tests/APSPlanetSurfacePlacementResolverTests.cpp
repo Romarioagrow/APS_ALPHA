@@ -190,4 +190,114 @@ bool FAPSPlanetSurfacePlacementReadyActivePreservationTest::RunTest(const FStrin
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FAPSPlanetSurfacePlacementIncrementalTest,
+	"APS.Surface.Placement.BoundedSearchAndCache",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FAPSPlanetSurfacePlacementIncrementalTest::RunTest(const FString& Parameters)
+{
+	using namespace APSPlanetSurfacePlacementResolverTests;
+	UWorld* World = CreateTestWorld();
+	if (!TestNotNull(TEXT("Test world"), World))
+	{
+		return false;
+	}
+	APlanet* HomeBody = World->SpawnActor<APlanet>();
+	if (!TestNotNull(TEXT("Home body"), HomeBody))
+	{
+		DestroyTestWorld(World);
+		return false;
+	}
+	HomeBody->PlanetType = EPlanetType::Desert;
+	HomeBody->RadiusKM = 1000.0;
+	HomeBody->PlanetRadiusKM = 1000;
+	HomeBody->WorldScapePresentationScale = 0.001337;
+	HomeBody->SetWorldScapeStreamingState(EWorldScapeSurfaceState::Active);
+	APlanetarySurfaceGenerator* Surface = HomeBody->PlanetaryEnvironmentGenerator;
+	AWorldScapeRoot* Root = IsValid(Surface) ? Surface->WorldScapeRootInstance : nullptr;
+	if (!TestNotNull(TEXT("Canonical surface"), Surface)
+		|| !TestNotNull(TEXT("Canonical root"), Root)
+		|| !TestTrue(TEXT("Canonical profile current"), Surface->IsSurfaceProfileCurrent(HomeBody)))
+	{
+		DestroyTestWorld(World);
+		return false;
+	}
+	Root->bFreezeGeneration = true;
+	Root->bGenerateCollision = false;
+	FAPSCivilizationFootprintRequest Request;
+	Request.ManifestSeed = 7788;
+	Request.MaximumStructureSlope = 1.0e9;
+	Request.MaximumRouteSlope = 1.0e9;
+	Request.MinimumDryMarginCm = 0.0;
+	FAPSCivilizationFootprintResult Synchronous;
+	UAPSPlanetSurfacePlacementResolver::TryResolveCivilizationFootprint(HomeBody, Request, Synchronous);
+	TestTrue(TEXT("Loose dry fixture produces a terrain candidate"), Synchronous.bTerrainResolved);
+	TestFalse(TEXT("Missing collision never permits materialization"), Synchronous.bReadyForMaterialization);
+
+	FAPSCivilizationFootprintSearch Search;
+	FAPSCivilizationFootprintResult Result;
+	UAPSPlanetSurfacePlacementResolver::AdvanceCivilizationFootprint(HomeBody, Request, Search, Result, 1, 1.0);
+	TestEqual(TEXT("First call evaluates only one candidate"), Search.GetEvaluatedCandidateCount(), 1);
+	TestTrue(TEXT("Search continues across frames"), Search.IsSearching());
+	TestFalse(TEXT("Partial best is not exposed as safe terrain"), Result.bTerrainResolved);
+	UAPSPlanetSurfacePlacementResolver::AdvanceCivilizationFootprint(HomeBody, Request, Search, Result, 100, 0.0);
+	TestEqual(TEXT("Expired time budget yields after one atomic candidate"), Search.GetEvaluatedCandidateCount(), 2);
+	UAPSPlanetSurfacePlacementResolver::AdvanceCivilizationFootprint(HomeBody, Request, Search, Result, 0, 1.0);
+	TestEqual(TEXT("Zero candidate budget does no terrain work"), Search.GetEvaluatedCandidateCount(), 2);
+	for (int32 Slice = 0; Slice < 630 && Search.IsSearching(); ++Slice)
+	{
+		const int32 Before = Search.GetEvaluatedCandidateCount();
+		UAPSPlanetSurfacePlacementResolver::AdvanceCivilizationFootprint(HomeBody, Request, Search, Result, 7, 1.0);
+		TestTrue(TEXT("Candidate budget respected"), Search.GetEvaluatedCandidateCount() - Before <= 7);
+	}
+	TestFalse(TEXT("Search completes"), Search.IsSearching());
+	TestEqual(TEXT("All original candidates evaluated exactly once"), Search.GetEvaluatedCandidateCount(), 628);
+	TestEqual(TEXT("Sliced and synchronous searches choose identical ordinal"), Result.CandidateOrdinal, Synchronous.CandidateOrdinal);
+	TestTrue(TEXT("Sliced search preserves base transform"), Result.BaseTransform.Equals(Synchronous.BaseTransform, 0.001));
+	TestTrue(TEXT("Sliced search preserves pad transform"), Result.PadTransform.Equals(Synchronous.PadTransform, 0.001));
+	for (int32 Poll = 0; Poll < 5; ++Poll)
+	{
+		UAPSPlanetSurfacePlacementResolver::AdvanceCivilizationFootprint(HomeBody, Request, Search, Result);
+		TestEqual(TEXT("Collision retry does not repeat terrain search"), Search.GetEvaluatedCandidateCount(), 628);
+		TestFalse(TEXT("Cached terrain never bypasses live collision gating"), Result.bReadyForMaterialization);
+	}
+	const FVector OldBase = Result.BaseTransform.GetLocation();
+	const FVector Shift(100000.0, -50000.0, 20000.0);
+	Root->SetActorLocation(Root->GetActorLocation() + Shift);
+	UAPSPlanetSurfacePlacementResolver::AdvanceCivilizationFootprint(HomeBody, Request, Search, Result);
+	TestEqual(TEXT("Root translation retains planet-relative search"), Search.GetEvaluatedCandidateCount(), 628);
+	TestTrue(TEXT("Cached site follows live root translation"), Result.BaseTransform.GetLocation().Equals(OldBase + Shift, 0.01));
+
+	Request.PadDiameterCm += 100.0;
+	UAPSPlanetSurfacePlacementResolver::AdvanceCivilizationFootprint(HomeBody, Request, Search, Result, 1, 1.0);
+	TestEqual(TEXT("Changed footprint invalidates cached search"), Search.GetEvaluatedCandidateCount(), 1);
+	++Surface->AppliedSurfaceProfileSignature;
+	UAPSPlanetSurfacePlacementResolver::AdvanceCivilizationFootprint(HomeBody, Request, Search, Result, 1, 1.0);
+	TestEqual(TEXT("Stale canonical profile discards pending work"), Search.GetEvaluatedCandidateCount(), 0);
+	TestFalse(TEXT("Missing canonical profile waits instead of searching every frame"), Search.IsSearching());
+	--Surface->AppliedSurfaceProfileSignature;
+	UAPSPlanetSurfacePlacementResolver::AdvanceCivilizationFootprint(HomeBody, Request, Search, Result, 2, 1.0);
+	Root->NoiseIntensity += 100.0f;
+	UAPSPlanetSurfacePlacementResolver::AdvanceCivilizationFootprint(HomeBody, Request, Search, Result, 1, 1.0);
+	TestEqual(TEXT("Changed terrain noise invalidates accumulated scores"), Search.GetEvaluatedCandidateCount(), 1);
+
+	// A deliberately submerged fixture checks the negative-result cache too.
+	Surface->ResolvedSurfaceProfile.LiquidType = EAPSPlanetLiquidType::Water;
+	Surface->ResolvedSurfaceProfile.OceanLevel = 1.0e9f;
+	UAPSPlanetSurfacePlacementResolver::AdvanceCivilizationFootprint(HomeBody, Request, Search, Result, 628, 10.0);
+	TestFalse(TEXT("Submerged fixture has no safe terrain"), Result.bTerrainResolved);
+	TestFalse(TEXT("No-site result is a completed search"), Search.IsSearching());
+	for (int32 Poll = 0; Poll < 5; ++Poll)
+	{
+		UAPSPlanetSurfacePlacementResolver::AdvanceCivilizationFootprint(HomeBody, Request, Search, Result, 1, 1.0);
+		TestEqual(TEXT("No-site retry does not restart expensive scan"), Search.GetEvaluatedCandidateCount(), 628);
+		TestFalse(TEXT("No-site cache does not authorize materialization"), Result.bReadyForMaterialization);
+	}
+	Search.Reset();
+	TestEqual(TEXT("Reset releases per-world search state"), Search.GetEvaluatedCandidateCount(), 0);
+	DestroyTestWorld(World);
+	return true;
+}
+
 #endif

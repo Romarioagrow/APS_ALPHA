@@ -36,6 +36,7 @@ void UAPSCivilizationMaterializationSubsystem::Initialize(FSubsystemCollectionBa
 
 void UAPSCivilizationMaterializationSubsystem::Deinitialize()
 {
+	ResetPlacementSearch();
 	RuntimeManifest = FAPSCivilizationRuntimeManifest{};
 	LastPlacementResult = FAPSCivilizationFootprintResult{};
 	MaterializedBase = nullptr;
@@ -48,6 +49,19 @@ void UAPSCivilizationMaterializationSubsystem::Deinitialize()
 	Super::Deinitialize();
 }
 
+void UAPSCivilizationMaterializationSubsystem::ResetPlacementSearch()
+{
+	UAPSPlanetSurfacePlacementResolver::ReleasePlacementAnchors(
+		PlacementHomeBody.Get(), LastPlacementResult.PlacementKey);
+	PlacementSearch.Reset();
+	PlacementHomeBody.Reset();
+	PlacementEnvelopeShip.Reset();
+	PlacementEnvelopeScale = FVector::ZeroVector;
+	PlacementShipEnvelopeDiameterCm = 0.0;
+	LastPlacementResult = FAPSCivilizationFootprintResult{};
+	RetryAccumulator = 0.0f;
+}
+
 void UAPSCivilizationMaterializationSubsystem::Tick(const float DeltaTime)
 {
 	if (bMaterializationComplete || !GetWorld() || !GetWorld()->IsGameWorld())
@@ -55,7 +69,9 @@ void UAPSCivilizationMaterializationSubsystem::Tick(const float DeltaTime)
 		return;
 	}
 	RetryAccumulator += DeltaTime;
-	if (RetryAccumulator < RetryIntervalSeconds)
+	// Search slices run every frame; waiting for the canonical profile/collision
+	// still polls at 4 Hz. Never repeat the entire terrain search on a retry.
+	if (!PlacementSearch.IsSearching() && RetryAccumulator < RetryIntervalSeconds)
 	{
 		return;
 	}
@@ -87,6 +103,7 @@ void UAPSCivilizationMaterializationSubsystem::Tick(const float DeltaTime)
 	UAPSPlanetSurfacePlacementResolver::ReleasePlacementAnchors(
 		HomeBody, LastPlacementResult.PlacementKey);
 
+	PlacementSearch.Reset();
 	bMaterializationComplete = true;
 	TransitionMaterializationState(bManifestRestoredFromSave
 		? EAPSCivilizationMaterializationState::LoadedFromSave
@@ -142,6 +159,7 @@ bool UAPSCivilizationMaterializationSubsystem::RestoreRuntimeManifest(
 			*ValidationReason);
 		return false;
 	}
+	ResetPlacementSearch();
 	RuntimeManifest = MoveTemp(Migrated);
 	RuntimeManifest.MaterializationState = EAPSCivilizationMaterializationState::PendingPlacement;
 	bManifestInitialized = true;
@@ -243,6 +261,11 @@ bool UAPSCivilizationMaterializationSubsystem::TryInitializeManifest(
 bool UAPSCivilizationMaterializationSubsystem::TryResolveSafeSite(
 	APlanetaryBody* HomeBody, FAPSCivilizationFootprintResult& OutResult)
 {
+	if (PlacementHomeBody.Get() != HomeBody)
+	{
+		ResetPlacementSearch();
+		PlacementHomeBody = HomeBody;
+	}
 	FAPSCivilizationManifestEntity* ShipEntity = RuntimeManifest.FindEntity(
 		EAPSCivilizationEntityRole::SelectedShip);
 	ASpaceship* SelectedShip = ShipEntity ? FindSelectedStarterShip(*ShipEntity) : nullptr;
@@ -251,21 +274,36 @@ bool UAPSCivilizationMaterializationSubsystem::TryResolveSafeSite(
 		return false;
 	}
 
-	FVector BoundsOrigin;
-	FVector BoundsExtent;
-	SelectedShip->GetActorBounds(false, BoundsOrigin, BoundsExtent);
-	const double ShipEnvelopeDiameter = 2.0 * FMath::Max3(
-		static_cast<double>(BoundsExtent.X), static_cast<double>(BoundsExtent.Y),
-		static_cast<double>(BoundsExtent.Z)) + 2.0 * PadShipClearanceCm;
+	// A moving ship's world AABB changes with every rotation and would continually
+	// invalidate the pending site. A local bounding sphere is rotation-independent
+	// and conservatively fits the ship for any landing orientation.
+	// Capture the selected starter asset once per actor/scale. Repeated inverse
+	// world transforms also introduce tiny floating-point changes during flight.
+	const FVector ShipScale = SelectedShip->GetActorScale3D().GetAbs();
+	if (PlacementEnvelopeShip.Get() != SelectedShip || PlacementEnvelopeScale != ShipScale)
+	{
+		const FVector LocalExtent = SelectedShip->CalculateComponentsBoundingBoxInLocalSpace(
+			true).GetExtent() * ShipScale;
+		PlacementShipEnvelopeDiameterCm = 2.0 * LocalExtent.Size()
+			+ 2.0 * PadShipClearanceCm;
+		PlacementEnvelopeShip = SelectedShip;
+		PlacementEnvelopeScale = ShipScale;
+	}
 
 	FAPSCivilizationFootprintRequest Request;
 	Request.ManifestSeed = static_cast<int32>(GetTypeHash(RuntimeManifest.ManifestId));
-	Request.PadDiameterCm = FMath::Max(MinimumPadDiameterCm, ShipEnvelopeDiameter);
+	Request.PadDiameterCm = FMath::Max(MinimumPadDiameterCm, PlacementShipEnvelopeDiameterCm);
 	Request.SeparationCm = Request.BaseSizeCm.X * 0.5
 		+ Request.PadDiameterCm * 0.5 + BasePadRouteClearanceCm;
 	Request.SurfaceClearanceCm = SupportClearanceCm;
-	const bool bReady = UAPSPlanetSurfacePlacementResolver::TryResolveCivilizationFootprint(
-		HomeBody, Request, OutResult);
+	const bool bPreviouslyResolved = OutResult.bTerrainResolved;
+	const int64 PreviousKey = OutResult.PlacementKey;
+	const bool bReady = UAPSPlanetSurfacePlacementResolver::AdvanceCivilizationFootprint(
+		HomeBody, Request, PlacementSearch, OutResult);
+	if (bPreviouslyResolved && (!OutResult.bTerrainResolved || PreviousKey != OutResult.PlacementKey))
+	{
+		UAPSPlanetSurfacePlacementResolver::ReleasePlacementAnchors(HomeBody, PreviousKey);
+	}
 	if (!bReady && OutResult.bTerrainResolved)
 	{
 		UAPSPlanetSurfacePlacementResolver::RequestPlacementAnchors(

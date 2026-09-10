@@ -114,6 +114,20 @@ struct APS_ALPHA_API FAPSCivilizationFootprintResult
 	FString FailureReason;
 };
 
+struct FAPSCivilizationFootprintSearchState;
+
+/** Caller-owned search/cache. No world-global cache or retained terrain actors. */
+struct APS_ALPHA_API FAPSCivilizationFootprintSearch
+{
+	bool IsSearching() const;
+	int32 GetEvaluatedCandidateCount() const;
+	void Reset();
+
+private:
+	friend class UAPSPlanetSurfacePlacementResolver;
+	TSharedPtr<FAPSCivilizationFootprintSearchState> State;
+};
+
 /**
  * Surface-owned resolver consuming the one canonical active WorldScape profile.
  * It never creates another terrain model and never spawns civilization actors.
@@ -134,6 +148,19 @@ public:
 		APlanetaryBody* HomeBody,
 		const FAPSCivilizationFootprintRequest& Request,
 		FAPSCivilizationFootprintResult& OutResult);
+
+	/**
+	 * Gameplay path: bounded, deterministic search across frames. Completed searches
+	 * (including no suitable site) are retained until canonical inputs change.
+	 * Resident LOD/collision readiness is always checked live, never cached as ready.
+	 * Time is checked between candidates; one candidate is the smallest work unit.
+	 */
+	static bool AdvanceCivilizationFootprint(
+		APlanetaryBody* HomeBody,
+		const FAPSCivilizationFootprintRequest& Request,
+		FAPSCivilizationFootprintSearch& Search,
+		FAPSCivilizationFootprintResult& OutResult,
+		int32 MaxCandidates = 4, double TimeBudgetSeconds = 0.00075);
 
 	/** Adds transient base/pad/route collision invokers without moving player LOD. */
 	UFUNCTION(BlueprintCallable, Category = "APS|Planet Surface|Placement")
