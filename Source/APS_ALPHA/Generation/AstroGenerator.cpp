@@ -9393,6 +9393,16 @@ void AAstroGenerator::GenerateStarSystemByModel()
 	{
 		UE_LOG(LogTemp, Warning, TEXT("Generate Star System!"));
 
+		// Authored SinglePlay used 149600000000000 / 1000 per orbit unit.
+		// Physical AU conversion stretched its orbits 100x around unchanged stars.
+		// Share the selected unit with reconciliation so it cannot undo placement;
+		// menu previews and newly generated worlds keep physical AU distances.
+		constexpr double AuToCentimetres = 14960000000000.0;
+		constexpr double LegacyAuthoredOrbitUnitCm = 149600000000.0;
+		const bool bUseLegacyAuthoredOrbitUnits = !bIsPreviewGeneration
+			&& bIntegrateStartPlanet && IsValid(WSR_StartHomePlanet);
+		const double OrbitDistanceUnitCm = bUseLegacyAuthoredOrbitUnits
+			? LegacyAuthoredOrbitUnitCm : AuToCentimetres;
 		FTransform HomeSystemTransform;
 		FVector HomeSystemSpawnLocation;
 		ComputeHomeSystemPosition(HomeSystemTransform, HomeSystemSpawnLocation);
@@ -9858,8 +9868,7 @@ void AAstroGenerator::GenerateStarSystemByModel()
 
 				// Set planet full-scale
 				NewPlanet->SetActorScale3D(FVector(PlanetModel->Radius * 12742000));
-				constexpr double AuToCentimetres = 14960000000000.0;
-				double OrbitRadiusCm = PlanetModel->OrbitDistance * AuToCentimetres;
+				double OrbitRadiusCm = PlanetModel->OrbitDistance * OrbitDistanceUnitCm;
 				if (bIsPreviewGeneration || !bIntegrateStartPlanet)
 				{
 					// A selected/generated stellar type can be a dwarf or a hypergiant.
@@ -10038,7 +10047,6 @@ void AAstroGenerator::GenerateStarSystemByModel()
 			// rotated rings and made the serialized hierarchy disagree with the scene.
 			if (bOrbitRotationCheck)
 			{
-				constexpr double OrbitAuToCentimetres = 14960000000000.0;
 				for (int32 OrbitIndex = 0;
 					OrbitIndex < NewPlanetarySystem->PlanetOrbitsList.Num(); ++OrbitIndex)
 				{
@@ -10067,7 +10075,7 @@ void AAstroGenerator::GenerateStarSystemByModel()
 						PlanetDirection = PlanetOrbit->GetActorQuat().GetAxisX();
 					}
 					const double PlanetOrbitRadiusCm = FMath::Max(
-						PlanetModel->OrbitDistance * OrbitAuToCentimetres, 0.0);
+						PlanetModel->OrbitDistance * OrbitDistanceUnitCm, 0.0);
 					Planet->SetActorLocation(
 						PlanetOrbit->GetActorLocation() + PlanetDirection * PlanetOrbitRadiusCm);
 					Planet->SetOrbitDistance(PlanetModel->OrbitDistance);
