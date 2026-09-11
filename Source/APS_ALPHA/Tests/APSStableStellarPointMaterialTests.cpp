@@ -48,11 +48,14 @@ bool FAPSStableStellarPointMaterialTest::RunTest(const FString& Parameters)
 
 	// The late path adds occlusion, not a new photometry/halo recipe. This also
 	// guards the luminosity custom-data channel, suppression and selection inputs.
-	TestTrue(TEXT("Entire accepted appearance code is retained unchanged"),
-		PointShader->Code.EndsWith(CoronaShader->Code));
+	FString ExpectedAppearance = CoronaShader->Code;
+	ExpectedAppearance.ReplaceInline(TEXT("float4 pixelClip = GetScreenPosition(Parameters);"),
+		TEXT("float4 pixelClip = RasterClip;"));
+	TestTrue(TEXT("Accepted appearance preserved except native raster coordinates"),
+		PointShader->Code.EndsWith(ExpectedAppearance));
 	TestEqual(TEXT("Accepted input contract"), CoronaShader->Inputs.Num(), 17);
-	TestEqual(TEXT("Only the depth dependency is appended"), PointShader->Inputs.Num(), 18);
-	if (CoronaShader->Inputs.Num() != 17 || PointShader->Inputs.Num() != 18) return false;
+	TestEqual(TEXT("Depth and native raster dependencies appended"), PointShader->Inputs.Num(), 19);
+	if (CoronaShader->Inputs.Num() != 17 || PointShader->Inputs.Num() != 19) return false;
 	for (int32 Index = 0; Index < CoronaShader->Inputs.Num(); ++Index)
 	{
 		const FCustomInput& Original = CoronaShader->Inputs[Index];
@@ -70,20 +73,29 @@ bool FAPSStableStellarPointMaterialTest::RunTest(const FString& Parameters)
 				Copy.Input.Expression->GetOuter() == Points);
 		}
 	}
-	const FCustomInput& Depth = PointShader->Inputs.Last();
+	const FCustomInput& Depth = PointShader->Inputs[17];
 	TestEqual(TEXT("Explicit scene-depth dependency"), Depth.InputName, FName(TEXT("SceneDepthForOcclusion")));
 	if (TestNotNull(TEXT("Depth expression connected"), Depth.Input.Expression))
 	{
 		TestEqual(TEXT("Depth expression type"), Depth.Input.Expression->GetClass()->GetFName(),
 			FName(TEXT("MaterialExpressionSceneDepth")));
 	}
-	const FString Guard = PointShader->Code.Left(PointShader->Code.Len() - CoronaShader->Code.Len());
+	const FCustomInput& Raster = PointShader->Inputs[18];
+	TestEqual(TEXT("Explicit raster dependency"), Raster.InputName, FName(TEXT("RasterClip")));
+	if (TestNotNull(TEXT("Raster expression connected"), Raster.Input.Expression))
+		TestEqual(TEXT("Raster arrives from the actual vertex stage"),
+			Raster.Input.Expression->GetClass()->GetFName(), FName(TEXT("MaterialExpressionVertexInterpolator")));
+	TestNull(TEXT("No padding or animation is introduced"),
+		UMaterialEditingLibrary::GetMaterialPropertyInputNode(Points, MP_WorldPositionOffset));
+	const FString Guard = PointShader->Code.Left(PointShader->Code.Len() - ExpectedAppearance.Len());
+	TestTrue(TEXT("Scene depth uses the native raster position, not primary SV_Position"),
+		Guard.Contains(TEXT("ViewportUVToBufferUV(rasterViewportUV)")));
 	TestTrue(TEXT("Depth is sampled in reversed device space, including the empty sky"),
 		Guard.Contains(TEXT("LookupDeviceZ(depthUV)")));
 	TestTrue(TEXT("Opaque geometry occludes astronomical points without a linear far-plane cap"),
 		Guard.Contains(TEXT("clip(Parameters.SvPosition.z-sceneDeviceZ)")));
-	TestEqual(TEXT("Only one new expression for occlusion"),
-		Points->GetExpressions().Num(), Corona->GetExpressions().Num() + 1);
+	TestEqual(TEXT("Depth plus two native raster expressions"),
+		Points->GetExpressions().Num(), Corona->GetExpressions().Num() + 3);
 	for (UMaterialExpression* Expression : Points->GetExpressions())
 	{
 		if (Expression) TestFalse(TEXT("No artificial time-driven point flicker"),

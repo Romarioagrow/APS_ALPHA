@@ -872,12 +872,31 @@ return lerp(pointSignal, coronaSignal, shellMode);
 				TEXT("/Script/Engine.MaterialExpressionSceneDepth"), -1050, 800);
 			if (!SceneDepth) return false;
 			AddCustomInput(PointAndCorona, TEXT("SceneDepthForOcclusion"), SceneDepth);
+			// The late pass can run at native output size while its view uniform
+			// buffer retains primary-resolution dimensions. Carry real raster clip
+			// coordinates from the vertex stage instead of reconstructing them from
+			// SV_Position with that mismatched view. No changes to optical appearance.
+			UMaterialExpressionCustom* RasterClip =
+				AddExpression<UMaterialExpressionCustom>(Material, -1050, 950);
+			UMaterialExpression* InterpolatedRasterClip = AddReflectedExpression(Material,
+				TEXT("/Script/Engine.MaterialExpressionVertexInterpolator"), -600, 950);
+			if (!RasterClip || !InterpolatedRasterClip) return false;
+			RasterClip->Description = TEXT("APS actual raster clip position");
+			RasterClip->OutputType = CMOT_Float4;
+			RasterClip->Code = TEXT("return GetScreenPosition(Parameters);");
+			if (!UMaterialEditingLibrary::ConnectMaterialExpressions(
+				RasterClip, TEXT(""), InterpolatedRasterClip, TEXT("VS"))) return false;
+			AddCustomInput(PointAndCorona, TEXT("RasterClip"), InterpolatedRasterClip);
+			PointAndCorona->Code.ReplaceInline(
+				TEXT("float4 pixelClip = GetScreenPosition(Parameters);"),
+				TEXT("float4 pixelClip = RasterClip;"));
 			// UE5.4 disables hardware depth tests after motion blur. Keep opaque
 			// planets/characters in front of points, using reversed device depth;
 			// a capped linear sky depth would incorrectly reject full-scale stars.
 			const FString PointDepthGuard = TEXT(R"APSPOINTDEPTH(
 if (!isfinite(SceneDepthForOcclusion)) return float3(0.0,0.0,0.0);
-float2 depthUV=GetDefaultSceneTextureUV(Parameters,1);
+float2 rasterViewportUV = RasterClip.xy/max(RasterClip.w,1.0e-20)*float2(0.5,-0.5)+0.5;
+float2 depthUV=ViewportUVToBufferUV(rasterViewportUV);
 float sceneDeviceZ=LookupDeviceZ(depthUV);
 clip(Parameters.SvPosition.z-sceneDeviceZ);
 )APSPOINTDEPTH");
