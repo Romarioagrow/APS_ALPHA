@@ -6,6 +6,7 @@
 #include "APS_ALPHA/Core/Enums/OrbitHeight.h"
 #include "APS_ALPHA/Core/Enums/PlanetarySystemType.h"
 #include "APS_ALPHA/Core/Enums/StarSpectralClass.h"
+#include "APS_ALPHA/Core/Model/GeneratedWorld.h"
 #include "APS_ALPHA/Core/Planetary/APSPlanetHabitability.h"
 #include "APS_ALPHA/Core/Structs/PlanetarySystemGenerationModel.h"
 #include "APS_ALPHA/Core/Structs/StarGenerationModel.h"
@@ -323,7 +324,8 @@ void UPlanetarySystemGenerator::GenerateCustomPlanetarySystemModel(
 	TSharedPtr<FPlanetarySystemModel> PlanetarySystemModel,
 	TSharedPtr<FStarModel> StarModel,
 	UPlanetGenerator* PlanetGenerator,
-	UMoonGenerator* MoonGenerator
+	UMoonGenerator* MoonGenerator,
+	const FAPSPreviewStarEditOverride* StellarEdit
 )
 {
 	// OrbitRadii is scratch storage owned by the reusable generator object.  It
@@ -350,6 +352,9 @@ void UPlanetarySystemGenerator::GenerateCustomPlanetarySystemModel(
 
 	double MinOrbit = StarModel->Mass * MinOrbitScalingFactor;
 	double MaxOrbit = StarModel->Mass * MaxOrbitScalingFactor;
+	// Changing the recipe must not restore the giant's mass-derived AU scale.
+	// Apply the retained range before sampling or assigning planetary zones.
+	if (StellarEdit) StellarEdit->TryGetPlanetOrbitRangeAu(MinOrbit, MaxOrbit);
 	StarModel->MinOrbit = MinOrbit;
 	StarModel->MaxOrbit = MaxOrbit;
 	UE_LOG(LogTemp, VeryVerbose, TEXT("MAX Orbit: %f"), MaxOrbit);
@@ -725,7 +730,8 @@ void UPlanetarySystemGenerator::GenerateCustomPlanetarySystemModel(
 
 void UPlanetarySystemGenerator::GeneratePlanetarySystemModelByStar(
 	TSharedPtr<FPlanetarySystemModel> PlanetarySystemModel, TSharedPtr<FStarModel> StarModel,
-	UPlanetGenerator* PlanetGenerator, UMoonGenerator* MoonGenerator)
+	UPlanetGenerator* PlanetGenerator, UMoonGenerator* MoonGenerator,
+	const FAPSPreviewStarEditOverride* StellarEdit)
 {
 	if (bSeededGeneration) GenerationRandom.Initialize(GenerationSeed);
 	// The same generator services every star in the hierarchy.  Never leak
@@ -802,6 +808,7 @@ void UPlanetarySystemGenerator::GeneratePlanetarySystemModelByStar(
 
 		double MinOrbit = StarModel->Mass * MinOrbitScalingFactor;
 		double MaxOrbit = StarModel->Mass * MaxOrbitScalingFactor;
+		if (StellarEdit) StellarEdit->TryGetPlanetOrbitRangeAu(MinOrbit, MaxOrbit);
 
 		// ��������� ��������� ������������� ��� ����� �������
 		EOrbitDistributionType OrbitDistributionType = ChooseOrbitDistribution(StarModel->StellarType);

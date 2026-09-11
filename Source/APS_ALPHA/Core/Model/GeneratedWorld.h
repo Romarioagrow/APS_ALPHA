@@ -111,6 +111,20 @@ struct FAPSPreviewStarEditOverride
 	/** Zero removes the size override without rerolling the baseline star. */
 	UPROPERTY()
 	double RadiusOverrideSolar{0.0};
+
+	/** Physical AU radii captured before a stellar edit, never star-relative scale. */
+	UPROPERTY()
+	TArray<double> PlanetOrbitRadiiAu;
+
+	/** A new recipe redistributes planets, but keeps the captured physical range. */
+	UPROPERTY()
+	EOrbitDistributionType PlanetOrbitDistribution{EOrbitDistributionType::Uniform};
+
+	/** Used before sampling any distribution, independent of recipe and planet count. */
+	bool TryGetPlanetOrbitRangeAu(double& OutMinimumAu, double& OutMaximumAu) const;
+
+	/** Exact replay only for a matching family; other recipes use the range above. */
+	bool ApplyToPlanetOrbits(FPlanetarySystemModel& Family) const;
 };
 
 /** Partial system recipe: untouched fields keep their original generation inputs. */

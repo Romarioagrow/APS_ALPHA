@@ -238,6 +238,7 @@ bool UWorldGenerationViewModel::SetSelectedStarEnum(const UEnum* EnumClass, cons
 	FAPSPreviewStarEditOverride Edit;
 	if (const FAPSPreviewStarEditOverride* Existing = GeneratedWorld->FindPreviewStarEditOverride(Address)) Edit = *Existing;
 	else Edit.AutomaticModel = Edit.Model = Current;
+	PreviewGenerator->CapturePreviewStarOrbitLayout(Edit);
 	TSharedPtr<FStarModel> NewModel = MakeShared<FStarModel>();
 	NewModel->StellarType = bStellar ? static_cast<EStellarType>(SelectedValue) : Current.StellarType;
 	NewModel->SpectralClass = bStellar ? Current.SpectralClass : static_cast<ESpectralClass>(SelectedValue);
@@ -267,6 +268,7 @@ void UWorldGenerationViewModel::SetSelectedStarRadiusOverrideSolar(const double 
 	FAPSPreviewStarEditOverride Edit;
 	if (const FAPSPreviewStarEditOverride* Existing = GeneratedWorld->FindPreviewStarEditOverride(Address)) Edit = *Existing;
 	else Edit.AutomaticModel = Edit.Model = Current;
+	PreviewGenerator->CapturePreviewStarOrbitLayout(Edit);
 	const double NewValue = Value <= 0.0 ? 0.0 : FMath::Clamp(Value, 1.0e-5, 1000.0);
 	if (FMath::IsNearlyEqual(Edit.RadiusOverrideSolar, NewValue, 1.0e-8)) return;
 	Edit.RadiusOverrideSolar = NewValue;

@@ -76,6 +76,29 @@ bool AAstroGenerator::GetPreviewStarEditContext(FString& OutAddress, FStarModel&
 	return true;
 }
 
+bool AAstroGenerator::CapturePreviewStarOrbitLayout(FAPSPreviewStarEditOverride& Edit) const
+{
+	if (!UsesContinuousPreviewFrame()) return false;
+	const AStarSystem* System = GetContinuousPreviewActiveSystem();
+	if (!IsValid(System)) return false;
+	const AStar* Star = ContinuousSelectedStar.Get();
+	if (!IsValid(Star) || !Star->IsAttachedTo(System)) Star = System->MainStar;
+	if (!IsValid(Star) || !IsValid(Star->PlanetarySystem)) return false;
+	const APlanetarySystem* Family = Star->PlanetarySystem;
+	TArray<double> OrbitsAu;
+	OrbitsAu.Reserve(Family->PlanetsActorsList.Num());
+	for (const APlanet* Planet : Family->PlanetsActorsList)
+	{
+		if (!IsValid(Planet) || !Planet->PlanetData.PlanetModel) return false;
+		const double OrbitAu = Planet->PlanetData.PlanetModel->OrbitDistance;
+		if (!FMath::IsFinite(OrbitAu) || OrbitAu <= 0.0) return false;
+		OrbitsAu.Add(OrbitAu);
+	}
+	Edit.PlanetOrbitRadiiAu = MoveTemp(OrbitsAu);
+	Edit.PlanetOrbitDistribution = Family->OrbitDistributionType;
+	return true;
+}
+
 bool AAstroGenerator::GetPreviewSystemEditContext(FString& OutAddress, FStarSystemModel& OutModel) const
 {
 	OutAddress.Reset();
@@ -164,7 +187,9 @@ bool AAstroGenerator::BuildContinuousPreviewSystemLayout(const FClusterStarSyste
 			if (const FAPSPreviewSystemEditOverride* Edit = GeneratedWorldModel->FindPreviewSystemEditOverride(Address))
 				Edit->ApplyToFamily(*FamilyModel, StarIndex, StarCount);
 		Families->SetGenerationSeed(APSGeneratedBodyIdentity::Stream(Seed, StarAddress, TEXT("planets")).GetInitialSeed());
-		Families->GenerateCustomPlanetarySystemModel(FamilyModel, StarModel, PlanetGenerator, MoonGenerator);
+		const FAPSPreviewStarEditOverride* StellarOrbitEdit = IsValid(GeneratedWorldModel)
+			? GeneratedWorldModel->FindPreviewStarEditOverride(StarAddress) : nullptr;
+		Families->GenerateCustomPlanetarySystemModel(FamilyModel, StarModel, PlanetGenerator, MoonGenerator, StellarOrbitEdit);
 		ApplyPreviewBodyEditOverridesToModels(GeneratedWorldModel, StarIndex, *FamilyModel, Address);
 		bool bEditedMoonHierarchy = false;
 		for (int32 PlanetIndex = 0; PlanetIndex < FamilyModel->PlanetsList.Num(); ++PlanetIndex)
@@ -181,6 +206,12 @@ bool AAstroGenerator::BuildContinuousPreviewSystemLayout(const FClusterStarSyste
 			}
 		}
 		if (bEditedMoonHierarchy) ApplyPreviewBodyEditOverridesToModels(GeneratedWorldModel, StarIndex, *FamilyModel, Address);
+		// Stellar mass/type changes must not rescale the user's complete orbit layout.
+		// Keep physical AU centers; the following photosphere/gap pass moves only
+		// bodies which the newly sized star or neighbouring planet actually overlaps.
+		if (IsValid(GeneratedWorldModel))
+			if (const FAPSPreviewStarEditOverride* Edit = GeneratedWorldModel->FindPreviewStarEditOverride(StarAddress))
+				Edit->ApplyToPlanetOrbits(*FamilyModel);
 		UPlanetarySystemGenerator::EnforcePlanetSurfaceClearance(*FamilyModel);
 		double Envelope = StarModel->RadiusKM * 1.0e5 * 1.35;
 		double PreviousOrbit = 0.0;

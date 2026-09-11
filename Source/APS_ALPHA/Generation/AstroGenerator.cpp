@@ -9623,16 +9623,22 @@ void AAstroGenerator::GenerateStarSystemByModel()
 			}
 			else PlanetarySystemGenerator->ClearGenerationSeed();
 			PlanetarySystemModel = MakeShared<FPlanetarySystemModel>();
+			// Same explicit-edit boundary as exact orbit replay below. Authored
+			// legacy SINGLE GAME continues to use its independent generator scale.
+			const FAPSPreviewStarEditOverride* StellarOrbitEdit =
+				(bIsPreviewGeneration || !bIntegrateStartPlanet) && IsValid(GeneratedWorldModel)
+				? GeneratedWorldModel->FindPreviewStarEditOverride(FString::Printf(TEXT("SYS0/S%d"), StarNumber))
+				: nullptr;
 
 			if (bRandomHomeSystemType)
 			{
 				PlanetarySystemGenerator->GeneratePlanetarySystemModelByStar(
-					PlanetarySystemModel, StarModel, PlanetGenerator, MoonGenerator);
+					PlanetarySystemModel, StarModel, PlanetGenerator, MoonGenerator, StellarOrbitEdit);
 				if (HomeSystemEdit)
 				{
 					HomeSystemEdit->ApplyToFamily(*PlanetarySystemModel, StarNumber, AmountOfStars);
 					PlanetarySystemGenerator->GenerateCustomPlanetarySystemModel(
-						PlanetarySystemModel, StarModel, PlanetGenerator, MoonGenerator);
+						PlanetarySystemModel, StarModel, PlanetGenerator, MoonGenerator, StellarOrbitEdit);
 				}
 			}
 			else
@@ -9642,7 +9648,7 @@ void AAstroGenerator::GenerateStarSystemByModel()
 				PlanetarySystemModel->OrbitDistributionType = HomeSystemOrbitDistributionType;
 				if (HomeSystemEdit) HomeSystemEdit->ApplyToFamily(*PlanetarySystemModel, StarNumber, AmountOfStars);
 				PlanetarySystemGenerator->GenerateCustomPlanetarySystemModel(
-					PlanetarySystemModel, StarModel, PlanetGenerator, MoonGenerator);
+					PlanetarySystemModel, StarModel, PlanetGenerator, MoonGenerator, StellarOrbitEdit);
 
 				if (StarNumber == 0 && HomeSystemEdit)
 					StartPlanetNumber = FMath::Clamp(StartPlanetNumber, 1, FMath::Max(1, PlanetarySystemModel->PlanetsList.Num()));
@@ -9754,6 +9760,12 @@ void AAstroGenerator::GenerateStarSystemByModel()
 				PlanetModel.MoonsListData = PlanetModel.GetMoonsData();
 				PlanetData->PlanetModelData = PlanetModel;
 			}
+			// A star edit owns its physical radius, not a new mass-scaled planet layout.
+			// No override exists in authored legacy or untouched procedural families.
+			if ((bIsPreviewGeneration || !bIntegrateStartPlanet) && IsValid(GeneratedWorldModel))
+				if (const FAPSPreviewStarEditOverride* Edit = GeneratedWorldModel->FindPreviewStarEditOverride(
+					FString::Printf(TEXT("SYS0/S%d"), StarNumber)))
+					Edit->ApplyToPlanetOrbits(*PlanetarySystemModel);
 			UPlanetarySystemGenerator::EnforcePlanetSurfaceClearance(
 				*PlanetarySystemModel);
 			if (RetainedModelEdits > 0)

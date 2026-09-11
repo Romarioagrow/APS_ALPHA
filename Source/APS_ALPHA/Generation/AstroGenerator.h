@@ -49,6 +49,7 @@ struct FAPSCanonicalStellarDataset;
 struct FAPSCanonicalClusterSystemRecord;
 struct FStarModel;
 struct FStarSystemModel;
+struct FAPSPreviewStarEditOverride;
 
 /** Existing physical generation recipe, resolved without spawning its actor tree. */
 struct FAPSContinuousPreviewStarLayout
@@ -212,6 +213,8 @@ public:
 	bool IsContinuousResolvedStarPoolHidden() const;
 	/** Current star (including a selected body's owner), addressed independently of its disposable actor. */
 	bool GetPreviewStarEditContext(FString& OutAddress, FStarModel& OutModel) const;
+	/** Captures physical planet orbits before changing their parent star's type/size. */
+	bool CapturePreviewStarOrbitLayout(FAPSPreviewStarEditOverride& Edit) const;
 	bool GetPreviewSystemEditContext(FString& OutAddress, FStarSystemModel& OutModel) const;
 	int32 GetPreviewHomePlanetCount() const;
 	AStarSystem* GetPreviewHomeSystem() const { return GeneratedHomeStarSystem; }

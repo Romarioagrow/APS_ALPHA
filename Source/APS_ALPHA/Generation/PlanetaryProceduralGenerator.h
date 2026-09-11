@@ -14,6 +14,7 @@ class UMoonGenerator;
 class UPlanetGenerator;
 struct FPlanetarySystemModel;
 struct FStarModel;
+struct FAPSPreviewStarEditOverride;
 typedef float PlanetProbability;
 
 USTRUCT(BlueprintType)
@@ -96,11 +97,13 @@ public:
 
 	void GenerateCustomPlanetarySystemModel(TSharedPtr<FPlanetarySystemModel> PlanetarySystemModel,
 	                                        TSharedPtr<FStarModel> StarModel, UPlanetGenerator* PlanetGenerator,
-	                                        UMoonGenerator* MoonGenerator);
+	                                        UMoonGenerator* MoonGenerator,
+	                                        const FAPSPreviewStarEditOverride* StellarEdit = nullptr);
 
 	void GeneratePlanetarySystemModelByStar(TSharedPtr<FPlanetarySystemModel> PlanetarySystemModel,
 	                                        TSharedPtr<FStarModel> StarModel, UPlanetGenerator* PlanetGenerator,
-	                                        UMoonGenerator* MoonGenerator);
+	                                        UMoonGenerator* MoonGenerator,
+	                                        const FAPSPreviewStarEditOverride* StellarEdit = nullptr);
 
 	void GeneratePlanetOrbits();
 

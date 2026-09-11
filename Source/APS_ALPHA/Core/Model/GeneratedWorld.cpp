@@ -108,6 +108,44 @@ bool UGeneratedWorld::ApplyPreviewStarEditOverride(const FString& StableStarKey,
 	return true;
 }
 
+bool FAPSPreviewStarEditOverride::TryGetPlanetOrbitRangeAu(double& OutMinimumAu, double& OutMaximumAu) const
+{
+	if (PlanetOrbitRadiiAu.IsEmpty()) return false;
+	double MinimumAu = PlanetOrbitRadiiAu[0];
+	double MaximumAu = MinimumAu;
+	for (const double OrbitAu : PlanetOrbitRadiiAu)
+	{
+		if (!FMath::IsFinite(OrbitAu) || OrbitAu <= 0.0) return false;
+		MinimumAu = FMath::Min(MinimumAu, OrbitAu);
+		MaximumAu = FMath::Max(MaximumAu, OrbitAu);
+	}
+	// Do not touch caller defaults on invalid snapshots. A single-planet range
+	// is valid too; the spacing pass adds clearance if the family gains planets.
+	OutMinimumAu = MinimumAu;
+	OutMaximumAu = MaximumAu;
+	return true;
+}
+
+bool FAPSPreviewStarEditOverride::ApplyToPlanetOrbits(FPlanetarySystemModel& Family) const
+{
+	if (PlanetOrbitRadiiAu.IsEmpty() || PlanetOrbitRadiiAu.Num() != Family.PlanetsList.Num()
+		|| PlanetOrbitDistribution != Family.OrbitDistributionType) return false;
+	// Validate before writing: an incomplete snapshot cannot half-rescale a family.
+	for (int32 Index = 0; Index < PlanetOrbitRadiiAu.Num(); ++Index)
+	{
+		if (!FMath::IsFinite(PlanetOrbitRadiiAu[Index]) || PlanetOrbitRadiiAu[Index] <= 0.0
+			|| !Family.PlanetsList[Index] || !Family.PlanetsList[Index]->PlanetModel) return false;
+	}
+	for (int32 Index = 0; Index < PlanetOrbitRadiiAu.Num(); ++Index)
+	{
+		FPlanetData& Data = *Family.PlanetsList[Index];
+		Data.OrbitRadius = PlanetOrbitRadiiAu[Index];
+		Data.PlanetModel->OrbitDistance = Data.OrbitRadius;
+		Data.PlanetModelData = *Data.PlanetModel;
+	}
+	return true;
+}
+
 uint32 UGeneratedWorld::GetPreviewStarEditHash() const
 {
 	const auto ModelHash = [](const FStarModel& Model)
@@ -139,6 +177,13 @@ uint32 UGeneratedWorld::GetPreviewStarEditHash() const
 		Hash = HashCombine(Hash, ModelHash(Edit.Model));
 		Hash = HashCombine(Hash, ModelHash(Edit.AutomaticModel));
 		Hash = HashCombine(Hash, GetTypeHash(Edit.RadiusOverrideSolar));
+		if (!Edit.PlanetOrbitRadiiAu.IsEmpty())
+		{
+			Hash = HashCombine(Hash, GetTypeHash(static_cast<uint8>(Edit.PlanetOrbitDistribution)));
+			Hash = HashCombine(Hash, GetTypeHash(Edit.PlanetOrbitRadiiAu.Num()));
+			for (const double OrbitAu : Edit.PlanetOrbitRadiiAu)
+				Hash = HashCombine(Hash, GetTypeHash(OrbitAu));
+		}
 	}
 	return Hash;
 }
