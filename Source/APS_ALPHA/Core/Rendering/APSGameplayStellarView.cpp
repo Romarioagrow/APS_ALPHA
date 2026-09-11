@@ -48,7 +48,9 @@ void UAPSStellarVisualSubsystem::UpdateGameplayStellarView()
 	AAstroGenerator* Generator = GameplayStellarGenerator.Get();
 	if (!IsValid(Generator))
 	{
-		if (!GameplayStellarLayers.IsEmpty()) ResetGameplayStellarView();
+		// Full-scale rendering has no replacement layers, but still owns a size
+		// cache. A replacement generator must not inherit that cache/build serial.
+		ResetGameplayStellarView();
 		for (TActorIterator<AAstroGenerator> It(World); It; ++It)
 		{
 			// This adapter never participates in the accepted menu presentation.
@@ -69,6 +71,141 @@ void UAPSStellarVisualSubsystem::UpdateGameplayStellarView()
 		Generator->GetCanonicalStellarProjectionDescriptor();
 	AStarSystem* Home = Generator->GetPreviewHomeSystem();
 	if (!Descriptor.bFinalized || !IsValid(Home)) { ResetGameplayStellarView(); return; }
+	if (Descriptor.bConsumedFinalizedDataset)
+	{
+		// A committed generated game owns the exact catalog accepted in the menu.
+		// Do not replace its three-dimensional hierarchy with ProjectSphere: that
+		// collapses every distance onto one camera-centred shell. The immutable HISM
+		// transforms already contain one shared affine contraction, so applying its
+		// inverse once at the render root restores canonical deltas from the selected
+		// home system without rebuilding records. Pixel support below affects only
+		// glyph size; it never remaps these centres to an observer shell.
+		if (!GameplayStellarLayers.IsEmpty())
+		{
+			ResetGameplayStellarView();
+			GameplayStellarGenerator = Generator;
+		}
+
+		const double PositionScale = Descriptor.Galaxy.PositionScale;
+		const double PhysicalRootScale = PositionScale > 0.0
+			? 1.0 / PositionScale : 0.0;
+		if (!FMath::IsFinite(PhysicalRootScale) || PhysicalRootScale <= 0.0)
+		{
+			UE_LOG(LogTemp, Error,
+				TEXT("[APS.FullScale.Gameplay] Invalid inverse canonical scale %.9e"),
+				PhysicalRootScale);
+			return;
+		}
+
+		const bool bNewBuild = GameplayStellarBuildSerial != Descriptor.ProxyBuildSerial;
+		const FVector HomeLocation = Home->GetActorLocation();
+		if (!Generator->GetActorLocation().Equals(HomeLocation, 0.01))
+		{
+			Generator->SetActorLocation(HomeLocation, false, nullptr,
+				ETeleportType::TeleportPhysics);
+		}
+		const FVector RequiredRootScale(PhysicalRootScale);
+		if (!Generator->GetActorScale3D().Equals(RequiredRootScale, 1.0e-3))
+		{
+			Generator->SetActorScale3D(RequiredRootScale);
+		}
+
+		FVector Camera;
+		FRotator Rotation;
+		Controller->GetPlayerViewPoint(Camera, Rotation);
+		int32 Width = 0, Height = 0;
+		Controller->GetViewportSize(Width, Height);
+		const double PixelTangent = 2.0 * FMath::Tan(FMath::DegreesToRadians(
+			Controller->PlayerCameraManager->GetFOVAngle() * 0.5)) / FMath::Max(Width, 320);
+		const FVector ObserverFromHome = Camera - HomeLocation;
+		const bool bUpdatePointSizes = bNewBuild
+			|| !APSGameplayStellarProjection::CanReuseOptics(LastStellarPixelTangent, PixelTangent)
+			|| !APSGameplayStellarProjection::CanReuseProjection(
+				FVector::Distance(ObserverFromHome, LastStellarObserverFromHome),
+				ClosestStellarPointCm, PixelTangent);
+		double NearestPointCm = TNumericLimits<double>::Max();
+
+		TArray<AActor*> Attached;
+		Generator->GetAttachedActors(Attached, true, true);
+		for (AActor* Actor : Attached)
+		{
+			UHierarchicalInstancedStaticMeshComponent* Source = nullptr;
+			const TArray<FTransform>* BaseTransforms = nullptr;
+			if (AGalaxy* Galaxy = Cast<AGalaxy>(Actor))
+			{
+				Source = Galaxy->StarMeshInstances;
+				BaseTransforms = &Galaxy->RenderedProxyBaseTransforms;
+			}
+			else if (AStarCluster* Cluster = Cast<AStarCluster>(Actor))
+			{
+				Source = Cluster->StarMeshInstances;
+				BaseTransforms = &Cluster->SystemProxyBaseTransforms;
+			}
+			if (IsValid(Source))
+			{
+				Source->SetVisibility(true, false);
+				Source->SetHiddenInGame(false, false);
+			}
+			if (!bUpdatePointSizes || !IsValid(Source) || !BaseTransforms
+				|| !IsValid(Source->GetStaticMesh())) continue;
+
+			// Work inside the existing affine frame: no enormous per-instance
+			// translations or root-scale cancellation are sent to the GPU.
+			const FTransform ComponentTransform = Source->GetComponentTransform();
+			const FVector LocalCamera = ComponentTransform.InverseTransformPosition(Camera);
+			const double ComponentScale = ComponentTransform.GetScale3D().GetAbsMax();
+			const double MeshRadius = FMath::Max(
+				Source->GetStaticMesh()->GetBounds().BoxExtent.GetMax(), 0.001);
+			TArray<FTransform> Transforms;
+			Transforms.SetNum(Source->GetInstanceCount());
+			bool bChanged = false;
+			for (int32 Index = 0; Index < Transforms.Num(); ++Index)
+			{
+				FTransform& Transform = Transforms[Index];
+				if (!Source->GetInstanceTransform(Index, Transform, false)) return;
+				// Keep materialized-home and other explicitly suppressed glyphs hidden.
+				if (!BaseTransforms->IsValidIndex(Index)
+					|| Transform.GetScale3D() == FVector::ZeroVector) continue;
+				const FVector BaseScale = (*BaseTransforms)[Index].GetScale3D();
+				const double BaseRadius = MeshRadius * BaseScale.GetAbsMax();
+				if (!FMath::IsFinite(BaseRadius) || BaseRadius <= 0.0) continue;
+				const double Distance = FVector::Distance(Transform.GetLocation(), LocalCamera);
+				NearestPointCm = FMath::Min(NearestPointCm, Distance * ComponentScale);
+				const double PointRadius = APSGameplayStellarProjection::GetFullScalePointRadius(
+					Distance, BaseRadius, PixelTangent);
+				const FVector PointScale = BaseScale * (PointRadius / BaseRadius);
+				if (!Transform.GetScale3D().Equals(PointScale, 1.0e-6))
+				{
+					Transform.SetScale3D(PointScale);
+					bChanged = true;
+				}
+			}
+			if (bChanged)
+			{
+				Source->BatchUpdateInstancesTransforms(0, Transforms, false, false, true);
+				// Automatic HISM rebuilds are disabled by the stellar stability policy.
+				// Refresh bounds once for this batch so enlarged points are not culled.
+				Source->BuildTreeIfOutdated(false, false);
+				Source->MarkRenderStateDirty();
+			}
+		}
+		if (bUpdatePointSizes)
+		{
+			LastStellarObserverFromHome = ObserverFromHome;
+			LastStellarPixelTangent = PixelTangent;
+			ClosestStellarPointCm = NearestPointCm;
+		}
+
+		GameplayStellarBuildSerial = Descriptor.ProxyBuildSerial;
+		if (bNewBuild)
+		{
+			UE_LOG(LogTemp, Log,
+				TEXT("[APS.FullScale.Gameplay] Restored accepted stellar hierarchy in physical 3D scale=%.9e anchor=%s pointSupport=%.1fpx"),
+				PhysicalRootScale, *HomeLocation.ToCompactString(),
+				APSGameplayStellarProjection::PointSupportPixels);
+		}
+		return;
+	}
 	if (GameplayStellarBuildSerial != 0 && GameplayStellarBuildSerial != Descriptor.ProxyBuildSerial)
 	{
 		ResetGameplayStellarView();

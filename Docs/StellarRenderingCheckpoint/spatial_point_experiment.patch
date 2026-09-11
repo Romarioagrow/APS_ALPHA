@@ -1,0 +1,360 @@
+diff --git a/original/Config/DefaultEngine.ini b/edited/Config/DefaultEngine.ini
+index 5d510b0..4d110ba 100644
+--- a/original/Config/DefaultEngine.ini
++++ b/edited/Config/DefaultEngine.ini
+@@ -71,6 +71,11 @@ r.TSR.ShadingRejection.Flickering.Period=3.000000
+ r.TSR.ShadingRejection.Flickering.MaxParallaxVelocity=1000000.000000
+ 
+ [SystemSettings]
++; Catalogue points are spatially filtered in the late translucent pass. Keep
++; that raster at temporal-upscale OUTPUT resolution; otherwise a second spatial
++; upscale reintroduces pixel-phase brightness pulses. Opaque-scene TSR remains.
++r.Translucency.ScreenPercentage.Basis=1
++r.SeparateTranslucencyScreenPercentage=100
+ ; This CVar is intentionally not in DefaultScalability.ini: UE 5.4 does not
+ ; mark it ECVF_Scalability and reports an ensure when a quality bucket sets it.
+ r.TSR.History.SampleCount=32
+diff --git a/original/Source/APS_ALPHA/Core/Rendering/APSFixStarHISMMaterialCommandlet.cpp b/edited/Source/APS_ALPHA/Core/Rendering/APSFixStarHISMMaterialCommandlet.cpp
+index 4d6ba2e..0dd3faf 100644
+--- a/original/Source/APS_ALPHA/Core/Rendering/APSFixStarHISMMaterialCommandlet.cpp
++++ b/edited/Source/APS_ALPHA/Core/Rendering/APSFixStarHISMMaterialCommandlet.cpp
+@@ -1,6 +1,7 @@
+ #include "APSFixStarHISMMaterialCommandlet.h"
+ 
+ #if WITH_EDITOR
++#include "APSStellarPointSampling.h"
+ #include "MaterialEditingLibrary.h"
+ #include "MaterialDomain.h"
+ #include "Materials/Material.h"
+@@ -868,21 +869,32 @@ return lerp(pointSignal, coronaSignal, shellMode);
+ 		AddCustomInput(PointAndCorona, TEXT("PointProjection"), InterpolatedPointProjection);
+ 		if (bStablePointPass)
+ 		{
++			UMaterialExpressionCustom* CarrierPadding =
++				AddExpression<UMaterialExpressionCustom>(Material, -1050, 1100);
++			UMaterialExpressionCustom* RasterClip =
++				AddExpression<UMaterialExpressionCustom>(Material, -1050, 950);
++			UMaterialExpression* InterpolatedRasterClip = AddReflectedExpression(Material,
++				TEXT("/Script/Engine.MaterialExpressionVertexInterpolator"), -600, 950);
++			if (!CarrierPadding || !RasterClip || !InterpolatedRasterClip) return false;
++			CarrierPadding->Description = TEXT("APS static point filter carrier padding");
++			CarrierPadding->OutputType = CMOT_Float3;
++			CarrierPadding->Code = APSStellarPointSampling::CarrierCode();
++			RasterClip->Description = TEXT("APS actual padded raster clip position");
++			RasterClip->OutputType = CMOT_Float4;
++			RasterClip->Code = APSStellarPointSampling::RasterClipCode();
++			PointProjection->Code = APSStellarPointSampling::ProjectionCode();
++			if (!UMaterialEditingLibrary::ConnectMaterialProperty(CarrierPadding, TEXT(""), MP_WorldPositionOffset)
++				|| !UMaterialEditingLibrary::ConnectMaterialExpressions(RasterClip, TEXT(""), InterpolatedRasterClip, TEXT("VS")))
++				return false;
+ 			UMaterialExpression* SceneDepth = AddReflectedExpression(Material,
+ 				TEXT("/Script/Engine.MaterialExpressionSceneDepth"), -1050, 800);
+ 			if (!SceneDepth) return false;
+ 			AddCustomInput(PointAndCorona, TEXT("SceneDepthForOcclusion"), SceneDepth);
+-			// UE5.4 disables hardware depth tests after motion blur. Keep opaque
+-			// planets/characters in front of points, using reversed device depth;
+-			// a capped linear sky depth would incorrectly reject full-scale stars.
+-			const FString PointDepthGuard = TEXT(R"APSPOINTDEPTH(
+-if (!isfinite(SceneDepthForOcclusion)) return float3(0.0,0.0,0.0);
+-float2 depthUV=GetDefaultSceneTextureUV(Parameters,1);
+-float sceneDeviceZ=LookupDeviceZ(depthUV);
+-clip(Parameters.SvPosition.z-sceneDeviceZ);
+-)APSPOINTDEPTH");
+-			PointAndCorona->Code = PointDepthGuard + PointAndCorona->Code;
+-			PointAndCorona->Description = TEXT("APS stable catalogue point with scene-depth occlusion");
++			AddCustomInput(PointAndCorona, TEXT("RasterClip"), InterpolatedRasterClip);
++			FString SampledPointCode;
++			if (!APSStellarPointSampling::BuildPointCode(PointAndCorona->Code, SampledPointCode)) return false;
++			PointAndCorona->Code = MoveTemp(SampledPointCode);
++			PointAndCorona->Description = TEXT("APS spatially reconstructed catalogue point with scene-depth occlusion");
+ 		}
+ 		if (!UMaterialEditingLibrary::ConnectMaterialProperty(
+ 			PointAndCorona, TEXT(""), MP_EmissiveColor))
+diff --git a/original/Source/APS_ALPHA/Core/Rendering/APSGameplayStellarView.cpp b/edited/Source/APS_ALPHA/Core/Rendering/APSGameplayStellarView.cpp
+index 86101ad..f9a1478 100644
+--- a/original/Source/APS_ALPHA/Core/Rendering/APSGameplayStellarView.cpp
++++ b/edited/Source/APS_ALPHA/Core/Rendering/APSGameplayStellarView.cpp
+@@ -1,6 +1,7 @@
+ #include "APSStellarVisualSubsystem.h"
+ 
+ #include "APSGameplayStellarProjection.h"
++#include "APSStellarMaterialContract.h"
+ #include "APS_ALPHA/Actors/Astro/Galaxy.h"
+ #include "APS_ALPHA/Actors/Astro/StarCluster.h"
+ #include "APS_ALPHA/Actors/Astro/StarSystem.h"
+@@ -242,7 +243,13 @@ void UAPSStellarVisualSubsystem::UpdateGameplayStellarView()
+ 			View->SetCastShadow(false);
+ 			View->bAffectDynamicIndirectLighting = false;
+ 			View->bAffectDistanceFieldLighting = false;
+-			View->bEvaluateWorldPositionOffset = false;
++			View->bEvaluateWorldPositionOffset = APSStellarMaterialContract::HasExactBase(
++				View->GetMaterial(0), APSStellarMaterialContract::HismBaseObjectPath);
++			if (View->bEvaluateWorldPositionOffset)
++			{
++				View->WorldPositionOffsetDisableDistance = 0;
++				View->SetBoundsScale(4.0f);
++			}
+ 			View->bWorldPositionOffsetWritesVelocity = false;
+ 			View->SetReceivesDecals(false);
+ 			View->SetCullDistances(0, 0);
+diff --git a/original/Source/APS_ALPHA/Core/Rendering/APSStarRenderStabilitySubsystem.cpp b/edited/Source/APS_ALPHA/Core/Rendering/APSStarRenderStabilitySubsystem.cpp
+index 8209f16..5963f64 100644
+--- a/original/Source/APS_ALPHA/Core/Rendering/APSStarRenderStabilitySubsystem.cpp
++++ b/edited/Source/APS_ALPHA/Core/Rendering/APSStarRenderStabilitySubsystem.cpp
+@@ -1,4 +1,5 @@
+ #include "APSStarRenderStabilitySubsystem.h"
++#include "APSStellarMaterialContract.h"
+ 
+ #include "APS_ALPHA/Actors/Astro/Galaxy.h"
+ #include "APS_ALPHA/Actors/Astro/StarCluster.h"
+@@ -184,10 +185,17 @@ void UAPSStarRenderStabilitySubsystem::StabilizeInstances(
+ 	Instances->SetGenerateOverlapEvents(false);
+ 	Instances->SetCanEverAffectNavigation(false);
+ 
+-	// The legacy star material contains animated SimpleGrassWind/Noise WPO. That makes
+-	// sub-pixel emissive stars change geometry independently on every temporal sample,
+-	// which becomes severe flicker at relativistic camera velocities.
+-	Instances->bEvaluateWorldPositionOffset = false;
++	// Animated legacy WPO remains forbidden. The dedicated point material alone
++	// uses static, centre-preserving padding so its spatial filter is not clipped
++	// by a low-poly raster carrier. It never changes catalogue transforms.
++	const bool bStaticPointPadding = APSStellarMaterialContract::HasExactBase(
++		Instances->GetMaterial(0), APSStellarMaterialContract::HismBaseObjectPath);
++	Instances->bEvaluateWorldPositionOffset = bStaticPointPadding;
++	if (bStaticPointPadding)
++	{
++		Instances->WorldPositionOffsetDisableDistance = 0;
++		Instances->SetBoundsScale(FMath::Max(Instances->BoundsScale, 4.0f));
++	}
+ 	Instances->bWorldPositionOffsetWritesVelocity = false;
+ 	Instances->SetCastShadow(false);
+ 	Instances->bAffectDynamicIndirectLighting = false;
+diff --git a/edited/Source/APS_ALPHA/Core/Rendering/APSStellarPointSampling.h b/edited/Source/APS_ALPHA/Core/Rendering/APSStellarPointSampling.h
+new file mode 100644
+index 0000000..56c9f53
+--- /dev/null
++++ b/edited/Source/APS_ALPHA/Core/Rendering/APSStellarPointSampling.h
+@@ -0,0 +1,146 @@
++#pragma once
++
++#include "CoreMinimal.h"
++
++// The point-only material's spatial reconstruction. Physical photospheres and
++// their accepted corona material never use this code. Keep individual wide
++// literals small enough for MSVC; compose them at runtime.
++namespace APSStellarPointSampling
++{
++inline const TCHAR* VertexFrame = TEXT(R"APSFRAME(
++float4x4 instanceToTranslated = DFFastToTranslatedWorld(
++    GetInstanceToWorldDF(Parameters), ResolvedView.PreViewTranslation);
++float4 centreClip = mul(float4(instanceToTranslated[3].xyz,1.0),
++    ResolvedView.TranslatedWorldToClip);
++float3 axis = instanceToTranslated[0].xyz;
++float axisMax = max(max(abs(axis.x),abs(axis.y)),abs(axis.z));
++float uniformScale = axisMax*length(axis/max(axisMax,1.0e-20));
++float3 localExtent = GetPrimitiveData(Parameters).InstanceLocalBoundsExtent;
++float opticalRadius = max(max(localExtent.x,localExtent.y),localExtent.z)*uniformScale;
++float3 fromCamera = instanceToTranslated[3].xyz-ResolvedView.TranslatedWorldCameraOrigin;
++float distanceMax = max(max(abs(fromCamera.x),abs(fromCamera.y)),abs(fromCamera.z));
++float cameraDistance = distanceMax*length(fromCamera/max(distanceMax,1.0e-20));
++bool validPoint = all(isfinite(centreClip)) && isfinite(opticalRadius)
++    && isfinite(cameraDistance) && centreClip.w>0.0 && opticalRadius>1.0e-20;
++)APSFRAME");
++
++inline FString ProjectionCode()
++{
++    return FString(VertexFrame) + TEXT(R"APSPROJECT(
++if (!validPoint) return float4(0.0,0.0,-1.0,-1.0);
++float angularRadiusPixels = opticalRadius/max(cameraDistance,1.0e-20)
++    *0.5*ResolvedView.ViewSizeAndInvSize.x*ResolvedView.ViewToClip[0][0]
++    /max(ResolvedView.ViewResolutionFraction,1.0e-6);
++// An unresolved PSF does not brighten merely by moving towards the frame edge.
++// Retain the accepted perspective radius for resolved large halos.
++float opticalDistance = lerp(cameraDistance,centreClip.w,smoothstep(4.0,8.0,angularRadiusPixels));
++float2 inverseRadiusNDC = (opticalDistance/opticalRadius)
++    /float2(ResolvedView.ViewToClip[0][0],ResolvedView.ViewToClip[1][1]);
++if (!all(isfinite(inverseRadiusNDC)) || any(inverseRadiusNDC<=0.0))
++    return float4(0.0,0.0,-1.0,-1.0);
++return float4(centreClip.xy/centreClip.w,inverseRadiusNDC);
++)APSPROJECT");
++}
++
++inline const TCHAR* CarrierPadding = TEXT(R"APSPADDING(
++float3 paddingOffset = float3(0.0,0.0,0.0);
++if (validPoint)
++{
++    // Padding belongs to the raster carrier, not the optical radius or catalogue.
++    // Four PRIMARY pixels are conservative when the late pass is native-sized.
++    // The extra support prevents a Gaussian apron being cut by coarse triangles.
++    float minCarrierRadius = cameraDistance*8.0
++        /max(abs(ResolvedView.ViewToClip[0][0])*ResolvedView.ViewSizeAndInvSize.x,1.0);
++    float padding = max(3.0,minCarrierRadius/opticalRadius);
++    float3 radialOffset;
++    #if USE_INSTANCING || USE_INSTANCE_CULLING
++        radialOffset = mul(float4(Parameters.InstanceLocalPosition,0.0),instanceToTranslated).xyz;
++    #else
++        radialOffset = Parameters.WorldPosition-instanceToTranslated[3].xyz;
++    #endif
++    paddingOffset = radialOffset*(padding-1.0);
++    if (!all(isfinite(paddingOffset))) paddingOffset = float3(0.0,0.0,0.0);
++}
++)APSPADDING");
++
++inline FString CarrierCode()
++{
++    return FString(VertexFrame) + CarrierPadding + TEXT("\nreturn paddingOffset;\n");
++}
++
++inline FString RasterClipCode()
++{
++    // BasePassVertexShader evaluates interpolators from the pre-WPO parameters.
++    // Reproduce precisely the static carrier offset used by the rasterizer.
++    return FString(VertexFrame) + CarrierPadding + TEXT(R"APSRASTER(
++return mul(float4(Parameters.WorldPosition+paddingOffset,1.0),
++    ResolvedView.TranslatedWorldToClip);
++)APSRASTER");
++}
++
++inline const TCHAR* SpatialFilter = TEXT(R"APSFILTER(
++    float2 qDx = ddx(pointQ);
++    float2 qDy = ddy(pointQ);
++    float maxPixelQSq = max(max(dot(qDx,qDx),dot(qDy,qDy)),1.0e-12);
++    float2 sigmaSq = rcp(1.38629436112*float2(coreSharpness,haloSharpness));
++    // This is spatial, not temporal: the same point has the same profile at rest
++    // and in motion. Broaden only undersampled lobes and compensate their peak.
++    float2 pixelVariance = max(1.0/12.0,0.85*0.85-sigmaSq/maxPixelQSq);
++    float2 covXX = pixelVariance*(qDx.x*qDx.x+qDy.x*qDy.x);
++    float2 covXY = pixelVariance*(qDx.x*qDx.y+qDy.x*qDy.y);
++    float2 covYY = pixelVariance*(qDx.y*qDx.y+qDy.y*qDy.y);
++    float2 filteredXX = sigmaSq+covXX;
++    float2 filteredYY = sigmaSq+covYY;
++    float2 determinant = max(filteredXX*filteredYY-covXY*covXY,1.0e-12);
++    float2 quadratic = (filteredYY*(pointQ.x*pointQ.x)
++        -2.0*covXY*(pointQ.x*pointQ.y)+filteredXX*(pointQ.y*pointQ.y))/determinant;
++    float2 filteredLobes = sigmaSq*rsqrt(determinant)*exp(-0.5*quadratic);
++    // Conserve the accepted compact lobe's integral, including its smooth cutoff.
++    // Integrate the cutoff interval in r^2 with four-point Gauss-Legendre nodes.
++    float2 sharpness = float2(coreSharpness,haloSharpness);
++    float2 lambda = sharpness*0.69314718056;
++    float2 retained = 1.0-exp2(-sharpness*0.36);
++    const float4 t = float4(0.0694318442,0.3300094782,0.6699905218,0.9305681558);
++    const float4 weights = float4(0.1739274226,0.3260725774,0.3260725774,0.1739274226);
++    [unroll] for (int s=0;s<4;++s)
++        retained += lambda*0.28*weights[s]*exp2(-sharpness*(0.36+0.28*t[s]))
++                    *(1.0-t[s]*t[s]*(3.0-2.0*t[s]));
++    float resolvedWeight = smoothstep(4.0,8.0,rsqrt(maxPixelQSq));
++    float2 envelope = lerp(retained,float2(edgeFade,edgeFade),resolvedWeight);
++    hotCore = lerp(hotCore,filteredLobes.x*envelope.x*projectionValid,rasterProfile);
++    softHalo = lerp(softHalo,filteredLobes.y*envelope.y*projectionValid,rasterProfile);
++)APSFILTER");
++
++inline bool BuildPointCode(const FString& AcceptedCode, FString& OutCode)
++{
++    const int32 Start = AcceptedCode.Find(TEXT("    // Spatial prefilter for unresolved points:"));
++    const int32 End = AcceptedCode.Find(TEXT("\n}\nfloat seedGain"), ESearchCase::CaseSensitive,
++        ESearchDir::FromStart, FMath::Max(Start,0));
++    if (Start == INDEX_NONE || End <= Start) return false;
++    OutCode = AcceptedCode.Left(Start) + SpatialFilter + AcceptedCode.Mid(End);
++    const FString Profile = TEXT("float gameplayProfile = saturate(GameplayPointProfile) * (1.0 - shellMode);");
++    if (!OutCode.Contains(Profile)) return false;
++    OutCode.ReplaceInline(*Profile, *(Profile + TEXT("\nfloat rasterProfile = 1.0 - shellMode;")));
++    // Menu photometry remains profile0; only reconstruction is common to both.
++    OutCode.ReplaceInline(TEXT("if (gameplayProfile > 0.0"), TEXT("if (rasterProfile > 0.0"));
++    OutCode.ReplaceInline(TEXT("dot(pointQ, pointQ), gameplayProfile"), TEXT("dot(pointQ, pointQ), rasterProfile"));
++    OutCode.ReplaceInline(TEXT("roundEnvelope * projectionValid, gameplayProfile"), TEXT("roundEnvelope * projectionValid, rasterProfile"));
++    OutCode.ReplaceInline(TEXT("float4 pixelClip = GetScreenPosition(Parameters);"), TEXT("float4 pixelClip = RasterClip;"));
++    // The padded carrier may extend beyond2 optical radii. Preserve derivatives
++    // throughout the spatial apron; malformed values are still bounded safely.
++    OutCode.ReplaceInline(TEXT("pointQ = clamp(candidateQ, -2.0, 2.0);"),
++        TEXT("pointQ = clamp(candidateQ, -10000.0, 10000.0);"));
++    const FString DepthGuard = TEXT(R"APSDEPTH(
++if (!isfinite(SceneDepthForOcclusion) || !all(isfinite(RasterClip)) || RasterClip.w<=0.0)
++    return float3(0.0,0.0,0.0);
++// UE5.4's late-pass View UB can retain primary resolution. The real interpolated
++// clip position works with either primary or native translucent raster targets.
++float2 rasterViewportUV = RasterClip.xy/max(RasterClip.w,1.0e-20)*float2(0.5,-0.5)+0.5;
++float2 depthUV=ViewportUVToBufferUV(rasterViewportUV);
++float sceneDeviceZ=LookupDeviceZ(depthUV);
++clip(Parameters.SvPosition.z-sceneDeviceZ);
++)APSDEPTH");
++    OutCode = DepthGuard + OutCode;
++    return true;
++}
++}
+diff --git a/original/Source/APS_ALPHA/Tests/APSStableStellarPointMaterialTests.cpp b/edited/Source/APS_ALPHA/Tests/APSStableStellarPointMaterialTests.cpp
+index da1f138..1f92ec8 100644
+--- a/original/Source/APS_ALPHA/Tests/APSStableStellarPointMaterialTests.cpp
++++ b/edited/Source/APS_ALPHA/Tests/APSStableStellarPointMaterialTests.cpp
+@@ -2,6 +2,7 @@
+ 
+ #if WITH_DEV_AUTOMATION_TESTS && WITH_EDITOR
+ #include "APS_ALPHA/Core/Rendering/APSStellarMaterialContract.h"
++#include "APS_ALPHA/Core/Rendering/APSStellarPointSampling.h"
+ #include "MaterialDomain.h"
+ #include "MaterialEditingLibrary.h"
+ #include "Materials/MaterialExpressionCustom.h"
+@@ -46,13 +47,19 @@ bool FAPSStableStellarPointMaterialTest::RunTest(const FString& Parameters)
+ 	if (!TestNotNull(TEXT("Point shader"), PointShader)
+ 		|| !TestNotNull(TEXT("Accepted appearance shader"), CoronaShader)) return false;
+ 
+-	// The late path adds occlusion, not a new photometry/halo recipe. This also
+-	// guards the luminosity custom-data channel, suppression and selection inputs.
+-	TestTrue(TEXT("Entire accepted appearance code is retained unchanged"),
+-		PointShader->Code.EndsWith(CoronaShader->Code));
++	// Sampling is now intentionally different, but the physical corona and the
++	// catalogue's photometry/selection inputs must remain independent of it.
++	FString ExpectedCode;
++	TestTrue(TEXT("Sampling code can be rebuilt from the accepted photometry"),
++		APSStellarPointSampling::BuildPointCode(CoronaShader->Code, ExpectedCode));
++	TestEqual(TEXT("Saved sampling shader matches its reproducible source"), PointShader->Code, ExpectedCode);
++	const int32 CoronaStart = CoronaShader->Code.Find(TEXT("// The actor corona runs"));
++	if (TestTrue(TEXT("Accepted physical-corona block exists"), CoronaStart != INDEX_NONE))
++		TestTrue(TEXT("Physical corona recipe remains byte-identical"),
++			PointShader->Code.EndsWith(CoronaShader->Code.Mid(CoronaStart)));
+ 	TestEqual(TEXT("Accepted input contract"), CoronaShader->Inputs.Num(), 17);
+-	TestEqual(TEXT("Only the depth dependency is appended"), PointShader->Inputs.Num(), 18);
+-	if (CoronaShader->Inputs.Num() != 17 || PointShader->Inputs.Num() != 18) return false;
++	TestEqual(TEXT("Depth and actual raster projection are appended"), PointShader->Inputs.Num(), 19);
++	if (CoronaShader->Inputs.Num() != 17 || PointShader->Inputs.Num() != 19) return false;
+ 	for (int32 Index = 0; Index < CoronaShader->Inputs.Num(); ++Index)
+ 	{
+ 		const FCustomInput& Original = CoronaShader->Inputs[Index];
+@@ -70,20 +77,32 @@ bool FAPSStableStellarPointMaterialTest::RunTest(const FString& Parameters)
+ 				Copy.Input.Expression->GetOuter() == Points);
+ 		}
+ 	}
+-	const FCustomInput& Depth = PointShader->Inputs.Last();
++	const FCustomInput& Depth = PointShader->Inputs[17];
+ 	TestEqual(TEXT("Explicit scene-depth dependency"), Depth.InputName, FName(TEXT("SceneDepthForOcclusion")));
+ 	if (TestNotNull(TEXT("Depth expression connected"), Depth.Input.Expression))
+ 	{
+ 		TestEqual(TEXT("Depth expression type"), Depth.Input.Expression->GetClass()->GetFName(),
+ 			FName(TEXT("MaterialExpressionSceneDepth")));
+ 	}
+-	const FString Guard = PointShader->Code.Left(PointShader->Code.Len() - CoronaShader->Code.Len());
+ 	TestTrue(TEXT("Depth is sampled in reversed device space, including the empty sky"),
+-		Guard.Contains(TEXT("LookupDeviceZ(depthUV)")));
++		PointShader->Code.Contains(TEXT("LookupDeviceZ(depthUV)")));
+ 	TestTrue(TEXT("Opaque geometry occludes astronomical points without a linear far-plane cap"),
+-		Guard.Contains(TEXT("clip(Parameters.SvPosition.z-sceneDeviceZ)")));
+-	TestEqual(TEXT("Only one new expression for occlusion"),
+-		Points->GetExpressions().Num(), Corona->GetExpressions().Num() + 1);
++		PointShader->Code.Contains(TEXT("clip(Parameters.SvPosition.z-sceneDeviceZ)")));
++	TestTrue(TEXT("Depth UV follows actual projection, not the primary raster size"),
++		PointShader->Code.Contains(TEXT("ViewportUVToBufferUV(rasterViewportUV)")));
++	TestEqual(TEXT("Occlusion, carrier, raster projection and its interpolator added"),
++		Points->GetExpressions().Num(), Corona->GetExpressions().Num() + 4);
++	UMaterialExpressionCustom* Carrier = Cast<UMaterialExpressionCustom>(
++		UMaterialEditingLibrary::GetMaterialPropertyInputNode(Points, MP_WorldPositionOffset));
++	if (TestNotNull(TEXT("Static filter-support carrier is connected"), Carrier))
++		TestEqual(TEXT("Saved padding matches its source"), Carrier->Code, APSStellarPointSampling::CarrierCode());
++	TestNull(TEXT("Accepted physical corona has no new padding"),
++		UMaterialEditingLibrary::GetMaterialPropertyInputNode(Corona, MP_WorldPositionOffset));
++	const FCustomInput& Raster = PointShader->Inputs[18];
++	TestEqual(TEXT("Actual raster clip input"), Raster.InputName, FName(TEXT("RasterClip")));
++	if (TestNotNull(TEXT("Raster interpolator is connected"), Raster.Input.Expression))
++		TestEqual(TEXT("Raster coordinates are interpolated from vertices"),
++			Raster.Input.Expression->GetClass()->GetFName(), FName(TEXT("MaterialExpressionVertexInterpolator")));
+ 	for (UMaterialExpression* Expression : Points->GetExpressions())
+ 	{
+ 		if (Expression) TestFalse(TEXT("No artificial time-driven point flicker"),

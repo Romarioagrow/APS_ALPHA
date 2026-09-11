@@ -14,6 +14,18 @@ inline constexpr double FarEnvelopeCm = 1.0e9;
 // this bound: moving an ordinary ISM invalidates every instance in UE 5.4.
 inline constexpr double ReprojectionErrorPixels = 0.05;
 
+// Keep the accepted Gaussian point resolvable at its actual 3D distance. All
+// lengths use the same frame; only the glyph radius changes, never its centre.
+inline double GetFullScalePointRadius(double Distance, double BaseRadius, double PixelTangent)
+{
+	if (!FMath::IsFinite(Distance) || Distance <= 0.0
+		|| !FMath::IsFinite(PixelTangent) || PixelTangent <= 0.0)
+	{
+		return BaseRadius;
+	}
+	return FMath::Max(BaseRadius, Distance * PixelTangent * PointSupportPixels);
+}
+
 inline bool NeedsInstanceUpload(bool bReproject, bool bPreviouslyOccluded, bool bNowOccluded)
 {
 	return (bReproject && !bNowOccluded) || bPreviouslyOccluded != bNowOccluded;

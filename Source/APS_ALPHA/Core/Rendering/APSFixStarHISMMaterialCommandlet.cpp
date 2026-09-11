@@ -9,6 +9,7 @@
 #include "Materials/MaterialExpressionScalarParameter.h"
 #include "Materials/MaterialExpressionVectorParameter.h"
 #include "Misc/PackageName.h"
+#include "Misc/Parse.h"
 #include "UObject/Package.h"
 #include "UObject/SavePackage.h"
 #include "UObject/UnrealType.h"
@@ -576,7 +577,7 @@ return preBloom * min(1.0, outputCeiling / max(peakChannel, 0.0001));
 		return true;
 	}
 
-	bool RebuildPointAndCoronaMaterial(UMaterial* Material)
+	bool RebuildPointAndCoronaMaterial(UMaterial* Material, const bool bStablePointPass = false)
 	{
 		if (!Material)
 		{
@@ -595,6 +596,11 @@ return preBloom * min(1.0, outputCeiling / max(peakChannel, 0.0001));
 		}
 		Material->MaterialDomain = MD_Surface;
 		Material->BlendMode = BLEND_Additive;
+		// TSR reconstructs these subpixel lights differently during motion and rest.
+		// Only catalogue points use the unjittered late pass; physical coronas keep
+		// their accepted pass and the rest of the scene retains temporal AA.
+		Material->TranslucencyPass = bStablePointPass ? MTP_AfterMotionBlur : MTP_AfterDOF;
+		Material->bDisableDepthTest = false;
 		Material->SetShadingModel(MSM_Unlit);
 		Material->TwoSided = false;
 		Material->DitheredLODTransition = false;
@@ -613,6 +619,8 @@ return preBloom * min(1.0, outputCeiling / max(peakChannel, 0.0001));
 			Material, TEXT("CoronaShellMode"), 0.0f, 0.0f, 1.0f, -1050, -120, 4);
 		UMaterialExpressionScalarParameter* CoronaInnerRadius = AddScalarParameter(
 			Material, TEXT("CoronaInnerRadius"), 0.8928571f, 0.50f, 0.95f, -1050, -20, 5);
+		UMaterialExpressionScalarParameter* GameplayPointProfile = AddScalarParameter(
+			Material, TEXT("GameplayPointProfile"), 0.0f, 0.0f, 1.0f, -1050, 90, 6);
 
 		UMaterialExpression* InstanceColor = AddReflectedExpression(Material,
 			TEXT("/Script/Engine.MaterialExpressionPerInstanceCustomData3Vector"), -820, -520);
@@ -622,6 +630,8 @@ return preBloom * min(1.0, outputCeiling / max(peakChannel, 0.0001));
 			TEXT("/Script/Engine.MaterialExpressionPerInstanceCustomData"), -820, -300);
 		UMaterialExpression* SystemHighlight = AddReflectedExpression(Material,
 			TEXT("/Script/Engine.MaterialExpressionPerInstanceCustomData"), -820, -190);
+		UMaterialExpression* InstanceLuminosityGain = AddReflectedExpression(Material,
+			TEXT("/Script/Engine.MaterialExpressionPerInstanceCustomData"), -820, 360);
 		UMaterialExpression* Normal = AddReflectedExpression(Material,
 			TEXT("/Script/Engine.MaterialExpressionPixelNormalWS"), -820, -80);
 		UMaterialExpression* WorldPosition = AddReflectedExpression(Material,
@@ -630,15 +640,49 @@ return preBloom * min(1.0, outputCeiling / max(peakChannel, 0.0001));
 			TEXT("/Script/Engine.MaterialExpressionObjectPositionWS"), -820, 140);
 		UMaterialExpression* InterpolatedObjectPosition = AddReflectedExpression(Material,
 			TEXT("/Script/Engine.MaterialExpressionVertexInterpolator"), -600, 140);
+		UMaterialExpressionCustom* PointProjection =
+			AddExpression<UMaterialExpressionCustom>(Material, -1050, 520);
+		UMaterialExpression* InterpolatedPointProjection = AddReflectedExpression(Material,
+			TEXT("/Script/Engine.MaterialExpressionVertexInterpolator"), -600, 520);
 		UMaterialExpressionCameraVectorWS* Camera =
 			AddExpression<UMaterialExpressionCameraVectorWS>(Material, -820, 250);
 		UMaterialExpressionCustom* PointAndCorona =
 			AddExpression<UMaterialExpressionCustom>(Material, -430, -260);
 		if (!Color || !CoronaIntensity || !CoronaOpacity || !CoronaSeed
-			|| !CoronaShellMode || !CoronaInnerRadius
+			|| !CoronaShellMode || !CoronaInnerRadius || !GameplayPointProfile
 			|| !InstanceColor || !InstanceEmission || !InstanceSeed
-			|| !SystemHighlight || !Normal || !WorldPosition || !ObjectPosition
-			|| !InterpolatedObjectPosition || !Camera || !PointAndCorona)
+			|| !SystemHighlight || !InstanceLuminosityGain || !Normal || !WorldPosition || !ObjectPosition
+			|| !InterpolatedObjectPosition || !PointProjection || !InterpolatedPointProjection
+			|| !Camera || !PointAndCorona)
+		{
+			return false;
+		}
+		// Vertex-only instance transform: pixel ObjectPosition/Radius are component bounds.
+		// Keep the physical centre in LWC until translated, then project with the same
+		// jittered matrix as the rasterizer. The carrier's triangle normals never enter.
+		PointProjection->Description = TEXT("APS per-instance optical point projection");
+		PointProjection->OutputType = CMOT_Float4;
+		PointProjection->Code = TEXT(R"APSPROJECTION(
+float4x4 instanceToTranslated = DFFastToTranslatedWorld(
+    GetInstanceToWorldDF(Parameters), ResolvedView.PreViewTranslation);
+float4 centreClip = mul(float4(instanceToTranslated[3].xyz, 1.0),
+    ResolvedView.TranslatedWorldToClip);
+float3 axis = instanceToTranslated[0].xyz;
+float axisMax = max(max(abs(axis.x), abs(axis.y)), abs(axis.z));
+float uniformScale = axisMax * length(axis / max(axisMax, 1.0e-20));
+float3 localExtent = GetPrimitiveData(Parameters).InstanceLocalBoundsExtent;
+float opticalRadius = max(max(localExtent.x, localExtent.y), localExtent.z) * uniformScale;
+if (!all(isfinite(centreClip)) || !isfinite(opticalRadius)
+    || centreClip.w <= 0.0 || opticalRadius <= 1.0e-20)
+    return float4(0.0, 0.0, -1.0, -1.0);
+float2 inverseRadiusNDC = (centreClip.w / opticalRadius)
+    / float2(ResolvedView.ViewToClip[0][0], ResolvedView.ViewToClip[1][1]);
+if (!all(isfinite(inverseRadiusNDC)) || any(inverseRadiusNDC <= 0.0))
+    return float4(0.0, 0.0, -1.0, -1.0);
+return float4(centreClip.xy / centreClip.w, inverseRadiusNDC);
+)APSPROJECTION");
+		if (!UMaterialEditingLibrary::ConnectMaterialExpressions(
+			PointProjection, TEXT(""), InterpolatedPointProjection, TEXT("VS")))
 		{
 			return false;
 		}
@@ -654,7 +698,9 @@ return preBloom * min(1.0, outputCeiling / max(peakChannel, 0.0001));
 			|| !SetUInt32Property(InstanceSeed, TEXT("DataIndex"), 4)
 			|| !SetFloatProperty(InstanceSeed, TEXT("ConstDefaultValue"), 0.0f)
 			|| !SetUInt32Property(SystemHighlight, TEXT("DataIndex"), 5)
-			|| !SetFloatProperty(SystemHighlight, TEXT("ConstDefaultValue"), 0.0f))
+			|| !SetFloatProperty(SystemHighlight, TEXT("ConstDefaultValue"), 0.0f)
+			|| !SetUInt32Property(InstanceLuminosityGain, TEXT("DataIndex"), 6)
+			|| !SetFloatProperty(InstanceLuminosityGain, TEXT("ConstDefaultValue"), 1.0f))
 		{
 			return false;
 		}
@@ -675,36 +721,78 @@ float marker = saturate(SystemMarker);
 float seed = frac(lerp(InstanceSeed, CoronaSeed, shellMode));
 float3 n = normalize(NormalWS);
 float3 v = normalize(CameraWS);
-float3 pointRadial = WorldPositionWS - ObjectPositionWS;
-float pointRadialLengthSq = dot(pointRadial, pointRadial);
-float3 pointNormal = pointRadialLengthSq > 1.0e-8
-    ? pointRadial * rsqrt(pointRadialLengthSq) : n;
-float facing = saturate(abs(dot(pointNormal, v)));
+// Opt-in on gameplay MIDs only. Menu points keep the accepted material profile,
+// and the materialized star's corona below remains independent of this control.
+float gameplayProfile = saturate(GameplayPointProfile) * (1.0 - shellMode);
+float facing = saturate(abs(dot(n, v)));
 float projectedRadiusSq = saturate(1.0 - facing * facing);
+// This is a local optical glyph at the actual instance centre, not a sky shell.
+// Screen radius follows the existing full-scale carrier; no catalogue movement.
+float2 pointQ = float2(0.0, 0.0);
+float projectionValid = 0.0;
+if (gameplayProfile > 0.0 && all(isfinite(PointProjection)) && all(PointProjection.zw > 0.0))
+{
+    float4 pixelClip = GetScreenPosition(Parameters);
+    float2 candidateQ = (pixelClip.xy / max(pixelClip.w, 1.0e-20) - PointProjection.xy)
+        * PointProjection.zw;
+    if (all(isfinite(candidateQ)))
+    {
+        // Beyond twice the carrier radius the envelope is already black. Clamp
+        // before squaring so malformed bounds cannot contaminate other profiles.
+        pointQ = clamp(candidateQ, -2.0, 2.0);
+        projectedRadiusSq = lerp(projectedRadiusSq, dot(pointQ, pointQ), gameplayProfile);
+        projectionValid = 1.0;
+    }
+}
 
 // A sphere is only the conservative HISM bound. Its visible signal is a compact
 // Gaussian point: a resolved hot HDR core plus a broader low-energy halo. Brighter
 // stars receive a wider halo, while black pixels in the additive material are
 // genuinely transparent instead of forming pastel opaque discs.
 float pointActivity = saturate(activity + marker * 0.14);
-// Parent-scope proxy spheres project to only a few pixels. Keep the neutral HDR
-// seed sub-pixel-to-one-pixel and the spectral halo close to one surrounding
-// pixel. The previous 12/4 and 3.60/1.35 profile filled too much of every proxy;
-// dense Ring/Arc samples then merged through bloom into white polygonal blobs.
-// The sphere remains only a conservative bound and its outer silhouette is black.
-float coreSharpness = lerp(28.0, 14.0, pointActivity);
+// At the accepted gameplay support the old core was mostly sub-pixel. Broaden
+// its Gaussian and lower its peak together, retaining its integrated energy
+// before the model-luminosity weight. No time, camera-speed or motion-history gain.
+float coreSpread = lerp(1.0, 0.65, gameplayProfile);
+float coreSharpness = lerp(28.0, 14.0, pointActivity) * coreSpread;
 float haloSharpness = lerp(5.50, 3.00, pointActivity);
 float edgeFade = smoothstep(0.02, 0.28, facing);
-float normalFootprint = max(length(ddx(pointNormal)), length(ddy(pointNormal)));
-float unresolvedPoint = smoothstep(0.45, 0.95, normalFootprint);
-float hotCoreShape = exp2(-projectedRadiusSq * coreSharpness);
-float softHaloShape = exp2(-projectedRadiusSq * haloSharpness);
-float unresolvedCoverage = unresolvedPoint * lerp(0.18, 0.24, pointActivity);
-float hotCore = lerp(hotCoreShape * edgeFade, hotCoreShape, unresolvedPoint);
-float softHalo = max(softHaloShape * edgeFade, unresolvedCoverage);
+// The low-poly mesh is a bound, never the halo's visible edge. Fade to black
+// inside that silhouette instead of filling triangles with a coverage floor.
+float roundEnvelope = 1.0 - smoothstep(0.36, 0.64, projectedRadiusSq);
+edgeFade = lerp(edgeFade, roundEnvelope * projectionValid, gameplayProfile);
+float hotCore = exp2(-projectedRadiusSq * coreSharpness) * edgeFade;
+float softHalo = exp2(-projectedRadiusSq * haloSharpness) * edgeFade;
+if (gameplayProfile > 0.0)
+{
+    // Spatial prefilter for unresolved points: convolve each Gaussian with the
+    // pixel footprint's matched covariance. Compensate the peak, never add energy.
+    // This is independent of movement, time and temporal-history accumulation.
+    float2 qDx = ddx(pointQ);
+    float2 qDy = ddy(pointQ);
+    const float pixelVariance = 1.0 / 12.0;
+    float covXX = pixelVariance * (qDx.x*qDx.x + qDy.x*qDy.x);
+    float covXY = pixelVariance * (qDx.x*qDx.y + qDy.x*qDy.y);
+    float covYY = pixelVariance * (qDx.y*qDx.y + qDy.y*qDy.y);
+    float2 sigmaSq = rcp(1.38629436112 * float2(coreSharpness, haloSharpness));
+    float2 filteredXX = sigmaSq + covXX;
+    float2 filteredYY = sigmaSq + covYY;
+    float2 determinant = max(filteredXX * filteredYY - covXY * covXY, 1.0e-12);
+    float2 quadratic = (filteredYY * (pointQ.x*pointQ.x)
+        - 2.0 * covXY * (pointQ.x*pointQ.y)
+        + filteredXX * (pointQ.y*pointQ.y)) / determinant;
+    float2 filteredLobes = sigmaSq * rsqrt(determinant) * exp(-0.5 * quadratic);
+    hotCore = lerp(hotCore, filteredLobes.x * edgeFade, gameplayProfile);
+    softHalo = lerp(softHalo, filteredLobes.y * edgeFade, gameplayProfile);
+}
 float seedGain = lerp(0.86, 1.14, frac(seed * 17.713 + 0.37));
-float coreEnergy = lerp(4.0, 11.0, activity) * seedGain * (1.0 + marker * 0.22);
-float haloEnergy = lerp(0.62, 2.6, activity) * seedGain * (1.0 + marker * 0.18);
+// Original model luminosity arrives separately from the clamped, area-prefiltered
+// emission channel. A luminous red giant must not be dimmed as a cool dwarf.
+float modelGain = lerp(1.0, clamp(InstanceLuminosityGain, 0.0, 1.2), gameplayProfile);
+float coreEnergy = lerp(4.0, 11.0, activity) * seedGain * (1.0 + marker * 0.22)
+                 * coreSpread * modelGain;
+float haloEnergy = lerp(0.62, 2.6, activity) * seedGain * (1.0 + marker * 0.18)
+                 * lerp(1.0, 0.80, gameplayProfile) * modelGain;
 // Photographic point stars saturate toward a neutral core while their lower-energy
 // halo retains the spectral hue. Tinting both lobes identically made the numerous
 // M/K stars register as red pixels in max-channel tests but supplied very little
@@ -717,7 +805,10 @@ float3 hotCoreTint = lerp(pointTint, neutralCoreTint, coreWhitening);
 float3 haloTint = lerp(pointTint, neutralCoreTint, 0.04);
 float3 pointSignal = hotCoreTint * (hotCore * coreEnergy)
                    + haloTint * (softHalo * haloEnergy);
-
+)APSPOINT");
+		// MSVC limits individual wide string literals. Append the independent corona
+		// block at runtime; the resulting HLSL stays byte-identical to the saved master.
+		PointAndCorona->Code += TEXT(R"APSPOINT(
 // The actor corona runs on a second, slightly enlarged fallback mesh. Reconstruct
 // its radial normal from continuous position rather than the fallback proxy's
 // faceted normals. Its envelope starts at the opaque photosphere silhouette and
@@ -772,6 +863,27 @@ return lerp(pointSignal, coronaSignal, shellMode);
 		AddCustomInput(PointAndCorona, TEXT("WorldPositionWS"), WorldPosition);
 		AddCustomInput(PointAndCorona, TEXT("ObjectPositionWS"), InterpolatedObjectPosition);
 		AddCustomInput(PointAndCorona, TEXT("CameraWS"), Camera);
+		AddCustomInput(PointAndCorona, TEXT("GameplayPointProfile"), GameplayPointProfile);
+		AddCustomInput(PointAndCorona, TEXT("InstanceLuminosityGain"), InstanceLuminosityGain);
+		AddCustomInput(PointAndCorona, TEXT("PointProjection"), InterpolatedPointProjection);
+		if (bStablePointPass)
+		{
+			UMaterialExpression* SceneDepth = AddReflectedExpression(Material,
+				TEXT("/Script/Engine.MaterialExpressionSceneDepth"), -1050, 800);
+			if (!SceneDepth) return false;
+			AddCustomInput(PointAndCorona, TEXT("SceneDepthForOcclusion"), SceneDepth);
+			// UE5.4 disables hardware depth tests after motion blur. Keep opaque
+			// planets/characters in front of points, using reversed device depth;
+			// a capped linear sky depth would incorrectly reject full-scale stars.
+			const FString PointDepthGuard = TEXT(R"APSPOINTDEPTH(
+if (!isfinite(SceneDepthForOcclusion)) return float3(0.0,0.0,0.0);
+float2 depthUV=GetDefaultSceneTextureUV(Parameters,1);
+float sceneDeviceZ=LookupDeviceZ(depthUV);
+clip(Parameters.SvPosition.z-sceneDeviceZ);
+)APSPOINTDEPTH");
+			PointAndCorona->Code = PointDepthGuard + PointAndCorona->Code;
+			PointAndCorona->Description = TEXT("APS stable catalogue point with scene-depth occlusion");
+		}
 		if (!UMaterialEditingLibrary::ConnectMaterialProperty(
 			PointAndCorona, TEXT(""), MP_EmissiveColor))
 		{
@@ -797,10 +909,15 @@ UAPSFixStarHISMMaterialCommandlet::UAPSFixStarHISMMaterialCommandlet()
 int32 UAPSFixStarHISMMaterialCommandlet::Main(const FString& Params)
 {
 #if WITH_EDITOR
-	const TArray<FString> UnifiedMasterPaths{
+	const FString StablePointPackagePath =
+		TEXT("/Game/APS/APS_ALPHA/Assets/Materials/Astro/M_SpectralStarMat_POINTS");
+	const TArray<FString> UnifiedMasterPaths = FParse::Param(*Params, TEXT("PointsOnly"))
+		? TArray<FString>{ StablePointPackagePath }
+		: TArray<FString>{
 		TEXT("/Game/APS/APS_ALPHA/Assets/Materials/Astro/M_SpectralStarMat"),
 		TEXT("/Game/APS/APS_ALPHA/Assets/Materials/Astro/M_SpectralStarMat_HISM"),
-		TEXT("/Game/APS/APS_ALPHA/Assets/Materials/Astro/M_SpectralStarMat_SUN")
+		TEXT("/Game/APS/APS_ALPHA/Assets/Materials/Astro/M_SpectralStarMat_SUN"),
+		StablePointPackagePath
 	};
 
 	int32 ChangedCount = 0;
@@ -809,7 +926,13 @@ int32 UAPSFixStarHISMMaterialCommandlet::Main(const FString& Params)
 	{
 		const FString AssetName = FPackageName::GetLongPackageAssetName(PackagePath);
 		const FString ObjectPath = FString::Printf(TEXT("%s.%s"), *PackagePath, *AssetName);
+		const bool bStablePointPass = PackagePath == StablePointPackagePath;
 		UMaterial* Material = LoadObject<UMaterial>(nullptr, *ObjectPath);
+		if (!Material && bStablePointPass)
+		{
+			UPackage* NewPackage = CreatePackage(*PackagePath);
+			Material = NewObject<UMaterial>(NewPackage, FName(*AssetName), RF_Public | RF_Standalone);
+		}
 		if (!Material)
 		{
 			UE_LOG(LogAPSStarMaterialFix, Error, TEXT("Could not load %s"), *ObjectPath);
@@ -817,9 +940,9 @@ int32 UAPSFixStarHISMMaterialCommandlet::Main(const FString& Params)
 			continue;
 		}
 
-		const bool bPointAndCoronaMaster = PackagePath.EndsWith(TEXT("_HISM"));
+		const bool bPointAndCoronaMaster = bStablePointPass || PackagePath.EndsWith(TEXT("_HISM"));
 		const bool bRebuilt = bPointAndCoronaMaster
-			? APSStellarMaterial::RebuildPointAndCoronaMaterial(Material)
+			? APSStellarMaterial::RebuildPointAndCoronaMaterial(Material, bStablePointPass)
 			: APSStellarMaterial::RebuildUnifiedStellarMaterial(Material);
 		if (!bRebuilt)
 		{
@@ -845,7 +968,8 @@ int32 UAPSFixStarHISMMaterialCommandlet::Main(const FString& Params)
 
 		UE_LOG(LogAPSStarMaterialFix, Display,
 			TEXT("Rebuilt %s stellar material: %s"),
-			bPointAndCoronaMaster ? TEXT("additive point/corona") : TEXT("photosphere"),
+			bStablePointPass ? TEXT("stable catalogue point")
+				: bPointAndCoronaMaster ? TEXT("additive point/corona") : TEXT("photosphere"),
 			*ObjectPath);
 		++ChangedCount;
 	}

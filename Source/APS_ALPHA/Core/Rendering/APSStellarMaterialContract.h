@@ -9,10 +9,11 @@ namespace APSStellarMaterialContract
 	inline constexpr const TCHAR* ActorBaseObjectPath =
 		TEXT("/Game/APS/APS_ALPHA/Assets/Materials/Astro/M_SpectralStarMat_SUN.M_SpectralStarMat_SUN");
 	inline constexpr const TCHAR* HismBaseObjectPath =
+		TEXT("/Game/APS/APS_ALPHA/Assets/Materials/Astro/M_SpectralStarMat_POINTS.M_SpectralStarMat_POINTS");
+	// Distant points bypass temporal reconstruction. Materialized corona shells
+	// retain the accepted original pass and must never inherit the point-only pass.
+	inline constexpr const TCHAR* CoronaBaseObjectPath =
 		TEXT("/Game/APS/APS_ALPHA/Assets/Materials/Astro/M_SpectralStarMat_HISM.M_SpectralStarMat_HISM");
-	// The additive HISM master also owns the actor-only corona-shell mode. Keeping
-	// both soft point profiles in one material avoids another binary asset/runtime PSO.
-	inline constexpr const TCHAR* CoronaBaseObjectPath = HismBaseObjectPath;
 	inline constexpr const TCHAR* WorldGridBaseObjectPath =
 		TEXT("/Engine/EngineMaterials/WorldGridMaterial.WorldGridMaterial");
 

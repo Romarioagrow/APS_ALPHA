@@ -1,4 +1,5 @@
 #include "APSStellarVisualSubsystem.h"
+#include "APSGameplayStarAppearance.h"
 
 #include "APS_ALPHA/Actors/Astro/Star.h"
 #include "APS_ALPHA/Actors/Astro/StarSystem.h"
@@ -116,6 +117,7 @@ void UAPSStellarVisualSubsystem::Tick(float DeltaTime)
 	if (SearchElapsed >= 0.5f || !bHasTargetStar)
 	{
 		SearchElapsed = 0.0f;
+		APSGameplayStarAppearance::Apply(World);
 		ResolveNearestStar(ObserverLocation);
 	}
 	UpdateGameplaySurfaceFillLight(
