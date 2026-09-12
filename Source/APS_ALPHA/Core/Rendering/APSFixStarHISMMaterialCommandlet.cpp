@@ -1,6 +1,7 @@
 #include "APSFixStarHISMMaterialCommandlet.h"
 
 #if WITH_EDITOR
+#include "APSStellarPointRasterRecipe.h"
 #include "MaterialEditingLibrary.h"
 #include "MaterialDomain.h"
 #include "Materials/Material.h"
@@ -890,6 +891,13 @@ return lerp(pointSignal, coronaSignal, shellMode);
 			PointAndCorona->Code.ReplaceInline(
 				TEXT("float4 pixelClip = GetScreenPosition(Parameters);"),
 				TEXT("float4 pixelClip = RasterClip;"));
+			// A preview profile controls luminosity, not whether a point is circular.
+			// Only the dedicated POINTS asset gets this; the corona master is unchanged.
+			if (!APSStellarPointRasterRecipe::EnableForAllPointProfiles(PointAndCorona->Code))
+			{
+				UE_LOG(LogAPSStarMaterialFix, Error, TEXT("Unexpected stellar point raster recipe; refusing a partial rewrite."));
+				return false;
+			}
 			// UE5.4 disables hardware depth tests after motion blur. Keep opaque
 			// planets/characters in front of points, using reversed device depth;
 			// a capped linear sky depth would incorrectly reject full-scale stars.
