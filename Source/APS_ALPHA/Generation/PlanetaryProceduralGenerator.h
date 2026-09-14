@@ -98,16 +98,23 @@ public:
 	void GenerateCustomPlanetarySystemModel(TSharedPtr<FPlanetarySystemModel> PlanetarySystemModel,
 	                                        TSharedPtr<FStarModel> StarModel, UPlanetGenerator* PlanetGenerator,
 	                                        UMoonGenerator* MoonGenerator,
-	                                        const FAPSPreviewStarEditOverride* StellarEdit = nullptr);
+	                                        const FAPSPreviewStarEditOverride* StellarEdit = nullptr, bool bCompactOrbits = false);
 
 	void GeneratePlanetarySystemModelByStar(TSharedPtr<FPlanetarySystemModel> PlanetarySystemModel,
 	                                        TSharedPtr<FStarModel> StarModel, UPlanetGenerator* PlanetGenerator,
 	                                        UMoonGenerator* MoonGenerator,
-	                                        const FAPSPreviewStarEditOverride* StellarEdit = nullptr);
+	                                        const FAPSPreviewStarEditOverride* StellarEdit = nullptr, bool bCompactOrbits = false);
 
 	void GeneratePlanetOrbits();
 
 	/** Keep generated planet orbit rings distinct inside the stellar envelope. */
+	static void ResolvePlanetOrbitRange(double& MinOrbit, double& MaxOrbit, double StellarRadiusSolar);
+	/** Canonical systems: 25% tighter, with bounded mass-derived spans. Legacy callers opt out. */
+	static void CompactPlanetOrbitRange(double& MinOrbit, double& MaxOrbit, double StellarRadiusSolar);
+	static TArray<double> BuildPlanetOrbitLayout(int32 Count, EOrbitDistributionType Distribution,
+		double MinOrbit, double MaxOrbit, double StellarRadiusSolar, FRandomStream& Random);
+	static FRotator SamplePlanetOrbitRotation(FRandomStream& Random, double MaxInclinationDegrees);
+
 	static void EnforceMinimumPlanetOrbitSpacing(
 		TArray<double>& InOutOrbitRadii, double MinOrbit, double MaxOrbit,
 		double StellarRadiusSolar, EOrbitDistributionType DistributionType);

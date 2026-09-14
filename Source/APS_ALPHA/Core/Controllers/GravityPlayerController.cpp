@@ -1,7 +1,9 @@
 #include "GravityPlayerController.h"
 #include <ctime> 
 #include <random>
+#include "APS_ALPHA/Actors/Astro/WorldActor.h"
 #include "APS_ALPHA/Core/Instances/MainGameplayInstance.h"
+#include "APS_ALPHA/Core/Saves/APSWorldSaveSnapshot.h"
 #include "APS_ALPHA/Core/Saves/GameSave.h"
 #include "APS_ALPHA/Core/Saves/SavedActorData.h"
 #include "APS_ALPHA/Gameplay/Civilizations/APSCivilizationIdentityComponent.h"
@@ -13,6 +15,7 @@
 #include "Serialization/ObjectAndNameAsStringProxyArchive.h"
 #include "APS_ALPHA/UI/StrategicMap/SAPSStrategicMapPanel.h"
 #include "Engine/GameViewportClient.h"
+#include "GameFramework/Pawn.h"
 #include "InputCoreTypes.h"
 #include "Misc/ConfigCacheIni.h"
 #include "Misc/Paths.h"
@@ -67,6 +70,8 @@ void AGravityPlayerController::SetupInputComponent()
 	Super::SetupInputComponent();
 	if (InputComponent)
 	{
+		InputComponent->BindKey(EKeys::F5, IE_Pressed, this,
+			&AGravityPlayerController::SaveCurrentWorld);
 		InputComponent->BindKey(EKeys::F10, IE_Pressed, this, &AGravityPlayerController::ToggleStrategicMap);
 	}
 }
@@ -142,93 +147,196 @@ FString AGravityPlayerController::GetCurrentSaveSlotName() const
 void AGravityPlayerController::SaveNewWorld(const EAstroGenerationLevel AstroGenerationLevel,
                                             UGeneratedWorld* GeneratedWorldModel)
 {
-	UGameSave* SaveGameInstance = Cast<UGameSave>(UGameplayStatics::CreateSaveGameObject(UGameSave::StaticClass()));
-	if (SaveGameInstance)
+	if (const UGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance() : nullptr)
 	{
-		FString SaveSlotName = GenerateUniqueSaveSlotName(AstroGenerationLevel);
-
-		FString WorldName;
-		if (int32 LastSpaceIndex; SaveSlotName.FindLastChar(TEXT(' '), LastSpaceIndex))
+		if (const UMainGameplayInstance* GameplayState =
+			GameInstance->GetSubsystem<UMainGameplayInstance>();
+			GameplayState && GameplayState->bPendingSavedWorldReplay)
 		{
-			WorldName = SaveSlotName.Left(LastSpaceIndex);
-		}
-
-		SaveGameInstance->SaveSlotName = SaveSlotName;
-		SaveGameInstance->UserIndex = 0;
-	
-		FGeneratedWorldData WorldSaveData = GeneratedWorldModel->SaveWorldData();
-		SaveGameInstance->GeneratedWorldsDataArray.Add(WorldSaveData);
-		SaveGameInstance->WorldName = WorldName;
-
-		const TArray<FPlanetData>& InhabitedPlanets = GeneratedWorldModel->GetInhabitedPlanets();
-		SaveGameInstance->InhabitedPlanetsDataArray.Append(InhabitedPlanets);
-		
-		if (UWorld* World = GetWorld())
-		{
-			if (const UAPSCivilizationMaterializationSubsystem* CivilizationSubsystem =
-				World->GetSubsystem<UAPSCivilizationMaterializationSubsystem>())
-			{
-				const FAPSCivilizationRuntimeManifest& Manifest =
-					CivilizationSubsystem->GetRuntimeManifest();
-				FString ManifestValidationReason;
-				if (Manifest.IsStructurallyValid(&ManifestValidationReason))
-				{
-					SaveGameInstance->CivilizationManifest = Manifest;
-					SaveGameInstance->bHasCivilizationManifest = true;
-				}
-			}
-
-			TArray<AActor*> AllActors;
-			UGameplayStatics::GetAllActorsOfClass(World, ABaseActor::StaticClass(), AllActors);
-
-			for (AActor* Actor : AllActors)
-			{
-				if (Actor->IsValidLowLevel() && IsValid(Actor))
-				{
-					FActorSaveData SaveData;
-					SaveData.ActorTransform = Actor->GetActorTransform();
-					SaveData.ActorName = Actor->GetName();
-					SaveData.ActorClass = Actor->GetClass()->GetPathName();
-
-					if (const UAPSCivilizationIdentityComponent* Identity =
-						Actor->FindComponentByClass<UAPSCivilizationIdentityComponent>())
-					{
-						SaveData.StableEntityId = Identity->StableEntityId;
-					}
-
-					FMemoryWriter MemoryWriter(SaveData.ActorData, true);
-					FObjectAndNameAsStringProxyArchive Archive(MemoryWriter, true);
-					Actor->Serialize(Archive);
-
-					if (AActor* ParentActor = Actor->GetAttachParentActor())
-					{
-						SaveData.ParentActorName = ParentActor->GetName();
-					}
-
-					SaveGameInstance->ActorSaveDataArray.Add(SaveData);
-				}
-			}
-
-			if (UGameplayStatics::SaveGameToSlot(SaveGameInstance, SaveGameInstance->SaveSlotName,
-			                                     SaveGameInstance->UserIndex))
-			{
-				CurrentSaveSlotName = SaveGameInstance->SaveSlotName;
-				WriteWorldMetadataSidecar(SaveGameInstance, WorldSaveData);
-				UE_LOG(LogTemp, Warning, TEXT("Game saved successfully to slot: %s"), *SaveGameInstance->SaveSlotName);
-			}
+			UE_LOG(LogTemp, Verbose,
+				TEXT("[APS.Save] Suppressed new-slot autosave while replaying %s"),
+				*GameplayState->SaveSlotName);
+			return;
 		}
 	}
+
+	const FString SaveSlotName = GenerateUniqueSaveSlotName(AstroGenerationLevel);
+	SaveWorldToSlot(SaveSlotName, GeneratedWorldModel);
+}
+
+void AGravityPlayerController::SaveCurrentWorld()
+{
+	UMainGameplayInstance* GameplayState = GetWorld() && GetWorld()->GetGameInstance()
+		? GetWorld()->GetGameInstance()->GetSubsystem<UMainGameplayInstance>() : nullptr;
+	if (!GameplayState || GameplayState->bPendingSavedWorldReplay
+		|| !IsValid(GameplayState->NewGeneratedWorld))
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[APS.Save] Quick-save ignored: no fully loaded generated world"));
+		return;
+	}
+
+	FString SlotName = GetCurrentSaveSlotName();
+	if (SlotName.IsEmpty())
+	{
+		SlotName = CurrentSaveSlotName;
+	}
+	if (SlotName.IsEmpty())
+	{
+		SlotName = GenerateUniqueSaveSlotName(
+			GameplayState->NewGeneratedWorld->AstroGenerationLevel);
+	}
+
+	FString ExistingWorldName;
+	if (const UGameSave* Existing = Cast<UGameSave>(
+		UGameplayStatics::LoadGameFromSlot(SlotName, 0)))
+	{
+		ExistingWorldName = Existing->WorldName;
+	}
+	SaveWorldToSlot(SlotName, GameplayState->NewGeneratedWorld, ExistingWorldName);
+}
+
+bool AGravityPlayerController::SaveWorldToSlot(const FString& SlotName,
+	UGeneratedWorld* GeneratedWorldModel, const FString& ExistingWorldName)
+{
+	if (SlotName.IsEmpty() || !IsValid(GeneratedWorldModel) || !GetWorld())
+	{
+		return false;
+	}
+
+	UGameSave* SaveGameInstance = Cast<UGameSave>(
+		UGameplayStatics::CreateSaveGameObject(UGameSave::StaticClass()));
+	if (!SaveGameInstance)
+	{
+		return false;
+	}
+
+	FString WorldName = ExistingWorldName;
+	if (WorldName.IsEmpty())
+	{
+		if (int32 LastSpaceIndex; SlotName.FindLastChar(TEXT(' '), LastSpaceIndex))
+		{
+			WorldName = SlotName.Left(LastSpaceIndex);
+		}
+		else
+		{
+			WorldName = SlotName;
+		}
+	}
+
+	SaveGameInstance->SaveFormatVersion = APSWorldSaveSnapshot::LatestSaveFormatVersion;
+	SaveGameInstance->SaveSlotName = SlotName;
+	SaveGameInstance->UserIndex = 0;
+	SaveGameInstance->WorldName = WorldName;
+
+	const FGeneratedWorldData WorldSaveData = GeneratedWorldModel->SaveWorldData();
+	SaveGameInstance->GeneratedWorldsDataArray.Add(WorldSaveData);
+	if (!APSWorldSaveSnapshot::Capture(
+		GeneratedWorldModel, SaveGameInstance->GeneratedWorldModelData))
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[APS.Save] Refusing incomplete save: generated model snapshot failed"));
+		return false;
+	}
+
+	SaveGameInstance->InhabitedPlanetsDataArray = GeneratedWorldModel->GetInhabitedPlanets();
+
+	UWorld* World = GetWorld();
+	if (const UAPSCivilizationMaterializationSubsystem* CivilizationSubsystem =
+		World->GetSubsystem<UAPSCivilizationMaterializationSubsystem>())
+	{
+		const FAPSCivilizationRuntimeManifest& Manifest =
+			CivilizationSubsystem->GetRuntimeManifest();
+		FString ManifestValidationReason;
+		if (Manifest.IsStructurallyValid(&ManifestValidationReason))
+		{
+			SaveGameInstance->CivilizationManifest = Manifest;
+			SaveGameInstance->bHasCivilizationManifest = true;
+		}
+	}
+
+	TArray<AActor*> AllActors;
+	UGameplayStatics::GetAllActorsOfClass(World, ABaseActor::StaticClass(), AllActors);
+	for (AActor* Actor : AllActors)
+	{
+		// Astronomy is reconstructed from the canonical snapshot. Serializing those
+		// actors duplicated large transient graphs and still lost their TSharedPtr data.
+		if (!IsValid(Actor) || Actor->IsA<AWorldActor>())
+		{
+			continue;
+		}
+
+		FActorSaveData SaveData;
+		SaveData.ActorTransform = Actor->GetActorTransform();
+		SaveData.ActorName = Actor->GetName();
+		SaveData.ActorClass = Actor->GetClass()->GetPathName();
+		if (const UAPSCivilizationIdentityComponent* Identity =
+			Actor->FindComponentByClass<UAPSCivilizationIdentityComponent>())
+		{
+			SaveData.StableEntityId = Identity->StableEntityId;
+		}
+		FMemoryWriter MemoryWriter(SaveData.ActorData, true);
+		FObjectAndNameAsStringProxyArchive Archive(MemoryWriter, true);
+		Actor->Serialize(Archive);
+		if (AActor* ParentActor = Actor->GetAttachParentActor())
+		{
+			SaveData.ParentActorName = ParentActor->GetName();
+		}
+		SaveGameInstance->ActorSaveDataArray.Add(MoveTemp(SaveData));
+	}
+
+	if (APawn* PlayerPawn = GetPawn())
+	{
+		SaveGameInstance->bHasPlayerPawnState = true;
+		SaveGameInstance->PlayerPawnClass = PlayerPawn->GetClass()->GetPathName();
+		SaveGameInstance->PlayerPawnTransform = PlayerPawn->GetActorTransform();
+		SaveGameInstance->PlayerControlRotation = GetControlRotation();
+	}
+
+	if (!UGameplayStatics::SaveGameToSlot(SaveGameInstance, SlotName,
+		SaveGameInstance->UserIndex))
+	{
+		UE_LOG(LogTemp, Error, TEXT("[APS.Save] Failed to write slot: %s"), *SlotName);
+		return false;
+	}
+
+	CurrentSaveSlotName = SlotName;
+	if (UMainGameplayInstance* GameplayState = World->GetGameInstance()
+		? World->GetGameInstance()->GetSubsystem<UMainGameplayInstance>() : nullptr)
+	{
+		GameplayState->SaveSlotName = SlotName;
+	}
+	WriteWorldMetadataSidecar(SaveGameInstance, WorldSaveData);
+	UE_LOG(LogTemp, Log,
+		TEXT("[APS.Save] Saved slot=%s modelBytes=%d actors=%d player=%s"),
+		*SlotName, SaveGameInstance->GeneratedWorldModelData.Num(),
+		SaveGameInstance->ActorSaveDataArray.Num(),
+		SaveGameInstance->bHasPlayerPawnState ? TEXT("yes") : TEXT("no"));
+	return true;
 }
 
 void AGravityPlayerController::LoadWorld()
 {
 	if (UWorld* World = GetWorld())
 	{
+		UMainGameplayInstance* GameplayState = World->GetGameInstance()
+			? World->GetGameInstance()->GetSubsystem<UMainGameplayInstance>() : nullptr;
+		if (GameplayState && GameplayState->bPendingSavedWorldReplay
+			&& !GameplayState->bSavedWorldHierarchyReady)
+		{
+			// L_WorldGeneration contains a legacy BeginPlay call.  Loading its actor
+			// archive before deterministic generation creates a partial/duplicate world.
+			UE_LOG(LogTemp, Verbose,
+				TEXT("[APS.Save] Actor overlay deferred until generated hierarchy is ready"));
+			return;
+		}
+
 		FString LoadingName = GetCurrentSaveSlotName();
 		if (UGameSave* LoadedGame = Cast<UGameSave>(UGameplayStatics::LoadGameFromSlot(LoadingName, 0)))
 		{
 			TMap<FString, AActor*> NameToActorMap;
 			TMap<FGuid, AActor*> StableIdToActorMap;
+			TSet<FString> RestoredActorNames;
 
 			FAPSCivilizationRuntimeManifest LoadedManifest;
 			bool bHasValidManifest = false;
@@ -274,6 +382,12 @@ void AGravityPlayerController::LoadWorld()
 			{
 				if (UClass* ActorClass = LoadClass<AActor>(nullptr, *SaveData.ActorClass))
 				{
+					// Legacy archives contain astronomy actors whose non-reflected model
+					// graphs cannot be restored.  The canonical model already rebuilt them.
+					if (ActorClass->IsChildOf(AWorldActor::StaticClass()))
+					{
+						continue;
+					}
 					AActor* Actor = SaveData.StableEntityId.IsValid()
 						? StableIdToActorMap.FindRef(SaveData.StableEntityId) : nullptr;
 					if (!IsValid(Actor))
@@ -330,6 +444,7 @@ void AGravityPlayerController::LoadWorld()
 						}
 
 						NameToActorMap.Add(SaveData.ActorName, Actor);
+						RestoredActorNames.Add(SaveData.ActorName);
 						if (SaveData.StableEntityId.IsValid())
 						{
 							StableIdToActorMap.Add(SaveData.StableEntityId, Actor);
@@ -340,7 +455,8 @@ void AGravityPlayerController::LoadWorld()
 
 			for (const FActorSaveData& SaveData : LoadedGame->ActorSaveDataArray)
 			{
-				if (!SaveData.ParentActorName.IsEmpty())
+				if (RestoredActorNames.Contains(SaveData.ActorName)
+					&& !SaveData.ParentActorName.IsEmpty())
 				{
 					AActor** ParentActor = NameToActorMap.Find(SaveData.ParentActorName);
 					AActor** ChildActor = NameToActorMap.Find(SaveData.ActorName);
@@ -352,11 +468,52 @@ void AGravityPlayerController::LoadWorld()
 				}
 			}
 
-			UE_LOG(LogTemp, Warning, TEXT("Game loaded successfully from slot: %s"), *LoadedGame->SaveSlotName);
+			if (LoadedGame->bHasPlayerPawnState && !LoadedGame->PlayerPawnClass.IsEmpty())
+			{
+				UClass* SavedPawnClass = LoadClass<APawn>(nullptr, *LoadedGame->PlayerPawnClass);
+				APawn* PlayerPawn = GetPawn();
+				if (SavedPawnClass && (!IsValid(PlayerPawn) || !PlayerPawn->IsA(SavedPawnClass)))
+				{
+					APawn* PreviousPawn = PlayerPawn;
+					FActorSpawnParameters SpawnParams;
+					SpawnParams.SpawnCollisionHandlingOverride =
+						ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+					PlayerPawn = World->SpawnActor<APawn>(SavedPawnClass,
+						LoadedGame->PlayerPawnTransform, SpawnParams);
+					if (IsValid(PlayerPawn))
+					{
+						Possess(PlayerPawn);
+						if (IsValid(PreviousPawn) && PreviousPawn != PlayerPawn)
+						{
+							PreviousPawn->Destroy();
+						}
+					}
+				}
+				if (IsValid(PlayerPawn))
+				{
+					PlayerPawn->SetActorTransform(LoadedGame->PlayerPawnTransform,
+						false, nullptr, ETeleportType::TeleportPhysics);
+					SetControlRotation(LoadedGame->PlayerControlRotation);
+					SetViewTarget(PlayerPawn);
+				}
+			}
+
+			CurrentSaveSlotName = LoadingName;
+			if (GameplayState)
+			{
+				GameplayState->bIsLoadingMode = false;
+				GameplayState->bPendingSavedWorldReplay = false;
+				GameplayState->bSavedWorldHierarchyReady = false;
+			}
+
+			UE_LOG(LogTemp, Log,
+				TEXT("[APS.Save] Loaded slot=%s actors=%d player=%s"),
+				*LoadingName, RestoredActorNames.Num(),
+				LoadedGame->bHasPlayerPawnState ? TEXT("restored") : TEXT("legacy-default"));
 		}
 		else
 		{
-			UE_LOG(LogTemp, Warning, TEXT("No save game found in slot: PlayerSaveSlot"));
+			UE_LOG(LogTemp, Error, TEXT("[APS.Save] No save game found in slot: %s"), *LoadingName);
 		}
 	}
 }

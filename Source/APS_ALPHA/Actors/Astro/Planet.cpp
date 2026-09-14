@@ -140,6 +140,11 @@ APlanet::APlanet()
 	{
 		GasGiantVisualComponent->SetStaticMesh(GasGiantMesh.Object);
 	}
+	// This project-owned master is baked separately by APSGasGiantAsset. Until it
+	// exists, retain the imported Jupiter material rather than a missing-material globe.
+	GasGiantSurfaceMaterial = LoadObject<UMaterialInterface>(nullptr,
+		TEXT("/Game/APS/APS_ALPHA/Assets/Materials/M_APS_GasGiantAtmosphere.M_APS_GasGiantAtmosphere"),
+		nullptr, LOAD_NoWarn);
 }
 
 bool APlanet::IsNotGasGiant() const
@@ -204,15 +209,18 @@ void APlanet::RefreshGasGiantVisual()
 	}
 	GasGiantVisualComponent->SetRelativeLocation(FVector::ZeroVector);
 
-	if (!IsValid(GasGiantMaterialInstance))
+	UMaterialInterface* BaseMaterial = GasGiantVisualComponent->GetMaterial(0);
+	if (BaseMaterial == GasGiantMaterialInstance && IsValid(GasGiantMaterialInstance))
 	{
-		UMaterialInterface* BaseMaterial = GasGiantVisualComponent->GetMaterial(0);
-		if (IsValid(BaseMaterial))
-		{
-			GasGiantMaterialInstance = UMaterialInstanceDynamic::Create(
-				BaseMaterial, this, TEXT("MID_APS_GasGiantVisual"));
-			GasGiantVisualComponent->SetMaterial(0, GasGiantMaterialInstance);
-		}
+		BaseMaterial = GasGiantMaterialInstance->Parent;
+	}
+	if (IsValid(GasGiantSurfaceMaterial)) BaseMaterial = GasGiantSurfaceMaterial;
+	if (IsValid(BaseMaterial) && (!IsValid(GasGiantMaterialInstance)
+		|| GasGiantMaterialInstance->Parent != BaseMaterial))
+	{
+		GasGiantMaterialInstance = UMaterialInstanceDynamic::Create(
+			BaseMaterial, this, TEXT("MID_APS_GasGiantVisual"));
+		GasGiantVisualComponent->SetMaterial(0, GasGiantMaterialInstance);
 	}
 	if (IsValid(GasGiantMaterialInstance))
 	{
@@ -240,6 +248,40 @@ void APlanet::RefreshGasGiantVisual()
 			TEXT("BaseColorFactor_RGB"), TypeTint);
 		GasGiantMaterialInstance->SetScalarParameterValue(
 			TEXT("RoughnessFactor"), PlanetType == EPlanetType::IceGiant ? 0.36f : 0.42f);
+
+		if (IsValid(GasGiantSurfaceMaterial))
+		{
+			// Cloud-top colour and broad stable circulation are presentation only;
+			// the physical radius, rotation, position and generation model remain authoritative.
+			FLinearColor CloudLight(0.78f, 0.68f, 0.49f);
+			FLinearColor CloudDark(0.24f, 0.13f, 0.065f);
+			FLinearColor StormColor(0.50f, 0.20f, 0.085f);
+			float BandContrast = 0.78f;
+			float StormStrength = 0.85f;
+			if (PlanetType == EPlanetType::HotGiant)
+			{
+				CloudLight = FLinearColor(0.83f, 0.65f, 0.42f);
+				CloudDark = FLinearColor(0.23f, 0.105f, 0.047f);
+				StormColor = FLinearColor(0.56f, 0.19f, 0.060f);
+				BandContrast = 0.90f;
+				StormStrength = 0.95f;
+			}
+			else if (PlanetType == EPlanetType::IceGiant)
+			{
+				CloudLight = FLinearColor(0.24f, 0.58f, 0.70f);
+				CloudDark = FLinearColor(0.045f, 0.16f, 0.32f);
+				StormColor = FLinearColor(0.48f, 0.72f, 0.78f);
+				BandContrast = 0.38f;
+				StormStrength = 0.45f;
+			}
+			GasGiantMaterialInstance->SetVectorParameterValue(TEXT("GasCloudLight"), CloudLight * SeedVariation);
+			GasGiantMaterialInstance->SetVectorParameterValue(TEXT("GasCloudDark"), CloudDark * SeedVariation);
+			GasGiantMaterialInstance->SetVectorParameterValue(TEXT("GasStormColor"), StormColor);
+			GasGiantMaterialInstance->SetScalarParameterValue(TEXT("GasPatternSeed"), static_cast<float>(StableHash % 4096u));
+			GasGiantMaterialInstance->SetScalarParameterValue(TEXT("GasBandContrast"), BandContrast);
+			GasGiantMaterialInstance->SetScalarParameterValue(TEXT("GasStormStrength"), StormStrength);
+			GasGiantMaterialInstance->SetScalarParameterValue(TEXT("GasCloudRoughness"), 0.86f);
+		}
 	}
 }
 

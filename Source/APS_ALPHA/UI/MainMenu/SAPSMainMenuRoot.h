@@ -138,6 +138,7 @@ private:
 	void LoadExistingWorlds();
 	void RebuildExistingWorldGrid();
 	void RebuildExistingWorldDetails();
+	const FSlateBrush* GetExistingWorldImage(const FAPSExistingWorldEntry& Entry) const;
 	void BeginExistingWorldMetadataLoad();
 	bool PassesExistingWorldFilters(const FAPSExistingWorldEntry& Entry) const;
 	FText GetWorldCollectionLabel(EAPSWorldCollection Collection) const;
@@ -216,6 +217,11 @@ private:
 	FSlateBrush ClusterImage;
 	FSlateBrush CivilizationImage;
 	FSlateBrush BackgroundImage;
+	FSlateBrush WorldMultiPlanetImage;
+	FSlateBrush WorldSinglePlanetImage;
+	FSlateBrush WorldHabitableZoneImage;
+	FSlateBrush WorldGasGiantsImage;
+	FSlateBrush WorldNoPlanetsImage;
 
 	FButtonStyle PrimaryButtonStyle;
 	FButtonStyle SecondaryButtonStyle;

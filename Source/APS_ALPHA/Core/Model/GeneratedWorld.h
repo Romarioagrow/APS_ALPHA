@@ -120,11 +120,39 @@ struct FAPSPreviewStarEditOverride
 	UPROPERTY()
 	EOrbitDistributionType PlanetOrbitDistribution{EOrbitDistributionType::Uniform};
 
+	/** Stable sampling envelope, independent of how much of it Dense occupies. */
+	UPROPERTY()
+	double PlanetOrbitRangeMinAu{0.0};
+	UPROPERTY()
+	double PlanetOrbitRangeMaxAu{0.0};
+	UPROPERTY()
+	bool bReplayPlanetOrbitLayout{true};
+	void CapturePlanetOrbitLayout(const TArray<double>& RadiiAu, EOrbitDistributionType Distribution,
+		double MinimumAu, double MaximumAu);
+
 	/** Used before sampling any distribution, independent of recipe and planet count. */
 	bool TryGetPlanetOrbitRangeAu(double& OutMinimumAu, double& OutMaximumAu) const;
 
 	/** Exact replay only for a matching family; other recipes use the range above. */
-	bool ApplyToPlanetOrbits(FPlanetarySystemModel& Family) const;
+	bool ApplyToPlanetOrbits(FPlanetarySystemModel& Family, bool bCompactOrbits = false, double StellarRadiusSolar = 0.0) const;
+	/** The retained AU envelope has already been compacted; never compound the reduction. */
+	UPROPERTY()
+	bool bCompactOrbitEnvelope{false};
+};
+
+/** Independent orbital authoring: selecting/editing a surface cannot overwrite it. */
+USTRUCT()
+struct FAPSPreviewPlanetOrbitEdit
+{
+	GENERATED_BODY()
+	UPROPERTY()
+	bool bOverrideDistance{false};
+	UPROPERTY()
+	double DistanceAu{1.0};
+	UPROPERTY()
+	bool bOverrideInclination{false};
+	UPROPERTY()
+	double InclinationDegrees{0.0};
 };
 
 /** Partial system recipe: untouched fields keep their original generation inputs. */
@@ -147,6 +175,11 @@ struct FAPSPreviewSystemEditOverride
 	bool bOverrideOrbitDistribution{false};
 	UPROPERTY()
 	EOrbitDistributionType OrbitDistribution{EOrbitDistributionType::Uniform};
+	/** Inclination of the orbital plane relative to the system ecliptic, not camera pitch. */
+	UPROPERTY()
+	bool bOverrideOrbitInclination{false};
+	UPROPERTY()
+	double MaxOrbitInclinationDegrees{8.0};
 
 	void ApplyToSystem(FStarSystemModel& Model) const;
 	void ApplyToFamily(FPlanetarySystemModel& Model, int32 StarIndex, int32 ActualStarCount) const;
@@ -177,8 +210,21 @@ public:
 	uint32 GetPreviewStarEditHash() const;
 	void SetPreviewSystemEditOverride(const FString& Address, const FAPSPreviewSystemEditOverride& Edit);
 	const FAPSPreviewSystemEditOverride* FindPreviewSystemEditOverride(const FString& Address) const;
+	double GetSystemMaxOrbitInclinationDegrees(const FString& Address) const;
+	const FAPSPreviewPlanetOrbitEdit* FindPlanetOrbitEdit(const FString& Address) const;
+	void SetPlanetOrbitEdit(const FString& Address, const FAPSPreviewPlanetOrbitEdit& Edit);
+	void ResetPlanetOrbitEdit(const FString& Address);
+	void ApplyPlanetOrbitEdits(FPlanetarySystemModel& Family, const FString& StarAddress, double StellarRadiusSolar) const;
+	FRotator ResolvePlanetOrbitRotation(const FString& PlanetAddress, const FRotator& AutomaticRotation) const;
+	static double MinimumPlanetOrbitAu(double StellarRadiusSolar, double PlanetRadiusKm);
+	static double MaximumPlanetOrbitAu(double StellarRadiusSolar);
 	void ClearPreviewSystemEditOverrides() { PreviewSystemEditOverrides.Reset(); }
 	uint32 GetPreviewSystemEditHash() const;
+
+	/** Display labels never participate in canonical identity or generation seeds. */
+	bool SetPreviewDisplayNameOverride(const FString& StableKey, const FString& DisplayName);
+	const FString* FindPreviewDisplayNameOverride(const FString& StableKey) const;
+	void ClearPreviewDisplayNameOverrides() { PreviewDisplayNameOverrides.Reset(); }
 
 	/** Resolves UI seed zero from stable world/body identity, never actor transform/name. */
 	static int32 ResolveCanonicalSurfaceSeed(
@@ -350,6 +396,8 @@ public:
 	 */
 	UPROPERTY()
 	TMap<FString, FAPSPreviewBodyEditOverride> PreviewBodyEditOverrides;
+	UPROPERTY()
+	TMap<FString, FAPSPreviewPlanetOrbitEdit> PreviewPlanetOrbitEdits;
 
 	/** Explicit stellar authoring is copied with the finalized world into gameplay. */
 	UPROPERTY()
@@ -357,6 +405,10 @@ public:
 
 	UPROPERTY()
 	TMap<FString, FAPSPreviewSystemEditOverride> PreviewSystemEditOverrides;
+
+	/** Copied with the accepted world; disposable actors only display these names. */
+	UPROPERTY()
+	TMap<FString, FString> PreviewDisplayNameOverrides;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Star Cluster")
 	int StarsAmount;
@@ -387,6 +439,7 @@ public:
 	FGeneratedWorldData SaveWorldData() const
 	{
 		FGeneratedWorldData WorldData;
+		WorldData.PreviewDisplayNameOverrides = PreviewDisplayNameOverrides;
 		WorldData.bGenerateFullScaledWorld = bGenerateFullScaledWorld;
 		WorldData.bGenerateHomeSystem = bGenerateHomeSystem;
 		WorldData.bStartWithHomePlanet = bStartWithHomePlanet;

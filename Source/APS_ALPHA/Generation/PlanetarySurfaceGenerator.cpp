@@ -1,4 +1,5 @@
 #include "PlanetarySurfaceGenerator.h"
+#include "APSAtmosphereGeneration.h"
 #include "APS_ALPHA/Actors/Astro/Moon.h"
 #include "APS_ALPHA/Actors/Astro/Planet.h"
 #include "APS_ALPHA/Core/Enums/MoonType.h"
@@ -225,7 +226,7 @@ void APlanetarySurfaceGenerator::InitAtmoScape(UWorld* World, double PlanetaryRa
         // Установка параметров и свойств для объекта Atmosphere.
 		const double SafeRadiusKm = FMath::Max(PlanetaryRadiusKM, 1.0);
 		PlanetAtmosphere->PlanetRadius = FMath::Max(SafeRadiusKm - 1.0, 0.5); // Atm dead zone.
-        PlanetAtmosphere->bKeepRelativeScale = false;
+        PlanetAtmosphere->bKeepRelativeScale = true;
         PlanetAtmosphere->AtmosphereHeight = NewPlanetaryBody->AtmosphereHeight;
         PlanetAtmosphere->SetActorLocation(NewPlanetaryBody->GetActorLocation());
         PlanetAtmosphere->SetActorRotation(NewPlanetaryBody->GetActorRotation());
@@ -570,6 +571,7 @@ void APlanetarySurfaceGenerator::InitAtmoScape(UWorld* World, double PlanetaryRa
 		// AtmoScape otherwise keeps its constructor scale until the first tick. On a
 		// full-scale body that produces an invisible first frame (and can briefly use
 		// the old relative-radius coefficients). Apply the physical km->cm scale now.
+		APSAtmosphereGeneration::CommitAuthoredDimensions(*PlanetAtmosphere);
 		PlanetAtmosphere->UpdateScale();
 
 		// AtmoScape's separate absorption sphere uses a modulate material and is not

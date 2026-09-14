@@ -2,7 +2,6 @@
 
 #if WITH_DEV_AUTOMATION_TESTS && WITH_EDITOR
 #include "APS_ALPHA/Core/Rendering/APSStellarMaterialContract.h"
-#include "APS_ALPHA/Core/Rendering/APSStellarPointRasterRecipe.h"
 #include "MaterialDomain.h"
 #include "MaterialEditingLibrary.h"
 #include "Materials/MaterialExpressionCustom.h"
@@ -47,30 +46,13 @@ bool FAPSStableStellarPointMaterialTest::RunTest(const FString& Parameters)
 	if (!TestNotNull(TEXT("Point shader"), PointShader)
 		|| !TestNotNull(TEXT("Accepted appearance shader"), CoronaShader)) return false;
 
-	// Only point rasterization is shared with preview. Keep luminosity inputs,
-	// gameplay photometry and the entire accepted corona recipe unchanged.
+	// The late path adds occlusion, not a new photometry/halo recipe. This also
+	// guards the luminosity custom-data channel, suppression and selection inputs.
 	FString ExpectedAppearance = CoronaShader->Code;
 	ExpectedAppearance.ReplaceInline(TEXT("float4 pixelClip = GetScreenPosition(Parameters);"),
 		TEXT("float4 pixelClip = RasterClip;"));
-	if (!TestTrue(TEXT("Canonical point-raster rewrite succeeds"),
-		APSStellarPointRasterRecipe::EnableForAllPointProfiles(ExpectedAppearance))) return false;
-	TestTrue(TEXT("Accepted photometry preserved with shared circular point raster"),
+	TestTrue(TEXT("Accepted appearance preserved except native raster coordinates"),
 		PointShader->Code.EndsWith(ExpectedAppearance));
-	TestTrue(TEXT("Circular point support does not depend on gameplay profile"),
-		PointShader->Code.Contains(TEXT("float rasterProfile = 1.0 - shellMode;")));
-	TestFalse(TEXT("Preview does not bypass the spatial point filter"),
-		PointShader->Code.Contains(TEXT("if (gameplayProfile > 0.0")));
-	TestTrue(TEXT("Preview retains its original luminosity weighting"),
-		PointShader->Code.Contains(TEXT("clamp(InstanceLuminosityGain, 0.0, 1.2), gameplayProfile")));
-	const int32 PreservedTailStart = CoronaShader->Code.Find(TEXT("float seedGain"));
-	if (!TestTrue(TEXT("Photometry/corona boundary is present"), PreservedTailStart != INDEX_NONE)) return false;
-	TestTrue(TEXT("Photometry and physical corona code remain byte-identical"),
-		PointShader->Code.EndsWith(CoronaShader->Code.Mid(PreservedTailStart)));
-	FString UnexpectedRecipe = TEXT("float gameplayProfile = saturate(GameplayPointProfile) * (1.0 - shellMode);");
-	const FString OriginalUnexpectedRecipe = UnexpectedRecipe;
-	TestFalse(TEXT("Missing raster anchors reject an incomplete rewrite"),
-		APSStellarPointRasterRecipe::EnableForAllPointProfiles(UnexpectedRecipe));
-	TestEqual(TEXT("Rejected rewrite leaves its input unchanged"), UnexpectedRecipe, OriginalUnexpectedRecipe);
 	TestEqual(TEXT("Accepted input contract"), CoronaShader->Inputs.Num(), 17);
 	TestEqual(TEXT("Depth and native raster dependencies appended"), PointShader->Inputs.Num(), 19);
 	if (CoronaShader->Inputs.Num() != 17 || PointShader->Inputs.Num() != 19) return false;

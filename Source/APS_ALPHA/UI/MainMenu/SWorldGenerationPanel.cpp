@@ -41,6 +41,7 @@ CSV_DECLARE_CATEGORY_EXTERN(APSPreview);
 #include "SceneView.h"
 #include "Styling/AppStyle.h"
 #include "Widgets/Input/SButton.h"
+#include "Widgets/Input/SEditableTextBox.h"
 #include "Widgets/Input/SSlider.h"
 #include "Widgets/Input/SSpinBox.h"
 #include "Widgets/Layout/SBorder.h"
@@ -331,12 +332,16 @@ namespace APSGenerationUI
 	// fully transparent so no Slate wash/vignette changes the scene exposure or
 	// hides small galaxy/cluster instances in the middle of the screen.
 	const FLinearColor Background(0.0f, 0.0f, 0.0f, 0.0f);
-	const FLinearColor Panel(0.002f, 0.014f, 0.024f, 0.93f);
-	const FLinearColor Cyan(0.12f, 0.82f, 1.0f, 1.0f);
-	const FLinearColor CyanDim(0.035f, 0.23f, 0.32f, 1.0f);
-	const FLinearColor Amber(1.0f, 0.56f, 0.04f, 1.0f);
-	const FLinearColor White(0.92f, 0.97f, 1.0f, 1.0f);
-	const FLinearColor SecondaryText(0.58f, 0.72f, 0.78f, 1.0f);
+	FLinearColor SRGB(uint8 R, uint8 G, uint8 B, uint8 A = 255)
+	{
+		return FLinearColor::FromSRGBColor(FColor(R, G, B, A));
+	}
+	const FLinearColor Panel = SRGB(8, 32, 42, 238);
+	const FLinearColor Cyan = SRGB(67, 214, 236);
+	const FLinearColor CyanDim = SRGB(27, 83, 96, 176);
+	const FLinearColor Amber = SRGB(242, 181, 29);
+	const FLinearColor White = SRGB(234, 246, 248);
+	const FLinearColor SecondaryText = SRGB(145, 171, 178);
 	TWeakObjectPtr<UFont> DisplayFont;
 	TWeakObjectPtr<UFont> BodyFont;
 	const FSlateRoundedBoxBrush PanelBrush(Panel, 10.0f, CyanDim, 1.0f);
@@ -354,9 +359,12 @@ namespace APSGenerationUI
 			DisplayFont = LoadObject<UFont>(nullptr, TEXT("/Game/APS/APS_ALPHA/UI/Fonts/Orbitron_Bold_Font.Orbitron_Bold_Font"));
 			BodyFont = LoadObject<UFont>(nullptr, TEXT("/Game/APS/APS_ALPHA/UI/Fonts/Orbitron_Medium_Font.Orbitron_Medium_Font"));
 		}
-		if (UFont* FontObject = (Typeface == TEXT("Bold") ? DisplayFont.Get() : BodyFont.Get()))
+		if (Typeface == TEXT("Bold"))
 		{
-			return FSlateFontInfo(FontObject, Size, Typeface);
+			if (UFont* FontObject = DisplayFont.Get())
+			{
+				return FSlateFontInfo(FontObject, Size, Typeface);
+			}
 		}
 		return FCoreStyle::GetDefaultFontStyle(Typeface, Size);
 	}
@@ -1430,6 +1438,23 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 			+ SVerticalBox::Slot().AutoHeight()[EnumRow<EStarType>(LOCTEXT("StarType", "STAR SYSTEM TYPE"), VM, [VM](const UGeneratedWorld* W){ return VM.IsValid() ? VM->GetSelectedSystemStarType() : W->StarType; })]
 			+ SVerticalBox::Slot().AutoHeight()[EnumRow<EPlanetarySystemType>(LOCTEXT("SelectedFamilyType", "PLANET FAMILY TYPE"), VM, [VM](const UGeneratedWorld* W){ return VM.IsValid() ? VM->GetSelectedSystemPlanetaryType() : W->PlanetarySystemType; })]
 			+ SVerticalBox::Slot().AutoHeight()[EnumRow<EOrbitDistributionType>(LOCTEXT("Distribution", "ORBIT DISTRIBUTION"), VM, [VM](const UGeneratedWorld* W){ return VM.IsValid() ? VM->GetSelectedSystemOrbitDistribution() : W->OrbitDistributionType; })]
+			+ SVerticalBox::Slot().AutoHeight()[NumberRow<double>(LOCTEXT("OrbitInclination", "MAX ORBIT INCLINATION / DEG"), 0.0, 90.0, 1.0, VM, [VM](const UGeneratedWorld*){ return VM.IsValid() ? VM->GetSelectedSystemMaxOrbitInclination() : 8.0; }, [](UWorldGenerationViewModel* V, double X){ V->SetSelectedSystemMaxOrbitInclination(X); })]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 2.0f, 0.0f, 8.0f)
+			[SNew(STextBlock).Text_Lambda([VM]()
+			{
+				if (!VM.IsValid()) return FText::GetEmpty();
+				switch (VM->GetSelectedSystemOrbitDistribution())
+				{
+				case EOrbitDistributionType::Uniform: return LOCTEXT("OrbitsUniformHint", "UNIFORM: EVEN RADIAL SPACING.");
+				case EOrbitDistributionType::Gaussian: return LOCTEXT("OrbitsGaussianHint", "GAUSSIAN: DENSE MIDDLE, SPARSE INNER AND OUTER ORBITS.");
+				case EOrbitDistributionType::Chaotic: return LOCTEXT("OrbitsChaoticHint", "CHAOTIC: IRREGULAR GAPS WITHIN THE SAME SYSTEM SIZE.");
+				case EOrbitDistributionType::InnerOuter: return LOCTEXT("OrbitsBandsHint", "INNER / OUTER: TWO GROUPS WITH A CLEAR GAP.");
+				default: return LOCTEXT("OrbitsDenseHint", "DENSE: COMPACT INNER GROUP.");
+				}
+			}).AutoWrapText(true).Font(ReadableFont("Regular", 9)).ColorAndOpacity(SecondaryText)]
+			+ SVerticalBox::Slot().AutoHeight()
+			[SNew(STextBlock).Text(LOCTEXT("InclinationHint", "0 DEG = FLAT ECLIPTIC. HIGHER VALUES ALLOW TILTED PLANES; DISTANCES STAY UNCHANGED."))
+			.AutoWrapText(true).Font(ReadableFont("Regular", 9)).ColorAndOpacity(SecondaryText)]
 			+ SVerticalBox::Slot().AutoHeight()[NumberRow<int32>(LOCTEXT("TotalPlanets", "TOTAL PLANETS IN SYSTEM"), 0, 120, 1, VM, [VM](const UGeneratedWorld* W){ return VM.IsValid() ? VM->GetSelectedSystemPlanetCount() : W->PlanetsAmount; }, [](UWorldGenerationViewModel* V, int32 X){ V->SetSelectedSystemPlanetCount(X); })]
 		]
 		+ SVerticalBox::Slot().AutoHeight()
@@ -1472,7 +1497,12 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 	const TSharedRef<SWidget> PlanetControls = SNew(SScrollBox) + SScrollBox::Slot()
 	[
 		SNew(SVerticalBox)
-		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 12.0f)[SectionTitle(LOCTEXT("Planet", "SELECTED PLANET"))]
+		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 12.0f)
+		[
+			SNew(STextBlock).Font(Font("Bold", 13)).ColorAndOpacity(Cyan)
+			.Text_Lambda([VM]() { return VM.IsValid() && VM->IsSelectedPreviewBodyMoon()
+				? LOCTEXT("SelectedMoon", "SELECTED MOON") : LOCTEXT("Planet", "SELECTED PLANET"); })
+		]
 		+ SVerticalBox::Slot().AutoHeight()
 		[
 			ChoiceRow(LOCTEXT("SurfaceFamily", "SURFACE FAMILY"), VM,
@@ -1521,6 +1551,24 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 		+ SVerticalBox::Slot().AutoHeight()[NumberRow<double>(LOCTEXT("Radius", "PLANET RADIUS / KM"), 1.0, 200000.0, 100.0, VM, [](const UGeneratedWorld* W){ return W->PlanetRadius; }, [](UWorldGenerationViewModel* V, double X){ V->SetPlanetRadius(X); })]
 		+ SVerticalBox::Slot().AutoHeight()
 		[
+			SNew(SVerticalBox)
+			.Visibility_Lambda([VM](){ return VM.IsValid() && VM->CanEditSelectedPlanetOrbit() ? EVisibility::Visible : EVisibility::Collapsed; })
+			+ SVerticalBox::Slot().AutoHeight()[NumberRow<double>(LOCTEXT("PlanetOrbitAU", "ORBIT DISTANCE / AU"), 0.001, 50.0, 0.05, VM,
+				[VM](const UGeneratedWorld*){ return VM.IsValid() ? VM->GetSelectedPlanetOrbitDistanceAu() : 1.0; },
+				[](UWorldGenerationViewModel* V, double X){ V->SetSelectedPlanetOrbitDistanceAu(X); })]
+			+ SVerticalBox::Slot().AutoHeight()[NumberRow<double>(LOCTEXT("PlanetOrbitTilt", "ORBIT INCLINATION / DEG"), 0.0, 90.0, 1.0, VM,
+				[VM](const UGeneratedWorld*){ return VM.IsValid() ? VM->GetSelectedPlanetOrbitInclination() : 0.0; },
+				[](UWorldGenerationViewModel* V, double X){ V->SetSelectedPlanetOrbitInclination(X); })]
+			+ SVerticalBox::Slot().AutoHeight()
+			[SNew(SButton).ButtonStyle(&SecondaryButton).Text(LOCTEXT("PlanetOrbitAuto", "RESTORE AUTO ORBIT"))
+				.IsEnabled_Lambda([VM](){ return VM.IsValid() && VM->HasSelectedPlanetOrbitEdit(); })
+				.OnClicked_Lambda([VM](){ if (VM.IsValid()) VM->ResetSelectedPlanetOrbit(); return FReply::Handled(); })]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 4.0f, 0.0f, 8.0f)
+			[SNew(STextBlock).AutoWrapText(true).Font(ReadableFont("Regular", 9)).ColorAndOpacity(SecondaryText)
+				.Text(LOCTEXT("PlanetOrbitManualHint", "MANUAL VALUES SURVIVE DISTRIBUTION CHANGES. 0 DEG = FLAT. DISTANCE IS FROM THE STAR CENTRE; SURFACE CLEARANCE IS ALWAYS KEPT."))]
+		]
+		+ SVerticalBox::Slot().AutoHeight()
+		[
 			SNew(SBox)
 			.Visibility_Lambda([VM]()
 			{
@@ -1534,7 +1582,18 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 					[](UWorldGenerationViewModel* V, double X){ V->SetSelectedMoonOrbitRadiusKm(X); })
 			]
 		]
-		+ SVerticalBox::Slot().AutoHeight()[NumberRow<int32>(LOCTEXT("PlanetMoons", "MOONS AMOUNT"), 0, 10, 1, VM, [](const UGeneratedWorld* W){ return FMath::Clamp(W->MoonsAmount, 0, 10); }, [](UWorldGenerationViewModel* V, int32 X){ V->SetMoonsAmount(X); })]
+		+ SVerticalBox::Slot().AutoHeight()
+		[
+			SNew(SBox)
+			.Visibility_Lambda([VM]()
+			{
+				return VM.IsValid() && !VM->IsSelectedPreviewBodyMoon()
+					? EVisibility::Visible : EVisibility::Collapsed;
+			})
+			[NumberRow<int32>(LOCTEXT("PlanetMoons", "MOONS AMOUNT"), 0, 10, 1, VM,
+				[](const UGeneratedWorld* W){ return FMath::Clamp(W->MoonsAmount, 0, 10); },
+				[](UWorldGenerationViewModel* V, int32 X){ V->SetMoonsAmount(X); })]
+		]
 		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 12.0f, 0.0f, 10.0f)[SectionTitle(LOCTEXT("PlanetSurface", "PLANET SURFACE"))]
 		+ SVerticalBox::Slot().AutoHeight()
 		[
@@ -1614,8 +1673,60 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 			[
 				SNew(SButton).ButtonStyle(&SecondaryButton).ContentPadding(FMargin(9.0f, 4.0f))
 				.OnClicked(this, &SWorldGenerationPanel::FocusPreviewUp)
-				.IsEnabled_Lambda([VM]() { return VM.IsValid() && VM->GetPreviewFocus() != EAstroPreviewFocus::Overview; })
+				.IsEnabled_Lambda([VM]() { return VM.IsValid() && VM->CanFocusPreviewParent(); })
 				[SNew(STextBlock).Text(LOCTEXT("Up", "^  UP")).Font(Font("Bold", 8)).ColorAndOpacity(White)]
+			]
+		]
+		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 11.0f, 0.0f, 0.0f)
+		[
+			SNew(SBox)
+			.Visibility_Lambda([VM]()
+			{
+				return VM.IsValid() && VM->CanRenameSelectedPreviewBody()
+					? EVisibility::Visible : EVisibility::Collapsed;
+			})
+			[
+				SNew(SVerticalBox)
+				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 5.0f)
+				[SectionTitle(LOCTEXT("BodyDisplayName", "BODY NAME"))]
+				+ SVerticalBox::Slot().AutoHeight()
+				[
+					SAssignNew(BodyNameTextBox, SEditableTextBox)
+					.Font(ReadableFont("Regular", 11))
+					.Text_Lambda([VM]()
+					{
+						return VM.IsValid() ? VM->GetSelectedPreviewBodyName() : FText::GetEmpty();
+					})
+					.HintText(LOCTEXT("BodyDisplayNameHint", "Enter a name"))
+					.ToolTipText(LOCTEXT("BodyDisplayNameHelp", "1–128 characters. Enter or leave the field to save. Renaming does not regenerate the body."))
+					.OnVerifyTextChanged_Lambda([](const FText& Text, FText& Error)
+					{
+						const FString Name = Text.ToString().TrimStartAndEnd();
+						if (Name.Equals(TEXT("None"), ESearchCase::IgnoreCase))
+						{
+							Error = LOCTEXT("BodyDisplayNameReserved", "None is reserved for an unnamed body. Choose another name.");
+							return false;
+						}
+						bool bValid = !Name.IsEmpty() && Name.Len() <= 128;
+						for (const TCHAR Character : Name)
+							bValid = bValid && !FChar::IsControl(Character);
+						Error = bValid ? FText::GetEmpty()
+							: LOCTEXT("BodyDisplayNameInvalid", "Use 1–128 characters without line breaks or control characters.");
+						return bValid;
+					})
+					.OnTextChanged_Lambda([this, VM](const FText&)
+					{
+						if (PendingRenameBodyKey.IsEmpty() && VM.IsValid()
+							&& BodyNameTextBox.IsValid() && BodyNameTextBox->HasKeyboardFocus())
+							PendingRenameBodyKey = VM->GetPreviewObjectStableKey(VM->GetSelectedPreviewBody());
+					})
+					.OnTextCommitted_Lambda([this, VM](const FText& Text, ETextCommit::Type CommitType)
+					{
+						if (VM.IsValid() && CommitType != ETextCommit::OnCleared)
+							VM->SetSelectedPreviewBodyName(Text, PendingRenameBodyKey);
+						PendingRenameBodyKey.Reset();
+					})
+				]
 			]
 		]
 		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 11.0f, 0.0f, 0.0f)[SectionTitle(LOCTEXT("CurrentScope", "CURRENT SCOPE"))]
@@ -1727,11 +1838,11 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 			+ SVerticalBox::Slot().FillHeight(1.0f).Padding(0.0f, 14.0f)
 			[
 				SNew(SHorizontalBox)
-				+ SHorizontalBox::Slot().FillWidth(0.25f).Padding(0.0f, 0.0f, 10.0f, 0.0f)
+				+ SHorizontalBox::Slot().FillWidth(0.23f).Padding(0.0f, 0.0f, 10.0f, 0.0f)
 				[
 					ChamferPanel(ControlsSwitcher)
 				]
-				+ SHorizontalBox::Slot().FillWidth(0.50f).Padding(6.0f, 0.0f)
+				+ SHorizontalBox::Slot().FillWidth(0.54f).Padding(6.0f, 0.0f)
 				[
 					SNew(SVerticalBox)
 					+ SVerticalBox::Slot().FillHeight(1.0f)
@@ -1766,7 +1877,7 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 					[SNew(STextBlock).Text(LOCTEXT("PreviewHintReadable", "RMB drag to rotate   /   Mouse wheel to zoom   /   Double-click to focus"))
 					.Font(ReadableFont("Regular", 9)).ColorAndOpacity(SecondaryText)]
 				]
-				+ SHorizontalBox::Slot().FillWidth(0.25f).Padding(10.0f, 0.0f, 0.0f, 0.0f)
+				+ SHorizontalBox::Slot().FillWidth(0.23f).Padding(10.0f, 0.0f, 0.0f, 0.0f)
 				[
 					ChamferPanel(ContextPanel)
 				]
@@ -1863,39 +1974,24 @@ FReply SWorldGenerationPanel::GoBack()
 
 FReply SWorldGenerationPanel::FocusPreview(uint8 FocusValue)
 {
+	PendingRenameBodyKey.Reset();
 	if (UWorldGenerationViewModel* VM = ViewModel.Get()) VM->SetPreviewFocus(static_cast<EAstroPreviewFocus>(FocusValue));
 	return FReply::Handled();
 }
 
 FReply SWorldGenerationPanel::FocusPreviewUp()
 {
+	PendingRenameBodyKey.Reset();
 	if (UWorldGenerationViewModel* VM = ViewModel.Get())
 	{
-		EAstroPreviewFocus ParentFocus = EAstroPreviewFocus::Overview;
-		switch (VM->GetPreviewFocus())
-		{
-		case EAstroPreviewFocus::HomePlanet:
-		case EAstroPreviewFocus::HomeStar:
-			ParentFocus = EAstroPreviewFocus::HomeSystem;
-			break;
-		case EAstroPreviewFocus::HomeSystem:
-			ParentFocus = EAstroPreviewFocus::StarCluster;
-			break;
-		case EAstroPreviewFocus::StarCluster:
-			ParentFocus = EAstroPreviewFocus::Galaxy;
-			break;
-		case EAstroPreviewFocus::Galaxy:
-		default:
-			ParentFocus = EAstroPreviewFocus::Overview;
-			break;
-		}
-		VM->SetPreviewFocus(ParentFocus);
+		VM->FocusPreviewParent();
 	}
 	return FReply::Handled();
 }
 
 FReply SWorldGenerationPanel::FocusPreviewBody(TWeakObjectPtr<AActor> BodyActor)
 {
+	PendingRenameBodyKey.Reset();
 	if (UWorldGenerationViewModel* VM = ViewModel.Get())
 	{
 		VM->FocusPreviewBody(BodyActor);
@@ -1906,6 +2002,7 @@ FReply SWorldGenerationPanel::FocusPreviewBody(TWeakObjectPtr<AActor> BodyActor)
 FReply SWorldGenerationPanel::FocusPreviewHierarchyEntry(
 	TWeakObjectPtr<AActor> BodyActor, int32 ClusterSystemInstanceIndex, int32 PreviewFocusValue)
 {
+	PendingRenameBodyKey.Reset();
 	if (UWorldGenerationViewModel* VM = ViewModel.Get())
 	{
 		if (PreviewFocusValue != INDEX_NONE)
@@ -1933,8 +2030,33 @@ EActiveTimerReturnType SWorldGenerationPanel::RefreshBodyHierarchy(double Curren
 	}
 
 	TArray<FAPSPreviewBodyEntry> Entries;
-	VM->GetPreviewBodyEntries(Entries);
+	VM->GetPreviewHierarchyEntries(Entries);
+	if (LastHierarchySelection.Get() != VM->GetSelectedPreviewBody())
+	{
+		// The user may already be typing on the new body before this timer runs.
+		// Discard only an edit for a different identity, not that body's new edit.
+		if (PendingRenameBodyKey != VM->GetPreviewObjectStableKey(VM->GetSelectedPreviewBody()))
+			PendingRenameBodyKey.Reset();
+		LastHierarchySelection = VM->GetSelectedPreviewBody();
+		const int32 SelectedIndex = Entries.IndexOfByPredicate([this](const FAPSPreviewBodyEntry& Entry)
+		{
+			return Entry.Actor.IsValid() && Entry.Actor == LastHierarchySelection;
+		});
+		if (SelectedIndex != INDEX_NONE)
+		{
+			// Selecting through the scene reveals the path, without expanding siblings.
+			int32 AncestorDepth = Entries[SelectedIndex].Depth;
+			for (int32 Index = SelectedIndex - 1; Index >= 0; --Index)
+			{
+				if (Entries[Index].Depth >= AncestorDepth) continue;
+				AncestorDepth = Entries[Index].Depth;
+				if (CollapsedHierarchyEntries.Remove(GetHierarchyEntryKey(Entries[Index])) > 0)
+					++HierarchyExpansionRevision;
+			}
+		}
+	}
 	uint32 Signature = HashCombineFast(GetTypeHash(VM->PreviewRevision), GetTypeHash(Entries.Num()));
+	Signature = HashCombineFast(Signature, GetTypeHash(HierarchyExpansionRevision));
 	for (const FAPSPreviewBodyEntry& Entry : Entries)
 	{
 		Signature = HashCombineFast(Signature, GetTypeHash(Entry.Actor.Get()));
@@ -1949,6 +2071,31 @@ EActiveTimerReturnType SWorldGenerationPanel::RefreshBodyHierarchy(double Curren
 		RebuildBodyHierarchy(Entries, Signature);
 	}
 	return EActiveTimerReturnType::Continue;
+}
+
+FString SWorldGenerationPanel::GetHierarchyEntryKey(const FAPSPreviewBodyEntry& Entry) const
+{
+	if (Entry.Actor.IsValid())
+	{
+		if (const UWorldGenerationViewModel* VM = ViewModel.Get())
+		{
+			const FString StableKey = VM->GetPreviewObjectStableKey(Entry.Actor.Get());
+			if (!StableKey.IsEmpty()) return StableKey;
+		}
+		return Entry.Actor->GetPathName();
+	}
+	if (Entry.ClusterSystemInstanceIndex != INDEX_NONE)
+		return FString::Printf(TEXT("cluster-record/%d"), Entry.ClusterSystemInstanceIndex);
+	return FString::Printf(TEXT("scope/%d"), Entry.PreviewFocusValue);
+}
+
+FReply SWorldGenerationPanel::ToggleHierarchyChildren(FString EntryKey)
+{
+	if (CollapsedHierarchyEntries.Contains(EntryKey)) CollapsedHierarchyEntries.Remove(EntryKey);
+	else CollapsedHierarchyEntries.Add(MoveTemp(EntryKey));
+	++HierarchyExpansionRevision;
+	// The timer rebuilds after this button's event has finished, not during it.
+	return FReply::Handled();
 }
 
 void SWorldGenerationPanel::RebuildBodyHierarchy(const TArray<FAPSPreviewBodyEntry>& Entries, uint32 Signature)
@@ -1971,9 +2118,17 @@ void SWorldGenerationPanel::RebuildBodyHierarchy(const TArray<FAPSPreviewBodyEnt
 		return;
 	}
 
+	int32 CollapsedParentDepth = MAX_int32;
 	for (int32 EntryIndex = 0; EntryIndex < Entries.Num(); ++EntryIndex)
 	{
 		const FAPSPreviewBodyEntry& Entry = Entries[EntryIndex];
+		if (CollapsedParentDepth != MAX_int32)
+		{
+			if (Entry.Depth > CollapsedParentDepth) continue;
+			CollapsedParentDepth = MAX_int32;
+		}
+		const FString EntryKey = GetHierarchyEntryKey(Entry);
+		const bool bCollapsed = CollapsedHierarchyEntries.Contains(EntryKey);
 		const TWeakObjectPtr<AActor> BodyActor = Entry.Actor;
 		const int32 ClusterSystemInstanceIndex = Entry.ClusterSystemInstanceIndex;
 		const int32 PreviewFocusValue = Entry.PreviewFocusValue;
@@ -1992,6 +2147,7 @@ void SWorldGenerationPanel::RebuildBodyHierarchy(const TArray<FAPSPreviewBodyEnt
 				++ImmediateChildCount;
 			}
 		}
+		if (bCollapsed && ImmediateChildCount > 0) CollapsedParentDepth = Entry.Depth;
 		const EHierarchyGlyph Glyph = [&BodyActor, PreviewFocusValue]()
 		{
 			if (BodyActor.IsValid())
@@ -2020,6 +2176,21 @@ void SWorldGenerationPanel::RebuildBodyHierarchy(const TArray<FAPSPreviewBodyEnt
 		};
 		BodyHierarchyBox->AddSlot().AutoHeight().Padding(0.0f, 2.0f)
 		[
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.0f, 0.0f, 3.0f, 0.0f)
+			[
+				SNew(SBox).WidthOverride(23.0f)
+				[
+					SNew(SButton).ButtonStyle(&SecondaryButton).ContentPadding(FMargin(3.0f, 5.0f))
+					.Visibility(ImmediateChildCount > 0 ? EVisibility::Visible : EVisibility::Hidden)
+					.OnClicked(this, &SWorldGenerationPanel::ToggleHierarchyChildren, EntryKey)
+					.ToolTipText(bCollapsed ? LOCTEXT("ExpandChildren", "Show children") : LOCTEXT("CollapseChildren", "Hide children"))
+					[SNew(STextBlock).Text(FText::FromString(bCollapsed ? TEXT("+") : TEXT("-")))
+					.Font(Font("Bold", 10)).ColorAndOpacity(Cyan)]
+				]
+			]
+			+ SHorizontalBox::Slot().FillWidth(1.0f)
+			[
 			SNew(SButton)
 			.ButtonStyle(&HierarchyButton)
 			.ContentPadding(FMargin(7.0f, 5.0f))
@@ -2098,6 +2269,7 @@ void SWorldGenerationPanel::RebuildBodyHierarchy(const TArray<FAPSPreviewBodyEnt
 					})
 					[SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(Amber)]
 				]
+			]
 			]
 		];
 	}
