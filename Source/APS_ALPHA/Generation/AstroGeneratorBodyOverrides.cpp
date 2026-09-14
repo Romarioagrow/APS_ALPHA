@@ -1,4 +1,5 @@
 #include "AstroGenerator.h"
+#include "APSAtmosphereGeneration.h"
 
 #include "PlanetarySurfaceGenerator.h"
 #include "PlanetaryProceduralGenerator.h"
@@ -397,13 +398,14 @@ namespace
 			&& IsValid(Body.PlanetaryEnvironmentGenerator->PlanetAtmosphere))
 		{
 			AAtmoScape* Atmosphere = Body.PlanetaryEnvironmentGenerator->PlanetAtmosphere;
-			Atmosphere->bKeepRelativeScale = false;
+			Atmosphere->bKeepRelativeScale = true;
 			Atmosphere->PlanetRadius = FMath::Max(BodyOverride.RadiusKm - 1.0, 0.5);
 			Atmosphere->AtmosphereHeight = BodyOverride.AtmosphereHeight;
 			Atmosphere->AtmosphereOpacity = BodyOverride.AtmosphereOpacity;
 			Atmosphere->MultiScatering = FMath::Max(0.01, BodyOverride.AtmosphereMultiScattering);
 			Atmosphere->RayleighHeight = BodyOverride.AtmosphereRayleighScattering;
 			Atmosphere->RayleighScattering = BodyOverride.AtmosphereColor;
+			APSAtmosphereGeneration::CommitAuthoredDimensions(*Atmosphere);
 			Atmosphere->UpdateScale();
 		}
 	}

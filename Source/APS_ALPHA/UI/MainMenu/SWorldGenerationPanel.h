@@ -6,6 +6,7 @@
 class UWorldGenerationViewModel;
 class SAPSGenerationRangeSlider;
 class SVerticalBox;
+class SEditableTextBox;
 struct FAPSPreviewBodyEntry;
 
 enum class EAPSGenerationSurfaceControl : uint8
@@ -49,6 +50,8 @@ private:
 		int32 ClusterSystemInstanceIndex, int32 PreviewFocusValue);
 	EActiveTimerReturnType RefreshBodyHierarchy(double CurrentTime, float DeltaTime);
 	void RebuildBodyHierarchy(const TArray<FAPSPreviewBodyEntry>& Entries, uint32 Signature);
+	FString GetHierarchyEntryKey(const FAPSPreviewBodyEntry& Entry) const;
+	FReply ToggleHierarchyChildren(FString EntryKey);
 
 	TWeakObjectPtr<UWorldGenerationViewModel> ViewModel;
 	FSimpleDelegate OnBack;
@@ -56,4 +59,9 @@ private:
 	TSharedPtr<SVerticalBox> BodyHierarchyBox;
 	TMap<EAPSGenerationSurfaceControl, TSharedPtr<SAPSGenerationRangeSlider>> SurfaceControlSliders;
 	uint32 BodyHierarchySignature{0};
+	TSet<FString> CollapsedHierarchyEntries;
+	uint32 HierarchyExpansionRevision{0};
+	FString PendingRenameBodyKey;
+	TSharedPtr<SEditableTextBox> BodyNameTextBox;
+	TWeakObjectPtr<AActor> LastHierarchySelection;
 };

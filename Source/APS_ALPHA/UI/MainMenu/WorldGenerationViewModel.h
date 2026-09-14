@@ -67,6 +67,8 @@ public:
 	EStarType GetSelectedSystemStarType() const;
 	EPlanetarySystemType GetSelectedSystemPlanetaryType() const;
 	EOrbitDistributionType GetSelectedSystemOrbitDistribution() const;
+	double GetSelectedSystemMaxOrbitInclination() const;
+	void SetSelectedSystemMaxOrbitInclination(double Degrees);
 	int32 GetSelectedSystemPlanetCount() const;
 	void SetSelectedSystemPlanetCount(double Value);
 	int32 GetHomeStartPlanetCount() const;
@@ -77,6 +79,13 @@ public:
 
 	/** Edit the selected moon's center-to-parent orbit radius in kilometres. */
 	void SetSelectedMoonOrbitRadiusKm(double Value);
+	bool CanEditSelectedPlanetOrbit() const;
+	bool HasSelectedPlanetOrbitEdit() const;
+	double GetSelectedPlanetOrbitDistanceAu() const;
+	double GetSelectedPlanetOrbitInclination() const;
+	void SetSelectedPlanetOrbitDistanceAu(double Value);
+	void SetSelectedPlanetOrbitInclination(double Degrees);
+	void ResetSelectedPlanetOrbit();
 
 	void SetPlanetSurfaceSeed(int32 Value);
 	void SetSurfaceFeatureScale(double Value);
@@ -94,6 +103,12 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "World Generation")
 	void RequestPreview();
+
+	/** Presents the fixed-cost decorative HISM composition used only behind menu pages. */
+	bool PresentMainMenuHeroGalaxy();
+
+	/** Releases the decorative composition before the ordinary preview generator runs. */
+	void DismissMainMenuHeroGalaxy();
 
 	/** Updates only the selected planet shell; avoids regenerating cluster/system/camera for appearance controls. */
 	void RefreshPlanetAppearancePreview(bool bRegenerateSurface);
@@ -117,12 +132,22 @@ public:
 	/** Same scene hit test as mouse focus, with viewport-pixel coordinates. */
 	bool FocusPreviewAtScreenPosition(const FVector2D& ScreenPosition);
 	void GetPreviewBodyEntries(TArray<FAPSPreviewBodyEntry>& OutEntries) const;
+	/** Panel-only parent rows; annotation depths/colours retain their original contract. */
+	void GetPreviewHierarchyEntries(TArray<FAPSPreviewBodyEntry>& OutEntries) const;
 	/** Returns a mesh-only PLANET presentation centre without changing actor data. */
 	bool GetPreviewPresentationLocation(const AActor* Actor, FVector& OutLocation) const;
 	bool FocusPreviewBody(const TWeakObjectPtr<AActor>& BodyActor);
 	bool FocusPreviewClusterSystem(int32 InstanceIndex);
 	AActor* GetSelectedPreviewBody() const { return SelectedPreviewBody.Get(); }
 	bool IsSelectedPreviewBodyMoon() const;
+	/** Follow the selected object's parent, retaining the active system context. */
+	bool CanFocusPreviewParent() const;
+	bool FocusPreviewParent();
+	FString GetPreviewObjectStableKey(const AActor* Actor) const;
+	FText GetSelectedPreviewBodyName() const;
+	bool CanRenameSelectedPreviewBody() const;
+	/** Expected key prevents a delayed text commit from renaming a new selection. */
+	bool SetSelectedPreviewBodyName(const FText& Name, const FString& ExpectedStableKey);
 	FText GetPreviewScopeSummary() const;
 	FText GetPreviewHierarchyTitle() const;
 	bool GetPreviewFocusSphere(FVector& OutCenter, double& OutRadius) const;

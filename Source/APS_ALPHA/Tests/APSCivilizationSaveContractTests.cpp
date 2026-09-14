@@ -3,6 +3,9 @@
 #include "Misc/AutomationTest.h"
 
 #include "APS_ALPHA/Core/Model/SpawnParameters.h"
+#include "APS_ALPHA/Core/Structs/PlanetarySystemGenerationModel.h"
+#include "APS_ALPHA/Core/Model/GeneratedWorld.h"
+#include "APS_ALPHA/Core/Saves/APSWorldSaveSnapshot.h"
 #include "APS_ALPHA/Core/Saves/GameSave.h"
 #include "APS_ALPHA/Core/Saves/SavedActorData.h"
 #include "APS_ALPHA/Gameplay/Civilizations/APSCivilizationStarterActors.h"
@@ -89,6 +92,69 @@ bool FAPSCivilizationSaveArchiveContractTest::RunTest(const FString& Parameters)
 			RestoredSave->ActorSaveDataArray[0].StableEntityId,
 			Manifest.Entities[2].StableId);
 	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FAPSGeneratedWorldSaveSnapshotContractTest,
+	"APS.World.Save.GeneratedModelAndPlayerRoundTrip",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FAPSGeneratedWorldSaveSnapshotContractTest::RunTest(const FString& Parameters)
+{
+	UGeneratedWorld* SourceModel = NewObject<UGeneratedWorld>();
+	SourceModel->GenerationSeed = 424242;
+	SourceModel->PlanetarySystemType = EPlanetarySystemType::GasGiantsSystem;
+	SourceModel->PlanetsAmount = 7;
+	SourceModel->SetPreviewDisplayNameOverride(TEXT("SYS0/S0/P2"), TEXT("Aurelia"));
+	SourceModel->CanonicalStellarDataset.BuildSerial = 19;
+	SourceModel->CanonicalStellarDataset.WorldGenerationSeed = 424242;
+	FAPSCanonicalClusterSystemRecord& Record =
+		SourceModel->CanonicalStellarDataset.ClusterRecords.AddDefaulted_GetRef();
+	Record.StableId = FGuid(0x12345678, 0x90abcdef, 0x10203040, 0x50607080);
+	Record.CanonicalIndex = 0;
+
+	UGameSave* SourceSave = NewObject<UGameSave>();
+	SourceSave->SaveFormatVersion = APSWorldSaveSnapshot::LatestSaveFormatVersion;
+	SourceSave->SaveSlotName = TEXT("APS_WORLD_SNAPSHOT_MEMORY_ONLY");
+	SourceSave->GeneratedWorldsDataArray.Add(SourceModel->SaveWorldData());
+	TestTrue(TEXT("generated world snapshot captures"),
+		APSWorldSaveSnapshot::Capture(SourceModel, SourceSave->GeneratedWorldModelData));
+	SourceSave->bHasPlayerPawnState = true;
+	SourceSave->PlayerPawnClass = TEXT("/Script/Engine.DefaultPawn");
+	SourceSave->PlayerPawnTransform = FTransform(
+		FRotator(5.0, 75.0, 0.0), FVector(1200.0, -3400.0, 5600.0));
+	SourceSave->PlayerControlRotation = FRotator(-12.0, 80.0, 0.0);
+
+	TArray<uint8> Bytes;
+	TestTrue(TEXT("save archive writes snapshot"),
+		UGameplayStatics::SaveGameToMemory(SourceSave, Bytes));
+	UGameSave* RestoredSave = Cast<UGameSave>(UGameplayStatics::LoadGameFromMemory(Bytes));
+	if (!TestNotNull(TEXT("save archive restores snapshot"), RestoredSave))
+	{
+		return false;
+	}
+
+	UGeneratedWorld* RestoredModel = APSWorldSaveSnapshot::Restore(
+		RestoredSave, GetTransientPackage(), RestoredSave->SaveSlotName);
+	if (!TestNotNull(TEXT("generated world model restores"), RestoredModel))
+	{
+		return false;
+	}
+	TestEqual(TEXT("generation seed survives"), RestoredModel->GenerationSeed, 424242);
+	TestEqual(TEXT("system type survives"), RestoredModel->PlanetarySystemType,
+		EPlanetarySystemType::GasGiantsSystem);
+	TestEqual(TEXT("planet count survives"), RestoredModel->PlanetsAmount, 7);
+	TestEqual(TEXT("canonical record survives"),
+		RestoredModel->CanonicalStellarDataset.ClusterRecords.Num(), 1);
+	const FString* RestoredName =
+		RestoredModel->FindPreviewDisplayNameOverride(TEXT("SYS0/S0/P2"));
+	TestTrue(TEXT("authored body name survives"),
+		RestoredName && *RestoredName == TEXT("Aurelia"));
+	TestTrue(TEXT("player transform survives save archive"),
+		RestoredSave->PlayerPawnTransform.Equals(SourceSave->PlayerPawnTransform, 0.01));
+	TestTrue(TEXT("control rotation survives save archive"),
+		RestoredSave->PlayerControlRotation.Equals(SourceSave->PlayerControlRotation, 0.01));
 	return true;
 }
 

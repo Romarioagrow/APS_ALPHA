@@ -402,6 +402,31 @@ EOrbitDistributionType UWorldGenerationViewModel::GetSelectedSystemOrbitDistribu
 	return GeneratedWorld ? GeneratedWorld->OrbitDistributionType : EOrbitDistributionType::Uniform;
 }
 
+double UWorldGenerationViewModel::GetSelectedSystemMaxOrbitInclination() const
+{
+	FString Address;
+	FStarSystemModel Current;
+	return GeneratedWorld && PreviewGenerator.IsValid()
+		&& PreviewGenerator->GetPreviewSystemEditContext(Address, Current)
+		? GeneratedWorld->GetSystemMaxOrbitInclinationDegrees(Address) : 8.0;
+}
+
+void UWorldGenerationViewModel::SetSelectedSystemMaxOrbitInclination(const double Degrees)
+{
+	FString Address;
+	FStarSystemModel Current;
+	if (!FMath::IsFinite(Degrees) || !GeneratedWorld || !PreviewGenerator.IsValid()
+		|| !PreviewGenerator->GetPreviewSystemEditContext(Address, Current)) return;
+	const double Clamped = FMath::Clamp(Degrees, 0.0, 90.0);
+	if (FMath::IsNearlyEqual(GetSelectedSystemMaxOrbitInclination(), Clamped, 1.0e-6)) return;
+	FAPSPreviewSystemEditOverride Edit;
+	if (const auto* Existing = GeneratedWorld->FindPreviewSystemEditOverride(Address)) Edit = *Existing;
+	Edit.bOverrideOrbitInclination = true;
+	Edit.MaxOrbitInclinationDegrees = Clamped;
+	GeneratedWorld->SetPreviewSystemEditOverride(Address, Edit);
+	RequestPreview();
+}
+
 int32 UWorldGenerationViewModel::GetSelectedSystemPlanetCount() const
 {
 	FString Address;
@@ -507,6 +532,80 @@ void UWorldGenerationViewModel::SetPlanetRadius(double Value)
 			RequestPreview();
 		}
 	}
+}
+
+bool UWorldGenerationViewModel::CanEditSelectedPlanetOrbit() const
+{
+	const APlanet* Planet = Cast<APlanet>(SelectedPreviewBody.Get());
+	return GeneratedWorld && PreviewGenerator.IsValid() && IsValid(Planet) && IsValid(Planet->ParentStar)
+		&& !PreviewGenerator->GetPreviewBodyStableKey(Planet).IsEmpty();
+}
+
+bool UWorldGenerationViewModel::HasSelectedPlanetOrbitEdit() const
+{
+	return CanEditSelectedPlanetOrbit() && GeneratedWorld->FindPlanetOrbitEdit(
+		PreviewGenerator->GetPreviewBodyStableKey(Cast<APlanet>(SelectedPreviewBody.Get()))) != nullptr;
+}
+
+double UWorldGenerationViewModel::GetSelectedPlanetOrbitDistanceAu() const
+{
+	if (!CanEditSelectedPlanetOrbit()) return 1.0;
+	const APlanet* Planet = Cast<APlanet>(SelectedPreviewBody.Get());
+	if (!bPreviewReady)
+		if (const auto* Edit = GeneratedWorld->FindPlanetOrbitEdit(PreviewGenerator->GetPreviewBodyStableKey(Planet));
+			Edit && Edit->bOverrideDistance) return Edit->DistanceAu;
+	return Planet->PlanetData.PlanetModel ? Planet->PlanetData.PlanetModel->OrbitDistance : Planet->PlanetData.OrbitRadius;
+}
+
+double UWorldGenerationViewModel::GetSelectedPlanetOrbitInclination() const
+{
+	if (!CanEditSelectedPlanetOrbit()) return 0.0;
+	const APlanet* Planet = Cast<APlanet>(SelectedPreviewBody.Get());
+	if (const auto* Edit = GeneratedWorld->FindPlanetOrbitEdit(PreviewGenerator->GetPreviewBodyStableKey(Planet));
+		Edit && Edit->bOverrideInclination) return Edit->InclinationDegrees;
+	const AActor* Orbit = Planet->GetAttachParentActor();
+	if (!IsValid(Orbit)) return 0.0;
+	const AActor* Family = Orbit->GetAttachParentActor();
+	const FVector Normal = IsValid(Family) ? Family->GetActorQuat().UnrotateVector(Orbit->GetActorUpVector()) : Orbit->GetActorUpVector();
+	return FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(Normal.Z, -1.0, 1.0)));
+}
+
+void UWorldGenerationViewModel::SetSelectedPlanetOrbitDistanceAu(const double Value)
+{
+	if (!CanEditSelectedPlanetOrbit() || !FMath::IsFinite(Value)) return;
+	const APlanet* Planet = Cast<APlanet>(SelectedPreviewBody.Get());
+	const FString Address = PreviewGenerator->GetPreviewBodyStableKey(Planet);
+	const double StarRadiusSolar = Planet->ParentStar->StarRadiusKM / 695700.0;
+	const double Minimum = UGeneratedWorld::MinimumPlanetOrbitAu(StarRadiusSolar, Planet->RadiusKM);
+	const double Clamped = FMath::Clamp(Value, Minimum, FMath::Max(Minimum, UGeneratedWorld::MaximumPlanetOrbitAu(StarRadiusSolar)));
+	if (FMath::IsNearlyEqual(Clamped, GetSelectedPlanetOrbitDistanceAu(), 1.e-9)) return;
+	FAPSPreviewPlanetOrbitEdit Edit;
+	if (const auto* Existing = GeneratedWorld->FindPlanetOrbitEdit(Address)) Edit = *Existing;
+	Edit.bOverrideDistance = true;
+	Edit.DistanceAu = Clamped;
+	GeneratedWorld->SetPlanetOrbitEdit(Address, Edit);
+	RequestPreview();
+}
+
+void UWorldGenerationViewModel::SetSelectedPlanetOrbitInclination(const double Degrees)
+{
+	if (!CanEditSelectedPlanetOrbit() || !FMath::IsFinite(Degrees)) return;
+	const double Clamped = FMath::Clamp(Degrees, 0.0, 90.0);
+	if (FMath::IsNearlyEqual(Clamped, GetSelectedPlanetOrbitInclination(), 1.e-9)) return;
+	const FString Address = PreviewGenerator->GetPreviewBodyStableKey(Cast<APlanet>(SelectedPreviewBody.Get()));
+	FAPSPreviewPlanetOrbitEdit Edit;
+	if (const auto* Existing = GeneratedWorld->FindPlanetOrbitEdit(Address)) Edit = *Existing;
+	Edit.bOverrideInclination = true;
+	Edit.InclinationDegrees = Clamped;
+	GeneratedWorld->SetPlanetOrbitEdit(Address, Edit);
+	RequestPreview();
+}
+
+void UWorldGenerationViewModel::ResetSelectedPlanetOrbit()
+{
+	if (!HasSelectedPlanetOrbitEdit()) return;
+	GeneratedWorld->ResetPlanetOrbitEdit(PreviewGenerator->GetPreviewBodyStableKey(Cast<APlanet>(SelectedPreviewBody.Get())));
+	RequestPreview();
 }
 
 void UWorldGenerationViewModel::SetMoonsAmount(double Value)
@@ -720,6 +819,42 @@ void UWorldGenerationViewModel::PreserveSelectedPreviewBodyEdit(const bool bFlus
 	bPendingSurfaceAppearanceRefresh = false;
 }
 
+bool UWorldGenerationViewModel::PresentMainMenuHeroGalaxy()
+{
+	CancelPendingPreview();
+	PreserveSelectedPreviewBodyEdit(true);
+	AAstroGenerator* Generator = FindOrCreatePreviewGenerator();
+	if (!Generator)
+	{
+		SetPreviewStatus(LOCTEXT("MenuHeroUnavailable", "MENU GALAXY UNAVAILABLE"), false);
+		return false;
+	}
+
+	PreviewFocus = EAstroPreviewFocus::Galaxy;
+	SelectedPreviewBody.Reset();
+	bPreserveCameraOnNextPreview = false;
+	bForceRefocusOnNextPreview = true;
+	const bool bPresented = Generator->GenerateMainMenuHeroGalaxy(
+		WorldContext.IsValid() && WorldContext->GetWorld()
+			? WorldContext->GetWorld()->GetFirstPlayerController() : nullptr);
+	SetPreviewStatus(bPresented
+		? LOCTEXT("MenuHeroReady", "MAIN MENU GALAXY")
+		: LOCTEXT("MenuHeroFailed", "MENU GALAXY UNAVAILABLE"), false);
+	return bPresented;
+}
+
+void UWorldGenerationViewModel::DismissMainMenuHeroGalaxy()
+{
+	CancelPendingPreview();
+	if (AAstroGenerator* Generator = PreviewGenerator.Get())
+	{
+		Generator->ReleaseMainMenuHeroGalaxy();
+	}
+	bPreserveCameraOnNextPreview = false;
+	bForceRefocusOnNextPreview = true;
+	SetPreviewStatus(LOCTEXT("PreviewPendingAfterMenu", "PREVIEW PENDING"), false);
+}
+
 void UWorldGenerationViewModel::RequestPreview()
 {
 	UWorld* World = WorldContext.IsValid() ? WorldContext->GetWorld() : nullptr;
@@ -816,6 +951,7 @@ void UWorldGenerationViewModel::RegeneratePreviewVariant()
 		GeneratedWorld->ClearPreviewBodyEditOverrides();
 		GeneratedWorld->ClearPreviewStarEditOverrides();
 		GeneratedWorld->ClearPreviewSystemEditOverrides();
+		GeneratedWorld->ClearPreviewDisplayNameOverrides();
 		bSkipBodyOverrideSnapshotOnce = true;
 	}
 	if (AAstroGenerator* Generator = FindOrCreatePreviewGenerator())
@@ -1051,6 +1187,28 @@ void UWorldGenerationViewModel::GetPreviewBodyEntries(TArray<FAPSPreviewBodyEntr
 	}
 }
 
+void UWorldGenerationViewModel::GetPreviewHierarchyEntries(TArray<FAPSPreviewBodyEntry>& OutEntries) const
+{
+	GetPreviewBodyEntries(OutEntries);
+	if (const AAstroGenerator* Generator = PreviewGenerator.Get())
+	{
+		// Object scopes still need an explicit route to their containing system.
+		// This uses the current system focus, never the unrelated home record.
+		if ((PreviewFocus == EAstroPreviewFocus::HomeStar
+			|| PreviewFocus == EAstroPreviewFocus::HomePlanet)
+			&& Generator->IsPreviewFocusAvailable(EAstroPreviewFocus::HomeSystem))
+		{
+			for (FAPSPreviewBodyEntry& Entry : OutEntries) ++Entry.Depth;
+			FAPSPreviewBodyEntry Parent;
+			Parent.Label = LOCTEXT("HierarchyParentSystem", "STAR SYSTEM");
+			Parent.Details = LOCTEXT("HierarchyParentSystemHint", "UP TO SYSTEM / ALL STARS AND PLANETS");
+			Parent.Depth = 0;
+			Parent.PreviewFocusValue = static_cast<int32>(EAstroPreviewFocus::HomeSystem);
+			OutEntries.Insert(MoveTemp(Parent), 0);
+		}
+	}
+}
+
 bool UWorldGenerationViewModel::GetPreviewPresentationLocation(
 	const AActor* Actor, FVector& OutLocation) const
 {
@@ -1171,6 +1329,83 @@ void UWorldGenerationViewModel::HydratePreviewBodyEditorBuffer(APlanetaryBody* B
 bool UWorldGenerationViewModel::IsSelectedPreviewBodyMoon() const
 {
 	return IsValid(Cast<AMoon>(SelectedPreviewBody.Get()));
+}
+
+bool UWorldGenerationViewModel::CanFocusPreviewParent() const
+{
+	if (const AMoon* Moon = Cast<AMoon>(SelectedPreviewBody.Get()); Moon && IsValid(Moon->ParentPlanet))
+		return true;
+	if (const APlanet* Planet = Cast<APlanet>(SelectedPreviewBody.Get()); Planet && IsValid(Planet->ParentStar))
+		return true;
+	if (PreviewFocus == EAstroPreviewFocus::HomeStar || PreviewFocus == EAstroPreviewFocus::HomePlanet)
+		return IsPreviewFocusAvailable(EAstroPreviewFocus::HomeSystem);
+	if (PreviewFocus == EAstroPreviewFocus::HomeSystem)
+		return IsPreviewFocusAvailable(EAstroPreviewFocus::StarCluster)
+			|| IsPreviewFocusAvailable(EAstroPreviewFocus::Overview);
+	if (PreviewFocus == EAstroPreviewFocus::StarCluster)
+		return IsPreviewFocusAvailable(EAstroPreviewFocus::Galaxy)
+			|| IsPreviewFocusAvailable(EAstroPreviewFocus::Overview);
+	return PreviewFocus != EAstroPreviewFocus::Overview
+		&& IsPreviewFocusAvailable(EAstroPreviewFocus::Overview);
+}
+
+bool UWorldGenerationViewModel::FocusPreviewParent()
+{
+	if (AMoon* Moon = Cast<AMoon>(SelectedPreviewBody.Get()); Moon && IsValid(Moon->ParentPlanet))
+		return FocusPreviewBody(Moon->ParentPlanet);
+	if (APlanet* Planet = Cast<APlanet>(SelectedPreviewBody.Get()); Planet && IsValid(Planet->ParentStar))
+		return FocusPreviewBody(Planet->ParentStar);
+	if (!CanFocusPreviewParent()) return false;
+	EAstroPreviewFocus ParentFocus = EAstroPreviewFocus::Overview;
+	if (PreviewFocus == EAstroPreviewFocus::HomeStar || PreviewFocus == EAstroPreviewFocus::HomePlanet)
+		ParentFocus = EAstroPreviewFocus::HomeSystem;
+	else if (PreviewFocus == EAstroPreviewFocus::HomeSystem
+		&& IsPreviewFocusAvailable(EAstroPreviewFocus::StarCluster))
+		ParentFocus = EAstroPreviewFocus::StarCluster;
+	else if (PreviewFocus == EAstroPreviewFocus::StarCluster
+		&& IsPreviewFocusAvailable(EAstroPreviewFocus::Galaxy))
+		ParentFocus = EAstroPreviewFocus::Galaxy;
+	SetPreviewFocus(ParentFocus);
+	return PreviewFocus == ParentFocus;
+}
+
+FString UWorldGenerationViewModel::GetPreviewObjectStableKey(const AActor* Actor) const
+{
+	const AAstroGenerator* Generator = PreviewGenerator.Get();
+	return Generator && IsValid(Actor) ? Generator->GetPreviewObjectStableKey(Actor) : FString();
+}
+
+FText UWorldGenerationViewModel::GetSelectedPreviewBodyName() const
+{
+	if (const AStar* Star = Cast<AStar>(SelectedPreviewBody.Get()))
+		return FText::FromName(Star->AstroName);
+	if (const APlanetaryBody* Body = Cast<APlanetaryBody>(SelectedPreviewBody.Get()))
+		return FText::FromName(Body->AstroName);
+	return FText::GetEmpty();
+}
+
+bool UWorldGenerationViewModel::CanRenameSelectedPreviewBody() const
+{
+	return GeneratedWorld && !GetPreviewObjectStableKey(SelectedPreviewBody.Get()).IsEmpty()
+		&& (SelectedPreviewBody->IsA<AStar>() || SelectedPreviewBody->IsA<APlanetaryBody>());
+}
+
+bool UWorldGenerationViewModel::SetSelectedPreviewBodyName(
+	const FText& Name, const FString& ExpectedStableKey)
+{
+	if (!CanRenameSelectedPreviewBody() || ExpectedStableKey.IsEmpty()
+		|| ExpectedStableKey != GetPreviewObjectStableKey(SelectedPreviewBody.Get())) return false;
+	FString TrimmedName = Name.ToString().TrimStartAndEnd();
+	// Names are labels, not paths or stable IDs. Reject empty/control-character input.
+	if (TrimmedName.IsEmpty() || TrimmedName.Len() > 128
+		|| TrimmedName.Equals(TEXT("None"), ESearchCase::IgnoreCase)) return false;
+	for (const TCHAR Character : TrimmedName)
+		if (FChar::IsControl(Character)) return false;
+	AAstroGenerator* Generator = PreviewGenerator.Get();
+	if (!Generator || !Generator->SetPreviewObjectDisplayName(
+		GeneratedWorld, SelectedPreviewBody.Get(), TrimmedName)) return false;
+	UE_MVVM_SET_PROPERTY_VALUE(PreviewRevision, PreviewRevision + 1);
+	return true;
 }
 
 bool UWorldGenerationViewModel::FocusPreviewBody(const TWeakObjectPtr<AActor>& BodyActor)

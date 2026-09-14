@@ -32,7 +32,7 @@ namespace APSStellarMaterialTests
 	// not a target. The archetype masks and compact-object presentation intentionally
 	// add ALU while retaining zero texture samples and a single unified draw contract.
 	constexpr int32 MaximumPixelInstructions = 420;
-	constexpr int32 MaximumPointCoronaPixelInstructions = 256;
+	constexpr int32 MaximumPointCoronaPixelInstructions = 420;
 	constexpr float MaximumActorPreBloom = 8.0f;
 	constexpr float MaximumHISMPreBloom = 5.0f;
 	constexpr float ActorToneMinimum = 0.78f;
@@ -700,9 +700,16 @@ bool FAPSStellarMaterialTest::RunTest(const FString& Parameters)
 				CompactCode.Contains(
 					TEXT("ordinaryPreBloom=surfaceTint*stellarSignal*temporalFlicker"))
 				&& CompactCode.Contains(
-					TEXT("+spectralHighlightTint*coronaBloom"))
+					TEXT("+neutralIncandescentTint*whitePatchBloom"))
+				&& CompactCode.Contains(TEXT("+hotCoronaTint*coronaBloom"))
 				&& CompactCode.Contains(
 					TEXT("ordinaryPreBloom*(1.0-blackHoleType)")));
+			TestTrue(APSStellarMaterialTests::Context(Material,
+				TEXT("bounded white-hot facular islands")),
+				CompactCode.Contains(TEXT("facularPlateau=smoothstep(0.58,0.82,mesoUnit)"))
+				&& CompactCode.Contains(TEXT("whitePatchMask=saturate(granuleSpark*0.72+facularPlateau*0.82)"))
+				&& CompactCode.Contains(TEXT("whitePatchBloom=actorOnly*whitePatchMask*lerp(0.42,2.60,emissionActivity)"))
+				&& CompactCode.Contains(TEXT("neutralIncandescentTint")));
 			TestTrue(APSStellarMaterialTests::Context(Material, TEXT("actor stellar archetype masks")),
 				CompactCode.Contains(TEXT("giantType=actorOnly*"))
 				&& CompactCode.Contains(TEXT("protostarType=actorOnly*"))
@@ -1176,37 +1183,21 @@ bool FAPSStellarPointCoronaMaterialTest::RunTest(const FString& Parameters)
 			&& CompactCode.Contains(
 				TEXT("returnlerp(pointSignal,coronaSignal,shellMode);")));
 		TestTrue(APSStellarMaterialTests::Context(
-			Material, TEXT("derivative-aware Gaussian hot core and soft halo")),
+			Material, TEXT("screen-stable Gaussian hot core and soft halo")),
 			CompactCode.Contains(
-				TEXT("floatcoreSharpness=lerp(28.0,14.0,pointActivity);"))
+				TEXT("floatcoreSharpness=lerp(28.0,14.0,pointActivity)*coreSpread;"))
 			&& CompactCode.Contains(
 				TEXT("floathaloSharpness=lerp(5.50,3.00,pointActivity);"))
 			&& CompactCode.Contains(
-				TEXT("float3pointRadial=WorldPositionWS-ObjectPositionWS;"))
+				TEXT("floatfacing=saturate(abs(dot(n,v)));"))
 			&& CompactCode.Contains(
-				TEXT("float3pointNormal=pointRadialLengthSq>1.0e-8?pointRadial*rsqrt(pointRadialLengthSq):n;"))
+				TEXT("floatroundEnvelope=1.0-smoothstep(0.36,0.64,projectedRadiusSq);"))
+			&& CompactCode.Contains(TEXT("floatcovXX=pixelVariance*(qDx.x*qDx.x+qDy.x*qDy.x);"))
+			&& CompactCode.Contains(TEXT("float2filteredLobes=sigmaSq*rsqrt(determinant)*exp(-0.5*quadratic);"))
 			&& CompactCode.Contains(
-				TEXT("floatfacing=saturate(abs(dot(pointNormal,v)));"))
+				TEXT("floatcoreEnergy=lerp(4.0,11.0,activity)*seedGain*(1.0+marker*0.22)*coreSpread*modelGain;"))
 			&& CompactCode.Contains(
-				TEXT("floatedgeFade=smoothstep(0.02,0.28,facing);"))
-			&& CompactCode.Contains(
-				TEXT("floatnormalFootprint=max(length(ddx(pointNormal)),length(ddy(pointNormal)));"))
-			&& CompactCode.Contains(
-				TEXT("floatunresolvedPoint=smoothstep(0.45,0.95,normalFootprint);"))
-			&& CompactCode.Contains(
-				TEXT("floathotCoreShape=exp2(-projectedRadiusSq*coreSharpness);"))
-			&& CompactCode.Contains(
-				TEXT("floatsoftHaloShape=exp2(-projectedRadiusSq*haloSharpness);"))
-			&& CompactCode.Contains(
-				TEXT("floatunresolvedCoverage=unresolvedPoint*lerp(0.18,0.24,pointActivity);"))
-			&& CompactCode.Contains(
-				TEXT("floathotCore=lerp(hotCoreShape*edgeFade,hotCoreShape,unresolvedPoint);"))
-			&& CompactCode.Contains(
-				TEXT("floatsoftHalo=max(softHaloShape*edgeFade,unresolvedCoverage);"))
-			&& CompactCode.Contains(
-				TEXT("floatcoreEnergy=lerp(4.0,11.0,activity)*seedGain*(1.0+marker*0.22);"))
-			&& CompactCode.Contains(
-				TEXT("floathaloEnergy=lerp(0.62,2.6,activity)*seedGain*(1.0+marker*0.18);"))
+				TEXT("floathaloEnergy=lerp(0.62,2.6,activity)*seedGain*(1.0+marker*0.18)*lerp(1.0,0.80,gameplayProfile)*modelGain;"))
 			&& CompactCode.Contains(
 				TEXT("floatcoreWhitening=lerp(0.58,0.78,activity);"))
 			&& CompactCode.Contains(
@@ -1217,6 +1208,15 @@ bool FAPSStellarPointCoronaMaterialTest::RunTest(const FString& Parameters)
 				TEXT("float3haloTint=lerp(pointTint,neutralCoreTint,0.04);"))
 			&& CompactCode.Contains(
 				TEXT("float3pointSignal=hotCoreTint*(hotCore*coreEnergy)+haloTint*(softHalo*haloEnergy);")));
+		TestTrue(APSStellarMaterialTests::Context(
+			Material, TEXT("finite temperature-weighted stellar diffraction rays")),
+			CompactCode.Contains(TEXT("rayTemperature=sqrt(saturate(normalizedTint.g*normalizedTint.b))"))
+			&& CompactCode.Contains(TEXT("rayReach=lerp(0.34,0.98,raySpectralReach)*lerp(0.72,1.0,activity)"))
+			&& CompactCode.Contains(TEXT("primaryAngular=saturate(1.0-primaryAcross*30.0)"))
+			&& CompactCode.Contains(TEXT("diagonalAngular=saturate(1.0-diagonalAcross*42.0)"))
+			&& CompactCode.Contains(TEXT("rayTemperatureGain=lerp(0.045,1.0,raySpectralReach)"))
+			&& CompactCode.Contains(TEXT("finiteRays=(primaryAngular*primaryLength+diagonalAngular*diagonalLength*0.24)"))
+			&& CompactCode.Contains(TEXT("pointSignal+=rayTint*(finiteRays*rayEnergy)")));
 		TestTrue(APSStellarMaterialTests::Context(
 			Material, TEXT("corona shell reconstructs a continuous radial projection")),
 			CompactCode.Contains(
@@ -1242,13 +1242,21 @@ bool FAPSStellarPointCoronaMaterialTest::RunTest(const FString& Parameters)
 			&& CompactCode.Contains(
 				TEXT("floatradialSpectralTail=0.050*exp2(-shellRadius01*1.6)*outerBoundaryFade;"))
 			&& CompactCode.Contains(
-				TEXT("floatradialLimbFalloff=radialHdrSeed+radialSpectralTail;"))
+				TEXT("floatradialLimbFalloff=radialHdrSeed+radialSpectralTail+shellRaySignal;"))
 			&& CompactCode.Contains(
 				TEXT("floatshellVariation=lerp(0.94,1.06,magneticField);"))
 			&& CompactCode.Contains(
 				TEXT("floatshellSignal=photosphereOcclusion*radialLimbFalloff*shellVariation*saturate(CoronaOpacity);"))
 			&& CompactCode.Contains(
 				TEXT("float3spectralShellTint=pow(max(normalizedShellTint,0.001),1.20);")));
+		TestTrue(APSStellarMaterialTests::Context(
+			Material, TEXT("view-aligned finite corona spokes")),
+			CompactCode.Contains(TEXT("screenX=normalize(cross(referenceUp,v))"))
+			&& CompactCode.Contains(TEXT("shellPrimary=saturate(1.0-min(absShellDirection.x,absShellDirection.y)*26.0)"))
+			&& CompactCode.Contains(TEXT("shellDiagonal=saturate(1.0-abs(absShellDirection.x-absShellDirection.y)*34.0)"))
+			&& CompactCode.Contains(TEXT("rayTail=exp2(-shellRadius01*lerp(18.0,3.8,shellRayReach))"))
+			&& CompactCode.Contains(TEXT("shellRaySignal=spokePattern*rayTail*lerp(0.012,0.22,shellRayReach)"))
+			&& CompactCode.Contains(TEXT("shellWhiteMix=lerp(0.12,0.62,shellRayReach)")));
 		TestFalse(APSStellarMaterialTests::Context(
 			Material, TEXT("actor corona has no detached radial peak")),
 			CompactCode.Contains(TEXT("bloomSeedOffset"))

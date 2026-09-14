@@ -1,4 +1,5 @@
 #include "AstroGenerator.h"
+#include "APSAtmosphereGeneration.h"
 #include "ProfilingDebugging/CsvProfiler.h"
 
 CSV_DECLARE_CATEGORY_EXTERN(APSPreview);
@@ -34,6 +35,7 @@ CSV_DECLARE_CATEGORY_EXTERN(APSPreview);
 #include "APS_ALPHA/Core/Structs/StarSystemGenerationModel.h"
 #include "APS_ALPHA/Pawns/Spaceships/Spaceship.h"
 #include "APS_ALPHA/Core/Model/GeneratedWorld.h"
+#include "APS_ALPHA/Core/Rendering/APSStellarMaterialContract.h"
 #include "APS_ALPHA/Core/Rendering/APSStarRenderStabilitySubsystem.h"
 #include <unordered_map>
 #include <functional>
@@ -51,6 +53,7 @@ CSV_DECLARE_CATEGORY_EXTERN(APSPreview);
 #include "Camera/PlayerCameraManager.h"
 #include "Components/SceneComponent.h"
 #include "Components/CapsuleComponent.h"
+#include "Components/HierarchicalInstancedStaticMeshComponent.h"
 #include "Components/PrimitiveComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "ProceduralMeshComponent.h"
@@ -72,6 +75,40 @@ static TAutoConsoleVariable<int32> CVarAPSFullScaleProjectionTelemetry(
 	TEXT("aps.FullScale.ProjectionTelemetry"), 0,
 	TEXT("Logs the immutable canonical stellar projection descriptor when a generation build finalizes."),
 	ECVF_Default);
+
+namespace APSMainMenuHeroGalaxy
+{
+	// This catalogue is deliberately independent from FGalaxyCatalogDescriptor.  It
+	// is a fixed-cost title-screen composition, not a second model of the player's
+	// generated universe.
+	constexpr int32 SpiralStarCount = 7200;
+	constexpr int32 BulgeStarCount = 1500;
+	constexpr int32 HaloStarCount = 500;
+	constexpr int32 TotalStarCount = SpiralStarCount + BulgeStarCount + HaloStarCount;
+	constexpr int32 SpiralArmCount = 4;
+	constexpr int32 CompositionSeed = 0x41A05F3;
+	constexpr double RadiusCm = 900000.0;
+	constexpr double CameraDistanceRatio = 4.10;
+	// The navigation rail occupies roughly the left fifth of the title screen. A
+	// 54% anchor brings the hero toward it while retaining a deliberate clear gap.
+	constexpr double HorizontalScreenOffset = 0.08;
+	constexpr double VerticalScreenOffset = 0.0;
+	constexpr float DefaultBloomIntensity = 1.35f;
+	constexpr float HeroBloomIntensity = 1.62f;
+
+	double BellNoise(FRandomStream& Random)
+	{
+		// Three independent draws give a cheap, bounded bell curve. Unlike Gaussian
+		// tails it cannot create a single outlier that expands HISM/camera bounds.
+		return static_cast<double>(Random.GetFraction() + Random.GetFraction()
+			+ Random.GetFraction()) - 1.5;
+	}
+
+	FLinearColor LerpPalette(const FLinearColor& A, const FLinearColor& B, const double Alpha)
+	{
+		return FMath::Lerp(A, B, static_cast<float>(FMath::Clamp(Alpha, 0.0, 1.0)));
+	}
+}
 
 namespace APSGeneratedBodyIdentity
 {
@@ -679,6 +716,53 @@ AAstroGenerator::AAstroGenerator()
 	PreviewCamera->PostProcessSettings.bOverride_BloomThreshold = true;
 	PreviewCamera->PostProcessSettings.BloomThreshold = -1.0f;
 
+	MainMenuHeroGalaxyHISM =
+		CreateDefaultSubobject<UHierarchicalInstancedStaticMeshComponent>(
+			TEXT("MainMenuHeroGalaxyHISM"));
+	MainMenuHeroGalaxyHISM->SetupAttachment(GenerationRoot);
+	MainMenuHeroGalaxyHISM->SetMobility(EComponentMobility::Movable);
+	MainMenuHeroGalaxyHISM->bDisallowNanite = true;
+	MainMenuHeroGalaxyHISM->SetForceDisableNanite(true);
+	MainMenuHeroGalaxyHISM->NumCustomDataFloats = 6;
+	MainMenuHeroGalaxyHISM->bAutoRebuildTreeOnInstanceChanges = false;
+	MainMenuHeroGalaxyHISM->bUseTranslatedInstanceSpace = true;
+	MainMenuHeroGalaxyHISM->bEnableDensityScaling = false;
+	MainMenuHeroGalaxyHISM->bNeverDistanceCull = true;
+	MainMenuHeroGalaxyHISM->SetCullDistances(0, 0);
+	MainMenuHeroGalaxyHISM->bDisableCollision = true;
+	MainMenuHeroGalaxyHISM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	MainMenuHeroGalaxyHISM->SetCollisionResponseToAllChannels(ECR_Ignore);
+	MainMenuHeroGalaxyHISM->SetGenerateOverlapEvents(false);
+	MainMenuHeroGalaxyHISM->SetCanEverAffectNavigation(false);
+	MainMenuHeroGalaxyHISM->bEvaluateWorldPositionOffset = false;
+	MainMenuHeroGalaxyHISM->bWorldPositionOffsetWritesVelocity = false;
+	MainMenuHeroGalaxyHISM->SetCastShadow(false);
+	MainMenuHeroGalaxyHISM->bAffectDynamicIndirectLighting = false;
+	MainMenuHeroGalaxyHISM->bAffectDistanceFieldLighting = false;
+	MainMenuHeroGalaxyHISM->SetReceivesDecals(false);
+	MainMenuHeroGalaxyHISM->SetVisibility(false, true);
+	MainMenuHeroGalaxyHISM->SetHiddenInGame(true, true);
+
+	// Use the production stellar proxy mesh when available, retaining an engine
+	// sphere only as a packaging-safe fallback for stripped editor builds.
+	static ConstructorHelpers::FObjectFinderOptional<UStaticMesh> HeroStarMesh(
+		TEXT("/Game/APS/APS_ALPHA/Assets/Star/XSM_APS_STAR_SPHERE_V10X2_AutoLOD."
+			"XSM_APS_STAR_SPHERE_V10X2_AutoLOD"));
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> HeroFallbackMesh(
+		TEXT("/Engine/BasicShapes/Sphere.Sphere"));
+	UStaticMesh* ResolvedHeroMesh = HeroStarMesh.Get();
+	if (!IsValid(ResolvedHeroMesh) && HeroFallbackMesh.Succeeded())
+	{
+		ResolvedHeroMesh = HeroFallbackMesh.Object;
+	}
+	MainMenuHeroGalaxyHISM->SetStaticMesh(ResolvedHeroMesh);
+	static ConstructorHelpers::FObjectFinder<UMaterial> HeroPointMaterial(
+		APSStellarMaterialContract::HismBaseObjectPath);
+	if (HeroPointMaterial.Succeeded())
+	{
+		MainMenuHeroGalaxyHISM->SetMaterial(0, HeroPointMaterial.Object);
+	}
+
 	// Scope guides are real world-space wire spheres. Thin orthogonal tubes preserve
 	// depth while removing the filled translucent discs that obscured the system.
 	static ConstructorHelpers::FObjectFinderOptional<UMaterialInterface> GuideMaterialAsset(
@@ -1089,6 +1173,250 @@ void AAstroGenerator::GenerateWorldByModel()
 	// creation. This second idempotent pass restores per-body atmosphere controls
 	// that are not represented in the legacy generation structs.
 	ApplyPreviewBodyEditOverrides(GeneratedWorldModel);
+	ApplyPreviewDisplayNames(GeneratedWorldModel);
+}
+
+int32 AAstroGenerator::GetMainMenuHeroGalaxyInstanceCount() const
+{
+	return IsValid(MainMenuHeroGalaxyHISM)
+		? MainMenuHeroGalaxyHISM->GetInstanceCount() : 0;
+}
+
+void AAstroGenerator::ReleaseMainMenuHeroGalaxy()
+{
+	bMainMenuHeroGalaxyActive = false;
+	if (IsValid(MainMenuHeroGalaxyHISM))
+	{
+		MainMenuHeroGalaxyHISM->SetVisibility(false, true);
+		MainMenuHeroGalaxyHISM->SetHiddenInGame(true, true);
+		MainMenuHeroGalaxyHISM->ClearInstances();
+		MainMenuHeroGalaxyHISM->SetRelativeTransform(FTransform::Identity);
+	}
+	if (IsValid(PreviewCamera))
+	{
+		PreviewCamera->PostProcessSettings.BloomIntensity =
+			APSMainMenuHeroGalaxy::DefaultBloomIntensity;
+	}
+}
+
+bool AAstroGenerator::GenerateMainMenuHeroGalaxy(APlayerController* PlayerController)
+{
+	if (!GetWorld() || !IsValid(MainMenuHeroGalaxyHISM) || !IsValid(PreviewCamera))
+	{
+		return false;
+	}
+
+	APlayerController* Controller = PlayerController
+		? PlayerController : GetWorld()->GetFirstPlayerController();
+	if (bMainMenuHeroGalaxyActive
+		&& GetMainMenuHeroGalaxyInstanceCount() == APSMainMenuHeroGalaxy::TotalStarCount)
+	{
+		PreviewCamera->SetActive(true);
+		if (Controller && Controller->GetViewTarget() != this)
+		{
+			Controller->SetViewTarget(this);
+		}
+		return true;
+	}
+
+	// The menu hero is mutually exclusive with the canonical editor hierarchy. It
+	// owns no UGeneratedWorld and no selection address, so switching pages cannot
+	// leak decorative positions into gameplay generation.
+	ClearGeneratedPreview();
+	SetActorScale3D(FVector::OneVector);
+	if (IsValid(GenerationRoot))
+	{
+		GenerationRoot->SetRelativeScale3D(FVector::OneVector);
+	}
+
+	UMaterial* CanonicalMaterial = APSStellarMaterialContract::LoadCanonicalBase(
+		APSStellarMaterialContract::HismBaseObjectPath);
+	if (IsValid(CanonicalMaterial))
+	{
+		MainMenuHeroGalaxyHISM->SetMaterial(0, CanonicalMaterial);
+	}
+	if (!IsValid(MainMenuHeroGalaxyHISM->GetStaticMesh()))
+	{
+		UStaticMesh* FallbackMesh = LoadObject<UStaticMesh>(nullptr,
+			TEXT("/Engine/BasicShapes/Sphere.Sphere"));
+		MainMenuHeroGalaxyHISM->SetStaticMesh(FallbackMesh);
+	}
+	if (!IsValid(MainMenuHeroGalaxyHISM->GetStaticMesh()) || !IsValid(CanonicalMaterial))
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[APS.MainMenuHero] Cannot build HISM galaxy: mesh=%s material=%s"),
+			*GetNameSafe(MainMenuHeroGalaxyHISM->GetStaticMesh()),
+			*GetNameSafe(CanonicalMaterial));
+		return false;
+	}
+
+	MainMenuHeroGalaxyHISM->ClearInstances();
+	MainMenuHeroGalaxyHISM->NumCustomDataFloats = 6;
+	MainMenuHeroGalaxyHISM->PreAllocateInstancesMemory(
+		APSMainMenuHeroGalaxy::TotalStarCount);
+	MainMenuHeroGalaxyHISM->SetRelativeTransform(FTransform::Identity);
+
+	FRandomStream Random(APSMainMenuHeroGalaxy::CompositionSeed);
+	const double MeshRadius = FMath::Max(
+		static_cast<double>(MainMenuHeroGalaxyHISM->GetStaticMesh()->GetBounds().SphereRadius),
+		1.0);
+	const FLinearColor CoreWhite(1.0f, 0.86f, 0.62f, 1.0f);
+	const FLinearColor WarmArm(1.0f, 0.62f, 0.28f, 1.0f);
+	const FLinearColor CoolArm(0.24f, 0.72f, 1.0f, 1.0f);
+	const FLinearColor OuterBlue(0.10f, 0.40f, 0.92f, 1.0f);
+
+	const auto AddHeroStar = [this, &Random, MeshRadius](const FVector& Location,
+		const double VisualRadiusCm, const FLinearColor& Color, const float Emission)
+	{
+		FTransform Transform(FQuat::Identity, Location,
+			FVector(FMath::Max(VisualRadiusCm / MeshRadius, 0.001)));
+		const int32 InstanceIndex = MainMenuHeroGalaxyHISM->AddInstance(Transform, false);
+		MainMenuHeroGalaxyHISM->SetCustomDataValue(InstanceIndex, 0, Color.R, false);
+		MainMenuHeroGalaxyHISM->SetCustomDataValue(InstanceIndex, 1, Color.G, false);
+		MainMenuHeroGalaxyHISM->SetCustomDataValue(InstanceIndex, 2, Color.B, false);
+		MainMenuHeroGalaxyHISM->SetCustomDataValue(InstanceIndex, 3, Emission, false);
+		MainMenuHeroGalaxyHISM->SetCustomDataValue(
+			InstanceIndex, 4, Random.GetFraction(), false);
+		MainMenuHeroGalaxyHISM->SetCustomDataValue(InstanceIndex, 5, 0.0f, false);
+	};
+
+	// Four logarithmic arms. Angular scatter grows toward the edge, producing
+	// feathered branches while the bounded Z curve preserves an unmistakable disc.
+	for (int32 Index = 0; Index < APSMainMenuHeroGalaxy::SpiralStarCount; ++Index)
+	{
+		const int32 ArmIndex = Index % APSMainMenuHeroGalaxy::SpiralArmCount;
+		const double RadiusAlpha = FMath::Pow(
+			static_cast<double>(Random.GetFraction()), 0.62);
+		const double Radius = APSMainMenuHeroGalaxy::RadiusCm
+			* (0.055 + RadiusAlpha * 0.945);
+		const double ArmAngle = ArmIndex * UE_TWO_PI
+			/ APSMainMenuHeroGalaxy::SpiralArmCount;
+		const double Scatter = APSMainMenuHeroGalaxy::BellNoise(Random)
+			* FMath::Lerp(0.10, 0.42, RadiusAlpha);
+		const double Angle = ArmAngle + RadiusAlpha * UE_TWO_PI * 1.72 + Scatter;
+		const double RadialJitter = APSMainMenuHeroGalaxy::BellNoise(Random)
+			* APSMainMenuHeroGalaxy::RadiusCm * FMath::Lerp(0.008, 0.035, RadiusAlpha);
+		const double EffectiveRadius = FMath::Max(Radius + RadialJitter, 0.0);
+		const double Thickness = APSMainMenuHeroGalaxy::RadiusCm
+			* FMath::Lerp(0.012, 0.065, RadiusAlpha);
+		const FVector Position(
+			FMath::Cos(Angle) * EffectiveRadius,
+			FMath::Sin(Angle) * EffectiveRadius * 0.78,
+			APSMainMenuHeroGalaxy::BellNoise(Random) * Thickness);
+		const double HotProbability = FMath::Lerp(0.52, 0.12, RadiusAlpha);
+		const bool bWarm = Random.GetFraction() < HotProbability;
+		const FLinearColor Color = bWarm
+			? APSMainMenuHeroGalaxy::LerpPalette(WarmArm, CoreWhite,
+				(1.0 - RadiusAlpha) * Random.GetFraction())
+			: APSMainMenuHeroGalaxy::LerpPalette(CoolArm, OuterBlue,
+				RadiusAlpha * Random.GetFraction());
+		const double Size = APSMainMenuHeroGalaxy::RadiusCm
+			* FMath::Lerp(0.0028, 0.0068,
+				FMath::Square(static_cast<double>(Random.GetFraction())));
+		const float Emission = static_cast<float>(FMath::Lerp(0.72, 2.20,
+			FMath::Square(static_cast<double>(Random.GetFraction()))));
+		AddHeroStar(Position, Size, Color, Emission);
+	}
+
+	// A warm, vertically thicker bulge gives the composition a readable focal core
+	// instead of a uniform cloud of equally loud points.
+	for (int32 Index = 0; Index < APSMainMenuHeroGalaxy::BulgeStarCount; ++Index)
+	{
+		const double RadiusAlpha = FMath::Pow(
+			static_cast<double>(Random.GetFraction()), 2.35);
+		const double Angle = Random.GetFraction() * UE_TWO_PI;
+		const double Radius = APSMainMenuHeroGalaxy::RadiusCm * 0.31 * RadiusAlpha;
+		const FVector Position(
+			FMath::Cos(Angle) * Radius,
+			FMath::Sin(Angle) * Radius * 0.72,
+			APSMainMenuHeroGalaxy::BellNoise(Random)
+				* APSMainMenuHeroGalaxy::RadiusCm * 0.075 * (1.0 - RadiusAlpha * 0.55));
+		const FLinearColor Color = APSMainMenuHeroGalaxy::LerpPalette(
+			WarmArm, CoreWhite, 0.50 + 0.50 * Random.GetFraction());
+		const double Size = APSMainMenuHeroGalaxy::RadiusCm
+			* FMath::Lerp(0.0040, 0.0105, Random.GetFraction());
+		AddHeroStar(Position, Size, Color,
+			static_cast<float>(FMath::Lerp(1.25, 3.8, Random.GetFraction())));
+	}
+
+	// Sparse halo points keep the silhouette soft and create depth beyond the arms.
+	for (int32 Index = 0; Index < APSMainMenuHeroGalaxy::HaloStarCount; ++Index)
+	{
+		const double RadiusAlpha = FMath::Sqrt(static_cast<double>(Random.GetFraction()));
+		const double Angle = Random.GetFraction() * UE_TWO_PI;
+		const double Radius = APSMainMenuHeroGalaxy::RadiusCm
+			* FMath::Lerp(0.48, 1.12, RadiusAlpha);
+		const FVector Position(
+			FMath::Cos(Angle) * Radius,
+			FMath::Sin(Angle) * Radius * 0.82,
+			APSMainMenuHeroGalaxy::BellNoise(Random)
+				* APSMainMenuHeroGalaxy::RadiusCm * 0.18);
+		const FLinearColor Color = APSMainMenuHeroGalaxy::LerpPalette(
+			CoolArm, OuterBlue, Random.GetFraction());
+		AddHeroStar(Position,
+			APSMainMenuHeroGalaxy::RadiusCm * FMath::Lerp(0.0022, 0.0045, Random.GetFraction()),
+			Color, static_cast<float>(FMath::Lerp(0.38, 1.15, Random.GetFraction())));
+	}
+
+	MainMenuHeroGalaxyHISM->BuildTreeIfOutdated(true, true);
+	MainMenuHeroGalaxyHISM->MarkRenderStateDirty();
+	MainMenuHeroGalaxyHISM->SetHiddenInGame(false, true);
+	MainMenuHeroGalaxyHISM->SetVisibility(true, true);
+	bMainMenuHeroGalaxyActive = true;
+	bIsPreviewGeneration = true;
+	PreviewFocus = EAstroPreviewFocus::Galaxy;
+
+	int32 ViewWidth = 1920;
+	int32 ViewHeight = 1080;
+	if (Controller)
+	{
+		int32 ReportedViewWidth = 0;
+		int32 ReportedViewHeight = 0;
+		Controller->GetViewportSize(ReportedViewWidth, ReportedViewHeight);
+		if (ReportedViewWidth > 0 && ReportedViewHeight > 0)
+		{
+			ViewWidth = ReportedViewWidth;
+			ViewHeight = ReportedViewHeight;
+		}
+	}
+	const double Aspect = static_cast<double>(FMath::Max(ViewWidth, 1))
+		/ static_cast<double>(FMath::Max(ViewHeight, 1));
+	const double HalfTanV = FMath::Tan(FMath::DegreesToRadians(
+		static_cast<double>(PreviewCamera->FieldOfView) * 0.5));
+	const double HalfTanH = HalfTanV * Aspect;
+	const double Distance = APSMainMenuHeroGalaxy::RadiusCm
+		* APSMainMenuHeroGalaxy::CameraDistanceRatio;
+	const FVector CameraOut = FVector(1.0, 1.0, -0.68).GetSafeNormal();
+	const FVector OpticalDirection = -CameraOut;
+	const FRotationMatrix CameraBasis(OpticalDirection.Rotation());
+	const FVector CameraRight = CameraBasis.GetUnitAxis(EAxis::Y);
+	const FVector CameraUp = CameraBasis.GetUnitAxis(EAxis::Z);
+	const FVector HeroCenter = GetActorLocation();
+	// Offset is expressed in angular screen space so 16:9, 21:9 and 32:9 keep the
+	// galaxy centered in the scene area to the right of the navigation rail.
+	const FVector AimPoint = HeroCenter
+		- CameraRight * (Distance * HalfTanH
+			* APSMainMenuHeroGalaxy::HorizontalScreenOffset)
+		- CameraUp * (Distance * HalfTanV
+			* APSMainMenuHeroGalaxy::VerticalScreenOffset);
+	const FVector CameraLocation = AimPoint + CameraOut * Distance;
+	PreviewCamera->SetWorldLocationAndRotation(
+		CameraLocation, (AimPoint - CameraLocation).Rotation());
+	PreviewCamera->PostProcessSettings.BloomIntensity =
+		APSMainMenuHeroGalaxy::HeroBloomIntensity;
+	PreviewCamera->SetActive(true);
+	bPreviewCameraTransitionActive = false;
+	SetActorTickEnabled(false);
+	if (Controller && Controller->GetViewTarget() != this)
+	{
+		Controller->SetViewTarget(this);
+	}
+
+	UE_LOG(LogTemp, Log,
+		TEXT("[APS.MainMenuHero] Generated decorative HISM galaxy instances=%d D/R=%.2f aspect=%.3f"),
+		GetMainMenuHeroGalaxyInstanceCount(),
+		APSMainMenuHeroGalaxy::CameraDistanceRatio, Aspect);
+	return GetMainMenuHeroGalaxyInstanceCount() == APSMainMenuHeroGalaxy::TotalStarCount;
 }
 
 bool AAstroGenerator::RegeneratePreview(
@@ -1098,6 +1426,7 @@ bool AAstroGenerator::RegeneratePreview(
 	{
 		return false;
 	}
+	ReleaseMainMenuHeroGalaxy();
 	// The initial GALAXY/SYSTEM build is the astronomical page's warm-up window.
 	// Keep all orbital materials resident now so a later PLANET/body click performs
 	// only MID creation and mesh commit, never a synchronous package load.
@@ -1175,9 +1504,12 @@ bool AAstroGenerator::RegeneratePreview(
 	{
 		FVector PhysicalCenter;
 		double PhysicalRadius = 0.0;
-		if (GetContinuousPreviewPhysicalFocus(PreviewFocus, PhysicalCenter, PhysicalRadius))
+		double MinimumDistance, MaximumDistance;
+		if (GetContinuousPreviewPhysicalFocus(PreviewFocus, PhysicalCenter, PhysicalRadius)
+			&& GetContinuousPreviewZoomLimits(MinimumDistance, MaximumDistance))
 			PreservedDistanceRatio = FMath::Clamp((bPreviewCameraTransitionActive
-				? ContinuousPreviewTargetOrbit.DistanceCm : ContinuousPreviewOrbit.DistanceCm) / PhysicalRadius, 1.2, 30.0);
+				? ContinuousPreviewTargetOrbit.DistanceCm : ContinuousPreviewOrbit.DistanceCm),
+				MinimumDistance, MaximumDistance) / PhysicalRadius;
 	}
 	else if (IsValid(PreviewCamera))
 	{
@@ -1230,6 +1562,7 @@ bool AAstroGenerator::RegeneratePreview(
 	// before preview normalization, camera framing, or WorldScape presentation reads
 	// the newly spawned actor/model values.
 	ApplyPreviewBodyEditOverrides(InGeneratedWorld);
+	ApplyPreviewDisplayNames(InGeneratedWorld);
 	// A structural edit replaces disposable actors, not the selected catalog
 	// address. Resolve by stable ID (instance indices may change with the catalog).
 	AStarSystem* RestoredSelectionSystem = GeneratedHomeStarSystem;
@@ -1462,6 +1795,7 @@ bool AAstroGenerator::RegeneratePreview(
 
 void AAstroGenerator::ClearGeneratedPreview()
 {
+	ReleaseMainMenuHeroGalaxy();
 	SetPreviewWorldScapeBody(nullptr);
 	ClearContinuousPreviewPresentation();
 	SetPreviewGuideShellVisible(PreviewStarInfluenceWireGuide, false);
@@ -1834,6 +2168,15 @@ bool AAstroGenerator::ComposeCanonicalStellarProjection(
 	GeneratedGalaxy->CanonicalProjectionFrame = GalaxyFrame;
 	GeneratedStarCluster->CanonicalProjectionFrame = ClusterFrame;
 	CanonicalStellarProjection.ClusterToGalaxyPositionScale = ClusterToGalaxyScale;
+	// Generated gameplay later expands this shared affine frame at the generator
+	// root. Counter-scale the baseline meshes to legacy physical sizes instead of
+	// expanding the menu impostor floor into enormous polygonal blobs. Gameplay
+	// adds pixel support at the actual star positions; emission stays menu-identical.
+	const bool bUseLegacyGameplayStellarVisuals = !bIsPreviewGeneration
+		&& bConsumedFinalizedCanonicalStellarDataset;
+	const double LegacyVisualScaleCompensation =
+		APSCanonicalStellarProjection::FullScaleCanonicalCmPerUnit
+		* GalaxyFrame.PositionScale;
 
 	const UStaticMesh* GalaxyMesh = GeneratedGalaxy->StarMeshInstances->GetStaticMesh();
 	const double GalaxyMeshRadius = IsValid(GalaxyMesh)
@@ -1850,9 +2193,13 @@ bool AAstroGenerator::ComposeCanonicalStellarProjection(
 			APSCanonicalStellarProjection::GetCanonicalStellarRadiusSolar(Record.SpectralClass);
 		const double AppliedRadiusCm = APSCanonicalStellarProjection::GetAppliedVisualRadiusCm(
 			EAPSCanonicalStellarProxyLayer::Galaxy, GalaxyFrame, PhysicalRadius);
+		const double InstanceScale = bUseLegacyGameplayStellarVisuals
+			? UStarGenerator::GetFarStarVisualRadius(PhysicalRadius)
+				* LegacyVisualScaleCompensation
+			: AppliedRadiusCm / GalaxyMeshRadius;
 		FTransform Transform(FQuat::Identity,
 			GalaxyFrame.ProjectCanonicalUnits(Record.GalaxyLocalLocation),
-			FVector(AppliedRadiusCm / GalaxyMeshRadius));
+			FVector(InstanceScale));
 		if (GeneratedGalaxy->RenderedProxyBaseTransforms.IsValidIndex(InstanceIndex))
 		{
 			GeneratedGalaxy->RenderedProxyBaseTransforms[InstanceIndex] = Transform;
@@ -1862,12 +2209,11 @@ bool AAstroGenerator::ComposeCanonicalStellarProjection(
 		const double AppliedRadiusSolar =
 			APSCanonicalStellarProjection::UnprojectPhysicalRadiusSolar(
 				GalaxyFrame, AppliedRadiusCm);
+		const double PhysicalEmission = StarGenerator->CalculateEmission(static_cast<float>(
+			APSCanonicalStellarProjection::GetCanonicalStellarLuminositySolar(
+				Record.SpectralClass) * 25.0));
 		const double Emission = UStarGenerator::GetFarStarVisualEmission(
-			PhysicalRadius,
-			StarGenerator->CalculateEmission(static_cast<float>(
-				APSCanonicalStellarProjection::GetCanonicalStellarLuminositySolar(
-					Record.SpectralClass) * 25.0)),
-			AppliedRadiusSolar);
+			PhysicalRadius, PhysicalEmission, AppliedRadiusSolar);
 		GeneratedGalaxy->StarMeshInstances->SetCustomDataValue(
 			InstanceIndex, 3, Emission, false);
 	}
@@ -1884,9 +2230,13 @@ bool AAstroGenerator::ComposeCanonicalStellarProjection(
 		const double AppliedRadiusCm = APSCanonicalStellarProjection::GetAppliedVisualRadiusCm(
 			EAPSCanonicalStellarProxyLayer::StarCluster, ClusterFrame,
 			Record.PrimaryStarModel.Radius);
+		const double InstanceScale = bUseLegacyGameplayStellarVisuals
+			? UStarGenerator::GetFarStarVisualRadius(Record.PrimaryStarModel.Radius)
+				* LegacyVisualScaleCompensation
+			: AppliedRadiusCm / ClusterMeshRadius;
 		FTransform Transform(FQuat::Identity,
 			ClusterFrame.ProjectCanonicalUnits(Record.ClusterLocalLocation),
-			FVector(AppliedRadiusCm / ClusterMeshRadius));
+			FVector(InstanceScale));
 		if (GeneratedStarCluster->SystemProxyBaseTransforms.IsValidIndex(Record.InstanceIndex))
 		{
 			GeneratedStarCluster->SystemProxyBaseTransforms[Record.InstanceIndex] = Transform;
@@ -1896,10 +2246,10 @@ bool AAstroGenerator::ComposeCanonicalStellarProjection(
 		const double AppliedRadiusSolar =
 			APSCanonicalStellarProjection::UnprojectPhysicalRadiusSolar(
 				ClusterFrame, AppliedRadiusCm);
+		const double PhysicalEmission =
+			StarGenerator->CalculateEmission(Record.PrimaryStarModel.Luminosity * 25.0);
 		const double Emission = UStarGenerator::GetFarStarVisualEmission(
-			Record.PrimaryStarModel.Radius,
-			StarGenerator->CalculateEmission(Record.PrimaryStarModel.Luminosity * 25.0),
-			AppliedRadiusSolar);
+			Record.PrimaryStarModel.Radius, PhysicalEmission, AppliedRadiusSolar);
 		GeneratedStarCluster->StarMeshInstances->SetCustomDataValue(
 			Record.InstanceIndex, 3, Emission, false);
 	}
@@ -4819,11 +5169,9 @@ bool AAstroGenerator::StabilizePreviewAtmosphere(APlanetaryBody* Body)
 	}
 
 	AAtmoScape* Atmosphere = Body->PlanetaryEnvironmentGenerator->PlanetAtmosphere;
-	// UI values are authored in physical kilometres. Relative scaling mutates those
-	// values inside AtmoScape and can divide by the previous (possibly zero) height.
-	// Disable it before every early return so no hidden shell keeps drifting in the
-	// background while WorldScape is rebuilding.
-	Atmosphere->bKeepRelativeScale = false;
+	// Every generated shell retains relative scaling, including hidden/reused ones.
+	// Authored batches synchronize their baseline at the write site, not here.
+	Atmosphere->bKeepRelativeScale = true;
 	Atmosphere->SetActorTickEnabled(false);
 	TInlineComponentArray<UStaticMeshComponent*> AtmosphereMeshes;
 	Atmosphere->GetComponents(AtmosphereMeshes);
@@ -6383,13 +6731,14 @@ bool AAstroGenerator::RefreshPreviewPlanetAppearance(
 		&& IsValid(Body->PlanetaryEnvironmentGenerator->PlanetAtmosphere))
 	{
 		AAtmoScape* Atmosphere = Body->PlanetaryEnvironmentGenerator->PlanetAtmosphere;
-		Atmosphere->bKeepRelativeScale = false;
+		Atmosphere->bKeepRelativeScale = true;
 		Atmosphere->PlanetRadius = FMath::Max(RadiusKm - 1.0, 0.5);
 		Atmosphere->AtmosphereHeight = FMath::Max(0.0, InGeneratedWorld->AtmosphereHeight);
 		Atmosphere->AtmosphereOpacity = FMath::Max(0.0, InGeneratedWorld->AtmosphereOpacity);
 		Atmosphere->MultiScatering = FMath::Max(0.01, InGeneratedWorld->AtmosphereMultiScattering);
 		Atmosphere->RayleighHeight = FMath::Max(0.0, InGeneratedWorld->AtmosphereRayleighScattering);
 		Atmosphere->RayleighScattering = InGeneratedWorld->AtmosphereColor;
+		APSAtmosphereGeneration::CommitAuthoredDimensions(*Atmosphere);
 		// Atmosphere-only sliders update the stable space shell in place. Terrain/profile
 		// edits retain the shell attached to the committed root until the staging root is
 		// validated and swapped; hiding it here caused the reported one-frame blink.
@@ -8301,10 +8650,9 @@ void AAstroGenerator::ZoomPreviewCamera(float WheelDelta)
 		// center. Clamping against the distant destination would snap that view.
 		const bool bAtRequestedCenter = ContinuousPreviewOrbit.CenterCm.Equals(
 			PhysicalCenter, FMath::Max(1.0, RadiusCm * 1.0e-9));
-		const double MinimumDistance = bAtRequestedCenter
-			? ((PreviewFocus == EAstroPreviewFocus::HomePlanet
-				|| PreviewFocus == EAstroPreviewFocus::HomeStar) ? RadiusCm * 1.2 : RadiusCm * 0.01) : 1.0;
-		const double MaximumDistance = bAtRequestedCenter ? RadiusCm * 30.0 : 1.0e25;
+		double MinimumDistance = 1.0;
+		double MaximumDistance = 1.0e25;
+		if (bAtRequestedCenter) GetContinuousPreviewZoomLimits(MinimumDistance, MaximumDistance);
 		ContinuousPreviewOrbit.DistanceCm = FMath::Clamp(ContinuousPreviewOrbit.DistanceCm
 			* FMath::Pow(0.82, static_cast<double>(WheelDelta)), MinimumDistance, MaximumDistance);
 		ApplyContinuousPreviewFrame();
@@ -8658,6 +9006,8 @@ void AAstroGenerator::GenerateStarCluster()
 		? CanonicalDataset->ClusterModeledCount
 		: StarClusterGenerator->GetStarsAmountByRange(StarClusterModel->StarClusterSize);
 	NewStarCluster->StarAmount = NewStarCluster->ModeledStarAmount;
+	// The menu draws a small LOD prefix. Gameplay draws the populated cluster from
+	// the same sealed records, retaining its density without rerolling any stars.
 	if (bIsPreviewGeneration)
 	{
 		int32 FormationBudget = 1600;
@@ -9268,6 +9618,8 @@ void AAstroGenerator::GenerateHomeStarSystem()
 				{
 					if (AGravityPlayerController* MainController = Cast<AGravityPlayerController>(PC))
 					{
+						// The first save occurs inside generation, before its final replay pass.
+						ApplyPreviewDisplayNames(GeneratedWorldModel);
 						MainController->SaveNewWorld(
 							GeneratedWorldModel->AstroGenerationLevel, GeneratedWorldModel);
 					}
@@ -9369,6 +9721,7 @@ void AAstroGenerator::GenerateHomeStarSystem()
 					{
 						if (AGravityPlayerController* MainController = Cast<AGravityPlayerController>(PC))
 						{
+							ApplyPreviewDisplayNames(GeneratedWorldModel);
 							MainController->
 								SaveNewWorld(GeneratedWorldModel->AstroGenerationLevel, GeneratedWorldModel);
 						}
@@ -9623,6 +9976,8 @@ void AAstroGenerator::GenerateStarSystemByModel()
 			}
 			else PlanetarySystemGenerator->ClearGenerationSeed();
 			PlanetarySystemModel = MakeShared<FPlanetarySystemModel>();
+			const bool bCompactProceduralOrbits = IsCanonicalStellarProjectionEnabled()
+				&& (bIsPreviewGeneration || !bIntegrateStartPlanet);
 			// Same explicit-edit boundary as exact orbit replay below. Authored
 			// legacy SINGLE GAME continues to use its independent generator scale.
 			const FAPSPreviewStarEditOverride* StellarOrbitEdit =
@@ -9633,12 +9988,12 @@ void AAstroGenerator::GenerateStarSystemByModel()
 			if (bRandomHomeSystemType)
 			{
 				PlanetarySystemGenerator->GeneratePlanetarySystemModelByStar(
-					PlanetarySystemModel, StarModel, PlanetGenerator, MoonGenerator, StellarOrbitEdit);
+					PlanetarySystemModel, StarModel, PlanetGenerator, MoonGenerator, StellarOrbitEdit, bCompactProceduralOrbits);
 				if (HomeSystemEdit)
 				{
 					HomeSystemEdit->ApplyToFamily(*PlanetarySystemModel, StarNumber, AmountOfStars);
 					PlanetarySystemGenerator->GenerateCustomPlanetarySystemModel(
-						PlanetarySystemModel, StarModel, PlanetGenerator, MoonGenerator, StellarOrbitEdit);
+						PlanetarySystemModel, StarModel, PlanetGenerator, MoonGenerator, StellarOrbitEdit, bCompactProceduralOrbits);
 				}
 			}
 			else
@@ -9648,7 +10003,7 @@ void AAstroGenerator::GenerateStarSystemByModel()
 				PlanetarySystemModel->OrbitDistributionType = HomeSystemOrbitDistributionType;
 				if (HomeSystemEdit) HomeSystemEdit->ApplyToFamily(*PlanetarySystemModel, StarNumber, AmountOfStars);
 				PlanetarySystemGenerator->GenerateCustomPlanetarySystemModel(
-					PlanetarySystemModel, StarModel, PlanetGenerator, MoonGenerator, StellarOrbitEdit);
+					PlanetarySystemModel, StarModel, PlanetGenerator, MoonGenerator, StellarOrbitEdit, bCompactProceduralOrbits);
 
 				if (StarNumber == 0 && HomeSystemEdit)
 					StartPlanetNumber = FMath::Clamp(StartPlanetNumber, 1, FMath::Max(1, PlanetarySystemModel->PlanetsList.Num()));
@@ -9765,7 +10120,9 @@ void AAstroGenerator::GenerateStarSystemByModel()
 			if ((bIsPreviewGeneration || !bIntegrateStartPlanet) && IsValid(GeneratedWorldModel))
 				if (const FAPSPreviewStarEditOverride* Edit = GeneratedWorldModel->FindPreviewStarEditOverride(
 					FString::Printf(TEXT("SYS0/S%d"), StarNumber)))
-					Edit->ApplyToPlanetOrbits(*PlanetarySystemModel);
+					Edit->ApplyToPlanetOrbits(*PlanetarySystemModel, bCompactProceduralOrbits, StarModel->Radius);
+			if (bCompactProceduralOrbits && IsValid(GeneratedWorldModel)) GeneratedWorldModel->ApplyPlanetOrbitEdits(
+				*PlanetarySystemModel, FString::Printf(TEXT("SYS0/S%d"), StarNumber), StarModel->Radius);
 			UPlanetarySystemGenerator::EnforcePlanetSurfaceClearance(
 				*PlanetarySystemModel);
 			if (RetainedModelEdits > 0)
@@ -9894,7 +10251,7 @@ void AAstroGenerator::GenerateStarSystemByModel()
 						NewStar->StarRadiusKM * 100000.0 * 1.35 + PlanetEnvelopeCm,
 						NewStar->StarRadiusKM * 100000.0 + PlanetEnvelopeCm * 2.0);
 					OrbitRadiusCm = FMath::Max(OrbitRadiusCm, StellarClearanceCm);
-					if (PreviousSafeOrbitRadiusCm > 0.0)
+					if (!bCompactProceduralOrbits && PreviousSafeOrbitRadiusCm > 0.0)
 					{
 						const double InterOrbitGapCm = FMath::Max(
 							AuToCentimetres * 0.01, NewStar->StarRadiusKM * 100000.0 * 0.08);
@@ -10041,12 +10398,13 @@ void AAstroGenerator::GenerateStarSystemByModel()
 					// preview and to the generated gameplay home world.
 					if (AAtmoScape* Atmosphere = NewPlanet->PlanetaryEnvironmentGenerator->PlanetAtmosphere)
 					{
-						Atmosphere->bKeepRelativeScale = false;
+						Atmosphere->bKeepRelativeScale = true;
 						Atmosphere->AtmosphereHeight = GeneratedWorldModel->AtmosphereHeight;
 						Atmosphere->AtmosphereOpacity = GeneratedWorldModel->AtmosphereOpacity;
 						Atmosphere->MultiScatering = GeneratedWorldModel->AtmosphereMultiScattering;
 						Atmosphere->RayleighHeight = GeneratedWorldModel->AtmosphereRayleighScattering;
 						Atmosphere->RayleighScattering = GeneratedWorldModel->AtmosphereColor;
+						APSAtmosphereGeneration::CommitAuthoredDimensions(*Atmosphere);
 						Atmosphere->UpdateScale();
 					}
 				}
@@ -10162,7 +10520,7 @@ void AAstroGenerator::GenerateStarSystemByModel()
 					: NewPlanetarySystem->PlanetsActorsList.Last()->GetActorLocation();
 			}
 
-			if (bNeedOrbitRotation)
+			if (bNeedOrbitRotation || ((bIsPreviewGeneration || !bIntegrateStartPlanet) && IsCanonicalStellarProjectionEnabled()))
 			{
 				RotatePlanetOrbits(NewPlanetarySystem);
 			}
@@ -10533,6 +10891,8 @@ void AAstroGenerator::GenerateGalaxy()
 	}
 
 	const int32 ModeledStarCount = FMath::Max(1, GalaxyModel->StarsCount);
+	// Gameplay extends the menu's nested LOD prefix within the same catalog;
+	// reusing that catalog must not impose the sparse menu-only render budget.
 	const int32 InstanceBudget = bIsPreviewGeneration
 		? FMath::Min(FMath::Max(100, PreviewMaxInstances), 1800)
 		: FMath::Max(1000, RuntimeMaxGalaxyInstances);
@@ -10848,7 +11208,7 @@ void AAstroGenerator::SpawnPlanetMoons(const TSharedPtr<FPlanetModel>& PlanetMod
 		// contract as a newly generated home planet. InitAtmoScape intentionally
 		// supplies generic defaults, so apply the selected full-scale values last.
 		AAtmoScape* Atmosphere = HomePlanet->PlanetaryEnvironmentGenerator->PlanetAtmosphere;
-		Atmosphere->bKeepRelativeScale = false;
+		Atmosphere->bKeepRelativeScale = true;
 		Atmosphere->LightSource = IsValid(HomePlanet->ParentStar)
 			? HomePlanet->ParentStar : HomeStar;
 		Atmosphere->PlanetRadius = FMath::Max(HomePlanet->RadiusKM - 1.0, 0.5);
@@ -10857,6 +11217,7 @@ void AAstroGenerator::SpawnPlanetMoons(const TSharedPtr<FPlanetModel>& PlanetMod
 		Atmosphere->MultiScatering = GeneratedWorldModel->AtmosphereMultiScattering;
 		Atmosphere->RayleighHeight = GeneratedWorldModel->AtmosphereRayleighScattering;
 		Atmosphere->RayleighScattering = GeneratedWorldModel->AtmosphereColor;
+		APSAtmosphereGeneration::CommitAuthoredDimensions(*Atmosphere);
 		Atmosphere->UpdateScale();
 		Atmosphere->SetActorHiddenInGame(false);
 	}
@@ -12921,8 +13282,15 @@ void AAstroGenerator::RotatePlanetOrbits(APlanetarySystem* NewPlanetarySystem)
 			RandomZRotation = Random.FRandRange(-360.0f, 360.0f);
 			RandomYRotation = Random.FRandRange(-15.0f, 15.0f);
 		}
-		const FRotator NewRotation = FRotator(RandomYRotation, RandomZRotation, 0);
-		PlanetOrbit->AddActorLocalRotation(NewRotation);
+		if (bAddressedOrbits)
+		{
+			FRandomStream Orientation = APSGeneratedBodyIdentity::Stream(PreviewGenerationSeed, PlanetAddress, TEXT("orbit"));
+			PlanetOrbit->SetActorRotation(UPlanetarySystemGenerator::SamplePlanetOrbitRotation(Orientation,
+				IsValid(GeneratedWorldModel) ? GeneratedWorldModel->GetSystemMaxOrbitInclinationDegrees(TEXT("SYS0")) : 8.0));
+			if (IsValid(GeneratedWorldModel)) PlanetOrbit->SetActorRotation(
+				GeneratedWorldModel->ResolvePlanetOrbitRotation(PlanetAddress, PlanetOrbit->GetActorRotation()));
+		}
+		else PlanetOrbit->AddActorLocalRotation(FRotator(RandomYRotation, RandomZRotation, 0));
 
 		APlanet* Planet = PlanetOrbit->Planet;
 		if (!IsValid(Planet) && NewPlanetarySystem->PlanetsActorsList.IsValidIndex(PlanetOrbitIndex))

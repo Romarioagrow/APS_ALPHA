@@ -414,6 +414,117 @@ namespace
 		bool bChamferBottom{true};
 	};
 
+	/** Readability scrim and restrained sensor furniture for the live landing scene. */
+	class SLandingAtmosphere final : public SLeafWidget
+	{
+	public:
+		SLATE_BEGIN_ARGS(SLandingAtmosphere) {}
+		SLATE_END_ARGS()
+
+		void Construct(const FArguments&)
+		{
+			SetVisibility(EVisibility::HitTestInvisible);
+		}
+
+		virtual FVector2D ComputeDesiredSize(float) const override
+		{
+			return FVector2D::ZeroVector;
+		}
+
+		virtual int32 OnPaint(const FPaintArgs&, const FGeometry& Geometry,
+			const FSlateRect&, FSlateWindowElementList& OutDrawElements, int32 LayerId,
+			const FWidgetStyle&, bool) const override
+		{
+			const FVector2D Size = Geometry.GetLocalSize();
+			if (Size.X <= 1.0f || Size.Y <= 1.0f)
+			{
+				return LayerId;
+			}
+
+			// Piecewise strips create a genuine left-to-right scrim without adding a
+			// heavy opaque panel between the player and the real 3D scene.
+			constexpr int32 ScrimBands = 18;
+			const float ScrimWidth = Size.X * 0.43f;
+			for (int32 Band = 0; Band < ScrimBands; ++Band)
+			{
+				const float T0 = static_cast<float>(Band) / ScrimBands;
+				const float T1 = static_cast<float>(Band + 1) / ScrimBands;
+				const float Alpha = FMath::Square(1.0f - T0) * 0.72f;
+				FSlateDrawElement::MakeBox(OutDrawElements, LayerId,
+					Geometry.ToPaintGeometry(
+						FVector2D(ScrimWidth * (T1 - T0) + 1.0f, Size.Y),
+						FSlateLayoutTransform(FVector2D(ScrimWidth * T0, 0.0f))),
+					FAppStyle::GetBrush("WhiteBrush"), ESlateDrawEffect::None,
+					FLinearColor(0.002f, 0.012f, 0.020f, Alpha));
+			}
+
+			// Match the camera's 54% scene anchor. The rings sit in the free space to
+			// the right of the navigation rail, while a faint datum visually connects
+			// both parts of the composition instead of leaving a detached reticle.
+			const FVector2D HeroCenter(Size.X * 0.54f, Size.Y * 0.50f);
+			const float Radius = FMath::Min(Size.X, Size.Y) * 0.275f;
+			const FLinearColor SensorGlow(0.08f, 0.54f, 0.66f, 0.055f);
+			const FLinearColor SensorLine(0.20f, 0.76f, 0.88f, 0.18f);
+			const FLinearColor SensorAccent(0.32f, 0.86f, 0.96f, 0.27f);
+			const auto DrawLine = [&](const TArray<FVector2D>& Points,
+				const FLinearColor& Color, const float Width = 1.0f)
+			{
+				FSlateDrawElement::MakeLines(OutDrawElements, LayerId + 1,
+					Geometry.ToPaintGeometry(), Points, ESlateDrawEffect::None,
+					Color, true, Width);
+			};
+			const auto DrawEllipse = [&](const float RadiusX, const float RadiusY,
+				const FLinearColor& Color, const float Width)
+			{
+				TArray<FVector2D> Points;
+				Points.Reserve(65);
+				for (int32 Index = 0; Index <= 64; ++Index)
+				{
+					const float Angle = UE_TWO_PI * static_cast<float>(Index) / 64.0f;
+					Points.Add(HeroCenter + FVector2D(
+						FMath::Cos(Angle) * RadiusX, FMath::Sin(Angle) * RadiusY));
+				}
+				DrawLine(Points, SensorGlow, Width + 1.6f);
+				DrawLine(Points, Color, Width);
+			};
+			DrawEllipse(Radius, Radius * 0.52f, SensorLine, 0.95f);
+			DrawEllipse(Radius * 0.76f, Radius * 0.38f, SensorLine, 0.85f);
+			DrawEllipse(Radius * 0.51f, Radius * 0.245f, SensorAccent, 0.75f);
+
+			// A segmented datum starts just beyond the button rail and gains energy
+			// toward the orbital graphic. It makes the scene furniture feel like a
+			// continuation of the menu grid while keeping the gap airy and readable.
+			const float RailEdgeX = Size.X * 0.205f;
+			const float OrbitLeftX = HeroCenter.X - Radius * 1.08f;
+			if (OrbitLeftX > RailEdgeX + 48.0f)
+			{
+				constexpr int32 DatumSegments = 11;
+				const float DatumSpan = OrbitLeftX - RailEdgeX;
+				for (int32 Segment = 0; Segment < DatumSegments; ++Segment)
+				{
+					const float T0 = static_cast<float>(Segment) / DatumSegments;
+					const float T1 = FMath::Min(T0 + 0.058f, 1.0f);
+					const float Alpha = FMath::Lerp(0.035f, 0.145f, T0);
+					DrawLine({FVector2D(RailEdgeX + DatumSpan * T0, HeroCenter.Y),
+						FVector2D(RailEdgeX + DatumSpan * T1, HeroCenter.Y)},
+						FLinearColor(0.20f, 0.76f, 0.88f, Alpha), 0.75f);
+				}
+				DrawLine({FVector2D(RailEdgeX, HeroCenter.Y - 7.0f),
+					FVector2D(RailEdgeX, HeroCenter.Y + 7.0f)}, SensorLine, 0.8f);
+			}
+
+			DrawLine({HeroCenter - FVector2D(Radius * 1.18f, 0.0f),
+				HeroCenter - FVector2D(Radius * 0.92f, 0.0f)}, SensorAccent, 1.0f);
+			DrawLine({HeroCenter + FVector2D(Radius * 0.92f, 0.0f),
+				HeroCenter + FVector2D(Radius * 1.18f, 0.0f)}, SensorAccent, 1.0f);
+			DrawLine({HeroCenter - FVector2D(0.0f, Radius * 0.74f),
+				HeroCenter - FVector2D(0.0f, Radius * 0.57f)}, SensorAccent, 1.0f);
+			DrawLine({HeroCenter + FVector2D(0.0f, Radius * 0.57f),
+				HeroCenter + FVector2D(0.0f, Radius * 0.74f)}, SensorAccent, 1.0f);
+			return LayerId + 1;
+		}
+	};
+
 	/** Animated, code-native mission diagram used by the Choose Your Path cards.
 	 * It deliberately has no texture/resource dependency: the card remains crisp
 	 * at every resolution and its meaning is carried by geometry, motion and data
@@ -460,7 +571,7 @@ namespace
 			{
 				Main = FLinearColor(0.30f, 0.40f, 0.46f, 1.0f);
 			}
-			const float Energy = bCardHovered ? 1.0f : 0.58f;
+			const float Energy = bCardHovered ? 1.0f : 0.48f;
 			const float Pulse = 0.5f + 0.5f * FMath::Sin(AnimationSeconds * (bCardHovered ? 2.8f : 1.35f));
 			const FVector2D Center(Size.X * 0.5f, Size.Y * 0.43f);
 			const float Unit = FMath::Min(Size.X, Size.Y);
@@ -528,7 +639,7 @@ namespace
 					FAppStyle::GetBrush("WhiteBrush"), ESlateDrawEffect::None,
 					FLinearColor(0.001f, 0.009f + 0.002f * Band, 0.018f + 0.003f * Band, Alpha));
 			}
-			const FLinearColor Grid(Main.R, Main.G, Main.B, 0.045f + (bCardHovered ? 0.025f : 0.0f));
+			const FLinearColor Grid(Main.R, Main.G, Main.B, 0.030f + (bCardHovered ? 0.020f : 0.0f));
 			for (float X = 24.0f; X < Size.X; X += 36.0f)
 			{
 				DrawLine({FVector2D(X, 0.0f), FVector2D(X, Size.Y)}, Grid, 0.55f, 1, false);
@@ -548,7 +659,7 @@ namespace
 			{
 			case EAPSPathVisual::LiveSystem:
 				{
-					const float Radius = Unit * 0.115f;
+					const float Radius = Unit * 0.145f;
 					DrawCircle(Center, Radius * 0.45f, Radius * 0.45f, Soft, 7.0f);
 					DrawCircle(Center, Radius * 0.28f, Radius * 0.28f, Bright, 2.0f);
 					DrawDot(Center, Radius * 0.17f, Bright);
@@ -568,7 +679,7 @@ namespace
 				break;
 			case EAPSPathVisual::WorldArchive:
 				{
-					const float Radius = Unit * 0.19f;
+					const float Radius = Unit * 0.23f;
 					const FVector2D C = Center + FVector2D(0.0f, Unit * 0.015f);
 					DrawCircle(C, Radius * 1.08f + Pulse * 2.0f, Radius * 1.08f + Pulse * 2.0f, Soft, 3.0f);
 					DrawCircle(C, Radius, Radius, Trace, 1.6f);
@@ -588,7 +699,7 @@ namespace
 				break;
 			case EAPSPathVisual::CivilizationNetwork:
 				{
-					const float Radius = Unit * 0.205f;
+					const float Radius = Unit * 0.25f;
 					DrawCircle(Center, Radius, Radius, Soft, 1.0f);
 					DrawCircle(Center, Radius * 0.76f, Radius * 0.24f, Soft, 0.8f);
 					DrawCircle(Center, Radius * 0.42f, Radius, Soft, 0.8f);
@@ -610,7 +721,7 @@ namespace
 				break;
 			case EAPSPathVisual::GalaxySynthesis:
 				{
-					const float Radius = Unit * 0.225f;
+					const float Radius = Unit * 0.28f;
 					DrawCircle(Center, Radius * 1.15f, Radius * 1.15f, Soft, 0.8f);
 					for (int32 Arm = 0; Arm < 3; ++Arm)
 					{
@@ -633,7 +744,7 @@ namespace
 				break;
 			case EAPSPathVisual::PlanetLaboratory:
 				{
-					const float Radius = Unit * 0.205f;
+					const float Radius = Unit * 0.25f;
 					DrawCircle(Center, Radius + Pulse * 1.5f, Radius + Pulse * 1.5f, Trace, 1.5f);
 					for (int32 Latitude = -2; Latitude <= 2; ++Latitude)
 					{
@@ -654,7 +765,7 @@ namespace
 				break;
 			case EAPSPathVisual::StoryArchive:
 				{
-					const float Radius = Unit * 0.19f;
+					const float Radius = Unit * 0.23f;
 					TArray<FVector2D> Nodes;
 					for (int32 Index = 0; Index < 8; ++Index)
 					{
@@ -704,18 +815,22 @@ namespace APSMenu
 	// Landing and Choose Path sit over the real generated astronomical scene.
 	// Keep only a faint readability veil here; the old turquoise wash hid every
 	// small star in the live background.
-	const FLinearColor Background(0.001f, 0.004f, 0.009f, 0.07f);
-	const FLinearColor Panel(0.002f, 0.012f, 0.022f, 0.94f);
-	const FLinearColor PanelSoft(0.004f, 0.025f, 0.040f, 0.90f);
-	const FLinearColor Cyan(0.12f, 0.82f, 1.0f, 1.0f);
-	const FLinearColor CyanDim(0.035f, 0.23f, 0.32f, 1.0f);
-	const FLinearColor Amber(1.0f, 0.55f, 0.04f, 1.0f);
-	const FLinearColor White(0.92f, 0.97f, 1.0f, 1.0f);
-	const FLinearColor Muted(0.48f, 0.62f, 0.70f, 1.0f);
-	const FLinearColor Success(0.35f, 0.94f, 0.78f, 1.0f);
-	const FLinearColor CivPanel(0.003f, 0.015f, 0.027f, 0.975f);
-	const FLinearColor CivRaised(0.008f, 0.034f, 0.052f, 0.985f);
-	const FLinearColor CivControl(0.004f, 0.023f, 0.038f, 0.99f);
+	FLinearColor SRGB(uint8 R, uint8 G, uint8 B, uint8 A = 255)
+	{
+		return FLinearColor::FromSRGBColor(FColor(R, G, B, A));
+	}
+	const FLinearColor Background = SRGB(2, 7, 11, 20);
+	const FLinearColor Panel = SRGB(8, 32, 42, 242);
+	const FLinearColor PanelSoft = SRGB(6, 19, 26, 232);
+	const FLinearColor Cyan = SRGB(67, 214, 236);
+	const FLinearColor CyanDim = SRGB(27, 83, 96, 178);
+	const FLinearColor Amber = SRGB(242, 181, 29);
+	const FLinearColor White = SRGB(234, 246, 248);
+	const FLinearColor Muted = SRGB(88, 114, 122);
+	const FLinearColor Success = SRGB(100, 214, 166);
+	const FLinearColor CivPanel = SRGB(6, 19, 26, 249);
+	const FLinearColor CivRaised = SRGB(12, 41, 52, 251);
+	const FLinearColor CivControl = SRGB(8, 32, 42, 252);
 	TWeakObjectPtr<UFont> DisplayFont;
 	TWeakObjectPtr<UFont> BodyFont;
 	const FSlateRoundedBoxBrush PanelBrush(Panel, 10.0f, CyanDim, 1.0f);
@@ -754,9 +869,12 @@ namespace APSMenu
 
 	FSlateFontInfo Font(const FName Typeface, int32 Size)
 	{
-		if (UFont* FontObject = (Typeface == TEXT("Bold") ? DisplayFont.Get() : BodyFont.Get()))
+		if (Typeface == TEXT("Bold"))
 		{
-			return FSlateFontInfo(FontObject, Size, Typeface);
+			if (UFont* FontObject = DisplayFont.Get())
+			{
+				return FSlateFontInfo(FontObject, Size, Typeface);
+			}
 		}
 		return FCoreStyle::GetDefaultFontStyle(Typeface, Size);
 	}
@@ -940,14 +1058,14 @@ namespace APSMenu
 SAPSMainMenuRoot::SAPSMainMenuRoot()
 {
 	PrimaryButtonStyle = FButtonStyle()
-		.SetNormal(FSlateRoundedBoxBrush(FLinearColor(0.18f, 0.08f, 0.005f, 0.94f), 8.0f, APSMenu::Amber, 1.5f))
-		.SetHovered(FSlateRoundedBoxBrush(FLinearColor(0.42f, 0.18f, 0.01f, 0.98f), 8.0f, FLinearColor(1.0f, 0.76f, 0.18f), 2.0f))
-		.SetPressed(FSlateRoundedBoxBrush(FLinearColor(0.62f, 0.26f, 0.01f, 1.0f), 8.0f, APSMenu::Amber, 2.0f))
+		.SetNormal(FSlateRoundedBoxBrush(APSMenu::SRGB(74, 48, 4, 246), 8.0f, APSMenu::Amber, 1.5f))
+		.SetHovered(FSlateRoundedBoxBrush(APSMenu::SRGB(106, 70, 5, 252), 8.0f, APSMenu::SRGB(255, 208, 82), 2.0f))
+		.SetPressed(FSlateRoundedBoxBrush(APSMenu::SRGB(128, 82, 4), 8.0f, APSMenu::Amber, 2.0f))
 		.SetNormalPadding(FMargin(2.0f)).SetPressedPadding(FMargin(2.0f, 3.0f, 2.0f, 1.0f));
 	SecondaryButtonStyle = FButtonStyle()
-		.SetNormal(FSlateRoundedBoxBrush(FLinearColor(0.01f, 0.04f, 0.065f, 0.92f), 7.0f, APSMenu::CyanDim, 1.0f))
-		.SetHovered(FSlateRoundedBoxBrush(FLinearColor(0.015f, 0.10f, 0.15f, 0.96f), 7.0f, APSMenu::Cyan, 1.5f))
-		.SetPressed(FSlateRoundedBoxBrush(FLinearColor(0.02f, 0.16f, 0.22f, 1.0f), 7.0f, APSMenu::Cyan, 1.5f));
+		.SetNormal(FSlateRoundedBoxBrush(APSMenu::SRGB(8, 32, 42, 232), 7.0f, APSMenu::CyanDim, 1.0f))
+		.SetHovered(FSlateRoundedBoxBrush(APSMenu::SRGB(12, 52, 65, 246), 7.0f, APSMenu::Cyan, 1.5f))
+		.SetPressed(FSlateRoundedBoxBrush(APSMenu::SRGB(13, 67, 82), 7.0f, APSMenu::Cyan, 1.5f));
 	CardButtonStyle = SecondaryButtonStyle;
 	DisabledCardButtonStyle = FButtonStyle()
 		.SetNormal(FSlateRoundedBoxBrush(FLinearColor(0.015f, 0.025f, 0.035f, 0.82f), 8.0f, FLinearColor(0.20f, 0.25f, 0.28f), 1.0f))
@@ -1007,22 +1125,16 @@ void SAPSMainMenuRoot::Navigate(EAPSMenuPage NewPage)
 	if ((CurrentPage == EAPSMenuPage::Landing || CurrentPage == EAPSMenuPage::ChoosePath)
 		&& ViewModel.IsValid())
 	{
-		bool bRestoredAstronomicalRoute = false;
 		if (ViewModel->GetGenerationRoute() == EAPSGenerationRoute::Planet)
 		{
-			// The dedicated PLANET route intentionally owns no galaxy/system. Rebuild
-			// the normal space hierarchy before it becomes the live menu background.
+			// Do not leave the editor's body-only recipe armed while the player is in
+			// the route selector. The decorative hero itself never consumes this model.
 			ViewModel->SetGenerationRoute(EAPSGenerationRoute::Space);
-			bRestoredAstronomicalRoute = true;
 		}
-		ViewModel->SetPreviewFocus(EAstroPreviewFocus::Galaxy);
-		// The clean menu map intentionally has no authored planet/station backdrop.
-		// Start the same bounded procedural hierarchy used by the editor so Landing
-		// and Choose Path share a real, live astronomical background.
-		if (!ViewModel->bPreviewReady && !bRestoredAstronomicalRoute)
-		{
-			ViewModel->RequestPreview();
-		}
+		// Landing and Choose Path share one cheap, deterministic HISM composition.
+		// It is presentation-only and explicitly replaced by the normal generator
+		// before Astronomical Generation is constructed.
+		ViewModel->PresentMainMenuHeroGalaxy();
 	}
 
 	switch (CurrentPage)
@@ -1110,7 +1222,7 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildLandingPage()
 	auto MenuEntry = [this](const FText& Label, const FOnClicked& Action,
 		bool bEnabled = true, bool bPrimary = false, int32 FontSize = 16)
 	{
-		return SNew(SBox).WidthOverride(210.0f).HeightOverride(bPrimary ? 50.0f : 40.0f)
+		return SNew(SBox).WidthOverride(296.0f).HeightOverride(bPrimary ? 52.0f : 46.0f)
 		[
 			SNew(SButton)
 			.IsEnabled(bEnabled)
@@ -1134,16 +1246,18 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildLandingPage()
 	};
 
 	return SNew(SOverlay)
-		+ SOverlay::Slot().HAlign(HAlign_Left).VAlign(VAlign_Center).Padding(112.0f, 40.0f)
+		+ SOverlay::Slot()
+		[SNew(SLandingAtmosphere)]
+		+ SOverlay::Slot().HAlign(HAlign_Left).VAlign(VAlign_Center).Padding(96.0f, 40.0f)
 		[
 			SNew(SVerticalBox)
-			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 50.0f)
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 56.0f)
 			[
 				SNew(SVerticalBox)
 				+ SVerticalBox::Slot().AutoHeight()
-				[SNew(STextBlock).Text(LOCTEXT("LandingTitle", "APOSFERA")).Font(APSMenu::Font("Bold", 44)).ColorAndOpacity(APSMenu::White)]
+				[SNew(STextBlock).Text(LOCTEXT("LandingTitle", "APOSFERA")).Font(APSMenu::Font("Bold", 50)).ColorAndOpacity(APSMenu::White)]
 				+ SVerticalBox::Slot().AutoHeight().Padding(2.0f, 2.0f, 0.0f, 0.0f)
-				[SNew(STextBlock).Text(LOCTEXT("LandingSubtitle", "S P A C E T R I P S")).Font(APSMenu::Font("Regular", 11)).ColorAndOpacity(APSMenu::Cyan)]
+				[SNew(STextBlock).Text(LOCTEXT("LandingSubtitle", "S P A C E T R I P S")).Font(APSMenu::Font("Regular", 13)).ColorAndOpacity(APSMenu::Cyan)]
 			]
 			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 5.0f)
 			[MenuEntry(LOCTEXT("SingleGame", "SINGLE GAME"), FOnClicked::CreateSP(this, &SAPSMainMenuRoot::OpenChoosePath), true, true, 18)]
@@ -1152,7 +1266,7 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildLandingPage()
 			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 6.0f)
 			[MenuEntry(LOCTEXT("Profile", "PROFILE"), FOnClicked::CreateSP(this, &SAPSMainMenuRoot::OpenProfile))]
 			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 20.0f, 0.0f, 10.0f)
-			[SNew(SBox).WidthOverride(210.0f).HeightOverride(1.0f)[SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(APSMenu::CyanDim)]]
+			[SNew(SBox).WidthOverride(296.0f).HeightOverride(1.0f)[SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(APSMenu::CyanDim)]]
 			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 5.0f)
 			[MenuEntry(LOCTEXT("Settings", "SETTINGS"), FOnClicked::CreateSP(this, &SAPSMainMenuRoot::OpenSettings), true, false, 14)]
 			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 6.0f)
@@ -1314,7 +1428,7 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildPathCard(const FText& Title, const FT
 				[
 					SNew(STextBlock)
 					.Text(RouteCode)
-					.Font(APSMenu::Font("Bold", bLarge ? 10 : 8))
+					.Font(APSMenu::Font("Bold", bLarge ? 10 : 9))
 					.ColorAndOpacity(bEnabled ? Accent : APSMenu::Muted)
 				]
 			]
@@ -1334,7 +1448,7 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildPathCard(const FText& Title, const FT
 				[
 					SNew(STextBlock)
 					.Text(StateLabel)
-					.Font(APSMenu::Font("Bold", bLarge ? 9 : 7))
+					.Font(APSMenu::Font("Bold", bLarge ? 9 : 8))
 					.ColorAndOpacity(bEnabled ? APSMenu::White : APSMenu::Muted)
 				]
 			]
@@ -1360,7 +1474,7 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildPathCard(const FText& Title, const FT
 				// Every compact card owns the same full-width information rail. Keeping
 				// this geometry identical prevents Story/Generate cards from looking
 				// like unrelated debug panels when their descriptions differ.
-				SNew(SBox).HeightOverride(bLarge ? 210.0f : 132.0f)
+				SNew(SBox).HeightOverride(bLarge ? 210.0f : 146.0f)
 				[
 				SNew(SOverlay)
 				+ SOverlay::Slot()
@@ -1395,7 +1509,7 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildPathCard(const FText& Title, const FT
 								+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(12.0f, 0.0f)
 								[
 									SNew(STextBlock).Text(Title).Justification(ETextJustify::Left)
-									.Font(APSMenu::Font("Bold", bLarge ? 28 : 17))
+									.Font(APSMenu::Font("Bold", bLarge ? 28 : 19))
 									.ColorAndOpacity_Lambda([WeakCardButton, bEnabled, Accent]()
 									{
 										if (!bEnabled) return APSMenu::Muted;
@@ -1419,7 +1533,7 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildPathCard(const FText& Title, const FT
 						[
 							SNew(STextBlock).Text(Description).AutoWrapText(true)
 							.Justification(ETextJustify::Left)
-							.Font(APSMenu::Font("Regular", bLarge ? 15 : 12))
+							.Font(APSMenu::Font("Regular", bLarge ? 15 : 14))
 							.ColorAndOpacity(bEnabled
 								? FLinearColor(0.68f, 0.79f, 0.85f, 1.0f) : APSMenu::Muted)
 						]
@@ -1482,8 +1596,8 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildChoosePathPage()
 	ChoosePathStaticTextureResourceCount = 0;
 #endif
 	TSharedRef<SWidget> Foreground = SNew(SVerticalBox)
-		+ SVerticalBox::Slot().AutoHeight().Padding(30.0f, 20.0f, 30.0f, 10.0f)[BuildHeader(LOCTEXT("ChoosePath", "CHOOSE YOUR PATH"))]
-		+ SVerticalBox::Slot().FillHeight(1.0f).Padding(58.0f, 18.0f, 58.0f, 46.0f)
+		+ SVerticalBox::Slot().AutoHeight().Padding(28.0f, 16.0f, 28.0f, 8.0f)[BuildHeader(LOCTEXT("ChoosePath", "CHOOSE YOUR PATH"))]
+		+ SVerticalBox::Slot().FillHeight(1.0f).Padding(48.0f, 14.0f, 48.0f, 36.0f)
 		[
 			SNew(SHorizontalBox)
 			+ SHorizontalBox::Slot().FillWidth(0.31f).Padding(7.0f)
@@ -1741,6 +1855,21 @@ void SAPSMainMenuRoot::ApplyExistingWorldMetadata(const FString& SlotName, const
 	if (SelectedWorld == *Found) RebuildExistingWorldDetails();
 }
 
+const FSlateBrush* SAPSMainMenuRoot::GetExistingWorldImage(
+	const FAPSExistingWorldEntry& Entry) const
+{
+	const FString Type = Entry.SystemType.ToUpper();
+	if (Type.Contains(TEXT("HABITABLE"))) return &WorldHabitableZoneImage;
+	if (Type.Contains(TEXT("GAS GIANT"))) return &WorldGasGiantsImage;
+	if (Type.Contains(TEXT("NO PLANET"))) return &WorldNoPlanetsImage;
+	if (Type.Contains(TEXT("SINGLE"))) return &WorldSinglePlanetImage;
+	if (Type.Contains(TEXT("MULTI"))) return &WorldMultiPlanetImage;
+
+	// A legacy save without metadata still gets a stable, semantically neutral
+	// system illustration instead of a random planet/galaxy chosen by filename.
+	return &WorldMultiPlanetImage;
+}
+
 void SAPSMainMenuRoot::RebuildExistingWorldGrid()
 {
 	if (!ExistingWorldGridHost) return;
@@ -1781,42 +1910,68 @@ void SAPSMainMenuRoot::RebuildExistingWorldGrid()
 	{
 		const int32 VisibleIndex = SourceIndex - FirstIndex;
 		const TSharedPtr<FAPSExistingWorldEntry>& Entry = Filtered[SourceIndex];
-		const uint32 StableImageIndex = GetTypeHash(Entry->SaveFileName) % 3u;
-		const FSlateBrush* Image = StableImageIndex == 0 ? &PlanetImage : (StableImageIndex == 1 ? &GalaxyImage : &SystemImage);
+		const FSlateBrush* Image = GetExistingWorldImage(*Entry);
 		const bool bSelected = SelectedWorld == Entry;
 		const FString LastPlayed = FDateTime::FromUnixTimestamp(Entry->FileTimestamp).ToString(TEXT("%Y-%m-%d  %H:%M"));
 		const int32 ColumnCount = bCompactWorldList ? 1 : 3;
 		Grid->AddSlot(VisibleIndex % ColumnCount, VisibleIndex / ColumnCount)
 		[
-			SNew(SButton).ButtonStyle(bSelected ? &PrimaryButtonStyle : &CardButtonStyle).OnClicked(this, &SAPSMainMenuRoot::SelectExistingWorld, Entry).ContentPadding(0.0f)
+			SNew(SButton).ButtonStyle(&CardButtonStyle)
+			.OnClicked(this, &SAPSMainMenuRoot::SelectExistingWorld, Entry).ContentPadding(0.0f)
 			[
 				SNew(SOverlay)
 				+ SOverlay::Slot()
 				[
-					SNew(SBox).HeightOverride(bCompactWorldList ? 112.0f : 190.0f).Clipping(EWidgetClipping::ClipToBounds)
-					[SNew(SScaleBox).Stretch(EStretch::ScaleToFit)[SNew(SImage).Image(Image)]]
+					SNew(SBox).HeightOverride(bCompactWorldList ? 128.0f : 218.0f)
+					.Clipping(EWidgetClipping::ClipToBounds)
+					[
+						SNew(SScaleBox).Stretch(EStretch::ScaleToFitX)
+						.StretchDirection(EStretchDirection::Both)
+						[SNew(SImage).Image(Image)]
+					]
 				]
-				+ SOverlay::Slot().HAlign(HAlign_Right).VAlign(VAlign_Top).Padding(10.0f)
+				+ SOverlay::Slot().HAlign(HAlign_Left).VAlign(VAlign_Top).Padding(12.0f)
+				[
+					SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush"))
+					.BorderBackgroundColor(FLinearColor(0.0f, 0.03f, 0.05f, 0.92f))
+					.Padding(FMargin(9.0f, 5.0f))
+					[
+						SNew(STextBlock)
+						.Text(FText::FromString(FString::Printf(TEXT("%d PLANETS  /  %s"),
+							Entry->TotalPlanets, *Entry->StarType)))
+						.Font(APSMenu::Font("Bold", 9)).ColorAndOpacity(APSMenu::Cyan)
+					]
+				]
+				+ SOverlay::Slot().HAlign(HAlign_Right).VAlign(VAlign_Top).Padding(11.0f)
 				[
 					SNew(SButton).ButtonStyle(&FAppStyle::Get().GetWidgetStyle<FButtonStyle>("NoBorder"))
-					.OnClicked(this, &SAPSMainMenuRoot::ToggleWorldFavorite, Entry).ContentPadding(2.0f)
-					[SNew(STextBlock).Text(LOCTEXT("FavoriteStar", "*")).Font(APSMenu::Font("Bold", 21)).ColorAndOpacity(Entry->bFavorite ? APSMenu::Amber : APSMenu::White)]
+					.OnClicked(this, &SAPSMainMenuRoot::ToggleWorldFavorite, Entry).ContentPadding(4.0f)
+					[SNew(STextBlock).Text(FText::FromString(Entry->bFavorite ? TEXT("★") : TEXT("☆")))
+					.Font(APSMenu::Font("Bold", 19)).ColorAndOpacity(Entry->bFavorite ? APSMenu::Amber : APSMenu::White)]
 				]
 				+ SOverlay::Slot().VAlign(VAlign_Bottom)
 				[
-					SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(FLinearColor(0.002f, 0.01f, 0.02f, 0.94f)).Padding(12.0f)
+					SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush"))
+					.BorderBackgroundColor(FLinearColor(0.001f, 0.008f, 0.016f, 0.96f))
+					.Padding(FMargin(14.0f, 10.0f))
 					[
 						SNew(SVerticalBox)
-						+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Text(FText::FromString(Entry->DisplayName)).Font(APSMenu::Font("Bold", 13)).ColorAndOpacity(APSMenu::White)]
-						+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 3.0f)[SNew(STextBlock).Text(FText::FromString(Entry->SystemType)).Font(APSMenu::Font("Regular", 10)).ColorAndOpacity(APSMenu::Cyan)]
-						+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 4.0f, 0.0f, 0.0f)[SNew(STextBlock).Text(FText::FromString(FString::Printf(TEXT("LAST PLAYED  %s"), *LastPlayed))).Font(APSMenu::Font("Regular", 9)).ColorAndOpacity(APSMenu::Muted)]
+						+ SVerticalBox::Slot().AutoHeight()
+						[SNew(STextBlock).Text(FText::FromString(Entry->DisplayName))
+						.Font(APSMenu::Font("Bold", 15)).ColorAndOpacity(APSMenu::White)]
+						+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 3.0f)
+						[SNew(STextBlock).Text(FText::FromString(Entry->SystemType))
+						.Font(APSMenu::Font("Bold", 10)).ColorAndOpacity(APSMenu::Cyan)]
+						+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 5.0f, 0.0f, 0.0f)
+						[SNew(STextBlock).Text(FText::FromString(FString::Printf(TEXT("LAST PLAYED  %s"), *LastPlayed)))
+						.Font(APSMenu::Font("Regular", 9)).ColorAndOpacity(APSMenu::Muted)]
 					]
 				]
 				+ SOverlay::Slot()
 				[
 					SNew(SChamferedFrame)
 					.Color(bSelected ? APSMenu::Amber : APSMenu::CyanDim)
-					.Thickness(bSelected ? 1.7f : 1.0f)
+					.Thickness(bSelected ? 2.2f : 1.0f)
 				]
 			]
 		];
@@ -1833,16 +1988,20 @@ void SAPSMainMenuRoot::RebuildExistingWorldDetails()
 		return;
 	}
 
-	const uint32 StableImageIndex = GetTypeHash(SelectedWorld->SaveFileName) % 3u;
-	const FSlateBrush* DetailsImage = StableImageIndex == 0
-		? &PlanetImage : (StableImageIndex == 1 ? &GalaxyImage : &SystemImage);
+	const FSlateBrush* DetailsImage = GetExistingWorldImage(*SelectedWorld);
 	const auto DetailRow = [](const FText& Label, const FText& Value)
 	{
-		return SNew(SVerticalBox)
-			+ SVerticalBox::Slot().AutoHeight()
-			[SNew(STextBlock).Text(Label).Font(APSMenu::Font("Regular", 11)).ColorAndOpacity(APSMenu::Muted)]
-			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 3.0f, 0.0f, 11.0f)
-			[SNew(STextBlock).Text(Value).AutoWrapText(true).Font(APSMenu::Font("Bold", 12)).ColorAndOpacity(APSMenu::White)];
+		return SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush"))
+			.BorderBackgroundColor(FLinearColor(0.02f, 0.10f, 0.13f, 0.58f))
+			.Padding(FMargin(10.0f, 7.0f))
+			[
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot().FillWidth(0.44f).VAlign(VAlign_Center)
+				[SNew(STextBlock).Text(Label).Font(APSMenu::Font("Regular", 9)).ColorAndOpacity(APSMenu::Muted)]
+				+ SHorizontalBox::Slot().FillWidth(0.56f).VAlign(VAlign_Center)
+				[SNew(STextBlock).Text(Value).AutoWrapText(true).Justification(ETextJustify::Right)
+				.Font(APSMenu::Font("Bold", 10)).ColorAndOpacity(APSMenu::White)]
+			];
 	};
 	TSharedRef<SVerticalBox> DetailRows = SNew(SVerticalBox)
 		+ SVerticalBox::Slot().AutoHeight()[DetailRow(LOCTEXT("DetailSystemType", "SYSTEM TYPE"), FText::FromString(SelectedWorld->SystemType))]
@@ -1863,14 +2022,28 @@ void SAPSMainMenuRoot::RebuildExistingWorldDetails()
 		SNew(SVerticalBox)
 		+ SVerticalBox::Slot().AutoHeight()
 		[
-			SNew(SBox).HeightOverride(190.0f).Clipping(EWidgetClipping::ClipToBounds)
-			[SNew(SScaleBox).Stretch(EStretch::ScaleToFit)[SNew(SImage).Image(DetailsImage)]]
+			SNew(SBox).HeightOverride(160.0f).Clipping(EWidgetClipping::ClipToBounds)
+			[
+				SNew(SOverlay)
+				+ SOverlay::Slot()
+				[SNew(SScaleBox).Stretch(EStretch::ScaleToFitX).StretchDirection(EStretchDirection::Both)
+				[SNew(SImage).Image(DetailsImage)]]
+				+ SOverlay::Slot().HAlign(HAlign_Left).VAlign(VAlign_Bottom).Padding(10.0f)
+				[
+					SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush"))
+					.BorderBackgroundColor(FLinearColor(0.0f, 0.03f, 0.05f, 0.92f))
+					.Padding(FMargin(9.0f, 5.0f))
+					[SNew(STextBlock).Text(FText::FromString(FString::Printf(TEXT("%d PLANETS  /  %s"),
+						SelectedWorld->TotalPlanets, *SelectedWorld->StarType)))
+					.Font(APSMenu::Font("Bold", 9)).ColorAndOpacity(APSMenu::Cyan)]
+				]
+			]
 		]
-		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 14.0f, 0.0f, 5.0f)
-		[SNew(STextBlock).Text(FText::FromString(SelectedWorld->DisplayName)).AutoWrapText(true).Font(APSMenu::Font("Bold", 19)).ColorAndOpacity(APSMenu::White)]
+		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 15.0f, 0.0f, 5.0f)
+		[SNew(STextBlock).Text(FText::FromString(SelectedWorld->DisplayName)).AutoWrapText(true).Font(APSMenu::Font("Bold", 20)).ColorAndOpacity(APSMenu::White)]
 		+ SVerticalBox::Slot().AutoHeight()
 		[SNew(STextBlock).Text(FText::FromString(SelectedWorld->SystemType)).AutoWrapText(true).Font(APSMenu::Font("Regular", 12)).ColorAndOpacity(APSMenu::Cyan)]
-		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 12.0f, 0.0f, 10.0f)
+		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 11.0f, 0.0f, 9.0f)
 		[SNew(SBox).HeightOverride(1.0f)[SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(APSMenu::CyanDim)]]
 		+ SVerticalBox::Slot().FillHeight(1.0f)
 		[
@@ -2380,7 +2553,7 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildSpawnCard(EAPSStartAssetSlot Slot, co
 		[
 			SNew(SButton)
 			.ButtonStyle(&CardButtonStyle)
-			.ContentPadding(FMargin(5.0f, 4.0f))
+			.ContentPadding(FMargin(7.0f, 7.0f))
 			.ButtonColorAndOpacity_Lambda([this, Slot, CapturedIndex]()
 			{
 				return SpawnClassIndices.FindRef(Slot) == CapturedIndex
@@ -2395,7 +2568,7 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildSpawnCard(EAPSStartAssetSlot Slot, co
 				[
 					SNew(STextBlock)
 					.Text(FText::FromString(FString::Printf(TEXT("%02d"), OptionIndex + 1)))
-					.Font(APSMenu::Font("Bold", 8))
+					.Font(APSMenu::Font("Bold", 9))
 					.ColorAndOpacity_Lambda([this, Slot, CapturedIndex]()
 					{
 						return SpawnClassIndices.FindRef(Slot) == CapturedIndex ? APSMenu::Amber : APSMenu::Cyan;
@@ -2405,13 +2578,13 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildSpawnCard(EAPSStartAssetSlot Slot, co
 				[
 					SNew(STextBlock)
 					.Text_Lambda([this, Slot, CapturedIndex]() { return GetSpawnClassOptionName(Slot, CapturedIndex); })
-					.Font(APSMenu::Font("Bold", 9)).ColorAndOpacity(APSMenu::White)
+					.Font(APSMenu::Font("Bold", 11)).ColorAndOpacity(APSMenu::White)
 					.OverflowPolicy(ETextOverflowPolicy::Ellipsis)
 				]
 				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
 				[
 					SNew(STextBlock).Text(LOCTEXT("SpawnOptionActive", "ACTIVE"))
-					.Font(APSMenu::Font("Bold", 7)).ColorAndOpacity(APSMenu::Success)
+					.Font(APSMenu::Font("Bold", 8)).ColorAndOpacity(APSMenu::Success)
 					.Visibility_Lambda([this, Slot, CapturedIndex]()
 					{
 						return SpawnClassIndices.FindRef(Slot) == CapturedIndex
@@ -2428,7 +2601,7 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildSpawnCard(EAPSStartAssetSlot Slot, co
 			SNew(SBorder).BorderImage(&APSMenu::CivCardBrush).Padding(0.0f)
 			[
 				SNew(SOverlay)
-				+ SOverlay::Slot().Padding(11.0f)
+				+ SOverlay::Slot().Padding(14.0f)
 				[
 					SNew(SVerticalBox)
 					+ SVerticalBox::Slot().AutoHeight()
@@ -2440,9 +2613,9 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildSpawnCard(EAPSStartAssetSlot Slot, co
 						[
 							SNew(SVerticalBox)
 							+ SVerticalBox::Slot().AutoHeight()
-							[SNew(STextBlock).Text(Label).Font(APSMenu::Font("Bold", 13)).ColorAndOpacity(APSMenu::White)]
+							[SNew(STextBlock).Text(Label).Font(APSMenu::Font("Bold", 15)).ColorAndOpacity(APSMenu::White)]
 							+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 1.0f, 0.0f, 0.0f)
-							[SNew(STextBlock).Text(SlotDescription).Font(APSMenu::Font("Regular", 8)).ColorAndOpacity(APSMenu::Muted).OverflowPolicy(ETextOverflowPolicy::Ellipsis)]
+							[SNew(STextBlock).Text(SlotDescription).Font(APSMenu::Font("Regular", 9)).ColorAndOpacity(APSMenu::Muted).OverflowPolicy(ETextOverflowPolicy::Ellipsis)]
 						]
 						+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
 						[
@@ -2463,12 +2636,12 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildSpawnCard(EAPSStartAssetSlot Slot, co
 							SNew(SOverlay)
 							+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Center)
 							[
-								SNew(SBox).WidthOverride(96.0f).HeightOverride(96.0f)
+								SNew(SBox).WidthOverride(118.0f).HeightOverride(118.0f)
 								[SNew(SVectorMenuGlyph).Glyph(SlotGlyph).Color(FLinearColor(0.03f, 0.28f, 0.38f, 0.32f)).StrokeWidth(4.8f)]
 							]
 							+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Center)
 							[
-								SNew(SBox).WidthOverride(62.0f).HeightOverride(62.0f)
+								SNew(SBox).WidthOverride(76.0f).HeightOverride(76.0f)
 								[SNew(SVectorMenuGlyph).Glyph(SlotGlyph).Color(bLockedProductionPilot ? APSMenu::Amber : APSMenu::Cyan).StrokeWidth(1.9f)]
 							]
 							+ SOverlay::Slot().HAlign(HAlign_Left).VAlign(VAlign_Bottom).Padding(8.0f)
@@ -2481,7 +2654,7 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildSpawnCard(EAPSStartAssetSlot Slot, co
 					+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center)
 					[
 						SNew(STextBlock).Text_Lambda([this, Slot]() { return GetSpawnClassName(Slot); })
-						.Font(APSMenu::Font("Bold", 14)).ColorAndOpacity(APSMenu::White)
+						.Font(APSMenu::Font("Bold", 16)).ColorAndOpacity(APSMenu::White)
 						.Justification(ETextJustify::Center).AutoWrapText(true)
 					]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 7.0f, 0.0f, 5.0f)
@@ -2512,7 +2685,7 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildSpawnCard(EAPSStartAssetSlot Slot, co
 					]
 					+ SVerticalBox::Slot().FillHeight(0.44f)
 					[
-						SNew(SBox).MaxDesiredHeight(98.0f)
+						SNew(SBox).MaxDesiredHeight(116.0f)
 						.Visibility(bLockedProductionPilot ? EVisibility::Collapsed : EVisibility::Visible)
 						[
 							SNew(SBorder).BorderImage(&APSMenu::InsetBrush).Padding(4.0f)
@@ -2552,22 +2725,22 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildCivilizationPage()
 		return SNew(SBorder).BorderImage(&APSMenu::CivControlBrush).Padding(FMargin(10.0f, 7.0f))
 		[
 			SNew(SHorizontalBox)
-			+ SHorizontalBox::Slot().FillWidth(0.44f).VAlign(VAlign_Center)
+			+ SHorizontalBox::Slot().FillWidth(0.40f).VAlign(VAlign_Center)
 			[
 				SNew(SVerticalBox)
 				+ SVerticalBox::Slot().AutoHeight()
-				[SNew(STextBlock).Text(Label).Font(APSMenu::Font("Bold", 10)).ColorAndOpacity(APSMenu::White)]
+				[SNew(STextBlock).Text(Label).Font(APSMenu::Font("Bold", 11)).ColorAndOpacity(APSMenu::White)]
 				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 2.0f, 0.0f, 0.0f)
-				[SNew(STextBlock).Text(LOCTEXT("EnumControlType", "SELECTED PROFILE")).Font(APSMenu::Font("Regular", 8)).ColorAndOpacity(APSMenu::Muted)]
+				[SNew(STextBlock).Text(LOCTEXT("EnumControlType", "SELECTED PROFILE")).Font(APSMenu::Font("Regular", 9)).ColorAndOpacity(APSMenu::Muted)]
 			]
-			+ SHorizontalBox::Slot().FillWidth(0.56f).VAlign(VAlign_Center).Padding(10.0f, 0.0f, 0.0f, 0.0f)
+			+ SHorizontalBox::Slot().FillWidth(0.60f).VAlign(VAlign_Center).Padding(10.0f, 0.0f, 0.0f, 0.0f)
 			[
 				SNew(SBorder).BorderImage(&APSMenu::InsetBrush).Padding(FMargin(2.0f))
 				[
 					SNew(SHorizontalBox)
 					+ SHorizontalBox::Slot().AutoWidth()[SNew(SButton).ButtonStyle(&SecondaryButtonStyle).ContentPadding(FMargin(8.0f, 5.0f)).OnClicked_Lambda([Step](){ return Step(-1); })[SNew(STextBlock).Text(FText::FromString(TEXT("<"))).Font(APSMenu::Font("Bold", 10)).ColorAndOpacity(APSMenu::Cyan)]]
 					+ SHorizontalBox::Slot().FillWidth(1.0f).HAlign(HAlign_Center).VAlign(VAlign_Center)
-					[SNew(STextBlock).Text_Lambda([Enum, Getter](){ return Enum ? Enum->GetDisplayNameTextByValue(Getter()) : FText::FromString(TEXT("--")); }).Font(APSMenu::Font("Bold", 10)).ColorAndOpacity(APSMenu::White).OverflowPolicy(ETextOverflowPolicy::Ellipsis)]
+					[SNew(STextBlock).Text_Lambda([Enum, Getter](){ return Enum ? Enum->GetDisplayNameTextByValue(Getter()) : FText::FromString(TEXT("--")); }).Font(APSMenu::Font("Bold", 11)).ColorAndOpacity(APSMenu::White).OverflowPolicy(ETextOverflowPolicy::Ellipsis)]
 					+ SHorizontalBox::Slot().AutoWidth()[SNew(SButton).ButtonStyle(&SecondaryButtonStyle).ContentPadding(FMargin(8.0f, 5.0f)).OnClicked_Lambda([Step](){ return Step(1); })[SNew(STextBlock).Text(FText::FromString(TEXT(">"))).Font(APSMenu::Font("Bold", 10)).ColorAndOpacity(APSMenu::Cyan)]]
 				]
 			]
@@ -2584,9 +2757,9 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildCivilizationPage()
 			[
 				SNew(SVerticalBox)
 				+ SVerticalBox::Slot().AutoHeight()
-				[SNew(STextBlock).Text(Label).Font(APSMenu::Font("Bold", 10)).ColorAndOpacity(APSMenu::White)]
+				[SNew(STextBlock).Text(Label).Font(APSMenu::Font("Bold", 11)).ColorAndOpacity(APSMenu::White)]
 				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 2.0f, 0.0f, 0.0f)
-				[SNew(STextBlock).Text(FText::FromString(FString::Printf(TEXT("RANGE  %s - %s"), *FText::AsNumber(MinValue).ToString(), *FText::AsNumber(MaxValue).ToString()))).Font(APSMenu::Font("Regular", 8)).ColorAndOpacity(APSMenu::Muted)]
+				[SNew(STextBlock).Text(FText::FromString(FString::Printf(TEXT("RANGE  %s - %s"), *FText::AsNumber(MinValue).ToString(), *FText::AsNumber(MaxValue).ToString()))).Font(APSMenu::Font("Regular", 9)).ColorAndOpacity(APSMenu::Muted)]
 			]
 			+ SHorizontalBox::Slot().FillWidth(0.42f).VAlign(VAlign_Center).Padding(10.0f, 0.0f, 0.0f, 0.0f)
 			[
@@ -2616,7 +2789,7 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildCivilizationPage()
 			[
 				SNew(SHorizontalBox)
 				+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
-				[SNew(STextBlock).Text(Label).Font(APSMenu::Font("Bold", 10)).ColorAndOpacity(APSMenu::White)]
+				[SNew(STextBlock).Text(Label).Font(APSMenu::Font("Bold", 11)).ColorAndOpacity(APSMenu::White)]
 				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
 				[SNew(SButton).ButtonStyle(&SecondaryButtonStyle).ContentPadding(FMargin(8.0f, 2.0f)).OnClicked_Lambda([Step](){ return Step(-1); })[SNew(STextBlock).Text(FText::FromString(TEXT("-"))).Font(APSMenu::Font("Bold", 11)).ColorAndOpacity(APSMenu::Cyan)]]
 				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(9.0f, 0.0f)
@@ -2648,8 +2821,8 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildCivilizationPage()
 				+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center).Padding(9.0f, 0.0f)
 				[
 					SNew(SVerticalBox)
-					+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Text(Title).Font(APSMenu::Font("Bold", 12)).ColorAndOpacity(APSMenu::White)]
-					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 1.0f, 0.0f, 0.0f)[SNew(STextBlock).Text(Subtitle).Font(APSMenu::Font("Regular", 8)).ColorAndOpacity(APSMenu::Muted)]
+					+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Text(Title).Font(APSMenu::Font("Bold", 14)).ColorAndOpacity(APSMenu::White)]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 1.0f, 0.0f, 0.0f)[SNew(STextBlock).Text(Subtitle).Font(APSMenu::Font("Regular", 9)).ColorAndOpacity(APSMenu::Muted)]
 				]
 				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
 				[SNew(STextBlock).Text(LOCTEXT("CivInfoLive", "LIVE")).Font(APSMenu::Font("Bold", 8)).ColorAndOpacity(APSMenu::Success)]
@@ -2657,7 +2830,7 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildCivilizationPage()
 			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 9.0f, 0.0f, 0.0f)
 			[SNew(SBox).HeightOverride(1.0f)[SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(APSMenu::CyanDim)]]
 			+ SVerticalBox::Slot().FillHeight(1.0f).Padding(0.0f, 10.0f, 0.0f, 0.0f)
-			[SNew(STextBlock).Text(Body).AutoWrapText(true).Font(APSMenu::Font("Regular", 11)).ColorAndOpacity(APSMenu::White)]
+			[SNew(STextBlock).Text(Body).AutoWrapText(true).Font(APSMenu::Font("Regular", 13)).ColorAndOpacity(APSMenu::White)]
 		, FMargin(15.0f), FLinearColor(0.035f, 0.28f, 0.37f, 0.95f), 1.0f);
 	};
 
@@ -2880,8 +3053,8 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildCivilizationPage()
 				+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center).Padding(8.0f, 0.0f)
 				[
 					SNew(SVerticalBox)
-					+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Text(LOCTEXT("CivManifestHint", "ARRIVAL ARCHITECT  /  LIVE CIVILIZATION MANIFEST")).Font(APSMenu::Font("Bold", 9)).ColorAndOpacity(APSMenu::White)]
-					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 1.0f, 0.0f, 0.0f)[SNew(STextBlock).Text(LOCTEXT("CivManifestSubHint", "Fleet and infrastructure values create persistent gameplay actors in the generated system.")).Font(APSMenu::Font("Regular", 8)).ColorAndOpacity(APSMenu::Muted)]
+					+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Text(LOCTEXT("CivManifestHint", "ARRIVAL ARCHITECT  /  LIVE CIVILIZATION MANIFEST")).Font(APSMenu::Font("Bold", 11)).ColorAndOpacity(APSMenu::White)]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 1.0f, 0.0f, 0.0f)[SNew(STextBlock).Text(LOCTEXT("CivManifestSubHint", "Fleet and infrastructure values create persistent gameplay actors in the generated system.")).Font(APSMenu::Font("Regular", 10)).ColorAndOpacity(APSMenu::Muted)]
 				]
 				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
 				[
@@ -2892,7 +3065,7 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildCivilizationPage()
 						.Font(APSMenu::Font("Bold", 8)).ColorAndOpacity_Lambda([this](){return SpawnSelectionLoadHandles.IsEmpty()?APSMenu::Success:APSMenu::Amber;})
 					]
 					+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Right).Padding(0.0f, 1.0f, 0.0f, 0.0f)
-					[SNew(STextBlock).Text_Lambda([VM](){const USpawnParameters* P=VM.IsValid()?VM->SpawnParameters.Get():nullptr;return FText::FromString(FString::Printf(TEXT("%d PHYSICAL ACTORS"),P?P->GetPlannedPhysicalActorCount():0));}).Font(APSMenu::Font("Bold", 11)).ColorAndOpacity(APSMenu::Amber)]
+					[SNew(STextBlock).Text_Lambda([VM](){const USpawnParameters* P=VM.IsValid()?VM->SpawnParameters.Get():nullptr;return FText::FromString(FString::Printf(TEXT("%d PHYSICAL ACTORS"),P?P->GetPlannedPhysicalActorCount():0));}).Font(APSMenu::Font("Bold", 13)).ColorAndOpacity(APSMenu::Amber)]
 				]
 			]
 		]
@@ -2906,9 +3079,9 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildCivilizationPage()
 				[
 					SNew(SHorizontalBox)
 					+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
-					[SNew(STextBlock).Text(LOCTEXT("FoundingRegistryTitle", "FOUNDING ASSET REGISTRY")).Font(APSMenu::Font("Bold", 10)).ColorAndOpacity(APSMenu::White)]
+					[SNew(STextBlock).Text(LOCTEXT("FoundingRegistryTitle", "FOUNDING ASSET REGISTRY")).Font(APSMenu::Font("Bold", 12)).ColorAndOpacity(APSMenu::White)]
 					+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
-					[SNew(STextBlock).Text(LOCTEXT("FoundingRegistryStatus", "5 CLASS SLOTS  /  PILOT VERIFIED")).Font(APSMenu::Font("Bold", 8)).ColorAndOpacity(APSMenu::Success)]
+					[SNew(STextBlock).Text(LOCTEXT("FoundingRegistryStatus", "5 CLASS SLOTS  /  PILOT VERIFIED")).Font(APSMenu::Font("Bold", 9)).ColorAndOpacity(APSMenu::Success)]
 				]
 				+ SVerticalBox::Slot().FillHeight(0.60f)
 				[
@@ -2940,8 +3113,8 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildCivilizationPage()
 						+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
 						[
 							SNew(SVerticalBox)
-							+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Text(LOCTEXT("CivilizationConsole", "CONFIGURATION CONSOLE")).Font(APSMenu::Font("Bold", 11)).ColorAndOpacity(APSMenu::White)]
-							+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 2.0f, 0.0f, 0.0f)[SNew(STextBlock).Text(LOCTEXT("CivilizationConsoleHint", "Tune the colony package before system handoff.")).Font(APSMenu::Font("Regular", 8)).ColorAndOpacity(APSMenu::Muted)]
+							+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Text(LOCTEXT("CivilizationConsole", "CONFIGURATION CONSOLE")).Font(APSMenu::Font("Bold", 13)).ColorAndOpacity(APSMenu::White)]
+							+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 2.0f, 0.0f, 0.0f)[SNew(STextBlock).Text(LOCTEXT("CivilizationConsoleHint", "Tune the colony package before system handoff.")).Font(APSMenu::Font("Regular", 10)).ColorAndOpacity(APSMenu::Muted)]
 						]
 						+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
 						[
@@ -3023,6 +3196,11 @@ void SAPSMainMenuRoot::LoadVisualResources()
 	Load(ClusterImage, TEXT("/Game/APS/APS_ALPHA/UI/Images/I_Cluster.I_Cluster"));
 	Load(CivilizationImage, TEXT("/Game/APS/APS_ALPHA/UI/Images/circular_galaxy.circular_galaxy"));
 	Load(BackgroundImage, TEXT("/Game/APS/APS_ALPHA/UI/Images/Screenshot_2023.Screenshot_2023"));
+	Load(WorldMultiPlanetImage, TEXT("/Game/APS/APS_ALPHA/UI/Images/WorldBrowser/T_World_MultiPlanet.T_World_MultiPlanet"));
+	Load(WorldSinglePlanetImage, TEXT("/Game/APS/APS_ALPHA/UI/Images/WorldBrowser/T_World_SinglePlanet.T_World_SinglePlanet"));
+	Load(WorldHabitableZoneImage, TEXT("/Game/APS/APS_ALPHA/UI/Images/WorldBrowser/T_World_HabitableZone.T_World_HabitableZone"));
+	Load(WorldGasGiantsImage, TEXT("/Game/APS/APS_ALPHA/UI/Images/WorldBrowser/T_World_GasGiants.T_World_GasGiants"));
+	Load(WorldNoPlanetsImage, TEXT("/Game/APS/APS_ALPHA/UI/Images/WorldBrowser/T_World_NoPlanets.T_World_NoPlanets"));
 }
 
 void SAPSMainMenuRoot::BeginAuxiliaryMenuLoad()
@@ -3088,6 +3266,7 @@ FReply SAPSMainMenuRoot::OpenAstronomicalGeneration(EAstroPreviewFocus Focus, EA
 		// Establish the route and its requested hierarchy focus before constructing
 		// the panel. This prevents a one-frame flash of the previous scope and makes
 		// Generate Civilization enter directly at PLANET as designed.
+		ViewModel->DismissMainMenuHeroGalaxy();
 		ViewModel->SetGenerationRoute(Route);
 		ViewModel->SetPreviewFocus(Focus);
 	}

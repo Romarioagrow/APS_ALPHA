@@ -30,6 +30,14 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Loading")
 	bool bIsLoadingMode{false};
 
+	/** True from save selection until the reconstructed hierarchy has been overlaid. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Loading")
+	bool bPendingSavedWorldReplay{false};
+
+	/** Prevents the legacy level Blueprint from restoring actors before generation. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Loading")
+	bool bSavedWorldHierarchyReady{false};
+
 	/**
 	 * The Start Single Game route opens the authored showcase map exactly as it
 	 * is saved. Placed AstroGenerator actors must not reinterpret that map as a
