@@ -1441,10 +1441,14 @@ namespace APSPlanetSurfaceAssets
 		// so its one shared root-relative normal is the authoritative shading normal.
 		UMaterialExpressionVertexNormalWS* LiquidVertexNormal = bOrbitalPresentation
 			? AddExpression<UMaterialExpressionVertexNormalWS>(Material, 20, 900) : nullptr;
-		UMaterialExpressionLinearInterpolate* OrbitalBaseWorldNormal = bOrbitalPresentation
-			? AddLerp(Material, LiquidVertexNormal, LiquidRadialNormal,
-				OrbitalNormalBlend, 0, 220, 980)
+		// The closed ocean mesh already carries exact sphere normals. Reconstructing
+		// these from two world positions loses precision at extreme preview scales and
+		// feeds quantized bands into Fresnel, specular and opacity simultaneously.
+		UMaterialExpressionNormalize* OrbitalBaseWorldNormal = bOrbitalPresentation
+			? AddExpression<UMaterialExpressionNormalize>(Material, 220, 980)
 			: nullptr;
+		UMaterialExpressionMultiply* OrbitalWaveDomain = bOrbitalPresentation
+			? AddExpression<UMaterialExpressionMultiply>(Material, -850, 900) : nullptr;
 		UMaterialExpression* LiquidBaseWorldNormal = bOrbitalPresentation
 			? static_cast<UMaterialExpression*>(OrbitalBaseWorldNormal)
 			: static_cast<UMaterialExpression*>(LiquidRadialNormal);
@@ -1526,7 +1530,7 @@ namespace APSPlanetSurfaceAssets
 			return nullptr;
 		}
 		if (bOrbitalPresentation
-			&& (!LiquidVertexNormal || !OrbitalBaseWorldNormal || !LiquidVertexColor
+			&& (!LiquidVertexNormal || !OrbitalBaseWorldNormal || !OrbitalWaveDomain || !LiquidVertexColor
 				|| !OrbitalWaterMask || !FullLiquidVisibility || !LiquidVisibilityMask
 				|| !FresnelOpacityScale || !FresnelOpacity || !BoundedOpacity
 				|| !MaskedOpacity || !MaskedEmissive))
@@ -1541,7 +1545,17 @@ namespace APSPlanetSurfaceAssets
 		// section normal here would retain the LOD grid in Fresnel colour even after the
 		// final material normal had been unified.
 		Fresnel->Normal.Connect(0, LiquidBaseWorldNormal);
-		WavePosition->A.Connect(0, LiquidRootRelativePosition);
+		if (bOrbitalPresentation)
+		{
+			OrbitalBaseWorldNormal->VectorInput.Connect(0, LiquidVertexNormal);
+			// Fixed reference sphere: detail density must not change as the hierarchy
+			// compresses or expands this presentation component. Physical oceans below
+			// continue using centimetres relative to their actual WorldScape root.
+			OrbitalWaveDomain->A.Connect(0, OrbitalBaseWorldNormal);
+			OrbitalWaveDomain->ConstB = 600000.0f;
+		}
+		WavePosition->A.Connect(0, bOrbitalPresentation
+			? static_cast<UMaterialExpression*>(OrbitalWaveDomain) : LiquidRootRelativePosition);
 		WavePosition->B.Connect(0, WaveScale);
 		WaveNoise->Position.Connect(0, WavePosition);
 		WaveNoise->WorldPositionOriginType = EPositionOrigin::Absolute;
@@ -1834,6 +1848,8 @@ namespace APSPlanetSurfaceAssets
 		UMaterialExpressionWorldPosition* WorldPosition =
 			AddExpression<UMaterialExpressionWorldPosition>(Material, -900, 720);
 		UMaterialExpression* ObjectPosition = AddObjectPositionExpression(Material, -900, 780);
+		UMaterialExpressionVertexNormalWS* OceanVertexNormal =
+			AddExpression<UMaterialExpressionVertexNormalWS>(Material, -650, 840);
 		UMaterialExpressionSubtract* RelativePosition =
 			AddExpression<UMaterialExpressionSubtract>(Material, -650, 720);
 		UMaterialExpressionNormalize* RadialNormal =
@@ -1848,7 +1864,7 @@ namespace APSPlanetSurfaceAssets
 			AddExpression<UMaterialExpressionClamp>(Material, 320, -240);
 		if (!Deep || !Shallow || !Emissive || !Roughness || !Metallic || !Specular
 			|| !VertexColor || !CoastMask || !OceanDepthMask || !DepthColor
-			|| !WorldPosition || !ObjectPosition || !RelativePosition || !RadialNormal
+			|| !WorldPosition || !ObjectPosition || !RelativePosition || !RadialNormal || !OceanVertexNormal
 			|| !Fresnel || !BoundedFresnel || !WaterColor || !BoundedWaterColor)
 		{
 			return nullptr;
@@ -1857,7 +1873,9 @@ namespace APSPlanetSurfaceAssets
 		WorldPosition->WorldPositionShaderOffset = WPT_ExcludeAllShaderOffsets;
 		RelativePosition->A.Connect(0, WorldPosition);
 		RelativePosition->B.Connect(0, ObjectPosition);
-		RadialNormal->VectorInput.Connect(0, RelativePosition);
+		// The closed shell has exact radial vertex normals, independent of world
+		// translation, hierarchy scale and interpolated depth precision.
+		RadialNormal->VectorInput.Connect(0, OceanVertexNormal);
 		Fresnel->Exponent = 5.0f;
 		Fresnel->BaseReflectFraction = 0.02f;
 		Fresnel->Normal.Connect(0, RadialNormal);
@@ -2447,6 +2465,14 @@ int32 UAPSPlanetSurfaceAssetCommandlet::Main(const FString& Params)
 		return 8;
 	}
 	IAssetTools& AssetTools = FModuleManager::LoadModuleChecked<FAssetToolsModule>(TEXT("AssetTools")).Get();
+	if (FParse::Param(*Params, TEXT("OrbitalLiquidsOnly")))
+	{
+		// Scoped repair: never regenerate the physical WorldScape materials, terrain,
+		// catalog or any stellar asset when updating the two preview liquid masters.
+		return CreateCanonicalLiquidMaterial(AssetTools, PreviewMaterialPath,
+			TEXT("M_APS_OrbitalLiquid"), true)
+			&& CreateOrbitalLivingWaterMaterial(AssetTools) ? 0 : 5;
+	}
 
 	// Terrain and physical liquids are project-authored and assigned directly to
 	// WorldScape's generated sections. Water owns a compact dedicated opaque master;

@@ -1,6 +1,7 @@
 #include "MainMenuController.h"
 #include "APS_ALPHA/Core/Instances/MainGameplayInstance.h"
 #include "APS_ALPHA/Core/Model/GeneratedWorld.h"
+#include "APS_ALPHA/Core/Saves/APSWorldSaveSnapshot.h"
 #include "APS_ALPHA/Core/Saves/GameSave.h"
 #include "APS_ALPHA/UI/MainMenu/WorldGenerationViewModel.h"
 #include "APS_ALPHA/UI/MainMenu/SAPSMainMenuRoot.h"
@@ -9,6 +10,7 @@
 #include "Engine/GameViewportClient.h"
 #include "Engine/World.h"
 #include "Kismet/GameplayStatics.h"
+#include "Misc/Paths.h"
 #include "Widgets/SWeakWidget.h"
 
 void AMainMenuController::BeginPlay()
@@ -148,6 +150,8 @@ void AMainMenuController::LaunchSingleGame()
 		GameplayInstance->bIsLoadingMode = false;
 		GameplayInstance->bUseAuthoredSinglePlayWorld = true;
 		GameplayInstance->bSpawnGeneratedCivilization = false;
+		GameplayInstance->bPendingSavedWorldReplay = false;
+		GameplayInstance->bSavedWorldHierarchyReady = false;
 		GameplayInstance->SaveSlotName.Reset();
 		GameplayInstance->NewGeneratedWorld = nullptr;
 		GameplayInstance->SpawnParameters = nullptr;
@@ -160,19 +164,46 @@ void AMainMenuController::LaunchSingleGame()
 
 void AMainMenuController::LoadWorldSlot(const FString& SaveFileName)
 {
-	if (UMainGameplayInstance* GameplayInstance = GetGameInstance()
-		? GetGameInstance()->GetSubsystem<UMainGameplayInstance>() : nullptr)
+	UMainGameplayInstance* GameplayInstance = GetGameInstance()
+		? GetGameInstance()->GetSubsystem<UMainGameplayInstance>() : nullptr;
+	if (!GameplayInstance || SaveFileName.IsEmpty())
 	{
-		// A visit must never accidentally reuse a model committed by an earlier
-		// generation session in the same GameInstance.
-		GameplayInstance->bUseAuthoredSinglePlayWorld = false;
-		GameplayInstance->bSpawnGeneratedCivilization = false;
-		GameplayInstance->NewGeneratedWorld = nullptr;
-		GameplayInstance->SpawnParameters = nullptr;
-		GameplayInstance->CurrentCivilization = nullptr;
+		UE_LOG(LogTemp, Error, TEXT("[APS.Save] Cannot start load: invalid game state or slot"));
+		return;
 	}
-	SetSaveSlotName(SaveFileName);
-	SetLoadingModeTrue();
+
+	const FString SlotName = FPaths::GetBaseFilename(SaveFileName);
+	UGameSave* LoadedSave = Cast<UGameSave>(UGameplayStatics::LoadGameFromSlot(SlotName, 0));
+	if (!LoadedSave)
+	{
+		UE_LOG(LogTemp, Error, TEXT("[APS.Save] Cannot open selected save slot: %s"), *SlotName);
+		return;
+	}
+
+	UGeneratedWorld* ReplayModel = APSWorldSaveSnapshot::Restore(
+		LoadedSave, GameplayInstance, SlotName);
+	if (!ReplayModel)
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[APS.Save] Slot %s has no recoverable generated-world model"), *SlotName);
+		return;
+	}
+
+	// Rebuild astronomy first from the immutable model.  Interactive actor and
+	// player transforms are restored only after the hierarchy reports ready.
+	GameplayInstance->bUseAuthoredSinglePlayWorld = false;
+	GameplayInstance->bSpawnGeneratedCivilization = false;
+	GameplayInstance->NewGeneratedWorld = ReplayModel;
+	GameplayInstance->SpawnParameters = nullptr;
+	GameplayInstance->CurrentCivilization = nullptr;
+	GameplayInstance->SaveSlotName = SlotName;
+	GameplayInstance->bIsLoadingMode = true;
+	GameplayInstance->bPendingSavedWorldReplay = true;
+	GameplayInstance->bSavedWorldHierarchyReady = false;
+	UE_LOG(LogTemp, Log,
+		TEXT("[APS.Save] Prepared deterministic replay slot=%s version=%d modelBytes=%d seed=%d canonicalRecords=%d"),
+		*SlotName, LoadedSave->SaveFormatVersion, LoadedSave->GeneratedWorldModelData.Num(),
+		ReplayModel->GenerationSeed, ReplayModel->CanonicalStellarDataset.ClusterRecords.Num());
 	UGameplayStatics::OpenLevel(this, TEXT("L_WorldGeneration"));
 }
 

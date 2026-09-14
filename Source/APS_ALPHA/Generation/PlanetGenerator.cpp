@@ -1,4 +1,5 @@
 #include "PlanetGenerator.h"
+#include "APSAtmosphereGeneration.h"
 
 #include "PlanetaryAtmosphere.h"
 #include "APS_ALPHA/Actors/Astro/Planet.h"
@@ -196,7 +197,7 @@ void UPlanetGenerator::GeneratePlanetAtmosphere(APlanet* Planet, const TSharedPt
 		PlanetAtmosphere->AttachToActor(Planet, FAttachmentTransformRules::KeepWorldTransform);
 
 		// Настройка параметров атмосферы
-		PlanetAtmosphere->bKeepRelativeScale = false;
+		PlanetAtmosphere->bKeepRelativeScale = true;
 		PlanetAtmosphere->PlanetRadius = FMath::Max(PlanetAtmosphereMode->AtmosphereRadiusKm - 1.0, 0.5);
 		PlanetAtmosphere->AtmosphereHeight = PlanetAtmosphereMode->AtmosphereHeight;
 		PlanetAtmosphere->AtmosphereOpacity = PlanetAtmosphereMode->AtmosphereOpacity;
@@ -204,6 +205,7 @@ void UPlanetGenerator::GeneratePlanetAtmosphere(APlanet* Planet, const TSharedPt
 		PlanetAtmosphere->RayleighHeight = PlanetAtmosphereMode->AtmosphereRayleighScattering;
 		//PlanetAtmosphere->Ray = PlanetAtmosphereMode->AtmosphereColor;
 		PlanetAtmosphere->RayleighScattering = PlanetAtmosphereMode->AtmosphereColor;
+		APSAtmosphereGeneration::CommitAuthoredDimensions(*PlanetAtmosphere);
 		PlanetAtmosphere->UpdateScale();
 	}
 }

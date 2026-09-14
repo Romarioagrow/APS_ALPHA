@@ -22,6 +22,8 @@ public class APS_ALPHA : ModuleRules
 		{
 			PublicDependencyModuleNames.Add("WorldScapeEditor");
 			PrivateDependencyModuleNames.AddRange(new string[] { "UnrealEd", "AssetTools", "MaterialEditor" });
+			// Editor-only asynchronous stellar diagnostic readback; no runtime rendering change.
+			PrivateDependencyModuleNames.Add("RHI");
 		}
 		
 		PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore", "DirGravity", "EnhancedInput", "AssetRegistry", "RenderCore" });

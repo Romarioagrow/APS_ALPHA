@@ -21,10 +21,10 @@ namespace APSOrbitGeneration
 		switch (DistributionType)
 		{
 		case EOrbitDistributionType::Uniform: return 0.72;
-		case EOrbitDistributionType::Gaussian: return 0.58;
-		case EOrbitDistributionType::Chaotic: return 0.46;
-		case EOrbitDistributionType::InnerOuter: return 0.60;
-		case EOrbitDistributionType::Dense: return 0.36;
+		case EOrbitDistributionType::Gaussian: return 0.10;
+		case EOrbitDistributionType::Chaotic: return 0.08;
+		case EOrbitDistributionType::InnerOuter: return 0.12;
+		case EOrbitDistributionType::Dense: return 0.10;
 		default: return 0.50;
 		}
 	}
@@ -84,6 +84,90 @@ void UPlanetarySystemGenerator::EnforcePlanetSurfaceClearance(
 		PreviousRadiusKm = PlanetRadiusKm;
 		bHasPreviousPlanet = true;
 	}
+}
+
+void UPlanetarySystemGenerator::CompactPlanetOrbitRange(double& MinOrbit, double& MaxOrbit, const double StellarRadiusSolar)
+{
+	const double Clearance = UGeneratedWorld::MinimumPlanetOrbitAu(StellarRadiusSolar, 0.0);
+	const double Span = FMath::Clamp(FMath::IsFinite(MaxOrbit - MinOrbit) ? MaxOrbit - MinOrbit : 9.0, 0.25, 20.0);
+	MinOrbit = Clearance + 0.75 * FMath::Clamp(FMath::IsFinite(MinOrbit) ? MinOrbit - Clearance : 1.0, 0.0, 2.0);
+	MaxOrbit = MinOrbit + FMath::Max(0.25, Span * 0.75);
+}
+
+void UPlanetarySystemGenerator::ResolvePlanetOrbitRange(
+	double& MinOrbit, double& MaxOrbit, const double StellarRadiusSolar)
+{
+	const double Radius = FMath::IsFinite(StellarRadiusSolar) ? FMath::Max(0.0, StellarRadiusSolar) : 0.0;
+	const double Span = FMath::Max(FMath::IsFinite(MaxOrbit - MinOrbit) ? MaxOrbit - MinOrbit : 0.0, 0.25);
+	MinOrbit = FMath::Max(FMath::IsFinite(MinOrbit) ? MinOrbit : 0.0,
+		FMath::Max(0.001, Radius * APSOrbitGeneration::SolarRadiusInAu * 1.35));
+	MaxOrbit = FMath::Max(FMath::IsFinite(MaxOrbit) ? MaxOrbit : MinOrbit, MinOrbit + Span);
+}
+
+TArray<double> UPlanetarySystemGenerator::BuildPlanetOrbitLayout(const int32 Count,
+	const EOrbitDistributionType Distribution, double MinOrbit, double MaxOrbit,
+	const double StellarRadiusSolar, FRandomStream& Random)
+{
+	TArray<double> Radii;
+	// Resolve the photosphere BEFORE sampling. Clamping samples from an engulfed
+	// interval afterwards collapses every recipe to the same minimum-gap ring.
+	ResolvePlanetOrbitRange(MinOrbit, MaxOrbit, StellarRadiusSolar);
+	const int32 N = FMath::Clamp(Count, 0, 120);
+	TArray<double> ChaoticGaps;
+	double GapSum = 0.0;
+	for (int32 I = 1; I < N; ++I)
+	{
+		const double R = Random.FRand();
+		GapSum += ChaoticGaps.Add_GetRef(0.08 + R * R * R * 3.0);
+	}
+	double ChaoticPosition = 0.0;
+	const double ChaoticInnerEdge = 0.02 + 0.12 * Random.FRand();
+	const double ChaoticOuterEdge = 0.84 + 0.14 * Random.FRand();
+	for (int32 I = 0; I < N; ++I)
+	{
+		const double Q = N == 1 ? 0.5 : static_cast<double>(I) / (N - 1);
+		double U = 0.04 + 0.92 * Q;
+		switch (Distribution)
+		{
+		case EOrbitDistributionType::Gaussian:
+		{
+			// Symmetric dense centre with progressively wider gaps in the tails.
+			const double X = 2.0 * Q - 1.0;
+			U = 0.5 + 0.34 * (0.25 * X + 0.75 * X * X * X);
+			break;
+		}
+		case EOrbitDistributionType::Chaotic:
+			if (I > 0) ChaoticPosition += ChaoticGaps[I - 1];
+			U = N == 1 ? 0.35 + 0.3 * Random.FRand()
+				: FMath::Lerp(ChaoticInnerEdge, ChaoticOuterEdge, ChaoticPosition / GapSum);
+			break;
+		case EOrbitDistributionType::InnerOuter:
+		{
+			const int32 InnerCount = (N + 1) / 2;
+			const bool bInner = I < InnerCount;
+			const int32 BandCount = bInner ? InnerCount : N - InnerCount;
+			const int32 BandIndex = bInner ? I : I - InnerCount;
+			const double BandQ = BandCount <= 1 ? 0.5 : static_cast<double>(BandIndex) / (BandCount - 1);
+			U = (bInner ? 0.04 : 0.74) + 0.22 * BandQ;
+			break;
+		}
+		case EOrbitDistributionType::Dense: U = 0.04 + 0.28 * Q; break;
+		default: break;
+		}
+		Radii.Add(FMath::Lerp(MinOrbit, MaxOrbit, U));
+	}
+	EnforceMinimumPlanetOrbitSpacing(Radii, MinOrbit, MaxOrbit, StellarRadiusSolar, Distribution);
+	return Radii;
+}
+
+FRotator UPlanetarySystemGenerator::SamplePlanetOrbitRotation(FRandomStream& Random, double MaxInclinationDegrees)
+{
+	MaxInclinationDegrees = FMath::IsFinite(MaxInclinationDegrees) ? FMath::Clamp(MaxInclinationDegrees, 0.0, 90.0) : 8.0;
+	const double Node = Random.FRand() * 2.0 * PI;
+	const double Tilt = FMath::Acos(FMath::Lerp(1.0, FMath::Cos(FMath::DegreesToRadians(MaxInclinationDegrees)), static_cast<double>(Random.FRand())));
+	const double Phase = Random.FRand() * 2.0 * PI;
+	return (FQuat(FVector::UpVector, Node) * FQuat(FVector::RightVector, Tilt)
+		* FQuat(FVector::UpVector, Phase)).Rotator();
 }
 
 void UPlanetarySystemGenerator::EnforceMinimumPlanetOrbitSpacing(
@@ -325,7 +409,7 @@ void UPlanetarySystemGenerator::GenerateCustomPlanetarySystemModel(
 	TSharedPtr<FStarModel> StarModel,
 	UPlanetGenerator* PlanetGenerator,
 	UMoonGenerator* MoonGenerator,
-	const FAPSPreviewStarEditOverride* StellarEdit
+	const FAPSPreviewStarEditOverride* StellarEdit, const bool bCompactOrbits
 )
 {
 	// OrbitRadii is scratch storage owned by the reusable generator object.  It
@@ -354,7 +438,9 @@ void UPlanetarySystemGenerator::GenerateCustomPlanetarySystemModel(
 	double MaxOrbit = StarModel->Mass * MaxOrbitScalingFactor;
 	// Changing the recipe must not restore the giant's mass-derived AU scale.
 	// Apply the retained range before sampling or assigning planetary zones.
-	if (StellarEdit) StellarEdit->TryGetPlanetOrbitRangeAu(MinOrbit, MaxOrbit);
+	const bool bRetainedRange = StellarEdit && StellarEdit->TryGetPlanetOrbitRangeAu(MinOrbit, MaxOrbit);
+	if (bCompactOrbits && (!bRetainedRange || !StellarEdit->bCompactOrbitEnvelope))
+		CompactPlanetOrbitRange(MinOrbit, MaxOrbit, StarModel->Radius);
 	StarModel->MinOrbit = MinOrbit;
 	StarModel->MaxOrbit = MaxOrbit;
 	UE_LOG(LogTemp, VeryVerbose, TEXT("MAX Orbit: %f"), MaxOrbit);
@@ -374,60 +460,12 @@ void UPlanetarySystemGenerator::GenerateCustomPlanetarySystemModel(
 		FinalPlanetCount = 1;
 	}
 
-	for (int i = 0; i < FinalPlanetCount; i++)
-	{
-		double OrbitDistributionValue;
-		double OrbitRadius;
-		switch (OrbitDistributionType)
-		{
-		case EOrbitDistributionType::Uniform:
-			OrbitDistributionValue = GenerationRandRange(0.1, 1.0);
-		// next orbit - PlanetAffection Zone + Star Radius
-			break;
-		case EOrbitDistributionType::Gaussian:
-			OrbitDistributionValue = RandGauss();
-		// Overlap Fix
-			break;
-		case EOrbitDistributionType::Chaotic:
-			{
-				OrbitDistributionValue = GenerationRandRange(MinOrbit, MaxOrbit);
-				OrbitRadius = OrbitDistributionValue;
-				break;
-			}
-		case EOrbitDistributionType::InnerOuter:
-			{
-				if (i < FinalPlanetCount / 2.0)
-				{
-					OrbitDistributionValue = GenerationRandRange(0.01, 0.5);
-				}
-				else
-				{
-					OrbitDistributionValue = GenerationRandRange(0.5, 1.0);
-				}
-				break;
-			}
-		case EOrbitDistributionType::Dense:
-			OrbitDistributionValue = GenerationRandRange(0.05, 0.5);
-			break;
-		}
-
-		if (OrbitDistributionType != EOrbitDistributionType::Chaotic)
-		{
-			OrbitRadius = FMath::Lerp(MinOrbit, MaxOrbit, OrbitDistributionValue);
-		}
-
-		// ��������� ������� ������������� � ������ ��������� �����
-		OrbitRadii.Add(OrbitRadius);
-	}
-	OrbitRadii.Sort();
-	EnforceMinimumPlanetOrbitSpacing(
-		OrbitRadii, MinOrbit, MaxOrbit, StarModel->Radius, OrbitDistributionType);
-	if (!OrbitRadii.IsEmpty())
-	{
-		MaxOrbit = FMath::Max(MaxOrbit, OrbitRadii.Last());
-		StarModel->MinOrbit = FMath::Min(MinOrbit, OrbitRadii[0]);
-		StarModel->MaxOrbit = MaxOrbit;
-	}
+	FRandomStream OrbitRandom(bSeededGeneration ? GenerationSeed : FMath::Rand());
+	OrbitRadii = BuildPlanetOrbitLayout(FinalPlanetCount, OrbitDistributionType,
+		MinOrbit, MaxOrbit, StarModel->Radius, OrbitRandom);
+	ResolvePlanetOrbitRange(MinOrbit, MaxOrbit, StarModel->Radius);
+	StarModel->MinOrbit = MinOrbit;
+	StarModel->MaxOrbit = MaxOrbit;
 	UE_LOG(LogTemp, VeryVerbose, TEXT("OrbitRadii Num: %d "), OrbitRadii.Num());
 	UE_LOG(LogTemp, VeryVerbose, TEXT("MinOrbit: %f, MaxOrbit: %f"), MinOrbit, MaxOrbit);
 
@@ -731,7 +769,7 @@ void UPlanetarySystemGenerator::GenerateCustomPlanetarySystemModel(
 void UPlanetarySystemGenerator::GeneratePlanetarySystemModelByStar(
 	TSharedPtr<FPlanetarySystemModel> PlanetarySystemModel, TSharedPtr<FStarModel> StarModel,
 	UPlanetGenerator* PlanetGenerator, UMoonGenerator* MoonGenerator,
-	const FAPSPreviewStarEditOverride* StellarEdit)
+	const FAPSPreviewStarEditOverride* StellarEdit, const bool bCompactOrbits)
 {
 	if (bSeededGeneration) GenerationRandom.Initialize(GenerationSeed);
 	// The same generator services every star in the hierarchy.  Never leak
@@ -808,7 +846,9 @@ void UPlanetarySystemGenerator::GeneratePlanetarySystemModelByStar(
 
 		double MinOrbit = StarModel->Mass * MinOrbitScalingFactor;
 		double MaxOrbit = StarModel->Mass * MaxOrbitScalingFactor;
-		if (StellarEdit) StellarEdit->TryGetPlanetOrbitRangeAu(MinOrbit, MaxOrbit);
+		const bool bRetainedRange = StellarEdit && StellarEdit->TryGetPlanetOrbitRangeAu(MinOrbit, MaxOrbit);
+		if (bCompactOrbits && (!bRetainedRange || !StellarEdit->bCompactOrbitEnvelope))
+			CompactPlanetOrbitRange(MinOrbit, MaxOrbit, StarModel->Radius);
 
 		// ��������� ��������� ������������� ��� ����� �������
 		EOrbitDistributionType OrbitDistributionType = ChooseOrbitDistribution(StarModel->StellarType);
@@ -817,59 +857,12 @@ void UPlanetarySystemGenerator::GeneratePlanetarySystemModelByStar(
 		FString OrbitType = UEnum::GetValueAsString(OrbitDistributionType);
 		UE_LOG(LogTemp, VeryVerbose, TEXT("Orbit Distribution Type: %s"), *OrbitType);
 
-		for (int i = 0; i < FinalPlanetCount; i++)
-		{
-			double OrbitDistributionValue;
-			double OrbitRadius;
-			switch (OrbitDistributionType)
-			{
-			case EOrbitDistributionType::Uniform:
-				OrbitDistributionValue = GenerationRandRange(0.0, 1.0);
-				break;
-			case EOrbitDistributionType::Gaussian:
-				OrbitDistributionValue = RandGauss();
-				break;
-			case EOrbitDistributionType::Chaotic:
-				{
-					OrbitDistributionValue = GenerationRandRange(MinOrbit, MaxOrbit);
-					OrbitRadius = OrbitDistributionValue;
-					break;
-				}
-			case EOrbitDistributionType::InnerOuter:
-				{
-					if (i < FinalPlanetCount / 2.0)
-					{
-						OrbitDistributionValue = GenerationRandRange(0.01, 0.5);
-					}
-					else
-					{
-						OrbitDistributionValue = GenerationRandRange(0.5, 1.0);
-					}
-					break;
-				}
-			case EOrbitDistributionType::Dense:
-				OrbitDistributionValue = GenerationRandRange(0.01, 0.5);
-				break;
-			}
-
-			if (OrbitDistributionType != EOrbitDistributionType::Chaotic)
-			{
-				OrbitRadius = FMath::Lerp(MinOrbit, MaxOrbit, OrbitDistributionValue);
-			}
-
-			// ��������� ������� ������������� � ������ ��������� �����
-			OrbitRadii.Add(OrbitRadius);
-		}
-
-		OrbitRadii.Sort();
-		EnforceMinimumPlanetOrbitSpacing(
-			OrbitRadii, MinOrbit, MaxOrbit, StarModel->Radius, OrbitDistributionType);
-		if (!OrbitRadii.IsEmpty())
-		{
-			MaxOrbit = FMath::Max(MaxOrbit, OrbitRadii.Last());
-			StarModel->MinOrbit = FMath::Min(MinOrbit, OrbitRadii[0]);
-			StarModel->MaxOrbit = MaxOrbit;
-		}
+		FRandomStream OrbitRandom(bSeededGeneration ? GenerationSeed : FMath::Rand());
+		OrbitRadii = BuildPlanetOrbitLayout(FinalPlanetCount, OrbitDistributionType,
+			MinOrbit, MaxOrbit, StarModel->Radius, OrbitRandom);
+		ResolvePlanetOrbitRange(MinOrbit, MaxOrbit, StarModel->Radius);
+		StarModel->MinOrbit = MinOrbit;
+		StarModel->MaxOrbit = MaxOrbit;
 		UE_LOG(LogTemp, VeryVerbose, TEXT("OrbitRadii Num: %d "), OrbitRadii.Num());
 
 		// ������� ����������� � ������������ ������

@@ -30,9 +30,9 @@ void AGravityGameModeBase::BeginPlay()
 		World->GetTimerManager().SetTimerForNextTick(
 			FTimerDelegate::CreateUObject(
 				this, &AGravityGameModeBase::ClearLegacyLevelScreenMessages));
-		if (const UGameInstance* GameInstance = World->GetGameInstance())
+		if (UGameInstance* GameInstance = World->GetGameInstance())
 		{
-			const UMainGameplayInstance* GameplayState =
+			UMainGameplayInstance* GameplayState =
 				GameInstance->GetSubsystem<UMainGameplayInstance>();
 			if (GameplayState && GameplayState->bUseAuthoredSinglePlayWorld)
 			{
@@ -83,6 +83,17 @@ void AGravityGameModeBase::BeginPlay()
 					UGameplayStatics::FinishSpawningActor(AstroGenerator, GeneratorTransform);
 					AstroGenerator->DisplayNewGeneratedWorld();
 					AstroGenerator->GenerateWorldByModel();
+					if (GameplayState->bPendingSavedWorldReplay)
+					{
+						// The actor archive is an overlay, not a generator replacement.  Mark
+						// readiness only after the canonical hierarchy has been materialized.
+						GameplayState->bSavedWorldHierarchyReady = true;
+						if (AGravityPlayerController* GravityController =
+							Cast<AGravityPlayerController>(PlayerController))
+						{
+							GravityController->LoadWorld();
+						}
+					}
 					UE_LOG(LogTemp, Log,
 						TEXT("[APS.WorldGeneration] Generated committed world from isolated runtime generator"));
 				}

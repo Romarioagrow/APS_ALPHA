@@ -30,6 +30,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "SaveLoad")
 	void SaveNewWorld(const EAstroGenerationLevel AstroGenerationLevel, UGeneratedWorld* GeneratedWorldModel);
 
+	/** Overwrites the active slot with the current actor and player state (F5). */
+	UFUNCTION(BlueprintCallable, Category = "SaveLoad")
+	void SaveCurrentWorld();
+
 	UFUNCTION(BlueprintCallable, Category = "SaveLoad")
 	void LoadWorld();
 	
@@ -47,6 +51,8 @@ public:
 	void ToggleStrategicMap();
 
 private:
+	bool SaveWorldToSlot(const FString& SlotName, UGeneratedWorld* GeneratedWorldModel,
+		const FString& ExistingWorldName = FString());
 	void CloseStrategicMap(bool bRestoreView);
 
 	TSharedPtr<SAPSStrategicMapPanel> StrategicMapWidget;

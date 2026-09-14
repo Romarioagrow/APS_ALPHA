@@ -94,8 +94,14 @@ bool AAstroGenerator::CapturePreviewStarOrbitLayout(FAPSPreviewStarEditOverride&
 		if (!FMath::IsFinite(OrbitAu) || OrbitAu <= 0.0) return false;
 		OrbitsAu.Add(OrbitAu);
 	}
-	Edit.PlanetOrbitRadiiAu = MoveTemp(OrbitsAu);
-	Edit.PlanetOrbitDistribution = Family->OrbitDistributionType;
+	Edit.CapturePlanetOrbitLayout(OrbitsAu, Family->OrbitDistributionType, Star->MinOrbit, Star->MaxOrbit);
+	// Model envelope describes AUTO, not a manually moved outer planet.
+	if (Star->MinOrbit > 0.0 && Star->MaxOrbit > Star->MinOrbit)
+	{
+		Edit.PlanetOrbitRangeMinAu = Star->MinOrbit;
+		Edit.PlanetOrbitRangeMaxAu = Star->MaxOrbit;
+	}
+	Edit.bCompactOrbitEnvelope = true;
 	return true;
 }
 
@@ -189,7 +195,7 @@ bool AAstroGenerator::BuildContinuousPreviewSystemLayout(const FClusterStarSyste
 		Families->SetGenerationSeed(APSGeneratedBodyIdentity::Stream(Seed, StarAddress, TEXT("planets")).GetInitialSeed());
 		const FAPSPreviewStarEditOverride* StellarOrbitEdit = IsValid(GeneratedWorldModel)
 			? GeneratedWorldModel->FindPreviewStarEditOverride(StarAddress) : nullptr;
-		Families->GenerateCustomPlanetarySystemModel(FamilyModel, StarModel, PlanetGenerator, MoonGenerator, StellarOrbitEdit);
+		Families->GenerateCustomPlanetarySystemModel(FamilyModel, StarModel, PlanetGenerator, MoonGenerator, StellarOrbitEdit, true);
 		ApplyPreviewBodyEditOverridesToModels(GeneratedWorldModel, StarIndex, *FamilyModel, Address);
 		bool bEditedMoonHierarchy = false;
 		for (int32 PlanetIndex = 0; PlanetIndex < FamilyModel->PlanetsList.Num(); ++PlanetIndex)
@@ -211,11 +217,10 @@ bool AAstroGenerator::BuildContinuousPreviewSystemLayout(const FClusterStarSyste
 		// bodies which the newly sized star or neighbouring planet actually overlaps.
 		if (IsValid(GeneratedWorldModel))
 			if (const FAPSPreviewStarEditOverride* Edit = GeneratedWorldModel->FindPreviewStarEditOverride(StarAddress))
-				Edit->ApplyToPlanetOrbits(*FamilyModel);
+				Edit->ApplyToPlanetOrbits(*FamilyModel, true, StarModel->Radius);
+		if (IsValid(GeneratedWorldModel)) GeneratedWorldModel->ApplyPlanetOrbitEdits(*FamilyModel, StarAddress, StarModel->Radius);
 		UPlanetarySystemGenerator::EnforcePlanetSurfaceClearance(*FamilyModel);
 		double Envelope = StarModel->RadiusKM * 1.0e5 * 1.35;
-		double PreviousOrbit = 0.0;
-		double PreviousEnvelope = 0.0;
 		for (int32 PlanetIndex = 0; PlanetIndex < FamilyModel->PlanetsList.Num(); ++PlanetIndex)
 		{
 			const TSharedPtr<FPlanetData>& Data = FamilyModel->PlanetsList[PlanetIndex];
@@ -227,10 +232,8 @@ bool AAstroGenerator::BuildContinuousPreviewSystemLayout(const FClusterStarSyste
 			const double PlanetEnvelope = Model->Radius * EarthRadiusCm * 2.5;
 			double OrbitRadius = FMath::Max(Model->OrbitDistance * AU,
 				StarModel->RadiusKM * 1.0e5 * 1.35 + PlanetEnvelope);
-			if (PreviousOrbit > 0.0) OrbitRadius = FMath::Max(OrbitRadius,
-				PreviousOrbit + PreviousEnvelope + PlanetEnvelope + FMath::Max(AU * 0.01, StarModel->RadiusKM * 1.0e5 * 0.08));
-			PreviousOrbit = OrbitRadius;
-			PreviousEnvelope = PlanetEnvelope;
+			// Radial clearances were solved in distance order before spawning;
+			// stable planet indices need not be ordered by an authored orbit radius.
 			Model->OrbitDistance = Data->OrbitRadius = OrbitRadius / AU;
 			Layout.PlanetOrbitRadiiCm.Add(OrbitRadius);
 			double MoonEnvelope = Model->Radius * EarthRadiusCm * 1.1;
@@ -341,7 +344,10 @@ AStarSystem* AAstroGenerator::MaterializeContinuousPreviewSystem(const int32 Ins
 			if (!Orbit) return nullptr;
 			Orbit->AttachToActor(Family, FAttachmentTransformRules::KeepWorldTransform);
 			FRandomStream Orientation = APSGeneratedBodyIdentity::Stream(Seed, PlanetAddress, TEXT("orbit"));
-			Orbit->SetActorRotation(FRotator(Orientation.FRandRange(-8.0f, 8.0f), Orientation.FRandRange(0.0f, 360.0f), 0.0));
+			Orbit->SetActorRotation(UPlanetarySystemGenerator::SamplePlanetOrbitRotation(Orientation,
+				IsValid(GeneratedWorldModel) ? GeneratedWorldModel->GetSystemMaxOrbitInclinationDegrees(Address) : 8.0));
+			if (IsValid(GeneratedWorldModel)) Orbit->SetActorRotation(
+				GeneratedWorldModel->ResolvePlanetOrbitRotation(PlanetAddress, Orbit->GetActorRotation()));
 			const FVector Center = LocalOrigin + Orbit->GetActorQuat().GetAxisX() * OrbitRadius;
 			APlanet* Planet = World->SpawnActor<APlanet>(BP_PlanetClass, Center, FRotator::ZeroRotator);
 			if (!Planet) return nullptr;
@@ -437,6 +443,7 @@ AStarSystem* AAstroGenerator::MaterializeContinuousPreviewSystem(const int32 Ins
 		}
 	}
 	ContinuousMaterializedSystems.Add(InstanceIndex, System);
+	ApplyPreviewDisplayNames(GeneratedWorldModel);
 	ContinuousSystemRecency.Remove(InstanceIndex);
 	ContinuousSystemRecency.Add(InstanceIndex);
 	bCommitted = true;

@@ -10,6 +10,7 @@
 #include "APS_ALPHA/Generation/StarGenerator.h"
 #include "APS_ALPHA/Core/Rendering/APSStellarMaterialContract.h"
 #include "APS_ALPHA/Core/Rendering/APSPreviewVisibility.h"
+#include "APS_ALPHA/Core/Rendering/APSPreviewCameraBounds.h"
 #include "Camera/CameraComponent.h"
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Components/PointLightComponent.h"
@@ -173,6 +174,56 @@ bool AAstroGenerator::GetContinuousPreviewPhysicalFocus(const EAstroPreviewFocus
 		RadiusCm = PhysicalBodyRadiusCm(Body);
 	}
 	return !CenterCm.ContainsNaN() && FMath::IsFinite(RadiusCm) && RadiusCm > 0.0;
+}
+
+double AAstroGenerator::GetContinuousPreviewFocusEnvelopeCm() const
+{
+	FVector CenterCm;
+	double RadiusCm = 0.0;
+	if (!GetContinuousPreviewPhysicalFocus(PreviewFocus, CenterCm, RadiusCm)) return 0.0;
+	if (PreviewFocus != EAstroPreviewFocus::HomePlanet) return RadiusCm;
+	const AActor* Selected = SelectedPreviewBodyActor.Get();
+	if (!Cast<APlanetaryBody>(Selected))
+		Selected = ContinuousSelectedPlanet.IsValid() ? ContinuousSelectedPlanet.Get() : HomePlanet;
+	const APlanet* Planet = Cast<APlanet>(Selected);
+	if (!IsValid(Planet)) return RadiusCm; // A moon's close-up does not own its parent's orbit.
+	double EnvelopeCm = RadiusCm;
+	for (const AMoon* Moon : Planet->Moons)
+	{
+		if (!IsValid(Moon)) continue;
+		EnvelopeCm = FMath::Max(EnvelopeCm,
+			FVector::Distance(Planet->GetActorLocation(), Moon->GetActorLocation()) + PhysicalBodyRadiusCm(Moon));
+	}
+	// Read the current model too: edited orbital radii are authoritative even before
+	// the deferred presentation refresh has moved a satellite's actor.
+	if (const TSharedPtr<FPlanetModel>& Model = Planet->PlanetData.PlanetModel; Model)
+	{
+		for (const TSharedPtr<FMoonData>& Moon : Model->MoonsList)
+		{
+			if (!Moon || !Moon->MoonModel || !FMath::IsFinite(Moon->OrbitRadius)) continue;
+			const double MoonRadiusCm = FMath::Max(static_cast<double>(Moon->MoonModel->RadiusKM),
+				Moon->MoonModel->Radius * 6371.0) * 1.0e5;
+			const double OrbitEnvelopeCm = RadiusCm * FMath::Max(1.0 + Moon->OrbitRadius, 1.0) + MoonRadiusCm;
+			if (FMath::IsFinite(OrbitEnvelopeCm)) EnvelopeCm = FMath::Max(EnvelopeCm, OrbitEnvelopeCm);
+		}
+	}
+	return EnvelopeCm;
+}
+
+bool AAstroGenerator::GetContinuousPreviewZoomLimits(double& MinDistanceCm, double& MaxDistanceCm) const
+{
+	FVector CenterCm;
+	double RadiusCm = 0.0;
+	if (!IsValid(PreviewCamera) || !GetContinuousPreviewPhysicalFocus(PreviewFocus, CenterCm, RadiusCm)) return false;
+	const double FallbackTangent = FMath::Tan(FMath::DegreesToRadians(PreviewCamera->FieldOfView * 0.5)) * 0.25;
+	const double FitTangent = ContinuousPreviewFramingTangent > 0.0 ? ContinuousPreviewFramingTangent : FallbackTangent;
+	const double MinRatio = PreviewFocus == EAstroPreviewFocus::HomePlanet ? 1.01
+		: PreviewFocus == EAstroPreviewFocus::HomeStar ? 1.2 : 0.01;
+	const FAPSPreviewCameraBounds Bounds = FAPSPreviewCameraBounds::Calculate(
+		RadiusCm, GetContinuousPreviewFocusEnvelopeCm(), FitTangent, MinRatio);
+	MinDistanceCm = Bounds.MinimumCm;
+	MaxDistanceCm = Bounds.MaximumCm;
+	return true;
 }
 
 void AAstroGenerator::ClearContinuousPreviewPresentation()
@@ -875,6 +926,12 @@ void AAstroGenerator::StartContinuousPreviewTransition(APlayerController* Player
 	FAPSContinuousPreviewOrbit Target = ContinuousPreviewOrbit;
 	Target.CenterCm = CenterCm;
 	Target.DistanceCm = RadiusCm * (DistanceRatio > 0.0 ? DistanceRatio : FrameRatio);
+	if (DistanceRatio > 0.0)
+	{
+		double MinimumDistance, MaximumDistance;
+		if (GetContinuousPreviewZoomLimits(MinimumDistance, MaximumDistance))
+			Target.DistanceCm = FMath::Clamp(Target.DistanceCm, MinimumDistance, MaximumDistance);
+	}
 	if (!Target.IsValid()) return;
 	const bool bInitial = !bContinuousPreviewInitialized;
 	if (bInitial)

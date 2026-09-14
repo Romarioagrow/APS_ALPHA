@@ -9,6 +9,7 @@
 #include "APS_ALPHA/Core/Enums/StarClusterSize.h"
 #include "APS_ALPHA/Core/Enums/StarClusterType.h"
 #include "APS_ALPHA/Core/Structs/PlanetarySystemGenerationModel.h"
+#include "APS_ALPHA/Generation/PlanetaryProceduralGenerator.h"
 
 UGeneratedWorld::UGeneratedWorld(): GalaxyClass()
 {
@@ -82,6 +83,94 @@ const FAPSPreviewBodyEditOverride* UGeneratedWorld::FindPreviewBodyEditOverride(
 void UGeneratedWorld::ClearPreviewBodyEditOverrides()
 {
 	PreviewBodyEditOverrides.Reset();
+	PreviewPlanetOrbitEdits.Reset();
+}
+
+const FAPSPreviewPlanetOrbitEdit* UGeneratedWorld::FindPlanetOrbitEdit(const FString& Address) const
+{
+	return PreviewPlanetOrbitEdits.Find(Address);
+}
+
+void UGeneratedWorld::SetPlanetOrbitEdit(const FString& Address, const FAPSPreviewPlanetOrbitEdit& Edit)
+{
+	if (Address.IsEmpty() || !Address.Contains(TEXT("/P")) || Address.Contains(TEXT("/M"))) return;
+	if ((Edit.bOverrideDistance && (!FMath::IsFinite(Edit.DistanceAu) || Edit.DistanceAu <= 0.0))
+		|| (Edit.bOverrideInclination && !FMath::IsFinite(Edit.InclinationDegrees))) return;
+	FAPSPreviewPlanetOrbitEdit Safe = Edit;
+	Safe.InclinationDegrees = FMath::Clamp(Safe.InclinationDegrees, 0.0, 90.0);
+	PreviewPlanetOrbitEdits.Add(Address, Safe);
+}
+
+void UGeneratedWorld::ResetPlanetOrbitEdit(const FString& Address)
+{
+	if (!PreviewPlanetOrbitEdits.Remove(Address)) return;
+	int32 Slash = INDEX_NONE;
+	if (Address.FindLastChar(TEXT('/'), Slash))
+		if (auto* StarEdit = PreviewStarEditOverrides.Find(Address.Left(Slash)))
+			StarEdit->bReplayPlanetOrbitLayout = false; // Old snapshot may contain the manual distance.
+}
+
+double UGeneratedWorld::MinimumPlanetOrbitAu(const double StellarRadiusSolar, const double PlanetRadiusKm)
+{
+	const double StarAu = (FMath::IsFinite(StellarRadiusSolar) ? FMath::Max(0.0, StellarRadiusSolar) : 0.0) * 0.00465047;
+	const double PlanetAu = (FMath::IsFinite(PlanetRadiusKm) ? FMath::Max(0.0, PlanetRadiusKm) : 0.0) / 149597870.7;
+	return FMath::Max3(0.001, StarAu * 1.35 + PlanetAu * 2.5, StarAu + PlanetAu * 5.0);
+}
+
+double UGeneratedWorld::MaximumPlanetOrbitAu(const double StellarRadiusSolar)
+{
+	// Manual edits are physical AU, never multiplied by stellar mass or preview scale.
+	return FMath::Max(50.0, MinimumPlanetOrbitAu(StellarRadiusSolar, 0.0) + 20.0);
+}
+
+void UGeneratedWorld::ApplyPlanetOrbitEdits(FPlanetarySystemModel& Family, const FString& StarAddress,
+	const double StellarRadiusSolar) const
+{
+	const double Maximum = MaximumPlanetOrbitAu(StellarRadiusSolar);
+	for (int32 I = 0; I < Family.PlanetsList.Num(); ++I)
+	{
+		const auto& Data = Family.PlanetsList[I];
+		if (!Data || !Data->PlanetModel) continue;
+		const double RadiusKm = FMath::Max(static_cast<double>(Data->PlanetModel->RadiusKM), Data->PlanetModel->Radius * 6371.0);
+		const double Minimum = MinimumPlanetOrbitAu(StellarRadiusSolar, RadiusKm);
+		if (const auto* Edit = FindPlanetOrbitEdit(FString::Printf(TEXT("%s/P%d"), *StarAddress, I));
+			Edit && Edit->bOverrideDistance && FMath::IsFinite(Edit->DistanceAu))
+			Data->OrbitRadius = FMath::Clamp(Edit->DistanceAu, Minimum, FMath::Max(Minimum, Maximum));
+		Data->OrbitRadius = FMath::Max(Minimum, Data->OrbitRadius);
+		Data->PlanetModel->OrbitDistance = Data->OrbitRadius;
+		Data->PlanetModelData = *Data->PlanetModel;
+	}
+	// Sort indices, not bodies: stable identity and manual ordering survive.
+	UPlanetarySystemGenerator::EnforcePlanetSurfaceClearance(Family);
+}
+
+FRotator UGeneratedWorld::ResolvePlanetOrbitRotation(const FString& PlanetAddress, const FRotator& AutomaticRotation) const
+{
+	const auto* Edit = FindPlanetOrbitEdit(PlanetAddress);
+	if (!Edit || !Edit->bOverrideInclination || !FMath::IsFinite(Edit->InclinationDegrees)) return AutomaticRotation;
+	const double Tilt = FMath::DegreesToRadians(FMath::Clamp(Edit->InclinationDegrees, 0.0, 90.0));
+	const FVector OldNormal = AutomaticRotation.Quaternion().GetAxisZ();
+	const double Node = FMath::Atan2(OldNormal.Y, OldNormal.X);
+	const FVector NewNormal(FMath::Sin(Tilt) * FMath::Cos(Node), FMath::Sin(Tilt) * FMath::Sin(Node), FMath::Cos(Tilt));
+	return (FQuat::FindBetweenNormals(OldNormal, NewNormal) * AutomaticRotation.Quaternion()).Rotator();
+}
+
+bool UGeneratedWorld::SetPreviewDisplayNameOverride(const FString& StableKey, const FString& DisplayName)
+{
+	const FString CleanName = DisplayName.TrimStartAndEnd();
+	if (StableKey.IsEmpty() || CleanName.IsEmpty() || CleanName.Len() > 128
+		|| CleanName.Equals(TEXT("None"), ESearchCase::IgnoreCase)) return false;
+	for (TCHAR Character : CleanName)
+	{
+		if (FChar::IsControl(Character)) return false;
+	}
+	PreviewDisplayNameOverrides.Add(StableKey, CleanName);
+	return true;
+}
+
+const FString* UGeneratedWorld::FindPreviewDisplayNameOverride(const FString& StableKey) const
+{
+	return StableKey.IsEmpty() ? nullptr : PreviewDisplayNameOverrides.Find(StableKey);
 }
 
 void UGeneratedWorld::SetPreviewStarEditOverride(
@@ -110,6 +199,13 @@ bool UGeneratedWorld::ApplyPreviewStarEditOverride(const FString& StableStarKey,
 
 bool FAPSPreviewStarEditOverride::TryGetPlanetOrbitRangeAu(double& OutMinimumAu, double& OutMaximumAu) const
 {
+	if (FMath::IsFinite(PlanetOrbitRangeMinAu) && FMath::IsFinite(PlanetOrbitRangeMaxAu)
+		&& PlanetOrbitRangeMinAu > 0.0 && PlanetOrbitRangeMaxAu > PlanetOrbitRangeMinAu)
+	{
+		OutMinimumAu = PlanetOrbitRangeMinAu;
+		OutMaximumAu = PlanetOrbitRangeMaxAu;
+		return true;
+	}
 	if (PlanetOrbitRadiiAu.IsEmpty()) return false;
 	double MinimumAu = PlanetOrbitRadiiAu[0];
 	double MaximumAu = MinimumAu;
@@ -121,14 +217,44 @@ bool FAPSPreviewStarEditOverride::TryGetPlanetOrbitRangeAu(double& OutMinimumAu,
 	}
 	// Do not touch caller defaults on invalid snapshots. A single-planet range
 	// is valid too; the spacing pass adds clearance if the family gains planets.
-	OutMinimumAu = MinimumAu;
+	// Repair old multi-planet snapshots compressed to one narrow belt by prior
+	// resampling. Expand INWARD only: never recover a giant mass-derived maximum.
+	OutMinimumAu = PlanetOrbitRadiiAu.Num() >= 3 && MaximumAu - MinimumAu < MaximumAu * 0.15
+		? FMath::Max(0.001, MaximumAu * 0.04) : MinimumAu;
 	OutMaximumAu = MaximumAu;
 	return true;
 }
 
-bool FAPSPreviewStarEditOverride::ApplyToPlanetOrbits(FPlanetarySystemModel& Family) const
+void FAPSPreviewStarEditOverride::CapturePlanetOrbitLayout(const TArray<double>& RadiiAu,
+	const EOrbitDistributionType Distribution, double MinimumAu, double MaximumAu)
 {
-	if (PlanetOrbitRadiiAu.IsEmpty() || PlanetOrbitRadiiAu.Num() != Family.PlanetsList.Num()
+	const bool bHasStableRange = FMath::IsFinite(PlanetOrbitRangeMinAu)
+		&& FMath::IsFinite(PlanetOrbitRangeMaxAu) && PlanetOrbitRangeMinAu > 0.0
+		&& PlanetOrbitRangeMaxAu > PlanetOrbitRangeMinAu;
+	PlanetOrbitRadiiAu = RadiiAu;
+	PlanetOrbitDistribution = Distribution;
+	bReplayPlanetOrbitLayout = true;
+	if (!bHasStableRange)
+	{
+		double CapturedMin = 0.0, CapturedMax = 0.0;
+		if (!TryGetPlanetOrbitRangeAu(CapturedMin, CapturedMax)) return;
+		// A valid model envelope is wider than its sampled points and must survive
+		// subsequent Dense -> star edit -> Uniform transitions without contraction.
+		if (!(FMath::IsFinite(MinimumAu) && FMath::IsFinite(MaximumAu)
+			&& MinimumAu > 0.0 && MinimumAu <= CapturedMin && MaximumAu >= CapturedMax))
+		{
+			MinimumAu = CapturedMin;
+			MaximumAu = CapturedMax;
+		}
+		PlanetOrbitRangeMinAu = MinimumAu;
+		PlanetOrbitRangeMaxAu = FMath::Max(MaximumAu, MinimumAu + 0.25);
+	}
+}
+
+bool FAPSPreviewStarEditOverride::ApplyToPlanetOrbits(FPlanetarySystemModel& Family,
+	const bool bCompactOrbits, const double StellarRadiusSolar) const
+{
+	if (!bReplayPlanetOrbitLayout || PlanetOrbitRadiiAu.IsEmpty() || PlanetOrbitRadiiAu.Num() != Family.PlanetsList.Num()
 		|| PlanetOrbitDistribution != Family.OrbitDistributionType) return false;
 	// Validate before writing: an incomplete snapshot cannot half-rescale a family.
 	for (int32 Index = 0; Index < PlanetOrbitRadiiAu.Num(); ++Index)
@@ -136,10 +262,15 @@ bool FAPSPreviewStarEditOverride::ApplyToPlanetOrbits(FPlanetarySystemModel& Fam
 		if (!FMath::IsFinite(PlanetOrbitRadiiAu[Index]) || PlanetOrbitRadiiAu[Index] <= 0.0
 			|| !Family.PlanetsList[Index] || !Family.PlanetsList[Index]->PlanetModel) return false;
 	}
+	double OldMin = 0.0, OldMax = 0.0;
+	const bool bMigrate = bCompactOrbits && !bCompactOrbitEnvelope && TryGetPlanetOrbitRangeAu(OldMin, OldMax);
+	double NewMin = OldMin, NewMax = OldMax;
+	if (bMigrate) UPlanetarySystemGenerator::CompactPlanetOrbitRange(NewMin, NewMax, StellarRadiusSolar);
 	for (int32 Index = 0; Index < PlanetOrbitRadiiAu.Num(); ++Index)
 	{
 		FPlanetData& Data = *Family.PlanetsList[Index];
-		Data.OrbitRadius = PlanetOrbitRadiiAu[Index];
+		Data.OrbitRadius = bMigrate ? FMath::Lerp(NewMin, NewMax,
+			FMath::Clamp((PlanetOrbitRadiiAu[Index] - OldMin) / FMath::Max(OldMax - OldMin, 0.25), 0.0, 1.0)) : PlanetOrbitRadiiAu[Index];
 		Data.PlanetModel->OrbitDistance = Data.OrbitRadius;
 		Data.PlanetModelData = *Data.PlanetModel;
 	}
@@ -177,6 +308,10 @@ uint32 UGeneratedWorld::GetPreviewStarEditHash() const
 		Hash = HashCombine(Hash, ModelHash(Edit.Model));
 		Hash = HashCombine(Hash, ModelHash(Edit.AutomaticModel));
 		Hash = HashCombine(Hash, GetTypeHash(Edit.RadiusOverrideSolar));
+		Hash = HashCombine(Hash, GetTypeHash(Edit.PlanetOrbitRangeMinAu));
+		Hash = HashCombine(Hash, GetTypeHash(Edit.PlanetOrbitRangeMaxAu));
+		Hash = HashCombine(Hash, GetTypeHash(Edit.bReplayPlanetOrbitLayout));
+		Hash = HashCombine(Hash, GetTypeHash(Edit.bCompactOrbitEnvelope));
 		if (!Edit.PlanetOrbitRadiiAu.IsEmpty())
 		{
 			Hash = HashCombine(Hash, GetTypeHash(static_cast<uint8>(Edit.PlanetOrbitDistribution)));
@@ -223,7 +358,23 @@ void FAPSPreviewSystemEditOverride::ApplyToFamily(
 
 void UGeneratedWorld::SetPreviewSystemEditOverride(const FString& Address, const FAPSPreviewSystemEditOverride& Edit)
 {
+	const FAPSPreviewSystemEditOverride* Previous = PreviewSystemEditOverrides.Find(Address);
+	if (!Address.IsEmpty() && Edit.bOverrideOrbitDistribution && (!Previous
+		|| !Previous->bOverrideOrbitDistribution || Previous->OrbitDistribution != Edit.OrbitDistribution))
+	{
+		// A deliberate recipe change must also resample on returning to the initial
+		// recipe. Keep radius/stellar edits and the bounded envelope; drop only replay.
+		for (auto& Entry : PreviewStarEditOverrides)
+			if (Entry.Key.StartsWith(Address + TEXT("/S"))) Entry.Value.bReplayPlanetOrbitLayout = false;
+	}
 	if (!Address.IsEmpty()) PreviewSystemEditOverrides.Add(Address, Edit);
+}
+
+double UGeneratedWorld::GetSystemMaxOrbitInclinationDegrees(const FString& Address) const
+{
+	const FAPSPreviewSystemEditOverride* Edit = FindPreviewSystemEditOverride(Address);
+	return Edit && Edit->bOverrideOrbitInclination && FMath::IsFinite(Edit->MaxOrbitInclinationDegrees)
+		? FMath::Clamp(Edit->MaxOrbitInclinationDegrees, 0.0, 90.0) : 8.0;
 }
 
 const FAPSPreviewSystemEditOverride* UGeneratedWorld::FindPreviewSystemEditOverride(const FString& Address) const
@@ -248,8 +399,22 @@ uint32 UGeneratedWorld::GetPreviewSystemEditHash() const
 		Hash = HashCombine(Hash, GetTypeHash(static_cast<uint8>(Edit.PlanetaryType)));
 		Hash = HashCombine(Hash, GetTypeHash(Edit.bOverrideOrbitDistribution));
 		Hash = HashCombine(Hash, GetTypeHash(static_cast<uint8>(Edit.OrbitDistribution)));
+		Hash = HashCombine(Hash, GetTypeHash(Edit.bOverrideOrbitInclination));
+		Hash = HashCombine(Hash, GetTypeHash(Edit.MaxOrbitInclinationDegrees));
 	}
-	return Addresses.IsEmpty() ? 0u : (Hash != 0u ? Hash : 1u);
+	TArray<FString> PlanetAddresses;
+	PreviewPlanetOrbitEdits.GetKeys(PlanetAddresses);
+	PlanetAddresses.Sort();
+	for (const FString& Address : PlanetAddresses)
+	{
+		const auto& Edit = PreviewPlanetOrbitEdits.FindChecked(Address);
+		Hash = HashCombine(Hash, FCrc::StrCrc32(*Address));
+		Hash = HashCombine(Hash, GetTypeHash(Edit.bOverrideDistance));
+		Hash = HashCombine(Hash, GetTypeHash(Edit.DistanceAu));
+		Hash = HashCombine(Hash, GetTypeHash(Edit.bOverrideInclination));
+		Hash = HashCombine(Hash, GetTypeHash(Edit.InclinationDegrees));
+	}
+	return Addresses.IsEmpty() && PlanetAddresses.IsEmpty() ? 0u : (Hash != 0u ? Hash : 1u);
 }
 
 int32 UGeneratedWorld::ResolveCanonicalSurfaceSeed(

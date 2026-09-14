@@ -14,6 +14,7 @@ enum class EPlanetaryZoneType : uint8;
 class AMoon;
 class AStar;
 class UMaterialInstanceDynamic;
+class UMaterialInterface;
 class UStaticMeshComponent;
 
 UCLASS()
@@ -61,6 +62,10 @@ public:
 
 	UPROPERTY(Transient)
 	UMaterialInstanceDynamic* GasGiantMaterialInstance{nullptr};
+
+	/** Optional gas-only master. Imported Jupiter remains the fallback before asset baking. */
+	UPROPERTY(VisibleAnywhere, Category = "Planet|Visual")
+	UMaterialInterface* GasGiantSurfaceMaterial{nullptr};
 
 	UPROPERTY(VisibleAnywhere, Category = "Planet")
 	AStar* ParentStar;

@@ -779,8 +779,8 @@ namespace APSMainMenuPreviewSmokeTests
 			Test->TestTrue(FString::Printf(
 				TEXT("%s atmosphere shell is visible"), *Context),
 				OutSpaceShell->IsVisible() && !OutSpaceShell->bHiddenInGame);
-			Test->TestFalse(FString::Printf(
-				TEXT("%s atmosphere keeps physical UI scaling"), *Context),
+			Test->TestTrue(FString::Printf(
+				TEXT("%s atmosphere keeps relative scaling enabled"), *Context),
 				Atmosphere->bKeepRelativeScale);
 			Test->TestTrue(FString::Printf(
 				TEXT("%s atmosphere halo clears the live terrain"), *Context),
@@ -2482,7 +2482,7 @@ namespace APSMainMenuPreviewSmokeTests
 			if (AssertAtmospherePresentation(Planet, Atmosphere, TEXT("Selected PLANET"),
 				VisibleSpaceShell, AtmospherePresentationRadius))
 			{
-				Test->TestFalse(TEXT("Full-scale atmosphere disables relative actor scaling"),
+				Test->TestTrue(TEXT("Full-scale atmosphere keeps relative scaling enabled"),
 					Atmosphere->bKeepRelativeScale);
 				Test->TestEqual(TEXT("Atmosphere uses the generated parent star as its light source"),
 					Atmosphere->LightSource, static_cast<AActor*>(Planet->ParentStar));

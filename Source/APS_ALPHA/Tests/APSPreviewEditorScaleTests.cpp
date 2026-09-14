@@ -2,10 +2,42 @@
 
 #include "Misc/AutomationTest.h"
 #include "APS_ALPHA/Core/Model/GeneratedWorld.h"
+#include "APS_ALPHA/Core/Rendering/APSPreviewCameraBounds.h"
 #include "APS_ALPHA/Core/Structs/PlanetarySystemGenerationModel.h"
 #include "APS_ALPHA/Generation/PlanetaryProceduralGenerator.h"
 #include "APS_ALPHA/Generation/PlanetGenerator.h"
 #include "APS_ALPHA/Generation/MoonGenerator.h"
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAPSPlanetPreviewZoomBoundsTest,
+	"APS.Preview.Editor.PlanetMoonZoomBounds",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FAPSPlanetPreviewZoomBoundsTest::RunTest(const FString& Parameters)
+{
+	constexpr double Radius = 6750.0 * 1.0e5;
+	for (const double MoonOrbitKm : {0.0, 384400.0, 1.0e6, 1.0e8})
+	{
+		const double Envelope = FMath::Max(Radius, (MoonOrbitKm + 2000.0) * 1.0e5);
+		for (const double Tangent : {0.1, 0.2, 0.5})
+		{
+			const FAPSPreviewCameraBounds Bounds = FAPSPreviewCameraBounds::Calculate(Radius, Envelope, Tangent, 1.01);
+			TestTrue(TEXT("Camera stays outside the selected surface"), Bounds.MinimumCm > Radius);
+			TestTrue(TEXT("Wide moon orbits do not push the close-up limit out"),
+				FMath::IsNearlyEqual(Bounds.MinimumCm / Radius, 1.01, 1.0e-12));
+			TestTrue(TEXT("The complete farthest moon orbit fits the available screen angle"),
+				FMath::Asin(Envelope / Bounds.MaximumCm) < FMath::Atan(Tangent));
+			TestTrue(TEXT("Range is finite and ordered"), FMath::IsFinite(Bounds.MaximumCm) && Bounds.MaximumCm > Bounds.MinimumCm);
+		}
+	}
+	const auto Large = FAPSPreviewCameraBounds::Calculate(Radius, 1.0e13, 0.2, 1.01);
+	const auto Small = FAPSPreviewCameraBounds::Calculate(Radius, Radius, 0.2, 1.01);
+	TestTrue(TEXT("Recalculating after a smaller orbit removes the old large bound"), Small.MaximumCm < Large.MaximumCm);
+	const double FarUserRatio = Large.MaximumCm / Radius;
+	TestTrue(TEXT("Wide satellite layouts explicitly allow more than the old 30 body radii"), FarUserRatio > 30.0);
+	TestTrue(TEXT("Persisted physical zoom can be restored without truncation to 30"),
+		FMath::IsNearlyEqual(FarUserRatio * Radius / Large.MaximumCm, 1.0, 1.0e-12));
+	return true;
+}
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAPSStellarEditPlanetOrbitTest,
 	"APS.Preview.Editor.StellarEditKeepsPlanetOrbits",

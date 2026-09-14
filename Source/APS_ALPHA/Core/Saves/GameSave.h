@@ -17,6 +17,10 @@ class APS_ALPHA_API UGameSave : public USaveGame
 	GENERATED_BODY()
 
 public:
+	/** Versioned contract for model snapshots and player-state persistence. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Basic")
+	int32 SaveFormatVersion{2};
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Basic")
 	FString SaveSlotName;
 
@@ -38,8 +42,29 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "World")
 	TArray<FGeneratedWorldData> GeneratedWorldsDataArray;
 
+	/**
+	 * Tagged UObject snapshot of the actor-free generation model.  The legacy
+	 * summary above remains browser- and migration-friendly; this payload retains
+	 * the canonical stellar catalogue, generation seed and every authored edit.
+	 */
+	UPROPERTY(VisibleAnywhere, Category = "World")
+	TArray<uint8> GeneratedWorldModelData;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "World")
 	TArray<FPlanetData> InhabitedPlanetsDataArray;
+
+	/** The possessed pawn is not an ABaseActor and therefore needs its own record. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Player")
+	bool bHasPlayerPawnState{false};
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Player")
+	FString PlayerPawnClass;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Player")
+	FTransform PlayerPawnTransform{FTransform::Identity};
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Player")
+	FRotator PlayerControlRotation{FRotator::ZeroRotator};
 	
 	UFUNCTION(BlueprintCallable)
 	FGeneratedWorldData GetGeneratedWorld();

@@ -5239,7 +5239,7 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 				|| Root->WorldScapeNoise != Surface->ResolvedNoiseInstance
 				|| !Surface->ResolvedTerrainMaterialInstance
 				|| Root->TerrainMaterial.DefaultMaterial != Surface->ResolvedTerrainMaterialInstance
-				|| Atmosphere->bKeepRelativeScale || Atmosphere->LightSource != Planet->ParentStar
+				|| !Atmosphere->bKeepRelativeScale || Atmosphere->LightSource != Planet->ParentStar
 				|| AbsorptionShellCount != 1 || PresentedAbsorptionShellCount != 0
 				|| !FMath::IsNearlyEqual(Planet->WorldScapePresentationScale, 1.0)
 				|| Planet->GetWorldScapeStreamingState() != EWorldScapeSurfaceState::Active

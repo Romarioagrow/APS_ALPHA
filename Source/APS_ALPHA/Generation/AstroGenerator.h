@@ -182,6 +182,24 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "World Generation|Preview")
 	bool RegeneratePreview(UGeneratedWorld* InGeneratedWorld, EAstroPreviewFocus RequestedFocus);
 
+	/**
+	 * Builds the decorative main-menu galaxy without creating any canonical world,
+	 * catalogue or gameplay actors.  The landing scene owns this presentation only;
+	 * RegeneratePreview always releases it before running the normal generator.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "World Generation|Preview")
+	bool GenerateMainMenuHeroGalaxy(APlayerController* PlayerController = nullptr);
+
+	/** Removes only the decorative landing HISM and restores preview-camera defaults. */
+	UFUNCTION(BlueprintCallable, Category = "World Generation|Preview")
+	void ReleaseMainMenuHeroGalaxy();
+
+	UFUNCTION(BlueprintPure, Category = "World Generation|Preview")
+	bool IsMainMenuHeroGalaxyActive() const { return bMainMenuHeroGalaxyActive; }
+
+	/** Read-only diagnostics for smoke tests and performance budgets. */
+	int32 GetMainMenuHeroGalaxyInstanceCount() const;
+
 	UFUNCTION(BlueprintCallable, Category = "World Generation|Preview")
 	void FocusPreviewCamera(APlayerController* PlayerController = nullptr);
 	/** Read-only access for rendered preview diagnostics and automation contracts. */
@@ -314,6 +332,12 @@ public:
 	bool RefreshPreviewPlanetAppearance(UGeneratedWorld* InGeneratedWorld, bool bRegenerateSurface);
 	/** Deterministic index path used to retain body edits across disposable hierarchy rebuilds. */
 	FString GetPreviewBodyStableKey(const APlanetaryBody* Body) const;
+	/** Stable hierarchy address, independent of the current display label. */
+	FString GetPreviewObjectStableKey(const AActor* Actor) const;
+	bool SetPreviewObjectDisplayName(UGeneratedWorld* InGeneratedWorld, AActor* Actor, const FString& Name);
+	static bool ApplyPreviewDisplayNameByKey(const UGeneratedWorld* InGeneratedWorld,
+		const FString& StableKey, AActor* Actor);
+	void ApplyPreviewDisplayNames(UGeneratedWorld* InGeneratedWorld);
 	/** Snapshots the current editor buffer for one body immediately, before the debounced surface refresh. */
 	bool SavePreviewBodyEditOverride(UGeneratedWorld* InGeneratedWorld, const APlanetaryBody* Body) const;
 	bool SaveSelectedPreviewBodyEditOverride(UGeneratedWorld* InGeneratedWorld) const;
@@ -387,6 +411,10 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "World Generation|Preview")
 	UCameraComponent* PreviewCamera;
 
+	/** Dedicated HISM for the landing hero; never participates in generated-world data. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "World Generation|Preview")
+	UHierarchicalInstancedStaticMeshComponent* MainMenuHeroGalaxyHISM;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "World Generation|Preview")
 	bool bIsPreviewGeneration{false};
 
@@ -444,6 +472,8 @@ protected:
 	void StartPreviewCameraTransition(const FVector& Center, double Radius, APlayerController* PlayerController);
 	void ApplyPreviewFocusPresentation(EAstroPreviewFocus NewFocus);
 	bool GetContinuousPreviewPhysicalFocus(EAstroPreviewFocus Focus, FVector& CenterCm, double& RadiusCm) const;
+	double GetContinuousPreviewFocusEnvelopeCm() const;
+	bool GetContinuousPreviewZoomLimits(double& MinDistanceCm, double& MaxDistanceCm) const;
 	void EnsureContinuousPreviewPresentation();
 	void ClearContinuousPreviewPresentation();
 	void ApplyContinuousPreviewFrame();
@@ -539,6 +569,7 @@ protected:
 	float PreviewCameraTransitionElapsed{0.0f};
 	float PreviewCameraTransitionDuration{0.55f};
 	bool bPreviewCameraTransitionActive{false};
+	bool bMainMenuHeroGalaxyActive{false};
 	TWeakObjectPtr<APlanetaryBody> ActivePreviewWorldScapeBody;
 	/** Last fully validated pair currently presented in PLANET scope. */
 	TWeakObjectPtr<APlanetarySurfaceGenerator> PersistentPreviewSurfaceGenerator;

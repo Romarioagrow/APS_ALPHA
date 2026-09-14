@@ -1,7 +1,6 @@
 #include "APSFixStarHISMMaterialCommandlet.h"
 
 #if WITH_EDITOR
-#include "APSStellarPointRasterRecipe.h"
 #include "MaterialEditingLibrary.h"
 #include "MaterialDomain.h"
 #include "Materials/Material.h"
@@ -395,12 +394,20 @@ float granulation = (mesoCells * 0.64 + granuleRidges * 0.36)
 // A narrow subset of the micro cells carries the faceted, jewel-like highlights.
 // Footprint attenuation preserves it on resolved HISM without sub-pixel aliasing.
 float granuleSpark = smoothstep(0.84, 0.97, microUnit) * spatialDetail;
+// A wider, irregular overlap of meso convection and micro granules produces the
+// white-hot facular islands visible on a real exposed photosphere. It remains
+// actor/resolution bounded, so unresolved catalogue points never turn into noise.
+float mesoUnit = mesoCells * 0.5 + 0.5;
+float facularPlateau = smoothstep(0.58, 0.82, mesoUnit)
+                      * smoothstep(0.48, 0.76, microUnit) * spatialDetail;
 float spots = spotCore * SpotAmount * lerp(0.72, 1.0, emissionActivity)
             * spatialDetail;
 float faculae = spotHalo * (0.095 + variation * 0.17) * spatialDetail;
+float whitePatchMask = saturate(granuleSpark * 0.72 + facularPlateau * 0.82)
+                     * (1.0 - saturate(spots * 0.88));
 float surface = max(0.24, 1.0 + macroConvection * variation * 0.12 * spatialDetail
                            + granulation + faculae - spots * 0.72);
-surface *= lerp(0.96, 1.07, granuleSpark);
+surface *= lerp(0.96, 1.13, max(granuleSpark, whitePatchMask));
 
 // Limb darkening gives the disc volume.  The edge is brighter only in sparse
 // magnetic lobes, so post-process bloom reads as a soft corona with occasional
@@ -452,6 +459,8 @@ float3 quietTint = lerp(spectralTint * spectralTint, spectralTint, 0.64)
                  * spectralVisibility;
 float cellHeat = lerp(0.5, granuleCell, spatialDetail);
 float3 spectralHighlightTint = normalizedSpectralTint * spectralVisibility;
+float3 neutralIncandescentTint = lerp(spectralHighlightTint,
+    float3(spectralVisibility, spectralVisibility, spectralVisibility), 0.76);
 float3 hotGranuleTint = lerp(quietTint * 1.02,
                              spectralHighlightTint * 1.16, 0.18);
 float resolvedCellHeat = cellHeat * 0.84 + granuleSpark * 0.16;
@@ -461,6 +470,8 @@ surfaceTint = lerp(surfaceTint, quietTint * 0.18, saturate(spots * 1.18));
 surfaceTint = lerp(surfaceTint,
                    spectralHighlightTint * 1.16,
                    faculae * 1.85 + granuleSpark * 0.10);
+surfaceTint = lerp(surfaceTint, neutralIncandescentTint * 1.20,
+                   whitePatchMask * 0.74);
 // Spectral temperature remains authoritative. Archetypes only bias it toward the
 // physically expected warm protostellar envelope or blue-white compact remnant.
 float3 protostarTint = float3(1.00, 0.56, 0.24);
@@ -515,6 +526,14 @@ float coreBloom = actorOnly * pow(facing, 8.0)
 float coronaBloom = actorOnly * CoronaAmount * pow(rim, 1.35)
                   * lerp(24.0, 38.0, emissionActivity) * typeCoronaGain
                   * lerp(0.72, 1.0, resolvedProminence);
+// Only the sparse facular islands cross the white-hot HDR shoulder. Their area is
+// bounded, preserving the coloured photosphere while supplying local bloom seeds.
+float whitePatchBloom = actorOnly * whitePatchMask
+                      * lerp(0.42, 2.60, emissionActivity);
+float coronaWhitening = saturate(0.46 + normalizedSpectralTint.g
+                                      * normalizedSpectralTint.b * 0.38);
+float3 hotCoronaTint = lerp(spectralHighlightTint,
+                            neutralIncandescentTint, coronaWhitening);
 float polarCap = pow(axisAlignment, 14.0);
 float compactLift = compactType * polarCap * 1.45;
 float pulsarPulse = 0.58 + 0.42 * sin(GameTime * 6.4 + phase);
@@ -523,7 +542,8 @@ float pulsarLift = pulsarType * pow(axisAlignment, 28.0)
 float stellarSignal = (toneSafeEmission + jewelLift) * visibleSurface
                     + rimJewelLift + coreBloom + compactLift + pulsarLift;
 float3 ordinaryPreBloom = surfaceTint * stellarSignal * temporalFlicker
-                        + spectralHighlightTint * coronaBloom;
+                        + neutralIncandescentTint * whitePatchBloom
+                        + hotCoronaTint * coronaBloom;
 
 // A black hole is deliberately not resurrected as a glowing sphere. The centre
 // stays dark while a thin hot accretion band and a sharp photon rim carry HDR.
@@ -806,6 +826,36 @@ float3 hotCoreTint = lerp(pointTint, neutralCoreTint, coreWhitening);
 float3 haloTint = lerp(pointTint, neutralCoreTint, 0.04);
 float3 pointSignal = hotCoreTint * (hotCore * coreEnergy)
                    + haloTint * (softHalo * haloEnergy);
+// Finite diffraction spokes make a resolved catalogue object read as emitted
+// light instead of a coloured dot. The green/blue spectral content controls both
+// reach and energy: white/blue stars receive strong long rays, cool red stars keep
+// only a very short, low-energy hint. The gameplay profile already supplies stable
+// per-instance screen coordinates; menu and sub-pixel behaviour remain unchanged.
+float rayTemperature = sqrt(saturate(normalizedTint.g * normalizedTint.b));
+float raySpectralReach = smoothstep(0.16, 0.92, rayTemperature);
+float rayReach = lerp(0.34, 0.98, raySpectralReach)
+               * lerp(0.72, 1.0, activity);
+float2 rayQ = abs(pointQ);
+float primaryAlong = max(rayQ.x, rayQ.y);
+float primaryAcross = min(rayQ.x, rayQ.y);
+float primaryAngular = saturate(1.0 - primaryAcross * 30.0);
+float primaryLength = (1.0 - smoothstep(rayReach * 0.72, rayReach, primaryAlong))
+                    * smoothstep(0.10, 0.24, primaryAlong);
+float diagonalAlong = (rayQ.x + rayQ.y) * 0.70710678;
+float diagonalAcross = abs(rayQ.x - rayQ.y) * 0.70710678;
+float diagonalAngular = saturate(1.0 - diagonalAcross * 42.0);
+float diagonalLength = (1.0 - smoothstep(rayReach * 0.52, rayReach * 0.78,
+                                         diagonalAlong))
+                     * smoothstep(0.16, 0.30, diagonalAlong);
+float rayTemperatureGain = lerp(0.045, 1.0, raySpectralReach);
+float finiteRays = (primaryAngular * primaryLength
+                  + diagonalAngular * diagonalLength * 0.24)
+                 * rayTemperatureGain * gameplayProfile * projectionValid;
+float rayEnergy = lerp(0.28, 2.35, activity) * seedGain
+                * (1.0 + marker * 0.25) * modelGain;
+float3 rayTint = lerp(haloTint, neutralCoreTint,
+                      0.30 + raySpectralReach * 0.42);
+pointSignal += rayTint * (finiteRays * rayEnergy);
 )APSPOINT");
 		// MSVC limits individual wide string literals. Append the independent corona
 		// block at runtime; the resulting HLSL stays byte-identical to the saved master.
@@ -824,6 +874,16 @@ float shellFacing = saturate(abs(dot(shellNormal, v)));
 float shellProjectedRadiusSq = saturate(1.0 - shellFacing * shellFacing);
 float magneticField = 0.5 + 0.5 * sin(
     dot(shellNormal, float3(7.3, 11.1, 5.7)) + seed * 37.699);
+float3 rawShellTint = max(Color.rgb, 0.0);
+float shellTintPeak = max(max(rawShellTint.r, rawShellTint.g), rawShellTint.b);
+float3 normalizedShellTint = rawShellTint / max(shellTintPeak, 0.001);
+float3 spectralShellTint = pow(max(normalizedShellTint, 0.001), 1.20);
+float shellTemperature = sqrt(saturate(normalizedShellTint.g
+                                      * normalizedShellTint.b));
+float shellRayReach = smoothstep(0.16, 0.92, shellTemperature);
+float shellWhiteMix = lerp(0.12, 0.62, shellRayReach);
+float3 shellTint = lerp(spectralShellTint, float3(1.0, 0.90, 0.72),
+                         shellWhiteMix);
 float shellInnerRadius = saturate(CoronaInnerRadius);
 float shellInnerRadiusSq = shellInnerRadius * shellInnerRadius;
 float shellSpanSq = max(1.0 - shellInnerRadiusSq, 0.001);
@@ -838,15 +898,30 @@ float outerBoundaryFade = 1.0 - smoothstep(0.72, 1.0, shellRadius01);
 float radialHdrSeed = exp2(-shellRadius01 * 32.0);
 float radialSpectralTail = 0.050 * exp2(-shellRadius01 * 1.6)
                          * outerBoundaryFade;
-float radialLimbFalloff = radialHdrSeed + radialSpectralTail;
+// View-aligned finite spokes live only in the additive shell. They are deliberately
+// narrow and asymmetrical, giving bloom a shaped seed without drawing an infinite
+// lens flare across the scene or changing the opaque photosphere silhouette.
+float3 referenceUp = abs(v.z) < 0.95
+    ? float3(0.0, 0.0, 1.0) : float3(0.0, 1.0, 0.0);
+float3 screenX = normalize(cross(referenceUp, v));
+float3 screenY = cross(v, screenX);
+float2 shellDirection = float2(dot(shellNormal, screenX),
+                               dot(shellNormal, screenY));
+shellDirection /= max(length(shellDirection), 0.0001);
+float2 absShellDirection = abs(shellDirection);
+float shellPrimary = saturate(1.0 - min(absShellDirection.x,
+                                       absShellDirection.y) * 26.0);
+float shellDiagonal = saturate(1.0 - abs(absShellDirection.x
+                                        - absShellDirection.y) * 34.0);
+float spokePattern = shellPrimary + shellDiagonal * 0.20;
+float rayTail = exp2(-shellRadius01 * lerp(18.0, 3.8, shellRayReach))
+              * (1.0 - smoothstep(0.82, 1.0, shellRadius01));
+float shellRaySignal = spokePattern * rayTail
+                     * lerp(0.012, 0.22, shellRayReach);
+float radialLimbFalloff = radialHdrSeed + radialSpectralTail + shellRaySignal;
 float shellVariation = lerp(0.94, 1.06, magneticField);
 float shellSignal = photosphereOcclusion * radialLimbFalloff * shellVariation
                   * saturate(CoronaOpacity);
-float3 rawShellTint = max(Color.rgb, 0.0);
-float shellTintPeak = max(max(rawShellTint.r, rawShellTint.g), rawShellTint.b);
-float3 normalizedShellTint = rawShellTint / max(shellTintPeak, 0.001);
-float3 spectralShellTint = pow(max(normalizedShellTint, 0.001), 1.20);
-float3 shellTint = lerp(spectralShellTint, float3(1.0, 0.90, 0.72), 0.10);
 float3 coronaSignal = shellTint * max(CoronaIntensity, 0.0) * shellSignal;
 return lerp(pointSignal, coronaSignal, shellMode);
 )APSPOINT");
@@ -891,13 +966,6 @@ return lerp(pointSignal, coronaSignal, shellMode);
 			PointAndCorona->Code.ReplaceInline(
 				TEXT("float4 pixelClip = GetScreenPosition(Parameters);"),
 				TEXT("float4 pixelClip = RasterClip;"));
-			// A preview profile controls luminosity, not whether a point is circular.
-			// Only the dedicated POINTS asset gets this; the corona master is unchanged.
-			if (!APSStellarPointRasterRecipe::EnableForAllPointProfiles(PointAndCorona->Code))
-			{
-				UE_LOG(LogAPSStarMaterialFix, Error, TEXT("Unexpected stellar point raster recipe; refusing a partial rewrite."));
-				return false;
-			}
 			// UE5.4 disables hardware depth tests after motion blur. Keep opaque
 			// planets/characters in front of points, using reversed device depth;
 			// a capped linear sky depth would incorrectly reject full-scale stars.

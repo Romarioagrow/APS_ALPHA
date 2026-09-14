@@ -21,6 +21,10 @@ struct FGeneratedWorldData
 {
     GENERATED_BODY()
 
+	/** Authored labels also survive for remote bodies absent from the actor snapshot. */
+	UPROPERTY()
+	TMap<FString, FString> PreviewDisplayNameOverrides;
+
     // Конструктор по умолчанию для инициализации всех свойств
     FGeneratedWorldData()
         : bGenerateFullScaledWorld(false)

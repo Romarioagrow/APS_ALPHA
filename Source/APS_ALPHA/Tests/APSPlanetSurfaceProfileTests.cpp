@@ -3240,4 +3240,35 @@ bool FAPSPlanetSurfaceRuntimeIsolationTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAPSPreviewLiquidNormalPrecisionTest,
+	"APS.Preview.Materials.LiquidNormalScaleIndependence",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FAPSPreviewLiquidNormalPrecisionTest::RunTest(const FString& Parameters)
+{
+	for (const TCHAR* Name : {TEXT("M_APS_OrbitalLiquid"), TEXT("M_APS_OrbitalWater")})
+	{
+		const FString Path = FString(TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Preview/")) + Name;
+		UMaterial* Material = LoadObject<UMaterial>(nullptr, *Path);
+		if (!TestNotNull(Name, Material)) continue;
+		const FExpressionInput* Normal = Material->GetExpressionInputForProperty(MP_Normal);
+		TArray<UMaterialExpression*> Pending;
+		TSet<UMaterialExpression*> Visited;
+		if (Normal && Normal->Expression) Pending.Add(Normal->Expression);
+		bool bUsesVertexNormal = false, bUsesWorldPosition = false;
+		while (!Pending.IsEmpty())
+		{
+			UMaterialExpression* Node = Pending.Pop();
+			if (!Node || Visited.Contains(Node)) continue;
+			Visited.Add(Node);
+			bUsesVertexNormal |= Node->IsA<UMaterialExpressionVertexNormalWS>();
+			bUsesWorldPosition |= Node->IsA<UMaterialExpressionWorldPosition>();
+			for (FExpressionInput* Input : Node->GetInputsView())
+				if (Input && Input->Expression) Pending.Add(Input->Expression);
+		}
+		TestTrue(TEXT("Closed liquid shell uses its authored smooth normals"), bUsesVertexNormal);
+		TestFalse(TEXT("No large-coordinate subtraction in the liquid normal or its wave gradient"), bUsesWorldPosition);
+	}
+	return true;
+}
+
 #endif
