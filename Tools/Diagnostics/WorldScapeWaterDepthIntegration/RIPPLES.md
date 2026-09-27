@@ -12,15 +12,16 @@ unchanged. New code is retained as a source overlay alongside the depth work.
 - Current candidate: two smooth twelve-wave bands at nominal 370 cm and 83 cm,
   weights .65/.35, final slope bounded by .065. There is no latitude/longitude or local
   tangent UV basis to introduce a pole seam.
-- Current physical positions reconstruct directly from the camera-relative pixel
-  interpolant and the view's DoubleFloat translation, then use compensated frame and division,
-  reusing the accepted terrain-detail coordinate contract and split transform
-  rows. The earlier native tile/offset path is rejected by the 2 m close test.
+- Current physical positions split a uniform DoubleFloat view-origin phase from
+  the small camera-relative pixel delta. The same physical transform rows apply
+  to both. The anchor is wrapped before adding the delta, avoiding per-pixel
+  planetary-sized quotients; the sum is algebraically planet-fixed. Earlier
+  per-pixel DoubleFloat and native tile/offset variants failed the 2 m close test.
   Each band receives a bounded 96-cell coordinate. Integer wave vectors preserve
   continuity across the 96-cell wrap, including negative axes. The two physical
   wavelengths differ. This is a finite periodic spectrum, not a claim of
   mathematically aperiodic texture everywhere.
-- DFDdx/DdyDemote use the unwrapped compensated coordinate; each wave fades between
+- Ddx/ddy use the unwrapped small pixel delta; each wave fades between
   .25 and .5 cycles per pixel using its own projected frequency. No derivative is taken through
   the wrap discontinuity. This is a practical detail filter, not perfect
   band-limiting or a proof of temporal stability.
@@ -101,7 +102,7 @@ all dependent modules as described in README. Run `BakeRipples.ps1` with a new
 label, then `Run.ps1 -Label <new-label> -PaletteBudget -Oblique -LiveLod -Ripples`.
 The private assets are not automatically cooked, selected, or copied to /Game.
 The latest two saved assets are checkpointed under
-`Assets/SpectralRipples20260927/`; they retain their `/APSWaterDetail/` package
+`Assets/ViewAnchorRipples20260927/`; they retain their `/APSWaterDetail/` package
 identities. For exact-byte reproduction copy that folder to the isolated host's
 `Intermediate/WaterRippleAssets/` and verify the hashes instead of rebaking.
 Do not install any isolated DLL by itself into the accepted project/plugin.
@@ -291,3 +292,105 @@ Report SHA256:
 - `water-ripples-spectral-near-v1`: `4EC44D59C4637BA57BA3DEEDD37ECE89BC8A6921E04F85784070CEBDA746BC70`.
 - `water-ripples-normal-buffer-v1`: `203EC950E8D3E1C8D2FB3E47AC3D0FC955B60B5C591408520D21C67E37C07A61`.
 - `water-ripples-basecolor-v1`: `E00EC899005932C73773E216105C9C486F2FED409B731735652747C9A566DD92`.
+
+## Lighting controls and uniform view-anchor phase
+
+Build `build-20260927-130501.log`: 4 actions, 8.87 seconds, success. The static
+probe now accepts `-LightingIsolation NoSpecular` or `NoReflections`, mutually
+exclusive with buffer, live and performance modes. It records actual show flags
+and restores the entire original flag set. These are diagnostics, never a
+production graphics setting or a way to hide a failed material.
+
+Both owned controls exited normally with both test entries successful, 55
+rendered warnings and no errors. Both still show the lit angular pattern:
+
+- `water-ripples-no-specular-v1`, PID 22512: Specular=0, other reflection flags=1.
+- `water-ripples-no-reflections-v1`, PID 29464: Specular=1, ReflectionEnvironment,
+  ScreenSpaceReflections and LumenReflections=0.
+
+Water ROI x=[50,650), y=[120,620) mean absolute RGB differences from the preceding
+full-lit spectral candidate are respectively 0.195101 and 0.100397 code values.
+The controls therefore do not justify changing production water reflectance or
+reflection settings. They also do not prove that every lighting path is disabled.
+The remaining field/normal calculation needs direct investigation.
+
+Report SHA256:
+
+- NoSpecular: `432C048C76D382EEE13B2197FAF0C85BD867733CDA2A157E36863D7AA73EE5F6`.
+- NoReflections: `0B0C45142EBC14154A349618DA33B99EBE0D1A35869D59BA447891E94C324923`.
+
+The next candidate changes only phase evaluation. Transform the uniform view
+origin minus planet centre with DoubleFloat, wrap its phase, then add the
+transformed small camera-relative pixel delta. This avoids repeatedly dividing
+and wrapping planetary-sized per-pixel values. Derivatives operate on that
+unwrapped delta. Wave spectrum, slope, depth palette, roughness, geometry and
+reflection settings are unchanged. The two phase terms cancel camera motion
+algebraically; rendered motion stability is a separate outstanding requirement.
+
+A double/float32 arithmetic spot check (10,000 wavelength/point cases at up to
+7e8 cm coordinates, pixel deltas up to 500 m, view shifts up to 60 m) measured
+maximum double phase residual 1.44352e-11 cycles, float phase residual
+9.50444e-7 cycles and float view-shift residual 1.43052e-6 cycles. This checks
+the decomposition, not the actual shader's DoubleFloat implementation or GPU.
+
+Build `build-20260927-131155.log`: 5 actions, 11.80 seconds, success.
+Bake `bake-view-anchor-ripples-v1`, PID 15908 (confirmed exited): 0 errors,
+7 existing warnings, 2 new private packages; no source asset overwritten.
+Master SHA256: `833F076C5BE0FBDAD14445613CE80F99FD1862CE80D7A52A1E37F3086CCD63CC`.
+MIC SHA256: `527F9B88F2498345E0A0AEAFD228EA7761F3807A340FF6D138C311BB53A1AAD9`.
+
+`water-ripples-view-anchor-near-v1`, PID 6124 (confirmed exited): both tests
+passed (55 rendered warnings, zero errors), but the 2 m image STILL contains
+angular patches. Visual acceptance FAILED. The uniform-anchor decomposition
+does not fix the reported appearance by itself. No production rollout is allowed.
+Paired material-only GPU increments +0.0495978 / +0.0702724 ms, original means
+4.21269 / 4.2091 / 4.21168 ms. This is not a whole-pipeline FPS measurement.
+Report SHA256: `4636A11CED9538C19F1CD60599EF6F2DA638E3D9D4A8BB23EC6559020A3907DC`.
+
+Build `build-20260927-131724.log` adds a third private lighting control,
+`-LightingIsolation NoIndirect`, disabling GlobalIllumination and
+LumenGlobalIllumination while retaining direct lights, specular and reflections.
+Four actions, 9.19 seconds, success. This control does not rebake the material.
+
+`water-ripples-no-indirect-v1`, PID 30420 (exited): both test entries succeeded,
+55 rendered warnings / zero errors. With GI=0 and LumenGI=0, the broad angular
+patches disappear in the inspected near image while smooth fine wave detail
+remains. This is the first control to remove that observed artifact. It localizes
+the problem to the interaction with indirect illumination, not a demonstrated
+failure of phase arithmetic. It is NOT a proposed production fix: turning off
+GI globally changes the scene and is not acceptable as material polish.
+Report SHA256: `9B0626A015F92A3D25E21AFEBD46BB8D2B413556E146A74F1CF537236A6A0CBA`.
+
+Build `build-20260927-132111.log`: 4 actions, 9.39 seconds, success. Additional
+static controls set exactly one runtime CVar to zero and restore its original
+value (with an assertion) on exit: `NoShortRangeAO` for
+`r.Lumen.ScreenProbeGather.ShortRangeAO`, and `SHDiffuse` for
+`r.Lumen.ScreenProbeGather.IrradianceFormat`. The latter uses UE's SH3 diffuse
+irradiance representation rather than the default octahedral representation;
+the installed engine labels it slower. Neither control modifies project config
+or disables GI. They remain incompatible with live/performance modes so their
+images cannot be mistaken for the ordinary material benchmark.
+
+`water-ripples-no-short-ao-v1`, PID 27752 (confirmed exited), completed both tests
+successfully, 55 rendered warnings and zero errors. Actual control state:
+ShortRangeAO=0 (previously 1), GI=1, LumenGI=1, all specular/reflection flags=1.
+The inspected 2 m image no longer has the broad angular patches while the small
+water-normal variation and coast remain visible. Original CVar value and view
+flags were restored; the restoration assertion passed. `SHDiffuse` has NOT
+been run and has no evidence of benefit.
+Report SHA256: `9B9B93DCFEAFC1D3B0CCC0FCF1D12D22A5AD784C9DCE6C23ECF2A7DC3786E656`.
+
+This localizes the visible interaction to Lumen's ShortRangeAO path in this one
+fixture. Engine source `LumenScreenSpaceBentNormal.usf` samples screen-space
+rays from `Material.WorldNormal`, which includes the added ripple, against the
+undisplaced depth surface. False self-occlusion is a plausible mechanism, not
+yet proven by trace data. Raising slope tolerance blindly is not justified:
+`SSRTRayCast.ush` uses it as a depth hit window, not simply a normal bias.
+
+Next action: pursue a water-specific treatment of that interaction while keeping
+indirect lighting and land/contact occlusion intact. Do not promote a global
+`ShortRangeAO=0` or `GI=0` setting as a water-material correction. No production
+renderer setting, source, plugin binary or asset was changed in these runs.
+There is now evidence against further blind wave/coordinate rewrites as the
+sole fix. The current view-anchor asset is still a FAILED ordinary-lit candidate;
+its control-only improvement is not material acceptance or a 120 FPS result.

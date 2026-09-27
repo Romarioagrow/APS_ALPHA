@@ -2,7 +2,7 @@ param([ValidatePattern('^[a-z0-9-]+$')][string]$Label='bake-ripples-v1')
 $ErrorActionPreference='Stop'
 if(Get-Process UnrealEditor,UnrealEditor-Cmd -ErrorAction SilentlyContinue){throw 'Editor active; no session touched'}
 $hostProject=Join-Path $PSScriptRoot 'host'
-$output=Join-Path $hostProject 'Intermediate/WaterRippleAssets/SpectralRipples20260927'
+$output=Join-Path $hostProject 'Intermediate/WaterRippleAssets/ViewAnchorRipples20260927'
 if(Test-Path -LiteralPath $output){throw 'New assets only; refusing to overwrite'}
 $run=Join-Path $PSScriptRoot $Label
 if(Test-Path -LiteralPath $run){throw 'Evidence exists; refusing to overwrite'}
