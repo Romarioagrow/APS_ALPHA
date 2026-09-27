@@ -7,19 +7,21 @@ Production source, materials, engine plugin and binaries were not replaced.
 
 ## What is preserved here
 
-`integration.patch` and `overlay-manifest.json` describe 13 source files:
+`integration.patch` and `overlay-manifest.json` describe 17 source files:
 the private WorldScape signed-kilometre UV1 data path and worker tests, an APS
 process-wide opt-in restricted to owned full-scale generated Water roots, and
 a bounded extension of the existing real gameplay liquid probe. There is no
 new production material selector, saved default, geography or palette change.
 The rejected compressed-preview height adapter is deliberately absent.
 
-Current overlay: `overlay-v6` (the preceding palette-budget fixture is preserved
-in commit `8248482c54d92e86a655412f2b82b530ad326a1f`; wet-shore fixture in
-`50799d91bd3e332225128f8953fe2986453a885f`; dry fixture in `6e9e8e09`).
-Patch SHA256: `B468D3D176E94B647ECCB3B66E38D3F266EAE8B8E29607ECF83DFEEC82D17E8B`.
-Manifest SHA256: `2FD74004AEA4AA140AE82E412C7F3E9FF6E62A51C950ECAC7C00EEC7B38271D3`.
+Current overlay: `overlay-v8` (the preceding oblique/live-LOD fixture is preserved
+in commit `47ac2c4340f7103f869aebda30d4dd1c740e05ff`; palette-budget fixture in
+`8248482c54d92e86a655412f2b82b530ad326a1f`; dry fixture in `6e9e8e09`).
+Patch SHA256: `72D885A6C0DD9C06E0FB31850B8C74D9BFA9E0191F30283EBAFDCFAEDCB1624F`.
+Manifest SHA256: `44AAACC44B998DA1F57B64326E03250473C22E8A651C99AB88AC6A4231B4DC86`.
 The patch was reverse-checked against the final isolated source tree.
+The optional normal-only ripple extension, private asset mount and its separate
+rendered evidence are documented in `RIPPLES.md`. It has no production selector.
 
 ## Evidence and limits
 
@@ -273,8 +275,8 @@ Omit `-LiveLod` for a frozen oblique A/B; live mode requires the oblique fixture
 In live mode native geometry is allowed to regenerate and restoration changes
 material ownership only, never copying the frozen section buffers back.
 
-Next bounded step: improve the still-smooth water detail with a precision-safe
-physical noise domain; normal walking, broader Water-family coverage and
+Next bounded step: assess the optional precision-safe water ripple band described
+in `RIPPLES.md`; normal walking, broader Water-family coverage and
 controlled performance comparisons remain unverified. Do not hide the ground,
 clamp dry depths, move just the test camera into coarse distant LOD or alter the
 production spawn rule. Keep production selection off until those requirements
