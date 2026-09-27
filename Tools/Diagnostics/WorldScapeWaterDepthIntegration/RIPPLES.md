@@ -529,3 +529,83 @@ Next work needs direct depth/coverage evidence, or a separately justified
 material approach. Do not repeat the excluded reflection/DF-shadow controls,
 compensate the darker water with arbitrary colour gain, or change global AO.
 The accepted checkpoint remains the production authority.
+
+## v16: GPU evidence and filtered water shadows
+
+The v15 depth-prepass lead was tested directly rather than by disabling it.
+`Run.ps1 -WaterGpuDump` requires the isolated SingleLayerWater oblique fixture,
+disallows lighting/buffer/performance/live overrides, and records ONE frame
+filtered to `*Water*`. The candidate remains bound until native dump status is
+`ok`. Upload/explorer/camera-cut/fixed-time options are disabled, all changed
+dump CVars are restored, and no engine files or materials are modified.
+`AnalyzeWaterGpuDump.py` reads the native binary textures with NumPy; `--samples`
+also prints neighbouring shore pixel values. It asserts resource identity and
+array sizes, resolves versions by output pass, and does not alter images.
+
+Build `build-20260927-141257.log`: 4 actions / 9.48 seconds, success.
+Run `water-single-layer-gpu-depth-v1`, PID 17616, confirmed exited: 2 tests
+succeeded, rendered 58 warnings / zero errors. Dump status `ok`, 136 resources,
+1258.876 MiB binary data, 2.632 seconds instrumentation stall. This is NOT a
+performance sample. Dump under that run's
+`Saved/WaterGpuDump/APS_ALPHA-WindowsEditor-2026.09.27-14.14.22`.
+
+Direct numerical findings in the 1279x722 render view:
+
+- Opaque depth and its water-prepass copy are bit-identical: zero differences.
+- Prepass stencil marks 587506 water pixels; the base pass writes SingleLayerWater
+  shading-model ID 10 at exactly those 587506 pixels. Zero missing or extra
+  water GBuffer pixels. A coverage disagreement between these passes is not
+  present in this frame and cannot explain its fringe.
+- Only ONE covered water pixel equals underlying opaque depth. The many dark
+  fringe pixels are therefore not explained by equality at the composite gate.
+- 1899 water pixels already have zero separated main-sun contribution at the
+  base-pass output. Neighbouring shore samples jump between lit and unlit sun;
+  final composite colour follows them. The DF shadow pass changes ZERO water
+  pixels in that sun texture. The composite and DF pass are not introducing this
+  observed pattern; it exists earlier in direct sunlight.
+
+Source corroboration: UE 5.4 `ForwardLightingCommon.ush` uses a single directional
+VSM sample in this SingleLayerWater path when `SUPPORT_VSM_FOWARD_QUALITY=0`
+(actual TranslucentQuality=0). Native water VSM filtering routes this lighting
+through the deferred shadow projection instead. The existing DF-shadow shader
+support already enables the shared separated-main-light output and shader key;
+enabling water filtering support does not change that OR condition.
+
+Added `-WaterFilteredShadows`: explicit process-only `-ini:Engine:[SystemSettings]`
+startup overrides set `r.Water.SingleLayer.ShadersSupportVSMFiltering=1` and
+`r.Water.SingleLayer.VSMFiltering=1`. Read-only shader support is not forced at
+runtime. Probe guards verify both values, VSM, depth prepass, existing DF shader
+output, expected material, and ShortRangeAO=1. No persistent Config edit, global
+shadow/AO disable, palette compensation or asset bake.
+
+Build `build-20260927-142126.log`: 4 actions / 8.98 seconds, success.
+Run `water-single-layer-filtered-shadow-v1`, PID 26924, confirmed exited:
+`-Ripples -SingleLayerSurfaceControl -WaterFilteredShadows -PaletteBudget
+-CameraHeightM 2 -Oblique -MaterialPerf`. Both tests succeeded, rendered 55
+warnings / zero errors. Inspected ripple-on, ripple-off and original-return
+frames: the noisy shore fringe is absent with filtered shadows, with AO and
+scene shadows still enabled. The broad old AO patches remain absent as well.
+This confirms a local improvement, NOT general water/material acceptance.
+
+The water remains darker than the accepted material. Same interior ROIs as v14:
+water mean absolute RGB difference 7.915897/255, p99 28; linear luminance
+0.03353341 candidate / 0.04412965 original. Land mean difference 0.150602/255,
+p99 1; linear luminance 0.03530037 / 0.03531198. Geometry/RGBA/UV/root/camera and
+restoration checks passed. No volume, moving-camera, orbit or family coverage.
+Material-only A/B/A/B/A GPU increments +0.340124 / +0.352029 ms, baseline means
+4.21203 / 4.20714 / 4.19274 ms. This measures the WHOLE candidate versus original,
+not filtering alone, and proves neither walking FPS nor whole-pipeline 120 FPS.
+
+Evidence SHA256:
+
+- GPU-run report: `6E688DEA1103AFFC041A05DB9D1670A3BC7BC3718844D3B3E684B17B7ED388A3`.
+- Dump passes: `6ABBEA859FE912A6E819E261A62489D5E1B9DEF4372ADF3CEFA837105D96F198`.
+- Dump resource descriptors: `CB58C177A41CE61DB06F38C0514A30B5FF43E05FA752419442B944A58C18A294`.
+- Filtered-shadow report: `516CA9A88458F62FDCE619CC781F27C2DB46F7B9F17B1DB21EFA2E3C95A25A02`.
+
+Next: explain remaining lighting parity before promotion. Accepted gameplay adds
+a second, diffuse-only directional surface fill (2.2, no shadows/specular).
+The single-layer forward-light path selects one main directional light; losing
+that fill is a source-supported candidate explanation, not yet a measured cause
+of the luminance difference. Do not substitute arbitrary colour gain or turn off
+the accepted fill scene-wide. Retain the filtered shadows in any next SLW test.

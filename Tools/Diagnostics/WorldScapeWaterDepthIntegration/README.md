@@ -14,7 +14,8 @@ a bounded extension of the existing real gameplay liquid probe. There is no
 new production material selector, saved default, geography or palette change.
 The rejected compressed-preview height adapter is deliberately absent.
 
-Current overlay: `overlay-v15` (the SingleLayerWater surface control and its
+Current overlay: `overlay-v16` (the three water-pass controls are preserved in
+`2d5cad80d19acd0924b3369a9fa7b9e0f8c37e15`; the SingleLayerWater surface control and its
 shore/lighting regression are preserved in `dfdcb10992d8e61f23608071021ee0e5ec14c5cd`;
 the view-anchor and ShortRangeAO controls are
 preserved in `bed23b70d55bc4de341081eb069de860fb1c80e6`; the preceding spectral/buffer diagnostic is
@@ -24,15 +25,16 @@ the preceding stochastic candidate is preserved
 in commit `2092659f86e030ece6209e22eec27ddb86ab16b9`; oblique/live-LOD fixture
 in commit `47ac2c4340f7103f869aebda30d4dd1c740e05ff`; palette-budget fixture in
 `8248482c54d92e86a655412f2b82b530ad326a1f`; dry fixture in `6e9e8e09`).
-Patch SHA256: `94988F32CC0433CDD1A82EC5B13599BB1DCB01EFD2F4B79508FF191F7BDA1C74`.
-Manifest SHA256: `CAA6533C51ACD3FFEF3A3528212082EFFCDDF16ACCD0FBBAF53B65629E02BEDC`.
+Patch SHA256: `EC4C8F8AAF365F60AEF8CD592D4A0E7E6F424D22449DA59C1B585D4A453EA031`.
+Manifest SHA256: `B3464EA2C245AEA141F6165C7A4003CEA59C048FBDDF1E55F31766D8D306FCC0`.
 The patch was reverse-checked against the final isolated source tree.
 The optional normal-only ripple extension, private asset mount and its separate
 rendered evidence are documented in `RIPPLES.md`. It has no production selector.
 **Do not promote either ripple candidate:** the DefaultLit 2 m close-view
 regression remains despite passing structural automation. The private
-SingleLayerWater surface control removes that pattern but darkens the water and
-adds a shore fringe, so it also fails overall visual acceptance. The
+SingleLayerWater surface control removes that pattern but darkens the water.
+Its shore fringe is removed in the v16 filtered-shadow fixture, but lighting
+parity and broader coverage remain unresolved, so it still fails overall acceptance. The
 paired GPU benchmark is useful evidence, not a visual or 120 FPS acceptance.
 The latest lighting controls and view-anchor candidate are recorded in
 `RIPPLES.md`. With GI and reflections still enabled, disabling ShortRangeAO
@@ -49,6 +51,14 @@ Disabling the full composite darkens water almost to black, so that is not a
 valid visual correction. No new assets were baked. The read-only depth-prepass
 setting also changes shader-map keys; do not try an invalid runtime toggle or
 repeat the already-excluded controls. See the v15 evidence in `RIPPLES.md`.
+
+The v16 one-frame GPU dump directly rules out coverage disagreement between
+water depth/base passes in the tested view (587506 matching water pixels, zero
+missing). The noisy pattern is already in main-sun lighting, not introduced by
+the reflection composite. Explicit `-WaterFilteredShadows` enables native water
+VSM filtering at process startup; inspected near-shore ripple-on/off frames lose
+the fringe while preserving global AO and shadows. No new material bake or
+production rollout. See `RIPPLES.md` for exact evidence and remaining darkening.
 
 ## Evidence and limits
 
@@ -302,11 +312,12 @@ Omit `-LiveLod` for a frozen oblique A/B; live mode requires the oblique fixture
 In live mode native geometry is allowed to regenerate and restoration changes
 material ownership only, never copying the frozen section buffers back.
 
-Next bounded step: investigate the SingleLayerWater control's shore-depth/coverage
-and lighting regressions without changing the accepted palette or global AO.
-Address the ripple/ShortRangeAO interaction specifically for water, retaining
-GI and land/contact occlusion. The frozen fixture and positive
-isolation controls are documented in `RIPPLES.md`. Do not repeat blind
+Next bounded step: resolve remaining SingleLayerWater lighting parity with
+the accepted material, retaining the now-tested filtered water shadows.
+The additional diffuse-only gameplay directional fill is a concrete source
+lead; verify its contribution before proposing any compensation. The frozen
+fixture and positive isolation controls are documented in `RIPPLES.md`.
+Do not repeat the excluded prepass-coverage or reflection/DF controls, blind
 coordinate/noise rewrites or promote a scene-wide AO disable. Normal walking, broader
 Water-family coverage and whole-pipeline performance remain unverified. Do not hide the ground,
 clamp dry depths, move just the test camera into coarse distant LOD or alter the
