@@ -1,9 +1,10 @@
 param([ValidatePattern('^[a-z0-9-]+$')][string]$Label='physical-water-v1',
- [switch]$PaletteBudget, [switch]$Oblique, [switch]$LiveLod, [switch]$Ripples, [switch]$MaterialPerf, [switch]$RippleIsolation, [switch]$NormalBuffer,
+ [switch]$PaletteBudget, [switch]$Oblique, [switch]$LiveLod, [switch]$Ripples, [switch]$MaterialPerf, [switch]$RippleIsolation, [switch]$NormalBuffer, [switch]$SingleLayerSurfaceControl,
  [ValidateSet('WorldNormal','BaseColor','Roughness','Specular')][string]$BufferView,
  [ValidateSet('NoSpecular','NoReflections','NoIndirect','NoShortRangeAO','SHDiffuse')][string]$LightingIsolation,
  [ValidateRange(1,500)][int]$CameraHeightM=50)
 $ErrorActionPreference='Stop'
+if($SingleLayerSurfaceControl -and (-not $Ripples -or $LightingIsolation -or $NormalBuffer -or $BufferView -or $LiveLod -or $RippleIsolation)){throw 'Single-layer pass control requires a static ripple lit view with ordinary renderer settings'}
 if($MaterialPerf -and $LiveLod){throw 'Material timing requires the frozen A/B fixture, not moving LODs'}
 if($RippleIsolation -and (-not $Ripples -or $LiveLod -or $MaterialPerf)){throw 'Isolation requires Ripples and static views only'}
 if(($NormalBuffer -or $BufferView) -and ($LiveLod -or $MaterialPerf)){throw 'Buffer capture is not a live/performance run'}
@@ -29,6 +30,7 @@ if($PaletteBudget){$arguments+='-APSWaterDepthPaletteBudget'}
 if($Oblique){$arguments+='-APSWaterDepthOblique'}
 if($LiveLod){$arguments+='-APSWaterDepthLiveLod'}
 if($Ripples){$arguments+='-APSWaterRipples'}
+if($SingleLayerSurfaceControl){$arguments+='-APSWaterSingleLayerCandidate'}
 if($RippleIsolation){$arguments+='-APSRippleIsolation'}
 if($NormalBuffer){$arguments+='-APSWaterNormalBuffer'}
 if($BufferView){$arguments+=('-APSWaterBufferView='+$BufferView)}

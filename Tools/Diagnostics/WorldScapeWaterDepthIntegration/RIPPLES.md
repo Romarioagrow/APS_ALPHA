@@ -394,3 +394,81 @@ renderer setting, source, plugin binary or asset was changed in these runs.
 There is now evidence against further blind wave/coordinate rewrites as the
 sole fix. The current view-anchor asset is still a FAILED ordinary-lit candidate;
 its control-only improvement is not material acceptance or a 120 FPS result.
+
+## Single-layer pass-routing control (v14, private and off by default)
+
+The installed UE 5.4 deferred renderer composites opaque diffuse indirect/AO
+before `RenderSingleLayerWater`. This motivates a water-only shading-model
+control, not a global renderer change. `LumenMaterial.ush::IsValid` does NOT
+explicitly exclude SingleLayerWater, so exclusion must not be attributed to
+that predicate. The actual pass order is the hypothesis being tested.
+
+`-SingleLayerSurfaceControl` on BakeRipples.ps1 and Run.ps1 selects a separate
+`/APSWaterDetail/SingleLayerSurfaceControl20260927` clone. The prior view-anchor
+candidate remains the normal diagnostic default and its packages are retained.
+The clone requires a guarded saved DefaultLit source and is asserted to compile
+as SingleLayerWater on both master and MIC. All saved numeric parameters and
+previous material outputs are retained; the only new output is Opacity=1 plus
+zero scattering/absorption volume coefficients. This is an opaque-surface/pass
+experiment, NOT transparent water, calibrated optical scattering or a production
+shading-model migration. Existing depth-palette and ripple normal are unchanged.
+Runtime binding requires the expected shading model and ShortRangeAO=1. The
+launcher rejects lighting/buffer/isolation/live overrides for this control.
+
+No interpretation of legacy optical units was introduced. UE's single-layer
+coefficients are in inverse centimetres, whereas the authored Water coefficient
+parameters currently feed a bounded approximate colour operation. Also UE's
+`SingleLayerWaterShading.ush` approximates light-to-bottom attenuation using
+world-Z separation. That approximation cannot be assumed correct for a spherical
+WorldScape planet. Both issues require explicit treatment before any real
+transmission/volume proposal; this opacity=1 control disables that contribution.
+
+Build `build-20260927-133739.log`: 5 actions, 12.05 seconds, success.
+Bake `bake-single-layer-control-v1`, PID 12556 (confirmed exited): zero errors,
+7 existing warnings, exactly two new private packages; source hashes preserved.
+Master SHA256: `592D7941F4DCD49E081225CB22A2F911D8C5AAA14B5707D4B7A53D15F0FE283E`.
+MIC SHA256: `C21AA424F5BD457D8E3031D9E4C87774BCDCB2E7E2BD3C239C60C20E0D4A3DE5`.
+
+`water-single-layer-surface-near-v1`, PID 28624 (confirmed exited): both tests
+succeeded, 55 rendered warnings / zero errors. This first run was TOP-DOWN at
+2 m, not the earlier oblique repro, so it cannot establish removal of that
+angular artifact. It visibly changes water lighting and has a fine shore-edge
+pattern absent from the original return. No visual acceptance. Material-only
+paired GPU changes +0.193621 / +0.187097 ms, original means
+3.82546 / 3.82618 / 3.83103 ms. Not a walking/whole-pipeline FPS measurement.
+Report SHA256: `02400ABE6392EAA12DE3507E2532E2E01E2484970A0D6211F221841CC00A45EF`.
+
+`water-single-layer-surface-oblique-v1`, PID 920 (confirmed exited), repeats the
+2 m oblique shore fixture with no lighting overrides. Both tests succeeded,
+55 rendered warnings / zero errors. Runtime logged the private SingleLayerWater
+template and ShortRangeAO=1. The broad angular patches are absent in the inspected
+candidate, but the pass change darkens the water and introduces a noisy fine
+shore fringe in BOTH ripple-on and ripple-off captures. The original-return
+shore is clean. This control therefore FAILS overall visual acceptance; absence
+of the old patch pattern does not authorize installing the candidate.
+
+Same-run interior ROI analysis of original RGB captures, excluding shore/HUD:
+
+- Water x=[80,620), y=[200,620): candidate/original mean absolute channel
+  difference 7.95562/255, p99 28/255. Mean sRGB-decoded linear luminance
+  candidate 0.0334741 vs original 0.0441253 (about 24% lower).
+- Land x=[980,1200), y=[250,650): mean absolute channel difference
+  0.215034/255, p99 1/255. Mean linear luminance 0.0350681 vs 0.0350643.
+  This supports preservation in that land patch only, not every contact shadow.
+- Ripple-on/off mean absolute channel difference: water 1.750801/255,
+  land 0.185958/255. Ripple detail is not simply disabled to remove the pattern.
+
+Paired material-only GPU increments +0.315844 / +0.319119 ms; original means
+4.20961 / 4.22751 / 4.2297 ms. Source/geometry/RGBA/UV/root/camera checks passed
+within the run. This is not walking, moving LOD, orbit or 120 FPS acceptance.
+Report SHA256: `13D09AA496F6D2420C0663331330AC04BE597C4B01DFB6EB3B2A1E37210D555F`.
+
+Next bounded investigation: explain the model-specific shore fringe independently
+of ripple normals (it survives their zero-strength control), and account for
+surface-lighting parity before considering volume/transmission. The installed
+engine enables a separate single-layer-water depth prepass by default; compare
+that pass's depth/coverage contract to the existing masked WorldScape ocean.
+This is a source lead, not a proven prepass defect. Do not compensate with an
+arbitrary colour multiplier, retune the accepted palette, disable global AO, or
+promote this masked model change without shore/orbit/LOD/performance coverage.
+No production source, Content, Config, plugin or binary was modified.
