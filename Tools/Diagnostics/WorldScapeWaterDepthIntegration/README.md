@@ -7,17 +7,17 @@ Production source, materials, engine plugin and binaries were not replaced.
 
 ## What is preserved here
 
-`integration.patch` and `overlay-manifest.json` describe 12 source files:
+`integration.patch` and `overlay-manifest.json` describe 13 source files:
 the private WorldScape signed-kilometre UV1 data path and worker tests, an APS
 process-wide opt-in restricted to owned full-scale generated Water roots, and
 a bounded extension of the existing real gameplay liquid probe. There is no
 new production material selector, saved default, geography or palette change.
 The rejected compressed-preview height adapter is deliberately absent.
 
-Current overlay: `overlay-v4` (the earlier dry-fixture overlay is in commit
-`6e9e8e09771467eef2b0c2d9ccc4418bc339d106`).
-Patch SHA256: `9422DCA55F8429F9FE85A38E40AEE4CEF41DC7B8B870D4A6DAF8C759FEC97614`.
-Manifest SHA256: `89A0FEFEA83AE4C67176B8C22C87104DD2505A7C64D2D207754574610D891FF4`.
+Current overlay: `overlay-v5` (the preceding wet-shore fixture is preserved in
+commit `50799d91bd3e332225128f8953fe2986453a885f`; dry fixture in `6e9e8e09`).
+Patch SHA256: `548979DF22DD4142ED8F550CAD6FA8106842A5BC4410BF0196AA3AC9870DBED3`.
+Manifest SHA256: `72032AF7ADB9F46E0EA5E2E086B99A5123DA15D754AC2AACC60E73DC1DF8745E`.
 The patch was reverse-checked against the final isolated source tree.
 
 ## Evidence and limits
@@ -110,6 +110,72 @@ candidate has 66 in water and 1 on land. The strong water shift is attributable
 to the candidate rather than a broad exposure/terrain change in this fixture.
 No natural walking, LOD-traversal, broader-family or FPS acceptance is claimed.
 
+## Palette-budget refinement (still opt-in)
+
+`APSWaterDepthPalette.h` resolves the uniform strength from the existing saved
+deep and shallow colours instead of assuming .35 is equally subtle for every
+palette. With a .35 relative linear-luminance budget it uses
+`min(1, budget * min(Ydeep,Yshallow) / abs(Yshallow-Ydeep))`. Equal-luminance or
+black endpoints produce zero strength; negative/nonfinite colours or an
+out-of-range/nonfinite budget fail closed with zero output. The algorithm
+retains both endpoints and the saved filtered 20 m depth falloff.
+
+For the tested Water palette, Ydeep=.0164619, Yshallow=.147944996, so the resolved
+strength is .0438205749. For the existing bounded legacy/filtered-depth alpha,
+this bounds the change in the linear palette term by .35 of its baseline.
+It does not bound displayed pixel brightness or simulate physical scattering.
+It adds a small CPU uniform calculation, not a shader texture/noise loop.
+
+The diagnostic requires `APSWaterDepthPaletteBudget` explicitly; existing
+non-budget runs still use .35. Camera height may be 10..500 m, independently
+of the real WorldScape observer held at 70 m for native collision convergence.
+This is not an adaptive production LOD or camera change.
+
+Evidence:
+
+- Build `build-20260927-111351.log`: 4 actions, 8.81 seconds, success.
+- `physical-water-budget-near-v1`, PID 29164, failed before any scene: sandbox
+  restrictions made the common DDC read-only; Unreal requested exit status 3.
+  No test or visual acceptance. The owned orphan crash monitor was removed
+  only after verifying its exact `-MONITOR=29164` argument and editor exit.
+  No user editor, project cache settings or production assets were changed.
+- Retried with access to the existing writable DDC: `physical-water-budget-near-v2`
+  (PID 4384, 50 m) and `physical-water-budget-coast-v1` (PID 26732, 500 m).
+  Each completed two tests: palette arithmetic passed with 0 warnings, rendered
+  gameplay passed with 55 logged warnings; 0 failed tests / 0 errors. Both
+  editors requested exit status 0 and were confirmed no longer running.
+- The C++ palette test covers 2,420 combinations of five endpoint pairs,
+  four budgets, legacy alpha and depth falloff; includes reversed contrast,
+  black/equal endpoints, HDR values, linear-scale invariance, zero/far identity
+  and negative/NaN/infinite input rejection. It is not GPU or FPS proof.
+- Both rendered runs validated actual ground/ocean collision and the same
+  73,960 UV1 vertices, 1,081 root oracle samples, 30/30 restored slots and
+  restored pawn/camera. Ground, topology, RGBA and UVs stayed unchanged per A/B.
+- On inspected 50 m and 500 m captures, water retains a dark-blue appearance
+  with a modest shallow-depth lift; the previous strong cyan shift is reduced.
+  Water still lacks convincing fine detail and these top-down stills do not
+  establish realistic oblique/walking appearance, all-family continuity or FPS.
+
+Same fixed ROIs and mean absolute display-RGB metric as above:
+
+| View / comparison to repeated original | Water | Land |
+| --- | ---: | ---: |
+| 50 m candidate | 6.4187 | 0.0682 |
+| 50 m zero strength | 0.0860 | 0.1832 |
+| 50 m original return | 0.0084 | 0.0954 |
+| 500 m candidate | 4.5783 | 0.1503 |
+| 500 m zero strength | 0.0859 | 0.1490 |
+| 500 m original return | 0.0861 | 0.1504 |
+
+Compare the former .35 candidate's 50 m water difference of 40.6759: the new
+uniform measurably reduces the broad colour shift, while zero/return controls
+stay near their baseline noise. No material asset was rebaked or replaced.
+
+Reports SHA256:
+
+- Near: `B9F5D74857FD2A8BFB44315FE36CB2019B72780C4DA159F0C1DFAE320054D83E`.
+- Coast: `90CF78501F7D711EB45F4B109E578039E227CFD46DEC5A1964C17E129A3E3324`.
+
 ## Reproduction and safety
 
 Use a separate project, never the accepted installation. Copy APS Source/Config
@@ -134,9 +200,14 @@ filtered candidate (strength .35, half-depth 20 m), zero-strength and original
 return. The saved filtered Water MIC is its parameter authority. Alpha is not
 repurposed as a depth mask. No other liquid family is eligible.
 
-Next bounded step: use the proven shore fixture to assess a less intrusive
-water treatment that preserves the accepted palette while improving depth
-readability. Do not hide the ground, clamp dry depths, move just the test camera
-into coarse distant LOD or alter the production spawn rule. Assess natural
-motion/LOD traversal, broader Water-family coverage and performance before
-any production enablement. A successful diagnostic does not authorize rollout.
+Palette-budget runs: `Run.ps1 -Label <new-label> -PaletteBudget -CameraHeightM 50`
+or `500`; neither enables a production default. An isolated process still needs
+access to a writable DDC. A DDC startup failure is not a material failure; do
+not change the accepted project config or restart a live user editor for it.
+
+Next bounded step: verify oblique water-surface detail and depth readability
+with natural motion/LOD traversal, then broader Water-family coverage and
+performance. Do not hide the ground, clamp dry depths, move just the test camera
+into coarse distant LOD or alter the production spawn rule. Keep production
+selection off until those requirements are met. A successful static diagnostic
+does not establish completed water realism or authorize rollout by itself.

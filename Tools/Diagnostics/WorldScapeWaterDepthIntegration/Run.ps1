@@ -1,4 +1,5 @@
-param([ValidatePattern('^[a-z0-9-]+$')][string]$Label='physical-water-v1')
+param([ValidatePattern('^[a-z0-9-]+$')][string]$Label='physical-water-v1',
+ [switch]$PaletteBudget, [ValidateRange(10,500)][int]$CameraHeightM=50)
 $ErrorActionPreference='Stop'
 if(Get-Process UnrealEditor,UnrealEditor-Cmd -ErrorAction SilentlyContinue){throw 'Editor active; no session touched'}
 $project=Join-Path $PSScriptRoot 'host/APS_ALPHA.uproject'
@@ -14,7 +15,9 @@ $arguments=@(
  '-d3d12','-sm6','-RenderOffscreen','-Windowed','-ForceRes','-ResX=1600','-ResY=900',
  '-APSDiagnosticPlanet=Water','-APSSharedLiquidCoverage','-APSWaterDepthPayload','-APSProbeWaterDepthGameplay',
  ('-UserDir="'+$run+'"'),('-ReportExportPath="'+$run+'/report"'),('-abslog="'+$run+'/surface.log"'),
- '-ExecCmds="Automation RunTests APS.Rendered.Gameplay.GeneratedSurfaceLightingDiagnostics"',
+ '-ExecCmds="Automation RunTests APS.Materials.WaterDepth.PaletteBudget+APS.Rendered.Gameplay.GeneratedSurfaceLightingDiagnostics"',
  '-TestExit="Automation Test Queue Empty"')
+if($PaletteBudget){$arguments+='-APSWaterDepthPaletteBudget'}
+$arguments+=('-APSWaterDepthCameraHeightM='+$CameraHeightM)
 $process=Start-Process -FilePath 'C:/Program Files/Epic Games/UE/UE_5.4/Engine/Binaries/Win64/UnrealEditor.exe' -ArgumentList $arguments -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $run 'stdout.txt') -RedirectStandardError (Join-Path $run 'stderr.txt')
 $process | Select-Object Id,StartTime | ConvertTo-Json

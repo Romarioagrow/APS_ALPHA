@@ -690,6 +690,49 @@ index 0000000..c5d45c0
 +        return bEnabled;
 +    }
 +}
+diff --git a/Source/APS_ALPHA/Core/Planetary/APSWaterDepthPalette.h b/Source/APS_ALPHA/Core/Planetary/APSWaterDepthPalette.h
+new file mode 100644
+index 0000000..cf12891
+--- /dev/null
++++ b/Source/APS_ALPHA/Core/Planetary/APSWaterDepthPalette.h
+@@ -0,0 +1,37 @@
++#pragma once
++#include "CoreMinimal.h"
++
++// Candidate-only uniform calculation. It does not select a material or change
++// either palette endpoint, Fresnel, wave normals, geometry or exposure.
++namespace APSWaterDepthPalette
++{
++inline double Luminance(const FLinearColor& C)
++{
++    return double(C.R) * 0.2126 + double(C.G) * 0.7152 + double(C.B) * 0.0722;
++}
++
++inline bool ResolveStrength(const FLinearColor& Deep, const FLinearColor& Shallow,
++    float MaxRelativeLuminanceChange, float& OutStrength)
++{
++    OutStrength = 0.0f;
++    const auto Valid = [](const FLinearColor& C)
++    {
++        return FMath::IsFinite(C.R) && FMath::IsFinite(C.G) && FMath::IsFinite(C.B)
++            && C.R >= 0.0f && C.G >= 0.0f && C.B >= 0.0f;
++    };
++    if (!Valid(Deep) || !Valid(Shallow) || !FMath::IsFinite(MaxRelativeLuminanceChange)
++        || MaxRelativeLuminanceChange < 0.0f || MaxRelativeLuminanceChange > 1.0f) return false;
++
++    const double A = Luminance(Deep), B = Luminance(Shallow);
++    const double Contrast = FMath::Abs(B - A), Floor = FMath::Min(A, B);
++    // Equal-luminance endpoints do not justify an unrestricted hue change.
++    // A black endpoint cannot support a nonzero relative-light budget either.
++    if (Contrast <= 1.e-12 || Floor <= 0.0 || MaxRelativeLuminanceChange == 0.0f) return true;
++    OutStrength = float(FMath::Min(1.0, double(MaxRelativeLuminanceChange) * Floor / Contrast));
++    // For alpha = legacy + (1-legacy)*strength*shallowDepth, legacy and
++    // shallowDepth in [0,1], |delta Y| <= budget * min(A,B) <= budget * Ybase.
++    // This bounds only the linear palette term, not tonemapped pixels, PBR
++    // lighting or physical scattering. Existing filtered depth falloff survives.
++    return true;
++}
++}
 diff --git a/Source/APS_ALPHA/Generation/PlanetarySurfaceGeneratorStreaming.cpp b/Source/APS_ALPHA/Generation/PlanetarySurfaceGeneratorStreaming.cpp
 index b6f8aac..4f76b9a 100644
 --- a/Source/APS_ALPHA/Generation/PlanetarySurfaceGeneratorStreaming.cpp
@@ -722,7 +765,7 @@ index b6f8aac..4f76b9a 100644
  	// or an occlusion source.  WorldScape's defaults otherwise let independently
  	// stitched clipmap sections cast their rectangular boundaries onto the terrain,
 diff --git a/Source/APS_ALPHA/Tests/APSSharedLavaCoverageProbe.cpp b/Source/APS_ALPHA/Tests/APSSharedLavaCoverageProbe.cpp
-index 6bbb423..43b0e5f 100644
+index 6bbb423..e938901 100644
 --- a/Source/APS_ALPHA/Tests/APSSharedLavaCoverageProbe.cpp
 +++ b/Source/APS_ALPHA/Tests/APSSharedLavaCoverageProbe.cpp
 @@ -3,6 +3,7 @@
@@ -733,11 +776,12 @@ index 6bbb423..43b0e5f 100644
  #include "APS_ALPHA/Core/Planetary/APSSharedLavaMaterial.h"
  #include "APS_ALPHA/Core/Planetary/APSSharedWaterMaterial.h"
  #include "APS_ALPHA/Generation/PlanetarySurfaceGenerator.h"
-@@ -28,11 +29,17 @@
+@@ -28,11 +29,18 @@
  #include "UnrealClient.h"
  #include "UObject/StrongObjectPtr.h"
  #include "APSLavaShorelineProbe.h"
 +#include "APS_ALPHA/Core/Planetary/APSWaterDepthCandidate.h"
++#include "APS_ALPHA/Core/Planetary/APSWaterDepthPalette.h"
 +#include "WorldScapeCore/Public/WorldScapeOceanDepth.h"
 +#include <limits>
  
@@ -747,15 +791,18 @@ index 6bbb423..43b0e5f 100644
  constexpr double CameraClearanceCm = 50000.0;
 +// WorldScape intentionally skips collision regeneration high above HeightAnchor.
 +// A near-shore data/collision/material fixture stays below that cutoff.
-+constexpr double WaterDepthClearanceCm = 5000.0;
++constexpr double WaterDepthObserverClearanceCm = 7000.0;
  const TCHAR* Labels[] = { TEXT("00-context0-alpha0"), TEXT("01-context0-alpha1"),
      TEXT("02-context1-alpha0"), TEXT("03-context1-alpha1") };
  // The first pair (1 / 1.25) was captured before and after crust correction.
-@@ -104,6 +111,18 @@ class FProbe final : public IAutomationLatentCommand
+@@ -104,6 +112,21 @@ class FProbe final : public IAutomationLatentCommand
      bool bLeased = false, bRestored = false, bDone = false;
      bool bRootTick = false, bSurfaceTick = false, bPlanetTick = false, bFrozen = false;
      bool bSharedLiquidFamilies = false;
 +    bool bWaterDepthGameplay = false;
++    bool bWaterDepthPaletteBudget = false;
++    float WaterDepthStrength = 0.35f;
++    double WaterDepthClearanceCm = 5000.0;
 +    int32 WaterDepthCase = 0;
 +    FTransform WaterDepthCamera;
 +    TWeakObjectPtr<ACustomGravityCharacter> ShorePawn;
@@ -770,7 +817,7 @@ index 6bbb423..43b0e5f 100644
      EAPSPlanetLiquidType LiquidType = EAPSPlanetLiquidType::Lava;
  
      const TCHAR* Marker() const { return bSharedLiquidFamilies ? TEXT("SHARED_LIQUID_COVERAGE") : TEXT("LAVA_COVERAGE"); }
-@@ -114,6 +133,132 @@ class FProbe final : public IAutomationLatentCommand
+@@ -114,6 +137,132 @@ class FProbe final : public IAutomationLatentCommand
              : LiquidType == EAPSPlanetLiquidType::Ammonia ? TEXT("Ammonia") : TEXT("Lava");
      }
  
@@ -842,7 +889,7 @@ index 6bbb423..43b0e5f 100644
 +        ShoreECEF = Shore * (Root->PlanetScale + Sea.Height);
 +        // Camera will be at 50 m; the real streaming pawn remains behind its
 +        // downward-facing lens. Nothing is hidden or manually injected into LODs.
-+        ShorePawnECEF = ShoreECEF + Shore * (WaterDepthClearanceCm + 2000.0);
++        ShorePawnECEF = ShoreECEF + Shore * WaterDepthObserverClearanceCm;
 +        OriginalPawnECEF = Root->WorldToECEF(ShorePawn->GetActorLocation()).ToFVector();
 +        OriginalPawnRotation = ShorePawn->GetActorQuat(); OriginalPawnControl = PC->GetControlRotation();
 +        OriginalPawnVelocity = ShorePawn->GetVelocity(); bOriginalPawnZeroG = ShorePawn->bManualZeroGOverride;
@@ -903,7 +950,7 @@ index 6bbb423..43b0e5f 100644
      UMaterialInstanceDynamic* CreateSharedLiquidCandidate(UMaterialInstanceDynamic* SourceMID)
      {
          // Exact family parents matter: Water and Ammonia share a master, not
-@@ -129,6 +274,26 @@ class FProbe final : public IAutomationLatentCommand
+@@ -129,6 +278,37 @@ class FProbe final : public IAutomationLatentCommand
              || Root->OceanMaterial.DefaultMaterial != SourceMID) return nullptr;
          for (const FSlot& Slot : Slots)
              if (Slot.OriginalMaterial.Get() != SourceMID) return nullptr;
@@ -922,15 +969,26 @@ index 6bbb423..43b0e5f 100644
 +            if (!APSSharedTerrainMaterial::WritePhysicalFrame(DepthMID, Root->GetRootComponent(),
 +                Planet->WorldScapePresentationScale)) return nullptr;
 +            DepthMID->SetScalarParameterValue(TEXT("APS_UsePresentationWaterMask"), 0.0f);
-+            DepthMID->SetScalarParameterValue(TEXT("APS_WaterDepthStrength"), 0.35f);
++            if (bWaterDepthPaletteBudget)
++            {
++                FLinearColor Deep, Shallow;
++                if (!Template->GetVectorParameterValue(FMaterialParameterInfo(TEXT("LiquidDeepColor")), Deep)
++                    || !Template->GetVectorParameterValue(FMaterialParameterInfo(TEXT("LiquidShallowColor")), Shallow)
++                    || !APSWaterDepthPalette::ResolveStrength(Deep, Shallow, 0.35f, WaterDepthStrength)) return nullptr;
++                Test->AddInfo(FString::Printf(TEXT("WATER_DEPTH_PALETTE_BUDGET relativeLinearLuminance=0.35 deep=%s shallow=%s deepY=%.9g shallowY=%.9g strength=%.9g; palette endpoints unchanged, not physical scattering or pixel brightness bound"),
++                    *Deep.ToString(), *Shallow.ToString(), APSWaterDepthPalette::Luminance(Deep),
++                    APSWaterDepthPalette::Luminance(Shallow), WaterDepthStrength));
++            }
++            DepthMID->SetScalarParameterValue(TEXT("APS_WaterDepthStrength"), WaterDepthStrength);
 +            DepthMID->SetScalarParameterValue(TEXT("APS_WaterHalfDepthM"), 20.0f);
-+            Test->AddInfo(TEXT("WATER_DEPTH_GAMEPLAY candidate=filtered20260927 authority=savedMIC strength=0.35 halfDepthM=20; production unchanged"));
++            Test->AddInfo(FString::Printf(TEXT("WATER_DEPTH_GAMEPLAY candidate=filtered20260927 authority=savedMIC paletteBudget=%d strength=%.9g halfDepthM=20; production unchanged"),
++                bWaterDepthPaletteBudget ? 1 : 0, WaterDepthStrength));
 +            return DepthMID;
 +        }
          UMaterialInstanceDynamic* MID = bWater
              ? APSSharedWaterMaterial::CreateUnboundCandidate(Root.Get(), Root->GetRootComponent(),
                  Planet->WorldScapePresentationScale, false, Surface->ResolvedSurfaceProfile, Planet->IsManual, Root->bOcean)
-@@ -160,6 +325,9 @@ class FProbe final : public IAutomationLatentCommand
+@@ -160,6 +340,9 @@ class FProbe final : public IAutomationLatentCommand
              const FWorldScapeMeshSection* S = Slot.Mesh->GetProcMeshSection(Slot.Index);
              if (!S || S->PlanetVertexBuffer.Num() != Slot.OriginalColors.Num()
                  || PayloadHash(*S) != Slot.Hash) return false;
@@ -940,7 +998,7 @@ index 6bbb423..43b0e5f 100644
          }
          return true;
      }
-@@ -203,6 +371,17 @@ class FProbe final : public IAutomationLatentCommand
+@@ -203,6 +386,17 @@ class FProbe final : public IAutomationLatentCommand
              if (Surface.IsValid()) Surface->SetActorTickEnabled(bSurfaceTick);
              if (Planet.IsValid()) Planet->SetActorTickEnabled(bPlanetTick);
          }
@@ -958,7 +1016,7 @@ index 6bbb423..43b0e5f 100644
          Test->AddInfo(FString::Printf(TEXT("%s_RESTORE slots=%d/%d colors=%d cameraRestored=%d family=%s"),
              Marker(), RestoredSlots, Slots.Num(), RestoredVertices, PC.IsValid() && PC->GetViewTarget() == OriginalViewTarget.Get() ? 1 : 0, Family()));
      }
-@@ -227,7 +406,7 @@ class FProbe final : public IAutomationLatentCommand
+@@ -227,7 +421,7 @@ class FProbe final : public IAutomationLatentCommand
                  Slot.Transform = Lod->Mesh->GetComponentTransform(); Slot.Hash = PayloadHash(*S);
                  for (const FWorldScapeMeshVertex& V : S->PlanetVertexBuffer) Slot.OriginalColors.Add(V.Color);
                  TotalVertices += Slot.OriginalColors.Num();
@@ -967,7 +1025,7 @@ index 6bbb423..43b0e5f 100644
                  // Aim at an actual nondegenerate LOD0 triangle, not a synthetic plane.
                  for (int32 I = 0; I + 2 < S->PlanetIndexBuffer.Num(); I += 3)
                  {
-@@ -236,13 +415,35 @@ class FProbe final : public IAutomationLatentCommand
+@@ -236,13 +430,35 @@ class FProbe final : public IAutomationLatentCommand
                          || !S->PlanetVertexBuffer.IsValidIndex(C)) return false;
                      const FVector P0 = S->PlanetVertexBuffer[A].Position, P1 = S->PlanetVertexBuffer[B].Position, P2 = S->PlanetVertexBuffer[C].Position;
                      if (FVector::CrossProduct(P1-P0, P2-P0).SizeSquared() < 1.0) continue;
@@ -1004,7 +1062,7 @@ index 6bbb423..43b0e5f 100644
          for (const UWorldScapeLod* Lod : R->WorldScapeLod)
              if (IsValid(Lod) && IsValid(Lod->Mesh))
              {
-@@ -267,7 +468,7 @@ class FProbe final : public IAutomationLatentCommand
+@@ -267,7 +483,7 @@ class FProbe final : public IAutomationLatentCommand
          FActorSpawnParameters Params; Params.ObjectFlags |= RF_Transient;
          Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
          ACameraActor* NewCamera = World->SpawnActor<ACameraActor>(ACameraActor::StaticClass(),
@@ -1013,7 +1071,7 @@ index 6bbb423..43b0e5f 100644
          Camera = NewCamera;
          if (!NewCamera || !NewCamera->GetCameraComponent()) return false;
          const FMinimalViewInfo& Natural = Controller->PlayerCameraManager->GetCameraCacheView();
-@@ -280,6 +481,13 @@ class FProbe final : public IAutomationLatentCommand
+@@ -280,6 +496,13 @@ class FProbe final : public IAutomationLatentCommand
          // Explicit isolation only. The natural-route fixture has three preceding
          // unchanged scene frames; the opt-in Lava orbital route does not claim
          // those frames. No light/exposure/foliage/material-style edits here.
@@ -1027,7 +1085,7 @@ index 6bbb423..43b0e5f 100644
          for (const FVisibility& V : GroundVisibility) if (V.Mesh.IsValid()) V.Mesh->SetVisibility(false, false);
          auto* Capture = NewObject<USceneCaptureComponent2D>(NewCamera);
          if (!Capture) return false;
-@@ -333,8 +541,83 @@ class FProbe final : public IAutomationLatentCommand
+@@ -333,8 +556,83 @@ class FProbe final : public IAutomationLatentCommand
          const FString Path = Folder / FString::Printf(TEXT("production-%02d-original-material-rgba.png"), ProductionCaptureCount);
          TArray64<uint8> Png; FImageUtils::PNGCompressImageArray(Size.X, Size.Y, Pixels, Png);
          if (!FFileHelper::SaveArrayToFile(Png, *Path)) return false;
@@ -1081,7 +1139,7 @@ index 6bbb423..43b0e5f 100644
 +    bool ApplyWaterDepthCase()
 +    {
 +        if (!PayloadIsUnchanged() || !Candidate.IsValid() || WaterDepthCase < 0 || WaterDepthCase > 2) return false;
-+        Candidate->SetScalarParameterValue(TEXT("APS_WaterDepthStrength"), WaterDepthCase == 1 ? 0.0f : 0.35f);
++        Candidate->SetScalarParameterValue(TEXT("APS_WaterDepthStrength"), WaterDepthCase == 1 ? 0.0f : WaterDepthStrength);
 +        for (const FSlot& Slot : Slots)
 +            Slot.Mesh->SetMaterial(Slot.Index, WaterDepthCase == 2 ? Slot.OriginalMaterial.Get() : Candidate.Get());
 +        SetFrame = GFrameCounter; Next = FPlatformTime::Seconds() + 2.0;
@@ -1113,11 +1171,19 @@ index 6bbb423..43b0e5f 100644
          return true;
      }
  
-@@ -451,11 +734,15 @@ public:
+@@ -451,11 +749,23 @@ public:
          if (Step == 0)
          {
              bRadianceAB = FParse::Param(FCommandLine::Get(), TEXT("APSLavaRadianceAB"));
 +            bWaterDepthGameplay = FParse::Param(FCommandLine::Get(), TEXT("APSProbeWaterDepthGameplay"));
++            bWaterDepthPaletteBudget = FParse::Param(FCommandLine::Get(), TEXT("APSWaterDepthPaletteBudget"));
++            float HeightM = 50.0f;
++            FParse::Value(FCommandLine::Get(), TEXT("APSWaterDepthCameraHeightM="), HeightM);
++            if (!FMath::IsFinite(HeightM) || HeightM < 10.0f || HeightM > 500.0f)
++                return Finish(TEXT("diagnostic camera height must be 10..500 metres"));
++            WaterDepthClearanceCm = double(HeightM) * 100.0;
++            if (bWaterDepthPaletteBudget && !bWaterDepthGameplay)
++                return Finish(TEXT("palette budget is an opt-in depth diagnostic only"));
 +            if (bWaterDepthGameplay && (!bSharedLiquidFamilies || !APSWaterDepthCandidate::Enabled() || bRadianceAB))
 +                return Finish(TEXT("depth probe requires shared Water coverage plus process-wide payload, without Lava flags"));
              if (bRadianceAB && bSharedLiquidFamilies) return Finish(TEXT("radiance A/B is Lava-only"));
@@ -1129,7 +1195,7 @@ index 6bbb423..43b0e5f 100644
              const bool bAllowedFamily = bSharedLiquidFamilies
                  ? LiquidType == EAPSPlanetLiquidType::Water || LiquidType == EAPSPlanetLiquidType::Ammonia
                  : LiquidType == EAPSPlanetLiquidType::Lava;
-@@ -466,6 +753,11 @@ public:
+@@ -466,6 +776,11 @@ public:
                  return Finish(TEXT("requires an actual ready generated full-scale ocean of the opted-in liquid family"));
              if (Root->bGenerateFoliages && !Root->Foliages.IsEmpty())
                  return Finish(TEXT("refusing a foliage-active root without a public foliage-worker drain"));
@@ -1141,7 +1207,7 @@ index 6bbb423..43b0e5f 100644
              bRootTick = Root->IsActorTickEnabled(); bFrozen = Root->bFreezeGeneration;
              bSurfaceTick = Surface->IsActorTickEnabled(); bPlanetTick = Planet->IsActorTickEnabled();
              bLeased = true; Root->bFreezeGeneration = true; Root->SetActorTickEnabled(false);
-@@ -539,6 +831,11 @@ public:
+@@ -539,6 +854,11 @@ public:
          {
              if (!CaptureProductionBaseline()) return Finish(TEXT("actual production shared liquid baseline/frame/slot assertion failed before candidate substitution"));
              if (++ProductionCaptureCount < 2) { SetFrame = GFrameCounter; Next = Now + 1.0; return false; }
@@ -1153,7 +1219,7 @@ index 6bbb423..43b0e5f 100644
              if (bRadianceAB)
              {
                  if (!ApplyRadianceCase()) return Finish(TEXT("failed to begin isolated radiance A/B"));
-@@ -549,6 +846,13 @@ public:
+@@ -549,6 +869,13 @@ public:
              Step = 3;
              return false;
          }
@@ -1167,3 +1233,64 @@ index 6bbb423..43b0e5f 100644
          if (Step == 5)
          {
              if (!CaptureRadianceCase()) return Finish(TEXT("radiance A/B capture or original parameter/payload continuity failed"));
+@@ -599,4 +926,60 @@ TSharedPtr<IAutomationLatentCommand> APSCreateSharedLiquidCoverageProbe(
+ {
+     return MakeShared<APSSharedLavaCoverage::FProbe>(Test, World, Planet, true);
+ }
++
++IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAPSWaterDepthPaletteBudgetTest,
++    "APS.Materials.WaterDepth.PaletteBudget",
++    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
++bool FAPSWaterDepthPaletteBudgetTest::RunTest(const FString&)
++{
++    using namespace APSWaterDepthPalette;
++    const TPair<FLinearColor, FLinearColor> Pairs[] = {
++        {FLinearColor(0.004f, 0.018f, 0.065f), FLinearColor(0.03f, 0.25f, 0.52f)},
++        {FLinearColor(0.5f, 0.3f, 0.2f), FLinearColor(0.01f, 0.02f, 0.04f)},
++        {FLinearColor::Black, FLinearColor::White},
++        {FLinearColor(0.02f, 0.03f, 0.04f), FLinearColor(0.02f, 0.03f, 0.04f)},
++        {FLinearColor(2.0f, 3.0f, 4.0f), FLinearColor(20.0f, 35.0f, 50.0f)}};
++    int32 Samples = 0;
++    for (const auto& P : Pairs)
++    for (float Budget : {0.0f, 0.1f, 0.35f, 1.0f})
++    {
++        float Strength = -1.0f, ScaledStrength = -1.0f;
++        if (!ResolveStrength(P.Key, P.Value, Budget, Strength)
++            || !ResolveStrength(P.Key * 0.125f, P.Value * 0.125f, Budget, ScaledStrength)
++            || Strength < 0.0f || Strength > 1.0f || !FMath::IsFinite(Strength)
++            || FMath::Abs(Strength - ScaledStrength) > 1.e-6f)
++        { AddError(TEXT("Finite bounded palette strength / linear-scale invariance failed")); return false; }
++        for (int32 L = 0; L <= 10; ++L)
++        for (int32 D = 0; D <= 10; ++D)
++        {
++            const double Legacy = L / 10.0, ShallowDepth = D / 10.0;
++            const double A = Luminance(P.Key), B = Luminance(P.Value);
++            const double Before = A + (B - A) * Legacy;
++            const double Alpha = Legacy + (1.0 - Legacy) * Strength * ShallowDepth;
++            const double After = A + (B - A) * Alpha;
++            if (FMath::Abs(After - Before) > Budget * Before + 1.e-6 * FMath::Max(1.0, Before)
++                || (D == 0 && After != Before) || (Budget == 0 && After != Before))
++            { AddError(TEXT("Palette luminance budget or zero/far-depth identity failed")); return false; }
++            ++Samples;
++        }
++    }
++    for (const FLinearColor& Invalid : {FLinearColor(-0.1f, 0.2f, 0.3f),
++        FLinearColor(std::numeric_limits<float>::quiet_NaN(), 0, 0),
++        FLinearColor(0, std::numeric_limits<float>::infinity(), 0)})
++    {
++        float Strength = -1.0f;
++        TestFalse(TEXT("Reject invalid deep palette"), ResolveStrength(Invalid, FLinearColor::White, 0.35f, Strength));
++        TestEqual(TEXT("Rejected deep palette clears output"), Strength, 0.0f);
++        TestFalse(TEXT("Reject invalid shallow palette"), ResolveStrength(FLinearColor::White, Invalid, 0.35f, Strength));
++        TestEqual(TEXT("Rejected shallow palette clears output"), Strength, 0.0f);
++    }
++    for (float Invalid : {-0.1f, 1.1f, std::numeric_limits<float>::quiet_NaN(), std::numeric_limits<float>::infinity()})
++    {
++        float Strength = -1.0f;
++        TestFalse(TEXT("Reject invalid budget"), ResolveStrength(Pairs[0].Key, Pairs[0].Value, Invalid, Strength));
++        TestEqual(TEXT("Rejected budget clears output"), Strength, 0.0f);
++    }
++    AddInfo(FString::Printf(TEXT("PALETTE_BUDGET samples=%d; palette-term numeric evidence only, not shader/FPS/visual acceptance"), Samples));
++    return true;
++}
+ #endif
