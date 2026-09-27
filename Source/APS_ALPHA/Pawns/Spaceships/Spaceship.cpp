@@ -19,6 +19,7 @@
 #include "APS_ALPHA/Pawns/Characters/GravityDetectorComponent.h"
 #include "APS_ALPHA/Pawns/Spaceships/ShipNavigationComponent.h"
 #include "Camera/CameraComponent.h"
+#include "Components/ArrowComponent.h"
 #include "Components/BoxComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -254,6 +255,20 @@ ASpaceship::ASpaceship()
 	ForwardVector->SetVisibility(false, true);
 	ForwardVector->SetHiddenInGame(true);
 
+#if WITH_EDITORONLY_DATA
+	NoseArrow = CreateEditorOnlyDefaultSubobject<UArrowComponent>(TEXT("NoseArrow"));
+	if (NoseArrow)
+	{
+		NoseArrow->SetupAttachment(ForwardVector);
+		NoseArrow->ArrowColor = FColor(242, 181, 29);
+		NoseArrow->ArrowSize = 2.0f;
+		NoseArrow->bIsScreenSizeScaled = true;
+		// Arrow bounds scale with the hull and would inflate the ship's actor bounds.
+		NoseArrow->bUseAttachParentBound = true;
+		NoseArrow->SetHiddenInGame(true);
+	}
+#endif
+
 	OnInterstellarMode.AddDynamic(this, &ASpaceship::UpdateNavigatableActorsForInterstellar);
 	OnStellarMode.AddDynamic(this, &ASpaceship::UpdateNavigatableActorsForStellar);
 	OnInterplanetaryMode.AddDynamic(this, &ASpaceship::UpdateNavigatableActorsForInterplanetary);
@@ -424,8 +439,7 @@ void ASpaceship::RefreshInteractionGeometry()
 	}
 	const FVector LocalCenter = (LocalBoundsMin + LocalBoundsMax) * 0.5;
 	const FVector LocalExtent = (LocalBoundsMax - LocalBoundsMin) * 0.5;
-	const bool bForceGeneratedConfiguration = bGenerateSimpleHullCollision
-		|| Tags.Contains(TEXT("APS.GeneratedShip"));
+	const bool bForceGeneratedConfiguration = bGenerateSimpleHullCollision;
 
 	static const TArray<FName> SeatSocketNames{
 		TEXT("PilotSeat"), TEXT("PilotChair"), TEXT("CockpitSeat"), TEXT("DriverSeat"), TEXT("Seat")};
@@ -980,24 +994,13 @@ ESpaceshipSizeClass ASpaceship::InferSizeClassFromLength(double LengthCentimeter
 	return ESpaceshipSizeClass::Titan;
 }
 
-bool ASpaceship::IsGeneratedShipMeshAsset(const UStaticMesh* Mesh)
-{
-	return IsValid(Mesh)
-		&& Mesh->GetPathName().Contains(TEXT("/Game/APS/APS_ALPHA/Assets/AI_Shpis/"), ESearchCase::IgnoreCase);
-}
-
-bool ASpaceship::IsGeneratedShipSkeletalMeshAsset(const USkeletalMesh* Mesh)
-{
-	return IsValid(Mesh)
-		&& Mesh->GetPathName().Contains(TEXT("/Game/APS/APS_ALPHA/Assets/AI_Shpis/"), ESearchCase::IgnoreCase);
-}
-
 void ASpaceship::ConfigureFlightReferenceFromHull(UPrimitiveComponent* Hull, const FVector& LocalExtent)
 {
 	// Legacy interior ships already author their actual nose direction with this hidden arrow.
 	// Prefer it when authored; generated hulls keep the bounds-axis fallback below.
 	const bool bHasAuthoredForward = ForwardVector
-		&& (ForwardVector->GetStaticMesh() != nullptr
+		&& (bUseAuthoredNoseDirection
+			|| ForwardVector->GetStaticMesh() != nullptr
 			|| !ForwardVector->GetRelativeRotation().IsNearlyZero(0.1));
 	if (bHasAuthoredForward && SpaceshipHull)
 	{
@@ -1033,23 +1036,30 @@ void ASpaceship::ConfigureFlightReferenceFromHull(UPrimitiveComponent* Hull, con
 	}
 }
 
-void ASpaceship::ConfigureFromHull()
+void ASpaceship::RefreshFlightReferenceFromHull()
 {
 	UPrimitiveComponent* MainMesh = GetPrimaryHullComponent();
-	if (MainMesh)
+	if (!MainMesh)
 	{
-		MainMesh->UpdateBounds();
-		FVector LocalMin;
-		FVector LocalMax;
-		if (GetPrimaryHullLocalBounds(MainMesh, LocalMin, LocalMax))
-		{
-			ConfigureFlightReferenceFromHull(MainMesh, (LocalMax - LocalMin) * 0.5);
-		}
-		if (bInferSizeClassFromHull)
-		{
-			const FVector Size = MainMesh->Bounds.BoxExtent * 2.0;
-			SizeClass = InferSizeClassFromLength(Size.GetMax());
-		}
+		return;
+	}
+	MainMesh->UpdateBounds();
+	FVector LocalMin;
+	FVector LocalMax;
+	if (GetPrimaryHullLocalBounds(MainMesh, LocalMin, LocalMax))
+	{
+		ConfigureFlightReferenceFromHull(MainMesh, (LocalMax - LocalMin) * 0.5);
+	}
+}
+
+void ASpaceship::ConfigureFromHull()
+{
+	RefreshFlightReferenceFromHull();
+	UPrimitiveComponent* MainMesh = GetPrimaryHullComponent();
+	if (MainMesh && bInferSizeClassFromHull)
+	{
+		const FVector Size = MainMesh->Bounds.BoxExtent * 2.0;
+		SizeClass = InferSizeClassFromLength(Size.GetMax());
 	}
 
 	ActiveClassPreset = GetPresetForSizeClass(SizeClass);

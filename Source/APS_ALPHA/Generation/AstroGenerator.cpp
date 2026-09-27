@@ -1,4 +1,5 @@
 #include "AstroGenerator.h"
+#include "APS_ALPHA/Pawns/Spaceships/APSShipCatalog.h"
 #include "APSAtmosphereGeneration.h"
 #include "ProfilingDebugging/CsvProfiler.h"
 
@@ -12938,7 +12939,18 @@ bool AAstroGenerator::SpawnConfiguredCivilizationAssets(const USpawnParameters* 
 		const FVector ShipLocation = FleetOrigin
 			+ HomeSpaceShipyard->GetActorRightVector() * Side
 			- HomeSpaceShipyard->GetActorForwardVector() * Back;
-		ASpaceship* Ship = World->SpawnActor<ASpaceship>(BP_HomeSpaceship, ShipLocation,
+		TSubclassOf<ASpaceship> EscortClass = BP_HomeSpaceship;
+		if (ShipCatalog)
+		{
+			// Picked per fleet slot, so the same world seed always gives the same fleet.
+			FRandomStream EscortStream = APSGeneratedBodyIdentity::Stream(PreviewGenerationSeed,
+				FString::Printf(TEXT("FLEET/ESCORT/%d"), FleetIndex), TEXT("ship"));
+			if (const TSubclassOf<ASpaceship> CatalogShip = ShipCatalog->PickStartingFleetShip(EscortStream))
+			{
+				EscortClass = CatalogShip;
+			}
+		}
+		ASpaceship* Ship = World->SpawnActor<ASpaceship>(EscortClass, ShipLocation,
 			HomeSpaceShipyard->GetActorRotation(), ActorSpawnParameters);
 		if (!IsValid(Ship))
 		{

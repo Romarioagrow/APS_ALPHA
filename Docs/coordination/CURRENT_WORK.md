@@ -41,3 +41,18 @@ build/bake/render запусков Codex не делает. В production соб
 это ещё не визуальная приёмка и не подтверждение сохранения 120 FPS.
 Пути, обратимый переключатель старого бюджета и незакрытые пункты:
 [coast refinement handoff](../Diagnostics/2026-09-27-coast-refinement-handoff.md).
+
+## Claude: корабли, этап 1 (27.09, вечер)
+
+Задача от Rio: корабли становятся Blueprint-классами в общей иерархии, а конвертация
+«любой меш из `AI_Shpis` становится кораблём» удаляется. Эти файлы до handoff не трогать:
+
+- `Source/APS_ALPHA/Pawns/Spaceships/Spaceship.h/.cpp`: явный нос `bUseAuthoredNoseDirection` и
+  editor-only стрелка `NoseArrow`. `SpaceshipFleetSubsystem.*` удалена.
+- `Source/APS_ALPHA/Pawns/Spaceships/APSShipCatalog.*` и `Generation/AstroGenerator.h/.cpp` — только
+  поле `ShipCatalog` и выбор класса эскорта стартового флота.
+- Тесты: `APSGameplayIntegrationTests.cpp` (`AuthoredNoseDirection`), `APSShipCatalogTests.cpp`.
+- Контент: `Core/Spaceships/**` (новые BP и `DA_ShipCatalog`), поле `ShipCatalog` в `BP_AstroGenerator`,
+  акторы кораблей на `L_APS_SinglePlay_StartLocation`.
+
+Рабочие материалы, скрипты и отчёт: `F:/ChatGPT/APOSFERA/work/ships`.

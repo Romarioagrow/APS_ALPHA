@@ -26,6 +26,7 @@ class FSlateWindowElementList;
 struct FGeometry;
 class FSlateRect;
 class UBoxComponent;
+class UArrowComponent;
 
 /** Gameplay size class. The display names intentionally match the in-world ship taxonomy. */
 UENUM(BlueprintType)
@@ -228,6 +229,19 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Components")
 	UStaticMeshComponent* ForwardVector;
 
+	/**
+	 * Makes ForwardVector's rotation the ship's nose, even when it is zero and has no mesh.
+	 * Ship Blueprints turn this on so hulls never fall back to guessing from the longest bounds axis.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Flight")
+	bool bUseAuthoredNoseDirection{false};
+
+#if WITH_EDITORONLY_DATA
+	/** Editor-only arrow on ForwardVector that shows the flight nose in the viewport. */
+	UPROPERTY(VisibleAnywhere, Category = "Components")
+	TObjectPtr<UArrowComponent> NoseArrow;
+#endif
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Components")
 	USceneComponent* PilotChair;
 
@@ -428,11 +442,13 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Ship|Class")
 	static ESpaceshipSizeClass InferSizeClassFromLength(double LengthCentimeters);
 
-	UFUNCTION(BlueprintPure, Category = "Ship|Runtime Fleet")
-	static bool IsGeneratedShipMeshAsset(const UStaticMesh* Mesh);
+	/** Recomputes the flight nose and up axes from ForwardVector, or from the hull bounds as a fallback. */
+	UFUNCTION(BlueprintCallable, Category = "Ship|Flight")
+	void RefreshFlightReferenceFromHull();
 
-	UFUNCTION(BlueprintPure, Category = "Ship|Runtime Fleet")
-	static bool IsGeneratedShipSkeletalMeshAsset(const USkeletalMesh* Mesh);
+	/** World-space nose direction used by flight, camera and navigation. */
+	UFUNCTION(BlueprintPure, Category = "Ship|Flight")
+	FVector GetShipForwardVector() const;
 
 	UFUNCTION(BlueprintPure, Category = "Ship|Flight")
 	FString GetSizeClassName() const;
@@ -551,7 +567,6 @@ private:
 	void InitializeFlightPostProcess();
 	void RestoreFlightPostProcess();
 	void StabilizeFullScaleVisualVelocity();
-	FVector GetShipForwardVector() const;
 	FVector GetShipRightVector() const;
 	FVector GetShipUpVector() const;
 	void SetFlightCollisionOptimization(bool bEnabled);

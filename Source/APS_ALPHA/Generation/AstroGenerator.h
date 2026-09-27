@@ -38,6 +38,7 @@ class UHierarchicalInstancedStaticMeshComponent;
 class UInstancedStaticMeshComponent;
 class ASpaceShipyard;
 class ASpaceship;
+class UAPSShipCatalog;
 class ASpaceStation;
 class ASpaceHeadquarters;
 enum class ECharSpawnPlace : uint8;
@@ -155,6 +156,7 @@ class APS_ALPHA_API AAstroGenerator : public ABaseActor
 
 public:
 	AAstroGenerator();
+	
 	virtual void OnConstruction(const FTransform& Transform) override;
 
 	/** Transactionally spawns and validates the selected starter hierarchy. */
@@ -981,6 +983,10 @@ public:
 
 	UPROPERTY(EditAnywhere, Category = "Player Spawn")
 	TSubclassOf<ASpaceship> BP_HomeSpaceship;
+
+	/** Ship Blueprints for starting-fleet escorts. Escorts use BP_HomeSpaceship when this is empty. */
+	UPROPERTY(EditAnywhere, Category = "Player Spawn")
+	TObjectPtr<UAPSShipCatalog> ShipCatalog;
 
 	UPROPERTY(EditAnywhere, Category = "Player Spawn")
 	TSubclassOf<ASpaceShipyard> BP_HomeSpaceShipyard;

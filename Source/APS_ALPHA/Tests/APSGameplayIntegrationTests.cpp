@@ -654,15 +654,49 @@ bool FAPSShipClassPresetTest::RunTest(const FString& Parameters)
 		ASpaceship::InferSizeClassFromLength(6000.0), ESpaceshipSizeClass::S);
 	TestEqual(TEXT("Full-scale capital hull is T"),
 		ASpaceship::InferSizeClassFromLength(25000000.0), ESpaceshipSizeClass::Titan);
+	return true;
+}
 
-	TestFalse(TEXT("Null mesh never becomes a runtime ship"), ASpaceship::IsGeneratedShipMeshAsset(nullptr));
-	UStaticMesh* GeneratedShipMesh = LoadObject<UStaticMesh>(nullptr,
-		TEXT("/Game/APS/APS_ALPHA/Assets/AI_Shpis/Pack_1/01/e5b238288cac3d44ede823f8f809396c.e5b238288cac3d44ede823f8f809396c"));
-	if (TestNotNull(TEXT("Whitelisted generated ship mesh exists"), GeneratedShipMesh))
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FAPSShipAuthoredNoseTest,
+	"APS.Gameplay.Vehicle.AuthoredNoseDirection",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FAPSShipAuthoredNoseTest::RunTest(const FString& Parameters)
+{
+	UWorld* World = APSGameplayIntegrationTests::CreateTestWorld();
+	if (!TestNotNull(TEXT("Test world"), World))
 	{
-		TestTrue(TEXT("AI_Shpis assets are whitelisted"),
-			ASpaceship::IsGeneratedShipMeshAsset(GeneratedShipMesh));
+		return false;
 	}
+
+	ASpaceship* Ship = World->SpawnActor<ASpaceship>();
+	UStaticMesh* TestHullMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
+	if (!TestNotNull(TEXT("Spaceship"), Ship) || !TestNotNull(TEXT("Engine test hull mesh"), TestHullMesh))
+	{
+		APSGameplayIntegrationTests::DestroyTestWorld(World);
+		return false;
+	}
+
+	Ship->SpaceshipHull->SetStaticMesh(TestHullMesh);
+	Ship->RefreshFlightReferenceFromHull();
+	TestTrue(TEXT("Default nose follows the actor forward axis"),
+		Ship->GetShipForwardVector().Equals(Ship->GetActorForwardVector(), 0.01));
+
+	Ship->bUseAuthoredNoseDirection = true;
+	Ship->ForwardVector->SetRelativeRotation(FRotator(0.0, 180.0, 0.0));
+	Ship->RefreshFlightReferenceFromHull();
+	TestTrue(TEXT("A flipped authored nose reverses flight"),
+		Ship->GetShipForwardVector().Equals(-Ship->GetActorForwardVector(), 0.01));
+	TestTrue(TEXT("Flipping the nose does not rotate the ship"),
+		Ship->GetActorRotation().Equals(FRotator::ZeroRotator, 0.01));
+
+	Ship->ForwardVector->SetRelativeRotation(FRotator(0.0, 90.0, 0.0));
+	Ship->RefreshFlightReferenceFromHull();
+	TestTrue(TEXT("An authored nose can point along any hull axis"),
+		Ship->GetShipForwardVector().Equals(Ship->GetActorRightVector(), 0.01));
+
+	APSGameplayIntegrationTests::DestroyTestWorld(World);
 	return true;
 }
 
