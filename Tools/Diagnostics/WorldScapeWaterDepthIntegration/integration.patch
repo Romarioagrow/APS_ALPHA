@@ -1170,7 +1170,7 @@ index 099e4d2..e858fc4 100644
  		|| FParse::Param(FCommandLine::Get(), TEXT("APSDiagnosticOrbitOverview"))
  		|| FParse::Param(FCommandLine::Get(), TEXT("APSDiagnosticTerrainLodAB"))
 diff --git a/Source/APS_ALPHA/Tests/APSSharedLavaCoverageProbe.cpp b/Source/APS_ALPHA/Tests/APSSharedLavaCoverageProbe.cpp
-index 6bbb423..2803815 100644
+index 6bbb423..7089c36 100644
 --- a/Source/APS_ALPHA/Tests/APSSharedLavaCoverageProbe.cpp
 +++ b/Source/APS_ALPHA/Tests/APSSharedLavaCoverageProbe.cpp
 @@ -3,6 +3,7 @@
@@ -1206,10 +1206,11 @@ index 6bbb423..2803815 100644
  #include "HAL/FileManager.h"
  #include "ImageUtils.h"
  #include "Misc/FileHelper.h"
-@@ -28,11 +38,19 @@
+@@ -28,11 +38,20 @@
  #include "UnrealClient.h"
  #include "UObject/StrongObjectPtr.h"
  #include "APSLavaShorelineProbe.h"
++#include "APSWaterShoreWalk.h"
 +#include "APS_ALPHA/Core/Planetary/APSWaterDepthCandidate.h"
 +#include "APS_ALPHA/Core/Planetary/APSWaterDepthPalette.h"
 +#include "APS_ALPHA/Core/Planetary/APSWaterRippleCandidate.h"
@@ -1226,7 +1227,7 @@ index 6bbb423..2803815 100644
  const TCHAR* Labels[] = { TEXT("00-context0-alpha0"), TEXT("01-context0-alpha1"),
      TEXT("02-context1-alpha0"), TEXT("03-context1-alpha1") };
  // The first pair (1 / 1.25) was captured before and after crust correction.
-@@ -104,6 +122,57 @@ class FProbe final : public IAutomationLatentCommand
+@@ -104,6 +123,59 @@ class FProbe final : public IAutomationLatentCommand
      bool bLeased = false, bRestored = false, bDone = false;
      bool bRootTick = false, bSurfaceTick = false, bPlanetTick = false, bFrozen = false;
      bool bSharedLiquidFamilies = false;
@@ -1235,6 +1236,8 @@ index 6bbb423..2803815 100644
 +    bool bWaterDepthOblique = false;
 +    bool bWaterDepthLiveLod = false, bLiveLeased = false;
 +    bool bWaterMaterialPerf = false;
++    bool bWaterShoreWalk = false, bWaterShoreWalkOriginal = false;
++    TUniquePtr<APSWaterShoreWalk::FPilot> ShoreWalk;
 +    TOptional<FEngineShowFlags> NormalBufferSavedFlags;
 +    int32 NormalBufferSavedViewMode = 0;
 +    FString NormalBufferSavedTarget;
@@ -1284,7 +1287,7 @@ index 6bbb423..2803815 100644
      EAPSPlanetLiquidType LiquidType = EAPSPlanetLiquidType::Lava;
  
      const TCHAR* Marker() const { return bSharedLiquidFamilies ? TEXT("SHARED_LIQUID_COVERAGE") : TEXT("LAVA_COVERAGE"); }
-@@ -114,6 +183,138 @@ class FProbe final : public IAutomationLatentCommand
+@@ -114,6 +186,138 @@ class FProbe final : public IAutomationLatentCommand
              : LiquidType == EAPSPlanetLiquidType::Ammonia ? TEXT("Ammonia") : TEXT("Lava");
      }
  
@@ -1423,7 +1426,7 @@ index 6bbb423..2803815 100644
      UMaterialInstanceDynamic* CreateSharedLiquidCandidate(UMaterialInstanceDynamic* SourceMID)
      {
          // Exact family parents matter: Water and Ammonia share a master, not
-@@ -129,6 +330,74 @@ class FProbe final : public IAutomationLatentCommand
+@@ -129,6 +333,74 @@ class FProbe final : public IAutomationLatentCommand
              || Root->OceanMaterial.DefaultMaterial != SourceMID) return nullptr;
          for (const FSlot& Slot : Slots)
              if (Slot.OriginalMaterial.Get() != SourceMID) return nullptr;
@@ -1498,7 +1501,7 @@ index 6bbb423..2803815 100644
          UMaterialInstanceDynamic* MID = bWater
              ? APSSharedWaterMaterial::CreateUnboundCandidate(Root.Get(), Root->GetRootComponent(),
                  Planet->WorldScapePresentationScale, false, Surface->ResolvedSurfaceProfile, Planet->IsManual, Root->bOcean)
-@@ -160,6 +429,9 @@ class FProbe final : public IAutomationLatentCommand
+@@ -160,6 +432,9 @@ class FProbe final : public IAutomationLatentCommand
              const FWorldScapeMeshSection* S = Slot.Mesh->GetProcMeshSection(Slot.Index);
              if (!S || S->PlanetVertexBuffer.Num() != Slot.OriginalColors.Num()
                  || PayloadHash(*S) != Slot.Hash) return false;
@@ -1508,10 +1511,11 @@ index 6bbb423..2803815 100644
          }
          return true;
      }
-@@ -168,10 +440,62 @@ class FProbe final : public IAutomationLatentCommand
+@@ -168,10 +443,64 @@ class FProbe final : public IAutomationLatentCommand
      {
          if (bRestored) return;
          bRestored = true;
++        if (ShoreWalk) ShoreWalk->Release();
 +        RestoreFillLifecycle();
 +        for (const auto& Saved : WaterGpuDumpSavedCVars)
 +        {
@@ -1550,7 +1554,8 @@ index 6bbb423..2803815 100644
 +        {
 +            // Native workers published NEW sections. Never overwrite their
 +            // colours/vertices with the frozen comparison's old snapshot.
-+            if (Root.IsValid() && Root == ShoreRoot && Root->OceanMaterial.DefaultMaterial == Candidate.Get())
++            UMaterialInterface* Expected = bWaterShoreWalkOriginal ? OriginalRootMaterial.Get() : Candidate.Get();
++            if (Root.IsValid() && Root == ShoreRoot && Root->OceanMaterial.DefaultMaterial == Expected)
 +            {
 +                Root->OceanMaterial.DefaultMaterial = OriginalRootMaterial.Get();
 +                Root->UpdateOceanMaterial(Root->OceanMaterial);
@@ -1561,7 +1566,7 @@ index 6bbb423..2803815 100644
 +                Test->TestEqual(TEXT("Live LOD slots restored without stale geometry writes"), RestoredSlots, Root->OceanMaxLod * 3);
 +            }
 +            else Test->AddError(TEXT("Live root material changed externally; refusing to overwrite it"));
-+            if (Surface.IsValid() && Surface->ResolvedOceanMaterialInstance == Candidate.Get())
++            if (Surface.IsValid() && Surface->ResolvedOceanMaterialInstance == Expected)
 +                Surface->ResolvedOceanMaterialInstance = Cast<UMaterialInstanceDynamic>(OriginalRootMaterial.Get());
 +            else Test->AddError(TEXT("Live surface material changed externally; refusing to overwrite it"));
 +        }
@@ -1571,7 +1576,7 @@ index 6bbb423..2803815 100644
              if (!Slot.Mesh.IsValid()) { Test->AddError(FString(ErrorPrefix()) + TEXT("mesh disappeared before restore")); continue; }
              FWorldScapeMeshSection* S = Slot.Mesh->GetProcMeshSection(Slot.Index);
              if (!S || S->PlanetVertexBuffer.Num() != Slot.OriginalColors.Num() || PayloadHash(*S) != Slot.Hash)
-@@ -190,7 +514,7 @@ class FProbe final : public IAutomationLatentCommand
+@@ -190,7 +519,7 @@ class FProbe final : public IAutomationLatentCommand
              ChangedMeshes.Add(Slot.Mesh.Get());
          }
          for (UWorldScapeMeshComponent* Mesh : ChangedMeshes) Mesh->MarkRenderStateDirty();
@@ -1580,7 +1585,7 @@ index 6bbb423..2803815 100644
          for (const FVisibility& V : GroundVisibility)
              if (V.Mesh.IsValid()) { V.Mesh->SetVisibility(V.bVisible, false); V.Mesh->SetHiddenInGame(V.bHidden, false); }
          if (PC.IsValid() && Camera.IsValid() && PC->GetViewTarget() == Camera.Get() && OriginalViewTarget.IsValid())
-@@ -203,6 +527,17 @@ class FProbe final : public IAutomationLatentCommand
+@@ -203,6 +532,17 @@ class FProbe final : public IAutomationLatentCommand
              if (Surface.IsValid()) Surface->SetActorTickEnabled(bSurfaceTick);
              if (Planet.IsValid()) Planet->SetActorTickEnabled(bPlanetTick);
          }
@@ -1598,7 +1603,7 @@ index 6bbb423..2803815 100644
          Test->AddInfo(FString::Printf(TEXT("%s_RESTORE slots=%d/%d colors=%d cameraRestored=%d family=%s"),
              Marker(), RestoredSlots, Slots.Num(), RestoredVertices, PC.IsValid() && PC->GetViewTarget() == OriginalViewTarget.Get() ? 1 : 0, Family()));
      }
-@@ -227,7 +562,7 @@ class FProbe final : public IAutomationLatentCommand
+@@ -227,7 +567,7 @@ class FProbe final : public IAutomationLatentCommand
                  Slot.Transform = Lod->Mesh->GetComponentTransform(); Slot.Hash = PayloadHash(*S);
                  for (const FWorldScapeMeshVertex& V : S->PlanetVertexBuffer) Slot.OriginalColors.Add(V.Color);
                  TotalVertices += Slot.OriginalColors.Num();
@@ -1607,7 +1612,7 @@ index 6bbb423..2803815 100644
                  // Aim at an actual nondegenerate LOD0 triangle, not a synthetic plane.
                  for (int32 I = 0; I + 2 < S->PlanetIndexBuffer.Num(); I += 3)
                  {
-@@ -236,13 +571,35 @@ class FProbe final : public IAutomationLatentCommand
+@@ -236,13 +576,35 @@ class FProbe final : public IAutomationLatentCommand
                          || !S->PlanetVertexBuffer.IsValidIndex(C)) return false;
                      const FVector P0 = S->PlanetVertexBuffer[A].Position, P1 = S->PlanetVertexBuffer[B].Position, P2 = S->PlanetVertexBuffer[C].Position;
                      if (FVector::CrossProduct(P1-P0, P2-P0).SizeSquared() < 1.0) continue;
@@ -1644,7 +1649,7 @@ index 6bbb423..2803815 100644
          for (const UWorldScapeLod* Lod : R->WorldScapeLod)
              if (IsValid(Lod) && IsValid(Lod->Mesh))
              {
-@@ -266,8 +623,19 @@ class FProbe final : public IAutomationLatentCommand
+@@ -266,8 +628,19 @@ class FProbe final : public IAutomationLatentCommand
          if (Up.IsNearlyZero()) return false;
          FActorSpawnParameters Params; Params.ObjectFlags |= RF_Transient;
          Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
@@ -1665,7 +1670,7 @@ index 6bbb423..2803815 100644
          Camera = NewCamera;
          if (!NewCamera || !NewCamera->GetCameraComponent()) return false;
          const FMinimalViewInfo& Natural = Controller->PlayerCameraManager->GetCameraCacheView();
-@@ -280,6 +648,87 @@ class FProbe final : public IAutomationLatentCommand
+@@ -280,6 +653,87 @@ class FProbe final : public IAutomationLatentCommand
          // Explicit isolation only. The natural-route fixture has three preceding
          // unchanged scene frames; the opt-in Lava orbital route does not claim
          // those frames. No light/exposure/foliage/material-style edits here.
@@ -1753,7 +1758,7 @@ index 6bbb423..2803815 100644
          for (const FVisibility& V : GroundVisibility) if (V.Mesh.IsValid()) V.Mesh->SetVisibility(false, false);
          auto* Capture = NewObject<USceneCaptureComponent2D>(NewCamera);
          if (!Capture) return false;
-@@ -333,8 +782,641 @@ class FProbe final : public IAutomationLatentCommand
+@@ -333,8 +787,695 @@ class FProbe final : public IAutomationLatentCommand
          const FString Path = Folder / FString::Printf(TEXT("production-%02d-original-material-rgba.png"), ProductionCaptureCount);
          TArray64<uint8> Png; FImageUtils::PNGCompressImageArray(Size.X, Size.Y, Pixels, Png);
          if (!FFileHelper::SaveArrayToFile(Png, *Path)) return false;
@@ -2126,6 +2131,60 @@ index 6bbb423..2803815 100644
 +        return true;
 +    }
 +
++    bool StartShoreWalk()
++    {
++        if (!bShoreLeased || !Candidate.IsValid() || !PayloadIsUnchanged()
++            || !bRootTick || bFrozen || Root->Ocean_UseMaterialInstance
++            || !Root->OceanMaterial.MaterialsLod.IsEmpty()
++            || Surface->ResolvedOceanMaterialInstance != OriginalRootMaterial.Get()) return false;
++        if (!BindWaterSurfaceFill(true) || !BuildLiveShorePath()) return false;
++        Candidate->SetScalarParameterValue(TEXT("APS_WaterDepthStrength"), WaterDepthStrength);
++        Candidate->SetScalarParameterValue(TEXT("APS_WaterRippleSlope"), 0.065f);
++        // Both arms keep the same native depth payload and live worker setup.
++        // Lease the publication template as well as currently visible slots.
++        bLiveLeased = true;
++        auto* Material = bWaterShoreWalkOriginal ? OriginalRootMaterial.Get() : Candidate.Get();
++        Root->OceanMaterial.DefaultMaterial = Material;
++        Surface->ResolvedOceanMaterialInstance = Cast<UMaterialInstanceDynamic>(Material);
++        Root->UpdateOceanMaterial(Root->OceanMaterial);
++        Root->bFreezeGeneration = bFrozen; Root->SetActorTickEnabled(bRootTick);
++        Surface->SetActorTickEnabled(bSurfaceTick); Planet->SetActorTickEnabled(bPlanetTick);
++        ShoreWalk = MakeUnique<APSWaterShoreWalk::FPilot>();
++        return ShoreWalk->Begin(Test, World.Get(), PC.Get(), ShorePawn.Get(), Planet.Get(), Root.Get(),
++            LiveShorePath[0].Sea, LiveShorePath[0].Wet, !bWaterShoreWalkOriginal);
++    }
++
++    bool UpdateShoreWalk(double Now)
++    {
++        auto* Expected = bWaterShoreWalkOriginal ? OriginalRootMaterial.Get() : Candidate.Get();
++        if (!ShoreWalk || !ShorePawn.IsValid() || Root != ShoreRoot
++            || Root->OceanMaterial.DefaultMaterial != Expected || Surface->ResolvedOceanMaterialInstance != Expected
++            || Root->WorldScapeLodOcean.Num() != Root->OceanMaxLod
++            || ShoreProfile != UAPSPlanetSurfaceProfileResolver::BuildProfileSignature(Surface->ResolvedSurfaceProfile))
++            return Finish(TEXT("shore walk lost root/profile/material ownership"));
++        // Identical adapter work in both arms. Avoid the frozen snapshot's full
++        // CPU geometry hash while native workers are publishing moving LODs.
++        if (!APSSharedTerrainMaterial::WritePhysicalFrame(Candidate.Get(), Root->GetRootComponent(), Planet->WorldScapePresentationScale)
++            || !BindWaterSurfaceFill(true, false) || !WaterSurfaceFillIsStable(true))
++            return Finish(TEXT("shore walk lost physical water frame or scene fill"));
++        for (const auto* Lod : Root->WorldScapeLodOcean)
++        {
++            if (!IsValid(Lod) || !IsValid(Lod->Mesh) || Lod->Mesh->GetNumSections() != 3)
++                return Finish(TEXT("shore walk lost native ocean sections"));
++            for (int32 I=0; I<3; ++I)
++            {
++                const auto* S=Lod->Mesh->GetProcMeshSection(I);
++                if (!S || S->PlanetVertexBuffer.IsEmpty() || Lod->Mesh->GetMaterial(I) != Expected)
++                    return Finish(TEXT("shore walk native publication changed material"));
++                for (int32 V : {0, S->PlanetVertexBuffer.Num()/2, S->PlanetVertexBuffer.Num()-1})
++                    if (S->PlanetVertexBuffer[V].UV1.Y != 1.0 || !FMath::IsFinite(S->PlanetVertexBuffer[V].UV1.X))
++                        return Finish(TEXT("shore walk lost signed-depth payload"));
++            }
++        }
++        FString Failure;
++        return ShoreWalk->Update(Now, Failure) ? Finish(Failure.IsEmpty() ? nullptr : *Failure) : false;
++    }
++
 +    bool BeginMaterialPerfPhase(double Now)
 +    {
 +        if (!PayloadIsUnchanged() || !Candidate.IsValid() || !GSupportsTimestampRenderQueries
@@ -2397,7 +2456,7 @@ index 6bbb423..2803815 100644
          return true;
      }
  
-@@ -444,18 +1526,45 @@ public:
+@@ -444,18 +1585,57 @@ public:
      {
          if (bDone) return true;
          const double Now = FPlatformTime::Seconds(); if (Start == 0) Start = Now;
@@ -2409,6 +2468,7 @@ index 6bbb423..2803815 100644
 +        if (Step == 7 || Step == 8) return UpdateLiveLod(Now);
 +        if (Step == 9) return UpdateMaterialPerf(Now);
 +        if (Step == 10) return UpdateFillLifecycle(Now);
++        if (Step == 11) return UpdateShoreWalk(Now);
          if (Step == 0)
          {
              bRadianceAB = FParse::Param(FCommandLine::Get(), TEXT("APSLavaRadianceAB"));
@@ -2417,6 +2477,17 @@ index 6bbb423..2803815 100644
 +            bWaterDepthOblique = FParse::Param(FCommandLine::Get(), TEXT("APSWaterDepthOblique"));
 +            bWaterDepthLiveLod = FParse::Param(FCommandLine::Get(), TEXT("APSWaterDepthLiveLod"));
 +            bWaterMaterialPerf = FParse::Param(FCommandLine::Get(), TEXT("APSWaterMaterialPerf"));
++            bWaterShoreWalk = FParse::Param(FCommandLine::Get(), TEXT("APSWaterShoreWalk"));
++            bWaterShoreWalkOriginal = FParse::Param(FCommandLine::Get(), TEXT("APSWaterShoreWalkOriginal"));
++            if (bWaterShoreWalkOriginal && !bWaterShoreWalk) return Finish(TEXT("original walk requires shore walk mode"));
++            if (bWaterShoreWalk && (!bWaterDepthGameplay || bWaterDepthLiveLod || bWaterMaterialPerf
++                || !FParse::Param(FCommandLine::Get(), TEXT("APSWaterRipples"))
++                || !FParse::Param(FCommandLine::Get(), TEXT("APSWaterSingleLayerCandidate"))
++                || !FParse::Param(FCommandLine::Get(), TEXT("APSWaterFilteredShadows"))
++                || !FParse::Param(FCommandLine::Get(), TEXT("APSWaterSurfaceFill"))
++                || FParse::Param(FCommandLine::Get(), TEXT("APSWaterFillBaselineControl"))
++                || FParse::Param(FCommandLine::Get(), TEXT("APSWaterFillLifecycleControl"))))
++                return Finish(TEXT("shore walk requires the guarded lit candidate without hover/static controls"));
 +            if (bWaterMaterialPerf && (!bWaterDepthGameplay || bWaterDepthLiveLod))
 +                return Finish(TEXT("material-only performance mode requires Water depth and excludes moving LOD mode"));
 +            if (bWaterDepthLiveLod && (!bWaterDepthGameplay || !bWaterDepthOblique))
@@ -2444,7 +2515,7 @@ index 6bbb423..2803815 100644
              const bool bAllowedFamily = bSharedLiquidFamilies
                  ? LiquidType == EAPSPlanetLiquidType::Water || LiquidType == EAPSPlanetLiquidType::Ammonia
                  : LiquidType == EAPSPlanetLiquidType::Lava;
-@@ -466,6 +1575,11 @@ public:
+@@ -466,6 +1646,11 @@ public:
                  return Finish(TEXT("requires an actual ready generated full-scale ocean of the opted-in liquid family"));
              if (Root->bGenerateFoliages && !Root->Foliages.IsEmpty())
                  return Finish(TEXT("refusing a foliage-active root without a public foliage-worker drain"));
@@ -2456,7 +2527,7 @@ index 6bbb423..2803815 100644
              bRootTick = Root->IsActorTickEnabled(); bFrozen = Root->bFreezeGeneration;
              bSurfaceTick = Surface->IsActorTickEnabled(); bPlanetTick = Planet->IsActorTickEnabled();
              bLeased = true; Root->bFreezeGeneration = true; Root->SetActorTickEnabled(false);
-@@ -539,6 +1653,11 @@ public:
+@@ -539,6 +1724,11 @@ public:
          {
              if (!CaptureProductionBaseline()) return Finish(TEXT("actual production shared liquid baseline/frame/slot assertion failed before candidate substitution"));
              if (++ProductionCaptureCount < 2) { SetFrame = GFrameCounter; Next = Now + 1.0; return false; }
@@ -2468,7 +2539,7 @@ index 6bbb423..2803815 100644
              if (bRadianceAB)
              {
                  if (!ApplyRadianceCase()) return Finish(TEXT("failed to begin isolated radiance A/B"));
-@@ -549,6 +1668,40 @@ public:
+@@ -549,6 +1739,45 @@ public:
              Step = 3;
              return false;
          }
@@ -2489,6 +2560,11 @@ index 6bbb423..2803815 100644
 +            if (!CaptureWaterDepthCase()) return Finish(TEXT("depth capture or payload/ground/camera continuity failed"));
 +            if (++WaterDepthCase == 3)
 +            {
++                if (bWaterShoreWalk)
++                {
++                    if (!StartShoreWalk()) return Finish(TEXT("grounded shore walk setup failed"));
++                    Step = 11; return false;
++                }
 +                if (FParse::Param(FCommandLine::Get(), TEXT("APSWaterFillLifecycleControl")))
 +                {
 +                    if (!BeginFillLifecycle()) return Finish(TEXT("fill lifecycle setup failed"));
@@ -2509,7 +2585,7 @@ index 6bbb423..2803815 100644
          if (Step == 5)
          {
              if (!CaptureRadianceCase()) return Finish(TEXT("radiance A/B capture or original parameter/payload continuity failed"));
-@@ -599,4 +1752,60 @@ TSharedPtr<IAutomationLatentCommand> APSCreateSharedLiquidCoverageProbe(
+@@ -599,4 +1828,60 @@ TSharedPtr<IAutomationLatentCommand> APSCreateSharedLiquidCoverageProbe(
  {
      return MakeShared<APSSharedLavaCoverage::FProbe>(Test, World, Planet, true);
  }
@@ -2570,3 +2646,216 @@ index 6bbb423..2803815 100644
 +    return true;
 +}
  #endif
+diff --git a/Source/APS_ALPHA/Tests/APSWaterShoreWalk.h b/Source/APS_ALPHA/Tests/APSWaterShoreWalk.h
+new file mode 100644
+index 0000000..4eb9b7a
+--- /dev/null
++++ b/Source/APS_ALPHA/Tests/APSWaterShoreWalk.h
+@@ -0,0 +1,207 @@
++#pragma once
++
++#if WITH_DEV_AUTOMATION_TESTS
++#include "Components/CapsuleComponent.h"
++#include "EnhancedInputSubsystems.h"
++#include "Engine/LocalPlayer.h"
++#include "InputAction.h"
++#include "Misc/App.h"
++
++// Bounded, owned gameplay pilot. Relocation happens once BEFORE measurement;
++// movement then comes solely from the real EnhancedInput MoveAction. The parent
++// probe owns material/root/pawn restoration and must keep native LODs running.
++namespace APSWaterShoreWalk
++{
++class FPilot
++{
++    FAutomationTestBase* Test = nullptr;
++    TWeakObjectPtr<UWorld> World;
++    TWeakObjectPtr<APlayerController> PC;
++    TWeakObjectPtr<ACustomGravityCharacter> Pawn;
++    TWeakObjectPtr<APlanet> Planet;
++    TWeakObjectPtr<AWorldScapeRoot> Root;
++    TWeakObjectPtr<UEnhancedInputLocalPlayerSubsystem> Input;
++    TWeakObjectPtr<UInputAction> MoveAction;
++    FVector WetECEF, LastECEF;
++    double Started = 0, AlignedAt = 0, WalkStarted = 0, LastTime = 0, DistanceCm = 0;
++    uint64 LastFrame = 0, MissedFrames = 0;
++    int32 GroundedFrames = 0;
++    double LastPending = -1000;
++    bool bMoveOwned = false, bCandidate = false;
++    struct FSample { uint64 Frame, Gap; double WallMs, EngineMs, GameMs, RenderMs, GPUMs, Speed; int32 Workers; };
++    TArray<FSample> Samples;
++
++    bool Grounded() const
++    {
++        const auto* M = Pawn.IsValid() ? Pawn->GetCharacterMovement() : nullptr;
++        if (!M || !Root.IsValid()) return false;
++        bool bNativeFloor = false;
++        for (const auto* Lod : Root->CollisionLods)
++            bNativeFloor |= IsValid(Lod) && IsValid(Lod->Mesh) && M->CurrentFloor.HitResult.GetComponent() == Lod->Mesh;
++        return bNativeFloor && !Pawn->bIsZeroG && !Pawn->bManualZeroGOverride
++            && Pawn->CurrentGravityType == EGravityType::OnPlanet && Pawn->GravityTarget == Planet.Get()
++            && !Pawn->IsSurfaceHandoffSuspended() && M->IsMovingOnGround() && M->CurrentFloor.IsWalkableFloor();
++    }
++
++    bool Capture(const TCHAR* Phase)
++    {
++        auto* Client = World->GetGameViewport();
++        TArray<FColor> Pixels; FIntVector Size = FIntVector::ZeroValue;
++        if (!Client || !Client->GetGameViewportWidget().IsValid()
++            || !FSlateApplication::Get().TakeScreenshot(Client->GetGameViewportWidget().ToSharedRef(), Pixels, Size)
++            || Size.X <= 0 || Size.Y <= 0 || Pixels.Num() != Size.X * Size.Y) return false;
++        const FString Path = FPaths::ProjectSavedDir() / TEXT("Automation/WaterDepthGameplay") / (FString(Phase)+TEXT(".png"));
++        TArray64<uint8> Png; FImageUtils::PNGCompressImageArray(Size.X, Size.Y, Pixels, Png);
++        if (!FFileHelper::SaveArrayToFile(Png, *Path)) return false;
++        Test->AddInfo(FString::Printf(TEXT("WATER_SHORE_WALK_FRAME phase=%s candidate=%d actualPawnCamera=1 nativeFloor=1 screenshot=%s"), Phase, bCandidate ? 1 : 0, *Path));
++        return true;
++    }
++
++public:
++    ~FPilot() { Release(); }
++    void Release()
++    {
++        if (bMoveOwned && Input.IsValid() && MoveAction.IsValid()) Input->StopContinuousInputInjectionForAction(MoveAction.Get());
++        bMoveOwned = false;
++    }
++
++    bool Begin(FAutomationTestBase* InTest, UWorld* InWorld, APlayerController* InPC,
++        ACustomGravityCharacter* InPawn, APlanet* InPlanet, AWorldScapeRoot* InRoot,
++        const FVector& SeaECEF, const FVector& InWetECEF, bool bInCandidate)
++    {
++        Test=InTest; World=InWorld; PC=InPC; Pawn=InPawn; Planet=InPlanet; Root=InRoot;
++        WetECEF=InWetECEF; bCandidate=bInCandidate;
++        auto* LocalPlayer = PC.IsValid() ? PC->GetLocalPlayer() : nullptr;
++        Input = LocalPlayer ? LocalPlayer->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>() : nullptr;
++        if (!World.IsValid() || !Pawn.IsValid() || !Planet.IsValid() || !Root.IsValid() || !Input.IsValid()
++            || !Pawn->MoveAction || !Pawn->LookAction || !Pawn->FollowCamera || !Pawn->GetCapsuleComponent()
++            || Pawn->MoveAction->ValueType != EInputActionValueType::Axis2D
++            || Pawn->LookAction->ValueType != EInputActionValueType::Axis2D
++            || !FMath::IsFinite(Pawn->LookSensitivity) || Pawn->LookSensitivity <= 0.0f
++            || PC->IsMoveInputIgnored() || PC->IsLookInputIgnored() || PC->GetPawn() != Pawn.Get()) return false;
++        MoveAction = Pawn->MoveAction;
++        auto* M = Pawn->GetCharacterMovement();
++        if (!M) return false;
++        bool bFound = false;
++        FVector Landing, Up;
++        double UsedOffsetCm = 0, DryHeightCm = 0;
++        for (double OffsetCm : {500.0, 1000.0, 2000.0, 4000.0})
++        {
++            const FVector Direction = (SeaECEF - InWetECEF * OffsetCm).GetSafeNormal();
++            const auto Ground = Root->GetGroundNoise(DVector(Direction * Root->PlanetScale), false);
++            const auto Sea = Root->GetGroundNoise(DVector(Direction * Root->PlanetScale), true);
++            if (Ground.Hole || Sea.Hole || !FMath::IsFinite(Ground.Height) || !FMath::IsFinite(Sea.Height)
++                || Ground.Height - Sea.Height < 25.0) continue;
++            const FVector GroundECEF = Direction * (Root->PlanetScale + Ground.Height);
++            FHitResult Hit; FCollisionQueryParams Query(SCENE_QUERY_STAT(APSWaterShoreWalk), true, Pawn.Get());
++            World->LineTraceSingleByChannel(Hit,
++                Root->ECEFToWorld(GroundECEF + Direction * 10000.0).ToFVector(),
++                Root->ECEFToWorld(GroundECEF - Direction * 10000.0).ToFVector(), ECC_Visibility, Query);
++            bool bNative = false;
++            for (const auto* Lod : Root->CollisionLods)
++                bNative |= IsValid(Lod) && IsValid(Lod->Mesh) && Hit.bBlockingHit && Hit.GetComponent() == Lod->Mesh;
++            Up = Root->GetActorQuat().RotateVector(Direction);
++            if (!bNative || FVector::DotProduct(Hit.ImpactNormal, Up) < M->GetWalkableFloorZ()
++                || FMath::Abs(Root->WorldToECEF(Hit.ImpactPoint).ToFVector().Size() - GroundECEF.Size()) > 100.0) continue;
++            Landing = Hit.ImpactPoint + Up * (Pawn->GetCapsuleComponent()->GetScaledCapsuleHalfHeight() + 10.0);
++            UsedOffsetCm = OffsetCm; DryHeightCm = Ground.Height - Sea.Height; bFound = true; break;
++        }
++        if (!bFound) return false;
++        M->StopMovementImmediately();
++        Pawn->SetActorLocationAndRotation(Landing,
++            FRotationMatrix::MakeFromXZ(Root->GetActorQuat().RotateVector(WetECEF), Up).Rotator(),
++            false, nullptr, ETeleportType::TeleportPhysics);
++        Pawn->SetManualZeroGOverride(false);
++        PC->SetViewTarget(Pawn.Get());
++        Started = FPlatformTime::Seconds(); Samples.Reserve(2048);
++        Test->AddInfo(FString::Printf(TEXT("WATER_SHORE_WALK_BEGIN candidate=%d dryOffsetM=%.6g nativeDryHeightCm=%.6g pawnECEF=%s; one initial relocation, natural gravity/floor, no forced walking mode or speed"),
++            bCandidate ? 1 : 0, UsedOffsetCm/100.0, DryHeightCm, *Root->WorldToECEF(Landing).ToFVector().ToString()));
++        return true;
++    }
++
++    // Returns true only on terminal completion. Failure is propagated to the
++    // parent, which releases input and restores the owned material/pawn lease.
++    bool Update(double Now, FString& Failure)
++    {
++        if (!World.IsValid() || !Pawn.IsValid() || !PC.IsValid() || !Root.IsValid() || !Input.IsValid()
++            || PC->GetPawn() != Pawn.Get() || PC->GetViewTarget() != Pawn.Get()
++            || Root->bFreezeGeneration || !Root->IsActorTickEnabled())
++        { Failure=TEXT("shore walk lost its real pawn/camera/input/native root"); return true; }
++        if (Now-Started > 35.0) { Failure=TEXT("shore walk bounded setup/measurement timeout"); return true; }
++        const bool bGrounded = Grounded();
++        if (WalkStarted == 0)
++        {
++            GroundedFrames = bGrounded ? GroundedFrames+1 : 0;
++            if (!bGrounded || GroundedFrames < 20)
++            {
++                if (Now-LastPending > 3.0)
++                {
++                    const auto* M=Pawn->GetCharacterMovement();
++                    Test->AddInfo(FString::Printf(TEXT("WATER_SHORE_WALK_SETTLE age=%.3g grounded=%d frames=%d zeroG=%d handoff=%d mode=%d floor=%s gravity=%d target=%s"),
++                        Now-Started,bGrounded?1:0,GroundedFrames,Pawn->bIsZeroG?1:0,Pawn->IsSurfaceHandoffSuspended()?1:0,
++                        M?int32(M->MovementMode):-1,M?*GetNameSafe(M->CurrentFloor.HitResult.GetComponent()):TEXT("none"),
++                        int32(Pawn->CurrentGravityType),*GetNameSafe(Pawn->GravityTarget)));
++                    LastPending=Now;
++                }
++                AlignedAt=0; return false;
++            }
++            const FVector Up = -Pawn->GetCurrentGravityDirection();
++            const FVector Current = Pawn->FollowCamera->GetForwardVector();
++            const FVector Planar = FVector::VectorPlaneProject(Current, Up).GetSafeNormal();
++            const FVector Desired = FVector::VectorPlaneProject(Root->GetActorQuat().RotateVector(WetECEF), Up).GetSafeNormal();
++            if (Planar.IsNearlyZero() || Desired.IsNearlyZero()) { Failure=TEXT("shore camera heading invalid"); return true; }
++            const double Yaw = FMath::RadiansToDegrees(FMath::Atan2(FVector::DotProduct(FVector::CrossProduct(Planar, Desired), Up), FVector::DotProduct(Planar, Desired)));
++            const double Pitch = -10.0-FMath::RadiansToDegrees(FMath::Asin(FMath::Clamp(FVector::DotProduct(Current, Up), -1.0, 1.0)));
++            if (FMath::Abs(Yaw) > 0.2 || FMath::Abs(Pitch) > 0.2)
++            {
++                Input->InjectInputForAction(Pawn->LookAction, FInputActionValue(FVector2D(
++                    FMath::Clamp(Yaw,-10.0,10.0)/Pawn->LookSensitivity,
++                    FMath::Clamp(Pitch,-10.0,10.0)/Pawn->LookSensitivity)), {}, {});
++                AlignedAt=0; return false;
++            }
++            if (AlignedAt == 0) AlignedAt=Now;
++            if (Now-AlignedAt < 2.0) return false;
++            if (!Capture(TEXT("20-walk-start"))) { Failure=TEXT("shore walk start capture failed"); return true; }
++            Input->StartContinuousInputInjectionForAction(MoveAction.Get(), FInputActionValue(FVector2D(1.0,0.0)), {}, {});
++            bMoveOwned=true; WalkStarted=Now; LastTime=Now; LastFrame=GFrameCounter;
++            LastECEF=Root->WorldToECEF(Pawn->GetActorLocation()).ToFVector(); return false;
++        }
++        if (!bGrounded) { Failure=TEXT("shore walk became airborne or lost its native walkable floor; no walking performance acceptance"); return true; }
++        if (GFrameCounter == LastFrame) return false;
++        const FVector ECEF = Root->WorldToECEF(Pawn->GetActorLocation()).ToFVector();
++        DistanceCm += FVector::VectorPlaneProject(ECEF-LastECEF,ECEF.GetSafeNormal()).Size(); LastECEF=ECEF;
++        const uint64 Gap = GFrameCounter-LastFrame;
++        if (Now-WalkStarted >= 1.0)
++        {
++            MissedFrames += Gap > 1 ? Gap-1 : 0;
++            Samples.Add({GFrameCounter,Gap,(Now-LastTime)*1000.0,FApp::GetDeltaTime()*1000.0,
++                GGameThreadTime ? FPlatformTime::ToMilliseconds(GGameThreadTime) : -1.0,
++                GRenderThreadTime ? FPlatformTime::ToMilliseconds(GRenderThreadTime) : -1.0,
++                GGPUFrameTime ? FPlatformTime::ToMilliseconds(GGPUFrameTime) : -1.0,
++                Pawn->GetVelocity().Size(),Root->WorldScapeLodInGeneration.Num()});
++        }
++        LastFrame=GFrameCounter; LastTime=Now;
++        if (Now-WalkStarted < 10.0) return false;
++        Release();
++        if (DistanceCm < Pawn->SurfaceWalkSpeed * 5.0 || Samples.Num()<120)
++        { Failure=TEXT("shore walk insufficient real movement/samples"); return true; }
++        if (!Capture(TEXT("21-walk-end"))) { Failure=TEXT("shore walk end capture failed"); return true; }
++        FString TSV=TEXT("frame\tframe_gap\twall_ms\tengine_ms\tgame_ms\trender_ms\tgpu_ms\tspeed_cm_s\tworkers\n");
++        TArray<double> Frame, GPU;
++        for (const FSample& S : Samples)
++        {
++            TSV+=FString::Printf(TEXT("%llu\t%llu\t%.9g\t%.9g\t%.9g\t%.9g\t%.9g\t%.9g\t%d\n"),S.Frame,S.Gap,S.WallMs,S.EngineMs,S.GameMs,S.RenderMs,S.GPUMs,S.Speed,S.Workers);
++            Frame.Add(S.EngineMs); if (S.GPUMs>0 && FMath::IsFinite(S.GPUMs)) GPU.Add(S.GPUMs);
++        }
++        const FString Path=FPaths::ProjectSavedDir()/TEXT("Automation/WaterDepthGameplay/shore-walk.tsv");
++        if (!FFileHelper::SaveStringToFile(TSV,*Path)) { Failure=TEXT("shore walk timing report save failed"); return true; }
++        Frame.Sort(); GPU.Sort();
++        Test->AddInfo(FString::Printf(TEXT("WATER_SHORE_WALK_DONE candidate=%d distanceM=%.6g seconds=%.6g samples=%d unobservedFrames=%llu engineMedianMs=%.6g engineP95Ms=%.6g gpuMedianMs=%.6g gpuP95Ms=%.6g raw=%s; real grounded input, offscreen editor asynchronous counters, not Present/120FPS acceptance"),
++            bCandidate ? 1 : 0,DistanceCm/100.0,Now-WalkStarted,Samples.Num(),MissedFrames,
++            Frame[Frame.Num()/2],Frame[FMath::Min(Frame.Num()-1,int32(Frame.Num()*.95))],
++            GPU.Num() ? GPU[GPU.Num()/2] : -1.0,GPU.Num() ? GPU[FMath::Min(GPU.Num()-1,int32(GPU.Num()*.95))] : -1.0,*Path));
++        return true;
++    }
++};
++}
++#endif

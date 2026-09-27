@@ -1,10 +1,13 @@
 param([ValidatePattern('^[a-z0-9-]+$')][string]$Label='physical-water-v1',
  [switch]$PaletteBudget, [switch]$Oblique, [switch]$LiveLod, [switch]$Ripples, [switch]$MaterialPerf, [switch]$RippleIsolation, [switch]$NormalBuffer, [switch]$SingleLayerSurfaceControl, [switch]$WaterGpuDump, [switch]$WaterFilteredShadows, [switch]$WaterSurfaceFill, [switch]$WaterFillBaselineControl, [switch]$WaterFillLifecycleControl,
+ [switch]$WaterShoreWalk, [switch]$WaterShoreWalkOriginal,
  [ValidateSet('WorldNormal','BaseColor','Roughness','Specular')][string]$BufferView,
  [ValidateSet('NoSpecular','NoReflections','NoIndirect','NoShortRangeAO','SHDiffuse','WaterCaptures','NoWaterComposite','NoWaterDFShadow')][string]$LightingIsolation,
  [ValidateSet('Water','Terrestrial','Ocean','Forest','Oasis','Savanna','Nordic','Tundra','Archipelago','Pangea','SuperEarth','HighMountain')][string]$Planet='Water',
  [ValidateRange(1,500)][int]$CameraHeightM=50)
 $ErrorActionPreference='Stop'
+if($WaterShoreWalkOriginal -and -not $WaterShoreWalk){throw 'Original walking baseline requires WaterShoreWalk'}
+if($WaterShoreWalk -and (-not $Ripples -or -not $SingleLayerSurfaceControl -or -not $WaterFilteredShadows -or -not $WaterSurfaceFill -or $LiveLod -or $MaterialPerf -or $WaterFillBaselineControl -or $WaterFillLifecycleControl -or $WaterGpuDump -or $LightingIsolation -or $NormalBuffer -or $BufferView -or $RippleIsolation)){throw 'Grounded walking requires the lit scene-fill candidate without hover/static controls'}
 $waterPassControl=$LightingIsolation -in @('WaterCaptures','NoWaterComposite','NoWaterDFShadow')
 if($waterPassControl -and -not $SingleLayerSurfaceControl){throw 'Water pass isolation requires the explicit single-layer candidate'}
 if($SingleLayerSurfaceControl -and (-not $Ripples -or ($LightingIsolation -and -not $waterPassControl) -or $NormalBuffer -or $BufferView -or ($LiveLod -and -not $WaterSurfaceFill) -or $RippleIsolation)){throw 'Single-layer live views require the guarded scene-fill adapter; other pass controls remain static'}
@@ -48,6 +51,8 @@ if($WaterGpuDump){$arguments+='-APSWaterGpuDump'}
 if($WaterSurfaceFill){$arguments+='-APSWaterSurfaceFill'}
 if($WaterFillBaselineControl){$arguments+='-APSWaterFillBaselineControl'}
 if($WaterFillLifecycleControl){$arguments+='-APSWaterFillLifecycleControl'}
+if($WaterShoreWalk){$arguments+='-APSWaterShoreWalk'}
+if($WaterShoreWalkOriginal){$arguments+='-APSWaterShoreWalkOriginal'}
 if($WaterFilteredShadows){
  # Read-only shader-support setting must be established at startup, not forced
  # at runtime. The existing DF-shadow support already enables the same separated

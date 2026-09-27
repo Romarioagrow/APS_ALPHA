@@ -7,15 +7,16 @@ Production source, materials, engine plugin and binaries were not replaced.
 
 ## What is preserved here
 
-`integration.patch` and `overlay-manifest.json` describe 18 source files:
+`integration.patch` and `overlay-manifest.json` describe 19 source files:
 the private WorldScape signed-kilometre UV1 data path and worker tests, an APS
 process-wide opt-in restricted to owned full-scale generated Water roots, and
 a bounded extension of the existing real gameplay liquid probe. There is no
 new production material selector, saved default, geography or palette change.
 The rejected compressed-preview height adapter is deliberately absent.
 
-Current overlay: `overlay-v20` supports inactive optional fill without material
-fallback and adds rendered source-change/loss/recovery controls. v19's native
+Current overlay: `overlay-v21` adds actual grounded input-driven shore walking
+and original/candidate runs on Water and Terrestrial. The v20 optional-fill
+and source-lifecycle controls are saved in `d3abccf47094f55d4629d766ed5882df35861e57`. v19's native
 shore route/family fixtures are saved in `0d51fe72ff6d8713a72714f66a5d67cecf51e249`.
 v18's source-
 equivalent baseline control is saved in `7feae9e720933f95e83ba55779c95f1e66115224`.
@@ -31,8 +32,8 @@ the preceding stochastic candidate is preserved
 in commit `2092659f86e030ece6209e22eec27ddb86ab16b9`; oblique/live-LOD fixture
 in commit `47ac2c4340f7103f869aebda30d4dd1c740e05ff`; palette-budget fixture in
 `8248482c54d92e86a655412f2b82b530ad326a1f`; dry fixture in `6e9e8e09`).
-Patch SHA256: `2C34B3267C9397CE2B9CEFE19C401CDE96D599E6ADBA205FF0FF0E2695B25F7B`.
-Manifest SHA256: `4E61F4B83AFA895E96100BE366D897E5AC57ACCE85C06D8C72B33A31B8C3A482`.
+Patch SHA256: `6E2134E2E42B35B23A36B4732FE081B4199894E7A9097E8FE78F9B3384EEB6D0`.
+Manifest SHA256: `791D8B786EED5253E90AF70A1C60924E42A14945F649B1765D058FD49F400F25`.
 The patch was reverse-checked against the final isolated source tree.
 The optional normal-only ripple extension, private asset mount and its separate
 rendered evidence are documented in `RIPPLES.md`. It has no production selector.
@@ -48,8 +49,11 @@ the prior noisy fringe in their limited visible shoreline. Neither moving run
 changed the actual fill direction. v20 separately exercises rotation, reduced
 energy, hidden light, unsupported settings and recovery on the actual tagged
 source; the paused fixture's final frame is pixel-identical to its starting
-frame. Natural unpaused light transitions remain untested. Natural
-walking, orbit and broader-family coverage remain open; no production promotion. The
+frame. Natural unpaused light transitions remain untested. v21 covers actual
+grounded walking on Water and Terrestrial, with native workers and the real
+pawn camera; sprint, orbit and broader-family coverage remain open. Candidate
+engine frame time increased in these separate runs, so no performance acceptance
+or production promotion. The
 paired GPU benchmark is useful evidence, not a visual or 120 FPS acceptance.
 The latest lighting controls and view-anchor candidate are recorded in
 `RIPPLES.md`. With GI and reflections still enabled, disabling ShortRangeAO
@@ -327,8 +331,13 @@ Omit `-LiveLod` for a frozen oblique A/B; live mode requires the oblique fixture
 In live mode native geometry is allowed to regenerate and restoration changes
 material ownership only, never copying the frozen section buffers back.
 
-Next bounded step: a normal grounded walking view with visible shoreline and
-matched baseline. The v20 actual-light change/loss/recovery control passed in a
+Next bounded step: investigate the measured moving-frame cost with an in-process
+grounded A/B/A comparison before rollout; include sprint and preserve the real
+floor/camera/input gates. Do not substitute another static light-control pass.
+The v21 same-protocol runs passed walking/LOD binding, but are NOT bitwise-matched
+views or a proof of 120 FPS. Water fills a narrow distant band; Terrestrial has
+more visible shore/water. Long highlight streaks remain in the candidate; finer
+realism and temporal filtering are not finished. The v20 actual-light change/loss/recovery control passed in a
 paused owned world, not a natural day/night/station transition.
 The v19 per-frame adapter was rendered only on a 60 m out-and-back hover route,
 not a production light lifecycle. `Run.ps1 -Planet Terrestrial` selects the
@@ -337,7 +346,7 @@ allowed but NOT validated merely by being listed. The runtime still requires
 actual Water liquid, native collision, stable root, payload and restoration.
 The source-equivalent lighting control and v19/v20 limits are in `RIPPLES.md`.
 Do not repeat the excluded prepass-coverage or reflection/DF controls, blind
-coordinate/noise rewrites or promote a scene-wide AO disable. Normal walking, broader
+coordinate/noise rewrites or promote a scene-wide AO disable. Sprint, broader
 Water-family coverage and whole-pipeline performance remain unverified. Do not hide the ground,
 clamp dry depths, move just the test camera into coarse distant LOD or alter the
 production spawn rule. Keep production selection off until those requirements

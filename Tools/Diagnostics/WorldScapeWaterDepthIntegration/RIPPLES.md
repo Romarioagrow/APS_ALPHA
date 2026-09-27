@@ -815,3 +815,77 @@ is in `APSGeneratedGameplayHandoffSmokeTests.cpp::BeginDiagnosticWalkRunPerf`:
 reuse its EnhancedInput ownership and real CurrentFloor/gravity gates, not the
 70 m hover or repeated teleports. Do not repeat the now-resolved static fill
 controls as a substitute for walking, orbit/family coverage or runtime rollout.
+
+## v21: real grounded shoreline walking, paired material arms
+
+`APSWaterShoreWalk.h` is now wired into the existing native Water-depth probe.
+`Run.ps1 -WaterShoreWalk` requires the filtered scene-fill SLW ripple candidate;
+add `-WaterShoreWalkOriginal` for original material. Hover/performance/lifecycle/
+buffer overrides are mutually exclusive. Both arms keep native depth workers
+and identical per-frame frame/fill/binding validation. This compares materials,
+not total payload overhead against an uninstrumented production executable.
+
+One initial relocation uses the native shore gradient and a real collision
+trace to dry walkable ground. The pilot then waits for 20 consecutive real
+grounded frames and aligns the REAL pawn camera through LookAction. No forced
+movement mode, fake floor, speed change, terrain change or camera-boom override.
+MoveAction strafes at the ordinary 600 cm/s for ten seconds. Every measured
+callback must remain on a native CollisionLods floor with planet gravity and
+no handoff/zero-G. First second is excluded from timing after start capture;
+no captures during measured movement. End capture and raw TSV are retained.
+Owned input is released on all exits; original root/slot material templates and
+pawn pose are restored without writing stale saved vertices over new LODs.
+Internal camera heading changes are not claimed to be restored by the control-
+rotation restore; these finite owned test worlds exit after the run.
+
+Build `build-20260927-154152.log`: 4 actions, 10.41 s, success. DLL SHA256
+`43F6C4D39D41F9B134813E3D5AF6BB0A4695BC0FF942188937618740C5368DAD`.
+No bake or private material change. All four runs passed both tests (rendered:
+55 warnings / 0 errors; palette: 0 warnings / 0 errors). Owned PIDs 17056, 8952,
+15712 and 28060 exited and were confirmed absent. Canonical gameplay unchanged.
+
+| Run label | Distance m | Samples | Engine median/p95 ms | GPU median/p95 ms |
+| --- | ---: | ---: | --- | --- |
+| water-shore-walk-original-v1 | 58.5382 | 930 | 9.4042 / 11.5435 | 4.0959 / 4.5908 |
+| water-shore-walk-candidate-v1 | 58.5242 | 866 | 10.1155 / 12.2872 | 4.2975 / 4.7005 |
+| water-terrestrial-walk-original-v1 | 58.5737 | 931 | 9.3733 / 11.2286 | 4.1002 / 4.3521 |
+| water-terrestrial-walk-candidate-v1 | 58.5140 | 788 | 11.0077 / 13.7715 | 4.4050 / 4.9300 |
+
+All measured frame gaps were one (no unobserved engine frames). Minimum sampled
+speed was 599.99999 cm/s; active worker count reached 20 on Water and 14 on
+Terrestrial in both arms. Start dry offsets were 20 m / 5 m respectively, with
+native ground 34 / 35 cm above sea. Each label contains
+`Saved/Automation/WaterDepthGameplay/shore-walk.tsv`, `20-walk-start.png` and
+`21-walk-end.png`. The saved viewport is 1280x722, offscreen DX12 editor, not
+the user's display resolution or Present timing.
+
+Inspected all eight walking frames. The candidate adds visible water normal
+detail over the original's smooth band, with the same broad terrain/coastline
+layout and no obvious prior near-water AO blotches/fringe in these views.
+However, long highlight streaks and a very abrupt grass/water boundary remain;
+this is NOT finished realism. Water occupies mainly a narrow distant band;
+Terrestrial shows more water. Two stills per run do not prove zero shimmer.
+The separate launches follow the same setup/input protocol but differ slightly
+in placement/timing (Terrestrial starts differ by about 0.74 m), so they are not
+pixel-registered comparisons or a controlled repeated performance experiment.
+
+The candidate's observed median GPU delta is +0.2016 ms / +0.3048 ms; engine
+delta is +0.7113 ms / +1.6344 ms. Game/render medians also rose (Water
+4.5244/3.7455 -> 4.6694/4.0215 ms; Terrestrial 4.5641/3.7629 ->
+5.0312/4.1950 ms). Do not dismiss this as harmless or attribute the full change
+to the shader from one sequential pair. It motivates an in-process grounded
+A/B/A timing control before promotion. Approximately 120 FPS is NOT verified;
+neither is sprint, natural light transition, orbit continuity or other families.
+
+Report SHA256 in table order:
+
+- `184E1EA93136C93563C3FE97CE6FDA9BE48DA62C21389F7C7DF095EC404781B8`
+- `DF69631526060337DF0F3A4ED596B59B091F49C3CCDCCBB5C48BB7ACF59421AD`
+- `860B5116E3BC03ACB8A745BFEBF577F07BFC6268061FB602C1AC6AED8D3B3DD9`
+- `0263954E45B63200CFC786A886827712FF6F10308D552C224BF9616E174C6195`
+
+Reproduce with a unique label: `Run.ps1 -Label <label> -Planet Terrestrial
+-Ripples -SingleLayerSurfaceControl -WaterFilteredShadows -WaterSurfaceFill
+-PaletteBudget -CameraHeightM 2 -Oblique -WaterShoreWalk`, plus
+`-WaterShoreWalkOriginal` only for the original arm. The diagnostic 2 m static
+camera runs before walking; walking uses the actual character camera instead.
