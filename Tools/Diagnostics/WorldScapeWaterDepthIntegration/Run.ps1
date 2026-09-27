@@ -1,5 +1,5 @@
 param([ValidatePattern('^[a-z0-9-]+$')][string]$Label='physical-water-v1',
- [switch]$PaletteBudget, [switch]$Oblique, [switch]$LiveLod, [switch]$Ripples, [switch]$MaterialPerf, [switch]$RippleIsolation, [switch]$NormalBuffer, [switch]$SingleLayerSurfaceControl, [switch]$WaterGpuDump, [switch]$WaterFilteredShadows, [switch]$WaterSurfaceFill, [switch]$WaterFillBaselineControl,
+ [switch]$PaletteBudget, [switch]$Oblique, [switch]$LiveLod, [switch]$Ripples, [switch]$MaterialPerf, [switch]$RippleIsolation, [switch]$NormalBuffer, [switch]$SingleLayerSurfaceControl, [switch]$WaterGpuDump, [switch]$WaterFilteredShadows, [switch]$WaterSurfaceFill, [switch]$WaterFillBaselineControl, [switch]$WaterFillLifecycleControl,
  [ValidateSet('WorldNormal','BaseColor','Roughness','Specular')][string]$BufferView,
  [ValidateSet('NoSpecular','NoReflections','NoIndirect','NoShortRangeAO','SHDiffuse','WaterCaptures','NoWaterComposite','NoWaterDFShadow')][string]$LightingIsolation,
  [ValidateSet('Water','Terrestrial','Ocean','Forest','Oasis','Savanna','Nordic','Tundra','Archipelago','Pangea','SuperEarth','HighMountain')][string]$Planet='Water',
@@ -17,6 +17,7 @@ if($WaterGpuDump -and (-not $SingleLayerSurfaceControl -or -not $Oblique -or $Li
 if($WaterFilteredShadows -and (-not $SingleLayerSurfaceControl -or $LightingIsolation -or $NormalBuffer -or $BufferView -or $RippleIsolation)){throw 'Filtered water shadows require the single-layer lit fixture without lighting isolation'}
 if($WaterSurfaceFill -and (-not $WaterFilteredShadows -or $WaterGpuDump)){throw 'Surface fill requires filtered water shadows without GPU dump'}
 if($WaterFillBaselineControl -and (-not $WaterSurfaceFill -or $MaterialPerf -or $LiveLod)){throw 'Fill baseline control requires the static scene fill candidate without timing'}
+if($WaterFillLifecycleControl -and (-not $WaterSurfaceFill -or $WaterFillBaselineControl -or $MaterialPerf -or $LiveLod)){throw 'Fill lifecycle control requires static scene fill without other controls/timing'}
 if(Get-Process UnrealEditor,UnrealEditor-Cmd -ErrorAction SilentlyContinue){throw 'Editor active; no session touched'}
 $project=Join-Path $PSScriptRoot 'host/APS_ALPHA.uproject'
 $run=Join-Path $PSScriptRoot $Label
@@ -46,6 +47,7 @@ if($MaterialPerf){$arguments+='-APSWaterMaterialPerf'}
 if($WaterGpuDump){$arguments+='-APSWaterGpuDump'}
 if($WaterSurfaceFill){$arguments+='-APSWaterSurfaceFill'}
 if($WaterFillBaselineControl){$arguments+='-APSWaterFillBaselineControl'}
+if($WaterFillLifecycleControl){$arguments+='-APSWaterFillLifecycleControl'}
 if($WaterFilteredShadows){
  # Read-only shader-support setting must be established at startup, not forced
  # at runtime. The existing DF-shadow support already enables the same separated

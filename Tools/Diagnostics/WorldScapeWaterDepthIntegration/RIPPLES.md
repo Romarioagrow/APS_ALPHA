@@ -753,3 +753,65 @@ Reproduce on the matching isolated host, with a new label:
 Next: actual light-change/loss/recovery control, then a grounded walking view
 with meaningful visible shore and matched baseline. Retain source-derived
 energy and filtered shadows; no global AO disable, palette gain or rollout.
+
+## v20: optional light absence and rendered recovery
+
+The v19 resolver treated an inactive optional fill as a failure, which would
+restore the old material during the normal production surface-fill cutoff.
+It now accepts exactly one visible positive-priority main light and no visible
+fill as a valid zero-irradiance/zero-direction state. The candidate stays bound.
+Active fill still requires the exact transient tagged diffuse-only light and
+higher-priority main. Negative/nonfinite intensity is rejected rather than
+silently skipped. Unsupported lighting clears energy and reports failure.
+This fixes the isolated adapter's state handling; production remains unchanged.
+
+Added `Run.ps1 -WaterFillLifecycleControl` (requires static scene fill, excludes
+live LOD, baseline and timing controls). After ordinary A/B it pauses only the
+owned PIE world so the real stellar subsystem cannot overwrite test light
+parameters each tick. It changes the ACTUAL tagged light, not just uniforms:
+original, reversed direction, half intensity, hidden, unsupported specular=1,
+then recovered. The same binding is revalidated per frame. Hidden succeeds with
+zero energy; unsupported fails with zero energy. All 30 candidate slots remain
+bound, root/geometry/RGBA/UV/camera/ground visibility remain unchanged. Every exit
+restores light rotation/intensity/specular/visibility and releases owned pause.
+This controlled fixture does not prove natural unpaused transitions or FPS.
+
+- Initial build `build-20260927-151906.log`: 4 actions / 9.09 s, success.
+  `water-fill-lifecycle-v1`, PID 1724, exercised the old reject-on-hidden path.
+  Rendered recovery passed but source inspection identified the unnecessary
+  fallback, motivating the valid-inactive state above.
+- Final build `build-20260927-152146.log`: 4 actions / 9.22 s, success.
+  DLL SHA256 `2537ABA557D2086BE7B0F7ECEF5117694A764AEF30545E65569B41FE1EBF4235`.
+  `water-fill-lifecycle-v2`, PID 30456: all six phases and restorations passed.
+- Each run completed both tests successfully: rendered 55 warnings / 0 errors,
+  palette 0 warnings / 0 errors. Both owned editors exited and were confirmed
+  absent. No bake or production Source/Content/Config/Plugins replacement.
+
+Inspected all six final images. Water responds to direction/strength/visibility;
+hidden and reversed states have the same sampled water luminance, while recovery
+is **pixel-identical across the full frame** to the starting paused candidate.
+The distant water has blocky highlight detail in this paused fixture; this is
+not a temporal-quality or finished-water-realism acceptance. No new broad
+near-water angular patches or noisy shoreline fringe are evident in these stills.
+
+Final water ROI x=80:620, y=200:620, mean linear display luminance (inverse-sRGB,
+Rec.709 coefficients), not HDR radiance or physical linearity proof:
+
+| Actual source state | Mean Y | Mean abs display RGB from original /255 |
+| --- | ---: | ---: |
+| Original / recovered | .054778051 | 0 |
+| Reversed / hidden | .033544446 | 13.596890 |
+| Half intensity | .043633563 | 6.584769 |
+| Unsupported specular | .033546531 | 13.595847 |
+
+Terrain also responds to actual light mutation (as expected), unlike a uniform-
+only synthetic control. Its ROI x=980:1200,y=250:650 returns exactly to baseline.
+Report SHA256: initial `F50647604F80D4CA3F296621D13259B6B6508A927B2B8AAA205EE4C93110BB2D`;
+final `4B8A50415A45DAF155A7F6F4374848A90038AD63ABFFF809FAC8DCBDA2F2F305`.
+
+Next: use the real grounded character/input and native floor near visible water,
+with matched original/candidate runs. Existing natural dry-spawn walk/run code
+is in `APSGeneratedGameplayHandoffSmokeTests.cpp::BeginDiagnosticWalkRunPerf`:
+reuse its EnhancedInput ownership and real CurrentFloor/gravity gates, not the
+70 m hover or repeated teleports. Do not repeat the now-resolved static fill
+controls as a substitute for walking, orbit/family coverage or runtime rollout.
