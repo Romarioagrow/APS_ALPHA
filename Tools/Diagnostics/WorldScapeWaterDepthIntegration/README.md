@@ -14,18 +14,23 @@ a bounded extension of the existing real gameplay liquid probe. There is no
 new production material selector, saved default, geography or palette change.
 The rejected compressed-preview height adapter is deliberately absent.
 
-Current overlay: `overlay-v10` (the preceding stochastic candidate is preserved
+Current overlay: `overlay-v12` (the camera-relative close-view regression and
+paired GPU benchmark are preserved in `bf32ab9bdc572adccb2e8412c2c67a135c5d3545`;
+the preceding stochastic candidate is preserved
 in commit `2092659f86e030ece6209e22eec27ddb86ab16b9`; oblique/live-LOD fixture
 in commit `47ac2c4340f7103f869aebda30d4dd1c740e05ff`; palette-budget fixture in
 `8248482c54d92e86a655412f2b82b530ad326a1f`; dry fixture in `6e9e8e09`).
-Patch SHA256: `3505EBA1903D7E3BB0DEDC2089544FE5101C965E2ACF84F1D6D355FA2FB68A48`.
-Manifest SHA256: `CA1FF3D0C8ACBF1283D690A90F5D5899E8D4D2E0B906A849266016ADF5B64F38`.
+Patch SHA256: `225FB0030EFE92E51A3F2E722B0C5C506EAFDB11DCA69A31278A5276A86E717D`.
+Manifest SHA256: `29D2B2308B022B622AE0C1F9A160A563BD1FCFEB9481042F7831F3E292A6968A`.
 The patch was reverse-checked against the final isolated source tree.
 The optional normal-only ripple extension, private asset mount and its separate
 rendered evidence are documented in `RIPPLES.md`. It has no production selector.
 **Do not promote the ripple candidate:** the 2 m close-view regression remains
 visible in all tested variants, despite passing structural automation. The
 paired GPU benchmark is useful evidence, not a visual or 120 FPS acceptance.
+The latest isolation controls, spectral candidate, WorldNormal and BaseColor
+buffer captures are recorded in `RIPPLES.md`. BaseColor remains smooth; the
+lit angular pattern is unresolved. No noise-only root cause is established.
 
 ## Evidence and limits
 
@@ -279,9 +284,10 @@ Omit `-LiveLod` for a frozen oblique A/B; live mode requires the oblique fixture
 In live mode native geometry is allowed to regenerate and restoration changes
 material ownership only, never copying the frozen section buffers back.
 
-Next bounded step: assess the optional precision-safe water ripple band described
-in `RIPPLES.md`; normal walking, broader Water-family coverage and
-controlled performance comparisons remain unverified. Do not hide the ground,
+Next bounded step: isolate lighting/specular contribution to the remaining
+close-view ripple pattern using the frozen fixture described in `RIPPLES.md`.
+Do not repeat unproven coordinate/noise rewrites. Normal walking, broader
+Water-family coverage and whole-pipeline performance remain unverified. Do not hide the ground,
 clamp dry depths, move just the test camera into coarse distant LOD or alter the
 production spawn rule. Keep production selection off until those requirements
 are met. Successful diagnostic runs do not establish completed water realism

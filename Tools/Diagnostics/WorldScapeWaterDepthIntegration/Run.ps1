@@ -1,7 +1,12 @@
 param([ValidatePattern('^[a-z0-9-]+$')][string]$Label='physical-water-v1',
- [switch]$PaletteBudget, [switch]$Oblique, [switch]$LiveLod, [switch]$Ripples, [switch]$MaterialPerf, [ValidateRange(1,500)][int]$CameraHeightM=50)
+ [switch]$PaletteBudget, [switch]$Oblique, [switch]$LiveLod, [switch]$Ripples, [switch]$MaterialPerf, [switch]$RippleIsolation, [switch]$NormalBuffer,
+ [ValidateSet('WorldNormal','BaseColor','Roughness','Specular')][string]$BufferView,
+ [ValidateRange(1,500)][int]$CameraHeightM=50)
 $ErrorActionPreference='Stop'
 if($MaterialPerf -and $LiveLod){throw 'Material timing requires the frozen A/B fixture, not moving LODs'}
+if($RippleIsolation -and (-not $Ripples -or $LiveLod -or $MaterialPerf)){throw 'Isolation requires Ripples and static views only'}
+if(($NormalBuffer -or $BufferView) -and ($LiveLod -or $MaterialPerf)){throw 'Buffer capture is not a live/performance run'}
+if($NormalBuffer -and $BufferView){throw 'Choose one buffer view'}
 if(Get-Process UnrealEditor,UnrealEditor-Cmd -ErrorAction SilentlyContinue){throw 'Editor active; no session touched'}
 $project=Join-Path $PSScriptRoot 'host/APS_ALPHA.uproject'
 $run=Join-Path $PSScriptRoot $Label
@@ -22,6 +27,9 @@ if($PaletteBudget){$arguments+='-APSWaterDepthPaletteBudget'}
 if($Oblique){$arguments+='-APSWaterDepthOblique'}
 if($LiveLod){$arguments+='-APSWaterDepthLiveLod'}
 if($Ripples){$arguments+='-APSWaterRipples'}
+if($RippleIsolation){$arguments+='-APSRippleIsolation'}
+if($NormalBuffer){$arguments+='-APSWaterNormalBuffer'}
+if($BufferView){$arguments+=('-APSWaterBufferView='+$BufferView)}
 if($MaterialPerf){$arguments+='-APSWaterMaterialPerf'}
 $arguments+=('-APSWaterDepthCameraHeightM='+$CameraHeightM)
 $process=Start-Process -FilePath 'C:/Program Files/Epic Games/UE/UE_5.4/Engine/Binaries/Win64/UnrealEditor.exe' -ArgumentList $arguments -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $run 'stdout.txt') -RedirectStandardError (Join-Path $run 'stderr.txt')

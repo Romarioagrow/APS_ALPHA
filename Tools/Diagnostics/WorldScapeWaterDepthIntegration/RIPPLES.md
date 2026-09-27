@@ -9,22 +9,24 @@ unchanged. New code is retained as a source overlay alongside the depth work.
 - `APSWaterRippleMaterialBuilder.h` adds a stationary normal-detail band before
   the existing single planet-to-world normal rotation. It is not fluid simulation
   and does not move vertices or change the water level.
-- Current candidate: two 3D gradient-noise bands at 370 cm and 83 cm, weights
-  .65/.35, final slope bounded by .065. There is no latitude/longitude or local
+- Current candidate: two smooth twelve-wave bands at nominal 370 cm and 83 cm,
+  weights .65/.35, final slope bounded by .065. There is no latitude/longitude or local
   tangent UV basis to introduce a pole seam.
 - Current physical positions reconstruct directly from the camera-relative pixel
   interpolant and the view's DoubleFloat translation, then use compensated frame and division,
   reusing the accepted terrain-detail coordinate contract and split transform
   rows. The earlier native tile/offset path is rejected by the 2 m close test.
-  Noise receives a bounded 96-cell coordinate. UE 5.4's simplex Jacobian hashes
-  `6*T`, so its hash period is 576, matching the Cartesian wrap exactly. This is
-  periodic noise, not a claim of mathematically aperiodic texture everywhere.
-- DFDdx/DdyDemote use the unwrapped compensated coordinate; the gradient fades between
-  .25 and .5 noise cells per pixel footprint. No derivative is taken through
+  Each band receives a bounded 96-cell coordinate. Integer wave vectors preserve
+  continuity across the 96-cell wrap, including negative axes. The two physical
+  wavelengths differ. This is a finite periodic spectrum, not a claim of
+  mathematically aperiodic texture everywhere.
+- DFDdx/DdyDemote use the unwrapped compensated coordinate; each wave fades between
+  .25 and .5 cycles per pixel using its own projected frequency. No derivative is taken through
   the wrap discontinuity. This is a practical detail filter, not perfect
   band-limiting or a proof of temporal stability.
-- LWC `Frac`/derivative behaviour and the six-times simplex hash were checked
-  against the installed UE 5.4 translator and shader source, not guessed.
+- The earlier native simplex implementation and LWC derivatives were checked
+  against installed UE 5.4 source. Its smooth analytic limits alone did not
+  guarantee a natural-looking reflected pattern in the close fixture.
 - `APSWaterRippleCandidate.h` mounts `/APSWaterDetail/` solely for explicit
   diagnostics at `host/Intermediate/WaterRippleAssets/`. **No output goes through
   the host's read-only Content junction.** `BakeRipples.ps1` refuses existing
@@ -99,7 +101,7 @@ all dependent modules as described in README. Run `BakeRipples.ps1` with a new
 label, then `Run.ps1 -Label <new-label> -PaletteBudget -Oblique -LiveLod -Ripples`.
 The private assets are not automatically cooked, selected, or copied to /Game.
 The latest two saved assets are checkpointed under
-`Assets/CameraRelativeRipples20260927/`; they retain their `/APSWaterDetail/` package
+`Assets/SpectralRipples20260927/`; they retain their `/APSWaterDetail/` package
 identities. For exact-byte reproduction copy that folder to the isolated host's
 `Intermediate/WaterRippleAssets/` and verify the hashes instead of rebaking.
 Do not install any isolated DLL by itself into the accepted project/plugin.
@@ -193,3 +195,99 @@ Report SHA256 (under the private workspace paths named above):
 - `water-ripples-far-perf-v1`: `B7A9B714F4B96264AC45E66889983EFC050A77765AEDE6EE0E5ABF24F4651EDC`.
 - `water-ripples-compensated-near-v1`: `39F27A1649C35914792C49F6E05E3598BFDBCDF314AC1EB839AEE063E17B33DE`.
 - `water-ripples-camera-relative-near-v1`: `BC11053466411FE4FCF630E0565DB75612A467C55BD6BEFED29C507EC2709182`.
+
+## Isolated normal controls and smooth-spectrum revision
+
+The previous turn is progress, not completion: its close frames prevented an
+incorrect candidate promotion. This follow-up changes the next action using
+an explicit control, rather than assuming another precision rewrite will help.
+
+Build `build-20260927-123704.log`: 5 actions, 10.45 seconds, success.
+Bake `bake-isolation-ripples-v1`, PID 27192 (exited): 0 errors, 7 warnings.
+Run `water-ripples-isolation-near-v1`, PID 11648 (exited), both tests passed:
+the native gradient with its footprint filter disabled still shows angular
+patches; a simple smooth sine control on the SAME physical phase does not.
+This rules out the footprint filter as the sole explanation in that fixture.
+It does NOT isolate the noise algorithm: the analytic control uses only band 0,
+whereas the native candidate combines both bands. The spectral follow-up below
+also retains an angular lit pattern, so the initial noise-only hypothesis is
+not established. No Unreal native-noise implementation bug is demonstrated.
+
+The isolation run's legacy filenames are important: `02-filtered-depth.png`
+actually contains UNFILTERED native noise, and `03-depth-only.png` contains
+the ANALYTIC CONTROL, not depth-only. Explicit WATER_RIPPLE_ISOLATION log
+entries record both settings. Subsequent code gives these diagnostic frames
+the unambiguous names `02-unfiltered-slope` and `03-analytic-control`.
+`-RippleIsolation` requires `-Ripples` and refuses performance/live-LOD modes.
+Report SHA256: `2AAA2C0AA506FA3529578E23AE6AD9F073A783F3CAE5513C5E1236D05D3B23A6`.
+The full isolation source is preserved in private `overlay-v11`.
+
+The next candidate replaces only the added native noise gradient with 12
+distinct wave vectors per band (24 total), varied phases and frequencies,
+analytic slopes and a separate per-frequency footprint filter. Its intent is
+to reduce the first candidate's regular comb and the later gradient's faceted
+appearance; the close-view result below does not establish that goal. Tangential projection, .065 slope bound, native
+coarse water normals, colour/depth blend, shoreline and geometry are retained.
+These are still stationary normal details, not a moving fluid simulation.
+
+A double-precision numerical spot check of 1,000 phase points gave a maximum
+96-cell periodic residual of 2.60e-13 and maximum slope change of 9.21e-6 for
+a 1e-6-cell offset; a large footprint attenuated all waves to zero. This checks
+the formula, not actual GPU precision or perceptual/temporal acceptance.
+Build `build-20260927-124158.log`: 5 actions, 9.89 seconds, success.
+Bake `bake-spectral-ripples-v1`, PID 30352 (exited): 0 errors, 7 existing warnings;
+2 new packages in `/APSWaterDetail/SpectralRipples20260927/`, no production binding.
+
+Saved master SHA256: `30271CD41A4BCBFD0E337421192E68188EEC89DA37F8F5BFC127A510397D906F`.
+Saved MIC SHA256: `09C0DA35D778662ADD7161428AE35E059E96932736C4F673F9B9542E7A9C55F4`.
+
+`water-ripples-spectral-near-v1`, owned PID 6692 (exited), completed both test
+entries successfully: rendered test 55 warnings / 0 errors, palette test 0 / 0.
+At 2 m, the lit image still shows subtle angular patches relative to depth-only.
+Visual acceptance remains FAILED. Paired material-only GPU increments were
++0.0548465 / +0.0619483 ms, against original phase means
+4.21155 / 4.20747 / 4.2136 ms. This is not full-pipeline or 120 FPS acceptance.
+
+## Buffer isolation: latest evidence, not a production fix
+
+The private static probe can now select `-BufferView WorldNormal`, `BaseColor`,
+`Roughness` or `Specular`; legacy `-NormalBuffer` selects WorldNormal. Invalid
+combinations with live/performance modes are rejected. The probe saves and
+restores viewport show flags, view mode and buffer target. Its log explicitly
+labels buffer images as diagnostics, not lit-water appearance. This path is
+diagnostic opt-in only and was not installed into the accepted game.
+
+Build `build-20260927-124819.log`: 4 actions, 7.76 seconds, success.
+`water-ripples-normal-buffer-v1`, owned PID 10820 (exited): both test entries
+succeeded (55 rendered warnings, no errors). Enabled and depth-only WorldNormal
+images look broadly smooth without conspicuous rectangular discontinuities.
+On ROI x=[50,650), y=[120,620), mean absolute RGB difference was 0.870564 code
+values. Eight-bit PNGs cannot rule out small normal errors amplified by lighting.
+The project uses `r.GBufferFormat=3`; do not infer an eight-bit GBuffer merely
+from the exported image's precision.
+
+Build `build-20260927-125254.log`: 4 actions, 7.90 seconds, success.
+`water-ripples-basecolor-v1`, owned PID 23944 (confirmed exited): both test entries
+succeeded (55 rendered warnings, no errors); buffer state and pawn/camera/material
+state restored. Candidate and depth-only BaseColor both show a smooth colour
+gradient. Same water ROI mean absolute RGB difference is 0.09403, p99 1 and
+maximum 3 code values; land x=[1000,1250), y=[120,620) mean is 0.176453.
+These small differences do not explain the observed lit angular pattern.
+They narrow investigation toward normal response/lighting/reflections, but do
+not identify a specific rendering defect. The accepted source Fresnel has an
+explicit normal input; do not assume it automatically consumes the new pixel
+normal. No lighting/reflection isolation has been performed yet.
+
+All three latest runs preserve geometry, palette binding and depth payload;
+their structural test success is separate from the FAILED lit quality gate.
+No production source, plugin DLL, cooked selector or material was changed.
+Stop speculative build/bake loops here. The next useful bounded test should
+isolate lighting/specular contribution in this same frozen fixture, or compare
+both bands using a matched control, before proposing a further shader rewrite.
+Whole-family coverage, temporal walking and whole-pipeline performance are open.
+
+Report SHA256:
+
+- `water-ripples-spectral-near-v1`: `4EC44D59C4637BA57BA3DEEDD37ECE89BC8A6921E04F85784070CEBDA746BC70`.
+- `water-ripples-normal-buffer-v1`: `203EC950E8D3E1C8D2FB3E47AC3D0FC955B60B5C591408520D21C67E37C07A61`.
+- `water-ripples-basecolor-v1`: `E00EC899005932C73773E216105C9C486F2FED409B731735652747C9A566DD92`.
