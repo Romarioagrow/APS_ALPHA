@@ -35,6 +35,7 @@
 #include "LocalVertexFactory.h"
 #include "MaterialShared.h"
 #include "UObject/StrongObjectPtr.h"
+#include "APSWaterDepthRenderedProbe.h"
 
 // Test-only changes are transient and restored. This is a causal A/B fixture,
 // not a claim that any screenshot is visually accepted.
@@ -50,6 +51,7 @@ class FProbe final : public IAutomationLatentCommand
     float AtmosphereOpacity = 1.0f;
     bool bTerrainLodAB = false, bTerrainFarNormalAB = false;
     APSPlanetTerrainLodAB::FProbe TerrainLodProbe;
+    APSWaterDepthRendered::FProbe WaterDepthProbe;
     TWeakObjectPtr<UMaterialInterface> ProductionLiquidParent;
     TWeakObjectPtr<AAstroGenerator> Generator;
     TArray<TPair<TWeakObjectPtr<AAtmoScape>, bool>> Atmospheres;
@@ -449,6 +451,7 @@ class FProbe final : public IAutomationLatentCommand
         if (bLavaBandwidthLOD) Folder /= TEXT("LavaBandwidthLOD");
         if (bSharedAmmoniaCandidate) Folder /= TEXT("SharedAmmoniaCandidate");
         if (bSharedWaterCandidate) Folder /= TEXT("SharedWaterCandidate");
+        if (APSWaterDepthRendered::Enabled()) Folder /= TEXT("WaterDepth20260927");
         if (bWaterOpacityAB) Folder /= TEXT("WaterOpacityAB");
         if (APSPlanetTerrainLodAB::UsesNativeViews()) Folder /= TEXT("TerrainNativeViews");
         else if (bTerrainLodAB) Folder /= bTerrainFarNormalAB ? TEXT("TerrainPixelFarNormalAB") : TEXT("TerrainPixelAB");
@@ -485,6 +488,10 @@ public:
         if (!VM || !VM->GeneratedWorld) { DiagnosePending(TEXT("ViewModelOrGeneratedWorld"), World, VM); return false; }
         if (Step == 0)
         {
+            if (APSWaterDepthRendered::Enabled() && (HasSharedCandidate() || bTerrainLodAB
+                || bWaterOpacityAB || bLavaSamplingAB || bLavaEmissionAB
+                || (Family != TEXT("Ocean") && Family != TEXT("Water"))))
+            { Test->AddError(TEXT("Water depth A/B requires only Ocean/Water and no other diagnostic variant")); return true; }
             if (!FMath::IsFinite(AtmosphereOpacity) || AtmosphereOpacity < 0.0f || AtmosphereOpacity > 20.0f)
             { Test->AddError(TEXT("Invalid explicit probe atmosphere opacity")); return true; }
             if (bLavaBandwidthLOD && (!bSharedLavaCandidate || bSharedAmmoniaCandidate || bSharedWaterCandidate
@@ -546,6 +553,14 @@ public:
         if (!Generator->IsPreviewGlobeFamilyWarmQueueDrained()) { DiagnosePending(TEXT("FamilyWarmQueue"), World, VM); return false; }
         UProceduralMeshComponent* Terrain = Generator->GetActivePreviewTerrainProxy();
         UProceduralMeshComponent* Ocean = Generator->GetActivePreviewOceanProxy();
+        if (APSWaterDepthRendered::Enabled())
+        {
+            FString Error;
+            const auto Result = WaterDepthProbe.Update(Generator.Get(), VM, Zoom,
+                [this](const TCHAR* Label) { Capture(Label); }, Error);
+            if (Result == APSWaterDepthRendered::EResult::Failed) Test->AddError(Error);
+            return Result != APSWaterDepthRendered::EResult::Pending;
+        }
         if (bTerrainLodAB)
         {
             FString Error;

@@ -57,6 +57,7 @@
 #include "APSLavaBandwidthLODBuilder.h"
 #include "APSSharedAmmoniaMaterialBuilder.h"
 #include "APSSharedWaterMaterialBuilder.h"
+#include "APSWaterDepthMaterialBuilder.h"
 #include "APSSharedTerrainLodABBuilder.h"
 #include "APSSharedTerrainFarNormalABBuilder.h"
 #include "APSSharedTerrainNormalUpdate.h"
@@ -2445,6 +2446,10 @@ int32 UAPSPlanetSurfaceAssetCommandlet::Main(const FString& Params)
 	{
 		// One new MIC only; the installed physical-liquid master remains read-only.
 		return APSSharedWaterMaterialBuilder::Build(AssetTools) ? 0 : 13;
+	}
+	if (FParse::Param(*Params, TEXT("OnlyWaterDepthCandidate")))
+	{
+		return APSWaterDepthMaterialBuilder::Build(AssetTools) ? 0 : 33;
 	}
 	if (FParse::Param(*Params, TEXT("OnlySharedTerrain")))
 	{
