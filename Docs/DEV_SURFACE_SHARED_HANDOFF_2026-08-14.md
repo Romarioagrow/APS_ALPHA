@@ -1,5 +1,11 @@
 # Dev Surface shared handoff — 2026-08-14
 
+> Historical handoff; retain the evidence and architecture boundaries below.
+> Current status and collaboration entry points are in the
+> [2026-09-27 audit](Audit/2026-09-27-project-state.md) and
+> [current coordination](coordination/CURRENT_WORK.md). Old FPS figures and
+> defect hypotheses are not current acceptance results or live ownership locks.
+
 ## Ownership
 
 - Dev 2 owns canonical planet ID, seed, type/subtype, radius, atmosphere, biosphere and orbital biome representation.

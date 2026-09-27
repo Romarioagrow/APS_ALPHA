@@ -82,9 +82,17 @@ production rollout. See `RIPPLES.md` for exact evidence and remaining darkening.
 ## Evidence and limits
 
 Private workspace:
-`C:/Users/Rio/Documents/ChatGPT/APOSFERA/work/planet_refinement_20260927/water-depth-gameplay`.
+`F:/ChatGPT/APOSFERA/work/planet_refinement_20260927/water-depth-gameplay`.
 It contains the full isolated `host/APS_ALPHA.uproject`, source snapshot,
 build logs, manifests and finite rendered diagnostic reports.
+
+Relocation note, 2026-09-27: historical logs may still contain the former
+`C:/Users/Rio/Documents/ChatGPT/APOSFERA` prefix. The relocated `host/Content`
+was observed as an ordinary directory, not a junction; do not remove or relink
+it on the assumption that it is disposable. Rebuild/run portability after the
+move has not been validated. Inspect old absolute paths before the next run;
+do not rewrite hashed historical evidence. See the
+[current project audit](../../../Docs/Audit/2026-09-27-project-state.md).
 
 - A coherent build of APS, private WorldScape and private AtmoScape succeeded:
   470 actions, 327.11 seconds. No pre-existing plugin binaries were copied.

@@ -1,5 +1,10 @@
 # Stellar rendering checkpoint — 12 September 2026
 
+> Historical checkpoint. For current onboarding use the
+> [2026-09-27 audit](../Audit/2026-09-27-project-state.md) and
+> [user-accepted visuals](../Checkpoints/2026-09-27-worldscape-accepted.md).
+> The flicker report below describes 12 September, not a fresh reproduction.
+
 This is a recoverable intermediate result, NOT a completed flicker fix.
 
 User observations after restart: the generation-map appearance is substantially
