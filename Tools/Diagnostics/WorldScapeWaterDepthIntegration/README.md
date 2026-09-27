@@ -14,10 +14,11 @@ a bounded extension of the existing real gameplay liquid probe. There is no
 new production material selector, saved default, geography or palette change.
 The rejected compressed-preview height adapter is deliberately absent.
 
-Current overlay: `overlay-v5` (the preceding wet-shore fixture is preserved in
-commit `50799d91bd3e332225128f8953fe2986453a885f`; dry fixture in `6e9e8e09`).
-Patch SHA256: `548979DF22DD4142ED8F550CAD6FA8106842A5BC4410BF0196AA3AC9870DBED3`.
-Manifest SHA256: `72032AF7ADB9F46E0EA5E2E086B99A5123DA15D754AC2AACC60E73DC1DF8745E`.
+Current overlay: `overlay-v6` (the preceding palette-budget fixture is preserved
+in commit `8248482c54d92e86a655412f2b82b530ad326a1f`; wet-shore fixture in
+`50799d91bd3e332225128f8953fe2986453a885f`; dry fixture in `6e9e8e09`).
+Patch SHA256: `B468D3D176E94B647ECCB3B66E38D3F266EAE8B8E29607ECF83DFEEC82D17E8B`.
+Manifest SHA256: `2FD74004AEA4AA140AE82E412C7F3E9FF6E62A51C950ECAC7C00EEC7B38271D3`.
 The patch was reverse-checked against the final isolated source tree.
 
 ## Evidence and limits
@@ -176,6 +177,68 @@ Reports SHA256:
 - Near: `B9F5D74857FD2A8BFB44315FE36CB2019B72780C4DA159F0C1DFAE320054D83E`.
 - Coast: `90CF78501F7D711EB45F4B109E578039E227CFD46DEC5A1964C17E129A3E3324`.
 
+## Oblique view and live native LOD follow-up
+
+`APSWaterDepthOblique` aims the diagnostic camera 30 degrees below the physical
+horizon, using the real shore's wet/dry tangent and the root rotation. It does
+not hide the ground, rotate the planet or substitute a flat test surface.
+
+- `physical-water-budget-oblique-v1`, PID 22760: the rendered test failed before
+  relocation because the tiny post-bisection dimensionless shore chord was
+  normalized below FVector's safe-normal threshold. The palette test passed.
+  Multiplying the chord by the actual planet radius before normalization fixes
+  this units error without changing the shore search or geography.
+- Build `build-20260927-112812.log`: 4 actions, 8.74 seconds, success.
+  `physical-water-budget-oblique-v2`, PID 28716: both tests passed; rendered
+  gameplay had 55 warnings, palette arithmetic 0, and there were 0 errors.
+  The original/repeat/candidate/zero/return fixture retained visible land and
+  its physical frame. Inspected oblique frames show a modest near-water lift,
+  with the existing blue-to-cyan grazing-angle response. Water still looks
+  overly smooth; this is not completed water-detail polish.
+
+`APSWaterDepthLiveLod` adds a bounded optional phase after the static controls.
+It leases the root's ocean default and the surface's resolved material together,
+calls native `UpdateOceanMaterial` so subsequent LOD publications inherit the
+candidate, then resumes the existing terrain/ocean workers and actor ticks.
+The actual pawn observer follows 60 metres out and back at 6 m/s, 70 metres
+above sea level; the 50 m oblique camera follows it. This scripted zero-G hover
+is explicitly not normal character walking or a production spawn change.
+
+- Build `build-20260927-113623.log`: 4 actions, 8.94 seconds, success.
+- `physical-water-live-lod-v1`, PID 20296: both tests passed, rendered gameplay
+  with 55 warnings, palette arithmetic with 0; no errors or failed tests.
+- Across 2,035 callback frames, all 30 ocean material slots retained the
+  candidate and 90 sampled vertices per frame retained finite valid UV1.
+  The monitored published LOD0 vertex changed position 99 times; generation
+  was actually running rather than merely enabled by a flag.
+- After the return and worker drain, all 73,960 vertices had valid depth:
+  29,401 wet / 44,559 dry / 0 invalid. The 1,081 actual-root oracle samples had
+  maximum CPU coordinate-round-trip error `1.11742213e-9` metres.
+- Start/turn/return stills show a moving shoreline without obvious holes or
+  grid seams in those frames. Three stills do not prove absence of temporal
+  flicker, normal walking quality, all-family coverage or frame-rate parity.
+- Callback intervals were median 9.4313 ms / p95 12.3064 ms, excluding 0.5 s
+  after captures. These instrumented callback timings are not GPU/Present
+  measurements or acceptance of approximately 120 FPS; no baseline performance
+  control was run. Do not convert them into a claimed gameplay FPS result.
+- Restored 30/30 slots and the original pawn/camera/tick state. The live path
+  intentionally restored zero old vertex colours: it never overwrites freshly
+  regenerated native geometry with the earlier frozen snapshot. Both successful
+  oblique/live editors exited normally and are no longer running.
+
+Report SHA256:
+
+- Oblique v2: `FA2BBFEE7D8B1A21847DEAE3F20DCEF22015397FC15B40488FE95DEB04970C97`.
+- Live LOD v1: `C2FFB3ACEE30442129A354782F1E189B9E1D035F5548C453F8D43411CC89AB76`.
+
+No production code, plugin DLL or material asset was installed or rebaked.
+The next detail issue is separate from the now-tested native depth handoff.
+The current material-builder source uses coarse 180 m / 280 m wave-noise scales;
+UE 5.4's `FHLSLMaterialTranslator::VectorNoise` coerces position to Float3.
+Reducing those scales blindly at planetary coordinates risks precision loss.
+This is a source finding, not proof of a rendered precision defect: a finer
+noise domain must preserve physical coordinates, continuity and pixel filtering.
+
 ## Reproduction and safety
 
 Use a separate project, never the accepted installation. Copy APS Source/Config
@@ -194,7 +257,7 @@ landing diagnostic plus `APSSharedLiquidCoverage`, `APSWaterDepthPayload` and
 `APSProbeWaterDepthGameplay`. That opt-in relocates the test observer to a
 verified physical shore, with bounded failure and restoration paths.
 
-The visual probe is prepared to preserve ground visibility, physical root,
+The static visual probe is prepared to preserve ground visibility, physical root,
 camera and every RGBA/UV/topology value while capturing original/repeat,
 filtered candidate (strength .35, half-depth 20 m), zero-strength and original
 return. The saved filtered Water MIC is its parameter authority. Alpha is not
@@ -205,9 +268,15 @@ or `500`; neither enables a production default. An isolated process still needs
 access to a writable DDC. A DDC startup failure is not a material failure; do
 not change the accepted project config or restart a live user editor for it.
 
-Next bounded step: verify oblique water-surface detail and depth readability
-with natural motion/LOD traversal, then broader Water-family coverage and
-performance. Do not hide the ground, clamp dry depths, move just the test camera
-into coarse distant LOD or alter the production spawn rule. Keep production
-selection off until those requirements are met. A successful static diagnostic
-does not establish completed water realism or authorize rollout by itself.
+Oblique live run: `Run.ps1 -Label <new-label> -PaletteBudget -Oblique -LiveLod`.
+Omit `-LiveLod` for a frozen oblique A/B; live mode requires the oblique fixture.
+In live mode native geometry is allowed to regenerate and restoration changes
+material ownership only, never copying the frozen section buffers back.
+
+Next bounded step: improve the still-smooth water detail with a precision-safe
+physical noise domain; normal walking, broader Water-family coverage and
+controlled performance comparisons remain unverified. Do not hide the ground,
+clamp dry depths, move just the test camera into coarse distant LOD or alter the
+production spawn rule. Keep production selection off until those requirements
+are met. Successful diagnostic runs do not establish completed water realism
+or authorize rollout by themselves.

@@ -765,7 +765,7 @@ index b6f8aac..4f76b9a 100644
  	// or an occlusion source.  WorldScape's defaults otherwise let independently
  	// stitched clipmap sections cast their rectangular boundaries onto the terrain,
 diff --git a/Source/APS_ALPHA/Tests/APSSharedLavaCoverageProbe.cpp b/Source/APS_ALPHA/Tests/APSSharedLavaCoverageProbe.cpp
-index 6bbb423..e938901 100644
+index 6bbb423..deb9f36 100644
 --- a/Source/APS_ALPHA/Tests/APSSharedLavaCoverageProbe.cpp
 +++ b/Source/APS_ALPHA/Tests/APSSharedLavaCoverageProbe.cpp
 @@ -3,6 +3,7 @@
@@ -795,12 +795,18 @@ index 6bbb423..e938901 100644
  const TCHAR* Labels[] = { TEXT("00-context0-alpha0"), TEXT("01-context0-alpha1"),
      TEXT("02-context1-alpha0"), TEXT("03-context1-alpha1") };
  // The first pair (1 / 1.25) was captured before and after crust correction.
-@@ -104,6 +112,21 @@ class FProbe final : public IAutomationLatentCommand
+@@ -104,6 +112,28 @@ class FProbe final : public IAutomationLatentCommand
      bool bLeased = false, bRestored = false, bDone = false;
      bool bRootTick = false, bSurfaceTick = false, bPlanetTick = false, bFrozen = false;
      bool bSharedLiquidFamilies = false;
 +    bool bWaterDepthGameplay = false;
 +    bool bWaterDepthPaletteBudget = false;
++    bool bWaterDepthOblique = false;
++    bool bWaterDepthLiveLod = false, bLiveLeased = false;
++    double LiveStart = 0, LiveLastFrame = 0, LiveLastCapture = -1000;
++    int32 LiveGeometryChanges = 0, LiveFrames = 0;
++    FVector LiveLastVertex = FVector::ZeroVector;
++    TArray<double> LiveFrameIntervalsMs;
 +    float WaterDepthStrength = 0.35f;
 +    double WaterDepthClearanceCm = 5000.0;
 +    int32 WaterDepthCase = 0;
@@ -808,6 +814,7 @@ index 6bbb423..e938901 100644
 +    TWeakObjectPtr<ACustomGravityCharacter> ShorePawn;
 +    TWeakObjectPtr<AWorldScapeRoot> ShoreRoot;
 +    FVector OriginalPawnECEF, OriginalPawnVelocity, ShoreECEF, ShorePawnECEF;
++    FVector ShoreWetTangent = FVector::ZeroVector;
 +    FQuat OriginalPawnRotation;
 +    FRotator OriginalPawnControl;
 +    uint32 ShoreProfile = 0;
@@ -817,7 +824,7 @@ index 6bbb423..e938901 100644
      EAPSPlanetLiquidType LiquidType = EAPSPlanetLiquidType::Lava;
  
      const TCHAR* Marker() const { return bSharedLiquidFamilies ? TEXT("SHARED_LIQUID_COVERAGE") : TEXT("LAVA_COVERAGE"); }
-@@ -114,6 +137,132 @@ class FProbe final : public IAutomationLatentCommand
+@@ -114,6 +144,138 @@ class FProbe final : public IAutomationLatentCommand
              : LiquidType == EAPSPlanetLiquidType::Ammonia ? TEXT("Ammonia") : TEXT("Lava");
      }
  
@@ -889,6 +896,12 @@ index 6bbb423..e938901 100644
 +        ShoreECEF = Shore * (Root->PlanetScale + Sea.Height);
 +        // Camera will be at 50 m; the real streaming pawn remains behind its
 +        // downward-facing lens. Nothing is hidden or manually injected into LODs.
++        // Wet/Dry are unit-sphere directions now separated by a sub-centimetre
++        // bracket. Normalize their physical-centimetre tangent, not the tiny
++        // dimensionless chord (which falls below FVector's safe-normal cutoff).
++        const FVector ShoreChordCm = (Wet - Dry) * Root->PlanetScale;
++        ShoreWetTangent = (ShoreChordCm - Shore * FVector::DotProduct(ShoreChordCm, Shore)).GetSafeNormal();
++        if (ShoreWetTangent.IsNearlyZero()) return false;
 +        ShorePawnECEF = ShoreECEF + Shore * WaterDepthObserverClearanceCm;
 +        OriginalPawnECEF = Root->WorldToECEF(ShorePawn->GetActorLocation()).ToFVector();
 +        OriginalPawnRotation = ShorePawn->GetActorQuat(); OriginalPawnControl = PC->GetControlRotation();
@@ -950,7 +963,7 @@ index 6bbb423..e938901 100644
      UMaterialInstanceDynamic* CreateSharedLiquidCandidate(UMaterialInstanceDynamic* SourceMID)
      {
          // Exact family parents matter: Water and Ammonia share a master, not
-@@ -129,6 +278,37 @@ class FProbe final : public IAutomationLatentCommand
+@@ -129,6 +291,37 @@ class FProbe final : public IAutomationLatentCommand
              || Root->OceanMaterial.DefaultMaterial != SourceMID) return nullptr;
          for (const FSlot& Slot : Slots)
              if (Slot.OriginalMaterial.Get() != SourceMID) return nullptr;
@@ -988,7 +1001,7 @@ index 6bbb423..e938901 100644
          UMaterialInstanceDynamic* MID = bWater
              ? APSSharedWaterMaterial::CreateUnboundCandidate(Root.Get(), Root->GetRootComponent(),
                  Planet->WorldScapePresentationScale, false, Surface->ResolvedSurfaceProfile, Planet->IsManual, Root->bOcean)
-@@ -160,6 +340,9 @@ class FProbe final : public IAutomationLatentCommand
+@@ -160,6 +353,9 @@ class FProbe final : public IAutomationLatentCommand
              const FWorldScapeMeshSection* S = Slot.Mesh->GetProcMeshSection(Slot.Index);
              if (!S || S->PlanetVertexBuffer.Num() != Slot.OriginalColors.Num()
                  || PayloadHash(*S) != Slot.Hash) return false;
@@ -998,7 +1011,45 @@ index 6bbb423..e938901 100644
          }
          return true;
      }
-@@ -203,6 +386,17 @@ class FProbe final : public IAutomationLatentCommand
+@@ -170,8 +366,28 @@ class FProbe final : public IAutomationLatentCommand
+         bRestored = true;
+         int32 RestoredVertices = 0, RestoredSlots = 0;
+         TSet<UWorldScapeMeshComponent*> ChangedMeshes;
++        if (bLiveLeased)
++        {
++            // Native workers published NEW sections. Never overwrite their
++            // colours/vertices with the frozen comparison's old snapshot.
++            if (Root.IsValid() && Root == ShoreRoot && Root->OceanMaterial.DefaultMaterial == Candidate.Get())
++            {
++                Root->OceanMaterial.DefaultMaterial = OriginalRootMaterial.Get();
++                Root->UpdateOceanMaterial(Root->OceanMaterial);
++                for (const UWorldScapeLod* Lod : Root->WorldScapeLodOcean)
++                    if (IsValid(Lod) && IsValid(Lod->Mesh))
++                        for (int32 I = 0; I < Lod->Mesh->GetNumSections(); ++I)
++                            if (Lod->Mesh->GetMaterial(I) == OriginalRootMaterial.Get()) ++RestoredSlots;
++                Test->TestEqual(TEXT("Live LOD slots restored without stale geometry writes"), RestoredSlots, Root->OceanMaxLod * 3);
++            }
++            else Test->AddError(TEXT("Live root material changed externally; refusing to overwrite it"));
++            if (Surface.IsValid() && Surface->ResolvedOceanMaterialInstance == Candidate.Get())
++                Surface->ResolvedOceanMaterialInstance = Cast<UMaterialInstanceDynamic>(OriginalRootMaterial.Get());
++            else Test->AddError(TEXT("Live surface material changed externally; refusing to overwrite it"));
++        }
+         for (FSlot& Slot : Slots)
+         {
++            if (bLiveLeased) break;
+             if (!Slot.Mesh.IsValid()) { Test->AddError(FString(ErrorPrefix()) + TEXT("mesh disappeared before restore")); continue; }
+             FWorldScapeMeshSection* S = Slot.Mesh->GetProcMeshSection(Slot.Index);
+             if (!S || S->PlanetVertexBuffer.Num() != Slot.OriginalColors.Num() || PayloadHash(*S) != Slot.Hash)
+@@ -190,7 +406,7 @@ class FProbe final : public IAutomationLatentCommand
+             ChangedMeshes.Add(Slot.Mesh.Get());
+         }
+         for (UWorldScapeMeshComponent* Mesh : ChangedMeshes) Mesh->MarkRenderStateDirty();
+-        Test->TestEqual(TEXT("Every original ocean slot/color buffer was restored"), RestoredSlots, Slots.Num());
++        if (!bLiveLeased) Test->TestEqual(TEXT("Every original ocean slot/color buffer was restored"), RestoredSlots, Slots.Num());
+         for (const FVisibility& V : GroundVisibility)
+             if (V.Mesh.IsValid()) { V.Mesh->SetVisibility(V.bVisible, false); V.Mesh->SetHiddenInGame(V.bHidden, false); }
+         if (PC.IsValid() && Camera.IsValid() && PC->GetViewTarget() == Camera.Get() && OriginalViewTarget.IsValid())
+@@ -203,6 +419,17 @@ class FProbe final : public IAutomationLatentCommand
              if (Surface.IsValid()) Surface->SetActorTickEnabled(bSurfaceTick);
              if (Planet.IsValid()) Planet->SetActorTickEnabled(bPlanetTick);
          }
@@ -1016,7 +1067,7 @@ index 6bbb423..e938901 100644
          Test->AddInfo(FString::Printf(TEXT("%s_RESTORE slots=%d/%d colors=%d cameraRestored=%d family=%s"),
              Marker(), RestoredSlots, Slots.Num(), RestoredVertices, PC.IsValid() && PC->GetViewTarget() == OriginalViewTarget.Get() ? 1 : 0, Family()));
      }
-@@ -227,7 +421,7 @@ class FProbe final : public IAutomationLatentCommand
+@@ -227,7 +454,7 @@ class FProbe final : public IAutomationLatentCommand
                  Slot.Transform = Lod->Mesh->GetComponentTransform(); Slot.Hash = PayloadHash(*S);
                  for (const FWorldScapeMeshVertex& V : S->PlanetVertexBuffer) Slot.OriginalColors.Add(V.Color);
                  TotalVertices += Slot.OriginalColors.Num();
@@ -1025,7 +1076,7 @@ index 6bbb423..e938901 100644
                  // Aim at an actual nondegenerate LOD0 triangle, not a synthetic plane.
                  for (int32 I = 0; I + 2 < S->PlanetIndexBuffer.Num(); I += 3)
                  {
-@@ -236,13 +430,35 @@ class FProbe final : public IAutomationLatentCommand
+@@ -236,13 +463,35 @@ class FProbe final : public IAutomationLatentCommand
                          || !S->PlanetVertexBuffer.IsValidIndex(C)) return false;
                      const FVector P0 = S->PlanetVertexBuffer[A].Position, P1 = S->PlanetVertexBuffer[B].Position, P2 = S->PlanetVertexBuffer[C].Position;
                      if (FVector::CrossProduct(P1-P0, P2-P0).SizeSquared() < 1.0) continue;
@@ -1062,16 +1113,28 @@ index 6bbb423..e938901 100644
          for (const UWorldScapeLod* Lod : R->WorldScapeLod)
              if (IsValid(Lod) && IsValid(Lod->Mesh))
              {
-@@ -267,7 +483,7 @@ class FProbe final : public IAutomationLatentCommand
+@@ -266,8 +515,19 @@ class FProbe final : public IAutomationLatentCommand
+         if (Up.IsNearlyZero()) return false;
          FActorSpawnParameters Params; Params.ObjectFlags |= RF_Transient;
          Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
++        FRotator ViewRotation = (-Up).Rotation();
++        if (bWaterDepthGameplay && bWaterDepthOblique)
++        {
++            const FVector Wet = Root->GetActorQuat().RotateVector(ShoreWetTangent).GetSafeNormal();
++            if (Wet.IsNearlyZero()) return false;
++            // Thirty degrees below the local horizon, with both sea and coast
++            // in view. No tilted planet, artificial plane or hidden terrain.
++            const FVector Along = FVector::CrossProduct(Up, Wet).GetSafeNormal();
++            const FVector Forward = (Wet * 0.8 + Along * 0.6) * 0.866025403784 - Up * 0.5;
++            ViewRotation = FRotationMatrix::MakeFromXZ(Forward, Up).Rotator();
++        }
          ACameraActor* NewCamera = World->SpawnActor<ACameraActor>(ACameraActor::StaticClass(),
 -            OceanPoint + Up * CameraClearanceCm, (-Up).Rotation(), Params);
-+            OceanPoint + Up * (bWaterDepthGameplay ? WaterDepthClearanceCm : CameraClearanceCm), (-Up).Rotation(), Params);
++            OceanPoint + Up * (bWaterDepthGameplay ? WaterDepthClearanceCm : CameraClearanceCm), ViewRotation, Params);
          Camera = NewCamera;
          if (!NewCamera || !NewCamera->GetCameraComponent()) return false;
          const FMinimalViewInfo& Natural = Controller->PlayerCameraManager->GetCameraCacheView();
-@@ -280,6 +496,13 @@ class FProbe final : public IAutomationLatentCommand
+@@ -280,6 +540,13 @@ class FProbe final : public IAutomationLatentCommand
          // Explicit isolation only. The natural-route fixture has three preceding
          // unchanged scene frames; the opt-in Lava orbital route does not claim
          // those frames. No light/exposure/foliage/material-style edits here.
@@ -1085,7 +1148,7 @@ index 6bbb423..e938901 100644
          for (const FVisibility& V : GroundVisibility) if (V.Mesh.IsValid()) V.Mesh->SetVisibility(false, false);
          auto* Capture = NewObject<USceneCaptureComponent2D>(NewCamera);
          if (!Capture) return false;
-@@ -333,8 +556,83 @@ class FProbe final : public IAutomationLatentCommand
+@@ -333,8 +600,199 @@ class FProbe final : public IAutomationLatentCommand
          const FString Path = Folder / FString::Printf(TEXT("production-%02d-original-material-rgba.png"), ProductionCaptureCount);
          TArray64<uint8> Png; FImageUtils::PNGCompressImageArray(Size.X, Size.Y, Pixels, Png);
          if (!FFileHelper::SaveArrayToFile(Png, *Path)) return false;
@@ -1146,6 +1209,122 @@ index 6bbb423..e938901 100644
 +        return true;
 +    }
 +
++    bool StartLiveLod()
++    {
++        if (!bShoreLeased || !Candidate.IsValid() || !PayloadIsUnchanged()
++            || !bRootTick || bFrozen || Root->Ocean_UseMaterialInstance
++            || !Root->OceanMaterial.MaterialsLod.IsEmpty()
++            || Surface->ResolvedOceanMaterialInstance != OriginalRootMaterial.Get()) return false;
++        Candidate->SetScalarParameterValue(TEXT("APS_WaterDepthStrength"), WaterDepthStrength);
++        bLiveLeased = true;
++        Root->OceanMaterial.DefaultMaterial = Candidate.Get();
++        Root->UpdateOceanMaterial(Root->OceanMaterial);
++        Surface->ResolvedOceanMaterialInstance = Candidate.Get();
++        Root->bFreezeGeneration = bFrozen; Root->SetActorTickEnabled(bRootTick);
++        Surface->SetActorTickEnabled(bSurfaceTick); Planet->SetActorTickEnabled(bPlanetTick);
++        LiveStart = FPlatformTime::Seconds(); LiveLastFrame = LiveStart;
++        Test->AddInfo(TEXT("WATER_DEPTH_LIVE_BEGIN native terrain/ocean workers enabled; real observer follows 60m out-and-back at 6m/s and 70m clearance; instrumented hover, not walking/FPS acceptance"));
++        return true;
++    }
++
++    bool CaptureLiveLod(const TCHAR* Phase)
++    {
++        UGameViewportClient* Client = World->GetGameViewport();
++        TArray<FColor> Pixels; FIntVector Size = FIntVector::ZeroValue;
++        if (!Client || !Client->GetGameViewportWidget().IsValid()
++            || !FSlateApplication::Get().TakeScreenshot(Client->GetGameViewportWidget().ToSharedRef(), Pixels, Size)
++            || Size.X <= 0 || Size.Y <= 0 || Pixels.Num() != Size.X * Size.Y) return false;
++        const FString Path = FPaths::ProjectSavedDir() / TEXT("Automation/WaterDepthGameplay") / (FString(Phase) + TEXT(".png"));
++        TArray64<uint8> Png; FImageUtils::PNGCompressImageArray(Size.X, Size.Y, Pixels, Png);
++        if (!FFileHelper::SaveArrayToFile(Png, *Path)) return false;
++        Test->AddInfo(FString::Printf(TEXT("WATER_DEPTH_LIVE_FRAME phase=%s geometryChanges=%d workers=%d camera=%s screenshot=%s"),
++            Phase, LiveGeometryChanges, Root->WorldScapeLodInGeneration.Num(), *Camera->GetActorLocation().ToString(), *Path));
++        return true;
++    }
++
++    bool UpdateLiveLod(double Now)
++    {
++        if (!ShorePawn.IsValid() || !Camera.IsValid() || !PC.IsValid() || PC->GetViewTarget() != Camera.Get()
++            || Root->OceanMaterial.DefaultMaterial != Candidate.Get() || Surface->ResolvedOceanMaterialInstance != Candidate.Get()
++            || Root->WorldScapeLodOcean.Num() != Root->OceanMaxLod
++            || ShoreProfile != UAPSPlanetSurfaceProfileResolver::BuildProfileSignature(Surface->ResolvedSurfaceProfile))
++            return Finish(TEXT("live observer/material/root/profile ownership changed"));
++        if (Step == 7)
++        {
++            if (Root->bFreezeGeneration || !Root->IsActorTickEnabled()) return Finish(TEXT("live native generation unexpectedly frozen"));
++            const double Elapsed = FMath::Clamp(Now - LiveStart, 0.0, 20.0);
++            const double OffsetCm = 600.0 * (Elapsed <= 10.0 ? Elapsed : 20.0 - Elapsed);
++            const FVector StartUp = ShoreECEF.GetSafeNormal();
++            const FVector Along = FVector::CrossProduct(StartUp, ShoreWetTangent).GetSafeNormal();
++            const FVector Direction = (ShoreECEF + Along * OffsetCm).GetSafeNormal();
++            const FVector Sea = Direction * ShoreECEF.Size();
++            ShorePawn->GetCharacterMovement()->StopMovementImmediately();
++            ShorePawn->SetActorLocation(Root->ECEFToWorld(Sea + Direction * WaterDepthObserverClearanceCm).ToFVector(),
++                false, nullptr, ETeleportType::TeleportPhysics);
++            const FVector Up = Root->GetActorQuat().RotateVector(Direction);
++            const FVector Wet = Root->GetActorQuat().RotateVector(ShoreWetTangent);
++            const FVector ViewAlong = FVector::CrossProduct(Up, Wet).GetSafeNormal();
++            const FVector Forward = (Wet * 0.8 + ViewAlong * 0.6) * 0.866025403784 - Up * 0.5;
++            Camera->SetActorLocationAndRotation(Root->ECEFToWorld(Sea + Direction * WaterDepthClearanceCm).ToFVector(),
++                FRotationMatrix::MakeFromXZ(Forward, Up).Rotator());
++            if (Now-LiveLastCapture > 0.5) LiveFrameIntervalsMs.Add((Now-LiveLastFrame)*1000.0);
++            LiveLastFrame = Now; ++LiveFrames;
++            if (Elapsed >= 20.0)
++            {
++                Root->bFreezeGeneration = true; Root->SetActorTickEnabled(false); Step = 8;
++            }
++        }
++        if (!APSSharedTerrainMaterial::WritePhysicalFrame(Candidate.Get(), Root->GetRootComponent(), Planet->WorldScapePresentationScale))
++            return Finish(TEXT("live physical material frame failed"));
++        for (const UWorldScapeLod* Lod : Root->WorldScapeLodOcean)
++        {
++            if (!IsValid(Lod) || !IsValid(Lod->Mesh) || Lod->Mesh->GetNumSections() != 3)
++                return Finish(TEXT("live ocean LOD sections disappeared"));
++            for (int32 I = 0; I < 3; ++I)
++            {
++                const auto* S = Lod->Mesh->GetProcMeshSection(I);
++                if (!S || S->PlanetVertexBuffer.IsEmpty() || Lod->Mesh->GetMaterial(I) != Candidate.Get())
++                    return Finish(TEXT("live LOD publication lost candidate binding or vertices"));
++                for (int32 V : {0, S->PlanetVertexBuffer.Num()/2, S->PlanetVertexBuffer.Num()-1})
++                    if (S->PlanetVertexBuffer[V].UV1.Y != 1.0 || !FMath::IsFinite(S->PlanetVertexBuffer[V].UV1.X))
++                        return Finish(TEXT("live regenerated ocean lost signed-depth validity"));
++                if (Lod->Lod == 0 && I == 0)
++                {
++                    const FVector P = Lod->Mesh->GetComponentTransform().TransformPosition(S->PlanetVertexBuffer[0].Position);
++                    if (!LiveLastVertex.IsZero() && !P.Equals(LiveLastVertex, 0.1)) ++LiveGeometryChanges;
++                    LiveLastVertex = P;
++                }
++            }
++        }
++        const double Age = Now-LiveStart;
++        if (Step == 7 && ((Age >= 1.0 && LiveLastCapture < 0) || (Age >= 10.0 && LiveLastCapture-LiveStart < 9.0)))
++        {
++            if (!CaptureLiveLod(LiveLastCapture < 0 ? TEXT("05-live-start") : TEXT("06-live-turn")))
++                return Finish(TEXT("live screenshot failed"));
++            LiveLastCapture = Now;
++        }
++        if (Step == 8)
++        {
++            if (Root->WorldScapeLodInGeneration.Num()) { Root->CheckForLodGeneration(); return false; }
++            TArray<FSlot> StaticSlots = MoveTemp(Slots);
++            Slots.Reset();
++            for (const UWorldScapeLod* Lod : Root->WorldScapeLodOcean)
++                for (int32 I = 0; I < 3; ++I)
++                { FSlot& S = Slots.AddDefaulted_GetRef(); S.Mesh = Lod->Mesh; S.Index = I; S.Transform = Lod->Mesh->GetComponentTransform(); }
++            const bool Valid = ValidateWaterDepth();
++            Slots = MoveTemp(StaticSlots);
++            if (!Valid || LiveGeometryChanges < 2 || !CaptureLiveLod(TEXT("07-live-return")))
++                return Finish(TEXT("live depth oracle/update/capture check failed"));
++            LiveFrameIntervalsMs.Sort();
++            const double Median = LiveFrameIntervalsMs.IsEmpty() ? 0 : LiveFrameIntervalsMs[LiveFrameIntervalsMs.Num()/2];
++            const double P95 = LiveFrameIntervalsMs.IsEmpty() ? 0 : LiveFrameIntervalsMs[FMath::Min(LiveFrameIntervalsMs.Num()-1, int32(LiveFrameIntervalsMs.Num()*0.95))];
++            Test->AddInfo(FString::Printf(TEXT("WATER_DEPTH_LIVE_DONE frames=%d actualLod0VertexChanges=%d validSamplesEveryFrame=90 finalFullOracle=1 callbackMedianMs=%.6g callbackP95Ms=%.6g; instrumented hover with payload enabled, no walking/FPS acceptance"),
++                LiveFrames, LiveGeometryChanges, Median, P95));
++            return Finish();
++        }
++        return false;
++    }
++
 +    bool CaptureWaterDepthCase()
 +    {
 +        if (!PayloadIsUnchanged() || !PC.IsValid() || PC->GetViewTarget() != Camera.Get()
@@ -1165,18 +1344,26 @@ index 6bbb423..e938901 100644
 +        const FString Path = Folder / (FString(Phases[WaterDepthCase]) + TEXT(".png"));
 +        TArray64<uint8> Png; FImageUtils::PNGCompressImageArray(Size.X, Size.Y, Pixels, Png);
 +        if (!FFileHelper::SaveArrayToFile(Png, *Path)) return false;
-+        Test->AddInfo(FString::Printf(TEXT("WATER_DEPTH_GAMEPLAY phase=%s family=%s rootFrameGeometryRGBAUVStable=1 groundVisible=1 cameraHeightM=%.0f camera=%s parent=%s screenshot=%s; not FPS acceptance"),
-+            Phases[WaterDepthCase], Family(), WaterDepthClearanceCm / 100.0, *Camera->GetActorLocation().ToString(),
++        Test->AddInfo(FString::Printf(TEXT("WATER_DEPTH_GAMEPLAY phase=%s family=%s rootFrameGeometryRGBAUVStable=1 groundVisible=1 cameraHeightM=%.0f oblique=%d camera=%s parent=%s screenshot=%s; not FPS acceptance"),
++            Phases[WaterDepthCase], Family(), WaterDepthClearanceCm / 100.0, bWaterDepthOblique ? 1 : 0, *Camera->GetActorLocation().ToString(),
 +            *GetPathNameSafe(Slots[0].Mesh->GetMaterial(Slots[0].Index)), *Path));
          return true;
      }
  
-@@ -451,11 +749,23 @@ public:
+@@ -448,14 +906,31 @@ public:
+         if (!World.IsValid() || !Planet.IsValid()) return Finish(TEXT("production world/planet disappeared"));
+         if (Step > 0 && (!Root.IsValid() || !Surface.IsValid() || !PC.IsValid()
+             || Surface->WorldScapeRootInstance != Root.Get())) return Finish(TEXT("leased production root was replaced"));
++        if (Step == 7 || Step == 8) return UpdateLiveLod(Now);
          if (Step == 0)
          {
              bRadianceAB = FParse::Param(FCommandLine::Get(), TEXT("APSLavaRadianceAB"));
 +            bWaterDepthGameplay = FParse::Param(FCommandLine::Get(), TEXT("APSProbeWaterDepthGameplay"));
 +            bWaterDepthPaletteBudget = FParse::Param(FCommandLine::Get(), TEXT("APSWaterDepthPaletteBudget"));
++            bWaterDepthOblique = FParse::Param(FCommandLine::Get(), TEXT("APSWaterDepthOblique"));
++            bWaterDepthLiveLod = FParse::Param(FCommandLine::Get(), TEXT("APSWaterDepthLiveLod"));
++            if (bWaterDepthLiveLod && (!bWaterDepthGameplay || !bWaterDepthOblique))
++                return Finish(TEXT("live LOD diagnostic requires oblique Water depth mode"));
 +            float HeightM = 50.0f;
 +            FParse::Value(FCommandLine::Get(), TEXT("APSWaterDepthCameraHeightM="), HeightM);
 +            if (!FMath::IsFinite(HeightM) || HeightM < 10.0f || HeightM > 500.0f)
@@ -1195,7 +1382,7 @@ index 6bbb423..e938901 100644
              const bool bAllowedFamily = bSharedLiquidFamilies
                  ? LiquidType == EAPSPlanetLiquidType::Water || LiquidType == EAPSPlanetLiquidType::Ammonia
                  : LiquidType == EAPSPlanetLiquidType::Lava;
-@@ -466,6 +776,11 @@ public:
+@@ -466,6 +941,11 @@ public:
                  return Finish(TEXT("requires an actual ready generated full-scale ocean of the opted-in liquid family"));
              if (Root->bGenerateFoliages && !Root->Foliages.IsEmpty())
                  return Finish(TEXT("refusing a foliage-active root without a public foliage-worker drain"));
@@ -1207,7 +1394,7 @@ index 6bbb423..e938901 100644
              bRootTick = Root->IsActorTickEnabled(); bFrozen = Root->bFreezeGeneration;
              bSurfaceTick = Surface->IsActorTickEnabled(); bPlanetTick = Planet->IsActorTickEnabled();
              bLeased = true; Root->bFreezeGeneration = true; Root->SetActorTickEnabled(false);
-@@ -539,6 +854,11 @@ public:
+@@ -539,6 +1019,11 @@ public:
          {
              if (!CaptureProductionBaseline()) return Finish(TEXT("actual production shared liquid baseline/frame/slot assertion failed before candidate substitution"));
              if (++ProductionCaptureCount < 2) { SetFrame = GFrameCounter; Next = Now + 1.0; return false; }
@@ -1219,21 +1406,26 @@ index 6bbb423..e938901 100644
              if (bRadianceAB)
              {
                  if (!ApplyRadianceCase()) return Finish(TEXT("failed to begin isolated radiance A/B"));
-@@ -549,6 +869,13 @@ public:
+@@ -549,6 +1034,18 @@ public:
              Step = 3;
              return false;
          }
 +        if (Step == 6)
 +        {
 +            if (!CaptureWaterDepthCase()) return Finish(TEXT("depth capture or payload/ground/camera continuity failed"));
-+            if (++WaterDepthCase == 3) return Finish();
++            if (++WaterDepthCase == 3)
++            {
++                if (!bWaterDepthLiveLod) return Finish();
++                if (!StartLiveLod()) return Finish(TEXT("live candidate lease preconditions failed"));
++                Step = 7; return false;
++            }
 +            if (!ApplyWaterDepthCase()) return Finish(TEXT("failed to advance depth A/B"));
 +            return false;
 +        }
          if (Step == 5)
          {
              if (!CaptureRadianceCase()) return Finish(TEXT("radiance A/B capture or original parameter/payload continuity failed"));
-@@ -599,4 +926,60 @@ TSharedPtr<IAutomationLatentCommand> APSCreateSharedLiquidCoverageProbe(
+@@ -599,4 +1096,60 @@ TSharedPtr<IAutomationLatentCommand> APSCreateSharedLiquidCoverageProbe(
  {
      return MakeShared<APSSharedLavaCoverage::FProbe>(Test, World, Planet, true);
  }
