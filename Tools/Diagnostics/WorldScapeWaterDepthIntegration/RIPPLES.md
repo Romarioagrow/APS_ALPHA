@@ -609,3 +609,70 @@ The single-layer forward-light path selects one main directional light; losing
 that fill is a source-supported candidate explanation, not yet a measured cause
 of the luminance difference. Do not substitute arbitrary colour gain or turn off
 the accepted fill scene-wide. Retain the filtered shadows in any next SLW test.
+
+## v17/v18: actual secondary scene fill and source-equivalent control
+
+`-WaterSurfaceFill` selects a NEW private `SingleLayerFill20260927` asset pair;
+it requires the single-layer candidate and filtered shadows. The original pair
+and all accepted assets remain unchanged. Missing/unbound fill energy is zero.
+The adapter retains existing emission and adds only
+`BaseColor * (1-Metallic) * actualIrradiance * saturate(N dot L) / PI`.
+This is a diagnostic transport of the omitted direct-diffuse light through the
+emissive output, not a palette multiplier, fake second specular sun or physical
+water volume. It does not reproduce deferred screen-space AO for that light.
+
+The probe requires the actual transient `APSGameplaySurfaceFillLight`, no
+shadows/specular, channel 0, exactly two visible directional lights and a higher-
+priority main light. RoughDiffuse, Material.EnergyConservation and Substrate
+must be off. It obtains RGB from `GetColoredLightBrightness()` and direction
+from the actual component; it never edits the light. Each capture/performance
+phase checks stable binding. This is **static-fixture binding only**, not a
+production dynamic update path. Actual RGB was (1.723783,1.845358,2.065109),
+direction (0.884538,-0.047623,0.464031).
+
+Build `build-20260927-143927.log`: 5 actions / 11.05 s, success.
+DLL SHA256 `C1F98A65A16850DF785DC3802EADB46714D0F27B68DB71DED95B7C4A790283C5`.
+`BakeRipples.ps1 -Label bake-single-layer-fill-v1 -SingleLayerSurfaceControl
+-WaterSurfaceFill`, PID 20500: 2 new packages saved only to the private mount,
+0 errors / 7 existing warnings, owned process exited. Exact accepted source
+SHA1 guards passed; saved palette/coverage parameters remain unchanged.
+New master SHA256 `F83C541BDA3611C98C106E9222FDC0094AE493E4020404D600424C100DBA21D7`;
+MIC `8C7A3D8190A6C31B66AA1E4D757C97F44EFC7C9DC85FFDC8D67CEAA4C33E62D4`.
+
+Run `water-single-layer-fill-v1`, PID 4816, exited:
+`-Ripples -SingleLayerSurfaceControl -WaterFilteredShadows -WaterSurfaceFill
+-PaletteBudget -CameraHeightM 2 -Oblique -MaterialPerf`. Both tests succeeded,
+rendered 55 warnings / 0 errors. The second frame disables only candidate fill;
+depth and ripple slope stay identical. Inspected all three frames: no noisy
+shore fringe or broad angular AO patches. Interior water linear luminance
+(x=80:620,y=200:620) was .054704153 fill-on, .033475210 fill-off, .044124865
+original. This alone does NOT prove over-lighting: the original has neither
+new depth colouring nor ripple detail. No arbitrary gain was introduced.
+Whole-candidate frozen A/B/A/B/A GPU increments +.352770 / +.347933 ms, original
+means 4.20870 / 4.20452 / 4.20628 ms. Not isolated fill cost or walking/120 FPS.
+
+The v18 `-WaterFillBaselineControl` repeats with fill ON in both candidate
+frames; phase 1 sets depth strength AND new ripple slope to zero, restoring
+the inherited source material response before comparing to the original.
+No new bake. Build `build-20260927-144828.log`: 4 actions / 9.02 s, success;
+DLL SHA256 `05C11D1AF7115B51BD978A7592AD258222848139CAE7E3B36DA385554966969C`.
+Run `water-single-layer-fill-baseline-v1`, PID 25444, exited, same options
+without `-MaterialPerf`, adding `-WaterFillBaselineControl`: both tests passed,
+rendered 55 warnings / 0 errors, all geometry/camera/binding/restoration guards
+passed. Inspected source-equivalent and original-return images side by side.
+
+Source-equivalent water luminance .043691480 versus original .044129916
+(-0.994%); mean absolute RGB difference .438230/255, p99 2. With depth/ripples
+enabled luminance .054812705 (+24.2%); therefore the earlier +24% observation
+must not be attributed to fill overcompensation. Land control (x=980:1200,
+y=250:650) mean RGB difference .250845/255, p99 2, luminance .035376839 versus
+.035420709. These are local image measurements, not exact pixel equality,
+all-view calibration or physical translucency acceptance.
+
+Reports SHA256, fill A/B then source baseline:
+`7278A0104B86679EE3BB8CB58039ACF8916F3B592E48A1034FFA4E2872858A04`,
+`049FCCDE964E55803CA3691A98D2F2A02875742032DA1CB63F6AB365138E9B52`.
+Accepted production Source/Content/Config/Plugins and binaries are unchanged.
+Next work is dynamic light binding plus moving/native-LOD and orbit/family
+coverage. Do not transplant the frozen fixture or enable the new material in
+production merely because this source-equivalent lighting comparison passed.

@@ -735,10 +735,10 @@ index 0000000..cf12891
 +}
 diff --git a/Source/APS_ALPHA/Core/Planetary/APSWaterRippleCandidate.h b/Source/APS_ALPHA/Core/Planetary/APSWaterRippleCandidate.h
 new file mode 100644
-index 0000000..60b6485
+index 0000000..f65293d
 --- /dev/null
 +++ b/Source/APS_ALPHA/Core/Planetary/APSWaterRippleCandidate.h
-@@ -0,0 +1,18 @@
+@@ -0,0 +1,19 @@
 +#pragma once
 +
 +#include "Misc/PackageName.h"
@@ -748,6 +748,7 @@ index 0000000..60b6485
 +{
 +inline constexpr const TCHAR* Folder = TEXT("/APSWaterDetail/ViewAnchorRipples20260927");
 +inline constexpr const TCHAR* SingleLayerFolder = TEXT("/APSWaterDetail/SingleLayerSurfaceControl20260927");
++inline constexpr const TCHAR* SingleLayerFillFolder = TEXT("/APSWaterDetail/SingleLayerFill20260927");
 +inline void RegisterPrivateMount()
 +{
 +    // Deliberately outside Content: the isolated host's Content is a read-only
@@ -773,10 +774,10 @@ index a4ad9d1..94ed05c 100644
  	{
  		return APSWaterDepthMaterialBuilder::Build(AssetTools, true) ? 0 : 33;
 diff --git a/Source/APS_ALPHA/Editor/APSWaterDepthMaterialBuilder.h b/Source/APS_ALPHA/Editor/APSWaterDepthMaterialBuilder.h
-index 9a3dba9..bbdc612 100644
+index 9a3dba9..972a524 100644
 --- a/Source/APS_ALPHA/Editor/APSWaterDepthMaterialBuilder.h
 +++ b/Source/APS_ALPHA/Editor/APSWaterDepthMaterialBuilder.h
-@@ -5,15 +5,24 @@
+@@ -5,15 +5,27 @@
  #include "Materials/MaterialExpressionCustom.h"
  #include "Materials/MaterialExpressionDDX.h"
  #include "Materials/MaterialExpressionDDY.h"
@@ -796,14 +797,17 @@ index 9a3dba9..bbdc612 100644
      using namespace APSSharedAmmoniaMaterialBuilder;
 -    const TCHAR* Folder = bFiltered
 +    const bool bSingleLayerControl = FParse::Param(FCommandLine::Get(), TEXT("APSWaterSingleLayerCandidate"));
++    const bool bSurfaceFill = FParse::Param(FCommandLine::Get(), TEXT("APSWaterSurfaceFill"));
++    if (bSurfaceFill && !bSingleLayerControl) return false;
 +    if (bSingleLayerControl && !bRipples) return false;
 +    if (bRipples) APSWaterRippleCandidate::RegisterPrivateMount();
-+    const TCHAR* Folder = bSingleLayerControl ? APSWaterRippleCandidate::SingleLayerFolder
++    const TCHAR* Folder = bSurfaceFill ? APSWaterRippleCandidate::SingleLayerFillFolder
++        : bSingleLayerControl ? APSWaterRippleCandidate::SingleLayerFolder
 +        : bRipples ? APSWaterRippleCandidate::Folder : bFiltered
          ? TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Diagnostics/WaterDepthFiltered20260927")
          : TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Diagnostics/WaterDepth20260927");
      FCore Core(AssetTools, Folder);
-@@ -29,6 +38,8 @@ inline bool Build(IAssetTools& AssetTools, bool bFiltered = false)
+@@ -29,6 +41,8 @@ inline bool Build(IAssetTools& AssetTools, bool bFiltered = false)
          || !SavedSourceMatches(Water, TEXT("30ADFAAAF2EB11B5E4D30299FA886A67861E8CC8"))
          || Water->Parent.Get() != Source || Source->GetBlendMode() != BLEND_Masked)
          return Fail(TEXT("Accepted saved Water dependencies changed"));
@@ -812,7 +816,7 @@ index 9a3dba9..bbdc612 100644
      auto* Master = Cast<UMaterial>(Core.Duplicate(Source, TEXT("M_APS_WaterDepth")));
      if (!Master) return Fail(TEXT("New master only"));
  
-@@ -114,15 +125,41 @@ inline bool Build(IAssetTools& AssetTools, bool bFiltered = false)
+@@ -114,15 +128,43 @@ inline bool Build(IAssetTools& AssetTools, bool bFiltered = false)
      ColorMix->Alpha.Expression = Alpha;
      for (const auto& Pair : Preserved)
          if (!SameInput(*Pair.Key, Pair.Value, false)) return Fail(TEXT("Unrelated graph edge changed"));
@@ -843,6 +847,8 @@ index 9a3dba9..bbdc612 100644
 +        Master->GetExpressionInputForProperty(MP_Opacity)->Connect(0, One);
 +        Master->SetShadingModel(MSM_SingleLayerWater);
 +    }
++    if (bSurfaceFill && !APSWaterRippleMaterialBuilder::AddSurfaceFill(Core, Master))
++        return Fail(TEXT("Scene-derived surface fill adapter failed"));
 +
      auto* Candidate = Cast<UMaterialInstanceConstant>(Core.Duplicate(Water, TEXT("MI_APS_WaterDepth")));
      if (!Candidate) return Fail(TEXT("New Water MIC only"));
@@ -854,7 +860,7 @@ index 9a3dba9..bbdc612 100644
      if (!APSSharedLavaMaterialBuilder::SameTypeState(Water, Candidate)
          || Master->TwoSided != Source->TwoSided || Master->bTangentSpaceNormal != Source->bTangentSpaceNormal
          || Master->OpacityMaskClipValue != Source->OpacityMaskClipValue
-@@ -156,8 +193,10 @@ inline bool Build(IAssetTools& AssetTools, bool bFiltered = false)
+@@ -156,8 +198,12 @@ inline bool Build(IAssetTools& AssetTools, bool bFiltered = false)
          const FString Filename = FPackageName::LongPackageNameToFilename(Package->GetName(), FPackageName::GetAssetPackageExtension());
          if (!UPackage::SavePackage(Package, Output, *Filename, Args)) return Fail(TEXT("Candidate save failed"));
      }
@@ -864,15 +870,17 @@ index 9a3dba9..bbdc612 100644
 +        int(bFiltered), HalfDepth->DefaultValue, Strength->DefaultValue, int(bRipples));
 +    if (bSingleLayerControl)
 +        UE_LOG(LogTemp, Display, TEXT("[APS.WaterDepth] singleLayerSurfaceControl=1 opacity=1 volume=0 production=0 folder=%s"), Folder);
++    if (bSurfaceFill)
++        UE_LOG(LogTemp, Display, TEXT("[APS.WaterDepth] sceneSurfaceFill=1 unboundEnergy=0 acceptedPalettePreserved=1 production=0"));
      return true;
  }
  }
 diff --git a/Source/APS_ALPHA/Editor/APSWaterRippleMaterialBuilder.h b/Source/APS_ALPHA/Editor/APSWaterRippleMaterialBuilder.h
 new file mode 100644
-index 0000000..f0b6b81
+index 0000000..5257583
 --- /dev/null
 +++ b/Source/APS_ALPHA/Editor/APSWaterRippleMaterialBuilder.h
-@@ -0,0 +1,174 @@
+@@ -0,0 +1,212 @@
 +#pragma once
 +
 +#if WITH_EDITOR
@@ -880,6 +888,44 @@ index 0000000..f0b6b81
 +
 +namespace APSWaterRippleMaterialBuilder
 +{
++// The generated gameplay fill is a second unshadowed, diffuse-only directional
++// light. UE's SLW forward pass evaluates only its selected main directional.
++// Explicit scene-derived Lambert contribution, not an albedo/brightness retune.
++// Runtime guards require the legacy non-rough, non-energy-preserving diffuse
++// model and the actual tagged fill. A missing/unbound fill contributes zero.
++inline bool AddSurfaceFill(APSSharedTerrainMaterialBuilder::FBuild& Core, UMaterial* Master)
++{
++    if (Master->bTangentSpaceNormal) return false;
++    auto* Fill = Core.Add<UMaterialExpressionCustom>(Master);
++    Fill->Description = TEXT("Actual secondary scene fill: diffuse Lambert, no palette gain or second specular sun");
++    Fill->OutputType = CMOT_Float3;
++    for (const auto& P : {TPair<FName, EMaterialProperty>(TEXT("Base"), MP_BaseColor),
++        {TEXT("N"), MP_Normal}, {TEXT("Metal"), MP_Metallic}, {TEXT("Existing"), MP_EmissiveColor}})
++    {
++        const FExpressionInput* Source = Master->GetExpressionInputForProperty(P.Value);
++        if (!Source || !Source->Expression) return false;
++        FCustomInput Input; Input.InputName = P.Key; Input.Input = *Source;
++        Fill->Inputs.Add(Input);
++    }
++    for (const auto& P : {TPair<const TCHAR*, const TCHAR*>(TEXT("APS_WaterFillDirection"), TEXT("ToLight")),
++        {TEXT("APS_WaterFillIrradiance"), TEXT("Irradiance")}})
++    {
++        auto* Parameter = Core.Add<UMaterialExpressionVectorParameter>(Master);
++        Parameter->ParameterName = P.Key;
++        Parameter->DefaultValue = FLinearColor::Black;
++        Parameter->Group = TEXT("APS Scene-derived Surface Fill");
++        Parameter->UpdateParameterGuid(true, true);
++        FCustomInput Input; Input.InputName = P.Value; Input.Input.Expression = Parameter;
++        Input.Input.Mask = Input.Input.MaskR = Input.Input.MaskG = Input.Input.MaskB = 1;
++        Fill->Inputs.Add(Input);
++    }
++    Fill->Code = TEXT("if (!all(isfinite(Irradiance)) || !any(Irradiance > 0.0) || dot(ToLight,ToLight) < 0.5) return Existing;\n")
++        TEXT("float NoL = saturate(dot(normalize(N), normalize(ToLight)));\n")
++        TEXT("return Existing + saturate(Base) * (1.0-saturate(Metal)) * max(Irradiance,0.0) * (NoL * 0.318309886184);\n");
++    Master->GetExpressionInputForProperty(MP_EmissiveColor)->Connect(0, Fill);
++    return true;
++}
++
 +// A normal-only, stationary small-wave band. Existing coarse waves, colour,
 +// roughness, Fresnel, coverage and geometry remain connected exactly as saved.
 +inline bool Add(APSSharedTerrainMaterialBuilder::FBuild& Core, UMaterial* Master)
@@ -1079,7 +1125,7 @@ index b6f8aac..4f76b9a 100644
  	// or an occlusion source.  WorldScape's defaults otherwise let independently
  	// stitched clipmap sections cast their rectangular boundaries onto the terrain,
 diff --git a/Source/APS_ALPHA/Tests/APSSharedLavaCoverageProbe.cpp b/Source/APS_ALPHA/Tests/APSSharedLavaCoverageProbe.cpp
-index 6bbb423..647eaf5 100644
+index 6bbb423..88757b2 100644
 --- a/Source/APS_ALPHA/Tests/APSSharedLavaCoverageProbe.cpp
 +++ b/Source/APS_ALPHA/Tests/APSSharedLavaCoverageProbe.cpp
 @@ -3,6 +3,7 @@
@@ -1090,8 +1136,14 @@ index 6bbb423..647eaf5 100644
  #include "APS_ALPHA/Core/Planetary/APSSharedLavaMaterial.h"
  #include "APS_ALPHA/Core/Planetary/APSSharedWaterMaterial.h"
  #include "APS_ALPHA/Generation/PlanetarySurfaceGenerator.h"
-@@ -13,6 +14,11 @@
+@@ -10,9 +11,17 @@
+ #include "Camera/CameraComponent.h"
+ #include "Camera/PlayerCameraManager.h"
+ #include "Components/SceneCaptureComponent2D.h"
++#include "Components/DirectionalLightComponent.h"
++#include "Engine/DirectionalLight.h"
  #include "Engine/GameViewportClient.h"
++#include "EngineUtils.h"
  #include "Engine/TextureRenderTarget2D.h"
  #include "Engine/World.h"
 +#include "EngineGlobals.h"
@@ -1102,7 +1154,7 @@ index 6bbb423..647eaf5 100644
  #include "LocalVertexFactory.h"
  #include "MaterialShared.h"
  #include "Framework/Application/SlateApplication.h"
-@@ -28,11 +34,19 @@
+@@ -28,11 +37,19 @@
  #include "UnrealClient.h"
  #include "UObject/StrongObjectPtr.h"
  #include "APSLavaShorelineProbe.h"
@@ -1122,7 +1174,7 @@ index 6bbb423..647eaf5 100644
  const TCHAR* Labels[] = { TEXT("00-context0-alpha0"), TEXT("01-context0-alpha1"),
      TEXT("02-context1-alpha0"), TEXT("03-context1-alpha1") };
  // The first pair (1 / 1.25) was captured before and after crust correction.
-@@ -104,6 +118,47 @@ class FProbe final : public IAutomationLatentCommand
+@@ -104,6 +121,47 @@ class FProbe final : public IAutomationLatentCommand
      bool bLeased = false, bRestored = false, bDone = false;
      bool bRootTick = false, bSurfaceTick = false, bPlanetTick = false, bFrozen = false;
      bool bSharedLiquidFamilies = false;
@@ -1170,7 +1222,7 @@ index 6bbb423..647eaf5 100644
      EAPSPlanetLiquidType LiquidType = EAPSPlanetLiquidType::Lava;
  
      const TCHAR* Marker() const { return bSharedLiquidFamilies ? TEXT("SHARED_LIQUID_COVERAGE") : TEXT("LAVA_COVERAGE"); }
-@@ -114,6 +169,138 @@ class FProbe final : public IAutomationLatentCommand
+@@ -114,6 +172,138 @@ class FProbe final : public IAutomationLatentCommand
              : LiquidType == EAPSPlanetLiquidType::Ammonia ? TEXT("Ammonia") : TEXT("Lava");
      }
  
@@ -1309,7 +1361,7 @@ index 6bbb423..647eaf5 100644
      UMaterialInstanceDynamic* CreateSharedLiquidCandidate(UMaterialInstanceDynamic* SourceMID)
      {
          // Exact family parents matter: Water and Ammonia share a master, not
-@@ -129,6 +316,70 @@ class FProbe final : public IAutomationLatentCommand
+@@ -129,6 +319,74 @@ class FProbe final : public IAutomationLatentCommand
              || Root->OceanMaterial.DefaultMaterial != SourceMID) return nullptr;
          for (const FSlot& Slot : Slots)
              if (Slot.OriginalMaterial.Get() != SourceMID) return nullptr;
@@ -1318,9 +1370,13 @@ index 6bbb423..647eaf5 100644
 +            if (!bWater || SourceParent != ExpectedParent) return nullptr;
 +            const bool bRipples = FParse::Param(FCommandLine::Get(), TEXT("APSWaterRipples"));
 +            const bool bSingleLayerControl = FParse::Param(FCommandLine::Get(), TEXT("APSWaterSingleLayerCandidate"));
++            const bool bSurfaceFill = FParse::Param(FCommandLine::Get(), TEXT("APSWaterSurfaceFill"));
 +            if (bSingleLayerControl && !bRipples) return nullptr;
++            if (bSurfaceFill && (!bSingleLayerControl
++                || !FParse::Param(FCommandLine::Get(), TEXT("APSWaterFilteredShadows")))) return nullptr;
 +            if (bRipples) APSWaterRippleCandidate::RegisterPrivateMount();
-+            const FString Folder = bSingleLayerControl ? FString(APSWaterRippleCandidate::SingleLayerFolder) + TEXT("/")
++            const FString Folder = bSurfaceFill ? FString(APSWaterRippleCandidate::SingleLayerFillFolder) + TEXT("/")
++                : bSingleLayerControl ? FString(APSWaterRippleCandidate::SingleLayerFolder) + TEXT("/")
 +                : bRipples ? FString(APSWaterRippleCandidate::Folder) + TEXT("/")
 +                : TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Diagnostics/WaterDepthFiltered20260927/");
 +            UMaterialInstance* Template = LoadObject<UMaterialInstance>(nullptr,
@@ -1380,7 +1436,7 @@ index 6bbb423..647eaf5 100644
          UMaterialInstanceDynamic* MID = bWater
              ? APSSharedWaterMaterial::CreateUnboundCandidate(Root.Get(), Root->GetRootComponent(),
                  Planet->WorldScapePresentationScale, false, Surface->ResolvedSurfaceProfile, Planet->IsManual, Root->bOcean)
-@@ -160,6 +411,9 @@ class FProbe final : public IAutomationLatentCommand
+@@ -160,6 +418,9 @@ class FProbe final : public IAutomationLatentCommand
              const FWorldScapeMeshSection* S = Slot.Mesh->GetProcMeshSection(Slot.Index);
              if (!S || S->PlanetVertexBuffer.Num() != Slot.OriginalColors.Num()
                  || PayloadHash(*S) != Slot.Hash) return false;
@@ -1390,7 +1446,7 @@ index 6bbb423..647eaf5 100644
          }
          return true;
      }
-@@ -168,10 +422,61 @@ class FProbe final : public IAutomationLatentCommand
+@@ -168,10 +429,61 @@ class FProbe final : public IAutomationLatentCommand
      {
          if (bRestored) return;
          bRestored = true;
@@ -1452,7 +1508,7 @@ index 6bbb423..647eaf5 100644
              if (!Slot.Mesh.IsValid()) { Test->AddError(FString(ErrorPrefix()) + TEXT("mesh disappeared before restore")); continue; }
              FWorldScapeMeshSection* S = Slot.Mesh->GetProcMeshSection(Slot.Index);
              if (!S || S->PlanetVertexBuffer.Num() != Slot.OriginalColors.Num() || PayloadHash(*S) != Slot.Hash)
-@@ -190,7 +495,7 @@ class FProbe final : public IAutomationLatentCommand
+@@ -190,7 +502,7 @@ class FProbe final : public IAutomationLatentCommand
              ChangedMeshes.Add(Slot.Mesh.Get());
          }
          for (UWorldScapeMeshComponent* Mesh : ChangedMeshes) Mesh->MarkRenderStateDirty();
@@ -1461,7 +1517,7 @@ index 6bbb423..647eaf5 100644
          for (const FVisibility& V : GroundVisibility)
              if (V.Mesh.IsValid()) { V.Mesh->SetVisibility(V.bVisible, false); V.Mesh->SetHiddenInGame(V.bHidden, false); }
          if (PC.IsValid() && Camera.IsValid() && PC->GetViewTarget() == Camera.Get() && OriginalViewTarget.IsValid())
-@@ -203,6 +508,17 @@ class FProbe final : public IAutomationLatentCommand
+@@ -203,6 +515,17 @@ class FProbe final : public IAutomationLatentCommand
              if (Surface.IsValid()) Surface->SetActorTickEnabled(bSurfaceTick);
              if (Planet.IsValid()) Planet->SetActorTickEnabled(bPlanetTick);
          }
@@ -1479,7 +1535,7 @@ index 6bbb423..647eaf5 100644
          Test->AddInfo(FString::Printf(TEXT("%s_RESTORE slots=%d/%d colors=%d cameraRestored=%d family=%s"),
              Marker(), RestoredSlots, Slots.Num(), RestoredVertices, PC.IsValid() && PC->GetViewTarget() == OriginalViewTarget.Get() ? 1 : 0, Family()));
      }
-@@ -227,7 +543,7 @@ class FProbe final : public IAutomationLatentCommand
+@@ -227,7 +550,7 @@ class FProbe final : public IAutomationLatentCommand
                  Slot.Transform = Lod->Mesh->GetComponentTransform(); Slot.Hash = PayloadHash(*S);
                  for (const FWorldScapeMeshVertex& V : S->PlanetVertexBuffer) Slot.OriginalColors.Add(V.Color);
                  TotalVertices += Slot.OriginalColors.Num();
@@ -1488,7 +1544,7 @@ index 6bbb423..647eaf5 100644
                  // Aim at an actual nondegenerate LOD0 triangle, not a synthetic plane.
                  for (int32 I = 0; I + 2 < S->PlanetIndexBuffer.Num(); I += 3)
                  {
-@@ -236,13 +552,35 @@ class FProbe final : public IAutomationLatentCommand
+@@ -236,13 +559,35 @@ class FProbe final : public IAutomationLatentCommand
                          || !S->PlanetVertexBuffer.IsValidIndex(C)) return false;
                      const FVector P0 = S->PlanetVertexBuffer[A].Position, P1 = S->PlanetVertexBuffer[B].Position, P2 = S->PlanetVertexBuffer[C].Position;
                      if (FVector::CrossProduct(P1-P0, P2-P0).SizeSquared() < 1.0) continue;
@@ -1525,7 +1581,7 @@ index 6bbb423..647eaf5 100644
          for (const UWorldScapeLod* Lod : R->WorldScapeLod)
              if (IsValid(Lod) && IsValid(Lod->Mesh))
              {
-@@ -266,8 +604,19 @@ class FProbe final : public IAutomationLatentCommand
+@@ -266,8 +611,19 @@ class FProbe final : public IAutomationLatentCommand
          if (Up.IsNearlyZero()) return false;
          FActorSpawnParameters Params; Params.ObjectFlags |= RF_Transient;
          Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
@@ -1546,7 +1602,7 @@ index 6bbb423..647eaf5 100644
          Camera = NewCamera;
          if (!NewCamera || !NewCamera->GetCameraComponent()) return false;
          const FMinimalViewInfo& Natural = Controller->PlayerCameraManager->GetCameraCacheView();
-@@ -280,6 +629,87 @@ class FProbe final : public IAutomationLatentCommand
+@@ -280,6 +636,87 @@ class FProbe final : public IAutomationLatentCommand
          // Explicit isolation only. The natural-route fixture has three preceding
          // unchanged scene frames; the opt-in Lava orbital route does not claim
          // those frames. No light/exposure/foliage/material-style edits here.
@@ -1634,7 +1690,7 @@ index 6bbb423..647eaf5 100644
          for (const FVisibility& V : GroundVisibility) if (V.Mesh.IsValid()) V.Mesh->SetVisibility(false, false);
          auto* Capture = NewObject<USceneCaptureComponent2D>(NewCamera);
          if (!Capture) return false;
-@@ -333,8 +763,346 @@ class FProbe final : public IAutomationLatentCommand
+@@ -333,8 +770,419 @@ class FProbe final : public IAutomationLatentCommand
          const FString Path = Folder / FString::Printf(TEXT("production-%02d-original-material-rgba.png"), ProductionCaptureCount);
          TArray64<uint8> Png; FImageUtils::PNGCompressImageArray(Size.X, Size.Y, Pixels, Png);
          if (!FFileHelper::SaveArrayToFile(Png, *Path)) return false;
@@ -1685,16 +1741,85 @@ index 6bbb423..647eaf5 100644
 +        return bTagged && Invalid == 0 && Samples > 0 && MaxErrorKm < 1.e-5; // 1 cm CPU coordinate round trip.
 +    }
 +
++    bool ResolveWaterSurfaceFill(FLinearColor& Direction, FLinearColor& Irradiance) const
++    {
++        if (!World.IsValid()) return false;
++        // Exact legacy Lambert control only. Do not approximate another BRDF or
++        // silently double-count a light selected by the water forward pass.
++        for (const TCHAR* Name : {TEXT("r.Material.RoughDiffuse"),
++            TEXT("r.Material.EnergyConservation"), TEXT("r.Substrate")})
++        {
++            const auto* CVar = IConsoleManager::Get().FindConsoleVariable(Name);
++            if (!CVar || CVar->GetInt() != 0) return false;
++        }
++        UDirectionalLightComponent* Fill = nullptr;
++        UDirectionalLightComponent* Main = nullptr;
++        int32 VisibleLights = 0;
++        for (TActorIterator<ADirectionalLight> It(World.Get()); It; ++It)
++        {
++            auto* Light = Cast<UDirectionalLightComponent>(It->GetLightComponent());
++            if (!Light || !Light->bAffectsWorld || !Light->IsVisible() || Light->bHiddenInGame
++                || It->IsHidden() || !Light->LightingChannels.bChannel0 || Light->Intensity <= 0.0f) continue;
++            ++VisibleLights;
++            if (!Main || Light->ForwardShadingPriority > Main->ForwardShadingPriority) Main = Light;
++            if (It->ActorHasTag(TEXT("APSGameplaySurfaceFillLight")))
++            {
++                if (Fill || !It->HasAnyFlags(RF_Transient) || Light->CastShadows
++                    || Light->SpecularScale != 0.0f || Light->LightingChannels.bChannel1
++                    || Light->LightingChannels.bChannel2) return false;
++                Fill = Light;
++            }
++        }
++        if (VisibleLights != 2 || !Fill || !Main || Main == Fill
++            || Main->ForwardShadingPriority <= Fill->ForwardShadingPriority) return false;
++        const FVector ToLight = -Fill->GetForwardVector().GetSafeNormal();
++        Irradiance = Fill->GetColoredLightBrightness();
++        if (ToLight.ContainsNaN() || ToLight.IsNearlyZero() || !FMath::IsFinite(Irradiance.R)
++            || !FMath::IsFinite(Irradiance.G) || !FMath::IsFinite(Irradiance.B)
++            || Irradiance.R < 0.0f || Irradiance.G < 0.0f || Irradiance.B < 0.0f) return false;
++        Direction = FLinearColor(ToLight.X, ToLight.Y, ToLight.Z, 0.0f);
++        return true;
++    }
++
++    bool BindWaterSurfaceFill(bool bEnabled)
++    {
++        if (!FParse::Param(FCommandLine::Get(), TEXT("APSWaterSurfaceFill"))) return true;
++        FLinearColor Direction, Irradiance, Parameter;
++        if (!Candidate.IsValid() || !ResolveWaterSurfaceFill(Direction, Irradiance)
++            || !Candidate->GetVectorParameterValue(FMaterialParameterInfo(TEXT("APS_WaterFillDirection")), Parameter)
++            || !Candidate->GetVectorParameterValue(FMaterialParameterInfo(TEXT("APS_WaterFillIrradiance")), Parameter)) return false;
++        Candidate->SetVectorParameterValue(TEXT("APS_WaterFillDirection"), Direction);
++        Candidate->SetVectorParameterValue(TEXT("APS_WaterFillIrradiance"), bEnabled ? Irradiance : FLinearColor::Black);
++        Test->AddInfo(FString::Printf(TEXT("WATER_SCENE_FILL enabled=%d source=APSGameplaySurfaceFillLight direction=%s actualIrradiance=%s legacyLambert=1 shadows=0 specular=0 sceneLightUnchanged=1 paletteUnchanged=1"),
++            bEnabled ? 1 : 0, *Direction.ToString(), *Irradiance.ToString()));
++        return true;
++    }
++
++    bool WaterSurfaceFillIsStable(bool bEnabled) const
++    {
++        if (!FParse::Param(FCommandLine::Get(), TEXT("APSWaterSurfaceFill"))) return true;
++        FLinearColor Direction, Irradiance, BoundDirection, BoundIrradiance;
++        return Candidate.IsValid() && ResolveWaterSurfaceFill(Direction, Irradiance)
++            && Candidate->GetVectorParameterValue(FMaterialParameterInfo(TEXT("APS_WaterFillDirection")), BoundDirection)
++            && Candidate->GetVectorParameterValue(FMaterialParameterInfo(TEXT("APS_WaterFillIrradiance")), BoundIrradiance)
++            && Direction.Equals(BoundDirection, 0.001f)
++            && (bEnabled ? Irradiance : FLinearColor::Black).Equals(BoundIrradiance, 0.0001f);
++    }
++
 +    bool ApplyWaterDepthCase()
 +    {
 +        if (!PayloadIsUnchanged() || !Candidate.IsValid() || WaterDepthCase < 0 || WaterDepthCase > 2) return false;
 +        const bool bRipples = FParse::Param(FCommandLine::Get(), TEXT("APSWaterRipples"));
++        const bool bSurfaceFill = FParse::Param(FCommandLine::Get(), TEXT("APSWaterSurfaceFill"));
++        const bool bFillBaseline = FParse::Param(FCommandLine::Get(), TEXT("APSWaterFillBaselineControl"));
++        if (bFillBaseline && !bSurfaceFill) return false;
++        if (!BindWaterSurfaceFill(WaterDepthCase != 1 || bFillBaseline)) return false;
 +        // In a ripple A/B keep the same depth colour for the disabled-ripple
 +        // control, so a colour lift cannot masquerade as new surface detail.
-+        Candidate->SetScalarParameterValue(TEXT("APS_WaterDepthStrength"), WaterDepthCase == 1 && !bRipples ? 0.0f : WaterDepthStrength);
++        Candidate->SetScalarParameterValue(TEXT("APS_WaterDepthStrength"), WaterDepthCase == 1 && (!bRipples || bFillBaseline) ? 0.0f : WaterDepthStrength);
 +        if (bRipples)
 +        {
-+            Candidate->SetScalarParameterValue(TEXT("APS_WaterRippleSlope"), WaterDepthCase == 1 ? 0.0f : 0.065f);
++            Candidate->SetScalarParameterValue(TEXT("APS_WaterRippleSlope"), WaterDepthCase == 1 && (!bSurfaceFill || bFillBaseline) ? 0.0f : 0.065f);
 +            if (FParse::Param(FCommandLine::Get(), TEXT("APSRippleIsolation")))
 +            {
 +                Candidate->SetScalarParameterValue(TEXT("APS_WaterRippleSlope"), 0.065f);
@@ -1735,6 +1860,7 @@ index 6bbb423..647eaf5 100644
 +            || PerfPhase < 0 || PerfPhase >= 5 || !Root->bFreezeGeneration
 +            || Root->IsActorTickEnabled() || Surface->IsActorTickEnabled() || Planet->IsActorTickEnabled()) return false;
 +        const bool bCandidate = (PerfPhase % 2) == 1;
++        if (!BindWaterSurfaceFill(true)) return false;
 +        Candidate->SetScalarParameterValue(TEXT("APS_WaterDepthStrength"), WaterDepthStrength);
 +        if (FParse::Param(FCommandLine::Get(), TEXT("APSWaterRipples")))
 +            Candidate->SetScalarParameterValue(TEXT("APS_WaterRippleSlope"), 0.065f);
@@ -1777,7 +1903,7 @@ index 6bbb423..647eaf5 100644
 +            PerfSamples[PerfPhase].Add(S);
 +        }
 +        if (Now-PerfPhaseStart < 5.0) return false;
-+        if (!PayloadIsUnchanged() || PerfSamples[PerfPhase].Num() < 60)
++        if (!PayloadIsUnchanged() || !WaterSurfaceFillIsStable(true) || PerfSamples[PerfPhase].Num() < 60)
 +            return Finish(TEXT("insufficient performance samples or changed frozen geometry"));
 +        const bool bCandidate = (PerfPhase % 2) == 1;
 +        for (const FSlot& Slot : Slots)
@@ -1957,15 +2083,18 @@ index 6bbb423..647eaf5 100644
 +
 +    bool CaptureWaterDepthCase()
 +    {
-+        if (!PayloadIsUnchanged() || !PC.IsValid() || PC->GetViewTarget() != Camera.Get()
++        const bool bFillBaseline = FParse::Param(FCommandLine::Get(), TEXT("APSWaterFillBaselineControl"));
++        if (!PayloadIsUnchanged() || !WaterSurfaceFillIsStable(WaterDepthCase != 1 || bFillBaseline)
++            || !PC.IsValid() || PC->GetViewTarget() != Camera.Get()
 +            || !Camera->GetActorTransform().Equals(WaterDepthCamera, 0.0)) return false;
 +        for (const auto& V : GroundVisibility)
 +            if (!V.Mesh.IsValid() || V.Mesh->IsVisible() != V.bVisible || !!V.Mesh->bHiddenInGame != V.bHidden) return false;
 +        for (const auto& Slot : Slots)
 +            if (Slot.Mesh->GetMaterial(Slot.Index) != (WaterDepthCase == 2 ? Slot.OriginalMaterial.Get() : Candidate.Get())) return false;
 +        const bool bIsolation = FParse::Param(FCommandLine::Get(), TEXT("APSRippleIsolation"));
++        const bool bSurfaceFill = FParse::Param(FCommandLine::Get(), TEXT("APSWaterSurfaceFill"));
 +        const TCHAR* Phases[] = {bIsolation ? TEXT("02-unfiltered-slope") : TEXT("02-filtered-depth"),
-+            bIsolation ? TEXT("03-analytic-control") : (FParse::Param(FCommandLine::Get(), TEXT("APSWaterRipples")) ? TEXT("03-depth-only") : TEXT("03-zero-strength")),
++            bFillBaseline ? TEXT("03-fill-source-baseline") : bSurfaceFill ? TEXT("03-no-secondary-fill") : bIsolation ? TEXT("03-analytic-control") : (FParse::Param(FCommandLine::Get(), TEXT("APSWaterRipples")) ? TEXT("03-depth-only") : TEXT("03-zero-strength")),
 +            TEXT("04-original-return")};
 +        UGameViewportClient* Client = World->GetGameViewport();
 +        TArray<FColor> Pixels; FIntVector Size = FIntVector::ZeroValue;
@@ -1983,7 +2112,7 @@ index 6bbb423..647eaf5 100644
          return true;
      }
  
-@@ -444,18 +1212,39 @@ public:
+@@ -444,18 +1292,39 @@ public:
      {
          if (bDone) return true;
          const double Now = FPlatformTime::Seconds(); if (Start == 0) Start = Now;
@@ -2024,7 +2153,7 @@ index 6bbb423..647eaf5 100644
              const bool bAllowedFamily = bSharedLiquidFamilies
                  ? LiquidType == EAPSPlanetLiquidType::Water || LiquidType == EAPSPlanetLiquidType::Ammonia
                  : LiquidType == EAPSPlanetLiquidType::Lava;
-@@ -466,6 +1255,11 @@ public:
+@@ -466,6 +1335,11 @@ public:
                  return Finish(TEXT("requires an actual ready generated full-scale ocean of the opted-in liquid family"));
              if (Root->bGenerateFoliages && !Root->Foliages.IsEmpty())
                  return Finish(TEXT("refusing a foliage-active root without a public foliage-worker drain"));
@@ -2036,7 +2165,7 @@ index 6bbb423..647eaf5 100644
              bRootTick = Root->IsActorTickEnabled(); bFrozen = Root->bFreezeGeneration;
              bSurfaceTick = Surface->IsActorTickEnabled(); bPlanetTick = Planet->IsActorTickEnabled();
              bLeased = true; Root->bFreezeGeneration = true; Root->SetActorTickEnabled(false);
-@@ -539,6 +1333,11 @@ public:
+@@ -539,6 +1413,11 @@ public:
          {
              if (!CaptureProductionBaseline()) return Finish(TEXT("actual production shared liquid baseline/frame/slot assertion failed before candidate substitution"));
              if (++ProductionCaptureCount < 2) { SetFrame = GFrameCounter; Next = Now + 1.0; return false; }
@@ -2048,7 +2177,7 @@ index 6bbb423..647eaf5 100644
              if (bRadianceAB)
              {
                  if (!ApplyRadianceCase()) return Finish(TEXT("failed to begin isolated radiance A/B"));
-@@ -549,6 +1348,35 @@ public:
+@@ -549,6 +1428,35 @@ public:
              Step = 3;
              return false;
          }
@@ -2084,7 +2213,7 @@ index 6bbb423..647eaf5 100644
          if (Step == 5)
          {
              if (!CaptureRadianceCase()) return Finish(TEXT("radiance A/B capture or original parameter/payload continuity failed"));
-@@ -599,4 +1427,60 @@ TSharedPtr<IAutomationLatentCommand> APSCreateSharedLiquidCoverageProbe(
+@@ -599,4 +1507,60 @@ TSharedPtr<IAutomationLatentCommand> APSCreateSharedLiquidCoverageProbe(
  {
      return MakeShared<APSSharedLavaCoverage::FProbe>(Test, World, Planet, true);
  }
