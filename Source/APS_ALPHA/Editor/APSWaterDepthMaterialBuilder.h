@@ -3,15 +3,19 @@
 #include "APSSharedWaterMaterialBuilder.h"
 #include "Materials/MaterialExpressionTextureCoordinate.h"
 #include "Materials/MaterialExpressionCustom.h"
+#include "Materials/MaterialExpressionDDX.h"
+#include "Materials/MaterialExpressionDDY.h"
 
 // New diagnostic packages only. No runtime selection or shared-parent edits.
 namespace APSWaterDepthMaterialBuilder
 {
-inline bool Build(IAssetTools& AssetTools)
+inline bool Build(IAssetTools& AssetTools, bool bFiltered = false)
 {
     using FCore = APSSharedTerrainMaterialBuilder::FBuild;
     using namespace APSSharedAmmoniaMaterialBuilder;
-    constexpr const TCHAR* Folder = TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Diagnostics/WaterDepth20260927");
+    const TCHAR* Folder = bFiltered
+        ? TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Diagnostics/WaterDepthFiltered20260927")
+        : TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Diagnostics/WaterDepth20260927");
     FCore Core(AssetTools, Folder);
     auto Fail = [&Core](const TCHAR* Why)
     {
@@ -53,11 +57,11 @@ inline bool Build(IAssetTools& AssetTools)
     if (!UV || !Strength || !HalfDepth || !Alpha) return Fail(TEXT("Depth expressions could not be allocated"));
     UV->CoordinateIndex = 1;
     Strength->ParameterName = TEXT("APS_WaterDepthStrength");
-    Strength->DefaultValue = 0.65f;
+    Strength->DefaultValue = bFiltered ? 0.35f : 0.65f;
     Strength->SliderMin = 0.0f; Strength->SliderMax = 1.0f;
     Strength->UpdateParameterGuid(true, true);
     HalfDepth->ParameterName = TEXT("APS_WaterHalfDepthM");
-    HalfDepth->DefaultValue = 80.0f;
+    HalfDepth->DefaultValue = bFiltered ? 20.0f : 80.0f;
     HalfDepth->SliderMin = 1.0f; HalfDepth->SliderMax = 500.0f;
     HalfDepth->UpdateParameterGuid(true, true);
     Alpha->OutputType = CMOT_Float1;
@@ -66,9 +70,37 @@ inline bool Build(IAssetTools& AssetTools)
         TEXT("float depthM = max(DepthUV.x, 0.0) * 1000.0;\n")
         TEXT("float shallow = exp2(-depthM / max(HalfDepthM, 1.0));\n")
         TEXT("return lerp(Legacy, shallow, saturate(Strength));");
-    const TPair<FName, UMaterialExpression*> Inputs[] = {
+    TArray<TPair<FName, UMaterialExpression*>> Inputs = {
         {TEXT("DepthUV"), UV}, {TEXT("Legacy"), ColorMix->Alpha.Expression},
         {TEXT("Strength"), Strength}, {TEXT("HalfDepthM"), HalfDepth}};
+    if (bFiltered)
+    {
+        // Derivatives go through the material compiler, outside divergent custom
+        // code. Integrate over the pixel's depth range, retaining signed coast data.
+        auto* DX = Core.Add<UMaterialExpressionDDX>(Master);
+        auto* DY = Core.Add<UMaterialExpressionDDY>(Master);
+        if (!DX || !DY) return Fail(TEXT("Depth derivatives could not be allocated"));
+        DX->Value.Expression = UV; DY->Value.Expression = UV;
+        Inputs.Emplace(TEXT("DepthDX"), DX); Inputs.Emplace(TEXT("DepthDY"), DY);
+        Alpha->Description = TEXT("Footprint-integrated shallow column; accepted deep/Fresnel baseline retained");
+        Alpha->Code = TEXT("if (!all(isfinite(DepthUV)) || DepthUV.y < 0.999 || DepthUV.y > 1.001 || !isfinite(DepthDX.x) || !isfinite(DepthDY.x)) return Legacy;\n")
+            TEXT("float h = max(HalfDepthM, 1.0);\n")
+            TEXT("float d = DepthUV.x * 1000.0;\n")
+            TEXT("float w = (abs(DepthDX.x) + abs(DepthDY.x)) * 1000.0;\n")
+            TEXT("float shallow = exp2(-max(d, 0.0) / h);\n")
+            TEXT("if (w > 0.0001) {\n")
+            TEXT("  float a = d - 0.5 * w, b = d + 0.5 * w;\n")
+            // Avoid subtracting two large near-equal depths on either side.
+            TEXT("  float wet = clamp(b, 0.0, w);\n")
+            TEXT("  float x = wet * 0.69314718056 / h;\n")
+            // Stable 1-exp(-x) near zero avoids cancellation.
+            TEXT("  float e = x < 0.01 ? x * (1.0 - 0.5 * x + x * x / 6.0) : 1.0 - exp2(-x * 1.44269504089);\n")
+            TEXT("  shallow = saturate((w - wet + exp2(-max(a, 0.0) / h) * h * 1.44269504089 * e) / w);\n")
+            TEXT("}\n")
+            // Add only the shallow transmitted contribution; do not suppress the
+            // accepted view-dependent deep-water baseline across the whole globe.
+            TEXT("return Legacy + (1.0 - Legacy) * saturate(Strength) * shallow;");
+    }
     Alpha->Inputs.Reset();
     for (const auto& Pair : Inputs)
     {
@@ -124,7 +156,8 @@ inline bool Build(IAssetTools& AssetTools)
         const FString Filename = FPackageName::LongPackageNameToFilename(Package->GetName(), FPackageName::GetAssetPackageExtension());
         if (!UPackage::SavePackage(Package, Output, *Filename, Args)) return Fail(TEXT("Candidate save failed"));
     }
-    UE_LOG(LogTemp, Display, TEXT("[APS.WaterDepth] Saved=2 bound=0 changedPaletteEdges=1 halfDepthM=80 strength=.65 acceptedParametersPreserved=1"));
+    UE_LOG(LogTemp, Display, TEXT("[APS.WaterDepth] Saved=2 bound=0 changedPaletteEdges=1 filtered=%d halfDepthM=%.6g strength=%.6g acceptedParametersPreserved=1"),
+        int(bFiltered), HalfDepth->DefaultValue, Strength->DefaultValue);
     return true;
 }
 }

@@ -2451,6 +2451,10 @@ int32 UAPSPlanetSurfaceAssetCommandlet::Main(const FString& Params)
 	{
 		return APSWaterDepthMaterialBuilder::Build(AssetTools) ? 0 : 33;
 	}
+	if (FParse::Param(*Params, TEXT("OnlyWaterDepthFilteredCandidate")))
+	{
+		return APSWaterDepthMaterialBuilder::Build(AssetTools, true) ? 0 : 33;
+	}
 	if (FParse::Param(*Params, TEXT("OnlySharedTerrain")))
 	{
 		// Creates only the new shared-native master/templates and necessary private

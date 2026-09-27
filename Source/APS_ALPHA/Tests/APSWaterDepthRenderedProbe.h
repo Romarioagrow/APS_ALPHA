@@ -18,6 +18,7 @@
 namespace APSWaterDepthRendered
 {
 inline bool Enabled() { return FParse::Param(FCommandLine::Get(), TEXT("APSProbeWaterDepth")); }
+inline bool Filtered() { return FParse::Param(FCommandLine::Get(), TEXT("APSWaterDepthFiltered")); }
 inline bool ResolveFamily(const FString& Name, EPlanetType& Type)
 {
     const TPair<const TCHAR*, EPlanetType> Families[] = {
@@ -183,12 +184,15 @@ public:
             Original.Reset(Ocean->GetMaterial(0));
             if (!APSSharedGeneratedLiquidMaterial::HasSavedParameterAuthority(Original.Get(), EAPSPlanetLiquidType::Water))
                 return Fail(TEXT("Actual baseline is not the accepted Water family"));
-            auto* Template = LoadObject<UMaterialInstance>(nullptr,
-                TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Diagnostics/WaterDepth20260927/MI_APS_WaterDepth.MI_APS_WaterDepth"));
+            const FString Folder = Filtered()
+                ? TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Diagnostics/WaterDepthFiltered20260927/")
+                : TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Diagnostics/WaterDepth20260927/");
+            auto* Template = LoadObject<UMaterialInstance>(nullptr, *(Folder + TEXT("MI_APS_WaterDepth.MI_APS_WaterDepth")));
             if (!Template || !Template->GetMaterial() || Template->GetMaterial()->GetPathName() !=
-                TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Diagnostics/WaterDepth20260927/M_APS_WaterDepth.M_APS_WaterDepth"))
+                Folder + TEXT("M_APS_WaterDepth.M_APS_WaterDepth"))
                 return Fail(TEXT("Exact saved depth candidate absent"));
             Candidate.Reset(UMaterialInstanceDynamic::Create(Template, Ocean.Get()));
+            UE_LOG(LogTemp, Display, TEXT("[APS.WaterDepthCandidate] filtered=%d template=%s"), int(Filtered()), *Template->GetPathName());
             ViewEvidence = FSceneViewExtensions::NewExtension<FViewEvidence>(Ocean->GetWorld());
         }
         if (InGenerator != Generator.Get() || InGenerator->GetActivePreviewOceanProxy() != Ocean.Get())
