@@ -51,12 +51,25 @@ public:
 		CustomNoise& NoiseClass, const DVector& Position, const DVector& PlanetPosition,
 		double NoiseScale, double NoiseIntensity, double PlanetScale, double Latitude,
 		DVector& NoisePosition);
+	/**
+	 * Same signed displacement field, in the same centimetres as GetNoise(). Skips
+	 * material/climate/foliage channels, not terrain frequency bands. Callers must
+	 * supply the actual full-scale root settings for physical bathymetry; a preview's
+	 * compressed settings deliberately describe different low-bandwidth geometry.
+	 * Does not apply WorldScape noise/heightmap volumes or the ocean-height clamp.
+	 * Independently optimized full/height paths may differ by floating-point roundoff.
+	 */
+	static double SampleHeightResolvedProfile(
+		const FAPSResolvedPlanetSurfaceProfile& SurfaceProfile,
+		CustomNoise& NoiseClass, const DVector& Position, const DVector& PlanetPosition,
+		double NoiseScale, double NoiseIntensity, double PlanetScale, double Latitude);
 
 private:
 	FNoiseData Evaluate(
 		CustomNoise& NoiseClass, const DVector& Position, const DVector& PlanetPosition,
 		double NoiseScale, double NoiseIntensity, double PlanetScale, double Latitude,
 		DVector& NoisePosition) const;
+	template<bool bHeightOnly>
 	static FNoiseData EvaluateProfile(
 		const FAPSResolvedPlanetSurfaceProfile& SurfaceProfile,
 		CustomNoise& NoiseClass, const DVector& Position, const DVector& PlanetPosition,

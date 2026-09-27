@@ -128,7 +128,7 @@ FNoiseData UAPSWorldScapePlanetNoise::SampleResolved(
 	double NoiseScale, double NoiseIntensity, double PlanetScale, double Latitude,
 	DVector& NoisePosition) const
 {
-	return EvaluateProfile(SurfaceProfile, NoiseClass, Position, PlanetPosition,
+	return EvaluateProfile<false>(SurfaceProfile, NoiseClass, Position, PlanetPosition,
 		NoiseScale, NoiseIntensity, PlanetScale, Latitude, NoisePosition);
 }
 
@@ -138,8 +138,18 @@ FNoiseData UAPSWorldScapePlanetNoise::SampleResolvedProfile(
 	double NoiseScale, double NoiseIntensity, double PlanetScale, double Latitude,
 	DVector& NoisePosition)
 {
-	return EvaluateProfile(SurfaceProfile, NoiseClass, Position, PlanetPosition,
+	return EvaluateProfile<false>(SurfaceProfile, NoiseClass, Position, PlanetPosition,
 		NoiseScale, NoiseIntensity, PlanetScale, Latitude, NoisePosition);
+}
+
+double UAPSWorldScapePlanetNoise::SampleHeightResolvedProfile(
+	const FAPSResolvedPlanetSurfaceProfile& SurfaceProfile,
+	CustomNoise& NoiseClass, const DVector& Position, const DVector& PlanetPosition,
+	double NoiseScale, double NoiseIntensity, double PlanetScale, double Latitude)
+{
+	DVector NoisePosition;
+	return EvaluateProfile<true>(SurfaceProfile, NoiseClass, Position, PlanetPosition,
+		NoiseScale, NoiseIntensity, PlanetScale, Latitude, NoisePosition).Height;
 }
 
 FNoiseData UAPSWorldScapePlanetNoise::Evaluate(
@@ -147,10 +157,11 @@ FNoiseData UAPSWorldScapePlanetNoise::Evaluate(
 	double NoiseScale, double NoiseIntensity, double PlanetScale, double Latitude,
 	DVector& NoisePosition) const
 {
-	return EvaluateProfile(SurfaceProfile, NoiseClass, Position, PlanetPosition,
+	return EvaluateProfile<false>(SurfaceProfile, NoiseClass, Position, PlanetPosition,
 		NoiseScale, NoiseIntensity, PlanetScale, Latitude, NoisePosition);
 }
 
+template<bool bHeightOnly>
 FNoiseData UAPSWorldScapePlanetNoise::EvaluateProfile(
 	const FAPSResolvedPlanetSurfaceProfile& SurfaceProfile,
 	CustomNoise& NoiseClass, const DVector& Position, const DVector& PlanetPosition,
@@ -562,94 +573,99 @@ FNoiseData UAPSWorldScapePlanetNoise::EvaluateProfile(
 
 	const double PhysicalHeightNormalized = FMath::Clamp(HeightNormalized, -0.35, 0.65);
 	Data.Height = PhysicalHeightNormalized * NoiseIntensity;
-	// Palette classification is intentionally independent from the high-frequency and
-	// preset-specific displacement above. Preset identity is retained by the resolved
-	// family palette, climate channels and the physical silhouette, without drawing the
-	// displacement field a second time as coloured contour lines.
-	const double PaletteHeightNormalized = FMath::Clamp(
-		PaletteMacroHeightNormalized, -0.35, 0.65);
-	Data.HeightNormalize = APSPlanetNoise::NormalizeHeightForMaterial(
-		PaletteHeightNormalized, SurfaceProfile);
-
-	const double ClampedLatitude = FMath::Clamp(Latitude, -1.0, 1.0);
-	const double EquatorialWarmth = 1.0 - FMath::Abs(FMath::Asin(ClampedLatitude) / UE_HALF_PI);
-	const double LatitudeStrength = FMath::Clamp(
-		static_cast<double>(SurfaceProfile.LatitudeClimateStrength), 0.5, 1.75);
-	const double ShapedEquatorialWarmth = FMath::Clamp(
-		0.5 + (EquatorialWarmth - 0.5) * LatitudeStrength, 0.0, 1.0);
-	const double ClimateNoise = FMath::Clamp(
-		NoiseClass.Fractal((NoisePosition + BiomeOffset) * 0.0035, 4, 2.0, 0.5), 0.0, 1.0) - 0.5;
-	const double HeightCooling = FMath::Clamp(PhysicalHeightNormalized, 0.0, 1.0) * 0.5;
-	double TemperatureValue = static_cast<double>(SurfaceProfile.Temperature)
-		* (0.42 + ShapedEquatorialWarmth * 0.58) + ClimateNoise * 0.08 - HeightCooling;
-
-	const double HumidityNoise = FMath::Clamp(
-		NoiseClass.Fractal((NoisePosition + BiomeOffset) * 0.0065, 5, 2.1, 0.5), 0.0, 1.0) - 0.5;
-	const double OceanInfluence = 1.0 - FMath::SmoothStep(-0.02, 0.16, SignedLand);
-	double HumidityValue = static_cast<double>(SurfaceProfile.Humidity) + HumidityNoise * 0.16
-		+ OceanInfluence * 0.24 - HeightCooling * 0.32;
-	double VegetationPatch = 1.0;
-	const double ClimatePatchStrength = FMath::Clamp(
-		static_cast<double>(SurfaceProfile.ClimatePatchStrength), 0.0, 1.0);
-	if (ClimatePatchStrength > static_cast<double>(KINDA_SMALL_NUMBER))
+	// Compile-time dispatch keeps existing full samples on their accepted path.
+	// No terrain calculation is duplicated or approximated for bathymetry.
+	if constexpr (!bHeightOnly)
 	{
-		const double ClimatePatch01 = FMath::Clamp(NoiseClass.Fractal(
-			(NoisePosition + BiomeOffset) * 0.0019, 4, 2.0, 0.53), 0.0, 1.0);
-		HumidityValue += (ClimatePatch01 - 0.5) * 0.32 * ClimatePatchStrength;
-		TemperatureValue += (0.5 - ClimatePatch01) * 0.08 * ClimatePatchStrength;
+		// Palette classification is intentionally independent from the high-frequency and
+		// preset-specific displacement above. Preset identity is retained by the resolved
+		// family palette, climate channels and the physical silhouette, without drawing the
+		// displacement field a second time as coloured contour lines.
+		const double PaletteHeightNormalized = FMath::Clamp(
+			PaletteMacroHeightNormalized, -0.35, 0.65);
+		Data.HeightNormalize = APSPlanetNoise::NormalizeHeightForMaterial(
+			PaletteHeightNormalized, SurfaceProfile);
 
-		if (SurfaceProfile.HasModifier(EAPSPlanetSurfaceModifier::ForestCanopy))
-		{
-			// Large coherent humidity/temperature patches feed the material's vertex
-			// channels, so a forest world reads as biomes even at orbital distance.
-			VegetationPatch = FMath::SmoothStep(0.30, 0.72, ClimatePatch01);
-			HumidityValue += (VegetationPatch - 0.58) * 0.72 * ClimatePatchStrength;
-			TemperatureValue -= VegetationPatch * 0.035;
-		}
-		if (SurfaceProfile.HasModifier(EAPSPlanetSurfaceModifier::OasisWetlands))
-		{
-			VegetationPatch = FMath::SmoothStep(0.66, 0.84, ClimatePatch01);
-			HumidityValue += VegetationPatch * 0.72 * ClimatePatchStrength - 0.06;
-		}
-		if (SurfaceProfile.HasModifier(EAPSPlanetSurfaceModifier::TundraBands))
-		{
-			const double PolarBand = FMath::SmoothStep(0.42, 0.82, FMath::Abs(ClampedLatitude));
-			HumidityValue += PolarBand * 0.13;
-			TemperatureValue -= PolarBand * 0.08;
-		}
-		if (SurfaceProfile.HasModifier(EAPSPlanetSurfaceModifier::ChemicalBands))
-		{
-			const double ChemicalBand = FMath::Sin(ClampedLatitude * UE_PI * 7.0 + ClimatePatch01 * 2.0);
-			HumidityValue += ChemicalBand * 0.10 * ClimatePatchStrength;
-			TemperatureValue -= ChemicalBand * 0.045 * ClimatePatchStrength;
-		}
-	}
+		const double ClampedLatitude = FMath::Clamp(Latitude, -1.0, 1.0);
+		const double EquatorialWarmth = 1.0 - FMath::Abs(FMath::Asin(ClampedLatitude) / UE_HALF_PI);
+		const double LatitudeStrength = FMath::Clamp(
+			static_cast<double>(SurfaceProfile.LatitudeClimateStrength), 0.5, 1.75);
+		const double ShapedEquatorialWarmth = FMath::Clamp(
+			0.5 + (EquatorialWarmth - 0.5) * LatitudeStrength, 0.0, 1.0);
+		const double ClimateNoise = FMath::Clamp(
+			NoiseClass.Fractal((NoisePosition + BiomeOffset) * 0.0035, 4, 2.0, 0.5), 0.0, 1.0) - 0.5;
+		const double HeightCooling = FMath::Clamp(PhysicalHeightNormalized, 0.0, 1.0) * 0.5;
+		double TemperatureValue = static_cast<double>(SurfaceProfile.Temperature)
+			* (0.42 + ShapedEquatorialWarmth * 0.58) + ClimateNoise * 0.08 - HeightCooling;
 
-	Data.Temperature = static_cast<float>(FMath::Clamp(TemperatureValue, 0.0, 1.0));
-	Data.Humidity = static_cast<float>(FMath::Clamp(HumidityValue, 0.0, 1.0));
+		const double HumidityNoise = FMath::Clamp(
+			NoiseClass.Fractal((NoisePosition + BiomeOffset) * 0.0065, 5, 2.1, 0.5), 0.0, 1.0) - 0.5;
+		const double OceanInfluence = 1.0 - FMath::SmoothStep(-0.02, 0.16, SignedLand);
+		double HumidityValue = static_cast<double>(SurfaceProfile.Humidity) + HumidityNoise * 0.16
+			+ OceanInfluence * 0.24 - HeightCooling * 0.32;
+		double VegetationPatch = 1.0;
+		const double ClimatePatchStrength = FMath::Clamp(
+			static_cast<double>(SurfaceProfile.ClimatePatchStrength), 0.0, 1.0);
+		if (ClimatePatchStrength > static_cast<double>(KINDA_SMALL_NUMBER))
+		{
+			const double ClimatePatch01 = FMath::Clamp(NoiseClass.Fractal(
+				(NoisePosition + BiomeOffset) * 0.0019, 4, 2.0, 0.53), 0.0, 1.0);
+			HumidityValue += (ClimatePatch01 - 0.5) * 0.32 * ClimatePatchStrength;
+			TemperatureValue += (0.5 - ClimatePatch01) * 0.08 * ClimatePatchStrength;
 
-	// This channel is the stable below-datum classification for every solid body.
-	// Wet profiles classify the final displaced coast. Dry profiles classify the
-	// macro continental field itself: craters remain visible terrain rather than
-	// becoming imaginary lakes, while Tundra/Exoplanet/Unknown still retain their
-	// authored basin-to-highland ratio. LiquidType alone controls ocean allocation.
-	if (SurfaceProfile.LiquidType == EAPSPlanetLiquidType::None)
-	{
-		Data.WaterMask = static_cast<float>(1.0 - FMath::SmoothStep(
-			-0.035, 0.035, SignedLand));
+			if (SurfaceProfile.HasModifier(EAPSPlanetSurfaceModifier::ForestCanopy))
+			{
+				// Large coherent humidity/temperature patches feed the material's vertex
+				// channels, so a forest world reads as biomes even at orbital distance.
+				VegetationPatch = FMath::SmoothStep(0.30, 0.72, ClimatePatch01);
+				HumidityValue += (VegetationPatch - 0.58) * 0.72 * ClimatePatchStrength;
+				TemperatureValue -= VegetationPatch * 0.035;
+			}
+			if (SurfaceProfile.HasModifier(EAPSPlanetSurfaceModifier::OasisWetlands))
+			{
+				VegetationPatch = FMath::SmoothStep(0.66, 0.84, ClimatePatch01);
+				HumidityValue += VegetationPatch * 0.72 * ClimatePatchStrength - 0.06;
+			}
+			if (SurfaceProfile.HasModifier(EAPSPlanetSurfaceModifier::TundraBands))
+			{
+				const double PolarBand = FMath::SmoothStep(0.42, 0.82, FMath::Abs(ClampedLatitude));
+				HumidityValue += PolarBand * 0.13;
+				TemperatureValue -= PolarBand * 0.08;
+			}
+			if (SurfaceProfile.HasModifier(EAPSPlanetSurfaceModifier::ChemicalBands))
+			{
+				const double ChemicalBand = FMath::Sin(ClampedLatitude * UE_PI * 7.0 + ClimatePatch01 * 2.0);
+				HumidityValue += ChemicalBand * 0.10 * ClimatePatchStrength;
+				TemperatureValue -= ChemicalBand * 0.045 * ClimatePatchStrength;
+			}
+		}
+
+		Data.Temperature = static_cast<float>(FMath::Clamp(TemperatureValue, 0.0, 1.0));
+		Data.Humidity = static_cast<float>(FMath::Clamp(HumidityValue, 0.0, 1.0));
+
+		// This channel is the stable below-datum classification for every solid body.
+		// Wet profiles classify the final displaced coast. Dry profiles classify the
+		// macro continental field itself: craters remain visible terrain rather than
+		// becoming imaginary lakes, while Tundra/Exoplanet/Unknown still retain their
+		// authored basin-to-highland ratio. LiquidType alone controls ocean allocation.
+		if (SurfaceProfile.LiquidType == EAPSPlanetLiquidType::None)
+		{
+			Data.WaterMask = static_cast<float>(1.0 - FMath::SmoothStep(
+				-0.035, 0.035, SignedLand));
+		}
+		else
+		{
+			Data.WaterMask = static_cast<float>(1.0 - FMath::SmoothStep(
+				static_cast<double>(SurfaceProfile.OceanLevel) - 0.012,
+				static_cast<double>(SurfaceProfile.OceanLevel) + 0.012,
+				PhysicalHeightNormalized));
+		}
+		const float ThermalSuitability = 1.0f - FMath::Abs(Data.Temperature - 0.58f) / 0.58f;
+		const float MoistureSuitability = FMath::SmoothStep(0.18f, 0.72f, Data.Humidity);
+		Data.FoliageMask = FMath::Clamp(
+			SurfaceProfile.Biomass * ThermalSuitability * MoistureSuitability
+				* static_cast<float>(FMath::Lerp(0.18, 1.0, VegetationPatch)) * (1.0f - Data.WaterMask),
+			0.0f, 1.0f);
 	}
-	else
-	{
-		Data.WaterMask = static_cast<float>(1.0 - FMath::SmoothStep(
-			static_cast<double>(SurfaceProfile.OceanLevel) - 0.012,
-			static_cast<double>(SurfaceProfile.OceanLevel) + 0.012,
-			PhysicalHeightNormalized));
-	}
-	const float ThermalSuitability = 1.0f - FMath::Abs(Data.Temperature - 0.58f) / 0.58f;
-	const float MoistureSuitability = FMath::SmoothStep(0.18f, 0.72f, Data.Humidity);
-	Data.FoliageMask = FMath::Clamp(
-		SurfaceProfile.Biomass * ThermalSuitability * MoistureSuitability
-			* static_cast<float>(FMath::Lerp(0.18, 1.0, VegetationPatch)) * (1.0f - Data.WaterMask),
-		0.0f, 1.0f);
 	return Data;
 }

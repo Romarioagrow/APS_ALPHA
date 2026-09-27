@@ -1,6 +1,9 @@
 #if WITH_DEV_AUTOMATION_TESTS
 #include "Misc/AutomationTest.h"
-#include "WorldScapeCore/Public/WorldScapeLod.h"
+// WorldScapeLod.h in the installed plugin lacks a guard. Root includes it through
+// its own pragma-once boundary, avoiding duplicate UHT declarations when UBT puts
+// this test beside another root consumer in a unity translation unit.
+#include "WorldScapeCore/Public/WorldScapeRoot.h"
 #include "Engine/World.h"
 
 // Exercises the loaded vendor binary: checking WorldScape's source alone misses
