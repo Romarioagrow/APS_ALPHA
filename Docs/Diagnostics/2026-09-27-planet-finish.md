@@ -58,5 +58,26 @@ optics/contrast/currents, cross-family PLANET/gameplay detail coverage, Ocean/Me
 dark boundary, Ice seams, Tundra softness, delayed lighting and paired walking /
 sprint performance. The task has not been narrowed to passing these tests.
 No production material, palette, seed, save or character asset was changed here.
+
+## Follow-up: coastline measurement
+
+`APSCoastGeometry` adds a read-only measurement of the actual submitted terrain /
+liquid triangles at each shoreline frame. It checks identical topology, records
+screen-space edge size and angular lattice alignment, and compares interpolated
+liquid depth with the authoritative native height field at triangle centroids.
+At most 16 visible coast triangles per section per LOD receive native samples.
+CSV samples are evidence for diagnosing geometry; they are not a visual fix.
+
+`build-coast-geometry.log` succeeded. `lava-coast-geometry-v1` was stopped before
+the far-shore measurements: a user editor (PID 34424, started 21:47:35) appeared
+between the earlier process check and the diagnostic launch. Only the owned
+diagnostic PID 8724 was stopped; the user editor was left running. This run is
+NOT a pass and supplies no coastline measurement result.
+
+Resume with `Tools/Diagnostics/Run-LavaCoastGeometry.ps1 -Planet Volcanic` only
+after the editor is closed. The launcher fails closed when any Unreal editor
+process exists, returns its owned PID, and creates a unique F: evidence folder.
+Do not rebuild or replace loaded production DLLs while the user editor is open.
+
 Claude's separate `Docs/Audit/2026-09-27-claude-full-audit.md` is not part of this
 checkpoint and must not be staged with Codex changes.

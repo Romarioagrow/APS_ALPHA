@@ -7,6 +7,7 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/Texture.h"
 #include "Engine/Texture2D.h"
+#include "APSCoastGeometryProbe.h"
 
 // Opt-in continuation AFTER the natural PlanetSurface landing's First/+3/+8
 // frames. Only the real pawn/camera is leased by default. Optional ThermalAB
@@ -303,6 +304,9 @@ class FProbe final : public IAutomationLatentCommand
             : FString::Printf(TEXT("%02d-shore-%.0fm.png"), View, ViewClearanceCm() / 100.0));
         TArray64<uint8> Png; FImageUtils::PNGCompressImageArray(Size.X, Size.Y, Pixels, Png);
         if (!FFileHelper::SaveArrayToFile(Png, *Path)) return Finish(TEXT("cannot save shoreline frame"));
+        if (FParse::Param(FCommandLine::Get(), TEXT("APSCoastGeometry"))
+            && !APSCoastGeometryProbe::Capture(*Test, *Root, *PC, Path + TEXT(".csv"), View))
+            return Finish(TEXT("coast geometry sample failed"));
         Test->AddInfo(FString::Printf(TEXT("LAVA_SHORE_FRAME view=%d heightM=%.3f terrainClearanceM=%.3f oceanSlots=%d terrainSlots=%d observerDeltaCm=%.3f terrainVisible=1 noSubstitution=1 originalRGBA=1 streamingActive=1 profile=%u %s screenshot=%s; not a walking/FPS result"),
             View, ViewClearanceCm()/100.0, ActualClearance/100.0, OceanSlots, TerrainSlots, ObserverDelta, ProfileSignature, *Evidence, *Path));
         if (bThermalAB)
