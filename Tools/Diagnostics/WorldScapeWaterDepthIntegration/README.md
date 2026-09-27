@@ -1,5 +1,9 @@
 # Isolated physical WorldScape water-depth integration, 2026-09-27
 
+Later optional v22/v23 current and physical-column experiments are recorded in
+[CURRENTS.md](CURRENTS.md). They are not production-installed or visually accepted;
+the existing v21 integration package below remains their reproducible baseline.
+
 Source-only diagnostic overlay, **not installed or enabled in production**.
 The accepted checkpoint remains `67fff3b4`; canonical source snapshot for this
 experiment was clean `dbc3c430b5551ff3f405de41ac0017f419e631d2` on `dev-3`.

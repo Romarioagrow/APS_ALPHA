@@ -39,6 +39,7 @@ class FProbe final : public IAutomationLatentCommand
     const bool bCrustNormalAB = FParse::Param(FCommandLine::Get(), TEXT("APSLavaCrustNormalAB"));
     const bool bCrustFieldAB = FParse::Param(FCommandLine::Get(), TEXT("APSLavaCrustFieldAB"));
     const bool bRadianceAB = FParse::Param(FCommandLine::Get(), TEXT("APSLavaJointRadianceAB"));
+    const bool bFarShoreline = FParse::Param(FCommandLine::Get(), TEXT("APSLavaFarShoreline"));
     bool HasCrustAB() const { return bCrustNormalAB || bCrustFieldAB || bRadianceAB; }
     int32 ThermalVariant = 0;
     TStrongObjectPtr<UMaterialInstanceDynamic> ThermalSaved{nullptr};
@@ -112,7 +113,12 @@ class FProbe final : public IAutomationLatentCommand
         ThermalLive.Reset(); ThermalSaved.Reset(); ThermalApplied.Reset(); ThermalTexturesApplied.Reset(); ThermalVariant = 0;
     }
     static constexpr double ClearancesCm[] = {1500000.0, 150000.0, 15000.0, 1500.0, 300.0};
-    int32 ViewCount() const { return (FParse::Param(FCommandLine::Get(), TEXT("APSLavaThermalMipAB"))
+    // Observe the real coast from orbit without replacing the liquid, hiding
+    // terrain or leaving the streaming pawn at the surface. This remains a
+    // settled view sequence, not proof of a continuous high-speed descent.
+    static constexpr double FarClearancesCm[] = {30000000.0, 10000000.0, 1500000.0};
+    double ViewClearanceCm() const { return bFarShoreline ? FarClearancesCm[View] : ClearancesCm[View]; }
+    int32 ViewCount() const { return bFarShoreline ? 3 : (FParse::Param(FCommandLine::Get(), TEXT("APSLavaThermalMipAB"))
         || FParse::Param(FCommandLine::Get(), TEXT("APSLavaNearShoreline"))) ? 5 : 3; }
 
     double Height(const FVector& Direction) const
@@ -293,12 +299,12 @@ class FProbe final : public IAutomationLatentCommand
                     : bCrustNormalAB ? (ThermalVariant == 0 ? TEXT("flat-crust") : TEXT("bump-crust-25cm"))
                     : bStochasticAB ? (ThermalVariant == 0 ? TEXT("periodic-40m") : TEXT("stochastic-40m"))
                     : bFinePeriodAB ? (ThermalVariant == 0 ? TEXT("thermal-400m") : TEXT("thermal-40m"))
-                    : (ThermalVariant == 0 ? TEXT("native") : TEXT("thermal")), ClearancesCm[View] / 100.0)
-            : FString::Printf(TEXT("%02d-shore-%.0fm.png"), View, ClearancesCm[View] / 100.0));
+                    : (ThermalVariant == 0 ? TEXT("native") : TEXT("thermal")), ViewClearanceCm() / 100.0)
+            : FString::Printf(TEXT("%02d-shore-%.0fm.png"), View, ViewClearanceCm() / 100.0));
         TArray64<uint8> Png; FImageUtils::PNGCompressImageArray(Size.X, Size.Y, Pixels, Png);
         if (!FFileHelper::SaveArrayToFile(Png, *Path)) return Finish(TEXT("cannot save shoreline frame"));
         Test->AddInfo(FString::Printf(TEXT("LAVA_SHORE_FRAME view=%d heightM=%.3f terrainClearanceM=%.3f oceanSlots=%d terrainSlots=%d observerDeltaCm=%.3f terrainVisible=1 noSubstitution=1 originalRGBA=1 streamingActive=1 profile=%u %s screenshot=%s; not a walking/FPS result"),
-            View, ClearancesCm[View]/100.0, ActualClearance/100.0, OceanSlots, TerrainSlots, ObserverDelta, ProfileSignature, *Evidence, *Path));
+            View, ViewClearanceCm()/100.0, ActualClearance/100.0, OceanSlots, TerrainSlots, ObserverDelta, ProfileSignature, *Evidence, *Path));
         if (bThermalAB)
         {
             Test->AddInfo(FString::Printf(TEXT("LAVA_THERMAL_FRAME view=%d strength=%d finePeriodAB=%d stochasticAB=%d stochastic=%d periodCm=%.0f sameLiveMID=1 originalPaletteBrightness=1 candidateOnly=1"),
@@ -341,6 +347,10 @@ public:
         if (!World.IsValid() || !Planet.IsValid()) return Finish(TEXT("world/planet disappeared"));
         if (!bLeased)
         {
+            if (bFarShoreline && (bThermalAB || bFinePeriodAB || bStochasticAB || HasCrustAB()
+                || FParse::Param(FCommandLine::Get(), TEXT("APSLavaThermalMipAB"))
+                || FParse::Param(FCommandLine::Get(), TEXT("APSLavaNearShoreline"))))
+                return Finish(TEXT("far shoreline requires unchanged production materials without near/thermal controls"));
             if (HasCrustAB() && (!bThermalAB || bFinePeriodAB || bStochasticAB
                 || int32(bCrustNormalAB)+int32(bCrustFieldAB)+int32(bRadianceAB)>1))
                 return Finish(TEXT("crust normal comparison requires thermal mode without other comparisons"));
@@ -387,7 +397,7 @@ public:
             || PC->GetPawn() != Pawn.Get() || Root->bFreezeGeneration || !Root->IsActorTickEnabled()
             || ProfileSignature != UAPSPlanetSurfaceProfileResolver::BuildProfileSignature(Surface->ResolvedSurfaceProfile))
             return Finish(TEXT("leased observer/root/profile changed"));
-        const double H = ClearancesCm[View];
+        const double H = ViewClearanceCm();
         const double SeaRadius = Root->PlanetScale + Root->OceanHeight;
         const FVector Direction = (Shore * SeaRadius + WetTangent * (H * 1.2)).GetSafeNormal();
         const double TerrainHeight = Height(Direction);

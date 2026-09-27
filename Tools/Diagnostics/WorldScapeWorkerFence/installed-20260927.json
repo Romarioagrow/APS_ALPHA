@@ -1,0 +1,19 @@
+{
+  "entries": [
+    {
+      "installedSHA256": "FD69FCA2019B4405BAAB04D8EE9DFCC2EEFF23F358E8E761304506B7018F9F7D",
+      "path": "Source/WorldScapeCore/Private/WorldScapeRoot_Main.cpp"
+    },
+    {
+      "installedSHA256": "01833DDC9B251A103416F2815582BB93C97D860099C91AEC9F5344A8B11E61F4",
+      "path": "Source/WorldScapeCore/Private/WorldScapeRoot_Thread.cpp"
+    },
+    {
+      "installedSHA256": "C9EC369732C33429B2A26541FA8120478A564FCC4DBE933D73135145C28E1CAA",
+      "path": "Source/WorldScapeCore/Private/Tests/APSWorldScapeWorkerCompletionTests.cpp"
+    }
+  ],
+  "installedDLLSHA256": "0AD8D541CBE5DBC3BC729F2E8F1A3F8299BFE228A3CA2E0FA9EFD6CE22BADE22",
+  "sourceComparison": "Exact after CRLF to LF normalization only",
+  "installedAt": "2026-09-27T21:00:53.9502188+05:00"
+}

@@ -1,0 +1,360 @@
+diff --git a/host/Source/APS_ALPHA/Editor/APSWaterRippleMaterialBuilder.h b/host/Source/APS_ALPHA/Editor/APSWaterRippleMaterialBuilder.h
+index 5257583..d1cd295 100644
+--- a/host/Source/APS_ALPHA/Editor/APSWaterRippleMaterialBuilder.h
++++ b/host/Source/APS_ALPHA/Editor/APSWaterRippleMaterialBuilder.h
+@@ -2,6 +2,7 @@
+ 
+ #if WITH_EDITOR
+ #include "APSSharedAmmoniaMaterialBuilder.h"
++#include "Materials/MaterialExpressionTime.h"
+ 
+ namespace APSWaterRippleMaterialBuilder
+ {
+@@ -43,7 +44,8 @@ inline bool AddSurfaceFill(APSSharedTerrainMaterialBuilder::FBuild& Core, UMater
+     return true;
+ }
+ 
+-// A normal-only, stationary small-wave band. Existing coarse waves, colour,
++// A normal-only small-wave band (stationary baseline; explicit currents candidate animates).
++// Existing coarse waves, colour,
+ // roughness, Fresnel, coverage and geometry remain connected exactly as saved.
+ inline bool Add(APSSharedTerrainMaterialBuilder::FBuild& Core, UMaterial* Master)
+ {
+@@ -111,6 +113,12 @@ inline bool Add(APSSharedTerrainMaterialBuilder::FBuild& Core, UMaterial* Master
+     // These remain normal detail, not fluid simulation or displacement.
+     const float WavelengthCm[] = {370.0f, 83.0f};
+     const float Weights[] = {0.65f, 0.35f};
++    UMaterialExpressionTime* WaveTime = nullptr;
++    if (FParse::Param(FCommandLine::Get(), TEXT("APSWaterCurrents")))
++    {
++        WaveTime = Core.Add<UMaterialExpressionTime>(Master);
++        WaveTime->bOverride_Period = true; WaveTime->Period = 4096.0f;
++    }
+     for (int32 I = 0; I < UE_ARRAY_COUNT(WavelengthCm); ++I)
+     {
+         auto* Phase = Core.Add<UMaterialExpressionCustom>(Master);
+@@ -178,6 +186,11 @@ inline bool Add(APSSharedTerrainMaterialBuilder::FBuild& Core, UMaterial* Master
+         }
+         FCustomInput FilterInput; FilterInput.InputName = TEXT("Filter"); FilterInput.Input.Expression = FilterParameter;
+         Gradient->Inputs.Add(FilterInput);
++        if (WaveTime)
++        {
++            FCustomInput T; T.InputName = TEXT("Seconds"); T.Input.Expression = WaveTime;
++            Gradient->Inputs.Add(T);
++        }
+         // Integer vectors make a 96-cell wrap exactly periodic in each axis;
+         // unequal 370/83 cm bands do not share a short combined spatial repeat.
+         const FIntVector WaveVectors[] = { {67,43,58}, {-62,73,19}, {17,-83,56}, {89,11,-37},
+@@ -188,13 +201,15 @@ inline bool Add(APSSharedTerrainMaterialBuilder::FBuild& Core, UMaterial* Master
+         {
+             const FIntVector K = WaveVectors[J];
+             const double Offset = FMath::Frac((J+1)*0.61803398875 + (I+1)*0.38196601125);
++            const FString Motion = WaveTime ? FString::Printf(TEXT(" - Seconds * (%d.0 / 4096.0)"),
++                (I == 0 ? 2000 : 3800) + 137 * J) : FString();
+             Gradient->Code += FString::Printf(
+                 TEXT("{ float3 k = float3(%d.0, %d.0, %d.0);\n")
+                 TEXT("float footprint = (abs(dot(DX,k)) + abs(dot(DY,k))) / 96.0;\n")
+                 TEXT("float fade = lerp(1.0, 1.0 - smoothstep(0.25,0.5,footprint), saturate(Filter));\n")
+-                TEXT("float phase = dot(P,k) / 96.0 + %.9f;\n")
++                TEXT("float phase = dot(P,k) / 96.0 + %.9f%s;\n")
+                 TEXT("g += normalize(k) * (cos(phase * 6.28318530718) * (0.40824829 * fade)); }\n"),
+-                K.X, K.Y, K.Z, Offset);
++                K.X, K.Y, K.Z, Offset, *Motion);
+         }
+         Gradient->Code += TEXT("return g;\n");
+         FExpressionInput GradientInput; GradientInput.Expression = Gradient;
+diff --git a/host/Source/APS_ALPHA/Editor/APSWaterDepthMaterialBuilder.h b/host/Source/APS_ALPHA/Editor/APSWaterDepthMaterialBuilder.h
+index 972a524..5dc3d41 100644
+--- a/host/Source/APS_ALPHA/Editor/APSWaterDepthMaterialBuilder.h
++++ b/host/Source/APS_ALPHA/Editor/APSWaterDepthMaterialBuilder.h
+@@ -9,6 +9,7 @@
+ #include "Materials/MaterialExpressionConstant3Vector.h"
+ #include "Materials/MaterialExpressionSingleLayerWaterMaterialOutput.h"
+ #include "APSWaterRippleMaterialBuilder.h"
++#include "APSWaterCurrentMaterialBuilder.h"
+ #include "APS_ALPHA/Core/Planetary/APSWaterRippleCandidate.h"
+ 
+ // New diagnostic packages only. No runtime selection or shared-parent edits.
+@@ -20,10 +21,14 @@ inline bool Build(IAssetTools& AssetTools, bool bFiltered = false, bool bRipples
+     using namespace APSSharedAmmoniaMaterialBuilder;
+     const bool bSingleLayerControl = FParse::Param(FCommandLine::Get(), TEXT("APSWaterSingleLayerCandidate"));
+     const bool bSurfaceFill = FParse::Param(FCommandLine::Get(), TEXT("APSWaterSurfaceFill"));
++    const bool bCurrents = FParse::Param(FCommandLine::Get(), TEXT("APSWaterCurrents"));
++    const bool bColumn = FParse::Param(FCommandLine::Get(), TEXT("APSWaterColumnContrast"));
++    if (bColumn && (!bCurrents || !bFiltered)) return false;
++    if (bCurrents && !bSurfaceFill) return false;
+     if (bSurfaceFill && !bSingleLayerControl) return false;
+     if (bSingleLayerControl && !bRipples) return false;
+     if (bRipples) APSWaterRippleCandidate::RegisterPrivateMount();
+-    const TCHAR* Folder = bSurfaceFill ? APSWaterRippleCandidate::SingleLayerFillFolder
++    const TCHAR* Folder = bSurfaceFill ? APSWaterRippleCandidate::ActiveFillFolder()
+         : bSingleLayerControl ? APSWaterRippleCandidate::SingleLayerFolder
+         : bRipples ? APSWaterRippleCandidate::Folder : bFiltered
+         ? TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Diagnostics/WaterDepthFiltered20260927")
+@@ -71,11 +76,11 @@ inline bool Build(IAssetTools& AssetTools, bool bFiltered = false, bool bRipples
+     if (!UV || !Strength || !HalfDepth || !Alpha) return Fail(TEXT("Depth expressions could not be allocated"));
+     UV->CoordinateIndex = 1;
+     Strength->ParameterName = TEXT("APS_WaterDepthStrength");
+-    Strength->DefaultValue = bFiltered ? 0.35f : 0.65f;
++    Strength->DefaultValue = bColumn ? 0.75f : bFiltered ? 0.35f : 0.65f;
+     Strength->SliderMin = 0.0f; Strength->SliderMax = 1.0f;
+     Strength->UpdateParameterGuid(true, true);
+     HalfDepth->ParameterName = TEXT("APS_WaterHalfDepthM");
+-    HalfDepth->DefaultValue = bFiltered ? 20.0f : 80.0f;
++    HalfDepth->DefaultValue = bColumn ? 12.0f : bFiltered ? 20.0f : 80.0f;
+     HalfDepth->SliderMin = 1.0f; HalfDepth->SliderMax = 500.0f;
+     HalfDepth->UpdateParameterGuid(true, true);
+     Alpha->OutputType = CMOT_Float1;
+@@ -114,6 +119,17 @@ inline bool Build(IAssetTools& AssetTools, bool bFiltered = false, bool bRipples
+             // Add only the shallow transmitted contribution; do not suppress the
+             // accepted view-dependent deep-water baseline across the whole globe.
+             TEXT("return Legacy + (1.0 - Legacy) * saturate(Strength) * shallow;");
++        if (bColumn)
++        {
++            // The inherited palette uses a view-angle Fresnel as its alpha.
++            // Adding shallow light alone can never darken a deep grazing ocean.
++            // Keep both palette endpoints and the specular Fresnel unchanged;
++            // let signed physical water-column depth dominate BASE colour only.
++            Alpha->Code.ReplaceInline(
++                TEXT("return Legacy + (1.0 - Legacy) * saturate(Strength) * shallow;"),
++                TEXT("return lerp(Legacy, shallow, saturate(Strength));"));
++            Alpha->Description = TEXT("Footprint-integrated water column controls palette; legacy colour is fallback, not depth");
++        }
+     }
+     Alpha->Inputs.Reset();
+     for (const auto& Pair : Inputs)
+@@ -155,6 +171,8 @@ inline bool Build(IAssetTools& AssetTools, bool bFiltered = false, bool bRipples
+         Master->GetExpressionInputForProperty(MP_Opacity)->Connect(0, One);
+         Master->SetShadingModel(MSM_SingleLayerWater);
+     }
++    if (bCurrents && !APSWaterCurrentMaterialBuilder::Add(Core, Master))
++        return Fail(TEXT("Ocean current graph contract changed"));
+     if (bSurfaceFill && !APSWaterRippleMaterialBuilder::AddSurfaceFill(Core, Master))
+         return Fail(TEXT("Scene-derived surface fill adapter failed"));
+ 
+diff --git a/host/Source/APS_ALPHA/Core/Planetary/APSWaterRippleCandidate.h b/host/Source/APS_ALPHA/Core/Planetary/APSWaterRippleCandidate.h
+index f65293d..f0405d2 100644
+--- a/host/Source/APS_ALPHA/Core/Planetary/APSWaterRippleCandidate.h
++++ b/host/Source/APS_ALPHA/Core/Planetary/APSWaterRippleCandidate.h
+@@ -2,12 +2,21 @@
+ 
+ #include "Misc/PackageName.h"
+ #include "Misc/Paths.h"
++#include "Misc/CommandLine.h"
++#include "Misc/Parse.h"
+ 
+ namespace APSWaterRippleCandidate
+ {
+ inline constexpr const TCHAR* Folder = TEXT("/APSWaterDetail/ViewAnchorRipples20260927");
+ inline constexpr const TCHAR* SingleLayerFolder = TEXT("/APSWaterDetail/SingleLayerSurfaceControl20260927");
+ inline constexpr const TCHAR* SingleLayerFillFolder = TEXT("/APSWaterDetail/SingleLayerFill20260927");
++inline constexpr const TCHAR* CurrentFolder = TEXT("/APSWaterDetail/OceanCurrents20260927");
++inline constexpr const TCHAR* ColumnFolder = TEXT("/APSWaterDetail/OceanColumnCurrents20260927");
++inline const TCHAR* ActiveFillFolder()
++{
++    if (FParse::Param(FCommandLine::Get(), TEXT("APSWaterColumnContrast"))) return ColumnFolder;
++    return FParse::Param(FCommandLine::Get(), TEXT("APSWaterCurrents")) ? CurrentFolder : SingleLayerFillFolder;
++}
+ inline void RegisterPrivateMount()
+ {
+     // Deliberately outside Content: the isolated host's Content is a read-only
+diff --git a/host/Source/APS_ALPHA/Tests/APSSharedLavaCoverageProbe.cpp b/host/Source/APS_ALPHA/Tests/APSSharedLavaCoverageProbe.cpp
+index 7089c36..0008bac 100644
+--- a/host/Source/APS_ALPHA/Tests/APSSharedLavaCoverageProbe.cpp
++++ b/host/Source/APS_ALPHA/Tests/APSSharedLavaCoverageProbe.cpp
+@@ -343,7 +343,7 @@ class FProbe final : public IAutomationLatentCommand
+             if (bSurfaceFill && (!bSingleLayerControl
+                 || !FParse::Param(FCommandLine::Get(), TEXT("APSWaterFilteredShadows")))) return nullptr;
+             if (bRipples) APSWaterRippleCandidate::RegisterPrivateMount();
+-            const FString Folder = bSurfaceFill ? FString(APSWaterRippleCandidate::SingleLayerFillFolder) + TEXT("/")
++            const FString Folder = bSurfaceFill ? FString(APSWaterRippleCandidate::ActiveFillFolder()) + TEXT("/")
+                 : bSingleLayerControl ? FString(APSWaterRippleCandidate::SingleLayerFolder) + TEXT("/")
+                 : bRipples ? FString(APSWaterRippleCandidate::Folder) + TEXT("/")
+                 : TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Diagnostics/WaterDepthFiltered20260927/");
+@@ -385,6 +385,9 @@ class FProbe final : public IAutomationLatentCommand
+             if (!APSSharedTerrainMaterial::WritePhysicalFrame(DepthMID, Root->GetRootComponent(),
+                 Planet->WorldScapePresentationScale)) return nullptr;
+             DepthMID->SetScalarParameterValue(TEXT("APS_UsePresentationWaterMask"), 0.0f);
++            const bool bColumn = FParse::Param(FCommandLine::Get(), TEXT("APSWaterColumnContrast"));
++            if (bColumn && bWaterDepthPaletteBudget) return nullptr; // Different, explicit contrast experiment.
++            if (bColumn) WaterDepthStrength = 0.75f;
+             if (bWaterDepthPaletteBudget)
+             {
+                 FLinearColor Deep, Shallow;
+@@ -396,9 +399,10 @@ class FProbe final : public IAutomationLatentCommand
+                     APSWaterDepthPalette::Luminance(Shallow), WaterDepthStrength));
+             }
+             DepthMID->SetScalarParameterValue(TEXT("APS_WaterDepthStrength"), WaterDepthStrength);
+-            DepthMID->SetScalarParameterValue(TEXT("APS_WaterHalfDepthM"), 20.0f);
+-            Test->AddInfo(FString::Printf(TEXT("WATER_DEPTH_GAMEPLAY candidate=filtered20260927 authority=savedMIC paletteBudget=%d strength=%.9g halfDepthM=20; production unchanged"),
+-                bWaterDepthPaletteBudget ? 1 : 0, WaterDepthStrength));
++            const float HalfDepth = bColumn ? 12.0f : 20.0f;
++            DepthMID->SetScalarParameterValue(TEXT("APS_WaterHalfDepthM"), HalfDepth);
++            Test->AddInfo(FString::Printf(TEXT("WATER_DEPTH_GAMEPLAY columnContrast=%d authority=savedMIC paletteBudget=%d strength=%.9g halfDepthM=%.9g; production unchanged"),
++                bColumn ? 1 : 0, bWaterDepthPaletteBudget ? 1 : 0, WaterDepthStrength, HalfDepth));
+             return DepthMID;
+         }
+         UMaterialInstanceDynamic* MID = bWater
+@@ -1212,7 +1216,14 @@ class FProbe final : public IAutomationLatentCommand
+     {
+         if (!PayloadIsUnchanged() || !Candidate.IsValid() || !GSupportsTimestampRenderQueries
+             || PerfPhase < 0 || PerfPhase >= 5 || !Root->bFreezeGeneration
+-            || Root->IsActorTickEnabled() || Surface->IsActorTickEnabled() || Planet->IsActorTickEnabled()) return false;
++            || Root->IsActorTickEnabled() || Surface->IsActorTickEnabled() || Planet->IsActorTickEnabled())
++        {
++            Test->AddInfo(FString::Printf(TEXT("WATER_MATERIAL_PERF_REJECT payload=%d candidate=%d timestamps=%d phase=%d frozen=%d rootTick=%d surfaceTick=%d planetTick=%d"),
++                PayloadIsUnchanged(), Candidate.IsValid(), GSupportsTimestampRenderQueries, PerfPhase,
++                Root.IsValid() ? int(Root->bFreezeGeneration) : -1, Root.IsValid() ? int(Root->IsActorTickEnabled()) : -1,
++                Surface.IsValid() ? int(Surface->IsActorTickEnabled()) : -1, Planet.IsValid() ? int(Planet->IsActorTickEnabled()) : -1));
++            return false;
++        }
+         const bool bCandidate = (PerfPhase % 2) == 1;
+         if (!BindWaterSurfaceFill(true)) return false;
+         Candidate->SetScalarParameterValue(TEXT("APS_WaterDepthStrength"), WaterDepthStrength);
+diff --git a/BakeRipples.ps1 b/BakeRipples.ps1
+index aed1a77..6d90ea9 100644
+--- a/BakeRipples.ps1
++++ b/BakeRipples.ps1
+@@ -1,9 +1,11 @@
+-param([ValidatePattern('^[a-z0-9-]+$')][string]$Label='bake-ripples-v1', [switch]$SingleLayerSurfaceControl, [switch]$WaterSurfaceFill)
++param([ValidatePattern('^[a-z0-9-]+$')][string]$Label='bake-ripples-v1', [switch]$SingleLayerSurfaceControl, [switch]$WaterSurfaceFill, [switch]$WaterCurrents, [switch]$WaterColumnContrast)
+ $ErrorActionPreference='Stop'
+ if(Get-Process UnrealEditor,UnrealEditor-Cmd -ErrorAction SilentlyContinue){throw 'Editor active; no session touched'}
+ $hostProject=Join-Path $PSScriptRoot 'host'
+ if($WaterSurfaceFill -and -not $SingleLayerSurfaceControl){throw 'Surface fill adapter requires the single-layer candidate'}
+-$assetFolder=if($WaterSurfaceFill){'SingleLayerFill20260927'}elseif($SingleLayerSurfaceControl){'SingleLayerSurfaceControl20260927'}else{'ViewAnchorRipples20260927'}
++if($WaterCurrents -and -not $WaterSurfaceFill){throw 'Currents require the separate scene-fill candidate'}
++if($WaterColumnContrast -and -not $WaterCurrents){throw 'Column contrast requires Currents'}
++$assetFolder=if($WaterColumnContrast){'OceanColumnCurrents20260927'}elseif($WaterCurrents){'OceanCurrents20260927'}elseif($WaterSurfaceFill){'SingleLayerFill20260927'}elseif($SingleLayerSurfaceControl){'SingleLayerSurfaceControl20260927'}else{'ViewAnchorRipples20260927'}
+ $output=Join-Path $hostProject ('Intermediate/WaterRippleAssets/'+$assetFolder)
+ if(Test-Path -LiteralPath $output){throw 'New assets only; refusing to overwrite'}
+ $run=Join-Path $PSScriptRoot $Label
+@@ -17,5 +19,7 @@ $arguments=@(('"'+$hostProject+'/APS_ALPHA.uproject"'),'-run=APSPlanetSurfaceAss
+  ('-UserDir="'+$run+'"'),('-abslog="'+$run+'/bake.log"'))
+ if($SingleLayerSurfaceControl){$arguments+='-APSWaterSingleLayerCandidate'}
+ if($WaterSurfaceFill){$arguments+='-APSWaterSurfaceFill'}
++if($WaterCurrents){$arguments+='-APSWaterCurrents'}
++if($WaterColumnContrast){$arguments+='-APSWaterColumnContrast'}
+ $process=Start-Process -FilePath 'C:/Program Files/Epic Games/UE/UE_5.4/Engine/Binaries/Win64/UnrealEditor-Cmd.exe' -ArgumentList $arguments -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $run 'stdout.txt') -RedirectStandardError (Join-Path $run 'stderr.txt')
+ $process | Select-Object Id,StartTime | ConvertTo-Json
+diff --git a/Run.ps1 b/Run.ps1
+index 7871c80..af1e4c6 100644
+--- a/Run.ps1
++++ b/Run.ps1
+@@ -1,6 +1,6 @@
+ param([ValidatePattern('^[a-z0-9-]+$')][string]$Label='physical-water-v1',
+  [switch]$PaletteBudget, [switch]$Oblique, [switch]$LiveLod, [switch]$Ripples, [switch]$MaterialPerf, [switch]$RippleIsolation, [switch]$NormalBuffer, [switch]$SingleLayerSurfaceControl, [switch]$WaterGpuDump, [switch]$WaterFilteredShadows, [switch]$WaterSurfaceFill, [switch]$WaterFillBaselineControl, [switch]$WaterFillLifecycleControl,
+- [switch]$WaterShoreWalk, [switch]$WaterShoreWalkOriginal,
++ [switch]$WaterShoreWalk, [switch]$WaterShoreWalkOriginal, [switch]$WaterCurrents, [switch]$WaterColumnContrast,
+  [ValidateSet('WorldNormal','BaseColor','Roughness','Specular')][string]$BufferView,
+  [ValidateSet('NoSpecular','NoReflections','NoIndirect','NoShortRangeAO','SHDiffuse','WaterCaptures','NoWaterComposite','NoWaterDFShadow')][string]$LightingIsolation,
+  [ValidateSet('Water','Terrestrial','Ocean','Forest','Oasis','Savanna','Nordic','Tundra','Archipelago','Pangea','SuperEarth','HighMountain')][string]$Planet='Water',
+@@ -19,6 +19,8 @@ if($LightingIsolation -and ($NormalBuffer -or $BufferView -or $MaterialPerf -or
+ if($WaterGpuDump -and (-not $SingleLayerSurfaceControl -or -not $Oblique -or $LightingIsolation -or $MaterialPerf -or $LiveLod -or $NormalBuffer -or $BufferView -or $RippleIsolation)){throw 'Water GPU dump requires the unmodified single-layer oblique fixture without other diagnostic overrides'}
+ if($WaterFilteredShadows -and (-not $SingleLayerSurfaceControl -or $LightingIsolation -or $NormalBuffer -or $BufferView -or $RippleIsolation)){throw 'Filtered water shadows require the single-layer lit fixture without lighting isolation'}
+ if($WaterSurfaceFill -and (-not $WaterFilteredShadows -or $WaterGpuDump)){throw 'Surface fill requires filtered water shadows without GPU dump'}
++if($WaterCurrents -and -not $WaterSurfaceFill){throw 'Currents require the separate scene-fill candidate'}
++if($WaterColumnContrast -and (-not $WaterCurrents -or $PaletteBudget)){throw 'Column contrast requires Currents without the additive palette-budget control'}
+ if($WaterFillBaselineControl -and (-not $WaterSurfaceFill -or $MaterialPerf -or $LiveLod)){throw 'Fill baseline control requires the static scene fill candidate without timing'}
+ if($WaterFillLifecycleControl -and (-not $WaterSurfaceFill -or $WaterFillBaselineControl -or $MaterialPerf -or $LiveLod)){throw 'Fill lifecycle control requires static scene fill without other controls/timing'}
+ if(Get-Process UnrealEditor,UnrealEditor-Cmd -ErrorAction SilentlyContinue){throw 'Editor active; no session touched'}
+@@ -49,6 +51,8 @@ if($LightingIsolation){$arguments+=('-APSWaterLightingIsolation='+$LightingIsola
+ if($MaterialPerf){$arguments+='-APSWaterMaterialPerf'}
+ if($WaterGpuDump){$arguments+='-APSWaterGpuDump'}
+ if($WaterSurfaceFill){$arguments+='-APSWaterSurfaceFill'}
++if($WaterCurrents){$arguments+='-APSWaterCurrents'}
++if($WaterColumnContrast){$arguments+='-APSWaterColumnContrast'}
+ if($WaterFillBaselineControl){$arguments+='-APSWaterFillBaselineControl'}
+ if($WaterFillLifecycleControl){$arguments+='-APSWaterFillLifecycleControl'}
+ if($WaterShoreWalk){$arguments+='-APSWaterShoreWalk'}
+diff --git a/host/Source/APS_ALPHA/Editor/APSWaterCurrentMaterialBuilder.h b/host/Source/APS_ALPHA/Editor/APSWaterCurrentMaterialBuilder.h
+new file mode 100644
+--- /dev/null
++++ b/host/Source/APS_ALPHA/Editor/APSWaterCurrentMaterialBuilder.h
+@@ -0,0 +1,86 @@
++#pragma once
++#if WITH_EDITOR
++#include "APSSharedAmmoniaMaterialBuilder.h"
++#include "Materials/MaterialExpressionTime.h"
++
++namespace APSWaterCurrentMaterialBuilder
++{
++// Appearance of slow mixing fronts, not a fluid solver. Three-dimensional
++// planet-fixed coordinates avoid polar seams and per-patch UV/LOD dependence.
++// Only water's reflectance/roughness change; no emission, opacity or geometry.
++inline bool Add(APSSharedTerrainMaterialBuilder::FBuild& Core, UMaterial* Master)
++{
++    FExpressionInput* Base = Master->GetExpressionInputForProperty(MP_BaseColor);
++    FExpressionInput* Roughness = Master->GetExpressionInputForProperty(MP_Roughness);
++    if (!Base || !Base->Expression || !Roughness || !Roughness->Expression) return false;
++    auto* World = Core.Add<UMaterialExpressionWorldPosition>(Master);
++    World->WorldPositionShaderOffset = WPT_ExcludeAllShaderOffsets;
++    auto* Center = Core.Add<UMaterialExpressionDoubleVectorParameter>(Master);
++    Center->ParameterName = TEXT("APS_SharedPlanetCenter");
++    Center->UpdateParameterGuid(true, true);
++    auto* Time = Core.Add<UMaterialExpressionTime>(Master);
++    Time->bOverride_Period = true; Time->Period = 4096.0f;
++    auto* Strength = Core.Add<UMaterialExpressionScalarParameter>(Master);
++    Strength->ParameterName = TEXT("APS_WaterCurrentStrength");
++    Strength->DefaultValue = 0.5f;
++    Strength->SliderMin = 0.0f; Strength->SliderMax = 1.0f;
++    Strength->Group = TEXT("APS Ocean Currents"); Strength->UpdateParameterGuid(true, true);
++    auto* Field = Core.Add<UMaterialExpressionCustom>(Master);
++    Field->Description = TEXT("Planet-fixed ocean mixing fronts; continuous periodic time and pixel footprint filter");
++    Field->OutputType = CMOT_Float1;
++    const auto Input = [Field](const TCHAR* Name, UMaterialExpression* E, bool RGB = false)
++    {
++        FCustomInput I; I.InputName = Name; I.Input.Expression = E;
++        if (RGB) I.Input.Mask = I.Input.MaskR = I.Input.MaskG = I.Input.MaskB = 1;
++        Field->Inputs.Add(I);
++    };
++    Input(TEXT("Raw"), World); Input(TEXT("Center"), Center, true);
++    Input(TEXT("Seconds"), Time); Input(TEXT("Strength"), Strength);
++    const TCHAR* Names[] = {TEXT("APS_SharedDetailRowXHigh"), TEXT("APS_SharedDetailRowXLow"),
++        TEXT("APS_SharedDetailRowYHigh"), TEXT("APS_SharedDetailRowYLow"),
++        TEXT("APS_SharedDetailRowZHigh"), TEXT("APS_SharedDetailRowZLow")};
++    const TCHAR* Pins[] = {TEXT("XHigh"), TEXT("XLow"), TEXT("YHigh"), TEXT("YLow"), TEXT("ZHigh"), TEXT("ZLow")};
++    for (int32 I = 0; I < UE_ARRAY_COUNT(Names); ++I)
++    {
++        auto* Row = Core.Add<UMaterialExpressionVectorParameter>(Master);
++        Row->ParameterName = Names[I];
++        Row->DefaultValue = FLinearColor(I == 0 ? 1.f : 0.f, I == 2 ? 1.f : 0.f, I == 4 ? 1.f : 0.f, 0.f);
++        Row->UpdateParameterGuid(true, true); Input(Pins[I], Row, true);
++    }
++    // Divide while still compensated: casting absolute planet coordinates to
++    // float before subtraction/division would reintroduce blocky flow fields.
++    // Time is CPU-periodic, and every temporal phase has an integer cycle count,
++    // so the 4096-second wrap has matching values AND first derivatives.
++    Field->Code = TEXT("FDFVector3 r = DFSubtract(WSToDF(LWCRaw), WSToDF(LWCCenter));\n")
++        TEXT("FDFVector3 x = DFMultiply(r, MakeDFVector3(XHigh,XLow));\n")
++        TEXT("FDFVector3 y = DFMultiply(r, MakeDFVector3(YHigh,YLow));\n")
++        TEXT("FDFVector3 z = DFMultiply(r, MakeDFVector3(ZHigh,ZLow));\n")
++        TEXT("FDFVector3 p = MakeDFVector(DFAdd(DFAdd(DFGetX(x),DFGetY(x)),DFGetZ(x)), DFAdd(DFAdd(DFGetX(y),DFGetY(y)),DFGetZ(y)), DFAdd(DFAdd(DFGetX(z),DFGetY(z)),DFGetZ(z)));\n")
++        TEXT("float3 q = DFDemote(DFDivide(p, 600000.0f));\n")
++        TEXT("float t = Seconds * (6.28318530718 / 4096.0);\n")
++        TEXT("float a = dot(q,float3(0.73,0.29,-0.41));\n")
++        TEXT("float b = dot(q,float3(-0.31,0.61,0.47));\n")
++        TEXT("float c = dot(q,float3(0.23,-0.53,0.67));\n")
++        TEXT("float3 phase = float3(a + 1.4*sin(b + t), b + 1.1*sin(c - t), c + 0.8*sin(a + t));\n")
++        TEXT("phase += float3(t,-t,2.0*t);\n")
++        TEXT("float3 footprint = (abs(ddx(phase)) + abs(ddy(phase))) * 0.15915494309;\n")
++        TEXT("float3 fade = 1.0 - smoothstep(0.125,0.35,footprint);\n")
++        TEXT("return clamp(dot(sin(phase)*fade,float3(0.5,0.3,0.2)), -1.0, 1.0)*saturate(Strength);\n");
++    for (EMaterialProperty Property : {MP_BaseColor, MP_Roughness})
++    {
++        FExpressionInput* Output = Master->GetExpressionInputForProperty(Property);
++        auto* Mix = Core.Add<UMaterialExpressionCustom>(Master);
++        Mix->Description = TEXT("Bounded ocean current reflectance; strength zero restores exact baseline");
++        Mix->OutputType = Property == MP_BaseColor ? CMOT_Float3 : CMOT_Float1;
++        FCustomInput Original; Original.InputName = TEXT("Original"); Original.Input = *Output;
++        FCustomInput Current; Current.InputName = TEXT("Current"); Current.Input.Expression = Field;
++        Mix->Inputs = {Original, Current};
++        Mix->Code = Property == MP_BaseColor
++            ? TEXT("return Original * (1.0 + 0.08 * Current);")
++            : TEXT("return Original + clamp(0.03 * Current, -max(Original,0.0), max(1.0-Original,0.0));");
++        Output->Connect(0, Mix);
++    }
++    return true;
++}
++}
++#endif

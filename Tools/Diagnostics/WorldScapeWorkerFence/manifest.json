@@ -1,0 +1,24 @@
+{
+  "base": "Installed WorldScape_5.4, including accepted seam-normal welding",
+  "coreBeforeSHA256": "E35F1C35A1EE19494E8E258864FD30B6B22397C14568AA6AF786115C00CA7A54",
+  "classLayoutChanged": false,
+  "entries": [
+    {
+      "afterSHA256": "486433C155663ED88A6D706BEFA3C92A135D42FDAECB2B500B0D24FD1CED030A",
+      "path": "Source/WorldScapeCore/Private/WorldScapeRoot_Main.cpp",
+      "beforeSHA256": "3E693B15CB17CA1BEBA305024C7F47AABD6F54D1BC95673DBF7D8369BCF45227"
+    },
+    {
+      "afterSHA256": "FE39E37EA376C7D2E4D3133BAF292C057873790991E5A56560CA639C27FBA979",
+      "path": "Source/WorldScapeCore/Private/WorldScapeRoot_Thread.cpp",
+      "beforeSHA256": "BF48B95DFE6B4F878B5390CE9DEAA10FB242AFCB5FC2BE945AFB911455E05833"
+    },
+    {
+      "afterSHA256": "C9EC369732C33429B2A26541FA8120478A564FCC4DBE933D73135145C28E1CAA",
+      "path": "Source/WorldScapeCore/Private/Tests/APSWorldScapeWorkerCompletionTests.cpp",
+      "beforeSHA256": null
+    }
+  ],
+  "patch": "worker-fence.patch",
+  "coreAfterSHA256": "0AD8D541CBE5DBC3BC729F2E8F1A3F8299BFE228A3CA2E0FA9EFD6CE22BADE22"
+}

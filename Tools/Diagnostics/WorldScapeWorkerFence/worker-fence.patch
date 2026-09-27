@@ -1,0 +1,150 @@
+diff --git a/Source/WorldScapeCore/Private/WorldScapeRoot_Main.cpp b/Source/WorldScapeCore/Private/WorldScapeRoot_Main.cpp
+index e6ae358..b60f5cd 100644
+--- a/Source/WorldScapeCore/Private/WorldScapeRoot_Main.cpp
++++ b/Source/WorldScapeCore/Private/WorldScapeRoot_Main.cpp
+@@ -718,6 +718,15 @@ void AWorldScapeRoot::UpdateFoliageData()
+ // ----------------------------------------------------------------------------
+ void AWorldScapeRoot::CleanComponents()
+ {
++	// Workers own the pending LOD payload until their async task has completed.
++	// Explicit regeneration must drain them before destroying their components.
++	for (FAsyncTask<LodGenerationThread>* Task : LodGenerationThreadPool)
++	{
++		if (!Task) continue;
++		if (!Task->Cancel()) Task->EnsureCompletion();
++		delete Task;
++	}
++	LodGenerationThreadPool.Empty();
+ 	if (GenerationType == EWorldScapeType::Planet)
+ 	{
+ 		PlanetScaleCode = PlanetScale;
+@@ -1791,9 +1800,12 @@ void AWorldScapeRoot::CheckForLodGeneration()
+ {
+ 	bool DoneGenerating = true;
+ 	
+-	for (const TPair<UWorldScapeLod*, bool>& Pair : WorldScapeLodInGeneration)
++	// The pending TMap is game-thread-owned. Workers must never read/write it
++	// while this thread can grow/rehash it when scheduling the rest of a batch.
++	// IsDone also fences the payload and the worker tail before publication.
++	for (FAsyncTask<LodGenerationThread>* Task : LodGenerationThreadPool)
+ 	{
+-		if (!Pair.Value)
++		if (Task && !Task->IsDone())
+ 		{
+ 			DoneGenerating = false;
+ 			break;
+@@ -1811,6 +1823,10 @@ void AWorldScapeRoot::CheckForLodGeneration()
+ 				updateMaterial = true;
+ 			}
+ 		}
++		for (FAsyncTask<LodGenerationThread>* Task : LodGenerationThreadPool)
++		{
++			delete Task; // All tasks passed IsDone; do not leak one task per LOD update.
++		}
+ 		LodGenerationThreadPool.Empty();
+ 
+ 		TransformKeeper->UpdateBounds();
+diff --git a/Source/WorldScapeCore/Private/WorldScapeRoot_Thread.cpp b/Source/WorldScapeCore/Private/WorldScapeRoot_Thread.cpp
+index 7b049b9..6c1b3be 100644
+--- a/Source/WorldScapeCore/Private/WorldScapeRoot_Thread.cpp
++++ b/Source/WorldScapeCore/Private/WorldScapeRoot_Thread.cpp
+@@ -590,6 +590,7 @@ void LodGenerationThread::SetPointPosition()
+ void LodGenerationThread::DoWork()
+ {
+ 	TRACE_CPUPROFILER_EVENT_SCOPE(WS_Mesh_DoWork);
++	if (!IsValid(RootRef) || !IsValid(WorldScapeLodRef)) return;
+ 
+ 	//Size = (float)(FMath::Max((double)RootRef->HeightAnchor, AltitudeMultiplier) * (double)Size * (1. / (double)RootRef->HeightAnchor));
+ 
+@@ -618,7 +619,7 @@ void LodGenerationThread::DoWork()
+ 
+ 		OffSetHelper = OldRelativePosition - RelativePosition;
+ 	}
+-	if (IsValid(RootRef) && IsValid(WorldScapeLodRef) && RootRef->WorldScapeLodInGeneration.Contains(WorldScapeLodRef))
++	if (IsValid(RootRef) && IsValid(WorldScapeLodRef))
+ 	{
+ 		WorldScapeLodRef->SetRelativePosition(RelativePosition);
+ 	}
+@@ -642,10 +643,8 @@ void LodGenerationThread::DoWork()
+ 
+ 		WorldScapeLodRef->SetMeshLod(Lod + AltitudeLod);
+ 
+-		if (RootRef->WorldScapeLodInGeneration.Contains(WorldScapeLodRef))
+-		{
+-			RootRef->WorldScapeLodInGeneration[WorldScapeLodRef] = true;
+-		}
++		// Completion is published by FAsyncTask after DoWork returns. Never touch
++		// the root's game-thread TMap from a worker, including Contains/Find.
+ 
+ 	}
+ 
+diff --git a/Source/WorldScapeCore/Private/Tests/APSWorldScapeWorkerCompletionTests.cpp b/Source/WorldScapeCore/Private/Tests/APSWorldScapeWorkerCompletionTests.cpp
+new file mode 100644
+--- /dev/null
++++ b/Source/WorldScapeCore/Private/Tests/APSWorldScapeWorkerCompletionTests.cpp
+@@ -0,0 +1,65 @@
++#if WITH_DEV_AUTOMATION_TESTS
++#include "Misc/AutomationTest.h"
++#include "WorldScapeRoot.h"
++#include "Engine/World.h"
++
++IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAPSWorldScapeWorkerCompletionTest,
++    "APS.Gameplay.World.PlanetSurface.WorkerCompletionOwnership",
++    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
++
++bool FAPSWorldScapeWorkerCompletionTest::RunTest(const FString& Parameters)
++{
++    UWorld* World = UWorld::CreateWorld(EWorldType::Game, false);
++    if (!TestNotNull(TEXT("Worker test world"), World)) return false;
++    AWorldScapeRoot* Root = World->SpawnActor<AWorldScapeRoot>();
++    if (!TestNotNull(TEXT("Worker test root"), Root)) { World->DestroyWorld(false); return false; }
++    Root->NoiseIntensity = 0;
++    Root->bGenerateTangents = false;
++    constexpr double Radius = 10000000.0;
++    constexpr int32 Count = 32;
++    for (int32 Batch = 0; Batch < 3; ++Batch)
++    {
++        for (int32 Index = 0; Index < Count; ++Index)
++        {
++            UWorldScapeLod* Lod = NewObject<UWorldScapeLod>(Root);
++            const DVector Position(FVector(0.0, 0.0, Radius));
++            Lod->Init(0, 16, 1920.0, Position, FWSMaterialLodArray{}, Radius,
++                DVector(0), false, false);
++            Root->WorldScapeLod.Add(Lod);
++            // Intentionally grow the pending map while previous tasks run.
++            Root->WorldScapeLodInGeneration.Add(Lod, false);
++            auto* Task = new FAsyncTask<LodGenerationThread>(Lod, Root, Position,
++                DVector(0), FVector2D(Index & 1, (Index >> 1) & 1), Radius,
++                0, 120.0f, 16, 1000.0, FVector::UpVector, false, false);
++            Root->LodGenerationThreadPool.Add(Task);
++            Task->StartBackgroundTask();
++        }
++        for (auto* Task : Root->LodGenerationThreadPool) Task->EnsureCompletion();
++        TestEqual(TEXT("Pending targets retained until game-thread publish"),
++            Root->WorldScapeLodInGeneration.Num(), Count);
++        for (const auto& Pair : Root->WorldScapeLodInGeneration)
++            TestFalse(TEXT("Workers never mutate the game-thread pending map"), Pair.Value);
++        Root->CheckForLodGeneration();
++        TestEqual(TEXT("Whole completed batch published"), Root->WorldScapeLodInGeneration.Num(), 0);
++        TestEqual(TEXT("Completed task objects released"), Root->LodGenerationThreadPool.Num(), 0);
++        Root->CleanComponents();
++        TestEqual(TEXT("Regeneration removes old LODs"), Root->WorldScapeLod.Num(), 0);
++    }
++    // Explicit regeneration may arrive with a worker still queued/running.
++    UWorldScapeLod* Lod = NewObject<UWorldScapeLod>(Root);
++    const DVector Position(FVector(0.0, 0.0, Radius));
++    Lod->Init(0, 16, 1920.0, Position, FWSMaterialLodArray{}, Radius, DVector(0), false, false);
++    Root->WorldScapeLod.Add(Lod);
++    Root->WorldScapeLodInGeneration.Add(Lod, false);
++    auto* Task = new FAsyncTask<LodGenerationThread>(Lod, Root, Position,
++        DVector(0), FVector2D::ZeroVector, Radius, 0, 120.0f, 16, 1000.0,
++        FVector::UpVector, false, false);
++    Root->LodGenerationThreadPool.Add(Task);
++    Task->StartBackgroundTask();
++    Root->CleanComponents();
++    TestEqual(TEXT("Explicit rebuild drains outstanding tasks"), Root->LodGenerationThreadPool.Num(), 0);
++    TestEqual(TEXT("Explicit rebuild clears pending targets"), Root->WorldScapeLodInGeneration.Num(), 0);
++    World->DestroyWorld(false);
++    return true;
++}
++#endif

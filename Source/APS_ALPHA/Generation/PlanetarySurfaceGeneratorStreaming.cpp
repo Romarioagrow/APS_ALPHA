@@ -9,6 +9,7 @@
 #include "APS_ALPHA/Core/Planetary/APSSharedTerrainMaterial.h"
 #include "APS_ALPHA/Core/Planetary/APSSharedGeneratedLiquidMaterial.h"
 #include "APS_ALPHA/Core/Planetary/APSWorldScapeFoliagePolicy.h"
+#include "APS_ALPHA/Core/Planetary/APSWorldScapeLiquidLattice.h"
 #include "APSWorldScapePlanetNoise.h"
 #include "Engine/World.h"
 #include "HAL/IConsoleManager.h"
@@ -869,20 +870,11 @@ void APlanetarySurfaceGenerator::ApplySurfaceProfileNow(APlanetaryBody* Body)
 	WorldScapeRootInstance->OceanMaxLod = bScaledOrbitalPreview ? 6 : 9;
 	WorldScapeRootInstance->OceanLodResolution = bScaledOrbitalPreview ? 32 : 64;
 	WorldScapeRootInstance->OceanTriangleSize = bScaledOrbitalPreview ? 650.0f : 200.0f;
-	if (bOwnsWorldScapeRootInstance && !bScaledOrbitalPreview
-		&& WorldScapeRootInstance->bOcean
-		&& ResolvedSurfaceProfile.LiquidType == EAPSPlanetLiquidType::Water)
-	{
-		// WorldScape derives altitude expansion and snapping independently from
-		// these three settings. Different ocean/terrain lattices have different
-		// spherical chord sag, exposing triangular water cuts through dry coast.
-		// Share the terrain lattice so only sampled height decides their intersection.
-		// Keep terrain, collision, authored roots and scaled presentation unchanged.
-		// Only the active Water root takes the additional ocean sampling cost.
-		WorldScapeRootInstance->OceanMaxLod = WorldScapeRootInstance->MaxLod;
-		WorldScapeRootInstance->OceanLodResolution = WorldScapeRootInstance->LodResolution;
-		WorldScapeRootInstance->OceanTriangleSize = WorldScapeRootInstance->TriangleSize;
-	}
+	// Lava and exotic oceans need the same lattice guarantee as water: material
+	// colour/emission cannot repair intersections between unequal spherical chords.
+	// No changes to terrain density, collision, authored roots or scaled previews.
+	APSWorldScapeLiquidLattice::MatchTerrain(*WorldScapeRootInstance,
+		bOwnsWorldScapeRootInstance, bScaledOrbitalPreview);
 	// Keep the gameplay collision sample spacing identical to terrain LOD0 so the
 	// pawn does not walk on the visibly smoother 2 m default collision sheet. A
 	// 64x64 padded patch gives roughly 74 m of full-scale coverage around each
