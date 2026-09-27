@@ -7,15 +7,17 @@ Production source, materials, engine plugin and binaries were not replaced.
 
 ## What is preserved here
 
-`integration.patch` and `overlay-manifest.json` describe 17 source files:
+`integration.patch` and `overlay-manifest.json` describe 18 source files:
 the private WorldScape signed-kilometre UV1 data path and worker tests, an APS
 process-wide opt-in restricted to owned full-scale generated Water roots, and
 a bounded extension of the existing real gameplay liquid probe. There is no
 new production material selector, saved default, geography or palette change.
 The rejected compressed-preview height adapter is deliberately absent.
 
-Current overlay: `overlay-v18` (v17 is the first local fill A/B package; v18 adds
-the source-equivalent baseline control. The v16 filtered-shadow result is in
+Current overlay: `overlay-v19` adds guarded per-frame fill binding, a native-noise
+shore-following route and explicit Water-depth family fixtures. v18's source-
+equivalent baseline control is saved in `7feae9e720933f95e83ba55779c95f1e66115224`.
+(v17 is the first local fill A/B package. The v16 filtered-shadow result is in
 `1563603de1a35beeb53c24b640deed64453548f1`; the three water-pass controls are preserved in
 `2d5cad80d19acd0924b3369a9fa7b9e0f8c37e15`; the SingleLayerWater surface control and its
 shore/lighting regression are preserved in `dfdcb10992d8e61f23608071021ee0e5ec14c5cd`;
@@ -27,8 +29,8 @@ the preceding stochastic candidate is preserved
 in commit `2092659f86e030ece6209e22eec27ddb86ab16b9`; oblique/live-LOD fixture
 in commit `47ac2c4340f7103f869aebda30d4dd1c740e05ff`; palette-budget fixture in
 `8248482c54d92e86a655412f2b82b530ad326a1f`; dry fixture in `6e9e8e09`).
-Patch SHA256: `6B9178C8B2921D3551306420CAC687321997E6F5DBB5D0D1E9F02E28E2DEA831`.
-Manifest SHA256: `AF9422A3969E079D2E43E011D37C526F0A3635CE3AA808DE24840F2BAF702A96`.
+Patch SHA256: `0E25DE73A68D1E6B99F748711530D8842779BB6132A51BD21CC31626CFFB7C71`.
+Manifest SHA256: `85D0EE289571A15DFFA12692A6FF6AE9B20E87CA0075BB6A5B3A2E857C0E0A6F`.
 The patch was reverse-checked against the final isolated source tree.
 The optional normal-only ripple extension, private asset mount and its separate
 rendered evidence are documented in `RIPPLES.md`. It has no production selector.
@@ -38,8 +40,11 @@ SingleLayerWater surface control removes that pattern but darkens the water.
 Its shore fringe is removed in the v16 filtered-shadow fixture. The v18
 scene-derived secondary-fill adapter brings the source-equivalent 2 m baseline
 within 1% mean linear water luminance of the original, without palette gain.
-This is a local rendered result: dynamic binding, moving views and broader
-coverage remain unverified, so it is still not eligible for production. The
+The v19 moving shore fixture passed native LOD/binding checks on Water and
+Terrestrial; inspected start/turn/return stills retain the ripple surface without
+the prior noisy fringe in their limited visible shoreline. Neither run changed
+the actual fill direction, so light transitions remain untested. Natural
+walking, orbit and broader-family coverage remain open; no production promotion. The
 paired GPU benchmark is useful evidence, not a visual or 120 FPS acceptance.
 The latest lighting controls and view-anchor candidate are recorded in
 `RIPPLES.md`. With GI and reflections still enabled, disabling ShortRangeAO
@@ -317,11 +322,14 @@ Omit `-LiveLod` for a frozen oblique A/B; live mode requires the oblique fixture
 In live mode native geometry is allowed to regenerate and restoration changes
 material ownership only, never copying the frozen section buffers back.
 
-Next bounded step: extend the scene-derived fill's guarded binding to the
-existing native moving-LOD fixture, retaining filtered water shadows. Account
-for actual light direction/visibility changes and teardown; do not treat the
-frozen fixture's phase-bound values as a runtime implementation. The source-
-equivalent close-view lighting control and its limits are in `RIPPLES.md`.
+Next bounded step: exercise actual source-light change/loss and recoverability,
+then a normal grounded walking view with visible shoreline and matched baseline.
+The v19 per-frame adapter was rendered only on a 60 m out-and-back hover route,
+not a production light lifecycle. `Run.ps1 -Planet Terrestrial` selects the
+explicit Water-depth family fixture; other listed Water-bearing types are
+allowed but NOT validated merely by being listed. The runtime still requires
+actual Water liquid, native collision, stable root, payload and restoration.
+The source-equivalent lighting control and v19 limits are in `RIPPLES.md`.
 Do not repeat the excluded prepass-coverage or reflection/DF controls, blind
 coordinate/noise rewrites or promote a scene-wide AO disable. Normal walking, broader
 Water-family coverage and whole-pipeline performance remain unverified. Do not hide the ground,

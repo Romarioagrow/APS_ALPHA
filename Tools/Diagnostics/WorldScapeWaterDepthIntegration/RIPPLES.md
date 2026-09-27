@@ -676,3 +676,80 @@ Accepted production Source/Content/Config/Plugins and binaries are unchanged.
 Next work is dynamic light binding plus moving/native-LOD and orbit/family
 coverage. Do not transplant the frozen fixture or enable the new material in
 production merely because this source-equivalent lighting comparison passed.
+
+## v19: per-frame binding and native shoreline traversal
+
+The isolated probe now revalidates the real fill source on every moving frame.
+It writes direction/irradiance only when changed; unsupported or missing source
+zeros candidate irradiance before failing and restoring the original material.
+The source lookup retains all v18 light/tag/channel/model guards. This is still
+diagnostic code, not an installed production lifecycle or physical water volume.
+
+The first live run used the old straight tangent route. Its turn frame went
+mostly inland, so it did not establish adequate water coverage. The route now
+traces the zero of actual native ocean-minus-ground height: 13 waypoints,
+approximately 5 m spacing, bounded finite-difference gradient/Newton projection.
+Each waypoint requires residual <=0.1 cm; weak gradients, holes, nonfinite noise,
+large displacement or unreasonable total path length fail closed. Neither the
+noise, seed, geography nor sea level is changed. Runtime interpolates this path
+out/back in 20 seconds, keeping the real LOD observer 70 m above sea and the
+camera 2 m above sea. This remains a labelled zero-G hover, NOT walking.
+
+`Run.ps1 -Planet` defaults to Water. The explicit Water-depth diagnostic may also
+select Terrestrial/Ocean/Forest/Oasis/Savanna/Nordic/Tundra/Archipelago/Pangea/
+SuperEarth/HighMountain. Only Water and Terrestrial have been exercised here;
+the extra list is not acceptance of those families. The production enum,
+material resolver, normal spawn and other automation family contracts are
+unchanged. Runtime must still resolve actual Water liquid and all existing
+root/collision/physical-depth gates. Existing diagnostic atmosphere overrides
+are unchanged; these runs do not validate production atmosphere defaults.
+
+All three finite editors below exited and were confirmed absent. Each completed
+both tests successfully: rendered test 55 warnings / 0 errors, palette test
+0 warnings / 0 errors. Restored all 30 material slots, pawn/camera/tick state;
+did not overwrite regenerated geometry with old frozen buffers. Same private
+fill assets as v18, no bake, production asset/source/config/plugin replacement.
+
+| Run / owned PID | Evidence |
+| --- | --- |
+| `water-single-layer-fill-live-v1` / 30356 | Initial straight route: 1939 moving frames, 98 actual LOD0 vertex changes. Turn mostly inland; insufficient water-view coverage. |
+| `water-single-layer-fill-shore-live-v1` / 27664 | Water: 1930 frames, 79 actual LOD0 changes; native route 59.9354 m one-way / 105 noise samples / max waypoint residual .0899291 cm. |
+| `water-terrestrial-fill-shore-live-v1` / 28148 | Terrestrial: 1862 frames, 100 actual LOD0 changes; native route 59.9346 m / 120 samples / max waypoint residual .0213615 cm. |
+
+Every moving frame checked all 30 candidate slots and 90 valid UV1 samples.
+Final full Water payload: 29401 wet / 44559 dry / 0 invalid; 1081 native-oracle
+samples, max CPU error 1.11742213e-9 m. Terrestrial: 32125 wet / 41835 dry /
+0 invalid, 1081 samples, max error 2.91952573e-9 m. These are CPU payload checks,
+not GPU error bounds. The source fill was sampled on every frame, but both
+shore runs recorded ZERO direction changes. Changing/lost source, night/station
+transitions and recovery are NOT runtime-tested by these passes.
+
+Inspected Water and Terrestrial start/turn/return images. Ripple water remains
+visible and no broad angular AO patches or old noisy fringe are evident in
+those stills. Shore occupies only a small right-hand portion; Terrestrial's
+static A/B views are almost entirely water. This limits shoreline/terrain
+acceptance. The unmodified original remains smoother; the new surface is not
+yet established as realistic water across viewpoints. Three stills do not prove
+temporal stability, orbit continuity, normal walking or all-family completion.
+
+Callback intervals (median/p95): Water 9.8261/12.9118 ms; Terrestrial
+10.2323/13.8641 ms. Instrumented hover callback timing is not GPU/Present or
+approximately 120 FPS acceptance. No paired moving baseline in these runs.
+
+Builds succeeded: `build-20260927-145633.log` (4 actions / 10.64 s),
+`build-20260927-150159.log` (4 / 9.28 s),
+`build-20260927-150626.log` (4 / 16.96 s, family fixture).
+Final DLL SHA256 `C47138D286522774DC89066539CA1F493188487C9F3A1F2E70C15039DFA53495`.
+Report SHA256 in table order:
+
+- `9BA0C4E1FEA33CEBCB5C2FF139C8A59BF9A094260EF37E0002C057CD1CD338BC`
+- `A7A58A77580A5F30C9D6C66E9C9BB269CD0B2BFF7ACEDC9E72AF9E3AA4A5F25E`
+- `55A1AF2FEFB4CCB0AE8DC295D5D4BD6342AD6D50EE04C49B0D84F7C0B36B8758`
+
+Reproduce on the matching isolated host, with a new label:
+`Run.ps1 -Label <new-label> -Planet Terrestrial -Ripples
+-SingleLayerSurfaceControl -WaterFilteredShadows -WaterSurfaceFill
+-PaletteBudget -CameraHeightM 2 -Oblique -LiveLod`.
+Next: actual light-change/loss/recovery control, then a grounded walking view
+with meaningful visible shore and matched baseline. Retain source-derived
+energy and filtered shadows; no global AO disable, palette gain or rollout.
