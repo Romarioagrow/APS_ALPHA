@@ -488,10 +488,11 @@ public:
         if (!VM || !VM->GeneratedWorld) { DiagnosePending(TEXT("ViewModelOrGeneratedWorld"), World, VM); return false; }
         if (Step == 0)
         {
+            EPlanetType WaterDepthType = EPlanetType::Ocean;
             if (APSWaterDepthRendered::Enabled() && (HasSharedCandidate() || bTerrainLodAB
                 || bWaterOpacityAB || bLavaSamplingAB || bLavaEmissionAB
-                || (Family != TEXT("Ocean") && Family != TEXT("Water"))))
-            { Test->AddError(TEXT("Water depth A/B requires only Ocean/Water and no other diagnostic variant")); return true; }
+                || !APSWaterDepthRendered::ResolveFamily(Family, WaterDepthType)))
+            { Test->AddError(TEXT("Water depth A/B requires an explicit supported Water family and no other diagnostic variant")); return true; }
             if (!FMath::IsFinite(AtmosphereOpacity) || AtmosphereOpacity < 0.0f || AtmosphereOpacity > 20.0f)
             { Test->AddError(TEXT("Invalid explicit probe atmosphere opacity")); return true; }
             if (bLavaBandwidthLOD && (!bSharedLavaCandidate || bSharedAmmoniaCandidate || bSharedWaterCandidate
@@ -537,6 +538,7 @@ public:
                 Family == TEXT("Ammonia") ? EPlanetType::Ammonia :
                 Family == TEXT("Water") ? EPlanetType::Water :
                 Family == TEXT("Metal") ? EPlanetType::Metal : EPlanetType::Ocean;
+            if (APSWaterDepthRendered::Enabled()) Model->PlanetType = WaterDepthType;
             // Match the current generated-world default. The old diagnostic
             // value 12 hid the surface under a dense white atmosphere.
             Model->AtmosphereHeight = 100; Model->AtmosphereOpacity = AtmosphereOpacity;

@@ -7,13 +7,53 @@
 #include "Async/ParallelFor.h"
 #include "Camera/CameraComponent.h"
 #include "ProceduralMeshComponent.h"
+#include "APSProductionSharedLiquidAssertions.h"
+#include "ContentStreaming.h"
+#include "Engine/Texture2D.h"
+#include "SceneView.h"
+#include "SceneViewExtension.h"
 
 // Controlled PLANET A/B only. Uses the real retained globe and a transient UV1
 // payload; no WorldScape worker/ABI or production material binding is changed.
 namespace APSWaterDepthRendered
 {
 inline bool Enabled() { return FParse::Param(FCommandLine::Get(), TEXT("APSProbeWaterDepth")); }
+inline bool ResolveFamily(const FString& Name, EPlanetType& Type)
+{
+    const TPair<const TCHAR*, EPlanetType> Families[] = {
+        {TEXT("Ocean"), EPlanetType::Ocean}, {TEXT("Water"), EPlanetType::Water},
+        {TEXT("Terrestrial"), EPlanetType::Terrestrial}, {TEXT("Forest"), EPlanetType::Forest},
+        {TEXT("Oasis"), EPlanetType::Oasis}, {TEXT("Savanna"), EPlanetType::Savanna}};
+    for (const auto& Family : Families)
+        if (Name == Family.Key) { Type = Family.Value; return true; }
+    return false;
+}
 enum class EResult { Pending, Finished, Failed };
+// Observe the final blended game view, not just the camera component defaults.
+// This does not override exposure, streaming, lights or any production setting.
+class FViewEvidence final : public FWorldSceneViewExtension
+{
+public:
+    FViewEvidence(const FAutoRegister& Register, UWorld* World)
+        : FWorldSceneViewExtension(Register, World) {}
+    virtual void SetupViewFamily(FSceneViewFamily&) override {}
+    virtual void BeginRenderViewFamily(FSceneViewFamily&) override {}
+    virtual void SetupView(FSceneViewFamily& Family, FSceneView& View) override
+    {
+        if (View.bIsSceneCapture) return;
+        PP = View.FinalPostProcessSettings;
+        Location = View.ViewLocation; Rotation = View.ViewRotation;
+        Frame = GFrameCounter;
+        bEye = Family.EngineShowFlags.EyeAdaptation;
+        bLocal = Family.EngineShowFlags.LocalExposure;
+        bCut = View.bCameraCut;
+    }
+    FPostProcessSettings PP;
+    FVector Location = FVector::ZeroVector;
+    FRotator Rotation = FRotator::ZeroRotator;
+    uint64 Frame = 0;
+    bool bEye = false, bLocal = false, bCut = false;
+};
 class FProbe
 {
     TWeakObjectPtr<AAstroGenerator> Generator;
@@ -26,7 +66,36 @@ class FProbe
     int32 Step = 0;
     double Next = 0, Scale = 0;
     float Strength = 0.65f, HalfDepthM = 80.0f;
+    EPlanetType ExpectedType = EPlanetType::Ocean;
+    bool bFamilyValid = false;
     FTransform PairCamera, PairMesh;
+    TSharedPtr<FViewEvidence, ESPMode::ThreadSafe> ViewEvidence;
+
+    bool Trace(const TCHAR* Phase, FString& Error) const
+    {
+        FString Baseline;
+        if (!APSProductionSharedLiquidAssertions::Validate(
+            Cast<UMaterialInstanceDynamic>(Original.Get()), EAPSPlanetLiquidType::Water,
+            Ocean.Get(), Scale, 1.0f, Baseline, Error)) return false;
+        if (!ViewEvidence || !ViewEvidence->Frame || GFrameCounter - ViewEvidence->Frame > 3)
+        { Error = TEXT("No recent actual game view for optical comparison"); return false; }
+        const auto& V = *ViewEvidence;
+        const auto& P = V.PP;
+        UE_LOG(LogTemp, Display, TEXT("[APS.WaterDepthView] phase=%s age=%llu location=%s rotation=%s cut=%d exposure=%d min=%.9g max=%.9g bias=%.9g physical=%d eye=%d local=%d localHighlight=%.9g localShadow=%.9g localGrey=%.9g bloom=%.9g wanting=%d baselineFrameValid=1"),
+            Phase, GFrameCounter - V.Frame, *V.Location.ToString(), *V.Rotation.ToString(), int(V.bCut),
+            int(P.AutoExposureMethod), P.AutoExposureMinBrightness, P.AutoExposureMaxBrightness,
+            P.AutoExposureBias, int(P.AutoExposureApplyPhysicalCameraExposure), int(V.bEye), int(V.bLocal),
+            P.LocalExposureHighlightContrastScale, P.LocalExposureShadowContrastScale,
+            P.LocalExposureMiddleGreyBias, P.BloomIntensity, IStreamingManager::Get().GetNumWantingResources());
+        TArray<UTexture*> Textures;
+        Ocean->GetMaterial(0)->GetUsedTextures(Textures, EMaterialQualityLevel::High, true,
+            Ocean->GetWorld()->GetFeatureLevel(), false);
+        for (UTexture* Texture : Textures)
+            if (const UTexture2D* T = Cast<UTexture2D>(Texture))
+                UE_LOG(LogTemp, Display, TEXT("[APS.WaterDepthTexture] phase=%s texture=%s resident=%d"),
+                    Phase, *T->GetPathName(), T->GetNumResidentMips());
+        return true;
+    }
 
     static uint32 CRC(const FProcMeshSection& Section)
     {
@@ -69,6 +138,9 @@ public:
     {
         FParse::Value(FCommandLine::Get(), TEXT("APSWaterDepthStrength="), Strength);
         FParse::Value(FCommandLine::Get(), TEXT("APSWaterHalfDepthM="), HalfDepthM);
+        FString Family = TEXT("Ocean");
+        FParse::Value(FCommandLine::Get(), TEXT("APSPlanetProbeFamily="), Family);
+        bFamilyValid = ResolveFamily(Family, ExpectedType);
     }
     ~FProbe() { Restore(); }
     void Restore()
@@ -84,6 +156,7 @@ public:
             }
         }
         if (bSceneSaved && Generator.IsValid()) Generator->SetActorTickEnabled(bSavedTick);
+        ViewEvidence.Reset();
         bSceneSaved = false;
     }
     EResult Update(AAstroGenerator* InGenerator, UWorldGenerationViewModel* VM, float Zoom,
@@ -93,6 +166,7 @@ public:
         const double Now = FPlatformTime::Seconds();
         if (Now < Next) return EResult::Pending;
         if (!InGenerator || !VM) return Fail(TEXT("Missing actual preview context"));
+        if (!bFamilyValid) return Fail(TEXT("Unsupported explicit Water depth family"));
         if (!FMath::IsFinite(Strength) || Strength < 0.0f || Strength > 1.0f
             || !FMath::IsFinite(HalfDepthM) || HalfDepthM < 1.0f || HalfDepthM > 500.0f)
             return Fail(TEXT("Invalid bounded optical controls"));
@@ -101,7 +175,8 @@ public:
             Generator = InGenerator;
             Ocean = InGenerator->GetActivePreviewOceanProxy();
             APlanet* Body = Cast<APlanet>(InGenerator->GetActivePreviewWorldScapeBody());
-            if (!Body || Body->IsManual || !Ocean.IsValid() || !InGenerator->GetPreviewCameraComponent())
+            if (!Body || Body->IsManual || Body->PlanetType != ExpectedType
+                || !Ocean.IsValid() || !InGenerator->GetPreviewCameraComponent())
                 return Fail(TEXT("Expected generated Water PLANET mesh"));
             Scale = Body->WorldScapePresentationScale;
             if (!FMath::IsFinite(Scale) || Scale <= 0.0) return Fail(TEXT("Invalid actual presentation scale"));
@@ -114,6 +189,7 @@ public:
                 TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Diagnostics/WaterDepth20260927/M_APS_WaterDepth.M_APS_WaterDepth"))
                 return Fail(TEXT("Exact saved depth candidate absent"));
             Candidate.Reset(UMaterialInstanceDynamic::Create(Template, Ocean.Get()));
+            ViewEvidence = FSceneViewExtensions::NewExtension<FViewEvidence>(Ocean->GetWorld());
         }
         if (InGenerator != Generator.Get() || InGenerator->GetActivePreviewOceanProxy() != Ocean.Get())
             return Fail(TEXT("Preview rebuilt/replaced during depth comparison"));
@@ -135,13 +211,17 @@ public:
                 if (It->GetOwner() == Generator.Get() && It->IsSurfaceProfileCurrent(Body))
                 { if (Resolver) return Fail(TEXT("Ambiguous surface resolver")); Resolver = *It; }
             if (!Resolver || !Resolver->WorldScapeRootInstance
-                || Resolver->ResolvedSurfaceProfile.LiquidType != EAPSPlanetLiquidType::Water)
+                || Resolver->ResolvedSurfaceProfile.LiquidType != EAPSPlanetLiquidType::Water
+                || Resolver->ResolvedSurfaceProfile.PlanetType != ExpectedType
+                || !Resolver->WorldScapeRootInstance->bOcean)
                 return Fail(TEXT("Missing actual Water resolver"));
             const auto* Root = Resolver->WorldScapeRootInstance;
             if (!Cast<UAPSWorldScapePlanetNoise>(Root->WorldScapeNoise)) return Fail(TEXT("Unsupported generator"));
             FProcMeshSection* Section = Ocean->GetProcMeshSection(0);
             if (!Section || Section->ProcVertexBuffer.IsEmpty()) return Fail(TEXT("Missing retained water geometry"));
             const auto Profile = Resolver->ResolvedSurfaceProfile;
+            UE_LOG(LogTemp, Display, TEXT("[APS.WaterDepthProfile] type=%d actualType=%d liquid=%d landCoverage=%.9g resolver=%s"),
+                int(ExpectedType), int(Body->PlanetType), int(Profile.LiquidType), Profile.LandCoverage, *Resolver->GetPathName());
             // Reproduce the full-scale root's float property conversion from the
             // physical body, not a division of an already rounded preview radius.
             const double Radius = static_cast<float>(FMath::Max(100000.0,
@@ -186,18 +266,20 @@ public:
             UE_LOG(LogTemp, Display, TEXT("[APS.WaterDepthRender] strength=%.6g halfDepthM=%.6g physicalReference=full-scale-root-property"), Strength, HalfDepthM);
             UE_LOG(LogTemp, Display, TEXT("[APS.WaterDepthRender] vertices=%d physicalRadiusCm=%.9g intensity=%.9g minKm=%.9g maxKm=%.9g sampleMs=%.3f crc=%u payload=UV1-only previewGeometryUnchanged=1 productionBinding=0"),
                 Depths.Num(), Radius, Intensity, Minimum, Maximum, (FPlatformTime::Seconds() - WorkStart) * 1000.0, GeometryCRC);
-            Next = Now + 2; Step = 1; return EResult::Pending;
+            Next = Now + 6; Step = 1; return EResult::Pending;
         }
         FProcMeshSection* Section = Ocean->GetProcMeshSection(0);
         if (!Section || CRC(*Section) != GeometryCRC) return Fail(TEXT("Geometry/RGBA/other UV channels changed during A/B"));
         if (Step == 1)
         {
+            if (!Trace(TEXT("00-orbit-accepted"), Error)) { Restore(); return EResult::Failed; }
             RememberPair(); Capture(TEXT("00-orbit-accepted"));
             if (!ApplyCandidate()) return Fail(TEXT("Candidate frame failed"));
         }
         else if (Step == 2)
         {
             if (!SamePair()) return Fail(TEXT("Orbit camera/mesh changed between A/B"));
+            if (!Trace(TEXT("01-orbit-depth"), Error)) { Restore(); return EResult::Failed; }
             Capture(TEXT("01-orbit-depth"));
             Ocean->SetMaterial(0, Original.Get());
             Generator->SetActorTickEnabled(bSavedTick);
@@ -206,26 +288,53 @@ public:
         }
         else if (Step == 3)
         {
-            Generator->SetActorTickEnabled(false); RememberPair(); Capture(TEXT("02-close-accepted"));
+            Generator->SetActorTickEnabled(false); RememberPair();
+            // Camera tick being disabled is not evidence that its final rendered
+            // view/history has settled. Add original-only controls on both sides.
+            Step = 31; Next = Now + 2; return EResult::Pending;
+        }
+        else if (Step == 31)
+        {
+            if (!SamePair()) return Fail(TEXT("Close settling changed camera/mesh"));
+            if (!Trace(TEXT("02-close-accepted"), Error)) { Restore(); return EResult::Failed; }
+            Capture(TEXT("02-close-accepted"));
+            Step = 32; Next = Now + 2; return EResult::Pending;
+        }
+        else if (Step == 32)
+        {
+            if (!SamePair()) return Fail(TEXT("Repeated original frame changed camera/mesh"));
+            if (!Trace(TEXT("02b-close-accepted-repeat"), Error)) { Restore(); return EResult::Failed; }
+            Capture(TEXT("02b-close-accepted-repeat"));
             if (!ApplyCandidate()) return Fail(TEXT("Close candidate frame failed"));
+            Step = 4; Next = Now + 2; return EResult::Pending;
         }
         else if (Step == 4)
         {
             if (!SamePair()) return Fail(TEXT("Close camera/mesh changed between A/B"));
+            if (!Trace(TEXT("03-close-depth"), Error)) { Restore(); return EResult::Failed; }
             Capture(TEXT("03-close-depth")); Candidate->SetScalarParameterValue(TEXT("APS_WaterDepthStrength"), 0.0f);
         }
         else if (Step == 5)
         {
             if (!SamePair()) return Fail(TEXT("Close fallback frame changed"));
+            if (!Trace(TEXT("04-close-strength-zero"), Error)) { Restore(); return EResult::Failed; }
             Capture(TEXT("04-close-strength-zero")); Candidate->SetScalarParameterValue(TEXT("APS_WaterDepthStrength"), Strength);
             for (auto& V : Section->ProcVertexBuffer) V.UV1.Y = 0.0;
             Ocean->MarkRenderStateDirty();
         }
-        else
+        else if (Step == 6)
         {
             if (!SamePair()) return Fail(TEXT("Invalid payload fallback frame changed"));
-            Capture(TEXT("05-close-invalid-payload")); Restore();
-            UE_LOG(LogTemp, Display, TEXT("[APS.WaterDepthRender] comparisons=orbit,close,zero-strength,invalid-payload restored=1 visualAcceptance=UNVERIFIED gameplayCoverage=0"));
+            if (!Trace(TEXT("05-close-invalid-payload"), Error)) { Restore(); return EResult::Failed; }
+            Capture(TEXT("05-close-invalid-payload"));
+            Ocean->SetMaterial(0, Original.Get());
+        }
+        else
+        {
+            if (!SamePair()) return Fail(TEXT("Original-return frame changed camera/mesh"));
+            if (!Trace(TEXT("06-close-accepted-return"), Error)) { Restore(); return EResult::Failed; }
+            Capture(TEXT("06-close-accepted-return")); Restore();
+            UE_LOG(LogTemp, Display, TEXT("[APS.WaterDepthRender] comparisons=orbit,close,original-repeat,zero-strength,invalid-payload,original-return restored=1 visualAcceptance=UNVERIFIED gameplayCoverage=0"));
             return EResult::Finished;
         }
         ++Step; Next = Now + 2; return EResult::Pending;
