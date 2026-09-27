@@ -11816,7 +11816,12 @@ bool AAstroGenerator::ResolveSpawnLocation(const ASpaceship* NewHomeSpaceship, F
 		const AStar* LandingStar = IsValid(FamilyPlanet) && IsValid(FamilyPlanet->ParentStar)
 			? FamilyPlanet->ParentStar : HomeStar;
 		constexpr double MinimumSunElevationSine = 0.35; // ~20 degrees above the horizon.
+		// First frame: the star stands low enough to be seen, not at the zenith.
+		constexpr double TargetSunElevationDegrees = 25.0;
+		// Face the star turned aside a little so it sits in the frame, not in its centre.
+		constexpr double SunViewOffsetDegrees = 25.0;
 		FVector SunPosition = FVector::ZeroVector;
+		FVector SubSolarOutward = FVector::ZeroVector;
 		TArray<APlanetaryBody*, TInlineAllocator<16>> EclipseBodies;
 		if (bRequireSunlitLanding)
 		{
@@ -11832,7 +11837,21 @@ bool AAstroGenerator::ResolveSpawnLocation(const ASpaceship* NewHomeSpaceship, F
 				UE_LOG(LogTemp, Error, TEXT("[APS.Civilization.SurfaceSpawn] invalid daylight geometry body=%s star=%s"), *GetNameSafe(Body), *GetNameSafe(LandingStar));
 				return false;
 			}
-			Outward = ToSun.GetSafeNormal();
+			SubSolarOutward = ToSun.GetSafeNormal();
+			// Search around the point where the sun is TargetSunElevationDegrees above the
+			// horizon, on the side of the preferred direction.
+			FVector TowardsPreferred = FVector::VectorPlaneProject(
+				PreferredOutward.GetSafeNormal(UE_DOUBLE_SMALL_NUMBER, Body->GetActorUpVector()),
+				SubSolarOutward);
+			if (TowardsPreferred.IsNearlyZero(1.0e-3))
+			{
+				FVector UnusedTangent;
+				SubSolarOutward.FindBestAxisVectors(TowardsPreferred, UnusedTangent);
+			}
+			TowardsPreferred.Normalize();
+			const double SunZenithAngle = FMath::DegreesToRadians(90.0 - TargetSunElevationDegrees);
+			Outward = (SubSolarOutward * FMath::Cos(SunZenithAngle)
+				+ TowardsPreferred * FMath::Sin(SunZenithAngle)).GetSafeNormal();
 			if (IsValid(FamilyPlanet))
 			{
 				if (FamilyPlanet != Body) EclipseBodies.Add(FamilyPlanet);
@@ -12007,6 +12026,18 @@ bool AAstroGenerator::ResolveSpawnLocation(const ASpaceship* NewHomeSpaceship, F
 			}
 
 			Evaluation.ViewDirection = BestViewDirection;
+			if (bRequireSunlitLanding)
+			{
+				const FVector GroundPoint = SurfaceCenter
+					+ Evaluation.Outward * (SurfaceRadiusCm + Evaluation.HeightCm);
+				const FVector SunAzimuth = FVector::VectorPlaneProject(
+					SunPosition - GroundPoint, Evaluation.Outward).GetSafeNormal();
+				if (!SunAzimuth.IsNearlyZero())
+				{
+					Evaluation.ViewDirection = SunAzimuth.RotateAngleAxis(
+						SunViewOffsetDegrees, Evaluation.Outward);
+				}
+			}
 			const double PreferredAlignment = FVector::DotProduct(
 				Evaluation.Outward, Outward);
 			const double DryMarginScore = bHasLiquid
@@ -12067,6 +12098,11 @@ bool AAstroGenerator::ResolveSpawnLocation(const ASpaceship* NewHomeSpaceship, F
 		if (!BestCandidate.bValid)
 		{
 			bUsedGlobalSearch = true;
+			// The daylight cap is centred on the sub-solar point, not on the first-frame target.
+			const FVector CapCenter = bRequireSunlitLanding ? SubSolarOutward : Outward;
+			FVector CapTangentA;
+			FVector CapTangentB;
+			CapCenter.FindBestAxisVectors(CapTangentA, CapTangentB);
 			constexpr int32 GlobalCandidateCount = 96;
 			const double GoldenAngle = UE_PI * (3.0 - FMath::Sqrt(5.0));
 			TArray<FVector> GlobalCandidateDirections;
@@ -12082,8 +12118,8 @@ bool AAstroGenerator::ResolveSpawnLocation(const ASpaceship* NewHomeSpaceship, F
 					FMath::Max(0.0, 1.0 - UnitZ * UnitZ));
 				const double Azimuth = GoldenAngle * static_cast<double>(CandidateIndex);
 				GlobalCandidateDirections.Add(bRequireSunlitLanding
-					? Outward * UnitZ + TangentA * (UnitRadius * FMath::Cos(Azimuth))
-						+ TangentB * (UnitRadius * FMath::Sin(Azimuth))
+					? CapCenter * UnitZ + CapTangentA * (UnitRadius * FMath::Cos(Azimuth))
+						+ CapTangentB * (UnitRadius * FMath::Sin(Azimuth))
 					: FVector(UnitRadius * FMath::Cos(Azimuth), UnitRadius * FMath::Sin(Azimuth), UnitZ));
 			}
 			ChooseBestCandidate(GlobalCandidateDirections, true, BestCandidate);
@@ -13396,12 +13432,24 @@ bool AAstroGenerator::SpawnStartInteractiveActors(TSharedPtr<FPlanetModel> Start
 		const FRotator InitialViewRotation = FRotationMatrix::MakeFromXZ(
 			InitialViewDirection.GetSafeNormal(), CameraUp).Rotator();
 		PlayerCharacter->SetActorRotation(InitialViewRotation, ETeleportType::TeleportPhysics);
+		// On the ground only the camera tilts up a little, so the low sun and the horizon
+		// share the first frame; the character itself stays upright.
+		FRotator InitialControlRotation = InitialViewRotation;
+		if (CharSpawnPlace == ECharSpawnPlace::PlanetSurface
+			|| CharSpawnPlace == ECharSpawnPlace::MoonSurface)
+		{
+			constexpr double SurfaceCameraPitchDegrees = 8.0;
+			InitialControlRotation = FRotationMatrix::MakeFromXZ(
+				(InitialViewDirection.GetSafeNormal()
+					+ CameraUp * FMath::Tan(FMath::DegreesToRadians(SurfaceCameraPitchDegrees))).GetSafeNormal(),
+				CameraUp).Rotator();
+		}
 		if (APlayerController* PlayerController = UGameplayStatics::GetPlayerController(World, 0))
 		{
 			// Selected pawn Blueprints may opt into control-rotation on their spring
 			// arm even though the native pawn does not. Set both contracts so the
 			// committed class opens on the same generated subject either way.
-			PlayerController->SetControlRotation(InitialViewRotation);
+			PlayerController->SetControlRotation(InitialControlRotation);
 			PlayerController->SetViewTarget(PlayerCharacter);
 		}
 		const UMainGameplayInstance* GameplayInstance = World->GetGameInstance()
