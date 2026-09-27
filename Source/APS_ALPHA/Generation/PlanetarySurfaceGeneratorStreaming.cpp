@@ -23,6 +23,14 @@
 
 namespace APSWorldScapeProfiles
 {
+    TAutoConsoleVariable<int32> CVarSurfaceMeshResolution(
+        TEXT("aps.Surface.MeshResolution"), 192,
+        TEXT("Generated full-scale WorldScape ring resolution, 96..192 in multiples of four. ")
+        TEXT("192 reduces coastline interpolation artifacts; 96 is the previous budget. ")
+        TEXT("Read only when creating a surface profile: stop PIE before changing. ")
+        TEXT("Terrain and liquid stay on matching lattices; collision and PLANET previews are unchanged."),
+        ECVF_Default);
+
 	TAutoConsoleVariable<int32> CVarNativeTerrainMaterial(
 		TEXT("aps.Surface.UseNativeTerrainMaterial"), 1,
 		TEXT("Use the SinglePlay WorldScape texture/normal stack for generated full-scale terrain. ")
@@ -865,7 +873,9 @@ void APlanetarySurfaceGenerator::ApplySurfaceProfileNow(APlanetaryBody* Body)
 		ResolvedTerrainMaterialInstance->SetScalarParameterValue(TEXT("MesoRoughnessStrength"), 0.0f);
 	}
 	WorldScapeRootInstance->MaxLod = bScaledOrbitalPreview ? 6 : 10;
-	WorldScapeRootInstance->LodResolution = bScaledOrbitalPreview ? 48 : 96;
+	WorldScapeRootInstance->LodResolution = APSWorldScapeLiquidLattice::TerrainResolution(
+		bOwnsWorldScapeRootInstance, bScaledOrbitalPreview,
+		APSWorldScapeProfiles::CVarSurfaceMeshResolution.GetValueOnGameThread());
 	WorldScapeRootInstance->TriangleSize = bScaledOrbitalPreview ? 450.0f : 120.0f;
 	WorldScapeRootInstance->OceanMaxLod = bScaledOrbitalPreview ? 6 : 9;
 	WorldScapeRootInstance->OceanLodResolution = bScaledOrbitalPreview ? 32 : 64;
