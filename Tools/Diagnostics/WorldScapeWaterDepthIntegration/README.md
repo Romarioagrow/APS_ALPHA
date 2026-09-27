@@ -14,8 +14,10 @@ a bounded extension of the existing real gameplay liquid probe. There is no
 new production material selector, saved default, geography or palette change.
 The rejected compressed-preview height adapter is deliberately absent.
 
-Patch SHA256: `21FEE5BA1DC0D4FA6914E73B2EBB7D4F0C7E8A2E3E1864EFBE6982D04E67053B`.
-Manifest SHA256: `FE9525EAAA14C2A5588CE32A500324B46203ACB721BAFDE0B53D0EE8F1244E41`.
+Current overlay: `overlay-v4` (the earlier dry-fixture overlay is in commit
+`6e9e8e09771467eef2b0c2d9ccc4418bc339d106`).
+Patch SHA256: `9422DCA55F8429F9FE85A38E40AEE4CEF41DC7B8B870D4A6DAF8C759FEC97614`.
+Manifest SHA256: `89A0FEFEA83AE4C67176B8C22C87104DD2505A7C64D2D207754574610D891FF4`.
 The patch was reverse-checked against the final isolated source tree.
 
 ## Evidence and limits
@@ -23,7 +25,7 @@ The patch was reverse-checked against the final isolated source tree.
 Private workspace:
 `C:/Users/Rio/Documents/ChatGPT/APOSFERA/work/planet_refinement_20260927/water-depth-gameplay`.
 It contains the full isolated `host/APS_ALPHA.uproject`, source snapshot,
-build logs, manifests and two finite rendered diagnostic reports.
+build logs, manifests and finite rendered diagnostic reports.
 
 - A coherent build of APS, private WorldScape and private AtmoScape succeeded:
   470 actions, 327.11 seconds. No pre-existing plugin binaries were copied.
@@ -40,7 +42,7 @@ build logs, manifests and two finite rendered diagnostic reports.
   No wet samples, candidate render, wet-coast quality or FPS acceptance.
 - Both runs restored all 30 material slots and 73,960 original vertex colours.
   No camera replacement occurred before the failure. Both owned editors exited.
-- Final source distinguishes valid all-dry data from a missing visible shore.
+- That revision distinguished valid all-dry data from a missing visible shore.
   That diagnostic wording/control-flow adjustment was compiled successfully
   (`build-20260927-104817.log`, 4 actions, 7.36 seconds), not rendered again.
 
@@ -49,6 +51,64 @@ Report v2 SHA256:
 Overall v2 result is 0 passed / 1 failed; narrow payload evidence does not turn
 the visual test into a pass. Natural First/+3/+8-second frames show the accepted
 material on dry ground, not the water-depth candidate.
+
+## Real wet-shore follow-up
+
+The diagnostic now searches deterministically for a day-side zero crossing of
+the actual full-scale root's ground and ocean noise. It moves the real pawn
+observer, waits for centred terrain/ocean LODs and actual WorldScape collision,
+then freezes/drains before its existing A/B sequence. This is a labelled test
+fixture, not the natural landing or a change to the production spawn rule.
+It restores the original pawn ECEF position, rotation, velocity, manual-zero-G
+state and control rotation, as well as the original camera/material state.
+No seed, sea level, noise profile, terrain geometry, RGBA or UV0 is changed.
+
+- `physical-water-shore-v1`, PID 30308: shore located but automation failed
+  after 100 seconds waiting for collision at 500 m camera / 520 m observer.
+  Inspection of WorldScape's collision altitude gate explained the unsuitable
+  fixture; no candidate frames were produced. The owned editor exited.
+- `physical-water-shore-v2`, PID 25984: camera 50 m above the actual shore,
+  pawn observer 70 m above it, complex trace against the native collision LOD.
+  Build `build-20260927-110112.log` succeeded (4 actions, 7.41 seconds).
+  Automation finished **Success with warnings**, 1 test, 55 warnings,
+  0 errors / 0 failed tests. Do not report a warning-free pass.
+  The editor exited normally. Actual saved frames are 1280 x 722.
+- The bounded search took 119 samples; sun dot 0.408206. Before freezing,
+  observer delta was 0 cm, with 10 terrain and 10 ocean LODs, confirmed native
+  collision, and stable profile signature 3027946924.
+- UV1 contained 29,401 wet and 44,559 dry vertices, 0 invalid, across 30
+  sections. 1,081 actual-root oracle samples had maximum CPU coordinate
+  round-trip error `1.11742213e-9` metres. This is not a GPU depth-error bound.
+- Captured original/repeat, filtered candidate, zero-strength and original
+  return on the same physical shore with visible ground and unchanged camera,
+  root frame, geometry, RGBA and UVs. Restored 30/30 material slots and 73,960
+  colours, then returned the pawn to its original physical position.
+
+Shore-v2 report SHA256:
+`FB2DABBEDA73C577C4F8AAD0E3DC853D7CD6F37C853CDD48A1A7D597BE71ACE3`.
+
+Visual outcome: the candidate makes near-shore water substantially brighter
+and more cyan; land and shoreline placement remain visually consistent.
+The water is still smooth/simple. This is **not accepted realism polish** and
+the candidate remains disabled. Zero-strength and original-return controls
+visually reproduce the accepted baseline.
+
+For a reproducible, narrow control comparison, mean absolute 8-bit display-RGB
+differences from the repeated original are below. Water ROI: x=[50,400),
+y=[50,620); land ROI: x=[950,1250), y=[50,620). These fixed rectangles exclude
+the HUD and shore, so they are not a whole-frame quality or luminance metric.
+
+| Frame | Water mean abs | Land mean abs |
+| --- | ---: | ---: |
+| First original | 0.0846 | 0.1681 |
+| Filtered candidate (.35 / 20 m) | 40.6759 | 0.1830 |
+| Zero strength | 0.0865 | 0.1907 |
+| Original return | 0.0865 | 0.1744 |
+
+Controls have a 95th-percentile absolute difference of 1 in both ROIs; the
+candidate has 66 in water and 1 on land. The strong water shift is attributable
+to the candidate rather than a broad exposure/terrain change in this fixture.
+No natural walking, LOD-traversal, broader-family or FPS acceptance is claimed.
 
 ## Reproduction and safety
 
@@ -65,7 +125,8 @@ no bake, SavePackage, resave, content editing or recursive deletion. Build.ps1
 and Run.ps1 operate a `host` adjacent to the scripts and refuse a running editor.
 Run.ps1 uses a new evidence directory / UserDir and the existing natural Water
 landing diagnostic plus `APSSharedLiquidCoverage`, `APSWaterDepthPayload` and
-`APSProbeWaterDepthGameplay`. It will currently reject this inland fixture.
+`APSProbeWaterDepthGameplay`. That opt-in relocates the test observer to a
+verified physical shore, with bounded failure and restoration paths.
 
 The visual probe is prepared to preserve ground visibility, physical root,
 camera and every RGBA/UV/topology value while capturing original/repeat,
@@ -73,9 +134,9 @@ filtered candidate (strength .35, half-depth 20 m), zero-strength and original
 return. The saved filtered Water MIC is its parameter authority. Alpha is not
 repurposed as a depth mask. No other liquid family is eligible.
 
-Next bounded step: a clearly labelled deterministic **physical shore** fixture
-with real WorldScape streaming/collision convergence before freezing. Do not
-hide the ground, clamp dry depths, move just the test camera into coarse distant
-LOD or alter the production spawn rule to manufacture a passing water image.
-Then assess actual wet rendering, zero/return controls and performance before
-any production enablement or broader Water-family coverage.
+Next bounded step: use the proven shore fixture to assess a less intrusive
+water treatment that preserves the accepted palette while improving depth
+readability. Do not hide the ground, clamp dry depths, move just the test camera
+into coarse distant LOD or alter the production spawn rule. Assess natural
+motion/LOD traversal, broader Water-family coverage and performance before
+any production enablement. A successful diagnostic does not authorize rollout.
