@@ -413,7 +413,8 @@ zero scattering/absorption volume coefficients. This is an opaque-surface/pass
 experiment, NOT transparent water, calibrated optical scattering or a production
 shading-model migration. Existing depth-palette and ripple normal are unchanged.
 Runtime binding requires the expected shading model and ShortRangeAO=1. The
-launcher rejects lighting/buffer/isolation/live overrides for this control.
+launcher rejects general lighting/buffer/isolation/live overrides for this
+control. The dedicated water-pass controls below are the only lighting exception.
 
 No interpretation of legacy optical units was introduced. UE's single-layer
 coefficients are in inverse centimetres, whereas the authored Water coefficient
@@ -472,3 +473,59 @@ This is a source lead, not a proven prepass defect. Do not compensate with an
 arbitrary colour multiplier, retune the accepted palette, disable global AO, or
 promote this masked model change without shore/orbit/LOD/performance coverage.
 No production source, Content, Config, plugin or binary was modified.
+
+## v15: bounded water-pass controls, no new material bake
+
+Three finite tests reused the exact v14 SingleLayerWater packages and the same
+2 m oblique, native shore, palette-budget fixture. Each retained ShortRangeAO=1,
+GI/reflection show flags, original ground visibility, and the ripple-on/off and
+original-return sequence. Every run passed both structural tests, with 55
+rendered warnings / zero errors. Restoration checks passed and all three owned
+editors exited. These are isolation results, NOT visual acceptance or a fix.
+There was no material bake, production edit or engine modification.
+
+Baseline runtime CVars: Reflection=1, DepthPrepass=1,
+RefractionDownsampleFactor=1, DistanceFieldShadow=1, VSMFiltering=0, under
+`r.Water.SingleLayer`. Build `build-20260927-134953.log` succeeded in 4 actions /
+9.33 seconds; `build-20260927-135446.log` added the guarded DF-shadow control,
+4 actions / 9.36 seconds. CVar values and viewport flags are restored after the
+tests. No lighting-isolation run is used for GPU or walking-performance claims.
+
+Reproduce with a unique label and
+`-Ripples -SingleLayerSurfaceControl -PaletteBudget -CameraHeightM 2 -Oblique
+-LightingIsolation <mode>`:
+
+| Mode / run | Observed result and limit |
+| --- | --- |
+| `WaterCaptures` / `water-single-layer-captures-v1`, PID 27680 | Reflection=2 keeps sky/capture reflections and the composite, removes traced reflections. The noisy shore fringe remains in both ripple states; traced reflections alone do not explain it. |
+| `NoWaterComposite` / `water-single-layer-no-composite-v1`, PID 27636 | Reflection=0 skips the whole composite, including any separated main directional light. Water becomes almost black. Reduced visible fringe at that contrast is **not** evidence of correction; this does not isolate a particular lighting term. |
+| `NoWaterDFShadow` / `water-single-layer-no-df-shadow-v1`, PID 11316 | DistanceFieldShadow=0, with VSMFiltering required to be 0. The fringe remains. This is not an all-shadow disable and does not prove which separated-light shader permutation actually ran. |
+
+Report SHA256, in the same order:
+
+- `DFA209B3AFC60E222DAC4B107AE98CC45126D034596B2765B7CAD3EF89449300`.
+- `0E1B8F8967E9B35834EBE8ECCE413F91C2AD48B629A08C231011F65343A0E78C`.
+- `65D69AA9B41FFADE9EF369F8D56351364348DB51A110861BF763674D8EB4D748`.
+
+Source-contract findings (not a demonstrated root cause):
+
+- The inherited presentation mask is bypassed in this gameplay fixture:
+  `APS_UsePresentationWaterMask=0` yields coverage 1. Do not blame authored
+  alpha dithering without contrary runtime evidence.
+- Native `UWorldScapeLod::Init` already disables cast/far/DF shadows for water.
+  An ocean-cast-shadow toggle is not a justified next attempt.
+- The water depth prepass writes near-or-equal depth; the subsequent water
+  base pass uses exact equal depth plus its stencil. Their depth/coverage
+  agreement is a remaining source lead, **not a proven precision defect**.
+- `r.Water.SingleLayer.DepthPrepass` is read-only and participates in the
+  shader-map key (`_SLWDP`). A runtime switch is not a valid control; a new
+  startup configuration may entail broad shader recompilation. Do not bypass
+  the flag's contract or launch that costly experiment without a concrete test.
+- The composite only contributes where opaque depth is behind water depth
+  and fades reflections over shallow screen-space depth separation. Removing
+  this branch speculatively would change ordinary water/shore occlusion.
+
+Next work needs direct depth/coverage evidence, or a separately justified
+material approach. Do not repeat the excluded reflection/DF-shadow controls,
+compensate the darker water with arbitrary colour gain, or change global AO.
+The accepted checkpoint remains the production authority.

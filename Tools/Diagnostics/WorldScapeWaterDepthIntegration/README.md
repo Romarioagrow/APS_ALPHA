@@ -14,7 +14,9 @@ a bounded extension of the existing real gameplay liquid probe. There is no
 new production material selector, saved default, geography or palette change.
 The rejected compressed-preview height adapter is deliberately absent.
 
-Current overlay: `overlay-v14` (the view-anchor and ShortRangeAO controls are
+Current overlay: `overlay-v15` (the SingleLayerWater surface control and its
+shore/lighting regression are preserved in `dfdcb10992d8e61f23608071021ee0e5ec14c5cd`;
+the view-anchor and ShortRangeAO controls are
 preserved in `bed23b70d55bc4de341081eb069de860fb1c80e6`; the preceding spectral/buffer diagnostic is
 preserved in `d5bcb739be56a8bc04d5202a66a28251aff6eaa5`; the camera-relative close-view regression and
 paired GPU benchmark are preserved in `bf32ab9bdc572adccb2e8412c2c67a135c5d3545`;
@@ -22,8 +24,8 @@ the preceding stochastic candidate is preserved
 in commit `2092659f86e030ece6209e22eec27ddb86ab16b9`; oblique/live-LOD fixture
 in commit `47ac2c4340f7103f869aebda30d4dd1c740e05ff`; palette-budget fixture in
 `8248482c54d92e86a655412f2b82b530ad326a1f`; dry fixture in `6e9e8e09`).
-Patch SHA256: `4E853B876B6DB14C2229B6375A4F47EE48A5656789B5E71596E3CE7E7B903780`.
-Manifest SHA256: `6D7D73AE0F340578D73DFA7D3B987713A19A0749E507ECEF2E612055CE3C3D1F`.
+Patch SHA256: `94988F32CC0433CDD1A82EC5B13599BB1DCB01EFD2F4B79508FF191F7BDA1C74`.
+Manifest SHA256: `CAA6533C51ACD3FFEF3A3528212082EFFCDDF16ACCD0FBBAF53B65629E02BEDC`.
 The patch was reverse-checked against the final isolated source tree.
 The optional normal-only ripple extension, private asset mount and its separate
 rendered evidence are documented in `RIPPLES.md`. It has no production selector.
@@ -40,7 +42,13 @@ The current candidate still fails ordinary-lit acceptance with default settings.
 `-SingleLayerSurfaceControl` is a separate opt-in for BakeRipples.ps1 and Run.ps1
 (the latter also needs `-Ripples`). It retains opaque surface weight=1 and zero
 volume coefficients; it is NOT a transparent-water migration. See `RIPPLES.md`
-for source rationale, two rendered views, hashes, performance and remaining gaps.
+for source rationale, rendered views, hashes, performance and remaining gaps.
+Three additional water-pass controls reused the same saved packages: the shore
+fringe survives both capture-only reflections and disabled water DF shadows.
+Disabling the full composite darkens water almost to black, so that is not a
+valid visual correction. No new assets were baked. The read-only depth-prepass
+setting also changes shader-map keys; do not try an invalid runtime toggle or
+repeat the already-excluded controls. See the v15 evidence in `RIPPLES.md`.
 
 ## Evidence and limits
 

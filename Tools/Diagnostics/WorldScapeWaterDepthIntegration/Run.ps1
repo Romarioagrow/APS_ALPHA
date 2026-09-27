@@ -1,10 +1,12 @@
 param([ValidatePattern('^[a-z0-9-]+$')][string]$Label='physical-water-v1',
  [switch]$PaletteBudget, [switch]$Oblique, [switch]$LiveLod, [switch]$Ripples, [switch]$MaterialPerf, [switch]$RippleIsolation, [switch]$NormalBuffer, [switch]$SingleLayerSurfaceControl,
  [ValidateSet('WorldNormal','BaseColor','Roughness','Specular')][string]$BufferView,
- [ValidateSet('NoSpecular','NoReflections','NoIndirect','NoShortRangeAO','SHDiffuse')][string]$LightingIsolation,
+ [ValidateSet('NoSpecular','NoReflections','NoIndirect','NoShortRangeAO','SHDiffuse','WaterCaptures','NoWaterComposite','NoWaterDFShadow')][string]$LightingIsolation,
  [ValidateRange(1,500)][int]$CameraHeightM=50)
 $ErrorActionPreference='Stop'
-if($SingleLayerSurfaceControl -and (-not $Ripples -or $LightingIsolation -or $NormalBuffer -or $BufferView -or $LiveLod -or $RippleIsolation)){throw 'Single-layer pass control requires a static ripple lit view with ordinary renderer settings'}
+$waterPassControl=$LightingIsolation -in @('WaterCaptures','NoWaterComposite','NoWaterDFShadow')
+if($waterPassControl -and -not $SingleLayerSurfaceControl){throw 'Water pass isolation requires the explicit single-layer candidate'}
+if($SingleLayerSurfaceControl -and (-not $Ripples -or ($LightingIsolation -and -not $waterPassControl) -or $NormalBuffer -or $BufferView -or $LiveLod -or $RippleIsolation)){throw 'Single-layer pass control requires static lit views and only dedicated water pass isolation'}
 if($MaterialPerf -and $LiveLod){throw 'Material timing requires the frozen A/B fixture, not moving LODs'}
 if($RippleIsolation -and (-not $Ripples -or $LiveLod -or $MaterialPerf)){throw 'Isolation requires Ripples and static views only'}
 if(($NormalBuffer -or $BufferView) -and ($LiveLod -or $MaterialPerf)){throw 'Buffer capture is not a live/performance run'}
