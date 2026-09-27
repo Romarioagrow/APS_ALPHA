@@ -183,6 +183,10 @@ private:
 		{EPlanetType::SuperEarth, FRadiusRange(1.3, 2)}, // ����������
 		{EPlanetType::Lava, FRadiusRange(0.8, 1.1)}, // ������� �������
 		{EPlanetType::Metallic, FRadiusRange(0.8, 1.3)}, // ������������� �������
+		{EPlanetType::Crystal, FRadiusRange(0.6, 1.4)},
+		{EPlanetType::Basalt, FRadiusRange(0.5, 0.9)},
+		{EPlanetType::Savanna, FRadiusRange(0.9, 1.3)},
+		{EPlanetType::Sulfur, FRadiusRange(0.6, 0.9)},
 		{EPlanetType::Unknown, FRadiusRange(0.2, 5)} // ����������� �������
 	};
 
@@ -210,6 +214,10 @@ private:
 		{EPlanetType::SuperEarth, FDensityRange(6.0, 9.0)},
 		{EPlanetType::Lava, FDensityRange(3.0, 6.0)},
 		{EPlanetType::Metallic, FDensityRange(5.0, 10.0)},
+		{EPlanetType::Crystal, FDensityRange(2.5, 5.5)},
+		{EPlanetType::Basalt, FDensityRange(3.0, 5.0)},
+		{EPlanetType::Savanna, FDensityRange(4.0, 6.0)},
+		{EPlanetType::Sulfur, FDensityRange(2.0, 3.5)},
 		{EPlanetType::Unknown, FDensityRange(0.1, 10.0)}
 	};
 

@@ -136,6 +136,10 @@ private:
 	void BeginAuxiliaryMenuLoad();
 	void OnAuxiliaryMenuLoaded();
 	void LoadExistingWorlds();
+	void RefreshExistingWorlds();
+	uint32 ComputeExistingWorldDirectoryFingerprint() const;
+	virtual void Tick(const FGeometry& AllottedGeometry, double InCurrentTime,
+		float InDeltaTime) override;
 	void RebuildExistingWorldGrid();
 	void RebuildExistingWorldDetails();
 	const FSlateBrush* GetExistingWorldImage(const FAPSExistingWorldEntry& Entry) const;
@@ -193,6 +197,8 @@ private:
 	EAPSWorldCollection WorldCollection{EAPSWorldCollection::All};
 	EAPSWorldSortMode WorldSortMode{EAPSWorldSortMode::LastPlayed};
 	TMap<EAPSWorldFilterKind, int32> WorldFilterIndices;
+	uint32 ExistingWorldDirectoryFingerprint{0};
+	double NextExistingWorldRefreshTime{0.0};
 	bool bShowTechnicalWorldDetails{false};
 	bool bCompactWorldList{false};
 

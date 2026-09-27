@@ -3,6 +3,7 @@
 #include <random>
 #include "APS_ALPHA/Actors/Astro/WorldActor.h"
 #include "APS_ALPHA/Core/Instances/MainGameplayInstance.h"
+#include "APS_ALPHA/Core/Model/SpawnParameters.h"
 #include "APS_ALPHA/Core/Saves/APSWorldSaveSnapshot.h"
 #include "APS_ALPHA/Core/Saves/GameSave.h"
 #include "APS_ALPHA/Core/Saves/SavedActorData.h"
@@ -17,6 +18,7 @@
 #include "Engine/GameViewportClient.h"
 #include "GameFramework/Pawn.h"
 #include "InputCoreTypes.h"
+#include "Misc/App.h"
 #include "Misc/ConfigCacheIni.h"
 #include "Misc/Paths.h"
 #include "Widgets/SWeakWidget.h"
@@ -70,14 +72,44 @@ void AGravityPlayerController::SetupInputComponent()
 	Super::SetupInputComponent();
 	if (InputComponent)
 	{
-		InputComponent->BindKey(EKeys::F5, IE_Pressed, this,
-			&AGravityPlayerController::SaveCurrentWorld);
 		InputComponent->BindKey(EKeys::F10, IE_Pressed, this, &AGravityPlayerController::ToggleStrategicMap);
 	}
 }
 
+void AGravityPlayerController::PlayerTick(const float DeltaTime)
+{
+	Super::PlayerTick(DeltaTime);
+	CapturePlayerStateForSave();
+}
+
+void AGravityPlayerController::CapturePlayerStateForSave()
+{
+	const APawn* PlayerPawn = GetPawn();
+	if (!IsValid(PlayerPawn))
+	{
+		return;
+	}
+	CachedPlayerPawnClass = PlayerPawn->GetClass()->GetPathName();
+	CachedPlayerPawnTransform = PlayerPawn->GetActorTransform();
+	CachedPlayerControlRotation = GetControlRotation();
+	bHasCachedPlayerState = true;
+}
+
 void AGravityPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	// PIE/editor owns F5, and players should never have to know a debug hotkey.
+	// Persist the latest pawn/camera state while the generated hierarchy is still
+	// alive. The initial slot is already created synchronously by SaveNewWorld.
+	UMainGameplayInstance* GameplayState = GetWorld() && GetWorld()->GetGameInstance()
+		? GetWorld()->GetGameInstance()->GetSubsystem<UMainGameplayInstance>() : nullptr;
+	if (!GIsAutomationTesting && !FApp::IsUnattended()
+		&& GameplayState && !GameplayState->bPendingSavedWorldReplay
+		&& IsValid(GameplayState->NewGeneratedWorld))
+	{
+		UE_LOG(LogTemp, Log, TEXT("[APS.Save] Lifecycle autosave reason=%d"),
+			static_cast<int32>(EndPlayReason));
+		SaveCurrentWorld();
+	}
 	CloseStrategicMap(false);
 	Super::EndPlay(EndPlayReason);
 }
@@ -187,13 +219,11 @@ void AGravityPlayerController::SaveCurrentWorld()
 			GameplayState->NewGeneratedWorld->AstroGenerationLevel);
 	}
 
-	FString ExistingWorldName;
-	if (const UGameSave* Existing = Cast<UGameSave>(
-		UGameplayStatics::LoadGameFromSlot(SlotName, 0)))
-	{
-		ExistingWorldName = Existing->WorldName;
-	}
-	SaveWorldToSlot(SlotName, GameplayState->NewGeneratedWorld, ExistingWorldName);
+	// Do not synchronously read the previous (potentially very large) save just to
+	// recover its display name. SaveWorldToSlot derives the same stable name from
+	// the slot when ExistingWorldName is empty. This removes the long read-before-
+	// write hitch that previously made the obsolete F5 quick-save appear frozen.
+	SaveWorldToSlot(SlotName, GameplayState->NewGeneratedWorld);
 }
 
 bool AGravityPlayerController::SaveWorldToSlot(const FString& SlotName,
@@ -242,6 +272,20 @@ bool AGravityPlayerController::SaveWorldToSlot(const FString& SlotName,
 	SaveGameInstance->InhabitedPlanetsDataArray = GeneratedWorldModel->GetInhabitedPlanets();
 
 	UWorld* World = GetWorld();
+	UMainGameplayInstance* GameplayState = World->GetGameInstance()
+		? World->GetGameInstance()->GetSubsystem<UMainGameplayInstance>() : nullptr;
+	SaveGameInstance->bHadGeneratedCivilization = GameplayState
+		&& GameplayState->bSpawnGeneratedCivilization;
+	if (SaveGameInstance->bHadGeneratedCivilization
+		&& (!IsValid(GameplayState->SpawnParameters)
+			|| !APSWorldSaveSnapshot::CaptureSpawnParameters(
+				GameplayState->SpawnParameters, SaveGameInstance->SpawnParametersData)))
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[APS.Save] Refusing incomplete civilization save: spawn recipe failed"));
+		return false;
+	}
+
 	if (const UAPSCivilizationMaterializationSubsystem* CivilizationSubsystem =
 		World->GetSubsystem<UAPSCivilizationMaterializationSubsystem>())
 	{
@@ -285,12 +329,16 @@ bool AGravityPlayerController::SaveWorldToSlot(const FString& SlotName,
 		SaveGameInstance->ActorSaveDataArray.Add(MoveTemp(SaveData));
 	}
 
-	if (APawn* PlayerPawn = GetPawn())
+	// EndPlay may run after the pawn has already been torn down. Cache the latest
+	// valid frame continuously so a lifecycle autosave can never replace a valid
+	// player record with an empty one during level travel or application exit.
+	CapturePlayerStateForSave();
+	if (bHasCachedPlayerState)
 	{
 		SaveGameInstance->bHasPlayerPawnState = true;
-		SaveGameInstance->PlayerPawnClass = PlayerPawn->GetClass()->GetPathName();
-		SaveGameInstance->PlayerPawnTransform = PlayerPawn->GetActorTransform();
-		SaveGameInstance->PlayerControlRotation = GetControlRotation();
+		SaveGameInstance->PlayerPawnClass = CachedPlayerPawnClass;
+		SaveGameInstance->PlayerPawnTransform = CachedPlayerPawnTransform;
+		SaveGameInstance->PlayerControlRotation = CachedPlayerControlRotation;
 	}
 
 	if (!UGameplayStatics::SaveGameToSlot(SaveGameInstance, SlotName,
@@ -301,15 +349,16 @@ bool AGravityPlayerController::SaveWorldToSlot(const FString& SlotName,
 	}
 
 	CurrentSaveSlotName = SlotName;
-	if (UMainGameplayInstance* GameplayState = World->GetGameInstance()
-		? World->GetGameInstance()->GetSubsystem<UMainGameplayInstance>() : nullptr)
+	if (GameplayState)
 	{
 		GameplayState->SaveSlotName = SlotName;
 	}
 	WriteWorldMetadataSidecar(SaveGameInstance, WorldSaveData);
 	UE_LOG(LogTemp, Log,
-		TEXT("[APS.Save] Saved slot=%s modelBytes=%d actors=%d player=%s"),
+		TEXT("[APS.Save] Saved slot=%s modelBytes=%d spawnBytes=%d civilization=%s actors=%d player=%s"),
 		*SlotName, SaveGameInstance->GeneratedWorldModelData.Num(),
+		SaveGameInstance->SpawnParametersData.Num(),
+		SaveGameInstance->bHadGeneratedCivilization ? TEXT("yes") : TEXT("no"),
 		SaveGameInstance->ActorSaveDataArray.Num(),
 		SaveGameInstance->bHasPlayerPawnState ? TEXT("yes") : TEXT("no"));
 	return true;
@@ -495,6 +544,7 @@ void AGravityPlayerController::LoadWorld()
 						false, nullptr, ETeleportType::TeleportPhysics);
 					SetControlRotation(LoadedGame->PlayerControlRotation);
 					SetViewTarget(PlayerPawn);
+					CapturePlayerStateForSave();
 				}
 			}
 

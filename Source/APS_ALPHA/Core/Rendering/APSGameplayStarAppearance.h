@@ -1,6 +1,7 @@
 #pragma once
 
 #include "APSStellarMaterialContract.h"
+#include "APSStellarOpticalSupport.h"
 #include "APS_ALPHA/Actors/Astro/Galaxy.h"
 #include "APS_ALPHA/Actors/Astro/StarCluster.h"
 #include "APS_ALPHA/Core/GameModes/MainMenuGameModeBase.h"
@@ -99,7 +100,7 @@ inline void Apply(UWorld* World)
 		const uint64 BuildSerial = GetBuildSerial(Source->GetOwner());
 		Current->GetScalarParameterValue(ProfileParameter, Profile);
 		if (State.Material.Get() == Current && Profile == 1.0f
-			&& OldStride >= 7 && State.CustomDataStride == OldStride
+			&& OldStride >= APSStellarOpticalSupport::RequiredStride && State.CustomDataStride == OldStride
 			&& State.InstanceCount == Count && State.BuildSerial == BuildSerial) return;
 
 		UMaterialInstanceDynamic* GameplayMaterial = State.Material.Get();
@@ -110,11 +111,11 @@ inline void Apply(UWorld* World)
 			GameplayMaterial->SetFlags(RF_Transient);
 		}
 
-		const int32 NewStride = FMath::Max(OldStride, 7);
+		const int32 NewStride = FMath::Max(OldStride, APSStellarOpticalSupport::RequiredStride);
 		const int64 NewDataCount = static_cast<int64>(Count) * NewStride;
 		if (NewDataCount > MAX_int32) return;
 		TArray<float> Repacked;
-		Repacked.SetNumUninitialized(static_cast<int32>(NewDataCount));
+		Repacked.SetNumZeroed(static_cast<int32>(NewDataCount));
 		for (int32 Index = 0; Index < Count; ++Index)
 		{
 			float* Row = Repacked.GetData() + Index * NewStride;
@@ -123,6 +124,8 @@ inline void Apply(UWorld* World)
 			FMemory::Memcpy(Row, Source->PerInstanceSMCustomData.GetData() + Index * OldStride,
 				OldStride * sizeof(float));
 			Row[6] = ResolveGain(Index);
+			if (OldStride <= APSStellarOpticalSupport::CoreScaleIndex)
+				Row[APSStellarOpticalSupport::CoreScaleIndex] = 1.0f;
 		}
 		// UE 5.4 clears the entire custom array when its stride changes. Repack
 		// BEFORE calling the setter, then publish through the instance-data API.

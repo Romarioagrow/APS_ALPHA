@@ -1,6 +1,8 @@
 #include "APSStellarVisualSubsystem.h"
 
 #include "APSGameplayStellarProjection.h"
+#include "APSGameplayStarAppearance.h"
+#include "APSStellarViewOptics.h"
 #include "APS_ALPHA/Actors/Astro/Galaxy.h"
 #include "APS_ALPHA/Actors/Astro/StarCluster.h"
 #include "APS_ALPHA/Actors/Astro/StarSystem.h"
@@ -20,6 +22,7 @@ CSV_DEFINE_CATEGORY(APSGameplayStars, true);
 
 void UAPSStellarVisualSubsystem::ResetGameplayStellarView()
 {
+	ResetGameplayNativeStars();
 	for (FAPSGameplayStellarLayer& Layer : GameplayStellarLayers)
 	{
 		if (UInstancedStaticMeshComponent* View = Layer.View.Get()) View->DestroyComponent();
@@ -43,6 +46,9 @@ void UAPSStellarVisualSubsystem::UpdateGameplayStellarView()
 	TRACE_CPUPROFILER_EVENT_SCOPE(APS_GameplayStellarView);
 	CSV_SCOPED_TIMING_STAT(APSGameplayStars, ObserverView);
 	UWorld* World = GetWorld();
+	// Publish spectral luminosity before selecting optical support. The helper's
+	// bounded scan is shared with Tick, so this does not add another catalog scan.
+	APSGameplayStarAppearance::Apply(World);
 	APlayerController* Controller = World ? World->GetFirstPlayerController() : nullptr;
 	if (!Controller || !Controller->PlayerCameraManager) return;
 	AAstroGenerator* Generator = GameplayStellarGenerator.Get();
@@ -98,6 +104,7 @@ void UAPSStellarVisualSubsystem::UpdateGameplayStellarView()
 		}
 
 		const bool bNewBuild = GameplayStellarBuildSerial != Descriptor.ProxyBuildSerial;
+		if (bNewBuild) ResetGameplayNativeStars();
 		const FVector HomeLocation = Home->GetActorLocation();
 		if (!Generator->GetActorLocation().Equals(HomeLocation, 0.01))
 		{
@@ -115,18 +122,47 @@ void UAPSStellarVisualSubsystem::UpdateGameplayStellarView()
 		Controller->GetPlayerViewPoint(Camera, Rotation);
 		int32 Width = 0, Height = 0;
 		Controller->GetViewportSize(Width, Height);
-		const double PixelTangent = 2.0 * FMath::Tan(FMath::DegreesToRadians(
-			Controller->PlayerCameraManager->GetFOVAngle() * 0.5)) / FMath::Max(Width, 320);
+		const double PixelTangent = APSStellarViewOptics::PixelTangent(Controller,
+			2.0 * FMath::Tan(FMath::DegreesToRadians(
+				Controller->PlayerCameraManager->GetFOVAngle() * 0.5)) / FMath::Max(Width, 320));
 		const FVector ObserverFromHome = Camera - HomeLocation;
-		const bool bUpdatePointSizes = bNewBuild
+		TArray<AActor*> Attached;
+		Generator->GetAttachedActors(Attached, true, true);
+		uint32 TopologyHash = 0;
+		for (AActor* Actor : Attached)
+		{
+			UHierarchicalInstancedStaticMeshComponent* Source = nullptr;
+			if (AGalaxy* Galaxy = Cast<AGalaxy>(Actor)) Source = Galaxy->StarMeshInstances;
+			else if (AStarCluster* Cluster = Cast<AStarCluster>(Actor)) Source = Cluster->StarMeshInstances;
+			if (IsValid(Source))
+			{
+				TopologyHash = HashCombine(TopologyHash, GetTypeHash(TWeakObjectPtr<UHierarchicalInstancedStaticMeshComponent>(Source)));
+				TopologyHash = HashCombine(TopologyHash, GetTypeHash(Source->GetInstanceCount()));
+				TopologyHash = HashCombine(TopologyHash, GetTypeHash(Source->GetStaticMesh()));
+			}
+		}
+		const bool bGeometryChanged = bNewBuild
+			|| TopologyHash != GameplayNativeTopologyHash
+			|| GameplayNativeMutationSerial != Descriptor.TransformMutationSerial;
+		if (bGeometryChanged) GameplayNativePhysicalRadii.Reset();
+		const bool bUpdatePointSizes = bGeometryChanged
 			|| !APSGameplayStellarProjection::CanReuseOptics(LastStellarPixelTangent, PixelTangent)
 			|| !APSGameplayStellarProjection::CanReuseProjection(
 				FVector::Distance(ObserverFromHome, LastStellarObserverFromHome),
 				ClosestStellarPointCm, PixelTangent);
+		const FQuat ViewRotation = Rotation.Quaternion();
+		const double TanHalfHorizontal = FMath::Tan(FMath::DegreesToRadians(
+			Controller->PlayerCameraManager->GetFOVAngle() * 0.5));
+		const double TanHalfVertical = TanHalfHorizontal * FMath::Max(Height, 1) / FMath::Max(Width, 1);
+		// Selection is view-dependent even when distance/FOV allow point-size reuse.
+		// Refresh before crossing the 32px admission guard, without reuploading HISM.
+		const bool bRefreshDemand = bUpdatePointSizes
+			|| GameplayNativeDemandRotation.AngularDistance(ViewRotation) > PixelTangent * 8.0
+			|| !FMath::IsNearlyEqual(GameplayNativeTanHalfHorizontal, TanHalfHorizontal, 1.0e-6)
+			|| !FMath::IsNearlyEqual(GameplayNativeTanHalfVertical, TanHalfVertical, 1.0e-6);
 		double NearestPointCm = TNumericLimits<double>::Max();
-
-		TArray<AActor*> Attached;
-		Generator->GetAttachedActors(Attached, true, true);
+		BeginGameplayNativeStars(Generator, bRefreshDemand, Camera, PixelTangent,
+			ViewRotation, TanHalfHorizontal, TanHalfVertical);
 		for (AActor* Actor : Attached)
 		{
 			UHierarchicalInstancedStaticMeshComponent* Source = nullptr;
@@ -146,8 +182,9 @@ void UAPSStellarVisualSubsystem::UpdateGameplayStellarView()
 				Source->SetVisibility(true, false);
 				Source->SetHiddenInGame(false, false);
 			}
-			if (!bUpdatePointSizes || !IsValid(Source) || !BaseTransforms
+			if (!bRefreshDemand || !IsValid(Source) || !BaseTransforms
 				|| !IsValid(Source->GetStaticMesh())) continue;
+			if (!APSStellarOpticalSupport::EnsureLayout(Source)) continue;
 
 			// Work inside the existing affine frame: no enormous per-instance
 			// translations or root-scale cancellation are sent to the GPU.
@@ -156,6 +193,31 @@ void UAPSStellarVisualSubsystem::UpdateGameplayStellarView()
 			const double ComponentScale = ComponentTransform.GetScale3D().GetAbsMax();
 			const double MeshRadius = FMath::Max(
 				Source->GetStaticMesh()->GetBounds().BoxExtent.GetMax(), 0.001);
+			TArray<double>& PhysicalRadii = GameplayNativePhysicalRadii.FindOrAdd(Source);
+			if (PhysicalRadii.Num() != Source->GetInstanceCount())
+				PhysicalRadii.Init(-1.0, Source->GetInstanceCount());
+			const auto GetPhysicalRadius = [&](const FAPSGameplayStellarKey& Key)
+			{
+				double& Radius = PhysicalRadii[Key.Index];
+				if (Radius < 0.0) Radius = APSGameplayNativeStars::PhysicalRadiusCm(Key);
+				return Radius;
+			};
+			if (!bUpdatePointSizes)
+			{
+				// A camera turn changes selection, not HISM size or geometry. Avoid
+				// allocating/readback of the full transform catalog on every turn.
+				for (int32 Index = 0; Index < PhysicalRadii.Num(); ++Index)
+				{
+					if (!BaseTransforms->IsValidIndex(Index)) continue;
+					const FAPSGameplayStellarKey Key = Generator->MakeGameplayStellarKey(Source, Index);
+					const double RadiusCm = GetPhysicalRadius(Key);
+					const double PixelRadiusCm = FVector::Distance((*BaseTransforms)[Index].GetLocation(), LocalCamera)
+						* ComponentScale * PixelTangent;
+					CollectGameplayNativeDemand(Key, (*BaseTransforms)[Index], RadiusCm,
+						PixelRadiusCm > 0.0 ? RadiusCm / PixelRadiusCm : 0.0);
+				}
+				continue;
+			}
 			TArray<FTransform> Transforms;
 			Transforms.SetNum(Source->GetInstanceCount());
 			bool bChanged = false;
@@ -163,17 +225,42 @@ void UAPSStellarVisualSubsystem::UpdateGameplayStellarView()
 			{
 				FTransform& Transform = Transforms[Index];
 				if (!Source->GetInstanceTransform(Index, Transform, false)) return;
-				// Keep materialized-home and other explicitly suppressed glyphs hidden.
-				if (!BaseTransforms->IsValidIndex(Index)
-					|| Transform.GetScale3D() == FVector::ZeroVector) continue;
+				if (!BaseTransforms->IsValidIndex(Index)) continue;
+				const FAPSGameplayStellarKey Key = Generator->MakeGameplayStellarKey(Source, Index);
+				bool bNativeOwnsPoint = false;
+				if (!ObserveGameplayNativePoint(Generator, Key, (*BaseTransforms)[Index],
+					Transform, bNativeOwnsPoint))
+				{
+					if (Generator->IsGameplayStellarKeyCurrent(Key)
+						&& Generator->GetGameplayStellarSuppression(Key) != 0
+						&& Transform.GetScale3D() != FVector::ZeroVector)
+					{
+						Transform.SetScale3D(FVector::ZeroVector);
+						bChanged = true;
+					}
+					continue;
+				}
 				const FVector BaseScale = (*BaseTransforms)[Index].GetScale3D();
-				const double BaseRadius = MeshRadius * BaseScale.GetAbsMax();
-				if (!FMath::IsFinite(BaseRadius) || BaseRadius <= 0.0) continue;
+				const double SourceRadius = MeshRadius * BaseScale.GetAbsMax();
+				const double PhysicalRadiusCm = GetPhysicalRadius(Key);
+				// Consumed datasets retain legacy impostor scales in BaseTransforms.
+				// They are identity snapshots, not the physical radius used by the menu.
+				const double BaseRadius = ComponentScale > 0.0 ? PhysicalRadiusCm / ComponentScale : 0.0;
+				if (!FMath::IsFinite(BaseRadius) || BaseRadius <= 0.0 || SourceRadius <= 0.0) continue;
 				const double Distance = FVector::Distance(Transform.GetLocation(), LocalCamera);
 				NearestPointCm = FMath::Min(NearestPointCm, Distance * ComponentScale);
-				const double PointRadius = APSGameplayStellarProjection::GetFullScalePointRadius(
-					Distance, BaseRadius, PixelTangent);
-				const FVector PointScale = BaseScale * (PointRadius / BaseRadius);
+				const auto Profile = APSStellarOpticalSupport::Select(Source->PerInstanceSMCustomData,
+					Source->NumCustomDataFloats, Index);
+				const double PixelWorldRadius = Distance * PixelTangent;
+				CollectGameplayNativeDemand(Key, (*BaseTransforms)[Index], PhysicalRadiusCm,
+					PixelWorldRadius > 0.0 ? BaseRadius / PixelWorldRadius : 0.0);
+				const double CoreRadius = APSStellarOpticalSupport::CoreRadius(BaseRadius, PixelWorldRadius);
+				const double PointRadius = APSStellarOpticalSupport::CarrierRadius(BaseRadius, PixelWorldRadius, Profile);
+				bChanged |= APSStellarOpticalSupport::Publish(Source, Index,
+					APSStellarOpticalSupport::CoreScale(CoreRadius, PointRadius),
+					APSStellarOpticalSupport::ResolvedRayStrength(Profile, BaseRadius, PixelWorldRadius));
+				const FVector PointScale = bNativeOwnsPoint ? FVector::ZeroVector
+					: BaseScale * (PointRadius / SourceRadius);
 				if (!Transform.GetScale3D().Equals(PointScale, 1.0e-6))
 				{
 					Transform.SetScale3D(PointScale);
@@ -195,6 +282,8 @@ void UAPSStellarVisualSubsystem::UpdateGameplayStellarView()
 			LastStellarPixelTangent = PixelTangent;
 			ClosestStellarPointCm = NearestPointCm;
 		}
+		GameplayNativeTopologyHash = TopologyHash;
+		PresentGameplayNativeStars(Generator);
 
 		GameplayStellarBuildSerial = Descriptor.ProxyBuildSerial;
 		if (bNewBuild)
@@ -272,6 +361,7 @@ void UAPSStellarVisualSubsystem::UpdateGameplayStellarView()
 						View->SetCustomDataValue(Index, Field, Source->PerInstanceSMCustomData[Address], false);
 				}
 			}
+			APSStellarOpticalSupport::EnsureLayout(View);
 			GameplayStellarLayers.Add(MoveTemp(Layer));
 		};
 		for (AActor* Actor : Attached)
@@ -292,8 +382,9 @@ void UAPSStellarVisualSubsystem::UpdateGameplayStellarView()
 	Controller->GetPlayerViewPoint(Camera, Rotation);
 	int32 Width = 0, Height = 0;
 	Controller->GetViewportSize(Width, Height);
-	const double PixelTangent = 2.0 * FMath::Tan(FMath::DegreesToRadians(
-		Controller->PlayerCameraManager->GetFOVAngle() * 0.5)) / FMath::Max(Width, 320);
+	const double PixelTangent = APSStellarViewOptics::PixelTangent(Controller,
+		2.0 * FMath::Tan(FMath::DegreesToRadians(
+			Controller->PlayerCameraManager->GetFOVAngle() * 0.5)) / FMath::Max(Width, 320));
 	const FVector HomeLocation = Home->GetActorLocation();
 	TArray<FAPSPreviewOccluder> Occluders;
 	TArray<AActor*> Bodies;
@@ -366,7 +457,19 @@ void UAPSStellarVisualSubsystem::UpdateGameplayStellarView()
 	{
 		UInstancedStaticMeshComponent* View = Layer.View.Get();
 		if (!IsValid(View) || !IsValid(View->GetStaticMesh())) continue;
+		if (!APSStellarOpticalSupport::EnsureLayout(View)) continue;
 		const double MeshRadius = FMath::Max(View->GetStaticMesh()->GetBounds().BoxExtent.GetMax(), 0.001);
+		TArray<APSStellarOpticalSupport::FProfile> OpticalProfiles;
+		TArray<float> CoreScales, RayStrengths;
+		if (bReproject)
+		{
+			OpticalProfiles.Reserve(Layer.Points.Num());
+			CoreScales.Init(1.0f, Layer.Points.Num());
+			RayStrengths.Init(0.0f, Layer.Points.Num());
+			for (const FAPSGameplayStellarPoint& Point : Layer.Points)
+				OpticalProfiles.Add(APSStellarOpticalSupport::Select(View->PerInstanceSMCustomData,
+					View->NumCustomDataFloats, Point.InstanceIndex));
+		}
 		constexpr int32 ChunkSize = 1024;
 		const int32 ChunkCount = FMath::DivideAndRoundUp(Layer.Points.Num(), ChunkSize);
 		TArray<double> ClosestInChunk;
@@ -393,7 +496,13 @@ void UAPSStellarVisualSubsystem::UpdateGameplayStellarView()
 				{
 					FAPSPreviewProjectedSphere Sphere;
 					double OpticalRadius = 0.0;
-					if (!APSGameplayStellarProjection::Project(Offset, Point.RadiusCm, PixelTangent, Sphere, OpticalRadius)) continue;
+					if (!APSGameplayStellarProjection::Project(Offset, Point.RadiusCm, PixelTangent,
+						Sphere, OpticalRadius, OpticalProfiles[Index].SupportPixels)) continue;
+					const double PixelWorldRadius = Sphere.Center.Size() * PixelTangent;
+					CoreScales[Index] = APSStellarOpticalSupport::CoreScale(
+						APSStellarOpticalSupport::CoreRadius(Sphere.Radius, PixelWorldRadius), OpticalRadius);
+					RayStrengths[Index] = APSStellarOpticalSupport::ResolvedRayStrength(
+						OpticalProfiles[Index], Sphere.Radius, PixelWorldRadius);
 					ClosestRenderInChunk[Chunk] = FMath::Min(ClosestRenderInChunk[Chunk], Sphere.Center.Size());
 					Point.ProjectedTransform = FTransform(FQuat::Identity, Sphere.Center, FVector(OpticalRadius / MeshRadius));
 				}
@@ -410,6 +519,8 @@ void UAPSStellarVisualSubsystem::UpdateGameplayStellarView()
 		});
 		if (bReproject)
 		{
+			for (int32 Index = 0; Index < Layer.Points.Num(); ++Index)
+				APSStellarOpticalSupport::Publish(View, Layer.Points[Index].InstanceIndex, CoreScales[Index], RayStrengths[Index]);
 			for (double Distance : ClosestInChunk) ClosestStellarPointCm = FMath::Min(ClosestStellarPointCm, Distance);
 			for (double Distance : ClosestRenderInChunk) ClosestStellarRenderDistanceCm = FMath::Min(ClosestStellarRenderDistanceCm, Distance);
 			View->SetWorldLocation(Camera, false, nullptr, ETeleportType::TeleportPhysics);

@@ -1,4 +1,5 @@
 #include "APSWorldScapePlanetNoise.h"
+#include "APSPlanetPresetMorphology.h"
 
 #include "WorldScapeCommon/Public/NoiseMathUtils.h"
 
@@ -548,6 +549,15 @@ FNoiseData UAPSWorldScapePlanetNoise::EvaluateProfile(
 		const double Dunes = FMath::Clamp(
 			NoiseClass.BillowFractal(TerrainPosition * 0.11, 3, 2.0, 0.48), -1.0, 1.0);
 		HeightNormalized += Dunes * 0.012 * FMath::Max(PatternStrength, 0.2) * DeepLandMask;
+	}
+
+	// Appended presets only: no extra noise evaluations, RNG changes or floating
+	// operations are introduced into any legacy type's height path.
+	if (APSPlanetPresetMorphology::HasDedicatedMorphology(SurfaceProfile.PlanetType))
+	{
+		HeightNormalized += APSPlanetPresetMorphology::HeightDelta(
+			SurfaceProfile.PlanetType, Regional, Ridges, Cellular,
+			PatternStrength, LandMask, DeepLandMask);
 	}
 
 	const double PhysicalHeightNormalized = FMath::Clamp(HeightNormalized, -0.35, 0.65);

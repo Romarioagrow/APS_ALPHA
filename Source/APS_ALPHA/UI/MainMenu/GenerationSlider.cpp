@@ -1,4 +1,5 @@
-﻿#include "GenerationSlider.h"
+#include "GenerationSlider.h"
+#include "APS_ALPHA/Core/Enums/PlanetType.h"
 
 #include "Components/Slider.h"
 #include "Components/TextBlock.h"
@@ -9,7 +10,6 @@ void UGenerationSlider::PopulateEnumArray()
 	{
 		EnumArray.Empty();
 		const int32 NumEnums = EnumType->NumEnums() - 1; // -1 to exclude the "_MAX" value
-		EnumSlider->SetMaxValue(NumEnums - 1);
 
 		for (int32 i = 0; i < NumEnums; i++)
 		{
@@ -25,11 +25,16 @@ void UGenerationSlider::PopulateEnumArray()
 
 			// Если элемент не содержит "Unknown", добавляем его в массив
 			const int64 EnumValue = EnumType->GetValueByIndex(i);
+			if (EnumType == StaticEnum<EPlanetType>()
+				&& !APSPlanetTypes::IsSelectable(static_cast<EPlanetType>(EnumValue))) continue;
 			EnumArray.Add(static_cast<uint8>(EnumValue));
 
 			// Логирование добавленного элемента
 			UE_LOG(LogTemp, Log, TEXT("Added enum: %s"), *EnumName);
 		}
+		// Unknown can legally sit before newer, save-compatible values. Derive the
+		// slider range from the filtered array instead of the reflected declaration.
+		EnumSlider->SetMaxValue(FMath::Max(0, EnumArray.Num() - 1));
 	}
 }
 

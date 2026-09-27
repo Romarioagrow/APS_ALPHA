@@ -17,6 +17,7 @@
 #include "APS_ALPHA/Core/Enums/StarType.h"
 #include "APS_ALPHA/Core/Enums/PlanetType.h"
 #include "APS_ALPHA/Core/Model/GeneratedWorld.h"
+#include "APS_ALPHA/Core/Rendering/APSStellarOpticalSupport.h"
 #include "APS_ALPHA/Generation/AstroGenerator.h"
 #include "APS_ALPHA/UI/MainMenu/WorldGenerationViewModel.h"
 #include "APS_ALPHA/UI/MainMenu/SAPSMainMenuRoot.h"
@@ -1825,9 +1826,11 @@ private:
 				Sample.bGlyph = Points && Points->GetInstanceTransform(ResolvedNeighbor.SourceInstanceIndex, Glyph, true);
 				if (Sample.bGlyph)
 				{
+					const auto Profile = APSStellarOpticalSupport::Select(Points->PerInstanceSMCustomData,
+						Points->NumCustomDataFloats, ResolvedNeighbor.SourceInstanceIndex);
 					const double ExpectedRadius = Sample.bSurface
-						? Expected.Center.Size() * PixelTangent * 2.2 * (1.0 - FMath::Clamp((Sample.Pixels - 0.3) / 0.7, 0.0, 1.0))
-						: FMath::Max(Expected.Radius, Expected.Center.Size() * PixelTangent * 2.2);
+						? Expected.Center.Size() * PixelTangent * Profile.SupportPixels * (1.0 - FMath::Clamp((Sample.Pixels - 0.3) / 0.7, 0.0, 1.0))
+						: APSStellarOpticalSupport::CarrierRadius(Expected.Radius, Expected.Center.Size() * PixelTangent, Profile);
 					const double ActualRadius = Glyph.GetScale3D().GetAbsMax() * Points->GetStaticMesh()->GetBounds().BoxExtent.GetMax();
 					Sample.bGlyph = Glyph.GetLocation().Equals(Expected.Center, 1.0)
 						&& FMath::IsNearlyEqual(ActualRadius / FMath::Max(Expected.Center.Size(), 1.0e-12),

@@ -10,6 +10,7 @@
 #include "APS_ALPHA/Core/Saves/SavedActorData.h"
 #include "APS_ALPHA/Gameplay/Civilizations/APSCivilizationStarterActors.h"
 #include "APS_ALPHA/Pawns/Spaceships/Spaceship.h"
+#include "GameFramework/Pawn.h"
 #include "Kismet/GameplayStatics.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
@@ -120,6 +121,16 @@ bool FAPSGeneratedWorldSaveSnapshotContractTest::RunTest(const FString& Paramete
 	SourceSave->GeneratedWorldsDataArray.Add(SourceModel->SaveWorldData());
 	TestTrue(TEXT("generated world snapshot captures"),
 		APSWorldSaveSnapshot::Capture(SourceModel, SourceSave->GeneratedWorldModelData));
+	USpawnParameters* SourceSpawn = NewObject<USpawnParameters>();
+	SourceSpawn->CivilizationName = TEXT("EXACT REPLAY CIVILIZATION");
+	SourceSpawn->StartingFleetSize = 7;
+	SourceSpawn->CharacterSpawnPlace = ECharSpawnPlace::PlanetSurface;
+	SourceSpawn->BP_CharacterClass = APawn::StaticClass();
+	SourceSpawn->BP_HomeSpaceship = ASpaceship::StaticClass();
+	SourceSave->bHadGeneratedCivilization = true;
+	TestTrue(TEXT("civilization spawn recipe captures"),
+		APSWorldSaveSnapshot::CaptureSpawnParameters(
+			SourceSpawn, SourceSave->SpawnParametersData));
 	SourceSave->bHasPlayerPawnState = true;
 	SourceSave->PlayerPawnClass = TEXT("/Script/Engine.DefaultPawn");
 	SourceSave->PlayerPawnTransform = FTransform(
@@ -155,6 +166,21 @@ bool FAPSGeneratedWorldSaveSnapshotContractTest::RunTest(const FString& Paramete
 		RestoredSave->PlayerPawnTransform.Equals(SourceSave->PlayerPawnTransform, 0.01));
 	TestTrue(TEXT("control rotation survives save archive"),
 		RestoredSave->PlayerControlRotation.Equals(SourceSave->PlayerControlRotation, 0.01));
+	TestTrue(TEXT("civilization route survives save archive"),
+		RestoredSave->bHadGeneratedCivilization);
+	USpawnParameters* RestoredSpawn = APSWorldSaveSnapshot::RestoreSpawnParameters(
+		RestoredSave, GetTransientPackage());
+	if (!TestNotNull(TEXT("civilization spawn recipe restores"), RestoredSpawn))
+	{
+		return false;
+	}
+	TestEqual(TEXT("civilization name survives"), RestoredSpawn->CivilizationName,
+		SourceSpawn->CivilizationName);
+	TestEqual(TEXT("fleet size survives"), RestoredSpawn->StartingFleetSize, 7);
+	TestEqual(TEXT("surface start survives"), RestoredSpawn->CharacterSpawnPlace,
+		ECharSpawnPlace::PlanetSurface);
+	TestEqual(TEXT("selected ship class survives"), RestoredSpawn->BP_HomeSpaceship.Get(),
+		ASpaceship::StaticClass());
 	return true;
 }
 

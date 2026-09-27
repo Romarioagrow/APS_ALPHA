@@ -20,6 +20,7 @@ class APS_ALPHA_API AGravityPlayerController : public APlayerController
 
 protected:
 	virtual void SetupInputComponent() override;
+	virtual void PlayerTick(float DeltaTime) override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	
 	FString GetCurrentSaveSlotName() const;
@@ -30,7 +31,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "SaveLoad")
 	void SaveNewWorld(const EAstroGenerationLevel AstroGenerationLevel, UGeneratedWorld* GeneratedWorldModel);
 
-	/** Overwrites the active slot with the current actor and player state (F5). */
+	/** Overwrites the active slot with the current actor and player state. */
 	UFUNCTION(BlueprintCallable, Category = "SaveLoad")
 	void SaveCurrentWorld();
 
@@ -51,6 +52,7 @@ public:
 	void ToggleStrategicMap();
 
 private:
+	void CapturePlayerStateForSave();
 	bool SaveWorldToSlot(const FString& SlotName, UGeneratedWorld* GeneratedWorldModel,
 		const FString& ExistingWorldName = FString());
 	void CloseStrategicMap(bool bRestoreView);
@@ -58,4 +60,8 @@ private:
 	TSharedPtr<SAPSStrategicMapPanel> StrategicMapWidget;
 	TSharedPtr<SWidget> StrategicMapContainer;
 	TWeakObjectPtr<AActor> StrategicMapPreviousViewTarget;
+	FString CachedPlayerPawnClass;
+	FTransform CachedPlayerPawnTransform{FTransform::Identity};
+	FRotator CachedPlayerControlRotation{FRotator::ZeroRotator};
+	bool bHasCachedPlayerState{false};
 };

@@ -1296,8 +1296,8 @@ void UWorldGenerationViewModel::HydratePreviewBodyEditorBuffer(APlanetaryBody* B
 	GeneratedWorld->AtmosphereHeight = FMath::Clamp(Body->AtmosphereHeight, 0.0, 2000.0);
 	// Bodies without a materialized AtmoScape must start from their own defaults,
 	// never from whichever planet happened to be selected immediately before them.
-	GeneratedWorld->AtmosphereOpacity = 12.0;
-	GeneratedWorld->AtmosphereMultiScattering = 5.0;
+	GeneratedWorld->AtmosphereOpacity = 1.0;
+	GeneratedWorld->AtmosphereMultiScattering = 1.0;
 	GeneratedWorld->AtmosphereRayleighScattering = 8.0;
 	GeneratedWorld->AtmosphereColor = FLinearColor(3.8f, 13.5f, 33.0f, 0.0f);
 	GeneratedWorld->MoonsAmount = Cast<APlanet>(Body)

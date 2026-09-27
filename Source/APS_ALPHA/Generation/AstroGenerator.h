@@ -12,6 +12,7 @@
 #include "APS_ALPHA/Core/Enums/StarType.h"
 #include "APS_ALPHA/Core/Rendering/APSCanonicalStellarProjection.h"
 #include "APS_ALPHA/Core/Rendering/APSContinuousPreviewFrame.h"
+#include "APS_ALPHA/Core/Rendering/APSGameplayNativeStars.h"
 #include "GameFramework/Actor.h"
 #include "AstroGenerator.generated.h"
 
@@ -80,6 +81,14 @@ struct FAPSContinuousResolvedStarView
 {
 	TWeakObjectPtr<UStaticMeshComponent> Photosphere;
 	TWeakObjectPtr<UStaticMeshComponent> Corona;
+};
+
+/** Per-body shell identity and material inputs; camera transforms are independent. */
+struct FAPSPreviewAtmosphereState
+{
+	TWeakObjectPtr<USceneComponent> AtmosphereRoot;
+	TWeakObjectPtr<AWorldScapeRoot> ProfileRoot;
+	uint32 Signature{0};
 };
 
 struct APS_ALPHA_API FAPSPreviewBodyEntry
@@ -199,6 +208,8 @@ public:
 
 	/** Read-only diagnostics for smoke tests and performance budgets. */
 	int32 GetMainMenuHeroGalaxyInstanceCount() const;
+	int32 GetMainMenuDeepSpaceInstanceCount() const;
+	int32 GetMainMenuNebulaInstanceCount() const;
 
 	UFUNCTION(BlueprintCallable, Category = "World Generation|Preview")
 	void FocusPreviewCamera(APlayerController* PlayerController = nullptr);
@@ -262,6 +273,14 @@ public:
 	{
 		return CanonicalStellarProjection;
 	}
+	FAPSGameplayStellarKey MakeGameplayStellarKey(
+		UHierarchicalInstancedStaticMeshComponent* Source, int32 Index) const;
+	bool IsGameplayStellarKeyCurrent(const FAPSGameplayStellarKey& Key) const;
+	uint8 GetGameplayStellarSuppression(const FAPSGameplayStellarKey& Key) const;
+	void SetGameplayStellarSuppression(const FAPSGameplayStellarKey& Key,
+		EAPSGameplayStellarSuppression Reason, bool bSuppressed);
+	uint64 GetGameplayUnknownStellarMutationSerial() const { return GameplayUnknownStellarMutationSerial; }
+	UStarGenerator* GetGameplayStellarAppearanceGenerator() const { return StarGenerator; }
 	/** Resolves one exact rendered instance back to its canonical record and base projection. */
 	bool GetCanonicalStellarProxyRecord(
 		EAPSCanonicalStellarProxyLayer Layer, int32 InstanceIndex,
@@ -414,6 +433,21 @@ protected:
 	/** Dedicated HISM for the landing hero; never participates in generated-world data. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "World Generation|Preview")
 	UHierarchicalInstancedStaticMeshComponent* MainMenuHeroGalaxyHISM;
+
+	/** Sparse distant field, companion clusters and tidal streams behind the hero. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "World Generation|Preview")
+	UHierarchicalInstancedStaticMeshComponent* MainMenuDeepSpaceHISM;
+
+	/** Camera-facing procedural veils rendered by the reusable nebula master. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "World Generation|Preview")
+	UHierarchicalInstancedStaticMeshComponent* MainMenuNebulaHISM;
+
+	bool GenerateMainMenuDeepSpaceField(const FVector& AimPoint,
+		const FVector& CameraRight, const FVector& CameraUp, const FVector& CameraOut,
+		double Distance, double HalfTanHorizontal, double HalfTanVertical);
+	bool GenerateMainMenuNebulaField(const FVector& AimPoint,
+		const FVector& CameraRight, const FVector& CameraUp, const FVector& CameraOut,
+		double Distance, double HalfTanHorizontal, double HalfTanVertical);
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "World Generation|Preview")
 	bool bIsPreviewGeneration{false};
@@ -666,14 +700,10 @@ protected:
 	/** Test/diagnostic counter: a coalesced slider burst must resolve exactly one new profile. */
 	int32 PreviewSurfaceProfileApplyCount{0};
 	/**
-	 * Last atmosphere state committed to the live PLANET presentation.  Camera-only
-	 * interaction calls ApplyPreviewFocusPresentation repeatedly; retaining this key
-	 * lets StabilizePreviewAtmosphere prove that the already-correct shell can stay
-	 * visible instead of briefly restoring its full-scale transform every time.
+	 * Each retained body owns its own committed shell state. Camera movement may
+	 * update transforms independently without evicting another moon's material cache.
 	 */
-	TWeakObjectPtr<APlanetaryBody> StabilizedPreviewAtmosphereBody;
-	TWeakObjectPtr<AWorldScapeRoot> StabilizedPreviewAtmosphereRoot;
-	uint32 StabilizedPreviewAtmosphereSignature{0};
+	TMap<TWeakObjectPtr<APlanetaryBody>, FAPSPreviewAtmosphereState> StabilizedPreviewAtmospheres;
 	FVector PendingPreviewSurfaceViewPosition{FVector::ZeroVector};
 	TWeakObjectPtr<UHierarchicalInstancedStaticMeshComponent> PreviewGalaxyContextOwner;
 	TWeakObjectPtr<UHierarchicalInstancedStaticMeshComponent> PreviewClusterContextOwner;
@@ -704,7 +734,7 @@ protected:
 	void BeginCanonicalStellarProjectionBuild();
 	void FinalizeCanonicalStellarProjectionBuild();
 	void NoteCanonicalStellarProxyUpload();
-	void NoteCanonicalStellarProxyMutation();
+	void NoteCanonicalStellarProxyMutation(bool bClassifiedGameplayWrite = false);
 	uint32 BuildCanonicalStellarProjectionContextHash() const;
 	uint32 BuildCanonicalStellarDatasetInputHash() const;
 	uint32 BuildCanonicalStellarManifestHash(const FAPSCanonicalStellarDataset& Dataset) const;
@@ -745,6 +775,8 @@ protected:
 	AGalaxy* GeneratedGalaxy;
 	FAPSCanonicalStellarProjectionDescriptor CanonicalStellarProjection;
 	uint64 CanonicalStellarProjectionBuildCounter{0u};
+	TMap<FAPSGameplayStellarKey, uint8> GameplayStellarSuppression;
+	uint64 GameplayUnknownStellarMutationSerial{0};
 	bool bCanonicalStellarProjectionComposed{false};
 	bool bConsumedFinalizedCanonicalStellarDataset{false};
 	bool bCanonicalStellarDatasetValidated{false};

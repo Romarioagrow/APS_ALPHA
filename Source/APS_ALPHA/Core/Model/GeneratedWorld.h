@@ -84,10 +84,10 @@ struct FAPSPreviewBodyEditOverride
 	double AtmosphereHeight{100.0};
 
 	UPROPERTY()
-	double AtmosphereOpacity{12.0};
+	double AtmosphereOpacity{1.0};
 
 	UPROPERTY()
-	double AtmosphereMultiScattering{5.0};
+	double AtmosphereMultiScattering{1.0};
 
 	UPROPERTY()
 	double AtmosphereRayleighScattering{8.0};
@@ -378,10 +378,10 @@ public:
 	double AtmosphereHeight{ 100.0 };
 
 	UPROPERTY(EditAnywhere, Category = "Atmosphere")
-	double AtmosphereOpacity{ 12.0 };
+	double AtmosphereOpacity{ 1.0 };
 
 	UPROPERTY(EditAnywhere, Category = "Atmosphere")
-	double AtmosphereMultiScattering{ 5.0 };
+	double AtmosphereMultiScattering{ 1.0 };
 
 	UPROPERTY(EditAnywhere, Category = "Atmosphere")
 	double AtmosphereRayleighScattering{ 8.0 };

@@ -19,7 +19,7 @@ class APS_ALPHA_API UGameSave : public USaveGame
 public:
 	/** Versioned contract for model snapshots and player-state persistence. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Basic")
-	int32 SaveFormatVersion{2};
+	int32 SaveFormatVersion{3};
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Basic")
 	FString SaveSlotName;
@@ -49,6 +49,18 @@ public:
 	 */
 	UPROPERTY(VisibleAnywhere, Category = "World")
 	TArray<uint8> GeneratedWorldModelData;
+
+	/** Whether this world was committed through the civilization route. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, SaveGame, Category = "Civilization")
+	bool bHadGeneratedCivilization{false};
+
+	/**
+	 * Tagged snapshot of the exact civilization recipe and selected Blueprint
+	 * classes. It is restored before gameplay begins so the initial pawn and the
+	 * complete starter hierarchy are reconstructed in the same local frame.
+	 */
+	UPROPERTY(VisibleAnywhere, SaveGame, Category = "Civilization")
+	TArray<uint8> SpawnParametersData;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "World")
 	TArray<FPlanetData> InhabitedPlanetsDataArray;

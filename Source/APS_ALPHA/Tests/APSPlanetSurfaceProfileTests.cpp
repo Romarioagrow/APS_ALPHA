@@ -1,4 +1,4 @@
-﻿#if WITH_DEV_AUTOMATION_TESTS
+#if WITH_DEV_AUTOMATION_TESTS
 
 #include "Misc/AutomationTest.h"
 
@@ -27,6 +27,12 @@
 #include "Materials/MaterialExpressionSmoothStep.h"
 #include "Materials/MaterialExpressionSubtract.h"
 #include "Materials/MaterialExpressionTextureSample.h"
+#include "Materials/MaterialExpressionTextureSampleParameter2D.h"
+#include "Materials/MaterialExpressionTransformPosition.h"
+#include "Materials/MaterialExpressionComponentMask.h"
+#include "Materials/MaterialExpressionDDX.h"
+#include "Materials/MaterialExpressionDDY.h"
+#include "Materials/MaterialExpressionFrac.h"
 #include "Materials/MaterialExpressionVectorNoise.h"
 #include "Materials/MaterialExpressionVectorParameter.h"
 #include "Materials/MaterialExpressionVertexColor.h"
@@ -639,7 +645,7 @@ bool FAPSPlanetSurfaceAllSolidTypesTest::RunTest(const FString& Parameters)
 	UWorld* World = APSPlanetSurfaceProfileTests::CreateWorld();
 	if (!TestNotNull(TEXT("Test world"), World)) return false;
 
-	for (uint8 Value = 0; Value <= static_cast<uint8>(EPlanetType::Unknown); ++Value)
+	for (uint8 Value = 0; Value <= APSPlanetTypes::LastValue; ++Value)
 	{
 		const EPlanetType Type = static_cast<EPlanetType>(Value);
 		const bool bGas = Type == EPlanetType::GasGiant
@@ -726,7 +732,7 @@ bool FAPSPlanetSurfaceGroundScaleReliefTest::RunTest(const FString& Parameters)
 		return false;
 	}
 
-	for (uint8 Value = 0; Value <= static_cast<uint8>(EPlanetType::Unknown); ++Value)
+	for (uint8 Value = 0; Value <= APSPlanetTypes::LastValue; ++Value)
 	{
 		const EPlanetType Type = static_cast<EPlanetType>(Value);
 		if (!UAPSPlanetSurfaceProfileResolver::SupportsWorldScape(Type)) continue;
@@ -885,7 +891,7 @@ bool FAPSPlanetSurfaceMaterialHeightChannelContractTest::RunTest(const FString& 
 	Planet->PlanetAtmosphere.Humidity = 42.0f;
 	Planet->PlanetAtmosphere.AtmosphericPressure = 101325.0f;
 
-	for (uint8 Value = 0; Value <= static_cast<uint8>(EPlanetType::Unknown); ++Value)
+	for (uint8 Value = 0; Value <= APSPlanetTypes::LastValue; ++Value)
 	{
 		const EPlanetType Type = static_cast<EPlanetType>(Value);
 		if (!UAPSPlanetSurfaceProfileResolver::SupportsWorldScape(Type)) continue;
@@ -1034,11 +1040,68 @@ bool FAPSPlanetSurfaceMaterialCatalogIntegrityTest::RunTest(const FString& Param
 		}
 		TestTrue(TEXT("Orbital terrain uses a separate smooth transition for every palette band"),
 			HeightBandCount >= 5);
-		TestFalse(TEXT("Canonical WorldScape terrain has no UV texture sampling that can expose patch grids"),
-			OrbitalTerrain->GetExpressions().ContainsByPredicate([](const UMaterialExpression* Expression)
+		// Texture sampling itself is not a patch-grid defect. Require the actual
+		// component-local angular coordinate chain for EVERY texture sample instead
+		// of insisting on the retired texture-free orbital graph.
+		TMap<FName, int32> OrbitalTextureCounts;
+		int32 OrbitalTextureCount = 0;
+		for (UMaterialExpression* Expression : OrbitalTerrain->GetExpressions())
+		{
+			UMaterialExpressionTextureSample* Sample = Cast<UMaterialExpressionTextureSample>(Expression);
+			if (!Sample) continue;
+			++OrbitalTextureCount;
+			const auto* Parameter = Cast<UMaterialExpressionTextureSampleParameter2D>(Sample);
+			if (TestNotNull(TEXT("Orbital texture samples expose type-specific parameters"), Parameter))
+				++OrbitalTextureCounts.FindOrAdd(Parameter->ParameterName);
+			TestNotNull(TEXT("Orbital sample has a persisted default texture"), Sample->Texture.Get());
+			TestEqual(TEXT("Orbital texture uses hardware wrap"), Sample->SamplerSource, SSM_Wrap_WorldGroupSettings);
+			TestEqual(TEXT("Orbital texture uses implicit mip derivatives"), Sample->MipValueMode, TMVM_None);
+			TestFalse(TEXT("Orbital texture has no view-dependent mip bias"), Sample->AutomaticViewMipBias);
+			TestTrue(TEXT("Orbital texture has an explicit coordinate input"), Sample->Coordinates.Expression != nullptr);
+			if (Parameter)
 			{
-				return Expression && Expression->IsA<UMaterialExpressionTextureSample>();
-			}));
+				const bool bNormal = Parameter->ParameterName.ToString().EndsWith(TEXT("Normal"));
+				TestEqual(TEXT("Orbital texture sampler matches its color/normal role"),
+					Sample->SamplerType, bNormal ? SAMPLERTYPE_Normal : SAMPLERTYPE_Color);
+			}
+			TArray<UMaterialExpression*> Pending;
+			TSet<UMaterialExpression*> Visited;
+			if (Sample->Coordinates.Expression) Pending.Add(Sample->Coordinates.Expression);
+			bool bNormalizedComponentPosition = false;
+			bool bForbiddenCoordinates = false;
+			while (!Pending.IsEmpty())
+			{
+				UMaterialExpression* Node = Pending.Pop();
+				if (!Node || Visited.Contains(Node)) continue;
+				Visited.Add(Node);
+				if (const auto* Normalize = Cast<UMaterialExpressionNormalize>(Node))
+				{
+					const auto* Transform = Cast<UMaterialExpressionTransformPosition>(Normalize->VectorInput.Expression);
+					const auto* Position = Transform ? Cast<UMaterialExpressionWorldPosition>(Transform->Input.Expression) : nullptr;
+					bNormalizedComponentPosition |= Transform && Position
+						&& Transform->TransformSourceType == TRANSFORMPOSSOURCE_World
+						&& Transform->TransformType == TRANSFORMPOSSOURCE_Local
+						&& Position->WorldPositionShaderOffset == WPT_ExcludeAllShaderOffsets;
+				}
+				const FName NodeClass = Node->GetClass()->GetFName();
+				for (const TCHAR* Forbidden : {TEXT("MaterialExpressionTextureCoordinate"),
+					TEXT("MaterialExpressionCameraPositionWS"), TEXT("MaterialExpressionCameraVectorWS"),
+					TEXT("MaterialExpressionActorPositionWS"), TEXT("MaterialExpressionObjectPositionWS"),
+					TEXT("MaterialExpressionTime"), TEXT("MaterialExpressionPanner"),
+					TEXT("MaterialExpressionRotator"), TEXT("MaterialExpressionFrac")})
+					bForbiddenCoordinates |= NodeClass == FName(Forbidden);
+				for (FExpressionInput* Input : Node->GetInputsView())
+					if (Input && Input->Expression) Pending.Add(Input->Expression);
+			}
+			TestTrue(TEXT("Every orbital sample derives from normalized component-local position"), bNormalizedComponentPosition);
+			TestFalse(TEXT("Orbital coordinates contain no patch UV, camera, time, bounds center or frac seams"), bForbiddenCoordinates);
+		}
+		TestEqual(TEXT("Orbital two-band triplanar graph has twelve samples"), OrbitalTextureCount, 12);
+		TestEqual(TEXT("Orbital detail exposes exactly four texture parameters"), OrbitalTextureCounts.Num(), 4);
+		for (const TCHAR* Name : {TEXT("OrbitalPrimaryAlbedo"), TEXT("OrbitalPrimaryNormal"),
+			TEXT("OrbitalRockAlbedo"), TEXT("OrbitalRockNormal")})
+			TestEqual(*FString::Printf(TEXT("%s has three axis projections"), Name),
+				OrbitalTextureCounts.FindRef(FName(Name)), 3);
 		const UMaterialExpressionOneMinus* LowlandEmissiveMask = nullptr;
 		for (const UMaterialExpression* Expression : OrbitalTerrain->GetExpressions())
 		{
@@ -1089,9 +1152,9 @@ bool FAPSPlanetSurfaceMaterialCatalogIntegrityTest::RunTest(const FString& Param
 				++OrbitalGradientNoiseCount;
 			}
 		}
-		TestEqual(TEXT("Orbital terrain evaluates exactly one non-tiled GradientALU detail field"),
-			OrbitalGradientNoiseCount, 1);
-		TestTrue(TEXT("Orbital terrain centres material detail on its selected globe"),
+		TestEqual(TEXT("Orbital terrain does not retain the retired GradientALU detail field"),
+			OrbitalGradientNoiseCount, 0);
+		TestFalse(TEXT("Orbital detail does not depend on the moving bounds center"),
 			OrbitalTerrain->GetExpressions().ContainsByPredicate(
 				[](const UMaterialExpression* Expression)
 				{
@@ -1116,9 +1179,9 @@ bool FAPSPlanetSurfaceMaterialCatalogIntegrityTest::RunTest(const FString& Param
 		}
 		for (const TCHAR* ParameterName :
 			{TEXT("ClimateBlend"), TEXT("TerrainAmbientFill"), TEXT("Roughness"),
-				TEXT("Metallic"), TEXT("Specular"), TEXT("OrbitalMicroDetailScale"),
-				TEXT("OrbitalMicroColorStrength"), TEXT("OrbitalMicroNormalStrength"),
-				TEXT("OrbitalMicroRoughnessStrength")})
+				TEXT("Metallic"), TEXT("Specular"), TEXT("OrbitalTextureFrequency"),
+				TEXT("OrbitalTextureColorStrength"), TEXT("OrbitalTextureNormalStrength"),
+				TEXT("OrbitalRockMix")})
 		{
 			TestTrue(*FString::Printf(TEXT("Orbital terrain exposes %s"), ParameterName),
 				APSPlanetSurfaceProfileTests::HasScalarParameter(OrbitalTerrain, ParameterName));
@@ -1130,10 +1193,10 @@ bool FAPSPlanetSurfaceMaterialCatalogIntegrityTest::RunTest(const FString& Param
 		};
 		for (const FExpectedOrbitalMicroDefault& Expected :
 			{
-				FExpectedOrbitalMicroDefault{TEXT("OrbitalMicroDetailScale"), 28.0f},
-				FExpectedOrbitalMicroDefault{TEXT("OrbitalMicroColorStrength"), 0.025f},
-				FExpectedOrbitalMicroDefault{TEXT("OrbitalMicroNormalStrength"), 0.0375f},
-				FExpectedOrbitalMicroDefault{TEXT("OrbitalMicroRoughnessStrength"), 0.010f}
+				FExpectedOrbitalMicroDefault{TEXT("OrbitalTextureFrequency"), 96.0f},
+				FExpectedOrbitalMicroDefault{TEXT("OrbitalTextureColorStrength"), 0.75f},
+				FExpectedOrbitalMicroDefault{TEXT("OrbitalTextureNormalStrength"), 0.30f},
+				FExpectedOrbitalMicroDefault{TEXT("OrbitalRockMix"), 0.45f}
 			})
 		{
 			float ActualValue = 0.0f;
@@ -1141,7 +1204,7 @@ bool FAPSPlanetSurfaceMaterialCatalogIntegrityTest::RunTest(const FString& Param
 				Expected.ParameterName), APSPlanetSurfaceProfileTests::GetScalarParameter(
 					OrbitalTerrain, Expected.ParameterName, ActualValue)))
 			{
-				TestTrue(*FString::Printf(TEXT("Orbital terrain keeps anti-alias-safe default %s"),
+				TestTrue(*FString::Printf(TEXT("Orbital terrain retains the authored texture default %s"),
 					Expected.ParameterName), FMath::IsNearlyEqual(
 						ActualValue, Expected.ExpectedValue, 1.0e-4f));
 			}
@@ -1235,12 +1298,26 @@ bool FAPSPlanetSurfaceMaterialCatalogIntegrityTest::RunTest(const FString& Param
 				{
 					return Expression && Expression->IsA<UMaterialExpressionVertexColor>();
 				}));
-		TestFalse(TEXT("WorldScape terrain has no UV sampling that can reveal cube-patch grids"),
-			WorldScapeTerrain->GetExpressions().ContainsByPredicate(
-				[](const UMaterialExpression* Expression)
-				{
-					return Expression && Expression->IsA<UMaterialExpressionTextureSample>();
-				}));
+		int32 DetailTextureSamples = 0;
+		for (const UMaterialExpression* Expression : WorldScapeTerrain->GetExpressions())
+		{
+			const auto* Sample = Cast<UMaterialExpressionTextureSample>(Expression);
+			if (!Sample) continue;
+			++DetailTextureSamples;
+			TestNotNull(TEXT("Surface detail texture is available"), Sample->Texture.Get());
+			TestEqual(TEXT("Surface texture uses explicit pre-wrap derivatives"),
+				Sample->MipValueMode.GetValue(), TMVM_Derivative);
+			const auto* UV = Cast<UMaterialExpressionComponentMask>(Sample->Coordinates.Expression);
+			const auto* Dx = Cast<UMaterialExpressionComponentMask>(Sample->CoordinatesDX.Expression);
+			const auto* Dy = Cast<UMaterialExpressionComponentMask>(Sample->CoordinatesDY.Expression);
+			TestTrue(TEXT("Triplanar UV uses wrapped root coordinates rather than patch UV"),
+				UV && UV->Input.Expression && UV->Input.Expression->IsA<UMaterialExpressionFrac>());
+			TestTrue(TEXT("Triplanar mip gradients bypass the wrapping discontinuity"),
+				Dx && Dy && Dx->Input.Expression && Dy->Input.Expression
+				&& Dx->Input.Expression->IsA<UMaterialExpressionDDX>()
+				&& Dy->Input.Expression->IsA<UMaterialExpressionDDY>());
+		}
+		TestEqual(TEXT("Ground detail has a bounded nine-sample texture budget"), DetailTextureSamples, 9);
 		int32 NonTiledDetailNoiseCount = 0;
 		const UMaterialExpressionVectorParameter* TerrainSeedOffset = nullptr;
 		for (const UMaterialExpression* Expression : WorldScapeTerrain->GetExpressions())
@@ -1440,11 +1517,14 @@ bool FAPSPlanetSurfaceMaterialCatalogIntegrityTest::RunTest(const FString& Param
 						&& TestNotNull(TEXT("Slope cue can reuse the blended base normal"),
 							BlendedPhysicalBaseNormal))
 					{
-						TestTrue(TEXT("Lighting detail and slope tint share the normalized seam-safe normal"),
-							PhysicalSlopeAlignment->A.Expression == BlendedPhysicalBaseNormal
-								&& PerturbedWorldNormal
-								&& PerturbedWorldNormal->A.Expression
-									== BlendedPhysicalBaseNormal);
+						const auto* GeologicalNormal = Cast<UMaterialExpressionNormalize>(
+							PhysicalSlopeAlignment->A.Expression);
+						TestTrue(TEXT("Geological slope classification is independent of camera distance"),
+							GeologicalNormal && GeologicalNormal != BlendedPhysicalBaseNormal
+							&& GeologicalNormal->VectorInput.Expression
+							&& GeologicalNormal->VectorInput.Expression->IsA<UMaterialExpressionVertexNormalWS>());
+						TestTrue(TEXT("Only lighting keeps the established seam-normal transition"),
+							PerturbedWorldNormal && PerturbedWorldNormal->A.Expression == BlendedPhysicalBaseNormal);
 						TestTrue(TEXT("Slope cue compares against the same root-radial target"),
 							SectionNormalBlend
 								&& PhysicalSlopeAlignment->B.Expression
@@ -2801,7 +2881,7 @@ bool FAPSPlanetSurfacePresetFieldDiversityTest::RunTest(const FString& Parameter
 
 	TMap<EPlanetType, FSurfaceFieldStats> Samples;
 	TMap<uint32, EPlanetType> TypeByFieldHash;
-	for (uint8 Value = 0; Value <= static_cast<uint8>(EPlanetType::Unknown); ++Value)
+	for (uint8 Value = 0; Value <= APSPlanetTypes::LastValue; ++Value)
 	{
 		const EPlanetType Type = static_cast<EPlanetType>(Value);
 		if (!UAPSPlanetSurfaceProfileResolver::SupportsWorldScape(Type)) continue;

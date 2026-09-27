@@ -2,6 +2,10 @@
 
 #include "Misc/AutomationTest.h"
 #include "Tests/AutomationCommon.h"
+#include "APSSharedLavaCoverageProbe.h"
+#include "APSSharedTerrainLodABProbe.h"
+#include "APSLavaCoverageOrbit.h"
+#include "APSUserGreenhouseReference.h"
 
 #include "APS_ALPHA/Actors/Astro/Galaxy.h"
 #include "APS_ALPHA/Actors/Astro/Planet.h"
@@ -57,6 +61,17 @@
 #include "Engine/DirectionalLight.h"
 #include "Engine/GameViewportClient.h"
 #include "Engine/World.h"
+#include "Engine/Engine.h"
+#include "Engine/LocalPlayer.h"
+#include "EngineGlobals.h"
+#include "EnhancedInputSubsystems.h"
+#include "InputAction.h"
+#include "GameFramework/CharacterMovementComponent.h"
+#include "GameFramework/InputSettings.h"
+#include "GameFramework/PlayerInput.h"
+#include "Misc/App.h"
+#include "Misc/DefaultValueHelper.h"
+#include "RenderTimer.h"
 #include "EngineUtils.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/SpringArmComponent.h"
@@ -74,10 +89,37 @@
 #include "Materials/MaterialInstanceDynamic.h"
 #include "PlanetaryAtmosphere.h"
 #include "UnrealClient.h"
+#include "SceneView.h"
+#include "SceneViewExtension.h"
 #include "UObject/UnrealType.h"
 
 namespace APSGeneratedGameplayHandoffSmokeTests
 {
+	// Same read-only SetupView sampling as APSStellarFinalPostprocessTrace, scoped
+	// to this test's actual game world. No camera, exposure or light overrides.
+	class FSurfaceDiagnosticView final : public FWorldSceneViewExtension
+	{
+	public:
+		FSurfaceDiagnosticView(const FAutoRegister& Register, UWorld* World)
+			: FWorldSceneViewExtension(Register, World) {}
+		virtual void SetupViewFamily(FSceneViewFamily&) override {}
+		virtual void BeginRenderViewFamily(FSceneViewFamily&) override {}
+		virtual void SetupView(FSceneViewFamily& Family, FSceneView& View) override
+		{
+			if (View.bIsSceneCapture) return;
+			Settings = View.FinalPostProcessSettings;
+			SampleFrame = GFrameCounter;
+			bEyeAdaptation = Family.EngineShowFlags.EyeAdaptation;
+			bLocalExposure = Family.EngineShowFlags.LocalExposure;
+			bHasSample = true;
+		}
+		FPostProcessSettings Settings;
+		uint64 SampleFrame{0};
+		bool bEyeAdaptation{false};
+		bool bLocalExposure{false};
+		bool bHasSample{false};
+	};
+
 	constexpr double WholeTestTimeoutSeconds = 150.0;
 	constexpr double ScreenshotTimeoutSeconds = 10.0;
 	constexpr double PhysicalSurfaceTimeoutSeconds = 30.0;
@@ -806,12 +848,18 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 	public:
 		explicit FGeneratedCivilizationHandoffCommand(FAutomationTestBase* InTest,
 			EPlanetType InExpectedPlanetType = EPlanetType::Frozen,
-			bool bInValidateWetOceanContract = false)
+			bool bInValidateWetOceanContract = false,
+			bool bInCaptureSurfaceDiagnostics = false,
+			bool bInLavaCoverageOrbit = false,
+			bool bInSharedLiquidCoverageOrbit = false)
 			: Test(InTest)
 			, ExpectedPlanetType(InExpectedPlanetType)
 			, bValidateWetOceanContract(bInValidateWetOceanContract)
 			, bEnableWaterIsolation(bInValidateWetOceanContract
 				&& FParse::Param(FCommandLine::Get(), TEXT("APSWaterIsolation")))
+			, bCaptureSurfaceDiagnostics(bInCaptureSurfaceDiagnostics)
+			, bLavaCoverageOrbit(bInLavaCoverageOrbit)
+			, bSharedLiquidCoverageOrbit(bInSharedLiquidCoverageOrbit)
 		{
 		}
 
@@ -838,6 +886,21 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 				return UpdateWaitForPreview(World, Now);
 			case EStep::WaitForGameplayTravel:
 				return UpdateWaitForGameplayTravel(World, Now);
+			case EStep::DiagnosticSurfaceFrames:
+				return UpdateDiagnosticSurfaceFrames(World, Now);
+			case EStep::DiagnosticLavaOrbit:
+				return UpdateDiagnosticLavaOrbit(World, Now);
+			case EStep::DiagnosticLavaCoverage:
+				if (!LavaCoverageCommand.IsValid()) return Fail(TEXT("Liquid coverage continuation is missing"));
+				if (!LavaCoverageCommand->Update()) return false;
+				LavaCoverageCommand.Reset();
+				Step = EStep::Cleanup;
+				StepStartSeconds = Now;
+				return false;
+			case EStep::DiagnosticOrbitOverview:
+				return UpdateDiagnosticOrbitOverview(World, Now);
+			case EStep::DiagnosticWalkRunPerf:
+				return UpdateDiagnosticWalkRunPerf(World, Now);
 			case EStep::ValidateGameplayHierarchy:
 				return UpdateValidateGameplayHierarchy(World, Now);
 			case EStep::ProjectionEvidenceStationaryHold:
@@ -869,6 +932,11 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			OpenGenerator,
 			WaitForPreview,
 			WaitForGameplayTravel,
+			DiagnosticSurfaceFrames,
+			DiagnosticLavaOrbit,
+			DiagnosticLavaCoverage,
+			DiagnosticOrbitOverview,
+			DiagnosticWalkRunPerf,
 			ValidateGameplayHierarchy,
 			ProjectionEvidenceStationaryHold,
 			ProjectionEvidenceControlledMove,
@@ -1027,6 +1095,11 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			Model->AtmosphereOpacity = 12.0;
 			Model->AtmosphereMultiScattering = 5.0;
 			Model->AtmosphereRayleighScattering = 8.0;
+			if (bCaptureSurfaceDiagnostics && ExpectedPlanetType == EPlanetType::Greenhouse
+				&& APSUserGreenhouseReference::IsRequested())
+			{
+				APSUserGreenhouseReference::ConfigureModel(*Model);
+			}
 
 			if (!Controller->OpenAstronomicalGenerationForAutomation(
 				EAstroPreviewFocus::HomePlanet, EAPSGenerationRoute::Civilization))
@@ -1109,7 +1182,10 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			// Exercise the production gameplay contract directly. The pawn must be
 			// placed by AAstroGenerator::ResolveSpawnLocation and settle on the
 			// authoritative WorldScape collision without any test-side relocation.
-			Spawn->CharacterSpawnPlace = ECharSpawnPlace::PlanetSurface;
+			// The opt-in Lava/Ammonia coverage probes use the existing orbital spawn route;
+			// it never weakens or substitutes for the production dry-ground landing.
+			Spawn->CharacterSpawnPlace = (bLavaCoverageOrbit || bSharedLiquidCoverageOrbit)
+				? ECharSpawnPlace::PlanetOrbit : ECharSpawnPlace::PlanetSurface;
 			Spawn->HomeStationOrbitHeight = EOrbitHeight::LowOrbit;
 			EditableSpawnParametersAddress = Spawn;
 			// AppliedSurfaceProfileSignature also fingerprints preview-only presentation
@@ -1229,6 +1305,22 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 				PreviewDatasetOnlyMaxOrbit = DatasetOnlyRecord.PrimaryStarModel.MaxOrbit;
 			}
 
+			if (bCaptureSurfaceDiagnostics
+				&& FParse::Param(FCommandLine::Get(), TEXT("APSDiagnosticOrbitFrame")))
+			{
+				if (++DiagnosticOrbitSettleFrames < 3) return false;
+				ScreenshotPath = FPaths::Combine(FPaths::ProjectSavedDir(),
+					TEXT("Screenshots/Windows"), FString::Printf(
+						TEXT("APS_SurfaceLighting_%d_PLANET.png"), static_cast<int32>(ExpectedPlanetType)));
+				IFileManager::Get().MakeDirectory(*FPaths::GetPath(ScreenshotPath), true);
+				FString CaptureFailure;
+				if (!CaptureGameplayViewport(World, CaptureFailure, false, false))
+				{
+					return CaptureFailure.IsEmpty() ? false : Fail(CaptureFailure);
+				}
+				UE_LOG(LogTemp, Display, TEXT("[APS.SurfaceLighting] PLANET baseline type=%d screenshot=%s; unmodified preview camera"),
+					static_cast<int32>(ExpectedPlanetType), *ScreenshotPath);
+			}
 			UE_LOG(LogTemp, Display,
 				TEXT("[APS.Handoff.Smoke] Preview ready in %.2fs pawn=%s profile=%u projection=%u/%u dataset=%u home=%s; committing L_WorldGeneration"),
 				Now - StepStartSeconds, *SelectedPawnClassPath, PreviewProfileSignature,
@@ -1258,7 +1350,794 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 				TEXT("[APS.Handoff.Smoke] Travel complete in %.2fs map=%s gameMode=%s"),
 				Now - StepStartSeconds, *World->GetMapName(),
 				*GetNameSafe(World->GetAuthGameMode()));
-			Step = EStep::ValidateGameplayHierarchy;
+			Step = (bLavaCoverageOrbit || bSharedLiquidCoverageOrbit) ? EStep::DiagnosticLavaOrbit : bCaptureSurfaceDiagnostics
+				? EStep::DiagnosticSurfaceFrames : EStep::ValidateGameplayHierarchy;
+			if (bCaptureSurfaceDiagnostics && !bLavaCoverageOrbit && !bSharedLiquidCoverageOrbit)
+			{
+				DiagnosticView = FSceneViewExtensions::NewExtension<FSurfaceDiagnosticView>(World);
+			}
+			StepStartSeconds = Now;
+			return false;
+		}
+
+		bool UpdateDiagnosticLavaOrbit(UWorld* World, double Now)
+		{
+			if (!World || World != GameplayWorld.Get()) return false;
+			AAstroGenerator* Generator = nullptr;
+			for (AAstroGenerator* Candidate : FindActors<AAstroGenerator>(World))
+			{
+				if (Candidate->bGenerateFullScaledWorld && !Candidate->bIntegrateStartPlanet
+					&& !Candidate->ActorHasTag(TEXT("WorldGenerationPreview"))
+					&& Candidate->GetCanonicalStellarProjectionDescriptor().bConsumedFinalizedDataset)
+				{
+					Generator = Candidate;
+					break;
+				}
+			}
+			FString Error;
+			const auto Readiness = LavaOrbitObserver.Update(World, Generator, SelectedPawnClass.Get(),
+				ExpectedPlanetType, PreviewCanonicalDatasetHash, PreviewProfileSignature, Error,
+				bSharedLiquidCoverageOrbit ? EAPSPlanetLiquidType::Ammonia : EAPSPlanetLiquidType::Lava);
+			if (Readiness == APSLavaCoverageOrbit::EReadiness::Failed) return Fail(Error);
+			if (Readiness == APSLavaCoverageOrbit::EReadiness::Pending) return false;
+			LavaCoverageCommand = bSharedLiquidCoverageOrbit
+				? APSCreateSharedLiquidCoverageProbe(Test, World, Generator->HomePlanet)
+				: APSCreateSharedLavaCoverageProbe(Test, World, Generator->HomePlanet);
+			Step = EStep::DiagnosticLavaCoverage;
+			StepStartSeconds = Now;
+			return false;
+		}
+
+
+		// Diagnostic-only: mutate only two uniforms on actual test-world MIDs;
+		// no asset, material binding, parent, geometry or other parameter edits.
+		bool ApplyDiagnosticNormalRange(AWorldScapeRoot* Root, FString& Error, bool& bChanged)
+		{
+			bChanged = false;
+			FString StartText, EndText;
+			const bool bStart = FParse::Value(FCommandLine::Get(), TEXT("APSDiagnosticFarNormalStartKm="), StartText);
+			const bool bEnd = FParse::Value(FCommandLine::Get(), TEXT("APSDiagnosticFarNormalEndKm="), EndText);
+			if (!bStart && !bEnd) return true;
+			double StartKm = 0, EndKm = 0;
+			if (!bStart || !bEnd || !FDefaultValueHelper::ParseDouble(StartText, StartKm)
+				|| !FDefaultValueHelper::ParseDouble(EndText, EndKm)
+				|| !FMath::IsFinite(StartKm) || !FMath::IsFinite(EndKm)
+				|| StartKm < 0 || EndKm <= StartKm || EndKm > 1000
+				|| !bCaptureSurfaceDiagnostics || ExpectedPlanetType != EPlanetType::Ice
+				|| FParse::Param(FCommandLine::Get(), TEXT("APSDiagnosticTerrainLodAB"))
+				|| FParse::Param(FCommandLine::Get(), TEXT("APSProbeFarNormalAB")))
+			{
+				Error = TEXT("Normal-range diagnostic requires Ice, both finite 0<=start<end<=1000 km, and no material LOD A/B");
+				return false;
+			}
+			const float StartCm = static_cast<float>(StartKm * 100000.0);
+			const float EndCm = static_cast<float>(EndKm * 100000.0);
+			TMap<UMaterialInstanceDynamic*, FVector2D> Current;
+			int32 Slots = 0;
+			for (UWorldScapeLod* Lod : Root->WorldScapeLod)
+			{
+				if (!IsValid(Lod) || !IsValid(Lod->Mesh) || Lod->WaterBody)
+				{ Error = TEXT("Normal-range diagnostic lost actual terrain LOD"); return false; }
+				for (int32 I = 0; I < Lod->Mesh->GetNumSections(); ++I)
+				{
+					const FWorldScapeMeshSection* Section = Lod->Mesh->GetProcMeshSection(I);
+					if (!Section || Section->PlanetVertexBuffer.IsEmpty()) continue;
+					auto* MID = Cast<UMaterialInstanceDynamic>(Lod->Mesh->GetMaterial(I));
+					float OldStart = 0, OldEnd = 0;
+					if (!APSSharedTerrainMaterial::IsSharedStack(MID) || !MID->Parent
+						|| MID->Parent->GetPathName() != TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Shared/MI_APS_SharedTerra.MI_APS_SharedTerra")
+						|| !MID->GetScalarParameterValue(FMaterialParameterInfo(TEXT("APS_FarNormalStartCm")), OldStart)
+						|| !MID->GetScalarParameterValue(FMaterialParameterInfo(TEXT("APS_FarNormalEndCm")), OldEnd))
+					{ Error = TEXT("Normal-range diagnostic requires production Terra MID with both normal uniforms on every actual section"); return false; }
+					++Slots;
+					Current.Add(MID, FVector2D(OldStart, OldEnd));
+				}
+			}
+			if (Current.IsEmpty()) { Error = TEXT("Normal-range diagnostic found no terrain material slots"); return false; }
+			if (!DiagnosticNormalRangeOriginals.IsEmpty())
+			{
+				for (const auto& Pair : Current)
+					if (!DiagnosticNormalRangeOriginals.Contains(TWeakObjectPtr<UMaterialInstanceDynamic>(Pair.Key))
+						|| Pair.Value.X != StartCm || Pair.Value.Y != EndCm)
+					{ Error = TEXT("Normal-range diagnostic material/uniform changed after one-shot application"); return false; }
+				return true;
+			}
+			// Validate the complete set before one-shot writes. Allow a normal
+			// game/render frame before the first screenshot after uniform upload.
+			for (const auto& Pair : Current)
+			{
+				DiagnosticNormalRangeOriginals.Add(TWeakObjectPtr<UMaterialInstanceDynamic>(Pair.Key), Pair.Value);
+				Pair.Key->SetScalarParameterValue(TEXT("APS_FarNormalStartCm"), StartCm);
+				Pair.Key->SetScalarParameterValue(TEXT("APS_FarNormalEndCm"), EndCm);
+				UE_LOG(LogTemp, Display, TEXT("[APS.SurfaceNormalRange] slots=%d uniqueMIDs=%d material=%s parent=%s oldCm=(%.0f,%.0f) diagnosticKm=(%.3f,%.3f); actual MID only, production defaults unchanged"),
+					Slots, Current.Num(), *Pair.Key->GetPathName(), *Pair.Key->Parent->GetPathName(),
+					Pair.Value.X, Pair.Value.Y, StartKm, EndKm);
+			}
+			bChanged = true;
+			return true;
+		}
+
+		void RestoreDiagnosticNormalRange()
+		{
+			for (const auto& Pair : DiagnosticNormalRangeOriginals)
+				if (UMaterialInstanceDynamic* MID = Pair.Key.Get())
+				{
+					MID->SetScalarParameterValue(TEXT("APS_FarNormalStartCm"), static_cast<float>(Pair.Value.X));
+					MID->SetScalarParameterValue(TEXT("APS_FarNormalEndCm"), static_cast<float>(Pair.Value.Y));
+				}
+			if (!DiagnosticNormalRangeOriginals.IsEmpty())
+				UE_LOG(LogTemp, Display, TEXT("[APS.SurfaceNormalRange] restored effective scalar values on %d test-world MIDs"), DiagnosticNormalRangeOriginals.Num());
+			DiagnosticNormalRangeOriginals.Empty();
+		}
+
+		bool UpdateDiagnosticSurfaceFrames(UWorld* World, double Now)
+		{
+			if (!World || World != GameplayWorld.Get()) return false;
+			APlayerController* PC = World->GetFirstPlayerController();
+			APawn* Pawn = PC ? PC->GetPawn() : nullptr;
+			AAstroGenerator* Generator = nullptr;
+			for (AAstroGenerator* Candidate : FindActors<AAstroGenerator>(World))
+			{
+				if (Candidate->bGenerateFullScaledWorld && !Candidate->bIntegrateStartPlanet
+					&& !Candidate->ActorHasTag(TEXT("WorldGenerationPreview"))
+					&& Candidate->GetCanonicalStellarProjectionDescriptor().bConsumedFinalizedDataset)
+				{
+					Generator = Candidate;
+					break;
+				}
+			}
+			APlanet* Planet = Generator ? Generator->HomePlanet : nullptr;
+			APlanetarySurfaceGenerator* Surface = Planet ? Planet->PlanetaryEnvironmentGenerator : nullptr;
+			AWorldScapeRoot* Root = Surface ? Surface->WorldScapeRootInstance : nullptr;
+			UCapsuleComponent* Capsule = FindPawnCapsule(Pawn);
+			if (!PC || !PC->PlayerCameraManager || !IsValid(Pawn) || !IsValid(Root)
+				|| !IsValid(Capsule) || !SelectedPawnClass.IsValid()
+				|| !Pawn->IsA(SelectedPawnClass.Get()) || PC->GetViewTarget() != Pawn
+				|| !Planet->bWorldScapeSurfaceReady || Root->IsHidden()
+				|| !DiagnosticView.IsValid() || !DiagnosticView->bHasSample)
+			{
+				return Now - StepStartSeconds <= PhysicalSurfaceTimeoutSeconds ? false
+					: Fail(TEXT("surface diagnostic never reached an actual controlled production surface view"));
+			}
+			if (Surface->ResolvedSurfaceProfile.PlanetType != ExpectedPlanetType
+				|| Generator->GetCanonicalStellarProjectionDescriptor().CanonicalDatasetHash != PreviewCanonicalDatasetHash)
+			{
+				return Fail(TEXT("surface diagnostic did not preserve the requested planet type / committed preview dataset"));
+			}
+			RuntimeGenerator = Generator;
+			RuntimeHomePlanet = Planet;
+			RuntimeGravityPawn = Pawn;
+			const FVector Outward = (Pawn->GetActorLocation() - Root->GetActorLocation()).GetSafeNormal();
+			if (DiagnosticCaptureIndex == 0)
+			{
+				FHitResult Hit;
+				FCollisionQueryParams Params(SCENE_QUERY_STAT(APSSurfaceLightingNaturalGround), true, Pawn);
+				World->LineTraceSingleByChannel(Hit, Pawn->GetActorLocation() + Outward * 5000.0,
+					Pawn->GetActorLocation() - Outward * 5000.0, ECC_Visibility, Params);
+				bool bWorldScapeGround = false;
+				for (const UWorldScapeLod* Lod : Root->CollisionLods)
+				{
+					bWorldScapeGround |= IsValid(Lod) && IsValid(Lod->Mesh)
+						&& Hit.bBlockingHit && Hit.GetComponent() == Lod->Mesh;
+				}
+				EGravityType GravityType = EGravityType::ZeroG;
+				FVector GravityDirection;
+				AActor* GravityTarget = nullptr;
+				const bool bPlanetGravity = ReadGravityContract(Pawn, GravityType, GravityDirection, GravityTarget)
+					&& GravityType == EGravityType::OnPlanet && GravityTarget == Planet
+					&& FVector::DotProduct(GravityDirection.GetSafeNormal(), -Outward) > 0.95;
+				const double FootClearance = Hit.bBlockingHit
+					? FVector::DotProduct(Pawn->GetActorLocation() - Hit.ImpactPoint, Outward)
+						- Capsule->GetScaledCapsuleHalfHeight() : TNumericLimits<double>::Max();
+				const bool bGrounded = bWorldScapeGround && bPlanetGravity
+					&& FMath::Abs(FootClearance) <= MaximumFootClearanceCm
+					&& Pawn->GetVelocity().Size() <= MaximumSettledSpeedCmPerSecond;
+				NaturalSurfaceSettleFrames = bGrounded ? NaturalSurfaceSettleFrames + 1 : 0;
+				if (NaturalSurfaceSettleFrames < RequiredNaturalSettleFrames)
+				{
+					return Now - StepStartSeconds <= PhysicalSurfaceTimeoutSeconds ? false
+						: Fail(FString::Printf(TEXT("surface diagnostic natural landing failed hit=%d gravity=%d foot=%.2f speed=%.2f"),
+							bWorldScapeGround ? 1 : 0, bPlanetGravity ? 1 : 0, FootClearance, Pawn->GetVelocity().Size()));
+				}
+			}
+			else if (DiagnosticPerfSkipFrames > 0)
+			{
+				--DiagnosticPerfSkipFrames;
+			}
+			else if (World->GetDeltaSeconds() > 0.0f)
+			{
+				DiagnosticFrameTimesMs.Add(World->GetDeltaSeconds() * 1000.0);
+			}
+			FString NormalRangeError;
+			bool bNormalRangeChanged = false;
+			if (!ApplyDiagnosticNormalRange(Root, NormalRangeError, bNormalRangeChanged)) return Fail(NormalRangeError);
+			if (bNormalRangeChanged) return false;
+			const double Delays[3] = {0.0, 3.0, 8.0};
+			const TCHAR* Phases[3] = {TEXT("First"), TEXT("Plus3s"), TEXT("Plus8s")};
+			if (DiagnosticCaptureIndex > 0 && Now - DiagnosticFirstCaptureSeconds < Delays[DiagnosticCaptureIndex]) return false;
+			if (DiagnosticCaptureIndex == 0 && ExpectedPlanetType == EPlanetType::Greenhouse
+				&& APSUserGreenhouseReference::IsRequested())
+			{
+				FString ReadbackNotReady;
+				if (!APSUserGreenhouseReference::LogBeforeFirstScreenshot(Planet, Surface, Root,
+					PC->PlayerCameraManager->GetCameraLocation(), ReadbackNotReady))
+				{
+					return Now - StepStartSeconds <= PhysicalSurfaceTimeoutSeconds ? false : Fail(ReadbackNotReady);
+				}
+			}
+			ScreenshotPath = FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("Screenshots/Windows"),
+				FString::Printf(TEXT("APS_SurfaceLighting_%d_%s.png"), static_cast<int32>(ExpectedPlanetType), Phases[DiagnosticCaptureIndex]));
+			IFileManager::Get().MakeDirectory(*FPaths::GetPath(ScreenshotPath), true);
+			FString CaptureFailure;
+			FLinearColor LowerMean;
+			if (!CaptureGameplayViewport(World, CaptureFailure, false, false, nullptr, &LowerMean))
+			{
+				return CaptureFailure.IsEmpty() ? false : Fail(CaptureFailure);
+			}
+			if (DiagnosticCaptureIndex == 0)
+			{
+				DiagnosticFirstCaptureSeconds = Now;
+				DiagnosticInitialPawnLocation = Pawn->GetActorLocation();
+				DiagnosticInitialCameraLocation = PC->PlayerCameraManager->GetCameraLocation();
+				DiagnosticInitialCameraRotation = PC->PlayerCameraManager->GetCameraRotation();
+			}
+			const FPostProcessSettings& PP = DiagnosticView->Settings;
+			if (const UAPSStellarVisualSubsystem* Stellar = World->GetSubsystem<UAPSStellarVisualSubsystem>())
+			{
+				FVector TargetLocation;
+				FString TargetIdentity;
+				if (Stellar->GetActiveStellarTarget(TargetLocation, TargetIdentity))
+				{
+					UE_LOG(LogTemp, Display, TEXT("[APS.SurfaceLighting.Target] phase=%s star=%s location=%s expectedKeyDirection=%s"),
+						Phases[DiagnosticCaptureIndex], *TargetIdentity, *TargetLocation.ToCompactString(),
+						*(Pawn->GetActorLocation() - TargetLocation).GetSafeNormal().ToCompactString());
+				}
+			}
+			UE_LOG(LogTemp, Display,
+				TEXT("[APS.SurfaceLighting] phase=%s elapsed=%.3fs sinceTravel=%.3fs type=%d pawn=%s viewTarget=%s pawnDrift=%.3fcm cameraDrift=%.3fcm cameraRotationDelta=%s lowerMean=%s finalPPFrameAge=%llu exposureMode=%d min=%g max=%g bias=%g physical=%d eyeFlag=%d localFlag=%d localHighlights=%g localShadows=%g screenshot=%s"),
+				Phases[DiagnosticCaptureIndex], Now - DiagnosticFirstCaptureSeconds, Now - StepStartSeconds,
+				static_cast<int32>(ExpectedPlanetType), *Pawn->GetPathName(), *GetNameSafe(PC->GetViewTarget()),
+				FVector::Distance(Pawn->GetActorLocation(), DiagnosticInitialPawnLocation),
+				FVector::Distance(PC->PlayerCameraManager->GetCameraLocation(), DiagnosticInitialCameraLocation),
+				*(PC->PlayerCameraManager->GetCameraRotation() - DiagnosticInitialCameraRotation).GetNormalized().ToCompactString(),
+				*LowerMean.ToString(), GFrameCounter - DiagnosticView->SampleFrame, static_cast<int32>(PP.AutoExposureMethod),
+				PP.AutoExposureMinBrightness, PP.AutoExposureMaxBrightness, PP.AutoExposureBias,
+				PP.AutoExposureApplyPhysicalCameraExposure ? 1 : 0, DiagnosticView->bEyeAdaptation ? 1 : 0,
+				DiagnosticView->bLocalExposure ? 1 : 0, PP.LocalExposureHighlightContrastScale, PP.LocalExposureShadowContrastScale, *ScreenshotPath);
+			for (ADirectionalLight* Light : FindActors<ADirectionalLight>(World))
+			{
+				const UDirectionalLightComponent* Component = Cast<UDirectionalLightComponent>(Light->GetLightComponent());
+				if (!Component) continue;
+				UE_LOG(LogTemp, Display, TEXT("[APS.SurfaceLighting.Light] phase=%s light=%s fill=%d visible=%d intensity=%g direction=%s incidence=%g shadows=%d"),
+					Phases[DiagnosticCaptureIndex], *Light->GetPathName(), Light->ActorHasTag(TEXT("APSGameplaySurfaceFillLight")) ? 1 : 0,
+					Component->IsVisible() && !Light->IsHidden() ? 1 : 0, Component->Intensity,
+					*Component->GetDirection().ToCompactString(), FVector::DotProduct(-Component->GetDirection(), Outward), Component->CastShadows ? 1 : 0);
+			}
+			TSet<FString> MaterialBindings;
+			for (const UWorldScapeLod* Lod : Root->WorldScapeLod)
+			{
+				if (!IsValid(Lod) || !IsValid(Lod->Mesh) || !IsEffectivelyPresented(Lod->Mesh)) continue;
+				UMaterialInterface* Material = Lod->Mesh->GetMaterial(0);
+				UMaterialInstance* Instance = Cast<UMaterialInstance>(Material);
+				const FString Binding = FString::Printf(TEXT("material=%s parent=%s base=%s"),
+					*GetPathNameSafe(Material), *GetPathNameSafe(Instance ? Instance->Parent.Get() : nullptr),
+					*GetPathNameSafe(Material ? Material->GetMaterial() : nullptr));
+				if (!MaterialBindings.Contains(Binding))
+				{
+					MaterialBindings.Add(Binding);
+					UE_LOG(LogTemp, Display, TEXT("[APS.SurfaceLighting.Terrain] phase=%s mesh=%s %s"), Phases[DiagnosticCaptureIndex], *Lod->Mesh->GetPathName(), *Binding);
+				}
+			}
+			for (AStar* Star : FindActors<AStar>(World))
+			{
+				UE_LOG(LogTemp, Display, TEXT("[APS.SurfaceLighting.Emitter] phase=%s star=%s photosphereCastShadow=%d"),
+					Phases[DiagnosticCaptureIndex], *Star->GetPathName(), IsValid(Star->StarMesh) && Star->StarMesh->CastShadow ? 1 : 0);
+			}
+			DiagnosticPerfSkipFrames = 2; // exclude synchronous screenshot readback effects
+			if (++DiagnosticCaptureIndex == 3)
+			{
+				DiagnosticFrameTimesMs.Sort();
+				double Sum = 0.0;
+				for (double Ms : DiagnosticFrameTimesMs) Sum += Ms;
+				const int32 Count = DiagnosticFrameTimesMs.Num();
+				UE_LOG(LogTemp, Display, TEXT("[APS.SurfaceLighting.Perf] observedGameDeltaOnly samples=%d meanMs=%.3f p95Ms=%.3f maxMs=%.3f meanFPS=%.2f; excludes two ticks after capture; not GPU/Present benchmark"),
+					Count, Count ? Sum / Count : 0.0, Count ? DiagnosticFrameTimesMs[FMath::FloorToInt((Count - 1) * 0.95)] : 0.0,
+					Count ? DiagnosticFrameTimesMs.Last() : 0.0, Sum > 0.0 ? 1000.0 * Count / Sum : 0.0);
+				const bool bSharedLiquidCoverage = FParse::Param(FCommandLine::Get(), TEXT("APSSharedLiquidCoverage"));
+				if (bSharedLiquidCoverage || FParse::Param(FCommandLine::Get(), TEXT("APSLavaCoverage")))
+				{
+					LavaCoverageCommand = bSharedLiquidCoverage
+						? APSCreateSharedLiquidCoverageProbe(Test, World, Planet)
+						: APSCreateSharedLavaCoverageProbe(Test, World, Planet);
+					Step = EStep::DiagnosticLavaCoverage;
+					StepStartSeconds = Now;
+					return false;
+				}
+				if (FParse::Param(FCommandLine::Get(), TEXT("APSDiagnosticWalkRunPerf")))
+				{
+					return BeginDiagnosticWalkRunPerf(World, Now);
+				}
+				if (FParse::Param(FCommandLine::Get(), TEXT("APSDiagnosticOrbitOverview")))
+				{
+					return BeginDiagnosticOrbitOverview(World, Now);
+				}
+				Step = EStep::Cleanup;
+				StepStartSeconds = Now;
+			}
+			return false;
+		}
+
+		struct FSurfacePerfSample
+		{
+			int32 Phase{0};
+			uint64 Frame{0}, FrameGap{0};
+			double PhaseSeconds{0.0}, FrameMs{0.0}, WallGapMs{0.0};
+			double GameMs{-1.0}, RenderMs{-1.0}, GPUMs{-1.0};
+			double SpeedCm{0.0}, MaxWalkSpeedCm{0.0};
+			int32 GenerationWorkers{0};
+		};
+
+		bool BeginDiagnosticWalkRunPerf(UWorld* World, double Now)
+		{
+			ACustomGravityCharacter* Pawn = Cast<ACustomGravityCharacter>(RuntimeGravityPawn.Get());
+			APlayerController* PC = World ? World->GetFirstPlayerController() : nullptr;
+			ULocalPlayer* LocalPlayer = PC ? PC->GetLocalPlayer() : nullptr;
+			UEnhancedInputLocalPlayerSubsystem* Input = LocalPlayer
+				? LocalPlayer->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>() : nullptr;
+			if (!Pawn || !PC || !Input || !Pawn->MoveAction
+				|| Pawn->MoveAction->ValueType != EInputActionValueType::Axis2D || PC->IsMoveInputIgnored())
+			{
+				return Fail(TEXT("walk/run perf requires the real CustomGravityCharacter Axis2D MoveAction and enabled local input"));
+			}
+			TArray<FInputActionKeyMapping> SprintMappings;
+			UInputSettings::GetInputSettings()->GetActionMappingByName(TEXT("AccelerationBoost"), SprintMappings);
+			for (const FInputActionKeyMapping& Mapping : SprintMappings)
+			{
+				if (Mapping.Key.IsValid() && !Mapping.Key.IsGamepadKey()
+					&& !Mapping.bShift && !Mapping.bCtrl && !Mapping.bAlt && !Mapping.bCmd)
+				{
+					PerfSprintKey = Mapping.Key;
+					break;
+				}
+			}
+			if (!PerfSprintKey.IsValid() || PC->IsInputKeyDown(PerfSprintKey))
+			{
+				return Fail(TEXT("walk/run perf needs an unheld unmodified keyboard AccelerationBoost binding"));
+			}
+			PerfInputSubsystem = Input;
+			PerfMoveAction = Pawn->MoveAction;
+			PerfPlayerController = PC;
+			PerfSamples.Reserve(8192);
+			bPerfStarted = true;
+			PerfPhase = 0; // ten seconds of natural grounded idle warmup
+			PerfPhaseStartSeconds = Now;
+			PerfLastWallSeconds = Now;
+			PerfLastFrame = GFrameCounter;
+			Step = EStep::DiagnosticWalkRunPerf;
+			const auto CVar = [](const TCHAR* Name)
+			{
+				const IConsoleVariable* Value = IConsoleManager::Get().FindConsoleVariable(Name);
+				return Value ? static_cast<double>(Value->GetFloat()) : -1.0;
+			};
+			UE_LOG(LogTemp, Display, TEXT("[APS.SurfacePerf.Caps] tMaxFPS=%g vsync=%g vsyncEditor=%g idleBackground=%g screenPercentage=%g dynamicRes=%g smooth=%d smoothMin=%g smoothMax=%g fixedFrame=%d fixedFPS=%g fixedTimeStep=%d fixedDelta=%g renderOffscreen=%d; read only, caps unchanged"),
+				CVar(TEXT("t.MaxFPS")), CVar(TEXT("r.VSync")), CVar(TEXT("r.VSyncEditor")),
+				CVar(TEXT("t.IdleWhenNotForeground")), CVar(TEXT("r.ScreenPercentage")), CVar(TEXT("r.DynamicRes.OperationMode")),
+				GEngine && GEngine->bSmoothFrameRate ? 1 : 0,
+				GEngine && GEngine->SmoothedFrameRateRange.HasLowerBound() ? GEngine->SmoothedFrameRateRange.GetLowerBoundValue() : -1.0,
+				GEngine && GEngine->SmoothedFrameRateRange.HasUpperBound() ? GEngine->SmoothedFrameRateRange.GetUpperBoundValue() : -1.0,
+				GEngine && GEngine->bUseFixedFrameRate ? 1 : 0, GEngine ? GEngine->FixedFrameRate : -1.0,
+				FApp::UseFixedTimeStep() ? 1 : 0, FApp::GetFixedDeltaTime(),
+				FParse::Param(FCommandLine::Get(), TEXT("RenderOffscreen")) ? 1 : 0);
+			UE_LOG(LogTemp, Display, TEXT("[APS.SurfacePerf] BEGIN idleWarmup=10s walk=10s sprint=10s action=%s sprintKey=%s walkSpeed=%g sprintInitial=%g sprintMax=%g; real input, no look/camera/pose/speed overrides, no screenshot readback during measurement"),
+				*Pawn->MoveAction->GetPathName(), *PerfSprintKey.ToString(), Pawn->SurfaceWalkSpeed,
+				Pawn->SurfaceSprintSpeed, Pawn->SurfaceSprintMaxSpeed);
+			return false;
+		}
+
+		void ReleaseDiagnosticPerfInput()
+		{
+			if (bPerfMoveOwned && PerfInputSubsystem.IsValid() && PerfMoveAction.IsValid())
+			{
+				PerfInputSubsystem->StopContinuousInputInjectionForAction(PerfMoveAction.Get());
+			}
+			if (bPerfSprintOwned && PerfPlayerController.IsValid())
+			{
+				PerfPlayerController->InputKey(FInputKeyParams(PerfSprintKey, IE_Released, 0.0));
+			}
+			bPerfMoveOwned = false;
+			bPerfSprintOwned = false;
+		}
+
+		void WriteDiagnosticPerfReport()
+		{
+			if (!bPerfStarted || bPerfReportWritten) return;
+			bPerfReportWritten = true;
+			const FString Path = FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("Diagnostics"),
+				FString::Printf(TEXT("SurfaceWalkRun-%d-%s.csv"), static_cast<int32>(ExpectedPlanetType),
+					*FDateTime::UtcNow().ToString(TEXT("%Y%m%d-%H%M%S"))));
+			TArray<FString> Lines;
+			Lines.Reserve(PerfSamples.Num() + 2);
+			Lines.Add(FString::Printf(TEXT("# completed=%d, requested=10sWarmup/10sWalk/10sSprint, unobservedEngineFrames=%llu, frame=engineDeltaNotPresent, zeroCycleTimers=NA"),
+				bPerfCompleted ? 1 : 0, PerfUnobservedFrames));
+			Lines.Add(TEXT("phase,frame,phaseSeconds,frameMs,wallGapMs,frameGap,gameMs,renderMs,gpuMs,speedCmPerSec,maxWalkSpeedCmPerSec,generationWorkers"));
+			for (const FSurfacePerfSample& Sample : PerfSamples)
+			{
+				Lines.Add(FString::Printf(TEXT("%s,%llu,%.6f,%.6f,%.6f,%llu,%.6f,%.6f,%.6f,%.3f,%.3f,%d"),
+					Sample.Phase == 1 ? TEXT("walk") : TEXT("sprint"), Sample.Frame, Sample.PhaseSeconds,
+					Sample.FrameMs, Sample.WallGapMs, Sample.FrameGap, Sample.GameMs, Sample.RenderMs, Sample.GPUMs,
+					Sample.SpeedCm, Sample.MaxWalkSpeedCm, Sample.GenerationWorkers));
+			}
+			IFileManager::Get().MakeDirectory(*FPaths::GetPath(Path), true);
+			const bool bSaved = FFileHelper::SaveStringArrayToFile(Lines, *Path, FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM);
+			for (int32 Phase = 1; Phase <= 2; ++Phase)
+			{
+				for (int32 Channel = 0; Channel < 4; ++Channel)
+				{
+					TArray<double> Values;
+					double Sum = 0.0;
+					for (const FSurfacePerfSample& Sample : PerfSamples)
+					{
+						const double Value = Channel == 0 ? Sample.FrameMs : Channel == 1 ? Sample.GameMs : Channel == 2 ? Sample.RenderMs : Sample.GPUMs;
+						if (Sample.Phase != Phase || !FMath::IsFinite(Value) || Value <= 0.0) continue;
+						Values.Add(Value);
+						Sum += Value;
+					}
+					Values.Sort();
+					const int32 N = Values.Num();
+					const TCHAR* Channels[] = {TEXT("engineFrame"), TEXT("gameBusy"), TEXT("renderBusy"), TEXT("gpuLastAvailable")};
+					UE_LOG(LogTemp, Display, TEXT("[APS.SurfacePerf.Timing] phase=%s channel=%s validSamples=%d meanMs=%.3f p95Ms=%.3f p99Ms=%.3f maxMs=%.3f meanFPS=%g completed=%d"),
+						Phase == 1 ? TEXT("walk") : TEXT("sprint"), Channels[Channel], N, N ? Sum / N : -1.0,
+						N ? Values[FMath::FloorToInt((N - 1) * 0.95)] : -1.0, N ? Values[FMath::FloorToInt((N - 1) * 0.99)] : -1.0,
+						N ? Values.Last() : -1.0, Channel == 0 && Sum > 0.0 ? 1000.0 * N / Sum : -1.0, bPerfCompleted ? 1 : 0);
+				}
+			}
+			UE_LOG(LogTemp, Display, TEXT("[APS.SurfacePerf] REPORT completed=%d walkSeconds=%.3f sprintSeconds=%.3f walkDistanceM=%.3f sprintDistanceM=%.3f samples=%d unobservedEngineFrames=%llu saved=%d file=%s; capped/offscreen/editor and async timing limitations apply; not Present FPS or performance acceptance"),
+				bPerfCompleted ? 1 : 0, PerfPhaseElapsed[1], PerfPhaseElapsed[2], PerfDistanceCm[1] / 100.0, PerfDistanceCm[2] / 100.0,
+				PerfSamples.Num(), PerfUnobservedFrames, bSaved ? 1 : 0, *Path);
+		}
+
+		bool UpdateDiagnosticWalkRunPerf(UWorld* World, double Now)
+		{
+			ACustomGravityCharacter* Pawn = Cast<ACustomGravityCharacter>(RuntimeGravityPawn.Get());
+			APlayerController* PC = PerfPlayerController.Get();
+			APlanet* Planet = RuntimeHomePlanet.Get();
+			APlanetarySurfaceGenerator* Surface = IsValid(Planet) ? Planet->PlanetaryEnvironmentGenerator : nullptr;
+			AWorldScapeRoot* Root = IsValid(Surface) ? Surface->WorldScapeRootInstance : nullptr;
+			UCharacterMovementComponent* Movement = Pawn ? Pawn->GetCharacterMovement() : nullptr;
+			if (!World || World != GameplayWorld.Get() || !Pawn || !PC || PC->GetPawn() != Pawn
+				|| PC->GetViewTarget() != Pawn || !Root || !Movement || !PerfInputSubsystem.IsValid())
+			{
+				return Fail(TEXT("walk/run perf lost actual controlled pawn/camera/input/root"));
+			}
+			bool bCurrentTerrainFloor = false;
+			for (const UWorldScapeLod* Lod : Root->CollisionLods)
+			{
+				bCurrentTerrainFloor |= IsValid(Lod) && IsValid(Lod->Mesh)
+					&& Movement->CurrentFloor.HitResult.GetComponent() == Lod->Mesh;
+			}
+			const bool bGrounded = !Pawn->bIsZeroG && !Pawn->bManualZeroGOverride
+				&& Pawn->CurrentGravityType == EGravityType::OnPlanet && Pawn->GravityTarget == Planet
+				&& !Pawn->IsSurfaceHandoffSuspended() && Movement->IsMovingOnGround()
+				&& Movement->CurrentFloor.IsWalkableFloor() && bCurrentTerrainFloor;
+			if (!bGrounded)
+			{
+				return Fail(FString::Printf(TEXT("walk/run perf rejected airborne/lost-gravity/floor phase=%d elapsed=%.3f mode=%d gravity=%d target=%s realTerrainFloor=%d; no ground FPS acceptance"),
+					PerfPhase, Now - PerfPhaseStartSeconds, static_cast<int32>(Movement->MovementMode),
+					static_cast<int32>(Pawn->CurrentGravityType), *GetNameSafe(Pawn->GravityTarget), bCurrentTerrainFloor ? 1 : 0));
+			}
+			const double Elapsed = Now - PerfPhaseStartSeconds;
+			const FVector BodyRelativePosition = Pawn->GetActorLocation() - Root->GetActorLocation();
+			if (PerfPhase > 0 && GFrameCounter != PerfLastFrame)
+			{
+				FSurfacePerfSample Sample;
+				Sample.Phase = PerfPhase;
+				Sample.Frame = GFrameCounter;
+				Sample.FrameGap = GFrameCounter - PerfLastFrame;
+				PerfUnobservedFrames += Sample.FrameGap > 1 ? Sample.FrameGap - 1 : 0;
+				Sample.PhaseSeconds = Elapsed;
+				Sample.FrameMs = FApp::GetDeltaTime() * 1000.0;
+				Sample.WallGapMs = (Now - PerfLastWallSeconds) * 1000.0;
+				// Same once-local snapshot policy used by Engine/Private/ChartCreation.cpp.
+				// Busy/GPU values are previous/async samples, not this frame's exact Present.
+				const uint32 GameCycles = GGameThreadTime, RenderCycles = GRenderThreadTime, GPUCycles = GGPUFrameTime;
+				Sample.GameMs = GameCycles ? FPlatformTime::ToMilliseconds(GameCycles) : -1.0;
+				Sample.RenderMs = RenderCycles ? FPlatformTime::ToMilliseconds(RenderCycles) : -1.0;
+				Sample.GPUMs = GPUCycles ? FPlatformTime::ToMilliseconds(GPUCycles) : -1.0;
+				Sample.SpeedCm = Pawn->GetVelocity().Size();
+				Sample.MaxWalkSpeedCm = Movement->MaxWalkSpeed;
+				Sample.GenerationWorkers = Root->WorldScapeLodInGeneration.Num();
+				PerfSamples.Add(Sample);
+				PerfDistanceCm[PerfPhase] += FVector::VectorPlaneProject(
+					BodyRelativePosition - PerfLastBodyRelativePosition, BodyRelativePosition.GetSafeNormal()).Size();
+			}
+			PerfPhaseElapsed[PerfPhase] = Elapsed;
+			PerfLastFrame = GFrameCounter;
+			PerfLastWallSeconds = Now;
+			PerfLastBodyRelativePosition = BodyRelativePosition;
+			if (PerfPhase == 2 && Elapsed > 1.0 && Movement->MaxWalkSpeed <= Pawn->SurfaceWalkSpeed * 1.05f)
+			{
+				return Fail(TEXT("mapped sprint key did not activate production sprint speed after one second"));
+			}
+			if (Elapsed < 10.0) return false;
+			if (PerfPhase > 0 && PerfDistanceCm[PerfPhase] < Pawn->SurfaceWalkSpeed * 2.0)
+			{
+				return Fail(TEXT("walk/run perf rejected blocked or ineffective input: less than 20 percent of nominal 10s walk distance"));
+			}
+			if (PerfPhase == 0)
+			{
+				PerfInputSubsystem->StartContinuousInputInjectionForAction(
+					PerfMoveAction.Get(), FInputActionValue(FVector2D(0.0, 1.0)), {}, {});
+				bPerfMoveOwned = true;
+				PerfPhase = 1;
+			}
+			else if (PerfPhase == 1)
+			{
+				PC->InputKey(FInputKeyParams(PerfSprintKey, IE_Pressed, 1.0));
+				bPerfSprintOwned = true;
+				PerfPhase = 2;
+			}
+			else
+			{
+				bPerfCompleted = true;
+				ReleaseDiagnosticPerfInput();
+				WriteDiagnosticPerfReport();
+				if (FParse::Param(FCommandLine::Get(), TEXT("APSDiagnosticOrbitOverview")))
+				{
+					return BeginDiagnosticOrbitOverview(World, Now);
+				}
+				Step = EStep::Cleanup;
+				StepStartSeconds = Now;
+			}
+			PerfPhaseStartSeconds = Now;
+			return false;
+		}
+
+		bool BeginDiagnosticOrbitOverview(UWorld* World, double Now)
+		{
+			APawn* Pawn = RuntimeGravityPawn.Get();
+			APlanet* Planet = RuntimeHomePlanet.Get();
+			APlanetarySurfaceGenerator* Surface = IsValid(Planet) ? Planet->PlanetaryEnvironmentGenerator : nullptr;
+			AWorldScapeRoot* Root = IsValid(Surface) ? Surface->WorldScapeRootInstance : nullptr;
+			APlayerController* PC = World ? World->GetFirstPlayerController() : nullptr;
+			if (!IsValid(Pawn) || !IsValid(Root) || !PC || !PC->PlayerCameraManager)
+			{
+				return Fail(TEXT("orbit overview lost natural landing pawn/root/camera"));
+			}
+			DiagnosticOrbitOriginalViewTarget = PC->GetViewTarget();
+			DiagnosticOrbitOriginalPawnTransform = Pawn->GetActorTransform();
+			DiagnosticOrbitOriginalPawnOffset = Pawn->GetActorLocation() - Root->GetActorLocation();
+			DiagnosticOrbitOutward = DiagnosticOrbitOriginalPawnOffset.GetSafeNormal();
+			DiagnosticOrbitOutward.FindBestAxisVectors(DiagnosticOrbitTangentU, DiagnosticOrbitTangentV);
+			FString HeightText;
+			if (FParse::Value(FCommandLine::Get(), TEXT("APSDiagnosticOrbitHeightKm="), HeightText)
+				&& (!FDefaultValueHelper::ParseDouble(HeightText, DiagnosticOrbitHeightKm)
+					|| !FMath::IsFinite(DiagnosticOrbitHeightKm) || DiagnosticOrbitHeightKm < 10.0 || DiagnosticOrbitHeightKm > 10000.0))
+			{
+				return Fail(TEXT("APSDiagnosticOrbitHeightKm must be finite and within 10..10000 km"));
+			}
+			DiagnosticOrbitRadiusCm = Root->PlanetScale + Root->GetGroundHeight(
+				Root->GetActorLocation() + DiagnosticOrbitOutward * Root->PlanetScale, false) + DiagnosticOrbitHeightKm * 100000.0;
+			if (UCapsuleComponent* Capsule = FindPawnCapsule(Pawn))
+			{
+				DiagnosticOrbitOriginalVelocity = Capsule->GetPhysicsLinearVelocity();
+			}
+			FActorSpawnParameters SpawnParams;
+			SpawnParams.ObjectFlags |= RF_Transient;
+			SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			ACameraActor* Camera = World->SpawnActor<ACameraActor>(ACameraActor::StaticClass(),
+				Pawn->GetActorLocation(), PC->PlayerCameraManager->GetCameraRotation(), SpawnParams);
+			DiagnosticOrbitCamera = Camera;
+			if (!IsValid(Camera) || !Camera->GetCameraComponent())
+			{
+				return Fail(TEXT("orbit overview could not create its transient camera"));
+			}
+			// Preserve the natural pawn camera's optical/PP inputs verbatim. Do not
+			// introduce manual exposure, scene lighting, terrain or shadow overrides.
+			const FMinimalViewInfo& NaturalView = PC->PlayerCameraManager->GetCameraCacheView();
+			UCameraComponent* CameraComponent = Camera->GetCameraComponent();
+			CameraComponent->SetFieldOfView(NaturalView.FOV);
+			CameraComponent->SetAspectRatio(NaturalView.AspectRatio);
+			CameraComponent->SetConstraintAspectRatio(NaturalView.bConstrainAspectRatio);
+			CameraComponent->SetProjectionMode(NaturalView.ProjectionMode);
+			CameraComponent->PostProcessSettings = NaturalView.PostProcessSettings;
+			CameraComponent->PostProcessBlendWeight = NaturalView.PostProcessBlendWeight;
+			bDiagnosticOrbitPawnLeased = true;
+			PC->SetViewTarget(Camera);
+			DiagnosticOrbitViewIndex = 0;
+			DiagnosticOrbitStableFrames = 0;
+			Step = EStep::DiagnosticOrbitOverview;
+			StepStartSeconds = Now;
+			UE_LOG(LogTemp, Display, TEXT("[APS.SurfaceOrbit] BEGIN optional overview after natural +8s/optional perf; radialHeightAboveLocalGround=%.3fkm nadir then oblique55deg; cameraFOV=%.2f cameraPPWeight=%g copied unchanged; real pawn drives production streaming; no performance acceptance"),
+				DiagnosticOrbitHeightKm, NaturalView.FOV, NaturalView.PostProcessBlendWeight);
+			return false;
+		}
+
+		void RestoreDiagnosticOrbitOverview()
+		{
+			DiagnosticLodAB.Restore();
+			ACameraActor* Camera = DiagnosticOrbitCamera.Get();
+			UWorld* World = GameplayWorld.Get();
+			APlayerController* PC = World ? World->GetFirstPlayerController() : nullptr;
+			if (PC && IsValid(Camera) && PC->GetViewTarget() == Camera)
+			{
+				AActor* OriginalTarget = DiagnosticOrbitOriginalViewTarget.Get();
+				if (!IsValid(OriginalTarget)) OriginalTarget = RuntimeGravityPawn.Get();
+				if (IsValid(OriginalTarget)) PC->SetViewTarget(OriginalTarget);
+			}
+			if (bDiagnosticOrbitPawnLeased)
+			{
+				APawn* Pawn = RuntimeGravityPawn.Get();
+				APlanet* Planet = RuntimeHomePlanet.Get();
+				APlanetarySurfaceGenerator* Surface = IsValid(Planet) ? Planet->PlanetaryEnvironmentGenerator : nullptr;
+				AWorldScapeRoot* Root = IsValid(Surface) ? Surface->WorldScapeRootInstance : nullptr;
+				if (IsValid(Pawn) && IsValid(Root))
+				{
+					FTransform RestoreTransform = DiagnosticOrbitOriginalPawnTransform;
+					RestoreTransform.SetLocation(Root->GetActorLocation() + DiagnosticOrbitOriginalPawnOffset);
+					Pawn->SetActorTransform(RestoreTransform, false, nullptr, ETeleportType::TeleportPhysics);
+					if (UCapsuleComponent* Capsule = FindPawnCapsule(Pawn))
+					{
+						Capsule->SetPhysicsLinearVelocity(DiagnosticOrbitOriginalVelocity);
+					}
+				}
+			}
+			if (IsValid(Camera)) Camera->Destroy();
+			DiagnosticOrbitCamera.Reset();
+			DiagnosticOrbitOriginalViewTarget.Reset();
+			bDiagnosticOrbitPawnLeased = false;
+		}
+
+		bool UpdateDiagnosticOrbitOverview(UWorld* World, double Now)
+		{
+			APawn* Pawn = RuntimeGravityPawn.Get();
+			APlanet* Planet = RuntimeHomePlanet.Get();
+			APlanetarySurfaceGenerator* Surface = IsValid(Planet) ? Planet->PlanetaryEnvironmentGenerator : nullptr;
+			AWorldScapeRoot* Root = IsValid(Surface) ? Surface->WorldScapeRootInstance : nullptr;
+			ACameraActor* Camera = DiagnosticOrbitCamera.Get();
+			APlayerController* PC = World ? World->GetFirstPlayerController() : nullptr;
+			if (!World || World != GameplayWorld.Get() || !IsValid(Pawn) || !IsValid(Root)
+				|| !IsValid(Camera) || !PC || !PC->PlayerCameraManager || PC->GetViewTarget() != Camera)
+			{
+				return Fail(TEXT("orbit overview lost its production world/root/pawn or leased camera"));
+			}
+			const bool bLodAB = FParse::Param(FCommandLine::Get(), TEXT("APSDiagnosticTerrainLodAB"));
+			FString LodABError;
+			const auto LodABReadiness = bLodAB ? DiagnosticLodAB.PrepareCandidate(World, LodABError)
+				: APSSharedTerrainLodAB::ECandidateReadiness::Ready;
+			if (LodABReadiness == APSSharedTerrainLodAB::ECandidateReadiness::Failed) return Fail(LodABError);
+			const FVector Position = Root->GetActorLocation() + DiagnosticOrbitOutward * DiagnosticOrbitRadiusCm;
+			const double Angle = FMath::DegreesToRadians(55.0);
+			const FVector Forward = DiagnosticOrbitViewIndex == 0 ? -DiagnosticOrbitOutward
+				: (DiagnosticOrbitTangentU * FMath::Cos(Angle) - DiagnosticOrbitOutward * FMath::Sin(Angle)).GetSafeNormal();
+			const FVector Up = DiagnosticOrbitViewIndex == 0 ? DiagnosticOrbitTangentV : DiagnosticOrbitOutward;
+			const FRotator Rotation = FRotationMatrix::MakeFromXZ(Forward, Up).Rotator();
+			// Keep the real pawn ten metres behind the lens, out of both overview
+			// frames, without changing its visibility or any terrain visibility.
+			const FVector PawnPosition = Position - Forward * 1000.0;
+			// Move only the actual observer/camera. The production streaming subsystem
+			// must update its own observer and LOD; no direct root mutation/forced tick.
+			if (UCapsuleComponent* Capsule = FindPawnCapsule(Pawn)) Capsule->SetPhysicsLinearVelocity(FVector::ZeroVector);
+			Pawn->SetActorLocation(PawnPosition, false, nullptr, ETeleportType::TeleportPhysics);
+			// A zero-distance MoveComponent legitimately returns false. Verify the
+			// observer's actual position rather than interpreting that as failure.
+			if (!Pawn->GetActorLocation().Equals(PawnPosition, 1.0))
+			{
+				return Fail(TEXT("orbit overview pawn placement failed"));
+			}
+			Camera->SetActorLocationAndRotation(Position, Rotation, false, nullptr, ETeleportType::TeleportPhysics);
+			const FVector Observer = Root->bOverridePlayerPosition ? Root->OverridedPlayerPosition : Root->PlayerWorldPos.ToFVector();
+			const double ObserverDelta = FVector::Distance(Observer, PawnPosition);
+			int32 IncompleteLods = 0;
+			int32 PresentedLods = 0;
+			int64 Vertices = 0;
+			int64 Triangles = 0;
+			for (const UWorldScapeLod* Lod : Root->WorldScapeLod)
+			{
+				IncompleteLods += !APSWorldScapePayloadValidation::HasCompletePayload(Lod, true) ? 1 : 0;
+				if (!IsValid(Lod)) continue;
+				PresentedLods += IsValid(Lod->Mesh) && IsEffectivelyPresented(Lod->Mesh) ? 1 : 0;
+				Vertices += Lod->Vertices.Num();
+				Triangles += Lod->Triangles.Num() / 3;
+			}
+			const bool bReady = Planet->bWorldScapeSurfaceReady && !Root->IsHidden()
+				&& Root->WorldScapeLodInGeneration.Num() == 0 && Root->WorldScapeLod.Num() >= Root->MaxLod
+				&& IncompleteLods == 0 && PresentedLods > 0 && ObserverDelta < 1000.0
+				&& FVector::Distance(PC->PlayerCameraManager->GetCameraLocation(), Position) < 1000.0
+				&& PC->PlayerCameraManager->GetCameraRotation().Equals(Rotation, 0.1f);
+			DiagnosticOrbitStableFrames = bReady ? DiagnosticOrbitStableFrames + 1 : 0;
+			if (Now - StepStartSeconds < 2.0 || DiagnosticOrbitStableFrames < 12)
+			{
+				if (Now - StepStartSeconds > 40.0)
+				{
+					return Fail(FString::Printf(TEXT("orbit overview LOD settling timed out angle=%d ready=%d workers=%d lods=%d incomplete=%d presented=%d observerDelta=%.1f"),
+						DiagnosticOrbitViewIndex, Planet->bWorldScapeSurfaceReady ? 1 : 0,
+						Root->WorldScapeLodInGeneration.Num(), Root->WorldScapeLod.Num(), IncompleteLods, PresentedLods, ObserverDelta));
+				}
+				return false;
+			}
+			if (LodABReadiness == APSSharedTerrainLodAB::ECandidateReadiness::Pending)
+			{
+				return Now - StepStartSeconds > 40.0 ? Fail(TEXT("LOD A/B candidate shader timeout")) : false;
+			}
+			if (bLodAB && !DiagnosticLodAB.IsActive()
+				&& !DiagnosticLodAB.Begin(Surface, Planet, LodABError)) return Fail(LodABError);
+			if (bLodAB && !DiagnosticLodAB.Validate(LodABError)) return Fail(LodABError);
+			FString NormalRangeError;
+			bool bNormalRangeChanged = false;
+			if (!ApplyDiagnosticNormalRange(Root, NormalRangeError, bNormalRangeChanged)) return Fail(NormalRangeError);
+			if (bNormalRangeChanged) return false;
+			FString ViewLabel = DiagnosticOrbitViewIndex == 0 ? TEXT("OrbitNadir") : TEXT("OrbitOblique");
+			if (bLodAB) ViewLabel += FString(TEXT("_")) + DiagnosticLodAB.Label();
+			const TCHAR* ViewName = *ViewLabel;
+			ScreenshotPath = FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("Screenshots/Windows"),
+				FString::Printf(TEXT("APS_SurfaceLighting_%d_%s.png"), static_cast<int32>(ExpectedPlanetType), ViewName));
+			FString CaptureFailure;
+			TArray<FColor> Pixels;
+			FIntPoint ViewportSize;
+			if (!CaptureGameplayViewport(World, CaptureFailure, false, false, nullptr, nullptr, &Pixels, &ViewportSize))
+			{
+				return CaptureFailure.IsEmpty() ? false : Fail(CaptureFailure);
+			}
+			// Dark pixels are an indicator only: real shadows/materials can also be
+			// dark. These metrics cannot establish the presence/absence of mesh holes.
+			int64 DarkPixels = 0;
+			int64 Samples = 0;
+			int32 LongestDarkRowRun = 0;
+			const int32 MinX = ViewportSize.X / 5, MaxX = ViewportSize.X * 4 / 5;
+			const int32 MinY = ViewportSize.Y / 4, MaxY = ViewportSize.Y * 4 / 5;
+			for (int32 Y = MinY; Y < MaxY; ++Y)
+			{
+				int32 Run = 0;
+				for (int32 X = MinX; X < MaxX; ++X)
+				{
+					const FColor& Pixel = Pixels[Y * ViewportSize.X + X];
+					const bool bDark = FMath::Max3(Pixel.R, Pixel.G, Pixel.B) <= 4;
+					DarkPixels += bDark ? 1 : 0;
+					++Samples;
+					Run = bDark ? Run + 1 : 0;
+					LongestDarkRowRun = FMath::Max(LongestDarkRowRun, Run);
+				}
+			}
+			const double ActualHeightAboveGroundKm = (FVector::Distance(PC->PlayerCameraManager->GetCameraLocation(), Root->GetActorLocation())
+				- Root->PlanetScale - Root->GetGroundHeight(Root->GetActorLocation() + DiagnosticOrbitOutward * Root->PlanetScale, false)) / 100000.0;
+			UE_LOG(LogTemp, Display, TEXT("[APS.SurfaceOrbit] phase=%s actualAltitudeAboveGroundKm=%.3f altitudeAboveDatumKm=%.3f observerDeltaCm=%.3f camera=%s position=%s rotation=%s fov=%.2f lods=%d presented=%d incomplete=%d vertices=%lld triangles=%lld darkROIRatio=%.6f longestDarkRowPx=%d viewport=%dx%d screenshot=%s; real pawn is 10m behind lens; dark indicators are not a mesh-hole proof"),
+				ViewName, ActualHeightAboveGroundKm, (DiagnosticOrbitRadiusCm - Root->PlanetScale) / 100000.0, ObserverDelta,
+				*Camera->GetPathName(), *Position.ToCompactString(), *Rotation.ToCompactString(),
+				PC->PlayerCameraManager->GetFOVAngle(), Root->WorldScapeLod.Num(), PresentedLods, IncompleteLods,
+				Vertices, Triangles, Samples ? static_cast<double>(DarkPixels) / Samples : 0.0, LongestDarkRowRun,
+				ViewportSize.X, ViewportSize.Y, *ScreenshotPath);
+			TSet<FString> Bindings;
+			for (const UWorldScapeLod* Lod : Root->WorldScapeLod)
+			{
+				if (!IsValid(Lod) || !IsValid(Lod->Mesh) || !IsEffectivelyPresented(Lod->Mesh)) continue;
+				UMaterialInterface* Material = Lod->Mesh->GetMaterial(0);
+				UMaterialInstance* Instance = Cast<UMaterialInstance>(Material);
+				const FString Binding = FString::Printf(TEXT("material=%s parent=%s base=%s"), *GetPathNameSafe(Material),
+					*GetPathNameSafe(Instance ? Instance->Parent.Get() : nullptr), *GetPathNameSafe(Material ? Material->GetMaterial() : nullptr));
+				if (Bindings.Contains(Binding)) continue;
+				Bindings.Add(Binding);
+				UE_LOG(LogTemp, Display, TEXT("[APS.SurfaceOrbit.Terrain] phase=%s mesh=%s %s"), ViewName, *Lod->Mesh->GetPathName(), *Binding);
+			}
+			if (DiagnosticView.IsValid() && DiagnosticView->bHasSample)
+			{
+				const FPostProcessSettings& PP = DiagnosticView->Settings;
+				UE_LOG(LogTemp, Display, TEXT("[APS.SurfaceOrbit.FinalPP] phase=%s frameAge=%llu mode=%d min=%g max=%g bias=%g eye=%d local=%d"),
+					ViewName, GFrameCounter - DiagnosticView->SampleFrame, static_cast<int32>(PP.AutoExposureMethod),
+					PP.AutoExposureMinBrightness, PP.AutoExposureMaxBrightness, PP.AutoExposureBias,
+					DiagnosticView->bEyeAdaptation ? 1 : 0, DiagnosticView->bLocalExposure ? 1 : 0);
+			}
+			if (bLodAB && DiagnosticLodAB.Advance())
+			{
+				DiagnosticOrbitStableFrames = 0;
+				StepStartSeconds = Now;
+				return false;
+			}
+			if (++DiagnosticOrbitViewIndex == 2)
+			{
+				RestoreDiagnosticOrbitOverview();
+				Step = EStep::Cleanup;
+			}
+			DiagnosticOrbitStableFrames = 0;
 			StepStartSeconds = Now;
 			return false;
 		}
@@ -5447,8 +6326,8 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 				TEXT("[APS.Handoff.Camera] captured GAME viewport=%dx%d meanBrightness=%.3f variance=%.3f nonBlackRatio=%.5f crc=%u screenshot=%s"),
 				ViewportSize.X, ViewportSize.Y, MeanBrightness, BrightnessVariance,
 				NonBlackPixelRatio, FrameCrc, *ScreenshotPath);
-			if (NonBlackPixelRatio < MinimumNonBlackPixelRatio
-				|| BrightnessVariance < MinimumBrightnessVariance)
+			if (!bCaptureSurfaceDiagnostics && (NonBlackPixelRatio < MinimumNonBlackPixelRatio
+				|| BrightnessVariance < MinimumBrightnessVariance))
 			{
 				OutFailure = FString::Printf(
 					TEXT("gameplay camera frame is blank/flat meanBrightness=%.3f variance=%.3f nonBlackRatio=%.5f (minimum ratio=%.5f variance=%.3f)"),
@@ -6998,6 +7877,13 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			if (!bCleanupStarted)
 			{
 				bCleanupStarted = true;
+				RestoreDiagnosticNormalRange();
+				LavaCoverageCommand.Reset(); // Restore the lease before WorldScape drain, including timeout/failure.
+				LavaOrbitObserver.Restore(); // Ocean/camera lease must restore before its actual observer.
+				ReleaseDiagnosticPerfInput();
+				WriteDiagnosticPerfReport();
+				RestoreDiagnosticOrbitOverview();
+				DiagnosticView.Reset();
 				FString CameraRestoreFailure;
 				if (!RestoreProjectionEvidenceCamera(&CameraRestoreFailure)
 					&& PendingFailure.IsEmpty())
@@ -7043,7 +7929,19 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			}
 			else
 			{
-				if (bValidateWetOceanContract)
+				if (bSharedLiquidCoverageOrbit)
+				{
+					UE_LOG(LogTemp, Display, TEXT("[APS.SharedLiquidCoverage.Orbit] SEQUENCE FINISHED: generated Civilization PlanetOrbit -> actual Ammonia free-flight observer -> isolated shared liquid 2x2 probe -> restored leases. Matrix assertions determine test success. Natural ground lighting, landing, and FPS were NOT tested."));
+				}
+				else if (bLavaCoverageOrbit)
+				{
+					UE_LOG(LogTemp, Display, TEXT("[APS.LavaCoverage.Orbit] SEQUENCE FINISHED: generated Civilization PlanetOrbit -> actual free-flight observer -> isolated Lava 2x2 probe -> restored leases. Matrix assertions determine test success. Natural ground lighting, landing, and FPS were NOT tested."));
+				}
+				else if (bCaptureSurfaceDiagnostics)
+				{
+					UE_LOG(LogTemp, Display, TEXT("[APS.SurfaceLighting] CAPTURE COMPLETE: natural controlled surface first/+3/+8s, final blended PP and actual terrain bindings. Diagnostic capture only; not a visual-quality or FPS acceptance."));
+				}
+				else if (bValidateWetOceanContract)
 				{
 					UE_LOG(LogTemp, Display,
 						TEXT("[APS.Handoff.WetOcean] PASS menu preview -> immutable Water handoff -> one authoritative WorldScape root -> exact 9x3 project-owned non-displacing dedicated opaque water material slots -> collisionless/IgnoreAll liquid -> Visibility/Pawn traces reach terrain -> one ground scattering shell without coplanar cap passes plus preserved orbital shell -> two re-centred rendered observer positions -> two distinct screenshots -> hidden non-colliding preview ocean proxies -> safe worker drain"));
@@ -7061,6 +7959,48 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 		EPlanetType ExpectedPlanetType{EPlanetType::Frozen};
 		bool bValidateWetOceanContract{false};
 		bool bEnableWaterIsolation{false};
+		bool bCaptureSurfaceDiagnostics{false};
+		bool bLavaCoverageOrbit{false};
+		bool bSharedLiquidCoverageOrbit{false};
+		APSLavaCoverageOrbit::FObserver LavaOrbitObserver;
+		TSharedPtr<IAutomationLatentCommand> LavaCoverageCommand;
+		APSSharedTerrainLodAB::FLease DiagnosticLodAB;
+		TMap<TWeakObjectPtr<UMaterialInstanceDynamic>, FVector2D> DiagnosticNormalRangeOriginals;
+		TSharedPtr<FSurfaceDiagnosticView, ESPMode::ThreadSafe> DiagnosticView;
+		int32 DiagnosticCaptureIndex{0};
+		int32 DiagnosticOrbitSettleFrames{0};
+		int32 DiagnosticPerfSkipFrames{0};
+		double DiagnosticFirstCaptureSeconds{0.0};
+		TArray<double> DiagnosticFrameTimesMs;
+		FVector DiagnosticInitialPawnLocation{FVector::ZeroVector};
+		FVector DiagnosticInitialCameraLocation{FVector::ZeroVector};
+		FRotator DiagnosticInitialCameraRotation{FRotator::ZeroRotator};
+		TWeakObjectPtr<ACameraActor> DiagnosticOrbitCamera;
+		TWeakObjectPtr<AActor> DiagnosticOrbitOriginalViewTarget;
+		FTransform DiagnosticOrbitOriginalPawnTransform{FTransform::Identity};
+		FVector DiagnosticOrbitOriginalPawnOffset{FVector::ZeroVector};
+		FVector DiagnosticOrbitOriginalVelocity{FVector::ZeroVector};
+		FVector DiagnosticOrbitOutward{FVector::ZeroVector};
+		FVector DiagnosticOrbitTangentU{FVector::ZeroVector};
+		FVector DiagnosticOrbitTangentV{FVector::ZeroVector};
+		double DiagnosticOrbitRadiusCm{0.0};
+		int32 DiagnosticOrbitViewIndex{0};
+		int32 DiagnosticOrbitStableFrames{0};
+		bool bDiagnosticOrbitPawnLeased{false};
+		double DiagnosticOrbitHeightKm{100.0};
+		TWeakObjectPtr<UEnhancedInputLocalPlayerSubsystem> PerfInputSubsystem;
+		TWeakObjectPtr<UInputAction> PerfMoveAction;
+		TWeakObjectPtr<APlayerController> PerfPlayerController;
+		FKey PerfSprintKey;
+		TArray<FSurfacePerfSample> PerfSamples;
+		FVector PerfLastBodyRelativePosition{FVector::ZeroVector};
+		double PerfPhaseStartSeconds{0.0}, PerfLastWallSeconds{0.0};
+		double PerfPhaseElapsed[3]{0.0, 0.0, 0.0};
+		double PerfDistanceCm[3]{0.0, 0.0, 0.0};
+		uint64 PerfLastFrame{0}, PerfUnobservedFrames{0};
+		int32 PerfPhase{0};
+		bool bPerfStarted{false}, bPerfCompleted{false}, bPerfReportWritten{false};
+		bool bPerfMoveOwned{false}, bPerfSprintOwned{false};
 		EStep Step{EStep::OpenGenerator};
 		double TestStartSeconds{0.0};
 		double StepStartSeconds{0.0};
@@ -7233,6 +8173,98 @@ bool FAPSGeneratedCivilizationWetOceanHandoffSmokeTest::RunTest(
 	ADD_LATENT_AUTOMATION_COMMAND(
 		APSGeneratedGameplayHandoffSmokeTests::FGeneratedCivilizationHandoffCommand(
 			this, EPlanetType::Water, true));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FAPSGeneratedSurfaceLightingDiagnosticsTest,
+	"APS.Rendered.Gameplay.GeneratedSurfaceLightingDiagnostics",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FAPSGeneratedSurfaceLightingDiagnosticsTest::RunTest(const FString& Parameters)
+{
+	const bool bUserGreenhouseReference = APSUserGreenhouseReference::IsRequested();
+	FString TypeName(bUserGreenhouseReference ? TEXT("Greenhouse") : TEXT("Water"));
+	FParse::Value(FCommandLine::Get(), TEXT("APSDiagnosticPlanet="), TypeName);
+	EPlanetType Type = EPlanetType::Water;
+	const bool bLavaCoverageOrbit = FParse::Param(FCommandLine::Get(), TEXT("APSLavaCoverageOrbit"));
+	const bool bLavaCoverage = bLavaCoverageOrbit || FParse::Param(FCommandLine::Get(), TEXT("APSLavaCoverage"));
+	const bool bSharedLiquidCoverage = FParse::Param(FCommandLine::Get(), TEXT("APSSharedLiquidCoverage"));
+	const bool bSharedLiquidCoverageOrbit = FParse::Param(FCommandLine::Get(), TEXT("APSSharedLiquidCoverageOrbit"));
+	if (bUserGreenhouseReference)
+	{
+		FString UnusedValue;
+		const bool bConflictingReferenceMode = !TypeName.Equals(TEXT("Greenhouse"), ESearchCase::IgnoreCase)
+			|| bLavaCoverage || bSharedLiquidCoverage || bSharedLiquidCoverageOrbit
+			|| FParse::Param(FCommandLine::Get(), TEXT("APSDiagnosticWalkRunPerf"))
+			|| FParse::Param(FCommandLine::Get(), TEXT("APSDiagnosticOrbitOverview"))
+			|| FParse::Param(FCommandLine::Get(), TEXT("APSDiagnosticTerrainLodAB"))
+			|| FParse::Param(FCommandLine::Get(), TEXT("APSDiagnosticOrbitFrame"))
+			|| FParse::Param(FCommandLine::Get(), TEXT("APSProbeFarNormalAB"))
+			|| FParse::Param(FCommandLine::Get(), TEXT("APSWaterIsolation"))
+			|| FParse::Value(FCommandLine::Get(), TEXT("APSDiagnosticFarNormalStartKm="), UnusedValue)
+			|| FParse::Value(FCommandLine::Get(), TEXT("APSDiagnosticFarNormalEndKm="), UnusedValue);
+		if (bConflictingReferenceMode)
+		{
+			AddError(TEXT("APSUserGreenhouseReference requires Greenhouse natural First/+3/+8 only; no coverage, orbit, perf, material A/B or normal-range overrides"));
+			return false;
+		}
+		AddInfo(TEXT("[APS.GreenhouseReference] Exact user-model fixture and read-only coordinate diagnostics; natural production spawn, no relocation to reference outward, no material/geometry/light repair."));
+	}
+	if (TypeName.Equals(TEXT("Ice"), ESearchCase::IgnoreCase)) Type = EPlanetType::Ice;
+	else if (TypeName.Equals(TEXT("Frozen"), ESearchCase::IgnoreCase)) Type = EPlanetType::Frozen;
+	else if (bUserGreenhouseReference && TypeName.Equals(TEXT("Greenhouse"), ESearchCase::IgnoreCase)) Type = EPlanetType::Greenhouse;
+	else if (bLavaCoverage && TypeName.Equals(TEXT("Melted"), ESearchCase::IgnoreCase)) Type = EPlanetType::Melted;
+	else if (bLavaCoverage && TypeName.Equals(TEXT("Volcanic"), ESearchCase::IgnoreCase)) Type = EPlanetType::Volcanic;
+	else if ((bSharedLiquidCoverage || bSharedLiquidCoverageOrbit) && TypeName.Equals(TEXT("Ammonia"), ESearchCase::IgnoreCase)) Type = EPlanetType::Ammonia;
+	else if (!TypeName.Equals(TEXT("Water"), ESearchCase::IgnoreCase))
+	{
+		AddError(TEXT("APSDiagnosticPlanet must be Water, Ice or Frozen; Lava coverage additionally allows Melted/Volcanic; APSSharedLiquidCoverage allows Water/Ammonia; APSSharedLiquidCoverageOrbit allows Ammonia only"));
+		return false;
+	}
+	if (bLavaCoverage && ((Type != EPlanetType::Melted && Type != EPlanetType::Volcanic)
+		|| FParse::Param(FCommandLine::Get(), TEXT("APSDiagnosticWalkRunPerf"))
+		|| FParse::Param(FCommandLine::Get(), TEXT("APSDiagnosticOrbitOverview"))
+		|| FParse::Param(FCommandLine::Get(), TEXT("APSDiagnosticTerrainLodAB"))
+		|| (bLavaCoverageOrbit && FParse::Param(FCommandLine::Get(), TEXT("APSDiagnosticOrbitFrame")))))
+	{
+		AddError(TEXT("Lava coverage requires Melted/Volcanic and cannot combine walk/run, orbit overview or terrain LOD A/B; orbital coverage also excludes PLANET frame capture"));
+		return false;
+	}
+	if (bSharedLiquidCoverage && (bSharedLiquidCoverageOrbit || bLavaCoverage || (Type != EPlanetType::Water && Type != EPlanetType::Ammonia)
+		|| FParse::Param(FCommandLine::Get(), TEXT("APSDiagnosticWalkRunPerf"))
+		|| FParse::Param(FCommandLine::Get(), TEXT("APSDiagnosticOrbitOverview"))
+		|| FParse::Param(FCommandLine::Get(), TEXT("APSDiagnosticTerrainLodAB"))
+		|| FParse::Param(FCommandLine::Get(), TEXT("APSDiagnosticOrbitFrame"))))
+	{
+		AddError(TEXT("APSSharedLiquidCoverage requires Water/Ammonia natural PlanetSurface and cannot combine Lava flags, walk/run, orbit/PLANET capture or terrain LOD A/B"));
+		return false;
+	}
+	if (bSharedLiquidCoverageOrbit && (Type != EPlanetType::Ammonia || bSharedLiquidCoverage || bLavaCoverage
+		|| FParse::Param(FCommandLine::Get(), TEXT("APSDiagnosticWalkRunPerf"))
+		|| FParse::Param(FCommandLine::Get(), TEXT("APSDiagnosticOrbitOverview"))
+		|| FParse::Param(FCommandLine::Get(), TEXT("APSDiagnosticTerrainLodAB"))
+		|| FParse::Param(FCommandLine::Get(), TEXT("APSProbeFarNormalAB"))
+		|| FParse::Param(FCommandLine::Get(), TEXT("APSDiagnosticOrbitFrame"))))
+	{
+		AddError(TEXT("APSSharedLiquidCoverageOrbit requires Ammonia only and cannot combine natural coverage, Lava flags, walk/run, orbit/PLANET capture or terrain LOD A/B"));
+		return false;
+	}
+	if (bSharedLiquidCoverageOrbit)
+	{
+		AddInfo(TEXT("[APS.SharedLiquidCoverage.Orbit] Explicit diagnostic PlanetOrbit route, not a production landing fallback. Actual native wet-patch sampling and real pawn/free-flight streaming precede the unchanged shared liquid 2x2 probe; no natural landing/ground lighting/FPS result."));
+	}
+	if (bSharedLiquidCoverage)
+	{
+		AddInfo(TEXT("[APS.SharedLiquidCoverage] Natural PlanetSurface route: existing dry-start/ground gates remain required. If landing fails, no coverage result. Candidate parameter authority is the saved shared MIC, not legacy runtime Water/Ammonia values."));
+	}
+	if (!AutomationOpenMap(TEXT("/Game/APS/APS_ALPHA/Menu/L_APS_MainMenu_Alpha"), true))
+	{
+		AddError(TEXT("[APS.SurfaceLighting] Could not open MainMenu"));
+		return false;
+	}
+	ADD_LATENT_AUTOMATION_COMMAND(APSGeneratedGameplayHandoffSmokeTests::FGeneratedCivilizationHandoffCommand(
+		this, Type, false, true, bLavaCoverageOrbit, bSharedLiquidCoverageOrbit));
 	return true;
 }
 

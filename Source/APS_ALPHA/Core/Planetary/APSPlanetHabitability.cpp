@@ -20,6 +20,7 @@ EPlanetHabitability UAPSPlanetHabitabilityLibrary::ResolveDefaultHabitability(
 	{
 	case EPlanetType::Terrestrial:
 	case EPlanetType::Forest:
+	case EPlanetType::Savanna:
 	case EPlanetType::Oasis:
 	case EPlanetType::Ocean:
 	case EPlanetType::Water:
@@ -39,6 +40,7 @@ EPlanetHabitability UAPSPlanetHabitabilityLibrary::ResolveDefaultHabitability(
 	case EPlanetType::SuperEarth:
 	case EPlanetType::Ice:
 	case EPlanetType::Exoplanet:
+	case EPlanetType::Crystal:
 		return bCoolButViableOrbit
 			? EPlanetHabitability::PotentiallyHabitable
 			: EPlanetHabitability::Uninhabitable;

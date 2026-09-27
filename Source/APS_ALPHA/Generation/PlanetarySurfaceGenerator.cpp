@@ -2,6 +2,7 @@
 #include "APSAtmosphereGeneration.h"
 #include "APS_ALPHA/Actors/Astro/Moon.h"
 #include "APS_ALPHA/Actors/Astro/Planet.h"
+#include "APS_ALPHA/Actors/Astro/Star.h"
 #include "APS_ALPHA/Core/Enums/MoonType.h"
 #include "APS_ALPHA/Core/Enums/PlanetType.h"
 #include "Components/SceneComponent.h"
@@ -207,20 +208,40 @@ void APlanetarySurfaceGenerator::InitAtmoScape(UWorld* World, double PlanetaryRa
     if (PlanetAtmosphere)
     {
 		PlanetAtmosphere->SetActorHiddenInGame(false);
+		// The shared factory is also the final atmosphere setup for generated moons.
+		// Resolve the same parent-star light for both body kinds before publishing MIDs;
+		// do not rely on the planet-only caller to repair this after initialization.
+		AStar* AtmosphereStar = nullptr;
+		if (const APlanet* Planet = Cast<APlanet>(NewPlanetaryBody))
+		{
+			AtmosphereStar = Planet->ParentStar;
+		}
+		else if (const AMoon* Moon = Cast<AMoon>(NewPlanetaryBody);
+			IsValid(Moon) && IsValid(Moon->ParentPlanet))
+		{
+			AtmosphereStar = Moon->ParentPlanet->ParentStar;
+		}
+		// A detached/orphan body must not keep the previous body's custom light.
+		PlanetAtmosphere->LightSource = IsValid(AtmosphereStar) ? AtmosphereStar : nullptr;
 		const bool bFullScaleGameplayBody = World->IsGameWorld()
 			&& FMath::IsNearlyEqual(NewPlanetaryBody->WorldScapePresentationScale, 1.0);
-		if (bFullScaleGameplayBody)
+		// Reset presentation-only state when a body returns from the preview.
+		// The shader already normalizes optical depth by ActorScale; multiplying
+		// opacity by 0.055 again makes the authored atmosphere almost disappear.
+		PlanetAtmosphere->PresentationPlanetRadiusCm = 0.0f;
+		PlanetAtmosphere->PresentationAtmosphereRadiusCm = 0.0f;
+		PlanetAtmosphere->PresentationOpacityScale = 1.0f;
+		PlanetAtmosphere->PresentationLightIntensity = 1.0f;
+		PlanetAtmosphere->SetActorTickEnabled(true);
+		if (USceneComponent* AtmosphereRoot = PlanetAtmosphere->GetRootComponent())
 		{
-			// AtmoScape's AtmosOpacity is a final linear material multiplier on top of its
-			// integrated camera/light optical depths. The former 0.20 presentation scale
-			// still resolved to roughly 2.0-3.6 for generated atmospheres, clipping the
-			// ray-march into a nearly uniform pale veil over opaque terrain and water. Keep
-			// the effective multiplier below one across the authored 4.5-18.0 opacity range.
-			// Rayleigh/Mie coefficients, shell geometry and sample counts remain untouched,
-			// so the sky and orbital limb retain their spectral scattering instead of being
-			// replaced by a post-scattering white fill.
-			PlanetAtmosphere->PresentationOpacityScale = 0.055f;
+			// Follow the moving body, but do not inherit its display scale.
+			AtmosphereRoot->SetAbsolute(false, false, true);
 		}
+		PlanetAtmosphere->SetActorScale3D(FVector::OneVector);
+		const AAtmoScape* AtmosphereDefaults = GetDefault<AAtmoScape>();
+		PlanetAtmosphere->CameraSamplesCount = AtmosphereDefaults->CameraSamplesCount;
+		PlanetAtmosphere->LightSamplesCount = AtmosphereDefaults->LightSamplesCount;
         
         
         // Установка параметров и свойств для объекта Atmosphere.
@@ -234,8 +255,8 @@ void APlanetarySurfaceGenerator::InitAtmoScape(UWorld* World, double PlanetaryRa
 
 
         float RadiusFactor = PlanetaryRadiusKM / 6371;//* NewPlanetaryBody->Mass; //EARTH_RADIUS_KM;  // EARTH_RADIUS_KM is a constant representing the Earth's radius in kilometers.
-        AmbientParams.Opacity = FMath::Clamp(10.0f * RadiusFactor, 0.5f, 80.0f);
-        AmbientParams.MultiScatering = FMath::Clamp(10.0f * RadiusFactor, 0.5f, 80.0f);
+        AmbientParams.Opacity = 1.0f;
+        AmbientParams.MultiScatering = 1.0f;
 
         // Below parameters are based on Earth's atmosphere. 
         // To bring in more diversity, you could also apply some randomization or relation to planet's physical characteristics
@@ -276,6 +297,7 @@ void APlanetarySurfaceGenerator::InitAtmoScape(UWorld* World, double PlanetaryRa
 				MaxColor = FLinearColor(0.4f, 0.2f, 0.1f, 1.0f);
 				break;
             case EPlanetType::Rocky:
+            case EPlanetType::Basalt:
                 MinColor = FLinearColor(0.1f, 0.1f, 0.1f, 1.0f);  // Replace with actual values
                 MaxColor = FLinearColor(0.5f, 0.3f, 0.2f, 1.0f);
                 break;
@@ -303,6 +325,10 @@ void APlanetarySurfaceGenerator::InitAtmoScape(UWorld* World, double PlanetaryRa
                 MinColor = FLinearColor(0.4f, 0.4f, 0.4f, 1.0f);
                 MaxColor = FLinearColor(0.6f, 0.6f, 0.6f, 1.0f);
                 break;
+            case EPlanetType::Crystal:
+                MinColor = FLinearColor(0.12f, 0.20f, 0.24f, 1.0f);
+                MaxColor = FLinearColor(0.35f, 0.27f, 0.42f, 1.0f);
+                break;
             case EPlanetType::Exoplanet:
                 MinColor = FLinearColor(0.3f, 0.3f, 0.3f, 1.0f);
                 MaxColor = FLinearColor(0.7f, 0.7f, 0.7f, 1.0f);
@@ -327,6 +353,7 @@ void APlanetarySurfaceGenerator::InitAtmoScape(UWorld* World, double PlanetaryRa
 				MaxColor = FLinearColor(1.0f, 0.7f, 0.3f, 1.0f);
                 break;
             case EPlanetType::Forest:
+            case EPlanetType::Savanna:
                 MinColor = FLinearColor(0.0f, 0.6f, 0.0f, 1.0f);
                 MaxColor = FLinearColor(0.2f, 1.0f, 0.2f, 1.0f);
                 break;
@@ -344,6 +371,10 @@ void APlanetarySurfaceGenerator::InitAtmoScape(UWorld* World, double PlanetaryRa
 			case EPlanetType::HighMountain:
 				MinColor = FLinearColor(0.7f, 0.8f, 1.0f, 1.0f);
 				MaxColor = FLinearColor(0.9f, 0.9f, 1.0f, 1.0f);
+                break;
+            case EPlanetType::Sulfur:
+                MinColor = FLinearColor(0.25f, 0.16f, 0.03f, 1.0f);
+                MaxColor = FLinearColor(0.55f, 0.38f, 0.08f, 1.0f);
                 break;
             case EPlanetType::Ammonia:
                 MinColor = FLinearColor(0.7f, 0.7f, 0.0f, 1.0f);
@@ -497,7 +528,6 @@ void APlanetarySurfaceGenerator::InitAtmoScape(UWorld* World, double PlanetaryRa
 				AtmosphereProfile.Humidity, 0.0f, 1.0f);
 			const float PressureResponse = FMath::Clamp(
 				AtmosphereProfile.AtmosphericPressure / 4.0f, 0.0f, 1.0f);
-			const float PressureRoot = FMath::Sqrt(PressureResponse);
 			const float SeededResponse = AtmosphereRandom.FRandRange(-1.0f, 1.0f);
 			float DustResponse = 0.10f;
 			switch (AtmosphereProfile.Archetype)
@@ -535,17 +565,11 @@ void APlanetarySurfaceGenerator::InitAtmoScape(UWorld* World, double PlanetaryRa
 			PlanetAtmosphere->MieScattering = FMath::Lerp(
 				MoistAerosol, DustAerosol, DustResponse)
 				* FMath::Lerp(0.78f, 1.20f, PressureResponse);
-			// Optical density is pressure-led, while humidity only shapes the lower haze.
-			// Keeping both values in a narrow physical range restores a visible limb and
-			// terminator without reverting to the old planet-filling uniform colour cap.
-			PlanetAtmosphere->AtmosphereOpacity = FMath::Clamp(
-				5.5f + PressureRoot * 8.0f + HumidityResponse * 1.5f
-					+ SeededResponse * 0.35f,
-				4.5f, 18.0f);
-			PlanetAtmosphere->MultiScatering = FMath::Clamp(
-				3.8f + PressureResponse * 4.2f + HumidityResponse * 0.8f
-					+ SeededResponse * 0.15f,
-				3.5f, 10.0f);
+			// Generated bodies start with neutral, user-facing multipliers. Preset
+			// differences belong to height, scattering colour and haze, not hidden
+			// opacity boosts. Explicit saved/body overrides are applied afterwards.
+			PlanetAtmosphere->AtmosphereOpacity = 1.0f;
+			PlanetAtmosphere->MultiScatering = 1.0f;
 			PlanetAtmosphere->AirGlowIntensity = FMath::Clamp(
 				0.020f + PressureResponse * 0.030f + HumidityResponse * 0.010f
 					+ (1.0f - DustResponse) * 0.005f + SeededResponse * 0.002f,
@@ -615,6 +639,10 @@ void APlanetarySurfaceGenerator::InitAtmoScape(UWorld* World, double PlanetaryRa
 			if (!bDuplicateAbsorption && !bGroundOuterAirglow
 				&& !bGroundSkylightOverlay)
 			{
+				// Preview hides the main inside pass. UpdateScale owns its visibility,
+				// but physical initialization must clear preview-owned render suppression.
+				AtmosphereMesh->SetHiddenInGame(false, true);
+				AtmosphereMesh->ComponentTags.Remove(SuppressedAtmospherePassTag);
 				continue;
 			}
 			AtmosphereMesh->SetVisibility(false, true);

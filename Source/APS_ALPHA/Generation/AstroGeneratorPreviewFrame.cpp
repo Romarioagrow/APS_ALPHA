@@ -11,6 +11,8 @@
 #include "APS_ALPHA/Core/Rendering/APSStellarMaterialContract.h"
 #include "APS_ALPHA/Core/Rendering/APSPreviewVisibility.h"
 #include "APS_ALPHA/Core/Rendering/APSPreviewCameraBounds.h"
+#include "APS_ALPHA/Core/Rendering/APSStellarOpticalSupport.h"
+#include "APS_ALPHA/Core/Rendering/APSStellarViewOptics.h"
 #include "Camera/CameraComponent.h"
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Components/PointLightComponent.h"
@@ -308,6 +310,7 @@ void AAstroGenerator::EnsureContinuousPreviewPresentation()
 				if (Source->PerInstanceSMCustomData.IsValidIndex(Address))
 					View->SetCustomDataValue(Index, Field, Source->PerInstanceSMCustomData[Address], false);
 			}
+		APSStellarOpticalSupport::EnsureLayout(View);
 		return View;
 	};
 	if (!IsValid(ContinuousGalaxyView) && IsValid(GeneratedGalaxy))
@@ -362,6 +365,11 @@ void AAstroGenerator::EnsureContinuousPreviewPresentation()
 				ContinuousClusterView->SetCustomDataValue(Point.SourceInstanceIndex, 1, Color.G, false);
 				ContinuousClusterView->SetCustomDataValue(Point.SourceInstanceIndex, 2, Color.B, false);
 				ContinuousClusterView->SetCustomDataValue(Point.SourceInstanceIndex, 3, Emission, false);
+				// Companions can be appended after the view's stride upgrade. Newly
+				// allocated rows otherwise start with a zero luminosity/core ratio.
+				ContinuousClusterView->SetCustomDataValue(Point.SourceInstanceIndex, 6, 1.0f, false);
+				ContinuousClusterView->SetCustomDataValue(Point.SourceInstanceIndex,
+					APSStellarOpticalSupport::CoreScaleIndex, 1.0f, false);
 				if (StarIndex > 0)
 					ContinuousClusterView->SetCustomDataValue(Point.SourceInstanceIndex, 4, Point.SourceInstanceIndex * 0.137f, false);
 			};
@@ -778,18 +786,21 @@ void AAstroGenerator::ApplyContinuousPreviewFrame()
 
 	int32 ViewWidth = 1280;
 	int32 ViewHeight = 720;
-	if (APlayerController* Controller = GetWorld()->GetFirstPlayerController()) Controller->GetViewportSize(ViewWidth, ViewHeight);
+	APlayerController* Controller = GetWorld()->GetFirstPlayerController();
+	if (Controller) Controller->GetViewportSize(ViewWidth, ViewHeight);
 	// Optical PSF is explicitly separate from physical photosphere size. The existing
 	// Gaussian material's conservative sphere contains a ~0.2-radius bright core;
 	// a two-pixel support therefore produces a subpixel core, not a two-pixel disc.
-	const double PixelTangent = 2.0 * FMath::Tan(FMath::DegreesToRadians(PreviewCamera->FieldOfView * 0.5))
-		/ FMath::Max(ViewWidth, 320);
+	const double PixelTangent = APSStellarViewOptics::PixelTangent(Controller,
+		2.0 * FMath::Tan(FMath::DegreesToRadians(PreviewCamera->FieldOfView * 0.5))
+			/ FMath::Max(ViewWidth, 320));
 	TrimContinuousPreviewSystemCache(PixelTangent);
 	PresentContinuousResolvedStars(PixelTangent);
 	const auto PresentCatalog = [this, PixelTangent](UInstancedStaticMeshComponent* View,
 		const TArray<FAPSContinuousPreviewPoint>& Points)
 	{
 		if (!IsValid(View) || !IsValid(View->GetStaticMesh())) return;
+		if (!APSStellarOpticalSupport::EnsureLayout(View)) return;
 		const double MeshRadius = FMath::Max(View->GetStaticMesh()->GetBounds().BoxExtent.GetMax(), 0.001);
 		TArray<FTransform> Transforms;
 		Transforms.Init(FTransform(FQuat::Identity, FVector::ZeroVector, FVector::ZeroVector), View->GetInstanceCount());
@@ -798,7 +809,12 @@ void AAstroGenerator::ApplyContinuousPreviewFrame()
 			if (!Transforms.IsValidIndex(Point.SourceInstanceIndex)) continue;
 			FAPSPreviewProjectedSphere Sphere;
 			if (!ContinuousPreviewFrame.ProjectSphere(Point.CenterCm, Point.RadiusCm, Sphere)) continue;
-			double Radius = FMath::Max(Sphere.Radius, Sphere.Center.Size() * PixelTangent * 2.2);
+			const auto Profile = APSStellarOpticalSupport::Select(View->PerInstanceSMCustomData,
+				View->NumCustomDataFloats, Point.SourceInstanceIndex);
+			double PixelWorldRadius = Sphere.Center.Size() * PixelTangent;
+			double CoreRadius = APSStellarOpticalSupport::CoreRadius(Sphere.Radius, PixelWorldRadius);
+			double Radius = APSStellarOpticalSupport::CarrierRadius(Sphere.Radius, PixelWorldRadius, Profile);
+			float RayStrength = APSStellarOpticalSupport::ResolvedRayStrength(Profile, Sphere.Radius, PixelWorldRadius);
 			AStar* MaterializedStar = Point.MaterializedStar.Get();
 			if (IsValid(MaterializedStar))
 			{
@@ -812,8 +828,13 @@ void AAstroGenerator::ApplyContinuousPreviewFrame()
 				// whether the physical hierarchy of this star has already been visited.
 				const double PixelRadius = Sphere.Radius / FMath::Max(Sphere.Center.Size() * PixelTangent, 1.0e-12);
 				const double PointWeight = 1.0 - FMath::Clamp((PixelRadius - 0.3) / 0.7, 0.0, 1.0);
-				Radius = Sphere.Center.Size() * PixelTangent * 2.2 * PointWeight;
+				PixelWorldRadius = Sphere.Center.Size() * PixelTangent;
+				CoreRadius = PixelWorldRadius * APSStellarOpticalSupport::CompactSupportPixels * PointWeight;
+				Radius = PixelWorldRadius * Profile.SupportPixels * PointWeight;
+				RayStrength *= float(PointWeight);
 			}
+			APSStellarOpticalSupport::Publish(View, Point.SourceInstanceIndex,
+				APSStellarOpticalSupport::CoreScale(CoreRadius, Radius), RayStrength);
 			Transforms[Point.SourceInstanceIndex] = FTransform(FQuat::Identity, Sphere.Center, FVector(Radius / MeshRadius));
 		}
 		// UE 5.4 tracks each changed instance and schedules SendRenderInstanceData.
@@ -854,6 +875,18 @@ void AAstroGenerator::ApplyContinuousPreviewFrame()
 			PresentPhysicalMesh(Star->StarMesh, Sphere, Star->GetActorQuat());
 			if (IsValid(Star->StarMesh))
 			{
+				// Continuous preview returns before the legacy presentation policy.
+				// Its generated emissive sphere is not an occluder for the separate
+				// preview directional light: that self-shadow appears as a false
+				// circular boundary on PLANET. Only this preview's materialized
+				// stars are touched; authored/gameplay stars and body shadows keep
+				// their existing policy.
+				if (Star->StarMesh->CastShadow)
+				{
+					Star->StarMesh->SetCastShadow(false);
+					UE_LOG(LogTemp, Log, TEXT("[APS.Preview.Continuous] Disabled emitter self-shadow: %s"),
+						*Star->GetName());
+				}
 				Star->StarMesh->SetVisibility(true, false);
 				Star->StarMesh->SetHiddenInGame(false, false);
 			}

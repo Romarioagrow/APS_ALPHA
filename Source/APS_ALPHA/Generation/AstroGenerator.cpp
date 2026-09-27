@@ -10,6 +10,8 @@ CSV_DECLARE_CATEGORY_EXTERN(APSPreview);
 #include "PlanetarySurfaceGenerator.h"
 #include "WorldScapePayloadValidation.h"
 #include "APS_ALPHA/Core/Planetary/APSPlanetSurfaceProfile.h"
+#include "APS_ALPHA/Core/Planetary/APSSharedTerrainMaterial.h"
+#include "APS_ALPHA/Core/Planetary/APSSharedGeneratedLiquidMaterial.h"
 #include "PlanetaryAtmosphere.h"
 #include "PlanetGenerator.h"
 #include "APS_ALPHA/Actors/Astro/AstroAnchor.h"
@@ -29,12 +31,14 @@ CSV_DECLARE_CATEGORY_EXTERN(APSPreview);
 #include "APS_ALPHA/Core/Enums/HomeSystemPosition.h"
 #include "APS_ALPHA/Core/Enums/StarClusterType.h"
 #include "APS_ALPHA/Core/Structs/GalaxyModel.h"
+#include "APS_ALPHA/Generation/APSGrandDesignGalaxy.h"
 #include "APS_ALPHA/Core/Structs/MoonGenerationModel.h"
 #include "APS_ALPHA/Core/Structs/PlanetarySystemGenerationModel.h"
 #include "APS_ALPHA/Core/Structs/StarGenerationModel.h"
 #include "APS_ALPHA/Core/Structs/StarSystemGenerationModel.h"
 #include "APS_ALPHA/Pawns/Spaceships/Spaceship.h"
 #include "APS_ALPHA/Core/Model/GeneratedWorld.h"
+#include "APS_ALPHA/Core/Rendering/APSMainMenuNebulaMaterial.h"
 #include "APS_ALPHA/Core/Rendering/APSStellarMaterialContract.h"
 #include "APS_ALPHA/Core/Rendering/APSStarRenderStabilitySubsystem.h"
 #include <unordered_map>
@@ -58,12 +62,14 @@ CSV_DECLARE_CATEGORY_EXTERN(APSPreview);
 #include "Components/StaticMeshComponent.h"
 #include "ProceduralMeshComponent.h"
 #include "Engine/StaticMesh.h"
+#include "Engine/Texture2D.h"
 #include "GameFramework/PlayerController.h"
 #include "HAL/IConsoleManager.h"
 #include "Materials/MaterialInstance.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
 #include "LocalVertexFactory.h"
+#include "MaterialShared.h"
 #include "Misc/Crc.h"
 #include "Misc/ScopeExit.h"
 #include "SceneView.h"
@@ -76,6 +82,11 @@ static TAutoConsoleVariable<int32> CVarAPSFullScaleProjectionTelemetry(
 	TEXT("Logs the immutable canonical stellar projection descriptor when a generation build finalizes."),
 	ECVF_Default);
 
+static TAutoConsoleVariable<int32> CVarAPSSharedTerrainLegacyDiagnosticFallback(
+	TEXT("aps.Surface.SharedTerrainLegacyDiagnosticFallback"), 0,
+	TEXT("DIAGNOSTIC ONLY: allow legacy split preview/ground materials when shared assets are unavailable. Logs errors; never represents shared-material success."),
+	ECVF_Default);
+
 namespace APSMainMenuHeroGalaxy
 {
 	// This catalogue is deliberately independent from FGalaxyCatalogDescriptor.  It
@@ -85,24 +96,28 @@ namespace APSMainMenuHeroGalaxy
 	constexpr int32 BulgeStarCount = 1500;
 	constexpr int32 HaloStarCount = 500;
 	constexpr int32 TotalStarCount = SpiralStarCount + BulgeStarCount + HaloStarCount;
-	constexpr int32 SpiralArmCount = 4;
+	constexpr int32 DistantFieldStarCount = 1100;
+	constexpr int32 UpperCompanionStarCount = 850;
+	constexpr int32 LowerCompanionStarCount = 650;
+	constexpr int32 TidalStreamStarCount = 180;
+	constexpr int32 DeepSpaceStarCount = DistantFieldStarCount
+		+ UpperCompanionStarCount + LowerCompanionStarCount + TidalStreamStarCount;
+	constexpr int32 NebulaSheetCount = 0;
 	constexpr int32 CompositionSeed = 0x41A05F3;
 	constexpr double RadiusCm = 900000.0;
-	constexpr double CameraDistanceRatio = 4.10;
-	// The navigation rail occupies roughly the left fifth of the title screen. A
-	// 54% anchor brings the hero toward it while retaining a deliberate clear gap.
-	constexpr double HorizontalScreenOffset = 0.08;
+	constexpr double CameraDistanceRatio = 3.48;
+	// A 47% anchor and tighter lens fill the scene pane while leaving an intentional
+	// gap after the navigation rail. This remains angular and aspect-ratio stable.
 	constexpr double VerticalScreenOffset = 0.0;
 	constexpr float DefaultBloomIntensity = 1.35f;
-	constexpr float HeroBloomIntensity = 1.62f;
-
-	double BellNoise(FRandomStream& Random)
-	{
-		// Three independent draws give a cheap, bounded bell curve. Unlike Gaussian
-		// tails it cannot create a single outlier that expands HISM/camera bounds.
-		return static_cast<double>(Random.GetFraction() + Random.GetFraction()
-			+ Random.GetFraction()) - 1.5;
-	}
+	constexpr float DefaultBloomThreshold = -1.0f;
+	constexpr float HeroBloomIntensity = 0.82f;
+	constexpr float HeroBloomThreshold = 1.0f;
+	// The title screen uses the accepted optical point pass with camera DOF off.
+	// Gameplay's late catalogue/depth-comparison pass is not a menu material:
+	// rebuilding this local scene with that pass can reject the entire hero cloud.
+	constexpr const TCHAR* PointMaterialPath =
+		TEXT("/Game/APS/APS_ALPHA/Assets/Materials/Astro/M_SpectralStarMat_HISM.M_SpectralStarMat_HISM");
 
 	FLinearColor LerpPalette(const FLinearColor& A, const FLinearColor& B, const double Alpha)
 	{
@@ -146,6 +161,8 @@ namespace APSPreviewGlobe
 	constexpr int32 SelectedFaceResolution = 128;
 	constexpr int32 ContextFaceResolution = 48;
 	constexpr const TCHAR* TerrainMaterialPath =
+		TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Shared/M_APS_SharedWorldScapeTerrain.M_APS_SharedWorldScapeTerrain");
+	constexpr const TCHAR* LegacyDiagnosticTerrainMaterialPath =
 		TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Preview/M_APS_OrbitalTerrain.M_APS_OrbitalTerrain");
 	constexpr const TCHAR* LiquidMaterialPath =
 		TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Preview/M_APS_OrbitalLiquid.M_APS_OrbitalLiquid");
@@ -180,7 +197,16 @@ namespace APSPreviewGlobe
 		}
 	}
 
-	UMaterialInstanceDynamic* CreateTerrainMaterial(
+	bool IsMaterialRenderReady(UMaterialInterface* Material, const UWorld* World)
+	{
+		if (!IsValid(Material) || !IsValid(World)) return false;
+		const FMaterialResource* Resource = Material->GetMaterialResource(World->GetFeatureLevel());
+		const FMaterialShaderMap* ShaderMap = Resource ? Resource->GetGameThreadShaderMap() : nullptr;
+		return Resource && Resource->IsGameThreadShaderMapComplete() && ShaderMap
+			&& ShaderMap->GetMeshShaderMap(&FLocalVertexFactory::StaticType);
+	}
+
+	UMaterialInstanceDynamic* CreateLegacyDiagnosticTerrainMaterial(
 		UObject* Outer, UMaterialInterface* ResolvedMaterial,
 		UMaterialInterface* OrbitalPresentationMaterial,
 		const FAPSResolvedPlanetSurfaceProfile& Profile)
@@ -229,18 +255,90 @@ namespace APSPreviewGlobe
 		// regenerated assets consume them explicitly.
 		Material->SetScalarParameterValue(TEXT("OrbitalPresentationBlend"), 1.0f);
 		Material->SetScalarParameterValue(TEXT("OrbitalNormalBlend"), 1.0f);
+		float TextureFrequency = 0.0f;
+		if (Material->GetScalarParameterValue(
+			FHashedMaterialParameterInfo(TEXT("OrbitalTextureFrequency")), TextureFrequency))
+		{
+			const bool bSnow = Profile.Archetype == EAPSPlanetSurfaceArchetype::Cryogenic;
+			const bool bSand = Profile.Archetype == EAPSPlanetSurfaceArchetype::Desert;
+			const TCHAR* AlbedoPath = bSnow ? TEXT("/WorldScape/Ressources/Textures/Snow/T_Snow_Albedo")
+				: bSand ? TEXT("/WorldScape/Ressources/Textures/Sand/T_Sable_D")
+				: TEXT("/WorldScape/Ressources/Textures/Rock/T_Desert_Albedo1");
+			const TCHAR* NormalPath = bSnow ? TEXT("/WorldScape/Ressources/Textures/Snow/T_Snow_N")
+				: bSand ? TEXT("/WorldScape/Ressources/Textures/Sand/T_Sable_N")
+				: TEXT("/WorldScape/Ressources/Textures/Rock/T_Desert_Normal");
+			UTexture2D* Albedo = LoadObject<UTexture2D>(nullptr, AlbedoPath);
+			UTexture2D* Normal = LoadObject<UTexture2D>(nullptr, NormalPath);
+			if (IsValid(Albedo) && IsValid(Normal))
+			{
+				Material->SetTextureParameterValue(TEXT("OrbitalPrimaryAlbedo"), Albedo);
+				Material->SetTextureParameterValue(TEXT("OrbitalPrimaryNormal"), Normal);
+				Material->SetScalarParameterValue(TEXT("OrbitalRockMix"), bSnow ? 0.22f : bSand ? 0.25f : 0.45f);
+				UE_LOG(LogTemp, Log,
+					TEXT("[APS.Preview.Material] Native texture detail primary=%s coordinates=component-local-angular samples=12"),
+					*GetNameSafe(Albedo));
+			}
+			else
+			{
+				UE_LOG(LogTemp, Warning, TEXT("[APS.Preview.Material] Missing type texture: keeping baked rock fallback"));
+			}
+		}
+		else
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("[APS.Preview.Material] Orbital texture detail is not baked; run APSPlanetSurfaceAsset -OrbitalTerrainOnly after compiling the new source"));
+		}
 		return Material;
 	}
 
-	UMaterialInstanceDynamic* CreateLiquidMaterial(
-		UObject* Outer, UMaterialInterface* ResolvedMaterial,
-		UMaterialInterface* OrbitalPresentationMaterial)
+	UMaterialInstanceDynamic* CreateTerrainMaterial(
+		USceneComponent* FrameComponent, UMaterialInterface* ResolvedMaterial,
+		UMaterialInterface* WarmedPresentationMaterial,
+		const FAPSResolvedPlanetSurfaceProfile& Profile, double PresentationScale)
 	{
-		// The live WorldScape ocean is deliberately depth-writing while this closed
-		// one-component globe remains translucent. Liquid type selects an authored
-		// orbital MIC independently; physical WorldScape coefficients must never be
-		// copied into the incompatible closed-preview graph.
+		if (APSSharedTerrainMaterial::IsSharedStack(ResolvedMaterial)
+			&& APSSharedTerrainMaterial::IsSharedStack(WarmedPresentationMaterial))
+		{
+			UMaterialInstanceDynamic* Shared = APSSharedTerrainMaterial::Create(
+				FrameComponent, Profile, FrameComponent, PresentationScale);
+			if (Shared && Shared->GetMaterial() == ResolvedMaterial->GetMaterial())
+				return Shared;
+			UE_LOG(LogTemp, Error,
+				TEXT("[APS.SharedTerrain] PLANET instance/frame/parent mismatch resolved=%s shared=%s; commit withheld"),
+				*GetPathNameSafe(ResolvedMaterial), *GetPathNameSafe(Shared));
+			return nullptr;
+		}
+		UE_LOG(LogTemp, Error,
+			TEXT("[APS.SharedTerrain] PLANET source is not the shared native master: resolved=%s diagnosticFallback=%d"),
+			*GetPathNameSafe(ResolvedMaterial), APSSharedTerrainMaterial::AllowsLegacyDiagnosticFallback() ? 1 : 0);
+		if (!APSSharedTerrainMaterial::AllowsLegacyDiagnosticFallback()) return nullptr;
+		UMaterialInterface* Legacy = LoadObject<UMaterialInterface>(nullptr, LegacyDiagnosticTerrainMaterialPath);
+		return CreateLegacyDiagnosticTerrainMaterial(FrameComponent, ResolvedMaterial, Legacy, Profile);
+	}
+
+	UMaterialInstanceDynamic* CreateLiquidMaterial(
+		USceneComponent* Frame, UMaterialInterface* ResolvedMaterial,
+		UMaterialInterface* OrbitalPresentationMaterial,
+		const FAPSResolvedPlanetSurfaceProfile& Profile, double PresentationScale, bool bManualPlanet,
+		bool bMigrateGeneratedSource)
+	{
 		UMaterialInstance* ResolvedInstance = Cast<UMaterialInstance>(ResolvedMaterial);
+		if (bMigrateGeneratedSource)
+		{
+			if (!APSSharedGeneratedLiquidMaterial::IsFamilyInstance(ResolvedInstance, Profile.LiquidType)) return nullptr;
+			// The same liquid family MIC as gameplay, with a physical planet-fixed
+			// frame and explicit closed-globe WaterMask context, not Hole alpha.
+			UMaterialInstanceDynamic* Shared = APSSharedGeneratedLiquidMaterial::Create(
+				Frame, Frame, PresentationScale, true, bManualPlanet, Profile, ResolvedInstance);
+			if (Shared && IsValid(Frame)
+				&& APSSharedGeneratedLiquidMaterial::IsRenderReady(Shared, Profile.LiquidType, Frame->GetWorld())) return Shared;
+			UE_LOG(LogTemp, Error,
+				TEXT("[APS.SharedLiquid] PLANET asset/frame/shader mismatch resolved=%s; commit withheld"),
+				*GetPathNameSafe(ResolvedMaterial));
+			return nullptr;
+		}
+		// Manual planets and custom liquid catalog materials retain their
+		// existing separate orbital graph; do not copy incompatible coefficients.
 		const EBlendMode PresentationBlendMode = IsValid(OrbitalPresentationMaterial)
 			? OrbitalPresentationMaterial->GetBlendMode() : BLEND_Opaque;
 		const bool bMaskedLivingWater = PresentationBlendMode == BLEND_Masked;
@@ -265,7 +363,7 @@ namespace APSPreviewGlobe
 		}
 
 		UMaterialInstanceDynamic* Material = UMaterialInstanceDynamic::Create(
-			OrbitalPresentationMaterial, Outer);
+			OrbitalPresentationMaterial, Frame);
 		if (!IsValid(Material))
 		{
 			return nullptr;
@@ -704,17 +802,17 @@ AAstroGenerator::AAstroGenerator()
 	// The astronomical preview is an HDR scene, but a bare UCameraComponent only
 	// inherits UE's deliberately restrained default bloom. That left valid stellar
 	// emissive energy visible as a bright sphere with an almost black silhouette.
-	// Keep this contract local to the preview camera. Thresholdless standard bloom
-	// preserves the low-energy spectral tail of small HISM stars at fixed exposure;
-	// their bounded material output, rather than a hard screen threshold, separates
-	// astronomical light from ordinary preview surfaces.
+	// Keep the baseline contract local to the preview camera. The title-screen hero
+	// temporarily raises the threshold so its dense point cloud stays crisp; normal
+	// astronomical previews restore these broader bloom values on page transition.
 	PreviewCamera->SetPostProcessBlendWeight(1.0f);
 	PreviewCamera->PostProcessSettings.bOverride_BloomMethod = true;
 	PreviewCamera->PostProcessSettings.BloomMethod = EBloomMethod::BM_SOG;
 	PreviewCamera->PostProcessSettings.bOverride_BloomIntensity = true;
 	PreviewCamera->PostProcessSettings.BloomIntensity = 1.35f;
 	PreviewCamera->PostProcessSettings.bOverride_BloomThreshold = true;
-	PreviewCamera->PostProcessSettings.BloomThreshold = -1.0f;
+	PreviewCamera->PostProcessSettings.BloomThreshold =
+		APSMainMenuHeroGalaxy::DefaultBloomThreshold;
 
 	MainMenuHeroGalaxyHISM =
 		CreateDefaultSubobject<UHierarchicalInstancedStaticMeshComponent>(
@@ -743,6 +841,62 @@ AAstroGenerator::AAstroGenerator()
 	MainMenuHeroGalaxyHISM->SetVisibility(false, true);
 	MainMenuHeroGalaxyHISM->SetHiddenInGame(true, true);
 
+	MainMenuDeepSpaceHISM =
+		CreateDefaultSubobject<UHierarchicalInstancedStaticMeshComponent>(
+			TEXT("MainMenuDeepSpaceHISM"));
+	MainMenuDeepSpaceHISM->SetupAttachment(GenerationRoot);
+	MainMenuDeepSpaceHISM->SetMobility(EComponentMobility::Movable);
+	MainMenuDeepSpaceHISM->bDisallowNanite = true;
+	MainMenuDeepSpaceHISM->SetForceDisableNanite(true);
+	MainMenuDeepSpaceHISM->NumCustomDataFloats = 6;
+	MainMenuDeepSpaceHISM->bAutoRebuildTreeOnInstanceChanges = false;
+	MainMenuDeepSpaceHISM->bUseTranslatedInstanceSpace = true;
+	MainMenuDeepSpaceHISM->bEnableDensityScaling = false;
+	MainMenuDeepSpaceHISM->bNeverDistanceCull = true;
+	MainMenuDeepSpaceHISM->SetCullDistances(0, 0);
+	MainMenuDeepSpaceHISM->bDisableCollision = true;
+	MainMenuDeepSpaceHISM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	MainMenuDeepSpaceHISM->SetCollisionResponseToAllChannels(ECR_Ignore);
+	MainMenuDeepSpaceHISM->SetGenerateOverlapEvents(false);
+	MainMenuDeepSpaceHISM->SetCanEverAffectNavigation(false);
+	MainMenuDeepSpaceHISM->bEvaluateWorldPositionOffset = false;
+	MainMenuDeepSpaceHISM->bWorldPositionOffsetWritesVelocity = false;
+	MainMenuDeepSpaceHISM->SetCastShadow(false);
+	MainMenuDeepSpaceHISM->bAffectDynamicIndirectLighting = false;
+	MainMenuDeepSpaceHISM->bAffectDistanceFieldLighting = false;
+	MainMenuDeepSpaceHISM->SetReceivesDecals(false);
+	MainMenuDeepSpaceHISM->SetVisibility(false, true);
+	MainMenuDeepSpaceHISM->SetHiddenInGame(true, true);
+
+	MainMenuNebulaHISM =
+		CreateDefaultSubobject<UHierarchicalInstancedStaticMeshComponent>(
+			TEXT("MainMenuNebulaHISM"));
+	MainMenuNebulaHISM->SetupAttachment(GenerationRoot);
+	MainMenuNebulaHISM->SetMobility(EComponentMobility::Movable);
+	MainMenuNebulaHISM->bDisallowNanite = true;
+	MainMenuNebulaHISM->SetForceDisableNanite(true);
+	MainMenuNebulaHISM->NumCustomDataFloats =
+		APSMainMenuNebulaMaterial::CustomDataFloatCount;
+	MainMenuNebulaHISM->bAutoRebuildTreeOnInstanceChanges = false;
+	MainMenuNebulaHISM->bUseTranslatedInstanceSpace = true;
+	MainMenuNebulaHISM->bEnableDensityScaling = false;
+	MainMenuNebulaHISM->bNeverDistanceCull = true;
+	MainMenuNebulaHISM->SetCullDistances(0, 0);
+	MainMenuNebulaHISM->bDisableCollision = true;
+	MainMenuNebulaHISM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	MainMenuNebulaHISM->SetCollisionResponseToAllChannels(ECR_Ignore);
+	MainMenuNebulaHISM->SetGenerateOverlapEvents(false);
+	MainMenuNebulaHISM->SetCanEverAffectNavigation(false);
+	MainMenuNebulaHISM->bEvaluateWorldPositionOffset = false;
+	MainMenuNebulaHISM->bWorldPositionOffsetWritesVelocity = false;
+	MainMenuNebulaHISM->SetCastShadow(false);
+	MainMenuNebulaHISM->bAffectDynamicIndirectLighting = false;
+	MainMenuNebulaHISM->bAffectDistanceFieldLighting = false;
+	MainMenuNebulaHISM->SetReceivesDecals(false);
+	MainMenuNebulaHISM->SetTranslucentSortPriority(-20);
+	MainMenuNebulaHISM->SetVisibility(false, true);
+	MainMenuNebulaHISM->SetHiddenInGame(true, true);
+
 	// Use the production stellar proxy mesh when available, retaining an engine
 	// sphere only as a packaging-safe fallback for stripped editor builds.
 	static ConstructorHelpers::FObjectFinderOptional<UStaticMesh> HeroStarMesh(
@@ -756,12 +910,16 @@ AAstroGenerator::AAstroGenerator()
 		ResolvedHeroMesh = HeroFallbackMesh.Object;
 	}
 	MainMenuHeroGalaxyHISM->SetStaticMesh(ResolvedHeroMesh);
+	MainMenuDeepSpaceHISM->SetStaticMesh(ResolvedHeroMesh);
+	// Nebula carriers are deliberately empty until the replacement art is ready.
 	static ConstructorHelpers::FObjectFinder<UMaterial> HeroPointMaterial(
-		APSStellarMaterialContract::HismBaseObjectPath);
+		APSMainMenuHeroGalaxy::PointMaterialPath);
 	if (HeroPointMaterial.Succeeded())
 	{
 		MainMenuHeroGalaxyHISM->SetMaterial(0, HeroPointMaterial.Object);
+		MainMenuDeepSpaceHISM->SetMaterial(0, HeroPointMaterial.Object);
 	}
+
 
 	// Scope guides are real world-space wire spheres. Thin orthogonal tubes preserve
 	// depth while removing the filled translucent discs that obscured the system.
@@ -853,7 +1011,14 @@ AAstroGenerator::AAstroGenerator()
 
 bool AAstroGenerator::ArePreviewMaterialAssetsWarmed() const
 {
-	return IsValid(PreviewTerrainBaseMaterial)
+	const bool bSharedTerrain = APSSharedTerrainMaterial::IsSharedStack(PreviewTerrainBaseMaterial);
+	const bool bTerrainReady = bSharedTerrain
+		? APSSharedTerrainMaterial::IsSharedStack(FindObject<UMaterialInterface>(nullptr,
+			APSSharedTerrainMaterial::TemplatePath(EAPSPlanetSurfaceArchetype::Rocky)))
+			&& APSSharedTerrainMaterial::IsSharedStack(FindObject<UMaterialInterface>(nullptr,
+				APSSharedTerrainMaterial::TemplatePath(EAPSPlanetSurfaceArchetype::Magmatic)))
+		: APSSharedTerrainMaterial::AllowsLegacyDiagnosticFallback() && IsValid(PreviewTerrainBaseMaterial);
+	return bTerrainReady
 		&& IsValid(PreviewLiquidBaseMaterial)
 		&& IsValid(PreviewWaterBaseMaterial)
 		&& IsValid(PreviewAmmoniaBaseMaterial)
@@ -870,7 +1035,30 @@ bool AAstroGenerator::WarmPreviewMaterialAssets()
 			Asset = LoadObject<UMaterialInterface>(nullptr, ObjectPath);
 		}
 	};
-	LoadIfMissing(PreviewTerrainBaseMaterial, APSPreviewGlobe::TerrainMaterialPath);
+	// Serialized editor state may still hold the old preview-only master. Replace
+	// that reference explicitly; LoadIfMissing alone would preserve the split stack.
+	if (!APSSharedTerrainMaterial::IsSharedStack(PreviewTerrainBaseMaterial))
+	{
+		PreviewTerrainBaseMaterial = LoadObject<UMaterialInterface>(nullptr, APSPreviewGlobe::TerrainMaterialPath);
+		bPreviewMaterialPSOPrecacheRequested = false;
+		if (!IsValid(PreviewTerrainBaseMaterial) && APSSharedTerrainMaterial::AllowsLegacyDiagnosticFallback())
+		{
+			PreviewTerrainBaseMaterial = LoadObject<UMaterialInterface>(nullptr,
+				APSPreviewGlobe::LegacyDiagnosticTerrainMaterialPath);
+			UE_LOG(LogTemp, Error,
+				TEXT("[APS.SharedTerrain] DIAGNOSTIC LEGACY FALLBACK active: shared assets missing; single-material requirement is NOT met"));
+		}
+	}
+	UMaterialInterface* SharedTerra = LoadObject<UMaterialInterface>(nullptr,
+		APSSharedTerrainMaterial::TemplatePath(EAPSPlanetSurfaceArchetype::Rocky));
+	UMaterialInterface* SharedMagma = LoadObject<UMaterialInterface>(nullptr,
+		APSSharedTerrainMaterial::TemplatePath(EAPSPlanetSurfaceArchetype::Magmatic));
+	UMaterialInterface* SharedWater = LoadObject<UMaterialInterface>(nullptr,
+		APSSharedWaterMaterial::TemplatePath());
+	UMaterialInterface* SharedAmmonia = LoadObject<UMaterialInterface>(nullptr,
+		APSSharedAmmoniaMaterial::TemplatePath());
+	UMaterialInterface* SharedLava = LoadObject<UMaterialInterface>(nullptr,
+		APSSharedLavaMaterial::TemplatePath());
 	LoadIfMissing(PreviewLiquidBaseMaterial, APSPreviewGlobe::LiquidMaterialPath);
 	LoadIfMissing(PreviewWaterBaseMaterial,
 		APSPreviewGlobe::GetLiquidMaterialPath(EAPSPlanetLiquidType::Water));
@@ -896,15 +1084,31 @@ bool AAstroGenerator::WarmPreviewMaterialAssets()
 		for (UMaterialInterface* Material : {
 			PreviewTerrainBaseMaterial.Get(), PreviewLiquidBaseMaterial.Get(),
 			PreviewWaterBaseMaterial.Get(), PreviewAmmoniaBaseMaterial.Get(),
-			PreviewLavaBaseMaterial.Get() })
+			PreviewLavaBaseMaterial.Get(), SharedTerra, SharedMagma, SharedWater, SharedAmmonia, SharedLava })
 		{
+			if (!IsValid(Material)) continue; // Legacy diagnostic mode may lack shared templates.
+#if WITH_EDITOR
+			// Loading the UObject and requesting a PSO do not complete an uncooked
+			// shader map. Submit once during warmup; the selected globe waits below
+			// without blocking the game thread or displaying the engine grid fallback.
+			FMaterialResource* Resource = IsValid(GetWorld())
+				? Material->GetMaterialResource(GetWorld()->GetFeatureLevel()) : nullptr;
+			if (Resource && !Resource->IsGameThreadShaderMapComplete())
+			{
+				Resource->SubmitCompileJobs_GameThread(EShaderCompileJobPriority::ForceLocal);
+			}
+			UE_LOG(LogTemp, Log,
+				TEXT("[APS.Preview.Material] Preparing material=%s resource=%d complete=%d"),
+				*GetPathNameSafe(Material), Resource ? 1 : 0,
+				Resource && Resource->IsGameThreadShaderMapComplete() ? 1 : 0);
+#endif
 			Material->PrecachePSOs(&FLocalVertexFactory::StaticType, PrecacheParams);
 		}
 		bPreviewMaterialPSOPrecacheRequested = true;
 	}
 
 	UE_CLOG(!bWarmed, LogTemp, Error,
-		TEXT("[APS.WorldGeneration] Orbital preview material warmup incomplete terrain=%s liquid=%s water=%s ammonia=%s lava=%s"),
+		TEXT("[APS.WorldGeneration] Shared preview material warmup incomplete terrain=%s liquid=%s water=%s ammonia=%s lava=%s; bake APSPlanetSurfaceAsset -OnlySharedTerrain if the shared stack is missing"),
 		*GetNameSafe(PreviewTerrainBaseMaterial), *GetNameSafe(PreviewLiquidBaseMaterial),
 		*GetNameSafe(PreviewWaterBaseMaterial), *GetNameSafe(PreviewAmmoniaBaseMaterial),
 		*GetNameSafe(PreviewLavaBaseMaterial));
@@ -1182,6 +1386,18 @@ int32 AAstroGenerator::GetMainMenuHeroGalaxyInstanceCount() const
 		? MainMenuHeroGalaxyHISM->GetInstanceCount() : 0;
 }
 
+int32 AAstroGenerator::GetMainMenuDeepSpaceInstanceCount() const
+{
+	return IsValid(MainMenuDeepSpaceHISM)
+		? MainMenuDeepSpaceHISM->GetInstanceCount() : 0;
+}
+
+int32 AAstroGenerator::GetMainMenuNebulaInstanceCount() const
+{
+	return IsValid(MainMenuNebulaHISM)
+		? MainMenuNebulaHISM->GetInstanceCount() : 0;
+}
+
 void AAstroGenerator::ReleaseMainMenuHeroGalaxy()
 {
 	bMainMenuHeroGalaxyActive = false;
@@ -1192,25 +1408,243 @@ void AAstroGenerator::ReleaseMainMenuHeroGalaxy()
 		MainMenuHeroGalaxyHISM->ClearInstances();
 		MainMenuHeroGalaxyHISM->SetRelativeTransform(FTransform::Identity);
 	}
+	if (IsValid(MainMenuDeepSpaceHISM))
+	{
+		MainMenuDeepSpaceHISM->SetVisibility(false, true);
+		MainMenuDeepSpaceHISM->SetHiddenInGame(true, true);
+		MainMenuDeepSpaceHISM->ClearInstances();
+		MainMenuDeepSpaceHISM->SetRelativeTransform(FTransform::Identity);
+	}
+	if (IsValid(MainMenuNebulaHISM))
+	{
+		MainMenuNebulaHISM->SetVisibility(false, true);
+		MainMenuNebulaHISM->SetHiddenInGame(true, true);
+		MainMenuNebulaHISM->ClearInstances();
+		MainMenuNebulaHISM->SetRelativeTransform(FTransform::Identity);
+	}
 	if (IsValid(PreviewCamera))
 	{
 		PreviewCamera->PostProcessSettings.BloomIntensity =
 			APSMainMenuHeroGalaxy::DefaultBloomIntensity;
+		PreviewCamera->PostProcessSettings.BloomThreshold =
+			APSMainMenuHeroGalaxy::DefaultBloomThreshold;
+		PreviewCamera->PostProcessSettings.bOverride_DepthOfFieldScale = false;
+		PreviewCamera->PostProcessSettings.bOverride_DepthOfFieldFocalDistance = false;
+		PreviewCamera->PostProcessSettings.bOverride_DepthOfFieldDepthBlurRadius = false;
+		PreviewCamera->PostProcessSettings.bOverride_MotionBlurAmount = false;
+		PreviewCamera->bOverrideAspectRatioAxisConstraint = false;
 	}
+}
+
+bool AAstroGenerator::GenerateMainMenuNebulaField(const FVector& AimPoint,
+	const FVector& CameraRight, const FVector& CameraUp, const FVector& CameraOut,
+	const double Distance, const double HalfTanHorizontal, const double HalfTanVertical)
+{
+	// Remove carriers, including serialized instances from an earlier menu actor.
+	if (IsValid(MainMenuNebulaHISM))
+	{
+		MainMenuNebulaHISM->SetVisibility(false, true);
+		MainMenuNebulaHISM->SetHiddenInGame(true, true);
+		MainMenuNebulaHISM->ClearInstances();
+		MainMenuNebulaHISM->SetMaterial(0, nullptr);
+		MainMenuNebulaHISM->SetStaticMesh(nullptr);
+	}
+	return true;
+}
+
+bool AAstroGenerator::GenerateMainMenuDeepSpaceField(const FVector& AimPoint,
+	const FVector& CameraRight, const FVector& CameraUp, const FVector& CameraOut,
+	const double Distance, const double HalfTanHorizontal, const double HalfTanVertical)
+{
+	if (!IsValid(MainMenuDeepSpaceHISM) || !IsValid(MainMenuDeepSpaceHISM->GetStaticMesh()))
+	{
+		return false;
+	}
+
+	MainMenuDeepSpaceHISM->ClearInstances();
+	MainMenuDeepSpaceHISM->SetRelativeTransform(FTransform::Identity);
+	MainMenuDeepSpaceHISM->bUseTranslatedInstanceSpace = false;
+	MainMenuDeepSpaceHISM->NumCustomDataFloats = 6;
+	MainMenuDeepSpaceHISM->PreAllocateInstancesMemory(
+		APSMainMenuHeroGalaxy::DeepSpaceStarCount);
+	const double MeshRadius = FMath::Max(static_cast<double>(
+		MainMenuDeepSpaceHISM->GetStaticMesh()->GetBounds().SphereRadius), 1.0);
+
+	const FLinearColor DeepBlue(0.08f, 0.30f, 0.74f, 1.0f);
+	const FLinearColor DustCyan(0.20f, 0.66f, 0.92f, 1.0f);
+	const FLinearColor IceWhite(0.72f, 0.90f, 1.0f, 1.0f);
+	const FLinearColor OldGold(0.92f, 0.58f, 0.30f, 1.0f);
+
+	const auto AddScreenPoint = [this, AimPoint, CameraRight, CameraUp, CameraOut,
+		Distance, HalfTanHorizontal, HalfTanVertical, MeshRadius](
+		const double ScreenX, const double ScreenY, const double DepthRatio,
+		const double VisualRadiusCm, const FLinearColor& Color,
+		const float Emission, const float PointSeed)
+	{
+		// Build at a real depth plane rather than scaling a flat overlay. Parallax and
+		// occlusion therefore remain physically coherent if the menu camera is tuned.
+		const double LayerDistance = Distance * (1.0 + DepthRatio);
+		const double NdcX = ScreenX * 2.0 - 1.0;
+		const double NdcY = 1.0 - ScreenY * 2.0;
+		const FVector WorldPosition = AimPoint - CameraOut * (Distance * DepthRatio)
+			+ CameraRight * (NdcX * LayerDistance * HalfTanHorizontal)
+			+ CameraUp * (NdcY * LayerDistance * HalfTanVertical);
+		const FVector LocalPosition = GetActorTransform().InverseTransformPosition(WorldPosition);
+		FTransform Transform(FQuat::Identity, LocalPosition,
+			FVector(FMath::Max(VisualRadiusCm / MeshRadius, 0.001)));
+		const int32 InstanceIndex = MainMenuDeepSpaceHISM->AddInstance(Transform, false);
+		MainMenuDeepSpaceHISM->SetCustomDataValue(InstanceIndex, 0, Color.R, false);
+		MainMenuDeepSpaceHISM->SetCustomDataValue(InstanceIndex, 1, Color.G, false);
+		MainMenuDeepSpaceHISM->SetCustomDataValue(InstanceIndex, 2, Color.B, false);
+		MainMenuDeepSpaceHISM->SetCustomDataValue(InstanceIndex, 3, Emission, false);
+		MainMenuDeepSpaceHISM->SetCustomDataValue(InstanceIndex, 4, PointSeed, false);
+		MainMenuDeepSpaceHISM->SetCustomDataValue(InstanceIndex, 5, 0.0f, false);
+	};
+
+	// Sparse deep field: deliberately incomplete coverage preserves negative space.
+	FRandomStream FieldRandom(APSMainMenuHeroGalaxy::CompositionSeed ^ 0x2D5A17);
+	for (int32 Index = 0; Index < APSMainMenuHeroGalaxy::DistantFieldStarCount; ++Index)
+	{
+		const double ScreenX = FMath::Lerp(0.22, 0.985,
+			static_cast<double>(FieldRandom.GetFraction()));
+		const double ScreenY = FMath::Lerp(0.055, 0.945,
+			static_cast<double>(FieldRandom.GetFraction()));
+		const double Depth = FMath::Lerp(0.32, 0.82,
+			static_cast<double>(FieldRandom.GetFraction()));
+		const double HeroEnvelope = FMath::Square((ScreenX - 0.47) / 0.33)
+			+ FMath::Square((ScreenY - 0.50) / 0.24);
+		const double QuietFactor = HeroEnvelope < 1.0
+			? FMath::Lerp(0.28, 0.55, HeroEnvelope) : 1.0;
+		const float Palette = FieldRandom.GetFraction();
+		const FLinearColor Color = Palette < 0.055f
+			? APSMainMenuHeroGalaxy::LerpPalette(OldGold, IceWhite,
+				FieldRandom.GetFraction() * 0.35)
+			: APSMainMenuHeroGalaxy::LerpPalette(DeepBlue, DustCyan,
+				FieldRandom.GetFraction());
+		const double Size = APSMainMenuHeroGalaxy::RadiusCm
+			* FMath::Lerp(0.00055, 0.00155,
+				FMath::Square(static_cast<double>(FieldRandom.GetFraction())))
+			* (1.0 + Depth);
+		const float Emission = static_cast<float>(QuietFactor
+			* FMath::Lerp(0.10, 0.62,
+				FMath::Square(static_cast<double>(FieldRandom.GetFraction()))));
+		AddScreenPoint(ScreenX, ScreenY, Depth, Size, Color, Emission,
+			FieldRandom.GetFraction());
+	}
+
+	const auto AddCompanionCluster = [&AddScreenPoint, &DeepBlue, &DustCyan,
+		&IceWhite, &OldGold, HalfTanHorizontal, HalfTanVertical](const int32 Seed, const int32 Count,
+		const FVector2D Center, const FVector2D Spread, const bool bWarmCore)
+	{
+		FRandomStream ClusterRandom(Seed);
+		for (int32 Index = 0; Index < Count; ++Index)
+		{
+			const double RadiusAlpha = FMath::Pow(
+				static_cast<double>(ClusterRandom.GetFraction()), 1.85);
+			const double Angle = ClusterRandom.GetFraction() * UE_TWO_PI;
+			const double ScreenX = Center.X + FMath::Cos(Angle) * Spread.X * RadiusAlpha * HalfTanVertical / HalfTanHorizontal
+				+ APSGrandDesignGalaxy::BellNoise(ClusterRandom) * Spread.X * 0.10 * HalfTanVertical / HalfTanHorizontal;
+			const double ScreenY = Center.Y + FMath::Sin(Angle) * Spread.Y * RadiusAlpha
+				+ APSGrandDesignGalaxy::BellNoise(ClusterRandom) * Spread.Y * 0.10;
+			const double Depth = FMath::Lerp(0.22, 0.40,
+				static_cast<double>(ClusterRandom.GetFraction()));
+			const double CoreEnergy = FMath::Square(1.0 - RadiusAlpha);
+			const FLinearColor CoolColor = APSMainMenuHeroGalaxy::LerpPalette(
+				DeepBlue, IceWhite, 0.28 + CoreEnergy * 0.58);
+			const FLinearColor Color = bWarmCore && ClusterRandom.GetFraction() < 0.28f
+				? APSMainMenuHeroGalaxy::LerpPalette(OldGold, IceWhite, CoreEnergy)
+				: APSMainMenuHeroGalaxy::LerpPalette(CoolColor, DustCyan,
+					ClusterRandom.GetFraction() * 0.35);
+			const double Size = APSMainMenuHeroGalaxy::RadiusCm
+				* FMath::Lerp(0.0024, 0.0052,
+					FMath::Square(static_cast<double>(ClusterRandom.GetFraction())))
+				* (1.0 + Depth);
+			const float Emission = static_cast<float>(FMath::Lerp(0.70, 2.10,
+				CoreEnergy * 0.72 + ClusterRandom.GetFraction() * 0.28));
+			AddScreenPoint(ScreenX, ScreenY, Depth, Size, Color, Emission,
+				ClusterRandom.GetFraction());
+		}
+	};
+
+	// Two satellite systems echo real dwarf companions without competing with the
+	// primary galaxy's luminous core.
+	AddCompanionCluster(APSMainMenuHeroGalaxy::CompositionSeed ^ 0x35A1,
+		APSMainMenuHeroGalaxy::UpperCompanionStarCount,
+		FVector2D(0.80f, 0.24f), FVector2D(0.095f, 0.095f), false);
+	AddCompanionCluster(APSMainMenuHeroGalaxy::CompositionSeed ^ 0x71C3,
+		APSMainMenuHeroGalaxy::LowerCompanionStarCount,
+		FVector2D(0.77f, 0.77f), FVector2D(0.115f, 0.062f), true);
+
+	// Paired tidal streams imply a larger galactic environment. Their deliberately
+	// low energy keeps them discoverable rather than decorative neon curves.
+	FRandomStream StreamRandom(APSMainMenuHeroGalaxy::CompositionSeed ^ 0x4A91D);
+	for (int32 Index = 0; Index < APSMainMenuHeroGalaxy::TidalStreamStarCount; ++Index)
+	{
+		const bool bUpper = Index < APSMainMenuHeroGalaxy::TidalStreamStarCount / 2;
+		const int32 LocalIndex = bUpper ? Index
+			: Index - APSMainMenuHeroGalaxy::TidalStreamStarCount / 2;
+		const int32 StreamCount = APSMainMenuHeroGalaxy::TidalStreamStarCount / 2;
+		const double T = (static_cast<double>(LocalIndex) + StreamRandom.GetFraction())
+			/ StreamCount;
+		const FVector2D P0 = bUpper ? FVector2D(0.805f, 0.245f) : FVector2D(0.735f, 0.755f);
+		const FVector2D P1 = bUpper ? FVector2D(0.705f, 0.245f) : FVector2D(0.690f, 0.690f);
+		const FVector2D P2 = bUpper ? FVector2D(0.625f, 0.390f) : FVector2D(0.620f, 0.615f);
+		const double OneMinusT = 1.0 - T;
+		FVector2D Point = P0 * FMath::Square(OneMinusT)
+			+ P1 * (2.0 * OneMinusT * T) + P2 * FMath::Square(T);
+		Point.X += APSGrandDesignGalaxy::BellNoise(StreamRandom) * 0.0055;
+		Point.Y += APSGrandDesignGalaxy::BellNoise(StreamRandom) * 0.0065;
+		const double Depth = FMath::Lerp(0.26, 0.36,
+			static_cast<double>(StreamRandom.GetFraction()));
+		const double Size = APSMainMenuHeroGalaxy::RadiusCm
+			* FMath::Lerp(0.00048, 0.00110,
+				static_cast<double>(StreamRandom.GetFraction())) * (1.0 + Depth);
+		AddScreenPoint(Point.X, Point.Y, Depth, Size,
+			APSMainMenuHeroGalaxy::LerpPalette(DeepBlue, DustCyan,
+				StreamRandom.GetFraction()),
+			static_cast<float>(FMath::Lerp(0.10, 0.34,
+				static_cast<double>(StreamRandom.GetFraction()))),
+			StreamRandom.GetFraction());
+	}
+
+	MainMenuDeepSpaceHISM->BuildTreeIfOutdated(false, true);
+	MainMenuDeepSpaceHISM->MarkRenderStateDirty();
+	MainMenuDeepSpaceHISM->SetHiddenInGame(false, true);
+	MainMenuDeepSpaceHISM->SetVisibility(true, true);
+	return GetMainMenuDeepSpaceInstanceCount()
+		== APSMainMenuHeroGalaxy::DeepSpaceStarCount;
 }
 
 bool AAstroGenerator::GenerateMainMenuHeroGalaxy(APlayerController* PlayerController)
 {
-	if (!GetWorld() || !IsValid(MainMenuHeroGalaxyHISM) || !IsValid(PreviewCamera))
+	if (!GetWorld() || !IsValid(MainMenuHeroGalaxyHISM)
+		|| !IsValid(MainMenuDeepSpaceHISM) || !IsValid(MainMenuNebulaHISM)
+		|| !IsValid(PreviewCamera))
 	{
 		return false;
 	}
 
 	APlayerController* Controller = PlayerController
 		? PlayerController : GetWorld()->GetFirstPlayerController();
+	PreviewCamera->bOverrideAspectRatioAxisConstraint = true;
+	PreviewCamera->SetAspectRatioAxisConstraint(AspectRatio_MaintainYFOV);
 	if (bMainMenuHeroGalaxyActive
-		&& GetMainMenuHeroGalaxyInstanceCount() == APSMainMenuHeroGalaxy::TotalStarCount)
+		&& GetMainMenuHeroGalaxyInstanceCount() == APSMainMenuHeroGalaxy::TotalStarCount
+		&& GetMainMenuDeepSpaceInstanceCount() == APSMainMenuHeroGalaxy::DeepSpaceStarCount
+		&& GetMainMenuNebulaInstanceCount() == APSMainMenuHeroGalaxy::NebulaSheetCount)
 	{
+		PreviewCamera->PostProcessSettings.BloomIntensity =
+			APSMainMenuHeroGalaxy::HeroBloomIntensity;
+		PreviewCamera->PostProcessSettings.BloomThreshold =
+			APSMainMenuHeroGalaxy::HeroBloomThreshold;
+		PreviewCamera->PostProcessSettings.bOverride_DepthOfFieldScale = true;
+		PreviewCamera->PostProcessSettings.DepthOfFieldScale = 0.0f;
+		PreviewCamera->PostProcessSettings.bOverride_DepthOfFieldFocalDistance = true;
+		PreviewCamera->PostProcessSettings.DepthOfFieldFocalDistance = 0.0f;
+		PreviewCamera->PostProcessSettings.bOverride_DepthOfFieldDepthBlurRadius = true;
+		PreviewCamera->PostProcessSettings.DepthOfFieldDepthBlurRadius = 0.0f;
+		PreviewCamera->PostProcessSettings.bOverride_MotionBlurAmount = true;
+		PreviewCamera->PostProcessSettings.MotionBlurAmount = 0.0f;
 		PreviewCamera->SetActive(true);
 		if (Controller && Controller->GetViewTarget() != this)
 		{
@@ -1223,6 +1657,9 @@ bool AAstroGenerator::GenerateMainMenuHeroGalaxy(APlayerController* PlayerContro
 	// owns no UGeneratedWorld and no selection address, so switching pages cannot
 	// leak decorative positions into gameplay generation.
 	ClearGeneratedPreview();
+	// ClearGeneratedPreview releases the menu camera overrides as well.
+	PreviewCamera->bOverrideAspectRatioAxisConstraint = true;
+	PreviewCamera->SetAspectRatioAxisConstraint(AspectRatio_MaintainYFOV);
 	SetActorScale3D(FVector::OneVector);
 	if (IsValid(GenerationRoot))
 	{
@@ -1230,33 +1667,44 @@ bool AAstroGenerator::GenerateMainMenuHeroGalaxy(APlayerController* PlayerContro
 	}
 
 	UMaterial* CanonicalMaterial = APSStellarMaterialContract::LoadCanonicalBase(
-		APSStellarMaterialContract::HismBaseObjectPath);
+		APSMainMenuHeroGalaxy::PointMaterialPath);
 	if (IsValid(CanonicalMaterial))
 	{
 		MainMenuHeroGalaxyHISM->SetMaterial(0, CanonicalMaterial);
+		MainMenuDeepSpaceHISM->SetMaterial(0, CanonicalMaterial);
 	}
+
 	if (!IsValid(MainMenuHeroGalaxyHISM->GetStaticMesh()))
 	{
 		UStaticMesh* FallbackMesh = LoadObject<UStaticMesh>(nullptr,
 			TEXT("/Engine/BasicShapes/Sphere.Sphere"));
 		MainMenuHeroGalaxyHISM->SetStaticMesh(FallbackMesh);
 	}
-	if (!IsValid(MainMenuHeroGalaxyHISM->GetStaticMesh()) || !IsValid(CanonicalMaterial))
+	if (!IsValid(MainMenuDeepSpaceHISM->GetStaticMesh()))
+	{
+		MainMenuDeepSpaceHISM->SetStaticMesh(MainMenuHeroGalaxyHISM->GetStaticMesh());
+	}
+
+	if (!IsValid(MainMenuHeroGalaxyHISM->GetStaticMesh())
+		|| !IsValid(MainMenuDeepSpaceHISM->GetStaticMesh())
+		|| !IsValid(CanonicalMaterial))
 	{
 		UE_LOG(LogTemp, Error,
-			TEXT("[APS.MainMenuHero] Cannot build HISM galaxy: mesh=%s material=%s"),
+			TEXT("[APS.MainMenuHero] Cannot build HISM scene: heroMesh=%s fieldMesh=%s starMaterial=%s"),
 			*GetNameSafe(MainMenuHeroGalaxyHISM->GetStaticMesh()),
+			*GetNameSafe(MainMenuDeepSpaceHISM->GetStaticMesh()),
 			*GetNameSafe(CanonicalMaterial));
 		return false;
 	}
 
 	MainMenuHeroGalaxyHISM->ClearInstances();
+	// This local menu spans only kilometres and does not need a translated origin.
+	MainMenuHeroGalaxyHISM->bUseTranslatedInstanceSpace = false;
 	MainMenuHeroGalaxyHISM->NumCustomDataFloats = 6;
 	MainMenuHeroGalaxyHISM->PreAllocateInstancesMemory(
 		APSMainMenuHeroGalaxy::TotalStarCount);
 	MainMenuHeroGalaxyHISM->SetRelativeTransform(FTransform::Identity);
 
-	FRandomStream Random(APSMainMenuHeroGalaxy::CompositionSeed);
 	const double MeshRadius = FMath::Max(
 		static_cast<double>(MainMenuHeroGalaxyHISM->GetStaticMesh()->GetBounds().SphereRadius),
 		1.0);
@@ -1265,8 +1713,9 @@ bool AAstroGenerator::GenerateMainMenuHeroGalaxy(APlayerController* PlayerContro
 	const FLinearColor CoolArm(0.24f, 0.72f, 1.0f, 1.0f);
 	const FLinearColor OuterBlue(0.10f, 0.40f, 0.92f, 1.0f);
 
-	const auto AddHeroStar = [this, &Random, MeshRadius](const FVector& Location,
-		const double VisualRadiusCm, const FLinearColor& Color, const float Emission)
+	const auto AddHeroStar = [this, MeshRadius](const FVector& Location,
+		const double VisualRadiusCm, const FLinearColor& Color, const float Emission,
+		const float PointSeed)
 	{
 		FTransform Transform(FQuat::Identity, Location,
 			FVector(FMath::Max(VisualRadiusCm / MeshRadius, 0.001)));
@@ -1275,8 +1724,7 @@ bool AAstroGenerator::GenerateMainMenuHeroGalaxy(APlayerController* PlayerContro
 		MainMenuHeroGalaxyHISM->SetCustomDataValue(InstanceIndex, 1, Color.G, false);
 		MainMenuHeroGalaxyHISM->SetCustomDataValue(InstanceIndex, 2, Color.B, false);
 		MainMenuHeroGalaxyHISM->SetCustomDataValue(InstanceIndex, 3, Emission, false);
-		MainMenuHeroGalaxyHISM->SetCustomDataValue(
-			InstanceIndex, 4, Random.GetFraction(), false);
+		MainMenuHeroGalaxyHISM->SetCustomDataValue(InstanceIndex, 4, PointSeed, false);
 		MainMenuHeroGalaxyHISM->SetCustomDataValue(InstanceIndex, 5, 0.0f, false);
 	};
 
@@ -1284,81 +1732,55 @@ bool AAstroGenerator::GenerateMainMenuHeroGalaxy(APlayerController* PlayerContro
 	// feathered branches while the bounded Z curve preserves an unmistakable disc.
 	for (int32 Index = 0; Index < APSMainMenuHeroGalaxy::SpiralStarCount; ++Index)
 	{
-		const int32 ArmIndex = Index % APSMainMenuHeroGalaxy::SpiralArmCount;
-		const double RadiusAlpha = FMath::Pow(
-			static_cast<double>(Random.GetFraction()), 0.62);
-		const double Radius = APSMainMenuHeroGalaxy::RadiusCm
-			* (0.055 + RadiusAlpha * 0.945);
-		const double ArmAngle = ArmIndex * UE_TWO_PI
-			/ APSMainMenuHeroGalaxy::SpiralArmCount;
-		const double Scatter = APSMainMenuHeroGalaxy::BellNoise(Random)
-			* FMath::Lerp(0.10, 0.42, RadiusAlpha);
-		const double Angle = ArmAngle + RadiusAlpha * UE_TWO_PI * 1.72 + Scatter;
-		const double RadialJitter = APSMainMenuHeroGalaxy::BellNoise(Random)
-			* APSMainMenuHeroGalaxy::RadiusCm * FMath::Lerp(0.008, 0.035, RadiusAlpha);
-		const double EffectiveRadius = FMath::Max(Radius + RadialJitter, 0.0);
-		const double Thickness = APSMainMenuHeroGalaxy::RadiusCm
-			* FMath::Lerp(0.012, 0.065, RadiusAlpha);
-		const FVector Position(
-			FMath::Cos(Angle) * EffectiveRadius,
-			FMath::Sin(Angle) * EffectiveRadius * 0.78,
-			APSMainMenuHeroGalaxy::BellNoise(Random) * Thickness);
-		const double HotProbability = FMath::Lerp(0.52, 0.12, RadiusAlpha);
-		const bool bWarm = Random.GetFraction() < HotProbability;
+		const APSGrandDesignGalaxy::FSample Sample = APSGrandDesignGalaxy::SampleSpiral(
+			APSMainMenuHeroGalaxy::CompositionSeed, Index);
+		const double HotProbability = FMath::Lerp(0.52, 0.12, Sample.RadiusAlpha);
+		const bool bWarm = Sample.StyleA < HotProbability;
 		const FLinearColor Color = bWarm
 			? APSMainMenuHeroGalaxy::LerpPalette(WarmArm, CoreWhite,
-				(1.0 - RadiusAlpha) * Random.GetFraction())
+				(1.0 - Sample.RadiusAlpha) * Sample.StyleB)
 			: APSMainMenuHeroGalaxy::LerpPalette(CoolArm, OuterBlue,
-				RadiusAlpha * Random.GetFraction());
+				Sample.RadiusAlpha * Sample.StyleB);
 		const double Size = APSMainMenuHeroGalaxy::RadiusCm
 			* FMath::Lerp(0.0028, 0.0068,
-				FMath::Square(static_cast<double>(Random.GetFraction())));
+				FMath::Square(static_cast<double>(Sample.StyleC)));
 		const float Emission = static_cast<float>(FMath::Lerp(0.72, 2.20,
-			FMath::Square(static_cast<double>(Random.GetFraction()))));
-		AddHeroStar(Position, Size, Color, Emission);
+			FMath::Square(static_cast<double>(Sample.StyleD))));
+		AddHeroStar(Sample.UnitPosition * APSMainMenuHeroGalaxy::RadiusCm,
+			Size, Color, Emission, Sample.PointSeed);
 	}
 
 	// A warm, vertically thicker bulge gives the composition a readable focal core
 	// instead of a uniform cloud of equally loud points.
 	for (int32 Index = 0; Index < APSMainMenuHeroGalaxy::BulgeStarCount; ++Index)
 	{
-		const double RadiusAlpha = FMath::Pow(
-			static_cast<double>(Random.GetFraction()), 2.35);
-		const double Angle = Random.GetFraction() * UE_TWO_PI;
-		const double Radius = APSMainMenuHeroGalaxy::RadiusCm * 0.31 * RadiusAlpha;
-		const FVector Position(
-			FMath::Cos(Angle) * Radius,
-			FMath::Sin(Angle) * Radius * 0.72,
-			APSMainMenuHeroGalaxy::BellNoise(Random)
-				* APSMainMenuHeroGalaxy::RadiusCm * 0.075 * (1.0 - RadiusAlpha * 0.55));
+		const APSGrandDesignGalaxy::FSample Sample = APSGrandDesignGalaxy::SampleBulge(
+			APSMainMenuHeroGalaxy::CompositionSeed, Index);
 		const FLinearColor Color = APSMainMenuHeroGalaxy::LerpPalette(
-			WarmArm, CoreWhite, 0.50 + 0.50 * Random.GetFraction());
+			WarmArm, CoreWhite, 0.50 + 0.50 * Sample.StyleA);
 		const double Size = APSMainMenuHeroGalaxy::RadiusCm
-			* FMath::Lerp(0.0040, 0.0105, Random.GetFraction());
-		AddHeroStar(Position, Size, Color,
-			static_cast<float>(FMath::Lerp(1.25, 3.8, Random.GetFraction())));
+			* FMath::Lerp(0.0040, 0.0105, static_cast<double>(Sample.StyleB));
+		AddHeroStar(Sample.UnitPosition * APSMainMenuHeroGalaxy::RadiusCm,
+			Size, Color, static_cast<float>(FMath::Lerp(1.25, 3.8,
+				static_cast<double>(Sample.StyleC))), Sample.PointSeed);
 	}
 
 	// Sparse halo points keep the silhouette soft and create depth beyond the arms.
 	for (int32 Index = 0; Index < APSMainMenuHeroGalaxy::HaloStarCount; ++Index)
 	{
-		const double RadiusAlpha = FMath::Sqrt(static_cast<double>(Random.GetFraction()));
-		const double Angle = Random.GetFraction() * UE_TWO_PI;
-		const double Radius = APSMainMenuHeroGalaxy::RadiusCm
-			* FMath::Lerp(0.48, 1.12, RadiusAlpha);
-		const FVector Position(
-			FMath::Cos(Angle) * Radius,
-			FMath::Sin(Angle) * Radius * 0.82,
-			APSMainMenuHeroGalaxy::BellNoise(Random)
-				* APSMainMenuHeroGalaxy::RadiusCm * 0.18);
+		const APSGrandDesignGalaxy::FSample Sample = APSGrandDesignGalaxy::SampleHalo(
+			APSMainMenuHeroGalaxy::CompositionSeed, Index);
 		const FLinearColor Color = APSMainMenuHeroGalaxy::LerpPalette(
-			CoolArm, OuterBlue, Random.GetFraction());
-		AddHeroStar(Position,
-			APSMainMenuHeroGalaxy::RadiusCm * FMath::Lerp(0.0022, 0.0045, Random.GetFraction()),
-			Color, static_cast<float>(FMath::Lerp(0.38, 1.15, Random.GetFraction())));
+			CoolArm, OuterBlue, Sample.StyleA);
+		AddHeroStar(Sample.UnitPosition * APSMainMenuHeroGalaxy::RadiusCm,
+			APSMainMenuHeroGalaxy::RadiusCm * FMath::Lerp(0.0022, 0.0045,
+				static_cast<double>(Sample.StyleB)), Color,
+			static_cast<float>(FMath::Lerp(0.38, 1.15,
+				static_cast<double>(Sample.StyleC))), Sample.PointSeed);
 	}
 
-	MainMenuHeroGalaxyHISM->BuildTreeIfOutdated(true, true);
+	// Finish this small fixed tree before revealing the menu layer.
+	MainMenuHeroGalaxyHISM->BuildTreeIfOutdated(false, true);
 	MainMenuHeroGalaxyHISM->MarkRenderStateDirty();
 	MainMenuHeroGalaxyHISM->SetHiddenInGame(false, true);
 	MainMenuHeroGalaxyHISM->SetVisibility(true, true);
@@ -1382,7 +1804,8 @@ bool AAstroGenerator::GenerateMainMenuHeroGalaxy(APlayerController* PlayerContro
 	const double Aspect = static_cast<double>(FMath::Max(ViewWidth, 1))
 		/ static_cast<double>(FMath::Max(ViewHeight, 1));
 	const double HalfTanV = FMath::Tan(FMath::DegreesToRadians(
-		static_cast<double>(PreviewCamera->FieldOfView) * 0.5));
+		static_cast<double>(PreviewCamera->FieldOfView) * 0.5))
+		/ FMath::Max(static_cast<double>(PreviewCamera->AspectRatio), 0.1);
 	const double HalfTanH = HalfTanV * Aspect;
 	const double Distance = APSMainMenuHeroGalaxy::RadiusCm
 		* APSMainMenuHeroGalaxy::CameraDistanceRatio;
@@ -1392,18 +1815,33 @@ bool AAstroGenerator::GenerateMainMenuHeroGalaxy(APlayerController* PlayerContro
 	const FVector CameraRight = CameraBasis.GetUnitAxis(EAxis::Y);
 	const FVector CameraUp = CameraBasis.GetUnitAxis(EAxis::Z);
 	const FVector HeroCenter = GetActorLocation();
+	const double HeroAnchorX = FMath::Max(0.47, 0.92 / Aspect + 0.035);
 	// Offset is expressed in angular screen space so 16:9, 21:9 and 32:9 keep the
-	// galaxy centered in the scene area to the right of the navigation rail.
+	// enlarged galaxy close to the navigation rail without clipping either edge.
 	const FVector AimPoint = HeroCenter
 		- CameraRight * (Distance * HalfTanH
-			* APSMainMenuHeroGalaxy::HorizontalScreenOffset)
+			* (HeroAnchorX * 2.0 - 1.0))
 		- CameraUp * (Distance * HalfTanV
 			* APSMainMenuHeroGalaxy::VerticalScreenOffset);
+	const bool bDeepSpaceReady = GenerateMainMenuDeepSpaceField(AimPoint,
+		CameraRight, CameraUp, CameraOut, Distance, HalfTanH, HalfTanV);
+	const bool bNebulaReady = GenerateMainMenuNebulaField(AimPoint,
+		CameraRight, CameraUp, CameraOut, Distance, HalfTanH, HalfTanV);
 	const FVector CameraLocation = AimPoint + CameraOut * Distance;
 	PreviewCamera->SetWorldLocationAndRotation(
 		CameraLocation, (AimPoint - CameraLocation).Rotation());
 	PreviewCamera->PostProcessSettings.BloomIntensity =
 		APSMainMenuHeroGalaxy::HeroBloomIntensity;
+	PreviewCamera->PostProcessSettings.BloomThreshold =
+		APSMainMenuHeroGalaxy::HeroBloomThreshold;
+	PreviewCamera->PostProcessSettings.bOverride_DepthOfFieldScale = true;
+	PreviewCamera->PostProcessSettings.DepthOfFieldScale = 0.0f;
+	PreviewCamera->PostProcessSettings.bOverride_DepthOfFieldFocalDistance = true;
+	PreviewCamera->PostProcessSettings.DepthOfFieldFocalDistance = 0.0f;
+	PreviewCamera->PostProcessSettings.bOverride_DepthOfFieldDepthBlurRadius = true;
+	PreviewCamera->PostProcessSettings.DepthOfFieldDepthBlurRadius = 0.0f;
+	PreviewCamera->PostProcessSettings.bOverride_MotionBlurAmount = true;
+	PreviewCamera->PostProcessSettings.MotionBlurAmount = 0.0f;
 	PreviewCamera->SetActive(true);
 	bPreviewCameraTransitionActive = false;
 	SetActorTickEnabled(false);
@@ -1413,10 +1851,13 @@ bool AAstroGenerator::GenerateMainMenuHeroGalaxy(APlayerController* PlayerContro
 	}
 
 	UE_LOG(LogTemp, Log,
-		TEXT("[APS.MainMenuHero] Generated decorative HISM galaxy instances=%d D/R=%.2f aspect=%.3f"),
+		TEXT("[APS.MainMenuHero] Generated decorative HISM scene galaxy=%d deepSpace=%d nebula=%d D/R=%.2f aspect=%.3f"),
 		GetMainMenuHeroGalaxyInstanceCount(),
+		GetMainMenuDeepSpaceInstanceCount(),
+		GetMainMenuNebulaInstanceCount(),
 		APSMainMenuHeroGalaxy::CameraDistanceRatio, Aspect);
-	return GetMainMenuHeroGalaxyInstanceCount() == APSMainMenuHeroGalaxy::TotalStarCount;
+	return bDeepSpaceReady && bNebulaReady
+		&& GetMainMenuHeroGalaxyInstanceCount() == APSMainMenuHeroGalaxy::TotalStarCount;
 }
 
 bool AAstroGenerator::RegeneratePreview(
@@ -1806,9 +2247,7 @@ void AAstroGenerator::ClearGeneratedPreview()
 	PreviewBodyPresentationCenters.Reset();
 	PreviewBodyPresentationRadii.Reset();
 	PreviewPlanetPresentationRotations.Reset();
-	StabilizedPreviewAtmosphereBody.Reset();
-	StabilizedPreviewAtmosphereRoot.Reset();
-	StabilizedPreviewAtmosphereSignature = 0;
+	StabilizedPreviewAtmospheres.Reset();
 	SelectedPreviewClusterSystemIndex = INDEX_NONE;
 	SelectedPreviewBodyActor.Reset();
 	TArray<AActor*> GeneratedRoots;
@@ -1847,6 +2286,8 @@ bool AAstroGenerator::IsCanonicalStellarProjectionEnabled() const
 
 void AAstroGenerator::BeginCanonicalStellarProjectionBuild()
 {
+	GameplayStellarSuppression.Reset();
+	GameplayUnknownStellarMutationSerial = 0;
 	CanonicalStellarProjection = FAPSCanonicalStellarProjectionDescriptor{};
 	CanonicalStellarProjection.ProxyBuildSerial = ++CanonicalStellarProjectionBuildCounter;
 	bCanonicalStellarProjectionComposed = false;
@@ -1870,9 +2311,10 @@ void AAstroGenerator::NoteCanonicalStellarProxyUpload()
 	++CanonicalStellarProjection.InstanceUploadCount;
 }
 
-void AAstroGenerator::NoteCanonicalStellarProxyMutation()
+void AAstroGenerator::NoteCanonicalStellarProxyMutation(const bool bClassifiedGameplayWrite)
 {
 	++CanonicalStellarProjection.TransformMutationSerial;
+	if (!bClassifiedGameplayWrite) ++GameplayUnknownStellarMutationSerial;
 }
 
 uint32 AAstroGenerator::BuildCanonicalStellarProjectionContextHash() const
@@ -2261,7 +2703,7 @@ bool AAstroGenerator::ComposeCanonicalStellarProjection(
 	// One construction-time batch reprojects both provisional catalog uploads once
 	// the finalized home anchor is known. Telemetry snapshots this serial after ready;
 	// scope/camera/tick paths must leave it unchanged thereafter.
-	NoteCanonicalStellarProxyMutation();
+	NoteCanonicalStellarProxyMutation(true);
 	bCanonicalStellarProjectionComposed = true;
 	return true;
 }
@@ -2289,9 +2731,14 @@ bool AAstroGenerator::RefreshCanonicalClusterProxy(const int32 InstanceIndex)
 		GeneratedStarCluster->CanonicalProjectionFrame, Record->PrimaryStarModel.Radius);
 	BaseTransform.SetScale3D(FVector(AppliedRadiusCm / MeshRadius));
 	GeneratedStarCluster->SystemProxyBaseTransforms[InstanceIndex] = BaseTransform;
+	if (GetGameplayStellarSuppression(MakeGameplayStellarKey(
+		GeneratedStarCluster->StarMeshInstances, InstanceIndex)) != 0)
+	{
+		BaseTransform.SetScale3D(FVector::ZeroVector);
+	}
 	GeneratedStarCluster->StarMeshInstances->UpdateInstanceTransform(
 		InstanceIndex, BaseTransform, false, false, true);
-	NoteCanonicalStellarProxyMutation();
+	NoteCanonicalStellarProxyMutation(true);
 	const double AppliedRadiusSolar = APSCanonicalStellarProjection::UnprojectPhysicalRadiusSolar(
 		GeneratedStarCluster->CanonicalProjectionFrame, AppliedRadiusCm);
 	const double Emission = UStarGenerator::GetFarStarVisualEmission(
@@ -2364,8 +2811,7 @@ void AAstroGenerator::FinalizeCanonicalStellarProjectionBuild()
 				{
 					FTransform ActualTransform;
 					if (!Component->GetInstanceTransform(
-							InstanceIndex, ActualTransform, false)
-						|| ActualTransform.GetScale3D().IsNearlyZero())
+							InstanceIndex, ActualTransform, false))
 					{
 						continue;
 					}
@@ -2388,6 +2834,9 @@ void AAstroGenerator::FinalizeCanonicalStellarProjectionBuild()
 					{
 						continue;
 					}
+					SetGameplayStellarSuppression(MakeGameplayStellarKey(Component, InstanceIndex),
+						EAPSGameplayStellarSuppression::SafetyExclusion, true);
+					if (ActualTransform.GetScale3D() == FVector::ZeroVector) continue;
 					ActualTransform.SetScale3D(FVector::ZeroVector);
 					Component->UpdateInstanceTransform(
 						InstanceIndex, ActualTransform, false, false, true);
@@ -2427,7 +2876,7 @@ void AAstroGenerator::FinalizeCanonicalStellarProjectionBuild()
 					GeneratedStarCluster->SystemProxyBaseTransforms, TEXT("cluster")) : 0;
 			if (SuppressedGalaxy + SuppressedCluster > 0)
 			{
-				NoteCanonicalStellarProxyMutation();
+				NoteCanonicalStellarProxyMutation(true);
 			}
 		}
 	}
@@ -4382,6 +4831,11 @@ void AAstroGenerator::ApplyPreviewFocusPresentation(EAstroPreviewFocus NewFocus)
 			}
 			if (IsValid(Star->StarMesh))
 			{
+				// The generated emitter is rendered as an opaque emissive sphere,
+				// but the lighting comes from a separate directional light. Letting
+				// that sphere cast into its own illumination created a hard circular
+				// shadow on close PLANET views. Keep real terrain/body shadows intact.
+				if (bIsPreviewGeneration) Star->StarMesh->SetCastShadow(false);
 				// Focus changes are stateful. PLANET and STAR can hide meshes below,
 				// therefore every presentation pass must first restore the complete
 				// generated hierarchy before applying the new focus filter.
@@ -5162,6 +5616,7 @@ void AAstroGenerator::RotatePreviewPlanetPresentation(const FQuat& DeltaRotation
 
 bool AAstroGenerator::StabilizePreviewAtmosphere(APlanetaryBody* Body)
 {
+	CSV_SCOPED_TIMING_STAT(APSPreview, AtmosphereStabilize);
 	if (!IsValid(Body) || !IsValid(Body->PlanetaryEnvironmentGenerator)
 		|| !IsValid(Body->PlanetaryEnvironmentGenerator->PlanetAtmosphere))
 	{
@@ -5199,12 +5654,7 @@ bool AAstroGenerator::StabilizePreviewAtmosphere(APlanetaryBody* Body)
 		}
 		Atmosphere->SetActorHiddenInGame(true);
 		Atmosphere->SetActorTickEnabled(false);
-		if (StabilizedPreviewAtmosphereBody.Get() == Body)
-		{
-			StabilizedPreviewAtmosphereBody.Reset();
-			StabilizedPreviewAtmosphereRoot.Reset();
-			StabilizedPreviewAtmosphereSignature = 0;
-		}
+		StabilizedPreviewAtmospheres.Remove(Body);
 	};
 
 	AWorldScapeRoot* PreviewSurface = PersistentPreviewWorldScapeRoot.Get();
@@ -5287,20 +5737,11 @@ bool AAstroGenerator::StabilizePreviewAtmosphere(APlanetaryBody* Body)
 		return false;
 	}
 
-	// Preserve the authored physical height. The former 6% and 0.8% floors both
-	// inflated thin atmospheres in PLANET mode. Keep only a tiny rasterisation floor
-	// for positive authored values; an explicitly zero-height/zero-opacity atmosphere
-	// is hidden above rather than replaced by a synthetic shell.
-	constexpr double MinimumPreviewAtmosphereHeightRatio = 0.001;
-	constexpr double MaximumPreviewAtmosphereHeightRatio = 0.04;
-	constexpr double MinimumSafeShellRatio =
-		1.0 + MinimumPreviewAtmosphereHeightRatio;
-	constexpr double MaximumSafeShellRatio =
-		1.0 + MaximumPreviewAtmosphereHeightRatio;
-	const double HeightRatio = FMath::Clamp(
-		AuthoredAtmosphereHeightKm / FMath::Max(PhysicalRadiusKm, 1.0),
-		MinimumPreviewAtmosphereHeightRatio,
-		MaximumPreviewAtmosphereHeightRatio);
+	// Use the same physical thickness ratio as gameplay: no synthetic floor for
+	// tenuous rocky skies, or 4% ceiling making thick moon height edits ineffective.
+	const double HeightRatio = AuthoredAtmosphereHeightKm / PhysicalRadiusKm;
+	const double MinimumSafeShellRatio = 1.0;
+	const double MaximumSafeShellRatio = (1.0 + HeightRatio) * 1.001;
 	const double TargetAtmosphereRadius = PresentedPlanetRadius * (1.0 + HeightRatio);
 	if (!FMath::IsFinite(TargetAtmosphereRadius)
 		|| TargetAtmosphereRadius <= PresentedPlanetRadius)
@@ -5328,11 +5769,9 @@ bool AAstroGenerator::StabilizePreviewAtmosphere(APlanetaryBody* Body)
 	Atmosphere->PresentationPlanetRadiusCm = static_cast<float>(PresentedPlanetRadius);
 	Atmosphere->PresentationAtmosphereRadiusCm = static_cast<float>(TargetAtmosphereRadius);
 	Atmosphere->PresentationLightIntensity = 1.0f;
-	// The space shader multiplies the integrated Rayleigh/Mie optical depth by this
-	// final scalar. 0.20 turned authored opacity 3-18 into a uniform pale layer over
-	// the whole disc. Keep the physical/type-dependent coefficients and height, but
-	// present them as a readable limb/terminator instead of a colour wash.
-	Atmosphere->PresentationOpacityScale = 0.075f;
+	// Ray lengths and ActorScale are already uniformly scaled by the material.
+	// Do not apply a second preview-only attenuation to the authored opacity.
+	Atmosphere->PresentationOpacityScale = 1.0f;
 	Atmosphere->CameraSamplesCount = FMath::Min(Atmosphere->CameraSamplesCount, 8);
 	Atmosphere->LightSamplesCount = FMath::Min(Atmosphere->LightSamplesCount, 4);
 	Atmosphere->StepsNumAO = FMath::Min(Atmosphere->StepsNumAO, 8.0f);
@@ -5370,8 +5809,52 @@ bool AAstroGenerator::StabilizePreviewAtmosphere(APlanetaryBody* Body)
 	HashFloat(Atmosphere->OzoneContribution);
 	PresentationSignature = HashCombine(PresentationSignature,
 		GetTypeHash(Atmosphere->Absorption));
+	// The per-body cache survives other moons' refreshes. Include every remaining
+	// input read by UpdateMaterialParameters, not only the main PLANET sliders.
+	HashFloat(Atmosphere->CameraSamplesCount);
+	HashFloat(Atmosphere->LightSamplesCount);
+	HashFloat(Atmosphere->SkylightIntensity);
+	HashFloat(Atmosphere->SkylightShadow);
+	HashFloat(Atmosphere->StartDistanceAO);
+	HashFloat(Atmosphere->StepsNumAO);
+	HashFloat(Atmosphere->AirGlowIntensity);
+	PresentationSignature = HashCombine(PresentationSignature,
+		GetTypeHash(Atmosphere->OutterColor));
+	PresentationSignature = HashCombine(PresentationSignature,
+		GetTypeHash(Atmosphere->InsideColor));
+	for (const UStaticMeshComponent* AtmosphereMesh : AtmosphereMeshes)
+	{
+		if (!IsValid(AtmosphereMesh)) continue;
+		// Construction can replace a MID without replacing the shell root.
+		PresentationSignature = HashCombine(PresentationSignature,
+			GetTypeHash(AtmosphereMesh->GetMaterial(0)));
+	}
 	PresentationSignature = HashCombine(PresentationSignature,
 		GetTypeHash(ContextParentStar));
+
+	const FAPSPreviewAtmosphereState* CachedState = StabilizedPreviewAtmospheres.Find(Body);
+	const bool bSameShellIdentity = CachedState
+		&& CachedState->AtmosphereRoot.Get() == AtmosphereRoot
+		&& CachedState->ProfileRoot.Get() == PreviewSurface;
+	if (bSameShellIdentity && CachedState->Signature == PresentationSignature)
+	{
+		// Retained moons translate with the observer. Move their existing shell before
+		// checking its bounds; this does not require material or render-proxy rebuilds.
+		const FVector CenterDelta = PresentedPlanetCenter - SpaceAtmosphereMesh->Bounds.Origin;
+		if (!CenterDelta.ContainsNaN())
+		{
+			Atmosphere->SetActorLocationAndRotation(Atmosphere->GetActorLocation() + CenterDelta,
+				PresentedPlanetRotation.Rotator(), false, nullptr, ETeleportType::TeleportPhysics);
+			SpaceAtmosphereMesh->UpdateBounds();
+			const FVector RemainingDelta = PresentedPlanetCenter - SpaceAtmosphereMesh->Bounds.Origin;
+			if (!RemainingDelta.ContainsNaN() && !RemainingDelta.IsNearlyZero(0.01))
+			{
+				Atmosphere->SetActorLocation(Atmosphere->GetActorLocation() + RemainingDelta,
+					false, nullptr, ETeleportType::TeleportPhysics);
+				SpaceAtmosphereMesh->UpdateBounds();
+			}
+		}
+	}
 
 	const double ExistingShellRadius =
 		APSPreviewGlobe::GetRadialBoundsRadius(SpaceAtmosphereMesh);
@@ -5393,8 +5876,7 @@ bool AAstroGenerator::StabilizePreviewAtmosphere(APlanetaryBody* Body)
 	// applying new physical values over the old root recreated the giant-shell pulse.
 	const bool bCanRetainCommittedShell = bRetainingCommittedSurface
 		&& bExistingShellSafe
-		&& StabilizedPreviewAtmosphereBody.Get() == Body
-		&& StabilizedPreviewAtmosphereRoot.Get() == PreviewSurface;
+		&& bSameShellIdentity;
 	if (bCanRetainCommittedShell)
 	{
 		Atmosphere->LightSource = ContextParentStar;
@@ -5409,9 +5891,8 @@ bool AAstroGenerator::StabilizePreviewAtmosphere(APlanetaryBody* Body)
 		return true;
 	}
 	const bool bCanReuseStableShell = bExistingTargetMatch
-		&& StabilizedPreviewAtmosphereBody.Get() == Body
-		&& StabilizedPreviewAtmosphereRoot.Get() == PreviewSurface
-		&& StabilizedPreviewAtmosphereSignature == PresentationSignature;
+		&& bSameShellIdentity
+		&& CachedState->Signature == PresentationSignature;
 	if (bCanReuseStableShell)
 	{
 		Atmosphere->LightSource = ContextParentStar;
@@ -5458,14 +5939,13 @@ bool AAstroGenerator::StabilizePreviewAtmosphere(APlanetaryBody* Body)
 	// preview directional light already represents this star, so refresh materials
 	// through the direction branch and restore the semantic pointer afterwards.
 	Atmosphere->LightSource = nullptr;
-	Atmosphere->UpdateScale();
+	CSV_CUSTOM_STAT(APSPreview, AtmosphereMaterialRefresh, 1, ECsvCustomStatOp::Accumulate);
+	Atmosphere->UpdatePresentationScale();
 	Atmosphere->LightSource = ContextParentStar;
 
-	// UpdateScale restores the plugin's physical component scale. The preview owns an
-	// absolute actor/root, so applying a second actor scale multiplies the component's
-	// already physical relative scale and produced the 1.55x detached shell. Normalize
-	// the actor once, then solve the visible space component directly from its asset
-	// bounds. The other AtmoScape meshes remain hidden in PLANET presentation.
+	// Optical refresh leaves component transforms untouched. Solve the visible space
+	// shell directly from its asset bounds; no physical-size intermediate transform is
+	// published. The other AtmoScape meshes remain hidden in PLANET presentation.
 	const UStaticMesh* SpaceAtmosphereAsset = SpaceAtmosphereMesh->GetStaticMesh();
 	const double AssetShellRadius = IsValid(SpaceAtmosphereAsset)
 		? SpaceAtmosphereAsset->GetBounds().BoxExtent.GetMax() : 0.0;
@@ -5548,14 +6028,14 @@ bool AAstroGenerator::StabilizePreviewAtmosphere(APlanetaryBody* Body)
 		if (bShowSpaceShell)
 		{
 			AtmosphereMesh->Activate(true);
-			AtmosphereMesh->MarkRenderStateDirty();
 		}
 	}
 	Atmosphere->SetActorTickEnabled(false);
-	StabilizedPreviewAtmosphereBody = Body;
-	StabilizedPreviewAtmosphereRoot = PreviewSurface;
-	StabilizedPreviewAtmosphereSignature = PresentationSignature;
-	UE_LOG(LogTemp, Display,
+	FAPSPreviewAtmosphereState& CommittedState = StabilizedPreviewAtmospheres.FindOrAdd(Body);
+	CommittedState.AtmosphereRoot = AtmosphereRoot;
+	CommittedState.ProfileRoot = PreviewSurface;
+	CommittedState.Signature = PresentationSignature;
+	UE_LOG(LogTemp, VeryVerbose,
 		TEXT("[APS.Preview.Atmosphere] Stabilized body=%s planetRadius=%.0f shellRadius=%.0f ratio=%.4f centerError=%.2f source=%s"),
 		*GetNameSafe(Body), PresentedPlanetRadius, FinalShellRadius,
 		FinalShellRatio, CenterError,
@@ -6113,12 +6593,31 @@ bool AAstroGenerator::BuildPreviewGlobeProxy(APlanetaryBody* Body,
 	{
 		return false;
 	}
+	UStaticMeshComponent* BodyMesh = Cast<UStaticMeshComponent>(
+		Body->GetComponentByClass(UStaticMeshComponent::StaticClass()));
+	if (!IsValid(BodyMesh)) return false;
+	BodyMesh->UpdateBounds();
+	const FTransform WorldTransform(Body->GetActorQuat(), BodyMesh->Bounds.Origin,
+		FVector::OneVector);
+	// Initialize the inactive component's actual frame BEFORE binding the shared
+	// physical-coordinate MID. Later observer focus transforms update this binding.
+	NewTerrain->SetVisibility(false, false);
+	NewTerrain->SetHiddenInGame(true, false);
+	NewOcean->SetVisibility(false, false);
+	NewOcean->SetHiddenInGame(true, false);
+	NewTerrain->SetWorldTransform(WorldTransform, false, nullptr, ETeleportType::TeleportPhysics);
+	NewOcean->SetWorldTransform(WorldTransform, false, nullptr, ETeleportType::TeleportPhysics);
 	UMaterialInstanceDynamic* NewTerrainMaterial =
 		APSPreviewGlobe::CreateTerrainMaterial(
 			NewTerrain, SurfaceGenerator->ResolvedTerrainMaterialInstance,
 			PreviewTerrainBaseMaterial.Get(),
-			SurfaceGenerator->ResolvedSurfaceProfile);
+			SurfaceGenerator->ResolvedSurfaceProfile, Body->WorldScapePresentationScale);
 	const bool bRenderOcean = bHasOcean && MeshData.OceanIndices.Num() >= 3;
+	const APlanet* LiquidPlanet = Cast<APlanet>(Body);
+	const bool bMigrateGeneratedLiquid = bRenderOcean && APSSharedGeneratedLiquidMaterial::ShouldMigrate(
+		APSSharedGeneratedLiquidMaterial::ResolveSource(SurfaceGenerator->ResolvedSurfaceProfile,
+			SurfaceGenerator->SurfaceProfileCatalog), SurfaceGenerator->ResolvedSurfaceProfile,
+		LiquidPlanet && LiquidPlanet->IsManual);
 	UMaterialInstanceDynamic* NewOceanMaterial = bRenderOcean
 		? APSPreviewGlobe::CreateLiquidMaterial(NewOcean,
 			SurfaceGenerator->ResolvedOceanMaterialInstance,
@@ -6127,7 +6626,9 @@ bool AAstroGenerator::BuildPreviewGlobeProxy(APlanetaryBody* Body,
 				: SurfaceGenerator->ResolvedSurfaceProfile.LiquidType == EAPSPlanetLiquidType::Ammonia
 					? PreviewAmmoniaBaseMaterial.Get()
 					: SurfaceGenerator->ResolvedSurfaceProfile.LiquidType == EAPSPlanetLiquidType::Lava
-						? PreviewLavaBaseMaterial.Get() : nullptr)
+						? PreviewLavaBaseMaterial.Get() : nullptr,
+			SurfaceGenerator->ResolvedSurfaceProfile, Body->WorldScapePresentationScale,
+			LiquidPlanet && LiquidPlanet->IsManual, bMigrateGeneratedLiquid)
 		: nullptr;
 	if (!IsValid(NewTerrainMaterial) || (bRenderOcean && !IsValid(NewOceanMaterial)))
 	{
@@ -6161,10 +6662,7 @@ bool AAstroGenerator::BuildPreviewGlobeProxy(APlanetaryBody* Body,
 		NewOcean->SetMaterial(0, nullptr);
 	}
 
-	UStaticMeshComponent* BodyMesh = Cast<UStaticMeshComponent>(
-		Body->GetComponentByClass(UStaticMeshComponent::StaticClass()));
-	if (!IsValid(BodyMesh)
-		|| NewTerrain->GetProcMeshSection(0) == nullptr
+	if (NewTerrain->GetProcMeshSection(0) == nullptr
 		|| NewTerrain->GetMaterial(0) != NewTerrainMaterial
 		|| (bRenderOcean && (NewOcean->GetProcMeshSection(0) == nullptr
 			|| NewOcean->GetMaterial(0) != NewOceanMaterial)))
@@ -6178,11 +6676,6 @@ bool AAstroGenerator::BuildPreviewGlobeProxy(APlanetaryBody* Body,
 		return false;
 	}
 
-	BodyMesh->UpdateBounds();
-	const FTransform WorldTransform(Body->GetActorQuat(), BodyMesh->Bounds.Origin,
-		FVector::OneVector);
-	NewTerrain->SetWorldTransform(WorldTransform, false, nullptr, ETeleportType::TeleportPhysics);
-	NewOcean->SetWorldTransform(WorldTransform, false, nullptr, ETeleportType::TeleportPhysics);
 	NewTerrain->UpdateBounds();
 	if (bRenderOcean) NewOcean->UpdateBounds();
 
@@ -6230,8 +6723,13 @@ bool AAstroGenerator::BuildPreviewGlobeProxy(APlanetaryBody* Body,
 	SyncPreviewGlobeProxyTransforms();
 	SetPreviewGlobeProxyVisible(PreviewFocus == EAstroPreviewFocus::HomePlanet);
 
-	UE_LOG(LogTemp, Display,
-		TEXT("[APS.WorldGeneration] Closed preview globe ready body=%s profileSignature=%u meshSignature=%u faceResolution=%d vertices=%d indices=%d previewTerrain=%s previewOcean=%s resolvedTerrain=%s resolvedOcean=%s"),
+	const bool bSharedMaterialContract = APSSharedTerrainMaterial::IsSharedStack(NewTerrainMaterial)
+		&& NewTerrainMaterial->GetMaterial() == SurfaceGenerator->ResolvedTerrainMaterialInstance->GetMaterial();
+	UE_CLOG(!bSharedMaterialContract, LogTemp, Error,
+		TEXT("[APS.SharedTerrain] DIAGNOSTIC LEGACY globe committed body=%s; shared-material requirement is NOT met"),
+		*GetNameSafe(Body));
+	UE_CLOG(bSharedMaterialContract, LogTemp, Display,
+		TEXT("[APS.WorldGeneration] Shared-native closed preview globe ready body=%s profileSignature=%u meshSignature=%u faceResolution=%d vertices=%d indices=%d previewTerrain=%s previewOcean=%s resolvedTerrain=%s resolvedOcean=%s"),
 		*GetNameSafe(Body), State->ProfileSignature, State->MeshSignature,
 		State->FaceResolution, State->VertexCount, State->IndexCount,
 		*GetNameSafe(NewTerrainMaterial),
@@ -7077,6 +7575,37 @@ void AAstroGenerator::UpdatePreviewWorldScape()
 			Body->RadiusKM, static_cast<double>(Body->PlanetRadiusKM)) * 100000.0;
 		Body->WorldScapePresentationScale = FMath::Clamp(
 			VisualRadiusCm / FMath::Max(PhysicalRadiusCm, 1.0), 1.0e-9, 1.0);
+
+		const FAPSResolvedPlanetSurfaceProfile PreviewProfile =
+			UAPSPlanetSurfaceProfileResolver::ResolveForBody(Body, SurfaceGenerator->SurfaceProfileCatalog);
+		// Gate the actual family MIC, not only its master. Magma may own a distinct
+		// static permutation; a ready Terra/master is not readiness for that variant.
+		UMaterialInterface* SelectedTerrainMaterial = APSSharedTerrainMaterial::IsSharedStack(PreviewTerrainBaseMaterial)
+			? LoadObject<UMaterialInterface>(nullptr, APSSharedTerrainMaterial::TemplatePath(PreviewProfile.Archetype))
+			: PreviewTerrainBaseMaterial.Get();
+		UMaterialInterface* SelectedLiquidMaterial =
+			PreviewProfile.LiquidType == EAPSPlanetLiquidType::Water ? PreviewWaterBaseMaterial.Get()
+			: PreviewProfile.LiquidType == EAPSPlanetLiquidType::Ammonia ? PreviewAmmoniaBaseMaterial.Get()
+			: PreviewProfile.LiquidType == EAPSPlanetLiquidType::Lava ? PreviewLavaBaseMaterial.Get() : nullptr;
+		const APlanet* LiquidPlanet = Cast<APlanet>(Body);
+		const bool bUseSharedLiquid = APSSharedGeneratedLiquidMaterial::ShouldMigrate(
+			APSSharedGeneratedLiquidMaterial::ResolveSource(PreviewProfile, SurfaceGenerator->SurfaceProfileCatalog),
+			PreviewProfile, LiquidPlanet && LiquidPlanet->IsManual);
+		if (bUseSharedLiquid)
+			SelectedLiquidMaterial = LoadObject<UMaterialInterface>(nullptr,
+				APSSharedGeneratedLiquidMaterial::TemplatePath(PreviewProfile.LiquidType));
+		const bool bLiquidReady = bUseSharedLiquid
+			? APSSharedGeneratedLiquidMaterial::IsRenderReady(SelectedLiquidMaterial, PreviewProfile.LiquidType, GetWorld())
+			: APSPreviewGlobe::IsMaterialRenderReady(SelectedLiquidMaterial, GetWorld());
+		if (!APSPreviewGlobe::IsMaterialRenderReady(SelectedTerrainMaterial, GetWorld())
+			|| (PreviewProfile.LiquidType != EAPSPlanetLiquidType::None
+				&& PreviewProfile.LandCoverage < 0.995f
+				&& !bLiquidReady))
+		{
+			// Keep the old complete globe and the queued build. Do not regenerate
+			// ~100k vertices every frame while the asynchronous material job is pending.
+			return;
+		}
 
 		SurfaceGenerator->PlanetaryBody = Body;
 		const uint32 PreviousProfileSignature =
@@ -9412,6 +9941,9 @@ AStarSystem* AAstroGenerator::MaterializeClusterStarSystem(int32 InstanceIndex)
 	StarSystem->AddNewStar(Star);
 	Star->AttachToActor(StarSystem, FAttachmentTransformRules::KeepWorldTransform);
 
+	SetGameplayStellarSuppression(MakeGameplayStellarKey(
+		GeneratedStarCluster->StarMeshInstances, InstanceIndex),
+		EAPSGameplayStellarSuppression::Materialized, true);
 	FTransform HiddenTransform;
 	if (GeneratedStarCluster->StarMeshInstances->GetInstanceTransform(
 		InstanceIndex, HiddenTransform, false))
@@ -9420,7 +9952,7 @@ AStarSystem* AAstroGenerator::MaterializeClusterStarSystem(int32 InstanceIndex)
 		GeneratedStarCluster->StarMeshInstances->UpdateInstanceTransform(
 			InstanceIndex, HiddenTransform, false, true, true);
 		GeneratedStarCluster->StarMeshInstances->BuildTreeIfOutdated(true, true);
-		NoteCanonicalStellarProxyMutation();
+		NoteCanonicalStellarProxyMutation(true);
 	}
 	Record->bMaterialized = true;
 	Record->MaterializedSystem = StarSystem;
@@ -9453,12 +9985,20 @@ bool AAstroGenerator::DematerializeClusterStarSystem(int32 InstanceIndex)
 	{
 		return false;
 	}
+	Record->bMaterialized = false;
+	Record->MaterializedSystem.Reset();
+	const FAPSGameplayStellarKey RestoredKey = MakeGameplayStellarKey(
+		GeneratedStarCluster->StarMeshInstances, InstanceIndex);
+	SetGameplayStellarSuppression(RestoredKey,
+		EAPSGameplayStellarSuppression::Materialized, false);
+	if (GetGameplayStellarSuppression(RestoredKey) != 0)
+	{
+		RestoredTransform.SetScale3D(FVector::ZeroVector);
+	}
 	GeneratedStarCluster->StarMeshInstances->UpdateInstanceTransform(
 		InstanceIndex, RestoredTransform, false, true, true);
 	GeneratedStarCluster->StarMeshInstances->BuildTreeIfOutdated(true, true);
-	NoteCanonicalStellarProxyMutation();
-	Record->bMaterialized = false;
-	Record->MaterializedSystem.Reset();
+	NoteCanonicalStellarProxyMutation(true);
 	return true;
 }
 
@@ -10643,6 +11183,8 @@ void AAstroGenerator::GenerateStarSystemByModel()
 			// no second visible representation of one canonical system is introduced.
 			if (UHierarchicalInstancedStaticMeshComponent* Hism = PendingHomeCluster->StarMeshInstances)
 			{
+				SetGameplayStellarSuppression(MakeGameplayStellarKey(Hism, PendingHomeClusterInstanceIndex),
+					EAPSGameplayStellarSuppression::Materialized, true);
 				if (Hism->NumCustomDataFloats > 5)
 				{
 					Hism->SetCustomDataValue(PendingHomeClusterInstanceIndex, 5,
@@ -10679,7 +11221,7 @@ void AAstroGenerator::GenerateStarSystemByModel()
 						{
 							Hism->UpdateInstanceTransform(PendingHomeClusterInstanceIndex,
 								LocalProxyTransform, false, true, true);
-							NoteCanonicalStellarProxyMutation();
+							NoteCanonicalStellarProxyMutation(true);
 						}
 					}
 				}
@@ -11229,7 +11771,13 @@ bool AAstroGenerator::ResolveSpawnLocation(const ASpaceship* NewHomeSpaceship, F
 	ResolvedSurfaceSpawnBody.Reset();
 	ResolvedSurfaceSpawnOutward = FVector::ZeroVector;
 	ResolvedSurfaceSpawnViewDirection = FVector::ZeroVector;
-	const auto ResolveSurfaceLocation = [this](APlanetaryBody* Body, const FVector& PreferredOutward,
+	const UMainGameplayInstance* SpawnGameplayInstance = GetWorld() && GetWorld()->GetGameInstance()
+		? GetWorld()->GetGameInstance()->GetSubsystem<UMainGameplayInstance>() : nullptr;
+	// Saved player placement has its own authority; daylight is a new-game default,
+	// never a reason to move a restored player or to reject an existing night save.
+	const bool bRequireSunlitLanding = !(SpawnGameplayInstance
+		&& SpawnGameplayInstance->bPendingSavedWorldReplay);
+	const auto ResolveSurfaceLocation = [this, bRequireSunlitLanding](APlanetaryBody* Body, const FVector& PreferredOutward,
 		FVector& OutLocation)
 	{
 		if (!IsValid(Body))
@@ -11259,6 +11807,64 @@ bool AAstroGenerator::ResolveSpawnLocation(const ASpaceship* NewHomeSpaceship, F
 
 		const double SurfaceRadiusCm = Root->PlanetScale;
 		const FVector SurfaceCenter = Root->GetActorLocation();
+		APlanet* FamilyPlanet = Cast<APlanet>(Body);
+		if (const AMoon* LandingMoon = Cast<AMoon>(Body))
+		{
+			FamilyPlanet = LandingMoon->ParentPlanet;
+		}
+		const AStar* LandingStar = IsValid(FamilyPlanet) && IsValid(FamilyPlanet->ParentStar)
+			? FamilyPlanet->ParentStar : HomeStar;
+		constexpr double MinimumSunElevationSine = 0.35; // ~20 degrees above the horizon.
+		FVector SunPosition = FVector::ZeroVector;
+		TArray<APlanetaryBody*, TInlineAllocator<16>> EclipseBodies;
+		if (bRequireSunlitLanding)
+		{
+			if (!IsValid(LandingStar))
+			{
+				UE_LOG(LogTemp, Error, TEXT("[APS.Civilization.SurfaceSpawn] no parent star for daylight start body=%s"), *GetNameSafe(Body));
+				return false;
+			}
+			SunPosition = LandingStar->GetActorLocation();
+			const FVector ToSun = SunPosition - SurfaceCenter;
+			if (ToSun.ContainsNaN() || ToSun.SizeSquared() <= FMath::Square(SurfaceRadiusCm))
+			{
+				UE_LOG(LogTemp, Error, TEXT("[APS.Civilization.SurfaceSpawn] invalid daylight geometry body=%s star=%s"), *GetNameSafe(Body), *GetNameSafe(LandingStar));
+				return false;
+			}
+			Outward = ToSun.GetSafeNormal();
+			if (IsValid(FamilyPlanet))
+			{
+				if (FamilyPlanet != Body) EclipseBodies.Add(FamilyPlanet);
+				for (AMoon* SiblingMoon : FamilyPlanet->Moons)
+				{
+					if (IsValid(SiblingMoon) && SiblingMoon != Body) EclipseBodies.Add(SiblingMoon);
+				}
+			}
+		}
+		const auto HasDirectSunlight = [&](const FVector& Direction, const double HeightCm)
+		{
+			if (!bRequireSunlitLanding) return true;
+			const FVector GroundPoint = SurfaceCenter + Direction * (SurfaceRadiusCm + HeightCm);
+			const FVector ToSun = SunPosition - GroundPoint;
+			const double SunDistance = ToSun.Size();
+			if (!FMath::IsFinite(SunDistance) || SunDistance <= UE_DOUBLE_SMALL_NUMBER) return false;
+			const FVector SunDirection = ToSun / SunDistance;
+			if (FVector::DotProduct(Direction, SunDirection) < MinimumSunElevationSine) return false;
+			// Reject the parent/sibling eclipse as well as the night hemisphere. This
+			// is a bounded analytic check, not a collision trace against streamed meshes.
+			for (const APlanetaryBody* Occluder : EclipseBodies)
+			{
+				const FVector ToOccluder = Occluder->GetActorLocation() - GroundPoint;
+				const double AlongRay = FVector::DotProduct(ToOccluder, SunDirection);
+				const double OccluderRadius = Occluder->GetWorldScapeBodyRadiusCm();
+				if (AlongRay > 0.0 && AlongRay < SunDistance && OccluderRadius > 0.0
+					&& (ToOccluder - SunDirection * AlongRay).SizeSquared() < FMath::Square(OccluderRadius))
+				{
+					return false;
+				}
+			}
+			return true;
+		};
 		const bool bHasLiquid =
 			Surface->ResolvedSurfaceProfile.LiquidType != EAPSPlanetLiquidType::None;
 		const double OceanHeightCm = bHasLiquid
@@ -11306,10 +11912,12 @@ bool AAstroGenerator::ResolveSpawnLocation(const ASpaceship* NewHomeSpaceship, F
 			{
 				return Evaluation;
 			}
+			if (!HasDirectSunlight(Evaluation.Outward, 0.0)) return Evaluation;
 
 			Evaluation.HeightCm = Root->GetGroundHeight(
 				SurfaceCenter + Evaluation.Outward * SurfaceRadiusCm, false);
 			if (!FMath::IsFinite(Evaluation.HeightCm)
+				|| !HasDirectSunlight(Evaluation.Outward, Evaluation.HeightCm)
 				|| (bHasLiquid
 					&& Evaluation.HeightCm - OceanHeightCm < MinimumLandClearanceCm))
 			{
@@ -11426,9 +12034,8 @@ bool AAstroGenerator::ResolveSpawnLocation(const ASpaceship* NewHomeSpaceship, F
 			}
 		};
 
-		// Search the requested HQ/station side first, expanding from hundreds of
-		// metres to tens of kilometres before considering a deterministic whole-body
-		// fallback. A liquid shell is presentation only and can never be a landing site.
+		// New starts search the subsolar side, then the daylight cap. Saved replay
+		// retains its old selection contract. A liquid shell is never a landing site.
 		FVector TangentA;
 		FVector TangentB;
 		Outward.FindBestAxisVectors(TangentA, TangentB);
@@ -11466,15 +12073,17 @@ bool AAstroGenerator::ResolveSpawnLocation(const ASpaceship* NewHomeSpaceship, F
 			for (int32 CandidateIndex = 0;
 				CandidateIndex < GlobalCandidateCount; ++CandidateIndex)
 			{
-				const double UnitZ = 1.0 - 2.0
+				const double UnitZ = 1.0 - (bRequireSunlitLanding
+					? 1.0 - MinimumSunElevationSine : 2.0)
 					* (static_cast<double>(CandidateIndex) + 0.5)
 					/ static_cast<double>(GlobalCandidateCount);
 				const double UnitRadius = FMath::Sqrt(
 					FMath::Max(0.0, 1.0 - UnitZ * UnitZ));
 				const double Azimuth = GoldenAngle * static_cast<double>(CandidateIndex);
-				GlobalCandidateDirections.Add(FVector(
-					UnitRadius * FMath::Cos(Azimuth),
-					UnitRadius * FMath::Sin(Azimuth), UnitZ));
+				GlobalCandidateDirections.Add(bRequireSunlitLanding
+					? Outward * UnitZ + TangentA * (UnitRadius * FMath::Cos(Azimuth))
+						+ TangentB * (UnitRadius * FMath::Sin(Azimuth))
+					: FVector(UnitRadius * FMath::Cos(Azimuth), UnitRadius * FMath::Sin(Azimuth), UnitZ));
 			}
 			ChooseBestCandidate(GlobalCandidateDirections, true, BestCandidate);
 		}
@@ -11482,11 +12091,11 @@ bool AAstroGenerator::ResolveSpawnLocation(const ASpaceship* NewHomeSpaceship, F
 		if (!BestCandidate.bValid)
 		{
 			UE_LOG(LogTemp, Error,
-				TEXT("[APS.Civilization.SurfaceSpawn] no dry, non-flat, bounded-slope WorldScape landing patch body=%s archetype=%s liquid=%d oceanHeight=%.2f requiredRelief=[%.0f,%.0f,%.0f]cm"),
+				TEXT("[APS.Civilization.SurfaceSpawn] no dry, non-flat, bounded-slope WorldScape landing patch body=%s archetype=%s liquid=%d oceanHeight=%.2f requiredRelief=[%.0f,%.0f,%.0f]cm daylightRequired=%d"),
 				*GetNameSafe(Body),
 				*UEnum::GetValueAsString(Surface->ResolvedSurfaceProfile.Archetype),
 				bHasLiquid ? 1 : 0, OceanHeightCm,
-				MinimumRange10mCm, MinimumRange100mCm, MinimumRange250mCm);
+				MinimumRange10mCm, MinimumRange100mCm, MinimumRange250mCm, bRequireSunlitLanding ? 1 : 0);
 			return false;
 		}
 
@@ -11515,13 +12124,14 @@ bool AAstroGenerator::ResolveSpawnLocation(const ASpaceship* NewHomeSpaceship, F
 		ResolvedSurfaceSpawnOutward = Outward;
 		ResolvedSurfaceSpawnViewDirection = BestCandidate.ViewDirection;
 		UE_LOG(LogTemp, Log,
-			TEXT("[APS.Civilization.SurfaceSpawn] body=%s worldScape=sampled search=%s radius=%.0f height=%.0f ocean=%.0f clearance=%.0f relief10m=%.0f relief100m=%.0f relief250m=%.0f maxSlope=%.4f location=%s"),
+			TEXT("[APS.Civilization.SurfaceSpawn] body=%s worldScape=sampled search=%s radius=%.0f height=%.0f ocean=%.0f clearance=%.0f relief10m=%.0f relief100m=%.0f relief250m=%.0f maxSlope=%.4f location=%s daylightRequired=%d sunElevationSine=%.4f"),
 			*GetNameSafe(Body), bUsedGlobalSearch ? TEXT("global") : TEXT("local"),
 			SurfaceRadiusCm, TerrainHeightCm, OceanHeightCm, CapsuleClearanceCm,
 			BestCandidate.Range10mCm, BestCandidate.Range100mCm,
 			BestCandidate.Range250mCm,
 			BestCandidate.MaxSlope,
-			*OutLocation.ToCompactString());
+			*OutLocation.ToCompactString(), bRequireSunlitLanding ? 1 : 0,
+			bRequireSunlitLanding ? FVector::DotProduct(Outward, (SunPosition - OutLocation).GetSafeNormal()) : 0.0);
 		return true;
 	};
 	const auto GetFirstHomeMoon = [this]() -> AMoon*
@@ -12782,9 +13392,13 @@ bool AAstroGenerator::SpawnStartInteractiveActors(TSharedPtr<FPlanetModel> Start
 			PlayerController->SetControlRotation(InitialViewRotation);
 			PlayerController->SetViewTarget(PlayerCharacter);
 		}
+		const UMainGameplayInstance* GameplayInstance = World->GetGameInstance()
+			? World->GetGameInstance()->GetSubsystem<UMainGameplayInstance>() : nullptr;
+		const bool bRestoringSavedPlayer = GameplayInstance
+			&& GameplayInstance->bPendingSavedWorldReplay;
 		if ((CharSpawnPlace == ECharSpawnPlace::PlanetSurface
 				|| CharSpawnPlace == ECharSpawnPlace::MoonSurface)
-			&& ResolvedSurfaceSpawnBody.IsValid())
+			&& ResolvedSurfaceSpawnBody.IsValid() && !bRestoringSavedPlayer)
 		{
 			ScheduleSurfaceSpawnFinalization(PlayerCharacter,
 				ResolvedSurfaceSpawnBody.Get(), ResolvedSurfaceSpawnOutward,
@@ -12794,8 +13408,6 @@ bool AAstroGenerator::SpawnStartInteractiveActors(TSharedPtr<FPlanetModel> Start
 			TEXT("[APS.Civilization] Initial gameplay view direction=%s up=%s rotation=%s targetPlanet=%s"),
 			*InitialViewDirection.GetSafeNormal().ToCompactString(), *CameraUp.ToCompactString(),
 			*InitialViewRotation.ToCompactString(), *GetNameSafe(HomePlanet));
-		const UMainGameplayInstance* GameplayInstance = World->GetGameInstance()
-			? World->GetGameInstance()->GetSubsystem<UMainGameplayInstance>() : nullptr;
 		const USpawnParameters* CommittedSpawnParameters = GameplayInstance
 			? GameplayInstance->SpawnParameters : nullptr;
 		if (!CommittedSpawnParameters

@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Subsystems/WorldSubsystem.h"
 #include "APSPreviewVisibility.h"
+#include "APSGameplayNativeStars.h"
 #include "APSStellarVisualSubsystem.generated.h"
 
 class ADirectionalLight;
@@ -51,6 +52,36 @@ public:
 private:
 	void UpdateGameplayStellarView();
 	void ResetGameplayStellarView();
+	void ResetGameplayNativeStars();
+	void BeginGameplayNativeStars(AAstroGenerator* Generator, bool bRefreshDemand,
+		const FVector& Camera, double PixelTangent, const FQuat& ViewRotation,
+		double TanHalfHorizontal, double TanHalfVertical);
+	bool ObserveGameplayNativePoint(AAstroGenerator* Generator,
+		const FAPSGameplayStellarKey& Key, const FTransform& BaseTransform,
+		const FTransform& CurrentTransform, bool& bOwned);
+	void CollectGameplayNativeDemand(const FAPSGameplayStellarKey& Key,
+		const FTransform& BaseTransform, double PhysicalRadiusCm, double PixelRadius);
+	void PresentGameplayNativeStars(AAstroGenerator* Generator);
+	TArray<FAPSGameplayNativePair> GameplayNativePairs;
+	TMap<FAPSGameplayStellarKey, int32> GameplayNativeOwners;
+	TArray<FAPSGameplayNativeDemand> GameplayNativeDemand;
+	// One scalar per rendered slot; procedural records are resolved once per build.
+	TMap<TWeakObjectPtr<UHierarchicalInstancedStaticMeshComponent>, TArray<double>> GameplayNativePhysicalRadii;
+	FVector GameplayNativeCamera{FVector::ZeroVector};
+	double GameplayNativePixelTangent{0.0};
+	FQuat GameplayNativeViewRotation{FQuat::Identity};
+	FQuat GameplayNativeDemandRotation{FQuat::Identity};
+	double GameplayNativeTanHalfHorizontal{0.0};
+	double GameplayNativeTanHalfVertical{0.0};
+	int32 GameplayNativeLastPresentedCount{INDEX_NONE};
+	int32 GameplayNativeLastDemandCount{INDEX_NONE};
+	uint64 GameplayNativeMutationSerial{0};
+	uint64 GameplayNativeUnknownMutationSerial{0};
+	uint32 GameplayNativeTopologyHash{0};
+	uint64 GameplayNativeBindFrame{MAX_uint64};
+	int32 GameplayNativeBindAttempts{0};
+	int32 GameplayNativeOverflowResolved{0};
+	bool bGameplayNativeInitialized{false};
 	TWeakObjectPtr<AAstroGenerator> GameplayStellarGenerator;
 	TArray<FAPSGameplayStellarLayer> GameplayStellarLayers;
 	FVector LastStellarObserverFromHome{FVector::ZeroVector};
@@ -78,6 +109,8 @@ private:
 		float DeltaTime);
 
 	TWeakObjectPtr<ADirectionalLight> DirectionalLight;
+	/** One bootstrap per committed generated hierarchy; never reset for a star switch. */
+	TWeakObjectPtr<AAstroGenerator> InitializedGameplayLightGenerator;
 	/**
 	 * Menu-only camera fill. It keeps the selected WorldScape material readable on
 	 * the physical night side without moving or replacing the parent-star light.

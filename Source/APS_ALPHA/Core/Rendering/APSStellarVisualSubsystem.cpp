@@ -11,6 +11,7 @@
 #include "Components/DirectionalLightComponent.h"
 #include "Components/PointLightComponent.h"
 #include "Components/SphereComponent.h"
+#include "Components/StaticMeshComponent.h"
 #include "Engine/DirectionalLight.h"
 #include "Engine/PointLight.h"
 #include "Engine/World.h"
@@ -135,12 +136,29 @@ void UAPSStellarVisualSubsystem::Tick(float DeltaTime)
 	}
 
 	const FVector LightRayDirection = (ObserverLocation - TargetStarLocation).GetSafeNormal();
+	const AAstroGenerator* FullScaleGenerator = GameplayStellarGenerator.Get();
+	// A committed generated world must not initially display the map's unrelated
+	// sun and then fade/rotate to its own star over several seconds. The existing
+	// gameplay adapter identifies the accepted full-scale hierarchy; additionally
+	// exclude authored SinglePlay and every preview path. A weak per-generator
+	// latch leaves later star changes, movement and rebases on the original smoothing.
+	const bool bInitializeGeneratedLight = IsValid(FullScaleGenerator)
+		&& !ActivePreviewBody
+		&& FullScaleGenerator->bGenerateFullScaledWorld
+		&& !FullScaleGenerator->bIntegrateStartPlanet
+		&& !FullScaleGenerator->ActorHasTag(TEXT("WorldGenerationPreview"))
+		&& !FullScaleGenerator->UsesContinuousPreviewFrame()
+		&& FullScaleGenerator->GetCanonicalStellarProjectionDescriptor().bConsumedFinalizedDataset
+		&& InitializedGameplayLightGenerator.Get() != FullScaleGenerator
+		&& !LightRayDirection.IsNearlyZero();
+	const float PreviousKeyIntensity = LightComponent->Intensity;
+	const FRotator PreviousKeyRotation = Light->GetActorRotation();
 	if (!LightRayDirection.IsNearlyZero())
 	{
 		const FRotator DesiredRotation = LightRayDirection.Rotation();
 		const FRotator CurrentRotation = Light->GetActorRotation();
-		FRotator UpdatedRotation = FMath::RInterpTo(
-			CurrentRotation, DesiredRotation, DeltaTime, 1.6f);
+		FRotator UpdatedRotation = bInitializeGeneratedLight ? DesiredRotation
+			: FMath::RInterpTo(CurrentRotation, DesiredRotation, DeltaTime, 1.6f);
 		if (UpdatedRotation.Equals(DesiredRotation, 0.05f))
 		{
 			UpdatedRotation = DesiredRotation;
@@ -152,8 +170,8 @@ void UAPSStellarVisualSubsystem::Tick(float DeltaTime)
 			Light->SetActorRotation(UpdatedRotation);
 		}
 	}
-	FLinearColor UpdatedLightColor = FMath::CInterpTo(
-		SmoothedLightColor, TargetLightColor, DeltaTime, 1.3f);
+	FLinearColor UpdatedLightColor = bInitializeGeneratedLight ? TargetLightColor
+		: FMath::CInterpTo(SmoothedLightColor, TargetLightColor, DeltaTime, 1.3f);
 	if (UpdatedLightColor.Equals(TargetLightColor, 0.002f))
 	{
 		UpdatedLightColor = TargetLightColor;
@@ -162,8 +180,8 @@ void UAPSStellarVisualSubsystem::Tick(float DeltaTime)
 	const float EffectiveTargetLightIntensity = ActivePreviewBody
 		? TargetLightIntensity * PreviewKeyLightIntensityScale
 		: TargetLightIntensity;
-	float UpdatedLightIntensity = FMath::FInterpTo(
-		SmoothedLightIntensity, EffectiveTargetLightIntensity, DeltaTime, 1.3f);
+	float UpdatedLightIntensity = bInitializeGeneratedLight ? EffectiveTargetLightIntensity
+		: FMath::FInterpTo(SmoothedLightIntensity, EffectiveTargetLightIntensity, DeltaTime, 1.3f);
 	if (FMath::IsNearlyEqual(
 		UpdatedLightIntensity, EffectiveTargetLightIntensity, 0.002f))
 	{
@@ -177,6 +195,16 @@ void UAPSStellarVisualSubsystem::Tick(float DeltaTime)
 	if (!FMath::IsNearlyEqual(LightComponent->Intensity, SmoothedLightIntensity, 0.0005f))
 	{
 		LightComponent->SetIntensity(SmoothedLightIntensity);
+	}
+	if (bInitializeGeneratedLight)
+	{
+		InitializedGameplayLightGenerator = GameplayStellarGenerator;
+		UE_LOG(LogAPSStellarVisuals, Log,
+			TEXT("[APS.StellarLighting.Bootstrap] generator=%s star=%s key=%s oldIntensity=%.3f intensity=%.3f oldRotation=%s rotation=%s ray=%s"),
+			*GetNameSafe(FullScaleGenerator), *ActiveStarIdentity, *GetNameSafe(Light),
+			PreviousKeyIntensity, LightComponent->Intensity,
+			*PreviousKeyRotation.ToCompactString(), *Light->GetActorRotation().ToCompactString(),
+			*LightRayDirection.ToCompactString());
 	}
 }
 
@@ -654,6 +682,7 @@ void UAPSStellarVisualSubsystem::UpdateGameplaySurfaceFillLight(
 		FillComponent->SetVolumetricScatteringIntensity(0.0f);
 		FillComponent->SetLightColor(GameplaySurfaceFillLightColor);
 		FillComponent->SetIntensity(GameplaySurfaceFillLightIntensity);
+		FillComponent->SetSpecularScale(0.0f);
 		FillComponent->SetLightingChannels(true, false, false);
 		GameplaySurfaceFillLight = FillLight;
 		UE_LOG(LogAPSStellarVisuals, Log,
@@ -668,6 +697,12 @@ void UAPSStellarVisualSubsystem::UpdateGameplaySurfaceFillLight(
 	// Keep hot-reloaded/editor worlds deterministic as well: an already-created
 	// transient fill must adopt the current readability contract without forcing a
 	// destroy/recreate cycle that would flash the terrain for one frame.
+	// This diffuse readability fill is not another physical star. Its reflection
+	// otherwise becomes a large, off-axis white disc on oceans and wet terrain.
+	if (!FMath::IsNearlyZero(FillComponent->SpecularScale))
+	{
+		FillComponent->SetSpecularScale(0.0f);
+	}
 	if (!FillComponent->GetLightColor().Equals(GameplaySurfaceFillLightColor, 0.0005f))
 	{
 		FillComponent->SetLightColor(GameplaySurfaceFillLightColor);
@@ -711,6 +746,7 @@ void UAPSStellarVisualSubsystem::ResolveNearestStar(const FVector& ObserverLocat
 	FLinearColor BestColor = FLinearColor::White;
 	float BestLuminosity = 1.0f;
 	FString BestIdentity;
+	const AStar* BestMaterializedStar = nullptr;
 	bool bHasMaterializedStar = false;
 	const AStarSystem* PreviewSystem = nullptr;
 	for (TActorIterator<AAstroGenerator> It(World); It; ++It)
@@ -732,6 +768,7 @@ void UAPSStellarVisualSubsystem::ResolveNearestStar(const FVector& ObserverLocat
 			BestColor = UStarGenerator::GetStarColor(Star->SpectralClass, Star->SpectralSubclass);
 			BestLuminosity = Star->Luminosity;
 			BestIdentity = Star->GetPathName();
+			BestMaterializedStar = Star;
 		}
 	}
 
@@ -790,6 +827,28 @@ void UAPSStellarVisualSubsystem::ResolveNearestStar(const FVector& ObserverLocat
 		return;
 	}
 	TargetStarLocation = BestLocation;
+	const AAstroGenerator* GeneratedWorld = GameplayStellarGenerator.Get();
+	const AStarSystem* GeneratedHomeSystem = IsValid(GeneratedWorld)
+		? GeneratedWorld->GetPreviewHomeSystem() : nullptr;
+	// The visible photosphere emits this directional key: casting its own sphere's
+	// shadow blocks that key on the illuminated planet once its direction settles.
+	// Only touch the selected physical emitter of a committed generated hierarchy;
+	// authored SinglePlay, PLANET preview, other stars and terrain keep their flags.
+	if (IsValid(GeneratedWorld) && GeneratedWorld->bGenerateFullScaledWorld
+		&& !GeneratedWorld->bIntegrateStartPlanet
+		&& !GeneratedWorld->ActorHasTag(TEXT("WorldGenerationPreview"))
+		&& !GeneratedWorld->UsesContinuousPreviewFrame()
+		&& GeneratedWorld->GetCanonicalStellarProjectionDescriptor().bConsumedFinalizedDataset
+		&& IsValid(BestMaterializedStar)
+		&& (BestMaterializedStar == GeneratedWorld->HomeStar
+			|| (IsValid(GeneratedHomeSystem) && BestMaterializedStar->IsAttachedTo(GeneratedHomeSystem)))
+		&& IsValid(BestMaterializedStar->StarMesh) && BestMaterializedStar->StarMesh->CastShadow)
+	{
+		BestMaterializedStar->StarMesh->SetCastShadow(false);
+		UE_LOG(LogAPSStellarVisuals, Log,
+			TEXT("[APS.StellarLighting.EmitterShadow] generator=%s activeStar=%s photosphere=%s castShadow=0; emitting sphere must not occlude its own directional key"),
+			*GetNameSafe(GeneratedWorld), *BestIdentity, *GetPathNameSafe(BestMaterializedStar->StarMesh));
+	}
 	// Keep spectral identity readable without tinting the whole scene into an accessibility problem.
 	TargetLightColor = FMath::Lerp(FLinearColor::White, BestColor.GetClamped(), 0.38f);
 	TargetLightColor.A = 1.0f;

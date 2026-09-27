@@ -1,6 +1,7 @@
 #include "APSWorldSaveSnapshot.h"
 
 #include "APS_ALPHA/Core/Structs/PlanetarySystemGenerationModel.h"
+#include "APS_ALPHA/Core/Model/SpawnParameters.h"
 #include "APS_ALPHA/Core/Model/GeneratedWorld.h"
 #include "APS_ALPHA/Core/Saves/GameSave.h"
 #include "Serialization/MemoryReader.h"
@@ -129,4 +130,51 @@ UGeneratedWorld* APSWorldSaveSnapshot::Restore(const UGameSave* Save, UObject* O
 	Model->InhabitedPlanets = Save->InhabitedPlanetsDataArray;
 	Model->GenerationSeed = FMath::Max(Model->GenerationSeed, 1);
 	return Model;
+}
+
+bool APSWorldSaveSnapshot::CaptureSpawnParameters(const USpawnParameters* Parameters,
+	TArray<uint8>& OutBytes)
+{
+	OutBytes.Reset();
+	if (!IsValid(Parameters))
+	{
+		return false;
+	}
+
+	FMemoryWriter Writer(OutBytes, true);
+	FObjectAndNameAsStringProxyArchive Archive(Writer, false);
+	Archive.ArNoDelta = true;
+	const_cast<USpawnParameters*>(Parameters)->Serialize(Archive);
+	Archive.Close();
+	Writer.Close();
+	return !Writer.IsError() && !OutBytes.IsEmpty();
+}
+
+USpawnParameters* APSWorldSaveSnapshot::RestoreSpawnParameters(const UGameSave* Save,
+	UObject* Outer)
+{
+	if (!IsValid(Save) || !IsValid(Outer) || Save->SpawnParametersData.IsEmpty())
+	{
+		return nullptr;
+	}
+
+	USpawnParameters* Parameters = NewObject<USpawnParameters>(Outer);
+	if (!IsValid(Parameters))
+	{
+		return nullptr;
+	}
+
+	FMemoryReader Reader(Save->SpawnParametersData, true);
+	FObjectAndNameAsStringProxyArchive Archive(Reader, true);
+	Archive.ArNoDelta = true;
+	Parameters->Serialize(Archive);
+	Archive.Close();
+	const bool bRestored = !Reader.IsError();
+	Reader.Close();
+	if (!bRestored)
+	{
+		return nullptr;
+	}
+	Parameters->SanitizeForGeneration();
+	return Parameters;
 }

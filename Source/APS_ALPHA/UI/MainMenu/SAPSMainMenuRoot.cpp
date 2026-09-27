@@ -1,6 +1,8 @@
 #include "SAPSMainMenuRoot.h"
+#include "SAPSChamferedOverlay.h"
 
 #include "APS_ALPHA/Core/Controllers/MainMenuController.h"
+#include "APS_ALPHA/Core/Loading/APSAuthoredLevelLaunchSubsystem.h"
 #include "APS_ALPHA/Core/Enums/CharSpawnPlace.h"
 #include "APS_ALPHA/Core/Enums/OrbitHeight.h"
 #include "APS_ALPHA/Core/Interfaces/ItemInfoInterface.h"
@@ -19,6 +21,7 @@
 #include "Engine/Texture2D.h"
 #include "Engine/Font.h"
 #include "Engine/AssetManager.h"
+#include "Engine/GameInstance.h"
 #include "Engine/StreamableManager.h"
 #include "Blueprint/UserWidget.h"
 #include "Framework/Application/SlateApplication.h"
@@ -49,12 +52,20 @@
 #include "Widgets/Notifications/SProgressBar.h"
 #include "Widgets/SLeafWidget.h"
 #include "Widgets/SBoxPanel.h"
+#include "Widgets/SOverlay.h"
 #include "Widgets/Text/STextBlock.h"
 
 #define LOCTEXT_NAMESPACE "APSMainMenuRoot"
 
 namespace
 {
+	UAPSAuthoredLevelLaunchSubsystem* GetAuthoredLaunch(const AMainMenuController* Controller)
+	{
+		return Controller && Controller->GetGameInstance()
+			? Controller->GetGameInstance()->GetSubsystem<UAPSAuthoredLevelLaunchSubsystem>()
+			: nullptr;
+	}
+
 	enum class EAPSMenuGlyph : uint8
 	{
 		Compass,
@@ -293,6 +304,11 @@ namespace
 		float StrokeWidth{1.35f};
 	};
 
+	// One fixed cut in Slate units keeps adjacent cards geometrically identical.
+	// Deriving it from each card's height made large and compact neighbours expose
+	// different corner wedges even when their perimeter stroke had the same width.
+	// Shared with astronomical panels and the full child-content stencil.
+
 	class SChamferedFrame final : public SLeafWidget
 	{
 	public:
@@ -319,15 +335,45 @@ namespace
 			{
 				return LayerId;
 			}
-			const float Cut = FMath::Clamp(FMath::Min(Size.X, Size.Y) * 0.025f, 8.0f, 18.0f);
-			const TArray<FVector2D> Points = {
-				FVector2D(Cut, 0.5f), FVector2D(Size.X - Cut, 0.5f),
-				FVector2D(Size.X - 0.5f, Cut), FVector2D(Size.X - 0.5f, Size.Y - Cut),
-				FVector2D(Size.X - Cut, Size.Y - 0.5f), FVector2D(Cut, Size.Y - 0.5f),
-				FVector2D(0.5f, Size.Y - Cut), FVector2D(0.5f, Cut), FVector2D(Cut, 0.5f)
+			const FSlateBrush* Brush = FAppStyle::GetBrush("WhiteBrush");
+			const FSlateResourceHandle ResourceHandle = Brush->GetRenderingResource();
+			const float Cut = APSChamfer::Cut(Size);
+			const float Inset = FMath::Clamp(Thickness, 0.75f,
+				FMath::Min(Size.X, Size.Y) * 0.24f);
+			const float InnerCut = Cut + Inset * 0.41421356f;
+			const TArray<FVector2f> Points = {
+				FVector2f(Cut, 0.0f), FVector2f(Size.X - Cut, 0.0f),
+				FVector2f(Size.X, Cut), FVector2f(Size.X, Size.Y - Cut),
+				FVector2f(Size.X - Cut, Size.Y), FVector2f(Cut, Size.Y),
+				FVector2f(0.0f, Size.Y - Cut), FVector2f(0.0f, Cut),
+				FVector2f(InnerCut, Inset), FVector2f(Size.X - InnerCut, Inset),
+				FVector2f(Size.X - Inset, InnerCut), FVector2f(Size.X - Inset, Size.Y - InnerCut),
+				FVector2f(Size.X - InnerCut, Size.Y - Inset), FVector2f(InnerCut, Size.Y - Inset),
+				FVector2f(Inset, Size.Y - InnerCut), FVector2f(Inset, InnerCut)
 			};
-			FSlateDrawElement::MakeLines(OutDrawElements, LayerId, Geometry.ToPaintGeometry(),
-				Points, ESlateDrawEffect::None, Color.Get(FLinearColor::White), true, Thickness);
+			const FColor VertexColor = Color.Get(FLinearColor::White).ToFColor(true);
+			TArray<FSlateVertex> Vertices;
+			Vertices.Reserve(Points.Num());
+			for (const FVector2f& Point : Points)
+			{
+				Vertices.Add(FSlateVertex::Make<ESlateVertexRounding::Disabled>(
+					Geometry.GetAccumulatedRenderTransform(), Point,
+					FVector2f::ZeroVector, VertexColor));
+			}
+			TArray<SlateIndex> Indices;
+			Indices.Reserve(48);
+			for (SlateIndex Edge = 0; Edge < 8; ++Edge)
+			{
+				const SlateIndex Next = (Edge + 1) % 8;
+				Indices.Add(Edge);
+				Indices.Add(Next);
+				Indices.Add(static_cast<SlateIndex>(8 + Next));
+				Indices.Add(Edge);
+				Indices.Add(static_cast<SlateIndex>(8 + Next));
+				Indices.Add(static_cast<SlateIndex>(8 + Edge));
+			}
+			FSlateDrawElement::MakeCustomVerts(OutDrawElements, LayerId, ResourceHandle,
+				Vertices, Indices, nullptr, 0, 0, ESlateDrawEffect::None);
 			return LayerId;
 		}
 
@@ -369,7 +415,7 @@ namespace
 				return LayerId;
 			}
 
-			const float Cut = FMath::Clamp(FMath::Min(Size.X, Size.Y) * 0.025f, 8.0f, 18.0f);
+			const float Cut = APSChamfer::Cut(Size);
 			const float TopCut = bChamferTop ? Cut : 0.0f;
 			const float BottomCut = bChamferBottom ? Cut : 0.0f;
 			const TArray<FVector2f> LocalPoints = {
@@ -403,7 +449,7 @@ namespace
 				Indices.Add(Edge == 8 ? 1 : Edge + 1);
 			}
 			FSlateDrawElement::MakeCustomVerts(OutDrawElements, LayerId, ResourceHandle,
-				Vertices, Indices, nullptr, 0, 0, ESlateDrawEffect::PreMultipliedAlpha);
+				Vertices, Indices, nullptr, 0, 0, ESlateDrawEffect::None);
 			return LayerId;
 		}
 
@@ -458,10 +504,11 @@ namespace
 					FLinearColor(0.002f, 0.012f, 0.020f, Alpha));
 			}
 
-			// Match the camera's 54% scene anchor. The rings sit in the free space to
+			// Match the camera's 47% scene anchor. The rings sit in the free space to
 			// the right of the navigation rail, while a faint datum visually connects
 			// both parts of the composition instead of leaving a detached reticle.
-			const FVector2D HeroCenter(Size.X * 0.54f, Size.Y * 0.50f);
+			const double HeroAnchorX = FMath::Max(0.47, 0.92 * Size.Y / Size.X + 0.035);
+			const FVector2D HeroCenter(Size.X * HeroAnchorX, Size.Y * 0.50f);
 			const float Radius = FMath::Min(Size.X, Size.Y) * 0.275f;
 			const FLinearColor SensorGlow(0.08f, 0.54f, 0.66f, 0.055f);
 			const FLinearColor SensorLine(0.20f, 0.76f, 0.88f, 0.18f);
@@ -831,6 +878,7 @@ namespace APSMenu
 	const FLinearColor CivPanel = SRGB(6, 19, 26, 249);
 	const FLinearColor CivRaised = SRGB(12, 41, 52, 251);
 	const FLinearColor CivControl = SRGB(8, 32, 42, 252);
+	constexpr float CardPerimeterThickness = 1.0f;
 	TWeakObjectPtr<UFont> DisplayFont;
 	TWeakObjectPtr<UFont> BodyFont;
 	const FSlateRoundedBoxBrush PanelBrush(Panel, 10.0f, CyanDim, 1.0f);
@@ -838,7 +886,6 @@ namespace APSMenu
 	const FSlateRoundedBoxBrush InsetBrush(FLinearColor(0.001f, 0.012f, 0.022f, 0.96f), 6.0f, FLinearColor(0.04f, 0.22f, 0.31f, 1.0f), 1.0f);
 	const FSlateRoundedBoxBrush CyanBadgeBrush(FLinearColor(0.01f, 0.07f, 0.10f, 0.98f), 18.0f, Cyan, 1.25f);
 	const FSlateRoundedBoxBrush AmberPanelBrush(FLinearColor(0.11f, 0.045f, 0.002f, 0.96f), 9.0f, Amber, 1.4f);
-	const FSlateRoundedBoxBrush CivCardBrush(CivRaised, 9.0f, FLinearColor(0.045f, 0.30f, 0.40f, 0.95f), 1.0f);
 	const FSlateRoundedBoxBrush CivControlBrush(CivControl, 6.0f, FLinearColor(0.025f, 0.18f, 0.25f, 0.95f), 1.0f);
 	const FSlateRoundedBoxBrush CivMetricBrush(FLinearColor(0.005f, 0.028f, 0.044f, 0.98f), 6.0f,
 		FLinearColor(0.035f, 0.23f, 0.31f, 0.88f), 1.0f);
@@ -848,7 +895,7 @@ namespace APSMenu
 	TSharedRef<SWidget> ChamferPanel(TSharedRef<SWidget> Content, const FMargin& Padding,
 		const FLinearColor& Accent = CyanDim, float Thickness = 1.0f)
 	{
-		return SNew(SOverlay)
+		return SNew(SAPSChamferedOverlay)
 			+ SOverlay::Slot()
 			[
 				SNew(SChamferedSurface)
@@ -882,10 +929,12 @@ namespace APSMenu
 	TSharedRef<SWidget> Badge(const FText& Glyph, const FLinearColor& Accent, float Size = 34.0f)
 	{
 		return SNew(SBox).WidthOverride(Size).HeightOverride(Size)
+		.HAlign(HAlign_Fill).VAlign(VAlign_Fill)
 		[
 			SNew(SBorder).BorderImage(&CyanBadgeBrush).BorderBackgroundColor(Accent).Padding(1.0f)
 			[
 				SNew(SBorder).BorderImage(&InsetBrush).Padding(0.0f)
+				.HAlign(HAlign_Center).VAlign(VAlign_Center)
 				[
 					SNew(STextBlock).Text(Glyph).Justification(ETextJustify::Center)
 					.Font(Font("Bold", FMath::RoundToInt(Size * 0.34f))).ColorAndOpacity(Accent)
@@ -897,10 +946,12 @@ namespace APSMenu
 	TSharedRef<SWidget> IconBadge(EAPSMenuGlyph Glyph, const FLinearColor& Accent, float Size = 34.0f)
 	{
 		return SNew(SBox).WidthOverride(Size).HeightOverride(Size)
+		.HAlign(HAlign_Fill).VAlign(VAlign_Fill)
 		[
 			SNew(SBorder).BorderImage(&CyanBadgeBrush).BorderBackgroundColor(Accent).Padding(1.0f)
 			[
 				SNew(SBorder).BorderImage(&InsetBrush).Padding(FMath::Max(4.0f, Size * 0.19f))
+				.HAlign(HAlign_Fill).VAlign(VAlign_Fill)
 				[
 					SNew(SVectorMenuGlyph).Glyph(Glyph).Color(Accent).StrokeWidth(Size >= 40.0f ? 1.7f : 1.35f)
 				]
@@ -1082,12 +1133,73 @@ void SAPSMainMenuRoot::Construct(const FArguments& InArgs)
 
 	ChildSlot
 	[
-		SNew(SBorder)
-		.BorderImage(FAppStyle::GetBrush("WhiteBrush"))
-		.BorderBackgroundColor(APSMenu::Background)
-		.Padding(0.0f)
+		SNew(SOverlay)
+		+ SOverlay::Slot()
 		[
-			SAssignNew(ContentHost, SBox)
+			SNew(SBorder)
+			.BorderImage(FAppStyle::GetBrush("WhiteBrush"))
+			.BorderBackgroundColor(APSMenu::Background)
+			.Padding(0.0f)
+			.IsEnabled_Lambda([this]()
+			{
+				const UAPSAuthoredLevelLaunchSubsystem* Launch = GetAuthoredLaunch(Controller.Get());
+				return !Launch || !Launch->IsDialogVisible();
+			})
+			[SAssignNew(ContentHost, SBox)]
+		]
+		+ SOverlay::Slot()
+		[
+			SNew(SBorder)
+			.BorderImage(FAppStyle::GetBrush("WhiteBrush"))
+			.BorderBackgroundColor(FLinearColor(0.005f, 0.015f, 0.025f, 0.96f))
+			.HAlign(HAlign_Center).VAlign(VAlign_Center).Padding(32.0f)
+			.Visibility_Lambda([this]()
+			{
+				const UAPSAuthoredLevelLaunchSubsystem* Launch = GetAuthoredLaunch(Controller.Get());
+				return Launch && Launch->IsDialogVisible() ? EVisibility::Visible : EVisibility::Collapsed;
+			})
+			[
+				SNew(SBox).WidthOverride(580.0f)
+				[
+					SNew(SVerticalBox)
+					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 16.0f)
+					[
+						SNew(STextBlock).Text(LOCTEXT("SinglePlayPreparation", "SINGLE GAME"))
+						.Font(APSMenu::Font("Bold", 24)).ColorAndOpacity(APSMenu::Cyan)
+					]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 16.0f)
+					[
+						SNew(STextBlock).AutoWrapText(true)
+						.Font(APSMenu::Font("Regular", 17)).ColorAndOpacity(APSMenu::Muted)
+						.Text_Lambda([this]()
+						{
+							const UAPSAuthoredLevelLaunchSubsystem* Launch = GetAuthoredLaunch(Controller.Get());
+							return Launch ? Launch->GetStatusText() : FText::GetEmpty();
+						})
+					]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 24.0f)
+					[
+						SNew(STextBlock).AutoWrapText(true)
+						.Text(LOCTEXT("SinglePlayColdCacheHint", "First launch prepares level assets in the background. You can cancel without changing your world."))
+						.Font(APSMenu::Font("Regular", 14)).ColorAndOpacity(APSMenu::Muted)
+					]
+					+ SVerticalBox::Slot().AutoHeight()
+					[
+						SNew(SButton).ButtonStyle(&SecondaryButtonStyle).ContentPadding(FMargin(16.0f, 10.0f))
+						.Text(LOCTEXT("CancelSinglePlayLaunch", "BACK TO MENU"))
+						.IsEnabled_Lambda([this]()
+						{
+							const UAPSAuthoredLevelLaunchSubsystem* Launch = GetAuthoredLaunch(Controller.Get());
+							return Launch && !Launch->IsOpening();
+						})
+						.OnClicked_Lambda([this]()
+						{
+							if (UAPSAuthoredLevelLaunchSubsystem* Launch = GetAuthoredLaunch(Controller.Get())) Launch->CancelLaunch();
+							return FReply::Handled();
+						})
+					]
+				]
+			]
 		]
 	];
 	Navigate(EAPSMenuPage::Landing);
@@ -1097,6 +1209,10 @@ void SAPSMainMenuRoot::Navigate(EAPSMenuPage NewPage)
 {
 	if (bHasBuiltCurrentPage && CurrentPage == NewPage && ContentHost.IsValid())
 	{
+		if (NewPage == EAPSMenuPage::ExistingWorlds)
+		{
+			RefreshExistingWorlds();
+		}
 		return;
 	}
 	if (CurrentPage == EAPSMenuPage::AstronomicalGeneration
@@ -1169,8 +1285,11 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildHeader(const FText& SectionTitle, boo
 				.ButtonStyle(&SecondaryButtonStyle)
 				.OnClicked(this, &SAPSMainMenuRoot::Back)
 				.ContentPadding(FMargin(22.0f, 13.0f))
+				.HAlign(HAlign_Center).VAlign(VAlign_Center)
 				[
-					SNew(STextBlock).Text(LOCTEXT("Back", "<   BACK")).Font(APSMenu::Font("Bold", 15)).ColorAndOpacity(APSMenu::White)
+					SNew(STextBlock).Text(LOCTEXT("Back", "<   BACK"))
+					.Justification(ETextJustify::Center).OverflowPolicy(ETextOverflowPolicy::Ellipsis)
+					.Font(APSMenu::Font("Bold", 15)).ColorAndOpacity(APSMenu::White)
 				]
 			]
 		]
@@ -1198,20 +1317,29 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildHeader(const FText& SectionTitle, boo
 		]
 		+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
 		[
-			SNew(SBox).WidthOverride(190.0f)
+			SNew(SBox).WidthOverride(190.0f).HeightOverride(58.0f)
+			.VAlign(VAlign_Center)
 			[
 				SNew(SHorizontalBox)
-				+ SHorizontalBox::Slot().AutoWidth().Padding(5.0f)
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(5.0f)
 				[
-					SNew(SButton).ButtonStyle(&SecondaryButtonStyle).ContentPadding(4.0f)
-					.OnClicked(this, &SAPSMainMenuRoot::OpenProfile).ToolTipText(LOCTEXT("ProfileTip", "PLAYER PROFILE"))
-					[APSMenu::Badge(LOCTEXT("ProfileGlyph", "ID"), APSMenu::Cyan, 38.0f)]
+					SNew(SBox).WidthOverride(52.0f).HeightOverride(52.0f)
+					[
+						SNew(SButton).ButtonStyle(&SecondaryButtonStyle).ContentPadding(0.0f)
+						.HAlign(HAlign_Center).VAlign(VAlign_Center)
+						.OnClicked(this, &SAPSMainMenuRoot::OpenProfile).ToolTipText(LOCTEXT("ProfileTip", "PLAYER PROFILE"))
+						[APSMenu::Badge(LOCTEXT("ProfileGlyph", "ID"), APSMenu::Cyan, 38.0f)]
+					]
 				]
-				+ SHorizontalBox::Slot().AutoWidth().Padding(5.0f)
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(5.0f)
 				[
-					SNew(SButton).ButtonStyle(&SecondaryButtonStyle).ContentPadding(4.0f)
-					.OnClicked(this, &SAPSMainMenuRoot::OpenSettings).ToolTipText(LOCTEXT("SettingsTip", "SETTINGS"))
-					[APSMenu::Badge(LOCTEXT("SettingsGlyph", "CFG"), APSMenu::Cyan, 38.0f)]
+					SNew(SBox).WidthOverride(52.0f).HeightOverride(52.0f)
+					[
+						SNew(SButton).ButtonStyle(&SecondaryButtonStyle).ContentPadding(0.0f)
+						.HAlign(HAlign_Center).VAlign(VAlign_Center)
+						.OnClicked(this, &SAPSMainMenuRoot::OpenSettings).ToolTipText(LOCTEXT("SettingsTip", "SETTINGS"))
+						[APSMenu::Badge(LOCTEXT("SettingsGlyph", "CFG"), APSMenu::Cyan, 38.0f)]
+					]
 				]
 			]
 		];
@@ -1228,17 +1356,20 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildLandingPage()
 			.IsEnabled(bEnabled)
 			.ButtonStyle(bPrimary ? &PrimaryButtonStyle : &SecondaryButtonStyle)
 			.OnClicked(Action)
-			.ContentPadding(FMargin(18.0f, 8.0f))
+			.ContentPadding(FMargin(12.0f, 6.0f))
+			.HAlign(HAlign_Fill).VAlign(VAlign_Fill)
 			[
-				SNew(SHorizontalBox)
-				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.0f, 0.0f, 12.0f, 0.0f)
+				SNew(SOverlay)
+				+ SOverlay::Slot().HAlign(HAlign_Left).VAlign(VAlign_Center)
 				[
 					SNew(STextBlock).Text(FText::FromString(bEnabled ? TEXT(">") : TEXT("-")))
+					.Justification(ETextJustify::Center)
 					.Font(APSMenu::Font("Bold", FontSize)).ColorAndOpacity(bEnabled ? (bPrimary ? APSMenu::Amber : APSMenu::Cyan) : APSMenu::Muted)
 				]
-				+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
+				+ SOverlay::Slot().HAlign(HAlign_Fill).VAlign(VAlign_Center).Padding(28.0f, 0.0f)
 				[
 					SNew(STextBlock).Text(Label).Font(APSMenu::Font(bPrimary ? "Bold" : "Regular", FontSize))
+					.Justification(ETextJustify::Center).OverflowPolicy(ETextOverflowPolicy::Ellipsis)
 					.ColorAndOpacity(bEnabled ? APSMenu::White : APSMenu::Muted)
 				]
 			]
@@ -1452,23 +1583,6 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildPathCard(const FText& Title, const FT
 					.ColorAndOpacity(bEnabled ? APSMenu::White : APSMenu::Muted)
 				]
 			]
-			+ SOverlay::Slot()
-			[
-				SNew(SChamferedSurface)
-				.Brush(FAppStyle::GetBrush("WhiteBrush"))
-				.Tint_Lambda([WeakCardButton, Accent, bEnabled]()
-				{
-					const TSharedPtr<SButton> Button = WeakCardButton.Pin();
-					if (!bEnabled || !Button.IsValid()
-						|| (!Button->IsHovered() && !Button->HasKeyboardFocus()))
-					{
-						return FLinearColor::Transparent;
-					}
-					return FLinearColor(Accent.R, Accent.G, Accent.B, 0.075f);
-				})
-				.ChamferTop(true)
-				.ChamferBottom(true)
-			]
 			+ SOverlay::Slot().VAlign(VAlign_Bottom)
 			[
 				// Every compact card owns the same full-width information rail. Keeping
@@ -1486,6 +1600,7 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildPathCard(const FText& Title, const FT
 					.ChamferBottom(true)
 				]
 				+ SOverlay::Slot().VAlign(VAlign_Top)
+					.Padding(FMargin(APSMenu::CardPerimeterThickness, 0.0f))
 				[
 					SNew(SBox).HeightOverride(2.0f)
 					[
@@ -1567,25 +1682,10 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildPathCard(const FText& Title, const FT
 						? FLinearColor::White
 						: Accent;
 				})
-				.Thickness(bLarge ? 1.8f : 1.2f)
-			]
-			+ SOverlay::Slot()
-			[
-				// A broad translucent trace reads as a restrained holographic glow
-				// and makes hover unambiguous without moving or resizing the card.
-				SNew(SChamferedFrame)
-				.Color_Lambda([WeakCardButton, Accent, bEnabled]()
-				{
-					const TSharedPtr<SButton> Button = WeakCardButton.Pin();
-					return bEnabled && Button.IsValid()
-						&& (Button->IsHovered() || Button->HasKeyboardFocus())
-						? FLinearColor(Accent.R, Accent.G, Accent.B, 0.48f)
-						: FLinearColor::Transparent;
-				})
-				.Thickness(bLarge ? 4.5f : 3.5f)
+				.Thickness(APSMenu::CardPerimeterThickness)
 			]
 		);
-	return CardButton;
+	return SNew(SAPSChamferedOverlay) + SOverlay::Slot()[CardButton];
 }
 
 TSharedRef<SWidget> SAPSMainMenuRoot::BuildChoosePathPage()
@@ -1682,7 +1782,7 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildExistingWorldsPage()
 			SNew(SHorizontalBox)
 			+ SHorizontalBox::Slot().FillWidth(0.17f).Padding(5.0f)
 			[
-				SNew(SOverlay)
+				SNew(SAPSChamferedOverlay)
 				+ SOverlay::Slot()
 				[
 					SNew(SBorder).BorderImage(&APSMenu::PanelBrush).Padding(14.0f)
@@ -1703,7 +1803,7 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildExistingWorldsPage()
 				]
 				+ SOverlay::Slot()
 				[
-					SNew(SChamferedFrame).Color(APSMenu::Cyan).Thickness(1.15f)
+					SNew(SChamferedFrame).Color(APSMenu::Cyan).Thickness(APSMenu::CardPerimeterThickness)
 				]
 			]
 			+ SHorizontalBox::Slot().FillWidth(0.62f).Padding(5.0f)
@@ -1713,6 +1813,7 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildExistingWorldsPage()
 				[
 					SNew(SHorizontalBox)
 					+ SHorizontalBox::Slot().FillWidth(1.0f)[SNew(SSearchBox).HintText(LOCTEXT("SearchWorlds", "Search worlds...")).OnTextChanged(this, &SAPSMainMenuRoot::OnWorldSearchChanged)]
+					+ SHorizontalBox::Slot().AutoWidth().Padding(8.0f, 0.0f, 2.0f, 0.0f)[SNew(SButton).ButtonStyle(&SecondaryButtonStyle).OnClicked_Lambda([this](){ RefreshExistingWorlds(); return FReply::Handled(); })[SNew(STextBlock).Text(LOCTEXT("RefreshWorlds", "REFRESH")).Font(APSMenu::Font("Bold", 10)).ColorAndOpacity(APSMenu::Cyan)]]
 					+ SHorizontalBox::Slot().AutoWidth().Padding(8.0f, 0.0f)[SNew(SButton).ButtonStyle(&SecondaryButtonStyle).OnClicked(this, &SAPSMainMenuRoot::CycleWorldSort)[SNew(STextBlock).Text_Lambda([this](){ return GetWorldSortLabel(); }).Font(APSMenu::Font("Bold", 10)).ColorAndOpacity(APSMenu::White)]]
 					+ SHorizontalBox::Slot().AutoWidth().Padding(2.0f, 0.0f)[SNew(SButton).ButtonStyle(&SecondaryButtonStyle).OnClicked(this, &SAPSMainMenuRoot::ToggleWorldView)[SNew(STextBlock).Text_Lambda([this](){ return FText::FromString(bCompactWorldList ? TEXT("LIST") : TEXT("GRID")); }).Font(APSMenu::Font("Bold", 10)).ColorAndOpacity(APSMenu::Cyan)]]
 				]
@@ -1762,6 +1863,7 @@ void SAPSMainMenuRoot::LoadExistingWorlds()
 	TArray<FString> SaveFiles;
 	const FString SaveDirectory = FPaths::ProjectSavedDir() / TEXT("SaveGames");
 	IFileManager::Get().FindFiles(SaveFiles, *SaveDirectory, TEXT("*.sav"));
+	SaveFiles.Sort();
 	for (const FString& SaveFile : SaveFiles)
 	{
 		const FString SlotName = FPaths::GetBaseFilename(SaveFile);
@@ -1802,6 +1904,60 @@ void SAPSMainMenuRoot::LoadExistingWorlds()
 			return Entry.IsValid() && Entry->SaveFileName == PreviouslySelectedSlot;
 		});
 	SelectedWorld = RestoredSelection ? *RestoredSelection : (ExistingWorlds.Num() > 0 ? ExistingWorlds[0] : nullptr);
+	ExistingWorldDirectoryFingerprint = ComputeExistingWorldDirectoryFingerprint();
+	UE_LOG(LogTemp, Log, TEXT("[APS.WorldBrowser] Scanned directory=%s saves=%d"),
+		*SaveDirectory, ExistingWorlds.Num());
+}
+
+uint32 SAPSMainMenuRoot::ComputeExistingWorldDirectoryFingerprint() const
+{
+	const FString SaveDirectory = FPaths::ProjectSavedDir() / TEXT("SaveGames");
+	TArray<FString> SaveFiles;
+	IFileManager::Get().FindFiles(SaveFiles, *SaveDirectory, TEXT("*.sav"));
+	SaveFiles.Sort();
+	uint32 Fingerprint = GetTypeHash(SaveFiles.Num());
+	for (const FString& SaveFile : SaveFiles)
+	{
+		const FFileStatData Stat = IFileManager::Get().GetStatData(*(SaveDirectory / SaveFile));
+		Fingerprint = HashCombineFast(Fingerprint, GetTypeHash(SaveFile));
+		Fingerprint = HashCombineFast(Fingerprint, GetTypeHash(Stat.FileSize));
+		Fingerprint = HashCombineFast(Fingerprint,
+			GetTypeHash(Stat.ModificationTime.ToUnixTimestamp()));
+	}
+	return Fingerprint;
+}
+
+void SAPSMainMenuRoot::RefreshExistingWorlds()
+{
+	if (CurrentPage != EAPSMenuPage::ExistingWorlds)
+	{
+		return;
+	}
+	if (AMainMenuController* PC = Controller.Get())
+	{
+		PC->CancelWorldMetadataLoad();
+	}
+	LoadExistingWorlds();
+	RebuildExistingWorldGrid();
+	RebuildExistingWorldDetails();
+	BeginExistingWorldMetadataLoad();
+}
+
+void SAPSMainMenuRoot::Tick(const FGeometry& AllottedGeometry, const double InCurrentTime,
+	const float InDeltaTime)
+{
+	SCompoundWidget::Tick(AllottedGeometry, InCurrentTime, InDeltaTime);
+	if (CurrentPage != EAPSMenuPage::ExistingWorlds
+		|| InCurrentTime < NextExistingWorldRefreshTime)
+	{
+		return;
+	}
+	NextExistingWorldRefreshTime = InCurrentTime + 1.0;
+	if (ComputeExistingWorldDirectoryFingerprint() != ExistingWorldDirectoryFingerprint)
+	{
+		UE_LOG(LogTemp, Log, TEXT("[APS.WorldBrowser] Save directory changed; refreshing"));
+		RefreshExistingWorlds();
+	}
 }
 
 void SAPSMainMenuRoot::BeginExistingWorldMetadataLoad()
@@ -1916,10 +2072,10 @@ void SAPSMainMenuRoot::RebuildExistingWorldGrid()
 		const int32 ColumnCount = bCompactWorldList ? 1 : 3;
 		Grid->AddSlot(VisibleIndex % ColumnCount, VisibleIndex / ColumnCount)
 		[
-			SNew(SButton).ButtonStyle(&CardButtonStyle)
+			SNew(SButton).ButtonStyle(&FAppStyle::Get().GetWidgetStyle<FButtonStyle>("NoBorder"))
 			.OnClicked(this, &SAPSMainMenuRoot::SelectExistingWorld, Entry).ContentPadding(0.0f)
 			[
-				SNew(SOverlay)
+				SNew(SAPSChamferedOverlay)
 				+ SOverlay::Slot()
 				[
 					SNew(SBox).HeightOverride(bCompactWorldList ? 128.0f : 218.0f)
@@ -1971,7 +2127,7 @@ void SAPSMainMenuRoot::RebuildExistingWorldGrid()
 				[
 					SNew(SChamferedFrame)
 					.Color(bSelected ? APSMenu::Amber : APSMenu::CyanDim)
-					.Thickness(bSelected ? 2.2f : 1.0f)
+					.Thickness(APSMenu::CardPerimeterThickness)
 				]
 			]
 		];
@@ -2595,10 +2751,19 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildSpawnCard(EAPSStartAssetSlot Slot, co
 		];
 	}
 
-	return SNew(SOverlay)
+	return SNew(SAPSChamferedOverlay)
 		+ SOverlay::Slot()
 		[
-			SNew(SBorder).BorderImage(&APSMenu::CivCardBrush).Padding(0.0f)
+			SNew(SOverlay)
+			+ SOverlay::Slot()
+			[
+				SNew(SChamferedSurface)
+				.Brush(FAppStyle::GetBrush("WhiteBrush"))
+				.Tint(APSMenu::CivRaised)
+				.ChamferTop(true)
+				.ChamferBottom(true)
+			]
+			+ SOverlay::Slot()
 			[
 				SNew(SOverlay)
 				+ SOverlay::Slot().Padding(14.0f)
@@ -2662,7 +2827,9 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildSpawnCard(EAPSStartAssetSlot Slot, co
 						SNew(SHorizontalBox)
 						.Visibility(bLockedProductionPilot ? EVisibility::Collapsed : EVisibility::Visible)
 						+ SHorizontalBox::Slot().FillWidth(0.28f)
-						[SNew(SButton).ButtonStyle(&SecondaryButtonStyle).ContentPadding(FMargin(5.0f, 4.0f)).OnClicked(this, &SAPSMainMenuRoot::CycleSpawnClass, Slot, -1)[SNew(STextBlock).Text(FText::FromString(TEXT("<"))).Justification(ETextJustify::Center).Font(APSMenu::Font("Bold", 11)).ColorAndOpacity(APSMenu::Cyan)]]
+						[SNew(SButton).ButtonStyle(&SecondaryButtonStyle).ContentPadding(0.0f)
+						.HAlign(HAlign_Center).VAlign(VAlign_Center).OnClicked(this, &SAPSMainMenuRoot::CycleSpawnClass, Slot, -1)
+						[SNew(STextBlock).Text(FText::FromString(TEXT("<"))).Justification(ETextJustify::Center).Font(APSMenu::Font("Bold", 11)).ColorAndOpacity(APSMenu::Cyan)]]
 						+ SHorizontalBox::Slot().FillWidth(0.44f).HAlign(HAlign_Center).VAlign(VAlign_Center)
 						[
 							SNew(STextBlock).Text_Lambda([this, Slot]()
@@ -2672,7 +2839,9 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildSpawnCard(EAPSStartAssetSlot Slot, co
 							}).Justification(ETextJustify::Center).Font(APSMenu::Font("Bold", 8)).ColorAndOpacity(APSMenu::Muted)
 						]
 						+ SHorizontalBox::Slot().FillWidth(0.28f)
-						[SNew(SButton).ButtonStyle(&SecondaryButtonStyle).ContentPadding(FMargin(5.0f, 4.0f)).OnClicked(this, &SAPSMainMenuRoot::CycleSpawnClass, Slot, 1)[SNew(STextBlock).Text(FText::FromString(TEXT(">"))).Justification(ETextJustify::Center).Font(APSMenu::Font("Bold", 11)).ColorAndOpacity(APSMenu::Cyan)]]
+						[SNew(SButton).ButtonStyle(&SecondaryButtonStyle).ContentPadding(0.0f)
+						.HAlign(HAlign_Center).VAlign(VAlign_Center).OnClicked(this, &SAPSMainMenuRoot::CycleSpawnClass, Slot, 1)
+						[SNew(STextBlock).Text(FText::FromString(TEXT(">"))).Justification(ETextJustify::Center).Font(APSMenu::Font("Bold", 11)).ColorAndOpacity(APSMenu::Cyan)]]
 					]
 					+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0.0f, 5.0f, 0.0f, 8.0f)
 					[
@@ -2693,16 +2862,13 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildSpawnCard(EAPSStartAssetSlot Slot, co
 						]
 					]
 				]
-				+ SOverlay::Slot().HAlign(HAlign_Fill).VAlign(VAlign_Top)
-				[
-					SNew(SBox).HeightOverride(2.0f)
-					[SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(bLockedProductionPilot ? APSMenu::Amber : APSMenu::Cyan)]
-				]
 			]
 		]
 		+ SOverlay::Slot()
 		[
-			SNew(SChamferedFrame).Color(APSMenu::Cyan).Thickness(1.15f)
+			SNew(SChamferedFrame)
+			.Color(bLockedProductionPilot ? APSMenu::Amber : APSMenu::Cyan)
+			.Thickness(APSMenu::CardPerimeterThickness)
 		];
 }
 
@@ -2738,10 +2904,10 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildCivilizationPage()
 				SNew(SBorder).BorderImage(&APSMenu::InsetBrush).Padding(FMargin(2.0f))
 				[
 					SNew(SHorizontalBox)
-					+ SHorizontalBox::Slot().AutoWidth()[SNew(SButton).ButtonStyle(&SecondaryButtonStyle).ContentPadding(FMargin(8.0f, 5.0f)).OnClicked_Lambda([Step](){ return Step(-1); })[SNew(STextBlock).Text(FText::FromString(TEXT("<"))).Font(APSMenu::Font("Bold", 10)).ColorAndOpacity(APSMenu::Cyan)]]
+					+ SHorizontalBox::Slot().AutoWidth()[SNew(SBox).WidthOverride(40.0f).HeightOverride(40.0f)[SNew(SButton).ButtonStyle(&SecondaryButtonStyle).ContentPadding(0.0f).HAlign(HAlign_Center).VAlign(VAlign_Center).OnClicked_Lambda([Step](){ return Step(-1); })[SNew(STextBlock).Text(FText::FromString(TEXT("<"))).Justification(ETextJustify::Center).Font(APSMenu::Font("Bold", 10)).ColorAndOpacity(APSMenu::Cyan)]]]
 					+ SHorizontalBox::Slot().FillWidth(1.0f).HAlign(HAlign_Center).VAlign(VAlign_Center)
 					[SNew(STextBlock).Text_Lambda([Enum, Getter](){ return Enum ? Enum->GetDisplayNameTextByValue(Getter()) : FText::FromString(TEXT("--")); }).Font(APSMenu::Font("Bold", 11)).ColorAndOpacity(APSMenu::White).OverflowPolicy(ETextOverflowPolicy::Ellipsis)]
-					+ SHorizontalBox::Slot().AutoWidth()[SNew(SButton).ButtonStyle(&SecondaryButtonStyle).ContentPadding(FMargin(8.0f, 5.0f)).OnClicked_Lambda([Step](){ return Step(1); })[SNew(STextBlock).Text(FText::FromString(TEXT(">"))).Font(APSMenu::Font("Bold", 10)).ColorAndOpacity(APSMenu::Cyan)]]
+					+ SHorizontalBox::Slot().AutoWidth()[SNew(SBox).WidthOverride(40.0f).HeightOverride(40.0f)[SNew(SButton).ButtonStyle(&SecondaryButtonStyle).ContentPadding(0.0f).HAlign(HAlign_Center).VAlign(VAlign_Center).OnClicked_Lambda([Step](){ return Step(1); })[SNew(STextBlock).Text(FText::FromString(TEXT(">"))).Justification(ETextJustify::Center).Font(APSMenu::Font("Bold", 10)).ColorAndOpacity(APSMenu::Cyan)]]]
 				]
 			]
 		];
@@ -2791,11 +2957,11 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildCivilizationPage()
 				+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
 				[SNew(STextBlock).Text(Label).Font(APSMenu::Font("Bold", 11)).ColorAndOpacity(APSMenu::White)]
 				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
-				[SNew(SButton).ButtonStyle(&SecondaryButtonStyle).ContentPadding(FMargin(8.0f, 2.0f)).OnClicked_Lambda([Step](){ return Step(-1); })[SNew(STextBlock).Text(FText::FromString(TEXT("-"))).Font(APSMenu::Font("Bold", 11)).ColorAndOpacity(APSMenu::Cyan)]]
+				[SNew(SButton).ButtonStyle(&SecondaryButtonStyle).ContentPadding(0.0f).HAlign(HAlign_Center).VAlign(VAlign_Center).OnClicked_Lambda([Step](){ return Step(-1); })[SNew(STextBlock).Text(FText::FromString(TEXT("-"))).Justification(ETextJustify::Center).Font(APSMenu::Font("Bold", 11)).ColorAndOpacity(APSMenu::Cyan)]]
 				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(9.0f, 0.0f)
 				[SNew(STextBlock).Text_Lambda([Getter](){ return FText::FromString(FString::Printf(TEXT("%02d / 20"), Getter())); }).Font(APSMenu::Font("Bold", 10)).ColorAndOpacity(APSMenu::Cyan)]
 				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
-				[SNew(SButton).ButtonStyle(&SecondaryButtonStyle).ContentPadding(FMargin(8.0f, 2.0f)).OnClicked_Lambda([Step](){ return Step(1); })[SNew(STextBlock).Text(FText::FromString(TEXT("+"))).Font(APSMenu::Font("Bold", 11)).ColorAndOpacity(APSMenu::Cyan)]]
+				[SNew(SButton).ButtonStyle(&SecondaryButtonStyle).ContentPadding(0.0f).HAlign(HAlign_Center).VAlign(VAlign_Center).OnClicked_Lambda([Step](){ return Step(1); })[SNew(STextBlock).Text(FText::FromString(TEXT("+"))).Justification(ETextJustify::Center).Font(APSMenu::Font("Bold", 11)).ColorAndOpacity(APSMenu::Cyan)]]
 			]
 			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 7.0f, 0.0f, 0.0f)
 			[

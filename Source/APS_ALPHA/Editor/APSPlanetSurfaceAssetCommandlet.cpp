@@ -1,4 +1,4 @@
-﻿#include "APSPlanetSurfaceAssetCommandlet.h"
+#include "APSPlanetSurfaceAssetCommandlet.h"
 
 #if WITH_EDITOR
 
@@ -43,6 +43,25 @@
 #include "UObject/Package.h"
 #include "UObject/SavePackage.h"
 #include "APS_ALPHA/Core/Planetary/APSPlanetSurfaceProfile.h"
+#include "APSPlanetSurfaceDetailMaterial.h"
+#include "APSOrbitalTerrainDetail.h"
+#include "APSSharedTerrainMaterialBuilder.h"
+#include "APSSharedLavaMaterialBuilder.h"
+#include "APSLavaAntiGridUpdate.h"
+#include "APSLavaCrustReflectanceUpdate.h"
+#include "APSLavaThermalCoverageUpdate.h"
+#include "APSLavaThermalCoverageRetune.h"
+#include "APSLavaThermalMipUpdate.h"
+#include "APSLavaDetailPrecisionUpdate.h"
+#include "APSLavaSamplingABBuilder.h"
+#include "APSLavaBandwidthLODBuilder.h"
+#include "APSSharedAmmoniaMaterialBuilder.h"
+#include "APSSharedWaterMaterialBuilder.h"
+#include "APSSharedTerrainLodABBuilder.h"
+#include "APSSharedTerrainFarNormalABBuilder.h"
+#include "APSSharedTerrainNormalUpdate.h"
+#include "APSSharedTerrainDetailPrecisionUpdate.h"
+#include "APSSharedTerrainColorBoundsUpdate.h"
 
 namespace APSPlanetSurfaceAssets
 {
@@ -899,13 +918,24 @@ namespace APSPlanetSurfaceAssets
 			BoundedNormalBlend->MaxDefault = 1.0f;
 			BaseWorldNormal->VectorInput.Connect(0, BaseWorldNormalBlend);
 
+			// Classification belongs to the terrain, not the view. Reusing the distance-
+			// blended lighting normal here erased rock masks as the camera moved away.
+			auto* GeologicalNormal = AddExpression<UMaterialExpressionNormalize>(Material, 2480, -600);
+			GeologicalNormal->VectorInput.Connect(0, VertexNormal);
+			const APSPlanetSurfaceDetail::FLayer TextureDetail = APSPlanetSurfaceDetail::Build(
+				Material, RootRelativePosition, TerrainSeedOffset, GeologicalNormal,
+				BaseWorldNormal, EnvelopedNearFieldFade, OrbitalPresentationBlend);
+			if (!TextureDetail.ColorMultiplier || !TextureDetail.NormalPerturbation) return nullptr;
+			auto* TexturedColor = AddExpression<UMaterialExpressionMultiply>(Material, 3300, -600);
+			TexturedColor->A.Connect(0, BoundedDetailedColor);
+			TexturedColor->B.Connect(0, TextureDetail.ColorMultiplier);
+			SlopeTintedColor->A.Connect(0, TexturedColor);
+
 			// VectorNoise GradientALU returns the signed volume gradient in RGB and
 			// scalar noise in A. Remove the component along the actual streamed vertex
 			// normal before applying it, so detail follows the spherical terrain rather
 			// than biasing normals toward an arbitrary world axis.
-			// BaseWorldNormal is already normalized after the distance blend. Reuse it for
-			// detail projection and slope classification so neither lighting nor base colour
-			// can reintroduce a raw section-local normal at the same LOD boundary.
+			// The lighting basis is independent of the geological classification above.
 			RadialGradient->A.Connect(0, NearGradient);
 			RadialGradient->B.Connect(0, BaseWorldNormal);
 			RadialGradientVector->A.Connect(0, BaseWorldNormal);
@@ -916,13 +946,14 @@ namespace APSPlanetSurfaceAssets
 			FadedNormalStrength->B.Connect(0, EnvelopedNearFieldFade);
 			NormalPerturbation->A.Connect(0, TangentGradient);
 			NormalPerturbation->B.Connect(0, FadedNormalStrength);
+			auto* CombinedDetailNormal = AddExpression<UMaterialExpressionAdd>(Material, 3380, 120);
+			CombinedDetailNormal->A.Connect(0, NormalPerturbation);
+			CombinedDetailNormal->B.Connect(0, TextureDetail.NormalPerturbation);
 			PerturbedNormal->A.Connect(0, BaseWorldNormal);
-			PerturbedNormal->B.Connect(0, NormalPerturbation);
+			PerturbedNormal->B.Connect(0, CombinedDetailNormal);
 			NormalizedWorldNormal->VectorInput.Connect(0, PerturbedNormal);
-			// This remains a material cue on the authoritative displaced mesh. Close to the
-			// player the blend is exactly the streamed normal; beyond 50 m the shared radial
-			// basis prevents independently generated sections from becoming square tint bands.
-			SurfaceNormalAlignment->A.Connect(0, BaseWorldNormal);
+			// The rock mask follows the mesh, not the camera-distance normal fade.
+			SurfaceNormalAlignment->A.Connect(0, GeologicalNormal);
 			SurfaceNormalAlignment->B.Connect(0, RadialNormal);
 			SurfaceSteepness->Input.Connect(0, SurfaceNormalAlignment);
 			WeightedSlopeMask->A.Connect(0, GeologicalSlopeMask);
@@ -934,153 +965,15 @@ namespace APSPlanetSurfaceAssets
 		}
 		else
 		{
-			// The selected PLANET renderer is one closed procedural component. Its vertex
-			// payload retains the authoritative WorldScape height/climate classification,
-			// but vertex interpolation alone remains visibly soft at close framing.
-			// Add one object-centred GradientALU sample and reuse all four outputs for
-			// colour, roughness and a world-space tangent normal. This supplies seamless
-			// sub-vertex material detail without another texture, mesh, shell or noise
-			// evaluation, so only the currently visible selected globe pays the shader cost.
-			UMaterialExpressionWorldPosition* OrbitalWorldPosition =
-				AddExpression<UMaterialExpressionWorldPosition>(Material, 240, -900);
-			UMaterialExpression* OrbitalObjectCenter =
-				AddObjectPositionExpression(Material, 240, -820);
-			UMaterialExpressionSubtract* OrbitalRelativePosition =
-				AddExpression<UMaterialExpressionSubtract>(Material, 460, -860);
-			UMaterialExpressionNormalize* OrbitalRadialNormal =
-				AddExpression<UMaterialExpressionNormalize>(Material, 680, -860);
-			UMaterialExpressionVertexNormalWS* OrbitalBaseWorldNormal =
-				AddExpression<UMaterialExpressionVertexNormalWS>(Material, 1500, -520);
-			UMaterialExpressionVectorParameter* OrbitalSeedOffset = AddVectorParameter(
-				Material, TEXT("OrbitalSeedOffset"),
-				FLinearColor(3.1f, 7.7f, 11.3f, 0.0f), 460, -760, 30);
-			UMaterialExpressionScalarParameter* OrbitalMicroDetailScale = AddScalarParameter(
-				Material, TEXT("OrbitalMicroDetailScale"), 28.0f, 20.0f, 64.0f,
-				680, -760, 31);
-			UMaterialExpressionScalarParameter* OrbitalMicroColorStrength = AddScalarParameter(
-				Material, TEXT("OrbitalMicroColorStrength"), 0.025f, 0.0f, 0.035f,
-				680, -680, 32);
-			UMaterialExpressionScalarParameter* OrbitalMicroNormalStrength = AddScalarParameter(
-				Material, TEXT("OrbitalMicroNormalStrength"), 0.0375f, 0.0f, 0.055f,
-				680, -600, 33);
-			UMaterialExpressionScalarParameter* OrbitalMicroRoughnessStrength = AddScalarParameter(
-				Material, TEXT("OrbitalMicroRoughnessStrength"), 0.010f, 0.0f, 0.016f,
-				680, -520, 34);
-			UMaterialExpressionMultiply* OrbitalDetailPosition =
-				AddExpression<UMaterialExpressionMultiply>(Material, 900, -860);
-			UMaterialExpressionAdd* SeededOrbitalDetailPosition =
-				AddExpression<UMaterialExpressionAdd>(Material, 1100, -860);
-			UMaterialExpressionVectorNoise* OrbitalDetailNoise =
-				AddExpression<UMaterialExpressionVectorNoise>(Material, 1300, -860);
-			UMaterialExpressionComponentMask* OrbitalDetailGradient =
-				AddExpression<UMaterialExpressionComponentMask>(Material, 1500, -900);
-			UMaterialExpressionComponentMask* OrbitalDetailScalar =
-				AddExpression<UMaterialExpressionComponentMask>(Material, 1500, -760);
-			UMaterialExpressionMultiply* OrbitalColorTerm =
-				AddExpression<UMaterialExpressionMultiply>(Material, 1700, -760);
-			UMaterialExpressionAdd* OrbitalColorScale =
-				AddExpression<UMaterialExpressionAdd>(Material, 1900, -760);
-			UMaterialExpressionMultiply* DetailedOrbitalColor =
-				AddExpression<UMaterialExpressionMultiply>(Material, 2100, -760);
-			UMaterialExpressionClamp* BoundedOrbitalColor =
-				AddExpression<UMaterialExpressionClamp>(Material, 2300, -760);
-			UMaterialExpressionMultiply* OrbitalRoughnessTerm =
-				AddExpression<UMaterialExpressionMultiply>(Material, 1700, -620);
-			UMaterialExpressionAdd* DetailedOrbitalRoughness =
-				AddExpression<UMaterialExpressionAdd>(Material, 1900, -620);
-			UMaterialExpressionClamp* BoundedOrbitalRoughness =
-				AddExpression<UMaterialExpressionClamp>(Material, 2100, -620);
-			UMaterialExpressionDotProduct* OrbitalRadialGradient =
-				AddExpression<UMaterialExpressionDotProduct>(Material, 1700, -480);
-			UMaterialExpressionMultiply* OrbitalRadialGradientVector =
-				AddExpression<UMaterialExpressionMultiply>(Material, 1900, -480);
-			UMaterialExpressionSubtract* OrbitalTangentGradient =
-				AddExpression<UMaterialExpressionSubtract>(Material, 2100, -480);
-			UMaterialExpressionMultiply* OrbitalNormalPerturbation =
-				AddExpression<UMaterialExpressionMultiply>(Material, 2300, -480);
-			UMaterialExpressionAdd* PerturbedOrbitalNormal =
-				AddExpression<UMaterialExpressionAdd>(Material, 2500, -480);
-			UMaterialExpressionNormalize* NormalizedOrbitalNormal =
-				AddExpression<UMaterialExpressionNormalize>(Material, 2700, -480);
-			if (!OrbitalWorldPosition || !OrbitalObjectCenter || !OrbitalRelativePosition
-				|| !OrbitalRadialNormal || !OrbitalBaseWorldNormal
-				|| !OrbitalSeedOffset || !OrbitalMicroDetailScale
-				|| !OrbitalMicroColorStrength || !OrbitalMicroNormalStrength
-				|| !OrbitalMicroRoughnessStrength || !OrbitalDetailPosition
-				|| !SeededOrbitalDetailPosition || !OrbitalDetailNoise
-				|| !OrbitalDetailGradient || !OrbitalDetailScalar || !OrbitalColorTerm
-				|| !OrbitalColorScale || !DetailedOrbitalColor || !BoundedOrbitalColor
-				|| !OrbitalRoughnessTerm || !DetailedOrbitalRoughness
-				|| !BoundedOrbitalRoughness || !OrbitalRadialGradient
-				|| !OrbitalRadialGradientVector || !OrbitalTangentGradient
-				|| !OrbitalNormalPerturbation || !PerturbedOrbitalNormal
-				|| !NormalizedOrbitalNormal)
-			{
-				return nullptr;
-			}
-
-			OrbitalWorldPosition->WorldPositionShaderOffset = WPT_ExcludeAllShaderOffsets;
-			OrbitalRelativePosition->A.Connect(0, OrbitalWorldPosition);
-			OrbitalRelativePosition->B.Connect(0, OrbitalObjectCenter);
-			OrbitalRadialNormal->VectorInput.Connect(0, OrbitalRelativePosition);
-			OrbitalDetailPosition->A.Connect(0, OrbitalRadialNormal);
-			OrbitalDetailPosition->B.Connect(0, OrbitalMicroDetailScale);
-			SeededOrbitalDetailPosition->A.Connect(0, OrbitalDetailPosition);
-			SeededOrbitalDetailPosition->B.Connect(0, OrbitalSeedOffset);
-			OrbitalDetailNoise->Position.Connect(0, SeededOrbitalDetailPosition);
-			OrbitalDetailNoise->WorldPositionOriginType = EPositionOrigin::Absolute;
-			OrbitalDetailNoise->NoiseFunction = VNF_GradientALU;
-			OrbitalDetailNoise->Quality = 1;
-			OrbitalDetailNoise->bTiling = false;
-			OrbitalDetailGradient->Input.Connect(0, OrbitalDetailNoise);
-			OrbitalDetailGradient->R = true;
-			OrbitalDetailGradient->G = true;
-			OrbitalDetailGradient->B = true;
-			OrbitalDetailGradient->A = false;
-			OrbitalDetailScalar->Input.Connect(0, OrbitalDetailNoise);
-			OrbitalDetailScalar->R = false;
-			OrbitalDetailScalar->G = false;
-			OrbitalDetailScalar->B = false;
-			OrbitalDetailScalar->A = true;
-
-			OrbitalColorTerm->A.Connect(0, OrbitalDetailScalar);
-			OrbitalColorTerm->B.Connect(0, OrbitalMicroColorStrength);
-			OrbitalColorScale->A.Connect(0, OrbitalColorTerm);
-			OrbitalColorScale->ConstB = 1.0f;
-			DetailedOrbitalColor->A.Connect(0, BoundedPaletteColor);
-			DetailedOrbitalColor->B.Connect(0, OrbitalColorScale);
-			BoundedOrbitalColor->Input.Connect(0, DetailedOrbitalColor);
-			BoundedOrbitalColor->ClampMode = CMODE_Clamp;
-			BoundedOrbitalColor->MinDefault = 0.0f;
-			BoundedOrbitalColor->MaxDefault = 1.0f;
-
-			OrbitalRoughnessTerm->A.Connect(0, OrbitalDetailScalar);
-			OrbitalRoughnessTerm->B.Connect(0, OrbitalMicroRoughnessStrength);
-			DetailedOrbitalRoughness->A.Connect(0, Roughness);
-			DetailedOrbitalRoughness->B.Connect(0, OrbitalRoughnessTerm);
-			BoundedOrbitalRoughness->Input.Connect(0, DetailedOrbitalRoughness);
-			BoundedOrbitalRoughness->ClampMode = CMODE_Clamp;
-			BoundedOrbitalRoughness->MinDefault = 0.04f;
-			BoundedOrbitalRoughness->MaxDefault = 0.98f;
-
-			OrbitalRadialGradient->A.Connect(0, OrbitalDetailGradient);
-			// Preserve the closed mesh's area-weighted relief normal. The radial direction
-			// is only the seamless sampling domain; the procedural gradient is projected
-			// into the actual displaced surface tangent before being added to lighting.
-			OrbitalRadialGradient->B.Connect(0, OrbitalBaseWorldNormal);
-			OrbitalRadialGradientVector->A.Connect(0, OrbitalBaseWorldNormal);
-			OrbitalRadialGradientVector->B.Connect(0, OrbitalRadialGradient);
-			OrbitalTangentGradient->A.Connect(0, OrbitalDetailGradient);
-			OrbitalTangentGradient->B.Connect(0, OrbitalRadialGradientVector);
-			OrbitalNormalPerturbation->A.Connect(0, OrbitalTangentGradient);
-			OrbitalNormalPerturbation->B.Connect(0, OrbitalMicroNormalStrength);
-			PerturbedOrbitalNormal->A.Connect(0, OrbitalBaseWorldNormal);
-			PerturbedOrbitalNormal->B.Connect(0, OrbitalNormalPerturbation);
-			NormalizedOrbitalNormal->VectorInput.Connect(0, PerturbedOrbitalNormal);
-
-			SurfaceColor = BoundedOrbitalColor;
-			SurfaceRoughness = BoundedOrbitalRoughness;
-			SurfaceNormal = NormalizedOrbitalNormal;
+			// PLANET uses angular, component-local native textures. Keep the same
+			// height/climate palette and displaced mesh normal as the resolved body;
+			// never assign the full-scale ground master to this compressed globe.
+			auto* BaseNormal = AddExpression<UMaterialExpressionVertexNormalWS>(Material, 1500, -520);
+			const auto Detail = APSOrbitalTerrainDetail::Build(Material, BoundedPaletteColor, BaseNormal);
+			if (!Detail.Color || !Detail.Normal) return nullptr;
+			SurfaceColor = Detail.Color;
+			SurfaceNormal = Detail.Normal;
+			SurfaceRoughness = Roughness;
 		}
 
 		UMaterialExpressionClamp* BoundedEmissive =
@@ -1153,8 +1046,8 @@ namespace APSPlanetSurfaceAssets
 	UMaterial* CreateWorldScapeTerrainMaterial(IAssetTools& AssetTools)
 	{
 		// This graph is assigned to the real WorldScape LOD meshes. It deliberately
-		// contains no UV texture sampling, cube-face projection or proxy geometry:
-		// the continuous WorldScape vertex payload drives every visible colour band.
+		// contains no patch UV sampling or proxy geometry. The continuous WorldScape
+		// payload owns the palette; root-relative triplanar textures add ground detail.
 		return CreateTerrainMaterial(
 			AssetTools, MaterialPath, TEXT("M_APS_WorldScapeTerrain"), true);
 	}
@@ -2417,6 +2310,14 @@ namespace APSPlanetSurfaceAssets
 		Scalar(TEXT("Roughness"), MeanRoughness);
 		Scalar(TEXT("Metallic"), MeanMetallic);
 		Scalar(TEXT("Specular"), FMath::Lerp(0.24f, 0.48f, MeanMetallic));
+		const APSPlanetSurfaceDetail::FTextures Detail = APSPlanetSurfaceDetail::TexturesFor(Archetype);
+		Material->SetTextureParameterValueEditorOnly(FMaterialParameterInfo(TEXT("SurfaceDetailAlbedo")),
+			LoadObject<UTexture2D>(nullptr, Detail.Albedo));
+		Material->SetTextureParameterValueEditorOnly(FMaterialParameterInfo(TEXT("SurfaceDetailNormal")),
+			LoadObject<UTexture2D>(nullptr, Detail.Normal));
+		Scalar(TEXT("SurfaceDetailSizeCm"), Detail.SizeCm);
+		Scalar(TEXT("SurfaceDetailNormalStrength"), 0.38f);
+		Scalar(TEXT("SurfaceDetailColorStrength"), 0.38f);
 		Material->PostEditChange();
 	}
 
@@ -2449,7 +2350,10 @@ namespace APSPlanetSurfaceAssets
 
 UAPSPlanetSurfaceAssetCommandlet::UAPSPlanetSurfaceAssetCommandlet()
 {
-	IsClient = false;
+	// Material authoring needs all editor exports. Server-only filtering strips
+	// MaterialExpression objects from the native material functions on load.
+	IsClient = true;
+	IsServer = true;
 	IsEditor = true;
 	LogToConsole = true;
 	ShowErrorCount = true;
@@ -2465,6 +2369,89 @@ int32 UAPSPlanetSurfaceAssetCommandlet::Main(const FString& Params)
 		return 8;
 	}
 	IAssetTools& AssetTools = FModuleManager::LoadModuleChecked<FAssetToolsModule>(TEXT("AssetTools")).Get();
+	if (FParse::Param(*Params, TEXT("OnlyUpdateSharedLavaAntiGrid")))
+	{
+		// Explicit offline rebake: new owned WAT + existing shared master only.
+		return APSLavaAntiGridUpdate::Run(AssetTools) ? 0 : 21;
+	}
+	if (FParse::Param(*Params, TEXT("OnlyUpdateSharedTerrainColorBounds")))
+	{
+		return APSSharedTerrainColorBoundsUpdate::Run(AssetTools) ? 0 : 22;
+	}
+	if (FParse::Param(*Params, TEXT("OnlyRetuneSharedLavaThermalCoverage")))
+	{
+		return APSLavaThermalCoverageRetune::Run(AssetTools) ? 0 : 21;
+	}
+	if (FParse::Param(*Params, TEXT("OnlyUpdateSharedLavaDetailPrecision")))
+	{
+		return APSLavaDetailPrecisionUpdate::Run(AssetTools) ? 0 : 21;
+	}
+	if (FParse::Param(*Params, TEXT("OnlyUpdateSharedLavaThermalMips")))
+	{
+		return APSLavaThermalMipUpdate::Run(AssetTools) ? 0 : 21;
+	}
+	if (FParse::Param(*Params, TEXT("OnlyUpdateSharedLavaThermalCoverage")))
+	{
+		return APSLavaThermalCoverageUpdate::Run(AssetTools) ? 0 : 21;
+	}
+	if (FParse::Param(*Params, TEXT("OnlyUpdateSharedLavaCrustReflectance")))
+	{
+		return APSLavaCrustReflectanceUpdate::Run(AssetTools) ? 0 : 21;
+	}
+	if (FParse::Param(*Params, TEXT("OnlyUpdateSharedTerrainDetailPrecision")))
+	{
+		return APSSharedTerrainDetailPrecisionUpdate::Run(AssetTools) ? 0 : 21;
+	}
+	if (FParse::Param(*Params, TEXT("OnlyUpdateSharedTerrainNormals")))
+	{
+		return APSSharedTerrainNormalUpdate::Run(AssetTools) ? 0 : 18;
+	}
+	if (FParse::Param(*Params, TEXT("OnlySharedTerrainFarNormalAB")))
+	{
+		return APSSharedTerrainFarNormalABBuilder::Build(AssetTools) ? 0 : 15;
+	}
+	if (FParse::Param(*Params, TEXT("OnlyLavaBandwidthLOD")))
+	{
+		return APSLavaBandwidthLODBuilder::Build(AssetTools) ? 0 : 19;
+	}
+	if (FParse::Param(*Params, TEXT("OnlyLavaScaleAB")))
+	{
+		return APSLavaSamplingABBuilder::Build(AssetTools, false, true) ? 0 : 17;
+	}
+	if (FParse::Param(*Params, TEXT("OnlyLavaDerivativeFix")))
+	{
+		return APSLavaSamplingABBuilder::Build(AssetTools, true) ? 0 : 16;
+	}
+	if (FParse::Param(*Params, TEXT("OnlyLavaSamplingAB")))
+	{
+		// Diagnostic-only new graph; never selects or modifies production assets.
+		return APSLavaSamplingABBuilder::Build(AssetTools) ? 0 : 14;
+	}
+	if (FParse::Param(*Params, TEXT("OnlySharedTerrainLodAB")))
+	{
+		return APSSharedTerrainLodABBuilder::Build(AssetTools) ? 0 : 12;
+	}
+	if (FParse::Param(*Params, TEXT("OnlySharedAmmonia")))
+	{
+		// New candidate packages only; no catalog rewrite or runtime selection.
+		return APSSharedAmmoniaMaterialBuilder::Build(AssetTools) ? 0 : 11;
+	}
+	if (FParse::Param(*Params, TEXT("OnlySharedLava")))
+	{
+		// Creates new candidate assets only; no runtime selector is changed here.
+		return APSSharedLavaMaterialBuilder::Build(AssetTools) ? 0 : 10;
+	}
+	if (FParse::Param(*Params, TEXT("OnlySharedWater")))
+	{
+		// One new MIC only; the installed physical-liquid master remains read-only.
+		return APSSharedWaterMaterialBuilder::Build(AssetTools) ? 0 : 13;
+	}
+	if (FParse::Param(*Params, TEXT("OnlySharedTerrain")))
+	{
+		// Creates only the new shared-native master/templates and necessary private
+		// function adapters. Never rebake liquids, catalog, authored or vendor assets.
+		return APSSharedTerrainMaterialBuilder::Build(AssetTools) ? 0 : 9;
+	}
 	if (FParse::Param(*Params, TEXT("OrbitalLiquidsOnly")))
 	{
 		// Scoped repair: never regenerate the physical WorldScape materials, terrain,
@@ -2472,6 +2459,35 @@ int32 UAPSPlanetSurfaceAssetCommandlet::Main(const FString& Params)
 		return CreateCanonicalLiquidMaterial(AssetTools, PreviewMaterialPath,
 			TEXT("M_APS_OrbitalLiquid"), true)
 			&& CreateOrbitalLivingWaterMaterial(AssetTools) ? 0 : 5;
+	}
+	if (FParse::Param(*Params, TEXT("OrbitalTerrainOnly")))
+	{
+		UE_LOG(LogTemp, Display, TEXT("[APS.PlanetSurfaceAssets] OrbitalTerrainOnly v1: one menu material"));
+		// Exactly one menu material; leave gameplay ground, liquids, catalog and
+		// the saved manual/native reference assets untouched.
+		return CreateOrbitalTerrainMaterial(AssetTools) ? 0 : 6;
+	}
+	if (FParse::Param(*Params, TEXT("TerrainDetailOnly")))
+	{
+		// Do not regenerate liquid, atmosphere, orbital-preview or catalog assets.
+		UMaterial* Master = CreateWorldScapeTerrainMaterial(AssetTools);
+		if (!Master) return 6;
+		const TPair<EAPSPlanetSurfaceArchetype, const TCHAR*> Families[] = {
+			{EAPSPlanetSurfaceArchetype::Rocky, TEXT("MI_APS_WS_Rocky")},
+			{EAPSPlanetSurfaceArchetype::Temperate, TEXT("MI_APS_WS_Temperate")},
+			{EAPSPlanetSurfaceArchetype::Oceanic, TEXT("MI_APS_WS_Oceanic")},
+			{EAPSPlanetSurfaceArchetype::Biosphere, TEXT("MI_APS_WS_Biosphere")},
+			{EAPSPlanetSurfaceArchetype::Desert, TEXT("MI_APS_WS_Desert")},
+			{EAPSPlanetSurfaceArchetype::Cryogenic, TEXT("MI_APS_WS_Cryogenic")},
+			{EAPSPlanetSurfaceArchetype::Magmatic, TEXT("MI_APS_WS_Magmatic")},
+			{EAPSPlanetSurfaceArchetype::Metallic, TEXT("MI_APS_WS_Metallic")},
+			{EAPSPlanetSurfaceArchetype::ExoticChemical, TEXT("MI_APS_WS_ExoticChemical")}};
+		for (const auto& Family : Families)
+		{
+			if (!CreateFamilyMaterial(AssetTools, Family.Key, Family.Value, Master,
+				UAPSPlanetSurfaceProfileResolver::GetNativeDefinition(Family.Key))) return 7;
+		}
+		return 0;
 	}
 
 	// Terrain and physical liquids are project-authored and assigned directly to

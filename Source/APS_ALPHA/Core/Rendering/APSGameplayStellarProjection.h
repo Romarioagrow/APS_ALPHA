@@ -2,6 +2,7 @@
 
 #include "APSContinuousPreviewFrame.h"
 #include "APSPreviewVisibility.h"
+#include "APSStellarOpticalSupport.h"
 
 namespace APSGameplayStellarProjection
 {
@@ -16,14 +17,17 @@ inline constexpr double ReprojectionErrorPixels = 0.05;
 
 // Keep the accepted Gaussian point resolvable at its actual 3D distance. All
 // lengths use the same frame; only the glyph radius changes, never its centre.
-inline double GetFullScalePointRadius(double Distance, double BaseRadius, double PixelTangent)
+inline double GetFullScalePointRadius(double Distance, double BaseRadius, double PixelTangent,
+	double SupportPixels = PointSupportPixels)
 {
 	if (!FMath::IsFinite(Distance) || Distance <= 0.0
 		|| !FMath::IsFinite(PixelTangent) || PixelTangent <= 0.0)
 	{
 		return BaseRadius;
 	}
-	return FMath::Max(BaseRadius, Distance * PixelTangent * PointSupportPixels);
+	const double SafeSupport = FMath::IsFinite(SupportPixels)
+		? FMath::Clamp(SupportPixels, PointSupportPixels, APSStellarOpticalSupport::MaximumSupportPixels) : PointSupportPixels;
+	return FMath::Max(BaseRadius, Distance * PixelTangent * SafeSupport);
 }
 
 inline bool NeedsInstanceUpload(bool bReproject, bool bPreviouslyOccluded, bool bNowOccluded)
@@ -35,7 +39,7 @@ inline bool CanReuseOptics(double PreviousPixelTangent, double CurrentPixelTange
 {
 	return FMath::IsFinite(PreviousPixelTangent) && PreviousPixelTangent > 0.0
 		&& FMath::IsFinite(CurrentPixelTangent) && CurrentPixelTangent > 0.0
-		&& PointSupportPixels * FMath::Abs(PreviousPixelTangent / CurrentPixelTangent - 1.0)
+		&& APSStellarOpticalSupport::MaximumSupportPixels * FMath::Abs(PreviousPixelTangent / CurrentPixelTangent - 1.0)
 			<= ReprojectionErrorPixels;
 }
 
@@ -97,14 +101,13 @@ struct FPreparedOccluder
 };
 
 inline bool Project(const FVector& FromObserverCm, double RadiusCm, double PixelTangent,
-	FAPSPreviewProjectedSphere& Sphere, double& OpticalRadiusCm)
+	FAPSPreviewProjectedSphere& Sphere, double& OpticalRadiusCm, double SupportPixels = PointSupportPixels)
 {
 	FAPSContinuousPreviewFrame Frame;
 	Frame.FarEnvelopeCm = FarEnvelopeCm;
 	if (!FMath::IsFinite(PixelTangent) || PixelTangent <= 0.0
 		|| !Frame.ProjectSphere(FromObserverCm, RadiusCm, Sphere)) return false;
-	OpticalRadiusCm = FMath::Max(Sphere.Radius,
-		Sphere.Center.Size() * PixelTangent * PointSupportPixels);
+	OpticalRadiusCm = GetFullScalePointRadius(Sphere.Center.Size(), Sphere.Radius, PixelTangent, SupportPixels);
 	return FMath::IsFinite(OpticalRadiusCm);
 }
 

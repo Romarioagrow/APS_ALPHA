@@ -1,4 +1,6 @@
 #include "APSPlanetSurfaceProfile.h"
+#include "APSNativeTerrainMaterial.h"
+#include "APSSharedTerrainMaterial.h"
 
 #include "APS_ALPHA/Actors/Astro/PlanetaryBody.h"
 #include "APS_ALPHA/Actors/Planetary/PlanetAtmosphere.h"
@@ -425,6 +427,70 @@ namespace APSPlanetSurface
 				SRGB(161, 151, 84), SRGB(205, 217, 178), SRGB(48, 50, 72), FLinearColor::Black);
 			break;
 
+		case EPlanetType::Crystal:
+			// A new saved ID: never repurpose legacy Exoplanet's accepted surface.
+			P.LiquidType = EAPSPlanetLiquidType::None;
+			P.LandCoverage = FMath::Clamp(P.LandCoverage, 0.82f, 0.94f);
+			P.MountainStrength = FMath::Clamp(P.MountainStrength, 0.48f, 0.78f);
+			P.CraterStrength = FMath::Min(P.CraterStrength, 0.12f);
+			P.ContinentalFrequencyMultiplier = 1.18f;
+			P.RegionalFrequencyMultiplier = 0.70f;
+			P.RidgeFrequencyMultiplier = 1.48f;
+			P.CellularFrequencyMultiplier = 0.86f;
+			P.TerrainPatternStrength = 0.92f;
+			P.ClimatePatchStrength = 0.38f;
+			P.Palette = MakePalette(SRGB(147, 163, 148), SRGB(61, 76, 91), SRGB(94, 116, 125), SRGB(140, 155, 163),
+				SRGB(125, 108, 147), SRGB(213, 226, 220), SRGB(46, 54, 72), FLinearColor::Black);
+			break;
+
+		case EPlanetType::Basalt:
+			// Cooled flood-basalt plateaux; dry and non-emissive, not a lava variant.
+			P.LiquidType = EAPSPlanetLiquidType::None;
+			P.LandCoverage = 1.0f;
+			P.NoiseIntensity *= 0.82f;
+			P.MountainStrength = FMath::Clamp(P.MountainStrength, 0.25f, 0.48f);
+			P.CraterStrength = FMath::Min(P.CraterStrength, 0.22f);
+			P.ContinentalFrequencyMultiplier = 0.92f;
+			P.RegionalFrequencyMultiplier = 0.74f;
+			P.RidgeFrequencyMultiplier = 1.24f;
+			P.TerrainPatternStrength = 0.86f;
+			P.Palette = MakePalette(SRGB(112, 106, 91), SRGB(44, 47, 48), SRGB(69, 72, 70), SRGB(95, 93, 86),
+				SRGB(114, 91, 68), SRGB(161, 156, 143), SRGB(39, 40, 41), FLinearColor::Black);
+			break;
+
+		case EPlanetType::Savanna:
+			// Seasonal grassland on rolling, incised plateaux; not Forest recoloured.
+			P.LiquidType = EAPSPlanetLiquidType::Water;
+			P.LandCoverage = FMath::Clamp(P.LandCoverage, 0.64f, 0.76f);
+			P.Humidity = FMath::Clamp(P.Humidity, 0.38f, 0.56f);
+			P.Biomass = FMath::Max(P.Biomass, 0.55f);
+			P.Biodiversity = FMath::Max(P.Biodiversity, 0.52f);
+			P.MountainStrength = FMath::Min(P.MountainStrength, 0.36f);
+			P.ContinentalFrequencyMultiplier = 0.88f;
+			P.RegionalFrequencyMultiplier = 0.82f;
+			P.RidgeFrequencyMultiplier = 1.16f;
+			P.TerrainPatternStrength = 0.70f;
+			P.ClimatePatchStrength = 0.62f;
+			P.Palette = MakePalette(SRGB(195, 170, 114), SRGB(102, 113, 47), SRGB(130, 133, 58), SRGB(139, 122, 75),
+				SRGB(188, 154, 75), SRGB(217, 217, 186), SRGB(89, 78, 58), FLinearColor::Black);
+			break;
+
+		case EPlanetType::Sulfur:
+			// Dry chemical vent basins with raised rims and terraced deposits.
+			P.LiquidType = EAPSPlanetLiquidType::None;
+			P.LandCoverage = 1.0f;
+			P.NoiseIntensity *= 0.78f;
+			P.MountainStrength = FMath::Min(P.MountainStrength, 0.34f);
+			P.Humidity = FMath::Min(P.Humidity, 0.20f);
+			P.ContinentalFrequencyMultiplier = 1.12f;
+			P.RegionalFrequencyMultiplier = 0.72f;
+			P.CellularFrequencyMultiplier = 0.64f;
+			P.TerrainPatternStrength = 0.90f;
+			P.ClimatePatchStrength = 0.20f;
+			P.Palette = MakePalette(SRGB(185, 161, 74), SRGB(132, 118, 41), SRGB(191, 161, 48), SRGB(156, 118, 44),
+				SRGB(205, 178, 67), SRGB(230, 212, 139), SRGB(88, 71, 39), FLinearColor::Black);
+			break;
+
 		case EPlanetType::Unknown:
 			P.LiquidType = EAPSPlanetLiquidType::None;
 			P.LandCoverage = FMath::Clamp(P.LandCoverage, 0.58f, 0.74f);
@@ -461,6 +527,7 @@ EAPSPlanetSurfaceArchetype UAPSPlanetSurfaceProfileResolver::GetArchetypeForType
 
 	case EPlanetType::Forest:
 	case EPlanetType::Oasis:
+	case EPlanetType::Savanna:
 		return EAPSPlanetSurfaceArchetype::Biosphere;
 
 	case EPlanetType::Greenhouse:
@@ -486,10 +553,13 @@ EAPSPlanetSurfaceArchetype UAPSPlanetSurfaceProfileResolver::GetArchetypeForType
 
 	case EPlanetType::Ammonia:
 	case EPlanetType::Exoplanet:
+	case EPlanetType::Sulfur:
+	case EPlanetType::Crystal:
 		return EAPSPlanetSurfaceArchetype::ExoticChemical;
 
 	case EPlanetType::Dwarf:
 	case EPlanetType::Rocky:
+	case EPlanetType::Basalt:
 	case EPlanetType::Unknown:
 	default:
 		return EAPSPlanetSurfaceArchetype::Rocky;
@@ -956,6 +1026,12 @@ void UAPSPlanetSurfaceProfileResolver::ApplyMaterialParameters(
 	UMaterialInstanceDynamic* Material, const FAPSResolvedPlanetSurfaceProfile& Profile)
 {
 	if (!IsValid(Material)) return;
+	if (APSNativeTerrainMaterial::IsNativeStack(Material)
+		|| APSSharedTerrainMaterial::IsSharedStack(Material))
+	{
+		APSNativeTerrainMaterial::ApplyPalette(Material, Profile);
+		return;
+	}
 
 	Material->SetVectorParameterValue(TEXT("BottomColor"), Profile.Palette.Coast);
 	Material->SetVectorParameterValue(TEXT("Color1"), Profile.Palette.Lowland);

@@ -21,6 +21,9 @@ AStar::AStar()
 
 	StarMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("StarMesh"));
 	StarMesh->SetupAttachment(RootComponent);
+	// A materialized star is the only resolved stellar sphere in the hierarchy.
+	// Never let distance LOD turn its optical disc into a visible low-poly proxy.
+	StarMesh->SetForcedLodModel(1);
 	static ConstructorHelpers::FObjectFinder<UMaterial> CanonicalActorMaterial(
 		APSStellarMaterialContract::ActorBaseObjectPath);
 	if (CanonicalActorMaterial.Succeeded())
@@ -38,7 +41,8 @@ AStar::AStar()
 	CoronaMesh->bDisallowNanite = true;
 	CoronaMesh->SetForceDisableNanite(true);
 	CoronaMesh->SetupAttachment(StarMesh);
-	CoronaMesh->SetRelativeScale3D(FVector(1.12));
+	CoronaMesh->SetRelativeScale3D(FVector(1.24));
+	CoronaMesh->SetForcedLodModel(1);
 	CoronaMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	CoronaMesh->SetGenerateOverlapEvents(false);
 	CoronaMesh->SetCanEverAffectNavigation(false);
@@ -148,6 +152,8 @@ UMaterialInstanceDynamic* AStar::EnsureCanonicalStellarMaterial()
 		// before assigning the Nanite photosphere mesh and additive corona material.
 		CoronaMesh->bDisallowNanite = true;
 		CoronaMesh->SetForceDisableNanite(true);
+		StarMesh->SetForcedLodModel(1);
+		CoronaMesh->SetForcedLodModel(1);
 		CoronaMesh->SetStaticMesh(StarMesh->GetStaticMesh());
 		UMaterial* CoronaBase = APSStellarMaterialContract::LoadCanonicalBase(
 			APSStellarMaterialContract::CoronaBaseObjectPath);
@@ -189,25 +195,24 @@ void AStar::ConfigureStellarPresentationComponents(
 
 	StarMesh->UpdateBounds();
 	const bool bBlackHole = StellarType == EStellarType::BlackHole;
-	// The fallback proxy stays close enough to the photosphere that it cannot read
-	// as a second globe. Its material receives the exact reciprocal below and emits
-	// a monotonic limb-to-space falloff, concentrating HDR at the photosphere edge
-	// instead of drawing a detached geometric crown.
-	float CoronaScale = 1.12f;
+	// The shell is a deliberately generous invisible carrier. Its material fades
+	// all round energy before the geometry ends, while narrow optical rays retain
+	// enough physical room to taper instead of being clipped into rectangular tabs.
+	float CoronaScale = 1.24f;
 	float TypeGain = 1.0f;
 	switch (StellarType)
 	{
-	case EStellarType::Protostar: CoronaScale = 1.14f; TypeGain = 1.40f; break;
-	case EStellarType::HyperGiant: CoronaScale = 1.14f; TypeGain = 1.35f; break;
-	case EStellarType::SuperGiant: CoronaScale = 1.13f; TypeGain = 1.28f; break;
-	case EStellarType::BrightGiant: CoronaScale = 1.13f; TypeGain = 1.20f; break;
-	case EStellarType::Giant: CoronaScale = 1.12f; TypeGain = 1.14f; break;
-	case EStellarType::SubGiant: CoronaScale = 1.11f; TypeGain = 1.08f; break;
-	case EStellarType::Neutron: CoronaScale = 1.08f; TypeGain = 1.18f; break;
-	case EStellarType::Pulsar: CoronaScale = 1.10f; TypeGain = 1.34f; break;
-	case EStellarType::WhiteDwarf: CoronaScale = 1.08f; TypeGain = 0.92f; break;
-	case EStellarType::SubDwarf: CoronaScale = 1.09f; TypeGain = 0.82f; break;
-	case EStellarType::BrownDwarf: CoronaScale = 1.08f; TypeGain = 0.42f; break;
+	case EStellarType::Protostar: CoronaScale = 1.30f; TypeGain = 1.40f; break;
+	case EStellarType::HyperGiant: CoronaScale = 1.32f; TypeGain = 1.35f; break;
+	case EStellarType::SuperGiant: CoronaScale = 1.30f; TypeGain = 1.28f; break;
+	case EStellarType::BrightGiant: CoronaScale = 1.28f; TypeGain = 1.20f; break;
+	case EStellarType::Giant: CoronaScale = 1.27f; TypeGain = 1.14f; break;
+	case EStellarType::SubGiant: CoronaScale = 1.25f; TypeGain = 1.08f; break;
+	case EStellarType::Neutron: CoronaScale = 1.15f; TypeGain = 1.18f; break;
+	case EStellarType::Pulsar: CoronaScale = 1.25f; TypeGain = 1.34f; break;
+	case EStellarType::WhiteDwarf: CoronaScale = 1.18f; TypeGain = 0.92f; break;
+	case EStellarType::SubDwarf: CoronaScale = 1.19f; TypeGain = 0.82f; break;
+	case EStellarType::BrownDwarf: CoronaScale = 1.13f; TypeGain = 0.42f; break;
 	default: break;
 	}
 
@@ -215,6 +220,8 @@ void AStar::ConfigureStellarPresentationComponents(
 		FMath::Log2(1.0f + FMath::Max(Emission, 0.0f)) / 8.97f, 0.0f, 1.0f);
 	if (IsValid(CoronaMesh))
 	{
+		StarMesh->SetForcedLodModel(1);
+		CoronaMesh->SetForcedLodModel(1);
 		CoronaMesh->SetStaticMesh(StarMesh->GetStaticMesh());
 		CoronaMesh->SetRelativeScale3D(FVector(CoronaScale));
 		CoronaMesh->SetVisibility(!bBlackHole && IsValid(CoronaDynamicMaterial), true);
@@ -227,9 +234,9 @@ void AStar::ConfigureStellarPresentationComponents(
 			1.0f / CoronaScale);
 		CoronaDynamicMaterial->SetScalarParameterValue(TEXT("CoronaSeed"), SurfaceSeed);
 		CoronaDynamicMaterial->SetScalarParameterValue(TEXT("CoronaIntensity"),
-			FMath::Min(FMath::Lerp(128.0f, 160.0f, EmissionActivity) * TypeGain, 192.0f));
+			FMath::Min(FMath::Lerp(138.0f, 190.0f, EmissionActivity) * TypeGain, 228.0f));
 		CoronaDynamicMaterial->SetScalarParameterValue(TEXT("CoronaOpacity"),
-			FMath::Lerp(0.68f, 0.76f, EmissionActivity));
+			FMath::Lerp(0.70f, 0.82f, EmissionActivity));
 	}
 
 	if (IsValid(StellarLight))

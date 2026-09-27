@@ -5,9 +5,13 @@
 #include "APS_ALPHA/Core/Enums/MoonType.h"
 #include "APS_ALPHA/Core/Enums/PlanetType.h"
 #include "APS_ALPHA/Core/Planetary/APSPlanetSurfaceProfile.h"
+#include "APS_ALPHA/Core/Planetary/APSNativeTerrainMaterial.h"
+#include "APS_ALPHA/Core/Planetary/APSSharedTerrainMaterial.h"
+#include "APS_ALPHA/Core/Planetary/APSSharedGeneratedLiquidMaterial.h"
 #include "APS_ALPHA/Core/Planetary/APSWorldScapeFoliagePolicy.h"
 #include "APSWorldScapePlanetNoise.h"
 #include "Engine/World.h"
+#include "HAL/IConsoleManager.h"
 #include "Kismet/GameplayStatics.h"
 #include "LocalVertexFactory.h"
 #include "Materials/Material.h"
@@ -18,6 +22,13 @@
 
 namespace APSWorldScapeProfiles
 {
+	TAutoConsoleVariable<int32> CVarNativeTerrainMaterial(
+		TEXT("aps.Surface.UseNativeTerrainMaterial"), 1,
+		TEXT("Use the SinglePlay WorldScape texture/normal stack for generated full-scale terrain. ")
+		TEXT("0 restores the APS ground parent on the next profile creation. Stop PIE before switching. ")
+		TEXT("Does not alter noise, manual planets, custom catalog materials or the PLANET globe."),
+		ECVF_Default);
+
 	struct FSurfaceProfile
 	{
 		UWorldScapeNoiseClass* Noise{nullptr};
@@ -78,10 +89,10 @@ bool APlanetarySurfaceGenerator::FinalizeStableWaterMaterial()
 		return false;
 	}
 
-	// Ammonia and lava intentionally retain their established material families.
-	// A Water profile without an actual ocean has no streamed liquid slots to publish.
-	if (ResolvedSurfaceProfile.LiquidType != EAPSPlanetLiquidType::Water
-		|| !Root->bOcean)
+	// A dry profile has no streamed liquid slots to publish. All actual oceans
+	// must pass readiness, not just Water; retaining a family is not proof that
+	// its shader or the worker-created render proxies are ready.
+	if (!Root->bOcean)
 	{
 		return true;
 	}
@@ -121,6 +132,78 @@ bool APlanetarySurfaceGenerator::FinalizeStableWaterMaterial()
 		return HasExactWaterSlots(ResolvedOceanMaterialInstance);
 	}
 
+	const APlanet* LiquidPlanet = Cast<APlanet>(PlanetaryBody);
+	const bool bSharedLiquid = APSSharedGeneratedLiquidMaterial::IsFamilyInstance(
+		ResolvedOceanMaterialInstance, ResolvedSurfaceProfile.LiquidType)
+		&& APSSharedGeneratedLiquidMaterial::ShouldMigrate(
+			APSSharedGeneratedLiquidMaterial::ResolveSource(ResolvedSurfaceProfile, SurfaceProfileCatalog),
+			ResolvedSurfaceProfile, LiquidPlanet && LiquidPlanet->IsManual);
+	if (ResolvedSurfaceProfile.LiquidType != EAPSPlanetLiquidType::Water || bSharedLiquid)
+	{
+		UMaterialInstanceDynamic* PreviousMID = ResolvedOceanMaterialInstance;
+		UWorld* World = Root->GetWorld();
+		if (!IsValid(World) || !IsValid(PreviousMID)
+			|| Root->OceanMaterial.DefaultMaterial != PreviousMID
+			|| !IsValid(PreviousMID->Parent) || !HasExactWaterSlots(PreviousMID))
+		{
+			return false;
+		}
+		// The job was requested at profile creation, alongside LOD generation.
+		// Only poll here: no synchronous compilation stall during landing.
+		FMaterialResource* Resource = PreviousMID->GetMaterialResource(World->GetFeatureLevel());
+		FMaterialShaderMap* ShaderMap = Resource ? Resource->GetGameThreadShaderMap() : nullptr;
+		if (!Resource || !Resource->IsGameThreadShaderMapComplete() || !ShaderMap
+			|| !ShaderMap->GetMeshShaderMap(&FLocalVertexFactory::StaticType))
+		{
+			return false;
+		}
+		if (bSharedLiquid && !APSSharedGeneratedLiquidMaterial::IsRenderReady(
+			PreviousMID, ResolvedSurfaceProfile.LiquidType, World)) return false;
+
+		// Preserve the authored MIC chain (including lava textures/static switches).
+		// Flattening to GetMaterial() would lose the inherited overrides.
+		UMaterialInstanceDynamic* StableMID =
+			UMaterialInstanceDynamic::Create(PreviousMID->Parent, Root);
+		if (!IsValid(StableMID)) return false;
+		StableMID->CopyInterpParameters(PreviousMID);
+		if (bSharedLiquid)
+		{
+			// A fresh MID has no transform/rebase delegates. Rebind before publishing
+			// all WorldScape sections; gameplay Hole alpha is never a shoreline mask.
+			if (!IsValid(PlanetaryBody)) return false;
+			StableMID->SetScalarParameterValue(TEXT("APS_UsePresentationWaterMask"), 0.0f);
+			if (!APSSharedGeneratedLiquidMaterial::BindFrame(StableMID, ResolvedSurfaceProfile.LiquidType, Root->GetRootComponent(),
+				PlanetaryBody->WorldScapePresentationScale)
+				|| !APSSharedGeneratedLiquidMaterial::IsRenderReady(StableMID, ResolvedSurfaceProfile.LiquidType, World)) return false;
+		}
+		else
+		{
+			APSNativeTerrainMaterial::BindNewInstanceCenter(StableMID, Root->GetRootComponent());
+		}
+		Root->OceanMaterial.DefaultMaterial = StableMID;
+		Root->UpdateOceanMaterial(Root->OceanMaterial);
+		if (!HasExactWaterSlots(StableMID))
+		{
+			Root->OceanMaterial.DefaultMaterial = PreviousMID;
+			Root->UpdateOceanMaterial(Root->OceanMaterial);
+			return false;
+		}
+		for (const UWorldScapeLod* OceanLod : Root->WorldScapeLodOcean)
+		{
+			OceanLod->Mesh->MarkRenderStateDirty();
+		}
+		ResolvedOceanMaterialInstance = StableMID;
+		FinalizedWaterMaterialRoot = Root;
+		FinalizedWaterMaterialProfileSignature = AppliedSurfaceProfileSignature;
+		UE_LOG(LogTemp, Log,
+			TEXT("[APS.WorldScape.Liquid] Published type=%s parent=%s complete=1 localVF=1 slots=%d nativeCenter=%d sharedLiquid=%d context=%d"),
+			*UEnum::GetValueAsString(ResolvedSurfaceProfile.LiquidType),
+			*GetPathNameSafe(StableMID->Parent), Root->OceanMaxLod * 3,
+			APSNativeTerrainMaterial::UsesNativePlanetCenter(StableMID) ? 1 : 0,
+			bSharedLiquid ? 1 : 0, bSharedLiquid ? 0 : -1);
+		return true;
+	}
+
 	UMaterialInstanceDynamic* PreviousWaterMID = ResolvedOceanMaterialInstance;
 	if (!IsValid(PreviousWaterMID)
 		|| Root->OceanMaterial.DefaultMaterial != PreviousWaterMID
@@ -146,8 +229,8 @@ bool APlanetarySurfaceGenerator::FinalizeStableWaterMaterial()
 	// UE 5.4's public synchronous material barrier. In editor builds it submits
 	// incomplete render feature-level jobs with ForceLocal priority and waits for
 	// completion; in cooked builds the validation below still rejects a missing map.
-	WaterMaster->EnsureIsComplete();
-	FMaterialResource* WaterResource = WaterMaster->GetMaterialResource(
+	PreviousWaterMID->EnsureIsComplete();
+	FMaterialResource* WaterResource = PreviousWaterMID->GetMaterialResource(
 		World->GetFeatureLevel());
 	FMaterialShaderMap* WaterShaderMap = WaterResource
 		? WaterResource->GetGameThreadShaderMap()
@@ -167,7 +250,7 @@ bool APlanetarySurfaceGenerator::FinalizeStableWaterMaterial()
 	}
 
 	UMaterialInstanceDynamic* StableWaterMID =
-		UMaterialInstanceDynamic::Create(WaterMaster, Root);
+		UMaterialInstanceDynamic::Create(PreviousWaterMID->Parent, Root);
 	if (!IsValid(StableWaterMID))
 	{
 		UE_LOG(LogTemp, Error,
@@ -176,6 +259,9 @@ bool APlanetarySurfaceGenerator::FinalizeStableWaterMaterial()
 		return false;
 	}
 
+	// Keep the exact saved MIC chain, static permutation and all dynamic
+	// overrides through the worker-batch handoff, just as for other liquid types.
+	StableWaterMID->CopyInterpParameters(PreviousWaterMID);
 	auto CopyWaterColor = [PreviousWaterMID, StableWaterMID](const FName ParameterName)
 	{
 		FLinearColor Value = FLinearColor::Black;
@@ -491,6 +577,49 @@ void APlanetarySurfaceGenerator::ApplySurfaceProfileNow(APlanetaryBody* Body)
 			BaseTerrainMaterial = LoadObject<UMaterialInstance>(nullptr, FallbackTerrainPath);
 		}
 
+		const APlanet* Planet = Cast<APlanet>(Body);
+		if (!(Planet && Planet->IsManual)
+			&& APSSharedTerrainMaterial::IsGeneratedCatalogStack(BaseTerrainMaterial))
+		{
+			const TCHAR* SharedPath = APSSharedTerrainMaterial::TemplatePath(ResolvedSurfaceProfile.Archetype);
+			UMaterialInstance* SharedTemplate = LoadObject<UMaterialInstance>(nullptr, SharedPath);
+			if (APSSharedTerrainMaterial::IsSharedStack(SharedTemplate))
+			{
+				BaseTerrainMaterial = SharedTemplate;
+				UE_LOG(LogTemp, Display,
+					TEXT("[APS.SharedTerrain] Profile parent selected body=%s template=%s presentationScale=%.9g (binding only, not visual acceptance)"),
+					*GetNameSafe(Body), SharedPath, Body->WorldScapePresentationScale);
+			}
+			else
+			{
+				UE_LOG(LogTemp, Error,
+					TEXT("[APS.SharedTerrain] Required template missing/invalid body=%s path=%s diagnosticFallback=%d; single-material requirement is NOT met"),
+					*GetNameSafe(Body), SharedPath, APSSharedTerrainMaterial::AllowsLegacyDiagnosticFallback() ? 1 : 0);
+				if (!APSSharedTerrainMaterial::AllowsLegacyDiagnosticFallback()) return;
+			}
+		}
+		if (APSNativeTerrainMaterial::ShouldReplace(BaseTerrainMaterial,
+			Body->WorldScapePresentationScale, Planet && Planet->IsManual,
+			CVarNativeTerrainMaterial.GetValueOnGameThread() != 0))
+		{
+			const TCHAR* NativePath = APSNativeTerrainMaterial::TemplatePath(ResolvedSurfaceProfile.Archetype);
+			UMaterialInstance* NativeTemplate = LoadObject<UMaterialInstance>(nullptr, NativePath);
+			if (APSNativeTerrainMaterial::IsNativeStack(NativeTemplate))
+			{
+				BaseTerrainMaterial = NativeTemplate;
+				UE_LOG(LogTemp, Display,
+					TEXT("[APS.Surface.NativeStack] body=%s template=%s palette=APS noise=unchanged"),
+					*GetNameSafe(Body), NativePath);
+			}
+			else
+			{
+				// A missing/changed reference must not turn the planet into checkerboard.
+				UE_LOG(LogTemp, Warning,
+					TEXT("[APS.Surface.NativeStack] Keeping APS fallback: invalid template=%s body=%s"),
+					NativePath, *GetNameSafe(Body));
+			}
+		}
+
 		ResolvedNoiseInstance = NewObject<UAPSWorldScapePlanetNoise>(
 			WorldScapeRootInstance, NAME_None, RF_Transient);
 		if (IsValid(ResolvedNoiseInstance))
@@ -506,6 +635,21 @@ void APlanetarySurfaceGenerator::ApplySurfaceProfileNow(APlanetaryBody* Body)
 		{
 			UAPSPlanetSurfaceProfileResolver::ApplyMaterialParameters(
 				ResolvedTerrainMaterialInstance, ResolvedSurfaceProfile);
+			if (APSSharedTerrainMaterial::IsSharedStack(ResolvedTerrainMaterialInstance))
+			{
+				if (!APSSharedTerrainMaterial::BindNewInstanceFrame(ResolvedTerrainMaterialInstance,
+					WorldScapeRootInstance->GetRootComponent(), Body->WorldScapePresentationScale))
+				{
+					UE_LOG(LogTemp, Error,
+						TEXT("[APS.SharedTerrain] Invalid physical frame body=%s; surface profile publication withheld"), *GetNameSafe(Body));
+					return;
+				}
+			}
+			else
+			{
+				APSNativeTerrainMaterial::BindNewInstanceCenter(ResolvedTerrainMaterialInstance,
+					WorldScapeRootInstance->GetRootComponent());
+			}
 			Profile.TerrainMaterial = ResolvedTerrainMaterialInstance;
 		}
 
@@ -541,15 +685,61 @@ void APlanetarySurfaceGenerator::ApplySurfaceProfileNow(APlanetaryBody* Body)
 					: TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Materials/MI_APS_WS_Water.MI_APS_WS_Water");
 			BaseOceanMaterial = LoadObject<UMaterialInstance>(nullptr, FallbackOceanPath);
 		}
-		ResolvedOceanMaterialInstance = IsValid(BaseOceanMaterial)
-			? UMaterialInstanceDynamic::Create(BaseOceanMaterial, WorldScapeRootInstance)
-			: nullptr;
+		const bool bUseSharedLiquid = APSSharedGeneratedLiquidMaterial::ShouldMigrate(
+			BaseOceanMaterial, ResolvedSurfaceProfile, Planet && Planet->IsManual);
+		ResolvedOceanMaterialInstance = bUseSharedLiquid
+			? APSSharedGeneratedLiquidMaterial::Create(WorldScapeRootInstance, WorldScapeRootInstance->GetRootComponent(),
+				Body->WorldScapePresentationScale, false, false, ResolvedSurfaceProfile, BaseOceanMaterial)
+			: IsValid(BaseOceanMaterial)
+				? UMaterialInstanceDynamic::Create(BaseOceanMaterial, WorldScapeRootInstance) : nullptr;
+		if (bUseSharedLiquid && !IsValid(ResolvedOceanMaterialInstance))
+		{
+			// Do not silently commit a dry planet or a different liquid parent when the
+			// protected shared asset/frame is unavailable. Existing proxies stay owned
+			// by their last complete root/closed-globe commit while readiness is false.
+			bSurfaceProfileApplied = false;
+			AppliedSurfaceProfileSignature = 0;
+			UE_LOG(LogTemp, Error,
+				TEXT("[APS.SharedLiquid] Invalid saved asset/frame body=%s type=%s; surface profile publication withheld"),
+				*GetNameSafe(Body), *UEnum::GetValueAsString(ResolvedSurfaceProfile.LiquidType));
+			return;
+		}
 		if (IsValid(ResolvedOceanMaterialInstance))
 		{
 			// Liquid style is authored once in the project MIC / WorldScape template
 			// chain generated by APSPlanetSurfaceAssetCommandlet. Runtime must not add
 			// project-only controls to that plugin graph (or multiply lava emission).
 			Profile.OceanMaterial = ResolvedOceanMaterialInstance;
+			if (!bUseSharedLiquid)
+				APSNativeTerrainMaterial::BindNewInstanceCenter(ResolvedOceanMaterialInstance,
+					WorldScapeRootInstance->GetRootComponent());
+			if ((bUseSharedLiquid || (ResolvedSurfaceProfile.LiquidType != EAPSPlanetLiquidType::Water
+				&& Body->WorldScapePresentationScale >= 0.999)) && GetWorld()->IsGameWorld())
+			{
+				FMaterialResource* Resource = ResolvedOceanMaterialInstance->GetMaterialResource(
+					GetWorld()->GetFeatureLevel());
+#if WITH_EDITOR
+				if (Resource && !Resource->IsGameThreadShaderMapComplete())
+				{
+					Resource->SubmitCompileJobs_GameThread(EShaderCompileJobPriority::ForceLocal);
+				}
+#endif
+				if (bUseSharedLiquid)
+				{
+					FPSOPrecacheParams Params;
+					Params.bStaticLighting = false;
+					Params.bCastShadow = true;
+					Params.SetMobility(EComponentMobility::Movable);
+					static_cast<UMaterialInterface*>(ResolvedOceanMaterialInstance)->PrecachePSOs(&FLocalVertexFactory::StaticType, Params);
+				}
+				UE_LOG(LogTemp, Log,
+					TEXT("[APS.WorldScape.Liquid] Preparing type=%s parent=%s resource=%d complete=%d nativeCenter=%d sharedLiquid=%d context=%d"),
+					*UEnum::GetValueAsString(ResolvedSurfaceProfile.LiquidType),
+					*GetPathNameSafe(ResolvedOceanMaterialInstance->Parent), Resource ? 1 : 0,
+					Resource && Resource->IsGameThreadShaderMapComplete() ? 1 : 0,
+					APSNativeTerrainMaterial::UsesNativePlanetCenter(ResolvedOceanMaterialInstance) ? 1 : 0,
+					bUseSharedLiquid ? 1 : 0, bUseSharedLiquid ? 0 : -1);
+			}
 		}
 
 		Profile.NoiseScale = ResolvedSurfaceProfile.NoiseScale;
@@ -679,6 +869,20 @@ void APlanetarySurfaceGenerator::ApplySurfaceProfileNow(APlanetaryBody* Body)
 	WorldScapeRootInstance->OceanMaxLod = bScaledOrbitalPreview ? 6 : 9;
 	WorldScapeRootInstance->OceanLodResolution = bScaledOrbitalPreview ? 32 : 64;
 	WorldScapeRootInstance->OceanTriangleSize = bScaledOrbitalPreview ? 650.0f : 200.0f;
+	if (bOwnsWorldScapeRootInstance && !bScaledOrbitalPreview
+		&& WorldScapeRootInstance->bOcean
+		&& ResolvedSurfaceProfile.LiquidType == EAPSPlanetLiquidType::Water)
+	{
+		// WorldScape derives altitude expansion and snapping independently from
+		// these three settings. Different ocean/terrain lattices have different
+		// spherical chord sag, exposing triangular water cuts through dry coast.
+		// Share the terrain lattice so only sampled height decides their intersection.
+		// Keep terrain, collision, authored roots and scaled presentation unchanged.
+		// Only the active Water root takes the additional ocean sampling cost.
+		WorldScapeRootInstance->OceanMaxLod = WorldScapeRootInstance->MaxLod;
+		WorldScapeRootInstance->OceanLodResolution = WorldScapeRootInstance->LodResolution;
+		WorldScapeRootInstance->OceanTriangleSize = WorldScapeRootInstance->TriangleSize;
+	}
 	// Keep the gameplay collision sample spacing identical to terrain LOD0 so the
 	// pawn does not walk on the visibly smoother 2 m default collision sheet. A
 	// 64x64 padded patch gives roughly 74 m of full-scale coverage around each
@@ -701,6 +905,16 @@ void APlanetarySurfaceGenerator::ApplySurfaceProfileNow(APlanetaryBody* Body)
 	WorldScapeRootInstance->TerrainCastDynamicShadow = !bScaledOrbitalPreview;
 	WorldScapeRootInstance->TerrainFarShadow = !bScaledOrbitalPreview;
 	WorldScapeRootInstance->TerrainTowSideShadow = false;
+	// Sewing duplicates physical vertices across three sections. Opt only owned,
+	// spherical, non-tangent generated ground into the native area-normal weld.
+	// Authored roots and ocean sections keep their original shading contract.
+	const FName CoincidentNormalTag(TEXT("APS.GeneratedTerrain.WeldCoincidentNormals"));
+	if (bOwnsWorldScapeRootInstance && !bScaledOrbitalPreview
+		&& WorldScapeRootInstance->GenerationType == EWorldScapeType::Planet
+		&& !WorldScapeRootInstance->bGenerateTangents)
+		WorldScapeRootInstance->Tags.AddUnique(CoincidentNormalTag);
+	else
+		WorldScapeRootInstance->Tags.Remove(CoincidentNormalTag);
 	// A streamed ocean is a colour/depth presentation shell, never a shadow caster
 	// or an occlusion source.  WorldScape's defaults otherwise let independently
 	// stitched clipmap sections cast their rectangular boundaries onto the terrain,
@@ -709,8 +923,15 @@ void APlanetarySurfaceGenerator::ApplySurfaceProfileNow(APlanetaryBody* Body)
 	// section topology into the scene lighting or HZB.
 	WorldScapeRootInstance->OceanMeshIsOccluder = false;
 	WorldScapeRootInstance->OceanMeshTreatAsBackGroundForOcclusion = false;
-	WorldScapeRootInstance->HeightAnchor = FMath::Clamp(
-		static_cast<float>(WorldScapeRootInstance->PlanetScale * 0.00025), 50000.0f, 250000.0f);
+	// Match the saved manual root's native UE5.4 HeightAnchor (100 m).
+	// WorldScape grows triangle spacing by 2^round(log2(height / anchor)).
+	// The radius-based 0.5-2.5 km override kept a small, dense square under the
+	// observer at altitude. Restore earlier expansion without adding vertices,
+	// LOD rings or collision work. Ground-level 1.2 m spacing stays unchanged.
+	WorldScapeRootInstance->HeightAnchor = bScaledOrbitalPreview
+		? FMath::Clamp(static_cast<float>(WorldScapeRootInstance->PlanetScale * 0.00025),
+			50000.0f, 250000.0f)
+		: 10000.0f;
 	bSurfaceProfileApplied = true;
 	AppliedSurfaceProfileSignature = BuildSurfaceProfileSignature(Body);
 

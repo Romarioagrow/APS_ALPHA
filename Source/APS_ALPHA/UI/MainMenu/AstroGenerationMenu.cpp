@@ -1,4 +1,4 @@
-﻿#include "AstroGenerationMenu.h"
+#include "AstroGenerationMenu.h"
 
 #include "GenerationInput.h"
 #include "GenerationSlider.h"
@@ -239,13 +239,15 @@ void UAstroGenerationMenu::HandleGenerationSlider(const float Value, const UEnum
 			// Проверка, содержит ли имя строку "Unknown"
 			if (EnumValueName.Contains("Unknown"))
 			{
-				Slider->EnumSlider->SetMaxValue(EnumValues.Num() - 1);
 				UE_LOG(LogTemp, Warning, TEXT("Skipped enum: %s"), *EnumValueName); // Логирование пропуска
 				continue; // Пропускаем этот элемент, если он содержит "Unknown"
 			}
 
 			// Добавляем значение Enum только если оно не содержит "Unknown"
-			EnumValues.Add(EnumClass->GetValueByIndex(i));
+			const int64 EnumValue = EnumClass->GetValueByIndex(i);
+			if (EnumClass == StaticEnum<EPlanetType>()
+				&& !APSPlanetTypes::IsSelectable(static_cast<EPlanetType>(EnumValue))) continue;
+			EnumValues.Add(EnumValue);
 			
 		}
 
@@ -254,7 +256,7 @@ void UAstroGenerationMenu::HandleGenerationSlider(const float Value, const UEnum
 			const int32 SelectedValue = EnumValues[EnumIndex];
 
 			// Вывод значения Enum на экран
-			FString EnumValueName = EnumClass->GetNameStringByIndex(EnumIndex);
+			FString EnumValueName = EnumClass->GetNameStringByValue(SelectedValue);
 
 			// Dynamically update the enum value in AGEneratedWorld
 			UpdateGeneratedWorldEnumValue(EnumClass, SelectedValue);

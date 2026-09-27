@@ -1,5 +1,7 @@
 #include "SWorldGenerationPanel.h"
+#include "SAPSChamferedOverlay.h"
 #include "APSPreviewAnnotationLayout.h"
+#include "APSAtmosphereColorControl.h"
 #include "ProfilingDebugging/CsvProfiler.h"
 
 CSV_DECLARE_CATEGORY_EXTERN(APSPreview);
@@ -25,6 +27,7 @@ CSV_DECLARE_CATEGORY_EXTERN(APSPreview);
 #include "APS_ALPHA/Core/Rendering/APSPreviewVisibility.h"
 #include "APS_ALPHA/Actors/Astro/Star.h"
 #include "APS_ALPHA/UI/MainMenu/WorldGenerationViewModel.h"
+#include "APS_ALPHA/UI/Style/APSUIStyle.h"
 #include "Engine/Font.h"
 #include "Fonts/FontMeasure.h"
 #include "Framework/Application/SlateApplication.h"
@@ -40,6 +43,8 @@ CSV_DECLARE_CATEGORY_EXTERN(APSPreview);
 #include "Rendering/DrawElements.h"
 #include "SceneView.h"
 #include "Styling/AppStyle.h"
+#include "Widgets/Colors/SColorBlock.h"
+#include "Widgets/Layout/SExpandableArea.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Input/SEditableTextBox.h"
 #include "Widgets/Input/SSlider.h"
@@ -83,7 +88,17 @@ public:
 
 	void Construct(const FArguments& InArgs)
 	{
+		SliderStyle = MakeShared<FSliderStyle>(FAPSUIStyle::MakeSliderStyle(
+			FAPSUIStyle::GetPalette(EAPSUIDisplayProfile::Balanced22)));
+		const FAPSUILayoutMetrics& Layout = FAPSUIStyle::Metrics();
+		TrackBrush = MakeShared<FSlateRoundedBoxBrush>(
+			FLinearColor::White, Layout.SliderTrackHeight * 0.5f);
+		ThumbBrush = MakeShared<FSlateRoundedBoxBrush>(
+			FLinearColor::White, Layout.SliderHandleSize.X * 0.5f);
+		HoverThumbBrush = MakeShared<FSlateRoundedBoxBrush>(
+			FLinearColor::White, Layout.SliderHandleHoverSize.X * 0.5f);
 		SSlider::Construct(SSlider::FArguments()
+			.Style(SliderStyle.Get())
 			.Value(InArgs._Value)
 			.MinValue(InArgs._MinValue)
 			.MaxValue(InArgs._MaxValue)
@@ -94,6 +109,78 @@ public:
 			.SliderBarColor(InArgs._SliderBarColor)
 			.SliderHandleColor(InArgs._SliderHandleColor)
 			.OnValueChanged(InArgs._OnValueChanged));
+	}
+
+	virtual FVector2D ComputeDesiredSize(float) const override
+	{
+		return FVector2D(160.0f, FAPSUIStyle::Metrics().SliderHitHeight);
+	}
+
+	virtual int32 OnPaint(const FPaintArgs&, const FGeometry& Geometry,
+		const FSlateRect&, FSlateWindowElementList& OutDrawElements, int32 LayerId,
+		const FWidgetStyle& WidgetStyle, bool bParentEnabled) const override
+	{
+		if (!TrackBrush.IsValid() || !ThumbBrush.IsValid() || !HoverThumbBrush.IsValid())
+		{
+			return LayerId;
+		}
+		const FAPSUILayoutMetrics& Layout = FAPSUIStyle::Metrics();
+		const FVector2D Size = Geometry.GetLocalSize();
+		const bool bEnabled = ShouldBeEnabled(bParentEnabled);
+		const bool bHot = IsHovered() || HasMouseCapture() || HasKeyboardFocus();
+		const float ThumbDiameter = bHot
+			? Layout.SliderHandleHoverSize.X : Layout.SliderHandleSize.X;
+		const float TrackLeft = Layout.SliderHandleHoverSize.X * 0.5f;
+		const float TrackRight = FMath::Max(TrackLeft, Size.X - TrackLeft);
+		const float TrackWidth = FMath::Max(TrackRight - TrackLeft, 1.0f);
+		const float CenterY = Size.Y * 0.5f;
+		const float NormalizedValue = FMath::Clamp(GetNormalizedValue(), 0.0f, 1.0f);
+		const float ThumbX = TrackLeft + TrackWidth * NormalizedValue;
+		const ESlateDrawEffect DrawEffect = bEnabled
+			? ESlateDrawEffect::None : ESlateDrawEffect::DisabledEffect;
+		FLinearColor QuietColor = GetSliderBarColorAttribute().Get().GetColor(WidgetStyle);
+		FLinearColor FocusColor = GetSliderHandleColorAttribute().Get().GetColor(WidgetStyle);
+		if (!bEnabled)
+		{
+			QuietColor.A *= 0.45f;
+			FocusColor.A *= 0.45f;
+		}
+
+		const FVector2D TrackSize(TrackWidth, Layout.SliderTrackHeight);
+		const FVector2D TrackPosition(TrackLeft, CenterY - Layout.SliderTrackHeight * 0.5f);
+		FSlateDrawElement::MakeBox(OutDrawElements, LayerId,
+			Geometry.ToPaintGeometry(TrackSize, FSlateLayoutTransform(TrackPosition)),
+			TrackBrush.Get(), DrawEffect,
+			FLinearColor(QuietColor.R, QuietColor.G, QuietColor.B, QuietColor.A * 0.72f));
+
+		const float FilledWidth = TrackWidth * NormalizedValue;
+		if (FilledWidth > 0.5f)
+		{
+			FSlateDrawElement::MakeBox(OutDrawElements, LayerId + 1,
+				Geometry.ToPaintGeometry(
+					FVector2D(FilledWidth, Layout.SliderTrackHeight),
+					FSlateLayoutTransform(TrackPosition)),
+				TrackBrush.Get(), DrawEffect,
+				FLinearColor(FocusColor.R, FocusColor.G, FocusColor.B, FocusColor.A * 0.92f));
+		}
+
+		if (bHot && bEnabled)
+		{
+			const FVector2D GlowSize = Layout.SliderHandleHoverSize + FVector2D(8.0f, 8.0f);
+			FSlateDrawElement::MakeBox(OutDrawElements, LayerId + 2,
+				Geometry.ToPaintGeometry(GlowSize, FSlateLayoutTransform(
+					FVector2D(ThumbX, CenterY) - GlowSize * 0.5f)),
+				HoverThumbBrush.Get(), ESlateDrawEffect::None,
+				FLinearColor(FocusColor.R, FocusColor.G, FocusColor.B, 0.16f));
+		}
+
+		const FVector2D ThumbSize(ThumbDiameter, ThumbDiameter);
+		FSlateDrawElement::MakeBox(OutDrawElements, LayerId + 3,
+			Geometry.ToPaintGeometry(ThumbSize, FSlateLayoutTransform(
+				FVector2D(ThumbX, CenterY) - ThumbSize * 0.5f)),
+			bHot ? HoverThumbBrush.Get() : ThumbBrush.Get(), DrawEffect,
+			bHot && bEnabled ? FLinearColor::White : FocusColor);
+		return LayerId + 3;
 	}
 
 protected:
@@ -115,6 +202,12 @@ public:
 		CommitValue(NewValue);
 	}
 #endif
+
+private:
+	TSharedPtr<FSliderStyle> SliderStyle;
+	TSharedPtr<FSlateRoundedBoxBrush> TrackBrush;
+	TSharedPtr<FSlateRoundedBoxBrush> ThumbBrush;
+	TSharedPtr<FSlateRoundedBoxBrush> HoverThumbBrush;
 };
 
 namespace APSGenerationUI
@@ -311,21 +404,110 @@ namespace APSGenerationUI
 			{
 				return LayerId;
 			}
-			const float Cut = FMath::Clamp(FMath::Min(Size.X, Size.Y) * 0.025f, 9.0f, 18.0f);
-			const TArray<FVector2D> Points = {
-				FVector2D(Cut, 0.5f), FVector2D(Size.X - Cut, 0.5f),
-				FVector2D(Size.X - 0.5f, Cut), FVector2D(Size.X - 0.5f, Size.Y - Cut),
-				FVector2D(Size.X - Cut, Size.Y - 0.5f), FVector2D(Cut, Size.Y - 0.5f),
-				FVector2D(0.5f, Size.Y - Cut), FVector2D(0.5f, Cut), FVector2D(Cut, 0.5f)
+			const FSlateBrush* Brush = FAppStyle::GetBrush("WhiteBrush");
+			const FSlateResourceHandle ResourceHandle = Brush->GetRenderingResource();
+			const float Cut = APSChamfer::Cut(Size);
+			const float Inset = FMath::Clamp(Thickness, 0.75f,
+				FMath::Min(Size.X, Size.Y) * 0.24f);
+			const float InnerCut = Cut + Inset * 0.41421356f;
+			const TArray<FVector2f> Points = {
+				FVector2f(Cut, 0.0f), FVector2f(Size.X - Cut, 0.0f),
+				FVector2f(Size.X, Cut), FVector2f(Size.X, Size.Y - Cut),
+				FVector2f(Size.X - Cut, Size.Y), FVector2f(Cut, Size.Y),
+				FVector2f(0.0f, Size.Y - Cut), FVector2f(0.0f, Cut),
+				FVector2f(InnerCut, Inset), FVector2f(Size.X - InnerCut, Inset),
+				FVector2f(Size.X - Inset, InnerCut), FVector2f(Size.X - Inset, Size.Y - InnerCut),
+				FVector2f(Size.X - InnerCut, Size.Y - Inset), FVector2f(InnerCut, Size.Y - Inset),
+				FVector2f(Inset, Size.Y - InnerCut), FVector2f(Inset, InnerCut)
 			};
-			FSlateDrawElement::MakeLines(OutDrawElements, LayerId, Geometry.ToPaintGeometry(),
-				Points, ESlateDrawEffect::None, Color, true, Thickness);
+			const FColor VertexColor = Color.ToFColor(true);
+			TArray<FSlateVertex> Vertices;
+			Vertices.Reserve(Points.Num());
+			for (const FVector2f& Point : Points)
+			{
+				Vertices.Add(FSlateVertex::Make<ESlateVertexRounding::Disabled>(
+					Geometry.GetAccumulatedRenderTransform(), Point,
+					FVector2f::ZeroVector, VertexColor));
+			}
+			TArray<SlateIndex> Indices;
+			Indices.Reserve(48);
+			for (SlateIndex Edge = 0; Edge < 8; ++Edge)
+			{
+				const SlateIndex Next = (Edge + 1) % 8;
+				Indices.Add(Edge);
+				Indices.Add(Next);
+				Indices.Add(static_cast<SlateIndex>(8 + Next));
+				Indices.Add(Edge);
+				Indices.Add(static_cast<SlateIndex>(8 + Next));
+				Indices.Add(static_cast<SlateIndex>(8 + Edge));
+			}
+			FSlateDrawElement::MakeCustomVerts(OutDrawElements, LayerId, ResourceHandle,
+				Vertices, Indices, nullptr, 0, 0, ESlateDrawEffect::None);
 			return LayerId;
 		}
 
 	private:
 		FLinearColor Color{FLinearColor::White};
 		float Thickness{1.0f};
+	};
+
+	/** Fill and frame share the same eight-corner polygon, so no rectangular
+	 * brush can leak a one-pixel spur beyond a chamfer. */
+	class SGenerationChamferedSurface final : public SLeafWidget
+	{
+	public:
+		SLATE_BEGIN_ARGS(SGenerationChamferedSurface) {}
+			SLATE_ARGUMENT(FLinearColor, Color)
+		SLATE_END_ARGS()
+
+		void Construct(const FArguments& InArgs)
+		{
+			Color = InArgs._Color;
+			SetVisibility(EVisibility::HitTestInvisible);
+		}
+
+		virtual FVector2D ComputeDesiredSize(float) const override { return FVector2D::ZeroVector; }
+
+		virtual int32 OnPaint(const FPaintArgs&, const FGeometry& Geometry,
+			const FSlateRect&, FSlateWindowElementList& OutDrawElements, int32 LayerId,
+			const FWidgetStyle&, bool) const override
+		{
+			const FVector2D Size = Geometry.GetLocalSize();
+			if (Size.X <= 4.0f || Size.Y <= 4.0f) return LayerId;
+			const FSlateBrush* Brush = FAppStyle::GetBrush("WhiteBrush");
+			const FSlateResourceHandle ResourceHandle = Brush->GetRenderingResource();
+			const float Cut = APSChamfer::Cut(Size);
+			const TArray<FVector2f> Points = {
+				FVector2f(Size.X * 0.5f, Size.Y * 0.5f),
+				FVector2f(Cut, 0.0f), FVector2f(Size.X - Cut, 0.0f),
+				FVector2f(Size.X, Cut), FVector2f(Size.X, Size.Y - Cut),
+				FVector2f(Size.X - Cut, Size.Y), FVector2f(Cut, Size.Y),
+				FVector2f(0.0f, Size.Y - Cut), FVector2f(0.0f, Cut)
+			};
+			const FColor VertexColor = Color.ToFColor(true);
+			TArray<FSlateVertex> Vertices;
+			Vertices.Reserve(Points.Num());
+			for (const FVector2f& Point : Points)
+			{
+				Vertices.Add(FSlateVertex::Make<ESlateVertexRounding::Disabled>(
+					Geometry.GetAccumulatedRenderTransform(), Point,
+					FVector2f::ZeroVector, VertexColor));
+			}
+			TArray<SlateIndex> Indices;
+			Indices.Reserve(24);
+			for (SlateIndex Edge = 1; Edge <= 8; ++Edge)
+			{
+				Indices.Add(0);
+				Indices.Add(Edge);
+				Indices.Add(static_cast<SlateIndex>(Edge == 8 ? 1 : Edge + 1));
+			}
+			FSlateDrawElement::MakeCustomVerts(OutDrawElements, LayerId, ResourceHandle,
+				Vertices, Indices, nullptr, 0, 0, ESlateDrawEffect::None);
+			return LayerId;
+		}
+
+	private:
+		FLinearColor Color{FLinearColor::Transparent};
 	};
 
 	// The astronomical preview is the real level viewport. Keep the root chrome
@@ -344,7 +526,6 @@ namespace APSGenerationUI
 	const FLinearColor SecondaryText = SRGB(145, 171, 178);
 	TWeakObjectPtr<UFont> DisplayFont;
 	TWeakObjectPtr<UFont> BodyFont;
-	const FSlateRoundedBoxBrush PanelBrush(Panel, 10.0f, CyanDim, 1.0f);
 	const FSlateRoundedBoxBrush ControlBrush(FLinearColor(0.003f, 0.016f, 0.028f, 0.94f), 6.0f, CyanDim, 1.0f);
 	const FSlateRoundedBoxBrush BadgeBrush(FLinearColor(0.005f, 0.045f, 0.070f, 0.98f), 16.0f, Cyan, 1.0f);
 	const FLinearColor HierarchyRowFill(0.003f, 0.022f, 0.038f, 0.94f);
@@ -409,14 +590,18 @@ namespace APSGenerationUI
 
 	TSharedRef<SWidget> ChamferPanel(TSharedRef<SWidget> Content)
 	{
-		return SNew(SOverlay)
+		return SNew(SAPSChamferedOverlay)
 			+ SOverlay::Slot()
 			[
-				SNew(SBorder).BorderImage(&PanelBrush).Padding(16.0f)[Content]
+				SNew(SGenerationChamferedSurface).Color(Panel)
+			]
+			+ SOverlay::Slot().Padding(16.0f)
+			[
+				Content
 			]
 			+ SOverlay::Slot()
 			[
-				SNew(SGenerationChamferedFrame).Color(Cyan).Thickness(1.15f)
+				SNew(SGenerationChamferedFrame).Color(Cyan).Thickness(1.0f)
 			];
 	}
 
@@ -435,7 +620,10 @@ namespace APSGenerationUI
 			{
 				continue;
 			}
-			Values.Add(Enum->GetValueByIndex(Index));
+			const int64 Value = Enum->GetValueByIndex(Index);
+			if (Enum == StaticEnum<EPlanetType>()
+				&& !APSPlanetTypes::IsSelectable(static_cast<EPlanetType>(Value))) continue;
+			Values.Add(Value);
 		}
 		return Values;
 	}
@@ -488,14 +676,14 @@ namespace APSGenerationUI
 		switch (FamilyIndex)
 		{
 		case static_cast<int32>(EAPSPlanetSurfaceArchetype::Rocky):
-			return {EPlanetType::Rocky, EPlanetType::Dwarf};
+			return {EPlanetType::Rocky, EPlanetType::Dwarf, EPlanetType::Basalt};
 		case static_cast<int32>(EAPSPlanetSurfaceArchetype::Temperate):
 			return {EPlanetType::Terrestrial, EPlanetType::Pangea, EPlanetType::Nordic,
 				EPlanetType::SuperEarth, EPlanetType::HighMountain};
 		case static_cast<int32>(EAPSPlanetSurfaceArchetype::Oceanic):
 			return {EPlanetType::Ocean, EPlanetType::Water, EPlanetType::Archipelago};
 		case static_cast<int32>(EAPSPlanetSurfaceArchetype::Biosphere):
-			return {EPlanetType::Forest, EPlanetType::Oasis};
+			return {EPlanetType::Forest, EPlanetType::Oasis, EPlanetType::Savanna};
 		case static_cast<int32>(EAPSPlanetSurfaceArchetype::Desert):
 			return {EPlanetType::Greenhouse, EPlanetType::Desert, EPlanetType::Sand};
 		case static_cast<int32>(EAPSPlanetSurfaceArchetype::Cryogenic):
@@ -505,7 +693,7 @@ namespace APSGenerationUI
 		case static_cast<int32>(EAPSPlanetSurfaceArchetype::Metallic):
 			return {EPlanetType::Metal, EPlanetType::Metallic, EPlanetType::Carbon};
 		case static_cast<int32>(EAPSPlanetSurfaceArchetype::ExoticChemical):
-			return {EPlanetType::Ammonia, EPlanetType::Exoplanet};
+			return {EPlanetType::Ammonia, EPlanetType::Crystal, EPlanetType::Sulfur};
 		case GasGiantSurfaceFamilyIndex:
 		default:
 			return {EPlanetType::GasGiant, EPlanetType::HotGiant, EPlanetType::IceGiant};
@@ -535,34 +723,41 @@ namespace APSGenerationUI
 					SNew(SHorizontalBox)
 					+ SHorizontalBox::Slot().AutoWidth()
 					[
-						SNew(SBox).MinDesiredWidth(36.0f).MinDesiredHeight(36.0f)
+						SNew(SBox).WidthOverride(FAPSUIStyle::Metrics().IconButtonTarget)
+						.HeightOverride(FAPSUIStyle::Metrics().IconButtonTarget)
 						[
-							SNew(SButton).Text(FText::FromString(TEXT("<")))
-							.ContentPadding(FMargin(9.0f, 4.0f)).ButtonStyle(&SecondaryButton)
+							SNew(SButton).ContentPadding(0.0f).ButtonStyle(&SecondaryButton)
+							.HAlign(HAlign_Center).VAlign(VAlign_Center)
 							.OnClicked_Lambda([ViewModel, Stepper]()
 							{
 								if (UWorldGenerationViewModel* VM = ViewModel.Get()) Stepper(VM, -1);
 								return FReply::Handled();
 							})
+							[SNew(STextBlock).Text(FText::FromString(TEXT("<")))
+							.Justification(ETextJustify::Center).Font(Font("Bold", 12)).ColorAndOpacity(Cyan)]
 						]
 					]
 					+ SHorizontalBox::Slot().FillWidth(1.0f).HAlign(HAlign_Center).VAlign(VAlign_Center)
 					[
 						SNew(STextBlock).Text_Lambda(ValueText).ToolTipText_Lambda(ValueText)
 						.OverflowPolicy(ETextOverflowPolicy::Ellipsis)
+						.Justification(ETextJustify::Center)
 						.Font(Font("Bold", 11)).ColorAndOpacity(White)
 					]
 					+ SHorizontalBox::Slot().AutoWidth()
 					[
-						SNew(SBox).MinDesiredWidth(36.0f).MinDesiredHeight(36.0f)
+						SNew(SBox).WidthOverride(FAPSUIStyle::Metrics().IconButtonTarget)
+						.HeightOverride(FAPSUIStyle::Metrics().IconButtonTarget)
 						[
-							SNew(SButton).Text(FText::FromString(TEXT(">")))
-							.ContentPadding(FMargin(9.0f, 4.0f)).ButtonStyle(&SecondaryButton)
+							SNew(SButton).ContentPadding(0.0f).ButtonStyle(&SecondaryButton)
+							.HAlign(HAlign_Center).VAlign(VAlign_Center)
 							.OnClicked_Lambda([ViewModel, Stepper]()
 							{
 								if (UWorldGenerationViewModel* VM = ViewModel.Get()) Stepper(VM, 1);
 								return FReply::Handled();
 							})
+							[SNew(STextBlock).Text(FText::FromString(TEXT(">")))
+							.Justification(ETextJustify::Center).Font(Font("Bold", 12)).ColorAndOpacity(Cyan)]
 						]
 					]
 				]
@@ -584,7 +779,13 @@ namespace APSGenerationUI
 			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
 			[
 				SNew(SBox).WidthOverride(30.0f).HeightOverride(30.0f)
-				[SNew(SBorder).BorderImage(&BadgeBrush).Padding(0.0f)[SNew(STextBlock).Text(Glyph).Justification(ETextJustify::Center).Font(Font("Bold", 8)).ColorAndOpacity(Cyan)]]
+				.HAlign(HAlign_Fill).VAlign(VAlign_Fill)
+				[
+					SNew(SBorder).BorderImage(&BadgeBrush).Padding(0.0f)
+					.HAlign(HAlign_Center).VAlign(VAlign_Center)
+					[SNew(STextBlock).Text(Glyph).Justification(ETextJustify::Center)
+					.Font(Font("Bold", 8)).ColorAndOpacity(Cyan)]
+				]
 			]
 			+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center).Padding(10.0f, 0.0f)
 			[SNew(STextBlock).Text(Text).Font(Font("Bold", 16)).ColorAndOpacity(Cyan)]
@@ -619,9 +820,11 @@ namespace APSGenerationUI
 				SNew(SHorizontalBox)
 				+ SHorizontalBox::Slot().AutoWidth()
 				[
-					SNew(SBox).MinDesiredWidth(36.0f).MinDesiredHeight(36.0f)
+					SNew(SBox).WidthOverride(FAPSUIStyle::Metrics().IconButtonTarget)
+					.HeightOverride(FAPSUIStyle::Metrics().IconButtonTarget)
 					[
-						SNew(SButton).Text(FText::FromString(TEXT("<"))).ContentPadding(FMargin(9.0f, 4.0f))
+						SNew(SButton).ContentPadding(0.0f)
+						.HAlign(HAlign_Center).VAlign(VAlign_Center)
 						.ButtonStyle(&SecondaryButton)
 						.OnClicked_Lambda([ViewModel, Getter, Enum]()
 						{
@@ -639,6 +842,8 @@ namespace APSGenerationUI
 							}
 							return FReply::Handled();
 						})
+						[SNew(STextBlock).Text(FText::FromString(TEXT("<")))
+						.Justification(ETextJustify::Center).Font(Font("Bold", 12)).ColorAndOpacity(Cyan)]
 					]
 				]
 				+ SHorizontalBox::Slot().FillWidth(1.0f).HAlign(HAlign_Center).VAlign(VAlign_Center)
@@ -646,13 +851,16 @@ namespace APSGenerationUI
 					SNew(STextBlock)
 					.Text_Lambda(ValueText).ToolTipText_Lambda(ValueText)
 					.OverflowPolicy(ETextOverflowPolicy::Ellipsis)
+					.Justification(ETextJustify::Center)
 					.Font(Font("Bold", 11)).ColorAndOpacity(White)
 				]
 				+ SHorizontalBox::Slot().AutoWidth()
 				[
-					SNew(SBox).MinDesiredWidth(36.0f).MinDesiredHeight(36.0f)
+					SNew(SBox).WidthOverride(FAPSUIStyle::Metrics().IconButtonTarget)
+					.HeightOverride(FAPSUIStyle::Metrics().IconButtonTarget)
 					[
-						SNew(SButton).Text(FText::FromString(TEXT(">"))).ContentPadding(FMargin(9.0f, 4.0f))
+						SNew(SButton).ContentPadding(0.0f)
+						.HAlign(HAlign_Center).VAlign(VAlign_Center)
 						.ButtonStyle(&SecondaryButton)
 						.OnClicked_Lambda([ViewModel, Getter, Enum]()
 						{
@@ -670,6 +878,8 @@ namespace APSGenerationUI
 							}
 							return FReply::Handled();
 						})
+						[SNew(STextBlock).Text(FText::FromString(TEXT(">")))
+						.Justification(ETextJustify::Center).Font(Font("Bold", 12)).ColorAndOpacity(Cyan)]
 					]
 				]
 				]
@@ -694,6 +904,9 @@ namespace APSGenerationUI
 				SNew(SHorizontalBox)
 				+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center).Padding(7.0f, 0.0f)
 				[
+					SNew(SBox).HeightOverride(FAPSUIStyle::Metrics().SliderHitHeight)
+					.VAlign(VAlign_Fill)
+					[
 					SAssignNew(Slider, SAPSGenerationRangeSlider)
 					.MinValue(static_cast<float>(Min))
 					.MaxValue(static_cast<float>(Max))
@@ -722,6 +935,7 @@ namespace APSGenerationUI
 							}
 						}
 					})
+					]
 				]
 				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(7.0f, 0.0f, 0.0f, 0.0f)
 				[
@@ -756,6 +970,111 @@ namespace APSGenerationUI
 		}
 		return Row;
 	}
+
+
+    struct FAtmosphereColorUIState
+    {
+        APSAtmosphereColorControl::FState Color;
+        TWeakObjectPtr<UGeneratedWorld> Model;
+        TWeakObjectPtr<AActor> Body;
+
+        APSAtmosphereColorControl::FState& Read(UWorldGenerationViewModel* VM)
+        {
+            UGeneratedWorld* CurrentModel = VM ? VM->GeneratedWorld.Get() : nullptr;
+            AActor* CurrentBody = VM ? VM->GetSelectedPreviewBody() : nullptr;
+            if (Model.Get() != CurrentModel || Body.Get() != CurrentBody)
+            {
+                Color = APSAtmosphereColorControl::FState{};
+                Model = CurrentModel;
+                Body = CurrentBody;
+            }
+            if (CurrentModel) Color.Read(CurrentModel->AtmosphereColor);
+            return Color;
+        }
+    };
+
+    TSharedRef<SWidget> AtmosphereColorRows(TWeakObjectPtr<UWorldGenerationViewModel> VM)
+    {
+        const TSharedRef<FAtmosphereColorUIState> State = MakeShared<FAtmosphereColorUIState>();
+        return SNew(SVerticalBox)
+            + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 8)
+            [
+                SNew(SHorizontalBox)
+                + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 9, 0)
+                [
+                    SNew(SColorBlock).Size(FVector2D(50, 26))
+                    .AlphaDisplayMode(EColorBlockAlphaDisplayMode::Ignore)
+                    .Color_Lambda([VM, State]() { return State->Read(VM.Get()).Swatch(); })
+                ]
+                + SHorizontalBox::Slot().FillWidth(1).VAlign(VAlign_Center)
+                [
+                    SNew(STextBlock).AutoWrapText(true)
+                    .Font(ReadableFont("Regular", 9)).ColorAndOpacity(SecondaryText)
+                    .Text_Lambda([VM, State]()
+                    {
+                        const auto& Color = State->Read(VM.Get());
+                        if (!Color.bValid)
+                            return LOCTEXT("AtmosphereInvalidColor", "INVALID COEFFICIENTS KEPT UNCHANGED. CORRECT THEM IN ADVANCED RGB.");
+                        if (Color.Strength == 0.0f)
+                            return LOCTEXT("AtmosphereZeroStrength", "STRENGTH 0 — NO SCATTERING. HUE/SATURATION APPLY WHEN STRENGTH IS RAISED.");
+                        return FText::Format(LOCTEXT("AtmosphereColorSwatch",
+                            "NORMALIZED COLOR · STRENGTH {0}\nSKY COLOR ALSO DEPENDS ON LIGHT AND VIEW."),
+                            FText::AsNumber(Color.Strength));
+                    })
+                ]
+            ]
+            + SVerticalBox::Slot().AutoHeight()
+            [
+                SNew(SVerticalBox)
+                .IsEnabled_Lambda([VM, State]() { return VM.IsValid() && VM->GeneratedWorld && State->Read(VM.Get()).bValid; })
+                + SVerticalBox::Slot().AutoHeight()
+                [NumberRow<double>(LOCTEXT("AtmosphereHue", "HUE / DEG"), 0.0, 360.0, 1.0, VM,
+                    [VM, State](const UGeneratedWorld*) { return static_cast<double>(State->Read(VM.Get()).Hue); },
+                    [State](UWorldGenerationViewModel* V, double X)
+                    {
+                        if (V->GeneratedWorld && State->Read(V).SetHue(V->GeneratedWorld->AtmosphereColor, static_cast<float>(X)))
+                            V->RefreshPlanetAppearancePreview(false);
+                    })]
+                + SVerticalBox::Slot().AutoHeight()
+                [NumberRow<double>(LOCTEXT("AtmosphereSaturation", "SATURATION / %"), 0.0, 100.0, 1.0, VM,
+                    [VM, State](const UGeneratedWorld*) { return static_cast<double>(State->Read(VM.Get()).Saturation) * 100.0; },
+                    [State](UWorldGenerationViewModel* V, double X)
+                    {
+                        if (V->GeneratedWorld && State->Read(V).SetSaturation(V->GeneratedWorld->AtmosphereColor, static_cast<float>(X / 100.0)))
+                            V->RefreshPlanetAppearancePreview(false);
+                    })]
+                + SVerticalBox::Slot().AutoHeight()
+                [NumberRow<double>(LOCTEXT("AtmosphereStrength", "SCATTERING STRENGTH"), 0.0, 64.0, 0.1, VM,
+                    [VM, State](const UGeneratedWorld*) { return static_cast<double>(State->Read(VM.Get()).Strength); },
+                    [State](UWorldGenerationViewModel* V, double X)
+                    {
+                        if (V->GeneratedWorld && State->Read(V).SetStrength(V->GeneratedWorld->AtmosphereColor, static_cast<float>(X)))
+                            V->RefreshPlanetAppearancePreview(false);
+                    })]
+            ]
+            + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 8)
+            [
+                SNew(STextBlock).AutoWrapText(true).Font(ReadableFont("Regular", 9)).ColorAndOpacity(SecondaryText)
+                .Text(LOCTEXT("AtmosphereStrengthHelp",
+                    "STRENGTH = PEAK LINEAR RGB COEFFICIENT, NOT HEIGHT OR OPACITY. HUE/SATURATION KEEP IT. EXISTING VALUES ABOVE 64 ARE RETAINED UNTIL STRENGTH IS EDITED."))
+            ]
+            + SVerticalBox::Slot().AutoHeight()
+            [
+                SNew(SExpandableArea).InitiallyCollapsed(true)
+                .BorderBackgroundColor(FLinearColor::Transparent)
+                .BodyBorderBackgroundColor(FLinearColor::Transparent)
+                .HeaderContent()
+                [SNew(STextBlock).Text(LOCTEXT("AtmosphereAdvancedRGB", "ADVANCED · LINEAR RGB"))
+                    .Font(ReadableFont("Bold", 10)).ColorAndOpacity(SecondaryText)]
+                .BodyContent()
+                [
+                    SNew(SVerticalBox)
+		+ SVerticalBox::Slot().AutoHeight()[NumberRow<double>(LOCTEXT("AtmosphereLinearR", "LINEAR COEFFICIENT / RED"), 0.0, 64.0, 0.1, VM, [](const UGeneratedWorld* W){ return FMath::IsFinite(W->AtmosphereColor.R) ? static_cast<double>(W->AtmosphereColor.R) : 0.0; }, [](UWorldGenerationViewModel* V, double X){ if(V->GeneratedWorld){V->GeneratedWorld->AtmosphereColor.R=static_cast<float>(X); V->RefreshPlanetAppearancePreview(false);} })]
+		+ SVerticalBox::Slot().AutoHeight()[NumberRow<double>(LOCTEXT("AtmosphereLinearG", "LINEAR COEFFICIENT / GREEN"), 0.0, 64.0, 0.1, VM, [](const UGeneratedWorld* W){ return FMath::IsFinite(W->AtmosphereColor.G) ? static_cast<double>(W->AtmosphereColor.G) : 0.0; }, [](UWorldGenerationViewModel* V, double X){ if(V->GeneratedWorld){V->GeneratedWorld->AtmosphereColor.G=static_cast<float>(X); V->RefreshPlanetAppearancePreview(false);} })]
+		+ SVerticalBox::Slot().AutoHeight()[NumberRow<double>(LOCTEXT("AtmosphereLinearB", "LINEAR COEFFICIENT / BLUE"), 0.0, 64.0, 0.1, VM, [](const UGeneratedWorld* W){ return FMath::IsFinite(W->AtmosphereColor.B) ? static_cast<double>(W->AtmosphereColor.B) : 0.0; }, [](UWorldGenerationViewModel* V, double X){ if(V->GeneratedWorld){V->GeneratedWorld->AtmosphereColor.B=static_cast<float>(X); V->RefreshPlanetAppearancePreview(false);} })]
+                ]
+            ];
+    }
 
 	class SPreviewInteractionSurface final : public SCompoundWidget
 	{
@@ -1374,6 +1693,7 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 			+ SHorizontalBox::Slot().AutoWidth()
 			[
 				SNew(SButton).ButtonStyle(&SecondaryButton).ContentPadding(FMargin(14.0f, 4.0f))
+				.HAlign(HAlign_Center).VAlign(VAlign_Center)
 				.ButtonColorAndOpacity_Lambda([VM, Getter]()
 				{
 					return VM.IsValid() && VM->GeneratedWorld && Getter(VM->GeneratedWorld)
@@ -1391,7 +1711,7 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 				[
 					SNew(STextBlock)
 					.Text_Lambda([VM, Getter](){ return FText::FromString(VM.IsValid() && VM->GeneratedWorld && Getter(VM->GeneratedWorld) ? TEXT("ON") : TEXT("OFF")); })
-					.Font(Font("Bold", 10)).ColorAndOpacity(Cyan)
+					.Justification(ETextJustify::Center).Font(Font("Bold", 10)).ColorAndOpacity(Cyan)
 				]
 			]
 		];
@@ -1538,7 +1858,9 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 						GetSurfaceFamilyIndex(V->GeneratedWorld->PlanetType));
 					if (Presets.IsEmpty()) return;
 					const int32 Current = Presets.IndexOfByKey(V->GeneratedWorld->PlanetType);
-					const int32 Base = Current == INDEX_NONE ? 0 : Current;
+					// Loaded legacy Exoplanet stays untouched until the user steps the preset.
+					// Its first forward step selects the first current family entry.
+					const int32 Base = Current == INDEX_NONE ? (Direction < 0 ? 0 : -1) : Current;
 					const int32 Next = (Base + (Direction < 0 ? -1 : 1) + Presets.Num()) % Presets.Num();
 					V->SetEnumValue(StaticEnum<EPlanetType>(), static_cast<int32>(Presets[Next]));
 				})
@@ -1561,6 +1883,7 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 				[](UWorldGenerationViewModel* V, double X){ V->SetSelectedPlanetOrbitInclination(X); })]
 			+ SVerticalBox::Slot().AutoHeight()
 			[SNew(SButton).ButtonStyle(&SecondaryButton).Text(LOCTEXT("PlanetOrbitAuto", "RESTORE AUTO ORBIT"))
+				.HAlign(HAlign_Center).VAlign(VAlign_Center)
 				.IsEnabled_Lambda([VM](){ return VM.IsValid() && VM->HasSelectedPlanetOrbitEdit(); })
 				.OnClicked_Lambda([VM](){ if (VM.IsValid()) VM->ResetSelectedPlanetOrbit(); return FReply::Handled(); })]
 			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 4.0f, 0.0f, 8.0f)
@@ -1621,10 +1944,8 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 		+ SVerticalBox::Slot().AutoHeight()[NumberRow<double>(LOCTEXT("AtmosphereHeight", "HEIGHT / KM"), 0.0, 2000.0, 5.0, VM, [](const UGeneratedWorld* W){ return W->AtmosphereHeight; }, [](UWorldGenerationViewModel* V, double X){ if(V->GeneratedWorld){V->GeneratedWorld->AtmosphereHeight=X; V->RefreshPlanetAppearancePreview(false);} })]
 		+ SVerticalBox::Slot().AutoHeight()[NumberRow<double>(LOCTEXT("AtmosphereOpacity", "OPACITY"), 0.0, 40.0, 0.25, VM, [](const UGeneratedWorld* W){ return W->AtmosphereOpacity; }, [](UWorldGenerationViewModel* V, double X){ if(V->GeneratedWorld){V->GeneratedWorld->AtmosphereOpacity=X; V->RefreshPlanetAppearancePreview(false);} })]
 		+ SVerticalBox::Slot().AutoHeight()[NumberRow<double>(LOCTEXT("AtmosphereMulti", "MULTI SCATTERING"), 0.0, 10.0, 0.05, VM, [](const UGeneratedWorld* W){ return W->AtmosphereMultiScattering; }, [](UWorldGenerationViewModel* V, double X){ if(V->GeneratedWorld){V->GeneratedWorld->AtmosphereMultiScattering=X; V->RefreshPlanetAppearancePreview(false);} })]
-		+ SVerticalBox::Slot().AutoHeight()[NumberRow<double>(LOCTEXT("AtmosphereRayleigh", "RAYLEIGH SCATTERING"), 0.0, 64.0, 0.25, VM, [](const UGeneratedWorld* W){ return W->AtmosphereRayleighScattering; }, [](UWorldGenerationViewModel* V, double X){ if(V->GeneratedWorld){V->GeneratedWorld->AtmosphereRayleighScattering=X; V->RefreshPlanetAppearancePreview(false);} })]
-		+ SVerticalBox::Slot().AutoHeight()[NumberRow<double>(LOCTEXT("AtmosphereColorR", "COLOR / RED"), 0.0, 64.0, 0.1, VM, [](const UGeneratedWorld* W){ return static_cast<double>(W->AtmosphereColor.R); }, [](UWorldGenerationViewModel* V, double X){ if(V->GeneratedWorld){V->GeneratedWorld->AtmosphereColor.R=static_cast<float>(X); V->RefreshPlanetAppearancePreview(false);} })]
-		+ SVerticalBox::Slot().AutoHeight()[NumberRow<double>(LOCTEXT("AtmosphereColorG", "COLOR / GREEN"), 0.0, 64.0, 0.1, VM, [](const UGeneratedWorld* W){ return static_cast<double>(W->AtmosphereColor.G); }, [](UWorldGenerationViewModel* V, double X){ if(V->GeneratedWorld){V->GeneratedWorld->AtmosphereColor.G=static_cast<float>(X); V->RefreshPlanetAppearancePreview(false);} })]
-		+ SVerticalBox::Slot().AutoHeight()[NumberRow<double>(LOCTEXT("AtmosphereColorB", "COLOR / BLUE"), 0.0, 64.0, 0.1, VM, [](const UGeneratedWorld* W){ return static_cast<double>(W->AtmosphereColor.B); }, [](UWorldGenerationViewModel* V, double X){ if(V->GeneratedWorld){V->GeneratedWorld->AtmosphereColor.B=static_cast<float>(X); V->RefreshPlanetAppearancePreview(false);} })]
+		+ SVerticalBox::Slot().AutoHeight()[NumberRow<double>(LOCTEXT("AtmosphereRayleigh", "RAYLEIGH SCALE HEIGHT / KM"), 0.0, 64.0, 0.25, VM, [](const UGeneratedWorld* W){ return W->AtmosphereRayleighScattering; }, [](UWorldGenerationViewModel* V, double X){ if(V->GeneratedWorld){V->GeneratedWorld->AtmosphereRayleighScattering=X; V->RefreshPlanetAppearancePreview(false);} })]
+		+ SVerticalBox::Slot().AutoHeight()[AtmosphereColorRows(VM)]
 	];
 
 	const TSharedRef<SWidget> ControlsSwitcher = SNew(SWidgetSwitcher)
@@ -1672,9 +1993,11 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 			+ SHorizontalBox::Slot().AutoWidth()
 			[
 				SNew(SButton).ButtonStyle(&SecondaryButton).ContentPadding(FMargin(9.0f, 4.0f))
+				.HAlign(HAlign_Center).VAlign(VAlign_Center)
 				.OnClicked(this, &SWorldGenerationPanel::FocusPreviewUp)
 				.IsEnabled_Lambda([VM]() { return VM.IsValid() && VM->CanFocusPreviewParent(); })
-				[SNew(STextBlock).Text(LOCTEXT("Up", "^  UP")).Font(Font("Bold", 8)).ColorAndOpacity(White)]
+				[SNew(STextBlock).Text(LOCTEXT("Up", "^  UP")).Justification(ETextJustify::Center)
+				.Font(Font("Bold", 8)).ColorAndOpacity(White)]
 			]
 		]
 		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 11.0f, 0.0f, 0.0f)
@@ -1779,6 +2102,7 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 	{
 		return SNew(SButton)
 			.ButtonStyle(&SecondaryButton)
+			.HAlign(HAlign_Center).VAlign(VAlign_Center)
 			.IsEnabled_Lambda([this, Focus]()
 			{
 				const UWorldGenerationViewModel* VMValue = ViewModel.Get();
@@ -1815,7 +2139,9 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
 				[
 					SNew(SButton).ButtonStyle(&SecondaryButton).OnClicked(this, &SWorldGenerationPanel::GoBack).ContentPadding(FMargin(15.0f, 8.0f))
-					[SNew(STextBlock).Text(LOCTEXT("Back", "<  BACK")).Font(Font("Bold", 12)).ColorAndOpacity(White)]
+					.HAlign(HAlign_Center).VAlign(VAlign_Center)
+					[SNew(STextBlock).Text(LOCTEXT("Back", "<  BACK")).Justification(ETextJustify::Center)
+					.Font(Font("Bold", 12)).ColorAndOpacity(White).OverflowPolicy(ETextOverflowPolicy::Ellipsis)]
 				]
 				+ SHorizontalBox::Slot().FillWidth(1.0f).HAlign(HAlign_Center)
 				[
@@ -1832,7 +2158,9 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
 				[
 					SNew(SButton).ButtonStyle(&SecondaryButton).OnClicked(this, &SWorldGenerationPanel::RefreshPreview).ContentPadding(FMargin(14.0f, 8.0f))
-					[SNew(STextBlock).Text(LOCTEXT("Refresh", "REGENERATE")).Font(Font("Bold", 11)).ColorAndOpacity(Cyan)]
+					.HAlign(HAlign_Center).VAlign(VAlign_Center)
+					[SNew(STextBlock).Text(LOCTEXT("Refresh", "REGENERATE")).Justification(ETextJustify::Center)
+					.Font(Font("Bold", 11)).ColorAndOpacity(Cyan).OverflowPolicy(ETextOverflowPolicy::Ellipsis)]
 				]
 			]
 			+ SVerticalBox::Slot().FillHeight(1.0f).Padding(0.0f, 14.0f)
@@ -1892,12 +2220,15 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 				+ SHorizontalBox::Slot().AutoWidth()
 				[
 					SNew(SButton).ButtonStyle(&PrimaryButton).OnClicked(this, &SWorldGenerationPanel::CommitWorld)
+					.HAlign(HAlign_Center).VAlign(VAlign_Center)
 					.IsEnabled_Lambda([VM]() { return VM.IsValid() && VM->bPreviewReady
 						&& (VM->GetGenerationRoute() != EAPSGenerationRoute::Civilization || VM->GetHomeStartPlanetCount() > 0); })
 					.ToolTipText_Lambda([VM]() { return VM.IsValid() && VM->GetGenerationRoute() == EAPSGenerationRoute::Civilization
 						&& VM->GetHomeStartPlanetCount() == 0 ? LOCTEXT("HomePlanetRequiredHint", "A civilization needs a planet in the home system.") : FText::GetEmpty(); })
 					.ContentPadding(FMargin(52.0f, 13.0f))
-					[SNew(STextBlock).Text(this, &SWorldGenerationPanel::GetContinueLabel).Font(Font("Bold", 14)).ColorAndOpacity(White)]
+					[SNew(STextBlock).Text(this, &SWorldGenerationPanel::GetContinueLabel)
+					.Justification(ETextJustify::Center).OverflowPolicy(ETextOverflowPolicy::Ellipsis)
+					.Font(Font("Bold", 14)).ColorAndOpacity(White)]
 				]
 			]
 		]
@@ -2181,12 +2512,13 @@ void SWorldGenerationPanel::RebuildBodyHierarchy(const TArray<FAPSPreviewBodyEnt
 			[
 				SNew(SBox).WidthOverride(23.0f)
 				[
-					SNew(SButton).ButtonStyle(&SecondaryButton).ContentPadding(FMargin(3.0f, 5.0f))
+					SNew(SButton).ButtonStyle(&SecondaryButton).ContentPadding(0.0f)
+					.HAlign(HAlign_Center).VAlign(VAlign_Center)
 					.Visibility(ImmediateChildCount > 0 ? EVisibility::Visible : EVisibility::Hidden)
 					.OnClicked(this, &SWorldGenerationPanel::ToggleHierarchyChildren, EntryKey)
 					.ToolTipText(bCollapsed ? LOCTEXT("ExpandChildren", "Show children") : LOCTEXT("CollapseChildren", "Hide children"))
 					[SNew(STextBlock).Text(FText::FromString(bCollapsed ? TEXT("+") : TEXT("-")))
-					.Font(Font("Bold", 10)).ColorAndOpacity(Cyan)]
+					.Justification(ETextJustify::Center).Font(Font("Bold", 10)).ColorAndOpacity(Cyan)]
 				]
 			]
 			+ SHorizontalBox::Slot().FillWidth(1.0f)

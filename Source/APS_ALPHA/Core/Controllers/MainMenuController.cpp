@@ -1,17 +1,118 @@
 #include "MainMenuController.h"
 #include "APS_ALPHA/Core/Instances/MainGameplayInstance.h"
+#include "APS_ALPHA/Core/Loading/APSAuthoredLevelLaunchSubsystem.h"
 #include "APS_ALPHA/Core/Model/GeneratedWorld.h"
+#include "APS_ALPHA/Core/Model/SpawnParameters.h"
 #include "APS_ALPHA/Core/Saves/APSWorldSaveSnapshot.h"
 #include "APS_ALPHA/Core/Saves/GameSave.h"
+#include "APS_ALPHA/Core/Saves/SavedActorData.h"
+#include "APS_ALPHA/Actors/Tech/SpaceHeadquarters.h"
+#include "APS_ALPHA/Actors/Tech/SpaceShipyard.h"
+#include "APS_ALPHA/Actors/Tech/SpaceStation.h"
+#include "APS_ALPHA/Gameplay/Civilizations/Civilization.h"
+#include "APS_ALPHA/Generation/AstroGenerator.h"
+#include "APS_ALPHA/Pawns/Spaceships/Spaceship.h"
 #include "APS_ALPHA/UI/MainMenu/WorldGenerationViewModel.h"
 #include "APS_ALPHA/UI/MainMenu/SAPSMainMenuRoot.h"
 #include "Blueprint/WidgetLayoutLibrary.h"
 #include "Engine/GameInstance.h"
 #include "Engine/GameViewportClient.h"
 #include "Engine/World.h"
+#include "GameFramework/Pawn.h"
 #include "Kismet/GameplayStatics.h"
 #include "Misc/Paths.h"
 #include "Widgets/SWeakWidget.h"
+
+namespace
+{
+	bool IsLegacyCivilizationSave(const UGameSave& Save)
+	{
+		if (Save.bHasCivilizationManifest)
+		{
+			return true;
+		}
+		for (const FActorSaveData& ActorData : Save.ActorSaveDataArray)
+		{
+			if (ActorData.StableEntityId.IsValid())
+			{
+				return true;
+			}
+			if (const UClass* ActorClass = LoadClass<AActor>(nullptr, *ActorData.ActorClass);
+				ActorClass && ActorClass->IsChildOf(ASpaceship::StaticClass()))
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	USpawnParameters* BuildLegacySpawnParameters(const UGameSave& Save, UObject* Outer)
+	{
+		USpawnParameters* Parameters = NewObject<USpawnParameters>(Outer);
+		if (!Parameters)
+		{
+			return nullptr;
+		}
+		UClass* GeneratorClass = LoadClass<AAstroGenerator>(nullptr,
+			TEXT("/Game/APS/APS_ALPHA/Core/BP_AstroGenerator.BP_AstroGenerator_C"));
+		const AAstroGenerator* GeneratorDefaults = GeneratorClass
+			? Cast<AAstroGenerator>(GeneratorClass->GetDefaultObject()) : nullptr;
+		if (GeneratorDefaults)
+		{
+			Parameters->BP_CharacterClass = GeneratorDefaults->BP_CharacterClass;
+			Parameters->BP_HomeSpaceStation = GeneratorDefaults->BP_HomeSpaceStation;
+			Parameters->BP_HomeSpaceship = GeneratorDefaults->BP_HomeSpaceship;
+			Parameters->BP_HomeSpaceShipyard = GeneratorDefaults->BP_HomeSpaceShipyard;
+			Parameters->BP_HomeSpaceHeadquarters = GeneratorDefaults->BP_HomeSpaceHeadquarters;
+		}
+		// The menu's certified civilization route has always used this production
+		// gravity pawn. Legacy files without a player record must recover the same
+		// class instead of inheriting an experimental generator-CDO default.
+		if (UClass* ProductionPilot = LoadClass<APawn>(nullptr,
+			TEXT("/Game/APS/APS_ALPHA/Blueprints/BP_CustomGravityCharacter.BP_CustomGravityCharacter_C")))
+		{
+			Parameters->BP_CharacterClass = ProductionPilot;
+		}
+
+		if (!Save.PlayerPawnClass.IsEmpty())
+		{
+			if (UClass* PawnClass = LoadClass<APawn>(nullptr, *Save.PlayerPawnClass))
+			{
+				Parameters->BP_CharacterClass = PawnClass;
+			}
+		}
+		if (Save.bHasCivilizationManifest)
+		{
+			if (UClass* ShipClass =
+				Save.CivilizationManifest.SelectedShipClass.TryLoadClass<ASpaceship>())
+			{
+				Parameters->BP_HomeSpaceship = ShipClass;
+			}
+		}
+		for (const FActorSaveData& ActorData : Save.ActorSaveDataArray)
+		{
+			if (UClass* ActorClass = LoadClass<AActor>(nullptr, *ActorData.ActorClass);
+				ActorClass && ActorClass->IsChildOf(ASpaceship::StaticClass()))
+			{
+				Parameters->BP_HomeSpaceship = ActorClass;
+				break;
+			}
+		}
+		// If a malformed legacy slot lost the pawn snapshot as well as its spawn
+		// recipe, recover onto the home planet instead of silently falling back to
+		// the SpawnParameters orbit default.  Slots that still contain a pawn
+		// snapshot are positioned exactly by the post-generation restore overlay.
+		if (!Save.bHasPlayerPawnState)
+		{
+			Parameters->CharacterSpawnPlace = ECharSpawnPlace::PlanetSurface;
+		}
+		Parameters->SanitizeForGeneration();
+		const bool bComplete = Parameters->BP_CharacterClass
+			&& Parameters->BP_HomeSpaceStation && Parameters->BP_HomeSpaceship
+			&& Parameters->BP_HomeSpaceShipyard && Parameters->BP_HomeSpaceHeadquarters;
+		return bComplete ? Parameters : nullptr;
+	}
+}
 
 void AMainMenuController::BeginPlay()
 {
@@ -144,22 +245,16 @@ void AMainMenuController::RemoveSlateMenu()
 
 void AMainMenuController::LaunchSingleGame()
 {
-	if (UMainGameplayInstance* GameplayInstance = GetGameInstance()
-		? GetGameInstance()->GetSubsystem<UMainGameplayInstance>() : nullptr)
+	if (UAPSAuthoredLevelLaunchSubsystem* Launch = GetGameInstance()
+		? GetGameInstance()->GetSubsystem<UAPSAuthoredLevelLaunchSubsystem>() : nullptr)
 	{
-		GameplayInstance->bIsLoadingMode = false;
-		GameplayInstance->bUseAuthoredSinglePlayWorld = true;
-		GameplayInstance->bSpawnGeneratedCivilization = false;
-		GameplayInstance->bPendingSavedWorldReplay = false;
-		GameplayInstance->bSavedWorldHierarchyReady = false;
-		GameplayInstance->SaveSlotName.Reset();
-		GameplayInstance->NewGeneratedWorld = nullptr;
-		GameplayInstance->SpawnParameters = nullptr;
-		GameplayInstance->CurrentCivilization = nullptr;
+		// Cold authored assets must finish before entering a game world: LoadMap's
+		// FinishCompilationsForGame otherwise blocks the game thread for minutes.
+		// The gate keeps this menu alive and commits gameplay state only on success.
+		Launch->RequestLaunch(this);
+		return;
 	}
-	// Deliberately no generation/commit work here. This route is equivalent to
-	// pressing Play while L_APS_SinglePlay_StartLocation is open in the editor.
-	UGameplayStatics::OpenLevel(this, TEXT("L_APS_SinglePlay_StartLocation"));
+	UE_LOG(LogTemp, Error, TEXT("[APS.SinglePlay] Launch subsystem unavailable; staying in menu"));
 }
 
 void AMainMenuController::LoadWorldSlot(const FString& SaveFileName)
@@ -189,21 +284,57 @@ void AMainMenuController::LoadWorldSlot(const FString& SaveFileName)
 		return;
 	}
 
+	USpawnParameters* ReplaySpawnParameters =
+		APSWorldSaveSnapshot::RestoreSpawnParameters(LoadedSave, GameplayInstance);
+	bool bReplayCivilization = LoadedSave->bHadGeneratedCivilization;
+	// A short-lived pre-release v3 build stamped the new version number before
+	// UnrealHeaderTool had emitted the two new properties. Those files look like
+	// v3 but contain no spawn recipe. Detect migration need from the actual
+	// civilization evidence, not only from the version integer.
+	if (!ReplaySpawnParameters && IsLegacyCivilizationSave(*LoadedSave))
+	{
+		bReplayCivilization = true;
+		ReplaySpawnParameters = BuildLegacySpawnParameters(*LoadedSave, GameplayInstance);
+		UE_LOG(LogTemp, Log,
+			TEXT("[APS.Save] Recovered missing civilization recipe for slot=%s stampedVersion=%d"),
+			*SlotName, LoadedSave->SaveFormatVersion);
+	}
+	if (bReplayCivilization && !ReplaySpawnParameters)
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[APS.Save] Slot %s requires civilization replay but its spawn recipe is unavailable"),
+			*SlotName);
+		return;
+	}
+	UCivilization* ReplayCivilization = nullptr;
+	if (bReplayCivilization)
+	{
+		ReplayCivilization = NewObject<UCivilization>(GameplayInstance);
+		if (!ReplayCivilization)
+		{
+			UE_LOG(LogTemp, Error,
+				TEXT("[APS.Save] Cannot recreate civilization for slot %s"), *SlotName);
+			return;
+		}
+		ReplayCivilization->InitializeFromSpawnParameters(ReplaySpawnParameters);
+	}
+
 	// Rebuild astronomy first from the immutable model.  Interactive actor and
 	// player transforms are restored only after the hierarchy reports ready.
 	GameplayInstance->bUseAuthoredSinglePlayWorld = false;
-	GameplayInstance->bSpawnGeneratedCivilization = false;
+	GameplayInstance->bSpawnGeneratedCivilization = bReplayCivilization;
 	GameplayInstance->NewGeneratedWorld = ReplayModel;
-	GameplayInstance->SpawnParameters = nullptr;
-	GameplayInstance->CurrentCivilization = nullptr;
+	GameplayInstance->SpawnParameters = ReplaySpawnParameters;
+	GameplayInstance->CurrentCivilization = ReplayCivilization;
 	GameplayInstance->SaveSlotName = SlotName;
 	GameplayInstance->bIsLoadingMode = true;
 	GameplayInstance->bPendingSavedWorldReplay = true;
 	GameplayInstance->bSavedWorldHierarchyReady = false;
 	UE_LOG(LogTemp, Log,
-		TEXT("[APS.Save] Prepared deterministic replay slot=%s version=%d modelBytes=%d seed=%d canonicalRecords=%d"),
+		TEXT("[APS.Save] Prepared deterministic replay slot=%s version=%d modelBytes=%d seed=%d canonicalRecords=%d civilization=%s spawnBytes=%d"),
 		*SlotName, LoadedSave->SaveFormatVersion, LoadedSave->GeneratedWorldModelData.Num(),
-		ReplayModel->GenerationSeed, ReplayModel->CanonicalStellarDataset.ClusterRecords.Num());
+		ReplayModel->GenerationSeed, ReplayModel->CanonicalStellarDataset.ClusterRecords.Num(),
+		bReplayCivilization ? TEXT("yes") : TEXT("no"), LoadedSave->SpawnParametersData.Num());
 	UGameplayStatics::OpenLevel(this, TEXT("L_WorldGeneration"));
 }
 

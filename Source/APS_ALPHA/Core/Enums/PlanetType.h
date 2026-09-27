@@ -3,35 +3,53 @@
 UENUM(BlueprintType)
 enum class EPlanetType : uint8
 {
-	Rocky			UMETA(DisplayName = "Rocky"),
-	Terrestrial		UMETA(DisplayName = "Terrestrial"), // Землеподобные планеты, как Земля
-	Greenhouse		UMETA(DisplayName = "Greenhouse Planet"), // Парниковые планеты, подобные Венере// Скалистые планеты (состоят в основном из камня)
-	Melted 			UMETA(DisplayName = "Melted Planet"), // Melted
-	HotGiant		UMETA(DisplayName = "Hot Giant"), // Hot Газовые гиганты
-	GasGiant		UMETA(DisplayName = "Gas Giant"), // Газовые гиганты, как Юпитер
-	IceGiant		UMETA(DisplayName = "Ice Giant"), // Ледяные гиганты, как Нептун
-	Dwarf			UMETA(DisplayName = "Dwarf Planet"), // Карликовые планеты, как Плутон
-	Ocean			UMETA(DisplayName = "Ocean Planet"), // Океанические планеты - планеты, полностью покрытые океаном
-	Water			UMETA(DisplayName = "Ocean Planet"), // WaterWorld планеты - планеты, покрытые океаном
-	Desert			UMETA(DisplayName = "Desert Planet"), // Пустынные планеты, на которых нет воды
-	Forest			UMETA(DisplayName = "Forest Planet"), // Лесные планеты с обильной растительностью
-	Volcanic		UMETA(DisplayName = "Volcanic Planet"), // Вулканические планеты с активной вулканической деятельностью
-	Ice				UMETA(DisplayName = "Ice Planet"), // Ледяные планеты, покрытые льдом
-	Frozen			UMETA(DisplayName = "Frozen Planet"), // Frozen планеты, покрытые льдом
-	Ammonia			UMETA(DisplayName = "Ammonia Planet"), // Планеты аммиака, на которых преобладают аммиачные соединения
-	Metal			UMETA(DisplayName = "Metal Planet"), // Железные планеты, состоящие преимущественно из металлов
-	Carbon			UMETA(DisplayName = "Carbon Planet"), // Углеродные планеты, где преобладает углерод
-	SuperEarth		UMETA(DisplayName = "Super-Earth"), // Супер-Земли, которые значительно больше нашей планеты
-	Lava			UMETA(DisplayName = "Lava Planet"), // Планеты, полностью или большей частью покрытые раскаленной лавой.
-	Metallic		UMETA(DisplayName = "Metallic Planet"), // Планеты, состоящие преимущественно из металлов, но не обязательно железа.
-	Nordic			UMETA(DisplayName = "Nordic Planet"),
-	Tundra			UMETA(DisplayName = "Tundra Planet"),
-	HighMountain	UMETA(DisplayName = "High Mountain Planet"),
-	Sand			UMETA(DisplayName = "Sand Planet"),
-	Oasis			UMETA(DisplayName = "Oasis Planet"),
-	Archipelago 	UMETA(DisplayName = "Archipelago Planet"),
-	Pangea		 	UMETA(DisplayName = "Pangea Planet"),
-	Rogue			UMETA(DisplayName = "Rogue Planet"), // Бродячие планеты - планеты, которые не привязаны к конкретной звезде
-	Exoplanet		UMETA(DisplayName = "Exoplanet"), // Экзопланеты - планеты вокруг других звезд
-	Unknown	UMETA(DisplayName = "Unknown") // Unknown
+	Rocky = 0			UMETA(DisplayName = "Rocky Planet"),
+	Terrestrial = 1		UMETA(DisplayName = "Terrestrial Planet"), // Р—РµРјР»РµРїРѕРґРѕР±РЅС‹Рµ РїР»Р°РЅРµС‚С‹, РєР°Рє Р—РµРјР»СЏ
+	Greenhouse = 2		UMETA(DisplayName = "Greenhouse Planet"), // РџР°СЂРЅРёРєРѕРІС‹Рµ РїР»Р°РЅРµС‚С‹, РїРѕРґРѕР±РЅС‹Рµ Р’РµРЅРµСЂРµ// РЎРєР°Р»РёСЃС‚С‹Рµ РїР»Р°РЅРµС‚С‹ (СЃРѕСЃС‚РѕСЏС‚ РІ РѕСЃРЅРѕРІРЅРѕРј РёР· РєР°РјРЅСЏ)
+	Melted = 3 			UMETA(DisplayName = "Melted Planet"), // Melted
+	HotGiant = 4		UMETA(DisplayName = "Hot Giant"), // Hot Р“Р°Р·РѕРІС‹Рµ РіРёРіР°РЅС‚С‹
+	GasGiant = 5		UMETA(DisplayName = "Gas Giant"), // Р“Р°Р·РѕРІС‹Рµ РіРёРіР°РЅС‚С‹, РєР°Рє Р®РїРёС‚РµСЂ
+	IceGiant = 6		UMETA(DisplayName = "Ice Giant"), // Р›РµРґСЏРЅС‹Рµ РіРёРіР°РЅС‚С‹, РєР°Рє РќРµРїС‚СѓРЅ
+	Dwarf = 7			UMETA(DisplayName = "Dwarf Planet"), // РљР°СЂР»РёРєРѕРІС‹Рµ РїР»Р°РЅРµС‚С‹, РєР°Рє РџР»СѓС‚РѕРЅ
+	Ocean = 8			UMETA(DisplayName = "Ocean Planet"), // РћРєРµР°РЅРёС‡РµСЃРєРёРµ РїР»Р°РЅРµС‚С‹ - РїР»Р°РЅРµС‚С‹, РїРѕР»РЅРѕСЃС‚СЊСЋ РїРѕРєСЂС‹С‚С‹Рµ РѕРєРµР°РЅРѕРј
+	Water = 9			UMETA(DisplayName = "Ocean Planet"), // WaterWorld РїР»Р°РЅРµС‚С‹ - РїР»Р°РЅРµС‚С‹, РїРѕРєСЂС‹С‚С‹Рµ РѕРєРµР°РЅРѕРј
+	Desert = 10			UMETA(DisplayName = "Desert Planet"), // РџСѓСЃС‚С‹РЅРЅС‹Рµ РїР»Р°РЅРµС‚С‹, РЅР° РєРѕС‚РѕСЂС‹С… РЅРµС‚ РІРѕРґС‹
+	Forest = 11			UMETA(DisplayName = "Forest Planet"), // Р›РµСЃРЅС‹Рµ РїР»Р°РЅРµС‚С‹ СЃ РѕР±РёР»СЊРЅРѕР№ СЂР°СЃС‚РёС‚РµР»СЊРЅРѕСЃС‚СЊСЋ
+	Volcanic = 12		UMETA(DisplayName = "Volcanic Planet"), // Р’СѓР»РєР°РЅРёС‡РµСЃРєРёРµ РїР»Р°РЅРµС‚С‹ СЃ Р°РєС‚РёРІРЅРѕР№ РІСѓР»РєР°РЅРёС‡РµСЃРєРѕР№ РґРµСЏС‚РµР»СЊРЅРѕСЃС‚СЊСЋ
+	Ice = 13				UMETA(DisplayName = "Ice Planet"), // Р›РµРґСЏРЅС‹Рµ РїР»Р°РЅРµС‚С‹, РїРѕРєСЂС‹С‚С‹Рµ Р»СЊРґРѕРј
+	Frozen = 14			UMETA(DisplayName = "Frozen Planet"), // Frozen РїР»Р°РЅРµС‚С‹, РїРѕРєСЂС‹С‚С‹Рµ Р»СЊРґРѕРј
+	Ammonia = 15			UMETA(DisplayName = "Ammonia Planet"), // РџР»Р°РЅРµС‚С‹ Р°РјРјРёР°РєР°, РЅР° РєРѕС‚РѕСЂС‹С… РїСЂРµРѕР±Р»Р°РґР°СЋС‚ Р°РјРјРёР°С‡РЅС‹Рµ СЃРѕРµРґРёРЅРµРЅРёСЏ
+	Metal = 16			UMETA(DisplayName = "Metal Planet"), // Р–РµР»РµР·РЅС‹Рµ РїР»Р°РЅРµС‚С‹, СЃРѕСЃС‚РѕСЏС‰РёРµ РїСЂРµРёРјСѓС‰РµСЃС‚РІРµРЅРЅРѕ РёР· РјРµС‚Р°Р»Р»РѕРІ
+	Carbon = 17			UMETA(DisplayName = "Carbon Planet"), // РЈРіР»РµСЂРѕРґРЅС‹Рµ РїР»Р°РЅРµС‚С‹, РіРґРµ РїСЂРµРѕР±Р»Р°РґР°РµС‚ СѓРіР»РµСЂРѕРґ
+	SuperEarth = 18		UMETA(DisplayName = "Super-Earth"), // РЎСѓРїРµСЂ-Р—РµРјР»Рё, РєРѕС‚РѕСЂС‹Рµ Р·РЅР°С‡РёС‚РµР»СЊРЅРѕ Р±РѕР»СЊС€Рµ РЅР°С€РµР№ РїР»Р°РЅРµС‚С‹
+	Lava = 19			UMETA(DisplayName = "Lava Planet"), // РџР»Р°РЅРµС‚С‹, РїРѕР»РЅРѕСЃС‚СЊСЋ РёР»Рё Р±РѕР»СЊС€РµР№ С‡Р°СЃС‚СЊСЋ РїРѕРєСЂС‹С‚С‹Рµ СЂР°СЃРєР°Р»РµРЅРЅРѕР№ Р»Р°РІРѕР№.
+	Metallic = 20		UMETA(DisplayName = "Metallic Planet"), // РџР»Р°РЅРµС‚С‹, СЃРѕСЃС‚РѕСЏС‰РёРµ РїСЂРµРёРјСѓС‰РµСЃС‚РІРµРЅРЅРѕ РёР· РјРµС‚Р°Р»Р»РѕРІ, РЅРѕ РЅРµ РѕР±СЏР·Р°С‚РµР»СЊРЅРѕ Р¶РµР»РµР·Р°.
+	Nordic = 21			UMETA(DisplayName = "Nordic Planet"),
+	Tundra = 22			UMETA(DisplayName = "Tundra Planet"),
+	HighMountain = 23	UMETA(DisplayName = "High Mountain Planet"),
+	Sand = 24			UMETA(DisplayName = "Sand Planet"),
+	Oasis = 25			UMETA(DisplayName = "Oasis Planet"),
+	Archipelago = 26 	UMETA(DisplayName = "Archipelago Planet"),
+	Pangea = 27		 	UMETA(DisplayName = "Pangea Planet"),
+	Rogue = 28			UMETA(DisplayName = "Rogue Planet"), // Р‘СЂРѕРґСЏС‡РёРµ РїР»Р°РЅРµС‚С‹ - РїР»Р°РЅРµС‚С‹, РєРѕС‚РѕСЂС‹Рµ РЅРµ РїСЂРёРІСЏР·Р°РЅС‹ Рє РєРѕРЅРєСЂРµС‚РЅРѕР№ Р·РІРµР·РґРµ
+	Exoplanet = 29		UMETA(DisplayName = "Exoplanet", Hidden), // Р­РєР·РѕРїР»Р°РЅРµС‚С‹ - РїР»Р°РЅРµС‚С‹ РІРѕРєСЂСѓРі РґСЂСѓРіРёС… Р·РІРµР·Рґ
+	Unknown = 30	UMETA(DisplayName = "Unknown"), // Unknown: stable saved ID, not the final preset
+	// Append-only additions. Keep legacy Exoplanet=29 resolvable for saved worlds.
+	Basalt = 31 UMETA(DisplayName = "Basalt Planet"),
+	Savanna = 32 UMETA(DisplayName = "Savanna Planet"),
+	Sulfur = 33 UMETA(DisplayName = "Sulfur Planet"),
+	Crystal = 34 UMETA(DisplayName = "Crystal Planet")
 };
+
+namespace APSPlanetTypes
+{
+	inline constexpr uint8 LegacyLastValue = 30;
+	inline constexpr uint8 LastValue = 34;
+
+	// UI creation policy only. Loading and resolving legacy Exoplanet remains valid.
+	inline constexpr bool IsSelectable(EPlanetType Type)
+	{
+		return static_cast<uint8>(Type) <= LastValue
+			&& Type != EPlanetType::Unknown && Type != EPlanetType::Exoplanet;
+	}
+}

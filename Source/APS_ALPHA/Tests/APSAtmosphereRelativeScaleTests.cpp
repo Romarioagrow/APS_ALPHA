@@ -32,7 +32,7 @@ bool FAPSGeneratedAtmosphereRelativeScaleTest::RunTest(const FString& Parameters
 	APlanetarySurfaceGenerator* Generator = World->SpawnActor<APlanetarySurfaceGenerator>();
 	if (!Planet || !Moon || !Generator) { World->DestroyWorld(false); return false; }
 	for (double RadiusKm : {100.0, 6371.0, 6750.0, 70000.0})
-	for (uint8 Type = 0; Type <= static_cast<uint8>(EPlanetType::Unknown); ++Type)
+	for (uint8 Type = 0; Type <= APSPlanetTypes::LastValue; ++Type)
 	{
 		Planet->PlanetType = static_cast<EPlanetType>(Type);
 		Planet->WorldScapeSeed = 41771;
