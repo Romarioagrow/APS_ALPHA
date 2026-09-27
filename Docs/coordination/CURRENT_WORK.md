@@ -56,3 +56,31 @@ build/bake/render запусков Codex не делает. В production соб
   акторы кораблей на `L_APS_SinglePlay_StartLocation`.
 
 Рабочие материалы, скрипты и отчёт: `F:/ChatGPT/APOSFERA/work/ships`.
+
+## Claude: стартовая станция и иконки меню (28.09, ночь)
+
+Задача от Rio: отдельный блок выбора старта в меню цивилизации и иконки Blueprint
+вместо векторных глифов. Файлы до handoff не трогать:
+
+- `Core/Enums/StartStation.h` (`EAPSStartStation`), поле `StartStation` в `SpawnParameters.h`,
+  `SetStartStation` в `WorldGenerationViewModel.*`.
+- `Actors/Tech/SpaceStation.*` (компонент `PlayerStartPoint`, `GetPlayerStartLocation()`),
+  `SpaceHeadquarters.*` (override). `SpawnPoint` верфей по-прежнему точка вылета кораблей.
+- `Generation/AstroGenerator.*`: только `StartStation`, `GetOrbitalStartStation()` и орбитальная
+  ветка `ResolveSpawnLocation` / камера старта.
+- `UI/MainMenu/SAPSMainMenuRoot.*`: вкладка START (шаг 04) и миниатюры на карточках;
+  `UI/MainMenu/APSUIThumbnails.h`; `Editor/APSUIThumbnailCommandlet.*`.
+- Контент: `UI/Thumbnails/**` (62 текстуры на прозрачном фоне; у 8 BP без видимого меша
+  остаётся векторный значок). Пересборка: `-run=APSUIThumbnail -AllowCommandletRendering
+  [-SkipExisting] [-Only=...]`. `PlayerStartPoint` записан в `SpaceInfrastructure/BP_SpaceHeadquarters`,
+  `_V2`, `BP_SpaceShipyard`, `_B`; классовые BP кораблей (`BP_SpaceshipBase`, `_XXS/_S/_M/_L/_XL`)
+  помечены abstract и не показываются в меню. `Config/DefaultGame.ini`: только строка cook.
+- Тест `APS.Gameplay.Start.StationPlayerStart` (в `APSGameplayIntegrationTests.cpp`).
+
+Проверено: сборка редактора, 9 автотестов (`APS.Gameplay.Start`, `APS.Gameplay.Vehicle`,
+`APS.Civilization.Save`, `APS.World.Save`), кадры иконок. Не проверено: вид меню и старт в
+штабе/на верфи в игре — визуальная проверка за Rio. Запечка иконок грузит GPU и память;
+не запускать её одновременно с другими GPU-задачами (ComfyUI и т. п.).
+
+Перенос `L_APS_MainMenu_Alpha` в `Levels/Alpha` сделан не Claude и в этот набор не входит.
+Скрипты и отчёты: `F:/ChatGPT/APOSFERA/work/ui`, `F:/ChatGPT/APOSFERA/work/stations`.

@@ -26,6 +26,16 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Components")
 	USceneComponent* SpawnPoint;
 
+	/**
+	 * Where an orbital start places the pilot, when authored (non-zero). Otherwise stations
+	 * use SpawnPoint; shipyards keep SpawnPoint for the ships they launch.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Components")
+	USceneComponent* PlayerStartPoint;
+
+	UFUNCTION(BlueprintPure, Category = "Player Start")
+	virtual FVector GetPlayerStartLocation() const;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gravity")
 	USphereComponent* GravityCollisionZone;
 };

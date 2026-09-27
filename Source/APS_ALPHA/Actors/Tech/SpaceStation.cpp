@@ -30,6 +30,18 @@ ASpaceStation::ASpaceStation()
 	SpawnPoint = CreateDefaultSubobject<USceneComponent>(TEXT("SpawnPoint"));
 	SpawnPoint->SetupAttachment(GravityCollisionZone);
 	SpawnPoint->SetWorldRotation(GetActorRotation());
+
+	PlayerStartPoint = CreateDefaultSubobject<USceneComponent>(TEXT("PlayerStartPoint"));
+	PlayerStartPoint->SetupAttachment(GravityCollisionZone);
+}
+
+FVector ASpaceStation::GetPlayerStartLocation() const
+{
+	if (IsValid(PlayerStartPoint) && !PlayerStartPoint->GetRelativeLocation().IsNearlyZero(1.0))
+	{
+		return PlayerStartPoint->GetComponentLocation();
+	}
+	return IsValid(SpawnPoint) ? SpawnPoint->GetComponentLocation() : GetActorLocation();
 }
 
 void ASpaceStation::BeginPlay()

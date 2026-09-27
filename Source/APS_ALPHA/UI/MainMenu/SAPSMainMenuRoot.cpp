@@ -2,6 +2,7 @@
 #include "SAPSChamferedOverlay.h"
 
 #include "APS_ALPHA/Core/Controllers/MainMenuController.h"
+#include "APS_ALPHA/UI/MainMenu/APSUIThumbnails.h"
 #include "APS_ALPHA/Core/Loading/APSAuthoredLevelLaunchSubsystem.h"
 #include "APS_ALPHA/Core/Enums/CharSpawnPlace.h"
 #include "APS_ALPHA/Core/Enums/OrbitHeight.h"
@@ -2559,6 +2560,54 @@ void SAPSMainMenuRoot::SynchronizeSpawnClassOptions()
 		SpawnClassIndices.Add(Pair.Key, InitialIndex);
 		ApplySpawnClassSelection(Pair.Key);
 	}
+	RefreshSpawnThumbnails();
+}
+
+void SAPSMainMenuRoot::RefreshSpawnThumbnails()
+{
+	SpawnClassThumbnails.Reset();
+	for (const auto& Pair : SpawnClassOptions)
+	{
+		TArray<TSharedPtr<FSlateBrush>>& Brushes = SpawnClassThumbnails.Add(Pair.Key);
+		for (const TSoftClassPtr<AActor>& Option : Pair.Value)
+		{
+			const FString PackageName = Option.ToSoftObjectPath().GetLongPackageName();
+			const FName Key(*PackageName);
+			if (const TSharedPtr<FSlateBrush>* Cached = SpawnThumbnailBrushCache.Find(Key))
+			{
+				Brushes.Add(*Cached);
+				continue;
+			}
+			TSharedPtr<FSlateBrush> Brush;
+			const FString TexturePath = APSUIThumbnails::TexturePathForBlueprintPackage(PackageName);
+			if (UTexture2D* Texture = LoadObject<UTexture2D>(nullptr, *TexturePath, nullptr,
+				LOAD_NoWarn | LOAD_Quiet))
+			{
+				if (AMainMenuController* PC = Controller.Get())
+				{
+					PC->HoldSlateResource(Texture);
+				}
+				Brush = MakeShared<FSlateBrush>();
+				Brush->SetResourceObject(Texture);
+				Brush->ImageSize = FVector2D(static_cast<float>(Texture->GetSizeX()),
+					static_cast<float>(Texture->GetSizeY()));
+				Brush->DrawAs = ESlateBrushDrawType::Image;
+			}
+			SpawnThumbnailBrushCache.Add(Key, Brush);
+			Brushes.Add(Brush);
+		}
+	}
+}
+
+const FSlateBrush* SAPSMainMenuRoot::GetSpawnClassThumbnail(EAPSStartAssetSlot Slot, int32 OptionIndex) const
+{
+	const TArray<TSharedPtr<FSlateBrush>>* Brushes = SpawnClassThumbnails.Find(Slot);
+	return Brushes && Brushes->IsValidIndex(OptionIndex) ? (*Brushes)[OptionIndex].Get() : nullptr;
+}
+
+const FSlateBrush* SAPSMainMenuRoot::GetSelectedSpawnThumbnail(EAPSStartAssetSlot Slot) const
+{
+	return GetSpawnClassThumbnail(Slot, SpawnClassIndices.FindRef(Slot));
 }
 
 void SAPSMainMenuRoot::ApplySpawnClassSelection(EAPSStartAssetSlot Slot)
@@ -2730,6 +2779,16 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildSpawnCard(EAPSStartAssetSlot Slot, co
 						return SpawnClassIndices.FindRef(Slot) == CapturedIndex ? APSMenu::Amber : APSMenu::Cyan;
 					})
 				]
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(6.0f, 0.0f, 0.0f, 0.0f)
+				[
+					SNew(SBox).WidthOverride(24.0f).HeightOverride(24.0f)
+					.Visibility_Lambda([this, Slot, CapturedIndex]()
+					{
+						return GetSpawnClassThumbnail(Slot, CapturedIndex)
+							? EVisibility::HitTestInvisible : EVisibility::Collapsed;
+					})
+					[SNew(SImage).Image_Lambda([this, Slot, CapturedIndex]() { return GetSpawnClassThumbnail(Slot, CapturedIndex); })]
+				]
 				+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center).Padding(7.0f, 0.0f)
 				[
 					SNew(STextBlock)
@@ -2802,12 +2861,21 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildSpawnCard(EAPSStartAssetSlot Slot, co
 							+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Center)
 							[
 								SNew(SBox).WidthOverride(118.0f).HeightOverride(118.0f)
+								.Visibility_Lambda([this, Slot]() { return GetSelectedSpawnThumbnail(Slot) ? EVisibility::Collapsed : EVisibility::Visible; })
 								[SNew(SVectorMenuGlyph).Glyph(SlotGlyph).Color(FLinearColor(0.03f, 0.28f, 0.38f, 0.32f)).StrokeWidth(4.8f)]
 							]
 							+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Center)
 							[
 								SNew(SBox).WidthOverride(76.0f).HeightOverride(76.0f)
+								.Visibility_Lambda([this, Slot]() { return GetSelectedSpawnThumbnail(Slot) ? EVisibility::Collapsed : EVisibility::Visible; })
 								[SNew(SVectorMenuGlyph).Glyph(SlotGlyph).Color(bLockedProductionPilot ? APSMenu::Amber : APSMenu::Cyan).StrokeWidth(1.9f)]
+							]
+							// Baked thumbnail of the selected Blueprint, as in the editor's content browser.
+							+ SOverlay::Slot().Padding(6.0f)
+							[
+								SNew(SScaleBox).Stretch(EStretch::ScaleToFit)
+								.Visibility_Lambda([this, Slot]() { return GetSelectedSpawnThumbnail(Slot) ? EVisibility::HitTestInvisible : EVisibility::Collapsed; })
+								[SNew(SImage).Image_Lambda([this, Slot]() { return GetSelectedSpawnThumbnail(Slot); })]
 							]
 							+ SOverlay::Slot().HAlign(HAlign_Left).VAlign(VAlign_Bottom).Padding(8.0f)
 							[
@@ -2876,7 +2944,7 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildCivilizationPage()
 {
 	DiscoverSpawnClassOptions();
 	const TWeakObjectPtr<UWorldGenerationViewModel> VM = ViewModel;
-	CivilizationEditorSection = FMath::Clamp(CivilizationEditorSection, 0, 2);
+	CivilizationEditorSection = FMath::Clamp(CivilizationEditorSection, 0, 3);
 
 	const auto EnumControl = [this](const FText& Label, const UEnum* Enum,
 		TFunction<int32()> Getter, TFunction<void(int32)> Setter)
@@ -3133,7 +3201,23 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildCivilizationPage()
 			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 6.0f)[NumberControl(LOCTEXT("FoundingPopulation", "FOUNDING POPULATION"), 1, 100000000, 1000, [VM](){return VM.IsValid()&&VM->SpawnParameters?VM->SpawnParameters->FoundingPopulation:1;}, [VM](int32 V){if(VM.IsValid()&&VM->SpawnParameters)VM->SpawnParameters->FoundingPopulation=V;})]
 			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 6.0f)[NumberControl(LOCTEXT("StartingCredits", "STARTING CREDITS"), 0, 2000000000, 10000, [VM](){return VM.IsValid()&&VM->SpawnParameters?static_cast<int32>(FMath::Min<int64>(VM->SpawnParameters->StartingCredits, MAX_int32)):0;}, [VM](int32 V){if(VM.IsValid()&&VM->SpawnParameters)VM->SpawnParameters->StartingCredits=V;})]
 			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 6.0f)[NumberControl(LOCTEXT("Technology", "TECHNOLOGY LEVEL"), 1, 10, 1, [VM](){return VM.IsValid()&&VM->SpawnParameters?VM->SpawnParameters->TechnologyLevel:1;}, [VM](int32 V){if(VM.IsValid()&&VM->SpawnParameters)VM->SpawnParameters->TechnologyLevel=V;})]
-			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 6.0f)[EnumControl(LOCTEXT("SpawnPlace", "PILOT START LOCATION"), StaticEnum<ECharSpawnPlace>(), [VM](){return VM.IsValid()&&VM->SpawnParameters?static_cast<int32>(VM->SpawnParameters->CharacterSpawnPlace):0;}, [VM](int32 V){if(VM.IsValid())VM->SetCharacterSpawnPlace(V);})]
+		];
+
+	// STEP 04: where the pilot starts, on which station for orbital starts, and the complex orbit.
+	TSharedRef<SWidget> StartEditor = SNew(SScrollBox)
+		+ SScrollBox::Slot()
+		[
+			SNew(SVerticalBox)
+			+ SVerticalBox::Slot().AutoHeight()[APSMenu::IconSectionHeading(EAPSMenuGlyph::Station,
+				LOCTEXT("StartSetup", "ARRIVAL POINT"), LOCTEXT("StartSetupHint", "Where the pilot wakes up in the home system."))]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 14.0f, 0.0f, 6.0f)[EnumControl(LOCTEXT("SpawnPlace", "PILOT START LOCATION"), StaticEnum<ECharSpawnPlace>(), [VM](){return VM.IsValid()&&VM->SpawnParameters?static_cast<int32>(VM->SpawnParameters->CharacterSpawnPlace):0;}, [VM](int32 V){if(VM.IsValid())VM->SetCharacterSpawnPlace(V);})]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 6.0f)
+			[
+				SNew(SBox)
+				.IsEnabled_Lambda([VM](){return VM.IsValid()&&VM->SpawnParameters&&VM->SpawnParameters->CharacterSpawnPlace==ECharSpawnPlace::PlanetOrbit;})
+				.ToolTipText(LOCTEXT("StartStationTip", "Used when the pilot starts in planet orbit."))
+				[EnumControl(LOCTEXT("StartStation", "START STATION"), StaticEnum<EAPSStartStation>(), [VM](){return VM.IsValid()&&VM->SpawnParameters?static_cast<int32>(VM->SpawnParameters->StartStation):0;}, [VM](int32 V){if(VM.IsValid())VM->SetStartStation(V);})]
+			]
 			+ SVerticalBox::Slot().AutoHeight()[EnumControl(LOCTEXT("OrbitHeight", "HOME COMPLEX ORBIT"), StaticEnum<EOrbitHeight>(), [VM](){return VM.IsValid()&&VM->SpawnParameters?static_cast<int32>(VM->SpawnParameters->HomeStationOrbitHeight):0;}, [VM](int32 V){if(VM.IsValid())VM->SetStationOrbitHeight(V);})]
 		];
 
@@ -3205,7 +3289,8 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildCivilizationPage()
 		.WidgetIndex(CivilizationEditorSection)
 		+ SWidgetSwitcher::Slot()[IdentityEditor]
 		+ SWidgetSwitcher::Slot()[InfrastructureEditor]
-		+ SWidgetSwitcher::Slot()[DivisionsEditor];
+		+ SWidgetSwitcher::Slot()[DivisionsEditor]
+		+ SWidgetSwitcher::Slot()[StartEditor];
 
 	TSharedRef<SWidget> Page = SNew(SVerticalBox)
 		+ SVerticalBox::Slot().AutoHeight().Padding(28.0f, 18.0f, 28.0f, 3.0f)[BuildHeader(LOCTEXT("CivParameters", "CIVILIZATION GENERATION"))]
@@ -3294,6 +3379,7 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildCivilizationPage()
 						+ SUniformGridPanel::Slot(0, 0)[EditorTab(0, EAPSMenuGlyph::Civilization, LOCTEXT("IdentityTab", "IDENTITY"))]
 						+ SUniformGridPanel::Slot(1, 0)[EditorTab(1, EAPSMenuGlyph::Infrastructure, LOCTEXT("ManifestTab", "MANIFEST"))]
 						+ SUniformGridPanel::Slot(2, 0)[EditorTab(2, EAPSMenuGlyph::Divisions, LOCTEXT("DivisionsTab", "DIVISIONS"))]
+						+ SUniformGridPanel::Slot(3, 0)[EditorTab(3, EAPSMenuGlyph::Station, LOCTEXT("StartTab", "START"))]
 					]
 					+ SVerticalBox::Slot().FillHeight(1.0f)[EditorSwitcher]
 				, FMargin(16.0f), FLinearColor(0.05f, 0.34f, 0.43f, 0.95f), 1.2f)

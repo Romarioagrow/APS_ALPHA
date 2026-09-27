@@ -22,6 +22,8 @@
 #include "APS_ALPHA/Generation/StarClusterGenerator.h"
 #include "APS_ALPHA/Generation/StarSystemGenerator.h"
 #include "APS_ALPHA/Pawns/Characters/CustomGravityCharacter.h"
+#include "APS_ALPHA/Actors/Tech/SpaceHeadquarters.h"
+#include "APS_ALPHA/Actors/Tech/SpaceStation.h"
 #include "APS_ALPHA/Pawns/Spaceships/Spaceship.h"
 #include "APS_ALPHA/Pawns/Spaceships/ShipNavigationComponent.h"
 #include "APS_ALPHA/UI/MainMenu/WorldGenerationViewModel.h"
@@ -695,6 +697,48 @@ bool FAPSShipAuthoredNoseTest::RunTest(const FString& Parameters)
 	Ship->RefreshFlightReferenceFromHull();
 	TestTrue(TEXT("An authored nose can point along any hull axis"),
 		Ship->GetShipForwardVector().Equals(Ship->GetActorRightVector(), 0.01));
+
+	APSGameplayIntegrationTests::DestroyTestWorld(World);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FAPSStationPlayerStartTest,
+	"APS.Gameplay.Start.StationPlayerStart",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FAPSStationPlayerStartTest::RunTest(const FString& Parameters)
+{
+	UWorld* World = APSGameplayIntegrationTests::CreateTestWorld();
+	if (!TestNotNull(TEXT("Test world"), World))
+	{
+		return false;
+	}
+
+	const FTransform StationTransform(FRotator(10.0, 90.0, 0.0), FVector(1000.0, -2000.0, 3000.0));
+	ASpaceStation* Station = World->SpawnActor<ASpaceStation>(ASpaceStation::StaticClass(), StationTransform);
+	const FTransform HeadquartersTransform(FRotator(0.0, -45.0, 20.0), FVector(-5000.0, 400.0, 0.0));
+	ASpaceHeadquarters* Headquarters = World->SpawnActor<ASpaceHeadquarters>(
+		ASpaceHeadquarters::StaticClass(), HeadquartersTransform);
+	if (!TestNotNull(TEXT("Station"), Station) || !TestNotNull(TEXT("Headquarters"), Headquarters))
+	{
+		APSGameplayIntegrationTests::DestroyTestWorld(World);
+		return false;
+	}
+
+	Station->SpawnPoint->SetRelativeLocation(FVector(100.0, 0.0, 0.0));
+	TestTrue(TEXT("Without an authored player start a station uses SpawnPoint"),
+		Station->GetPlayerStartLocation().Equals(StationTransform.TransformPosition(FVector(100.0, 0.0, 0.0)), 0.1));
+	Station->PlayerStartPoint->SetRelativeLocation(FVector(0.0, 200.0, 50.0));
+	TestTrue(TEXT("An authored PlayerStartPoint wins over SpawnPoint"),
+		Station->GetPlayerStartLocation().Equals(StationTransform.TransformPosition(FVector(0.0, 200.0, 50.0)), 0.1));
+
+	TestTrue(TEXT("Without an authored player start headquarters use StartPoint"),
+		Headquarters->GetPlayerStartLocation().Equals(Headquarters->GetStartPointPosition(), 0.1));
+	Headquarters->PlayerStartPoint->SetRelativeLocation(FVector(300.0, -100.0, 20.0));
+	TestTrue(TEXT("The headquarters player start moves and turns with the actor"),
+		Headquarters->GetPlayerStartLocation().Equals(
+			HeadquartersTransform.TransformPosition(FVector(300.0, -100.0, 20.0)), 0.1));
 
 	APSGameplayIntegrationTests::DestroyTestWorld(World);
 	return true;

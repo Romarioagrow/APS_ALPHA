@@ -1,6 +1,7 @@
 ﻿#pragma once
 #include "APS_ALPHA/Core/Enums/CharSpawnPlace.h"
 #include "APS_ALPHA/Core/Enums/OrbitHeight.h"
+#include "APS_ALPHA/Core/Enums/StartStation.h"
 #include "SpawnParameters.generated.h"
 
 class ASpaceHeadquarters;
@@ -137,6 +138,10 @@ public:
 	/** Shared orbital preset for the initial station/headquarters group. */
 	UPROPERTY(EditAnywhere, Category = "Player Spawn")
 	EOrbitHeight HomeStationOrbitHeight{EOrbitHeight::LowOrbit};
+
+	/** For orbital starts: which home-complex station the pilot starts in. */
+	UPROPERTY(EditAnywhere, Category = "Player Spawn")
+	EAPSStartStation StartStation{EAPSStartStation::HomeStation};
 
 	UPROPERTY(EditAnywhere, Category = "Player Spawn")
 	TSubclassOf<APawn> BP_CharacterClass;

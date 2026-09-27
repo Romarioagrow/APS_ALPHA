@@ -10,6 +10,7 @@
 #include "APS_ALPHA/Core/Enums/AstroGenerationLevel.h"
 #include "APS_ALPHA/Core/Enums/PlanetarySystemType.h"
 #include "APS_ALPHA/Core/Enums/StarType.h"
+#include "APS_ALPHA/Core/Enums/StartStation.h"
 #include "APS_ALPHA/Core/Rendering/APSCanonicalStellarProjection.h"
 #include "APS_ALPHA/Core/Rendering/APSContinuousPreviewFrame.h"
 #include "APS_ALPHA/Core/Rendering/APSGameplayNativeStars.h"
@@ -971,6 +972,13 @@ public:
 
 	UPROPERTY(EditAnywhere, Category = "Player Spawn")
 	ECharSpawnPlace CharSpawnPlace;
+
+	/** Orbital starts only: which home-complex station the pilot starts in. */
+	UPROPERTY(EditAnywhere, Category = "Player Spawn")
+	EAPSStartStation StartStation{EAPSStartStation::HomeStation};
+
+	/** The station an orbital start uses; falls back to the home station. */
+	ASpaceStation* GetOrbitalStartStation() const;
 
 	UPROPERTY(EditAnywhere, Category = "Player Spawn")
 	EOrbitHeight HomeSpaceStationOrbitHeight;

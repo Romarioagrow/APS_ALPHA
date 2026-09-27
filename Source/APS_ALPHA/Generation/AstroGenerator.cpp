@@ -9397,6 +9397,7 @@ void AAstroGenerator::ApplySpawnParameters()
 			{
 				// ���������� ����������
 				CharSpawnPlace = SpawnParams->CharacterSpawnPlace;
+				StartStation = SpawnParams->StartStation;
 				HomeSpaceStationOrbitHeight = SpawnParams->HomeStationOrbitHeight;
 				BP_CharacterClass = SpawnParams->BP_CharacterClass;
 				BP_HomeSpaceStation = SpawnParams->BP_HomeSpaceStation;
@@ -12189,9 +12190,9 @@ bool AAstroGenerator::ResolveSpawnLocation(const ASpaceship* NewHomeSpaceship, F
 	switch (CharSpawnPlace)
 	{
 	case ECharSpawnPlace::PlanetOrbit:
-		if (IsValid(HomeSpaceStation) && IsValid(HomeSpaceStation->SpawnPoint))
+		if (const ASpaceStation* OrbitalStartStation = GetOrbitalStartStation())
 		{
-			CharSpawnLocation = HomeSpaceStation->SpawnPoint->GetComponentLocation();
+			CharSpawnLocation = OrbitalStartStation->GetPlayerStartLocation();
 			return true;
 		}
 		break;
@@ -12233,6 +12234,22 @@ bool AAstroGenerator::ResolveSpawnLocation(const ASpaceship* NewHomeSpaceship, F
 		break;
 	}
 	return false;
+}
+
+ASpaceStation* AAstroGenerator::GetOrbitalStartStation() const
+{
+	switch (StartStation)
+	{
+	case EAPSStartStation::Headquarters:
+		if (IsValid(HomeSpaceHeadquarters)) return HomeSpaceHeadquarters;
+		break;
+	case EAPSStartStation::Shipyard:
+		if (IsValid(HomeSpaceShipyard)) return HomeSpaceShipyard;
+		break;
+	default:
+		break;
+	}
+	return IsValid(HomeSpaceStation) ? HomeSpaceStation : nullptr;
 }
 
 void AAstroGenerator::ScheduleSurfaceSpawnFinalization(APawn* Pawn,
@@ -13379,8 +13396,11 @@ bool AAstroGenerator::SpawnStartInteractiveActors(TSharedPtr<FPlanetModel> Start
 		// station foreground, WorldScape terrain and parent-star illumination in one
 		// physically coherent view. Surface starts retain a tangential forward vector
 		// so they never point the camera into the ground.
-		FVector CameraUp = HomeSpaceStation->GetActorUpVector().GetSafeNormal(
-			UE_DOUBLE_SMALL_NUMBER, FVector::UpVector);
+		// Station gravity is "down" along the station's own axis, so frame the start with it.
+		const ASpaceStation* OrbitalStartStation = CharSpawnPlace == ECharSpawnPlace::PlanetOrbit
+			? GetOrbitalStartStation() : nullptr;
+		FVector CameraUp = (OrbitalStartStation ? OrbitalStartStation : HomeSpaceStation)
+			->GetActorUpVector().GetSafeNormal(UE_DOUBLE_SMALL_NUMBER, FVector::UpVector);
 		FVector InitialViewDirection = HomePlanet->GetActorLocation() - SpawnLocation;
 		if (CharSpawnPlace == ECharSpawnPlace::PlanetSurface)
 		{

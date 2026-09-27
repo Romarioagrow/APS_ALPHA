@@ -164,6 +164,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "World Generation|Civilization")
 	void SetStationOrbitHeight(int32 Value);
 
+	UFUNCTION(BlueprintCallable, Category = "World Generation|Civilization")
+	void SetStartStation(int32 Value);
+
 	UFUNCTION(BlueprintCallable, Category = "World Generation")
 	void CommitAndOpenLevel(FName LevelName = TEXT("L_WorldGeneration"));
 

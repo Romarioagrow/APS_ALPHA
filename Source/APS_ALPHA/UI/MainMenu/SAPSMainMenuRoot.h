@@ -156,6 +156,9 @@ private:
 	FText GetSpawnClassOptionName(EAPSStartAssetSlot Slot, int32 OptionIndex) const;
 	FReply CycleSpawnClass(EAPSStartAssetSlot Slot, int32 Direction);
 	FReply SelectSpawnClass(EAPSStartAssetSlot Slot, int32 OptionIndex);
+	void RefreshSpawnThumbnails();
+	const FSlateBrush* GetSpawnClassThumbnail(EAPSStartAssetSlot Slot, int32 OptionIndex) const;
+	const FSlateBrush* GetSelectedSpawnThumbnail(EAPSStartAssetSlot Slot) const;
 
 	FReply Back();
 	FReply OpenChoosePath();
@@ -204,6 +207,10 @@ private:
 
 	TMap<EAPSStartAssetSlot, TArray<TSoftClassPtr<AActor>>> SpawnClassOptions;
 	TMap<EAPSStartAssetSlot, int32> SpawnClassIndices;
+	/** Baked Blueprint thumbnails aligned with SpawnClassOptions; null where none was baked. */
+	TMap<EAPSStartAssetSlot, TArray<TSharedPtr<FSlateBrush>>> SpawnClassThumbnails;
+	/** One brush per Blueprint package, so each thumbnail texture loads once. */
+	TMap<FName, TSharedPtr<FSlateBrush>> SpawnThumbnailBrushCache;
 	TMap<EAPSStartAssetSlot, TSharedPtr<FStreamableHandle>> SpawnSelectionLoadHandles;
 	/** Identity guard for async picker loads; stale callbacks must not clear a newer slot request. */
 	TMap<EAPSStartAssetSlot, FSoftObjectPath> SpawnSelectionRequestedPaths;

@@ -30,4 +30,7 @@ public:
 	TObjectPtr<UCivilization> Civilization;
 
 	FVector GetStartPointPosition();
+
+	/** An authored PlayerStartPoint wins; otherwise the historical StartPoint marker. */
+	virtual FVector GetPlayerStartLocation() const override;
 };

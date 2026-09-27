@@ -1694,6 +1694,15 @@ void UWorldGenerationViewModel::SetStationOrbitHeight(int32 Value)
 	}
 }
 
+void UWorldGenerationViewModel::SetStartStation(int32 Value)
+{
+	if (SpawnParameters)
+	{
+		const int32 MaxValue = StaticEnum<EAPSStartStation>()->NumEnums() - 2;
+		SpawnParameters->StartStation = static_cast<EAPSStartStation>(FMath::Clamp(Value, 0, MaxValue));
+	}
+}
+
 void UWorldGenerationViewModel::ExecutePreview()
 {
 	AAstroGenerator* Generator = FindOrCreatePreviewGenerator();
