@@ -39,7 +39,8 @@ namespace APSSharedTerrainMaterial
     inline bool IsSharedStack(UMaterialInterface* Material)
     {
         const UMaterial* Master = IsValid(Material) ? Material->GetMaterial() : nullptr;
-        return IsValid(Master) && Master->GetPathName() == MasterPath();
+        return IsValid(Master) && (Master->GetPathName() == MasterPath()
+            || Master->GetPathName() == TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/UnifiedLava/M_APS_UnifiedLavaSurface.M_APS_UnifiedLavaSurface"));
     }
 
     // Called only through an exact stack-specific guard.

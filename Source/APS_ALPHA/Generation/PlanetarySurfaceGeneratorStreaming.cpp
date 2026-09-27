@@ -10,6 +10,8 @@
 #include "APS_ALPHA/Core/Planetary/APSSharedGeneratedLiquidMaterial.h"
 #include "APS_ALPHA/Core/Planetary/APSWorldScapeFoliagePolicy.h"
 #include "APS_ALPHA/Core/Planetary/APSWorldScapeLiquidLattice.h"
+#include "APS_ALPHA/Core/Planetary/APSWorldScapeSurfaceEnvelope.h"
+#include "APS_ALPHA/Core/Planetary/APSUnifiedLavaSurface.h"
 #include "APSWorldScapePlanetNoise.h"
 #include "Engine/World.h"
 #include "HAL/IConsoleManager.h"
@@ -23,6 +25,11 @@
 
 namespace APSWorldScapeProfiles
 {
+    TAutoConsoleVariable<int32> CVarUnifiedLavaSurface(
+        TEXT("aps.Surface.UnifiedLavaSurface"), 0,
+        TEXT("Candidate: one opaque lava/rock WorldScape surface and matching collision. ")
+        TEXT("Requires the protected UnifiedLava material bake. Stop PIE before changing. ")
+        TEXT("Off until rendered validation; no effect on water, ammonia, dry or authored worlds."), ECVF_Default);
     TAutoConsoleVariable<int32> CVarSurfaceMeshResolution(
         TEXT("aps.Surface.MeshResolution"), 192,
         TEXT("Generated full-scale WorldScape ring resolution, 96..192 in multiples of four. ")
@@ -757,6 +764,32 @@ void APlanetarySurfaceGenerator::ApplySurfaceProfileNow(APlanetaryBody* Body)
 			&& ResolvedSurfaceProfile.LandCoverage < 0.995f
 			&& IsValid(Profile.OceanMaterial);
 		Profile.OceanHeight = ResolvedSurfaceProfile.OceanLevel * ResolvedSurfaceProfile.NoiseIntensity;
+		if (APSWorldScapeProfiles::CVarUnifiedLavaSurface.GetValueOnGameThread() != 0
+			&& APSWorldScapeSurfaceEnvelope::Eligible(
+				ResolvedSurfaceProfile.LiquidType == EAPSPlanetLiquidType::Lava,
+				Profile.bOcean, Planet && Planet->IsManual, Body->WorldScapePresentationScale)
+			&& APSSharedTerrainMaterial::IsSharedStack(ResolvedTerrainMaterialInstance)
+			&& APSSharedLavaMaterial::IsSharedStack(ResolvedOceanMaterialInstance)
+			&& IsValid(ResolvedNoiseInstance))
+		{
+			const double Radius = FMath::Max(Body->RadiusKM, static_cast<double>(Body->PlanetRadiusKM)) * 100000.0;
+			UMaterialInstanceDynamic* Unified = APSUnifiedLavaSurface::Create(
+				WorldScapeRootInstance, WorldScapeRootInstance->GetRootComponent(), ResolvedSurfaceProfile,
+				Radius, GetWorld()->GetFeatureLevel());
+			if (IsValid(Unified))
+			{
+				// Publish all three parts together, before any new worker starts. A
+				// missing material must NEVER flatten terrain or remove the old lava.
+				ResolvedNoiseInstance->Configure(ResolvedSurfaceProfile, true);
+				ResolvedTerrainMaterialInstance = Unified;
+				Profile.TerrainMaterial = Unified;
+				Profile.bOcean = false;
+				Profile.OceanMaterial = nullptr;
+				ResolvedOceanMaterialInstance = nullptr;
+			}
+			UE_LOG(LogTemp, Warning, TEXT("[APS.UnifiedLava] body=%s installed=%d ocean=%d (candidate; visual validation required)"),
+				*GetNameSafe(Body), IsValid(Unified) ? 1 : 0, Profile.bOcean ? 1 : 0);
+		}
 	}
 	if (!IsValid(Profile.Noise) || !IsValid(Profile.TerrainMaterial))
 	{

@@ -47,6 +47,7 @@
 #include "APSOrbitalTerrainDetail.h"
 #include "APSSharedTerrainMaterialBuilder.h"
 #include "APSSharedLavaMaterialBuilder.h"
+#include "APSUnifiedLavaSurfaceBuilder.h"
 #include "APSLavaAntiGridUpdate.h"
 #include "APSLavaCrustReflectanceUpdate.h"
 #include "APSLavaThermalCoverageUpdate.h"
@@ -2441,6 +2442,10 @@ int32 UAPSPlanetSurfaceAssetCommandlet::Main(const FString& Params)
 	{
 		// Creates new candidate assets only; no runtime selector is changed here.
 		return APSSharedLavaMaterialBuilder::Build(AssetTools) ? 0 : 10;
+	}
+	if (FParse::Param(*Params, TEXT("OnlyUnifiedLavaSurface")))
+	{
+		return APSUnifiedLavaSurfaceBuilder::Build(AssetTools) ? 0 : 22;
 	}
 	if (FParse::Param(*Params, TEXT("OnlySharedWater")))
 	{

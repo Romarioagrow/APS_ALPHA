@@ -1,5 +1,6 @@
 #include "APSWorldScapePlanetNoise.h"
 #include "APSPlanetPresetMorphology.h"
+#include "APS_ALPHA/Core/Planetary/APSWorldScapeSurfaceEnvelope.h"
 
 #include "WorldScapeCommon/Public/NoiseMathUtils.h"
 
@@ -87,9 +88,11 @@ namespace APSPlanetNoise
 	}
 }
 
-void UAPSWorldScapePlanetNoise::Configure(const FAPSResolvedPlanetSurfaceProfile& InProfile)
+void UAPSWorldScapePlanetNoise::Configure(const FAPSResolvedPlanetSurfaceProfile& InProfile, bool bInUnifiedLavaSurface)
 {
 	SurfaceProfile = InProfile;
+	bUnifiedLavaSurface = bInUnifiedLavaSurface
+		&& InProfile.LiquidType == EAPSPlanetLiquidType::Lava && InProfile.LandCoverage < 0.995f;
 	bNeedPlanetRefresh = true;
 }
 FNoiseData UAPSWorldScapePlanetNoise::GetNoise(
@@ -157,8 +160,11 @@ FNoiseData UAPSWorldScapePlanetNoise::Evaluate(
 	double NoiseScale, double NoiseIntensity, double PlanetScale, double Latitude,
 	DVector& NoisePosition) const
 {
-	return EvaluateProfile<false>(SurfaceProfile, NoiseClass, Position, PlanetPosition,
+	FNoiseData Data = EvaluateProfile<false>(SurfaceProfile, NoiseClass, Position, PlanetPosition,
 		NoiseScale, NoiseIntensity, PlanetScale, Latitude, NoisePosition);
+	Data.Height = APSWorldScapeSurfaceEnvelope::Height(Data.Height,
+		static_cast<double>(SurfaceProfile.OceanLevel) * NoiseIntensity, bUnifiedLavaSurface);
+	return Data;
 }
 
 template<bool bHeightOnly>

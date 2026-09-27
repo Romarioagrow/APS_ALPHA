@@ -19,7 +19,7 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "APS|Planet Surface")
 	FAPSResolvedPlanetSurfaceProfile SurfaceProfile;
 
-	void Configure(const FAPSResolvedPlanetSurfaceProfile& InProfile);
+	void Configure(const FAPSResolvedPlanetSurfaceProfile& InProfile, bool bInUnifiedLavaSurface = false);
 
 	virtual FNoiseData GetNoise(
 		CustomNoise NoiseClass, const DVector& Position, const DVector& PlanetPosition,
@@ -65,6 +65,10 @@ public:
 		double NoiseScale, double NoiseIntensity, double PlanetScale, double Latitude);
 
 private:
+	// Configure only while the owning root has no in-flight workers. Never enable
+	// independently of the compatible material and removal of the ocean mesh.
+	bool bUnifiedLavaSurface = false;
+
 	FNoiseData Evaluate(
 		CustomNoise& NoiseClass, const DVector& Position, const DVector& PlanetPosition,
 		double NoiseScale, double NoiseIntensity, double PlanetScale, double Latitude,
