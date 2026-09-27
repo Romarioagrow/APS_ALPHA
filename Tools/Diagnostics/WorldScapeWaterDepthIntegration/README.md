@@ -14,14 +14,18 @@ a bounded extension of the existing real gameplay liquid probe. There is no
 new production material selector, saved default, geography or palette change.
 The rejected compressed-preview height adapter is deliberately absent.
 
-Current overlay: `overlay-v8` (the preceding oblique/live-LOD fixture is preserved
+Current overlay: `overlay-v10` (the preceding stochastic candidate is preserved
+in commit `2092659f86e030ece6209e22eec27ddb86ab16b9`; oblique/live-LOD fixture
 in commit `47ac2c4340f7103f869aebda30d4dd1c740e05ff`; palette-budget fixture in
 `8248482c54d92e86a655412f2b82b530ad326a1f`; dry fixture in `6e9e8e09`).
-Patch SHA256: `72D885A6C0DD9C06E0FB31850B8C74D9BFA9E0191F30283EBAFDCFAEDCB1624F`.
-Manifest SHA256: `44AAACC44B998DA1F57B64326E03250473C22E8A651C99AB88AC6A4231B4DC86`.
+Patch SHA256: `3505EBA1903D7E3BB0DEDC2089544FE5101C965E2ACF84F1D6D355FA2FB68A48`.
+Manifest SHA256: `CA1FF3D0C8ACBF1283D690A90F5D5899E8D4D2E0B906A849266016ADF5B64F38`.
 The patch was reverse-checked against the final isolated source tree.
 The optional normal-only ripple extension, private asset mount and its separate
 rendered evidence are documented in `RIPPLES.md`. It has no production selector.
+**Do not promote the ripple candidate:** the 2 m close-view regression remains
+visible in all tested variants, despite passing structural automation. The
+paired GPU benchmark is useful evidence, not a visual or 120 FPS acceptance.
 
 ## Evidence and limits
 

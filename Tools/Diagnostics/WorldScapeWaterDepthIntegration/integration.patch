@@ -735,7 +735,7 @@ index 0000000..cf12891
 +}
 diff --git a/Source/APS_ALPHA/Core/Planetary/APSWaterRippleCandidate.h b/Source/APS_ALPHA/Core/Planetary/APSWaterRippleCandidate.h
 new file mode 100644
-index 0000000..bf9b709
+index 0000000..13cdcb5
 --- /dev/null
 +++ b/Source/APS_ALPHA/Core/Planetary/APSWaterRippleCandidate.h
 @@ -0,0 +1,17 @@
@@ -746,7 +746,7 @@ index 0000000..bf9b709
 +
 +namespace APSWaterRippleCandidate
 +{
-+inline constexpr const TCHAR* Folder = TEXT("/APSWaterDetail/StochasticRipples20260927");
++inline constexpr const TCHAR* Folder = TEXT("/APSWaterDetail/CameraRelativeRipples20260927");
 +inline void RegisterPrivateMount()
 +{
 +    // Deliberately outside Content: the isolated host's Content is a read-only
@@ -818,18 +818,14 @@ index 9a3dba9..e1ed447 100644
  }
 diff --git a/Source/APS_ALPHA/Editor/APSWaterRippleMaterialBuilder.h b/Source/APS_ALPHA/Editor/APSWaterRippleMaterialBuilder.h
 new file mode 100644
-index 0000000..0c6f388
+index 0000000..8aabbd8
 --- /dev/null
 +++ b/Source/APS_ALPHA/Editor/APSWaterRippleMaterialBuilder.h
-@@ -0,0 +1,94 @@
+@@ -0,0 +1,140 @@
 +#pragma once
 +
 +#if WITH_EDITOR
 +#include "APSSharedAmmoniaMaterialBuilder.h"
-+#include "Materials/MaterialExpressionFrac.h"
-+#include "Materials/MaterialExpressionDDX.h"
-+#include "Materials/MaterialExpressionDDY.h"
-+#include "Materials/MaterialExpressionDivide.h"
 +
 +namespace APSWaterRippleMaterialBuilder
 +{
@@ -849,13 +845,29 @@ index 0000000..0c6f388
 +    auto* Ripple = Core.Add<UMaterialExpressionCustom>(Master);
 +    if (!World || !Strength || !Ripple) return false;
 +    World->WorldPositionShaderOffset = WPT_ExcludeAllShaderOffsets;
-+    APSSharedTerrainMaterialBuilder::FBuild::FFrame Frame(Core, Master);
-+    UMaterialExpression* Position = Frame.Position(World);
++    auto* Center = Core.Add<UMaterialExpressionDoubleVectorParameter>(Master);
++    Center->ParameterName = TEXT("APS_SharedPlanetCenter");
++    Center->UpdateParameterGuid(true, true);
++    UMaterialExpression* Rows[6] = {};
++    const TCHAR* RowNames[] = {TEXT("APS_SharedDetailRowXHigh"), TEXT("APS_SharedDetailRowXLow"),
++        TEXT("APS_SharedDetailRowYHigh"), TEXT("APS_SharedDetailRowYLow"),
++        TEXT("APS_SharedDetailRowZHigh"), TEXT("APS_SharedDetailRowZLow")};
++    const TCHAR* RowInputs[] = {TEXT("XHigh"), TEXT("XLow"), TEXT("YHigh"), TEXT("YLow"), TEXT("ZHigh"), TEXT("ZLow")};
++    for (int32 I = 0; I < UE_ARRAY_COUNT(Rows); ++I)
++    {
++        auto* Row = Core.Add<UMaterialExpressionVectorParameter>(Master);
++        Row->ParameterName = RowNames[I];
++        Row->DefaultValue = FLinearColor(I == 0 ? 1.0f : 0.0f,
++            I == 2 ? 1.0f : 0.0f, I == 4 ? 1.0f : 0.0f, 0.0f);
++        Row->Group = TEXT("APS Physical Coordinate Contract");
++        Row->UpdateParameterGuid(true, true);
++        Rows[I] = Row;
++    }
 +    Strength->ParameterName = TEXT("APS_WaterRippleSlope");
 +    Strength->DefaultValue = 0.065f;
 +    Strength->SliderMin = 0.0f; Strength->SliderMax = 0.12f;
 +    Strength->UpdateParameterGuid(true, true);
-+    Ripple->Description = TEXT("Planet-fixed LWC wrapped volume, footprint-filtered stochastic slopes; no displacement");
++    Ripple->Description = TEXT("Compensated planet-fixed volume, footprint-filtered stochastic slopes; no displacement");
 +    Ripple->OutputType = CMOT_Float3;
 +    auto Input = [Ripple](FName Name, FExpressionInput Value)
 +    {
@@ -873,16 +885,55 @@ index 0000000..0c6f388
 +    const float Weights[] = {0.65f, 0.35f};
 +    for (int32 I = 0; I < UE_ARRAY_COUNT(WavelengthCm); ++I)
 +    {
-+        auto* Phase = Core.Add<UMaterialExpressionDivide>(Master);
-+        Phase->A.Expression = Position; Phase->ConstB = WavelengthCm[I];
-+        auto* Period = Core.Add<UMaterialExpressionDivide>(Master);
-+        Period->A.Expression = Phase; Period->ConstB = 96.0f;
-+        auto* Fraction = Core.Add<UMaterialExpressionFrac>(Master);
-+        Fraction->Input.Expression = Period;
-+        auto* Wrapped = Core.Add<UMaterialExpressionMultiply>(Master);
-+        Wrapped->A.Expression = Fraction; Wrapped->ConstB = 96.0f;
++        auto* Phase = Core.Add<UMaterialExpressionCustom>(Master);
++        Phase->Description = TEXT("APS compensated water detail phase and unwrapped derivatives");
++        Phase->OutputType = CMOT_Float3;
++        Phase->Inputs.Empty();
++        const auto PhaseInput = [Phase](const TCHAR* Name, UMaterialExpression* E, bool bRGB)
++        {
++            FCustomInput Entry; Entry.InputName = Name; Entry.Input.Expression = E;
++            if (bRGB)
++            {
++                Entry.Input.Mask = 1;
++                Entry.Input.MaskR = Entry.Input.MaskG = Entry.Input.MaskB = 1;
++            }
++            Phase->Inputs.Add(Entry);
++        };
++        PhaseInput(TEXT("Raw"), World, false);
++        PhaseInput(TEXT("Center"), Center, true);
++        for (int32 J = 0; J < UE_ARRAY_COUNT(Rows); ++J) PhaseInput(RowInputs[J], Rows[J], true);
++        Phase->Outputs.Reset(3);
++        Phase->Outputs.Add(FExpressionOutput(TEXT("return")));
++        Phase->bShowOutputNameOnPin = true;
++        for (const TCHAR* Name : {TEXT("PhaseDX"), TEXT("PhaseDY")})
++        {
++            FCustomOutput Output; Output.OutputName = Name; Output.OutputType = CMOT_Float3;
++            Phase->AdditionalOutputs.Add(Output);
++            Phase->Outputs.Add(FExpressionOutput(Name));
++        }
++        // Same compensated transform as accepted terrain detail. Native LWC
++        // tile/offset multiply/divide quantizes centimetre noise near the ground.
++        // Retain both components through rotation, scale and phase division;
++        // demote only the bounded phase and its unwrapped pixel derivatives.
++        Phase->Code =
++            // Reconstruct directly from the camera-relative pixel interpolant.
++            // The legacy tile/offset world-position node can lose precision
++            // before conversion to DF. Raw stays connected to request the
++            // no-offset interpolant; no camera-dependent noise phase is added.
++            TEXT("FDFVector3 Absolute = DFSubtract(DFPromote(Parameters.WorldPosition_NoOffsets_CamRelative), ResolvedView.PreViewTranslation);\n")
++            TEXT("FDFVector3 Relative = DFSubtract(Absolute, WSToDF(LWCCenter));\n")
++            TEXT("FDFVector3 PX = DFMultiply(Relative, MakeDFVector3(XHigh, XLow));\n")
++            TEXT("FDFVector3 PY = DFMultiply(Relative, MakeDFVector3(YHigh, YLow));\n")
++            TEXT("FDFVector3 PZ = DFMultiply(Relative, MakeDFVector3(ZHigh, ZLow));\n")
++            TEXT("FDFScalar X = DFAdd(DFAdd(DFGetX(PX), DFGetY(PX)), DFGetZ(PX));\n")
++            TEXT("FDFScalar Y = DFAdd(DFAdd(DFGetX(PY), DFGetY(PY)), DFGetZ(PY));\n")
++            TEXT("FDFScalar Z = DFAdd(DFAdd(DFGetX(PZ), DFGetY(PZ)), DFGetZ(PZ));\n")
++            TEXT("FDFVector3 Physical = MakeDFVector(X, Y, Z);\n");
++        Phase->Code += FString::Printf(TEXT("FDFVector3 Unwrapped = DFDivide(Physical, %.9ff);\n"), WavelengthCm[I]);
++        Phase->Code += TEXT("PhaseDX = DFDdxDemote(Unwrapped);\nPhaseDY = DFDdyDemote(Unwrapped);\n")
++            TEXT("return DFFracDemote(DFDivide(Unwrapped, 96.0f)) * 96.0f;\n");
 +        auto* Noise = Core.Add<UMaterialExpressionVectorNoise>(Master);
-+        Noise->Position.Expression = Wrapped;
++        Noise->Position.Expression = Phase;
 +        Noise->WorldPositionOriginType = EPositionOrigin::Absolute;
 +        Noise->NoiseFunction = VNF_GradientALU; Noise->Quality = 1;
 +        // UE5.4 JacobianSimplex_ALU hashes 6*T, not T. A 96-cell Cartesian
@@ -892,17 +943,12 @@ index 0000000..0c6f388
 +        auto* Gradient = Core.Add<UMaterialExpressionComponentMask>(Master);
 +        Gradient->Input.Expression = Noise;
 +        Gradient->R = Gradient->G = Gradient->B = true; Gradient->A = false;
-+        auto* DX = Core.Add<UMaterialExpressionDDX>(Master);
-+        auto* DY = Core.Add<UMaterialExpressionDDY>(Master);
-+        // Filter the UNWRAPPED phase, not frac's discontinuity. UE's native
-+        // derivative emits WSDdx/DdyDemote for LWC inputs, including tile edges.
-+        DX->Value.Expression = Phase; DY->Value.Expression = Phase;
-+        for (const auto& P : {TPair<const TCHAR*, UMaterialExpression*>(TEXT("G"), Gradient),
-+            TPair<const TCHAR*, UMaterialExpression*>(TEXT("X"), DX),
-+            TPair<const TCHAR*, UMaterialExpression*>(TEXT("Y"), DY)})
++        const TCHAR* InputNames[] = {TEXT("G"), TEXT("X"), TEXT("Y")};
++        for (int32 J = 0; J < UE_ARRAY_COUNT(InputNames); ++J)
 +        {
-+            FExpressionInput E; E.Expression = P.Value;
-+            Input(FName(*FString::Printf(TEXT("%s%d"), P.Key, I)), E);
++            FExpressionInput E; E.Expression = J == 0 ? static_cast<UMaterialExpression*>(Gradient) : Phase;
++            E.OutputIndex = J;
++            Input(FName(*FString::Printf(TEXT("%s%d"), InputNames[J], I)), E);
 +        }
 +        Ripple->Code += FString::Printf(
 +            TEXT("float f%d = 1.0 - smoothstep(0.25, 0.5, length(X%d) + length(Y%d));\n")
@@ -948,7 +994,7 @@ index b6f8aac..4f76b9a 100644
  	// or an occlusion source.  WorldScape's defaults otherwise let independently
  	// stitched clipmap sections cast their rectangular boundaries onto the terrain,
 diff --git a/Source/APS_ALPHA/Tests/APSSharedLavaCoverageProbe.cpp b/Source/APS_ALPHA/Tests/APSSharedLavaCoverageProbe.cpp
-index 6bbb423..4ae544a 100644
+index 6bbb423..b7cd5d8 100644
 --- a/Source/APS_ALPHA/Tests/APSSharedLavaCoverageProbe.cpp
 +++ b/Source/APS_ALPHA/Tests/APSSharedLavaCoverageProbe.cpp
 @@ -3,6 +3,7 @@
@@ -959,7 +1005,18 @@ index 6bbb423..4ae544a 100644
  #include "APS_ALPHA/Core/Planetary/APSSharedLavaMaterial.h"
  #include "APS_ALPHA/Core/Planetary/APSSharedWaterMaterial.h"
  #include "APS_ALPHA/Generation/PlanetarySurfaceGenerator.h"
-@@ -28,11 +29,19 @@
+@@ -13,6 +14,10 @@
+ #include "Engine/GameViewportClient.h"
+ #include "Engine/TextureRenderTarget2D.h"
+ #include "Engine/World.h"
++#include "EngineGlobals.h"
++#include "RenderTimer.h"
++#include "RHI.h"
++#include "HAL/IConsoleManager.h"
+ #include "LocalVertexFactory.h"
+ #include "MaterialShared.h"
+ #include "Framework/Application/SlateApplication.h"
+@@ -28,11 +33,19 @@
  #include "UnrealClient.h"
  #include "UObject/StrongObjectPtr.h"
  #include "APSLavaShorelineProbe.h"
@@ -979,7 +1036,7 @@ index 6bbb423..4ae544a 100644
  const TCHAR* Labels[] = { TEXT("00-context0-alpha0"), TEXT("01-context0-alpha1"),
      TEXT("02-context1-alpha0"), TEXT("03-context1-alpha1") };
  // The first pair (1 / 1.25) was captured before and after crust correction.
-@@ -104,6 +113,28 @@ class FProbe final : public IAutomationLatentCommand
+@@ -104,6 +117,38 @@ class FProbe final : public IAutomationLatentCommand
      bool bLeased = false, bRestored = false, bDone = false;
      bool bRootTick = false, bSurfaceTick = false, bPlanetTick = false, bFrozen = false;
      bool bSharedLiquidFamilies = false;
@@ -987,6 +1044,16 @@ index 6bbb423..4ae544a 100644
 +    bool bWaterDepthPaletteBudget = false;
 +    bool bWaterDepthOblique = false;
 +    bool bWaterDepthLiveLod = false, bLiveLeased = false;
++    bool bWaterMaterialPerf = false;
++    struct FPerfSample
++    {
++        uint64 Frame;
++        double WallMs, GameMs, RenderMs, RHIMs, GPUMs;
++    };
++    TArray<FPerfSample> PerfSamples[5];
++    int32 PerfPhase = 0;
++    double PerfPhaseStart = 0, PerfLastTime = 0;
++    uint64 PerfLastFrame = 0;
 +    double LiveStart = 0, LiveLastFrame = 0, LiveLastCapture = -1000;
 +    int32 LiveGeometryChanges = 0, LiveFrames = 0;
 +    FVector LiveLastVertex = FVector::ZeroVector;
@@ -1008,7 +1075,7 @@ index 6bbb423..4ae544a 100644
      EAPSPlanetLiquidType LiquidType = EAPSPlanetLiquidType::Lava;
  
      const TCHAR* Marker() const { return bSharedLiquidFamilies ? TEXT("SHARED_LIQUID_COVERAGE") : TEXT("LAVA_COVERAGE"); }
-@@ -114,6 +145,138 @@ class FProbe final : public IAutomationLatentCommand
+@@ -114,6 +159,138 @@ class FProbe final : public IAutomationLatentCommand
              : LiquidType == EAPSPlanetLiquidType::Ammonia ? TEXT("Ammonia") : TEXT("Lava");
      }
  
@@ -1147,7 +1214,7 @@ index 6bbb423..4ae544a 100644
      UMaterialInstanceDynamic* CreateSharedLiquidCandidate(UMaterialInstanceDynamic* SourceMID)
      {
          // Exact family parents matter: Water and Ammonia share a master, not
-@@ -129,6 +292,40 @@ class FProbe final : public IAutomationLatentCommand
+@@ -129,6 +306,40 @@ class FProbe final : public IAutomationLatentCommand
              || Root->OceanMaterial.DefaultMaterial != SourceMID) return nullptr;
          for (const FSlot& Slot : Slots)
              if (Slot.OriginalMaterial.Get() != SourceMID) return nullptr;
@@ -1188,7 +1255,7 @@ index 6bbb423..4ae544a 100644
          UMaterialInstanceDynamic* MID = bWater
              ? APSSharedWaterMaterial::CreateUnboundCandidate(Root.Get(), Root->GetRootComponent(),
                  Planet->WorldScapePresentationScale, false, Surface->ResolvedSurfaceProfile, Planet->IsManual, Root->bOcean)
-@@ -160,6 +357,9 @@ class FProbe final : public IAutomationLatentCommand
+@@ -160,6 +371,9 @@ class FProbe final : public IAutomationLatentCommand
              const FWorldScapeMeshSection* S = Slot.Mesh->GetProcMeshSection(Slot.Index);
              if (!S || S->PlanetVertexBuffer.Num() != Slot.OriginalColors.Num()
                  || PayloadHash(*S) != Slot.Hash) return false;
@@ -1198,7 +1265,7 @@ index 6bbb423..4ae544a 100644
          }
          return true;
      }
-@@ -170,8 +370,28 @@ class FProbe final : public IAutomationLatentCommand
+@@ -170,8 +384,28 @@ class FProbe final : public IAutomationLatentCommand
          bRestored = true;
          int32 RestoredVertices = 0, RestoredSlots = 0;
          TSet<UWorldScapeMeshComponent*> ChangedMeshes;
@@ -1227,7 +1294,7 @@ index 6bbb423..4ae544a 100644
              if (!Slot.Mesh.IsValid()) { Test->AddError(FString(ErrorPrefix()) + TEXT("mesh disappeared before restore")); continue; }
              FWorldScapeMeshSection* S = Slot.Mesh->GetProcMeshSection(Slot.Index);
              if (!S || S->PlanetVertexBuffer.Num() != Slot.OriginalColors.Num() || PayloadHash(*S) != Slot.Hash)
-@@ -190,7 +410,7 @@ class FProbe final : public IAutomationLatentCommand
+@@ -190,7 +424,7 @@ class FProbe final : public IAutomationLatentCommand
              ChangedMeshes.Add(Slot.Mesh.Get());
          }
          for (UWorldScapeMeshComponent* Mesh : ChangedMeshes) Mesh->MarkRenderStateDirty();
@@ -1236,7 +1303,7 @@ index 6bbb423..4ae544a 100644
          for (const FVisibility& V : GroundVisibility)
              if (V.Mesh.IsValid()) { V.Mesh->SetVisibility(V.bVisible, false); V.Mesh->SetHiddenInGame(V.bHidden, false); }
          if (PC.IsValid() && Camera.IsValid() && PC->GetViewTarget() == Camera.Get() && OriginalViewTarget.IsValid())
-@@ -203,6 +423,17 @@ class FProbe final : public IAutomationLatentCommand
+@@ -203,6 +437,17 @@ class FProbe final : public IAutomationLatentCommand
              if (Surface.IsValid()) Surface->SetActorTickEnabled(bSurfaceTick);
              if (Planet.IsValid()) Planet->SetActorTickEnabled(bPlanetTick);
          }
@@ -1254,7 +1321,7 @@ index 6bbb423..4ae544a 100644
          Test->AddInfo(FString::Printf(TEXT("%s_RESTORE slots=%d/%d colors=%d cameraRestored=%d family=%s"),
              Marker(), RestoredSlots, Slots.Num(), RestoredVertices, PC.IsValid() && PC->GetViewTarget() == OriginalViewTarget.Get() ? 1 : 0, Family()));
      }
-@@ -227,7 +458,7 @@ class FProbe final : public IAutomationLatentCommand
+@@ -227,7 +472,7 @@ class FProbe final : public IAutomationLatentCommand
                  Slot.Transform = Lod->Mesh->GetComponentTransform(); Slot.Hash = PayloadHash(*S);
                  for (const FWorldScapeMeshVertex& V : S->PlanetVertexBuffer) Slot.OriginalColors.Add(V.Color);
                  TotalVertices += Slot.OriginalColors.Num();
@@ -1263,7 +1330,7 @@ index 6bbb423..4ae544a 100644
                  // Aim at an actual nondegenerate LOD0 triangle, not a synthetic plane.
                  for (int32 I = 0; I + 2 < S->PlanetIndexBuffer.Num(); I += 3)
                  {
-@@ -236,13 +467,35 @@ class FProbe final : public IAutomationLatentCommand
+@@ -236,13 +481,35 @@ class FProbe final : public IAutomationLatentCommand
                          || !S->PlanetVertexBuffer.IsValidIndex(C)) return false;
                      const FVector P0 = S->PlanetVertexBuffer[A].Position, P1 = S->PlanetVertexBuffer[B].Position, P2 = S->PlanetVertexBuffer[C].Position;
                      if (FVector::CrossProduct(P1-P0, P2-P0).SizeSquared() < 1.0) continue;
@@ -1300,7 +1367,7 @@ index 6bbb423..4ae544a 100644
          for (const UWorldScapeLod* Lod : R->WorldScapeLod)
              if (IsValid(Lod) && IsValid(Lod->Mesh))
              {
-@@ -266,8 +519,19 @@ class FProbe final : public IAutomationLatentCommand
+@@ -266,8 +533,19 @@ class FProbe final : public IAutomationLatentCommand
          if (Up.IsNearlyZero()) return false;
          FActorSpawnParameters Params; Params.ObjectFlags |= RF_Transient;
          Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
@@ -1321,7 +1388,7 @@ index 6bbb423..4ae544a 100644
          Camera = NewCamera;
          if (!NewCamera || !NewCamera->GetCameraComponent()) return false;
          const FMinimalViewInfo& Natural = Controller->PlayerCameraManager->GetCameraCacheView();
-@@ -280,6 +544,13 @@ class FProbe final : public IAutomationLatentCommand
+@@ -280,6 +558,13 @@ class FProbe final : public IAutomationLatentCommand
          // Explicit isolation only. The natural-route fixture has three preceding
          // unchanged scene frames; the opt-in Lava orbital route does not claim
          // those frames. No light/exposure/foliage/material-style edits here.
@@ -1335,7 +1402,7 @@ index 6bbb423..4ae544a 100644
          for (const FVisibility& V : GroundVisibility) if (V.Mesh.IsValid()) V.Mesh->SetVisibility(false, false);
          auto* Capture = NewObject<USceneCaptureComponent2D>(NewCamera);
          if (!Capture) return false;
-@@ -333,8 +604,208 @@ class FProbe final : public IAutomationLatentCommand
+@@ -333,8 +618,294 @@ class FProbe final : public IAutomationLatentCommand
          const FString Path = Folder / FString::Printf(TEXT("production-%02d-original-material-rgba.png"), ProductionCaptureCount);
          TArray64<uint8> Png; FImageUtils::PNGCompressImageArray(Size.X, Size.Y, Pixels, Png);
          if (!FFileHelper::SaveArrayToFile(Png, *Path)) return false;
@@ -1419,6 +1486,92 @@ index 6bbb423..4ae544a 100644
 +        LiveStart = FPlatformTime::Seconds(); LiveLastFrame = LiveStart;
 +        Test->AddInfo(TEXT("WATER_DEPTH_LIVE_BEGIN native terrain/ocean workers enabled; real observer follows 60m out-and-back at 6m/s and 70m clearance; instrumented hover, not walking/FPS acceptance"));
 +        return true;
++    }
++
++    bool BeginMaterialPerfPhase(double Now)
++    {
++        if (!PayloadIsUnchanged() || !Candidate.IsValid() || !GSupportsTimestampRenderQueries
++            || PerfPhase < 0 || PerfPhase >= 5 || !Root->bFreezeGeneration
++            || Root->IsActorTickEnabled() || Surface->IsActorTickEnabled() || Planet->IsActorTickEnabled()) return false;
++        const bool bCandidate = (PerfPhase % 2) == 1;
++        Candidate->SetScalarParameterValue(TEXT("APS_WaterDepthStrength"), WaterDepthStrength);
++        if (FParse::Param(FCommandLine::Get(), TEXT("APSWaterRipples")))
++            Candidate->SetScalarParameterValue(TEXT("APS_WaterRippleSlope"), 0.065f);
++        for (const FSlot& Slot : Slots)
++            Slot.Mesh->SetMaterial(Slot.Index, bCandidate ? Candidate.Get() : Slot.OriginalMaterial.Get());
++        PerfPhaseStart = PerfLastTime = Now; PerfLastFrame = GFrameCounter;
++        if (PerfPhase == 0)
++        {
++            const auto CVar = [](const TCHAR* Name)
++            {
++                const IConsoleVariable* V = IConsoleManager::Get().FindConsoleVariable(Name);
++                return V ? V->GetFloat() : -1.0f;
++            };
++            const FIntPoint Size = World->GetGameViewport()->Viewport->GetSizeXY();
++            Test->AddInfo(FString::Printf(TEXT("WATER_MATERIAL_PERF_BEGIN viewport=%dx%d cameraHeightM=%.3g vsync=%.3g editorVsync=%.3g maxFPS=%.3g screenPercentage=%.3g dynamicRes=%.3g; A/B/A/B/A frozen native geometry, 2s warm + 3s sample per phase, no captures; GPU=engine completed-frame timestamps, CPU=engine thread cycles; depth payload enabled in both, not worker/walking/Present acceptance"),
++                Size.X, Size.Y, WaterDepthClearanceCm/100.0, CVar(TEXT("r.VSync")), CVar(TEXT("r.VSyncEditor")),
++                CVar(TEXT("t.MaxFPS")), CVar(TEXT("r.ScreenPercentage")), CVar(TEXT("r.DynamicRes.OperationMode"))));
++        }
++        return true;
++    }
++
++    bool UpdateMaterialPerf(double Now)
++    {
++        if (!Camera.IsValid() || PC->GetViewTarget() != Camera.Get()
++            || !Camera->GetActorTransform().Equals(WaterDepthCamera, 0.0)
++            || !Root->bFreezeGeneration || Root->IsActorTickEnabled())
++            return Finish(TEXT("material performance fixture changed"));
++        if (GFrameCounter == PerfLastFrame) return false;
++        const double WallMs = (Now-PerfLastTime)*1000.0;
++        PerfLastFrame = GFrameCounter; PerfLastTime = Now;
++        // Sample engine counters, not time spent inside this test callback.
++        // No section hashing, readback, screenshot or render-thread flush here.
++        if (Now-PerfPhaseStart >= 2.0 && Now-PerfPhaseStart < 5.0)
++        {
++            FPerfSample S{GFrameCounter, WallMs, FPlatformTime::ToMilliseconds(GGameThreadTime),
++                FPlatformTime::ToMilliseconds(GRenderThreadTime), FPlatformTime::ToMilliseconds(GRHIThreadTime),
++                FPlatformTime::ToMilliseconds(GGPUFrameTime)};
++            if (!FMath::IsFinite(S.GPUMs) || S.GPUMs <= 0 || !FMath::IsFinite(S.GameMs) || S.GameMs <= 0)
++                return Finish(TEXT("GPU/CPU timing unavailable; no performance result"));
++            PerfSamples[PerfPhase].Add(S);
++        }
++        if (Now-PerfPhaseStart < 5.0) return false;
++        if (!PayloadIsUnchanged() || PerfSamples[PerfPhase].Num() < 60)
++            return Finish(TEXT("insufficient performance samples or changed frozen geometry"));
++        const bool bCandidate = (PerfPhase % 2) == 1;
++        for (const FSlot& Slot : Slots)
++            if (Slot.Mesh->GetMaterial(Slot.Index) != (bCandidate ? Candidate.Get() : Slot.OriginalMaterial.Get()))
++                return Finish(TEXT("performance material ownership changed"));
++        if (++PerfPhase < 5)
++        {
++            if (!BeginMaterialPerfPhase(Now)) return Finish(TEXT("performance phase setup failed"));
++            return false;
++        }
++        FString TSV = TEXT("phase\tcandidate\tengine_frame\twall_ms\tgame_ms\trender_ms\trhi_ms\tgpu_ms\n");
++        double GPUAverage[5] = {};
++        for (int32 Phase = 0; Phase < 5; ++Phase)
++        {
++            TArray<double> GPU, Game, Render, Wall;
++            for (const FPerfSample& S : PerfSamples[Phase])
++            {
++                GPU.Add(S.GPUMs); Game.Add(S.GameMs); Render.Add(S.RenderMs); Wall.Add(S.WallMs);
++                GPUAverage[Phase] += S.GPUMs;
++                TSV += FString::Printf(TEXT("%d\t%d\t%llu\t%.9g\t%.9g\t%.9g\t%.9g\t%.9g\n"),
++                    Phase, Phase%2, S.Frame, S.WallMs, S.GameMs, S.RenderMs, S.RHIMs, S.GPUMs);
++            }
++            GPUAverage[Phase] /= GPU.Num();
++            GPU.Sort(); Game.Sort(); Render.Sort(); Wall.Sort();
++            const int32 Mid = GPU.Num()/2, P95 = FMath::Min(GPU.Num()-1, int32(GPU.Num()*0.95));
++            Test->AddInfo(FString::Printf(TEXT("WATER_MATERIAL_PERF phase=%d candidate=%d samples=%d gpuMeanMs=%.6g gpuMedianMs=%.6g gpuP95Ms=%.6g gameMedianMs=%.6g gameP95Ms=%.6g renderMedianMs=%.6g renderP95Ms=%.6g wallMedianMs=%.6g wallP95Ms=%.6g"),
++                Phase, Phase%2, GPU.Num(), GPUAverage[Phase], GPU[Mid], GPU[P95], Game[Mid], Game[P95], Render[Mid], Render[P95], Wall[Mid], Wall[P95]));
++        }
++        const FString Path = FPaths::ProjectSavedDir() / TEXT("Automation/WaterDepthGameplay/material-perf.tsv");
++        if (!FFileHelper::SaveStringToFile(TSV, *Path)) return Finish(TEXT("performance evidence save failed"));
++        Test->AddInfo(FString::Printf(TEXT("WATER_MATERIAL_PERF_DONE pairedGpuDeltaMs=[%.6g,%.6g] baselineGpuMeansMs=[%.6g,%.6g,%.6g] raw=%s; not whole-pipeline, walking, Present or 120FPS acceptance"),
++            GPUAverage[1]-(GPUAverage[0]+GPUAverage[2])*0.5,
++            GPUAverage[3]-(GPUAverage[2]+GPUAverage[4])*0.5,
++            GPUAverage[0], GPUAverage[2], GPUAverage[4], *Path));
++        return Finish();
 +    }
 +
 +    bool CaptureLiveLod(const TCHAR* Phase)
@@ -1546,11 +1699,17 @@ index 6bbb423..4ae544a 100644
          return true;
      }
  
-@@ -448,14 +919,31 @@ public:
+@@ -444,18 +1015,39 @@ public:
+     {
+         if (bDone) return true;
+         const double Now = FPlatformTime::Seconds(); if (Start == 0) Start = Now;
+-        if (Now-Start > 100) return Finish(TEXT("100s timeout; no coverage acceptance"));
++        if (Now-Start > (bWaterMaterialPerf ? 150.0 : 100.0)) return Finish(TEXT("bounded probe timeout; no coverage acceptance"));
          if (!World.IsValid() || !Planet.IsValid()) return Finish(TEXT("production world/planet disappeared"));
          if (Step > 0 && (!Root.IsValid() || !Surface.IsValid() || !PC.IsValid()
              || Surface->WorldScapeRootInstance != Root.Get())) return Finish(TEXT("leased production root was replaced"));
 +        if (Step == 7 || Step == 8) return UpdateLiveLod(Now);
++        if (Step == 9) return UpdateMaterialPerf(Now);
          if (Step == 0)
          {
              bRadianceAB = FParse::Param(FCommandLine::Get(), TEXT("APSLavaRadianceAB"));
@@ -1558,12 +1717,15 @@ index 6bbb423..4ae544a 100644
 +            bWaterDepthPaletteBudget = FParse::Param(FCommandLine::Get(), TEXT("APSWaterDepthPaletteBudget"));
 +            bWaterDepthOblique = FParse::Param(FCommandLine::Get(), TEXT("APSWaterDepthOblique"));
 +            bWaterDepthLiveLod = FParse::Param(FCommandLine::Get(), TEXT("APSWaterDepthLiveLod"));
++            bWaterMaterialPerf = FParse::Param(FCommandLine::Get(), TEXT("APSWaterMaterialPerf"));
++            if (bWaterMaterialPerf && (!bWaterDepthGameplay || bWaterDepthLiveLod))
++                return Finish(TEXT("material-only performance mode requires Water depth and excludes moving LOD mode"));
 +            if (bWaterDepthLiveLod && (!bWaterDepthGameplay || !bWaterDepthOblique))
 +                return Finish(TEXT("live LOD diagnostic requires oblique Water depth mode"));
 +            float HeightM = 50.0f;
 +            FParse::Value(FCommandLine::Get(), TEXT("APSWaterDepthCameraHeightM="), HeightM);
-+            if (!FMath::IsFinite(HeightM) || HeightM < 10.0f || HeightM > 500.0f)
-+                return Finish(TEXT("diagnostic camera height must be 10..500 metres"));
++            if (!FMath::IsFinite(HeightM) || HeightM < 1.0f || HeightM > 500.0f)
++                return Finish(TEXT("diagnostic camera height must be 1..500 metres"));
 +            WaterDepthClearanceCm = double(HeightM) * 100.0;
 +            if (bWaterDepthPaletteBudget && !bWaterDepthGameplay)
 +                return Finish(TEXT("palette budget is an opt-in depth diagnostic only"));
@@ -1578,7 +1740,7 @@ index 6bbb423..4ae544a 100644
              const bool bAllowedFamily = bSharedLiquidFamilies
                  ? LiquidType == EAPSPlanetLiquidType::Water || LiquidType == EAPSPlanetLiquidType::Ammonia
                  : LiquidType == EAPSPlanetLiquidType::Lava;
-@@ -466,6 +954,11 @@ public:
+@@ -466,6 +1058,11 @@ public:
                  return Finish(TEXT("requires an actual ready generated full-scale ocean of the opted-in liquid family"));
              if (Root->bGenerateFoliages && !Root->Foliages.IsEmpty())
                  return Finish(TEXT("refusing a foliage-active root without a public foliage-worker drain"));
@@ -1590,7 +1752,7 @@ index 6bbb423..4ae544a 100644
              bRootTick = Root->IsActorTickEnabled(); bFrozen = Root->bFreezeGeneration;
              bSurfaceTick = Surface->IsActorTickEnabled(); bPlanetTick = Planet->IsActorTickEnabled();
              bLeased = true; Root->bFreezeGeneration = true; Root->SetActorTickEnabled(false);
-@@ -539,6 +1032,11 @@ public:
+@@ -539,6 +1136,11 @@ public:
          {
              if (!CaptureProductionBaseline()) return Finish(TEXT("actual production shared liquid baseline/frame/slot assertion failed before candidate substitution"));
              if (++ProductionCaptureCount < 2) { SetFrame = GFrameCounter; Next = Now + 1.0; return false; }
@@ -1602,7 +1764,7 @@ index 6bbb423..4ae544a 100644
              if (bRadianceAB)
              {
                  if (!ApplyRadianceCase()) return Finish(TEXT("failed to begin isolated radiance A/B"));
-@@ -549,6 +1047,18 @@ public:
+@@ -549,6 +1151,23 @@ public:
              Step = 3;
              return false;
          }
@@ -1611,6 +1773,11 @@ index 6bbb423..4ae544a 100644
 +            if (!CaptureWaterDepthCase()) return Finish(TEXT("depth capture or payload/ground/camera continuity failed"));
 +            if (++WaterDepthCase == 3)
 +            {
++                if (bWaterMaterialPerf)
++                {
++                    if (!BeginMaterialPerfPhase(Now)) return Finish(TEXT("material performance setup failed"));
++                    Step = 9; return false;
++                }
 +                if (!bWaterDepthLiveLod) return Finish();
 +                if (!StartLiveLod()) return Finish(TEXT("live candidate lease preconditions failed"));
 +                Step = 7; return false;
@@ -1621,7 +1788,7 @@ index 6bbb423..4ae544a 100644
          if (Step == 5)
          {
              if (!CaptureRadianceCase()) return Finish(TEXT("radiance A/B capture or original parameter/payload continuity failed"));
-@@ -599,4 +1109,60 @@ TSharedPtr<IAutomationLatentCommand> APSCreateSharedLiquidCoverageProbe(
+@@ -599,4 +1218,60 @@ TSharedPtr<IAutomationLatentCommand> APSCreateSharedLiquidCoverageProbe(
  {
      return MakeShared<APSSharedLavaCoverage::FProbe>(Test, World, Planet, true);
  }
