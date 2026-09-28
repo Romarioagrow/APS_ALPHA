@@ -1,4 +1,5 @@
 #include "APSPlanetSurfacePlacementResolver.h"
+#include "APSPlanetEnvironmentStreamingSubsystem.h"
 
 #include "APS_ALPHA/Actors/Astro/PlanetaryBody.h"
 #include "APS_ALPHA/Generation/PlanetarySurfaceGenerator.h"
@@ -13,6 +14,18 @@ DEFINE_LOG_CATEGORY_STATIC(LogAPSPlanetSurfacePlacement, Log, All);
 
 namespace APSPlanetSurfacePlacement
 {
+	bool ShouldDeferToStreaming(const APlanetaryBody* Body)
+	{
+		if (!IsValid(Body) || !Body->bStreamWorldScapeSurface) return false;
+		if (Body->GetWorldScapeStreamingState() == EWorldScapeSurfaceState::FrozenVisible) return true;
+		const UWorld* World = Body->GetWorld();
+		const auto* Streaming = World ? World->GetSubsystem<UAPSPlanetEnvironmentStreamingSubsystem>() : nullptr;
+		const APlanetaryBody* Selected = Streaming ? Streaming->GetActiveBody() : nullptr;
+		// Permit initial placement bootstrap before an observer is selected. Once
+		// streaming owns another body, background placement cannot seize its budget.
+		return IsValid(Selected) && Selected != Body;
+	}
+
 	constexpr int32 RingDirections = 12;
 	constexpr int32 HeadingCount = 4;
 	constexpr int32 GlobalDirections = 96;
@@ -290,6 +303,16 @@ bool UAPSPlanetSurfacePlacementResolver::AdvanceCivilizationFootprint(
 {
 	TRACE_CPUPROFILER_EVENT_SCOPE(APS_CivilizationFootprintAdvance);
 	using namespace APSPlanetSurfacePlacement;
+	if (ShouldDeferToStreaming(HomeBody))
+	{
+		// Keep the search and existing anchor key while away. No collision/readiness
+		// promise: resume and revalidate the cached site only after streaming returns.
+		OutResult.bReadyForMaterialization = false;
+		OutResult.bCollisionReady = false;
+		OutResult.bLod0Ready = false;
+		OutResult.FailureReason = TEXT("Waiting for home body streaming activation");
+		return false;
+	}
 	OutResult = FAPSCivilizationFootprintResult{};
 	if (!IsValid(HomeBody))
 	{
@@ -591,6 +614,27 @@ bool UAPSPlanetSurfacePlacementResolver::RequestPlacementAnchors(
 	{
 		return false;
 	}
+	// A placed civilization must not restart its distant home world's visual
+	// producer every time its collision anchors are refreshed. The streaming owner
+	// freezes those anchors together with the resident surface, and resumes both on
+	// return. Existing anchor actors stay attached; no terrain or placement is lost.
+	if (HomeBody->bStreamWorldScapeSurface && HomeBody->bWorldScapeSurfaceReady
+		&& HomeBody->GetWorldScapeStreamingState() == EWorldScapeSurfaceState::FrozenVisible)
+	{
+		const auto* ResidentSurface = HomeBody->PlanetaryEnvironmentGenerator;
+		const AWorldScapeRoot* ResidentRoot = IsValid(ResidentSurface)
+			? ResidentSurface->WorldScapeRootInstance : nullptr;
+		if (!IsValid(ResidentRoot)) return false;
+		for (const TCHAR* Role : {TEXT("Base"), TEXT("Pad"), TEXT("Route")})
+		{
+			const FName Tag = AnchorTag(ResolvedPlacement.PlacementKey, Role);
+			if (!ResidentRoot->CollisionDependantActor.ContainsByPredicate(
+				[Tag](const AActor* Anchor) { return IsValid(Anchor) && Anchor->ActorHasTag(Tag); }))
+				return false; // Do not report an uncreated anchor as ready.
+		}
+		return true;
+	}
+	if (ShouldDeferToStreaming(HomeBody)) return false;
 	if (!HomeBody->IsWorldScapeStreamingActive())
 	{
 		HomeBody->SetWorldScapeStreamingState(EWorldScapeSurfaceState::Active);

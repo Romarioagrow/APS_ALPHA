@@ -246,6 +246,9 @@ public:
 	 */
 	bool FinalizeStableWaterMaterial();
 
+	/** Existing visible-surface refresh drives two optical scalars; no extra actor tick or geometry change. */
+	void UpdateOrbitalWaterAppearance();
+
 	void SpawnWorldScapeRoot();
 
 	/** Keep assets and the configured root resident without spending generation time. */

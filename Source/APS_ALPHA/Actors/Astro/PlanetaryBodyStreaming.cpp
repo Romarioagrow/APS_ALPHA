@@ -3,6 +3,7 @@
 #include "APS_ALPHA/Actors/Astro/Moon.h"
 #include "APS_ALPHA/Actors/Astro/Planet.h"
 #include "APS_ALPHA/Core/Planetary/APSPlanetSurfaceProfile.h"
+#include "APS_ALPHA/Core/Planetary/APSWorldScapeReadinessPolicy.h"
 #include "APS_ALPHA/Generation/PlanetarySurfaceGenerator.h"
 #include "APS_ALPHA/Generation/WorldScapePayloadValidation.h"
 
@@ -10,8 +11,6 @@ namespace
 {
 	constexpr double WorldScapeRenderAnchorToleranceCm = 2.0;
 	constexpr double WorldScapeRenderRadiusToleranceCm = 10.0;
-	constexpr double MinimumInitialWorldScapeRenderReliefCm = 100.0;
-	constexpr double MaximumInitialWorldScapeRenderNoiseDeltaCm = 250.0;
 	constexpr int32 MaximumInitialWorldScapeRenderSamples = 128;
 
 	const UWorldScapeLod* FindUniqueTerrainRenderLod0(const AWorldScapeRoot* Root)
@@ -95,9 +94,9 @@ namespace
 		// Initial readiness is the atomic hand-off from the smooth body placeholder to
 		// WorldScape. A correctly centred but undisplaced base sphere is therefore not a
 		// valid first frame. Inspect a bounded, evenly distributed sample of the actual
-		// visible LOD0 vertices and make sure that (a) it contains measurable radial
-		// relief and (b) the published render geometry still represents the root's
-		// current analytic height field. This intentionally runs only before the body's
+		// visible LOD0 vertices and make sure that their displacement/relief agrees
+		// with the current analytic field, including legitimately flat basins.
+		// This intentionally runs only before the body's
 		// readiness latch; later incremental WorldScape workers do not revoke readiness.
 		const FWorldScapeMeshSection* VisibleRenderSection =
 			RenderLod0->Mesh->GetProcMeshSection(0);
@@ -115,10 +114,7 @@ namespace
 			1, FMath::CeilToInt(static_cast<double>(
 				VisibleRenderSection->PlanetVertexBuffer.Num())
 				/ static_cast<double>(MaximumInitialWorldScapeRenderSamples)));
-		double MinimumRenderHeightCm = TNumericLimits<double>::Max();
-		double MaximumRenderHeightCm = -TNumericLimits<double>::Max();
-		double MaximumRenderNoiseDeltaCm = 0.0;
-		int32 RenderSampleCount = 0;
+		APSWorldScapeReadinessPolicy::FHeightAgreement HeightAgreement;
 		for (int32 VertexIndex = 0;
 			VertexIndex < VisibleRenderSection->PlanetVertexBuffer.Num();
 			VertexIndex += RenderSampleStride)
@@ -133,11 +129,7 @@ namespace
 			{
 				return false;
 			}
-			MinimumRenderHeightCm = FMath::Min(MinimumRenderHeightCm, RenderHeightCm);
-			MaximumRenderHeightCm = FMath::Max(MaximumRenderHeightCm, RenderHeightCm);
-			MaximumRenderNoiseDeltaCm = FMath::Max(MaximumRenderNoiseDeltaCm,
-				FMath::Abs(RenderHeightCm - ExpectedHeightCm));
-			++RenderSampleCount;
+			HeightAgreement.Add(RenderHeightCm, ExpectedHeightCm);
 		}
 		// Include the final corner even when the stride does not land on it. It is both
 		// a useful relief extremum and a guard against a partially published final row.
@@ -155,17 +147,9 @@ namespace
 			{
 				return false;
 			}
-			MinimumRenderHeightCm = FMath::Min(MinimumRenderHeightCm, RenderHeightCm);
-			MaximumRenderHeightCm = FMath::Max(MaximumRenderHeightCm, RenderHeightCm);
-			MaximumRenderNoiseDeltaCm = FMath::Max(MaximumRenderNoiseDeltaCm,
-				FMath::Abs(RenderHeightCm - ExpectedHeightCm));
-			++RenderSampleCount;
+			HeightAgreement.Add(RenderHeightCm, ExpectedHeightCm);
 		}
-		const double RenderReliefCm = MaximumRenderHeightCm - MinimumRenderHeightCm;
-		if (RenderSampleCount < 3 || !FMath::IsFinite(RenderReliefCm)
-			|| RenderReliefCm < MinimumInitialWorldScapeRenderReliefCm
-			|| !FMath::IsFinite(MaximumRenderNoiseDeltaCm)
-			|| MaximumRenderNoiseDeltaCm > MaximumInitialWorldScapeRenderNoiseDeltaCm)
+		if (!HeightAgreement.IsReady())
 		{
 			return false;
 		}
@@ -260,9 +244,8 @@ void APlanetaryBody::SetWorldScapeStreamingState(EWorldScapeSurfaceState NewStat
 	{
 		if (PrepareSurface())
 		{
-			// Allocate and profile every member of the resident family early, but
-			// keep it hidden, frozen and collision-free until that body is selected.
-			// This makes planet/moon handoff immediate without updating every surface.
+			// Allocate/profile a hidden, collision-free sibling. The streaming owner
+			// may then warm one real payload before publishing it as FrozenVisible.
 			Generator->PreloadWorldScapeRoot();
 			SetPlaceholderVisible(true);
 			bEnvironmentSpawned = false;
@@ -275,34 +258,55 @@ void APlanetaryBody::SetWorldScapeStreamingState(EWorldScapeSurfaceState NewStat
 	switch (NewState)
 	{
 	case EWorldScapeSurfaceState::Active:
+	{
+		AWorldScapeRoot* PreviousRoot = Generator->WorldScapeRootInstance;
+		const uint32 PreviousProfile = Generator->AppliedSurfaceProfileSignature;
+		const bool bHadPublishedSurface = bWorldScapeSurfaceReady
+			&& (WorldScapeSurfaceState == EWorldScapeSurfaceState::Active
+				|| WorldScapeSurfaceState == EWorldScapeSurfaceState::FrozenVisible);
 		if (PrepareSurface())
 		{
-			// Do not expose an empty atmosphere while WorldScape is producing its
-			// first chunks. The lightweight globe is replaced only after real mesh
-			// geometry exists, which also makes slow machines transition cleanly.
-			SetPlaceholderVisible(true);
-			bWorldScapeSurfaceReady = false;
+			const APlanet* Planet = Cast<APlanet>(this);
+			const bool bResumePublishedSurface = bHadPublishedSurface
+				&& bWorldScapeSurfaceReady
+				&& IsValid(PreviousRoot) && PreviousRoot == Generator->WorldScapeRootInstance
+				&& PreviousProfile == Generator->AppliedSurfaceProfileSignature
+				&& !Generator->IsSurfaceProfileApplyPending()
+				&& ((Planet && Planet->IsManual) || Generator->IsSurfaceProfileCurrent(this));
+			// A planet -> moon -> planet handoff resumes an already published root.
+			// Do not revoke its readiness or cover it with the placeholder while its
+			// LOD workers catch up to the returning observer. First activation, new
+			// roots and changed/pending profiles still require the complete initial
+			// render contract. Never inspect worker-owned vertex buffers here.
+			SetPlaceholderVisible(!bResumePublishedSurface);
+			bWorldScapeSurfaceReady = bResumePublishedSurface;
 			Generator->SpawnWorldScapeRoot();
-			// WorldScape creates its LOD meshes asynchronously. Keep the root itself
-			// hidden until the complete terrain set is ready, otherwise partially
-			// updated patches appear as the reported black/ripped planet.
-			Generator->WorldScapeRootInstance->SetActorHiddenInGame(true);
+			Generator->WorldScapeRootInstance->SetActorHiddenInGame(!bResumePublishedSurface);
 			bEnvironmentSpawned = true;
 			WorldScapeSurfaceState = EWorldScapeSurfaceState::Active;
 			RefreshWorldScapeSurfaceVisibility();
+			if (bResumePublishedSurface)
+			{
+				UE_LOG(LogTemp, Log, TEXT("[APS.WorldScape] Resumed published surface body=%s root=%s workers=%d"),
+					*GetName(), *GetNameSafe(PreviousRoot), PreviousRoot->WorldScapeLodInGeneration.Num());
+			}
 		}
 		break;
+	}
 
 	case EWorldScapeSurfaceState::FrozenVisible:
 		if (IsValid(Generator->WorldScapeRootInstance)
 			&& (WorldScapeSurfaceState == EWorldScapeSurfaceState::Active
 				|| WorldScapeSurfaceState == EWorldScapeSurfaceState::FrozenVisible
+				|| (WorldScapeSurfaceState == EWorldScapeSurfaceState::Preloaded && bWorldScapeSurfaceReady)
 				|| IsWorldScapeStreamingActive()))
 		{
 			Generator->FreezeWorldScapeRoot();
-			RefreshWorldScapeSurfaceVisibility();
 			bEnvironmentSpawned = true;
 			WorldScapeSurfaceState = EWorldScapeSurfaceState::FrozenVisible;
+			// Establish the display state before refreshing: a just-published standby
+			// is no longer "building" once frozen, but its readiness must survive.
+			RefreshWorldScapeSurfaceVisibility();
 		}
 		else
 		{
@@ -335,9 +339,12 @@ bool APlanetaryBody::RefreshWorldScapeSurfaceVisibility()
 		? PlanetaryEnvironmentGenerator->WorldScapeRootInstance : nullptr;
 	bool bHasStableTerrainCoverage = false;
 	const bool bWasSurfaceReady = bWorldScapeSurfaceReady;
+	const bool bBuildingStandby = IsValid(Root)
+		&& WorldScapeSurfaceState == EWorldScapeSurfaceState::Preloaded
+		&& Root->bGenerateWorldScape && !Root->bFreezeGeneration;
 	if (IsValid(Root)
 		&& (WorldScapeSurfaceState == EWorldScapeSurfaceState::Active
-			|| WorldScapeSurfaceState == EWorldScapeSurfaceState::FrozenVisible))
+			|| WorldScapeSurfaceState == EWorldScapeSurfaceState::FrozenVisible || bBuildingStandby))
 	{
 		// The ocean is a visual liquid shell, never the physical planetary surface.
 		// SpawnWorldScapeRoot has to enable collision on the root so the generated
@@ -369,7 +376,7 @@ bool APlanetaryBody::RefreshWorldScapeSurfaceVisibility()
 		}
 
 		const bool bWorkersInFlight = Root->WorldScapeLodInGeneration.Num() > 0;
-		if (!bWorkersInFlight)
+		if (APSWorldScapeReadinessPolicy::NeedsInitialPayloadValidation(bWasSurfaceReady, bWorkersInFlight))
 		{
 			const FVector ObserverWorldPosition = Root->bOverridePlayerPosition
 				? Root->OverridedPlayerPosition : Root->PlayerWorldPos.ToFVector();
@@ -394,7 +401,7 @@ bool APlanetaryBody::RefreshWorldScapeSurfaceVisibility()
 			bHasStableTerrainCoverage = bTerrainReady && bOceanReady;
 
 			const bool bRequiresStrictInitialGameplayRender = !bWasSurfaceReady
-				&& WorldScapeSurfaceState == EWorldScapeSurfaceState::Active
+				&& (WorldScapeSurfaceState == EWorldScapeSurfaceState::Active || bBuildingStandby)
 				&& FMath::IsNearlyEqual(WorldScapePresentationScale, 1.0)
 				&& IsValid(GetWorld()) && GetWorld()->IsGameWorld();
 			if (bHasStableTerrainCoverage && bRequiresStrictInitialGameplayRender)
@@ -425,7 +432,7 @@ bool APlanetaryBody::RefreshWorldScapeSurfaceVisibility()
 	// invalidation already clears bWorldScapeSurfaceReady before reaching this path.
 	const bool bCanDisplaySurface = IsValid(Root)
 		&& (WorldScapeSurfaceState == EWorldScapeSurfaceState::Active
-			|| WorldScapeSurfaceState == EWorldScapeSurfaceState::FrozenVisible);
+			|| WorldScapeSurfaceState == EWorldScapeSurfaceState::FrozenVisible || bBuildingStandby);
 	bWorldScapeSurfaceReady = bCanDisplaySurface
 		&& (bWasSurfaceReady || bHasStableTerrainCoverage);
 	if (IsValid(Root))
@@ -433,6 +440,10 @@ bool APlanetaryBody::RefreshWorldScapeSurfaceVisibility()
 		Root->SetActorHiddenInGame(!bWorldScapeSurfaceReady);
 	}
 	SetPlaceholderVisible(!bWorldScapeSurfaceReady);
+	if (bWorldScapeSurfaceReady && IsValid(PlanetaryEnvironmentGenerator))
+	{
+		PlanetaryEnvironmentGenerator->UpdateOrbitalWaterAppearance();
+	}
 	return bWorldScapeSurfaceReady;
 }
 

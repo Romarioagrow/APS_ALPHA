@@ -179,6 +179,28 @@ bool FAPSPlanetSurfacePlacementReadyActivePreservationTest::RunTest(const FStrin
 			TestReadyRootPreserved(TEXT("Placement anchor poll")));
 	}
 
+	HomeBody->bStreamWorldScapeSurface = true;
+	HomeBody->SetWorldScapeStreamingState(EWorldScapeSurfaceState::FrozenVisible);
+	for (int32 PollIndex = 0; PollIndex < 3; ++PollIndex)
+	{
+		FAPSCivilizationFootprintResult DeferredSite = AnchorRequest;
+		TestFalse(TEXT("Background site search waits for streaming instead of resuming home"),
+			UAPSPlanetSurfacePlacementResolver::TryResolveCivilizationFootprint(HomeBody, Request, DeferredSite));
+		TestEqual(TEXT("Deferred site keeps its anchor key"), DeferredSite.PlacementKey, AnchorRequest.PlacementKey);
+		TestFalse(TEXT("Frozen collision is not reported as ready"), DeferredSite.bReadyForMaterialization);
+		TestTrue(TEXT("Existing anchors can be polled on a resident frozen home"),
+			UAPSPlanetSurfacePlacementResolver::RequestPlacementAnchors(HomeBody, AnchorRequest));
+		TestTrue(TEXT("Anchor polls do not restart a distant producer or collision"),
+			HomeBody->GetWorldScapeStreamingState() == EWorldScapeSurfaceState::FrozenVisible
+			&& Root->bFreezeGeneration && !Root->IsActorTickEnabled()
+			&& !Root->GetActorEnableCollision() && !Root->IsHidden()
+			&& HomeBody->bWorldScapeSurfaceReady);
+	}
+	FAPSCivilizationFootprintResult MissingAnchors = AnchorRequest;
+	++MissingAnchors.PlacementKey;
+	TestFalse(TEXT("Missing anchors are not falsely reported as available while frozen"),
+		UAPSPlanetSurfacePlacementResolver::RequestPlacementAnchors(HomeBody, MissingAnchors));
+	HomeBody->SetWorldScapeStreamingState(EWorldScapeSurfaceState::Active);
 	UAPSPlanetSurfacePlacementResolver::ReleasePlacementAnchors(
 		HomeBody, AnchorRequest.PlacementKey);
 	TestEqual(TEXT("Release removes only the placement-owned anchors"),

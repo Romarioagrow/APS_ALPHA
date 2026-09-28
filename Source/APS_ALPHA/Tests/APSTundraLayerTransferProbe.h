@@ -136,7 +136,7 @@ namespace APSTundraLayerTransfer
             { Error = TEXT("Audited native Tundra transfer parameters drifted"); return false; }
             if (NormalRequested() && (!Material->GetScalarParameterValue(FHashedMaterialParameterInfo(TEXT("APS_FarNormalStartCm")), NormalStart)
                 || !Material->GetScalarParameterValue(FHashedMaterialParameterInfo(TEXT("APS_FarNormalEndCm")), NormalEnd)
-                || NormalStart != 20000000.0f || NormalEnd != 70000000.0f))
+                || NormalStart != 200000.0f || NormalEnd != 2000000.0f))
             { Error = TEXT("Native normal continuity range drifted"); return false; }
             Live.Reset(Material);
             Saved.Reset(UMaterialInstanceDynamic::Create(Material->Parent, GetTransientPackage()));

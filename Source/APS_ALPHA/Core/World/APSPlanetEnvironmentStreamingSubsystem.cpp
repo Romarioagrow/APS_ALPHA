@@ -4,14 +4,23 @@
 #include "APS_ALPHA/Actors/Astro/Planet.h"
 #include "APS_ALPHA/Actors/Astro/PlanetaryBody.h"
 #include "APS_ALPHA/Generation/PlanetarySurfaceGenerator.h"
+#include "APS_ALPHA/Core/Planetary/APSPlanetSurfaceProfile.h"
+#include "APS_ALPHA/Core/Planetary/APSWorldScapeStreamingPolicy.h"
 #include "EngineUtils.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
+#include "HAL/IConsoleManager.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogAPSWorldScapeStreaming, Log, All);
 
 namespace
 {
+	TAutoConsoleVariable<int32> CVarMaxStandbyRoots(
+		TEXT("aps.Surface.MaxStandbyRoots"), 4,
+		TEXT("Maximum hidden, unpublished sibling roots prepared ahead of travel (0..32). ")
+		TEXT("Never evicts the selected body or an already published surface. Not a total GPU memory cap."),
+		ECVF_Default);
+
 	bool IsExplicitMenuPreviewBody(const AActor* Actor)
 	{
 		for (const AActor* Parent = Actor; IsValid(Parent); Parent = Parent->GetAttachParentActor())
@@ -34,6 +43,9 @@ bool UAPSPlanetEnvironmentStreamingSubsystem::ShouldCreateSubsystem(UObject* Out
 void UAPSPlanetEnvironmentStreamingSubsystem::Deinitialize()
 {
 	ClearGameplayCollisionAnchor();
+	WarmingBody.Reset();
+	PrewarmedBodies.Reset();
+	VisibleLiquidBodies.Reset();
 	Super::Deinitialize();
 }
 
@@ -46,17 +58,82 @@ void UAPSPlanetEnvironmentStreamingSubsystem::Tick(float DeltaTime)
 	RefreshGameplayObserverPosition();
 
 	UpdateElapsed += DeltaTime;
-	if (UpdateElapsed < UpdateInterval)
+	if (UpdateElapsed >= UpdateInterval)
 	{
-		return;
+		UpdateElapsed = 0.0f;
+		UpdateActiveEnvironment();
 	}
-	UpdateElapsed = 0.0f;
-	UpdateActiveEnvironment();
+	RefreshVisibleLiquidAppearance();
+}
+
+void UAPSPlanetEnvironmentStreamingSubsystem::RefreshVisibleLiquidAppearance()
+{
+	for (const TWeakObjectPtr<APlanetaryBody>& WeakBody : VisibleLiquidBodies)
+	{
+		APlanetaryBody* Body = WeakBody.Get();
+		if (IsValid(Body) && Body->bWorldScapeSurfaceReady
+			&& (Body->GetWorldScapeStreamingState() == EWorldScapeSurfaceState::Active
+				|| Body->GetWorldScapeStreamingState() == EWorldScapeSurfaceState::FrozenVisible)
+			&& IsValid(Body->PlanetaryEnvironmentGenerator))
+		{
+			Body->PlanetaryEnvironmentGenerator->UpdateOrbitalWaterAppearance();
+		}
+	}
 }
 
 TStatId UAPSPlanetEnvironmentStreamingSubsystem::GetStatId() const
 {
 	RETURN_QUICK_DECLARE_CYCLE_STAT(UAPSPlanetEnvironmentStreamingSubsystem, STATGROUP_Tickables);
+}
+
+void UAPSPlanetEnvironmentStreamingSubsystem::UpdateStandbyWarmup(
+	APlanetaryBody* Candidate, APawn* Observer)
+{
+	if (APlanetaryBody* Previous = WarmingBody.Get(); Previous && Previous != Candidate)
+	{
+		// An approach takes ownership of the same root; do not pause that new active
+		// producer. A cancelled speculative build drains through the existing path.
+		if (Previous->GetWorldScapeStreamingState() == EWorldScapeSurfaceState::Preloaded
+			&& IsValid(Previous->PlanetaryEnvironmentGenerator))
+			Previous->PlanetaryEnvironmentGenerator->PreloadWorldScapeRoot();
+	}
+	const bool bStarting = WarmingBody.Get() != Candidate;
+	WarmingBody = Candidate;
+	if (!IsValid(Candidate) || !IsValid(Observer)
+		|| !IsValid(Candidate->PlanetaryEnvironmentGenerator)) return;
+	auto* Generator = Candidate->PlanetaryEnvironmentGenerator;
+	AWorldScapeRoot* Root = Generator->WorldScapeRootInstance;
+	if (!IsValid(Root) || Generator->IsSurfaceProfileApplyPending())
+	{
+		WarmingBody.Reset(); // Retry starting after the deferred profile drain.
+		return;
+	}
+	if (bStarting)
+	{
+		// Allocation alone was not preload: the moon remained a white placeholder
+		// until the player approached it. Build one real, collision-free payload now.
+		// Keep its observer fixed until publication so travel cannot starve readiness.
+		Root->bOverridePlayerPosition = true;
+		Root->OverridedPlayerPosition = Observer->GetActorLocation();
+		Generator->SpawnWorldScapeRoot();
+		Root->DistanceToFreezeGeneration = 0.0f;
+		Root->SetActorHiddenInGame(true);
+		Root->SetActorEnableCollision(false);
+		Root->bGenerateCollision = false;
+#if WITH_EDITOR
+		Root->bGenerateCollisionInEditor = false;
+#endif
+	}
+	if (Root->WorldScapeLodInGeneration.Num() > 0)
+		Root->CheckForLodGeneration(); // Non-blocking IsDone fence, never wait/join.
+	if (Candidate->RefreshWorldScapeSurfaceVisibility())
+	{
+		Candidate->SetWorldScapeStreamingState(EWorldScapeSurfaceState::FrozenVisible);
+		PrewarmedBodies.AddUnique(Candidate);
+		WarmingBody.Reset();
+		UE_LOG(LogAPSWorldScapeStreaming, Log, TEXT("Published standby terrain: %s"),
+			*Candidate->GetPathName());
+	}
 }
 
 APlanet* UAPSPlanetEnvironmentStreamingSubsystem::ResolveFamilyPlanet(APlanetaryBody* Body) const
@@ -154,6 +231,7 @@ void UAPSPlanetEnvironmentStreamingSubsystem::ApplyGameplayObserverContract(
 void UAPSPlanetEnvironmentStreamingSubsystem::UpdateActiveEnvironment()
 {
 	UWorld* World = GetWorld();
+	VisibleLiquidBodies.Reset();
 	// Do not disable streaming for the complete authored SinglePlay map. Its
 	// integrated home planet opts out explicitly (bStreamWorldScapeSurface=false),
 	// while the other generated planets and moons still need the same distant
@@ -168,11 +246,7 @@ void UAPSPlanetEnvironmentStreamingSubsystem::UpdateActiveEnvironment()
 	}
 
 	const FVector ObserverLocation = Observer->GetActorLocation();
-	auto GetSurfaceDistance = [&ObserverLocation](const APlanetaryBody* Body)
-	{
-		return FMath::Max(0.0,
-			FVector::Distance(ObserverLocation, Body->GetActorLocation()) - Body->GetWorldScapeBodyRadiusCm());
-	};
+	if (ObserverLocation.ContainsNaN()) return;
 	TArray<APlanetaryBody*> StreamedBodies;
 	TMap<APlanet*, TArray<APlanetaryBody*>> Families;
 	for (TActorIterator<APlanetaryBody> It(World); It; ++It)
@@ -183,14 +257,16 @@ void UAPSPlanetEnvironmentStreamingSubsystem::UpdateActiveEnvironment()
 		{
 			continue;
 		}
-		if (const APlanet* Planet = Cast<APlanet>(Body); Planet && !Planet->IsNotGasGiant())
+		if (!UAPSPlanetSurfaceProfileResolver::SupportsWorldScape(Body->PlanetType))
 		{
-			// Gas giants keep their lightweight volumetric/sphere renderer. Their
-			// solid moons still join the family through ParentPlanet below.
+			// Gas MOONS obey the same rule as planets. A live solid->gas edit must
+			// also release its old root, not leave it updating outside the candidate set.
+			if (Body->GetWorldScapeStreamingState() != EWorldScapeSurfaceState::Unloaded)
+				Body->SetWorldScapeStreamingState(EWorldScapeSurfaceState::Unloaded);
 			continue;
 		}
 		StreamedBodies.Add(Body);
-		if (APlanet* Family = ResolveFamilyPlanet(Body))
+		if (APlanet* Family = ResolveFamilyPlanet(Body); IsValid(Family))
 		{
 			Families.FindOrAdd(Family).Add(Body);
 		}
@@ -198,33 +274,9 @@ void UAPSPlanetEnvironmentStreamingSubsystem::UpdateActiveEnvironment()
 
 	APlanet* BestFamily = nullptr;
 	double BestFamilyScore = TNumericLimits<double>::Max();
-	if (APlanet* CurrentFamily = ResidentFamily.Get())
-	{
-		if (const TArray<APlanetaryBody*>* CurrentFamilyBodies = Families.Find(CurrentFamily))
-		{
-			// While the observer remains inside the resident family's normal preload
-			// zone, keep the whole family stable. Without this lock an overlapping
-			// neighbour could win one update and unload every planet/moon root even
-			// though the player had not actually left the current planetary system.
-			const bool bInsideResidentCore = CurrentFamilyBodies->ContainsByPredicate(
-				[&ObserverLocation](const APlanetaryBody* Body)
-				{
-					return FVector::Distance(ObserverLocation, Body->GetActorLocation())
-						<= Body->GetWorldScapePreloadRadiusCm();
-				});
-			if (bInsideResidentCore)
-			{
-				BestFamily = CurrentFamily;
-				BestFamilyScore = 0.0;
-			}
-		}
-	}
+	FString BestFamilyKey;
 	for (const TPair<APlanet*, TArray<APlanetaryBody*>>& Pair : Families)
 	{
-		if (BestFamily)
-		{
-			break;
-		}
 		const bool bResident = ResidentFamily.Get() == Pair.Key;
 		double FamilyScore = TNumericLimits<double>::Max();
 		for (APlanetaryBody* Body : Pair.Value)
@@ -233,16 +285,16 @@ void UAPSPlanetEnvironmentStreamingSubsystem::UpdateActiveEnvironment()
 				? Body->GetWorldScapeUnloadRadiusCm()
 				: Body->GetWorldScapePreloadRadiusCm();
 			const double Distance = FVector::Distance(ObserverLocation, Body->GetActorLocation());
-			if (Limit > UE_DOUBLE_SMALL_NUMBER && Distance <= Limit)
-			{
-				const double ResidentBias = bResident ? 0.72 : 1.0;
-				FamilyScore = FMath::Min(FamilyScore, GetSurfaceDistance(Body) * ResidentBias);
-			}
+			FamilyScore = FMath::Min(FamilyScore, APSWorldScapeStreamingPolicy::Score(
+				Distance, Body->GetWorldScapeBodyRadiusCm(), Limit, bResident, 0.72));
 		}
-		if (FamilyScore < BestFamilyScore)
+		const FString Key = Pair.Key->GetPathName();
+		if (APSWorldScapeStreamingPolicy::Prefer(FamilyScore, bResident, Key,
+			BestFamilyScore, BestFamily && BestFamily == ResidentFamily.Get(), BestFamilyKey))
 		{
 			BestFamilyScore = FamilyScore;
 			BestFamily = Pair.Key;
+			BestFamilyKey = Key;
 		}
 	}
 
@@ -259,6 +311,8 @@ void UAPSPlanetEnvironmentStreamingSubsystem::UpdateActiveEnvironment()
 
 	if (!BestFamily)
 	{
+		UpdateStandbyWarmup(nullptr, Observer);
+		PrewarmedBodies.Reset();
 		if (ResidentFamily.IsValid())
 		{
 			UE_LOG(LogAPSWorldScapeStreaming, Log, TEXT("Unloaded WorldScape family: %s"),
@@ -280,34 +334,27 @@ void UAPSPlanetEnvironmentStreamingSubsystem::UpdateActiveEnvironment()
 
 	APlanetaryBody* BestBody = nullptr;
 	double BestBodyScore = TNumericLimits<double>::Max();
+	FString BestBodyKey;
 	for (APlanetaryBody* Body : FamilyBodies)
 	{
-		if (APlanet* Planet = Cast<APlanet>(Body); Planet && !Planet->IsNotGasGiant())
-		{
-			continue;
-		}
 		const bool bCurrentBody = ActiveBody.Get() == Body;
 		const double Limit = bCurrentBody
 			? Body->GetWorldScapeDeactivationRadiusCm()
 			: Body->GetWorldScapeActivationRadiusCm();
 		const double Distance = FVector::Distance(ObserverLocation, Body->GetActorLocation());
-		if (Limit <= UE_DOUBLE_SMALL_NUMBER || Distance > Limit)
-		{
-			continue;
-		}
-		const double BodyScore = GetSurfaceDistance(Body) * (bCurrentBody ? 0.8 : 1.0);
-		if (BodyScore < BestBodyScore)
+		const double BodyScore = APSWorldScapeStreamingPolicy::Score(
+			Distance, Body->GetWorldScapeBodyRadiusCm(), Limit, bCurrentBody, 0.8);
+		const FString Key = Body->GetPathName();
+		if (APSWorldScapeStreamingPolicy::Prefer(BodyScore, bCurrentBody, Key,
+			BestBodyScore, BestBody && BestBody == ActiveBody.Get(), BestBodyKey))
 		{
 			BestBodyScore = BodyScore;
 			BestBody = Body;
+			BestBodyKey = Key;
 		}
 	}
 
-	// Preparing every planet and moon in one subsystem update synchronously loaded
-	// dozens of WorldScape profiles and spawned dozens of roots.  Keep the family
-	// resident contract, but activate the nearest body immediately and amortize its
-	// siblings across later updates. At the 0.5 s cadence the whole family is still
-	// warm well before normal inter-body travel can reach it.
+	// The selected body is never delayed by the speculative sibling preload budget.
 	if (BestBody && BestBody->GetWorldScapeStreamingState() == EWorldScapeSurfaceState::Unloaded)
 	{
 		BestBody->SetWorldScapeStreamingState(EWorldScapeSurfaceState::Preloaded);
@@ -325,19 +372,6 @@ void UAPSPlanetEnvironmentStreamingSubsystem::UpdateActiveEnvironment()
 			ApplyGameplayObserverContract(ActiveRoot, Observer);
 		}
 	}
-	constexpr int32 MaxSiblingPreloadsPerUpdate = 2;
-	int32 SiblingPreloads = 0;
-	for (APlanetaryBody* Body : FamilyBodies)
-	{
-		if (Body != BestBody
-			&& Body->GetWorldScapeStreamingState() == EWorldScapeSurfaceState::Unloaded
-			&& SiblingPreloads < MaxSiblingPreloadsPerUpdate)
-		{
-			Body->SetWorldScapeStreamingState(EWorldScapeSurfaceState::Preloaded);
-			++SiblingPreloads;
-		}
-	}
-
 	if (APlanetaryBody* PreviousBody = ActiveBody.Get(); PreviousBody && PreviousBody != BestBody)
 	{
 		if (ResolveFamilyPlanet(PreviousBody) == BestFamily)
@@ -348,6 +382,51 @@ void UAPSPlanetEnvironmentStreamingSubsystem::UpdateActiveEnvironment()
 			PreviousBody->SetWorldScapeStreamingState(EWorldScapeSurfaceState::FrozenVisible);
 			UE_LOG(LogAPSWorldScapeStreaming, Log, TEXT("Froze resident WorldScape surface: %s"),
 				*PreviousBody->GetPathName());
+		}
+	}
+
+	// Bound speculative allocations only. Frozen *published* siblings still render
+	// their real geometry: replacing them with the placeholder is not safe eviction.
+	// Existing warm roots get a small bias to avoid churning near equal distances.
+	struct FStandbyCandidate
+	{
+		APlanetaryBody* Body;
+		double Score;
+		FString Key;
+	};
+	TArray<FStandbyCandidate> Standby;
+	for (APlanetaryBody* Body : FamilyBodies)
+	{
+		if (Body == BestBody || Body->bWorldScapeSurfaceReady) continue;
+		const double Distance = FVector::Distance(ObserverLocation, Body->GetActorLocation());
+		const bool bWarm = Body->GetWorldScapeStreamingState() != EWorldScapeSurfaceState::Unloaded;
+		Standby.Add({Body, APSWorldScapeStreamingPolicy::Score(Distance,
+			Body->GetWorldScapeBodyRadiusCm(), TNumericLimits<double>::Max(), bWarm, 0.8),
+			Body->GetPathName()});
+	}
+	Standby.Sort([](const FStandbyCandidate& A, const FStandbyCandidate& B)
+	{
+		return A.Score != B.Score ? A.Score < B.Score
+			: A.Key.Compare(B.Key, ESearchCase::CaseSensitive) < 0;
+	});
+	const int32 MaxStandby = FMath::Clamp(CVarMaxStandbyRoots.GetValueOnGameThread(), 0, 32);
+	constexpr int32 MaxSiblingPreloadsPerUpdate = 2;
+	int32 SiblingPreloads = 0;
+	for (int32 Index = 0; Index < Standby.Num(); ++Index)
+	{
+		APlanetaryBody* Body = Standby[Index].Body;
+		if (Index >= MaxStandby || Standby[Index].Score == TNumericLimits<double>::Max())
+		{
+			if (Body->GetWorldScapeStreamingState() != EWorldScapeSurfaceState::Unloaded)
+				Body->SetWorldScapeStreamingState(EWorldScapeSurfaceState::Unloaded);
+		}
+		else if (Body->GetWorldScapeStreamingState() != EWorldScapeSurfaceState::Preloaded
+			&& SiblingPreloads < MaxSiblingPreloadsPerUpdate)
+		{
+			// This can also reclaim a never-published frozen attempt. The generator
+			// drains workers before cleanup; no worker-owned arrays are freed here.
+			Body->SetWorldScapeStreamingState(EWorldScapeSurfaceState::Preloaded);
+			++SiblingPreloads;
 		}
 	}
 
@@ -377,5 +456,34 @@ void UAPSPlanetEnvironmentStreamingSubsystem::UpdateActiveEnvironment()
 	else
 	{
 		ClearGameplayCollisionAnchor();
+	}
+	// Warm sequentially, and only after the foreground body has actually published.
+	// Count completed speculative surfaces too: otherwise each published moon frees
+	// a hidden slot and eventually every moon gets a high-resolution allocation.
+	PrewarmedBodies.RemoveAll([this, BestBody, BestFamily](const TWeakObjectPtr<APlanetaryBody>& WeakBody)
+	{
+		const APlanetaryBody* Body = WeakBody.Get();
+		return !IsValid(Body) || Body == BestBody || !Body->bWorldScapeSurfaceReady
+			|| ResolveFamilyPlanet(WeakBody.Get()) != BestFamily;
+	});
+	APlanetaryBody* WarmCandidate = nullptr;
+	if (BestBody && BestBody->bWorldScapeSurfaceReady && PrewarmedBodies.Num() < MaxStandby)
+	{
+		for (int32 Index = 0; Index < FMath::Min(MaxStandby, Standby.Num()); ++Index)
+		{
+			APlanetaryBody* Body = Standby[Index].Body;
+			if (Body->GetWorldScapeStreamingState() == EWorldScapeSurfaceState::Preloaded
+				&& !Body->bWorldScapeSurfaceReady)
+			{
+				if (!WarmCandidate || Body == WarmingBody.Get()) WarmCandidate = Body;
+			}
+		}
+	}
+	UpdateStandbyWarmup(WarmCandidate, Observer);
+	for (APlanetaryBody* Body : FamilyBodies)
+	{
+		if (Body->bWorldScapeSurfaceReady && IsValid(Body->PlanetaryEnvironmentGenerator)
+			&& Body->PlanetaryEnvironmentGenerator->ResolvedSurfaceProfile.LiquidType == EAPSPlanetLiquidType::Water)
+			VisibleLiquidBodies.Add(Body);
 	}
 }

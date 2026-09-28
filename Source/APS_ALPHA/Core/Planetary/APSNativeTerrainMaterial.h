@@ -1,6 +1,9 @@
 #pragma once
 
 #include "APSPlanetSurfaceProfile.h"
+#include "APSLivingTerrainPalette.h"
+#include "APSLivingBiomeTransfer.h"
+#include "HAL/IConsoleManager.h"
 #include "Components/SceneComponent.h"
 #include "Misc/CoreDelegates.h"
 #include "Materials/Material.h"
@@ -120,17 +123,52 @@ namespace APSNativeTerrainMaterial
         Set(TEXT("Color3"), P.Highland);
         Set(TEXT("Color4"), P.Dryland);
         Set(TEXT("Color5"), P.Dryland); // Native Color5 is savanna, not the snow cap.
+        // Scope the refinement to generated SharedTerra instances. In particular,
+        // never alter a bespoke catalog parent or the authored native reference.
+        if (IsValid(Material->Parent.Get()) && Material->Parent->GetPathName() ==
+            TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Shared/MI_APS_SharedTerra.MI_APS_SharedTerra"))
+        {
+            const IConsoleVariable* Detail = IConsoleManager::Get().FindConsoleVariable(
+                TEXT("aps.Surface.LivingPaletteDetail"));
+            Set(TEXT("Color4"), APSLivingTerrainPalette::CoolDryland(Profile, Detail ? Detail->GetFloat() : 0.0f));
+            if (APSLivingTerrainPalette::Allows(Profile))
+            {
+                // Calibrate the native shoreline to our red-channel sea datum .08.
+                // Do not confuse these with similarly named simplified-graph knobs.
+                Material->SetScalarParameterValue(TEXT("BottomLayerShift"), APSLivingBiomeTransfer::CoastShift);
+                Material->SetScalarParameterValue(TEXT("BottomLayerSharpness"), APSLivingBiomeTransfer::CoastContrast);
+                Material->SetScalarParameterValue(TEXT("ShiftSavhana"), APSLivingBiomeTransfer::HumidLandShift);
+            }
+        }
         Set(TEXT("2_Color1"), P.Dryland);
         Set(TEXT("2_Color2"), P.Coast);
         Set(TEXT("2_Color3"), P.Highland);
         Set(TEXT("2_Color4"), P.Dryland);
         Set(TEXT("Color1_3"), P.Peak);
         Set(TEXT("Color2_3"), P.Highland);
+        if (IsValid(Material->Parent.Get()) && Material->Parent->GetPathName() ==
+            TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Shared/MI_APS_SharedTerra.MI_APS_SharedTerra"))
+        {
+            const FLinearColor Rock = APSLivingTerrainPalette::ExposedRock(Profile);
+            Set(TEXT("2_Color3"), Rock);
+            Set(TEXT("Color2_3"), Rock);
+        }
         Set(TEXT("SlopeColor"), P.Slope);
         Set(TEXT("ColotTint"), FLinearColor::White);
         Set(TEXT("EmissiveColor"), P.Emissive);
-        // Deliberately retain the template's fine/coarse texture sizes, normal
-        // blending, height/climate transfer functions and distance transitions.
+		// Generated shared materials already contain a continuous physical-distance
+		// normal filter. Its former 200..700 km range left mesh-dependent slope/UV
+		// weights fully active across coarse orbital rings, exposing a square LOD0.
+		// Finish that filter before orbit, identically in menu and gameplay. Ground
+		// shading below 2 km, displaced geometry and collision are unchanged.
+		const UMaterial* Master = Material->GetMaterial();
+		if (IsValid(Master) && Master->GetPathName() ==
+			TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Shared/M_APS_SharedWorldScapeTerrain.M_APS_SharedWorldScapeTerrain"))
+		{
+			Material->SetScalarParameterValue(TEXT("APS_FarNormalStartCm"), 200000.0f);
+			Material->SetScalarParameterValue(TEXT("APS_FarNormalEndCm"), 2000000.0f);
+		}
+        // Retain template texture sizes and all other layer/normal transfers.
         // The APS simplified graph's HeightContrast/WarpedScale controls are not
         // interchangeable with identically named controls in this native stack.
     }

@@ -28,6 +28,7 @@
 #include "UnrealClient.h"
 #include "UObject/StrongObjectPtr.h"
 #include "APSLavaShorelineProbe.h"
+#include "APSUnifiedLavaSurfaceProbe.h"
 
 namespace APSSharedLavaCoverage
 {
@@ -589,6 +590,8 @@ public:
 TSharedPtr<IAutomationLatentCommand> APSCreateSharedLavaCoverageProbe(
     FAutomationTestBase* Test, UWorld* World, APlanet* Planet)
 {
+    if (FParse::Param(FCommandLine::Get(), TEXT("APSUnifiedLavaProbe")))
+        return MakeShared<APSUnifiedLavaProbe::FProbe>(Test, World, Planet);
     if (FParse::Param(FCommandLine::Get(), TEXT("APSLavaShoreline")))
         return MakeShared<APSLavaShoreline::FProbe>(Test, World, Planet);
     return MakeShared<APSSharedLavaCoverage::FProbe>(Test, World, Planet);

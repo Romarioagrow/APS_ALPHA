@@ -12,6 +12,9 @@
 #include "APS_ALPHA/Core/Planetary/APSWorldScapeLiquidLattice.h"
 #include "APS_ALPHA/Core/Planetary/APSWorldScapeSurfaceEnvelope.h"
 #include "APS_ALPHA/Core/Planetary/APSUnifiedLavaSurface.h"
+#include "APS_ALPHA/Core/Planetary/APSOrbitalWaterAppearance.h"
+#include "Camera/PlayerCameraManager.h"
+#include "GameFramework/PlayerController.h"
 #include "APSWorldScapePlanetNoise.h"
 #include "Engine/World.h"
 #include "HAL/IConsoleManager.h"
@@ -25,15 +28,28 @@
 
 namespace APSWorldScapeProfiles
 {
+    TAutoConsoleVariable<float> CVarLivingPaletteDetail(
+        TEXT("aps.Surface.LivingPaletteDetail"), 1.0f,
+        TEXT("0..1 restores the distinct cool dryland palette endpoint on generated SharedTerra water worlds. ")
+        TEXT("0 restores identical Color4/Color5. No climate/height/coverage change. Read on profile creation."), ECVF_Default);
+    TAutoConsoleVariable<int32> CVarCoastResolution(
+        TEXT("aps.Surface.CoastResolution"), 0,
+        TEXT("Matched terrain/liquid ring resolution for generated full-scale wet planets, capped at 256. ")
+        TEXT("0 keeps aps.Surface.MeshResolution (default 256). Read at profile creation; restart PIE. ")
+        TEXT("No new surface, collision change or material bake. Higher vertex cost; FPS needs validation."), ECVF_Default);
+    TAutoConsoleVariable<float> CVarOrbitalWaterContrast(
+        TEXT("aps.Surface.OrbitalWaterContrast"), 1.0f,
+        TEXT("0..1 optical refinement of shared Water above 20 km, full at 200 km. ")
+        TEXT("0 restores saved roughness/specular. No palette, near-water, Lava or Ammonia changes."), ECVF_Default);
     TAutoConsoleVariable<int32> CVarUnifiedLavaSurface(
         TEXT("aps.Surface.UnifiedLavaSurface"), 0,
         TEXT("Candidate: one opaque lava/rock WorldScape surface and matching collision. ")
         TEXT("Requires the protected UnifiedLava material bake. Stop PIE before changing. ")
         TEXT("Off until rendered validation; no effect on water, ammonia, dry or authored worlds."), ECVF_Default);
     TAutoConsoleVariable<int32> CVarSurfaceMeshResolution(
-        TEXT("aps.Surface.MeshResolution"), 192,
-        TEXT("Generated full-scale WorldScape ring resolution, 96..192 in multiples of four. ")
-        TEXT("192 reduces coastline interpolation artifacts; 96 is the previous budget. ")
+        TEXT("aps.Surface.MeshResolution"), APSWorldScapeLiquidLattice::DefaultTerrainResolution,
+        TEXT("Generated full-scale WorldScape ring resolution, 96..256 in multiples of four. ")
+        TEXT("Default 256; 192 restores the previous geometry budget. FPS needs runtime validation. ")
         TEXT("Read only when creating a surface profile: stop PIE before changing. ")
         TEXT("Terrain and liquid stay on matching lattices; collision and PLANET previews are unchanged."),
         ECVF_Default);
@@ -93,6 +109,43 @@ bool APlanetarySurfaceGenerator::IsSurfaceProfileCurrent(const APlanetaryBody* B
 	return bSurfaceProfileApplied
 		&& AppliedSurfaceProfileSignature != 0
 		&& AppliedSurfaceProfileSignature == BuildSurfaceProfileSignature(Body);
+}
+
+void APlanetarySurfaceGenerator::UpdateOrbitalWaterAppearance()
+{
+	AWorldScapeRoot* Root = WorldScapeRootInstance;
+	UMaterialInstanceDynamic* Material = ResolvedOceanMaterialInstance;
+	const APlanetaryBody* Body = PlanetaryBody;
+	const APlanet* Planet = Cast<APlanet>(Body);
+	if (!IsValid(Root) || !Root->bOcean || !IsValid(Body)
+		|| !APSOrbitalWaterAppearance::IsEligible(bOwnsWorldScapeRootInstance, Planet && Planet->IsManual,
+			ResolvedSurfaceProfile.LiquidType, Body->WorldScapePresentationScale, Root->GetActorScale3D())
+		|| !APSSharedGeneratedLiquidMaterial::IsFamilyInstance(Material, EAPSPlanetLiquidType::Water)) return;
+	UWorld* World = GetWorld();
+	APlayerController* Controller = World && World->IsGameWorld() ? World->GetFirstPlayerController() : nullptr;
+	if (!IsValid(Controller) || !IsValid(Controller->PlayerCameraManager)) return;
+	const FVector Camera = Controller->PlayerCameraManager->GetCameraLocation();
+	if (Camera.ContainsNaN()) return;
+	// Root conversion accounts for rebase/rotation; camera height is above this
+	// planet's sea datum, not distance from origin or from a LOD component.
+	const double Height = Root->WorldToECEF(Camera).Lenght() - Root->PlanetScale - Root->OceanHeight;
+	const float Blend = APSOrbitalWaterAppearance::Weight(Height,
+		APSWorldScapeProfiles::CVarOrbitalWaterContrast.GetValueOnGameThread());
+	float SavedSpecular = 0, SavedRoughness = 0, ActualSpecular = 0, ActualRoughness = 0;
+	if (!Material->Parent->GetScalarParameterValue(FHashedMaterialParameterInfo(TEXT("Specular")), SavedSpecular)
+		|| !Material->Parent->GetScalarParameterValue(FHashedMaterialParameterInfo(TEXT("Roughness")), SavedRoughness)
+		|| !Material->GetScalarParameterValue(FHashedMaterialParameterInfo(TEXT("Specular")), ActualSpecular)
+		|| !Material->GetScalarParameterValue(FHashedMaterialParameterInfo(TEXT("Roughness")), ActualRoughness)
+		|| !FMath::IsFinite(SavedSpecular) || !FMath::IsFinite(SavedRoughness)
+		|| SavedSpecular < 0 || SavedSpecular > 1 || SavedRoughness < 0 || SavedRoughness > 1) return;
+	const float Specular = APSOrbitalWaterAppearance::Specular(SavedSpecular, Blend);
+	const float Roughness = APSOrbitalWaterAppearance::Roughness(SavedRoughness, Blend);
+	// Near/disabled must return EXACTLY to the saved state, not accumulate lerps
+	// from the previously overridden MID. Avoid steady-state render commands.
+	if ((Blend == 0 && ActualSpecular != SavedSpecular) || !FMath::IsNearlyEqual(ActualSpecular, Specular, 0.0001f))
+		Material->SetScalarParameterValue(TEXT("Specular"), Specular);
+	if ((Blend == 0 && ActualRoughness != SavedRoughness) || !FMath::IsNearlyEqual(ActualRoughness, Roughness, 0.0001f))
+		Material->SetScalarParameterValue(TEXT("Roughness"), Roughness);
 }
 
 bool APlanetarySurfaceGenerator::FinalizeStableWaterMaterial()
@@ -909,13 +962,19 @@ void APlanetarySurfaceGenerator::ApplySurfaceProfileNow(APlanetaryBody* Body)
 	WorldScapeRootInstance->LodResolution = APSWorldScapeLiquidLattice::TerrainResolution(
 		bOwnsWorldScapeRootInstance, bScaledOrbitalPreview,
 		APSWorldScapeProfiles::CVarSurfaceMeshResolution.GetValueOnGameThread());
+	const APlanet* CoastPlanet = Cast<APlanet>(Body);
+	WorldScapeRootInstance->LodResolution = APSWorldScapeLiquidLattice::CoastResolution(
+		WorldScapeRootInstance->LodResolution, bOwnsWorldScapeRootInstance && !(CoastPlanet && CoastPlanet->IsManual),
+		bScaledOrbitalPreview, ResolvedSurfaceProfile.LiquidType != EAPSPlanetLiquidType::None
+			&& ResolvedSurfaceProfile.LandCoverage < 0.995f,
+		APSWorldScapeProfiles::CVarCoastResolution.GetValueOnGameThread());
 	WorldScapeRootInstance->TriangleSize = bScaledOrbitalPreview ? 450.0f : 120.0f;
 	WorldScapeRootInstance->OceanMaxLod = bScaledOrbitalPreview ? 6 : 9;
 	WorldScapeRootInstance->OceanLodResolution = bScaledOrbitalPreview ? 32 : 64;
 	WorldScapeRootInstance->OceanTriangleSize = bScaledOrbitalPreview ? 650.0f : 200.0f;
 	// Lava and exotic oceans need the same lattice guarantee as water: material
 	// colour/emission cannot repair intersections between unequal spherical chords.
-	// No changes to terrain density, collision, authored roots or scaled previews.
+	// Matching the ocean does not alter collision, authored roots or scaled previews.
 	APSWorldScapeLiquidLattice::MatchTerrain(*WorldScapeRootInstance,
 		bOwnsWorldScapeRootInstance, bScaledOrbitalPreview);
 	// Keep the gameplay collision sample spacing identical to terrain LOD0 so the

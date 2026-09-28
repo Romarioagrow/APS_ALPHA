@@ -1,6 +1,7 @@
 #include "APSWorldScapePlanetNoise.h"
 #include "APSPlanetPresetMorphology.h"
 #include "APS_ALPHA/Core/Planetary/APSWorldScapeSurfaceEnvelope.h"
+#include "APS_ALPHA/Core/Planetary/APSLivingBiomeTransfer.h"
 
 #include "WorldScapeCommon/Public/NoiseMathUtils.h"
 
@@ -66,7 +67,7 @@ namespace APSPlanetNoise
 		// Cryogenic's physically amplified broad bands legitimately exceed the common
 		// 0.13 authored land span. A hard linear map consequently pinned most vertices
 		// to red=0/1 and made real geometry look like one flat colour. Use a wider
-		// display span for that family and a rational shoulder for every family. The
+		// display span for that family and a rational shoulder for non-living families. The
 		// shoulder remains monotonic, preserves the exact coast value and never changes
 		// Data.Height (the authoritative WorldScape displacement).
 		const double AuthoredLandSpan = Profile.Archetype
@@ -77,6 +78,8 @@ namespace APSPlanetNoise
 			- static_cast<double>(Profile.OceanLevel);
 		if (HeightAboveSea >= 0.0)
 		{
+			if (APSLivingTerrainPalette::Allows(Profile))
+				return APSLivingBiomeTransfer::Height(HeightAboveSea, AuthoredLandSpan);
 			const double LandRatio = HeightAboveSea / FMath::Max(AuthoredLandSpan, 0.001);
 			return MaterialCoastHeight
 				+ MaterialLandHeightRange * LandRatio / (1.0 + LandRatio);
@@ -609,6 +612,12 @@ FNoiseData UAPSWorldScapePlanetNoise::EvaluateProfile(
 		const double OceanInfluence = 1.0 - FMath::SmoothStep(-0.02, 0.16, SignedLand);
 		double HumidityValue = static_cast<double>(SurfaceProfile.Humidity) + HumidityNoise * 0.16
 			+ OceanInfluence * 0.24 - HeightCooling * 0.32;
+		if (APSLivingTerrainPalette::Allows(SurfaceProfile))
+		{
+			HumidityValue = APSLivingBiomeTransfer::Humidity(HumidityValue,
+				APSPlanetNoise::UniformizeContinentalField(HumidityNoise + 0.5),
+				ClampedLatitude, OceanInfluence);
+		}
 		double VegetationPatch = 1.0;
 		const double ClimatePatchStrength = FMath::Clamp(
 			static_cast<double>(SurfaceProfile.ClimatePatchStrength), 0.0, 1.0);

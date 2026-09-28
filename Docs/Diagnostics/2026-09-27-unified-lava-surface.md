@@ -2,11 +2,22 @@
 
 ## Status
 
-Source candidate only. **Not enabled in the game; no material has been baked.**
+Source candidate only. **Not enabled in the game; no candidate material saved.**
 `aps.Surface.UnifiedLavaSurface` defaults to `0`. The accepted assets and engine
-WorldScape DLL are unchanged. No editor launch, project build, hot reload, or
-shader bake was performed: the editor/build window remains assigned to Claude.
-Ships, character, AstroGenerator, maps, station assets and coordination ledger
+WorldScape DLL are unchanged. On September 28 the project build passed. The first
+isolated bake failed on an inherited function's missing transient input pointer.
+The builder now copies/registers the complete connected function closure and
+preserves bindings by GUID; the second bake reached shader compilation without
+that error but was stopped before completion at Rio's request.
+
+**Current authority: CODE ONLY. Rio handles builds, baking and editor launches
+while working. Do not launch them automatically, even if no editor is detected.**
+Only the owned commandlet PID 18852 was stopped; user processes were untouched.
+Evidence: `F:/ChatGPT/APOSFERA/work/unified_lava_20260928`.
+The probe's DVector `Size()` compile error was corrected to the plugin's
+`Lenght()` method and the subsequent project build passed. A later source-only
+viewport-size initialization/validation cleanup has not been rebuilt.
+Ships, character implementation, AstroGenerator, maps, station assets and coordination ledger
 were not edited by this task.
 
 ## Evidence and scope
@@ -76,6 +87,9 @@ outside this patch and must not be silently changed to solid ground.
 Check outputs are on `F:/ChatGPT/APOSFERA/work/unified_lava_20260927/checks`.
 
 ## Next authorized Unreal window
+
+The following are manual validation steps for Rio, NOT permission for automatic
+build/test execution. No rendered acceptance or default promotion has occurred.
 
 1. Confirm Claude has released the editor/build window; do not close his process.
 2. Build APS_ALPHAEditor and restart normally. Run the new family matrix and

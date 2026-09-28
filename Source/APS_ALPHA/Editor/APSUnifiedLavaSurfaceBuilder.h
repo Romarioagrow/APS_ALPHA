@@ -22,6 +22,7 @@ namespace APSUnifiedLavaSurfaceBuilder
     {
         UMaterialInstance* LavaTemplate = nullptr;
         TMap<UMaterialFunction*, UMaterialFunction*> LavaFunctions;
+        TMap<UMaterialFunction*, UMaterialFunction*> TerrainFunctions;
         TSet<UMaterialFunction*> Visiting;
 
         explicit FBuild(IAssetTools& Tools) : FCore(Tools, Destination) {}
@@ -64,30 +65,39 @@ namespace APSUnifiedLavaSurfaceBuilder
             return Result;
         }
 
-        bool FreezeLavaParameters(UObject* Owner)
+        bool CopyFunctionClosure(UObject* Owner, bool bLava)
         {
-            for (UMaterialExpression* E : Expressions(Owner))
+            // Older saved graphs have connected nodes outside their flat inventory.
+            // Register the full closure ONLY on our copies so a fresh load restores
+            // transient function pins too (not merely the current DDC shader).
+            APSSharedTerrainNormalContinuity::TTransform<FCore> Reader(*this);
+            const auto Graph = Reader.Graph(Owner);
+            if (!Error.IsEmpty()) return false;
+            for (UMaterialExpression* E : Graph)
+                APSSharedTerrainNormalContinuity::TTransform<FCore>::Register(Owner, E);
+            auto& Functions = bLava ? LavaFunctions : TerrainFunctions;
+            for (UMaterialExpression* E : Graph)
             {
                 if (auto* Call = Cast<UMaterialExpressionMaterialFunctionCall>(E))
                 {
                     UMaterialFunction* Source = Cast<UMaterialFunction>(Call->MaterialFunction);
                     if (!Source) { Error = TEXT("Unsupported lava function instance"); return false; }
                     if (Visiting.Contains(Source)) { Error = TEXT("Recursive lava function"); return false; }
-                    UMaterialFunction* Copy = LavaFunctions.FindRef(Source);
+                    UMaterialFunction* Copy = Functions.FindRef(Source);
                     if (!Copy)
                     {
                         Copy = Cast<UMaterialFunction>(Duplicate(Source, FString::Printf(
-                            TEXT("MF_APS_UnifiedLava_%08x"), FCrc::StrCrc32(*Source->GetPathName()))));
+                            TEXT("MF_APS_Unified%s_%08x"), bLava ? TEXT("Lava") : TEXT("Rock"), FCrc::StrCrc32(*Source->GetPathName()))));
                         if (!Copy) return false;
-                        LavaFunctions.Add(Source, Copy);
+                        Functions.Add(Source, Copy);
                         Visiting.Add(Source);
-                        if (!FreezeLavaParameters(Copy)) return false;
+                        if (!CopyFunctionClosure(Copy, bLava)) return false;
                         Visiting.Remove(Source);
                         UMaterialEditingLibrary::UpdateMaterialFunction(Copy);
                     }
                     if (!ReconnectFunctionById(Call, Source, Copy)) return false;
                 }
-                if (!E->HasAParameterName()) continue;
+                if (!bLava || !E->HasAParameterName()) continue;
                 const FName Name = E->GetParameterName();
                 // Both original graphs intentionally share ONLY their physical
                 // frame. Chemistry/style parameters must not collide by name.
@@ -135,11 +145,11 @@ namespace APSUnifiedLavaSurfaceBuilder
             { Error = TEXT("New lava normal requires explicit space conversion"); return false; }
 
             auto* Master = Cast<UMaterial>(Duplicate(Terrain, TEXT("M_APS_UnifiedLavaSurface")));
-            if (!Master) return false;
+            if (!Master || !CopyFunctionClosure(Master, false)) return false;
             // Duplicate the entire lava graph first so every internal expression
             // reference is remapped by Unreal; move its nodes, not hand-wired pins.
             auto* LavaCopy = DuplicateObject<UMaterial>(Lava, GetTransientPackage());
-            if (!LavaCopy || !FreezeLavaParameters(LavaCopy)) return false;
+            if (!LavaCopy || !CopyFunctionClosure(LavaCopy, true)) return false;
             const TArray<UMaterialExpression*> LavaNodes = Expressions(LavaCopy);
             for (UMaterialExpression* E : LavaNodes)
             {
@@ -197,6 +207,7 @@ namespace APSUnifiedLavaSurfaceBuilder
             auto* Template = Cast<UMaterialInstanceConstant>(Duplicate(TerrainTemplate, TEXT("MI_APS_UnifiedLavaSurface")));
             if (!Template) return false;
             Template->SetParentEditorOnly(Master, false);
+            Template->CopyMaterialUniformParametersEditorOnly(TerrainTemplate, true);
             Master->PostEditChange(); Template->PostEditChange();
             if (Template->GetBlendMode() != BLEND_Opaque)
             { Error = TEXT("Inherited base-property override changed candidate coverage"); return false; }

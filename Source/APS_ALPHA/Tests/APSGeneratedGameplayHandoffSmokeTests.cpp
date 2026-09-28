@@ -8215,6 +8215,7 @@ bool FAPSGeneratedSurfaceLightingDiagnosticsTest::RunTest(const FString& Paramet
 	else if (TypeName.Equals(TEXT("Frozen"), ESearchCase::IgnoreCase)) Type = EPlanetType::Frozen;
 	else if (bUserGreenhouseReference && TypeName.Equals(TEXT("Greenhouse"), ESearchCase::IgnoreCase)) Type = EPlanetType::Greenhouse;
 	else if (bLavaCoverage && TypeName.Equals(TEXT("Melted"), ESearchCase::IgnoreCase)) Type = EPlanetType::Melted;
+	else if (bLavaCoverage && FParse::Param(FCommandLine::Get(), TEXT("APSUnifiedLavaProbe")) && TypeName.Equals(TEXT("Lava"), ESearchCase::IgnoreCase)) Type = EPlanetType::Lava;
 	else if (bLavaCoverage && TypeName.Equals(TEXT("Volcanic"), ESearchCase::IgnoreCase)) Type = EPlanetType::Volcanic;
 	else if ((bSharedLiquidCoverage || bSharedLiquidCoverageOrbit) && TypeName.Equals(TEXT("Ammonia"), ESearchCase::IgnoreCase)) Type = EPlanetType::Ammonia;
 	else if (!TypeName.Equals(TEXT("Water"), ESearchCase::IgnoreCase))
@@ -8222,7 +8223,7 @@ bool FAPSGeneratedSurfaceLightingDiagnosticsTest::RunTest(const FString& Paramet
 		AddError(TEXT("APSDiagnosticPlanet must be Water, Ice or Frozen; Lava coverage additionally allows Melted/Volcanic; APSSharedLiquidCoverage allows Water/Ammonia; APSSharedLiquidCoverageOrbit allows Ammonia only"));
 		return false;
 	}
-	if (bLavaCoverage && ((Type != EPlanetType::Melted && Type != EPlanetType::Volcanic)
+	if (bLavaCoverage && ((Type != EPlanetType::Melted && Type != EPlanetType::Volcanic && !(Type == EPlanetType::Lava && FParse::Param(FCommandLine::Get(), TEXT("APSUnifiedLavaProbe"))))
 		|| FParse::Param(FCommandLine::Get(), TEXT("APSDiagnosticWalkRunPerf"))
 		|| FParse::Param(FCommandLine::Get(), TEXT("APSDiagnosticOrbitOverview"))
 		|| FParse::Param(FCommandLine::Get(), TEXT("APSDiagnosticTerrainLodAB"))

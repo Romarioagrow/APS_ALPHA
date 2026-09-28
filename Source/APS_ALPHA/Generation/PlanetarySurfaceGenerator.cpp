@@ -570,10 +570,8 @@ void APlanetarySurfaceGenerator::InitAtmoScape(UWorld* World, double PlanetaryRa
 			// opacity boosts. Explicit saved/body overrides are applied afterwards.
 			PlanetAtmosphere->AtmosphereOpacity = 1.0f;
 			PlanetAtmosphere->MultiScatering = 1.0f;
-			PlanetAtmosphere->AirGlowIntensity = FMath::Clamp(
-				0.020f + PressureResponse * 0.030f + HumidityResponse * 0.010f
-					+ (1.0f - DustResponse) * 0.005f + SeededResponse * 0.002f,
-				0.018f, 0.070f);
+			PlanetAtmosphere->AirGlowIntensity = APSAtmosphereGeneration::GeneratedAirGlow(
+				PressureResponse, HumidityResponse, DustResponse, SeededResponse);
 			const float RayleighMaximum = FMath::Max3(
 				PlanetAtmosphere->RayleighScattering.R,
 				PlanetAtmosphere->RayleighScattering.G,
