@@ -422,7 +422,8 @@ namespace APSMainMenuPreviewSmokeTests
 					UAPSWorldScapePlanetNoise::SampleResolvedProfile(
 						ResolvedNoise->SurfaceProfile, SnapshotNoise, SamplePosition,
 						PlanetPosition, Root->NoiseScale, Root->NoiseIntensity,
-						Root->PlanetScale, SampleDirection.Z, SnapshotNoisePosition);
+						Root->PlanetScale, SampleDirection.Z, SnapshotNoisePosition,
+						ResolvedNoise->UsesCoastalReliefCandidate());
 				Test->TestTrue(FString::Printf(
 					TEXT("%s value-snapshot sampler is bit-exact with the member sampler"),
 					*Context),

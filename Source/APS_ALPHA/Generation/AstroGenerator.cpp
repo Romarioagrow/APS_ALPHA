@@ -472,11 +472,12 @@ namespace APSPreviewGlobe
 		uint8* FaceValidityData = FaceSamplesValid.GetData();
 		const CustomNoise SeededNoise = ProfileRoot->PlanetNoise;
 		const FAPSResolvedPlanetSurfaceProfile SurfaceProfile = Noise->SurfaceProfile;
+		const bool bCoastalReliefCandidate = Noise->UsesCoastalReliefCandidate();
 		const double NoiseScale = ProfileRoot->NoiseScale;
 		const double NoiseIntensity = ProfileRoot->NoiseIntensity;
 		ParallelFor(UE_ARRAY_COUNT(Faces), [Radius, FaceResolution,
 			VerticesPerFace, DirectionData, SurfaceData, FaceValidityData,
-			SeededNoise, &SurfaceProfile, NoiseScale, NoiseIntensity](const int32 FaceIndex)
+			SeededNoise, &SurfaceProfile, NoiseScale, NoiseIntensity, bCoastalReliefCandidate](const int32 FaceIndex)
 		{
 			const FCubeFace& Face = Faces[FaceIndex];
 			CustomNoise FaceNoise = SeededNoise;
@@ -496,7 +497,7 @@ namespace APSPreviewGlobe
 						UAPSWorldScapePlanetNoise::SampleResolvedProfile(
 						SurfaceProfile, FaceNoise, DVector(Direction * Radius),
 						DVector(0.0, 0.0, 0.0),
-						NoiseScale, NoiseIntensity, Radius, Direction.Z, NoisePosition);
+						NoiseScale, NoiseIntensity, Radius, Direction.Z, NoisePosition, bCoastalReliefCandidate);
 					DirectionData[SampleIndex] = Direction;
 					SurfaceData[SampleIndex] = Surface;
 					bFaceSamplesValid = bFaceSamplesValid

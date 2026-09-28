@@ -13,7 +13,7 @@ omits those physical bands. A higher mesh resolution alone cannot remove real
 wet/dry sign changes. The first measured 32km coastal grid had 40 enclosed dry
 components; this is sampled terrain fragmentation, not a count of visible holes.
 
-## Implementation
+## V1 implementation (measured below)
 
 `APSCoastalRelief::Height` keeps 35% of the existing 18km regional band as a broad
 coastal landform and smoothly bounds the remaining physical detail to 65% of its
@@ -74,14 +74,32 @@ native WATER MATERIAL, not the native terrain field. No wave tuning is promoted.
   the candidate's corresponding views replace it with a coherent continental
   edge. Both processes use the same logged camera direction/tangent and height.
 
+## V2 source revision (not built or rendered yet)
+
+The source now retains 10% of the already evaluated 4km physical landform in the
+coastal base, alongside 35% of the 18km band. This is intended to restore modest
+coves lost in V1 without allowing the 1.8km..60m detail to punch through the broad
+shore. No new noise samples are introduced. The full constraint and exact inland
+path are unchanged; a zero medium-scale contribution reproduces the V1 helper.
+The numerical counts and rendered observations above are V1 evidence, **not V2
+results**. New inlet/headland tests have only been added to source.
+
+The owning generator exposes its immutable eligibility-resolved candidate flag.
+The closed orbital mesh now captures it with the profile before launching its
+workers. The existing frozen water-depth probe and menu sampler also use the
+same captured state; they no longer silently sample the old physical field when
+the root uses the candidate. Added tests compare full worker and value snapshot
+height, material, climate, water and foliage channels. These new assertions have
+not been executed yet. The ordinary-game flag is still OFF.
+
 ## Publication prerequisite
 
-The instance flag must also be carried explicitly into any immutable profile
-sampling consumers before a default is enabled. In particular, the closed
-orbital mesh in `AstroGenerator.cpp` currently calls the static sampler with the
-default OFF argument. Its compressed case is unchanged, but do not assume every
-caller is compressed or publish a second inconsistent full-scale representation.
-Do not simply flip the development command-line gate or static defaults globally.
+Build and render the V2 source changes, including the orbital consumer, before
+enabling a default. The compressed preview remains deliberately unchanged; do
+not assume every consumer uses compressed coordinates. Any future runtime
+toggle must invalidate the orbital mesh cache as well as reconfigure the noise
+instance. The current isolated command-line candidate is process-constant, not
+a runtime setting. Do not simply flip static defaults globally.
 
 Do not enable the default from component counts alone. The next refinement must
 retain restrained intermediate-scale coves and address the separate shallow-water

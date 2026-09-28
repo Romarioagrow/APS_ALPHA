@@ -22,6 +22,10 @@ public:
 	void Configure(const FAPSResolvedPlanetSurfaceProfile& InProfile, bool bInUnifiedLavaSurface = false,
 		bool bInCoastalReliefCandidate = false);
 
+	// Capture on the owning thread together with SurfaceProfile before launching
+	// value-sampler workers. Never reconstruct this from a command line on workers.
+	bool UsesCoastalReliefCandidate() const { return bCoastalReliefCandidate; }
+
 	virtual FNoiseData GetNoise(
 		CustomNoise NoiseClass, const DVector& Position, const DVector& PlanetPosition,
 		double NoiseScale, double NoiseIntensity, double PlanetScale, bool FlatWorld,
@@ -46,6 +50,7 @@ public:
 	 * Thread-safe value sampler for preview mesh workers. The caller supplies an
 	 * immutable profile snapshot and task-local noise state, so this path never reads
 	 * or writes a UObject while preserving the exact resolved-profile math.
+	 * An existing generator's caller must also capture UsesCoastalReliefCandidate().
 	 */
 	static FNoiseData SampleResolvedProfile(
 		const FAPSResolvedPlanetSurfaceProfile& SurfaceProfile,
@@ -59,6 +64,7 @@ public:
 	 * compressed settings deliberately describe different low-bandwidth geometry.
 	 * Does not apply WorldScape noise/heightmap volumes or the ocean-height clamp.
 	 * Independently optimized full/height paths may differ by floating-point roundoff.
+	 * Pass the owning generator's captured coastal flag when sampling its field.
 	 */
 	static double SampleHeightResolvedProfile(
 		const FAPSResolvedPlanetSurfaceProfile& SurfaceProfile,

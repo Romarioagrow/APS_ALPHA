@@ -235,6 +235,9 @@ public:
             const double Sea = FMath::Max(Profile.OceanLevel * double(Profile.NoiseIntensity), Profile.OceanLevel * Intensity);
             if (!FMath::IsFinite(Radius) || Radius <= 0.0) return Fail(TEXT("Invalid physical reference radius"));
             const CustomNoise Seeded = Root->PlanetNoise;
+            const UAPSWorldScapePlanetNoise* ResolvedNoise = Cast<UAPSWorldScapePlanetNoise>(Root->WorldScapeNoise);
+            if (!ResolvedNoise) return Fail(TEXT("Physical depth requires the owning resolved field"));
+            const bool bCoastalReliefCandidate = ResolvedNoise->UsesCoastalReliefCandidate();
             TArray<FVector> Directions;
             for (const auto& V : Section->ProcVertexBuffer) Directions.Add(V.Position.GetSafeNormal());
             TArray<double> Depths; Depths.SetNumUninitialized(Directions.Num());
@@ -247,7 +250,8 @@ public:
                 {
                     const FVector D = Directions[I];
                     const double Height = UAPSWorldScapePlanetNoise::SampleHeightResolvedProfile(
-                        Profile, Noise, DVector(D * Radius), DVector(0.0), NoiseScale, Intensity, Radius, D.Z);
+                        Profile, Noise, DVector(D * Radius), DVector(0.0), NoiseScale, Intensity, Radius, D.Z,
+                        bCoastalReliefCandidate);
                     Depths[I] = (Sea - Height) / 100000.0;
                 }
             });

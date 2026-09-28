@@ -411,8 +411,10 @@ FNoiseData UAPSWorldScapePlanetNoise::EvaluateProfile(
 	{
 		const double RegionalCoastDelta = PhysicalBandWeight * GroundRegional * 0.0200 * GroundRegionalShape
 			* GroundBroadLandformBoost * GroundSurfaceMask;
+		const double MidCoastDelta = PhysicalBandWeight * GroundRelief * 0.0280 * GroundRoughness
+			* GroundBroadLandformBoost * GroundSurfaceMask;
 		CoastalHeightDelta = APSCoastalRelief::Height(PrePhysicalHeight, RegionalCoastDelta,
-			HeightNormalized, static_cast<double>(SurfaceProfile.OceanLevel), SignedLand) - HeightNormalized;
+			HeightNormalized, static_cast<double>(SurfaceProfile.OceanLevel), SignedLand, MidCoastDelta) - HeightNormalized;
 	}
 	// Keep orbital colour classification on a deliberately low-pass terrain field.
 	// Feeding physical displacement or preset deformation into vertex R turns real

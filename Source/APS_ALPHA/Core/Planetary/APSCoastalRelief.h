@@ -14,11 +14,16 @@ namespace APSCoastalRelief
                 || P.PlanetType == EPlanetType::Water || P.PlanetType == EPlanetType::Oasis);
     }
 
-    inline double Height(double Macro, double RegionalDelta, double Detailed, double Sea, double SignedLand)
+    inline double Height(double Macro, double RegionalDelta, double Detailed, double Sea,
+        double SignedLand, double CoastalDetailDelta = 0.0)
     {
         const double Distance = FMath::Abs(SignedLand);
         if (Distance >= 0.12) return Detailed; // bit-exact interior/deep-ocean path
-        const double Base = Macro + RegionalDelta * 0.35;
+        // Retain a small amount of the existing 4km landform to give the beach
+        // coves at kilometre scale. V1 used only the 18km band and rendered as an
+        // excessively smooth arc at 2km altitude. The 1.8km..60m detail still
+        // cannot puncture this shoreline. A zero detail argument reproduces V1.
+        const double Base = Macro + RegionalDelta * 0.35 + CoastalDetailDelta * 0.10;
         const double Delta = Detailed - Base;
         const double Budget = FMath::Abs(Base - Sea) * 0.65;
         // Smooth saturation (no clipped terraces). At the broad shoreline the

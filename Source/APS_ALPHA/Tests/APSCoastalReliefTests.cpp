@@ -11,6 +11,15 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAPSCoastalReliefBounds,
 bool FAPSCoastalReliefBounds::RunTest(const FString& Parameters)
 {
     for (double Sea : {-0.15, 0.0, 0.15})
+    {
+        TestTrue(TEXT("Medium-scale inlet survives opposing fine detail"),
+            APSCoastalRelief::Height(Sea, 0.0, Sea + 0.05, Sea, 0.0, -0.01) < Sea);
+        TestTrue(TEXT("Medium-scale headland survives opposing fine detail"),
+            APSCoastalRelief::Height(Sea, 0.0, Sea - 0.05, Sea, 0.0, 0.01) > Sea);
+        TestTrue(TEXT("Medium-scale contribution cannot alter inland heights"),
+            APSCoastalRelief::Height(Sea, 0.0, Sea + 0.04, Sea, 0.12, 0.01) == Sea + 0.04);
+    }
+    for (double Sea : {-0.15, 0.0, 0.15})
         for (double Offset : {-0.004, -0.000001, 0.0, 0.000001, 0.004})
             for (double Detail : {-0.1, -0.01, 0.0, 0.01, 0.1})
             {
@@ -72,6 +81,8 @@ bool FAPSCoastalReliefField::RunTest(const FString& Parameters)
             int32 Changed = 0;
             UAPSWorldScapePlanetNoise* Instance = NewObject<UAPSWorldScapePlanetNoise>(World);
             Instance->Configure(P, false, true);
+            const bool bSnapshotCoastal = Instance->UsesCoastalReliefCandidate();
+            TestEqual(TEXT("Snapshot carries the actual eligible field flag"), bSnapshotCoastal, bEligible);
             for (int32 I = 0; I < 1024; ++I)
             {
                 const double Z = 1.0 - 2.0 * (I + 0.5) / 1024.0, R = FMath::Sqrt(1.0 - Z * Z);
@@ -82,9 +93,15 @@ bool FAPSCoastalReliefField::RunTest(const FString& Parameters)
                     Scale, Intensity, Radius, D.Z, NP);
                 const FNoiseData Worker = Instance->GetNoise(N, DVector(D * Radius), DVector(0.0),
                     Scale, Intensity, Radius, false, D.Z, NP, FNoiseData(), true);
+                const FNoiseData Snapshot = UAPSWorldScapePlanetNoise::SampleResolvedProfile(P, N,
+                    DVector(D * Radius), DVector(0.0), Scale, Intensity, Radius, D.Z, NP, bSnapshotCoastal);
                 const FNoiseData OldFull = UAPSWorldScapePlanetNoise::SampleResolvedProfile(P, N,
                     DVector(D * Radius), DVector(0.0), Scale, Intensity, Radius, D.Z, NP, false);
                 TestTrue(TEXT("Worker and immutable sampler share the candidate"), Worker.Height == Full.Height);
+                TestTrue(TEXT("Orbital snapshot retains the same field and material channels"),
+                    Snapshot.Height == Worker.Height && Snapshot.HeightNormalize == Worker.HeightNormalize
+                    && Snapshot.Temperature == Worker.Temperature && Snapshot.Humidity == Worker.Humidity
+                    && Snapshot.WaterMask == Worker.WaterMask && Snapshot.FoliageMask == Worker.FoliageMask);
                 TestTrue(TEXT("Accepted palette and climate unchanged"), OldFull.HeightNormalize == Full.HeightNormalize
                     && OldFull.Temperature == Full.Temperature && OldFull.Humidity == Full.Humidity);
                 MaxError = FMath::Max(MaxError, FMath::Abs(Full.Height - Candidate));
