@@ -1,6 +1,7 @@
 #pragma once
 #if WITH_EDITOR
 #include "APSSharedWaterMaterialBuilder.h"
+#include "APS_ALPHA/Core/Planetary/APSWaterDepthPalette.h"
 #include "Materials/MaterialExpressionTextureCoordinate.h"
 #include "Materials/MaterialExpressionCustom.h"
 #include "Materials/MaterialExpressionDDX.h"
@@ -14,7 +15,7 @@ inline bool Build(IAssetTools& AssetTools, bool bFiltered = false)
     using FCore = APSSharedTerrainMaterialBuilder::FBuild;
     using namespace APSSharedAmmoniaMaterialBuilder;
     const TCHAR* Folder = bFiltered
-        ? TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Diagnostics/WaterDepthFiltered20260927")
+        ? TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Diagnostics/WaterDepthFiltered20260928")
         : TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Diagnostics/WaterDepth20260927");
     FCore Core(AssetTools, Folder);
     auto Fail = [&Core](const TCHAR* Why)
@@ -29,6 +30,16 @@ inline bool Build(IAssetTools& AssetTools, bool bFiltered = false)
         || !SavedSourceMatches(Water, TEXT("30ADFAAAF2EB11B5E4D30299FA886A67861E8CC8"))
         || Water->Parent.Get() != Source || Source->GetBlendMode() != BLEND_Masked)
         return Fail(TEXT("Accepted saved Water dependencies changed"));
+    float FilteredStrength = 0.0f;
+    if (bFiltered)
+    {
+        FLinearColor Deep, Shallow;
+        if (!Water->GetVectorParameterValue(FMaterialParameterInfo(TEXT("LiquidDeepColor")), Deep)
+            || !Water->GetVectorParameterValue(FMaterialParameterInfo(TEXT("LiquidShallowColor")), Shallow)
+            || !APSWaterDepthPalette::ResolveStrength(Deep, Shallow,
+                APSWaterDepthPalette::DefaultRelativeBudget, FilteredStrength))
+            return Fail(TEXT("Cannot resolve bounded response from the actual saved Water palette"));
+    }
     auto* Master = Cast<UMaterial>(Core.Duplicate(Source, TEXT("M_APS_WaterDepth")));
     if (!Master) return Fail(TEXT("New master only"));
 
@@ -57,11 +68,11 @@ inline bool Build(IAssetTools& AssetTools, bool bFiltered = false)
     if (!UV || !Strength || !HalfDepth || !Alpha) return Fail(TEXT("Depth expressions could not be allocated"));
     UV->CoordinateIndex = 1;
     Strength->ParameterName = TEXT("APS_WaterDepthStrength");
-    Strength->DefaultValue = bFiltered ? 0.35f : 0.65f;
+    Strength->DefaultValue = bFiltered ? FilteredStrength : 0.65f;
     Strength->SliderMin = 0.0f; Strength->SliderMax = 1.0f;
     Strength->UpdateParameterGuid(true, true);
     HalfDepth->ParameterName = TEXT("APS_WaterHalfDepthM");
-    HalfDepth->DefaultValue = bFiltered ? 20.0f : 80.0f;
+    HalfDepth->DefaultValue = bFiltered ? APSWaterDepthPalette::DefaultHalfDepthM : 80.0f;
     HalfDepth->SliderMin = 1.0f; HalfDepth->SliderMax = 500.0f;
     HalfDepth->UpdateParameterGuid(true, true);
     Alpha->OutputType = CMOT_Float1;

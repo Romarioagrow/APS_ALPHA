@@ -97,3 +97,33 @@ near-coast relief, mesh resolution/coverage, optical depth, or more than one.
   explicitly scope a production candidate after the first comparison.
 - Still open: shoreline fragmentation/angular edges, physical shallow-water
   transition, other family coverage, atmosphere and live-flight performance.
+
+## Palette-depth source preparation (not built, baked or rendered)
+
+The filtered depth builder now reuses the bounded palette response previously
+measured in the private water-depth experiment. It resolves a uniform strength
+from the actual deep/shallow colours with a 35% relative **linear palette
+luminance** budget and a 20m half-depth. This is not a bound on final lighting,
+tone mapping or brightness in captured pixels. It does not change normals,
+roughness, light setup, endpoints, coverage or geometry. A float rounding guard
+keeps the resolved strength on the conservative side of the bound. Invalid
+palettes fail closed; equal-luminance/black endpoints give zero strength.
+
+The new diagnostic output folder is `Diagnostics/WaterDepthFiltered20260928`.
+Historical 20260927 packages and production Water/Ammonia packages remain
+untouched. The PLANET depth probe now defaults to this filtered/budgeted route
+when explicitly requested, copies the actual baseline's material uniforms and
+resolves its strength from that palette. An explicit diagnostic strength still
+overrides the budget and is logged as unbudgeted. The unfiltered historical
+route is unchanged. Neither route is selected in ordinary gameplay.
+
+Added `APS.Gameplay.World.PlanetSurface.WaterDepth.PaletteBounds` covers 12,100
+combinations plus invalid inputs, but has NOT been compiled/run in this revision.
+The shared production source hashes were rechecked unchanged:
+`M_APS_SharedAmmonia=91EA9BB6BAD5DE82BD29594B259DE4D94D52CCFC`,
+`MI_APS_SharedWater=30ADFAAAF2EB11B5E4D30299FA886A67861E8CC8` (SHA1).
+
+This preparation does not install the old private WorldScape UV1 worker overlay:
+that overlay includes rejected ripple/lighting experiments and a wider ABI
+change. Live physical depth delivery/performance, the new candidate bake and
+paired rendered acceptance remain required before production publication.

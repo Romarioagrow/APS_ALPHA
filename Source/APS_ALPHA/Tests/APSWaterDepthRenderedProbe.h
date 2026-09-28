@@ -1,5 +1,6 @@
 #pragma once
 #if WITH_DEV_AUTOMATION_TESTS
+#include "APS_ALPHA/Core/Planetary/APSWaterDepthPalette.h"
 #include "APS_ALPHA/Actors/Astro/Planet.h"
 #include "APS_ALPHA/Generation/APSWorldScapePlanetNoise.h"
 #include "APS_ALPHA/Generation/PlanetarySurfaceGenerator.h"
@@ -67,6 +68,7 @@ class FProbe
     int32 Step = 0;
     double Next = 0, Scale = 0;
     float Strength = 0.65f, HalfDepthM = 80.0f;
+    bool bExplicitStrength = false;
     EPlanetType ExpectedType = EPlanetType::Ocean;
     bool bFamilyValid = false;
     FTransform PairCamera, PairMesh;
@@ -137,7 +139,8 @@ class FProbe
 public:
     FProbe()
     {
-        FParse::Value(FCommandLine::Get(), TEXT("APSWaterDepthStrength="), Strength);
+        if (Filtered()) HalfDepthM = APSWaterDepthPalette::DefaultHalfDepthM;
+        bExplicitStrength = FParse::Value(FCommandLine::Get(), TEXT("APSWaterDepthStrength="), Strength);
         FParse::Value(FCommandLine::Get(), TEXT("APSWaterHalfDepthM="), HalfDepthM);
         FString Family = TEXT("Ocean");
         FParse::Value(FCommandLine::Get(), TEXT("APSPlanetProbeFamily="), Family);
@@ -184,15 +187,29 @@ public:
             Original.Reset(Ocean->GetMaterial(0));
             if (!APSSharedGeneratedLiquidMaterial::HasSavedParameterAuthority(Original.Get(), EAPSPlanetLiquidType::Water))
                 return Fail(TEXT("Actual baseline is not the accepted Water family"));
+            if (Filtered() && !bExplicitStrength)
+            {
+                FLinearColor Deep, Shallow;
+                if (!Original->GetVectorParameterValue(FMaterialParameterInfo(TEXT("LiquidDeepColor")), Deep)
+                    || !Original->GetVectorParameterValue(FMaterialParameterInfo(TEXT("LiquidShallowColor")), Shallow)
+                    || !APSWaterDepthPalette::ResolveStrength(Deep, Shallow,
+                        APSWaterDepthPalette::DefaultRelativeBudget, Strength))
+                    return Fail(TEXT("Actual Water palette cannot support a bounded depth response"));
+            }
             const FString Folder = Filtered()
-                ? TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Diagnostics/WaterDepthFiltered20260927/")
+                ? TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Diagnostics/WaterDepthFiltered20260928/")
                 : TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Diagnostics/WaterDepth20260927/");
             auto* Template = LoadObject<UMaterialInstance>(nullptr, *(Folder + TEXT("MI_APS_WaterDepth.MI_APS_WaterDepth")));
             if (!Template || !Template->GetMaterial() || Template->GetMaterial()->GetPathName() !=
                 Folder + TEXT("M_APS_WaterDepth.M_APS_WaterDepth"))
                 return Fail(TEXT("Exact saved depth candidate absent"));
             Candidate.Reset(UMaterialInstanceDynamic::Create(Template, Ocean.Get()));
-            UE_LOG(LogTemp, Display, TEXT("[APS.WaterDepthCandidate] filtered=%d template=%s"), int(Filtered()), *Template->GetPathName());
+            if (!Candidate.IsValid()) return Fail(TEXT("Depth MID creation failed"));
+            // Use the exact actual baseline endpoints/PBR/waves, not just the
+            // saved template defaults. Depth strength is resolved from this palette.
+            if (Filtered()) Candidate->CopyMaterialUniformParameters(Original.Get());
+            UE_LOG(LogTemp, Display, TEXT("[APS.WaterDepthCandidate] filtered=%d paletteBudgeted=%d strength=%.9g halfDepthM=%.9g template=%s"),
+                int(Filtered()), int(Filtered() && !bExplicitStrength), Strength, HalfDepthM, *Template->GetPathName());
             ViewEvidence = FSceneViewExtensions::NewExtension<FViewEvidence>(Ocean->GetWorld());
         }
         if (InGenerator != Generator.Get() || InGenerator->GetActivePreviewOceanProxy() != Ocean.Get())
