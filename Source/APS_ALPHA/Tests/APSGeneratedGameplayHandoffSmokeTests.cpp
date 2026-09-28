@@ -4,6 +4,7 @@
 #include "Tests/AutomationCommon.h"
 #include "APSSharedLavaCoverageProbe.h"
 #include "APSSharedTerrainLodABProbe.h"
+#include "APSWaterNormalABProbe.h"
 #include "APSLavaCoverageOrbit.h"
 #include "APSUserGreenhouseReference.h"
 
@@ -1908,16 +1909,23 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			DiagnosticOrbitOriginalPawnOffset = Pawn->GetActorLocation() - Root->GetActorLocation();
 			DiagnosticOrbitOutward = DiagnosticOrbitOriginalPawnOffset.GetSafeNormal();
 			DiagnosticOrbitOutward.FindBestAxisVectors(DiagnosticOrbitTangentU, DiagnosticOrbitTangentV);
+			const bool bWaterAB = APSWaterNormalAB::Enabled();
+			if (bWaterAB)
+			{
+				FString WaterError;
+				if (!APSWaterNormalAB::SelectView(Root, DiagnosticOrbitOutward, DiagnosticOrbitTangentU, WaterError)) return Fail(WaterError);
+				DiagnosticOrbitTangentV = FVector::CrossProduct(DiagnosticOrbitOutward, DiagnosticOrbitTangentU).GetSafeNormal();
+			}
 			FString HeightText;
-			const double MinimumHeightKm = FParse::Param(FCommandLine::Get(), TEXT("APSProbeMacroAB")) ? 0.1 : 10.0;
+			const double MinimumHeightKm = bWaterAB ? 0.002 : FParse::Param(FCommandLine::Get(), TEXT("APSProbeMacroAB")) ? 0.1 : 10.0;
 			if (FParse::Value(FCommandLine::Get(), TEXT("APSDiagnosticOrbitHeightKm="), HeightText)
 				&& (!FDefaultValueHelper::ParseDouble(HeightText, DiagnosticOrbitHeightKm)
 					|| !FMath::IsFinite(DiagnosticOrbitHeightKm) || DiagnosticOrbitHeightKm < MinimumHeightKm || DiagnosticOrbitHeightKm > 10000.0))
 			{
-				return Fail(TEXT("APSDiagnosticOrbitHeightKm out of range; minimum 10km, or 0.1km for macro near-control only"));
+				return Fail(TEXT("APSDiagnosticOrbitHeightKm out of range; minimum 10km, 0.1km for macro, or 0.002km above sea for water A/B"));
 			}
-			DiagnosticOrbitRadiusCm = Root->PlanetScale + Root->GetGroundHeight(
-				Root->GetActorLocation() + DiagnosticOrbitOutward * Root->PlanetScale, false) + DiagnosticOrbitHeightKm * 100000.0;
+			DiagnosticOrbitRadiusCm = Root->PlanetScale + (bWaterAB ? double(Root->OceanHeight) : Root->GetGroundHeight(
+				Root->GetActorLocation() + DiagnosticOrbitOutward * Root->PlanetScale, false)) + DiagnosticOrbitHeightKm * 100000.0;
 			if (UCapsuleComponent* Capsule = FindPawnCapsule(Pawn))
 			{
 				DiagnosticOrbitOriginalVelocity = Capsule->GetPhysicsLinearVelocity();
@@ -1955,6 +1963,7 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 
 		void RestoreDiagnosticOrbitOverview()
 		{
+			DiagnosticWaterAB.Restore();
 			DiagnosticLodAB.Restore();
 			ACameraActor* Camera = DiagnosticOrbitCamera.Get();
 			UWorld* World = GameplayWorld.Get();
@@ -2003,6 +2012,7 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			}
 			const bool bLodAB = FParse::Param(FCommandLine::Get(), TEXT("APSDiagnosticTerrainLodAB"));
 			const bool bMacroAB = FParse::Param(FCommandLine::Get(), TEXT("APSProbeMacroAB"));
+			const bool bWaterAB = APSWaterNormalAB::Enabled();
 			FString LodABError;
 			const auto LodABReadiness = bLodAB ? DiagnosticLodAB.PrepareCandidate(World, LodABError)
 				: APSSharedTerrainLodAB::ECandidateReadiness::Ready;
@@ -2044,6 +2054,7 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			const bool bReady = Planet->bWorldScapeSurfaceReady && !Root->IsHidden()
 				&& Root->WorldScapeLodInGeneration.Num() == 0 && Root->WorldScapeLod.Num() >= Root->MaxLod
 				&& IncompleteLods == 0 && PresentedLods > 0 && ObserverDelta < 1000.0
+				&& (!bWaterAB || APSWaterNormalAB::IsSettled(Surface))
 				&& FVector::Distance(PC->PlayerCameraManager->GetCameraLocation(), Position) < 1000.0
 				&& PC->PlayerCameraManager->GetCameraRotation().Equals(Rotation, 0.1f);
 			DiagnosticOrbitStableFrames = bReady ? DiagnosticOrbitStableFrames + 1 : 0;
@@ -2078,6 +2089,12 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 				}
 			}
 			if (bLodAB && !DiagnosticLodAB.Validate(LodABError)) return Fail(LodABError);
+			if (bWaterAB && !DiagnosticWaterAB.IsActive())
+			{
+				if (!DiagnosticWaterAB.Begin(Surface, Planet, LodABError)) return Fail(LodABError);
+				StepStartSeconds = Now; DiagnosticOrbitStableFrames = 0; return false;
+			}
+			if (bWaterAB && !DiagnosticWaterAB.Validate(LodABError)) return Fail(LodABError);
 			FString NormalRangeError;
 			bool bNormalRangeChanged = false;
 			if (!ApplyDiagnosticNormalRange(Root, NormalRangeError, bNormalRangeChanged)) return Fail(NormalRangeError);
@@ -2085,6 +2102,7 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			FString ViewLabel = DiagnosticOrbitViewIndex == 0 ? TEXT("OrbitNadir")
 				: DiagnosticOrbitViewIndex == 1 ? TEXT("OrbitOblique") : TEXT("OrbitLimb");
 			if (bLodAB) ViewLabel += FString(TEXT("_")) + DiagnosticLodAB.Label();
+			if (bWaterAB) ViewLabel += FString(TEXT("_")) + DiagnosticWaterAB.Label();
 			const TCHAR* ViewName = *ViewLabel;
 			if (bMacroAB)
 			{
@@ -2160,7 +2178,11 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 				StepStartSeconds = Now;
 				return false;
 			}
-			if (++DiagnosticOrbitViewIndex == (bMacroAB ? 3 : 2))
+			if (bWaterAB && DiagnosticWaterAB.Advance())
+			{
+				DiagnosticOrbitStableFrames = 0; StepStartSeconds = Now; return false;
+			}
+			if (++DiagnosticOrbitViewIndex == ((bMacroAB || bWaterAB) ? 3 : 2))
 			{
 				RestoreDiagnosticOrbitOverview();
 				Step = EStep::Cleanup;
@@ -7993,6 +8015,7 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 		APSLavaCoverageOrbit::FObserver LavaOrbitObserver;
 		TSharedPtr<IAutomationLatentCommand> LavaCoverageCommand;
 		APSSharedTerrainLodAB::FLease DiagnosticLodAB;
+		APSWaterNormalAB::FLease DiagnosticWaterAB;
 		TMap<TWeakObjectPtr<UMaterialInstanceDynamic>, FVector2D> DiagnosticNormalRangeOriginals;
 		TSharedPtr<FSurfaceDiagnosticView, ESPMode::ThreadSafe> DiagnosticView;
 		int32 DiagnosticCaptureIndex{0};
@@ -8221,6 +8244,26 @@ bool FAPSGeneratedSurfaceLightingDiagnosticsTest::RunTest(const FString& Paramet
 	const bool bLavaCoverage = bLavaCoverageOrbit || FParse::Param(FCommandLine::Get(), TEXT("APSLavaCoverage"));
 	const bool bSharedLiquidCoverage = FParse::Param(FCommandLine::Get(), TEXT("APSSharedLiquidCoverage"));
 	const bool bSharedLiquidCoverageOrbit = FParse::Param(FCommandLine::Get(), TEXT("APSSharedLiquidCoverageOrbit"));
+	const bool bWaterNormalAB = APSWaterNormalAB::Enabled();
+	FString UnusedWaterABValue;
+	if (bWaterNormalAB && (!FParse::Param(FCommandLine::Get(), TEXT("APSDiagnosticOrbitOverview"))
+		|| FParse::Param(FCommandLine::Get(), TEXT("APSDiagnosticTerrainLodAB"))
+		|| FParse::Param(FCommandLine::Get(), TEXT("APSProbeMacroAB"))
+		|| FParse::Param(FCommandLine::Get(), TEXT("APSProbeFarNormalAB"))
+		|| FParse::Param(FCommandLine::Get(), TEXT("APSProbeWaterDepth"))
+		|| FParse::Param(FCommandLine::Get(), TEXT("APSWaterIsolation"))
+		|| FParse::Param(FCommandLine::Get(), TEXT("APSDiagnosticWalkRunPerf"))
+		|| FParse::Param(FCommandLine::Get(), TEXT("APSDiagnosticOrbitFrame"))
+		|| FParse::Value(FCommandLine::Get(), TEXT("APSDiagnosticFarNormalStartKm="), UnusedWaterABValue)
+		|| FParse::Value(FCommandLine::Get(), TEXT("APSDiagnosticFarNormalEndKm="), UnusedWaterABValue)
+		|| bLavaCoverage || bSharedLiquidCoverage || bSharedLiquidCoverageOrbit || bUserGreenhouseReference
+		|| !(TypeName.Equals(TEXT("Water"), ESearchCase::IgnoreCase)
+			|| TypeName.Equals(TEXT("Terrestrial"), ESearchCase::IgnoreCase)
+			|| TypeName.Equals(TEXT("Oasis"), ESearchCase::IgnoreCase))))
+	{
+		AddError(TEXT("Water normal A/B requires isolated Water/Terrestrial/Oasis orbit route; no depth, terrain, lighting, coverage or perf overrides"));
+		return false;
+	}
 	if (FParse::Param(FCommandLine::Get(), TEXT("APSProbeMacroAB"))
 		&& (!FParse::Param(FCommandLine::Get(), TEXT("APSDiagnosticTerrainLodAB"))
 			|| !FParse::Param(FCommandLine::Get(), TEXT("APSDiagnosticOrbitOverview"))
@@ -8251,8 +8294,8 @@ bool FAPSGeneratedSurfaceLightingDiagnosticsTest::RunTest(const FString& Paramet
 		AddInfo(TEXT("[APS.GreenhouseReference] Exact user-model fixture and read-only coordinate diagnostics; natural production spawn, no relocation to reference outward, no material/geometry/light repair."));
 	}
 	if (TypeName.Equals(TEXT("Ice"), ESearchCase::IgnoreCase)) Type = EPlanetType::Ice;
-	else if (FParse::Param(FCommandLine::Get(), TEXT("APSProbeMacroAB")) && TypeName.Equals(TEXT("Oasis"), ESearchCase::IgnoreCase)) Type = EPlanetType::Oasis;
-	else if (FParse::Param(FCommandLine::Get(), TEXT("APSProbeMacroAB")) && TypeName.Equals(TEXT("Terrestrial"), ESearchCase::IgnoreCase)) Type = EPlanetType::Terrestrial;
+	else if ((bWaterNormalAB || FParse::Param(FCommandLine::Get(), TEXT("APSProbeMacroAB"))) && TypeName.Equals(TEXT("Oasis"), ESearchCase::IgnoreCase)) Type = EPlanetType::Oasis;
+	else if ((bWaterNormalAB || FParse::Param(FCommandLine::Get(), TEXT("APSProbeMacroAB"))) && TypeName.Equals(TEXT("Terrestrial"), ESearchCase::IgnoreCase)) Type = EPlanetType::Terrestrial;
 	else if (TypeName.Equals(TEXT("Frozen"), ESearchCase::IgnoreCase)) Type = EPlanetType::Frozen;
 	else if (bUserGreenhouseReference && TypeName.Equals(TEXT("Greenhouse"), ESearchCase::IgnoreCase)) Type = EPlanetType::Greenhouse;
 	else if (bLavaCoverage && TypeName.Equals(TEXT("Melted"), ESearchCase::IgnoreCase)) Type = EPlanetType::Melted;
