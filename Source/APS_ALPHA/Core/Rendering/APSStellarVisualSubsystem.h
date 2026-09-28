@@ -130,6 +130,12 @@ private:
 	FVector TargetStarLocation{FVector::ZeroVector};
 	FLinearColor TargetLightColor{FLinearColor::White};
 	FLinearColor SmoothedLightColor{FLinearColor::White};
+	/** Surface temperature of the target star (K) mapped for the key light; 6500 K is neutral. */
+	float TargetLightTemperature{6500.0f};
+	float SmoothedLightTemperature{6500.0f};
+	bool bCapturedOriginalTemperature{false};
+	bool bOriginalUseTemperature{false};
+	float OriginalTemperature{6500.0f};
 	float TargetLightIntensity{10.0f};
 	float SmoothedLightIntensity{10.0f};
 	float SearchElapsed{0.0f};

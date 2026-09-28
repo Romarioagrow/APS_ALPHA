@@ -16,6 +16,7 @@
 #include "Engine/PointLight.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
+#include "HAL/IConsoleManager.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 
@@ -195,6 +196,23 @@ void UAPSStellarVisualSubsystem::Tick(float DeltaTime)
 	if (!FMath::IsNearlyEqual(LightComponent->Intensity, SmoothedLightIntensity, 0.0005f))
 	{
 		LightComponent->SetIntensity(SmoothedLightIntensity);
+	}
+	if (!bCapturedOriginalTemperature)
+	{
+		bCapturedOriginalTemperature = true;
+		bOriginalUseTemperature = LightComponent->bUseTemperature;
+		OriginalTemperature = LightComponent->Temperature;
+		SmoothedLightTemperature = TargetLightTemperature;
+	}
+	SmoothedLightTemperature = bInitializeGeneratedLight ? TargetLightTemperature
+		: FMath::FInterpTo(SmoothedLightTemperature, TargetLightTemperature, DeltaTime, 1.3f);
+	if (!LightComponent->bUseTemperature)
+	{
+		LightComponent->SetUseTemperature(true);
+	}
+	if (!FMath::IsNearlyEqual(LightComponent->Temperature, SmoothedLightTemperature, 1.0f))
+	{
+		LightComponent->SetTemperature(SmoothedLightTemperature);
 	}
 	if (bInitializeGeneratedLight)
 	{
@@ -566,6 +584,13 @@ void UAPSStellarVisualSubsystem::UpdateGameplayStationFillLight(
 	{
 		FillComponent->SetAttenuationRadius(DesiredAttenuationRadius);
 	}
+	// Rio 2026-09-28: 28 blew station interiors out under the fixed exposure; live-tunable now.
+	static const IConsoleVariable* StationFill = IConsoleManager::Get().FindConsoleVariable(TEXT("aps.Lighting.StationFill"));
+	const float DesiredFillIntensity = StationFill ? FMath::Max(0.0f, StationFill->GetFloat()) : GameplayStationFillLightIntensity;
+	if (!FMath::IsNearlyEqual(FillComponent->Intensity, DesiredFillIntensity, 0.01f))
+	{
+		FillComponent->SetIntensity(DesiredFillIntensity);
+	}
 	const bool bStationChanged = GameplayFillStation.Get() != ContainingStation;
 	if (!FillComponent->IsVisible() || bStationChanged)
 	{
@@ -744,6 +769,7 @@ void UAPSStellarVisualSubsystem::ResolveNearestStar(const FVector& ObserverLocat
 	double BestDistanceSquared = TNumericLimits<double>::Max();
 	FVector BestLocation = FVector::ZeroVector;
 	FLinearColor BestColor = FLinearColor::White;
+	int32 BestTemperature = 0;
 	float BestLuminosity = 1.0f;
 	FString BestIdentity;
 	const AStar* BestMaterializedStar = nullptr;
@@ -766,6 +792,7 @@ void UAPSStellarVisualSubsystem::ResolveNearestStar(const FVector& ObserverLocat
 			BestDistanceSquared = DistanceSquared;
 			BestLocation = Star->GetActorLocation();
 			BestColor = UStarGenerator::GetStarColor(Star->SpectralClass, Star->SpectralSubclass);
+			BestTemperature = Star->SurfaceTemperature;
 			BestLuminosity = Star->Luminosity;
 			BestIdentity = Star->GetPathName();
 			BestMaterializedStar = Star;
@@ -815,6 +842,7 @@ void UAPSStellarVisualSubsystem::ResolveNearestStar(const FVector& ObserverLocat
 					ClosestClusterRecord->PrimaryStarModel.SpectralClass,
 					ClosestClusterRecord->PrimaryStarModel.SpectralSubclass);
 				BestLuminosity = ClosestClusterRecord->PrimaryStarModel.Luminosity;
+				BestTemperature = ClosestClusterRecord->PrimaryStarModel.SurfaceTemperature;
 				BestIdentity = ClosestClusterRecord->StableId.ToString(
 					EGuidFormats::DigitsWithHyphensLower);
 			}
@@ -849,8 +877,24 @@ void UAPSStellarVisualSubsystem::ResolveNearestStar(const FVector& ObserverLocat
 			TEXT("[APS.StellarLighting.EmitterShadow] generator=%s activeStar=%s photosphere=%s castShadow=0; emitting sphere must not occlude its own directional key"),
 			*GetNameSafe(GeneratedWorld), *BestIdentity, *GetPathNameSafe(BestMaterializedStar->StarMesh));
 	}
-	// Keep spectral identity readable without tinting the whole scene into an accessibility problem.
-	TargetLightColor = FMath::Lerp(FLinearColor::White, BestColor.GetClamped(), 0.38f);
+	// Rio 2026-09-28: the key takes the generated star's own colour temperature. It moves from neutral
+	// 6500 K towards the star in mired space by aps.Lighting.StarKelvinStrength, so an M dwarf reads warm
+	// and an O/B star cool without drowning the scene; aps.Lighting.StarKelvin 0 restores the old tint.
+	static const IConsoleVariable* StarKelvin = IConsoleManager::Get().FindConsoleVariable(TEXT("aps.Lighting.StarKelvin"));
+	static const IConsoleVariable* StarKelvinStrength = IConsoleManager::Get().FindConsoleVariable(TEXT("aps.Lighting.StarKelvinStrength"));
+	if (BestTemperature > 0 && (!StarKelvin || StarKelvin->GetInt() != 0))
+	{
+		const double Strength = StarKelvinStrength ? FMath::Clamp(StarKelvinStrength->GetFloat(), 0.0f, 1.0f) : 0.75;
+		const double Mired = FMath::Lerp(1.0e6 / 6500.0, 1.0e6 / FMath::Max(BestTemperature, 1000), Strength);
+		TargetLightTemperature = static_cast<float>(FMath::Clamp(1.0e6 / Mired, 1700.0, 12000.0));
+		TargetLightColor = FLinearColor::White;
+	}
+	else
+	{
+		TargetLightTemperature = 6500.0f;
+		// Keep spectral identity readable without tinting the whole scene into an accessibility problem.
+		TargetLightColor = FMath::Lerp(FLinearColor::White, BestColor.GetClamped(), 0.38f);
+	}
 	TargetLightColor.A = 1.0f;
 	TargetLightIntensity = 9.0f + FMath::Clamp(
 		FMath::LogX(10.0f, FMath::Max(BestLuminosity, 0.0f) + 1.0f) * 1.8f, 0.0f, 9.0f);

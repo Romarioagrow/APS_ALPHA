@@ -27,6 +27,8 @@
 #include "Engine/GameViewportClient.h"
 #include "Engine/SkeletalMesh.h"
 #include "Engine/StaticMesh.h"
+#include "PhysicsEngine/BodySetup.h"
+#include "HAL/IConsoleManager.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "GameFramework/PlayerController.h"
 #include "Camera/PlayerCameraManager.h"
@@ -1255,8 +1257,12 @@ void ASpaceship::UpdatePilotFillLightVisibility()
 	{
 		// The private fill is a readability fallback for interplanetary darkness,
 		// not a replacement for physically meaningful local star/planet lighting.
+		// Rio 2026-09-28: this fill lit only the piloted ship, so it read white next to black
+		// neighbours. The object fill (aps.Lighting.ObjectFill) now lights every ship alike.
+		static const IConsoleVariable* PilotFill = IConsoleManager::Get().FindConsoleVariable(TEXT("aps.Lighting.PilotFill"));
 		const bool bShouldUseFill = IsValid(Pilot)
-			&& CurrentFlightEnvironment == EShipFlightEnvironment::DeepSpace;
+			&& CurrentFlightEnvironment == EShipFlightEnvironment::DeepSpace
+			&& PilotFill && PilotFill->GetInt() != 0;
 		PilotFillPointLight->SetVisibility(bShouldUseFill, true);
 	}
 }
