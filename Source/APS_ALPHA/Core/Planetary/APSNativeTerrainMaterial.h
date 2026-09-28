@@ -3,6 +3,7 @@
 #include "APSPlanetSurfaceProfile.h"
 #include "APSLivingTerrainPalette.h"
 #include "APSLivingBiomeTransfer.h"
+#include "APSOrbitalMacroVariation.h"
 #include "HAL/IConsoleManager.h"
 #include "Components/SceneComponent.h"
 #include "Misc/CoreDelegates.h"
@@ -167,6 +168,8 @@ namespace APSNativeTerrainMaterial
 		{
 			Material->SetScalarParameterValue(TEXT("APS_FarNormalStartCm"), 200000.0f);
 			Material->SetScalarParameterValue(TEXT("APS_FarNormalEndCm"), 2000000.0f);
+			Material->SetScalarParameterValue(TEXT("APS_OrbitalMacroMode"),
+				APSOrbitalMacroVariation::Allows(Profile.PlanetType) ? 1.0f : 0.0f);
 		}
         // Retain template texture sizes and all other layer/normal transfers.
         // The APS simplified graph's HeightContrast/WarpedScale controls are not

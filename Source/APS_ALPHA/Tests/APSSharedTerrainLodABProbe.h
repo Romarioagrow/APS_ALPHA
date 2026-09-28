@@ -60,6 +60,7 @@ namespace APSSharedTerrainLodAB
         bool bCandidateCompileRequested = false;
         bool bFarNormalCompileRequested = false;
         const bool bFarNormalAB = FParse::Param(FCommandLine::Get(), TEXT("APSProbeFarNormalAB"));
+        const bool bMacroAB = FParse::Param(FCommandLine::Get(), TEXT("APSProbeMacroAB"));
         FTransform RootTransform;
         bool bFrozen = false, bRootTick = false, bSurfaceTick = false, bBodyTick = false, bLeased = false;
         int32 Phase = 0;
@@ -120,9 +121,12 @@ namespace APSSharedTerrainLodAB
             Error.Reset();
             if (!IsValid(World))
             { Error = TEXT("LOD A/B candidate warmup has no world"); return ECandidateReadiness::Failed; }
+            if (bMacroAB && bFarNormalAB)
+            { Error = TEXT("Macro and far-normal comparisons must be isolated"); return ECandidateReadiness::Failed; }
             if (!CandidateTemplate.IsValid())
                 CandidateTemplate.Reset(LoadObject<UMaterialInstance>(nullptr,
-                    TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Diagnostics/LodPixelAB/MI_APS_LodPixelTerra.MI_APS_LodPixelTerra")));
+                    bMacroAB ? TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Diagnostics/MacroAB20260928V2/MI_APS_MacroTerra.MI_APS_MacroTerra")
+                        : TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Diagnostics/LodPixelAB/MI_APS_LodPixelTerra.MI_APS_LodPixelTerra")));
             if (!CandidateTemplate.IsValid())
             { Error = TEXT("LOD A/B candidate missing; run OnlySharedTerrainLodAB first"); return ECandidateReadiness::Failed; }
             FMaterialResource* Resource = CandidateTemplate->GetMaterialResource(World->GetFeatureLevel());
@@ -157,6 +161,8 @@ namespace APSSharedTerrainLodAB
         }
         const TCHAR* Label() const
         {
+            if (bMacroAB) return Phase == 0 ? TEXT("Macro0Native") : Phase == 1 ? TEXT("Macro1Control")
+                : Phase == 2 ? TEXT("Macro2Mean") : TEXT("Macro3Aperiodic");
             return Phase == 0 ? TEXT("AB0Native") : Phase == 1 ? TEXT("AB1RadialMeshNormals")
                 : Phase == 2 ? TEXT("AB2PixelInterpolators") : TEXT("AB3PhysicalFarNormal");
         }
@@ -232,11 +238,12 @@ namespace APSSharedTerrainLodAB
                 auto* Mesh = S.Mesh.Get();
                 const auto* Section = Mesh ? Mesh->GetProcMeshSection(S.Index) : nullptr;
                 if (!Section || !Mesh->GetComponentTransform().Equals(S.Transform) || PayloadHash(*Section, false) != S.Payload
-                    || (Phase != 1 && PayloadHash(*Section, true) != S.FullPayload)
-                    || Mesh->GetMaterial(S.Index) != (Phase == 3 ? static_cast<UMaterialInterface*>(S.FarNormalMaterial.Get())
+                    || ((bMacroAB || Phase != 1) && PayloadHash(*Section, true) != S.FullPayload)
+                    || Mesh->GetMaterial(S.Index) != (bMacroAB ? (Phase == 0 ? S.Material.Get() : static_cast<UMaterialInterface*>(S.PixelMaterial.Get()))
+                        : Phase == 3 ? static_cast<UMaterialInterface*>(S.FarNormalMaterial.Get())
                         : Phase == 2 ? static_cast<UMaterialInterface*>(S.PixelMaterial.Get()) : S.Material.Get()))
                 { Error = TEXT("LOD A/B actual mesh payload/material/transform drifted"); return false; }
-                if (Phase == 1)
+                if (!bMacroAB && Phase == 1)
                     for (int32 I = 0; I < S.RadialNormals.Num(); ++I)
                         if (Section->PlanetVertexBuffer[I].Normal != S.RadialNormals[I])
                         { Error = TEXT("LOD A/B analytical radial normals were not published"); return false; }
@@ -248,6 +255,17 @@ namespace APSSharedTerrainLodAB
         bool Advance()
         {
             if (!bLeased) return false;
+            if (bMacroAB)
+            {
+                if (++Phase > 3) { Restore(); return false; }
+                for (FSlot& S : Slots)
+                {
+                    S.PixelMaterial->SetScalarParameterValue(TEXT("APS_OrbitalMacroMode"), Phase == 1 ? 0.0f : Phase == 2 ? 2.0f : 1.0f);
+                    if (auto* Mesh = S.Mesh.Get()) Mesh->SetMaterial(S.Index, S.PixelMaterial.Get());
+                }
+                UE_LOG(LogTemp, Display, TEXT("[APS.MacroAB] phase=%s; full mesh payload and physical frame unchanged"), Label());
+                return true;
+            }
             if (++Phase == 1)
                 for (FSlot& S : Slots) WriteNormals(S, S.RadialNormals);
             else if (Phase == 2)
@@ -276,7 +294,8 @@ namespace APSSharedTerrainLodAB
                     // Never replace a concurrently regenerated payload with an old
                     // snapshot. Such a run fails Validate and is not A/B evidence.
                     const auto* Before = Mesh->GetProcMeshSection(S.Index);
-                    if (Before && PayloadHash(*Before, false) == S.Payload) WriteNormals(S, S.Normals);
+                    if (Before && PayloadHash(*Before, false) == S.Payload)
+                    { if (!bMacroAB) WriteNormals(S, S.Normals); }
                     else UE_LOG(LogTemp, Error, TEXT("[APS.LodAB] Payload drifted; refused stale normal/position restore mesh=%s slot=%d"), *Mesh->GetPathName(), S.Index);
                     Mesh->SetMaterial(S.Index, S.Material.Get());
                     const auto* Section = Mesh->GetProcMeshSection(S.Index);

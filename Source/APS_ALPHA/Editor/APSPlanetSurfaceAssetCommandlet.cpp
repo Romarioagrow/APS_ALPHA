@@ -60,6 +60,7 @@
 #include "APSSharedWaterMaterialBuilder.h"
 #include "APSWaterDepthMaterialBuilder.h"
 #include "APSSharedTerrainLodABBuilder.h"
+#include "APSSharedTerrainMacroABBuilder.h"
 #include "APSSharedTerrainFarNormalABBuilder.h"
 #include "APSSharedTerrainNormalUpdate.h"
 #include "APSSharedTerrainDetailPrecisionUpdate.h"
@@ -2371,6 +2372,14 @@ int32 UAPSPlanetSurfaceAssetCommandlet::Main(const FString& Params)
 		return 8;
 	}
 	IAssetTools& AssetTools = FModuleManager::LoadModuleChecked<FAssetToolsModule>(TEXT("AssetTools")).Get();
+	if (FParse::Param(*Params, TEXT("OnlySharedTerrainMacroAB")))
+	{
+		return APSSharedTerrainMacroABBuilder::Build(AssetTools) ? 0 : 23;
+	}
+	if (FParse::Param(*Params, TEXT("OnlyInstallSharedTerrainMacroV2")))
+	{
+		return APSSharedTerrainMacroABBuilder::Promote(AssetTools) ? 0 : 24;
+	}
 	if (FParse::Param(*Params, TEXT("OnlyUpdateSharedLavaAntiGrid")))
 	{
 		// Explicit offline rebake: new owned WAT + existing shared master only.

@@ -1909,11 +1909,12 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			DiagnosticOrbitOutward = DiagnosticOrbitOriginalPawnOffset.GetSafeNormal();
 			DiagnosticOrbitOutward.FindBestAxisVectors(DiagnosticOrbitTangentU, DiagnosticOrbitTangentV);
 			FString HeightText;
+			const double MinimumHeightKm = FParse::Param(FCommandLine::Get(), TEXT("APSProbeMacroAB")) ? 0.1 : 10.0;
 			if (FParse::Value(FCommandLine::Get(), TEXT("APSDiagnosticOrbitHeightKm="), HeightText)
 				&& (!FDefaultValueHelper::ParseDouble(HeightText, DiagnosticOrbitHeightKm)
-					|| !FMath::IsFinite(DiagnosticOrbitHeightKm) || DiagnosticOrbitHeightKm < 10.0 || DiagnosticOrbitHeightKm > 10000.0))
+					|| !FMath::IsFinite(DiagnosticOrbitHeightKm) || DiagnosticOrbitHeightKm < MinimumHeightKm || DiagnosticOrbitHeightKm > 10000.0))
 			{
-				return Fail(TEXT("APSDiagnosticOrbitHeightKm must be finite and within 10..10000 km"));
+				return Fail(TEXT("APSDiagnosticOrbitHeightKm out of range; minimum 10km, or 0.1km for macro near-control only"));
 			}
 			DiagnosticOrbitRadiusCm = Root->PlanetScale + Root->GetGroundHeight(
 				Root->GetActorLocation() + DiagnosticOrbitOutward * Root->PlanetScale, false) + DiagnosticOrbitHeightKm * 100000.0;
@@ -2001,12 +2002,13 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 				return Fail(TEXT("orbit overview lost its production world/root/pawn or leased camera"));
 			}
 			const bool bLodAB = FParse::Param(FCommandLine::Get(), TEXT("APSDiagnosticTerrainLodAB"));
+			const bool bMacroAB = FParse::Param(FCommandLine::Get(), TEXT("APSProbeMacroAB"));
 			FString LodABError;
 			const auto LodABReadiness = bLodAB ? DiagnosticLodAB.PrepareCandidate(World, LodABError)
 				: APSSharedTerrainLodAB::ECandidateReadiness::Ready;
 			if (LodABReadiness == APSSharedTerrainLodAB::ECandidateReadiness::Failed) return Fail(LodABError);
 			const FVector Position = Root->GetActorLocation() + DiagnosticOrbitOutward * DiagnosticOrbitRadiusCm;
-			const double Angle = FMath::DegreesToRadians(55.0);
+			const double Angle = FMath::DegreesToRadians(DiagnosticOrbitViewIndex == 2 ? 5.0 : 55.0);
 			const FVector Forward = DiagnosticOrbitViewIndex == 0 ? -DiagnosticOrbitOutward
 				: (DiagnosticOrbitTangentU * FMath::Cos(Angle) - DiagnosticOrbitOutward * FMath::Sin(Angle)).GetSafeNormal();
 			const FVector Up = DiagnosticOrbitViewIndex == 0 ? DiagnosticOrbitTangentV : DiagnosticOrbitOutward;
@@ -2045,7 +2047,14 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 				&& FVector::Distance(PC->PlayerCameraManager->GetCameraLocation(), Position) < 1000.0
 				&& PC->PlayerCameraManager->GetCameraRotation().Equals(Rotation, 0.1f);
 			DiagnosticOrbitStableFrames = bReady ? DiagnosticOrbitStableFrames + 1 : 0;
-			if (Now - StepStartSeconds < 2.0 || DiagnosticOrbitStableFrames < 12)
+			if (bMacroAB && bReady && DiagnosticLodAB.IsActive() && Now - StepStartSeconds >= 1.0
+				&& DiagnosticOrbitGpuLastFrame != GFrameCounter)
+			{
+				DiagnosticOrbitGpuLastFrame = GFrameCounter;
+				const uint32 GPUCycles = GGPUFrameTime;
+				if (GPUCycles) DiagnosticOrbitGpuTimes.Add(FPlatformTime::ToMilliseconds(GPUCycles));
+			}
+			if (Now - StepStartSeconds < (bMacroAB ? 4.0 : 2.0) || DiagnosticOrbitStableFrames < 12)
 			{
 				if (Now - StepStartSeconds > 40.0)
 				{
@@ -2059,16 +2068,34 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			{
 				return Now - StepStartSeconds > 40.0 ? Fail(TEXT("LOD A/B candidate shader timeout")) : false;
 			}
-			if (bLodAB && !DiagnosticLodAB.IsActive()
-				&& !DiagnosticLodAB.Begin(Surface, Planet, LodABError)) return Fail(LodABError);
+			if (bLodAB && !DiagnosticLodAB.IsActive())
+			{
+				if (!DiagnosticLodAB.Begin(Surface, Planet, LodABError)) return Fail(LodABError);
+				if (bMacroAB)
+				{
+					DiagnosticOrbitGpuTimes.Reset(); StepStartSeconds = Now;
+					DiagnosticOrbitStableFrames = 0; return false;
+				}
+			}
 			if (bLodAB && !DiagnosticLodAB.Validate(LodABError)) return Fail(LodABError);
 			FString NormalRangeError;
 			bool bNormalRangeChanged = false;
 			if (!ApplyDiagnosticNormalRange(Root, NormalRangeError, bNormalRangeChanged)) return Fail(NormalRangeError);
 			if (bNormalRangeChanged) return false;
-			FString ViewLabel = DiagnosticOrbitViewIndex == 0 ? TEXT("OrbitNadir") : TEXT("OrbitOblique");
+			FString ViewLabel = DiagnosticOrbitViewIndex == 0 ? TEXT("OrbitNadir")
+				: DiagnosticOrbitViewIndex == 1 ? TEXT("OrbitOblique") : TEXT("OrbitLimb");
 			if (bLodAB) ViewLabel += FString(TEXT("_")) + DiagnosticLodAB.Label();
 			const TCHAR* ViewName = *ViewLabel;
+			if (bMacroAB)
+			{
+				DiagnosticOrbitGpuTimes.Sort();
+				double Sum = 0.0;
+				for (double Ms : DiagnosticOrbitGpuTimes) Sum += Ms;
+				const int32 Count = DiagnosticOrbitGpuTimes.Num();
+				UE_LOG(LogTemp, Display, TEXT("[APS.MacroAB.GPU] phase=%s samples=%d meanMs=%.4f p95Ms=%.4f; async GPU counter, fixed camera/frozen mesh, no production FPS claim"),
+					ViewName, Count, Count ? Sum / Count : -1.0,
+					Count ? DiagnosticOrbitGpuTimes[FMath::FloorToInt((Count-1)*0.95)] : -1.0);
+			}
 			ScreenshotPath = FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("Screenshots/Windows"),
 				FString::Printf(TEXT("APS_SurfaceLighting_%d_%s.png"), static_cast<int32>(ExpectedPlanetType), ViewName));
 			FString CaptureFailure;
@@ -2128,11 +2155,12 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			}
 			if (bLodAB && DiagnosticLodAB.Advance())
 			{
+				DiagnosticOrbitGpuTimes.Reset();
 				DiagnosticOrbitStableFrames = 0;
 				StepStartSeconds = Now;
 				return false;
 			}
-			if (++DiagnosticOrbitViewIndex == 2)
+			if (++DiagnosticOrbitViewIndex == (bMacroAB ? 3 : 2))
 			{
 				RestoreDiagnosticOrbitOverview();
 				Step = EStep::Cleanup;
@@ -7986,6 +8014,8 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 		double DiagnosticOrbitRadiusCm{0.0};
 		int32 DiagnosticOrbitViewIndex{0};
 		int32 DiagnosticOrbitStableFrames{0};
+		TArray<double> DiagnosticOrbitGpuTimes;
+		uint64 DiagnosticOrbitGpuLastFrame{MAX_uint64};
 		bool bDiagnosticOrbitPawnLeased{false};
 		double DiagnosticOrbitHeightKm{100.0};
 		TWeakObjectPtr<UEnhancedInputLocalPlayerSubsystem> PerfInputSubsystem;
@@ -8191,6 +8221,15 @@ bool FAPSGeneratedSurfaceLightingDiagnosticsTest::RunTest(const FString& Paramet
 	const bool bLavaCoverage = bLavaCoverageOrbit || FParse::Param(FCommandLine::Get(), TEXT("APSLavaCoverage"));
 	const bool bSharedLiquidCoverage = FParse::Param(FCommandLine::Get(), TEXT("APSSharedLiquidCoverage"));
 	const bool bSharedLiquidCoverageOrbit = FParse::Param(FCommandLine::Get(), TEXT("APSSharedLiquidCoverageOrbit"));
+	if (FParse::Param(FCommandLine::Get(), TEXT("APSProbeMacroAB"))
+		&& (!FParse::Param(FCommandLine::Get(), TEXT("APSDiagnosticTerrainLodAB"))
+			|| !FParse::Param(FCommandLine::Get(), TEXT("APSDiagnosticOrbitOverview"))
+			|| FParse::Param(FCommandLine::Get(), TEXT("APSProbeFarNormalAB"))
+			|| bLavaCoverage || bSharedLiquidCoverage || bSharedLiquidCoverageOrbit))
+	{
+		AddError(TEXT("APSProbeMacroAB requires its isolated terrain/orbit A/B route; no liquid or normal A/B"));
+		return false;
+	}
 	if (bUserGreenhouseReference)
 	{
 		FString UnusedValue;
@@ -8212,6 +8251,8 @@ bool FAPSGeneratedSurfaceLightingDiagnosticsTest::RunTest(const FString& Paramet
 		AddInfo(TEXT("[APS.GreenhouseReference] Exact user-model fixture and read-only coordinate diagnostics; natural production spawn, no relocation to reference outward, no material/geometry/light repair."));
 	}
 	if (TypeName.Equals(TEXT("Ice"), ESearchCase::IgnoreCase)) Type = EPlanetType::Ice;
+	else if (FParse::Param(FCommandLine::Get(), TEXT("APSProbeMacroAB")) && TypeName.Equals(TEXT("Oasis"), ESearchCase::IgnoreCase)) Type = EPlanetType::Oasis;
+	else if (FParse::Param(FCommandLine::Get(), TEXT("APSProbeMacroAB")) && TypeName.Equals(TEXT("Terrestrial"), ESearchCase::IgnoreCase)) Type = EPlanetType::Terrestrial;
 	else if (TypeName.Equals(TEXT("Frozen"), ESearchCase::IgnoreCase)) Type = EPlanetType::Frozen;
 	else if (bUserGreenhouseReference && TypeName.Equals(TEXT("Greenhouse"), ESearchCase::IgnoreCase)) Type = EPlanetType::Greenhouse;
 	else if (bLavaCoverage && TypeName.Equals(TEXT("Melted"), ESearchCase::IgnoreCase)) Type = EPlanetType::Melted;
