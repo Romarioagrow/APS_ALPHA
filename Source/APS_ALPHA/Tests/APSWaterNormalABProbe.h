@@ -93,6 +93,11 @@ namespace APSWaterNormalAB
         struct FSample { FVector Direction; double Depth; };
         TArray<FSample> Dry, Wet;
         const FVector Initial = Outward;
+        double TargetDepthM = 20.0;
+        FParse::Value(FCommandLine::Get(), TEXT("APSWaterABDepthM="), TargetDepthM);
+        if (!FMath::IsFinite(TargetDepthM) || TargetDepthM < 0.05 || TargetDepthM > 1000.0)
+        { Error = TEXT("Water A/B target depth must be 0.05..1000 metres"); return false; }
+        const double TargetDepthCm = TargetDepthM * 100.0;
         auto Depth = [R](const FVector& D)
         { return double(R->OceanHeight) - R->GetGroundHeight(R->GetActorLocation() + D * R->PlanetScale, false); };
         constexpr int32 Count = 1024;
@@ -105,7 +110,7 @@ namespace APSWaterNormalAB
             if (FVector::DotProduct(D, Initial) < 0.6) continue;
             const double H = Depth(D);
             if (!FMath::IsFinite(H)) { Error = TEXT("Water A/B field sample is non-finite"); return false; }
-            if (H >= 2000.0) Wet.Add({D, H});
+            if (H >= TargetDepthCm) Wet.Add({D, H});
             else if (H < 0.0) Dry.Add({D, H});
         }
         if (Wet.IsEmpty() || (!OpenWater() && Dry.IsEmpty()))
@@ -118,14 +123,14 @@ namespace APSWaterNormalAB
             Dry.Sort([&](const FSample& A, const FSample& B)
             { return FVector::DotProduct(A.Direction, Outward) > FVector::DotProduct(B.Direction, Outward); });
             FVector Land = Dry[0].Direction, Sea = Outward;
-            // Bracket a point 20m underwater. This is observer selection only;
+            // Bracket the requested underwater depth. This is observer selection only;
             // the terrain function and all generated heights remain untouched.
             for (int32 I = 0; I < 40; ++I)
             {
                 const FVector Mid = (Land + Sea).GetSafeNormal();
                 const double H = Depth(Mid);
                 if (!FMath::IsFinite(H)) { Error = TEXT("Water A/B coast refinement is non-finite"); return false; }
-                if (H >= 2000.0) Sea = Mid; else Land = Mid;
+                if (H >= TargetDepthCm) Sea = Mid; else Land = Mid;
             }
             Outward = Sea;
             Tangent = FVector::VectorPlaneProject(Land - Sea, Sea).GetSafeNormal();
@@ -136,9 +141,31 @@ namespace APSWaterNormalAB
         else Tangent = FVector::VectorPlaneProject(Initial, Outward).GetSafeNormal();
         if (Tangent.IsNearlyZero())
         { FVector Unused; Outward.FindBestAxisVectors(Tangent, Unused); }
+        // Replay the logged candidate frame in an unmodified-field process, so
+        // shoreline comparisons do not accidentally compare different locations.
+        const TCHAR* Keys[] = {TEXT("APSWaterABViewX="), TEXT("APSWaterABViewY="), TEXT("APSWaterABViewZ="),
+            TEXT("APSWaterABViewU="), TEXT("APSWaterABViewV="), TEXT("APSWaterABViewW=")};
+        double Frame[6] = {};
+        int32 FrameValues = 0;
+        for (int32 I = 0; I < 6; ++I)
+        {
+            FrameValues += FParse::Value(FCommandLine::Get(), Keys[I], Frame[I]) ? 1 : 0;
+            if (!FMath::IsFinite(Frame[I])) { Error = TEXT("Non-finite comparison frame"); return false; }
+        }
+        if (FrameValues != 0 && FrameValues != 6) { Error = TEXT("Comparison frame needs all six values"); return false; }
+        if (FrameValues == 6)
+        {
+            Outward = FVector(Frame[0], Frame[1], Frame[2]).GetSafeNormal();
+            Tangent = FVector::VectorPlaneProject(FVector(Frame[3], Frame[4], Frame[5]), Outward).GetSafeNormal();
+            if (Outward.IsNearlyZero() || Tangent.IsNearlyZero()) { Error = TEXT("Degenerate comparison frame"); return false; }
+        }
         const double SelectedDepth = Depth(Outward);
-        if (!FMath::IsFinite(SelectedDepth) || SelectedDepth < 1999.0)
+        if (!FMath::IsFinite(SelectedDepth) || (FrameValues == 0 && SelectedDepth < TargetDepthCm - 1.0))
         { Error = TEXT("Water A/B selected observer is not over water"); return false; }
+        UE_LOG(LogTemp, Display, TEXT("[APS.WaterNormalAB.Field] coastCandidate=%d seed=%d radius=%.17g scale=%.17g intensity=%.17g direction=(%.17g,%.17g,%.17g) tangent=(%.17g,%.17g,%.17g)"),
+            FParse::Param(FCommandLine::Get(), TEXT("APSProbeCoastalReliefV1")) ? 1 : 0, R->Seed,
+            R->PlanetScale, double(R->NoiseScale), double(R->NoiseIntensity), Outward.X, Outward.Y, Outward.Z,
+            Tangent.X, Tangent.Y, Tangent.Z);
         UE_LOG(LogTemp, Display, TEXT("[APS.WaterNormalAB.View] mode=%s direction=%s depthCm=%.6f hemisphereDot=%.6f wet=%d dry=%d; actual height field, camera height measured above sea"),
             OpenWater() ? TEXT("open-water") : TEXT("coast"), *Outward.ToString(), SelectedDepth,
             FVector::DotProduct(Initial, Outward), Wet.Num(), Dry.Num());

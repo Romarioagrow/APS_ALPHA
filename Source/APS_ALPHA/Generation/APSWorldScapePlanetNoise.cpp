@@ -2,6 +2,7 @@
 #include "APSPlanetPresetMorphology.h"
 #include "APS_ALPHA/Core/Planetary/APSWorldScapeSurfaceEnvelope.h"
 #include "APS_ALPHA/Core/Planetary/APSLivingBiomeTransfer.h"
+#include "APS_ALPHA/Core/Planetary/APSCoastalRelief.h"
 
 #include "WorldScapeCommon/Public/NoiseMathUtils.h"
 
@@ -91,11 +92,13 @@ namespace APSPlanetNoise
 	}
 }
 
-void UAPSWorldScapePlanetNoise::Configure(const FAPSResolvedPlanetSurfaceProfile& InProfile, bool bInUnifiedLavaSurface)
+void UAPSWorldScapePlanetNoise::Configure(const FAPSResolvedPlanetSurfaceProfile& InProfile, bool bInUnifiedLavaSurface,
+	bool bInCoastalReliefCandidate)
 {
 	SurfaceProfile = InProfile;
 	bUnifiedLavaSurface = bInUnifiedLavaSurface
 		&& InProfile.LiquidType == EAPSPlanetLiquidType::Lava && InProfile.LandCoverage < 0.995f;
+	bCoastalReliefCandidate = bInCoastalReliefCandidate && APSCoastalRelief::Allows(InProfile);
 	bNeedPlanetRefresh = true;
 }
 FNoiseData UAPSWorldScapePlanetNoise::GetNoise(
@@ -135,27 +138,27 @@ FNoiseData UAPSWorldScapePlanetNoise::SampleResolved(
 	DVector& NoisePosition) const
 {
 	return EvaluateProfile<false>(SurfaceProfile, NoiseClass, Position, PlanetPosition,
-		NoiseScale, NoiseIntensity, PlanetScale, Latitude, NoisePosition);
+		NoiseScale, NoiseIntensity, PlanetScale, Latitude, NoisePosition, bCoastalReliefCandidate);
 }
 
 FNoiseData UAPSWorldScapePlanetNoise::SampleResolvedProfile(
 	const FAPSResolvedPlanetSurfaceProfile& SurfaceProfile,
 	CustomNoise& NoiseClass, const DVector& Position, const DVector& PlanetPosition,
 	double NoiseScale, double NoiseIntensity, double PlanetScale, double Latitude,
-	DVector& NoisePosition)
+	DVector& NoisePosition, bool bCoastalReliefCandidate)
 {
 	return EvaluateProfile<false>(SurfaceProfile, NoiseClass, Position, PlanetPosition,
-		NoiseScale, NoiseIntensity, PlanetScale, Latitude, NoisePosition);
+		NoiseScale, NoiseIntensity, PlanetScale, Latitude, NoisePosition, bCoastalReliefCandidate);
 }
 
 double UAPSWorldScapePlanetNoise::SampleHeightResolvedProfile(
 	const FAPSResolvedPlanetSurfaceProfile& SurfaceProfile,
 	CustomNoise& NoiseClass, const DVector& Position, const DVector& PlanetPosition,
-	double NoiseScale, double NoiseIntensity, double PlanetScale, double Latitude)
+	double NoiseScale, double NoiseIntensity, double PlanetScale, double Latitude, bool bCoastalReliefCandidate)
 {
 	DVector NoisePosition;
 	return EvaluateProfile<true>(SurfaceProfile, NoiseClass, Position, PlanetPosition,
-		NoiseScale, NoiseIntensity, PlanetScale, Latitude, NoisePosition).Height;
+		NoiseScale, NoiseIntensity, PlanetScale, Latitude, NoisePosition, bCoastalReliefCandidate).Height;
 }
 
 FNoiseData UAPSWorldScapePlanetNoise::Evaluate(
@@ -164,7 +167,7 @@ FNoiseData UAPSWorldScapePlanetNoise::Evaluate(
 	DVector& NoisePosition) const
 {
 	FNoiseData Data = EvaluateProfile<false>(SurfaceProfile, NoiseClass, Position, PlanetPosition,
-		NoiseScale, NoiseIntensity, PlanetScale, Latitude, NoisePosition);
+		NoiseScale, NoiseIntensity, PlanetScale, Latitude, NoisePosition, bCoastalReliefCandidate);
 	Data.Height = APSWorldScapeSurfaceEnvelope::Height(Data.Height,
 		static_cast<double>(SurfaceProfile.OceanLevel) * NoiseIntensity, bUnifiedLavaSurface);
 	return Data;
@@ -175,7 +178,7 @@ FNoiseData UAPSWorldScapePlanetNoise::EvaluateProfile(
 	const FAPSResolvedPlanetSurfaceProfile& SurfaceProfile,
 	CustomNoise& NoiseClass, const DVector& Position, const DVector& PlanetPosition,
 	double NoiseScale, double NoiseIntensity, double PlanetScale, double Latitude,
-	DVector& NoisePosition)
+	DVector& NoisePosition, bool bUseCoastalRelief)
 {
 	FNoiseData Data;
 	const double SafePlanetScale = FMath::Max(PlanetScale, 1.0);
@@ -366,6 +369,7 @@ FNoiseData UAPSWorldScapePlanetNoise::EvaluateProfile(
 		* FMath::Lerp(0.25, 1.25, static_cast<double>(SurfaceProfile.Roughness)) * DeepLandMask;
 	HeightNormalized += FMath::Square(MountainSignal) * 0.058
 		* static_cast<double>(SurfaceProfile.MountainStrength) * MountainMask;
+	const double PrePhysicalHeight = HeightNormalized;
 	// Put most displacement into broad landforms that remain recognisable both from
 	// orbit and while walking. High Mountain and Cryogenic profiles receive bounded
 	// profile-specific boosts, but still use the same single WorldScape height field
@@ -402,6 +406,14 @@ FNoiseData UAPSWorldScapePlanetNoise::EvaluateProfile(
 		* LocalPhysicalSurfaceMask;
 	HeightNormalized += PhysicalBandWeight * GroundFine * FineBandCoefficient
 		* LocalPhysicalSurfaceMask;
+	double CoastalHeightDelta = 0.0;
+	if (bUseCoastalRelief && PhysicalDetailWeight > 0.0 && APSCoastalRelief::Allows(SurfaceProfile))
+	{
+		const double RegionalCoastDelta = PhysicalBandWeight * GroundRegional * 0.0200 * GroundRegionalShape
+			* GroundBroadLandformBoost * GroundSurfaceMask;
+		CoastalHeightDelta = APSCoastalRelief::Height(PrePhysicalHeight, RegionalCoastDelta,
+			HeightNormalized, static_cast<double>(SurfaceProfile.OceanLevel), SignedLand) - HeightNormalized;
+	}
 	// Keep orbital colour classification on a deliberately low-pass terrain field.
 	// Feeding physical displacement or preset deformation into vertex R turns real
 	// relief into nested palette isolines; at mixed WorldScape LODs those isolines also
@@ -580,7 +592,13 @@ FNoiseData UAPSWorldScapePlanetNoise::EvaluateProfile(
 			PatternStrength, LandMask, DeepLandMask);
 	}
 
-	const double PhysicalHeightNormalized = FMath::Clamp(HeightNormalized, -0.35, 0.65);
+	// Keep the accepted climate/palette transfer on its original height. Applying
+	// the bounded coast offset only after authored basins/craters preserves their
+	// contribution and avoids silently shifting the temperature/humidity colours.
+	const double OriginalPhysicalHeightNormalized = FMath::Clamp(HeightNormalized, -0.35, 0.65);
+	const double PhysicalHeightNormalized = CoastalHeightDelta != 0.0
+		? FMath::Clamp(HeightNormalized + CoastalHeightDelta, -0.35, 0.65)
+		: OriginalPhysicalHeightNormalized;
 	Data.Height = PhysicalHeightNormalized * NoiseIntensity;
 	// Compile-time dispatch keeps existing full samples on their accepted path.
 	// No terrain calculation is duplicated or approximated for bathymetry.
@@ -603,7 +621,7 @@ FNoiseData UAPSWorldScapePlanetNoise::EvaluateProfile(
 			0.5 + (EquatorialWarmth - 0.5) * LatitudeStrength, 0.0, 1.0);
 		const double ClimateNoise = FMath::Clamp(
 			NoiseClass.Fractal((NoisePosition + BiomeOffset) * 0.0035, 4, 2.0, 0.5), 0.0, 1.0) - 0.5;
-		const double HeightCooling = FMath::Clamp(PhysicalHeightNormalized, 0.0, 1.0) * 0.5;
+		const double HeightCooling = FMath::Clamp(OriginalPhysicalHeightNormalized, 0.0, 1.0) * 0.5;
 		double TemperatureValue = static_cast<double>(SurfaceProfile.Temperature)
 			* (0.42 + ShapedEquatorialWarmth * 0.58) + ClimateNoise * 0.08 - HeightCooling;
 

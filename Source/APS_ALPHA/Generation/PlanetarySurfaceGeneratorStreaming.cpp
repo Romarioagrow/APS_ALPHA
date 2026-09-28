@@ -23,6 +23,8 @@
 #include "Materials/Material.h"
 #include "Materials/MaterialInstance.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "Misc/CommandLine.h"
+#include "Misc/Parse.h"
 #include "MaterialShared.h"
 #include "UObject/UObjectGlobals.h"
 
@@ -693,7 +695,12 @@ void APlanetarySurfaceGenerator::ApplySurfaceProfileNow(APlanetaryBody* Body)
 			WorldScapeRootInstance, NAME_None, RF_Transient);
 		if (IsValid(ResolvedNoiseInstance))
 		{
-			ResolvedNoiseInstance->Configure(ResolvedSurfaceProfile);
+			bool bCoastalCandidate = false;
+#if WITH_DEV_AUTOMATION_TESTS
+			// Opt-in isolated evidence run only. No production or saved-profile default.
+			bCoastalCandidate = FParse::Param(FCommandLine::Get(), TEXT("APSProbeCoastalReliefV1"));
+#endif
+			ResolvedNoiseInstance->Configure(ResolvedSurfaceProfile, false, bCoastalCandidate);
 			Profile.Noise = ResolvedNoiseInstance;
 		}
 

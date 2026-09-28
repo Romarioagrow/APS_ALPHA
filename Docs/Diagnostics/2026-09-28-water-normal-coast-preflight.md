@@ -1,9 +1,30 @@
-# Water normal and coast preflight (source only)
+# Water normal and coast preflight
 
-Status: **compiled; not rendered yet**. No production material, noise field,
-saved asset, shader or default has changed in this pass. The accepted orbital
-macro patch remains commit `ce6701fe`. The editor window belongs to Claude;
-the next finite window was requested in `Docs/coordination/PLANET_EDITOR_WINDOW.md`.
+Status: **rendered; amplitude-only candidate not promoted**. No production material,
+noise default, saved asset or shader changed in this experiment. The accepted
+orbital macro patch remains commit `ce6701fe`. Claude released the window at
+07:49; Codex ran the following two finite comparisons on build_editor8.
+
+## Rendered evidence, 28 September
+
+Evidence root: `F:/ChatGPT/APOSFERA/work/planet_water_normal_20260928`.
+`terrestrial-coast-50m-v1` and `water-open-2m-v1` each report one Success with
+warnings, zero failed tests (55.61 / 54.94 seconds). Actual capture resolution
+is 1280x722, not the requested command-line size. All three angles and six
+phases completed; terrain/ocean payload hashes and transforms stayed fixed.
+
+Native-copy and native-return controls have p99 absolute RGB error <=1/255 in
+all six family/angle comparisons. This supports the comparison setup; it is
+not an acceptance metric for the art. Reduced strength visibly changes water,
+but broad undulations become a smoother/plastic gradient. The broad white glint
+and oblique angular shading remain even in the zero-normal control. Do not
+publish a strength reduction as a fix for the complete symptom.
+
+The Terrestrial 32km grid contains wet fraction 0.631753, 2480 sign-change edges,
+51 land components / 22 water components, including 40 enclosed dry and 18
+enclosed wet components at 250m spacing. This is genuine fragmentation in the
+sampled height field, not evidence that every rendered jagged edge is geometry.
+The CSV is under that run's `Saved/Diagnostics/WaterNormalAB/coast-depth.csv`.
 
 ## Why this experiment
 
@@ -67,10 +88,10 @@ near-coast relief, mesh resolution/coverage, optical depth, or more than one.
   the subsequent `build_editor6.log` relinked at 07:38:50 with `BUILD_EXIT=0`.
   The current DLL contains both `[APS.WaterNormalAB] BEGIN` and `[APS.CoastGrid]`
   markers. No separate Codex build was started. Screenshots and copy equivalence
-  remain pending; compiler success does not establish a visual improvement.
-- First render Terrestrial coast at 50m, then 2m open water; inspect native/copy/
-  return controls before interpreting reduced normals. Follow with Water/Oasis
-  and an orbital no-change control if a candidate is worth promoting.
+  were subsequently checked in the two runs above. Compiler success alone did
+  not establish a visual improvement.
+- Native/copy/return controls are checked. An amplitude-only variant is not
+  worth promoting; wavelength/precision and separate shading remain open.
 - Saved Water MIC changes would affect more families than these three. Do not
   globally publish from this limited matrix; either expand family coverage or
   explicitly scope a production candidate after the first comparison.

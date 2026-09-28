@@ -19,7 +19,8 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "APS|Planet Surface")
 	FAPSResolvedPlanetSurfaceProfile SurfaceProfile;
 
-	void Configure(const FAPSResolvedPlanetSurfaceProfile& InProfile, bool bInUnifiedLavaSurface = false);
+	void Configure(const FAPSResolvedPlanetSurfaceProfile& InProfile, bool bInUnifiedLavaSurface = false,
+		bool bInCoastalReliefCandidate = false);
 
 	virtual FNoiseData GetNoise(
 		CustomNoise NoiseClass, const DVector& Position, const DVector& PlanetPosition,
@@ -50,7 +51,7 @@ public:
 		const FAPSResolvedPlanetSurfaceProfile& SurfaceProfile,
 		CustomNoise& NoiseClass, const DVector& Position, const DVector& PlanetPosition,
 		double NoiseScale, double NoiseIntensity, double PlanetScale, double Latitude,
-		DVector& NoisePosition);
+		DVector& NoisePosition, bool bCoastalReliefCandidate = false);
 	/**
 	 * Same signed displacement field, in the same centimetres as GetNoise(). Skips
 	 * material/climate/foliage channels, not terrain frequency bands. Callers must
@@ -62,12 +63,15 @@ public:
 	static double SampleHeightResolvedProfile(
 		const FAPSResolvedPlanetSurfaceProfile& SurfaceProfile,
 		CustomNoise& NoiseClass, const DVector& Position, const DVector& PlanetPosition,
-		double NoiseScale, double NoiseIntensity, double PlanetScale, double Latitude);
+		double NoiseScale, double NoiseIntensity, double PlanetScale, double Latitude,
+		bool bCoastalReliefCandidate = false);
 
 private:
 	// Configure only while the owning root has no in-flight workers. Never enable
 	// independently of the compatible material and removal of the ocean mesh.
 	bool bUnifiedLavaSurface = false;
+	// Immutable for the lifetime of an in-flight terrain/collision worker.
+	bool bCoastalReliefCandidate = false;
 
 	FNoiseData Evaluate(
 		CustomNoise& NoiseClass, const DVector& Position, const DVector& PlanetPosition,
@@ -78,5 +82,5 @@ private:
 		const FAPSResolvedPlanetSurfaceProfile& SurfaceProfile,
 		CustomNoise& NoiseClass, const DVector& Position, const DVector& PlanetPosition,
 		double NoiseScale, double NoiseIntensity, double PlanetScale, double Latitude,
-		DVector& NoisePosition);
+		DVector& NoisePosition, bool bUseCoastalRelief);
 };

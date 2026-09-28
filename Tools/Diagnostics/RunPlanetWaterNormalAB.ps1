@@ -2,9 +2,14 @@ param(
     [ValidateSet('Water','Terrestrial','Oasis')][string]$Family='Terrestrial',
     [ValidatePattern('^[a-z0-9-]+$')][string]$Label='coast-50m-v1',
     [ValidateRange(0.002,10000)][double]$HeightKm=0.05,
-    [switch]$OpenWater
+    [ValidateRange(0.05,1000)][double]$DepthM=20,
+    [double[]]$ViewFrame=@(),
+    [switch]$OpenWater,
+    [switch]$CoastalRelief
 )
 $ErrorActionPreference='Stop'
+if ($ViewFrame.Count -ne 0 -and $ViewFrame.Count -ne 6) { throw 'ViewFrame needs direction XYZ and tangent XYZ' }
+foreach ($value in $ViewFrame) { if ([double]::IsNaN($value) -or [double]::IsInfinity($value)) { throw 'Non-finite ViewFrame' } }
 $projectRoot = 'F:/Rio/Projects/Unreal Projects/APS/APS_ALPHA'
 # Run only during the coordinated Codex editor window. No process is killed.
 $coordination = Get-Content -Encoding UTF8 -LiteralPath ($projectRoot+'/Docs/coordination/PLANET_EDITOR_WINDOW.md')
@@ -32,11 +37,17 @@ $arguments = @(
     '-APSDiagnosticOrbitOverview','-APSProbeWaterNormalAB',
     ('-APSDiagnosticPlanet='+$Family),
     ('-APSDiagnosticOrbitHeightKm='+$HeightKm.ToString([Globalization.CultureInfo]::InvariantCulture)),
+    ('-APSWaterABDepthM='+$DepthM.ToString([Globalization.CultureInfo]::InvariantCulture)),
     ('-UserDir="'+$runDir+'"'),
     '-ExecCmds="Automation RunTests APS.Rendered.Gameplay.GeneratedSurfaceLightingDiagnostics"',
     '-TestExit="Automation Test Queue Empty"',
     ('-ReportExportPath="'+$runDir+'/report"'), ('-abslog="'+$runDir+'/surface.log"')
 )
 if ($OpenWater) { $arguments += '-APSWaterABOpenWater' }
+if ($CoastalRelief) { $arguments += '-APSProbeCoastalReliefV1' }
+$frameKeys = @('X','Y','Z','U','V','W')
+for ($i=0; $i -lt $ViewFrame.Count; ++$i) {
+    $arguments += '-APSWaterABView'+$frameKeys[$i]+'='+$ViewFrame[$i].ToString('G17',[Globalization.CultureInfo]::InvariantCulture)
+}
 $process = Start-Process -FilePath 'C:/Program Files/Epic Games/UE/UE_5.4/Engine/Binaries/Win64/UnrealEditor.exe' -ArgumentList $arguments -WindowStyle Hidden -PassThru -RedirectStandardOutput ($runDir+'/stdout.txt') -RedirectStandardError ($runDir+'/stderr.txt')
 [PSCustomObject]@{ Id=$process.Id; StartTime=$process.StartTime; Evidence=$runDir } | ConvertTo-Json
