@@ -1,5 +1,6 @@
 #include "AstroGenerator.h"
 #include "APS_ALPHA/Pawns/Spaceships/APSShipCatalog.h"
+#include "APS_ALPHA/Core/World/APSWorldOriginSubsystem.h"
 #include "APSAtmosphereGeneration.h"
 #include "ProfilingDebugging/CsvProfiler.h"
 
@@ -12911,6 +12912,12 @@ void AAstroGenerator::TryFinalizeSurfaceSpawn(TWeakObjectPtr<APawn> WeakPawn,
 		*GetNameSafe(TerrainHit->GetComponent()), ExpectedHeightCm,
 		TerrainHitHeightCm, Body->PlanetGravityStrength,
 		*FinalLocation.ToCompactString());
+	// The live landing can differ from the first estimate by tens of km: re-centre on the grounded pawn.
+	UAPSWorldOriginSubsystem* WorldOrigin = GetWorld() ? GetWorld()->GetSubsystem<UAPSWorldOriginSubsystem>() : nullptr;
+	if (WorldOrigin && WorldOrigin->RebaseOnto(Pawn->GetActorLocation(), TEXT("surface spawn final")))
+	{
+		Root->OverridedPlayerPosition = Pawn->GetActorLocation();
+	}
 }
 
 namespace APSCivilizationSpawn
@@ -13390,6 +13397,12 @@ bool AAstroGenerator::SpawnStartInteractiveActors(TSharedPtr<FPlanetModel> Start
 		const bool bTeleportSuccess = PlayerCharacter->SetActorLocation(SpawnLocation, false);
 		UE_LOG(LogTemp, Log, TEXT("[APS.Civilization] Character spawn location=%s success=%s"),
 			*SpawnLocation.ToString(), bTeleportSuccess ? TEXT("true") : TEXT("false"));
+		// Rio 2026-09-29: the player's spot becomes world 0,0,0 (engine world origin shift of every actor).
+		// Surface starts land hundreds to thousands of km from the headquarters frame; saves keep that frame.
+		if (UAPSWorldOriginSubsystem* WorldOrigin = World->GetSubsystem<UAPSWorldOriginSubsystem>())
+		{
+			WorldOrigin->RebaseOnto(PlayerCharacter->GetActorLocation(), TEXT("spawn"));
+		}
 		// Compose a readable first gameplay frame from the real generated hierarchy.
 		// The shipyard rotation is an asset-local construction rotation; using it for
 		// the pawn made the third-person camera look tangentially into empty space.

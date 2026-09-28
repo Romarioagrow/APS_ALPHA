@@ -11,6 +11,7 @@
 #include "APS_ALPHA/Gameplay/Civilizations/APSCivilizationMaterializationSubsystem.h"
 #include "APS_ALPHA/Gameplay/Civilizations/APSCivilizationRuntimeManifest.h"
 #include "APS_ALPHA/Generation/AstroGenerator.h"
+#include "APS_ALPHA/Core/World/APSWorldOriginSubsystem.h"
 #include "Kismet/GameplayStatics.h"
 #include "APS_ALPHA/Core/Structs/PlanetarySystemGenerationModel.h"
 #include "Serialization/ObjectAndNameAsStringProxyArchive.h"
@@ -76,6 +77,19 @@ void AGravityPlayerController::SetupInputComponent()
 	}
 }
 
+namespace APSSaveFrame
+{
+	/** Saved transforms are in the generation frame; the live world may have its origin on the player. */
+	FTransform ToWorld(const UWorld* World, FTransform Transform)
+	{
+		if (const UAPSWorldOriginSubsystem* WorldOrigin = World ? World->GetSubsystem<UAPSWorldOriginSubsystem>() : nullptr)
+		{
+			Transform.SetLocation(WorldOrigin->FromGenerationFrame(Transform.GetLocation()));
+		}
+		return Transform;
+	}
+}
+
 void AGravityPlayerController::PlayerTick(const float DeltaTime)
 {
 	Super::PlayerTick(DeltaTime);
@@ -91,6 +105,11 @@ void AGravityPlayerController::CapturePlayerStateForSave()
 	}
 	CachedPlayerPawnClass = PlayerPawn->GetClass()->GetPathName();
 	CachedPlayerPawnTransform = PlayerPawn->GetActorTransform();
+	// Saves stay in the generation frame (headquarters at 0,0,0) after the world origin moved to the player.
+	if (const UAPSWorldOriginSubsystem* WorldOrigin = GetWorld() ? GetWorld()->GetSubsystem<UAPSWorldOriginSubsystem>() : nullptr)
+	{
+		CachedPlayerPawnTransform.SetLocation(WorldOrigin->ToGenerationFrame(CachedPlayerPawnTransform.GetLocation()));
+	}
 	CachedPlayerControlRotation = GetControlRotation();
 	bHasCachedPlayerState = true;
 }
@@ -312,6 +331,10 @@ bool AGravityPlayerController::SaveWorldToSlot(const FString& SlotName,
 
 		FActorSaveData SaveData;
 		SaveData.ActorTransform = Actor->GetActorTransform();
+		if (const UAPSWorldOriginSubsystem* WorldOrigin = World->GetSubsystem<UAPSWorldOriginSubsystem>())
+		{
+			SaveData.ActorTransform.SetLocation(WorldOrigin->ToGenerationFrame(SaveData.ActorTransform.GetLocation()));
+		}
 		SaveData.ActorName = Actor->GetName();
 		SaveData.ActorClass = Actor->GetClass()->GetPathName();
 		if (const UAPSCivilizationIdentityComponent* Identity =
@@ -458,7 +481,7 @@ void AGravityPlayerController::LoadWorld()
 						SpawnParams.SpawnCollisionHandlingOverride =
 							ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 						Actor = World->SpawnActor<AActor>(ActorClass,
-							SaveData.ActorTransform, SpawnParams);
+							APSSaveFrame::ToWorld(World, SaveData.ActorTransform), SpawnParams);
 					}
 
 					if (Actor)
@@ -466,7 +489,7 @@ void AGravityPlayerController::LoadWorld()
 						FMemoryReader MemoryReader(SaveData.ActorData, true);
 						FObjectAndNameAsStringProxyArchive Archive(MemoryReader, true);
 						Actor->Serialize(Archive);
-						Actor->SetActorTransform(SaveData.ActorTransform, false, nullptr,
+						Actor->SetActorTransform(APSSaveFrame::ToWorld(World, SaveData.ActorTransform), false, nullptr,
 							ETeleportType::TeleportPhysics);
 
 						if (SaveData.StableEntityId.IsValid() && bHasValidManifest)
@@ -528,7 +551,7 @@ void AGravityPlayerController::LoadWorld()
 					SpawnParams.SpawnCollisionHandlingOverride =
 						ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 					PlayerPawn = World->SpawnActor<APawn>(SavedPawnClass,
-						LoadedGame->PlayerPawnTransform, SpawnParams);
+						APSSaveFrame::ToWorld(World, LoadedGame->PlayerPawnTransform), SpawnParams);
 					if (IsValid(PlayerPawn))
 					{
 						Possess(PlayerPawn);
@@ -540,10 +563,14 @@ void AGravityPlayerController::LoadWorld()
 				}
 				if (IsValid(PlayerPawn))
 				{
-					PlayerPawn->SetActorTransform(LoadedGame->PlayerPawnTransform,
+					PlayerPawn->SetActorTransform(APSSaveFrame::ToWorld(World, LoadedGame->PlayerPawnTransform),
 						false, nullptr, ETeleportType::TeleportPhysics);
 					SetControlRotation(LoadedGame->PlayerControlRotation);
 					SetViewTarget(PlayerPawn);
+					if (UAPSWorldOriginSubsystem* WorldOrigin = World->GetSubsystem<UAPSWorldOriginSubsystem>())
+					{
+						WorldOrigin->RebaseOnto(PlayerPawn->GetActorLocation(), TEXT("load"));
+					}
 					CapturePlayerStateForSave();
 				}
 			}
