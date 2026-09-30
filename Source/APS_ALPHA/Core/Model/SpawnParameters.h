@@ -139,9 +139,9 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Player Spawn")
 	EOrbitHeight HomeStationOrbitHeight{EOrbitHeight::LowOrbit};
 
-	/** For orbital starts: which home-complex station the pilot starts in. */
+	/** For orbital starts: which home-complex station the pilot starts in (the headquarters by default, Rio 29.09). */
 	UPROPERTY(EditAnywhere, Category = "Player Spawn")
-	EAPSStartStation StartStation{EAPSStartStation::HomeStation};
+	EAPSStartStation StartStation{EAPSStartStation::Headquarters};
 
 	UPROPERTY(EditAnywhere, Category = "Player Spawn")
 	TSubclassOf<APawn> BP_CharacterClass;

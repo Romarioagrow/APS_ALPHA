@@ -64,6 +64,8 @@ bool UAPSCivilizationMaterializationSubsystem::ValidateMaterializedStarterSet(
 
 	for (const FBinding& Binding : Bindings)
 	{
+		// A ship in service (docked at the headquarters or piloted) keeps its own place: only its identity is checked.
+		const bool bPlaced = Binding.Actor != MaterializedShip.Get() || bShipParkedAtColony;
 		UClass* ExpectedClass = Binding.Entity->ActorClass.ResolveClass();
 		if (!ExpectedClass || Binding.Actor->GetClass() != ExpectedClass)
 		{
@@ -88,22 +90,22 @@ bool UAPSCivilizationMaterializationSubsystem::ValidateMaterializedStarterSet(
 			return Fail(FString::Printf(TEXT("stable identity mismatch for role %d"),
 				static_cast<int32>(Binding.Entity->Role)));
 		}
-		if (Binding.Actor->GetAttachParentActor() != HomeBody)
+		if (bPlaced && Binding.Actor->GetAttachParentActor() != HomeBody)
 		{
 			return Fail(FString::Printf(TEXT("home-body attachment mismatch for role %d"),
 				static_cast<int32>(Binding.Entity->Role)));
 		}
 		const FVector RadialUp = (Binding.Actor->GetActorLocation()
 			- HomeBody->GetActorLocation()).GetSafeNormal();
-		if (FVector::DotProduct(Binding.Actor->GetActorUpVector(), RadialUp) < 0.98)
+		if (bPlaced && FVector::DotProduct(Binding.Actor->GetActorUpVector(), RadialUp) < 0.98)
 		{
 			return Fail(FString::Printf(TEXT("planet-relative orientation mismatch for role %d"),
 				static_cast<int32>(Binding.Entity->Role)));
 		}
 		const FTransform RelativeTransform = Binding.Actor->GetActorTransform()
 			.GetRelativeTransform(HomeBody->GetActorTransform());
-		if (!Binding.Entity->bHasPersistedTransform
-			|| !RelativeTransform.Equals(Binding.Entity->PlanetRelativeTransform, 0.5))
+		if (bPlaced && (!Binding.Entity->bHasPersistedTransform
+			|| !RelativeTransform.Equals(Binding.Entity->PlanetRelativeTransform, 0.5)))
 		{
 			return Fail(FString::Printf(TEXT("persisted transform mismatch for role %d"),
 				static_cast<int32>(Binding.Entity->Role)));
@@ -128,8 +130,8 @@ bool UAPSCivilizationMaterializationSubsystem::ValidateMaterializedStarterSet(
 	}
 
 	if (MaterializedShip->GetClass() != RuntimeManifest.SelectedShipClass.ResolveClass()
-		|| MaterializedShip->bProvidesArtificialGravity
-		|| !MaterializedShip->bApplyExternalGravity)
+		|| (bShipParkedAtColony && (MaterializedShip->bProvidesArtificialGravity
+			|| !MaterializedShip->bApplyExternalGravity)))
 	{
 		return Fail(TEXT("selected ship or natural-gravity contract mismatch"));
 	}
@@ -154,7 +156,7 @@ bool UAPSCivilizationMaterializationSubsystem::ValidateMaterializedStarterSet(
 		};
 		if (BottomClearance(MaterializedBase.Get(), Placement.BaseTransform) < -1.0
 			|| BottomClearance(MaterializedPad.Get(), Placement.PadTransform) < -1.0
-			|| BottomClearance(MaterializedShip.Get(), Placement.PadTransform) < -1.0)
+			|| (bShipParkedAtColony && BottomClearance(MaterializedShip.Get(), Placement.PadTransform) < -1.0))
 		{
 			return Fail(TEXT("starter bounds penetrate the Surface support planes"));
 		}
@@ -169,6 +171,10 @@ bool UAPSCivilizationMaterializationSubsystem::ValidateMaterializedStarterSet(
 	}
 	for (const FBinding& Binding : Bindings)
 	{
+		if (Binding.Actor == MaterializedShip.Get() && !bShipParkedAtColony)
+		{
+			continue;
+		}
 		FVector Origin;
 		FVector Extent;
 		Binding.Actor->GetActorBounds(false, Origin, Extent);

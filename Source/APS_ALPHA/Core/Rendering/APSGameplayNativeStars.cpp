@@ -340,6 +340,10 @@ void UAPSStellarVisualSubsystem::ResetGameplayNativeStars()
 	GameplayNativeOwners.Reset();
 	GameplayNativeDemand.Reset();
 	GameplayNativePhysicalRadii.Reset();
+	GameplayNativeSizedDistances.Reset();
+	GameplayNativeDemandCandidates.Reset();
+	bGameplayNativeDemandCandidatesValid = false;
+	GameplayNativeResizePasses.Reset();
 	GameplayNativeMutationSerial = 0;
 	GameplayNativeUnknownMutationSerial = 0;
 	GameplayNativeTopologyHash = 0;
@@ -448,6 +452,8 @@ void UAPSStellarVisualSubsystem::PresentGameplayNativeStars(AAstroGenerator* Gen
 	TSet<UHierarchicalInstancedStaticMeshComponent*> DirtySources;
 	GameplayNativeDemand.RemoveAll([&](FAPSGameplayNativeDemand& Demand)
 	{
+		// A day sky hides the other stars; their pairs are released below (UpdateGameplayDaylightStars).
+		if (bGameplayDaylightStarsHidden) return true;
 		if (!GeometryCurrent(Generator, Demand) || Generator->GetGameplayStellarSuppression(Demand.Key) != 0) return true;
 		UHierarchicalInstancedStaticMeshComponent* Source = Demand.Key.Source.Get();
 		const FVector Offset = Source->GetComponentTransform().TransformPosition(Demand.BaseTransform.GetLocation())

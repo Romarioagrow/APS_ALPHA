@@ -8,6 +8,7 @@
 #include "APS_ALPHA/Core/Enums/OrbitHeight.h"
 #include "APS_ALPHA/Core/Enums/PlanetHabitability.h"
 #include "APS_ALPHA/Pawns/Characters/CustomGravityCharacter.h"
+#include "Engine/BlueprintGeneratedClass.h"
 #include "APS_ALPHA/Pawns/Spaceships/Spaceship.h"
 #include "APS_ALPHA/Actors/Tech/SpaceStation.h"
 #include "APS_ALPHA/Actors/Tech/SpaceHeadquarters.h"
@@ -40,6 +41,14 @@ namespace APSCivilizationPilot
 	UClass* LoadProductionClass()
 	{
 		return LoadClass<ACustomGravityCharacter>(nullptr, ProductionClassPath);
+	}
+
+	/** Pilot Blueprints built on the production pilot's native class inherit its generated-world movement/camera
+	 * contract; the Blueprint supplies mesh, animation and input assets, which bare native classes lack. */
+	bool IsCertifiedClass(const UClass* Class)
+	{
+		return Class && Class->IsChildOf(ACustomGravityCharacter::StaticClass()) && Cast<UBlueprintGeneratedClass>(Class)
+			&& !Class->HasAnyClassFlags(CLASS_Abstract | CLASS_Deprecated | CLASS_NewerVersionExists | CLASS_NotPlaceable);
 	}
 }
 
@@ -83,12 +92,15 @@ void UWorldGenerationViewModel::Initialize(UObject* InWorldContext, UGeneratedWo
 			{
 				GameplayInstance->SpawnParameters = NewObject<USpawnParameters>(GameplayInstance);
 			}
-			// Only the production custom-gravity pawn currently satisfies the full
-			// generated-world movement/camera contract. Keep experimental pawns out
-			// of the committed civilization route until they are explicitly certified.
-			if (UClass* ProductionPilot = APSCivilizationPilot::LoadProductionClass())
+			// Only the production custom-gravity pawn and pilots built on its native class
+			// satisfy the full generated-world movement/camera contract. Keep other pawns
+			// out of the committed civilization route; a certified pick survives re-entry.
+			if (!APSCivilizationPilot::IsCertifiedClass(GameplayInstance->SpawnParameters->BP_CharacterClass))
 			{
-				GameplayInstance->SpawnParameters->BP_CharacterClass = ProductionPilot;
+				if (UClass* ProductionPilot = APSCivilizationPilot::LoadProductionClass())
+				{
+					GameplayInstance->SpawnParameters->BP_CharacterClass = ProductionPilot;
+				}
 			}
 			UE_MVVM_SET_PROPERTY_VALUE(SpawnParameters, GameplayInstance->SpawnParameters);
 		}
@@ -1668,19 +1680,44 @@ void UWorldGenerationViewModel::SetSpawnClass(EAPSStartAssetSlot Slot, UClass* N
 	}
 }
 
+int32 UWorldGenerationViewModel::GetHomePlanetMoonCount() const
+{
+	// The preview hierarchy is what a commit builds: body overrides and the moon editor buffer are applied to it.
+	const AStarSystem* System = PreviewGenerator.IsValid() ? PreviewGenerator->GetPreviewHomeSystem() : nullptr;
+	const AStar* Star = IsValid(System) ? System->MainStar : nullptr;
+	const APlanetarySystem* Family = IsValid(Star) ? Star->PlanetarySystem : nullptr;
+	const int32 Index = GeneratedWorld ? GeneratedWorld->StartPlanetIndex - 1 : 0;
+	if (!IsValid(Family) || !Family->PlanetsActorsList.IsValidIndex(Index) || !IsValid(Family->PlanetsActorsList[Index]))
+	{
+		return INDEX_NONE;
+	}
+	int32 Count = 0;
+	for (const AMoon* Moon : Family->PlanetsActorsList[Index]->Moons)
+	{
+		Count += IsValid(Moon) ? 1 : 0;
+	}
+	return Count;
+}
+
+bool UWorldGenerationViewModel::IsCharacterSpawnPlaceAvailable(int32 Value) const
+{
+	const ECharSpawnPlace Place = static_cast<ECharSpawnPlace>(Value);
+	// Lunar starts need a moon around the home planet (Rio 29.09: without moons the options are unavailable).
+	// An unknown count (no preview yet) keeps them selectable; the commit checks again.
+	return (Place != ECharSpawnPlace::MoonOrbit && Place != ECharSpawnPlace::MoonSurface) || GetHomePlanetMoonCount() != 0;
+}
+
 void UWorldGenerationViewModel::SetCharacterSpawnPlace(int32 Value)
 {
 	if (SpawnParameters)
 	{
 		const int32 MaxValue = StaticEnum<ECharSpawnPlace>()->NumEnums() - 2;
-		SpawnParameters->CharacterSpawnPlace = static_cast<ECharSpawnPlace>(FMath::Clamp(Value, 0, MaxValue));
-		if (GeneratedWorld
-			&& (SpawnParameters->CharacterSpawnPlace == ECharSpawnPlace::MoonOrbit
-				|| SpawnParameters->CharacterSpawnPlace == ECharSpawnPlace::MoonSurface))
+		const int32 Clamped = FMath::Clamp(Value, 0, MaxValue);
+		// A lunar start used to raise the moon count behind the user's back; now it is refused while the home
+		// planet has none, and the menu skips it.
+		if (IsCharacterSpawnPlaceAvailable(Clamped))
 		{
-			// A lunar start must commit a hierarchy that actually contains a moon.
-			// Keep the user's larger value, only repairing the impossible zero case.
-			GeneratedWorld->MoonsAmount = FMath::Max(1, GeneratedWorld->MoonsAmount);
+			SpawnParameters->CharacterSpawnPlace = static_cast<ECharSpawnPlace>(Clamped);
 		}
 	}
 }
@@ -1835,7 +1872,11 @@ void UWorldGenerationViewModel::InitializeSpawnDefaultsFromGenerator(AAstroGener
 		return;
 	}
 
-	if (UClass* ProductionPilot = APSCivilizationPilot::LoadProductionClass())
+	if (APSCivilizationPilot::IsCertifiedClass(SpawnParameters->BP_CharacterClass))
+	{
+		// Keep the player's certified pick (production or derived pilot).
+	}
+	else if (UClass* ProductionPilot = APSCivilizationPilot::LoadProductionClass())
 	{
 		SpawnParameters->BP_CharacterClass = ProductionPilot;
 	}
@@ -1890,9 +1931,20 @@ void UWorldGenerationViewModel::CommitAndOpenLevel(FName LevelName)
 		if (SpawnParameters)
 		{
 			SpawnParameters->SanitizeForGeneration();
-			if (UClass* ProductionPilot = APSCivilizationPilot::LoadProductionClass())
+			if (!IsCharacterSpawnPlaceAvailable(static_cast<int32>(SpawnParameters->CharacterSpawnPlace)))
 			{
-				SpawnParameters->BP_CharacterClass = ProductionPilot;
+				// The moons were removed after a lunar start was chosen: start at the headquarters instead of aborting
+				// the whole start in the level.
+				UE_LOG(LogTemp, Warning, TEXT("[APS.Civilization] lunar start without a moon: planet orbit at the headquarters"));
+				SpawnParameters->CharacterSpawnPlace = ECharSpawnPlace::PlanetOrbit;
+				SpawnParameters->StartStation = EAPSStartStation::Headquarters;
+			}
+			if (!APSCivilizationPilot::IsCertifiedClass(SpawnParameters->BP_CharacterClass))
+			{
+				if (UClass* ProductionPilot = APSCivilizationPilot::LoadProductionClass())
+				{
+					SpawnParameters->BP_CharacterClass = ProductionPilot;
+				}
 			}
 		}
 		const auto IsSpawnableClass = [](const UClass* Class)
@@ -1901,7 +1953,7 @@ void UWorldGenerationViewModel::CommitAndOpenLevel(FName LevelName)
 				CLASS_Abstract | CLASS_Deprecated | CLASS_NewerVersionExists | CLASS_NotPlaceable);
 		};
 		const bool bClassesReady = SpawnParameters
-			&& SpawnParameters->BP_CharacterClass.Get() == APSCivilizationPilot::LoadProductionClass()
+			&& APSCivilizationPilot::IsCertifiedClass(SpawnParameters->BP_CharacterClass)
 			&& IsSpawnableClass(SpawnParameters->BP_CharacterClass)
 			&& IsSpawnableClass(SpawnParameters->BP_HomeSpaceship)
 			&& IsSpawnableClass(SpawnParameters->BP_HomeSpaceStation)

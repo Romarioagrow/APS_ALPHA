@@ -156,6 +156,9 @@ private:
 	FText GetSpawnClassOptionName(EAPSStartAssetSlot Slot, int32 OptionIndex) const;
 	FReply CycleSpawnClass(EAPSStartAssetSlot Slot, int32 Direction);
 	FReply SelectSpawnClass(EAPSStartAssetSlot Slot, int32 OptionIndex);
+	/** Station, headquarters and shipyard cards: start the pilot in orbit aboard that station. */
+	FReply SetStartHere(EAPSStartAssetSlot Slot);
+	bool IsStartHere(EAPSStartAssetSlot Slot) const;
 	void RefreshSpawnThumbnails();
 	const FSlateBrush* GetSpawnClassThumbnail(EAPSStartAssetSlot Slot, int32 OptionIndex) const;
 	const FSlateBrush* GetSelectedSpawnThumbnail(EAPSStartAssetSlot Slot) const;
@@ -211,6 +214,10 @@ private:
 	TMap<EAPSStartAssetSlot, TArray<TSharedPtr<FSlateBrush>>> SpawnClassThumbnails;
 	/** One brush per Blueprint package, so each thumbnail texture loads once. */
 	TMap<FName, TSharedPtr<FSlateBrush>> SpawnThumbnailBrushCache;
+	/** Start Blueprints left out by the basic mesh rule or UAPSStartAssetFilter; never re-added as defaults. */
+	TSet<FSoftObjectPath> HiddenStartClasses;
+	/** Hidden legacy duplicate -> the listed Blueprint with the same name, for default selection. */
+	TMap<FSoftObjectPath, FSoftObjectPath> DuplicateStartClasses;
 	TMap<EAPSStartAssetSlot, TSharedPtr<FStreamableHandle>> SpawnSelectionLoadHandles;
 	/** Identity guard for async picker loads; stale callbacks must not clear a newer slot request. */
 	TMap<EAPSStartAssetSlot, FSoftObjectPath> SpawnSelectionRequestedPaths;

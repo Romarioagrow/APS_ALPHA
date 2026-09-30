@@ -72,6 +72,10 @@ public:
 	int32 GetSelectedSystemPlanetCount() const;
 	void SetSelectedSystemPlanetCount(double Value);
 	int32 GetHomeStartPlanetCount() const;
+	/** Moons of the preview's home start planet; INDEX_NONE while no preview hierarchy exists. */
+	int32 GetHomePlanetMoonCount() const;
+	/** Lunar starts need a moon around the home planet; every other start is always available. */
+	bool IsCharacterSpawnPlaceAvailable(int32 Value) const;
 	bool CanEditSelectedSystem() const;
 
 	UFUNCTION(BlueprintCallable, Category = "World Generation")

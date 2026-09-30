@@ -78,6 +78,28 @@ bool FAPSGameplayStellarProjectionTest::RunTest(const FString& Parameters)
 		APSGameplayStellarProjection::CanReuseProjection(1.0e4, 1.0e9, PixelTangent));
 	TestFalse(TEXT("Accumulated render-anchor error eventually forces recentering"),
 		APSGameplayStellarProjection::CanReuseProjection(1.0e6, 1.0e9, PixelTangent));
+	TestFalse(TEXT("Travel of 5% of the nearest distance re-measures the native-star candidates"),
+		APSGameplayStellarProjection::CanReuseDemand(0.05e13, 1.0e13));
+	TestTrue(TEXT("The same travel keeps the candidate list of the last catalogue walk"),
+		APSGameplayStellarProjection::CanReuseDemandCandidates(0.05e13, 1.0e13));
+	TestTrue(TEXT("A fifth of the nearest distance still keeps the candidate list (points grow at most 1.25x)"),
+		APSGameplayStellarProjection::CanReuseDemandCandidates(0.2e13, 1.0e13));
+	TestFalse(TEXT("A quarter of the nearest distance walks the catalogue again"),
+		APSGameplayStellarProjection::CanReuseDemandCandidates(0.25e13, 1.0e13));
+	TestFalse(TEXT("Travel past the nearest point walks the catalogue again"),
+		APSGameplayStellarProjection::CanReuseDemandCandidates(2.0e13, 1.0e13));
+	TestFalse(TEXT("An unknown nearest distance walks the catalogue"),
+		APSGameplayStellarProjection::CanReuseDemandCandidates(0.0, 0.0));
+	TestTrue(TEXT("A glyph keeps its size within 1% of travel (0.14 px on the largest glyph)"),
+		APSGameplayStellarProjection::CanReusePointSize(1.01e13, 1.0e13));
+	TestFalse(TEXT("A glyph is re-sized past its 0.15 px budget"),
+		APSGameplayStellarProjection::CanReusePointSize(1.012e13, 1.0e13));
+	TestFalse(TEXT("An unsized glyph is always sized"),
+		APSGameplayStellarProjection::CanReusePointSize(1.0e13, 0.0));
+	TestTrue(TEXT("The travel slack of a fresh glyph is its whole budget"),
+		FMath::IsNearlyEqual(APSGameplayStellarProjection::PointSizeSlackCm(1.0e13, 1.0e13),
+			1.0e13 * APSGameplayStellarProjection::PointSizeErrorPixels / APSStellarOpticalSupport::MaximumSupportPixels,
+			1.0));
 	TestFalse(TEXT("An unchanged visible point is not uploaded on an occlusion-only refresh"),
 		APSGameplayStellarProjection::NeedsInstanceUpload(false, false, false));
 	TestFalse(TEXT("An unchanged hidden point is not uploaded even on reprojection"),

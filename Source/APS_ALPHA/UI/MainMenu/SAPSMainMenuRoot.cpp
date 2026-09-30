@@ -2,7 +2,10 @@
 #include "SAPSChamferedOverlay.h"
 
 #include "APS_ALPHA/Core/Controllers/MainMenuController.h"
+#include "APS_ALPHA/UI/MainMenu/APSStartAssetFilter.h"
 #include "APS_ALPHA/UI/MainMenu/APSUIThumbnails.h"
+#include "Engine/SkeletalMesh.h"
+#include "Engine/StaticMesh.h"
 #include "APS_ALPHA/Core/Loading/APSAuthoredLevelLaunchSubsystem.h"
 #include "APS_ALPHA/Core/Enums/CharSpawnPlace.h"
 #include "APS_ALPHA/Core/Enums/OrbitHeight.h"
@@ -11,6 +14,7 @@
 #include "APS_ALPHA/Core/Model/GeneratedWorld.h"
 #include "APS_ALPHA/Core/Saves/GameSave.h"
 #include "APS_ALPHA/Core/Saves/GeneratedWorldData.h"
+#include "APS_ALPHA/Pawns/Characters/CustomGravityCharacter.h"
 #include "APS_ALPHA/Pawns/Spaceships/Spaceship.h"
 #include "APS_ALPHA/Actors/Tech/SpaceHeadquarters.h"
 #include "APS_ALPHA/Actors/Tech/SpaceShipyard.h"
@@ -2439,6 +2443,8 @@ void SAPSMainMenuRoot::DiscoverSpawnClassOptions()
 	// Match the GameMode contract: a playable start class may derive from APawn
 	// directly or through ACharacter (the authored SinglePlay character does).
 	const TSet<FTopLevelAssetPath> CharacterClassPaths = FindDerivedClasses(APawn::StaticClass());
+	// Pilots built on the production pilot's native class inherit its generated-world movement/camera contract.
+	const TSet<FTopLevelAssetPath> PilotClassPaths = FindDerivedClasses(ACustomGravityCharacter::StaticClass());
 	const TSet<FTopLevelAssetPath> SpaceshipClassPaths = FindDerivedClasses(ASpaceship::StaticClass());
 	const TSet<FTopLevelAssetPath> StationClassPaths = FindDerivedClasses(ASpaceStation::StaticClass());
 	const TSet<FTopLevelAssetPath> HeadquartersClassPaths = FindDerivedClasses(ASpaceHeadquarters::StaticClass());
@@ -2458,6 +2464,42 @@ void SAPSMainMenuRoot::DiscoverSpawnClassOptions()
 
 	TArray<FAssetData> BlueprintAssets;
 	AssetRegistry.GetAssets(Filter, BlueprintAssets);
+
+	// Basic rule: a start asset must reference a mesh, directly or through a parent Blueprint, so
+	// empty and placeholder Blueprints never reach the pickers. The filter asset adds hand-picked
+	// exclusions and the Blueprints the thumbnail bake found to render nothing.
+	const UAPSStartAssetFilter* StartAssetFilter = LoadObject<UAPSStartAssetFilter>(
+		nullptr, APSUIThumbnails::StartAssetFilterPath, nullptr, LOAD_NoWarn | LOAD_Quiet);
+	const TSet<FTopLevelAssetPath> MeshClassPaths = {
+		UStaticMesh::StaticClass()->GetClassPathName(), USkeletalMesh::StaticClass()->GetClassPathName()};
+	const FTopLevelAssetPath BlueprintClassPath = UBlueprint::StaticClass()->GetClassPathName();
+	TMap<FName, bool> MeshReferenceCache;
+	TFunction<bool(FName)> ReferencesMesh = [&](FName PackageName) -> bool
+	{
+		if (const bool* Cached = MeshReferenceCache.Find(PackageName))
+		{
+			return *Cached;
+		}
+		MeshReferenceCache.Add(PackageName, false);
+		TArray<FName> Dependencies;
+		AssetRegistry.GetDependencies(PackageName, Dependencies, UE::AssetRegistry::EDependencyCategory::Package,
+			UE::AssetRegistry::EDependencyQuery::Hard);
+		for (const FName Dependency : Dependencies)
+		{
+			TArray<FAssetData> DependencyAssets;
+			AssetRegistry.GetAssetsByPackageName(Dependency, DependencyAssets, true);
+			for (const FAssetData& DependencyAsset : DependencyAssets)
+			{
+				if (MeshClassPaths.Contains(DependencyAsset.AssetClassPath)
+					|| (DependencyAsset.AssetClassPath == BlueprintClassPath && ReferencesMesh(Dependency)))
+				{
+					MeshReferenceCache.Add(PackageName, true);
+					return true;
+				}
+			}
+		}
+		return false;
+	};
 	for (const FAssetData& Asset : BlueprintAssets)
 	{
 		const uint32 ClassFlags = Asset.GetTagValueRef<uint32>(FBlueprintTags::ClassFlags);
@@ -2498,14 +2540,55 @@ void SAPSMainMenuRoot::DiscoverSpawnClassOptions()
 		}
 		else
 		{
-			if (FSoftObjectPath(GeneratedClassObjectPath) != ProductionPilotClassPath)
+			if (FSoftObjectPath(GeneratedClassObjectPath) != ProductionPilotClassPath
+				&& !(PilotClassPaths.Contains(GeneratedClassPath)
+					&& GeneratedClassObjectPath.StartsWith(TEXT("/Game/APS/APS_ALPHA/"))))
 			{
 				continue;
 			}
 			Slot = EAPSStartAssetSlot::Character;
 		}
+		if (Slot != EAPSStartAssetSlot::Character
+			&& ((StartAssetFilter && StartAssetFilter->Hides(FSoftObjectPath(GeneratedClassObjectPath)))
+				|| !ReferencesMesh(Asset.PackageName)))
+		{
+			HiddenStartClasses.Add(FSoftObjectPath(GeneratedClassObjectPath));
+			continue;
+		}
 		SpawnClassOptions.FindOrAdd(Slot).AddUnique(TSoftClassPtr<AActor>(FSoftObjectPath(GeneratedClassObjectPath)));
 	}
+	// Legacy copies (/Game/APS/Core, APS_PREA) share Blueprint names with the current APS_ALPHA ones;
+	// list each name once and prefer the APS_ALPHA Blueprint.
+	const auto IsPreferredStartAsset = [](const FSoftObjectPath& Path)
+	{
+		return Path.GetLongPackageName().StartsWith(TEXT("/Game/APS/APS_ALPHA/"));
+	};
+	for (auto& Pair : SpawnClassOptions)
+	{
+		TMap<FString, int32> IndexByName;
+		TArray<TSoftClassPtr<AActor>> Unique;
+		for (const TSoftClassPtr<AActor>& Option : Pair.Value)
+		{
+			const FSoftObjectPath Path = Option.ToSoftObjectPath();
+			if (const int32* Existing = IndexByName.Find(Path.GetAssetName()))
+			{
+				const FSoftObjectPath ExistingPath = Unique[*Existing].ToSoftObjectPath();
+				const bool bReplace = IsPreferredStartAsset(Path) && !IsPreferredStartAsset(ExistingPath);
+				const FSoftObjectPath& Dropped = bReplace ? ExistingPath : Path;
+				HiddenStartClasses.Add(Dropped);
+				DuplicateStartClasses.Add(Dropped, bReplace ? Path : ExistingPath);
+				if (bReplace)
+				{
+					Unique[*Existing] = Option;
+				}
+				continue;
+			}
+			IndexByName.Add(Path.GetAssetName(), Unique.Num());
+			Unique.Add(Option);
+		}
+		Pair.Value = MoveTemp(Unique);
+	}
+
 	// Keep one stable entry even if the asset registry is still discovering files;
 	// the async picker load and commit validation remain authoritative.
 	SpawnClassOptions.FindOrAdd(EAPSStartAssetSlot::Character).AddUnique(
@@ -2520,12 +2603,13 @@ void SAPSMainMenuRoot::DiscoverSpawnClassOptions()
 	}
 	SynchronizeSpawnClassOptions();
 	UE_LOG(LogTemp, Log,
-		TEXT("[APS.Menu] Blueprint spawn catalogue indexed without loading assets: characters=%d ships=%d stations=%d headquarters=%d shipyards=%d"),
+		TEXT("[APS.Menu] Blueprint spawn catalogue indexed without loading assets: characters=%d ships=%d stations=%d headquarters=%d shipyards=%d hidden=%d"),
 		SpawnClassOptions.FindRef(EAPSStartAssetSlot::Character).Num(),
 		SpawnClassOptions.FindRef(EAPSStartAssetSlot::Spaceship).Num(),
 		SpawnClassOptions.FindRef(EAPSStartAssetSlot::SpaceStation).Num(),
 		SpawnClassOptions.FindRef(EAPSStartAssetSlot::Headquarters).Num(),
-		SpawnClassOptions.FindRef(EAPSStartAssetSlot::Shipyard).Num());
+		SpawnClassOptions.FindRef(EAPSStartAssetSlot::Shipyard).Num(),
+		HiddenStartClasses.Num());
 }
 
 void SAPSMainMenuRoot::SynchronizeSpawnClassOptions()
@@ -2547,14 +2631,22 @@ void SAPSMainMenuRoot::SynchronizeSpawnClassOptions()
 		// Slate remains functional even if the legacy picker Blueprint is absent or
 		// has an empty array: generator defaults are valid runtime selections and do
 		// not require the user to reconnect anything in UMG.
-		if (CurrentClass && CurrentClass->IsChildOf(AActor::StaticClass()))
+		// A hidden default (for example a mesh-less generator shipyard) gives way to the first visible
+		// option below instead of coming back as an empty, pre-selected entry.
+		if (CurrentClass && CurrentClass->IsChildOf(AActor::StaticClass())
+			&& !HiddenStartClasses.Contains(FSoftObjectPath(CurrentClass)))
 		{
 			Pair.Value.AddUnique(TSoftClassPtr<AActor>(CurrentClass));
 		}
-		int32 InitialIndex = Pair.Value.IndexOfByPredicate([CurrentClass](const TSoftClassPtr<AActor>& Candidate)
+		FSoftObjectPath CurrentPath = CurrentClass ? FSoftObjectPath(CurrentClass) : FSoftObjectPath();
+		if (const FSoftObjectPath* Twin = DuplicateStartClasses.Find(CurrentPath))
+		{
+			CurrentPath = *Twin;
+		}
+		int32 InitialIndex = Pair.Value.IndexOfByPredicate([CurrentClass, &CurrentPath](const TSoftClassPtr<AActor>& Candidate)
 		{
 			return Candidate.Get() == CurrentClass
-				|| (CurrentClass && Candidate.ToSoftObjectPath() == FSoftObjectPath(CurrentClass));
+				|| (CurrentPath.IsValid() && Candidate.ToSoftObjectPath() == CurrentPath);
 		});
 		if (InitialIndex == INDEX_NONE) InitialIndex = 0;
 		SpawnClassIndices.Add(Pair.Key, InitialIndex);
@@ -2729,9 +2821,47 @@ FText SAPSMainMenuRoot::GetSpawnClassOptionName(EAPSStartAssetSlot Slot, int32 O
 	const AActor* DefaultActor = LoadedClass->GetDefaultObject<AActor>();
 	if (DefaultActor && DefaultActor->Implements<UItemInfoInterface>())
 	{
-		return IItemInfoInterface::Execute_GetInGameName(DefaultActor);
+		const FText InGameName = IItemInfoInterface::Execute_GetInGameName(DefaultActor);
+		if (!InGameName.IsEmptyOrWhitespace())
+		{
+			return InGameName;
+		}
 	}
-	return FText::FromString(LoadedClass->GetName().Replace(TEXT("BP_"), TEXT("")));
+	FString ClassName = LoadedClass->GetName();
+	ClassName.RemoveFromEnd(TEXT("_C"));
+	return FText::FromString(ClassName.Replace(TEXT("BP_"), TEXT("")));
+}
+
+namespace
+{
+	bool IsStationCard(EAPSStartAssetSlot Slot)
+	{
+		return Slot == EAPSStartAssetSlot::SpaceStation || Slot == EAPSStartAssetSlot::Headquarters
+			|| Slot == EAPSStartAssetSlot::Shipyard;
+	}
+
+	EAPSStartStation StartStationForCard(EAPSStartAssetSlot Slot)
+	{
+		return Slot == EAPSStartAssetSlot::Headquarters ? EAPSStartStation::Headquarters
+			: Slot == EAPSStartAssetSlot::Shipyard ? EAPSStartStation::Shipyard : EAPSStartStation::HomeStation;
+	}
+}
+
+bool SAPSMainMenuRoot::IsStartHere(EAPSStartAssetSlot Slot) const
+{
+	const USpawnParameters* Parameters = ViewModel.IsValid() ? ViewModel->SpawnParameters.Get() : nullptr;
+	return Parameters && IsStationCard(Slot) && Parameters->CharacterSpawnPlace == ECharSpawnPlace::PlanetOrbit
+		&& Parameters->StartStation == StartStationForCard(Slot);
+}
+
+FReply SAPSMainMenuRoot::SetStartHere(EAPSStartAssetSlot Slot)
+{
+	if (ViewModel.IsValid() && IsStationCard(Slot))
+	{
+		ViewModel->SetCharacterSpawnPlace(static_cast<int32>(ECharSpawnPlace::PlanetOrbit));
+		ViewModel->SetStartStation(static_cast<int32>(StartStationForCard(Slot)));
+	}
+	return FReply::Handled();
 }
 
 TSharedRef<SWidget> SAPSMainMenuRoot::BuildSpawnCard(EAPSStartAssetSlot Slot, const FText& Label)
@@ -2741,7 +2871,9 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildSpawnCard(EAPSStartAssetSlot Slot, co
 		Slot == EAPSStartAssetSlot::Spaceship ? EAPSMenuGlyph::Ship :
 		Slot == EAPSStartAssetSlot::SpaceStation ? EAPSMenuGlyph::Station :
 		Slot == EAPSStartAssetSlot::Headquarters ? EAPSMenuGlyph::Headquarters : EAPSMenuGlyph::Shipyard;
-	const bool bLockedProductionPilot = Slot == EAPSStartAssetSlot::Character;
+	// With a single certified pilot the card stays a locked badge; derived pilots make it a normal picker.
+	const bool bLockedProductionPilot = Slot == EAPSStartAssetSlot::Character
+		&& SpawnClassOptions.FindRef(Slot).Num() <= 1;
 	const int32 SlotNumber = static_cast<int32>(Slot) + 1;
 	const FText SlotDescription =
 		Slot == EAPSStartAssetSlot::Character ? LOCTEXT("PilotCardRole", "CERTIFIED SURFACE & EVA OPERATOR") :
@@ -2888,12 +3020,25 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildSpawnCard(EAPSStartAssetSlot Slot, co
 					[
 						SNew(STextBlock).Text_Lambda([this, Slot]() { return GetSpawnClassName(Slot); })
 						.Font(APSMenu::Font("Bold", 16)).ColorAndOpacity(APSMenu::White)
-						.Justification(ETextJustify::Center).AutoWrapText(true)
+						.Justification(ETextJustify::Center).OverflowPolicy(ETextOverflowPolicy::Ellipsis)
 					]
+					// Every card keeps the same rows (hidden where unused) so the images line up at one height.
 					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 7.0f, 0.0f, 5.0f)
 					[
+						SNew(SOverlay)
+						+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Center)
+						[
+							SNew(SBorder).BorderImage(&APSMenu::CivStatusBrush).Padding(FMargin(8.0f, 4.0f))
+							.Visibility(bLockedProductionPilot ? EVisibility::Visible : EVisibility::Collapsed)
+							[
+								SNew(STextBlock).Text(LOCTEXT("ProductionPilotLocked", "VERIFIED GRAVITY PILOT"))
+								.Font(APSMenu::Font("Bold", 8)).ColorAndOpacity(APSMenu::Amber)
+							]
+						]
+						+ SOverlay::Slot()
+						[
 						SNew(SHorizontalBox)
-						.Visibility(bLockedProductionPilot ? EVisibility::Collapsed : EVisibility::Visible)
+						.Visibility(bLockedProductionPilot ? EVisibility::Hidden : EVisibility::Visible)
 						+ SHorizontalBox::Slot().FillWidth(0.28f)
 						[SNew(SButton).ButtonStyle(&SecondaryButtonStyle).ContentPadding(0.0f)
 						.HAlign(HAlign_Center).VAlign(VAlign_Center).OnClicked(this, &SAPSMainMenuRoot::CycleSpawnClass, Slot, -1)
@@ -2910,20 +3055,36 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildSpawnCard(EAPSStartAssetSlot Slot, co
 						[SNew(SButton).ButtonStyle(&SecondaryButtonStyle).ContentPadding(0.0f)
 						.HAlign(HAlign_Center).VAlign(VAlign_Center).OnClicked(this, &SAPSMainMenuRoot::CycleSpawnClass, Slot, 1)
 						[SNew(STextBlock).Text(FText::FromString(TEXT(">"))).Justification(ETextJustify::Center).Font(APSMenu::Font("Bold", 11)).ColorAndOpacity(APSMenu::Cyan)]]
-					]
-					+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0.0f, 5.0f, 0.0f, 8.0f)
-					[
-						SNew(SBorder).BorderImage(&APSMenu::CivStatusBrush).Padding(FMargin(8.0f, 4.0f))
-						.Visibility(bLockedProductionPilot ? EVisibility::Visible : EVisibility::Collapsed)
-						[
-							SNew(STextBlock).Text(LOCTEXT("ProductionPilotLocked", "VERIFIED GRAVITY PILOT"))
-							.Font(APSMenu::Font("Bold", 8)).ColorAndOpacity(APSMenu::Amber)
 						]
 					]
-					+ SVerticalBox::Slot().FillHeight(0.44f)
+					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 4.0f)
+					[
+						SNew(SButton)
+						.Visibility(IsStationCard(Slot) ? EVisibility::Visible : EVisibility::Hidden)
+						.ButtonStyle(&SecondaryButtonStyle)
+						.ContentPadding(FMargin(8.0f, 5.0f))
+						.HAlign(HAlign_Center)
+						.ButtonColorAndOpacity_Lambda([this, Slot]()
+						{
+							return IsStartHere(Slot) ? FLinearColor(0.42f, 0.19f, 0.01f, 1.0f) : FLinearColor::White;
+						})
+						.ToolTipText(LOCTEXT("StartHereTip", "The pilot starts in planet orbit aboard this station."))
+						.OnClicked(this, &SAPSMainMenuRoot::SetStartHere, Slot)
+						[
+							SNew(STextBlock)
+							.Text_Lambda([this, Slot]()
+							{
+								return IsStartHere(Slot) ? LOCTEXT("StartingHere", "PILOT STARTS HERE")
+									: LOCTEXT("StartHere", "START HERE");
+							})
+							.Font(APSMenu::Font("Bold", 9))
+							.ColorAndOpacity_Lambda([this, Slot]() { return IsStartHere(Slot) ? APSMenu::Amber : APSMenu::Cyan; })
+						]
+					]
+					+ SVerticalBox::Slot().FillHeight(0.44f).Padding(0.0f, 4.0f, 0.0f, 0.0f)
 					[
 						SNew(SBox).MaxDesiredHeight(116.0f)
-						.Visibility(bLockedProductionPilot ? EVisibility::Collapsed : EVisibility::Visible)
+						.Visibility(bLockedProductionPilot ? EVisibility::Hidden : EVisibility::Visible)
 						[
 							SNew(SBorder).BorderImage(&APSMenu::InsetBrush).Padding(4.0f)
 							[SNew(SScrollBox) + SScrollBox::Slot()[OptionGrid]]
@@ -2947,13 +3108,23 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildCivilizationPage()
 	CivilizationEditorSection = FMath::Clamp(CivilizationEditorSection, 0, 3);
 
 	const auto EnumControl = [this](const FText& Label, const UEnum* Enum,
-		TFunction<int32()> Getter, TFunction<void(int32)> Setter)
+		TFunction<int32()> Getter, TFunction<void(int32)> Setter, TFunction<bool(int32)> IsAvailable = nullptr)
 	{
-		const auto Step = [Enum, Getter, Setter](int32 Direction)
+		const auto Step = [Enum, Getter, Setter, IsAvailable](int32 Direction)
 		{
 			if (!Enum) return FReply::Handled();
 			const int32 Count = FMath::Max(1, Enum->NumEnums() - 1);
-			Setter((Getter() + Direction + Count) % Count);
+			// Unavailable values (a lunar start without moons) are stepped over, not selected.
+			int32 Value = Getter();
+			for (int32 Tries = 0; Tries < Count; ++Tries)
+			{
+				Value = (Value + Direction + Count) % Count;
+				if (!IsAvailable || IsAvailable(Value))
+				{
+					Setter(Value);
+					break;
+				}
+			}
 			return FReply::Handled();
 		};
 		return SNew(SBorder).BorderImage(&APSMenu::CivControlBrush).Padding(FMargin(10.0f, 7.0f))
@@ -3210,7 +3381,21 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildCivilizationPage()
 			SNew(SVerticalBox)
 			+ SVerticalBox::Slot().AutoHeight()[APSMenu::IconSectionHeading(EAPSMenuGlyph::Station,
 				LOCTEXT("StartSetup", "ARRIVAL POINT"), LOCTEXT("StartSetupHint", "Where the pilot wakes up in the home system."))]
-			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 14.0f, 0.0f, 6.0f)[EnumControl(LOCTEXT("SpawnPlace", "PILOT START LOCATION"), StaticEnum<ECharSpawnPlace>(), [VM](){return VM.IsValid()&&VM->SpawnParameters?static_cast<int32>(VM->SpawnParameters->CharacterSpawnPlace):0;}, [VM](int32 V){if(VM.IsValid())VM->SetCharacterSpawnPlace(V);})]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 14.0f, 0.0f, 6.0f)[EnumControl(LOCTEXT("SpawnPlace", "PILOT START LOCATION"), StaticEnum<ECharSpawnPlace>(), [VM](){return VM.IsValid()&&VM->SpawnParameters?static_cast<int32>(VM->SpawnParameters->CharacterSpawnPlace):0;}, [VM](int32 V){if(VM.IsValid())VM->SetCharacterSpawnPlace(V);}, [VM](int32 V){return !VM.IsValid()||VM->IsCharacterSpawnPlaceAvailable(V);})]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 6.0f)
+			[
+				SNew(STextBlock)
+				.Visibility_Lambda([VM](){return VM.IsValid()&&VM->GetHomePlanetMoonCount()==0?EVisibility::Visible:EVisibility::Collapsed;})
+				.Text_Lambda([VM]()
+				{
+					const bool bLunarChosen = VM.IsValid() && VM->SpawnParameters
+						&& !VM->IsCharacterSpawnPlaceAvailable(static_cast<int32>(VM->SpawnParameters->CharacterSpawnPlace));
+					return bLunarChosen
+						? LOCTEXT("NoMoonsChosen", "THE HOME PLANET HAS NO MOONS: THE PILOT WILL START AT THE HEADQUARTERS")
+						: LOCTEXT("NoMoons", "LUNAR STARTS NEED A MOON AROUND THE HOME PLANET");
+				})
+				.Font(APSMenu::Font("Regular", 9)).ColorAndOpacity(APSMenu::Muted).AutoWrapText(true)
+			]
 			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 6.0f)
 			[
 				SNew(SBox)
@@ -3351,7 +3536,7 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildCivilizationPage()
 					+ SHorizontalBox::Slot().FillWidth(1.0f).Padding(4.0f)
 					[InfoPanel(EAPSMenuGlyph::System, LOCTEXT("StarSystemInfo", "HOME SYSTEM"), LOCTEXT("StarSystemInfoHint", "Astronomical handoff"), TAttribute<FText>::CreateLambda([VM](){ const UGeneratedWorld* W=VM.IsValid()?VM->GeneratedWorld.Get():nullptr; return W ? FText::FromString(FString::Printf(TEXT("%s\n%s  /  %s\n%d planets\nHome  %s  /  %.0f KM"), *APSMenu::EnumLabel(W->PlanetarySystemType), *APSMenu::EnumLabel(W->StellarType), *APSMenu::EnumLabel(W->SpectralClass), W->PlanetsAmount, *APSMenu::EnumLabel(W->PlanetType), W->PlanetRadius)) : FText::GetEmpty(); }))]
 					+ SHorizontalBox::Slot().FillWidth(1.0f).Padding(4.0f)
-					[InfoPanel(EAPSMenuGlyph::Infrastructure, LOCTEXT("Infrastructure", "DEPLOYMENT"), LOCTEXT("InfrastructureHint", "Physical actor manifest"), TAttribute<FText>::CreateLambda([VM](){ const USpawnParameters* P=VM.IsValid()?VM->SpawnParameters.Get():nullptr; return P ? FText::FromString(FString::Printf(TEXT("%d total actors\nFleet  %d ships\nInfrastructure  %d nodes\nPilot  Custom Gravity"), P->GetPlannedPhysicalActorCount(), P->StartingFleetSize, P->GetPlannedInfrastructureActorCount())) : FText::GetEmpty(); }))]
+					[InfoPanel(EAPSMenuGlyph::Infrastructure, LOCTEXT("Infrastructure", "DEPLOYMENT"), LOCTEXT("InfrastructureHint", "Physical actor manifest"), TAttribute<FText>::CreateLambda([VM](){ const USpawnParameters* P=VM.IsValid()?VM->SpawnParameters.Get():nullptr; if (!P) return FText::GetEmpty(); FString Start = StaticEnum<ECharSpawnPlace>()->GetDisplayNameTextByValue(static_cast<int64>(P->CharacterSpawnPlace)).ToString(); if (P->CharacterSpawnPlace == ECharSpawnPlace::PlanetOrbit) { Start += TEXT(" / ") + StaticEnum<EAPSStartStation>()->GetDisplayNameTextByValue(static_cast<int64>(P->StartStation)).ToString(); } return FText::FromString(FString::Printf(TEXT("%d total actors\nFleet  %d ships\nInfrastructure  %d nodes\nPilot  Custom Gravity\nStart  %s"), P->GetPlannedPhysicalActorCount(), P->StartingFleetSize, P->GetPlannedInfrastructureActorCount(), *Start)); }))]
 				]
 			]
 			+ SHorizontalBox::Slot().FillWidth(0.34f).Padding(5.0f)

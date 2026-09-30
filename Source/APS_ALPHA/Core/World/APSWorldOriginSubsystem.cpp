@@ -1,7 +1,10 @@
 #include "APSWorldOriginSubsystem.h"
 
+#include "APS_ALPHA/Generation/AstroGenerator.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
+#include "TimerManager.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "HAL/IConsoleManager.h"
@@ -85,7 +88,67 @@ FVector UAPSWorldOriginSubsystem::GetOriginOffset() const
 	return World ? FVector(World->OriginLocation) : FVector::ZeroVector;
 }
 
+bool UAPSWorldOriginSubsystem::IsStellarCatalogueSettling() const
+{
+	for (TActorIterator<AAstroGenerator> It(GetWorld()); It; ++It)
+	{
+		if (!It->GetCanonicalStellarProjectionDescriptor().bFinalized)
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
 bool UAPSWorldOriginSubsystem::RebaseOnto(const FVector& WorldLocation, const TCHAR* Reason)
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return false;
+	}
+	if (IsStellarCatalogueSettling())
+	{
+		// The canonical star catalogue validates its proxy bounds in the frame it was generated in, at the end of level
+		// initialisation. The spawn shift used to come first; a surface start moves ~2 500 km, failed those bounds and
+		// left the catalogue unused: no stars after a surface spawn (regression of b21445f9, 29.09). The shift now waits
+		// for the catalogue (the same frame's initialisation) and then centres on the player where they stand.
+		if (!bRebaseDeferred)
+		{
+			bRebaseDeferred = true;
+			DeferredRebaseTicks = 0;
+			DeferredRebaseReason = FString::Printf(TEXT("%s, after the star catalogue"), Reason);
+			World->GetTimerManager().SetTimerForNextTick(
+				FTimerDelegate::CreateUObject(this, &UAPSWorldOriginSubsystem::RetryDeferredRebase));
+			UE_LOG(LogTemp, Log, TEXT("[APS.WorldOrigin] defer reason=%s until the star catalogue is final"), Reason);
+		}
+		return false;
+	}
+	return RebaseNow(WorldLocation, Reason);
+}
+
+void UAPSWorldOriginSubsystem::RetryDeferredRebase()
+{
+	UWorld* World = GetWorld();
+	if (!World || !bRebaseDeferred)
+	{
+		return;
+	}
+	// A catalogue that never finalizes (rejected dataset) must not keep the player off-centre: give up after ~2 s.
+	if (IsStellarCatalogueSettling() && ++DeferredRebaseTicks < 120)
+	{
+		World->GetTimerManager().SetTimerForNextTick(
+			FTimerDelegate::CreateUObject(this, &UAPSWorldOriginSubsystem::RetryDeferredRebase));
+		return;
+	}
+	bRebaseDeferred = false;
+	if (const APawn* Pawn = APSWorldOrigin::PlayerPawn(World))
+	{
+		RebaseNow(Pawn->GetActorLocation(), *DeferredRebaseReason);
+	}
+}
+
+bool UAPSWorldOriginSubsystem::RebaseNow(const FVector& WorldLocation, const TCHAR* Reason)
 {
 	UWorld* World = GetWorld();
 	if (!World)

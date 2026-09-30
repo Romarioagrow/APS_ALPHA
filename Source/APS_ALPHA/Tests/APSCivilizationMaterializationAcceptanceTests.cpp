@@ -122,6 +122,8 @@ bool FAPSCivilizationMaterializationAcceptanceTest::RunTest(const FString& Param
 	Subsystem->PersistRelativeTransform(Base, HomeBody, *BaseEntity);
 	Subsystem->PersistRelativeTransform(Pad, HomeBody, *PadEntity);
 	Subsystem->PersistRelativeTransform(Ship, HomeBody, *ShipEntity);
+	// A surface start lands the ship on the pad; that parked contract is what the checks below cover.
+	Subsystem->bShipParkedAtColony = true;
 
 	FString FailureReason;
 	const bool bCanonicalSetReady = Subsystem->ValidateMaterializedStarterSet(
@@ -134,6 +136,15 @@ bool FAPSCivilizationMaterializationAcceptanceTest::RunTest(const FString& Param
 	TestFalse(TEXT("surface ship cannot provide artificial gravity"),
 		Subsystem->ValidateMaterializedStarterSet(HomeBody, Placement, FailureReason));
 	TestTrue(TEXT("gravity rejection is explicit"), FailureReason.Contains(TEXT("gravity")));
+
+	// Rio 30.09: an orbital or in-ship start keeps the ship docked at the headquarters or under its pilot, in service:
+	// only its identity is checked, not the pad, the attachment or its own gravity.
+	Subsystem->bShipParkedAtColony = false;
+	Ship->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+	TestTrue(TEXT("a ship in service keeps its own place and gravity"),
+		Subsystem->ValidateMaterializedStarterSet(HomeBody, Placement, FailureReason));
+	Ship->AttachToActor(HomeBody, FAttachmentTransformRules::KeepWorldTransform);
+	Subsystem->bShipParkedAtColony = true;
 	Ship->bProvidesArtificialGravity = false;
 
 	AAPSCivilizationLandingPad* BlockingActor =

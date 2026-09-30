@@ -30,5 +30,9 @@ FVector ASpaceHeadquarters::GetPlayerStartLocation() const
 	{
 		return PlayerStartPoint->GetComponentLocation();
 	}
-	return IsValid(StartPoint) ? StartPoint->GetComponentLocation() : Super::GetPlayerStartLocation();
+	if (IsValid(StartPoint) && !StartPoint->GetRelativeLocation().IsNearlyZero(1.0))
+	{
+		return StartPoint->GetComponentLocation();
+	}
+	return Super::GetPlayerStartLocation();
 }

@@ -15,6 +15,7 @@
 #include "APS_ALPHA/Core/Interfaces/ItemInfoInterface.h"
 #include "APS_ALPHA/Core/Interfaces/NavigatableBody.h"
 #include "APS_ALPHA/Core/Structs/StarGenerationModel.h"
+#include "APS_ALPHA/Gameplay/Civilizations/APSCivilizationIdentityComponent.h"
 #include "Components/HierarchicalInstancedStaticMeshComponent.h"
 #include "EngineUtils.h"
 
@@ -179,7 +180,18 @@ void UShipNavigationComponent::AddActorContact(AActor* Actor, const FVector& Obs
 	{
 		Contact.TypeLabel = TEXT("NAV OBJECT");
 	}
-	if (!IsContactTypeVisible(Contact.Type))
+	// The pilot's own colony is always charted, with a marker of its own (Rio, 30.09).
+	if (Actor->ActorHasTag(TEXT("APS.Civilization.Materialized")))
+	{
+		if (const UAPSCivilizationIdentityComponent* Identity = Actor->FindComponentByClass<UAPSCivilizationIdentityComponent>();
+			Identity && Identity->Role == EAPSCivilizationEntityRole::BaseModule)
+		{
+			Contact.bOwnColony = true;
+			Contact.TypeLabel = TEXT("COLONY");
+			Contact.DisplayName = TEXT("HOME COLONY");
+		}
+	}
+	if (!IsContactTypeVisible(Contact.Type) && !Contact.bOwnColony && Contact.StableId != PinnedCourseId)
 	{
 		return;
 	}
@@ -305,8 +317,39 @@ void UShipNavigationComponent::RestoreSelection(const FString& PreviousStableId)
 	}
 }
 
+bool UShipNavigationComponent::SelectContact(const FString& StableId)
+{
+	const int32 Index = Contacts.IndexOfByPredicate([&StableId](const FShipNavigationContact& Contact)
+	{
+		return Contact.StableId == StableId;
+	});
+	if (Index == INDEX_NONE)
+	{
+		return false;
+	}
+	SelectedContactIndex = Index;
+	return true;
+}
+
+bool UShipNavigationComponent::SetCourse(const FString& StableId)
+{
+	PinnedCourseId = StableId;
+	if (const AActor* Owner = GetOwner())
+	{
+		RefreshContacts(Owner->GetActorLocation(), true);
+	}
+	if (SelectContact(StableId))
+	{
+		return true;
+	}
+	PinnedCourseId.Reset();
+	return false;
+}
+
 void UShipNavigationComponent::CycleTarget(int32 Direction)
 {
+	// A target picked by hand releases a course pinned from the terminal.
+	PinnedCourseId.Reset();
 	if (Contacts.IsEmpty())
 	{
 		SelectedContactIndex = INDEX_NONE;

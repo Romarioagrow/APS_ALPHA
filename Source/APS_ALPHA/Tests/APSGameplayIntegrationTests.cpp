@@ -25,14 +25,18 @@
 #include "APS_ALPHA/Actors/Tech/SpaceHeadquarters.h"
 #include "APS_ALPHA/Actors/Tech/SpaceStation.h"
 #include "APS_ALPHA/Pawns/Spaceships/Spaceship.h"
+#include "APS_ALPHA/Pawns/Spaceships/APSShipFlightModel.h"
 #include "APS_ALPHA/Pawns/Spaceships/ShipNavigationComponent.h"
 #include "APS_ALPHA/UI/MainMenu/WorldGenerationViewModel.h"
 #include "Engine/World.h"
 #include "Engine/StaticMesh.h"
+#include "Components/StaticMeshComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/PlayerController.h"
 #include "Components/SpotLightComponent.h"
 #include "Components/PointLightComponent.h"
+#include "HAL/IConsoleManager.h"
+#include "Misc/ScopeExit.h"
 
 namespace APSGameplayIntegrationTests
 {
@@ -512,13 +516,29 @@ bool FAPSVehicleControlRoundTripTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Interface vehicle eligibility accepts the pilot"),
 		VehicleInterface && VehicleInterface->CanRequestVehicleControl(Character));
 
+	// Since 2026-09-28 the object fill (aps.Lighting.ObjectFill) lights every ship alike and the piloted ship's
+	// private fill is opt-in (aps.Lighting.PilotFill 1). The default keeps it off; the round trip checks the opt-in.
+	IConsoleVariable* PilotFill = IConsoleManager::Get().FindConsoleVariable(TEXT("aps.Lighting.PilotFill"));
+	TestNotNull(TEXT("aps.Lighting.PilotFill is registered"), PilotFill);
+	const int32 PreviousPilotFill = PilotFill ? PilotFill->GetInt() : 0;
+	if (PilotFill && VehicleInterface)
+	{
+		PilotFill->Set(0, ECVF_SetByCode);
+		const bool bDefaultEntered = VehicleInterface->RequestVehicleControl(Character);
+		TestTrue(TEXT("Pilot enters with the default lighting"), bDefaultEntered);
+		TestTrue(TEXT("Controlled ship keeps its private fill off by default"),
+			Ship->PilotFillPointLight && !Ship->PilotFillPointLight->IsVisible());
+		TestTrue(TEXT("Pilot leaves with the default lighting"), bDefaultEntered && VehicleInterface->RequestReleaseVehicleControl());
+		PilotFill->Set(1, ECVF_SetByCode);
+	}
+
 	const bool bEntered = VehicleInterface && VehicleInterface->RequestVehicleControl(Character);
 	TestTrue(TEXT("Unified vehicle interface accepts the pilot"), bEntered);
 	TestEqual(TEXT("Controller possesses the spaceship"), Controller->GetPawn(), static_cast<APawn*>(Ship));
 	TestEqual(TEXT("Spaceship remembers its pilot"), Ship->Pilot.Get(), static_cast<APawn*>(Character));
 	TestTrue(TEXT("Pilot is attached to the ship seat"), Character->IsAttachedTo(Ship));
 	TestTrue(TEXT("Pilot is hidden while no seated animation is configured"), Character->IsHidden());
-	TestTrue(TEXT("Controlled ship enables its camera-side fill light"),
+	TestTrue(TEXT("Controlled ship enables its camera-side fill light with aps.Lighting.PilotFill 1"),
 		Ship->PilotFillPointLight && Ship->PilotFillPointLight->IsVisible());
 
 	const bool bExited = VehicleInterface && VehicleInterface->RequestReleaseVehicleControl();
@@ -531,6 +551,10 @@ bool FAPSVehicleControlRoundTripTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("Pilot visibility is restored"), Character->IsHidden());
 	TestTrue(TEXT("Released ship disables its camera-side fill light"),
 		Ship->PilotFillPointLight && !Ship->PilotFillPointLight->IsVisible());
+	if (PilotFill)
+	{
+		PilotFill->Set(PreviousPilotFill, ECVF_SetByCode);
+	}
 
 	APSGameplayIntegrationTests::DestroyTestWorld(World);
 	return true;
@@ -726,6 +750,22 @@ bool FAPSStationPlayerStartTest::RunTest(const FString& Parameters)
 		return false;
 	}
 
+	// Nothing authored: the pilot starts above the visible hull instead of inside it.
+	UStaticMesh* HullMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
+	if (TestNotNull(TEXT("Engine cube mesh"), HullMesh))
+	{
+		UStaticMeshComponent* Hull = NewObject<UStaticMeshComponent>(Station);
+		Hull->SetStaticMesh(HullMesh);
+		Hull->SetupAttachment(Station->GetRootComponent());
+		Hull->SetRelativeScale3D(FVector(20.0));
+		Hull->RegisterComponent();
+		const FBox HullBox = Hull->Bounds.GetBox();
+		const FVector FallbackStart = Station->GetPlayerStartLocation();
+		TestFalse(TEXT("The fallback start is outside the hull"), HullBox.IsInsideOrOn(FallbackStart));
+		TestTrue(TEXT("The fallback start is above the hull along station up"),
+			(FallbackStart - HullBox.GetCenter()).GetSafeNormal().Equals(Station->GetActorUpVector(), 0.01));
+	}
+
 	Station->SpawnPoint->SetRelativeLocation(FVector(100.0, 0.0, 0.0));
 	TestTrue(TEXT("Without an authored player start a station uses SpawnPoint"),
 		Station->GetPlayerStartLocation().Equals(StationTransform.TransformPosition(FVector(100.0, 0.0, 0.0)), 0.1));
@@ -733,8 +773,6 @@ bool FAPSStationPlayerStartTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("An authored PlayerStartPoint wins over SpawnPoint"),
 		Station->GetPlayerStartLocation().Equals(StationTransform.TransformPosition(FVector(0.0, 200.0, 50.0)), 0.1));
 
-	TestTrue(TEXT("Without an authored player start headquarters use StartPoint"),
-		Headquarters->GetPlayerStartLocation().Equals(Headquarters->GetStartPointPosition(), 0.1));
 	Headquarters->PlayerStartPoint->SetRelativeLocation(FVector(300.0, -100.0, 20.0));
 	TestTrue(TEXT("The headquarters player start moves and turns with the actor"),
 		Headquarters->GetPlayerStartLocation().Equals(
@@ -751,6 +789,16 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FAPSShipDriveEnvironmentTest::RunTest(const FString& Parameters)
 {
+	// The power steps x engine modes stay available behind aps.Ship.FlightModel 0; this test covers them.
+	IConsoleVariable* FlightModelSwitch = IConsoleManager::Get().FindConsoleVariable(TEXT("aps.Ship.FlightModel"));
+	if (!TestNotNull(TEXT("aps.Ship.FlightModel"), FlightModelSwitch))
+	{
+		return false;
+	}
+	const int32 PreviousFlightModel = FlightModelSwitch->GetInt();
+	FlightModelSwitch->Set(0, ECVF_SetByCode);
+	ON_SCOPE_EXIT { FlightModelSwitch->Set(PreviousFlightModel, ECVF_SetByCode); };
+
 	UWorld* World = APSGameplayIntegrationTests::CreateTestWorld();
 	if (!TestNotNull(TEXT("Test world"), World))
 	{
@@ -868,6 +916,158 @@ bool FAPSShipDriveEnvironmentTest::RunTest(const FString& Parameters)
 	Ship->Tick(0.5f);
 	TestTrue(TEXT("Kinematic-to-physics engine handoff preserves speed"),
 		FMath::IsNearlyEqual(Ship->GetShipSpeedMetersPerSecond(), SpeedBeforeHandoff, 0.1));
+
+	APSGameplayIntegrationTests::DestroyTestWorld(World);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FAPSShipBandFlightControlsTest,
+	"APS.Gameplay.Vehicle.BandFlightControls",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FAPSShipBandFlightControlsTest::RunTest(const FString& Parameters)
+{
+	IConsoleVariable* FlightModelSwitch = IConsoleManager::Get().FindConsoleVariable(TEXT("aps.Ship.FlightModel"));
+	if (!TestNotNull(TEXT("aps.Ship.FlightModel"), FlightModelSwitch))
+	{
+		return false;
+	}
+	const int32 PreviousFlightModel = FlightModelSwitch->GetInt();
+	FlightModelSwitch->Set(1, ECVF_SetByCode);
+	ON_SCOPE_EXIT { FlightModelSwitch->Set(PreviousFlightModel, ECVF_SetByCode); };
+
+	UWorld* World = APSGameplayIntegrationTests::CreateTestWorld();
+	if (!TestNotNull(TEXT("Test world"), World))
+	{
+		return false;
+	}
+	ASpaceship* Ship = World->SpawnActor<ASpaceship>();
+	UAPSShipFlightModel* Model = Ship ? Ship->FlightModel : nullptr;
+	if (!TestNotNull(TEXT("Spaceship"), Ship) || !TestNotNull(TEXT("Every ship owns the band flight model"), Model))
+	{
+		APSGameplayIntegrationTests::DestroyTestWorld(World);
+		return false;
+	}
+	Ship->SizeClass = ESpaceshipSizeClass::M;
+	Ship->ActiveClassPreset = ASpaceship::GetPresetForSizeClass(ESpaceshipSizeClass::M);
+	TestTrue(TEXT("The band model is on by default"), Model->IsBandFlightActive());
+
+	// Keys 1-5 pick the bands; Right Shift / Right Ctrl step through the ones the hull supports.
+	Ship->SelectOffsetEngine();
+	TestEqual(TEXT("Key 3 selects ORBITAL"), Model->GetFlightBand(), EAPSFlightBand::Orbital);
+	Ship->SelectCruiseBand();
+	TestEqual(TEXT("Key 4 selects CRUISE on an M hull"), Model->GetFlightBand(), EAPSFlightBand::Cruise);
+	Ship->SelectStellarBand();
+	TestEqual(TEXT("Key 5 selects STELLAR on an M hull"), Model->GetFlightBand(), EAPSFlightBand::Stellar);
+	Ship->SelectImpulseEngine();
+	TestEqual(TEXT("Key 1 selects MANEUVER"), Model->GetFlightBand(), EAPSFlightBand::Maneuver);
+	Ship->IncreaseFlightMode();
+	TestEqual(TEXT("Right Shift steps MANEUVER to FLIGHT"), Model->GetFlightBand(), EAPSFlightBand::Flight);
+	Ship->DecreaseFlightMode();
+	TestEqual(TEXT("Right Ctrl steps back to MANEUVER"), Model->GetFlightBand(), EAPSFlightBand::Maneuver);
+	Ship->DecreaseFlightMode();
+	TestEqual(TEXT("MANEUVER is the lowest band"), Model->GetFlightBand(), EAPSFlightBand::Maneuver);
+
+	Ship->ActiveClassPreset = ASpaceship::GetPresetForSizeClass(ESpaceshipSizeClass::XXS);
+	Ship->SelectOffsetEngine();
+	Ship->SelectCruiseBand();
+	TestEqual(TEXT("An XXS hull without SpaceWrap keeps ORBITAL on key 4"), Model->GetFlightBand(), EAPSFlightBand::Orbital);
+	Ship->IncreaseFlightMode();
+	TestEqual(TEXT("Stepping up skips bands the hull lacks"), Model->GetFlightBand(), EAPSFlightBand::Orbital);
+	Ship->ActiveClassPreset = ASpaceship::GetPresetForSizeClass(ESpaceshipSizeClass::S);
+	Ship->IncreaseFlightMode();
+	TestEqual(TEXT("An S hull reaches CRUISE"), Model->GetFlightBand(), EAPSFlightBand::Cruise);
+	Ship->IncreaseFlightMode();
+	TestEqual(TEXT("An S hull without Offset stops at CRUISE"), Model->GetFlightBand(), EAPSFlightBand::Cruise);
+
+	// Flight in an empty world (no bodies, no ground): the band limits alone.
+	Ship->ActiveClassPreset = ASpaceship::GetPresetForSizeClass(ESpaceshipSizeClass::M);
+	Ship->SelectImpulseEngine();
+	Ship->SwitchEngines();
+	const auto Fly = [Ship](float Seconds)
+	{
+		for (int32 Frame = 0; Frame < FMath::RoundToInt(Seconds * 60.0f); ++Frame)
+		{
+			Ship->Tick(1.0f / 60.0f);
+		}
+	};
+	// Direction of one frame's motion (the velocity itself is internal to the ship).
+	const auto MotionDirection = [Ship]()
+	{
+		const FVector Before = Ship->GetActorLocation();
+		Ship->Tick(1.0f / 60.0f);
+		return (Ship->GetActorLocation() - Before).GetSafeNormal();
+	};
+	const double ManeuverLimit = Model->GetBandSettings(EAPSFlightBand::Maneuver).MaxSpeed;
+	Ship->ThrustForward(1.0f);
+	Fly(4.0f);
+	TestTrue(TEXT("Held W reaches the MANEUVER limit"),
+		FMath::IsNearlyEqual(Ship->GetShipSpeedMetersPerSecond(), ManeuverLimit, ManeuverLimit * 0.02));
+	TestTrue(TEXT("The ship flies along its nose"),
+		FVector::DotProduct(MotionDirection(), Ship->GetShipForwardVector()) > 0.99);
+	Ship->ThrustForward(0.0f);
+	Fly(4.0f);
+	TestTrue(TEXT("Released keys stop a hovering ship"), Ship->GetShipSpeedMetersPerSecond() < 0.5);
+
+	Ship->SelectSpaceWrapEngine();
+	const double FlightLimit = Model->GetBandSettings(EAPSFlightBand::Flight).MaxSpeed;
+	Ship->ThrustForward(1.0f);
+	Fly(5.0f);
+	const double FlightSpeed = Ship->GetShipSpeedMetersPerSecond();
+	TestTrue(TEXT("FLIGHT reaches 90% of its limit within 5 s"), FlightSpeed > FlightLimit * 0.9 && FlightSpeed <= FlightLimit);
+	Ship->ThrustForward(0.0f);
+	Fly(1.0f);
+	TestTrue(TEXT("Released W slows a FLIGHT ship like a car"), Ship->GetShipSpeedMetersPerSecond() < FlightSpeed * 0.6);
+
+	Ship->SelectOffsetEngine();
+	Ship->ThrustForward(1.0f);
+	Fly(2.0f);
+	Ship->ThrustForward(0.0f);
+	const double CoastSpeed = Ship->GetShipSpeedMetersPerSecond();
+	Fly(1.0f);
+	TestTrue(TEXT("Released W keeps an ORBITAL ship's speed in space"),
+		FMath::IsNearlyEqual(Ship->GetShipSpeedMetersPerSecond(), CoastSpeed, CoastSpeed * 0.01));
+	// The engines cancel drift: a turned nose takes the velocity with it.
+	Ship->SetActorRotation(Ship->GetActorRotation() + FRotator(0.0, 60.0, 0.0));
+	TestTrue(TEXT("Right after the turn the ship still drifts along its old course"),
+		FVector::DotProduct(MotionDirection(), Ship->GetShipForwardVector()) < 0.6);
+	Fly(2.0f);
+	TestTrue(TEXT("ORBITAL velocity follows a turned nose"),
+		FVector::DotProduct(MotionDirection(), Ship->GetShipForwardVector()) > 0.95);
+
+	Ship->SelectImpulseEngine();
+	Fly(2.0f);
+	TestTrue(TEXT("Dropping to MANEUVER sheds the ORBITAL speed within 2 s"),
+		Ship->GetShipSpeedMetersPerSecond() < ManeuverLimit * 1.1);
+
+	// Letting go of Shift keeps the speed in space (Rio, 29.09); S slows the ship down.
+	Ship->SelectOffsetEngine();
+	Ship->StartAccelerationBoost();
+	Ship->ThrustForward(1.0f);
+	Fly(3.0f);
+	Ship->StopAccelerationBoost();
+	Ship->ThrustForward(0.0f);
+	const double BoostedSpeed = Ship->GetShipSpeedMetersPerSecond();
+	Fly(2.0f);
+	TestTrue(TEXT("The boost carries ORBITAL past its unboosted limit"),
+		BoostedSpeed > Model->GetBandSettings(EAPSFlightBand::Orbital).MaxSpeed * 1.05);
+	TestTrue(TEXT("Letting go of the boost keeps the speed in space"),
+		FMath::IsNearlyEqual(Ship->GetShipSpeedMetersPerSecond(), BoostedSpeed, BoostedSpeed * 0.02));
+	Ship->ThrustForward(-1.0f);
+	Fly(2.0f);
+	TestTrue(TEXT("S slows the ship down"), Ship->GetShipSpeedMetersPerSecond() < BoostedSpeed * 0.9);
+	Ship->ThrustForward(0.0f);
+
+	// AUTO: key 0 hands the band back; in open space held W shifts up through the gears.
+	Ship->SelectAutoBands();
+	TestTrue(TEXT("Key 0 turns AUTO back on"), Model->IsAutoBandActive());
+	Ship->ThrustForward(1.0f);
+	Fly(10.0f);
+	TestTrue(TEXT("AUTO shifts up past ORBITAL in open space"), Model->GetFlightBand() >= EAPSFlightBand::Cruise);
+	Ship->ThrustForward(0.0f);
+	Ship->SelectImpulseEngine();
+	TestFalse(TEXT("A band key switches AUTO off"), Model->IsAutoBandActive());
 
 	APSGameplayIntegrationTests::DestroyTestWorld(World);
 	return true;

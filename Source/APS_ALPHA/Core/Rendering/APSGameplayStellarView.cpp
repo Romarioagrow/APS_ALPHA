@@ -13,6 +13,7 @@
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
+#include "HAL/IConsoleManager.h"
 #include "EngineUtils.h"
 #include "GameFramework/PlayerController.h"
 #include "Async/ParallelFor.h"
@@ -39,6 +40,116 @@ void UAPSStellarVisualSubsystem::ResetGameplayStellarView()
 	ClosestStellarPointCm = 0.0;
 	ClosestStellarRenderDistanceCm = 0.0;
 	LastStellarOccluders.Reset();
+}
+
+namespace APSGameplayStellarDay
+{
+	// Catalogue stars fade in their material with daylight and altitude: none in a full day at the ground, back in
+	// full at the top of the atmosphere (Rio, 30.09: "a key feature"; e1-ascent-1). 0 restores the old switch-off.
+	TAutoConsoleVariable<int32> CVarDayFadeLog(TEXT("aps.Stars.DayFadeLog"), 0,
+		TEXT("1 logs every change of the stars' daylight visibility (smoothness checks)."));
+	TAutoConsoleVariable<int32> CVarDayFade(TEXT("aps.Stars.DayFade"), 1,
+		TEXT("1 fades the catalogue stars with daylight and altitude in their material; 0 switches them off in a day sky."));
+	TAutoConsoleVariable<float> CVarDayFadeDepth(TEXT("aps.Stars.DayFadeDepth"), 6.25f,
+		TEXT("How deep a day sky dims the catalogue stars, in e-folds of brightness. 6.25: the brightest show from ~20 km of ")
+		TEXT("a 100 km atmosphere, all from ~50 km, full brightness at 95 km (e1-ascent-4); lower shows them earlier."));
+
+	/**
+	 * The points' brightness for a day factor. Against the dark day sky and the fixed exposure every catalogue star shows
+	 * from ~6% of its brightness and all are bright from ~30% (e1-ascent-2 shots: 906 of 906 stars at 6%, 72 of them
+	 * bright), so the brightness is exponential in the factor: each step multiplies it by the same amount, from 0.2%
+	 * (below the brightest star) to full, and the last 5% of the day ramps that 0.2% down to none.
+	 */
+	float PointVisibility(const float DayFactor)
+	{
+		const float Clear = FMath::Clamp(1.0f - DayFactor, 0.0f, 1.0f);
+		return FMath::Exp(-FMath::Max(CVarDayFadeDepth.GetValueOnGameThread(), 0.0f) * (1.0f - Clear))
+			* FMath::Min(Clear / 0.05f, 1.0f);
+	}
+
+	/**
+	 * Sets the points' daylight brightness on their gameplay material (APSGameplayStarAppearance); false when the
+	 * material has no such term (not regenerated yet), and the caller switches the points off in a day sky instead.
+	 */
+	bool ApplyPointVisibility(UMaterialInterface* Material, const float DayFactor, const AActor* Owner)
+	{
+		static const FName VisibilityParameter(TEXT("GameplayPointVisibility"));
+		UMaterialInstanceDynamic* Points = Cast<UMaterialInstanceDynamic>(Material);
+		float Applied = 1.0f;
+		if (!Points || CVarDayFade.GetValueOnGameThread() == 0 || !Points->GetScalarParameterValue(VisibilityParameter, Applied))
+		{
+			return false;
+		}
+		// None in a full day at the ground (the day sky here is dark and the exposure fixed, so even 1% of a point
+		// shows), then an even return with altitude up to the Karman line.
+		const float Visibility = PointVisibility(DayFactor);
+		// A relative step: the first stars live at a fraction of a percent, where a fixed step would stair. The ends are
+		// set exactly (a 1% step left space at 0.9974, e1-ascent-4).
+		const bool bEnd = (Visibility <= 0.0f || Visibility >= 1.0f) && Applied != Visibility;
+		if (bEnd || FMath::Abs(Applied - Visibility) > 0.01f * FMath::Max(Visibility, 0.0005f))
+		{
+			if (FMath::Abs(Applied - Visibility) > 0.1f || CVarDayFadeLog.GetValueOnGameThread() != 0)
+			{
+				UE_LOG(LogTemp, Log, TEXT("[APS.Gameplay.StellarView] %s points fade to %.4f (day %.3f)"),
+					*GetNameSafe(Owner), Visibility, DayFactor);
+			}
+			Points->SetScalarParameterValue(VisibilityParameter, Visibility);
+		}
+		return true;
+	}
+}
+
+void UAPSStellarVisualSubsystem::UpdateGameplayDaylightStars(const FVector& CameraLocation)
+{
+	// Day factor: how much of the catalogue a lit sky still outshines, on a perceived scale. The key star's height sets
+	// day or night (below -3 degrees none, above 7 degrees full). Higher up a lit sky dims and shows ever fainter stars,
+	// about the same gain in magnitude per kilometre, so the factor falls linearly with height and is gone just below
+	// the top of the atmosphere, the Karman line; the points' brightness follows it on a log scale (PointVisibility).
+	// The stars used to be switched off and appeared all at once after take-off; the first fade thinned the air on a
+	// fifth of the height and still showed every star by ~10 km of a 100 km atmosphere (Rio, 30.09; e1-ascent-2).
+	float Factor = 0.0f;
+	// The accepted switch-off curve: full day from 60% of the atmosphere's height down.
+	float HideFactor = 0.0f;
+	if (bHasTargetStar && GetWorld())
+	{
+		for (TActorIterator<APlanetaryBody> It(GetWorld()); It; ++It)
+		{
+			const APlanetaryBody* Body = *It;
+			const double AtmosphereCm = IsValid(Body) ? Body->AtmosphereHeight * 100000.0 : 0.0;
+			const double RadiusCm = IsValid(Body) ? Body->GetWorldScapeBodyRadiusCm() : 0.0;
+			if (AtmosphereCm <= 0.0 || RadiusCm <= 0.0)
+			{
+				continue;
+			}
+			const FVector FromCentre = CameraLocation - Body->GetActorLocation();
+			const double Altitude = FromCentre.Size() - RadiusCm;
+			if (Altitude >= AtmosphereCm)
+			{
+				continue;
+			}
+			const double SunSine = FVector::DotProduct(FromCentre.GetSafeNormal(),
+				(TargetStarLocation - CameraLocation).GetSafeNormal());
+			const double Height = FMath::Clamp(FMath::Max(Altitude, 0.0) / (0.95 * AtmosphereCm), 0.0, 1.0);
+			Factor = FMath::Max(Factor, static_cast<float>(FMath::SmoothStep(-0.05, 0.12, SunSine) * (1.0 - Height)));
+			HideFactor = FMath::Max(HideFactor, static_cast<float>(FMath::SmoothStep(-0.05, 0.12, SunSine)
+				* FMath::SmoothStep(0.0, 0.4, 1.0 - FMath::Max(Altitude, 0.0) / AtmosphereCm)));
+		}
+	}
+	// Eased toward the target so no frame jumps; a jump of more than half the range (spawn, a teleport) snaps.
+	const float DeltaSeconds = GetWorld() ? GetWorld()->GetDeltaSeconds() : 0.0f;
+	GameplayDaylightFactor = FMath::Abs(Factor - GameplayDaylightFactor) > 0.5f || DeltaSeconds <= 0.0f
+		? Factor : FMath::FInterpTo(GameplayDaylightFactor, Factor, DeltaSeconds, 6.0f);
+	// The catalogue points fade in their material (UpdateGameplayStellarView); only the resolved native stars, separate
+	// meshes without that term, still leave a day sky.
+	const bool bHide = bGameplayDaylightStarsHidden ? HideFactor > 0.5f : HideFactor > 0.8f;
+	if (bHide != bGameplayDaylightStarsHidden)
+	{
+		bGameplayDaylightStarsHidden = bHide;
+		// Back at night the native stars need one full demand pass; point sizes are still current.
+		bGameplayNativeDemandCandidatesValid = false;
+		UE_LOG(LogTemp, Log, TEXT("[APS.Gameplay.StellarView] daylight %s the resolved stars (day %.2f)"),
+			bHide ? TEXT("hides") : TEXT("shows"), Factor);
+	}
 }
 
 void UAPSStellarVisualSubsystem::UpdateGameplayStellarView()
@@ -144,23 +255,74 @@ void UAPSStellarVisualSubsystem::UpdateGameplayStellarView()
 		const bool bGeometryChanged = bNewBuild
 			|| TopologyHash != GameplayNativeTopologyHash
 			|| GameplayNativeMutationSerial != Descriptor.TransformMutationSerial;
-		if (bGeometryChanged) GameplayNativePhysicalRadii.Reset();
+		if (bGeometryChanged)
+		{
+			GameplayNativePhysicalRadii.Reset();
+			GameplayNativeSizedDistances.Reset();
+			GameplayNativeDemandCandidates.Reset();
+			bGameplayNativeDemandCandidatesValid = false;
+			GameplayNativeResizePasses.Reset();
+		}
+		// A consumed catalogue keeps every centre at its real position, so observer travel changes only glyph
+		// sizes. Geometry and optics (FOV) changes resize the whole catalogue; travel resizes each point on its own
+		// once its size error reaches the pixel budget (below). A fast approach to one star then costs a few points
+		// per frame instead of a pass over all 61k instances (29.09).
 		const bool bUpdatePointSizes = bGeometryChanged
-			|| !APSGameplayStellarProjection::CanReuseOptics(LastStellarPixelTangent, PixelTangent)
-			|| !APSGameplayStellarProjection::CanReuseProjection(
-				FVector::Distance(ObserverFromHome, LastStellarObserverFromHome),
-				ClosestStellarPointCm, PixelTangent);
+			|| !APSGameplayStellarProjection::CanReuseOptics(LastStellarPixelTangent, PixelTangent);
+		// No point of a source can leave its size budget before the observer travels that source's smallest slack,
+		// so its per-point check is skipped until then (walking on a planet: practically never; 29.09). Among the
+		// ~1 AU-spaced cluster stars a CRUISE flight ran out of slack every frame, and each pass restarted the
+		// source's HISM tree build and scene proxy (~2.5 ms a frame). Passes of one source are now
+		// PointResizeIntervalSeconds apart, and one source at most is checked per frame (30.09).
+		const double NowSeconds = FPlatformTime::Seconds();
+		bool bResizePassTaken = false;
+		// Nearest catalogue point now: at least each source's nearest at its last pass, less the travel since.
+		const auto NearestCatalogueCm = [&]()
+		{
+			double Nearest = TNumericLimits<double>::Max();
+			for (const auto& Pass : GameplayNativeResizePasses)
+			{
+				if (!Pass.Key.IsValid() || Pass.Value.NearestCm == TNumericLimits<double>::Max()) continue;
+				Nearest = FMath::Min(Nearest,
+					Pass.Value.NearestCm - FVector::Distance(ObserverFromHome, Pass.Value.Observer));
+			}
+			return Nearest;
+		};
+		const double ClosestNowCm = NearestCatalogueCm();
 		const FQuat ViewRotation = Rotation.Quaternion();
 		const double TanHalfHorizontal = FMath::Tan(FMath::DegreesToRadians(
 			Controller->PlayerCameraManager->GetFOVAngle() * 0.5));
 		const double TanHalfVertical = TanHalfHorizontal * FMath::Max(Height, 1) / FMath::Max(Width, 1);
 		// Selection is view-dependent even when distance/FOV allow point-size reuse.
 		// Refresh before crossing the 32px admission guard, without reuploading HISM.
-		const bool bRefreshDemand = bUpdatePointSizes
-			|| GameplayNativeDemandRotation.AngularDistance(ViewRotation) > PixelTangent * 8.0
+		const bool bDemandTurned = GameplayNativeDemandRotation.AngularDistance(ViewRotation) > PixelTangent * 8.0
 			|| !FMath::IsNearlyEqual(GameplayNativeTanHalfHorizontal, TanHalfHorizontal, 1.0e-6)
 			|| !FMath::IsNearlyEqual(GameplayNativeTanHalfVertical, TanHalfVertical, 1.0e-6);
-		double NearestPointCm = TNumericLimits<double>::Max();
+		// A turn changes which stars are on screen, not how large they look: only travel (or new geometry/optics)
+		// rebuilds the short list of stars bright enough to matter, and a turn re-selects among those. Every mouse
+		// turn of 8 px used to walk all 61k points (3-9 ms, the stutter when looking around; 29.09). Travel
+		// re-measures the candidates at the 2% step and walks the whole catalogue only at the 25% step, before which
+		// no point outside the list can reach admission (CanReuseDemandCandidates; 30.09).
+		const bool bFullDemand = bUpdatePointSizes || !bGameplayNativeDemandCandidatesValid
+			|| !APSGameplayStellarProjection::CanReuseDemandCandidates(
+				FVector::Distance(ObserverFromHome, GameplayNativeDemandObserver),
+				FMath::Min(GameplayNativeDemandClosestCm, ClosestNowCm));
+		const bool bDemandTravelled = !APSGameplayStellarProjection::CanReuseDemand(
+			FVector::Distance(ObserverFromHome, GameplayNativeDemandRefreshObserver),
+			FMath::Min(GameplayNativeDemandRefreshClosestCm, ClosestNowCm));
+		const bool bRefreshDemand = bFullDemand || bDemandTurned || bDemandTravelled;
+		if (bFullDemand)
+		{
+			GameplayNativeDemandObserver = ObserverFromHome;
+			GameplayNativeDemandCandidates.Reset();
+			bGameplayNativeDemandCandidatesValid = true;
+		}
+		if (bRefreshDemand)
+		{
+			GameplayNativeDemandRefreshObserver = ObserverFromHome;
+		}
+		// Candidates keep a 2x margin below the smallest admission radius (RetainPixels 0.65 px).
+		constexpr double CandidatePixels = 0.3;
 		BeginGameplayNativeStars(Generator, bRefreshDemand, Camera, PixelTangent,
 			ViewRotation, TanHalfHorizontal, TanHalfVertical);
 		for (AActor* Actor : Attached)
@@ -179,11 +341,20 @@ void UAPSStellarVisualSubsystem::UpdateGameplayStellarView()
 			}
 			if (IsValid(Source))
 			{
-				Source->SetVisibility(true, false);
-				Source->SetHiddenInGame(false, false);
+				// A day sky fades the points through their gameplay material (APSGameplayStarAppearance), brightest last.
+				const bool bFades = APSGameplayStellarDay::ApplyPointVisibility(Source->GetMaterial(0),
+					GameplayDaylightFactor, Source->GetOwner());
+				// A material without the fade (not regenerated yet) still switches the points off in a day sky.
+				const bool bHidden = !bFades && bGameplayDaylightStarsHidden;
+				Source->SetVisibility(!bHidden, false);
+				Source->SetHiddenInGame(bHidden, false);
 			}
-			if (!bRefreshDemand || !IsValid(Source) || !BaseTransforms
-				|| !IsValid(Source->GetStaticMesh())) continue;
+			if (!IsValid(Source) || !BaseTransforms || !IsValid(Source->GetStaticMesh())) continue;
+			FAPSGameplayStellarResizePass& Pass = GameplayNativeResizePasses.FindOrAdd(Source);
+			const bool bResizeTravelled = !bUpdatePointSizes && !bResizePassTaken
+				&& FVector::Distance(ObserverFromHome, Pass.Observer) > FMath::Max(Pass.SlackCm, 1.0)
+				&& NowSeconds - Pass.Seconds >= APSGameplayStellarProjection::PointResizeIntervalSeconds;
+			if (!bRefreshDemand && !bResizeTravelled) continue;
 			if (!APSStellarOpticalSupport::EnsureLayout(Source)) continue;
 
 			// Work inside the existing affine frame: no enormous per-instance
@@ -202,30 +373,13 @@ void UAPSStellarVisualSubsystem::UpdateGameplayStellarView()
 				if (Radius < 0.0) Radius = APSGameplayNativeStars::PhysicalRadiusCm(Key);
 				return Radius;
 			};
-			if (!bUpdatePointSizes)
+			TArray<double>& SizedDistances = GameplayNativeSizedDistances.FindOrAdd(Source);
+			TArray<int32>& DemandCandidates = GameplayNativeDemandCandidates.FindOrAdd(Source);
+			// Sizes one point for the current observer; true when its transform or optical data changed.
+			// OutDistanceCm is the distance it was sized at (0 for suppressed points, which need no size).
+			const auto SizePoint = [&](int32 Index, FTransform& Transform, bool bCollectDemand, double& OutDistanceCm)
 			{
-				// A camera turn changes selection, not HISM size or geometry. Avoid
-				// allocating/readback of the full transform catalog on every turn.
-				for (int32 Index = 0; Index < PhysicalRadii.Num(); ++Index)
-				{
-					if (!BaseTransforms->IsValidIndex(Index)) continue;
-					const FAPSGameplayStellarKey Key = Generator->MakeGameplayStellarKey(Source, Index);
-					const double RadiusCm = GetPhysicalRadius(Key);
-					const double PixelRadiusCm = FVector::Distance((*BaseTransforms)[Index].GetLocation(), LocalCamera)
-						* ComponentScale * PixelTangent;
-					CollectGameplayNativeDemand(Key, (*BaseTransforms)[Index], RadiusCm,
-						PixelRadiusCm > 0.0 ? RadiusCm / PixelRadiusCm : 0.0);
-				}
-				continue;
-			}
-			TArray<FTransform> Transforms;
-			Transforms.SetNum(Source->GetInstanceCount());
-			bool bChanged = false;
-			for (int32 Index = 0; Index < Transforms.Num(); ++Index)
-			{
-				FTransform& Transform = Transforms[Index];
-				if (!Source->GetInstanceTransform(Index, Transform, false)) return;
-				if (!BaseTransforms->IsValidIndex(Index)) continue;
+				OutDistanceCm = 0.0;
 				const FAPSGameplayStellarKey Key = Generator->MakeGameplayStellarKey(Source, Index);
 				bool bNativeOwnsPoint = false;
 				if (!ObserveGameplayNativePoint(Generator, Key, (*BaseTransforms)[Index],
@@ -236,9 +390,9 @@ void UAPSStellarVisualSubsystem::UpdateGameplayStellarView()
 						&& Transform.GetScale3D() != FVector::ZeroVector)
 					{
 						Transform.SetScale3D(FVector::ZeroVector);
-						bChanged = true;
+						return true;
 					}
-					continue;
+					return false;
 				}
 				const FVector BaseScale = (*BaseTransforms)[Index].GetScale3D();
 				const double SourceRadius = MeshRadius * BaseScale.GetAbsMax();
@@ -246,17 +400,25 @@ void UAPSStellarVisualSubsystem::UpdateGameplayStellarView()
 				// Consumed datasets retain legacy impostor scales in BaseTransforms.
 				// They are identity snapshots, not the physical radius used by the menu.
 				const double BaseRadius = ComponentScale > 0.0 ? PhysicalRadiusCm / ComponentScale : 0.0;
-				if (!FMath::IsFinite(BaseRadius) || BaseRadius <= 0.0 || SourceRadius <= 0.0) continue;
+				if (!FMath::IsFinite(BaseRadius) || BaseRadius <= 0.0 || SourceRadius <= 0.0) return false;
 				const double Distance = FVector::Distance(Transform.GetLocation(), LocalCamera);
-				NearestPointCm = FMath::Min(NearestPointCm, Distance * ComponentScale);
+				// Measured like the per-point check below (from the immutable centre), so the two never disagree.
+				OutDistanceCm = FVector::Distance((*BaseTransforms)[Index].GetLocation(), LocalCamera) * ComponentScale;
 				const auto Profile = APSStellarOpticalSupport::Select(Source->PerInstanceSMCustomData,
 					Source->NumCustomDataFloats, Index);
 				const double PixelWorldRadius = Distance * PixelTangent;
-				CollectGameplayNativeDemand(Key, (*BaseTransforms)[Index], PhysicalRadiusCm,
-					PixelWorldRadius > 0.0 ? BaseRadius / PixelWorldRadius : 0.0);
+				if (bCollectDemand)
+				{
+					const double ApparentPixels = PixelWorldRadius > 0.0 ? BaseRadius / PixelWorldRadius : 0.0;
+					CollectGameplayNativeDemand(Key, (*BaseTransforms)[Index], PhysicalRadiusCm, ApparentPixels);
+					if (ApparentPixels >= CandidatePixels)
+					{
+						DemandCandidates.Add(Index);
+					}
+				}
 				const double CoreRadius = APSStellarOpticalSupport::CoreRadius(BaseRadius, PixelWorldRadius);
 				const double PointRadius = APSStellarOpticalSupport::CarrierRadius(BaseRadius, PixelWorldRadius, Profile);
-				bChanged |= APSStellarOpticalSupport::Publish(Source, Index,
+				bool bChanged = APSStellarOpticalSupport::Publish(Source, Index,
 					APSStellarOpticalSupport::CoreScale(CoreRadius, PointRadius),
 					APSStellarOpticalSupport::ResolvedRayStrength(Profile, BaseRadius, PixelWorldRadius));
 				const FVector PointScale = bNativeOwnsPoint ? FVector::ZeroVector
@@ -266,13 +428,129 @@ void UAPSStellarVisualSubsystem::UpdateGameplayStellarView()
 					Transform.SetScale3D(PointScale);
 					bChanged = true;
 				}
+				return bChanged;
+			};
+			if (!bUpdatePointSizes)
+			{
+				if (bRefreshDemand)
+				{
+					// A camera turn changes selection, not HISM size or geometry. Avoid
+					// allocating/readback of the full transform catalog on every turn.
+					const auto CollectDemand = [&](int32 Index)
+					{
+						const FAPSGameplayStellarKey Key = Generator->MakeGameplayStellarKey(Source, Index);
+						const double RadiusCm = GetPhysicalRadius(Key);
+						const double PixelRadiusCm = FVector::Distance((*BaseTransforms)[Index].GetLocation(), LocalCamera)
+							* ComponentScale * PixelTangent;
+						const double ApparentPixels = PixelRadiusCm > 0.0 ? RadiusCm / PixelRadiusCm : 0.0;
+						CollectGameplayNativeDemand(Key, (*BaseTransforms)[Index], RadiusCm, ApparentPixels);
+						return ApparentPixels;
+					};
+					if (bFullDemand)
+					{
+						TRACE_CPUPROFILER_EVENT_SCOPE(APS_GameplayStellarDemandWalk);
+						for (int32 Index = 0; Index < PhysicalRadii.Num(); ++Index)
+						{
+							if (BaseTransforms->IsValidIndex(Index) && CollectDemand(Index) >= CandidatePixels)
+							{
+								DemandCandidates.Add(Index);
+							}
+						}
+					}
+					else
+					{
+						for (const int32 Index : DemandCandidates)
+						{
+							if (BaseTransforms->IsValidIndex(Index) && PhysicalRadii.IsValidIndex(Index))
+							{
+								CollectDemand(Index);
+							}
+						}
+					}
+				}
+				if (bResizeTravelled && SizedDistances.Num() == Source->GetInstanceCount())
+				{
+					if (Source->IsAsyncBuilding())
+					{
+						// Any instance change during an async tree build makes UE discard and restart it, so the
+						// points wait for the build to land (a few frames) and are checked again then.
+						continue;
+					}
+					TRACE_CPUPROFILER_EVENT_SCOPE(APS_GameplayStellarResizePass);
+					// Only points whose own size error reached the budget are re-sized and re-uploaded.
+					bResizePassTaken = true;
+					bool bChanged = false;
+					double SlackCm = TNumericLimits<double>::Max();
+					double NearestCm = TNumericLimits<double>::Max();
+					for (int32 Index = 0; Index < SizedDistances.Num(); ++Index)
+					{
+						if (SizedDistances[Index] <= 0.0 || !BaseTransforms->IsValidIndex(Index)) continue;
+						const double DistanceCm = FVector::Distance((*BaseTransforms)[Index].GetLocation(), LocalCamera)
+							* ComponentScale;
+						NearestCm = FMath::Min(NearestCm, DistanceCm);
+						if (!APSGameplayStellarProjection::CanReusePointSize(DistanceCm, SizedDistances[Index]))
+						{
+							FTransform Transform;
+							if (Source->GetInstanceTransform(Index, Transform, false)
+								&& SizePoint(Index, Transform, false, SizedDistances[Index]))
+							{
+								Source->UpdateInstanceTransform(Index, Transform, false, false, true);
+								bChanged = true;
+							}
+						}
+						if (SizedDistances[Index] > 0.0)
+						{
+							SlackCm = FMath::Min(SlackCm,
+								APSGameplayStellarProjection::PointSizeSlackCm(DistanceCm, SizedDistances[Index]));
+						}
+					}
+					// The next pass waits until the observer has travelled the smallest slack found now.
+					Pass.Observer = ObserverFromHome;
+					Pass.SlackCm = SlackCm < TNumericLimits<double>::Max() ? FMath::Max(SlackCm, 0.0) : 0.0;
+					Pass.NearestCm = NearestCm;
+					Pass.Seconds = NowSeconds;
+					if (bChanged)
+					{
+						// A legacy-mode HISM reaches the GPU through its tree: ApplyBuildTree recreates the
+						// render state when the build lands, so no extra proxy rebuild here.
+						Source->BuildTreeIfOutdated(true, false);
+					}
+				}
+				continue;
 			}
+			TRACE_CPUPROFILER_EVENT_SCOPE(APS_GameplayStellarFullResize);
+			TArray<FTransform> Transforms;
+			Transforms.SetNum(Source->GetInstanceCount());
+			SizedDistances.Init(0.0, Transforms.Num());
+			bool bChanged = false;
+			double SlackCm = TNumericLimits<double>::Max();
+			double NearestCm = TNumericLimits<double>::Max();
+			for (int32 Index = 0; Index < Transforms.Num(); ++Index)
+			{
+				FTransform& Transform = Transforms[Index];
+				if (!Source->GetInstanceTransform(Index, Transform, false)) return;
+				if (!BaseTransforms->IsValidIndex(Index)) continue;
+				bChanged |= SizePoint(Index, Transform, true, SizedDistances[Index]);
+				if (SizedDistances[Index] > 0.0)
+				{
+					NearestCm = FMath::Min(NearestCm, SizedDistances[Index]);
+					SlackCm = FMath::Min(SlackCm,
+						APSGameplayStellarProjection::PointSizeSlackCm(SizedDistances[Index], SizedDistances[Index]));
+				}
+			}
+			Pass.Observer = ObserverFromHome;
+			Pass.SlackCm = SlackCm < TNumericLimits<double>::Max() ? FMath::Max(SlackCm, 0.0) : 0.0;
+			Pass.NearestCm = NearestCm;
+			Pass.Seconds = NowSeconds;
 			if (bChanged)
 			{
 				Source->BatchUpdateInstancesTransforms(0, Transforms, false, false, true);
 				// Automatic HISM rebuilds are disabled by the stellar stability policy.
 				// Refresh bounds once for this batch so enlarged points are not culled.
-				Source->BuildTreeIfOutdated(false, false);
+				// Asynchronously, as FlushSources does: a pass changes each glyph by at most
+				// the size budget, while a synchronous rebuild of the 25k/36k catalogue trees
+				// stalled the game thread ~22 ms per source (29.09).
+				Source->BuildTreeIfOutdated(true, false);
 				Source->MarkRenderStateDirty();
 			}
 		}
@@ -280,7 +558,20 @@ void UAPSStellarVisualSubsystem::UpdateGameplayStellarView()
 		{
 			LastStellarObserverFromHome = ObserverFromHome;
 			LastStellarPixelTangent = PixelTangent;
-			ClosestStellarPointCm = NearestPointCm;
+		}
+		// The demand steps are measured from the nearest point at the walk / re-measure just made.
+		const double ClosestAfterCm = NearestCatalogueCm();
+		if (bFullDemand)
+		{
+			GameplayNativeDemandClosestCm = ClosestAfterCm;
+		}
+		if (bRefreshDemand)
+		{
+			GameplayNativeDemandRefreshClosestCm = ClosestAfterCm;
+		}
+		if (ClosestAfterCm < TNumericLimits<double>::Max())
+		{
+			ClosestStellarPointCm = ClosestAfterCm;
 		}
 		GameplayNativeTopologyHash = TopologyHash;
 		PresentGameplayNativeStars(Generator);
@@ -435,6 +726,11 @@ void UAPSStellarVisualSubsystem::UpdateGameplayStellarView()
 	const bool bUpdateMask = bReproject
 		|| !APSGameplayStellarProjection::CanReuseProjection(MaskTravelCm, NearestPointCm, PixelTangent)
 		|| !APSGameplayStellarProjection::CanReuseOcclusion(LastStellarOccluders, Occluders, NearestPointCm, PixelTangent);
+	// The daylight fade follows every frame, as in the full-scale path; each view shares its source's material.
+	for (const FAPSGameplayStellarLayer& Layer : GameplayStellarLayers)
+		if (UInstancedStaticMeshComponent* View = Layer.View.Get())
+			APSGameplayStellarDay::ApplyPointVisibility(View->GetMaterial(0), GameplayDaylightFactor,
+				Layer.Source.IsValid() ? Layer.Source->GetOwner() : View->GetOwner());
 	if (!bUpdateMask) return;
 	CSV_SCOPED_TIMING_STAT(APSGameplayStars, Refresh);
 	CSV_CUSTOM_STAT(APSGameplayStars, MaskRefreshes, 1, ECsvCustomStatOp::Accumulate);
@@ -547,8 +843,11 @@ void UAPSStellarVisualSubsystem::UpdateGameplayStellarView()
 				Start = End;
 			}
 		}
-		View->SetVisibility(true, false);
-		View->SetHiddenInGame(false, false);
+		// A day sky switches the view off only when its material cannot fade the points (not regenerated yet).
+		const bool bHidden = bGameplayDaylightStarsHidden && !APSGameplayStellarDay::ApplyPointVisibility(View->GetMaterial(0),
+			GameplayDaylightFactor, Layer.Source.IsValid() ? Layer.Source->GetOwner() : View->GetOwner());
+		View->SetVisibility(!bHidden, false);
+		View->SetHiddenInGame(bHidden, false);
 		// Hide only after a populated replacement is ready; do not propagate into
 		// child actors and never alter source instance transforms or custom data.
 		if (UHierarchicalInstancedStaticMeshComponent* Source = Layer.Source.Get())

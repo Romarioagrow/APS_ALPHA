@@ -154,6 +154,12 @@ bool AAPSProductionConsole::ResolveCanonicalIdentity(FGuid& OutContextStableId,
 bool AAPSProductionConsole::InitializeProductionContext(FString& OutFailure)
 {
 	OutFailure.Reset();
+	// An explicit initialization (a world that never dispatched BeginPlay, as in the contract test) still needs the
+	// prompt identity BeginPlay would have issued, or every query is refused.
+	if (!PromptId.IsValid())
+	{
+		PromptId = FGuid::NewGuid();
+	}
 	UWorld* World = GetWorld();
 	UAPSProductionSubsystem* Production = World
 		? World->GetSubsystem<UAPSProductionSubsystem>() : nullptr;

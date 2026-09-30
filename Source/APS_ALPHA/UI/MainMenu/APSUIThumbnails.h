@@ -9,6 +9,10 @@ namespace APSUIThumbnails
 {
 	inline constexpr const TCHAR* Folder = TEXT("/Game/APS/APS_ALPHA/UI/Thumbnails");
 
+	/** UAPSStartAssetFilter: which start Blueprints the menu hides. Lives next to the thumbnails. */
+	inline constexpr const TCHAR* StartAssetFilterPath =
+		TEXT("/Game/APS/APS_ALPHA/UI/Thumbnails/DA_StartAssetFilter.DA_StartAssetFilter");
+
 	/** Texture object path for a Blueprint package. The hash keeps duplicate asset names apart. */
 	inline FString TexturePathForBlueprintPackage(const FString& BlueprintPackageName)
 	{

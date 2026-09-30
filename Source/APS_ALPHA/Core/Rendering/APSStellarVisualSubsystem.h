@@ -24,6 +24,19 @@ struct FAPSGameplayStellarPoint
 	bool bOccluded{true};
 };
 
+/** Per-point glyph sizing of one consumed catalogue source (UAPSStellarVisualSubsystem::UpdateGameplayStellarView). */
+struct FAPSGameplayStellarResizePass
+{
+	/** Observer (from home) at the source's last pass, and how far it may travel from there before a point of the
+	 * source leaves its size budget (the smallest PointSizeSlackCm found then). */
+	FVector Observer{FVector::ZeroVector};
+	double SlackCm{0.0};
+	/** Nearest sized point of the source at that pass; less the travel since, a bound on its nearest point now. */
+	double NearestCm{TNumericLimits<double>::Max()};
+	/** FPlatformTime::Seconds of the pass. */
+	double Seconds{-1.0e9};
+};
+
 /** Disposable optical view; the source catalog and its identity mapping stay immutable. */
 struct FAPSGameplayStellarLayer
 {
@@ -67,6 +80,20 @@ private:
 	TArray<FAPSGameplayNativeDemand> GameplayNativeDemand;
 	// One scalar per rendered slot; procedural records are resolved once per build.
 	TMap<TWeakObjectPtr<UHierarchicalInstancedStaticMeshComponent>, TArray<double>> GameplayNativePhysicalRadii;
+	// Consumed catalogues: observer distance each rendered slot was last sized at. Travel refreshes only the slots
+	// whose own size error reaches the pixel budget, not the whole catalogue.
+	TMap<TWeakObjectPtr<UHierarchicalInstancedStaticMeshComponent>, TArray<double>> GameplayNativeSizedDistances;
+	/** Observer and nearest catalogue distance at the last full demand walk and at the last candidate re-measure. */
+	FVector GameplayNativeDemandObserver{FVector::ZeroVector};
+	double GameplayNativeDemandClosestCm{0.0};
+	FVector GameplayNativeDemandRefreshObserver{FVector::ZeroVector};
+	double GameplayNativeDemandRefreshClosestCm{0.0};
+	/** Per-point sizing of each consumed source: its own slack, passes PointResizeIntervalSeconds apart. */
+	TMap<TWeakObjectPtr<UHierarchicalInstancedStaticMeshComponent>, FAPSGameplayStellarResizePass>
+		GameplayNativeResizePasses;
+	/** Points bright enough (with a 2x margin) to be native-star demand; a turn of the camera re-selects only these. */
+	TMap<TWeakObjectPtr<UHierarchicalInstancedStaticMeshComponent>, TArray<int32>> GameplayNativeDemandCandidates;
+	bool bGameplayNativeDemandCandidatesValid{false};
 	FVector GameplayNativeCamera{FVector::ZeroVector};
 	double GameplayNativePixelTangent{0.0};
 	FQuat GameplayNativeViewRotation{FQuat::Identity};
@@ -93,6 +120,13 @@ private:
 	uint64 GameplayStellarBuildSerial{0u};
 	void ResolveDirectionalLight();
 	void ResolveNearestStar(const FVector& ObserverLocation);
+	/**
+	 * Daylight deep in an atmosphere hides the catalogue and native stars; the own star is an actor and stays (Rio,
+	 * 29.09/30.09: a day sky shows one sun). Evaluated with the key-star search; hysteresis keeps dusk steady.
+	 */
+	void UpdateGameplayDaylightStars(const FVector& CameraLocation);
+	bool bGameplayDaylightStarsHidden{false};
+	float GameplayDaylightFactor{0.0f};
 	void UpdatePreviewFillLight(
 		const APlanetaryBody* PreviewBody,
 		const FVector& PreviewCameraLocation,

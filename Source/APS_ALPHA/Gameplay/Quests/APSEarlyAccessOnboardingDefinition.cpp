@@ -99,7 +99,8 @@ UAPSEarlyAccessOnboardingDefinition::UAPSEarlyAccessOnboardingDefinition()
 		LOCTEXT("BaseOpenedTitle", "Inspect the station"),
 		LOCTEXT("BaseOpenedBody", "Open or use the marked base interaction."),
 		Contract::PlayerCharacterBinding, Contract::BaseBinding);
-	AddNode(*this, Contract::StructurePlacedNode, TEXT("APS.Build.Place"),
+	// The verb production publishes for a Building job (was APS.Build.Place, which nothing publishes).
+	AddNode(*this, Contract::StructurePlacedNode, TEXT("APS.Building.Build"),
 		LOCTEXT("StructurePlacedTitle", "Build your first structure"),
 		LOCTEXT("StructurePlacedBody", "Place one valid buildable and wait for committed success."),
 		Contract::PlayerCharacterBinding);

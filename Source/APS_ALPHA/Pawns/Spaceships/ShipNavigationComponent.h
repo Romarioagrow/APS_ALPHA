@@ -34,6 +34,8 @@ struct FShipNavigationContact
 	EShipNavigationContactType Type{EShipNavigationContactType::Unknown};
 	double DistanceCentimeters{0.0};
 	bool bVirtualContact{false};
+	/** The pilot's own colony: always charted, with a marker of its own. */
+	bool bOwnColony{false};
 
 	FVector GetWorldLocation() const
 	{
@@ -55,6 +57,11 @@ public:
 
 	void RefreshContacts(const FVector& ObserverLocation, bool bForce = false);
 	void CycleTarget(int32 Direction);
+	/** Selects the listed contact with this stable id (the colony terminal's course); false when it is not listed. */
+	bool SelectContact(const FString& StableId);
+	/** A course for any charted actor, a station or a settlement too: it stays listed, whatever the marker filters,
+	 * until the pilot picks another target. False when no such actor is charted. */
+	bool SetCourse(const FString& StableId);
 
 	const TArray<FShipNavigationContact>& GetContacts() const { return Contacts; }
 	const FShipNavigationContact* GetContact(int32 Index) const;
@@ -98,6 +105,7 @@ private:
 
 	TArray<FShipNavigationContact> Contacts;
 	int32 SelectedContactIndex{INDEX_NONE};
+	FString PinnedCourseId;
 	int32 DiscoveredContactCount{0};
 	float RefreshElapsed{0.0f};
 };

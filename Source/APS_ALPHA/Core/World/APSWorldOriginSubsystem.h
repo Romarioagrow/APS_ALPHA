@@ -22,7 +22,10 @@ class APS_ALPHA_API UAPSWorldOriginSubsystem : public UWorldSubsystem
 	GENERATED_BODY()
 
 public:
-	/** Shifts the world so WorldLocation becomes 0,0,0. Returns true when the world moved. */
+	/**
+	 * Shifts the world so WorldLocation becomes 0,0,0. Returns true when the world moved now. While the generator's
+	 * star catalogue is not final yet the shift waits for it and then centres on the player pawn (returns false).
+	 */
 	bool RebaseOnto(const FVector& WorldLocation, const TCHAR* Reason);
 
 	/** Accumulated engine origin: generation frame = world + offset. */
@@ -33,4 +36,14 @@ public:
 
 protected:
 	virtual bool DoesSupportWorldType(const EWorldType::Type WorldType) const override;
+
+private:
+	bool RebaseNow(const FVector& WorldLocation, const TCHAR* Reason);
+	/** A generator whose canonical star catalogue has not been finalized yet (it validates bounds in its frame). */
+	bool IsStellarCatalogueSettling() const;
+	void RetryDeferredRebase();
+
+	bool bRebaseDeferred{false};
+	int32 DeferredRebaseTicks{0};
+	FString DeferredRebaseReason;
 };

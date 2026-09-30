@@ -569,6 +569,10 @@ return preBloom * min(1.0, outputCeiling / max(peakChannel, 0.0001));
 			Material, TEXT("CoronaInnerRadius"), 0.8064516f, 0.50f, 0.95f, -1050, -20, 5);
 		UMaterialExpressionScalarParameter* GameplayPointProfile = AddScalarParameter(
 			Material, TEXT("GameplayPointProfile"), 0.0f, 0.0f, 1.0f, -1050, 90, 6);
+		// Gameplay daylight: 1 at night and in space, 0 in a full day sky at the ground. The default keeps every
+		// other view (menu, preview, corona) exactly as accepted.
+		UMaterialExpressionScalarParameter* GameplayPointVisibility = AddScalarParameter(
+			Material, TEXT("GameplayPointVisibility"), 1.0f, 0.0f, 1.0f, -1050, 190, 7);
 
 		UMaterialExpression* InstanceColor = AddReflectedExpression(Material,
 			TEXT("/Script/Engine.MaterialExpressionPerInstanceCustomData3Vector"), -820, -520);
@@ -601,7 +605,7 @@ return preBloom * min(1.0, outputCeiling / max(peakChannel, 0.0001));
 		UMaterialExpressionCustom* PointAndCorona =
 			AddExpression<UMaterialExpressionCustom>(Material, -430, -260);
 		if (!Color || !CoronaIntensity || !CoronaOpacity || !CoronaSeed
-			|| !CoronaShellMode || !CoronaInnerRadius || !GameplayPointProfile
+			|| !CoronaShellMode || !CoronaInnerRadius || !GameplayPointProfile || !GameplayPointVisibility
 			|| !InstanceColor || !InstanceEmission || !InstanceSeed
 			|| !SystemHighlight || !InstanceLuminosityGain || !InstanceOpticalCoreScale || !InstanceRayStrength || !Normal || !WorldPosition || !ObjectPosition
 			|| !InterpolatedObjectPosition || !PointProjection || !InterpolatedPointProjection
@@ -673,6 +677,9 @@ float3 normalizedTint = instanceTint / max(maxSpectral, 0.001);
 float3 pointTint = lerp(instanceTint, normalizedTint, 0.72) * spectralVisibility;
 float rawEmission = max(InstanceEmission, 0.0);
 float activity = saturate(log2(1.0 + rawEmission) / 8.97);
+// Gameplay daylight: the CPU passes how much of the catalogue a lit sky leaves visible (0 in a full day at the
+// ground, 1 at night and above the atmosphere). The corona shell keeps its own energy.
+float pointVisibility = lerp(saturate(GameplayPointVisibility), 1.0, shellMode);
 float marker = saturate(SystemMarker);
 float seed = frac(lerp(InstanceSeed, CoronaSeed, shellMode));
 float3 n = normalize(NormalWS);
@@ -807,7 +814,7 @@ float3 pointSignal = hotCoreTint * (hotCore * coreEnergy)
 float rayCarrierGate = isfinite(InstanceRayStrength) ? saturate(InstanceRayStrength) : 0.0;
 // Compact catalogue members need neither an extended carrier nor ray shading.
 if (shellMode < 0.5 && rayCarrierGate == 0.0)
-    return pointSignal;
+    return pointSignal * pointVisibility;
 // Emission is area-prefiltered before reaching the material. In distant views it
 // can be far below one even for an optically selected luminous star; do not gate
 // that selection a second time or force its rays back to the minimum energy.
@@ -912,7 +919,7 @@ if (gameplayHot > 0.0)
 // CoronaShellMode is uniform for the whole draw. Keep the increasingly detailed
 // actor corona out of the hot path used by thousands of catalogue point pixels.
 if (shellMode < 0.5)
-    return pointSignal;
+    return pointSignal * pointVisibility;
 
 
 )APSPOINT");
@@ -1098,6 +1105,7 @@ return (spectralShellTint * colouredHaze
 		AddCustomInput(PointAndCorona, TEXT("ObjectPositionWS"), InterpolatedObjectPosition);
 		AddCustomInput(PointAndCorona, TEXT("CameraWS"), Camera);
 		AddCustomInput(PointAndCorona, TEXT("GameplayPointProfile"), GameplayPointProfile);
+		AddCustomInput(PointAndCorona, TEXT("GameplayPointVisibility"), GameplayPointVisibility);
 		AddCustomInput(PointAndCorona, TEXT("InstanceLuminosityGain"), InstanceLuminosityGain);
 		AddCustomInput(PointAndCorona, TEXT("InstanceOpticalCoreScale"), InstanceOpticalCoreScale);
 		AddCustomInput(PointAndCorona, TEXT("InstanceRayStrength"), InstanceRayStrength);

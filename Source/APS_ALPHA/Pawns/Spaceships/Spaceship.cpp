@@ -29,10 +29,16 @@
 #include "Engine/StaticMesh.h"
 #include "PhysicsEngine/BodySetup.h"
 #include "HAL/IConsoleManager.h"
+#include "ProfilingDebugging/CpuProfilerTrace.h"
+#include "APSShipFlightBenchmark.h"
+#include "APSShipFlightModel.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "GameFramework/PlayerController.h"
 #include "Camera/PlayerCameraManager.h"
 #include "Blueprint/WidgetLayoutLibrary.h"
+#include "Blueprint/SlateBlueprintLibrary.h"
+#include "Engine/LocalPlayer.h"
+#include "SceneView.h"
 #include "InputCoreTypes.h"
 #include "Kismet/GameplayStatics.h"
 #include "Rendering/DrawElements.h"
@@ -87,6 +93,33 @@ namespace APSNavigationHud
 	constexpr float MarkerGap = 5.0f;
 	constexpr float FlagHorizontalShift = 0.62f;
 	constexpr float FlagPoleLength = 18.0f;
+
+	/**
+	 * The overlay projects hundreds of points per frame (orbit rings, markers). The engine's widget projection
+	 * rebuilds the view from the camera on every call; this keeps one view per frame and derives the
+	 * screen-to-viewport mapping (DPI scale and offset) from the same engine call, so results are unchanged.
+	 */
+	struct FProjectionFrame
+	{
+		const ASpaceship* Ship{nullptr};
+		uint64 Frame{MAX_uint64};
+		bool bValid{false};
+		FMatrix ViewProjection{FMatrix::Identity};
+		FIntRect ViewRect;
+		FVector2D Offset{FVector2D::ZeroVector};
+		FVector2D Scale{FVector2D::UnitVector};
+	};
+	FProjectionFrame GProjectionFrame;
+
+	/** Marker label placement solved once per frame for all markers (was solved again for every marker). */
+	struct FLayoutFrame
+	{
+		const ASpaceship* Ship{nullptr};
+		uint64 Frame{MAX_uint64};
+		const TSet<int32>* OccludedContacts{nullptr};
+		TMap<int32, TPair<FVector2D, FVector2D>> Layouts;
+	};
+	FLayoutFrame GLayoutFrame;
 }
 
 namespace APSAutomaticShipInteraction
@@ -203,6 +236,79 @@ void ASpaceship::UpdateNavigatableActorsForInterplanetary()
 	GEngine->AddOnScreenDebugMessage(-1, 1.f, FColor::Green, TEXT("UpdateNavigatableActorsForInterplanetary"));
 }
 
+namespace APSShipPerf
+{
+	TAutoConsoleVariable<int32> CVarShipPerfLog(
+		TEXT("aps.Ship.PerfLog"), 0,
+		TEXT("1 logs the piloted ship's tick cost per section (environment, navigation, move/sweep, rotation, camera, HUD) every 2 s."));
+	TAutoConsoleVariable<int32> CVarSweepPrecheck(
+		TEXT("aps.Ship.SweepPrecheck"), 1,
+		TEXT("1 tests a kinematic ship move with the hull's bounding sphere first and sweeps the hull body only when "
+			"that sphere may hit. 0 always sweeps the hull body (every convex hull separately)."));
+	TAutoConsoleVariable<int32> CVarHudProjectionCheck(
+		TEXT("aps.Ship.HudProjectionCheck"), 0,
+		TEXT("1 compares the navigation HUD's per-frame projection with the engine's per-call projection and logs ")
+		TEXT("the largest difference every second (verification only)."));
+	TAutoConsoleVariable<int32> CVarResetHullVelocity(
+		TEXT("aps.Ship.ResetHullVelocity"), 1,
+		TEXT("1 removes the piloted kinematic ship's primitives from the renderer's velocity data every frame (the behaviour ")
+		TEXT("before 29.09): TSR and Lumen then reproject the hull as static world geometry while the camera flies with it. ")
+		TEXT("0 leaves the engine's own motion vectors (A/B for the hull shimmer at speed)."));
+	TAutoConsoleVariable<int32> CVarProxySweep(
+		TEXT("aps.Ship.ProxySweep"), 1,
+		TEXT("1 sweeps the flight proxy boxes of detailed hulls (M3 and similar) so they collide with stations, ships and ")
+		TEXT("terrain; 0 restores the collision-free root move of those ships (before 29.09)."));
+	TAutoConsoleVariable<int32> CVarHullSceneLightingInFlight(
+		TEXT("aps.Ship.HullSceneLightingInFlight"), 2,
+		TEXT("2 (default since Rio's check on 29.09) takes a piloted ship out of the global distance field: that copy ")
+		TEXT("updates a frame behind a hull moving hundreds of metres per frame and lit it on alternate frames (shimmer ")
+		TEXT("27 -> 4; the hull loses some self-bounce light). 1 keeps the ship in the distance field and the Lumen scene ")
+		TEXT("(before 29.09), 3 takes it out of the Lumen scene only, 0 out of both. Changes apply in flight; the flags ")
+		TEXT("come back when the pilot leaves."));
+	TAutoConsoleVariable<int32> CVarSpeedFov(
+		TEXT("aps.Ship.SpeedFov"), 0,
+		TEXT("1 widens the flight camera's field of view with speed (up to +12 deg, the camera before 29.09). Every ")
+		TEXT("frame of that widening re-sizes and re-uploads the full-scale star catalogue (APS_GameplayStellarView), ")
+		TEXT("which cost 6-8 ms per frame and 80-100 ms hitches while accelerating at power 3. 0 keeps the base FOV."));
+
+	enum ESection : int32 { Environment, Navigation, Move, Rotation, Stabilize, Camera, Hud, Count };
+	const TCHAR* const SectionNames[Count] = {TEXT("env"), TEXT("nav"), TEXT("move"), TEXT("rot"),
+		TEXT("stab"), TEXT("cam"), TEXT("hud")};
+
+	struct FWindow
+	{
+		double Sum[Count] = {};
+		double Max[Count] = {};
+		double FrameSum = 0.0;
+		double FrameMax = 0.0;
+		int32 Frames = 0;
+		int32 Hitches = 0;
+		double Elapsed = 0.0;
+		double MaxMove = 0.0;
+	};
+	FWindow GPiloted;
+
+	bool Enabled() { return CVarShipPerfLog.GetValueOnGameThread() != 0; }
+
+	struct FScope
+	{
+		FScope(bool bInActive, ESection InSection) : bActive(bInActive), Section(InSection),
+			Start(bInActive ? FPlatformTime::Seconds() : 0.0) {}
+		~FScope()
+		{
+			if (bActive)
+			{
+				const double Ms = (FPlatformTime::Seconds() - Start) * 1000.0;
+				GPiloted.Sum[Section] += Ms;
+				GPiloted.Max[Section] = FMath::Max(GPiloted.Max[Section], Ms);
+			}
+		}
+		bool bActive;
+		ESection Section;
+		double Start;
+	};
+}
+
 ASpaceship::ASpaceship()
 {
 	SpaceshipHull = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("SpaceshipHull"));
@@ -232,6 +338,7 @@ ASpaceship::ASpaceship()
 	FlightGravityDetector->PrimaryComponentTick.bStartWithTickEnabled = false;
 
 	ShipNavigation = CreateDefaultSubobject<UShipNavigationComponent>(TEXT("ShipNavigation"));
+	FlightModel = CreateDefaultSubobject<UAPSShipFlightModel>(TEXT("FlightModel"));
 
 	InteractionBoundsComponent = CreateDefaultSubobject<UBoxComponent>(TEXT("InteractionBounds"));
 	InteractionBoundsComponent->SetupAttachment(SpaceshipHull);
@@ -600,9 +707,23 @@ void ASpaceship::Tick(float DeltaTime)
 		return;
 	}
 
-	UpdateFlightEnvironment(DeltaTime);
+	const bool bMeasure = IsValid(Pilot) && APSShipPerf::Enabled();
+	const FVector LocationBeforeMove = GetActorLocation();
+	if (IsValid(Pilot) && APSShipPerf::CVarHullSceneLightingInFlight.GetValueOnGameThread() != AppliedHullSceneLightingMode)
+	{
+		// A console A/B of the hull lighting takes effect in flight, without leaving the seat.
+		SetHullSceneLightingExcluded(false);
+		SetHullSceneLightingExcluded(true);
+	}
+	{
+		TRACE_CPUPROFILER_EVENT_SCOPE(APS_Ship_Environment);
+		APSShipPerf::FScope Scope(bMeasure, APSShipPerf::Environment);
+		UpdateFlightEnvironment(DeltaTime);
+	}
 	if (ShipNavigation && IsValid(Pilot) && (bNavigationMarkersVisible || bNavigationPanelVisible))
 	{
+		TRACE_CPUPROFILER_EVENT_SCOPE(APS_Ship_Navigation);
+		APSShipPerf::FScope Scope(bMeasure, APSShipPerf::Navigation);
 		ShipNavigation->RefreshContacts(GetActorLocation());
 	}
 
@@ -614,10 +735,55 @@ void ASpaceship::Tick(float DeltaTime)
 		CurrentBoostMultiplier, TargetBoost, DeltaTime, BoostResponse);
 
 	AdvanceEngineModeTransition(DeltaTime);
-	ApplyFlightInput(DeltaTime);
-	ApplyRotationInput(DeltaTime);
-	StabilizeFullScaleVisualVelocity();
-	UpdateAdaptiveFlightCamera(DeltaTime);
+	{
+		TRACE_CPUPROFILER_EVENT_SCOPE(APS_Ship_Move);
+		APSShipPerf::FScope Scope(bMeasure, APSShipPerf::Move);
+		if (!FAPSShipFlightBenchmark::TickShip(*this, DeltaTime) && !ApplyCustomFlightTranslation(DeltaTime))
+		{
+			ApplyFlightInput(DeltaTime);
+		}
+	}
+	{
+		TRACE_CPUPROFILER_EVENT_SCOPE(APS_Ship_Rotation);
+		APSShipPerf::FScope Scope(bMeasure, APSShipPerf::Rotation);
+		ApplyRotationInput(DeltaTime);
+	}
+	{
+		TRACE_CPUPROFILER_EVENT_SCOPE(APS_Ship_Stabilize);
+		APSShipPerf::FScope Scope(bMeasure, APSShipPerf::Stabilize);
+		StabilizeFullScaleVisualVelocity();
+	}
+	{
+		TRACE_CPUPROFILER_EVENT_SCOPE(APS_Ship_Camera);
+		APSShipPerf::FScope Scope(bMeasure, APSShipPerf::Camera);
+		UpdateAdaptiveFlightCamera(DeltaTime);
+	}
+	if (bMeasure)
+	{
+		APSShipPerf::FWindow& Window = APSShipPerf::GPiloted;
+		const double FrameMs = DeltaTime * 1000.0;
+		Window.FrameSum += FrameMs;
+		Window.FrameMax = FMath::Max(Window.FrameMax, FrameMs);
+		Window.Hitches += FrameMs > 33.4 ? 1 : 0;
+		Window.MaxMove = FMath::Max(Window.MaxMove, FVector::Distance(LocationBeforeMove, GetActorLocation()));
+		++Window.Frames;
+		Window.Elapsed += DeltaTime;
+		if (Window.Elapsed >= 2.0 && Window.Frames > 0)
+		{
+			FString Sections;
+			for (int32 Index = 0; Index < APSShipPerf::Count; ++Index)
+			{
+				Sections += FString::Printf(TEXT(" %s %.2f/%.2f"), APSShipPerf::SectionNames[Index],
+					Window.Sum[Index] / Window.Frames, Window.Max[Index]);
+			}
+			UE_LOG(LogTemp, Log,
+				TEXT("[APS.ShipPerf] ship=%s speed=%.1f m/s env=%s engine=%s drive=%s frame %.2f/%.2f ms hitches=%d maxMovePerFrame=%.0f m | avg/max ms:%s"),
+				*GetName(), GetShipSpeedMetersPerSecond(), *GetFlightEnvironmentName(), *GetEngineModeName(),
+				*GetDriveModeName(), Window.FrameSum / Window.Frames, Window.FrameMax, Window.Hitches,
+				Window.MaxMove / 100.0, *Sections);
+			Window = APSShipPerf::FWindow();
+		}
+	}
 	/*uint64 StartCycles = FPlatformTime::Cycles();
 
 	if (!bEngineRunning)
@@ -1090,6 +1256,14 @@ void ASpaceship::ConfigureFromHull()
 	ConfigurePilotFillLight();
 }
 
+bool ASpaceship::HullHasFittedConvexCollision() const
+{
+	const UStaticMesh* HullMesh = SpaceshipHull ? SpaceshipHull->GetStaticMesh() : nullptr;
+	const UBodySetup* BodySetup = HullMesh ? HullMesh->GetBodySetup() : nullptr;
+	return BodySetup && BodySetup->CollisionTraceFlag != CTF_UseComplexAsSimple
+		&& BodySetup->AggGeom.ConvexElems.Num() > 0;
+}
+
 void ASpaceship::RebuildSimpleHullCollision()
 {
 	for (UBoxComponent* Box : GeneratedCollisionBoxes)
@@ -1109,6 +1283,13 @@ void ASpaceship::RebuildSimpleHullCollision()
 	UPrimitiveComponent* MainMesh = GetPrimaryHullComponent();
 	if (!MainMesh)
 	{
+		return;
+	}
+	// Hull meshes with fitted convex collision already hug the hull; the tapered boxes below span the
+	// whole bounding box and block the pilot metres away from wings and fins.
+	if (!bBuildingFlightCollisionProxy && HullHasFittedConvexCollision())
+	{
+		MainMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 		return;
 	}
 
@@ -1641,19 +1822,40 @@ void ASpaceship::UpdateAdaptiveFlightCamera(float DeltaTime)
 		? SpaceshipHull->GetPhysicsLinearVelocity().Size() : KinematicVelocity.Size();
 	// Camera response is driven only by continuous physical speed. Using the selected
 	// drive/engine limit here made the same velocity produce a different camera pose
-	// immediately after every mode change.
+	// immediately after every mode change. Speeds span metres to light years per second, so the
+	// pose reads the logarithm of the speed (29.09: the old log2/8 mapping saturated at ~250 km/s
+	// and left the camera still for every faster flight).
 	const double ClassReferenceSpeed = FMath::Max(ActiveClassPreset.MaxImpulseSpeed, 1.0);
 	const float TargetCameraAlpha = FMath::Clamp(static_cast<float>(
-		FMath::Log2(1.0 + Speed / ClassReferenceSpeed) / 8.0), 0.0f, 1.0f);
+		FMath::LogX(10.0, 1.0 + Speed / ClassReferenceSpeed) / 7.0), 0.0f, 1.0f);
 	SmoothedCameraSpeedAlpha = FMath::FInterpTo(
-		SmoothedCameraSpeedAlpha, TargetCameraAlpha, DeltaTime, 2.0f);
+		SmoothedCameraSpeedAlpha, TargetCameraAlpha, DeltaTime, 1.2f);
 	const float CameraAlpha = SmoothedCameraSpeedAlpha;
 
-	// Hull bounds define the baseline. Speed adds a restrained pull-back while FOV
-	// and positional lag provide the remaining sensation without losing the ship.
-	const float TargetArmLength = BaseCameraArmLength * FMath::Lerp(1.0f, 1.22f, CameraAlpha);
-	SpringArmComponent->TargetArmLength = FMath::FInterpTo(
-		SpringArmComponent->TargetArmLength, TargetArmLength, DeltaTime, 2.6f);
+	// Acceleration feel at every scale: the rate of ln(speed), smoothed over about a second and only outward. Speeding
+	// up lets the ship ease away from the camera; slowing down never pulls the camera in (Rio, 30.09: jerky).
+	const double LogSpeed = FMath::Loge(FMath::Max(Speed, 100.0));
+	const float LogSpeedRate = PreviousCameraLogSpeed < 0.0 || DeltaTime <= 0.0f ? 0.0f
+		: FMath::Clamp(static_cast<float>((LogSpeed - PreviousCameraLogSpeed) / DeltaTime), -4.0f, 4.0f);
+	PreviousCameraLogSpeed = LogSpeed;
+	SmoothedLogSpeedRate = FMath::FInterpTo(SmoothedLogSpeedRate, LogSpeedRate, DeltaTime, 1.0f);
+	const float Thrust = FMath::Clamp(SmoothedLogSpeedRate / 2.0f, 0.0f, 1.0f);
+
+	// Hull bounds define the baseline, a third farther at rest than the hull alone asks for (Rio, 30.09: too close at
+	// low speed). Speed and thrust ease the camera back on a critically damped follow (Game Programming Gems 4, 1.10)
+	// that settles in about a second without overshoot: no kick on band shifts, no shake.
+	const float TargetArmLength = BaseCameraArmLength * (1.3f + 0.30f * CameraAlpha + 0.12f * Thrust);
+	if (DeltaTime > 0.0f)
+	{
+		constexpr float ArmSmoothSeconds = 0.9f;
+		const float Omega = 2.0f / ArmSmoothSeconds;
+		const float X = Omega * DeltaTime;
+		const float Decay = 1.0f / (1.0f + X + 0.48f * X * X + 0.235f * X * X * X);
+		const float Change = SpringArmComponent->TargetArmLength - TargetArmLength;
+		const float Carried = (CameraArmLengthRate + Omega * Change) * DeltaTime;
+		CameraArmLengthRate = (CameraArmLengthRate - Omega * Carried) * Decay;
+		SpringArmComponent->TargetArmLength = TargetArmLength + (Change + Carried) * Decay;
+	}
 	// Positional lag is intentionally disabled. At astronomical velocities a
 	// spring-arm positional integrator alternates between a huge error and a huge
 	// correction, while smoothly interpolated arm length/FOV retain the chase feel.
@@ -1662,7 +1864,10 @@ void ASpaceship::UpdateAdaptiveFlightCamera(float DeltaTime)
 	SpringArmComponent->CameraLagMaxDistance = 0.0f;
 	if (CameraComponent)
 	{
-		const float TargetFieldOfView = BaseCameraFieldOfView + CameraAlpha * 12.0f;
+		// Speed reads through arm length, vignette and bloom. A changing FOV invalidates the star optics every
+		// frame (see aps.Ship.SpeedFov), so the widening is opt-in.
+		const float SpeedFieldOfView = APSShipPerf::CVarSpeedFov.GetValueOnGameThread() != 0 ? CameraAlpha * 12.0f : 0.0f;
+		const float TargetFieldOfView = BaseCameraFieldOfView + SpeedFieldOfView;
 		CameraComponent->SetFieldOfView(FMath::FInterpTo(
 			CameraComponent->FieldOfView, TargetFieldOfView, DeltaTime, 2.6f));
 
@@ -1680,10 +1885,12 @@ void ASpaceship::UpdateAdaptiveFlightCamera(float DeltaTime)
 		// remain spectrally coherent at every velocity.
 		PostProcess.SceneFringeIntensity = 0.0f;
 		PostProcess.ChromaticAberrationStartOffset = 0.0f;
+		// Sustained thrust deepens the vignette and bloom a little on top of the speed level.
+		const float Pulse = 0.08f * Thrust;
 		PostProcess.VignetteIntensity = FMath::FInterpTo(PostProcess.VignetteIntensity,
-			FMath::Max(BaseVignetteIntensity, 0.16f + CinematicAlpha * 0.12f), DeltaTime, 2.2f);
+			FMath::Max(BaseVignetteIntensity, 0.16f + CinematicAlpha * 0.12f + Pulse), DeltaTime, 1.5f);
 		PostProcess.BloomIntensity = FMath::FInterpTo(PostProcess.BloomIntensity,
-			FMath::Max(BaseBloomIntensity, 0.45f + CinematicAlpha * 0.22f), DeltaTime, 2.2f);
+			FMath::Max(BaseBloomIntensity, 0.45f + CinematicAlpha * 0.22f + Pulse), DeltaTime, 1.5f);
 		// Exposure is intentionally speed-invariant; only the lens response changes with velocity.
 		PostProcess.AutoExposureBias = BaseAutoExposureBias;
 		CameraComponent->PostProcessBlendWeight = FMath::Max(BaseCameraPostProcessBlendWeight, 1.0f);
@@ -1731,9 +1938,65 @@ void ASpaceship::RestoreFlightPostProcess()
 	CameraComponent->PostProcessBlendWeight = BaseCameraPostProcessBlendWeight;
 }
 
+void ASpaceship::SetHullSceneLightingExcluded(bool bExcluded)
+{
+	if (!bExcluded)
+	{
+		for (const FHullSceneLightingFlags& Flags : ExcludedHullSceneLighting)
+		{
+			if (UPrimitiveComponent* Component = Flags.Component.Get())
+			{
+				Component->SetAffectDistanceFieldLighting(Flags.bAffectDistanceField);
+				Component->SetAffectDynamicIndirectLighting(Flags.bAffectIndirect);
+			}
+		}
+		ExcludedHullSceneLighting.Reset();
+		AppliedHullSceneLightingMode = 1;
+		return;
+	}
+	const int32 Mode = APSShipPerf::CVarHullSceneLightingInFlight.GetValueOnGameThread();
+	if (!ExcludedHullSceneLighting.IsEmpty() || Mode == 1)
+	{
+		return;
+	}
+	AppliedHullSceneLightingMode = Mode;
+	const bool bLeaveDistanceField = Mode == 0 || Mode == 2;
+	const bool bLeaveLumenScene = Mode == 0 || Mode == 3;
+	TArray<AActor*> Actors{this};
+	GetAttachedActors(Actors, false, true);
+	for (const AActor* Actor : Actors)
+	{
+		// The pilot keeps its own flags; it is hidden while seated.
+		if (!IsValid(Actor) || (Actor != this && Actor->IsA<APawn>()))
+		{
+			continue;
+		}
+		TArray<UPrimitiveComponent*> Components;
+		Actor->GetComponents(Components);
+		for (UPrimitiveComponent* Component : Components)
+		{
+			if (!IsValid(Component) || (!Component->bAffectDistanceFieldLighting && !Component->bAffectDynamicIndirectLighting))
+			{
+				continue;
+			}
+			ExcludedHullSceneLighting.Add({Component, Component->bAffectDistanceFieldLighting != 0,
+				Component->bAffectDynamicIndirectLighting != 0});
+			if (bLeaveDistanceField)
+			{
+				Component->SetAffectDistanceFieldLighting(false);
+			}
+			if (bLeaveLumenScene)
+			{
+				Component->SetAffectDynamicIndirectLighting(false);
+			}
+		}
+	}
+}
+
 void ASpaceship::StabilizeFullScaleVisualVelocity()
 {
-	if (!IsValid(Pilot) || (SpaceshipHull && SpaceshipHull->IsSimulatingPhysics()))
+	if (!IsValid(Pilot) || (SpaceshipHull && SpaceshipHull->IsSimulatingPhysics())
+		|| APSShipPerf::CVarResetHullVelocity.GetValueOnGameThread() == 0)
 	{
 		return;
 	}
@@ -1765,7 +2028,9 @@ void ASpaceship::SetFlightCollisionOptimization(bool bEnabled)
 		OriginalHullCollisionResponses = PrimaryHull->GetCollisionResponseToChannels();
 		bOriginalHullSimulatesPhysics = PrimaryHull->IsSimulatingPhysics();
 		bGenerateSimpleHullCollision = true;
+		bBuildingFlightCollisionProxy = true;
 		RebuildSimpleHullCollision();
+		bBuildingFlightCollisionProxy = false;
 		bGenerateSimpleHullCollision = false;
 		ActiveClassPreset.bUsesPhysicalImpulse = false;
 		bFlightCollisionOptimizationActive = true;
@@ -1828,6 +2093,123 @@ FVector ASpaceship::GetControlledFlightAcceleration(const FVector& WorldInput,
 	const double MaximumLateralAcceleration = ReferenceSpeed * MaximumHeadingRateRadians;
 	LateralAcceleration = LateralAcceleration.GetClampedToMaxSize(MaximumLateralAcceleration);
 	return VelocityDirection * ParallelAcceleration + LateralAcceleration;
+}
+
+bool ASpaceship::MoveShipKinematic(const FVector& Delta, bool bSweep, FHitResult& OutHit)
+{
+	OutHit = FHitResult();
+	if (Delta.IsNearlyZero())
+	{
+		return false;
+	}
+	UPrimitiveComponent* RootPrimitive = Cast<UPrimitiveComponent>(GetRootComponent());
+	if (bSweep && RootPrimitive && !RootPrimitive->IsQueryCollisionEnabled() && !GeneratedCollisionBoxes.IsEmpty()
+		&& APSShipPerf::CVarProxySweep.GetValueOnGameThread() != 0)
+	{
+		// Detailed hulls fly on child proxy boxes with a collision-free root (SetFlightCollisionOptimization);
+		// the root sweep below would never hit anything, so a piloted M3 passed through stations and ground.
+		return MoveShipWithProxySweep(Delta, OutHit);
+	}
+	if (bSweep && (!RootPrimitive || !RootPrimitive->IsQueryCollisionEnabled()))
+	{
+		// MoveComponent sweeps only the root body; without query collision the move is a plain offset anyway.
+		bSweep = false;
+	}
+	if (bSweep && APSShipPerf::CVarSweepPrecheck.GetValueOnGameThread() != 0 && GetWorld())
+	{
+		// The body sweep queries every convex hull of the root separately (12-32 on generated hulls) and its
+		// cost grows with the swept length. A sphere around the body's bounding box encloses all of them, so a
+		// clear sphere path with the same channel, responses and ignore lists proves the body sweep clear too.
+		const FBox BodyBox = RootPrimitive->BodyInstance.GetBodyBounds();
+		const FVector SphereCenter = BodyBox.IsValid ? BodyBox.GetCenter() : RootPrimitive->Bounds.Origin;
+		const double SphereRadius = BodyBox.IsValid ? BodyBox.GetExtent().Size() : RootPrimitive->Bounds.BoxExtent.Size();
+		FCollisionQueryParams Params(SCENE_QUERY_STAT(APSShipSweepPrecheck), RootPrimitive->bTraceComplexOnMove, this);
+		Params.AddIgnoredActors(RootPrimitive->GetMoveIgnoreActors());
+		Params.AddIgnoredComponents(RootPrimitive->GetMoveIgnoreComponents());
+		if (IsValid(Pilot))
+		{
+			Params.AddIgnoredActor(Pilot);
+		}
+		bSweep = GetWorld()->SweepTestByChannel(SphereCenter, SphereCenter + Delta, FQuat::Identity,
+			RootPrimitive->GetCollisionObjectType(), FCollisionShape::MakeSphere(SphereRadius), Params,
+			FCollisionResponseParams(RootPrimitive->GetCollisionResponseToChannels()));
+	}
+	AddActorWorldOffset(Delta, bSweep, &OutHit, ETeleportType::None);
+	return OutHit.bBlockingHit;
+}
+
+bool ASpaceship::MoveShipWithProxySweep(const FVector& Delta, FHitResult& OutHit)
+{
+	UWorld* World = GetWorld();
+	TArray<UBoxComponent*, TInlineAllocator<9>> Boxes;
+	FBox ProxyBounds(ForceInit);
+	for (UBoxComponent* Box : GeneratedCollisionBoxes)
+	{
+		if (IsValid(Box) && Box->IsQueryCollisionEnabled())
+		{
+			Boxes.Add(Box);
+			ProxyBounds += Box->Bounds.GetBox();
+		}
+	}
+	if (!World || Boxes.IsEmpty() || !ProxyBounds.IsValid)
+	{
+		AddActorWorldOffset(Delta, false, nullptr, ETeleportType::None);
+		return false;
+	}
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(APSShipProxySweep), false, this);
+	TArray<AActor*> Attached;
+	GetAttachedActors(Attached, false, true);
+	Params.AddIgnoredActors(Attached);
+	if (IsValid(Pilot))
+	{
+		Params.AddIgnoredActor(Pilot);
+	}
+	const ECollisionChannel Channel = Boxes[0]->GetCollisionObjectType();
+	const FCollisionResponseParams Responses(Boxes[0]->GetCollisionResponseToChannels());
+
+	// Nearly every frame of flight is clear: one sphere around all boxes proves that cheaply.
+	const FVector Center = ProxyBounds.GetCenter();
+	if (!World->SweepTestByChannel(Center, Center + Delta, FQuat::Identity, Channel,
+		FCollisionShape::MakeSphere(ProxyBounds.GetExtent().Size()), Params, Responses))
+	{
+		AddActorWorldOffset(Delta, false, nullptr, ETeleportType::None);
+		return false;
+	}
+	FHitResult Earliest;
+	bool bBlocked = false;
+	for (const UBoxComponent* Box : Boxes)
+	{
+		const FVector Start = Box->GetComponentLocation();
+		TArray<FHitResult> Hits;
+		World->SweepMultiByChannel(Hits, Start, Start + Delta, Box->GetComponentQuat(), Channel,
+			FCollisionShape::MakeBox(Box->GetScaledBoxExtent()), Params, Responses);
+		for (const FHitResult& Hit : Hits)
+		{
+			// A contact the ship is already leaving (parked on a deck, grazing a wall) must not hold it.
+			if (!Hit.bBlockingHit || (Hit.bStartPenetrating && FVector::DotProduct(Delta, Hit.ImpactNormal) >= 0.0))
+			{
+				continue;
+			}
+			if (!bBlocked || Hit.Time < Earliest.Time)
+			{
+				Earliest = Hit;
+				bBlocked = true;
+			}
+		}
+	}
+	if (!bBlocked)
+	{
+		AddActorWorldOffset(Delta, false, nullptr, ETeleportType::None);
+		return false;
+	}
+	// Up to the contact with a centimetre to spare; the caller removes the velocity into the surface.
+	const double Travel = FMath::Max(Earliest.Time * Delta.Size() - 1.0, 0.0);
+	if (Travel > 0.0)
+	{
+		AddActorWorldOffset(Delta.GetSafeNormal() * Travel, false, nullptr, ETeleportType::None);
+	}
+	OutHit = Earliest;
+	return true;
 }
 
 void ASpaceship::ApplyFlightInput(float DeltaTime)
@@ -1914,7 +2296,7 @@ void ASpaceship::ApplyFlightInput(float DeltaTime)
 
 	FHitResult Hit;
 	const bool bSweep = EngineMode == EEngineMode::Impulse;
-	AddActorWorldOffset(KinematicVelocity * DeltaTime, bSweep, &Hit, ETeleportType::None);
+	MoveShipKinematic(KinematicVelocity * DeltaTime, bSweep, Hit);
 	if (Hit.bBlockingHit)
 	{
 		// A grazing contact must not consume the ship's whole impulse. Multiplying the
@@ -2325,6 +2707,12 @@ FText ASpaceship::GetShipStatusText() const
 	else if (SpeedMetersPerSecond < 1000000.0) SpeedText = FString::Printf(TEXT("%.2f km/s"), SpeedMetersPerSecond / 1000.0);
 	else if (SpeedMetersPerSecond < 299792458.0) SpeedText = FString::Printf(TEXT("%.2f Mm/s"), SpeedMetersPerSecond / 1000000.0);
 	else SpeedText = FString::Printf(TEXT("%.3f c"), SpeedMetersPerSecond / 299792458.0);
+	const FString CustomStatus = GetCustomFlightStatus();
+	if (!CustomStatus.IsEmpty())
+	{
+		// The band model's own two lines carry speed, mode and surroundings.
+		return FText::FromString(CustomStatus);
+	}
 	return FText::FromString(FString::Printf(
 		TEXT("SHIP %s   |   ENGINE %s\nPOWER %d/%d: %s   |   ENVIRONMENT: %s\nGRAVITY: %s (%.2f m/s2, %s)   |   %s   |   BOOST x%.2f"),
 		*GetSizeClassName(), *GetEngineModeName(), ModeNumber, MaximumModeNumber, *GetDriveModeName(),
@@ -2334,6 +2722,11 @@ FText ASpaceship::GetShipStatusText() const
 
 FText ASpaceship::GetShipHintText() const
 {
+	const FString CustomHint = GetCustomFlightHint();
+	if (!CustomHint.IsEmpty())
+	{
+		return FText::FromString(CustomHint);
+	}
 	const TCHAR* SpaceWrapHint = CanUseEngineMode(EEngineMode::SpaceWrap) ? TEXT("2 SPACE WRAP") : TEXT("2 SPACE WRAP [N/A]");
 	const TCHAR* OffsetHint = CanUseEngineMode(EEngineMode::Offset) ? TEXT("3 OFFSET") : TEXT("3 OFFSET [N/A]");
 	return FText::FromString(FString::Printf(
@@ -2532,7 +2925,7 @@ bool ASpaceship::ShouldShowNavigationMarker(int32 ContactIndex) const
 	}
 
 	const FShipNavigationContact* Contact = ShipNavigation->GetContact(ContactIndex);
-	if (Contact->Type == EShipNavigationContactType::Planet)
+	if (Contact->Type == EShipNavigationContactType::Planet || Contact->bOwnColony)
 	{
 		return true;
 	}
@@ -2550,11 +2943,59 @@ bool ASpaceship::ProjectWorldLocationToNavigationScreen(const FVector& WorldLoca
 	FVector2D& OutScreenPosition, bool bRequireInsideViewport) const
 {
 	APlayerController* PlayerController = Cast<APlayerController>(GetController());
-	if (!PlayerController || !GEngine || !GEngine->GameViewport
-		|| !UWidgetLayoutLibrary::ProjectWorldLocationToWidgetPosition(
-			PlayerController, WorldLocation, OutScreenPosition, true))
+	if (!PlayerController || !GEngine || !GEngine->GameViewport)
 	{
 		return false;
+	}
+	// Same result as UWidgetLayoutLibrary::ProjectWorldLocationToWidgetPosition(..., true), one view per frame.
+	APSNavigationHud::FProjectionFrame& Projection = APSNavigationHud::GProjectionFrame;
+	if (Projection.Ship != this || Projection.Frame != GFrameCounter)
+	{
+		Projection = APSNavigationHud::FProjectionFrame();
+		Projection.Ship = this;
+		Projection.Frame = GFrameCounter;
+		const ULocalPlayer* LocalPlayer = PlayerController->GetLocalPlayer();
+		FSceneViewProjectionData ProjectionData;
+		if (LocalPlayer && LocalPlayer->ViewportClient
+			&& LocalPlayer->GetProjectionData(LocalPlayer->ViewportClient->Viewport, ProjectionData))
+		{
+			Projection.ViewProjection = ProjectionData.ComputeViewProjectionMatrix();
+			Projection.ViewRect = ProjectionData.GetConstrainedViewRect();
+			FVector2D Origin;
+			FVector2D Reference;
+			USlateBlueprintLibrary::ScreenToViewport(PlayerController, FVector2D::ZeroVector, Origin);
+			USlateBlueprintLibrary::ScreenToViewport(PlayerController, FVector2D(1000.0, 1000.0), Reference);
+			Projection.Offset = Origin;
+			Projection.Scale = (Reference - Origin) / 1000.0;
+			Projection.bValid = true;
+		}
+	}
+	FVector2D PixelPosition;
+	if (!Projection.bValid || !FSceneView::ProjectWorldToScreen(
+			WorldLocation, Projection.ViewRect, Projection.ViewProjection, PixelPosition))
+	{
+		return false;
+	}
+	PixelPosition -= FVector2D(Projection.ViewRect.Min);
+	OutScreenPosition = Projection.Offset
+		+ FVector2D(FMath::RoundToInt(PixelPosition.X), FMath::RoundToInt(PixelPosition.Y)) * Projection.Scale;
+	if (APSShipPerf::CVarHudProjectionCheck.GetValueOnGameThread() != 0)
+	{
+		static double LargestDifference = 0.0;
+		static double LastReportSeconds = 0.0;
+		FVector2D EnginePosition;
+		if (UWidgetLayoutLibrary::ProjectWorldLocationToWidgetPosition(PlayerController, WorldLocation, EnginePosition, true))
+		{
+			LargestDifference = FMath::Max(LargestDifference, FVector2D::Distance(EnginePosition, OutScreenPosition));
+		}
+		const double Now = FPlatformTime::Seconds();
+		if (Now - LastReportSeconds >= 1.0)
+		{
+			UE_LOG(LogTemp, Log, TEXT("[APS.ShipPerf] HUD projection check: largest difference to the engine %.4f slate units"),
+				LargestDifference);
+			LargestDifference = 0.0;
+			LastReportSeconds = Now;
+		}
 	}
 
 	const TSharedPtr<SViewport> ViewportWidget = GEngine->GameViewport->GetGameViewportWidget();
@@ -2600,6 +3041,22 @@ bool ASpaceship::GetNavigationMarkerLayout(int32 ContactIndex, FVector2D& OutAnc
 	{
 		return false;
 	}
+
+	APSNavigationHud::FLayoutFrame& LayoutFrame = APSNavigationHud::GLayoutFrame;
+	if (LayoutFrame.Ship == this && LayoutFrame.Frame == GFrameCounter && LayoutFrame.OccludedContacts == OccludedContacts)
+	{
+		if (const TPair<FVector2D, FVector2D>* Cached = LayoutFrame.Layouts.Find(ContactIndex))
+		{
+			OutAnchorPosition = Cached->Key;
+			OutLabelPosition = Cached->Value;
+			return true;
+		}
+		return false;
+	}
+	LayoutFrame.Ship = this;
+	LayoutFrame.Frame = GFrameCounter;
+	LayoutFrame.OccludedContacts = OccludedContacts;
+	LayoutFrame.Layouts.Reset();
 
 	struct FMarkerPlacement
 	{
@@ -2686,12 +3143,15 @@ bool ASpaceship::GetNavigationMarkerLayout(int32 ContactIndex, FVector2D& OutAnc
 		Chosen.Y = FMath::Clamp(Chosen.Y, ScreenMargin, ViewportSize.Y - LabelSize.Y - ScreenMargin);
 		OccupiedRects.Add(FSlateRect(Chosen.X - 4.0f, Chosen.Y - 4.0f,
 			Chosen.X + LabelSize.X + 4.0f, Chosen.Y + LabelSize.Y + 4.0f));
-		if (Placement.Index == ContactIndex)
-		{
-			OutAnchorPosition = Placement.Anchor;
-			OutLabelPosition = Chosen;
-			return true;
-		}
+		// Every placement depends only on the ones before it, so the full pass gives each marker the same
+		// position the per-marker early exit used to give.
+		LayoutFrame.Layouts.Add(Placement.Index, TPair<FVector2D, FVector2D>(Placement.Anchor, Chosen));
+	}
+	if (const TPair<FVector2D, FVector2D>* Layout = LayoutFrame.Layouts.Find(ContactIndex))
+	{
+		OutAnchorPosition = Layout->Key;
+		OutLabelPosition = Layout->Value;
+		return true;
 	}
 	return false;
 }
@@ -2703,6 +3163,8 @@ int32 ASpaceship::PaintNavigationOverlay(const FGeometry& AllottedGeometry, cons
 	{
 		return LayerId;
 	}
+	TRACE_CPUPROFILER_EVENT_SCOPE(APS_Ship_NavigationHud);
+	APSShipPerf::FScope PerfScope(IsValid(Pilot) && APSShipPerf::Enabled(), APSShipPerf::Hud);
 
 	const FPaintGeometry PaintGeometry = AllottedGeometry.ToPaintGeometry();
 	struct FNavigationOccluder
@@ -2722,7 +3184,7 @@ int32 ASpaceship::PaintNavigationOverlay(const FGeometry& AllottedGeometry, cons
 		{
 			continue;
 		}
-		const double OcclusionRadius = Body->GetWorldScapeBodyRadiusCm() * 0.98;
+		const double OcclusionRadius = Body->GetWorldScapeBodyRadiusCm();
 		if (OcclusionRadius > UE_DOUBLE_SMALL_NUMBER)
 		{
 			Occluders.Add({Body, GetNavigationContactWorldAnchor(ContactIndex), OcclusionRadius});
@@ -2734,7 +3196,10 @@ int32 ASpaceship::PaintNavigationOverlay(const FGeometry& AllottedGeometry, cons
 		? NavigationPlayerController->PlayerCameraManager : nullptr;
 	const FVector NavigationCameraLocation = NavigationCameraManager
 		? NavigationCameraManager->GetCameraLocation() : FVector::ZeroVector;
-	auto IsWorldPointOccluded = [&](const FVector& WorldPoint, const AActor* IgnoredActor = nullptr)
+	// Markers test against 98% of a body (a flag on its limb stays visible); orbit rings against the whole body, so a
+	// ring never shows through the ground (Rio, 30.09).
+	auto IsWorldPointOccluded = [&](const FVector& WorldPoint, const AActor* IgnoredActor = nullptr,
+		const double RadiusScale = 0.98)
 	{
 		if (!NavigationCameraManager)
 		{
@@ -2753,11 +3218,14 @@ int32 ASpaceship::PaintNavigationOverlay(const FGeometry& AllottedGeometry, cons
 				continue;
 			}
 			const FVector CameraToCenter = Occluder.Center - NavigationCameraLocation;
-			const double RadiusSquared = FMath::Square(Occluder.Radius);
-			if (CameraToCenter.SizeSquared() <= RadiusSquared)
+			// In a valley the camera can sit below the body's base radius: the ground still hides what lies beneath the
+			// horizon, so the occluder shrinks to just below the camera instead of being skipped.
+			const double Radius = FMath::Min(Occluder.Radius * RadiusScale, CameraToCenter.Size() - 100.0);
+			if (Radius <= 0.0)
 			{
 				continue;
 			}
+			const double RadiusSquared = FMath::Square(Radius);
 			const double SegmentFraction = FVector::DotProduct(CameraToCenter, CameraToPoint)
 				/ SegmentLengthSquared;
 			if (SegmentFraction <= 0.0 || SegmentFraction >= 0.9995)
@@ -2797,7 +3265,7 @@ int32 ASpaceship::PaintNavigationOverlay(const FGeometry& AllottedGeometry, cons
 			const FVector WorldPoint = Center + AxisX * (FMath::Cos(Angle) * Radius)
 				+ AxisY * (FMath::Sin(Angle) * Radius);
 			FVector2D ScreenPoint;
-			const bool bValid = !IsWorldPointOccluded(WorldPoint)
+			const bool bValid = !IsWorldPointOccluded(WorldPoint, nullptr, 1.0)
 				&& ProjectWorldLocationToNavigationScreen(WorldPoint, ScreenPoint, false);
 			if (bDashed)
 			{
@@ -2978,8 +3446,71 @@ int32 ASpaceship::PaintNavigationOverlay(const FGeometry& AllottedGeometry, cons
 			DrawScreenLine({Anchor + FVector2D(0.0f, -CrossExtent), Anchor + FVector2D(0.0f, CrossExtent)},
 				Color, bSelected ? 1.35f : 0.8f, LayerId + 6);
 		}
+
+		// Course target: corner brackets that stand apart from every flag and orbit, pulsing gently, and while it is out
+		// of view an arrow at the screen edge toward it (Rio, 30.09: the target has to be clearly marked).
+		const int32 TargetIndex = ShipNavigation->GetSelectedContactIndex();
+		const FShipNavigationContact* Target = ShipNavigation->GetSelectedContact();
+		const TSharedPtr<SViewport> TargetViewport = GEngine && GEngine->GameViewport
+			? GEngine->GameViewport->GetGameViewportWidget() : nullptr;
+		if (Target && NavigationCameraManager && TargetViewport.IsValid())
+		{
+			const FVector2D ViewportSize = TargetViewport->GetCachedGeometry().GetLocalSize();
+			const FVector TargetWorld = GetNavigationContactWorldAnchor(TargetIndex);
+			const FLinearColor TargetColor(1.0f, 0.74f, 0.18f,
+				0.78f + 0.22f * static_cast<float>(FMath::Sin(FPlatformTime::Seconds() * 3.0)));
+			const FString Caption = FString::Printf(TEXT("COURSE  %s"),
+				*UShipNavigationComponent::FormatDistance(FVector::Distance(GetActorLocation(), TargetWorld)));
+			const FSlateFontInfo CaptionFont = FCoreStyle::GetDefaultFontStyle("Bold", 8);
+			FVector2D TargetScreen;
+			if (ProjectWorldLocationToNavigationScreen(TargetWorld, TargetScreen, true))
+			{
+				// Around a resolved disc (a planet or moon) the brackets hug its rim, otherwise they keep a fixed box.
+				double DiscPixels = 0.0;
+				FVector2D Rim;
+				if (const APlanetaryBody* TargetBody = Cast<APlanetaryBody>(Target->Actor.Get()); TargetBody
+					&& ProjectWorldLocationToNavigationScreen(TargetWorld + NavigationCameraManager->GetActorRightVector()
+						* TargetBody->GetWorldScapeBodyRadiusCm(), Rim, false))
+				{
+					DiscPixels = FVector2D::Distance(Rim, TargetScreen);
+				}
+				const double Half = FMath::Clamp(DiscPixels + 10.0, 16.0, 160.0);
+				const double Arm = FMath::Clamp(Half * 0.42, 6.0, 18.0);
+				for (const FVector2D& Corner : {FVector2D(-1.0, -1.0), FVector2D(1.0, -1.0), FVector2D(1.0, 1.0), FVector2D(-1.0, 1.0)})
+				{
+					const FVector2D Tip = TargetScreen + Corner * Half;
+					DrawScreenLine({Tip - FVector2D(Corner.X * Arm, 0.0), Tip, Tip - FVector2D(0.0, Corner.Y * Arm)},
+						TargetColor, 1.6f, LayerId + 7);
+				}
+				FSlateDrawElement::MakeText(OutDrawElements, LayerId + 7, AllottedGeometry.ToPaintGeometry(
+					FVector2f(220.0f, 14.0f), FSlateLayoutTransform(FVector2f(static_cast<float>(TargetScreen.X - Half),
+						static_cast<float>(TargetScreen.Y + Half + 4.0)))),
+					Caption, CaptionFont, ESlateDrawEffect::None, TargetColor);
+			}
+			else if (ViewportSize.X > 160.0 && ViewportSize.Y > 160.0)
+			{
+				// Off screen or behind the camera: the target's direction from the view axis, on an inset ellipse.
+				const FVector Local = NavigationCameraManager->GetCameraRotation().UnrotateVector(
+					TargetWorld - NavigationCameraLocation);
+				FVector2D Direction(Local.Y, -Local.Z);
+				if (!Direction.Normalize())
+				{
+					Direction = FVector2D(0.0, 1.0);
+				}
+				const FVector2D Centre = ViewportSize * 0.5;
+				const FVector2D Tip = Centre + FVector2D(Direction.X * (Centre.X - 56.0), Direction.Y * (Centre.Y - 56.0));
+				const FVector2D Side(-Direction.Y, Direction.X);
+				DrawScreenLine({Tip - Direction * 16.0 + Side * 10.0, Tip, Tip - Direction * 16.0 - Side * 10.0},
+					TargetColor, 2.2f, LayerId + 7);
+				const FVector2D CaptionAt = Tip - Direction * 40.0 - FVector2D(40.0, 7.0);
+				FSlateDrawElement::MakeText(OutDrawElements, LayerId + 7, AllottedGeometry.ToPaintGeometry(
+					FVector2f(220.0f, 14.0f), FSlateLayoutTransform(FVector2f(static_cast<float>(CaptionAt.X),
+						static_cast<float>(CaptionAt.Y)))),
+					Caption, CaptionFont, ESlateDrawEffect::None, TargetColor);
+			}
+		}
 	}
-	return LayerId + 6;
+	return LayerId + 7;
 }
 
 FLinearColor ASpaceship::GetNavigationMarkerColor(int32 ContactIndex) const
@@ -2990,6 +3521,10 @@ FLinearColor ASpaceship::GetNavigationMarkerColor(int32 ContactIndex) const
 	}
 	const FShipNavigationContact* Contact = ShipNavigation ? ShipNavigation->GetContact(ContactIndex) : nullptr;
 	if (!Contact) return FLinearColor::Transparent;
+	if (Contact->bOwnColony)
+	{
+		return FLinearColor(0.36f, 1.0f, 0.58f, 0.98f);
+	}
 	if (const APlanet* Planet = Cast<APlanet>(Contact->Actor.Get()))
 	{
 		switch (Planet->PlanetType)
@@ -3170,6 +3705,11 @@ void ASpaceship::RemoveShipHud()
 void ASpaceship::PossessedBy(AController* NewController)
 {
 	Super::PossessedBy(NewController);
+	SetHullSceneLightingExcluded(true);
+	if (FlightModel)
+	{
+		FlightModel->OnPossessed();
+	}
 	ConfigurePilotFillLight();
 	UpdateFlightEnvironment(0.0f, true);
 	UpdatePilotFillLightVisibility();
@@ -3190,10 +3730,13 @@ void ASpaceship::UnPossessed()
 		PilotFillPointLight->SetVisibility(false, true);
 	}
 	RestoreFlightPostProcess();
+	SetHullSceneLightingExcluded(false);
 	if (CameraComponent && bCameraFieldOfViewInitialized)
 	{
 		CameraComponent->SetFieldOfView(BaseCameraFieldOfView);
 	}
+	CameraArmLengthRate = SmoothedLogSpeedRate = 0.0f;
+	PreviousCameraLogSpeed = -1.0;
 	if (!bEngineRunning)
 	{
 		SetFlightCollisionOptimization(false);
@@ -3237,6 +3780,9 @@ void ASpaceship::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent
 	PlayerInputComponent->BindKey(EKeys::One, IE_Pressed, this, &ASpaceship::SelectImpulseEngine);
 	PlayerInputComponent->BindKey(EKeys::Two, IE_Pressed, this, &ASpaceship::SelectSpaceWrapEngine);
 	PlayerInputComponent->BindKey(EKeys::Three, IE_Pressed, this, &ASpaceship::SelectOffsetEngine);
+	PlayerInputComponent->BindKey(EKeys::Four, IE_Pressed, this, &ASpaceship::SelectCruiseBand);
+	PlayerInputComponent->BindKey(EKeys::Five, IE_Pressed, this, &ASpaceship::SelectStellarBand);
+	PlayerInputComponent->BindKey(EKeys::Zero, IE_Pressed, this, &ASpaceship::SelectAutoBands);
 	PlayerInputComponent->BindKey(EKeys::N, IE_Pressed, this, &ASpaceship::ToggleNavigationMarkers);
 	PlayerInputComponent->BindKey(EKeys::M, IE_Pressed, this, &ASpaceship::ToggleNavigationPanel);
 	PlayerInputComponent->BindKey(EKeys::T, IE_Pressed, this, &ASpaceship::SelectNextNavigationTarget);
@@ -3281,6 +3827,11 @@ void ASpaceship::HandleDecelerationBoost(float Value)
 
 void ASpaceship::IncreaseFlightMode()
 {
+	if (FlightModel && FlightModel->IsBandFlightActive())
+	{
+		FlightModel->StepFlightBand(1);
+		return;
+	}
 	if (!OnboardComputer) return;
 	const uint8 Current = static_cast<uint8>(SelectedDriveMode);
 	const uint8 Maximum = FMath::Min(
@@ -3292,6 +3843,11 @@ void ASpaceship::IncreaseFlightMode()
 
 void ASpaceship::DecreaseFlightMode()
 {
+	if (FlightModel && FlightModel->IsBandFlightActive())
+	{
+		FlightModel->StepFlightBand(-1);
+		return;
+	}
 	if (!OnboardComputer) return;
 	const uint8 Current = static_cast<uint8>(SelectedDriveMode);
 	if (Current <= static_cast<uint8>(EShipDriveMode::Landing)) return;
@@ -3300,17 +3856,71 @@ void ASpaceship::DecreaseFlightMode()
 
 void ASpaceship::SelectImpulseEngine()
 {
+	if (FlightModel && FlightModel->IsBandFlightActive())
+	{
+		FlightModel->SetFlightBand(EAPSFlightBand::Maneuver);
+		return;
+	}
 	SetEngineMode(EEngineMode::Impulse, false);
 }
 
 void ASpaceship::SelectSpaceWrapEngine()
 {
+	if (FlightModel && FlightModel->IsBandFlightActive())
+	{
+		FlightModel->SetFlightBand(EAPSFlightBand::Flight);
+		return;
+	}
 	SetEngineMode(EEngineMode::SpaceWrap, false);
 }
 
 void ASpaceship::SelectOffsetEngine()
 {
+	if (FlightModel && FlightModel->IsBandFlightActive())
+	{
+		FlightModel->SetFlightBand(EAPSFlightBand::Orbital);
+		return;
+	}
 	SetEngineMode(EEngineMode::Offset, false);
+}
+
+void ASpaceship::SelectCruiseBand()
+{
+	if (FlightModel && FlightModel->IsBandFlightActive())
+	{
+		FlightModel->SetFlightBand(EAPSFlightBand::Cruise);
+	}
+}
+
+void ASpaceship::SelectStellarBand()
+{
+	if (FlightModel && FlightModel->IsBandFlightActive())
+	{
+		FlightModel->SetFlightBand(EAPSFlightBand::Stellar);
+	}
+}
+
+void ASpaceship::SelectAutoBands()
+{
+	if (FlightModel && FlightModel->IsBandFlightActive())
+	{
+		FlightModel->SetAutoBands();
+	}
+}
+
+bool ASpaceship::ApplyCustomFlightTranslation(float DeltaTime)
+{
+	return FlightModel && FlightModel->ApplyTranslation(DeltaTime);
+}
+
+FString ASpaceship::GetCustomFlightStatus() const
+{
+	return FlightModel ? FlightModel->GetStatusText() : FString();
+}
+
+FString ASpaceship::GetCustomFlightHint() const
+{
+	return FlightModel ? FlightModel->GetHintText() : FString();
 }
 
 void ASpaceship::ToggleNavigationMarkers()

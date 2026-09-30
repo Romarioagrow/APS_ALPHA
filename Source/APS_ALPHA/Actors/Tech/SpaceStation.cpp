@@ -41,7 +41,31 @@ FVector ASpaceStation::GetPlayerStartLocation() const
 	{
 		return PlayerStartPoint->GetComponentLocation();
 	}
-	return IsValid(SpawnPoint) ? SpawnPoint->GetComponentLocation() : GetActorLocation();
+	if (IsValid(SpawnPoint) && !SpawnPoint->GetRelativeLocation().IsNearlyZero(1.0))
+	{
+		return SpawnPoint->GetComponentLocation();
+	}
+	// Nothing authored: the actor origin usually lies inside the hull, where the pilot falls through
+	// back faces and stays trapped under the collision. Start just above the top of the visible
+	// geometry instead; station gravity then lands the pilot on the roof.
+	FBox VisualBounds(ForceInit);
+	TArray<UStaticMeshComponent*> MeshComponents;
+	GetComponents(MeshComponents);
+	for (const UStaticMeshComponent* MeshComponent : MeshComponents)
+	{
+		if (IsValid(MeshComponent) && MeshComponent->GetStaticMesh() && MeshComponent->IsRegistered())
+		{
+			VisualBounds += MeshComponent->Bounds.GetBox();
+		}
+	}
+	if (!VisualBounds.IsValid)
+	{
+		return IsValid(SpawnPoint) ? SpawnPoint->GetComponentLocation() : GetActorLocation();
+	}
+	const FVector Up = GetActorUpVector();
+	const FVector Extent = VisualBounds.GetExtent();
+	const double TopDistance = FMath::Abs(Up.X) * Extent.X + FMath::Abs(Up.Y) * Extent.Y + FMath::Abs(Up.Z) * Extent.Z;
+	return VisualBounds.GetCenter() + Up * (TopDistance + 200.0);
 }
 
 void ASpaceStation::BeginPlay()

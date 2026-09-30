@@ -19,6 +19,7 @@ class USkeletalMeshComponent;
 class UPrimitiveComponent;
 class UGravityDetectorComponent;
 class UShipNavigationComponent;
+class UAPSShipFlightModel;
 class AWorldActor;
 class SWidget;
 class SAPSShipNavigationOverlay;
@@ -215,6 +216,10 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	UShipNavigationComponent* ShipNavigation;
 
+	/** Band flight model (keys 1-5); moves every ship while aps.Ship.FlightModel is 1. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	UAPSShipFlightModel* FlightModel;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Components")
 	UStaticMeshComponent* SpaceshipHull;
 
@@ -281,6 +286,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Ship|Collision")
 	void RebuildSimpleHullCollision();
+
+	/** The static hull mesh carries convex hulls fitted to it (a convex decomposition), not just a box. */
+	bool HullHasFittedConvexCollision() const;
 
 	UFUNCTION(BlueprintPure, Category = "Ship|Collision")
 	int32 GetGeneratedCollisionCount() const { return GeneratedCollisionBoxes.Num(); }
@@ -542,9 +550,15 @@ public:
 
 	void DecreaseFlightMode();
 
+	/** Keys 1-3: a flight band in the band model, the engine in the power-step model. */
 	void SelectImpulseEngine();
 	void SelectSpaceWrapEngine();
 	void SelectOffsetEngine();
+	/** Keys 4-5: the Cruise and Stellar bands (band model only). */
+	void SelectCruiseBand();
+	void SelectStellarBand();
+	/** Key 0: the band model picks the band itself again (AUTO). */
+	void SelectAutoBands();
 	void ToggleNavigationMarkers();
 	void ToggleNavigationPanel();
 	void ToggleNavigationGuides();
@@ -555,8 +569,36 @@ protected:
 	virtual USceneComponent* GetPilotSeatComponent() const override;
 	virtual FTransform GetPilotExitTransform() const override;
 
-private:
+	/**
+	 * Alternative flight models move the ship here: the band model (UAPSShipFlightModel) by default. Return true
+	 * when this frame's translation is handled; the power-step ApplyFlightInput is then skipped. Environment
+	 * detection, rotation, camera and HUD keep running in ASpaceship.
+	 */
+	virtual bool ApplyCustomFlightTranslation(float DeltaTime);
+	/** Extra HUD status line of the active flight model; empty keeps the power-step text only. */
+	virtual FString GetCustomFlightStatus() const;
+	/** Key hints of the active flight model; empty keeps the power-step hints. */
+	virtual FString GetCustomFlightHint() const;
+
 	UPrimitiveComponent* GetPrimaryHullComponent() const;
+	FVector GetShipRightVector() const;
+	FVector GetShipUpVector() const;
+	double GetEnvironmentDrag() const;
+	/**
+	 * Kinematic move of the whole ship. A requested sweep first tests the root hull's bounding sphere
+	 * (aps.Ship.SweepPrecheck) and runs the per-hull body sweep only when that sphere may hit.
+	 */
+	bool MoveShipKinematic(const FVector& Delta, bool bSweep, FHitResult& OutHit);
+	/** Flight proxies are child boxes and MoveComponent sweeps only the root: sweep the boxes themselves. */
+	bool MoveShipWithProxySweep(const FVector& Delta, FHitResult& OutHit);
+
+	float ForwardInput{0.0f};
+	float SideInput{0.0f};
+	float VerticalInput{0.0f};
+	double CurrentBoostMultiplier{1.0};
+	FVector KinematicVelocity{FVector::ZeroVector};
+
+private:
 	bool GetPrimaryHullLocalBounds(UPrimitiveComponent* Hull, FVector& OutMin, FVector& OutMax) const;
 	void ConfigureFromHull();
 	void ConfigureCameraFromHull();
@@ -566,9 +608,19 @@ private:
 	void UpdateAdaptiveFlightCamera(float DeltaTime);
 	void InitializeFlightPostProcess();
 	void RestoreFlightPostProcess();
+	/** While piloted, keeps the ship out of the distance-field and Lumen scene representations (see
+	 * aps.Ship.HullSceneLightingInFlight); restores the authored flags when the pilot leaves. */
+	void SetHullSceneLightingExcluded(bool bExcluded);
+	struct FHullSceneLightingFlags
+	{
+		TWeakObjectPtr<UPrimitiveComponent> Component;
+		bool bAffectDistanceField{true};
+		bool bAffectIndirect{true};
+	};
+	TArray<FHullSceneLightingFlags> ExcludedHullSceneLighting;
+	/** aps.Ship.HullSceneLightingInFlight value applied to the piloted hull; a console change re-applies it live. */
+	int32 AppliedHullSceneLightingMode{1};
 	void StabilizeFullScaleVisualVelocity();
-	FVector GetShipRightVector() const;
-	FVector GetShipUpVector() const;
 	void SetFlightCollisionOptimization(bool bEnabled);
 	void UpdateFlightEnvironment(float DeltaTime, bool bForce = false);
 	void ApplyEnvironmentForces(float DeltaTime);
@@ -579,7 +631,6 @@ private:
 	EShipDriveMode GetMaximumDriveModeForEnvironment() const;
 	EEngineMode ResolveEngineModeForDriveMode(EShipDriveMode DriveMode) const;
 	EFlightMode ResolveLegacyFlightModeForDriveMode(EShipDriveMode DriveMode) const;
-	double GetEnvironmentDrag() const;
 	bool IsNearGravitySurface(const FVector& GravityDirection) const;
 	void ApplyFlightInput(float DeltaTime);
 	void ApplyRotationInput(float DeltaTime);
@@ -611,6 +662,9 @@ private:
 		FSlateWindowElementList& OutDrawElements, int32 LayerId) const;
 	FLinearColor GetNavigationMarkerColor(int32 ContactIndex) const;
 	friend class SAPSShipNavigationOverlay;
+	friend class FAPSShipFlightBenchmark;
+	friend class UAPSShipFlightModel;
+	friend class FAPSFleetCommand;
 
 	bool bSeatWasAutoConfigured{false};
 	bool bExitWasAutoConfigured{false};
@@ -624,6 +678,11 @@ private:
 	float BaseCameraArmLength{1200.0f};
 	float BaseCameraFieldOfView{90.0f};
 	float SmoothedCameraSpeedAlpha{0.0f};
+	/** Chase camera feel (29.09): rate of ln(speed) in 1/s, the same for a 1 -> 100 km/s burn and 1 -> 100 c. */
+	float SmoothedLogSpeedRate{0.0f};
+	double PreviousCameraLogSpeed{-1.0};
+	/** Rate of the critically damped arm-length follow, cm/s. */
+	float CameraArmLengthRate{0.0f};
 	bool bCameraFieldOfViewInitialized{false};
 	bool bCameraPostProcessInitialized{false};
 	float BaseCameraPostProcessBlendWeight{0.0f};
@@ -643,20 +702,17 @@ private:
 	TWeakObjectPtr<AActor> PendingGravitySource;
 	bool bFlightEnvironmentInitialized{false};
 	bool bFlightCollisionOptimizationActive{false};
+	/** Set while SetFlightCollisionOptimization builds the in-flight box proxy of a detailed ship. */
+	bool bBuildingFlightCollisionProxy{false};
 	FName OriginalHullCollisionProfile{NAME_None};
 	ECollisionEnabled::Type OriginalHullCollisionEnabled{ECollisionEnabled::QueryAndPhysics};
 	FCollisionResponseContainer OriginalHullCollisionResponses;
 	bool bOriginalHullSimulatesPhysics{false};
 
-	float ForwardInput{0.0f};
-	float SideInput{0.0f};
-	float VerticalInput{0.0f};
 	float YawInput{0.0f};
 	float PitchInput{0.0f};
 	float RollInput{0.0f};
 	FVector CurrentAngularVelocityDegrees{FVector::ZeroVector};
-	double CurrentBoostMultiplier{1.0};
-	FVector KinematicVelocity{FVector::ZeroVector};
 	EEngineMode PendingEngineMode{EEngineMode::Impulse};
 	float EngineModeTransitionElapsed{0.0f};
 	bool bEngineModeTransitionActive{false};

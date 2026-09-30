@@ -80,6 +80,8 @@ void SAPSUIHierarchyCard::Construct(const FArguments& InArgs)
 						SNew(SBox).WidthOverride(28.0f).HeightOverride(28.0f)
 						[
 							SNew(SBorder).BorderImage(GlyphBrush.Get()).Padding(0.0f)
+							// Centred both ways: the short glyph text sat at the top of its badge (Rio, 30.09).
+							.HAlign(HAlign_Center).VAlign(VAlign_Center)
 							[
 								SNew(STextBlock).Text(InArgs._Glyph).Justification(ETextJustify::Center)
 								.Font(FAPSUIStyle::DisplayFont(TEXT("Bold"), 8)).ColorAndOpacity(Palette.FocusCyan)
@@ -109,6 +111,7 @@ void SAPSUIHierarchyCard::Construct(const FArguments& InArgs)
 						})
 						[
 							SNew(SBorder).BorderImage(CountBrush.Get()).Padding(FMargin(Layout.Space2, 0.0f))
+							.HAlign(HAlign_Center).VAlign(VAlign_Center)
 							[
 								SNew(STextBlock).Text(CountLabel).Justification(ETextJustify::Center)
 								.Font(FAPSUIStyle::DisplayFont(TEXT("Bold"), 8)).ColorAndOpacity(Palette.FocusCyan)

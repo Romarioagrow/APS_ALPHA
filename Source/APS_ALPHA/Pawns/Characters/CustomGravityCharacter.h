@@ -237,8 +237,9 @@ protected:
 	void RemoveInteractionPrompt();
 	void CreateTraversalHud();
 	void RemoveTraversalHud();
-	FText GetTraversalStatusText() const;
-	FText GetTraversalHintText() const;
+	/** Virtual so derived pilots can add their own state (APSSpeedModeCharacter adds its pace). */
+	virtual FText GetTraversalStatusText() const;
+	virtual FText GetTraversalHintText() const;
 
 	// Gravity
 	void UpdateGravityDirection(float DeltaTime);
