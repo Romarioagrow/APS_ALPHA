@@ -62,6 +62,13 @@ public:
 	UPROPERTY(VisibleAnywhere, SaveGame, Category = "Civilization")
 	TArray<uint8> SpawnParametersData;
 
+	/**
+	 * The civilization's progress outside the actor archive (APSCivilizationSave): colony modules, the fleet with its
+	 * surveys and outposts, the journal. Versioned inside; empty in saves before 01.10.
+	 */
+	UPROPERTY(VisibleAnywhere, SaveGame, Category = "Civilization")
+	TArray<uint8> CivilizationState;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "World")
 	TArray<FPlanetData> InhabitedPlanetsDataArray;
 

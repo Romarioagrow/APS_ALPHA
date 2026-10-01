@@ -2,6 +2,7 @@
 
 #include "APS_ALPHA/Actors/Astro/PlanetaryBody.h"
 #include "APS_ALPHA/Generation/PlanetarySurfaceGenerator.h"
+#include "Components/SkinnedMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
@@ -135,10 +136,19 @@ namespace APSSpawnPlacement
 	{
 		for (const TObjectPtr<AActor>& Obstacle : Request.Obstacles)
 		{
-			if (IsValid(Obstacle) && Obstacle != Request.Anchor)
+			if (!IsValid(Obstacle) || Obstacle == Request.Anchor)
 			{
-				OutCircles.Add(ObstacleCircle(Frame, Obstacle));
+				continue;
 			}
+			// The plane drops height: an obstacle far above or below the site (a module on the headquarters, in orbit
+			// straight over the base) would land beside the base and crowd every candidate (Rio's playtest, 01.10).
+			const FVector Delta = Obstacle->GetActorLocation() - Frame.Origin;
+			if (Request.Site == EAPSSpawnSite::Surface && (FMath::Abs(FVector::DotProduct(Delta, Frame.Up)) > 20000.0
+				|| Delta.Size() > Request.MaximumReachCm + 50000.0))
+			{
+				continue;
+			}
+			OutCircles.Add(ObstacleCircle(Frame, Obstacle));
 		}
 		for (const TObjectPtr<AActor>& Target : Request.RouteTargets)
 		{
@@ -189,78 +199,125 @@ double UAPSSpawnPlacementSubsystem::DistanceToSegment(const FVector2D& Point, co
 	return FVector2D::Distance(Point, Start + Segment * Alpha);
 }
 
+namespace APSSpawnPlacementGround
+{
+	AWorldScapeRoot* LoadedRoot(APlanetaryBody* Body)
+	{
+		APlanetarySurfaceGenerator* Surface = IsValid(Body) ? Body->PlanetaryEnvironmentGenerator : nullptr;
+		AWorldScapeRoot* Root = IsValid(Surface) ? Surface->WorldScapeRootInstance : nullptr;
+		return IsValid(Root) && IsValid(Root->WorldScapeNoise) && Root->PlanetScale > 0.0
+			&& Surface->IsSurfaceProfileCurrent(Body) ? Root : nullptr;
+	}
+
+	/** The largest and the smallest gap between a structure's underside and the ground over its footprint. */
+	bool MeasureUnderside(const AActor* Structure, APlanetaryBody* Body, FBox& OutLocalFootprint, bool& bOutRound,
+		double& OutMinimumGap, double& OutMaximumGap)
+	{
+		OutLocalFootprint = FBox(ForceInit);
+		bOutRound = false;
+		OutMinimumGap = TNumericLimits<double>::Max();
+		OutMaximumGap = -TNumericLimits<double>::Max();
+		AWorldScapeRoot* Root = LoadedRoot(Body);
+		if (!IsValid(Structure) || !Root)
+		{
+			return false;
+		}
+		// The largest visible part carries the structure: its bottom face is the underside to fill beneath.
+		const FTransform Transform = Structure->GetActorTransform();
+		const FTransform WorldToActor = Transform.Inverse();
+		double LargestArea = 0.0;
+		Structure->ForEachComponent<UStaticMeshComponent>(false, [&](const UStaticMeshComponent* Mesh)
+		{
+			if (!Mesh->IsRegistered() || !Mesh->IsVisible() || !Mesh->GetStaticMesh())
+			{
+				return;
+			}
+			const FBox Local = Mesh->CalcBounds(Mesh->GetComponentTransform() * WorldToActor).GetBox();
+			const double Area = Local.GetExtent().X * Local.GetExtent().Y;
+			if (Area > LargestArea)
+			{
+				LargestArea = Area;
+				OutLocalFootprint = Local;
+				bOutRound = Mesh->GetStaticMesh()->GetName().Contains(TEXT("Cylinder"));
+			}
+		});
+		if (!OutLocalFootprint.IsValid)
+		{
+			return false;
+		}
+		const FVector Center = Root->GetActorLocation();
+		const double RadiusCm = Root->PlanetScale;
+		const FVector LocalCenter = OutLocalFootprint.GetCenter();
+		const FVector LocalExtent = OutLocalFootprint.GetExtent();
+		const FBox Footprint = OutLocalFootprint;
+		const auto Sample = [&](const double U, const double V)
+		{
+			const FVector World = Transform.TransformPosition(FVector(LocalCenter.X + U * LocalExtent.X,
+				LocalCenter.Y + V * LocalExtent.Y, Footprint.Min.Z));
+			const FVector Direction = (World - Center).GetSafeNormal();
+			const double GroundRadius = RadiusCm + Root->GetGroundHeight(Center + Direction * RadiusCm, false);
+			if (FMath::IsFinite(GroundRadius))
+			{
+				const double Gap = (World - Center).Size() - GroundRadius;
+				OutMinimumGap = FMath::Min(OutMinimumGap, Gap);
+				OutMaximumGap = FMath::Max(OutMaximumGap, Gap);
+			}
+		};
+		for (int32 I = -2; I <= 2; ++I)
+		{
+			for (int32 J = -2; J <= 2; ++J)
+			{
+				const double U = I * 0.5;
+				const double V = J * 0.5;
+				if (!bOutRound || U * U + V * V <= 1.0001)
+				{
+					Sample(U, V);
+				}
+			}
+		}
+		if (bOutRound)
+		{
+			for (int32 Index = 0; Index < 8; ++Index)
+			{
+				const double Angle = UE_TWO_PI * (Index + 0.5) / 8.0;
+				Sample(FMath::Cos(Angle), FMath::Sin(Angle));
+			}
+		}
+		return true;
+	}
+}
+
 double UAPSSpawnPlacementSubsystem::MeasureGroundGap(const AActor* Structure, APlanetaryBody* Body,
 	FBox& OutLocalFootprint, bool& bOutRound) const
 {
-	OutLocalFootprint = FBox(ForceInit);
-	bOutRound = false;
-	APlanetarySurfaceGenerator* Surface = IsValid(Body) ? Body->PlanetaryEnvironmentGenerator : nullptr;
-	AWorldScapeRoot* Root = IsValid(Surface) ? Surface->WorldScapeRootInstance : nullptr;
-	if (!IsValid(Structure) || !IsValid(Root) || !IsValid(Root->WorldScapeNoise) || Root->PlanetScale <= 0.0
-		|| !Surface->IsSurfaceProfileCurrent(Body))
+	double MinimumGap = 0.0;
+	double MaximumGap = 0.0;
+	return APSSpawnPlacementGround::MeasureUnderside(Structure, Body, OutLocalFootprint, bOutRound, MinimumGap,
+		MaximumGap) ? MaximumGap : -1.0;
+}
+
+double UAPSSpawnPlacementSubsystem::MeasureGroundClearance(const AActor* Structure, APlanetaryBody* Body) const
+{
+	FBox Footprint(ForceInit);
+	bool bRound = false;
+	double MinimumGap = 0.0;
+	double MaximumGap = 0.0;
+	return APSSpawnPlacementGround::MeasureUnderside(Structure, Body, Footprint, bRound, MinimumGap, MaximumGap)
+		? MinimumGap : -TNumericLimits<double>::Max();
+}
+
+double UAPSSpawnPlacementSubsystem::GroundDropBelow(APlanetaryBody* Body, const FVector& WorldPoint) const
+{
+	AWorldScapeRoot* Root = APSSpawnPlacementGround::LoadedRoot(Body);
+	if (!Root)
 	{
-		return -1.0;
-	}
-	// The largest visible part carries the structure: its bottom face is the underside to fill beneath.
-	const FTransform Transform = Structure->GetActorTransform();
-	const FTransform WorldToActor = Transform.Inverse();
-	double LargestArea = 0.0;
-	Structure->ForEachComponent<UStaticMeshComponent>(false, [&](const UStaticMeshComponent* Mesh)
-	{
-		if (!Mesh->IsRegistered() || !Mesh->IsVisible() || !Mesh->GetStaticMesh())
-		{
-			return;
-		}
-		const FBox Local = Mesh->CalcBounds(Mesh->GetComponentTransform() * WorldToActor).GetBox();
-		const double Area = Local.GetExtent().X * Local.GetExtent().Y;
-		if (Area > LargestArea)
-		{
-			LargestArea = Area;
-			OutLocalFootprint = Local;
-			bOutRound = Mesh->GetStaticMesh()->GetName().Contains(TEXT("Cylinder"));
-		}
-	});
-	if (!OutLocalFootprint.IsValid)
-	{
-		return -1.0;
+		return -TNumericLimits<double>::Max();
 	}
 	const FVector Center = Root->GetActorLocation();
 	const double RadiusCm = Root->PlanetScale;
-	const FVector LocalCenter = OutLocalFootprint.GetCenter();
-	const FVector LocalExtent = OutLocalFootprint.GetExtent();
-	double Gap = -TNumericLimits<double>::Max();
-	const auto Sample = [&](const double U, const double V)
-	{
-		const FVector World = Transform.TransformPosition(FVector(LocalCenter.X + U * LocalExtent.X,
-			LocalCenter.Y + V * LocalExtent.Y, OutLocalFootprint.Min.Z));
-		const FVector Direction = (World - Center).GetSafeNormal();
-		const double GroundRadius = RadiusCm + Root->GetGroundHeight(Center + Direction * RadiusCm, false);
-		if (FMath::IsFinite(GroundRadius))
-		{
-			Gap = FMath::Max(Gap, (World - Center).Size() - GroundRadius);
-		}
-	};
-	for (int32 I = -2; I <= 2; ++I)
-	{
-		for (int32 J = -2; J <= 2; ++J)
-		{
-			const double U = I * 0.5;
-			const double V = J * 0.5;
-			if (!bOutRound || U * U + V * V <= 1.0001)
-			{
-				Sample(U, V);
-			}
-		}
-	}
-	if (bOutRound)
-	{
-		for (int32 Index = 0; Index < 8; ++Index)
-		{
-			const double Angle = UE_TWO_PI * (Index + 0.5) / 8.0;
-			Sample(FMath::Cos(Angle), FMath::Sin(Angle));
-		}
-	}
-	return Gap;
+	const FVector Direction = (WorldPoint - Center).GetSafeNormal();
+	const double GroundRadius = RadiusCm + Root->GetGroundHeight(Center + Direction * RadiusCm, false);
+	return FMath::IsFinite(GroundRadius) ? (WorldPoint - Center).Size() - GroundRadius : -TNumericLimits<double>::Max();
 }
 
 FBox UAPSSpawnPlacementSubsystem::VisualLocalBounds(const AActor* Actor)
@@ -271,9 +328,15 @@ FBox UAPSSpawnPlacementSubsystem::VisualLocalBounds(const AActor* Actor)
 		return Box;
 	}
 	const FTransform WorldToActor = Actor->GetActorTransform().Inverse();
-	Actor->ForEachComponent<UStaticMeshComponent>(false, [&Box, &WorldToActor](const UStaticMeshComponent* Mesh)
+	// Static and skeletal meshes alike: the generated ship hulls are skeletal, and without them the box of every
+	// component (gravity and interaction spheres too) made a 952 m landing pad (01.10).
+	Actor->ForEachComponent<UMeshComponent>(false, [&Box, &WorldToActor](const UMeshComponent* Mesh)
 	{
-		if (Mesh->IsRegistered() && Mesh->IsVisible() && Mesh->GetStaticMesh())
+		const UStaticMeshComponent* Static = Cast<UStaticMeshComponent>(Mesh);
+		const USkinnedMeshComponent* Skinned = Cast<USkinnedMeshComponent>(Mesh);
+		const bool bHasAsset = Static ? Static->GetStaticMesh() != nullptr
+			: Skinned ? Skinned->GetSkinnedAsset() != nullptr : false;
+		if (Mesh->IsRegistered() && Mesh->IsVisible() && bHasAsset)
 		{
 			Box += Mesh->CalcBounds(Mesh->GetComponentTransform() * WorldToActor).GetBox();
 		}
@@ -462,6 +525,22 @@ bool UAPSSpawnPlacementSubsystem::ResolveSurface(const FAPSSpawnRequest& Request
 	UE_LOG(LogAPSSpawnPlacement, Log,
 		TEXT("[APS.Spawn] surface: no site beside %s (%d candidates: %d crowded, %d steep, %d flooded)"),
 		*GetNameSafe(Request.Anchor), OutPlacement.CandidatesTried, Blocked, Steep, Wet);
+	if (Blocked > 0)
+	{
+		// What crowds it, in the base's plane (m): the obstacles and the walk to the pad.
+		FString Crowding;
+		for (const FCircle& Circle : Circles)
+		{
+			Crowding += FString::Printf(TEXT(" circle(%.0f,%.0f r%.0f)"), Circle.Center.X * 0.01, Circle.Center.Y * 0.01,
+				Circle.Radius * 0.01);
+		}
+		for (const FVector2D& Route : Routes)
+		{
+			Crowding += FString::Printf(TEXT(" route(to %.0f,%.0f)"), Route.X * 0.01, Route.Y * 0.01);
+		}
+		UE_LOG(LogAPSSpawnPlacement, Log, TEXT("[APS.Spawn] surface crowding: footprint r%.0f m, site %.0fx%.0f m:%s"),
+			FootprintRadius * 0.01, Frame.RectHalf.X * 0.02, Frame.RectHalf.Y * 0.02, *Crowding);
+	}
 	return false;
 }
 

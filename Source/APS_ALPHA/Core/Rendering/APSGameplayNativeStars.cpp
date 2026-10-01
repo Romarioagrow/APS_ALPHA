@@ -566,8 +566,10 @@ void UAPSStellarVisualSubsystem::PresentGameplayNativeStars(AAstroGenerator* Gen
 		}
 	}
 	FlushSources(DirtySources);
+	// Logged when what is shown changes, or the demand empties or fills: the demand itself moves with every camera turn
+	// (700 lines in 40 minutes of play, 01.10).
 	if (PresentedCount != GameplayNativeLastPresentedCount
-		|| GameplayNativeDemand.Num() != GameplayNativeLastDemandCount)
+		|| (GameplayNativeDemand.Num() == 0) != (GameplayNativeLastDemandCount == 0))
 	{
 		UE_LOG(LogTemp, Log, TEXT("[APS.Gameplay.NativeStars] generator=%s demand=%d presented=%d pool=%d pendingResolved=%d bindAttempts=%d limit=%d; physical radii, visible-view selection"),
 			*GetNameSafe(Generator), GameplayNativeDemand.Num(), PresentedCount, GameplayNativePairs.Num(),

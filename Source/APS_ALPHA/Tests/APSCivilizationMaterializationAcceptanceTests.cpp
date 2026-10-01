@@ -9,6 +9,7 @@
 #include "APS_ALPHA/Gameplay/Civilizations/APSCivilizationStarterActors.h"
 #include "APS_ALPHA/Pawns/Spaceships/Spaceship.h"
 #include "Engine/World.h"
+#include "Math/RotationMatrix.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FAPSCivilizationMaterializationAcceptanceTest,
@@ -204,6 +205,31 @@ bool FAPSCivilizationMaterializationAcceptanceTest::RunTest(const FString& Param
 	TestEqual(TEXT("lifecycle actor-ready state"), ObservedCurrent,
 		EAPSCivilizationMaterializationState::Materialized);
 	TestTrue(TEXT("subscriber observes complete actor set"), bCallbackSawComplete);
+
+	// A tilted support plane, as at any site away from the world axes: the pad's own box sits on it. The world box of
+	// its 90 m deck reached tens of metres below the deck and lifted the pad that far (Rio, 01.10: 64 m and 217 m).
+	{
+		const FVector TiltedUp = FVector(1.0, 1.0, 1.0).GetSafeNormal();
+		const FVector TiltedForward = FVector::CrossProduct(FVector::RightVector, TiltedUp).GetSafeNormal();
+		const FTransform Tilted(FRotationMatrix::MakeFromXZ(TiltedForward, TiltedUp).ToQuat(),
+			FVector(0.0, 300000.0, 1000000.0));
+		AAPSCivilizationLandingPad* TiltedPad = World->SpawnActor<AAPSCivilizationLandingPad>();
+		if (TestNotNull(TEXT("tilted pad"), TiltedPad))
+		{
+			Subsystem->PlaceBoundsOnSupportPlane(TiltedPad, Tilted, 25.0);
+			const FBox Local = TiltedPad->CalculateComponentsBoundingBoxInLocalSpace(true);
+			FVector Corners[8];
+			Local.GetVertices(Corners);
+			double Bottom = TNumericLimits<double>::Max();
+			for (const FVector& Corner : Corners)
+			{
+				Bottom = FMath::Min(Bottom, FVector::DotProduct(
+					TiltedPad->GetActorTransform().TransformPosition(Corner) - Tilted.GetLocation(), TiltedUp));
+			}
+			TestEqual(TEXT("a tilted pad's own bottom sits on the support plane plus the clearance"), Bottom, 25.0, 1.0);
+			TiltedPad->Destroy();
+		}
+	}
 
 	DestroyWorld();
 	return true;

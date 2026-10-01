@@ -3,12 +3,17 @@
 #include "APSGameplayStellarProjection.h"
 #include "APSGameplayStarAppearance.h"
 #include "APSStellarViewOptics.h"
+#include "APS_ALPHA/Core/Planetary/APSAtmosphereModel.h"
 #include "APS_ALPHA/Actors/Astro/Galaxy.h"
 #include "APS_ALPHA/Actors/Astro/StarCluster.h"
 #include "APS_ALPHA/Actors/Astro/StarSystem.h"
 #include "APS_ALPHA/Actors/Astro/Star.h"
 #include "APS_ALPHA/Actors/Astro/PlanetaryBody.h"
 #include "APS_ALPHA/Generation/AstroGenerator.h"
+#include "APS_ALPHA/Generation/PlanetarySurfaceGenerator.h"
+#include "Components/StaticMeshComponent.h"
+#include "Materials/MaterialInstanceDynamic.h"
+#include "PlanetaryAtmosphere.h"
 #include "Camera/PlayerCameraManager.h"
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
@@ -50,6 +55,36 @@ namespace APSGameplayStellarDay
 		TEXT("1 logs every change of the stars' daylight visibility (smoothness checks)."));
 	TAutoConsoleVariable<int32> CVarDayFade(TEXT("aps.Stars.DayFade"), 1,
 		TEXT("1 fades the catalogue stars with daylight and altitude in their material; 0 switches them off in a day sky."));
+	TAutoConsoleVariable<float> CVarInsideOpacityGain(TEXT("aps.Sky.InsideOpacityGain"), 12.0f,
+		TEXT("How much denser the sky seen from inside an Earth-like or thicker atmosphere is than its view from space ")
+		TEXT("(1 = the same). Thin air gets less, none at all; it fades to 1 towards the top of the shell."));
+	TAutoConsoleVariable<float> CVarInsideSkylightGain(TEXT("aps.Sky.InsideSkylightGain"), 1.0f,
+		TEXT("The same gain for the atmosphere's skylight (ambient light on the ground); 1 = unchanged."));
+
+	/**
+	 * Raises the plugin's AtmosOpacity on the inside sky and skylight materials of one atmosphere. The plugin writes
+	 * the base value to all its materials in its own tick, before this subsystem's; the space shell keeps it.
+	 */
+	void ApplyInsideSkyGain(AAtmoScape& Atmosphere, const float OpacityGain, const float SkylightGain)
+	{
+		static const FName InsideSky(TEXT("PlanetaryAtmoMesh"));
+		static const FName Skylight(TEXT("PlanetarySkylightMesh"));
+		const float Base = Atmosphere.AtmosphereOpacity * FMath::Max(Atmosphere.PresentationOpacityScale, 0.0f);
+		TInlineComponentArray<UStaticMeshComponent*> Meshes(&Atmosphere);
+		for (UStaticMeshComponent* Mesh : Meshes)
+		{
+			const FName Name = Mesh ? Mesh->GetFName() : NAME_None;
+			const float Gain = Name == InsideSky ? OpacityGain : Name == Skylight ? SkylightGain : 0.0f;
+			if (Gain > 0.0f && !FMath::IsNearlyEqual(Gain, 1.0f))
+			{
+				if (UMaterialInstanceDynamic* Material = Cast<UMaterialInstanceDynamic>(Mesh->GetMaterial(0)))
+				{
+					Material->SetScalarParameterValue(TEXT("AtmosOpacity"), Base * Gain);
+				}
+			}
+		}
+	}
+
 	TAutoConsoleVariable<float> CVarDayFadeDepth(TEXT("aps.Stars.DayFadeDepth"), 6.25f,
 		TEXT("How deep a day sky dims the catalogue stars, in e-folds of brightness. 6.25: the brightest show from ~20 km of ")
 		TEXT("a 100 km atmosphere, all from ~50 km, full brightness at 95 km (e1-ascent-4); lower shows them earlier."));
@@ -127,10 +162,27 @@ void UAPSStellarVisualSubsystem::UpdateGameplayDaylightStars(const FVector& Came
 			{
 				continue;
 			}
+			// Day sky from inside (E2): full gain near the ground of an Earth-like or denser atmosphere, less in thin air,
+			// none without air, back to the view-from-space value towards the top of the shell (no pop at the switch).
+			if (AAtmoScape* Atmosphere = IsValid(Body->PlanetaryEnvironmentGenerator)
+				? Body->PlanetaryEnvironmentGenerator->PlanetAtmosphere : nullptr; IsValid(Atmosphere))
+			{
+				const double Air = (1.0 - FMath::SmoothStep(0.5, 0.95, FMath::Max(Altitude, 0.0) / AtmosphereCm))
+					* APSAtmosphereModel::DaySkyMasking(APSAtmosphereModel::Density(Body));
+				const auto Gain = [Air](const TAutoConsoleVariable<float>& Setting)
+				{
+					return static_cast<float>(1.0 + (FMath::Max(Setting.GetValueOnGameThread(), 0.0f) - 1.0) * Air);
+				};
+				APSGameplayStellarDay::ApplyInsideSkyGain(*Atmosphere, Gain(APSGameplayStellarDay::CVarInsideOpacityGain),
+					Gain(APSGameplayStellarDay::CVarInsideSkylightGain));
+			}
 			const double SunSine = FVector::DotProduct(FromCentre.GetSafeNormal(),
 				(TargetStarLocation - CameraLocation).GetSafeNormal());
 			const double Height = FMath::Clamp(FMath::Max(Altitude, 0.0) / (0.95 * AtmosphereCm), 0.0, 1.0);
-			Factor = FMath::Max(Factor, static_cast<float>(FMath::SmoothStep(-0.05, 0.12, SunSine) * (1.0 - Height)));
+			// A thin sky hides fewer stars by day; an airless one none (Rio, 01.10: dark starless skies on weak air).
+			const double Masking = APSAtmosphereModel::DaySkyMasking(APSAtmosphereModel::Density(Body));
+			Factor = FMath::Max(Factor, static_cast<float>(FMath::SmoothStep(-0.05, 0.12, SunSine) * (1.0 - Height)
+				* Masking));
 			HideFactor = FMath::Max(HideFactor, static_cast<float>(FMath::SmoothStep(-0.05, 0.12, SunSine)
 				* FMath::SmoothStep(0.0, 0.4, 1.0 - FMath::Max(Altitude, 0.0) / AtmosphereCm)));
 		}
@@ -140,10 +192,17 @@ void UAPSStellarVisualSubsystem::UpdateGameplayDaylightStars(const FVector& Came
 	GameplayDaylightFactor = FMath::Abs(Factor - GameplayDaylightFactor) > 0.5f || DeltaSeconds <= 0.0f
 		? Factor : FMath::FInterpTo(GameplayDaylightFactor, Factor, DeltaSeconds, 6.0f);
 	// The catalogue points fade in their material (UpdateGameplayStellarView); only the resolved native stars, separate
-	// meshes without that term, still leave a day sky.
-	const bool bHide = bGameplayDaylightStarsHidden ? HideFactor > 0.5f : HideFactor > 0.8f;
-	if (bHide != bGameplayDaylightStarsHidden)
+	// meshes without that term, still leave a day sky. They follow the points: hidden while the points stay below the
+	// faintest visible star, back once those show. Each return rescans the catalogue, so a hysteresis band and three
+	// seconds between changes keep a climb through that band from flipping them (six flips in 13 s beside a moon,
+	// Rio's playtest 01.10). Without the material fade the old switch-off curve stays.
+	const bool bHide = APSGameplayStellarDay::CVarDayFade.GetValueOnGameThread() != 0
+		? APSGameplayStellarDay::PointVisibility(GameplayDaylightFactor) < (bGameplayDaylightStarsHidden ? 0.006f : 0.002f)
+		: (bGameplayDaylightStarsHidden ? HideFactor > 0.5f : HideFactor > 0.8f);
+	const double Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
+	if (bHide != bGameplayDaylightStarsHidden && Now - GameplayDaylightHideChangeSeconds >= 3.0)
 	{
+		GameplayDaylightHideChangeSeconds = Now;
 		bGameplayDaylightStarsHidden = bHide;
 		// Back at night the native stars need one full demand pass; point sizes are still current.
 		bGameplayNativeDemandCandidatesValid = false;

@@ -2,6 +2,7 @@
 
 #include "Spaceship.h"
 #include "APSShipFlightModel.h"
+#include "APS_ALPHA/Actors/Astro/Moon.h"
 #include "APS_ALPHA/Actors/Astro/PlanetaryBody.h"
 #include "APS_ALPHA/Generation/PlanetarySurfaceGenerator.h"
 #include "Camera/CameraComponent.h"
@@ -426,6 +427,8 @@ namespace APSShipBenchmark
 		bool bActive{false};
 		TWeakObjectPtr<ASpaceship> Ship;
 		TWeakObjectPtr<APlanetaryBody> Planet;
+		/** aim=next: the planet flown to, logged every second with its surface readiness. */
+		TWeakObjectPtr<APlanetaryBody> Target;
 		TWeakObjectPtr<AWorldScapeRoot> Terrain;
 		int32 Power{3};
 		float Forward{1.0f};
@@ -553,6 +556,24 @@ namespace APSShipBenchmark
 		{
 			Forward = Radial;
 		}
+		else if (GDrive.Aim.Equals(TEXT("next"), ESearchCase::IgnoreCase))
+		{
+			// The nearest other planet with a streamed surface: an approach from afar (arrival forecast, 01.10).
+			double Best = TNumericLimits<double>::Max();
+			for (TActorIterator<APlanetaryBody> It(Ship.GetWorld()); It && !GDrive.Target.IsValid(); ++It)
+			{
+				const double Distance = FVector::Dist(Ship.GetActorLocation(), It->GetActorLocation());
+				if (IsValid(*It) && *It != Planet && It->bStreamWorldScapeSurface && !It->IsA<AMoon>() && Distance < Best)
+				{
+					Best = Distance;
+					GDrive.Target = *It;
+				}
+			}
+			if (const APlanetaryBody* Target = GDrive.Target.Get())
+			{
+				Forward = (Target->GetActorLocation() - Ship.GetActorLocation()).GetSafeNormal();
+			}
+		}
 		else if (GDrive.Aim.Equals(TEXT("out"), ESearchCase::IgnoreCase))
 		{
 			// Away from the world origin (the spawn point), toward the edge of charted space.
@@ -617,6 +638,20 @@ namespace APSShipBenchmark
 				Ship.SetActorLocation(Out * GDrive.StartLightYears * 9.4607e17, false, nullptr, ETeleportType::TeleportPhysics);
 				UE_LOG(LogTemp, Log, TEXT("[APS.ShipDrive] moved to %.2f ly from the world origin"),
 					Ship.GetActorLocation().Size() / 9.4607e17);
+			}
+			if (GDrive.Aim.Equals(TEXT("next"), ESearchCase::IgnoreCase))
+			{
+				// Arrival tests: start halfway to the target in open space, out of the home planet's gravity well.
+				AimShip(Ship);
+				if (const APlanetaryBody* Target = GDrive.Target.Get())
+				{
+					const FVector Start = FMath::Lerp(Ship.GetActorLocation(), Target->GetActorLocation(), 0.5);
+					Ship.DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+					Ship.SetActorLocation(Start, false, nullptr, ETeleportType::TeleportPhysics);
+					UE_LOG(LogTemp, Log, TEXT("[APS.ShipDrive] moved halfway to %s: its surface %.0f km away"),
+						*Target->GetName(),
+						(FVector::Dist(Start, Target->GetActorLocation()) - Target->GetWorldScapeBodyRadiusCm()) / 1.0e5);
+				}
 			}
 			AimShip(Ship);
 			if (GDrive.Engine > 0)
@@ -725,6 +760,13 @@ namespace APSShipBenchmark
 				GDrive.RenderSamples ? GDrive.RenderSum / GDrive.RenderSamples : -1.0,
 				GDrive.GpuSamples ? GDrive.GpuSum / GDrive.GpuSamples : -1.0,
 				GDrive.LodsSum / GDrive.Frames, GDrive.LodsMax);
+			if (const APlanetaryBody* Target = GDrive.Target.Get())
+			{
+				UE_LOG(LogTemp, Log, TEXT("[APS.ShipDrive] t=%3d s target %s: surface %.0f km away, surface ready=%d"),
+					GDrive.Second + 1, Target->AstroName.IsNone() ? *Target->GetName() : *Target->AstroName.ToString(),
+					(FVector::Dist(Ship.GetActorLocation(), Target->GetActorLocation()) - Target->GetWorldScapeBodyRadiusCm())
+						/ 1.0e5, Target->bWorldScapeSurfaceReady ? 1 : 0);
+			}
 			if (GDrive.bCameraSampled)
 			{
 				UE_LOG(LogTemp, Log, TEXT("[APS.ShipCam] t=%3d s arm %.1f-%.1f m | step max %.2f cm jerk max %.3f cm turn max %.3f deg"),

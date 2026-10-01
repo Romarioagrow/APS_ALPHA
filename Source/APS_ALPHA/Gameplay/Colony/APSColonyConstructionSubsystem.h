@@ -44,6 +44,12 @@ public:
 	bool GetSiteSnapshot(EAPSSpawnSite Site, FAPSProductionSnapshot& OutSnapshot) const;
 	/** Modules standing at a site, oldest first. */
 	void GetBuiltModules(EAPSSpawnSite Site, TArray<AAPSColonyModule*>& OutModules) const;
+	/**
+	 * Loads (APSCivilizationSave): one saved module back at its site, placed relative to the site's anchor as it was.
+	 * Null while the site is not ready (the colony materializes after the load), so the caller tries again later.
+	 */
+	AAPSColonyModule* RestoreModule(FName ModuleId, const FGuid& StableId, EAPSSpawnSite Site,
+		const FTransform& RelativeToAnchor, double FoundationDepthCm, double BoomLengthCm);
 	/** Why a finished job still waits for its place (surface not loaded); empty when it does not wait. */
 	FText GetJobNote(const FGuid& JobId) const;
 	/** A failed job's code (APS.Spawn.TooSteep, ...) in words. */

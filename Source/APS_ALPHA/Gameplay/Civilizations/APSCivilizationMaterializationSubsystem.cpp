@@ -25,9 +25,13 @@ namespace
 {
 	constexpr float RetryIntervalSeconds = 0.25f;
 	constexpr double MinimumPadDiameterCm = 9000.0;
+	/** A pad on stilts beside the base, not an airfield: a bigger ship does not land at the colony (01.10, 952 m). */
+	constexpr double MaximumPadDiameterCm = 16000.0;
 	constexpr double PadShipClearanceCm = 1500.0;
 	constexpr double BasePadRouteClearanceCm = 3000.0;
 	constexpr double SupportClearanceCm = 25.0;
+	/** The pad's deck stands on stilts at least this high above the highest ground under it. */
+	constexpr double PadDeckClearanceCm = 150.0;
 	/** Surface start: the base stands this far ahead of the landed pilot, turned this far to the right of the view. */
 	constexpr double PilotSiteDistanceCm = 26000.0;
 	constexpr double PilotSiteBearingDegrees = 35.0;
@@ -64,11 +68,46 @@ namespace
 		return FVector2D(FMath::Abs(Center.X) + Extent.X, FMath::Abs(Center.Y) + Extent.Y).Size();
 	}
 
-	double ProjectedExtent(const FVector& Extent, const FVector& Direction)
+	/** The lowest and highest points of an actor along Direction, relative to Point, from its own oriented bounds. */
+	FVector2D OrientedExtremes(const AActor* Actor, const FVector& Point, const FVector& Direction)
 	{
-		return FMath::Abs(Direction.X) * Extent.X
-			+ FMath::Abs(Direction.Y) * Extent.Y
-			+ FMath::Abs(Direction.Z) * Extent.Z;
+		// Visible meshes only: a ship's invisible gravity and interaction spheres held it far above the deck (01.10).
+		FBox Local = UAPSSpawnPlacementSubsystem::VisualLocalBounds(Actor);
+		if (!Local.IsValid)
+		{
+			Local = Actor->CalculateComponentsBoundingBoxInLocalSpace(true);
+		}
+		const double Pivot = FVector::DotProduct(Actor->GetActorLocation() - Point, Direction);
+		if (!Local.IsValid)
+		{
+			return FVector2D(Pivot, Pivot);
+		}
+		FVector Corners[8];
+		Local.GetVertices(Corners);
+		const FTransform Transform = Actor->GetActorTransform();
+		FVector2D Extremes(TNumericLimits<double>::Max(), -TNumericLimits<double>::Max());
+		for (const FVector& Corner : Corners)
+		{
+			const double Along = FVector::DotProduct(Transform.TransformPosition(Corner) - Point, Direction);
+			Extremes.X = FMath::Min(Extremes.X, Along);
+			Extremes.Y = FMath::Max(Extremes.Y, Along);
+		}
+		return Extremes;
+	}
+
+	/** The resolver checks a few points of a footprint and the ground between them can rise higher: lifts the
+	 * structure so that its underside clears the highest ground beneath it (stilts or a plinth fill below). */
+	void LiftClearOfGround(AActor* Structure, APlanetaryBody* Body, const double ClearanceCm)
+	{
+		const UWorld* World = IsValid(Structure) ? Structure->GetWorld() : nullptr;
+		const UAPSSpawnPlacementSubsystem* Spawner = World ? World->GetSubsystem<UAPSSpawnPlacementSubsystem>() : nullptr;
+		const double Clearance = Spawner ? Spawner->MeasureGroundClearance(Structure, Body)
+			: -TNumericLimits<double>::Max();
+		if (Clearance > -TNumericLimits<double>::Max() && Clearance < ClearanceCm)
+		{
+			Structure->AddActorWorldOffset(Structure->GetActorUpVector() * (ClearanceCm - Clearance), false, nullptr,
+				ETeleportType::TeleportPhysics);
+		}
 	}
 }
 
@@ -348,7 +387,8 @@ bool UAPSCivilizationMaterializationSubsystem::TryResolveSafeSite(
 	const FVector ShipScale = SelectedShip->GetActorScale3D().GetAbs();
 	if (PlacementEnvelopeShip.Get() != SelectedShip || PlacementEnvelopeScale != ShipScale)
 	{
-		PlacementShipEnvelopeDiameterCm = 2.0 * ShipHullRadiusCm(SelectedShip) + 2.0 * PadShipClearanceCm;
+		PlacementShipEnvelopeDiameterCm = FMath::Min(2.0 * ShipHullRadiusCm(SelectedShip) + 2.0 * PadShipClearanceCm,
+			MaximumPadDiameterCm);
 		PlacementEnvelopeShip = SelectedShip;
 		PlacementEnvelopeScale = ShipScale;
 	}
@@ -743,13 +783,11 @@ void UAPSCivilizationMaterializationSubsystem::PlaceBoundsOnSupportPlane(
 		return;
 	}
 	Actor->SetActorTransform(SupportTransform, false, nullptr, ETeleportType::TeleportPhysics);
-	FVector BoundsOrigin;
-	FVector BoundsExtent;
-	Actor->GetActorBounds(false, BoundsOrigin, BoundsExtent);
 	const FVector Outward = SupportTransform.GetUnitAxis(EAxis::Z);
-	const double PivotToBottom = FVector::DotProduct(
-		BoundsOrigin - Actor->GetActorLocation(), Outward)
-		- ProjectedExtent(BoundsExtent, Outward);
+	// The bottom along the support normal from the actor's own oriented bounds. The world-axis box of a wide flat
+	// part on a tilted plane (any site away from the world axes) reached tens of metres below it: the 108 m pad stood
+	// 64 m above the ground, 217 m in an earlier game (Rio, 01.10: the pad hangs and cannot be reached).
+	const double PivotToBottom = OrientedExtremes(Actor, Actor->GetActorLocation(), Outward).X;
 	Actor->SetActorLocation(SupportTransform.GetLocation()
 		+ Outward * (ExtraClearanceCm - PivotToBottom), false, nullptr,
 		ETeleportType::TeleportPhysics);
@@ -812,14 +850,15 @@ bool UAPSCivilizationMaterializationSubsystem::TryMaterializeEntities(
 	else
 	{
 		PlaceBoundsOnSupportPlane(MaterializedBase, Placement.BaseTransform, SupportClearanceCm);
+		LiftClearOfGround(MaterializedBase, HomeBody, SupportClearanceCm);
 	}
 	MaterializedBase->Tags.AddUnique(TEXT("APS.Placeholder.LegacyColony"));
 	BindIdentity(MaterializedBase, *BaseEntity);
 
 	// The pad the resolver checked: the ship's hull footprint plus clearance, never less than the standard deck.
-	const double RequiredPadDiameter = FMath::Max(MinimumPadDiameterCm, PlacementShipEnvelopeDiameterCm > 0.0
+	const double RequiredPadDiameter = FMath::Clamp(PlacementShipEnvelopeDiameterCm > 0.0
 		? PlacementShipEnvelopeDiameterCm
-		: 2.0 * ShipHullRadiusCm(MaterializedShip) + 2.0 * PadShipClearanceCm);
+		: 2.0 * ShipHullRadiusCm(MaterializedShip) + 2.0 * PadShipClearanceCm, MinimumPadDiameterCm, MaximumPadDiameterCm);
 	const double PadScale = RequiredPadDiameter / MinimumPadDiameterCm;
 	if (PadEntity->bHasPersistedTransform)
 	{
@@ -833,6 +872,7 @@ bool UAPSCivilizationMaterializationSubsystem::TryMaterializeEntities(
 		PadSupportTransform.SetScale3D(FVector(PadScale, PadScale, 1.0));
 		PlaceBoundsOnSupportPlane(MaterializedPad, PadSupportTransform,
 			SupportClearanceCm);
+		LiftClearOfGround(MaterializedPad, HomeBody, PadDeckClearanceCm);
 	}
 	BindIdentity(MaterializedPad, *PadEntity);
 
@@ -855,7 +895,12 @@ bool UAPSCivilizationMaterializationSubsystem::TryMaterializeEntities(
 		}
 		else
 		{
-			PlaceBoundsOnSupportPlane(MaterializedShip, Placement.PadTransform, 150.0);
+			// On the deck: the pad's top along its normal is the ship's support plane.
+			FTransform DeckTransform = Placement.PadTransform;
+			const FVector PadUp = Placement.PadTransform.GetUnitAxis(EAxis::Z);
+			DeckTransform.SetLocation(Placement.PadTransform.GetLocation() + PadUp
+				* OrientedExtremes(MaterializedPad, Placement.PadTransform.GetLocation(), PadUp).Y);
+			PlaceBoundsOnSupportPlane(MaterializedShip, DeckTransform, 50.0);
 		}
 		MaterializedShip->bProvidesArtificialGravity = false;
 		MaterializedShip->bApplyExternalGravity = true;

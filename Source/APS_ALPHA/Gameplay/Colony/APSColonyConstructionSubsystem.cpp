@@ -12,6 +12,7 @@
 #include "APS_ALPHA/Gameplay/Civilizations/APSCivilizationJournalSubsystem.h"
 #include "APS_ALPHA/Gameplay/Civilizations/APSCivilizationMaterializationSubsystem.h"
 #include "APS_ALPHA/Gameplay/Civilizations/APSCivilizationRuntimeManifest.h"
+#include "APS_ALPHA/Gameplay/Civilizations/APSCivilizationStarterActors.h"
 #include "APS_ALPHA/Gameplay/Production/APSProductionSubsystem.h"
 #include "APS_ALPHA/Pawns/Characters/CustomGravityCharacter.h"
 #include "Camera/CameraActor.h"
@@ -41,6 +42,16 @@ namespace APSColonyConstruction
 	/** A structure whose underside stands higher than this above the ground gets a plinth, sunk this far in. */
 	constexpr double MinimumPlinthGapCm = 40.0;
 	constexpr double PlinthBuryCm = 60.0;
+	/** The pad's stilts (Rio, 01.10: "a pad on stilts of a reasonable height, so that you can get onto it"). */
+	constexpr double LegDiameterCm = 160.0;
+	constexpr double MinimumLegDropCm = 30.0;
+	constexpr double MaximumLegDropCm = 5000.0;
+	/** Its ramp to the ground: about this steep, never shorter or longer than these runs. */
+	constexpr double RampSlopeDegrees = 18.0;
+	constexpr double RampMinimumRunCm = 1200.0;
+	constexpr double RampMaximumRunCm = 6000.0;
+	constexpr double RampWidthCm = 1800.0;
+	constexpr double RampThicknessCm = 35.0;
 	/** Test runs photograph what was ordered after this long even if a site never became ready. */
 	constexpr double AutoBuildShotTimeoutSeconds = 180.0;
 	const FName EnqueueAction(TEXT("APS.Production.Enqueue"));
@@ -105,6 +116,91 @@ namespace APSColonyConstruction
 		const APlanet* Planet = Cast<APlanet>(Body);
 		const AStar* Star = Planet ? Planet->ParentStar : nullptr;
 		return IsValid(Star) ? (Star->GetActorLocation() - From).GetSafeNormal() : FVector::ZeroVector;
+	}
+
+	/**
+	 * The landing pad on stilts: legs from the deck's underside down to the ground (the centre, 6 inner and 12 outer),
+	 * and the access ramp from the deck edge on the base side (-X) down to the ground. DeckFootprint is the deck in the
+	 * pad's own space. Returns the number of legs; OutRampRunCm and OutRampDegrees describe the ramp (zero when the
+	 * ground below it is not loaded).
+	 */
+	int32 BuildPadSupports(UWorld& World, AAPSCivilizationLandingPad& Pad, APlanetaryBody& Body,
+		const UAPSSpawnPlacementSubsystem& Spawner, const FBox& DeckFootprint, double& OutRampRunCm,
+		double& OutRampDegrees)
+	{
+		OutRampRunCm = 0.0;
+		OutRampDegrees = 0.0;
+		const FTransform Transform = Pad.GetActorTransform();
+		const FVector Up = Transform.GetUnitAxis(EAxis::Z);
+		const FVector Scale = Transform.GetScale3D().GetAbs();
+		const double DeckRadius = DeckFootprint.GetExtent().X;
+		int32 Legs = 0;
+		const auto Leg = [&](const double LocalX, const double LocalY)
+		{
+			const FVector Top = Transform.TransformPosition(FVector(LocalX, LocalY, DeckFootprint.Min.Z));
+			const double Drop = Spawner.GroundDropBelow(&Body, Top);
+			if (!(Drop > MinimumLegDropCm) || Drop > MaximumLegDropCm)
+			{
+				return;
+			}
+			const double Height = Drop + PlinthBuryCm;
+			const FTransform LegTransform(Transform.GetRotation(), Top - Up * (Height * 0.5 + 1.0),
+				FVector(LegDiameterCm * 0.01, LegDiameterCm * 0.01, Height * 0.01));
+			AAPSColonyPlinth* Plinth = World.SpawnActorDeferred<AAPSColonyPlinth>(AAPSColonyPlinth::StaticClass(),
+				LegTransform, nullptr, nullptr, ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+			if (!Plinth)
+			{
+				return;
+			}
+			Plinth->Configure(true);
+			Plinth->FinishSpawning(LegTransform);
+			Plinth->AttachToActor(&Pad, FAttachmentTransformRules::KeepWorldTransform);
+			++Legs;
+		};
+		Leg(0.0, 0.0);
+		for (int32 Index = 0; Index < 6; ++Index)
+		{
+			const double Angle = UE_TWO_PI * Index / 6.0;
+			Leg(0.55 * DeckRadius * FMath::Cos(Angle), 0.55 * DeckRadius * FMath::Sin(Angle));
+		}
+		for (int32 Index = 0; Index < 12; ++Index)
+		{
+			const double Angle = UE_TWO_PI * (Index + 0.5) / 12.0;
+			Leg(0.92 * DeckRadius * FMath::Cos(Angle), 0.92 * DeckRadius * FMath::Sin(Angle));
+		}
+
+		// The ramp: its upper edge on the deck edge at deck height, its foot on the ground where it lands.
+		UStaticMeshComponent* Ramp = Pad.AccessRamp;
+		if (!Ramp || Scale.X <= UE_SMALL_NUMBER || Scale.Y <= UE_SMALL_NUMBER || Scale.Z <= UE_SMALL_NUMBER)
+		{
+			return Legs;
+		}
+		const double DeckTop = DeckFootprint.Max.Z;
+		const double EdgeX = -DeckRadius;
+		double Run = RampMinimumRunCm;
+		double Rise = 0.0;
+		for (int32 Pass = 0; Pass < 3; ++Pass)
+		{
+			const FVector Foot = Transform.TransformPosition(FVector(EdgeX - Run / Scale.X, 0.0, DeckTop));
+			const double Drop = Spawner.GroundDropBelow(&Body, Foot);
+			if (Drop <= -TNumericLimits<double>::Max())
+			{
+				return Legs;
+			}
+			Rise = FMath::Max(Drop, 0.0);
+			Run = FMath::Clamp(Rise / FMath::Tan(FMath::DegreesToRadians(RampSlopeDegrees)),
+				RampMinimumRunCm, RampMaximumRunCm);
+		}
+		const double Degrees = FMath::RadiansToDegrees(FMath::Atan2(Rise, Run));
+		const double Length = FMath::Sqrt(Run * Run + Rise * Rise);
+		Ramp->SetRelativeLocationAndRotation(
+			FVector(EdgeX - Run * 0.5 / Scale.X, 0.0, (DeckTop - (Rise + RampThicknessCm) * 0.5) / Scale.Z),
+			FRotator(Degrees, 0.0, 0.0));
+		Ramp->SetRelativeScale3D(FVector(Length / (100.0 * Scale.X), RampWidthCm / (100.0 * Scale.Y),
+			RampThicknessCm / (100.0 * Scale.Z)));
+		OutRampRunCm = Run;
+		OutRampDegrees = Degrees;
+		return Legs;
 	}
 }
 
@@ -313,8 +409,19 @@ void UAPSColonyConstructionSubsystem::GroundColonyStructures()
 			return;
 		}
 	}
+	TMap<const AActor*, FString> Supports;
 	for (const FMeasured& Entry : Measured)
 	{
+		if (AAPSCivilizationLandingPad* Pad = Cast<AAPSCivilizationLandingPad>(Entry.Structure))
+		{
+			// The pad stands on stilts with a ramp down to the ground, not on a solid plinth.
+			double RampRun = 0.0;
+			double RampDegrees = 0.0;
+			const int32 Legs = BuildPadSupports(*World, *Pad, *Body, *Spawner, Entry.Footprint, RampRun, RampDegrees);
+			Supports.Add(Pad, FString::Printf(TEXT(", %d stilts, ramp %.0f m at %.0f deg"), Legs, RampRun * 0.01,
+				RampDegrees));
+			continue;
+		}
 		if (Entry.Gap < MinimumPlinthGapCm)
 		{
 			continue;
@@ -342,9 +449,14 @@ void UAPSColonyConstructionSubsystem::GroundColonyStructures()
 	bColonyGrounded = true;
 	for (const FMeasured& Entry : Measured)
 	{
-		UE_LOG(LogAPSColonyConstruction, Log, TEXT("[APS.Colony.Build] %s: underside up to %.1f m above the ground%s"),
-			*GetNameSafe(Entry.Structure), Entry.Gap * 0.01,
-			Entry.Gap >= MinimumPlinthGapCm ? TEXT(", plinth placed beneath") : TEXT(", stands on the ground"));
+		// The footprint the gap was measured over (the largest visible part), to tell a steep site from a wrong part.
+		const FVector Size = Entry.Footprint.GetSize() * Entry.Structure->GetActorTransform().GetScale3D().GetAbs() * 0.01;
+		const FString* Support = Supports.Find(Entry.Structure);
+		UE_LOG(LogAPSColonyConstruction, Log,
+			TEXT("[APS.Colony.Build] %s: underside up to %.1f m above the ground over a %.0fx%.0f m %s footprint%s"),
+			*GetNameSafe(Entry.Structure), Entry.Gap * 0.01, Size.X, Size.Y, Entry.bRound ? TEXT("round") : TEXT("square"),
+			Support ? **Support : Entry.Gap >= MinimumPlinthGapCm ? TEXT(", plinth placed beneath")
+				: TEXT(", stands on the ground"));
 	}
 }
 
@@ -422,6 +534,51 @@ bool UAPSColonyConstructionSubsystem::GetSiteSnapshot(const EAPSSpawnSite Site,
 	return Production && Entry.bRegistered && Entry.Anchor.IsValid()
 		&& Production->QuerySnapshot(Entry.ContextId, Entry.Anchor.Get(), EAPSProductionAccessMode::ActorGated,
 			OutSnapshot, Failure);
+}
+
+AAPSColonyModule* UAPSColonyConstructionSubsystem::RestoreModule(const FName ModuleId, const FGuid& StableId,
+	const EAPSSpawnSite Site, const FTransform& RelativeToAnchor, const double FoundationDepthCm, const double BoomLengthCm)
+{
+	const int32 Index = static_cast<int32>(Site);
+	UWorld* World = GetWorld();
+	if (!World || Index < 0 || Index >= UE_ARRAY_COUNT(Sites) || !FAPSColonyModuleCatalogue::Find(ModuleId))
+	{
+		return nullptr;
+	}
+	FSite& Entry = Sites[Index];
+	AActor* Anchor = Entry.Anchor.Get();
+	if (!Entry.bRegistered || !IsValid(Anchor))
+	{
+		return nullptr;
+	}
+	// Loaded twice into one world: the module already stands.
+	for (const TWeakObjectPtr<AAPSColonyModule>& Built : BuiltModules)
+	{
+		if (Built.IsValid() && Built->GetStableId() == StableId)
+		{
+			return Built.Get();
+		}
+	}
+	const FTransform Transform = RelativeToAnchor * Anchor->GetActorTransform();
+	AAPSColonyModule* Module = World->SpawnActorDeferred<AAPSColonyModule>(AAPSColonyModule::StaticClass(), Transform,
+		nullptr, nullptr, ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+	if (!Module)
+	{
+		return nullptr;
+	}
+	Module->Configure(ModuleId, StableId, CivilizationId, FoundationDepthCm, BoomLengthCm);
+	Module->FinishSpawning(Transform);
+	Module->BuildParts();
+	// Attached as a build attaches it: to the body on the surface, to the headquarters in orbit.
+	AActor* Parent = Site == EAPSSpawnSite::Surface ? static_cast<AActor*>(Entry.Body.Get()) : Anchor;
+	if (IsValid(Parent))
+	{
+		Module->AttachToActor(Parent, FAttachmentTransformRules::KeepWorldTransform);
+	}
+	BuiltModules.Add(Module);
+	UE_LOG(LogAPSColonyConstruction, Log, TEXT("[APS.Colony.Build] restored %s beside %s"), *ModuleId.ToString(),
+		*GetNameSafe(Anchor));
+	return Module;
 }
 
 void UAPSColonyConstructionSubsystem::GetBuiltModules(const EAPSSpawnSite Site,
@@ -548,7 +705,7 @@ bool UAPSColonyConstructionSubsystem::MaterializeJob(const EAPSSpawnSite Kind, F
 		{
 			// The surface is not loaded (the pilot is far from it): the crew waits and the job keeps its place.
 			JobNotes.Add(Job.JobId, LOCTEXT("WaitingSurface", "Waiting for the surface to load"));
-			JobRetrySeconds.Add(Job.JobId, Now + RetryIntervalSeconds);
+			JobRetrySeconds.Add(Job.JobId, Now + APSColonyConstruction::RetryIntervalSeconds);
 			return false;
 		}
 		Production.ResolveMaterialization(Site.ContextId, Job.JobId, FGuid(), FSoftClassPath(), false,
@@ -602,7 +759,7 @@ bool UAPSColonyConstructionSubsystem::MaterializeJob(const EAPSSpawnSite Kind, F
 		UE_LOG(LogAPSColonyConstruction, Warning, TEXT("[APS.Colony.Build] %s built but not committed: %s"),
 			*ModuleId.ToString(), *Failure);
 		Module->Destroy();
-		JobRetrySeconds.Add(Job.JobId, Now + RetryIntervalSeconds);
+		JobRetrySeconds.Add(Job.JobId, Now + APSColonyConstruction::RetryIntervalSeconds);
 		return false;
 	}
 	BuiltModules.Add(Module);
@@ -746,9 +903,19 @@ void UAPSColonyConstructionSubsystem::TickModuleShots()
 	}
 	const int32 ModuleIndex = ShotIndex / 2;
 	AActor* Base = GetSiteAnchor(EAPSSpawnSite::Surface);
-	// After the modules, one overview of the surface colony from above.
+	AActor* Pad = nullptr;
+	for (TActorIterator<AAPSCivilizationLandingPad> It(World); It && IsValid(Base); ++It)
+	{
+		if (IsValid(*It) && It->GetAttachParentActor() == Base->GetAttachParentActor())
+		{
+			Pad = *It;
+			break;
+		}
+	}
+	// After the modules, one overview of the surface colony from above, then the pad from low beside it (stilts, ramp).
 	const bool bOverview = ModuleIndex == ShotModules.Num() && IsValid(Base);
-	if (ModuleIndex >= ShotModules.Num() && !bOverview)
+	const bool bPadShot = ModuleIndex == ShotModules.Num() + 1 && IsValid(Pad);
+	if (ModuleIndex >= ShotModules.Num() && !bOverview && !bPadShot)
 	{
 		// Done: back to the pilot's view, then the terminal's own captures.
 		if (APawn* Pawn = Controller->GetPawn())
@@ -770,7 +937,7 @@ void UAPSColonyConstructionSubsystem::TickModuleShots()
 		TestShotsFinished.Broadcast();
 		return;
 	}
-	AActor* Subject = bOverview ? Base : ShotModules[ModuleIndex].Get();
+	AActor* Subject = bOverview ? Base : bPadShot ? Pad : ShotModules[ModuleIndex].Get();
 	if (!IsValid(Subject))
 	{
 		ShotIndex = (ModuleIndex + 1) * 2;
@@ -784,11 +951,14 @@ void UAPSColonyConstructionSubsystem::TickModuleShots()
 		const FVector Size = Spec ? Spec->SizeCm : FVector(1000.0);
 		const FTransform Frame = Subject->GetActorTransform();
 		const FVector Up = Frame.GetUnitAxis(EAxis::Z);
-		const double Reach = bOverview ? 17000.0 : Size.GetMax() * (bOrbit ? 2.5 : 2.0) + (bOrbit ? 3000.0 : 1200.0);
-		const FVector Target = Frame.GetLocation() + Up * (bOverview ? 800.0 : Size.Z * 0.4);
-		// A module is seen from behind (its front faces the site) and above, the site beyond it; the colony from high up.
-		FVector Eye = Target + Frame.TransformVectorNoScale((bOverview
-			? FVector(-0.55, 0.6, 0.6) : FVector(-0.75, 0.55, 0.35)).GetSafeNormal()) * Reach;
+		const double PadReach = bPadShot ? Pad->GetComponentsBoundingBox(true).GetExtent().Size() * 1.1 : 0.0;
+		const double Reach = bPadShot ? PadReach : bOverview ? 17000.0
+			: Size.GetMax() * (bOrbit ? 2.5 : 2.0) + (bOrbit ? 3000.0 : 1200.0);
+		const FVector Target = Frame.GetLocation() + Up * (bPadShot ? -150.0 : bOverview ? 800.0 : Size.Z * 0.4);
+		// A module is seen from behind (its front faces the site) and above, the site beyond it; the colony from high up;
+		// the pad from low on its ramp side, so its stilts and the ramp to the ground show.
+		FVector Eye = Target + Frame.TransformVectorNoScale((bPadShot ? FVector(-0.75, 0.6, 0.12)
+			: bOverview ? FVector(-0.55, 0.6, 0.6) : FVector(-0.75, 0.55, 0.35)).GetSafeNormal()) * Reach;
 		if (bOrbit)
 		{
 			// A module bolted into a recess of the station would hide behind its arms: look from outside the station's box.
@@ -819,7 +989,7 @@ void UAPSColonyConstructionSubsystem::TickModuleShots()
 	{
 		FScreenshotRequest::RequestScreenshot(FPaths::ScreenShotDir() / TEXT("ColonyModules")
 			/ FString::Printf(TEXT("%s_%s.png"), *FDateTime::Now().ToString(TEXT("%Y%m%d_%H%M%S")),
-				Module ? *Module->GetModuleId().ToString() : TEXT("ColonyOverview")), false, false);
+				Module ? *Module->GetModuleId().ToString() : bPadShot ? TEXT("LandingPad") : TEXT("ColonyOverview")), false, false);
 		ShotStepSeconds = Now + 0.6;
 	}
 	++ShotIndex;

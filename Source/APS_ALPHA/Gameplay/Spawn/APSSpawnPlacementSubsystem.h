@@ -147,6 +147,12 @@ public:
 	 */
 	double MeasureGroundGap(const AActor* Structure, APlanetaryBody* Body, FBox& OutLocalFootprint,
 		bool& bOutRound) const;
+	/** The same measure's other end: the smallest gap under the underside, negative where the ground rises above it;
+	 * the lowest double when the surface is not loaded. */
+	double MeasureGroundClearance(const AActor* Structure, APlanetaryBody* Body) const;
+	/** How far below a point the WorldScape ground lies along the body's radius (negative under the ground); the
+	 * lowest double when the surface is not loaded. */
+	double GroundDropBelow(APlanetaryBody* Body, const FVector& WorldPoint) const;
 
 private:
 	bool ResolveSurface(const FAPSSpawnRequest& Request, FAPSSpawnPlacement& OutPlacement) const;

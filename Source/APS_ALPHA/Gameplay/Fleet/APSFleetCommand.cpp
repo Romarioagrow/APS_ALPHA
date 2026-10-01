@@ -5,13 +5,17 @@
 #include "APS_ALPHA/Actors/Astro/PlanetaryBody.h"
 #include "APS_ALPHA/Actors/Astro/Star.h"
 #include "APS_ALPHA/Actors/Tech/AutonomousOutpost.h"
+#include "APS_ALPHA/Actors/Tech/SpaceShipyard.h"
 #include "APS_ALPHA/Actors/Tech/SpaceStation.h"
 #include "APS_ALPHA/Core/Enums/PlanetHabitability.h"
 #include "APS_ALPHA/Core/Instances/MainGameplayInstance.h"
 #include "APS_ALPHA/Core/Interfaces/ItemInfoInterface.h"
+#include "APS_ALPHA/Core/Planetary/APSAtmosphereModel.h"
 #include "APS_ALPHA/Core/Planetary/APSPlanetSurfaceProfile.h"
 #include "APS_ALPHA/Gameplay/Civilizations/APSCivilizationJournalSubsystem.h"
 #include "APS_ALPHA/Gameplay/Civilizations/Civilization.h"
+#include "APS_ALPHA/Generation/AstroGenerator.h"
+#include "APS_ALPHA/Pawns/Spaceships/APSShipCatalog.h"
 #include "APS_ALPHA/UI/Colony/APSColonyTerminalSubsystem.h"
 #include "Containers/Ticker.h"
 #include "Engine/Engine.h"
@@ -45,6 +49,25 @@ namespace APSFleetPrivate
 		TEXT("Multiplies how fast surveys and outposts progress at the target (tests)."));
 	TAutoConsoleVariable<int32> CVarLog(TEXT("aps.Fleet.Log"), 0,
 		TEXT("1 logs every unit under orders once a second: phase, distance, speed."));
+	TAutoConsoleVariable<float> CVarBuildScale(TEXT("aps.Fleet.BuildScale"), 1.0f,
+		TEXT("Multiplies how fast the shipyard builds (tests)."));
+	const FName BuiltTag(TEXT("APS.Fleet.Built"));
+
+	/** Seconds on the slipway by size, before the Industry level shortens them. */
+	float ClassBuildSeconds(const ESpaceshipSizeClass SizeClass)
+	{
+		switch (SizeClass)
+		{
+		case ESpaceshipSizeClass::XXS: return 20.0f;
+		case ESpaceshipSizeClass::XS: return 30.0f;
+		case ESpaceshipSizeClass::S: return 45.0f;
+		case ESpaceshipSizeClass::M: return 60.0f;
+		case ESpaceshipSizeClass::L: return 90.0f;
+		case ESpaceshipSizeClass::XL: return 120.0f;
+		case ESpaceshipSizeClass::XXL: return 150.0f;
+		default: return 240.0f;
+		}
+	}
 
 	TMap<const UWorld*, FAPSFleetCommand*>& Registry()
 	{
@@ -123,9 +146,9 @@ namespace APSFleetPrivate
 				? LOCTEXT("FindNoLiquid", "NONE") : EnumText(Profile.LiquidType)));
 			OutLines.Add(FText::Format(LOCTEXT("FindTemperature", "Temperature: {0}"), Grade(Profile.Temperature,
 				LOCTEXT("Cold", "COLD"), LOCTEXT("Temperate", "TEMPERATE"), LOCTEXT("Hot", "HOT"), 0.3f, 0.7f)));
-			OutLines.Add(FText::Format(LOCTEXT("FindAtmosphere", "Atmosphere: {0}"), Profile.AtmosphericPressure < 0.05f
-				? LOCTEXT("NoAir", "NONE") : Profile.AtmosphericPressure < 0.6f ? LOCTEXT("ThinAir", "THIN")
-				: Profile.AtmosphericPressure < 1.25f ? LOCTEXT("StandardAir", "BREATHABLE PRESSURE") : LOCTEXT("DenseAir", "DENSE")));
+			// The body's air from the atmosphere model: the generated profile carries one default pressure for all.
+			OutLines.Add(FText::Format(LOCTEXT("FindAtmosphere", "Atmosphere: {0}"),
+				APSAtmosphereModel::Describe(APSAtmosphereModel::Density(Body))));
 			OutLines.Add(FText::Format(LOCTEXT("FindHabitability", "Habitability: {0}"), EnumText(Body->PlanetHabitability)));
 		}
 		if (From < ESurvey::Studied && To >= ESurvey::Studied)
@@ -562,6 +585,10 @@ void FAPSFleetCommand::RefreshUnits()
 		});
 		++Revision;
 	}
+	if (PendingRestore.IsSet())
+	{
+		ApplyPendingRestore();
+	}
 	// The home world is known: the colony stands on it.
 	if (!bHomeKnown)
 	{
@@ -776,6 +803,7 @@ void FAPSFleetCommand::Tick(const float DeltaSeconds)
 	{
 		TickUnit(Unit, DeltaSeconds);
 	}
+	TickShipyard(DeltaSeconds);
 }
 
 void FAPSFleetCommand::TickUnit(FAPSFleetUnit& Unit, const float DeltaSeconds)
@@ -990,30 +1018,12 @@ void FAPSFleetCommand::FinishWork(FAPSFleetUnit& Unit)
 		const FVector Radial = Unit.SlotDirection.GetSafeNormal();
 		const FVector Along = FVector::CrossProduct(Body->GetActorUpVector(), Radial).GetSafeNormal();
 		const FVector Location = Ship->GetActorLocation() + (Along.IsNearlyZero() ? FVector::ForwardVector : Along) * 400000.0;
-		FActorSpawnParameters Parameters;
-		Parameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-		AAutonomousOutpost* Outpost = LiveWorld->SpawnActor<AAutonomousOutpost>(AAutonomousOutpost::StaticClass(), Location,
-			FRotationMatrix::MakeFromZ(Radial).Rotator(), Parameters);
-		if (!Outpost)
+		const FText Name = FText::Format(LOCTEXT("OutpostName", "Outpost {0} {1}"),
+			FText::FromString(NameOf(Body).ToString()), FText::AsNumber(CountOutposts(Body) + 1));
+		if (!SpawnOutpost(Body, Location, FRotationMatrix::MakeFromZ(Radial).ToQuat(), Name))
 		{
 			Post(FText::Format(LOCTEXT("BuildFailed", "{0} could not place the outpost at {1}."), UnitName(Unit), NameOf(Body)));
 			return;
-		}
-		Outpost->AttachToActor(Body, FAttachmentTransformRules::KeepWorldTransform);
-		Outpost->Tags.Add(TEXT("APS.GeneratedCivilization"));
-		Outpost->Tags.Add(TEXT("APS.Infrastructure.PlanetOutpost"));
-		Outpost->Tags.Add(OutpostTag);
-		Record.Outposts.Add(Outpost);
-		const FText Name = FText::Format(LOCTEXT("OutpostName", "Outpost {0} {1}"),
-			FText::FromString(NameOf(Body).ToString()), FText::AsNumber(CountOutposts(Body)));
-		// The world actor keeps its display name protected; it is a reflected property, so set it through reflection.
-		if (FTextProperty* NameProperty = FindFProperty<FTextProperty>(Outpost->GetClass(), TEXT("InGameName")))
-		{
-			NameProperty->SetPropertyValue_InContainer(Outpost, Name);
-		}
-		if (UCivilization* Civ = Civilization())
-		{
-			++Civ->Infrastructure.PlanetOutposts;
 		}
 		Post(FText::Format(LOCTEXT("OutpostBuilt", "{0} built {1}."), UnitName(Unit), Name));
 	}
@@ -1124,6 +1134,473 @@ int32 FAPSFleetCommand::ConsoleOrder(const FString& Who, const APSFleet::EOrder 
 		return Ships.Num();
 	}
 	return IssueOrder(Ships, Order, Target, OutRefusal);
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Saves
+
+FArchive& operator<<(FArchive& Ar, FAPSFleetSaveData& Data)
+{
+	int32 UnitCount = Data.Units.Num();
+	Ar << UnitCount;
+	if (Ar.IsLoading())
+	{
+		Data.Units.SetNum(FMath::Clamp(UnitCount, 0, 4096));
+	}
+	for (FAPSFleetUnitRecord& Unit : Data.Units)
+	{
+		Ar << Unit.CallSign << Unit.Division << Unit.Order << Unit.Phase << Unit.TargetKey << Unit.SlotDirection
+			<< Unit.Progress << Unit.WorkLength << Unit.bHasBerth << Unit.bBerthParked << Unit.BerthKey
+			<< Unit.BerthRelative << Unit.ReferenceKey << Unit.RelativeTransform << Unit.bPiloted << Unit.SpawnClassPath;
+	}
+	int32 SurveyCount = Data.Surveys.Num();
+	Ar << SurveyCount;
+	if (Ar.IsLoading())
+	{
+		Data.Surveys.SetNum(FMath::Clamp(SurveyCount, 0, 4096));
+	}
+	for (TPair<FString, uint8>& Survey : Data.Surveys)
+	{
+		Ar << Survey.Key << Survey.Value;
+	}
+	int32 OutpostCount = Data.Outposts.Num();
+	Ar << OutpostCount;
+	if (Ar.IsLoading())
+	{
+		Data.Outposts.SetNum(FMath::Clamp(OutpostCount, 0, 4096));
+	}
+	for (FAPSFleetSaveData::FOutpost& Outpost : Data.Outposts)
+	{
+		Ar << Outpost.BodyKey << Outpost.RelativeTransform << Outpost.Name;
+	}
+	return Ar;
+}
+
+FString FAPSFleetCommand::KeyOf(const AActor* Actor)
+{
+	if (!Actor)
+	{
+		return FString();
+	}
+	if (const ACelestialBody* Body = Cast<ACelestialBody>(Actor); Body && !Body->AstroName.IsNone())
+	{
+		return TEXT("BODY:") + Body->AstroName.ToString();
+	}
+	return TEXT("ACTOR:") + Actor->GetName();
+}
+
+AActor* FAPSFleetCommand::FindByKey(const FString& Key) const
+{
+	UWorld* LiveWorld = World.Get();
+	if (!LiveWorld || Key.IsEmpty())
+	{
+		return nullptr;
+	}
+	for (TActorIterator<AActor> It(LiveWorld); It; ++It)
+	{
+		if (KeyOf(*It) == Key)
+		{
+			return *It;
+		}
+	}
+	return nullptr;
+}
+
+AAutonomousOutpost* FAPSFleetCommand::SpawnOutpost(APlanetaryBody* Body, const FVector& Location, const FQuat& Rotation,
+	const FText& Name)
+{
+	using namespace APSFleetPrivate;
+	UWorld* LiveWorld = World.Get();
+	if (!LiveWorld || !Body)
+	{
+		return nullptr;
+	}
+	FActorSpawnParameters Parameters;
+	Parameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	AAutonomousOutpost* Outpost = LiveWorld->SpawnActor<AAutonomousOutpost>(AAutonomousOutpost::StaticClass(), Location,
+		Rotation.Rotator(), Parameters);
+	if (!Outpost)
+	{
+		return nullptr;
+	}
+	Outpost->AttachToActor(Body, FAttachmentTransformRules::KeepWorldTransform);
+	Outpost->Tags.Add(TEXT("APS.GeneratedCivilization"));
+	Outpost->Tags.Add(TEXT("APS.Infrastructure.PlanetOutpost"));
+	Outpost->Tags.Add(OutpostTag);
+	// The world actor keeps its display name protected; it is a reflected property, so set it through reflection.
+	if (FTextProperty* NameProperty = FindFProperty<FTextProperty>(Outpost->GetClass(), TEXT("InGameName")))
+	{
+		NameProperty->SetPropertyValue_InContainer(Outpost, Name);
+	}
+	BodyRecord(Body).Outposts.Add(Outpost);
+	if (UCivilization* Civ = Civilization())
+	{
+		++Civ->Infrastructure.PlanetOutposts;
+	}
+	++Revision;
+	return Outpost;
+}
+
+void FAPSFleetCommand::CaptureSave(FAPSFleetSaveData& OutData) const
+{
+	using namespace APSFleet;
+	OutData = FAPSFleetSaveData();
+	for (const FAPSFleetUnit& Unit : Units)
+	{
+		const ASpaceship* Ship = Unit.Ship.Get();
+		if (!Ship)
+		{
+			continue;
+		}
+		FAPSFleetUnitRecord& Record = OutData.Units.AddDefaulted_GetRef();
+		Record.CallSign = Unit.CallSign;
+		Record.Division = static_cast<uint8>(Unit.Division);
+		Record.Order = static_cast<uint8>(Unit.Order);
+		Record.Phase = static_cast<uint8>(Unit.Phase);
+		Record.TargetKey = KeyOf(Unit.Target.Get());
+		Record.SlotDirection = Unit.SlotDirection;
+		Record.Progress = Unit.Progress;
+		Record.WorkLength = Unit.WorkLength;
+		Record.bHasBerth = Unit.bHasBerth;
+		Record.bBerthParked = Unit.bBerthParked;
+		Record.BerthKey = KeyOf(Unit.Berth.Get());
+		Record.BerthRelative = Unit.BerthRelative;
+		Record.bPiloted = Ship->HasPilot();
+		Record.SpawnClassPath = Ship->ActorHasTag(APSFleetPrivate::BuiltTag) ? Ship->GetClass()->GetPathName() : FString();
+		// Where it stands, relative to its target or the nearest body: the world origin moves between sessions.
+		const AActor* Reference = Unit.Target.Get();
+		if (!Reference)
+		{
+			double Surface = 0.0, Radius = 0.0;
+			Reference = NearestBody(Ship->GetActorLocation(), Surface, Radius);
+		}
+		Record.ReferenceKey = KeyOf(Reference);
+		Record.RelativeTransform = Reference
+			? Ship->GetActorTransform().GetRelativeTransform(Reference->GetActorTransform()) : Ship->GetActorTransform();
+	}
+	for (const FAPSFleetBodyRecord& Body : Bodies)
+	{
+		const APlanetaryBody* Planet = Body.Body.Get();
+		if (!Planet)
+		{
+			continue;
+		}
+		if (Body.Survey != ESurvey::Unknown)
+		{
+			OutData.Surveys.Emplace(KeyOf(Planet), static_cast<uint8>(Body.Survey));
+		}
+		for (const TWeakObjectPtr<AActor>& Outpost : Body.Outposts)
+		{
+			if (Outpost.IsValid())
+			{
+				FAPSFleetSaveData::FOutpost& Record = OutData.Outposts.AddDefaulted_GetRef();
+				Record.BodyKey = KeyOf(Planet);
+				Record.RelativeTransform = Outpost->GetActorTransform().GetRelativeTransform(Planet->GetActorTransform());
+				Record.Name = APSFleetPrivate::NameOf(Outpost.Get()).ToString();
+			}
+		}
+	}
+}
+
+void FAPSFleetCommand::SetPendingRestore(FAPSFleetSaveData&& Data)
+{
+	PendingRestore = MoveTemp(Data);
+	PendingRestoreSince = World.IsValid() ? World->GetTimeSeconds() : 0.0;
+	RefreshSeconds = 0.0;
+}
+
+void FAPSFleetCommand::ApplyPendingRestore()
+{
+	using namespace APSFleet;
+	using namespace APSFleetPrivate;
+	UWorld* LiveWorld = World.Get();
+	if (!LiveWorld || !PendingRestore.IsSet())
+	{
+		return;
+	}
+	// The saved units come back with the generated hierarchy; wait for them, but not forever.
+	const FAPSFleetSaveData Data = PendingRestore.GetValue();
+	if (Units.Num() < Data.Units.Num() && LiveWorld->GetTimeSeconds() - PendingRestoreSince < 20.0)
+	{
+		return;
+	}
+	PendingRestore.Reset();
+	for (const TPair<FString, uint8>& Survey : Data.Surveys)
+	{
+		if (APlanetaryBody* Body = Cast<APlanetaryBody>(FindByKey(Survey.Key)))
+		{
+			FAPSFleetBodyRecord& Record = BodyRecord(Body);
+			const ESurvey Level = static_cast<ESurvey>(FMath::Min<uint8>(Survey.Value, static_cast<uint8>(ESurvey::Studied)));
+			if (Level > Record.Survey)
+			{
+				AddFindings(Body, Record.Survey, Level, Record.Findings);
+				Record.Survey = Level;
+			}
+		}
+	}
+	int32 Outposts = 0;
+	for (const FAPSFleetSaveData::FOutpost& Saved : Data.Outposts)
+	{
+		if (APlanetaryBody* Body = Cast<APlanetaryBody>(FindByKey(Saved.BodyKey)))
+		{
+			const FTransform Transform = Saved.RelativeTransform * Body->GetActorTransform();
+			Outposts += SpawnOutpost(Body, Transform.GetLocation(), Transform.GetRotation(), FText::FromString(Saved.Name)) ? 1 : 0;
+		}
+	}
+	// Ships the shipyard built come back first: the generator only respawns its own fleet.
+	for (const FAPSFleetUnitRecord& Saved : Data.Units)
+	{
+		if (Saved.SpawnClassPath.IsEmpty() || Units.ContainsByPredicate([&Saved](const FAPSFleetUnit& Unit)
+			{
+				return Unit.CallSign == Saved.CallSign;
+			}))
+		{
+			continue;
+		}
+		const AActor* Reference = FindByKey(Saved.ReferenceKey);
+		UClass* Class = LoadClass<ASpaceship>(nullptr, *Saved.SpawnClassPath);
+		ASpaceship* Ship = Class && Reference ? LaunchShip(Class, Saved.RelativeTransform * Reference->GetActorTransform()) : nullptr;
+		if (!Ship)
+		{
+			continue;
+		}
+		FAPSFleetUnit& Unit = Units.AddDefaulted_GetRef();
+		Unit.Ship = Ship;
+		Unit.CallSign = Saved.CallSign;
+		int32 Number = 0;
+		FString Digits;
+		if (Saved.CallSign.Split(TEXT("-"), nullptr, &Digits, ESearchCase::IgnoreCase, ESearchDir::FromEnd))
+		{
+			Number = FCString::Atoi(*Digits);
+		}
+		RegisteredCount = FMath::Max(RegisteredCount, Number);
+	}
+	int32 Restored = 0;
+	for (const FAPSFleetUnitRecord& Saved : Data.Units)
+	{
+		FAPSFleetUnit* Unit = Units.FindByPredicate([&Saved](const FAPSFleetUnit& Candidate)
+		{
+			return Candidate.CallSign == Saved.CallSign;
+		});
+		ASpaceship* Ship = Unit ? Unit->Ship.Get() : nullptr;
+		if (!Ship)
+		{
+			continue;
+		}
+		++Restored;
+		Unit->Division = static_cast<EDivision>(FMath::Min<uint8>(Saved.Division, static_cast<uint8>(EDivision::Count) - 1));
+		Unit->bHasBerth = Saved.bHasBerth;
+		Unit->bBerthParked = Saved.bBerthParked;
+		Unit->Berth = FindByKey(Saved.BerthKey);
+		Unit->BerthRelative = Saved.BerthRelative;
+		// A ship that left its berth stands where it was saved; one still at its berth is already there.
+		const bool bAway = Saved.bHasBerth || Saved.Order != static_cast<uint8>(EOrder::None);
+		if (bAway && !Saved.bPiloted && !Ship->HasPilot())
+		{
+			if (const AActor* Reference = FindByKey(Saved.ReferenceKey))
+			{
+				Ship->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+				Ship->Tags.Remove(ParkedTag);
+				Ship->SetActorTransform(Saved.RelativeTransform * Reference->GetActorTransform(), false, nullptr,
+					ETeleportType::TeleportPhysics);
+			}
+		}
+		Unit->Order = static_cast<EOrder>(FMath::Min<uint8>(Saved.Order, static_cast<uint8>(EOrder::Return)));
+		Unit->Phase = static_cast<EPhase>(FMath::Min<uint8>(Saved.Phase, static_cast<uint8>(EPhase::Holding)));
+		Unit->Target = FindByKey(Saved.TargetKey);
+		Unit->SlotDirection = Saved.SlotDirection;
+		Unit->Progress = Saved.Progress;
+		Unit->WorkLength = Saved.WorkLength;
+		Unit->Speed = 0.0;
+		Unit->Heading = FVector::ZeroVector;
+		if (Unit->Order != EOrder::None && Unit->Order != EOrder::Return && !Unit->Target.IsValid())
+		{
+			Unit->Order = EOrder::None;
+			Unit->Phase = EPhase::Idle;
+		}
+		// Leaving the berth needs the point it was clearing; after a load it simply sets course.
+		if (Unit->Phase == EPhase::Departing)
+		{
+			Unit->Phase = EPhase::Transit;
+		}
+		if ((Unit->Phase == EPhase::Working || Unit->Phase == EPhase::Holding) && Unit->Target.IsValid() && !Ship->HasPilot())
+		{
+			Ship->AttachToActor(Unit->Target.Get(), FAttachmentTransformRules::KeepWorldTransform);
+		}
+	}
+	UE_LOG(LogTemp, Log, TEXT("[APS.Fleet] restored %d of %d units, %d surveys, %d outposts"), Restored, Data.Units.Num(),
+		Data.Surveys.Num(), Outposts);
+	++Revision;
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Shipyard
+
+ASpaceShipyard* FAPSFleetCommand::FindShipyard() const
+{
+	UWorld* LiveWorld = World.Get();
+	if (!LiveWorld)
+	{
+		return nullptr;
+	}
+	// The civilization's own shipyard first (the escorts wait there), else any.
+	ASpaceShipyard* Any = nullptr;
+	for (TActorIterator<ASpaceShipyard> It(LiveWorld); It; ++It)
+	{
+		if (!IsValid(*It))
+		{
+			continue;
+		}
+		if (It->ActorHasTag(TEXT("APS.GeneratedCivilization")))
+		{
+			return *It;
+		}
+		Any = Any ? Any : *It;
+	}
+	return Any;
+}
+
+void FAPSFleetCommand::GetShipyardOptions(TArray<FAPSShipyardOption>& OutOptions) const
+{
+	OutOptions.Reset();
+	UWorld* LiveWorld = World.Get();
+	const UAPSShipCatalog* Catalog = nullptr;
+	if (LiveWorld)
+	{
+		for (TActorIterator<AAstroGenerator> It(LiveWorld); It; ++It)
+		{
+			if (IsValid(*It) && It->ShipCatalog)
+			{
+				Catalog = It->ShipCatalog;
+				break;
+			}
+		}
+	}
+	if (!Catalog)
+	{
+		return;
+	}
+	const float Industry = 1.0f + 0.2f * FMath::Max(DivisionLevel(APSFleet::EDivision::Construction), 0);
+	for (const FAPSShipCatalogEntry& Entry : Catalog->Ships)
+	{
+		if (!Entry.ShipClass)
+		{
+			continue;
+		}
+		FAPSShipyardOption& Option = OutOptions.AddDefaulted_GetRef();
+		Option.ShipClass = Entry.ShipClass;
+		Option.SizeClass = Entry.SizeClass;
+		FString Name = Entry.ShipClass->GetName();
+		Name.RemoveFromStart(TEXT("BP_Spaceship_"));
+		Name.RemoveFromEnd(TEXT("_C"));
+		Name.ReplaceInline(TEXT("_"), TEXT(" "));
+		Option.Name = FText::FromString(Name.ToUpper());
+		Option.BuildSeconds = APSFleetPrivate::ClassBuildSeconds(Entry.SizeClass) / Industry;
+	}
+	OutOptions.Sort([](const FAPSShipyardOption& A, const FAPSShipyardOption& B)
+	{
+		return A.SizeClass != B.SizeClass ? A.SizeClass < B.SizeClass : A.Name.ToString() < B.Name.ToString();
+	});
+}
+
+FText FAPSFleetCommand::OrderShip(const FAPSShipyardOption& Option)
+{
+	if (!Option.ShipClass)
+	{
+		return LOCTEXT("NoShipClass", "Pick a ship.");
+	}
+	if (!FindShipyard())
+	{
+		return LOCTEXT("NoShipyard", "No shipyard in this world.");
+	}
+	if (ShipyardQueue.Num() >= ShipyardQueueLimit)
+	{
+		return FText::Format(LOCTEXT("SlipwayFull", "The slipway is full: {0} ships queued."), FText::AsNumber(ShipyardQueueLimit));
+	}
+	FAPSShipyardJob& Job = ShipyardQueue.AddDefaulted_GetRef();
+	Job.ShipClass = Option.ShipClass;
+	Job.SizeClass = Option.SizeClass;
+	Job.Name = Option.Name;
+	Job.Length = FMath::Max(Option.BuildSeconds, 1.0f);
+	++Revision;
+	Post(FText::Format(LOCTEXT("ShipOrdered", "Shipyard: {0} (class {1}) laid down, about {2} s."), Option.Name,
+		APSFleetPrivate::EnumText(Option.SizeClass), FText::AsNumber(FMath::RoundToInt(Job.Length))));
+	return FText::GetEmpty();
+}
+
+void FAPSFleetCommand::TickShipyard(const float DeltaSeconds)
+{
+	if (ShipyardQueue.IsEmpty())
+	{
+		return;
+	}
+	FAPSShipyardJob& Job = ShipyardQueue[0];
+	Job.Progress = FMath::Min(1.0f, Job.Progress + DeltaSeconds
+		* FMath::Max(APSFleetPrivate::CVarBuildScale.GetValueOnGameThread(), 0.0f) / FMath::Max(Job.Length, 0.1f));
+	if (Job.Progress < 1.0f)
+	{
+		return;
+	}
+	ASpaceShipyard* Shipyard = FindShipyard();
+	if (!Shipyard)
+	{
+		return;
+	}
+	// Above the shipyard, four abreast, a row per four ships.
+	const int32 Slot = LaunchedCount;
+	constexpr double Spacing = 30000.0;
+	const FVector Base = Shipyard->SpawnPoint ? Shipyard->SpawnPoint->GetComponentLocation() : Shipyard->GetActorLocation();
+	const FVector Location = Base + Shipyard->GetActorRightVector() * ((Slot % 4) - 1.5) * Spacing
+		+ Shipyard->GetActorUpVector() * (Slot / 4 + 1) * Spacing;
+	const FAPSShipyardJob Launched = Job;
+	ShipyardQueue.RemoveAt(0);
+	ASpaceship* Ship = LaunchShip(Launched.ShipClass, FTransform(Shipyard->GetActorQuat(), Location));
+	if (!Ship)
+	{
+		Post(FText::Format(LOCTEXT("LaunchFailed", "Shipyard: {0} could not be launched."), Launched.Name));
+		return;
+	}
+	++LaunchedCount;
+	RefreshUnits();
+	const FAPSFleetUnit* Unit = FindUnit(Ship);
+	Post(FText::Format(LOCTEXT("ShipLaunched", "Shipyard launched {0}: {1}, {2}."), FText::FromString(Unit ? Unit->CallSign : Ship->GetName()),
+		Launched.Name, Unit ? APSFleet::DivisionName(Unit->Division) : FText::GetEmpty()));
+}
+
+ASpaceship* FAPSFleetCommand::LaunchShip(const TSubclassOf<ASpaceship> ShipClass, const FTransform& Transform)
+{
+	using namespace APSFleetPrivate;
+	UWorld* LiveWorld = World.Get();
+	ASpaceShipyard* Shipyard = FindShipyard();
+	if (!LiveWorld || !ShipClass)
+	{
+		return nullptr;
+	}
+	FActorSpawnParameters Parameters;
+	Parameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	ASpaceship* Ship = LiveWorld->SpawnActor<ASpaceship>(ShipClass, Transform.GetLocation(), Transform.Rotator(), Parameters);
+	if (!Ship)
+	{
+		return nullptr;
+	}
+	// As the generator readies an escort: the star system that moves the ship's frame, the civilization's tags.
+	for (const FAPSFleetUnit& Unit : Units)
+	{
+		if (Unit.Ship.IsValid() && Unit.Ship->OffsetSystem)
+		{
+			Ship->OffsetSystem = Unit.Ship->OffsetSystem;
+			break;
+		}
+	}
+	Ship->Tags.AddUnique(TEXT("APS.GeneratedCivilization"));
+	Ship->Tags.AddUnique(UnitTag);
+	Ship->Tags.AddUnique(BuiltTag);
+	if (Shipyard && FVector::Dist(Ship->GetActorLocation(), Shipyard->GetActorLocation()) < 2000000.0)
+	{
+		Ship->AttachToActor(Shipyard, FAttachmentTransformRules::KeepWorldTransform);
+	}
+	++Revision;
+	return Ship;
 }
 
 // ---------------------------------------------------------------------------------------------------------------------

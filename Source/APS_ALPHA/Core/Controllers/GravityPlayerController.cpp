@@ -1,6 +1,7 @@
 #include "GravityPlayerController.h"
 #include <ctime> 
 #include <random>
+#include "APS_ALPHA/Gameplay/Civilizations/APSCivilizationSave.h"
 #include "APS_ALPHA/Actors/Astro/WorldActor.h"
 #include "APS_ALPHA/Core/Instances/MainGameplayInstance.h"
 #include "APS_ALPHA/Core/Model/SpawnParameters.h"
@@ -12,6 +13,7 @@
 #include "APS_ALPHA/Gameplay/Civilizations/APSCivilizationRuntimeManifest.h"
 #include "APS_ALPHA/Generation/AstroGenerator.h"
 #include "APS_ALPHA/Core/World/APSWorldOriginSubsystem.h"
+#include "APS_ALPHA/Pawns/Vehicles/PilotingVehicle.h"
 #include "Kismet/GameplayStatics.h"
 #include "APS_ALPHA/Core/Structs/PlanetarySystemGenerationModel.h"
 #include "Serialization/ObjectAndNameAsStringProxyArchive.h"
@@ -99,6 +101,13 @@ void AGravityPlayerController::PlayerTick(const float DeltaTime)
 void AGravityPlayerController::CapturePlayerStateForSave()
 {
 	const APawn* PlayerPawn = GetPawn();
+	// Seated in a ship the player is still its pilot: the save keeps the pilot, who sits down in the ship again after
+	// loading (APSCivilizationSave). Saving the ship as the player's pawn spawned a second, empty ship on load and
+	// removed the pilot, who then could not get out (audit B2).
+	if (const APilotingVehicle* Vehicle = Cast<APilotingVehicle>(PlayerPawn); Vehicle && IsValid(Vehicle->Pilot))
+	{
+		PlayerPawn = Vehicle->Pilot;
+	}
 	if (!IsValid(PlayerPawn))
 	{
 		return;
@@ -317,6 +326,8 @@ bool AGravityPlayerController::SaveWorldToSlot(const FString& SlotName,
 			SaveGameInstance->bHasCivilizationManifest = true;
 		}
 	}
+	// Modules, fleet, surveys, outposts and the journal: the progress the actor archive below does not hold.
+	APSCivilizationSave::Capture(World, SaveGameInstance->CivilizationState);
 
 	TArray<AActor*> AllActors;
 	UGameplayStatics::GetAllActorsOfClass(World, ABaseActor::StaticClass(), AllActors);
@@ -539,6 +550,8 @@ void AGravityPlayerController::LoadWorld()
 					}
 				}
 			}
+
+			APSCivilizationSave::Restore(World, LoadedGame->CivilizationState);
 
 			if (LoadedGame->bHasPlayerPawnState && !LoadedGame->PlayerPawnClass.IsEmpty())
 			{

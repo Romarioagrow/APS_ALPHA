@@ -31,6 +31,8 @@ public:
 
 	const FGuid& GetStableId() const { return StableId; }
 	const FGuid& GetOwnerCivilizationId() const { return OwnerCivilizationId; }
+	double GetFoundationDepthCm() const { return FoundationDepthCm; }
+	double GetBoomLengthCm() const { return BoomLengthCm; }
 	int32 GetPartCount() const { return PartCount; }
 	/** Parts whose pack mesh is not installed (they fell back to an engine shape or were left out). */
 	int32 GetFallbackPartCount() const { return FallbackPartCount; }

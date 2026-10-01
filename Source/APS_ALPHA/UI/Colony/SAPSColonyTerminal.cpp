@@ -19,14 +19,18 @@
 #include "APS_ALPHA/Pawns/Spaceships/APSShipFlightModel.h"
 #include "APS_ALPHA/Pawns/Spaceships/ShipNavigationComponent.h"
 #include "APS_ALPHA/Pawns/Spaceships/Spaceship.h"
+#include "APS_ALPHA/UI/MainMenu/APSUIThumbnails.h"
 #include "APS_ALPHA/UI/Style/APSMenuChrome.h"
+#include "Engine/Texture2D.h"
 #include "EngineUtils.h"
 #include "Framework/Application/SlateApplication.h"
 #include "GameFramework/PlayerController.h"
 #include "InputCoreTypes.h"
 #include "Styling/AppStyle.h"
 #include "Widgets/Layout/SBorder.h"
+#include "Widgets/Images/SImage.h"
 #include "Widgets/Layout/SBox.h"
+#include "Widgets/Layout/SScaleBox.h"
 #include "Widgets/Layout/SScrollBox.h"
 #include "Widgets/Layout/SWidgetSwitcher.h"
 #include "Widgets/Input/SButton.h"
@@ -350,6 +354,11 @@ void SAPSColonyTerminal::Construct(const FArguments& InArgs)
 						]
 						+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 8.0f)
 						[
+							TabButton(EAPSChromeGlyph::Ship, LOCTEXT("ShipyardTab", "SHIPYARD"),
+								LOCTEXT("ShipyardDetails", "Build ships for the fleet"), ETab::Shipyard)
+						]
+						+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 8.0f)
+						[
 							TabButton(EAPSChromeGlyph::Divisions, LOCTEXT("Divisions", "DIVISIONS"),
 								LOCTEXT("DivisionsDetails", "Exploration, industry, science, fleet"), ETab::Divisions)
 						]
@@ -369,7 +378,8 @@ void SAPSColonyTerminal::Construct(const FArguments& InArgs)
 						+ SWidgetSwitcher::Slot()[BuildColony()]
 						+ SWidgetSwitcher::Slot()[BuildFleet()]
 						+ SWidgetSwitcher::Slot()[BuildDivisions()]
-						+ SWidgetSwitcher::Slot()[BuildJournal()],
+						+ SWidgetSwitcher::Slot()[BuildJournal()]
+						+ SWidgetSwitcher::Slot()[BuildShipyard()],
 						FMargin(22.0f, 18.0f), CyanDim())
 				]
 			]
@@ -1436,6 +1446,11 @@ FReply SAPSColonyTerminal::SelectTab(const ETab Tab)
 	{
 		RefreshFleet(true);
 	}
+	if (Tab == ETab::Shipyard)
+	{
+		RebuildShipyardCatalogue();
+		RefreshShipyard(true);
+	}
 	return FReply::Handled();
 }
 
@@ -1473,7 +1488,7 @@ FReply SAPSColonyTerminal::OnKeyDown(const FGeometry& Geometry, const FKeyEvent&
 void SAPSColonyTerminal::Tick(const FGeometry& AllottedGeometry, const double InCurrentTime, const float InDeltaTime)
 {
 	SCompoundWidget::Tick(AllottedGeometry, InCurrentTime, InDeltaTime);
-	if (ActiveTab != ETab::Colony && ActiveTab != ETab::Map && ActiveTab != ETab::Fleet)
+	if (ActiveTab != ETab::Colony && ActiveTab != ETab::Map && ActiveTab != ETab::Fleet && ActiveTab != ETab::Shipyard)
 	{
 		return;
 	}
@@ -1489,6 +1504,10 @@ void SAPSColonyTerminal::Tick(const FGeometry& AllottedGeometry, const double In
 		else if (ActiveTab == ETab::Fleet)
 		{
 			RefreshFleet(false);
+		}
+		else if (ActiveTab == ETab::Shipyard)
+		{
+			RefreshShipyard(false);
 		}
 		else
 		{
@@ -2231,6 +2250,247 @@ void SAPSColonyTerminal::RebuildBuilt(const TArray<AAPSColonyModule*>& Modules)
 				FMargin(14.0f, 9.0f), CyanDim())
 		];
 	}
+}
+
+const FSlateBrush* SAPSColonyTerminal::ShipThumbnail(const TSubclassOf<ASpaceship> ShipClass)
+{
+	if (!ShipClass)
+	{
+		return nullptr;
+	}
+	const FString Package = ShipClass->GetOutermost()->GetName();
+	if (const TSharedPtr<FSlateBrush>* Found = ShipThumbnails.Find(Package))
+	{
+		return Found->Get();
+	}
+	TSharedPtr<FSlateBrush> Brush;
+	if (UTexture2D* Texture = LoadObject<UTexture2D>(nullptr, *APSUIThumbnails::TexturePathForBlueprintPackage(Package),
+		nullptr, LOAD_NoWarn | LOAD_Quiet))
+	{
+		ShipThumbnailTextures.Emplace(Texture);
+		Brush = MakeShared<FSlateBrush>();
+		Brush->SetResourceObject(Texture);
+		Brush->ImageSize = FVector2D(static_cast<float>(Texture->GetSizeX()), static_cast<float>(Texture->GetSizeY()));
+		Brush->DrawAs = ESlateBrushDrawType::Image;
+	}
+	ShipThumbnails.Add(Package, Brush);
+	return Brush.Get();
+}
+
+TSharedRef<SWidget> SAPSColonyTerminal::BuildShipyard()
+{
+	using namespace APSColonyUI;
+	return SNew(SHorizontalBox)
+		+ SHorizontalBox::Slot().FillWidth(1.0f)
+		[
+			SNew(SScrollBox)
+			+ SScrollBox::Slot().Padding(0.0f, 0.0f, 0.0f, 12.0f)
+			[
+				IconSectionHeading(EAPSChromeGlyph::Ship, LOCTEXT("ShipyardSection", "SHIPYARD"),
+					LOCTEXT("ShipyardSubtitle", "Each ship launches above the shipyard and joins FLEET COMMAND"))
+			]
+			+ SScrollBox::Slot()
+			[
+				SAssignNew(ShipyardCatalogueBox, SVerticalBox)
+			]
+		]
+		+ SHorizontalBox::Slot().AutoWidth().Padding(16.0f, 0.0f, 0.0f, 0.0f)
+		[
+			SNew(SBox).WidthOverride(320.0f)
+			[
+				SNew(SVerticalBox)
+				+ SVerticalBox::Slot().AutoHeight()
+				[
+					SNew(STextBlock).Text(LOCTEXT("SlipwayTitle", "SLIPWAY")).Font(Font("Bold", 14)).ColorAndOpacity(White())
+				]
+				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 4.0f, 0.0f, 10.0f)
+				[
+					SNew(STextBlock).AutoWrapText(true).Font(Font("Regular", 10))
+					.Text_Lambda([this]()
+					{
+						if (!bShipyardPresent)
+						{
+							return LOCTEXT("SlipwayNoShipyard", "No shipyard in this system: ships cannot be launched.");
+						}
+						const FAPSFleetCommand* Fleet = GetFleet();
+						return FText::Format(LOCTEXT("SlipwayState", "One ship at a time, up to {0} queued. Launched here: {1}."),
+							FText::AsNumber(FAPSFleetCommand::ShipyardQueueLimit), FText::AsNumber(Fleet ? Fleet->GetLaunchedCount() : 0));
+					})
+					.ColorAndOpacity_Lambda([this]() { return FSlateColor(bShipyardPresent ? Muted() : Amber()); })
+				]
+				+ SVerticalBox::Slot().AutoHeight()
+				[
+					SAssignNew(ShipyardQueueBox, SVerticalBox)
+				]
+				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 10.0f, 0.0f, 0.0f)
+				[
+					SNew(STextBlock).AutoWrapText(true).Font(Font("Bold", 10))
+					.Text_Lambda([this]() { return ShipyardMessage; })
+					.ColorAndOpacity_Lambda([this]() { return FSlateColor(bShipyardMessageIsError ? Amber() : Success()); })
+				]
+			]
+		];
+}
+
+void SAPSColonyTerminal::RebuildShipyardCatalogue()
+{
+	using namespace APSColonyUI;
+	if (!ShipyardCatalogueBox.IsValid())
+	{
+		return;
+	}
+	ShipyardOptions.Reset();
+	if (const FAPSFleetCommand* Fleet = GetFleet())
+	{
+		Fleet->GetShipyardOptions(ShipyardOptions);
+	}
+	ShipyardCatalogueBox->ClearChildren();
+	if (ShipyardOptions.IsEmpty())
+	{
+		ShipyardCatalogueBox->AddSlot().AutoHeight()
+		[
+			SNew(STextBlock).AutoWrapText(true).Font(Font("Regular", 12)).ColorAndOpacity(Muted())
+			.Text(LOCTEXT("ShipyardNoCatalogue", "No ship catalogue in this world: the shipyard has nothing to build."))
+		];
+		return;
+	}
+	const TSharedRef<SUniformGridPanel> Grid = SNew(SUniformGridPanel).SlotPadding(FMargin(6.0f));
+	for (int32 Index = 0; Index < ShipyardOptions.Num(); ++Index)
+	{
+		const FAPSShipyardOption& Option = ShipyardOptions[Index];
+		const FSlateBrush* Thumbnail = ShipThumbnail(Option.ShipClass);
+		Grid->AddSlot(Index % 3, Index / 3)
+		[
+			ChamferPanel(
+				SNew(SVerticalBox)
+				+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center)
+				[
+					SNew(SBox).WidthOverride(170.0f).HeightOverride(96.0f)
+					[
+						Thumbnail
+							? StaticCastSharedRef<SWidget>(SNew(SScaleBox).Stretch(EStretch::ScaleToFit)[SNew(SImage).Image(Thumbnail)])
+							: StaticCastSharedRef<SWidget>(SNew(SBox).HAlign(HAlign_Center).VAlign(VAlign_Center)
+								[IconBadge(EAPSChromeGlyph::Ship, Cyan(), 48.0f)])
+					]
+				]
+				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 8.0f, 0.0f, 0.0f)
+				[
+					SNew(STextBlock).Text(Option.Name).Font(Font("Bold", 12)).ColorAndOpacity(White())
+				]
+				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 2.0f, 0.0f, 0.0f)
+				[
+					SNew(STextBlock)
+					.Text(FText::Format(LOCTEXT("ShipyardOptionDetail", "CLASS {0}  /  {1} S  /  {2}"),
+						EnumText(Option.SizeClass).ToUpper(), FText::AsNumber(FMath::RoundToInt(Option.BuildSeconds)),
+						APSFleet::DivisionName(APSFleet::DefaultDivision(Option.SizeClass, false))))
+					.Font(Font("Bold", 9)).ColorAndOpacity(Cyan())
+				]
+				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 10.0f, 0.0f, 0.0f)
+				[
+					PrimaryButton(LOCTEXT("ShipyardBuild", "BUILD"),
+						FOnClicked::CreateSP(this, &SAPSColonyTerminal::OrderShipyardShip, Index),
+						TAttribute<bool>::CreateLambda([this]()
+						{
+							const FAPSFleetCommand* Fleet = GetFleet();
+							return bShipyardPresent && Fleet && Fleet->GetShipyardQueue().Num() < FAPSFleetCommand::ShipyardQueueLimit;
+						}))
+				],
+				FMargin(12.0f, 10.0f), CyanDim())
+		];
+	}
+	ShipyardCatalogueBox->AddSlot().AutoHeight()[Grid];
+}
+
+void SAPSColonyTerminal::RefreshShipyard(const bool bForceRebuild)
+{
+	using namespace APSColonyUI;
+	const FAPSFleetCommand* Fleet = GetFleet();
+	bShipyardPresent = Fleet && Fleet->FindShipyard();
+	if (!ShipyardQueueBox.IsValid())
+	{
+		return;
+	}
+	FString Signature;
+	const int32 QueueLength = Fleet ? Fleet->GetShipyardQueue().Num() : 0;
+	for (int32 Index = 0; Index < QueueLength; ++Index)
+	{
+		Signature += Fleet->GetShipyardQueue()[Index].Name.ToString() + TEXT(";");
+	}
+	if (!bForceRebuild && Signature == ShipyardSignature)
+	{
+		return;
+	}
+	ShipyardSignature = Signature;
+	ShipyardQueueBox->ClearChildren();
+	if (QueueLength == 0)
+	{
+		ShipyardQueueBox->AddSlot().AutoHeight()
+		[
+			SNew(STextBlock).Text(LOCTEXT("SlipwayEmpty", "The slipway is empty: pick a ship to build.")).AutoWrapText(true)
+			.Font(Font("Regular", 11)).ColorAndOpacity(Muted())
+		];
+		return;
+	}
+	for (int32 Index = 0; Index < QueueLength; ++Index)
+	{
+		const FAPSShipyardJob& Job = Fleet->GetShipyardQueue()[Index];
+		const auto Progress = [this, Index]()
+		{
+			const FAPSFleetCommand* Live = GetFleet();
+			return Live && Live->GetShipyardQueue().IsValidIndex(Index) ? Live->GetShipyardQueue()[Index].Progress : 0.0f;
+		};
+		ShipyardQueueBox->AddSlot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 8.0f)
+		[
+			SNew(SVerticalBox)
+			+ SVerticalBox::Slot().AutoHeight()
+			[
+				SNew(STextBlock).Font(Font("Bold", 11)).ColorAndOpacity(White())
+				.Text(FText::Format(LOCTEXT("SlipwayJob", "{0}  /  CLASS {1}"), Job.Name, EnumText(Job.SizeClass).ToUpper()))
+			]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 2.0f, 0.0f, 0.0f)
+			[
+				SNew(STextBlock).Font(Font("Bold", 9)).ColorAndOpacity(Index == 0 ? Amber() : Muted())
+				.Text_Lambda([Progress, Index]()
+				{
+					return Index == 0
+						? FText::Format(LOCTEXT("SlipwayBuilding", "ON THE SLIPWAY  /  {0}%"),
+							FText::AsNumber(FMath::RoundToInt(Progress() * 100.0f)))
+						: LOCTEXT("SlipwayQueued", "QUEUED");
+				})
+			]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 4.0f, 0.0f, 0.0f)
+			[
+				SNew(SBox).HeightOverride(6.0f)
+				[
+					SNew(SHorizontalBox)
+					+ SHorizontalBox::Slot().FillWidth(TAttribute<float>::CreateLambda([Progress]() { return Progress(); }))
+					[
+						SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(Amber())
+					]
+					+ SHorizontalBox::Slot().FillWidth(TAttribute<float>::CreateLambda([Progress]() { return 1.0f - Progress(); }))
+					[
+						SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(CyanDim())
+					]
+				]
+			]
+		];
+	}
+}
+
+FReply SAPSColonyTerminal::OrderShipyardShip(const int32 OptionIndex)
+{
+	FAPSFleetCommand* Fleet = GetFleet();
+	if (!Fleet || !ShipyardOptions.IsValidIndex(OptionIndex))
+	{
+		return FReply::Handled();
+	}
+	const FText Refusal = Fleet->OrderShip(ShipyardOptions[OptionIndex]);
+	bShipyardMessageIsError = !Refusal.IsEmpty();
+	ShipyardMessage = Refusal.IsEmpty()
+		? FText::Format(LOCTEXT("ShipyardOrdered", "LAID DOWN: {0}"), ShipyardOptions[OptionIndex].Name)
+		: Refusal;
+	RefreshShipyard(true);
+	return FReply::Handled();
 }
 
 #undef LOCTEXT_NAMESPACE

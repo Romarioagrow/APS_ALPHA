@@ -5,6 +5,7 @@
 
 class AActor;
 class APlanetaryBody;
+class ASpaceShipyard;
 class UCivilization;
 class UWorld;
 
@@ -123,6 +124,66 @@ struct APS_ALPHA_API FAPSFleetUnit
 	double RemainingCm{0.0};
 };
 
+/** A unit as saved (APSCivilizationSave), matched by its call sign on load. Actors are named by key (KeyOf). */
+struct APS_ALPHA_API FAPSFleetUnitRecord
+{
+	FString CallSign;
+	uint8 Division{0};
+	uint8 Order{0};
+	uint8 Phase{0};
+	FString TargetKey;
+	FVector SlotDirection{FVector::UpVector};
+	float Progress{0.0f};
+	float WorkLength{0.0f};
+	bool bHasBerth{false};
+	bool bBerthParked{false};
+	FString BerthKey;
+	FTransform BerthRelative{FTransform::Identity};
+	/** Where the ship stood, relative to the actor ReferenceKey names (its target, or the nearest body). */
+	FString ReferenceKey;
+	FTransform RelativeTransform{FTransform::Identity};
+	/** The pilot was aboard: the player's own record puts that ship back, not this one. */
+	bool bPiloted{false};
+	/** Built by the shipyard: its class, so a load spawns it again (the generator only respawns its own fleet). */
+	FString SpawnClassPath;
+};
+
+struct APS_ALPHA_API FAPSFleetSaveData
+{
+	TArray<FAPSFleetUnitRecord> Units;
+	/** Body key and survey level. */
+	TArray<TPair<FString, uint8>> Surveys;
+	/** Outposts the fleet built: body key, transform relative to the body, name. */
+	struct FOutpost
+	{
+		FString BodyKey;
+		FTransform RelativeTransform{FTransform::Identity};
+		FString Name;
+	};
+	TArray<FOutpost> Outposts;
+
+	friend FArchive& operator<<(FArchive& Ar, FAPSFleetSaveData& Data);
+};
+
+/** A ship the shipyard can build: an entry of the civilization's ship catalogue. */
+struct APS_ALPHA_API FAPSShipyardOption
+{
+	TSubclassOf<ASpaceship> ShipClass;
+	ESpaceshipSizeClass SizeClass{ESpaceshipSizeClass::M};
+	FText Name;
+	float BuildSeconds{0.0f};
+};
+
+/** A ship on the slipway or waiting for it. */
+struct APS_ALPHA_API FAPSShipyardJob
+{
+	TSubclassOf<ASpaceship> ShipClass;
+	ESpaceshipSizeClass SizeClass{ESpaceshipSizeClass::M};
+	FText Name;
+	float Length{1.0f};
+	float Progress{0.0f};
+};
+
 /** A planet or moon the civilization has surveyed or built at. */
 struct APS_ALPHA_API FAPSFleetBodyRecord
 {
@@ -165,7 +226,33 @@ public:
 	void LogUnits() const;
 	int32 ConsoleOrder(const FString& Who, APSFleet::EOrder Order, const FString& TargetName, FText& OutRefusal);
 
+	/** Saves: every unit (where it is, its division and order), the surveys and the outposts the fleet built. */
+	void CaptureSave(FAPSFleetSaveData& OutData) const;
+	/** Loads: applied once the saved units are back (the fleet respawns with the generated hierarchy), or after 20 s. */
+	void SetPendingRestore(FAPSFleetSaveData&& Data);
+	/** A stable name for an actor across sessions: a body's catalogue name, else the actor's name. */
+	static FString KeyOf(const AActor* Actor);
+
+	/**
+	 * Shipyard (Rio, 01.10: "ships cannot be built in the game yet"): the catalogue's ships, built one after another at
+	 * the civilization's shipyard; each launches above it and joins the fleet as a new unit. The time falls with the
+	 * Industry level.
+	 */
+	void GetShipyardOptions(TArray<FAPSShipyardOption>& OutOptions) const;
+	/** Queues one ship; the refusal when it cannot (no shipyard, a full slipway). */
+	FText OrderShip(const FAPSShipyardOption& Option);
+	const TArray<FAPSShipyardJob>& GetShipyardQueue() const { return ShipyardQueue; }
+	int32 GetLaunchedCount() const { return LaunchedCount; }
+	ASpaceShipyard* FindShipyard() const;
+	static constexpr int32 ShipyardQueueLimit = 6;
+
 private:
+	void TickShipyard(float DeltaSeconds);
+	ASpaceship* LaunchShip(TSubclassOf<ASpaceship> ShipClass, const FTransform& Transform);
+	void ApplyPendingRestore();
+	AActor* FindByKey(const FString& Key) const;
+	class AAutonomousOutpost* SpawnOutpost(APlanetaryBody* Body, const FVector& Location, const FQuat& Rotation,
+		const FText& Name);
 	FAPSFleetUnit* FindUnitMutable(const ASpaceship* Ship);
 	void RefreshUnits();
 	void TickUnit(FAPSFleetUnit& Unit, float DeltaSeconds);
@@ -193,6 +280,11 @@ private:
 	int32 RegisteredCount{0};
 	uint32 Revision{1};
 	bool bHomeKnown{false};
+	TArray<FAPSShipyardJob> ShipyardQueue;
+	/** Ships launched in this world, for their slots above the shipyard. */
+	int32 LaunchedCount{0};
+	TOptional<FAPSFleetSaveData> PendingRestore;
+	double PendingRestoreSince{-1.0};
 };
 
 /** The world's fleet command, or null outside a generated game (UAPSFleetCommandSubsystem registers it). */

@@ -50,6 +50,8 @@ public:
 	static void Post(const UObject* WorldContext, FName Category, const FText& Text);
 
 	const TArray<FAPSCivilizationJournalEntry>& GetEntries() const { return Entries; }
+	/** Loads (APSCivilizationSave): the saved entries go before this session's, the oldest dropped past MaxEntries. */
+	void RestoreEntries(TArray<FAPSCivilizationJournalEntry>&& Saved);
 	FOnAPSCivilizationJournalEntryAdded& OnEntryAdded() { return EntryAdded; }
 
 	static constexpr int32 MaxEntries = 500;

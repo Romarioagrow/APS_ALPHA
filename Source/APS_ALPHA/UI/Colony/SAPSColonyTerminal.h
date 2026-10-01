@@ -16,6 +16,7 @@ class UAPSColonyConstructionSubsystem;
 struct FAPSColonyModuleSpec;
 struct FAPSCivilizationJournalEntry;
 struct FAPSProductionSnapshot;
+struct FSlateBrush;
 
 /**
  * Colony terminal (Rio, 29.09: one colony management menu out of atomic, reusable pieces). Tabs over live data only:
@@ -36,8 +37,8 @@ public:
 	virtual bool SupportsKeyboardFocus() const override { return true; }
 	virtual FReply OnKeyDown(const FGeometry& Geometry, const FKeyEvent& Event) override;
 	virtual void Tick(const FGeometry& AllottedGeometry, double InCurrentTime, float InDeltaTime) override;
-	/** 0 overview, 1 map, 2 colony, 3 fleet command, 4 divisions, 5 journal (test captures, K). */
-	void ShowTab(int32 TabIndex) { SelectTab(static_cast<ETab>(FMath::Clamp(TabIndex, 0, 5))); }
+	/** 0 overview, 1 map, 2 colony, 3 fleet command, 4 divisions, 5 journal, 6 shipyard (test captures, K). */
+	void ShowTab(int32 TabIndex) { SelectTab(static_cast<ETab>(FMath::Clamp(TabIndex, 0, 6))); }
 	bool IsShowingTab(int32 TabIndex) const { return static_cast<int32>(ActiveTab) == TabIndex; }
 
 private:
@@ -48,7 +49,8 @@ private:
 		Colony,
 		Fleet,
 		Divisions,
-		Journal
+		Journal,
+		Shipyard
 	};
 
 	FReply SelectTab(ETab Tab);
@@ -85,6 +87,17 @@ private:
 	/** Why no picked ship can take the order at the target; empty when at least one can. */
 	FText OrderRefusal(APSFleet::EOrder Order) const;
 	FAPSFleetCommand* GetFleet() const;
+	/**
+	 * Shipyard (Rio, 01.10: "ships cannot be built in the game yet"): the civilization's ship catalogue as cards with
+	 * their baked thumbnails, and the slipway. Each ship launches above the shipyard and joins fleet command.
+	 */
+	TSharedRef<SWidget> BuildShipyard();
+	void RebuildShipyardCatalogue();
+	/** Slipway rows, rebuilt when the queue changes; their progress is read live. */
+	void RefreshShipyard(bool bForceRebuild);
+	FReply OrderShipyardShip(int32 OptionIndex);
+	/** The main menu's baked thumbnail of a ship Blueprint, or null. */
+	const FSlateBrush* ShipThumbnail(TSubclassOf<ASpaceship> ShipClass);
 
 	UAPSColonyConstructionSubsystem* GetConstruction() const;
 	FReply SelectSite(EAPSSpawnSite Site);
@@ -128,6 +141,17 @@ private:
 	bool bFleetMessageIsError{false};
 	/** The fleet map opens on the home planet's neighbourhood once, where the ships and moons are. */
 	bool bFleetMapFocused{false};
+
+	TSharedPtr<SVerticalBox> ShipyardCatalogueBox;
+	TSharedPtr<SVerticalBox> ShipyardQueueBox;
+	TArray<FAPSShipyardOption> ShipyardOptions;
+	FString ShipyardSignature;
+	FText ShipyardMessage;
+	bool bShipyardMessageIsError{false};
+	bool bShipyardPresent{false};
+	/** Thumbnails by Blueprint package; their textures are held while the terminal is open. */
+	TMap<FString, TSharedPtr<FSlateBrush>> ShipThumbnails;
+	TArray<TStrongObjectPtr<UObject>> ShipThumbnailTextures;
 
 	/** Construction: the base by default is the headquarters (Rio, 29.09); the surface base when the pilot stands at it. */
 	EAPSSpawnSite SelectedSite{EAPSSpawnSite::Orbit};

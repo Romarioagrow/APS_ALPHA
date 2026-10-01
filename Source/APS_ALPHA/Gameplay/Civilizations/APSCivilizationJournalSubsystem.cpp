@@ -70,6 +70,16 @@ void UAPSCivilizationJournalSubsystem::AddEntry(const FName Category, const FTex
 	EntryAdded.Broadcast(Entries.Last());
 }
 
+void UAPSCivilizationJournalSubsystem::RestoreEntries(TArray<FAPSCivilizationJournalEntry>&& Saved)
+{
+	Saved.Append(MoveTemp(Entries));
+	Entries = MoveTemp(Saved);
+	if (Entries.Num() > MaxEntries)
+	{
+		Entries.RemoveAt(0, Entries.Num() - MaxEntries);
+	}
+}
+
 void UAPSCivilizationJournalSubsystem::Post(const UObject* WorldContext, const FName Category, const FText& Text)
 {
 	UWorld* World = WorldContext ? WorldContext->GetWorld() : nullptr;

@@ -126,6 +126,8 @@ private:
 	 */
 	void UpdateGameplayDaylightStars(const FVector& CameraLocation);
 	bool bGameplayDaylightStarsHidden{false};
+	/** World time of the last hide/show of the resolved stars (they change at most every three seconds). */
+	double GameplayDaylightHideChangeSeconds{-1.0e9};
 	float GameplayDaylightFactor{0.0f};
 	void UpdatePreviewFillLight(
 		const APlanetaryBody* PreviewBody,
