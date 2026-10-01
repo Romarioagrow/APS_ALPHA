@@ -5,6 +5,7 @@
 #include "APS_ALPHA/Actors/Astro/Planet.h"
 #include "APS_ALPHA/Actors/Astro/PlanetaryBody.h"
 #include "APS_ALPHA/Actors/Astro/Star.h"
+#include "APS_ALPHA/Actors/Tech/SpaceShipyard.h"
 #include "APS_ALPHA/Core/Instances/MainGameplayInstance.h"
 #include "APS_ALPHA/Core/Interfaces/ItemInfoInterface.h"
 #include "APS_ALPHA/Core/Model/SpawnParameters.h"
@@ -16,12 +17,18 @@
 #include "APS_ALPHA/Gameplay/Civilizations/APSCivilizationMaterializationSubsystem.h"
 #include "APS_ALPHA/Gameplay/Civilizations/Civilization.h"
 #include "APS_ALPHA/Generation/AstroGenerator.h"
+#include "APS_ALPHA/Generation/PlanetarySurfaceGenerator.h"
+#include "PlanetaryAtmosphere.h"
+#include "WorldScapeCore/Public/WorldScapeRoot.h"
 #include "APS_ALPHA/Pawns/Spaceships/APSShipFlightModel.h"
 #include "APS_ALPHA/Pawns/Spaceships/ShipNavigationComponent.h"
 #include "APS_ALPHA/Pawns/Spaceships/Spaceship.h"
 #include "APS_ALPHA/UI/MainMenu/APSUIThumbnails.h"
 #include "APS_ALPHA/UI/Style/APSMenuChrome.h"
+#include "Components/SceneCaptureComponent2D.h"
+#include "Engine/SceneCapture2D.h"
 #include "Engine/Texture2D.h"
+#include "Engine/TextureRenderTarget2D.h"
 #include "EngineUtils.h"
 #include "Framework/Application/SlateApplication.h"
 #include "GameFramework/PlayerController.h"
@@ -45,6 +52,10 @@
 namespace APSColonyUI
 {
 	using namespace APSChrome;
+
+	/** Registered with the module, so -ExecCmds at start-up can set it (B1 test captures). */
+	TAutoConsoleVariable<FString> CVarPreviewTest(TEXT("aps.Colony.PreviewTest"), TEXT(""),
+		TEXT("Tests: picks the studied planet or moon whose name contains this text as the fleet target (B1 preview)."));
 
 	template <typename TEnum>
 	FText EnumText(const TEnum Value)
@@ -209,6 +220,65 @@ namespace APSColonyUI
 		return Pawn && Actor
 			? UShipNavigationComponent::FormatDistance(FVector::Distance(Pawn->GetActorLocation(), Actor->GetActorLocation()))
 			: FString(TEXT("?"));
+	}
+}
+
+namespace APSColonyUI
+{
+	/** How a journal category reads: its glyph, colour and label (Rio, 01.10: "the journal is hard to read"). */
+	struct FJournalStyle
+	{
+		EAPSChromeGlyph Glyph{EAPSChromeGlyph::Recent};
+		FLinearColor Colour{FLinearColor::White};
+		FText Label;
+	};
+
+	FJournalStyle JournalStyle(const FName Category)
+	{
+		if (Category == TEXT("Objective"))
+		{
+			return {EAPSChromeGlyph::Favorite, Amber(), LOCTEXT("JournalObjective", "OBJECTIVE")};
+		}
+		if (Category == TEXT("Fleet"))
+		{
+			return {EAPSChromeGlyph::Fleet, Cyan(), LOCTEXT("JournalFleet", "FLEET")};
+		}
+		if (Category == TEXT("Colony"))
+		{
+			return {EAPSChromeGlyph::Headquarters, FLinearColor(0.36f, 1.0f, 0.58f), LOCTEXT("JournalColony", "COLONY")};
+		}
+		if (Category == TEXT("Build"))
+		{
+			return {EAPSChromeGlyph::Infrastructure, FLinearColor(1.0f, 0.62f, 0.32f), LOCTEXT("JournalBuild", "CONSTRUCTION")};
+		}
+		if (Category == TEXT("Flight"))
+		{
+			return {EAPSChromeGlyph::Ship, FLinearColor(0.56f, 0.78f, 1.0f), LOCTEXT("JournalFlight", "FLIGHT")};
+		}
+		if (Category == TEXT("Navigation"))
+		{
+			return {EAPSChromeGlyph::Compass, FLinearColor(0.56f, 0.78f, 1.0f), LOCTEXT("JournalNavigation", "NAVIGATION")};
+		}
+		if (Category == TEXT("Start"))
+		{
+			return {EAPSChromeGlyph::Civilization, White(), LOCTEXT("JournalStart", "START")};
+		}
+		return {EAPSChromeGlyph::Recent, Muted(), FText::FromString(Category.ToString().ToUpper())};
+	}
+
+	/** Chips read best with the player's goals first, then what the fleet and the colony did. */
+	int32 JournalRank(const FName Category)
+	{
+		static const FName Ordered[] = {TEXT("Objective"), TEXT("Fleet"), TEXT("Colony"), TEXT("Build"), TEXT("Flight"),
+			TEXT("Navigation"), TEXT("Start")};
+		for (int32 Index = 0; Index < static_cast<int32>(UE_ARRAY_COUNT(Ordered)); ++Index)
+		{
+			if (Ordered[Index] == Category)
+			{
+				return Index;
+			}
+		}
+		return static_cast<int32>(UE_ARRAY_COUNT(Ordered));
 	}
 }
 
@@ -400,6 +470,10 @@ void SAPSColonyTerminal::Construct(const FArguments& InArgs)
 
 SAPSColonyTerminal::~SAPSColonyTerminal()
 {
+	if (AActor* Camera = PreviewCamera.Get())
+	{
+		Camera->Destroy();
+	}
 	if (UWorld* LiveWorld = World.Get())
 	{
 		if (UAPSCivilizationJournalSubsystem* Journal = LiveWorld->GetSubsystem<UAPSCivilizationJournalSubsystem>())
@@ -522,43 +596,45 @@ TSharedRef<SWidget> SAPSColonyTerminal::BuildDivisions()
 	{
 		FText Name;
 		FText Role;
-		int32 Level;
 		EAPSChromeGlyph Glyph;
-		/** The fleet division of its ships (APSFleet::EDivision), -1 none, -2 fleet command (every ship's speed). */
+		/** The fleet division of its ships (APSFleet::EDivision), -1 none, -2 fleet command (every ship). */
 		int32 FleetDivision;
 	};
-	const FAPSCivilizationDivisions Levels = Civilization ? Civilization->Divisions : FAPSCivilizationDivisions();
 	const FDivisionCard Cards[] = {
 		{LOCTEXT("Exploration", "EXPLORATION"), LOCTEXT("ExplorationRole",
-			"Surveys planets, systems and clusters, charts routes and finds anomalies."), Levels.Exploration, EAPSChromeGlyph::Compass,
+			"Surveys planets, systems and clusters, charts routes and finds anomalies."), EAPSChromeGlyph::Compass,
 			static_cast<int32>(APSFleet::EDivision::Exploration)},
 		{LOCTEXT("Industry", "INDUSTRY"), LOCTEXT("IndustryRole",
-			"Production, mining, construction and the shipyards: everything the colony builds."), Levels.Industry,
+			"Production, mining, construction and the shipyards: everything the colony builds."),
 			EAPSChromeGlyph::Infrastructure, static_cast<int32>(APSFleet::EDivision::Construction)},
 		{LOCTEXT("Science", "SCIENCE"), LOCTEXT("ScienceRole",
-			"Research and new technologies; investigates what exploration finds."), Levels.Science, EAPSChromeGlyph::Planet,
+			"Research and new technologies; investigates what exploration finds."), EAPSChromeGlyph::Planet,
 			static_cast<int32>(APSFleet::EDivision::Science)},
 		{LOCTEXT("CivilAffairs", "CIVIL AFFAIRS"), LOCTEXT("CivilAffairsRole",
-			"Claims star systems, runs public services, law and population growth."), Levels.CivilAffairs,
-			EAPSChromeGlyph::Civilization, -1},
+			"Claims star systems, runs public services, law and population growth."), EAPSChromeGlyph::Civilization, -1},
 		{LOCTEXT("Military", "MILITARY"), LOCTEXT("MilitaryRole",
-			"Forces, defence protocols and training."), Levels.Military, EAPSChromeGlyph::Lock,
-			static_cast<int32>(APSFleet::EDivision::MainFleet)},
+			"Forces, defence protocols and training."), EAPSChromeGlyph::Lock, static_cast<int32>(APSFleet::EDivision::MainFleet)},
 		{LOCTEXT("FleetCommand", "FLEET COMMAND"), LOCTEXT("FleetCommandRole",
-			"Deploys, repairs and upgrades the fleet."), Levels.FleetCommand, EAPSChromeGlyph::Fleet, -2}};
+			"Deploys, repairs and upgrades the fleet."), EAPSChromeGlyph::Fleet, -2}};
 	TSharedRef<SUniformGridPanel> Grid = SNew(SUniformGridPanel).SlotPadding(FMargin(6.0f));
 	for (int32 Index = 0; Index < UE_ARRAY_COUNT(Cards); ++Index)
 	{
 		const FDivisionCard& Card = Cards[Index];
+		// Eight pips: the civilization's levels in amber, those its work earned in green.
 		TSharedRef<SHorizontalBox> Pips = SNew(SHorizontalBox);
-		for (int32 Pip = 0; Pip < 5; ++Pip)
+		for (int32 Pip = 0; Pip < 8; ++Pip)
 		{
 			Pips->AddSlot().AutoWidth().Padding(0.0f, 0.0f, 4.0f, 0.0f)
 			[
-				SNew(SBox).WidthOverride(22.0f).HeightOverride(6.0f)
+				SNew(SBox).WidthOverride(18.0f).HeightOverride(6.0f)
 				[
 					SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush"))
-					.BorderBackgroundColor(Pip < Card.Level ? Amber() : CyanDim())
+					.BorderBackgroundColor_Lambda([this, Index, Pip]()
+					{
+						int32 Earned = 0;
+						const int32 Level = DivisionCardLevel(Index, Earned);
+						return FSlateColor(Pip < Level - Earned ? Amber() : Pip < Level ? Success() : CyanDim());
+					})
 				]
 			];
 		}
@@ -579,8 +655,16 @@ TSharedRef<SWidget> SAPSColonyTerminal::BuildDivisions()
 					]
 					+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
 					[
-						SNew(STextBlock).Text(FText::Format(LOCTEXT("DivisionLevel", "LEVEL {0}"), FText::AsNumber(Card.Level)))
-						.Font(Font("Bold", 11)).ColorAndOpacity(Amber())
+						SNew(STextBlock).Font(Font("Bold", 11)).ColorAndOpacity(Amber())
+						.Text_Lambda([this, Index]()
+						{
+							int32 Earned = 0;
+							const int32 Level = DivisionCardLevel(Index, Earned);
+							return Earned > 0
+								? FText::Format(LOCTEXT("DivisionLevelEarned", "LEVEL {0}  (+{1} EARNED)"), FText::AsNumber(Level),
+									FText::AsNumber(Earned))
+								: FText::Format(LOCTEXT("DivisionLevel", "LEVEL {0}"), FText::AsNumber(Level));
+						})
 					]
 				]
 				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 10.0f, 0.0f, 0.0f)
@@ -591,18 +675,24 @@ TSharedRef<SWidget> SAPSColonyTerminal::BuildDivisions()
 				[
 					SNew(STextBlock).Text(Card.Role).AutoWrapText(true).Font(Font("Regular", 11)).ColorAndOpacity(Muted())
 				]
-				// Its ships in fleet command (K), live.
+				// What the level does in the game now, and how the division grows (Rio, 01.10).
 				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 8.0f, 0.0f, 0.0f)
 				[
+					SNew(STextBlock).AutoWrapText(true).Font(Font("Bold", 10)).ColorAndOpacity(White())
+					.Text_Lambda([this, Index]() { return DivisionCardEffect(Index, false); })
+				]
+				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 3.0f, 0.0f, 0.0f)
+				[
+					SNew(STextBlock).AutoWrapText(true).Font(Font("Regular", 10)).ColorAndOpacity(Success())
+					.Text_Lambda([this, Index]() { return DivisionCardEffect(Index, true); })
+				]
+				// Its ships in fleet command (K), live.
+				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 6.0f, 0.0f, 0.0f)
+				[
 					SNew(STextBlock).AutoWrapText(true).Font(Font("Bold", 10)).ColorAndOpacity(Cyan())
-					.Visibility(Card.FleetDivision == -1 ? EVisibility::Collapsed : EVisibility::Visible)
-					.Text_Lambda([this, FleetDivision = Card.FleetDivision, Level = Card.Level]()
+					.Visibility(Card.FleetDivision < 0 ? EVisibility::Collapsed : EVisibility::Visible)
+					.Text_Lambda([this, FleetDivision = Card.FleetDivision]()
 					{
-						if (FleetDivision == -2)
-						{
-							return FText::Format(LOCTEXT("FleetSpeedBonus", "EVERY SHIP FLIES {0}% FASTER"),
-								FText::AsNumber(10 * FMath::Max(Level, 0)));
-						}
 						int32 Ships = 0, UnderOrders = 0;
 						if (const FAPSFleetCommand* Fleet = GetFleet())
 						{
@@ -626,13 +716,97 @@ TSharedRef<SWidget> SAPSColonyTerminal::BuildDivisions()
 		+ SScrollBox::Slot().Padding(0.0f, 0.0f, 0.0f, 12.0f)
 		[
 			IconSectionHeading(EAPSChromeGlyph::Divisions, LOCTEXT("DivisionsSection", "DIVISIONS"),
-				Civilization ? LOCTEXT("DivisionsSubtitle", "Levels set when the civilization was founded; ships and orders: FLEET COMMAND (K)")
+				Civilization ? LOCTEXT("DivisionsSubtitleEffects", "Levels from the founding (amber) and earned by work (green); what each changes in the game, live")
 				: LOCTEXT("DivisionsNoCivilization", "No civilization in this world yet"))
 		]
 		+ SScrollBox::Slot()
 		[
 			Grid
 		];
+}
+
+int32 SAPSColonyTerminal::DivisionCardLevel(const int32 CardIndex, int32& OutEarned) const
+{
+	using namespace APSColonyUI;
+	OutEarned = 0;
+	const UMainGameplayInstance* State = GameplayState(World.Get());
+	const UCivilization* Civ = State ? State->CurrentCivilization.Get() : nullptr;
+	const FAPSCivilizationDivisions Levels = Civ ? Civ->Divisions : FAPSCivilizationDivisions();
+	const FAPSFleetCommand* Fleet = GetFleet();
+	switch (CardIndex)
+	{
+	case 0:
+		OutEarned = Fleet ? Fleet->GetEarnedLevel(APSFleet::EDivision::Exploration) : 0;
+		return Levels.Exploration + OutEarned;
+	case 1:
+		OutEarned = Fleet ? Fleet->GetEarnedLevel(APSFleet::EDivision::Construction) : 0;
+		return Levels.Industry + OutEarned;
+	case 2:
+		OutEarned = Fleet ? Fleet->GetEarnedLevel(APSFleet::EDivision::Science) : 0;
+		return Levels.Science + OutEarned;
+	case 3:
+		return Levels.CivilAffairs;
+	case 4:
+		return Levels.Military;
+	default:
+		OutEarned = Fleet ? Fleet->GetEarnedFleetCommandLevel() : 0;
+		return Levels.FleetCommand + OutEarned;
+	}
+}
+
+FText SAPSColonyTerminal::DivisionCardEffect(const int32 CardIndex, const bool bGrowth) const
+{
+	using namespace APSFleet;
+	const FAPSFleetCommand* Fleet = GetFleet();
+	int32 Earned = 0;
+	const int32 Level = DivisionCardLevel(CardIndex, Earned);
+	const auto Seconds = [](const double Value) { return FText::AsNumber(FMath::RoundToInt(Value)); };
+	const FAPSFleetCommand::FWorkTally Tally = Fleet ? Fleet->GetWorkTally() : FAPSFleetCommand::FWorkTally();
+	switch (CardIndex)
+	{
+	case 0:
+		return bGrowth
+			? FText::Format(LOCTEXT("ExplorationGrowth", "GROWS: +1 per 3 worlds surveyed, up to +3. Surveyed so far: {0}."),
+				FText::AsNumber(Tally.Surveyed))
+			: FText::Format(LOCTEXT("ExplorationEffect", "A SURVEY TAKES {0} S AT THE WORLD, {1} S WHERE A STATION STANDS"),
+				Seconds(WorkSeconds(EOrder::Survey, EDivision::Exploration, Level)),
+				Seconds(WorkSeconds(EOrder::Survey, EDivision::Exploration, Level, true)));
+	case 1:
+		return bGrowth
+			? FText::Format(LOCTEXT("IndustryGrowth", "GROWS: +1 per 3 outposts, stations, shipyards or HQs built, up to +3. Built so far: {0}."),
+				FText::AsNumber(Tally.Built))
+			: FText::Format(LOCTEXT("IndustryEffect", "OUTPOST {0} S  /  STATION {1} S  /  SHIPYARD {2} S  /  SECTOR HQ {3} S;  SLIPWAYS BUILD {4}% FASTER"),
+				Seconds(WorkSeconds(EOrder::BuildOutpost, EDivision::Construction, Level)),
+				Seconds(WorkSeconds(EOrder::BuildStation, EDivision::Construction, Level)),
+				Seconds(WorkSeconds(EOrder::BuildShipyard, EDivision::Construction, Level)),
+				Seconds(WorkSeconds(EOrder::BuildHeadquarters, EDivision::Construction, Level)),
+				FText::AsNumber(FMath::RoundToInt(20.0f * FMath::Max(Level, 0))));
+	case 2:
+		return bGrowth
+			? FText::Format(LOCTEXT("ScienceGrowthAnomalies", "GROWS: +1 per 2 worlds studied or anomalies investigated (on foot counts twice), up to +3. So far: {0} studied, {1} from anomalies."),
+				FText::AsNumber(Tally.Studied), FText::AsNumber(Tally.Investigated))
+			: FText::Format(LOCTEXT("ScienceEffect", "A STUDY (LIFE, GEOLOGY, METALS) TAKES {0} S, {1} S WHERE A STATION STANDS"),
+				Seconds(WorkSeconds(EOrder::Survey, EDivision::Science, Level)),
+				Seconds(WorkSeconds(EOrder::Survey, EDivision::Science, Level, true)));
+	case 3:
+		return bGrowth ? LOCTEXT("CivilGrowth", "Set when the civilization was founded.")
+			: FText::Format(LOCTEXT("CivilEffect", "COLONY MODULES BUILD {0}% FASTER"),
+				FText::AsNumber(15 * FMath::Max(Level, 0)));
+	case 4:
+		return bGrowth ? LOCTEXT("MilitaryGrowth", "Set when the civilization was founded.")
+			: FText::Format(LOCTEXT("MilitaryEffect", "MAIN FLEET SHIPS FLY {0}% FASTER: THE LINE ANSWERS FIRST"),
+				FText::AsNumber(15 * FMath::Max(Level, 0)));
+	default:
+	{
+		const int32 Headquarters = Fleet ? Fleet->CountBuiltHeadquarters() : 0;
+		return bGrowth
+			? FText::Format(LOCTEXT("FleetCommandGrowth", "GROWS: +1 per 4 ships launched from the slipways, up to +3. Launched so far: {0}."),
+				FText::AsNumber(Tally.Launched))
+			: FText::Format(LOCTEXT("FleetCommandEffect", "EVERY SHIP FLIES {0}% FASTER ({1}% OF IT FROM {2} SECTOR HQS)"),
+				FText::AsNumber(10 * (FMath::Max(Level, 0) + Headquarters)), FText::AsNumber(10 * Headquarters),
+				FText::AsNumber(Headquarters));
+	}
+	}
 }
 
 TSharedRef<SWidget> SAPSColonyTerminal::BuildColony()
@@ -888,10 +1062,23 @@ TSharedRef<SWidget> SAPSColonyTerminal::BuildFleet()
 								: FText::Format(LOCTEXT("Picked", "SHIPS: {0}"), FText::FromString(FString::Join(Signs, TEXT(", "))));
 						})
 					]
-					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 12.0f, 0.0f, 0.0f)
+						+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 12.0f, 0.0f, 0.0f)
 					[
 						ChamferPanel(
 							SNew(SVerticalBox)
+							// A studied world's photograph (B1).
+							+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0.0f, 0.0f, 0.0f, 8.0f)
+							[
+								SNew(SBox).WidthOverride(220.0f).HeightOverride(220.0f)
+								.Visibility_Lambda([this]()
+								{
+									return PreviewBrush.IsValid() && PreviewSubject.IsValid() && PreviewSubject == FleetTarget
+										? EVisibility::Visible : EVisibility::Collapsed;
+								})
+								[
+									SNew(SImage).Image_Lambda([this]() { return PreviewBrush.Get(); })
+								]
+							]
 							+ SVerticalBox::Slot().AutoHeight()
 							[
 								SNew(STextBlock).Font(Font("Bold", 13)).ColorAndOpacity(White())
@@ -901,7 +1088,7 @@ TSharedRef<SWidget> SAPSColonyTerminal::BuildFleet()
 									const SAPSCivilizationMap::FObject* Object = FleetMap.IsValid() ? FleetMap->GetSelected() : nullptr;
 									return !Target ? LOCTEXT("NoTarget", "NO TARGET")
 										: Object && Object->Actor.Get() == Target ? Object->Name
-										: FText::FromString(Target->GetName());
+										: FAPSFleetCommand::DisplayName(Target);
 								})
 							]
 							+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 3.0f, 0.0f, 0.0f)
@@ -917,8 +1104,14 @@ TSharedRef<SWidget> SAPSColonyTerminal::BuildFleet()
 									const FAPSFleetCommand* Fleet = GetFleet();
 									if (Target->IsA<APlanetaryBody>() && Fleet)
 									{
-										return FText::Format(LOCTEXT("TargetSurvey", "{0}  /  OUTPOSTS {1} OF 3"),
-											APSFleet::SurveyName(Fleet->GetSurvey(Target)), FText::AsNumber(Fleet->CountOutposts(Target)));
+										using APSFleet::EStructure;
+										const int32 Shipyards = Fleet->CountStructures(Target, EStructure::Shipyard);
+										const int32 Headquarters = Fleet->CountStructures(Target, EStructure::Headquarters);
+										return FText::Format(LOCTEXT("TargetSurveyBuilt", "{0}  /  OUTPOSTS {1} OF 3  /  STATIONS {2}{3}{4}"),
+											APSFleet::SurveyName(Fleet->GetSurvey(Target)), FText::AsNumber(Fleet->CountOutposts(Target)),
+											FText::AsNumber(Fleet->CountStructures(Target, EStructure::Station)),
+											Shipyards > 0 ? LOCTEXT("TargetShipyard", "  /  SHIPYARD") : FText::GetEmpty(),
+											Headquarters > 0 ? LOCTEXT("TargetHeadquarters", "  /  HQ") : FText::GetEmpty());
 									}
 									return LOCTEXT("TargetStation", "STATION OR OUTPOST: ships can fly there");
 								})
@@ -938,13 +1131,50 @@ TSharedRef<SWidget> SAPSColonyTerminal::BuildFleet()
 									}
 									return FText::Join(FText::FromString(TEXT("\n")), Record->Findings);
 								})
+							]
+							// The world's anomaly, when the fleet knows of one (Rio, 01.10).
+							+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 6.0f, 0.0f, 0.0f)
+							[
+								SNew(STextBlock).AutoWrapText(true).Font(Font("Bold", 11)).ColorAndOpacity(Amber())
+								.Text_Lambda([this]()
+								{
+									const FAPSFleetCommand* Fleet = GetFleet();
+									return Fleet ? Fleet->DescribeAnomaly(FleetTarget.Get()) : FText::GetEmpty();
+								})
+								.Visibility_Lambda([this]()
+								{
+									const FAPSFleetCommand* Fleet = GetFleet();
+									return Fleet && !Fleet->DescribeAnomaly(FleetTarget.Get()).IsEmpty()
+										? EVisibility::Visible : EVisibility::Collapsed;
+								})
 							],
 							FMargin(14.0f, 12.0f), CyanDim())
 					]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 14.0f, 0.0f, 0.0f)[OrderButton(APSFleet::EOrder::Move)]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 8.0f, 0.0f, 0.0f)[OrderButton(APSFleet::EOrder::Survey)]
-					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 8.0f, 0.0f, 0.0f)[OrderButton(APSFleet::EOrder::BuildOutpost)]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 8.0f, 0.0f, 0.0f)[OrderButton(APSFleet::EOrder::Expedition)]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 8.0f, 0.0f, 0.0f)[OrderButton(APSFleet::EOrder::Return)]
+					// Construction (Rio, 01.10: "after an outpost, a headquarters, a station, infrastructure"): what a
+					// construction ship raises at a surveyed world, each step opening the next.
+					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 18.0f, 0.0f, 0.0f)
+					[
+						SNew(STextBlock).Text(LOCTEXT("ConstructionOrders", "CONSTRUCTION")).Font(Font("Bold", 12))
+						.ColorAndOpacity(APSFleet::DivisionColour(APSFleet::EDivision::Construction))
+					]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 2.0f, 0.0f, 0.0f)
+					[
+						SNew(STextBlock).AutoWrapText(true).Font(Font("Regular", 10)).ColorAndOpacity(Muted())
+						.Text(LOCTEXT("ConstructionHelp", "Construction ships at a surveyed world: an outpost first, then a station; a station opens a shipyard and a sector HQ."))
+					]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 8.0f, 0.0f, 0.0f)[OrderButton(APSFleet::EOrder::BuildOutpost)]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 8.0f, 0.0f, 0.0f)[OrderButton(APSFleet::EOrder::BuildStation)]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 8.0f, 0.0f, 0.0f)[OrderButton(APSFleet::EOrder::BuildShipyard)]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 8.0f, 0.0f, 0.0f)[OrderButton(APSFleet::EOrder::BuildHeadquarters)]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 8.0f, 0.0f, 0.0f)
+					[
+						SNew(STextBlock).AutoWrapText(true).Font(Font("Regular", 10)).ColorAndOpacity(Muted())
+						.Text(LOCTEXT("ConstructionEffects", "A station speeds work at its world up by 25%. A shipyard gets its own slipway in SHIPYARD. Every sector HQ: the fleet flies 10% faster. Megastructures are planned with the module-style buildings."))
+					]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 10.0f, 0.0f, 0.0f)
 					[
 						ChromeButton(SNew(STextBlock).Text(LOCTEXT("CancelOrders", "CANCEL ORDERS")).Justification(ETextJustify::Center)
@@ -967,15 +1197,19 @@ TSharedRef<SWidget> SAPSColonyTerminal::BuildFleet()
 							{
 								return LOCTEXT("NoFleetCommand", "Fleet command is not running in this world.");
 							}
-							int32 Surveyed = 0, Studied = 0, Outposts = 0;
+							int32 Surveyed = 0, Studied = 0, Outposts = 0, Built = 0;
 							for (const FAPSFleetBodyRecord& Record : Fleet->GetBodies())
 							{
 								Surveyed += Record.Survey == APSFleet::ESurvey::Surveyed ? 1 : 0;
 								Studied += Record.Survey == APSFleet::ESurvey::Studied ? 1 : 0;
 								Outposts += Fleet->CountOutposts(Record.Body.Get());
 							}
-							return FText::Format(LOCTEXT("KnownWorlds", "KNOWN WORLDS: {0} studied, {1} surveyed  /  OUTPOSTS BUILT: {2}"),
-								FText::AsNumber(Studied), FText::AsNumber(Surveyed), FText::AsNumber(Outposts));
+							for (const FAPSFleetStructure& Structure : Fleet->GetStructures())
+							{
+								Built += Structure.bBuilt && Structure.Actor.IsValid() ? 1 : 0;
+							}
+							return FText::Format(LOCTEXT("KnownWorldsBuilt", "KNOWN WORLDS: {0} studied, {1} surveyed  /  OUTPOSTS BUILT: {2}  /  STATIONS, SHIPYARDS AND HQS BUILT: {3}"),
+								FText::AsNumber(Studied), FText::AsNumber(Surveyed), FText::AsNumber(Outposts), FText::AsNumber(Built));
 						})
 					]
 				]
@@ -1004,6 +1238,7 @@ TArray<ASpaceship*> SAPSColonyTerminal::GetPickedShips() const
 void SAPSColonyTerminal::RefreshFleet(const bool bForceRebuild)
 {
 	using namespace APSColonyUI;
+	UpdateBodyPreview();
 	if (FleetMap.IsValid())
 	{
 		FleetMap->Refresh();
@@ -1239,7 +1474,100 @@ void SAPSColonyTerminal::HandleFleetMapSelection()
 		FleetTarget = Selected->Actor;
 		FleetMessage = FText::GetEmpty();
 		RefreshFleet(false);
+		UpdateBodyPreview();
 	}
+}
+
+void SAPSColonyTerminal::UpdateBodyPreview()
+{
+	UWorld* LiveWorld = World.Get();
+	APlanetaryBody* Body = Cast<APlanetaryBody>(FleetTarget.Get());
+	const FAPSFleetCommand* Fleet = GetFleet();
+	if (!LiveWorld || !Body || !Fleet || Fleet->GetSurvey(Body) != APSFleet::ESurvey::Studied)
+	{
+		return;
+	}
+	if (PreviewSubject.Get() == Body && PreviewBrush.IsValid())
+	{
+		return;
+	}
+	if (!PreviewTarget.IsValid())
+	{
+		UTextureRenderTarget2D* Target = NewObject<UTextureRenderTarget2D>();
+		Target->RenderTargetFormat = RTF_RGBA8;
+		Target->ClearColor = FLinearColor::Black;
+		Target->InitAutoFormat(512, 512);
+		Target->UpdateResourceImmediate(true);
+		PreviewTarget.Reset(Target);
+		PreviewBrush = MakeShared<FSlateBrush>();
+		PreviewBrush->SetResourceObject(Target);
+		PreviewBrush->ImageSize = FVector2D(512.0, 512.0);
+	}
+	ASceneCapture2D* Camera = Cast<ASceneCapture2D>(PreviewCamera.Get());
+	if (!Camera)
+	{
+		FActorSpawnParameters Parameters;
+		Parameters.ObjectFlags |= RF_Transient;
+		Parameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		Camera = LiveWorld->SpawnActor<ASceneCapture2D>(ASceneCapture2D::StaticClass(), FTransform::Identity, Parameters);
+		if (!Camera)
+		{
+			return;
+		}
+		PreviewCamera = Camera;
+	}
+	USceneCaptureComponent2D* Capture = Camera->GetCaptureComponent2D();
+	Capture->TextureTarget = Cast<UTextureRenderTarget2D>(PreviewTarget.Get());
+	Capture->CaptureSource = ESceneCaptureSource::SCS_FinalColorLDR;
+	Capture->FOVAngle = 30.0f;
+	Capture->bCaptureOnMovement = false;
+	Capture->PrimitiveRenderMode = ESceneCapturePrimitiveRenderMode::PRM_UseShowOnlyList;
+	// The body and what hangs on it (WorldScape root, atmosphere, clouds); not its moons, stations or ships.
+	Capture->ShowOnlyActors.Reset();
+	Capture->ShowOnlyActors.Add(Body);
+	TArray<AActor*> Attached;
+	Body->GetAttachedActors(Attached, true, true);
+	// The surface and the air need not hang on the body: its environment generator owns them.
+	if (const APlanetarySurfaceGenerator* Environment = Body->PlanetaryEnvironmentGenerator)
+	{
+		Attached.Add(Environment->WorldScapeRootInstance);
+		Attached.Add(Environment->PlanetAtmosphere);
+	}
+	for (AActor* Each : Attached)
+	{
+		// Not its orbit line, moons, stations or ships: the world itself.
+		if (IsValid(Each) && !Each->IsA<APlanetaryBody>() && !Each->IsA<ATechActor>() && !Each->IsA<ASpaceship>()
+			&& !Each->GetClass()->GetName().Contains(TEXT("Orbit")))
+		{
+			Capture->ShowOnlyActors.AddUnique(Each);
+		}
+	}
+	// From its star's side, a little off the line so the terminator shows; the disc fills most of the frame.
+	FVector ToStar = FVector::UpVector;
+	double Nearest = TNumericLimits<double>::Max();
+	for (TActorIterator<AStar> It(LiveWorld); It; ++It)
+	{
+		const double Distance = IsValid(*It) ? FVector::DistSquared(It->GetActorLocation(), Body->GetActorLocation())
+			: TNumericLimits<double>::Max();
+		if (Distance < Nearest)
+		{
+			Nearest = Distance;
+			ToStar = (It->GetActorLocation() - Body->GetActorLocation()).GetSafeNormal();
+		}
+	}
+	FVector Side = FVector::CrossProduct(ToStar, FVector::UpVector).GetSafeNormal();
+	Side = Side.IsNearlyZero() ? FVector::ForwardVector : Side;
+	const FVector View = (ToStar + Side * 0.5).GetSafeNormal();
+	const double Radius = FMath::Max(Body->GetWorldScapeBodyRadiusCm(), 100000.0);
+	const double Distance = Radius * 1.25 / FMath::Tan(FMath::DegreesToRadians(Capture->FOVAngle * 0.5));
+	Camera->SetActorLocationAndRotation(Body->GetActorLocation() + View * Distance, (-View).Rotation(), false, nullptr,
+		ETeleportType::TeleportPhysics);
+	// A few frames so the exposure settles, then the picture stays (Tick turns the capture off).
+	Capture->bCaptureEveryFrame = true;
+	PreviewSubject = Body;
+	PreviewFramesLeft = 12;
+	UE_LOG(LogTemp, Log, TEXT("[APS.Colony.Terminal] preview of %s: %d actors, %.0f km away"), *Body->GetName(),
+		Capture->ShowOnlyActors.Num(), Distance / 100000.0);
 }
 
 FText SAPSColonyTerminal::OrderRefusal(const APSFleet::EOrder Order) const
@@ -1316,7 +1644,7 @@ void SAPSColonyTerminal::RebuildJournal()
 		return;
 	}
 	JournalList->ClearChildren();
-	JournalList->AddSlot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 12.0f)
+	JournalList->AddSlot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 10.0f)
 	[
 		IconSectionHeading(EAPSChromeGlyph::Recent, LOCTEXT("JournalSection", "CIVILIZATION JOURNAL"),
 			LOCTEXT("JournalSubtitle", "Newest first, game time since the world began"))
@@ -1328,47 +1656,131 @@ void SAPSColonyTerminal::RebuildJournal()
 		JournalList->AddSlot().AutoHeight()
 		[
 			SNew(STextBlock).Text(LOCTEXT("EmptyJournal", "Nothing recorded yet."))
-			.Font(Font("Regular", 12)).ColorAndOpacity(Muted())
+			.Font(Font("Regular", 13)).ColorAndOpacity(Muted())
 		];
 		return;
 	}
-	// Newest first: the journal reads like a ship's log.
 	const TArray<FAPSCivilizationJournalEntry>& Entries = Journal->GetEntries();
-	for (int32 Index = Entries.Num() - 1; Index >= 0; --Index)
+
+	// Category chips with their counts, ALL first.
+	TArray<FName> Categories;
+	TMap<FName, int32> Counts;
+	for (const FAPSCivilizationJournalEntry& Entry : Entries)
+	{
+		Categories.AddUnique(Entry.Category);
+		++Counts.FindOrAdd(Entry.Category);
+	}
+	Categories.Sort([](const FName& A, const FName& B)
+	{
+		const int32 RankA = JournalRank(A);
+		const int32 RankB = JournalRank(B);
+		return RankA != RankB ? RankA < RankB : A.LexicalLess(B);
+	});
+	if (!JournalFilter.IsNone() && !Counts.Contains(JournalFilter))
+	{
+		JournalFilter = NAME_None;
+	}
+	const TSharedRef<SWrapBox> Filters = SNew(SWrapBox).UseAllottedSize(true).InnerSlotPadding(FVector2D(6.0f, 6.0f));
+	for (int32 Index = -1; Index < Categories.Num(); ++Index)
+	{
+		const FName Category = Index < 0 ? FName(NAME_None) : Categories[Index];
+		const FJournalStyle Style = JournalStyle(Category);
+		const FLinearColor Accent = Index < 0 ? Cyan() : Style.Colour;
+		Filters->AddSlot()
+		[
+			ChromeButton(
+				SNew(STextBlock).Font(Font("Bold", 10)).ColorAndOpacity(Accent)
+				.Text(FText::Format(LOCTEXT("JournalChip", "{0}  {1}"), Index < 0 ? LOCTEXT("JournalAll", "ALL") : Style.Label,
+					FText::AsNumber(Index < 0 ? Entries.Num() : Counts.FindRef(Category)))),
+				FOnClicked::CreateSP(this, &SAPSColonyTerminal::SetJournalFilter, Category),
+				TAttribute<bool>::CreateLambda([this, Category]() { return JournalFilter == Category; }), Accent)
+		];
+	}
+	JournalList->AddSlot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 12.0f)[Filters];
+
+	// Newest first, like a ship's log; the last minute's entries stand out.
+	constexpr int32 MaxShown = 200;
+	const double Now = World.IsValid() ? World->GetTimeSeconds() : 0.0;
+	int32 Shown = 0;
+	for (int32 Index = Entries.Num() - 1; Index >= 0 && Shown < MaxShown; --Index)
 	{
 		const FAPSCivilizationJournalEntry& Entry = Entries[Index];
+		if (!JournalFilter.IsNone() && Entry.Category != JournalFilter)
+		{
+			continue;
+		}
+		++Shown;
+		const FJournalStyle Style = JournalStyle(Entry.Category);
 		const int32 Seconds = FMath::FloorToInt(Entry.WorldSeconds);
 		const FText Time = FText::FromString(FString::Printf(TEXT("T+%02d:%02d:%02d"),
 			Seconds / 3600, (Seconds / 60) % 60, Seconds % 60));
+		const bool bRecent = Entry.WorldSeconds <= Now && Now - Entry.WorldSeconds < 60.0;
 		JournalList->AddSlot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 6.0f)
 		[
-			SNew(SHorizontalBox)
-			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Top).Padding(0.0f, 0.0f, 12.0f, 0.0f)
+			SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).Padding(0.0f)
+			.BorderBackgroundColor(bRecent ? FLinearColor(0.03f, 0.12f, 0.15f, 0.94f) : FLinearColor(0.02f, 0.05f, 0.07f, 0.74f))
 			[
-				SNew(SBox).WidthOverride(96.0f)
+				SNew(SHorizontalBox)
+				// The category's colour down the left edge.
+				+ SHorizontalBox::Slot().AutoWidth()
 				[
-					SNew(STextBlock).Text(Time).Font(Font("Bold", 10)).ColorAndOpacity(Muted())
+					SNew(SBox).WidthOverride(3.0f)
+					[
+						SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(Style.Colour)
+					]
+				]
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Top).Padding(10.0f, 9.0f, 10.0f, 9.0f)
+				[
+					IconBadge(Style.Glyph, Style.Colour, 30.0f)
+				]
+				+ SHorizontalBox::Slot().FillWidth(1.0f).Padding(0.0f, 8.0f, 14.0f, 10.0f)
+				[
+					SNew(SVerticalBox)
+					+ SVerticalBox::Slot().AutoHeight()
+					[
+						SNew(SHorizontalBox)
+						+ SHorizontalBox::Slot().AutoWidth()
+						[
+							SNew(STextBlock).Text(Style.Label).Font(Font("Bold", 10)).ColorAndOpacity(Style.Colour)
+						]
+						+ SHorizontalBox::Slot().AutoWidth().Padding(12.0f, 0.0f, 0.0f, 0.0f)
+						[
+							SNew(STextBlock).Text(Time).Font(Font("Regular", 10)).ColorAndOpacity(Muted())
+						]
+					]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 4.0f, 0.0f, 0.0f)
+					[
+						SNew(STextBlock).Text(Entry.Text).AutoWrapText(true).Font(Font("Regular", 14))
+						.LineHeightPercentage(1.12f).ColorAndOpacity(White())
+					]
 				]
 			]
-			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Top).Padding(0.0f, 0.0f, 12.0f, 0.0f)
-			[
-				SNew(SBox).WidthOverride(92.0f)
-				[
-					SNew(STextBlock).Text(FText::FromName(Entry.Category).ToUpper()).Font(Font("Bold", 10))
-					.ColorAndOpacity(Cyan())
-				]
-			]
-			+ SHorizontalBox::Slot().FillWidth(1.0f)
-			[
-				SNew(STextBlock).Text(Entry.Text).AutoWrapText(true).Font(Font("Regular", 12)).ColorAndOpacity(White())
-			]
+		];
+	}
+	if (Shown >= MaxShown)
+	{
+		JournalList->AddSlot().AutoHeight().Padding(0.0f, 6.0f, 0.0f, 0.0f)
+		[
+			SNew(STextBlock).Text(FText::Format(LOCTEXT("JournalOlder", "The latest {0} are shown; older entries stay in the save."),
+				FText::AsNumber(MaxShown))).Font(Font("Regular", 11)).ColorAndOpacity(Muted())
 		];
 	}
 }
 
 void SAPSColonyTerminal::HandleJournalEntry(const FAPSCivilizationJournalEntry& Entry)
 {
+	// The cards are rebuilt where they are seen; switching to the tab rebuilds them anyway.
+	if (ActiveTab == ETab::Journal)
+	{
+		RebuildJournal();
+	}
+}
+
+FReply SAPSColonyTerminal::SetJournalFilter(const FName Category)
+{
+	JournalFilter = Category;
 	RebuildJournal();
+	return FReply::Handled();
 }
 
 void SAPSColonyTerminal::CacheColonyActors()
@@ -1488,6 +1900,32 @@ FReply SAPSColonyTerminal::OnKeyDown(const FGeometry& Geometry, const FKeyEvent&
 void SAPSColonyTerminal::Tick(const FGeometry& AllottedGeometry, const double InCurrentTime, const float InDeltaTime)
 {
 	SCompoundWidget::Tick(AllottedGeometry, InCurrentTime, InDeltaTime);
+	// The body preview: a few frames of capture, then the picture is kept (B1).
+	if (PreviewFramesLeft > 0 && --PreviewFramesLeft == 0)
+	{
+		if (ASceneCapture2D* Camera = Cast<ASceneCapture2D>(PreviewCamera.Get()))
+		{
+			Camera->GetCaptureComponent2D()->bCaptureEveryFrame = false;
+		}
+	}
+	if (!FleetTarget.IsValid())
+	{
+		const FString Wanted = APSColonyUI::CVarPreviewTest.GetValueOnGameThread();
+		const FAPSFleetCommand* Fleet = GetFleet();
+		if (!Wanted.IsEmpty() && Fleet && World.IsValid())
+		{
+			for (TActorIterator<APlanetaryBody> It(World.Get()); It; ++It)
+			{
+				if (IsValid(*It) && Fleet->GetSurvey(*It) == APSFleet::ESurvey::Studied
+					&& FAPSFleetCommand::DisplayName(*It).ToString().Contains(Wanted))
+				{
+					FleetTarget = *It;
+					UpdateBodyPreview();
+					break;
+				}
+			}
+		}
+	}
 	if (ActiveTab != ETab::Colony && ActiveTab != ETab::Map && ActiveTab != ETab::Fleet && ActiveTab != ETab::Shipyard)
 	{
 		return;
@@ -1905,10 +2343,14 @@ TSharedRef<SWidget> SAPSColonyTerminal::BuildModuleCard(const FAPSColonyModuleSp
 	using namespace APSColonyUI;
 	const FName ModuleId = Spec.Id;
 	const EAPSSpawnSite Site = Spec.Site;
+	// Civil affairs speeds the colony's works up by 15% a level (APSColonyConstructionSubsystem registers them so).
+	const UMainGameplayInstance* State = GameplayState(World.Get());
+	const UCivilization* Civ = State ? State->CurrentCivilization.Get() : nullptr;
+	const double CivilFactor = 1.0 / (1.0 + 0.15 * FMath::Max(Civ ? Civ->Divisions.CivilAffairs : 0, 0));
 	const FText Metrics = FText::Format(LOCTEXT("ModuleMetrics", "{0} x {1} M  /  {2} S"),
 		FText::AsNumber(FMath::RoundToInt(Spec.SizeCm.X / 100.0)),
 		FText::AsNumber(FMath::RoundToInt(Spec.SizeCm.Y / 100.0)),
-		FText::AsNumber(FMath::RoundToInt(Spec.BuildSeconds)));
+		FText::AsNumber(FMath::RoundToInt(Spec.BuildSeconds * CivilFactor)));
 	const auto CanOrder = [this, Site]()
 	{
 		const UAPSColonyConstructionSubsystem* Construction = GetConstruction();
@@ -2284,10 +2726,10 @@ TSharedRef<SWidget> SAPSColonyTerminal::BuildShipyard()
 		+ SHorizontalBox::Slot().FillWidth(1.0f)
 		[
 			SNew(SScrollBox)
-			+ SScrollBox::Slot().Padding(0.0f, 0.0f, 0.0f, 12.0f)
+			+ SScrollBox::Slot().Padding(0.0f, 0.0f, 0.0f, 10.0f)
 			[
 				IconSectionHeading(EAPSChromeGlyph::Ship, LOCTEXT("ShipyardSection", "SHIPYARD"),
-					LOCTEXT("ShipyardSubtitle", "Each ship launches above the shipyard and joins FLEET COMMAND"))
+					LOCTEXT("ShipyardSubtitle", "Pick a shipyard on the right, then a ship: it launches there and joins FLEET COMMAND"))
 			]
 			+ SScrollBox::Slot()
 			[
@@ -2296,37 +2738,62 @@ TSharedRef<SWidget> SAPSColonyTerminal::BuildShipyard()
 		]
 		+ SHorizontalBox::Slot().AutoWidth().Padding(16.0f, 0.0f, 0.0f, 0.0f)
 		[
-			SNew(SBox).WidthOverride(320.0f)
+			SNew(SBox).WidthOverride(340.0f)
 			[
-				SNew(SVerticalBox)
-				+ SVerticalBox::Slot().AutoHeight()
+				SNew(SScrollBox)
+				+ SScrollBox::Slot()
 				[
-					SNew(STextBlock).Text(LOCTEXT("SlipwayTitle", "SLIPWAY")).Font(Font("Bold", 14)).ColorAndOpacity(White())
-				]
-				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 4.0f, 0.0f, 10.0f)
-				[
-					SNew(STextBlock).AutoWrapText(true).Font(Font("Regular", 10))
-					.Text_Lambda([this]()
-					{
-						if (!bShipyardPresent)
+					SNew(SVerticalBox)
+					+ SVerticalBox::Slot().AutoHeight()
+					[
+						SNew(STextBlock).Text(LOCTEXT("ShipyardsTitle", "SHIPYARDS")).Font(Font("Bold", 14)).ColorAndOpacity(White())
+					]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 4.0f, 0.0f, 10.0f)
+					[
+						SNew(STextBlock).AutoWrapText(true).Font(Font("Regular", 10)).ColorAndOpacity(Muted())
+						.Text(LOCTEXT("ShipyardsHelp", "Every shipyard builds one ship at a time, all of them at once. More shipyards: FLEET COMMAND, a construction ship, a world with a station, BUILD SHIPYARD."))
+					]
+					+ SVerticalBox::Slot().AutoHeight()
+					[
+						SAssignNew(ShipyardYardsBox, SVerticalBox)
+					]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 14.0f, 0.0f, 0.0f)
+					[
+						SNew(STextBlock).AutoWrapText(true).Font(Font("Bold", 13)).ColorAndOpacity(White())
+						.Text_Lambda([this]()
 						{
-							return LOCTEXT("SlipwayNoShipyard", "No shipyard in this system: ships cannot be launched.");
-						}
-						const FAPSFleetCommand* Fleet = GetFleet();
-						return FText::Format(LOCTEXT("SlipwayState", "One ship at a time, up to {0} queued. Launched here: {1}."),
-							FText::AsNumber(FAPSFleetCommand::ShipyardQueueLimit), FText::AsNumber(Fleet ? Fleet->GetLaunchedCount() : 0));
-					})
-					.ColorAndOpacity_Lambda([this]() { return FSlateColor(bShipyardPresent ? Muted() : Amber()); })
-				]
-				+ SVerticalBox::Slot().AutoHeight()
-				[
-					SAssignNew(ShipyardQueueBox, SVerticalBox)
-				]
-				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 10.0f, 0.0f, 0.0f)
-				[
-					SNew(STextBlock).AutoWrapText(true).Font(Font("Bold", 10))
-					.Text_Lambda([this]() { return ShipyardMessage; })
-					.ColorAndOpacity_Lambda([this]() { return FSlateColor(bShipyardMessageIsError ? Amber() : Success()); })
+							const ASpaceShipyard* Yard = GetSelectedYard();
+							return Yard ? FText::Format(LOCTEXT("SlipwayOf", "SLIPWAY  /  {0}"), FAPSFleetCommand::DisplayName(Yard))
+								: LOCTEXT("SlipwayTitle", "SLIPWAY");
+						})
+					]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 4.0f, 0.0f, 10.0f)
+					[
+						SNew(STextBlock).AutoWrapText(true).Font(Font("Regular", 10))
+						.Text_Lambda([this]()
+						{
+							const FAPSFleetCommand* Fleet = GetFleet();
+							const ASpaceShipyard* Yard = GetSelectedYard();
+							if (!Fleet || !Yard)
+							{
+								return LOCTEXT("SlipwayNoShipyard", "No shipyard in this system: ships cannot be launched.");
+							}
+							return FText::Format(LOCTEXT("SlipwayState", "{0} of {1} queued. Launched here: {2}."),
+								FText::AsNumber(Fleet->CountQueued(Yard)), FText::AsNumber(FAPSFleetCommand::ShipyardQueueLimit),
+								FText::AsNumber(Fleet->GetLaunchedCount(Yard)));
+						})
+						.ColorAndOpacity_Lambda([this]() { return FSlateColor(bShipyardPresent ? Muted() : Amber()); })
+					]
+					+ SVerticalBox::Slot().AutoHeight()
+					[
+						SAssignNew(ShipyardQueueBox, SVerticalBox)
+					]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 10.0f, 0.0f, 0.0f)
+					[
+						SNew(STextBlock).AutoWrapText(true).Font(Font("Bold", 10))
+						.Text_Lambda([this]() { return ShipyardMessage; })
+						.ColorAndOpacity_Lambda([this]() { return FSlateColor(bShipyardMessageIsError ? Amber() : Success()); })
+					]
 				]
 			]
 		];
@@ -2354,67 +2821,230 @@ void SAPSColonyTerminal::RebuildShipyardCatalogue()
 		];
 		return;
 	}
-	const TSharedRef<SUniformGridPanel> Grid = SNew(SUniformGridPanel).SlotPadding(FMargin(6.0f));
+	// Class chips with their counts: ALL, then every class the catalogue has, smallest first.
+	TArray<ESpaceshipSizeClass> Classes;
+	for (const FAPSShipyardOption& Option : ShipyardOptions)
+	{
+		Classes.AddUnique(Option.SizeClass);
+	}
+	const TSharedRef<SWrapBox> Filters = SNew(SWrapBox).UseAllottedSize(true).InnerSlotPadding(FVector2D(6.0f, 6.0f));
+	for (int32 Index = -1; Index < Classes.Num(); ++Index)
+	{
+		const int32 Filter = Index < 0 ? -1 : static_cast<int32>(Classes[Index]);
+		int32 Count = 0;
+		for (const FAPSShipyardOption& Option : ShipyardOptions)
+		{
+			Count += Filter < 0 || static_cast<int32>(Option.SizeClass) == Filter ? 1 : 0;
+		}
+		Filters->AddSlot()
+		[
+			ChromeButton(
+				SNew(STextBlock).Font(Font("Bold", 9)).ColorAndOpacity(Cyan())
+				.Text(FText::Format(LOCTEXT("ShipyardClassChip", "{0}  {1}"), Index < 0 ? LOCTEXT("ShipyardClassAll", "ALL")
+					: FText::Format(LOCTEXT("ShipyardClassName", "CLASS {0}"), EnumText(Classes[Index]).ToUpper()),
+					FText::AsNumber(Count))),
+				FOnClicked::CreateSP(this, &SAPSColonyTerminal::SetShipyardClassFilter, Filter),
+				TAttribute<bool>::CreateLambda([this, Filter]() { return ShipyardClassFilter == Filter; }), Cyan())
+		];
+	}
+	ShipyardCatalogueBox->AddSlot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 10.0f)[Filters];
+
+	constexpr int32 Columns = 4;
+	const TSharedRef<SUniformGridPanel> Grid = SNew(SUniformGridPanel).SlotPadding(FMargin(5.0f));
+	int32 Shown = 0;
 	for (int32 Index = 0; Index < ShipyardOptions.Num(); ++Index)
 	{
 		const FAPSShipyardOption& Option = ShipyardOptions[Index];
+		if (ShipyardClassFilter >= 0 && static_cast<int32>(Option.SizeClass) != ShipyardClassFilter)
+		{
+			continue;
+		}
 		const FSlateBrush* Thumbnail = ShipThumbnail(Option.ShipClass);
-		Grid->AddSlot(Index % 3, Index / 3)
+		Grid->AddSlot(Shown % Columns, Shown / Columns)
 		[
 			ChamferPanel(
 				SNew(SVerticalBox)
 				+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center)
 				[
-					SNew(SBox).WidthOverride(170.0f).HeightOverride(96.0f)
+					SNew(SBox).WidthOverride(150.0f).HeightOverride(84.0f)
 					[
 						Thumbnail
 							? StaticCastSharedRef<SWidget>(SNew(SScaleBox).Stretch(EStretch::ScaleToFit)[SNew(SImage).Image(Thumbnail)])
 							: StaticCastSharedRef<SWidget>(SNew(SBox).HAlign(HAlign_Center).VAlign(VAlign_Center)
-								[IconBadge(EAPSChromeGlyph::Ship, Cyan(), 48.0f)])
+								[IconBadge(EAPSChromeGlyph::Ship, Cyan(), 44.0f)])
 					]
 				]
-				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 8.0f, 0.0f, 0.0f)
+				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 6.0f, 0.0f, 0.0f)
 				[
-					SNew(STextBlock).Text(Option.Name).Font(Font("Bold", 12)).ColorAndOpacity(White())
+					SNew(STextBlock).Text(Option.Name).Font(Font("Bold", 11)).ColorAndOpacity(White())
 				]
 				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 2.0f, 0.0f, 0.0f)
 				[
-					SNew(STextBlock)
+					SNew(STextBlock).AutoWrapText(true)
 					.Text(FText::Format(LOCTEXT("ShipyardOptionDetail", "CLASS {0}  /  {1} S  /  {2}"),
 						EnumText(Option.SizeClass).ToUpper(), FText::AsNumber(FMath::RoundToInt(Option.BuildSeconds)),
 						APSFleet::DivisionName(APSFleet::DefaultDivision(Option.SizeClass, false))))
 					.Font(Font("Bold", 9)).ColorAndOpacity(Cyan())
 				]
-				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 10.0f, 0.0f, 0.0f)
+				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 8.0f, 0.0f, 0.0f)
 				[
 					PrimaryButton(LOCTEXT("ShipyardBuild", "BUILD"),
 						FOnClicked::CreateSP(this, &SAPSColonyTerminal::OrderShipyardShip, Index),
 						TAttribute<bool>::CreateLambda([this]()
 						{
 							const FAPSFleetCommand* Fleet = GetFleet();
-							return bShipyardPresent && Fleet && Fleet->GetShipyardQueue().Num() < FAPSFleetCommand::ShipyardQueueLimit;
+							const ASpaceShipyard* Yard = GetSelectedYard();
+							return Fleet && Yard && Fleet->CountQueued(Yard) < FAPSFleetCommand::ShipyardQueueLimit;
 						}))
 				],
-				FMargin(12.0f, 10.0f), CyanDim())
+				FMargin(10.0f, 8.0f), CyanDim())
 		];
+		++Shown;
+	}
+	// A filter showing fewer than four keeps the cards their width.
+	for (int32 Pad = Shown; Pad < Columns; ++Pad)
+	{
+		Grid->AddSlot(Pad, 0)[SNew(SBox)];
 	}
 	ShipyardCatalogueBox->AddSlot().AutoHeight()[Grid];
+}
+
+ASpaceShipyard* SAPSColonyTerminal::GetSelectedYard() const
+{
+	if (SelectedYard.IsValid())
+	{
+		return SelectedYard.Get();
+	}
+	const FAPSFleetCommand* Fleet = GetFleet();
+	return Fleet ? Fleet->FindShipyard() : nullptr;
+}
+
+FReply SAPSColonyTerminal::SelectShipyard(const TWeakObjectPtr<ASpaceShipyard> Yard)
+{
+	SelectedYard = Yard;
+	ShipyardMessage = FText::GetEmpty();
+	RefreshShipyard(true);
+	return FReply::Handled();
+}
+
+FReply SAPSColonyTerminal::SetShipyardClassFilter(const int32 Filter)
+{
+	ShipyardClassFilter = Filter;
+	RebuildShipyardCatalogue();
+	return FReply::Handled();
 }
 
 void SAPSColonyTerminal::RefreshShipyard(const bool bForceRebuild)
 {
 	using namespace APSColonyUI;
 	const FAPSFleetCommand* Fleet = GetFleet();
-	bShipyardPresent = Fleet && Fleet->FindShipyard();
+	TArray<ASpaceShipyard*> Yards;
+	if (Fleet)
+	{
+		Fleet->GetShipyards(Yards);
+	}
+	if (!SelectedYard.IsValid() || !Yards.Contains(SelectedYard.Get()))
+	{
+		SelectedYard = Yards.IsEmpty() ? nullptr : Yards[0];
+	}
+	ASpaceShipyard* Yard = SelectedYard.Get();
+	bShipyardPresent = Yard != nullptr;
+
+	// The shipyards: rebuilt when the set or the pick changes; what each builds is read live.
+	if (ShipyardYardsBox.IsValid())
+	{
+		FString YardsSignature = GetNameSafe(Yard);
+		for (const ASpaceShipyard* Each : Yards)
+		{
+			YardsSignature += TEXT(";") + Each->GetName();
+		}
+		if (bForceRebuild || YardsSignature != ShipyardYardsSignature)
+		{
+			ShipyardYardsSignature = YardsSignature;
+			ShipyardYardsBox->ClearChildren();
+			if (Yards.IsEmpty())
+			{
+				ShipyardYardsBox->AddSlot().AutoHeight()
+				[
+					SNew(STextBlock).AutoWrapText(true).Font(Font("Regular", 11)).ColorAndOpacity(Amber())
+					.Text(LOCTEXT("NoShipyards", "No shipyard yet: a construction ship can build one at a world with a station."))
+				];
+			}
+			for (ASpaceShipyard* Each : Yards)
+			{
+				const TWeakObjectPtr<ASpaceShipyard> Weak = Each;
+				const FText Orbit = FAPSFleetCommand::DisplayName(FAPSFleetCommand::OrbitedBody(Each));
+				const bool bHome = !Each->ActorHasTag(TEXT("APS.Fleet.Structure"));
+				ShipyardYardsBox->AddSlot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 6.0f)
+				[
+					ChromeButton(
+						SNew(SVerticalBox)
+						+ SVerticalBox::Slot().AutoHeight()
+						[
+							SNew(SHorizontalBox)
+							+ SHorizontalBox::Slot().FillWidth(1.0f)
+							[
+								SNew(STextBlock).Text(FAPSFleetCommand::DisplayName(Each)).Font(Font("Bold", 11)).ColorAndOpacity(White())
+							]
+							+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(8.0f, 0.0f, 0.0f, 0.0f)
+							[
+								SNew(STextBlock).Text(bHome ? LOCTEXT("YardHome", "HOME") : LOCTEXT("YardBuilt", "BUILT"))
+								.Font(Font("Bold", 9)).ColorAndOpacity(bHome ? Amber() : Success())
+							]
+						]
+						+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 2.0f, 0.0f, 0.0f)
+						[
+							SNew(STextBlock).Font(Font("Bold", 9)).ColorAndOpacity(Cyan())
+							.Text(Orbit.IsEmpty() ? LOCTEXT("YardNoOrbit", "IN OPEN SPACE")
+								: FText::Format(LOCTEXT("YardOrbit", "ORBIT  {0}"), Orbit))
+						]
+						+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 3.0f, 0.0f, 0.0f)
+						[
+							SNew(STextBlock).AutoWrapText(true).Font(Font("Regular", 10)).ColorAndOpacity(Muted())
+							.Text_Lambda([this, Weak]()
+							{
+								const FAPSFleetCommand* Live = GetFleet();
+								const ASpaceShipyard* Target = Weak.Get();
+								if (!Live || !Target)
+								{
+									return FText::GetEmpty();
+								}
+								for (const FAPSShipyardJob& Job : Live->GetShipyardQueue())
+								{
+									if (Job.Yard.Get() == Target)
+									{
+										return FText::Format(LOCTEXT("YardBusy", "BUILDING {0}  {1}%  /  QUEUE {2} OF {3}"), Job.Name,
+											FText::AsNumber(FMath::RoundToInt(Job.Progress * 100.0f)),
+											FText::AsNumber(Live->CountQueued(Target)), FText::AsNumber(FAPSFleetCommand::ShipyardQueueLimit));
+									}
+								}
+								return FText::Format(LOCTEXT("YardIdle", "SLIPWAY FREE  /  LAUNCHED {0}"),
+									FText::AsNumber(Live->GetLaunchedCount(Target)));
+							})
+						],
+						FOnClicked::CreateSP(this, &SAPSColonyTerminal::SelectShipyard, Weak),
+						TAttribute<bool>::CreateLambda([this, Weak]() { return SelectedYard == Weak; }), Amber())
+				];
+			}
+		}
+	}
+
 	if (!ShipyardQueueBox.IsValid())
 	{
 		return;
 	}
-	FString Signature;
-	const int32 QueueLength = Fleet ? Fleet->GetShipyardQueue().Num() : 0;
-	for (int32 Index = 0; Index < QueueLength; ++Index)
+	// The picked shipyard's slipway.
+	static const TArray<FAPSShipyardJob> NoJobs;
+	const TArray<FAPSShipyardJob>& Queue = Fleet ? Fleet->GetShipyardQueue() : NoJobs;
+	TArray<int32> Jobs;
+	FString Signature = GetNameSafe(Yard);
+	for (int32 Index = 0; Index < Queue.Num(); ++Index)
 	{
-		Signature += Fleet->GetShipyardQueue()[Index].Name.ToString() + TEXT(";");
+		if (Yard && Queue[Index].Yard.Get() == Yard)
+		{
+			Jobs.Add(Index);
+			Signature += TEXT(";") + Queue[Index].Name.ToString();
+		}
 	}
 	if (!bForceRebuild && Signature == ShipyardSignature)
 	{
@@ -2422,22 +3052,32 @@ void SAPSColonyTerminal::RefreshShipyard(const bool bForceRebuild)
 	}
 	ShipyardSignature = Signature;
 	ShipyardQueueBox->ClearChildren();
-	if (QueueLength == 0)
+	if (Jobs.IsEmpty())
 	{
 		ShipyardQueueBox->AddSlot().AutoHeight()
 		[
-			SNew(STextBlock).Text(LOCTEXT("SlipwayEmpty", "The slipway is empty: pick a ship to build.")).AutoWrapText(true)
+			SNew(STextBlock).Text(LOCTEXT("SlipwayEmpty", "The slipway is free: pick a ship on the left.")).AutoWrapText(true)
 			.Font(Font("Regular", 11)).ColorAndOpacity(Muted())
 		];
 		return;
 	}
-	for (int32 Index = 0; Index < QueueLength; ++Index)
+	const TWeakObjectPtr<ASpaceShipyard> WeakYard = Yard;
+	for (int32 Position = 0; Position < Jobs.Num(); ++Position)
 	{
-		const FAPSShipyardJob& Job = Fleet->GetShipyardQueue()[Index];
-		const auto Progress = [this, Index]()
+		const FAPSShipyardJob& Job = Queue[Jobs[Position]];
+		// Read live: the queue shifts as ships launch, so find this shipyard's job at this position again.
+		const auto Progress = [this, WeakYard, Position]()
 		{
 			const FAPSFleetCommand* Live = GetFleet();
-			return Live && Live->GetShipyardQueue().IsValidIndex(Index) ? Live->GetShipyardQueue()[Index].Progress : 0.0f;
+			int32 Seen = 0;
+			for (const FAPSShipyardJob& Each : Live ? Live->GetShipyardQueue() : NoJobs)
+			{
+				if (Each.Yard == WeakYard && Seen++ == Position)
+				{
+					return Each.Progress;
+				}
+			}
+			return 0.0f;
 		};
 		ShipyardQueueBox->AddSlot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 8.0f)
 		[
@@ -2449,10 +3089,10 @@ void SAPSColonyTerminal::RefreshShipyard(const bool bForceRebuild)
 			]
 			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 2.0f, 0.0f, 0.0f)
 			[
-				SNew(STextBlock).Font(Font("Bold", 9)).ColorAndOpacity(Index == 0 ? Amber() : Muted())
-				.Text_Lambda([Progress, Index]()
+				SNew(STextBlock).Font(Font("Bold", 9)).ColorAndOpacity(Position == 0 ? Amber() : Muted())
+				.Text_Lambda([Progress, Position]()
 				{
-					return Index == 0
+					return Position == 0
 						? FText::Format(LOCTEXT("SlipwayBuilding", "ON THE SLIPWAY  /  {0}%"),
 							FText::AsNumber(FMath::RoundToInt(Progress() * 100.0f)))
 						: LOCTEXT("SlipwayQueued", "QUEUED");
@@ -2484,10 +3124,12 @@ FReply SAPSColonyTerminal::OrderShipyardShip(const int32 OptionIndex)
 	{
 		return FReply::Handled();
 	}
-	const FText Refusal = Fleet->OrderShip(ShipyardOptions[OptionIndex]);
+	ASpaceShipyard* Yard = GetSelectedYard();
+	const FText Refusal = Fleet->OrderShip(ShipyardOptions[OptionIndex], Yard);
 	bShipyardMessageIsError = !Refusal.IsEmpty();
 	ShipyardMessage = Refusal.IsEmpty()
-		? FText::Format(LOCTEXT("ShipyardOrdered", "LAID DOWN: {0}"), ShipyardOptions[OptionIndex].Name)
+		? FText::Format(LOCTEXT("ShipyardOrdered", "LAID DOWN AT {0}: {1}"), FAPSFleetCommand::DisplayName(Yard),
+			ShipyardOptions[OptionIndex].Name)
 		: Refusal;
 	RefreshShipyard(true);
 	return FReply::Handled();

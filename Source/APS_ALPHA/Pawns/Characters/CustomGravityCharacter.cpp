@@ -1429,6 +1429,34 @@ void ACustomGravityCharacter::UpdateGravityAnimationParameters()
 		GetMesh()->GlobalAnimRateScale, TargetPlayRate, DeltaTime, 7.0f);
 }
 
+void ACustomGravityCharacter::SettleAfterVehicleExit(const FVector& Facing)
+{
+	// While seated the character did not tick: its gravity frame is the one it boarded in, possibly another body.
+	if (GravityDetector)
+	{
+		GravityDetector->RunGravityCheckForActor(this);
+	}
+	bGravityDirectionInitialized = false;
+	UpdateGravityDirection(0.0f);
+	if (!bIsZeroG && !CurrentGravityDir.IsNearlyZero())
+	{
+		const FVector Up = -CurrentGravityDir.GetSafeNormal();
+		FVector Forward = FVector::VectorPlaneProject(Facing, Up).GetSafeNormal();
+		if (Forward.IsNearlyZero())
+		{
+			Forward = FVector::VectorPlaneProject(GetActorForwardVector(), Up).GetSafeNormal();
+		}
+		if (!Forward.IsNearlyZero())
+		{
+			SetActorRotation(FRotationMatrix::MakeFromXZ(Forward, Up).ToQuat(), ETeleportType::TeleportPhysics);
+		}
+	}
+	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+	{
+		Movement->SetMovementMode(bIsZeroG ? MOVE_Flying : MOVE_Falling);
+	}
+}
+
 void ACustomGravityCharacter::HandleGravitySourceChanged(AActor* NewSource)
 {
 	if (bManualGravityOverride)

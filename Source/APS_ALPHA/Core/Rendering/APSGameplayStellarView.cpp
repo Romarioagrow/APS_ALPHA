@@ -55,35 +55,54 @@ namespace APSGameplayStellarDay
 		TEXT("1 logs every change of the stars' daylight visibility (smoothness checks)."));
 	TAutoConsoleVariable<int32> CVarDayFade(TEXT("aps.Stars.DayFade"), 1,
 		TEXT("1 fades the catalogue stars with daylight and altitude in their material; 0 switches them off in a day sky."));
-	TAutoConsoleVariable<float> CVarInsideOpacityGain(TEXT("aps.Sky.InsideOpacityGain"), 12.0f,
-		TEXT("How much denser the sky seen from inside an Earth-like or thicker atmosphere is than its view from space ")
-		TEXT("(1 = the same). Thin air gets less, none at all; it fades to 1 towards the top of the shell."));
-	TAutoConsoleVariable<float> CVarInsideSkylightGain(TEXT("aps.Sky.InsideSkylightGain"), 1.0f,
-		TEXT("The same gain for the atmosphere's skylight (ambient light on the ground); 1 = unchanged."));
+	TAutoConsoleVariable<float> CVarAtmosphereDensityGain(TEXT("aps.Sky.AtmosphereDensityGain"), 12.0f,
+		TEXT("How much denser an Earth-like or thicker atmosphere is drawn than its generated base, from the ground and from ")
+		TEXT("space alike (1 = the base). Thin air gets less of it, an airless body none."));
 
 	/**
-	 * Raises the plugin's AtmosOpacity on the inside sky and skylight materials of one atmosphere. The plugin writes
-	 * the base value to all its materials in its own tick, before this subsystem's; the space shell keeps it.
+	 * Raises the plugin's AtmosOpacity on the sky seen from inside and on the shell seen from space, by the same gain,
+	 * so that a climb into orbit keeps the look of the sky from the ground (Rio, 01.10: dense and rich from the
+	 * ground, suddenly pale in orbit). The plugin writes its base to all its materials in its own tick, before this
+	 * subsystem's; skylight, absorption and outer glow keep the base.
 	 */
-	void ApplyInsideSkyGain(AAtmoScape& Atmosphere, const float OpacityGain, const float SkylightGain)
+	void ApplyAtmosphereDensityGain(AAtmoScape& Atmosphere, const float DensityGain)
 	{
 		static const FName InsideSky(TEXT("PlanetaryAtmoMesh"));
-		static const FName Skylight(TEXT("PlanetarySkylightMesh"));
+		static const FName SpaceShell(TEXT("SpacePlanetaryAtmoMesh"));
+		if (FMath::IsNearlyEqual(DensityGain, 1.0f))
+		{
+			return;
+		}
 		const float Base = Atmosphere.AtmosphereOpacity * FMath::Max(Atmosphere.PresentationOpacityScale, 0.0f);
 		TInlineComponentArray<UStaticMeshComponent*> Meshes(&Atmosphere);
 		for (UStaticMeshComponent* Mesh : Meshes)
 		{
 			const FName Name = Mesh ? Mesh->GetFName() : NAME_None;
-			const float Gain = Name == InsideSky ? OpacityGain : Name == Skylight ? SkylightGain : 0.0f;
-			if (Gain > 0.0f && !FMath::IsNearlyEqual(Gain, 1.0f))
+			if (Name == InsideSky || Name == SpaceShell)
 			{
 				if (UMaterialInstanceDynamic* Material = Cast<UMaterialInstanceDynamic>(Mesh->GetMaterial(0)))
 				{
-					Material->SetScalarParameterValue(TEXT("AtmosOpacity"), Base * Gain);
+					Material->SetScalarParameterValue(TEXT("AtmosOpacity"), Base * DensityGain);
 				}
 			}
 		}
 	}
+
+	/**
+	 * A4 (Rio, 01.10: stutters in flight): every resize pass that changes a point restarts the source's HISM tree build,
+	 * whose game-thread part copies the whole catalogue (up to 12.6 ms, 17-19 passes a second flying fast through the
+	 * cluster, a4-trace-1). A longer interval trades that for point sizes that catch up in coarser steps; tests only
+	 * until a visual check accepts a value.
+	 */
+	TAutoConsoleVariable<float> CVarResizeInterval(TEXT("aps.Stars.ResizeInterval"),
+		static_cast<float>(APSGameplayStellarProjection::PointResizeIntervalSeconds),
+		TEXT("Seconds between two resize passes of one star source in flight (default 0.1). Each pass that changes a point ")
+		TEXT("rebuilds the source's tree (~12 ms of game thread for the big catalogues)."));
+
+	/** A5: which catalogue stars carry rays in flight (APSStellarOpticalSupport::Select); a change re-sizes them all. */
+	TAutoConsoleVariable<int32> CVarRayRule(TEXT("aps.Stars.RayRule"), 0,
+		TEXT("Rays on the catalogue stars in flight: 0 a stable share of the bright ones (accepted), 1 every bright enough ")
+		TEXT("star, 2 none (comparison for Rio, 01.10)."));
 
 	TAutoConsoleVariable<float> CVarDayFadeDepth(TEXT("aps.Stars.DayFadeDepth"), 6.25f,
 		TEXT("How deep a day sky dims the catalogue stars, in e-folds of brightness. 6.25: the brightest show from ~20 km of ")
@@ -156,25 +175,20 @@ void UAPSStellarVisualSubsystem::UpdateGameplayDaylightStars(const FVector& Came
 			{
 				continue;
 			}
+			// The sky's density (E2, A1): Earth-like air full gain, thin air less, none without air; the same from the
+			// ground and from space, for every atmosphere in view.
+			if (AAtmoScape* Atmosphere = IsValid(Body->PlanetaryEnvironmentGenerator)
+				? Body->PlanetaryEnvironmentGenerator->PlanetAtmosphere : nullptr; IsValid(Atmosphere))
+			{
+				APSGameplayStellarDay::ApplyAtmosphereDensityGain(*Atmosphere, static_cast<float>(1.0
+					+ (FMath::Max(APSGameplayStellarDay::CVarAtmosphereDensityGain.GetValueOnGameThread(), 0.0f) - 1.0)
+					* APSAtmosphereModel::DaySkyMasking(APSAtmosphereModel::Density(Body))));
+			}
 			const FVector FromCentre = CameraLocation - Body->GetActorLocation();
 			const double Altitude = FromCentre.Size() - RadiusCm;
 			if (Altitude >= AtmosphereCm)
 			{
 				continue;
-			}
-			// Day sky from inside (E2): full gain near the ground of an Earth-like or denser atmosphere, less in thin air,
-			// none without air, back to the view-from-space value towards the top of the shell (no pop at the switch).
-			if (AAtmoScape* Atmosphere = IsValid(Body->PlanetaryEnvironmentGenerator)
-				? Body->PlanetaryEnvironmentGenerator->PlanetAtmosphere : nullptr; IsValid(Atmosphere))
-			{
-				const double Air = (1.0 - FMath::SmoothStep(0.5, 0.95, FMath::Max(Altitude, 0.0) / AtmosphereCm))
-					* APSAtmosphereModel::DaySkyMasking(APSAtmosphereModel::Density(Body));
-				const auto Gain = [Air](const TAutoConsoleVariable<float>& Setting)
-				{
-					return static_cast<float>(1.0 + (FMath::Max(Setting.GetValueOnGameThread(), 0.0f) - 1.0) * Air);
-				};
-				APSGameplayStellarDay::ApplyInsideSkyGain(*Atmosphere, Gain(APSGameplayStellarDay::CVarInsideOpacityGain),
-					Gain(APSGameplayStellarDay::CVarInsideSkylightGain));
 			}
 			const double SunSine = FVector::DotProduct(FromCentre.GetSafeNormal(),
 				(TargetStarLocation - CameraLocation).GetSafeNormal());
@@ -216,6 +230,13 @@ void UAPSStellarVisualSubsystem::UpdateGameplayStellarView()
 	TRACE_CPUPROFILER_EVENT_SCOPE(APS_GameplayStellarView);
 	CSV_SCOPED_TIMING_STAT(APSGameplayStars, ObserverView);
 	UWorld* World = GetWorld();
+	// A new ray rule re-publishes every point's optics: forget the optics the sizes were made for.
+	static int32 LastRayRule = 0;
+	if (const int32 RayRule = APSGameplayStellarDay::CVarRayRule.GetValueOnGameThread(); RayRule != LastRayRule)
+	{
+		LastRayRule = RayRule;
+		LastStellarPixelTangent = -1.0;
+	}
 	// Publish spectral luminosity before selecting optical support. The helper's
 	// bounded scan is shared with Tick, so this does not add another catalog scan.
 	APSGameplayStarAppearance::Apply(World);
@@ -412,7 +433,7 @@ void UAPSStellarVisualSubsystem::UpdateGameplayStellarView()
 			FAPSGameplayStellarResizePass& Pass = GameplayNativeResizePasses.FindOrAdd(Source);
 			const bool bResizeTravelled = !bUpdatePointSizes && !bResizePassTaken
 				&& FVector::Distance(ObserverFromHome, Pass.Observer) > FMath::Max(Pass.SlackCm, 1.0)
-				&& NowSeconds - Pass.Seconds >= APSGameplayStellarProjection::PointResizeIntervalSeconds;
+				&& NowSeconds - Pass.Seconds >= FMath::Max(APSGameplayStellarDay::CVarResizeInterval.GetValueOnGameThread(), 0.0f);
 			if (!bRefreshDemand && !bResizeTravelled) continue;
 			if (!APSStellarOpticalSupport::EnsureLayout(Source)) continue;
 
@@ -464,7 +485,7 @@ void UAPSStellarVisualSubsystem::UpdateGameplayStellarView()
 				// Measured like the per-point check below (from the immutable centre), so the two never disagree.
 				OutDistanceCm = FVector::Distance((*BaseTransforms)[Index].GetLocation(), LocalCamera) * ComponentScale;
 				const auto Profile = APSStellarOpticalSupport::Select(Source->PerInstanceSMCustomData,
-					Source->NumCustomDataFloats, Index);
+					Source->NumCustomDataFloats, Index, APSGameplayStellarDay::CVarRayRule.GetValueOnGameThread());
 				const double PixelWorldRadius = Distance * PixelTangent;
 				if (bCollectDemand)
 				{
@@ -823,7 +844,7 @@ void UAPSStellarVisualSubsystem::UpdateGameplayStellarView()
 			RayStrengths.Init(0.0f, Layer.Points.Num());
 			for (const FAPSGameplayStellarPoint& Point : Layer.Points)
 				OpticalProfiles.Add(APSStellarOpticalSupport::Select(View->PerInstanceSMCustomData,
-					View->NumCustomDataFloats, Point.InstanceIndex));
+					View->NumCustomDataFloats, Point.InstanceIndex, APSGameplayStellarDay::CVarRayRule.GetValueOnGameThread()));
 		}
 		constexpr int32 ChunkSize = 1024;
 		const int32 ChunkCount = FMath::DivideAndRoundUp(Layer.Points.Num(), ChunkSize);

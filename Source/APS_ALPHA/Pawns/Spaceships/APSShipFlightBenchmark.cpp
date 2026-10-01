@@ -427,8 +427,14 @@ namespace APSShipBenchmark
 		bool bActive{false};
 		TWeakObjectPtr<ASpaceship> Ship;
 		TWeakObjectPtr<APlanetaryBody> Planet;
-		/** aim=next: the planet flown to, logged every second with its surface readiness. */
+		/** aim=next or aim=moon: the body flown to, logged every second with its surface readiness. */
 		TWeakObjectPtr<APlanetaryBody> Target;
+		/** The nearest matching body is chosen once, on the first aim; later aims keep it. */
+		bool bTargetChosen{false};
+		/** jump=Km: start this far above the target's surface instead of halfway (moon landings, exit tests). */
+		double JumpKm{0.0};
+		/** exit=1: at the minimum altitude the pilot leaves the ship (gravity and orientation after an exit, 01.10). */
+		bool bExitAtEnd{false};
 		TWeakObjectPtr<AWorldScapeRoot> Terrain;
 		int32 Power{3};
 		float Forward{1.0f};
@@ -494,6 +500,15 @@ namespace APSShipBenchmark
 	};
 	FDrive GDrive;
 
+	/** exit=1: the pilot's own view a few seconds after leaving the ship. */
+	struct FExitShots
+	{
+		double ExitSeconds{-1.0};
+		FString Label;
+		int32 Taken{0};
+	};
+	FExitShots GExitShots;
+
 	double AltitudeKm(const ASpaceship& Ship, const APlanetaryBody* Planet)
 	{
 		return IsValid(Planet)
@@ -556,18 +571,28 @@ namespace APSShipBenchmark
 		{
 			Forward = Radial;
 		}
-		else if (GDrive.Aim.Equals(TEXT("next"), ESearchCase::IgnoreCase))
+		else if (GDrive.Aim.Equals(TEXT("next"), ESearchCase::IgnoreCase) || GDrive.Aim.Equals(TEXT("moon"), ESearchCase::IgnoreCase))
 		{
-			// The nearest other planet with a streamed surface: an approach from afar (arrival forecast, 01.10).
+			// The nearest other planet (or moon) with a streamed surface: an approach from afar (arrival forecast) or a
+			// landing on a moon (gravity after an exit, 01.10).
+			// The default menu world has one planet and no moons: start with aps.Ship.StartGenerated's Moons argument.
+			const bool bMoon = GDrive.Aim.Equals(TEXT("moon"), ESearchCase::IgnoreCase);
 			double Best = TNumericLimits<double>::Max();
-			for (TActorIterator<APlanetaryBody> It(Ship.GetWorld()); It && !GDrive.Target.IsValid(); ++It)
+			for (TActorIterator<APlanetaryBody> It(Ship.GetWorld()); It && !GDrive.bTargetChosen; ++It)
 			{
 				const double Distance = FVector::Dist(Ship.GetActorLocation(), It->GetActorLocation());
-				if (IsValid(*It) && *It != Planet && It->bStreamWorldScapeSurface && !It->IsA<AMoon>() && Distance < Best)
+				if (IsValid(*It) && *It != Planet && It->bStreamWorldScapeSurface && It->IsA<AMoon>() == bMoon
+					&& Distance < Best)
 				{
 					Best = Distance;
 					GDrive.Target = *It;
 				}
+			}
+			if (!GDrive.bTargetChosen)
+			{
+				GDrive.bTargetChosen = true;
+				UE_LOG(LogTemp, Log, TEXT("[APS.ShipDrive] target for aim=%s: %s"), *GDrive.Aim,
+					GDrive.Target.IsValid() ? *GDrive.Target->GetName() : TEXT("none (no such body in this world)"));
 			}
 			if (const APlanetaryBody* Target = GDrive.Target.Get())
 			{
@@ -639,13 +664,22 @@ namespace APSShipBenchmark
 				UE_LOG(LogTemp, Log, TEXT("[APS.ShipDrive] moved to %.2f ly from the world origin"),
 					Ship.GetActorLocation().Size() / 9.4607e17);
 			}
-			if (GDrive.Aim.Equals(TEXT("next"), ESearchCase::IgnoreCase))
+			if (GDrive.Aim.Equals(TEXT("next"), ESearchCase::IgnoreCase) || GDrive.Aim.Equals(TEXT("moon"), ESearchCase::IgnoreCase))
 			{
-				// Arrival tests: start halfway to the target in open space, out of the home planet's gravity well.
+				// Arrival tests start halfway to the target in open space, out of the home planet's gravity well;
+				// jump=Km starts that far above the target's surface, on the side facing the ship.
 				AimShip(Ship);
-				if (const APlanetaryBody* Target = GDrive.Target.Get())
+				if (APlanetaryBody* Target = GDrive.Target.Get())
 				{
-					const FVector Start = FMath::Lerp(Ship.GetActorLocation(), Target->GetActorLocation(), 0.5);
+					const FVector Away = (Ship.GetActorLocation() - Target->GetActorLocation()).GetSafeNormal();
+					const FVector Start = GDrive.JumpKm > 0.0
+						? Target->GetActorLocation() + Away * (Target->GetWorldScapeBodyRadiusCm() + GDrive.JumpKm * 1.0e5)
+						: FMath::Lerp(Ship.GetActorLocation(), Target->GetActorLocation(), 0.5);
+					if (GDrive.JumpKm > 0.0)
+					{
+						// Altitude and the minimum altitude now refer to the target.
+						GDrive.Planet = Target;
+					}
 					Ship.DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
 					Ship.SetActorLocation(Start, false, nullptr, ETeleportType::TeleportPhysics);
 					UE_LOG(LogTemp, Log, TEXT("[APS.ShipDrive] moved halfway to %s: its surface %.0f km away"),
@@ -794,6 +828,17 @@ namespace APSShipBenchmark
 		{
 			// Stop short of the ground: a kinematic hull without a sweep would fly through the terrain.
 			FAPSShipFlightBenchmark::SetKinematicVelocity(Ship, FVector::ZeroVector);
+			if (GDrive.bExitAtEnd)
+			{
+				FAPSShipFlightBenchmark::SetPilotControls(Ship, 0, 0.0f, false, false, 0.0f);
+				const FString Body = GetNameSafe(GDrive.Planet.Get());
+				const bool bLeft = Ship.RequestReleaseVehicleControl();
+				UE_LOG(LogTemp, Log, TEXT("[APS.ShipDrive] pilot %s the ship %.1f km above %s"),
+					bLeft ? TEXT("left") : TEXT("could not leave"), Altitude, *Body);
+				GExitShots.ExitSeconds = bLeft ? FPlatformTime::Seconds() : -1.0;
+				GExitShots.Label = GDrive.ShotLabel;
+				GExitShots.Taken = 0;
+			}
 			StopDrive(TEXT("minimum altitude reached, velocity cleared"));
 		}
 	}
@@ -830,6 +875,14 @@ namespace APSShipBenchmark
 			else if (Arg.StartsWith(TEXT("startly="), ESearchCase::IgnoreCase))
 			{
 				Drive.StartLightYears = FMath::Clamp(FCString::Atod(*Arg.RightChop(8)), 0.0, 60.0);
+			}
+			else if (Arg.StartsWith(TEXT("jump="), ESearchCase::IgnoreCase))
+			{
+				Drive.JumpKm = FMath::Clamp(FCString::Atod(*Arg.RightChop(5)), 0.0, 1.0e6);
+			}
+			else if (Arg.StartsWith(TEXT("exit="), ESearchCase::IgnoreCase))
+			{
+				Drive.bExitAtEnd = FCString::Atoi(*Arg.RightChop(5)) != 0;
 			}
 			else if (Arg.StartsWith(TEXT("yaw="), ESearchCase::IgnoreCase))
 			{
@@ -892,7 +945,10 @@ namespace APSShipBenchmark
 		int32 Moons{-1};
 		/** Total starting ships, the home ship included (-1: the menu's own; CORE is 10), for fleet command runs. */
 		int32 Fleet{-1};
+		/** Planets in the home system (-1: the menu's own, one in the default world), for flights between planets. */
+		int32 Planets{-1};
 		bool bMoonsApplied{false};
+		bool bPlanetsApplied{false};
 		FString ShipClassPath;
 		FString CharacterClassPath;
 		double StartSeconds{0.0};
@@ -963,6 +1019,15 @@ namespace APSShipBenchmark
 		{
 			return true;
 		}
+		if (GGeneratedStart.Planets > 0 && !GGeneratedStart.bPlanetsApplied)
+		{
+			// Inter-planet flights need neighbours: set them, then wait for the regenerated preview.
+			GGeneratedStart.bPlanetsApplied = true;
+			ViewModel->SetPlanetsAmount(GGeneratedStart.Planets);
+			GGeneratedStart.ReadySeconds = 0.0;
+			UE_LOG(LogTemp, Log, TEXT("[APS.ShipBench] generated start: %d planet(s) in the home system"), GGeneratedStart.Planets);
+			return true;
+		}
 		if (GGeneratedStart.Moons >= 0 && !GGeneratedStart.bMoonsApplied)
 		{
 			// Lunar starts need moons: set them, then wait for the regenerated preview before choosing the start.
@@ -1025,6 +1090,7 @@ namespace APSShipBenchmark
 		GGeneratedStart.CharacterClassPath = Args.Num() > 2 && Args[2] != TEXT("-") ? Args[2] : FString();
 		GGeneratedStart.Moons = Args.Num() > 3 ? FCString::Atoi(*Args[3]) : -1;
 		GGeneratedStart.Fleet = Args.Num() > 4 ? FCString::Atoi(*Args[4]) : -1;
+		GGeneratedStart.Planets = Args.Num() > 5 ? FCString::Atoi(*Args[5]) : -1;
 		GGeneratedStart.StartSeconds = FPlatformTime::Seconds();
 		GGeneratedStart.Ticker = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateStatic(&TickGeneratedStart), 0.5f);
 		UE_LOG(LogTemp, Log, TEXT("[APS.ShipBench] generated start armed: spawnPlace=%d ship=%s character=%s"),
@@ -1036,7 +1102,7 @@ namespace APSShipBenchmark
 
 	FAutoConsoleCommandWithWorldAndArgs StartGeneratedCommand(
 		TEXT("aps.Ship.StartGenerated"),
-		TEXT("aps.Ship.StartGenerated [SpawnPlace=0 orbit] [ShipBlueprintPath|-] [CharacterBlueprintPath|-] [Moons|-1] [FleetShips]: from the main menu, ")
+		TEXT("aps.Ship.StartGenerated [SpawnPlace=0 orbit] [ShipBlueprintPath|-] [CharacterBlueprintPath|-] [Moons|-1] [FleetShips|-1] [Planets|-1]: from the main menu, ")
 		TEXT("opens the Civilization generator on the home planet and starts L_WorldGeneration like the menu's Start ")
 		TEXT("(optionally with another home ship or pilot)."),
 		FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&StartGenerated));
@@ -1158,6 +1224,21 @@ namespace APSShipBenchmark
 			}
 			if (!GDrive.bActive)
 			{
+				// After an exit (exit=1): the pilot's own view 2, 5 and 9 s later, then finish.
+				if (GExitShots.ExitSeconds >= 0.0 && GExitShots.Taken < 3)
+				{
+					static const double Offsets[] = {2.0, 5.0, 9.0};
+					if (Now - GExitShots.ExitSeconds >= Offsets[GExitShots.Taken])
+					{
+						const FString File = FPaths::ScreenShotDir() / TEXT("ShipDrive")
+							/ FString::Printf(TEXT("%s_texit%.0f.png"), *GExitShots.Label, Offsets[GExitShots.Taken]);
+						FScreenshotRequest::RequestScreenshot(File, false, false);
+						UE_LOG(LogTemp, Log, TEXT("[APS.ShipDrive] exit shot %s pawn=%s"), *FPaths::GetCleanFilename(File),
+							*GetNameSafe(Pawn));
+						++GExitShots.Taken;
+					}
+					return true;
+				}
 				EndAutoRun(TEXT("drive finished"));
 				return false;
 			}
@@ -1247,6 +1328,8 @@ namespace APSShipBenchmark
 				|| Args[Index].StartsWith(TEXT("pitch="), ESearchCase::IgnoreCase)
 				|| Args[Index].StartsWith(TEXT("minalt="), ESearchCase::IgnoreCase)
 				|| Args[Index].StartsWith(TEXT("startly="), ESearchCase::IgnoreCase)
+				|| Args[Index].StartsWith(TEXT("jump="), ESearchCase::IgnoreCase)
+				|| Args[Index].StartsWith(TEXT("exit="), ESearchCase::IgnoreCase)
 				|| Args[Index].StartsWith(TEXT("yaw="), ESearchCase::IgnoreCase)
 				|| Args[Index].StartsWith(TEXT("engine="), ESearchCase::IgnoreCase)
 				|| Args[Index].StartsWith(TEXT("shots="), ESearchCase::IgnoreCase)

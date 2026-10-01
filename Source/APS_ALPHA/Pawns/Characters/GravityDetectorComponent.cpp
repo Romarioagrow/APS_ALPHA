@@ -54,7 +54,18 @@ void UGravityDetectorComponent::RunGravityCheckForActor(AActor* Self)
 		return;
 	}
 
-	if (AActor* OverlappingSource = FindBestOverlappingSource(Self))
+	AActor* OverlappingSource = FindBestOverlappingSource(Self);
+	// Natural bodies: their overlap zones are coarse (a planet's reaches past its moons, a moon has none), so on a moon
+	// the parent planet pulled (Rio, 01.10). Among natural bodies the one whose surface is nearest pulls; stations and
+	// ships keep their place above them.
+	if (OverlappingSource && OverlappingSource->IsA(AOrbitalBody::StaticClass()))
+	{
+		if (AActor* NearestBody = FindClosestFullScaleSource(Self); IsValid(NearestBody) && NearestBody != OverlappingSource)
+		{
+			OverlappingSource = NearestBody;
+		}
+	}
+	if (OverlappingSource)
 	{
 		if (OverlappingSource != GravityTargetActor)
 		{

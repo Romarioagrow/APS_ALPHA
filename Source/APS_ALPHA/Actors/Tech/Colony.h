@@ -13,7 +13,7 @@ class APS_ALPHA_API AColony : public ATechActor
 	GENERATED_BODY()
 
 public:
-	AColony();
+	AColony(); virtual void BeginPlay() override; // B8: dressed in the colony modules' style.
 
 private:
 	UPROPERTY(VisibleAnywhere, Category = "Colony|Visual")

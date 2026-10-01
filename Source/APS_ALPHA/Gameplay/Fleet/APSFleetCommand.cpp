@@ -5,6 +5,7 @@
 #include "APS_ALPHA/Actors/Astro/PlanetaryBody.h"
 #include "APS_ALPHA/Actors/Astro/Star.h"
 #include "APS_ALPHA/Actors/Tech/AutonomousOutpost.h"
+#include "APS_ALPHA/Actors/Tech/SpaceHeadquarters.h"
 #include "APS_ALPHA/Actors/Tech/SpaceShipyard.h"
 #include "APS_ALPHA/Actors/Tech/SpaceStation.h"
 #include "APS_ALPHA/Core/Enums/PlanetHabitability.h"
@@ -52,6 +53,31 @@ namespace APSFleetPrivate
 	TAutoConsoleVariable<float> CVarBuildScale(TEXT("aps.Fleet.BuildScale"), 1.0f,
 		TEXT("Multiplies how fast the shipyard builds (tests)."));
 	const FName BuiltTag(TEXT("APS.Fleet.Built"));
+	const FName CivilizationTag(TEXT("APS.GeneratedCivilization"));
+	/** Stations, shipyards and HQs the construction ships raised (the generated home complex has no such tag). */
+	const FName StructureTag(TEXT("APS.Fleet.Structure"));
+
+	/** "a station" for the journal's sentences; StructureName is the upper-case label. */
+	FText StructureNoun(const EStructure Structure)
+	{
+		switch (Structure)
+		{
+		case EStructure::Shipyard: return LOCTEXT("NounShipyard", "a shipyard");
+		case EStructure::Headquarters: return LOCTEXT("NounHeadquarters", "a sector headquarters");
+		default: return LOCTEXT("NounStation", "a station");
+		}
+	}
+
+	/** What the structure gives, said once it stands. */
+	FText StructureEffect(const EStructure Structure, const FText& Body)
+	{
+		switch (Structure)
+		{
+		case EStructure::Shipyard: return LOCTEXT("EffectShipyard", "Its slipway is open in the SHIPYARD tab.");
+		case EStructure::Headquarters: return LOCTEXT("EffectHeadquarters", "The whole fleet flies 10% faster.");
+		default: return FText::Format(LOCTEXT("EffectStation", "Work at {0} now goes 25% faster."), Body);
+		}
+	}
 
 	/** Seconds on the slipway by size, before the Industry level shortens them. */
 	float ClassBuildSeconds(const ESpaceshipSizeClass SizeClass)
@@ -236,8 +262,39 @@ FText APSFleet::OrderName(const EOrder Order)
 	case EOrder::Survey: return LOCTEXT("OrderSurvey", "SURVEY");
 	case EOrder::BuildOutpost: return LOCTEXT("OrderOutpost", "BUILD OUTPOST");
 	case EOrder::Return: return LOCTEXT("OrderReturn", "RETURN");
+	case EOrder::BuildStation: return LOCTEXT("OrderStation", "BUILD STATION");
+	case EOrder::BuildShipyard: return LOCTEXT("OrderShipyard", "BUILD SHIPYARD");
+	case EOrder::BuildHeadquarters: return LOCTEXT("OrderHeadquarters", "BUILD SECTOR HQ");
+	case EOrder::Expedition: return LOCTEXT("OrderExpedition", "EXPEDITION");
 	default: return LOCTEXT("OrderNone", "NO ORDERS");
 	}
+}
+
+FText APSFleet::StructureName(const EStructure Structure)
+{
+	switch (Structure)
+	{
+	case EStructure::Station: return LOCTEXT("StructureStation", "STATION");
+	case EStructure::Shipyard: return LOCTEXT("StructureShipyard", "SHIPYARD");
+	case EStructure::Headquarters: return LOCTEXT("StructureHeadquarters", "SECTOR HQ");
+	default: return FText::GetEmpty();
+	}
+}
+
+bool APSFleet::StructureOf(const EOrder Order, EStructure& OutStructure)
+{
+	switch (Order)
+	{
+	case EOrder::BuildStation: OutStructure = EStructure::Station; return true;
+	case EOrder::BuildShipyard: OutStructure = EStructure::Shipyard; return true;
+	case EOrder::BuildHeadquarters: OutStructure = EStructure::Headquarters; return true;
+	default: return false;
+	}
+}
+
+bool APSFleet::NeedsStation(const EStructure Structure)
+{
+	return Structure != EStructure::Station;
 }
 
 FText APSFleet::SurveyName(const ESurvey Survey)
@@ -278,8 +335,12 @@ bool APSFleet::DivisionCan(const EDivision Division, const EOrder Order)
 	case EOrder::Return:
 		return true;
 	case EOrder::Survey:
+	case EOrder::Expedition:
 		return Division == EDivision::Exploration || Division == EDivision::Science;
 	case EOrder::BuildOutpost:
+	case EOrder::BuildStation:
+	case EOrder::BuildShipyard:
+	case EOrder::BuildHeadquarters:
 		return Division == EDivision::Construction;
 	default:
 		return false;
@@ -314,10 +375,20 @@ double APSFleet::ClassCap(const FSpaceshipClassPreset& Preset)
 	return Preset.bSupportsSpaceWrap ? 1.0e13 : 2.0e9;
 }
 
-double APSFleet::WorkSeconds(const EOrder Order, const EDivision Division, const int32 DivisionLevel)
+double APSFleet::WorkSeconds(const EOrder Order, const EDivision Division, const int32 DivisionLevel,
+	const bool bStationThere)
 {
-	const double Base = Order == EOrder::BuildOutpost ? 36.0 : Division == EDivision::Science ? 30.0 : 20.0;
-	return Base / (1.0 + 0.2 * FMath::Max(DivisionLevel, 0));
+	double Base = Division == EDivision::Science ? 30.0 : 20.0;
+	switch (Order)
+	{
+	case EOrder::BuildOutpost: Base = 36.0; break;
+	case EOrder::BuildStation: Base = 60.0; break;
+	case EOrder::BuildShipyard: Base = 75.0; break;
+	case EOrder::BuildHeadquarters: Base = 90.0; break;
+	case EOrder::Expedition: Base = 45.0; break;
+	default: break;
+	}
+	return Base / (1.0 + 0.2 * FMath::Max(DivisionLevel, 0)) / (bStationThere ? 1.25 : 1.0);
 }
 
 double APSFleet::SlotRadius(const double BodyRadiusCm)
@@ -351,6 +422,32 @@ bool APSFleet::Detour(const FVector& Start, const FVector& End, const FVector& C
 	}
 	OutPoint = Centre + Out.GetSafeNormal() * Radius * 1.35;
 	return true;
+}
+
+FVector APSFleet::RoundBody(const FVector& Ship, const FVector& Slot, const FVector& Centre, const double Radius)
+{
+	const FVector FromCentre = Ship - Centre;
+	const double Distance = FromCentre.Size();
+	if (Radius <= 0.0 || Distance < 1.0)
+	{
+		return Slot;
+	}
+	const FVector Up = FromCentre / Distance;
+	if (Distance < Radius * 1.3)
+	{
+		// Climb clear first: from a berth on or near the surface every way round starts by going up.
+		return Centre + Up * (Radius * 1.4);
+	}
+	const FVector ToSlot = (Slot - Centre).GetSafeNormal();
+	const double Angle = FMath::Acos(FMath::Clamp(FVector::DotProduct(Up, ToSlot), -1.0, 1.0));
+	FVector Axis = FVector::CrossProduct(Up, ToSlot).GetSafeNormal();
+	if (Axis.IsNearlyZero())
+	{
+		// The slot straight behind the body: any way round will do.
+		Axis = FVector::CrossProduct(Up, FMath::Abs(Up.Z) < 0.9 ? FVector::UpVector : FVector::ForwardVector).GetSafeNormal();
+	}
+	const double Step = FMath::Min(Angle, FMath::DegreesToRadians(30.0));
+	return Centre + Up.RotateAngleAxisRad(Step, Axis) * FMath::Max(Distance, Radius * 1.35);
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -399,25 +496,119 @@ UCivilization* FAPSFleetCommand::Civilization() const
 int32 FAPSFleetCommand::DivisionLevel(const APSFleet::EDivision Division) const
 {
 	const UCivilization* Civ = Civilization();
-	if (!Civ)
+	int32 Base = 1;
+	if (Civ)
 	{
-		return 1;
+		switch (Division)
+		{
+		case APSFleet::EDivision::MainFleet: Base = Civ->Divisions.Military; break;
+		case APSFleet::EDivision::Exploration: Base = Civ->Divisions.Exploration; break;
+		case APSFleet::EDivision::Science: Base = Civ->Divisions.Science; break;
+		case APSFleet::EDivision::Construction: Base = Civ->Divisions.Industry; break;
+		default: break;
+		}
 	}
+	return Base + GetEarnedLevel(Division);
+}
+
+int32 FAPSFleetCommand::GetDivisionLevel(const APSFleet::EDivision Division) const
+{
+	return DivisionLevel(Division);
+}
+
+FAPSFleetCommand::FWorkTally FAPSFleetCommand::GetWorkTally() const
+{
+	FWorkTally Tally;
+	for (const FAPSFleetBodyRecord& Record : Bodies)
+	{
+		Tally.Surveyed += Record.Survey >= APSFleet::ESurvey::Surveyed ? 1 : 0;
+		Tally.Studied += Record.Survey == APSFleet::ESurvey::Studied ? 1 : 0;
+		Tally.Built += CountOutposts(Record.Body.Get());
+		Tally.Investigated += Record.bHasAnomaly && Record.Anomaly == APSFleet::EAnomalyState::Investigated
+			? (Record.bAnomalyInPerson ? 2 : 1) : 0;
+	}
+	// The home world is known from the start: nobody surveyed it.
+	if (bHomeKnown)
+	{
+		Tally.Surveyed = FMath::Max(Tally.Surveyed - 1, 0);
+		Tally.Studied = FMath::Max(Tally.Studied - 1, 0);
+	}
+	for (const FAPSFleetStructure& Structure : Structures)
+	{
+		Tally.Built += Structure.bBuilt && Structure.Actor.IsValid() ? 1 : 0;
+	}
+	for (const FAPSFleetUnit& Unit : Units)
+	{
+		Tally.Launched += Unit.Ship.IsValid() && Unit.Ship->ActorHasTag(APSFleetPrivate::BuiltTag) ? 1 : 0;
+	}
+	return Tally;
+}
+
+int32 FAPSFleetCommand::GetEarnedLevel(const APSFleet::EDivision Division) const
+{
+	const FWorkTally Tally = GetWorkTally();
 	switch (Division)
 	{
-	case APSFleet::EDivision::MainFleet: return Civ->Divisions.Military;
-	case APSFleet::EDivision::Exploration: return Civ->Divisions.Exploration;
-	case APSFleet::EDivision::Science: return Civ->Divisions.Science;
-	case APSFleet::EDivision::Construction: return Civ->Divisions.Industry;
-	default: return 1;
+	case APSFleet::EDivision::Exploration: return FMath::Clamp(Tally.Surveyed / 3, 0, 3);
+	case APSFleet::EDivision::Science: return FMath::Clamp((Tally.Studied + Tally.Investigated) / 2, 0, 3);
+	case APSFleet::EDivision::Construction: return FMath::Clamp(Tally.Built / 3, 0, 3);
+	default: return 0;
+	}
+}
+
+int32 FAPSFleetCommand::GetEarnedFleetCommandLevel() const
+{
+	return FMath::Clamp(GetWorkTally().Launched / 4, 0, 3);
+}
+
+double FAPSFleetCommand::GetDivisionSpeedFactor(const APSFleet::EDivision Division) const
+{
+	// The line answers first: each military level speeds the main fleet's ships up by 15%.
+	return Division == APSFleet::EDivision::MainFleet ? 1.0 + 0.15 * FMath::Max(DivisionLevel(Division), 0) : 1.0;
+}
+
+float FAPSFleetCommand::GetShipyardRate() const
+{
+	return 1.0f + 0.2f * FMath::Max(DivisionLevel(APSFleet::EDivision::Construction), 0);
+}
+
+void FAPSFleetCommand::AnnouncePromotions()
+{
+	using namespace APSFleet;
+	const int32 Earned[4] = {GetEarnedLevel(EDivision::Exploration), GetEarnedLevel(EDivision::Science),
+		GetEarnedLevel(EDivision::Construction), GetEarnedFleetCommandLevel()};
+	if (!bEarnedPrimed)
+	{
+		FMemory::Memcpy(AnnouncedEarned, Earned, sizeof(Earned));
+		bEarnedPrimed = true;
+		return;
+	}
+	const UCivilization* Civ = Civilization();
+	for (int32 Index = 0; Index < 4; ++Index)
+	{
+		if (Earned[Index] > AnnouncedEarned[Index])
+		{
+			const FText Name = Index == 0 ? LOCTEXT("PromoteExploration", "Exploration")
+				: Index == 1 ? LOCTEXT("PromoteScience", "Science")
+				: Index == 2 ? LOCTEXT("PromoteIndustry", "Industry") : LOCTEXT("PromoteFleetCommand", "Fleet command");
+			const int32 Level = Index == 0 ? DivisionLevel(EDivision::Exploration)
+				: Index == 1 ? DivisionLevel(EDivision::Science)
+				: Index == 2 ? DivisionLevel(EDivision::Construction)
+				: (Civ ? Civ->Divisions.FleetCommand : 0) + Earned[Index];
+			Post(FText::Format(LOCTEXT("Promoted", "{0} division learned from its work: level {1} (+{2} earned). See DIVISIONS."),
+				Name, FText::AsNumber(Level), FText::AsNumber(Earned[Index])));
+		}
+		AnnouncedEarned[Index] = Earned[Index];
 	}
 }
 
 double FAPSFleetCommand::SpeedScale() const
 {
 	const UCivilization* Civ = Civilization();
+	// Each Fleet Command level (the civilization's and the earned) and each sector HQ the fleet built: 10%.
 	return FMath::Max(APSFleetPrivate::CVarSpeedScale.GetValueOnGameThread(), 0.01f)
-		* (1.0 + 0.1 * (Civ ? FMath::Max(Civ->Divisions.FleetCommand, 0) : 0));
+		* (1.0 + 0.1 * ((Civ ? FMath::Max(Civ->Divisions.FleetCommand, 0) : 0) + GetEarnedFleetCommandLevel()
+			+ CountBuiltHeadquarters()));
 }
 
 void FAPSFleetCommand::Post(const FText& Text) const
@@ -495,6 +686,7 @@ FAPSFleetBodyRecord& FAPSFleetCommand::BodyRecord(APlanetaryBody* Body)
 	}
 	FAPSFleetBodyRecord& Record = Bodies.AddDefaulted_GetRef();
 	Record.Body = Body;
+	RollAnomaly(Record, Body);
 	return Record;
 }
 
@@ -585,9 +777,15 @@ void FAPSFleetCommand::RefreshUnits()
 		});
 		++Revision;
 	}
+	RefreshStructures();
 	if (PendingRestore.IsSet())
 	{
 		ApplyPendingRestore();
+	}
+	if (!PendingRestore.IsSet())
+	{
+		AnnouncePromotions();
+		TickAnomalies();
 	}
 	// The home world is known: the colony stands on it.
 	if (!bHomeKnown)
@@ -600,6 +798,8 @@ void FAPSFleetCommand::RefreshUnits()
 				FAPSFleetBodyRecord& Record = BodyRecord(Home);
 				AddFindings(Home, APSFleet::ESurvey::Unknown, APSFleet::ESurvey::Studied, Record.Findings);
 				Record.Survey = APSFleet::ESurvey::Studied;
+				// Anomalies are what ships find: the home world, known from the start, hides none.
+				Record.bHasAnomaly = false;
 				bHomeKnown = true;
 				++Revision;
 			}
@@ -632,9 +832,13 @@ FText FAPSFleetCommand::CheckOrder(const ASpaceship* Ship, const APSFleet::EOrde
 	{
 		return LOCTEXT("PickTarget", "Pick a target on the map.");
 	}
+	EStructure Structure = EStructure::Station;
+	const bool bStructure = StructureOf(Order, Structure);
 	if (!DivisionCan(Unit->Division, Order))
 	{
 		return Order == EOrder::Survey ? LOCTEXT("SurveyDivision", "Surveys need an exploration or science ship.")
+			: Order == EOrder::Expedition ? LOCTEXT("ExpeditionDivision", "Expeditions need an exploration or science ship.")
+			: bStructure ? LOCTEXT("BuildDivision", "Building needs a construction ship.")
 			: LOCTEXT("OutpostDivision", "Outposts need a construction ship.");
 	}
 	const bool bBody = Target->IsA<APlanetaryBody>();
@@ -642,9 +846,60 @@ FText FAPSFleetCommand::CheckOrder(const ASpaceship* Ship, const APSFleet::EOrde
 	{
 		return LOCTEXT("MoveTarget", "Ships fly to planets, moons, stations and outposts.");
 	}
-	if ((Order == EOrder::Survey || Order == EOrder::BuildOutpost) && !bBody)
+	if ((Order == EOrder::Survey || Order == EOrder::BuildOutpost || Order == EOrder::Expedition || bStructure) && !bBody)
 	{
 		return LOCTEXT("BodyTarget", "Pick a planet or a moon.");
+	}
+	if (Order == EOrder::Expedition)
+	{
+		const FAPSFleetBodyRecord* Record = FindBody(Target);
+		if (!Record || !Record->bHasAnomaly || Record->Anomaly < EAnomalyState::Located)
+		{
+			return Record && Record->bHasAnomaly && Record->Anomaly == EAnomalyState::Detected
+				? LOCTEXT("ExpeditionNeedsSite", "The anomaly's site is unknown: a science ship's study locates it.")
+				: LOCTEXT("ExpeditionNoAnomaly", "No anomaly known here: surveys find them, studies locate them.");
+		}
+		if (Record->Anomaly == EAnomalyState::Investigated)
+		{
+			return LOCTEXT("ExpeditionDone", "Its anomaly is investigated already.");
+		}
+		for (const FAPSFleetUnit& Other : Units)
+		{
+			if (&Other != Unit && Other.Order == Order && Other.Target.Get() == Target)
+			{
+				return FText::Format(LOCTEXT("ExpeditionUnderWay", "{0} is on that expedition already."), UnitName(Other));
+			}
+		}
+	}
+	if (bStructure)
+	{
+		// An outpost is the foothold, a station the base for the rest (Rio, 01.10: "after an outpost, a station, a HQ").
+		const int32 Stations = CountStructures(Target, EStructure::Station);
+		if (GetSurvey(Target) == ESurvey::Unknown)
+		{
+			return LOCTEXT("StructureNeedsSurvey", "No data on this world: survey it first.");
+		}
+		if (CountOutposts(Target) == 0 && Stations == 0)
+		{
+			return LOCTEXT("NeedOutpost", "Build an outpost there first: it is the foothold.");
+		}
+		if (NeedsStation(Structure) && Stations == 0)
+		{
+			return LOCTEXT("NeedStation", "Build a station there first.");
+		}
+		if (CountStructures(Target, Structure) >= (Structure == EStructure::Station ? 2 : 1))
+		{
+			return Structure == EStructure::Station ? LOCTEXT("StationLimit", "Two stations already orbit it.")
+				: Structure == EStructure::Shipyard ? LOCTEXT("ShipyardLimit", "A shipyard already orbits it.")
+				: LOCTEXT("HeadquartersLimit", "A headquarters already orbits it.");
+		}
+		for (const FAPSFleetUnit& Other : Units)
+		{
+			if (&Other != Unit && Other.Order == Order && Other.Target.Get() == Target)
+			{
+				return FText::Format(LOCTEXT("AlreadyBuilding", "{0} is already building it there."), UnitName(Other));
+			}
+		}
 	}
 	if (Order == EOrder::Survey && GetSurvey(Target) >= SurveyBy(Unit->Division))
 	{
@@ -847,7 +1102,8 @@ void FAPSFleetCommand::TickUnit(FAPSFleetUnit& Unit, const float DeltaSeconds)
 	case EPhase::Transit:
 	{
 		const FVector Slot = SlotLocation(Unit);
-		// Round any planet, moon or star in the way: head for the first detour point, else the slot.
+		// Round any planet, moon or star in the way, the nearest such first: along its sphere (RoundBody), never
+		// through it; else straight for the slot.
 		FVector Goal = Slot;
 		double BestDistance = TNumericLimits<double>::Max();
 		if (UWorld* LiveWorld = World.Get())
@@ -855,13 +1111,14 @@ void FAPSFleetCommand::TickUnit(FAPSFleetUnit& Unit, const float DeltaSeconds)
 			for (TActorIterator<ACelestialBody> It(LiveWorld); It; ++It)
 			{
 				FVector Point;
-				if (APSFleet::Detour(Ship->GetActorLocation(), Slot, It->GetActorLocation(), APSFleetPrivate::BodyRadiusCm(*It), Point))
+				const double Radius = APSFleetPrivate::BodyRadiusCm(*It);
+				if (APSFleet::Detour(Ship->GetActorLocation(), Slot, It->GetActorLocation(), Radius, Point))
 				{
 					const double Distance = FVector::DistSquared(Ship->GetActorLocation(), Point);
 					if (Distance < BestDistance)
 					{
 						BestDistance = Distance;
-						Goal = Point;
+						Goal = APSFleet::RoundBody(Ship->GetActorLocation(), Slot, It->GetActorLocation(), Radius);
 					}
 				}
 			}
@@ -898,7 +1155,7 @@ void FAPSFleetCommand::Fly(FAPSFleetUnit& Unit, ASpaceship* Ship, const FVector&
 	double Surface = 0.0, Radius = 0.0;
 	const AActor* Near = NearestBody(Location, Surface, Radius);
 	const double Cap = Unit.Phase == APSFleet::EPhase::Departing ? 100000.0
-		: APSFleet::ClassCap(Ship->ActiveClassPreset) * SpeedScale();
+		: APSFleet::ClassCap(Ship->ActiveClassPreset) * SpeedScale() * GetDivisionSpeedFactor(Unit.Division);
 	Unit.Speed = APSFleet::StepSpeed(Unit.Speed, OutRemainingCm, Surface, Cap, DeltaSeconds);
 	if (Distance < 1.0)
 	{
@@ -960,9 +1217,19 @@ void FAPSFleetCommand::Arrive(FAPSFleetUnit& Unit, ASpaceship* Ship)
 	{
 		Unit.Phase = EPhase::Working;
 		Unit.Progress = 0.0f;
-		Unit.WorkLength = static_cast<float>(WorkSeconds(Unit.Order, Unit.Division, DivisionLevel(Unit.Division)));
-		Post(FText::Format(Unit.Order == EOrder::Survey ? LOCTEXT("SurveyStarted", "{0} began surveying {1}.")
-			: LOCTEXT("BuildStarted", "{0} began building an outpost at {1}."), UnitName(Unit), APSFleetPrivate::NameOf(Target)));
+		Unit.WorkLength = static_cast<float>(WorkSeconds(Unit.Order, Unit.Division, DivisionLevel(Unit.Division),
+			CountStructures(Target, EStructure::Station) > 0));
+		EStructure Structure = EStructure::Station;
+		Post(Unit.Order == EOrder::Survey
+			? FText::Format(LOCTEXT("SurveyStarted", "{0} began surveying {1}."), UnitName(Unit), APSFleetPrivate::NameOf(Target))
+			: Unit.Order == EOrder::Expedition
+			? FText::Format(LOCTEXT("ExpeditionStarted", "{0} sent its crew down to the anomaly on {1}."), UnitName(Unit),
+				APSFleetPrivate::NameOf(Target))
+			: StructureOf(Unit.Order, Structure)
+			? FText::Format(LOCTEXT("StructureStarted", "{0} began building {1} at {2}."), UnitName(Unit),
+				APSFleetPrivate::StructureNoun(Structure), APSFleetPrivate::NameOf(Target))
+			: FText::Format(LOCTEXT("BuildStarted", "{0} began building an outpost at {1}."), UnitName(Unit),
+				APSFleetPrivate::NameOf(Target)));
 	}
 	++Revision;
 }
@@ -991,6 +1258,7 @@ void FAPSFleetCommand::FinishWork(FAPSFleetUnit& Unit)
 		AddFindings(Body, Record.Survey, Reached, Lines);
 		Record.Findings.Append(Lines);
 		Record.Survey = Reached;
+		RevealAnomaly(Record, Reached, UnitName(Unit), true);
 		Post(FText::Format(LOCTEXT("SurveyDone", "{0} {1} {2}: {3}."), UnitName(Unit), Reached == ESurvey::Studied
 			? LOCTEXT("StudiedVerb", "studied") : LOCTEXT("SurveyedVerb", "surveyed"), NameOf(Body),
 			FText::Join(FText::FromString(TEXT("; ")), Lines)));
@@ -1004,6 +1272,43 @@ void FAPSFleetCommand::FinishWork(FAPSFleetUnit& Unit)
 				Other.Progress = 1.0f;
 			}
 		}
+		return;
+	}
+	if (Unit.Order == EOrder::Expedition)
+	{
+		InvestigateAnomaly(Record, UnitName(Unit), false, true);
+		return;
+	}
+	if (EStructure Structure = EStructure::Station; StructureOf(Unit.Order, Structure))
+	{
+		const ASpaceship* Ship = Unit.Ship.Get();
+		if (!Ship)
+		{
+			return;
+		}
+		// Beside the builder in its orbit, on the other side from the outposts, spaced by what already stands there.
+		const FVector Radial = Unit.SlotDirection.GetSafeNormal();
+		FVector Along = FVector::CrossProduct(Body->GetActorUpVector(), Radial).GetSafeNormal();
+		Along = Along.IsNearlyZero() ? FVector::ForwardVector : Along;
+		int32 Standing = 0;
+		for (int32 Kind = 0; Kind < static_cast<int32>(EStructure::Count); ++Kind)
+		{
+			Standing += CountStructures(Body, static_cast<EStructure>(Kind));
+		}
+		const FVector Location = Ship->GetActorLocation() - Along * (800000.0 + 600000.0 * Standing);
+		const FText Name = FText::Format(LOCTEXT("StructureTitle", "{0} {1}"), StructureName(Structure), NameOf(Body));
+		const FString ActorName = FString::Printf(TEXT("APS_Fleet_%s_%d"),
+			Structure == EStructure::Shipyard ? TEXT("Shipyard") : Structure == EStructure::Headquarters ? TEXT("HQ")
+				: TEXT("Station"), ++StructureSerial);
+		if (!SpawnStructure(Structure, Body, FTransform(FRotationMatrix::MakeFromZ(Radial).ToQuat(), Location), Name,
+			ActorName))
+		{
+			Post(FText::Format(LOCTEXT("StructureFailed", "{0} could not raise {1} at {2}."), UnitName(Unit),
+				StructureNoun(Structure), NameOf(Body)));
+			return;
+		}
+		Post(FText::Format(LOCTEXT("StructureBuilt", "{0} built {1}. {2}"), UnitName(Unit), Name,
+			StructureEffect(Structure, NameOf(Body))));
 		return;
 	}
 	if (Unit.Order == EOrder::BuildOutpost)
@@ -1070,6 +1375,12 @@ void FAPSFleetCommand::LogUnits() const
 	{
 		UE_LOG(LogTemp, Log, TEXT("[APS.Fleet] body %s %s outposts=%d"), *APSFleetPrivate::NameOf(Record.Body.Get()).ToString(),
 			*APSFleet::SurveyName(Record.Survey).ToString(), CountOutposts(Record.Body.Get()));
+	}
+	for (const FAPSFleetStructure& Structure : Structures)
+	{
+		UE_LOG(LogTemp, Log, TEXT("[APS.Fleet] structure %s %s at %s%s"), *GetNameSafe(Structure.Actor.Get()),
+			*APSFleet::StructureName(Structure.Kind).ToString(), *APSFleetPrivate::NameOf(Structure.Body.Get()).ToString(),
+			Structure.bBuilt ? TEXT(" (built by the fleet)") : TEXT(""));
 	}
 }
 
@@ -1174,6 +1485,40 @@ FArchive& operator<<(FArchive& Ar, FAPSFleetSaveData& Data)
 		Ar << Outpost.BodyKey << Outpost.RelativeTransform << Outpost.Name;
 	}
 	return Ar;
+}
+
+void FAPSFleetSaveData::SerializeExtras(FArchive& Ar, FAPSFleetSaveData& Data)
+{
+	int32 StructureCount = Data.Structures.Num();
+	Ar << StructureCount;
+	if (Ar.IsLoading())
+	{
+		Data.Structures.SetNum(FMath::Clamp(StructureCount, 0, 4096));
+	}
+	for (FStructure& Structure : Data.Structures)
+	{
+		Ar << Structure.Kind << Structure.BodyKey << Structure.RelativeTransform << Structure.Name << Structure.ActorName;
+	}
+	int32 JobCount = Data.ShipyardJobs.Num();
+	Ar << JobCount;
+	if (Ar.IsLoading())
+	{
+		Data.ShipyardJobs.SetNum(FMath::Clamp(JobCount, 0, 4096));
+	}
+	for (FShipyardJob& Job : Data.ShipyardJobs)
+	{
+		Ar << Job.ClassPath << Job.SizeClass << Job.Name << Job.Length << Job.Progress << Job.YardKey;
+	}
+	int32 InvestigationCount = Data.Investigations.Num();
+	Ar << InvestigationCount;
+	if (Ar.IsLoading())
+	{
+		Data.Investigations.SetNum(FMath::Clamp(InvestigationCount, 0, 4096));
+	}
+	for (TPair<FString, uint8>& Investigation : Data.Investigations)
+	{
+		Ar << Investigation.Key << Investigation.Value;
+	}
 }
 
 FString FAPSFleetCommand::KeyOf(const AActor* Actor)
@@ -1300,6 +1645,43 @@ void FAPSFleetCommand::CaptureSave(FAPSFleetSaveData& OutData) const
 			}
 		}
 	}
+	for (const FAPSFleetBodyRecord& Body : Bodies)
+	{
+		if (Body.Body.IsValid() && Body.bHasAnomaly && Body.Anomaly == EAnomalyState::Investigated)
+		{
+			OutData.Investigations.Emplace(KeyOf(Body.Body.Get()), Body.bAnomalyInPerson ? 2 : 1);
+		}
+	}
+	// Only what the fleet built: the generator raises the home complex again by itself.
+	for (const FAPSFleetStructure& Structure : Structures)
+	{
+		const AActor* Actor = Structure.Actor.Get();
+		const APlanetaryBody* Body = Structure.Body.Get();
+		if (!Structure.bBuilt || !Actor || !Body)
+		{
+			continue;
+		}
+		FAPSFleetSaveData::FStructure& Record = OutData.Structures.AddDefaulted_GetRef();
+		Record.Kind = static_cast<uint8>(Structure.Kind);
+		Record.BodyKey = KeyOf(Body);
+		Record.RelativeTransform = Actor->GetActorTransform().GetRelativeTransform(Body->GetActorTransform());
+		Record.Name = IItemInfoInterface::Execute_GetInGameName(Actor).ToString();
+		Record.ActorName = Actor->GetName();
+	}
+	for (const FAPSShipyardJob& Job : ShipyardQueue)
+	{
+		if (!Job.ShipClass)
+		{
+			continue;
+		}
+		FAPSFleetSaveData::FShipyardJob& Record = OutData.ShipyardJobs.AddDefaulted_GetRef();
+		Record.ClassPath = Job.ShipClass->GetPathName();
+		Record.SizeClass = static_cast<uint8>(Job.SizeClass);
+		Record.Name = Job.Name.ToString();
+		Record.Length = Job.Length;
+		Record.Progress = Job.Progress;
+		Record.YardKey = KeyOf(Job.Yard.Get());
+	}
 }
 
 void FAPSFleetCommand::SetPendingRestore(FAPSFleetSaveData&& Data)
@@ -1336,7 +1718,26 @@ void FAPSFleetCommand::ApplyPendingRestore()
 				AddFindings(Body, Record.Survey, Level, Record.Findings);
 				Record.Survey = Level;
 			}
+			RevealAnomaly(Record, Record.Survey, FText::GetEmpty(), false);
 		}
+	}
+	// The fleet's stations, shipyards and HQs first, under their saved names: units and slipway jobs refer to them.
+	int32 StructuresBack = 0;
+	for (const FAPSFleetSaveData::FStructure& Saved : Data.Structures)
+	{
+		APlanetaryBody* Body = Cast<APlanetaryBody>(FindByKey(Saved.BodyKey));
+		if (!Body || Saved.Kind >= static_cast<uint8>(EStructure::Count)
+			|| (!Saved.ActorName.IsEmpty() && FindByKey(TEXT("ACTOR:") + Saved.ActorName)))
+		{
+			continue;
+		}
+		FString Digits;
+		if (Saved.ActorName.Split(TEXT("_"), nullptr, &Digits, ESearchCase::IgnoreCase, ESearchDir::FromEnd))
+		{
+			StructureSerial = FMath::Max(StructureSerial, FCString::Atoi(*Digits));
+		}
+		StructuresBack += SpawnStructure(static_cast<EStructure>(Saved.Kind), Body,
+			Saved.RelativeTransform * Body->GetActorTransform(), FText::FromString(Saved.Name), Saved.ActorName) ? 1 : 0;
 	}
 	int32 Outposts = 0;
 	for (const FAPSFleetSaveData::FOutpost& Saved : Data.Outposts)
@@ -1359,7 +1760,8 @@ void FAPSFleetCommand::ApplyPendingRestore()
 		}
 		const AActor* Reference = FindByKey(Saved.ReferenceKey);
 		UClass* Class = LoadClass<ASpaceship>(nullptr, *Saved.SpawnClassPath);
-		ASpaceship* Ship = Class && Reference ? LaunchShip(Class, Saved.RelativeTransform * Reference->GetActorTransform()) : nullptr;
+		ASpaceship* Ship = Class && Reference ? LaunchShip(Class, Saved.RelativeTransform * Reference->GetActorTransform(), nullptr)
+			: nullptr;
 		if (!Ship)
 		{
 			continue;
@@ -1405,7 +1807,7 @@ void FAPSFleetCommand::ApplyPendingRestore()
 					ETeleportType::TeleportPhysics);
 			}
 		}
-		Unit->Order = static_cast<EOrder>(FMath::Min<uint8>(Saved.Order, static_cast<uint8>(EOrder::Return)));
+		Unit->Order = static_cast<EOrder>(FMath::Min<uint8>(Saved.Order, static_cast<uint8>(LastOrder)));
 		Unit->Phase = static_cast<EPhase>(FMath::Min<uint8>(Saved.Phase, static_cast<uint8>(EPhase::Holding)));
 		Unit->Target = FindByKey(Saved.TargetKey);
 		Unit->SlotDirection = Saved.SlotDirection;
@@ -1428,8 +1830,33 @@ void FAPSFleetCommand::ApplyPendingRestore()
 			Ship->AttachToActor(Unit->Target.Get(), FAttachmentTransformRules::KeepWorldTransform);
 		}
 	}
-	UE_LOG(LogTemp, Log, TEXT("[APS.Fleet] restored %d of %d units, %d surveys, %d outposts"), Restored, Data.Units.Num(),
-		Data.Surveys.Num(), Outposts);
+	for (const TPair<FString, uint8>& Saved : Data.Investigations)
+	{
+		if (APlanetaryBody* Body = Cast<APlanetaryBody>(FindByKey(Saved.Key)))
+		{
+			InvestigateAnomaly(BodyRecord(Body), FText::GetEmpty(), Saved.Value == 2, false);
+		}
+	}
+	// The slipways: a job whose shipyard did not come back moves to the home one (TickShipyard).
+	for (const FAPSFleetSaveData::FShipyardJob& Saved : Data.ShipyardJobs)
+	{
+		UClass* Class = LoadClass<ASpaceship>(nullptr, *Saved.ClassPath);
+		if (!Class)
+		{
+			continue;
+		}
+		FAPSShipyardJob& Job = ShipyardQueue.AddDefaulted_GetRef();
+		Job.ShipClass = Class;
+		Job.SizeClass = static_cast<ESpaceshipSizeClass>(Saved.SizeClass);
+		Job.Name = FText::FromString(Saved.Name);
+		Job.Length = FMath::Max(Saved.Length, 1.0f);
+		Job.Progress = FMath::Clamp(Saved.Progress, 0.0f, 0.999f);
+		Job.Yard = Cast<ASpaceShipyard>(FindByKey(Saved.YardKey));
+	}
+	UE_LOG(LogTemp, Log, TEXT("[APS.Fleet] restored %d of %d units, %d surveys, %d outposts, %d of %d structures, %d slipway jobs"),
+		Restored, Data.Units.Num(), Data.Surveys.Num(), Outposts, StructuresBack, Data.Structures.Num(), Data.ShipyardJobs.Num());
+	// The levels the restored work earned were announced in the saved journal already.
+	bEarnedPrimed = false;
 	++Revision;
 }
 
@@ -1443,21 +1870,10 @@ ASpaceShipyard* FAPSFleetCommand::FindShipyard() const
 	{
 		return nullptr;
 	}
-	// The civilization's own shipyard first (the escorts wait there), else any.
-	ASpaceShipyard* Any = nullptr;
-	for (TActorIterator<ASpaceShipyard> It(LiveWorld); It; ++It)
-	{
-		if (!IsValid(*It))
-		{
-			continue;
-		}
-		if (It->ActorHasTag(TEXT("APS.GeneratedCivilization")))
-		{
-			return *It;
-		}
-		Any = Any ? Any : *It;
-	}
-	return Any;
+	// The home shipyard (the escorts wait there): GetShipyards lists it first.
+	TArray<ASpaceShipyard*> Yards;
+	GetShipyards(Yards);
+	return Yards.IsEmpty() ? nullptr : Yards[0];
 }
 
 void FAPSFleetCommand::GetShipyardOptions(TArray<FAPSShipyardOption>& OutOptions) const
@@ -1480,7 +1896,7 @@ void FAPSFleetCommand::GetShipyardOptions(TArray<FAPSShipyardOption>& OutOptions
 	{
 		return;
 	}
-	const float Industry = 1.0f + 0.2f * FMath::Max(DivisionLevel(APSFleet::EDivision::Construction), 0);
+	const float Industry = GetShipyardRate();
 	for (const FAPSShipCatalogEntry& Entry : Catalog->Ships)
 	{
 		if (!Entry.ShipClass)
@@ -1503,27 +1919,78 @@ void FAPSFleetCommand::GetShipyardOptions(TArray<FAPSShipyardOption>& OutOptions
 	});
 }
 
-FText FAPSFleetCommand::OrderShip(const FAPSShipyardOption& Option)
+void FAPSFleetCommand::GetShipyards(TArray<ASpaceShipyard*>& OutYards) const
+{
+	using namespace APSFleetPrivate;
+	OutYards.Reset();
+	UWorld* LiveWorld = World.Get();
+	if (!LiveWorld)
+	{
+		return;
+	}
+	// One civilization per world: every shipyard is its own. The generator does not tag the home complex, the
+	// construction ships tag what they raise (StructureTag).
+	for (TActorIterator<ASpaceShipyard> It(LiveWorld); It; ++It)
+	{
+		if (IsValid(*It))
+		{
+			OutYards.Add(*It);
+		}
+	}
+	// The home shipyard first, then those the construction ships raised, in the order they went up.
+	OutYards.StableSort([](const ASpaceShipyard& A, const ASpaceShipyard& B)
+	{
+		return !A.ActorHasTag(StructureTag) && B.ActorHasTag(StructureTag);
+	});
+}
+
+int32 FAPSFleetCommand::CountQueued(const ASpaceShipyard* Yard) const
+{
+	int32 Count = 0;
+	for (const FAPSShipyardJob& Job : ShipyardQueue)
+	{
+		Count += Job.Yard.Get() == Yard ? 1 : 0;
+	}
+	return Count;
+}
+
+int32 FAPSFleetCommand::GetLaunchedCount(const ASpaceShipyard* Yard) const
+{
+	for (const TPair<TWeakObjectPtr<ASpaceShipyard>, int32>& Entry : LaunchedAt)
+	{
+		if (Entry.Key.Get() == Yard)
+		{
+			return Entry.Value;
+		}
+	}
+	return 0;
+}
+
+FText FAPSFleetCommand::OrderShip(const FAPSShipyardOption& Option, ASpaceShipyard* Yard)
 {
 	if (!Option.ShipClass)
 	{
 		return LOCTEXT("NoShipClass", "Pick a ship.");
 	}
-	if (!FindShipyard())
+	Yard = IsValid(Yard) ? Yard : FindShipyard();
+	if (!Yard)
 	{
 		return LOCTEXT("NoShipyard", "No shipyard in this world.");
 	}
-	if (ShipyardQueue.Num() >= ShipyardQueueLimit)
+	const FText YardName = DisplayName(Yard);
+	if (CountQueued(Yard) >= ShipyardQueueLimit)
 	{
-		return FText::Format(LOCTEXT("SlipwayFull", "The slipway is full: {0} ships queued."), FText::AsNumber(ShipyardQueueLimit));
+		return FText::Format(LOCTEXT("SlipwayFull", "The slipway of {0} is full: {1} ships queued. Pick another shipyard."),
+			YardName, FText::AsNumber(ShipyardQueueLimit));
 	}
 	FAPSShipyardJob& Job = ShipyardQueue.AddDefaulted_GetRef();
 	Job.ShipClass = Option.ShipClass;
 	Job.SizeClass = Option.SizeClass;
 	Job.Name = Option.Name;
 	Job.Length = FMath::Max(Option.BuildSeconds, 1.0f);
+	Job.Yard = Yard;
 	++Revision;
-	Post(FText::Format(LOCTEXT("ShipOrdered", "Shipyard: {0} (class {1}) laid down, about {2} s."), Option.Name,
+	Post(FText::Format(LOCTEXT("ShipOrdered", "{0}: {1} (class {2}) laid down, about {3} s."), YardName, Option.Name,
 		APSFleetPrivate::EnumText(Option.SizeClass), FText::AsNumber(FMath::RoundToInt(Job.Length))));
 	return FText::GetEmpty();
 }
@@ -1534,47 +2001,86 @@ void FAPSFleetCommand::TickShipyard(const float DeltaSeconds)
 	{
 		return;
 	}
-	FAPSShipyardJob& Job = ShipyardQueue[0];
-	Job.Progress = FMath::Min(1.0f, Job.Progress + DeltaSeconds
-		* FMath::Max(APSFleetPrivate::CVarBuildScale.GetValueOnGameThread(), 0.0f) / FMath::Max(Job.Length, 0.1f));
-	if (Job.Progress < 1.0f)
+	// A job whose shipyard is gone (or did not come back with a load) moves to the home one.
+	ASpaceShipyard* Home = nullptr;
+	bool bHomeFound = false;
+	for (FAPSShipyardJob& Job : ShipyardQueue)
 	{
-		return;
+		if (!Job.Yard.IsValid())
+		{
+			if (!bHomeFound)
+			{
+				Home = FindShipyard();
+				bHomeFound = true;
+			}
+			Job.Yard = Home;
+		}
 	}
-	ASpaceShipyard* Shipyard = FindShipyard();
-	if (!Shipyard)
+	// Every shipyard builds the first ship of its own queue.
+	const float Rate = FMath::Max(APSFleetPrivate::CVarBuildScale.GetValueOnGameThread(), 0.0f);
+	TArray<const ASpaceShipyard*, TInlineAllocator<8>> Busy;
+	for (int32 Index = 0; Index < ShipyardQueue.Num(); ++Index)
 	{
-		return;
+		FAPSShipyardJob& Job = ShipyardQueue[Index];
+		ASpaceShipyard* Shipyard = Job.Yard.Get();
+		if (!Shipyard || Busy.Contains(Shipyard))
+		{
+			continue;
+		}
+		Busy.Add(Shipyard);
+		Job.Progress = FMath::Min(1.0f, Job.Progress + DeltaSeconds * Rate / FMath::Max(Job.Length, 0.1f));
+		if (Job.Progress < 1.0f)
+		{
+			continue;
+		}
+		// Above the shipyard, four abreast, a row per four ships.
+		const int32 Slot = LaunchedAt.FindRef(Shipyard);
+		constexpr double Spacing = 30000.0;
+		const FVector Base = Shipyard->SpawnPoint ? Shipyard->SpawnPoint->GetComponentLocation() : Shipyard->GetActorLocation();
+		const FVector Location = Base + Shipyard->GetActorRightVector() * ((Slot % 4) - 1.5) * Spacing
+			+ Shipyard->GetActorUpVector() * (Slot / 4 + 1) * Spacing;
+		const FAPSShipyardJob Launched = Job;
+		ShipyardQueue.RemoveAt(Index--);
+		ASpaceship* Ship = LaunchShip(Launched.ShipClass, FTransform(Shipyard->GetActorQuat(), Location), Shipyard);
+		if (!Ship)
+		{
+			Post(FText::Format(LOCTEXT("LaunchFailed", "{0}: {1} could not be launched."), DisplayName(Shipyard), Launched.Name));
+			continue;
+		}
+		LaunchedAt.FindOrAdd(Shipyard) = Slot + 1;
+		++LaunchedCount;
+		RefreshUnits();
+		const FAPSFleetUnit* Unit = FindUnit(Ship);
+		Post(FText::Format(LOCTEXT("ShipLaunched", "{0} launched {1}: {2}, {3}."), DisplayName(Shipyard),
+			FText::FromString(Unit ? Unit->CallSign : Ship->GetName()), Launched.Name,
+			Unit ? APSFleet::DivisionName(Unit->Division) : FText::GetEmpty()));
 	}
-	// Above the shipyard, four abreast, a row per four ships.
-	const int32 Slot = LaunchedCount;
-	constexpr double Spacing = 30000.0;
-	const FVector Base = Shipyard->SpawnPoint ? Shipyard->SpawnPoint->GetComponentLocation() : Shipyard->GetActorLocation();
-	const FVector Location = Base + Shipyard->GetActorRightVector() * ((Slot % 4) - 1.5) * Spacing
-		+ Shipyard->GetActorUpVector() * (Slot / 4 + 1) * Spacing;
-	const FAPSShipyardJob Launched = Job;
-	ShipyardQueue.RemoveAt(0);
-	ASpaceship* Ship = LaunchShip(Launched.ShipClass, FTransform(Shipyard->GetActorQuat(), Location));
-	if (!Ship)
-	{
-		Post(FText::Format(LOCTEXT("LaunchFailed", "Shipyard: {0} could not be launched."), Launched.Name));
-		return;
-	}
-	++LaunchedCount;
-	RefreshUnits();
-	const FAPSFleetUnit* Unit = FindUnit(Ship);
-	Post(FText::Format(LOCTEXT("ShipLaunched", "Shipyard launched {0}: {1}, {2}."), FText::FromString(Unit ? Unit->CallSign : Ship->GetName()),
-		Launched.Name, Unit ? APSFleet::DivisionName(Unit->Division) : FText::GetEmpty()));
 }
 
-ASpaceship* FAPSFleetCommand::LaunchShip(const TSubclassOf<ASpaceship> ShipClass, const FTransform& Transform)
+ASpaceship* FAPSFleetCommand::LaunchShip(const TSubclassOf<ASpaceship> ShipClass, const FTransform& Transform,
+	ASpaceShipyard* Shipyard)
 {
 	using namespace APSFleetPrivate;
 	UWorld* LiveWorld = World.Get();
-	ASpaceShipyard* Shipyard = FindShipyard();
 	if (!LiveWorld || !ShipClass)
 	{
 		return nullptr;
+	}
+	if (!Shipyard)
+	{
+		// A ship back from a save: the shipyard it waits at, if any is near.
+		TArray<ASpaceShipyard*> Yards;
+		GetShipyards(Yards);
+		double Best = TNumericLimits<double>::Max();
+		for (ASpaceShipyard* Candidate : Yards)
+		{
+			const double Distance = FVector::DistSquared(Candidate->GetActorLocation(), Transform.GetLocation());
+			if (Distance < Best)
+			{
+				Best = Distance;
+				Shipyard = Candidate;
+			}
+		}
 	}
 	FActorSpawnParameters Parameters;
 	Parameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
@@ -1589,10 +2095,14 @@ ASpaceship* FAPSFleetCommand::LaunchShip(const TSubclassOf<ASpaceship> ShipClass
 		if (Unit.Ship.IsValid() && Unit.Ship->OffsetSystem)
 		{
 			Ship->OffsetSystem = Unit.Ship->OffsetSystem;
+			if (Ship->OnboardComputer)
+			{
+				Ship->OnboardComputer->OffsetSystem = Unit.Ship->OffsetSystem;
+			}
 			break;
 		}
 	}
-	Ship->Tags.AddUnique(TEXT("APS.GeneratedCivilization"));
+	Ship->Tags.AddUnique(CivilizationTag);
 	Ship->Tags.AddUnique(UnitTag);
 	Ship->Tags.AddUnique(BuiltTag);
 	if (Shipyard && FVector::Dist(Ship->GetActorLocation(), Shipyard->GetActorLocation()) < 2000000.0)
@@ -1601,6 +2111,141 @@ ASpaceship* FAPSFleetCommand::LaunchShip(const TSubclassOf<ASpaceship> ShipClass
 	}
 	++Revision;
 	return Ship;
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Structures
+
+ASpaceStation* FAPSFleetCommand::SpawnStructure(const APSFleet::EStructure Kind, APlanetaryBody* Body,
+	const FTransform& Transform, const FText& Name, const FString& ActorName)
+{
+	using namespace APSFleet;
+	using namespace APSFleetPrivate;
+	UWorld* LiveWorld = World.Get();
+	if (!LiveWorld || !Body)
+	{
+		return nullptr;
+	}
+	// The classes the home complex was raised with (the menu's station, shipyard and headquarters choices).
+	TSubclassOf<ASpaceStation> Class;
+	for (TActorIterator<AAstroGenerator> It(LiveWorld); It && !Class; ++It)
+	{
+		if (IsValid(*It))
+		{
+			Class = Kind == EStructure::Shipyard ? TSubclassOf<ASpaceStation>(It->BP_HomeSpaceShipyard)
+				: Kind == EStructure::Headquarters ? TSubclassOf<ASpaceStation>(It->BP_HomeSpaceHeadquarters)
+				: It->BP_HomeSpaceStation;
+		}
+	}
+	if (!Class)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[APS.Fleet] no %s class in this world (no generator)"), *StructureName(Kind).ToString());
+		return nullptr;
+	}
+	FActorSpawnParameters Parameters;
+	Parameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	if (!ActorName.IsEmpty())
+	{
+		Parameters.Name = FName(*ActorName);
+		Parameters.NameMode = FActorSpawnParameters::ESpawnActorNameMode::Requested;
+	}
+	ASpaceStation* Station = LiveWorld->SpawnActor<ASpaceStation>(Class, Transform.GetLocation(), Transform.Rotator(), Parameters);
+	if (!Station)
+	{
+		return nullptr;
+	}
+	Station->AttachToActor(Body, FAttachmentTransformRules::KeepWorldTransform);
+	Station->CalculateAffectionRadius();
+	Station->Tags.AddUnique(CivilizationTag);
+	Station->Tags.AddUnique(StructureTag);
+	Station->Tags.AddUnique(Kind == EStructure::Shipyard ? FName(TEXT("APS.Infrastructure.Shipyard"))
+		: Kind == EStructure::Headquarters ? FName(TEXT("APS.Infrastructure.Headquarters"))
+		: FName(TEXT("APS.Infrastructure.OrbitalStation")));
+	if (ASpaceHeadquarters* Headquarters = Cast<ASpaceHeadquarters>(Station))
+	{
+		Headquarters->Civilization = Civilization();
+	}
+	// The world actor keeps its display name protected; it is a reflected property, so set it through reflection.
+	if (FTextProperty* NameProperty = FindFProperty<FTextProperty>(Station->GetClass(), TEXT("InGameName")))
+	{
+		NameProperty->SetPropertyValue_InContainer(Station, Name);
+	}
+	if (UCivilization* Civ = Civilization())
+	{
+		++Civ->Infrastructure.OrbitalStations;
+	}
+	FAPSFleetStructure& Record = Structures.AddDefaulted_GetRef();
+	Record.Actor = Station;
+	Record.Body = Body;
+	Record.Kind = Kind;
+	Record.bBuilt = true;
+	UE_LOG(LogTemp, Log, TEXT("[APS.Fleet] structure %s (%s) at %s, %.0f km from its centre"), *Station->GetName(),
+		*StructureName(Kind).ToString(), *NameOf(Body).ToString(),
+		FVector::Dist(Station->GetActorLocation(), Body->GetActorLocation()) / 100000.0);
+	++Revision;
+	return Station;
+}
+
+void FAPSFleetCommand::RefreshStructures()
+{
+	using namespace APSFleet;
+	Structures.Reset();
+	UWorld* LiveWorld = World.Get();
+	if (!LiveWorld)
+	{
+		return;
+	}
+	for (TActorIterator<ASpaceStation> It(LiveWorld); It; ++It)
+	{
+		APlanetaryBody* Body = IsValid(*It) ? OrbitedBody(*It) : nullptr;
+		if (!Body)
+		{
+			continue;
+		}
+		FAPSFleetStructure& Record = Structures.AddDefaulted_GetRef();
+		Record.Actor = *It;
+		Record.Body = Body;
+		Record.Kind = It->IsA<ASpaceShipyard>() ? EStructure::Shipyard
+			: It->IsA<ASpaceHeadquarters>() ? EStructure::Headquarters : EStructure::Station;
+		Record.bBuilt = It->ActorHasTag(APSFleetPrivate::StructureTag);
+	}
+}
+
+int32 FAPSFleetCommand::CountStructures(const AActor* Body, const APSFleet::EStructure Kind) const
+{
+	int32 Count = 0;
+	for (const FAPSFleetStructure& Structure : Structures)
+	{
+		Count += Body && Structure.Kind == Kind && Structure.Actor.IsValid() && Structure.Body.Get() == Body ? 1 : 0;
+	}
+	return Count;
+}
+
+int32 FAPSFleetCommand::CountBuiltHeadquarters() const
+{
+	int32 Count = 0;
+	for (const FAPSFleetStructure& Structure : Structures)
+	{
+		Count += Structure.bBuilt && Structure.Kind == APSFleet::EStructure::Headquarters && Structure.Actor.IsValid() ? 1 : 0;
+	}
+	return Count;
+}
+
+APlanetaryBody* FAPSFleetCommand::OrbitedBody(const AActor* Actor)
+{
+	for (AActor* Parent = Actor ? Actor->GetAttachParentActor() : nullptr; Parent; Parent = Parent->GetAttachParentActor())
+	{
+		if (APlanetaryBody* Body = Cast<APlanetaryBody>(Parent))
+		{
+			return Body;
+		}
+	}
+	return nullptr;
+}
+
+FText FAPSFleetCommand::DisplayName(const AActor* Actor)
+{
+	return APSFleetPrivate::NameOf(Actor);
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -1622,7 +2267,7 @@ namespace APSFleetPrivate
 		}));
 
 	FAutoConsoleCommandWithWorldAndArgs OrderCommand(TEXT("aps.Fleet.Order"),
-		TEXT("aps.Fleet.Order <all|call sign|division> <move|survey|outpost|return|cancel> [target name, or moon/planet/station]"),
+		TEXT("aps.Fleet.Order <all|call sign|division> <move|survey|expedition|outpost|station|shipyard|hq|return|cancel> [target name, or moon/planet/station]"),
 		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
 		{
 			FAPSFleetCommand* Fleet = APSFleetFind(World);
@@ -1636,11 +2281,63 @@ namespace APSFleetPrivate
 			const APSFleet::EOrder Order = Verb.Equals(TEXT("move"), ESearchCase::IgnoreCase) ? APSFleet::EOrder::Move
 				: Verb.Equals(TEXT("survey"), ESearchCase::IgnoreCase) ? APSFleet::EOrder::Survey
 				: Verb.Equals(TEXT("outpost"), ESearchCase::IgnoreCase) ? APSFleet::EOrder::BuildOutpost
+				: Verb.Equals(TEXT("station"), ESearchCase::IgnoreCase) ? APSFleet::EOrder::BuildStation
+				: Verb.Equals(TEXT("shipyard"), ESearchCase::IgnoreCase) ? APSFleet::EOrder::BuildShipyard
+				: Verb.Equals(TEXT("hq"), ESearchCase::IgnoreCase) ? APSFleet::EOrder::BuildHeadquarters
+				: Verb.Equals(TEXT("expedition"), ESearchCase::IgnoreCase) ? APSFleet::EOrder::Expedition
 				: Verb.Equals(TEXT("return"), ESearchCase::IgnoreCase) ? APSFleet::EOrder::Return : APSFleet::EOrder::None;
 			FText Refusal;
 			const int32 Issued = Fleet->ConsoleOrder(Args[0], Order, Args.Num() > 2 ? Args[2] : FString(), Refusal);
 			UE_LOG(LogTemp, Log, TEXT("[APS.Fleet] order %s %s -> %d ship(s)%s%s"), *Args[0], *Verb, Issued,
 				Refusal.IsEmpty() ? TEXT("") : TEXT("; refused: "), *Refusal.ToString());
+		}));
+
+	FAutoConsoleCommandWithWorld AnomaliesCommand(TEXT("aps.Fleet.Anomalies"),
+		TEXT("Logs the anomaly every planet and moon hides (kind, state, site) and its beacon."),
+		FConsoleCommandWithWorldDelegate::CreateLambda([](UWorld* World)
+		{
+			if (FAPSFleetCommand* Fleet = APSFleetFind(World))
+			{
+				Fleet->LogAnomalies();
+			}
+		}));
+
+	FAutoConsoleCommandWithWorldAndArgs ShipyardCommand(TEXT("aps.Fleet.Shipyard"),
+		TEXT("aps.Fleet.Shipyard [ship name] [shipyard number]: lists the shipyards and their slipways, or lays a catalogue ")
+		TEXT("ship down at one (1 = the home shipyard; underscores stand for spaces)."),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
+		{
+			FAPSFleetCommand* Fleet = APSFleetFind(World);
+			if (!Fleet)
+			{
+				UE_LOG(LogTemp, Warning, TEXT("[APS.Fleet] no fleet command in this world"));
+				return;
+			}
+			TArray<ASpaceShipyard*> Yards;
+			Fleet->GetShipyards(Yards);
+			if (Args.Num() > 0)
+			{
+				TArray<FAPSShipyardOption> Options;
+				Fleet->GetShipyardOptions(Options);
+				const FString Wanted = Args[0].Replace(TEXT("_"), TEXT(" "));
+				const FAPSShipyardOption* Option = Options.FindByPredicate([&Wanted](const FAPSShipyardOption& Candidate)
+				{
+					return Candidate.Name.ToString().Contains(Wanted, ESearchCase::IgnoreCase);
+				});
+				const int32 YardIndex = Args.Num() > 1 ? FCString::Atoi(*Args[1]) - 1 : 0;
+				const FText Refusal = Option
+					? Fleet->OrderShip(*Option, Yards.IsValidIndex(YardIndex) ? Yards[YardIndex] : nullptr)
+					: FText::FromString(TEXT("no such ship in the catalogue"));
+				UE_LOG(LogTemp, Log, TEXT("[APS.Fleet] shipyard order %s at %d: %s"), *Args[0], YardIndex + 1,
+					Refusal.IsEmpty() ? TEXT("laid down") : *Refusal.ToString());
+			}
+			for (int32 Index = 0; Index < Yards.Num(); ++Index)
+			{
+				UE_LOG(LogTemp, Log, TEXT("[APS.Fleet] shipyard %d %s at %s: %d queued, %d launched"), Index + 1,
+					*FAPSFleetCommand::DisplayName(Yards[Index]).ToString(),
+					*FAPSFleetCommand::DisplayName(FAPSFleetCommand::OrbitedBody(Yards[Index])).ToString(),
+					Fleet->CountQueued(Yards[Index]), Fleet->GetLaunchedCount(Yards[Index]));
+			}
 		}));
 
 	/**
@@ -1654,6 +2351,14 @@ namespace APSFleetPrivate
 	{
 		bool bActive{false};
 		bool bQuit{false};
+		/** build: after the outpost a station, then a shipyard there, then a ship laid down and launched at it. */
+		bool bBuild{false};
+		/** anomaly: science studies a world that hides an anomaly (its site gets located), then an expedition goes down. */
+		bool bAnomaly{false};
+		TWeakObjectPtr<ASpaceShipyard> Yard;
+		int32 LaunchedBefore{0};
+		/** build: every terminal tab is shot once at the end (shipyards, journal, divisions with the chain's results). */
+		bool bTabsShot{false};
 		FString Label;
 		int32 Stage{0};
 		double Started{0.0};
@@ -1727,6 +2432,42 @@ namespace APSFleetPrivate
 				return true;
 			}
 			Fleet->LogUnits();
+			if (GAutoTest.bAnomaly)
+			{
+				// The first world (not home) that hides an anomaly; the science ships study it, which locates the site.
+				Fleet->LogAnomalies();
+				APlanetaryBody* Hidden = nullptr;
+				for (TActorIterator<APlanetaryBody> It(World); It && !Hidden; ++It)
+				{
+					const FAPSFleetBodyRecord* Record = Fleet->FindBody(*It);
+					Hidden = Record && Record->bHasAnomaly && Record->Anomaly == EAnomalyState::Hidden ? *It : nullptr;
+				}
+				if (!Hidden)
+				{
+					return Finish(TEXT("no world hides an anomaly"));
+				}
+				TArray<ASpaceship*> Science;
+				for (const FAPSFleetUnit& Unit : Fleet->GetUnits())
+				{
+					if (Unit.Division == EDivision::Science && Unit.Ship.IsValid())
+					{
+						Science.Add(Unit.Ship.Get());
+					}
+				}
+				const int32 Issued = Fleet->IssueOrder(Science, EOrder::Survey, Hidden, Refusal);
+				UE_LOG(LogTemp, Log, TEXT("[APS.Fleet] autotest: science study of %s for its anomaly -> %d ship(s) %s"),
+					*Hidden->GetName(), Issued, *Refusal.ToString());
+				GAutoTest.SurveyTarget = Hidden;
+				GAutoTest.Stage = Issued > 0 ? 10 : 3;
+				GAutoTest.StageSeconds = Now + 6.0;
+				if (UAPSColonyTerminalSubsystem* Terminal = World->GetSubsystem<UAPSColonyTerminalSubsystem>();
+					Terminal && !Terminal->IsTerminalOpen())
+				{
+					Terminal->ToggleFleetCommand();
+				}
+				GAutoTest.NextShot = Now + 3.0;
+				break;
+			}
 			{
 				int32 Issued = Fleet->ConsoleOrder(TEXT("exploration"), EOrder::Survey, TEXT("moon"), Refusal);
 				if (Issued == 0)
@@ -1787,16 +2528,132 @@ namespace APSFleetPrivate
 		case 2:
 			if (Fleet->CountOutposts(GAutoTest.SurveyTarget.Get()) > 0)
 			{
+				GAutoTest.Stage = GAutoTest.bBuild ? 4 : 3;
+				GAutoTest.StageSeconds = Now + 6.0;
+			}
+			break;
+		case 4:
+		case 5:
+		{
+			// The builder holds where it raised the outpost: a station next, then (once it stands) a shipyard.
+			if (GAutoTest.Stage == 5 && Fleet->CountStructures(GAutoTest.SurveyTarget.Get(), EStructure::Station) == 0)
+			{
+				break;
+			}
+			const EOrder Next = GAutoTest.Stage == 4 ? EOrder::BuildStation : EOrder::BuildShipyard;
+			TArray<ASpaceship*> Builders;
+			for (const FAPSFleetUnit& Unit : Fleet->GetUnits())
+			{
+				if (Unit.Division == EDivision::Construction && Unit.Ship.IsValid()
+					&& (Unit.Order == EOrder::None || Unit.Phase == EPhase::Holding))
+				{
+					Builders.Add(Unit.Ship.Get());
+					break;
+				}
+			}
+			const int32 Issued = Fleet->IssueOrder(Builders, Next, GAutoTest.SurveyTarget.Get(), Refusal);
+			UE_LOG(LogTemp, Log, TEXT("[APS.Fleet] autotest: %s -> %d ship(s) %s"), *OrderName(Next).ToString(), Issued,
+				*Refusal.ToString());
+			if (Issued == 0)
+			{
+				return Finish(TEXT("construction refused"));
+			}
+			GAutoTest.Stage = GAutoTest.Stage == 4 ? 5 : 6;
+			break;
+		}
+		case 6:
+			for (const FAPSFleetStructure& Structure : Fleet->GetStructures())
+			{
+				if (Structure.Kind == EStructure::Shipyard && Structure.bBuilt
+					&& Structure.Body.Get() == GAutoTest.SurveyTarget.Get())
+				{
+					GAutoTest.Yard = Cast<ASpaceShipyard>(Structure.Actor.Get());
+				}
+			}
+			if (ASpaceShipyard* Yard = GAutoTest.Yard.Get())
+			{
+				TArray<FAPSShipyardOption> Options;
+				Fleet->GetShipyardOptions(Options);
+				GAutoTest.LaunchedBefore = Fleet->GetLaunchedCount(Yard);
+				const FText Laid = Options.IsEmpty() ? FText::FromString(TEXT("no catalogue")) : Fleet->OrderShip(Options[0], Yard);
+				UE_LOG(LogTemp, Log, TEXT("[APS.Fleet] autotest: ship at the new shipyard %s: %s"), *Yard->GetName(),
+					Laid.IsEmpty() ? TEXT("laid down") : *Laid.ToString());
+				if (!Laid.IsEmpty())
+				{
+					return Finish(TEXT("the new shipyard refused the ship"));
+				}
+				GAutoTest.Stage = 7;
+			}
+			break;
+		case 7:
+			if (Fleet->GetLaunchedCount(GAutoTest.Yard.Get()) > GAutoTest.LaunchedBefore)
+			{
+				GAutoTest.Stage = 8;
+				GAutoTest.StageSeconds = Now + 6.0;
+				Fleet->LogAnomalies();
+			}
+			break;
+		case 8:
+		{
+			// An anomaly located on the surveyed world (the science ship studied it): an expedition investigates it.
+			const FAPSFleetBodyRecord* Record = Fleet->FindBody(GAutoTest.SurveyTarget.Get());
+			if (!Record || !Record->bHasAnomaly || Record->Anomaly != EAnomalyState::Located)
+			{
+				UE_LOG(LogTemp, Log, TEXT("[APS.Fleet] autotest: no located anomaly on %s (state %d), no expedition"),
+					*GetNameSafe(GAutoTest.SurveyTarget.Get()), Record ? static_cast<int32>(Record->Anomaly) : -1);
+				GAutoTest.Stage = 3;
+				break;
+			}
+			TArray<ASpaceship*> Crew;
+			for (const FAPSFleetUnit& Unit : Fleet->GetUnits())
+			{
+				if ((Unit.Division == EDivision::Science || Unit.Division == EDivision::Exploration) && Unit.Ship.IsValid()
+					&& (Unit.Order == EOrder::None || Unit.Phase == EPhase::Holding))
+				{
+					Crew.Add(Unit.Ship.Get());
+					break;
+				}
+			}
+			const int32 Issued = Fleet->IssueOrder(Crew, EOrder::Expedition, GAutoTest.SurveyTarget.Get(), Refusal);
+			UE_LOG(LogTemp, Log, TEXT("[APS.Fleet] autotest: expedition -> %d ship(s) %s"), Issued, *Refusal.ToString());
+			GAutoTest.Stage = Issued > 0 ? 9 : 3;
+			break;
+		}
+		case 9:
+			if (const FAPSFleetBodyRecord* Record = Fleet->FindBody(GAutoTest.SurveyTarget.Get());
+				Record && Record->Anomaly == EAnomalyState::Investigated)
+			{
+				Fleet->LogAnomalies();
 				GAutoTest.Stage = 3;
 				GAutoTest.StageSeconds = Now + 6.0;
+			}
+			break;
+		case 10:
+			// The study located the site: the expedition next (stage 8 picks a free exploration or science ship).
+			if (const FAPSFleetBodyRecord* Record = Fleet->FindBody(GAutoTest.SurveyTarget.Get());
+				Record && Record->Anomaly == EAnomalyState::Located)
+			{
+				Fleet->LogAnomalies();
+				GAutoTest.Stage = 8;
 			}
 			break;
 		default:
 			if (Now >= GAutoTest.StageSeconds)
 			{
+				if ((GAutoTest.bBuild || GAutoTest.bAnomaly) && !GAutoTest.bTabsShot)
+				{
+					GAutoTest.bTabsShot = true;
+					if (UAPSColonyTerminalSubsystem* Terminal = World->GetSubsystem<UAPSColonyTerminalSubsystem>())
+					{
+						Terminal->StartTestCaptures();
+					}
+					GAutoTest.StageSeconds = Now + 22.0;
+					break;
+				}
 				Fleet->LogUnits();
 				AutoTestShot();
-				return Finish(TEXT("outpost built"));
+				return Finish(GAutoTest.bAnomaly ? TEXT("anomaly located and investigated")
+					: GAutoTest.bBuild ? TEXT("station, shipyard and its first ship built") : TEXT("outpost built"));
 			}
 			break;
 		}
@@ -1809,7 +2666,9 @@ namespace APSFleetPrivate
 	}
 
 	FAutoConsoleCommandWithWorldAndArgs AutoTestCommand(TEXT("aps.Fleet.AutoTest"),
-		TEXT("aps.Fleet.AutoTest <label> [quit]: survey, study and build an outpost with the fleet, shooting fleet command."),
+		TEXT("aps.Fleet.AutoTest <label> [quit] [build]: survey, study and build an outpost with the fleet, shooting fleet ")
+		TEXT("command; build goes on to a station, a shipyard there and a ship launched from it; anomaly has science study a ")
+		TEXT("world that hides an anomaly and sends an expedition to its site."),
 		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld*)
 		{
 			if (GAutoTest.bActive)
@@ -1819,7 +2678,12 @@ namespace APSFleetPrivate
 			GAutoTest = FAutoTest();
 			GAutoTest.bActive = true;
 			GAutoTest.Label = Args.Num() > 0 ? Args[0] : FString(TEXT("fleet"));
-			GAutoTest.bQuit = Args.Num() > 1 && Args[1].Equals(TEXT("quit"), ESearchCase::IgnoreCase);
+			for (int32 Index = 1; Index < Args.Num(); ++Index)
+			{
+				GAutoTest.bQuit |= Args[Index].Equals(TEXT("quit"), ESearchCase::IgnoreCase);
+				GAutoTest.bBuild |= Args[Index].Equals(TEXT("build"), ESearchCase::IgnoreCase);
+				GAutoTest.bAnomaly |= Args[Index].Equals(TEXT("anomaly"), ESearchCase::IgnoreCase);
+			}
 			GAutoTest.Started = FPlatformTime::Seconds();
 			GAutoTest.Ticker = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateStatic(&TickAutoTest), 0.25f);
 			UE_LOG(LogTemp, Log, TEXT("[APS.Fleet] autotest armed: %s%s"), *GAutoTest.Label, GAutoTest.bQuit ? TEXT(" (quit)") : TEXT(""));

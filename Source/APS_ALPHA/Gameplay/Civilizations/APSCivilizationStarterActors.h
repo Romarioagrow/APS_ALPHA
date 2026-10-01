@@ -15,7 +15,7 @@ class APS_ALPHA_API AAPSCivilizationBaseModule : public ATechActor
 	GENERATED_BODY()
 
 public:
-	AAPSCivilizationBaseModule();
+	AAPSCivilizationBaseModule(); virtual void BeginPlay() override; // B8: dressed in the colony modules' style.
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Civilization")
 	TObjectPtr<UAPSCivilizationIdentityComponent> CivilizationIdentity;
@@ -40,7 +40,7 @@ class APS_ALPHA_API AAPSCivilizationLandingPad : public ATechActor
 	GENERATED_BODY()
 
 public:
-	AAPSCivilizationLandingPad();
+	AAPSCivilizationLandingPad(); virtual void BeginPlay() override; // B8: deck markings and landing lights.
 
 	UFUNCTION(BlueprintPure, Category="Civilization|Landing Pad")
 	FTransform GetCharacterSpawnTransform() const;

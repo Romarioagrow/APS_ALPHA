@@ -2,6 +2,7 @@
 
 
 #include "PilotingVehicle.h"
+#include "APS_ALPHA/Pawns/Characters/CustomGravityCharacter.h"
 
 #include "Components/PrimitiveComponent.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -170,13 +171,18 @@ bool APilotingVehicle::EndVehicleControl()
 		if (UCharacterMovementComponent* Movement = Character->GetCharacterMovement())
 		{
 			Movement->SetMovementMode(static_cast<EMovementMode>(PilotMovementMode));
-			Movement->Velocity = GetVelocity();
+			// Stepping out keeps a little of the ship's motion, not its flight speed (audit B3: thrown at hundreds of km/s).
+			Movement->Velocity = GetVelocity().GetClampedToMaxSize(1500.0);
 		}
 	}
 
 	if (ControllerToRestore)
 	{
 		ControllerToRestore->Possess(PreviousPilot);
+	}
+	if (ACustomGravityCharacter* Character = Cast<ACustomGravityCharacter>(PreviousPilot))
+	{
+		Character->SettleAfterVehicleExit(ExitRotation.Vector());
 	}
 
 	OnPilotControlEnded(PreviousPilot);

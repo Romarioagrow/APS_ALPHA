@@ -44,13 +44,13 @@ void UAPSColonyTerminalSubsystem::Tick(float DeltaTime)
 {
 	if (bBound)
 	{
-		// Test capture: overview, colony and journal, a second apart, each with the UI.
+		// Test capture: the game view, then every tab (overview to shipyard), 1.5 s apart, each with the UI.
 		const double Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
 		if (ShotStage < 0 || Now < ShotStageSeconds)
 		{
 			return;
 		}
-		if (ShotStage > 7)
+		if (ShotStage > 15)
 		{
 			CloseTerminal();
 			ShotStage = -1;
@@ -72,19 +72,24 @@ void UAPSColonyTerminalSubsystem::Tick(float DeltaTime)
 		}
 		else if (TerminalWidget.IsValid())
 		{
+			// Two steps a tab: show it, then shoot it a moment later. A shot is taken with the next frame, so switching
+			// in the same tick as the request caught the next tab (01.10: the journal's shot showed the shipyard).
 			static const TCHAR* TabNames[] = {TEXT("overview"), TEXT("map"), TEXT("colony"), TEXT("fleet"),
-				TEXT("divisions"), TEXT("journal")};
-			const int32 Tab = ShotStage - 2;
-			FScreenshotRequest::RequestScreenshot(FPaths::ScreenShotDir() / TEXT("ColonyTerminal")
-				/ FString::Printf(TEXT("%s_%s.png"), *FDateTime::Now().ToString(TEXT("%Y%m%d_%H%M%S")), TabNames[Tab]),
-				true, false);
-			if (Tab < 5)
+				TEXT("divisions"), TEXT("journal"), TEXT("shipyard")};
+			const int32 Tab = (ShotStage - 2) / 2;
+			if ((ShotStage - 2) % 2 == 0)
 			{
-				TerminalWidget->ShowTab(Tab + 1);
+				TerminalWidget->ShowTab(Tab);
+			}
+			else
+			{
+				FScreenshotRequest::RequestScreenshot(FPaths::ScreenShotDir() / TEXT("ColonyTerminal")
+					/ FString::Printf(TEXT("%s_%s.png"), *FDateTime::Now().ToString(TEXT("%Y%m%d_%H%M%S")), TabNames[Tab]),
+					true, false);
 			}
 		}
 		++ShotStage;
-		ShotStageSeconds = Now + 1.5;
+		ShotStageSeconds = Now + 1.2;
 		return;
 	}
 	// Only the generated game's controller: other levels keep their own Tab (the authored single-play menu).

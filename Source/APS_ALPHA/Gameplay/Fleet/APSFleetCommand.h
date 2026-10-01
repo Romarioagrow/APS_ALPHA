@@ -35,7 +35,55 @@ namespace APSFleet
 		Move,
 		Survey,
 		BuildOutpost,
-		Return
+		Return,
+		// Construction after an outpost (Rio, 01.10). Appended: saved orders keep their numbers.
+		BuildStation,
+		BuildShipyard,
+		BuildHeadquarters,
+		/** To a located anomaly: the crew goes down and investigates it (exploration or science ships). */
+		Expedition
+	};
+	constexpr EOrder LastOrder = EOrder::Expedition;
+
+	/**
+	 * Anomalies (Rio, 01.10: "ships find anomalies on planets; to study one you land or send an expedition"). About two
+	 * worlds in five hide one, the same world always the same one. A survey detects it, a study locates its site, then an
+	 * expedition or the pilot on foot at the site investigates it.
+	 */
+	enum class EAnomalyState : uint8
+	{
+		Hidden,
+		Detected,
+		Located,
+		Investigated
+	};
+
+	/** What shapes a world's anomaly: its generated surface profile and its air. */
+	struct FAnomalyTraits
+	{
+		float Temperature{0.5f};
+		float Biomass{0.0f};
+		float Metallic{0.5f};
+		float Seismic{0.3f};
+		bool bAirless{false};
+	};
+	constexpr int32 AnomalyKindCount = 7;
+	/** The anomaly the world with this key hides, or false; deterministic. OutDirection: its site, body-local. */
+	APS_ALPHA_API bool RollAnomaly(const FString& WorldKey, const FAnomalyTraits& Traits, int32& OutKind, FVector& OutDirection);
+	APS_ALPHA_API FText AnomalyName(int32 Kind);
+	/** What the investigation finds. */
+	APS_ALPHA_API FText AnomalyStory(int32 Kind);
+
+	/**
+	 * What the construction division raises in orbit once a world has an outpost: a station (work there goes faster),
+	 * a shipyard (a slipway of its own in the SHIPYARD tab) and a sector headquarters (the fleet flies faster).
+	 */
+	enum class EStructure : uint8
+	{
+		Station,
+		Shipyard,
+		Headquarters,
+		Count
 	};
 
 	/** Where an order stands: leaving the berth, under way, at work at the target, or done and holding there. */
@@ -61,10 +109,15 @@ namespace APSFleet
 	APS_ALPHA_API FLinearColor DivisionColour(EDivision Division);
 	APS_ALPHA_API FText OrderName(EOrder Order);
 	APS_ALPHA_API FText SurveyName(ESurvey Survey);
+	APS_ALPHA_API FText StructureName(EStructure Structure);
+	/** The structure a construction order raises; false for every other order (an outpost included). */
+	APS_ALPHA_API bool StructureOf(EOrder Order, EStructure& OutStructure);
+	/** What the structure needs at the world first: an outpost for a station, a station for a shipyard or a HQ. */
+	APS_ALPHA_API bool NeedsStation(EStructure Structure);
 
 	/** The flagship leads the main fleet; the rest by size: XXS/XS scouts, S science, M construction, L and up the line. */
 	APS_ALPHA_API EDivision DefaultDivision(ESpaceshipSizeClass SizeClass, bool bFlagship);
-	/** Move and Return suit every division; a survey needs exploration or science, an outpost construction. */
+	/** Move and Return suit every division; a survey needs exploration or science, building construction. */
 	APS_ALPHA_API bool DivisionCan(EDivision Division, EOrder Order);
 	/** What a survey by this division leaves: exploration surveys, science studies (and surveys on the way). */
 	APS_ALPHA_API ESurvey SurveyBy(EDivision Division);
@@ -80,8 +133,8 @@ namespace APSFleet
 		double DeltaSeconds);
 	/** Class speed cap: ships without SpaceWrap (XXS, XS) stay at planetary speeds and only fly near their own planet. */
 	APS_ALPHA_API double ClassCap(const FSpaceshipClassPreset& Preset);
-	/** Seconds of work at the target, shortened by the division's level (each level 20%). */
-	APS_ALPHA_API double WorkSeconds(EOrder Order, EDivision Division, int32 DivisionLevel);
+	/** Seconds of work at the target, shortened by the division's level (each level 20%) and by a station there (25%). */
+	APS_ALPHA_API double WorkSeconds(EOrder Order, EDivision Division, int32 DivisionLevel, bool bStationThere = false);
 	/** Orbit slot distance from a body's centre for a body radius (cm). */
 	APS_ALPHA_API double SlotRadius(double BodyRadiusCm);
 	/**
@@ -90,6 +143,13 @@ namespace APSFleet
 	 * (an approach from above, even to a berth just over the surface) or ends inside the body.
 	 */
 	APS_ALPHA_API bool Detour(const FVector& Start, const FVector& End, const FVector& Centre, double Radius, FVector& OutPoint);
+	/**
+	 * The next point on the way round a body that lies across the way to Slot (01.10: ships bound for a moon behind the
+	 * planet flew into it toward a detour point and crawled at the surface speed limit). Lower than 1.3 radii: straight
+	 * out to 1.4. Higher: 30 degrees along the sphere toward the slot, at least 1.35 radii out, so the chord to it stays
+	 * outside 1.3 radii.
+	 */
+	APS_ALPHA_API FVector RoundBody(const FVector& Ship, const FVector& Slot, const FVector& Centre, double Radius);
 }
 
 struct APS_ALPHA_API FAPSFleetUnit
@@ -162,7 +222,33 @@ struct APS_ALPHA_API FAPSFleetSaveData
 	};
 	TArray<FOutpost> Outposts;
 
+	/** Stations, shipyards and sector HQs the fleet built; respawned under their saved actor names (stable keys). */
+	struct FStructure
+	{
+		uint8 Kind{0};
+		FString BodyKey;
+		FTransform RelativeTransform{FTransform::Identity};
+		FString Name;
+		FString ActorName;
+	};
+	TArray<FStructure> Structures;
+	/** The slipways' queues, the ship on the slipway with its progress. */
+	struct FShipyardJob
+	{
+		FString ClassPath;
+		uint8 SizeClass{0};
+		FString Name;
+		float Length{1.0f};
+		float Progress{0.0f};
+		FString YardKey;
+	};
+	TArray<FShipyardJob> ShipyardJobs;
+	/** Investigated anomalies: body key, 1 by an expedition, 2 by the pilot in person. */
+	TArray<TPair<FString, uint8>> Investigations;
+
 	friend FArchive& operator<<(FArchive& Ar, FAPSFleetSaveData& Data);
+	/** Structures and ShipyardJobs: civilization save version 4, appended after the older blocks so those still load. */
+	static void SerializeExtras(FArchive& Ar, FAPSFleetSaveData& Data);
 };
 
 /** A ship the shipyard can build: an entry of the civilization's ship catalogue. */
@@ -174,7 +260,7 @@ struct APS_ALPHA_API FAPSShipyardOption
 	float BuildSeconds{0.0f};
 };
 
-/** A ship on the slipway or waiting for it. */
+/** A ship on a shipyard's slipway or waiting for it. Every shipyard builds its first job at the same time. */
 struct APS_ALPHA_API FAPSShipyardJob
 {
 	TSubclassOf<ASpaceship> ShipClass;
@@ -182,6 +268,17 @@ struct APS_ALPHA_API FAPSShipyardJob
 	FText Name;
 	float Length{1.0f};
 	float Progress{0.0f};
+	TWeakObjectPtr<ASpaceShipyard> Yard;
+};
+
+/** A station, shipyard or headquarters in orbit of a planet or moon, generated or built by the fleet. */
+struct APS_ALPHA_API FAPSFleetStructure
+{
+	TWeakObjectPtr<AActor> Actor;
+	TWeakObjectPtr<APlanetaryBody> Body;
+	APSFleet::EStructure Kind{APSFleet::EStructure::Station};
+	/** Raised by the fleet's construction ships (saved and respawned), not part of the generated home complex. */
+	bool bBuilt{false};
 };
 
 /** A planet or moon the civilization has surveyed or built at. */
@@ -192,6 +289,15 @@ struct APS_ALPHA_API FAPSFleetBodyRecord
 	/** Lines revealed so far (survey, then study), for the map and the journal. */
 	TArray<FText> Findings;
 	TArray<TWeakObjectPtr<AActor>> Outposts;
+	/** The world's anomaly, if it hides one (APSFleet::RollAnomaly), and how far the civilization got with it. */
+	bool bHasAnomaly{false};
+	int32 AnomalyKind{0};
+	FVector AnomalyDirection{FVector::UpVector};
+	APSFleet::EAnomalyState Anomaly{APSFleet::EAnomalyState::Hidden};
+	bool bAnomalyInPerson{false};
+	/** A navigation beacon at a located site (the map lists it, the ship can set a course to it). */
+	TWeakObjectPtr<AActor> AnomalyBeacon;
+	bool bBeaconGrounded{false};
 };
 
 class APS_ALPHA_API FAPSFleetCommand
@@ -234,21 +340,82 @@ public:
 	static FString KeyOf(const AActor* Actor);
 
 	/**
-	 * Shipyard (Rio, 01.10: "ships cannot be built in the game yet"): the catalogue's ships, built one after another at
-	 * the civilization's shipyard; each launches above it and joins the fleet as a new unit. The time falls with the
-	 * Industry level.
+	 * Shipyard (Rio, 01.10: "ships cannot be built in the game yet"): the catalogue's ships, built one after another on
+	 * a shipyard's slipway; each launches above it and joins the fleet as a new unit. Every shipyard of the civilization
+	 * (the home one and those its construction ships built) has its own slipway and builds at the same time as the
+	 * others. The time falls with the Industry level.
 	 */
 	void GetShipyardOptions(TArray<FAPSShipyardOption>& OutOptions) const;
-	/** Queues one ship; the refusal when it cannot (no shipyard, a full slipway). */
-	FText OrderShip(const FAPSShipyardOption& Option);
+	/** Queues one ship at this shipyard (null: the home one); the refusal when it cannot (no shipyard, a full slipway). */
+	FText OrderShip(const FAPSShipyardOption& Option, ASpaceShipyard* Yard = nullptr);
 	const TArray<FAPSShipyardJob>& GetShipyardQueue() const { return ShipyardQueue; }
+	int32 CountQueued(const ASpaceShipyard* Yard) const;
 	int32 GetLaunchedCount() const { return LaunchedCount; }
+	int32 GetLaunchedCount(const ASpaceShipyard* Yard) const;
+	/** The civilization's home shipyard, else any. */
 	ASpaceShipyard* FindShipyard() const;
+	/** Every shipyard of the civilization, the home one first (any in the world when none is the civilization's). */
+	void GetShipyards(TArray<ASpaceShipyard*>& OutYards) const;
 	static constexpr int32 ShipyardQueueLimit = 6;
+
+	/** Stations, shipyards and HQs in orbit, refreshed once a second and on every build. */
+	const TArray<FAPSFleetStructure>& GetStructures() const { return Structures; }
+	int32 CountStructures(const AActor* Body, APSFleet::EStructure Kind) const;
+	/** Sector HQs the fleet built: each speeds the whole fleet up by 10%. */
+	int32 CountBuiltHeadquarters() const;
+	/** The planet or moon an orbital structure belongs to, through its attach parents. */
+	static APlanetaryBody* OrbitedBody(const AActor* Actor);
+
+	/**
+	 * Divisions grow with their work (Rio, 01.10: "the divisions should change the game, and the menu should say how"):
+	 * exploration one level per three worlds surveyed, science one per two studied, industry (the construction ships)
+	 * one per three outposts and structures built, fleet command one per four ships launched from the slipways; at most
+	 * three each. Counted from the records a load restores, so nothing extra is saved.
+	 */
+	struct FWorkTally
+	{
+		int32 Surveyed{0};
+		int32 Studied{0};
+		int32 Built{0};
+		int32 Launched{0};
+		/** Anomalies investigated: an expedition counts once, the pilot in person twice (science grows with both). */
+		int32 Investigated{0};
+	};
+	FWorkTally GetWorkTally() const;
+	int32 GetEarnedLevel(APSFleet::EDivision Division) const;
+	int32 GetEarnedFleetCommandLevel() const;
+	/** The civilization's level plus what the work earned: what the rules use. */
+	int32 GetDivisionLevel(APSFleet::EDivision Division) const;
+	/** Every ship's autopilot speed factor (fleet command and sector HQs), and the main fleet's extra (military). */
+	double GetSpeedScale() const { return SpeedScale(); }
+	double GetDivisionSpeedFactor(APSFleet::EDivision Division) const;
+	/** The shipyards' speed factor (industry). */
+	float GetShipyardRate() const;
+	/** A body's catalogue name, an actor's in-game name, else its class, upper case (as the journal names them). */
+	static FText DisplayName(const AActor* Actor);
+	/** The world record whose anomaly beacon this is, or null (the map names beacons by it). */
+	const FAPSFleetBodyRecord* FindAnomalyByBeacon(const AActor* Beacon) const;
+	/** One line on the world's anomaly for the order panel; empty when none is known. */
+	FText DescribeAnomaly(const AActor* Body) const;
+	/** Console and tests (aps.Fleet.Anomalies): every planet's and moon's anomaly, state and site in the log. */
+	void LogAnomalies();
 
 private:
 	void TickShipyard(float DeltaSeconds);
-	ASpaceship* LaunchShip(TSubclassOf<ASpaceship> ShipClass, const FTransform& Transform);
+	ASpaceship* LaunchShip(TSubclassOf<ASpaceship> ShipClass, const FTransform& Transform, ASpaceShipyard* Yard);
+	class ASpaceStation* SpawnStructure(APSFleet::EStructure Kind, APlanetaryBody* Body, const FTransform& Transform,
+		const FText& Name, const FString& ActorName);
+	void RefreshStructures();
+	/** Anomalies (APSFleetAnomalies.cpp): rolled once per world record, revealed with the survey level, investigated by
+	 * an expedition or the pilot on foot at the site. */
+	void RollAnomaly(FAPSFleetBodyRecord& Record, const APlanetaryBody* Body) const;
+	void RevealAnomaly(FAPSFleetBodyRecord& Record, APSFleet::ESurvey Level, const FText& By, bool bAnnounce);
+	void InvestigateAnomaly(FAPSFleetBodyRecord& Record, const FText& By, bool bInPerson, bool bAnnounce);
+	void SpawnAnomalyBeacon(FAPSFleetBodyRecord& Record);
+	/** Once a second: beacons settle on the ground once the surface near them has collision; a pilot on foot at a
+	 * located site investigates it. */
+	void TickAnomalies();
+	static FText AnomalySiteText(const FVector& Direction);
 	void ApplyPendingRestore();
 	AActor* FindByKey(const FString& Key) const;
 	class AAutonomousOutpost* SpawnOutpost(APlanetaryBody* Body, const FVector& Location, const FQuat& Rotation,
@@ -281,8 +448,17 @@ private:
 	uint32 Revision{1};
 	bool bHomeKnown{false};
 	TArray<FAPSShipyardJob> ShipyardQueue;
-	/** Ships launched in this world, for their slots above the shipyard. */
+	/** Ships launched in this world, and per shipyard for their slots above it. */
 	int32 LaunchedCount{0};
+	TMap<TWeakObjectPtr<ASpaceShipyard>, int32> LaunchedAt;
+	TArray<FAPSFleetStructure> Structures;
+	/** Numbers the fleet's structures' actor names, so a load gives them the same keys. */
+	int32 StructureSerial{0};
+	/** Earned levels last seen (exploration, science, industry, fleet command), for the journal's promotions; primed
+	 * silently after a load. */
+	int32 AnnouncedEarned[4]{0, 0, 0, 0};
+	bool bEarnedPrimed{false};
+	void AnnouncePromotions();
 	TOptional<FAPSFleetSaveData> PendingRestore;
 	double PendingRestoreSince{-1.0};
 };

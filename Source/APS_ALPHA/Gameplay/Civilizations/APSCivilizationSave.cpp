@@ -4,20 +4,29 @@
 #include "APS_ALPHA/Gameplay/Colony/APSColonyConstructionSubsystem.h"
 #include "APS_ALPHA/Gameplay/Colony/APSColonyModule.h"
 #include "APS_ALPHA/Gameplay/Fleet/APSFleetCommand.h"
+#include "APS_ALPHA/Gameplay/Quests/APSQuestSubsystem.h"
 #include "APS_ALPHA/Pawns/Vehicles/PilotingVehicle.h"
 #include "Containers/Ticker.h"
 #include "Engine/World.h"
+#include "Engine/GameInstance.h"
 #include "EngineUtils.h"
 #include "GameFramework/PlayerController.h"
 #include "HAL/PlatformTime.h"
 #include "Serialization/MemoryReader.h"
 #include "Serialization/MemoryWriter.h"
+#include "Serialization/ObjectAndNameAsStringProxyArchive.h"
 
 namespace APSCivilizationSavePrivate
 {
 	constexpr uint32 Magic = 0x53564943; // "CIVS"
-	/** 2: the ship the player was piloting, to seat the pilot in it again. */
-	constexpr int32 Version = 2;
+	/** 2: the ship the player was piloting, to seat the pilot in it again. 3: the quests (the onboarding). */
+	constexpr int32 Version = 4;
+
+	UAPSQuestSubsystem* QuestOf(const UWorld* World)
+	{
+		UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
+		return GameInstance ? GameInstance->GetSubsystem<UAPSQuestSubsystem>() : nullptr;
+	}
 
 	struct FModuleRecord
 	{
@@ -206,8 +215,24 @@ void APSCivilizationSave::Capture(UWorld* World, TArray<uint8>& OutBytes)
 		}
 	}
 	Ar << PilotedVehicleKey;
-	UE_LOG(LogTemp, Log, TEXT("[APS.Save] civilization state: %d modules, %d units, %d surveys, %d outposts, %d journal entries, %d bytes%s%s"),
-		Modules.Num(), Fleet.Units.Num(), Fleet.Surveys.Num(), Fleet.Outposts.Num(), EntryCount, OutBytes.Num(),
+
+	// The quests' progress (the onboarding restarted from its first step after every load, audit A02).
+	TArray<uint8> QuestBytes;
+	int32 QuestCount = 0;
+	if (UAPSQuestSubsystem* Quest = QuestOf(World))
+	{
+		FAPSQuestSaveData QuestData = Quest->ExportQuestSaveData();
+		QuestCount = QuestData.Instances.Num();
+		FMemoryWriter QuestWriter(QuestBytes, true);
+		FObjectAndNameAsStringProxyArchive QuestArchive(QuestWriter, false);
+		FAPSQuestSaveData::StaticStruct()->SerializeItem(QuestArchive, &QuestData, nullptr);
+	}
+	Ar << QuestBytes;
+	// Version 4: the stations, shipyards and HQs the fleet built and the slipways' queues (Rio, 01.10).
+	FAPSFleetSaveData::SerializeExtras(Ar, Fleet);
+	UE_LOG(LogTemp, Log, TEXT("[APS.Save] civilization state: %d modules, %d units, %d surveys, %d outposts, %d structures, %d slipway jobs, %d journal entries, %d quests, %d bytes%s%s"),
+		Modules.Num(), Fleet.Units.Num(), Fleet.Surveys.Num(), Fleet.Outposts.Num(), Fleet.Structures.Num(),
+		Fleet.ShipyardJobs.Num(), EntryCount, QuestCount, OutBytes.Num(),
 		PilotedVehicleKey.IsEmpty() ? TEXT("") : TEXT(", piloting "), *PilotedVehicleKey);
 }
 
@@ -250,6 +275,15 @@ void APSCivilizationSave::Restore(UWorld* World, const TArray<uint8>& Bytes)
 	{
 		Ar << PilotedVehicleKey;
 	}
+	TArray<uint8> QuestBytes;
+	if (SavedVersion >= 3)
+	{
+		Ar << QuestBytes;
+	}
+	if (SavedVersion >= 4)
+	{
+		FAPSFleetSaveData::SerializeExtras(Ar, Fleet);
+	}
 	if (Ar.IsError())
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[APS.Save] civilization state is damaged; nothing restored from it"));
@@ -273,6 +307,26 @@ void APSCivilizationSave::Restore(UWorld* World, const TArray<uint8>& Bytes)
 		if (!PendingTicker.IsValid())
 		{
 			PendingTicker = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateStatic(&TickPendingColonies), 0.5f);
+		}
+	}
+	// Before the world's quest adapter starts the onboarding again for this manifest: it then finds the saved instance
+	// and continues it (a matching start is a no-op).
+	if (!QuestBytes.IsEmpty())
+	{
+		FAPSQuestSaveData QuestData;
+		FMemoryReader QuestReader(QuestBytes, true);
+		FObjectAndNameAsStringProxyArchive QuestArchive(QuestReader, true);
+		FAPSQuestSaveData::StaticStruct()->SerializeItem(QuestArchive, &QuestData, nullptr);
+		FString Reason;
+		UAPSQuestSubsystem* Quest = QuestOf(World);
+		if (QuestReader.IsError() || !Quest || !Quest->RestoreQuestSaveData(QuestData, Reason))
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[APS.Save] quests not restored: %s"),
+				Reason.IsEmpty() ? TEXT("unreadable") : *Reason);
+		}
+		else
+		{
+			UE_LOG(LogTemp, Log, TEXT("[APS.Save] quests restored: %d"), QuestData.Instances.Num());
 		}
 	}
 	if (!PilotedVehicleKey.IsEmpty())

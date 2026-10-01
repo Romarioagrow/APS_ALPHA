@@ -8,11 +8,13 @@
 #include "APS_ALPHA/Actors/Astro/PlanetaryBody.h"
 #include "APS_ALPHA/Actors/Astro/Star.h"
 #include "APS_ALPHA/Actors/Tech/SpaceHeadquarters.h"
+#include "APS_ALPHA/Core/Instances/MainGameplayInstance.h"
 #include "APS_ALPHA/Gameplay/Civilizations/APSCivilizationIdentityComponent.h"
 #include "APS_ALPHA/Gameplay/Civilizations/APSCivilizationJournalSubsystem.h"
 #include "APS_ALPHA/Gameplay/Civilizations/APSCivilizationMaterializationSubsystem.h"
 #include "APS_ALPHA/Gameplay/Civilizations/APSCivilizationRuntimeManifest.h"
 #include "APS_ALPHA/Gameplay/Civilizations/APSCivilizationStarterActors.h"
+#include "APS_ALPHA/Gameplay/Civilizations/Civilization.h"
 #include "APS_ALPHA/Gameplay/Production/APSProductionSubsystem.h"
 #include "APS_ALPHA/Pawns/Characters/CustomGravityCharacter.h"
 #include "Camera/CameraActor.h"
@@ -271,7 +273,14 @@ void UAPSColonyConstructionSubsystem::EnsureDefinitions(UAPSProductionSubsystem&
 	{
 		return;
 	}
-	const double TimeScale = FMath::Max(0.0f, APSColonyConstruction::CVarBuildTimeScale.GetValueOnGameThread());
+	double TimeScale = FMath::Max(0.0f, APSColonyConstruction::CVarBuildTimeScale.GetValueOnGameThread());
+	// Civil affairs runs the colony's works (Rio, 01.10: "the divisions should change the game"): 15% faster a level.
+	const UGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
+	const UMainGameplayInstance* State = GameInstance ? GameInstance->GetSubsystem<UMainGameplayInstance>() : nullptr;
+	if (const UCivilization* Civ = State ? State->CurrentCivilization.Get() : nullptr)
+	{
+		TimeScale /= 1.0 + 0.15 * FMath::Max(Civ->Divisions.CivilAffairs, 0);
+	}
 	for (const FAPSColonyModuleSpec& Spec : FAPSColonyModuleCatalogue::Get())
 	{
 		FString Failure;

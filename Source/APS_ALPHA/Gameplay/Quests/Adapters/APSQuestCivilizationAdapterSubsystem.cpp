@@ -99,6 +99,20 @@ bool UAPSQuestCivilizationAdapterSubsystem::TryConsumeReadyManifest(
 		return false;
 	};
 	using Contract = FAPSEarlyAccessOnboardingContract;
+	// The quest runtime lives on the game instance: a new world in the same game session found the previous world's
+	// onboarding and could not start its own (audit B5). Another manifest's instance gives way; a load restored this
+	// manifest's own instance before this point and keeps it.
+	{
+		FAPSQuestSaveData Existing = Quest->ExportQuestSaveData();
+		const int32 Removed = Existing.Instances.RemoveAll([&Snapshot](const FAPSQuestInstanceSaveData& Instance)
+		{
+			return Instance.QuestId == Contract::QuestId && Instance.InstanceId != Snapshot.ManifestId;
+		});
+		if (Removed > 0 && !Quest->RestoreQuestSaveData(Existing, Reason))
+		{
+			return Reject(TEXT("previous world's onboarding"));
+		}
+	}
 	if (!Quest->StartQuest(Contract::QuestId, Snapshot.ManifestId, Reason))
 	{
 		return Reject(TEXT("start"));

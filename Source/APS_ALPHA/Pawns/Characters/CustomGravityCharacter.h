@@ -204,6 +204,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Gravity|ZeroG")
 	void SetManualZeroGOverride(bool bEnabled);
 
+	/**
+	 * Out of a vehicle (Rio, 01.10: odd turns and orientation on leaving the ship): the gravity of the place the
+	 * character now stands in, taken at once instead of blending from the frame it boarded in, upright on it and
+	 * facing Facing; flying in zero-G, falling to the ground under gravity.
+	 */
+	void SettleAfterVehicleExit(const FVector& Facing);
+
 	UFUNCTION(BlueprintCallable, Category = "Gravity|ZeroG")
 	void ToggleManualZeroGOverride();
 

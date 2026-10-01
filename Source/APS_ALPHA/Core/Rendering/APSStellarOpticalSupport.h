@@ -18,7 +18,11 @@ struct FProfile
 	float RayStrength = 0.0f;
 };
 
-inline FProfile Select(const TArray<float>& Data, const int32 Stride, const int32 Index)
+/**
+ * RayRule (A5, Rio 01.10: "some stars have rays, others not"): 0 the accepted stable rank (a share of the bright
+ * stars sparkles, so the field is no uniform grid of crosses), 1 every star bright enough sparkles, 2 none does.
+ */
+inline FProfile Select(const TArray<float>& Data, const int32 Stride, const int32 Index, const int32 RayRule = 0)
 {
 	FProfile Result;
 	const int64 Base = int64(Index) * Stride;
@@ -39,7 +43,7 @@ inline FProfile Select(const TArray<float>& Data, const int32 Stride, const int3
 		* FMath::Clamp(Gain, 0.5, 1.2);
 	const double Rank = FMath::Frac(FMath::Abs(double(Data[Base + 4])) * 17.713 + 0.37);
 	const double RankThreshold = FMath::Lerp(0.96, 0.72, FMath::Clamp(Brightness * 2.0, 0.0, 1.0));
-	if (Brightness < 0.055 || Rank < RankThreshold) return Result;
+	if (Brightness < 0.055 || RayRule == 2 || (RayRule == 1 ? Brightness < 0.3 : Rank < RankThreshold)) return Result;
 	const double Strength = FMath::Clamp((Brightness - 0.035) / 0.42, 0.0, 1.0);
 	Result.SupportPixels = FMath::Lerp(8.0, MaximumSupportPixels, Strength);
 	Result.RayStrength = float(FMath::Lerp(0.35, 1.0, Strength));

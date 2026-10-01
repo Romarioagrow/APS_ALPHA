@@ -126,6 +126,30 @@ namespace APSCivilizationMapPrivate
 			true, Thickness);
 	}
 
+	/** A dashed circle: a boundary, not an orbit. */
+	void DashedCircle(FSlateWindowElementList& Out, const int32 Layer, const FGeometry& Geometry, const FVector2D& Centre,
+		const double Radius, const FLinearColor& Colour, const float Thickness)
+	{
+		if (Radius < 1.0)
+		{
+			return;
+		}
+		const int32 Dashes = FMath::Clamp(FMath::RoundToInt(Radius * 0.25), 24, 96);
+		for (int32 Index = 0; Index < Dashes; ++Index)
+		{
+			const double From = UE_TWO_PI * Index / Dashes;
+			const double To = From + UE_TWO_PI * 0.55 / Dashes;
+			TArray<FVector2D> Points;
+			for (int32 Step = 0; Step <= 3; ++Step)
+			{
+				const double Angle = FMath::Lerp(From, To, Step / 3.0);
+				Points.Add(Centre + FVector2D(FMath::Cos(Angle), FMath::Sin(Angle)) * Radius);
+			}
+			FSlateDrawElement::MakeLines(Out, Layer, Geometry.ToPaintGeometry(), Points, ESlateDrawEffect::None, Colour,
+				true, Thickness);
+		}
+	}
+
 	void Dot(FSlateWindowElementList& Out, const int32 Layer, const FGeometry& Geometry, const FVector2D& Centre,
 		const double Radius, const FLinearColor& Colour)
 	{
@@ -346,6 +370,15 @@ void SAPSCivilizationMap::Refresh()
 			Colony.Name = LOCTEXT("ColonyName", "HOME COLONY");
 		}
 	}
+	// Anomaly beacons at located sites (fleet command, Rio 01.10): a course can be set to them.
+	for (TActorIterator<AActor> It(LiveWorld); It; ++It)
+	{
+		if (IsValid(*It) && It->ActorHasTag(TEXT("APS.Fleet.Anomaly")))
+		{
+			Add(*It, EKind::Outpost, LOCTEXT("AnomalyDetail", "ANOMALY SITE"), FLinearColor(1.0f, 0.62f, 0.2f), 0.0,
+				AnchorOf(It->GetActorLocation()), true);
+		}
+	}
 	for (TActorIterator<AAutonomousOutpost> It(LiveWorld); It; ++It)
 	{
 		if (IsValid(*It))
@@ -534,14 +567,17 @@ int32 SAPSCivilizationMap::OnPaint(const FPaintArgs& Args, const FGeometry& Allo
 	PaintedDiscRadius = 0.0;
 	const FAPSFleetCommand* Fleet = APSFleetFind(World.Get());
 
-	// Guide rings: a quarter, half and three quarters of the view.
-	for (int32 Ring = 1; Ring <= 4; ++Ring)
-	{
-		Circle(OutDrawElements, LayerId, AllottedGeometry, Centre, PixelRadius * Ring / 4.0,
-			FLinearColor(0.26f, 0.84f, 0.93f, Ring == 4 ? 0.10f : 0.05f), 1.0f);
-	}
-
+	// Only real orbits are drawn as rings (Rio, 01.10: the quarter-view guide rings read as orbits nobody has); the edge
+	// of the view, just past the outermost planet or the planet's farthest moon, station or ship, is a dashed boundary.
 	const AActor* Planet = FocusPlanet.Get();
+	{
+		const FLinearColor EdgeColour(0.26f, 0.84f, 0.93f, 0.30f);
+		DashedCircle(OutDrawElements, LayerId, AllottedGeometry, Centre, PixelRadius, EdgeColour, 1.0f);
+		const FVector2D EdgeLabel = Centre + FVector2D(0.70710678, -0.70710678) * PixelRadius + FVector2D(6.0, -14.0);
+		Label(OutDrawElements, LayerId + 1, AllottedGeometry, EdgeLabel,
+			Planet ? LOCTEXT("PlanetSpaceEdge", "EDGE OF LOCAL SPACE") : LOCTEXT("SystemEdge", "EDGE OF THE SYSTEM"), SmallFont,
+			EdgeColour * FLinearColor(1.0f, 1.0f, 1.0f, 2.2f));
+	}
 	const AActor* ViewCentre = Planet ? Planet : Star.Get();
 	const auto InPlaneDistance = [this, ViewCentre](const FVector& Location)
 	{

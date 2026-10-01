@@ -10,6 +10,8 @@
 class AAPSColonyModule;
 class SAPSCivilizationMap;
 class ASpaceship;
+class ASpaceShipyard;
+class UTextureRenderTarget2D;
 class SVerticalBox;
 class SWidgetSwitcher;
 class UAPSColonyConstructionSubsystem;
@@ -60,10 +62,19 @@ private:
 	TSharedRef<SWidget> BuildColony();
 	TSharedRef<SWidget> BuildConstruction();
 	TSharedRef<SWidget> BuildJournal();
-	/** Divisions: the six divisions of the civilization and their levels (the UMG civilization menu, 01.2026). */
+	/** Divisions: the six divisions of the civilization and their levels (the UMG civilization menu, 01.2026), what each
+	 * changes in the game now and how it grows (Rio, 01.10). Cards: exploration, industry, science, civil affairs,
+	 * military, fleet command. */
 	TSharedRef<SWidget> BuildDivisions();
+	/** The card's level with what the work earned (OutEarned). */
+	int32 DivisionCardLevel(int32 CardIndex, int32& OutEarned) const;
+	/** The card's effect in the game at its level, or (bGrowth) how it grows. */
+	FText DivisionCardEffect(int32 CardIndex, bool bGrowth) const;
+	/** Journal (Rio, 01.10: "more readable: fonts, icons"): newest first, each entry with its category's glyph and colour,
+	 * and category chips with counts to filter. Built while the journal tab is shown. */
 	void RebuildJournal();
 	void HandleJournalEntry(const FAPSCivilizationJournalEntry& Entry);
+	FReply SetJournalFilter(FName Category);
 	/** The colony actors (base, pad, home ship), found once when the terminal opens. */
 	void CacheColonyActors();
 	FText DescribeColonyActor(int32 RoleIndex) const;
@@ -88,14 +99,26 @@ private:
 	FText OrderRefusal(APSFleet::EOrder Order) const;
 	FAPSFleetCommand* GetFleet() const;
 	/**
-	 * Shipyard (Rio, 01.10: "ships cannot be built in the game yet"): the civilization's ship catalogue as cards with
-	 * their baked thumbnails, and the slipway. Each ship launches above the shipyard and joins fleet command.
+	 * B1 (Rio, 01.10: "studied planets and moons: their real look in the menu"): a photograph of the fleet target as it
+	 * stands in the world (its WorldScape surface where streamed, its globe and atmosphere otherwise), lit by its star.
+	 * A scene capture runs for a few frames when a studied world is picked, then the picture stays.
+	 */
+	void UpdateBodyPreview();
+	/**
+	 * Shipyard (Rio, 01.10: "ships cannot be built in the game yet"; "on the right, which shipyard we build at"): the
+	 * civilization's ship catalogue as cards with their baked thumbnails and class filters, and on the right the
+	 * shipyards (the home one and those the construction ships built) with the slipway of the one picked. Each ship
+	 * launches above its shipyard and joins fleet command; every shipyard builds at the same time.
 	 */
 	TSharedRef<SWidget> BuildShipyard();
 	void RebuildShipyardCatalogue();
-	/** Slipway rows, rebuilt when the queue changes; their progress is read live. */
+	/** Shipyard cards and the picked one's slipway rows, rebuilt when they change; progress is read live. */
 	void RefreshShipyard(bool bForceRebuild);
 	FReply OrderShipyardShip(int32 OptionIndex);
+	FReply SelectShipyard(TWeakObjectPtr<ASpaceShipyard> Yard);
+	FReply SetShipyardClassFilter(int32 Filter);
+	/** The picked shipyard, else the home one. */
+	ASpaceShipyard* GetSelectedYard() const;
 	/** The main menu's baked thumbnail of a ship Blueprint, or null. */
 	const FSlateBrush* ShipThumbnail(TSubclassOf<ASpaceship> ShipClass);
 
@@ -128,6 +151,8 @@ private:
 	TSharedPtr<SWidgetSwitcher> Switcher;
 	TSharedPtr<SVerticalBox> JournalList;
 	FDelegateHandle JournalHandle;
+	/** None: every category. */
+	FName JournalFilter;
 	TWeakObjectPtr<AActor> ColonyActors[3];
 	ETab ActiveTab{ETab::Overview};
 	TSharedPtr<SVerticalBox> FleetList;
@@ -141,11 +166,22 @@ private:
 	bool bFleetMessageIsError{false};
 	/** The fleet map opens on the home planet's neighbourhood once, where the ships and moons are. */
 	bool bFleetMapFocused{false};
+	/** A UTextureRenderTarget2D; held as UObject so the widget's includers need no render-target header. */
+	TStrongObjectPtr<UObject> PreviewTarget;
+	TSharedPtr<FSlateBrush> PreviewBrush;
+	TWeakObjectPtr<AActor> PreviewCamera;
+	TWeakObjectPtr<AActor> PreviewSubject;
+	int32 PreviewFramesLeft{0};
 
 	TSharedPtr<SVerticalBox> ShipyardCatalogueBox;
 	TSharedPtr<SVerticalBox> ShipyardQueueBox;
+	TSharedPtr<SVerticalBox> ShipyardYardsBox;
 	TArray<FAPSShipyardOption> ShipyardOptions;
 	FString ShipyardSignature;
+	FString ShipyardYardsSignature;
+	TWeakObjectPtr<ASpaceShipyard> SelectedYard;
+	/** -1 every class, else an ESpaceshipSizeClass. */
+	int32 ShipyardClassFilter{-1};
 	FText ShipyardMessage;
 	bool bShipyardMessageIsError{false};
 	bool bShipyardPresent{false};
