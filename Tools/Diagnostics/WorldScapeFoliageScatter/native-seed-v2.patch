@@ -1,0 +1,26 @@
+--- a/Source/WorldScapeCore/Private/WorldScapeRoot_Foliages.cpp
++++ b/Source/WorldScapeCore/Private/WorldScapeRoot_Foliages.cpp
+@@ -5,3 +5,9 @@
+ #include "PoissonDiscSampling.h"
+ #include "Async/ParallelFor.h"
++#include "APSBoundedFoliageSeed.h"
++#include "HAL/IConsoleManager.h"
++namespace {
++TAutoConsoleVariable<int32> APSFoliageSeedRevision(TEXT("worldscape.APS.FoliageSeedRevision"),
++    2, TEXT("Bounded planet-local scatter seed, owned V2 roots only."), ECVF_ReadOnly);
++}
+ //ChunkGeneration Thread Functions
+@@ -167,3 +173,6 @@
+ 	int32 seed = FMath::TruncToInt(FMath::Fmod(FVector::DotProduct(Sector.Position.ToFVector(), FVector(Sector.Size + 100 * FoliageCollectionID, 2000 * FoliageID, 50000 * FLID)), 2000000000));
++	if (RootRef && RootRef->ActorHasTag(FName(TEXT("APS.SurfaceScatter.V2"))))
++		seed = int32(APSBoundedFoliageSeed::ForSector(Sector.Position.X, Sector.Position.Y, Sector.Position.Z,
++			Sector.Size, RootRef->Seed, FoliageCollectionID, FoliageID, FLID));
+ 
+ 	FRandomStream Stream = FRandomStream(seed);
+@@ -670,3 +679,6 @@
+ 	int32 seed = FMath::TruncToInt(FMath::Fmod(FVector::DotProduct(Sector.Position.ToFVector(), FVector(Sector.Size + 100 * FoliageCollectionID, 2000 * FoliageID, 50000 * FLID)), 2000000000));
++	if (RootRef && RootRef->ActorHasTag(FName(TEXT("APS.SurfaceScatter.V2"))))
++		seed = int32(APSBoundedFoliageSeed::ForSector(Sector.Position.X, Sector.Position.Y, Sector.Position.Z,
++			Sector.Size, RootRef->Seed, FoliageCollectionID, FoliageID, FLID));
+ 
+ 	FRandomStream Stream = FRandomStream(seed);

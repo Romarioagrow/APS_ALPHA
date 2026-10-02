@@ -1,4 +1,9 @@
 #include "SAPSMainMenuRoot.h"
+#include "Widgets/Layout/SGridPanel.h"
+#include "APS_ALPHA/Core/Audio/APSAudioSubsystem.h"
+#include "APS_ALPHA/UI/Settings/SAPSAudioSettings.h"
+#include "Engine/World.h"
+#include "APS_ALPHA/UI/Style/APSUINumber.h"
 #include "SAPSChamferedOverlay.h"
 
 #include "APS_ALPHA/Core/Controllers/MainMenuController.h"
@@ -1333,7 +1338,7 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildHeader(const FText& SectionTitle, boo
 						SNew(SButton).ButtonStyle(&SecondaryButtonStyle).ContentPadding(0.0f)
 						.HAlign(HAlign_Center).VAlign(VAlign_Center)
 						.OnClicked(this, &SAPSMainMenuRoot::OpenProfile).ToolTipText(LOCTEXT("ProfileTip", "PLAYER PROFILE"))
-						[APSMenu::Badge(LOCTEXT("ProfileGlyph", "ID"), APSMenu::Cyan, 38.0f)]
+						[APSMenu::IconBadge(EAPSMenuGlyph::Profile, APSMenu::Cyan, 38.0f)]
 					]
 				]
 				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(5.0f)
@@ -1343,7 +1348,7 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildHeader(const FText& SectionTitle, boo
 						SNew(SButton).ButtonStyle(&SecondaryButtonStyle).ContentPadding(0.0f)
 						.HAlign(HAlign_Center).VAlign(VAlign_Center)
 						.OnClicked(this, &SAPSMainMenuRoot::OpenSettings).ToolTipText(LOCTEXT("SettingsTip", "SETTINGS"))
-						[APSMenu::Badge(LOCTEXT("SettingsGlyph", "CFG"), APSMenu::Cyan, 38.0f)]
+						[APSMenu::IconBadge(EAPSMenuGlyph::Settings, APSMenu::Cyan, 38.0f)]
 					]
 				]
 			]
@@ -1440,6 +1445,14 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildAuxiliaryPage(const FText& SectionTit
 				[SNew(STextBlock).Text(LoadingText).Font(APSMenu::Font("Regular", 16)).ColorAndOpacity(APSMenu::Muted)]
 			]
 		);
+
+	if (&WidgetClass == &SettingsPanelClass)
+	{
+		Body = SNew(SVerticalBox)
+			+ SVerticalBox::Slot().AutoHeight().Padding(16.f, 8.f, 16.f, 16.f)
+			[SNew(SAPSAudioSettings).World(Controller.IsValid() ? Controller->GetWorld() : nullptr)]
+			+ SVerticalBox::Slot().FillHeight(1.f)[Body];
+	}
 
 	return SNew(SOverlay)
 		+ SOverlay::Slot()
@@ -1765,7 +1778,7 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildExistingWorldsPage()
 				+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
 				[SNew(STextBlock).Text(Label).Font(APSMenu::Font("Bold", 13)).ColorAndOpacity_Lambda([this, Collection](){ return WorldCollection == Collection ? APSMenu::Amber : APSMenu::White; })]
 				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
-				[SNew(STextBlock).Text_Lambda([CountGetter](){ return FText::AsNumber(CountGetter()); }).Font(APSMenu::Font("Bold", 12)).ColorAndOpacity(APSMenu::Muted)]
+				[SNew(STextBlock).Text_Lambda([CountGetter](){ return APSUINumber::Number(CountGetter()); }).Font(APSMenu::Font("Bold", 12)).ColorAndOpacity(APSMenu::Muted)]
 			];
 	};
 
@@ -1830,7 +1843,7 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildExistingWorldsPage()
 				[
 					SNew(SHorizontalBox)
 					+ SHorizontalBox::Slot().AutoWidth().Padding(3.0f)[SNew(SBox).MinDesiredWidth(118.0f)[SNew(SButton).ButtonStyle(&SecondaryButtonStyle).ContentPadding(FMargin(12.0f, 7.0f)).OnClicked(this, &SAPSMainMenuRoot::ChangeExistingWorldPage, -1)[SNew(STextBlock).Text(LOCTEXT("PreviousPage", "<<  PREVIOUS")).Justification(ETextJustify::Center).Font(APSMenu::Font("Bold", 10)).ColorAndOpacity(APSMenu::Cyan)]]]
-					+ SHorizontalBox::Slot().AutoWidth().Padding(12.0f, 7.0f)[SNew(STextBlock).Text_Lambda([this](){ return FText::AsNumber(ExistingWorldPage + 1); }).Font(APSMenu::Font("Bold", 12)).ColorAndOpacity(APSMenu::White)]
+					+ SHorizontalBox::Slot().AutoWidth().Padding(12.0f, 7.0f)[SNew(STextBlock).Text_Lambda([this](){ return APSUINumber::Number(ExistingWorldPage + 1); }).Font(APSMenu::Font("Bold", 12)).ColorAndOpacity(APSMenu::White)]
 					+ SHorizontalBox::Slot().AutoWidth().Padding(3.0f)[SNew(SBox).MinDesiredWidth(118.0f)[SNew(SButton).ButtonStyle(&SecondaryButtonStyle).ContentPadding(FMargin(12.0f, 7.0f)).OnClicked(this, &SAPSMainMenuRoot::ChangeExistingWorldPage, 1)[SNew(STextBlock).Text(LOCTEXT("NextPage", "NEXT  >>")).Justification(ETextJustify::Center).Font(APSMenu::Font("Bold", 10)).ColorAndOpacity(APSMenu::Cyan)]]]
 				]
 			]
@@ -1952,6 +1965,15 @@ void SAPSMainMenuRoot::Tick(const FGeometry& AllottedGeometry, const double InCu
 	const float InDeltaTime)
 {
 	SCompoundWidget::Tick(AllottedGeometry, InCurrentTime, InDeltaTime);
+	if (AMainMenuController* PC = Controller.Get())
+	{
+		if (UAPSAudioSubsystem* Audio = PC->GetWorld()->GetSubsystem<UAPSAudioSubsystem>())
+		{
+			Audio->ApplyButtonSounds(PrimaryButtonStyle);
+			Audio->ApplyButtonSounds(SecondaryButtonStyle);
+			Audio->ApplyButtonSounds(CardButtonStyle);
+		}
+	}
 	if (CurrentPage != EAPSMenuPage::ExistingWorlds
 		|| InCurrentTime < NextExistingWorldRefreshTime)
 	{
@@ -2167,8 +2189,8 @@ void SAPSMainMenuRoot::RebuildExistingWorldDetails()
 	TSharedRef<SVerticalBox> DetailRows = SNew(SVerticalBox)
 		+ SVerticalBox::Slot().AutoHeight()[DetailRow(LOCTEXT("DetailSystemType", "SYSTEM TYPE"), FText::FromString(SelectedWorld->SystemType))]
 		+ SVerticalBox::Slot().AutoHeight()[DetailRow(LOCTEXT("DetailStarType", "STAR TYPE"), FText::FromString(SelectedWorld->StarType))]
-		+ SVerticalBox::Slot().AutoHeight()[DetailRow(LOCTEXT("DetailTotalPlanets", "TOTAL PLANETS"), FText::AsNumber(SelectedWorld->TotalPlanets))]
-		+ SVerticalBox::Slot().AutoHeight()[DetailRow(LOCTEXT("DetailInhabited", "INHABITED PLANETS"), FText::AsNumber(SelectedWorld->InhabitedPlanets))]
+		+ SVerticalBox::Slot().AutoHeight()[DetailRow(LOCTEXT("DetailTotalPlanets", "TOTAL PLANETS"), APSUINumber::Number(SelectedWorld->TotalPlanets))]
+		+ SVerticalBox::Slot().AutoHeight()[DetailRow(LOCTEXT("DetailInhabited", "INHABITED PLANETS"), APSUINumber::Number(SelectedWorld->InhabitedPlanets))]
 		+ SVerticalBox::Slot().AutoHeight()[DetailRow(LOCTEXT("DetailHabitability", "HABITABILITY"), FText::FromString(SelectedWorld->Habitability))]
 		+ SVerticalBox::Slot().AutoHeight()[DetailRow(LOCTEXT("DetailEnvironment", "ENVIRONMENT"), FText::FromString(SelectedWorld->Environment))]
 		+ SVerticalBox::Slot().AutoHeight()[DetailRow(LOCTEXT("DetailSaveSize", "SAVE SIZE"), APSMenu::SaveSizeText(SelectedWorld->FileSizeBytes))];
@@ -2612,8 +2634,36 @@ void SAPSMainMenuRoot::DiscoverSpawnClassOptions()
 		HiddenStartClasses.Num());
 }
 
+namespace APSMenuStartDefaults
+{
+	/** Rio 02.10: until the player picks, the menu starts with the newest pieces: the ranger pilot, the S P3 cargo ship,
+	 * station R2 and headquarters Alpha. The shipyard stays the generator's. Loaded like any pick (asynchronously). */
+	FSoftObjectPath For(const EAPSStartAssetSlot Slot)
+	{
+		switch (Slot)
+		{
+		case EAPSStartAssetSlot::Character:
+			return FSoftObjectPath(TEXT("/Game/APS/APS_ALPHA/Blueprints/BP_CustomGravityCharacter_SpeedModes.BP_CustomGravityCharacter_SpeedModes_C"));
+		case EAPSStartAssetSlot::Spaceship:
+			return FSoftObjectPath(TEXT("/Game/APS/APS_ALPHA/Core/Spaceships/S/BP_Spaceship_S_P3_01.BP_Spaceship_S_P3_01_C"));
+		case EAPSStartAssetSlot::SpaceStation:
+			return FSoftObjectPath(TEXT("/Game/APS/APS_ALPHA/Core/Stations/BP_SpaceStation_R2.BP_SpaceStation_R2_C"));
+		case EAPSStartAssetSlot::Headquarters:
+			return FSoftObjectPath(TEXT("/Game/APS/APS_ALPHA/Core/SpaceInfrastructure/BP_SpaceHeadquarters_Alpha.BP_SpaceHeadquarters_Alpha_C"));
+		default:
+			return FSoftObjectPath();
+		}
+	}
+}
+
+namespace APSMenuClassNames
+{
+	FText BaseName(const TSoftClassPtr<AActor>& Option);
+}
+
 void SAPSMainMenuRoot::SynchronizeSpawnClassOptions()
 {
+	SpawnClassCaptions.Reset();
 	for (auto& Pair : SpawnClassOptions)
 	{
 		UClass* CurrentClass = nullptr;
@@ -2649,6 +2699,17 @@ void SAPSMainMenuRoot::SynchronizeSpawnClassOptions()
 				|| (CurrentPath.IsValid() && Candidate.ToSoftObjectPath() == CurrentPath);
 		});
 		if (InitialIndex == INDEX_NONE) InitialIndex = 0;
+		if (ViewModel.IsValid() && ViewModel->IsSpawnSlotDefaulted(Pair.Key))
+		{
+			const FSoftObjectPath Preferred = APSMenuStartDefaults::For(Pair.Key);
+			const int32 PreferredIndex = Preferred.IsValid() ? Pair.Value.IndexOfByPredicate(
+				[&Preferred](const TSoftClassPtr<AActor>& Candidate) { return Candidate.ToSoftObjectPath() == Preferred; })
+				: INDEX_NONE;
+			if (PreferredIndex != INDEX_NONE)
+			{
+				InitialIndex = PreferredIndex;
+			}
+		}
 		SpawnClassIndices.Add(Pair.Key, InitialIndex);
 		ApplySpawnClassSelection(Pair.Key);
 	}
@@ -2797,6 +2858,8 @@ void SAPSMainMenuRoot::OnSpawnClassSelectionLoaded(EAPSStartAssetSlot Slot, FSof
 	{
 		ViewModel->SetSpawnClass(Slot, LoadedClass);
 	}
+	// Remembers its in-game name for the next session; this session's captions stay as they are.
+	APSMenuClassNames::BaseName((*Options)[Index]);
 	Invalidate(EInvalidateWidgetReason::Paint);
 }
 
@@ -2807,29 +2870,114 @@ FText SAPSMainMenuRoot::GetSpawnClassName(EAPSStartAssetSlot Slot) const
 	return GetSpawnClassOptionName(Slot, Index);
 }
 
+namespace APSMenuClassNames
+{
+	/** In-game names of start classes seen loaded, kept across sessions (GameUserSettings). */
+	const TCHAR* const Section = TEXT("APS.Menu.ClassNames");
+
+	TMap<FString, FString>& Remembered()
+	{
+		static TMap<FString, FString> Names;
+		static bool bRead = false;
+		if (!bRead && GConfig)
+		{
+			bRead = true;
+			if (const FConfigSection* Stored = GConfig->GetSection(Section, false, GGameUserSettingsIni))
+			{
+				for (const auto& Pair : *Stored) Names.Add(Pair.Key.ToString(), Pair.Value.GetValue());
+			}
+		}
+		return Names;
+	}
+
+	/**
+	 * Rio 02.10 ("the names keep changing, at least the headquarters"): an option read its in-game name only while
+	 * its class happened to be loaded and its asset name otherwise, so the list changed with what was loaded. The
+	 * in-game name, once seen, is remembered; until then the asset name stands in.
+	 */
+	/** Rio 02.10: names given in the menu where the in-game ones say nothing (both pilots read the same). */
+	const FString* Curated(const FString& Path)
+	{
+		static const TMap<FString, FString> Names = {
+			{TEXT("/Game/APS/APS_ALPHA/Blueprints/BP_CustomGravityCharacter.BP_CustomGravityCharacter_C"),
+				TEXT("PILOT  /  STANDARD")},
+			{TEXT("/Game/APS/APS_ALPHA/Blueprints/BP_CustomGravityCharacter_SpeedModes.BP_CustomGravityCharacter_SpeedModes_C"),
+				TEXT("PILOT  /  RANGER")}};
+		return Names.Find(Path);
+	}
+
+	FText BaseName(const TSoftClassPtr<AActor>& Option)
+	{
+		const FString Path = Option.ToSoftObjectPath().ToString();
+		if (const FString* Name = Curated(Path))
+		{
+			return FText::FromString(*Name);
+		}
+		if (const UClass* Loaded = Option.Get())
+		{
+			const AActor* Default = Loaded->GetDefaultObject<AActor>();
+			const FText InGameName = Default && Default->Implements<UItemInfoInterface>()
+				? IItemInfoInterface::Execute_GetInGameName(Default) : FText::GetEmpty();
+			if (!InGameName.IsEmptyOrWhitespace())
+			{
+				const FString Name = InGameName.ToString();
+				if (Remembered().FindRef(Path) != Name && GConfig)
+				{
+					Remembered().Add(Path, Name);
+					GConfig->SetString(Section, *Path, *Name, GGameUserSettingsIni);
+					GConfig->Flush(false, GGameUserSettingsIni);
+				}
+				return InGameName;
+			}
+		}
+		if (const FString* Name = Remembered().Find(Path))
+		{
+			return FText::FromString(*Name);
+		}
+		FString AssetName = Option.ToSoftObjectPath().GetAssetName();
+		AssetName.RemoveFromEnd(TEXT("_C"));
+		return FText::FromString(AssetName.Replace(TEXT("BP_"), TEXT("")));
+	}
+}
+
 FText SAPSMainMenuRoot::GetSpawnClassOptionName(EAPSStartAssetSlot Slot, int32 OptionIndex) const
 {
 	const TArray<TSoftClassPtr<AActor>>* Options = SpawnClassOptions.Find(Slot);
 	if (!Options || !Options->IsValidIndex(OptionIndex)) return LOCTEXT("Unavailable", "NOT CONFIGURED");
-	UClass* LoadedClass = (*Options)[OptionIndex].Get();
-	if (!LoadedClass)
+	TArray<FText>& Captions = SpawnClassCaptions.FindOrAdd(Slot);
+	if (Captions.Num() != Options->Num())
 	{
-		FString AssetName = (*Options)[OptionIndex].ToSoftObjectPath().GetAssetName();
-		AssetName.RemoveFromEnd(TEXT("_C"));
-		return FText::FromString(AssetName.Replace(TEXT("BP_"), TEXT("")));
-	}
-	const AActor* DefaultActor = LoadedClass->GetDefaultObject<AActor>();
-	if (DefaultActor && DefaultActor->Implements<UItemInfoInterface>())
-	{
-		const FText InGameName = IItemInfoInterface::Execute_GetInGameName(DefaultActor);
-		if (!InGameName.IsEmptyOrWhitespace())
+		// Rio 02.10 ("the names under the list change"): a name read while its class happened to be loaded renamed the
+		// option, and its twins with it, as picks loaded classes. A slot's captions are now taken at once and kept.
+		TArray<FText> Names;
+		for (const TSoftClassPtr<AActor>& Option : *Options)
 		{
-			return InGameName;
+			Names.Add(APSMenuClassNames::BaseName(Option));
+		}
+		Captions.Reset(Options->Num());
+		for (int32 Index = 0; Index < Options->Num(); ++Index)
+		{
+			// Rio 02.10: three headquarters all read "HQ X-1". Options sharing a name show their variant (the asset's suffix).
+			bool bShared = false;
+			for (int32 Other = 0; Other < Names.Num() && !bShared; ++Other)
+			{
+				bShared = Other != Index && Names[Other].EqualTo(Names[Index]);
+			}
+			if (!bShared)
+			{
+				Captions.Add(Names[Index]);
+				continue;
+			}
+			FString Variant = (*Options)[Index].ToSoftObjectPath().GetAssetName();
+			Variant.RemoveFromEnd(TEXT("_C"));
+			Variant.RemoveFromStart(TEXT("BP_"));
+			FString Head, Tail;
+			const FString Suffix = Variant.Split(TEXT("_"), &Head, &Tail, ESearchCase::IgnoreCase, ESearchDir::FromEnd)
+				? Tail.ToUpper() : FString(TEXT("ORIGINAL"));
+			Captions.Add(FText::Format(LOCTEXT("SpawnClassVariant", "{0}  /  {1}"), Names[Index], FText::FromString(Suffix)));
 		}
 	}
-	FString ClassName = LoadedClass->GetName();
-	ClassName.RemoveFromEnd(TEXT("_C"));
-	return FText::FromString(ClassName.Replace(TEXT("BP_"), TEXT("")));
+	return Captions[OptionIndex];
 }
 
 namespace
@@ -3164,7 +3312,7 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildCivilizationPage()
 				+ SVerticalBox::Slot().AutoHeight()
 				[SNew(STextBlock).Text(Label).Font(APSMenu::Font("Bold", 11)).ColorAndOpacity(APSMenu::White)]
 				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 2.0f, 0.0f, 0.0f)
-				[SNew(STextBlock).Text(FText::FromString(FString::Printf(TEXT("RANGE  %s - %s"), *FText::AsNumber(MinValue).ToString(), *FText::AsNumber(MaxValue).ToString()))).Font(APSMenu::Font("Regular", 9)).ColorAndOpacity(APSMenu::Muted)]
+				[SNew(STextBlock).Text(FText::FromString(FString::Printf(TEXT("RANGE  %s - %s"), *APSUINumber::Number(MinValue).ToString(), *APSUINumber::Number(MaxValue).ToString()))).Font(APSMenu::Font("Regular", 9)).ColorAndOpacity(APSMenu::Muted)]
 			]
 			+ SHorizontalBox::Slot().FillWidth(0.42f).VAlign(VAlign_Center).Padding(10.0f, 0.0f, 0.0f, 0.0f)
 			[
@@ -3214,9 +3362,36 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildCivilizationPage()
 		];
 	};
 
-	const auto InfoPanel = [](EAPSMenuGlyph Glyph, const FText& Title,
-		const FText& Subtitle, TAttribute<FText> Body)
+	// Rio 02.10 ("unreadable UX"): a headline value, then tiles with a small label over a large value, like LIVE MODEL.
+	struct FInfoTile
 	{
+		FText Label;
+		int32 Span{1};
+		TFunction<FText()> Value;
+	};
+	const auto InfoPanel = [](EAPSMenuGlyph Glyph, const FText& Title,
+		const FText& Subtitle, TAttribute<FText> Headline, TArray<FInfoTile> Tiles)
+	{
+		const TSharedRef<SGridPanel> Grid = SNew(SGridPanel).FillColumn(0, 1.0f).FillColumn(1, 1.0f).FillColumn(2, 1.0f);
+		int32 Column = 0;
+		int32 Row = 0;
+		for (FInfoTile& Tile : Tiles)
+		{
+			if (Column + Tile.Span > 3)
+			{
+				Column = 0;
+				++Row;
+			}
+			Grid->AddSlot(Column, Row).ColumnSpan(Tile.Span).Padding(0.0f, 0.0f, 14.0f, 12.0f)
+			[
+				SNew(SVerticalBox)
+				+ SVerticalBox::Slot().AutoHeight()
+				[SNew(STextBlock).Text(Tile.Label).Font(FCoreStyle::GetDefaultFontStyle("Bold", 9)).ColorAndOpacity(APSMenu::Muted)]
+				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 3.0f, 0.0f, 0.0f)
+				[SNew(STextBlock).Text_Lambda(MoveTemp(Tile.Value)).AutoWrapText(true).Font(APSMenu::Font("Bold", 13)).ColorAndOpacity(APSMenu::White)]
+			];
+			Column += Tile.Span;
+		}
 		return APSMenu::ChamferPanel(
 			SNew(SVerticalBox)
 			+ SVerticalBox::Slot().AutoHeight()
@@ -3234,10 +3409,16 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildCivilizationPage()
 			]
 			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 9.0f, 0.0f, 0.0f)
 			[SNew(SBox).HeightOverride(1.0f)[SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(APSMenu::CyanDim)]]
-			+ SVerticalBox::Slot().FillHeight(1.0f).Padding(0.0f, 10.0f, 0.0f, 0.0f)
-			[SNew(STextBlock).Text(Body).AutoWrapText(true).Font(APSMenu::Font("Regular", 13)).ColorAndOpacity(APSMenu::White)]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 10.0f, 0.0f, 0.0f)
+			[SNew(STextBlock).Text(Headline).AutoWrapText(true).Font(APSMenu::Font("Bold", 16)).ColorAndOpacity(APSMenu::Cyan)]
+			+ SVerticalBox::Slot().FillHeight(1.0f).Padding(0.0f, 12.0f, 0.0f, 0.0f)
+			[Grid]
 		, FMargin(15.0f), FLinearColor(0.035f, 0.28f, 0.37f, 0.95f), 1.0f);
 	};
+	// The tiles read the live spawn parameters and generated world.
+	const auto Spawn = [VM]() -> const USpawnParameters* { return VM.IsValid() ? VM->SpawnParameters.Get() : nullptr; };
+	const auto Generated = [VM]() -> const UGeneratedWorld* { return VM.IsValid() ? VM->GeneratedWorld.Get() : nullptr; };
+	const auto Upper = [](const FString& Value) { return FText::FromString(Value.ToUpper()); };
 
 	const auto PresetButton = [this](const FText& Label, const FText& ToolTip,
 		TFunction<bool()> IsActive, TFunction<void()> Apply)
@@ -3406,6 +3587,76 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildCivilizationPage()
 			+ SVerticalBox::Slot().AutoHeight()[EnumControl(LOCTEXT("OrbitHeight", "HOME COMPLEX ORBIT"), StaticEnum<EOrbitHeight>(), [VM](){return VM.IsValid()&&VM->SpawnParameters?static_cast<int32>(VM->SpawnParameters->HomeStationOrbitHeight):0;}, [VM](int32 V){if(VM.IsValid())VM->SetStationOrbitHeight(V);})]
 		];
 
+	// STEP 05 (Rio 02.10, C19: "for the ground start, a screen of its own to choose the base colony, the ground vehicles,
+	// the launch pad"): the colony on the home world as it is founded. It stands in every start; on the ground the pilot
+	// wakes up in it.
+	const auto VehicleToggle = [this, VM](const FText& Label, const FText& ToolTip, const int32 Bit)
+	{
+		const auto IsOn = [VM, Bit]()
+		{
+			const USpawnParameters* P = VM.IsValid() ? VM->SpawnParameters.Get() : nullptr;
+			return P && (P->GroundVehicleMask & Bit) != 0;
+		};
+		return SNew(SButton).ButtonStyle(&SecondaryButtonStyle).ToolTipText(ToolTip).ContentPadding(FMargin(8.0f, 7.0f))
+			.ButtonColorAndOpacity_Lambda([IsOn]()
+			{
+				return IsOn() ? FLinearColor(0.45f, 0.18f, 0.01f, 1.0f) : FLinearColor(0.015f, 0.09f, 0.12f, 0.96f);
+			})
+			.OnClicked_Lambda([VM, Bit]()
+			{
+				if (VM.IsValid() && VM->SpawnParameters)
+				{
+					VM->SpawnParameters->GroundVehicleMask ^= Bit;
+				}
+				return FReply::Handled();
+			})
+			[
+				SNew(SVerticalBox)
+				+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center)
+				[SNew(STextBlock).Text(Label).Justification(ETextJustify::Center).Font(APSMenu::Font("Bold", 9)).ColorAndOpacity(APSMenu::White)]
+				+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0.0f, 2.0f, 0.0f, 0.0f)
+				[
+					SNew(STextBlock).Text_Lambda([IsOn](){ return IsOn() ? LOCTEXT("VehicleOn", "AT THE COLONY") : LOCTEXT("VehicleOff", "NONE"); })
+					.Font(APSMenu::Font("Bold", 8)).ColorAndOpacity_Lambda([IsOn](){ return IsOn() ? APSMenu::Amber : APSMenu::Muted; })
+				]
+			];
+	};
+	const auto PackageText = [VM]()
+	{
+		const USpawnParameters* P = VM.IsValid() ? VM->SpawnParameters.Get() : nullptr;
+		if (!P) return FText::GetEmpty();
+		switch (P->ColonyStartPackage)
+		{
+		case EAPSColonyStartPackage::Standard:
+			return LOCTEXT("PackageStandard", "The base, and the colony orders a habitat, a solar array and storage on founding.");
+		case EAPSColonyStartPackage::Settlement:
+			return LOCTEXT("PackageSettlement", "A working colony: habitat, solar array, storage, greenhouse, comms mast and floodlight, built over the first minutes.");
+		case EAPSColonyStartPackage::Outpost:
+		default:
+			return LOCTEXT("PackageOutpost", "The base alone: the first structures are yours to build.");
+		}
+	};
+	TSharedRef<SWidget> GroundEditor = SNew(SScrollBox)
+		+ SScrollBox::Slot()
+		[
+			SNew(SVerticalBox)
+			+ SVerticalBox::Slot().AutoHeight()[APSMenu::IconSectionHeading(EAPSMenuGlyph::Planet,
+				LOCTEXT("GroundSetup", "GROUND START"), LOCTEXT("GroundSetupHint", "The colony on the home world as it is founded."))]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 14.0f, 0.0f, 4.0f)[EnumControl(LOCTEXT("ColonyPackage", "BASE COLONY"), StaticEnum<EAPSColonyStartPackage>(), [VM](){return VM.IsValid()&&VM->SpawnParameters?static_cast<int32>(VM->SpawnParameters->ColonyStartPackage):0;}, [VM](int32 V){if(VM.IsValid()&&VM->SpawnParameters)VM->SpawnParameters->ColonyStartPackage=static_cast<EAPSColonyStartPackage>(V);})]
+			+ SVerticalBox::Slot().AutoHeight().Padding(2.0f, 0.0f, 2.0f, 8.0f)
+			[SNew(STextBlock).Text_Lambda(PackageText).Font(APSMenu::Font("Regular", 9)).ColorAndOpacity(APSMenu::Muted).AutoWrapText(true)]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 8.0f)[EnumControl(LOCTEXT("LaunchPad", "LAUNCH PAD"), StaticEnum<EAPSLaunchPadStart>(), [VM](){return VM.IsValid()&&VM->SpawnParameters?static_cast<int32>(VM->SpawnParameters->LaunchPadStart):0;}, [VM](int32 V){if(VM.IsValid()&&VM->SpawnParameters)VM->SpawnParameters->LaunchPadStart=static_cast<EAPSLaunchPadStart>(V);})]
+			+ SVerticalBox::Slot().AutoHeight().Padding(2.0f, 4.0f, 0.0f, 6.0f)
+			[SNew(STextBlock).Text(LOCTEXT("GroundVehicles", "GROUND VEHICLES")).Font(APSMenu::Font("Bold", 11)).ColorAndOpacity(APSMenu::White)]
+			+ SVerticalBox::Slot().AutoHeight()
+			[
+				SNew(SUniformGridPanel).SlotPadding(FMargin(3.0f))
+				+ SUniformGridPanel::Slot(0, 0)[VehicleToggle(LOCTEXT("VehicleRover", "ROVER"), LOCTEXT("VehicleRoverTip", "Wheels, 25-35 m/s over the ground."), 1)]
+				+ SUniformGridPanel::Slot(1, 0)[VehicleToggle(LOCTEXT("VehicleHover", "HOVER"), LOCTEXT("VehicleHoverTip", "Floats over the ground and water, twice as fast."), 2)]
+				+ SUniformGridPanel::Slot(2, 0)[VehicleToggle(LOCTEXT("VehicleDrone", "DRONE"), LOCTEXT("VehicleDroneTip", "Flies up to the edge of the atmosphere."), 4)]
+			]
+		];
+
 	TSharedRef<SWidget> InfrastructureEditor = SNew(SScrollBox)
 		+ SScrollBox::Slot()
 		[
@@ -3440,9 +3691,9 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildCivilizationPage()
 					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 8.0f, 0.0f, 0.0f)
 					[
 						SNew(SUniformGridPanel).SlotPadding(FMargin(2.0f))
-						+ SUniformGridPanel::Slot(0,0)[MetricTile(LOCTEXT("MetricActors", "TOTAL ACTORS"),TAttribute<FText>::CreateLambda([VM](){const USpawnParameters* P=VM.IsValid()?VM->SpawnParameters.Get():nullptr;return FText::AsNumber(P?P->GetPlannedPhysicalActorCount():0);}),APSMenu::Amber)]
-						+ SUniformGridPanel::Slot(1,0)[MetricTile(LOCTEXT("MetricShips", "FLEET"),TAttribute<FText>::CreateLambda([VM](){const USpawnParameters* P=VM.IsValid()?VM->SpawnParameters.Get():nullptr;return FText::AsNumber(P?P->StartingFleetSize:0);}))]
-						+ SUniformGridPanel::Slot(2,0)[MetricTile(LOCTEXT("MetricInfra", "INFRA NODES"),TAttribute<FText>::CreateLambda([VM](){const USpawnParameters* P=VM.IsValid()?VM->SpawnParameters.Get():nullptr;return FText::AsNumber(P?P->GetPlannedInfrastructureActorCount():0);}))]
+						+ SUniformGridPanel::Slot(0,0)[MetricTile(LOCTEXT("MetricActors", "TOTAL ACTORS"),TAttribute<FText>::CreateLambda([VM](){const USpawnParameters* P=VM.IsValid()?VM->SpawnParameters.Get():nullptr;return APSUINumber::Number(P?P->GetPlannedPhysicalActorCount():0);}),APSMenu::Amber)]
+						+ SUniformGridPanel::Slot(1,0)[MetricTile(LOCTEXT("MetricShips", "FLEET"),TAttribute<FText>::CreateLambda([VM](){const USpawnParameters* P=VM.IsValid()?VM->SpawnParameters.Get():nullptr;return APSUINumber::Number(P?P->StartingFleetSize:0);}))]
+						+ SUniformGridPanel::Slot(2,0)[MetricTile(LOCTEXT("MetricInfra", "INFRA NODES"),TAttribute<FText>::CreateLambda([VM](){const USpawnParameters* P=VM.IsValid()?VM->SpawnParameters.Get():nullptr;return APSUINumber::Number(P?P->GetPlannedInfrastructureActorCount():0);}))]
 					]
 				]
 			]
@@ -3475,7 +3726,8 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildCivilizationPage()
 		+ SWidgetSwitcher::Slot()[IdentityEditor]
 		+ SWidgetSwitcher::Slot()[InfrastructureEditor]
 		+ SWidgetSwitcher::Slot()[DivisionsEditor]
-		+ SWidgetSwitcher::Slot()[StartEditor];
+		+ SWidgetSwitcher::Slot()[StartEditor]
+		+ SWidgetSwitcher::Slot()[GroundEditor];
 
 	TSharedRef<SWidget> Page = SNew(SVerticalBox)
 		+ SVerticalBox::Slot().AutoHeight().Padding(28.0f, 18.0f, 28.0f, 3.0f)[BuildHeader(LOCTEXT("CivParameters", "CIVILIZATION GENERATION"))]
@@ -3501,7 +3753,7 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildCivilizationPage()
 						.Font(APSMenu::Font("Bold", 8)).ColorAndOpacity_Lambda([this](){return SpawnSelectionLoadHandles.IsEmpty()?APSMenu::Success:APSMenu::Amber;})
 					]
 					+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Right).Padding(0.0f, 1.0f, 0.0f, 0.0f)
-					[SNew(STextBlock).Text_Lambda([VM](){const USpawnParameters* P=VM.IsValid()?VM->SpawnParameters.Get():nullptr;return FText::FromString(FString::Printf(TEXT("%d PHYSICAL ACTORS"),P?P->GetPlannedPhysicalActorCount():0));}).Font(APSMenu::Font("Bold", 13)).ColorAndOpacity(APSMenu::Amber)]
+					[SNew(STextBlock).Text_Lambda([VM](){const USpawnParameters* P=VM.IsValid()?VM->SpawnParameters.Get():nullptr;return FText::Format(LOCTEXT("CivManifestCount", "{0} UNITS  /  {1} STRUCTURES"),P?P->GetPlannedUnitCount():0,P?P->GetPlannedStructureCount():0);}).Font(APSMenu::Font("Bold", 13)).ColorAndOpacity(APSMenu::Amber)]
 				]
 			]
 		]
@@ -3532,11 +3784,52 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildCivilizationPage()
 				[
 					SNew(SHorizontalBox)
 					+ SHorizontalBox::Slot().FillWidth(1.0f).Padding(4.0f)
-					[InfoPanel(EAPSMenuGlyph::Civilization, LOCTEXT("CivilizationStatus", "CIVILIZATION"), LOCTEXT("CivilizationStatusHint", "Identity snapshot"), TAttribute<FText>::CreateLambda([VM](){ const USpawnParameters* P=VM.IsValid()?VM->SpawnParameters.Get():nullptr; return P ? FText::FromString(FString::Printf(TEXT("%s\n%s  /  %s\n%s  /  %s\nPopulation  %s  /  Tech T%d"), *P->CivilizationName, *APSMenu::EnumLabel(P->CivilizationArchetype), *APSMenu::EnumLabel(P->GovernmentType), *APSMenu::EnumLabel(P->EconomicSystem), *APSMenu::EnumLabel(P->SocietyType), *FText::AsNumber(P->FoundingPopulation).ToString(), P->TechnologyLevel)) : FText::GetEmpty(); }))]
+					[InfoPanel(EAPSMenuGlyph::Civilization, LOCTEXT("CivilizationStatus", "CIVILIZATION"), LOCTEXT("CivilizationStatusHint", "Identity snapshot"),
+						TAttribute<FText>::CreateLambda([Spawn, Upper]() { const USpawnParameters* P = Spawn(); return P ? Upper(P->CivilizationName) : FText::GetEmpty(); }),
+						{
+							{LOCTEXT("CivStance", "STANCE"), 1, [Spawn, Upper]() { const USpawnParameters* P = Spawn(); return P ? Upper(APSMenu::EnumLabel(P->CivilizationArchetype)) : FText::GetEmpty(); }},
+							{LOCTEXT("CivGovernment", "GOVERNMENT"), 1, [Spawn, Upper]() { const USpawnParameters* P = Spawn(); return P ? Upper(APSMenu::EnumLabel(P->GovernmentType)) : FText::GetEmpty(); }},
+							{LOCTEXT("CivEconomy", "ECONOMY"), 1, [Spawn, Upper]() { const USpawnParameters* P = Spawn(); return P ? Upper(APSMenu::EnumLabel(P->EconomicSystem)) : FText::GetEmpty(); }},
+							{LOCTEXT("CivSociety", "SOCIETY"), 1, [Spawn, Upper]() { const USpawnParameters* P = Spawn(); return P ? Upper(APSMenu::EnumLabel(P->SocietyType)) : FText::GetEmpty(); }},
+							{LOCTEXT("CivPopulation", "POPULATION"), 1, [Spawn]() { const USpawnParameters* P = Spawn(); return P ? APSUINumber::Number(P->FoundingPopulation) : FText::GetEmpty(); }},
+							{LOCTEXT("CivTech", "TECH LEVEL"), 1, [Spawn]() { const USpawnParameters* P = Spawn(); return P ? FText::FromString(FString::Printf(TEXT("T%d"), P->TechnologyLevel)) : FText::GetEmpty(); }}
+						})]
 					+ SHorizontalBox::Slot().FillWidth(1.0f).Padding(4.0f)
-					[InfoPanel(EAPSMenuGlyph::System, LOCTEXT("StarSystemInfo", "HOME SYSTEM"), LOCTEXT("StarSystemInfoHint", "Astronomical handoff"), TAttribute<FText>::CreateLambda([VM](){ const UGeneratedWorld* W=VM.IsValid()?VM->GeneratedWorld.Get():nullptr; return W ? FText::FromString(FString::Printf(TEXT("%s\n%s  /  %s\n%d planets\nHome  %s  /  %.0f KM"), *APSMenu::EnumLabel(W->PlanetarySystemType), *APSMenu::EnumLabel(W->StellarType), *APSMenu::EnumLabel(W->SpectralClass), W->PlanetsAmount, *APSMenu::EnumLabel(W->PlanetType), W->PlanetRadius)) : FText::GetEmpty(); }))]
+					[InfoPanel(EAPSMenuGlyph::System, LOCTEXT("StarSystemInfo", "HOME SYSTEM"), LOCTEXT("StarSystemInfoHint", "Astronomical handoff"),
+						TAttribute<FText>::CreateLambda([Generated, Upper]() { const UGeneratedWorld* W = Generated(); return W ? Upper(APSMenu::EnumLabel(W->PlanetarySystemType)) : FText::GetEmpty(); }),
+						{
+							{LOCTEXT("SysStar", "STAR"), 1, [Generated, Upper]() { const UGeneratedWorld* W = Generated(); return W ? Upper(APSMenu::EnumLabel(W->StellarType)) : FText::GetEmpty(); }},
+							{LOCTEXT("SysSpectrum", "SPECTRUM"), 1, [Generated, Upper]() { const UGeneratedWorld* W = Generated(); return W ? Upper(APSMenu::EnumLabel(W->SpectralClass)) : FText::GetEmpty(); }},
+							{LOCTEXT("SysPlanets", "PLANETS"), 1, [Generated]() { const UGeneratedWorld* W = Generated(); return W ? APSUINumber::Number(W->PlanetsAmount) : FText::GetEmpty(); }},
+							{LOCTEXT("SysHome", "HOME WORLD"), 1, [Generated, Upper]() { const UGeneratedWorld* W = Generated(); return W ? Upper(APSMenu::EnumLabel(W->PlanetType)) : FText::GetEmpty(); }},
+							{LOCTEXT("SysRadius", "RADIUS"), 1, [Generated]() { const UGeneratedWorld* W = Generated(); return W ? FText::Format(LOCTEXT("SysRadiusKm", "{0} KM"), APSUINumber::Number(FMath::RoundToInt(W->PlanetRadius))) : FText::GetEmpty(); }},
+							{LOCTEXT("SysMoons", "MOONS"), 1, [Generated]() { const UGeneratedWorld* W = Generated(); return W ? APSUINumber::Number(W->MoonsAmount) : FText::GetEmpty(); }}
+						})]
 					+ SHorizontalBox::Slot().FillWidth(1.0f).Padding(4.0f)
-					[InfoPanel(EAPSMenuGlyph::Infrastructure, LOCTEXT("Infrastructure", "DEPLOYMENT"), LOCTEXT("InfrastructureHint", "Physical actor manifest"), TAttribute<FText>::CreateLambda([VM](){ const USpawnParameters* P=VM.IsValid()?VM->SpawnParameters.Get():nullptr; if (!P) return FText::GetEmpty(); FString Start = StaticEnum<ECharSpawnPlace>()->GetDisplayNameTextByValue(static_cast<int64>(P->CharacterSpawnPlace)).ToString(); if (P->CharacterSpawnPlace == ECharSpawnPlace::PlanetOrbit) { Start += TEXT(" / ") + StaticEnum<EAPSStartStation>()->GetDisplayNameTextByValue(static_cast<int64>(P->StartStation)).ToString(); } return FText::FromString(FString::Printf(TEXT("%d total actors\nFleet  %d ships\nInfrastructure  %d nodes\nPilot  Custom Gravity\nStart  %s"), P->GetPlannedPhysicalActorCount(), P->StartingFleetSize, P->GetPlannedInfrastructureActorCount(), *Start)); }))]
+					[InfoPanel(EAPSMenuGlyph::Infrastructure, LOCTEXT("Infrastructure", "DEPLOYMENT"), LOCTEXT("InfrastructureHint", "Physical actor manifest"),
+						TAttribute<FText>::CreateLambda([Spawn]() { const USpawnParameters* P = Spawn(); return P ? FText::Format(LOCTEXT("DeployActors", "{0} ACTORS"), APSUINumber::Number(P->GetPlannedPhysicalActorCount())) : FText::GetEmpty(); }),
+						{
+							{LOCTEXT("DeployFleet", "FLEET"), 1, [Spawn]() { const USpawnParameters* P = Spawn(); return P ? FText::Format(LOCTEXT("DeployShips", "{0} SHIPS"), APSUINumber::Number(P->StartingFleetSize)) : FText::GetEmpty(); }},
+							{LOCTEXT("DeployInfrastructure", "INFRASTRUCTURE"), 1, [Spawn]() { const USpawnParameters* P = Spawn(); return P ? FText::Format(LOCTEXT("DeployNodes", "{0} NODES"), APSUINumber::Number(P->GetPlannedInfrastructureActorCount())) : FText::GetEmpty(); }},
+							{LOCTEXT("DeployPilot", "PILOT"), 1, []() { return LOCTEXT("DeployPilotValue", "CUSTOM GRAVITY"); }},
+							{LOCTEXT("DeployStart", "START"), 3, [Spawn, Upper]()
+							{
+								const USpawnParameters* P = Spawn();
+								if (!P) return FText::GetEmpty();
+								FString Start = StaticEnum<ECharSpawnPlace>()->GetDisplayNameTextByValue(static_cast<int64>(P->CharacterSpawnPlace)).ToString();
+								if (P->CharacterSpawnPlace == ECharSpawnPlace::PlanetOrbit)
+								{
+									Start += TEXT("  /  ") + StaticEnum<EAPSStartStation>()->GetDisplayNameTextByValue(static_cast<int64>(P->StartStation)).ToString();
+								}
+								else if (P->CharacterSpawnPlace == ECharSpawnPlace::PlanetSurface)
+								{
+									// C19: the ground start names its colony package.
+									Start += TEXT("  /  ") + StaticEnum<EAPSColonyStartPackage>()->GetDisplayNameTextByValue(static_cast<int64>(P->ColonyStartPackage)).ToString()
+										+ TEXT(" COLONY");
+								}
+								return Upper(Start);
+							}}
+						})]
 				]
 			]
 			+ SHorizontalBox::Slot().FillWidth(0.34f).Padding(5.0f)
@@ -3565,6 +3858,7 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildCivilizationPage()
 						+ SUniformGridPanel::Slot(1, 0)[EditorTab(1, EAPSMenuGlyph::Infrastructure, LOCTEXT("ManifestTab", "MANIFEST"))]
 						+ SUniformGridPanel::Slot(2, 0)[EditorTab(2, EAPSMenuGlyph::Divisions, LOCTEXT("DivisionsTab", "DIVISIONS"))]
 						+ SUniformGridPanel::Slot(3, 0)[EditorTab(3, EAPSMenuGlyph::Station, LOCTEXT("StartTab", "START"))]
+						+ SUniformGridPanel::Slot(4, 0)[EditorTab(4, EAPSMenuGlyph::Planet, LOCTEXT("GroundTab", "GROUND"))]
 					]
 					+ SVerticalBox::Slot().FillHeight(1.0f)[EditorSwitcher]
 				, FMargin(16.0f), FLinearColor(0.05f, 0.34f, 0.43f, 0.95f), 1.2f)

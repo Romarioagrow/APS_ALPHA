@@ -11,6 +11,8 @@ struct FAPSPreviewAnnotationCandidate
 	FVector2D Anchor{FVector2D::ZeroVector};
 	bool bSelected{false};
 	bool bPrimary{false};
+	/** Box size of this label; labels fit their full text instead of eliding it (Rio, 02.10). */
+	FVector2D Size{160.0, 36.0};
 };
 
 struct FAPSPreviewAnnotationPlacement
@@ -60,23 +62,23 @@ inline TArray<FAPSPreviewAnnotationPlacement> Arrange(
 		return APriority != BPriority ? APriority < BPriority : A.EntryIndex < B.EntryIndex;
 	});
 	const int32 Budget = LabelBudget(PanelSize);
-	const FVector2D Size = LabelSize();
 	// Reserve the explanation row even when a locally crowded sparse scene cannot
 	// place all its labels. Otherwise that explanation could overlap a bottom label.
 	const double Bottom = PanelSize.Y - 22.0;
 	TArray<FSlateRect> Occupied;
 	TArray<FAPSPreviewAnnotationPlacement> Placements;
 	Placements.Reserve(Candidates.Num());
-	const FVector2D Offsets[] = {
-		FVector2D(-Size.X * 0.5, -Size.Y - 34.0),
-		FVector2D(14.0, -Size.Y * 0.5),
-		FVector2D(-Size.X - 14.0, -Size.Y * 0.5),
-		FVector2D(-Size.X * 0.5, 18.0),
-		FVector2D(-Size.X * 0.5, -Size.Y - 78.0),
-		FVector2D(-Size.X * 0.5, 62.0)
-	};
 	for (const FAPSPreviewAnnotationCandidate& Candidate : Candidates)
 	{
+		const FVector2D Size = Candidate.Size;
+		const FVector2D Offsets[] = {
+			FVector2D(-Size.X * 0.5, -Size.Y - 34.0),
+			FVector2D(14.0, -Size.Y * 0.5),
+			FVector2D(-Size.X - 14.0, -Size.Y * 0.5),
+			FVector2D(-Size.X * 0.5, 18.0),
+			FVector2D(-Size.X * 0.5, -Size.Y - 78.0),
+			FVector2D(-Size.X * 0.5, 62.0)
+		};
 		FAPSPreviewAnnotationPlacement& Placement = Placements.AddDefaulted_GetRef();
 		Placement.Candidate = Candidate;
 		if (Occupied.Num() >= Budget || PanelSize.X < Size.X + 8.0 || Bottom < Size.Y + 4.0) continue;

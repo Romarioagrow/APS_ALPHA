@@ -6,6 +6,8 @@
 #include "APS_ALPHA/Generation/PlanetarySurfaceGenerator.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/World.h"
+#include "HAL/IConsoleManager.h"
+#include "Misc/ScopeExit.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAPSWorldScapeResidentResumeTest,
     "APS.Gameplay.World.PlanetSurface.ResidentResume",
@@ -13,6 +15,18 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAPSWorldScapeResidentResumeTest,
 
 bool FAPSWorldScapeResidentResumeTest::RunTest(const FString& Parameters)
 {
+    // This fixture covers terrain worker draining, including live seed edits.
+    // Published foliage is now enabled in project defaults; its immutable-root
+    // contract intentionally rejects those edits and requires root replacement.
+    // Do not make a terrain-only sentinel test depend on release CVar defaults.
+    IConsoleVariable* FoliageEnable = IConsoleManager::Get().FindConsoleVariable(TEXT("aps.WorldScapeFoliage.Enable"));
+    if (!TestNotNull(TEXT("Foliage gate exists for isolated terrain lifecycle"), FoliageEnable)) return false;
+    const FString SavedFoliageEnable = FoliageEnable->GetString();
+    const auto SavedFoliageFlags = static_cast<EConsoleVariableFlags>(
+        (FoliageEnable->GetFlags() & ECVF_SetByMask) | ECVF_Set_SetOnly_Unsafe);
+    ON_SCOPE_EXIT { FoliageEnable->Set(*SavedFoliageEnable, SavedFoliageFlags); };
+    FoliageEnable->Set(0, SavedFoliageFlags);
+
     const UWorld::InitializationValues Values = UWorld::InitializationValues()
         .AllowAudioPlayback(false).RequiresHitProxies(false).CreatePhysicsScene(true)
         .CreateNavigation(false).CreateAISystem(false).ShouldSimulatePhysics(false);

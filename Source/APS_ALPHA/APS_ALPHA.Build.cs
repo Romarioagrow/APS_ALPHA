@@ -8,7 +8,7 @@ public class APS_ALPHA : ModuleRules
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 	
-		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "UMG", "ModelViewViewModel"
+		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "PhysicsCore", "InputCore", "UMG", "ModelViewViewModel"
 			, "WorldScapeCore"
 			, "WorldScapeCommon"
 			, "WorldScapeNoise"

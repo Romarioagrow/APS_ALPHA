@@ -5,6 +5,7 @@
 #include "APS_ALPHA/Core/Enums/MoonType.h"
 #include "APS_ALPHA/Core/Enums/PlanetType.h"
 #include "APS_ALPHA/Core/Planetary/APSPlanetSurfaceProfile.h"
+#include "APS_ALPHA/Core/Planetary/APSPlanetSurfaceRadius.h"
 #include "APS_ALPHA/Core/Planetary/APSNativeTerrainMaterial.h"
 #include "APS_ALPHA/Core/Planetary/APSSharedTerrainMaterial.h"
 #include "APS_ALPHA/Core/Planetary/APSSharedGeneratedLiquidMaterial.h"
@@ -12,6 +13,7 @@
 #include "APS_ALPHA/Core/Planetary/APSWorldScapeLiquidLattice.h"
 #include "APS_ALPHA/Core/Planetary/APSWorldScapeSurfaceEnvelope.h"
 #include "APS_ALPHA/Core/Planetary/APSUnifiedLavaSurface.h"
+#include "APS_ALPHA/Core/Planetary/APSUnifiedLavaMaterialPreparation.h"
 #include "APS_ALPHA/Core/Planetary/APSOrbitalWaterAppearance.h"
 #include "Camera/PlayerCameraManager.h"
 #include "GameFramework/PlayerController.h"
@@ -26,10 +28,30 @@
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
 #include "MaterialShared.h"
+#include "TimerManager.h"
 #include "UObject/UObjectGlobals.h"
 
 namespace APSWorldScapeProfiles
 {
+    TAutoConsoleVariable<int32> CVarShoreWater(
+        TEXT("aps.Surface.ShoreWater"), 0,
+        TEXT("DEFAULT-OFF shore transmission factory trial for existing CoastalWater families. ")
+        TEXT("Same saved template in PLANET/gameplay; requires supported single-layer-water render settings. ")
+        TEXT("Recreate profile after changing; no geometry or other-chemistry changes."), ECVF_Default);
+    TAutoConsoleVariable<int32> CVarCoastalWater(
+        TEXT("aps.Surface.CoastalWater"), 1,
+        TEXT("Versioned dark Water with footprint-filtered anchored ripples and native bathymetry. ")
+        TEXT("Generated Water/Terrestrial/Oasis only; recreate profile after change. 0 restores SharedLiquid. ")
+        TEXT("Enabled for validated release-path families; other liquids and authored instances are unchanged."), ECVF_Default);
+    TAutoConsoleVariable<int32> CVarTerrestrialPalette(
+        TEXT("aps.Surface.TerrestrialPalette"), 1,
+        TEXT("Material-only Earth-like palette: lower biome chroma, preserve luminance. ")
+        TEXT("Generated Shared/Continuous Terra only; no exposure/geometry changes. Read on profile recreation."), ECVF_Default);
+    TAutoConsoleVariable<int32> CVarTerrainContinuity(
+        TEXT("aps.Surface.TerrainContinuity"), 1,
+        TEXT("Versioned detiled terrain on explicitly validated generated solid presets only. ")
+        TEXT("0 restores the unchanged Shared material on profile recreation; restart PIE. ")
+        TEXT("No geometry, height, collision, liquid, authored or other-family changes."), ECVF_Default);
     TAutoConsoleVariable<float> CVarLivingPaletteDetail(
         TEXT("aps.Surface.LivingPaletteDetail"), 1.0f,
         TEXT("0..1 restores the distinct cool dryland palette endpoint on generated SharedTerra water worlds. ")
@@ -83,8 +105,8 @@ uint32 APlanetarySurfaceGenerator::BuildSurfaceProfileSignature(const APlanetary
 	}
 
 	uint32 Signature = GetTypeHash(Body->WorldScapeSeed);
-	Signature = HashCombine(Signature, GetTypeHash(FMath::RoundToInt64(Body->RadiusKM * 1000.0)));
-	Signature = HashCombine(Signature, GetTypeHash(static_cast<int64>(Body->PlanetRadiusKM)));
+	Signature = HashCombine(Signature, GetTypeHash(FMath::RoundToInt64(
+		APSPlanetSurfaceRadius::Kilometres(Body->RadiusKM, Body->PlanetRadiusKM) * 1000.0)));
 	Signature = HashCombine(Signature,
 		GetTypeHash(FMath::RoundToInt64(Body->WorldScapePresentationScale * 1.0e9)));
 	Signature = HashCombine(Signature, GetTypeHash(static_cast<uint8>(Body->PlanetType)));
@@ -427,6 +449,7 @@ bool APlanetarySurfaceGenerator::CreateRuntimeWorldScapeRoot(APlanetaryBody* Bod
 	UGameplayStatics::FinishSpawningActor(WorldScapeRootInstance, RootTransform);
 	bOwnsWorldScapeRootInstance = true;
 	CancelPendingSurfaceProfileApply();
+	CancelLavaMaterialPreparation();
 	bPendingWorldScapeUnload = false;
 	bDestroyWorldScapeRootAfterDrain = false;
 	WorldScapeRootInstance->SetActorScale3D(FVector::OneVector);
@@ -457,6 +480,11 @@ bool APlanetarySurfaceGenerator::ReplaceDrainedRuntimeWorldScapeRoot(APlanetaryB
 		DrainedRootToReplace->SetActorTickEnabled(false);
 		DrainedRootToReplace->SetActorHiddenInGame(true);
 		DrainedRootToReplace->SetActorEnableCollision(false);
+		if (FAPSWorldScapeFoliagePolicy::HasPendingNativeWorker(DrainedRootToReplace))
+		{
+			// A native EndPlay would otherwise EnsureCompletion on the game thread.
+			return false;
+		}
 		if (DrainedRootToReplace->WorldScapeLodInGeneration.Num() > 0)
 		{
 			UE_LOG(LogTemp, Warning,
@@ -482,6 +510,7 @@ bool APlanetarySurfaceGenerator::ReplaceDrainedRuntimeWorldScapeRoot(APlanetaryB
 	WorldScapeRootInstance = nullptr;
 	bOwnsWorldScapeRootInstance = false;
 	CancelPendingSurfaceProfileApply();
+	CancelLavaMaterialPreparation();
 	bPendingWorldScapeUnload = false;
 	bDestroyWorldScapeRootAfterDrain = false;
 	SetActorTickEnabled(false);
@@ -510,10 +539,155 @@ bool APlanetarySurfaceGenerator::ReplaceDrainedRuntimeWorldScapeRoot(APlanetaryB
 }
 
 
+void APlanetarySurfaceGenerator::StopLavaMaterialPolling()
+{
+	if (UWorld* World = GetWorld()) World->GetTimerManager().ClearTimer(LavaMaterialPollTimer);
+	bPendingLavaMaterial = false;
+}
+
+void APlanetarySurfaceGenerator::CancelLavaMaterialPreparation()
+{
+	StopLavaMaterialPolling();
+	LavaMaterialPreparation.Reset();
+	LavaMaterialBody.Reset();
+	LavaMaterialRoot.Reset();
+	bLavaMaterialTimedOut = false;
+	bLavaMaterialFailureLogged = false;
+	LavaMaterialRequestTime = 0.0;
+	LavaMaterialResumeState = EDeferredWorldScapeRootState::Preloaded;
+}
+
+bool APlanetarySurfaceGenerator::DeferProfileForLavaMaterial(APlanetaryBody* Body)
+{
+	using namespace APSUnifiedLavaSurface;
+	const APlanet* Planet = Cast<APlanet>(Body);
+	if (!IsValid(Body) || !IsValid(WorldScapeRootInstance) || !GetWorld()
+		|| APSWorldScapeProfiles::CVarUnifiedLavaSurface.GetValueOnGameThread() == 0
+		|| !UAPSPlanetSurfaceProfileResolver::SupportsWorldScape(Body->PlanetType))
+	{
+		CancelLavaMaterialPreparation();
+		return false;
+	}
+	if (!IsValid(SurfaceProfileCatalog))
+		SurfaceProfileCatalog = LoadObject<UAPSPlanetSurfaceCatalog>(nullptr,
+			TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/DA_PlanetSurfaceCatalog.DA_PlanetSurfaceCatalog"));
+	const FAPSResolvedPlanetSurfaceProfile Requested =
+		UAPSPlanetSurfaceProfileResolver::ResolveForBody(Body, SurfaceProfileCatalog);
+	if (!APSWorldScapeSurfaceEnvelope::Eligible(Requested.LiquidType == EAPSPlanetLiquidType::Lava,
+		FMath::IsFinite(Requested.LandCoverage) && Requested.LandCoverage < 0.995f,
+		Planet && Planet->IsManual, Body->WorldScapePresentationScale))
+	{
+		CancelLavaMaterialPreparation();
+		return false;
+	}
+	// Custom authored stacks cannot be converted by the factory. Do not delay
+	// them for an unrelated candidate; the existing selection remains authoritative.
+	if (IsValid(SurfaceProfileCatalog))
+		if (const auto* Definition = SurfaceProfileCatalog->Archetypes.Find(Requested.Archetype))
+			if (UMaterialInstance* Terrain = Definition->TerrainMaterial.LoadSynchronous())
+				if (!APSSharedTerrainMaterial::IsGeneratedCatalogStack(Terrain)
+					&& !APSSharedTerrainMaterial::IsSharedStack(Terrain))
+				{
+					CancelLavaMaterialPreparation();
+					return false;
+				}
+	UMaterialInstance* Liquid = APSSharedGeneratedLiquidMaterial::ResolveSource(Requested, SurfaceProfileCatalog);
+	if (!APSSharedGeneratedLiquidMaterial::ShouldMigrate(Liquid, Requested, false)
+		&& !APSSharedLavaMaterial::IsSharedStack(Liquid))
+	{
+		CancelLavaMaterialPreparation();
+		return false;
+	}
+	if (!LavaMaterialPreparation || LavaMaterialBody.Get() != Body
+		|| LavaMaterialRoot.Get() != WorldScapeRootInstance)
+	{
+		CancelLavaMaterialPreparation();
+		LavaMaterialPreparation = MakeShared<FMaterialPreparation>();
+		LavaMaterialBody = Body;
+		LavaMaterialRoot = WorldScapeRootInstance;
+		LavaMaterialRequestTime = FPlatformTime::Seconds();
+		LavaMaterialResumeState = bPendingSurfaceProfileApply ? DeferredWorldScapeRootState
+			: WorldScapeRootInstance->bGenerateWorldScape && !WorldScapeRootInstance->bFreezeGeneration
+				? EDeferredWorldScapeRootState::Active
+				: WorldScapeRootInstance->bGenerateWorldScape && !WorldScapeRootInstance->IsHidden()
+					? EDeferredWorldScapeRootState::FrozenVisible : EDeferredWorldScapeRootState::Preloaded;
+	}
+	EPreparationState State = bLavaMaterialTimedOut ? EPreparationState::Failed
+		: LavaMaterialPreparation->Poll(GetWorld()->GetFeatureLevel());
+	if (State == EPreparationState::Pending && FPlatformTime::Seconds() - LavaMaterialRequestTime > 180.0)
+	{
+		// Never wait forever or cancel shader jobs shared by another body.
+		bLavaMaterialTimedOut = true;
+		State = EPreparationState::Failed;
+	}
+	if (State != EPreparationState::Pending)
+	{
+		const bool bWasPending = bPendingLavaMaterial;
+		StopLavaMaterialPolling();
+		if (State == EPreparationState::Failed && !bLavaMaterialFailureLogged)
+		{
+			bLavaMaterialFailureLogged = true;
+			UE_LOG(LogTemp, Warning, TEXT("[APS.UnifiedLava.Prepare] body=%s failed=%s; strict factory/fallback retained"),
+				*GetNameSafe(Body), bLavaMaterialTimedOut ? TEXT("Timeout180s") : LavaMaterialPreparation->GetFailureReason());
+		}
+		else if (bWasPending && State == EPreparationState::Ready)
+			UE_LOG(LogTemp, Display, TEXT("[APS.UnifiedLava.Prepare] body=%s ready elapsed=%.3fs (shader readiness, not visual acceptance)"),
+				*GetNameSafe(Body), FPlatformTime::Seconds() - LavaMaterialRequestTime);
+		return false;
+	}
+	if (!bPendingLavaMaterial)
+	{
+		bPendingLavaMaterial = true;
+		GetWorld()->GetTimerManager().SetTimer(LavaMaterialPollTimer, this,
+			&APlanetarySurfaceGenerator::TryFinalizeLavaMaterial, 0.1f, true);
+		UE_LOG(LogTemp, Display, TEXT("[APS.UnifiedLava.Prepare] body=%s pending; existing profile/visibility/collision unchanged"), *GetNameSafe(Body));
+	}
+	return true;
+}
+
+void APlanetarySurfaceGenerator::TryFinalizeLavaMaterial()
+{
+	if (!bPendingLavaMaterial) return;
+	APlanetaryBody* Body = LavaMaterialBody.Get();
+	if (!IsValid(Body) || !IsValid(WorldScapeRootInstance)
+		|| PlanetaryBody != Body || LavaMaterialRoot.Get() != WorldScapeRootInstance)
+	{
+		CancelLavaMaterialPreparation();
+		return;
+	}
+	if (!UAPSPlanetSurfaceProfileResolver::SupportsWorldScape(Body->PlanetType))
+	{
+		UnloadWorldScapeRoot();
+		return;
+	}
+	// Preloading may still be draining an older batch. Explicit unload cancels
+	// this timer outright; a preload drain retains the root and resumes here later.
+	if (bPendingWorldScapeUnload) return;
+	const EDeferredWorldScapeRootState ResumeState = LavaMaterialResumeState;
+	ApplySurfaceProfile(Body); // Re-resolve the latest type/seed/radius before publication.
+	if (bPendingLavaMaterial) return;
+	if (bPendingSurfaceProfileApply)
+	{
+		DeferredWorldScapeRootState = ResumeState;
+		return;
+	}
+	if (!IsSurfaceProfileCurrent(Body)) return;
+	// Shader readiness permits configuration, not immediate display of the old
+	// mesh with a changed profile. The existing geometry visibility gate owns it.
+	Body->bWorldScapeSurfaceReady = false;
+	if (ResumeState == EDeferredWorldScapeRootState::Active)
+	{
+		SpawnWorldScapeRoot();
+		WorldScapeRootInstance->SetActorHiddenInGame(true);
+	}
+	else PreloadWorldScapeRoot(); // Never expose old geometry with the new profile.
+}
+
 void APlanetarySurfaceGenerator::ApplySurfaceProfile(APlanetaryBody* Body)
 {
 	if (!IsValid(Body) || !IsValid(WorldScapeRootInstance))
 	{
+		CancelLavaMaterialPreparation();
 		return;
 	}
 	if (bSurfaceProfileApplied)
@@ -534,6 +708,7 @@ void APlanetarySurfaceGenerator::ApplySurfaceProfile(APlanetaryBody* Body)
 					"appliedSignature=%u requestedSignature=%u; recreate a fresh runtime root"),
 				*GetNameSafe(Body), AppliedSurfaceProfileSignature,
 				UAPSPlanetSurfaceProfileResolver::BuildProfileSignature(RequestedProfile));
+			CancelLavaMaterialPreparation();
 			return;
 		}
 	}
@@ -548,6 +723,10 @@ void APlanetarySurfaceGenerator::ApplySurfaceProfile(APlanetaryBody* Body)
 		UnloadWorldScapeRoot();
 		return;
 	}
+
+	// Request shaders before stopping any existing geometry producer. A fresh
+	// root stays disabled; a published root retains its exact old state.
+	if (DeferProfileForLavaMaterial(Body)) return;
 
 	// WorldScape 5.4 workers read the root profile throughout DoWork and write the
 	// associated UWorldScapeLod buffers at the end. Changing any regeneration
@@ -606,9 +785,10 @@ void APlanetarySurfaceGenerator::ApplySurfaceProfileNow(APlanetaryBody* Body)
 		// Defense in depth for deferred/internal callers that bypass ApplySurfaceProfile.
 		UE_LOG(LogTemp, Error,
 			TEXT("[APS.WorldScape.Foliage] Rejected internal live profile mutation body=%s"),
-			*GetNameSafe(Body));
+				*GetNameSafe(Body));
 		return;
 	}
+	if (DeferProfileForLavaMaterial(Body)) return;
 	FinalizedWaterMaterialRoot.Reset();
 	FinalizedWaterMaterialProfileSignature = 0;
 	ResolvedSurfaceProfile = RequestedProfile;
@@ -652,7 +832,7 @@ void APlanetarySurfaceGenerator::ApplySurfaceProfileNow(APlanetaryBody* Body)
 		if (!(Planet && Planet->IsManual)
 			&& APSSharedTerrainMaterial::IsGeneratedCatalogStack(BaseTerrainMaterial))
 		{
-			const TCHAR* SharedPath = APSSharedTerrainMaterial::TemplatePath(ResolvedSurfaceProfile.Archetype);
+			const TCHAR* SharedPath = APSSharedTerrainMaterial::TemplatePath(ResolvedSurfaceProfile);
 			UMaterialInstance* SharedTemplate = LoadObject<UMaterialInstance>(nullptr, SharedPath);
 			if (APSSharedTerrainMaterial::IsSharedStack(SharedTemplate))
 			{
@@ -832,7 +1012,7 @@ void APlanetarySurfaceGenerator::ApplySurfaceProfileNow(APlanetaryBody* Body)
 			&& APSSharedLavaMaterial::IsSharedStack(ResolvedOceanMaterialInstance)
 			&& IsValid(ResolvedNoiseInstance))
 		{
-			const double Radius = FMath::Max(Body->RadiusKM, static_cast<double>(Body->PlanetRadiusKM)) * 100000.0;
+			const double Radius = APSPlanetSurfaceRadius::Kilometres(Body->RadiusKM, Body->PlanetRadiusKM) * 100000.0;
 			UMaterialInstanceDynamic* Unified = APSUnifiedLavaSurface::Create(
 				WorldScapeRootInstance, WorldScapeRootInstance->GetRootComponent(), ResolvedSurfaceProfile,
 				Radius, GetWorld()->GetFeatureLevel());
@@ -866,7 +1046,7 @@ void APlanetarySurfaceGenerator::ApplySurfaceProfileNow(APlanetaryBody* Body)
 	}
 
 	const double PresentationScale = FMath::Clamp(Body->WorldScapePresentationScale, 1.0e-9, 1.0);
-	const double BodyRadiusCm = FMath::Max(Body->RadiusKM, static_cast<double>(Body->PlanetRadiusKM))
+	const double BodyRadiusCm = APSPlanetSurfaceRadius::Kilometres(Body->RadiusKM, Body->PlanetRadiusKM)
 		* 100000.0 * PresentationScale;
 	WorldScapeRootInstance->GenerationType = EWorldScapeType::Planet;
 	WorldScapeRootInstance->PlanetScale = FMath::Max(BodyRadiusCm, 100000.0);
@@ -909,12 +1089,13 @@ void APlanetarySurfaceGenerator::ApplySurfaceProfileNow(APlanetaryBody* Body)
 	const bool bScaledOrbitalPreview = PresentationScale < 0.999;
 	// Configure only a newly-created root. WorldScape 5.4 exposes no public drain
 	// for its foliage worker, so hot-swapping collections on a previously active
-	// root is intentionally outside this foundation. The cvar/profile gates default
-	// to off, and scaled menu/orbital roots are vetoed inside the policy as well.
+	// root is intentionally outside this foundation. The sparse default is limited
+	// to validated generated planets; manual/moon and scaled roots are vetoed.
 	if (bOwnsWorldScapeRootInstance && !bSurfaceProfileApplied)
 	{
+		const APlanet* FoliagePlanet = Cast<APlanet>(Body);
 		FAPSWorldScapeFoliagePolicy::ApplyToFreshOwnedRuntimeRoot(
-			WorldScapeRootInstance, ResolvedSurfaceProfile, bScaledOrbitalPreview);
+			WorldScapeRootInstance, ResolvedSurfaceProfile, bScaledOrbitalPreview, !FoliagePlanet || FoliagePlanet->IsManual);
 	}
 	if (IsValid(ResolvedTerrainMaterialInstance) && IsValid(WorldScapeRootInstance))
 	{
@@ -1016,6 +1197,46 @@ void APlanetarySurfaceGenerator::ApplySurfaceProfileNow(APlanetaryBody* Body)
 		WorldScapeRootInstance->Tags.AddUnique(CoincidentNormalTag);
 	else
 		WorldScapeRootInstance->Tags.Remove(CoincidentNormalTag);
+	// The native sampler is immutable while this root generates; its existing LOD
+	// workers already share it. Allow bounded parallel collision samples too, without
+	// coarsening physics or moving component publication off the game thread. The
+	// plugin falls back to serial for volumes/heightmaps and accepts a 1-task rollback.
+	const FName ParallelCollisionTag(TEXT("APS.Collision.ParallelSamples"));
+	if (bOwnsWorldScapeRootInstance && !bScaledOrbitalPreview
+		&& IsValid(ResolvedNoiseInstance) && Profile.Noise == ResolvedNoiseInstance
+		&& ResolvedNoiseInstance->GetClass() == UAPSWorldScapePlanetNoise::StaticClass())
+		WorldScapeRootInstance->Tags.AddUnique(ParallelCollisionTag);
+	else
+		WorldScapeRootInstance->Tags.Remove(ParallelCollisionTag);
+	// Bounded rollout of worker-prepared visual publication. The native default
+	// (-1) requires this explicit owner tag; 0 restores the legacy publication.
+	// Keep other presets, authored roots and scaled previews on their old path.
+	const FName PreparedPublicationTag(TEXT("APS.Mesh.PreparedPublication"));
+	const bool bPreparedPublicationType = ResolvedSurfaceProfile.PlanetType == EPlanetType::Terrestrial
+		|| ResolvedSurfaceProfile.PlanetType == EPlanetType::Frozen
+		|| ResolvedSurfaceProfile.PlanetType == EPlanetType::Oasis;
+	if (bPreparedPublicationType && WorldScapeRootInstance->ActorHasTag(ParallelCollisionTag)
+		&& !(CoastPlanet && CoastPlanet->IsManual))
+		WorldScapeRootInstance->Tags.AddUnique(PreparedPublicationTag);
+	else
+		WorldScapeRootInstance->Tags.Remove(PreparedPublicationTag);
+	// Depth accompanies the versioned material; diagnostics can still opt in.
+	// The native LOD worker owns UV1; no per-frame GT bathymetry or mesh rewrite.
+	// Do not enable for authored/compressed roots or other liquid families.
+	static const bool bRequestWaterDepth = FParse::Param(FCommandLine::Get(), TEXT("APSWaterDepthPayload"));
+	const FName WaterDepthTag(TEXT("APS.GeneratedOcean.BathymetryUV1"));
+	const bool bWaterDepth = (bRequestWaterDepth || APSCoastalWaterMaterial::IsInstance(ResolvedOceanMaterialInstance))
+		&& bOwnsWorldScapeRootInstance
+		&& !bScaledOrbitalPreview && !(CoastPlanet && CoastPlanet->IsManual)
+		&& FMath::IsNearlyEqual(PresentationScale, 1.0, 1.e-12)
+		&& WorldScapeRootInstance->GenerationType == EWorldScapeType::Planet
+		&& WorldScapeRootInstance->bOcean && IsValid(ResolvedNoiseInstance)
+		&& Profile.Noise == ResolvedNoiseInstance
+		&& ResolvedNoiseInstance->GetClass() == UAPSWorldScapePlanetNoise::StaticClass()
+		&& APSSharedGeneratedLiquidMaterial::IsFamilyInstance(
+			ResolvedOceanMaterialInstance, EAPSPlanetLiquidType::Water);
+	if (bWaterDepth) WorldScapeRootInstance->Tags.AddUnique(WaterDepthTag);
+	else WorldScapeRootInstance->Tags.Remove(WaterDepthTag);
 	// A streamed ocean is a colour/depth presentation shell, never a shadow caster
 	// or an occlusion source.  WorldScape's defaults otherwise let independently
 	// stitched clipmap sections cast their rectangular boundaries onto the terrain,
@@ -1075,6 +1296,11 @@ void APlanetarySurfaceGenerator::PreloadWorldScapeRoot()
 	{
 		return;
 	}
+	if (bPendingLavaMaterial)
+	{
+		LavaMaterialResumeState = EDeferredWorldScapeRootState::Preloaded;
+		if (!bSurfaceProfileApplied) return;
+	}
 	if (bPendingSurfaceProfileApply)
 	{
 		DeferredWorldScapeRootState = EDeferredWorldScapeRootState::Preloaded;
@@ -1110,6 +1336,11 @@ void APlanetarySurfaceGenerator::FreezeWorldScapeRoot()
 	{
 		return;
 	}
+	if (bPendingLavaMaterial)
+	{
+		LavaMaterialResumeState = EDeferredWorldScapeRootState::FrozenVisible;
+		if (!bSurfaceProfileApplied) return;
+	}
 	if (bPendingSurfaceProfileApply)
 	{
 		DeferredWorldScapeRootState = EDeferredWorldScapeRootState::FrozenVisible;
@@ -1128,6 +1359,7 @@ void APlanetarySurfaceGenerator::FreezeWorldScapeRoot()
 
 void APlanetarySurfaceGenerator::UnloadWorldScapeRoot()
 {
+	CancelLavaMaterialPreparation();
 	// Unload has stronger lifetime semantics than a queued edit. Cancel the edit
 	// request but retain its old profile references until the common worker drain
 	// below is complete.
@@ -1155,7 +1387,8 @@ void APlanetarySurfaceGenerator::UnloadWorldScapeRoot()
 	WorldScapeRootInstance->SetActorEnableCollision(false);
 	bPendingWorldScapeUnload = true;
 	bDestroyWorldScapeRootAfterDrain = bOwnsWorldScapeRootInstance;
-	if (WorldScapeRootInstance->WorldScapeLodInGeneration.Num() > 0)
+	if (WorldScapeRootInstance->WorldScapeLodInGeneration.Num() > 0
+		|| FAPSWorldScapeFoliagePolicy::HasPendingNativeWorker(WorldScapeRootInstance))
 	{
 		// Do not use the WorldScape actor tick for draining. Its tick runs
 		// UpdatePosition before CheckForLodGeneration and can start a fresh batch in
@@ -1264,6 +1497,11 @@ void APlanetarySurfaceGenerator::TryFinalizeSurfaceProfileApply()
 
 	const uint32 PreviousSignature = AppliedSurfaceProfileSignature;
 	ApplySurfaceProfileNow(Body);
+	if (bPendingLavaMaterial)
+	{
+		LavaMaterialResumeState = ResumeState;
+		return;
+	}
 	UE_LOG(LogTemp, Log,
 		TEXT("[APS.WorldScape] Applied deferred profile body=%s previous=%u current=%u"),
 		*GetNameSafe(Body), PreviousSignature, AppliedSurfaceProfileSignature);
@@ -1313,6 +1551,12 @@ void APlanetarySurfaceGenerator::TryFinalizeWorldScapeUnload()
 		bPendingWorldScapeUnload = false;
 		bDestroyWorldScapeRootAfterDrain = false;
 		SetActorTickEnabled(false);
+		return;
+	}
+	// Unload holds the producer tick stopped. Keep its references and poll, not
+	// EnsureCompletion: an in-flight foliage worker must finish before EndPlay.
+	if (FAPSWorldScapeFoliagePolicy::HasPendingNativeWorker(WorldScapeRootInstance))
+	{
 		return;
 	}
 	if (WorldScapeRootInstance->WorldScapeLodInGeneration.Num() > 0)

@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "APS_ALPHA/Generation/AstroGenerator.h"
+#include "Engine/TimerHandle.h"
 #include "GameFramework/GameModeBase.h"
 #include "GravityGameModeBase.generated.h"
 
@@ -19,6 +20,7 @@ public:
 	AGravityGameModeBase();
 
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual UClass* GetDefaultPawnClassForController_Implementation(AController* InController) override;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astro Object BP")
@@ -27,4 +29,9 @@ public:
 private:
 	/** Clears one-shot PrintString output left by the legacy level graph. */
 	void ClearLegacyLevelScreenMessages();
+
+	/** The save overlay must never precede an asynchronously prepared starter hierarchy. */
+	void TryFinalizeSavedWorldReplay(TWeakObjectPtr<AAstroGenerator> WeakGenerator,
+		TWeakObjectPtr<UGeneratedWorld> ExpectedModel, uint64 CommitSerial, double RequestTime);
+	FTimerHandle SavedWorldReplayTimer;
 };

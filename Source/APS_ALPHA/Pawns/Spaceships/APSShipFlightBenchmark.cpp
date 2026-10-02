@@ -1,9 +1,17 @@
 #include "APSShipFlightBenchmark.h"
+#include "APS_ALPHA/Core/Controllers/GravityPlayerController.h"
+#include "APS_ALPHA/Pawns/Characters/CustomGravityCharacter.h"
 
 #include "Spaceship.h"
 #include "APSShipFlightModel.h"
 #include "APS_ALPHA/Actors/Astro/Moon.h"
 #include "APS_ALPHA/Actors/Astro/PlanetaryBody.h"
+#include "APS_ALPHA/Actors/Astro/Planet.h"
+#include "APS_ALPHA/Actors/Astro/Star.h"
+#include "APS_ALPHA/Gameplay/Construction/APSConstructionMode.h"
+#include "APS_ALPHA/Gameplay/Construction/APSShipBuildComponent.h"
+#include "APS_ALPHA/Gameplay/Expansion/APSStarSystems.h"
+#include "APS_ALPHA/Actors/Astro/StarCluster.h"
 #include "APS_ALPHA/Generation/PlanetarySurfaceGenerator.h"
 #include "Camera/CameraComponent.h"
 #include "Components/LocalLightComponent.h"
@@ -29,6 +37,7 @@
 #include "UnrealClient.h"
 #include "WorldScapeCore/Public/WorldScapeRoot.h"
 #if WITH_DEV_AUTOMATION_TESTS
+#include "APS_ALPHA/Actors/Tech/SpaceHeadquarters.h"
 #include "APS_ALPHA/Core/Controllers/MainMenuController.h"
 #include "APS_ALPHA/Core/Model/SpawnParameters.h"
 #include "APS_ALPHA/Generation/AstroGenerator.h"
@@ -431,6 +440,10 @@ namespace APSShipBenchmark
 		TWeakObjectPtr<APlanetaryBody> Target;
 		/** The nearest matching body is chosen once, on the first aim; later aims keep it. */
 		bool bTargetChosen{false};
+		/** aim=star: the nearest catalogue star of the cluster other than the home one (stars at speed, 02.10). */
+		bool bHasStar{false};
+		FVector StarLocation{FVector::ZeroVector};
+		int32 StarIndex{INDEX_NONE};
 		/** jump=Km: start this far above the target's surface instead of halfway (moon landings, exit tests). */
 		double JumpKm{0.0};
 		/** exit=1: at the minimum altitude the pilot leaves the ship (gravity and orientation after an exit, 01.10). */
@@ -597,6 +610,37 @@ namespace APSShipBenchmark
 			if (const APlanetaryBody* Target = GDrive.Target.Get())
 			{
 				Forward = (Target->GetActorLocation() - Ship.GetActorLocation()).GetSafeNormal();
+			}
+		}
+		else if (GDrive.Aim.Equals(TEXT("star"), ESearchCase::IgnoreCase))
+		{
+			if (!GDrive.bTargetChosen)
+			{
+				GDrive.bTargetChosen = true;
+				double Best = TNumericLimits<double>::Max();
+				for (TActorIterator<AStarCluster> It(Ship.GetWorld()); It; ++It)
+				{
+					for (const FClusterStarSystemRecord& Record : It->PotentialStarSystems)
+					{
+						if (Record.InstanceIndex == INDEX_NONE || Record.bMaterialized || Record.MaterializedSystem.IsValid()) continue;
+						const FVector Location = It->GetPotentialSystemWorldLocation(Record);
+						const double Distance = FVector::Dist(Location, Ship.GetActorLocation());
+						if (Distance > 1.0e12 && Distance < Best)
+						{
+							Best = Distance;
+							GDrive.bHasStar = true;
+							GDrive.StarLocation = Location;
+							GDrive.StarIndex = Record.InstanceIndex;
+						}
+					}
+				}
+				UE_LOG(LogTemp, Log, TEXT("[APS.ShipDrive] target for aim=star: %s"), GDrive.bHasStar
+					? *FString::Printf(TEXT("cluster star %d, %.2f AU away"), GDrive.StarIndex, Best / 1.495978707e13)
+					: TEXT("none (no cluster in this world)"));
+			}
+			if (GDrive.bHasStar)
+			{
+				Forward = (GDrive.StarLocation - Ship.GetActorLocation()).GetSafeNormal();
 			}
 		}
 		else if (GDrive.Aim.Equals(TEXT("out"), ESearchCase::IgnoreCase))
@@ -801,6 +845,11 @@ namespace APSShipBenchmark
 					(FVector::Dist(Ship.GetActorLocation(), Target->GetActorLocation()) - Target->GetWorldScapeBodyRadiusCm())
 						/ 1.0e5, Target->bWorldScapeSurfaceReady ? 1 : 0);
 			}
+			if (GDrive.bHasStar)
+			{
+				UE_LOG(LogTemp, Log, TEXT("[APS.ShipDrive] t=%3d s star %d: %.4f AU away"), GDrive.Second + 1, GDrive.StarIndex,
+					FVector::Dist(Ship.GetActorLocation(), GDrive.StarLocation) / 1.495978707e13);
+			}
 			if (GDrive.bCameraSampled)
 			{
 				UE_LOG(LogTemp, Log, TEXT("[APS.ShipCam] t=%3d s arm %.1f-%.1f m | step max %.2f cm jerk max %.3f cm turn max %.3f deg"),
@@ -949,6 +998,10 @@ namespace APSShipBenchmark
 		int32 Planets{-1};
 		bool bMoonsApplied{false};
 		bool bPlanetsApplied{false};
+		/** C19 ground start as "package/pad/vehicles" (0-2 / 0-1 / 0-7), empty: the menu's own. */
+		FString Ground;
+		/** The headquarters Blueprint (C20 HQ Alpha checks), empty: the menu's own. */
+		FString HeadquartersClassPath;
 		FString ShipClassPath;
 		FString CharacterClassPath;
 		double StartSeconds{0.0};
@@ -1062,16 +1115,32 @@ namespace APSShipBenchmark
 			ViewModel->SetSpawnClass(EAPSStartAssetSlot::Character,
 				LoadBlueprintClass(GGeneratedStart.CharacterClassPath, APawn::StaticClass()));
 		}
+		if (!GGeneratedStart.HeadquartersClassPath.IsEmpty())
+		{
+			ViewModel->SetSpawnClass(EAPSStartAssetSlot::Headquarters,
+				LoadBlueprintClass(GGeneratedStart.HeadquartersClassPath, ASpaceHeadquarters::StaticClass()));
+		}
 		ViewModel->SetCharacterSpawnPlace(GGeneratedStart.SpawnPlace);
 		if (GGeneratedStart.Fleet > 0)
 		{
 			// As the menu's TOTAL FLEET SHIPS control sets it.
 			ViewModel->SpawnParameters->StartingFleetSize = FMath::Clamp(GGeneratedStart.Fleet, 1, USpawnParameters::MaxStartingFleetSize);
 		}
+		if (TArray<FString> Ground; GGeneratedStart.Ground.ParseIntoArray(Ground, TEXT("/")) == 3)
+		{
+			// As the menu's GROUND step sets them.
+			ViewModel->SpawnParameters->ColonyStartPackage = static_cast<EAPSColonyStartPackage>(FMath::Clamp(FCString::Atoi(*Ground[0]), 0, 2));
+			ViewModel->SpawnParameters->LaunchPadStart = static_cast<EAPSLaunchPadStart>(FMath::Clamp(FCString::Atoi(*Ground[1]), 0, 1));
+			ViewModel->SpawnParameters->GroundVehicleMask = FMath::Clamp(FCString::Atoi(*Ground[2]), 0, 7);
+			UE_LOG(LogTemp, Log, TEXT("[APS.ShipBench] generated start: ground package=%d pad=%d vehicles=%d"),
+				static_cast<int32>(ViewModel->SpawnParameters->ColonyStartPackage),
+				static_cast<int32>(ViewModel->SpawnParameters->LaunchPadStart), ViewModel->SpawnParameters->GroundVehicleMask);
+		}
 		const USpawnParameters* Spawn = ViewModel->SpawnParameters;
-		UE_LOG(LogTemp, Log, TEXT("[APS.ShipBench] generated start: committing spawnPlace=%d ship=%s character=%s fleet=%d"),
+		UE_LOG(LogTemp, Log, TEXT("[APS.ShipBench] generated start: committing spawnPlace=%d ship=%s character=%s hq=%s fleet=%d"),
 			static_cast<int32>(Spawn->CharacterSpawnPlace), *GetNameSafe(Spawn->BP_HomeSpaceship.Get()),
-			*GetNameSafe(Spawn->BP_CharacterClass.Get()), Spawn->StartingFleetSize);
+			*GetNameSafe(Spawn->BP_CharacterClass.Get()), *GetNameSafe(Spawn->BP_HomeSpaceHeadquarters.Get()),
+			Spawn->StartingFleetSize);
 		GGeneratedStart.bActive = false;
 		ViewModel->CommitAndOpenLevel(TEXT("L_WorldGeneration"));
 		return false;
@@ -1091,6 +1160,8 @@ namespace APSShipBenchmark
 		GGeneratedStart.Moons = Args.Num() > 3 ? FCString::Atoi(*Args[3]) : -1;
 		GGeneratedStart.Fleet = Args.Num() > 4 ? FCString::Atoi(*Args[4]) : -1;
 		GGeneratedStart.Planets = Args.Num() > 5 ? FCString::Atoi(*Args[5]) : -1;
+		GGeneratedStart.Ground = Args.Num() > 6 && Args[6] != TEXT("-") ? Args[6] : FString();
+		GGeneratedStart.HeadquartersClassPath = Args.Num() > 7 && Args[7] != TEXT("-") ? Args[7] : FString();
 		GGeneratedStart.StartSeconds = FPlatformTime::Seconds();
 		GGeneratedStart.Ticker = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateStatic(&TickGeneratedStart), 0.5f);
 		UE_LOG(LogTemp, Log, TEXT("[APS.ShipBench] generated start armed: spawnPlace=%d ship=%s character=%s"),
@@ -1102,7 +1173,7 @@ namespace APSShipBenchmark
 
 	FAutoConsoleCommandWithWorldAndArgs StartGeneratedCommand(
 		TEXT("aps.Ship.StartGenerated"),
-		TEXT("aps.Ship.StartGenerated [SpawnPlace=0 orbit] [ShipBlueprintPath|-] [CharacterBlueprintPath|-] [Moons|-1] [FleetShips|-1] [Planets|-1]: from the main menu, ")
+		TEXT("aps.Ship.StartGenerated [SpawnPlace=0 orbit] [ShipBlueprintPath|-] [CharacterBlueprintPath|-] [Moons|-1] [FleetShips|-1] [Planets|-1] [package/pad/vehicles|-] [HeadquartersBlueprintPath|-]: from the main menu, ")
 		TEXT("opens the Civilization generator on the home planet and starts L_WorldGeneration like the menu's Start ")
 		TEXT("(optionally with another home ship or pilot)."),
 		FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&StartGenerated));
@@ -1135,6 +1206,11 @@ namespace APSShipBenchmark
 		/** shipdrive=Power/Forward/Boost (+ aim=, pitch=, minalt=): aps.Ship.Drive in the boarded ship itself. */
 		FString ShipDriveArgs;
 		bool bShipDriveStarted{false};
+		/** at=<seconds>:<command>: console commands at those seconds after boarding (+ stands for a space). */
+		TArray<TPair<double, FString>> Timed;
+		/** noboard: the player stays on foot; the timed commands count from the end of the warmup, then the hold ends the run. */
+		bool bNoBoard{false};
+		double BoardedAt{0.0};
 		FTSTicker::FDelegateHandle Ticker;
 	};
 	FAutoRun GAutoRun;
@@ -1180,14 +1256,29 @@ namespace APSShipBenchmark
 			{
 				return true;
 			}
-			if (!BoardShip(Pawn, GAutoRun.Filter, GAutoRun.bSkipChildActors))
+			if (GAutoRun.bNoBoard)
+			{
+				UE_LOG(LogTemp, Log, TEXT("[APS.ShipBench] auto run: staying on foot as %s"), *Pawn->GetName());
+				GAutoRun.ShipDriveArgs.Reset();
+			}
+			else if (!BoardShip(Pawn, GAutoRun.Filter, GAutoRun.bSkipChildActors))
 			{
 				EndAutoRun(TEXT("boarding failed"));
 				return false;
 			}
 			GAutoRun.bBoarded = true;
 			GAutoRun.BoardedSeconds = Now;
+			GAutoRun.BoardedAt = Now;
 			return true;
+		}
+		for (int32 Index = 0; Index < GAutoRun.Timed.Num(); ++Index)
+		{
+			if (Now - GAutoRun.BoardedAt >= GAutoRun.Timed[Index].Key)
+			{
+				UE_LOG(LogTemp, Log, TEXT("[APS.ShipBench] at %.0f s: %s"), GAutoRun.Timed[Index].Key, *GAutoRun.Timed[Index].Value);
+				GEngine->Exec(Pawn->GetWorld(), *GAutoRun.Timed[Index].Value);
+				GAutoRun.Timed.RemoveAt(Index--);
+			}
 		}
 		if (GAutoRun.bSpawnExperimental && !GAutoRun.bExperimentalSpawned)
 		{
@@ -1320,6 +1411,19 @@ namespace APSShipBenchmark
 			{
 				GAutoRun.bSkipChildActors = true;
 			}
+			else if (Args[Index].Equals(TEXT("noboard"), ESearchCase::IgnoreCase))
+			{
+				GAutoRun.bNoBoard = true;
+			}
+			else if (Args[Index].StartsWith(TEXT("at="), ESearchCase::IgnoreCase))
+			{
+				FString Seconds;
+				FString Command;
+				if (Args[Index].RightChop(3).Split(TEXT(":"), &Seconds, &Command))
+				{
+					GAutoRun.Timed.Emplace(FCString::Atod(*Seconds), Command.Replace(TEXT("+"), TEXT(" ")));
+				}
+			}
 			else if (Args[Index].StartsWith(TEXT("shipdrive="), ESearchCase::IgnoreCase))
 			{
 				GAutoRun.ShipDriveArgs = Args[Index].RightChop(10).Replace(TEXT("/"), TEXT(" ")) + GAutoRun.ShipDriveArgs;
@@ -1338,6 +1442,11 @@ namespace APSShipBenchmark
 				|| Args[Index].StartsWith(TEXT("shotui="), ESearchCase::IgnoreCase))
 			{
 				GAutoRun.ShipDriveArgs += TEXT(" ") + Args[Index];
+				// Timed aps.Test.Shot commands can come before the drive starts: they take the run's label too.
+				if (Args[Index].StartsWith(TEXT("shotlabel="), ESearchCase::IgnoreCase))
+				{
+					GDrive.ShotLabel = Args[Index].RightChop(10);
+				}
 			}
 			else
 			{
@@ -1368,6 +1477,242 @@ namespace APSShipBenchmark
 		TEXT("aps.Ship.Benchmark [AltitudeMeters=1000] [SecondsPerStep=8] [SpeedsMps=0,100,400,1600,6400,25600] [Sweep=1]: ")
 		TEXT("flies the piloted ship around the nearest planet at each speed and logs frame/game/render/GPU time."),
 		FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&Start));
+
+	void TestMap(UWorld* World)
+	{
+		AGravityPlayerController* Controller = World ? Cast<AGravityPlayerController>(World->GetFirstPlayerController()) : nullptr;
+		if (!Controller)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[APS.Test] aps.Test.Map: no gravity player controller"));
+			return;
+		}
+		Controller->ToggleStrategicMap();
+		UE_LOG(LogTemp, Log, TEXT("[APS.Test] F10 map %s"), Controller->IsStrategicMapOpen() ? TEXT("open") : TEXT("closed"));
+	}
+
+	void TestBuildMode(UWorld* World)
+	{
+		const APlayerController* Controller = World ? World->GetFirstPlayerController() : nullptr;
+		ACustomGravityCharacter* Character = Controller ? Cast<ACustomGravityCharacter>(Controller->GetPawn()) : nullptr;
+		if (!Character)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[APS.Test] aps.Test.BuildMode: the player is not on foot"));
+			return;
+		}
+		Character->ToggleBuildMode();
+		UE_LOG(LogTemp, Log, TEXT("[APS.Test] build mode %s"), Character->IsInBuildMode() ? TEXT("on") : TEXT("off"));
+	}
+
+	void TestShot(const TArray<FString>& Args, UWorld*)
+	{
+		// The run script collects <label>_t*.png from Saved/Screenshots/ShipDrive.
+		const FString Name = Args.IsEmpty() ? FString::Printf(TEXT("%.0f"), FPlatformTime::Seconds()) : Args[0];
+		const FString File = FPaths::ScreenShotDir() / TEXT("ShipDrive") / FString::Printf(TEXT("%s_t%s.png"), *GDrive.ShotLabel, *Name);
+		FScreenshotRequest::RequestScreenshot(File, true, false);
+		UE_LOG(LogTemp, Log, TEXT("[APS.Test] shot %s"), *FPaths::GetCleanFilename(File));
+	}
+
+	void TestDumpHome(UWorld* World)
+	{
+		if (!World) return;
+		const auto Describe = [](const AActor* Actor)
+		{
+			const AActor* Parent = Actor->GetAttachParentActor();
+			return FString::Printf(TEXT("%s loc=%s worldScale=%s relScale=%s parent=%s parentScale=%s"), *Actor->GetName(),
+				*Actor->GetActorLocation().ToCompactString(), *Actor->GetActorScale3D().ToCompactString(),
+				Actor->GetRootComponent() ? *Actor->GetRootComponent()->GetRelativeScale3D().ToCompactString() : TEXT("-"),
+				*GetNameSafe(Parent), Parent ? *Parent->GetActorScale3D().ToCompactString() : TEXT("-"));
+		};
+		for (TActorIterator<AAstroGenerator> It(World); It; ++It)
+		{
+			UE_LOG(LogTemp, Log, TEXT("[APS.Test] generator %s preview=%d continuous=%d"), *Describe(*It),
+				It->ActorHasTag(TEXT("WorldGenerationPreview")) ? 1 : 0, It->UsesContinuousPreviewFrame() ? 1 : 0);
+		}
+		for (TActorIterator<AStar> It(World); It; ++It)
+		{
+			UE_LOG(LogTemp, Log, TEXT("[APS.Test] star %s radiusKm=%d"), *Describe(*It), It->StarRadiusKM);
+		}
+		for (TActorIterator<APlanetaryBody> It(World); It; ++It)
+		{
+			const APlanet* Planet = Cast<APlanet>(*It);
+			const AActor* Star = Planet && IsValid(Planet->ParentStar) ? Planet->ParentStar : nullptr;
+			UE_LOG(LogTemp, Log, TEXT("[APS.Test] body %s radiusKm=%d bodyRadiusCm=%.4g toStarAU=%.3f stream=%d"), *Describe(*It),
+				It->PlanetRadiusKM, It->GetWorldScapeBodyRadiusCm(),
+				Star ? FVector::Dist(It->GetActorLocation(), Star->GetActorLocation()) / 1.495978707e13 : -1.0,
+				It->bStreamWorldScapeSurface ? 1 : 0);
+		}
+	}
+
+	/** aps.Test.Pose: the pawn's pose in absolute coordinates (the world origin may move between save and load). */
+	struct FTestPose
+	{
+		bool bSaved{false};
+		FVector Absolute{FVector::ZeroVector};
+		FQuat Rotation{FQuat::Identity};
+		FRotator Control{FRotator::ZeroRotator};
+	};
+	FTestPose GTestPose;
+
+	void TestPose(const TArray<FString>& Args, UWorld* World)
+	{
+		APlayerController* Controller = World ? World->GetFirstPlayerController() : nullptr;
+		APawn* Pawn = Controller ? Controller->GetPawn() : nullptr;
+		if (!Pawn || Args.IsEmpty())
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[APS.Test] aps.Test.Pose save | load | turn <yaw deg>: no pawn or no argument"));
+			return;
+		}
+		const FVector Origin(World->OriginLocation);
+		if (Args[0].Equals(TEXT("save"), ESearchCase::IgnoreCase))
+		{
+			GTestPose.bSaved = true;
+			GTestPose.Absolute = Origin + Pawn->GetActorLocation();
+			GTestPose.Rotation = Pawn->GetActorQuat();
+			GTestPose.Control = Controller->GetControlRotation();
+		}
+		else if (Args[0].Equals(TEXT("load"), ESearchCase::IgnoreCase) && GTestPose.bSaved)
+		{
+			if (ASpaceship* Ship = Cast<ASpaceship>(Pawn))
+			{
+				FAPSShipFlightBenchmark::SetKinematicVelocity(*Ship, FVector::ZeroVector);
+			}
+			Pawn->SetActorLocationAndRotation(GTestPose.Absolute - Origin, GTestPose.Rotation, false, nullptr,
+				ETeleportType::TeleportPhysics);
+			Controller->SetControlRotation(GTestPose.Control);
+		}
+		else if (Args[0].Equals(TEXT("back"), ESearchCase::IgnoreCase) && Args.Num() > 1)
+		{
+			// Back along the view by N AU: the same target from further away (B7 shots).
+			if (ASpaceship* Ship = Cast<ASpaceship>(Pawn))
+			{
+				FAPSShipFlightBenchmark::SetKinematicVelocity(*Ship, FVector::ZeroVector);
+			}
+			const FVector View = Controller->GetControlRotation().Vector();
+			Pawn->SetActorLocation(Pawn->GetActorLocation() - View * FCString::Atod(*Args[1]) * 1.495978707e13, false, nullptr,
+				ETeleportType::TeleportPhysics);
+		}
+		else if (Args[0].Equals(TEXT("star"), ESearchCase::IgnoreCase) || Args[0].Equals(TEXT("system"), ESearchCase::IgnoreCase))
+		{
+			// Faces the nearest star actor (star [deg]) or a catalogue system's point (system <name> [deg]), turned aside
+			// by N degrees so the hull does not hide it (B7 shots).
+			const bool bSystem = Args[0].Equals(TEXT("system"), ESearchCase::IgnoreCase);
+			FVector Target = FVector::ZeroVector;
+			FString TargetName;
+			int32 TargetRadiusKm = 0;
+			bool bFound = false;
+			if (bSystem)
+			{
+				const FAPSStarSystems* Systems = APSStarSystemsFind(World);
+				TArray<int32> Found;
+				if (Systems && Args.Num() > 1)
+				{
+					Systems->Search(Args[1], 1, Found);
+				}
+				if (const FAPSStarSystemInfo* Info = Systems && !Found.IsEmpty() ? Systems->Get(Found[0]) : nullptr)
+				{
+					Target = Info->Location;
+					TargetName = Info->Name;
+					bFound = true;
+				}
+			}
+			else
+			{
+				double NearestDistance = TNumericLimits<double>::Max();
+				for (TActorIterator<AStar> It(World); It; ++It)
+				{
+					const double Distance = FVector::DistSquared(It->GetActorLocation(), Pawn->GetActorLocation());
+					if (Distance < NearestDistance)
+					{
+						NearestDistance = Distance;
+						Target = It->GetActorLocation();
+						TargetName = It->GetName();
+						TargetRadiusKm = It->StarRadiusKM;
+						bFound = true;
+					}
+				}
+			}
+			if (bFound)
+			{
+				const int32 AsideArg = bSystem ? 2 : 1;
+				const double Aside = Args.Num() > AsideArg ? FCString::Atod(*Args[AsideArg]) : 10.0;
+				const FVector ToStar = (Target - Pawn->GetActorLocation()).GetSafeNormal();
+				FVector Up = FVector::VectorPlaneProject(FVector::UpVector, ToStar).GetSafeNormal();
+				if (Up.IsNearlyZero()) Up = FVector::VectorPlaneProject(FVector::ForwardVector, ToStar).GetSafeNormal();
+				const FVector Forward = FQuat(Up, FMath::DegreesToRadians(-Aside)).RotateVector(ToStar);
+				if (ASpaceship* Ship = Cast<ASpaceship>(Pawn))
+				{
+					FAPSShipFlightBenchmark::SetKinematicVelocity(*Ship, FVector::ZeroVector);
+					Pawn->SetActorRotation(FAPSShipFlightBenchmark::GetRotationForFlightAxes(*Ship, Forward, Up),
+						ETeleportType::TeleportPhysics);
+				}
+				Controller->SetControlRotation(Forward.Rotation());
+				UE_LOG(LogTemp, Log, TEXT("[APS.Test] facing %s (%d km) %.0f deg aside, %.3f AU away"), *TargetName,
+					TargetRadiusKm, Aside, FVector::Dist(Target, Pawn->GetActorLocation()) / 1.495978707e13);
+			}
+		}
+		else if (Args[0].Equals(TEXT("turn"), ESearchCase::IgnoreCase) && Args.Num() > 1)
+		{
+			// About the pawn's own up: the hull and the view turn together.
+			const double Degrees = FCString::Atod(*Args[1]);
+			const FQuat Turn(Pawn->GetActorUpVector(), FMath::DegreesToRadians(Degrees));
+			Pawn->SetActorRotation(Turn * Pawn->GetActorQuat(), ETeleportType::TeleportPhysics);
+			Controller->SetControlRotation((Turn * Controller->GetControlRotation().Quaternion()).Rotator());
+		}
+		UE_LOG(LogTemp, Log, TEXT("[APS.Test] pose %s: %s at %s"), *Args[0], *Pawn->GetName(),
+			*(Origin + Pawn->GetActorLocation()).ToCompactString());
+	}
+
+	void TestBuild(const TArray<FString>& Args, UWorld* World)
+	{
+		const APlayerController* Controller = World ? World->GetFirstPlayerController() : nullptr;
+		ASpaceship* Ship = Controller ? Cast<ASpaceship>(Controller->GetPawn()) : nullptr;
+		UAPSShipBuildComponent* Build = Ship ? Ship->FindComponentByClass<UAPSShipBuildComponent>() : nullptr;
+		if (!Build || Args.IsEmpty())
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[APS.Test] aps.Test.Build: no piloted ship with a build component, or no verb"));
+			return;
+		}
+		const FString& Verb = Args[0];
+		const double Value = Args.Num() > 1 ? FCString::Atod(*Args[1]) : 0.0;
+		if (Verb.Equals(TEXT("toggle"), ESearchCase::IgnoreCase))
+		{
+			Build->Toggle();
+		}
+		FAPSConstructionMode* Mode = Build->GetMode();
+		bool bPlaced = false;
+		if (Mode)
+		{
+			if (Verb.Equals(TEXT("slot"), ESearchCase::IgnoreCase)) Mode->SelectSlot(static_cast<int32>(Value));
+			else if (Verb.Equals(TEXT("section"), ESearchCase::IgnoreCase)) Mode->ToggleSection();
+			else if (Verb.Equals(TEXT("place"), ESearchCase::IgnoreCase)) bPlaced = Mode->Place();
+			else if (Verb.Equals(TEXT("turn"), ESearchCase::IgnoreCase)) Mode->Rotate(static_cast<float>(Value));
+			else if (Verb.Equals(TEXT("tilt"), ESearchCase::IgnoreCase)) Mode->RotatePitch(static_cast<float>(Value));
+			else if (Verb.Equals(TEXT("far"), ESearchCase::IgnoreCase)) Mode->AdjustDistance(static_cast<float>(Value));
+		}
+		UE_LOG(LogTemp, Log, TEXT("[APS.Test] build %s: building=%d selection=%s placed=%d status=%s"), *Verb,
+			Build->IsBuilding() ? 1 : 0, Mode ? *Mode->GetSelectedId().ToString() : TEXT("-"), bPlaced ? 1 : 0,
+			Mode ? *Mode->GetStatus().ToString() : *Build->GetHintText());
+	}
+
+	FAutoConsoleCommandWithWorldAndArgs TestBuildCommand(TEXT("aps.Test.Build"),
+		TEXT("Test runs: aps.Test.Build toggle | slot N | section | place | turn D | tilt D | far S (the piloted ship's orbital build mode)."),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TestBuild));
+
+	FAutoConsoleCommandWithWorldAndArgs TestPoseCommand(TEXT("aps.Test.Pose"),
+		TEXT("Test runs: aps.Test.Pose save | load | turn <yaw deg> | back <AU> | star [deg aside] (the pawn's pose, for before/after shots)."),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TestPose));
+
+	FAutoConsoleCommandWithWorld TestDumpHomeCommand(TEXT("aps.Test.DumpHome"),
+		TEXT("Test runs: logs the home system's hierarchy (locations, scales, parents)."),
+		FConsoleCommandWithWorldDelegate::CreateStatic(&TestDumpHome));
+
+	FAutoConsoleCommandWithWorld TestMapCommand(TEXT("aps.Test.Map"),
+		TEXT("Test runs: toggles the F10 strategic map."), FConsoleCommandWithWorldDelegate::CreateStatic(&TestMap));
+	FAutoConsoleCommandWithWorld TestBuildModeCommand(TEXT("aps.Test.BuildMode"),
+		TEXT("Test runs: toggles build mode of the player on foot."), FConsoleCommandWithWorldDelegate::CreateStatic(&TestBuildMode));
+	FAutoConsoleCommandWithWorldAndArgs TestShotCommand(TEXT("aps.Test.Shot"),
+		TEXT("Test runs: aps.Test.Shot <name>: a screenshot with the UI to Saved/Screenshots/ShipDrive/<shotlabel>_t<name>.png."),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TestShot));
 
 	FAutoConsoleCommandWithWorldAndArgs BoardCommand(
 		TEXT("aps.Ship.Board"),

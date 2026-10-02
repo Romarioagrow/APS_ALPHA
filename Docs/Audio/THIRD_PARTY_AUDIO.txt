@@ -1,0 +1,43 @@
+APOSFERA audio credits
+
+Footsteps Mini Sound Pack by Mechanics Mechanics
+Source: https://www.fab.com/listings/baf07baa-d485-4d37-bf73-dab6a50ed4bb
+License: Creative Commons Attribution 4.0 International (CC BY 4.0)
+https://creativecommons.org/licenses/by/4.0/
+Selected dirt and metal footsteps are used with adjusted playback volume and pitch.
+The source recordings are unchanged. No endorsement by the author is implied.
+This attribution also appears in the game's Audio settings.
+
+The following Fab assets are used under the license associated with the owner's acquisition:
+- Interface & Item Sounds Pack — Daydream Sound
+  https://www.fab.com/listings/78e31bcc-adfc-4816-8e10-609320deeeb1
+- 237 SCI-FI Game Sound Effects — Tiny Bat Products
+  https://www.fab.com/listings/498b5fe0-7f76-41b2-ae3d-d7d2919f85b0
+- Energy Fields SFX Pack — Monitor Lizards
+  https://www.fab.com/listings/497d53e3-be95-4174-8786-433558a8a849
+- Mix Of Ambient Music — Evil Tiger
+  https://www.fab.com/listings/2881af24-60ec-4486-96d5-5da80cae6ea6
+  Exploration_CalmSuite is an in-project edit of NewAge: four excerpts, EQ, fades and pauses.
+  The marketplace source is unchanged; this edit remains subject to the source asset license.
+- Space Ambient Soundscapes Bundle — Magic Sound Effects
+  https://www.fab.com/listings/00dcadc7-faaf-437b-b313-18ac6382b8fd
+
+
+APOSFERA main generation menu music
+
+Music by Scott Buckley - released under CC-BY 4.0.
+https://www.scottbuckley.com.au
+License: https://creativecommons.org/licenses/by/4.0/
+
+A Kind Of Hope
+https://www.scottbuckley.com.au/library/a-kind-of-hope/
+
+Tears in Rain
+https://www.scottbuckley.com.au/library/tears-in-rain/
+
+Celestial
+https://www.scottbuckley.com.au/library/celestial/
+
+Changes for APOSFERA: level attenuation, gentle fades, and a six-second overlap
+between the complete tracks. The cycle repeats after all three compositions.
+No endorsement by the composer is implied.

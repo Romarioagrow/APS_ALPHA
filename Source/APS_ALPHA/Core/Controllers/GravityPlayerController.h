@@ -64,4 +64,8 @@ private:
 	FTransform CachedPlayerPawnTransform{FTransform::Identity};
 	FRotator CachedPlayerControlRotation{FRotator::ZeroRotator};
 	bool bHasCachedPlayerState{false};
+
+public:
+	/** The F10 strategic map is open (its own camera holds the view): HUDs that project through the camera may hide. */
+	bool IsStrategicMapOpen() const { return StrategicMapWidget.IsValid(); }
 };

@@ -28,6 +28,8 @@ public:
 	void ToggleTerminal();
 	/** K: the terminal on fleet command; K again closes it. */
 	void ToggleFleetCommand();
+	/** Opens the terminal on a tab (SAPSColonyTerminal::ShowTab index: 2 INFRASTRUCTURE), or shows it when open. */
+	void OpenTerminalTab(int32 Tab);
 	bool IsTerminalOpen() const { return TerminalWidget.IsValid(); }
 	/** Test runs: open the terminal, capture every tab with the UI, close it (after aps.Colony.ModuleShots too). */
 	void StartTestCaptures();

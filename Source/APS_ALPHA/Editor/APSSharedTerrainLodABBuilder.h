@@ -2,7 +2,10 @@
 
 #if WITH_EDITOR
 #include "APSSharedTerrainMaterialBuilder.h"
+#include "APSOrbitalColorFieldsAB.h"
 #include "LocalVertexFactory.h"
+#include "Engine/Texture2D.h"
+#include "Materials/MaterialExpressionTextureObject.h"
 #include "Materials/MaterialExpressionVertexInterpolator.h"
 
 // Diagnostic duplicate of the CURRENT shared graph. Never rebuild from the
@@ -20,15 +23,24 @@ namespace APSSharedTerrainLodABBuilder
         TMap<UMaterialFunction*, UMaterialFunction*> Copies;
         const bool bSlopeOnly = FParse::Param(FCommandLine::Get(), TEXT("APSBuildTerrainSlopeOnly"));
         const bool bWarpOnly = FParse::Param(FCommandLine::Get(), TEXT("APSBuildTerrainWarpOnly"));
+        const bool bSideOnly = FParse::Param(FCommandLine::Get(), TEXT("APSBuildTerrainSlopeSide"));
+        const bool bFields = FParse::Param(FCommandLine::Get(), TEXT("APSBuildTerrainOrbitalFields"));
+        const bool bMagmaFields = FParse::Param(FCommandLine::Get(), TEXT("APSBuildTerrainOrbitalMagma"));
         int32 Bypassed = 0;
         int32 MasterBypassed = 0;
         int32 FunctionBypassed = 0;
 
         explicit FBuilder(IAssetTools& Tools) : B(Tools,
-            FParse::Param(FCommandLine::Get(), TEXT("APSBuildTerrainSlopeOnly"))
+            FParse::Param(FCommandLine::Get(), TEXT("APSBuildTerrainOrbitalFields"))
+                ? (FParse::Param(FCommandLine::Get(), TEXT("APSBuildTerrainOrbitalMagma"))
+                    ? TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Diagnostics/OrbitalFields20260929MagmaV3")
+                    : TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Diagnostics/OrbitalFields20260929V3"))
+                : FParse::Param(FCommandLine::Get(), TEXT("APSBuildTerrainSlopeSide"))
+                ? TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Diagnostics/LodSlopeSide20260929")
+                : FParse::Param(FCommandLine::Get(), TEXT("APSBuildTerrainSlopeOnly"))
                 ? TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Diagnostics/LodSlopePreserve20260927")
                 : FParse::Param(FCommandLine::Get(), TEXT("APSBuildTerrainWarpOnly"))
-                    ? TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Diagnostics/LodWarpPixel20260926") : Destination) {}
+                    ? TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Diagnostics/LodWarpPixel20260929") : Destination) {}
 
         bool NeedsCopy(UMaterialFunction* Function)
         {
@@ -70,7 +82,7 @@ namespace APSSharedTerrainLodABBuilder
                     auto* Source = Cast<UMaterialFunction>(Call->MaterialFunction);
                     // Isolate ONLY the five coordinate warps in the current master.
                     // Keep current slope/normal continuity and precision functions identical.
-                    if (bWarpOnly || !Source || !NeedsCopy(Source)) continue;
+                    if (bWarpOnly || bFields || !Source || !NeedsCopy(Source)) continue;
                     if (!B.Error.IsEmpty()) return false;
                     UMaterialFunction* Copy = Copies.FindRef(Source);
                     if (!Copy)
@@ -121,6 +133,14 @@ namespace APSSharedTerrainLodABBuilder
                 ++Calls;
                 auto* Copy = Cast<UMaterialFunction>(B.Duplicate(Source, TEXT("MF_APS_PreserveGeometricSlope")));
                 if (!Copy) return false;
+                if (bSideOnly)
+                {
+                    if (!PatchSlopeSide(Copy)) return false;
+                    ++Blends;
+                    UMaterialEditingLibrary::UpdateMaterialFunction(Copy);
+                    if (!B.ReconnectFunctionById(Call, Source, Copy)) return false;
+                    continue;
+                }
                 for (UMaterialExpression* Node : Reader.Graph(Copy))
                 {
                     // Keep connected nodes in the owned copy's expression inventory
@@ -144,6 +164,72 @@ namespace APSSharedTerrainLodABBuilder
             }
             if (Calls != 1 || Blends != 1)
             { B.Error = FString::Printf(TEXT("Expected one slope call/blend, got %d/%d"), Calls, Blends); return false; }
+            return true;
+        }
+
+        bool PatchSlopeSide(UMaterialFunction* Copy)
+        {
+            using FBuild = APSSharedTerrainMaterialBuilder::FBuild;
+            APSSharedTerrainNormalContinuity::TTransform<FBuild> Reader(B);
+            const auto Graph = Reader.Graph(Copy);
+            UMaterialExpressionCustom* Slope = nullptr;
+            UTexture2D* Texture = nullptr;
+            for (UMaterialExpression* Node : Graph)
+            {
+                Reader.Register(Copy, Node);
+                if (auto* C = Cast<UMaterialExpressionCustom>(Node);
+                    C && C->Description == APSSharedTerrainNormalContinuity::SlopeDescription) Slope = C;
+                if (auto* T = Cast<UMaterialExpressionTextureObject>(Node);
+                    T && T->Texture && T->Texture->GetPathName() == TEXT("/Game/Ressources/Textures/Rock/T_MountainSide.T_MountainSide"))
+                    Texture = Cast<UTexture2D>(T->Texture);
+            }
+            TArray64<uint8> Pixels;
+            if (!Slope || Slope->Inputs.Num() != 6 || !Texture || !Texture->Source.GetMipData(Pixels, 0))
+            { B.Error = TEXT("Slope side source contract changed"); return false; }
+            const bool Gray = Texture->Source.GetFormat() == TSF_G8;
+            const int64 Stride = Gray ? 1 : 4;
+            const int64 Count = int64(Texture->Source.GetSizeX()) * Texture->Source.GetSizeY();
+            if ((!Gray && Texture->Source.GetFormat() != TSF_BGRA8) || Count <= 0 || Pixels.Num() != Count * Stride)
+            { B.Error = TEXT("Slope side source format changed"); return false; }
+            FVector3d Sum = FVector3d::ZeroVector;
+            for (int64 I = 0; I < Count; ++I)
+            {
+                const uint8* P = Pixels.GetData() + I * Stride;
+                const FColor C = Gray ? FColor(P[0],P[0],P[0]) : FColor(P[2],P[1],P[0]);
+                const FLinearColor L = Texture->SRGB ? FLinearColor(C) : C.ReinterpretAsLinear();
+                Sum += FVector3d(L.R,L.G,L.B);
+            }
+            auto* Mean = Reader.Add<UMaterialExpressionConstant3Vector>(Copy);
+            Mean->Constant = FLinearColor(Sum.X / Count, Sum.Y / Count, Sum.Z / Count);
+            int32 Patched = 0, Consumers = 0;
+            for (UMaterialExpression* Node : Graph)
+            {
+                auto* Call = Cast<UMaterialExpressionMaterialFunctionCall>(Node);
+                if (!Call || !Call->MaterialFunction || Call->MaterialFunction->GetName() != TEXT("MF_APS_WorldAlignedTexture_a83aa78c")) continue;
+                const auto* Pin = Call->FunctionInputs.FindByPredicate([](const FFunctionExpressionInput& P) { return P.Input.InputName == TEXT("TextureObject"); });
+                const auto* Object = Pin ? Cast<UMaterialExpressionTextureObject>(Pin->Input.Expression) : nullptr;
+                if (!Object || Object->Texture != Texture) { B.Error = TEXT("Unexpected slope texture sampler"); return false; }
+                auto* Filter = Reader.Add<UMaterialExpressionCustom>(Copy);
+                Filter->Description = TEXT("APS slope side repeat filter; native near, source mean far v1");
+                Filter->OutputType = CMOT_Float3; Filter->Inputs.Empty();
+                FCustomInput Legacy; Legacy.InputName = TEXT("Legacy"); Legacy.Input.Expression = Call; Legacy.Input.OutputIndex = 2;
+                Filter->Inputs.Add(Legacy);
+                FCustomInput Average; Average.InputName = TEXT("Mean"); Average.Input.Expression = Mean; Filter->Inputs.Add(Average);
+                for (int32 I = 2; I < 6; ++I) Filter->Inputs.Add(Slope->Inputs[I]);
+                Filter->Code = TEXT("float d=length(CameraDelta.xyz)*max(InverseScale.x,0.0);\n")
+                    TEXT("float w=smoothstep(StartCm,max(EndCm,StartCm+1.0),d);\nreturn lerp(Legacy,Mean,w);\n");
+                for (UMaterialExpression* Consumer : Graph)
+                    for (FExpressionInput* In : Consumer->GetInputsView())
+                        if (In && In->Expression == Call)
+                        {
+                            if (In->OutputIndex != 2) { B.Error = TEXT("Unexpected slope side projection consumer"); return false; }
+                            In->Expression = Filter; In->OutputIndex = 0; ++Consumers;
+                        }
+                ++Patched;
+            }
+            UE_LOG(LogTemp, Display, TEXT("[APS.SlopeSideAB] samples=%d consumers=%d mean=(%.6f %.6f %.6f); no geometry/noise/palette changes"),
+                Patched, Consumers, Mean->Constant.R, Mean->Constant.G, Mean->Constant.B);
+            if (Patched != 2 || Consumers != 2) { B.Error = TEXT("Expected two side samplers/consumers"); return false; }
             return true;
         }
 
@@ -198,26 +284,40 @@ namespace APSSharedTerrainLodABBuilder
 
         bool Run()
         {
-            if (bSlopeOnly && bWarpOnly) { B.Error = TEXT("Select exactly one isolated change"); return false; }
+            if (int32(bSlopeOnly) + int32(bWarpOnly) + int32(bSideOnly) + int32(bFields) > 1) { B.Error = TEXT("Select exactly one isolated change"); return false; }
+            if (bMagmaFields && !bFields) { B.Error = TEXT("Magma specialization requires orbital fields mode"); return false; }
             UMaterial* Source = LoadObject<UMaterial>(nullptr,
                 TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Shared/M_APS_SharedWorldScapeTerrain.M_APS_SharedWorldScapeTerrain"));
             UMaterialInstanceConstant* Template = LoadObject<UMaterialInstanceConstant>(nullptr,
-                TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Shared/MI_APS_SharedTerra.MI_APS_SharedTerra"));
+                bMagmaFields ? TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Shared/MI_APS_SharedMagma.MI_APS_SharedMagma")
+                    : TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Shared/MI_APS_SharedTerra.MI_APS_SharedTerra"));
             if (!Source || !Template || Template->GetMaterial() != Source)
             { B.Error = TEXT("Current production shared source/template missing"); return false; }
+            bool bSourceLava = false; FGuid LavaGuid;
+            if (bFields && (!Template->GetStaticSwitchParameterValue(FMaterialParameterInfo(TEXT("lavaPlanet")), bSourceLava, LavaGuid)
+                || bSourceLava != bMagmaFields))
+            { B.Error = TEXT("Native template lavaPlanet permutation differs from requested specialization"); return false; }
             auto* Master = Cast<UMaterial>(B.Duplicate(Source, TEXT("M_APS_LodPixelTerrain")));
-            if (!Master || !(bSlopeOnly ? PatchSlopeOnly(Master) : Patch(Master))) return false;
-            if (!bSlopeOnly && (Bypassed != (bWarpOnly ? 5 : 6) || MasterBypassed != 5 || FunctionBypassed != (bWarpOnly ? 0 : 1)))
+            if (!Master || (!bFields && !((bSlopeOnly || bSideOnly) ? PatchSlopeOnly(Master) : Patch(Master)))) return false;
+            if (!bSlopeOnly && !bSideOnly && !bFields && (Bypassed != (bWarpOnly ? 5 : 6) || MasterBypassed != 5 || FunctionBypassed != (bWarpOnly ? 0 : 1)))
             {
                 B.Error = FString::Printf(TEXT("Unexpected interpolator bypass count: warpOnly=%d got %d (%d/%d)"),
                     bWarpOnly, Bypassed, MasterBypassed, FunctionBypassed);
                 return false;
             }
-            auto* Instance = Cast<UMaterialInstanceConstant>(B.Duplicate(Template, TEXT("MI_APS_LodPixelTerra")));
+            auto* Instance = Cast<UMaterialInstanceConstant>(B.Duplicate(Template,
+                bMagmaFields ? TEXT("MI_APS_LodPixelMagma") : TEXT("MI_APS_LodPixelTerra")));
+            if (bFields && !APSOrbitalColorFieldsAB::Patch(B, Master, Template)) return false;
             if (!Instance) return false;
             Instance->SetParentEditorOnly(Master, false);
             Instance->CopyMaterialUniformParametersEditorOnly(Template, true);
             Instance->PostEditChange();
+            bool bCandidateLava = false;
+            if (bFields && (!Instance->GetStaticSwitchParameterValue(FMaterialParameterInfo(TEXT("lavaPlanet")), bCandidateLava, LavaGuid)
+                || bCandidateLava != bSourceLava))
+            { B.Error = TEXT("Candidate lost the native lavaPlanet permutation after reparenting"); return false; }
+            if (bFields) UE_LOG(LogTemp, Display, TEXT("[APS.OrbitalFieldsAB] template=%s candidate=%s lavaPlanet=%d preserved=1"),
+                *Template->GetPathName(), *Instance->GetPathName(), bCandidateLava);
             Master->PostEditChange();
             if (!RestoreTransientFunctionPins(Master)) return false;
             for (UObject* Output : B.Outputs)

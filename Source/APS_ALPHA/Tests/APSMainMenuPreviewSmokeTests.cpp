@@ -23,7 +23,10 @@
 #include "APS_ALPHA/Core/Enums/StellarType.h"
 #include "APS_ALPHA/Core/Model/GeneratedWorld.h"
 #include "APS_ALPHA/Core/Planetary/APSPlanetSurfaceProfile.h"
+#include "APS_ALPHA/Core/Planetary/APSGasGiantMaterial.h"
 #include "APS_ALPHA/Core/Rendering/APSStellarMaterialContract.h"
+#include "APS_ALPHA/Core/Saves/APSWorldSaveSnapshot.h"
+#include "APS_ALPHA/Core/Saves/GameSave.h"
 #include "APS_ALPHA/Generation/APSWorldScapePlanetNoise.h"
 #include "APS_ALPHA/Generation/AstroGenerator.h"
 #include "APS_ALPHA/Generation/PlanetarySurfaceGenerator.h"
@@ -48,9 +51,12 @@
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
 #include "Misc/FileHelper.h"
+#include "Misc/CommandLine.h"
+#include "Misc/Parse.h"
 #include "Misc/Paths.h"
 #include "ShaderCompiler.h"
 #include "UnrealClient.h"
+#include "UObject/StrongObjectPtr.h"
 
 namespace APSMainMenuPreviewSmokeTests
 {
@@ -222,6 +228,9 @@ namespace APSMainMenuPreviewSmokeTests
 	public:
 		explicit FRenderedMenuPreviewCommand(FAutomationTestBase* InTest)
 			: Test(InTest)
+			, bProbeGasSeed(FParse::Param(FCommandLine::Get(), TEXT("APSProbeGasSeed")))
+			, bProbeGasAtmosphereMatrix(bProbeGasSeed
+				|| FParse::Param(FCommandLine::Get(), TEXT("APSProbeGasAtmosphereMatrix")))
 		{
 		}
 
@@ -263,9 +272,14 @@ namespace APSMainMenuPreviewSmokeTests
 			case 7:
 				return UpdateScreenshot(Now);
 			case 8:
+				if (bProbeGasAtmosphereMatrix)
+					return UpdateGasAtmosphereTransition(World, ViewModel, Now);
 				return UpdateUnsupportedSurfaceCleanup(World, ViewModel, Now);
 			case 9:
 				return UpdateCleanup(Now);
+			case 10:
+				if (bProbeGasSeed) return UpdateGasSeedSequence(World, ViewModel, Now);
+				return UpdateGasAtmosphereMatrix(World, ViewModel, Now);
 			default:
 				return true;
 			}
@@ -937,6 +951,7 @@ namespace APSMainMenuPreviewSmokeTests
 			Model->PlanetSurfaceSeed = 42042;
 			Model->AtmosphereHeight = 140.0;
 			Model->AtmosphereOpacity = 12.0;
+			if (bProbeGasAtmosphereMatrix) Model->GenerationSeed = 271828;
 
 			if (!Controller->OpenAstronomicalGenerationForAutomation(
 				EAstroPreviewFocus::Galaxy, EAPSGenerationRoute::Space))
@@ -969,6 +984,30 @@ namespace APSMainMenuPreviewSmokeTests
 			}
 
 			AAstroGenerator* Generator = PreviewGenerator.Get();
+			if (bProbeGasAtmosphereMatrix)
+			{
+				// The opt-in diagnostic uses the real menu route, but must not depend on
+				// unrelated solid-proxy/optics assertions before reaching the gas cases.
+				if (Now - StepStartSeconds > SurfaceTimeoutSeconds)
+					return Fail(TEXT("Gas matrix PLANET setup timed out"));
+				if (!bGasAtmosphereFocusRequested)
+				{
+					ViewModel->SetPreviewFocus(EAstroPreviewFocus::HomePlanet);
+					bGasAtmosphereFocusRequested = true;
+					return false;
+				}
+				APlanet* Planet = Cast<APlanet>(Generator->GetActivePreviewWorldScapeBody());
+				// Model readiness can precede the Galaxy -> PLANET camera arrival.
+				// Preserve the real transition and wait before the first body edit.
+				if (!IsValid(Planet) || Generator->IsPreviewCameraTransitionActive()) return false;
+				GasAtmosphereStableKey = Generator->GetPreviewBodyStableKey(Planet);
+				UnsupportedSurfaceRevisionBeforeChange = ViewModel->PreviewRevision;
+				UnsupportedSurfaceBody = Planet;
+				ViewModel->SetEnumValue(StaticEnum<EPlanetType>(), static_cast<int32>(EPlanetType::GasGiant));
+				Step = 8;
+				StepStartSeconds = Now;
+				return false;
+			}
 			Test->TestTrue(TEXT("Orbital materials are resident before PLANET focus"),
 				Generator->ArePreviewMaterialAssetsWarmed());
 			Test->TestTrue(TEXT("Galaxy HISM preview is populated"),
@@ -3568,6 +3607,403 @@ namespace APSMainMenuPreviewSmokeTests
 			return false;
 		}
 
+		bool UpdateGasAtmosphereTransition(UWorld* World, UWorldGenerationViewModel* ViewModel, double Now)
+		{
+			if (!World || !ViewModel || !PreviewGenerator.IsValid())
+				return Fail(TEXT("Gas matrix lost its menu preview during the Step8 transition"));
+			if (Now - StepStartSeconds > SurfaceTimeoutSeconds)
+				return Fail(TEXT("Gas matrix Step8 transition timed out"));
+			const APlanet* Planet = Cast<APlanet>(PreviewGenerator->GetActivePreviewWorldScapeBody());
+			if (!ViewModel->bPreviewReady || ViewModel->PreviewRevision <= UnsupportedSurfaceRevisionBeforeChange
+				|| !IsValid(Planet) || Planet->PlanetType != EPlanetType::GasGiant
+				|| !IsPresented(Planet->GasGiantVisualComponent)
+				|| PreviewGenerator->IsPreviewCameraTransitionActive()) return false;
+			// Gas cleanup no longer needs the old solid test's one-inert-root topology.
+			// Never wait for an atmosphere to become visible: that is the defect under test.
+			GasAtmosphereCaptureDirectory = FPaths::Combine(FPaths::ProjectSavedDir(),
+				bProbeGasSeed ? TEXT("Screenshots/Windows/APS_GasSeedSequence") : TEXT("Screenshots/Windows/APS_GasAtmosphereMatrix"),
+				FDateTime::Now().ToString(TEXT("%Y%m%d-%H%M%S")));
+			UE_LOG(LogTemp, Display, TEXT("[APS.GasMatrix] Starting 18 cases; mode=%s; default optics; path=%s"),
+				bProbeGasSeed ? TEXT("seed A-B-A/Auto and in-memory snapshot roundtrip, R60000") : TEXT("radius matrix, seed41771"),
+				*GasAtmosphereCaptureDirectory);
+			Step = 10;
+			StepStartSeconds = Now;
+			return false;
+		}
+
+		static double GasMatrixMeshRadius(const UStaticMeshComponent* Mesh)
+		{
+			return IsValid(Mesh) && IsValid(Mesh->GetStaticMesh())
+				? Mesh->GetStaticMesh()->GetBounds().BoxExtent.GetMax() * Mesh->GetComponentScale().GetAbsMax() : 0.0;
+		}
+
+		static FVector GasMatrixMeshCenter(const UStaticMeshComponent* Mesh)
+		{
+			return IsValid(Mesh) && IsValid(Mesh->GetStaticMesh())
+				? Mesh->GetComponentTransform().TransformPosition(Mesh->GetStaticMesh()->GetBounds().Origin) : FVector::ZeroVector;
+		}
+
+		bool CaptureGasAtmosphereCase(UWorld* World, APlanet* Planet, const FString& CaseName,
+			const double ExpectedHeightKm, const double ExpectedRayleighKm, const int32 CurrentRevision,
+			const int32 ExpectedSeed = 41771)
+		{
+			UGameViewportClient* GameViewport = AutomationCommon::GetAnyGameViewportClient();
+			FViewport* Viewport = GameViewport ? GameViewport->Viewport : nullptr;
+			if (!Viewport || GameViewport->GetWorld() != World) return false;
+			const FIntPoint Size = Viewport->GetSizeXY();
+			TArray<FColor> Pixels;
+			if (Size.X <= 0 || Size.Y <= 0 || !Viewport->ReadPixels(Pixels)
+				|| Pixels.Num() != static_cast<int64>(Size.X) * Size.Y) return false;
+			const FString Path = FPaths::Combine(GasAtmosphereCaptureDirectory, CaseName + TEXT(".png"));
+			IFileManager::Get().MakeDirectory(*GasAtmosphereCaptureDirectory, true);
+			TArray64<uint8> Png;
+			FImageUtils::PNGCompressImageArray(Size.X, Size.Y,
+				TArrayView64<const FColor>(Pixels.GetData(), Pixels.Num()), Png);
+			if (Png.IsEmpty() || !FFileHelper::SaveArrayToFile(Png, *Path)) return false;
+			++GasAtmosphereCapturedCases;
+
+			// Capture first, then report all invariants; a hidden/broken shell must not
+			// prevent the remaining radius/type frames from reaching disk.
+			const auto Check = [this, &CaseName](const TCHAR* Label, const bool bValue)
+			{
+				Test->TestTrue(CaseName + TEXT(": ") + Label, bValue);
+			};
+			UStaticMeshComponent* GasMesh = Planet->GasGiantVisualComponent;
+			const double Rg = GasMatrixMeshRadius(GasMesh);
+			const FVector Center = GasMatrixMeshCenter(GasMesh);
+			FVector PublishedCenter = FVector::ZeroVector;
+			double PublishedRadius = 0.0;
+			const bool bPublished = PreviewGenerator->GetPreviewPresentationLocation(Planet, PublishedCenter)
+				&& PreviewGenerator->GetPreviewPresentationRadius(Planet, PublishedRadius);
+			FVector Camera = FVector::ZeroVector;
+			FRotator CameraRotation = FRotator::ZeroRotator;
+			if (APlayerController* PC = World->GetFirstPlayerController()) PC->GetPlayerViewPoint(Camera, CameraRotation);
+			const FAPSContinuousPreviewFrame& Frame = PreviewGenerator->GetContinuousPreviewFrame();
+			AAtmoScape* Atmosphere = IsValid(Planet->PlanetaryEnvironmentGenerator)
+				? Planet->PlanetaryEnvironmentGenerator->PlanetAtmosphere : nullptr;
+			const FVector GasScale = IsValid(GasMesh) ? GasMesh->GetComponentScale().GetAbs() : FVector::ZeroVector;
+			const double CenterTolerance = FMath::Max(1.0, Rg * 1.0e-5);
+			const double ExpectedShellRadius = Rg * (1.0 + ExpectedHeightKm / Planet->RadiusKM);
+			const double RadiusTolerance = FMath::Max(1.0, ExpectedShellRadius * 1.0e-4);
+			Check(TEXT("same stable selected body"), PreviewGenerator->GetPreviewBodyStableKey(Planet) == GasAtmosphereStableKey);
+			Check(TEXT("expected canonical surface seed"), Planet->WorldScapeSeed == ExpectedSeed);
+			Check(TEXT("body retains authored atmosphere height"), FMath::IsNearlyEqual(Planet->AtmosphereHeight, ExpectedHeightKm, 0.01));
+			Check(TEXT("gas backing layer is presented"), IsPresented(GasMesh) && !Planet->IsHidden());
+			const IConsoleVariable* GasMode = IConsoleManager::Get().FindConsoleVariable(TEXT("aps.Surface.GasVisual"));
+			UMaterialInterface* GasMaterial = IsValid(GasMesh) ? GasMesh->GetMaterial(0) : nullptr;
+			const UMaterialInstanceDynamic* GasMID = Cast<UMaterialInstanceDynamic>(GasMaterial);
+			const UMaterialInterface* GasParent = GasMID ? GasMID->Parent.Get() : GasMaterial;
+			if (GasMode && GasMode->GetInt() == 1)
+				Check(TEXT("requested V2 candidate is actually bound, never a silent fallback"),
+					IsValid(GasParent) && GasParent->GetPathName() == APSGasGiantMaterial::CandidatePath);
+			UE_LOG(LogTemp, Display, TEXT("[APS.GasMatrix.Material] case=%s mode=%d mid=%s parent=%s candidate=%s"),
+				*CaseName, GasMode ? GasMode->GetInt() : 0, *GetPathNameSafe(GasMID),
+				*GetPathNameSafe(GasParent), APSGasGiantMaterial::CandidatePath);
+			Check(TEXT("display radius is finite and positive"), FMath::IsFinite(Rg) && Rg > 0.0);
+			const double ViewDistanceRatio = FVector::Distance(Camera, Center) / FMath::Max(Rg, UE_DOUBLE_SMALL_NUMBER);
+			UE_LOG(LogTemp, Display, TEXT("[APS.GasMatrix.Framing] case=%s expectedRatio=%.17g currentRatio=%.17g transition=%d"),
+				*CaseName, GasAtmosphereExpectedDistanceRatio, ViewDistanceRatio,
+				PreviewGenerator->IsPreviewCameraTransitionActive() ? 1 : 0);
+			Check(TEXT("camera stays outside the opaque cloud-top sphere after a radius edit"), ViewDistanceRatio > 1.0);
+			Check(TEXT("radius edit preserves the selected planet's angular framing"),
+				GasAtmosphereExpectedDistanceRatio > 1.0 && FMath::IsNearlyEqual(ViewDistanceRatio,
+					GasAtmosphereExpectedDistanceRatio, GasAtmosphereExpectedDistanceRatio * 1.e-4));
+			Check(TEXT("gas display scale is uniform"), GasScale.GetMax() > 0.0
+				&& GasScale.GetMax() - GasScale.GetMin() <= GasScale.GetMax() * 1.0e-5);
+			Check(TEXT("published frame matches actual gas display sphere"), bPublished
+				&& FVector::Distance(Center, PublishedCenter) <= CenterTolerance
+				&& FMath::Abs(Rg - PublishedRadius) <= RadiusTolerance);
+			Check(TEXT("continuous preview frame is valid"), PreviewGenerator->UsesContinuousPreviewFrame() && Frame.IsValid());
+			UE_LOG(LogTemp, Display,
+				TEXT("[APS.GasMatrix.Frame] case=%s frame=%llu revision=%d type=%s seed=%d Rkm=%.9g Hkm=%.9g Rg=%.17g targetRa=%.17g center=%s publishedCenter=%s publishedRadius=%.17g meshScale=%s effectiveScale=%.17g observer=%s frameScale=%.17g farEnvelope=%.17g camera=%s rotation=%s distanceOverRg=%.9g actor=%s mesh=%s png=%s"),
+				*CaseName, static_cast<uint64>(GFrameCounter), CurrentRevision, *UEnum::GetValueAsString(Planet->PlanetType),
+				Planet->WorldScapeSeed, Planet->RadiusKM, Planet->AtmosphereHeight, Rg, ExpectedShellRadius,
+				*Center.ToString(), *PublishedCenter.ToString(), PublishedRadius, *GasScale.ToString(), Rg / (Planet->RadiusKM * 100000.0),
+				*Frame.ObserverCm.ToString(), Frame.RenderCmPerPhysicalCm, Frame.FarEnvelopeCm, *Camera.ToString(),
+				*CameraRotation.ToString(), FVector::Distance(Camera, Center) / FMath::Max(Rg, UE_DOUBLE_SMALL_NUMBER),
+				*Planet->GetPathName(), *GetPathNameSafe(GasMesh), *Path);
+			Check(TEXT("atmosphere actor exists"), IsValid(Atmosphere));
+			if (!IsValid(Atmosphere)) return true;
+			const double ExpectedAtmoRadiusKm = FMath::Max(Planet->RadiusKM - 1.0, 0.5);
+			Check(TEXT("factory one-km dead zone is preserved"), FMath::IsNearlyEqual(
+				static_cast<double>(Atmosphere->PlanetRadius), ExpectedAtmoRadiusKm, 0.05));
+			Check(TEXT("authored height survives real editor path"), FMath::IsNearlyEqual(
+				static_cast<double>(Atmosphere->AtmosphereHeight), ExpectedHeightKm, 0.01));
+			Check(TEXT("Rayleigh height survives real editor path"), FMath::IsNearlyEqual(
+				static_cast<double>(Atmosphere->RayleighHeight), ExpectedRayleighKm, 0.001));
+			Check(TEXT("neutral opacity and multi-scattering controls"), Atmosphere->AtmosphereOpacity == 1.0f
+				&& Atmosphere->MultiScatering == 1.0f);
+			UE_LOG(LogTemp, Display, TEXT("[APS.GasMatrix.Atmo] case=%s actor=%s hidden=%d radiusKm=%.9g heightKm=%.9g rayleighKm=%.9g presentationR=%.9g presentationRa=%.9g opacity=%.9g opacityScale=%.9g multi=%.9g"),
+				*CaseName, *Atmosphere->GetPathName(), Atmosphere->IsHidden(), Atmosphere->PlanetRadius,
+				Atmosphere->AtmosphereHeight, Atmosphere->RayleighHeight, Atmosphere->PresentationPlanetRadiusCm,
+				Atmosphere->PresentationAtmosphereRadiusCm, Atmosphere->AtmosphereOpacity,
+				Atmosphere->PresentationOpacityScale, Atmosphere->MultiScatering);
+			int32 VisiblePrimaryShells = 0;
+			int32 VisibleExtraShells = 0;
+			TInlineComponentArray<UStaticMeshComponent*> Shells;
+			Atmosphere->GetComponents(Shells);
+			for (UStaticMeshComponent* Shell : Shells)
+			{
+				if (!IsValid(Shell)) continue;
+				const bool bSpace = Shell->GetName().Contains(TEXT("SpacePlanetaryAtmoMesh"));
+				const bool bMain = !bSpace && Shell->GetName().Contains(TEXT("PlanetaryAtmoMesh"));
+				const bool bVisible = !Atmosphere->IsHidden() && IsPresented(Shell);
+				if (bVisible) (bSpace || bMain ? VisiblePrimaryShells : VisibleExtraShells)++;
+				UMaterialInstanceDynamic* MID = Cast<UMaterialInstanceDynamic>(Shell->GetMaterial(0));
+				float EarthRadius = -1.0f, AtmosRadius = -1.0f, ActorScale = -1.0f, RayleighHeight = -1.0f, Opacity = -1.0f;
+				// Query independently so one absent parameter does not hide the others.
+				uint32 UniformMask = 0;
+				if (MID)
+				{
+					if (MID->GetScalarParameterValue(FMaterialParameterInfo(TEXT("EarthRadius")), EarthRadius)) UniformMask |= 1;
+					if (MID->GetScalarParameterValue(FMaterialParameterInfo(TEXT("AtmosRadius")), AtmosRadius)) UniformMask |= 2;
+					if (MID->GetScalarParameterValue(FMaterialParameterInfo(TEXT("ActorScale")), ActorScale)) UniformMask |= 4;
+					if (MID->GetScalarParameterValue(FMaterialParameterInfo(TEXT("ScaleHeight_R")), RayleighHeight)) UniformMask |= 8;
+					if (MID->GetScalarParameterValue(FMaterialParameterInfo(TEXT("AtmosOpacity")), Opacity)) UniformMask |= 16;
+				}
+				UE_LOG(LogTemp, Display, TEXT("[APS.GasMatrix.Shell] case=%s name=%s visible=%d componentVisible=%d hidden=%d registered=%d radius=%.17g center=%s material=%s uniformMask=%u EarthRadius=%.9g AtmosRadius=%.9g ActorScale=%.9g ScaleHeight_R=%.9g AtmosOpacity=%.9g"),
+					*CaseName, *Shell->GetName(), bVisible, Shell->IsVisible(), Shell->bHiddenInGame, Shell->IsRegistered(),
+					GasMatrixMeshRadius(Shell), *GasMatrixMeshCenter(Shell).ToString(), *GetPathNameSafe(Shell->GetMaterial(0)),
+					UniformMask, EarthRadius, AtmosRadius, ActorScale, RayleighHeight, Opacity);
+				if (!bVisible || (!bSpace && !bMain)) continue;
+				Check(TEXT("visible shell matches authored thickness and gas center"),
+					FMath::Abs(GasMatrixMeshRadius(Shell) - ExpectedShellRadius) <= RadiusTolerance
+					&& FVector::Distance(GasMatrixMeshCenter(Shell), Center) <= CenterTolerance);
+				Check(TEXT("inside/outside pass matches actual camera"), bSpace == (FVector::Distance(Camera, Center) >= ExpectedShellRadius));
+				Check(TEXT("visible shell has required shader uniforms"), UniformMask == 31);
+				Check(TEXT("shader radii use displayed frame, not physical cm"),
+					FMath::Abs(EarthRadius - Rg) <= RadiusTolerance && FMath::Abs(AtmosRadius - ExpectedShellRadius) <= RadiusTolerance);
+				Check(TEXT("shader length units track current display scale"),
+					FMath::IsNearlyEqual(static_cast<double>(ActorScale), Rg / 50.0, FMath::Max(0.0001, Rg / 50.0 * 1.0e-4))
+					&& FMath::IsNearlyEqual(static_cast<double>(RayleighHeight), ExpectedRayleighKm / ExpectedAtmoRadiusKm * Rg,
+						FMath::Max(0.0001, ExpectedRayleighKm / ExpectedAtmoRadiusKm * Rg * 1.0e-4)));
+				Check(TEXT("shader keeps neutral opacity once"), FMath::IsNearlyEqual(Opacity, 1.0f, 1.0e-4f));
+			}
+			Check(TEXT("exactly one physical atmosphere shell is presented"), VisiblePrimaryShells == 1);
+			Check(TEXT("no duplicate sky/absorption/outer shell is presented"), VisibleExtraShells == 0);
+			return true;
+		}
+
+		bool UpdateGasSeedSequence(UWorld* World, UWorldGenerationViewModel* ViewModel, double Now)
+		{
+			static constexpr EPlanetType Types[] = {EPlanetType::GasGiant, EPlanetType::HotGiant, EPlanetType::IceGiant};
+			static constexpr const TCHAR* Stages[] = {TEXT("A"), TEXT("B"), TEXT("AReplay"), TEXT("Auto"), TEXT("Replacement"), TEXT("RestoredAuto")};
+			constexpr double RadiusKm = 60000.0;
+			constexpr double HeightKm = RadiusKm / 30.0;
+			const double RayleighKm = FMath::Clamp(8.0 * RadiusKm / 6371.0, 4.1, 80.0);
+			if (!World || !ViewModel || !ViewModel->GeneratedWorld || !PreviewGenerator.IsValid()
+				|| GasAtmosphereStableKey.IsEmpty())
+				return Fail(TEXT("Gas seed sequence lost its real menu model/generator/stable key"));
+			if (GasAtmosphereCase >= UE_ARRAY_COUNT(Types) * UE_ARRAY_COUNT(Stages))
+			{
+				Test->TestEqual(TEXT("Gas seed sequence captures all 18 rendered states"), GasAtmosphereCapturedCases, 18);
+				Step = 9;
+				StepStartSeconds = Now;
+				return false;
+			}
+			const EPlanetType Type = Types[GasAtmosphereCase / UE_ARRAY_COUNT(Stages)];
+			const int32 Stage = GasAtmosphereCase % UE_ARRAY_COUNT(Stages);
+			const int32 RequestedSeed = Stage == 1 ? 2 : Stage == 3 ? 0 : Stage == 4 ? GasSeedReplacementSeed
+				: Stage == 5 ? GasSeedAutoSeed : 1;
+			const int32 ExpectedSeed = Stage == 3 ? GasSeedAutoSeed : RequestedSeed;
+			const FString CaseName = FString::Printf(TEXT("%02d_%s_R60000_%s_seed%d"), GasAtmosphereCase,
+				*StaticEnum<EPlanetType>()->GetNameStringByValue(static_cast<int64>(Type)), Stages[Stage], RequestedSeed);
+			if (Now - StepStartSeconds > 30.0)
+				return Fail(FString::Printf(TEXT("Gas seed case %s did not settle/capture within 30 seconds"), *CaseName));
+			UGeneratedWorld* Model = ViewModel->GeneratedWorld;
+			APlanet* Planet = Cast<APlanet>(PreviewGenerator->GetActivePreviewWorldScapeBody());
+			if (!IsValid(Planet)) return Fail(TEXT("Gas seed sequence lost the selected planet"));
+			if (!bGasAtmosphereCasePending)
+			{
+				if (PreviewGenerator->IsPreviewCameraTransitionActive()) return false;
+				GasAtmosphereRevision = ViewModel->PreviewRevision;
+				if (GasAtmosphereCase == 0)
+				{
+					const auto& Orbit = PreviewGenerator->GetContinuousPreviewOrbit();
+					if (!Orbit.IsValid() || Planet->RadiusKM <= 0.0)
+						return Fail(TEXT("Gas seed sequence has no settled framing baseline"));
+					GasAtmosphereExpectedDistanceRatio = Orbit.DistanceCm / (Planet->RadiusKM * 100000.0);
+				}
+				UE_LOG(LogTemp, Display, TEXT("[APS.GasSeed.Edit] case=%s stableKey=%s expectedRatio=%.17g transition=%d"),
+					*CaseName, *GasAtmosphereStableKey, GasAtmosphereExpectedDistanceRatio,
+					PreviewGenerator->IsPreviewCameraTransitionActive() ? 1 : 0);
+				if (Stage == 0)
+				{
+					GasSeedSave.Reset();
+					GasSeedRestored.Reset();
+					GasSeedFamilyMID.Reset();
+					bGasSeedReselected = false;
+					GasSeedAutoSeed = UGeneratedWorld::ResolveCanonicalSurfaceSeed(0, Model->GenerationSeed, GasAtmosphereStableKey);
+					if (GasSeedAutoSeed <= 0 || GasSeedAutoSeed > 999983)
+						return Fail(TEXT("Gas Auto did not resolve to a supported positive canonical seed"));
+					Model->AtmosphereHeight = HeightKm;
+					Model->AtmosphereRayleighScattering = RayleighKm;
+					Model->AtmosphereOpacity = GetDefault<UGeneratedWorld>()->AtmosphereOpacity;
+					Model->AtmosphereMultiScattering = GetDefault<UGeneratedWorld>()->AtmosphereMultiScattering;
+					Model->AtmosphereColor = GetDefault<UGeneratedWorld>()->AtmosphereColor;
+					// The previous snapshot was applied from a separate restored model.
+					// Overwrite the live VM's replacement seed before committing this family.
+					ViewModel->SetPlanetSurfaceSeed(1);
+					ViewModel->SetPlanetRadius(RadiusKm);
+					ViewModel->SetEnumValue(StaticEnum<EPlanetType>(), static_cast<int32>(Type));
+					if (Model->PlanetSurfaceSeed != 1 || Model->PlanetType != Type || Model->PlanetRadius != RadiusKm)
+						return Fail(TEXT("Gas seed family setup did not replace the previous live editor buffer"));
+				}
+				else if (Stage == 5)
+				{
+					if (!GasSeedSave.IsValid() || GasSeedSave->GeneratedWorldModelData.IsEmpty())
+						return Fail(TEXT("Gas seed snapshot is absent before restore"));
+					GasSeedRestored.Reset(APSWorldSaveSnapshot::Restore(GasSeedSave.Get(), GetTransientPackage(), TEXT("APS_RENDERED_GAS_SEED")));
+					const FAPSPreviewBodyEditOverride* RestoredOverride = GasSeedRestored.IsValid()
+						? GasSeedRestored->FindPreviewBodyEditOverride(GasAtmosphereStableKey) : nullptr;
+					if (!RestoredOverride || RestoredOverride->SurfaceSeed != GasSeedAutoSeed
+						|| RestoredOverride->PlanetType != Type || RestoredOverride->RadiusKm != RadiusKm
+						|| GasSeedRestored->PlanetSurfaceSeed != GasSeedAutoSeed
+						|| GasSeedRestored->GenerationSeed != Model->GenerationSeed)
+						return Fail(TEXT("Gas seed snapshot did not restore the captured family/seed/radius/key"));
+					// Real snapshot -> public actor application; no disk/game replay, VM
+					// replacement, MID assignment, uniform patch or camera manipulation.
+					if (!PreviewGenerator->RefreshPreviewPlanetAppearance(GasSeedRestored.Get(), false)
+						|| !PreviewGenerator->LoadPreviewBodyEditOverride(GasSeedRestored.Get(), Planet))
+						return Fail(TEXT("Gas seed restored override could not be applied/reloaded publicly"));
+				}
+				else
+				{
+					ViewModel->SetPlanetSurfaceSeed(RequestedSeed);
+					if (Model->PlanetSurfaceSeed != RequestedSeed)
+						return Fail(TEXT("Gas seed public setter did not update the editor buffer"));
+				}
+				bGasAtmosphereCasePending = true;
+				StepStartSeconds = Now;
+				return false;
+			}
+			// Snapshot application is synchronous and intentionally does not increment
+			// the live VM's revision. All public setter stages must advance it normally.
+			if (!ViewModel->bPreviewReady || (Stage != 5 && ViewModel->PreviewRevision <= GasAtmosphereRevision)
+				|| Planet->PlanetType != Type || !FMath::IsNearlyEqual(Planet->RadiusKM, RadiusKm, 0.01)
+				|| Planet->WorldScapeSeed != ExpectedSeed || !IsPresented(Planet->GasGiantVisualComponent)
+				|| PreviewGenerator->IsPreviewCameraTransitionActive()) return false;
+			if (Stage == 3 && !bGasSeedReselected)
+			{
+				// Exercise the real same-body hierarchy selection while the live VM
+				// still owns Auto, not after the separate snapshot restore.
+				if (!ViewModel->FocusPreviewBody(Planet)) return Fail(TEXT("Gas Auto public reselect failed"));
+				bGasSeedReselected = true;
+				CompilationWaitContext.Reset();
+				return false;
+			}
+			if (!WaitForCompilationIdle(Now, *CaseName)) return false;
+			UMaterialInstanceDynamic* MID = Planet->GasGiantMaterialInstance;
+			float PatternSeed = -1.0f;
+			if (!IsValid(MID) || Planet->GasGiantVisualComponent->GetMaterial(0) != MID
+				|| !MID->GetScalarParameterValue(FMaterialParameterInfo(TEXT("GasPatternSeed")), PatternSeed))
+				return Fail(FString::Printf(TEXT("Gas seed case %s has no real bound MID/seed uniform"), *CaseName));
+			const uint32 SeedHash = HashCombine(GetTypeHash(ExpectedSeed), GetTypeHash(static_cast<uint8>(Type)));
+			Test->TestEqual(CaseName + TEXT(": canonical hash reaches actual material"), PatternSeed, static_cast<float>(SeedHash % 4096u));
+			if (Stage == 0) GasSeedFamilyMID = MID;
+			Test->TestTrue(CaseName + TEXT(": seed edits retain this family's MID"), GasSeedFamilyMID.Get() == MID);
+			const UGeneratedWorld* CheckedModel = Stage == 5 ? GasSeedRestored.Get() : Model;
+			const FAPSPreviewBodyEditOverride* SavedOverride = CheckedModel->FindPreviewBodyEditOverride(GasAtmosphereStableKey);
+			Test->TestTrue(CaseName + TEXT(": actual per-body override retains canonical seed"),
+				SavedOverride && SavedOverride->SurfaceSeed == ExpectedSeed);
+			Test->TestEqual(CaseName + TEXT(": reselected/restored editor seed"), CheckedModel->PlanetSurfaceSeed, ExpectedSeed);
+			UE_LOG(LogTemp, Display, TEXT("[APS.GasSeed.State] case=%s stableKey=%s requestedSeed=%d modelSeed=%d liveVMSeed=%d actorSeed=%d actualGasPatternSeed=%.9g mid=%s radiusKm=%.9g snapshotBytes=%d"),
+				*CaseName, *PreviewGenerator->GetPreviewBodyStableKey(Planet), RequestedSeed, CheckedModel->PlanetSurfaceSeed,
+				Model->PlanetSurfaceSeed, Planet->WorldScapeSeed, PatternSeed, *MID->GetPathName(), Planet->RadiusKM,
+				GasSeedSave.IsValid() ? GasSeedSave->GeneratedWorldModelData.Num() : 0);
+			if (!CaptureGasAtmosphereCase(World, Planet, CaseName, HeightKm, RayleighKm, ViewModel->PreviewRevision, ExpectedSeed)) return false;
+			if (Stage == 0) GasSeedPatternA = PatternSeed;
+			else if (Stage == 1)
+			{
+				GasSeedPatternB = PatternSeed;
+				Test->TestNotEqual(CaseName + TEXT(": A and B material inputs differ"), GasSeedPatternB, GasSeedPatternA);
+			}
+			else if (Stage == 2) Test->TestEqual(CaseName + TEXT(": A-B-A restores exact material input"), PatternSeed, GasSeedPatternA);
+			else if (Stage == 3)
+			{
+				GasSeedAutoPattern = PatternSeed;
+				GasSeedReplacementSeed = PatternSeed != GasSeedPatternB ? 2 : 1;
+				GasSeedSave.Reset(NewObject<UGameSave>());
+				GasSeedSave->GeneratedWorldsDataArray.Add(Model->SaveWorldData());
+				if (!APSWorldSaveSnapshot::Capture(Model, GasSeedSave->GeneratedWorldModelData)
+					|| GasSeedSave->GeneratedWorldModelData.IsEmpty())
+					return Fail(TEXT("Gas Auto in-memory snapshot capture failed"));
+			}
+			else if (Stage == 4)
+				Test->TestNotEqual(CaseName + TEXT(": replacement visibly testable through a distinct material input"), PatternSeed, GasSeedAutoPattern);
+			else if (Stage == 5)
+				Test->TestEqual(CaseName + TEXT(": snapshot restores exact Auto material input"), PatternSeed, GasSeedAutoPattern);
+			++GasAtmosphereCase;
+			bGasAtmosphereCasePending = false;
+			StepStartSeconds = Now;
+			return false;
+		}
+
+		bool UpdateGasAtmosphereMatrix(UWorld* World, UWorldGenerationViewModel* ViewModel, double Now)
+		{
+			static constexpr EPlanetType Types[] = {EPlanetType::GasGiant, EPlanetType::HotGiant, EPlanetType::IceGiant};
+			static constexpr double RadiiKm[] = {5262.0, 50000.0, 60000.0, 70000.0, 200000.0, 70000.0};
+			if (!World || !ViewModel || !ViewModel->GeneratedWorld || !PreviewGenerator.IsValid())
+				return Fail(TEXT("Gas matrix lost its real menu model/generator"));
+			if (GasAtmosphereCase >= UE_ARRAY_COUNT(Types) * UE_ARRAY_COUNT(RadiiKm))
+			{
+				Step = 9;
+				StepStartSeconds = Now;
+				return false;
+			}
+			const EPlanetType Type = Types[GasAtmosphereCase / UE_ARRAY_COUNT(RadiiKm)];
+			const int32 RadiusIndex = GasAtmosphereCase % UE_ARRAY_COUNT(RadiiKm);
+			const double RadiusKm = RadiiKm[RadiusIndex];
+			const bool bFixedHeight = RadiusIndex == UE_ARRAY_COUNT(RadiiKm) - 1;
+			const double HeightKm = bFixedHeight ? 100.0 : RadiusKm / 30.0;
+			const double RayleighKm = FMath::Clamp(8.0 * RadiusKm / 6371.0, 4.1, 80.0);
+			const FString CaseName = FString::Printf(TEXT("%02d_%s_R%.0f_%s_seed41771"), GasAtmosphereCase,
+				*StaticEnum<EPlanetType>()->GetNameStringByValue(static_cast<int64>(Type)), RadiusKm,
+				bFixedHeight ? TEXT("H100") : TEXT("Hgenerated"));
+			if (Now - StepStartSeconds > 30.0)
+				return Fail(FString::Printf(TEXT("Gas matrix case %s did not settle/capture within 30 seconds"), *CaseName));
+			if (!bGasAtmosphereCasePending)
+			{
+				// A current interpolated orbit is not a settled framing baseline.
+				// The case timeout above also bounds this pre-edit wait.
+				if (PreviewGenerator->IsPreviewCameraTransitionActive()) return false;
+				GasAtmosphereRevision = ViewModel->PreviewRevision;
+				const APlanetaryBody* PreviousBody = PreviewGenerator->GetActivePreviewWorldScapeBody();
+				const auto& PreviousOrbit = PreviewGenerator->GetContinuousPreviewOrbit();
+				GasAtmosphereExpectedDistanceRatio = IsValid(PreviousBody) && PreviousBody->RadiusKM > 0.0
+					&& PreviousOrbit.IsValid() ? PreviousOrbit.DistanceCm / (PreviousBody->RadiusKM * 100000.0) : 0.0;
+				UE_LOG(LogTemp, Display, TEXT("[APS.GasMatrix.Baseline] case=%s expectedRatio=%.17g orbitDistanceCm=%.17g bodyRadiusKm=%.17g transition=%d"),
+					*CaseName, GasAtmosphereExpectedDistanceRatio, PreviousOrbit.DistanceCm,
+					IsValid(PreviousBody) ? PreviousBody->RadiusKM : 0.0,
+					PreviewGenerator->IsPreviewCameraTransitionActive() ? 1 : 0);
+				UGeneratedWorld* Model = ViewModel->GeneratedWorld;
+				// Atmosphere NumberRows edit this same public buffer before requesting
+				// appearance refresh. No actor, shell visibility, material or camera edits.
+				Model->AtmosphereHeight = HeightKm;
+				Model->AtmosphereRayleighScattering = RayleighKm;
+				Model->AtmosphereOpacity = GetDefault<UGeneratedWorld>()->AtmosphereOpacity;
+				Model->AtmosphereMultiScattering = GetDefault<UGeneratedWorld>()->AtmosphereMultiScattering;
+				Model->AtmosphereColor = GetDefault<UGeneratedWorld>()->AtmosphereColor;
+				ViewModel->SetPlanetSurfaceSeed(41771);
+				ViewModel->SetPlanetRadius(RadiusKm);
+				ViewModel->SetEnumValue(StaticEnum<EPlanetType>(), static_cast<int32>(Type));
+				bGasAtmosphereCasePending = true;
+				StepStartSeconds = Now;
+				return false;
+			}
+			APlanet* Planet = Cast<APlanet>(PreviewGenerator->GetActivePreviewWorldScapeBody());
+			if (!ViewModel->bPreviewReady || ViewModel->PreviewRevision <= GasAtmosphereRevision
+				|| !IsValid(Planet) || Planet->PlanetType != Type
+				|| !FMath::IsNearlyEqual(Planet->RadiusKM, RadiusKm, 0.01)
+				|| Planet->WorldScapeSeed != 41771 || !IsPresented(Planet->GasGiantVisualComponent)
+				|| PreviewGenerator->IsPreviewCameraTransitionActive()) return false;
+			if (!WaitForCompilationIdle(Now, *CaseName)) return false;
+			if (!CaptureGasAtmosphereCase(World, Planet, CaseName, HeightKm, RayleighKm, ViewModel->PreviewRevision)) return false;
+			++GasAtmosphereCase;
+			bGasAtmosphereCasePending = false;
+			return false;
+		}
+
 		bool UpdateCleanup(double Now)
 		{
 			if (PreviewGenerator.IsValid() && !PreviewGenerator->PreparePreviewForTravel())
@@ -3585,6 +4021,12 @@ namespace APSMainMenuPreviewSmokeTests
 			if (!PendingFailure.IsEmpty())
 			{
 				Test->AddError(PendingFailure);
+			}
+			else if (bProbeGasAtmosphereMatrix)
+			{
+				UE_LOG(LogTemp, Display, TEXT("[APS.GasMatrix] Capture sequence complete: %d/18 PNGs; mode=%s; inspect automation assertions and rendered frames; path=%s"),
+					GasAtmosphereCapturedCases, bProbeGasSeed ? TEXT("rendered seed / in-memory snapshot roundtrip") : TEXT("radius matrix"),
+					*GasAtmosphereCaptureDirectory);
 			}
 			else
 			{
@@ -3673,6 +4115,23 @@ namespace APSMainMenuPreviewSmokeTests
 		}
 
 		FAutomationTestBase* Test{nullptr};
+		const bool bProbeGasSeed{false};
+		const bool bProbeGasAtmosphereMatrix{false};
+		bool bGasSeedReselected{false};
+		int32 GasSeedAutoSeed{0};
+		int32 GasSeedReplacementSeed{2};
+		float GasSeedPatternA{-1.0f}, GasSeedPatternB{-1.0f}, GasSeedAutoPattern{-1.0f};
+		TWeakObjectPtr<UMaterialInstanceDynamic> GasSeedFamilyMID;
+		TStrongObjectPtr<UGameSave> GasSeedSave{nullptr};
+		TStrongObjectPtr<UGeneratedWorld> GasSeedRestored{nullptr};
+		bool bGasAtmosphereFocusRequested{false};
+		bool bGasAtmosphereCasePending{false};
+		int32 GasAtmosphereCase{0};
+		int32 GasAtmosphereCapturedCases{0};
+		int32 GasAtmosphereRevision{0};
+		double GasAtmosphereExpectedDistanceRatio{0.0};
+		FString GasAtmosphereStableKey;
+		FString GasAtmosphereCaptureDirectory;
 		TWeakObjectPtr<AAstroGenerator> PreviewGenerator;
 		TWeakObjectPtr<APlanet> InitialPlanet;
 		TWeakObjectPtr<AWorldScapeRoot> CurrentResolverRoot;

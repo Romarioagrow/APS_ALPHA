@@ -50,7 +50,7 @@ void UAPSColonyTerminalSubsystem::Tick(float DeltaTime)
 		{
 			return;
 		}
-		if (ShotStage > 15)
+		if (ShotStage > 25)
 		{
 			CloseTerminal();
 			ShotStage = -1;
@@ -74,18 +74,31 @@ void UAPSColonyTerminalSubsystem::Tick(float DeltaTime)
 		{
 			// Two steps a tab: show it, then shoot it a moment later. A shot is taken with the next frame, so switching
 			// in the same tick as the request caught the next tab (01.10: the journal's shot showed the shipyard).
+			// Then the object window over the map and the construction catalogue (02.10, C4/C5).
 			static const TCHAR* TabNames[] = {TEXT("overview"), TEXT("map"), TEXT("colony"), TEXT("fleet"),
-				TEXT("divisions"), TEXT("journal"), TEXT("shipyard")};
+				TEXT("divisions"), TEXT("journal"), TEXT("shipyard"), TEXT("scheme"), TEXT("pilot"), TEXT("surface"),
+				TEXT("object"), TEXT("construction")};
 			const int32 Tab = (ShotStage - 2) / 2;
 			if ((ShotStage - 2) % 2 == 0)
 			{
-				TerminalWidget->ShowTab(Tab);
+				if (Tab < 10)
+				{
+					TerminalWidget->ShowTab(Tab);
+				}
+				else
+				{
+					TerminalWidget->ShowTestOverlay(Tab - 9);
+				}
 			}
 			else
 			{
 				FScreenshotRequest::RequestScreenshot(FPaths::ScreenShotDir() / TEXT("ColonyTerminal")
 					/ FString::Printf(TEXT("%s_%s.png"), *FDateTime::Now().ToString(TEXT("%Y%m%d_%H%M%S")), TabNames[Tab]),
 					true, false);
+				if (Tab == 11)
+				{
+					TerminalWidget->ShowTestOverlay(0);
+				}
 			}
 		}
 		++ShotStage;
@@ -158,6 +171,18 @@ void UAPSColonyTerminalSubsystem::ToggleFleetCommand()
 	if (TerminalWidget.IsValid())
 	{
 		TerminalWidget->ShowTab(FleetTab);
+	}
+}
+
+void UAPSColonyTerminalSubsystem::OpenTerminalTab(const int32 Tab)
+{
+	if (!TerminalWidget.IsValid())
+	{
+		ToggleTerminal();
+	}
+	if (TerminalWidget.IsValid())
+	{
+		TerminalWidget->ShowTab(Tab);
 	}
 }
 
@@ -243,7 +268,9 @@ void UAPSColonyTerminalSubsystem::ShowOverlays()
 			.Visibility_Lambda([WeakThis, Objective]()
 			{
 				const UAPSColonyTerminalSubsystem* Self = WeakThis.Get();
-				return Self && !Self->IsTerminalOpen() && !Objective(true).IsEmpty()
+				// Under the F10 map too: its 3D view between the panels let the objective show through (02.10 test shots).
+				const AGravityPlayerController* Controller = Self ? Cast<AGravityPlayerController>(Self->BoundController.Get()) : nullptr;
+				return Self && !Self->IsTerminalOpen() && !(Controller && Controller->IsStrategicMapOpen()) && !Objective(true).IsEmpty()
 					? EVisibility::HitTestInvisible : EVisibility::Collapsed;
 			})
 			[

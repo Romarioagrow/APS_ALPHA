@@ -6,6 +6,11 @@ namespace APSStationGravity
 {
 	constexpr float MinimumGravityRadius = 1000.0f;
 	constexpr float BoundsPadding = 500.0f;
+	// A station is a few kilometres across. A mesh component left far from the actor (BP_SpaceHeadquarters_Alpha had
+	// one at the world origin, 02.10) stretched the gravity volume to 1.6 AU: the whole home system pulled at 1 g
+	// toward the HQ and ships flew at the 500 m/s floor. Such components are ignored and the volume is capped.
+	constexpr double StrayComponentCm = 10000000.0;
+	constexpr float MaximumGravityRadius = 5000000.0f;
 }
 
 ASpaceStation::ASpaceStation()
@@ -53,7 +58,9 @@ FVector ASpaceStation::GetPlayerStartLocation() const
 	GetComponents(MeshComponents);
 	for (const UStaticMeshComponent* MeshComponent : MeshComponents)
 	{
-		if (IsValid(MeshComponent) && MeshComponent->GetStaticMesh() && MeshComponent->IsRegistered())
+		// Stray components far from the station are not part of its hull (see APSStationGravity).
+		if (IsValid(MeshComponent) && MeshComponent->GetStaticMesh() && MeshComponent->IsRegistered()
+			&& FVector::Dist(MeshComponent->Bounds.Origin, GetActorLocation()) <= APSStationGravity::StrayComponentCm)
 		{
 			VisualBounds += MeshComponent->Bounds.GetBox();
 		}
@@ -135,6 +142,12 @@ void ASpaceStation::ConfigureGravityVolume(bool bWriteDiagnosticLog)
 	{
 		if (IsValid(MeshComponent) && MeshComponent->GetStaticMesh() && MeshComponent->IsRegistered())
 		{
+			if (FVector::Dist(MeshComponent->Bounds.Origin, GetActorLocation()) > APSStationGravity::StrayComponentCm)
+			{
+				UE_LOG(LogTemp, Warning, TEXT("[APS.Gravity] StationVolume actor=%s ignores stray mesh %s %.0f km from the station"),
+					*GetName(), *MeshComponent->GetName(), FVector::Dist(MeshComponent->Bounds.Origin, GetActorLocation()) / 100000.0);
+				continue;
+			}
 			VisualBounds += MeshComponent->Bounds.GetBox();
 		}
 	}
@@ -169,9 +182,9 @@ void ASpaceStation::ConfigureGravityVolume(bool bWriteDiagnosticLog)
 		: GravityCollisionZone->GetComponentLocation();
 	const float RequiredWorldRadius = FVector::Distance(VolumeCenter, BoundsCenter)
 		+ BoundsExtent.Size() + APSStationGravity::BoundsPadding;
-	const float DesiredWorldRadius = FMath::Max(
+	const float DesiredWorldRadius = FMath::Min(FMath::Max(
 		APSStationGravity::MinimumGravityRadius,
-		RequiredWorldRadius * GetGravityVolumeRadiusMultiplier());
+		RequiredWorldRadius * GetGravityVolumeRadiusMultiplier()), APSStationGravity::MaximumGravityRadius);
 
 	if (bGravityVolumeWasDetached)
 	{

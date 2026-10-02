@@ -1,0 +1,661 @@
+diff --git a/Source/WorldScapeCore/Private/LodData.cpp b/Source/WorldScapeCore/Private/LodData.cpp
+--- a/Source/WorldScapeCore/Private/LodData.cpp
++++ b/Source/WorldScapeCore/Private/LodData.cpp
+@@ -20,6 +20,7 @@ LodData::LodData()
+ 	Vertices.Empty();
+ 	Tangents.Empty();
+ 	UV.Empty();
++	UV1.Empty();
+ }
+ 
+ void LodData::CleanData()
+@@ -29,9 +30,10 @@ void LodData::CleanData()
+ 	Vertices.Empty();
+ 	Tangents.Empty();
+ 	UV.Empty();
++	UV1.Empty();
+ }
+ 
+ FQueueVegetation::FQueueVegetation()
+ {
+ 
+-}
+\ No newline at end of file
++}
+diff --git a/Source/WorldScapeCore/Private/WorldScapeLod.cpp b/Source/WorldScapeCore/Private/WorldScapeLod.cpp
+--- a/Source/WorldScapeCore/Private/WorldScapeLod.cpp
++++ b/Source/WorldScapeCore/Private/WorldScapeLod.cpp
+@@ -91,7 +91,7 @@ void UWorldScapeLod::Init(int pLod,int TriResolution, double Size, DVector pRela
+ 				Triangles.Add(x + (y * (Width) ) + 1);				//current vertex + one right
+ 			}
+ 		}
+-		Mesh->CreateMeshSection_LinearColor(0, Vertices, Triangles, Normals, UV, VertexColors, Tangents, bCollision);
++		Mesh->CreateMeshSection_LinearColor(0, Vertices, Triangles, Normals, UV, UV1, {}, {}, VertexColors, Tangents, bCollision, false);
+ 		Mesh->SetMaterial(0, MaterialLodArray.DefaultMaterial);
+ 	}
+ 	else 
+@@ -170,7 +170,7 @@ void UWorldScapeLod::Init(int pLod,int TriResolution, double Size, DVector pRela
+ 			}
+ 			PreviousOffset = IndexOffset;
+ 		}
+-		Mesh->CreateMeshSection_LinearColor(0, Vertices, Triangles, Normals, UV, VertexColors, Tangents, bCollision);
++		Mesh->CreateMeshSection_LinearColor(0, Vertices, Triangles, Normals, UV, UV1, {}, {}, VertexColors, Tangents, bCollision, false);
+ 		Mesh->SetMaterial(0, MaterialLodArray.DefaultMaterial);
+ 	}
+ 	if (!bCollision)
+@@ -205,7 +205,7 @@ void UWorldScapeLod::Init(int pLod,int TriResolution, double Size, DVector pRela
+ 				TrianglesPatchA.Add(x + (y * (Width)) + 1);				//current vertex + one right
+ 			}
+ 		}
+-		Mesh->CreateMeshSection_LinearColor(1, VerticesPA, TrianglesPatchA, VerticesNormalPA, UVPA, VerticesColorPA, TangentsPA, bCollision);
++		Mesh->CreateMeshSection_LinearColor(1, VerticesPA, TrianglesPatchA, VerticesNormalPA, UVPA, UV1PA, {}, {}, VerticesColorPA, TangentsPA, bCollision, false);
+ 		Mesh->SetMaterial(1, MaterialLodArray.DefaultMaterial);
+ 		
+ 		Width = TriResolution - 2;
+@@ -238,7 +238,7 @@ void UWorldScapeLod::Init(int pLod,int TriResolution, double Size, DVector pRela
+ 				TrianglesPatchB.Add(x + (y * (Width)) + 1);				//current vertex + one right
+ 			}
+ 		}
+-		Mesh->CreateMeshSection_LinearColor(2, VerticesPB, TrianglesPatchB, VerticesNormalPB, UVPB, VerticesColorPB, TangentsPB, bCollision);
++		Mesh->CreateMeshSection_LinearColor(2, VerticesPB, TrianglesPatchB, VerticesNormalPB, UVPB, UV1PB, {}, {}, VerticesColorPB, TangentsPB, bCollision, false);
+ 		Mesh->SetMaterial(2, MaterialLodArray.DefaultMaterial);
+ 	}
+ 	TriangleSize = FVector(Size, Size, Size);
+@@ -287,6 +287,15 @@ UWorldScapeLod::UWorldScapeLod()
+ void UWorldScapeLod::SetData(LodData data, double pSize, int Patch)
+ {
+ 	LodSize = pSize;
++	const auto CopyMaterialUV = [&data](TArray<FVector2D>& Target)
++	{
++		if (data.UV1.Num() == data.Vertices.Num())
++			Target = data.UV1;
++		else if (!Target.IsEmpty())
++			// An empty array means "leave unchanged" to UpdateMeshSection. Clear a
++			// previous valid payload explicitly when a pooled LOD loses the opt-in.
++			Target.Init(FVector2D::ZeroVector, data.Vertices.Num());
++	};
+ 	
+ 	TArray<FVector> FVerticeList;
+ 	for (int i = 0; i < data.Vertices.Num(); i++) 
+@@ -302,6 +311,7 @@ void UWorldScapeLod::SetData(LodData data, double pSize, int Patch)
+ 		VerticesColorPA = data.VertexColors;
+ 		VerticesPA = FVerticeList;
+ 		UVPA = data.UV;
++		CopyMaterialUV(UV1PA);
+ 		TangentsPA = data.Tangents;
+ 	}
+ 	else if (Patch == 2) 
+@@ -310,6 +320,7 @@ void UWorldScapeLod::SetData(LodData data, double pSize, int Patch)
+ 		VerticesColorPB = data.VertexColors;
+ 		VerticesPB = FVerticeList;
+ 		UVPB = data.UV;
++		CopyMaterialUV(UV1PB);
+ 		TangentsPB = data.Tangents;
+ 		// Opt-in only: authored/manual worlds retain their original normals.
+ 		// Worker publishes Main, A, then B; all three payloads are current here.
+@@ -325,6 +336,7 @@ void UWorldScapeLod::SetData(LodData data, double pSize, int Patch)
+ 		VertexColors = data.VertexColors;
+ 		Vertices = FVerticeList;
+ 		UV = data.UV;
++		CopyMaterialUV(UV1);
+ 		Tangents = data.Tangents;
+ 	}
+ }
+@@ -353,9 +365,9 @@ void UWorldScapeLod::UpdateMesh()
+ 	// display colour. Matching CreateMeshSection's false conversion flag prevents
+ 	// every async LOD update from gamma-raising the data before the terrain material
+ 	// classifies it.
+-	Mesh->UpdateMeshSection_LinearColor(0, Vertices, Normals, UV, VertexColors, Tangents, false);
+-	Mesh->UpdateMeshSection_LinearColor(1, VerticesPA, VerticesNormalPA, UVPA, VerticesColorPA, TangentsPA, false);
+-	Mesh->UpdateMeshSection_LinearColor(2, VerticesPB, VerticesNormalPB, UVPB, VerticesColorPB, TangentsPB, false);
++	Mesh->UpdateMeshSection_LinearColor(0, Vertices, Normals, UV, UV1, {}, {}, VertexColors, Tangents, false);
++	Mesh->UpdateMeshSection_LinearColor(1, VerticesPA, VerticesNormalPA, UVPA, UV1PA, {}, {}, VerticesColorPA, TangentsPA, false);
++	Mesh->UpdateMeshSection_LinearColor(2, VerticesPB, VerticesNormalPB, UVPB, UV1PB, {}, {}, VerticesColorPB, TangentsPB, false);
+ 	
+ 	//Mesh->SetMobility(EComponentMobility::Static);
+ 	/*
+@@ -387,9 +399,9 @@ void UWorldScapeLod::SetMesh()
+ 	Mesh->SetRelativeLocation(RelativePosition.ToFVector(), false, nullptr, ETeleportType::TeleportPhysics);
+ 	//Mesh->SetWorldLocationAndRotationNoPhysics(RelativePosition.ToFVector(), FRotator());
+ 
+-	Mesh->CreateMeshSection_LinearColor(0, Vertices,Triangles ,Normals, UV, VertexColors, Tangents,true);
+-	Mesh->CreateMeshSection_LinearColor(1, VerticesPA, TrianglesPatchA,VerticesNormalPA, UVPA, VerticesColorPA, TangentsPA,true);
+-	Mesh->CreateMeshSection_LinearColor(2, VerticesPB, TrianglesPatchB,VerticesNormalPB, UVPB, VerticesColorPB, TangentsPB, true);
++	Mesh->CreateMeshSection_LinearColor(0, Vertices, Triangles, Normals, UV, UV1, {}, {}, VertexColors, Tangents, true, false);
++	Mesh->CreateMeshSection_LinearColor(1, VerticesPA, TrianglesPatchA, VerticesNormalPA, UVPA, UV1PA, {}, {}, VerticesColorPA, TangentsPA, true, false);
++	Mesh->CreateMeshSection_LinearColor(2, VerticesPB, TrianglesPatchB, VerticesNormalPB, UVPB, UV1PB, {}, {}, VerticesColorPB, TangentsPB, true, false);
+ 	//Mesh->SetRelativeLocation(RelativePosition.ToFVector(), false, nullptr, ETeleportType::TeleportPhysics);
+ 	//Mesh->SetMobility(EComponentMobility::Static);
+ }
+diff --git a/Source/WorldScapeCore/Private/WorldScapeOceanDepthTestNoise.h b/Source/WorldScapeCore/Private/WorldScapeOceanDepthTestNoise.h
+new file mode 100644
+--- /dev/null
++++ b/Source/WorldScapeCore/Private/WorldScapeOceanDepthTestNoise.h
+@@ -0,0 +1,39 @@
++#pragma once
++
++#include "WorldScapeNoise/Public/WorldScapeNoiseClass.h"
++#include "WorldScapeOceanDepthTestNoise.generated.h"
++
++// Private isolated-host fixture, not an APS terrain replacement or a saved asset.
++UCLASS()
++class UWorldScapeOceanDepthTestNoise : public UWorldScapeNoiseClass
++{
++    GENERATED_BODY()
++public:
++    int32 GroundCalls = 0;
++    int32 OceanCalls = 0;
++
++    static double GroundHeight(const DVector& P) { return 500.0 + P.X * .002 - P.Y * .001; }
++    static double SeaHeight(const DVector& P) { return 850.0 + P.Y * .0001; }
++
++    virtual FNoiseData GetNoise(CustomNoise Noise, const DVector& P, const DVector& Planet,
++        double Scale, double Intensity, double Radius, bool Flat, double Latitude,
++        DVector& NoisePosition, FNoiseData Previous, bool Planetary) override
++    {
++        ++GroundCalls;
++        FNoiseData Data;
++        Data.Height = GroundHeight(P);
++        Data.HeightNormalize = .2f; Data.Temperature = .4f; Data.Humidity = .6f;
++        return Data;
++    }
++
++    virtual FNoiseData GetOceanNoise(CustomNoise Noise, const DVector& P, const DVector& Planet,
++        double Scale, double Intensity, double Radius, bool Flat, double Latitude,
++        DVector& NoisePosition, FNoiseData Previous, bool Planetary) override
++    {
++        ++OceanCalls;
++        FNoiseData Data;
++        Data.Height = SeaHeight(P);
++        Data.HeightNormalize = .3f; Data.Temperature = .5f; Data.Humidity = .7f;
++        return Data;
++    }
++};
+diff --git a/Source/WorldScapeCore/Private/WorldScapeOceanDepthTests.cpp b/Source/WorldScapeCore/Private/WorldScapeOceanDepthTests.cpp
+new file mode 100644
+--- /dev/null
++++ b/Source/WorldScapeCore/Private/WorldScapeOceanDepthTests.cpp
+@@ -0,0 +1,106 @@
++#if WITH_DEV_AUTOMATION_TESTS
++#include "Misc/AutomationTest.h"
++#include "WorldScapeOceanDepth.h"
++#include "WorldScapeLod.h"
++#include "Engine/World.h"
++#include "Math/Float16.h"
++#include <limits>
++
++IMPLEMENT_SIMPLE_AUTOMATION_TEST(FWorldScapeOceanDepthUnitsTest,
++    "WorldScape.APS.OceanDepth.Units",
++    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
++bool FWorldScapeOceanDepthUnitsTest::RunTest(const FString& Parameters)
++{
++    using WorldScapeOceanDepth::Encode;
++    TestEqual(TEXT("100 metres is 0.1 km"), Encode(12500.0, 2500.0), FVector2D(0.1, 1.0));
++    TestEqual(TEXT("Dry land keeps negative depth"), Encode(2500.0, 12500.0), FVector2D(-0.1, 1.0));
++    TestEqual(TEXT("Zero depth is valid, not absent"), Encode(2500.0, 2500.0), FVector2D(0.0, 1.0));
++    for (double Scale : {1.0, 0.01, 1.0e-6, 1.0e-9})
++        TestTrue(TEXT("Uniform preview compression preserves physical depth"),
++            Encode(12500.0 * Scale, 2500.0 * Scale, Scale).Equals(Encode(12500.0, 2500.0), 1.0e-12));
++    for (double Bad : {std::numeric_limits<double>::quiet_NaN(),
++        std::numeric_limits<double>::infinity(), -std::numeric_limits<double>::infinity()})
++    {
++        TestEqual(TEXT("Invalid sea height fails closed"), Encode(Bad, 0.0), FVector2D::ZeroVector);
++        TestEqual(TEXT("Invalid ground height fails closed"), Encode(0.0, Bad), FVector2D::ZeroVector);
++        TestEqual(TEXT("Invalid scale fails closed"), Encode(0.0, 0.0, Bad), FVector2D::ZeroVector);
++    }
++    TestEqual(TEXT("Zero scale invalid"), Encode(1.0, 0.0, 0.0), FVector2D::ZeroVector);
++    TestEqual(TEXT("Negative scale invalid"), Encode(1.0, 0.0, -1.0), FVector2D::ZeroVector);
++    TestEqual(TEXT("FP16 overflow rejected"), Encode(7.0e9, 0.0), FVector2D::ZeroVector);
++    const FVector2D ShoreMidpoint = (Encode(0.0, -1000.0) + Encode(0.0, 1000.0)) * 0.5;
++    TestEqual(TEXT("Interpolation across the coast does not invent water depth"), ShoreMidpoint, FVector2D(0.0, 1.0));
++    for (double Meters : {-100.0, -1.0, 0.0, 0.01, 0.1, 1.0, 10.0, 100.0, 1000.0, 11000.0})
++    {
++        const FVector2D Payload = Encode(Meters * 100.0, 0.0);
++        const FFloat16 Packed(static_cast<float>(Payload.X));
++        const double DecodedMeters = static_cast<float>(Packed) * 1000.0;
++        TestTrue(TEXT("Existing FP16 UVs retain useful depth precision"),
++            FMath::Abs(DecodedMeters - Meters) <= FMath::Max(0.0001, FMath::Abs(Meters) * 0.001));
++    }
++    return true;
++}
++
++IMPLEMENT_SIMPLE_AUTOMATION_TEST(FWorldScapeOceanDepthPayloadTest,
++    "WorldScape.APS.OceanDepth.Payload",
++    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
++bool FWorldScapeOceanDepthPayloadTest::RunTest(const FString& Parameters)
++{
++    UWorld* World = UWorld::CreateWorld(EWorldType::Game, false);
++    if (!TestNotNull(TEXT("Transient test world"), World)) return false;
++    AActor* Owner = World->SpawnActor<AActor>();
++    UWorldScapeLod* Lod = NewObject<UWorldScapeLod>(Owner);
++    Lod->Mesh = NewObject<UWorldScapeMeshComponent>(Owner);
++    Lod->WaterBody = true;
++    Lod->RelativePosition = DVector(0.0, 0.0, 0.0);
++    Lod->Triangles = Lod->TrianglesPatchA = Lod->TrianglesPatchB = {0, 1, 2};
++    LodData Data;
++    Data.Vertices = {DVector(0,0,0), DVector(100,0,0), DVector(0,100,0)};
++    Data.Normals.Init(FVector::UpVector, 3);
++    Data.Tangents.Init(FWorldScapeMeshTangent(FVector::ForwardVector, false), 3);
++    Data.VertexColors.Init(FLinearColor(0.08f, 0.35f, 0.6f, 0.0f), 3);
++    Data.UV = {FVector2D(0,0), FVector2D(1,0), FVector2D(0,1)};
++    const auto Check = [this, Lod, &Data](const TCHAR* Phase, bool bValid)
++    {
++        for (int32 Section = 0; Section < 3; ++Section)
++        {
++            const FWorldScapeMeshSection* MeshSection = Lod->Mesh->GetProcMeshSection(Section);
++            if (!TestNotNull(FString::Printf(TEXT("%s section %d"), Phase, Section), MeshSection)) continue;
++            for (int32 Index = 0; Index < 3; ++Index)
++            {
++                const FWorldScapeMeshVertex& Vertex = MeshSection->PlanetVertexBuffer[Index];
++                TestEqual(TEXT("Depth never moves geometry"), Vertex.Position, Data.Vertices[Index].ToFVector());
++                TestEqual(TEXT("Depth never changes semantic RGBA"), Vertex.Color, Data.VertexColors[Index].ToFColor(false));
++                TestEqual(TEXT("Original UV0 preserved"), Vertex.UV0, Data.UV[Index]);
++                TestEqual(TEXT("Original normal preserved"), Vertex.Normal, Data.Normals[Index]);
++                TestEqual(TEXT("UV1 matches batch including validity"), Vertex.UV1,
++                    bValid ? Data.UV1[Index] : FVector2D::ZeroVector);
++            }
++        }
++    };
++    for (int32 Section = 0; Section < 3; ++Section) Lod->SetData(Data, 100.0, Section);
++    Lod->SetMesh();
++    Check(TEXT("Legacy create"), false);
++    for (int32 Round = 0; Round < 2; ++Round)
++    {
++        Data.UV1 = {FVector2D(-0.001,1), FVector2D(0.0,1), FVector2D(0.005 + Round,1)};
++        for (int32 Section = 0; Section < 3; ++Section) Lod->SetData(Data, 100.0, Section);
++        Lod->UpdateMesh();
++        Check(TEXT("Worker payload / LOD update"), true);
++        Lod->SetMesh();
++        Check(TEXT("Section recreation"), true);
++    }
++    Data.UV1.Reset();
++    for (int32 Section = 0; Section < 3; ++Section) Lod->SetData(Data, 100.0, Section);
++    Lod->UpdateMesh();
++    Check(TEXT("Opt-out clears old validity"), false);
++    Data.UV1.Add(FVector2D(3.0, 1.0));
++    for (int32 Section = 0; Section < 3; ++Section) Lod->SetData(Data, 100.0, Section);
++    Lod->UpdateMesh();
++    Check(TEXT("Truncated payload rejected"), false);
++    Data.CleanData();
++    TestEqual(TEXT("Batch recycling clears UV1"), Data.UV1.Num(), 0);
++    World->DestroyWorld(false);
++    return true;
++}
++#endif
+diff --git a/Source/WorldScapeCore/Private/WorldScapeOceanDepthWorkerTests.cpp b/Source/WorldScapeCore/Private/WorldScapeOceanDepthWorkerTests.cpp
+new file mode 100644
+--- /dev/null
++++ b/Source/WorldScapeCore/Private/WorldScapeOceanDepthWorkerTests.cpp
+@@ -0,0 +1,208 @@
++#if WITH_DEV_AUTOMATION_TESTS
++#include "Misc/AutomationTest.h"
++#include "WorldScapeRoot.h"
++#include "WorldScapeOceanDepth.h"
++#include "WorldScapeOceanDepthTestNoise.h"
++#include "Async/Async.h"
++#include "Engine/World.h"
++
++IMPLEMENT_SIMPLE_AUTOMATION_TEST(FWorldScapeOceanDepthWorkerTest,
++    "WorldScape.APS.OceanDepth.WorkerCoordinates",
++    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
++bool FWorldScapeOceanDepthWorkerTest::RunTest(const FString& Parameters)
++{
++    // Exercise the real worker calculation on the thread pool, with a known field
++    // and explicit original coordinates. This is not APS catalog or GPU coverage.
++    const auto Values = UWorld::InitializationValues().AllowAudioPlayback(false)
++        .RequiresHitProxies(false).CreatePhysicsScene(false).CreateNavigation(false)
++        .CreateAISystem(false).ShouldSimulatePhysics(false).SetTransactional(false);
++    UWorld* World = UWorld::CreateWorld(EWorldType::Game, false, NAME_None, nullptr,
++        false, ERHIFeatureLevel::Num, &Values);
++    if (!TestNotNull(TEXT("Isolated worker world"), World)) return false;
++    AWorldScapeRoot* Root = World->SpawnActorDeferred<AWorldScapeRoot>(
++        AWorldScapeRoot::StaticClass(), FTransform::Identity);
++    if (!TestNotNull(TEXT("Deferred root; no live generation"), Root))
++    {
++        World->DestroyWorld(false);
++        return false;
++    }
++    constexpr double Radius = 675000000.0;
++    Root->GenerationType = EWorldScapeType::Planet;
++    Root->PlanetScaleCode = Radius;
++    Root->bFlatWorld = false;
++    Root->bUsePlanetaryHeightMap = false;
++    Root->bEnableVolumes = false;
++    Root->NoiseOffset = FVector::ZeroVector;
++    Root->PlanetLocation = DVector(0.0);
++    Root->OceanHeight = 1000.0;
++    UWorldScapeOceanDepthTestNoise* Noise = NewObject<UWorldScapeOceanDepthTestNoise>(Root);
++    Root->WorldScapeNoise = Noise;
++    UWorldScapeLod* Lod = NewObject<UWorldScapeLod>(Root);
++    Lod->Mesh = NewObject<UWorldScapeMeshComponent>(Root);
++    Lod->RelativePosition = DVector(0.0, 0.0, Radius);
++
++    int32 Wet = 0, Dry = 0, CheckedVertices = 0;
++    for (int32 Level : {0, 1, 5, 9})
++    {
++        const double Step = 120.0 * FMath::Pow(2.0, Level);
++        TArray<DVector> SurfacePositions;
++        for (int32 Y = -2; Y <= 2; ++Y)
++            for (int32 X = -2; X <= 2; ++X)
++            {
++                DVector P(X * Step * 8.0, Y * Step * 8.0, Radius);
++                P.Normalize();
++                SurfacePositions.Add(P * Radius);
++            }
++        TArray<FVector2D> FirstOriginDepth;
++        for (int32 Origin = 0; Origin < 2; ++Origin)
++        {
++            const DVector Relative(Origin * 138124.5, Origin * -218737.25, Radius - Origin * 500.5);
++            const DVector Offset(Origin * 417.25, Origin * -118.5, Origin * 62.25);
++            TArray<LodData> Baseline;
++            for (int32 Mode = 0; Mode < 4; ++Mode)
++            {
++                const bool bPayload = Mode == 1;
++                Lod->WaterBody = Mode != 2;
++                const bool bFlat = Mode == 3;
++                Root->bFlatWorld = bFlat;
++                // Modes: ocean off, ocean on, tagged ground, tagged flat ocean.
++                Root->Tags.Remove(WorldScapeOceanDepth::RootTag());
++                if (Mode != 0) Root->Tags.Add(WorldScapeOceanDepth::RootTag());
++                LodGenerationThread Worker(Lod, Root, Relative, DVector(0.0),
++                    FVector2D::ZeroVector, Radius, Level, 120.f, 16, 1000.0,
++                    FVector::UpVector, bFlat, false);
++                Worker.OffSetHelper = Offset;
++                LodData* Patches[] = {&Worker.MainPatch, &Worker.PatchA, &Worker.PatchB};
++                for (int32 Section = 0; Section < 3; ++Section)
++                {
++                    for (int32 I = 0; I < SurfacePositions.Num(); ++I)
++                    {
++                        const int32 Index = (I + Section * 7) % SurfacePositions.Num();
++                        Patches[Section]->Vertices.Add(SurfacePositions[Index] - Relative - Offset);
++                    }
++                }
++                Noise->GroundCalls = Noise->OceanCalls = 0;
++                const bool bRanOffGameThread = Async(EAsyncExecution::ThreadPool, [&Worker]()
++                {
++                    const bool bOffThread = !IsInGameThread();
++                    Worker.CalculateNoise();
++                    return bOffThread;
++                }).Get();
++                TestTrue(TEXT("Real calculation ran on worker pool"), bRanOffGameThread);
++                const int32 Count = SurfacePositions.Num() * 3;
++                TestEqual(TEXT("No unnecessary second ground evaluation outside opt-in ocean"),
++                    Noise->GroundCalls, Mode == 1 || Mode == 2 ? Count : 0);
++                TestEqual(TEXT("One ocean evaluation per ocean vertex"),
++                    Noise->OceanCalls, Mode == 2 ? 0 : Count);
++                for (int32 Section = 0; Section < 3; ++Section)
++                {
++                    const LodData& Patch = *Patches[Section];
++                    TestEqual(TEXT("Payload present only for opted-in spherical ocean"),
++                        Patch.UV1.Num(), bPayload ? SurfacePositions.Num() : 0);
++                    if (Mode == 0) Baseline.Add(Patch);
++                    if (!bPayload) continue;
++                    TestTrue(TEXT("Enabling depth leaves ocean vertices exactly unchanged"),
++                        Patch.Vertices == Baseline[Section].Vertices);
++                    TestTrue(TEXT("Enabling depth leaves semantic colors exactly unchanged"),
++                        Patch.VertexColors == Baseline[Section].VertexColors);
++                    for (int32 I = 0; I < Patch.UV1.Num(); ++I)
++                    {
++                        const int32 Index = (I + Section * 7) % SurfacePositions.Num();
++                        const DVector& P = SurfacePositions[Index];
++                        const double OceanCm = FMath::Max(1000.0,
++                            UWorldScapeOceanDepthTestNoise::SeaHeight(P));
++                        const double ExpectedKm = (OceanCm -
++                            UWorldScapeOceanDepthTestNoise::GroundHeight(P)) * 1.0e-5;
++                        const FVector2D Actual = Patch.UV1[I];
++                        TestTrue(TEXT("Full-scale coordinate, clamp, units and sign match analytic field"),
++                            Actual.Equals(FVector2D(ExpectedKm, 1.0), 1.0e-10));
++                        if (Origin == 0 && Section == 0) FirstOriginDepth.Add(Actual);
++                        else TestTrue(TEXT("Shared points agree across section layout and shifted origin"),
++                            Actual.Equals(FirstOriginDepth[Index], 1.0e-10));
++                        Wet += ExpectedKm > 0.0; Dry += ExpectedKm < 0.0;
++                        ++CheckedVertices;
++                    }
++                }
++            }
++        }
++    }
++    TestTrue(TEXT("Both wet and dry terrain were covered"), Wet > 0 && Dry > 0);
++    // Now let the worker construct and publish its actual 96-resolution ring,
++    // instead of supplying vertices ourselves. Reuse the LOD after opting out.
++    Root->bFlatWorld = false;
++    Root->NoiseIntensity = 100000;
++    Root->HeightAnchor = 10000.0;
++    Lod->WaterBody = true;
++    Root->WorldScapeLodInGeneration.Add(Lod, false);
++    DVector Axis(.11, .28, 1.0);
++    Axis.Normalize();
++    const DVector RingOrigin = Axis * (Radius + 20000.0);
++    int32 GeneratedVertices = 0;
++    for (int32 Level : {0, 5, 9})
++    {
++        for (const FVector2D Sub : {FVector2D(0,0), FVector2D(1,1)})
++        {
++            TArray<TArray<FVector>> OriginalVertices;
++            TArray<TArray<FLinearColor>> OriginalColors;
++            for (int32 Mode = 0; Mode < 3; ++Mode)
++            {
++                Root->Tags.Remove(WorldScapeOceanDepth::RootTag());
++                if (Mode == 1) Root->Tags.Add(WorldScapeOceanDepth::RootTag());
++                LodGenerationThread Worker(Lod, Root, RingOrigin, DVector(0.0),
++                    Sub, Radius, Level, 120.f, 96, 12000.0, Axis.ToFVector(), false, false);
++                Async(EAsyncExecution::ThreadPool, [&Worker]() { Worker.DoWork(); }).Get();
++                const TArray<FVector>* Positions[] = {&Lod->Vertices, &Lod->VerticesPA, &Lod->VerticesPB};
++                const TArray<FLinearColor>* Colors[] = {&Lod->VertexColors, &Lod->VerticesColorPA, &Lod->VerticesColorPB};
++                const TArray<FVector2D>* Depth[] = {&Lod->UV1, &Lod->UV1PA, &Lod->UV1PB};
++                for (int32 Section = 0; Section < 3; ++Section)
++                {
++                    const auto& P = *Positions[Section];
++                    const auto& UV1 = *Depth[Section];
++                    TestTrue(TEXT("Generated section is nonempty"), P.Num() > 0);
++                    if (Mode == 0)
++                    {
++                        OriginalVertices.Add(P);
++                        OriginalColors.Add(*Colors[Section]);
++                        continue;
++                    }
++                    TestTrue(TEXT("Full ring construction preserves original geometry"), P == OriginalVertices[Section]);
++                    TestTrue(TEXT("Full ring construction preserves original semantic colors"), *Colors[Section] == OriginalColors[Section]);
++                    if (!TestEqual(TEXT("Published UV1 covers the whole generated section"), UV1.Num(), P.Num())) continue;
++                    for (int32 I = 0; I < P.Num(); ++I)
++                    {
++                        if (Mode == 2)
++                        {
++                            TestEqual(TEXT("Reused published ring clears obsolete validity"), UV1[I], FVector2D::ZeroVector);
++                            continue;
++                        }
++                        DVector Position = DVector(P[I]) + Lod->RelativePosition;
++                        Position.Normalize();
++                        Position = Position * Radius;
++                        const double ExpectedKm = (FMath::Max(1000.0,
++                            UWorldScapeOceanDepthTestNoise::SeaHeight(Position)) -
++                            UWorldScapeOceanDepthTestNoise::GroundHeight(Position)) * 1.0e-5;
++                        TestTrue(TEXT("Generated LOD payload agrees with physical analytic column"),
++                            UV1[I].Equals(FVector2D(ExpectedKm, 1.0), 1.0e-9));
++                        ++GeneratedVertices;
++                    }
++                }
++                // Async.Get above is the completion fence for this direct-worker
++                // fixture. Production CheckForLodGeneration owns publication:
++                // workers must not mutate its game-thread pending map. That
++                // ownership/cleanup path is covered by WorkerCompletionOwnership.
++                TestEqual(TEXT("Worker preserves its pending target"), Root->WorldScapeLodInGeneration.Num(), 1);
++                TestFalse(TEXT("Worker never publishes through the game-thread pending map"), Root->WorldScapeLodInGeneration.FindChecked(Lod));
++                TestTrue(TEXT("Temporary payload recycled after publication"), Worker.MainPatch.UV1.IsEmpty()
++                    && Worker.PatchA.UV1.IsEmpty() && Worker.PatchB.UV1.IsEmpty());
++            }
++        }
++    }
++    Root->WorldScapeLodInGeneration.Remove(Lod);
++    UE_LOG(LogTemp, Display, TEXT("[WS.OceanDepthWorker] vertices=%d wet=%d dry=%d levels=0,1,5,9 sections=3 origins=2 threadPool=1 fixture=analytic gameplayCoverage=0"),
++        CheckedVertices, Wet, Dry);
++    UE_LOG(LogTemp, Display, TEXT("[WS.OceanDepthPublished] vertices=%d resolution=96 levels=0,5,9 subpositions=2 optOutReused=1 fixture=analytic gameplayCoverage=0"), GeneratedVertices);
++    Root->WorldScapeNoise = nullptr;
++    World->DestroyWorld(false);
++    return true;
++}
++#endif
+diff --git a/Source/WorldScapeCore/Private/WorldScapeRoot_Thread.cpp b/Source/WorldScapeCore/Private/WorldScapeRoot_Thread.cpp
+--- a/Source/WorldScapeCore/Private/WorldScapeRoot_Thread.cpp
++++ b/Source/WorldScapeCore/Private/WorldScapeRoot_Thread.cpp
+@@ -1,5 +1,6 @@
+ // Copyright 2021 IOLACORP STUDIO. All Rights Reserved
+ #include "WorldScapeRoot.h"
++#include "WorldScapeOceanDepth.h"
+ 
+ //ChunkGeneration Thread Functions
+ 
+@@ -62,6 +63,30 @@ void LodGenerationThread::CalculateNoise()
+ 
+ 	}
+ 
++	// A material-only opt-in. Off by default; no terrain resampling/allocation for
++	// authored worlds, ground, lava or the accepted production water path.
++	const bool bOceanDepth = IsValid(RootRef) && IsValid(WorldScapeLodRef)
++		&& WorldScapeLodRef->WaterBody && !bFlatWorld
++		&& RootRef->ActorHasTag(WorldScapeOceanDepth::RootTag());
++	MainPatch.UV1.Reset();
++	PatchA.UV1.Reset();
++	PatchB.UV1.Reset();
++	if (bOceanDepth)
++	{
++		MainPatch.UV1.Reserve(MainPatch.Vertices.Num());
++		PatchA.UV1.Reserve(PatchA.Vertices.Num());
++		PatchB.UV1.Reserve(PatchB.Vertices.Num());
++	}
++	const auto SampleDepth = [&](const DVector& Position, const FNoiseData& Ocean)
++	{
++		TRACE_CPUPROFILER_EVENT_SCOPE(WS_OceanDepth);
++		// Same root-local position and volume snapshot as the actual mesh heights.
++		// This runs on the existing LOD worker, never once per frame on the game thread.
++		const FNoiseData Ground = RootRef->GetGroundNoise(Position, NoiseVolumeListVar,
++			VolumeListVar, TerrainHoleVolumeListVar, VolumeTransformArray, false);
++		return Ground.Hole || Ocean.Hole ? FVector2D::ZeroVector
++			: WorldScapeOceanDepth::Encode(Ocean.Height, Ground.Height);
++	};
+ 	//UE_LOG(LogWorldScapeCore, Log, TEXT("Volume Size : %i"), VolumeListVar.Num());
+ 	//FVector VertexWorldTransformedPosition;
+ 	//FVector VertexTransformedPosition;
+@@ -77,6 +102,7 @@ void LodGenerationThread::CalculateNoise()
+ 
+ 		VertexNormal = MainPatch.Vertices[i] + RelativePosition + OffSetHelper;
+ 		Data = RootRef->GetGroundNoise(VertexNormal, NoiseVolumeListVar, VolumeListVar, TerrainHoleVolumeListVar, VolumeTransformArray, WorldScapeLodRef->WaterBody);
++		if (bOceanDepth) MainPatch.UV1.Add(SampleDepth(VertexNormal, Data));
+ 		if (bFlatWorld)
+ 		{
+ 			MainPatch.Vertices[i] = (DVector(0, 0, 1) * Data.Height + OffSetHelper + MainPatch.Vertices[i]).ToFVector();
+@@ -103,6 +129,7 @@ void LodGenerationThread::CalculateNoise()
+ 
+ 		VertexNormal = PatchA.Vertices[i] + RelativePosition + OffSetHelper;
+ 		Data = RootRef->GetGroundNoise(VertexNormal, NoiseVolumeListVar, VolumeListVar, TerrainHoleVolumeListVar, VolumeTransformArray, WorldScapeLodRef->WaterBody);
++		if (bOceanDepth) PatchA.UV1.Add(SampleDepth(VertexNormal, Data));
+ 		if (bFlatWorld)
+ 		{
+ 			PatchA.Vertices[i] = (DVector(0, 0, 1) * Data.Height + PatchA.Vertices[i] + OffSetHelper).ToFVector();
+@@ -128,6 +155,7 @@ void LodGenerationThread::CalculateNoise()
+ 
+ 		VertexNormal = PatchB.Vertices[i] + RelativePosition + OffSetHelper;
+ 		Data = RootRef->GetGroundNoise(VertexNormal, NoiseVolumeListVar, VolumeListVar, TerrainHoleVolumeListVar, VolumeTransformArray, WorldScapeLodRef->WaterBody);
++		if (bOceanDepth) PatchB.UV1.Add(SampleDepth(VertexNormal, Data));
+ 		if (bFlatWorld)
+ 		{
+ 			PatchB.Vertices[i] = (DVector(0, 0, 1) * Data.Height + PatchB.Vertices[i] + OffSetHelper).ToFVector();
+diff --git a/Source/WorldScapeCore/Public/LodData.h b/Source/WorldScapeCore/Public/LodData.h
+--- a/Source/WorldScapeCore/Public/LodData.h
++++ b/Source/WorldScapeCore/Public/LodData.h
+@@ -12,7 +12,7 @@
+ #include "LodData.generated.h"
+ 
+ //USTRUCT()
+-struct LodData {
++struct WORLDSCAPECORE_API LodData {
+ 
+ 	//GENERATED_BODY()
+ 
+@@ -26,6 +26,8 @@ public:
+ 	TArray<FVector> Normals;
+ 	TArray<FWorldScapeMeshTangent> Tangents;
+ 	TArray<FVector2D> UV;
++	// Optional TEXCOORD1. Empty on legacy paths, independent of semantic RGBA.
++	TArray<FVector2D> UV1;
+ 
+ 	void CleanData();
+ };
+@@ -76,4 +78,4 @@ public:
+ 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Transient, Category = "General")
+ 		TArray<FFoliagesSector> ActiveFoliageSector;
+ 
+-};
+\ No newline at end of file
++};
+diff --git a/Source/WorldScapeCore/Public/WorldScapeLod.h b/Source/WorldScapeCore/Public/WorldScapeLod.h
+--- a/Source/WorldScapeCore/Public/WorldScapeLod.h
++++ b/Source/WorldScapeCore/Public/WorldScapeLod.h
+@@ -85,6 +85,7 @@ public:
+ 	TArray<FVector> VerticesNormalPA;
+ 	TArray<FLinearColor>  VerticesColorPA;
+ 	TArray<FVector2D> UVPA;
++	TArray<FVector2D> UV1PA;
+ 	TArray<FWorldScapeMeshTangent> TangentsPA;
+ 
+ 	//Patch B (Left to Right Strip)
+@@ -92,6 +93,7 @@ public:
+ 	TArray<FVector> VerticesNormalPB;
+ 	TArray<FLinearColor>  VerticesColorPB;
+ 	TArray<FVector2D> UVPB;
++	TArray<FVector2D> UV1PB;
+ 	TArray<FWorldScapeMeshTangent> TangentsPB;
+ 
+ 
+@@ -99,6 +101,7 @@ public:
+ 		FVector TriangleSize;
+ 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "MeshInfo")
+ 	TArray<FVector2D> UV;
++	TArray<FVector2D> UV1;
+ 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "MeshInfo")
+ 		TArray<FWorldScapeMeshTangent> Tangents;
+ 	/*
+@@ -143,4 +146,4 @@ public:
+ 	FBox GetFBox(FVector Offset = FVector(0,0,0), float scale = 1.f);
+ 
+ 
+-};
+\ No newline at end of file
++};
+diff --git a/Source/WorldScapeCore/Public/WorldScapeOceanDepth.h b/Source/WorldScapeCore/Public/WorldScapeOceanDepth.h
+new file mode 100644
+--- /dev/null
++++ b/Source/WorldScapeCore/Public/WorldScapeOceanDepth.h
+@@ -0,0 +1,32 @@
++// Optional material-only ocean bathymetry. Geometry, RGBA and UV0 are unchanged.
++#pragma once
++
++#include "CoreMinimal.h"
++
++namespace WorldScapeOceanDepth
++{
++    // Explicit opt-in on generated roots only; legacy/authored worlds do no extra work.
++    inline const FName& RootTag()
++    {
++        static const FName Tag(TEXT("APS.GeneratedOcean.BathymetryUV1"));
++        return Tag;
++    }
++
++    // TEXCOORD1 = (signed water-column depth in kilometres, validity 0/1).
++    // Keep negative land depths through interpolation: clamping each vertex to
++    // zero incorrectly spreads shallows across coast triangles. Clamp in pixel code.
++    // Kilometres fit the existing half-precision UV buffer without changing its ABI.
++    // These are physical displacement heights, never absolute world coordinates,
++    // normalized vertex red, or the camera-to-surface distance.
++    inline FVector2D Encode(double OceanHeightCm, double GroundHeightCm,
++        double PhysicalToMeshScale = 1.0)
++    {
++        if (!FMath::IsFinite(OceanHeightCm) || !FMath::IsFinite(GroundHeightCm)
++            || !FMath::IsFinite(PhysicalToMeshScale) || PhysicalToMeshScale <= 0.0)
++            return FVector2D::ZeroVector;
++        const double DepthKm = ((OceanHeightCm - GroundHeightCm) / PhysicalToMeshScale) * 1.0e-5;
++        // Fail closed instead of sending NaN/Inf or overflowing an FP16 UV.
++        return FMath::IsFinite(DepthKm) && FMath::Abs(DepthKm) <= 60000.0
++            ? FVector2D(DepthKm, 1.0) : FVector2D::ZeroVector;
++    }
++}

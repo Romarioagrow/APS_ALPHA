@@ -1,9 +1,11 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "Misc/AutomationTest.h"
+#include <limits>
 
 #include "APS_ALPHA/Core/Interfaces/VehicleControlling.h"
 #include "APS_ALPHA/Core/Model/GeneratedWorld.h"
+#include "APS_ALPHA/Core/Planetary/APSPlanetSurfaceRadius.h"
 #include "APS_ALPHA/Actors/Astro/Galaxy.h"
 #include "APS_ALPHA/Actors/Astro/Moon.h"
 #include "APS_ALPHA/Actors/Astro/Planet.h"
@@ -109,7 +111,8 @@ bool FAPSGenerationViewModelConstraintsTest::RunTest(const FString& Parameters)
 
 	TestEqual(TEXT("Planet amount accepts valid values"), Model->PlanetsAmount, 4);
 	TestEqual(TEXT("Start planet stays inside generated planet list"), Model->StartPlanetIndex, 4);
-	TestEqual(TEXT("Planet radius respects the preview's 100 km minimum"), Model->PlanetRadius, 100.0);
+	// The clamp has been 1 km since the full-scale generation UI (14aba261, 09-11).
+	TestEqual(TEXT("Planet radius respects the preview's 1 km minimum"), Model->PlanetRadius, 1.0);
 	TestEqual(TEXT("Moon count cannot be negative"), Model->MoonsAmount, 0);
 
 	Model->PlanetType = EPlanetType::HighMountain;
@@ -134,6 +137,53 @@ bool FAPSGenerationViewModelConstraintsTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("Crater multiplier reaches the body model"), PlanetModel->SurfaceCraterScale, 0.4);
 		TestEqual(TEXT("Roughness multiplier reaches the body model"), PlanetModel->SurfaceRoughnessScale, 1.2);
 	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAPSWorldScapeFractionalRadiusIdentityTest,
+	"APS.Gameplay.World.WorldScapeFractionalRadiusIdentity",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FAPSWorldScapeFractionalRadiusIdentityTest::RunTest(const FString& Parameters)
+{
+	UWorld* World = APSGameplayIntegrationTests::CreateTestWorld();
+	if (!TestNotNull(TEXT("Test world"), World)) return false;
+	ON_SCOPE_EXIT { APSGameplayIntegrationTests::DestroyTestWorld(World); };
+	APlanet* Planet = World->SpawnActor<APlanet>();
+	if (!TestNotNull(TEXT("Fractional-radius planet"), Planet)) return false;
+	Planet->PlanetType = EPlanetType::Volcanic;
+	Planet->WorldScapeSeed = 73875;
+	Planet->RadiusKM = 5831.7060546875;
+	Planet->PlanetRadiusKM = 5831;
+	Planet->SetWorldScapeStreamingState(EWorldScapeSurfaceState::Preloaded);
+	auto* Surface = Planet->PlanetaryEnvironmentGenerator;
+	if (!TestNotNull(TEXT("Configured surface"), Surface)) return false;
+	auto* Root = Surface->WorldScapeRootInstance;
+	if (!TestNotNull(TEXT("Configured root"), Root)) return false;
+	const auto Signature = Surface->AppliedSurfaceProfileSignature;
+	const auto* Noise = Root->WorldScapeNoise;
+	const double RadiusCm = Root->PlanetScale;
+	TestTrue(TEXT("Initial profile current"), Surface->IsSurfaceProfileCurrent(Planet));
+	// Reproduce the model replay refreshing the whole-km cache after root creation.
+	Planet->PlanetRadiusKM = 5832;
+	TestTrue(TEXT("Whole-km cache refresh cannot stale physical profile"), Surface->IsSurfaceProfileCurrent(Planet));
+	TestTrue(TEXT("Streaming radius uses fractional model, not rounded cache"),
+		FMath::IsNearlyEqual(Planet->GetWorldScapeBodyRadiusCm(), Planet->RadiusKM * 100000.0, 0.001));
+	// Exercise the actual streaming caller; direct forced reapply is correctly
+	// prohibited for resident foliage, even when the requested profile is equal.
+	Planet->SetWorldScapeStreamingState(EWorldScapeSurfaceState::Active);
+	TestTrue(TEXT("Cache refresh preserves resident root"), Surface->WorldScapeRootInstance == Root);
+	TestEqual(TEXT("Cache refresh retains signature"), Surface->AppliedSurfaceProfileSignature, Signature);
+	TestTrue(TEXT("Cache refresh retains immutable noise and root radius"),
+		Root->WorldScapeNoise == Noise && Root->PlanetScale == RadiusCm);
+	Planet->RadiusKM += 0.25;
+	TestFalse(TEXT("Real physical radius edit still invalidates profile"), Surface->IsSurfaceProfileCurrent(Planet));
+	Planet->RadiusKM -= 0.25;
+	Planet->WorldScapeSeed += 1;
+	TestFalse(TEXT("Real seed edit still invalidates profile"), Surface->IsSurfaceProfileCurrent(Planet));
+	TestEqual(TEXT("Legacy radius used when model radius absent"), APSPlanetSurfaceRadius::Kilometres(0.0, 1000), 1000.0);
+	TestEqual(TEXT("Non-finite model safely uses legacy radius"), APSPlanetSurfaceRadius::Kilometres(std::numeric_limits<double>::infinity(), 1000), 1000.0);
+	TestEqual(TEXT("Invalid radius leaves bounds fallback available"), APSPlanetSurfaceRadius::Kilometres(-1.0, -1), 0.0);
 	return true;
 }
 

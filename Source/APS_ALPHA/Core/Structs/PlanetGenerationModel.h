@@ -7,6 +7,7 @@
 #include "APS_ALPHA/Core/Enums/PlanetHabitability.h"
 #include "APS_ALPHA/Core/Enums/PlanetaryZoneType.h"
 #include "APS_ALPHA/Core/Enums/PlanetType.h"
+#include "APS_ALPHA/Core/Planetary/APSPlanetCloudSettings.h"
 #include "PlanetGenerationModel.generated.h"
 
 enum class EPlanetaryZoneType : uint8;
@@ -104,6 +105,9 @@ struct FPlanetModel : public FOrbitalBodyModel
 	
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Planet")
 	double AtmosphereHeight{0};
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Clouds")
+	FAPSPlanetCloudSettings CloudSettings;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Planet Surface")
 	int32 SurfaceSeed{0};

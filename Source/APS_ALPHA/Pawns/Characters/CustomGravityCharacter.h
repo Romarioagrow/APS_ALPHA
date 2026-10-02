@@ -13,7 +13,7 @@ class UInputAction;
 class USpringArmComponent;
 class UCameraComponent;
 class UGravityDetectorComponent;
-class UAnimInstance;
+class UAnimInstance; class ASpaceship;
 class SWidget;
 class FProperty;
 
@@ -35,6 +35,8 @@ protected:
 
 public:
 	virtual void Tick(float DeltaTime) override;
+	/** Aboard a ship the attachment carries the character; the ship is not also its movement base (it would move twice). */
+	virtual void SetBase(UPrimitiveComponent* NewBase, const FName BoneName = NAME_None, bool bNotifyActor = true) override;
 	virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
@@ -210,6 +212,13 @@ public:
 	 * facing Facing; flying in zero-G, falling to the ground under gravity.
 	 */
 	void SettleAfterVehicleExit(const FVector& Facing);
+	/**
+	 * Rio 02.10 ("landed, left the ship, and the character was pulled up into the sky"): for a few seconds after a
+	 * vehicle the G meant for the ship's engine does not toggle zero-G, and the rise away from the gravity source is
+	 * logged with the frame's gravity, so the cause shows in the log.
+	 */
+	double VehicleExitSeconds{-100.0};
+	bool bExitRiseLogged{false};
 
 	UFUNCTION(BlueprintCallable, Category = "Gravity|ZeroG")
 	void ToggleManualZeroGOverride();
@@ -224,6 +233,23 @@ public:
 	/** Get the "up" vector relative to current gravity */
 	UFUNCTION(BlueprintPure, Category = "Gravity")
 	FVector GetGravityUpVector() const;
+
+	// ──────────────────────── Build mode ────────────────────────
+
+	/**
+	 * Build mode (Rio 02.10; Gameplay/Construction): B on foot on a planet or moon. The camera pulls back and looks down,
+	 * the cursor shows, the palette docks at the bottom and a ring marks the zone; WASD still walks. B or Esc leaves.
+	 */
+	void ToggleBuildMode();
+	bool IsInBuildMode() const;
+	/** Leaves build mode while the controller can still restore its input (boarding a vehicle). */
+	virtual void UnPossessed() override;
+
+	/** Radius of the build zone around the character, cm. */
+	float BuildZoneRadiusCm = 7000.f;
+	/** The build camera: arm length (the wheel changes it while nothing is picked) and its look down, degrees. */
+	float BuildArmLength = 1800.f;
+	float BuildCameraPitch = 55.f;
 
 protected:
 	// Input handlers
@@ -297,6 +323,18 @@ private:
 	bool bManualGravityOverride = false;
 	bool bSurfaceHandoffSuspended = false;
 
+	/**
+	 * Aboard a ship under its gravity (Rio 02.10: "walk normally relative to the ship while it flies"): attached to it,
+	 * carried rigidly at any speed and rotation; the view turns with the deck. Left when its gravity no longer holds.
+	 */
+	void UpdateShipPassenger();
+	void BoardShip(ASpaceship& Ship);
+	void LeaveShip();
+	TWeakObjectPtr<ASpaceship> AboardShip;
+	FQuat AboardShipLastQuat = FQuat::Identity;
+	bool bAboardSavedCameraLag = false;
+	bool bAboardSavedCameraRotationLag = false;
+
 	UPROPERTY(Transient)
 	TSubclassOf<UAnimInstance> SurfaceAnimationClass;
 
@@ -309,4 +347,32 @@ private:
 	TWeakObjectPtr<AActor> CurrentInteractableActor;
 	TSharedPtr<SWidget> InteractionPromptWidget;
 	TSharedPtr<SWidget> TraversalHudWidget;
+
+	// Build mode (Gameplay/Construction): the core is host-agnostic; the character gives it its frame, keys and camera.
+	void EnterBuildMode();
+	void ExitBuildMode(bool bRestoreInput);
+	/** Leaves when the place no longer allows it, another screen took the input, or B / Esc / EXIT asked; else ticks it. */
+	void UpdateBuildMode(float DeltaTime);
+	/** The camera pulls back and looks down while building, and returns after. */
+	void UpdateBuildCamera(float DeltaTime);
+	/** On foot, under a planet's or moon's gravity, not held by the surface handoff. */
+	bool CanBuildHere() const;
+	/** The walking HUD's line: "B BUILD MODE" where it can start, or why it could not for a moment. */
+	FText GetBuildHintText() const;
+	/** Build mode's own keys: 1-9 and 0, Q/E, the wheel, the mouse buttons, C, X, B (on its own input component). */
+	void HandleBuildKey(FKey Key);
+	void HandleBuildKeyReleased(FKey Key);
+
+	TSharedPtr<class FAPSConstructionMode> ConstructionMode;
+	/** Exists only while building: it sits above the character's own bindings and takes their keys. */
+	TWeakObjectPtr<UInputComponent> BuildInputComponent;
+	/** The view when building began: another screen taking it (the strategic map) ends build mode. */
+	TWeakObjectPtr<AActor> BuildViewTarget;
+	float BuildCameraBlend = 0.f;
+	float BuildSavedCameraPitch = 0.f;
+	/** A right click drops the selection; a right drag turns the camera. */
+	float BuildRightDragAmount = 0.f;
+	bool bBuildRightHeld = false;
+	FText BuildRefusalText;
+	double BuildRefusalUntilSeconds = 0.0;
 };

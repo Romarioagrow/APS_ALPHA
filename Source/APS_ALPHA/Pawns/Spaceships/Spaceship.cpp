@@ -1,4 +1,7 @@
 #include "Spaceship.h"
+#include "APS_ALPHA/Core/Controllers/GravityPlayerController.h"
+#include "APS_ALPHA/UI/Style/APSUINumber.h"
+#include "APS_ALPHA/Actors/Astro/APSBodyDesignation.h"
 #include "APS_ALPHA/Actors/Astro/Moon.h"
 #include "APS_ALPHA/Actors/Astro/Planet.h"
 #include "APS_ALPHA/Actors/Astro/PlanetOrbit.h"
@@ -15,6 +18,7 @@
 #include "APS_ALPHA/Core/Structs/StarGenerationModel.h"
 #include "APS_ALPHA/Core/World/APSPlanetEnvironmentStreamingSubsystem.h"
 #include "APS_ALPHA/Generation/AstroGenerator.h"
+#include "APS_ALPHA/Generation/PlanetarySurfaceGenerator.h"
 #include "APS_ALPHA/Pawns/Characters/GravityCharacterPawn.h"
 #include "APS_ALPHA/Pawns/Characters/GravityDetectorComponent.h"
 #include "APS_ALPHA/Pawns/Spaceships/ShipNavigationComponent.h"
@@ -27,6 +31,7 @@
 #include "Engine/GameViewportClient.h"
 #include "Engine/SkeletalMesh.h"
 #include "Engine/StaticMesh.h"
+#include "EngineUtils.h"
 #include "PhysicsEngine/BodySetup.h"
 #include "HAL/IConsoleManager.h"
 #include "ProfilingDebugging/CpuProfilerTrace.h"
@@ -43,6 +48,10 @@
 #include "Kismet/GameplayStatics.h"
 #include "Rendering/DrawElements.h"
 #include "Styling/CoreStyle.h"
+#include "APS_ALPHA/Gameplay/Fleet/APSFleetCommand.h"
+#include "Fonts/FontMeasure.h"
+#include "Framework/Application/SlateApplication.h"
+#include "Rendering/SlateRenderer.h"
 #include "Widgets/SLeafWidget.h"
 #include "Widgets/Layout/SBackgroundBlur.h"
 #include "Widgets/Layout/SBorder.h"
@@ -54,6 +63,9 @@
 #include "Components/MeshComponent.h"
 #include "Components/SpotLightComponent.h"
 #include "Components/PointLightComponent.h"
+#include "APS_ALPHA/Gameplay/Vehicles/APSGroundVehicleTypes.h"
+#include "APS_ALPHA/Gameplay/Construction/APSShipBuildComponent.h"
+#include "Engine/CollisionProfile.h"
 
 class SAPSShipNavigationOverlay final : public SLeafWidget
 {
@@ -88,11 +100,35 @@ private:
 
 namespace APSNavigationHud
 {
-	constexpr float MarkerWidth = 176.0f;
-	constexpr float MarkerHeight = 38.0f;
+	// Rio 02.10 ("labels run past their frame, hard to see"): bold 9 pt and a denser background over star fields. Each card
+	// is as wide as its own text: one width for every card of the frame crowded the sky (Rio 02.10: "labels pile up").
+	constexpr float MarkerMinimumWidth = 120.0f;
+	constexpr float MarkerHeight = 42.0f;
+	constexpr float MarkerMaximumWidth = 320.0f;
+	inline FSlateFontInfo MarkerFont() { return FCoreStyle::GetDefaultFontStyle("Bold", 9); }
+	inline FSlateFontInfo UnitTitleFont() { return FCoreStyle::GetDefaultFontStyle("Bold", 8); }
+	inline FSlateFontInfo UnitLineFont() { return FCoreStyle::GetDefaultFontStyle("Regular", 8); }
+	/** The line of a card that lists the other objects it stands for. */
+	inline FSlateFontInfo MergedFont() { return FCoreStyle::GetDefaultFontStyle("Bold", 8); }
 	constexpr float MarkerGap = 5.0f;
 	constexpr float FlagHorizontalShift = 0.62f;
-	constexpr float FlagPoleLength = 18.0f;
+	/** Pole from the edge of an object's mark to its flag. */
+	constexpr float FlagPoleLength = 14.0f;
+	constexpr float UnitCardHeight = 30.0f;
+	constexpr float MergedLineHeight = 13.0f;
+	/** Objects closer on screen than this share one card; a shared card holds together up to the second distance. */
+	constexpr double MergeRadius = 6.0;
+	constexpr double MergeHoldRadius = 10.0;
+	/** A card without room of its own is listed on a placed card at most this far away, or left out. */
+	constexpr double FallbackMergeRadius = 18.0;
+	constexpr float ScreenMargin = 10.0f;
+	/** Clear space around every card, and the room a card's first choice needs before the card returns to it. */
+	constexpr float CardClearance = 3.0f;
+	constexpr float ReturnClearance = 12.0f;
+	/** Panels and instruments keep this much more space around them. */
+	constexpr float PanelClearance = 8.0f;
+	/** Middle dot between the names on a shared card. */
+	const TCHAR* const ListSeparator = TEXT(" · ");
 
 	/**
 	 * The overlay projects hundreds of points per frame (orbit rings, markers). The engine's widget projection
@@ -111,15 +147,750 @@ namespace APSNavigationHud
 	};
 	FProjectionFrame GProjectionFrame;
 
-	/** Marker label placement solved once per frame for all markers (was solved again for every marker). */
+	/** Card placement of the last painted frame, for GetNavigationMarkerLayout: contact index -> (anchor, card corner). */
 	struct FLayoutFrame
 	{
 		const ASpaceship* Ship{nullptr};
 		uint64 Frame{MAX_uint64};
-		const TSet<int32>* OccludedContacts{nullptr};
 		TMap<int32, TPair<FVector2D, FVector2D>> Layouts;
 	};
 	FLayoutFrame GLayoutFrame;
+	/** Rio 02.10 ("labels jump over each other, now above, now below"): the slot each object's card took last, so a card
+	 * keeps its place while that place stays free and only returns to its first choice when there is clear room. */
+	TMap<TWeakObjectPtr<const AActor>, int32> GPreviousSlots;
+	/** The object whose card an object shared last frame: a shared card holds together a little longer. */
+	TMap<TWeakObjectPtr<const AActor>, TWeakObjectPtr<const AActor>> GPreviousLeaders;
+	/** Size of the HUD overlay as last painted, the space the markers are projected into and drawn in. The viewport
+	 * widget itself is larger than that by the UI scale whenever the scale is not 1. */
+	FVector2D GHudSize{FVector2D::ZeroVector};
+	/** The navigation (top right) and flight status (bottom left) panels of the HUD: no card covers them. */
+	TWeakPtr<SWidget> GNavigationPanel;
+	TWeakPtr<SWidget> GStatusPanel;
+
+	enum class ECardKind : uint8
+	{
+		/** A navigation contact: star, planet, moon, station, colony, star-system beacon. */
+		Contact,
+		/** A ship of the civilization's fleet. */
+		Unit
+	};
+
+	/** One object's card on the HUD, and where the layout put it. */
+	struct FCard
+	{
+		ECardKind Kind{ECardKind::Contact};
+		int32 ContactIndex{INDEX_NONE};
+		TWeakObjectPtr<const AActor> Key;
+		FVector2D Anchor{FVector2D::ZeroVector};
+		/** Radius of the object's own mark (limb ring, diamond, course brackets): cards and leaders start beyond it. */
+		float KeepOut{6.0f};
+		/** Limb ring of a body; 0 when the body is too large on screen for one. */
+		float RingRadius{0.0f};
+		double Distance{0.0};
+		bool bSelected{false};
+		/** Which card leads a shared one: stars and planets, then moons, other contacts, ships. */
+		int32 Rank{0};
+		FLinearColor Color{FLinearColor::White};
+		FString Title;
+		/** Catalogue designation after the name (A, A7, A5.01), drawn in the marker colour. */
+		FString Designation;
+		FString Detail;
+		/** The object's name where a shared card lists it. */
+		FString ShortName;
+		/** The objects this card stands for besides its own: name, and whether it is a ship. */
+		TArray<TPair<FString, bool>> MergedNames;
+		/** The texts as drawn, fitted to the card. */
+		FString DrawTitle;
+		FString DrawDetail;
+		FString MergedLine;
+		FVector2D Size{FVector2D::ZeroVector};
+		/** The card this object is listed on instead of a card of its own. */
+		int32 MergedInto{INDEX_NONE};
+		bool bPlaced{false};
+		int32 Slot{INDEX_NONE};
+		FVector2D Position{FVector2D::ZeroVector};
+	};
+
+	/** Where a card sits around its mark: flags hang beside a vertical pole, side cards beside a short leader. */
+	enum ESlotSide : int32
+	{
+		SideUpLeft,
+		SideUpRight,
+		SideRight,
+		SideLeft,
+		SideDownLeft,
+		SideDownRight,
+		SideRightUp,
+		SideRightDown,
+		SideLeftUp,
+		SideLeftDown,
+		SideCount
+	};
+	/** Level 0 is next to the mark; each further level stacks the card one card further out on a longer leader. */
+	constexpr int32 SlotLevels = 7;
+
+	/**
+	 * Slots in order of preference. Flags first, as the HUD always drew them: a body's card above its mark with the pole
+	 * on the card's right edge, a ship's card up and to the right. Then the mirrored and the side slots, those below, and
+	 * the same again further out.
+	 */
+	void BuildSlotOrder(const ECardKind Kind, TArray<int32, TInlineAllocator<64>>& OutSlots)
+	{
+		constexpr int32 NearCount = 6;
+		constexpr int32 FarCount = 8;
+		static const int32 ContactNear[NearCount] = {SideUpLeft, SideUpRight, SideRight, SideLeft, SideDownLeft, SideDownRight};
+		static const int32 UnitNear[NearCount] = {SideUpRight, SideDownRight, SideUpLeft, SideDownLeft, SideRight, SideLeft};
+		static const int32 ContactFar[FarCount] = {SideUpLeft, SideUpRight, SideRightUp, SideLeftUp, SideDownLeft,
+			SideDownRight, SideRightDown, SideLeftDown};
+		static const int32 UnitFar[FarCount] = {SideUpRight, SideUpLeft, SideDownRight, SideDownLeft, SideRightUp,
+			SideRightDown, SideLeftUp, SideLeftDown};
+		const bool bUnit = Kind == ECardKind::Unit;
+		const int32* Near = bUnit ? UnitNear : ContactNear;
+		const int32* Far = bUnit ? UnitFar : ContactFar;
+		OutSlots.Reset();
+		for (int32 Index = 0; Index < NearCount; ++Index)
+		{
+			OutSlots.Add(Near[Index]);
+		}
+		for (int32 Level = 1; Level < SlotLevels; ++Level)
+		{
+			for (int32 Index = 0; Index < FarCount; ++Index)
+			{
+				OutSlots.Add(Level * SideCount + Far[Index]);
+			}
+		}
+	}
+
+	/** Top-left corner of a card of this size in a slot around its mark. */
+	FVector2D SlotPosition(const FCard& Card, const int32 Slot, const FVector2D& Size)
+	{
+		const int32 Side = Slot % SideCount;
+		const double Level = static_cast<double>(Slot / SideCount);
+		const double Step = Size.Y + MarkerGap + 3.0;
+		const bool bUnit = Card.Kind == ECardKind::Unit;
+		// A flag's pole runs inside the accent bar on the card's near edge; a ship's card sits off a short diagonal leader.
+		const double Inner = bUnit ? Card.KeepOut + 9.0 : -1.5;
+		const double Rise = Card.KeepOut + (bUnit ? 11.0 : FlagPoleLength);
+		constexpr double SideGap = 10.0;
+		const FVector2D& Mark = Card.Anchor;
+		const double UpY = Mark.Y - Rise - Size.Y - Level * Step;
+		const double DownY = Mark.Y + Rise + Level * Step;
+		const double MiddleY = Mark.Y - Size.Y * 0.5;
+		const double RightX = Mark.X + Card.KeepOut + SideGap;
+		const double LeftX = Mark.X - Card.KeepOut - SideGap - Size.X;
+		switch (Side)
+		{
+		case SideUpLeft: return FVector2D(Mark.X - Inner - Size.X, UpY);
+		case SideUpRight: return FVector2D(Mark.X + Inner, UpY);
+		case SideDownLeft: return FVector2D(Mark.X - Inner - Size.X, DownY);
+		case SideDownRight: return FVector2D(Mark.X + Inner, DownY);
+		case SideRight: return FVector2D(RightX, MiddleY);
+		case SideLeft: return FVector2D(LeftX, MiddleY);
+		case SideRightUp: return FVector2D(RightX, MiddleY - Level * Step);
+		case SideRightDown: return FVector2D(RightX, MiddleY + Level * Step);
+		case SideLeftUp: return FVector2D(LeftX, MiddleY - Level * Step);
+		default: return FVector2D(LeftX, MiddleY + Level * Step);
+		}
+	}
+
+	FSlateRect CardRect(const FVector2D& Position, const FVector2D& Size)
+	{
+		return FSlateRect(static_cast<float>(Position.X), static_cast<float>(Position.Y),
+			static_cast<float>(Position.X + Size.X), static_cast<float>(Position.Y + Size.Y));
+	}
+
+	FSlateRect Inflate(const FSlateRect& Rect, const float Amount)
+	{
+		return FSlateRect(Rect.Left - Amount, Rect.Top - Amount, Rect.Right + Amount, Rect.Bottom + Amount);
+	}
+
+	/** The leader from the edge of a card's mark to the nearest point of the card: a flag's pole, a side card's tick. */
+	void LeaderSegment(const FCard& Card, const FSlateRect& Rect, FVector2D& OutStart, FVector2D& OutEnd)
+	{
+		OutEnd = FVector2D(FMath::Clamp(Card.Anchor.X, static_cast<double>(Rect.Left), static_cast<double>(Rect.Right)),
+			FMath::Clamp(Card.Anchor.Y, static_cast<double>(Rect.Top), static_cast<double>(Rect.Bottom)));
+		const FVector2D Delta = OutEnd - Card.Anchor;
+		const double Length = Delta.Size();
+		OutStart = Length > Card.KeepOut ? Card.Anchor + Delta * (Card.KeepOut / Length) : OutEnd;
+	}
+
+	/** True when the segment touches the rectangle (Liang-Barsky clipping). */
+	bool SegmentHitsRect(const FVector2D& Start, const FVector2D& End, const FSlateRect& Rect)
+	{
+		const double DeltaX = End.X - Start.X;
+		const double DeltaY = End.Y - Start.Y;
+		const double Directions[4] = {-DeltaX, DeltaX, -DeltaY, DeltaY};
+		const double Distances[4] = {Start.X - Rect.Left, Rect.Right - Start.X, Start.Y - Rect.Top, Rect.Bottom - Start.Y};
+		double Enter = 0.0;
+		double Leave = 1.0;
+		for (int32 Edge = 0; Edge < 4; ++Edge)
+		{
+			if (FMath::IsNearlyZero(Directions[Edge]))
+			{
+				if (Distances[Edge] < 0.0)
+				{
+					return false;
+				}
+				continue;
+			}
+			const double Crossing = Distances[Edge] / Directions[Edge];
+			if (Directions[Edge] < 0.0)
+			{
+				Enter = FMath::Max(Enter, Crossing);
+			}
+			else
+			{
+				Leave = FMath::Min(Leave, Crossing);
+			}
+			if (Enter > Leave)
+			{
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/** The text cut to MaxWidth, with an ellipsis where it had to be cut. */
+	FString FitText(const FString& Text, const FSlateFontInfo& Font, const float MaxWidth, FSlateFontMeasure& FontMeasure)
+	{
+		if (FontMeasure.Measure(Text, Font).X <= MaxWidth)
+		{
+			return Text;
+		}
+		FString Fitted = Text;
+		while (Fitted.Len() > 1 && FontMeasure.Measure(Fitted + TEXT("..."), Font).X > MaxWidth)
+		{
+			Fitted.LeftChopInline(1);
+		}
+		Fitted.TrimEndInline();
+		return Fitted + TEXT("...");
+	}
+
+	/** Names joined by a middle dot, as many as fit MaxWidth, the rest counted: "S-04 · S-05 · M-01  +2". */
+	FString JoinFitted(const TArray<FString>& Names, const FString& Prefix, const FSlateFontInfo& Font, const float MaxWidth,
+		FSlateFontMeasure& FontMeasure)
+	{
+		FString Line = Prefix;
+		for (int32 Index = 0; Index < Names.Num(); ++Index)
+		{
+			const FString Next = Index == 0 ? Line + Names[Index] : Line + ListSeparator + Names[Index];
+			const int32 Rest = Names.Num() - Index - 1;
+			if (Index > 0 && FontMeasure.Measure(Rest > 0 ? Next + FString::Printf(TEXT("  +%d"), Rest) : Next, Font).X > MaxWidth)
+			{
+				return FitText(Line + FString::Printf(TEXT("  +%d"), Names.Num() - Index), Font, MaxWidth, FontMeasure);
+			}
+			Line = Next;
+		}
+		return FitText(Line, Font, MaxWidth, FontMeasure);
+	}
+
+	/** Fits a card's texts and sizes the card: ships sharing a ship's card join its call sign ("S-04 · S-05"), anything
+	 * else a card stands for goes on a line of its own ("+ S-04 · KRA A5.01"). */
+	void SizeCard(FCard& Card, FSlateFontMeasure& FontMeasure)
+	{
+		const bool bUnit = Card.Kind == ECardKind::Unit;
+		const float Padding = bUnit ? 20.0f : 26.0f;
+		const float MaxText = MarkerMaximumWidth - Padding;
+		TArray<FString> Joined;
+		TArray<FString> Listed;
+		for (const TPair<FString, bool>& Merged : Card.MergedNames)
+		{
+			(bUnit && Merged.Value ? Joined : Listed).Add(Merged.Key);
+		}
+		const FSlateFontInfo TitleFont = bUnit ? UnitTitleFont() : MarkerFont();
+		const FSlateFontInfo DetailFont = bUnit ? UnitLineFont() : MarkerFont();
+		const FString Suffix = Card.Designation.IsEmpty() || !Joined.IsEmpty() ? FString() : TEXT("  ") + Card.Designation;
+		if (Joined.IsEmpty())
+		{
+			const float SuffixWidth = Suffix.IsEmpty() ? 0.0f : static_cast<float>(FontMeasure.Measure(Suffix, TitleFont).X);
+			Card.DrawTitle = FitText(Card.Title, TitleFont, MaxText - SuffixWidth, FontMeasure);
+		}
+		else
+		{
+			Joined.Insert(Card.Title, 0);
+			Card.DrawTitle = JoinFitted(Joined, FString(), TitleFont, MaxText, FontMeasure);
+		}
+		Card.DrawDetail = FitText(Card.Detail, DetailFont, MaxText, FontMeasure);
+		Card.MergedLine = Listed.IsEmpty() ? FString() : JoinFitted(Listed, TEXT("+ "), MergedFont(), MaxText, FontMeasure);
+		float TextWidth = static_cast<float>(FontMeasure.Measure(Card.DrawTitle + Suffix, TitleFont).X);
+		TextWidth = FMath::Max(TextWidth, static_cast<float>(FontMeasure.Measure(Card.DrawDetail, DetailFont).X));
+		if (!Card.MergedLine.IsEmpty())
+		{
+			TextWidth = FMath::Max(TextWidth, static_cast<float>(FontMeasure.Measure(Card.MergedLine, MergedFont()).X));
+		}
+		Card.Size.X = FMath::Clamp(TextWidth + Padding, bUnit ? 64.0f : MarkerMinimumWidth, MarkerMaximumWidth);
+		Card.Size.Y = (bUnit ? UnitCardHeight : MarkerHeight) + (Card.MergedLine.IsEmpty() ? 0.0f : MergedLineHeight);
+	}
+
+	/**
+	 * Rio 02.10 ("labels pile onto each other"): every card of the frame (planets, moons, stations, beacons, ships) is laid
+	 * out in one pass, so no two overlap whatever their kind. Objects within a few pixels share one card. Then, greedily
+	 * by priority (the course target first, then the nearest), each card takes the first free slot around its mark:
+	 * beside it, above or below it, then stacked further out on a longer leader. A card keeps last frame's slot while it
+	 * stays free, so cards do not jump. A card without room is listed on a placed card a few pixels away, or left out
+	 * (its mark stays). No card leaves the screen, covers a panel, another card or another card's leader.
+	 */
+	void LayOutCards(TArray<FCard>& Cards, const TArray<FSlateRect>& Obstacles, const FVector2D& Screen,
+		FSlateFontMeasure& FontMeasure)
+	{
+		const int32 CardCount = Cards.Num();
+		// Who leads a shared card: the course target, then stars and planets, moons, other contacts, ships; the nearest.
+		TArray<int32, TInlineAllocator<64>> Leadership;
+		for (int32 Index = 0; Index < CardCount; ++Index)
+		{
+			Leadership.Add(Index);
+		}
+		Leadership.Sort([&Cards](const int32 Left, const int32 Right)
+		{
+			const FCard& A = Cards[Left];
+			const FCard& B = Cards[Right];
+			if (A.bSelected != B.bSelected) return A.bSelected;
+			if (A.Rank != B.Rank) return A.Rank < B.Rank;
+			return A.Distance < B.Distance;
+		});
+		for (int32 LeaderOrder = 0; LeaderOrder < Leadership.Num(); ++LeaderOrder)
+		{
+			const int32 LeaderIndex = Leadership[LeaderOrder];
+			if (Cards[LeaderIndex].MergedInto != INDEX_NONE)
+			{
+				continue;
+			}
+			for (int32 MemberOrder = LeaderOrder + 1; MemberOrder < Leadership.Num(); ++MemberOrder)
+			{
+				FCard& Member = Cards[Leadership[MemberOrder]];
+				const FCard& Leader = Cards[LeaderIndex];
+				if (Member.MergedInto != INDEX_NONE || Member.bSelected)
+				{
+					continue;
+				}
+				const double Gap = FVector2D::Distance(Leader.Anchor, Member.Anchor);
+				const TWeakObjectPtr<const AActor>* Previous = Member.Key.IsValid() ? GPreviousLeaders.Find(Member.Key) : nullptr;
+				const bool bHeld = Previous && Leader.Key.IsValid() && *Previous == Leader.Key;
+				if (Gap <= MergeRadius || (bHeld && Gap <= MergeHoldRadius))
+				{
+					Member.MergedInto = LeaderIndex;
+				}
+			}
+		}
+		for (const int32 Index : Leadership)
+		{
+			if (const int32 Host = Cards[Index].MergedInto; Host != INDEX_NONE)
+			{
+				Cards[Host].MergedNames.Emplace(Cards[Index].ShortName, Cards[Index].Kind == ECardKind::Unit);
+			}
+		}
+
+		// Greedy by priority: the course target first, then the nearest.
+		TArray<int32, TInlineAllocator<64>> Placement;
+		for (int32 Index = 0; Index < CardCount; ++Index)
+		{
+			if (Cards[Index].MergedInto == INDEX_NONE)
+			{
+				SizeCard(Cards[Index], FontMeasure);
+				Placement.Add(Index);
+			}
+		}
+		Placement.Sort([&Cards](const int32 Left, const int32 Right)
+		{
+			const FCard& A = Cards[Left];
+			const FCard& B = Cards[Right];
+			if (A.bSelected != B.bSelected) return A.bSelected;
+			return A.Distance < B.Distance;
+		});
+
+		struct FPlaced
+		{
+			int32 Card{INDEX_NONE};
+			FSlateRect Rect;
+			FVector2D LeaderStart{FVector2D::ZeroVector};
+			FVector2D LeaderEnd{FVector2D::ZeroVector};
+		};
+		TArray<FPlaced, TInlineAllocator<64>> Placed;
+		// A slot is free when the card stays on screen with its margin, keeps clear of the panels and the placed cards,
+		// its leader crosses neither, it covers no placed leader and, while bAvoidMarks, no other object's mark.
+		const auto Fits = [&](const FCard& Card, const int32 CardIndex, const int32 Slot, const float Clearance,
+			const bool bAvoidMarks)
+		{
+			const FSlateRect Rect = CardRect(SlotPosition(Card, Slot, Card.Size), Card.Size);
+			if (Rect.Left < ScreenMargin || Rect.Top < ScreenMargin
+				|| Rect.Right > Screen.X - ScreenMargin || Rect.Bottom > Screen.Y - ScreenMargin)
+			{
+				return false;
+			}
+			const FSlateRect Padded = Inflate(Rect, Clearance);
+			FVector2D LeaderStart;
+			FVector2D LeaderEnd;
+			LeaderSegment(Card, Rect, LeaderStart, LeaderEnd);
+			for (const FSlateRect& Obstacle : Obstacles)
+			{
+				// A mark inside an obstacle (a moon within the course brackets of its planet) still gets a card outside it.
+				const bool bMarkInside = Card.Anchor.X >= Obstacle.Left && Card.Anchor.X <= Obstacle.Right
+					&& Card.Anchor.Y >= Obstacle.Top && Card.Anchor.Y <= Obstacle.Bottom;
+				if (FSlateRect::DoRectanglesIntersect(Padded, Obstacle)
+					|| (!bMarkInside && SegmentHitsRect(LeaderStart, LeaderEnd, Obstacle)))
+				{
+					return false;
+				}
+			}
+			const FSlateRect LeaderGuard = Inflate(Rect, 2.0f);
+			for (const FPlaced& Other : Placed)
+			{
+				if (Other.Card == CardIndex)
+				{
+					continue;
+				}
+				// A leader may start under a card placed earlier (its mark covered there); it never runs into one.
+				const bool bMarkUnder = Card.Anchor.X >= Other.Rect.Left && Card.Anchor.X <= Other.Rect.Right
+					&& Card.Anchor.Y >= Other.Rect.Top && Card.Anchor.Y <= Other.Rect.Bottom;
+				if (FSlateRect::DoRectanglesIntersect(Padded, Inflate(Other.Rect, CardClearance))
+					|| (!bMarkUnder && SegmentHitsRect(LeaderStart, LeaderEnd, Other.Rect))
+					|| SegmentHitsRect(Other.LeaderStart, Other.LeaderEnd, LeaderGuard))
+				{
+					return false;
+				}
+			}
+			if (bAvoidMarks)
+			{
+				for (int32 OtherIndex = 0; OtherIndex < CardCount; ++OtherIndex)
+				{
+					const FCard& Other = Cards[OtherIndex];
+					if (OtherIndex == CardIndex || Other.MergedInto == CardIndex)
+					{
+						continue;
+					}
+					const double Mark = FMath::Min(static_cast<double>(Other.KeepOut), 24.0);
+					if (FSlateRect::DoRectanglesIntersect(Padded, FSlateRect(static_cast<float>(Other.Anchor.X - Mark),
+						static_cast<float>(Other.Anchor.Y - Mark), static_cast<float>(Other.Anchor.X + Mark),
+						static_cast<float>(Other.Anchor.Y + Mark))))
+					{
+						return false;
+					}
+				}
+			}
+			return true;
+		};
+		const auto Settle = [&Cards](const int32 CardIndex, FPlaced& Entry)
+		{
+			FCard& Card = Cards[CardIndex];
+			Card.Position = SlotPosition(Card, Card.Slot, Card.Size);
+			Entry.Card = CardIndex;
+			Entry.Rect = CardRect(Card.Position, Card.Size);
+			LeaderSegment(Card, Entry.Rect, Entry.LeaderStart, Entry.LeaderEnd);
+		};
+
+		TArray<int32, TInlineAllocator<64>> ContactSlots;
+		TArray<int32, TInlineAllocator<64>> UnitSlots;
+		BuildSlotOrder(ECardKind::Contact, ContactSlots);
+		BuildSlotOrder(ECardKind::Unit, UnitSlots);
+		for (const int32 CardIndex : Placement)
+		{
+			FCard& Card = Cards[CardIndex];
+			const TArray<int32, TInlineAllocator<64>>& Slots = Card.Kind == ECardKind::Unit ? UnitSlots : ContactSlots;
+			const int32* Previous = Card.Key.IsValid() ? GPreviousSlots.Find(Card.Key) : nullptr;
+			const bool bKnownPrevious = Previous && Slots.Contains(*Previous);
+			int32 Chosen = INDEX_NONE;
+			// Its first choice when that is clearly free; else last frame's slot while it stays free; else the first
+			// free slot, clear of other objects' marks where possible.
+			if (bKnownPrevious && *Previous != Slots[0] && Fits(Card, CardIndex, Slots[0], ReturnClearance, true))
+			{
+				Chosen = Slots[0];
+			}
+			else if (bKnownPrevious && Fits(Card, CardIndex, *Previous, CardClearance, false))
+			{
+				Chosen = *Previous;
+			}
+			for (int32 Pass = 0; Pass < 2 && Chosen == INDEX_NONE; ++Pass)
+			{
+				for (const int32 Slot : Slots)
+				{
+					// The second pass, which may cover other objects' marks, keeps to the nearer slots (bounded cost).
+					if (Pass == 1 && Slot >= 3 * SideCount)
+					{
+						break;
+					}
+					if (Fits(Card, CardIndex, Slot, CardClearance, Pass == 0))
+					{
+						Chosen = Slot;
+						break;
+					}
+				}
+			}
+			if (Chosen != INDEX_NONE)
+			{
+				Card.bPlaced = true;
+				Card.Slot = Chosen;
+				Settle(CardIndex, Placed.AddDefaulted_GetRef());
+				continue;
+			}
+
+			// No room: listed on the nearest placed card a few pixels away (a ship's card lists only ships), or left out.
+			int32 HostEntry = INDEX_NONE;
+			double HostGap = FallbackMergeRadius;
+			for (int32 EntryIndex = 0; EntryIndex < Placed.Num(); ++EntryIndex)
+			{
+				const FCard& Host = Cards[Placed[EntryIndex].Card];
+				const double Gap = FVector2D::Distance(Host.Anchor, Card.Anchor);
+				if ((Host.Kind != ECardKind::Unit || Card.Kind == ECardKind::Unit) && Gap <= HostGap)
+				{
+					HostGap = Gap;
+					HostEntry = EntryIndex;
+				}
+			}
+			if (HostEntry == INDEX_NONE)
+			{
+				continue;
+			}
+			const int32 HostIndex = Placed[HostEntry].Card;
+			const FCard Saved = Cards[HostIndex];
+			{
+				FCard& Host = Cards[HostIndex];
+				Host.MergedNames.Emplace(Card.ShortName, Card.Kind == ECardKind::Unit);
+				Host.MergedNames.Append(Card.MergedNames);
+				SizeCard(Host, FontMeasure);
+			}
+			if (Fits(Cards[HostIndex], HostIndex, Cards[HostIndex].Slot, CardClearance, false))
+			{
+				Settle(HostIndex, Placed[HostEntry]);
+				for (FCard& Other : Cards)
+				{
+					if (Other.MergedInto == CardIndex)
+					{
+						Other.MergedInto = HostIndex;
+					}
+				}
+				Card.MergedInto = HostIndex;
+			}
+			else
+			{
+				Cards[HostIndex] = Saved;
+			}
+		}
+
+		GPreviousSlots.Reset();
+		GPreviousLeaders.Reset();
+		for (const FCard& Card : Cards)
+		{
+			if (!Card.Key.IsValid())
+			{
+				continue;
+			}
+			if (Card.bPlaced)
+			{
+				GPreviousSlots.Add(Card.Key, Card.Slot);
+			}
+			else if (Card.MergedInto != INDEX_NONE && Cards[Card.MergedInto].Key.IsValid())
+			{
+				GPreviousLeaders.Add(Card.Key, Cards[Card.MergedInto].Key);
+			}
+		}
+	}
+
+	FLinearColor PlanetMarkerColor(const EPlanetType Type)
+	{
+		switch (Type)
+		{
+		case EPlanetType::Ice:
+		case EPlanetType::Frozen:
+		case EPlanetType::Nordic:
+		case EPlanetType::Tundra:
+		case EPlanetType::IceGiant:
+			return FLinearColor(0.72f, 0.9f, 1.0f, 0.96f);
+		case EPlanetType::Ocean:
+		case EPlanetType::Water:
+		case EPlanetType::Archipelago:
+			return FLinearColor(0.16f, 0.62f, 1.0f, 0.96f);
+		case EPlanetType::Terrestrial:
+		case EPlanetType::Forest:
+		case EPlanetType::Oasis:
+		case EPlanetType::Pangea:
+		case EPlanetType::SuperEarth:
+			return FLinearColor(0.2f, 0.92f, 0.58f, 0.96f);
+		case EPlanetType::Desert:
+		case EPlanetType::Sand:
+			return FLinearColor(1.0f, 0.68f, 0.24f, 0.96f);
+		case EPlanetType::Volcanic:
+		case EPlanetType::Melted:
+		case EPlanetType::Lava:
+		case EPlanetType::HotGiant:
+			return FLinearColor(1.0f, 0.25f, 0.1f, 0.96f);
+		case EPlanetType::GasGiant:
+		case EPlanetType::Greenhouse:
+		case EPlanetType::Ammonia:
+			return FLinearColor(0.92f, 0.72f, 0.3f, 0.96f);
+		case EPlanetType::Metal:
+		case EPlanetType::Metallic:
+		case EPlanetType::Carbon:
+			return FLinearColor(0.74f, 0.72f, 0.88f, 0.96f);
+		default:
+			return FLinearColor(0.28f, 0.84f, 0.75f, 0.95f);
+		}
+	}
+
+	FLinearColor MoonMarkerColor(const EMoonType Type)
+	{
+		switch (Type)
+		{
+		case EMoonType::Icy:
+			return FLinearColor(0.82f, 0.93f, 1.0f, 0.96f);
+		case EMoonType::Ocean:
+			return FLinearColor(0.22f, 0.64f, 1.0f, 0.96f);
+		case EMoonType::Continental:
+			return FLinearColor(0.38f, 0.84f, 0.65f, 0.96f);
+		case EMoonType::Desert:
+			return FLinearColor(0.96f, 0.67f, 0.34f, 0.96f);
+		case EMoonType::Volcanic:
+			return FLinearColor(1.0f, 0.31f, 0.12f, 0.96f);
+		case EMoonType::Iron:
+			return FLinearColor(0.68f, 0.74f, 0.82f, 0.96f);
+		case EMoonType::Gas:
+		case EMoonType::Peculiar:
+			return FLinearColor(0.72f, 0.52f, 1.0f, 0.96f);
+		default:
+			return FLinearColor(0.66f, 0.76f, 0.9f, 0.95f);
+		}
+	}
+
+	/** Marker colour of a planet or a moon by its type; false for any other actor. */
+	bool BodyMarkerColor(const AActor* Actor, FLinearColor& OutColor)
+	{
+		if (const APlanet* Planet = Cast<APlanet>(Actor))
+		{
+			OutColor = PlanetMarkerColor(Planet->PlanetType);
+			return true;
+		}
+		if (const AMoon* Moon = Cast<AMoon>(Actor))
+		{
+			OutColor = MoonMarkerColor(Moon->MoonType);
+			return true;
+		}
+		return false;
+	}
+
+	/** Altimeter of the piloted ship (Rio 02.10): the planet or moon it reads and what it showed last. */
+	struct FAltimeter
+	{
+		const ASpaceship* Ship{nullptr};
+		TWeakObjectPtr<const APlanetaryBody> Body;
+		double LastSeconds{0.0};
+		double PickSeconds{-1.0e9};
+		double SampleSeconds{-1.0e9};
+		/** Ground clearance at the last terrain sample and the base-sphere altitude then: between the samples the
+		 * clearance follows the change of the base altitude, so a fast descent never reads a stale sample. */
+		double SampleGroundCm{-1.0};
+		double SampleBaseCm{0.0};
+		double AltitudeCm{0.0};
+		double VerticalCmPerSecond{0.0};
+		/** Top of the tape and the edge of the atmosphere (negative without one), cm above the surface. */
+		double TopCm{1.0};
+		double AtmosphereCm{-1.0};
+		/** Fades in near a body and out after leaving it, showing the last reading meanwhile. */
+		float Alpha{0.0f};
+		/** 0 calm, 1 amber, 2 red: closing on the surface fast. */
+		float Severity{0.0f};
+		bool bReading{false};
+		FString BodyName;
+		FString Designation;
+		FLinearColor BodyColor{FLinearColor::White};
+	};
+	FAltimeter GAltimeter;
+	/** The altimeter reads a planet or moon within this many of its radii above the surface. */
+	constexpr double AltimeterReachRadii = 2.0;
+	/** Above this the base sphere stands in for the terrain (the flight model's limit for its terrain queries). */
+	constexpr double AltimeterTerrainAltitudeCm = 5.0e7;
+
+	/**
+	 * Height of Location above the WorldScape terrain of Body, or above the sea of a liquid world: the canonical surface
+	 * the flight model and the placement resolver sample too. -1 while the body has no current surface.
+	 */
+	double TerrainClearanceCm(const APlanetaryBody* Body, const FVector& Location)
+	{
+		APlanetarySurfaceGenerator* Surface = IsValid(Body) ? Body->PlanetaryEnvironmentGenerator : nullptr;
+		AWorldScapeRoot* Root = IsValid(Surface) ? Surface->WorldScapeRootInstance : nullptr;
+		if (!IsValid(Root) || !IsValid(Root->WorldScapeNoise) || Root->PlanetScale <= 0.0
+			|| !Surface->IsSurfaceProfileCurrent(Body))
+		{
+			return -1.0;
+		}
+		const FVector Center = Root->GetActorLocation();
+		const FVector Offset = Location - Center;
+		const double CenterDistance = Offset.Size();
+		if (CenterDistance <= UE_DOUBLE_SMALL_NUMBER)
+		{
+			return -1.0;
+		}
+		const FVector Direction = Offset / CenterDistance;
+		double SurfaceRadius = Root->PlanetScale + Root->GetGroundHeight(Center + Direction * Root->PlanetScale, false);
+		if (Surface->ResolvedSurfaceProfile.LiquidType != EAPSPlanetLiquidType::None)
+		{
+			SurfaceRadius = FMath::Max(SurfaceRadius, Root->PlanetScale
+				+ static_cast<double>(Surface->ResolvedSurfaceProfile.OceanLevel) * Root->NoiseIntensity);
+		}
+		return FMath::Max(CenterDistance - SurfaceRadius, 0.0);
+	}
+
+	FString FormatAltitude(const double Centimetres)
+	{
+		const double Metres = FMath::Max(Centimetres, 0.0) / 100.0;
+		if (Metres < 1000.0)
+		{
+			return APSUINumber::Number(FMath::RoundToInt(Metres)).ToString() + TEXT(" m");
+		}
+		if (Metres < 100000.0)
+		{
+			return FString::Printf(TEXT("%.1f km"), Metres / 1000.0);
+		}
+		return APSUINumber::Number(FMath::RoundToInt64(Metres / 1000.0)).ToString() + TEXT(" km");
+	}
+
+	/** A round altitude of the tape scale: 100 m, 1 km ... 10,000 km. */
+	FString FormatTick(const double Centimetres)
+	{
+		const double Metres = Centimetres / 100.0;
+		return Metres < 1000.0
+			? APSUINumber::Number(FMath::RoundToInt(Metres)).ToString() + TEXT(" m")
+			: APSUINumber::Number(FMath::RoundToInt64(Metres / 1000.0)).ToString() + TEXT(" km");
+	}
+
+	FString FormatVerticalSpeed(const double CentimetresPerSecond)
+	{
+		const double Metres = FMath::Abs(CentimetresPerSecond) / 100.0;
+		if (Metres < 10.0)
+		{
+			return FString::Printf(TEXT("%.1f m/s"), Metres);
+		}
+		if (Metres < 1000.0)
+		{
+			return FString::Printf(TEXT("%.0f m/s"), Metres);
+		}
+		if (Metres < 1.0e6)
+		{
+			return FString::Printf(TEXT("%.1f km/s"), Metres / 1000.0);
+		}
+		return APSUINumber::Number(FMath::RoundToInt64(Metres / 1000.0)).ToString() + TEXT(" km/s");
+	}
+
+	FString FormatSurfaceTime(const double Seconds)
+	{
+		if (Seconds < 10.0)
+		{
+			return FString::Printf(TEXT("%.1f s"), Seconds);
+		}
+		if (Seconds < 60.0)
+		{
+			return FString::Printf(TEXT("%.0f s"), Seconds);
+		}
+		if (Seconds < 3600.0)
+		{
+			const int32 Whole = FMath::FloorToInt(Seconds);
+			return FString::Printf(TEXT("%d:%02d"), Whole / 60, Whole % 60);
+		}
+		if (Seconds < 36000.0)
+		{
+			const int32 Minutes = FMath::FloorToInt(Seconds / 60.0);
+			return FString::Printf(TEXT("%d h %02d min"), Minutes / 60, Minutes % 60);
+		}
+		return TEXT("over 10 h");
+	}
 }
 
 namespace APSAutomaticShipInteraction
@@ -149,7 +920,9 @@ namespace APSAutomaticShipInteraction
 		double BestBoundsSizeSquared = 0.0;
 		for (UStaticMeshComponent* MeshComponent : MeshComponents)
 		{
-			if (!IsValid(MeshComponent) || !MeshComponent->GetStaticMesh() || MeshComponent == Ship->ForwardVector)
+			// A collision shell (an invisible complex-collision copy of the hull, tagged) is not the hull.
+			if (!IsValid(MeshComponent) || !MeshComponent->GetStaticMesh() || MeshComponent == Ship->ForwardVector
+				|| MeshComponent->ComponentHasTag(TEXT("APS.Ship.CollisionShell")))
 			{
 				continue;
 			}
@@ -344,7 +1117,10 @@ ASpaceship::ASpaceship()
 	InteractionBoundsComponent->SetupAttachment(SpaceshipHull);
 	InteractionBoundsComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	InteractionBoundsComponent->SetCollisionResponseToAllChannels(ECR_Ignore);
-	InteractionBoundsComponent->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
+	// Overlap, not block (Rio 02.10: aboard, the walking animation's foot IK traces Visibility from inside this box,
+	// took its nearest face for the floor and sank the pilot's mesh through the deck). The interaction trace takes
+	// overlaps (ACustomGravityCharacter::FindInteractionCandidate).
+	InteractionBoundsComponent->SetCollisionResponseToChannel(ECC_Visibility, ECR_Overlap);
 	InteractionBoundsComponent->SetGenerateOverlapEvents(false);
 	InteractionBoundsComponent->SetCanEverAffectNavigation(false);
 
@@ -456,6 +1232,10 @@ void ASpaceship::BeginPlay()
 	ConfigureFromHull();
 	InitializeFlightPostProcess();
 	RefreshInteractionGeometry();
+	if (IsGroundVehicle())
+	{
+		ConfigureGroundVehicleExit();
+	}
 	UpdateFlightEnvironment(0.0f, true);
 
 	GeneratedWorld = Cast<AAstroGenerator>(
@@ -532,7 +1312,7 @@ void ASpaceship::RefreshInteractionGeometry()
 		return;
 	}
 	SphereCollisionComponent->SetCollisionEnabled(
-		bProvidesArtificialGravity ? ECollisionEnabled::QueryOnly : ECollisionEnabled::NoCollision);
+		ProvidesShipGravity() ? ECollisionEnabled::QueryOnly : ECollisionEnabled::NoCollision);
 
 	UPrimitiveComponent* InteractionMesh = GetPrimaryHullComponent();
 	if (!InteractionMesh)
@@ -637,7 +1417,7 @@ void ASpaceship::RefreshInteractionGeometry()
 	InteractionBoundsComponent->SetCollisionEnabled(
 		bAllowExteriorInteraction ? ECollisionEnabled::QueryOnly : ECollisionEnabled::NoCollision);
 	InteractionBoundsComponent->SetCollisionResponseToAllChannels(ECR_Ignore);
-	InteractionBoundsComponent->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
+	InteractionBoundsComponent->SetCollisionResponseToChannel(ECC_Visibility, ECR_Overlap);
 }
 
 void GetAttachedActorsRecursively(AActor* ParentActor, TArray<AActor*>& OutActors)
@@ -1238,6 +2018,17 @@ void ASpaceship::ConfigureFromHull()
 		ActiveClassPreset.bUsesPhysicalImpulse = false;
 		RebuildSimpleHullCollision();
 	}
+	if (IsGroundVehicle())
+	{
+		// Rio 02.10: a ground vehicle has no space engines and never simulates physics; the camera reads its top speed.
+		ActiveClassPreset.bSupportsSpaceWrap = false;
+		ActiveClassPreset.bSupportsOffset = false;
+		ActiveClassPreset.bUsesPhysicalImpulse = false;
+		ActiveClassPreset.bHasInteriorByDefault = false;
+		ActiveClassPreset.MaximumFlightMode = EFlightMode::Surface;
+		ActiveClassPreset.MaxImpulseSpeed = GroundVehicleKind == EAPSGroundVehicleKind::Drone ? 8000.0
+			: GroundVehicleKind == EAPSGroundVehicleKind::Hover ? 5500.0 : 2700.0;
+	}
 	RotationSpeedDegreesPerSecond = ActiveClassPreset.RotationSpeed;
 	ImpulseRotationAcceleration = FMath::DegreesToRadians(ActiveClassPreset.AngularAcceleration);
 	if (static_cast<uint8>(SelectedDriveMode) > static_cast<uint8>(GetMaximumDriveModeForClass()))
@@ -1371,8 +2162,11 @@ void ASpaceship::ConfigureCameraFromHull()
 	const FVector LocalCenter = (LocalMin + LocalMax) * 0.5;
 	const FVector LocalExtent = (LocalMax - LocalMin) * 0.5;
 	const FVector ScaledExtent = LocalExtent * MainMesh->GetComponentScale().GetAbs();
-	const double WorldRadius = FMath::Max(ScaledExtent.Size(), 400.0);
-	BaseCameraArmLength = FMath::Max(820.0, WorldRadius * 1.82);
+	// Rio 02.10: a ground vehicle gets a close chase camera, 6-9 m behind it at rest (the adaptive camera adds 30%).
+	const double WorldRadius = IsGroundVehicle() ? FMath::Max(ScaledExtent.Size(), 150.0)
+		: FMath::Max(ScaledExtent.Size(), 400.0);
+	BaseCameraArmLength = IsGroundVehicle() ? FMath::Clamp(WorldRadius * 2.0, 480.0, 760.0)
+		: FMath::Max(820.0, WorldRadius * 1.82);
 	if (CameraComponent && !bCameraFieldOfViewInitialized)
 	{
 		BaseCameraFieldOfView = CameraComponent->FieldOfView;
@@ -1392,7 +2186,8 @@ void ASpaceship::ConfigureCameraFromHull()
 	const FRotator FlightViewRotation = FRotationMatrix::MakeFromXZ(
 		FlightForwardLocalAxis, FlightUpLocalAxis).Rotator();
 	SpringArmComponent->SetRelativeRotation(FlightViewRotation + FRotator(-12.0, 0.0, 0.0));
-	SpringArmComponent->bDoCollisionTest = false;
+	// A ground vehicle's camera pulls in rather than sink into the hill behind it (the arm ignores its own vehicle).
+	SpringArmComponent->bDoCollisionTest = IsGroundVehicle();
 }
 
 void ASpaceship::ConfigurePilotFillLight()
@@ -1844,7 +2639,10 @@ void ASpaceship::UpdateAdaptiveFlightCamera(float DeltaTime)
 	// Hull bounds define the baseline, a third farther at rest than the hull alone asks for (Rio, 30.09: too close at
 	// low speed). Speed and thrust ease the camera back on a critically damped follow (Game Programming Gems 4, 1.10)
 	// that settles in about a second without overshoot: no kick on band shifts, no shake.
-	const float TargetArmLength = BaseCameraArmLength * (1.3f + 0.30f * CameraAlpha + 0.12f * Thrust);
+	// A ground vehicle's camera eases back with its own top speed (Rio 02.10), a quarter farther at full speed.
+	const float SpeedPull = IsGroundVehicle()
+		? 0.25f * static_cast<float>(FMath::Min(Speed / ClassReferenceSpeed, 1.5)) : 0.30f * CameraAlpha;
+	const float TargetArmLength = BaseCameraArmLength * (1.3f + SpeedPull + 0.12f * Thrust);
 	if (DeltaTime > 0.0f)
 	{
 		constexpr float ArmSmoothSeconds = 0.9f;
@@ -1862,6 +2660,10 @@ void ASpaceship::UpdateAdaptiveFlightCamera(float DeltaTime)
 	SpringArmComponent->bEnableCameraLag = false;
 	SpringArmComponent->CameraRotationLagSpeed = FMath::Lerp(7.0f, 12.0f, CameraAlpha);
 	SpringArmComponent->CameraLagMaxDistance = 0.0f;
+	if (IsGroundVehicle())
+	{
+		UpdateGroundVehicleCamera();
+	}
 	if (CameraComponent)
 	{
 		// Speed reads through arm length, vignette and bloom. A changing FOV invalidates the star optics every
@@ -2315,19 +3117,31 @@ void ASpaceship::ApplyFlightInput(float DeltaTime)
 
 void ASpaceship::ApplyRotationInput(float DeltaTime)
 {
-	if (!bEngineRunning || !SpaceshipHull)
+	if (!bEngineRunning || !SpaceshipHull || IsGroundVehicle())
 	{
+		// Rio 02.10: a ground vehicle turns in its flight model step (steering on the ground, the drone's yaw and pitch).
 		CurrentAngularVelocityDegrees = FVector::ZeroVector;
 		return;
 	}
 
 	const float TransitionAlpha = GetEngineTransitionAuthority();
-	const double RotationSpeed = ActiveClassPreset.RotationSpeed * SteeringRateScale * TransitionAlpha;
+	// Rio 02.10: the flight model sets the steering feel. The star drive steers like a yoke with a lag, and the hull is
+	// calmer in the air. It also smooths the uneven mouse deltas there. Elsewhere both are neutral.
+	double RateScale = 1.0;
+	double ResponseScale = 1.0;
+	double DampingScale = 1.0;
+	FVector Steering(PitchInput, YawInput, RollInput);
+	if (FlightModel && FlightModel->IsBandFlightActive())
+	{
+		FlightModel->GetSteeringFeel(RateScale, ResponseScale, DampingScale);
+		Steering = FlightModel->SmoothSteeringInput(Steering, DeltaTime);
+	}
+	const double RotationSpeed = ActiveClassPreset.RotationSpeed * SteeringRateScale * TransitionAlpha * RateScale;
 	const double SafeInputLimit = FMath::Max(static_cast<double>(SteeringInputLimit), 0.05);
 	const FVector DesiredAngularVelocityDegrees(
-		FMath::Clamp(static_cast<double>(PitchInput) / SafeInputLimit, -1.0, 1.0) * RotationSpeed,
-		FMath::Clamp(static_cast<double>(YawInput) / SafeInputLimit, -1.0, 1.0) * RotationSpeed,
-		FMath::Clamp(static_cast<double>(RollInput) / SafeInputLimit, -1.0, 1.0) * RotationSpeed);
+		FMath::Clamp(Steering.X / SafeInputLimit, -1.0, 1.0) * RotationSpeed,
+		FMath::Clamp(Steering.Y / SafeInputLimit, -1.0, 1.0) * RotationSpeed,
+		FMath::Clamp(Steering.Z / SafeInputLimit, -1.0, 1.0) * RotationSpeed);
 	const bool bHasRotationInput = !DesiredAngularVelocityDegrees.IsNearlyZero(0.001);
 
 	const bool bUsePhysicalRotation = OnboardComputer
@@ -2374,9 +3188,9 @@ void ASpaceship::ApplyRotationInput(float DeltaTime)
 			CurrentAngularVelocityDegrees,
 			DesiredAngularVelocityDegrees,
 			DeltaTime,
-			ActiveClassPreset.AngularAcceleration * TransitionAlpha)
+			ActiveClassPreset.AngularAcceleration * TransitionAlpha * ResponseScale)
 		: FMath::VInterpTo(
-			CurrentAngularVelocityDegrees, FVector::ZeroVector, DeltaTime, PassiveAngularDamping);
+			CurrentAngularVelocityDegrees, FVector::ZeroVector, DeltaTime, PassiveAngularDamping * DampingScale);
 
 	const double PitchRadians = FMath::DegreesToRadians(CurrentAngularVelocityDegrees.X * DeltaTime);
 	const double YawRadians = FMath::DegreesToRadians(CurrentAngularVelocityDegrees.Y * DeltaTime);
@@ -2553,7 +3367,11 @@ void ASpaceship::ApplyEngineState()
 			SpaceshipHull->SetPhysicsAngularVelocityInRadians(FVector::ZeroVector);
 		}
 		SpaceshipHull->SetSimulatePhysics(false);
-		KinematicVelocity = FVector::ZeroVector;
+		if (!IsGroundVehicle())
+		{
+			// A ground vehicle switched off (G) keeps rolling, settling or sinking to a stop in its flight model.
+			KinematicVelocity = FVector::ZeroVector;
+		}
 		CurrentAngularVelocityDegrees = FVector::ZeroVector;
 		return;
 	}
@@ -2637,6 +3455,28 @@ FString ASpaceship::GetDriveModeName() const
 		return OffsetLabels[PowerIndex];
 	}
 	return ImpulseLabels[PowerIndex];
+}
+
+void ASpaceship::ToggleAutopilot()
+{
+	if (!FlightModel)
+	{
+		return;
+	}
+	if (FlightModel->IsAutopilotEngaged())
+	{
+		FlightModel->DisengageAutopilot(TEXT("Z"));
+		return;
+	}
+	const FShipNavigationContact* Contact = ShipNavigation ? ShipNavigation->GetSelectedContact() : nullptr;
+	if (Contact && Contact->Actor.IsValid())
+	{
+		FlightModel->EngageAutopilot(Contact->Actor.Get());
+	}
+	else
+	{
+		UE_LOG(LogTemp, Log, TEXT("[APS.Autopilot] no target: pick one with T or on the map"));
+	}
 }
 
 FString ASpaceship::GetFlightEnvironmentName() const
@@ -2797,7 +3637,7 @@ FText ASpaceship::GetNavigationMarkerText(int32 ContactIndex) const
 		if (MoonCount > 0)
 		{
 			Detail.RemoveFromEnd(TEXT(" PLANET"));
-			FamilySummary = FString::Printf(TEXT("   |   %d MOONS"), MoonCount);
+			FamilySummary = FString::Printf(TEXT("   |   %d %s"), MoonCount, MoonCount == 1 ? TEXT("MOON") : TEXT("MOONS"));
 		}
 	}
 
@@ -2999,8 +3839,11 @@ bool ASpaceship::ProjectWorldLocationToNavigationScreen(const FVector& WorldLoca
 	}
 
 	const TSharedPtr<SViewport> ViewportWidget = GEngine->GameViewport->GetGameViewportWidget();
-	const FVector2D SlateViewportSize = ViewportWidget.IsValid()
-		? ViewportWidget->GetCachedGeometry().GetLocalSize() : FVector2D::ZeroVector;
+	// The HUD overlay's own size once it has painted: positions are in its DPI-scaled units, which the viewport widget's
+	// size is not whenever the UI scale differs from 1.
+	const FVector2D SlateViewportSize = APSNavigationHud::GHudSize.X > 0.0 && APSNavigationHud::GHudSize.Y > 0.0
+		? APSNavigationHud::GHudSize
+		: ViewportWidget.IsValid() ? ViewportWidget->GetCachedGeometry().GetLocalSize() : FVector2D::ZeroVector;
 	if (!bRequireInsideViewport)
 	{
 		return SlateViewportSize.X > 0.0f && SlateViewportSize.Y > 0.0f;
@@ -3020,132 +3863,12 @@ bool ASpaceship::ProjectNavigationContactToScreen(int32 ContactIndex, FVector2D&
 bool ASpaceship::GetNavigationMarkerLayout(int32 ContactIndex, FVector2D& OutAnchorPosition,
 	FVector2D& OutLabelPosition, const TSet<int32>* OccludedContacts) const
 {
-	if (!ShipNavigation || !ShouldShowNavigationMarker(ContactIndex)
-		|| (OccludedContacts && OccludedContacts->Contains(ContactIndex))
-		|| !GEngine || !GEngine->GameViewport)
+	// Rio 02.10: the cards of a frame (bodies, stations, beacons and the fleet's ships) are laid out together in
+	// PaintNavigationOverlay so that none overlap; this reads one contact's placement from the last painted frame.
+	const APSNavigationHud::FLayoutFrame& LayoutFrame = APSNavigationHud::GLayoutFrame;
+	if (LayoutFrame.Ship != this || (OccludedContacts && OccludedContacts->Contains(ContactIndex)))
 	{
 		return false;
-	}
-
-	const FVector2D LabelSize(APSNavigationHud::MarkerWidth, APSNavigationHud::MarkerHeight);
-	const FVector2D ViewportSize = GEngine->GameViewport->GetGameViewportWidget().IsValid()
-		? GEngine->GameViewport->GetGameViewportWidget()->GetCachedGeometry().GetLocalSize()
-		: FVector2D::ZeroVector;
-	if (ViewportSize.X <= LabelSize.X || ViewportSize.Y <= LabelSize.Y)
-	{
-		return false;
-	}
-
-	FVector2D Anchor;
-	if (!ProjectNavigationContactToScreen(ContactIndex, Anchor))
-	{
-		return false;
-	}
-
-	APSNavigationHud::FLayoutFrame& LayoutFrame = APSNavigationHud::GLayoutFrame;
-	if (LayoutFrame.Ship == this && LayoutFrame.Frame == GFrameCounter && LayoutFrame.OccludedContacts == OccludedContacts)
-	{
-		if (const TPair<FVector2D, FVector2D>* Cached = LayoutFrame.Layouts.Find(ContactIndex))
-		{
-			OutAnchorPosition = Cached->Key;
-			OutLabelPosition = Cached->Value;
-			return true;
-		}
-		return false;
-	}
-	LayoutFrame.Ship = this;
-	LayoutFrame.Frame = GFrameCounter;
-	LayoutFrame.OccludedContacts = OccludedContacts;
-	LayoutFrame.Layouts.Reset();
-
-	struct FMarkerPlacement
-	{
-		int32 Index{INDEX_NONE};
-		FVector2D Anchor{FVector2D::ZeroVector};
-	};
-	TArray<FMarkerPlacement, TInlineAllocator<32>> Placements;
-	const int32 ContactCount = FMath::Min(ShipNavigation->GetContacts().Num(), MaximumNavigationMarkers);
-	for (int32 Index = 0; Index < ContactCount; ++Index)
-	{
-		FVector2D ProjectedAnchor;
-		if (ShouldShowNavigationMarker(Index)
-			&& (!OccludedContacts || !OccludedContacts->Contains(Index))
-			&& ProjectNavigationContactToScreen(Index, ProjectedAnchor))
-		{
-			Placements.Add({Index, ProjectedAnchor});
-		}
-	}
-	const int32 SelectedIndex = ShipNavigation->GetSelectedContactIndex();
-	Placements.Sort([this, SelectedIndex](const FMarkerPlacement& Left, const FMarkerPlacement& Right)
-	{
-		if (Left.Index == Right.Index) return false;
-		const bool bLeftSelected = Left.Index == SelectedIndex;
-		const bool bRightSelected = Right.Index == SelectedIndex;
-		if (bLeftSelected != bRightSelected) return bLeftSelected;
-		const FShipNavigationContact* LeftContact = ShipNavigation->GetContact(Left.Index);
-		const FShipNavigationContact* RightContact = ShipNavigation->GetContact(Right.Index);
-		const bool bLeftPlanet = LeftContact && LeftContact->Type == EShipNavigationContactType::Planet;
-		const bool bRightPlanet = RightContact && RightContact->Type == EShipNavigationContactType::Planet;
-		return bLeftPlanet != bRightPlanet ? bLeftPlanet : Left.Index < Right.Index;
-	});
-
-	TArray<FSlateRect, TInlineAllocator<32>> OccupiedRects;
-	if (bNavigationPanelVisible)
-	{
-		OccupiedRects.Add(FSlateRect(
-			FMath::Max(0.0f, ViewportSize.X - 420.0f), 24.0f, ViewportSize.X - 20.0f, 275.0f));
-	}
-	constexpr float ScreenMargin = 10.0f;
-	const float StepY = LabelSize.Y + APSNavigationHud::MarkerGap + 4.0f;
-	for (const FMarkerPlacement& Placement : Placements)
-	{
-		// Default to a left-facing flag: the card sits to the left of the
-		// object's vertical pole. Only flip it when the left viewport edge
-		// cannot contain the full card.
-		const bool bExtendFlagRight = Placement.Anchor.X - LabelSize.X + 1.5f < ScreenMargin;
-		const FVector2D Desired(
-			bExtendFlagRight
-				? Placement.Anchor.X - 1.5f
-				: Placement.Anchor.X - LabelSize.X + 1.5f,
-			Placement.Anchor.Y - LabelSize.Y - APSNavigationHud::FlagPoleLength);
-		FVector2D Chosen = Desired;
-		bool bFoundFreeSlot = false;
-		for (int32 RowMagnitude = 0; RowMagnitude <= 16 && !bFoundFreeSlot; ++RowMagnitude)
-		{
-			const int32 SignCount = RowMagnitude == 0 ? 1 : 2;
-			for (int32 SignIndex = 0; SignIndex < SignCount; ++SignIndex)
-			{
-				const int32 SignedRow = RowMagnitude == 0 ? 0
-					: (SignIndex == 0 ? -RowMagnitude : RowMagnitude);
-				const FVector2D Candidate = Desired + FVector2D(0.0f, SignedRow * StepY);
-				if (Candidate.X < ScreenMargin || Candidate.Y < ScreenMargin
-					|| Candidate.X + LabelSize.X > ViewportSize.X - ScreenMargin
-					|| Candidate.Y + LabelSize.Y > ViewportSize.Y - ScreenMargin)
-				{
-					continue;
-				}
-				const FSlateRect CandidateRect(Candidate.X - 4.0f, Candidate.Y - 4.0f,
-					Candidate.X + LabelSize.X + 4.0f, Candidate.Y + LabelSize.Y + 4.0f);
-				const bool bOverlaps = OccupiedRects.ContainsByPredicate(
-					[&CandidateRect](const FSlateRect& Occupied)
-					{
-						return FSlateRect::DoRectanglesIntersect(CandidateRect, Occupied);
-					});
-				if (!bOverlaps)
-				{
-					Chosen = Candidate;
-					bFoundFreeSlot = true;
-					break;
-				}
-			}
-		}
-		Chosen.X = FMath::Clamp(Chosen.X, ScreenMargin, ViewportSize.X - LabelSize.X - ScreenMargin);
-		Chosen.Y = FMath::Clamp(Chosen.Y, ScreenMargin, ViewportSize.Y - LabelSize.Y - ScreenMargin);
-		OccupiedRects.Add(FSlateRect(Chosen.X - 4.0f, Chosen.Y - 4.0f,
-			Chosen.X + LabelSize.X + 4.0f, Chosen.Y + LabelSize.Y + 4.0f));
-		// Every placement depends only on the ones before it, so the full pass gives each marker the same
-		// position the per-marker early exit used to give.
-		LayoutFrame.Layouts.Add(Placement.Index, TPair<FVector2D, FVector2D>(Placement.Anchor, Chosen));
 	}
 	if (const TPair<FVector2D, FVector2D>* Layout = LayoutFrame.Layouts.Find(ContactIndex))
 	{
@@ -3167,6 +3890,9 @@ int32 ASpaceship::PaintNavigationOverlay(const FGeometry& AllottedGeometry, cons
 	APSShipPerf::FScope PerfScope(IsValid(Pilot) && APSShipPerf::Enabled(), APSShipPerf::Hud);
 
 	const FPaintGeometry PaintGeometry = AllottedGeometry.ToPaintGeometry();
+	const FVector2f HudLocalSize = AllottedGeometry.GetLocalSize();
+	const FVector2D HudSize(HudLocalSize.X, HudLocalSize.Y);
+	APSNavigationHud::GHudSize = HudSize;
 	struct FNavigationOccluder
 	{
 		const AActor* Actor{nullptr};
@@ -3289,6 +4015,51 @@ int32 ASpaceship::PaintNavigationOverlay(const FGeometry& AllottedGeometry, cons
 		DrawScreenLine(ContinuousSegment, Color, Thickness, DrawLayer);
 	};
 
+	// Rio 02.10: orbits must read at a glance in flight. A soft glow under a firm line, brightest at the body and fading
+	// along the orbit away from it, so the ring also shows where its world is.
+	auto DrawOrbit = [&](const FVector& Center, const FVector& TowardBody, const FVector& Tangent, double Radius,
+		const FLinearColor& Color, bool bSelected, int32 DrawLayer)
+	{
+		if (Radius <= UE_DOUBLE_SMALL_NUMBER) return;
+		constexpr int32 SegmentCount = 192;
+		constexpr int32 ChunkPoints = 7;
+		const float CoreWidth = bSelected ? 2.2f : 1.5f;
+		const float GlowWidth = bSelected ? 7.0f : 5.0f;
+		TArray<FVector2D> Chunk;
+		const auto Flush = [&](const int32 LastIndex)
+		{
+			if (Chunk.Num() >= 2)
+			{
+				// Angle 0 is the body (TowardBody points at it).
+				const double Middle = UE_TWO_PI * (LastIndex - 0.5 * (Chunk.Num() - 1)) / SegmentCount;
+				const float Near = FMath::Pow(0.5f + 0.5f * static_cast<float>(FMath::Cos(Middle)), 1.6f);
+				const float Alpha = Color.A * (0.38f + 0.62f * Near);
+				DrawScreenLine(Chunk, FLinearColor(Color.R, Color.G, Color.B, Alpha * 0.22f), GlowWidth, DrawLayer);
+				DrawScreenLine(Chunk, FLinearColor(Color.R, Color.G, Color.B, Alpha), CoreWidth, DrawLayer + 1);
+			}
+			Chunk.Reset();
+		};
+		for (int32 Index = 0; Index <= SegmentCount; ++Index)
+		{
+			const double Angle = UE_TWO_PI * static_cast<double>(Index) / SegmentCount;
+			const FVector WorldPoint = Center + TowardBody * (FMath::Cos(Angle) * Radius) + Tangent * (FMath::Sin(Angle) * Radius);
+			FVector2D ScreenPoint;
+			if (IsWorldPointOccluded(WorldPoint, nullptr, 1.0) || !ProjectWorldLocationToNavigationScreen(WorldPoint, ScreenPoint, false))
+			{
+				Flush(Index - 1);
+				continue;
+			}
+			Chunk.Add(ScreenPoint);
+			if (Chunk.Num() >= ChunkPoints)
+			{
+				// Each chunk carries its own brightness; the next one starts where this one ends.
+				Flush(Index);
+				Chunk.Add(ScreenPoint);
+			}
+		}
+		Flush(SegmentCount);
+	};
+
 	if (bNavigationGuidesVisible)
 	{
 		TSet<const APlanetOrbit*> PaintedOrbits;
@@ -3334,10 +4105,9 @@ int32 ASpaceship::PaintNavigationOverlay(const FGeometry& AllottedGeometry, cons
 			FVector OrbitTangent = FVector::CrossProduct(Orbit->GetActorUpVector(), OrbitRadial).GetSafeNormal();
 			if (OrbitTangent.IsNearlyZero()) OrbitTangent = Orbit->GetActorRightVector();
 			const FLinearColor MarkerColor = GetNavigationMarkerColor(ContactIndex);
-			FLinearColor OrbitColor(MarkerColor.R, MarkerColor.G, MarkerColor.B,
-				bSelectedOrbit ? 0.62f : (Contact->Type == EShipNavigationContactType::Moon ? 0.16f : 0.14f));
-			DrawProjectedRing(OrbitCenter, OrbitRadial, OrbitTangent, OrbitRadius,
-				OrbitColor, bSelectedOrbit ? 1.25f : 0.65f, false, LayerId);
+			const FLinearColor OrbitColor(MarkerColor.R, MarkerColor.G, MarkerColor.B,
+				bSelectedOrbit ? 0.95f : (Contact->Type == EShipNavigationContactType::Moon ? 0.42f : 0.5f));
+			DrawOrbit(OrbitCenter, OrbitRadial, OrbitTangent, OrbitRadius, OrbitColor, bSelectedOrbit, LayerId);
 		}
 
 		if (SelectedContact)
@@ -3381,6 +4151,168 @@ int32 ASpaceship::PaintNavigationOverlay(const FGeometry& AllottedGeometry, cons
 		}
 	}
 
+	// Altimeter (Rio 02.10: "on the approach to a planet, once orbital flight begins, show how far the surface still is,
+	// nicely integrated"): the nearest planet or moon within two of its radii above the surface, the terrain or sea
+	// under the ship, the vertical speed and the time to the surface at that rate.
+	APSNavigationHud::FAltimeter& Altimeter = APSNavigationHud::GAltimeter;
+	const double NowSeconds = FPlatformTime::Seconds();
+	if (Altimeter.Ship != this)
+	{
+		Altimeter = APSNavigationHud::FAltimeter();
+		Altimeter.Ship = this;
+		Altimeter.LastSeconds = NowSeconds;
+	}
+	const float HudDeltaSeconds = FMath::Clamp(static_cast<float>(NowSeconds - Altimeter.LastSeconds), 0.0f, 0.1f);
+	Altimeter.LastSeconds = NowSeconds;
+	const FVector ShipLocation = GetActorLocation();
+	if (const UWorld* HudWorld = GetWorld(); HudWorld && NowSeconds - Altimeter.PickSeconds >= 0.25)
+	{
+		Altimeter.PickSeconds = NowSeconds;
+		const APlanetaryBody* Shown = Altimeter.Body.Get();
+		const APlanetaryBody* Nearest = nullptr;
+		double NearestAltitude = 0.0;
+		for (TActorIterator<APlanetaryBody> It(HudWorld); It; ++It)
+		{
+			const APlanetaryBody* Candidate = *It;
+			if (!IsValid(Candidate))
+			{
+				continue;
+			}
+			const double CandidateRadius = Candidate->GetWorldScapeBodyRadiusCm();
+			const double CandidateAltitude = FVector::Dist(ShipLocation, Candidate->GetActorLocation()) - CandidateRadius;
+			// The body on the instrument keeps it a little further out, so the instrument does not blink at the edge.
+			const double Reach = CandidateRadius * APSNavigationHud::AltimeterReachRadii * (Candidate == Shown ? 1.15 : 1.0);
+			if (CandidateAltitude <= Reach && (!Nearest || CandidateAltitude < NearestAltitude))
+			{
+				Nearest = Candidate;
+				NearestAltitude = CandidateAltitude;
+			}
+		}
+		// A rover or a hover lives on the ground (02.10 test shots: "0 m, DESCENT 5.5 m/s" over every bump); the
+		// drone flies up to the atmosphere's ceiling and keeps the instrument.
+		if (IsGroundVehicle() && GroundVehicleKind != EAPSGroundVehicleKind::Drone)
+		{
+			Nearest = nullptr;
+		}
+		if (Nearest != Shown)
+		{
+			Altimeter.SampleSeconds = -1.0e9;
+			Altimeter.SampleGroundCm = -1.0;
+			Altimeter.Severity = 0.0f;
+		}
+		Altimeter.Body = Nearest;
+	}
+	if (const APlanetaryBody* AltimeterBody = Altimeter.Body.Get())
+	{
+		const FVector FromCenter = ShipLocation - AltimeterBody->GetActorLocation();
+		const double CenterDistance = FromCenter.Size();
+		const FVector Up = CenterDistance > 1.0 ? FromCenter / CenterDistance : FVector::UpVector;
+		const double BodyRadius = AltimeterBody->GetWorldScapeBodyRadiusCm();
+		const double BaseAltitude = CenterDistance - BodyRadius;
+		// The flight model's ground clearance measures from half the hull's bounds too: a landed ship reads about 0.
+		const double HullReach = SpaceshipHull ? SpaceshipHull->Bounds.SphereRadius * 0.5 : 0.0;
+		if (NowSeconds - Altimeter.SampleSeconds >= 0.1)
+		{
+			Altimeter.SampleSeconds = NowSeconds;
+			Altimeter.SampleBaseCm = BaseAltitude;
+			double Ground = BaseAltitude < APSNavigationHud::AltimeterTerrainAltitudeCm
+				? APSNavigationHud::TerrainClearanceCm(AltimeterBody, ShipLocation) : -1.0;
+			// Close to the ground a short trace sees the collision, the colony's pads and whatever stands there.
+			const double ProbeLength = FMath::Max(Ground >= 0.0 ? Ground : BaseAltitude, 0.0) + HullReach + 50000.0;
+			if (ProbeLength <= 2000000.0 && GetWorld())
+			{
+				FCollisionQueryParams Params(SCENE_QUERY_STAT(APSShipAltimeter), false, this);
+				if (IsValid(Pilot))
+				{
+					Params.AddIgnoredActor(Pilot);
+				}
+				TArray<AActor*> Carried;
+				GetAttachedActors(Carried, true, true);
+				Params.AddIgnoredActors(Carried);
+				FHitResult Hit;
+				if (GetWorld()->LineTraceSingleByChannel(Hit, ShipLocation, ShipLocation - Up * ProbeLength,
+					ECC_Visibility, Params))
+				{
+					Ground = Ground >= 0.0 ? FMath::Min(Ground, static_cast<double>(Hit.Distance)) : static_cast<double>(Hit.Distance);
+				}
+			}
+			Altimeter.SampleGroundCm = Ground >= 0.0 ? FMath::Max(Ground - HullReach, 0.0) : -1.0;
+		}
+		Altimeter.AltitudeCm = Altimeter.SampleGroundCm >= 0.0
+			? FMath::Max(Altimeter.SampleGroundCm + BaseAltitude - Altimeter.SampleBaseCm, 0.0)
+			: FMath::Max(BaseAltitude - HullReach, 0.0);
+		const FVector Velocity = SpaceshipHull && SpaceshipHull->IsSimulatingPhysics()
+			? SpaceshipHull->GetPhysicsLinearVelocity() : KinematicVelocity;
+		Altimeter.VerticalCmPerSecond = FMath::Lerp(Altimeter.VerticalCmPerSecond, FVector::DotProduct(Velocity, Up),
+			1.0 - FMath::Exp(-static_cast<double>(HudDeltaSeconds) / 0.12));
+		Altimeter.TopCm = FMath::Max(BodyRadius * APSNavigationHud::AltimeterReachRadii, 1.0e6);
+		Altimeter.AtmosphereCm = AltimeterBody->AtmosphereHeight > UE_SMALL_NUMBER
+			? AltimeterBody->AtmosphereHeight * 100000.0 : -1.0;
+		// Amber, then red, while closing on the surface fast down low: at this rate the ground is seconds away. A slow
+		// landing stays calm.
+		const double CloseIn = FMath::Clamp(Altimeter.AtmosphereCm > 0.0 ? Altimeter.AtmosphereCm : BodyRadius / 30.0,
+			2.0e6, 3.0e7);
+		const double Descent = -Altimeter.VerticalCmPerSecond;
+		float Severity = 0.0f;
+		if (Descent > 0.0 && Altimeter.AltitudeCm < CloseIn)
+		{
+			const double SecondsLeft = Altimeter.AltitudeCm / Descent;
+			Severity = SecondsLeft < 5.0 && Descent > 2500.0 ? 2.0f : SecondsLeft < 15.0 && Descent > 1000.0 ? 1.0f : 0.0f;
+		}
+		Altimeter.Severity = FMath::FInterpTo(Altimeter.Severity, Severity, HudDeltaSeconds, 6.0f);
+		Altimeter.BodyName = AltimeterBody->AstroName.IsNone()
+			? AltimeterBody->GetName().ToUpper() : AltimeterBody->AstroName.ToString().ToUpper();
+		Altimeter.Designation = APSBodyDesignation::Of(AltimeterBody);
+		if (!APSNavigationHud::BodyMarkerColor(AltimeterBody, Altimeter.BodyColor))
+		{
+			Altimeter.BodyColor = FLinearColor(0.72f, 0.82f, 0.9f, 1.0f);
+		}
+		Altimeter.bReading = true;
+	}
+	Altimeter.Alpha = FMath::FInterpConstantTo(Altimeter.Alpha, Altimeter.Body.IsValid() ? 1.0f : 0.0f, HudDeltaSeconds,
+		Altimeter.Body.IsValid() ? 3.5f : 2.0f);
+
+	// The HUD's panels in the overlay's space: no card covers them.
+	const auto PanelRect = [&AllottedGeometry](const TWeakPtr<SWidget>& WeakPanel, FSlateRect& OutRect)
+	{
+		const TSharedPtr<SWidget> Panel = WeakPanel.Pin();
+		if (!Panel.IsValid() || !Panel->GetVisibility().IsVisible())
+		{
+			return false;
+		}
+		const FGeometry& PanelGeometry = Panel->GetCachedGeometry();
+		const FVector2f PanelPosition = PanelGeometry.GetAbsolutePosition();
+		const FVector2f PanelSize = PanelGeometry.GetAbsoluteSize();
+		const FVector2f TopLeft = AllottedGeometry.AbsoluteToLocal(PanelPosition);
+		const FVector2f BottomRight = AllottedGeometry.AbsoluteToLocal(PanelPosition + PanelSize);
+		if (BottomRight.X - TopLeft.X < 2.0f || BottomRight.Y - TopLeft.Y < 2.0f)
+		{
+			return false;
+		}
+		OutRect = FSlateRect(TopLeft.X, TopLeft.Y, BottomRight.X, BottomRight.Y);
+		return true;
+	};
+	FSlateRect NavigationPanelRect;
+	const bool bNavigationPanelShown = PanelRect(APSNavigationHud::GNavigationPanel, NavigationPanelRect);
+	FSlateRect StatusPanelRect;
+	const bool bStatusPanelShown = PanelRect(APSNavigationHud::GStatusPanel, StatusPanelRect);
+	// The altimeter stands right of centre, below the navigation panel, out of the cards' way (they keep clear of it).
+	FSlateRect AltimeterRect;
+	const bool bAltimeterShown = Altimeter.bReading && Altimeter.Alpha > 0.01f && HudSize.X > 480.0 && HudSize.Y > 320.0;
+	if (bAltimeterShown)
+	{
+		constexpr float AltimeterWidth = 184.0f;
+		const float AltimeterHeight = FMath::Clamp(static_cast<float>(HudSize.Y) * 0.4f, 250.0f, 330.0f);
+		const float AltimeterLeft = static_cast<float>(HudSize.X) - 36.0f - AltimeterWidth;
+		float AltimeterTop = static_cast<float>(HudSize.Y) * 0.5f - AltimeterHeight * 0.5f;
+		if (bNavigationPanelShown && NavigationPanelRect.Left < AltimeterLeft + AltimeterWidth)
+		{
+			AltimeterTop = FMath::Max(AltimeterTop, NavigationPanelRect.Bottom + 14.0f);
+		}
+		AltimeterTop = FMath::Max(FMath::Min(AltimeterTop, static_cast<float>(HudSize.Y) - 24.0f - AltimeterHeight), 12.0f);
+		AltimeterRect = FSlateRect(AltimeterLeft, AltimeterTop, AltimeterLeft + AltimeterWidth, AltimeterTop + AltimeterHeight);
+	}
+
 	if (bNavigationMarkersVisible)
 	{
 		TSet<int32> OccludedContacts;
@@ -3393,76 +4325,42 @@ int32 ASpaceship::PaintNavigationOverlay(const FGeometry& AllottedGeometry, cons
 				OccludedContacts.Add(ContactIndex);
 			}
 		}
-		const int32 ContactCount = NavigationContactCount;
-		for (int32 ContactIndex = 0; ContactIndex < ContactCount; ++ContactIndex)
+		const TSharedRef<FSlateFontMeasure> FontMeasure = FSlateApplication::Get().GetRenderer()->GetFontMeasureService();
+		TArray<FSlateRect> Obstacles;
+		if (bNavigationPanelShown)
 		{
-			FVector2D Anchor;
-			FVector2D Label;
-			if (!GetNavigationMarkerLayout(ContactIndex, Anchor, Label, &OccludedContacts)) continue;
-			const FLinearColor Color = GetNavigationMarkerColor(ContactIndex);
-			const bool bSelected = ContactIndex == ShipNavigation->GetSelectedContactIndex();
-			const bool bAccentOnRight = FMath::Abs(
-				Anchor.X - (Label.X + APSNavigationHud::MarkerWidth - 1.5f))
-				< FMath::Abs(Anchor.X - (Label.X + 1.5f));
-			const FVector2D FlagPoleEnd(Anchor.X, Label.Y + APSNavigationHud::MarkerHeight);
-			DrawScreenLine({Anchor, FlagPoleEnd}, FLinearColor(Color.R, Color.G, Color.B,
-				bSelected ? 0.82f : 0.42f), bSelected ? 1.15f : 0.65f, LayerId + 2);
-
-			// Draw the flag and its pole in the same OnPaint pass. A separate
-			// ConstraintCanvas was laid out before the post-physics camera update,
-			// so at high speed the card used an older projection than its pole.
-			const FVector2f LabelPosition(static_cast<float>(Label.X), static_cast<float>(Label.Y));
-			const FVector2f LabelSize(APSNavigationHud::MarkerWidth, APSNavigationHud::MarkerHeight);
-			const FPaintGeometry LabelGeometry = AllottedGeometry.ToPaintGeometry(
-				LabelSize, FSlateLayoutTransform(LabelPosition));
-			const FLinearColor BackgroundColor(
-				Color.R * 0.055f, Color.G * 0.055f, Color.B * 0.055f, bSelected ? 0.91f : 0.68f);
-			FSlateDrawElement::MakeBox(OutDrawElements, LayerId + 3, LabelGeometry,
-				FCoreStyle::Get().GetBrush("WhiteBrush"), ESlateDrawEffect::None, BackgroundColor);
-
-			const float AccentX = bAccentOnRight
-				? Label.X + APSNavigationHud::MarkerWidth - 3.0f : Label.X;
-			const FPaintGeometry AccentGeometry = AllottedGeometry.ToPaintGeometry(
-				FVector2f(3.0f, APSNavigationHud::MarkerHeight),
-				FSlateLayoutTransform(FVector2f(AccentX, Label.Y)));
-			FSlateDrawElement::MakeBox(OutDrawElements, LayerId + 4, AccentGeometry,
-				FCoreStyle::Get().GetBrush("WhiteBrush"), ESlateDrawEffect::None, Color);
-
-			const float TextLeftPadding = bAccentOnRight ? 8.0f : 11.0f;
-			const FPaintGeometry TextGeometry = AllottedGeometry.ToPaintGeometry(
-				FVector2f(APSNavigationHud::MarkerWidth - 18.0f, APSNavigationHud::MarkerHeight - 7.0f),
-				FSlateLayoutTransform(FVector2f(Label.X + TextLeftPadding, Label.Y + 4.0f)));
-			const FLinearColor TextColor(
-				FMath::Lerp(Color.R, 0.9f, 0.38f),
-				FMath::Lerp(Color.G, 0.94f, 0.38f),
-				FMath::Lerp(Color.B, 0.98f, 0.38f), 0.96f);
-			FSlateDrawElement::MakeText(OutDrawElements, LayerId + 5, TextGeometry,
-				GetNavigationMarkerText(ContactIndex), FCoreStyle::GetDefaultFontStyle("Regular", 8),
-				ESlateDrawEffect::None, TextColor);
-
-			const float CrossExtent = bSelected ? 4.5f : 2.75f;
-			DrawScreenLine({Anchor + FVector2D(-CrossExtent, 0.0f), Anchor + FVector2D(CrossExtent, 0.0f)},
-				Color, bSelected ? 1.35f : 0.8f, LayerId + 6);
-			DrawScreenLine({Anchor + FVector2D(0.0f, -CrossExtent), Anchor + FVector2D(0.0f, CrossExtent)},
-				Color, bSelected ? 1.35f : 0.8f, LayerId + 6);
+			Obstacles.Add(APSNavigationHud::Inflate(NavigationPanelRect, APSNavigationHud::PanelClearance));
+		}
+		if (bStatusPanelShown)
+		{
+			Obstacles.Add(APSNavigationHud::Inflate(StatusPanelRect, APSNavigationHud::PanelClearance));
+		}
+		if (bAltimeterShown)
+		{
+			Obstacles.Add(APSNavigationHud::Inflate(AltimeterRect, APSNavigationHud::PanelClearance));
 		}
 
 		// Course target: corner brackets that stand apart from every flag and orbit, pulsing gently, and while it is out
-		// of view an arrow at the screen edge toward it (Rio, 30.09: the target has to be clearly marked).
+		// of view an arrow at the screen edge toward it (Rio, 30.09: the target has to be clearly marked). Laid out before
+		// the cards, which keep clear of the brackets, the arrow and the caption.
 		const int32 TargetIndex = ShipNavigation->GetSelectedContactIndex();
 		const FShipNavigationContact* Target = ShipNavigation->GetSelectedContact();
-		const TSharedPtr<SViewport> TargetViewport = GEngine && GEngine->GameViewport
-			? GEngine->GameViewport->GetGameViewportWidget() : nullptr;
-		if (Target && NavigationCameraManager && TargetViewport.IsValid())
+		const FSlateFontInfo CaptionFont = FCoreStyle::GetDefaultFontStyle("Bold", 8);
+		const FLinearColor TargetColor(1.0f, 0.74f, 0.18f, 0.78f + 0.22f * static_cast<float>(FMath::Sin(NowSeconds * 3.0)));
+		FString Caption;
+		FVector2D TargetScreen = FVector2D::ZeroVector;
+		FVector2D ArrowTip = FVector2D::ZeroVector;
+		FVector2D ArrowDirection = FVector2D::ZeroVector;
+		FVector2D CaptionAt = FVector2D::ZeroVector;
+		double TargetHalf = 0.0;
+		bool bTargetInView = false;
+		bool bTargetArrow = false;
+		if (Target && NavigationCameraManager)
 		{
-			const FVector2D ViewportSize = TargetViewport->GetCachedGeometry().GetLocalSize();
 			const FVector TargetWorld = GetNavigationContactWorldAnchor(TargetIndex);
-			const FLinearColor TargetColor(1.0f, 0.74f, 0.18f,
-				0.78f + 0.22f * static_cast<float>(FMath::Sin(FPlatformTime::Seconds() * 3.0)));
-			const FString Caption = FString::Printf(TEXT("COURSE  %s"),
+			Caption = FString::Printf(TEXT("COURSE  %s"),
 				*UShipNavigationComponent::FormatDistance(FVector::Distance(GetActorLocation(), TargetWorld)));
-			const FSlateFontInfo CaptionFont = FCoreStyle::GetDefaultFontStyle("Bold", 8);
-			FVector2D TargetScreen;
+			const FVector2D CaptionSize = FontMeasure->Measure(Caption, CaptionFont);
 			if (ProjectWorldLocationToNavigationScreen(TargetWorld, TargetScreen, true))
 			{
 				// Around a resolved disc (a planet or moon) the brackets hug its rim, otherwise they keep a fixed box.
@@ -3474,41 +4372,445 @@ int32 ASpaceship::PaintNavigationOverlay(const FGeometry& AllottedGeometry, cons
 				{
 					DiscPixels = FVector2D::Distance(Rim, TargetScreen);
 				}
-				const double Half = FMath::Clamp(DiscPixels + 10.0, 16.0, 160.0);
-				const double Arm = FMath::Clamp(Half * 0.42, 6.0, 18.0);
-				for (const FVector2D& Corner : {FVector2D(-1.0, -1.0), FVector2D(1.0, -1.0), FVector2D(1.0, 1.0), FVector2D(-1.0, 1.0)})
-				{
-					const FVector2D Tip = TargetScreen + Corner * Half;
-					DrawScreenLine({Tip - FVector2D(Corner.X * Arm, 0.0), Tip, Tip - FVector2D(0.0, Corner.Y * Arm)},
-						TargetColor, 1.6f, LayerId + 7);
-				}
-				FSlateDrawElement::MakeText(OutDrawElements, LayerId + 7, AllottedGeometry.ToPaintGeometry(
-					FVector2f(220.0f, 14.0f), FSlateLayoutTransform(FVector2f(static_cast<float>(TargetScreen.X - Half),
-						static_cast<float>(TargetScreen.Y + Half + 4.0)))),
-					Caption, CaptionFont, ESlateDrawEffect::None, TargetColor);
+				bTargetInView = true;
+				TargetHalf = FMath::Clamp(DiscPixels + 10.0, 16.0, 160.0);
+				CaptionAt = FVector2D(TargetScreen.X - TargetHalf, TargetScreen.Y + TargetHalf + 4.0);
+				Obstacles.Add(FSlateRect(TargetScreen.X - TargetHalf - 2.0, TargetScreen.Y - TargetHalf - 2.0,
+					TargetScreen.X + TargetHalf + 2.0, TargetScreen.Y + TargetHalf + 2.0));
+				Obstacles.Add(FSlateRect(CaptionAt.X, CaptionAt.Y, CaptionAt.X + CaptionSize.X, CaptionAt.Y + CaptionSize.Y));
 			}
-			else if (ViewportSize.X > 160.0 && ViewportSize.Y > 160.0)
+			else if (HudSize.X > 160.0 && HudSize.Y > 160.0)
 			{
 				// Off screen or behind the camera: the target's direction from the view axis, on an inset ellipse.
 				const FVector Local = NavigationCameraManager->GetCameraRotation().UnrotateVector(
 					TargetWorld - NavigationCameraLocation);
-				FVector2D Direction(Local.Y, -Local.Z);
-				if (!Direction.Normalize())
+				ArrowDirection = FVector2D(Local.Y, -Local.Z);
+				if (!ArrowDirection.Normalize())
 				{
-					Direction = FVector2D(0.0, 1.0);
+					ArrowDirection = FVector2D(0.0, 1.0);
 				}
-				const FVector2D Centre = ViewportSize * 0.5;
-				const FVector2D Tip = Centre + FVector2D(Direction.X * (Centre.X - 56.0), Direction.Y * (Centre.Y - 56.0));
-				const FVector2D Side(-Direction.Y, Direction.X);
-				DrawScreenLine({Tip - Direction * 16.0 + Side * 10.0, Tip, Tip - Direction * 16.0 - Side * 10.0},
-					TargetColor, 2.2f, LayerId + 7);
-				const FVector2D CaptionAt = Tip - Direction * 40.0 - FVector2D(40.0, 7.0);
-				FSlateDrawElement::MakeText(OutDrawElements, LayerId + 7, AllottedGeometry.ToPaintGeometry(
-					FVector2f(220.0f, 14.0f), FSlateLayoutTransform(FVector2f(static_cast<float>(CaptionAt.X),
-						static_cast<float>(CaptionAt.Y)))),
-					Caption, CaptionFont, ESlateDrawEffect::None, TargetColor);
+				const FVector2D Centre = HudSize * 0.5;
+				ArrowTip = Centre + FVector2D(ArrowDirection.X * (Centre.X - 56.0), ArrowDirection.Y * (Centre.Y - 56.0));
+				// An arrow that would fall on the altimeter stands just left of it.
+				if (bAltimeterShown && ArrowTip.X > AltimeterRect.Left - 24.0
+					&& ArrowTip.Y > AltimeterRect.Top - 24.0 && ArrowTip.Y < AltimeterRect.Bottom + 24.0)
+				{
+					ArrowTip.X = AltimeterRect.Left - 24.0;
+				}
+				CaptionAt = ArrowTip - ArrowDirection * 40.0 - FVector2D(40.0, 7.0);
+				bTargetArrow = true;
+				Obstacles.Add(FSlateRect(ArrowTip.X - 20.0, ArrowTip.Y - 20.0, ArrowTip.X + 20.0, ArrowTip.Y + 20.0));
+				Obstacles.Add(FSlateRect(CaptionAt.X, CaptionAt.Y, CaptionAt.X + CaptionSize.X, CaptionAt.Y + CaptionSize.Y));
 			}
 		}
+
+		// Every object's card: the navigation contacts here, the fleet's ships below; laid out together.
+		TArray<APSNavigationHud::FCard> Cards;
+		Cards.Reserve(NavigationContactCount + 12);
+		for (int32 ContactIndex = 0; ContactIndex < NavigationContactCount; ++ContactIndex)
+		{
+			const FShipNavigationContact* Contact = ShipNavigation->GetContact(ContactIndex);
+			FVector2D Anchor;
+			if (!Contact || OccludedContacts.Contains(ContactIndex) || !ShouldShowNavigationMarker(ContactIndex)
+				|| !ProjectNavigationContactToScreen(ContactIndex, Anchor))
+			{
+				continue;
+			}
+			const AActor* ContactActor = Contact->Actor.Get();
+			APSNavigationHud::FCard& Card = Cards.AddDefaulted_GetRef();
+			Card.Kind = APSNavigationHud::ECardKind::Contact;
+			Card.ContactIndex = ContactIndex;
+			Card.Key = ContactActor;
+			Card.Anchor = Anchor;
+			Card.Distance = Contact->DistanceCentimeters;
+			Card.bSelected = ContactIndex == TargetIndex;
+			Card.Rank = ContactActor && (ContactActor->IsA<AStar>() || ContactActor->IsA<APlanet>()) ? 1
+				: ContactActor && ContactActor->IsA<AMoon>() ? 2 : 3;
+			Card.Color = GetNavigationMarkerColor(ContactIndex);
+			const FString MarkerText = GetNavigationMarkerText(ContactIndex).ToString();
+			if (!MarkerText.Split(TEXT("\n"), &Card.Title, &Card.Detail))
+			{
+				Card.Title = MarkerText;
+			}
+			// Rio 02.10 ("where did the indices of the planets and moons go"): the catalogue designation after the name,
+			// as in the generation menu.
+			Card.Designation = APSBodyDesignation::Of(ContactActor);
+			Card.ShortName = Card.Designation.IsEmpty() ? Contact->DisplayName : Contact->DisplayName + TEXT(" ") + Card.Designation;
+			// Rio 02.10: a ring on the limb of the body instead of a cross. It hugs a resolved disc and gives way once the
+			// body fills a large part of the view.
+			double LimbPixels = 0.0;
+			double RingBodyRadius = 0.0;
+			if (const APlanetaryBody* RingBody = Cast<APlanetaryBody>(ContactActor))
+			{
+				RingBodyRadius = RingBody->GetWorldScapeBodyRadiusCm();
+			}
+			else if (const AStar* RingStar = Cast<AStar>(ContactActor))
+			{
+				RingBodyRadius = RingStar->RadiusKM * 100000.0;
+			}
+			FVector2D Limb;
+			if (RingBodyRadius > 0.0 && NavigationCameraManager
+				&& ProjectWorldLocationToNavigationScreen(GetNavigationContactWorldAnchor(ContactIndex)
+					+ NavigationCameraManager->GetActorRightVector() * RingBodyRadius, Limb, false))
+			{
+				LimbPixels = FVector2D::Distance(Limb, Anchor);
+			}
+			// Room around the limb (Rio 02.10: "borders with a margin, not tight").
+			Card.RingRadius = LimbPixels < 160.0
+				? FMath::Max(Card.bSelected ? 7.5f : 6.5f, static_cast<float>(LimbPixels) * 1.15f + 7.0f) : 0.0f;
+			Card.KeepOut = Card.RingRadius > 0.0f ? Card.RingRadius : 6.0f;
+			if (Card.bSelected && bTargetInView)
+			{
+				Card.KeepOut = FMath::Max(Card.KeepOut, static_cast<float>(TargetHalf) + 3.0f);
+			}
+		}
+
+		// Rio 02.10: the ships of the civilization are tracked too, besides navigation targets: a diamond in the
+		// colour of the division and a flag in the style of the navigation flags with call sign, speed and distance.
+		if (const FAPSFleetCommand* Fleet = APSFleetFind(GetWorld()))
+		{
+			struct FUnitMarker
+			{
+				const FAPSFleetUnit* Unit;
+				double Distance;
+			};
+			TArray<FUnitMarker, TInlineAllocator<32>> UnitMarkers;
+			for (const FAPSFleetUnit& Unit : Fleet->GetUnits())
+			{
+				const ASpaceship* UnitShip = Unit.Ship.Get();
+				if (UnitShip && UnitShip != this)
+				{
+					UnitMarkers.Add({&Unit, FVector::Distance(UnitShip->GetActorLocation(), GetActorLocation())});
+				}
+			}
+			UnitMarkers.Sort([](const FUnitMarker& A, const FUnitMarker& B) { return A.Distance < B.Distance; });
+			const auto FormatSpeed = [](const double CentimetersPerSecond)
+			{
+				const double KmPerSecond = CentimetersPerSecond / 100000.0;
+				return KmPerSecond >= 1000.0 ? APSUINumber::Number(FMath::RoundToInt(KmPerSecond)).ToString() + TEXT(" km/s")
+					: KmPerSecond >= 1.0 ? FString::Printf(TEXT("%.1f km/s"), KmPerSecond)
+					: FString::Printf(TEXT("%.0f m/s"), CentimetersPerSecond / 100.0);
+			};
+			int32 ShownUnits = 0;
+			for (const FUnitMarker& Marker : UnitMarkers)
+			{
+				if (ShownUnits >= 12) break;
+				const ASpaceship* UnitShip = Marker.Unit->Ship.Get();
+				const FVector UnitWorld = UnitShip->GetActorLocation();
+				FVector2D UnitScreen;
+				// On screen only: a card is never drawn for a ship beyond the edge.
+				if (IsWorldPointOccluded(UnitWorld, UnitShip)
+					|| !ProjectWorldLocationToNavigationScreen(UnitWorld, UnitScreen, true)) continue;
+				++ShownUnits;
+				APSNavigationHud::FCard& Card = Cards.AddDefaulted_GetRef();
+				Card.Kind = APSNavigationHud::ECardKind::Unit;
+				Card.Key = UnitShip;
+				Card.Anchor = UnitScreen;
+				Card.KeepOut = 5.0f;
+				Card.Distance = Marker.Distance;
+				Card.Rank = 4;
+				Card.Color = APSFleet::DivisionColour(Marker.Unit->Division);
+				Card.Title = Marker.Unit->CallSign.IsEmpty() ? UnitShip->GetName() : Marker.Unit->CallSign;
+				const double SpeedCm = Marker.Unit->Speed > 0.0 ? Marker.Unit->Speed : UnitShip->GetVelocity().Size();
+				Card.Detail = FString::Printf(TEXT("%s  /  %s"), *FormatSpeed(SpeedCm),
+					*UShipNavigationComponent::FormatDistance(Marker.Distance));
+				Card.ShortName = Card.Title;
+			}
+		}
+
+		APSNavigationHud::LayOutCards(Cards, Obstacles, HudSize, *FontMeasure);
+		APSNavigationHud::FLayoutFrame& LayoutFrame = APSNavigationHud::GLayoutFrame;
+		LayoutFrame.Ship = this;
+		LayoutFrame.Frame = GFrameCounter;
+		LayoutFrame.Layouts.Reset();
+		const FSlateBrush* CardBrush = FCoreStyle::Get().GetBrush("WhiteBrush");
+		const float ContactLine = static_cast<float>(FontMeasure->GetMaxCharacterHeight(APSNavigationHud::MarkerFont()));
+		// Every object keeps its mark (limb ring or diamond), also when its card is shared or there was no room for one.
+		for (const APSNavigationHud::FCard& Card : Cards)
+		{
+			if (Card.Kind == APSNavigationHud::ECardKind::Unit)
+			{
+				constexpr float Diamond = 5.0f;
+				const FVector2D& Mark = Card.Anchor;
+				DrawScreenLine({Mark + FVector2D(0.0f, -Diamond), Mark + FVector2D(Diamond, 0.0f),
+					Mark + FVector2D(0.0f, Diamond), Mark + FVector2D(-Diamond, 0.0f),
+					Mark + FVector2D(0.0f, -Diamond)}, Card.Color, 1.3f, LayerId + 6);
+			}
+			else if (Card.RingRadius > 0.0f)
+			{
+				TArray<FVector2D> Ring;
+				const int32 Segments = FMath::Clamp(FMath::CeilToInt(Card.RingRadius * 0.9f), 18, 72);
+				Ring.Reserve(Segments + 1);
+				for (int32 Point = 0; Point <= Segments; ++Point)
+				{
+					const float Angle = UE_TWO_PI * static_cast<float>(Point) / Segments;
+					Ring.Add(Card.Anchor + FVector2D(FMath::Cos(Angle), FMath::Sin(Angle)) * Card.RingRadius);
+				}
+				DrawScreenLine(Ring, Card.Color, Card.bSelected ? 1.6f : 1.1f, LayerId + 6);
+			}
+			if (Card.bPlaced && Card.Kind == APSNavigationHud::ECardKind::Contact)
+			{
+				LayoutFrame.Layouts.Add(Card.ContactIndex, TPair<FVector2D, FVector2D>(Card.Anchor, Card.Position));
+			}
+		}
+		for (const APSNavigationHud::FCard& Card : Cards)
+		{
+			if (!Card.bPlaced)
+			{
+				continue;
+			}
+			const bool bUnit = Card.Kind == APSNavigationHud::ECardKind::Unit;
+			const FLinearColor& Color = Card.Color;
+			const FSlateRect CardBounds = APSNavigationHud::CardRect(Card.Position, Card.Size);
+			// The accent bar faces the mark, so the pole or the leader meets it.
+			const bool bAccentOnRight = Card.Anchor.X > (CardBounds.Left + CardBounds.Right) * 0.5f;
+			FVector2D LeaderStart;
+			FVector2D LeaderEnd;
+			APSNavigationHud::LeaderSegment(Card, CardBounds, LeaderStart, LeaderEnd);
+			if (FVector2D::DistSquared(LeaderStart, LeaderEnd) > 1.0)
+			{
+				DrawScreenLine({LeaderStart, LeaderEnd}, FLinearColor(Color.R, Color.G, Color.B,
+					bUnit ? 0.55f : (Card.bSelected ? 0.82f : 0.42f)), bUnit ? 0.8f : (Card.bSelected ? 1.15f : 0.65f), LayerId + 2);
+			}
+
+			// Draw the flag and its pole in the same OnPaint pass. A separate ConstraintCanvas was laid out before the
+			// post-physics camera update, so at high speed the card used an older projection than its pole.
+			const FVector2f CardPosition(static_cast<float>(Card.Position.X), static_cast<float>(Card.Position.Y));
+			const FVector2f CardSize(static_cast<float>(Card.Size.X), static_cast<float>(Card.Size.Y));
+			const float Shade = bUnit ? 0.055f : 0.05f;
+			FSlateDrawElement::MakeBox(OutDrawElements, LayerId + 3, AllottedGeometry.ToPaintGeometry(
+				CardSize, FSlateLayoutTransform(CardPosition)), CardBrush, ESlateDrawEffect::None,
+				FLinearColor(Color.R * Shade, Color.G * Shade, Color.B * Shade, bUnit ? 0.74f : (Card.bSelected ? 0.95f : 0.88f)));
+			FSlateDrawElement::MakeBox(OutDrawElements, LayerId + 4, AllottedGeometry.ToPaintGeometry(
+				FVector2f(3.0f, CardSize.Y), FSlateLayoutTransform(FVector2f(
+					bAccentOnRight ? CardPosition.X + CardSize.X - 3.0f : CardPosition.X, CardPosition.Y))),
+				CardBrush, ESlateDrawEffect::None, Color);
+			const float TextLeft = CardPosition.X + (bAccentOnRight ? (bUnit ? 7.0f : 8.0f) : (bUnit ? 10.0f : 11.0f));
+			const auto DrawCardText = [&](const FString& String, const float OffsetX, const float OffsetY,
+				const FSlateFontInfo& Font, const FLinearColor& Tone)
+			{
+				FSlateDrawElement::MakeText(OutDrawElements, LayerId + 5, AllottedGeometry.ToPaintGeometry(
+					FVector2f(FMath::Max(CardSize.X - 12.0f, 1.0f), 16.0f),
+					FSlateLayoutTransform(FVector2f(TextLeft + OffsetX, CardPosition.Y + OffsetY))),
+					String, Font, ESlateDrawEffect::None, Tone);
+			};
+			if (bUnit)
+			{
+				const FLinearColor UnitText(FMath::Lerp(Color.R, 0.9f, 0.38f), FMath::Lerp(Color.G, 0.94f, 0.38f),
+					FMath::Lerp(Color.B, 0.98f, 0.38f), 0.96f);
+				const FLinearColor UnitLine(0.70f, 0.78f, 0.82f, 0.92f);
+				DrawCardText(Card.DrawTitle, 0.0f, 2.0f, APSNavigationHud::UnitTitleFont(), UnitText);
+				DrawCardText(Card.DrawDetail, 0.0f, 15.0f, APSNavigationHud::UnitLineFont(), UnitLine);
+				if (!Card.MergedLine.IsEmpty())
+				{
+					DrawCardText(Card.MergedLine, 0.0f, 28.0f, APSNavigationHud::MergedFont(), UnitLine);
+				}
+				continue;
+			}
+			const FLinearColor TextColor(
+				FMath::Lerp(Color.R, 0.93f, 0.55f),
+				FMath::Lerp(Color.G, 0.96f, 0.55f),
+				FMath::Lerp(Color.B, 0.99f, 0.55f), 1.0f);
+			DrawCardText(Card.DrawTitle, 0.0f, 5.0f, APSNavigationHud::MarkerFont(), TextColor);
+			if (!Card.Designation.IsEmpty())
+			{
+				// Rio 02.10: the designation follows the name, in the marker colour ("PLANET  //  REKESEA  A7").
+				const float TitleWidth = static_cast<float>(
+					FontMeasure->Measure(Card.DrawTitle + TEXT("  "), APSNavigationHud::MarkerFont()).X);
+				DrawCardText(Card.Designation, TitleWidth, 5.0f, APSNavigationHud::MarkerFont(),
+					FLinearColor(Color.R, Color.G, Color.B, 1.0f));
+			}
+			DrawCardText(Card.DrawDetail, 0.0f, 5.0f + ContactLine, APSNavigationHud::MarkerFont(), TextColor);
+			if (!Card.MergedLine.IsEmpty())
+			{
+				DrawCardText(Card.MergedLine, 0.0f, 5.0f + 2.0f * ContactLine, APSNavigationHud::MergedFont(),
+					FLinearColor(TextColor.R, TextColor.G, TextColor.B, 0.82f));
+			}
+		}
+
+		// The course target's brackets or edge arrow, with its caption where the layout kept room for it.
+		if (bTargetInView)
+		{
+			const double Arm = FMath::Clamp(TargetHalf * 0.42, 6.0, 18.0);
+			for (const FVector2D& Corner : {FVector2D(-1.0, -1.0), FVector2D(1.0, -1.0), FVector2D(1.0, 1.0), FVector2D(-1.0, 1.0)})
+			{
+				const FVector2D Tip = TargetScreen + Corner * TargetHalf;
+				DrawScreenLine({Tip - FVector2D(Corner.X * Arm, 0.0), Tip, Tip - FVector2D(0.0, Corner.Y * Arm)},
+					TargetColor, 1.6f, LayerId + 7);
+			}
+		}
+		else if (bTargetArrow)
+		{
+			const FVector2D Side(-ArrowDirection.Y, ArrowDirection.X);
+			DrawScreenLine({ArrowTip - ArrowDirection * 16.0 + Side * 10.0, ArrowTip, ArrowTip - ArrowDirection * 16.0 - Side * 10.0},
+				TargetColor, 2.2f, LayerId + 7);
+		}
+		if (bTargetInView || bTargetArrow)
+		{
+			FSlateDrawElement::MakeText(OutDrawElements, LayerId + 7, AllottedGeometry.ToPaintGeometry(
+				FVector2f(220.0f, 14.0f), FSlateLayoutTransform(FVector2f(static_cast<float>(CaptionAt.X),
+					static_cast<float>(CaptionAt.Y)))),
+				Caption, CaptionFont, ESlateDrawEffect::None, TargetColor);
+		}
+	}
+
+	if (bAltimeterShown)
+	{
+		// A plate in the HUD's language: a dark panel with an accent bar that turns amber, then red, when the surface
+		// comes up fast. The header names the body, the large figure is the height above its ground (or sea).
+		const float Fade = Altimeter.Alpha;
+		const float PanelX = AltimeterRect.Left;
+		const float PanelY = AltimeterRect.Top;
+		const float PanelWidth = AltimeterRect.Right - AltimeterRect.Left;
+		const float PanelHeight = AltimeterRect.Bottom - AltimeterRect.Top;
+		const FLinearColor Calm(0.18f, 0.84f, 1.0f, 1.0f);
+		const FLinearColor Caution(1.0f, 0.68f, 0.16f, 1.0f);
+		const FLinearColor Danger(1.0f, 0.24f, 0.12f, 1.0f);
+		const FLinearColor Bright(0.93f, 0.96f, 0.99f, 1.0f);
+		const FLinearColor Muted(0.62f, 0.76f, 0.86f, 1.0f);
+		const float Alarm = FMath::Clamp(Altimeter.Severity, 0.0f, 1.0f);
+		const FLinearColor State = FMath::Lerp(FMath::Lerp(Calm, Caution, Alarm), Danger,
+			FMath::Clamp(Altimeter.Severity - 1.0f, 0.0f, 1.0f));
+		const float Pulse = Altimeter.Severity > 1.2f ? 0.7f + 0.3f * static_cast<float>(FMath::Sin(NowSeconds * 9.0)) : 1.0f;
+		const auto Tint = [Fade](const FLinearColor& Base, const float Opacity)
+		{
+			return FLinearColor(Base.R, Base.G, Base.B, Opacity * Fade);
+		};
+		const FSlateBrush* PlateBrush = FCoreStyle::Get().GetBrush("WhiteBrush");
+		const auto Fill = [&](const float FillX, const float FillY, const float FillWidth, const float FillHeight,
+			const FLinearColor& Tone, const int32 Layer)
+		{
+			if (FillWidth > 0.0f && FillHeight > 0.0f)
+			{
+				FSlateDrawElement::MakeBox(OutDrawElements, Layer, AllottedGeometry.ToPaintGeometry(
+					FVector2f(FillWidth, FillHeight), FSlateLayoutTransform(FVector2f(FillX, FillY))),
+					PlateBrush, ESlateDrawEffect::None, Tone);
+			}
+		};
+		const auto Write = [&](const FString& String, const float WriteX, const float WriteY, const FSlateFontInfo& Font,
+			const FLinearColor& Tone)
+		{
+			FSlateDrawElement::MakeText(OutDrawElements, LayerId + 6, AllottedGeometry.ToPaintGeometry(
+				FVector2f(PanelWidth, 32.0f), FSlateLayoutTransform(FVector2f(WriteX, WriteY))),
+				String, Font, ESlateDrawEffect::None, Tone);
+		};
+		const TSharedRef<FSlateFontMeasure> PlateMeasure = FSlateApplication::Get().GetRenderer()->GetFontMeasureService();
+		const FSlateFontInfo LabelFont = FCoreStyle::GetDefaultFontStyle("Bold", 8);
+		const FSlateFontInfo LineFont = FCoreStyle::GetDefaultFontStyle("Bold", 9);
+		const FSlateFontInfo ReadoutFont = FCoreStyle::GetDefaultFontStyle("Bold", 20);
+		const FSlateFontInfo ScaleFont = FCoreStyle::GetDefaultFontStyle("Regular", 8);
+		const FSlateFontInfo SmallFont = FCoreStyle::GetDefaultFontStyle("Bold", 7);
+
+		Fill(PanelX, PanelY, PanelWidth, PanelHeight, Tint(FLinearColor(0.005f, 0.018f, 0.035f, 1.0f), 0.84f), LayerId + 3);
+		Fill(PanelX, PanelY, 3.0f, PanelHeight, Tint(State, 0.95f * Pulse), LayerId + 4);
+		Write(TEXT("ALTITUDE"), PanelX + 13.0f, PanelY + 8.0f, LabelFont, Tint(Muted, 0.9f));
+		const FString DesignationSuffix = Altimeter.Designation.IsEmpty() ? FString() : TEXT("  ") + Altimeter.Designation;
+		const float SuffixWidth = DesignationSuffix.IsEmpty()
+			? 0.0f : static_cast<float>(PlateMeasure->Measure(DesignationSuffix, LabelFont).X);
+		const FString PlateBodyName = APSNavigationHud::FitText(Altimeter.BodyName, LabelFont,
+			FMath::Max(PanelWidth - 90.0f - SuffixWidth, 24.0f), *PlateMeasure);
+		const float NameWidth = static_cast<float>(PlateMeasure->Measure(PlateBodyName, LabelFont).X);
+		const float NameX = PanelX + PanelWidth - 12.0f - NameWidth - SuffixWidth;
+		Write(PlateBodyName, NameX, PanelY + 8.0f, LabelFont, Tint(Bright, 0.92f));
+		if (!DesignationSuffix.IsEmpty())
+		{
+			Write(DesignationSuffix, NameX + NameWidth, PanelY + 8.0f, LabelFont, Tint(Altimeter.BodyColor, 1.0f));
+		}
+		const float Urgency = Altimeter.Severity > 1.2f ? Pulse : 1.0f;
+		Write(APSNavigationHud::FormatAltitude(Altimeter.AltitudeCm), PanelX + 12.0f, PanelY + 21.0f, ReadoutFont,
+			Tint(FMath::Lerp(Bright, State, Alarm), Urgency));
+
+		// Vertical speed with its arrow, and the time to the surface at that rate.
+		const double Vertical = Altimeter.VerticalCmPerSecond;
+		const bool bDescending = Vertical < -50.0;
+		const bool bClimbing = Vertical > 50.0;
+		const float SpeedY = PanelY + 59.0f;
+		const FLinearColor SpeedTone = bDescending ? Tint(FMath::Lerp(Bright, State, 0.65f), 1.0f) : Tint(Bright, 0.9f);
+		const float ArrowLift = bDescending ? 4.0f : (bClimbing ? -4.0f : 0.0f);
+		DrawScreenLine({FVector2D(PanelX + 14.0f, SpeedY + 7.0f - ArrowLift), FVector2D(PanelX + 19.0f, SpeedY + 7.0f + ArrowLift),
+			FVector2D(PanelX + 24.0f, SpeedY + 7.0f - ArrowLift)}, SpeedTone, 1.8f, LayerId + 6);
+		Write(bDescending ? TEXT("DESCENT  ") + APSNavigationHud::FormatVerticalSpeed(Vertical)
+			: bClimbing ? TEXT("CLIMB  ") + APSNavigationHud::FormatVerticalSpeed(Vertical) : FString(TEXT("LEVEL")),
+			PanelX + 30.0f, SpeedY, LineFont, SpeedTone);
+		if (bDescending)
+		{
+			Write(TEXT("SURFACE IN  ") + APSNavigationHud::FormatSurfaceTime(Altimeter.AltitudeCm / -Vertical),
+				PanelX + 13.0f, PanelY + 76.0f, LineFont, Tint(FMath::Lerp(Muted, State, Alarm), Urgency * 0.95f));
+		}
+		else
+		{
+			Write(TEXT("SURFACE IN  --"), PanelX + 13.0f, PanelY + 76.0f, LineFont, Tint(Muted, 0.6f));
+		}
+
+		// The tape: the surface at the bottom, the instrument's reach at the top, on a log scale so the last kilometres
+		// open up. It fills from the top as the ship comes down; the dashes below the pointer are what is left.
+		const float TapeTop = PanelY + 100.0f;
+		const float TapeBottom = PanelY + PanelHeight - 24.0f;
+		const float TrackX = PanelX + 30.0f;
+		constexpr double ScaleFloorCm = 1000.0;
+		const double ScaleTopCm = FMath::Max(Altimeter.TopCm, 1.0e6);
+		const auto TapeY = [&](const double Centimetres)
+		{
+			const double Fraction = FMath::Clamp(FMath::Loge(1.0 + FMath::Max(Centimetres, 0.0) / ScaleFloorCm)
+				/ FMath::Loge(1.0 + ScaleTopCm / ScaleFloorCm), 0.0, 1.0);
+			return TapeBottom - static_cast<float>(Fraction) * (TapeBottom - TapeTop);
+		};
+		const float PointerY = TapeY(Altimeter.AltitudeCm);
+		Fill(TrackX - 3.0f, TapeTop, 6.0f, TapeBottom - TapeTop, Tint(State, 0.12f), LayerId + 4);
+		Fill(TrackX - 6.0f, TapeTop, 12.0f, PointerY - TapeTop, Tint(State, 0.12f), LayerId + 4);
+		Fill(TrackX - 3.0f, TapeTop, 6.0f, PointerY - TapeTop, Tint(State, 0.8f), LayerId + 5);
+		const float RemainingOpacity = (0.4f + 0.45f * Alarm) * Urgency;
+		for (float DashY = PointerY + 5.0f; DashY < TapeBottom - 2.0f; DashY += 7.0f)
+		{
+			Fill(TrackX - 1.5f, DashY, 3.0f, FMath::Min(4.0f, TapeBottom - 2.0f - DashY), Tint(State, RemainingOpacity), LayerId + 5);
+		}
+		// Round altitudes, 100 m, 1 km ... up to the top of the tape.
+		float LastLabelY = TNumericLimits<float>::Max();
+		for (double RoundAltitude = 1.0e4; RoundAltitude < ScaleTopCm * 0.95; RoundAltitude *= 10.0)
+		{
+			const float TickY = TapeY(RoundAltitude);
+			DrawScreenLine({FVector2D(TrackX + 5.0f, TickY), FVector2D(TrackX + 11.0f, TickY)}, Tint(Muted, 0.55f), 1.0f,
+				LayerId + 5);
+			if (FMath::Abs(LastLabelY - TickY) >= 12.0f && TickY > TapeTop + 5.0f && TickY < TapeBottom - 9.0f)
+			{
+				Write(APSNavigationHud::FormatTick(RoundAltitude), TrackX + 15.0f, TickY - 7.0f, ScaleFont, Tint(Muted, 0.8f));
+				LastLabelY = TickY;
+			}
+		}
+		if (Altimeter.AtmosphereCm > 0.0 && Altimeter.AtmosphereCm < ScaleTopCm)
+		{
+			// The edge of the atmosphere, dashed in sky blue across the track and beside the scale's labels.
+			const FLinearColor Sky(0.45f, 0.78f, 1.0f, 1.0f);
+			const float AtmosphereY = TapeY(Altimeter.AtmosphereCm);
+			const float DashEnd = PanelX + PanelWidth - 14.0f;
+			for (float DashX = TrackX - 8.0f; DashX < DashEnd; DashX += 6.0f)
+			{
+				if (DashX > TrackX + 12.0f && DashX < PanelX + 104.0f)
+				{
+					continue;
+				}
+				DrawScreenLine({FVector2D(DashX, AtmosphereY), FVector2D(FMath::Min(DashX + 3.0f, DashEnd), AtmosphereY)},
+					Tint(Sky, 0.5f), 1.0f, LayerId + 5);
+			}
+			const FString AtmosphereLabel(TEXT("ATMOSPHERE"));
+			const float AtmosphereLabelWidth = static_cast<float>(PlateMeasure->Measure(AtmosphereLabel, SmallFont).X);
+			Write(AtmosphereLabel, PanelX + PanelWidth - 12.0f - AtmosphereLabelWidth, AtmosphereY - 12.0f, SmallFont,
+				Tint(Sky, 0.85f));
+		}
+		// The ground: a firm line with a short hatch under the track.
+		Fill(PanelX + 12.0f, TapeBottom, PanelWidth - 24.0f, 2.0f, Tint(State, 0.9f), LayerId + 5);
+		for (float HatchX = PanelX + 16.0f; HatchX < TrackX + 12.0f; HatchX += 5.0f)
+		{
+			DrawScreenLine({FVector2D(HatchX, TapeBottom + 2.0f), FVector2D(HatchX - 4.0f, TapeBottom + 7.0f)},
+				Tint(State, 0.45f), 1.0f, LayerId + 5);
+		}
+		Write(TEXT("SURFACE"), TrackX + 15.0f, TapeBottom + 4.0f, SmallFont, Tint(Muted, 0.8f));
+		// The ship on the tape.
+		DrawScreenLine({FVector2D(TrackX - 17.0f, PointerY - 6.0f), FVector2D(TrackX - 8.0f, PointerY),
+			FVector2D(TrackX - 17.0f, PointerY + 6.0f), FVector2D(TrackX - 17.0f, PointerY - 6.0f)},
+			Tint(FMath::Lerp(Bright, State, 0.55f), Urgency), 1.6f, LayerId + 6);
+		DrawScreenLine({FVector2D(TrackX - 6.0f, PointerY), FVector2D(TrackX + 6.0f, PointerY)}, Tint(Bright, 1.0f), 2.0f,
+			LayerId + 6);
 	}
 	return LayerId + 7;
 }
@@ -3525,68 +4827,10 @@ FLinearColor ASpaceship::GetNavigationMarkerColor(int32 ContactIndex) const
 	{
 		return FLinearColor(0.36f, 1.0f, 0.58f, 0.98f);
 	}
-	if (const APlanet* Planet = Cast<APlanet>(Contact->Actor.Get()))
+	FLinearColor BodyColor;
+	if (APSNavigationHud::BodyMarkerColor(Contact->Actor.Get(), BodyColor))
 	{
-		switch (Planet->PlanetType)
-		{
-		case EPlanetType::Ice:
-		case EPlanetType::Frozen:
-		case EPlanetType::Nordic:
-		case EPlanetType::Tundra:
-		case EPlanetType::IceGiant:
-			return FLinearColor(0.72f, 0.9f, 1.0f, 0.96f);
-		case EPlanetType::Ocean:
-		case EPlanetType::Water:
-		case EPlanetType::Archipelago:
-			return FLinearColor(0.16f, 0.62f, 1.0f, 0.96f);
-		case EPlanetType::Terrestrial:
-		case EPlanetType::Forest:
-		case EPlanetType::Oasis:
-		case EPlanetType::Pangea:
-		case EPlanetType::SuperEarth:
-			return FLinearColor(0.2f, 0.92f, 0.58f, 0.96f);
-		case EPlanetType::Desert:
-		case EPlanetType::Sand:
-			return FLinearColor(1.0f, 0.68f, 0.24f, 0.96f);
-		case EPlanetType::Volcanic:
-		case EPlanetType::Melted:
-		case EPlanetType::Lava:
-		case EPlanetType::HotGiant:
-			return FLinearColor(1.0f, 0.25f, 0.1f, 0.96f);
-		case EPlanetType::GasGiant:
-		case EPlanetType::Greenhouse:
-		case EPlanetType::Ammonia:
-			return FLinearColor(0.92f, 0.72f, 0.3f, 0.96f);
-		case EPlanetType::Metal:
-		case EPlanetType::Metallic:
-		case EPlanetType::Carbon:
-			return FLinearColor(0.74f, 0.72f, 0.88f, 0.96f);
-		default:
-			return FLinearColor(0.28f, 0.84f, 0.75f, 0.95f);
-		}
-	}
-	if (const AMoon* Moon = Cast<AMoon>(Contact->Actor.Get()))
-	{
-		switch (Moon->MoonType)
-		{
-		case EMoonType::Icy:
-			return FLinearColor(0.82f, 0.93f, 1.0f, 0.96f);
-		case EMoonType::Ocean:
-			return FLinearColor(0.22f, 0.64f, 1.0f, 0.96f);
-		case EMoonType::Continental:
-			return FLinearColor(0.38f, 0.84f, 0.65f, 0.96f);
-		case EMoonType::Desert:
-			return FLinearColor(0.96f, 0.67f, 0.34f, 0.96f);
-		case EMoonType::Volcanic:
-			return FLinearColor(1.0f, 0.31f, 0.12f, 0.96f);
-		case EMoonType::Iron:
-			return FLinearColor(0.68f, 0.74f, 0.82f, 0.96f);
-		case EMoonType::Gas:
-		case EMoonType::Peculiar:
-			return FLinearColor(0.72f, 0.52f, 1.0f, 0.96f);
-		default:
-			return FLinearColor(0.66f, 0.76f, 0.9f, 0.95f);
-		}
+		return BodyColor;
 	}
 	switch (Contact->Type)
 	{
@@ -3621,12 +4865,15 @@ void ASpaceship::CreateShipHud()
 		.Ship(WeakThis)
 	];
 
+	// The navigation cards keep clear of both panels (their real size, whatever the text in them).
+	TSharedPtr<SBackgroundBlur> NavigationPanel;
+	TSharedPtr<SBackgroundBlur> StatusPanel;
 	RootOverlay->AddSlot()
 		.HAlign(HAlign_Right)
 		.VAlign(VAlign_Top)
 		.Padding(0.0f, 38.0f, 36.0f, 0.0f)
 		[
-			SNew(SBackgroundBlur)
+			SAssignNew(NavigationPanel, SBackgroundBlur)
 			.Visibility_Lambda([WeakThis]()
 			{
 				return WeakThis.IsValid() && WeakThis->bNavigationPanelVisible
@@ -3655,7 +4902,7 @@ void ASpaceship::CreateShipHud()
 		.VAlign(VAlign_Bottom)
 		.Padding(36.0f, 0.0f, 0.0f, 34.0f)
 		[
-			SNew(SBackgroundBlur)
+			SAssignNew(StatusPanel, SBackgroundBlur)
 			.BlurStrength(12.0f)
 			.BlurRadius(10)
 			.LowQualityFallbackBrush(FCoreStyle::Get().GetBrush("WhiteBrush"))
@@ -3689,23 +4936,61 @@ void ASpaceship::CreateShipHud()
 				]
 			]
 		];
+	APSNavigationHud::GNavigationPanel = NavigationPanel;
+	APSNavigationHud::GStatusPanel = StatusPanel;
+	// The F10 map holds the view with its own camera: the ship's cards and panels would show through it (02.10).
+	RootOverlay->SetVisibility(TAttribute<EVisibility>::CreateLambda([WeakThis]()
+	{
+		const AGravityPlayerController* Controller = WeakThis.IsValid()
+			? Cast<AGravityPlayerController>(WeakThis->GetController()) : nullptr;
+		return Controller && Controller->IsStrategicMapOpen() ? EVisibility::Collapsed : EVisibility::SelfHitTestInvisible;
+	}));
 	ShipHudWidget = RootOverlay;
 	GEngine->GameViewport->AddViewportWidgetContent(ShipHudWidget.ToSharedRef(), 60);
 }
 
 void ASpaceship::RemoveShipHud()
 {
-	if (ShipHudWidget.IsValid() && GEngine && GEngine->GameViewport)
+	const bool bHadHud = ShipHudWidget.IsValid();
+	if (bHadHud && GEngine && GEngine->GameViewport)
 	{
 		GEngine->GameViewport->RemoveViewportWidgetContent(ShipHudWidget.ToSharedRef());
 	}
 	ShipHudWidget.Reset();
+	if (bHadHud)
+	{
+		// The next HUD starts afresh: no stale altimeter reading, no overlay size of a closed HUD.
+		APSNavigationHud::GAltimeter = APSNavigationHud::FAltimeter();
+		APSNavigationHud::GHudSize = FVector2D::ZeroVector;
+	}
+}
+
+bool ASpaceship::ProvidesShipGravity() const
+{
+	return bProvidesArtificialGravity || (bHasInterior && !IsGroundVehicle() && !Cast<APlanetaryBody>(GetAttachParentActor()));
+}
+
+void ASpaceship::RefreshShipGravityZone()
+{
+	if (SphereCollisionComponent)
+	{
+		SphereCollisionComponent->SetCollisionEnabled(
+			ProvidesShipGravity() ? ECollisionEnabled::QueryOnly : ECollisionEnabled::NoCollision);
+	}
 }
 
 void ASpaceship::PossessedBy(AController* NewController)
 {
 	Super::PossessedBy(NewController);
+	// Boarding unparked the ship (APilotingVehicle detaches it from its world): its gravity holds aboard from now on.
+	RefreshShipGravityZone();
 	SetHullSceneLightingExcluded(true);
+	if (IsGroundVehicle() && !bEngineRunning)
+	{
+		// Rio 02.10: a vehicle starts when someone gets in; after they leave it parks and switches off by itself.
+		bEngineRunning = true;
+		ApplyEngineState();
+	}
 	if (FlightModel)
 	{
 		FlightModel->OnPossessed();
@@ -3737,17 +5022,18 @@ void ASpaceship::UnPossessed()
 	}
 	CameraArmLengthRate = SmoothedLogSpeedRate = 0.0f;
 	PreviousCameraLogSpeed = -1.0;
-	if (!bEngineRunning)
-	{
-		SetFlightCollisionOptimization(false);
-	}
+	RefreshShipGravityZone();
+	// The flight proxy boxes fill the hull; a pilot leaving a running ship would stand among them (and walk aboard
+	// against them), so the hull's own collision comes back whenever the pilot leaves.
+	SetFlightCollisionOptimization(false);
 	bIsAccelerating = false;
 	bIsDecelerating = false;
 	ForwardInput = SideInput = VerticalInput = 0.0f;
 	YawInput = PitchInput = RollInput = 0.0f;
 	CurrentAngularVelocityDegrees = FVector::ZeroVector;
 	Super::UnPossessed();
-	SetActorTickEnabled(bEngineRunning);
+	// A ground vehicle keeps ticking until it has come to rest and parked itself (UAPSShipFlightModel::ParkVehicle).
+	SetActorTickEnabled(bEngineRunning || IsGroundVehicle());
 }
 
 void ASpaceship::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -3787,6 +5073,24 @@ void ASpaceship::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent
 	PlayerInputComponent->BindKey(EKeys::M, IE_Pressed, this, &ASpaceship::ToggleNavigationPanel);
 	PlayerInputComponent->BindKey(EKeys::T, IE_Pressed, this, &ASpaceship::SelectNextNavigationTarget);
 	PlayerInputComponent->BindKey(EKeys::V, IE_Pressed, this, &ASpaceship::ToggleNavigationGuides);
+	PlayerInputComponent->BindKey(EKeys::Z, IE_Pressed, this, &ASpaceship::ToggleAutopilot);
+	// Rio 02.10: J toggles the star drive (spool, cruise, W/S faster/slower).
+	if (FlightModel)
+	{
+		PlayerInputComponent->BindKey(EKeys::J, IE_Pressed, FlightModel, &UAPSShipFlightModel::ToggleStarDrive);
+	}
+	// Rio 02.10 (C14): B is the orbital build mode, hosted by its own component (not for the ground vehicles).
+	if (!IsGroundVehicle())
+	{
+		UAPSShipBuildComponent* Build = FindComponentByClass<UAPSShipBuildComponent>();
+		if (!Build)
+		{
+			Build = NewObject<UAPSShipBuildComponent>(this, TEXT("OrbitalBuild"));
+			Build->RegisterComponent();
+			AddInstanceComponent(Build);
+		}
+		PlayerInputComponent->BindKey(EKeys::B, IE_Pressed, Build, &UAPSShipBuildComponent::Toggle);
+	}
 }
 
 void ASpaceship::StartAccelerationBoost()
@@ -4213,7 +5517,29 @@ USceneComponent* ASpaceship::GetPilotSeatComponent() const
 
 FTransform ASpaceship::GetPilotExitTransform() const
 {
-	return PilotExitPoint ? PilotExitPoint->GetComponentTransform() : Super::GetPilotExitTransform();
+	// In flight (moving, or nothing under the authored exit) the pilot gets up behind the seat, aboard: the exit may be
+	// outside the hull (Rio 02.10: "walk about the flying ship"). Parked or landed, through the authored exit as before.
+	const FTransform AuthoredExit = PilotExitPoint ? PilotExitPoint->GetComponentTransform() : Super::GetPilotExitTransform();
+	if (!PilotChair || !ProvidesShipGravity())
+	{
+		return AuthoredExit;
+	}
+	const FVector Up = GetActorUpVector();
+	bool bInFlight = KinematicVelocity.Size() > 200.0;
+	if (!bInFlight && GetWorld())
+	{
+		FCollisionQueryParams Params(SCENE_QUERY_STAT(APSShipExitGround), false, this);
+		FHitResult Hit;
+		bInFlight = !GetWorld()->LineTraceSingleByChannel(Hit, AuthoredExit.GetLocation(),
+			AuthoredExit.GetLocation() - Up * 1500.0, ECC_Visibility, Params);
+	}
+	if (!bInFlight)
+	{
+		return AuthoredExit;
+	}
+	const FTransform Seat = PilotChair->GetComponentTransform();
+	const FVector Back = -FVector::VectorPlaneProject(Seat.GetUnitAxis(EAxis::X), Up).GetSafeNormal();
+	return FTransform(Seat.GetRotation(), Seat.GetLocation() + Back * 120.0 + Up * 60.0);
 }
 
 void ASpaceship::ComputeProximity()
@@ -4295,4 +5621,214 @@ void ASpaceship::CheckFlightModeChange()
 UStaticMeshComponent* ASpaceship::GetSpaceshipHull()
 {
 	return SpaceshipHull;
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Ground vehicles (Rio 02.10: "a system of ground transport: a wheeled one, a hover one, and one that flies like a drone
+// or a small helicopter"). The pawn stays an ASpaceship, so boarding, exit, camera and HUD are the ship's own.
+
+namespace APSSpaceshipGroundVehicle
+{
+	/** One look of a vehicle: a static mesh, whether its nose points along the mesh's Y axis, and the vehicle's length. */
+	struct FVehicleLook
+	{
+		const TCHAR* MeshPath;
+		bool bNoseAlongY;
+		double LengthCm;
+	};
+
+	// The rover is the Vehicle Template's offroad buggy, body and tyres as static meshes (no Chaos vehicle: it assumes
+	// world -Z gravity). SciFiFlying and SpaceColonies hold no vehicle hulls (cockpit props, colony parts), so the hover
+	// and the drone use small hulls of the generated ship pack, nose along +Y as in their ship Blueprints: the speeder
+	// P1_06 hovers, the VTOL dropship P1_05 is the drone. A missing mesh falls back to the next one, then to a box.
+	const FVehicleLook RoverLooks[] = {
+		{TEXT("/Game/Vehicles/OffroadCar/SM_Offroad_Body.SM_Offroad_Body"), false, 420.0}};
+	const FVehicleLook HoverLooks[] = {
+		{TEXT("/Game/APS/APS_ALPHA/Assets/AI_Shpis/Pack_1/Spaceship_P1_06/SM_Spaceship_P1_06.SM_Spaceship_P1_06"), true, 560.0},
+		{TEXT("/Game/APS/APS_ALPHA/Assets/AI_Shpis/Pack_1/Spaceship_XXS_P1_09/SM_Spaceship_XXS_P1_09.SM_Spaceship_XXS_P1_09"), true, 560.0}};
+	const FVehicleLook DroneLooks[] = {
+		{TEXT("/Game/APS/APS_ALPHA/Assets/AI_Shpis/Pack_1/Spaceship_P1_05/SM_Spaceship_P1_05.SM_Spaceship_P1_05"), true, 520.0},
+		{TEXT("/Game/APS/APS_ALPHA/Assets/AI_Shpis/Pack_1/Spaceship_XXS_P1_22/SM_Spaceship_XXS_P1_22.SM_Spaceship_XXS_P1_22"), true, 520.0}};
+	const TCHAR* const FallbackMeshPath = TEXT("/Engine/BasicShapes/Cube.Cube");
+	const TCHAR* const OffroadTirePath = TEXT("/Game/Vehicles/OffroadCar/SM_Offroad_Tire.SM_Offroad_Tire");
+
+	/** The buggy's tyres: the VisWheel bones of SKM_Offroad in the body mesh's space (its origin is on the ground). */
+	struct FTireSlot
+	{
+		const TCHAR* Name;
+		FVector Center;
+		bool bLeft;
+		bool bFront;
+	};
+	const FTireSlot OffroadTires[] = {
+		{TEXT("VehicleTireFL"), FVector(168.3, -124.1, 51.1), true, true},
+		{TEXT("VehicleTireFR"), FVector(168.3, 124.1, 51.1), false, true},
+		{TEXT("VehicleTireBL"), FVector(-135.2, -139.8, 50.8), true, false},
+		{TEXT("VehicleTireBR"), FVector(-135.2, 139.8, 50.8), false, false}};
+	/** SM_Offroad_Tire: 51.2 cm radius around its centre, axle along Y, modelled as a right-side tyre. */
+	constexpr double OffroadTireRadius = 51.2;
+}
+
+void ASpaceship::ConfigureAsGroundVehicle(const EAPSGroundVehicleKind Kind)
+{
+	using namespace APSSpaceshipGroundVehicle;
+	GroundVehicleKind = Kind;
+	GroundVehicleWheels.Reset();
+	if (!IsGroundVehicle() || !SpaceshipHull)
+	{
+		return;
+	}
+
+	const TArrayView<const FVehicleLook> Looks = Kind == EAPSGroundVehicleKind::Rover ? MakeArrayView(RoverLooks)
+		: Kind == EAPSGroundVehicleKind::Hover ? MakeArrayView(HoverLooks) : MakeArrayView(DroneLooks);
+	UStaticMesh* BodyMesh = nullptr;
+	bool bNoseAlongY = false;
+	double LengthCm = 450.0;
+	bool bOffroadBuggy = false;
+	for (const FVehicleLook& Look : Looks)
+	{
+		BodyMesh = LoadObject<UStaticMesh>(nullptr, Look.MeshPath);
+		if (BodyMesh)
+		{
+			bNoseAlongY = Look.bNoseAlongY;
+			LengthCm = Look.LengthCm;
+			bOffroadBuggy = Kind == EAPSGroundVehicleKind::Rover;
+			break;
+		}
+		UE_LOG(LogTemp, Warning, TEXT("[APS.Vehicles] %s: mesh %s is missing; trying the next look"),
+			*GetGroundVehicleName(), Look.MeshPath);
+	}
+	if (!BodyMesh)
+	{
+		BodyMesh = LoadObject<UStaticMesh>(nullptr, FallbackMeshPath);
+	}
+	if (BodyMesh)
+	{
+		SpaceshipHull->SetStaticMesh(BodyMesh);
+		const FBoxSphereBounds MeshBounds = BodyMesh->GetBounds();
+		const double MeshLength = 2.0 * (bNoseAlongY ? MeshBounds.BoxExtent.Y : MeshBounds.BoxExtent.X);
+		// The hull is the root: its scale is the vehicle's. Rover about 4.5 m with its tyres, hover 5.6 m, drone 5.2 m.
+		SpaceshipHull->SetRelativeScale3D(FVector(MeshLength > 1.0 ? LengthCm / MeshLength : 1.0));
+	}
+	// Simple collision only: the meshes' own convex hulls on the root, which the kinematic moves sweep.
+	SpaceshipHull->SetCollisionProfileName(UCollisionProfile::BlockAllDynamic_ProfileName);
+	SpaceshipHull->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+	SpaceshipHull->SetSimulatePhysics(false);
+	SpaceshipHull->SetEnableGravity(false);
+	SpaceshipHull->SetCanEverAffectNavigation(false);
+	if (ForwardVector)
+	{
+		ForwardVector->SetRelativeRotation(bNoseAlongY ? FRotator(0.0, 90.0, 0.0) : FRotator::ZeroRotator);
+	}
+	bUseAuthoredNoseDirection = true;
+	FlightForwardLocalAxis = bNoseAlongY ? FVector::RightVector : FVector::ForwardVector;
+	FlightUpLocalAxis = FVector::UpVector;
+	SizeClass = ESpaceshipSizeClass::XXS;
+	bInferSizeClassFromHull = false;
+	bHasInterior = false;
+	bProvidesArtificialGravity = false;
+	bGenerateSimpleHullCollision = false;
+	bOptimizeCollisionWhilePiloted = false;
+	bAllowExteriorInteraction = true;
+	AutoInteractionPadding = 120.0f;
+	AutoExitClearance = 150.0f;
+	// On the ground the star list is clutter: the markers (the colony among them) stay, M brings the list back.
+	bNavigationPanelVisible = false;
+	// The fleet, the maps and the journal name actors by their in-game name (FAPSFleetCommand::DisplayName).
+	InGameName = FText::FromString(GetGroundVehicleName());
+	Tags.AddUnique(TEXT("APS.Vehicle"));
+	Tags.AddUnique(FName(*FString::Printf(TEXT("APS.Vehicle.%s"), *GetGroundVehicleName())));
+
+	if (bOffroadBuggy)
+	{
+		if (UStaticMesh* TireMesh = LoadObject<UStaticMesh>(nullptr, OffroadTirePath))
+		{
+			for (const FTireSlot& Slot : OffroadTires)
+			{
+				UStaticMeshComponent* Tire = NewObject<UStaticMeshComponent>(this, FName(Slot.Name), RF_Transient);
+				Tire->SetupAttachment(SpaceshipHull);
+				Tire->SetMobility(EComponentMobility::Movable);
+				Tire->SetStaticMesh(TireMesh);
+				Tire->SetRelativeLocation(Slot.Center);
+				// The template turns its left tyres around (their sockets); the mesh itself is a right-side tyre.
+				Tire->SetRelativeRotation(Slot.bLeft ? FRotator(0.0, 180.0, 0.0) : FRotator::ZeroRotator);
+				Tire->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				Tire->SetCollisionResponseToAllChannels(ECR_Ignore);
+				Tire->SetGenerateOverlapEvents(false);
+				Tire->SetCanEverAffectNavigation(false);
+				AddInstanceComponent(Tire);
+				Tire->RegisterComponent();
+				FGroundVehicleWheel& Wheel = GroundVehicleWheels.AddDefaulted_GetRef();
+				Wheel.Tire = Tire;
+				Wheel.LocalCenter = Slot.Center;
+				Wheel.LocalRadius = OffroadTireRadius;
+				Wheel.bLeft = Slot.bLeft;
+				Wheel.bFront = Slot.bFront;
+			}
+		}
+		else
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[APS.Vehicles] ROVER: tyre mesh %s is missing; the body drives without tyres"),
+				OffroadTirePath);
+		}
+	}
+	UE_LOG(LogTemp, Log, TEXT("[APS.Vehicles] %s configured: %s at scale %.2f, %d tyres"), *GetGroundVehicleName(),
+		*GetNameSafe(SpaceshipHull->GetStaticMesh()), SpaceshipHull->GetRelativeScale3D().X, GroundVehicleWheels.Num());
+}
+
+FString ASpaceship::GetGroundVehicleName() const
+{
+	return APSGroundVehicle::KindName(GroundVehicleKind);
+}
+
+FQuat ASpaceship::GetActorRotationForFlightAxes(const FVector& Forward, const FVector& Up) const
+{
+	const FQuat LocalFrame = FRotationMatrix::MakeFromXZ(FlightForwardLocalAxis, FlightUpLocalAxis).ToQuat();
+	const FQuat WorldFrame = FRotationMatrix::MakeFromXZ(Forward, Up).ToQuat();
+	return (WorldFrame * LocalFrame.Inverse()).GetNormalized();
+}
+
+void ASpaceship::ConfigureGroundVehicleExit()
+{
+	UPrimitiveComponent* Hull = GetPrimaryHullComponent();
+	FVector LocalMin;
+	FVector LocalMax;
+	if (!PilotExitPoint || !Hull || !GetPrimaryHullLocalBounds(Hull, LocalMin, LocalMax))
+	{
+		return;
+	}
+	const FTransform HullTransform = Hull->GetComponentTransform();
+	const FVector Scale = Hull->GetComponentScale().GetAbs();
+	const FVector Forward = GetShipForwardVector();
+	const FVector Up = GetShipUpVector();
+	const FVector Right = GetShipRightVector();
+	// Half the width across the nose (a buggy's tyres stand out past its body), then the clearance beside it.
+	const FVector LocalRight = HullTransform.InverseTransformVectorNoScale(Right).GetAbs();
+	double HalfWidth = FVector::DotProduct((LocalMax - LocalMin) * 0.5 * Scale, LocalRight);
+	for (const FGroundVehicleWheel& Wheel : GroundVehicleWheels)
+	{
+		HalfWidth = FMath::Max(HalfWidth, (FMath::Abs(Wheel.LocalCenter.Y) + 25.0) * Scale.Y);
+	}
+	const FVector Center = HullTransform.TransformPosition((LocalMin + LocalMax) * 0.5);
+	// The vehicle's origin is on the ground (its wheels or skids): the driver stands up a metre above it.
+	const FVector Location = GetActorLocation() + FVector::VectorPlaneProject(Center - GetActorLocation(), Up)
+		- Right * (HalfWidth + AutoExitClearance) + Up * 100.0;
+	PilotExitPoint->SetWorldTransform(FTransform(FRotationMatrix::MakeFromXZ(Forward, Up).ToQuat(), Location));
+}
+
+void ASpaceship::UpdateGroundVehicleCamera()
+{
+	FVector Forward;
+	FVector Up;
+	double PitchDegrees = 0.0;
+	if (!SpringArmComponent || !FlightModel || !FlightModel->GetVehicleCameraFrame(Forward, Up, PitchDegrees))
+	{
+		return;
+	}
+	// Behind the heading and level with the gravity, looking down 13 degrees (the drone's look pitch tilts it); the
+	// arm's rotation lag smooths the bumps of the ground.
+	const FQuat Frame = FRotationMatrix::MakeFromXZ(Forward, Up).ToQuat();
+	const FQuat Tilt(FVector::RightVector, FMath::DegreesToRadians(13.0 - PitchDegrees));
+	SpringArmComponent->SetWorldRotation((Frame * Tilt).GetNormalized());
+	SpringArmComponent->CameraRotationLagSpeed = 8.0f;
 }

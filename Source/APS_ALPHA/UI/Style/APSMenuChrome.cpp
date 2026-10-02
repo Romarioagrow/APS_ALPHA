@@ -43,15 +43,21 @@ FLinearColor APSChrome::Cyan() { return APSChromePrivate::SRGB(67, 214, 236); }
 FLinearColor APSChrome::CyanDim() { return APSChromePrivate::SRGB(27, 83, 96, 178); }
 FLinearColor APSChrome::Amber() { return APSChromePrivate::SRGB(242, 181, 29); }
 FLinearColor APSChrome::White() { return APSChromePrivate::SRGB(234, 246, 248); }
-FLinearColor APSChrome::Muted() { return APSChromePrivate::SRGB(138, 166, 174); }
+// Lighter than the original 138/166/174: secondary lines must still read on the dark panels (Rio 02.10).
+FLinearColor APSChrome::Muted() { return APSChromePrivate::SRGB(170, 194, 202); }
 FLinearColor APSChrome::Success() { return APSChromePrivate::SRGB(100, 214, 166); }
 FLinearColor APSChrome::Scrim() { return APSChromePrivate::SRGB(2, 7, 11, 150); }
 
 FSlateFontInfo APSChrome::Font(const FName Typeface, const int32 Size)
 {
-	return Typeface == TEXT("Bold")
-		? FAPSUIStyle::DisplayFont(Typeface, Size)
-		: FCoreStyle::GetDefaultFontStyle(Typeface, Size);
+	// Rio 02.10 ("hard to read, especially the small text"): the display face stays for headings and large values;
+	// below 10 pt its wide letters blur, so small bold text uses the readable face one size up, and regular text
+	// is never below 11 pt.
+	if (Typeface == TEXT("Bold"))
+	{
+		return Size >= 10 ? FAPSUIStyle::DisplayFont(Typeface, Size) : FCoreStyle::GetDefaultFontStyle(Typeface, Size + 1);
+	}
+	return FCoreStyle::GetDefaultFontStyle(Typeface, FMath::Max(Size, 11));
 }
 
 TSharedRef<SWidget> APSChrome::ChamferPanel(TSharedRef<SWidget> Content, const FMargin& Padding,
@@ -124,7 +130,7 @@ TSharedRef<SWidget> APSChrome::IconSectionHeading(const EAPSChromeGlyph Glyph, c
 			[SNew(STextBlock).Text(Title).Font(Font("Bold", 14)).ColorAndOpacity(White())]
 			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 2.0f, 0.0f, 0.0f)
 			[
-				SNew(STextBlock).Text(Subtitle).Font(Font("Regular", 9)).ColorAndOpacity(Muted())
+				SNew(STextBlock).Text(Subtitle).Font(Font("Regular", 11)).ColorAndOpacity(Muted())
 				.Visibility(Subtitle.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible)
 			]
 		]
@@ -150,18 +156,17 @@ TSharedRef<SWidget> APSChrome::KeyChip(const FText& Key, const FLinearColor& Acc
 TSharedRef<SWidget> APSChrome::MetricTile(const TAttribute<FText>& Label, const TAttribute<FText>& Value,
 	const FLinearColor& Accent)
 {
-	return SNew(SBorder).BorderImage(&APSChromePrivate::MetricBrush()).Padding(FMargin(8.0f, 7.0f))
+	// Rio 02.10: the label reads first, small but clear, then the value large (like the generation menu's LIVE MODEL).
+	return SNew(SBorder).BorderImage(&APSChromePrivate::MetricBrush()).Padding(FMargin(12.0f, 9.0f, 12.0f, 10.0f))
 	[
 		SNew(SVerticalBox)
-		+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center)
+		+ SVerticalBox::Slot().AutoHeight()
 		[
-			SNew(STextBlock).Text(Value).Font(Font("Bold", 15)).ColorAndOpacity(Accent)
-			.Justification(ETextJustify::Center)
+			SNew(STextBlock).Text(Label).Font(FCoreStyle::GetDefaultFontStyle("Bold", 10)).ColorAndOpacity(Muted())
 		]
-		+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0.0f, 2.0f, 0.0f, 0.0f)
+		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 4.0f, 0.0f, 0.0f)
 		[
-			SNew(STextBlock).Text(Label).Font(Font("Bold", 8)).ColorAndOpacity(Muted())
-			.Justification(ETextJustify::Center)
+			SNew(STextBlock).Text(Value).Font(Font("Bold", 16)).ColorAndOpacity(Accent).AutoWrapText(true)
 		]
 	];
 }

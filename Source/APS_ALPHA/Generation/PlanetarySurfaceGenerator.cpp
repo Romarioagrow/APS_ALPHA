@@ -1,5 +1,7 @@
 #include "PlanetarySurfaceGenerator.h"
 #include "APSAtmosphereGeneration.h"
+#include "APS_ALPHA/Core/Planetary/APSWorldScapeFoliagePolicy.h"
+#include "APS_ALPHA/Core/Rendering/APSPlanetCloudComponent.h"
 #include "APS_ALPHA/Actors/Astro/Moon.h"
 #include "APS_ALPHA/Actors/Astro/Planet.h"
 #include "APS_ALPHA/Actors/Astro/Star.h"
@@ -81,6 +83,12 @@ void APlanetarySurfaceGenerator::BeginPlay()
     {
         InitWorldScape(GetWorld());
     }
+}
+
+void APlanetarySurfaceGenerator::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	CancelLavaMaterialPreparation();
+	Super::EndPlay(EndPlayReason);
 }
 
 // Called every frame
@@ -649,6 +657,7 @@ void APlanetarySurfaceGenerator::InitAtmoScape(UWorld* World, double PlanetaryRa
 			AtmosphereMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 			AtmosphereMesh->SetGenerateOverlapEvents(false);
 		}
+        UAPSPlanetCloudComponent::Refresh(Cast<APlanet>(NewPlanetaryBody));
     }
 }
 
@@ -749,6 +758,12 @@ void APlanetarySurfaceGenerator::SpawnWorldScapeRoot()
 {
     if (WorldScapeRootInstance)
     {
+		if (bPendingLavaMaterial)
+		{
+			LavaMaterialResumeState = EDeferredWorldScapeRootState::Active;
+			// Retain a published root unchanged; never start an unconfigured new one.
+			return;
+		}
 		if (bPendingSurfaceProfileApply)
 		{
 			DeferredWorldScapeRootState = EDeferredWorldScapeRootState::Active;
@@ -772,15 +787,16 @@ void APlanetarySurfaceGenerator::SpawnWorldScapeRoot()
 		// WorldScape to include the possessed pawn in every supported net mode.
 		// Preload/frozen states still disable actor collision below their lifecycle
 		// boundary, so inactive siblings and ocean presentation meshes stay non-solid.
-		WorldScapeRootInstance->bGenerateCollision = true;
+		const bool bTransit = WorldScapeRootInstance->ActorHasTag(TEXT("APS.Surface.Transit"));
+		WorldScapeRootInstance->bGenerateCollision = !bTransit;
 		WorldScapeRootInstance->bGenerateCollisionForAllPlayer = true;
 #if WITH_EDITOR
-		WorldScapeRootInstance->bGenerateCollisionInEditor = true;
+		WorldScapeRootInstance->bGenerateCollisionInEditor = !bTransit;
 		WorldScapeRootInstance->bStaticCollisionInEditor = false;
 #endif
         WorldScapeRootInstance->SetActorHiddenInGame(false);    
         WorldScapeRootInstance->SetActorTickEnabled(true);
-        WorldScapeRootInstance->SetActorEnableCollision(true);
+        WorldScapeRootInstance->SetActorEnableCollision(!bTransit);
 
         if (WorldScapeRootInstance->GetAttachParentActor() != PlanetaryBody)
         {
@@ -788,6 +804,23 @@ void APlanetarySurfaceGenerator::SpawnWorldScapeRoot()
             WorldScapeRootInstance->AttachToActor(PlanetaryBody, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
 		}
 		WorldScapeRootInstance->SetActorScale3D(FVector::OneVector);
+		// The native first Tick builds once for init=false, then compares Prev_*.
+		// A new owned root must acknowledge its configured parameters BEFORE that
+		// first build; otherwise the same Tick immediately rebuilds all components.
+		// Never consume regeneration requests on resident/partial/authored roots or
+		// while a worker owns data. This does not build geometry or set init=true.
+		const APlanet* SurfacePlanet = Cast<APlanet>(PlanetaryBody);
+		if (bOwnsWorldScapeRootInstance && bSurfaceProfileApplied
+			&& !(SurfacePlanet && SurfacePlanet->IsManual)
+			&& !WorldScapeRootInstance->init
+			&& WorldScapeRootInstance->WorldScapeLod.IsEmpty()
+			&& WorldScapeRootInstance->WorldScapeLodOcean.IsEmpty()
+			&& WorldScapeRootInstance->CollisionLods.IsEmpty()
+			&& WorldScapeRootInstance->WorldScapeLodInGeneration.IsEmpty()
+			&& !FAPSWorldScapeFoliagePolicy::HasPendingNativeWorker(WorldScapeRootInstance))
+		{
+			WorldScapeRootInstance->CheckForRegenerate();
+		}
 		// Never call WS_ForceRegenerate here. It destroys every existing LOD
 		// immediately, which is both unnecessary for a resident family and the exact
 		// lifetime hazard behind LodGenerationThread::DoWork -> SetData crashes. A new

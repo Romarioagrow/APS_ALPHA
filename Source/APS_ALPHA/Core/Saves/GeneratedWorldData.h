@@ -14,12 +14,15 @@
 #include "APS_ALPHA/Core/Enums/StarSpectralClass.h"
 #include "APS_ALPHA/Core/Enums/StarType.h"
 #include "APS_ALPHA/Core/Enums/StellarType.h"
+#include "APS_ALPHA/Core/Planetary/APSPlanetCloudSettings.h"
 #include "GeneratedWorldData.generated.h"
 
 USTRUCT(BlueprintType)
 struct FGeneratedWorldData
 {
     GENERATED_BODY()
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Clouds")
+	FAPSPlanetCloudSettings CloudSettings;
 
 	/** Authored labels also survive for remote bodies absent from the actor snapshot. */
 	UPROPERTY()

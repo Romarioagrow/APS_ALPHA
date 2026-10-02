@@ -2,11 +2,13 @@
 
 #include "APS_ALPHA/Core/Controllers/GravityPlayerController.h"
 #include "APS_ALPHA/Core/Instances/MainGameplayInstance.h"
+#include "APS_ALPHA/Core/Model/GeneratedWorld.h"
 #include "APS_ALPHA/Core/Model/SpawnParameters.h"
 #include "APS_ALPHA/Generation/AstroGenerator.h"
 #include "APS_ALPHA/Pawns/Base/ControlledPawn.h"
 #include "APS_ALPHA/UI/SMENU_HUD.h"
 #include "Engine/Engine.h"
+#include "HAL/PlatformTime.h"
 #include "Kismet/GameplayStatics.h"
 #include "TimerManager.h"
 #include "UObject/ConstructorHelpers.h"
@@ -83,19 +85,44 @@ void AGravityGameModeBase::BeginPlay()
 					UGameplayStatics::FinishSpawningActor(AstroGenerator, GeneratorTransform);
 					AstroGenerator->DisplayNewGeneratedWorld();
 					AstroGenerator->GenerateWorldByModel();
-					if (GameplayState->bPendingSavedWorldReplay)
+					const bool bStarterCommitPending = AstroGenerator->IsGeneratedStarterCommitPending();
+					const bool bSavedWorldReplay = GameplayState->bPendingSavedWorldReplay;
+					if (bSavedWorldReplay)
 					{
-						// The actor archive is an overlay, not a generator replacement.  Mark
-						// readiness only after the canonical hierarchy has been materialized.
-						GameplayState->bSavedWorldHierarchyReady = true;
-						if (AGravityPlayerController* GravityController =
-							Cast<AGravityPlayerController>(PlayerController))
+						GameplayState->bSavedWorldHierarchyReady = false;
+						const TWeakObjectPtr<AAstroGenerator> WeakGenerator(AstroGenerator);
+						const TWeakObjectPtr<UGeneratedWorld> ExpectedModel(NewGeneratedWorld);
+						const uint64 CommitSerial = AstroGenerator->GetGeneratedStarterCommitSerial();
+						const double RequestTime = FPlatformTime::Seconds();
+						if (bStarterCommitPending)
 						{
-							GravityController->LoadWorld();
+							World->GetTimerManager().SetTimer(SavedWorldReplayTimer,
+								FTimerDelegate::CreateWeakLambda(this,
+									[this, WeakGenerator, ExpectedModel, CommitSerial, RequestTime]()
+									{
+										TryFinalizeSavedWorldReplay(WeakGenerator, ExpectedModel,
+											CommitSerial, RequestTime);
+									}), 0.1f, true);
 						}
+						// Preserve the same-frame overlay when generation completed synchronously.
+						TryFinalizeSavedWorldReplay(WeakGenerator, ExpectedModel, CommitSerial, RequestTime);
 					}
-					UE_LOG(LogTemp, Log,
-						TEXT("[APS.WorldGeneration] Generated committed world from isolated runtime generator"));
+					if (bStarterCommitPending)
+					{
+						UE_LOG(LogTemp, Log,
+							TEXT("[APS.WorldGeneration] Generated world starter commit queued; saved replay deferred=%d"),
+							bSavedWorldReplay ? 1 : 0);
+					}
+					else if (!AstroGenerator->HasGeneratedStarterCommitFailed())
+					{
+						UE_LOG(LogTemp, Log,
+							TEXT("[APS.WorldGeneration] Generated committed world from isolated runtime generator"));
+					}
+					else if (!bSavedWorldReplay)
+					{
+						UE_LOG(LogTemp, Error,
+							TEXT("[APS.WorldGeneration] Generated world starter commit failed"));
+					}
 				}
 				else
 				{
@@ -105,6 +132,60 @@ void AGravityGameModeBase::BeginPlay()
 				}
 			}
 		}
+	}
+}
+
+void AGravityGameModeBase::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(SavedWorldReplayTimer);
+	}
+	Super::EndPlay(EndPlayReason);
+}
+
+void AGravityGameModeBase::TryFinalizeSavedWorldReplay(
+	TWeakObjectPtr<AAstroGenerator> WeakGenerator, TWeakObjectPtr<UGeneratedWorld> ExpectedModel,
+	const uint64 CommitSerial, const double RequestTime)
+{
+	UWorld* World = GetWorld();
+	AAstroGenerator* Generator = WeakGenerator.Get();
+	UMainGameplayInstance* GameplayState = IsValid(World) && World->GetGameInstance()
+		? World->GetGameInstance()->GetSubsystem<UMainGameplayInstance>() : nullptr;
+	const auto AbortReplay = [World](FTimerHandle& Timer, const TCHAR* Reason)
+	{
+		if (IsValid(World)) World->GetTimerManager().ClearTimer(Timer);
+		UE_LOG(LogTemp, Error, TEXT("[APS.Save] Deferred generated hierarchy replay aborted: %s"), Reason);
+	};
+	if (!IsValid(Generator) || !IsValid(World) || Generator->GetWorld() != World
+		|| !ExpectedModel.IsValid() || Generator->GetGeneratedWorldModel() != ExpectedModel.Get()
+		|| Generator->GetGeneratedStarterCommitSerial() != CommitSerial
+		|| !GameplayState || GameplayState->NewGeneratedWorld != ExpectedModel.Get()
+		|| !GameplayState->bPendingSavedWorldReplay || GameplayState->bUseAuthoredSinglePlayWorld)
+	{
+		AbortReplay(SavedWorldReplayTimer, TEXT("request cancelled or generator/world model replaced"));
+		return;
+	}
+	if (Generator->HasGeneratedStarterCommitFailed())
+	{
+		AbortReplay(SavedWorldReplayTimer, TEXT("starter hierarchy commit failed"));
+		return;
+	}
+	// Slightly exceeds the generator's 180-second material deadline; never wait indefinitely.
+	if (FPlatformTime::Seconds() - RequestTime > 185.0)
+	{
+		AbortReplay(SavedWorldReplayTimer, TEXT("starter hierarchy wait exceeded 185 seconds"));
+		return;
+	}
+	if (Generator->IsGeneratedStarterCommitPending()) return;
+
+	// Clear before LoadWorld, which may alter replay state or initiate world teardown.
+	World->GetTimerManager().ClearTimer(SavedWorldReplayTimer);
+	GameplayState->bSavedWorldHierarchyReady = true;
+	if (AGravityPlayerController* GravityController =
+		Cast<AGravityPlayerController>(World->GetFirstPlayerController()))
+	{
+		GravityController->LoadWorld();
 	}
 }
 

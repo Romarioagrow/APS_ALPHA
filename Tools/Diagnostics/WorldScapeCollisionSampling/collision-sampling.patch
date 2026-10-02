@@ -1,0 +1,76 @@
+diff --git a/F:/ChatGPT/APOSFERA/work/planet_flight_performance_20260929/before/Source/WorldScapeCore/Private/WorldScapeRoot_Collision.cpp b/F:/ChatGPT/APOSFERA/work/surface_detail_20260915/PluginBuild/Plugins/WorldScape/Source/WorldScapeCore/Private/WorldScapeRoot_Collision.cpp
+index 71a489bf..22a4e129 100644
+--- a/F:/ChatGPT/APOSFERA/work/planet_flight_performance_20260929/before/Source/WorldScapeCore/Private/WorldScapeRoot_Collision.cpp
++++ b/F:/ChatGPT/APOSFERA/work/surface_detail_20260915/PluginBuild/Plugins/WorldScape/Source/WorldScapeCore/Private/WorldScapeRoot_Collision.cpp
+@@ -1,5 +1,15 @@
+ // Copyright 2021 IOLACORP STUDIO. All Rights Reserved
+ #include "WorldScapeRoot.h"
++#include "Async/ParallelFor.h"
++#include "HAL/IConsoleManager.h"
++
++namespace
++{
++	TAutoConsoleVariable<int32> CVarCollisionSampleTasks(
++		TEXT("worldscape.CollisionSampleTasks"), 4,
++		TEXT("Maximum parallel collision sample tasks (1..4), only for roots tagged APS.Collision.ParallelSamples. 1 restores serial sampling."),
++		ECVF_Default);
++}
+ 
+ void AWorldScapeRoot::CheckCollisionDeletion(FVector HardenNormal, bool ResetCollisions)
+ {
+@@ -338,11 +348,9 @@ ColisionGeneration::ColisionGeneration(UWorldScapeLod* pWorldScapeLod, AWorldSca
+ 
+ void ColisionGeneration::CalculateNoise()
+ {
+-
+-	DVector ECEFVertexPosition;
++	TRACE_CPUPROFILER_EVENT_SCOPE(WS_CollisionSampleHeights);
+ 
+ 	//FVector NoisePosition;
+-	FLinearColor VertexColor;
+ 	TArray<FHeightMapVolumeDataCopy> VolumeListVar;
+ 	TArray<FNoiseVolumeData> NoiseVolumeListVar;
+ 	TArray<FTerrainHoleVolumeData> TerrainHoleVolumeListVar;
+@@ -366,18 +374,37 @@ void ColisionGeneration::CalculateNoise()
+ 
+ 	//FVector VertexWorldTransformedPosition;
+ 	//FVector VertexTransformedPosition;
+-	for (int32 i = 0; i < MainPatch.Vertices.Num(); i++)
++	// Opt-in requires an immutable, thread-safe native noise implementation. Keep
++	// unknown noise/heightmap volume implementations on their original serial path.
++	// The joined ParallelFor never lets work outlive the root, its volume snapshot,
++	// or this chunk. This is bounded sample parallelism, NOT asynchronous streaming.
++	const int32 NumVertices = MainPatch.Vertices.Num();
++	const bool bSafeParallel = IsInGameThread()
++		&& RootRef->ActorHasTag(TEXT("APS.Collision.ParallelSamples"))
++		&& !RootRef->bUsePlanetaryHeightMap
++		&& VolumeListVar.IsEmpty() && NoiseVolumeListVar.IsEmpty()
++		&& TerrainHoleVolumeListVar.IsEmpty();
++	const int32 MaxTasks = bSafeParallel
++		? FMath::Clamp(CVarCollisionSampleTasks.GetValueOnGameThread(), 1, 4) : 1;
++	// Allocate once before task launch. Every task writes only its own vertex/color;
++	// no shared Add(), resize, component access or UObject mutation in the body.
++	MainPatch.VertexColors.SetNumUninitialized(NumVertices);
++	auto SampleVertex = [&](int32 i)
+ 	{
+-		ECEFVertexPosition = MainPatch.Vertices[i] + RelativePosition;
++		const DVector ECEFVertexPosition = MainPatch.Vertices[i] + RelativePosition;
+ 
+ 
+ 		FNoiseData Data = RootRef->GetNoise(ECEFVertexPosition, NoiseVolumeListVar, VolumeListVar, TerrainHoleVolumeListVar, VolumeTransformArray);
+-		VertexColor = FLinearColor(Data.HeightNormalize, Data.Temperature, Data.Humidity, Data.FoliageMask);
++		MainPatch.VertexColors[i] = FLinearColor(Data.HeightNormalize, Data.Temperature, Data.Humidity, Data.FoliageMask);
+ 
+ 		MainPatch.Vertices[i] = WorldScapeWorld::GetVertexTransformation(Data.Height, MainPatch.Vertices[i], bFlatWorld, ECEFVertexPosition).ToFVector();
+ 
+-		MainPatch.VertexColors.Add(VertexColor);
+-	}
++	};
++	if (MaxTasks > 1 && NumVertices >= 1024)
++		ParallelFor(TEXT("WS_CollisionSampleBatch"), NumVertices,
++			FMath::DivideAndRoundUp(NumVertices, MaxTasks), SampleVertex);
++	else
++		for (int32 i = 0; i < NumVertices; ++i) SampleVertex(i);
+ }
+ 
+ void ColisionGeneration::SetPointPosition()

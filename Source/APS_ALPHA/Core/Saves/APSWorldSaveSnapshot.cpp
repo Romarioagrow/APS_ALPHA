@@ -1,5 +1,7 @@
 #include "APSWorldSaveSnapshot.h"
 
+#include "APS_ALPHA/Generation/APSBodyNames.h"
+
 #include "APS_ALPHA/Core/Structs/PlanetarySystemGenerationModel.h"
 #include "APS_ALPHA/Core/Model/SpawnParameters.h"
 #include "APS_ALPHA/Core/Model/GeneratedWorld.h"
@@ -56,6 +58,7 @@ namespace
 		Model.SurfaceCraterScale = Data.SurfaceCraterScale;
 		Model.SurfaceRoughnessScale = Data.SurfaceRoughnessScale;
 		Model.AtmosphereHeight = Data.AtmosphereHeight;
+		Model.CloudSettings = Data.CloudSettings.Sanitized();
 		Model.AtmosphereOpacity = Data.AtmosphereOpacity;
 		Model.AtmosphereMultiScattering = Data.AtmosphereMultiScattering;
 		Model.AtmosphereRayleighScattering = Data.AtmosphereRayleighScattering;
@@ -103,6 +106,8 @@ UGeneratedWorld* APSWorldSaveSnapshot::Restore(const UGameSave* Save, UObject* O
 	}
 
 	bool bRestoredSnapshot = false;
+	// A snapshot from before 02.10 has no NameStyle tag: it keeps the legacy names. Newer snapshots overwrite this.
+	Model->NameStyle = APSBodyNames::LegacyStyle;
 	if (!Save->GeneratedWorldModelData.IsEmpty())
 	{
 		FMemoryReader Reader(Save->GeneratedWorldModelData, true);

@@ -2,6 +2,8 @@
 
 #if WITH_EDITOR
 #include "APSSharedTerrainLodABBuilder.h"
+#include "APSNormalMacroWarpABBuilder.h"
+#include "APSTerrainContinuityPublisher.h"
 #include "Engine/Texture2D.h"
 #include "Materials/MaterialExpressionTextureObject.h"
 #include "HAL/FileManager.h"
@@ -14,6 +16,8 @@ namespace APSSharedTerrainMacroABBuilder
     namespace
     {
         constexpr const TCHAR* Destination = TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Diagnostics/MacroAB20260928V2");
+        constexpr const TCHAR* ApproachDestination = TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Diagnostics/MacroApproach20260929V1");
+        bool IsApproachRange() { return FParse::Param(FCommandLine::Get(), TEXT("APSBuildMacroApproachRange")); }
         constexpr const TCHAR* Shared = TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Shared/");
 
         // Aperiodic, planet-fixed 3D field. No wrapped UVs or axis-plane seams.
@@ -81,8 +85,29 @@ return lerp(Legacy,value.xxx,w);
             using FBuild = APSSharedTerrainMaterialBuilder::FBuild;
             FBuild B;
             APSSharedTerrainNormalContinuity::TTransform<FBuild> Reader;
-            explicit FBuilder(IAssetTools& Tools) : B(Tools, Destination), Reader(B) {}
+            explicit FBuilder(IAssetTools& Tools) : B(Tools, IsApproachRange() ? ApproachDestination : Destination), Reader(B) {}
             bool Fail(const FString& Error) { B.Error = Error; return false; }
+
+            bool PatchApproachRange(UMaterialFunction* Function)
+            {
+                int32 Count = 0;
+                for (auto* Node : Reader.Graph(Function))
+                {
+                    Reader.Register(Function, Node);
+                    auto* Custom = Cast<UMaterialExpressionCustom>(Node);
+                    if (!Custom || Custom->Description != TEXT("APS orbital aperiodic macro v1; exact native near detail")) continue;
+                    // Isolate distance gating only. Same source mean/variance, field,
+                    // seed/domain, three scales and downstream palette as installed V2.
+                    if (Custom->Code != Shader) return Fail(TEXT("Installed macro shader differs from audited V2"));
+                    const int32 Replaced = Custom->Code.ReplaceInline(
+                        TEXT("smoothstep(500000.0,5000000.0,length(CameraDelta)*abs(Scale))"),
+                        TEXT("smoothstep(50000.0,500000.0,length(CameraDelta)*abs(Scale))"), ESearchCase::CaseSensitive);
+                    if (Replaced != 1) return Fail(TEXT("Expected one distance gate per macro band"));
+                    Custom->Description = TEXT("APS approach macro diagnostic; exact native below 500m, blend to 5km");
+                    ++Count;
+                }
+                return Count == 3 && B.Error.IsEmpty() ? true : Fail(TEXT("Expected exactly three installed macro gates"));
+            }
 
             bool TextureStatistics(UTexture2D* Texture, float& Mean, float& StdDev)
             {
@@ -201,9 +226,12 @@ return lerp(Legacy,value.xxx,w);
                 {
                     auto* Call = Cast<UMaterialExpressionMaterialFunctionCall>(Node);
                     auto* Macro = Call ? Cast<UMaterialFunction>(Call->MaterialFunction) : nullptr;
-                    if (!Macro || Macro->GetPathName() != FString(Shared) + TEXT("MF_APS_MF_MacroVariationBlock_50169517.MF_APS_MF_MacroVariationBlock_50169517")) continue;
+                    const FString ExpectedMacro = FString(Shared) + (IsApproachRange()
+                        ? TEXT("MF_APS_OrbitalMacroV2.MF_APS_OrbitalMacroV2")
+                        : TEXT("MF_APS_MF_MacroVariationBlock_50169517.MF_APS_MF_MacroVariationBlock_50169517"));
+                    if (!Macro || Macro->GetPathName() != ExpectedMacro) continue;
                     auto* Copy = Cast<UMaterialFunction>(B.Duplicate(Macro, TEXT("MF_APS_AperiodicMacro")));
-                    if (!Copy || !Patch(Copy)) return false;
+                    if (!Copy || !(IsApproachRange() ? PatchApproachRange(Copy) : Patch(Copy))) return false;
                     UMaterialEditingLibrary::UpdateMaterialFunction(Copy);
                     if (!B.ReconnectFunctionById(Call, Macro, Copy)) return false;
                     ++Patched;
@@ -242,7 +270,8 @@ return lerp(Legacy,value.xxx,w);
                     if (!UPackage::SavePackage(Package,Output,*FPackageName::LongPackageNameToFilename(Package->GetName(),FPackageName::GetAssetPackageExtension()),Args))
                         return Fail(TEXT("Candidate save failed"));
                 }
-                UE_LOG(LogTemp,Display,TEXT("[APS.MacroAB] Saved isolated candidate only: three aperiodic macro bands, native below 5km, blend 5..50km, zero added texture samples; no production selection or visual acceptance"));
+                UE_LOG(LogTemp,Display,TEXT("[APS.MacroAB] Saved isolated candidate only: three macro bands, approachRange=%d, blend=%s km, zero added texture samples; no production selection or visual acceptance"),
+                    IsApproachRange(), IsApproachRange() ? TEXT("0.5..5") : TEXT("5..50"));
                 return true;
             }
         };
@@ -250,6 +279,10 @@ return lerp(Legacy,value.xxx,w);
 
     bool Build(IAssetTools& Tools)
     {
+        if (FParse::Param(FCommandLine::Get(), TEXT("APSPublishTerrainContinuity"))) return APSTerrainContinuityPublisher::Build(Tools);
+        if (FParse::Param(FCommandLine::Get(), TEXT("APSBuildContinuityCombined"))) return APSNormalMacroWarpABBuilder::Build(Tools,true,true);
+        if (FParse::Param(FCommandLine::Get(), TEXT("APSBuildNormalHex"))) return APSNormalMacroWarpABBuilder::Build(Tools,true);
+        if (FParse::Param(FCommandLine::Get(), TEXT("APSBuildNormalMacroWarp"))) return APSNormalMacroWarpABBuilder::Build(Tools);
         FBuilder Builder(Tools);
         const bool Result = Builder.Run();
         if (!Result) UE_LOG(LogTemp,Error,TEXT("[APS.MacroAB] Refused: %s"),*Builder.B.Error);

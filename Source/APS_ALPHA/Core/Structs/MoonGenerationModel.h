@@ -5,6 +5,7 @@
 #include "APS_ALPHA/Core/Enums/MoonType.h"
 #include "APS_ALPHA/Core/Enums/PlanetHabitability.h"
 #include "APS_ALPHA/Core/Enums/PlanetType.h"
+#include "APS_ALPHA/Core/Planetary/APSPlanetCloudSettings.h"
 #include "MoonGenerationModel.generated.h"
 
 enum class EMoonType : uint8;
@@ -34,6 +35,9 @@ struct FMoonModel :
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Moon Atmosphere")
 	double MoonAtmosphereHeight{0.0};
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Clouds")
+	FAPSPlanetCloudSettings CloudSettings;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Moon Surface")
 	int32 SurfaceSeed{0};

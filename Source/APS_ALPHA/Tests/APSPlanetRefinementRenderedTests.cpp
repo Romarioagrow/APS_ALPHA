@@ -25,6 +25,7 @@
 #include "EngineUtils.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Widgets/SViewport.h"
+#include "Widgets/SWindow.h"
 #include "HAL/FileManager.h"
 #include "ImageUtils.h"
 #include "Misc/FileHelper.h"
@@ -36,11 +37,42 @@
 #include "MaterialShared.h"
 #include "UObject/StrongObjectPtr.h"
 #include "APSWaterDepthRenderedProbe.h"
+#include "APSCloudFlightProbe.h"
 
 // Test-only changes are transient and restored. This is a causal A/B fixture,
 // not a claim that any screenshot is visually accepted.
 namespace APSPlanetRefinement
 {
+// Never silently capture Ocean when a requested family is absent from a hand-written list.
+static bool ResolveProbeFamily(const FString& Name, EPlanetType& Out)
+{
+    const UEnum* Types = StaticEnum<EPlanetType>();
+    for (uint8 Value = 0; Value <= APSPlanetTypes::LastValue; ++Value)
+    {
+        const auto Type = static_cast<EPlanetType>(Value);
+        if (APSPlanetTypes::IsSelectable(Type) && Name == Types->GetNameStringByValue(Value))
+        { Out = Type; return true; }
+    }
+    return false;
+}
+
+static bool ResolveOrbitalBatch(const FString& Text, TArray<FString>& Out)
+{
+    Out.Reset();
+    TArray<FString> Names;
+    Text.ParseIntoArray(Names, TEXT(","), false);
+    if (Names.IsEmpty() || Names.Num() > APSPlanetTypes::LastValue + 1) return false;
+    for (const FString& Name : Names)
+    {
+        EPlanetType Type = EPlanetType::Unknown;
+        if (!ResolveProbeFamily(Name, Type) || !UAPSPlanetSurfaceProfileResolver::SupportsWorldScape(Type)
+            || Out.Contains(Name))
+        { Out.Reset(); return false; }
+        Out.Add(Name);
+    }
+    return true;
+}
+
 class FProbe final : public IAutomationLatentCommand
 {
     FAutomationTestBase* Test;
@@ -51,6 +83,9 @@ class FProbe final : public IAutomationLatentCommand
     float AtmosphereOpacity = 1.0f;
     bool bTerrainLodAB = false, bTerrainFarNormalAB = false;
     APSPlanetTerrainLodAB::FProbe TerrainLodProbe;
+    TWeakPtr<SWindow> ResizedWindow;
+    FVector2D SavedWindowSize = FVector2D::ZeroVector;
+    bool bViewportSizeHandled = false;
     APSWaterDepthRendered::FProbe WaterDepthProbe;
     TWeakObjectPtr<UMaterialInterface> ProductionLiquidParent;
     TWeakObjectPtr<AAstroGenerator> Generator;
@@ -453,17 +488,19 @@ class FProbe final : public IAutomationLatentCommand
         if (bSharedWaterCandidate) Folder /= TEXT("SharedWaterCandidate");
         if (APSWaterDepthRendered::Enabled()) Folder /= TEXT("WaterDepth20260927");
         if (bWaterOpacityAB) Folder /= TEXT("WaterOpacityAB");
-        if (APSPlanetTerrainLodAB::UsesNativeViews()) Folder /= TEXT("TerrainNativeViews");
+        if (APSPlanetBufferViews::Requested()) Folder /= TEXT("TerrainBuffers");
+        else if (APSPlanetTerrainLodAB::UsesNativeViews()) Folder /= TEXT("TerrainNativeViews");
         else if (bTerrainLodAB) Folder /= bTerrainFarNormalAB ? TEXT("TerrainPixelFarNormalAB") : TEXT("TerrainPixelAB");
         IFileManager::Get().MakeDirectory(*Folder, true);
         TArray64<uint8> Png; FImageUtils::PNGCompressImageArray(Size.X, Size.Y, Pixels, Png);
         Test->TestTrue(TEXT("Saved real PLANET capture"), FFileHelper::SaveArrayToFile(Png, *(Folder / (FString(Label) + TEXT(".png")))));
-        Test->AddInfo(FString::Printf(TEXT("PLANET_PROBE family=%s phase=%s"), *Family, Label));
+        Test->AddInfo(FString::Printf(TEXT("PLANET_PROBE family=%s phase=%s viewport=%dx%d"), *Family, Label, Size.X, Size.Y));
     }
 public:
-    explicit FProbe(FAutomationTestBase* InTest) : Test(InTest)
+    explicit FProbe(FAutomationTestBase* InTest, const FString& ExactFamily = FString()) : Test(InTest)
     {
-        FParse::Value(FCommandLine::Get(), TEXT("APSPlanetProbeFamily="), Family);
+        if (ExactFamily.IsEmpty()) FParse::Value(FCommandLine::Get(), TEXT("APSPlanetProbeFamily="), Family);
+        else Family = ExactFamily;
         FParse::Value(FCommandLine::Get(), TEXT("APSPlanetProbeZoom="), Zoom);
         FParse::Value(FCommandLine::Get(), TEXT("APSPlanetProbeAtmosphereOpacity="), AtmosphereOpacity);
         bTerrainLodAB = FParse::Param(FCommandLine::Get(), TEXT("APSProbeTerrainLodAB")) || APSPlanetTerrainLodAB::UsesNativeViews();
@@ -476,7 +513,11 @@ public:
         bSharedAmmoniaCandidate = FParse::Param(FCommandLine::Get(), TEXT("APSProbeSharedAmmoniaCandidate"));
         bSharedWaterCandidate = FParse::Param(FCommandLine::Get(), TEXT("APSProbeSharedWaterCandidate"));
     }
-    ~FProbe() override { Restore(); RestoreCandidate(); }
+    ~FProbe() override
+    {
+        Restore(); RestoreCandidate();
+        if (auto Window = ResizedWindow.Pin()) Window->Resize(SavedWindowSize);
+    }
     bool Update() override
     {
         const double Now = FPlatformTime::Seconds();
@@ -484,10 +525,30 @@ public:
         UWorld* World = AutomationCommon::GetAnyGameWorld();
         AMainMenuController* Controller = World ? Cast<AMainMenuController>(World->GetFirstPlayerController()) : nullptr;
         UWorldGenerationViewModel* VM = Controller ? Controller->GetWorldGenerationViewModel() : nullptr;
-        if (Now - Start > 100) { DiagnosePending(TEXT("Timeout"), World, VM, true); Test->AddError(TEXT("PLANET causal probe timeout")); Restore(); return true; }
+        if (Now - Start > (APSPlanetTerrainLodAB::UsesZoomSweep() ? 240.0 : 100.0)) { DiagnosePending(TEXT("Timeout"), World, VM, true); Test->AddError(TEXT("PLANET causal probe timeout")); Restore(); return true; }
         if (!VM || !VM->GeneratedWorld) { DiagnosePending(TEXT("ViewModelOrGeneratedWorld"), World, VM); return false; }
+        if (!bViewportSizeHandled)
+        {
+            int32 Width = 0, Height = 0;
+            const bool HasWidth = FParse::Value(FCommandLine::Get(), TEXT("APSProbeViewportWidth="), Width);
+            const bool HasHeight = FParse::Value(FCommandLine::Get(), TEXT("APSProbeViewportHeight="), Height);
+            if (HasWidth || HasHeight)
+            {
+                auto* Client = AutomationCommon::GetAnyGameViewportClient();
+                auto Window = Client ? Client->GetWindow() : TSharedPtr<SWindow>();
+                if (!HasWidth || !HasHeight || Width < 640 || Height < 480 || Width > 3840 || Height > 2160 || !Window)
+                { Test->AddError(TEXT("Explicit probe viewport needs a window and bounded width/height")); return true; }
+                ResizedWindow = Window; SavedWindowSize = FVector2D(Window->GetClientSizeInScreen());
+                Window->Resize(FVector2D(Width, Height));
+                Test->AddInfo(FString::Printf(TEXT("PLANET_PROBE_VIEWPORT requestedClient=%dx%d; actual capture dimensions logged separately"), Width, Height));
+            }
+            bViewportSizeHandled = true; Next = Now + 1.0; return false;
+        }
         if (Step == 0)
         {
+            EPlanetType RequestedType = EPlanetType::Unknown;
+            if (!ResolveProbeFamily(Family, RequestedType))
+            { Test->AddError(FString(TEXT("Unknown or non-selectable planet probe family: ")) + Family); return true; }
             EPlanetType WaterDepthType = EPlanetType::Ocean;
             if (APSWaterDepthRendered::Enabled() && (HasSharedCandidate() || bTerrainLodAB
                 || bWaterOpacityAB || bLavaSamplingAB || bLavaEmissionAB
@@ -502,10 +563,11 @@ public:
             if (APSLavaSamplingABProbe::UsesScaleIsolation()
                 && (!bLavaSamplingAB || APSLavaSamplingABProbe::UsesExplicitDerivatives()))
             { Test->AddError(TEXT("WAT scale isolation requires sampling A/B and forbids derivative candidate mixing")); return true; }
-            if ((bTerrainFarNormalAB && !bTerrainLodAB) || (bTerrainLodAB && (Family != TEXT("Tundra")
+            if ((bTerrainFarNormalAB && !bTerrainLodAB) || (bTerrainLodAB && ((!APSPlanetTerrainLodAB::UsesNativeViews() && !APSPlanetTerrainLodAB::UsesWarpOnly() && !APSPlanetTerrainLodAB::UsesSlopeSide() && !APSPlanetTerrainLodAB::UsesOrbitalFields() && Family != TEXT("Tundra"))
+                || (APSTundraLayerTransfer::Requested() && Family != TEXT("Tundra"))
                 || HasSharedCandidate() || bWaterOpacityAB || bLavaSamplingAB || bLavaEmissionAB
                 || FParse::Param(FCommandLine::Get(), TEXT("APSProbeLavaDerivativeFix")))))
-            { Test->AddError(TEXT("PLANET terrain A/B requires Tundra and no liquid diagnostic flags; far-normal requires terrain A/B")); return true; }
+            { Test->AddError(TEXT("Legacy PLANET graph/layer transfer requires Tundra; current shared-graph warp/side candidates and native views allow other families; no liquid diagnostic flags")); return true; }
             if (bWaterOpacityAB && (!bSharedWaterCandidate || bLavaSamplingAB || bLavaEmissionAB))
             { Test->AddError(TEXT("Water optical A/B requires only shared Water")); return true; }
             if (bLavaSamplingAB && (!bSharedLavaCandidate || bSharedAmmoniaCandidate || bSharedWaterCandidate || bLavaEmissionAB))
@@ -521,6 +583,9 @@ public:
             if (bSharedLavaCandidate && Family != TEXT("Melted") && Family != TEXT("Volcanic") && Family != TEXT("Lava"))
             { Test->AddError(TEXT("Shared Lava candidate probe requires Melted, Volcanic or Lava")); return true; }
             UGeneratedWorld* Model = VM->GeneratedWorld;
+            FString CloudFixtureError;
+            if (!APSCloudFlightProbe::ConfigureFeatureScaleFixture(Model->CloudSettings, CloudFixtureError))
+            { Test->AddError(CloudFixtureError); return true; }
             Model->AstroGenerationLevel = EAstroGenerationLevel::StarCluster;
             Model->bGenerateFullScaledWorld = true; Model->bGenerateHomeSystem = true;
             Model->bStartWithHomePlanet = true; Model->GenerationSeed = 271828;
@@ -529,21 +594,15 @@ public:
             Model->SpectralClass = ESpectralClass::G; Model->StarType = EStarType::SingleStar;
             Model->PlanetsAmount = 1; Model->MoonsAmount = 0; Model->StartPlanetIndex = 1;
             Model->PlanetRadius = 6750; Model->PlanetSurfaceSeed = 1337;
-            Model->PlanetType = Family == TEXT("Melted") ? EPlanetType::Melted :
-                Family == TEXT("Tundra") ? EPlanetType::Tundra :
-                Family == TEXT("Volcanic") ? EPlanetType::Volcanic :
-                Family == TEXT("Lava") ? EPlanetType::Lava :
-                Family == TEXT("Ice") ? EPlanetType::Ice :
-                Family == TEXT("Frozen") ? EPlanetType::Frozen :
-                Family == TEXT("Ammonia") ? EPlanetType::Ammonia :
-                Family == TEXT("Water") ? EPlanetType::Water :
-                Family == TEXT("Metal") ? EPlanetType::Metal : EPlanetType::Ocean;
+            Model->PlanetType = RequestedType;
             if (APSWaterDepthRendered::Enabled()) Model->PlanetType = WaterDepthType;
             // Match the current generated-world default. The old diagnostic
             // value 12 hid the surface under a dense white atmosphere.
             Model->AtmosphereHeight = 100; Model->AtmosphereOpacity = AtmosphereOpacity;
             Test->AddInfo(FString::Printf(TEXT("PLANET_PROBE_SETUP family=%s opacity=%.6g zoom=%.6g candidate=%d"),
                 *Family, AtmosphereOpacity, Zoom, HasSharedCandidate() ? 1 : 0));
+            // AddInfo is echoed at completion; batch GPU rows need a live family marker.
+            UE_LOG(LogTemp, Display, TEXT("PLANET_PROBE_SETUP family=%s"), *Family);
             if (!Controller->OpenAstronomicalGenerationForAutomation(EAstroPreviewFocus::HomePlanet, EAPSGenerationRoute::Civilization)) return false;
             Step = 1; Next = Now + 3; return false;
         }
@@ -779,6 +838,91 @@ public:
         ++Step; Next = Now + 3; return false;
     }
 };
+}
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAPSPlanetProbeFamilyContract,
+    "APS.Contracts.PlanetSurface.RenderedProbeFamily", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FAPSPlanetProbeFamilyContract::RunTest(const FString& Parameters)
+{
+    // Regression: a frozen candidate copies the native physical frame exactly,
+    // including double-vector scale and float high/low rows. A real drift must
+    // still fail, not be accepted by a relaxed numeric tolerance.
+    auto* FrameBase = NewObject<UMaterial>();
+    auto* NativeFrame = UMaterialInstanceDynamic::Create(FrameBase, GetTransientPackage());
+    auto* CopiedFrame = UMaterialInstanceDynamic::Create(FrameBase, GetTransientPackage());
+    auto* FrameRoot = NewObject<USceneComponent>();
+    FrameRoot->SetWorldLocation(FVector(123456.789123, -876543.210987, 13579.2468));
+    FrameRoot->SetWorldRotation(FRotator(-6.409012, -176.542354, 0.795904));
+    FrameRoot->SetWorldScale3D(FVector(0.137249185));
+    TestTrue(TEXT("Native diagnostic frame writes"), APSSharedTerrainMaterial::WritePhysicalFrame(NativeFrame, FrameRoot, 0.00188353477));
+    CopiedFrame->CopyMaterialUniformParameters(NativeFrame);
+    FString FrameError;
+    TestTrue(TEXT("Copied physical frame is bit-exact"), APSPlanetTerrainLodAB::SamePhysicalUniforms(CopiedFrame, NativeFrame, FrameError));
+    FVector4 NativeInverse;
+    NativeFrame->GetDoubleVectorParameterValue(FHashedMaterialParameterInfo(TEXT("APS_SharedInverseScale")), NativeInverse);
+    CopiedFrame->SetDoubleVectorParameterValue(TEXT("APS_SharedInverseScale"), NativeInverse + FVector4(0.000001, 0, 0, 0));
+    TestFalse(TEXT("Changed scale is still rejected"), APSPlanetTerrainLodAB::SamePhysicalUniforms(CopiedFrame, NativeFrame, FrameError));
+    CopiedFrame->CopyMaterialUniformParameters(NativeFrame);
+    CopiedFrame->SetVectorParameterValue(TEXT("APS_SharedDetailRowXLow"), FLinearColor(0.1f, 0.2f, 0.3f, 0));
+    TestFalse(TEXT("Changed detail residual is rejected"), APSPlanetTerrainLodAB::SamePhysicalUniforms(CopiedFrame, NativeFrame, FrameError));
+    CopiedFrame->CopyMaterialUniformParameters(NativeFrame);
+    TestTrue(TEXT("Exact recopy restores both frame paths"), APSPlanetTerrainLodAB::SamePhysicalUniforms(CopiedFrame, NativeFrame, FrameError));
+    for (uint8 Value = 0; Value <= APSPlanetTypes::LastValue; ++Value)
+    {
+        const auto Expected = static_cast<EPlanetType>(Value);
+        const FString Name = StaticEnum<EPlanetType>()->GetNameStringByValue(Value);
+        EPlanetType Actual = EPlanetType::Unknown;
+        const bool Resolved = APSPlanetRefinement::ResolveProbeFamily(Name, Actual);
+        TestEqual(*Name, Resolved, APSPlanetTypes::IsSelectable(Expected));
+        if (Resolved) TestTrue(*(Name + TEXT(" exact type")), Actual == Expected);
+    }
+    EPlanetType Unchanged = EPlanetType::Frozen;
+    TestFalse(TEXT("Typo is rejected, not silently rendered as Ocean"), APSPlanetRefinement::ResolveProbeFamily(TEXT("Terrrestrial"), Unchanged));
+    TestTrue(TEXT("Failure leaves output unchanged"), Unchanged == EPlanetType::Frozen);
+    TArray<FString> Batch;
+    FString CommandLineBatch;
+    FParse::Value(TEXT("-APSProbeTerrainBatchFamilies=Rocky,Ammonia -unattended"),
+        TEXT("APSProbeTerrainBatchFamilies="), CommandLineBatch, false);
+    TestEqual(TEXT("Command-line batch preserves comma-separated types"), CommandLineBatch, FString(TEXT("Rocky,Ammonia")));
+    TestTrue(TEXT("Explicit supported batch"), APSPlanetRefinement::ResolveOrbitalBatch(TEXT("Rocky,Ammonia"), Batch));
+    TestEqual(TEXT("Batch preserves requested count"), Batch.Num(), 2);
+    for (const TCHAR* Bad : {TEXT(""), TEXT("Rocky,Rocky"), TEXT("Rocky,"), TEXT("Rocky,Terrrestrial"), TEXT("GasGiant")})
+    {
+        TestFalse(Bad, APSPlanetRefinement::ResolveOrbitalBatch(Bad, Batch));
+        TestTrue(TEXT("Rejected batch leaves no partial cases"), Batch.IsEmpty());
+    }
+    if (FParse::Param(FCommandLine::Get(), TEXT("APSProbeTerrainFamilyBatch")))
+    {
+        FString Names;
+        FParse::Value(FCommandLine::Get(), TEXT("APSProbeTerrainBatchFamilies="), Names, false);
+        TestTrue(TEXT("Requested rendered batch is valid, unique and supported"), APSPlanetRefinement::ResolveOrbitalBatch(Names, Batch));
+    }
+    return true;
+}
+// Explicit opt-in only. Each case uses a fresh real menu world and the existing
+// guarded native/candidate probe. One process shares engine/shader startup work;
+// screenshots and test results remain separated by the actual requested type.
+IMPLEMENT_COMPLEX_AUTOMATION_TEST(FAPSPlanetOrbitalFieldsFamilyBatch,
+    "APS.Rendered.PlanetRefinement.OrbitalFieldsFamily", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::EngineFilter)
+void FAPSPlanetOrbitalFieldsFamilyBatch::GetTests(TArray<FString>& Names, TArray<FString>& Commands) const
+{
+    if (!FParse::Param(FCommandLine::Get(), TEXT("APSProbeTerrainFamilyBatch"))) return;
+    FString Requested;
+    FParse::Value(FCommandLine::Get(), TEXT("APSProbeTerrainBatchFamilies="), Requested, false);
+    TArray<FString> Families;
+    if (!APSPlanetRefinement::ResolveOrbitalBatch(Requested, Families)) return;
+    for (const FString& Family : Families) { Names.Add(Family); Commands.Add(Family); }
+}
+bool FAPSPlanetOrbitalFieldsFamilyBatch::RunTest(const FString& Parameters)
+{
+    EPlanetType Type = EPlanetType::Unknown;
+    if (!FParse::Param(FCommandLine::Get(), TEXT("APSProbeTerrainFamilyBatch"))
+        || !(APSPlanetTerrainLodAB::UsesOrbitalFields() || APSPlanetTerrainLodAB::UsesPublishedViews()) || !APSPlanetTerrainLodAB::UsesFamilyScaleAB()
+        || !APSPlanetRefinement::ResolveProbeFamily(Parameters, Type)
+        || !UAPSPlanetSurfaceProfileResolver::SupportsWorldScape(Type))
+    { AddError(TEXT("Orbital family batch requires explicit fields/family-scale mode and a supported concrete type")); return false; }
+    if (!AutomationOpenMap(TEXT("/Game/APS/APS_ALPHA/Menu/L_APS_MainMenu_Alpha"), true)) return false;
+    ADD_LATENT_AUTOMATION_COMMAND(APSPlanetRefinement::FProbe(this, Parameters));
+    return true;
 }
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAPSPlanetRefinementRenderedProbe,
     "APS.Rendered.PlanetRefinement.CausalLayers", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::EngineFilter)

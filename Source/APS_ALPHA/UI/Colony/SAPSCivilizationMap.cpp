@@ -1,4 +1,5 @@
 #include "SAPSCivilizationMap.h"
+#include "APS_ALPHA/UI/Style/APSUINumber.h"
 
 #include "APS_ALPHA/Actors/Astro/CelestialBody.h"
 #include "APS_ALPHA/Actors/Astro/Moon.h"
@@ -402,6 +403,7 @@ void SAPSCivilizationMap::Refresh()
 		const FAPSFleetUnit* Unit = Fleet ? Fleet->FindUnit(Ship) : nullptr;
 		FObject& Object = Add(Ship, EKind::Ship, Unit
 			? FText::Format(LOCTEXT("UnitDetail", "CLASS {0}  /  {1}"), EnumText(Ship->SizeClass), APSFleet::DivisionName(Unit->Division))
+			: Ship->IsGroundVehicle() ? LOCTEXT("VehicleDetail", "GROUND VEHICLE")
 			: FText::Format(LOCTEXT("ShipDetail", "CLASS {0} SHIP"), EnumText(Ship->SizeClass)),
 			Unit ? APSFleet::DivisionColour(Unit->Division) : bOwn ? FLinearColor(0.36f, 1.0f, 0.58f) : White(), 0.0,
 			AnchorOf(Ship->GetActorLocation()), bOwn);
@@ -422,6 +424,12 @@ void SAPSCivilizationMap::Refresh()
 
 void SAPSCivilizationMap::Focus(AActor* Planet)
 {
+	// Refresh() re-focuses the same view every few frames: only a new view (system or a planet's space) starts whole.
+	if (FocusPlanet.Get() != Planet)
+	{
+		MapZoom = 1.0;
+		MapOffset = FVector2D::ZeroVector;
+	}
 	FocusPlanet = Planet;
 	const AActor* Centre = Planet ? Planet : Star.Get();
 	RangeCm = 1.0;
@@ -438,12 +446,16 @@ void SAPSCivilizationMap::Focus(AActor* Planet)
 	};
 	if (const APlanetaryBody* Body = Cast<APlanetaryBody>(Planet))
 	{
-		// Local view: the planet's neighbourhood, from its surface out to its farthest moon, station or ship.
+		// Local view: the planet's neighbourhood, from its surface out to its farthest moon or station. Rio 02.10 ("a ship
+		// leaving on an order must not zoom the planet out unless that one ship is picked"): ships widen the view only
+		// when exactly one is picked and it is that ship.
 		const double PlanetRadius = FMath::Max(Body->GetWorldScapeBodyRadiusCm(), 1.0);
 		double Farthest = PlanetRadius * 5.0;
+		const AActor* FollowedShip = HighlightedShips.Num() == 1 ? HighlightedShips[0].Get() : nullptr;
 		for (const FObject& Object : Objects)
 		{
-			if (Object.Anchor.Get() == Planet && Object.Actor.Get() != Planet)
+			if (Object.Anchor.Get() == Planet && Object.Actor.Get() != Planet
+				&& (Object.Kind != EKind::Ship || Object.Actor.Get() == FollowedShip))
 			{
 				Farthest = FMath::Max(Farthest, InPlane(Object.Location));
 			}
@@ -559,8 +571,9 @@ int32 SAPSCivilizationMap::OnPaint(const FPaintArgs& Args, const FGeometry& Allo
 {
 	using namespace APSCivilizationMapPrivate;
 	const FVector2D Size = AllottedGeometry.GetLocalSize();
-	const FVector2D Centre = Size * 0.5;
-	const double PixelRadius = FMath::Max(FMath::Min(Size.X, Size.Y) * 0.5 - 38.0, 40.0);
+	// The whole projection scales with the radius, so the wheel zoom is a larger radius and the pan a moved centre.
+	const FVector2D Centre = Size * 0.5 + MapOffset;
+	const double PixelRadius = FMath::Max(FMath::Min(Size.X, Size.Y) * 0.5 - 38.0, 40.0) * MapZoom;
 	const FSlateFontInfo LabelFont = Font(TEXT("Bold"), 9);
 	const FSlateFontInfo SmallFont = Font(TEXT("Regular"), 9);
 	PaintedPositions.Init(Unpainted, Objects.Num());
@@ -733,7 +746,7 @@ int32 SAPSCivilizationMap::OnPaint(const FPaintArgs& Args, const FGeometry& Allo
 			const FVector2D Badge = Position + FVector2D(9.0, -9.0);
 			Dot(OutDrawElements, LayerId + 5, AllottedGeometry, Badge, 4.0, FLinearColor(0.36f, 1.0f, 0.58f));
 			Label(OutDrawElements, LayerId + 6, AllottedGeometry, Badge + FVector2D(5.0, -8.0),
-				FText::AsNumber(*Count), SmallFont, FLinearColor(0.36f, 1.0f, 0.58f));
+				APSUINumber::Number(*Count), SmallFont, FLinearColor(0.36f, 1.0f, 0.58f));
 		}
 		// Names: always for the star and planets, and for everything in a local view.
 		const bool bNamed = Object.Kind == EKind::Star || Object.Kind == EKind::Planet || Planet != nullptr;
@@ -923,19 +936,82 @@ int32 SAPSCivilizationMap::HitTest(const FVector2D& LocalPosition) const
 
 FReply SAPSCivilizationMap::OnMouseMove(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)
 {
-	HoverIndex = HitTest(MyGeometry.AbsoluteToLocal(MouseEvent.GetScreenSpacePosition()));
+	const FVector2D Local = MyGeometry.AbsoluteToLocal(MouseEvent.GetScreenSpacePosition());
+	if (bPressed)
+	{
+		bPanning |= FVector2D::Distance(Local, PressPosition) > 4.0;
+		if (bPanning)
+		{
+			MapOffset = PressOffset + (Local - PressPosition);
+			return FReply::Handled();
+		}
+	}
+	HoverIndex = HitTest(Local);
 	return FReply::Unhandled();
 }
 
 FReply SAPSCivilizationMap::OnMouseButtonDown(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)
 {
-	if (MouseEvent.GetEffectingButton() != EKeys::LeftMouseButton)
+	if (MouseEvent.GetEffectingButton() != EKeys::LeftMouseButton && MouseEvent.GetEffectingButton() != EKeys::RightMouseButton)
 	{
 		return FReply::Unhandled();
 	}
-	const int32 Index = HitTest(MyGeometry.AbsoluteToLocal(MouseEvent.GetScreenSpacePosition()));
-	SelectedId = Objects.IsValidIndex(Index) ? Objects[Index].StableId : FString();
-	OnSelectionChanged.ExecuteIfBound();
+	bPressed = true;
+	bPanning = false;
+	PressPosition = MyGeometry.AbsoluteToLocal(MouseEvent.GetScreenSpacePosition());
+	PressOffset = MapOffset;
+	return FReply::Handled().CaptureMouse(SharedThis(this));
+}
+
+FReply SAPSCivilizationMap::OnMouseButtonUp(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)
+{
+	if (!bPressed)
+	{
+		return FReply::Unhandled();
+	}
+	bPressed = false;
+	if (!bPanning && MouseEvent.GetEffectingButton() == EKeys::LeftMouseButton)
+	{
+		const int32 Index = HitTest(MyGeometry.AbsoluteToLocal(MouseEvent.GetScreenSpacePosition()));
+		SelectedId = Objects.IsValidIndex(Index) ? Objects[Index].StableId : FString();
+		OnSelectionChanged.ExecuteIfBound();
+	}
+	bPanning = false;
+	return FReply::Handled().ReleaseMouseCapture();
+}
+
+FReply SAPSCivilizationMap::OnMouseWheel(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)
+{
+	const FVector2D Size = MyGeometry.GetLocalSize();
+	const FVector2D ScreenCentre = Size * 0.5;
+	// Zoom about the selected object when one is drawn, else about the cursor.
+	FVector2D Anchor = MyGeometry.AbsoluteToLocal(MouseEvent.GetScreenSpacePosition());
+	bool bSelectedAnchor = false;
+	for (int32 Index = 0; Index < Objects.Num(); ++Index)
+	{
+		if (!SelectedId.IsEmpty() && Objects[Index].StableId == SelectedId && PaintedPositions.IsValidIndex(Index)
+			&& PaintedPositions[Index].X > -1000.0 && PaintedPositions[Index].X < Size.X + 1000.0)
+		{
+			Anchor = PaintedPositions[Index];
+			bSelectedAnchor = true;
+			break;
+		}
+	}
+	const double Previous = MapZoom;
+	MapZoom = FMath::Clamp(MapZoom * FMath::Pow(1.25, MouseEvent.GetWheelDelta()), 1.0, 80.0);
+	if (MapZoom <= 1.0001)
+	{
+		MapOffset = FVector2D::ZeroVector;
+		return FReply::Handled();
+	}
+	const FVector2D CentreNow = ScreenCentre + MapOffset;
+	FVector2D CentreNew = Anchor - (Anchor - CentreNow) * (MapZoom / Previous);
+	if (bSelectedAnchor && MapZoom > Previous)
+	{
+		// Zooming in brings the selected object toward the middle of the view.
+		CentreNew += (ScreenCentre - Anchor) * 0.35;
+	}
+	MapOffset = CentreNew - ScreenCentre;
 	return FReply::Handled();
 }
 

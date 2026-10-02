@@ -6,6 +6,8 @@
 #include "PlanetaryProceduralGenerator.h"
 #include "WorldScapeCore/Public/WorldScapeRoot.h"
 #include "CoreMinimal.h"
+#include "APS_ALPHA/Core/Enums/CharSpawnPlace.h"
+#include "Engine/TimerHandle.h"
 #include "APS_ALPHA/Actors/BaseActor.h"
 #include "APS_ALPHA/Core/Enums/AstroGenerationLevel.h"
 #include "APS_ALPHA/Core/Enums/PlanetarySystemType.h"
@@ -90,6 +92,7 @@ struct FAPSPreviewAtmosphereState
 {
 	TWeakObjectPtr<USceneComponent> AtmosphereRoot;
 	TWeakObjectPtr<AWorldScapeRoot> ProfileRoot;
+	TWeakObjectPtr<UStaticMeshComponent> GasVisual;
 	uint32 Signature{0};
 };
 
@@ -109,7 +112,7 @@ struct APS_ALPHA_API FAPSPreviewBodyEntry
 	/** Actor-free HISM system used by the cluster browser. */
 	int32 ClusterSystemInstanceIndex{INDEX_NONE};
 	/** Optional hierarchy focus for actor roots such as Galaxy or Cluster. */
-	int32 PreviewFocusValue{INDEX_NONE};
+	int32 PreviewFocusValue{INDEX_NONE}; bool bHighlighted{false}; // the system a click selected in the cluster
 };
 
 /**
@@ -156,12 +159,23 @@ class APS_ALPHA_API AAstroGenerator : public ABaseActor
 	GENERATED_BODY()
 
 public:
+	/** A surface start's pilot placement (TryFinalizeSurfaceSpawn), read by the arrival curtain. */
+	enum class ESurfaceSpawnState : uint8 { None, Pending, Final, Failed };
+	ESurfaceSpawnState GetSurfaceSpawnState() const { return SurfaceSpawnState; }
+	/** The civilization starter set (HQ, station, shipyard, fleet, pilot) stands in the world. */
+	bool IsStarterHierarchySpawned() const { return bStarterHierarchySpawned; }
+
 	AAstroGenerator();
 	
 	virtual void OnConstruction(const FTransform& Transform) override;
 
 	/** Transactionally spawns and validates the selected starter hierarchy. */
 	bool SpawnStartInteractiveActors(TSharedPtr<FPlanetModel> StartPlanetModel);
+
+	/** Pending is not a committed hierarchy and must not release saved-world replay. */
+	bool IsGeneratedStarterCommitPending() const { return bGeneratedStarterCommitPending; }
+	bool HasGeneratedStarterCommitFailed() const { return bGeneratedStarterCommitFailed; }
+	uint64 GetGeneratedStarterCommitSerial() const { return GeneratedStarterCommitSerial; }
 
 	UFUNCTION(BlueprintPure, Category = "World Generation|Civilization")
 	int32 GetGeneratedStartingFleetSize() const { return GeneratedStartingFleet.Num(); }
@@ -221,6 +235,7 @@ public:
 	bool UsesContinuousPreviewFrame() const;
 	const FAPSContinuousPreviewFrame& GetContinuousPreviewFrame() const { return ContinuousPreviewFrame; }
 	const FAPSContinuousPreviewOrbit& GetContinuousPreviewOrbit() const { return ContinuousPreviewOrbit; }
+	bool IsPreviewCameraTransitionActive() const { return bPreviewCameraTransitionActive; }
 	/** Angular space available around the optical axis inside the actual menu panel. */
 	void SetContinuousPreviewFramingTangent(double Tangent);
 	bool GetContinuousPreviewClusterLocation(int32 InstanceIndex, FVector& OutLocation) const;
@@ -267,6 +282,16 @@ public:
 	bool FocusPreviewClusterSystemAtScreenPosition(
 		APlayerController* PlayerController, const FVector2D& ScreenPosition, float MaxPixelDistance = 28.0f);
 	bool FocusPreviewClusterSystem(int32 InstanceIndex, APlayerController* PlayerController = nullptr);
+	/**
+	 * Rio 02.10 ("pick any system without blowing up the PC"): a click selects the catalogue system under the cursor
+	 * and shows its record without materializing its stars and planets; a double-click still focuses it.
+	 */
+	bool SelectPreviewClusterSystemAtScreenPosition(APlayerController* PlayerController, const FVector2D& ScreenPosition,
+		float MaxPixelDistance = 28.0f);
+	int32 GetHighlightedPreviewClusterSystem() const { return HighlightedPreviewClusterSystemIndex; }
+	/** The catalogue system drawn nearest the cursor within the distance (INDEX_NONE: none). */
+	int32 FindPreviewClusterSystemAtScreenPosition(APlayerController* PlayerController, const FVector2D& ScreenPosition,
+		float MaxPixelDistance) const;
 	int32 GetPreviewGalaxyRenderedStarCount() const;
 	int64 GetPreviewGalaxyModeledStarCount() const;
 	int32 GetPreviewClusterRenderedStarCount() const;
@@ -282,6 +307,12 @@ public:
 	uint8 GetGameplayStellarSuppression(const FAPSGameplayStellarKey& Key) const;
 	void SetGameplayStellarSuppression(const FAPSGameplayStellarKey& Key,
 		EAPSGameplayStellarSuppression Reason, bool bSuppressed);
+	/**
+	 * Rio 01.10 ("how many stars fall into our system"): in a game the cluster proxies standing inside the home system's
+	 * realistic orbits are suppressed as the composition-time SYSTEM exclusion does: not drawn, not charted, not flown to.
+	 * Returns how many were newly suppressed.
+	 */
+	int32 SuppressClusterProxies(const TArray<int32>& InstanceIndices);
 	uint64 GetGameplayUnknownStellarMutationSerial() const { return GameplayUnknownStellarMutationSerial; }
 	UStarGenerator* GetGameplayStellarAppearanceGenerator() const { return StarGenerator; }
 	/** Resolves one exact rendered instance back to its canonical record and base projection. */
@@ -496,6 +527,7 @@ protected:
 		TWeakObjectPtr<APlanetaryBody> WeakBody, FVector SurfaceOutward,
 		FVector ViewDirection, int32 AttemptIndex, uint64 FinalizationSerial);
 	uint64 SurfaceSpawnFinalizationSerial{0};
+	ESurfaceSpawnState SurfaceSpawnState{ESurfaceSpawnState::None};
 
 	/** Surface patch selected by ResolveSpawnLocation and consumed by the gameplay handoff. */
 	TWeakObjectPtr<APlanetaryBody> ResolvedSurfaceSpawnBody;
@@ -585,6 +617,8 @@ protected:
 
 	EAstroPreviewFocus PreviewFocus{EAstroPreviewFocus::HomePlanet};
 	int32 SelectedPreviewClusterSystemIndex{INDEX_NONE};
+	/** A cluster system selected with a click: its record only, nothing materialized. */
+	int32 HighlightedPreviewClusterSystemIndex{INDEX_NONE};
 	/** Exact body selected from the hierarchy; root buttons fall back to the authored home body. */
 	TWeakObjectPtr<AActor> SelectedPreviewBodyActor;
 	/** Mesh-only PLANET presentation centres; generated actor transforms stay authoritative. */
@@ -827,6 +861,23 @@ protected:
 	/** Prevents a second generation callback from duplicating the committed civilization starter set. */
 	UPROPERTY(Transient)
 	bool bStarterHierarchySpawned{false};
+
+	void BeginGeneratedStarterCommit(const TSharedPtr<FPlanetModel>& PlanetModel);
+	void ContinueGeneratedStarterCommit(uint64 ExpectedSerial);
+	void CancelGeneratedStarterCommit();
+	APlanetaryBody* GetGeneratedStarterSurfaceBody() const;
+	FTimerHandle GeneratedStarterCommitTimer;
+	TSharedPtr<FPlanetModel> PendingStarterPlanetModel;
+	TWeakObjectPtr<UGeneratedWorld> PendingStarterWorldModel;
+	TWeakObjectPtr<UWorld> PendingStarterWorld;
+	TWeakObjectPtr<APlanet> PendingStarterHomePlanet;
+	TWeakObjectPtr<APlanetaryBody> PendingStarterSurfaceBody;
+	ECharSpawnPlace PendingStarterSpawnPlace{ECharSpawnPlace::PlanetSurface};
+	double GeneratedStarterCommitDeadline{0.0};
+	uint64 GeneratedStarterCommitSerial{0};
+	bool bGeneratedStarterCommitPending{false};
+	bool bGeneratedStarterCommitFailed{false};
+	bool bGeneratedStarterCommitDeferred{false};
 
 	UPROPERTY(VisibleAnywhere, Category = "Generated Astro Actros")
 	AActor* GeneratedWorld;

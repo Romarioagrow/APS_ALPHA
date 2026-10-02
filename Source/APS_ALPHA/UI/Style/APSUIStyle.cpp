@@ -16,7 +16,15 @@ namespace APSUIStylePrivate
 			const TCHAR* FontPath = Typeface == TEXT("Bold")
 				? TEXT("/Game/APS/APS_ALPHA/UI/Fonts/Orbitron_Bold_Font.Orbitron_Bold_Font")
 				: TEXT("/Game/APS/APS_ALPHA/UI/Fonts/Orbitron_Medium_Font.Orbitron_Medium_Font");
-			FontSlot = LoadObject<UFont>(nullptr, FontPath);
+			// Rooted for the session: an STextBlock keeps FSlateFontInfo::FontObject as a plain pointer that GC never
+			// sees, so a font held only by the menu controller was collected after the level change and the next
+			// re-shape of the objective overlay's text read freed memory (a4-trace-2, 02.10).
+			UFont* Font = LoadObject<UFont>(nullptr, FontPath);
+			if (Font)
+			{
+				Font->AddToRoot();
+			}
+			FontSlot = Font;
 		}
 		return FontSlot.Get();
 	}

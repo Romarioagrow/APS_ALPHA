@@ -1,0 +1,62 @@
+{
+  "tracks": [
+    {
+      "filename": "a-kind-of-hope.mp3",
+      "download": "https://www.scottbuckley.com.au/library/wp-content/uploads/2022/10/AKindOfHope.mp3",
+      "license": "CC BY 4.0",
+      "author": "Scott Buckley",
+      "title": "A Kind Of Hope",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "style": "piano and strings",
+      "sha256": "D0DC554C0DB9EA208B4F59E4F0C1B4446AA7EF622C7BFEFFCA278130A46C51F1",
+      "page": "https://www.scottbuckley.com.au/library/a-kind-of-hope/",
+      "duration_s": 342.60054421768706,
+      "input_lufs": -14.94,
+      "input_true_peak_dbfs": -1.04,
+      "gain_db": -13.06,
+      "wave": "SW_Menu_AKindOfHope",
+      "playlist_start_s": 0.0
+    },
+    {
+      "filename": "tears-in-rain.mp3",
+      "download": "https://www.scottbuckley.com.au/library/wp-content/uploads/2019/07/sb_tearsinrain.mp3",
+      "license": "CC BY 4.0",
+      "author": "Scott Buckley",
+      "title": "Tears in Rain",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "style": "cinematic electronica",
+      "sha256": "C56F817A5090E17A2DEF09E3623104A5474F144F81A595EB4CCAE5F3EF9AB69F",
+      "page": "https://www.scottbuckley.com.au/library/tears-in-rain/",
+      "duration_s": 339.9734920634921,
+      "input_lufs": -15.55,
+      "input_true_peak_dbfs": -1.01,
+      "gain_db": -12.45,
+      "wave": "SW_Menu_TearsInRain",
+      "playlist_start_s": 336.60054421768706
+    },
+    {
+      "filename": "celestial.mp3",
+      "download": "https://www.scottbuckley.com.au/library/wp-content/uploads/2021/06/sb_celestial.mp3",
+      "license": "CC BY 4.0",
+      "author": "Scott Buckley",
+      "title": "Celestial",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "style": "orchestral",
+      "sha256": "AB5EDA0070D01631691EB0E71F9C55DD4229EB07897E5430A666D1F1944F2191",
+      "page": "https://www.scottbuckley.com.au/library/celestial/",
+      "duration_s": 337.2756462585034,
+      "input_lufs": -14.31,
+      "input_true_peak_dbfs": -1.03,
+      "gain_db": -13.69,
+      "wave": "SW_Menu_Celestial",
+      "playlist_start_s": 670.5740362811791
+    }
+  ],
+  "duration_s": 1007.8496825396826,
+  "sample_rate": 44100,
+  "crossfade_s": 6,
+  "cue_gain": 0.55,
+  "order": "fixed; all three complete tracks before repeating",
+  "sha256": "001d33a25d8318f258cd5acfebf8d1fb4839cfc5ea51abe920c933616a2b85dd",
+  "peak_dbfs": -13.486133575439453
+}

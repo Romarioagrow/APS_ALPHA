@@ -1,14 +1,21 @@
 #include "Planet.h"
 #include "Moon.h"
 #include "APS_ALPHA/Core/Enums/PlanetType.h"
+#include "APS_ALPHA/Core/Planetary/APSGasGiantMaterial.h"
 #include "APS_ALPHA/Generation/PlanetarySurfaceGenerator.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
+#include "HAL/IConsoleManager.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "UObject/ConstructorHelpers.h"
 
 namespace
 {
+	TAutoConsoleVariable<int32> CVarAPSGasVisual(
+		TEXT("aps.Surface.GasVisual"), 0,
+		TEXT("Gas visual material on the next ordinary body refresh: 0=accepted legacy, 1=protected V2 candidate."),
+		ECVF_Default);
+
 	void ConfigureNonBlockingPlanetZone(USphereComponent* Zone)
 	{
 		if (!IsValid(Zone))
@@ -215,6 +222,33 @@ void APlanet::RefreshGasGiantVisual()
 		BaseMaterial = GasGiantMaterialInstance->Parent;
 	}
 	if (IsValid(GasGiantSurfaceMaterial)) BaseMaterial = GasGiantSurfaceMaterial;
+	else if (IsValid(BaseMaterial) && BaseMaterial->GetPathName() == APSGasGiantMaterial::CandidatePath)
+	{
+		// Returning to mode 0 must also restore the imported fallback if the legacy
+		// project master is unavailable; do not retain a previous candidate MID.
+		BaseMaterial = GasGiantVisualComponent->GetStaticMesh()->GetMaterial(0);
+	}
+	bool bUsingGasCandidate = false;
+	if (!IsNotGasGiant() && CVarAPSGasVisual.GetValueOnGameThread() == 1)
+	{
+		UMaterialInterface* Candidate = LoadObject<UMaterialInterface>(nullptr,
+			APSGasGiantMaterial::CandidatePath, nullptr, LOAD_NoWarn);
+		if (IsValid(Candidate))
+		{
+			BaseMaterial = Candidate;
+			bUsingGasCandidate = true;
+		}
+		else
+		{
+			static bool bWarnedMissingCandidate = false;
+			if (!bWarnedMissingCandidate)
+			{
+				UE_LOG(LogTemp, Warning, TEXT("[APS.GasGiant] aps.Surface.GasVisual=1 requested unavailable candidate %s; using legacy. Candidate probes must reject this fallback."),
+					APSGasGiantMaterial::CandidatePath);
+				bWarnedMissingCandidate = true;
+			}
+		}
+	}
 	if (IsValid(BaseMaterial) && (!IsValid(GasGiantMaterialInstance)
 		|| GasGiantMaterialInstance->Parent != BaseMaterial))
 	{
@@ -249,7 +283,7 @@ void APlanet::RefreshGasGiantVisual()
 		GasGiantMaterialInstance->SetScalarParameterValue(
 			TEXT("RoughnessFactor"), PlanetType == EPlanetType::IceGiant ? 0.36f : 0.42f);
 
-		if (IsValid(GasGiantSurfaceMaterial))
+		if (IsValid(GasGiantSurfaceMaterial) || bUsingGasCandidate)
 		{
 			// Cloud-top colour and broad stable circulation are presentation only;
 			// the physical radius, rotation, position and generation model remain authoritative.
@@ -273,6 +307,32 @@ void APlanet::RefreshGasGiantVisual()
 				StormColor = FLinearColor(0.48f, 0.72f, 0.78f);
 				BandContrast = 0.38f;
 				StormStrength = 0.45f;
+			}
+			if (bUsingGasCandidate)
+			{
+				// Candidate-only palettes: warm ochre, copper and cold blue remain
+				// distinct without white stripe caps. Existing mode-0 colours stay exact.
+				CloudLight = FLinearColor(0.62f, 0.49f, 0.32f);
+				CloudDark = FLinearColor(0.23f, 0.16f, 0.11f);
+				StormColor = FLinearColor(0.36f, 0.18f, 0.09f);
+				BandContrast = 0.68f;
+				StormStrength = 0.72f;
+				if (PlanetType == EPlanetType::HotGiant)
+				{
+					CloudLight = FLinearColor(0.64f, 0.35f, 0.19f);
+					CloudDark = FLinearColor(0.20f, 0.075f, 0.05f);
+					StormColor = FLinearColor(0.78f, 0.46f, 0.19f);
+					BandContrast = 0.70f;
+					StormStrength = 0.92f;
+				}
+				else if (PlanetType == EPlanetType::IceGiant)
+				{
+					CloudLight = FLinearColor(0.21f, 0.48f, 0.57f);
+					CloudDark = FLinearColor(0.035f, 0.105f, 0.19f);
+					StormColor = FLinearColor(0.42f, 0.61f, 0.65f);
+					BandContrast = 0.46f;
+					StormStrength = 0.65f;
+				}
 			}
 			GasGiantMaterialInstance->SetVectorParameterValue(TEXT("GasCloudLight"), CloudLight * SeedVariation);
 			GasGiantMaterialInstance->SetVectorParameterValue(TEXT("GasCloudDark"), CloudDark * SeedVariation);

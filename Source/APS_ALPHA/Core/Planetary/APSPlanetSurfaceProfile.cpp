@@ -1,13 +1,22 @@
 #include "APSPlanetSurfaceProfile.h"
+#include "APSPlanetSurfaceRadius.h"
 #include "APSNativeTerrainMaterial.h"
 #include "APSSharedTerrainMaterial.h"
+#include "APSTerrestrialVegetation.h"
 
 #include "APS_ALPHA/Actors/Astro/PlanetaryBody.h"
+#include "APS_ALPHA/Actors/Astro/Planet.h"
 #include "APS_ALPHA/Actors/Planetary/PlanetAtmosphere.h"
+#include "HAL/IConsoleManager.h"
 #include "Materials/MaterialInstanceDynamic.h"
 
 namespace APSPlanetSurface
 {
+	TAutoConsoleVariable<int32> CVarTerrestrialVegetation(
+		TEXT("aps.WorldScapeFoliage.TerrestrialVegetation"), 0,
+		TEXT("Generated Terrestrial visual-only vegetation preset. Fresh profiles only.\n")
+		TEXT("0: previous mineral palette; 1: vegetation where biosphere/palette are unconfigured. Gameplay biology/save data unchanged."),
+		ECVF_Default);
 	constexpr double EarthRadiusKm = 6371.0;
 
 	FLinearColor SRGB(uint8 R, uint8 G, uint8 B)
@@ -869,7 +878,7 @@ FAPSResolvedPlanetSurfaceProfile UAPSPlanetSurfaceProfileResolver::ResolveForBod
 	P.CrustThickness = FMath::Clamp(Body->PlanetGeosphere.CrustThickness / 100.0f, 0.0f, 1.0f);
 	P.AtmosphericPressure = FMath::Clamp(PressurePa / 101325.0f, 0.0f, 4.0f);
 
-	const double RadiusKm = FMath::Max(Body->RadiusKM, static_cast<double>(Body->PlanetRadiusKM));
+	const double RadiusKm = APSPlanetSurfaceRadius::Kilometres(Body->RadiusKM, Body->PlanetRadiusKM);
 	if (RadiusKm > EarthRadiusKm * 1.3)
 	{
 		AddModifier(P.ModifierMask, EAPSPlanetSurfaceModifier::SuperEarth);
@@ -1019,6 +1028,9 @@ FAPSResolvedPlanetSurfaceProfile UAPSPlanetSurfaceProfileResolver::ResolveForBod
 		: (P.OceanLevel > 0.0f ? FMath::Clamp(P.OceanLevel, 0.002f, 0.035f) : 0.0125f);
 	JitterPalette(P.Palette, P.PaletteSeed, D.PaletteHueVariationDegrees);
 	P.Palette.Emissive *= P.EmissiveStrength;
+	const auto* GeneratedPlanet = Cast<APlanet>(Body);
+	APSTerrestrialVegetation::Apply(P, GeneratedPlanet && !GeneratedPlanet->IsManual,
+		CVarTerrestrialVegetation.GetValueOnGameThread());
 	return P;
 }
 
@@ -1367,6 +1379,9 @@ uint32 UAPSPlanetSurfaceProfileResolver::BuildProfileSignature(const FAPSResolve
 	Signature = HashCombine(Signature, GetTypeHash(FMath::RoundToInt(P.Humidity * 10000.0f)));
 	Signature = HashCombine(Signature, GetTypeHash(FMath::RoundToInt(P.Biomass * 10000.0f)));
 	Signature = HashCombine(Signature, GetTypeHash(FMath::RoundToInt(P.Biodiversity * 10000.0f)));
+	// Preserve every old/default signature when this presentation-only candidate is off.
+	if (FMath::IsFinite(P.VisualFoliageDensity) && P.VisualFoliageDensity > 0.0f)
+		Signature = HashCombine(Signature, GetTypeHash(FMath::RoundToInt(P.VisualFoliageDensity * 10000.0f)));
 	Signature = HashCombine(Signature, GetTypeHash(FMath::RoundToInt(P.Metallic * 10000.0f)));
 	Signature = HashCombine(Signature, GetTypeHash(FMath::RoundToInt(P.EmissiveStrength * 10000.0f)));
 	Signature = HashCombine(Signature, GetTypeHash(FMath::RoundToInt(P.BiomeContrast * 10000.0f)));

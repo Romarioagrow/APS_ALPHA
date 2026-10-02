@@ -7,9 +7,15 @@ namespace APSLivingBiomeTransfer
 {
     // Native MF_LayerAdjustment: saturate((1+2*c)*(R-shift-variation)-c)^2.
     // The inherited shift -.509154 made R=.08 (sea datum) already full inland.
-    // Keep coast sand through the datum, then blend inland across a narrow band.
-    inline constexpr float CoastShift = -0.40f;
-    inline constexpr float CoastContrast = 12.0f;
+    // The previous .08.. .15 coverage (including native .00.. .03 variation)
+    // painted a continental-scale sand ribbon. Bound its upper edge to .092:
+    // only the first .012 above the datum may still expose coastal sediment.
+    // Keep the existing variation and all inland biome/height/geometry transfers.
+    inline constexpr float CoastContrast = 32.0f;
+    inline constexpr float CoastUpperHeight = 0.092f;
+    inline constexpr float CoastNativeVariationMax = 0.03f;
+    inline constexpr float CoastShift = CoastUpperHeight - CoastNativeVariationMax
+        - (CoastContrast + 1.0f) / (1.0f + 2.0f * CoastContrast);
     inline constexpr float HumidLandShift = -0.18f;
 
     inline double Height(double AboveSea, double LandSpan)

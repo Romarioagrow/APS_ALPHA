@@ -1,0 +1,23 @@
+diff --git a/F:/ChatGPT/APOSFERA/work/planet_water_live_20260929/prepared-publication-project-source/PlanetarySurfaceGeneratorStreaming.cpp b/Source/APS_ALPHA/Generation/PlanetarySurfaceGeneratorStreaming.cpp
+index c7df9775..ca555a4b 100644
+--- a/F:/ChatGPT/APOSFERA/work/planet_water_live_20260929/prepared-publication-project-source/PlanetarySurfaceGeneratorStreaming.cpp
++++ b/Source/APS_ALPHA/Generation/PlanetarySurfaceGeneratorStreaming.cpp
+@@ -1032,6 +1032,18 @@ void APlanetarySurfaceGenerator::ApplySurfaceProfileNow(APlanetaryBody* Body)
+ 		WorldScapeRootInstance->Tags.AddUnique(ParallelCollisionTag);
+ 	else
+ 		WorldScapeRootInstance->Tags.Remove(ParallelCollisionTag);
++	// Bounded rollout of worker-prepared visual publication. The native default
++	// (-1) requires this explicit owner tag; 0 restores the legacy publication.
++	// Keep other presets, authored roots and scaled previews on their old path.
++	const FName PreparedPublicationTag(TEXT("APS.Mesh.PreparedPublication"));
++	const bool bPreparedPublicationType = ResolvedSurfaceProfile.PlanetType == EPlanetType::Terrestrial
++		|| ResolvedSurfaceProfile.PlanetType == EPlanetType::Frozen
++		|| ResolvedSurfaceProfile.PlanetType == EPlanetType::Oasis;
++	if (bPreparedPublicationType && WorldScapeRootInstance->ActorHasTag(ParallelCollisionTag)
++		&& !(CoastPlanet && CoastPlanet->IsManual))
++		WorldScapeRootInstance->Tags.AddUnique(PreparedPublicationTag);
++	else
++		WorldScapeRootInstance->Tags.Remove(PreparedPublicationTag);
+ 	// Process-wide opt-in until the moving water material is visually accepted.
+ 	// The native LOD worker owns UV1; no per-frame GT bathymetry or mesh rewrite.
+ 	// Do not enable for authored/compressed roots or other liquid families.

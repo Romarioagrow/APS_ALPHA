@@ -1,5 +1,12 @@
 # Coastal relief candidate — disabled by default
 
+Update29.09 14:04: V2 has now been built and rendered at the same coast on2km
+and100km, with ordinary atmosphere and unchanged native water. Four runs3/3,
+12/12 coast frames inspected,23protected assets unchanged. It reduces visible
+fragmentation but still over-smooths the close shore and leaves the hard opaque
+water boundary. Default staysOFF. See `2026-09-29-coastal-v2-rendered.md` for
+current V2 evidence. The dated V1/V2-unverified record below is historical.
+
 This is a measured geometry candidate, **not a published visual fix**. The
 production material assets, seeds, palette transfer, sea datum, grid resolution,
 LOD lifecycle and ships are unchanged. The verified orbital macro fix remains

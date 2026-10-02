@@ -305,6 +305,10 @@ struct APS_ALPHA_API FAPSResolvedPlanetSurfaceProfile
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
 	float Biodiversity = 0.0f;
 
+	/** Generated presentation-only vegetation budget. Never an authoritative biosphere/save value. */
+	UPROPERTY(Transient, VisibleAnywhere, BlueprintReadOnly)
+	float VisualFoliageDensity = 0.0f;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
 	float SeismicActivity = 0.0f;
 

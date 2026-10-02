@@ -10,6 +10,7 @@
 #include "APS_ALPHA/Core/Enums/StellarType.h"
 #include "APS_ALPHA/Core/Model/APSCanonicalStellarDataset.h"
 #include "APS_ALPHA/Core/Saves/GeneratedWorldData.h"
+#include "APS_ALPHA/Core/Planetary/APSPlanetCloudSettings.h"
 #include "GeneratedWorld.generated.h"
 
 struct FPlanetData;
@@ -41,6 +42,9 @@ USTRUCT()
 struct FAPSPreviewBodyEditOverride
 {
 	GENERATED_BODY()
+
+	UPROPERTY()
+	FAPSPlanetCloudSettings CloudSettings;
 
 	UPROPERTY()
 	EPlanetType PlanetType{EPlanetType::Frozen};
@@ -226,6 +230,13 @@ public:
 	const FString* FindPreviewDisplayNameOverride(const FString& StableKey) const;
 	void ClearPreviewDisplayNameOverrides() { PreviewDisplayNameOverrides.Reset(); }
 
+	/** Display-name keys of the galaxy and the home cluster (Rio 02.10: they are named like bodies). */
+	static const TCHAR* GalaxyNameKey() { return TEXT("GALAXY"); }
+	static const TCHAR* ClusterNameKey() { return TEXT("CLUSTER"); }
+	/** The player's name, else one generated from the seed (APSBodyNames). */
+	FString GetGalaxyName() const;
+	FString GetClusterName() const;
+
 	/** Resolves UI seed zero from stable world/body identity, never actor transform/name. */
 	static int32 ResolveCanonicalSurfaceSeed(
 		int32 AuthoredSeed, int32 WorldGenerationSeed, const FString& StableBodyKey);
@@ -248,6 +259,11 @@ public:
 	/** Deterministic seed shared by menu preview and the committed gameplay hierarchy. */
 	UPROPERTY(EditAnywhere, Category = "Generation Params")
 	int32 GenerationSeed{271828};
+
+	/** Body-name generator of this world (APSBodyNames): new worlds use the current style (1); a world restored
+	 * from a snapshot without this field keeps the original "Lonesobo Planet" names (0), so its fleet keys hold. */
+	UPROPERTY()
+	int32 NameStyle{1};
 
 	/** Finalized stellar truth duplicated unchanged into the gameplay GameInstance. */
 	UPROPERTY()
@@ -377,6 +393,9 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Atmosphere")
 	double AtmosphereHeight{ 100.0 };
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Clouds")
+	FAPSPlanetCloudSettings CloudSettings;
+
 	UPROPERTY(EditAnywhere, Category = "Atmosphere")
 	double AtmosphereOpacity{ 1.0 };
 
@@ -478,6 +497,7 @@ public:
 		WorldData.SurfaceCraterScale = SurfaceCraterScale;
 		WorldData.SurfaceRoughnessScale = SurfaceRoughnessScale;
 		WorldData.AtmosphereHeight = AtmosphereHeight;
+		WorldData.CloudSettings = CloudSettings.Sanitized();
 		WorldData.AtmosphereOpacity = AtmosphereOpacity;
 		WorldData.AtmosphereMultiScattering = AtmosphereMultiScattering;
 		WorldData.AtmosphereRayleighScattering = AtmosphereRayleighScattering;

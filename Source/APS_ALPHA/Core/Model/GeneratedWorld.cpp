@@ -1,6 +1,7 @@
 ﻿#include "GeneratedWorld.h"
 
 #include "APS_ALPHA/Actors/Astro/Planet.h"
+#include "APS_ALPHA/Generation/APSBodyNames.h"
 #include "APS_ALPHA/Core/Enums/GalaxyClass.h"
 #include "APS_ALPHA/Core/Enums/GalaxyType.h"
 #include "APS_ALPHA/Core/Enums/HomeSystemPosition.h"
@@ -171,6 +172,20 @@ bool UGeneratedWorld::SetPreviewDisplayNameOverride(const FString& StableKey, co
 const FString* UGeneratedWorld::FindPreviewDisplayNameOverride(const FString& StableKey) const
 {
 	return StableKey.IsEmpty() ? nullptr : PreviewDisplayNameOverrides.Find(StableKey);
+}
+
+FString UGeneratedWorld::GetGalaxyName() const
+{
+	const FString* Name = FindPreviewDisplayNameOverride(GalaxyNameKey());
+	return Name && !Name->IsEmpty() ? *Name
+		: APSBodyNames::Generate(GenerationSeed, GalaxyNameKey(), APSBodyNames::EKind::Galaxy);
+}
+
+FString UGeneratedWorld::GetClusterName() const
+{
+	const FString* Name = FindPreviewDisplayNameOverride(ClusterNameKey());
+	return Name && !Name->IsEmpty() ? *Name
+		: APSBodyNames::Generate(GenerationSeed, ClusterNameKey(), APSBodyNames::EKind::Cluster);
 }
 
 void UGeneratedWorld::SetPreviewStarEditOverride(

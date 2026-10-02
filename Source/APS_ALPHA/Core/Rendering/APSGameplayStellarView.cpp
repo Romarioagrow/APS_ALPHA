@@ -2,6 +2,7 @@
 
 #include "APSGameplayStellarProjection.h"
 #include "APSGameplayStarAppearance.h"
+#include "APSFarStarGlyphs.h"
 #include "APSStellarViewOptics.h"
 #include "APS_ALPHA/Core/Planetary/APSAtmosphereModel.h"
 #include "APS_ALPHA/Actors/Astro/Galaxy.h"
@@ -28,6 +29,7 @@ CSV_DEFINE_CATEGORY(APSGameplayStars, true);
 
 void UAPSStellarVisualSubsystem::ResetGameplayStellarView()
 {
+	APSFarStarGlyphs::Reset(GetWorld());
 	ResetGameplayNativeStars();
 	for (FAPSGameplayStellarLayer& Layer : GameplayStellarLayers)
 	{
@@ -100,9 +102,14 @@ namespace APSGameplayStellarDay
 		TEXT("rebuilds the source's tree (~12 ms of game thread for the big catalogues)."));
 
 	/** A5: which catalogue stars carry rays in flight (APSStellarOpticalSupport::Select); a change re-sizes them all. */
-	TAutoConsoleVariable<int32> CVarRayRule(TEXT("aps.Stars.RayRule"), 0,
+	// Rio 02.10: a random share with rays read as uneven; every bright enough star sparkles.
+	TAutoConsoleVariable<int32> CVarRayRule(TEXT("aps.Stars.RayRule"), 1,
 		TEXT("Rays on the catalogue stars in flight: 0 a stable share of the bright ones (accepted), 1 every bright enough ")
 		TEXT("star, 2 none (comparison for Rio, 01.10)."));
+	TAutoConsoleVariable<float> CVarRayBrightness(TEXT("aps.Stars.RayBrightness"), 0.1f,
+		TEXT("RayRule 1: the brightness from which a catalogue star carries rays (lower: more stars sparkle)."));
+	TAutoConsoleVariable<float> CVarRaySize(TEXT("aps.Stars.RaySize"), 1.0f,
+		TEXT("RayRule 1: the reach of the rays (0.25..2; 1 = about two thirds of rule 0)."));
 
 	TAutoConsoleVariable<float> CVarDayFadeDepth(TEXT("aps.Stars.DayFadeDepth"), 6.25f,
 		TEXT("How deep a day sky dims the catalogue stars, in e-folds of brightness. 6.25: the brightest show from ~20 km of ")
@@ -232,9 +239,16 @@ void UAPSStellarVisualSubsystem::UpdateGameplayStellarView()
 	UWorld* World = GetWorld();
 	// A new ray rule re-publishes every point's optics: forget the optics the sizes were made for.
 	static int32 LastRayRule = 0;
-	if (const int32 RayRule = APSGameplayStellarDay::CVarRayRule.GetValueOnGameThread(); RayRule != LastRayRule)
+	static float LastRayBrightness = -1.0f;
+	static float LastRaySize = -1.0f;
+	const float RayBrightness = APSGameplayStellarDay::CVarRayBrightness.GetValueOnGameThread();
+	const float RaySize = APSGameplayStellarDay::CVarRaySize.GetValueOnGameThread();
+	if (const int32 RayRule = APSGameplayStellarDay::CVarRayRule.GetValueOnGameThread();
+		RayRule != LastRayRule || RayBrightness != LastRayBrightness || RaySize != LastRaySize)
 	{
 		LastRayRule = RayRule;
+		LastRayBrightness = RayBrightness;
+		LastRaySize = RaySize;
 		LastStellarPixelTangent = -1.0;
 	}
 	// Publish spectral luminosity before selecting optical support. The helper's
@@ -485,7 +499,8 @@ void UAPSStellarVisualSubsystem::UpdateGameplayStellarView()
 				// Measured like the per-point check below (from the immutable centre), so the two never disagree.
 				OutDistanceCm = FVector::Distance((*BaseTransforms)[Index].GetLocation(), LocalCamera) * ComponentScale;
 				const auto Profile = APSStellarOpticalSupport::Select(Source->PerInstanceSMCustomData,
-					Source->NumCustomDataFloats, Index, APSGameplayStellarDay::CVarRayRule.GetValueOnGameThread());
+					Source->NumCustomDataFloats, Index, APSGameplayStellarDay::CVarRayRule.GetValueOnGameThread(),
+					APSGameplayStellarDay::CVarRayBrightness.GetValueOnGameThread());
 				const double PixelWorldRadius = Distance * PixelTangent;
 				if (bCollectDemand)
 				{
@@ -655,6 +670,8 @@ void UAPSStellarVisualSubsystem::UpdateGameplayStellarView()
 		}
 		GameplayNativeTopologyHash = TopologyHash;
 		PresentGameplayNativeStars(Generator);
+		// B7: a materialized star smaller than its glyph (the home sun from its planets) keeps its catalogue glyph.
+		APSFarStarGlyphs::Update(GetWorld(), Attached, Camera, PixelTangent, bGameplayDaylightStarsHidden);
 
 		GameplayStellarBuildSerial = Descriptor.ProxyBuildSerial;
 		if (bNewBuild)
@@ -844,7 +861,8 @@ void UAPSStellarVisualSubsystem::UpdateGameplayStellarView()
 			RayStrengths.Init(0.0f, Layer.Points.Num());
 			for (const FAPSGameplayStellarPoint& Point : Layer.Points)
 				OpticalProfiles.Add(APSStellarOpticalSupport::Select(View->PerInstanceSMCustomData,
-					View->NumCustomDataFloats, Point.InstanceIndex, APSGameplayStellarDay::CVarRayRule.GetValueOnGameThread()));
+					View->NumCustomDataFloats, Point.InstanceIndex, APSGameplayStellarDay::CVarRayRule.GetValueOnGameThread(),
+					APSGameplayStellarDay::CVarRayBrightness.GetValueOnGameThread()));
 		}
 		constexpr int32 ChunkSize = 1024;
 		const int32 ChunkCount = FMath::DivideAndRoundUp(Layer.Points.Num(), ChunkSize);
@@ -936,4 +954,19 @@ void UAPSStellarVisualSubsystem::UpdateGameplayStellarView()
 			Source->SetHiddenInGame(true, false);
 		}
 	}
+}
+
+int32 APSStellarOpticalSupport::RayRuleSetting()
+{
+	return APSGameplayStellarDay::CVarRayRule.GetValueOnAnyThread();
+}
+
+double APSStellarOpticalSupport::RayBrightnessSetting()
+{
+	return APSGameplayStellarDay::CVarRayBrightness.GetValueOnAnyThread();
+}
+
+double APSStellarOpticalSupport::RaySizeSetting()
+{
+	return APSGameplayStellarDay::CVarRaySize.GetValueOnAnyThread();
 }

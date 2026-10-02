@@ -1,4 +1,5 @@
 #include "GravityPlayerController.h"
+#include "APS_ALPHA/Generation/APSBodyNames.h"
 #include <ctime> 
 #include <random>
 #include "APS_ALPHA/Gameplay/Civilizations/APSCivilizationSave.h"
@@ -151,11 +152,24 @@ void AGravityPlayerController::ToggleStrategicMap()
 	}
 	if (!GEngine || !GEngine->GameViewport || !GetWorld()) return;
 
-	AAstroGenerator* Generator = Cast<AAstroGenerator>(
-		UGameplayStatics::GetActorOfClass(GetWorld(), AAstroGenerator::StaticClass()));
-	if (!Generator) return;
+	// The live generator (never a menu preview one): the map reads the home star, planet and system from it. The map
+	// works without one too; it never calls the generator's preview camera or presentation (Rio 02.10: "HOME SYSTEM
+	// shows nothing, the camera falls into the star; the planet is see-through; FPS drops when rotating").
+	AAstroGenerator* Generator = nullptr;
+	TArray<AActor*> Generators;
+	UGameplayStatics::GetAllActorsOfClass(GetWorld(), AAstroGenerator::StaticClass(), Generators);
+	for (AActor* Candidate : Generators)
+	{
+		AAstroGenerator* Live = Cast<AAstroGenerator>(Candidate);
+		if (IsValid(Live) && !Live->ActorHasTag(TEXT("WorldGenerationPreview")) && !Live->UsesContinuousPreviewFrame())
+		{
+			Generator = Live;
+			break;
+		}
+	}
 
 	StrategicMapPreviousViewTarget = GetViewTarget();
+	// The panel spawns the map's own camera at the current view and takes the view target (SAPSStrategicMapPanel).
 	StrategicMapWidget = SNew(SAPSStrategicMapPanel)
 		.Controller(this)
 		.Generator(Generator)
@@ -163,13 +177,13 @@ void AGravityPlayerController::ToggleStrategicMap()
 	StrategicMapContainer = SNew(SWeakWidget).PossiblyNullContent(StrategicMapWidget.ToSharedRef());
 	GEngine->GameViewport->AddViewportWidgetContent(StrategicMapContainer.ToSharedRef(), 900);
 
+	// UI only: the pawn and the ship take no keys while the map is open (typing a star's name must not fly the ship);
+	// the panel itself closes on F10 and Esc.
 	bShowMouseCursor = true;
-	FInputModeGameAndUI InputMode;
+	FInputModeUIOnly InputMode;
 	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
-	InputMode.SetHideCursorDuringCapture(false);
 	InputMode.SetWidgetToFocus(StrategicMapWidget);
 	SetInputMode(InputMode);
-	Generator->FocusPreviewTarget(EAstroPreviewFocus::Overview, this);
 }
 
 void AGravityPlayerController::CloseStrategicMap(bool bRestoreView)
@@ -179,6 +193,7 @@ void AGravityPlayerController::CloseStrategicMap(bool bRestoreView)
 		GEngine->GameViewport->RemoveViewportWidgetContent(StrategicMapContainer.ToSharedRef());
 	}
 	StrategicMapContainer.Reset();
+	// The panel releases the map camera here; it stays a moment for the blend back below, then goes by itself.
 	StrategicMapWidget.Reset();
 
 	if (bRestoreView)
@@ -635,36 +650,8 @@ void AGravityPlayerController::SetLoadingModeFalse()
 
 FName AGravityPlayerController::GenerateUniqueName(const FString& ObjectType)
 {
-	FString GeneratedName;
-	const FString Vowels = TEXT("aeiou");
-	const FString Consonants = TEXT("bcdfghjklmnpqrstvwxyz");
-
-	std::random_device Rd;
-	std::mt19937 Generator(Rd());
-	const int32 MinLength = 3; 
-	const int32 MaxLength = 8;
-	std::uniform_int_distribution LengthDist(MinLength, MaxLength);
-	const int32 WordLength = LengthDist(Generator);
-
-	for (int32 i = 0; i < WordLength; i++)
-	{
-		if (i % 2 == 0)
-		{
-			GeneratedName += Consonants[Generator() % Consonants.Len()];
-		}
-		else
-		{
-			GeneratedName += Vowels[Generator() % Vowels.Len()];
-		}
-	}
-
-	if (GeneratedName.Len() > 0)
-	{
-		GeneratedName[0] = FChar::ToUpper(GeneratedName[0]);
-	}
-
-	FString FullName = FString::Printf(TEXT("%s %s"), *GeneratedName, *ObjectType);
-	return FName(*FullName);
+	// Rio, 02.10: generated bodies carry a name only, no PLANET/MOON/spectral suffix (APSBodyNames).
+	return FName(*APSBodyNames::Random(APSBodyNames::KindFromLegacy(ObjectType)));
 }
 
 FString AGravityPlayerController::GenerateUniqueSaveSlotName(const EAstroGenerationLevel AstroGenerationLevel) const

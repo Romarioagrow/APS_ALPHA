@@ -41,9 +41,18 @@ namespace APSFleet
 		BuildShipyard,
 		BuildHeadquarters,
 		/** To a located anomaly: the crew goes down and investigates it (exploration or science ships). */
-		Expedition
+		Expedition,
+		/**
+		 * The expansion (Rio 02.10: "colonize the other systems: a scan, a probe, a visit or a unit, then a station or an
+		 * outpost"). A probe from an exploration or science ship scans a star system from its edge; a survey of the system
+		 * charts it; BuildStructure raises an infrastructure catalogue type (APSInfrastructureCatalog) at a world or in a
+		 * star system. Targets in other systems are the systems' anchors (FAPSStarSystems::GetAnchor).
+		 */
+		Probe,
+		SurveySystem,
+		BuildStructure
 	};
-	constexpr EOrder LastOrder = EOrder::Expedition;
+	constexpr EOrder LastOrder = EOrder::BuildStructure;
 
 	/**
 	 * Anomalies (Rio, 01.10: "ships find anomalies on planets; to study one you land or send an expedition"). About two
@@ -182,6 +191,8 @@ struct APS_ALPHA_API FAPSFleetUnit
 	double Speed{0.0};
 	/** Distance left to the target slot, for the list (cm). */
 	double RemainingCm{0.0};
+	/** BuildStructure: the infrastructure catalogue type being raised (its cost was taken when the order was given). */
+	FName StructureType;
 };
 
 /** A unit as saved (APSCivilizationSave), matched by its call sign on load. Actors are named by key (KeyOf). */
@@ -245,6 +256,8 @@ struct APS_ALPHA_API FAPSFleetSaveData
 	TArray<FShipyardJob> ShipyardJobs;
 	/** Investigated anomalies: body key, 1 by an expedition, 2 by the pilot in person. */
 	TArray<TPair<FString, uint8>> Investigations;
+	/** BuildStructure orders under way: call sign and catalogue type (saved in the civilization's version 5 block). */
+	TArray<TPair<FString, FString>> UnitStructureTypes;
 
 	friend FArchive& operator<<(FArchive& Ar, FAPSFleetSaveData& Data);
 	/** Structures and ShipyardJobs: civilization save version 4, appended after the older blocks so those still load. */
@@ -314,8 +327,16 @@ public:
 
 	/** Why the ship cannot take this order at this target; empty when it can. */
 	FText CheckOrder(const ASpaceship* Ship, APSFleet::EOrder Order, const AActor* Target) const;
-	/** Gives the order to every ship that can take it; returns how many did and the first refusal. */
-	int32 IssueOrder(const TArray<ASpaceship*>& Ships, APSFleet::EOrder Order, AActor* Target, FText& OutRefusal);
+	/**
+	 * Gives the order to every ship that can take it; returns how many did and the first refusal. BuildStructure takes
+	 * the catalogue type and goes to the first ship that can raise it (its cost is taken then).
+	 */
+	int32 IssueOrder(const TArray<ASpaceship*>& Ships, APSFleet::EOrder Order, AActor* Target, FText& OutRefusal,
+		FName StructureType = NAME_None);
+	/** Why this ship cannot raise this catalogue type at this place now; empty when it can. */
+	FText CheckBuildOrder(const ASpaceship* Ship, const AActor* Target, FName StructureType) const;
+	/** The idle ship of the civilization nearest the target that can take the order (null: none can); the reason if none. */
+	ASpaceship* PickShipFor(APSFleet::EOrder Order, const AActor* Target, FName StructureType, FText& OutRefusal) const;
 	void CancelOrder(const ASpaceship* Ship);
 
 	APSFleet::ESurvey GetSurvey(const AActor* Body) const;

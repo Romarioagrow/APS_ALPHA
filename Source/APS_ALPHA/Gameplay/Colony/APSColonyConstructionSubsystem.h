@@ -30,10 +30,13 @@ public:
 	virtual void Tick(float DeltaTime) override;
 	virtual TStatId GetStatId() const override;
 	virtual bool IsTickable() const override { return !IsTemplate(); }
+	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 	virtual void Deinitialize() override;
 
 	/** A site takes orders once its anchor exists and its production context is registered. */
 	bool IsSiteReady(EAPSSpawnSite Site) const;
+	/** The surface colony's base and pad stand on the ground with their plinths, stilts and ramp. */
+	bool IsColonyGrounded() const { return bColonyGrounded; }
 	AActor* GetSiteAnchor(EAPSSpawnSite Site) const;
 
 	/** Orders one module at its site; the instigator is the pilot's pawn. False with a player-facing reason. */
@@ -86,6 +89,8 @@ private:
 	bool MaterializeJob(EAPSSpawnSite Kind, FSite& Site, UAPSProductionSubsystem& Production,
 		const FAPSProductionJobSnapshot& Job);
 	APawn* GetPlayerPawn() const;
+	/** C19: orders the new game's founding package once the base stands on its ground. */
+	void OrderStartPackage();
 	void TickTestAutomation();
 	void TickModuleShots();
 
@@ -98,6 +103,9 @@ private:
 	float PollAccumulator{0.0f};
 	bool bDefinitionsRegistered{false};
 	bool bColonyGrounded{false};
+	/** C19: the founding package of a new game (USpawnParameters::ColonyStartPackage); empty for a loaded game. */
+	TArray<FName> StartPackage;
+	bool bStartPackageOrdered{false};
 
 	/** aps.Colony.AutoBuild / aps.Colony.ModuleShots test runs. */
 	TSet<FName> AutoBuildIssued;

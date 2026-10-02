@@ -1,6 +1,7 @@
 #pragma once
 
 #include "APSNativeTerrainMaterial.h"
+#include "APSUnifiedLavaAssets.h"
 #include "HAL/IConsoleManager.h"
 
 /** One native WorldScape shading stack for closed PLANET meshes and live terrain.
@@ -40,7 +41,17 @@ namespace APSSharedTerrainMaterial
     {
         const UMaterial* Master = IsValid(Material) ? Material->GetMaterial() : nullptr;
         return IsValid(Master) && (Master->GetPathName() == MasterPath()
-            || Master->GetPathName() == TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/UnifiedLava/M_APS_UnifiedLavaSurface.M_APS_UnifiedLavaSurface"));
+            || Master->GetPathName() == APSTerrainContinuityMaterial::MasterPath
+            || Master->GetPathName() == TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/UnifiedLava/M_APS_UnifiedLavaSurface.M_APS_UnifiedLavaSurface")
+            || (APSUnifiedLavaAssets::DetailCandidate()
+                && Master->GetPathName() == APSUnifiedLavaAssets::MasterPath()));
+    }
+
+    inline const TCHAR* TemplatePath(const FAPSResolvedPlanetSurfaceProfile& Profile)
+    {
+        return APSTerrainContinuityMaterial::Enabled() && APSTerrainContinuityMaterial::Allows(Profile.PlanetType)
+            && Profile.Archetype != EAPSPlanetSurfaceArchetype::Magmatic
+            ? APSTerrainContinuityMaterial::TemplatePath : TemplatePath(Profile.Archetype);
     }
 
     // Called only through an exact stack-specific guard.
@@ -138,7 +149,7 @@ namespace APSSharedTerrainMaterial
         USceneComponent* PlanetRoot, double PresentationScale)
     {
         UMaterialInstance* Template = LoadObject<UMaterialInstance>(nullptr,
-            TemplatePath(Profile.Archetype));
+            TemplatePath(Profile));
         if (!IsSharedStack(Template)) return nullptr;
         UMaterialInstanceDynamic* Result = UMaterialInstanceDynamic::Create(Template, Outer);
         if (!IsValid(Result)) return nullptr;

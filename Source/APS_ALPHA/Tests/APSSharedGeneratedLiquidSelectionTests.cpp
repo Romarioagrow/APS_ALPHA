@@ -6,6 +6,7 @@
 #include "Components/SceneComponent.h"
 #include "UObject/Package.h"
 #include "UObject/StrongObjectPtr.h"
+#include "Misc/ScopeExit.h"
 #include <limits>
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAPSSharedGeneratedLiquidSelectionTest,
@@ -135,6 +136,55 @@ bool FAPSSharedGeneratedLiquidSelectionTest::RunTest(const FString& Parameters)
         }
     }
     AddInfo(TEXT("Selection/frame/parameter regression on transient instances; no production asset changes, actor spawn or rendered acceptance."));
+    return true;
+}
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAPSCoastalWaterReleaseTest,
+    "APS.Gameplay.World.PlanetSurface.CoastalWater.ReleaseContract",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FAPSCoastalWaterReleaseTest::RunTest(const FString& Parameters)
+{
+    using namespace APSSharedGeneratedLiquidMaterial;
+    auto* Switch=IConsoleManager::Get().FindConsoleVariable(TEXT("aps.Surface.CoastalWater"));
+    if (!TestNotNull(TEXT("Rollout switch exists"),Switch)) return false;
+    const int32 Previous=Switch->GetInt();
+    ON_SCOPE_EXIT { Switch->Set(Previous,ECVF_SetByCode); };
+    FAPSResolvedPlanetSurfaceProfile P; P.LiquidType=EAPSPlanetLiquidType::Water; P.LandCoverage=.5f;
+    Switch->Set(1,ECVF_SetByCode);
+    for (auto Type:{EPlanetType::Water,EPlanetType::Terrestrial,EPlanetType::Oasis,EPlanetType::Frozen,EPlanetType::Forest,EPlanetType::Metallic})
+    {
+        P.PlanetType=Type;
+        TestEqual(TEXT("Bounded family rollout"),APSCoastalWaterMaterial::EnabledFor(P),
+            Type==EPlanetType::Water || Type==EPlanetType::Terrestrial || Type==EPlanetType::Oasis);
+    }
+    P.PlanetType=EPlanetType::Terrestrial;
+    for (auto Type:{EAPSPlanetLiquidType::None,EAPSPlanetLiquidType::Lava,EAPSPlanetLiquidType::Ammonia})
+    { P.LiquidType=Type; TestFalse(TEXT("No other chemistry promoted"),APSCoastalWaterMaterial::EnabledFor(P)); }
+    P.LiquidType=EAPSPlanetLiquidType::Water;
+    TStrongObjectPtr<UMaterialInstance> Source(LoadObject<UMaterialInstance>(nullptr,SourcePath(P.LiquidType)));
+    TStrongObjectPtr<USceneComponent> Frame(NewObject<USceneComponent>(GetTransientPackage()));
+    TStrongObjectPtr<UMaterialInstanceDynamic> Ground(Create(GetTransientPackage(),Frame.Get(),1.0,false,false,P,Source.Get()));
+    TStrongObjectPtr<UMaterialInstanceDynamic> Orbit(Create(GetTransientPackage(),Frame.Get(),.001,true,false,P,Source.Get()));
+    if (!TestNotNull(TEXT("Release ground created"),Ground.Get()) || !TestNotNull(TEXT("Release orbit created"),Orbit.Get())) return false;
+    TestTrue(TEXT("Both paths use one saved version"),Ground->Parent==Orbit->Parent && APSCoastalWaterMaterial::IsInstance(Ground.Get()));
+    TestTrue(TEXT("Own Water authority"),HasSavedParameterAuthority(Ground.Get(),EAPSPlanetLiquidType::Water));
+    TestFalse(TEXT("Cannot pass as ammonia"),IsFamilyInstance(Ground.Get(),EAPSPlanetLiquidType::Ammonia));
+    TestNull(TEXT("Manual untouched"),Create(GetTransientPackage(),Frame.Get(),1.0,false,true,P,Source.Get()));
+    const TPair<FName,float> Scalars[]={{TEXT("WaveScaleCm"),120},{TEXT("PhysicalWaveDetailScaleCm"),41},
+        {TEXT("APS_WaterDepthStrength"),1},{TEXT("APS_WaterHalfDepthM"),20},{TEXT("WaveColorStrength"),0},
+        {TEXT("PhysicalWaveRoughnessStrength"),0},{TEXT("WaveNormalStrength"),.025f}};
+    for (const auto& S:Scalars)
+    {
+        float A=-1,B=-1;
+        TestTrue(TEXT("Ground scalar exists"),Ground->GetScalarParameterValue(FHashedMaterialParameterInfo(S.Key),A));
+        TestTrue(TEXT("Orbit scalar exists"),Orbit->GetScalarParameterValue(FHashedMaterialParameterInfo(S.Key),B));
+        TestEqual(S.Key.ToString()+TEXT(" tested style"),A,S.Value); TestEqual(TEXT("Mode parity"),A,B);
+    }
+    Switch->Set(0,ECVF_SetByCode);
+    TestTrue(TEXT("Live release identity survives rollback switch"),IsFamilyInstance(Ground.Get(),P.LiquidType));
+    TestEqual(TEXT("New profiles roll back"),FString(TemplatePath(P)),FString(APSSharedWaterMaterial::TemplatePath()));
+    TStrongObjectPtr<UMaterialInstanceDynamic> Legacy(Create(GetTransientPackage(),Frame.Get(),1.0,false,false,P,Source.Get()));
+    TestTrue(TEXT("Rollback creates legacy shared Water"),Legacy.IsValid() && Legacy->Parent->GetPathName()==APSSharedWaterMaterial::TemplatePath());
+    AddInfo(TEXT("Saved release/factory/frame contracts only; rendered coverage is separate."));
     return true;
 }
 #endif

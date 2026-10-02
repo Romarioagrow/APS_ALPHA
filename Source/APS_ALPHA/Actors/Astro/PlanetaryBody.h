@@ -9,6 +9,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "APS_ALPHA/Core/Structs/PlanetarySystemGenerationModel.h"
 #include "APS_ALPHA/Core/Enums/PlanetHabitability.h"
+#include "APS_ALPHA/Core/Planetary/APSPlanetCloudSettings.h"
 #include "PlanetaryBody.generated.h"
 
 class APlanetarySurfaceGenerator;
@@ -115,6 +116,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Body")
 	double AtmosphereHeight{0.0};
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Clouds")
+	FAPSPlanetCloudSettings CloudSettings;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Body")
 	double OrbitHeight{0.0};
 
@@ -157,6 +161,8 @@ public:
 	EWorldScapeSurfaceState GetWorldScapeStreamingState() const { return WorldScapeSurfaceState; }
 	double GetWorldScapeActivationRadiusCm() const;
 	double GetWorldScapeBodyRadiusCm() const;
+	/** Worker-fenced geometry check for a hidden replacement; never changes readiness. */
+	bool HasWorldScapeReplacementCoverage(AWorldScapeRoot* Root) const;
 	double GetWorldScapeDeactivationRadiusCm() const;
 	double GetWorldScapePreloadRadiusCm() const;
 	double GetWorldScapeUnloadRadiusCm() const;

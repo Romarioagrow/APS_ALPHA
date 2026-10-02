@@ -16,6 +16,7 @@
 #include "APS_ALPHA/Core/Interfaces/NavigatableBody.h"
 #include "APS_ALPHA/Core/Structs/StarGenerationModel.h"
 #include "APS_ALPHA/Gameplay/Civilizations/APSCivilizationIdentityComponent.h"
+#include "APS_ALPHA/Gameplay/Expansion/APSStarSystems.h"
 #include "Components/HierarchicalInstancedStaticMeshComponent.h"
 #include "EngineUtils.h"
 
@@ -80,6 +81,14 @@ void UShipNavigationComponent::RefreshContacts(const FVector& ObserverLocation, 
 		}
 	}
 
+	// Star systems the civilization knows or holds (Rio 02.10: "beacons for the star systems"): their anchors.
+	for (TActorIterator<AActor> It(World); It; ++It)
+	{
+		if (IsValid(*It) && It->ActorHasTag(TEXT("APS.StarSystem")))
+		{
+			AddActorContact(*It, ObserverLocation);
+		}
+	}
 	DiscoveredContactCount = Contacts.Num();
 	AddGeneratedStarContacts(ObserverLocation);
 	Contacts.Sort([](const FShipNavigationContact& Left, const FShipNavigationContact& Right)
@@ -124,7 +133,23 @@ void UShipNavigationComponent::AddActorContact(AActor* Actor, const FVector& Obs
 		}
 	}
 
-	if (const AStar* Star = Cast<AStar>(Actor))
+	FGuid SystemId;
+	if (FAPSStarSystems::AnchorSystem(Actor, SystemId))
+	{
+		// A system's beacon: its name and what is known; a claimed one is charted always, like the colony.
+		const FAPSStarSystems* Stars = APSStarSystemsFind(GetWorld());
+		const FAPSStarSystemInfo* Info = Stars ? Stars->Find(SystemId) : nullptr;
+		Contact.Type = EShipNavigationContactType::StarSystem;
+		Contact.TypeLabel = Stars && Stars->IsClaimed(SystemId) ? TEXT("BEACON") : TEXT("STAR SYSTEM");
+		if (Info)
+		{
+			Contact.DisplayName = Info->Name;
+			Contact.Detail = FString::Printf(TEXT("%s%s%s"), *Info->Spectral, Info->Spectral.IsEmpty() ? TEXT("") : TEXT("  "),
+				*APSStars::KnowledgeName(Stars->GetKnowledge(SystemId)).ToString());
+		}
+		Contact.bOwnColony = Stars && Stars->IsClaimed(SystemId);
+	}
+	else if (const AStar* Star = Cast<AStar>(Actor))
 	{
 		Contact.Type = EShipNavigationContactType::Star;
 		Contact.TypeLabel = TEXT("STAR");

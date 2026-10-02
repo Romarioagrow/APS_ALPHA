@@ -127,13 +127,21 @@ bool FAPSGameplayStellarProjectionTest::RunTest(const FString& Parameters)
 	Faint[3] = 0.001f;
 	TestEqual(TEXT("A faint cool point retains compact support"), Select(Faint, 6, 0).SupportPixels, CompactSupportPixels);
 	TestEqual(TEXT("Malformed data cannot allocate an oversized carrier"), Select(Faint, 5, 0).SupportPixels, CompactSupportPixels);
+	// Rule 0, the stable rank: a share of the bright stars sparkles.
 	int32 Selected = 0;
 	for (int32 Seed = 0; Seed < 1000; ++Seed)
 	{
 		Warm[4] = Seed / 1000.0f;
-		Selected += Select(Warm, 6, 0).RayStrength > 0.0f;
+		Selected += Select(Warm, 6, 0, 0).RayStrength > 0.0f;
 	}
 	TestTrue(TEXT("Crosses form a sparse stable subset rather than every star"), Selected > 20 && Selected < 350);
+	// Rule 1 (the default since Rio's 02.10 "rays OK, smaller with a smooth transition"): every bright enough star
+	// sparkles, its rays shorter than rule 0's, and none below the brightness setting.
+	const FProfile RuleOne = Select(Warm, 6, 0, 1, 0.1, 1.0);
+	TestTrue(TEXT("Rule 1 gives a bright star its rays"), RuleOne.RayStrength > 0.0f);
+	TestTrue(TEXT("Rule 1 rays are shorter than rule 0's"), RuleOne.SupportPixels < MaximumSupportPixels);
+	TestEqual(TEXT("Rule 1 leaves a faint star without rays"), Select(Faint, 6, 0, 1, 0.1, 1.0).RayStrength, 0.0f);
+	TestEqual(TEXT("Rule 2 draws no rays"), Select(Warm, 6, 0, 2).RayStrength, 0.0f);
 	const double PixelWorld = 100.0;
 	const double UnresolvedCore = CoreRadius(1.0, PixelWorld);
 	const double UnresolvedCarrier = CarrierRadius(1.0, PixelWorld, WhiteProfile);

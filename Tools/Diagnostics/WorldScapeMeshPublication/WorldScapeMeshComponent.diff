@@ -1,0 +1,120 @@
+diff --git a/F:/ChatGPT/APOSFERA/work/planet_water_live_20260929/before-mesh-publication-v1/WorldScapeMeshComponent.cpp b/F:/ChatGPT/APOSFERA/work/surface_detail_20260915/PluginBuild/Plugins/WorldScape/Source/WorldScapeCore/Private/WorldScapeMeshComponent.cpp
+index ce17c3a4..d592f296 100644
+--- a/F:/ChatGPT/APOSFERA/work/planet_water_live_20260929/before-mesh-publication-v1/WorldScapeMeshComponent.cpp
++++ b/F:/ChatGPT/APOSFERA/work/surface_detail_20260915/PluginBuild/Plugins/WorldScape/Source/WorldScapeCore/Private/WorldScapeMeshComponent.cpp
+@@ -2,6 +2,9 @@
+ 
+ 
+ #include "WorldScapeMeshComponent.h"
++#include "Async/ParallelFor.h"
++#include "HAL/IConsoleManager.h"
++#include "ProfilingDebugging/CpuProfilerTrace.h"
+ #include "PrimitiveViewRelevance.h"
+ #include "RenderResource.h"
+ #include "RenderingThread.h"
+@@ -52,6 +55,15 @@ static TAutoConsoleVariable<int32> CVarRayTracingProceduralMesh(
+ 	1,
+ 	TEXT("Include WorldScape meshes in ray tracing effects (default = 1 (procedural meshes enabled in ray tracing))"));
+ 
++// Opt-in generated roots only. All batches join before bounds, physics or the
++// render command is touched: adjacent LODs still publish together on the GT.
++static TAutoConsoleVariable<int32> CVarWorldScapeMeshUpdateTasks(
++	TEXT("worldscape.MeshUpdateTasks"), 1,
++	TEXT("Joined vertex-copy batches (1-4) for APS-tagged roots; 1 is serial."));
++static TAutoConsoleVariable<int32> CVarWorldScapeMeshFastCopy(
++	TEXT("worldscape.MeshFastCopy"), 1,
++	TEXT("Validate array lengths once before copying APS visual vertex payloads; 0 restores original array access."));
++
+ /** Resource array to pass  */
+ class FWorldScapeMeshVertexResourceArray : public FResourceArrayInterface
+ {
+@@ -792,10 +804,46 @@ void UWorldScapeMeshComponent::UpdateMeshSection(int32 SectionIndex, const TArra
+ 		// Update bounds, if we are getting new position data
+ 		if (bSameVertexCount)
+ 		{
+-			Section.SectionLocalBox = FBox(Vertices);
+-
+-			// Iterate through vertex data, copying in new info
+-			for (int32 VertIdx = 0; VertIdx < NumVerts; VertIdx++)
++			{
++				TRACE_CPUPROFILER_EVENT_SCOPE(WS_PublishBounds);
++				Section.SectionLocalBox = FBox(Vertices);
++			}
++			const AActor* Owner = GetOwner();
++			const bool bEligible = NumVerts >= 16384 && GetCollisionEnabled() == ECollisionEnabled::NoCollision && Owner &&
++				Owner->ActorHasTag(TEXT("APS.Collision.ParallelSamples"));
++			const bool bFastCopy = bEligible && CVarWorldScapeMeshFastCopy.GetValueOnGameThread() != 0;
++			// Validate optional channel lengths once. The joined copy cannot resize
++			// any array or mutate a component; missing channels retain prior values.
++			auto* Out = Section.PlanetVertexBuffer.GetData();
++			const auto* InPosition = Vertices.GetData();
++			const auto* InNormal = Normals.Num() == NumVerts ? Normals.GetData() : nullptr;
++			const auto* InTangent = Tangents.Num() == NumVerts ? Tangents.GetData() : nullptr;
++			const auto* InUV0 = UV0.Num() == NumVerts ? UV0.GetData() : nullptr;
++			const auto* InUV1 = UV1.Num() == NumVerts ? UV1.GetData() : nullptr;
++			const auto* InUV2 = UV2.Num() == NumVerts ? UV2.GetData() : nullptr;
++			const auto* InUV3 = UV3.Num() == NumVerts ? UV3.GetData() : nullptr;
++			const auto* InColor = VertexColors.Num() == NumVerts ? VertexColors.GetData() : nullptr;
++
++			const auto CopyVertices = [&](int32 Begin, int32 End)
++			{
++			TRACE_CPUPROFILER_EVENT_SCOPE(WS_PublishVertexBatch);
++			if (bFastCopy)
++			{
++				for (int32 I = Begin; I < End; ++I)
++				{
++					auto& V = Out[I];
++					V.Position = InPosition[I];
++					if (InNormal) V.Normal = InNormal[I];
++					if (InTangent) V.Tangent = InTangent[I];
++					if (InUV0) V.UV0 = InUV0[I];
++					if (InUV1) V.UV1 = InUV1[I];
++					if (InUV2) V.UV2 = InUV2[I];
++					if (InUV3) V.UV3 = InUV3[I];
++					if (InColor) V.Color = InColor[I];
++				}
++				return;
++			}
++			for (int32 VertIdx = Begin; VertIdx < End; VertIdx++)
+ 			{
+ 				FWorldScapeMeshVertex& ModifyVert = Section.PlanetVertexBuffer[VertIdx];
+ 
+@@ -844,10 +892,26 @@ void UWorldScapeMeshComponent::UpdateMeshSection(int32 SectionIndex, const TArra
+ 					ModifyVert.Color = VertexColors[VertIdx];
+ 				}
+ 			}
++			};
++			const int32 Tasks = bEligible ?
++				FMath::Clamp(CVarWorldScapeMeshUpdateTasks.GetValueOnGameThread(), 1, 4) : 1;
++			if (Tasks == 1)
++			{
++				CopyVertices(0, NumVerts);
++			}
++			else
++			{
++				const int32 BatchSize = FMath::DivideAndRoundUp(NumVerts, Tasks);
++				ParallelFor(Tasks, [&](int32 Batch)
++				{
++					CopyVertices(Batch * BatchSize, FMath::Min((Batch + 1) * BatchSize, NumVerts));
++				});
++			}
+ 
+ 			// If we have collision enabled on this section, update that too
+ 			if (Section.bEnableCollision)
+ 			{
++				TRACE_CPUPROFILER_EVENT_SCOPE(WS_PublishCollisionVertices);
+ 				TArray<FVector> CollisionPositions;
+ 
+ 				// We have one collision mesh for all sections, so need to build array of _all_ positions
+@@ -873,7 +937,10 @@ void UWorldScapeMeshComponent::UpdateMeshSection(int32 SectionIndex, const TArra
+ 				// Create data to update section
+ 				FWorldScapeMeshSectionUpdateData* SectionData = new FWorldScapeMeshSectionUpdateData;
+ 				SectionData->TargetSection = SectionIndex;
+-				SectionData->NewVertexBuffer = Section.PlanetVertexBuffer;
++				{
++					TRACE_CPUPROFILER_EVENT_SCOPE(WS_PublishRenderBufferCopy);
++					SectionData->NewVertexBuffer = Section.PlanetVertexBuffer;
++				}
+ 
+ 				// Enqueue command to send to render thread
+ 				FWorldScapeSceneProxy* WorldScapeMeshSceneProxy = (FWorldScapeSceneProxy*)SceneProxy;

@@ -36,6 +36,84 @@ TAutoConsoleVariable<int32> CVarContinuousPreviewFrame(
 	TEXT("aps.Preview.ContinuousFrame"), 1,
 	TEXT("Use the common physical observer for every generation-menu scope (new preview required)."));
 
+// Rio 02.10: FPS fell hard while the cluster camera turned. Each orbit step re-sent every catalogue point to the GPU.
+TAutoConsoleVariable<int32> CVarCatalogDeltaUpload(
+	TEXT("aps.Preview.CatalogDeltaUpload"), 1,
+	TEXT("1: a preview frame re-sends only the catalogue points that moved by more than 0.15 px or resized by 0.4%."));
+
+namespace APSPreviewCatalogDelta
+{
+	/** The transforms last sent per catalogue view (the menu has one galaxy and one cluster view). */
+	TMap<TWeakObjectPtr<UInstancedStaticMeshComponent>, TArray<FTransform>> Sent;
+
+	/** Everything a catalogue frame depends on: an identical key gives identical points, so the frame is skipped. */
+	struct FFrameKey
+	{
+		FVector Observer{FVector::ZeroVector};
+		double Scale{0.0};
+		double PixelTangent{0.0};
+		uint64 Resolved{0};
+		uint64 Materialized{0};
+		int32 Points{0};
+		int32 Instances{0};
+		/** The live ray settings: changing one re-publishes every point. */
+		double Optics{0.0};
+		bool operator==(const FFrameKey& Other) const
+		{
+			return Observer == Other.Observer && Scale == Other.Scale && PixelTangent == Other.PixelTangent
+				&& Resolved == Other.Resolved && Materialized == Other.Materialized && Points == Other.Points
+				&& Instances == Other.Instances && Optics == Other.Optics;
+		}
+	};
+	TMap<TWeakObjectPtr<UInstancedStaticMeshComponent>, FFrameKey> Presented;
+
+	/** Sends the frame's transforms; with the delta rule only the changed points. Returns the count sent. */
+	int32 Upload(UInstancedStaticMeshComponent* View, const TArray<FTransform>& Transforms, const double PixelTangent)
+	{
+		for (auto It = Sent.CreateIterator(); It; ++It)
+		{
+			if (!It.Key().IsValid()) It.RemoveCurrent();
+		}
+		TArray<FTransform>& Last = Sent.FindOrAdd(View);
+		if (CVarCatalogDeltaUpload.GetValueOnGameThread() == 0 || Last.Num() != Transforms.Num()
+			|| View->GetInstanceCount() != Transforms.Num())
+		{
+			View->BatchUpdateInstancesTransforms(0, Transforms, true, false, true);
+			Last = Transforms;
+			return Transforms.Num();
+		}
+		TArray<int32> ChangedIndices;
+		for (int32 Index = 0; Index < Transforms.Num(); ++Index)
+		{
+			const FTransform& New = Transforms[Index];
+			FTransform& Old = Last[Index];
+			// The camera sits at the origin: a point's pixel size is its distance times the pixel tangent.
+			const double Pixel = FMath::Max(New.GetLocation().Size(), 1.0) * PixelTangent;
+			const double OldScale = Old.GetScale3D().X;
+			const double NewScale = New.GetScale3D().X;
+			const bool bResized = (OldScale == 0.0) != (NewScale == 0.0)
+				|| FMath::Abs(NewScale - OldScale) > FMath::Max(OldScale, NewScale) * 0.004;
+			const bool bMoved = NewScale != 0.0
+				&& FVector::DistSquared(Old.GetLocation(), New.GetLocation()) > FMath::Square(Pixel * 0.15);
+			if (!bResized && !bMoved) continue;
+			ChangedIndices.Add(Index);
+		}
+		// While the camera orbits nearly every point moves: one batch costs far less than per-instance updates.
+		if (ChangedIndices.Num() * 4 > Transforms.Num())
+		{
+			View->BatchUpdateInstancesTransforms(0, Transforms, true, false, true);
+			Last = Transforms;
+			return Transforms.Num();
+		}
+		for (const int32 Index : ChangedIndices)
+		{
+			View->UpdateInstanceTransform(Index, Transforms[Index], true, false, true);
+			Last[Index] = Transforms[Index];
+		}
+		return ChangedIndices.Num();
+	}
+}
+
 TAutoConsoleVariable<int32> CVarResolvedStarPreparation(
 	TEXT("aps.Preview.ResolvedStarPreparation"), 1,
 	TEXT("Prepare bounded hidden stellar component capacity during an existing continuous flight; never delay visible stars."));
@@ -772,6 +850,7 @@ void AAstroGenerator::ApplyContinuousPreviewFrame()
 {
 	if (!UsesContinuousPreviewFrame() || !bContinuousPreviewInitialized || !IsValid(PreviewCamera)) return;
 	CSV_SCOPED_TIMING_STAT(APSPreview, ApplyFrame);
+	const double TimeStart = FPlatformTime::Seconds();
 	ContinuousPreviewFrame.ObserverCm = ContinuousPreviewOrbit.ObserverCm();
 	// One numerical scale for all objects. Target framing stays precision-safe at
 	// every zoom while every resolved angular size still equals physical R / D.
@@ -796,11 +875,35 @@ void AAstroGenerator::ApplyContinuousPreviewFrame()
 			/ FMath::Max(ViewWidth, 320));
 	TrimContinuousPreviewSystemCache(PixelTangent);
 	PresentContinuousResolvedStars(PixelTangent);
+	const double TimeResolved = FPlatformTime::Seconds();
 	const auto PresentCatalog = [this, PixelTangent](UInstancedStaticMeshComponent* View,
 		const TArray<FAPSContinuousPreviewPoint>& Points)
 	{
 		if (!IsValid(View) || !IsValid(View->GetStaticMesh())) return;
 		if (!APSStellarOpticalSupport::EnsureLayout(View)) return;
+		APSPreviewCatalogDelta::FFrameKey Key;
+		Key.Observer = ContinuousPreviewFrame.ObserverCm;
+		Key.Scale = ContinuousPreviewFrame.RenderCmPerPhysicalCm;
+		Key.PixelTangent = PixelTangent;
+		for (const auto& Pair : ContinuousResolvedStarViews)
+			Key.Resolved += (uint64(uint32(Pair.Key)) + 1) * 0x9E3779B97F4A7C15ull;
+		for (const auto& Pair : ContinuousMaterializedSystems)
+			Key.Materialized += (uint64(uint32(Pair.Key)) + 1) * 0xC2B2AE3D27D4EB4Full + (IsValid(Pair.Value) ? 1 : 0);
+		Key.Points = Points.Num();
+		Key.Instances = View->GetInstanceCount();
+		Key.Optics = APSStellarOpticalSupport::RayRuleSetting() + 10.0 * APSStellarOpticalSupport::RayBrightnessSetting()
+			+ 1000.0 * APSStellarOpticalSupport::RaySizeSetting();
+		if (CVarCatalogDeltaUpload.GetValueOnGameThread() != 0)
+		{
+			APSPreviewCatalogDelta::FFrameKey& LastKey = APSPreviewCatalogDelta::Presented.FindOrAdd(View);
+			if (LastKey == Key)
+			{
+				View->SetVisibility(true, false);
+				View->SetHiddenInGame(false, false);
+				return;
+			}
+			LastKey = Key;
+		}
 		const double MeshRadius = FMath::Max(View->GetStaticMesh()->GetBounds().BoxExtent.GetMax(), 0.001);
 		TArray<FTransform> Transforms;
 		Transforms.Init(FTransform(FQuat::Identity, FVector::ZeroVector, FVector::ZeroVector), View->GetInstanceCount());
@@ -840,7 +943,8 @@ void AAstroGenerator::ApplyContinuousPreviewFrame()
 		// UE 5.4 tracks each changed instance and schedules SendRenderInstanceData.
 		// Recreating the entire scene proxy here would discard that incremental path
 		// on every flight frame; geometry and instance indices are unchanged.
-		View->BatchUpdateInstancesTransforms(0, Transforms, true, false, true);
+		const int32 Sent = APSPreviewCatalogDelta::Upload(View, Transforms, PixelTangent);
+		CSV_CUSTOM_STAT(APSPreview, CatalogPointsSent, Sent, ECsvCustomStatOp::Accumulate);
 		View->SetVisibility(true, false);
 		View->SetHiddenInGame(false, false);
 	};
@@ -848,10 +952,12 @@ void AAstroGenerator::ApplyContinuousPreviewFrame()
 		CSV_SCOPED_TIMING_STAT(APSPreview, GalaxyCatalog);
 		PresentCatalog(ContinuousGalaxyView, ContinuousGalaxyPoints);
 	}
+	const double TimeGalaxy = FPlatformTime::Seconds();
 	{
 		CSV_SCOPED_TIMING_STAT(APSPreview, ClusterCatalog);
 		PresentCatalog(ContinuousClusterView, ContinuousClusterPoints);
 	}
+	const double TimeCluster = FPlatformTime::Seconds();
 
 	PreviewBodyPresentationCenters.Reset();
 	PreviewBodyPresentationRadii.Reset();
@@ -908,6 +1014,7 @@ void AAstroGenerator::ApplyContinuousPreviewFrame()
 			SetPreviewBodyBackingSphereVisible(Body, !State || State->ActiveBuffer == INDEX_NONE);
 		}
 	}
+	const double TimeBodies = FPlatformTime::Seconds();
 	if (IsValid(GeneratedHomeStarSystem) && IsValid(GeneratedHomeStarSystem->StarSystemZone))
 	{
 		GeneratedHomeStarSystem->StarSystemZone->SetVisibility(false, false);
@@ -915,12 +1022,31 @@ void AAstroGenerator::ApplyContinuousPreviewFrame()
 	}
 	SyncPreviewGlobeProxyTransforms();
 	SetPreviewGlobeProxyVisible(true);
+	const double TimeGlobes = FPlatformTime::Seconds();
 	for (const TWeakObjectPtr<AActor>& WeakBody : ContinuousPreviewBodies)
 		if (APlanetaryBody* Body = Cast<APlanetaryBody>(WeakBody.Get())) StabilizePreviewAtmosphere(Body);
+	const double TimeAtmospheres = FPlatformTime::Seconds();
 	HideLegacyPreviewGuideShells();
 	SetPreviewGuideShellVisible(PreviewStarInfluenceWireGuide, false);
 	SetPreviewGuideShellVisible(PreviewSystemBoundaryWireGuide, false);
 	PrepareContinuousResolvedStarPool(PixelTangent);
+	// Rio 02.10 (freezes while turning the cluster): name the stage when one apply costs a visible share of a frame.
+	static uint64 AppliesFrame = 0;
+	static int32 AppliesThisFrame = 0;
+	AppliesThisFrame = AppliesFrame == GFrameCounter ? AppliesThisFrame + 1 : 1;
+	AppliesFrame = GFrameCounter;
+	const double TimeEnd = FPlatformTime::Seconds();
+	static double LastSlowApplyLog = 0.0;
+	if ((TimeEnd - TimeStart) * 1000.0 > 6.0 && TimeEnd - LastSlowApplyLog > 0.5)
+	{
+		LastSlowApplyLog = TimeEnd;
+		const auto Ms = [](const double From, const double To) { return (To - From) * 1000.0; };
+		UE_LOG(LogTemp, Warning, TEXT("[APS.Preview.Slow] apply %.1f ms: resolved %.1f, galaxy %.1f (%d), cluster %.1f (%d), bodies %.1f (%d), globes %.1f, atmospheres %.1f, rest %.1f; applies this frame %d, focus=%s"),
+			Ms(TimeStart, TimeEnd), Ms(TimeStart, TimeResolved), Ms(TimeResolved, TimeGalaxy), ContinuousGalaxyPoints.Num(),
+			Ms(TimeGalaxy, TimeCluster), ContinuousClusterPoints.Num(), Ms(TimeCluster, TimeBodies), ContinuousPreviewBodies.Num(),
+			Ms(TimeBodies, TimeGlobes), Ms(TimeGlobes, TimeAtmospheres), Ms(TimeAtmospheres, TimeEnd), AppliesThisFrame,
+			*UEnum::GetValueAsString(PreviewFocus));
+	}
 }
 
 void AAstroGenerator::SetContinuousPreviewFramingTangent(const double Tangent)

@@ -1,0 +1,95 @@
+diff --git a/F:/ChatGPT/APOSFERA/work/planet_flight_residency_20260930/base-batch-source-before/WorldScapeRoot.h b/F:/ChatGPT/APOSFERA/work/surface_detail_20260915/PluginBuild/Plugins/WorldScape/Source/WorldScapeCore/Public/WorldScapeRoot.h
+index 8eecf9bd..8cf4449b 100644
+--- a/F:/ChatGPT/APOSFERA/work/planet_flight_residency_20260930/base-batch-source-before/WorldScapeRoot.h
++++ b/F:/ChatGPT/APOSFERA/work/surface_detail_20260915/PluginBuild/Plugins/WorldScape/Source/WorldScapeCore/Public/WorldScapeRoot.h
+@@ -1913,6 +1913,10 @@ public:
+ 	* Generate the Base Mesh, used when Check for Regenerate is true
+ 	*/
+ 	void GenerateBaseMesh();
++	// Only for a fresh, hidden, tick-disabled root before any generation worker.
++	// Builds at most MaxNewLods base components; caller enables Tick after true.
++	bool AdvanceBaseMeshInitialization(int32 MaxNewLods);
++	bool GenerateBaseMeshBatch(int32 MaxNewLods, bool bRestart);
+ 	/**
+ 	* Delete all chunks and mesh instances
+ 	*/
+diff --git a/F:/ChatGPT/APOSFERA/work/planet_flight_residency_20260930/base-batch-source-before/WorldScapeRoot_Main.cpp b/F:/ChatGPT/APOSFERA/work/surface_detail_20260915/PluginBuild/Plugins/WorldScape/Source/WorldScapeCore/Private/WorldScapeRoot_Main.cpp
+index fca92fe6..9c342bae 100644
+--- a/F:/ChatGPT/APOSFERA/work/planet_flight_residency_20260930/base-batch-source-before/WorldScapeRoot_Main.cpp
++++ b/F:/ChatGPT/APOSFERA/work/surface_detail_20260915/PluginBuild/Plugins/WorldScape/Source/WorldScapeCore/Private/WorldScapeRoot_Main.cpp
+@@ -818,6 +818,24 @@ void AWorldScapeRoot::CleanComponents()
+ // ----------------------------------------------------------------------------
+ void AWorldScapeRoot::GenerateBaseMesh()
+ {
++	GenerateBaseMeshBatch(MAX_int32, true);
++}
++
++bool AWorldScapeRoot::AdvanceBaseMeshInitialization(int32 MaxNewLods)
++{
++	check(IsInGameThread());
++	if (init || !IsHidden() || IsActorTickEnabled() || !WorldScapeLodInGeneration.IsEmpty()) return false;
++	const bool Complete = GenerateBaseMeshBatch(FMath::Max(1, MaxNewLods), false);
++	if (Complete) init = true;
++	return Complete;
++}
++
++bool AWorldScapeRoot::GenerateBaseMeshBatch(int32 MaxNewLods, bool bRestart)
++{
++	TRACE_CPUPROFILER_EVENT_SCOPE(WS_BaseMeshBatch);
++	const bool Begin = bRestart || (WorldScapeLod.IsEmpty() && WorldScapeLodOcean.IsEmpty());
++	if (Begin)
++	{
+ 	Prev_HeightMult = -1;
+ 	if (MaxLod < 1)
+ 		MaxLod = 1;
+@@ -829,6 +847,7 @@ void AWorldScapeRoot::GenerateBaseMesh()
+ 	//UE_LOG(LogWorldScapeCore, Log, TEXT("Generate Base Mesh"));
+ 
+ 	FoliagesList.Empty();
++	}
+ 	DVector PPos = FVector(0, 0, 0);
+ 	
+ 	UWorld* world = GEngine->GetCurrentPlayWorld();
+@@ -861,6 +880,8 @@ void AWorldScapeRoot::GenerateBaseMesh()
+ 	PPos = PPos + PlanetLocation;
+ 	PPos.Normalize();
+ 
++	if (Begin)
++	{
+ 	for (int32 i = 0; i < HeightMapVolumeList.Num(); i++)
+ 	{
+ 		if (HeightMapVolumeList.IsValidIndex(i) && IsValid(HeightMapVolumeList[i]))
+@@ -885,10 +906,13 @@ void AWorldScapeRoot::GenerateBaseMesh()
+ 		}
+ 	}
+ 	UpdateFoliageData();
++	MaterialTerrainInstances.Empty();
++	MaterialOceanInstances.Empty();
++	}
+ 	if (IsValid(GetWorld()))
+ 	{
+-		MaterialTerrainInstances.Empty();
+-		for (int32 i = 0; i < MaxLod; i++)
++		int32 Added = 0;
++		for (int32 i = WorldScapeLod.Num(); i < MaxLod && Added < MaxNewLods; i++, Added++)
+ 		{
+ 			WorldScapeLod.Add(NewObject <UWorldScapeLod>(this));
+ 			WorldScapeLod[i]->InternalCollisionSettings = Terrain_CollisionSettings;
+@@ -941,8 +965,7 @@ void AWorldScapeRoot::GenerateBaseMesh()
+ 
+ 
+ 		}
+-		MaterialOceanInstances.Empty();
+-		for (int32 i = 0; i < OceanMaxLod; i++)
++		for (int32 i = WorldScapeLodOcean.Num(); bOcean && i < OceanMaxLod && Added < MaxNewLods; i++, Added++)
+ 		{
+ 			if (bOcean)
+ 			{
+@@ -983,6 +1006,7 @@ void AWorldScapeRoot::GenerateBaseMesh()
+ 		}
+ 
+ 	}
++	return IsValid(GetWorld()) && WorldScapeLod.Num() == MaxLod && (!bOcean || WorldScapeLodOcean.Num() == OceanMaxLod);
+ }
+ // ----------------------------------------------------------------------------
+ void AWorldScapeRoot::CreateInstancedMesh(FFoliagesSector* Sector, const UWorldScapeFoliagesInterface* Foliage) {

@@ -9,9 +9,11 @@
 
 class AAPSColonyModule;
 class SAPSCivilizationMap;
+class SAPSInfrastructurePanel;
+class SAPSSystemScheme;
+class SAPSSurfaceMap;
 class ASpaceship;
 class ASpaceShipyard;
-class UTextureRenderTarget2D;
 class SVerticalBox;
 class SWidgetSwitcher;
 class UAPSColonyConstructionSubsystem;
@@ -39,9 +41,12 @@ public:
 	virtual bool SupportsKeyboardFocus() const override { return true; }
 	virtual FReply OnKeyDown(const FGeometry& Geometry, const FKeyEvent& Event) override;
 	virtual void Tick(const FGeometry& AllottedGeometry, double InCurrentTime, float InDeltaTime) override;
-	/** 0 overview, 1 map, 2 colony, 3 fleet command, 4 divisions, 5 journal, 6 shipyard (test captures, K). */
-	void ShowTab(int32 TabIndex) { SelectTab(static_cast<ETab>(FMath::Clamp(TabIndex, 0, 6))); }
+	/** 0 overview, 1 map, 2 infrastructure, 3 fleet orders, 4 divisions, 5 journal, 6 shipyard, 7 system scheme, 8 pilot,
+	 * 9 surface map (test captures, K). Map, fleet orders, scheme and surface are the modes of one MAP tab (Rio, 02.10). */
+	void ShowTab(int32 TabIndex) { SelectTab(static_cast<ETab>(FMath::Clamp(TabIndex, 0, 9))); }
 	bool IsShowingTab(int32 TabIndex) const { return static_cast<int32>(ActiveTab) == TabIndex; }
+	/** Test captures: 1 the home planet's object page (INFRASTRUCTURE), 2 the construction catalogue, 0 neither. */
+	void ShowTestOverlay(int32 Overlay);
 
 private:
 	enum class ETab : uint8
@@ -52,7 +57,10 @@ private:
 		Fleet,
 		Divisions,
 		Journal,
-		Shipyard
+		Shipyard,
+		Scheme,
+		Pilot,
+		Surface
 	};
 
 	FReply SelectTab(ETab Tab);
@@ -64,12 +72,8 @@ private:
 	TSharedRef<SWidget> BuildJournal();
 	/** Divisions: the six divisions of the civilization and their levels (the UMG civilization menu, 01.2026), what each
 	 * changes in the game now and how it grows (Rio, 01.10). Cards: exploration, industry, science, civil affairs,
-	 * military, fleet command. */
+	 * military, fleet command; drawn by SAPSDivisionsPanel (Rio 02.10: gauges and chips instead of text lines). */
 	TSharedRef<SWidget> BuildDivisions();
-	/** The card's level with what the work earned (OutEarned). */
-	int32 DivisionCardLevel(int32 CardIndex, int32& OutEarned) const;
-	/** The card's effect in the game at its level, or (bGrowth) how it grows. */
-	FText DivisionCardEffect(int32 CardIndex, bool bGrowth) const;
 	/** Journal (Rio, 01.10: "more readable: fonts, icons"): newest first, each entry with its category's glyph and colour,
 	 * and category chips with counts to filter. Built while the journal tab is shown. */
 	void RebuildJournal();
@@ -99,9 +103,10 @@ private:
 	FText OrderRefusal(APSFleet::EOrder Order) const;
 	FAPSFleetCommand* GetFleet() const;
 	/**
-	 * B1 (Rio, 01.10: "studied planets and moons: their real look in the menu"): a photograph of the fleet target as it
-	 * stands in the world (its WorldScape surface where streamed, its globe and atmosphere otherwise), lit by its star.
-	 * A scene capture runs for a few frames when a studied world is picked, then the picture stays.
+	 * B1 (Rio, 01.10: "studied planets and moons: their real look in the menu"): the fleet target's globe in the order
+	 * panel. Rio 02.10 ("an empty mesh on a black background instead of the planet; remove the black"): a scene capture
+	 * only saw the placeholder sphere (WorldScape builds the surface for the player's camera), so the globe is the
+	 * surface map's own (SAPSSurfaceMap, globe only) on a transparent background, coarse while only surveyed.
 	 */
 	void UpdateBodyPreview();
 	/**
@@ -140,6 +145,53 @@ private:
 	 * to the home ship when the pilot is on foot. */
 	TSharedRef<SWidget> BuildMap();
 	void RefreshMap();
+	/** The mode bar shared by the MAP tab's three modes: strategic map, fleet orders, system scheme. */
+	TSharedRef<SWidget> BuildMapModes();
+	bool IsMapTab() const
+	{
+		return ActiveTab == ETab::Map || ActiveTab == ETab::Fleet || ActiveTab == ETab::Scheme || ActiveTab == ETab::Surface;
+	}
+	/** C6 (Rio, 02.10): the surface map of a world (SAPSSurfaceMap) with the worlds of the system to step through. */
+	TSharedRef<SWidget> BuildSurface();
+	FReply StepSurfaceBody(int32 Step);
+	TSharedPtr<SAPSSurfaceMap> SurfaceMap;
+	/** C2 (Rio, 02.10): the system in order, bodies to scale of size without distances (SAPSSystemScheme). */
+	TSharedRef<SWidget> BuildScheme();
+	/** C3 (Rio, 02.10): every infrastructure object, the home colony among stations, shipyards and outposts; each row
+	 * opens its object page. */
+	void RefreshInfrastructure(bool bForceRebuild);
+	/** The INFRASTRUCTURE tab v2 (Rio 02.10): stocks, the network map, the construction catalogue, the holdings above and
+	 * the object page every OPEN lands on (SAPSInfrastructurePanel). */
+	TSharedPtr<SAPSInfrastructurePanel> InfrastructurePanel;
+	/** P1 (Rio, 02.10): the old personal widget (WBP_CurrentStatus_UI) as the PILOT tab: who and where the pilot is,
+	 * gravity and environment, telemetry, the course and the last journal lines, read four times a second. */
+	TSharedRef<SWidget> BuildPilot();
+	void RefreshPilotStatus();
+	struct FPilotStatus
+	{
+		FText State;
+		FText Body;
+		FText BodyDetail;
+		FText Star;
+		FText Environment;
+		FText Altitude;
+		FText Gravity;
+		FText Speed;
+		FText Band;
+		FText Course;
+		FText CourseDistance;
+		FText Eta;
+		FText Journal;
+	};
+	FPilotStatus PilotStatus;
+	/** C5 (Rio, 02.10): construction as a catalogue window over the fleet map: cards with what each structure needs,
+	 * what it gives, whether the picked ships can raise it at the target, and the order. */
+	TSharedRef<SWidget> BuildConstructionCatalogue();
+	/** C4 (Rio, 02.10): the object picked on the map in a window: what it is, what the civilization knows and holds
+	 * there, and what can be done (course, construction, shipyard, fleet orders). Rio 02.10 ("OPEN should open a full
+	 * page"): now the object's page in the INFRASTRUCTURE tab; the window is no longer opened. */
+	void OpenObjectWindow(AActor* Actor);
+	void RebuildObjectWindow();
 	FReply SetCourseToSelected();
 	FReply ShowSystemView();
 	FReply OpenLocalView();
@@ -166,12 +218,8 @@ private:
 	bool bFleetMessageIsError{false};
 	/** The fleet map opens on the home planet's neighbourhood once, where the ships and moons are. */
 	bool bFleetMapFocused{false};
-	/** A UTextureRenderTarget2D; held as UObject so the widget's includers need no render-target header. */
-	TStrongObjectPtr<UObject> PreviewTarget;
-	TSharedPtr<FSlateBrush> PreviewBrush;
-	TWeakObjectPtr<AActor> PreviewCamera;
-	TWeakObjectPtr<AActor> PreviewSubject;
-	int32 PreviewFramesLeft{0};
+	/** The fleet target's globe in the order panel (B1). */
+	TSharedPtr<SAPSSurfaceMap> OrdersGlobe;
 
 	TSharedPtr<SVerticalBox> ShipyardCatalogueBox;
 	TSharedPtr<SVerticalBox> ShipyardQueueBox;
@@ -202,6 +250,13 @@ private:
 	float RefreshAccumulator{0.0f};
 
 	TSharedPtr<SAPSCivilizationMap> Map;
+	TSharedPtr<SAPSSystemScheme> Scheme;
+	TSharedPtr<SVerticalBox> InfrastructureList;
+	bool bConstructionOpen{false};
+	TSharedPtr<SVerticalBox> ObjectWindowBox;
+	TWeakObjectPtr<AActor> ObjectWindowActor;
+	bool bObjectWindowOpen{false};
+	FString InfrastructureSignature;
 	TSharedPtr<SVerticalBox> MapList;
 	FString MapListSignature;
 	FText CourseMessage;

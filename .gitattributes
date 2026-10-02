@@ -60,3 +60,6 @@
 Intermediate/ProjectFiles/UE5.vcxproj filter=lfs diff=lfs merge=lfs -text
 Content/APS/APS_ALPHA/Assets/AI_Shpis/Pack_1/24/ab95b727dd70b50c37e023f1a321f754.uasset filter=lfs diff=lfs merge=lfs -text
 Content/APS/APS_ALPHA/Assets/AI_Shpis/Pack_1/Spaceship_S_P1_24/SK_Spaceship_S_P1_24.uasset filter=lfs diff=lfs merge=lfs -text
+SourceAudio/APS/MenuMusic/SW_Menu_MelodicPlaylist.wav filter=lfs diff=lfs merge=lfs -text
+Content/APS/APS_ALPHA/Audio/Waves/SW_Menu_MelodicPlaylist.uasset filter=lfs diff=lfs merge=lfs -text
+Content/APS/APS_ALPHA/Assets/AI_Shpis/Pack_3/Spaceship_S_P3_01/SM_Spaceship_S_P3_01.uasset filter=lfs diff=lfs merge=lfs -text

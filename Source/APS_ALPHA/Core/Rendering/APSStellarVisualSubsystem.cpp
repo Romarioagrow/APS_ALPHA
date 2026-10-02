@@ -1,5 +1,6 @@
 #include "APSStellarVisualSubsystem.h"
 #include "APSGameplayStarAppearance.h"
+#include "APSPlanetSurfaceFill.h"
 
 #include "APS_ALPHA/Actors/Astro/Star.h"
 #include "APS_ALPHA/Actors/Astro/StarSystem.h"
@@ -45,7 +46,6 @@ namespace
 	// response above display quantization while remaining below one quarter of the
 	// generated star key (about 9.5 lux in the standard handoff).
 	constexpr float GameplaySurfaceFillLightIntensity = 2.20f;
-	constexpr double GameplaySurfaceFillMaximumAltitudeCm = 5000000.0;
 	const FLinearColor GameplaySurfaceFillLightColor(0.78f, 0.84f, 0.94f, 1.0f);
 }
 
@@ -121,6 +121,11 @@ void UAPSStellarVisualSubsystem::Tick(float DeltaTime)
 		SearchElapsed = 0.0f;
 		APSGameplayStarAppearance::Apply(World);
 		ResolveNearestStar(ObserverLocation);
+	}
+	// Every frame: the stars' daylight fade follows a climb continuously (twice a second it stepped visibly, 30.09).
+	if (!ActivePreviewBody && bHasPreviewCameraLocation)
+	{
+		UpdateGameplayDaylightStars(PreviewCameraLocation);
 	}
 	UpdateGameplaySurfaceFillLight(
 		ActivePreviewBody ? nullptr : Observer,
@@ -634,7 +639,7 @@ void UAPSStellarVisualSubsystem::UpdateGameplaySurfaceFillLight(
 			const double RadialDistanceCm = FVector::Distance(
 				ObserverLocation, Candidate->GetActorLocation());
 			const double SurfaceAltitudeCm = FMath::Abs(RadialDistanceCm - BodyRadiusCm);
-			if (SurfaceAltitudeCm <= GameplaySurfaceFillMaximumAltitudeCm
+			if (SurfaceAltitudeCm <= APSPlanetSurfaceFill::MaximumAltitudeCm
 				&& SurfaceAltitudeCm < ClosestSurfaceAltitudeCm)
 			{
 				ClosestSurfaceBody = Candidate;
@@ -679,6 +684,10 @@ void UAPSStellarVisualSubsystem::UpdateGameplaySurfaceFillLight(
 	const FVector DesiredLightRayDirection =
 		(-SurfaceOutward * 0.72 + StarAzimuth * 0.69).GetSafeNormal();
 	const FRotator DesiredRotation = DesiredLightRayDirection.Rotation();
+	// Keep the accepted near-surface fill; fade it to zero before the existing
+	// visibility cutoff instead of switching 2.2 lux off in one orbital frame.
+	const float DesiredSurfaceFillIntensity = GameplaySurfaceFillLightIntensity
+		* APSPlanetSurfaceFill::Weight(ClosestSurfaceAltitudeCm);
 
 	if (!FillComponent)
 	{
@@ -706,7 +715,7 @@ void UAPSStellarVisualSubsystem::UpdateGameplaySurfaceFillLight(
 		FillComponent->SetForwardShadingPriority(0);
 		FillComponent->SetVolumetricScatteringIntensity(0.0f);
 		FillComponent->SetLightColor(GameplaySurfaceFillLightColor);
-		FillComponent->SetIntensity(GameplaySurfaceFillLightIntensity);
+		FillComponent->SetIntensity(DesiredSurfaceFillIntensity);
 		FillComponent->SetSpecularScale(0.0f);
 		FillComponent->SetLightingChannels(true, false, false);
 		GameplaySurfaceFillLight = FillLight;
@@ -733,9 +742,9 @@ void UAPSStellarVisualSubsystem::UpdateGameplaySurfaceFillLight(
 		FillComponent->SetLightColor(GameplaySurfaceFillLightColor);
 	}
 	if (!FMath::IsNearlyEqual(
-		FillComponent->Intensity, GameplaySurfaceFillLightIntensity, 0.001f))
+		FillComponent->Intensity, DesiredSurfaceFillIntensity, 0.00001f))
 	{
-		FillComponent->SetIntensity(GameplaySurfaceFillLightIntensity);
+		FillComponent->SetIntensity(DesiredSurfaceFillIntensity);
 	}
 	const FRotator CurrentRotation = FillLight->GetActorRotation();
 	FRotator UpdatedRotation = FMath::RInterpTo(

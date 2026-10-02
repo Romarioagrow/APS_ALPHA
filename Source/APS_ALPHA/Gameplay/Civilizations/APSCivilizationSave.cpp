@@ -4,6 +4,9 @@
 #include "APS_ALPHA/Gameplay/Colony/APSColonyConstructionSubsystem.h"
 #include "APS_ALPHA/Gameplay/Colony/APSColonyModule.h"
 #include "APS_ALPHA/Gameplay/Fleet/APSFleetCommand.h"
+#include "APS_ALPHA/Gameplay/Expansion/APSInfrastructure.h"
+#include "APS_ALPHA/Gameplay/Expansion/APSMissions.h"
+#include "APS_ALPHA/Gameplay/Expansion/APSStarSystems.h"
 #include "APS_ALPHA/Gameplay/Quests/APSQuestSubsystem.h"
 #include "APS_ALPHA/Pawns/Vehicles/PilotingVehicle.h"
 #include "Containers/Ticker.h"
@@ -19,8 +22,11 @@
 namespace APSCivilizationSavePrivate
 {
 	constexpr uint32 Magic = 0x53564943; // "CIVS"
-	/** 2: the ship the player was piloting, to seat the pilot in it again. 3: the quests (the onboarding). */
-	constexpr int32 Version = 4;
+	/**
+	 * 2: the ship the player was piloting, to seat the pilot in it again. 3: the quests (the onboarding). 4: the fleet's
+	 * structures and slipways. 5: the expansion (star systems, infrastructure and stocks, missions, builders' types).
+	 */
+	constexpr int32 Version = 5;
 
 	UAPSQuestSubsystem* QuestOf(const UWorld* World)
 	{
@@ -230,6 +236,25 @@ void APSCivilizationSave::Capture(UWorld* World, TArray<uint8>& OutBytes)
 	Ar << QuestBytes;
 	// Version 4: the stations, shipyards and HQs the fleet built and the slipways' queues (Rio, 01.10).
 	FAPSFleetSaveData::SerializeExtras(Ar, Fleet);
+	// Version 5: the expansion (Rio, 02.10), as one blob with versions of its own inside.
+	TArray<uint8> ExpansionBytes;
+	{
+		FMemoryWriter Writer(ExpansionBytes, true);
+		FAPSStarSystemsSaveData Stars;
+		if (const FAPSStarSystems* Systems = APSStarSystemsFind(World)) Systems->CaptureSave(Stars);
+		FAPSInfrastructureSaveData Infrastructure;
+		if (const FAPSInfrastructure* Runtime = APSInfrastructureFind(World)) Runtime->CaptureSave(Infrastructure);
+		FAPSMissionSaveData Missions;
+		if (const FAPSMissionBoard* Board = APSMissionsFind(World)) Board->CaptureSave(Missions);
+		TArray<FString> Builders, BuilderTypes;
+		for (const TPair<FString, FString>& Building : Fleet.UnitStructureTypes)
+		{
+			Builders.Add(Building.Key);
+			BuilderTypes.Add(Building.Value);
+		}
+		Writer << Stars << Infrastructure << Missions << Builders << BuilderTypes;
+	}
+	Ar << ExpansionBytes;
 	UE_LOG(LogTemp, Log, TEXT("[APS.Save] civilization state: %d modules, %d units, %d surveys, %d outposts, %d structures, %d slipway jobs, %d journal entries, %d quests, %d bytes%s%s"),
 		Modules.Num(), Fleet.Units.Num(), Fleet.Surveys.Num(), Fleet.Outposts.Num(), Fleet.Structures.Num(),
 		Fleet.ShipyardJobs.Num(), EntryCount, QuestCount, OutBytes.Num(),
@@ -284,6 +309,11 @@ void APSCivilizationSave::Restore(UWorld* World, const TArray<uint8>& Bytes)
 	{
 		FAPSFleetSaveData::SerializeExtras(Ar, Fleet);
 	}
+	TArray<uint8> ExpansionBytes;
+	if (SavedVersion >= 5)
+	{
+		Ar << ExpansionBytes;
+	}
 	if (Ar.IsError())
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[APS.Save] civilization state is damaged; nothing restored from it"));
@@ -292,6 +322,29 @@ void APSCivilizationSave::Restore(UWorld* World, const TArray<uint8>& Bytes)
 	if (UAPSCivilizationJournalSubsystem* Journal = World->GetSubsystem<UAPSCivilizationJournalSubsystem>())
 	{
 		Journal->RestoreEntries(MoveTemp(Entries));
+	}
+	if (!ExpansionBytes.IsEmpty())
+	{
+		FMemoryReader Reader(ExpansionBytes, true);
+		FAPSStarSystemsSaveData Stars;
+		FAPSInfrastructureSaveData Infrastructure;
+		FAPSMissionSaveData Missions;
+		TArray<FString> Builders, BuilderTypes;
+		Reader << Stars << Infrastructure << Missions << Builders << BuilderTypes;
+		if (Reader.IsError())
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[APS.Save] the expansion block is damaged; star systems, infrastructure and missions start over"));
+		}
+		else
+		{
+			if (FAPSStarSystems* Systems = APSStarSystemsFind(World)) Systems->RestoreSave(MoveTemp(Stars));
+			if (FAPSInfrastructure* Runtime = APSInfrastructureFind(World)) Runtime->RestoreSave(MoveTemp(Infrastructure));
+			if (FAPSMissionBoard* Board = APSMissionsFind(World)) Board->RestoreSave(MoveTemp(Missions));
+			for (int32 Index = 0; Index < Builders.Num() && Index < BuilderTypes.Num(); ++Index)
+			{
+				Fleet.UnitStructureTypes.Emplace(Builders[Index], BuilderTypes[Index]);
+			}
+		}
 	}
 	const int32 UnitCount = Fleet.Units.Num();
 	if (FAPSFleetCommand* Command = APSFleetFind(World))

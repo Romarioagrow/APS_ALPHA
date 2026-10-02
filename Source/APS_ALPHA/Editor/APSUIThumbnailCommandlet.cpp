@@ -277,9 +277,10 @@ namespace
 	/**
 	 * Frames the visible object: crops a square around the pixels with alpha (plus a small margin) and
 	 * resamples it to OutSize with 4x4 bilinear taps in premultiplied space. Long, thin hulls that the
-	 * bounds-sphere camera leaves small fill the icon this way; magnification is capped at 2x.
+	 * bounds-sphere camera leaves small fill the icon this way; magnification is capped at 2x. Zoom above 1 frames
+	 * tighter (Rio 02.10: the S P3 icon "a bit bigger, add 50% zoom"); a long hull's ends may then leave the icon.
 	 */
-	bool CropToContent(const TArray<uint8>& Source, int32 SourceSize, TArray<uint8>& Out, int32 OutSize)
+	bool CropToContent(const TArray<uint8>& Source, int32 SourceSize, TArray<uint8>& Out, int32 OutSize, double Zoom = 1.0)
 	{
 		int32 MinX = SourceSize;
 		int32 MinY = SourceSize;
@@ -304,7 +305,7 @@ namespace
 		}
 		const double CenterX = (MinX + MaxX + 1) * 0.5;
 		const double CenterY = (MinY + MaxY + 1) * 0.5;
-		const double Side = FMath::Clamp(FMath::Max(MaxX - MinX + 1, MaxY - MinY + 1) * 1.12,
+		const double Side = FMath::Clamp(FMath::Max(MaxX - MinX + 1, MaxY - MinY + 1) * 1.12 / FMath::Max(Zoom, 0.25),
 			OutSize * 0.5, static_cast<double>(SourceSize));
 		const double Left = FMath::Clamp(CenterX - Side * 0.5, 0.0, SourceSize - Side);
 		const double Top = FMath::Clamp(CenterY - Side * 0.5, 0.0, SourceSize - Side);
@@ -418,6 +419,9 @@ int32 UAPSUIThumbnailCommandlet::Main(const FString& Params)
 	Size = FMath::Clamp(Size, 64, 1024);
 	FString Only;
 	FParse::Value(*Params, TEXT("Only="), Only);
+	// -Zoom=1.5 frames the object 1.5 times tighter (with -Only, for one Blueprint's icon).
+	double Zoom = 1.0;
+	FParse::Value(*Params, TEXT("Zoom="), Zoom);
 	FString PngDir;
 	FParse::Value(*Params, TEXT("PngDir="), PngDir);
 	const bool bKeepBackground = FParse::Param(*Params, TEXT("KeepBackground"));
@@ -625,7 +629,7 @@ int32 UAPSUIThumbnailCommandlet::Main(const FString& Params)
 			BackgroundFraction = bKeepBackground ? 0.0f : CutOutBackground(Pixels, RenderSize);
 		}
 		TArray<uint8> Icon;
-		if (BackgroundFraction > 0.995f || !CropToContent(Pixels, RenderSize, Icon, Size))
+		if (BackgroundFraction > 0.995f || !CropToContent(Pixels, RenderSize, Icon, Size, Zoom))
 		{
 			++Failed;
 			UE_LOG(LogAPSUIThumbnails, Warning, TEXT("[APS.UIThumbnails] nothing visible for %s"),

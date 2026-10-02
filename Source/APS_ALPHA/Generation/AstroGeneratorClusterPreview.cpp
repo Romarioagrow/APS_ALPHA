@@ -20,7 +20,8 @@
 namespace APSGeneratedBodyIdentity
 {
 	FRandomStream Stream(int32 WorldSeed, const FString& Address, const TCHAR* Channel);
-	FName Name(int32 WorldSeed, const FString& Address, const FString& Kind);
+	FName Name(int32 WorldSeed, const FString& Address, const FString& Kind, int32 Style);
+	int32 Style(const UGeneratedWorld* World);
 }
 
 AStarSystem* AAstroGenerator::GetContinuousPreviewOwningSystem(const AActor* Actor) const
@@ -330,7 +331,8 @@ AStarSystem* AAstroGenerator::MaterializeContinuousPreviewSystem(const int32 Ins
 		System->AddNewStar(Star);
 		if (StarIndex == 0) System->MainStar = Star;
 		Star->FullSpectralName = Star->GenerateFullSpectralName();
-		Star->AstroName = APSGeneratedBodyIdentity::Name(Seed, StarAddress, Star->FullSpectralName.ToString());
+		Star->AstroName = APSGeneratedBodyIdentity::Name(Seed, StarAddress, Star->FullSpectralName.ToString(),
+			APSGeneratedBodyIdentity::Style(GeneratedWorldModel));
 		Family->SetStarFullSpectralName(Star->FullSpectralName);
 		Stars->ApplySpectralMaterial(Star, StarModel);
 		for (int32 PlanetIndex = 0; PlanetIndex < FamilyModel->PlanetsList.Num(); ++PlanetIndex)
@@ -355,7 +357,8 @@ AStarSystem* AAstroGenerator::MaterializeContinuousPreviewSystem(const int32 Ins
 			Planet->bStreamWorldScapeSurface = true;
 			Planet->bGenerateByDefault = false;
 			PlanetGenerator->ApplyModel(Planet, Model);
-			Planet->AstroName = APSGeneratedBodyIdentity::Name(Seed, PlanetAddress, TEXT("Planet"));
+			Planet->AstroName = APSGeneratedBodyIdentity::Name(Seed, PlanetAddress, TEXT("Planet"),
+				APSGeneratedBodyIdentity::Style(GeneratedWorldModel));
 			Star->AddPlanet(Planet);
 			Planet->SetParentStar(Star);
 			Planet->SetActorScale3D(FVector(Model->Radius * 12742000.0));
@@ -385,7 +388,8 @@ AStarSystem* AAstroGenerator::MaterializeContinuousPreviewSystem(const int32 Ins
 				Moon->bGenerateByDefault = false;
 				MoonGenerator->ApplyModel(Moon, MoonData->MoonModel);
 				MoonGenerator->ConnectMoonWithPlanet(Moon, Planet);
-				Moon->AstroName = APSGeneratedBodyIdentity::Name(Seed, MoonAddress, TEXT("Moon"));
+				Moon->AstroName = APSGeneratedBodyIdentity::Name(Seed, MoonAddress, TEXT("Moon"),
+					APSGeneratedBodyIdentity::Style(GeneratedWorldModel));
 				Moon->SetParentPlanet(Planet);
 				Planet->AddMoon(Moon);
 				Planet->MoonOrbitsList.Add(MoonOrbit);

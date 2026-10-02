@@ -16,6 +16,8 @@
 #include "MaterialShared.h"
 #include "LocalVertexFactory.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "HAL/IConsoleManager.h"
+#include "Misc/Paths.h"
 #include "ProfilingDebugging/CsvProfiler.h"
 
 CSV_DECLARE_CATEGORY_EXTERN(APSGameplayStars);
@@ -24,11 +26,24 @@ namespace
 {
 // Bounded view policy, independent of catalog size. Prewarming never hides a point.
 constexpr int32 PairLimit = 64;
-constexpr int32 BindBudgetPerFrame = 2;
-constexpr double PreparePixels = 1.0;
-constexpr double RetainPixels = 0.65;
-constexpr double ResolvePixels = 3.0;
-constexpr double KeepResolvedPixels = 2.5;
+// Rio 02.10: a star must not grow into a large glyph before its sphere is ready; bind faster.
+constexpr int32 BindBudgetPerFrame = 6;
+// Rio 02.10: the translucent point glyph must not stand in for a visible star ("delete that transparent material"):
+// the full star (opaque photosphere and corona) takes over from aps.Stars.ResolvePixels of radius; the glyph stays only
+// for points too small to show it. Pairs are prepared just before, so the handoff never waits.
+TAutoConsoleVariable<float> CVarResolvePixels(TEXT("aps.Stars.ResolvePixels"), 1.0f,
+	TEXT("Pixel radius at which a catalogue point becomes the full star (photosphere and corona)."));
+double ResolvePixels() { return FMath::Max(static_cast<double>(CVarResolvePixels.GetValueOnGameThread()), 1.0); }
+double KeepResolvedPixels() { return ResolvePixels() * 0.83; }
+double PreparePixels() { return FMath::Max(ResolvePixels() * 0.6, 0.5); }
+double RetainPixels() { return PreparePixels() * 0.65; }
+
+// 02.10: no pair was ever presented in any log (presented=0 in 9k lines). Once a second, why the largest demands wait.
+TAutoConsoleVariable<int32> CVarNativeDiag(TEXT("aps.Stars.NativeDiag"), 0,
+	TEXT("1: log once a second the state of the four largest native star demands (pair, bind, render state, materials)."));
+TAutoConsoleVariable<int32> CVarNativeStrictMaterial(TEXT("aps.Stars.NativeStrictMaterial"), 0,
+	TEXT("1: a native star waits until its materials' shader maps are complete; 0: an existing shader map is enough ")
+	TEXT("(the missing shaders then compile on demand once the star draws)."));
 
 const FTransform* CurrentBase(const FAPSGameplayStellarKey& Key)
 {
@@ -67,6 +82,10 @@ bool MaterialReady(UMaterialInterface* Material, UWorld* World, const TCHAR* Bas
 	if (!World || !APSStellarMaterialContract::HasExactBase(Material, BasePath)) return false;
 	const FMaterialResource* Resource = Material->GetMaterialResource(World->GetFeatureLevel());
 	const FMaterialShaderMap* ShaderMap = Resource ? Resource->GetGameThreadShaderMap() : nullptr;
+	if (CVarNativeStrictMaterial.GetValueOnGameThread() == 0)
+	{
+		return ShaderMap != nullptr;
+	}
 	return Resource && Resource->IsCompilationFinished() && Resource->IsGameThreadShaderMapComplete()
 		&& ShaderMap && ShaderMap->GetMeshShaderMap(&FLocalVertexFactory::StaticType);
 }
@@ -301,6 +320,40 @@ bool AAstroGenerator::IsGameplayStellarKeyCurrent(const FAPSGameplayStellarKey& 
 		&& Key == MakeGameplayStellarKey(Key.Source.Get(), Key.Index);
 }
 
+int32 AAstroGenerator::SuppressClusterProxies(const TArray<int32>& InstanceIndices)
+{
+	UHierarchicalInstancedStaticMeshComponent* Component =
+		IsValid(GeneratedStarCluster) ? GeneratedStarCluster->StarMeshInstances : nullptr;
+	if (!IsValid(Component))
+	{
+		return 0;
+	}
+	int32 Suppressed = 0;
+	for (const int32 InstanceIndex : InstanceIndices)
+	{
+		const FAPSGameplayStellarKey Key = MakeGameplayStellarKey(Component, InstanceIndex);
+		if ((GetGameplayStellarSuppression(Key) & static_cast<uint8>(EAPSGameplayStellarSuppression::SafetyExclusion)) != 0)
+		{
+			continue;
+		}
+		SetGameplayStellarSuppression(Key, EAPSGameplayStellarSuppression::SafetyExclusion, true);
+		FTransform Transform;
+		if (Component->GetInstanceTransform(InstanceIndex, Transform, false) && Transform.GetScale3D() != FVector::ZeroVector)
+		{
+			Transform.SetScale3D(FVector::ZeroVector);
+			Component->UpdateInstanceTransform(InstanceIndex, Transform, false, false, true);
+		}
+		++Suppressed;
+	}
+	if (Suppressed > 0)
+	{
+		Component->BuildTreeIfOutdated(true, true);
+		// The flight model and the stellar view read the catalogue again.
+		NoteCanonicalStellarProxyMutation(true);
+	}
+	return Suppressed;
+}
+
 uint8 AAstroGenerator::GetGameplayStellarSuppression(const FAPSGameplayStellarKey& Key) const
 {
 	if (!IsGameplayStellarKeyCurrent(Key)) return static_cast<uint8>(EAPSGameplayStellarSuppression::UnclassifiedExternal);
@@ -409,7 +462,7 @@ void UAPSStellarVisualSubsystem::CollectGameplayNativeDemand(const FAPSGameplayS
 	const FTransform& BaseTransform, const double PhysicalRadiusCm, const double PixelRadius)
 {
 	const bool bRetained = GameplayNativeOwners.Contains(Key);
-	if (!FMath::IsFinite(PixelRadius) || PixelRadius < (bRetained ? RetainPixels : PreparePixels)) return;
+	if (!FMath::IsFinite(PixelRadius) || PixelRadius < (bRetained ? RetainPixels() : PreparePixels())) return;
 	const FVector Offset = Key.Source->GetComponentTransform().TransformPosition(BaseTransform.GetLocation())
 		- GameplayNativeCamera;
 	// Budget the camera's candidates, not the largest stars on the opposite side
@@ -439,10 +492,10 @@ void UAPSStellarVisualSubsystem::CollectGameplayNativeDemand(const FAPSGameplayS
 			if (GameplayNativeDemand[Index].PixelRadius < GameplayNativeDemand[Smallest].PixelRadius) Smallest = Index;
 		if (PixelRadius > GameplayNativeDemand[Smallest].PixelRadius)
 		{
-			GameplayNativeOverflowResolved += GameplayNativeDemand[Smallest].PixelRadius >= ResolvePixels;
+			GameplayNativeOverflowResolved += GameplayNativeDemand[Smallest].PixelRadius >= ResolvePixels();
 			GameplayNativeDemand[Smallest] = MoveTemp(Demand);
 		}
-		else GameplayNativeOverflowResolved += PixelRadius >= ResolvePixels;
+		else GameplayNativeOverflowResolved += PixelRadius >= ResolvePixels();
 	}
 }
 
@@ -463,7 +516,7 @@ void UAPSStellarVisualSubsystem::PresentGameplayNativeStars(AAstroGenerator* Gen
 		if (!APSPreviewVisibility::SphereIntersectsView(GameplayNativeViewRotation.UnrotateVector(Offset),
 			GuardedRadius, GameplayNativeTanHalfHorizontal, GameplayNativeTanHalfVertical)) return true;
 		Demand.PixelRadius = PixelWorldRadius > 0.0 ? Demand.PhysicalRadiusCm / PixelWorldRadius : 0.0;
-		return !FMath::IsFinite(Demand.PixelRadius) || Demand.PixelRadius < RetainPixels;
+		return !FMath::IsFinite(Demand.PixelRadius) || Demand.PixelRadius < RetainPixels();
 	});
 	GameplayNativeDemand.Sort([](const FAPSGameplayNativeDemand& A, const FAPSGameplayNativeDemand& B)
 	{
@@ -483,6 +536,22 @@ void UAPSStellarVisualSubsystem::PresentGameplayNativeStars(AAstroGenerator* Gen
 	}
 	AStarSystem* Home = Generator->GetPreviewHomeSystem();
 	UStaticMeshComponent* Template = IsValid(Home) && IsValid(Home->MainStar) ? Home->MainStar->StarMesh : nullptr;
+	if (!IsValid(Template) || !IsValid(Template->GetStaticMesh()))
+	{
+		// No home star mesh to copy: the engine sphere carries the photosphere (PresentPair scales by its bounds).
+		static TWeakObjectPtr<UStaticMeshComponent> FallbackTemplate;
+		if (!FallbackTemplate.IsValid())
+		{
+			if (UStaticMesh* Sphere = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Sphere.Sphere")))
+			{
+				UStaticMeshComponent* Fallback = NewObject<UStaticMeshComponent>(Generator, NAME_None, RF_Transient);
+				Fallback->SetStaticMesh(Sphere);
+				FallbackTemplate = Fallback;
+				UE_LOG(LogTemp, Warning, TEXT("[APS.Gameplay.NativeStars] home star mesh missing; native stars use the engine sphere"));
+			}
+		}
+		Template = FallbackTemplate.Get();
+	}
 	if (GameplayNativeBindFrame != GFrameCounter)
 	{
 		GameplayNativeBindFrame = GFrameCounter;
@@ -509,7 +578,7 @@ void UAPSStellarVisualSubsystem::PresentGameplayNativeStars(AAstroGenerator* Gen
 				GameplayNativeOwners.Add(Demand.Key, PairIndex);
 			}
 		}
-		if (PairIndex == INDEX_NONE) { UnmetResolved += Demand.PixelRadius >= ResolvePixels; continue; }
+		if (PairIndex == INDEX_NONE) { UnmetResolved += Demand.PixelRadius >= ResolvePixels(); continue; }
 		FAPSGameplayNativePair& Pair = GameplayNativePairs[PairIndex];
 		Pair.Demand = Demand;
 		if (!Pair.bBound || Pair.BoundMutationSerial != GameplayNativeMutationSerial)
@@ -522,13 +591,13 @@ void UAPSStellarVisualSubsystem::PresentGameplayNativeStars(AAstroGenerator* Gen
 				++BindAttempts;
 				if ((!Pair.Photosphere.IsValid() || !Pair.Corona.IsValid()) && !AllocatePair(Generator, Pair, Template))
 				{
-					UnmetResolved += Demand.PixelRadius >= ResolvePixels;
+					UnmetResolved += Demand.PixelRadius >= ResolvePixels();
 					continue;
 				}
 				Pair.bBound = BindPair(Generator, Pair);
 			}
 		}
-		const bool bResolve = Demand.PixelRadius >= (Pair.bOwnsPoint ? KeepResolvedPixels : ResolvePixels);
+		const bool bResolve = Demand.PixelRadius >= (Pair.bOwnsPoint ? KeepResolvedPixels() : ResolvePixels());
 		if (!bResolve || !PairReady(Pair, GetWorld()))
 		{
 			HidePair(Pair);
@@ -576,6 +645,50 @@ void UAPSStellarVisualSubsystem::PresentGameplayNativeStars(AAstroGenerator* Gen
 			UnmetResolved, BindAttempts, PairLimit);
 		GameplayNativeLastPresentedCount = PresentedCount;
 		GameplayNativeLastDemandCount = GameplayNativeDemand.Num();
+	}
+	static double LastDiagSeconds = 0.0;
+	if (CVarNativeDiag.GetValueOnGameThread() > 0 && FPlatformTime::Seconds() - LastDiagSeconds >= 1.0)
+	{
+		LastDiagSeconds = FPlatformTime::Seconds();
+		UE_LOG(LogTemp, Log, TEXT("[APS.Gameplay.NativeStars.Diag] frame=%llu demand=%d presented=%d pool=%d template=%d templateMesh=%s daylightHidden=%d serial=%llu"),
+			static_cast<unsigned long long>(GFrameCounter), GameplayNativeDemand.Num(), PresentedCount, GameplayNativePairs.Num(),
+			IsValid(Template) ? 1 : 0, IsValid(Template) ? *GetNameSafe(Template->GetStaticMesh()) : TEXT("-"),
+			bGameplayDaylightStarsHidden ? 1 : 0, static_cast<unsigned long long>(GameplayNativeMutationSerial));
+		for (const TCHAR* BasePath : {APSStellarMaterialContract::ActorBaseObjectPath, APSStellarMaterialContract::CoronaBaseObjectPath})
+		{
+			UMaterial* Base = APSStellarMaterialContract::LoadCanonicalBase(BasePath);
+			const FMaterialResource* Resource = IsValid(Base) && GetWorld() ? Base->GetMaterialResource(GetWorld()->GetFeatureLevel()) : nullptr;
+			const FMaterialShaderMap* ShaderMap = Resource ? Resource->GetGameThreadShaderMap() : nullptr;
+			UE_LOG(LogTemp, Log, TEXT("[APS.Gameplay.NativeStars.Diag]   base %s: loaded=%d resource=%d compiled=%d complete=%d shaderMap=%d localVF=%d ready=%d"),
+				*FPaths::GetBaseFilename(BasePath), IsValid(Base) ? 1 : 0, Resource ? 1 : 0,
+				Resource && Resource->IsCompilationFinished() ? 1 : 0, Resource && Resource->IsGameThreadShaderMapComplete() ? 1 : 0,
+				ShaderMap ? 1 : 0, ShaderMap && ShaderMap->GetMeshShaderMap(&FLocalVertexFactory::StaticType) ? 1 : 0,
+				MaterialReady(Base, GetWorld(), BasePath) ? 1 : 0);
+		}
+		for (int32 DemandIndex = 0; DemandIndex < FMath::Min(GameplayNativeDemand.Num(), 4); ++DemandIndex)
+		{
+			const FAPSGameplayNativeDemand& Demand = GameplayNativeDemand[DemandIndex];
+			const int32* PairIndex = GameplayNativeOwners.Find(Demand.Key);
+			const FAPSGameplayNativePair* Pair = PairIndex && GameplayNativePairs.IsValidIndex(*PairIndex) ? &GameplayNativePairs[*PairIndex] : nullptr;
+			UStaticMeshComponent* Surface = Pair ? Pair->Photosphere.Get() : nullptr;
+			UStaticMeshComponent* Corona = Pair ? Pair->Corona.Get() : nullptr;
+			FTransform Point;
+			const bool bPoint = Demand.Key.Source.IsValid() && Demand.Key.Source->GetInstanceTransform(Demand.Key.Index, Point, false);
+			UE_LOG(LogTemp, Log, TEXT("[APS.Gameplay.NativeStars.Diag]   #%d %s[%d] px=%.2f pair=%d assigned=%d bound=%d boundFrame=%llu serialOk=%d owns=%d ")
+				TEXT("valid=%d/%d registered=%d/%d renderState=%d/%d mesh=%d material=%d/%d visible=%d ready=%d suppression=%u geometry=%d pointScale=%.3g"),
+				DemandIndex, *GetNameSafe(Demand.Key.Source.IsValid() ? Demand.Key.Source->GetOwner() : nullptr), Demand.Key.Index,
+				Demand.PixelRadius, PairIndex ? *PairIndex : -1, Pair && Pair->bAssigned ? 1 : 0, Pair && Pair->bBound ? 1 : 0,
+				static_cast<unsigned long long>(Pair ? Pair->BoundFrame : 0), Pair && Pair->BoundMutationSerial == GameplayNativeMutationSerial ? 1 : 0,
+				Pair && Pair->bOwnsPoint ? 1 : 0, IsValid(Surface) ? 1 : 0, IsValid(Corona) ? 1 : 0,
+				IsValid(Surface) && Surface->IsRegistered() ? 1 : 0, IsValid(Corona) && Corona->IsRegistered() ? 1 : 0,
+				IsValid(Surface) && Surface->IsRenderStateCreated() ? 1 : 0, IsValid(Corona) && Corona->IsRenderStateCreated() ? 1 : 0,
+				IsValid(Surface) && IsValid(Surface->GetStaticMesh()) && Surface->GetStaticMesh()->GetRenderData() ? 1 : 0,
+				IsValid(Surface) && MaterialReady(Surface->GetMaterial(0), GetWorld(), APSStellarMaterialContract::ActorBaseObjectPath) ? 1 : 0,
+				IsValid(Corona) && MaterialReady(Corona->GetMaterial(0), GetWorld(), APSStellarMaterialContract::CoronaBaseObjectPath) ? 1 : 0,
+				IsValid(Surface) && Surface->IsVisible() ? 1 : 0, Pair && PairReady(*Pair, GetWorld()) ? 1 : 0,
+				static_cast<uint32>(Generator->GetGameplayStellarSuppression(Demand.Key)), GeometryCurrent(Generator, Demand) ? 1 : 0,
+				bPoint ? Point.GetScale3D().GetAbsMax() : -1.0);
+		}
 	}
 	CSV_CUSTOM_STAT(APSGameplayStars, NativePairCount, GameplayNativePairs.Num(), ECsvCustomStatOp::Set);
 	CSV_CUSTOM_STAT(APSGameplayStars, NativeBindAttempts, BindAttempts, ECsvCustomStatOp::Set);

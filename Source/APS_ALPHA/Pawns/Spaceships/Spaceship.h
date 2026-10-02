@@ -28,7 +28,7 @@ struct FGeometry;
 class FSlateRect;
 class UBoxComponent;
 class UArrowComponent;
-
+enum class EAPSGroundVehicleKind : uint8; // Rio 02.10: ground vehicles; defined in Gameplay/Vehicles/APSGroundVehicleTypes.h
 /** Gameplay size class. The display names intentionally match the in-world ship taxonomy. */
 UENUM(BlueprintType)
 enum class ESpaceshipSizeClass : uint8
@@ -273,6 +273,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Gravity")
 	bool bProvidesArtificialGravity{true};
 
+	/**
+	 * Ship gravity in effect: its own artificial gravity, or, for a ship with an interior, once it is no longer parked on
+	 * a world (Rio 02.10: "walk about a flying ship"; a colony-parked ship leaves its deck to the world's pull).
+	 */
+	bool ProvidesShipGravity() const;
+	/** Its gravity zone answers a walking character only while ship gravity is in effect. */
+	void RefreshShipGravityZone();
+
 	/** Replaces unsuitable generated-mesh collision with a cheap tapered box hull. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Collision")
 	bool bGenerateSimpleHullCollision{false};
@@ -469,6 +477,8 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Ship|Flight")
 	FString GetFlightEnvironmentName() const;
+	/** Z (Rio 02.10): the autopilot to the selected navigation target, or off. */
+	void ToggleAutopilot();
 
 	UFUNCTION(BlueprintPure, Category = "Ship|Flight")
 	FString GetGravitySourceName() const;
@@ -725,4 +735,44 @@ private:
 
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UBoxComponent>> GeneratedCollisionBoxes;
+
+public:
+	/**
+	 * Ground vehicles (Rio 02.10: a rover, a hover and a drone at the colony; Gameplay/Vehicles/APSGroundVehicles.h parks
+	 * them). Any kind but None makes the flight model drive this pawn in the local gravity frame instead of the bands;
+	 * boarding, exit, camera and HUD stay the ship's. Called on a deferred spawn, before FinishSpawning: it loads and
+	 * scales the vehicle's meshes and sets its collision, nose, interaction and name. A ship (None) is never touched.
+	 */
+	void ConfigureAsGroundVehicle(EAPSGroundVehicleKind Kind);
+	EAPSGroundVehicleKind GetGroundVehicleKind() const { return GroundVehicleKind; }
+	bool IsGroundVehicle() const { return static_cast<uint8>(GroundVehicleKind) != 0; }
+	/** ROVER, HOVER or DRONE; empty for a ship. */
+	FString GetGroundVehicleName() const;
+	/** The world a vehicle belongs to: its gravity, terrain height and the drone's ceiling fall back to it. */
+	void SetGroundVehicleHomeBody(AActor* Body) { GroundVehicleHomeBody = Body; }
+	AActor* GetGroundVehicleHomeBody() const { return GroundVehicleHomeBody.Get(); }
+	/** The actor rotation that points the flight nose along Forward and the flight up along Up, whatever the hull axes. */
+	FQuat GetActorRotationForFlightAxes(const FVector& Forward, const FVector& Up) const;
+
+	/** A rover's visual tyre: its centre and radius in the hull's own (unscaled) space, its side and axle. */
+	struct FGroundVehicleWheel
+	{
+		TWeakObjectPtr<USceneComponent> Tire;
+		FVector LocalCenter{FVector::ZeroVector};
+		double LocalRadius{50.0};
+		bool bLeft{false};
+		bool bFront{false};
+	};
+	const TArray<FGroundVehicleWheel>& GetGroundVehicleWheels() const { return GroundVehicleWheels; }
+
+private:
+	/** A vehicle's driver steps out to the left of the nose, on the ground beside the hull (BeginPlay, after the
+	 * automatic interaction setup). */
+	void ConfigureGroundVehicleExit();
+	/** A vehicle's chase camera: level with the gravity and behind the heading (UpdateAdaptiveFlightCamera). */
+	void UpdateGroundVehicleCamera();
+
+	EAPSGroundVehicleKind GroundVehicleKind{};
+	TWeakObjectPtr<AActor> GroundVehicleHomeBody;
+	TArray<FGroundVehicleWheel> GroundVehicleWheels;
 };

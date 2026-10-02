@@ -131,6 +131,17 @@ void UStarGenerator::ApplySpectralMaterial(AStar* NewStar, TSharedPtr<FStarModel
 	{
 		return;
 	}
+	// The generated luminous photosphere must not occlude its separate stellar
+	// directional key. Its false shadow ends at the VSM coverage radius, creating
+	// a hard moving circle and darkening the whole near planet. This is only a
+	// caster policy: no spectrum, emission, geometry, corona or terrain shadows
+	// change. Authored actors and non-emitting black-hole/unknown models retain
+	// their existing policy. Reassert after Blueprint templates / saved replay.
+	if (StarModel->StellarType != EStellarType::BlackHole
+		&& StarModel->StellarType != EStellarType::Unknown)
+	{
+		NewStar->StarMesh->SetCastShadow(false);
+	}
 	// Blueprint overrides and the mesh's WorldGrid fallback are not authoritative.
 	// Reuse a MID only when AStar verifies its ultimate alpha-master base.
 	UMaterialInstanceDynamic* StarDynamicMaterial =

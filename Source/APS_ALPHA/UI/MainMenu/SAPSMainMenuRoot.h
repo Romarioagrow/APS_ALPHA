@@ -210,6 +210,9 @@ private:
 
 	TMap<EAPSStartAssetSlot, TArray<TSoftClassPtr<AActor>>> SpawnClassOptions;
 	TMap<EAPSStartAssetSlot, int32> SpawnClassIndices;
+	/** Option captions aligned with SpawnClassOptions, fixed when the list is built: loading a class while picking no
+	 * longer renames it or its twins (Rio 02.10). */
+	mutable TMap<EAPSStartAssetSlot, TArray<FText>> SpawnClassCaptions;
 	/** Baked Blueprint thumbnails aligned with SpawnClassOptions; null where none was baked. */
 	TMap<EAPSStartAssetSlot, TArray<TSharedPtr<FSlateBrush>>> SpawnClassThumbnails;
 	/** One brush per Blueprint package, so each thumbnail texture loads once. */

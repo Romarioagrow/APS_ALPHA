@@ -1,4 +1,5 @@
 #include "APSPlanetEnvironmentStreamingSubsystem.h"
+#include "APS_ALPHA/Core/World/APSPlaceholderGlobe.h"
 
 #include "APS_ALPHA/Actors/Astro/Moon.h"
 #include "APS_ALPHA/Actors/Astro/Planet.h"
@@ -45,7 +46,9 @@ void UAPSPlanetEnvironmentStreamingSubsystem::Deinitialize()
 	ClearGameplayCollisionAnchor();
 	WarmingBody.Reset();
 	PrewarmedBodies.Reset();
+	FirstBuilds.Reset();
 	VisibleLiquidBodies.Reset();
+	CancelFlightReplacement();
 	Super::Deinitialize();
 }
 
@@ -64,6 +67,9 @@ void UAPSPlanetEnvironmentStreamingSubsystem::Tick(float DeltaTime)
 		UpdateActiveEnvironment();
 	}
 	RefreshVisibleLiquidAppearance();
+	AdvanceFirstBuilds();
+	ProbeWorldScapeProxies();
+	UpdateFlightResidency(DeltaTime);
 }
 
 void UAPSPlanetEnvironmentStreamingSubsystem::RefreshVisibleLiquidAppearance()
@@ -123,6 +129,7 @@ void UAPSPlanetEnvironmentStreamingSubsystem::UpdateStandbyWarmup(
 #if WITH_EDITOR
 		Root->bGenerateCollisionInEditor = false;
 #endif
+		HoldFirstBuild(Root, false);
 	}
 	if (Root->WorldScapeLodInGeneration.Num() > 0)
 		Root->CheckForLodGeneration(); // Non-blocking IsDone fence, never wait/join.
@@ -212,12 +219,21 @@ void UAPSPlanetEnvironmentStreamingSubsystem::ApplyGameplayObserverContract(
 	Root->bOverridePlayerPosition = true;
 	Root->OverridedPlayerPosition = Observer->GetActorLocation();
 	Root->DistanceToFreezeGeneration = 0.0f;
-	Root->bGenerateCollision = true;
+	const bool bTransit = Root->ActorHasTag(TEXT("APS.Surface.Transit"));
+	Root->bGenerateCollision = !bTransit;
 	Root->bGenerateCollisionForAllPlayer = true;
 #if WITH_EDITOR
-	Root->bGenerateCollisionInEditor = true;
+	Root->bGenerateCollisionInEditor = !bTransit;
 	Root->bStaticCollisionInEditor = false;
 #endif
+	if (bAnchorWithoutCollision)
+	{
+		// A surface started ahead of arrival builds no collision until the observer is within its reach.
+		Root->bGenerateCollision = false;
+#if WITH_EDITOR
+		Root->bGenerateCollisionInEditor = false;
+#endif
+	}
 
 	if (bAnchorChanged)
 	{
@@ -247,6 +263,7 @@ void UAPSPlanetEnvironmentStreamingSubsystem::UpdateActiveEnvironment()
 
 	const FVector ObserverLocation = Observer->GetActorLocation();
 	if (ObserverLocation.ContainsNaN()) return;
+	bHasObservedPawn = true;
 	TArray<APlanetaryBody*> StreamedBodies;
 	TMap<APlanet*, TArray<APlanetaryBody*>> Families;
 	for (TActorIterator<APlanetaryBody> It(World); It; ++It)
@@ -265,6 +282,8 @@ void UAPSPlanetEnvironmentStreamingSubsystem::UpdateActiveEnvironment()
 				Body->SetWorldScapeStreamingState(EWorldScapeSurfaceState::Unloaded);
 			continue;
 		}
+		// Rio 02.10 (grey worlds): every body away from the resident family shows its globe in its own palette colour.
+		APSPlaceholderGlobe::Apply(Body);
 		StreamedBodies.Add(Body);
 		if (APlanet* Family = ResolveFamilyPlanet(Body); IsValid(Family))
 		{
@@ -272,6 +291,7 @@ void UAPSPlanetEnvironmentStreamingSubsystem::UpdateActiveEnvironment()
 		}
 	}
 
+	APlanetaryBody* Arriving = UpdateArrivalForecast(Observer, StreamedBodies);
 	APlanet* BestFamily = nullptr;
 	double BestFamilyScore = TNumericLimits<double>::Max();
 	FString BestFamilyKey;
@@ -295,6 +315,27 @@ void UAPSPlanetEnvironmentStreamingSubsystem::UpdateActiveEnvironment()
 			BestFamilyScore = FamilyScore;
 			BestFamily = Pair.Key;
 			BestFamilyKey = Key;
+		}
+	}
+
+	// Flying to another family's body wins over a family the observer only passes or leaves, so that the surface starts
+	// before arrival. Within a body's activation radius the distance rule keeps its family (taking off, moving between
+	// a planet and its moons).
+	if (APlanet* ArrivingFamily = Arriving ? ResolveFamilyPlanet(Arriving) : nullptr;
+		IsValid(ArrivingFamily) && ArrivingFamily != BestFamily && Families.Contains(ArrivingFamily))
+	{
+		bool bWithinReach = false;
+		if (const TArray<APlanetaryBody*>* Current = BestFamily ? Families.Find(BestFamily) : nullptr)
+		{
+			for (const APlanetaryBody* Body : *Current)
+			{
+				bWithinReach |= FVector::Distance(ObserverLocation, Body->GetActorLocation())
+					<= Body->GetWorldScapeActivationRadiusCm();
+			}
+		}
+		if (!bWithinReach)
+		{
+			BestFamily = ArrivingFamily;
 		}
 	}
 
@@ -352,6 +393,13 @@ void UAPSPlanetEnvironmentStreamingSubsystem::UpdateActiveEnvironment()
 			BestBody = Body;
 			BestBodyKey = Key;
 		}
+	}
+
+	// Nothing within activation range yet: the body the observer flies to starts now, without collision.
+	bAnchorWithoutCollision = !BestBody && Arriving && ResolveFamilyPlanet(Arriving) == BestFamily;
+	if (bAnchorWithoutCollision)
+	{
+		BestBody = Arriving;
 	}
 
 	// The selected body is never delayed by the speculative sibling preload budget.
@@ -439,6 +487,10 @@ void UAPSPlanetEnvironmentStreamingSubsystem::UpdateActiveEnvironment()
 			BestBody->SetWorldScapeStreamingState(EWorldScapeSurfaceState::Active);
 			UE_LOG(LogAPSWorldScapeStreaming, Log, TEXT("Activated WorldScape surface: %s"),
 				*BestBody->GetPathName());
+			if (IsValid(BestBody->PlanetaryEnvironmentGenerator))
+			{
+				HoldFirstBuild(BestBody->PlanetaryEnvironmentGenerator->WorldScapeRootInstance, true);
+			}
 		}
 		if (IsValid(BestBody->PlanetaryEnvironmentGenerator))
 		{
@@ -467,7 +519,7 @@ void UAPSPlanetEnvironmentStreamingSubsystem::UpdateActiveEnvironment()
 			|| ResolveFamilyPlanet(WeakBody.Get()) != BestFamily;
 	});
 	APlanetaryBody* WarmCandidate = nullptr;
-	if (BestBody && BestBody->bWorldScapeSurfaceReady && PrewarmedBodies.Num() < MaxStandby)
+	if (!IsValid(FlightReplacement) && BestBody && BestBody->bWorldScapeSurfaceReady && PrewarmedBodies.Num() < MaxStandby)
 	{
 		for (int32 Index = 0; Index < FMath::Min(MaxStandby, Standby.Num()); ++Index)
 		{

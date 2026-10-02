@@ -4,14 +4,21 @@
 
 #include "Animation/AnimInstance.h"
 #include "Camera/CameraComponent.h"
+#include "Components/BoxComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
+#include "APS_ALPHA/Actors/Astro/PlanetaryBody.h"
+#include "APS_ALPHA/Core/Controllers/GravityPlayerController.h"
 #include "APS_ALPHA/Core/Interfaces/VehicleControlling.h"
+#include "APS_ALPHA/Gameplay/Construction/APSConstructionMode.h"
 #include "APS_ALPHA/Pawns/Characters/GravityDetectorComponent.h"
 #include "APS_ALPHA/Pawns/Spaceships/Spaceship.h"
+#include "APS_ALPHA/UI/Colony/APSColonyTerminalSubsystem.h"
+#include "Components/InputComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "GameFramework/PlayerController.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "Engine/GameViewportClient.h"
 #include "InputCoreTypes.h"
@@ -157,6 +164,28 @@ void ACustomGravityCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
+	// After leaving a vehicle: a character moving away from its planet faster than 10 m/s logs why, once.
+	if (!bExitRiseLogged && GetWorld() && GetWorld()->GetTimeSeconds() - VehicleExitSeconds < 8.0
+		&& CurrentGravityType == EGravityType::OnPlanet && GravityDetector && GravityDetector->GravityTargetActor)
+	{
+		const FVector Outward = (GetActorLocation() - GravityDetector->GravityTargetActor->GetActorLocation()).GetSafeNormal();
+		const double Rise = FVector::DotProduct(GetVelocity(), Outward);
+		if (Rise > 1000.0)
+		{
+			bExitRiseLogged = true;
+			const UCharacterMovementComponent* Movement = GetCharacterMovement();
+			UE_LOG(LogTemp, Warning,
+				TEXT("[APS.Gravity] Rising after exit: %.1f m/s away from %s; gravityDir=%s outward=%s zeroG=%d manual=%d mode=%d base=%s handoffSuspended=%d"),
+				Rise / 100.0, *GetNameSafe(GravityDetector->GravityTargetActor), *CurrentGravityDir.ToCompactString(),
+				*Outward.ToCompactString(), bIsZeroG ? 1 : 0, bManualZeroGOverride ? 1 : 0,
+				Movement ? static_cast<int32>(Movement->MovementMode.GetValue()) : -1,
+				Movement && Movement->GetMovementBase() ? *GetNameSafe(Movement->GetMovementBase()->GetOwner()) : TEXT("-"),
+				bSurfaceHandoffSuspended ? 1 : 0);
+		}
+	}
+
+	UpdateBuildMode(DeltaTime);
+
 	if (bSurfaceHandoffSuspended)
 	{
 		// WorldScape keys both visual and collision streaming to this pawn.  Even a
@@ -173,11 +202,13 @@ void ACustomGravityCharacter::Tick(float DeltaTime)
 			}
 		}
 		UpdateCameraReferenceFrame();
+		UpdateBuildCamera(DeltaTime);
 		AlignCameraToGravity(DeltaTime);
 		UpdateGravityAnimationParameters();
 		return;
 	}
 
+	UpdateShipPassenger();
 	if (bUseCustomGravity)
 	{
 		UpdateGravityDirection(DeltaTime);
@@ -192,6 +223,7 @@ void ACustomGravityCharacter::Tick(float DeltaTime)
 		SynchronizeCharacterToCamera(DeltaTime);
 	}
 	UpdateGravityAnimationParameters();
+	UpdateBuildCamera(DeltaTime);
 	AlignCameraToGravity(DeltaTime);
 	UpdateInteractionCandidate();
 	if (!InteractionPromptWidget.IsValid())
@@ -206,6 +238,10 @@ void ACustomGravityCharacter::Tick(float DeltaTime)
 
 void ACustomGravityCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (ConstructionMode.IsValid())
+	{
+		ExitBuildMode(true);
+	}
 	RemoveInteractionPrompt();
 	RemoveTraversalHud();
 	Super::EndPlay(EndPlayReason);
@@ -238,6 +274,8 @@ void ACustomGravityCharacter::SetupPlayerInputComponent(UInputComponent* PlayerI
 	PlayerInputComponent->BindAxis("MoveUp", this, &ACustomGravityCharacter::HandleZeroGVertical);
 	PlayerInputComponent->BindAxis("RotateRoll", this, &ACustomGravityCharacter::HandleZeroGRoll);
 	PlayerInputComponent->BindKey(EKeys::G, IE_Pressed, this, &ACustomGravityCharacter::ToggleManualZeroGOverride);
+	// Build mode (Rio 02.10). While it is on, its own input component above this one takes B to leave.
+	PlayerInputComponent->BindKey(EKeys::B, IE_Pressed, this, &ACustomGravityCharacter::ToggleBuildMode);
 }
 
 // ──────────────────────── Input Handlers ────────────────────────
@@ -266,6 +304,28 @@ void ACustomGravityCharacter::HandleMove(const FInputActionValue& Value)
 void ACustomGravityCharacter::HandleLook(const FInputActionValue& Value)
 {
 	const FVector2D LookAxisVector = Value.Get<FVector2D>();
+	if (ConstructionMode.IsValid())
+	{
+		// Building: the cursor moves freely; a right or middle drag turns the camera about gravity and tilts its look
+		// down within the build view's range.
+		const APlayerController* PlayerController = Cast<APlayerController>(Controller);
+		if (!PlayerController || (!PlayerController->IsInputKeyDown(EKeys::RightMouseButton)
+			&& !PlayerController->IsInputKeyDown(EKeys::MiddleMouseButton)))
+		{
+			return;
+		}
+		UpdateCameraReferenceFrame();
+		const float BuildYawDelta = LookAxisVector.X * LookSensitivity;
+		if (!FMath::IsNearlyZero(BuildYawDelta))
+		{
+			const FVector GravityUp = GetGravityUpVector();
+			CameraForwardOnGravityPlane = FVector::VectorPlaneProject(FQuat(GravityUp, FMath::DegreesToRadians(BuildYawDelta))
+				.RotateVector(CameraForwardOnGravityPlane), GravityUp).GetSafeNormal();
+		}
+		BuildCameraPitch = FMath::Clamp(BuildCameraPitch - LookAxisVector.Y * LookSensitivity, 20.f, 85.f);
+		BuildRightDragAmount += FMath::Abs(LookAxisVector.X) + FMath::Abs(LookAxisVector.Y);
+		return;
+	}
 	if (bIsZeroG)
 	{
 		if (!bZeroGViewRotationInitialized)
@@ -477,22 +537,50 @@ void ACustomGravityCharacter::TryInteract()
 AActor* ACustomGravityCharacter::FindInteractionCandidate()
 {
 	AActor* Candidate = nullptr;
+	bool bFromGravity = false;
 	if (UWorld* World = GetWorld())
 	{
 		const FVector Start = FollowCamera ? FollowCamera->GetComponentLocation() : GetActorLocation();
 		const FVector Direction = FollowCamera ? FollowCamera->GetForwardVector() : GetActorForwardVector();
-		FHitResult Hit;
+		// Ships answer with their InteractionBounds box, which overlaps Visibility rather than blocking it (Rio 02.10:
+		// a blocking box swallowed the foot IK's traces aboard and sank the mesh), so the overlaps count too: the first
+		// vehicle among them and the first block.
+		TArray<FHitResult> Hits;
 		FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(APSCharacterInteraction), false, this);
-		if (World->LineTraceSingleByChannel(Hit, Start, Start + Direction * InteractionDistance,
-			ECC_Visibility, QueryParams))
+		World->LineTraceMultiByChannel(Hits, Start, Start + Direction * InteractionDistance, ECC_Visibility, QueryParams);
+		for (const FHitResult& Hit : Hits)
 		{
-			Candidate = ResolveVehicleActor(Hit.GetActor());
+			if (AActor* Vehicle = ResolveVehicleActor(Hit.GetActor()))
+			{
+				Candidate = Vehicle;
+				break;
+			}
 		}
 	}
 
 	if (!Candidate && GravityDetector)
 	{
 		Candidate = ResolveVehicleActor(GravityDetector->CurrentSpaceship);
+		bFromGravity = Candidate != nullptr;
+	}
+
+	// Aboard (or found only through the ship's gravity) the controls are taken at the pilot's seat, not anywhere in
+	// the hull (Rio 02.10: "F TAKE CONTROL" showed all over the cargo deck).
+	if (const ASpaceship* Ship = Cast<ASpaceship>(Candidate))
+	{
+		bool bAboard = bFromGravity;
+		if (const UBoxComponent* Bounds = Ship->InteractionBoundsComponent)
+		{
+			const FVector Local = Bounds->GetComponentTransform().InverseTransformPositionNoScale(GetActorLocation());
+			const FVector Extent = Bounds->GetScaledBoxExtent();
+			bAboard |= FMath::Abs(Local.X) <= Extent.X && FMath::Abs(Local.Y) <= Extent.Y && FMath::Abs(Local.Z) <= Extent.Z;
+		}
+		constexpr double SeatReachCm = 350.0;
+		if (bAboard && (!Ship->PilotChair
+			|| FVector::Distance(Ship->PilotChair->GetComponentLocation(), GetActorLocation()) > SeatReachCm))
+		{
+			Candidate = nullptr;
+		}
 	}
 	return Candidate;
 }
@@ -545,7 +633,9 @@ void ACustomGravityCharacter::CreateInteractionPrompt()
 			.Visibility_Lambda([WeakThis]()
 			{
 				const ACustomGravityCharacter* Character = WeakThis.Get();
+				const AGravityPlayerController* Controller = Character ? Cast<AGravityPlayerController>(Character->GetController()) : nullptr;
 				return Character && Character->IsLocallyControlled() && Character->CurrentInteractableActor.IsValid()
+					&& !(Controller && Controller->IsStrategicMapOpen())
 					? EVisibility::HitTestInvisible
 					: EVisibility::Collapsed;
 			})
@@ -589,6 +679,17 @@ void ACustomGravityCharacter::CreateTraversalHud()
 	const TWeakObjectPtr<ACustomGravityCharacter> WeakThis(this);
 	TraversalHudWidget =
 		SNew(SOverlay)
+		// The F10 map and the colony terminal leave gaps between their panels: the walker's HUD steps aside under them
+		// instead of showing through (02.10 test shots).
+		.Visibility_Lambda([WeakThis]()
+		{
+			const ACustomGravityCharacter* Character = WeakThis.Get();
+			const AGravityPlayerController* Controller = Character ? Cast<AGravityPlayerController>(Character->GetController()) : nullptr;
+			const UAPSColonyTerminalSubsystem* Terminal = Character && Character->GetWorld()
+				? Character->GetWorld()->GetSubsystem<UAPSColonyTerminalSubsystem>() : nullptr;
+			return (Controller && Controller->IsStrategicMapOpen()) || (Terminal && Terminal->IsTerminalOpen())
+				? EVisibility::Collapsed : EVisibility::SelfHitTestInvisible;
+		})
 		+ SOverlay::Slot()
 		.HAlign(HAlign_Left)
 		.VAlign(VAlign_Bottom)
@@ -632,6 +733,25 @@ void ACustomGravityCharacter::CreateTraversalHud()
 							return Character ? Character->GetTraversalHintText() : FText::GetEmpty();
 						})
 						.ColorAndOpacity(FLinearColor(0.82f, 0.87f, 0.92f, 1.0f))
+					]
+					// Build mode (Rio 02.10): where it can start, and for a moment why it could not.
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					.Padding(0.0f, 5.0f, 0.0f, 0.0f)
+					[
+						SNew(STextBlock)
+						.Text_Lambda([WeakThis]()
+						{
+							const ACustomGravityCharacter* Character = WeakThis.Get();
+							return Character ? Character->GetBuildHintText() : FText::GetEmpty();
+						})
+						.Visibility_Lambda([WeakThis]()
+						{
+							const ACustomGravityCharacter* Character = WeakThis.Get();
+							return Character && !Character->GetBuildHintText().IsEmpty()
+								? EVisibility::HitTestInvisible : EVisibility::Collapsed;
+						})
+						.ColorAndOpacity(FLinearColor(0.95f, 0.71f, 0.11f, 1.0f))
 					]
 				]
 			]
@@ -805,6 +925,14 @@ void ACustomGravityCharacter::UpdateGravityDirection(float DeltaTime)
 	}
 
 	AdvanceGravityDirectionTransition(DeltaTime);
+	// Aboard a turning ship its down turns every frame: once the boarding transition is over, gravity follows the deck
+	// at once instead of a world-space blend that lagged the floor.
+	if (AboardShip.IsValid() && CurrentGravityType == EGravityType::OnShip && !bIsZeroG
+		&& GravityTransitionElapsed >= GravityTransitionDuration)
+	{
+		CurrentGravityDir = DesiredGravityDir;
+		GravityTransitionTargetDir = DesiredGravityDir;
+	}
 
 	// UE 5.4 aligns the capsule and movement simulation to this direction. Feeding
 	// it the interpolated vector keeps physics, camera and the visible body in sync.
@@ -929,6 +1057,8 @@ bool ACustomGravityCharacter::HasSurfaceGravitySupport(const FVector& GravityDir
 	const FVector End = Start + GravityDirection.GetSafeNormal() *
 		(CapsuleHalfHeight + SurfaceGravityAcquisitionDistance);
 	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(APSSurfaceGravityProbe), false, this);
+	// A shape the probe starts inside is no floor (an interaction or trigger volume round the pilot).
+	QueryParams.bFindInitialOverlaps = false;
 	FHitResult Hit;
 	const bool bHit = GetWorld()->SweepSingleByChannel(
 		Hit, Start, End, FQuat::Identity, ECC_Visibility,
@@ -1261,6 +1391,13 @@ void ACustomGravityCharacter::SetManualZeroGOverride(bool bEnabled)
 
 void ACustomGravityCharacter::ToggleManualZeroGOverride()
 {
+	// G is the ship's engine key: a press carried over from the cockpit must not switch gravity off on the ground.
+	if (!bManualZeroGOverride && GetWorld() && GetWorld()->GetTimeSeconds() - VehicleExitSeconds < 3.0)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[APS.Gravity] ManualZeroG ignored: %.1f s after leaving a vehicle"),
+			GetWorld()->GetTimeSeconds() - VehicleExitSeconds);
+		return;
+	}
 	SetManualZeroGOverride(!bManualZeroGOverride);
 }
 
@@ -1429,8 +1566,111 @@ void ACustomGravityCharacter::UpdateGravityAnimationParameters()
 		GetMesh()->GlobalAnimRateScale, TargetPlayRate, DeltaTime, 7.0f);
 }
 
+void ACustomGravityCharacter::SetBase(UPrimitiveComponent* NewBase, const FName BoneName, bool bNotifyActor)
+{
+	const ASpaceship* Ship = AboardShip.Get();
+	if (Ship && NewBase && NewBase->GetOwner() == Ship)
+	{
+		NewBase = nullptr;
+	}
+	Super::SetBase(NewBase, BoneName, bNotifyActor);
+}
+
+void ACustomGravityCharacter::UpdateShipPassenger()
+{
+	ASpaceship* Ship = GravityDetector && GravityDetector->CurrentGravityType == EGravityType::OnShip
+		? Cast<ASpaceship>(GravityDetector->GravityTargetActor) : nullptr;
+	if (AboardShip.IsValid() && AboardShip.Get() != Ship)
+	{
+		LeaveShip();
+	}
+	// Also after the seat: leaving the controls detaches the pilot, and aboard it is attached again.
+	if (Ship && (AboardShip.Get() != Ship || GetAttachParentActor() != Ship))
+	{
+		BoardShip(*Ship);
+	}
+	if (const ASpaceship* Current = AboardShip.Get())
+	{
+		const FQuat ShipQuat = Current->GetActorQuat();
+		const FQuat Delta = ShipQuat * AboardShipLastQuat.Inverse();
+		AboardShipLastQuat = ShipQuat;
+		if (!Delta.Equals(FQuat::Identity, 1.0e-9))
+		{
+			// The view turns with the deck: its heading, the up it was measured against and the zero-G view.
+			CameraForwardOnGravityPlane = Delta.RotateVector(CameraForwardOnGravityPlane);
+			CameraReferenceUp = Delta.RotateVector(CameraReferenceUp);
+			ZeroGViewRotation = Delta * ZeroGViewRotation;
+		}
+	}
+}
+
+void ACustomGravityCharacter::BoardShip(ASpaceship& Ship)
+{
+	const bool bAlreadyAboard = AboardShip.Get() == &Ship;
+	AboardShip = &Ship;
+	AboardShipLastQuat = Ship.GetActorQuat();
+	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+	{
+		// From now on the deck's motion comes with the attachment: a walking speed is kept, a flight speed (getting up
+		// from the seat in flight) is not.
+		if (Movement->Velocity.Size() > Movement->MaxWalkSpeed * 1.5f)
+		{
+			Movement->Velocity = FVector::ZeroVector;
+		}
+		SetBase(nullptr);
+	}
+	AttachToComponent(Ship.GetRootComponent(), FAttachmentTransformRules::KeepWorldTransform);
+	if (UPrimitiveComponent* Hull = Cast<UPrimitiveComponent>(Ship.GetRootComponent()))
+	{
+		Hull->IgnoreActorWhenMoving(this, true);
+	}
+	if (CameraBoom && !bAlreadyAboard)
+	{
+		// World-space lag would leave the camera behind a moving deck.
+		bAboardSavedCameraLag = CameraBoom->bEnableCameraLag;
+		bAboardSavedCameraRotationLag = CameraBoom->bEnableCameraRotationLag;
+		CameraBoom->bEnableCameraLag = false;
+		CameraBoom->bEnableCameraRotationLag = false;
+	}
+	if (!bAlreadyAboard)
+	{
+		UE_LOG(LogTemp, Log, TEXT("[APS.Gravity] aboard %s: attached, walking in the ship's frame"), *Ship.GetName());
+	}
+}
+
+void ACustomGravityCharacter::LeaveShip()
+{
+	ASpaceship* Ship = AboardShip.Get();
+	AboardShip.Reset();
+	if (!Ship)
+	{
+		return;
+	}
+	if (UPrimitiveComponent* Hull = Cast<UPrimitiveComponent>(Ship->GetRootComponent()))
+	{
+		Hull->IgnoreActorWhenMoving(this, false);
+	}
+	if (GetAttachParentActor() == Ship)
+	{
+		DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+	}
+	if (CameraBoom)
+	{
+		CameraBoom->bEnableCameraLag = bAboardSavedCameraLag;
+		CameraBoom->bEnableCameraRotationLag = bAboardSavedCameraRotationLag;
+	}
+	UE_LOG(LogTemp, Log, TEXT("[APS.Gravity] left %s"), *Ship->GetName());
+}
+
 void ACustomGravityCharacter::SettleAfterVehicleExit(const FVector& Facing)
 {
+	// F3 (Rio, 02.10: "disembarking on a planet ignores its gravity"): a zero-G toggled with G before boarding must
+	// not outlive the flight. The place of exit decides (A3); in empty space that is zero-G anyway.
+	if (bManualZeroGOverride)
+	{
+		bManualZeroGOverride = false;
+		UE_LOG(LogTemp, Warning, TEXT("[APS.Gravity] ManualZeroG=OFF on vehicle exit character=%s"), *GetName());
+	}
 	// While seated the character did not tick: its gravity frame is the one it boarded in, possibly another body.
 	if (GravityDetector)
 	{
@@ -1438,6 +1678,17 @@ void ACustomGravityCharacter::SettleAfterVehicleExit(const FVector& Facing)
 	}
 	bGravityDirectionInitialized = false;
 	UpdateGravityDirection(0.0f);
+	VehicleExitSeconds = GetWorld() ? GetWorld()->GetTimeSeconds() : -100.0;
+	bExitRiseLogged = false;
+	{
+		const AActor* Source = GravityDetector ? GravityDetector->GravityTargetActor : nullptr;
+		UE_LOG(LogTemp, Warning,
+			TEXT("[APS.Gravity] Exit settle character=%s source=%s type=%d dir=%s toSource=%s velocity=%s movementMode=%d"),
+			*GetName(), *GetNameSafe(Source), static_cast<int32>(CurrentGravityType), *CurrentGravityDir.ToCompactString(),
+			Source ? *(Source->GetActorLocation() - GetActorLocation()).GetSafeNormal().ToCompactString() : TEXT("-"),
+			*GetVelocity().ToCompactString(),
+			GetCharacterMovement() ? static_cast<int32>(GetCharacterMovement()->MovementMode.GetValue()) : -1);
+	}
 	if (!bIsZeroG && !CurrentGravityDir.IsNearlyZero())
 	{
 		const FVector Up = -CurrentGravityDir.GetSafeNormal();
@@ -1476,4 +1727,305 @@ FVector ACustomGravityCharacter::GetCurrentGravityDirection() const
 FVector ACustomGravityCharacter::GetGravityUpVector() const
 {
 	return -CurrentGravityDir;
+}
+
+// ──────────────────────── Build mode ────────────────────────
+
+namespace APSCharacterBuildLocal
+{
+	constexpr float RotateStepDegrees = 15.f;
+	constexpr float FineRotateStepDegrees = 5.f;
+	constexpr float CameraBlendSeconds = 0.45f;
+	/** Mouse travel during a right press below which it is a click (drop the selection), not a camera drag. */
+	constexpr float RightClickDragLimit = 6.f;
+	constexpr float MinBuildArmLength = 800.f;
+	constexpr float MaxBuildArmLength = 4500.f;
+	constexpr float ArmLengthStep = 250.f;
+
+	/** 1-9, then 0 for the tenth card; INDEX_NONE for other keys. */
+	int32 SlotOfKey(const FKey& Key)
+	{
+		const FKey SlotKeys[] = {EKeys::One, EKeys::Two, EKeys::Three, EKeys::Four, EKeys::Five, EKeys::Six, EKeys::Seven,
+			EKeys::Eight, EKeys::Nine, EKeys::Zero};
+		for (int32 Slot = 0; Slot < static_cast<int32>(UE_ARRAY_COUNT(SlotKeys)); ++Slot)
+		{
+			if (SlotKeys[Slot] == Key)
+			{
+				return Slot;
+			}
+		}
+		return INDEX_NONE;
+	}
+
+	APSConstruction::FFrame MakeFrame(const ACustomGravityCharacter& Character, const UGravityDetectorComponent* Detector,
+		const float RadiusCm)
+	{
+		APSConstruction::FFrame Frame;
+		Frame.Site = Detector ? Cast<APlanetaryBody>(Detector->GravityTargetActor) : nullptr;
+		Frame.BuilderLocation = Character.GetActorLocation();
+		Frame.BuilderUp = Character.GetGravityUpVector();
+		const UCapsuleComponent* Capsule = Character.GetCapsuleComponent();
+		Frame.BuilderFeetCm = Capsule ? Capsule->GetScaledCapsuleHalfHeight() : 90.0;
+		Frame.RadiusCm = RadiusCm;
+		Frame.Placement = APSConstruction::EPlacement::Surface;
+		return Frame;
+	}
+
+	/** The colony terminal or the strategic map holds the input with its own widget. */
+	bool IsOtherScreenOpen(const UWorld* World, const APlayerController* PlayerController)
+	{
+		const UAPSColonyTerminalSubsystem* Terminal = World ? World->GetSubsystem<UAPSColonyTerminalSubsystem>() : nullptr;
+		const AGravityPlayerController* GravityController = Cast<AGravityPlayerController>(PlayerController);
+		return (Terminal && Terminal->IsTerminalOpen()) || (GravityController && GravityController->IsStrategicMapOpen());
+	}
+
+	void ShowBuildCursor(APlayerController& PlayerController)
+	{
+		// Game and UI: the palette takes its clicks, the viewport keeps the keyboard (WASD walks on) and the world clicks.
+		PlayerController.SetShowMouseCursor(true);
+		FInputModeGameAndUI InputMode;
+		InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+		InputMode.SetHideCursorDuringCapture(false);
+		PlayerController.SetInputMode(InputMode);
+	}
+}
+
+bool ACustomGravityCharacter::IsInBuildMode() const
+{
+	return ConstructionMode.IsValid();
+}
+
+bool ACustomGravityCharacter::CanBuildHere() const
+{
+	return !bSurfaceHandoffSuspended && !bIsZeroG && CurrentGravityType == EGravityType::OnPlanet && GravityDetector
+		&& Cast<APlanetaryBody>(GravityDetector->GravityTargetActor) != nullptr;
+}
+
+void ACustomGravityCharacter::ToggleBuildMode()
+{
+	if (ConstructionMode.IsValid())
+	{
+		ExitBuildMode(true);
+		return;
+	}
+	EnterBuildMode();
+}
+
+void ACustomGravityCharacter::EnterBuildMode()
+{
+	APlayerController* PlayerController = Cast<APlayerController>(Controller);
+	UWorld* LiveWorld = GetWorld();
+	if (ConstructionMode.IsValid() || !PlayerController || !LiveWorld || !IsLocallyControlled())
+	{
+		return;
+	}
+	// The terminal or the strategic map holds the input with its own widget: B is not for building then.
+	if (APSCharacterBuildLocal::IsOtherScreenOpen(LiveWorld, PlayerController))
+	{
+		return;
+	}
+	if (!CanBuildHere())
+	{
+		BuildRefusalText = bSurfaceHandoffSuspended
+			? NSLOCTEXT("APSConstruction", "BuildWaitGround", "BUILD MODE: the ground is still loading")
+			: NSLOCTEXT("APSConstruction", "BuildNeedsGround", "BUILD MODE: stand on a planet or a moon");
+		BuildRefusalUntilSeconds = LiveWorld->GetTimeSeconds() + 3.0;
+		return;
+	}
+	BuildRefusalUntilSeconds = 0.0;
+
+	ConstructionMode = MakeShared<FAPSConstructionMode>(this);
+	ConstructionMode->Begin(APSCharacterBuildLocal::MakeFrame(*this, GravityDetector, BuildZoneRadiusCm));
+
+	// Its own keys, on a component the controller puts above the character's: they take the pace keys 1-3 and the
+	// zero-G roll on Q/E while building. It is the character's component, so it lives exactly as long as build mode.
+	if (UInputComponent* BuildInput = NewObject<UInputComponent>(this))
+	{
+		const FKey PressedKeys[] = {EKeys::One, EKeys::Two, EKeys::Three, EKeys::Four, EKeys::Five, EKeys::Six,
+			EKeys::Seven, EKeys::Eight, EKeys::Nine, EKeys::Zero, EKeys::Q, EKeys::E, EKeys::C, EKeys::X, EKeys::Delete,
+			EKeys::B, EKeys::LeftMouseButton, EKeys::RightMouseButton, EKeys::MouseScrollUp, EKeys::MouseScrollDown};
+		for (const FKey& PressedKey : PressedKeys)
+		{
+			BuildInput->BindKey(PressedKey, IE_Pressed, this, &ACustomGravityCharacter::HandleBuildKey);
+		}
+		BuildInput->BindKey(EKeys::Q, IE_Repeat, this, &ACustomGravityCharacter::HandleBuildKey);
+		BuildInput->BindKey(EKeys::E, IE_Repeat, this, &ACustomGravityCharacter::HandleBuildKey);
+		BuildInput->BindKey(EKeys::RightMouseButton, IE_Released, this, &ACustomGravityCharacter::HandleBuildKeyReleased);
+		BuildInput->RegisterComponent();
+		BuildInputComponent = BuildInput;
+	}
+
+	if (BuildCameraBlend <= 0.f)
+	{
+		BuildSavedCameraPitch = CameraPitch;
+	}
+	bBuildRightHeld = false;
+	BuildViewTarget = PlayerController->GetViewTarget();
+	APSCharacterBuildLocal::ShowBuildCursor(*PlayerController);
+	UE_LOG(LogTemp, Log, TEXT("[APS.Construction] %s enters build mode"), *GetName());
+}
+
+void ACustomGravityCharacter::ExitBuildMode(const bool bRestoreInput)
+{
+	const TSharedPtr<FAPSConstructionMode> EndingMode = MoveTemp(ConstructionMode);
+	ConstructionMode.Reset();
+	if (EndingMode.IsValid())
+	{
+		EndingMode->End();
+	}
+	if (UInputComponent* BuildInput = BuildInputComponent.Get())
+	{
+		// Unbound at once (this may run inside one of its own key events, whose dispatch holds copies); then gone.
+		BuildInput->KeyBindings.Reset();
+		BuildInput->DestroyComponent();
+	}
+	BuildInputComponent.Reset();
+	BuildViewTarget.Reset();
+	bBuildRightHeld = false;
+	if (APlayerController* PlayerController = Cast<APlayerController>(Controller); bRestoreInput && PlayerController)
+	{
+		PlayerController->SetShowMouseCursor(false);
+		PlayerController->SetInputMode(FInputModeGameOnly());
+	}
+}
+
+void ACustomGravityCharacter::UpdateBuildMode(const float DeltaTime)
+{
+	if (!ConstructionMode.IsValid())
+	{
+		return;
+	}
+	APlayerController* PlayerController = Cast<APlayerController>(Controller);
+	// Another screen took the input (the strategic map and its camera, the terminal): leave quietly, that screen gives
+	// the game its input back when it closes. A view arriving at the character (a blend from the ship) is not one.
+	const AActor* ViewTarget = PlayerController ? PlayerController->GetViewTarget() : nullptr;
+	const bool bOtherScreen = PlayerController && ((ViewTarget != this && ViewTarget != BuildViewTarget.Get())
+		|| APSCharacterBuildLocal::IsOtherScreenOpen(GetWorld(), PlayerController));
+	if (!PlayerController || !IsLocallyControlled() || bOtherScreen || !CanBuildHere() || ConstructionMode->IsExitRequested())
+	{
+		UE_LOG(LogTemp, Log, TEXT("[APS.Construction] build mode ends: %s"), !PlayerController ? TEXT("no controller")
+			: bOtherScreen ? TEXT("another screen took the input") : !CanBuildHere() ? TEXT("not on a body's ground")
+			: TEXT("asked"));
+		ExitBuildMode(!bOtherScreen);
+		return;
+	}
+	if (!PlayerController->ShouldShowMouseCursor())
+	{
+		// Something else hid the cursor (a screen closing in the same frame): build mode needs it.
+		APSCharacterBuildLocal::ShowBuildCursor(*PlayerController);
+	}
+	ConstructionMode->Tick(DeltaTime, APSCharacterBuildLocal::MakeFrame(*this, GravityDetector, BuildZoneRadiusCm));
+}
+
+void ACustomGravityCharacter::UpdateBuildCamera(const float DeltaTime)
+{
+	const bool bBuilding = ConstructionMode.IsValid();
+	if ((!bBuilding && BuildCameraBlend <= 0.f) || !CameraBoom)
+	{
+		return;
+	}
+	// Back and up over the shoulder to a look down on the zone, and back after; the pitch and length stay the
+	// player's while building (right or middle drag, the wheel with nothing picked).
+	BuildCameraBlend = FMath::FInterpConstantTo(BuildCameraBlend, bBuilding ? 1.f : 0.f, DeltaTime,
+		1.f / APSCharacterBuildLocal::CameraBlendSeconds);
+	const float Alpha = BuildCameraBlend * BuildCameraBlend * (3.f - 2.f * BuildCameraBlend);
+	CameraBoom->TargetArmLength = FMath::Lerp(CameraBoomLength, BuildArmLength, Alpha);
+	CameraPitch = FMath::Lerp(BuildSavedCameraPitch, BuildCameraPitch, Alpha);
+}
+
+FText ACustomGravityCharacter::GetBuildHintText() const
+{
+	if (ConstructionMode.IsValid() || !IsLocallyControlled())
+	{
+		return FText::GetEmpty();
+	}
+	const UWorld* LiveWorld = GetWorld();
+	if (LiveWorld && LiveWorld->GetTimeSeconds() < BuildRefusalUntilSeconds)
+	{
+		return BuildRefusalText;
+	}
+	return CanBuildHere() ? NSLOCTEXT("APSConstruction", "BuildHint", "B  BUILD MODE") : FText::GetEmpty();
+}
+
+void ACustomGravityCharacter::HandleBuildKey(const FKey Key)
+{
+	using namespace APSCharacterBuildLocal;
+	// Held for the call: a key may end build mode.
+	const TSharedPtr<FAPSConstructionMode> Building = ConstructionMode;
+	if (!Building.IsValid())
+	{
+		return;
+	}
+	const APlayerController* PlayerController = Cast<APlayerController>(Controller);
+	const bool bFine = PlayerController
+		&& (PlayerController->IsInputKeyDown(EKeys::LeftShift) || PlayerController->IsInputKeyDown(EKeys::RightShift));
+	const float Step = bFine ? FineRotateStepDegrees : RotateStepDegrees;
+	if (const int32 Slot = SlotOfKey(Key); Slot != INDEX_NONE)
+	{
+		Building->SelectSlot(Slot);
+	}
+	else if (Key == EKeys::Q)
+	{
+		Building->Rotate(-Step);
+	}
+	else if (Key == EKeys::E)
+	{
+		Building->Rotate(Step);
+	}
+	else if (Key == EKeys::MouseScrollUp || Key == EKeys::MouseScrollDown)
+	{
+		const float Sign = Key == EKeys::MouseScrollUp ? 1.f : -1.f;
+		if (Building->HasSelection())
+		{
+			Building->Rotate(Sign * Step);
+		}
+		else
+		{
+			BuildArmLength = FMath::Clamp(BuildArmLength - Sign * ArmLengthStep, MinBuildArmLength, MaxBuildArmLength);
+		}
+	}
+	else if (Key == EKeys::LeftMouseButton)
+	{
+		Building->Place();
+	}
+	else if (Key == EKeys::RightMouseButton)
+	{
+		bBuildRightHeld = true;
+		BuildRightDragAmount = 0.f;
+	}
+	else if (Key == EKeys::C)
+	{
+		Building->ToggleSection();
+	}
+	else if (Key == EKeys::X || Key == EKeys::Delete)
+	{
+		Building->RemoveHovered();
+	}
+	else if (Key == EKeys::B)
+	{
+		Building->RequestExit();
+	}
+}
+
+void ACustomGravityCharacter::HandleBuildKeyReleased(const FKey Key)
+{
+	if (Key != EKeys::RightMouseButton)
+	{
+		return;
+	}
+	// A click, not a drag of the camera: drops the selection.
+	if (ConstructionMode.IsValid() && bBuildRightHeld && BuildRightDragAmount < APSCharacterBuildLocal::RightClickDragLimit)
+	{
+		ConstructionMode->CancelSelection();
+	}
+	bBuildRightHeld = false;
+}
+
+void ACustomGravityCharacter::UnPossessed()
+{
+	if (ConstructionMode.IsValid())
+	{
+		ExitBuildMode(true);
+	}
+	Super::UnPossessed();
 }

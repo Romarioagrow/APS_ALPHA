@@ -48,6 +48,7 @@
 #include "APSSharedTerrainMaterialBuilder.h"
 #include "APSSharedLavaMaterialBuilder.h"
 #include "APSUnifiedLavaSurfaceBuilder.h"
+#include "APSUnifiedLavaDetailBuilder.h"
 #include "APSLavaAntiGridUpdate.h"
 #include "APSLavaCrustReflectanceUpdate.h"
 #include "APSLavaThermalCoverageUpdate.h"
@@ -59,12 +60,23 @@
 #include "APSSharedAmmoniaMaterialBuilder.h"
 #include "APSSharedWaterMaterialBuilder.h"
 #include "APSWaterDepthMaterialBuilder.h"
+#include "APSWaterSurfaceFilterBuilder.h"
+#include "APSWaterAnalyticWaveBuilder.h"
+#include "APSCoastalWaterPublisher.h"
+#include "APSWaterShoreTransmissionBuilder.h"
+#include "APSPlanetCloudBuilder.h"
+#include "APSWaterDomainAuditBuilder.h"
 #include "APSSharedTerrainLodABBuilder.h"
 #include "APSSharedTerrainMacroABBuilder.h"
 #include "APSSharedTerrainFarNormalABBuilder.h"
 #include "APSSharedTerrainNormalUpdate.h"
 #include "APSSharedTerrainDetailPrecisionUpdate.h"
 #include "APSSharedTerrainColorBoundsUpdate.h"
+#include "APSPlanetFoliagePrototypeBuilder.h"
+#include "APSPlanetSurfaceScatterBuilder.h"
+#include "APSPlanetScatterMaterialBuilder.h"
+#include "APSPlanetMaterialSourceAudit.h"
+#include "APSFoliageLeafMaterialBuilder.h"
 
 namespace APSPlanetSurfaceAssets
 {
@@ -2372,6 +2384,34 @@ int32 UAPSPlanetSurfaceAssetCommandlet::Main(const FString& Params)
 		return 8;
 	}
 	IAssetTools& AssetTools = FModuleManager::LoadModuleChecked<FAssetToolsModule>(TEXT("AssetTools")).Get();
+	if (FParse::Param(*Params, TEXT("OnlyPlanetCloudCandidate")))
+	{
+		return APSPlanetCloudBuilder::Build(AssetTools) ? 0 : 37;
+	}
+	if (FParse::Param(*Params, TEXT("OnlyLeafWaterSourceAudit")))
+	{
+		return APSPlanetMaterialSourceAudit::Export() ? 0 : 35;
+	}
+	if (FParse::Param(*Params, TEXT("OnlyScatterSourceAudit")))
+	{
+		return APSPlanetMaterialSourceAudit::Export(true) ? 0 : 39;
+	}
+	if (FParse::Param(*Params, TEXT("OnlyFoliageLeafCandidate")))
+	{
+		return APSFoliageLeafMaterialBuilder::Build(AssetTools) ? 0 : 36;
+	}
+	if (FParse::Param(*Params, TEXT("OnlyFoliagePrototype")))
+	{
+		return APSPlanetFoliagePrototypeBuilder::Build() ? 0 : 25;
+	}
+	if (FParse::Param(*Params, TEXT("OnlySurfaceScatter")))
+	{
+		return APSPlanetSurfaceScatterBuilder::Build() ? 0 : 38;
+	}
+	if (FParse::Param(*Params, TEXT("OnlyScatterMaterial")))
+	{
+		return APSPlanetScatterMaterialBuilder::Build(AssetTools) ? 0 : 40;
+	}
 	if (FParse::Param(*Params, TEXT("OnlySharedTerrainMacroAB")))
 	{
 		return APSSharedTerrainMacroABBuilder::Build(AssetTools) ? 0 : 23;
@@ -2456,6 +2496,10 @@ int32 UAPSPlanetSurfaceAssetCommandlet::Main(const FString& Params)
 	{
 		return APSUnifiedLavaSurfaceBuilder::Build(AssetTools) ? 0 : 22;
 	}
+	if (FParse::Param(*Params, TEXT("OnlyUnifiedLavaDetail")))
+	{
+		return APSUnifiedLavaDetailBuilder::Build(AssetTools) ? 0 : 23;
+	}
 	if (FParse::Param(*Params, TEXT("OnlySharedWater")))
 	{
 		// One new MIC only; the installed physical-liquid master remains read-only.
@@ -2464,6 +2508,38 @@ int32 UAPSPlanetSurfaceAssetCommandlet::Main(const FString& Params)
 	if (FParse::Param(*Params, TEXT("OnlyWaterDepthCandidate")))
 	{
 		return APSWaterDepthMaterialBuilder::Build(AssetTools) ? 0 : 33;
+	}
+	if (FParse::Param(*Params, TEXT("OnlyWaterSurfaceCandidate")))
+	{
+		return APSWaterSurfaceFilterBuilder::Build(AssetTools) ? 0 : 34;
+	}
+	if (FParse::Param(*Params, TEXT("OnlyWaterSurfacePassCandidate")))
+	{
+		return APSWaterSurfaceFilterBuilder::Build(AssetTools, true) ? 0 : 34;
+	}
+	if (FParse::Param(*Params, TEXT("OnlyWaterSurfacePreciseCandidate")))
+	{
+		return APSWaterSurfaceFilterBuilder::Build(AssetTools, false, true) ? 0 : 34;
+	}
+	if (FParse::Param(*Params, TEXT("OnlyWaterSurfaceRelativeCandidate")))
+	{
+		return APSWaterSurfaceFilterBuilder::Build(AssetTools, false, true, true) ? 0 : 34;
+	}
+	if (FParse::Param(*Params, TEXT("OnlyWaterAnalyticCandidate")))
+	{
+		return APSWaterAnalyticWaveBuilder::Build(AssetTools) ? 0 : 34;
+	}
+	if (FParse::Param(*Params, TEXT("OnlyCoastalWaterRelease")))
+	{
+		return APSCoastalWaterPublisher::Build(AssetTools) ? 0 : 34;
+	}
+	if (FParse::Param(*Params, TEXT("OnlyWaterShoreTransmission")))
+	{
+		return APSWaterShoreTransmissionBuilder::Build(AssetTools) ? 0 : 35;
+	}
+	if (FParse::Param(*Params, TEXT("OnlyWaterDomainAudit")))
+	{
+		return APSWaterDomainAuditBuilder::Build(AssetTools) ? 0 : 34;
 	}
 	if (FParse::Param(*Params, TEXT("OnlyWaterDepthFilteredCandidate")))
 	{

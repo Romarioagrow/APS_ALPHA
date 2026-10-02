@@ -1,0 +1,170 @@
+#include "APSPerfProbe.h"
+
+#include "Engine/Engine.h"
+#include "Engine/World.h"
+#include "HAL/IConsoleManager.h"
+#include "HAL/PlatformTime.h"
+#include "RenderTimer.h"
+#include "Stats/Stats.h"
+
+namespace APSPerfProbePrivate
+{
+	TAutoConsoleVariable<float> CVarLogSeconds(TEXT("aps.Perf.LogSeconds"), 5.0f,
+		TEXT("Seconds between [APS.Perf] lines in a game world (0 = off)."));
+	TAutoConsoleVariable<float> CVarHitchMs(TEXT("aps.Perf.HitchMs"), 50.0f,
+		TEXT("A frame whose game, render or GPU time is longer than this logs its own [APS.Perf] hitch line (0 = off)."));
+	TAutoConsoleVariable<int32> CVarAutoDump(TEXT("aps.Perf.AutoDumpHitches"), 1,
+		TEXT("1: the first hitch in a world (after its first 20 s) turns on 'stat dumphitches' for aps.Perf.DumpSeconds, ")
+		TEXT("once per world, so the log names what each hitch frame spent its time on. 0: off."));
+	TAutoConsoleVariable<float> CVarDumpSeconds(TEXT("aps.Perf.DumpSeconds"), 45.0f,
+		TEXT("How long the automatic 'stat dumphitches' stays on."));
+
+	/** The editor out of focus throttles itself to a few frames per second with idle threads (Rio's log 02.10: frames of
+	 * 333 ms at 5 ms of work). Such a frame is neither a hitch nor part of the averages. */
+	bool IsBackgroundFrame(const double FrameMs, const double BusiestThreadMs)
+	{
+		return FrameMs > 150.0 && BusiestThreadMs < 0.25 * FrameMs;
+	}
+
+	struct FChannel
+	{
+		double Sum{0.0};
+		double Worst{0.0};
+		int32 Samples{0};
+
+		void Add(const double Ms)
+		{
+			if (Ms <= 0.0) return;
+			Sum += Ms;
+			Worst = FMath::Max(Worst, Ms);
+			++Samples;
+		}
+		double Average() const { return Samples > 0 ? Sum / Samples : 0.0; }
+	};
+
+	struct FWindow
+	{
+		TWeakObjectPtr<UWorld> World;
+		double Start{0.0};
+		FChannel Frame;
+		FChannel Game;
+		FChannel Render;
+		FChannel Gpu;
+		int32 Hitches{0};
+		double BackgroundSeconds{0.0};
+	};
+
+	FWindow GWindow;
+	double GLastHitchLog = 0.0;
+	/** The world the probe has followed since WorldStart, whether its automatic dump was used, and when a running one ends. */
+	TWeakObjectPtr<UWorld> GDumpWorld;
+	double GWorldStart = 0.0;
+	bool bGDumpUsed = false;
+	bool bGDumpRunning = false;
+	double GDumpEnd = 0.0;
+	/** The engine's AI logging flag before the dump: while stats collect, the engine draws a red "PROFILING WITH AI
+	 * LOGGING ON!" over the HUD's objective panel unless AI logging is off (UnrealEngine.cpp, DrawStatsHUD). */
+	bool bGAILoggingOffBefore = false;
+
+	void SetHitchDump(const bool bOn, const TCHAR* Reason)
+	{
+#if STATS
+		if (bOn == bGDumpRunning) return;
+		// 'stat dumphitches' is a toggle; the probe only flips what it turned on itself.
+		DirectStatsCommand(TEXT("stat dumphitches"), true);
+		bGDumpRunning = bOn;
+		if (GEngine)
+		{
+			if (bOn)
+			{
+				bGAILoggingOffBefore = GEngine->bDisableAILogging != 0;
+				GEngine->bDisableAILogging = true;
+			}
+			else
+			{
+				GEngine->bDisableAILogging = bGAILoggingOffBefore;
+			}
+		}
+		UE_LOG(LogTemp, Warning, TEXT("[APS.Perf] stat dumphitches %s (%s)"), bOn ? TEXT("ON") : TEXT("OFF"), Reason);
+#endif
+	}
+}
+
+void APSPerfProbe::Tick(UWorld* World, const float DeltaSeconds)
+{
+	using namespace APSPerfProbePrivate;
+	const double Interval = CVarLogSeconds.GetValueOnGameThread();
+	if (!World || Interval <= 0.0) return;
+	const double Now = FPlatformTime::Seconds();
+	if (GDumpWorld.Get() != World)
+	{
+		SetHitchDump(false, TEXT("new world"));
+		GDumpWorld = World;
+		GWorldStart = Now;
+		bGDumpUsed = false;
+	}
+	if (bGDumpRunning && Now >= GDumpEnd)
+	{
+		SetHitchDump(false, TEXT("time is up"));
+	}
+	if (GWindow.World.Get() != World)
+	{
+		GWindow = FWindow();
+		GWindow.World = World;
+		GWindow.Start = Now;
+		return;
+	}
+	// The thread times are those of the last finished frame; the delta is this frame's wall time.
+	const double FrameMs = DeltaSeconds * 1000.0;
+	const double GameMs = FPlatformTime::ToMilliseconds(GGameThreadTime);
+	const double RenderMs = FPlatformTime::ToMilliseconds(GRenderThreadTime);
+	const double GpuMs = FPlatformTime::ToMilliseconds(GGPUFrameTime);
+	const double BusiestMs = FMath::Max3(GameMs, RenderMs, GpuMs);
+	if (IsBackgroundFrame(FrameMs, BusiestMs))
+	{
+		GWindow.BackgroundSeconds += DeltaSeconds;
+	}
+	else
+	{
+		GWindow.Frame.Add(FrameMs);
+		GWindow.Game.Add(GameMs);
+		GWindow.Render.Add(RenderMs);
+		GWindow.Gpu.Add(GpuMs);
+		const float HitchMs = CVarHitchMs.GetValueOnGameThread();
+		if (HitchMs > 0.0f && BusiestMs > HitchMs)
+		{
+			++GWindow.Hitches;
+			if (Now - GLastHitchLog > 0.25)
+			{
+				GLastHitchLog = Now;
+				UE_LOG(LogTemp, Warning, TEXT("[APS.Perf] hitch %.0f ms: game %.1f, render %.1f, gpu %.1f"),
+					FrameMs, GameMs, RenderMs, GpuMs);
+			}
+			// Rio 02.10 (freezes in flight): once per world, past its loading, the next stretch of frames is dumped with
+			// the stat tree of every hitch frame, so the log says which system spent the time.
+			if (CVarAutoDump.GetValueOnGameThread() != 0 && !bGDumpUsed && Now - GWorldStart > 20.0)
+			{
+				bGDumpUsed = true;
+				GDumpEnd = Now + FMath::Max(CVarDumpSeconds.GetValueOnGameThread(), 5.0f);
+				SetHitchDump(true, TEXT("first hitch in this world"));
+			}
+		}
+	}
+	if (Now - GWindow.Start < Interval) return;
+	const double Seconds = Now - GWindow.Start;
+	const double ActiveSeconds = FMath::Max(Seconds - GWindow.BackgroundSeconds, 0.001);
+	if (GWindow.Frame.Samples > 0)
+	{
+		UE_LOG(LogTemp, Log,
+			TEXT("[APS.Perf] %.0f fps over %.1f s | frame %.1f ms (worst %.1f) | game %.1f (%.1f) | render %.1f (%.1f) | gpu %.1f (%.1f) | hitches %d%s"),
+			GWindow.Frame.Samples / ActiveSeconds, ActiveSeconds, GWindow.Frame.Average(), GWindow.Frame.Worst,
+			GWindow.Game.Average(), GWindow.Game.Worst, GWindow.Render.Average(), GWindow.Render.Worst,
+			GWindow.Gpu.Average(), GWindow.Gpu.Worst, GWindow.Hitches,
+			GWindow.BackgroundSeconds > 0.5 ? *FString::Printf(TEXT(" | %.0f s in background"), GWindow.BackgroundSeconds)
+				: TEXT(""));
+	}
+	const TWeakObjectPtr<UWorld> Kept = GWindow.World;
+	GWindow = FWindow();
+	GWindow.World = Kept;
+	GWindow.Start = Now;
+}

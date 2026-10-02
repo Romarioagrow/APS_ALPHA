@@ -1,0 +1,199 @@
+diff --git a/Source/WorldScapeCore/Public/WorldScapePreparedMesh.h b/Source/WorldScapeCore/Public/WorldScapePreparedMesh.h
+index 6f7951a2..5293d09e 100644
+--- a/Source/WorldScapeCore/Public/WorldScapePreparedMesh.h
++++ b/Source/WorldScapeCore/Public/WorldScapePreparedMesh.h
+@@ -1,6 +1,7 @@
+ #pragma once
+ 
+ #include "WorldScapeMeshComponent.h"
++#include "DynamicMeshBuilder.h"
+ 
+ class UWorldScapeLod;
+ struct FStaticMeshVertexBuffers;
+@@ -21,7 +22,10 @@ struct FWorldScapePreparedMeshSection
+     // root reset/destruction must drain the same tasks before destroying meshes.
+     TConstArrayView<FWorldScapeMeshVertex> Previous;
+     TArray<FWorldScapeMeshVertex> CpuVertices;
+-    TArray<FWorldScapeMeshVertex> RenderVertices;
++    // Same conversion the legacy RT performs, but without retaining a second
++    // double-precision CPU mesh. Keep all four UVs and the tangent handedness
++    // available for the format-mismatch fallback, even without PackedBuffers.
++    TArray<FDynamicMeshVertex> RenderVertices;
+     // CPU storage only: never InitResource or enqueue RHI work on the worker.
+     TSharedPtr<FStaticMeshVertexBuffers, ESPMode::ThreadSafe> PackedBuffers;
+     FBox Bounds = FBox(ForceInit);
+diff --git a/Source/WorldScapeCore/Private/WorldScapePreparedMesh.cpp b/Source/WorldScapeCore/Private/WorldScapePreparedMesh.cpp
+index aa893547..44d7056b 100644
+--- a/Source/WorldScapeCore/Private/WorldScapePreparedMesh.cpp
++++ b/Source/WorldScapeCore/Private/WorldScapePreparedMesh.cpp
+@@ -50,7 +50,18 @@ namespace
+             // UV2/3 and missing channels deliberately retain the published data.
+         }
+         Out.RenderVertices.Reserve(Count);
+-        Out.RenderVertices.Append(Out.CpuVertices);
++        Out.RenderVertices.SetNumUninitialized(Count);
++        for (int32 I = 0; I < Count; ++I)
++        {
++            const auto& Proc = Out.CpuVertices[I];
++            auto& V = Out.RenderVertices[I];
++            V = FDynamicMeshVertex(FVector3f::ZeroVector);
++            V.Position = FVector3f(Proc.Position); V.Color = Proc.Color;
++            V.TextureCoordinate[0] = FVector2f(Proc.UV0); V.TextureCoordinate[1] = FVector2f(Proc.UV1);
++            V.TextureCoordinate[2] = FVector2f(Proc.UV2); V.TextureCoordinate[3] = FVector2f(Proc.UV3);
++            V.TangentX = Proc.Tangent.TangentX; V.TangentZ = Proc.Normal;
++            V.TangentZ.Vector.W = Proc.Tangent.bFlipTangentY ? -127 : 127;
++        }
+         if (bPack && Count > 0)
+         {
+             auto Buffers = MakeShared<FStaticMeshVertexBuffers, ESPMode::ThreadSafe>();
+@@ -60,13 +71,7 @@ namespace
+             Buffers->ColorVertexBuffer.Init(Count);
+             for (int32 I = 0; I < Count; ++I)
+             {
+-                const auto& Proc = Out.RenderVertices[I];
+-                FDynamicMeshVertex V;
+-                V.Position = FVector3f(Proc.Position); V.Color = Proc.Color;
+-                V.TextureCoordinate[0] = FVector2f(Proc.UV0); V.TextureCoordinate[1] = FVector2f(Proc.UV1);
+-                V.TextureCoordinate[2] = FVector2f(Proc.UV2); V.TextureCoordinate[3] = FVector2f(Proc.UV3);
+-                V.TangentX = Proc.Tangent.TangentX; V.TangentZ = Proc.Normal;
+-                V.TangentZ.Vector.W = Proc.Tangent.bFlipTangentY ? -127 : 127;
++                const auto& V = Out.RenderVertices[I];
+                 Buffers->PositionVertexBuffer.VertexPosition(I) = V.Position;
+                 Buffers->StaticMeshVertexBuffer.SetVertexTangents(I, V.TangentX.ToFVector3f(), V.GetTangentY(), V.TangentZ.ToFVector3f());
+                 for (int32 U = 0; U < 4; ++U) Buffers->StaticMeshVertexBuffer.SetVertexUV(I, U, V.TextureCoordinate[U]);
+@@ -125,7 +130,7 @@ TUniquePtr<FWorldScapePreparedLod> WorldScapePreparedMesh::Capture(UWorldScapeLo
+         if (!Section || Section->bEnableCollision) return {};
+         // Reserve() quantization/allocator overhead is bounded conservatively;
+         // actual TArray allocations are checked again after preparation.
+-        Bytes += int64(Section->PlanetVertexBuffer.Num()) * (sizeof(FWorldScapeMeshVertex) * 2 + (bPack ? 64 : 0)) + 65536;
++        Bytes += int64(Section->PlanetVertexBuffer.Num()) * (sizeof(FWorldScapeMeshVertex) + sizeof(FDynamicMeshVertex) + (bPack ? 64 : 0)) + 65536;
+     }
+     const int64 Limit = int64(FMath::Clamp(CVarBudget.GetValueOnGameThread(), 0, 512)) * 1024 * 1024;
+     if (!Reserve(Bytes, Limit)) return {};
+diff --git a/Source/WorldScapeCore/Private/WorldScapeMeshComponent.cpp b/Source/WorldScapeCore/Private/WorldScapeMeshComponent.cpp
+index bd2f5f29..d3ca3714 100644
+--- a/Source/WorldScapeCore/Private/WorldScapeMeshComponent.cpp
++++ b/Source/WorldScapeCore/Private/WorldScapeMeshComponent.cpp
+@@ -117,6 +117,7 @@ public:
+ 	int32 TargetSection;
+ 	/** New vertex information */
+ 	TArray<FWorldScapeMeshVertex> NewVertexBuffer;
++	TArray<FDynamicMeshVertex> PreparedVertexBuffer;
+ };
+ 
+ static void ConvertProcMeshToDynMeshVertex(FDynamicMeshVertex& Vert, const FWorldScapeMeshVertex& ProcVert)
+@@ -348,16 +349,17 @@ public:
+ 				FWorldScapeMeshProxySection* Section = Sections[SectionData->TargetSection];
+ 
+ 				// Lock vertex buffer
+-				const int32 NumVerts = SectionData->NewVertexBuffer.Num();
++				const bool bPreparedVertices = !SectionData->PreparedVertexBuffer.IsEmpty();
++				const int32 NumVerts = bPreparedVertices ? SectionData->PreparedVertexBuffer.Num() : SectionData->NewVertexBuffer.Num();
+ 
+ 				// Iterate through vertex data, copying in new info
+ 				const bool bCopied = SectionData->PackedBuffers && WorldScapePreparedMesh::CopyPreparedRenderBuffers(Section->VertexBuffers, *SectionData->PackedBuffers);
+ 				if (!bCopied)
+ 				for (int32 i = 0; i < NumVerts; i++)
+ 				{
+-					const FWorldScapeMeshVertex& ProcVert = SectionData->NewVertexBuffer[i];
+ 					FDynamicMeshVertex Vertex;
+-					ConvertProcMeshToDynMeshVertex(Vertex, ProcVert);
++					if (bPreparedVertices) Vertex = SectionData->PreparedVertexBuffer[i];
++					else ConvertProcMeshToDynMeshVertex(Vertex, SectionData->NewVertexBuffer[i]);
+ 
+ 					Section->VertexBuffers.PositionVertexBuffer.VertexPosition(i) = Vertex.Position;
+ 					Section->VertexBuffers.StaticMeshVertexBuffer.SetVertexTangents(i, Vertex.TangentX.ToFVector3f(), Vertex.GetTangentY(), Vertex.TangentZ.ToFVector3f());
+@@ -922,7 +924,7 @@ void UWorldScapeMeshComponent::PublishPreparedSection(int32 SectionIndex, FWorld
+ 		auto* Data = new FWorldScapeMeshSectionUpdateData;
+ 		Data->Reservation = Reservation;
+ 		Data->TargetSection = SectionIndex;
+-		Data->NewVertexBuffer = MoveTemp(Payload.RenderVertices);
++		Data->PreparedVertexBuffer = MoveTemp(Payload.RenderVertices);
+ 		Data->RetiredCpuVertices = MoveTemp(Payload.CpuVertices);
+ 		Data->PackedBuffers = MoveTemp(Payload.PackedBuffers);
+ 		auto* Proxy = static_cast<FWorldScapeSceneProxy*>(SceneProxy);
+diff --git a/Source/WorldScapeCore/Private/Tests/APSWorldScapeMeshPublicationTests.cpp b/Source/WorldScapeCore/Private/Tests/APSWorldScapeMeshPublicationTests.cpp
+index 7f436627..df78758e 100644
+--- a/Source/WorldScapeCore/Private/Tests/APSWorldScapeMeshPublicationTests.cpp
++++ b/Source/WorldScapeCore/Private/Tests/APSWorldScapeMeshPublicationTests.cpp
+@@ -17,7 +17,10 @@ bool FAPSWorldScapeMeshPublicationTest::RunTest(const FString& Parameters)
+ {
+     auto* Enabled = IConsoleManager::Get().FindConsoleVariable(TEXT("worldscape.PreparedMesh"));
+     auto* Budget = IConsoleManager::Get().FindConsoleVariable(TEXT("worldscape.PreparedMeshBudgetMiB"));
+-    if (!Enabled || !Budget) { AddError(TEXT("Prepared CVars missing")); return false; }
++    auto* PrepareRender = IConsoleManager::Get().FindConsoleVariable(TEXT("worldscape.PreparedRender"));
++    if (!Enabled || !Budget || !PrepareRender) { AddError(TEXT("Prepared CVars missing")); return false; }
++    const int32 SavedRender = PrepareRender->GetInt();
++    ON_SCOPE_EXIT { PrepareRender->Set(SavedRender, ECVF_SetByCode); };
+     const int32 SavedEnabled = Enabled->GetInt(), SavedBudget = Budget->GetInt();
+     ON_SCOPE_EXIT { Enabled->Set(SavedEnabled, ECVF_SetByCode); Budget->Set(SavedBudget, ECVF_SetByCode); };
+     Enabled->Set(1, ECVF_SetByCode); Budget->Set(384, ECVF_SetByCode);
+@@ -29,12 +32,15 @@ bool FAPSWorldScapeMeshPublicationTest::RunTest(const FString& Parameters)
+     if (!Root) return false;
+     const FName Tag(TEXT("APS.Collision.ParallelSamples"));
+     Root->Tags.AddUnique(Tag);
++    TestTrue(TEXT("Render fallback is smaller than duplicate CPU mesh"), sizeof(FDynamicMeshVertex) < sizeof(FWorldScapeMeshVertex));
+     int64 Checked = 0;
++    for (bool bPack : {false, true})
+     for (bool bWater : {false, true})
+     for (int32 Resolution : {17, 65, 257})
+     for (int32 Level : {0, 5})
+     for (bool bMissing : {false, true})
+     {
++        PrepareRender->Set(bPack ? 1 : 0, ECVF_SetByCode);
+         auto* Lod = NewObject<UWorldScapeLod>(Root);
+         Lod->Init(Level, Resolution, 1920., DVector(0, 0, 1.e7), FWSMaterialLodArray{}, 1.e7, DVector(0), bWater, false);
+         for (int32 S = 0; S < 3; ++S)
+@@ -77,10 +83,11 @@ bool FAPSWorldScapeMeshPublicationTest::RunTest(const FString& Parameters)
+             auto* Section = Lod->Mesh->GetProcMeshSection(S);
+             Expected[S] = Section->PlanetVertexBuffer; Boxes[S] = Section->SectionLocalBox; Indices[S] = Section->PlanetIndexBuffer;
+             const auto& Packed = Payload->Sections[S].PackedBuffers;
+-            if (!TestTrue(TEXT("CPU-only packed buffers prepared"), bool(Packed))) continue;
++            if (!TestEqual(TEXT("CPU-only packed buffers follow mode"), bool(Packed), bPack)) continue;
+             FStaticMeshVertexBuffers Oracle;
+             const int32 Count = Expected[S].Num();
+             Oracle.PositionVertexBuffer.Init(Count); Oracle.StaticMeshVertexBuffer.Init(Count, 4); Oracle.ColorVertexBuffer.Init(Count);
++            bool bCompactExact = Payload->Sections[S].RenderVertices.Num() == Count;
+             for (int32 I = 0; I < Count; ++I)
+             {
+                 const auto& P = Expected[S][I]; FDynamicMeshVertex V;
+@@ -89,11 +96,22 @@ bool FAPSWorldScapeMeshPublicationTest::RunTest(const FString& Parameters)
+                 V.TangentZ.Vector.W = P.Tangent.bFlipTangentY ? -127 : 127;
+                 V.TextureCoordinate[0] = FVector2f(P.UV0); V.TextureCoordinate[1] = FVector2f(P.UV1);
+                 V.TextureCoordinate[2] = FVector2f(P.UV2); V.TextureCoordinate[3] = FVector2f(P.UV3);
++                if (bCompactExact)
++                {
++                    const auto& Compact = Payload->Sections[S].RenderVertices[I];
++                    bCompactExact = Compact.Position == V.Position && Compact.Color == V.Color
++                        && Compact.TangentX.Vector.Packed == V.TangentX.Vector.Packed
++                        && Compact.TangentZ.Vector.Packed == V.TangentZ.Vector.Packed;
++                    for (int32 U = 0; U < 4; ++U) bCompactExact &= Compact.TextureCoordinate[U] == V.TextureCoordinate[U];
++                }
+                 Oracle.PositionVertexBuffer.VertexPosition(I) = V.Position;
+                 Oracle.StaticMeshVertexBuffer.SetVertexTangents(I,V.TangentX.ToFVector3f(),V.GetTangentY(),V.TangentZ.ToFVector3f());
+                 for (int32 U = 0; U < 4; ++U) Oracle.StaticMeshVertexBuffer.SetVertexUV(I,U,V.TextureCoordinate[U]);
+                 Oracle.ColorVertexBuffer.VertexColor(I) = V.Color;
+             }
++            TestTrue(TEXT("Compact format fallback matches legacy conversion exactly"), bCompactExact);
++            if (Packed)
++            {
+             TestTrue(TEXT("Packed positions exact"), FMemory::Memcmp(Oracle.PositionVertexBuffer.GetVertexData(),Packed->PositionVertexBuffer.GetVertexData(),Oracle.PositionVertexBuffer.GetAllocatedSize()) == 0);
+             TestTrue(TEXT("Packed colors exact"), FMemory::Memcmp(Oracle.ColorVertexBuffer.GetVertexData(),Packed->ColorVertexBuffer.GetVertexData(),Oracle.ColorVertexBuffer.GetAllocatedSize()) == 0);
+             TestTrue(TEXT("Packed tangent handedness exact"), FMemory::Memcmp(Oracle.StaticMeshVertexBuffer.GetTangentData(),Packed->StaticMeshVertexBuffer.GetTangentData(),Oracle.StaticMeshVertexBuffer.GetTangentSize()) == 0);
+@@ -103,6 +121,7 @@ bool FAPSWorldScapeMeshPublicationTest::RunTest(const FString& Parameters)
+             FStaticMeshVertexBuffers Mismatch;
+             Mismatch.PositionVertexBuffer.Init(Count+1);
+             TestFalse(TEXT("Mismatched format safely rejected"), WorldScapePreparedMesh::CopyPreparedRenderBuffers(Mismatch,*Packed));
++            }
+         }
+         TestTrue(TEXT("Complete prepared main and seams published"), Lod->UpdatePreparedMesh(*Payload));
+         TestFalse(TEXT("Packet cannot be published twice"), Lod->UpdatePreparedMesh(*Payload));
+@@ -155,7 +174,7 @@ bool FAPSWorldScapeMeshPublicationTest::RunTest(const FString& Parameters)
+     Lease.Reset();
+     TestEqual(TEXT("Last consumer releases reservation"), WorldScapePreparedMesh::CurrentBytes(), InitialBytes);
+     Lod->Mesh->DestroyComponent(); Lod->DestroyComponent();
+-    AddInfo(FString::Printf(TEXT("Prepared/legacy exact parity: %lld vertices; budget/fallback/lease checks; no rendered acceptance"), Checked));
++    AddInfo(FString::Printf(TEXT("Prepared/legacy exact parity: %lld vertices; CPU=%llu render=%llu bytes/vertex; budget/fallback/lease checks; no rendered acceptance"), Checked, uint64(sizeof(FWorldScapeMeshVertex)), uint64(sizeof(FDynamicMeshVertex))));
+     return true;
+ }
+ #endif

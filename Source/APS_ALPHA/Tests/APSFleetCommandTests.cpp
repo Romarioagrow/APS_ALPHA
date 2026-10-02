@@ -47,10 +47,13 @@ bool FAPSFleetCommandRulesTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("A station needs no station"), NeedsStation(EStructure::Station));
 	TestTrue(TEXT("A shipyard needs a station"), NeedsStation(EStructure::Shipyard));
 	TestTrue(TEXT("A HQ needs a station"), NeedsStation(EStructure::Headquarters));
+	// The expansion's orders (02.10) come after Expedition, so every saved order keeps its number.
 	TestTrue(TEXT("Saved orders keep their numbers: the new orders come after Return"),
-		static_cast<uint8>(EOrder::BuildStation) > static_cast<uint8>(EOrder::Return) && LastOrder == EOrder::Expedition);
+		static_cast<uint8>(EOrder::BuildStation) > static_cast<uint8>(EOrder::Return)
+		&& static_cast<uint8>(EOrder::Probe) > static_cast<uint8>(EOrder::Expedition) && LastOrder == EOrder::BuildStructure);
 	for (const EOrder Order : {EOrder::Move, EOrder::Survey, EOrder::BuildOutpost, EOrder::Return, EOrder::BuildStation,
-		EOrder::BuildShipyard, EOrder::BuildHeadquarters, EOrder::Expedition})
+		EOrder::BuildShipyard, EOrder::BuildHeadquarters, EOrder::Expedition, EOrder::Probe, EOrder::SurveySystem,
+		EOrder::BuildStructure})
 	{
 		TestFalse(TEXT("Every order has a name"), OrderName(Order).IsEmpty());
 	}

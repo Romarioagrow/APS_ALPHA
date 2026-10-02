@@ -1,4 +1,6 @@
 #include "APSShipFlightModel.h"
+#include "APSShipFlightBenchmark.h"
+#include "Components/MeshComponent.h"
 
 #include "Spaceship.h"
 #include "ShipNavigationComponent.h"
@@ -10,12 +12,15 @@
 #include "APS_ALPHA/Actors/Astro/StarSystem.h"
 #include "APS_ALPHA/Actors/Tech/SpaceStation.h"
 #include "APS_ALPHA/Gameplay/Civilizations/APSCivilizationJournalSubsystem.h"
+#include "APS_ALPHA/Gameplay/Construction/APSShipBuildComponent.h"
+#include "APS_ALPHA/Gameplay/Vehicles/APSGroundVehicleTypes.h"
 #include "APS_ALPHA/Generation/AstroGenerator.h"
 #include "APS_ALPHA/Generation/PlanetarySurfaceGenerator.h"
 #include "Components/HierarchicalInstancedStaticMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
+#include "GameFramework/PlayerController.h"
 #include "HAL/IConsoleManager.h"
 #include "HAL/PlatformTime.h"
 
@@ -44,6 +49,17 @@ namespace APSShipFlightModelLocal
 	TAutoConsoleVariable<float> CVarDistanceFactorScale(
 		TEXT("aps.Ship.DistanceFactorScale"), 1.0f,
 		TEXT("Multiplies every band's distance speed factor (tuning without a rebuild)."));
+	// F2 (Rio, 02.10): the cluster is compact (stars about 1 AU apart), so past its edge the nearest star only recedes
+	// and a limit proportional to it ran away exponentially until the edge of charted space.
+	TAutoConsoleVariable<float> CVarStarSpacingCap(
+		TEXT("aps.Ship.StarSpacingCap"), 0.0f,
+		TEXT("The star term of the speed limit counts at most this many median star spacings (0 = uncapped)."));
+	TAutoConsoleVariable<float> CVarLimitCreep(
+		TEXT("aps.Ship.LimitCreep"), 0.04f,
+		TEXT("No ceiling: held at the limit, the limit grows by this fraction of itself per second (0 = a hard limit)."));
+	TAutoConsoleVariable<float> CVarOutsideClusterSeconds(
+		TEXT("aps.Ship.OutsideClusterSeconds"), 0.0f,
+		TEXT("Outside the star cluster a band flies at most the cluster's radius in this many seconds (0 = unbounded)."));
 
 	TAutoConsoleVariable<float> CVarSurfaceSpeedFactor(
 		TEXT("aps.Ship.SurfaceSpeedFactor"), -1.0f,
@@ -53,6 +69,38 @@ namespace APSShipFlightModelLocal
 	TAutoConsoleVariable<int32> CVarLog(
 		TEXT("aps.Ship.FlightLog"), 0,
 		TEXT("1 logs the piloted ship's band, limit, nearest surface and speed every second."));
+
+	// Star drive (Rio 02.10, key J).
+	TAutoConsoleVariable<float> CVarDriveCrossSeconds(
+		TEXT("aps.Ship.StarDrive.CrossSeconds"), 10.0f,
+		TEXT("Star drive: without input the ship crosses the median gap between neighbouring stars in this many seconds."));
+	TAutoConsoleVariable<float> CVarDriveSpoolSeconds(
+		TEXT("aps.Ship.StarDrive.SpoolSeconds"), 2.0f,
+		TEXT("Star drive: seconds from engaging to the cruise speed."));
+	TAutoConsoleVariable<float> CVarDriveThrottleRate(
+		TEXT("aps.Ship.StarDrive.ThrottleRate"), 0.5f,
+		TEXT("Star drive: held W multiplies the set speed by e^rate per second, S divides it; Shift doubles the rate."));
+	TAutoConsoleVariable<float> CVarDriveMaxMultiple(
+		TEXT("aps.Ship.StarDrive.MaxMultiple"), 40.0f,
+		TEXT("Star drive: W raises the set speed up to this many times the cruise speed."));
+	TAutoConsoleVariable<float> CVarDriveResponse(
+		TEXT("aps.Ship.StarDrive.Response"), 1.2f,
+		TEXT("Star drive: how fast the speed follows the set speed, 1/s in log space (heavier hulls follow slower)."));
+	TAutoConsoleVariable<float> CVarDriveAlignRate(
+		TEXT("aps.Ship.StarDrive.AlignRate"), 0.8f,
+		TEXT("Star drive: how fast the course follows the nose, 1/s (lower: the ship floats wider through a turn)."));
+	TAutoConsoleVariable<int32> CVarFeel(
+		TEXT("aps.Ship.Feel"), 1,
+		TEXT("1 (Rio 02.10): calmer flight near the ground - AUTO keeps FLIGHT low over the ground, half the ground speed ")
+		TEXT("limit, less FLIGHT thrust, a lazier velocity follow, a gentle speed bleed in the air unless closing on the ")
+		TEXT("ground, wider AUTO hysteresis and a heavier steering feel. 0: the previous tuning (A/B)."));
+	/** aps.Ship.Feel: AUTO keeps FLIGHT below this ground clearance (and shifts up only above it), cm. */
+	constexpr double LowFlightCeilingCm = 350000.0;
+
+	bool FeelEnabled()
+	{
+		return CVarFeel.GetValueOnGameThread() != 0;
+	}
 
 	FString FormatSpeed(double CmPerSecond)
 	{
@@ -410,6 +458,12 @@ bool UAPSShipFlightModel::IsBandAvailable(EAPSFlightBand Band) const
 void UAPSShipFlightModel::SetFlightBand(EAPSFlightBand NewBand)
 {
 	const ASpaceship* Ship = GetShip();
+	if (Ship && Ship->IsGroundVehicle())
+	{
+		// Rio 02.10: a ground vehicle never uses the space flight bands.
+		VehicleNotice(TEXT("FLIGHT MODES (1-5) ARE FOR SHIPS"));
+		return;
+	}
 	if (!IsBandAvailable(NewBand))
 	{
 		UE_LOG(LogTemp, Log, TEXT("[APS.Flight] %s: band %s needs a %s engine this %s hull lacks"), *GetNameSafe(Ship),
@@ -423,6 +477,10 @@ void UAPSShipFlightModel::SetFlightBand(EAPSFlightBand NewBand)
 
 void UAPSShipFlightModel::SetAutoBands()
 {
+	if (const ASpaceship* Ship = GetShip(); Ship && Ship->IsGroundVehicle())
+	{
+		return;
+	}
 	if (bManualBand)
 	{
 		UE_LOG(LogTemp, Log, TEXT("[APS.Flight] %s band AUTO from %s"), *GetNameSafe(GetOwner()),
@@ -485,6 +543,127 @@ void UAPSShipFlightModel::StepFlightBand(int32 Direction)
 	}
 }
 
+void UAPSShipFlightModel::EngageAutopilot(AActor* Target)
+{
+	ASpaceship* Ship = GetShip();
+	if (!Ship || !IsValid(Target) || Target == Ship)
+	{
+		return;
+	}
+	if (Ship->IsGroundVehicle())
+	{
+		VehicleNotice(TEXT("THE AUTOPILOT IS FOR SHIPS"));
+		return;
+	}
+	DisengageStarDrive(TEXT("autopilot"));
+	// Where to stop: in a low orbit of a world, beside a station, well clear of a star.
+	double RadiusCm = 10000.0;
+	double ArrivalCm = 100000.0;
+	if (const APlanetaryBody* Body = Cast<APlanetaryBody>(Target))
+	{
+		RadiusCm = Body->GetWorldScapeBodyRadiusCm();
+		ArrivalCm = FMath::Max(RadiusCm * 0.08, 20000000.0);
+	}
+	else if (const AStar* Star = Cast<AStar>(Target))
+	{
+		RadiusCm = (Star->RadiusKM > 0.0 ? Star->RadiusKM : static_cast<double>(Star->StarRadiusKM)) * 100000.0;
+		ArrivalCm = RadiusCm * 3.0;
+	}
+	else if (Target->IsA<ASpaceStation>())
+	{
+		RadiusCm = 50000.0;
+		ArrivalCm = 150000.0;
+	}
+	AutopilotTarget = Target;
+	AutopilotArrivalCm = ArrivalCm;
+	AutopilotRemainingCm = -1.0;
+	bAutopilotRotated = false;
+	SetAutoBands();
+	UE_LOG(LogTemp, Log, TEXT("[APS.Autopilot] %s engaged for %s (stops %.0f km from its surface)"), *GetNameSafe(Ship),
+		*GetNameSafe(Target), ArrivalCm / 100000.0);
+}
+
+void UAPSShipFlightModel::DisengageAutopilot(const TCHAR* Reason)
+{
+	if (!AutopilotTarget.IsValid() && !bDebugDrive)
+	{
+		return;
+	}
+	UE_LOG(LogTemp, Log, TEXT("[APS.Autopilot] %s off: %s"), *GetNameSafe(GetShip()), Reason);
+	AutopilotTarget.Reset();
+	bAutopilotRotated = false;
+	bDebugDrive = false;
+	DebugForwardInput = 0.0f;
+	bDebugBoost = false;
+}
+
+void UAPSShipFlightModel::UpdateAutopilot(const float DeltaTime)
+{
+	ASpaceship* Ship = GetShip();
+	AActor* Target = AutopilotTarget.Get();
+	if (!Ship || !Target)
+	{
+		if (bAutopilotRotated)
+		{
+			DisengageAutopilot(TEXT("the target is gone"));
+		}
+		return;
+	}
+	// The helm takes the ship back: thrust, strafe, the brake, or a turn the autopilot did not make.
+	if (FMath::Abs(Ship->ForwardInput) > 0.1f || FMath::Abs(Ship->SideInput) > 0.1f || FMath::Abs(Ship->VerticalInput) > 0.1f
+		|| Ship->bIsDecelerating
+		// A turn of more than half a degree since the autopilot's own: the pilot steered (small drifts are not).
+		|| (bAutopilotRotated && Ship->GetActorQuat().AngularDistance(AutopilotLastRotation) > FMath::DegreesToRadians(0.5)))
+	{
+		DisengageAutopilot(TEXT("helm input"));
+		return;
+	}
+	double RadiusCm = 0.0;
+	if (const APlanetaryBody* Body = Cast<APlanetaryBody>(Target))
+	{
+		RadiusCm = Body->GetWorldScapeBodyRadiusCm();
+	}
+	else if (const AStar* Star = Cast<AStar>(Target))
+	{
+		RadiusCm = (Star->RadiusKM > 0.0 ? Star->RadiusKM : static_cast<double>(Star->StarRadiusKM)) * 100000.0;
+	}
+	else if (Target->IsA<ASpaceStation>())
+	{
+		RadiusCm = 50000.0;
+	}
+	const FVector ToTarget = Target->GetActorLocation() - Ship->GetActorLocation();
+	const double Distance = ToTarget.Size();
+	AutopilotRemainingCm = FMath::Max(Distance - RadiusCm - AutopilotArrivalCm, 0.0);
+	const double Speed = Ship->KinematicVelocity.Size();
+	if (Distance - RadiusCm <= AutopilotArrivalCm)
+	{
+		// There: brake to a stop, then hand the ship back.
+		if (Speed < 2000.0)
+		{
+			DisengageAutopilot(TEXT("arrived"));
+			return;
+		}
+		SetDebugDrive(true, -1.0f, false);
+		return;
+	}
+	const FVector Direction = Distance > 1.0 ? ToTarget / Distance : Ship->GetShipForwardVector();
+	FVector Up = FVector::VectorPlaneProject(Ship->GetActorUpVector(), Direction).GetSafeNormal();
+	if (Up.IsNearlyZero())
+	{
+		Up = FVector::VectorPlaneProject(FVector::UpVector, Direction).GetSafeNormal();
+	}
+	const FQuat Wanted = FAPSShipFlightBenchmark::GetRotationForFlightAxes(*Ship, Direction, Up);
+	Ship->SetActorRotation(FQuat::Slerp(Ship->GetActorQuat(), Wanted, FMath::Clamp(DeltaTime * 1.6f, 0.0f, 1.0f)),
+		ETeleportType::TeleportPhysics);
+	AutopilotLastRotation = Ship->GetActorQuat();
+	bAutopilotRotated = true;
+	// Thrust once the nose is on the target; the bands slow the ship near bodies as for a pilot.
+	const double Alignment = FVector::DotProduct(Ship->GetShipForwardVector(), Direction);
+	bDebugDrive = true;
+	DebugForwardInput = Alignment > 0.97 ? 1.0f : Alignment > 0.7 ? 0.3f : 0.0f;
+	bDebugBoost = false;
+}
+
 void UAPSShipFlightModel::SetDebugDrive(bool bEnabled, float Forward, bool bBoost)
 {
 	bDebugDrive = bEnabled;
@@ -497,6 +676,13 @@ void UAPSShipFlightModel::SetDebugDrive(bool bEnabled, float Forward, bool bBoos
 void UAPSShipFlightModel::OnPossessed()
 {
 	EnsureBandSettings();
+	if (const ASpaceship* Ship = GetShip(); Ship && Ship->IsGroundVehicle())
+	{
+		// Rio 02.10: a ground vehicle never flies the bands; it starts from its pose on the ground.
+		EnsureKinematicHull();
+		ResetVehicleState();
+		return;
+	}
 	if (IsBandFlightActive())
 	{
 		EnsureKinematicHull();
@@ -622,12 +808,25 @@ void UAPSShipFlightModel::RefreshFlightBodies()
 		const TPair<FVector, double>* Bounds = StationBoundsCache.Find(Station);
 		if (!Bounds)
 		{
-			// Colliding bounds once per station: many components, and stations do not change shape in flight.
-			FVector Origin;
-			FVector Extent;
-			Station->GetActorBounds(true, Origin, Extent);
+			// The hull's bounds once per station (stations do not change shape in flight): visible meshes only. Colliding
+			// bounds took in gravity and interaction volumes, and the new HQ Alpha's volume put a ship far outside it at
+			// "0 m" from the station, so every band sat at the 500 m/s floor (Rio 02.10).
+			FBox Hull(ForceInit);
+			const FVector StationLocation = Station->GetActorLocation();
+			Station->ForEachComponent<UMeshComponent>(false, [&Hull, StationLocation](const UMeshComponent* Mesh)
+			{
+				// A component left far away (one at the world origin in HQ Alpha) is not part of the hull.
+				if (Mesh->IsRegistered() && Mesh->IsVisible() && Mesh->Bounds.SphereRadius > 1.0
+					&& FVector::Dist(Mesh->Bounds.Origin, StationLocation) < 10000000.0)
+				{
+					Hull += Mesh->Bounds.GetBox();
+				}
+			});
+			const FVector Origin = Hull.IsValid ? Hull.GetCenter() : Station->GetActorLocation();
+			// A station is never more than a few kilometres across.
+			const double Radius = Hull.IsValid ? FMath::Min(Hull.GetExtent().Size(), 1000000.0) : 0.0;
 			Bounds = &StationBoundsCache.Add(Station, TPair<FVector, double>(
-				Station->GetActorTransform().InverseTransformPosition(Origin), Extent.Size()));
+				Station->GetActorTransform().InverseTransformPosition(Origin), Radius));
 		}
 		if (Bounds->Value <= 0.0)
 		{
@@ -777,6 +976,7 @@ bool UAPSShipFlightModel::RebuildStarCatalogue()
 		Spacings.IsEmpty() ? 0.0 : Spacings[Spacings.Num() * 9 / 10] / AU, OutermostOrbitCm / AU, InterstellarDistanceAU);
 	CatalogueCenterFromHome = Centroid;
 	CatalogueRadiusCm = RadiusCm;
+	CatalogueSpacingMedianCm = Spacings.IsEmpty() ? 0.0 : Spacings[Spacings.Num() / 2];
 	CatalogueFromHome = MoveTemp(FromHome);
 	CatalogueHome = Home;
 	CatalogueBuildSerial = Descriptor.ProxyBuildSerial;
@@ -942,8 +1142,8 @@ void UAPSShipFlightModel::UpdateNearestSurface(float DeltaTime)
 	// The star catalogue: every 0.1 s in the fast bands, and in STELLAR soon after the course turns, since it slows
 	// for the system its course runs into. A scan is one pass over ~36k points.
 	CatalogueScanElapsed += DeltaTime;
-	const bool bFastBand = FlightBand >= EAPSFlightBand::Cruise;
-	const bool bCourseTurned = FlightBand == EAPSFlightBand::Stellar && CatalogueScanElapsed >= 0.05f
+	const bool bFastBand = FlightBand >= EAPSFlightBand::Cruise || bStarDrive;
+	const bool bCourseTurned = (FlightBand == EAPSFlightBand::Stellar || bStarDrive) && CatalogueScanElapsed >= 0.05f
 		&& !Heading.IsNearlyZero()
 		&& FVector::DotProduct(Heading, CatalogueScanHeading) < APSShipFlightModelLocal::CourseRescanCosine;
 	if (CatalogueScanElapsed >= (bFastBand ? CatalogueScanInterval : 1.0f) || bCourseTurned)
@@ -1053,6 +1253,12 @@ void UAPSShipFlightModel::UpdateNearestSurface(float DeltaTime)
 			EdgeRadiusCm = ChartedRadiusCm;
 		}
 	}
+	CatalogueGapCm = 0.0;
+	if (const AActor* Home = CatalogueHome.Get(); Home && CatalogueRadiusCm > 0.0)
+	{
+		CatalogueGapCm = FMath::Max(FVector::Dist(Location, Home->GetActorLocation() + CatalogueCenterFromHome)
+			- CatalogueRadiusCm, 0.0);
+	}
 	const FVector FromEdgeCenter = Location - EdgeCenter;
 	const double FromCenter = FromEdgeCenter.Size();
 	if (EdgeRadiusCm > 0.0 && FromCenter > 1.0)
@@ -1126,13 +1332,28 @@ double UAPSShipFlightModel::BandLimitCm(EAPSFlightBand InBand, double Alpha) con
 	Inputs.LocalSurfaceCm = LimitLocalDistanceCm;
 	Inputs.GroundClearanceCm = GroundLimitClearanceCm;
 	Inputs.StarCm = NearestStarDistanceCm;
+	const double SpacingCap = APSShipFlightModelLocal::CVarStarSpacingCap.GetValueOnGameThread();
+	if (SpacingCap > 0.0 && CatalogueSpacingMedianCm > 0.0 && Inputs.StarCm >= 0.0)
+	{
+		Inputs.StarCm = FMath::Min(Inputs.StarCm, SpacingCap * CatalogueSpacingMedianCm);
+	}
 	Inputs.CourseCm = CourseClearanceCm;
 	Inputs.DistanceFloorCm = DistanceLimitFloor * 100.0;
-	Inputs.SurfaceFactor = SurfaceFactorOverride >= 0.0f ? SurfaceFactorOverride : SurfaceSpeedFactor;
-	Inputs.SurfaceFloorCm = SurfaceSpeedFloor * 100.0;
+	// aps.Ship.Feel (Rio 02.10, "AUTO flies too fast near the surface"): half the ground limit and a lower floor, so low
+	// flight is slower; climbing away still doubles it (DepartureSpeedFactor), so the way out stays quick.
+	const bool bFeel = APSShipFlightModelLocal::FeelEnabled();
+	Inputs.SurfaceFactor = SurfaceFactorOverride >= 0.0f ? SurfaceFactorOverride : SurfaceSpeedFactor * (bFeel ? 0.5 : 1.0);
+	Inputs.SurfaceFloorCm = SurfaceSpeedFloor * 100.0 * (bFeel ? 0.6 : 1.0);
 	const EAPSFlightBand Below = Settings.bCourseLimit ? NeighbourBand(InBand, -1) : InBand;
-	return APSFlightBandModel::BandSpeedLimitCm(Settings, BandBoost(InBand, Alpha), Inputs,
+	double Limit = APSFlightBandModel::BandSpeedLimitCm(Settings, BandBoost(InBand, Alpha), Inputs,
 		Below != InBand ? BandLimitCm(Below, Alpha) : -1.0);
+	const double OutsideSeconds = APSShipFlightModelLocal::CVarOutsideClusterSeconds.GetValueOnGameThread();
+	if (OutsideSeconds > 0.0 && CatalogueGapCm > 0.0 && CatalogueRadiusCm > 0.0)
+	{
+		// Past the cluster's edge the speed stays bounded: the way back is as quick as the way out.
+		Limit = FMath::Min(Limit, FMath::Max(CatalogueRadiusCm / OutsideSeconds, Inputs.DistanceFloorCm));
+	}
+	return Limit;
 }
 
 void UAPSShipFlightModel::UpdateAutoBand(double SpeedCm, double Throttle, float DeltaTime)
@@ -1147,14 +1368,24 @@ void UAPSShipFlightModel::UpdateAutoBand(double SpeedCm, double Throttle, float 
 	const bool bInAir = IsInAtmosphere() && !bStation;
 	// Outside every star system: a quarter beyond its planets, or InterstellarDistanceAU around a bare star.
 	const bool bInterstellar = !bSystemGapKnown || NearestSystemGapCm > 0.0;
-	EAPSFlightBand Lowest = bStation || bInAir ? EAPSFlightBand::Flight : EAPSFlightBand::Orbital;
+	// Rio 02.10 (AUTO flew 500 m/s a hundred metres up): ORBITAL's distance floor beat FLIGHT's ground limit, so AUTO
+	// shifted up right above the ground, and over an airless moon it never left ORBITAL. Low over any ground FLIGHT is
+	// the top band and the landing hover is offered; above the ceiling AUTO may shift up, and it drops back below 70% of it.
+	const bool bFeel = APSShipFlightModelLocal::FeelEnabled();
+	const bool bLowFlight = bFeel && !bStation && GroundClearanceCm >= 0.0
+		&& GroundClearanceCm < (FlightBand > EAPSFlightBand::Flight ? 0.7 : 1.0) * APSShipFlightModelLocal::LowFlightCeilingCm;
+	EAPSFlightBand Lowest = bStation || bInAir || bLowFlight ? EAPSFlightBand::Flight : EAPSFlightBand::Orbital;
 	EAPSFlightBand Highest = bInterstellar ? EAPSFlightBand::Stellar : EAPSFlightBand::Cruise;
 	while (Highest > Lowest && !IsBandAvailable(Highest))
 	{
 		Highest = static_cast<EAPSFlightBand>(static_cast<uint8>(Highest) - 1);
 	}
+	if (bLowFlight)
+	{
+		Highest = EAPSFlightBand::Flight;
+	}
 	const bool bHover = Throttle <= 0.1 && SpeedCm < HoverSpeed * 100.0
-		&& (bStation || (bInAir && GroundClearanceCm >= 0.0 && GroundClearanceCm < LandingClearance * 100.0));
+		&& (bStation || ((bInAir || bLowFlight) && GroundClearanceCm >= 0.0 && GroundClearanceCm < LandingClearance * 100.0));
 
 	EAPSFlightBand Wanted = FlightBand;
 	const TCHAR* Reason = TEXT("auto");
@@ -1167,7 +1398,7 @@ void UAPSShipFlightModel::UpdateAutoBand(double SpeedCm, double Throttle, float 
 	else if (Wanted == EAPSFlightBand::Maneuver)
 	{
 		// Leave the hover when W runs into its limit, or once no station or ground is near.
-		if (!(bStation || bInAir) || (Throttle > 0.5 && SpeedCm >= 0.85 * BandLimitCm(Wanted, BoostAlpha)))
+		if (!(bStation || bInAir || bLowFlight) || (Throttle > 0.5 && SpeedCm >= 0.85 * BandLimitCm(Wanted, BoostAlpha)))
 		{
 			Wanted = Lowest;
 			Reason = TEXT("auto: leaving the hover");
@@ -1184,7 +1415,7 @@ void UAPSShipFlightModel::UpdateAutoBand(double SpeedCm, double Throttle, float 
 		const EAPSFlightBand Up = NeighbourBand(Wanted, 1);
 		const EAPSFlightBand Down = NeighbourBand(Wanted, -1);
 		if (Up != Wanted && Up <= Highest && Throttle > 0.5 && SpeedCm >= 0.85 * Here
-			&& BandLimitCm(Up, BoostAlpha) >= 1.25 * Here)
+			&& BandLimitCm(Up, BoostAlpha) >= (bFeel ? 1.4 : 1.25) * Here)
 		{
 			// Like an automatic gearbox: at the top of this band, and the next one would go faster here.
 			Wanted = Up;
@@ -1192,10 +1423,12 @@ void UAPSShipFlightModel::UpdateAutoBand(double SpeedCm, double Throttle, float 
 		}
 		else if (Down != Wanted && Down >= Lowest)
 		{
-			const bool bNoGain = Here <= 1.05 * BandLimitCm(Down, BoostAlpha);
+			// aps.Ship.Feel: a wider gap between shifting up (1.4x) and down (1.0x), held longer, so AUTO stops hunting
+			// between two bands (Rio's log 02.10: ORBITAL <-> FLIGHT every few seconds near the ground).
+			const bool bNoGain = Here <= (bFeel ? 1.0 : 1.05) * BandLimitCm(Down, BoostAlpha);
 			const bool bSlowedDown = Throttle <= 0.1 && SpeedCm < 0.4 * GetBandSettings(Down).MaxSpeed * 100.0;
 			AutoShiftHold = bNoGain || bSlowedDown ? AutoShiftHold + DeltaTime : 0.0f;
-			if (AutoShiftHold >= 0.4f)
+			if (AutoShiftHold >= (bFeel ? 0.8f : 0.4f))
 			{
 				// Closing on a body (this band is no faster than the one below) or coasting slow: shift down.
 				Wanted = Down;
@@ -1292,25 +1525,67 @@ FVector UAPSShipFlightModel::StepVelocity(const FAPSFlightBandSettings& Band, co
 bool UAPSShipFlightModel::ApplyTranslation(float DeltaTime)
 {
 	ASpaceship* Ship = GetShip();
+	if (Ship && Ship->IsGroundVehicle())
+	{
+		// Rio 02.10: rover, hover and drone drive in the local gravity frame; the bands (and AUTO) never move them.
+		return ApplyVehicleTranslation(DeltaTime);
+	}
 	if (!Ship || !IsBandFlightActive() || !Ship->bEngineRunning || !Ship->SpaceshipHull || DeltaTime <= 0.0f)
 	{
 		// Engine off or the previous model selected: ASpaceship keeps its own behaviour.
+		if (DeltaTime > 0.0f)
+		{
+			DisengageStarDrive(TEXT("engine off"));
+		}
 		return false;
 	}
 	EnsureKinematicHull();
 	EnsureBandSettings();
 	UpdateNearestSurface(DeltaTime);
+	UpdateAutopilot(DeltaTime);
 
 	const bool bBoostHeld = Ship->bIsAccelerating || (bDebugDrive && bDebugBoost);
 	BoostAlpha = FMath::FInterpConstantTo(BoostAlpha, bBoostHeld ? 1.0 : 0.0, static_cast<double>(DeltaTime), 2.5);
 	const FVector LocalInput = FVector(bDebugDrive ? DebugForwardInput : Ship->ForwardInput, Ship->SideInput,
 		Ship->VerticalInput).GetClampedToMaxSize(1.0);
+	if (bStarDrive && ApplyStarDrive(LocalInput, DeltaTime))
+	{
+		return true;
+	}
 	UpdateAutoBand(Ship->KinematicVelocity.Size(), LocalInput.X, DeltaTime);
 
-	const FAPSFlightBandSettings& Band = GetBandSettings(FlightBand);
+	FAPSFlightBandSettings Band = GetBandSettings(FlightBand);
+	if (FlightBand == EAPSFlightBand::Flight && APSShipFlightModelLocal::FeelEnabled()
+		&& (IsInAtmosphere() || (GroundClearanceCm >= 0.0 && GroundClearanceCm < APSShipFlightModelLocal::LowFlightCeilingCm)))
+	{
+		// aps.Ship.Feel (Rio 02.10, "the weight is not felt"): less thrust, a lazier velocity follow (the hull carries its
+		// momentum through a turn) and a longer coast after W. Still 90% of a 300 m/s ground limit in about 2 s.
+		Band.Acceleration *= 0.6;
+		Band.AssistRate *= 0.65;
+		Band.ReleaseDrag *= 0.75;
+	}
 	const double Boost = BandBoost(FlightBand, BoostAlpha);
-	// What held W reaches now (boost included).
-	const double Limit = BandLimitCm(FlightBand, BoostAlpha);
+	// What held W reaches now (boost included), crept up while W stays held at it (Rio 02.10: no ceiling, the ship
+	// keeps accelerating slowly). Releasing W or braking lets the creep fall back; a band change starts over.
+	const double BaseLimit = BandLimitCm(FlightBand, BoostAlpha);
+	if (CreepBand != FlightBand)
+	{
+		CreepBand = FlightBand;
+		LimitCreep = 1.0;
+	}
+	// The autopilot flies at the plain limit, so it stops where it means to.
+	// Hover bands (docking, landing) keep their limit: the creep is for flight, not for a ship easing into a hangar.
+	const bool bThrottleHeld = LocalInput.X > 0.5 && !Ship->bIsDecelerating && !IsAutopilotEngaged()
+		&& Band.Control != EAPSFlightBandControl::Hover;
+	if (bThrottleHeld && Ship->KinematicVelocity.Size() >= BaseLimit * LimitCreep * 0.97)
+	{
+		LimitCreep += FMath::Max(APSShipFlightModelLocal::CVarLimitCreep.GetValueOnGameThread(), 0.0f) * DeltaTime;
+	}
+	else if (!bThrottleHeld)
+	{
+		LimitCreep = 1.0 + (LimitCreep - 1.0) * FMath::Exp(-1.5 * DeltaTime);
+	}
+	const double Limit = BaseLimit * LimitCreep;
 	CurrentSpeedLimitCm = Limit;
 	// In space the Assist and Cruise bands keep the speed a boost built up (Rio, 29.09: letting go of Shift must not
 	// slow the ship; S does). Only the full-boost limit, which still shrinks near bodies, and a band drop shed it.
@@ -1321,7 +1596,7 @@ bool UAPSShipFlightModel::ApplyTranslation(float DeltaTime)
 	// (30.09: it came in at four times that and braked hard), and a speed back under the limit forgets the boost.
 	KeptBoostAlpha = Ship->KinematicVelocity.Size() <= Limit ? BoostAlpha : FMath::Max(KeptBoostAlpha, BoostAlpha);
 	const double KeptBoost = bKeepsSpeed ? BandBoost(FlightBand, KeptBoostAlpha) : Boost;
-	const double KeptLimit = bKeepsSpeed ? BandLimitCm(FlightBand, KeptBoostAlpha) : Limit;
+	const double KeptLimit = (bKeepsSpeed ? BandLimitCm(FlightBand, KeptBoostAlpha) : BaseLimit) * LimitCreep;
 
 	const double Drag = IsInAtmosphere() ? Ship->GetEnvironmentDrag() : 0.0;
 	FVector Velocity = StepVelocity(Band, LocalInput, Limit, Boost, Drag, DeltaTime);
@@ -1349,9 +1624,42 @@ bool UAPSShipFlightModel::ApplyTranslation(float DeltaTime)
 		// Band drop or closing on a body: most of the excess goes within half a second.
 		const double Factor = Band.DistanceSpeedFactor
 			* FMath::Max(APSShipFlightModelLocal::CVarDistanceFactorScale.GetValueOnGameThread(), 0.0f) * KeptBoost;
+		double ShedBase = OverspeedShedRate;
+		if (IsInAtmosphere() && APSShipFlightModelLocal::FeelEnabled())
+		{
+			// aps.Ship.Feel (Rio 02.10, the air felt jerky): after a band drop or a turn away from the ground the excess
+			// bleeds off over a few seconds; heading into the ground or a body sheds it at the full rate.
+			const double Closing = SolidSurfaceDistanceCm >= 0.0 && !SolidSurfaceOutward.IsNearlyZero()
+				? -FVector::DotProduct(Velocity / Speed, SolidSurfaceOutward) : 1.0;
+			ShedBase = FMath::Lerp(1.2, OverspeedShedRate, FMath::Clamp(2.0 * Closing, 0.0, 1.0));
+		}
 		Velocity *= APSFlightBandModel::ShedOverspeed(Speed, KeptLimit,
-			APSFlightBandModel::ShedRate(OverspeedShedRate, Factor), DeltaTime) / Speed;
+			APSFlightBandModel::ShedRate(ShedBase, Factor), DeltaTime) / Speed;
 	}
+	MoveShip(Velocity, Band.bSweepCollision, DeltaTime);
+
+	if (APSShipFlightModelLocal::CVarLog.GetValueOnGameThread() != 0)
+	{
+		const double Now = FPlatformTime::Seconds();
+		if (Now - LastLogSeconds >= 1.0)
+		{
+			LastLogSeconds = Now;
+			UE_LOG(LogTemp, Log,
+				TEXT("[APS.Flight] %s band=%s env=%s speed=%s limit=%s nearest=%s %.0f m ground=%.0f m star=%.4g AU system=%.4g AU course=%.4g AU boost=%.2f drag=%.2f"),
+				*Ship->GetName(), *Band.Name, *Ship->GetFlightEnvironmentName(),
+				*APSShipFlightModelLocal::FormatSpeed(Ship->KinematicVelocity.Size()),
+				*APSShipFlightModelLocal::FormatSpeed(Limit), *NearestBodyName, NearestSurfaceDistanceCm / 100.0,
+				GroundClearanceCm / 100.0, NearestStarDistanceCm / APSShipFlightModelLocal::AstronomicalUnitCm,
+				NearestSystemGapCm / APSShipFlightModelLocal::AstronomicalUnitCm,
+				CourseClearanceCm / APSShipFlightModelLocal::AstronomicalUnitCm, Boost, Drag);
+		}
+	}
+	return true;
+}
+
+void UAPSShipFlightModel::MoveShip(FVector Velocity, const bool bSweepBand, const float DeltaTime)
+{
+	ASpaceship* Ship = GetShip();
 	if (SolidSurfaceDistanceCm >= 0.0 && !SolidSurfaceOutward.IsNearlyZero())
 	{
 		// Whatever the limits and the frame time, a frame closes at most a quarter of the gap to a planet, moon, star
@@ -1366,8 +1674,7 @@ bool UAPSShipFlightModel::ApplyTranslation(float DeltaTime)
 	Ship->KinematicVelocity = Velocity;
 
 	// Fast bands skip the sweep, but a slow frame in them (near a station) still collides.
-	const bool bSweep = Band.bSweepCollision
-		|| Velocity.Size() * DeltaTime < APSShipFlightModelLocal::ShortMoveSweepCm;
+	const bool bSweep = bSweepBand || Velocity.Size() * DeltaTime < APSShipFlightModelLocal::ShortMoveSweepCm;
 	FHitResult Hit;
 	Ship->MoveShipKinematic(Velocity * DeltaTime, bSweep, Hit);
 	if (Hit.bBlockingHit)
@@ -1392,6 +1699,207 @@ bool UAPSShipFlightModel::ApplyTranslation(float DeltaTime)
 			}
 		}
 	}
+}
+
+void UAPSShipFlightModel::ToggleStarDrive()
+{
+	if (bStarDrive)
+	{
+		DisengageStarDrive(TEXT("switched off"));
+	}
+	else
+	{
+		EngageStarDrive();
+	}
+}
+
+bool UAPSShipFlightModel::EngageStarDrive()
+{
+	ASpaceship* Ship = GetShip();
+	if (!Ship || bStarDrive)
+	{
+		return bStarDrive;
+	}
+	// Rio 02.10: never in a ground vehicle (rover, hover, drone).
+	const TCHAR* Refusal = Ship->IsGroundVehicle() ? TEXT("NOT IN A GROUND VEHICLE")
+		: !IsBandFlightActive() ? TEXT("THE BAND FLIGHT MODEL IS OFF")
+		: !Ship->bEngineRunning ? TEXT("ENGINE OFF (G)")
+		: !IsBandAvailable(EAPSFlightBand::Stellar) ? TEXT("NEEDS AN OFFSET ENGINE (CLASS M AND UP)")
+		: IsInAtmosphere() ? TEXT("LEAVE THE ATMOSPHERE FIRST")
+		: nullptr;
+	if (Refusal)
+	{
+		StarDriveNotice = FString::Printf(TEXT("STAR DRIVE: %s"), Refusal);
+		StarDriveNoticeUntil = FPlatformTime::Seconds() + 4.0;
+		UE_LOG(LogTemp, Log, TEXT("[APS.Drive] %s (%s hull) star drive refused: %s"), *GetNameSafe(Ship),
+			*Ship->GetSizeClassName(), Refusal);
+		return false;
+	}
+	DisengageAutopilot(TEXT("star drive"));
+	bStarDrive = true;
+	StarDriveSeconds = 0.0f;
+	StarDriveIdleSeconds = 0.0f;
+	StarDriveFromCm = Ship->KinematicVelocity.Size();
+	StarDriveSetCm = StarDriveCruiseCm();
+	StarDriveHeldBy = nullptr;
+	// Engaged between the systems, the next one entered is an arrival; engaged in one, it has to be left first.
+	bStarDriveLeftSystem = !(bSystemGapKnown && NearestSystemGapCm <= 0.0);
+	StarDriveNotice.Reset();
+	CatalogueScanElapsed = TNumericLimits<float>::Max();
+	UE_LOG(LogTemp, Log, TEXT("[APS.Drive] %s star drive on at %s: cruise %s (star spacing median %.2f AU), %s"),
+		*GetNameSafe(Ship), *APSShipFlightModelLocal::FormatSpeed(StarDriveFromCm),
+		*APSShipFlightModelLocal::FormatSpeed(StarDriveSetCm),
+		CatalogueSpacingMedianCm / APSShipFlightModelLocal::AstronomicalUnitCm,
+		bStarDriveLeftSystem ? TEXT("between the systems") : TEXT("inside a star system"));
+	return true;
+}
+
+void UAPSShipFlightModel::DisengageStarDrive(const TCHAR* Reason)
+{
+	if (!bStarDrive)
+	{
+		return;
+	}
+	bStarDrive = false;
+	StarDriveHeldBy = nullptr;
+	const ASpaceship* Ship = GetShip();
+	UE_LOG(LogTemp, Log, TEXT("[APS.Drive] %s star drive off at %s: %s"), *GetNameSafe(Ship),
+		Ship ? *APSShipFlightModelLocal::FormatSpeed(Ship->KinematicVelocity.Size()) : TEXT("?"), Reason);
+	StarDriveNotice = FString::Printf(TEXT("STAR DRIVE OFF: %s"), *FString(Reason).ToUpper());
+	StarDriveNoticeUntil = FPlatformTime::Seconds() + 4.0;
+	LimitCreep = 1.0;
+	KeptBoostAlpha = 0.0;
+	if (Ship && !bManualBand && !IsInAtmosphere())
+	{
+		// The bands take over at the speed the drive left: the fastest band here (STELLAR between the systems, CRUISE in
+		// one), and AUTO shifts down from there as the ship slows or closes on a body.
+		EAPSFlightBand Band = !bSystemGapKnown || NearestSystemGapCm > 0.0 ? EAPSFlightBand::Stellar : EAPSFlightBand::Cruise;
+		while (Band > EAPSFlightBand::Orbital && !IsBandAvailable(Band))
+		{
+			Band = static_cast<EAPSFlightBand>(static_cast<uint8>(Band) - 1);
+		}
+		ApplyBand(Band, TEXT("star drive off"));
+	}
+}
+
+double UAPSShipFlightModel::StarDriveCruiseCm() const
+{
+	// Neighbouring stars pass every CrossSeconds: about 1 AU in 10 s in the generated cluster (spacing median 1.0-1.6 AU).
+	constexpr double AU = APSShipFlightModelLocal::AstronomicalUnitCm;
+	const double Spacing = CatalogueSpacingMedianCm > 0.0 ? CatalogueSpacingMedianCm : AU;
+	return FMath::Max(Spacing, 0.1 * AU)
+		/ FMath::Max(APSShipFlightModelLocal::CVarDriveCrossSeconds.GetValueOnGameThread(), 0.5f);
+}
+
+bool UAPSShipFlightModel::ApplyStarDrive(const FVector& LocalInput, const float DeltaTime)
+{
+	ASpaceship* Ship = GetShip();
+	if (!Ship->IsPlayerControlled())
+	{
+		DisengageStarDrive(TEXT("no pilot"));
+		return false;
+	}
+	if (IsInAtmosphere())
+	{
+		DisengageStarDrive(TEXT("atmosphere"));
+		return false;
+	}
+	if (Ship->bIsDecelerating)
+	{
+		// Ctrl brakes out of the drive: the band takes over this frame, with its brake.
+		DisengageStarDrive(TEXT("brake"));
+		return false;
+	}
+	// Arrival: once outside every star system, entering one hands the ship to the bands at about the CRUISE speed there.
+	const bool bInsideSystem = bSystemGapKnown && NearestSystemGapCm <= 0.0;
+	if (!bInsideSystem)
+	{
+		bStarDriveLeftSystem = true;
+	}
+	else if (bStarDriveLeftSystem)
+	{
+		UAPSCivilizationJournalSubsystem::Post(Ship, TEXT("Flight"), NSLOCTEXT("APSCivilizationJournal", "DriveArrived",
+			"The home ship dropped out of the star drive at a star system."));
+		DisengageStarDrive(TEXT("arrived at a star system"));
+		return false;
+	}
+
+	StarDriveSeconds += DeltaTime;
+	const double Cruise = StarDriveCruiseCm();
+	const double Agility = APSFlightBandModel::ClassAgility(static_cast<uint8>(Ship->SizeClass));
+	// W raises the set speed and S lowers it, in log space so a press feels alike at any speed; Shift doubles the rate.
+	const double Rate = FMath::Max(APSShipFlightModelLocal::CVarDriveThrottleRate.GetValueOnGameThread(), 0.0f)
+		* (Ship->bIsAccelerating ? 2.0 : 1.0);
+	const double MinimumSet = 0.02 * Cruise;
+	const double MaximumSet = Cruise * FMath::Max(APSShipFlightModelLocal::CVarDriveMaxMultiple.GetValueOnGameThread(), 1.0f);
+	StarDriveSetCm = FMath::Clamp(StarDriveSetCm * FMath::Exp(Rate * LocalInput.X * DeltaTime), MinimumSet, MaximumSet);
+	// S held at the bottom of the range for a second winds the drive down.
+	StarDriveIdleSeconds = LocalInput.X < -0.5 && StarDriveSetCm <= 1.01 * MinimumSet ? StarDriveIdleSeconds + DeltaTime : 0.0f;
+	if (StarDriveIdleSeconds >= 1.0f)
+	{
+		DisengageStarDrive(TEXT("slowed down"));
+		return false;
+	}
+
+	// What the surroundings allow, as in CRUISE: planets, moons and stations slow the ship by their distance, and a star
+	// system on the course (or the edge of charted space) slows it to the CRUISE speed at its edge. Inside a system the
+	// drive flies no faster than CRUISE does there.
+	const double Factor = GetBandSettings(EAPSFlightBand::Cruise).DistanceSpeedFactor
+		* FMath::Max(APSShipFlightModelLocal::CVarDistanceFactorScale.GetValueOnGameThread(), 0.0f);
+	double Allowed = TNumericLimits<double>::Max();
+	const TCHAR* HeldBy = nullptr;
+	if (LimitLocalDistanceCm >= 0.0)
+	{
+		Allowed = FMath::Max(Factor * LimitLocalDistanceCm, DistanceLimitFloor * 100.0);
+		HeldBy = TEXT("BODY NEAR");
+	}
+	if (CourseClearanceCm >= 0.0)
+	{
+		const double CourseLimit = FMath::Max(Factor * CourseClearanceCm, BandLimitCm(EAPSFlightBand::Cruise, 0.0));
+		if (CourseLimit < Allowed)
+		{
+			Allowed = CourseLimit;
+			HeldBy = bInsideSystem ? TEXT("INSIDE A STAR SYSTEM") : TEXT("STAR SYSTEM AHEAD");
+		}
+	}
+	const double Target = FMath::Max(FMath::Min(StarDriveSetCm, Allowed), 100.0);
+	StarDriveHeldBy = Allowed < StarDriveSetCm ? HeldBy : nullptr;
+	CurrentSpeedLimitCm = Target;
+
+	const FVector Velocity = Ship->KinematicVelocity;
+	const double Speed = Velocity.Size();
+	const double Spool = FMath::Max(APSShipFlightModelLocal::CVarDriveSpoolSeconds.GetValueOnGameThread(), 0.1f);
+	const bool bSpooling = StarDriveSeconds < Spool;
+	double NextSpeed = Target;
+	if (bSpooling)
+	{
+		// The spool: from the speed at engaging to the target along an S-curve in log space, so the stars start to move
+		// at once and the ship reaches the cruise speed in two seconds.
+		const double Alpha = FMath::SmoothStep(0.0, 1.0, static_cast<double>(StarDriveSeconds) / Spool);
+		NextSpeed = FMath::Exp(FMath::Lerp(FMath::Loge(FMath::Max(StarDriveFromCm, 1000.0)), FMath::Loge(Target), Alpha));
+	}
+	else
+	{
+		// Momentum: the speed follows the target in log space, slower for heavy hulls; a body or a system ahead is
+		// followed at the bands' overspeed rate, so the drive never overshoots it.
+		const double FollowRate = StarDriveHeldBy && Target < Speed
+			? APSFlightBandModel::ShedRate(OverspeedShedRate, Factor)
+			: FMath::Max(APSShipFlightModelLocal::CVarDriveResponse.GetValueOnGameThread(), 0.05f) * Agility;
+		const double LogTarget = FMath::Loge(Target);
+		NextSpeed = FMath::Exp(LogTarget
+			+ (FMath::Loge(FMath::Max(Speed, 1.0)) - LogTarget) * FMath::Exp(-FollowRate * DeltaTime));
+	}
+	// The ship floats: the course follows the nose lazily, so a turn carries it wide (during the spool it lines up quickly).
+	const FVector Forward = Ship->GetShipForwardVector();
+	const FVector Heading = Speed > 1.0 ? Velocity / Speed : Forward;
+	const double AlignRate = bSpooling ? 4.0
+		: FMath::Max(APSShipFlightModelLocal::CVarDriveAlignRate.GetValueOnGameThread(), 0.0f) * FMath::Sqrt(Agility);
+	FVector Direction = (Heading + (Forward - Heading) * (1.0 - FMath::Exp(-AlignRate * DeltaTime))).GetSafeNormal();
+	if (Direction.IsNearlyZero())
+	{
+		Direction = Forward;
+	}
+	MoveShip(Direction * NextSpeed, false, DeltaTime);
 
 	if (APSShipFlightModelLocal::CVarLog.GetValueOnGameThread() != 0)
 	{
@@ -1400,30 +1908,94 @@ bool UAPSShipFlightModel::ApplyTranslation(float DeltaTime)
 		{
 			LastLogSeconds = Now;
 			UE_LOG(LogTemp, Log,
-				TEXT("[APS.Flight] %s band=%s env=%s speed=%s limit=%s nearest=%s %.0f m ground=%.0f m star=%.4g AU system=%.4g AU course=%.4g AU boost=%.2f drag=%.2f"),
-				*Ship->GetName(), *Band.Name, *Ship->GetFlightEnvironmentName(),
-				*APSShipFlightModelLocal::FormatSpeed(Ship->KinematicVelocity.Size()),
-				*APSShipFlightModelLocal::FormatSpeed(Limit), *NearestBodyName, NearestSurfaceDistanceCm / 100.0,
-				GroundClearanceCm / 100.0, NearestStarDistanceCm / APSShipFlightModelLocal::AstronomicalUnitCm,
-				NearestSystemGapCm / APSShipFlightModelLocal::AstronomicalUnitCm,
-				CourseClearanceCm / APSShipFlightModelLocal::AstronomicalUnitCm, Boost, Drag);
+				TEXT("[APS.Drive] %s t=%.1f s speed=%s set=%s allowed=%s held=%s system=%.4g AU course=%.4g AU slip=%.1f deg"),
+				*Ship->GetName(), StarDriveSeconds, *APSShipFlightModelLocal::FormatSpeed(Ship->KinematicVelocity.Size()),
+				*APSShipFlightModelLocal::FormatSpeed(StarDriveSetCm), *APSShipFlightModelLocal::FormatSpeed(Target),
+				StarDriveHeldBy ? StarDriveHeldBy : TEXT("-"), NearestSystemGapCm / APSShipFlightModelLocal::AstronomicalUnitCm,
+				CourseClearanceCm / APSShipFlightModelLocal::AstronomicalUnitCm,
+				FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(FVector::DotProduct(Direction, Forward), -1.0, 1.0))));
 		}
 	}
 	return true;
 }
 
+void UAPSShipFlightModel::GetSteeringFeel(double& OutRateScale, double& OutResponseScale, double& OutDampingScale) const
+{
+	OutRateScale = OutResponseScale = OutDampingScale = 1.0;
+	if (bStarDrive)
+	{
+		// A yoke (Rio 02.10): gentler turns that build up and settle with a lag, so the ship floats through them.
+		OutRateScale = 0.5;
+		OutResponseScale = 0.35;
+		OutDampingScale = 4.0;
+	}
+	else if (IsInAtmosphere() && APSShipFlightModelLocal::FeelEnabled())
+	{
+		// In the air the hull turns with its weight and stops turning soon after the mouse does, instead of tossing on.
+		OutRateScale = 0.85;
+		OutResponseScale = 0.7;
+		OutDampingScale = 12.0;
+	}
+}
+
+FVector UAPSShipFlightModel::SmoothSteeringInput(const FVector& RawPitchYawRoll, const float DeltaTime)
+{
+	// Mouse deltas arrive unevenly from frame to frame; a short low-pass takes the jerk out of a turn.
+	const double TimeConstant = bStarDrive ? 0.15
+		: IsInAtmosphere() && APSShipFlightModelLocal::FeelEnabled() ? 0.07 : 0.0;
+	if (TimeConstant <= 0.0 || DeltaTime <= 0.0f)
+	{
+		SmoothedSteering = RawPitchYawRoll;
+		return RawPitchYawRoll;
+	}
+	SmoothedSteering += (RawPitchYawRoll - SmoothedSteering) * (1.0 - FMath::Exp(-DeltaTime / TimeConstant));
+	return SmoothedSteering;
+}
+
 FString UAPSShipFlightModel::GetStatusText() const
 {
+	if (const ASpaceship* Owner = GetShip(); Owner && Owner->IsGroundVehicle())
+	{
+		return GetVehicleStatusText();
+	}
 	if (!IsBandFlightActive())
 	{
 		return FString();
 	}
 	const ASpaceship* Ship = GetShip();
 	const FAPSFlightBandSettings& Band = GetBandSettings(FlightBand);
+	const FString Notice = FPlatformTime::Seconds() < StarDriveNoticeUntil && !StarDriveNotice.IsEmpty()
+		? TEXT("   |   ") + StarDriveNotice : FString();
+	if (bStarDrive)
+	{
+		const double Speed = Ship ? Ship->KinematicVelocity.Size() : 0.0;
+		const float Spool = FMath::Max(APSShipFlightModelLocal::CVarDriveSpoolSeconds.GetValueOnGameThread(), 0.1f);
+		FString DriveLine = StarDriveSeconds < Spool
+			? FString::Printf(TEXT("STAR DRIVE   SPOOLING %d%%   %s"), FMath::RoundToInt(100.0f * StarDriveSeconds / Spool),
+				*APSShipFlightModelLocal::FormatSpeed(Speed))
+			: FString::Printf(TEXT("STAR DRIVE   %s   (SET %s)"), *APSShipFlightModelLocal::FormatSpeed(Speed),
+				*APSShipFlightModelLocal::FormatSpeed(StarDriveSetCm));
+		if (StarDriveHeldBy)
+		{
+			DriveLine += FString::Printf(TEXT("   HELD BACK: %s"), StarDriveHeldBy);
+		}
+		const FString Near = NearestSurfaceDistanceCm >= 0.0
+			? FString::Printf(TEXT("%s %s"), NearestBodyName.IsEmpty() ? TEXT("SURFACE") : *NearestBodyName,
+				*UShipNavigationComponent::FormatDistance(NearestSurfaceDistanceCm))
+			: FString(TEXT("OPEN SPACE"));
+		// The keys are on the hint line below; this one says what the set speed is measured against.
+		return FString::Printf(TEXT("%s%s\n%s   |   CRUISE %s"), *DriveLine, *Notice, *Near,
+			*APSShipFlightModelLocal::FormatSpeed(StarDriveCruiseCm()));
+	}
 	// Two short lines: what the ship does now, and what is near.
 	FString Line = FString::Printf(TEXT("%s %s   %s   (up to %s)"), IsAutoBandActive() ? TEXT("AUTO") : TEXT("MANUAL"),
 		*Band.Name, *APSShipFlightModelLocal::FormatSpeed(Ship ? Ship->KinematicVelocity.Size() : 0.0),
 		*APSShipFlightModelLocal::FormatSpeed(CurrentSpeedLimitCm));
+	if (const AActor* Target = AutopilotTarget.Get())
+	{
+		Line = FString::Printf(TEXT("AUTOPILOT > %s   %s left   |   %s"), *APSShipFlightModelLocal::BodyName(Target),
+			*UShipNavigationComponent::FormatDistance(FMath::Max(AutopilotRemainingCm, 0.0)), *Line);
+	}
 	if (BoostAlpha > 0.05)
 	{
 		Line += FString::Printf(TEXT("   BOOST x%.1f"), BandBoost(FlightBand, BoostAlpha));
@@ -1432,6 +2004,7 @@ FString UAPSShipFlightModel::GetStatusText() const
 	{
 		Line += TEXT("   ENGINE OFF (G)");
 	}
+	Line += Notice;
 	const FString Nearest = NearestSurfaceDistanceCm >= 0.0
 		? FString::Printf(TEXT("%s %s"), NearestBodyName.IsEmpty() ? TEXT("SURFACE") : *NearestBodyName,
 			*UShipNavigationComponent::FormatDistance(NearestSurfaceDistanceCm))
@@ -1442,12 +2015,1258 @@ FString UAPSShipFlightModel::GetStatusText() const
 
 FString UAPSShipFlightModel::GetHintText() const
 {
+	if (const ASpaceship* Owner = GetShip(); Owner && Owner->IsGroundVehicle())
+	{
+		return GetVehicleHintText();
+	}
 	if (!IsBandFlightActive())
 	{
 		return FString();
 	}
+	if (bStarDrive)
+	{
+		return FString(TEXT("W FASTER   S SLOWER   SHIFT QUICKER   CTRL BRAKE OUT   |   J DRIVE OFF   |   MOUSE STEERS LIKE A YOKE"));
+	}
 	// One line: flying needs W/S, Shift and Ctrl; the band keys are an override, 0 hands the choice back.
+	FString Drive = IsBandAvailable(EAPSFlightBand::Stellar) ? TEXT("   J STAR DRIVE") : TEXT("");
+	// C14: B where the orbital build mode can start (or why it just could not).
+	const ASpaceship* HintShip = GetShip();
+	if (const UAPSShipBuildComponent* Build = HintShip ? HintShip->FindComponentByClass<UAPSShipBuildComponent>() : nullptr)
+	{
+		if (const FString BuildHint = Build->GetHintText(); !BuildHint.IsEmpty())
+		{
+			Drive += TEXT("   ") + BuildHint;
+		}
+	}
 	return IsAutoBandActive()
-		? FString(TEXT("W/S THRUST   SHIFT BOOST   CTRL BRAKE   |   1-5 MANUAL MODE   |   G ENGINE   F EXIT   |   N M T V NAV"))
-		: FString(TEXT("W/S THRUST   SHIFT BOOST   CTRL BRAKE   |   0 AUTO   1-5 MODE   |   G ENGINE   F EXIT   |   N M T V NAV"));
+		? FString::Printf(TEXT("W/S THRUST   SHIFT BOOST   CTRL BRAKE   |   1-5 MANUAL MODE   |   Z AUTOPILOT%s   G ENGINE   F EXIT   |   N M T V NAV"), *Drive)
+		: FString::Printf(TEXT("W/S THRUST   SHIFT BOOST   CTRL BRAKE   |   0 AUTO   1-5 MODE   |   Z AUTOPILOT%s   G ENGINE   F EXIT   |   N M T V NAV"), *Drive);
+}
+
+namespace APSShipFlightModelLocal
+{
+	// Until a key is bound everywhere: toggles the star drive of the piloted ship.
+	FAutoConsoleCommandWithWorld CmdStarDrive(
+		TEXT("aps.Ship.StarDrive"),
+		TEXT("Toggles the star drive of the piloted ship (key J): spool, cruise, W/S faster/slower."),
+		FConsoleCommandWithWorldDelegate::CreateLambda([](UWorld* World)
+		{
+			if (!World)
+			{
+				return;
+			}
+			for (FConstPlayerControllerIterator It = World->GetPlayerControllerIterator(); It; ++It)
+			{
+				const APawn* Pawn = It->IsValid() ? (*It)->GetPawn() : nullptr;
+				if (UAPSShipFlightModel* Model = Pawn ? Pawn->FindComponentByClass<UAPSShipFlightModel>() : nullptr)
+				{
+					Model->ToggleStarDrive();
+					return;
+				}
+			}
+			UE_LOG(LogTemp, Log, TEXT("[APS.Drive] aps.Ship.StarDrive: no piloted ship"));
+		}));
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Ground vehicles (Rio 02.10: "a system of ground transport: a wheeled one, a hover one, and one that flies like a drone
+// or a small helicopter, but only up to the top of the atmosphere, or a little into space"; it should look good and be
+// pleasant to drive). ApplyTranslation hands a vehicle to ApplyVehicleTranslation: it drives in the local gravity frame,
+// never the bands, sweeps against the world and turns the hull itself (ASpaceship's rotation input stays out). All
+// kinematic, like every ship here: Chaos vehicles assume world -Z gravity, and these planets are full-scale spheres.
+
+namespace APSShipFlightModelVehicle
+{
+	TAutoConsoleVariable<float> CVarMouseSteer(
+		TEXT("aps.Vehicle.MouseSteer"), 1.0f,
+		TEXT("Ground vehicles: how strongly the mouse steers the rover and the hover and turns the drone (A/D steer fully at any value)."));
+	TAutoConsoleVariable<float> CVarSpeedScale(
+		TEXT("aps.Vehicle.SpeedScale"), 1.0f,
+		TEXT("Ground vehicles: multiplies every top speed and thrust (tuning without a rebuild)."));
+	TAutoConsoleVariable<int32> CVarVehicleLog(
+		TEXT("aps.Vehicle.Log"), 0,
+		TEXT("1 logs the driven vehicle's speed, ground height and source, slope, altitude and steering every second."));
+
+	/** A long frame is split into steps of at most this, MaxSteps of them; a longer hitch slows the vehicle's time. */
+	constexpr double MaxStepSeconds = 0.025;
+	constexpr int32 MaxSteps = 6;
+	constexpr double MaxFrameSeconds = 0.15;
+	/** Probes start this far above a tyre centre or a hull corner, along the gravity up. */
+	constexpr double ProbeAboveCm = 150.0;
+	/** Rover: within this of the ground (plus what the step closes) the tyres hold it; farther up, it is airborne. */
+	constexpr double RoverSnapCm = 35.0;
+	/** Rover: ground steeper than about 60 degrees does not carry the tyres. */
+	constexpr double RoverMinGroundCosine = 0.5;
+	/** Hover: its ride height over the ground or a liquid while it runs. Parked hovers and drones rest this high. */
+	constexpr double HoverRideCm = 175.0;
+	constexpr double RestHeightCm = 3.0;
+	/** Drone: its speed limits grow with the height over the ground beyond this, so its ceiling is minutes away. */
+	constexpr double DroneReferenceHeightCm = 150000.0;
+	/** Drone: the ceiling over an airless world's sea level; a world with air: its atmosphere's top plus 10%. */
+	constexpr double AirlessCeilingCm = 400000.0;
+	constexpr double CeilingMargin = 1.1;
+	/** WorldScape heights are sampled at most this often and this far apart; between samples the last one stands. */
+	constexpr double NoiseSampleSeconds = 0.1;
+	constexpr double NoiseSampleDistanceCm = 1000.0;
+
+	/** How a rover or a hover drives, cm and seconds. */
+	struct FDriveTuning
+	{
+		double TopSpeed;
+		double BoostTopSpeed;
+		double Thrust;
+		double BoostThrust;
+		double Brake;
+		double ReverseSpeed;
+		/** Rolling (or air) resistance without throttle: a constant plus a share of the speed, per second. */
+		double CoastDecel;
+		double CoastDrag;
+		/** How fast sideways slip is taken out (1/s), and the most sideways force the tyres or the field give. */
+		double Grip;
+		double MaxLateralAccel;
+		/** Turn rate (deg/s): its limit, what is left at a standstill and how fast it builds (deg/s^2); tightest turn (cm). */
+		double MaxYawRate;
+		double StandstillYawRate;
+		double YawAccel;
+		double MinTurnRadius;
+	};
+	// Rio 02.10: 25-35 m/s with weight (90% of the top speed in about five seconds, a turn builds up and settles); the
+	// hover is twice as fast and floats: a long coast and little grip, so it drifts through a turn.
+	constexpr FDriveTuning RoverTuning{2700.0, 3500.0, 850.0, 1100.0, 1500.0, 900.0, 60.0, 0.035, 9.0, 1300.0, 75.0,
+		22.0, 260.0, 550.0};
+	constexpr FDriveTuning HoverTuning{5500.0, 7000.0, 1300.0, 1700.0, 1800.0, 1200.0, 25.0, 0.012, 1.7, 1500.0, 90.0,
+		55.0, 300.0, 300.0};
+	/** Drone: speed along the nose and up or down near the ground (80 and 25 m/s), and how fast it gets there. */
+	constexpr double DroneSpeed = 8000.0;
+	constexpr double DroneClimbSpeed = 2500.0;
+	constexpr double DroneThrust = 1800.0;
+	constexpr double DroneBoost = 1.8;
+	constexpr double DroneMaxYawRate = 120.0;
+	/** Drone: degrees of yaw and look pitch per unit of mouse input (the ThrustYaw and ThrustPitch axes). */
+	constexpr double DroneMouseDegrees = 1.6;
+
+	FVector OnPlane(const FVector& Vector, const FVector& Normal)
+	{
+		return Vector - Normal * FVector::DotProduct(Vector, Normal);
+	}
+
+	/** Moves a speed toward zero by Amount, never through it. */
+	double TowardZero(const double Speed, const double Amount)
+	{
+		return Speed > 0.0 ? FMath::Max(Speed - Amount, 0.0) : FMath::Min(Speed + Amount, 0.0);
+	}
+
+	/** The world a vehicle drives on: the planet or moon pulling it, else the world it belongs to. */
+	const APlanetaryBody* GroundBody(const ASpaceship& Ship)
+	{
+		const APlanetaryBody* Body = Cast<APlanetaryBody>(Ship.ActiveGravitySource.Get());
+		return Body ? Body : Cast<APlanetaryBody>(Ship.GetGroundVehicleHomeBody());
+	}
+
+	/** A body's current WorldScape surface: its root and centre, and the liquid's radius on a sea world (else -1). */
+	AWorldScapeRoot* SurfaceRoot(const APlanetaryBody* Body, FVector& OutCenter, double& OutLiquidRadiusCm)
+	{
+		APlanetarySurfaceGenerator* Surface = Body ? Body->PlanetaryEnvironmentGenerator : nullptr;
+		AWorldScapeRoot* Root = IsValid(Surface) ? Surface->WorldScapeRootInstance : nullptr;
+		if (!IsValid(Root) || !IsValid(Root->WorldScapeNoise) || Root->PlanetScale <= 0.0
+			|| !Surface->IsSurfaceProfileCurrent(Body))
+		{
+			return nullptr;
+		}
+		OutCenter = Root->GetActorLocation();
+		OutLiquidRadiusCm = Surface->ResolvedSurfaceProfile.LiquidType != EAPSPlanetLiquidType::None
+			? Root->PlanetScale + static_cast<double>(Surface->ResolvedSurfaceProfile.OceanLevel) * Root->NoiseIntensity
+			: -1.0;
+		return Root;
+	}
+
+	/** The terrain's radius under a point from the WorldScape height (the canonical surface); -1 when unknown. */
+	double TerrainRadius(AWorldScapeRoot* Root, const FVector& Center, const FVector& Location)
+	{
+		const FVector Direction = (Location - Center).GetSafeNormal();
+		if (!Root || Direction.IsNearlyZero())
+		{
+			return -1.0;
+		}
+		const double Radius = Root->PlanetScale + Root->GetGroundHeight(Center + Direction * Root->PlanetScale, false);
+		return FMath::IsFinite(Radius) ? Radius : -1.0;
+	}
+}
+
+FVector UAPSShipFlightModel::VehicleDown() const
+{
+	const ASpaceship* Ship = GetShip();
+	if (!Ship)
+	{
+		return FVector::DownVector;
+	}
+	// Toward the centre of the world under the vehicle: a parked ship's artificial gravity nearby does not count here.
+	if (const APlanetaryBody* Body = APSShipFlightModelVehicle::GroundBody(*Ship))
+	{
+		const FVector Down = (Body->GetActorLocation() - Ship->GetActorLocation()).GetSafeNormal();
+		if (!Down.IsNearlyZero())
+		{
+			return Down;
+		}
+	}
+	return Ship->ActiveGravityDirection.IsNearlyZero() ? -Ship->GetActorUpVector() : Ship->ActiveGravityDirection.GetSafeNormal();
+}
+
+double UAPSShipFlightModel::VehicleGravity() const
+{
+	const ASpaceship* Ship = GetShip();
+	return Ship && Ship->ActiveGravityAcceleration > 50.0 ? Ship->ActiveGravityAcceleration : 980.0;
+}
+
+void UAPSShipFlightModel::VehicleNotice(const TCHAR* Text)
+{
+	StarDriveNotice = Text;
+	StarDriveNoticeUntil = FPlatformTime::Seconds() + 3.0;
+}
+
+void UAPSShipFlightModel::ResetVehicleState()
+{
+	using namespace APSShipFlightModelVehicle;
+	const double LastLog = Vehicle.LastLogSeconds;
+	Vehicle = FVehicleState();
+	Vehicle.LastLogSeconds = LastLog;
+	const ASpaceship* Ship = GetShip();
+	if (!Ship)
+	{
+		return;
+	}
+	const FVector Up = -VehicleDown();
+	FVector Heading = OnPlane(Ship->GetShipForwardVector(), Up).GetSafeNormal();
+	if (Heading.IsNearlyZero())
+	{
+		// The nose straight up or down: the hull's underside gives the heading.
+		Heading = OnPlane(-Ship->GetShipUpVector(), Up).GetSafeNormal();
+	}
+	if (Heading.IsNearlyZero())
+	{
+		Heading = OnPlane(FVector::ForwardVector, Up).GetSafeNormal();
+		if (Heading.IsNearlyZero())
+		{
+			Heading = OnPlane(FVector::RightVector, Up).GetSafeNormal();
+		}
+	}
+	Vehicle.Heading = Heading;
+	Vehicle.BodyUp = Ship->GetShipUpVector();
+	Vehicle.GroundNormal = Up;
+	Vehicle.LastVelocity = Ship->KinematicVelocity;
+	Vehicle.bInitialized = true;
+}
+
+UAPSShipFlightModel::FVehicleControls UAPSShipFlightModel::ReadVehicleControls(const float DeltaTime) const
+{
+	FVehicleControls Controls;
+	const ASpaceship* Ship = GetShip();
+	// Nobody at the controls, or the engine off (G): nothing drives it; it comes to rest by itself.
+	if (!Ship || !Ship->bEngineRunning || !IsValid(Ship->Pilot))
+	{
+		return Controls;
+	}
+	Controls.bPowered = true;
+	Controls.Throttle = FMath::Clamp(static_cast<double>(Ship->ForwardInput), -1.0, 1.0);
+	Controls.Strafe = FMath::Clamp(static_cast<double>(Ship->SideInput), -1.0, 1.0);
+	// Space up, Alt down (the vertical thrust keys); for the drone Ctrl also takes it down.
+	Controls.Vertical = FMath::Clamp(static_cast<double>(Ship->VerticalInput) - (Ship->bIsDecelerating ? 1.0 : 0.0), -1.0, 1.0);
+	Controls.MouseYaw = Ship->YawInput;
+	Controls.MousePitch = Ship->PitchInput;
+	// Mouse steering reads the mouse's speed, not its per-frame step, so it feels the same at any frame rate: 80 units of
+	// the yaw axis a second turn the wheel fully at aps.Vehicle.MouseSteer 1. A/D add to it.
+	const double MouseScale = FMath::Max(APSShipFlightModelVehicle::CVarMouseSteer.GetValueOnGameThread(), 0.0f);
+	const double MouseSteer = DeltaTime > 0.0f ? Ship->YawInput / DeltaTime / 80.0 * MouseScale : 0.0;
+	Controls.Steer = FMath::Clamp(static_cast<double>(Ship->SideInput) + MouseSteer, -1.0, 1.0);
+	Controls.bBoost = Ship->bIsAccelerating;
+	Controls.bBrake = Ship->bIsDecelerating;
+	return Controls;
+}
+
+bool UAPSShipFlightModel::ProbeVehicleGround(const FVector& Up, const double AboveCm, const double BelowCm,
+	FVehicleGround& OutGround, const bool bTrace)
+{
+	using namespace APSShipFlightModelVehicle;
+	OutGround = FVehicleGround();
+	ASpaceship* Ship = GetShip();
+	UWorld* World = GetWorld();
+	if (!Ship || !World || !Ship->SpaceshipHull)
+	{
+		return false;
+	}
+	// Probe points, front-left, front-right, back-left, back-right: a rover's tyre centres (each contact lies a radius
+	// below its centre), else the corners of the hull's underside.
+	const FTransform HullTransform = Ship->SpaceshipHull->GetComponentTransform();
+	FVector Points[4];
+	double Reach[4];
+	const TArray<ASpaceship::FGroundVehicleWheel>& Wheels = Ship->GetGroundVehicleWheels();
+	if (Wheels.Num() == 4)
+	{
+		for (int32 Index = 0; Index < 4; ++Index)
+		{
+			Points[Index] = HullTransform.TransformPosition(Wheels[Index].LocalCenter);
+			Reach[Index] = Wheels[Index].LocalRadius * HullTransform.GetScale3D().GetAbsMax() + BelowCm;
+		}
+	}
+	else
+	{
+		FVector LocalMin;
+		FVector LocalMax;
+		if (!Ship->GetPrimaryHullLocalBounds(Ship->SpaceshipHull, LocalMin, LocalMax))
+		{
+			return false;
+		}
+		const FVector Center = (LocalMin + LocalMax) * 0.5;
+		const FVector Extent = (LocalMax - LocalMin) * 0.5;
+		const FVector Forward = Ship->FlightForwardLocalAxis;
+		const FVector Right = FVector::CrossProduct(Ship->FlightUpLocalAxis, Forward).GetSafeNormal();
+		const double HalfLength = FVector::DotProduct(Extent, Forward.GetAbs()) * 0.42;
+		const double HalfWidth = FVector::DotProduct(Extent, Right.GetAbs()) * 0.38;
+		const double Signs[4][2] = {{1.0, -1.0}, {1.0, 1.0}, {-1.0, -1.0}, {-1.0, 1.0}};
+		for (int32 Index = 0; Index < 4; ++Index)
+		{
+			FVector Local = Center + Forward * (Signs[Index][0] * HalfLength) + Right * (Signs[Index][1] * HalfWidth);
+			Local.Z = LocalMin.Z;
+			Points[Index] = HullTransform.TransformPosition(Local);
+			Reach[Index] = BelowCm;
+		}
+	}
+
+	// The world-static channel: terrain, structures and hulls answer it; interaction boxes and gravity spheres do not.
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(APSVehicleGround), false, Ship);
+	if (IsValid(Ship->Pilot))
+	{
+		Params.AddIgnoredActor(Ship->Pilot);
+	}
+	FVector PointSum = FVector::ZeroVector;
+	FVector NormalSum = FVector::ZeroVector;
+	for (int32 Index = 0; Index < 4; ++Index)
+	{
+		FHitResult Hit;
+		OutGround.Contact[Index] = Points[Index] - Up * Reach[Index];
+		if (bTrace && World->LineTraceSingleByChannel(Hit, Points[Index] + Up * AboveCm, OutGround.Contact[Index],
+			ECC_WorldStatic, Params))
+		{
+			OutGround.bHit[Index] = true;
+			OutGround.Contact[Index] = Hit.ImpactPoint;
+			PointSum += Hit.ImpactPoint;
+			NormalSum += Hit.ImpactNormal;
+			++OutGround.Hits;
+		}
+	}
+	const FVector Location = Ship->GetActorLocation();
+	if (OutGround.Hits > 0)
+	{
+		FVector Normal = FVector::ZeroVector;
+		if (OutGround.Hits == 4)
+		{
+			// The plane of the four contacts (across its diagonals): the ground under the tyres, not one terrain facet.
+			Normal = FVector::CrossProduct(OutGround.Contact[1] - OutGround.Contact[2],
+				OutGround.Contact[0] - OutGround.Contact[3]);
+		}
+		else if (OutGround.Hits == 3)
+		{
+			FVector Three[3];
+			int32 Count = 0;
+			for (int32 Index = 0; Index < 4; ++Index)
+			{
+				if (OutGround.bHit[Index])
+				{
+					Three[Count++] = OutGround.Contact[Index];
+				}
+			}
+			Normal = FVector::CrossProduct(Three[1] - Three[0], Three[2] - Three[0]);
+		}
+		Normal = Normal.GetSafeNormal();
+		if (FVector::DotProduct(Normal, Up) < 0.0)
+		{
+			Normal = -Normal;
+		}
+		if (Normal.IsNearlyZero())
+		{
+			// One or two contacts: their own normals, half way to the gravity up.
+			Normal = (NormalSum.GetSafeNormal() + Up).GetSafeNormal();
+		}
+		OutGround.Normal = Normal.IsNearlyZero() ? Up : Normal;
+		OutGround.Point = PointSum / OutGround.Hits;
+		const double NormalUp = FVector::DotProduct(OutGround.Normal, Up);
+		// The origin's height over that plane, measured along the gravity up.
+		OutGround.Height = NormalUp > 0.05
+			? FVector::DotProduct(Location - OutGround.Point, OutGround.Normal) / NormalUp
+			: FVector::DotProduct(Location - OutGround.Point, Up);
+		OutGround.bValid = true;
+		OutGround.bCollision = true;
+	}
+
+	FVector Center = FVector::ZeroVector;
+	double LiquidRadius = -1.0;
+	if (AWorldScapeRoot* Root = SurfaceRoot(GroundBody(*Ship), Center, LiquidRadius))
+	{
+		const double Radial = FVector::Distance(Location, Center);
+		if (LiquidRadius > 0.0)
+		{
+			OutGround.LiquidHeight = Radial - LiquidRadius;
+		}
+		if (!OutGround.bValid)
+		{
+			// No collision here (far from the player, or faster than WorldScape builds it): the canonical height.
+			const double Now = World->GetTimeSeconds();
+			if (Vehicle.NoiseGroundRadiusCm < 0.0 || Now - Vehicle.NoiseSampleSeconds > NoiseSampleSeconds
+				|| FVector::DistSquared(Location, Vehicle.NoiseSampleLocation) > FMath::Square(NoiseSampleDistanceCm))
+			{
+				Vehicle.NoiseGroundRadiusCm = TerrainRadius(Root, Center, Location);
+				Vehicle.NoiseSampleSeconds = Now;
+				Vehicle.NoiseSampleLocation = Location;
+			}
+			if (Vehicle.NoiseGroundRadiusCm > 0.0)
+			{
+				OutGround.Height = Radial - Vehicle.NoiseGroundRadiusCm;
+				OutGround.Normal = Up;
+				OutGround.Point = Location - Up * OutGround.Height;
+				OutGround.bValid = true;
+			}
+		}
+	}
+	return OutGround.bValid;
+}
+
+void UAPSShipFlightModel::StepRover(const FVehicleControls& Controls, const FVector& Up, const double Gravity,
+	const double DeltaTime)
+{
+	using namespace APSShipFlightModelVehicle;
+	ASpaceship* Ship = GetShip();
+	const FDriveTuning& Tuning = RoverTuning;
+	const double SpeedScale = FMath::Max(CVarSpeedScale.GetValueOnGameThread(), 0.05f);
+	FVector Velocity = Ship->KinematicVelocity;
+	// The steering wheel follows the controls with a short lag; the turn below follows the wheel with the rover's weight.
+	Vehicle.Steer += (Controls.Steer - Vehicle.Steer) * (1.0 - FMath::Exp(-DeltaTime / 0.09));
+	const bool bHandbrake = !Controls.bPowered || Controls.bBrake;
+
+	FVehicleGround Ground;
+	ProbeVehicleGround(Up, ProbeAboveCm, 400.0, Ground);
+	const double NormalUp = FVector::DotProduct(Ground.Normal, Up);
+	const double Leaving = FVector::DotProduct(Velocity, Ground.Normal);
+	const bool bOnGround = Ground.bValid && NormalUp >= RoverMinGroundCosine && Leaving < 400.0
+		&& Ground.Height <= RoverSnapCm + FMath::Max(-Leaving, 0.0) * DeltaTime;
+	Vehicle.bCollisionGround = Ground.bCollision;
+	Vehicle.GroundHeightCm = Ground.bValid ? Ground.Height : -1.0;
+	Vehicle.SlopeDegrees = Ground.bValid ? FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(NormalUp, -1.0, 1.0))) : 0.0;
+	Vehicle.bOnLiquid = Ground.LiquidHeight < 0.0;
+	Vehicle.GroundNormal = bOnGround ? Ground.Normal : Up;
+	Vehicle.bGrounded = bOnGround;
+
+	// Suspension: each tyre reaches for the ground under it, whatever the plane the body rests on.
+	const TArray<ASpaceship::FGroundVehicleWheel>& Wheels = Ship->GetGroundVehicleWheels();
+	if (Wheels.Num() == 4)
+	{
+		const FTransform HullTransform = Ship->SpaceshipHull->GetComponentTransform();
+		const FVector HullUp = HullTransform.TransformVectorNoScale(FVector::UpVector);
+		const double Scale = HullTransform.GetScale3D().GetAbsMax();
+		for (int32 Index = 0; Index < 4; ++Index)
+		{
+			const FVector Bottom = HullTransform.TransformPosition(Wheels[Index].LocalCenter)
+				- HullUp * (Wheels[Index].LocalRadius * Scale);
+			const double Drop = Ground.bHit[Index] && bOnGround
+				? FMath::Clamp(FVector::DotProduct(Bottom - Ground.Contact[Index], HullUp), -15.0, 18.0) : 18.0;
+			Vehicle.WheelDrop[Index] += (Drop - Vehicle.WheelDrop[Index]) * (1.0 - FMath::Exp(-25.0 * DeltaTime));
+		}
+	}
+
+	FVector Snap = FVector::ZeroVector;
+	if (bOnGround)
+	{
+		const FVector Normal = Ground.Normal;
+		// On the ground: held on the plane of its tyres' contacts and moving along it. Down onto it with a short
+		// suspension lag (no jitter over the terrain's facets), up out of it at once (never sinking in).
+		Snap = -Up * (Ground.Height < 0.0 ? Ground.Height : Ground.Height * (1.0 - FMath::Exp(-30.0 * DeltaTime)));
+		Velocity = OnPlane(Velocity, Normal);
+		const FVector Forward = OnPlane(Vehicle.Heading, Normal).GetSafeNormal();
+		const FVector Right = FVector::CrossProduct(Normal, Forward).GetSafeNormal();
+		double Along = FVector::DotProduct(Velocity, Forward);
+		double Across = FVector::DotProduct(Velocity, Right);
+		const double Top = (Controls.bBoost ? Tuning.BoostTopSpeed : Tuning.TopSpeed) * SpeedScale;
+		const double Thrust = (Controls.bBoost ? Tuning.BoostThrust : Tuning.Thrust) * SpeedScale;
+		const double Throttle = Controls.Throttle;
+		if (Throttle > 0.05)
+		{
+			// W: brakes a backward roll first, then pulls toward the top speed, with less thrust near it.
+			Along = Along < -100.0 ? FMath::Min(Along + Tuning.Brake * DeltaTime, 0.0)
+				: APSFlightBandModel::TaperedSpeedStep(Along, Top * Throttle, Thrust, DeltaTime);
+		}
+		else if (Throttle < -0.05)
+		{
+			// S: brakes, and from a stop reverses gently.
+			const double Reverse = Tuning.ReverseSpeed * SpeedScale * -Throttle;
+			if (Along > 100.0)
+			{
+				Along = FMath::Max(Along - Tuning.Brake * -Throttle * DeltaTime, 0.0);
+			}
+			else if (Along > -Reverse)
+			{
+				Along = FMath::Max(Along - Thrust * 0.6 * -Throttle * DeltaTime, -Reverse);
+			}
+		}
+		else
+		{
+			Along = TowardZero(Along, (Tuning.CoastDecel + Tuning.CoastDrag * FMath::Abs(Along)) * DeltaTime);
+		}
+		if (Along > Top)
+		{
+			// Past the top speed (boost let go, downhill): the extra fades, like engine braking.
+			Along = FMath::Max(Top, Along - 250.0 * DeltaTime);
+		}
+		if (bHandbrake)
+		{
+			Along = TowardZero(Along, Tuning.Brake * 0.8 * DeltaTime);
+		}
+		// The slope pulls along the ground; stopped without throttle, the brakes hold it on anything but steep ground.
+		const FVector SlopePull = OnPlane(-Up * Gravity, Normal);
+		if (FMath::Abs(Throttle) < 0.05 && FMath::Abs(Along) < 80.0 && Vehicle.SlopeDegrees < 32.0)
+		{
+			Along = TowardZero(Along, 400.0 * DeltaTime);
+		}
+		else
+		{
+			Along += FVector::DotProduct(SlopePull, Forward) * DeltaTime;
+			Across += FVector::DotProduct(SlopePull, Right) * DeltaTime;
+		}
+		if (Along > Top * 1.03)
+		{
+			// Downhill on a heavy world (02.10 test: 40 m/s against "up to 27" at 3 g): past the top speed the drive
+			// holds it with up to its brakes, as a hill descent control would.
+			Along = FMath::Max(Top * 1.03, Along - Tuning.Brake * DeltaTime);
+		}
+		// The tyres take the sideways slip out, up to their grip; the handbrake lets the rover slide.
+		const double Grip = bHandbrake && Controls.bPowered ? 1.6 : Tuning.Grip;
+		const double Slip = Across * FMath::Exp(-Grip * DeltaTime) - Across;
+		Across += FMath::Clamp(Slip, -Tuning.MaxLateralAccel * DeltaTime, Tuning.MaxLateralAccel * DeltaTime);
+		Velocity = Forward * Along + Right * Across;
+
+		// Turning: the rate follows the wheel with the rover's weight. The tightest turn and the tyres' grip limit it;
+		// at a standstill it still creeps round (all-wheel steering). Reversing turns the other way, like a car.
+		const double Speed = FMath::Abs(Along);
+		double MaxRate = FMath::Min(Tuning.MaxYawRate, FMath::RadiansToDegrees(Speed / Tuning.MinTurnRadius));
+		MaxRate = FMath::Min(MaxRate, FMath::RadiansToDegrees(Tuning.MaxLateralAccel * 1.1 / FMath::Max(Speed, 1.0)));
+		MaxRate = FMath::Max(MaxRate, Tuning.StandstillYawRate * (1.0 - FMath::Clamp(Speed / 400.0, 0.0, 1.0)));
+		const double TargetRate = Vehicle.Steer * MaxRate * (Along < -50.0 ? -1.0 : 1.0);
+		Vehicle.YawRate = FMath::FInterpConstantTo(Vehicle.YawRate, TargetRate, DeltaTime,
+			FMath::Abs(TargetRate) > FMath::Abs(Vehicle.YawRate) ? Tuning.YawAccel : Tuning.YawAccel * 1.8);
+		Vehicle.Heading = FQuat(Normal, FMath::DegreesToRadians(Vehicle.YawRate * DeltaTime)).RotateVector(Vehicle.Heading);
+	}
+	else
+	{
+		// In the air (off a crest at speed, down a drop): gravity pulls and the tyres have nothing to steer with.
+		Velocity -= Up * Gravity * DeltaTime;
+		Vehicle.YawRate *= FMath::Exp(-2.0 * DeltaTime);
+		Vehicle.Heading = FQuat(Up, FMath::DegreesToRadians(Vehicle.YawRate * DeltaTime)).RotateVector(Vehicle.Heading);
+		if (Ground.bValid && Ground.Height < 0.0)
+		{
+			// Under the ground with nothing to stand on (terrain steeper than its tyres take): back out on top of it.
+			Snap = -Up * Ground.Height;
+			Velocity -= Up * FMath::Min(FVector::DotProduct(Velocity, Up), 0.0);
+		}
+	}
+	if (!Snap.IsNearlyZero())
+	{
+		// The tyres follow the ground at once; no sweep for this, the plane is the terrain the body rides over.
+		Ship->AddActorWorldOffset(Snap, false, nullptr, ETeleportType::None);
+	}
+	MoveVehicle(Velocity, Velocity * DeltaTime, Up);
+	Ship->KinematicVelocity = Velocity;
+}
+
+void UAPSShipFlightModel::StepHover(const FVehicleControls& Controls, const FVector& Up, const double Gravity,
+	const double DeltaTime)
+{
+	using namespace APSShipFlightModelVehicle;
+	ASpaceship* Ship = GetShip();
+	const FDriveTuning& Tuning = HoverTuning;
+	const double SpeedScale = FMath::Max(CVarSpeedScale.GetValueOnGameThread(), 0.05f);
+	FVector Velocity = Ship->KinematicVelocity;
+	Vehicle.Steer += (Controls.Steer - Vehicle.Steer) * (1.0 - FMath::Exp(-DeltaTime / 0.12));
+
+	FVehicleGround Ground;
+	ProbeVehicleGround(Up, ProbeAboveCm, HoverRideCm + 600.0, Ground);
+	// It floats over whichever is higher under it: the ground or a sea (of water, lava, ...).
+	bool bSupport = Ground.bValid;
+	double Support = Ground.bValid ? Ground.Height : 0.0;
+	Vehicle.bOnLiquid = false;
+	if (Ground.LiquidHeight < TNumericLimits<double>::Max() && (!bSupport || Ground.LiquidHeight < Support))
+	{
+		Support = Ground.LiquidHeight;
+		bSupport = true;
+		Vehicle.bOnLiquid = true;
+	}
+	const double NormalUp = FVector::DotProduct(Ground.Normal, Up);
+	Vehicle.bCollisionGround = Ground.bCollision;
+	Vehicle.GroundHeightCm = bSupport ? Support : -1.0;
+	Vehicle.SlopeDegrees = Ground.bValid && !Vehicle.bOnLiquid
+		? FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(NormalUp, -1.0, 1.0))) : 0.0;
+	Vehicle.GroundNormal = Ground.bValid && !Vehicle.bOnLiquid ? Ground.Normal : Up;
+
+	// Height: a damped spring to the ride height while it runs, with a slow bob; parked, it settles onto its underside.
+	Vehicle.BobSeconds += DeltaTime;
+	const double Ride = Controls.bPowered ? HoverRideCm + 4.0 * FMath::Sin(Vehicle.BobSeconds * 2.6) : RestHeightCm;
+	double Vertical = FVector::DotProduct(Velocity, Up);
+	FVector Snap = FVector::ZeroVector;
+	if (bSupport)
+	{
+		constexpr double Omega = 5.5;
+		constexpr double Damping = 0.8;
+		const double Spring = FMath::Clamp(Omega * Omega * (Ride - Support) - 2.0 * Damping * Omega * Vertical,
+			-1500.0, 2500.0);
+		// High over the ground (off a cliff) the field lets go: it sinks at about half the gravity.
+		const double Release = FMath::Clamp((Support - Ride - 200.0) / 600.0, 0.0, 1.0);
+		Vertical += FMath::Lerp(Spring, -0.55 * Gravity, Release) * DeltaTime;
+		if (Support < 0.0)
+		{
+			// Never under the ground or the sea.
+			Snap = -Up * Support;
+			Vertical = FMath::Max(Vertical, 0.0);
+		}
+	}
+	else
+	{
+		Vertical -= 0.55 * Gravity * DeltaTime;
+	}
+	Vehicle.bGrounded = bSupport && Support <= Ride + 25.0;
+
+	const FVector Forward = OnPlane(Vehicle.Heading, Up).GetSafeNormal();
+	const FVector Right = FVector::CrossProduct(Up, Forward).GetSafeNormal();
+	double Along = FVector::DotProduct(Velocity, Forward);
+	double Across = FVector::DotProduct(Velocity, Right);
+	const double Top = (Controls.bBoost ? Tuning.BoostTopSpeed : Tuning.TopSpeed) * SpeedScale;
+	const double Thrust = (Controls.bBoost ? Tuning.BoostThrust : Tuning.Thrust) * SpeedScale;
+	const double Throttle = Controls.Throttle;
+	if (Throttle > 0.05)
+	{
+		Along = Along < -100.0 ? FMath::Min(Along + Tuning.Brake * DeltaTime, 0.0)
+			: APSFlightBandModel::TaperedSpeedStep(Along, Top * Throttle, Thrust, DeltaTime);
+	}
+	else if (Throttle < -0.05)
+	{
+		const double Reverse = Tuning.ReverseSpeed * SpeedScale * -Throttle;
+		if (Along > 100.0)
+		{
+			Along = FMath::Max(Along - Tuning.Brake * -Throttle * DeltaTime, 0.0);
+		}
+		else if (Along > -Reverse)
+		{
+			Along = FMath::Max(Along - Thrust * 0.6 * -Throttle * DeltaTime, -Reverse);
+		}
+	}
+	else
+	{
+		// It glides: a long coast without throttle.
+		Along = TowardZero(Along, (Tuning.CoastDecel + Tuning.CoastDrag * FMath::Abs(Along)) * DeltaTime);
+	}
+	if (Along > Top)
+	{
+		Along = FMath::Max(Top, Along - 300.0 * DeltaTime);
+	}
+	const bool bAirBrake = Controls.bBrake || !Controls.bPowered;
+	if (bAirBrake)
+	{
+		Along = TowardZero(Along, Tuning.Brake * DeltaTime);
+	}
+	if (Vehicle.bGrounded && Ground.bValid && !Vehicle.bOnLiquid)
+	{
+		// A slope under it pushes it gently downhill.
+		const FVector SlopePush = OnPlane(OnPlane(-Up * Gravity, Ground.Normal), Up) * 0.25;
+		Along += FVector::DotProduct(SlopePush, Forward) * DeltaTime;
+		Across += FVector::DotProduct(SlopePush, Right) * DeltaTime;
+	}
+	// Little grip: the sideways drift dies away slowly, so it slides through a turn (the air brake catches it).
+	const double Grip = bAirBrake ? 6.0 : Tuning.Grip;
+	const double Slip = Across * FMath::Exp(-Grip * DeltaTime) - Across;
+	Across += FMath::Clamp(Slip, -Tuning.MaxLateralAccel * DeltaTime, Tuning.MaxLateralAccel * DeltaTime);
+	Velocity = Forward * Along + Right * Across + Up * Vertical;
+
+	// Turning like the rover, but it also turns on the spot (and the same way when reversing: it spins, it does not steer).
+	const double Speed = FMath::Abs(Along);
+	double MaxRate = FMath::Min(Tuning.MaxYawRate, FMath::RadiansToDegrees(Tuning.MaxLateralAccel * 1.2 / FMath::Max(Speed, 1.0)));
+	MaxRate = FMath::Max(MaxRate, Tuning.StandstillYawRate);
+	const double TargetRate = Controls.bPowered ? Vehicle.Steer * MaxRate : 0.0;
+	Vehicle.YawRate = FMath::FInterpConstantTo(Vehicle.YawRate, TargetRate, DeltaTime,
+		FMath::Abs(TargetRate) > FMath::Abs(Vehicle.YawRate) ? Tuning.YawAccel : Tuning.YawAccel * 1.5);
+	Vehicle.Heading = FQuat(Up, FMath::DegreesToRadians(Vehicle.YawRate * DeltaTime)).RotateVector(Vehicle.Heading);
+
+	if (!Snap.IsNearlyZero())
+	{
+		Ship->AddActorWorldOffset(Snap, false, nullptr, ETeleportType::None);
+	}
+	MoveVehicle(Velocity, Velocity * DeltaTime, Up);
+	Ship->KinematicVelocity = Velocity;
+}
+
+void UAPSShipFlightModel::StepDrone(const FVehicleControls& Controls, const FVector& Up, const double Gravity,
+	const double DeltaTime)
+{
+	using namespace APSShipFlightModelVehicle;
+	ASpaceship* Ship = GetShip();
+	const double SpeedScale = FMath::Max(CVarSpeedScale.GetValueOnGameThread(), 0.05f);
+	FVector Velocity = Ship->KinematicVelocity;
+
+	// Yaw: the heading catches up with the mouse within a tenth of a second, at most DroneMaxYawRate.
+	const double YawStep = FMath::Clamp(Vehicle.PendingYaw * (1.0 - FMath::Exp(-DeltaTime / 0.1)),
+		-DroneMaxYawRate * DeltaTime, DroneMaxYawRate * DeltaTime);
+	Vehicle.PendingYaw -= YawStep;
+	Vehicle.YawRate = DeltaTime > 0.0 ? YawStep / DeltaTime : 0.0;
+	Vehicle.Heading = FQuat(Up, FMath::DegreesToRadians(YawStep)).RotateVector(Vehicle.Heading);
+
+	FVehicleGround Ground;
+	// Collision exists only in the last ~140 m over the ground: higher up the WorldScape height alone does.
+	ProbeVehicleGround(Up, ProbeAboveCm, 20000.0, Ground, Vehicle.GroundHeightCm < 25000.0);
+	// The floor: the ground, or a sea over it (the drone does not dive into it).
+	bool bFloor = Ground.bValid;
+	double Floor = Ground.bValid ? Ground.Height : 0.0;
+	Vehicle.bOnLiquid = false;
+	if (Ground.LiquidHeight < TNumericLimits<double>::Max() && (!bFloor || Ground.LiquidHeight < Floor))
+	{
+		Floor = Ground.LiquidHeight;
+		bFloor = true;
+		Vehicle.bOnLiquid = true;
+	}
+	Vehicle.bCollisionGround = Ground.bCollision;
+	Vehicle.GroundHeightCm = bFloor ? Floor : -1.0;
+	Vehicle.GroundNormal = Ground.bValid && !Vehicle.bOnLiquid ? Ground.Normal : Up;
+
+	// Altitude over the world's sea level, and the ceiling: the top of its air plus 10% (a few km on an airless world).
+	double Altitude = -1.0;
+	double Ceiling = AirlessCeilingCm;
+	if (const APlanetaryBody* Body = GroundBody(*Ship))
+	{
+		Altitude = FVector::Distance(Ship->GetActorLocation(), Body->GetActorLocation()) - Body->GetWorldScapeBodyRadiusCm();
+		Ceiling = Body->AtmosphereHeight > 0.0 ? Body->AtmosphereHeight * 100000.0 * CeilingMargin : AirlessCeilingCm;
+	}
+	Vehicle.AltitudeCm = Altitude;
+	Vehicle.CeilingCm = Ceiling;
+
+	// Rio 02.10: up to the top of the air. Near the ground 80 m/s; higher up the limits grow with the height over the
+	// ground, so the ceiling is a few minutes away (about one with boost and the nose up), not hours.
+	const double Height = FMath::Max(bFloor ? Floor : Altitude, 0.0);
+	const double AltitudeScale = FMath::Max(1.0, Height / DroneReferenceHeightCm);
+	const double Horizontal = DroneSpeed * SpeedScale * AltitudeScale * (Controls.bBoost ? DroneBoost : 1.0);
+	const double Climb = DroneClimbSpeed * SpeedScale * AltitudeScale * (Controls.bBoost ? 1.6 : 1.0);
+	const double Pitch = FMath::DegreesToRadians(Vehicle.LookPitch);
+	const FVector Forward = OnPlane(Vehicle.Heading, Up).GetSafeNormal();
+	const FVector Right = FVector::CrossProduct(Up, Forward).GetSafeNormal();
+	const FVector Nose = Forward * FMath::Cos(Pitch) + Up * FMath::Sin(Pitch);
+	// W/S along the nose (it flies where it looks), A/D sideways, Space/Alt/Ctrl straight up and down.
+	FVector Wanted = (Nose * Controls.Throttle + Right * (Controls.Strafe * 0.75)) * Horizontal + Up * (Controls.Vertical * Climb);
+	if (!Controls.bPowered)
+	{
+		// Nobody at the controls (or the engine off): it comes down by itself, quickly from high up, and lands.
+		Wanted = -Up * FMath::Clamp(Height * 0.4, 300.0, 6000.0);
+	}
+	if (Altitude >= 0.0)
+	{
+		// The ceiling: climbing fades out over its last 3%; above it the drone eases back down.
+		const double Rising = FVector::DotProduct(Wanted, Up);
+		if (Rising > 0.0)
+		{
+			const double Room = FMath::Clamp((Ceiling - Altitude) / (0.03 * Ceiling), 0.0, 1.0);
+			Wanted -= Up * (Rising * (1.0 - Room));
+		}
+		if (Altitude > Ceiling)
+		{
+			Wanted = OnPlane(Wanted, Up) - Up * FMath::Min(Climb, (Altitude - Ceiling) * 0.6 + 200.0);
+		}
+	}
+	if (bFloor)
+	{
+		// Near the ground it slows its descent and touches down softly.
+		const double Sinking = -FVector::DotProduct(Wanted, Up);
+		const double MaxSinking = FMath::Max(150.0, Floor * 0.9);
+		if (Sinking > MaxSinking)
+		{
+			Wanted += Up * (Sinking - MaxSinking);
+		}
+	}
+	const double Thrust = DroneThrust * SpeedScale * AltitudeScale * (Controls.bBoost ? 1.4 : 1.0);
+	Velocity = APSFlightBandModel::HoverStep(Velocity, Wanted, Thrust, DeltaTime);
+
+	FVector Snap = FVector::ZeroVector;
+	Vehicle.bGrounded = false;
+	if (bFloor && Floor <= RestHeightCm + 8.0 && FVector::DotProduct(Wanted, Up) <= 1.0)
+	{
+		// Landed: it rests on its underside; only a climb (Space, or the nose up with W) lifts it off again.
+		Vehicle.bGrounded = true;
+		Velocity = OnPlane(Velocity, Up) * FMath::Exp(-6.0 * DeltaTime);
+		Snap = Up * (RestHeightCm - Floor);
+	}
+	else if (bFloor && Floor < 0.0)
+	{
+		Snap = -Up * Floor;
+		Velocity -= Up * FMath::Min(FVector::DotProduct(Velocity, Up), 0.0);
+	}
+	if (!Snap.IsNearlyZero())
+	{
+		Ship->AddActorWorldOffset(Snap, false, nullptr, ETeleportType::None);
+	}
+	MoveVehicle(Velocity, Velocity * DeltaTime, Up);
+	Ship->KinematicVelocity = Velocity;
+}
+
+void UAPSShipFlightModel::MoveVehicle(FVector& Velocity, const FVector& Delta, const FVector& Up)
+{
+	using namespace APSShipFlightModelVehicle;
+	ASpaceship* Ship = GetShip();
+	if (!Ship || Delta.IsNearlyZero())
+	{
+		return;
+	}
+	const auto ContactNormal = [](const FHitResult& Hit)
+	{
+		return (Hit.Normal.IsNearlyZero() ? FVector(Hit.ImpactNormal) : FVector(Hit.Normal)).GetSafeNormal();
+	};
+	FHitResult Hit;
+	Ship->MoveShipKinematic(Delta, true, Hit);
+	if (!Hit.bBlockingHit)
+	{
+		return;
+	}
+	FVector Normal = ContactNormal(Hit);
+	if (Hit.bStartPenetrating)
+	{
+		// It started inside something (a snap onto a ledge, a structure raised over a parked spot): out first, then on.
+		Ship->AddActorWorldOffset(Normal * (FMath::Max(static_cast<double>(Hit.PenetrationDepth), 0.0) + 1.0), false,
+			nullptr, ETeleportType::None);
+		FHitResult Retry;
+		Ship->MoveShipKinematic(Delta, true, Retry);
+		if (!Retry.bBlockingHit || Retry.bStartPenetrating)
+		{
+			return;
+		}
+		Hit = Retry;
+		Normal = ContactNormal(Hit);
+	}
+	const FVector Remaining = Delta * (1.0 - Hit.Time);
+	const bool bDrone = Ship->GetGroundVehicleKind() == EAPSGroundVehicleKind::Drone;
+	if (!bDrone && FVector::DotProduct(Normal, Up) > 0.65 && FVector::DotProduct(Delta.GetSafeNormal(), Up) > -0.3)
+	{
+		// A ground-like contact while driving along (a bump, the foot of a ramp): drive on over it; the probes lift the
+		// vehicle onto it in the next step.
+		Ship->AddActorWorldOffset(OnPlane(Remaining, Up) + Up * 2.0, false, nullptr, ETeleportType::None);
+		return;
+	}
+	// A wall (or the ground under a landing vehicle): the speed into it goes and the rest slides along it. Against a wall
+	// a rover or hover loses only its level speed, so a steep bank stops it without throwing it up.
+	const auto Against = [bDrone, &Up](const FVector& ContactNormalIn)
+	{
+		if (bDrone || FVector::DotProduct(ContactNormalIn, Up) >= 0.65)
+		{
+			return ContactNormalIn;
+		}
+		const FVector Level = OnPlane(ContactNormalIn, Up).GetSafeNormal();
+		return Level.IsNearlyZero() ? ContactNormalIn : Level;
+	};
+	const FVector Wall = Against(Normal);
+	const double Into = FVector::DotProduct(Velocity, Wall);
+	if (Into < 0.0)
+	{
+		Velocity -= Wall * Into;
+	}
+	const FVector Slide = OnPlane(Remaining, Wall);
+	if (Slide.SizeSquared() > 1.0)
+	{
+		FHitResult SlideHit;
+		Ship->MoveShipKinematic(Slide, true, SlideHit);
+		if (SlideHit.bBlockingHit && !SlideHit.bStartPenetrating)
+		{
+			const FVector SlideWall = Against(ContactNormal(SlideHit));
+			const double SlideInto = FVector::DotProduct(Velocity, SlideWall);
+			if (SlideInto < 0.0)
+			{
+				Velocity -= SlideWall * SlideInto;
+			}
+		}
+	}
+}
+
+void UAPSShipFlightModel::PoseVehicle(const FVector& Up, const double DeltaTime)
+{
+	using namespace APSShipFlightModelVehicle;
+	ASpaceship* Ship = GetShip();
+	if (!Ship || !Ship->SpaceshipHull || DeltaTime <= 0.0)
+	{
+		return;
+	}
+	const EAPSGroundVehicleKind Kind = Ship->GetGroundVehicleKind();
+	const FVector Velocity = Ship->KinematicVelocity;
+	const FVector Acceleration = (Velocity - Vehicle.LastVelocity) / DeltaTime;
+	Vehicle.LastVelocity = Velocity;
+
+	// The body's up: the rover lies on its ground, the hover half follows it (level over a sea), the drone stays level
+	// with the gravity and settles onto the ground when it lands.
+	FVector TargetUp = Up;
+	double UpRate = 5.0;
+	switch (Kind)
+	{
+	case EAPSGroundVehicleKind::Rover:
+		TargetUp = Vehicle.GroundNormal;
+		UpRate = Vehicle.bGrounded ? 12.0 : 1.5;
+		break;
+	case EAPSGroundVehicleKind::Hover:
+		TargetUp = (Up + Vehicle.GroundNormal).GetSafeNormal();
+		UpRate = 4.0;
+		break;
+	default:
+		TargetUp = Vehicle.bGrounded ? Vehicle.GroundNormal : Up;
+		break;
+	}
+	Vehicle.BodyUp = FMath::Lerp(Vehicle.BodyUp, TargetUp, 1.0 - FMath::Exp(-UpRate * DeltaTime)).GetSafeNormal();
+	if (Vehicle.BodyUp.IsNearlyZero() || FVector::DotProduct(Vehicle.BodyUp, Up) < 0.2)
+	{
+		Vehicle.BodyUp = Up;
+	}
+	const FVector Forward = OnPlane(Vehicle.Heading, Vehicle.BodyUp).GetSafeNormal();
+	if (Forward.IsNearlyZero())
+	{
+		return;
+	}
+	const FVector Right = FVector::CrossProduct(Vehicle.BodyUp, Forward).GetSafeNormal();
+
+	// Lean, in degrees (roll lifts the right side, pitch the nose): the rover rolls out of a turn and squats under
+	// thrust, the hover banks into its turns, the drone tilts into its motion and toward where it looks.
+	const double Lateral = FVector::DotProduct(Acceleration, Right);
+	const double Longitudinal = FVector::DotProduct(Acceleration, Forward);
+	double TargetRoll = 0.0;
+	double TargetPitch = 0.0;
+	switch (Kind)
+	{
+	case EAPSGroundVehicleKind::Rover:
+		TargetRoll = Vehicle.bGrounded ? FMath::Clamp(Lateral * 0.0038, -5.0, 5.0) : 0.0;
+		TargetPitch = Vehicle.bGrounded ? FMath::Clamp(Longitudinal * 0.0035, -4.0, 4.0) : 0.0;
+		break;
+	case EAPSGroundVehicleKind::Hover:
+		TargetRoll = FMath::Clamp(-Lateral * 0.008, -14.0, 14.0);
+		TargetPitch = FMath::Clamp(Longitudinal * 0.002, -4.0, 4.0);
+		break;
+	default:
+		TargetRoll = Vehicle.bGrounded ? 0.0 : FMath::Clamp(-Lateral * 0.01, -20.0, 20.0);
+		TargetPitch = Vehicle.bGrounded ? 0.0
+			: FMath::Clamp(-Longitudinal * 0.008, -15.0, 15.0) + Vehicle.LookPitch * 0.6;
+		break;
+	}
+	Vehicle.Roll += (TargetRoll - Vehicle.Roll) * (1.0 - FMath::Exp(-6.0 * DeltaTime));
+	Vehicle.Pitch += (TargetPitch - Vehicle.Pitch) * (1.0 - FMath::Exp(-6.0 * DeltaTime));
+	const FQuat Body = FRotationMatrix::MakeFromXZ(Forward, Vehicle.BodyUp).ToQuat();
+	const FQuat Lean = FQuat(FVector::ForwardVector, FMath::DegreesToRadians(Vehicle.Roll))
+		* FQuat(FVector::RightVector, FMath::DegreesToRadians(-Vehicle.Pitch));
+	const FQuat Pose = (Body * Lean).GetNormalized();
+	Ship->SetActorRotation(Ship->GetActorRotationForFlightAxes(Pose.GetAxisX(), Pose.GetAxisZ()), ETeleportType::None);
+
+	// The rover's tyres roll with its speed, the front ones steer and each reaches for its ground.
+	const TArray<ASpaceship::FGroundVehicleWheel>& Wheels = Ship->GetGroundVehicleWheels();
+	if (Wheels.Num() > 0)
+	{
+		const double Scale = FMath::Max(Ship->SpaceshipHull->GetComponentScale().GetAbsMax(), 0.01);
+		const double Radius = FMath::Max(Wheels[0].LocalRadius * Scale, 1.0);
+		const double Along = FVector::DotProduct(Velocity, Forward);
+		Vehicle.WheelSpin = FMath::Fmod(Vehicle.WheelSpin + FMath::RadiansToDegrees(Along * DeltaTime / Radius), 360.0);
+		const double SteerAngle = Vehicle.Steer * 26.0;
+		for (int32 Index = 0; Index < Wheels.Num(); ++Index)
+		{
+			const ASpaceship::FGroundVehicleWheel& Wheel = Wheels[Index];
+			USceneComponent* Tire = Wheel.Tire.Get();
+			if (!Tire)
+			{
+				continue;
+			}
+			const double Drop = Index < 4 ? Vehicle.WheelDrop[Index] : 0.0;
+			// Rolling about the axle (the left tyres are turned around, so they roll the other way about theirs).
+			const double Yaw = (Wheel.bFront ? SteerAngle : 0.0) + (Wheel.bLeft ? 180.0 : 0.0);
+			Tire->SetRelativeLocationAndRotation(Wheel.LocalCenter - FVector(0.0, 0.0, Drop / Scale),
+				FRotator(Wheel.bLeft ? Vehicle.WheelSpin : -Vehicle.WheelSpin, Yaw, 0.0));
+		}
+	}
+}
+
+void UAPSShipFlightModel::ParkVehicle()
+{
+	ASpaceship* Ship = GetShip();
+	if (!Ship)
+	{
+		return;
+	}
+	Ship->KinematicVelocity = FVector::ZeroVector;
+	Ship->bEngineRunning = false;
+	Ship->ApplyEngineState();
+	Ship->SetActorTickEnabled(false);
+	// Like the colony: attached to its world, so whatever moves the world moves the parked vehicle with it.
+	AActor* Home = Ship->GetGroundVehicleHomeBody();
+	if (IsValid(Home) && Ship->GetAttachParentActor() != Home)
+	{
+		Ship->AttachToActor(Home, FAttachmentTransformRules::KeepWorldTransform);
+	}
+	UE_LOG(LogTemp, Log, TEXT("[APS.Vehicles] %s parked and switched off (%s, %.0f cm over it)"),
+		*Ship->GetGroundVehicleName(), Vehicle.bCollisionGround ? TEXT("on collision") : TEXT("on the WorldScape height"),
+		Vehicle.GroundHeightCm);
+	Vehicle.bInitialized = false;
+}
+
+bool UAPSShipFlightModel::ApplyVehicleTranslation(const float DeltaTime)
+{
+	using namespace APSShipFlightModelVehicle;
+	ASpaceship* Ship = GetShip();
+	if (!Ship || !Ship->SpaceshipHull || DeltaTime <= 0.0f)
+	{
+		return true;
+	}
+	EnsureKinematicHull();
+	if (bStarDrive)
+	{
+		DisengageStarDrive(TEXT("ground vehicle"));
+	}
+	if (AutopilotTarget.IsValid() || bDebugDrive)
+	{
+		DisengageAutopilot(TEXT("ground vehicle"));
+	}
+	const FVector Up = -VehicleDown();
+	if (!Vehicle.bInitialized)
+	{
+		ResetVehicleState();
+	}
+	Vehicle.Heading = OnPlane(Vehicle.Heading, Up).GetSafeNormal();
+	if (Vehicle.Heading.IsNearlyZero())
+	{
+		ResetVehicleState();
+	}
+	const double Gravity = VehicleGravity();
+	const FVehicleControls Controls = ReadVehicleControls(DeltaTime);
+	const EAPSGroundVehicleKind Kind = Ship->GetGroundVehicleKind();
+	if (Kind == EAPSGroundVehicleKind::Drone)
+	{
+		// Mouse yaw and look pitch, once a frame: the drone's heading and nose follow the mouse with a little weight.
+		const double MouseScale = FMath::Max(CVarMouseSteer.GetValueOnGameThread(), 0.0f);
+		if (Controls.bPowered)
+		{
+			Vehicle.PendingYaw = FMath::Clamp(Vehicle.PendingYaw + Controls.MouseYaw * DroneMouseDegrees * MouseScale, -90.0, 90.0);
+			Vehicle.LookPitch = FMath::Clamp(Vehicle.LookPitch - Controls.MousePitch * DroneMouseDegrees * MouseScale, -60.0, 45.0);
+		}
+		else
+		{
+			Vehicle.PendingYaw = 0.0;
+			Vehicle.LookPitch *= FMath::Exp(-2.0 * DeltaTime);
+		}
+	}
+	const double FrameSeconds = FMath::Min(static_cast<double>(DeltaTime), MaxFrameSeconds);
+	const int32 Steps = FMath::Clamp(FMath::CeilToInt(FrameSeconds / MaxStepSeconds), 1, MaxSteps);
+	const double StepSeconds = FrameSeconds / Steps;
+	for (int32 Step = 0; Step < Steps; ++Step)
+	{
+		switch (Kind)
+		{
+		case EAPSGroundVehicleKind::Hover:
+			StepHover(Controls, Up, Gravity, StepSeconds);
+			break;
+		case EAPSGroundVehicleKind::Drone:
+			StepDrone(Controls, Up, Gravity, StepSeconds);
+			break;
+		case EAPSGroundVehicleKind::Rover:
+		default:
+			StepRover(Controls, Up, Gravity, StepSeconds);
+			break;
+		}
+	}
+	PoseVehicle(Up, FrameSeconds);
+
+	if (CVarVehicleLog.GetValueOnGameThread() != 0)
+	{
+		const double Now = FPlatformTime::Seconds();
+		if (Now - Vehicle.LastLogSeconds >= 1.0)
+		{
+			Vehicle.LastLogSeconds = Now;
+			UE_LOG(LogTemp, Log,
+				TEXT("[APS.Vehicles] %s speed=%s ground=%.0f cm (%s) slope=%.0f deg grounded=%d liquid=%d alt=%.0f m ceiling=%.0f m steer=%.2f yaw=%.0f deg/s powered=%d"),
+				*Ship->GetGroundVehicleName(), *APSShipFlightModelLocal::FormatSpeed(Ship->KinematicVelocity.Size()),
+				Vehicle.GroundHeightCm, Vehicle.bCollisionGround ? TEXT("collision") : TEXT("WorldScape height"),
+				Vehicle.SlopeDegrees, Vehicle.bGrounded ? 1 : 0, Vehicle.bOnLiquid ? 1 : 0, Vehicle.AltitudeCm / 100.0,
+				Vehicle.CeilingCm / 100.0, Vehicle.Steer, Vehicle.YawRate, Controls.bPowered ? 1 : 0);
+		}
+	}
+
+	// After the pilot leaves it comes to rest by itself (brakes, sets down, lands), then parks: engine and tick off.
+	if (!IsValid(Ship->Pilot))
+	{
+		Vehicle.ParkSeconds += DeltaTime;
+		Vehicle.RestSeconds = Vehicle.bGrounded && Ship->KinematicVelocity.SizeSquared() < 400.0
+			? Vehicle.RestSeconds + DeltaTime : 0.0;
+		// A safety for a vehicle that never settles (sliding on a steep bank); a drone left high up needs its descent.
+		const double ParkTimeout = Kind == EAPSGroundVehicleKind::Drone ? 300.0 : 30.0;
+		if (Vehicle.RestSeconds >= 0.75 || Vehicle.ParkSeconds >= ParkTimeout)
+		{
+			ParkVehicle();
+		}
+	}
+	else
+	{
+		Vehicle.ParkSeconds = 0.0;
+		Vehicle.RestSeconds = 0.0;
+	}
+	return true;
+}
+
+bool UAPSShipFlightModel::SettleVehicle(const bool bRequireCollision)
+{
+	using namespace APSShipFlightModelVehicle;
+	ASpaceship* Ship = GetShip();
+	if (!Ship || !Ship->IsGroundVehicle() || IsValid(Ship->Pilot) || Ship->IsActorTickEnabled())
+	{
+		return false;
+	}
+	const FVector Up = -VehicleDown();
+	// From well above: a vehicle placed on the WorldScape height may stand a little under (or over) the collision.
+	Vehicle.NoiseGroundRadiusCm = -1.0;
+	FVehicleGround Ground;
+	if (!ProbeVehicleGround(Up, 1500.0, 3000.0, Ground) || (bRequireCollision && !Ground.bCollision))
+	{
+		return false;
+	}
+	const EAPSGroundVehicleKind Kind = Ship->GetGroundVehicleKind();
+	const FVector Normal = FVector::DotProduct(Ground.Normal, Up) >= 0.7 ? Ground.Normal : Up;
+	const FVector BodyUp = Kind == EAPSGroundVehicleKind::Rover ? Normal : (Normal + Up).GetSafeNormal();
+	FVector Heading = OnPlane(Ship->GetShipForwardVector(), BodyUp).GetSafeNormal();
+	if (Heading.IsNearlyZero())
+	{
+		Heading = OnPlane(-Ship->GetShipUpVector(), BodyUp).GetSafeNormal();
+	}
+	if (Heading.IsNearlyZero())
+	{
+		return false;
+	}
+	const double Rest = Kind == EAPSGroundVehicleKind::Rover ? 0.0 : RestHeightCm;
+	Ship->SetActorLocationAndRotation(Ship->GetActorLocation() - Up * (Ground.Height - Rest),
+		Ship->GetActorRotationForFlightAxes(Heading, BodyUp), false, nullptr, ETeleportType::TeleportPhysics);
+	Ship->KinematicVelocity = FVector::ZeroVector;
+	Vehicle.bInitialized = false;
+	return Ground.bCollision;
+}
+
+bool UAPSShipFlightModel::GetVehicleCameraFrame(FVector& OutForward, FVector& OutUp, double& OutPitchDegrees) const
+{
+	using namespace APSShipFlightModelVehicle;
+	const ASpaceship* Ship = GetShip();
+	if (!Ship || !Ship->IsGroundVehicle() || !Vehicle.bInitialized)
+	{
+		return false;
+	}
+	OutUp = -VehicleDown();
+	OutForward = OnPlane(Vehicle.Heading, OutUp).GetSafeNormal();
+	if (OutForward.IsNearlyZero())
+	{
+		return false;
+	}
+	if (Ship->GetGroundVehicleKind() == EAPSGroundVehicleKind::Drone)
+	{
+		OutPitchDegrees = Vehicle.LookPitch * 0.8;
+	}
+	else
+	{
+		// Half the pitch of the ground under it: up a hill the camera looks up the hill, without the bumps.
+		const FVector BodyForward = OnPlane(Vehicle.Heading, Vehicle.BodyUp).GetSafeNormal();
+		OutPitchDegrees = 0.5 * FMath::RadiansToDegrees(FMath::Asin(FMath::Clamp(FVector::DotProduct(BodyForward, OutUp), -1.0, 1.0)));
+	}
+	return true;
+}
+
+FString UAPSShipFlightModel::GetVehicleStatusText() const
+{
+	using namespace APSShipFlightModelVehicle;
+	const ASpaceship* Ship = GetShip();
+	if (!Ship)
+	{
+		return FString();
+	}
+	const EAPSGroundVehicleKind Kind = Ship->GetGroundVehicleKind();
+	const double SpeedScale = FMath::Max(CVarSpeedScale.GetValueOnGameThread(), 0.05f);
+	const double Speed = Ship->KinematicVelocity.Size();
+	// Two short lines, like a ship's: what the vehicle does now, and what is under it.
+	FString Line = FString::Printf(TEXT("%s   %s"), *Ship->GetGroundVehicleName(), *APSShipFlightModelLocal::FormatSpeed(Speed));
+	if (Kind == EAPSGroundVehicleKind::Drone)
+	{
+		Line += FString::Printf(TEXT("   ALT %s   CEILING %s"),
+			*UShipNavigationComponent::FormatDistance(FMath::Max(Vehicle.AltitudeCm, 0.0)),
+			*UShipNavigationComponent::FormatDistance(Vehicle.CeilingCm));
+	}
+	else
+	{
+		const FDriveTuning& Tuning = Kind == EAPSGroundVehicleKind::Hover ? HoverTuning : RoverTuning;
+		Line += FString::Printf(TEXT("   (%.0f km/h, up to %s)"), Speed * 0.036,
+			*APSShipFlightModelLocal::FormatSpeed((Ship->bIsAccelerating ? Tuning.BoostTopSpeed : Tuning.TopSpeed) * SpeedScale));
+	}
+	if (Ship->bIsAccelerating)
+	{
+		Line += TEXT("   BOOST");
+	}
+	if (Ship->bIsDecelerating && Kind != EAPSGroundVehicleKind::Drone)
+	{
+		Line += Kind == EAPSGroundVehicleKind::Rover ? TEXT("   HANDBRAKE") : TEXT("   AIR BRAKE");
+	}
+	if (!Ship->bEngineRunning)
+	{
+		Line += TEXT("   ENGINE OFF (G)");
+	}
+	if (FPlatformTime::Seconds() < StarDriveNoticeUntil && !StarDriveNotice.IsEmpty())
+	{
+		Line += TEXT("   |   ") + StarDriveNotice;
+	}
+
+	FString Under;
+	switch (Kind)
+	{
+	case EAPSGroundVehicleKind::Hover:
+		Under = Vehicle.GroundHeightCm >= 0.0
+			? FString::Printf(TEXT("HOVERING %.1f m OVER %s"), Vehicle.GroundHeightCm / 100.0,
+				Vehicle.bOnLiquid ? TEXT("THE SEA") : TEXT("THE GROUND"))
+			: FString(TEXT("HOVERING"));
+		if (Vehicle.SlopeDegrees >= 1.0)
+		{
+			Under += FString::Printf(TEXT("   SLOPE %.0f DEG"), Vehicle.SlopeDegrees);
+		}
+		break;
+	case EAPSGroundVehicleKind::Drone:
+		Under = Vehicle.bGrounded ? FString(TEXT("LANDED: SPACE TO LIFT OFF"))
+			: Vehicle.GroundHeightCm >= 0.0
+			? FString::Printf(TEXT("%s OVER %s"), *UShipNavigationComponent::FormatDistance(Vehicle.GroundHeightCm),
+				Vehicle.bOnLiquid ? TEXT("THE SEA") : TEXT("THE GROUND"))
+			: FString(TEXT("OVER THE GROUND"));
+		if (Vehicle.AltitudeCm > Vehicle.CeilingCm)
+		{
+			Under += TEXT("   |   ABOVE THE CEILING: DESCENDING");
+		}
+		else if (Vehicle.AltitudeCm > 0.97 * Vehicle.CeilingCm)
+		{
+			Under += TEXT("   |   AT THE CEILING");
+		}
+		break;
+	case EAPSGroundVehicleKind::Rover:
+	default:
+		Under = Vehicle.bGrounded ? FString::Printf(TEXT("ON THE GROUND   SLOPE %.0f DEG"), Vehicle.SlopeDegrees)
+			: Vehicle.GroundHeightCm > 0.0
+			? FString::Printf(TEXT("AIRBORNE   %s OVER THE GROUND"), *UShipNavigationComponent::FormatDistance(Vehicle.GroundHeightCm))
+			: FString(TEXT("AIRBORNE"));
+		if (Vehicle.bOnLiquid)
+		{
+			Under += TEXT("   |   UNDER THE SEA SURFACE");
+		}
+		break;
+	}
+	return FString::Printf(TEXT("%s\n%s"), *Line, *Under);
+}
+
+FString UAPSShipFlightModel::GetVehicleHintText() const
+{
+	const ASpaceship* Ship = GetShip();
+	switch (Ship ? Ship->GetGroundVehicleKind() : EAPSGroundVehicleKind::None)
+	{
+	case EAPSGroundVehicleKind::Drone:
+		return TEXT("W/S FORWARD   A/D STRAFE   SPACE UP   ALT OR CTRL DOWN   MOUSE YAW AND PITCH   SHIFT BOOST   |   G ENGINE   F EXIT   |   N M NAV");
+	case EAPSGroundVehicleKind::Hover:
+		return TEXT("W/S THRUST   MOUSE OR A/D STEER   SHIFT BOOST   CTRL AIR BRAKE   |   G ENGINE   F EXIT   |   N M NAV");
+	case EAPSGroundVehicleKind::Rover:
+	default:
+		return TEXT("W/S DRIVE   MOUSE OR A/D STEER   SHIFT BOOST   CTRL HANDBRAKE   |   G ENGINE   F EXIT   |   N M NAV");
+	}
 }

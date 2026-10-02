@@ -1,4 +1,5 @@
 #include "APSAuthoredLevelLaunchSubsystem.h"
+#include "APS_ALPHA/UI/Style/APSUINumber.h"
 
 #include "APS_ALPHA/Core/Instances/MainGameplayInstance.h"
 #include "APS_ALPHA/Core/Model/GeneratedWorld.h"
@@ -330,11 +331,11 @@ void UAPSAuthoredLevelLaunchSubsystem::OnTravelFailure(UWorld* World, ETravelFai
 FText UAPSAuthoredLevelLaunchSubsystem::GetStatusText() const
 {
 	using EPhase = FAPSAuthoredLevelLaunchGate::EPhase;
-	const FText Seconds = FText::AsNumber(FMath::Max(0, FMath::FloorToInt(FPlatformTime::Seconds() - Gate.StartedAt)));
+	const FText Seconds = APSUINumber::Number(FMath::Max(0, FMath::FloorToInt(FPlatformTime::Seconds() - Gate.StartedAt)));
 	switch (Gate.Phase)
 	{
 	case EPhase::Loading: return FText::Format(LOCTEXT("Loading", "LOADING AUTHORED LEVEL — {0}s"), Seconds);
-	case EPhase::Compiling: return FText::Format(LOCTEXT("Compiling", "PREPARING EDITOR ASSETS — {0} REMAINING — {1}s"), FText::AsNumber(RemainingAssets), Seconds);
+	case EPhase::Compiling: return FText::Format(LOCTEXT("Compiling", "PREPARING EDITOR ASSETS — {0} REMAINING — {1}s"), APSUINumber::Number(RemainingAssets), Seconds);
 	case EPhase::Draining: return LOCTEXT("Draining", "FINISHING PREVIEW WORK");
 	case EPhase::Opening: return LOCTEXT("Opening", "OPENING SINGLE GAME");
 	case EPhase::Failed: return FailureReason;

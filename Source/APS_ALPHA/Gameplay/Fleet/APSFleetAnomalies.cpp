@@ -1,4 +1,5 @@
 #include "APSFleetCommand.h"
+#include "APS_ALPHA/Gameplay/Expansion/APSMissions.h"
 
 #include "APS_ALPHA/Actors/Astro/Planet.h"
 #include "APS_ALPHA/Actors/Astro/PlanetaryBody.h"
@@ -172,6 +173,7 @@ void FAPSFleetCommand::RevealAnomaly(FAPSFleetBodyRecord& Record, const APSFleet
 	{
 		Record.Anomaly = EAnomalyState::Located;
 		SpawnAnomalyBeacon(Record);
+		if (bAnnounce) APSMissionsNotify(World.Get(), APSMissions::EObjective::LocateAnomaly, KeyOf(Record.Body.Get()));
 		if (bAnnounce)
 		{
 			Post(FText::Format(LOCTEXT("AnomalyLocated", "{0} located the {1} on {2} at {3}. Land there on foot or send an expedition; a beacon marks the site (map, course)."),
@@ -191,6 +193,7 @@ void FAPSFleetCommand::InvestigateAnomaly(FAPSFleetBodyRecord& Record, const FTe
 	}
 	Record.Anomaly = EAnomalyState::Investigated;
 	Record.bAnomalyInPerson = bInPerson;
+	if (bAnnounce) APSMissionsNotify(World.Get(), APSMissions::EObjective::InvestigateAnomaly, KeyOf(Record.Body.Get()));
 	const FText Name = AnomalyName(Record.AnomalyKind);
 	APSFleetAnomalyPrivate::SetInGameName(Record.AnomalyBeacon.Get(),
 		FText::Format(LOCTEXT("BeaconInvestigated", "INVESTIGATED: {0}"), Name));

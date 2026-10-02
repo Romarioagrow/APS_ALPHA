@@ -6,18 +6,32 @@
 #include "APS_ALPHA/Core/World/APSPlanetEnvironmentStreamingSubsystem.h"
 #include "APS_ALPHA/Core/World/APSPlanetSurfacePlacementResolver.h"
 #include "APS_ALPHA/Generation/PlanetarySurfaceGenerator.h"
+#include "APS_ALPHA/Generation/AstroGenerator.h"
 #include "Components/SceneComponent.h"
+#include "Engine/Engine.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "HAL/IConsoleManager.h"
+#include "APSGameplayMapReturnProbe.h"
 
 namespace APSWorldScapeStreamingSelectionTests
 {
     struct FScopedWorld
     {
         UWorld* World;
-        ~FScopedWorld() { if (World) World->DestroyWorld(false); }
+        explicit FScopedWorld(UWorld* InWorld) : World(InWorld)
+        {
+            if (World && GEngine)
+                GEngine->CreateNewWorldContext(EWorldType::Game).SetCurrentWorld(World);
+        }
+        ~FScopedWorld()
+        {
+            if (!World) return;
+            World->DestroyWorld(false);
+            if (GEngine) GEngine->DestroyWorldContext(World);
+        }
     };
 
     struct FScopedStandbyBudget
@@ -70,6 +84,9 @@ bool FAPSWorldScapeStreamingSelectionTest::RunTest(const FString& Parameters)
         false, ERHIFeatureLevel::Num, &Values)};
     UWorld* World = Fixture.World;
     if (!TestNotNull(TEXT("Selection test world"), World)) return false;
+    // Register spawned controllers/camera managers through the real actor
+    // lifecycle. Do not BeginPlay or tick the world/terrain workers.
+    World->InitializeActorsForPlay(FURL());
     auto* Streaming = World->GetSubsystem<UAPSPlanetEnvironmentStreamingSubsystem>();
     auto* Controller = World->SpawnActor<APlayerController>();
     auto* Pawn = World->SpawnActor<APawn>();
@@ -198,6 +215,139 @@ bool FAPSWorldScapeStreamingSelectionTest::RunTest(const FString& Parameters)
     Streaming->Tick(0.5f);
     TestTrue(TEXT("Leaving family still unloads published surface"), !Streaming->GetResidentFamily()
         && !Streaming->GetActiveBody() && !PublishedSibling->bWorldScapeSurfaceReady);
+    return true;
+}
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAPSStrategicMapSurfaceOwnershipTest,
+    "APS.Gameplay.World.PlanetSurface.StrategicMapPreservesStreaming",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FAPSStrategicMapSurfaceOwnershipTest::RunTest(const FString& Parameters)
+{
+    using namespace APSWorldScapeStreamingSelectionTests;
+    FScopedStandbyBudget Budget;
+    Budget.Set(0);
+    const UWorld::InitializationValues Values = UWorld::InitializationValues()
+        .AllowAudioPlayback(false).RequiresHitProxies(false).CreatePhysicsScene(true)
+        .CreateNavigation(false).CreateAISystem(false).ShouldSimulatePhysics(false);
+    FScopedWorld Fixture{UWorld::CreateWorld(EWorldType::Game, false, NAME_None, nullptr,
+        false, ERHIFeatureLevel::Num, &Values)};
+    UWorld* World = Fixture.World;
+    if (!TestNotNull(TEXT("Map-return test world"), World)) return false;
+    World->InitializeActorsForPlay(FURL());
+    auto* Streaming = World->GetSubsystem<UAPSPlanetEnvironmentStreamingSubsystem>();
+    auto* Controller = World->SpawnActor<APlayerController>();
+    auto* Pawn = World->SpawnActor<APawn>();
+    auto* Generator = World->SpawnActor<AAstroGenerator>();
+    auto* Home = World->SpawnActor<APlanet>();
+    auto* Authored = World->SpawnActor<APlanet>();
+    if (!TestTrue(TEXT("Map-return actors"), Streaming && Controller && Pawn
+        && Generator && Home && Authored)) return false;
+
+    // Match the small Water home from the user's flight, not an Earth-radius
+    // Terrestrial preset. No world tick/worker or rendered acceptance here.
+    Configure(Home, 639.1442, FVector::ZeroVector);
+    Home->PlanetType = EPlanetType::Water;
+    Configure(Authored, 100, FVector(1e10, 0, 0));
+    Authored->bStreamWorldScapeSurface = false; // Intentional authored ownership.
+    Place(Generator, FVector::ZeroVector);
+    Home->AttachToActor(Generator, FAttachmentTransformRules::KeepWorldTransform);
+    Authored->AttachToActor(Generator, FAttachmentTransformRules::KeepWorldTransform);
+    Generator->HomePlanet = Home;
+    const FVector NearHome(639.1442 * 100000.0 + 200000, 0, 0);
+    Place(Pawn, NearHome);
+    Controller->Possess(Pawn);
+    Controller->SetViewTarget(Pawn);
+    Streaming->Tick(0.5f);
+    if (!TestTrue(TEXT("Home initially selected"), Streaming->GetActiveBody() == Home
+        && IsValid(Home->PlanetaryEnvironmentGenerator)
+        && IsValid(Home->PlanetaryEnvironmentGenerator->WorldScapeRootInstance))) return false;
+
+    const auto CountRoots = [World]()
+    {
+        int32 Count = 0;
+        for (TActorIterator<AWorldScapeRoot> It(World); It; ++It) ++Count;
+        return Count;
+    };
+    const auto CheckMapFocus = [&]()
+    {
+        auto* Surface = Home->PlanetaryEnvironmentGenerator;
+        auto* Root = Surface->WorldScapeRootInstance;
+        const int32 Resolution = Root->LodResolution;
+        const int32 RootCount = CountRoots();
+        const auto State = Home->GetWorldScapeStreamingState();
+        const bool Ready = Home->bWorldScapeSurfaceReady;
+        for (int32 Repeat = 0; Repeat < 3; ++Repeat)
+        {
+            Generator->FocusPreviewTarget(EAstroPreviewFocus::Overview, Controller);
+            Generator->FocusPreviewTarget(EAstroPreviewFocus::HomePlanet, Controller);
+            TestTrue(TEXT("Map focus still targets the home body"),
+                Generator->GetSelectedPreviewBodyActor() == Home);
+            TestTrue(TEXT("Map body selection still works"), Generator->FocusPreviewBodyActor(Home, Controller));
+            Streaming->Tick(0.5f);
+            TestTrue(TEXT("Map never disables home streaming"), Home->bStreamWorldScapeSurface);
+            TestTrue(TEXT("Map preserves the gameplay producer/root"),
+                Home->PlanetaryEnvironmentGenerator == Surface && Surface->WorldScapeRootInstance == Root);
+            TestEqual(TEXT("Map preserves gameplay resolution"), Root->LodResolution, Resolution);
+            TestEqual(TEXT("Repeated focus allocates no preview roots"), CountRoots(), RootCount);
+            TestTrue(TEXT("Map never claims surface ownership"), !Generator->GetActivePreviewWorldScapeBody());
+            TestTrue(TEXT("Map preserves readiness and active state"),
+                Home->bWorldScapeSurfaceReady == Ready && Home->GetWorldScapeStreamingState() == State);
+            TestTrue(TEXT("Map camera cannot evict pawn-centred terrain"), Streaming->GetActiveBody() == Home);
+        }
+        Generator->FocusPreviewTarget(EAstroPreviewFocus::Overview, Controller);
+        Controller->SetViewTarget(Pawn); // Same view restoration as closing F10.
+    };
+
+    // Opening/closing F10 while near home used to replace 256 with 96 and
+    // exclude the home from every subsequent streaming poll, permanently.
+    CheckMapFocus();
+    for (int32 Trip = 0; Trip < 2; ++Trip)
+    {
+        Place(Pawn, FVector(4e13, -2e13, 1e13));
+        Streaming->Tick(0.5f);
+        TestTrue(TEXT("Distant flight releases the home surface"), !Streaming->GetActiveBody()
+            && Home->GetWorldScapeStreamingState() == EWorldScapeSurfaceState::Unloaded);
+        const int32 RemoteRoots = CountRoots();
+        Generator->FocusPreviewTarget(EAstroPreviewFocus::HomePlanet, Controller);
+        TestTrue(TEXT("Remote map does not acquire a terrain root"), Home->bStreamWorldScapeSurface
+            && CountRoots() == RemoteRoots && !Generator->GetActivePreviewWorldScapeBody());
+        Controller->SetViewTarget(Pawn);
+        Place(Pawn, NearHome);
+        Streaming->Tick(0.5f);
+        if (!TestTrue(TEXT("Return reacquires the home family and root"),
+            Streaming->GetActiveBody() == Home && Streaming->GetResidentFamily() == Home
+            && Home->GetWorldScapeStreamingState() == EWorldScapeSurfaceState::Active
+            && IsValid(Home->PlanetaryEnvironmentGenerator)
+            && IsValid(Home->PlanetaryEnvironmentGenerator->WorldScapeRootInstance))) return false;
+        CheckMapFocus();
+    }
+    TestTrue(TEXT("Authored body is still selectable on map"), Generator->FocusPreviewBodyActor(Authored, Controller));
+    TestFalse(TEXT("Map must not turn on streaming for authored terrain"), Authored->bStreamWorldScapeSurface);
+    TestFalse(TEXT("Map must not manufacture a producer for authored terrain"), IsValid(Authored->PlanetaryEnvironmentGenerator));
+    return true;
+}
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAPSMapReturnRouteTest,
+    "APS.Contracts.PlanetSurface.MapReturnRoute",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FAPSMapReturnRouteTest::RunTest(const FString& Parameters)
+{
+    // Only bounded route mathematics; this is NOT rendered return evidence.
+    const double Near = 639.1442*100000.0 + 200.0;
+    const double Far = Near*160.0;
+    double Previous = Near;
+    for (int32 I=0; I<=1000; ++I)
+    {
+        const double Alpha = I/1000.0;
+        const double Out = APSGameplayMapReturnProbe::RouteRadius(Near, Far, Alpha, false);
+        const double Back = APSGameplayMapReturnProbe::RouteRadius(Near, Far, 1.0-Alpha, true);
+        if (!TestTrue(TEXT("Bounded monotonic route and matching return"), FMath::IsFinite(Out)
+            && Out >= Previous-0.01 && Out >= Near-0.01 && Out <= Far+0.01
+            && FMath::Abs(Out-Back) < 0.01)) return false;
+        Previous = Out;
+    }
+    TestTrue(TEXT("Return ends at the original radius to sub-centimetre accuracy"),
+        FMath::Abs(APSGameplayMapReturnProbe::RouteRadius(Near, Far, 1.0, true)-Near) < 0.01);
     return true;
 }
 #endif

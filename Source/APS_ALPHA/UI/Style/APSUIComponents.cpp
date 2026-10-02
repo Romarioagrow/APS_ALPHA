@@ -56,7 +56,8 @@ void SAPSUIHierarchyCard::Construct(const FArguments& InArgs)
 		[
 			SNew(SButton)
 			.ButtonStyle(ButtonStyle.Get())
-			.ContentPadding(FMargin(Layout.Space2 + Depth * Layout.Space3, Layout.Space2))
+			// Rio 02.10: a light step per level; the old staircase cut the deeper labels ("HOME PLA...").
+			.ContentPadding(FMargin(Layout.Space2 + Depth * 6.0f, Layout.Space2))
 			.IsEnabled(InArgs._IsEnabled)
 			.OnClicked(InArgs._OnClicked)
 			[
@@ -77,9 +78,10 @@ void SAPSUIHierarchyCard::Construct(const FArguments& InArgs)
 					SNew(SHorizontalBox)
 					+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
 					[
-						SNew(SBox).WidthOverride(28.0f).HeightOverride(28.0f)
+						// Room around the glyph text (Rio 02.10: "add padding to the text in the badges").
+						SNew(SBox).MinDesiredWidth(36.0f).HeightOverride(28.0f)
 						[
-							SNew(SBorder).BorderImage(GlyphBrush.Get()).Padding(0.0f)
+							SNew(SBorder).BorderImage(GlyphBrush.Get()).Padding(FMargin(7.0f, 0.0f))
 							// Centred both ways: the short glyph text sat at the top of its badge (Rio, 30.09).
 							.HAlign(HAlign_Center).VAlign(VAlign_Center)
 							[

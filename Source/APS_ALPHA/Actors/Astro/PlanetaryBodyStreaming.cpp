@@ -4,6 +4,8 @@
 #include "APS_ALPHA/Actors/Astro/Planet.h"
 #include "APS_ALPHA/Core/Planetary/APSPlanetSurfaceProfile.h"
 #include "APS_ALPHA/Core/Planetary/APSWorldScapeReadinessPolicy.h"
+#include "APS_ALPHA/Core/World/APSPlaceholderGlobe.h"
+#include "HAL/IConsoleManager.h"
 #include "APS_ALPHA/Generation/PlanetarySurfaceGenerator.h"
 #include "APS_ALPHA/Generation/WorldScapePayloadValidation.h"
 
@@ -12,6 +14,105 @@ namespace
 	constexpr double WorldScapeRenderAnchorToleranceCm = 2.0;
 	constexpr double WorldScapeRenderRadiusToleranceCm = 10.0;
 	constexpr int32 MaximumInitialWorldScapeRenderSamples = 128;
+
+	TAutoConsoleVariable<float> CVarFarReadyAltitude(TEXT("aps.Surface.FarReadyAltitude"), 0.5f,
+		TEXT("Higher than this many body radii above a streamed body, its relief shows once every terrain and ocean LOD ")
+		TEXT("has carried a complete payload of the current profile, instead of waiting for the landing contract (LOD0 ")
+		TEXT("centred under the observer, no worker in flight), which a fast approach met only after braking ")
+		TEXT("(Rio 02.10: grey worlds for 7-18 s). 0 = always the landing contract."));
+
+	/** The root, body and profile each LOD last carried a complete payload for (a recycled LOD starts over). */
+	TMap<TWeakObjectPtr<const UWorldScapeLod>, uint64> GSettledLods;
+
+	bool IsFarForInitialRender(const AWorldScapeRoot* Root)
+	{
+		const double Altitude = CVarFarReadyAltitude.GetValueOnGameThread();
+		if (Altitude <= 0.0 || !IsValid(Root) || Root->PlanetScale <= 0.0)
+		{
+			return false;
+		}
+		const FVector Observer = Root->bOverridePlayerPosition
+			? Root->OverridedPlayerPosition : Root->PlayerWorldPos.ToFVector();
+		return !Observer.ContainsNaN()
+			&& FVector::Distance(Observer, Root->GetActorLocation()) - Root->PlanetScale > Altitude * Root->PlanetScale;
+	}
+
+	/** A complete payload of the current field. Only for a LOD no worker owns: its arrays are read here. */
+	bool HasSettledPayload(AWorldScapeRoot* Root, const UWorldScapeLod* Lod, const bool bTerrain)
+	{
+		if (!APSWorldScapePayloadValidation::HasCompletePayload(Lod, bTerrain))
+		{
+			return false;
+		}
+		if (!bTerrain)
+		{
+			return true;
+		}
+		// A recycled LOD may still carry another body's or profile's relief: a few of its vertices must sit at the
+		// current analytic height (the landing contract's own test, on fewer samples).
+		const FWorldScapeMeshSection* Section = IsValid(Lod->Mesh) ? Lod->Mesh->GetProcMeshSection(0) : nullptr;
+		if (!Section || Section->PlanetVertexBuffer.Num() < 3)
+		{
+			return false;
+		}
+		const FTransform MeshTransform = Lod->Mesh->GetComponentTransform();
+		const FVector SurfaceCenter = Root->GetActorLocation();
+		const int32 Stride = FMath::Max(1, Section->PlanetVertexBuffer.Num() / 16);
+		APSWorldScapeReadinessPolicy::FHeightAgreement Agreement;
+		for (int32 Index = 0; Index < Section->PlanetVertexBuffer.Num(); Index += Stride)
+		{
+			const FVector WorldVertex = MeshTransform.TransformPosition(Section->PlanetVertexBuffer[Index].Position);
+			if (WorldVertex.ContainsNaN())
+			{
+				return false;
+			}
+			Agreement.Add(FVector::Distance(WorldVertex, SurfaceCenter) - Root->PlanetScaleCode,
+				Root->GetGroundHeight(WorldVertex, false));
+		}
+		return Agreement.IsReady();
+	}
+
+	/**
+	 * Far from the body every terrain and ocean LOD must have carried a complete payload of this root, body and profile
+	 * once. A LOD a worker owns right now counts only from an earlier check; its previous payload keeps rendering.
+	 */
+	bool HasFarInitialCoverage(AWorldScapeRoot* Root, const APlanetaryBody* Body, const uint32 ProfileSignature)
+	{
+		const uint64 Stamp = (static_cast<uint64>(GetTypeHash(Root)) << 32)
+			^ static_cast<uint64>(HashCombineFast(GetTypeHash(Body), ProfileSignature));
+		if (GSettledLods.Num() > 4096)
+		{
+			for (auto It = GSettledLods.CreateIterator(); It; ++It)
+			{
+				if (!It.Key().IsValid()) It.RemoveCurrent();
+			}
+		}
+		const auto Covered = [Root, Stamp](const TArray<UWorldScapeLod*>& Lods, const int32 Expected, const bool bTerrain)
+		{
+			if (Expected <= 0 || Lods.Num() < Expected)
+			{
+				return false;
+			}
+			bool bAll = true;
+			for (const UWorldScapeLod* Lod : Lods)
+			{
+				if (!IsValid(Lod))
+				{
+					return false;
+				}
+				uint64& Settled = GSettledLods.FindOrAdd(Lod, 0);
+				if (Settled != Stamp && !Root->WorldScapeLodInGeneration.Contains(const_cast<UWorldScapeLod*>(Lod))
+					&& HasSettledPayload(Root, Lod, bTerrain))
+				{
+					Settled = Stamp;
+				}
+				bAll &= Settled == Stamp;
+			}
+			return bAll;
+		};
+		const bool bTerrainCovered = Covered(Root->WorldScapeLod, Root->MaxLod, true);
+		return bTerrainCovered && (!Root->bOcean || Covered(Root->WorldScapeLodOcean, Root->OceanMaxLod, false));
+	}
 
 	const UWorldScapeLod* FindUniqueTerrainRenderLod0(const AWorldScapeRoot* Root)
 	{
@@ -167,6 +268,17 @@ namespace
 	}
 }
 
+bool APlanetaryBody::HasWorldScapeReplacementCoverage(AWorldScapeRoot* Root) const
+{
+	if (!IsValid(Root) || !Root->WorldScapeLodInGeneration.IsEmpty()) return false;
+	const FVector Direction = Root->WorldToECEF(Root->OverridedPlayerPosition).ToFVector().GetSafeNormal();
+	return APSWorldScapePayloadValidation::HasExactCenteredPayloadSet(
+		Root->WorldScapeLod, Root->MaxLod, false, Direction, true)
+		&& (!Root->bOcean || APSWorldScapePayloadValidation::HasExactCenteredPayloadSet(
+			Root->WorldScapeLodOcean, Root->OceanMaxLod, true, Direction, false))
+		&& HasInitialFullScaleGameplayRenderContract(Root);
+}
+
 void APlanetaryBody::SetWorldScapeStreamingState(EWorldScapeSurfaceState NewState)
 {
 	if (!bStreamWorldScapeSurface && !bGenerateByDefault)
@@ -176,6 +288,10 @@ void APlanetaryBody::SetWorldScapeStreamingState(EWorldScapeSurfaceState NewStat
 
 	auto SetPlaceholderVisible = [this](bool bVisible)
 	{
+		if (bVisible)
+		{
+			APSPlaceholderGlobe::Apply(this);
+		}
 		if (APlanet* Planet = Cast<APlanet>(this))
 		{
 			bVisible ? Planet->EnableSphereMesh() : Planet->DisableSphereMesh();
@@ -271,13 +387,16 @@ void APlanetaryBody::SetWorldScapeStreamingState(EWorldScapeSurfaceState NewStat
 				&& bWorldScapeSurfaceReady
 				&& IsValid(PreviousRoot) && PreviousRoot == Generator->WorldScapeRootInstance
 				&& PreviousProfile == Generator->AppliedSurfaceProfileSignature
-				&& !Generator->IsSurfaceProfileApplyPending()
-				&& ((Planet && Planet->IsManual) || Generator->IsSurfaceProfileCurrent(this));
+				&& (Generator->IsLavaMaterialPreparationPending()
+					|| (!Generator->IsSurfaceProfileApplyPending()
+						&& ((Planet && Planet->IsManual) || Generator->IsSurfaceProfileCurrent(this))));
 			// A planet -> moon -> planet handoff resumes an already published root.
 			// Do not revoke its readiness or cover it with the placeholder while its
 			// LOD workers catch up to the returning observer. First activation, new
 			// roots and changed/pending profiles still require the complete initial
 			// render contract. Never inspect worker-owned vertex buffers here.
+			// Shader-only waiting also retains a previously published exact root/
+			// profile pair. The generator invalidates it when configuration resumes.
 			SetPlaceholderVisible(!bResumePublishedSurface);
 			bWorldScapeSurfaceReady = bResumePublishedSurface;
 			Generator->SpawnWorldScapeRoot();
@@ -325,6 +444,10 @@ bool APlanetaryBody::RefreshWorldScapeSurfaceVisibility()
 {
 	auto SetPlaceholderVisible = [this](bool bVisible)
 	{
+		if (bVisible)
+		{
+			APSPlaceholderGlobe::Apply(this);
+		}
 		if (APlanet* Planet = Cast<APlanet>(this))
 		{
 			bVisible ? Planet->EnableSphereMesh() : Planet->DisableSphereMesh();
@@ -338,6 +461,7 @@ bool APlanetaryBody::RefreshWorldScapeSurfaceVisibility()
 	AWorldScapeRoot* Root = IsValid(PlanetaryEnvironmentGenerator)
 		? PlanetaryEnvironmentGenerator->WorldScapeRootInstance : nullptr;
 	bool bHasStableTerrainCoverage = false;
+	bool bFarFirstFrame = false;
 	const bool bWasSurfaceReady = bWorldScapeSurfaceReady;
 	const bool bBuildingStandby = IsValid(Root)
 		&& WorldScapeSurfaceState == EWorldScapeSurfaceState::Preloaded
@@ -376,7 +500,19 @@ bool APlanetaryBody::RefreshWorldScapeSurfaceVisibility()
 		}
 
 		const bool bWorkersInFlight = Root->WorldScapeLodInGeneration.Num() > 0;
-		if (APSWorldScapeReadinessPolicy::NeedsInitialPayloadValidation(bWasSurfaceReady, bWorkersInFlight))
+		// Far away the finest patch under the observer is a few pixels at most, and a fast approach keeps re-centring
+		// it, so the landing contract (no worker in flight) held the grey placeholder until the ship braked.
+		bFarFirstFrame = !bWasSurfaceReady
+			&& (WorldScapeSurfaceState == EWorldScapeSurfaceState::Active || bBuildingStandby)
+			&& FMath::IsNearlyEqual(WorldScapePresentationScale, 1.0)
+			&& IsValid(GetWorld()) && GetWorld()->IsGameWorld()
+			&& IsFarForInitialRender(Root);
+		if (bFarFirstFrame)
+		{
+			bHasStableTerrainCoverage = HasFarInitialCoverage(Root, this,
+				PlanetaryEnvironmentGenerator->AppliedSurfaceProfileSignature);
+		}
+		else if (APSWorldScapeReadinessPolicy::NeedsInitialPayloadValidation(bWasSurfaceReady, bWorkersInFlight))
 		{
 			const FVector ObserverWorldPosition = Root->bOverridePlayerPosition
 				? Root->OverridedPlayerPosition : Root->PlayerWorldPos.ToFVector();
@@ -420,8 +556,8 @@ bool APlanetaryBody::RefreshWorldScapeSurfaceVisibility()
 
 	if (bHasStableTerrainCoverage && !bWasSurfaceReady)
 	{
-		UE_LOG(LogTemp, Log, TEXT("[APS.WorldScape] Surface ready body=%s lods=%d oceanLods=%d"),
-			*GetName(), Root->WorldScapeLod.Num(), Root->WorldScapeLodOcean.Num());
+		UE_LOG(LogTemp, Log, TEXT("[APS.WorldScape] Surface ready body=%s lods=%d oceanLods=%d far=%d"),
+			*GetName(), Root->WorldScapeLod.Num(), Root->WorldScapeLodOcean.Num(), bFarFirstFrame ? 1 : 0);
 	}
 	// Readiness is an activation latch, not a statement that no incremental worker
 	// happens to be active on this exact frame. Once a complete payload has replaced
