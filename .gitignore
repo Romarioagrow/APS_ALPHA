@@ -382,7 +382,10 @@ Intermediate/
 
 Saved/
 
-/Plugins/
+/Plugins/*
+# Rio 04.10: the project's own plugins are part of the repository (their Binaries/ and Intermediate/ stay out).
+!/Plugins/APSStarRenderer/
+!/Plugins/AtmoScape/
 
 /Content/*
 !/Content/APS/

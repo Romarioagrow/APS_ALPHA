@@ -1,0 +1,28 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "0.1",
+	"FriendlyName": "APS Star Renderer",
+	"Description": "APOSFERA galaxy phase 3: GPU star points (compute raster, 64/32-bit atomics) and a ray-marched galaxy glow. Docs/Design/GALAXY_GPU_STARS.md",
+	"Category": "Rendering",
+	"CreatedBy": "APOSFERA",
+	"CreatedByURL": "",
+	"DocsURL": "",
+	"MarketplaceURL": "",
+	"SupportURL": "",
+	"CanContainContent": false,
+	"IsBetaVersion": true,
+	"IsExperimentalVersion": false,
+	"Installed": false,
+	"EnabledByDefault": false,
+	"Modules": [
+		{
+			"Name": "APSStarRenderer",
+			"Type": "Runtime",
+			"LoadingPhase": "PostConfigInit",
+			"PlatformAllowList": [
+				"Win64"
+			]
+		}
+	]
+}

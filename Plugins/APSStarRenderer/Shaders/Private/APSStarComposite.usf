@@ -1,0 +1,123 @@
+// Rio 03.10 (galaxy phase 3): composites GPU stars and the galaxy glow into the HDR scene colour after
+// TSR and before bloom/tonemapping. Writes a new texture (the TSR output is its history: never in place).
+// A compute pass, not a pixel shader (03.10 08:17): a graphics PSO can fail on VS/PS signature linkage or
+// render-target state, and UE treats a failed PSO at draw time as fatal; this pass has no such state.
+
+#include "/Plugin/APSStarRenderer/Private/APSStarCommon.ush"
+
+#ifndef APS_ATOMIC64
+#define APS_ATOMIC64 0
+#endif
+
+float4 StarPalette[256];
+int4 InputRect;
+int4 OutputRect;
+float4 PsfParams;
+float4 CompositeParams;
+uint bHasStars;
+uint bHasGlow;
+uint DebugMode;
+int PsfRadius;
+Texture2D SceneColorTexture;
+#if APS_ATOMIC64
+Texture2D<UlongType> StarBuffer64;
+#else
+Texture2D<uint> StarBuffer32;
+#endif
+Texture2D GlowTexture;
+SamplerState GlowSampler;
+RWTexture2D<float4> OutSceneColor;
+
+void ApsLoadStar(int2 Pixel, out float Brightness, out float2 Sub, out uint ColorIndex)
+{
+#if APS_ATOMIC64
+	ApsDecodeKey64(UnpackUlongType(StarBuffer64[uint2(Pixel)]), Brightness, Sub, ColorIndex);
+#else
+	ApsDecodeKey32(StarBuffer32[uint2(Pixel)], Brightness, Sub, ColorIndex);
+#endif
+}
+
+[numthreads(8, 8, 1)]
+void CompositeCS(uint3 DispatchThreadId : SV_DispatchThreadID)
+{
+	const int2 OutputPixel = int2(DispatchThreadId.xy);
+	if (OutputPixel.x >= OutputRect.z || OutputPixel.y >= OutputRect.w)
+	{
+		return;
+	}
+	const float2 OutputUV = (float2(OutputPixel) + 0.5) / float2(OutputRect.zw);
+	const int2 Local = clamp(int2(OutputUV * float2(InputRect.zw)), int2(0, 0), InputRect.zw - 1);
+	const float4 Scene = SceneColorTexture.Load(int3(InputRect.xy + Local, 0));
+
+	// Gather the brightest star of every pixel within PsfRadius and spread it with the sub-pixel PSF.
+	float3 Stars = float3(0.0, 0.0, 0.0);
+	if (bHasStars != 0u)
+	{
+		const float2 PixelCentre = float2(Local) + 0.5;
+		LOOP
+		for (int Dy = -PsfRadius; Dy <= PsfRadius; ++Dy)
+		{
+			LOOP
+			for (int Dx = -PsfRadius; Dx <= PsfRadius; ++Dx)
+			{
+				const int2 Q = Local + int2(Dx, Dy);
+				if (Q.x < 0 || Q.y < 0 || Q.x >= InputRect.z || Q.y >= InputRect.w)
+				{
+					continue;
+				}
+				float Brightness;
+				float2 Sub;
+				uint ColorIndex;
+				ApsLoadStar(Q, Brightness, Sub, ColorIndex);
+				if (!(Brightness > 0.0))
+				{
+					continue;
+				}
+				// Brighter stars widen their halo (PsfParams.y -> .z) and give it more weight (up to .w).
+				const float Strength = saturate(log2(max(Brightness * CompositeParams.x, 1.0)) * 0.125);
+				const float HaloSigma = lerp(PsfParams.y, PsfParams.z, Strength);
+				const float HaloWeight = PsfParams.w * Strength;
+				const float2 Offset = PixelCentre - (float2(Q) + Sub);
+				Stars += StarPalette[ColorIndex].rgb * (Brightness * ApsStarPsf(Offset, PsfParams.x, HaloSigma, HaloWeight));
+			}
+		}
+		Stars = min(Stars, float3(65000.0, 65000.0, 65000.0));
+	}
+
+	// Glow: emission plus the dust transmittance of the whole ray. Stars and the existing scene sit inside the
+	// galaxy, so they take the mean transmittance of a uniform position along the ray, (1 - T) / tau.
+	float3 Glow = float3(0.0, 0.0, 0.0);
+	float Transmittance = 1.0;
+	if (bHasGlow != 0u)
+	{
+		const float4 GlowSample = GlowTexture.SampleLevel(GlowSampler, OutputUV, 0);
+		Glow = min(max(GlowSample.rgb, float3(0.0, 0.0, 0.0)), float3(65000.0, 65000.0, 65000.0));
+		Transmittance = saturate(GlowSample.a);
+		// Rio 03.10 ("the halos may stay, but not that strong": a dense core whited out the whole screen, a planet view
+		// was plain white): the glow's luminance saturates softly at CompositeParams.w (pre-exposed), linear well below.
+		if (CompositeParams.w > 0.0)
+		{
+			const float GlowLuminance = dot(Glow, float3(0.2126, 0.7152, 0.0722));
+			Glow *= 1.0 / (1.0 + GlowLuminance / CompositeParams.w);
+		}
+	}
+	const float Tau = -log(max(Transmittance, 1.0e-4));
+	const float MeanTransmittance = Tau > 1.0e-4 ? (1.0 - Transmittance) / Tau : 1.0;
+	const float SceneAttenuation = lerp(1.0, MeanTransmittance, CompositeParams.y);
+	const float StarAttenuation = lerp(1.0, MeanTransmittance, CompositeParams.z);
+
+	float3 Result = Scene.rgb * SceneAttenuation + max(Stars, float3(0.0, 0.0, 0.0)) * StarAttenuation + Glow;
+	if (DebugMode == 1u)
+	{
+		Result = Stars;
+	}
+	else if (DebugMode == 2u)
+	{
+		Result = Glow;
+	}
+	else if (DebugMode == 3u)
+	{
+		Result = float3(MeanTransmittance, MeanTransmittance, MeanTransmittance);
+	}
+	OutSceneColor[uint2(OutputRect.xy + OutputPixel)] = float4(Result, Scene.a);
+}

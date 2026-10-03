@@ -63,3 +63,4 @@ Content/APS/APS_ALPHA/Assets/AI_Shpis/Pack_1/Spaceship_S_P1_24/SK_Spaceship_S_P1
 SourceAudio/APS/MenuMusic/SW_Menu_MelodicPlaylist.wav filter=lfs diff=lfs merge=lfs -text
 Content/APS/APS_ALPHA/Audio/Waves/SW_Menu_MelodicPlaylist.uasset filter=lfs diff=lfs merge=lfs -text
 Content/APS/APS_ALPHA/Assets/AI_Shpis/Pack_3/Spaceship_S_P3_01/SM_Spaceship_S_P3_01.uasset filter=lfs diff=lfs merge=lfs -text
+Plugins/AtmoScape/Content/Bonus/PlanetScape/Meshes/GPU_ClipMapMesh.uasset filter=lfs diff=lfs merge=lfs -text
