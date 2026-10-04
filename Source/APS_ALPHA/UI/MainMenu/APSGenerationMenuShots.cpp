@@ -6,6 +6,12 @@
 #include "APS_ALPHA/Actors/Astro/APSBodyDesignation.h"
 #include "APS_ALPHA/Actors/Astro/Moon.h"
 #include "APS_ALPHA/Core/Controllers/MainMenuController.h"
+#include "APS_ALPHA/Core/Enums/GalaxyClass.h"
+#include "APS_ALPHA/Core/Enums/GalaxyType.h"
+#include "APS_ALPHA/Core/Enums/StarClusterComposition.h"
+#include "APS_ALPHA/Core/Enums/StarClusterPopulation.h"
+#include "APS_ALPHA/Core/Enums/StarClusterSize.h"
+#include "APS_ALPHA/Core/Enums/StarClusterType.h"
 #include "APS_ALPHA/Generation/AstroGenerator.h"
 #include "Containers/Ticker.h"
 #include "Engine/Engine.h"
@@ -46,6 +52,20 @@ namespace APSGenerationShotsPrivate
 		int32 Moons{-1};
 		bool bPlanetsApplied{false};
 		bool bMoonsApplied{false};
+		/** Rio 03.10 (fps A/B in a heavy world): optional stars= csize= ctype= cpop= arguments, applied once. */
+		double GalaxyStars{-1.0};
+		FString ClusterSize;
+		FString ClusterType;
+		FString ClusterPopulation;
+		/** gpop= gcomp=: the galaxy's POPULATION / COMPOSITION rows (EStarClusterPopulation / Composition names). */
+		FString GalaxyPopulation;
+		FString GalaxyComposition;
+		/** Rio 03.10 (white glow in some generated worlds): gtype= gclass= (EGalaxyType / EGalaxyClass names), gsize= gdens=. */
+		FString GalaxyType;
+		FString GalaxyClass;
+		double GalaxySize{-1.0};
+		double GalaxyDensity{-1.0};
+		bool bWorldApplied{false};
 		int32 Step{0};
 		bool bStepRequested{false};
 		/** Rio 02.10: FPS fell while the cluster camera turned. After the cluster shot the camera orbits for a few
@@ -64,6 +84,11 @@ namespace APSGenerationShotsPrivate
 		double LastTickSeconds{0.0};
 		double StartSeconds{0.0};
 		double ReadySeconds{0.0};
+		/** Rio 03.10 ("after REGENERATE the orbits vanish, nothing highlights"): after the scopes, two REGENERATE presses,
+		 * each shot at SYSTEM with its overlay. */
+		int32 RegenShots{0};
+		bool bRegenRequested{false};
+		bool bRegenFocused{false};
 		FString Label;
 		FTSTicker::FDelegateHandle Ticker;
 	};
@@ -157,8 +182,96 @@ namespace APSGenerationShotsPrivate
 			GShots.ReadySeconds = 0.0;
 			return true;
 		}
+		if (!GShots.bWorldApplied)
+		{
+			GShots.bWorldApplied = true;
+			bool bChanged = false;
+			if (GShots.GalaxyStars > 0.0)
+			{
+				VM->SetGalaxyPlacedStarCount(GShots.GalaxyStars);
+				bChanged = true;
+			}
+			const auto ApplyEnum = [VM, &bChanged](const UEnum* Enum, const FString& Name)
+			{
+				if (Name.IsEmpty() || !Enum) return;
+				const int64 Value = Enum->GetValueByNameString(Name);
+				if (Value == INDEX_NONE)
+				{
+					UE_LOG(LogTemp, Warning, TEXT("[APS.MenuShots] no %s value '%s'"), *Enum->GetName(), *Name);
+					return;
+				}
+				VM->SetEnumValue(Enum, static_cast<int32>(Value));
+				bChanged = true;
+			};
+			ApplyEnum(StaticEnum<EStarClusterSize>(), GShots.ClusterSize);
+			ApplyEnum(StaticEnum<EStarClusterType>(), GShots.ClusterType);
+			ApplyEnum(StaticEnum<EStarClusterPopulation>(), GShots.ClusterPopulation);
+			ApplyEnum(StaticEnum<EGalaxyType>(), GShots.GalaxyType);
+			ApplyEnum(StaticEnum<EGalaxyClass>(), GShots.GalaxyClass);
+			if (GShots.GalaxySize > 0.0)
+			{
+				VM->SetGalaxySize(GShots.GalaxySize);
+				bChanged = true;
+			}
+			if (GShots.GalaxyDensity > 0.0)
+			{
+				VM->SetGalaxyStarDensity(GShots.GalaxyDensity);
+				bChanged = true;
+			}
+			const auto GalaxyValue = [](const UEnum* Enum, const FString& Name)
+			{
+				return Enum && !Name.IsEmpty() ? Enum->GetValueByNameString(Name) : INDEX_NONE;
+			};
+			if (const int64 Value = GalaxyValue(StaticEnum<EStarClusterPopulation>(), GShots.GalaxyPopulation); Value != INDEX_NONE)
+			{
+				VM->SetGalaxyStarPopulation(static_cast<int32>(Value));
+				bChanged = true;
+			}
+			if (const int64 Value = GalaxyValue(StaticEnum<EStarClusterComposition>(), GShots.GalaxyComposition); Value != INDEX_NONE)
+			{
+				VM->SetGalaxyStarComposition(static_cast<int32>(Value));
+				bChanged = true;
+			}
+			if (bChanged)
+			{
+				UE_LOG(LogTemp, Log, TEXT("[APS.MenuShots] world: stars=%.0f cluster size=%s type=%s population=%s; galaxy population=%s composition=%s"),
+					GShots.GalaxyStars, *GShots.ClusterSize, *GShots.ClusterType, *GShots.ClusterPopulation,
+					*GShots.GalaxyPopulation, *GShots.GalaxyComposition);
+				GShots.ReadySeconds = 0.0;
+				return true;
+			}
+		}
 		if (GShots.Step >= UE_ARRAY_COUNT(Shots))
 		{
+			if (GShots.RegenShots < 2)
+			{
+				// Each wait above (4 s after the preview is ready) lets the regenerated system and the camera settle.
+				if (!GShots.bRegenRequested)
+				{
+					GShots.bRegenRequested = true;
+					GShots.ReadySeconds = 0.0;
+					UE_LOG(LogTemp, Log, TEXT("[APS.MenuShots] REGENERATE %d"), GShots.RegenShots + 1);
+					VM->RegeneratePreviewVariant();
+					return true;
+				}
+				if (!GShots.bRegenFocused)
+				{
+					GShots.bRegenFocused = true;
+					GShots.ReadySeconds = 0.0;
+					VM->SetPreviewFocus(EAstroPreviewFocus::HomeSystem);
+					return true;
+				}
+				const FString RegenName = FString::Printf(TEXT("regen%d_system"), GShots.RegenShots + 1);
+				LogScope(*VM, *RegenName);
+				const FString RegenFile = FPaths::ScreenShotDir() / TEXT("GenerationMenu")
+					/ FString::Printf(TEXT("%s_%d_%s.png"), *GShots.Label, GShots.Step + GShots.RegenShots, *RegenName);
+				FScreenshotRequest::RequestScreenshot(RegenFile, true, false);
+				UE_LOG(LogTemp, Log, TEXT("[APS.MenuShots] shot %s"), *FPaths::GetCleanFilename(RegenFile));
+				++GShots.RegenShots;
+				GShots.bRegenRequested = false;
+				GShots.bRegenFocused = false;
+				return true;
+			}
 			Finish(TEXT("all scopes shot"));
 			return false;
 		}
@@ -221,7 +334,8 @@ namespace APSGenerationShotsPrivate
 			/ FString::Printf(TEXT("%s_%d_%s.png"), *GShots.Label, GShots.Step, Shot.Name);
 		FScreenshotRequest::RequestScreenshot(File, true, false);
 		UE_LOG(LogTemp, Log, TEXT("[APS.MenuShots] shot %s"), *FPaths::GetCleanFilename(File));
-		if (Shot.Focus == EAstroPreviewFocus::StarCluster && !GShots.bOrbitDone)
+		// Rio 03.10: the galaxy turns as well; each scope's orbit is timed on its own line.
+		if ((Shot.Focus == EAstroPreviewFocus::StarCluster || Shot.Focus == EAstroPreviewFocus::Galaxy) && !Shot.bMoon)
 		{
 			VM->BeginPreviewOrbit();
 			GShots.OrbitStartSeconds = Now;
@@ -255,6 +369,22 @@ static FAutoConsoleCommand GAPSGenerationShotsCommand(
 		GShots.Planets = Args.IsValidIndex(1) ? FCString::Atoi(*Args[1]) : -1;
 		GShots.Moons = Args.IsValidIndex(2) ? FCString::Atoi(*Args[2]) : -1;
 		GShots.bQuit = Args.ContainsByPredicate([](const FString& Arg) { return Arg.Equals(TEXT("quit"), ESearchCase::IgnoreCase); });
+		for (const FString& Arg : Args)
+		{
+			FString Key;
+			FString Value;
+			if (!Arg.Split(TEXT("="), &Key, &Value)) continue;
+			if (Key.Equals(TEXT("stars"), ESearchCase::IgnoreCase)) GShots.GalaxyStars = FCString::Atod(*Value);
+			else if (Key.Equals(TEXT("csize"), ESearchCase::IgnoreCase)) GShots.ClusterSize = Value;
+			else if (Key.Equals(TEXT("ctype"), ESearchCase::IgnoreCase)) GShots.ClusterType = Value;
+			else if (Key.Equals(TEXT("cpop"), ESearchCase::IgnoreCase)) GShots.ClusterPopulation = Value;
+			else if (Key.Equals(TEXT("gpop"), ESearchCase::IgnoreCase)) GShots.GalaxyPopulation = Value;
+			else if (Key.Equals(TEXT("gtype"), ESearchCase::IgnoreCase)) GShots.GalaxyType = Value;
+			else if (Key.Equals(TEXT("gclass"), ESearchCase::IgnoreCase)) GShots.GalaxyClass = Value;
+			else if (Key.Equals(TEXT("gsize"), ESearchCase::IgnoreCase)) GShots.GalaxySize = FCString::Atod(*Value);
+			else if (Key.Equals(TEXT("gdens"), ESearchCase::IgnoreCase)) GShots.GalaxyDensity = FCString::Atod(*Value);
+			else if (Key.Equals(TEXT("gcomp"), ESearchCase::IgnoreCase)) GShots.GalaxyComposition = Value;
+		}
 		GShots.Ticker = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateStatic(&Tick), 0.0f);
 		UE_LOG(LogTemp, Log, TEXT("[APS.MenuShots] armed label=%s planets=%d moons=%d quit=%d"), *GShots.Label,
 			GShots.Planets, GShots.Moons, GShots.bQuit ? 1 : 0);

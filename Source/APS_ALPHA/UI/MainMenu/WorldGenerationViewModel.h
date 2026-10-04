@@ -51,6 +51,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "World Generation")
 	void SetGalaxyStarCount(double Value);
 
+	/** Rio 03.10: STARS slider, galaxy stars actually placed (1,800..1,000,000; 0 keeps the historic budgets). */
+	void SetGalaxyPlacedStarCount(double Value);
+	/** Rio 03.10: the galaxy's POPULATION / COMPOSITION rows (EStarClusterPopulation / EStarClusterComposition values). */
+	void SetGalaxyStarPopulation(int32 Value);
+	void SetGalaxyStarComposition(int32 Value);
+
 	UFUNCTION(BlueprintCallable, Category = "World Generation")
 	void SetGalaxyStarDensity(double Value);
 
@@ -128,6 +134,17 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "World Generation|Preview")
 	void RegeneratePreviewVariant();
+
+	/** Rio 03.10: a person opening the generation screen on an untouched model gets a freshly rolled world, the same
+	 * roll as REGENERATE. Once per menu session; never for automation, the bench, diagnostics, load or continue. */
+	void RollFreshWorldOnce();
+
+	/** Rio 03.10: the preview's marks (labels, rings, orbits) hidden for "just space"; per menu session, logged. */
+	bool ArePreviewMarksHidden() const { return bPreviewMarksHidden; }
+	void SetPreviewMarksHidden(bool bHidden);
+
+	/** The menu's own preview generator, independent of the actor the camera currently views through. */
+	AAstroGenerator* GetPreviewGenerator() const { return PreviewGenerator.Get(); }
 
 	UFUNCTION(BlueprintCallable, Category = "World Generation|Preview")
 	void SetPreviewFocus(EAstroPreviewFocus NewFocus);
@@ -249,4 +266,8 @@ private:
 	bool bPendingSurfaceAppearanceRefresh{false};
 	/** Explicit REGENERATE intentionally discards the old hierarchy's per-body editor snapshots. */
 	bool bSkipBodyOverrideSnapshotOnce{false};
+	/** Rolls a new world into the model (APSWorldRoll): the whole home system, or only the world on the PLANET route. */
+	void RollWorld(const TCHAR* Reason);
+	bool bPreviewMarksHidden{false};
+	bool bFreshWorldRollConsidered{false};
 };

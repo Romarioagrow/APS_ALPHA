@@ -537,7 +537,6 @@ void ACustomGravityCharacter::TryInteract()
 AActor* ACustomGravityCharacter::FindInteractionCandidate()
 {
 	AActor* Candidate = nullptr;
-	bool bFromGravity = false;
 	if (UWorld* World = GetWorld())
 	{
 		const FVector Start = FollowCamera ? FollowCamera->GetComponentLocation() : GetActorLocation();
@@ -561,27 +560,11 @@ AActor* ACustomGravityCharacter::FindInteractionCandidate()
 	if (!Candidate && GravityDetector)
 	{
 		Candidate = ResolveVehicleActor(GravityDetector->CurrentSpaceship);
-		bFromGravity = Candidate != nullptr;
 	}
 
-	// Aboard (or found only through the ship's gravity) the controls are taken at the pilot's seat, not anywhere in
-	// the hull (Rio 02.10: "F TAKE CONTROL" showed all over the cargo deck).
-	if (const ASpaceship* Ship = Cast<ASpaceship>(Candidate))
-	{
-		bool bAboard = bFromGravity;
-		if (const UBoxComponent* Bounds = Ship->InteractionBoundsComponent)
-		{
-			const FVector Local = Bounds->GetComponentTransform().InverseTransformPositionNoScale(GetActorLocation());
-			const FVector Extent = Bounds->GetScaledBoxExtent();
-			bAboard |= FMath::Abs(Local.X) <= Extent.X && FMath::Abs(Local.Y) <= Extent.Y && FMath::Abs(Local.Z) <= Extent.Z;
-		}
-		constexpr double SeatReachCm = 350.0;
-		if (bAboard && (!Ship->PilotChair
-			|| FVector::Distance(Ship->PilotChair->GetComponentLocation(), GetActorLocation()) > SeatReachCm))
-		{
-			Candidate = nullptr;
-		}
-	}
+	// Rio 04.10 ("bring back taking the controls from anywhere once I'm in; when I get up I appear at the seat"): aboard
+	// any ship the controls are taken wherever the player stands (02.10 limited a modelled cabin to its seat); getting up
+	// still puts the pilot behind the seat (ASpaceship::GetPilotExitTransform).
 	return Candidate;
 }
 
@@ -814,6 +797,19 @@ FText ACustomGravityCharacter::GetTraversalHintText() const
 
 void ACustomGravityCharacter::UpdateGravityDirection(float DeltaTime)
 {
+	// Rio 03.10 ("flew from the surface to the HQ station, got out of the ship: it centres on the planet again"): the
+	// surface spawn pins gravity to its planet (SetGravityTarget) and the pin outlived the planet, so aboard a ship or on
+	// a station the character still fell toward the planet's centre. A ship or station the detector finds releases it.
+	if (bManualGravityOverride && GravityTarget && GravityDetector && IsValid(GravityDetector->GravityTargetActor)
+		&& GravityDetector->GravityTargetActor != GravityTarget
+		&& (GravityDetector->CurrentGravityType == EGravityType::OnShip
+			|| GravityDetector->CurrentGravityType == EGravityType::OnStation))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[APS.Gravity] spawn pin to %s released: %s is the local frame"),
+			*GetNameSafe(GravityTarget), *GetNameSafe(GravityDetector->GravityTargetActor));
+		bManualGravityOverride = false;
+	}
+
 	if (bManualZeroGOverride)
 	{
 		SetZeroGravityEnabled(true);
@@ -1263,6 +1259,26 @@ void ACustomGravityCharacter::SetSurfaceHandoffSuspended(const bool bSuspended)
 		*GetActorLocation().ToCompactString());
 }
 
+void ACustomGravityCharacter::SetViewDirection(const FVector& Forward, const float PitchUpDegrees)
+{
+	const FVector GravityUp = GetGravityUpVector();
+	const FVector Planar = FVector::VectorPlaneProject(Forward, GravityUp).GetSafeNormal();
+	if (Planar.IsNearlyZero())
+	{
+		return;
+	}
+	// The camera keeps its own heading on the gravity plane and the character follows it every tick
+	// (SynchronizeCharacterToCamera); a positive CameraPitch looks down.
+	CameraForwardOnGravityPlane = Planar;
+	CameraReferenceUp = GravityUp;
+	CameraPitch = FMath::Clamp(-PitchUpDegrees, -80.f, 80.f);
+	SetActorRotation(FRotationMatrix::MakeFromXZ(Planar, GravityUp).ToQuat(), ETeleportType::TeleportPhysics);
+	if (CameraBoom)
+	{
+		CameraBoom->SetWorldRotation(GetCameraViewRotation());
+	}
+}
+
 void ACustomGravityCharacter::SetCustomGravityDirection(const FVector& NewDirection)
 {
 	bUseCustomGravity = true;
@@ -1670,6 +1686,13 @@ void ACustomGravityCharacter::SettleAfterVehicleExit(const FVector& Facing)
 	{
 		bManualZeroGOverride = false;
 		UE_LOG(LogTemp, Warning, TEXT("[APS.Gravity] ManualZeroG=OFF on vehicle exit character=%s"), *GetName());
+	}
+	// Rio 03.10: the surface spawn's pin to its planet (SetGravityTarget) ends with the first ride: where the character
+	// gets out (a station, a ship's deck, another world) the detector decides, not the planet it started on.
+	if (bManualGravityOverride && GravityTarget)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[APS.Gravity] spawn pin to %s released on vehicle exit"), *GetNameSafe(GravityTarget));
+		bManualGravityOverride = false;
 	}
 	// While seated the character did not tick: its gravity frame is the one it boarded in, possibly another body.
 	if (GravityDetector)

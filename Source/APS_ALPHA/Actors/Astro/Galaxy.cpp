@@ -1,5 +1,8 @@
 #include "Galaxy.h"
+#include "APS_ALPHA/Core/Rendering/APSGalaxyGpuStars.h"
 #include "APS_ALPHA/Core/Rendering/APSStellarMaterialContract.h"
+#include "APS_ALPHA/Generation/APSGalaxyMorphology.h"
+#include "Async/ParallelFor.h"
 #include "UObject/ConstructorHelpers.h"
 
 namespace APSGalaxyCatalog
@@ -117,6 +120,16 @@ bool FGalaxyCatalogDescriptor::ResolveStar(const int64 CatalogIndex, FGalaxyCata
 	const double GalaxyRadius = FMath::Max(50000.0, static_cast<double>(FMath::Max(GalaxySize, 1)) * 50000.0)
 		* DensityScale;
 	FVector Position = FVector::ZeroVector;
+	// Rio 03.10: per-type subclasses. Only the subclasses appended on 03.10 own a parametric
+	// profile. Every older (type, class) pair, and the type defaults that reproduce it (Sb, SBb,
+	// warped Pec), resolve through the historic code below unchanged, so saved worlds keep
+	// identical galaxies.
+	const APSGalaxyMorphology::FProfile* Morphology =
+		APSGalaxyMorphology::FindProfile(GalaxyType, GalaxyClass);
+	const bool bParametricMorphology = Morphology && !Morphology->IsHistoric();
+	const EGalaxyClass HistoricClass = Morphology && Morphology->IsHistoric()
+		? Morphology->HistoricClass : GalaxyClass;
+	float PopulationAge = 0.0f;
 
 	// A readable galaxy preview needs more than a razor-thin disk. Real spiral and
 	// lenticular galaxies also own a central bulge and an extended stellar halo;
@@ -129,7 +142,14 @@ bool FGalaxyCatalogDescriptor::ResolveStar(const int64 CatalogIndex, FGalaxyCata
 		|| GalaxyType == EGalaxyType::BarredSpiral
 		|| GalaxyType == EGalaxyType::Peculiar;
 	const double StructureSelector = static_cast<double>((RecordHash >> 24) & 0xffffull) / 65535.0;
-	if (bDiskLikeGalaxy && StructureSelector < 0.18)
+	if (bParametricMorphology)
+	{
+		const APSGalaxyMorphology::FSample MorphologySample = APSGalaxyMorphology::Sample(
+			*Morphology, GenerationSeed, CatalogIndex, RecordHash, GalaxyRadius);
+		Position = MorphologySample.Position;
+		PopulationAge = MorphologySample.Age;
+	}
+	else if (bDiskLikeGalaxy && StructureSelector < 0.18)
 	{
 		APSGalaxyCatalog::FCatalogRandomStream HaloStream(
 			APSGalaxyCatalog::HashCatalogIndex(GenerationSeed, CatalogIndex,
@@ -153,7 +173,7 @@ bool FGalaxyCatalogDescriptor::ResolveStar(const int64 CatalogIndex, FGalaxyCata
 		case EGalaxyType::Elliptical:
 			{
 				const int32 Ellipticity = FMath::Clamp(
-					static_cast<int32>(GalaxyClass) - static_cast<int32>(EGalaxyClass::E0), 0, 7);
+					static_cast<int32>(HistoricClass) - static_cast<int32>(EGalaxyClass::E0), 0, 7);
 				const double Radius = FMath::Pow(Stream.Fraction(), 1.0 / 3.0) * GalaxyRadius;
 				Position = APSGalaxyCatalog::RandomUnitVector(Stream) * Radius;
 				const double Flattening = 1.0 - Ellipticity * 0.09;
@@ -173,7 +193,7 @@ bool FGalaxyCatalogDescriptor::ResolveStar(const int64 CatalogIndex, FGalaxyCata
 		case EGalaxyType::Spiral:
 		case EGalaxyType::BarredSpiral:
 			{
-				const int32 ClassValue = static_cast<int32>(GalaxyClass);
+				const int32 ClassValue = static_cast<int32>(HistoricClass);
 				const int32 ArmCount = FMath::Clamp(2 + (ClassValue % 4), 2, 5);
 				const int32 ArmIndex = static_cast<int32>(RecordHash % static_cast<uint64>(ArmCount));
 				const double RadiusAlpha = FMath::Sqrt(Stream.Fraction());
@@ -221,9 +241,60 @@ bool FGalaxyCatalogDescriptor::ResolveStar(const int64 CatalogIndex, FGalaxyCata
 	OutRecord.GalaxyLocalLocation = Position;
 	OutRecord.GenerationSeed = FMath::Max(1, static_cast<int32>(RecordHash & 0x7fffffffull));
 	OutRecord.SpectralClass = APSGalaxyCatalog::ChooseSpectralClass(static_cast<float>(Stream.Fraction()));
+	if (PopulationAge != 0.0f)
+	{
+		// Parametric subclasses only: young arms/knots gain hot stars, old bulges lose them.
+		// A separate stream keeps the following draws exactly where they were.
+		OutRecord.SpectralClass = APSGalaxyMorphology::ApplyPopulationAge(
+			OutRecord.SpectralClass, PopulationAge, RecordHash);
+	}
 	OutRecord.SpectralSubclass = Stream.Range(0, 9);
 	OutRecord.bPotentialStarSystem = Stream.Fraction() < 0.82;
+	// Rio 03.10: the galaxy POPULATION / COMPOSITION rows, after every historic draw and from a stream of their own;
+	// the historic mix (0, 0) leaves the record untouched (RadiusScale 1).
+	APSGalaxyMorphology::ApplyStarMix(StarPopulation, StarComposition, RecordHash,
+		OutRecord.SpectralClass, OutRecord.RadiusScale);
 	return true;
+}
+
+int32 APSGalaxyCatalogBatch::ResolveStars(const FGalaxyCatalogDescriptor& Catalog,
+	const APSCanonicalStellarProjection::FNestedCatalogPermutation& Order, const int32 FirstOrdinal,
+	const int32 Count, TArray<FGalaxyCatalogStarRecord>& OutRecords)
+{
+	OutRecords.Reset();
+	if (Count <= 0 || FirstOrdinal < 0)
+	{
+		return 0;
+	}
+	OutRecords.SetNum(Count);
+	// Small ranges are cheaper inline; large ones split into ~8k-record tasks.
+	constexpr int32 RecordsPerTask = 8192;
+	const int32 TaskCount = FMath::DivideAndRoundUp(Count, RecordsPerTask);
+	TArray<int32> ResolvedPerTask;
+	ResolvedPerTask.SetNumZeroed(TaskCount);
+	ParallelFor(TaskCount, [&Catalog, &Order, FirstOrdinal, Count, &OutRecords, &ResolvedPerTask](const int32 Task)
+	{
+		const int32 Begin = Task * RecordsPerTask;
+		const int32 End = FMath::Min(Begin + RecordsPerTask, Count);
+		for (int32 Local = Begin; Local < End; ++Local)
+		{
+			FGalaxyCatalogStarRecord& Record = OutRecords[Local];
+			if (Catalog.ResolveStar(Order.Resolve(FirstOrdinal + Local), Record))
+			{
+				++ResolvedPerTask[Task];
+			}
+			else
+			{
+				Record = FGalaxyCatalogStarRecord();
+			}
+		}
+	}, TaskCount <= 1 ? EParallelForFlags::ForceSingleThread : EParallelForFlags::None);
+	int32 Resolved = 0;
+	for (const int32 TaskResolved : ResolvedPerTask)
+	{
+		Resolved += TaskResolved;
+	}
+	return Resolved;
 }
 
 AGalaxy::AGalaxy()
@@ -265,6 +336,23 @@ void AGalaxy::PostInitializeComponents()
 {
 	Super::PostInitializeComponents();
 	EnsureCanonicalStellarMaterial();
+}
+
+void AGalaxy::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	// Rio 03.10 (galaxy phase 3): GPU buffers and a build in flight never outlive the galaxy (no-op without a layer).
+	ReleaseGpuStarLayer();
+	Super::EndPlay(EndPlayReason);
+}
+
+void AGalaxy::RebuildGpuStarLayer()
+{
+	APSGalaxyGpuStars::RebuildLayer(*this);
+}
+
+void AGalaxy::ReleaseGpuStarLayer()
+{
+	APSGalaxyGpuStars::ReleaseLayer(*this);
 }
 
 bool AGalaxy::EnsureCanonicalStellarMaterial()

@@ -19,6 +19,7 @@
 #include "APS_ALPHA/Core/Structs/PlanetarySystemGenerationModel.h"
 #include "Serialization/ObjectAndNameAsStringProxyArchive.h"
 #include "APS_ALPHA/UI/StrategicMap/SAPSStrategicMapPanel.h"
+#include "APS_ALPHA/UI/MainMenu/APSWorldBrowserMetadata.h"
 #include "Engine/GameViewportClient.h"
 #include "GameFramework/Pawn.h"
 #include "InputCoreTypes.h"
@@ -29,45 +30,13 @@
 
 namespace
 {
-	template <typename T>
-	FString APSMetadataEnumLabel(T Value)
+	/** The world browser's .apsmeta sidecar. Rio 03.10: it used to copy the menu model's editor buffer (a G star and one
+	 * frozen planet in almost every save); it now records the live home system. Format and reader live together in
+	 * APSWorldBrowserMetadata; the old keys stay, so older builds still read it. */
+	void WriteWorldMetadataSidecar(const UGameSave* Save, const FGeneratedWorldData& WorldData, const UWorld* World,
+		const UGeneratedWorld* GeneratedWorldModel)
 	{
-		const UEnum* Enum = StaticEnum<T>();
-		return Enum ? Enum->GetDisplayNameTextByValue(static_cast<int64>(Value)).ToString() : TEXT("UNKNOWN");
-	}
-
-	void WriteWorldMetadataSidecar(const UGameSave* Save, const FGeneratedWorldData& WorldData)
-	{
-		if (!Save || Save->SaveSlotName.IsEmpty())
-		{
-			return;
-		}
-
-		FConfigFile Metadata;
-		Metadata.SetInt64(TEXT("APSWorld"), TEXT("Version"), 1);
-		Metadata.SetString(TEXT("APSWorld"), TEXT("DisplayName"),
-			*(Save->WorldName.IsEmpty() ? Save->SaveSlotName : Save->WorldName));
-		Metadata.SetString(TEXT("APSWorld"), TEXT("SystemType"),
-			*APSMetadataEnumLabel(WorldData.PlanetarySystemType));
-		Metadata.SetString(TEXT("APSWorld"), TEXT("StarType"),
-			*APSMetadataEnumLabel(WorldData.SpectralClass));
-		const FString PlanetType = APSMetadataEnumLabel(WorldData.PlanetType);
-		Metadata.SetString(TEXT("APSWorld"), TEXT("PlanetType"), *PlanetType);
-		Metadata.SetString(TEXT("APSWorld"), TEXT("Habitability"),
-			*APSMetadataEnumLabel(WorldData.PlanetHabitability));
-		Metadata.SetString(TEXT("APSWorld"), TEXT("Environment"),
-			*FString::Printf(TEXT("%s / %.0f KM"), *PlanetType, WorldData.PlanetRadius));
-		Metadata.SetInt64(TEXT("APSWorld"), TEXT("TotalPlanets"), WorldData.PlanetsAmount);
-		Metadata.SetInt64(TEXT("APSWorld"), TEXT("InhabitedPlanets"),
-			Save->InhabitedPlanetsDataArray.Num());
-
-		const FString MetadataPath = FPaths::ProjectSavedDir() / TEXT("SaveGames") /
-			(Save->SaveSlotName + TEXT(".apsmeta"));
-		if (!Metadata.Write(MetadataPath, false))
-		{
-			UE_LOG(LogTemp, Warning, TEXT("[APS.Save] Could not write metadata sidecar: %s"),
-				*MetadataPath);
-		}
+		APSWorldBrowserMetadata::WriteForSave(Save, WorldData, World, GeneratedWorldModel);
 	}
 }
 
@@ -402,7 +371,7 @@ bool AGravityPlayerController::SaveWorldToSlot(const FString& SlotName,
 	{
 		GameplayState->SaveSlotName = SlotName;
 	}
-	WriteWorldMetadataSidecar(SaveGameInstance, WorldSaveData);
+	WriteWorldMetadataSidecar(SaveGameInstance, WorldSaveData, World, GeneratedWorldModel);
 	UE_LOG(LogTemp, Log,
 		TEXT("[APS.Save] Saved slot=%s modelBytes=%d spawnBytes=%d civilization=%s actors=%d player=%s"),
 		*SlotName, SaveGameInstance->GeneratedWorldModelData.Num(),

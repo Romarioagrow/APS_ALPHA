@@ -2,10 +2,27 @@
 
 #include "APS_ALPHA/Gameplay/Civilizations/APSStarterDressing.h"
 
+#include "Components/ChildActorComponent.h"
+#include "Components/LightComponent.h"
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
+#include "HAL/IConsoleManager.h"
 #include "UObject/ConstructorHelpers.h"
+
+namespace APSColonyHeadquarters
+{
+	TAutoConsoleVariable<int32> CVarHeadquarters(TEXT("aps.Colony.HQ"), 1,
+		TEXT("1: the home colony's main building is BP_ColonyHQ on its 80 x 55 m foundation (Rio 03.10); ")
+		TEXT("0: the compact dome, towers and disc. Applies to colonies founded or loaded afterwards."));
+	const TCHAR* const BuildingClassPath = TEXT("/Game/APS/APS_ALPHA/Assets/ColonyHQ/BP_ColonyHQ.BP_ColonyHQ_C");
+	/** The foundation under the building: +X (toward the landing pad) by Y by height, its top where the floors start. */
+	const FVector FoundationSizeCm(8000.0, 5500.0, 100.0);
+	/** A new surface start's pilot (Rio 03.10), from HQ_Spots.json: the hall spans x -800..1200 and y -700..700 on the
+	 * 105 cm floor. In its front half, between the kiosks and the sofas, facing the holotable and the console row (-X). */
+	const FVector ArrivalSpotCm(950.0, 0.0, 105.0);
+	constexpr double ArrivalYawDegrees = 180.0;
+}
 
 AColony::AColony()
 {
@@ -106,4 +123,112 @@ void AColony::BeginPlay()
 		Part(this, ColonyRoot, EShape::Cube, Post + FVector(0.0, 0.0, 410.0), FVector(50.0, 50.0, 30.0), Warm, 6.0f);
 		Lamp(this, ColonyRoot, Post + FVector(0.0, 0.0, 440.0), Warm, 600.0f, 2500.0f);
 	}
+}
+
+bool AColony::UseHeadquartersLook()
+{
+	using namespace APSColonyHeadquarters;
+	if (HeadquartersBuilding.IsValid())
+	{
+		return true;
+	}
+	if (CVarHeadquarters.GetValueOnGameThread() == 0)
+	{
+		return false;
+	}
+	UClass* BuildingClass = LoadClass<AActor>(nullptr, BuildingClassPath);
+	UStaticMesh* Cube = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
+	if (!BuildingClass || !Cube || !Foundation || !ColonyRoot)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[APS.Colony] %s: headquarters %s is missing; the compact base stays"),
+			*GetName(), BuildingClassPath);
+		return false;
+	}
+	// Everything of the compact look goes: the dome, the towers and the dressing BeginPlay hung on them.
+	HiddenCompactParts.Reset();
+	HiddenCompactLights.Reset();
+	TInlineComponentArray<UPrimitiveComponent*> Primitives(this);
+	for (UPrimitiveComponent* Primitive : Primitives)
+	{
+		if (Primitive && Primitive != Foundation && Primitive->IsVisible())
+		{
+			HiddenCompactParts.Emplace(Primitive, static_cast<uint8>(Primitive->GetCollisionEnabled()));
+			Primitive->SetVisibility(false, false);
+			Primitive->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		}
+	}
+	TInlineComponentArray<ULightComponent*> Lights(this);
+	for (ULightComponent* Light : Lights)
+	{
+		if (Light && Light->IsVisible())
+		{
+			HiddenCompactLights.Add(Light);
+			Light->SetVisibility(false, false);
+		}
+	}
+	// The foundation: its underside at the pivot and its top 1 m up, where the building's floors start.
+	Foundation->SetStaticMesh(Cube);
+	Foundation->SetRelativeLocation(FVector(0.0, 0.0, FoundationSizeCm.Z * 0.5));
+	Foundation->SetRelativeScale3D(FoundationSizeCm / 100.0);
+	APSStarterDressing::Paint(this, Foundation, APSStarterDressing::Metal);
+
+	UChildActorComponent* Building = NewObject<UChildActorComponent>(this, TEXT("ColonyHeadquarters"), RF_Transient);
+	Building->SetupAttachment(ColonyRoot);
+	Building->SetChildActorClass(BuildingClass);
+	AddInstanceComponent(Building);
+	Building->RegisterComponent();
+	HeadquartersBuilding = Building;
+	UE_LOG(LogTemp, Log, TEXT("[APS.Colony] %s: headquarters %s on an 80 x 55 m foundation (%d compact parts hidden)"),
+		*GetName(), *GetNameSafe(Building->GetChildActor()), HiddenCompactParts.Num());
+	return true;
+}
+
+bool AColony::GetHeadquartersArrival(FTransform& OutSpot) const
+{
+	using namespace APSColonyHeadquarters;
+	const UChildActorComponent* Building = HeadquartersBuilding.Get();
+	if (!Building || !IsValid(Building->GetChildActor()))
+	{
+		return false;
+	}
+	OutSpot = FTransform(FRotator(0.0, ArrivalYawDegrees, 0.0), ArrivalSpotCm) * Building->GetComponentTransform();
+	OutSpot.SetScale3D(FVector::OneVector);
+	return true;
+}
+
+void AColony::UseCompactLook()
+{
+	if (UChildActorComponent* Building = HeadquartersBuilding.Get())
+	{
+		Building->DestroyComponent();
+	}
+	HeadquartersBuilding.Reset();
+	for (const TPair<TWeakObjectPtr<UPrimitiveComponent>, uint8>& Part : HiddenCompactParts)
+	{
+		if (UPrimitiveComponent* Primitive = Part.Key.Get())
+		{
+			Primitive->SetVisibility(true, false);
+			Primitive->SetCollisionEnabled(static_cast<ECollisionEnabled::Type>(Part.Value));
+		}
+	}
+	for (const TWeakObjectPtr<ULightComponent>& Light : HiddenCompactLights)
+	{
+		if (ULightComponent* Each = Light.Get())
+		{
+			Each->SetVisibility(true, false);
+		}
+	}
+	HiddenCompactParts.Reset();
+	HiddenCompactLights.Reset();
+	if (Foundation)
+	{
+		if (UStaticMesh* Cylinder = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cylinder.Cylinder")))
+		{
+			Foundation->SetStaticMesh(Cylinder);
+		}
+		Foundation->SetRelativeLocation(FVector::ZeroVector);
+		Foundation->SetRelativeScale3D(FVector(30.0, 30.0, 2.0));
+		APSStarterDressing::Paint(this, Foundation, APSStarterDressing::Metal);
+	}
+	UE_LOG(LogTemp, Log, TEXT("[APS.Colony] %s: compact base"), *GetName());
 }

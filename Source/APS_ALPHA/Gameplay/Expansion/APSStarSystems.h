@@ -7,6 +7,8 @@ class AAstroGenerator;
 class AStarCluster;
 class FAPSSystemMaterializer;
 class UWorld;
+enum class ESpectralClass : uint8;
+enum class EStellarType : uint8;
 
 /**
  * The cluster's star systems as places the civilization can reach (Rio 02.10: "colonize the other systems: first a
@@ -36,6 +38,13 @@ namespace APSStars
 	 * the system's stable id, the same in the generation menu, on the maps and on the HUD.
 	 */
 	APS_ALPHA_API FString SystemName(int32 ClusterSeed, const FGuid& Id);
+
+	/**
+	 * Rio 03.10 ("every star must be reachable"): what a galaxy catalogue star stands for, from its class and the
+	 * population's radius factor (FGalaxyCatalogStarRecord::RadiusScale): its stellar type and a spectral name ("K4V").
+	 */
+	APS_ALPHA_API EStellarType GalaxyStellarType(ESpectralClass SpectralClass, float RadiusScale);
+	APS_ALPHA_API FString GalaxySpectralName(ESpectralClass SpectralClass, int32 Subclass, float RadiusScale);
 }
 
 /** One catalogue system: fixed data read from the generated cluster (not saved; rebuilt from the catalogue). */
@@ -61,6 +70,13 @@ struct APS_ALPHA_API FAPSStarSystemInfo
 	bool bInsideHome{false};
 	/** The primary's colour, for markers. */
 	FLinearColor Colour{FLinearColor::White};
+	/**
+	 * Rio 03.10 ("every star must be reachable"): a drawn star of the galaxy catalogue (its catalogue index), registered
+	 * once the pilot comes near it and kept from then on; INDEX_NONE for the cluster's systems (Record).
+	 */
+	int64 GalaxyIndex{INDEX_NONE};
+	/** The primary's radius as the sky draws it, cm (galaxy systems; 0 for the cluster's). */
+	double StarRadiusCm{0.0};
 };
 
 /** What the civilization has in a system (saved). */
@@ -83,6 +99,8 @@ struct APS_ALPHA_API FAPSStarSystemsSaveData
 {
 	TArray<FGuid> Ids;
 	TArray<FAPSStarSystemState> States;
+	/** Version 3, one per id: the galaxy catalogue index of a galaxy system (registered again on load), else INDEX_NONE. */
+	TArray<int64> GalaxyIndices;
 
 	friend FArchive& operator<<(FArchive& Ar, FAPSStarSystemsSaveData& Data);
 };
@@ -111,6 +129,17 @@ public:
 	void Search(const FString& Text, int32 Limit, TArray<int32>& OutIndices) const;
 	/** The system whose room holds a world location (a ship inside it), or INDEX_NONE. */
 	int32 FindContaining(const FVector& Location) const;
+
+	/**
+	 * Rio 03.10 ("every star must be reachable; only the nearest ones, those we fly to"): the drawn galaxy catalogue stars
+	 * nearest the pilot become systems here (aps.Stars.GalaxyReach), a few times a second, appended so every index stays.
+	 * Registers one now (a load, a test); returns its index, or INDEX_NONE without the galaxy's nearest-star index, or
+	 * for a star in the home system's sphere or in a cluster system's room (that system stands for it).
+	 */
+	int32 RegisterGalaxyStar(int64 CatalogIndex);
+	/** The registered galaxy system of a catalogue star, or INDEX_NONE. */
+	int32 IndexOfGalaxyStar(int64 CatalogIndex) const;
+	int32 NumGalaxySystems() const { return GalaxySystems.Num(); }
 	/** Every system the civilization knows or holds, nearest to home first. */
 	void GetKnown(TArray<int32>& OutIndices) const;
 
@@ -170,6 +199,9 @@ public:
 private:
 	bool ReadCatalogue();
 	void ApplyPendingRestore();
+	void UpdateGalaxyNeighbours(float DeltaSeconds);
+	/** The cluster system (the grid's) whose room holds a location, nearest first; INDEX_NONE if none. */
+	int32 FindContainingCluster(const FVector& Location, double* OutDistanceSquared = nullptr) const;
 	void UpdateVisit(float DeltaSeconds);
 	void FollowHome();
 	FIntVector CellOf(const FVector& FromHome) const;
@@ -191,6 +223,14 @@ private:
 	double CellCm{0.0};
 	TMap<FIntVector, TArray<int32>> Grid;
 	TOptional<FAPSStarSystemsSaveData> PendingRestore;
+	/** The galaxy systems after the cluster's, by catalogue index, and their states a load brought that wait for them. */
+	TMap<int64, int32> IndexByGalaxy;
+	TArray<int32> GalaxySystems;
+	/** Systems [0, ClusterSystemCount) are the cluster catalogue's, read once. */
+	int32 ClusterSystemCount{0};
+	TMap<FGuid, TPair<int64, FAPSStarSystemState>> HeldGalaxyStates;
+	float GalaxyClock{0.0f};
+	double GalaxyLogSeconds{0.0};
 	/** The system the pilot is in and for how long (a visit counts after a few seconds). */
 	int32 VisitIndex{INDEX_NONE};
 	float VisitSeconds{0.0f};

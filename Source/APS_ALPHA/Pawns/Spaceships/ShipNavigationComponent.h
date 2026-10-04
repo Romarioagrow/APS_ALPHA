@@ -36,6 +36,12 @@ struct FShipNavigationContact
 	bool bVirtualContact{false};
 	/** The pilot's own colony: always charted, with a marker of its own. */
 	bool bOwnColony{false};
+	/** Rio 04.10: a whole star system seen from well outside it, one card at its star; its worlds are folded into it. */
+	bool bSystemSummary{false};
+	/** Rio 04.10: a nearby star's label (the star-label mode, Y): its name, class, distance and what is known. */
+	bool bStarLabel{false};
+	/** The card's own colour (a star's spectral colour); transparent: the colour of its kind. */
+	FLinearColor MarkerColour{FLinearColor::Transparent};
 
 	FVector GetWorldLocation() const
 	{
@@ -97,15 +103,39 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Navigation|Markers")
 	bool bShowInfrastructureMarkers{false};
 
+	/** Rio 04.10 ("labels for the nearest stars, where each one is, its class"): the star-label mode, Y in the cockpit. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Navigation|Markers")
+	bool bShowNearStarLabels{false};
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Navigation|Markers", meta=(ClampMin="1", ClampMax="64"))
+	int32 NearStarLabelCount{12};
+
+	/** True when a world location lies in a star system that shows as one card from here (its ships fold into it too). */
+	bool IsInFoldedSystem(const FVector& WorldLocation) const;
+
 private:
 	void AddActorContact(AActor* Actor, const FVector& ObserverLocation);
 	void AddGeneratedStarContacts(const FVector& ObserverLocation);
+	/** Star systems seen from well outside become one card at their star (aps.Nav.SystemFold); KeepStableId stays apart. */
+	void FoldDistantSystems(const FVector& ObserverLocation, const FString& KeepStableId);
+	/** The nearest charted stars' labels (bShowNearStarLabels), but not those whose worlds are shown already. */
+	void AddNearStarLabels(const FVector& ObserverLocation);
 	void RestoreSelection(const FString& PreviousStableId);
 	bool IsContactTypeVisible(EShipNavigationContactType Type) const;
 
 	TArray<FShipNavigationContact> Contacts;
+	/** The systems folded at the last refresh: their star (it moves with origin shifts) and the reach of their worlds. */
+	struct FFoldedSystem
+	{
+		TWeakObjectPtr<AActor> Root;
+		TWeakObjectPtr<AActor> Star;
+		double RadiusCm{0.0};
+	};
+	TArray<FFoldedSystem> FoldedSystems;
 	int32 SelectedContactIndex{INDEX_NONE};
 	FString PinnedCourseId;
+	/** The selected contact's id while a refresh runs: it stays listed whatever the filters (cycling never loses it). */
+	FString KeepStableId;
 	int32 DiscoveredContactCount{0};
 	float RefreshElapsed{0.0f};
 };

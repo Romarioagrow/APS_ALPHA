@@ -141,6 +141,37 @@ float2 ApsRayBox(float3 Origin, float3 Dir, float3 BoxMin, float3 BoxMax)
 	return float2(max(max(TNear.x, TNear.y), TNear.z), min(min(TFar.x, TFar.y), TFar.z));
 }
 
+// Rio 04.10 ("the character's outline and the horizon ripple against the stars"): the scene depth under a viewport point
+// at render resolution, the nearest surface (reverse Z: the largest device Z) of the 3x3 render pixels around it. A star
+// beside a silhouette then stays hidden whichever way the frame's sub-pixel jitter moved that edge.
+float ApsNearestDeviceZ(Texture2D DepthTexture, uint4 DepthRect, float2 ViewportUV)
+{
+	const float2 DepthPixelF = float2(DepthRect.xy) + ViewportUV * float2(DepthRect.zw);
+	const int2 Lowest = int2(DepthRect.xy);
+	const int2 Highest = int2(DepthRect.xy + DepthRect.zw) - int2(1, 1);
+	const int2 Centre = int2(floor(DepthPixelF));
+	float Nearest = 0.0;
+	UNROLL
+	for (int Dy = -1; Dy <= 1; ++Dy)
+	{
+		UNROLL
+		for (int Dx = -1; Dx <= 1; ++Dx)
+		{
+			const int2 Pixel = clamp(Centre + int2(Dx, Dy), Lowest, Highest);
+			Nearest = max(Nearest, DepthTexture.Load(int3(Pixel, 0)).r);
+		}
+	}
+	return Nearest;
+}
+
+// The scene depth of the one render pixel under a viewport point.
+float ApsSceneDeviceZ(Texture2D DepthTexture, uint4 DepthRect, float2 ViewportUV)
+{
+	const float2 DepthPixelF = float2(DepthRect.xy) + ViewportUV * float2(DepthRect.zw);
+	const int2 Pixel = clamp(int2(floor(DepthPixelF)), int2(DepthRect.xy), int2(DepthRect.xy + DepthRect.zw) - int2(1, 1));
+	return DepthTexture.Load(int3(Pixel, 0)).r;
+}
+
 // Render-space position of a local point under the observer far envelope (FFarEnvelope).
 // Directions from the observer are exact; only the distance is compressed.
 float3 ApsPresentPosition(float3 Rel, float Dist, float4x4 LocalRotation, float CompressA, float CompressB,

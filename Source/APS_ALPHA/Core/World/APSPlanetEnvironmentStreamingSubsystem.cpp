@@ -7,6 +7,8 @@
 #include "APS_ALPHA/Generation/PlanetarySurfaceGenerator.h"
 #include "APS_ALPHA/Core/Planetary/APSPlanetSurfaceProfile.h"
 #include "APS_ALPHA/Core/Planetary/APSWorldScapeStreamingPolicy.h"
+#include "APS_ALPHA/Core/Controllers/GravityPlayerController.h"
+#include "Camera/PlayerCameraManager.h"
 #include "EngineUtils.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
@@ -20,6 +22,32 @@ namespace
 		TEXT("aps.Surface.MaxStandbyRoots"), 4,
 		TEXT("Maximum hidden, unpublished sibling roots prepared ahead of travel (0..32). ")
 		TEXT("Never evicts the selected body or an already published surface. Not a total GPU memory cap."),
+		ECVF_Default);
+
+	TAutoConsoleVariable<int32> CVarMapCameraObserver(
+		TEXT("aps.Map.WorldScapeObserver"), 1,
+		TEXT("1: while the F10 strategic map is open, its camera is the resident planet's WorldScape visual observer, so ")
+		TEXT("the planet builds for the map's view (collision stays with the pawn). 0: the terrain stays around the pawn."),
+		ECVF_Default);
+
+	TAutoConsoleVariable<float> CVarMapObserverRadii(
+		TEXT("aps.Map.WorldScapeObserverRadii"), 30.0f,
+		TEXT("Rio 03.10 (F10 near a planet: ~250 ms render hitches every few seconds while WorldScape rebuilt its LODs for a map ")
+		TEXT("camera far out at cluster scale): the map camera becomes the terrain's observer only within this many planet radii; ")
+		TEXT("farther out the globe is a few pixels and stays built around the pawn. 0: at any distance (the old rule)."),
+		ECVF_Default);
+
+	TAutoConsoleVariable<float> CVarFarFreezeRadii(
+		TEXT("aps.Surface.FarFreezeRadii"), 10.0f,
+		TEXT("Rio 03.10 (flight stutter: over 98% of in-flight hitch time was WorldScape rebuilding the active planet's LOD ")
+		TEXT("batches): beyond this many planet radii the terrain's visual observer only moves once the view from the planet's ")
+		TEXT("centre has turned by aps.Surface.FarFreezeTurnDeg (WorldScape's own far rule, switched off by our ")
+		TEXT("DistanceToFreezeGeneration = 0). 0: the observer follows every frame."),
+		ECVF_Default);
+
+	TAutoConsoleVariable<float> CVarFarFreezeTurnDeg(
+		TEXT("aps.Surface.FarFreezeTurnDeg"), 18.0f,
+		TEXT("See aps.Surface.FarFreezeRadii: the turn, in degrees, that moves a far observer."),
 		ECVF_Default);
 
 	bool IsExplicitMenuPreviewBody(const AActor* Actor)
@@ -188,7 +216,39 @@ void UAPSPlanetEnvironmentStreamingSubsystem::RefreshGameplayObserverPosition()
 	}
 
 	Root->bOverridePlayerPosition = true;
-	Root->OverridedPlayerPosition = Observer->GetActorLocation();
+	FVector VisualObserver = Observer->GetActorLocation();
+	// Rio 03.10 ("in F10 the planet must load fully, through WorldScape itself"): while the strategic map is open, its
+	// camera is the terrain's visual observer, so WorldScape builds the planet for the view the map shows. Collision stays
+	// with the pawn (CollisionDependantActor, ApplyGameplayObserverContract), so nothing under the pawn changes.
+	if (const AGravityPlayerController* GravityController = Cast<AGravityPlayerController>(PlayerController);
+		GravityController && GravityController->IsStrategicMapOpen() && IsValid(GravityController->PlayerCameraManager)
+		&& CVarMapCameraObserver.GetValueOnGameThread() != 0)
+	{
+		const FVector MapCamera = GravityController->PlayerCameraManager->GetCameraLocation();
+		const double MapRadii = CVarMapObserverRadii.GetValueOnGameThread();
+		if (MapRadii <= 0.0 || Root->PlanetScale <= 0.0
+			|| FVector::DistSquared(MapCamera, Root->GetActorLocation()) <= FMath::Square(MapRadii * Root->PlanetScale))
+		{
+			VisualObserver = MapCamera;
+		}
+	}
+	// Rio 03.10 (flight stutter): far out every LOD batch (50-400 ms, about every 0.4 s) only redraws the same small globe.
+	// Beyond FarFreezeRadii the observer keeps its last far position until the view from the planet's centre has turned
+	// FarFreezeTurnDeg; inside that radius, and on the way in, it follows every frame as before.
+	if (const double FreezeRadii = CVarFarFreezeRadii.GetValueOnGameThread(); FreezeRadii > 0.0 && Root->PlanetScale > 0.0)
+	{
+		const FVector Center = Root->GetActorLocation();
+		const FVector FromCenter = VisualObserver - Center;
+		const FVector LastFromCenter = Root->OverridedPlayerPosition - Center;
+		const double FarSquared = FMath::Square(FreezeRadii * Root->PlanetScale);
+		if (FromCenter.SizeSquared() > FarSquared && LastFromCenter.SizeSquared() > FarSquared
+			&& FVector::DotProduct(FromCenter.GetSafeNormal(), LastFromCenter.GetSafeNormal())
+				> FMath::Cos(FMath::DegreesToRadians(static_cast<double>(CVarFarFreezeTurnDeg.GetValueOnGameThread()))))
+		{
+			return;
+		}
+	}
+	Root->OverridedPlayerPosition = VisualObserver;
 }
 
 void UAPSPlanetEnvironmentStreamingSubsystem::ApplyGameplayObserverContract(

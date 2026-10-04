@@ -191,6 +191,13 @@ struct APS_ALPHA_API FAPSFleetUnit
 	double Speed{0.0};
 	/** Distance left to the target slot, for the list (cm). */
 	double RemainingCm{0.0};
+	/** Rio 04.10: the distance when the flight there began (this order's largest RemainingCm), for the screens' progress. */
+	double TransitStartCm{0.0};
+	/**
+	 * Rio 04.10 ("whatever the units do, the pilot does from the bridge of a ship that can"): the order is the pilot's own:
+	 * no autopilot, no slot; the work runs while the ship stays within reach of the target, then the unit is free again.
+	 */
+	bool bPilotWork{false};
 	/** BuildStructure: the infrastructure catalogue type being raised (its cost was taken when the order was given). */
 	FName StructureType;
 };
@@ -326,7 +333,7 @@ public:
 	void SetDivision(const ASpaceship* Ship, APSFleet::EDivision Division);
 
 	/** Why the ship cannot take this order at this target; empty when it can. */
-	FText CheckOrder(const ASpaceship* Ship, APSFleet::EOrder Order, const AActor* Target) const;
+	FText CheckOrder(const ASpaceship* Ship, APSFleet::EOrder Order, const AActor* Target, bool bByPilot = false) const;
 	/**
 	 * Gives the order to every ship that can take it; returns how many did and the first refusal. BuildStructure takes
 	 * the catalogue type and goes to the first ship that can raise it (its cost is taken then).
@@ -334,7 +341,21 @@ public:
 	int32 IssueOrder(const TArray<ASpaceship*>& Ships, APSFleet::EOrder Order, AActor* Target, FText& OutRefusal,
 		FName StructureType = NAME_None);
 	/** Why this ship cannot raise this catalogue type at this place now; empty when it can. */
-	FText CheckBuildOrder(const ASpaceship* Ship, const AActor* Target, FName StructureType) const;
+	FText CheckBuildOrder(const ASpaceship* Ship, const AActor* Target, FName StructureType, bool bByPilot = false) const;
+	/**
+	 * Rio 04.10: the piloted ship does an order itself (a survey, a study, a probe, a system survey, an outpost or any
+	 * build its division can), by the same rules as a fleet order but flown by the pilot: it must be within reach of the
+	 * target (PilotWorkRange) and the work goes on only while it stays there. Empty when given, else why not.
+	 */
+	FText IssuePilotOrder(ASpaceship* Ship, APSFleet::EOrder Order, AActor* Target, FName StructureType = NAME_None);
+	/** Why the pilot cannot do it now (empty: can), without giving it. */
+	FText CheckPilotOrder(const ASpaceship* Ship, APSFleet::EOrder Order, const AActor* Target, FName StructureType = NAME_None) const;
+	/**
+	 * How far the ship is from the target and how near the pilot's own work needs it, cm: a survey reads a world from a
+	 * near approach, building and landings need a near orbit, a star system's orders its room among the neighbours.
+	 */
+	bool PilotWorkRange(const ASpaceship* Ship, APSFleet::EOrder Order, const AActor* Target, double& OutDistanceCm,
+		double& OutRangeCm) const;
 	/** The idle ship of the civilization nearest the target that can take the order (null: none can); the reason if none. */
 	ASpaceship* PickShipFor(APSFleet::EOrder Order, const AActor* Target, FName StructureType, FText& OutRefusal) const;
 	void CancelOrder(const ASpaceship* Ship);
@@ -448,6 +469,10 @@ private:
 	void Fly(FAPSFleetUnit& Unit, ASpaceship* Ship, const FVector& Goal, double BeyondGoalCm, float DeltaSeconds,
 		double& OutRemainingCm);
 	void Arrive(FAPSFleetUnit& Unit, ASpaceship* Ship);
+	/** The work at the target begins (its length, bonuses and the journal line); Arrive's second half. */
+	void BeginWork(FAPSFleetUnit& Unit);
+	/** The pilot's own work: it advances while the ship stays within reach, ends when the pilot leaves or flies off. */
+	void TickPilotWork(FAPSFleetUnit& Unit, float DeltaSeconds);
 	void FinishWork(FAPSFleetUnit& Unit);
 	FVector SlotLocation(const FAPSFleetUnit& Unit) const;
 	/** The nearest planet, moon or star to a point and the distance to its surface (cm). */

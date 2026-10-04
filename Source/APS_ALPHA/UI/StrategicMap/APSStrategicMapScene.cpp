@@ -19,6 +19,7 @@
 #include "APS_ALPHA/Gameplay/Expansion/APSObjectActions.h"
 #include "APS_ALPHA/Gameplay/Expansion/APSStarSystems.h"
 #include "APS_ALPHA/Gameplay/Fleet/APSFleetCommand.h"
+#include "APS_ALPHA/Gameplay/Megastructures/APSMegastructures.h"
 #include "APS_ALPHA/Generation/AstroGenerator.h"
 #include "APS_ALPHA/Pawns/Spaceships/Spaceship.h"
 #include "APS_ALPHA/UI/Style/APSMenuChrome.h"
@@ -258,22 +259,27 @@ void FAPSStrategicMapScene::Update(const float DeltaSeconds, const FVector& View
 	}
 	if (StarsRevision != SeenStarsRevision)
 	{
+		// Rio 04.10 (hitches with the map open in flight): the galaxy's systems register around a flying pilot every half
+		// second and each re-pick of the catalogue cost ~50 ms; that news waits up to two seconds (orders above do not).
 		SeenStarsRevision = StarsRevision;
-		bSystemsDirty = true;
+		bStarsNews = true;
 	}
 	if (bObjectsDirty || ObjectsClock <= 0.0f)
 	{
 		RefreshObjects();
 		bObjectsDirty = false;
-		ObjectsClock = 0.5f;
+		// Rio 03.10 (FPS on the map): a full re-read walks the actors, meshes and names (1-3 ms). Launches, builds and orders
+		// bump a revision and re-read at once; positions are read live by the view, so the timed pass can be rare.
+		ObjectsClock = 2.0f;
 		++ObjectsSerial;
 	}
 	// The catalogue systems follow what is looked at: re-picked when the focus moved a fifth of the view.
 	const bool bFocusMoved = FVector::Dist(ViewFocus, SystemsFocus) > FMath::Max(ViewDistance * 0.2, 1.0e9);
-	if (bSystemsDirty || (bFocusMoved && SystemsClock <= 0.0f) || SystemsClock <= -2.0f)
+	if (bSystemsDirty || (bStarsNews && SystemsClock <= -1.6f) || (bFocusMoved && SystemsClock <= 0.0f) || SystemsClock <= -2.0f)
 	{
 		RefreshSystems(ViewFocus);
 		bSystemsDirty = false;
+		bStarsNews = false;
 		SystemsClock = 0.4f;
 	}
 }
@@ -417,12 +423,27 @@ void FAPSStrategicMapScene::RefreshObjects()
 		{
 			AActor* Actor = Structure.Actor.Get();
 			const APSInfrastructure::FType* Type = APSInfrastructure::Find(Structure.Type);
-			if (FObject* Object = Add(Actor, EKind::Outpost, 5))
+			// Rio 03.10: the huge hubs are stations (of a higher tier) on the map.
+			const bool bHub = Type && Type->Category == APSInfrastructure::ECategory::Hub;
+			if (FObject* Object = Add(Actor, bHub ? EKind::Station : EKind::Outpost, bHub ? 3 : 5))
 			{
 				Object->Type = APSObjectActions::KindOf(Actor);
 				Object->Colour = Type ? APSInfrastructure::DepartmentColour(Type->Department) : APSChrome::Amber();
 				Object->RadiusCm = MeshRadius(Actor);
 				Object->bOwn = true;
+				// The orbital ring: its circle round its world on the orbits layer, through its marker where the elevator's
+				// tether crosses it.
+				AActor* Body = Actor->GetAttachParentActor();
+				APSMegastructures::FWorldLayout Layout;
+				if (Type && Type->Visual == APSInfrastructure::EVisual::OrbitalRing && Body && APSMegastructures::LayoutAt(Body, Layout))
+				{
+					const FVector North = Body->GetActorUpVector();
+					Object->OrbitCentre = Body;
+					Object->OrbitAxisX = APSMegastructures::EquatorDirection(North, Actor->GetActorLocation() - Body->GetActorLocation(), 0.0,
+						Body->GetActorForwardVector());
+					Object->OrbitAxisY = FVector::CrossProduct(North, Object->OrbitAxisX).GetSafeNormal();
+					Object->OrbitRadiusCm = Layout.RingRadiusCm;
+				}
 			}
 		}
 	}
@@ -442,6 +463,20 @@ void FAPSStrategicMapScene::RefreshObjects()
 				Object->Colour = FLinearColor(1.0f, 0.62f, 0.2f, 1.0f);
 				Object->RadiusCm = 2000.0;
 				Object->bOwn = true;
+			}
+		}
+		// The ancient sites (Gameplay/Ancients): km-scale ruins of an unknown race, marked like anomalies in pale cyan.
+		for (TActorIterator<AActor> It(LiveWorld); It; ++It)
+		{
+			if (!IsValid(*It) || !It->ActorHasTag(TEXT("APS.Ancient.Site")))
+			{
+				continue;
+			}
+			if (FObject* Object = Add(*It, EKind::Anomaly, 4))
+			{
+				Object->Type = LOCTEXT("AncientSiteType", "ANCIENT SITE");
+				Object->Colour = FLinearColor(0.25f, 0.9f, 1.0f, 1.0f);
+				Object->RadiusCm = 200000.0;
 			}
 		}
 		// The fleet in its divisions' colours, named by call sign.

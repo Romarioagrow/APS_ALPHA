@@ -1,6 +1,7 @@
 #include "APSSystemMaterializer.h"
 
 #include "APSStarSystems.h"
+#include "APS_ALPHA/Actors/Astro/Galaxy.h"
 #include "APS_ALPHA/Actors/Astro/Moon.h"
 #include "APS_ALPHA/Actors/Astro/Planet.h"
 #include "APS_ALPHA/Actors/Astro/PlanetOrbit.h"
@@ -11,16 +12,22 @@
 #include "APS_ALPHA/Actors/Astro/StarSystem.h"
 #include "APS_ALPHA/Core/Enums/OrbitDistributionType.h"
 #include "APS_ALPHA/Core/Enums/PlanetarySystemType.h"
+#include "APS_ALPHA/Core/Rendering/APSCanonicalStellarProjection.h"
+#include "APS_ALPHA/Core/Rendering/APSGalaxyGpuStars.h"
+#include "APS_ALPHA/Core/Rendering/APSGalaxyNearStars.h"
 #include "APS_ALPHA/Core/Structs/MoonGenerationModel.h"
 #include "APS_ALPHA/Core/Structs/PlanetGenerationModel.h"
 #include "APS_ALPHA/Core/Structs/PlanetarySystemGenerationModel.h"
 #include "APS_ALPHA/Core/Structs/StarGenerationModel.h"
+#include "APS_ALPHA/Core/Structs/StarSystemGenerationModel.h"
 #include "APS_ALPHA/Generation/APSBodyNames.h"
 #include "APS_ALPHA/Generation/AstroGenerator.h"
 #include "APS_ALPHA/Generation/MoonGenerator.h"
 #include "APS_ALPHA/Generation/PlanetGenerator.h"
 #include "APS_ALPHA/Generation/PlanetaryProceduralGenerator.h"
 #include "APS_ALPHA/Generation/PlanetarySurfaceGenerator.h"
+#include "APS_ALPHA/Generation/StarGenerator.h"
+#include "APS_ALPHA/Generation/StarSystemGenerator.h"
 #include "APS_ALPHA/Pawns/Spaceships/APSShipFlightBenchmark.h"
 #include "APS_ALPHA/Pawns/Spaceships/Spaceship.h"
 #include "Components/SphereComponent.h"
@@ -51,6 +58,79 @@ namespace APSSystemMaterializerLocal
 	constexpr double RetrySeconds = 30.0;
 	constexpr double MaxMoonInclinationDegrees = 12.0;
 	constexpr double MaxPlanetInclinationDegrees = 6.0;
+	/** A star actor's scale per solar radius (AAstroGenerator::MaterializeClusterStarSystem). */
+	constexpr double StarScalePerSolarRadius = 813684224.0;
+	/**
+	 * A system (a galaxy star; since Rio 04.10 a cluster system too) comes only to a pilot slow enough to take this long
+	 * over its approach (two rooms), so a flight through a dense field does not stand up every star it passes.
+	 */
+	constexpr double GalaxyApproachSeconds = 4.0;
+
+	/**
+	 * Rio 03.10 ("every star must be reachable"): a galaxy catalogue star stood up as AAstroGenerator::
+	 * MaterializeClusterStarSystem stands a cluster record: a star system actor and its primary at the catalogue position,
+	 * from the star's class, size and seed. The sky stops drawing it: its GPU point inside the system's sphere (its room
+	 * holds no other drawn star), its near photosphere, and an ISM-prefix point through the generator's suppression.
+	 */
+	AStarSystem* MaterializeGalaxyStar(UWorld& World, AAstroGenerator& Gen, const FAPSStarSystemInfo& Info,
+		TSharedPtr<FStarModel>& OutStarModel, uint32& OutSeedHash)
+	{
+		const AGalaxy* Galaxy = APSGalaxyGpuStars::GetIndexedGalaxy(&World);
+		FGalaxyCatalogStarRecord Record;
+		if (!Galaxy || !Galaxy->StarCatalog.ResolveStar(Info.GalaxyIndex, Record) || !IsValid(Gen.StarGenerator)
+			|| !IsValid(Gen.StarSystemGenerator) || !Gen.BP_StarSystemClass || !Gen.BP_StarClass)
+		{
+			return nullptr;
+		}
+		// The star the sky drew: its class and its size (the photosphere grew from that radius), the rest from its seed.
+		TSharedPtr<FStarModel> StarModel = MakeShared<FStarModel>();
+		StarModel->StellarType = APSStars::GalaxyStellarType(Record.SpectralClass, Record.RadiusScale);
+		StarModel->SpectralClass = Record.SpectralClass;
+		Gen.StarGenerator->SetGenerationSeed(Record.GenerationSeed);
+		Gen.StarGenerator->GenerateStarModel(StarModel);
+		Gen.StarGenerator->ClearGenerationSeed();
+		if (Info.StarRadiusCm > 0.0)
+		{
+			Gen.StarGenerator->ApplyRadiusOverrideSolar(*StarModel, Info.StarRadiusCm / APSCanonicalStellarProjection::SolarRadiusCm);
+		}
+		StarModel->SpectralSubclass = Record.SpectralSubclass;
+		StarModel->FullSpectralClass = FName(*Info.Spectral);
+		StarModel->Location = Record.GalaxyLocalLocation;
+		FStarSystemModel SystemModel;
+		Gen.StarSystemGenerator->GeneratePotentialStarSystemModel(SystemModel, *StarModel, Record.GenerationSeed);
+		SystemModel.StableId = Record.StableId;
+		SystemModel.PotentialPlanetCount = Info.PotentialPlanets;
+		SystemModel.bHasPlanetarySystem = Info.PotentialPlanets > 0;
+
+		const FTransform WorldTransform(FQuat::Identity, Info.Location);
+		AStarSystem* StarSystem = World.SpawnActor<AStarSystem>(Gen.BP_StarSystemClass, WorldTransform);
+		if (!StarSystem)
+		{
+			return nullptr;
+		}
+		Gen.StarSystemGenerator->ApplyModel(StarSystem, MakeShared<FStarSystemModel>(SystemModel));
+		AStar* Star = World.SpawnActor<AStar>(Gen.BP_StarClass, WorldTransform);
+		if (!Star)
+		{
+			StarSystem->Destroy();
+			return nullptr;
+		}
+		Gen.StarGenerator->ApplyModel(Star, StarModel);
+		Star->SetActorLocation(Info.Location);
+		Star->SetActorScale3D(FVector(StarModel->Radius * StarScalePerSolarRadius));
+		Star->StarRadiusKM = FMath::RoundToInt(StarModel->RadiusKM);
+		Star->FullSpectralName = Star->GenerateFullSpectralName();
+		Gen.StarGenerator->ApplySpectralMaterial(Star, StarModel);
+		StarSystem->MainStar = Star;
+		StarSystem->AddNewStar(Star);
+		Star->AttachToActor(StarSystem, FAttachmentTransformRules::KeepWorldTransform);
+		StarSystem->StarSystemRadius = FMath::Max(Info.RoomCm, Info.StarRadiusCm * 2.0);
+		APSGalaxyNearStars::SetMaterialized(&World, Info.GalaxyIndex, true);
+		Gen.SetGalaxyProxyMaterialized(Info.GalaxyIndex, true);
+		OutStarModel = StarModel;
+		OutSeedHash = HashCombineFast(GetTypeHash(Record.StableId), static_cast<uint32>(Record.GenerationSeed));
+		return StarSystem;
+	}
 
 	int32 SurfaceSeed(const int32 SystemSeed, const FString& BodyAddress)
 	{
@@ -85,10 +165,11 @@ namespace APSSystemMaterializerLocal
 		return OutSystems ? OutSystems->GetMaterializer() : nullptr;
 	}
 
-	/** aps.Stars.Visit [name] [planet]: the named system, or the nearest outside the home. */
+	/** aps.Stars.Visit [name] [planet]: the named system, or the nearest outside the home ("galaxy": of the galaxy's). */
 	int32 FindVisitTarget(const FAPSStarSystems& Systems, const UWorld* World, const FString& Name)
 	{
-		if (!Name.IsEmpty() && !Name.Equals(TEXT("nearest"), ESearchCase::IgnoreCase))
+		const bool bGalaxy = Name.Equals(TEXT("galaxy"), ESearchCase::IgnoreCase);
+		if (!Name.IsEmpty() && !bGalaxy && !Name.Equals(TEXT("nearest"), ESearchCase::IgnoreCase))
 		{
 			TArray<int32> Found;
 			Systems.Search(Name, 1, Found);
@@ -98,6 +179,21 @@ namespace APSSystemMaterializerLocal
 		const APlayerController* Controller = World ? World->GetFirstPlayerController() : nullptr;
 		const FVector From = Controller && Controller->GetPawn() ? Controller->GetPawn()->GetActorLocation()
 			: Home ? Home->Location : FVector::ZeroVector;
+		if (bGalaxy)
+		{
+			int32 Best = INDEX_NONE;
+			double BestDistance = TNumericLimits<double>::Max();
+			for (int32 Index = 0; Index < Systems.Num(); ++Index)
+			{
+				const FAPSStarSystemInfo* Info = Systems.Get(Index);
+				if (Info && Info->GalaxyIndex != INDEX_NONE && FVector::DistSquared(From, Info->Location) < BestDistance)
+				{
+					BestDistance = FVector::DistSquared(From, Info->Location);
+					Best = Index;
+				}
+			}
+			return Best;
+		}
 		TArray<int32> Nearest;
 		Systems.FindNearest(From, 4, Nearest);
 		for (const int32 Index : Nearest)
@@ -198,6 +294,8 @@ void FAPSSystemMaterializer::Update(FAPSStarSystems& Systems, const float DeltaS
 	const APlayerController* Controller = LiveWorld->GetFirstPlayerController();
 	const APawn* Pilot = Controller ? Controller->GetPawn() : nullptr;
 	const FVector PilotLocation = Pilot ? Pilot->GetActorLocation() : FVector::ZeroVector;
+	const ASpaceship* PilotShip = Cast<ASpaceship>(Pilot);
+	const double PilotSpeedCm = PilotShip ? PilotShip->GetKinematicVelocity().Size() : Pilot ? Pilot->GetVelocity().Size() : 0.0;
 	// The system the pilot is coming to: the nearest outside the home, within two of its rooms.
 	int32 Wanted = INDEX_NONE;
 	if (bEnabled && Pilot)
@@ -208,7 +306,11 @@ void FAPSSystemMaterializer::Update(FAPSStarSystems& Systems, const float DeltaS
 		{
 			const FAPSStarSystemInfo* Info = Systems.Get(Index);
 			if (!Info || Info->bInsideHome) continue;
-			if (!Info->bHome && FVector::Dist(PilotLocation, Info->Location) <= Info->RoomCm * ApproachRooms)
+			// Rio 04.10 (FPS dips in the star drive): the cluster's systems were built for a pass at any speed too, 9-16 a
+			// minute, most torn down within 3 s for the next one ahead, each build and teardown an ~80 ms hitch. Every
+			// system now waits, as the galaxy's did, until the ship would take a few seconds to cross its approach.
+			if (!Info->bHome && FVector::Dist(PilotLocation, Info->Location) <= Info->RoomCm * ApproachRooms
+				&& PilotSpeedCm * GalaxyApproachSeconds <= Info->RoomCm * ApproachRooms)
 			{
 				Wanted = Index;
 			}
@@ -263,26 +365,58 @@ bool FAPSSystemMaterializer::Begin(FAPSStarSystems& Systems, const int32 Index)
 			Info ? *Info->Name : TEXT("?"));
 		return false;
 	}
-	const int32 Instance = Cluster->PotentialStarSystems.IsValidIndex(Info->Record)
-		? Cluster->PotentialStarSystems[Info->Record].InstanceIndex : INDEX_NONE;
-	const FClusterStarSystemRecord* Record = Cluster->FindPotentialSystem(Instance);
-	if (!Record || Record->bMaterialized)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("[APS.Stars] cannot materialize %s: record %d %s"), *Info->Name, Info->Record,
-			Record ? TEXT("already stands") : TEXT("not found"));
-		return false;
-	}
 	const double StartSeconds = FPlatformTime::Seconds();
-	AStarSystem* NewSystem = Gen->MaterializeClusterStarSystem(Instance);
-	AStar* NewStar = NewSystem ? NewSystem->MainStar : nullptr;
-	if (!IsValid(NewStar))
+	int32 Instance = INDEX_NONE;
+	AStarSystem* NewSystem = nullptr;
+	TSharedPtr<FStarModel> PrimaryModel;
+	int32 PotentialPlanets = 0;
+	uint32 SeedHash = 0;
+	FString NewAddress;
+	if (Info->GalaxyIndex != INDEX_NONE)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[APS.Stars] the generator did not materialize %s (instance %d)"), *Info->Name, Instance);
-		if (NewSystem) Gen->DematerializeClusterStarSystem(Instance);
-		return false;
+		NewSystem = MaterializeGalaxyStar(*LiveWorld, *Gen, *Info, PrimaryModel, SeedHash);
+		if (!NewSystem || !IsValid(NewSystem->MainStar))
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[APS.Stars] cannot materialize galaxy star %s (catalogue %lld)"), *Info->Name,
+				Info->GalaxyIndex);
+			if (NewSystem)
+			{
+				AAstroGenerator::DestroyActorTree(NewSystem);
+				Gen->SetGalaxyProxyMaterialized(Info->GalaxyIndex, false);
+				APSGalaxyNearStars::SetMaterialized(LiveWorld, Info->GalaxyIndex, false);
+			}
+			return false;
+		}
+		PotentialPlanets = Info->PotentialPlanets;
+		NewAddress = FString::Printf(TEXT("G%lld"), Info->GalaxyIndex);
 	}
+	else
+	{
+		Instance = Cluster->PotentialStarSystems.IsValidIndex(Info->Record)
+			? Cluster->PotentialStarSystems[Info->Record].InstanceIndex : INDEX_NONE;
+		const FClusterStarSystemRecord* Record = Cluster->FindPotentialSystem(Instance);
+		if (!Record || Record->bMaterialized)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[APS.Stars] cannot materialize %s: record %d %s"), *Info->Name, Info->Record,
+				Record ? TEXT("already stands") : TEXT("not found"));
+			return false;
+		}
+		NewSystem = Gen->MaterializeClusterStarSystem(Instance);
+		if (!NewSystem || !IsValid(NewSystem->MainStar))
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[APS.Stars] the generator did not materialize %s (instance %d)"), *Info->Name, Instance);
+			if (NewSystem) Gen->DematerializeClusterStarSystem(Instance);
+			return false;
+		}
+		PrimaryModel = MakeShared<FStarModel>(Record->PrimaryStarModel);
+		PotentialPlanets = Record->SystemModel.PotentialPlanetCount;
+		SeedHash = HashCombineFast(GetTypeHash(Record->StableId), static_cast<uint32>(Record->SystemModel.GenerationSeed));
+		NewAddress = FString::Printf(TEXT("C%d"), Info->Record);
+	}
+	AStar* NewStar = NewSystem->MainStar;
 	ActiveIndex = Index;
 	ActiveInstance = Instance;
+	ActiveGalaxyIndex = Info->GalaxyIndex;
 	ActiveName = Info->Name;
 	Generator = Gen;
 	System = NewSystem;
@@ -304,18 +438,16 @@ bool FAPSSystemMaterializer::Begin(FAPSStarSystems& Systems, const int32 Index)
 	APlanetarySystem* NewPlanetarySystem = LiveWorld->SpawnActor<APlanetarySystem>(Gen->BP_PlanetarySystemClass,
 		NewStar->GetActorLocation(), FRotator::ZeroRotator, Parameters);
 	PlanetarySystem = NewPlanetarySystem;
-	const int32 PotentialPlanets = Record->SystemModel.PotentialPlanetCount;
-	SystemSeed = static_cast<int32>(HashCombineFast(GetTypeHash(Record->StableId),
-		static_cast<uint32>(Record->SystemModel.GenerationSeed)) & 0x7fffffffu) | 1;
+	SystemSeed = static_cast<int32>(SeedHash & 0x7fffffffu) | 1;
 	WorldSeed = Systems.GetClusterSeed();
-	Address = FString::Printf(TEXT("C%d"), Info->Record);
+	Address = NewAddress;
 	Model = MakeShared<FPlanetarySystemModel>();
 	if (NewPlanetarySystem && PotentialPlanets > 0)
 	{
 		// The catalogue's number of worlds, laid out densely (Rio's C8), from the record's own seed: the same system comes
 		// back with the same worlds. The planet and moon generators draw from the global stream, seeded here too.
 		FMath::RandInit(SystemSeed);
-		TSharedPtr<FStarModel> StarModel = MakeShared<FStarModel>(Record->PrimaryStarModel);
+		TSharedPtr<FStarModel> StarModel = MakeShared<FStarModel>(*PrimaryModel);
 		Model->AmountOfPlanets = PotentialPlanets;
 		Model->PlanetarySystemType = PotentialPlanets == 1 ? EPlanetarySystemType::SinglePlanetSystem
 			: EPlanetarySystemType::MultiPlanetSystem;
@@ -583,7 +715,21 @@ bool FAPSSystemMaterializer::IsDrained(const float DeltaSeconds)
 
 void FAPSSystemMaterializer::Finish()
 {
-	if (AAstroGenerator* Gen = Generator.Get(); Gen && ActiveInstance != INDEX_NONE)
+	if (ActiveGalaxyIndex != INDEX_NONE)
+	{
+		// A galaxy star: its actors go and the sky draws it again.
+		if (AStarSystem* LiveSystem = System.Get())
+		{
+			AAstroGenerator::DestroyActorTree(LiveSystem);
+		}
+		if (AAstroGenerator* Gen = Generator.Get())
+		{
+			Gen->SetGalaxyProxyMaterialized(ActiveGalaxyIndex, false);
+		}
+		APSGalaxyNearStars::SetMaterialized(World.Get(), ActiveGalaxyIndex, false);
+		UE_LOG(LogTemp, Log, TEXT("[APS.Stars] %s is a catalogue point again"), *ActiveName);
+	}
+	else if (AAstroGenerator* Gen = Generator.Get(); Gen && ActiveInstance != INDEX_NONE)
 	{
 		Gen->DematerializeClusterStarSystem(ActiveInstance);
 		UE_LOG(LogTemp, Log, TEXT("[APS.Stars] %s is a catalogue point again"), *ActiveName);
@@ -591,6 +737,7 @@ void FAPSSystemMaterializer::Finish()
 	Stage = EStage::Idle;
 	ActiveIndex = INDEX_NONE;
 	ActiveInstance = INDEX_NONE;
+	ActiveGalaxyIndex = INDEX_NONE;
 	ActiveName.Reset();
 	System.Reset();
 	Star.Reset();

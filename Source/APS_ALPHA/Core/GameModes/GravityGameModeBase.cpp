@@ -6,6 +6,7 @@
 #include "APS_ALPHA/Core/Model/SpawnParameters.h"
 #include "APS_ALPHA/Generation/AstroGenerator.h"
 #include "APS_ALPHA/Pawns/Base/ControlledPawn.h"
+#include "APS_ALPHA/Pawns/Spectator/APSSpectatorPawn.h"
 #include "APS_ALPHA/UI/SMENU_HUD.h"
 #include "Engine/Engine.h"
 #include "HAL/PlatformTime.h"
@@ -218,6 +219,12 @@ UClass* AGravityGameModeBase::GetDefaultPawnClassForController_Implementation(AC
 				}
 			}
 		}
+	}
+	// Rio 03.10: Generate Space (the astronomical model without a civilization) flies a free camera, not the walker.
+	// A save of such a world replays the same route; LoadWorld still restores the pawn class the save holds.
+	if (Cast<APlayerController>(InController) && AAPSSpectatorPawn::IsGeneratedSpaceRoute(GetWorld()))
+	{
+		return AAPSSpectatorPawn::StaticClass();
 	}
 	return Super::GetDefaultPawnClassForController_Implementation(InController);
 }

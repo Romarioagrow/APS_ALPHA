@@ -1,3 +1,4 @@
+#include "APSRenderSafety.h"
 #include "APS_ALPHA/Core/Controllers/GravityPlayerController.h"
 #include "Camera/PlayerCameraManager.h"
 #include "Engine/Engine.h"
@@ -25,6 +26,14 @@ namespace APSRenderSafetyLocal
 	constexpr double FastMoveCm = 1.0e8;
 	constexpr double HoldSeconds = 1.0;
 
+	/** The engine's panning switch, looked up once (Rio 04.10 log: 500 lookups flagged by the console manager). */
+	IConsoleVariable* PanningVariable()
+	{
+		static IConsoleVariable* const Variable =
+			IConsoleManager::Get().FindConsoleVariable(TEXT("r.Shadow.Virtual.Cache.ClipmapPanning"));
+		return Variable;
+	}
+
 	class FGuard final : public FTickableGameObject
 	{
 	public:
@@ -37,9 +46,26 @@ namespace APSRenderSafetyLocal
 		// PIE worlds live in the editor process: tick there too (only game and PIE worlds are looked at).
 		virtual bool IsTickableInEditor() const override { return true; }
 
+		/** A jump this frame (APSRenderSafety::MarkCameraJump): panning off now, held as for a fast camera. */
+		void MarkRisky(const TCHAR* Why)
+		{
+			RiskySeconds = FPlatformTime::Seconds();
+			IConsoleVariable* Panning = PanningVariable();
+			if (Panning && !bForcedOff && CVarGuard.GetValueOnGameThread() != 0)
+			{
+				Saved = Panning->GetInt();
+				if (Saved != 0)
+				{
+					Panning->Set(0, ECVF_SetByCode);
+					bForcedOff = true;
+					UE_LOG(LogTemp, Log, TEXT("[APS.Render] shadow clipmap panning off (%s)"), Why);
+				}
+			}
+		}
+
 		virtual void Tick(float) override
 		{
-			IConsoleVariable* Panning = IConsoleManager::Get().FindConsoleVariable(TEXT("r.Shadow.Virtual.Cache.ClipmapPanning"));
+			IConsoleVariable* Panning = PanningVariable();
 			if (!Panning || !GEngine)
 			{
 				return;
@@ -119,4 +145,12 @@ namespace APSRenderSafetyLocal
 	{
 		GGuard = MakeUnique<FGuard>();
 	});
+}
+
+void APSRenderSafety::MarkCameraJump(const TCHAR* Why)
+{
+	if (APSRenderSafetyLocal::GGuard)
+	{
+		APSRenderSafetyLocal::GGuard->MarkRisky(Why);
+	}
 }

@@ -4,6 +4,7 @@
 #include "APSInfrastructureCatalog.h"
 
 class AActor;
+class FAPSMegastructureYard;
 class UWorld;
 
 /** A structure the civilization raised from the infrastructure catalogue. */
@@ -120,6 +121,20 @@ public:
 	void GetAt(const AActor* Site, TArray<const FAPSBuiltStructure*>& OutStructures) const;
 	int32 CountAt(const AActor* Site, FName Type) const;
 	const FAPSBuiltStructure* FindByActor(const AActor* Actor) const;
+	/** The actor of the first structure of a type standing at a place, or null. */
+	AActor* FindActorAt(const AActor* Site, FName Type) const;
+
+	/**
+	 * Chains (Rio 03.10): an orbital station of the civilization over this world: a catalogue station or hub there, or a
+	 * station, shipyard or headquarters of the fleet's (the home complex counts).
+	 */
+	bool HasStationAt(const AActor* Site) const;
+	/** Structures of a type in the star system of a place (a planet or moon belongs to the home system). */
+	int32 CountInSystem(const AActor* Site, FName Type) const;
+	/** Hubs: the extra berths their place gives an orbital station type there (0 for every other type). */
+	int32 BerthsAt(const AActor* Site, const APSInfrastructure::FType& Type) const;
+	/** Hubs and megastructures under construction and their scaffolds (Gameplay/Megastructures). */
+	FAPSMegastructureYard* GetMegastructureYard() const { return Yard.Get(); }
 
 	float GetStock(APSInfrastructure::EResource Resource) const;
 	/** Per minute, from everything standing. */
@@ -168,6 +183,8 @@ private:
 	float SettleClock{0.0f};
 	int32 Serial{0};
 	uint32 Revision{1};
+	/** Rio 03.10: the scaffolds of the hubs and megastructures the construction ships are raising. */
+	TUniquePtr<FAPSMegastructureYard> Yard;
 };
 
 APS_ALPHA_API FAPSInfrastructure* APSInfrastructureFind(const UWorld* World);

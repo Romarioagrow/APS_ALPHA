@@ -10,10 +10,14 @@
 #include "APS_ALPHA/Actors/Astro/Star.h"
 #include "APS_ALPHA/Generation/AstroGenerator.h"
 #include "APS_ALPHA/Generation/StarGenerator.h"
+#include "Components/HierarchicalInstancedStaticMeshComponent.h"
+#include "Components/InstancedStaticMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
+#include "HAL/PlatformTime.h"
 #include "MaterialShared.h"
+#include "StaticMeshResources.h"
 #include "LocalVertexFactory.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "HAL/IConsoleManager.h"
@@ -103,37 +107,45 @@ bool PairReady(const FAPSGameplayNativePair& Pair, UWorld* World)
 		&& GFrameCounter > Pair.BoundFrame;
 }
 
-void RestorePoint(AAstroGenerator* Generator, FAPSGameplayNativePair& Pair,
-	const FVector& Camera, const double PixelTangent,
+/** Gives an owned catalogue point (scale zero, LastPublishedPoint) back its glyph size for the current optics. */
+void RestoreOwnedPoint(AAstroGenerator* Generator, const FAPSGameplayNativeDemand& Demand,
+	const FTransform& LastPublishedPoint, const FVector& Camera, const double PixelTangent,
 	TSet<UHierarchicalInstancedStaticMeshComponent*>& DirtySources)
 {
-	if (!Pair.bOwnsPoint) return;
-	Pair.bOwnsPoint = false;
 	// Never restore a saved mutable scale, a new catalog slot or an external zero.
-	if (!IsValid(Generator) || !GeometryCurrent(Generator, Pair.Demand)
-		|| Generator->GetGameplayStellarSuppression(Pair.Demand.Key) != 0) return;
-	UHierarchicalInstancedStaticMeshComponent* Source = Pair.Demand.Key.Source.Get();
+	if (!IsValid(Generator) || !GeometryCurrent(Generator, Demand)
+		|| Generator->GetGameplayStellarSuppression(Demand.Key) != 0) return;
+	UHierarchicalInstancedStaticMeshComponent* Source = Demand.Key.Source.Get();
 	FTransform Current;
-	if (!Source->GetInstanceTransform(Pair.Demand.Key.Index, Current, false)
-		|| !Current.Equals(Pair.LastPublishedPoint, 0.0)) return;
-	const FTransform& Base = *CurrentBase(Pair.Demand.Key);
+	if (!Source->GetInstanceTransform(Demand.Key.Index, Current, false)
+		|| !Current.Equals(LastPublishedPoint, 0.0)) return;
+	const FTransform& Base = *CurrentBase(Demand.Key);
 	const double ComponentScale = Source->GetComponentScale().GetAbsMax();
-	const double Radius = ComponentScale > 0.0 ? Pair.Demand.PhysicalRadiusCm / ComponentScale : 0.0;
+	const double Radius = ComponentScale > 0.0 ? Demand.PhysicalRadiusCm / ComponentScale : 0.0;
 	const double BaseRadius = Source->GetStaticMesh()->GetBounds().BoxExtent.GetMax()
 		* Base.GetScale3D().GetAbsMax();
 	if (!FMath::IsFinite(Radius) || Radius <= 0.0 || BaseRadius <= 0.0 || PixelTangent <= 0.0) return;
 	const FVector LocalCamera = Source->GetComponentTransform().InverseTransformPosition(Camera);
 	const double PixelRadius = FVector::Distance(Base.GetLocation(), LocalCamera) * PixelTangent;
 	const auto Profile = APSStellarOpticalSupport::Select(Source->PerInstanceSMCustomData,
-		Source->NumCustomDataFloats, Pair.Demand.Key.Index);
+		Source->NumCustomDataFloats, Demand.Key.Index);
 	const double Carrier = APSStellarOpticalSupport::CarrierRadius(Radius, PixelRadius, Profile);
 	FTransform Restored = Base;
 	Restored.SetScale3D(Base.GetScale3D() * (Carrier / BaseRadius));
-	APSStellarOpticalSupport::Publish(Source, Pair.Demand.Key.Index,
+	APSStellarOpticalSupport::Publish(Source, Demand.Key.Index,
 		APSStellarOpticalSupport::CoreScale(APSStellarOpticalSupport::CoreRadius(Radius, PixelRadius), Carrier),
 		APSStellarOpticalSupport::ResolvedRayStrength(Profile, Radius, PixelRadius));
-	Source->UpdateInstanceTransform(Pair.Demand.Key.Index, Restored, false, false, true);
+	Source->UpdateInstanceTransform(Demand.Key.Index, Restored, false, false, true);
 	DirtySources.Add(Source);
+}
+
+void RestorePoint(AAstroGenerator* Generator, FAPSGameplayNativePair& Pair,
+	const FVector& Camera, const double PixelTangent,
+	TSet<UHierarchicalInstancedStaticMeshComponent*>& DirtySources)
+{
+	if (!Pair.bOwnsPoint) return;
+	Pair.bOwnsPoint = false;
+	RestoreOwnedPoint(Generator, Pair.Demand, Pair.LastPublishedPoint, Camera, PixelTangent, DirtySources);
 }
 
 void FlushSources(const TSet<UHierarchicalInstancedStaticMeshComponent*>& Sources)
@@ -222,8 +234,10 @@ bool BindPair(AAstroGenerator* Generator, FAPSGameplayNativePair& Pair)
 			|| Record.StableId != Pair.Demand.Key.StableId) return false;
 		// Catalog visual preset: no generated physical model and no POINTS compensation.
 		Parameters.Color = UStarGenerator::GetStarColor(Record.SpectralClass, Record.SpectralSubclass);
+		// Rio 03.10: x the galaxy POPULATION luminosity (R^2 of its size factor, 1 for the historic mix).
 		Parameters.Emission = static_cast<float>(Stars->CalculateEmission(static_cast<float>(
-			APSCanonicalStellarProjection::GetCanonicalStellarLuminositySolar(Record.SpectralClass) * 25.0)));
+			APSCanonicalStellarProjection::GetCanonicalStellarLuminositySolar(Record.SpectralClass)
+			* FMath::Clamp(static_cast<double>(Record.RadiusScale) * Record.RadiusScale, 1.0e-4, 1.0e4) * 25.0)));
 		Parameters.SurfaceSeed = static_cast<float>(Record.GenerationSeed & 0xffff) / 65535.0f;
 		UMaterial* Base = SurfaceMID->GetBaseMaterial();
 		for (const TCHAR* Name : {TEXT("SurfaceVariation"), TEXT("GranulationStrength"),
@@ -269,6 +283,390 @@ void PresentPair(FAPSGameplayNativePair& Pair)
 	Pair.Corona->SetHiddenInGame(!Pair.bShowCorona, false);
 	Pair.Corona->SetVisibility(Pair.bShowCorona, false);
 }
+
+// Rio 03.10: "some stars unload when the camera turns: they are seen, then they turn into blurred spots. Remove those
+// spots. One material that loses detail with distance, no other blurred-glow material; everything in frame sharp, nothing
+// blinks, unloads or vanishes", and "no visible FPS drop, no freeze". The pairs above drew the 64 largest stars in view;
+// every other resolved star (up to ~700 in a cluster view, 03.10 log) stayed its translucent glyph, a blurred disc, and a
+// turn re-selected the 64. Now every resolved catalogue star, in all directions, is one instance of an instanced
+// photosphere per catalogue: the star material's instance path (M_SpectralStarMat_SUN reads the catalogue's custom-data
+// slots 0..5 and fades its own detail by footprint). One draw per catalogue and nothing chosen by the view.
+TAutoConsoleVariable<int32> CVarNativeMode(TEXT("aps.Stars.NativeMode"), 1,
+	TEXT("Catalogue stars of at least aps.Stars.ResolvePixels radius. 1 (Rio 03.10): every one of them, in all directions, ")
+	TEXT("is an instance of an instanced photosphere (the star material's own detail fade); a turn changes nothing. ")
+	TEXT("0: the old 64 view-selected sphere and corona pairs, every other resolved star a blurred glyph."));
+TAutoConsoleVariable<int32> CVarResolvedLimit(TEXT("aps.Stars.ResolvedLimit"), 8192,
+	TEXT("NativeMode 1: most catalogue stars drawn as instanced photospheres at once."));
+TAutoConsoleVariable<int32> CVarResolvedAddsPerFrame(TEXT("aps.Stars.ResolvedAddsPerFrame"), 64,
+	TEXT("NativeMode 1: most photospheres added in one frame, largest first (a first fill spreads over a few frames)."));
+TAutoConsoleVariable<int32> CVarResolvedForcedLod(TEXT("aps.Stars.ResolvedForcedLod"), 1,
+	TEXT("NativeMode 1: forced LOD of the instanced photospheres (1 the finest, as the pairs had; 0 per-instance GPU LOD). ")
+	TEXT("Read when a photosphere component is made."));
+// The catalogue's own sphere has 256 triangles (16 sides): its outline stays within half a pixel up to a ~25 px radius.
+TAutoConsoleVariable<float> CVarResolvedSmoothPixels(TEXT("aps.Stars.ResolvedSmoothPixels"), 20.0f,
+	TEXT("NativeMode 1: from this radius in pixels a star's photosphere instance uses the home star's smooth sphere (the old ")
+	TEXT("pairs' mesh) instead of the catalogue's 256-triangle one; back below 80% of it. 0: always the catalogue sphere."));
+
+bool InstancedMode() { return CVarNativeMode.GetValueOnGameThread() != 0; }
+
+/** Tier 0: the catalogue's own sphere (most stars, a few pixels); tier 1: the smooth sphere (large ones). */
+constexpr int32 ResolvedTiers = 2;
+
+struct FResolvedSlot
+{
+	FAPSGameplayNativeDemand Demand;
+	FTransform LastPublishedPoint{FTransform::Identity};
+	float Data[6]{};
+	int32 Instance{INDEX_NONE};
+	int32 Tier{0};
+	bool bOwnsPoint{false};
+};
+
+struct FResolvedView
+{
+	TWeakObjectPtr<UInstancedStaticMeshComponent> Mesh;
+	/** Instance index -> its star; a removal swaps the last instance into the hole (SetRemoveSwap). */
+	TArray<FAPSGameplayStellarKey> Keys;
+};
+
+struct FResolvedState
+{
+	TMap<FAPSGameplayStellarKey, FResolvedSlot> Slots;
+	TMap<TWeakObjectPtr<UHierarchicalInstancedStaticMeshComponent>, FResolvedView> Views[ResolvedTiers];
+	uint64 ValidatedSerial{MAX_uint64};
+	int32 LoggedCount{INDEX_NONE};
+	double LoggedSeconds{-1.0e9};
+};
+
+TMap<TWeakObjectPtr<const UAPSStellarVisualSubsystem>, FResolvedState> GResolvedStates;
+TMap<TWeakObjectPtr<const UAPSStellarVisualSubsystem>, int32> GNativeModes;
+
+FResolvedState* FindResolved(const UAPSStellarVisualSubsystem* Subsystem)
+{
+	return GResolvedStates.Find(TWeakObjectPtr<const UAPSStellarVisualSubsystem>(Subsystem));
+}
+
+/** Slots 0..5 of the catalogue layout with the colour, emission and seed the pairs and the materialized star use, so a
+ * star keeps its tint and surface pattern from instance to actor. */
+bool MakeResolvedData(UStarGenerator* Stars, const FAPSGameplayStellarKey& Key, float (&Data)[6])
+{
+	const UHierarchicalInstancedStaticMeshComponent* Source = Key.Source.Get();
+	if (!IsValid(Stars) || !IsValid(Source)) return false;
+	FLinearColor Color = FLinearColor::White;
+	double Emission = 0.0;
+	float Seed = 0.0f;
+	if (const AStarCluster* Cluster = Cast<AStarCluster>(Source->GetOwner()))
+	{
+		const FClusterStarSystemRecord* Record = Cluster->FindPotentialSystem(Key.Index);
+		if (!Record || Record->StableId != Key.StableId) return false;
+		const FStarModel& Model = Record->PrimaryStarModel;
+		Color = UStarGenerator::GetStarColor(Model.SpectralClass, Model.SpectralSubclass);
+		Emission = Stars->CalculateEmission(Model.Luminosity * 25.0f);
+		// UStarGenerator::ApplySpectralMaterialParameters' SurfaceSeed.
+		Seed = static_cast<float>(FMath::Frac(FMath::Abs(Model.SurfaceTemperature * 0.000173f + Model.Mass * 0.137f
+			+ Model.Radius * 0.071f + Model.Luminosity * 0.019f)));
+	}
+	else if (const AGalaxy* Galaxy = Cast<AGalaxy>(Source->GetOwner()))
+	{
+		FGalaxyCatalogStarRecord Record;
+		if (!Galaxy->GetRenderedCatalogRecord(Key.Index, Record) || Record.StableId != Key.StableId) return false;
+		// BindPair's catalogue preset.
+		Color = UStarGenerator::GetStarColor(Record.SpectralClass, Record.SpectralSubclass);
+		Emission = Stars->CalculateEmission(static_cast<float>(
+			APSCanonicalStellarProjection::GetCanonicalStellarLuminositySolar(Record.SpectralClass)
+			* FMath::Clamp(static_cast<double>(Record.RadiusScale) * Record.RadiusScale, 1.0e-4, 1.0e4) * 25.0));
+		Seed = static_cast<float>(Record.GenerationSeed & 0xffff) / 65535.0f;
+	}
+	else return false;
+	const int32 Stride = Source->NumCustomDataFloats;
+	const int32 MarkerSlot = Key.Index * Stride + 5;
+	Data[0] = Color.R;
+	Data[1] = Color.G;
+	Data[2] = Color.B;
+	Data[3] = static_cast<float>(Emission);
+	Data[4] = Seed;
+	Data[5] = Stride > 5 && Source->PerInstanceSMCustomData.IsValidIndex(MarkerSlot)
+		? Source->PerInstanceSMCustomData[MarkerSlot] : 0.0f;
+	return FMath::IsFinite(Data[3]) && Data[3] > 0.0f;
+}
+
+/** The home star's own sphere (the old pairs' mesh), else the engine sphere: the smooth tier's mesh. */
+UStaticMesh* SmoothSphereMesh(const AAstroGenerator* Generator)
+{
+	const AStarSystem* Home = Generator ? Generator->GetPreviewHomeSystem() : nullptr;
+	if (IsValid(Home) && IsValid(Home->MainStar) && IsValid(Home->MainStar->StarMesh)
+		&& IsValid(Home->MainStar->StarMesh->GetStaticMesh()))
+	{
+		return Home->MainStar->StarMesh->GetStaticMesh();
+	}
+	static TWeakObjectPtr<UStaticMesh> EngineSphere;
+	if (!EngineSphere.IsValid())
+	{
+		EngineSphere = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Sphere.Sphere"));
+	}
+	return EngineSphere.Get();
+}
+
+/** One instanced photosphere per catalogue and tier, in the catalogue component's own frame (origin shifts move it). */
+UInstancedStaticMeshComponent* EnsureResolvedView(FResolvedView& View, UHierarchicalInstancedStaticMeshComponent* Source,
+	UWorld* World, UStaticMesh* SphereMesh)
+{
+	if (UInstancedStaticMeshComponent* Existing = View.Mesh.Get(); IsValid(Existing)) return Existing;
+	UMaterial* Surface = APSStellarMaterialContract::LoadCanonicalBase(APSStellarMaterialContract::ActorBaseObjectPath);
+	AActor* Owner = Source->GetOwner();
+	if (!IsValid(Owner) || !IsValid(SphereMesh)
+		|| !MaterialReady(Surface, World, APSStellarMaterialContract::ActorBaseObjectPath)) return nullptr;
+	UInstancedStaticMeshComponent* Mesh = NewObject<UInstancedStaticMeshComponent>(Owner, NAME_None, RF_Transient);
+	Mesh->SetupAttachment(Source);
+	Mesh->SetMobility(EComponentMobility::Movable);
+	Mesh->bDisallowNanite = true;
+	Mesh->SetForceDisableNanite(true);
+	Mesh->SetStaticMesh(SphereMesh);
+	Mesh->SetForcedLodModel(FMath::Clamp(CVarResolvedForcedLod.GetValueOnGameThread(), 0, SphereMesh->GetNumLODs()));
+	for (int32 Slot = 0; Slot < FMath::Max(Mesh->GetNumMaterials(), 1); ++Slot) Mesh->SetMaterial(Slot, Surface);
+	Mesh->SetNumCustomDataFloats(6);
+	Mesh->SetRemoveSwap();
+	Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	Mesh->bDisableCollision = true;
+	Mesh->SetGenerateOverlapEvents(false);
+	Mesh->SetCanEverAffectNavigation(false);
+	Mesh->SetCastShadow(false);
+	Mesh->bAffectDynamicIndirectLighting = false;
+	Mesh->bAffectDistanceFieldLighting = false;
+	Mesh->SetReceivesDecals(false);
+	Owner->AddInstanceComponent(Mesh);
+	Mesh->RegisterComponent();
+	View.Mesh = Mesh;
+	View.Keys.Reset();
+	const FStaticMeshRenderData* RenderData = SphereMesh->GetRenderData();
+	FString Triangles;
+	for (int32 Lod = 0; RenderData && Lod < RenderData->LODResources.Num(); ++Lod)
+	{
+		Triangles += FString::Printf(TEXT("%s%d"), Lod ? TEXT("/") : TEXT(""), RenderData->LODResources[Lod].GetNumTriangles());
+	}
+	UE_LOG(LogTemp, Log, TEXT("[APS.Gameplay.NativeStars] instanced photospheres for %s: mesh %s (triangles per LOD %s), forced LOD %d"),
+		*GetNameSafe(Owner), *GetNameSafe(SphereMesh), *Triangles, Mesh->ForcedLodModel);
+	return Mesh;
+}
+
+void RemoveResolvedInstance(FResolvedState& State, FResolvedSlot& Slot)
+{
+	FResolvedView* View = State.Views[Slot.Tier].Find(Slot.Demand.Key.Source);
+	if (!View || !View->Keys.IsValidIndex(Slot.Instance))
+	{
+		Slot.Instance = INDEX_NONE;
+		return;
+	}
+	UInstancedStaticMeshComponent* Mesh = View->Mesh.Get();
+	const int32 Last = View->Keys.Num() - 1;
+	if (IsValid(Mesh) && Mesh->GetInstanceCount() == View->Keys.Num()) Mesh->RemoveInstance(Slot.Instance);
+	if (Slot.Instance != Last)
+	{
+		View->Keys[Slot.Instance] = View->Keys[Last];
+		if (FResolvedSlot* Moved = State.Slots.Find(View->Keys[Slot.Instance])) Moved->Instance = Slot.Instance;
+	}
+	View->Keys.Pop(EAllowShrinking::No);
+	Slot.Instance = INDEX_NONE;
+}
+
+/** Adds the slot's photosphere to its tier's component, at its physical radius for that component's sphere. */
+bool AddResolvedInstance(FResolvedState& State, FResolvedSlot& Slot, AAstroGenerator* Generator)
+{
+	UHierarchicalInstancedStaticMeshComponent* Source = Slot.Demand.Key.Source.Get();
+	if (!IsValid(Source)) return false;
+	UStaticMesh* SphereMesh = Slot.Tier == 1 ? SmoothSphereMesh(Generator) : Source->GetStaticMesh().Get();
+	FResolvedView& View = State.Views[Slot.Tier].FindOrAdd(Slot.Demand.Key.Source);
+	UInstancedStaticMeshComponent* Mesh = EnsureResolvedView(View, Source, Generator->GetWorld(), SphereMesh);
+	if (!Mesh || !IsValid(Mesh->GetStaticMesh())) return false;
+	const FBoxSphereBounds MeshBounds = Mesh->GetStaticMesh()->GetBounds();
+	const double ComponentScale = Source->GetComponentScale().GetAbsMax();
+	const double Scale = ComponentScale > 0.0 && MeshBounds.BoxExtent.GetMax() > 0.0
+		? Slot.Demand.PhysicalRadiusCm / ComponentScale / MeshBounds.BoxExtent.GetMax() : 0.0;
+	if (!FMath::IsFinite(Scale) || Scale <= 0.0) return false;
+	const FQuat Rotation = Slot.Demand.BaseTransform.GetRotation();
+	const FTransform Local(Rotation,
+		Slot.Demand.BaseTransform.GetLocation() - Rotation.RotateVector(MeshBounds.Origin * Scale), FVector(Scale));
+	const int32 Instance = Mesh->AddInstance(Local, false);
+	if (Instance == INDEX_NONE) return false;
+	Mesh->SetCustomData(Instance, TArrayView<const float>(Slot.Data, 6), false);
+	if (View.Keys.Num() <= Instance) View.Keys.SetNum(Instance + 1);
+	View.Keys[Instance] = Slot.Demand.Key;
+	Slot.Instance = Instance;
+	return true;
+}
+
+int32 WantedTier(const FResolvedSlot& Slot, const double PixelRadius)
+{
+	const double Smooth = CVarResolvedSmoothPixels.GetValueOnGameThread();
+	if (Smooth <= 0.0) return 0;
+	return PixelRadius >= (Slot.Tier == 1 ? Smooth * 0.8 : Smooth) ? 1 : 0;
+}
+
+void ReleaseResolved(const UAPSStellarVisualSubsystem* Subsystem, AAstroGenerator* Generator, const FVector& Camera,
+	const double PixelTangent, TSet<UHierarchicalInstancedStaticMeshComponent*>& DirtySources)
+{
+	FResolvedState* State = FindResolved(Subsystem);
+	if (!State) return;
+	for (TPair<FAPSGameplayStellarKey, FResolvedSlot>& Entry : State->Slots)
+	{
+		if (Entry.Value.bOwnsPoint)
+			RestoreOwnedPoint(Generator, Entry.Value.Demand, Entry.Value.LastPublishedPoint, Camera, PixelTangent, DirtySources);
+	}
+	for (TMap<TWeakObjectPtr<UHierarchicalInstancedStaticMeshComponent>, FResolvedView>& Views : State->Views)
+	{
+		for (TPair<TWeakObjectPtr<UHierarchicalInstancedStaticMeshComponent>, FResolvedView>& Entry : Views)
+		{
+			if (UInstancedStaticMeshComponent* Mesh = Entry.Value.Mesh.Get()) Mesh->DestroyComponent();
+		}
+	}
+	GResolvedStates.Remove(TWeakObjectPtr<const UAPSStellarVisualSubsystem>(Subsystem));
+}
+
+bool ResolvedOwnsPoint(const UAPSStellarVisualSubsystem* Subsystem, const AAstroGenerator* Generator,
+	const FAPSGameplayStellarKey& Key, const FTransform& BaseTransform, const FTransform& CurrentTransform)
+{
+	const FResolvedState* State = FindResolved(Subsystem);
+	const FResolvedSlot* Slot = State ? State->Slots.Find(Key) : nullptr;
+	return Slot && Slot->bOwnsPoint && Slot->Demand.BaseTransform.Equals(BaseTransform, 0.0)
+		&& CurrentTransform.Equals(Slot->LastPublishedPoint, 0.0) && GeometryCurrent(Generator, Slot->Demand);
+}
+
+void PresentResolvedStars(const UAPSStellarVisualSubsystem* Subsystem, AAstroGenerator* Generator,
+	TArray<FAPSGameplayNativeDemand>& Demands, const FVector& Camera, const double PixelTangent, const bool bDaylightHidden)
+{
+	TRACE_CPUPROFILER_EVENT_SCOPE(APS_GameplayResolvedStars);
+	FResolvedState& State = GResolvedStates.FindOrAdd(TWeakObjectPtr<const UAPSStellarVisualSubsystem>(Subsystem));
+	const uint64 Serial = Generator->GetCanonicalStellarProjectionDescriptor().TransformMutationSerial;
+	const bool bValidate = Serial != State.ValidatedSerial;
+	State.ValidatedSerial = Serial;
+
+	// Every demanded star of at least ResolvePixels (KeepResolvedPixels once drawn), in all directions; a day sky none.
+	TSet<FAPSGameplayStellarKey> Wanted;
+	TArray<const FAPSGameplayNativeDemand*> ToAdd;
+	if (!bDaylightHidden)
+	{
+		Wanted.Reserve(Demands.Num());
+		for (FAPSGameplayNativeDemand& Demand : Demands)
+		{
+			const UHierarchicalInstancedStaticMeshComponent* Source = Demand.Key.Source.Get();
+			if (!IsValid(Source)) continue;
+			const double PixelWorldRadius = FVector::Distance(
+				Source->GetComponentTransform().TransformPosition(Demand.BaseTransform.GetLocation()), Camera) * PixelTangent;
+			Demand.PixelRadius = PixelWorldRadius > 0.0 ? Demand.PhysicalRadiusCm / PixelWorldRadius : 0.0;
+			FResolvedSlot* Drawn = State.Slots.Find(Demand.Key);
+			const bool bDrawn = Drawn != nullptr;
+			if (!FMath::IsFinite(Demand.PixelRadius) || Demand.PixelRadius < (bDrawn ? KeepResolvedPixels() : ResolvePixels()))
+				continue;
+			if (Drawn) Drawn->Demand.PixelRadius = Demand.PixelRadius;
+			// Producer reasons (materialized, excluded, rebuilt) are read again when the catalogue changed, and for a new star.
+			if ((bValidate || !bDrawn) && (!GeometryCurrent(Generator, Demand)
+				|| Generator->GetGameplayStellarSuppression(Demand.Key) != 0)) continue;
+			Wanted.Add(Demand.Key);
+			if (!bDrawn) ToAdd.Add(&Demand);
+		}
+	}
+
+	TSet<UHierarchicalInstancedStaticMeshComponent*> DirtySources;
+	for (auto It = State.Slots.CreateIterator(); It; ++It)
+	{
+		FResolvedSlot& Slot = It.Value();
+		bool bKeep = Wanted.Contains(It.Key());
+		if (bKeep && bValidate && Slot.bOwnsPoint)
+		{
+			// A point someone else wrote since is theirs (as with the pairs): dropped without a restore.
+			const UHierarchicalInstancedStaticMeshComponent* Source = Slot.Demand.Key.Source.Get();
+			FTransform Point;
+			if (!IsValid(Source) || !Source->GetInstanceTransform(Slot.Demand.Key.Index, Point, false)
+				|| !Point.Equals(Slot.LastPublishedPoint, 0.0))
+			{
+				Slot.bOwnsPoint = false;
+				bKeep = false;
+			}
+		}
+		if (bKeep) continue;
+		RemoveResolvedInstance(State, Slot);
+		if (Slot.bOwnsPoint)
+			RestoreOwnedPoint(Generator, Slot.Demand, Slot.LastPublishedPoint, Camera, PixelTangent, DirtySources);
+		It.RemoveCurrent();
+	}
+
+	// A star that grew past aps.Stars.ResolvedSmoothPixels moves to the smooth sphere (and back below 80% of it); a
+	// move is the same frame's remove and add, its point stays owned, so nothing shows in between.
+	int32 Changes = 0;
+	const int32 Budget = FMath::Max(CVarResolvedAddsPerFrame.GetValueOnGameThread(), 1);
+	for (TPair<FAPSGameplayStellarKey, FResolvedSlot>& Entry : State.Slots)
+	{
+		FResolvedSlot& Slot = Entry.Value;
+		if (Changes >= Budget) break;
+		if (Slot.Instance == INDEX_NONE)
+		{
+			// Its component was lost (or a move could not add it): draw it again.
+			Changes += AddResolvedInstance(State, Slot, Generator) ? 1 : 0;
+			continue;
+		}
+		const int32 Tier = WantedTier(Slot, Slot.Demand.PixelRadius);
+		if (Tier == Slot.Tier) continue;
+		const int32 OldTier = Slot.Tier;
+		RemoveResolvedInstance(State, Slot);
+		Slot.Tier = Tier;
+		if (!AddResolvedInstance(State, Slot, Generator))
+		{
+			Slot.Tier = OldTier;
+			AddResolvedInstance(State, Slot, Generator);
+		}
+		++Changes;
+	}
+
+	// New ones, largest first, a bounded number a frame; one still waiting keeps its point for that frame.
+	const int32 Room = FMath::Max(CVarResolvedLimit.GetValueOnGameThread() - State.Slots.Num(), 0);
+	const int32 Adds = FMath::Min(FMath::Max(Budget - Changes, 0), Room);
+	if (ToAdd.Num() > Adds)
+	{
+		ToAdd.Sort([](const FAPSGameplayNativeDemand& A, const FAPSGameplayNativeDemand& B) { return A.PixelRadius > B.PixelRadius; });
+		ToAdd.SetNum(Adds, EAllowShrinking::No);
+	}
+	UStarGenerator* Stars = Generator->GetGameplayStellarAppearanceGenerator();
+	for (const FAPSGameplayNativeDemand* Demand : ToAdd)
+	{
+		UHierarchicalInstancedStaticMeshComponent* Source = Demand->Key.Source.Get();
+		FTransform Point;
+		if (State.Slots.Contains(Demand->Key) || !IsValid(Source)
+			|| !Source->GetInstanceTransform(Demand->Key.Index, Point, false)) continue;
+		if (Point.GetScale3D() == FVector::ZeroVector)
+		{
+			// Someone else's zero: never taken over.
+			Generator->SetGameplayStellarSuppression(Demand->Key, EAPSGameplayStellarSuppression::UnclassifiedExternal, true);
+			continue;
+		}
+		FResolvedSlot NewSlot;
+		NewSlot.Demand = *Demand;
+		if (!MakeResolvedData(Stars, Demand->Key, NewSlot.Data)) continue;
+		NewSlot.Tier = WantedTier(NewSlot, Demand->PixelRadius);
+		if (!AddResolvedInstance(State, NewSlot, Generator)) continue;
+		Point.SetScale3D(FVector::ZeroVector);
+		Source->UpdateInstanceTransform(Demand->Key.Index, Point, false, false, true);
+		NewSlot.LastPublishedPoint = Point;
+		NewSlot.bOwnsPoint = true;
+		State.Slots.Add(Demand->Key, NewSlot);
+		DirtySources.Add(Source);
+	}
+	FlushSources(DirtySources);
+	const double Now = FPlatformTime::Seconds();
+	if (State.Slots.Num() != State.LoggedCount && Now - State.LoggedSeconds >= 2.0)
+	{
+		State.LoggedCount = State.Slots.Num();
+		State.LoggedSeconds = Now;
+		UE_LOG(LogTemp, Log, TEXT("[APS.Gameplay.NativeStars] generator=%s instanced photospheres=%d demand=%d waiting=%d; ")
+			TEXT("all directions, the star material's own detail fade"), *GetNameSafe(Generator), State.Slots.Num(),
+			Demands.Num(), FMath::Max(Wanted.Num() - State.Slots.Num(), 0));
+	}
+	CSV_CUSTOM_STAT(APSGameplayStars, ResolvedInstances, State.Slots.Num(), ECsvCustomStatOp::Set);
+}
+}
+
+bool APSGameplayNativeStars::UsesViewSelection()
+{
+	return !InstancedMode();
 }
 
 double APSGameplayNativeStars::PhysicalRadiusCm(const FAPSGameplayStellarKey& Key)
@@ -285,7 +683,7 @@ double APSGameplayNativeStars::PhysicalRadiusCm(const FAPSGameplayStellarKey& Ke
 	{
 		FGalaxyCatalogStarRecord Record;
 		if (Galaxy->GetRenderedCatalogRecord(Key.Index, Record) && Record.StableId == Key.StableId)
-			RadiusSolar = APSCanonicalStellarProjection::GetCanonicalStellarRadiusSolar(Record.SpectralClass);
+			RadiusSolar = APSCanonicalStellarProjection::GetCanonicalStellarRadiusSolar(Record.SpectralClass) * Record.RadiusScale;
 	}
 	return FMath::IsFinite(RadiusSolar) && RadiusSolar > 0.0
 		? RadiusSolar * APSCanonicalStellarProjection::SolarRadiusCm : 0.0;
@@ -354,6 +752,35 @@ int32 AAstroGenerator::SuppressClusterProxies(const TArray<int32>& InstanceIndic
 	return Suppressed;
 }
 
+bool AAstroGenerator::SetGalaxyProxyMaterialized(const int64 CatalogIndex, const bool bMaterialized)
+{
+	// Only the galaxy's ISM prefix has instances here; its GPU points are hidden by the materialized system's sphere.
+	UHierarchicalInstancedStaticMeshComponent* Component =
+		IsValid(GeneratedGalaxy) ? GeneratedGalaxy->StarMeshInstances : nullptr;
+	const int32 InstanceIndex = IsValid(Component) ? GeneratedGalaxy->RenderedCatalogIndices.Find(CatalogIndex) : INDEX_NONE;
+	if (InstanceIndex == INDEX_NONE || InstanceIndex >= Component->GetInstanceCount())
+	{
+		return false;
+	}
+	const FAPSGameplayStellarKey Key = MakeGameplayStellarKey(Component, InstanceIndex);
+	SetGameplayStellarSuppression(Key, EAPSGameplayStellarSuppression::Materialized, bMaterialized);
+	FTransform Transform;
+	if (GetGameplayStellarSuppression(Key) != 0)
+	{
+		if (!Component->GetInstanceTransform(InstanceIndex, Transform, false)) return false;
+		Transform.SetScale3D(FVector::ZeroVector);
+	}
+	else if (!GeneratedGalaxy->GetRenderedProxyBaseTransform(InstanceIndex, Transform))
+	{
+		return false;
+	}
+	Component->UpdateInstanceTransform(InstanceIndex, Transform, false, true, true);
+	Component->BuildTreeIfOutdated(true, true);
+	// As for a materialized cluster system: the stellar view sizes its points again, the resolved stars re-validate.
+	NoteCanonicalStellarProxyMutation(true);
+	return true;
+}
+
 uint8 AAstroGenerator::GetGameplayStellarSuppression(const FAPSGameplayStellarKey& Key) const
 {
 	if (!IsGameplayStellarKeyCurrent(Key)) return static_cast<uint8>(EAPSGameplayStellarSuppression::UnclassifiedExternal);
@@ -388,6 +815,7 @@ void UAPSStellarVisualSubsystem::ResetGameplayNativeStars()
 		if (UStaticMeshComponent* Corona = Pair.Corona.Get()) Corona->DestroyComponent();
 		if (UStaticMeshComponent* Surface = Pair.Photosphere.Get()) Surface->DestroyComponent();
 	}
+	ReleaseResolved(this, GameplayStellarGenerator.Get(), GameplayNativeCamera, GameplayNativePixelTangent, DirtySources);
 	FlushSources(DirtySources);
 	GameplayNativePairs.Reset();
 	GameplayNativeOwners.Reset();
@@ -409,6 +837,14 @@ void UAPSStellarVisualSubsystem::BeginGameplayNativeStars(AAstroGenerator* Gener
 	const bool bRefreshDemand, const FVector& Camera, const double PixelTangent,
 	const FQuat& ViewRotation, const double TanHalfHorizontal, const double TanHalfVertical)
 {
+	// A switch of aps.Stars.NativeMode starts over from the catalogue points (the new mode fills from the next demand).
+	int32& LastMode = GNativeModes.FindOrAdd(TWeakObjectPtr<const UAPSStellarVisualSubsystem>(this), INDEX_NONE);
+	const int32 Mode = InstancedMode() ? 1 : 0;
+	if (LastMode != INDEX_NONE && LastMode != Mode && bGameplayNativeInitialized)
+	{
+		ResetGameplayNativeStars();
+	}
+	LastMode = Mode;
 	GameplayNativeViewRotation = ViewRotation;
 	GameplayNativeTanHalfHorizontal = TanHalfHorizontal;
 	GameplayNativeTanHalfVertical = TanHalfVertical;
@@ -423,6 +859,15 @@ void UAPSStellarVisualSubsystem::BeginGameplayNativeStars(AAstroGenerator* Gener
 			Generator->SetGameplayStellarSuppression(Pair.Demand.Key,
 				EAPSGameplayStellarSuppression::UnclassifiedExternal, true);
 			HidePair(Pair);
+		}
+		if (const FResolvedState* Resolved = FindResolved(this))
+		{
+			// Their instances go at the next presentation (suppressed), their zeros stay.
+			for (const TPair<FAPSGameplayStellarKey, FResolvedSlot>& Entry : Resolved->Slots)
+			{
+				if (Entry.Value.bOwnsPoint)
+					Generator->SetGameplayStellarSuppression(Entry.Key, EAPSGameplayStellarSuppression::UnclassifiedExternal, true);
+			}
 		}
 		UE_LOG(LogTemp, Warning, TEXT("[APS.Gameplay.NativeStars] Unclassified proxy mutation; unresolved owned points remain suppressed until catalog rebuild."));
 	}
@@ -450,6 +895,10 @@ bool UAPSStellarVisualSubsystem::ObserveGameplayNativePoint(AAstroGenerator* Gen
 			&& GeometryCurrent(Generator, Pair.Demand)
 			&& CurrentTransform.Equals(Pair.LastPublishedPoint, 0.0);
 	}
+	if (!bOwned)
+	{
+		bOwned = ResolvedOwnsPoint(this, Generator, Key, BaseTransform, CurrentTransform);
+	}
 	if (CurrentTransform.GetScale3D() == FVector::ZeroVector && !bOwned)
 	{
 		Generator->SetGameplayStellarSuppression(Key, EAPSGameplayStellarSuppression::UnclassifiedExternal, true);
@@ -461,15 +910,19 @@ bool UAPSStellarVisualSubsystem::ObserveGameplayNativePoint(AAstroGenerator* Gen
 void UAPSStellarVisualSubsystem::CollectGameplayNativeDemand(const FAPSGameplayStellarKey& Key,
 	const FTransform& BaseTransform, const double PhysicalRadiusCm, const double PixelRadius)
 {
-	const bool bRetained = GameplayNativeOwners.Contains(Key);
+	// Rio 03.10 (NativeMode 1): every resolved star in all directions, so a turn never re-selects (no blurred spots).
+	const bool bInstanced = InstancedMode();
+	const FResolvedState* Resolved = bInstanced ? FindResolved(this) : nullptr;
+	const bool bRetained = bInstanced ? Resolved && Resolved->Slots.Contains(Key) : GameplayNativeOwners.Contains(Key);
 	if (!FMath::IsFinite(PixelRadius) || PixelRadius < (bRetained ? RetainPixels() : PreparePixels())) return;
 	const FVector Offset = Key.Source->GetComponentTransform().TransformPosition(BaseTransform.GetLocation())
 		- GameplayNativeCamera;
 	// Budget the camera's candidates, not the largest stars on the opposite side
 	// of the sky. A 32-pixel guard keeps admission stable at the viewport edge.
 	const double GuardedRadius = PhysicalRadiusCm * 1.32 + Offset.Size() * GameplayNativePixelTangent * 32.0;
-	if (!APSPreviewVisibility::SphereIntersectsView(GameplayNativeViewRotation.UnrotateVector(Offset),
+	if (!bInstanced && !APSPreviewVisibility::SphereIntersectsView(GameplayNativeViewRotation.UnrotateVector(Offset),
 		GuardedRadius, GameplayNativeTanHalfHorizontal, GameplayNativeTanHalfVertical)) return;
+	const int32 DemandLimit = bInstanced ? FMath::Max(CVarResolvedLimit.GetValueOnGameThread(), 0) : PairLimit;
 	// Rotation-only selection reads immutable centres/cached radii. Read back the
 	// mutable HISM slot only for an angularly relevant, on-screen candidate so an
 	// external zero or materialized star can never acquire native ownership.
@@ -484,7 +937,8 @@ void UAPSStellarVisualSubsystem::CollectGameplayNativeDemand(const FAPSGameplayS
 	Demand.SourceMesh = Key.Source->GetStaticMesh();
 	Demand.PhysicalRadiusCm = PhysicalRadiusCm;
 	Demand.PixelRadius = PixelRadius;
-	if (GameplayNativeDemand.Num() < PairLimit) GameplayNativeDemand.Add(MoveTemp(Demand));
+	if (GameplayNativeDemand.Num() < DemandLimit) GameplayNativeDemand.Add(MoveTemp(Demand));
+	else if (DemandLimit <= 0) return;
 	else
 	{
 		int32 Smallest = 0;
@@ -501,6 +955,12 @@ void UAPSStellarVisualSubsystem::CollectGameplayNativeDemand(const FAPSGameplayS
 
 void UAPSStellarVisualSubsystem::PresentGameplayNativeStars(AAstroGenerator* Generator)
 {
+	if (InstancedMode())
+	{
+		PresentResolvedStars(this, Generator, GameplayNativeDemand, GameplayNativeCamera, GameplayNativePixelTangent,
+			bGameplayDaylightStarsHidden);
+		return;
+	}
 	TRACE_CPUPROFILER_EVENT_SCOPE(APS_GameplayNativeStars);
 	TSet<UHierarchicalInstancedStaticMeshComponent*> DirtySources;
 	GameplayNativeDemand.RemoveAll([&](FAPSGameplayNativeDemand& Demand)

@@ -2,6 +2,7 @@
 
 #include "APSStrategicMapCamera.h"
 #include "APSStrategicMapScene.h"
+#include "APS_ALPHA/Core/Rendering/APSGalaxyGpuStars.h"
 #include "APS_ALPHA/Core/Rendering/APSPreviewVisibility.h"
 #include "APS_ALPHA/Gameplay/Expansion/APSStarSystems.h"
 #include "APS_ALPHA/Gameplay/Fleet/APSFleetCommand.h"
@@ -13,6 +14,9 @@
 #include "APS_ALPHA/UI/Style/APSUINumber.h"
 #include "Brushes/SlateRoundedBoxBrush.h"
 #include "Engine/GameViewportClient.h"
+#include "Fonts/FontMeasure.h"
+#include "Framework/Application/SlateApplication.h"
+#include "Rendering/SlateRenderer.h"
 #include "Engine/LocalPlayer.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
@@ -306,6 +310,32 @@ namespace APSStrategicMapViewLocal
 			String, Font, ESlateDrawEffect::None, Colour);
 	}
 
+	/**
+	 * Rio 04.10 ("the course line and its label are white on the bright star field, hard to see"): a line that reads on
+	 * any background: a dark halo under it, then the line in its colour.
+	 */
+	void HaloDashes(FSlateWindowElementList& Out, const int32 Layer, const FGeometry& Geometry, const FVector2D& From,
+		const FVector2D& To, const FLinearColor& Colour, const double Dash, const double Gap, const float Thickness)
+	{
+		Dashes(Out, Layer, Geometry, From, To, FLinearColor(0.0f, 0.006f, 0.012f, 0.72f * Colour.A), Dash, Gap, Thickness + 3.0f);
+		Dashes(Out, Layer, Geometry, From, To, Colour, Dash, Gap, Thickness);
+	}
+
+	/** Text on a dark plate with a bar in its colour, like the map's object plates. */
+	void PlatedText(FSlateWindowElementList& Out, const int32 Layer, const FGeometry& Geometry, const FVector2D& Position,
+		const FString& String, const FSlateFontInfo& Font, const FLinearColor& Colour)
+	{
+		const FVector2D Measured = FSlateApplication::Get().GetRenderer()->GetFontMeasureService()->Measure(String, Font);
+		const FVector2D PlateAt(FMath::RoundToDouble(Position.X) - 8.0, FMath::RoundToDouble(Position.Y) - 3.0);
+		const FVector2D PlateSize(Measured.X + 14.0, Measured.Y + 6.0);
+		const FSlateBrush* White = FAppStyle::GetBrush("WhiteBrush");
+		FSlateDrawElement::MakeBox(Out, Layer, Geometry.ToPaintGeometry(PlateSize, FSlateLayoutTransform(PlateAt)), White,
+			ESlateDrawEffect::None, FLinearColor(0.002f, 0.014f, 0.026f, 0.9f));
+		FSlateDrawElement::MakeBox(Out, Layer, Geometry.ToPaintGeometry(FVector2D(3.0, PlateSize.Y), FSlateLayoutTransform(PlateAt)),
+			White, ESlateDrawEffect::None, Colour);
+		Text(Out, Layer + 1, Geometry, Position, String, Font, Colour);
+	}
+
 	/** "1.24 AU", "38,400 KM", "820 M". */
 	FString DistanceString(const double Cm)
 	{
@@ -397,7 +427,9 @@ int32 SAPSStrategicMapView::OnPaint(const FPaintArgs& Args, const FGeometry& All
 	using APSStrategicMapViewLocal::Dot;
 	using APSStrategicMapViewLocal::FLabel;
 	using APSStrategicMapViewLocal::FProjector;
+	using APSStrategicMapViewLocal::HaloDashes;
 	using APSStrategicMapViewLocal::LayerShows;
+	using APSStrategicMapViewLocal::PlatedText;
 	using APSStrategicMapViewLocal::Lines;
 	using APSStrategicMapViewLocal::MergeDistance;
 	using APSStrategicMapViewLocal::Polygon;
@@ -538,8 +570,17 @@ int32 SAPSStrategicMapView::OnPaint(const FPaintArgs& Args, const FGeometry& All
 				{
 					FVector A = Previous;
 					FVector B = Current;
+					FVector2D PanelA;
+					FVector2D PanelB;
 					if (!View.ClipToNear(A, B))
 					{
+						Flush();
+					}
+					else if (!View.ProjectRelative(A, PanelA) || !View.ProjectRelative(B, PanelB)
+						|| !APSPreviewVisibility::ClipToPanel(PanelA, PanelB, Size))
+					{
+						// Rio 03.10 (FPS on the map): a segment off the panel needs no occlusion test. Close to a planet most of
+						// the orbits round the camera are off the screen, and each test walks every occluder.
 						Flush();
 					}
 					else
@@ -1019,13 +1060,14 @@ int32 SAPSStrategicMapView::OnPaint(const FPaintArgs& Args, const FGeometry& All
 			FVector2D To;
 			if (bGoal && View.ProjectSegment(Piloted->GetActorLocation(), Goal, Size, From, To))
 			{
-				const FLinearColor Colour = bAutopilot ? Amber : APSChrome::White();
-				Dashes(OutDrawElements, LayerLines, Geometry, From, To, WithAlpha(Colour, 0.8f), 10.0, 6.0, 1.5f);
+				// The course in cyan (amber under the autopilot), on a dark halo and its distance on a plate.
+				const FLinearColor Colour = bAutopilot ? Amber : Cyan;
+				HaloDashes(OutDrawElements, LayerLines, Geometry, From, To, WithAlpha(Colour, 0.95f), 10.0, 6.0, 2.0f);
 				if (FVector2D::Distance(From, To) > 120.0)
 				{
-					Text(OutDrawElements, LayerLines, Geometry, FMath::Lerp(From, To, 0.35) + FVector2D(6.0, 4.0),
+					PlatedText(OutDrawElements, LayerLines, Geometry, FMath::Lerp(From, To, 0.35) + FVector2D(10.0, 6.0),
 						FString::Printf(TEXT("%s  /  %s"), bAutopilot ? TEXT("AUTOPILOT") : TEXT("COURSE"),
-							*DistanceString(FVector::Dist(Piloted->GetActorLocation(), Goal))), SmallFont, WithAlpha(Colour, 0.95f));
+							*DistanceString(FVector::Dist(Piloted->GetActorLocation(), Goal))), SmallFont, Colour);
 				}
 			}
 		}
@@ -1040,9 +1082,9 @@ int32 SAPSStrategicMapView::OnPaint(const FPaintArgs& Args, const FGeometry& All
 		if (Map->Locate(Selected, Target) && View.ProjectSegment(Pilot->GetActorLocation(), Target, Size, From, To)
 			&& FVector2D::Distance(From, To) > 24.0)
 		{
-			Dashes(OutDrawElements, LayerGuides, Geometry, From, To, WithAlpha(APSChrome::White(), 0.32f), 3.0, 5.0, 1.0f);
-			Text(OutDrawElements, LayerGuides, Geometry, FMath::Lerp(From, To, 0.55) + FVector2D(8.0, 2.0),
-				DistanceString(FVector::Dist(Pilot->GetActorLocation(), Target)), SmallFont, WithAlpha(APSChrome::White(), 0.62f));
+			HaloDashes(OutDrawElements, LayerGuides, Geometry, From, To, WithAlpha(APSChrome::White(), 0.55f), 3.0, 5.0, 1.0f);
+			PlatedText(OutDrawElements, LayerGuides, Geometry, FMath::Lerp(From, To, 0.55) + FVector2D(12.0, 4.0),
+				DistanceString(FVector::Dist(Pilot->GetActorLocation(), Target)), SmallFont, WithAlpha(APSChrome::White(), 0.9f));
 		}
 	}
 
@@ -1051,10 +1093,13 @@ int32 SAPSStrategicMapView::OnPaint(const FPaintArgs& Args, const FGeometry& All
 	{
 		Labels[DockedLabel].bDocked = true;
 	}
+	// Rio 04.10 ("the labels jump back and forth as the mouse passes over the stars"): the hovered object no longer goes
+	// first, which re-laid every plate several times a second; it keeps its own place, or floats over the rest when it
+	// has none (below).
 	Labels.StableSort([](const FLabel& A, const FLabel& B)
 	{
-		const int32 RankA = A.bSelected ? -2 : A.bHovered ? -1 : A.Rank;
-		const int32 RankB = B.bSelected ? -2 : B.bHovered ? -1 : B.Rank;
+		const int32 RankA = A.bSelected ? -2 : A.Rank;
+		const int32 RankB = B.bSelected ? -2 : B.Rank;
 		return RankA < RankB;
 	});
 	const auto DrawPlate = [&](const FLabel& Label, const FVector2D& LocalPosition, const bool bLeader)
@@ -1121,14 +1166,31 @@ int32 SAPSStrategicMapView::OnPaint(const FPaintArgs& Args, const FGeometry& All
 			DrawPlate(Label, FVector2D(10.0, 8.0), false);
 			continue;
 		}
-		Candidates.Add({Index, Label.Anchor, Label.bSelected, Label.bHovered,
+		Candidates.Add({Index, Label.Anchor, Label.bSelected, false,
 			Label.Plate ? Label.Plate->Size : APSPreviewAnnotationLayout::LabelSize()});
 	}
+	bool bHoveredPlaced = false;
 	for (const FAPSPreviewAnnotationPlacement& Placement : APSPreviewAnnotationLayout::Arrange(MoveTemp(Candidates), Size))
 	{
 		if (Placement.bHasLabel && Labels.IsValidIndex(Placement.Candidate.EntryIndex))
 		{
 			DrawPlate(Labels[Placement.Candidate.EntryIndex], Placement.LabelPosition, true);
+			bHoveredPlaced |= Labels[Placement.Candidate.EntryIndex].bHovered;
+		}
+	}
+	if (!bHoveredPlaced)
+	{
+		// The hovered object without room of its own: its plate beside its mark, over the others.
+		for (const FLabel& Label : Labels)
+		{
+			if (Label.bHovered && !Label.bDocked && Label.Plate)
+			{
+				const FVector2D PlateSize = Label.Plate->Size;
+				const FVector2D At(FMath::Clamp(Label.Anchor.X + 14.0, 4.0, FMath::Max(4.0, Size.X - PlateSize.X - 4.0)),
+					FMath::Clamp(Label.Anchor.Y - PlateSize.Y * 0.5, 4.0, FMath::Max(4.0, Size.Y - PlateSize.Y - 26.0)));
+				DrawPlate(Label, At, true);
+				break;
+			}
 		}
 	}
 
@@ -1227,6 +1289,47 @@ bool SAPSStrategicMapView::Pick(const FVector2D& LocalPosition, APSStrategicMap:
 	return Best < TNumericLimits<double>::Max();
 }
 
+bool SAPSStrategicMapView::PickGalaxyStar(const FGeometry& Geometry, const FVector2D& LocalPosition,
+	APSStrategicMap::FSelection& OutTarget) const
+{
+	// Rio 04.10 ("how do I set a course to a star at the far end of the galaxy?"): a click on the star field, away from
+	// every mark, takes the drawn catalogue star it points at and makes it a star system there and then, selected: the
+	// course, the autopilot and the drive work on it as on any other.
+	APlayerController* PlayerController = Controller.Get();
+	UWorld* World = PlayerController ? PlayerController->GetWorld() : nullptr;
+	FAPSStarSystems* Stars = APSStarSystemsFind(World);
+	APSStrategicMapViewLocal::FProjector View;
+	if (!World || !Stars || !Stars->IsReady() || !View.Build(PlayerController, Geometry))
+	{
+		return false;
+	}
+	const FVector2D Pixel = (LocalPosition - View.PixelOffset) / View.PixelScale;
+	FVector RayOrigin;
+	FVector RayDirection;
+	if (!PlayerController->DeprojectScreenPositionToWorld(Pixel.X, Pixel.Y, RayOrigin, RayDirection))
+	{
+		return false;
+	}
+	APSGalaxyGpuStars::FNearStar Star;
+	const double MaxAngle = APSStrategicMapViewLocal::PickReach / FMath::Max(View.ScaleX, 1.0e-6);
+	if (!APSGalaxyGpuStars::PickAlongRay(World, RayOrigin, RayDirection, MaxAngle, Star))
+	{
+		return false;
+	}
+	int32 Index = Stars->RegisterGalaxyStar(Star.CatalogIndex);
+	if (Index == INDEX_NONE)
+	{
+		// A star in a cluster system's room (or the home's sphere) is that system's.
+		Index = Stars->FindContaining(Star.WorldLocation);
+	}
+	if (Index == INDEX_NONE)
+	{
+		return false;
+	}
+	OutTarget = APSStrategicMap::FSelection::OfSystem(Index);
+	return true;
+}
+
 FReply SAPSStrategicMapView::OnMouseButtonDown(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)
 {
 	const FKey Button = MouseEvent.GetEffectingButton();
@@ -1298,7 +1401,8 @@ FReply SAPSStrategicMapView::OnMouseButtonUp(const FGeometry& MyGeometry, const 
 	if (bClick)
 	{
 		APSStrategicMap::FSelection Under;
-		if (Pick(MyGeometry.AbsoluteToLocal(MouseEvent.GetScreenSpacePosition()), Under))
+		const FVector2D Local = MyGeometry.AbsoluteToLocal(MouseEvent.GetScreenSpacePosition());
+		if (Pick(Local, Under) || PickGalaxyStar(MyGeometry, Local, Under))
 		{
 			OnSelect.ExecuteIfBound(Under);
 		}
@@ -1313,7 +1417,8 @@ FReply SAPSStrategicMapView::OnMouseButtonDoubleClick(const FGeometry& MyGeometr
 		return FReply::Unhandled();
 	}
 	APSStrategicMap::FSelection Under;
-	if (Pick(MyGeometry.AbsoluteToLocal(MouseEvent.GetScreenSpacePosition()), Under))
+	const FVector2D Local = MyGeometry.AbsoluteToLocal(MouseEvent.GetScreenSpacePosition());
+	if (Pick(Local, Under) || PickGalaxyStar(MyGeometry, Local, Under))
 	{
 		OnSelect.ExecuteIfBound(Under);
 		OnFocus.ExecuteIfBound(Under);

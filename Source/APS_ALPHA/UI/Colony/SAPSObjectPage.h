@@ -9,6 +9,7 @@ class AActor;
 class APlanetaryBody;
 class SAPSSurfaceMap;
 class SBox;
+class STextBlock;
 class SVerticalBox;
 class UWorld;
 struct FAPSObjectAction;
@@ -22,10 +23,20 @@ namespace APSInfrastructureUI
 	/** The terminal's chamfered button: a card whose frame lights up on hover or when selected. */
 	TSharedRef<SWidget> FrameButton(TSharedRef<SWidget> Content, FOnClicked OnClicked, TAttribute<bool> IsSelected,
 		const FLinearColor& Accent);
+	/** A label alone (chips, CLOSE, BACK): centred both ways in the button by its capitals (Rio 03.10: "everywhere the
+	 * text strictly centred by height and width"); a label with its own render transform (a symbol) keeps it. */
+	TSharedRef<SWidget> FrameButton(const TSharedRef<STextBlock>& Label, FOnClicked OnClicked, TAttribute<bool> IsSelected,
+		const FLinearColor& Accent);
 	/** One action: filled amber with an edge in its colour when it can be done, dim when it cannot (the terminal's
 	 * primary button). */
 	TSharedRef<SWidget> FilledButton(const FText& Label, FOnClicked OnClicked, TAttribute<bool> CanClick,
 		const FLinearColor& Accent);
+	/**
+	 * Rio 04.10: an object's action as a FilledButton with the reason under it; while its order is under way
+	 * (FAPSObjectAction::Underway) the button turns dark, fills from the left in the action's colour as the ship flies
+	 * there and works, shows the percentage, and says under it who is doing what. Width: the cell's width.
+	 */
+	TSharedRef<SWidget> ActionCell(const FAPSObjectAction& Action, FOnClicked OnClicked, bool bCanRun, float Width);
 	/** A small rounded chip with a colour swatch: resources, categories, effects. */
 	TSharedRef<SWidget> Chip(const TAttribute<FText>& Text, const TAttribute<FSlateColor>& TextColour,
 		const FLinearColor& Swatch);

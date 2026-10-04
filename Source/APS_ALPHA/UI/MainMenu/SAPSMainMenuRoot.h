@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "APS_ALPHA/UI/MainMenu/APSWorldBrowserMetadata.h"
 #include "APS_ALPHA/UI/MainMenu/WorldGenerationViewModel.h"
 #include "Styling/SlateTypes.h"
 #include "Widgets/SCompoundWidget.h"
@@ -10,6 +11,7 @@ class SWorldGenerationPanel;
 struct FStreamableHandle;
 class SBox;
 class SButton;
+class SMenuAnchor;
 class SWidgetSwitcher;
 class UClass;
 class UGameSave;
@@ -55,12 +57,17 @@ struct FAPSExistingWorldEntry
 	int64 FileSizeBytes{0};
 	bool bMetadataLoaded{false};
 	bool bFavorite{false};
+	/** Rio 03.10: the true home system from a version 2 sidecar. Older records only echo the menu's editor buffer (a G
+	 * star and one frozen planet in almost every save), so the browser does not present their system fields as facts. */
+	bool bSystemRecorded{false};
+	FAPSWorldSystemRecord System;
 };
 
+/** Rio 03.10: MY WORLDS was dropped. It listed exactly ALL WORLDS: every save is made by this game on this machine, and
+ * no record tells "mine" from anything else. */
 enum class EAPSWorldCollection : uint8
 {
 	All,
-	MyWorlds,
 	Favorites,
 	Recent
 };
@@ -78,6 +85,15 @@ enum class EAPSWorldFilterKind : uint8
 	WorldType,
 	Inhabited,
 	Environment
+};
+
+/** One choice of a world browser filter: built from the scanned worlds, with how many the choice would show. */
+struct FAPSWorldFilterOption
+{
+	/** Empty for ANY. */
+	FString Key;
+	FText Label;
+	int32 Count{0};
 };
 
 class SAPSMainMenuRoot final : public SCompoundWidget
@@ -127,9 +143,10 @@ private:
 		TSoftClassPtr<UUserWidget>& WidgetClass, TWeakObjectPtr<UUserWidget>& WidgetInstance,
 		const FText& LoadingText);
 	TSharedRef<SWidget> BuildHeader(const FText& SectionTitle, bool bShowBack = true);
+	/** A non-empty ComingSoonTip keeps the card in place but dimmed and inert, its badge reading SOON. */
 	TSharedRef<SWidget> BuildPathCard(const FText& Title, const FText& Description,
 		EAPSPathVisual Visual, const FLinearColor& Accent, FSimpleDelegate Action,
-		bool bLarge = false, bool bEnabled = true);
+		bool bLarge = false, bool bEnabled = true, const FText& ComingSoonTip = FText::GetEmpty());
 	TSharedRef<SWidget> BuildSpawnCard(EAPSStartAssetSlot Slot, const FText& Label);
 
 	void LoadVisualResources();
@@ -142,9 +159,38 @@ private:
 		float InDeltaTime) override;
 	void RebuildExistingWorldGrid();
 	void RebuildExistingWorldDetails();
-	const FSlateBrush* GetExistingWorldImage(const FAPSExistingWorldEntry& Entry) const;
+	/** Rio 03.10: the confirmation modal of DELETE WORLD, shown over the browser while PendingDeleteWorld is set. */
+	TSharedRef<SWidget> BuildDeleteWorldDialog();
+	/** False for non-world slots and for a world a running game holds (OutReason says why). */
+	bool CanDeleteExistingWorld(const FAPSExistingWorldEntry& Entry, FText* OutReason = nullptr) const;
+	/** A load of the slot being handed to gameplay here, or another game world in this process playing it. */
+	bool IsWorldSlotInUse(const FString& SlotName) const;
+	FReply RequestDeleteExistingWorld();
+	FReply CancelDeleteExistingWorld();
+	FReply ConfirmDeleteExistingWorld();
+	/** Removes one world's save and sidecar (the in-use and non-world checks first); OutFailure says why not. */
+	bool DeleteWorldFiles(const FAPSExistingWorldEntry& Entry, FString& OutFailure, bool bLogEach);
+	/** Rio 03.10: DELETE ALL removes every world the collection, search and filters list (ListedWorlds), after a
+	 * confirmation whose button arms only after a countdown. */
+	TSharedRef<SWidget> BuildDeleteAllDialog();
+	FReply RequestDeleteListedWorlds();
+	FReply CancelDeleteListedWorlds();
+	FReply ConfirmDeleteListedWorlds();
 	void BeginExistingWorldMetadataLoad();
+	/** Collection, search and every filter. */
 	bool PassesExistingWorldFilters(const FAPSExistingWorldEntry& Entry) const;
+	bool PassesWorldCollectionAndSearch(const FAPSExistingWorldEntry& Entry) const;
+	bool MatchesWorldFilter(const FAPSExistingWorldEntry& Entry, EAPSWorldFilterKind Kind) const;
+	/** True when the collection, the search or a filter narrows the list. */
+	bool HasWorldNarrowing() const;
+	/** Rebuilds the options of every filter from the scanned worlds, counted under the other filters. */
+	void RebuildWorldFilterOptions();
+	/** Grid, then the selection (dropped if no longer listed), then the details. */
+	void ApplyExistingWorldView();
+	TSharedRef<SWidget> BuildWorldFilterMenu(EAPSWorldFilterKind Kind);
+	FReply ToggleWorldFilterMenu(EAPSWorldFilterKind Kind);
+	FReply SelectWorldFilter(EAPSWorldFilterKind Kind, FString Key);
+	FReply ClearWorldFilters();
 	FText GetWorldCollectionLabel(EAPSWorldCollection Collection) const;
 	FText GetWorldSortLabel() const;
 	FText GetWorldFilterLabel(EAPSWorldFilterKind Kind) const;
@@ -179,7 +225,6 @@ private:
 	FReply SetWorldCollection(EAPSWorldCollection Collection);
 	FReply CycleWorldSort();
 	FReply ToggleWorldView();
-	FReply CycleWorldFilter(EAPSWorldFilterKind Kind);
 	FReply ToggleWorldFavorite(TSharedPtr<FAPSExistingWorldEntry> Entry);
 	FReply ToggleWorldDetails();
 	FReply QuitGame();
@@ -198,11 +243,24 @@ private:
 	TSharedPtr<SBox> ExistingWorldDetailsHost;
 	TArray<TSharedPtr<FAPSExistingWorldEntry>> ExistingWorlds;
 	TSharedPtr<FAPSExistingWorldEntry> SelectedWorld;
+	/** The world the delete confirmation asks about; the modal is open while it is set. */
+	TSharedPtr<FAPSExistingWorldEntry> PendingDeleteWorld;
+	/** One line in the details panel: "... was deleted", or why a deletion failed; cleared by the next selection. */
+	FText WorldBrowserNotice;
+	/** The worlds DELETE ALL asks about; its modal is open while this is not empty. */
+	TArray<TSharedPtr<FAPSExistingWorldEntry>> PendingBulkDelete;
+	/** Application time at which the DELETE ALL confirmation arms. */
+	double BulkDeleteArmTime{0.0};
+	/** What the grid lists now: collection, search and filters applied, before paging. */
+	TArray<TSharedPtr<FAPSExistingWorldEntry>> ListedWorlds;
 	FString WorldSearch;
 	int32 ExistingWorldPage{0};
 	EAPSWorldCollection WorldCollection{EAPSWorldCollection::All};
 	EAPSWorldSortMode WorldSortMode{EAPSWorldSortMode::LastPlayed};
-	TMap<EAPSWorldFilterKind, int32> WorldFilterIndices;
+	/** The chosen option key of each filter; absent = ANY. Survives rescans. */
+	TMap<EAPSWorldFilterKind, FString> WorldFilterChoices;
+	TMap<EAPSWorldFilterKind, TArray<FAPSWorldFilterOption>> WorldFilterOptions;
+	TMap<EAPSWorldFilterKind, TSharedPtr<SMenuAnchor>> WorldFilterAnchors;
 	uint32 ExistingWorldDirectoryFingerprint{0};
 	double NextExistingWorldRefreshTime{0.0};
 	bool bShowTechnicalWorldDetails{false};
@@ -240,16 +298,17 @@ private:
 	FSlateBrush ClusterImage;
 	FSlateBrush CivilizationImage;
 	FSlateBrush BackgroundImage;
-	FSlateBrush WorldMultiPlanetImage;
-	FSlateBrush WorldSinglePlanetImage;
-	FSlateBrush WorldHabitableZoneImage;
-	FSlateBrush WorldGasGiantsImage;
-	FSlateBrush WorldNoPlanetsImage;
 
 	FButtonStyle PrimaryButtonStyle;
 	FButtonStyle SecondaryButtonStyle;
 	FButtonStyle CardButtonStyle;
 	FButtonStyle DisabledCardButtonStyle;
+	/** Secondary at rest, muted red under the pointer (DELETE WORLD). */
+	FButtonStyle DangerButtonStyle;
+	/** The confirmation's DELETE: red at rest. */
+	FButtonStyle DangerConfirmButtonStyle;
+	/** A row of a filter dropdown: bare at rest, lit under the pointer. */
+	FButtonStyle DropdownOptionStyle;
 	FScrollBarStyle ScrollBarStyle;
 
 #if WITH_DEV_AUTOMATION_TESTS

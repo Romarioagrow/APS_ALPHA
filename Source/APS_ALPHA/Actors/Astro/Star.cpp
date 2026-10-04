@@ -1,4 +1,6 @@
 #include "Star.h"
+#include "APSBlackHoleVisual.h"
+#include "HAL/IConsoleManager.h"
 #include "APS_ALPHA/Core/Enums/StellarType.h"
 #include "APS_ALPHA/Core/Rendering/APSStellarMaterialContract.h"
 #include "Components/PointLightComponent.h"
@@ -180,6 +182,10 @@ void AStar::ConfigureStellarPresentation(
 {
 	ConfigureStellarPresentationComponents(StarMesh, CoronaMesh, CoronaDynamicMaterial,
 		StellarLight, Color, Emission, SurfaceSeed, StellarType);
+	// Rio 03.10 ("the black hole is ugly, make it beautiful"): a materialized black hole gets its shadow, photon
+	// ring, accretion disc and lensed arcs inside this sphere's radius (aps.Stars.BlackHoleV2); other stars and the
+	// preview-only pairs sharing the static recipe above are untouched.
+	APSBlackHoleVisual::Configure(this, StellarType, SurfaceSeed);
 }
 
 void AStar::ConfigureStellarPresentationComponents(
@@ -228,7 +234,19 @@ void AStar::ConfigureStellarPresentationComponents(
 	}
 	if (IsValid(CoronaDynamicMaterial) && !bBlackHole)
 	{
-		CoronaDynamicMaterial->SetVectorParameterValue(TEXT("Color"), Color);
+		// Rio 02.10 ("Main Sequence Red is too saturated, red and magenta at the edges"): a red star's corona leans to warm
+		// orange (up to 45% for the deepest red), so its rim glows instead of bleeding; the photosphere keeps its colour.
+		FLinearColor CoronaColor = Color;
+		static IConsoleVariable* WarmRedCorona = IConsoleManager::Get().RegisterConsoleVariable(
+			TEXT("aps.Stars.WarmRedCorona"), 1,
+			TEXT("1: red stars' coronas lean to warm orange (less saturated rim, Rio 02.10). 0: the corona takes the star's colour."));
+		const float Redness = FMath::Clamp((Color.R - FMath::Max(Color.G, Color.B)) / FMath::Max(Color.R, 0.001f), 0.0f, 1.0f);
+		if (WarmRedCorona && WarmRedCorona->GetInt() != 0 && Redness > 0.4f)
+		{
+			const float Blend = FMath::GetMappedRangeValueClamped(FVector2f(0.4f, 0.9f), FVector2f(0.0f, 0.45f), Redness);
+			CoronaColor = FMath::Lerp(Color, FLinearColor(1.0f, 0.66f, 0.42f) * Color.GetMax(), Blend);
+		}
+		CoronaDynamicMaterial->SetVectorParameterValue(TEXT("Color"), CoronaColor);
 		CoronaDynamicMaterial->SetScalarParameterValue(TEXT("CoronaShellMode"), 1.0f);
 		CoronaDynamicMaterial->SetScalarParameterValue(TEXT("CoronaInnerRadius"),
 			1.0f / CoronaScale);

@@ -215,8 +215,9 @@ namespace APSInfrastructurePanelPrivate
 	void Label(FSlateWindowElementList& Out, const int32 Layer, const FGeometry& Geometry, const FVector2D& Position,
 		const FText& Text, const FSlateFontInfo& FontInfo, const FLinearColor& Colour)
 	{
+		// Rio 03.10 ("everywhere the text strictly centred"): the capitals' middle where the line box's middle was.
 		FSlateDrawElement::MakeText(Out, Layer, Geometry.ToPaintGeometry(FVector2f(320.0f, 20.0f),
-			FSlateLayoutTransform(FVector2f(static_cast<float>(Position.X), static_cast<float>(Position.Y)))),
+			FSlateLayoutTransform(FVector2f(static_cast<float>(Position.X), static_cast<float>(Position.Y) + CapsCenterOffset(FontInfo)))),
 			Text, FontInfo, ESlateDrawEffect::None, Colour);
 	}
 
@@ -250,6 +251,11 @@ namespace APSInfrastructurePanelPrivate
 			break;
 		case static_cast<uint8>(ECategory::Megastructure):
 			Polygon(6, 0.0);
+			break;
+		case static_cast<uint8>(ECategory::Hub):
+			// Rio 03.10: the huge hubs, an octagon round a ring.
+			Polygon(8, UE_PI / 8.0);
+			Circle(Out, Layer, Geometry, Centre, Half * 0.62, Colour, 1.2f);
 			break;
 		case ShapeFleetShipyard:
 			Polygon(4, UE_PI * 0.25);
@@ -562,7 +568,7 @@ void SAPSInfrastructureMap::Refresh()
 			Icon.Colour = APSInfrastructure::DepartmentColour(Type->Department);
 			Icon.Shape = static_cast<uint8>(Type->Category);
 			Icon.bTransport = IsTransport(*Type);
-			Icon.bLarge = Type->bMegastructure;
+			Icon.bLarge = Type->bMegastructure || Type->Category == APSInfrastructure::ECategory::Hub;
 			Icons.Add(Icon);
 			Mark(At, Icon.bTransport);
 			++StructureCount;
@@ -894,14 +900,16 @@ int32 SAPSInfrastructureMap::OnPaint(const FPaintArgs& Args, const FGeometry& Al
 		FSlateDrawElement::MakeBox(OutDrawElements, LayerId + 8, AllottedGeometry.ToPaintGeometry(FVector2f(BoxSize),
 			FSlateLayoutTransform(FVector2f(BoxAt))), FAppStyle::GetBrush("WhiteBrush"), ESlateDrawEffect::None,
 			FLinearColor(0.01f, 0.035f, 0.05f, 0.94f));
+		// Each line by its capitals' middle on the plate (Rio 03.10), not by Slate's line box.
 		FSlateDrawElement::MakeText(OutDrawElements, LayerId + 9, AllottedGeometry.ToPaintGeometry(FVector2f(NameSize),
-			FSlateLayoutTransform(FVector2f(BoxAt + FVector2D(9.0, 5.0)))), TipName, TipFont, ESlateDrawEffect::None, White());
+			FSlateLayoutTransform(FVector2f(BoxAt + FVector2D(9.0, 5.0 + CapsCenterOffset(TipFont))))), TipName, TipFont,
+			ESlateDrawEffect::None, White());
 		FSlateDrawElement::MakeText(OutDrawElements, LayerId + 9, AllottedGeometry.ToPaintGeometry(FVector2f(DetailSize),
-			FSlateLayoutTransform(FVector2f(BoxAt + FVector2D(9.0, 7.0 + NameSize.Y)))), TipDetail, SmallFont, ESlateDrawEffect::None,
-			Muted());
+			FSlateLayoutTransform(FVector2f(BoxAt + FVector2D(9.0, 7.0 + NameSize.Y + CapsCenterOffset(SmallFont))))), TipDetail,
+			SmallFont, ESlateDrawEffect::None, Muted());
 		FSlateDrawElement::MakeText(OutDrawElements, LayerId + 9, AllottedGeometry.ToPaintGeometry(FVector2f(HintSize),
-			FSlateLayoutTransform(FVector2f(BoxAt + FVector2D(9.0, 9.0 + NameSize.Y + DetailSize.Y)))), TipHint, LabelFont,
-			ESlateDrawEffect::None, Amber());
+			FSlateLayoutTransform(FVector2f(BoxAt + FVector2D(9.0, 9.0 + NameSize.Y + DetailSize.Y + CapsCenterOffset(LabelFont))))),
+			TipHint, LabelFont, ESlateDrawEffect::None, Amber());
 	}
 
 	// Legend: the departments' colours, the shapes, the network's marks.
@@ -916,7 +924,7 @@ int32 SAPSInfrastructureMap::OnPaint(const FPaintArgs& Args, const FGeometry& Al
 				SmallFont, Muted());
 			Row.Y += 17.0;
 		}
-		FVector2D Shapes(140.0, Size.Y - 17.0 * 6 - 10.0);
+		FVector2D Shapes(140.0, Size.Y - 17.0 * 7 - 10.0);
 		struct FShapeName
 		{
 			uint8 Kind;
@@ -925,6 +933,7 @@ int32 SAPSInfrastructureMap::OnPaint(const FPaintArgs& Args, const FGeometry& Al
 		const FShapeName ShapeNames[] = {
 			{static_cast<uint8>(APSInfrastructure::ECategory::Outpost), LOCTEXT("LegendOutpost", "OUTPOST")},
 			{static_cast<uint8>(APSInfrastructure::ECategory::Station), LOCTEXT("LegendStation", "STATION")},
+			{static_cast<uint8>(APSInfrastructure::ECategory::Hub), LOCTEXT("LegendHub", "HUB")},
 			{static_cast<uint8>(APSInfrastructure::ECategory::Relay), LOCTEXT("LegendRelay", "RELAY / BEACON")},
 			{static_cast<uint8>(APSInfrastructure::ECategory::Transport), LOCTEXT("LegendTransport", "TRANSPORT")},
 			{static_cast<uint8>(APSInfrastructure::ECategory::Megastructure), LOCTEXT("LegendMegastructure", "MEGASTRUCTURE")},
@@ -1284,7 +1293,7 @@ TSharedRef<SWidget> SAPSInfrastructurePanel::BuildSections()
 			]
 			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(8.0f, 0.0f, 0.0f, 0.0f)
 			[
-				SNew(STextBlock).Text(Caption).Font(Font("Bold", 10)).ColorAndOpacity(White())
+				SNew(STextBlock).Text(Caption).Font(Font("Bold", 10)).ColorAndOpacity(White()).RenderTransform(CapsCenterShift(Font("Bold", 10)))
 			],
 			FOnClicked::CreateLambda([this, View]()
 			{
@@ -1495,6 +1504,7 @@ void SAPSInfrastructurePanel::RefreshNetworkLists(const bool bForce)
 						+ SVerticalBox::Slot().AutoHeight()
 						[
 							SNew(STextBlock).Text(Row.Name).Font(Font("Bold", 10)).ColorAndOpacity(White())
+							.RenderTransform(CapsCenterShift(Font("Bold", 10)))
 						]
 						+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 2.0f, 0.0f, 0.0f)
 						[
@@ -1674,6 +1684,10 @@ TSharedRef<SWidget> SAPSInfrastructurePanel::BuildCard(const FName TypeId)
 	{
 		Badges->AddSlot()[Chip(LOCTEXT("Megastructure", "MEGASTRUCTURE: BUILT IN STAGES"), FSlateColor(Amber()), Amber())];
 	}
+	else if (Type->Category == APSInfrastructure::ECategory::Hub)
+	{
+		Badges->AddSlot()[Chip(LOCTEXT("HubBadge", "HUB: BUILT IN STAGES"), FSlateColor(Amber()), Amber())];
+	}
 	if (Type->bNeedsUnlock)
 	{
 		Badges->AddSlot()
@@ -1728,11 +1742,12 @@ TSharedRef<SWidget> SAPSInfrastructurePanel::BuildCard(const FName TypeId)
 	{
 		Need(LOCTEXT("NeedGround", "Solid ground: not a gas or ice giant"), FSlateColor(White()));
 	}
-	if (!Type->RequiresAtSite.IsNone())
+	// The structures it stands on (Rio 03.10, chains): a station over the world, the step before it, its system's ring.
+	TArray<FText> Requirements;
+	APSInfrastructure::DescribeRequirements(*Type, Requirements);
+	for (const FText& Requirement : Requirements)
 	{
-		const APSInfrastructure::FType* Needed = APSInfrastructure::Find(Type->RequiresAtSite);
-		Need(FText::Format(LOCTEXT("NeedAtSite", "{0} at the place first"), Needed ? Needed->Name : FText::FromName(Type->RequiresAtSite)),
-			FSlateColor(White()));
+		Need(Requirement, FSlateColor(White()));
 	}
 	if (RequiredLevel > 0)
 	{
@@ -1821,6 +1836,14 @@ TSharedRef<SWidget> SAPSInfrastructurePanel::BuildCard(const FName TypeId)
 	{
 		Effect(FText::Format(LOCTEXT("EffectLocal", "WORK THERE {0}"), SignedPercent(Type->LocalWorkSpeed)));
 	}
+	if (Type->SystemWorkSpeed > 0.0f)
+	{
+		Effect(FText::Format(LOCTEXT("EffectSystemWork", "WORK IN THE SYSTEM {0}"), SignedPercent(Type->SystemWorkSpeed)));
+	}
+	if (Type->HubBerths > 0)
+	{
+		Effect(FText::Format(LOCTEXT("EffectBerths", "+{0} STATION BERTHS AT ITS WORLD"), APSUINumber::Number(Type->HubBerths)));
+	}
 	if (GiveCount == 0)
 	{
 		Gives->AddSlot()[Chip(LOCTEXT("GivesGuard", "GUARDS THE PLACE"), FSlateColor(Muted()), Muted())];
@@ -1829,6 +1852,109 @@ TSharedRef<SWidget> SAPSInfrastructurePanel::BuildCard(const FName TypeId)
 	{
 		Gives->AddSlot()[Chip(FText::Format(LOCTEXT("EffectLimit", "UP TO {0} PER PLACE"), APSUINumber::Number(Type->LimitPerSite)),
 			FSlateColor(Muted()), Muted())];
+	}
+
+	// The chain it belongs to (Rio 03.10: "buildable in chains, a space elevator, then a space ring, one after another";
+	// the locked steps say what they require): the station it starts from, then every step with how far the civilization
+	// is: standing, under construction, ready somewhere, waiting (its needs stand, an unlock, a level or the stocks do
+	// not), or locked and why.
+	TArray<FName> ChainSteps;
+	const bool bInChain = APSInfrastructure::GetChain(TypeId, ChainSteps);
+	const TSharedRef<SVerticalBox> Chain = SNew(SVerticalBox);
+	if (bInChain)
+	{
+		const TWeakObjectPtr<UWorld> ChainWorld = World;
+		// How many of a type stand: anywhere, and the most at one place.
+		const auto Standing = [ChainWorld](const FName Id, int32& OutMostAtOnePlace)
+		{
+			OutMostAtOnePlace = 0;
+			const FAPSInfrastructure* Infrastructure = APSInfrastructureFind(ChainWorld.Get());
+			if (!Infrastructure)
+			{
+				return 0;
+			}
+			int32 Count = 0;
+			TMap<FString, int32> PerPlace;
+			for (const FAPSBuiltStructure& Built : Infrastructure->GetStructures())
+			{
+				if (Built.Type == Id)
+				{
+					++Count;
+					OutMostAtOnePlace = FMath::Max(OutMostAtOnePlace, ++PerPlace.FindOrAdd(Built.SiteKey));
+				}
+			}
+			return Count;
+		};
+		const auto Step = [&Chain](const TAttribute<FText>& Text, const TAttribute<FSlateColor>& Colour, const bool bCurrent)
+		{
+			Chain->AddSlot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 3.0f)
+			[
+				SNew(STextBlock).Text(Text).AutoWrapText(true).Font(Font(bCurrent ? "Bold" : "Regular", 11)).ColorAndOpacity(Colour)
+			];
+		};
+		Step(LOCTEXT("ChainStation", "1. AN ORBITAL STATION OVER THE WORLD (THE HOME COMPLEX COUNTS)"), FSlateColor(Success()), false);
+		for (int32 Index = 0; Index < ChainSteps.Num(); ++Index)
+		{
+			const FName StepId = ChainSteps[Index];
+			const APSInfrastructure::FType* StepType = APSInfrastructure::Find(StepId);
+			if (!StepType)
+			{
+				continue;
+			}
+			const FText Label = FText::Format(LOCTEXT("ChainStepName", "{0}. {1}"), APSUINumber::Number(Index + 2), StepType->Name);
+			TArray<FText> StepNeeds;
+			APSInfrastructure::DescribeRequirements(*StepType, StepNeeds);
+			const FText Lock = StepNeeds.IsEmpty() ? LOCTEXT("ChainLockedPlace", "NO KNOWN PLACE TAKES IT YET") : StepNeeds[0];
+			// What it stands on: the step before at one place (as many as it wants), or the ring somewhere in the system.
+			const FName Before = !StepType->RequiresAtSite.IsNone() ? StepType->RequiresAtSite : StepType->RequiresInSystem;
+			const int32 BeforeWanted = !StepType->RequiresAtSite.IsNone() ? FMath::Max(StepType->RequiresAtSiteCount, 1) : 1;
+			enum class EState : uint8 { Standing, Building, Ready, Waiting, Locked };
+			const auto StateOf = [this, Standing, StepId, Before, BeforeWanted](int32& OutCount)
+			{
+				int32 Most = 0;
+				OutCount = Standing(StepId, Most);
+				if (OutCount > 0)
+				{
+					return EState::Standing;
+				}
+				if (BuildsUnderWay.FindRef(StepId) > 0)
+				{
+					return EState::Building;
+				}
+				if (PlacesNow.FindRef(StepId) > 0)
+				{
+					return EState::Ready;
+				}
+				int32 BeforeMost = 0;
+				const bool bBeforeStands = Before.IsNone() || (Standing(Before, BeforeMost) > 0 && BeforeMost >= BeforeWanted);
+				return bBeforeStands ? EState::Waiting : EState::Locked;
+			};
+			Step(TAttribute<FText>::CreateLambda([StateOf, Label, Lock]()
+				{
+					int32 Count = 0;
+					switch (StateOf(Count))
+					{
+					case EState::Standing: return FText::Format(LOCTEXT("ChainStanding", "{0}: STANDS ({1})"), Label, APSUINumber::Number(Count));
+					case EState::Building: return FText::Format(LOCTEXT("ChainBuilding", "{0}: UNDER CONSTRUCTION"), Label);
+					case EState::Ready: return FText::Format(LOCTEXT("ChainReady", "{0}: READY TO BUILD"), Label);
+					case EState::Waiting: return FText::Format(LOCTEXT("ChainWaiting", "{0}: ITS NEEDS STAND; AN UNLOCK, A LEVEL OR THE STOCKS ARE MISSING (BUILD... SAYS WHICH)"), Label);
+					default: return FText::Format(LOCTEXT("ChainLocked", "{0}: LOCKED, {1}"), Label, Lock);
+					}
+				}),
+				TAttribute<FSlateColor>::CreateLambda([StateOf]()
+				{
+					int32 Count = 0;
+					switch (StateOf(Count))
+					{
+					case EState::Standing: return FSlateColor(Success());
+					case EState::Building:
+					case EState::Waiting: return FSlateColor(Amber());
+					case EState::Ready: return FSlateColor(Cyan());
+					default: return FSlateColor(Muted());
+					}
+				}),
+				StepId == TypeId);
+		}
 	}
 
 	const auto Row = [](const FText& Caption, const TSharedRef<SWidget>& Content)
@@ -1886,6 +2012,13 @@ TSharedRef<SWidget> SAPSInfrastructurePanel::BuildCard(const FName TypeId)
 			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 6.0f, 0.0f, 0.0f)
 			[
 				Row(LOCTEXT("RowNeeds", "NEEDS"), Needs)
+			]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 6.0f, 0.0f, 0.0f)
+			[
+				SNew(SBox).Visibility(bInChain ? EVisibility::Visible : EVisibility::Collapsed)
+				[
+					Row(LOCTEXT("RowChain", "CHAIN"), Chain)
+				]
 			]
 			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 3.0f, 0.0f, 0.0f)
 			[

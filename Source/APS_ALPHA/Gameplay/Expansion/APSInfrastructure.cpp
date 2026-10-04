@@ -4,7 +4,9 @@
 #include "APSStarSystems.h"
 #include "APS_ALPHA/Actors/Astro/Planet.h"
 #include "APS_ALPHA/Actors/Astro/PlanetaryBody.h"
+#include "APS_ALPHA/Actors/Astro/PlanetarySystem.h"
 #include "APS_ALPHA/Actors/Astro/Star.h"
+#include "APS_ALPHA/Actors/Astro/StarSystem.h"
 #include "APS_ALPHA/Actors/Tech/AutonomousOutpost.h"
 #include "APS_ALPHA/Actors/Tech/Colony.h"
 #include "APS_ALPHA/Actors/Tech/SpaceHeadquarters.h"
@@ -15,6 +17,7 @@
 #include "APS_ALPHA/Gameplay/Civilizations/APSCivilizationJournalSubsystem.h"
 #include "APS_ALPHA/Gameplay/Civilizations/Civilization.h"
 #include "APS_ALPHA/Gameplay/Fleet/APSFleetCommand.h"
+#include "APS_ALPHA/Gameplay/Megastructures/APSMegastructures.h"
 #include "APS_ALPHA/Generation/AstroGenerator.h"
 #include "APS_ALPHA/Generation/PlanetarySurfaceGenerator.h"
 #include "APS_ALPHA/Gameplay/Construction/APSConstructionCatalog.h"
@@ -185,6 +188,7 @@ void APSInfrastructureRegister(const UWorld* World, FAPSInfrastructure* Infrastr
 
 FAPSInfrastructure::FAPSInfrastructure(UWorld* InWorld)
 	: World(InWorld)
+	, Yard(MakeUnique<FAPSMegastructureYard>(InWorld))
 {
 	for (int32 Index = 0; Index < APSInfrastructureLocal::ResourceCount; ++Index)
 	{
@@ -219,6 +223,12 @@ void FAPSInfrastructure::Tick(const float DeltaSeconds)
 		SettleClock = 0.0f;
 		SettleSurfaceActors();
 		SettlePlacedProps(SettleElapsed);
+	}
+	// Rio 03.10: the hubs and megastructures under construction grow with the construction ships' work (twice a second);
+	// after a load only once the structures they stand on are back (a ring's scaffold hangs on its elevator).
+	if (Yard && !PendingRestore.IsSet())
+	{
+		Yard->Tick(DeltaSeconds, *this);
 	}
 }
 
@@ -318,6 +328,10 @@ FText FAPSInfrastructure::CheckBuild(const FName TypeId, const AActor* Site) con
 	{
 		return LOCTEXT("NoSurface", "A giant has no surface to build on.");
 	}
+	if (Type->bNeedsGround && APSInfrastructureLocal::IsGiant(Body))
+	{
+		return LOCTEXT("NoGround", "A giant has no ground to anchor it.");
+	}
 	if (bSystem)
 	{
 		const APSStars::EKnowledge Known = Stars ? Stars->GetKnowledge(SystemId) : APSStars::EKnowledge::Catalogued;
@@ -343,19 +357,31 @@ FText FAPSInfrastructure::CheckBuild(const FName TypeId, const AActor* Site) con
 			return FText::Format(LOCTEXT("NeedsUnlock", "Unlocked by a {0} mission."), DepartmentName(Type->Department));
 		}
 	}
-	if (!Type->RequiresAtSite.IsNone() && CountAt(Site, Type->RequiresAtSite) == 0)
+	// Rio 03.10, chains: each step stands on the one before it (the counts here, the rule in the catalogue).
+	FChainState Chain;
+	Chain.bStationHere = Type->bNeedsStationHere && HasStationAt(Site);
+	Chain.RequiredHere = Type->RequiresAtSite.IsNone() ? 0 : CountAt(Site, Type->RequiresAtSite);
+	Chain.RequiredInSystem = Type->RequiresInSystem.IsNone() ? 0 : CountInSystem(Site, Type->RequiresInSystem);
+	if (const FText Refusal = ChainRefusal(*Type, Chain); !Refusal.IsEmpty())
 	{
-		const FType* Needed = Find(Type->RequiresAtSite);
-		return FText::Format(LOCTEXT("NeedsAtSite", "Needs {0} here first."), Needed ? Needed->Name : FText::FromName(Type->RequiresAtSite));
+		return Refusal;
 	}
 	if (const int32 Level = DepartmentLevel(LiveWorld, Type->Department); Level < Type->RequiredLevel)
 	{
 		return FText::Format(LOCTEXT("NeedsLevel", "{0} level {1} needed (now {2})."), DepartmentName(Type->Department),
 			FText::AsNumber(Type->RequiredLevel), FText::AsNumber(Level));
 	}
-	if (CountAt(Site, Type->Id) >= Type->LimitPerSite)
+	if (const int32 Limit = Type->LimitPerSite + BerthsAt(Site, *Type); CountAt(Site, Type->Id) >= Limit)
 	{
-		return FText::Format(LOCTEXT("AtLimit", "Already {0} here (the most one place takes)."), FText::AsNumber(Type->LimitPerSite));
+		return FText::Format(LOCTEXT("AtLimit", "Already {0} here (the most one place takes)."), FText::AsNumber(Limit));
+	}
+	// Hubs and world megastructures need room: no moon may cross their orbits.
+	if (APSInfrastructure::IsMegaVisual(Type->Visual))
+	{
+		if (const FText Room = APSMegastructures::CheckRoom(*Type, Site); !Room.IsEmpty())
+		{
+			return Room;
+		}
 	}
 	if (!CanAfford(Type->Cost))
 	{
@@ -377,7 +403,7 @@ void FAPSInfrastructure::GetOptions(const AActor* Site, TArray<TPair<FName, FTex
 		const bool bFits = Type.Placement == EPlacement::StarSystem ? bSystem : Body != nullptr;
 		if (!bFits) continue;
 		if (Type.bGiantOnly && !APSInfrastructureLocal::IsGiant(Body)) continue;
-		if (Type.Placement == EPlacement::Surface && APSInfrastructureLocal::IsGiant(Body)) continue;
+		if ((Type.Placement == EPlacement::Surface || Type.bNeedsGround) && APSInfrastructureLocal::IsGiant(Body)) continue;
 		OutTypesAndRefusals.Emplace(Type.Id, CheckBuild(Type.Id, Site));
 	}
 }
@@ -412,30 +438,45 @@ AActor* FAPSInfrastructure::SpawnVisual(const APSInfrastructure::FType& Type, AA
 	using APSInfrastructure::EVisual;
 	UWorld* LiveWorld = World.Get();
 	if (!LiveWorld) return nullptr;
-	// The families the home complex was raised with (the menu's station, shipyard and headquarters choices).
-	UClass* Class = AAutonomousOutpost::StaticClass();
-	if (Type.Visual == EVisual::Station || Type.Visual == EVisual::Shipyard || Type.Visual == EVisual::Headquarters)
+	// Rio 03.10: hubs and megastructures wear the hand-made level's own meshes, fitted to their world
+	// (Gameplay/Megastructures); the elevator's root stands on the ground and settles like every surface structure.
+	AActor* Actor = nullptr;
+	if (APSInfrastructure::IsMegaVisual(Type.Visual))
 	{
-		for (TActorIterator<AAstroGenerator> It(LiveWorld); It; ++It)
+		Actor = APSMegastructures::SpawnStructure(LiveWorld, Type, Site, Transform, ActorName, Name, *this);
+		if (Actor && APSMegastructures::KindOf(Type.Visual) == APSMegastructures::EKind::SpaceElevator)
 		{
-			UClass* Found = Type.Visual == EVisual::Shipyard ? It->BP_HomeSpaceShipyard.Get()
-				: Type.Visual == EVisual::Headquarters ? It->BP_HomeSpaceHeadquarters.Get() : It->BP_HomeSpaceStation.Get();
-			if (Found) { Class = Found; break; }
+			Actor->Tags.AddUnique(APSInfrastructureLocal::SurfaceTag);
 		}
 	}
-	FActorSpawnParameters Parameters;
-	Parameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-	if (!ActorName.IsEmpty())
+	else
 	{
-		Parameters.Name = FName(*ActorName);
-		Parameters.NameMode = FActorSpawnParameters::ESpawnActorNameMode::Requested;
+		// The families the home complex was raised with (the menu's station, shipyard and headquarters choices).
+		UClass* Class = AAutonomousOutpost::StaticClass();
+		if (Type.Visual == EVisual::Station || Type.Visual == EVisual::Shipyard || Type.Visual == EVisual::Headquarters)
+		{
+			for (TActorIterator<AAstroGenerator> It(LiveWorld); It; ++It)
+			{
+				UClass* Found = Type.Visual == EVisual::Shipyard ? It->BP_HomeSpaceShipyard.Get()
+					: Type.Visual == EVisual::Headquarters ? It->BP_HomeSpaceHeadquarters.Get() : It->BP_HomeSpaceStation.Get();
+				if (Found) { Class = Found; break; }
+			}
+		}
+		FActorSpawnParameters Parameters;
+		Parameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		if (!ActorName.IsEmpty())
+		{
+			Parameters.Name = FName(*ActorName);
+			Parameters.NameMode = FActorSpawnParameters::ESpawnActorNameMode::Requested;
+		}
+		Actor = LiveWorld->SpawnActor<AActor>(Class, Transform.GetLocation(), Transform.Rotator(), Parameters);
+		if (!Actor) return nullptr;
+		const float Scale = Type.Visual == EVisual::Beacon ? 0.6f : Type.VisualScale;
+		if (!FMath::IsNearlyEqual(Scale, 1.0f)) Actor->SetActorScale3D(FVector(Scale));
+		if (Site) Actor->AttachToActor(Site, FAttachmentTransformRules::KeepWorldTransform);
+		if (ASpaceStation* Station = Cast<ASpaceStation>(Actor)) Station->CalculateAffectionRadius();
 	}
-	AActor* Actor = LiveWorld->SpawnActor<AActor>(Class, Transform.GetLocation(), Transform.Rotator(), Parameters);
 	if (!Actor) return nullptr;
-	const float Scale = Type.Visual == EVisual::Beacon ? 0.6f : Type.VisualScale;
-	if (!FMath::IsNearlyEqual(Scale, 1.0f)) Actor->SetActorScale3D(FVector(Scale));
-	if (Site) Actor->AttachToActor(Site, FAttachmentTransformRules::KeepWorldTransform);
-	if (ASpaceStation* Station = Cast<ASpaceStation>(Actor)) Station->CalculateAffectionRadius();
 	Actor->Tags.AddUnique(TEXT("APS.GeneratedCivilization"));
 	Actor->Tags.AddUnique(APSInfrastructureLocal::BuiltTag);
 	Actor->Tags.AddUnique(FName(*(TEXT("APS.Infrastructure.") + Type.Id.ToString())));
@@ -494,10 +535,59 @@ AActor* FAPSInfrastructure::Complete(const FName TypeId, AActor* Site, const FVe
 		if (const AStar* Star = Cast<AStar>(Site); Star && Star->StarRadiusKM > 0) StarRadius = Star->StarRadiusKM * 100000.0;
 		Up = APSInfrastructureLocal::SpreadDirection(Standing, FVector::UpVector);
 		Location = Centre + Up * FMath::Max(0.05 * APSStars::AstronomicalUnitCm, StarRadius * 40.0) * (1.0 + 0.15 * Standing);
+		// Rio 03.10 (the ADMINISTRATION HUB stood 48 AU out at a supergiant's edge: "put it by the planet"): what governs
+		// the system stands in a high orbit of its home world, the planet with the colony, else the first; planets keep
+		// their places, so the spot stays by the world.
+		const AStar* SystemStar = Cast<AStar>(Site);
+		if (const AStarSystem* System = SystemStar ? nullptr : Cast<AStarSystem>(Site))
+		{
+			SystemStar = System->MainStar;
+		}
+		if (Type->bClaims && IsValid(SystemStar))
+		{
+			TArray<APlanet*> Worlds = SystemStar->Planets;
+			if (Worlds.IsEmpty() && IsValid(SystemStar->PlanetarySystem))
+			{
+				Worlds = SystemStar->PlanetarySystem->PlanetsActorsList;
+			}
+			const APlanet* Home = nullptr;
+			for (APlanet* Candidate : Worlds)
+			{
+				if (!IsValid(Candidate))
+				{
+					continue;
+				}
+				Home = Home ? Home : Candidate;
+				TArray<AActor*> Attached;
+				Candidate->GetAttachedActors(Attached);
+				if (Attached.ContainsByPredicate([](const AActor* Child) { return IsValid(Child) && Child->IsA<AColony>(); }))
+				{
+					Home = Candidate;
+					break;
+				}
+			}
+			if (Home)
+			{
+				const double WorldRadius = FMath::Max(Home->GetWorldScapeBodyRadiusCm(), 100000.0);
+				Up = APSInfrastructureLocal::SpreadDirection(Standing + 3, Home->GetActorUpVector());
+				Location = Home->GetActorLocation() + Up * APSFleet::SlotRadius(WorldRadius) * (1.6 + 0.1 * Standing);
+			}
+		}
+	}
+	FTransform Placement(FRotationMatrix::MakeFromZ(Up).ToQuat(), Location);
+	// Rio 03.10: hubs and megastructures stand where their world's geometry puts them (the elevator on the equator, the
+	// ring round it, a hub in a high orbit, a swarm round the star); their scaffold goes when they stand.
+	if (APSInfrastructure::IsMegaVisual(Type->Visual))
+	{
+		APSMegastructures::PlaceRoot(*Type, *Site, *this, NearLocation, Placement);
+		if (Yard)
+		{
+			Yard->Finish(Site, Type->Id);
+		}
 	}
 	const FText Name = FText::Format(LOCTEXT("StructureName", "{0} {1}"), Type->Name, APSInfrastructureLocal::SiteName(Site, Stars));
 	const FString ActorName = FString::Printf(TEXT("APS_Infra_%s_%d"), *Type->Id.ToString(), ++Serial);
-	AActor* Actor = SpawnVisual(*Type, Site, FTransform(FRotationMatrix::MakeFromZ(Up).ToQuat(), Location), ActorName, Name);
+	AActor* Actor = SpawnVisual(*Type, Site, Placement, ActorName, Name);
 	if (!Actor) return nullptr;
 	FAPSBuiltStructure& Built = Structures.AddDefaulted_GetRef();
 	Built.Type = Type->Id;
@@ -520,6 +610,18 @@ AActor* FAPSInfrastructure::Complete(const FName TypeId, AActor* Site, const FVe
 AActor* FAPSInfrastructure::CompleteAt(const FName TypeId, AActor* Site, const FTransform& WorldTransform)
 {
 	using namespace APSInfrastructureLocal;
+	// Rio 03.10: hubs and megastructures are raised by construction ships only, in stages, where their world puts them;
+	// build mode's caller refunds the cost when this returns null.
+	if (const FType* Fixed = Find(TypeId); Fixed && Fixed->bFleetOnly)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[APS.Infra] %s is raised by construction ships only, not by hand"), *TypeId.ToString());
+		if (UWorld* LiveWorld = World.Get())
+		{
+			UAPSCivilizationJournalSubsystem::Post(LiveWorld, TEXT("Infrastructure"), FText::Format(LOCTEXT("FleetOnly",
+				"{0} is raised by construction ships: order it from INFRASTRUCTURE, CONSTRUCTION CATALOGUE, BUILD..."), Fixed->Name));
+		}
+		return nullptr;
+	}
 	const FVector Near = WorldTransform.GetLocation();
 	AActor* Actor = Complete(TypeId, Site, &Near);
 	if (!Actor || !Site)
@@ -602,6 +704,91 @@ const FAPSBuiltStructure* FAPSInfrastructure::FindByActor(const AActor* Actor) c
 		: nullptr;
 }
 
+AActor* FAPSInfrastructure::FindActorAt(const AActor* Site, const FName Type) const
+{
+	TArray<const FAPSBuiltStructure*> Here;
+	GetAt(Site, Here);
+	for (const FAPSBuiltStructure* Structure : Here)
+	{
+		if (Structure->Type == Type && Structure->Actor.IsValid())
+		{
+			return Structure->Actor.Get();
+		}
+	}
+	return nullptr;
+}
+
+bool FAPSInfrastructure::HasStationAt(const AActor* Site) const
+{
+	using namespace APSInfrastructure;
+	if (!Cast<APlanetaryBody>(Site))
+	{
+		return false;
+	}
+	TArray<const FAPSBuiltStructure*> Here;
+	GetAt(Site, Here);
+	for (const FAPSBuiltStructure* Structure : Here)
+	{
+		const FType* Type = Find(Structure->Type);
+		if (Type && (Type->Category == ECategory::Station || Type->Category == ECategory::Hub))
+		{
+			return true;
+		}
+	}
+	// The fleet's own: the generated home complex and the stations, shipyards and headquarters its ships built.
+	if (const FAPSFleetCommand* Fleet = APSFleetFind(World.Get()))
+	{
+		for (const APSFleet::EStructure Kind : {APSFleet::EStructure::Station, APSFleet::EStructure::Shipyard, APSFleet::EStructure::Headquarters})
+		{
+			if (Fleet->CountStructures(Site, Kind) > 0)
+			{
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+int32 FAPSInfrastructure::CountInSystem(const AActor* Site, const FName Type) const
+{
+	// A planet or moon stands in the home system (the only one materialized); a star or an anchor names its own.
+	UWorld* LiveWorld = World.Get();
+	FGuid SystemId;
+	const bool bSystemSite = SiteSystem(LiveWorld, Site, SystemId) && !Cast<APlanetaryBody>(Site);
+	const FAPSStarSystems* Stars = APSStarSystemsFind(LiveWorld);
+	const FAPSStarSystemInfo* Home = Stars ? Stars->GetHome() : nullptr;
+	const bool bHomeSystem = !bSystemSite || (Home && Home->Id == SystemId);
+	int32 Count = 0;
+	for (const FAPSBuiltStructure& Structure : Structures)
+	{
+		if (Structure.Type != Type)
+		{
+			continue;
+		}
+		const bool bAtBody = !Structure.SystemId.IsValid();
+		Count += (bAtBody && bHomeSystem) || (!bAtBody && bSystemSite && Structure.SystemId == SystemId)
+			|| (!bAtBody && !bSystemSite && Home && Structure.SystemId == Home->Id) ? 1 : 0;
+	}
+	return Count;
+}
+
+int32 FAPSInfrastructure::BerthsAt(const AActor* Site, const APSInfrastructure::FType& Type) const
+{
+	// Rio 03.10: a hub's berths take more of the ordinary orbital stations at its world.
+	if (Type.Category != APSInfrastructure::ECategory::Station)
+	{
+		return 0;
+	}
+	TArray<const FAPSBuiltStructure*> Here;
+	GetAt(Site, Here);
+	TArray<FName> Standing;
+	for (const FAPSBuiltStructure* Structure : Here)
+	{
+		Standing.Add(Structure->Type);
+	}
+	return APSInfrastructure::HubBerthsFor(Type, Standing);
+}
+
 float FAPSInfrastructure::GetStock(const APSInfrastructure::EResource Resource) const
 {
 	const int32 Index = static_cast<int32>(Resource);
@@ -682,6 +869,15 @@ float FAPSInfrastructure::LocalWorkBonus(const AActor* Site) const
 	for (const FAPSBuiltStructure* Structure : Here)
 	{
 		if (const APSInfrastructure::FType* Type = APSInfrastructure::Find(Structure->Type)) Bonus += Type->LocalWorkSpeed;
+	}
+	// Rio 03.10: hubs are the home system's logistics: work at its worlds and at its star goes faster everywhere.
+	if (Cast<APlanetaryBody>(Site) || Cast<AStar>(Site))
+	{
+		for (const FAPSBuiltStructure& Structure : Structures)
+		{
+			const APSInfrastructure::FType* Type = Structure.SystemId.IsValid() ? nullptr : APSInfrastructure::Find(Structure.Type);
+			Bonus += Type ? Type->SystemWorkSpeed : 0.0f;
+		}
 	}
 	return Bonus;
 }

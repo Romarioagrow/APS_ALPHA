@@ -3,6 +3,8 @@
 #include "APSGameplayStellarProjection.h"
 #include "APSGameplayStarAppearance.h"
 #include "APSFarStarGlyphs.h"
+#include "APSGalaxyNearStars.h"
+#include "APSGalaxyGpuStars.h"
 #include "APSStellarViewOptics.h"
 #include "APS_ALPHA/Core/Planetary/APSAtmosphereModel.h"
 #include "APS_ALPHA/Actors/Astro/Galaxy.h"
@@ -27,9 +29,40 @@
 
 CSV_DEFINE_CATEGORY(APSGameplayStars, true);
 
+namespace APSGameplayStellarOptics
+{
+	/** Rio 03.10 (the F10 freeze): a camera blend changes the field of view a little every frame, and every such frame
+	 * resized the whole catalogue (~61k instances, ~50 ms). Optics-only resizes are at least this far apart; the last
+	 * change of a blend lands one interval after it, glyphs a fraction of a pixel off until then. */
+	TAutoConsoleVariable<float> CVarOpticsResizeInterval(TEXT("aps.Stars.OpticsResizeInterval"), 0.25f,
+		TEXT("Seconds between full star-catalogue resizes caused only by a field-of-view change (0 = every frame, the old way)."));
+	double LastOpticsResizeSeconds = -1.0e9;
+
+	/**
+	 * Rio 04.10 ("turning the strategic map's camera drops to 30-40 fps, the faster the lower"): the map camera circles
+	 * hundreds of AU out, so it crosses a quarter of the nearest catalogue star's distance every frame, and every frame
+	 * walked all ~61k points (3-9 ms) and rebuilt the catalogue trees (~12 ms a pass). While the observer moves that fast
+	 * (more than FastObserverPerSecond of that distance a second) the full walks and resize passes are spaced out; the
+	 * resolved stars and point sizes catch up a few times a second, as soon as it slows down in full.
+	 */
+	TAutoConsoleVariable<float> CVarFastFullDemandInterval(TEXT("aps.Stars.FastFullDemandInterval"), 0.2f,
+		TEXT("Seconds between full star-catalogue demand walks while the observer moves fast (0 = every frame, the old way)."));
+	TAutoConsoleVariable<float> CVarFastResizeInterval(TEXT("aps.Stars.FastResizeInterval"), 0.5f,
+		TEXT("Seconds between resize passes of one star source while the observer moves fast (0 = aps.Stars.ResizeInterval)."));
+	constexpr double FastObserverPerSecond = 0.5;
+	struct FObserverMotion
+	{
+		FVector Observer{FVector::ZeroVector};
+		double Seconds{0.0};
+		double LastFullDemandSeconds{-1.0e9};
+	};
+	TMap<TWeakObjectPtr<const UObject>, FObserverMotion> GObserverMotion;
+}
+
 void UAPSStellarVisualSubsystem::ResetGameplayStellarView()
 {
 	APSFarStarGlyphs::Reset(GetWorld());
+	APSGalaxyNearStars::Reset(GetWorld());
 	ResetGameplayNativeStars();
 	for (FAPSGameplayStellarLayer& Layer : GameplayStellarLayers)
 	{
@@ -217,8 +250,11 @@ void UAPSStellarVisualSubsystem::UpdateGameplayDaylightStars(const FVector& Came
 	// faintest visible star, back once those show. Each return rescans the catalogue, so a hysteresis band and three
 	// seconds between changes keep a climb through that band from flipping them (six flips in 13 s beside a moon,
 	// Rio's playtest 01.10). Without the material fade the old switch-off curve stays.
+	// Rio 04.10 ("the big ones pop in one after another while the rest is still faint"): the resolved stars and the near
+	// photospheres have no fade of their own, so they come back only once the points are nearly full (and go below
+	// three quarters); until then the points, which fade, carry those stars too.
 	const bool bHide = APSGameplayStellarDay::CVarDayFade.GetValueOnGameThread() != 0
-		? APSGameplayStellarDay::PointVisibility(GameplayDaylightFactor) < (bGameplayDaylightStarsHidden ? 0.006f : 0.002f)
+		? APSGameplayStellarDay::PointVisibility(GameplayDaylightFactor) < (bGameplayDaylightStarsHidden ? 0.9f : 0.75f)
 		: (bGameplayDaylightStarsHidden ? HideFactor > 0.5f : HideFactor > 0.8f);
 	const double Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
 	if (bHide != bGameplayDaylightStarsHidden && Now - GameplayDaylightHideChangeSeconds >= 3.0)
@@ -229,6 +265,13 @@ void UAPSStellarVisualSubsystem::UpdateGameplayDaylightStars(const FVector& Came
 		bGameplayNativeDemandCandidatesValid = false;
 		UE_LOG(LogTemp, Log, TEXT("[APS.Gameplay.StellarView] daylight %s the resolved stars (day %.2f)"),
 			bHide ? TEXT("hides") : TEXT("shows"), Factor);
+	}
+	// Rio 03.10 (galaxy phase 3): a GPU star layer of this world fades like the catalogue points (no-op without one):
+	// their material fade, or the old switch-off where that is off (aps.Stars.DayFade 0).
+	if (APSGalaxyGpuStars::HasLayers())
+	{
+		APSGalaxyGpuStars::SetWorldDaylightVisibility(GetWorld(), APSGameplayStellarDay::CVarDayFade.GetValueOnGameThread() != 0
+			? APSGameplayStellarDay::PointVisibility(GameplayDaylightFactor) : (bGameplayDaylightStarsHidden ? 0.0f : 1.0f));
 	}
 }
 
@@ -346,6 +389,9 @@ void UAPSStellarVisualSubsystem::UpdateGameplayStellarView()
 				TopologyHash = HashCombine(TopologyHash, GetTypeHash(Source->GetStaticMesh()));
 			}
 		}
+		// Rio 03.10 (galaxy phase 3, gameplay sky): GPU points + glow of the galaxy catalogue after this sky's ISM prefix,
+		// in the same catalogue frame; inert while aps.Stars.GameplayGpu or the plugin CVars are 0.
+		APSGalaxyGpuStars::PresentGameplayFrame(World, Home, Attached);
 		const bool bGeometryChanged = bNewBuild
 			|| TopologyHash != GameplayNativeTopologyHash
 			|| GameplayNativeMutationSerial != Descriptor.TransformMutationSerial;
@@ -361,8 +407,16 @@ void UAPSStellarVisualSubsystem::UpdateGameplayStellarView()
 		// sizes. Geometry and optics (FOV) changes resize the whole catalogue; travel resizes each point on its own
 		// once its size error reaches the pixel budget (below). A fast approach to one star then costs a few points
 		// per frame instead of a pass over all 61k instances (29.09).
-		const bool bUpdatePointSizes = bGeometryChanged
-			|| !APSGameplayStellarProjection::CanReuseOptics(LastStellarPixelTangent, PixelTangent);
+		const bool bOpticsChanged = !APSGameplayStellarProjection::CanReuseOptics(LastStellarPixelTangent, PixelTangent);
+		const double OpticsNowSeconds = FPlatformTime::Seconds();
+		const bool bOpticsDue = bOpticsChanged && (LastStellarPixelTangent <= 0.0
+			|| OpticsNowSeconds - APSGameplayStellarOptics::LastOpticsResizeSeconds
+				>= FMath::Max(APSGameplayStellarOptics::CVarOpticsResizeInterval.GetValueOnGameThread(), 0.0f));
+		const bool bUpdatePointSizes = bGeometryChanged || bOpticsDue;
+		if (bUpdatePointSizes && bOpticsChanged)
+		{
+			APSGameplayStellarOptics::LastOpticsResizeSeconds = OpticsNowSeconds;
+		}
 		// No point of a source can leave its size budget before the observer travels that source's smallest slack,
 		// so its per-point check is skipped until then (walking on a planet: practically never; 29.09). Among the
 		// ~1 AU-spaced cluster stars a CRUISE flight ran out of slack every frame, and each pass restarted the
@@ -383,24 +437,40 @@ void UAPSStellarVisualSubsystem::UpdateGameplayStellarView()
 			return Nearest;
 		};
 		const double ClosestNowCm = NearestCatalogueCm();
+		APSGameplayStellarOptics::FObserverMotion& Motion =
+			APSGameplayStellarOptics::GObserverMotion.FindOrAdd(TWeakObjectPtr<const UObject>(this));
+		const double MotionSeconds = Motion.Seconds > 0.0 ? NowSeconds - Motion.Seconds : 0.0;
+		const double MotionCm = FVector::Distance(ObserverFromHome, Motion.Observer);
+		Motion.Observer = ObserverFromHome;
+		Motion.Seconds = NowSeconds;
+		const bool bFastObserver = MotionSeconds > 0.0 && ClosestNowCm > 0.0 && ClosestNowCm < TNumericLimits<double>::Max()
+			&& MotionCm / MotionSeconds > ClosestNowCm * APSGameplayStellarOptics::FastObserverPerSecond;
 		const FQuat ViewRotation = Rotation.Quaternion();
 		const double TanHalfHorizontal = FMath::Tan(FMath::DegreesToRadians(
 			Controller->PlayerCameraManager->GetFOVAngle() * 0.5));
 		const double TanHalfVertical = TanHalfHorizontal * FMath::Max(Height, 1) / FMath::Max(Width, 1);
 		// Selection is view-dependent even when distance/FOV allow point-size reuse.
 		// Refresh before crossing the 32px admission guard, without reuploading HISM.
-		const bool bDemandTurned = GameplayNativeDemandRotation.AngularDistance(ViewRotation) > PixelTangent * 8.0
-			|| !FMath::IsNearlyEqual(GameplayNativeTanHalfHorizontal, TanHalfHorizontal, 1.0e-6)
-			|| !FMath::IsNearlyEqual(GameplayNativeTanHalfVertical, TanHalfVertical, 1.0e-6);
+		// Rio 03.10: with aps.Stars.NativeMode 1 the resolved stars are chosen in all directions, so a turn needs nothing.
+		const bool bDemandTurned = APSGameplayNativeStars::UsesViewSelection()
+			&& (GameplayNativeDemandRotation.AngularDistance(ViewRotation) > PixelTangent * 8.0
+				|| !FMath::IsNearlyEqual(GameplayNativeTanHalfHorizontal, TanHalfHorizontal, 1.0e-6)
+				|| !FMath::IsNearlyEqual(GameplayNativeTanHalfVertical, TanHalfVertical, 1.0e-6));
 		// A turn changes which stars are on screen, not how large they look: only travel (or new geometry/optics)
 		// rebuilds the short list of stars bright enough to matter, and a turn re-selects among those. Every mouse
 		// turn of 8 px used to walk all 61k points (3-9 ms, the stutter when looking around; 29.09). Travel
 		// re-measures the candidates at the 2% step and walks the whole catalogue only at the 25% step, before which
 		// no point outside the list can reach admission (CanReuseDemandCandidates; 30.09).
 		const bool bFullDemand = bUpdatePointSizes || !bGameplayNativeDemandCandidatesValid
-			|| !APSGameplayStellarProjection::CanReuseDemandCandidates(
+			|| (!APSGameplayStellarProjection::CanReuseDemandCandidates(
 				FVector::Distance(ObserverFromHome, GameplayNativeDemandObserver),
-				FMath::Min(GameplayNativeDemandClosestCm, ClosestNowCm));
+				FMath::Min(GameplayNativeDemandClosestCm, ClosestNowCm))
+				&& (!bFastObserver || NowSeconds - Motion.LastFullDemandSeconds
+					>= APSGameplayStellarOptics::CVarFastFullDemandInterval.GetValueOnGameThread()));
+		if (bFullDemand)
+		{
+			Motion.LastFullDemandSeconds = NowSeconds;
+		}
 		const bool bDemandTravelled = !APSGameplayStellarProjection::CanReuseDemand(
 			FVector::Distance(ObserverFromHome, GameplayNativeDemandRefreshObserver),
 			FMath::Min(GameplayNativeDemandRefreshClosestCm, ClosestNowCm));
@@ -445,9 +515,11 @@ void UAPSStellarVisualSubsystem::UpdateGameplayStellarView()
 			}
 			if (!IsValid(Source) || !BaseTransforms || !IsValid(Source->GetStaticMesh())) continue;
 			FAPSGameplayStellarResizePass& Pass = GameplayNativeResizePasses.FindOrAdd(Source);
+			const double ResizeInterval = FMath::Max(APSGameplayStellarDay::CVarResizeInterval.GetValueOnGameThread(),
+				bFastObserver ? APSGameplayStellarOptics::CVarFastResizeInterval.GetValueOnGameThread() : 0.0f);
 			const bool bResizeTravelled = !bUpdatePointSizes && !bResizePassTaken
 				&& FVector::Distance(ObserverFromHome, Pass.Observer) > FMath::Max(Pass.SlackCm, 1.0)
-				&& NowSeconds - Pass.Seconds >= FMath::Max(APSGameplayStellarDay::CVarResizeInterval.GetValueOnGameThread(), 0.0f);
+				&& NowSeconds - Pass.Seconds >= FMath::Max(ResizeInterval, 0.0);
 			if (!bRefreshDemand && !bResizeTravelled) continue;
 			if (!APSStellarOpticalSupport::EnsureLayout(Source)) continue;
 
@@ -672,6 +744,8 @@ void UAPSStellarVisualSubsystem::UpdateGameplayStellarView()
 		PresentGameplayNativeStars(Generator);
 		// B7: a materialized star smaller than its glyph (the home sun from its planets) keeps its catalogue glyph.
 		APSFarStarGlyphs::Update(GetWorld(), Attached, Camera, PixelTangent, bGameplayDaylightStarsHidden);
+		// Rio 03.10: the galaxy GPU-only stars near the camera grow into photospheres (APSGalaxyNearStars).
+		APSGalaxyNearStars::Update(GetWorld(), Camera, PixelTangent, bGameplayDaylightStarsHidden);
 
 		GameplayStellarBuildSerial = Descriptor.ProxyBuildSerial;
 		if (bNewBuild)

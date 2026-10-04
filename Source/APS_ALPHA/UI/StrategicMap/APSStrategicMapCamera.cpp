@@ -1,15 +1,38 @@
 #include "APSStrategicMapCamera.h"
+#include "APS_ALPHA/Core/World/APSWorldOriginSubsystem.h"
 
 #include "Camera/CameraActor.h"
 #include "Camera/CameraComponent.h"
 #include "Camera/PlayerCameraManager.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
+#include "HAL/IConsoleManager.h"
 #include "Math/RotationMatrix.h"
 #include "Misc/App.h"
 
 namespace APSStrategicMapCameraLocal
 {
+	TAutoConsoleVariable<float> CVarFieldOfView(TEXT("aps.Map.FieldOfView"), 0.0f,
+		TEXT("The strategic map's lens in degrees. 0 keeps the pilot's field of view from F10 to the return: no field of ")
+		TEXT("view change, so the full-scale star catalogue is never re-sized for it (Rio 03.10, the F10 freezes). 20-120: ")
+		TEXT("that lens, switched in one step halfway through a flight and back in one step on close (one ~50 ms ")
+		TEXT("re-size each). 50 is the 02.10 map's lens."));
+
+	/** The lens a map opened from this field of view settles on. */
+	double LensFor(const double PilotFieldOfView)
+	{
+		const float Wanted = CVarFieldOfView.GetValueOnGameThread();
+		return FMath::Clamp(Wanted > 0.0f ? static_cast<double>(Wanted) : PilotFieldOfView, 20.0, 120.0);
+	}
+
+	/** The distance factor that keeps the view width at the focus when the lens changes. */
+	double LensRatio(const double FromDegrees, const double ToDegrees)
+	{
+		const double To = FMath::Tan(FMath::DegreesToRadians(ToDegrees * 0.5));
+		const double Ratio = To > UE_DOUBLE_SMALL_NUMBER ? FMath::Tan(FMath::DegreesToRadians(FromDegrees * 0.5)) / To : 1.0;
+		return FMath::IsFinite(Ratio) && Ratio > 0.0 ? Ratio : 1.0;
+	}
+
 	/** Look distance the rig starts with, just ahead of the player's own camera (cm). */
 	constexpr double StartLookDistanceCm = 2000.0;
 	/** The closest any focus may be approached (cm): a ship's hull still fits the view. */
@@ -94,7 +117,8 @@ bool FAPSStrategicMapCamera::Begin(APlayerController* InController, AActor* InRe
 
 	// The rig state that reproduces this view: a look point just ahead, the same orientation and field of view.
 	Rotation = StartRotation.Quaternion();
-	FieldOfView = StartFieldOfView;
+	FieldOfView = PilotFieldOfView = StartFieldOfView;
+	LensFieldOfView = APSStrategicMapCameraLocal::LensFor(StartFieldOfView);
 	Distance = DesiredDistance = APSStrategicMapCameraLocal::StartLookDistanceCm;
 	LookLocation = StartLocation + Rotation.GetForwardVector() * Distance;
 	CameraLocation = StartLocation;
@@ -122,6 +146,14 @@ void FAPSStrategicMapCamera::End()
 {
 	if (ACameraActor* Spawned = Camera.Get())
 	{
+		// Rio 03.10: back to the pilot's lens in one step, or the controller's blend would change the field of view (and
+		// re-size the star catalogue) every frame of the return; the focus keeps its place and size on the screen.
+		if (!bHolding && !FMath::IsNearlyEqual(FieldOfView, PilotFieldOfView, 0.01))
+		{
+			Distance *= APSStrategicMapCameraLocal::LensRatio(FieldOfView, PilotFieldOfView);
+			FieldOfView = PilotFieldOfView;
+			Apply();
+		}
 		// The controller blends from this view back to the pilot's (CloseStrategicMap, 0.3 s): the camera holds still
 		// that long, then goes by itself.
 		Spawned->SetLifeSpan(1.0f);
@@ -173,8 +205,9 @@ void FAPSStrategicMapCamera::Pan(const FVector2D& DeltaPixels, const double View
 void FAPSStrategicMapCamera::FlyTo(const FFocus& Target, const double FrameRadiusCm, const TOptional<double> InPitch,
 	const TOptional<double> InYaw)
 {
-	// Fit the sphere in the map region: the distance at which its angular radius equals the region's half angle.
-	const double HalfTangent = FMath::Tan(FMath::DegreesToRadians(MapFieldOfView * 0.5));
+	// Fit the sphere in the map region: the distance at which its angular radius equals the region's half angle. The
+	// flight starts with the field of view of now; a lens switch on the way keeps the framing (Tick).
+	const double HalfTangent = FMath::Tan(FMath::DegreesToRadians(FieldOfView * 0.5));
 	const double Fit = FMath::Max(RegionFit * HalfTangent, 0.05);
 	const double Radius = FMath::Max(FrameRadiusCm, 1.0);
 	FlyToDistance(Target, Radius * FMath::Sqrt(1.0 + 1.0 / (Fit * Fit)) * 1.06, InPitch, InYaw);
@@ -200,7 +233,6 @@ void FAPSStrategicMapCamera::FlyToDistance(const FFocus& Target, const double En
 	Flight.EndYaw = EndYaw;
 	Flight.EndPitch = EndPitch;
 	Flight.EndDistance = EndDistance;
-	Flight.StartFieldOfView = FieldOfView;
 	Flight.StartRegionWeight = RegionWeight;
 	const double Width = WidthPerDistance();
 	Flight.Prepare(Distance * Width, EndDistance * Width, Flight.StartRelative.Size());
@@ -260,7 +292,7 @@ double FAPSStrategicMapCamera::MinimumDistance(const FFocus& Target) const
 
 double FAPSStrategicMapCamera::WidthPerDistance() const
 {
-	return 2.0 * FMath::Tan(FMath::DegreesToRadians(MapFieldOfView * 0.5));
+	return 2.0 * FMath::Tan(FMath::DegreesToRadians(FieldOfView * 0.5));
 }
 
 FQuat FAPSStrategicMapCamera::OrbitRotation(const double InYaw, const double InPitch) const
@@ -308,9 +340,17 @@ void FAPSStrategicMapCamera::Tick(float)
 		Flight.Evaluate(Eased, Fraction, Width);
 		const FVector TargetLocation = Locate(Flight.Target);
 		LookLocation = TargetLocation + Flight.StartRelative * (1.0 - Fraction);
+		if (Eased >= 0.5 && !FMath::IsNearlyEqual(FieldOfView, LensFieldOfView, 0.01))
+		{
+			// Rio 03.10: another lens comes in one step halfway, where the view moves fastest, never frame by frame (each
+			// changed frame re-sizes the whole star catalogue). The view width at the focus carries on unchanged.
+			Flight.EndDistance = FMath::Clamp(Flight.EndDistance
+				* APSStrategicMapCameraLocal::LensRatio(FieldOfView, LensFieldOfView), MinimumDistance(Flight.Target),
+				MaximumDistanceCm);
+			FieldOfView = LensFieldOfView;
+		}
 		Distance = FMath::Max(Width / WidthPerDistance(), 1.0);
 		Rotation = FQuat::Slerp(Flight.StartRotation, OrbitRotation(Flight.EndYaw, Flight.EndPitch), Eased).GetNormalized();
-		FieldOfView = FMath::Lerp(Flight.StartFieldOfView, static_cast<double>(MapFieldOfView), Eased);
 		// The first flight leaves the pilot's view centred and moves the focus to the map region's middle as it goes.
 		RegionWeight = FMath::Lerp(Flight.StartRegionWeight, 1.0, Eased);
 		if (Alpha >= 1.0)
@@ -334,9 +374,21 @@ void FAPSStrategicMapCamera::Tick(float)
 		LookLocation = Locate(Focus);
 		LastFocusLocation = LookLocation;
 		Rotation = OrbitRotation(Yaw, Pitch);
-		FieldOfView = MapFieldOfView;
 	}
 	Apply();
+	// Rio 04.10 ("from ~900 AU the home planet's layers slide apart on the map"): a still view of something far from 0,0,0
+	// asks the floating origin to come to it (it decides: only with the pilot's ship in open space). The focus is held
+	// relative to its actor or system, so the next frame finds it again wherever the world went.
+	if (!bFlying)
+	{
+		if (UWorld* LiveWorld = World.Get())
+		{
+			if (UAPSWorldOriginSubsystem* Origin = LiveWorld->GetSubsystem<UAPSWorldOriginSubsystem>())
+			{
+				Origin->RequestMapView(LookLocation, Distance);
+			}
+		}
+	}
 }
 
 void FAPSStrategicMapCamera::Apply()

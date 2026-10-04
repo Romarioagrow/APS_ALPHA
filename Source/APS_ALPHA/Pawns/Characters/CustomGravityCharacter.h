@@ -196,6 +196,10 @@ public:
 	void SetSurfaceHandoffSuspended(bool bSuspended);
 	bool IsSurfaceHandoffSuspended() const { return bSurfaceHandoffSuspended; }
 
+	/** Turns the view, and the character with it, toward Forward on the gravity plane, PitchUpDegrees above it (a
+	 * teleport's first frame: the control rotation alone does not steer this character's camera). */
+	void SetViewDirection(const FVector& Forward, float PitchUpDegrees);
+
 	/** Set a custom gravity direction directly */
 	UFUNCTION(BlueprintCallable, Category = "Gravity")
 	void SetCustomGravityDirection(const FVector& NewDirection);

@@ -240,34 +240,80 @@ namespace APSInfrastructureCatalogLocal
 			Types.Add(T);
 		}
 
-		// MEGASTRUCTURES.
+		// HUBS (Rio 03.10: "space hubs: not the stations we usually build, huge, enormous ones", the hand-made level's own
+		// hub stations at their authored size): a high orbit of a world, logistics for the whole system, berths at the world.
+		{
+			FType T = Make(TEXT("SpaceHub"), LOCTEXT("SpaceHub", "SPACE HUB"),
+				LOCTEXT("SpaceHubRole", "An 11 km hub over a world: docks, depots and crews for the whole system. Work in the system 20% faster, two more berths for stations at its world."),
+				D::Transport, C::Hub, P::HighOrbit, 1, 2, 240.0f, {M(400), E(150), I(40)}, {M(4), E(2), I(3)}, L::SpaceHub);
+			T.bNeedsStationHere = true;
+			T.bFleetOnly = true;
+			T.BuildSpeed = 0.10f;
+			T.ShipSpeed = 0.05f;
+			T.LocalWorkSpeed = 0.5f;
+			T.SystemWorkSpeed = 0.2f;
+			T.HubBerths = 2;
+			Types.Add(T);
+		}
+		{
+			FType T = Make(TEXT("GrandHub"), LOCTEXT("GrandHub", "GRAND HUB"),
+				LOCTEXT("GrandHubRole", "A 67 km hub of hubs, the system's port and arsenal: the fleet 10% faster, work in the system 30% faster, three more berths."),
+				D::Transport, C::Hub, P::HighOrbit, 2, 3, 420.0f, {M(900), E(400), R(60), I(120)}, {M(8), E(6), I(6)}, L::GrandHub);
+			T.RequiresAtSite = FName(TEXT("SpaceHub"));
+			T.bFleetOnly = true;
+			T.BuildSpeed = 0.10f;
+			T.ShipSpeed = 0.10f;
+			T.SystemWorkSpeed = 0.3f;
+			T.HubBerths = 3;
+			Types.Add(T);
+		}
+
+		// MEGASTRUCTURES (Rio 03.10: a chain, as on the hand-made level: a station over the world > SPACE ELEVATOR >
+		// ORBITAL RING > DYSON SWARM around the star > DYSON SPHERE; each step opens the next).
+		{
+			FType T = Make(TEXT("SpaceElevator"), LOCTEXT("SpaceElevator", "SPACE ELEVATOR"),
+				LOCTEXT("SpaceElevatorRole", "A tower on the equator and a tether up to a counterweight in stationary orbit: cargo to orbit without rockets, work at the world 30% faster."),
+				D::Industry, C::Megastructure, P::AroundWorld, 2, 3, 360.0f, {M(600), E(250), I(50)}, {M(10), I(2)}, L::SpaceElevator);
+			T.bNeedsStationHere = true;
+			T.bNeedsGround = true;
+			T.bFleetOnly = true;
+			T.LocalWorkSpeed = 0.3f;
+			T.bMegastructure = true;
+			T.bNeedsUnlock = true;
+			Types.Add(T);
+		}
 		{
 			FType T = Make(TEXT("OrbitalRing"), LOCTEXT("OrbitalRing", "ORBITAL RING"),
-				LOCTEXT("OrbitalRingRole", "A ring around a world: industry, docks and homes; construction 20% faster."),
-				D::Industry, C::Megastructure, P::Orbit, 2, 3, 360.0f, {M(800), E(300)}, {M(20), I(5)}, L::Headquarters);
+				LOCTEXT("OrbitalRingRole", "A ring around the world's equator, hung on the elevator: industry, docks and homes; construction 20% faster."),
+				D::Industry, C::Megastructure, P::AroundWorld, 2, 3, 480.0f, {M(1000), E(400), R(80)}, {M(20), I(5)}, L::OrbitalRing);
+			T.RequiresAtSite = FName(TEXT("SpaceElevator"));
+			T.bFleetOnly = true;
 			T.BuildSpeed = 0.20f;
 			T.bMegastructure = true;
 			T.bNeedsUnlock = true;
-			T.VisualScale = 4.0f;
 			Types.Add(T);
 		}
 		{
 			FType T = Make(TEXT("DysonSwarm"), LOCTEXT("DysonSwarm", "DYSON SWARM SEGMENT"),
-				LOCTEXT("DysonSwarmRole", "Collectors around the star: vast energy."),
-				D::Industry, C::Megastructure, P::StarSystem, 2, 3, 420.0f, {M(900), R(150)}, {E(60)}, L::Station);
+				LOCTEXT("DysonSwarmRole", "A ring of collectors around the star, built from the ring's yards: vast energy."),
+				D::Industry, C::Megastructure, P::StarSystem, 2, 3, 420.0f, {M(900), R(150)}, {E(60)}, L::DysonSwarm);
+			T.RequiresInSystem = FName(TEXT("OrbitalRing"));
+			T.bFleetOnly = true;
 			T.bMegastructure = true;
 			T.bNeedsUnlock = true;
 			T.LimitPerSite = 5;
-			T.VisualScale = 4.0f;
 			Types.Add(T);
 		}
 		{
-			FType T = Make(TEXT("SpaceElevator"), LOCTEXT("SpaceElevator", "SPACE ELEVATOR"),
-				LOCTEXT("SpaceElevatorRole", "From the surface to orbit without rockets: metals and influence."),
-				D::Industry, C::Megastructure, P::Surface, 2, 3, 300.0f, {M(500), E(200)}, {M(10), I(2)}, L::Headquarters);
+			FType T = Make(TEXT("DysonSphere"), LOCTEXT("DysonSphere", "DYSON SPHERE"),
+				LOCTEXT("DysonSphereRole", "The five swarm rings closed into a shell around the star: energy beyond counting, construction 25% and the fleet 10% faster."),
+				D::Industry, C::Megastructure, P::StarSystem, 2, 3, 900.0f, {M(3000), E(800), R(400), I(100)}, {E(300), R(10)}, L::DysonSphere);
+			T.RequiresAtSite = FName(TEXT("DysonSwarm"));
+			T.RequiresAtSiteCount = 5;
+			T.bFleetOnly = true;
+			T.BuildSpeed = 0.25f;
+			T.ShipSpeed = 0.10f;
 			T.bMegastructure = true;
-			T.bNeedsUnlock = true;
-			T.VisualScale = 2.5f;
 			Types.Add(T);
 		}
 		return Types;
@@ -283,6 +329,101 @@ const TArray<APSInfrastructure::FType>& APSInfrastructure::Types()
 const APSInfrastructure::FType* APSInfrastructure::Find(const FName Id)
 {
 	return Types().FindByPredicate([Id](const FType& Type) { return Type.Id == Id; });
+}
+
+bool APSInfrastructure::GetChain(const FName Type, TArray<FName>& OutSteps)
+{
+	// Rio 03.10: the two chains of the hand-made level's structures, each step standing on the one before it.
+	static const TArray<FName> Hubs = {FName(TEXT("SpaceHub")), FName(TEXT("GrandHub"))};
+	static const TArray<FName> Megastructures = {FName(TEXT("SpaceElevator")), FName(TEXT("OrbitalRing")),
+		FName(TEXT("DysonSwarm")), FName(TEXT("DysonSphere"))};
+	OutSteps.Reset();
+	for (const TArray<FName>* Chain : {&Hubs, &Megastructures})
+	{
+		if (Chain->Contains(Type))
+		{
+			OutSteps = *Chain;
+			return true;
+		}
+	}
+	return false;
+}
+
+void APSInfrastructure::DescribeRequirements(const FType& Type, TArray<FText>& OutLines)
+{
+	OutLines.Reset();
+	if (Type.bNeedsStationHere)
+	{
+		OutLines.Add(LOCTEXT("RequiresStation", "REQUIRES AN ORBITAL STATION OVER THE WORLD"));
+	}
+	if (!Type.RequiresAtSite.IsNone())
+	{
+		const FType* Needed = Find(Type.RequiresAtSite);
+		const FText Name = Needed ? Needed->Name : FText::FromName(Type.RequiresAtSite);
+		const FText Where = Type.Placement == EPlacement::StarSystem ? LOCTEXT("WhereStar", "AROUND THE SAME STAR")
+			: LOCTEXT("WhereWorld", "AT THE SAME WORLD");
+		OutLines.Add(Type.RequiresAtSiteCount > 1
+			? FText::Format(LOCTEXT("RequiresCount", "REQUIRES {0} x {1} {2}"), FText::AsNumber(Type.RequiresAtSiteCount), Name, Where)
+			: FText::Format(LOCTEXT("RequiresAtSite", "REQUIRES {0} {1}"), Name, Where));
+	}
+	if (!Type.RequiresInSystem.IsNone())
+	{
+		const FType* Needed = Find(Type.RequiresInSystem);
+		OutLines.Add(FText::Format(LOCTEXT("RequiresInSystem", "REQUIRES {0} IN THE STAR SYSTEM"),
+			Needed ? Needed->Name : FText::FromName(Type.RequiresInSystem)));
+	}
+	if (Type.bNeedsGround)
+	{
+		OutLines.Add(LOCTEXT("RequiresGround", "REQUIRES SOLID GROUND ON THE EQUATOR (NO GIANTS)"));
+	}
+}
+
+FText APSInfrastructure::ChainRefusal(const FType& Type, const FChainState& State)
+{
+	// Rio 03.10, chains: each step stands on the one before it (a station > hub > grand hub; a station > elevator > ring >
+	// swarm > sphere).
+	if (Type.bNeedsStationHere && !State.bStationHere)
+	{
+		return LOCTEXT("NeedsStationHere", "Requires an orbital station over this world first (any station, a hub or the home complex).");
+	}
+	if (!Type.RequiresAtSite.IsNone())
+	{
+		const FType* Needed = Find(Type.RequiresAtSite);
+		const FText NeededName = Needed ? Needed->Name : FText::FromName(Type.RequiresAtSite);
+		const int32 Wanted = FMath::Max(Type.RequiresAtSiteCount, 1);
+		if (State.RequiredHere < Wanted)
+		{
+			return Wanted > 1
+				? FText::Format(LOCTEXT("NeedsCountAtSite", "Requires {0} x {1} here first (now {2})."), FText::AsNumber(Wanted), NeededName,
+					FText::AsNumber(State.RequiredHere))
+				: FText::Format(LOCTEXT("NeedsAtSite", "Requires {0} here first."), NeededName);
+		}
+	}
+	if (!Type.RequiresInSystem.IsNone() && State.RequiredInSystem <= 0)
+	{
+		const FType* Needed = Find(Type.RequiresInSystem);
+		return FText::Format(LOCTEXT("NeedsInSystem", "Requires {0} in this star system first."),
+			Needed ? Needed->Name : FText::FromName(Type.RequiresInSystem));
+	}
+	return FText::GetEmpty();
+}
+
+int32 APSInfrastructure::HubBerthsFor(const FType& Type, const TArray<FName>& StandingHere)
+{
+	// A hub's berths take more of the ordinary orbital stations at its world: not more hubs or megastructures.
+	if (Type.Category != ECategory::Station || Type.Placement != EPlacement::Orbit)
+	{
+		return 0;
+	}
+	int32 Berths = 0;
+	for (const FName& Id : StandingHere)
+	{
+		if (const FType* Standing = Find(Id))
+		{
+			Berths += FMath::Max(Standing->HubBerths, 0);
+		}
+	}
+	return Berths;
 }
 
 FText APSInfrastructure::DepartmentName(const EDepartment Department)
@@ -324,6 +465,7 @@ FText APSInfrastructure::CategoryName(const ECategory Category)
 	case ECategory::Relay: return LOCTEXT("CategoryRelay", "RELAY");
 	case ECategory::Transport: return LOCTEXT("CategoryTransport", "TRANSPORT");
 	case ECategory::Megastructure: return LOCTEXT("CategoryMegastructure", "MEGASTRUCTURE");
+	case ECategory::Hub: return LOCTEXT("CategoryHub", "HUB");
 	default: return FText::GetEmpty();
 	}
 }
@@ -335,6 +477,8 @@ FText APSInfrastructure::PlacementName(const EPlacement Placement)
 	case EPlacement::Orbit: return LOCTEXT("PlacementOrbit", "IN ORBIT OF A WORLD");
 	case EPlacement::Surface: return LOCTEXT("PlacementSurface", "ON A WORLD'S SURFACE");
 	case EPlacement::StarSystem: return LOCTEXT("PlacementStarSystem", "IN A STAR SYSTEM");
+	case EPlacement::HighOrbit: return LOCTEXT("PlacementHighOrbit", "IN A HIGH ORBIT OF A WORLD");
+	case EPlacement::AroundWorld: return LOCTEXT("PlacementAroundWorld", "AROUND A WORLD: EQUATOR TO ORBIT");
 	default: return FText::GetEmpty();
 	}
 }

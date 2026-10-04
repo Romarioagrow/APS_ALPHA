@@ -21,8 +21,17 @@
 #include "Brushes/SlateRoundedBoxBrush.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
+#include "Fonts/FontMeasure.h"
+#include "Framework/Application/SlateApplication.h"
 #include "GameFramework/PlayerController.h"
 #include "Rendering/DrawElements.h"
+#include "Rendering/SlateRenderer.h"
+#include "Styling/AppStyle.h"
+#include "Widgets/Input/SButton.h"
+#include "Widgets/Layout/SBorder.h"
+#include "Widgets/Layout/SBox.h"
+#include "Widgets/SBoxPanel.h"
+#include "Widgets/Text/STextBlock.h"
 
 #define LOCTEXT_NAMESPACE "APSCivilizationMap"
 
@@ -173,6 +182,17 @@ namespace APSCivilizationMapPrivate
 		FSlateDrawElement::MakeText(Out, Layer, Geometry.ToPaintGeometry(FVector2f(260.0f, 18.0f),
 			FSlateLayoutTransform(FVector2f(static_cast<float>(Position.X), static_cast<float>(Position.Y)))),
 			Text, FontInfo, ESlateDrawEffect::None, Colour);
+	}
+
+	/** A dark rounded plate under a map name, so it reads over the orbits and the star's glow (Rio 02.10). */
+	void Plate(FSlateWindowElementList& Out, const int32 Layer, const FGeometry& Geometry, const FVector2D& TopLeft,
+		const FVector2D& Size)
+	{
+		static const FSlateRoundedBoxBrush Brush(FLinearColor::White, 3.0f);
+		FSlateDrawElement::MakeBox(Out, Layer, Geometry.ToPaintGeometry(
+			FVector2f(static_cast<float>(Size.X), static_cast<float>(Size.Y)),
+			FSlateLayoutTransform(FVector2f(static_cast<float>(TopLeft.X), static_cast<float>(TopLeft.Y)))),
+			&Brush, ESlateDrawEffect::None, FLinearColor(0.0f, 0.014f, 0.024f, 0.74f));
 	}
 
 	/** Four corner brackets around a point, as the ship HUD marks its course target. */
@@ -352,7 +372,9 @@ void SAPSCivilizationMap::Refresh()
 		}
 		const FText Detail = It->IsA<ASpaceHeadquarters>() ? LOCTEXT("HeadquartersDetail", "HEADQUARTERS")
 			: It->IsA<ASpaceShipyard>() ? LOCTEXT("ShipyardDetail", "SHIPYARD") : LOCTEXT("StationDetail", "STATION");
-		Add(*It, EKind::Station, Detail, Cyan(), 0.0, AnchorOf(It->GetActorLocation()), true);
+		// Rio 02.10: the headquarters stands out in gold (its own marker and legend entry); stations and shipyards cyan.
+		Add(*It, EKind::Station, Detail, It->IsA<ASpaceHeadquarters>() ? FLinearColor(1.0f, 0.85f, 0.38f) : Cyan(), 0.0,
+			AnchorOf(It->GetActorLocation()), true);
 	}
 	for (TActorIterator<AColony> It(LiveWorld); It; ++It)
 	{
@@ -376,7 +398,10 @@ void SAPSCivilizationMap::Refresh()
 	{
 		if (IsValid(*It) && It->ActorHasTag(TEXT("APS.Fleet.Anomaly")))
 		{
-			Add(*It, EKind::Outpost, LOCTEXT("AnomalyDetail", "ANOMALY SITE"), FLinearColor(1.0f, 0.62f, 0.2f), 0.0,
+			// The ancient sites (Gameplay/Ancients) carry the anomaly tag too; they read as what they are, in pale cyan.
+			const bool bAncient = It->ActorHasTag(TEXT("APS.Ancient.Site"));
+			Add(*It, EKind::Outpost, bAncient ? LOCTEXT("AncientDetail", "ANCIENT SITE") : LOCTEXT("AnomalyDetail", "ANOMALY SITE"),
+				bAncient ? FLinearColor(0.25f, 0.9f, 1.0f) : FLinearColor(1.0f, 0.62f, 0.2f), 0.0,
 				AnchorOf(It->GetActorLocation()), true);
 		}
 	}
@@ -659,6 +684,7 @@ int32 SAPSCivilizationMap::OnPaint(const FPaintArgs& Args, const FGeometry& Allo
 		PlacedLabels.Add(Rect);
 		return true;
 	};
+	const TSharedRef<FSlateFontMeasure> FontMeasure = FSlateApplication::Get().GetRenderer()->GetFontMeasureService();
 	// YOU is always written: its place is taken first.
 	for (const FObject& Object : Objects)
 	{
@@ -703,11 +729,38 @@ int32 SAPSCivilizationMap::OnPaint(const FPaintArgs& Args, const FGeometry& Allo
 			break;
 		case EKind::Station:
 		{
-			const double Half = 5.0;
-			Polyline(OutDrawElements, LayerId + 4, AllottedGeometry, {Position + FVector2D(-Half, -Half),
-				Position + FVector2D(Half, -Half), Position + FVector2D(Half, Half), Position + FVector2D(-Half, Half),
-				Position + FVector2D(-Half, -Half)}, Colour, 1.6f);
-			Dot(OutDrawElements, LayerId + 4, AllottedGeometry, Position, 1.8, Colour);
+			const AActor* Station = Object.Actor.Get();
+			if (Station && Station->IsA<ASpaceHeadquarters>())
+			{
+				// Rio 02.10 ("where the HQ is"): the headquarters as a house in a soft halo, larger than a station.
+				const double Half = 7.0;
+				Dot(OutDrawElements, LayerId + 3, AllottedGeometry, Position, 13.0,
+					FLinearColor(Colour.R, Colour.G, Colour.B, 0.16f));
+				Polyline(OutDrawElements, LayerId + 4, AllottedGeometry, {Position + FVector2D(-Half, -1.0),
+					Position + FVector2D(0.0, -Half - 2.0), Position + FVector2D(Half, -1.0), Position + FVector2D(Half, Half),
+					Position + FVector2D(-Half, Half), Position + FVector2D(-Half, -1.0)}, Colour, 1.8f);
+				Polyline(OutDrawElements, LayerId + 4, AllottedGeometry, {Position + FVector2D(-2.2, Half),
+					Position + FVector2D(-2.2, 2.0), Position + FVector2D(2.2, 2.0), Position + FVector2D(2.2, Half)},
+					Colour, 1.4f);
+			}
+			else if (Station && Station->IsA<ASpaceShipyard>())
+			{
+				// A shipyard: an open dock under its gantry.
+				const double Half = 6.0;
+				Polyline(OutDrawElements, LayerId + 4, AllottedGeometry, {Position + FVector2D(-Half, -Half),
+					Position + FVector2D(-Half, Half), Position + FVector2D(Half, Half), Position + FVector2D(Half, -Half)},
+					Colour, 1.6f);
+				Polyline(OutDrawElements, LayerId + 4, AllottedGeometry, {Position + FVector2D(-Half - 2.5, -Half),
+					Position + FVector2D(Half + 2.5, -Half)}, Colour, 1.6f);
+			}
+			else
+			{
+				const double Half = 5.0;
+				Polyline(OutDrawElements, LayerId + 4, AllottedGeometry, {Position + FVector2D(-Half, -Half),
+					Position + FVector2D(Half, -Half), Position + FVector2D(Half, Half), Position + FVector2D(-Half, Half),
+					Position + FVector2D(-Half, -Half)}, Colour, 1.6f);
+				Dot(OutDrawElements, LayerId + 4, AllottedGeometry, Position, 1.8, Colour);
+			}
 			break;
 		}
 		case EKind::Colony:
@@ -755,13 +808,25 @@ int32 SAPSCivilizationMap::OnPaint(const FPaintArgs& Args, const FGeometry& Allo
 		if (bNamed && Object.Kind != EKind::Pilot
 			&& PlaceLabel(Position + FVector2D(-30.0, Below + 3.0), Object.Name, bSurveyTag ? 2.0 : 1.0))
 		{
-			Label(OutDrawElements, LayerId + 6, AllottedGeometry, Position + FVector2D(-30.0, Below + 3.0), Object.Name,
+			// Rio 02.10 ("labels hard to read"): a dark plate under the name and its survey line.
+			const double PlateWidth = FMath::Max(FontMeasure->Measure(Object.Name, LabelFont).X, bSurveyTag
+				? FontMeasure->Measure(APSFleet::SurveyName(Fleet->GetSurvey(Object.Actor.Get())), SmallFont).X : 0.0);
+			Plate(OutDrawElements, LayerId + 5, AllottedGeometry, Position + FVector2D(-34.0, Below + 2.0),
+				FVector2D(PlateWidth + 8.0, bSurveyTag ? 28.0 : 15.0));
+			// Rio 03.10: each line sits on the plate by its capitals' middle (7.5 px from the plate's top; the survey
+			// line 12.5 px under it), not by Slate's line box.
+			const auto LineTop = [&FontMeasure](const FSlateFontInfo& LineFont, const double CapsMiddle)
+			{
+				return CapsMiddle - FontMeasure->GetMaxCharacterHeight(LineFont) * 0.5 + CapsCenterOffset(LineFont);
+			};
+			Label(OutDrawElements, LayerId + 6, AllottedGeometry,
+				Position + FVector2D(-30.0, LineTop(LabelFont, Below + 9.5)), Object.Name,
 				LabelFont, FLinearColor(Colour.R, Colour.G, Colour.B, 0.95f));
 			// What the civilization knows of the world: its survey under the name.
 			if (bSurveyTag)
 			{
 				const APSFleet::ESurvey Survey = Fleet->GetSurvey(Object.Actor.Get());
-				Label(OutDrawElements, LayerId + 6, AllottedGeometry, Position + FVector2D(-30.0, Below + 15.0),
+				Label(OutDrawElements, LayerId + 6, AllottedGeometry, Position + FVector2D(-30.0, LineTop(SmallFont, Below + 22.0)),
 					APSFleet::SurveyName(Survey), SmallFont, Survey == APSFleet::ESurvey::Unknown
 						? FLinearColor(0.55f, 0.62f, 0.66f, 0.7f) : Survey == APSFleet::ESurvey::Surveyed ? Cyan()
 						: APSFleet::DivisionColour(APSFleet::EDivision::Science));
@@ -871,6 +936,7 @@ int32 SAPSCivilizationMap::OnPaint(const FPaintArgs& Args, const FGeometry& Allo
 	};
 	TArray<FLegend> Legend = {
 		{LOCTEXT("LegendColony", "COLONY"), FLinearColor(0.36f, 1.0f, 0.58f)},
+		{LOCTEXT("LegendHeadquarters", "HQ"), FLinearColor(1.0f, 0.85f, 0.38f)},
 		{LOCTEXT("LegendStation", "STATION"), Cyan()},
 		{LOCTEXT("LegendOutpost", "OUTPOST"), Amber()},
 		{LOCTEXT("LegendCourse", "COURSE"), Amber()},
@@ -972,9 +1038,75 @@ FReply SAPSCivilizationMap::OnMouseButtonUp(const FGeometry& MyGeometry, const F
 	bPressed = false;
 	if (!bPanning && MouseEvent.GetEffectingButton() == EKeys::LeftMouseButton)
 	{
-		const int32 Index = HitTest(MyGeometry.AbsoluteToLocal(MouseEvent.GetScreenSpacePosition()));
-		SelectedId = Objects.IsValidIndex(Index) ? Objects[Index].StableId : FString();
-		OnSelectionChanged.ExecuteIfBound();
+		const FVector2D Local = MyGeometry.AbsoluteToLocal(MouseEvent.GetScreenSpacePosition());
+		// Rio 02.10 ("objects right on top of each other: a click opens a little list beside them, pick one there"): two
+		// or more drawn objects under the cursor (the focused planet's disc aside) open a list of them by the cursor.
+		TArray<int32> Stack;
+		for (int32 Index = 0; Index < PaintedPositions.Num() && Index < Objects.Num(); ++Index)
+		{
+			const bool bFocusDisc = Objects[Index].Kind == EKind::Planet && Objects[Index].Actor.Get() == FocusPlanet.Get();
+			if (!bFocusDisc && Objects[Index].Kind != EKind::Pilot && APSCivilizationMapPrivate::IsPainted(PaintedPositions[Index])
+				&& FVector2D::Distance(PaintedPositions[Index], Local) <= 12.0)
+			{
+				Stack.Add(Index);
+			}
+		}
+		if (Stack.Num() > 1)
+		{
+			const TWeakPtr<SAPSCivilizationMap> WeakMap = SharedThis(this);
+			TSharedRef<SVerticalBox> List = SNew(SVerticalBox);
+			for (const int32 Index : Stack)
+			{
+				const FObject& Object = Objects[Index];
+				const FString Id = Object.StableId;
+				List->AddSlot().AutoHeight().Padding(0.0f, 1.0f)
+				[
+					SNew(SButton)
+					.ButtonColorAndOpacity(FLinearColor(0.03f, 0.10f, 0.13f, 1.0f))
+					.ContentPadding(FMargin(14.0f, 5.0f))
+					.OnClicked_Lambda([WeakMap, Id]()
+					{
+						if (const TSharedPtr<SAPSCivilizationMap> MapWidget = WeakMap.Pin())
+						{
+							MapWidget->SelectedId = Id;
+							MapWidget->OnSelectionChanged.ExecuteIfBound();
+						}
+						FSlateApplication::Get().DismissAllMenus();
+						return FReply::Handled();
+					})
+					[
+						SNew(SVerticalBox)
+						+ SVerticalBox::Slot().AutoHeight()
+						[
+							SNew(STextBlock).Text(Object.Name).Font(APSChrome::Font(TEXT("Bold"), 10))
+							.ColorAndOpacity(FSlateColor(Object.Color))
+						]
+						+ SVerticalBox::Slot().AutoHeight()
+						[
+							SNew(STextBlock).Text(Object.Detail).Font(APSChrome::Font(TEXT("Regular"), 9))
+							.ColorAndOpacity(FSlateColor(FLinearColor(0.64f, 0.75f, 0.80f, 1.0f)))
+						]
+					]
+				];
+			}
+			FSlateApplication::Get().PushMenu(SharedThis(this), FWidgetPath(),
+				SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush"))
+				.BorderBackgroundColor(FLinearColor(0.0f, 0.016f, 0.026f, 0.96f)).Padding(6.0f)
+				[
+					SNew(SBox).MinDesiredWidth(220.0f)
+					[
+						List
+					]
+				],
+				MouseEvent.GetScreenSpacePosition() + FVector2D(14.0, -10.0),
+				FPopupTransitionEffect(FPopupTransitionEffect::ContextMenu));
+		}
+		else
+		{
+			const int32 Index = HitTest(Local);
+			SelectedId = Objects.IsValidIndex(Index) ? Objects[Index].StableId : FString();
+			OnSelectionChanged.ExecuteIfBound();
+		}
 	}
 	bPanning = false;
 	return FReply::Handled().ReleaseMouseCapture();

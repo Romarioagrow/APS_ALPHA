@@ -3,19 +3,27 @@
 #include "APSInfrastructure.h"
 #include "APSMissions.h"
 #include "APSSystemMaterializer.h"
+#include "APS_ALPHA/Actors/Astro/Galaxy.h"
 #include "APS_ALPHA/Actors/Astro/Planet.h"
 #include "APS_ALPHA/Actors/Astro/Star.h"
 #include "APS_ALPHA/Actors/Astro/StarCluster.h"
 #include "APS_ALPHA/Actors/Astro/StarSystem.h"
+#include "APS_ALPHA/Core/Rendering/APSCanonicalStellarProjection.h"
+#include "APS_ALPHA/Core/Rendering/APSGalaxyGpuStars.h"
+#include "APS_ALPHA/Core/Structs/StarGenerationModel.h"
+#include "APS_ALPHA/Core/Structs/StarSystemGenerationModel.h"
 #include "APS_ALPHA/Gameplay/Civilizations/APSCivilizationJournalSubsystem.h"
 #include "APS_ALPHA/Generation/APSBodyNames.h"
 #include "APS_ALPHA/Generation/AstroGenerator.h"
+#include "APS_ALPHA/Generation/StarGenerator.h"
+#include "APS_ALPHA/Generation/StarSystemGenerator.h"
 #include "Components/SceneComponent.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "HAL/IConsoleManager.h"
+#include "HAL/PlatformTime.h"
 
 #define LOCTEXT_NAMESPACE "APSStarSystems"
 
@@ -29,6 +37,14 @@ namespace APSStarSystemsLocal
 	constexpr float VisitSeconds = 3.0f;
 	const FName AnchorTag(TEXT("APS.StarSystem"));
 	const FString AnchorTagPrefix(TEXT("APS.StarSystem."));
+
+	TAutoConsoleVariable<int32> CVarGalaxyReach(TEXT("aps.Stars.GalaxyReach"), 1,
+		TEXT("Rio 03.10 (every star must be reachable): 1 registers the drawn galaxy catalogue stars nearest the pilot as star ")
+		TEXT("systems (named, charted, visited, materialized like the cluster's). 0: only the cluster's systems."));
+	TAutoConsoleVariable<int32> CVarGalaxyReachCount(TEXT("aps.Stars.GalaxyReachCount"), 48,
+		TEXT("How many of the drawn galaxy stars nearest the pilot aps.Stars.GalaxyReach registers (twice a second)."));
+	/** Registrations per update (a fast flight through a dense field spreads them over a few updates). */
+	constexpr int32 GalaxyAddsPerUpdate = 32;
 
 	FString Digits(const FGuid& Id)
 	{
@@ -88,7 +104,7 @@ FArchive& operator<<(FArchive& Ar, FAPSStarSystemState& State)
 
 FArchive& operator<<(FArchive& Ar, FAPSStarSystemsSaveData& Data)
 {
-	uint8 Version = 2;
+	uint8 Version = 3;
 	Ar << Version;
 	Ar << Data.Ids;
 	Ar << Data.States;
@@ -106,7 +122,73 @@ FArchive& operator<<(FArchive& Ar, FAPSStarSystemsSaveData& Data)
 			for (int32 Index = 0; Index < Data.States.Num() && Index < Anomalies.Num(); ++Index) Data.States[Index].Anomaly = Anomalies[Index];
 		}
 	}
+	if (Version >= 3)
+	{
+		// Version 3 (Rio 03.10): which of them are galaxy catalogue stars, one entry per id.
+		if (Ar.IsSaving())
+		{
+			while (Data.GalaxyIndices.Num() < Data.Ids.Num()) Data.GalaxyIndices.Add(INDEX_NONE);
+		}
+		Ar << Data.GalaxyIndices;
+	}
 	return Ar;
+}
+
+EStellarType APSStars::GalaxyStellarType(const ESpectralClass SpectralClass, const float RadiusScale)
+{
+	switch (SpectralClass)
+	{
+	case ESpectralClass::NS: return EStellarType::Neutron;
+	case ESpectralClass::PS: return EStellarType::Protostar;
+	case ESpectralClass::BH: return EStellarType::BlackHole;
+	case ESpectralClass::L:
+	case ESpectralClass::T:
+	case ESpectralClass::Y: return EStellarType::BrownDwarf;
+	default: break;
+	}
+	// APSGalaxyMorphology's population factors: 0.006 white dwarf, 0.6 subdwarf, 2 subgiant, 2.5 protostar (its colour
+	// class kept, so a subgiant here), 8 giant, 20 bright giant, 50 supergiant, 100 hypergiant.
+	if (RadiusScale < 0.05f) return EStellarType::WhiteDwarf;
+	if (RadiusScale < 0.8f) return EStellarType::SubDwarf;
+	if (RadiusScale < 1.5f) return EStellarType::MainSequence;
+	if (RadiusScale < 4.0f) return EStellarType::SubGiant;
+	if (RadiusScale < 14.0f) return EStellarType::Giant;
+	if (RadiusScale < 35.0f) return EStellarType::BrightGiant;
+	if (RadiusScale < 75.0f) return EStellarType::SuperGiant;
+	return EStellarType::HyperGiant;
+}
+
+FString APSStars::GalaxySpectralName(const ESpectralClass SpectralClass, const int32 Subclass, const float RadiusScale)
+{
+	const int32 Sub = FMath::Clamp(Subclass, 0, 9);
+	const TCHAR* Letter = TEXT("G");
+	switch (SpectralClass)
+	{
+	case ESpectralClass::NS: return TEXT("NS");
+	case ESpectralClass::PS: return TEXT("PROTO");
+	case ESpectralClass::BH: return TEXT("BH");
+	case ESpectralClass::L: return FString::Printf(TEXT("L%d"), Sub);
+	case ESpectralClass::T: return FString::Printf(TEXT("T%d"), Sub);
+	case ESpectralClass::Y: return FString::Printf(TEXT("Y%d"), Sub);
+	case ESpectralClass::O: Letter = TEXT("O"); break;
+	case ESpectralClass::B: Letter = TEXT("B"); break;
+	case ESpectralClass::A: Letter = TEXT("A"); break;
+	case ESpectralClass::F: Letter = TEXT("F"); break;
+	case ESpectralClass::K: Letter = TEXT("K"); break;
+	case ESpectralClass::M: Letter = TEXT("M"); break;
+	default: break;
+	}
+	switch (GalaxyStellarType(SpectralClass, RadiusScale))
+	{
+	case EStellarType::WhiteDwarf: return FString::Printf(TEXT("D%s"), Letter);
+	case EStellarType::SubDwarf: return FString::Printf(TEXT("sd%s%d"), Letter, Sub);
+	case EStellarType::SubGiant: return FString::Printf(TEXT("%s%dIV"), Letter, Sub);
+	case EStellarType::Giant: return FString::Printf(TEXT("%s%dIII"), Letter, Sub);
+	case EStellarType::BrightGiant: return FString::Printf(TEXT("%s%dII"), Letter, Sub);
+	case EStellarType::SuperGiant: return FString::Printf(TEXT("%s%dIb"), Letter, Sub);
+	case EStellarType::HyperGiant: return FString::Printf(TEXT("%s%dIa+"), Letter, Sub);
+	default: return FString::Printf(TEXT("%s%dV"), Letter, Sub);
+	}
 }
 
 namespace APSStarSystemsLocal
@@ -216,6 +298,7 @@ void FAPSStarSystems::Tick(const float DeltaSeconds)
 	}
 	FollowHome();
 	ApplyPendingRestore();
+	UpdateGalaxyNeighbours(DeltaSeconds);
 	// Every known or held system has its beacon in the world, so navigation and the maps chart it.
 	AnchorClock -= DeltaSeconds;
 	if (AnchorClock <= 0.0f)
@@ -302,6 +385,9 @@ bool FAPSStarSystems::ReadCatalogue()
 	Systems.Reset(Count);
 	FromHome.Reset(Count);
 	IndexById.Reset();
+	IndexByGalaxy.Reset();
+	GalaxySystems.Reset();
+	ClusterSystemCount = Count;
 	HomeIndex = INDEX_NONE;
 	const FTransform ComponentTransform = Cluster->StarMeshInstances->GetComponentTransform();
 	const FAPSCanonicalStellarProjectionFrame& Frame = Descriptor.StarCluster;
@@ -526,6 +612,23 @@ int32 FAPSStarSystems::FindContaining(const FVector& Location) const
 	{
 		return HomeIndex;
 	}
+	double BestDistance = TNumericLimits<double>::Max();
+	int32 Best = FindContainingCluster(Location, &BestDistance);
+	// The galaxy systems near the pilot: outside the grid, since a sparse field's rooms may be wider than its cells.
+	for (const int32 Index : GalaxySystems)
+	{
+		const double Distance = FVector::DistSquared(Location, Systems[Index].Location);
+		if (Distance <= FMath::Square(Systems[Index].RoomCm) && Distance < BestDistance)
+		{
+			BestDistance = Distance;
+			Best = Index;
+		}
+	}
+	return Best;
+}
+
+int32 FAPSStarSystems::FindContainingCluster(const FVector& Location, double* OutDistanceSquared) const
+{
 	const FIntVector Cell = CellOf(Location - HomeLocation);
 	int32 Best = INDEX_NONE;
 	double BestDistance = TNumericLimits<double>::Max();
@@ -547,7 +650,158 @@ int32 FAPSStarSystems::FindContaining(const FVector& Location) const
 			}
 		}
 	}
+	if (OutDistanceSquared) *OutDistanceSquared = BestDistance;
 	return Best;
+}
+
+int32 FAPSStarSystems::IndexOfGalaxyStar(const int64 CatalogIndex) const
+{
+	const int32* Index = IndexByGalaxy.Find(CatalogIndex);
+	return Index ? *Index : INDEX_NONE;
+}
+
+int32 FAPSStarSystems::RegisterGalaxyStar(const int64 CatalogIndex)
+{
+	if (const int32* Existing = IndexByGalaxy.Find(CatalogIndex))
+	{
+		return *Existing;
+	}
+	UWorld* LiveWorld = World.Get();
+	const AGalaxy* Galaxy = APSGalaxyGpuStars::GetIndexedGalaxy(LiveWorld);
+	FGalaxyCatalogStarRecord Record;
+	FVector Location;
+	if (Systems.IsEmpty() || !Galaxy || CatalogIndex < 0 || !Galaxy->StarCatalog.ResolveStar(CatalogIndex, Record)
+		|| IndexById.Contains(Record.StableId)
+		|| !APSGalaxyGpuStars::ProjectCatalogueLocation(LiveWorld, Record.GalaxyLocalLocation, Location))
+	{
+		return INDEX_NONE;
+	}
+	// The home system's sphere hides its stars (the sky does too), and a star in a cluster system's room is that system's.
+	if (Systems.IsValidIndex(HomeIndex)
+		&& FVector::DistSquared(Location, Systems[HomeIndex].Location) < FMath::Square(Systems[HomeIndex].RoomCm * 1.1))
+	{
+		return INDEX_NONE;
+	}
+	if (FindContainingCluster(Location) != INDEX_NONE)
+	{
+		return INDEX_NONE;
+	}
+	// Room: half the distance to the nearest drawn star, of the galaxy or of the cluster, so no two systems overlap.
+	double NearestSquared = TNumericLimits<double>::Max();
+	TArray<APSGalaxyGpuStars::FNearStar> Near;
+	APSGalaxyGpuStars::FindNearStars(LiveWorld, Location, 3, 1.0e30, Near);
+	for (const APSGalaxyGpuStars::FNearStar& Star : Near)
+	{
+		if (Star.CatalogIndex != CatalogIndex)
+		{
+			NearestSquared = FMath::Min(NearestSquared, FVector::DistSquared(Star.WorldLocation, Location));
+		}
+	}
+	// The cluster's nearest, from the grid in rings (a dense cluster holds tens of thousands of systems): a ring of cells
+	// Ring away is at least Ring - 1 cells off, so the rings stop once that is beyond the nearest found.
+	const FIntVector Cell = CellOf(Location - HomeLocation);
+	const double CellSize = FMath::Max(CellCm, 1.0);
+	for (int32 Ring = 0; Ring <= 8; ++Ring)
+	{
+		if (Ring >= 2 && FMath::Square((Ring - 1) * CellSize) > NearestSquared) break;
+		for (int32 X = -Ring; X <= Ring; ++X)
+		for (int32 Y = -Ring; Y <= Ring; ++Y)
+		for (int32 Z = -Ring; Z <= Ring; ++Z)
+		{
+			if (FMath::Max3(FMath::Abs(X), FMath::Abs(Y), FMath::Abs(Z)) != Ring) continue;
+			if (const TArray<int32>* Members = Grid.Find(Cell + FIntVector(X, Y, Z)))
+			{
+				for (const int32 Member : *Members)
+				{
+					if (!Systems[Member].bInsideHome)
+					{
+						NearestSquared = FMath::Min(NearestSquared, FVector::DistSquared(Systems[Member].Location, Location));
+					}
+				}
+			}
+		}
+	}
+	if (!(NearestSquared > 0.0) || NearestSquared == TNumericLimits<double>::Max())
+	{
+		return INDEX_NONE;
+	}
+	// The catalogue's own recipe for what the system may hold (as for a cluster record), from the star's seed.
+	FStarModel Primary;
+	Primary.SpectralClass = Record.SpectralClass;
+	FStarSystemModel Potential;
+	GetDefault<UStarSystemGenerator>()->GeneratePotentialStarSystemModel(Potential, Primary, Record.GenerationSeed);
+
+	const int32 Index = Systems.Num();
+	FAPSStarSystemInfo& Info = Systems.AddDefaulted_GetRef();
+	Info.Id = Record.StableId;
+	Info.GalaxyIndex = CatalogIndex;
+	Info.Name = APSStars::SystemName(ClusterSeed, Info.Id);
+	Info.Spectral = APSStars::GalaxySpectralName(Record.SpectralClass, Record.SpectralSubclass, Record.RadiusScale);
+	Info.StarCount = FMath::Max(1, Potential.AmountOfStars);
+	Info.PotentialPlanets = Record.bPotentialStarSystem ? Potential.PotentialPlanetCount : 0;
+	Info.Location = Location;
+	Info.RoomCm = 0.5 * FMath::Sqrt(NearestSquared);
+	Info.HomeDistanceCm = FVector::Dist(Location, HomeLocation);
+	Info.Colour = UStarGenerator::GetStarColor(Record.SpectralClass, Record.SpectralSubclass);
+	Info.StarRadiusCm = APSCanonicalStellarProjection::GetCanonicalStellarRadiusSolar(Record.SpectralClass)
+		* FMath::Max(static_cast<double>(Record.RadiusScale), 0.0) * APSCanonicalStellarProjection::SolarRadiusCm;
+	FromHome.Add(Location - HomeLocation);
+	IndexById.Add(Info.Id, Index);
+	IndexByGalaxy.Add(CatalogIndex, Index);
+	GalaxySystems.Add(Index);
+	return Index;
+}
+
+void FAPSStarSystems::UpdateGalaxyNeighbours(const float DeltaSeconds)
+{
+	GalaxyClock -= DeltaSeconds;
+	if (GalaxyClock > 0.0f)
+	{
+		return;
+	}
+	GalaxyClock = 0.5f;
+	UWorld* LiveWorld = World.Get();
+	if (APSStarSystemsLocal::CVarGalaxyReach.GetValueOnGameThread() == 0 || !APSGalaxyGpuStars::GetIndexedGalaxy(LiveWorld))
+	{
+		return;
+	}
+	const int32 Before = Systems.Num();
+	// A load's galaxy systems first: their states wait for them.
+	int32 Restored = 0;
+	for (auto It = HeldGalaxyStates.CreateIterator(); It; ++It)
+	{
+		const int32 Index = RegisterGalaxyStar(It.Value().Key);
+		if (Systems.IsValidIndex(Index) && Systems[Index].Id == It.Key())
+		{
+			States.FindOrAdd(It.Key()) = It.Value().Value;
+			It.RemoveCurrent();
+			++Restored;
+		}
+	}
+	const APlayerController* Controller = LiveWorld->GetFirstPlayerController();
+	const APawn* Pilot = Controller ? Controller->GetPawn() : nullptr;
+	TArray<APSGalaxyGpuStars::FNearStar> Near;
+	if (Pilot && APSGalaxyGpuStars::FindNearStars(LiveWorld, Pilot->GetActorLocation(),
+		FMath::Clamp(APSStarSystemsLocal::CVarGalaxyReachCount.GetValueOnGameThread(), 1, 512), 1.0e30, Near))
+	{
+		int32 Added = 0;
+		for (const APSGalaxyGpuStars::FNearStar& Star : Near)
+		{
+			if (Added >= APSStarSystemsLocal::GalaxyAddsPerUpdate) break;
+			if (!IndexByGalaxy.Contains(Star.CatalogIndex) && RegisterGalaxyStar(Star.CatalogIndex) != INDEX_NONE) ++Added;
+		}
+	}
+	if (Systems.Num() != Before || Restored > 0)
+	{
+		++Revision;
+		const double Now = FPlatformTime::Seconds();
+		if (Restored > 0 || Now >= GalaxyLogSeconds)
+		{
+			GalaxyLogSeconds = Now + 5.0;
+			UE_LOG(LogTemp, Log, TEXT("[APS.Stars] galaxy systems: %d registered (+%d now, %d saved states restored, %d waiting)"),
+				GalaxySystems.Num(), Systems.Num() - Before, Restored, HeldGalaxyStates.Num());
+		}
+	}
 }
 
 void FAPSStarSystems::GetKnown(TArray<int32>& OutIndices) const
@@ -778,10 +1032,13 @@ void FAPSStarSystems::CaptureSave(FAPSStarSystemsSaveData& OutData) const
 {
 	OutData.Ids.Reset();
 	OutData.States.Reset();
+	OutData.GalaxyIndices.Reset();
 	for (const TPair<FGuid, FAPSStarSystemState>& Pair : States)
 	{
 		OutData.Ids.Add(Pair.Key);
 		OutData.States.Add(Pair.Value);
+		const FAPSStarSystemInfo* Info = Find(Pair.Key);
+		OutData.GalaxyIndices.Add(Info ? Info->GalaxyIndex : INDEX_NONE);
 	}
 	// A save made before the catalogue was read keeps what the load brought.
 	if (PendingRestore.IsSet())
@@ -792,7 +1049,19 @@ void FAPSStarSystems::CaptureSave(FAPSStarSystemsSaveData& OutData) const
 			{
 				OutData.Ids.Add(PendingRestore->Ids[Index]);
 				OutData.States.Add(PendingRestore->States[Index]);
+				OutData.GalaxyIndices.Add(PendingRestore->GalaxyIndices.IsValidIndex(Index)
+					? PendingRestore->GalaxyIndices[Index] : INDEX_NONE);
 			}
+		}
+	}
+	// So does one made before the galaxy's systems came back.
+	for (const TPair<FGuid, TPair<int64, FAPSStarSystemState>>& Held : HeldGalaxyStates)
+	{
+		if (!States.Contains(Held.Key))
+		{
+			OutData.Ids.Add(Held.Key);
+			OutData.States.Add(Held.Value.Value);
+			OutData.GalaxyIndices.Add(Held.Value.Key);
 		}
 	}
 }
@@ -808,10 +1077,19 @@ void FAPSStarSystems::ApplyPendingRestore()
 	if (!PendingRestore.IsSet()) return;
 	const FAPSStarSystemsSaveData Data = MoveTemp(PendingRestore.GetValue());
 	PendingRestore.Reset();
+	HeldGalaxyStates.Reset();
 	int32 Restored = 0;
 	for (int32 Index = 0; Index < Data.Ids.Num() && Index < Data.States.Num(); ++Index)
 	{
-		if (!IndexById.Contains(Data.Ids[Index])) continue;
+		if (!IndexById.Contains(Data.Ids[Index]))
+		{
+			// A galaxy system comes back once the galaxy's nearest-star index stands (UpdateGalaxyNeighbours).
+			if (Data.GalaxyIndices.IsValidIndex(Index) && Data.GalaxyIndices[Index] != INDEX_NONE)
+			{
+				HeldGalaxyStates.Add(Data.Ids[Index], TPair<int64, FAPSStarSystemState>(Data.GalaxyIndices[Index], Data.States[Index]));
+			}
+			continue;
+		}
 		FAPSStarSystemState& State = States.FindOrAdd(Data.Ids[Index]);
 		const bool bHomeClaim = State.bClaimed;
 		State = Data.States[Index];
@@ -819,7 +1097,8 @@ void FAPSStarSystems::ApplyPendingRestore()
 		++Restored;
 	}
 	++Revision;
-	UE_LOG(LogTemp, Log, TEXT("[APS.Stars] restored %d of %d saved systems"), Restored, Data.Ids.Num());
+	UE_LOG(LogTemp, Log, TEXT("[APS.Stars] restored %d of %d saved systems (%d galaxy systems wait for the galaxy)"), Restored,
+		Data.Ids.Num(), HeldGalaxyStates.Num());
 }
 
 void FAPSStarSystems::LogNearest(const int32 Count) const
@@ -829,15 +1108,17 @@ void FAPSStarSystems::LogNearest(const int32 Count) const
 	const FVector From = Controller && Controller->GetPawn() ? Controller->GetPawn()->GetActorLocation() : HomeLocation;
 	TArray<int32> Nearest;
 	FindNearest(From, Count, Nearest);
-	UE_LOG(LogTemp, Log, TEXT("[APS.Stars] %d systems; nearest %d to the pilot:"), Systems.Num(), Nearest.Num());
+	UE_LOG(LogTemp, Log, TEXT("[APS.Stars] %d systems (%d of the galaxy); nearest %d to the pilot:"), Systems.Num(),
+		GalaxySystems.Num(), Nearest.Num());
 	for (const int32 Index : Nearest)
 	{
 		const FAPSStarSystemInfo& Info = Systems[Index];
 		const FAPSStarSystemState State = GetState(Info.Id);
-		UE_LOG(LogTemp, Log, TEXT("[APS.Stars]   %-14s %-6s %.2f AU away, room %.2f AU, %d star(s), %d planet(s), %s%s"),
+		UE_LOG(LogTemp, Log, TEXT("[APS.Stars]   %-14s %-6s %.2f AU away, room %.2f AU, %d star(s), %d planet(s), %s%s%s"),
 			*Info.Name, *Info.Spectral, FVector::Dist(From, Info.Location) / APSStars::AstronomicalUnitCm,
 			Info.RoomCm / APSStars::AstronomicalUnitCm, Info.StarCount, Info.PotentialPlanets,
-			*APSStars::KnowledgeName(State.Knowledge).ToString(), State.bClaimed ? TEXT(", claimed") : TEXT(""));
+			*APSStars::KnowledgeName(State.Knowledge).ToString(), State.bClaimed ? TEXT(", claimed") : TEXT(""),
+			Info.GalaxyIndex != INDEX_NONE ? TEXT(" [galaxy]") : TEXT(""));
 	}
 }
 

@@ -10,4 +10,6 @@ enum class EStarClusterSize : uint8
 	Large			UMETA(DisplayName = "Large"),
 	Giant			UMETA(DisplayName = "Giant"),
 	Unknown			UMETA(DisplayName = "Unknown"),
+	// Rio 03.10: a size above Giant. Appended after Unknown so every serialized byte stays.
+	Colossal		UMETA(DisplayName = "Colossal"),
 }; 

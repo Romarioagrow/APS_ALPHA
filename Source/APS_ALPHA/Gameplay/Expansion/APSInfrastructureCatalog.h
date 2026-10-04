@@ -32,6 +32,8 @@ namespace APSInfrastructure
 		Relay,
 		Transport,
 		Megastructure,
+		/** Rio 03.10: the huge hub stations of the hand-made level, a tier above the stations. */
+		Hub,
 		Count
 	};
 
@@ -40,7 +42,12 @@ namespace APSInfrastructure
 	{
 		Orbit,
 		Surface,
-		StarSystem
+		StarSystem,
+		/** Rio 03.10, hubs: a high orbit of a planet or moon, placed by the runtime (never by hand). */
+		HighOrbit,
+		/** Rio 03.10, world megastructures: the space elevator (equator to stationary orbit) and the orbital ring (around
+		 * the equator), placed by the world's own geometry (Gameplay/Megastructures). */
+		AroundWorld
 	};
 
 	/** The civilization's stocks. */
@@ -67,8 +74,21 @@ namespace APSInfrastructure
 		Station,
 		Shipyard,
 		Headquarters,
-		Beacon
+		Beacon,
+		// Rio 03.10: the hand-made level's own meshes at their authored size (Gameplay/Megastructures). Appended.
+		SpaceHub,
+		GrandHub,
+		SpaceElevator,
+		OrbitalRing,
+		DysonSwarm,
+		DysonSphere
 	};
+
+	/** Hubs and megastructures: their look, place and construction stages come from Gameplay/Megastructures. */
+	inline bool IsMegaVisual(const EVisual Visual)
+	{
+		return Visual >= EVisual::SpaceHub && Visual <= EVisual::DysonSphere;
+	}
 
 	struct FType
 	{
@@ -115,10 +135,48 @@ namespace APSInfrastructure
 		bool bNeedsUnlock{false};
 		/** The look's size against the family's model (megastructures are larger). */
 		float VisualScale{1.0f};
+
+		// Chains (Rio 03.10: "megastructures buildable in chains, a space elevator, then a space ring, one after another").
+		/** How many of RequiresAtSite must stand there (the Dyson sphere wants its swarm segments). */
+		int32 RequiresAtSiteCount{1};
+		/** A structure that must stand somewhere in the same star system first (NAME_None: none). */
+		FName RequiresInSystem;
+		/** An orbital station of the civilization over this world first: a catalogue station or hub, or the fleet's own. */
+		bool bNeedsStationHere{false};
+		/** Anchored in solid ground: never at a gas or ice giant (the space elevator). */
+		bool bNeedsGround{false};
+		/** Raised only by construction ships, in stages (hubs, megastructures): build mode cannot place it by hand. */
+		bool bFleetOnly{false};
+		/** Hubs: berths for this many more of every orbital station type at their world. */
+		int32 HubBerths{0};
+		/** Hubs: work anywhere in the hub's star system is this much faster (+0.2 = 20%). */
+		float SystemWorkSpeed{0.0f};
 	};
 
 	APS_ALPHA_API const TArray<FType>& Types();
 	APS_ALPHA_API const FType* Find(FName Id);
+	/**
+	 * The build chain a type belongs to, in order (Rio 03.10): ORBITAL STATION > SPACE HUB > GRAND HUB, and
+	 * ORBITAL STATION > SPACE ELEVATOR > ORBITAL RING > DYSON SWARM SEGMENT > DYSON SPHERE. The station step is not a
+	 * catalogue type (any station counts) and is left out. False when the type is in no chain.
+	 */
+	APS_ALPHA_API bool GetChain(FName Type, TArray<FName>& OutSteps);
+	/** What a type needs before it, one line each ("REQUIRES SPACE ELEVATOR ON THE SAME WORLD"); empty when nothing. */
+	APS_ALPHA_API void DescribeRequirements(const FType& Type, TArray<FText>& OutLines);
+
+	/** What a place holds of a type's chain needs, as the runtime counts it (or a test sets it). */
+	struct FChainState
+	{
+		/** An orbital station of the civilization over the world. */
+		bool bStationHere{false};
+		/** How many of RequiresAtSite stand at the place, and of RequiresInSystem in its star system. */
+		int32 RequiredHere{0};
+		int32 RequiredInSystem{0};
+	};
+	/** The first chain need the place lacks ("Requires SPACE ELEVATOR here first."); empty when it has them all. */
+	APS_ALPHA_API FText ChainRefusal(const FType& Type, const FChainState& State);
+	/** Hubs: the extra berths the types standing at a place give this type there (ordinary orbital stations only). */
+	APS_ALPHA_API int32 HubBerthsFor(const FType& Type, const TArray<FName>& StandingHere);
 	APS_ALPHA_API FText DepartmentName(EDepartment Department);
 	APS_ALPHA_API FLinearColor DepartmentColour(EDepartment Department);
 	APS_ALPHA_API FText CategoryName(ECategory Category);

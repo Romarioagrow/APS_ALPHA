@@ -14,7 +14,12 @@
 #include "APS_ALPHA/Actors/Astro/StarCluster.h"
 #include "APS_ALPHA/Generation/PlanetarySurfaceGenerator.h"
 #include "Camera/CameraComponent.h"
+#include "APS_ALPHA/Actors/Astro/CelestialBody.h"
 #include "Components/LocalLightComponent.h"
+#include "Engine/TargetPoint.h"
+#include "Framework/Application/SlateApplication.h"
+#include "GameFramework/PlayerInput.h"
+#include "InputCoreTypes.h"
 #include "Components/StaticMeshComponent.h"
 #include "Containers/Ticker.h"
 #include "Engine/Engine.h"
@@ -1512,6 +1517,85 @@ namespace APSShipBenchmark
 		UE_LOG(LogTemp, Log, TEXT("[APS.Test] shot %s"), *FPaths::GetCleanFilename(File));
 	}
 
+	void TestKey(const TArray<FString>& Args, UWorld* World)
+	{
+		// Rio 04.10 checks: a key pressed as the player would (the F10 map's G, the cockpit's Y); Slate routes it to the focus.
+		const FKey Key = Args.IsEmpty() ? FKey() : FKey(*Args[0]);
+		if (!Key.IsValid() || !FSlateApplication::IsInitialized())
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[APS.Test] aps.Test.Key <Key>: unknown key or no Slate"));
+			return;
+		}
+		FSlateApplication& Slate = FSlateApplication::Get();
+		const uint32 User = Slate.GetUserIndexForKeyboard();
+		bool bHandled = Slate.ProcessKeyDownEvent(FKeyEvent(Key, FModifierKeysState(), User, false, 0, 0));
+		Slate.ProcessKeyUpEvent(FKeyEvent(Key, FModifierKeysState(), User, false, 0, 0));
+		// An offscreen run's viewport may hold no Slate focus: the key then goes to the player's input as the game's own.
+		APlayerController* Controller = !bHandled && World ? World->GetFirstPlayerController() : nullptr;
+		if (Controller)
+		{
+			bHandled = Controller->InputKey(FInputKeyParams(Key, IE_Pressed, 1.0, false));
+			Controller->InputKey(FInputKeyParams(Key, IE_Released, 0.0, false));
+		}
+		UE_LOG(LogTemp, Log, TEXT("[APS.Test] key %s %s%s"), *Key.ToString(), bHandled ? TEXT("handled") : TEXT("not handled"),
+			Controller ? TEXT(" (player input)") : TEXT(""));
+	}
+
+	void TestAutopilot(const TArray<FString>& Args, UWorld* World)
+	{
+		// Rio 04.10 checks: the piloted ship's autopilot to the nearest actor whose name (or a body's name) holds the filter;
+		// "antipode" makes a target 100 km over the far side of the nearest world (the climb out from behind its horizon).
+		const APlayerController* Controller = World ? World->GetFirstPlayerController() : nullptr;
+		ASpaceship* Ship = Controller ? Cast<ASpaceship>(Controller->GetPawn()) : nullptr;
+		if (!Ship || !Ship->FlightModel || Args.IsEmpty())
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[APS.Test] aps.Test.Autopilot <name|antipode>: pilot a ship first"));
+			return;
+		}
+		AActor* Target = nullptr;
+		if (Args[0].Equals(TEXT("antipode"), ESearchCase::IgnoreCase))
+		{
+			if (const APlanetaryBody* Near = FindPlanet(*Ship))
+			{
+				const FVector Centre = Near->GetActorLocation();
+				const FVector Out = (Ship->GetActorLocation() - Centre).GetSafeNormal();
+				FActorSpawnParameters Spawn;
+				Spawn.ObjectFlags |= RF_Transient;
+				Spawn.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+				Target = World->SpawnActor<ATargetPoint>(Centre - Out * (Near->GetWorldScapeBodyRadiusCm() + 1.0e7),
+					FRotator::ZeroRotator, Spawn);
+			}
+		}
+		else
+		{
+			double BestSquared = TNumericLimits<double>::Max();
+			for (TActorIterator<AActor> It(World); It; ++It)
+			{
+				AActor* Actor = *It;
+				const ACelestialBody* Body = Cast<ACelestialBody>(Actor);
+				if (!IsValid(Actor) || Actor == Ship || !(Actor->GetName().Contains(Args[0])
+					|| (Body && !Body->AstroName.IsNone() && Body->AstroName.ToString().Contains(Args[0]))))
+				{
+					continue;
+				}
+				const double Squared = FVector::DistSquared(Actor->GetActorLocation(), Ship->GetActorLocation());
+				if (Squared < BestSquared)
+				{
+					BestSquared = Squared;
+					Target = Actor;
+				}
+			}
+		}
+		if (!Target)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[APS.Test] aps.Test.Autopilot: no target for %s"), *Args[0]);
+			return;
+		}
+		Ship->FlightModel->EngageAutopilot(Target);
+		UE_LOG(LogTemp, Log, TEXT("[APS.Test] autopilot to %s, %.0f km away"), *Target->GetName(),
+			FVector::Dist(Target->GetActorLocation(), Ship->GetActorLocation()) / 1.0e5);
+	}
+
 	void TestDumpHome(UWorld* World)
 	{
 		if (!World) return;
@@ -1710,6 +1794,13 @@ namespace APSShipBenchmark
 		TEXT("Test runs: toggles the F10 strategic map."), FConsoleCommandWithWorldDelegate::CreateStatic(&TestMap));
 	FAutoConsoleCommandWithWorld TestBuildModeCommand(TEXT("aps.Test.BuildMode"),
 		TEXT("Test runs: toggles build mode of the player on foot."), FConsoleCommandWithWorldDelegate::CreateStatic(&TestBuildMode));
+	FAutoConsoleCommandWithWorldAndArgs TestKeyCommand(TEXT("aps.Test.Key"),
+		TEXT("Test runs: aps.Test.Key <Key>: presses and releases a key through Slate, as the player would (G, Y, M...)."),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TestKey));
+	FAutoConsoleCommandWithWorldAndArgs TestAutopilotCommand(TEXT("aps.Test.Autopilot"),
+		TEXT("Test runs: aps.Test.Autopilot <name|antipode>: the piloted ship's autopilot to the nearest actor so named, or ")
+		TEXT("to a point 100 km over the far side of the nearest world."),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TestAutopilot));
 	FAutoConsoleCommandWithWorldAndArgs TestShotCommand(TEXT("aps.Test.Shot"),
 		TEXT("Test runs: aps.Test.Shot <name>: a screenshot with the UI to Saved/Screenshots/ShipDrive/<shotlabel>_t<name>.png."),
 		FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TestShot));

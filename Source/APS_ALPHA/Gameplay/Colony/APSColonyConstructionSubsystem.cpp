@@ -644,7 +644,9 @@ void UAPSColonyConstructionSubsystem::GroundColonyStructures()
 		Base->GetComponents(Parts);
 		for (UStaticMeshComponent* Tower : Parts)
 		{
-			const UStaticMesh* Mesh = Tower->GetName().StartsWith(TEXT("SettlementTower")) ? Tower->GetStaticMesh() : nullptr;
+			// The headquarters look (Rio 03.10) hides the towers: no piers under what is not there.
+			const UStaticMesh* Mesh = Tower->GetName().StartsWith(TEXT("SettlementTower")) && Tower->IsVisible()
+				? Tower->GetStaticMesh() : nullptr;
 			if (!Mesh)
 			{
 				continue;

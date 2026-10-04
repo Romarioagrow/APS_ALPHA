@@ -339,6 +339,25 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Galaxy")
 	int GalaxyStarCount{ 100000000 };
 
+	/**
+	 * Rio 03.10 (STARS slider, 1,800..1,000,000): galaxy stars actually placed, the first N of the fixed catalogue
+	 * order, so more stars only add to the same sky. 0 keeps the historic budgets (menu 1,800, gameplay 25,000).
+	 * A render budget: never part of the canonical dataset InputHash.
+	 */
+	UPROPERTY(EditAnywhere, Category = "Galaxy")
+	int32 GalaxyPlacedStarCount{ 0 };
+
+	/**
+	 * Rio 03.10 ("the galaxy's star sizes and spectral classes, the same as for the cluster"): the cluster's presets
+	 * applied to the galaxy catalogue. All Sequences / All Spectral (the zero value, and every older save) keep the
+	 * historic catalogue exactly. Re-resolved, never stored, never part of the canonical dataset InputHash.
+	 */
+	UPROPERTY(EditAnywhere, Category = "Galaxy")
+	EStarClusterPopulation GalaxyStarPopulation{};
+
+	UPROPERTY(EditAnywhere, Category = "Galaxy")
+	EStarClusterComposition GalaxyStarComposition{};
+
 	UPROPERTY(EditAnywhere, Category = "Home System", meta = (EditCondition = "!bRandomHomeSystem"))
 	int PlanetsAmount{ 0 };
 

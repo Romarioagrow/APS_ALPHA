@@ -96,8 +96,12 @@ namespace APSMissionsLocal
 				LOCTEXT("IndustryStockBrief", "Six hundred metals in stock before we commit to anything big."),
 				O::ReachStock, S::Resource, 600, {E(40)}, 1, TEXT("Metals"), TEXT("OrbitalRing"), TEXT("IndustryRing"), false},
 			{TEXT("IndustryRing"), D::Industry, LOCTEXT("IndustryRing", "THE RING PROJECT"),
-				LOCTEXT("IndustryRingBrief", "The orbital ring is unlocked: lay it around a studied world."),
+				LOCTEXT("IndustryRingBrief", "The orbital ring is unlocked: it hangs on a space elevator, so raise one on a studied world first, then lay the ring around it."),
 				O::BuildStructure, S::None, 1, {I(40), R(60)}, 1, TEXT("OrbitalRing"), nullptr, nullptr, false},
+			// Rio 03.10: the chain's last step, offered once five swarm rings circle one star.
+			{TEXT("IndustrySphere"), D::Industry, LOCTEXT("IndustrySphere", "CLOSE THE SPHERE"),
+				LOCTEXT("IndustrySphereBrief", "Five swarm rings circle the star: close them into a Dyson sphere."),
+				O::BuildStructure, S::None, 1, {R(120), I(80)}, 1, TEXT("DysonSphere"), nullptr, nullptr, false},
 			// SCIENCE: study, find, investigate, observe, count stars.
 			{TEXT("ScienceStudy"), D::Science, LOCTEXT("ScienceStudy", "LOOK CLOSER"),
 				LOCTEXT("ScienceStudyBrief", "A science ship should study {0}: the survey only scratched it."),
@@ -178,6 +182,13 @@ namespace APSMissionsLocal
 			{TEXT("TransportCorridor"), D::Transport, LOCTEXT("TransportCorridor", "CLAIM THE CORRIDOR"),
 				LOCTEXT("TransportCorridorBrief", "Claim two more star systems; {0} lies on the way."),
 				O::ClaimSystem, S::SurveyedUnclaimedSystem, 2, {I(50)}, 0, nullptr, nullptr, nullptr, false},
+			// Rio 03.10: the hubs, the system's logistics.
+			{TEXT("TransportSpaceHub"), D::Transport, LOCTEXT("TransportSpaceHub", "A HUB FOR THE SYSTEM"),
+				LOCTEXT("TransportSpaceHubBrief", "Raise a space hub over a world one of our stations orbits: docks, depots and crews for the whole system."),
+				O::BuildStructure, S::None, 1, {I(40), E(60)}, 1, TEXT("SpaceHub"), nullptr, TEXT("TransportGrandHub"), false},
+			{TEXT("TransportGrandHub"), D::Transport, LOCTEXT("TransportGrandHub", "THE GRAND HUB"),
+				LOCTEXT("TransportGrandHubBrief", "Grow the system's port: a grand hub over the world that holds the space hub."),
+				O::BuildStructure, S::None, 1, {I(80), R(40)}, 1, TEXT("GrandHub"), nullptr, nullptr, false},
 		};
 		return List;
 	}
@@ -265,6 +276,33 @@ namespace APSMissionsLocal
 		default:
 			return false;
 		}
+	}
+
+	/**
+	 * Rio 03.10: the step before a chain type stands somewhere (a space hub before the grand hub, an elevator before the
+	 * ring, five swarm rings at one star before the sphere); true for a type that stands on no step.
+	 */
+	bool ChainStepBeforeStands(const FAPSInfrastructure* Infrastructure, const APSInfrastructure::FType& Type)
+	{
+		const FName Before = !Type.RequiresAtSite.IsNone() ? Type.RequiresAtSite : Type.RequiresInSystem;
+		if (Before.IsNone())
+		{
+			return true;
+		}
+		if (!Infrastructure)
+		{
+			return false;
+		}
+		const int32 Wanted = Type.RequiresAtSite.IsNone() ? 1 : FMath::Max(Type.RequiresAtSiteCount, 1);
+		TMap<FString, int32> PerPlace;
+		for (const FAPSBuiltStructure& Built : Infrastructure->GetStructures())
+		{
+			if (Built.Type == Before && ++PerPlace.FindOrAdd(Built.SiteKey) >= Wanted)
+			{
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/** Which subject a BuildStructure mission compares against: the structure type, not where it is built (any place). */
@@ -504,12 +542,14 @@ void FAPSMissionBoard::Tick(const float DeltaSeconds)
 			{
 				continue;
 			}
-			// Structures beyond the department's level or still locked wait until they can be built at all.
+			// Structures beyond the department's level or still locked wait until they can be built at all; a hub's or a
+			// megastructure's chain step (Rio 03.10) until the step before it stands.
 			if (Template.Objective == EObjective::BuildStructure && Template.Detail)
 			{
 				const APSInfrastructure::FType* Type = APSInfrastructure::Find(FName(Template.Detail));
 				if (!Type || (Type->bNeedsUnlock && !Unlocked.Contains(Type->Id))
-					|| FAPSInfrastructure::DepartmentLevel(LiveWorld, Type->Department) < Type->RequiredLevel)
+					|| FAPSInfrastructure::DepartmentLevel(LiveWorld, Type->Department) < Type->RequiredLevel
+					|| (Type->bFleetOnly && !ChainStepBeforeStands(Infrastructure, *Type)))
 				{
 					continue;
 				}

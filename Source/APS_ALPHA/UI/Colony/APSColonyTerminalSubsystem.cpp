@@ -1,5 +1,6 @@
 #include "APSColonyTerminalSubsystem.h"
 
+#include "APSMissionTracker.h"
 #include "SAPSColonyTerminal.h"
 #include "APS_ALPHA/Gameplay/Colony/APSColonyConstructionSubsystem.h"
 #include "APS_ALPHA/Gameplay/Colony/APSColonyOnboardingSubsystem.h"
@@ -22,7 +23,7 @@
 
 namespace APSColonyTerminal
 {
-	/** The objective and hint sit just under the terminal. */
+	/** The Tab hint sits just under the terminal (the objective too, in the mission tracker's card at the same layer). */
 	constexpr int32 OverlayZOrder = 880;
 	constexpr double HintSeconds = 14.0;
 
@@ -246,62 +247,21 @@ void UAPSColonyTerminalSubsystem::ShowOverlays()
 		return;
 	}
 	const TWeakObjectPtr<UAPSColonyTerminalSubsystem> WeakThis(this);
-	const auto Objective = [WeakThis](const bool bTitle)
-	{
-		FText Title;
-		FText Body;
-		const UAPSColonyTerminalSubsystem* Self = WeakThis.Get();
-		const UAPSColonyOnboardingSubsystem* Onboarding = Self && Self->GetWorld()
-			? Self->GetWorld()->GetSubsystem<UAPSColonyOnboardingSubsystem>() : nullptr;
-		if (Onboarding)
-		{
-			Onboarding->GetObjective(Title, Body);
-		}
-		return bTitle ? Title : Body;
-	};
 	// Top left: the ship HUD holds the top right (navigation) and the bottom left (flight), the pilot's HUD the bottom
 	// left. In the top right the objective covered the ship's navigation block (u4-hud-ship-1, 30.09).
+	// Rio 03.10: the objective heads the mission tracker's card there (APSMissionTracker), with the tracked mission under
+	// it in the same style; as two panels at fixed offsets the tracker ran over the objective.
+	APSMissionTracker::SetObjective(GetWorld(), [WeakThis](FText& OutTitle, FText& OutBody)
+	{
+		const UAPSColonyTerminalSubsystem* Self = WeakThis.Get();
+		// Under the F10 map too: its 3D view between the panels let the objective show through (02.10 test shots).
+		const AGravityPlayerController* Controller = Self ? Cast<AGravityPlayerController>(Self->BoundController.Get()) : nullptr;
+		const UAPSColonyOnboardingSubsystem* Onboarding = Self && Self->GetWorld()
+			? Self->GetWorld()->GetSubsystem<UAPSColonyOnboardingSubsystem>() : nullptr;
+		return Self && Onboarding && !Self->IsTerminalOpen() && !(Controller && Controller->IsStrategicMapOpen())
+			&& Onboarding->GetObjective(OutTitle, OutBody) && !OutTitle.IsEmpty();
+	});
 	OverlayWidget = SNew(SOverlay)
-		+ SOverlay::Slot().HAlign(HAlign_Left).VAlign(VAlign_Top).Padding(FMargin(24.0f, 96.0f, 0.0f, 0.0f))
-		[
-			SNew(SBox).WidthOverride(380.0f)
-			.Visibility_Lambda([WeakThis, Objective]()
-			{
-				const UAPSColonyTerminalSubsystem* Self = WeakThis.Get();
-				// Under the F10 map too: its 3D view between the panels let the objective show through (02.10 test shots).
-				const AGravityPlayerController* Controller = Self ? Cast<AGravityPlayerController>(Self->BoundController.Get()) : nullptr;
-				return Self && !Self->IsTerminalOpen() && !(Controller && Controller->IsStrategicMapOpen()) && !Objective(true).IsEmpty()
-					? EVisibility::HitTestInvisible : EVisibility::Collapsed;
-			})
-			[
-				ChamferPanel(
-					SNew(SHorizontalBox)
-					+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Top)
-					[
-						IconBadge(EAPSChromeGlyph::Compass, Amber(), 30.0f)
-					]
-					+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center).Padding(11.0f, 0.0f, 0.0f, 0.0f)
-					[
-						SNew(SVerticalBox)
-						+ SVerticalBox::Slot().AutoHeight()
-						[
-							SNew(STextBlock).Text(LOCTEXT("ObjectiveLabel", "OBJECTIVE")).Font(Font("Bold", 8))
-							.ColorAndOpacity(Amber())
-						]
-						+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 2.0f, 0.0f, 0.0f)
-						[
-							SNew(STextBlock).Text_Lambda([Objective]() { return Objective(true); })
-							.Font(Font("Bold", 12)).ColorAndOpacity(White()).AutoWrapText(true)
-						]
-						+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 2.0f, 0.0f, 0.0f)
-						[
-							SNew(STextBlock).Text_Lambda([Objective]() { return Objective(false); })
-							.Font(Font("Regular", 9)).ColorAndOpacity(Muted()).AutoWrapText(true)
-						]
-					],
-					FMargin(12.0f, 9.0f), CyanDim())
-			]
-		]
 		+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Top).Padding(FMargin(0.0f, 28.0f, 0.0f, 0.0f))
 		[
 			SNew(SBox).WidthOverride(380.0f)
@@ -342,6 +302,7 @@ void UAPSColonyTerminalSubsystem::ShowOverlays()
 
 void UAPSColonyTerminalSubsystem::HideOverlays()
 {
+	APSMissionTracker::SetObjective(GetWorld(), nullptr);
 	if (OverlayContainer.IsValid() && GEngine && GEngine->GameViewport)
 	{
 		GEngine->GameViewport->RemoveViewportWidgetContent(OverlayContainer.ToSharedRef());

@@ -1,4 +1,5 @@
 #include "AstroGenerator.h"
+#include "APS_ALPHA/Generation/APSPreviewClusterSpacing.h"
 
 #include "MoonGenerator.h"
 #include "PlanetGenerator.h"
@@ -51,7 +52,9 @@ FVector AAstroGenerator::GetContinuousPreviewSystemCenter(const AStarSystem* Sys
 		if (const FClusterStarSystemRecord* Record = GeneratedStarCluster->FindPotentialSystem(Entry.Key))
 		{
 			const FAPSCanonicalStellarProjectionFrame& Frame = GeneratedStarCluster->CanonicalProjectionFrame;
-			return Frame.GetCanonicalRootPositionCm(Record->ClusterLocalLocation) - Frame.CanonicalAnchorCm;
+			// Rio 03.10: the same presentation spacing as the system's catalogue points (zero unless enabled).
+			return Frame.GetCanonicalRootPositionCm(Record->ClusterLocalLocation) - Frame.CanonicalAnchorCm
+				+ APSPreviewClusterSpacing::GetOffsetCm(this, Entry.Key);
 		}
 	}
 	return FVector::ZeroVector;

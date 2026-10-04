@@ -3,6 +3,7 @@
 #include "APS_ALPHA/Core/Enums/CharSpawnPlace.h"
 #include "APS_ALPHA/Core/Instances/MainGameplayInstance.h"
 #include "APS_ALPHA/Core/Model/SpawnParameters.h"
+#include "APS_ALPHA/Gameplay/Civilizations/APSCivilizationMaterializationSubsystem.h"
 #include "APS_ALPHA/Gameplay/Colony/APSColonyConstructionSubsystem.h"
 #include "APS_ALPHA/Gameplay/Vehicles/APSGroundVehicles.h"
 #include "APS_ALPHA/Generation/AstroGenerator.h"
@@ -243,6 +244,11 @@ namespace APSArrivalCurtainLocal
 				Need(Colony && Colony->IsColonyGrounded(), LOCTEXT("StageColony", "RAISING THE COLONY"), TEXT("colony grounded"));
 				Need(APSGroundVehicles::AreParked(GameWorld), LOCTEXT("StageVehicles", "PARKING THE VEHICLES"),
 					TEXT("vehicles parked"));
+				// Rio 03.10: the first frame is inside the headquarters, not the landing site or the hop there.
+				const UAPSCivilizationMaterializationSubsystem* Materialization = GameWorld
+					? GameWorld->GetSubsystem<UAPSCivilizationMaterializationSubsystem>() : nullptr;
+				Need(!(Materialization && Materialization->IsPilotArrivalPending()),
+					LOCTEXT("StageArrival", "ENTERING THE HEADQUARTERS"), TEXT("pilot in the headquarters"));
 			}
 
 			// Still and smooth: the pilot neither moves nor jumps (offsets from the generator, which a world rebase moves

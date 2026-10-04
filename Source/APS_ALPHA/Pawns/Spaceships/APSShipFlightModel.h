@@ -261,6 +261,8 @@ public:
 	void EngageAutopilot(AActor* Target);
 	void DisengageAutopilot(const TCHAR* Reason);
 	bool IsAutopilotEngaged() const { return AutopilotTarget.IsValid(); }
+	/** Rio 03.10: the world shifted under the player (the floating origin): cached world centres move with it. */
+	void ApplyWorldShift(const FVector& Offset);
 	AActor* GetAutopilotTarget() const { return AutopilotTarget.Get(); }
 
 	/**
@@ -405,6 +407,8 @@ private:
 	bool RebuildStarCatalogue();
 	/** Picks the nearest catalogue stars and the one whose system the course runs into. */
 	void ScanStarCatalogue(const FVector& Location, const FVector& Heading);
+	/** The same for the galaxy's drawn stars (APSGalaxyGpuStars' nearest-star index), into NearestGalaxyStars. */
+	void ScanGalaxyStars(const FVector& Location, const FVector& Heading);
 	void UpdateGroundProbe(float DeltaTime);
 	/** Height above the WorldScape terrain (or sea level) of the nearest planet with a current surface; -1 if none. */
 	double MeasureTerrainClearanceCm(const FVector& Location) const;
@@ -422,6 +426,8 @@ private:
 	EAPSFlightBand FlightBand{EAPSFlightBand::Maneuver};
 	bool bManualBand{false};
 	float AutoShiftHold{0.0f};
+	/** After AUTO shifted down closing in on a body, no shift up for a while (Rio 04.10: ORBITAL <-> CRUISE every 3-5 s). */
+	float UpShiftBlockSeconds{0.0f};
 	/** Nearest star (actor or catalogue point), cm to its surface; -1 unknown. */
 	double NearestStarDistanceCm{-1.0};
 	/** Smallest distance outside a star system's sphere, cm (negative inside a system); unknown without stars. */
@@ -475,6 +481,10 @@ private:
 	/** The last scan: the nearest catalogue stars and the one whose system the course runs into. */
 	TArray<int32, TInlineAllocator<8>> NearestCatalogueStars;
 	int32 CourseCatalogueStar{INDEX_NONE};
+	/** Rio 03.10: the galaxy stars of the last scan, as offsets from the home system (xyz) and drawn radius (w), cm. */
+	TArray<FVector4, TInlineAllocator<10>> NearestGalaxyStars;
+	/** Their local spacing (the star drive's cruise past the cluster's edge), cm; 0 unknown. */
+	double GalaxySpacingCm{0.0};
 	float CatalogueScanElapsed{TNumericLimits<float>::Max()};
 	FVector CatalogueScanHeading{FVector::ZeroVector};
 	bool bCatalogueMissingLogged{false};
@@ -489,6 +499,12 @@ private:
 	double AutopilotRemainingCm{0.0};
 	FQuat AutopilotLastRotation{FQuat::Identity};
 	bool bAutopilotRotated{false};
+	/** The course the autopilot steers along (eased toward its aim), the level up it banks from, its bank (degrees) and
+	 * the speed it holds to reach its stop evenly (no cap while off). */
+	FVector AutopilotCourse{FVector::ZeroVector};
+	FVector AutopilotLevelUp{FVector::ZeroVector};
+	double AutopilotBankDegrees{0.0};
+	double AutopilotSpeedCapCm{TNumericLimits<double>::Max()};
 	/** Star drive: moves the ship for one frame (false: the drive dropped out and the bands fly this frame). */
 	bool ApplyStarDrive(const FVector& LocalInput, float DeltaTime);
 	/** The drive's speed without input: the median star spacing in aps.Ship.Drive.CrossSeconds. */
@@ -510,6 +526,8 @@ private:
 	FString StarDriveNotice;
 	double StarDriveNoticeUntil{0.0};
 	FVector SmoothedSteering{FVector::ZeroVector};
+	/** A/D's eased yaw while the mouse is on the camera (Rio 04.10: the keys turned too sharply in cruise). */
+	double KeySteeringYaw{0.0};
 	double LastLogSeconds{0.0};
 	double LastContactLogSeconds{0.0};
 
@@ -580,6 +598,9 @@ private:
 		double RestSeconds{0.0};
 		double ParkSeconds{0.0};
 		double BobSeconds{0.0};
+		/** Hover: what is left of a Space hop's soft field, and whether Space is still held (one hop per press). */
+		double HopSeconds{0.0};
+		bool bHopHeld{false};
 		double LastLogSeconds{0.0};
 		bool bGrounded{false};
 		bool bOnLiquid{false};

@@ -15,11 +15,13 @@
 #include "APS_ALPHA/Core/Enums/PlanetType.h"
 #include "APS_ALPHA/Core/Interfaces/ItemInfoInterface.h"
 #include "APS_ALPHA/Gameplay/Fleet/APSFleetCommand.h"
+#include "APS_ALPHA/Gameplay/Megastructures/APSMegastructures.h"
 #include "APS_ALPHA/Pawns/Spaceships/APSShipFlightModel.h"
 #include "APS_ALPHA/Pawns/Spaceships/ShipNavigationComponent.h"
 #include "APS_ALPHA/Pawns/Spaceships/Spaceship.h"
 #include "APS_ALPHA/UI/Style/APSUINumber.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
 #include "GameFramework/PlayerController.h"
 
 #define LOCTEXT_NAMESPACE "APSObjectActions"
@@ -82,8 +84,27 @@ namespace APSObjectActionsLocal
 		return Best;
 	}
 
+	/** What a ship does at the target, for a button whose order is under way. */
+	FText WorkingStatus(const EOrder Order)
+	{
+		switch (Order)
+		{
+		case EOrder::BuildOutpost:
+		case EOrder::BuildStation:
+		case EOrder::BuildShipyard:
+		case EOrder::BuildHeadquarters:
+		case EOrder::BuildStructure: return LOCTEXT("UnderwayBuilding", "BUILDING");
+		case EOrder::Survey:
+		case EOrder::SurveySystem: return LOCTEXT("UnderwaySurveying", "SURVEYING");
+		case EOrder::Probe: return LOCTEXT("UnderwayScanning", "SCANNING");
+		case EOrder::Expedition: return LOCTEXT("UnderwayInvestigating", "INVESTIGATING");
+		default: return LOCTEXT("UnderwayWorking", "AT WORK");
+		}
+	}
+
 	FAPSObjectAction FleetAction(UWorld* World, const FName Id, const FText& Label, const EOrder Order, AActor* Object,
-		ASpaceship* Ship, const FText& Refusal, const FName StructureType = NAME_None)
+		ASpaceship* Ship, const FText& Refusal, const FName StructureType = NAME_None,
+		const TOptional<EDivision> Division = TOptional<EDivision>())
 	{
 		FAPSObjectAction Action;
 		Action.Id = Id;
@@ -108,6 +129,90 @@ namespace APSObjectActionsLocal
 				? FText::Format(LOCTEXT("OrderGiven", "{0}: {1}."), FText::FromString(Command->FindUnit(Picked)->CallSign),
 					OrderName(Order))
 				: Refused;
+		};
+		// Rio 04.10: a ship already on this order here (on its way, or at work) makes the button a progress bar: the flight
+		// is the first part of the fill, the work the rest.
+		Action.Underway = [WeakWorld, WeakObject, Order, StructureType, Division](float& OutProgress, FText& OutStatus, FText& OutWho)
+		{
+			constexpr float FlightShare = 0.3f;
+			const FAPSFleetCommand* Command = APSFleetFind(WeakWorld.Get());
+			const AActor* Target = WeakObject.Get();
+			if (!Command || !Target) return false;
+			for (const FAPSFleetUnit& Unit : Command->GetUnits())
+			{
+				if (Unit.Order != Order || Unit.Target.Get() != Target
+					|| (Unit.Phase != EPhase::Departing && Unit.Phase != EPhase::Transit && Unit.Phase != EPhase::Working)
+					|| (Order == EOrder::BuildStructure && Unit.StructureType != StructureType)
+					|| (Division.IsSet() && Unit.Division != Division.GetValue()))
+				{
+					continue;
+				}
+				OutWho = FText::Format(LOCTEXT("UnderwayWho", "{0} ({1})"), FText::FromString(Unit.CallSign), DivisionName(Unit.Division));
+				if (Unit.Phase == EPhase::Working)
+				{
+					OutProgress = FlightShare + (1.0f - FlightShare) * FMath::Clamp(Unit.Progress, 0.0f, 1.0f);
+					OutStatus = WorkingStatus(Order);
+				}
+				else
+				{
+					const double Flown = Unit.TransitStartCm > 0.0 ? 1.0 - Unit.RemainingCm / Unit.TransitStartCm : 0.0;
+					OutProgress = FlightShare * static_cast<float>(FMath::Clamp(Flown, 0.0, 1.0));
+					OutStatus = LOCTEXT("UnderwayEnRoute", "EN ROUTE");
+				}
+				return true;
+			}
+			return false;
+		};
+		return Action;
+	}
+
+	/**
+	 * Rio 04.10 ("what the units do, we must be able to do ourselves, from the bridge of a ship that can"): an order the
+	 * piloted ship carries out itself, by the fleet's rules (FAPSFleetCommand::IssuePilotOrder): its division decides what
+	 * it can do, it must be near enough, and the work goes on while it stays there.
+	 */
+	FAPSObjectAction PilotAction(UWorld* World, const FName Id, const FText& Label, const EOrder Order, AActor* Object,
+		ASpaceship* Ship, const FName StructureType = NAME_None)
+	{
+		FAPSObjectAction Action;
+		Action.Id = Id;
+		Action.Label = Label;
+		Action.Group = LOCTEXT("GroupPilot", "YOUR SHIP");
+		Action.Colour = NavigationColour;
+		const FAPSFleetCommand* Command = APSFleetFind(World);
+		const FText Refusal = Command ? Command->CheckPilotOrder(Ship, Order, Object, StructureType)
+			: LOCTEXT("PilotNoFleet", "No fleet command in this world.");
+		Action.bEnabled = Refusal.IsEmpty();
+		Action.Detail = Action.bEnabled ? LOCTEXT("PilotDetail", "Your ship does it itself; stay near until it is done.") : Refusal;
+		TWeakObjectPtr<UWorld> WeakWorld = World;
+		TWeakObjectPtr<AActor> WeakObject = Object;
+		TWeakObjectPtr<ASpaceship> WeakShip = Ship;
+		Action.Execute = [WeakWorld, WeakObject, WeakShip, Order, StructureType]()
+		{
+			FAPSFleetCommand* Fleet = APSFleetFind(WeakWorld.Get());
+			ASpaceship* Piloted = WeakShip.Get();
+			if (!Fleet || !Piloted || !WeakObject.IsValid()) return LOCTEXT("OrderGone", "The ship or the target is gone.");
+			const FText Refused = Fleet->IssuePilotOrder(Piloted, Order, WeakObject.Get(), StructureType);
+			return Refused.IsEmpty() ? FText::Format(LOCTEXT("PilotOrderGiven", "YOUR SHIP: {0}."), OrderName(Order)) : Refused;
+		};
+		Action.Underway = [WeakWorld, WeakObject, WeakShip, Order, StructureType](float& OutProgress, FText& OutStatus, FText& OutWho)
+		{
+			const FAPSFleetCommand* Fleet = APSFleetFind(WeakWorld.Get());
+			const ASpaceship* Piloted = WeakShip.Get();
+			const FAPSFleetUnit* Unit = Fleet && Piloted ? Fleet->FindUnit(Piloted) : nullptr;
+			if (!Unit || !Unit->bPilotWork || Unit->Order != Order || Unit->Phase != EPhase::Working
+				|| !WeakObject.IsValid() || Unit->Target.Get() != WeakObject.Get()
+				|| (Order == EOrder::BuildStructure && Unit->StructureType != StructureType))
+			{
+				return false;
+			}
+			OutProgress = FMath::Clamp(Unit->Progress, 0.0f, 1.0f);
+			OutWho = LOCTEXT("PilotWho", "Your ship");
+			double Distance = 0.0;
+			double Range = 0.0;
+			OutStatus = Fleet->PilotWorkRange(Piloted, Order, WeakObject.Get(), Distance, Range) && Distance > Range
+				? LOCTEXT("PilotOutOfRange", "OUT OF RANGE, PAUSED") : WorkingStatus(Order);
+			return true;
 		};
 		return Action;
 	}
@@ -192,10 +297,12 @@ namespace APSObjectActionsLocal
 		{
 			FText Refusal;
 			ASpaceship* Ship = PickOfDivision(*Command, EOrder::Survey, Object, EDivision::Exploration, Refusal);
-			OutActions.Add(FleetAction(World, TEXT("Fleet.Survey"), LOCTEXT("Survey", "SURVEY"), EOrder::Survey, Object, Ship, Refusal));
+			OutActions.Add(FleetAction(World, TEXT("Fleet.Survey"), LOCTEXT("Survey", "SURVEY"), EOrder::Survey, Object, Ship, Refusal,
+				NAME_None, EDivision::Exploration));
 			Refusal = FText::GetEmpty();
 			Ship = PickOfDivision(*Command, EOrder::Survey, Object, EDivision::Science, Refusal);
-			OutActions.Add(FleetAction(World, TEXT("Fleet.Study"), LOCTEXT("Study", "STUDY (SCIENCE)"), EOrder::Survey, Object, Ship, Refusal));
+			OutActions.Add(FleetAction(World, TEXT("Fleet.Study"), LOCTEXT("Study", "STUDY (SCIENCE)"), EOrder::Survey, Object, Ship, Refusal,
+				NAME_None, EDivision::Science));
 			if (const FAPSFleetBodyRecord* Record = Command->FindBody(Object);
 				Record && Record->bHasAnomaly && Record->Anomaly >= EAnomalyState::Located && Record->Anomaly < EAnomalyState::Investigated)
 			{
@@ -221,6 +328,71 @@ namespace APSObjectActionsLocal
 			FText Refusal;
 			ASpaceship* Ship = PickOfDivision(*Command, EOrder::Move, Object, EDivision::MainFleet, Refusal);
 			OutActions.Add(FleetAction(World, TEXT("Fleet.Move"), LOCTEXT("MoveThere", "SEND THE MAIN FLEET"), EOrder::Move, Object, Ship, Refusal));
+		}
+	}
+
+	/** The piloted fleet ship's own orders at the object: what its division can do, as the crews would. */
+	void Pilot(UWorld* World, AActor* Object, TArray<FAPSObjectAction>& OutActions)
+	{
+		const FAPSFleetCommand* Command = APSFleetFind(World);
+		ASpaceship* Ship = PilotedShip(World);
+		const FAPSFleetUnit* Unit = Command && Ship && Object ? Command->FindUnit(Ship) : nullptr;
+		if (!Unit) return;
+		const EDivision Division = Unit->Division;
+		const auto Add = [&](const FName Id, const FText& Label, const EOrder Order)
+		{
+			if (DivisionCan(Division, Order)) OutActions.Add(PilotAction(World, Id, Label, Order, Object, Ship));
+		};
+		FGuid SystemId;
+		const bool bBody = Object->IsA<APlanetaryBody>();
+		if (!bBody && FAPSInfrastructure::SiteSystem(World, Object, SystemId))
+		{
+			Add(TEXT("Pilot.Probe"), LOCTEXT("PilotProbe", "LAUNCH A PROBE"), EOrder::Probe);
+			Add(TEXT("Pilot.SurveySystem"), LOCTEXT("PilotSurveySystem", "CHART THE SYSTEM"), EOrder::SurveySystem);
+			const FAPSStarSystems* Stars = APSStarSystemsFind(World);
+			if (Stars && Stars->AnomalyKindOf(SystemId) != INDEX_NONE && Stars->GetState(SystemId).Anomaly == 2)
+			{
+				Add(TEXT("Pilot.SystemExpedition"), FText::Format(LOCTEXT("PilotSystemExpedition", "INVESTIGATE THE {0}"),
+					FAPSStarSystems::AnomalyName(Stars->AnomalyKindOf(SystemId))), EOrder::Expedition);
+			}
+		}
+		if (bBody)
+		{
+			Add(TEXT("Pilot.Survey"), SurveyBy(Division) == ESurvey::Studied ? LOCTEXT("PilotStudy", "STUDY IT")
+				: LOCTEXT("PilotSurvey", "SCAN IT"), EOrder::Survey);
+			if (const FAPSFleetBodyRecord* Record = Command->FindBody(Object);
+				Record && Record->bHasAnomaly && Record->Anomaly >= EAnomalyState::Located && Record->Anomaly < EAnomalyState::Investigated)
+			{
+				Add(TEXT("Pilot.Expedition"), LOCTEXT("PilotExpedition", "LAND AT THE ANOMALY"), EOrder::Expedition);
+			}
+			for (const EOrder Order : {EOrder::BuildOutpost, EOrder::BuildStation, EOrder::BuildShipyard, EOrder::BuildHeadquarters})
+			{
+				Add(FName(*(TEXT("Pilot.") + OrderName(Order).ToString().Replace(TEXT(" "), TEXT("")))), OrderName(Order), Order);
+			}
+		}
+		// The construction catalogue, raised by the ship itself.
+		const FAPSInfrastructure* Infrastructure = APSInfrastructureFind(World);
+		if (!Infrastructure || !DivisionCan(Division, EOrder::BuildStructure)) return;
+		TArray<TPair<FName, FText>> Options;
+		Infrastructure->GetOptions(Object, Options);
+		for (const TPair<FName, FText>& Option : Options)
+		{
+			const APSInfrastructure::FType* Type = APSInfrastructure::Find(Option.Key);
+			if (!Type) continue;
+			FAPSObjectAction Action = PilotAction(World, FName(*(TEXT("Pilot.Build.") + Type->Id.ToString())),
+				FText::Format(LOCTEXT("PilotBuildType", "BUILD {0} YOURSELF"), Type->Name), EOrder::BuildStructure, Object, Ship,
+				Type->Id);
+			if (!Option.Value.IsEmpty())
+			{
+				Action.bEnabled = false;
+				Action.Detail = Option.Value;
+			}
+			else if (Action.bEnabled)
+			{
+				Action.Detail = FText::Format(LOCTEXT("PilotBuildDetail", "{0}. Costs {1}; yields {2} a minute. Your ship builds it; stay near."),
+					Type->Role, APSInfrastructure::DescribeAmounts(Type->Cost), APSInfrastructure::DescribeAmounts(Type->Yield));
+			}
+			OutActions.Add(MoveTemp(Action));
 		}
 	}
 
@@ -251,12 +423,124 @@ namespace APSObjectActionsLocal
 		}
 	}
 
+	FText Kilometres(const double Cm)
+	{
+		return FText::Format(LOCTEXT("MegaKm", "{0} km"), APSUINumber::Number(FMath::RoundToInt64(Cm / 100000.0)));
+	}
+
+	FText Radii(const double Ratio)
+	{
+		FNumberFormattingOptions Two;
+		Two.SetMaximumFractionalDigits(2);
+		return APSUINumber::Number(Ratio, &Two);
+	}
+
+	/**
+	 * Rio 03.10: a hub's or megastructure's numbers by its world (its orbit, the ring's radius, the counterweight's height,
+	 * the swarm's distance from the star) and where its chain stands: its step and the next one's state here.
+	 */
+	void DescribeMegastructure(UWorld* World, const AActor* Object, const APSInfrastructure::FType& Type,
+		const FAPSInfrastructure& Infrastructure, const TFunctionRef<void(const FText&, const FText&)> Add)
+	{
+		using APSMegastructures::EKind;
+		const AActor* Site = Object->GetAttachParentActor();
+		if (!Site)
+		{
+			return;
+		}
+		APSMegastructures::FWorldLayout Layout;
+		const bool bWorld = APSMegastructures::LayoutAt(Site, Layout);
+		const double Radius = Layout.BodyRadiusCm;
+		switch (APSMegastructures::KindOf(Type.Visual))
+		{
+		case EKind::SpaceHub:
+		case EKind::GrandHub:
+			if (bWorld)
+			{
+				Add(LOCTEXT("FieldMegaOrbit", "ORBIT"), FText::Format(LOCTEXT("MegaOrbitUp", "{0} up"),
+					Kilometres(FVector::Dist(Object->GetActorLocation(), Site->GetActorLocation()) - Radius)));
+			}
+			Add(LOCTEXT("FieldMegaBerths", "BERTHS"), FText::Format(LOCTEXT("MegaBerths", "+{0} station berths at its world"),
+				APSUINumber::Number(Type.HubBerths)));
+			break;
+		case EKind::SpaceElevator:
+			if (bWorld)
+			{
+				Add(LOCTEXT("FieldMegaCounterweight", "COUNTERWEIGHT"), FText::Format(LOCTEXT("MegaCounterweight",
+					"{0} up, at the stationary orbit ({1} radii)"), Kilometres(Layout.CounterweightRadiusCm - Radius),
+					Radii(Layout.CounterweightRadiusCm / FMath::Max(Radius, 1.0))));
+			}
+			break;
+		case EKind::OrbitalRing:
+			if (bWorld)
+			{
+				Add(LOCTEXT("FieldMegaRing", "RING RADIUS"), FText::Format(LOCTEXT("MegaRing", "{0} ({1} radii, {2} up)"),
+					Kilometres(Layout.RingRadiusCm), Radii(Layout.RingRadiusCm / FMath::Max(Radius, 1.0)),
+					Kilometres(Layout.RingRadiusCm - Radius)));
+			}
+			break;
+		case EKind::DysonSwarm:
+		case EKind::DysonSphere:
+		{
+			FNumberFormattingOptions Three;
+			Three.SetMaximumFractionalDigits(3);
+			Add(LOCTEXT("FieldMegaStar", "FROM THE STAR"), FText::Format(LOCTEXT("MegaAu", "{0} AU"), APSUINumber::Number(
+				FVector::Dist(Object->GetActorLocation(), Site->GetActorLocation()) / APSStars::AstronomicalUnitCm, &Three)));
+			break;
+		}
+		default:
+			break;
+		}
+		// The chain: the station is its first step; the next one's state at its place (the swarm's at the star).
+		TArray<FName> Steps;
+		if (!APSInfrastructure::GetChain(Type.Id, Steps))
+		{
+			return;
+		}
+		const int32 Index = Steps.IndexOfByKey(Type.Id);
+		const int32 Total = Steps.Num() + 1;
+		if (Index == INDEX_NONE || Index + 1 >= Steps.Num())
+		{
+			Add(LOCTEXT("FieldMegaChain", "CHAIN"), FText::Format(LOCTEXT("MegaChainDone", "STEP {0} OF {1}: THE CHAIN STANDS COMPLETE"),
+				APSUINumber::Number(Total), APSUINumber::Number(Total)));
+			return;
+		}
+		const APSInfrastructure::FType* Next = APSInfrastructure::Find(Steps[Index + 1]);
+		if (!Next)
+		{
+			return;
+		}
+		const AActor* NextSite = Site;
+		if (Next->Placement == APSInfrastructure::EPlacement::StarSystem && !Site->IsA<AStar>())
+		{
+			NextSite = nullptr;
+			for (TActorIterator<AStar> It(World); It && !NextSite; ++It)
+			{
+				NextSite = IsValid(*It) ? *It : nullptr;
+			}
+		}
+		FText State;
+		if (NextSite && Infrastructure.CountAt(NextSite, Next->Id) > 0)
+		{
+			State = LOCTEXT("MegaNextStands", "STANDS");
+		}
+		else if (NextSite)
+		{
+			const FText Refusal = Infrastructure.CheckBuild(Next->Id, NextSite);
+			State = Refusal.IsEmpty() ? LOCTEXT("MegaNextReady", "READY TO BUILD") : Refusal;
+		}
+		Add(LOCTEXT("FieldMegaChain", "CHAIN"), FText::Format(LOCTEXT("MegaChainStep", "STEP {0} OF {1}  /  NEXT: {2}{3}"),
+			APSUINumber::Number(Index + 2), APSUINumber::Number(Total), Next->Name,
+			State.IsEmpty() ? FText::GetEmpty() : FText::Format(LOCTEXT("MegaNextState", " ({0})"), State)));
+	}
+
 	void EnsureBuiltIns()
 	{
 		static bool bRegistered = false;
 		if (bRegistered) return;
 		bRegistered = true;
 		Providers().Emplace(TEXT("Navigation"), &Navigation);
+		Providers().Emplace(TEXT("Pilot"), &Pilot);
 		Providers().Emplace(TEXT("Fleet"), &Fleet);
 		Providers().Emplace(TEXT("Construction"), &Construction);
 	}
@@ -286,6 +570,7 @@ void APSObjectActions::Gather(UWorld* World, AActor* Object, TArray<FAPSObjectAc
 FText APSObjectActions::KindOf(const AActor* Object)
 {
 	if (!Object) return FText::GetEmpty();
+	if (Object->ActorHasTag(TEXT("APS.Ancient.Site"))) return LOCTEXT("KindAncient", "ANCIENT SITE");
 	if (FGuid SystemId; FAPSStarSystems::AnchorSystem(Object, SystemId))
 	{
 		const FAPSStarSystems* Stars = APSStarSystemsFind(Object->GetWorld());
@@ -413,6 +698,15 @@ void APSObjectActions::Describe(UWorld* World, const AActor* Object, TArray<TPai
 			: FText::GetEmpty());
 		Add(LOCTEXT("FieldRadius", "RADIUS"), FText::Format(LOCTEXT("RadiusKm", "{0} km"),
 			APSUINumber::Number(FMath::RoundToInt(Body->GetWorldScapeBodyRadiusCm() / 100000.0))));
+		// Rio 03.10: where this world's megastructures would stand (a world with ground: the elevator needs it).
+		APSMegastructures::FWorldLayout Layout;
+		if (Body->PlanetType != EPlanetType::GasGiant && Body->PlanetType != EPlanetType::HotGiant
+			&& Body->PlanetType != EPlanetType::IceGiant && APSMegastructures::LayoutAt(Body, Layout))
+		{
+			Add(LOCTEXT("FieldMegaLayout", "RING / STATIONARY ORBIT"), FText::Format(LOCTEXT("MegaLayout", "{0}  /  {1}"),
+				Layout.bRingFits ? Kilometres(Layout.RingRadiusCm) : LOCTEXT("MegaNoRingRoom", "no room for a ring"),
+				Layout.bElevatorFits ? Kilometres(Layout.CounterweightRadiusCm) : LOCTEXT("MegaNoOrbitRoom", "no room for an elevator")));
+		}
 		if (const FAPSFleetCommand* Fleet = APSFleetFind(World))
 		{
 			Add(LOCTEXT("FieldSurvey", "KNOWN"), APSFleet::SurveyName(Fleet->GetSurvey(Body)));
@@ -444,6 +738,10 @@ void APSObjectActions::Describe(UWorld* World, const AActor* Object, TArray<TPai
 			{
 				Add(LOCTEXT("FieldRole", "ROLE"), Type->Role);
 				Add(LOCTEXT("FieldYield", "YIELD / MIN"), APSInfrastructure::DescribeAmounts(Type->Yield));
+				if (APSInfrastructure::IsMegaVisual(Type->Visual))
+				{
+					DescribeMegastructure(World, Object, *Type, *Infrastructure, Add);
+				}
 			}
 		}
 		TArray<const FAPSBuiltStructure*> Here;

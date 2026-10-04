@@ -4,6 +4,8 @@
 #include "APSStrategicMapScene.h"
 #include "SAPSStrategicMapView.h"
 #include "APS_ALPHA/Actors/Astro/APSBodyDesignation.h"
+#include "APS_ALPHA/Actors/Astro/Galaxy.h"
+#include "APS_ALPHA/Core/Rendering/APSGalaxyGpuStars.h"
 #include "APS_ALPHA/Actors/Astro/Moon.h"
 #include "APS_ALPHA/Actors/Astro/Planet.h"
 #include "APS_ALPHA/Actors/Astro/Star.h"
@@ -47,6 +49,8 @@ namespace APSStrategicMapPanelLocal
 		TWeakObjectPtr<UWorld> World;
 		FAPSStrategicMapCamera::FFocus Focus;
 		double Distance{0.0};
+		/** The tangent of the half field of view that distance was for: another lens next time keeps the framing. */
+		double ViewTangent{0.0};
 		double Yaw{0.0};
 		double Pitch{-35.0};
 		uint32 LayerMask{0xFFFFFFFFu};
@@ -56,6 +60,10 @@ namespace APSStrategicMapPanelLocal
 		int32 StarList{0};
 		FString Title;
 		bool bValid{false};
+		/** Where the pilot was when the map closed (Rio 04.10: one far from there gets the map on himself). */
+		bool bPilotKnown{false};
+		int32 PilotSystem{INDEX_NONE};
+		FVector PilotFromHome{FVector::ZeroVector};
 	};
 
 	FMemory& Memory()
@@ -82,8 +90,11 @@ namespace APSStrategicMapPanelLocal
 	 */
 	TSharedRef<SWidget> MapButton(const TSharedRef<SWidget>& Content, const FOnClicked& OnClicked, const TAttribute<bool>& IsSelected,
 		const FLinearColor& Accent, const TAttribute<bool>& IsEnabled = TAttribute<bool>(true),
-		const FMargin& Padding = FMargin(10.0f, 7.0f))
+		const FMargin& RequestedPadding = FMargin(14.0f, 7.0f))
 	{
+		// Rio 03.10: never less than 14 each side, as in the main menu.
+		const FMargin Padding(FMath::Max(RequestedPadding.Left, 14.0f), RequestedPadding.Top,
+			FMath::Max(RequestedPadding.Right, 14.0f), RequestedPadding.Bottom);
 		const TSharedRef<SButton> Button = SNew(SButton)
 			.ButtonStyle(FAppStyle::Get(), "NoBorder")
 			.ContentPadding(0.0f)
@@ -128,14 +139,28 @@ namespace APSStrategicMapPanelLocal
 		return Button;
 	}
 
+	/** A label alone (FLY TO, STAR LIST, the list switches): centred both ways by its capitals (Rio 03.10). */
+	TSharedRef<SWidget> MapButton(const TSharedRef<STextBlock>& Label, const FOnClicked& OnClicked, const TAttribute<bool>& IsSelected,
+		const FLinearColor& Accent, const TAttribute<bool>& IsEnabled = TAttribute<bool>(true),
+		const FMargin& RequestedPadding = FMargin(14.0f, 7.0f))
+	{
+		Label->SetJustification(ETextJustify::Center);
+		if (!Label->GetRenderTransform().IsSet())
+		{
+			Label->SetRenderTransform(APSChrome::CapsCenterShift(Label->GetFont()));
+		}
+		const TSharedRef<SWidget> Centred = SNew(SBox).HAlign(HAlign_Center).VAlign(VAlign_Center)[Label];
+		return MapButton(Centred, OnClicked, IsSelected, Accent, IsEnabled, RequestedPadding);
+	}
+
 	TSharedRef<SWidget> MapChip(const FText& Text, const FLinearColor& Colour)
 	{
 		return SNew(SBorder)
 			.BorderImage(FAppStyle::GetBrush("WhiteBrush"))
 			.BorderBackgroundColor(FLinearColor(Colour.R, Colour.G, Colour.B, 0.16f))
-			.Padding(FMargin(6.0f, 1.0f))
+			.Padding(FMargin(7.0f, 2.0f)).HAlign(HAlign_Center).VAlign(VAlign_Center)
 			[
-				SNew(STextBlock).Text(Text).Font(Readable("Bold", 9)).ColorAndOpacity(Colour)
+				APSChrome::CenteredLabel(Text, Readable("Bold", 9), Colour)
 			];
 	}
 
@@ -152,6 +177,7 @@ namespace APSStrategicMapPanelLocal
 			+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
 			[
 				SNew(STextBlock).Text(Text).Font(APSChrome::Font("Bold", 10)).ColorAndOpacity(Colour)
+				.RenderTransform(APSChrome::CapsCenterShift(APSChrome::Font("Bold", 10)))
 			];
 	}
 
@@ -275,7 +301,8 @@ void SAPSStrategicMapPanel::Construct(const FArguments& InArgs)
 				SNew(SHorizontalBox)
 				+ SHorizontalBox::Slot().AutoWidth()
 				[
-					SNew(SBox).WidthOverride(262.0f)
+					// Rio 04.10: "the menu is squeezed on the left, a bit wider" (was 262).
+					SNew(SBox).WidthOverride(312.0f)
 					[
 						BuildLeftPanel()
 					]
@@ -318,6 +345,23 @@ void SAPSStrategicMapPanel::OpenView()
 {
 	const APSStrategicMapPanelLocal::FMemory& Saved = APSStrategicMapPanelLocal::Memory();
 	UWorld* World = Scene->GetWorld();
+	// Rio 04.10 ("the map has no galaxy level, the cluster is the most"): the camera reaches out to the whole galaxy.
+	FVector GalaxyCentre;
+	double GalaxyRadiusCm = 0.0;
+	if (World && APSGalaxyGpuStars::GetIndexedBounds(World, GalaxyCentre, GalaxyRadiusCm))
+	{
+		Camera->SetMaximumDistance(GalaxyRadiusCm * 4.0);
+	}
+	// Rio 04.10 ("far off in the galaxy the map opened on some other star, not on me"): it opens where it was left only
+	// while the pilot is still there; one who has flown on to another system or far out gets the map on himself.
+	FAPSStarSystems* Stars = Scene->GetStars();
+	const APawn* Pilot = Scene->GetPilot();
+	const AActor* HomeStar = Scene->GetHomeStar();
+	const int32 Containing = Stars && Stars->IsReady() && Pilot ? Stars->FindContaining(Pilot->GetActorLocation()) : INDEX_NONE;
+	const FVector PilotFromHome = Pilot && HomeStar ? Pilot->GetActorLocation() - HomeStar->GetActorLocation() : FVector::ZeroVector;
+	const bool bPilotMoved = Saved.bPilotKnown && Pilot && (Containing != Saved.PilotSystem
+		|| FVector::Distance(PilotFromHome, Saved.PilotFromHome)
+			> FMath::Max(Saved.Distance, 10.0 * FAPSStrategicMapCamera::AstronomicalUnitCm));
 	if (Saved.bValid && World && Saved.World.Get() == World)
 	{
 		// Rio 02.10: the map opens where it was left (the view, the layers, the selection), flying out of the pilot's view.
@@ -327,21 +371,27 @@ void SAPSStrategicMapPanel::OpenView()
 		ActiveTab = Saved.Tab;
 		StarList = Saved.StarList;
 		const bool bFocusAlive = !Saved.Focus.bOnActor || Saved.Focus.Actor.IsValid();
-		if (bFocusAlive && Saved.Distance > 0.0)
+		if (bFocusAlive && Saved.Distance > 0.0 && !bPilotMoved)
 		{
-			Camera->FlyToDistance(Saved.Focus, Saved.Distance, Saved.Pitch, Saved.Yaw);
+			// The same view width as when it was left, whatever lens this F10 starts with (the pilot's field of view).
+			const double Tangent = FMath::Tan(FMath::DegreesToRadians(Camera->GetFieldOfView() * 0.5));
+			const double Distance = Saved.ViewTangent > 0.0 && Tangent > UE_DOUBLE_SMALL_NUMBER
+				? Saved.Distance * Saved.ViewTangent / Tangent : Saved.Distance;
+			Camera->FlyToDistance(Saved.Focus, Distance, Saved.Pitch, Saved.Yaw);
 			FocusTitle = FText::FromString(Saved.Title);
 			return;
 		}
 	}
-	// The first time: the star system the pilot is in.
-	FAPSStarSystems* Stars = Scene->GetStars();
-	const APawn* Pilot = Scene->GetPilot();
-	const int32 Containing = Stars && Stars->IsReady() && Pilot ? Stars->FindContaining(Pilot->GetActorLocation()) : INDEX_NONE;
+	// The first time, or the pilot has moved on: the star system the pilot is in, else the pilot out in deep space.
 	if (Containing != INDEX_NONE && Containing != Stars->GetHomeIndex())
 	{
 		FocusOn(APSStrategicMap::FSelection::OfSystem(Containing), -38.0);
 		ActivePreset = EPreset::None;
+		return;
+	}
+	if (Containing == INDEX_NONE && Pilot && HomeStar && PilotFromHome.Size() > Scene->GetHomeRoomCm())
+	{
+		ApplyPreset(EPreset::MyShip);
 		return;
 	}
 	ApplyPreset(EPreset::HomeSystem);
@@ -358,6 +408,7 @@ void SAPSStrategicMapPanel::Remember() const
 	Saved.World = Scene->GetWorld();
 	Saved.Focus = Camera->GetFocus();
 	Saved.Distance = Camera->GetTargetDistance();
+	Saved.ViewTangent = FMath::Tan(FMath::DegreesToRadians(Camera->GetFieldOfView() * 0.5));
 	Saved.Yaw = Camera->GetTargetYaw();
 	Saved.Pitch = Camera->GetTargetPitch();
 	Saved.LayerMask = Scene->GetLayerMask();
@@ -367,6 +418,13 @@ void SAPSStrategicMapPanel::Remember() const
 	Saved.StarList = StarList;
 	Saved.Title = FocusTitle.ToString();
 	Saved.bValid = true;
+	// Where the pilot was (its system, its offset from home: both stay put through origin shifts).
+	const FAPSStarSystems* Stars = Scene->GetStars();
+	const APawn* Pilot = Scene->GetPilot();
+	const AActor* HomeStar = Scene->GetHomeStar();
+	Saved.bPilotKnown = Pilot && HomeStar;
+	Saved.PilotSystem = Stars && Stars->IsReady() && Pilot ? Stars->FindContaining(Pilot->GetActorLocation()) : INDEX_NONE;
+	Saved.PilotFromHome = Saved.bPilotKnown ? Pilot->GetActorLocation() - HomeStar->GetActorLocation() : FVector::ZeroVector;
 }
 
 FReply SAPSStrategicMapPanel::Close()
@@ -399,6 +457,7 @@ FReply SAPSStrategicMapPanel::OnKeyDown(const FGeometry& MyGeometry, const FKeyE
 	const FKey Key = InKeyEvent.GetKey();
 	if (Key == EKeys::F) return ApplyPreset(EPreset::Selection);
 	if (Key == EKeys::H) return ApplyPreset(EPreset::HomeSystem);
+	if (Key == EKeys::G) return ApplyPreset(EPreset::Galaxy);
 	if (Key == EKeys::C) return ApplyPreset(EPreset::Cluster);
 	if (Key == EKeys::P) return ApplyPreset(EPreset::HomePlanet);
 	if (Key == EKeys::M) return ApplyPreset(EPreset::MyShip);
@@ -418,6 +477,28 @@ FReply SAPSStrategicMapPanel::ApplyPreset(const EPreset Preset)
 	}
 	switch (Preset)
 	{
+	case EPreset::Galaxy:
+	{
+		// Rio 04.10 ("the map has no galaxy level"): every charted star, the disc seen from well above it.
+		UWorld* World = Scene->GetWorld();
+		AActor* Reference = Scene->GetHomeStar();
+		FVector Centre;
+		double RadiusCm = 0.0;
+		if (!World || !Reference || !APSGalaxyGpuStars::GetIndexedBounds(World, Centre, RadiusCm))
+		{
+			return FReply::Handled();
+		}
+		Camera->SetMaximumDistance(RadiusCm * 4.0);
+		FAPSStrategicMapCamera::FFocus Focus;
+		Focus.Actor = Reference;
+		Focus.Offset = Centre - Reference->GetActorLocation();
+		const AGalaxy* Galaxy = APSGalaxyGpuStars::GetIndexedGalaxy(World);
+		const FVector DiscUp = Galaxy ? Galaxy->GetActorUpVector() : FVector::UpVector;
+		const FVector DiscAcross = Galaxy ? Galaxy->GetActorForwardVector() : FVector::ForwardVector;
+		Camera->FlyToFrom(Focus, RadiusCm, DiscUp * 0.87 + DiscAcross * 0.5);
+		FocusTitle = LOCTEXT("GalaxyTitle", "THE GALAXY");
+		break;
+	}
 	case EPreset::Cluster:
 	{
 		// Home among its neighbours, seen from high over the ecliptic.
@@ -677,7 +758,7 @@ TSharedRef<SWidget> SAPSStrategicMapPanel::BuildHeader()
 					+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
 					[
 						SNew(STextBlock).Text(LOCTEXT("Return", "RETURN")).Font(APSChrome::Font("Bold", 11))
-						.ColorAndOpacity(APSChrome::White())
+						.ColorAndOpacity(APSChrome::White()).RenderTransform(APSChrome::CapsCenterShift(APSChrome::Font("Bold", 11)))
 					]
 					+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(10.0f, 0.0f, 0.0f, 0.0f)
 					[
@@ -709,7 +790,9 @@ TSharedRef<SWidget> SAPSStrategicMapPanel::PresetButton(const EPreset Preset, co
 			SNew(SVerticalBox)
 			+ SVerticalBox::Slot().AutoHeight()
 			[
+				// Rio 03.10: the title sits by its capitals, so the two lines centre on the badge.
 				SNew(STextBlock).Text(Label).Font(APSChrome::Font("Bold", 11)).ColorAndOpacity(APSChrome::White())
+				.RenderTransform(APSChrome::CapsCenterShift(APSChrome::Font("Bold", 11)))
 			]
 			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 1.0f, 0.0f, 0.0f)
 			[
@@ -743,6 +826,7 @@ TSharedRef<SWidget> SAPSStrategicMapPanel::LayerToggle(const APSStrategicMap::EL
 		+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center).Padding(10.0f, 0.0f, 0.0f, 0.0f)
 		[
 			SNew(STextBlock).Text(Label).Font(APSChrome::Font("Bold", 10))
+			.RenderTransform(APSChrome::CapsCenterShift(APSChrome::Font("Bold", 10)))
 			.ColorAndOpacity_Lambda([IsOn]() { return FSlateColor(IsOn() ? APSChrome::White() : APSChrome::Muted()); })
 		]
 		+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
@@ -779,6 +863,8 @@ TSharedRef<SWidget> SAPSStrategicMapPanel::BuildLeftPanel()
 			PresetButton(Preset, static_cast<int32>(Glyph), Label, Detail)
 		];
 	};
+	AddPreset(EPreset::Galaxy, EAPSChromeGlyph::World, LOCTEXT("PresetGalaxy", "GALAXY"),
+		LOCTEXT("PresetGalaxyDetail", "Every charted star, the whole disc  /  G"));
 	AddPreset(EPreset::Cluster, EAPSChromeGlyph::Space, LOCTEXT("PresetCluster", "CLUSTER"),
 		LOCTEXT("PresetClusterDetail", "Home among its neighbour stars  /  C"));
 	AddPreset(EPreset::HomeSystem, EAPSChromeGlyph::System, LOCTEXT("PresetSystem", "HOME SYSTEM"),
@@ -805,6 +891,7 @@ TSharedRef<SWidget> SAPSStrategicMapPanel::BuildLeftPanel()
 				+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
 				[
 					SNew(STextBlock).Text(LOCTEXT("CleanView", "ALL MARKS  /  L")).Font(APSChrome::Font("Bold", 10))
+					.RenderTransform(APSChrome::CapsCenterShift(APSChrome::Font("Bold", 10)))
 					.ColorAndOpacity_Lambda([IsClean]() { return FSlateColor(IsClean() ? APSChrome::Muted() : APSChrome::White()); })
 				]
 				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
@@ -928,6 +1015,7 @@ TSharedRef<SWidget> SAPSStrategicMapPanel::BuildRightPanel()
 				+ SVerticalBox::Slot().AutoHeight()
 				[
 					SNew(STextBlock).Text(Label).Font(APSChrome::Font("Bold", 11)).ColorAndOpacity(APSChrome::White())
+					.RenderTransform(APSChrome::CapsCenterShift(APSChrome::Font("Bold", 11)))
 				]
 				+ SVerticalBox::Slot().AutoHeight()
 				[
@@ -993,6 +1081,7 @@ TSharedRef<SWidget> SAPSStrategicMapPanel::BuildStarsTab()
 			{
 				StarList = Index;
 				bStarListDirty = true;
+				bStarListUserChange = true;
 				if (SearchBox.IsValid() && !SearchText.IsEmpty())
 				{
 					SearchBox->SetText(FText::GetEmpty());
@@ -1014,6 +1103,7 @@ TSharedRef<SWidget> SAPSStrategicMapPanel::BuildStarsTab()
 			{
 				SearchText = Text.ToString().TrimStartAndEnd();
 				bStarListDirty = true;
+				bStarListUserChange = true;
 			})
 		]
 		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 8.0f, 0.0f, 0.0f)
@@ -1117,6 +1207,7 @@ TSharedRef<SWidget> SAPSStrategicMapPanel::StarRow(const int32 CatalogueIndex)
 			+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
 			[
 				SNew(STextBlock).Text(FText::FromString(Info->Name)).Font(APSChrome::Font("Bold", 11))
+				.RenderTransform(APSChrome::CapsCenterShift(APSChrome::Font("Bold", 11)))
 				.ColorAndOpacity_Lambda([this, CatalogueIndex]()
 				{
 					return FSlateColor(Scene.IsValid() && Scene->GetSelection().SystemIndex == CatalogueIndex
@@ -1169,6 +1260,13 @@ TSharedRef<SWidget> SAPSStrategicMapPanel::StarRow(const int32 CatalogueIndex)
 void SAPSStrategicMapPanel::UpdateStarList(const float DeltaSeconds)
 {
 	StarListClock -= DeltaSeconds;
+	// Rio 03.10 (F10 freezes): during a flight the nearest systems change twice a second and each change rebuilt thirty
+	// rows of widgets; the list now follows when the view stops. A search or a list choice still shows at once.
+	if (!bStarListUserChange && Camera->IsFlying())
+	{
+		return;
+	}
+	bStarListUserChange = false;
 	const FAPSStarSystems* Stars = Scene->GetStars();
 	const uint32 Revision = Stars ? HashCombine(Stars->GetRevision(), static_cast<uint32>(Stars->Num())) : 0u;
 	bool bRebuild = bStarListDirty || Revision != StarListRevision;
@@ -1286,6 +1384,7 @@ TSharedRef<SWidget> SAPSStrategicMapPanel::ActionButton(const TSharedRef<FAPSObj
 				+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center).Padding(9.0f, 0.0f, 0.0f, 0.0f)
 				[
 					SNew(STextBlock).Text(Action->Label).Font(APSChrome::Font("Bold", 10))
+					.RenderTransform(APSChrome::CapsCenterShift(APSChrome::Font("Bold", 10)))
 					.ColorAndOpacity(bEnabled ? APSChrome::White() : APSChrome::Muted())
 				],
 				FOnClicked::CreateLambda([this, Action]()
@@ -1336,11 +1435,12 @@ void SAPSStrategicMapPanel::UpdateObjectPage(const float DeltaSeconds)
 		return;
 	}
 	// Status values change while the page is open (distances, orders): re-read twice a second in place. Actions whose
-	// availability changed without a revision (stocks filling up) rebuild the page.
+	// availability changed without a revision (stocks filling up) rebuild the page. Not while the camera flies (Rio
+	// 03.10, F10 freezes): every provider's checks then run once the view stops.
 	ObjectFieldsClock -= DeltaSeconds;
 	AActor* Target = ObjectTarget.Get();
 	UWorld* World = Scene->GetWorld();
-	if (ObjectFieldsClock > 0.0f || !Target || !World)
+	if (ObjectFieldsClock > 0.0f || !Target || !World || Camera->IsFlying())
 	{
 		return;
 	}

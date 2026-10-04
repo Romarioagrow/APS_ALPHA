@@ -43,6 +43,7 @@ private:
 	enum class EPreset : uint8
 	{
 		None,
+		Galaxy,
 		Cluster,
 		HomeSystem,
 		HomePlanet,
@@ -101,6 +102,8 @@ private:
 	/** 0 nearest to the view, 1 known, 2 claimed. */
 	int32 StarList{0};
 	bool bStarListDirty{true};
+	/** The search or the list choice changed: rebuilt at once, also while the camera flies. */
+	bool bStarListUserChange{false};
 	uint32 StarListRevision{0};
 	FVector StarListFocus{FVector::ZeroVector};
 	float StarListClock{0.0f};

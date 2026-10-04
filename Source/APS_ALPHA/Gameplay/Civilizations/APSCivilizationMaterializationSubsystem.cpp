@@ -41,12 +41,15 @@ namespace
 	constexpr double PilotSurfaceReachCm = 2000000.0;
 	/** A pilot who has not landed by then gets the seed site. */
 	constexpr double PilotLandTimeoutSeconds = 45.0;
-	/** Colony arrival: the stand point lies on the route between base and pad, this far to its side, so both stay
-	 * inside the collision WorldScape builds around the pilot (about +-64 m); the pilot hovers this high over it until
-	 * the terrain collision exists, and goes back to the landing site after the timeout. */
-	constexpr double PilotArrivalStandOffCm = 1000.0;
+	/** Colony arrival (Rio 02.10, "in front of the ramp, the ship and the star in view"): the stand point lies on the
+	 * pad's base side, this far past the deck edge (half the route clearance, so the base stays clear) and this far to
+	 * the side of the base-pad line (beside the 18 m access ramp); the pilot hovers this high over it until the terrain
+	 * collision exists, and goes back to the landing site after the timeout. */
+	constexpr double PilotArrivalBeyondDeckCm = BasePadRouteClearanceCm * 0.5;
+	constexpr double PilotArrivalStandOffCm = 1300.0;
 	constexpr double PilotArrivalHoverCm = 200.0;
-	constexpr double PilotArrivalTimeoutSeconds = 15.0;
+	/** The colony gets this long to stand (and the ground under the stand point to exist); the way back as long again. */
+	constexpr double PilotArrivalTimeoutSeconds = 30.0;
 	/** A pilot who has walked this far from the landing site keeps walking; no arrival. */
 	constexpr double PilotArrivalLeashCm = 100000.0;
 
@@ -308,20 +311,27 @@ bool UAPSCivilizationMaterializationSubsystem::TryInitializeManifest(
 		return false;
 	}
 
-	AStarSystem* HomeSystem = nullptr;
-	double BestDistanceSq = TNumericLimits<double>::Max();
-	for (TActorIterator<AStarSystem> It(GetWorld()); It; ++It)
+	// Rio 03.10: the generator's own home system first. The system nearest the home planet stood in for it, and with
+	// catalogue neighbours 1-11 AU away a materialized neighbour won (06:58, ZAKONARA at 10.9 AU): the colony then
+	// waited for "the saved home system" for good (24,207 log lines in 5 minutes, no colony).
+	AStarSystem* HomeSystem = OutGenerator->GetPreviewHomeSystem();
+	if (!IsValid(HomeSystem) || !HomeSystem->StableSystemId.IsValid())
 	{
-		if (!IsValid(*It) || !It->StableSystemId.IsValid())
+		HomeSystem = nullptr;
+		double BestDistanceSq = TNumericLimits<double>::Max();
+		for (TActorIterator<AStarSystem> It(GetWorld()); It; ++It)
 		{
-			continue;
-		}
-		const double DistanceSq = FVector::DistSquared(It->GetActorLocation(),
-			OutHomeBody->GetActorLocation());
-		if (DistanceSq < BestDistanceSq)
-		{
-			BestDistanceSq = DistanceSq;
-			HomeSystem = *It;
+			if (!IsValid(*It) || !It->StableSystemId.IsValid())
+			{
+				continue;
+			}
+			const double DistanceSq = FVector::DistSquared(It->GetActorLocation(),
+				OutHomeBody->GetActorLocation());
+			if (DistanceSq < BestDistanceSq)
+			{
+				BestDistanceSq = DistanceSq;
+				HomeSystem = *It;
+			}
 		}
 	}
 	if (!bManifestInitialized)
@@ -354,10 +364,16 @@ bool UAPSCivilizationMaterializationSubsystem::TryInitializeManifest(
 	}
 	else if (HomeSystem && RuntimeManifest.HomeSystemId != HomeSystem->StableSystemId)
 	{
-		UE_LOG(LogTemp, Warning,
-			TEXT("[APS.Civilization.Materialization] waiting for saved home system id=%s current=%s"),
-			*RuntimeManifest.HomeSystemId.ToString(EGuidFormats::DigitsWithHyphens),
-			*HomeSystem->StableSystemId.ToString(EGuidFormats::DigitsWithHyphens));
+		// Every 5 s, not every frame.
+		static double LastWaitLogSeconds = -100.0;
+		if (const double Now = FPlatformTime::Seconds(); Now - LastWaitLogSeconds >= 5.0)
+		{
+			LastWaitLogSeconds = Now;
+			UE_LOG(LogTemp, Warning,
+				TEXT("[APS.Civilization.Materialization] waiting for saved home system id=%s current=%s"),
+				*RuntimeManifest.HomeSystemId.ToString(EGuidFormats::DigitsWithHyphens),
+				*HomeSystem->StableSystemId.ToString(EGuidFormats::DigitsWithHyphens));
+		}
 		return false;
 	}
 	return true;
@@ -489,6 +505,7 @@ bool UAPSCivilizationMaterializationSubsystem::ResolvePilotSite(APlanetaryBody* 
 		// First landed sample, or the spawn moved the pilot again (a world-origin rebase too): settle from here.
 		PilotSettleStartSeconds = Now;
 		PilotSettleLocation = Pilot->GetActorLocation();
+		PilotSettleLocal = HomeBody->GetActorTransform().InverseTransformPosition(PilotSettleLocation);
 	}
 	if (PilotSettleStartSeconds < 0.0 || Now - PilotSettleStartSeconds < PilotSettleSeconds)
 	{
@@ -545,7 +562,8 @@ void UAPSCivilizationMaterializationSubsystem::BeginPilotArrival(APlanetaryBody*
 		|| Spawn->CharacterSpawnPlace != ECharSpawnPlace::PlanetSurface
 		|| !IsValid(Pilot) || Pilot->IsSurfaceHandoffSuspended() || !IsValid(Root) || Root->PlanetScale <= 0.0
 		|| PilotSettleStartSeconds < 0.0
-		|| FVector::Dist(Pilot->GetActorLocation(), PilotSettleLocation) > PilotArrivalLeashCm)
+		|| FVector::Dist(Pilot->GetActorLocation(), HomeBody->GetActorTransform().TransformPosition(PilotSettleLocal))
+			> PilotArrivalLeashCm)
 	{
 		return;
 	}
@@ -566,30 +584,46 @@ void UAPSCivilizationMaterializationSubsystem::BeginPilotArrival(APlanetaryBody*
 	}
 	const FVector StandSide = FVector::DotProduct(-Side, SunAzimuth) >= FVector::DotProduct(Side, SunAzimuth)
 		? Side : -Side;
-	const FVector StandDirection = ((Middle - RootCenter).GetSafeNormal() * Root->PlanetScale
-		+ StandSide * PilotArrivalStandOffCm).GetSafeNormal();
+	// The deck grows with the ship (up to 160 m): the old stand beside the middle of the base-pad line lay under it.
+	const double DeckRadiusCm = IsValid(MaterializedPad)
+		? 0.5 * MinimumPadDiameterCm * MaterializedPad->GetActorScale3D().GetAbs().X
+		: 0.5 * FMath::Max(MinimumPadDiameterCm, PlacementShipEnvelopeDiameterCm);
+	const FVector StandPoint = PadLocation - Along * (DeckRadiusCm + PilotArrivalBeyondDeckCm)
+		+ StandSide * PilotArrivalStandOffCm;
+	const FVector StandDirection = (StandPoint - RootCenter).GetSafeNormal();
 	const double HeightCm = Root->GetGroundHeight(RootCenter + StandDirection * Root->PlanetScale, false);
-	if (!FMath::IsFinite(HeightCm))
+	// The terrain's own relief bounds a ground height; anything beyond it is a broken sample, not a place for the pilot.
+	if (!FMath::IsFinite(HeightCm) || FMath::Abs(HeightCm) > FMath::Max(2.0 * Root->NoiseIntensity, 100000.0))
 	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[APS.Civilization.Materialization] no colony arrival: ground height %.0f m at the stand point"),
+			HeightCm / 100.0);
 		return;
 	}
-	PilotArrivalLocation = RootCenter + StandDirection * (Root->PlanetScale + HeightCm);
-	// Face along the route: toward the landing pad and the ship when they lie sunward, else toward the base, so the
-	// first view holds the colony and, if it can, the sun.
-	const FVector ToPad = FVector::VectorPlaneProject(PadLocation - Middle, Up).GetSafeNormal();
-	const FVector FacingTarget = SunAzimuth.IsNearlyZero() || FVector::DotProduct(ToPad, SunAzimuth) >= 0.0
-		? PadLocation : BaseLocation;
-	PilotArrivalView = FVector::VectorPlaneProject(FacingTarget - PilotArrivalLocation, StandDirection).GetSafeNormal();
-	PilotArrivalReturn = Pilot->GetActorLocation();
+	const FVector Arrival = RootCenter + StandDirection * (Root->PlanetScale + HeightCm);
+	// Face the landing pad and the ship on it; TickPilotArrival turns the camera toward the sun when both fit the frame.
+	const FVector View = FVector::VectorPlaneProject(PadLocation - Arrival, StandDirection).GetSafeNormal();
+	const FTransform BodyTransform = HomeBody->GetActorTransform();
+	PilotArrivalLocal = BodyTransform.InverseTransformPosition(Arrival);
+	PilotArrivalViewLocal = BodyTransform.InverseTransformVectorNoScale(View);
+	PilotArrivalReturnLocal = BodyTransform.InverseTransformPosition(Pilot->GetActorLocation());
 	PilotArrivalDeadlineSeconds = World->GetTimeSeconds() + PilotArrivalTimeoutSeconds;
-	Pilot->SetSurfaceHandoffSuspended(true);
-	Pilot->SetActorLocation(PilotArrivalLocation + StandDirection * PilotArrivalHoverCm, false, nullptr,
-		ETeleportType::TeleportPhysics);
+	bPilotArrivalReturning = false;
 	bPilotArrivalPending = true;
 	bPilotArrivalBegun = true;
 	UE_LOG(LogTemp, Log,
-		TEXT("[APS.Civilization.Materialization] pilot heads to the colony: %.0f m away, stand %.0f m beside the base-pad line"),
-		FVector::Dist(PilotArrivalReturn, PilotArrivalLocation) / 100.0, PilotArrivalStandOffCm / 100.0);
+		TEXT("[APS.Civilization.Materialization] pilot heads to the colony: %.0f m away, stand %.0f m past the %.0f m deck's edge, %.0f m beside the ramp line"),
+		FVector::Dist(Pilot->GetActorLocation(), Arrival) / 100.0, PilotArrivalBeyondDeckCm / 100.0,
+		DeckRadiusCm / 50.0, PilotArrivalStandOffCm / 100.0);
+	Pilot->SetSurfaceHandoffSuspended(true);
+	if (bMaterializationComplete && PlacePilotInHeadquarters(Pilot))
+	{
+		return;
+	}
+	// Upright over the stand point until the colony stands: WorldScape builds the collision around the pilot.
+	Pilot->SetActorLocationAndRotation(Arrival + StandDirection * PilotArrivalHoverCm,
+		FRotationMatrix::MakeFromXZ(View.IsNearlyZero() ? Along : View, StandDirection).Rotator(), false, nullptr,
+		ETeleportType::TeleportPhysics);
 }
 
 void UAPSCivilizationMaterializationSubsystem::TickPilotArrival()
@@ -609,8 +643,16 @@ void UAPSCivilizationMaterializationSubsystem::TickPilotArrival()
 		}
 		return;
 	}
+	// Rio 03.10: a surface start begins inside the new headquarters, as soon as the colony stands.
+	if (bMaterializationComplete && PlacePilotInHeadquarters(Pilot))
+	{
+		return;
+	}
+	const FTransform BodyTransform = HomeBody->GetActorTransform();
+	const FVector Arrival = BodyTransform.TransformPosition(PilotArrivalLocal);
+	const FVector ArrivalView = BodyTransform.TransformVectorNoScale(PilotArrivalViewLocal);
 	const FVector RootCenter = Root->GetActorLocation();
-	const FVector Up = (PilotArrivalLocation - RootCenter).GetSafeNormal();
+	const FVector Up = (Arrival - RootCenter).GetSafeNormal();
 	// Only the current WorldScape collision counts: not the ocean, the colony or an authored sphere.
 	TSet<const UPrimitiveComponent*> TerrainCollision;
 	for (const UWorldScapeLod* Lod : Root->CollisionLods)
@@ -629,16 +671,25 @@ void UAPSCivilizationMaterializationSubsystem::TickPilotArrival()
 		}
 	}
 	TArray<FHitResult> Hits;
-	World->LineTraceMultiByChannel(Hits, PilotArrivalLocation + Up * 30000.0, PilotArrivalLocation - Up * 30000.0,
-		ECC_Visibility, Params);
-	const double ExpectedRadius = FVector::Distance(PilotArrivalLocation, RootCenter);
+	World->LineTraceMultiByChannel(Hits, Arrival + Up * 30000.0, Arrival - Up * 30000.0, ECC_Visibility, Params);
+	const double ExpectedRadius = FVector::Distance(Arrival, RootCenter);
+	// The collision mesh is coarser than the height samples: the placement resolver's own tolerance.
+	const double ToleranceCm = FMath::Max(250.0, static_cast<double>(Root->CollisionTriangleSize) * 2.0);
 	const FHitResult* Ground = Hits.FindByPredicate([&](const FHitResult& Hit)
 	{
 		return Hit.bBlockingHit && TerrainCollision.Contains(Hit.GetComponent())
-			&& FMath::Abs(FVector::Distance(Hit.ImpactPoint, RootCenter) - ExpectedRadius) < 250.0;
+			&& FMath::Abs(FVector::Distance(Hit.ImpactPoint, RootCenter) - ExpectedRadius) < ToleranceCm;
 	});
-	if (Ground)
+	const double Now = World->GetTimeSeconds();
+	const bool bDeadline = Now > PilotArrivalDeadlineSeconds;
+	// Without the headquarters (aps.Colony.HQ 0, the relaxed 50 x 35 m base) the pilot stands by the pad once the colony
+	// stands or has given up; on the way back, as soon as the landing site's ground holds.
+	const bool bColonyDone = bMaterializationComplete
+		|| RuntimeManifest.MaterializationState == EAPSCivilizationMaterializationState::Blocked;
+	if (Ground && (bColonyDone || bDeadline || bPilotArrivalReturning))
 	{
+		const FVector PilotArrivalView = ArrivalView.IsNearlyZero()
+			? FVector::VectorPlaneProject(Pilot->GetActorForwardVector(), Up).GetSafeNormal() : ArrivalView;
 		const UCapsuleComponent* Capsule = Pilot->GetCapsuleComponent();
 		const double HalfHeightCm = Capsule ? Capsule->GetScaledCapsuleHalfHeight() : 90.0;
 		Pilot->SetActorLocation(Ground->ImpactPoint + Up * (HalfHeightCm + 2.0), false, nullptr,
@@ -646,33 +697,103 @@ void UAPSCivilizationMaterializationSubsystem::TickPilotArrival()
 		Pilot->SetActorRotation(FRotationMatrix::MakeFromXZ(PilotArrivalView, Up).Rotator(), ETeleportType::TeleportPhysics);
 		if (APlayerController* Controller = Cast<APlayerController>(Pilot->GetController()))
 		{
-			// The camera tilts up a little so the sun stands in the frame beside the colony.
-			Controller->SetControlRotation(FRotationMatrix::MakeFromXZ((PilotArrivalView
-				+ Up * FMath::Tan(FMath::DegreesToRadians(12.0))).GetSafeNormal(), Up).Rotator());
+			// Rio 02.10: the ship and the star in the first frame. The pilot faces the ship; the camera turns toward the
+			// star as far as the ship stays in view (up to 30 degrees, for a star within 80 degrees of the ship's
+			// bearing) and tilts up to a higher star; otherwise it tilts up a little over the ship.
+			FVector CameraView = PilotArrivalView;
+			double PitchDegrees = 12.0;
+			const APlanet* Planet = Cast<APlanet>(HomeBody);
+			if (Planet && IsValid(Planet->ParentStar))
+			{
+				const FVector ToStar = (Planet->ParentStar->GetActorLocation() - Pilot->GetActorLocation()).GetSafeNormal();
+				const FVector StarAzimuth = FVector::VectorPlaneProject(ToStar, Up).GetSafeNormal();
+				const double StarElevation = FMath::RadiansToDegrees(
+					FMath::Asin(FMath::Clamp(FVector::DotProduct(ToStar, Up), -1.0, 1.0)));
+				const double Bearing = FMath::RadiansToDegrees(FMath::Atan2(
+					FVector::DotProduct(FVector::CrossProduct(PilotArrivalView, StarAzimuth), Up),
+					FVector::DotProduct(PilotArrivalView, StarAzimuth)));
+				if (!StarAzimuth.IsNearlyZero() && StarElevation > -2.0 && FMath::Abs(Bearing) <= 80.0)
+				{
+					CameraView = PilotArrivalView.RotateAngleAxis(
+						FMath::Sign(Bearing) * FMath::Clamp(FMath::Abs(Bearing) - 20.0, 0.0, 30.0), Up);
+					PitchDegrees = FMath::Clamp(StarElevation - 18.0, 12.0, 22.0);
+				}
+			}
+			Controller->SetControlRotation(FRotationMatrix::MakeFromXZ((CameraView
+				+ Up * FMath::Tan(FMath::DegreesToRadians(PitchDegrees))).GetSafeNormal(), Up).Rotator());
+			Pilot->SetViewDirection(CameraView, static_cast<float>(PitchDegrees));
 		}
-		Pilot->SetSurfaceHandoffSuspended(false);
-		bPilotArrivalPending = false;
-		UE_LOG(LogTemp, Log,
-			TEXT("[APS.Civilization.Materialization] pilot arrived at the colony: base %.0f m, pad %.0f m away"),
-			IsValid(MaterializedBase) ? FVector::Dist(Pilot->GetActorLocation(), MaterializedBase->GetActorLocation()) / 100.0 : -1.0,
-			IsValid(MaterializedPad) ? FVector::Dist(Pilot->GetActorLocation(), MaterializedPad->GetActorLocation()) / 100.0 : -1.0);
-		if (UAPSWorldOriginSubsystem* WorldOrigin = World->GetSubsystem<UAPSWorldOriginSubsystem>())
-		{
-			WorldOrigin->RebaseOnto(Pilot->GetActorLocation(), TEXT("colony arrival"));
-		}
-		UAPSCivilizationJournalSubsystem::Post(this, TEXT("Colony"), NSLOCTEXT("APSCivilizationJournal", "PilotArrived",
-			"The pilot reached the colony site."));
+		FinishPilotArrival(Pilot, bPilotArrivalReturning ? TEXT("back at the landing site") : TEXT("at the colony"));
 		return;
 	}
-	if (World->GetTimeSeconds() > PilotArrivalDeadlineSeconds)
+	if (!bDeadline)
 	{
-		// No ground under the stand point in time: back to the landing site the spawn proved.
-		Pilot->SetActorLocation(PilotArrivalReturn, false, nullptr, ETeleportType::TeleportPhysics);
-		Pilot->SetSurfaceHandoffSuspended(false);
-		bPilotArrivalPending = false;
+		return;
+	}
+	if (!bPilotArrivalReturning)
+	{
+		// No colony and no ground under the stand point in time: back over the landing site the spawn proved, held until
+		// its ground collision is there again (the old release there dropped the pilot into the terrain, Rio 03.10).
+		bPilotArrivalReturning = true;
+		PilotArrivalLocal = PilotArrivalReturnLocal;
+		PilotArrivalDeadlineSeconds = Now + PilotArrivalTimeoutSeconds;
+		const FVector Return = BodyTransform.TransformPosition(PilotArrivalReturnLocal);
+		Pilot->SetActorLocation(Return + (Return - RootCenter).GetSafeNormal() * PilotArrivalHoverCm, false, nullptr,
+			ETeleportType::TeleportPhysics);
 		UE_LOG(LogTemp, Warning,
-			TEXT("[APS.Civilization.Materialization] no terrain collision at the colony within %.0f s; the pilot stays at the landing site"),
+			TEXT("[APS.Civilization.Materialization] no colony or terrain collision at the stand point within %.0f s; the pilot goes back over the landing site"),
 			PilotArrivalTimeoutSeconds);
+		return;
+	}
+	// Not even there yet: keep holding (WorldScape builds the collision around the pilot; a release would fall through).
+	PilotArrivalDeadlineSeconds = Now + PilotArrivalTimeoutSeconds;
+	UE_LOG(LogTemp, Error,
+		TEXT("[APS.Civilization.Materialization] still no terrain collision under the landing site; the pilot keeps hovering"));
+}
+
+bool UAPSCivilizationMaterializationSubsystem::PlacePilotInHeadquarters(ACustomGravityCharacter* Pilot)
+{
+	const AColony* Colony = Cast<AColony>(MaterializedBase);
+	FTransform Spot;
+	if (!IsValid(Pilot) || !IsValid(Colony) || !Colony->GetHeadquartersArrival(Spot))
+	{
+		return false;
+	}
+	// On the hall's floor (the building's own collision; no terrain needed), facing into the hall.
+	const FVector Up = Spot.GetUnitAxis(EAxis::Z);
+	const FRotator Facing = FRotationMatrix::MakeFromXZ(Spot.GetUnitAxis(EAxis::X), Up).Rotator();
+	const UCapsuleComponent* Capsule = Pilot->GetCapsuleComponent();
+	const double HalfHeightCm = Capsule ? Capsule->GetScaledCapsuleHalfHeight() : 90.0;
+	Pilot->SetActorLocationAndRotation(Spot.GetLocation() + Up * (HalfHeightCm + 2.0), Facing, false, nullptr,
+		ETeleportType::TeleportPhysics);
+	// A little down the hall, the holotable and the console row ahead.
+	Pilot->SetViewDirection(Spot.GetUnitAxis(EAxis::X), -5.0f);
+	if (APlayerController* Controller = Cast<APlayerController>(Pilot->GetController()))
+	{
+		Controller->SetControlRotation(Facing);
+	}
+	FinishPilotArrival(Pilot, TEXT("inside the headquarters"));
+	return true;
+}
+
+void UAPSCivilizationMaterializationSubsystem::FinishPilotArrival(ACustomGravityCharacter* Pilot, const TCHAR* Where)
+{
+	const bool bAtColony = !bPilotArrivalReturning;
+	Pilot->SetSurfaceHandoffSuspended(false);
+	bPilotArrivalPending = false;
+	bPilotArrivalReturning = false;
+	UE_LOG(LogTemp, Log,
+		TEXT("[APS.Civilization.Materialization] pilot arrived %s: base %.0f m, pad %.0f m away"), Where,
+		IsValid(MaterializedBase) ? FVector::Dist(Pilot->GetActorLocation(), MaterializedBase->GetActorLocation()) / 100.0 : -1.0,
+		IsValid(MaterializedPad) ? FVector::Dist(Pilot->GetActorLocation(), MaterializedPad->GetActorLocation()) / 100.0 : -1.0);
+	if (UAPSWorldOriginSubsystem* WorldOrigin = GetWorld() ? GetWorld()->GetSubsystem<UAPSWorldOriginSubsystem>() : nullptr)
+	{
+		WorldOrigin->RebaseOnto(Pilot->GetActorLocation(), TEXT("colony arrival"));
+	}
+	if (bAtColony)
+	{
+		UAPSCivilizationJournalSubsystem::Post(this, TEXT("Colony"), NSLOCTEXT("APSCivilizationJournal", "PilotArrived",
+			"The pilot reached the colony site."));
 	}
 }
 
@@ -842,10 +963,31 @@ bool UAPSCivilizationMaterializationSubsystem::TryMaterializeEntities(
 		return false;
 	}
 
+	// Rio 03.10: the home colony's main building is the new headquarters (BP_ColonyHQ on its 80 x 55 m foundation), and
+	// a surface start begins inside it. A rough world's relaxed 50 x 35 m site gets it too: the lift below raises the
+	// foundation clear of the highest ground under all of it, and the construction's plinth fills beneath.
+	AColony* HomeColony = Cast<AColony>(MaterializedBase);
+	if (HomeColony)
+	{
+		HomeColony->UseHeadquartersLook();
+	}
 	if (BaseEntity->bHasPersistedTransform)
 	{
 		MaterializedBase->SetActorTransform(BaseEntity->PlanetRelativeTransform
 			* HomeBody->GetActorTransform(), false, nullptr, ETeleportType::TeleportPhysics);
+		// A save sited before the headquarters (or on a relaxed site): if the 80 x 55 m foundation would sink into
+		// the ground there, the compact base stays where the save put it.
+		const UAPSSpawnPlacementSubsystem* Spawner = GetWorld() ? GetWorld()->GetSubsystem<UAPSSpawnPlacementSubsystem>() : nullptr;
+		if (HomeColony && HomeColony->HasHeadquartersLook() && Spawner)
+		{
+			const double Clearance = Spawner->MeasureGroundClearance(MaterializedBase, HomeBody);
+			if (Clearance > -TNumericLimits<double>::Max() && Clearance < -100.0)
+			{
+				UE_LOG(LogTemp, Log, TEXT("[APS.Civilization.Materialization] saved site buries the headquarters by %.0f cm: compact base"),
+					-Clearance);
+				HomeColony->UseCompactLook();
+			}
+		}
 	}
 	else
 	{

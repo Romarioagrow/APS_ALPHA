@@ -1,5 +1,6 @@
 #include "Spaceship.h"
 #include "APS_ALPHA/Core/Controllers/GravityPlayerController.h"
+#include "APS_ALPHA/Core/Rendering/APSPreviewVisibility.h"
 #include "APS_ALPHA/UI/Style/APSUINumber.h"
 #include "APS_ALPHA/Actors/Astro/APSBodyDesignation.h"
 #include "APS_ALPHA/Actors/Astro/Moon.h"
@@ -25,6 +26,8 @@
 #include "Camera/CameraComponent.h"
 #include "Components/ArrowComponent.h"
 #include "Components/BoxComponent.h"
+#include "Components/PoseableMeshComponent.h"
+#include "Algo/BinarySearch.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/Engine.h"
@@ -516,6 +519,18 @@ namespace APSNavigationHud
 				|| Rect.Right > Screen.X - ScreenMargin || Rect.Bottom > Screen.Y - ScreenMargin)
 			{
 				return false;
+			}
+			// Rio 03.10 ("with the whole body in view its label goes above it"): a card never covers its own body inside
+			// the limb ring; the slots above the ring come first.
+			if (Card.RingRadius > 0.0f)
+			{
+				const FVector2D Nearest(
+					FMath::Clamp(Card.Anchor.X, static_cast<double>(Rect.Left), static_cast<double>(Rect.Right)),
+					FMath::Clamp(Card.Anchor.Y, static_cast<double>(Rect.Top), static_cast<double>(Rect.Bottom)));
+				if (FVector2D::DistSquared(Nearest, Card.Anchor) < FMath::Square(static_cast<double>(Card.RingRadius) + 2.0))
+				{
+					return false;
+				}
 			}
 			const FSlateRect Padded = Inflate(Rect, Clearance);
 			FVector2D LeaderStart;
@@ -1038,6 +1053,11 @@ namespace APSShipPerf
 		TEXT("27 -> 4; the hull loses some self-bounce light). 1 keeps the ship in the distance field and the Lumen scene ")
 		TEXT("(before 29.09), 3 takes it out of the Lumen scene only, 0 out of both. Changes apply in flight; the flags ")
 		TEXT("come back when the pilot leaves."));
+	TAutoConsoleVariable<int32> CVarHudOrbitPlanets(
+		TEXT("aps.Hud.OrbitPlanets"), 0,
+		TEXT("Rio 04.10 (\"orbits for every planet\"): 0 draws the orbit of every planet listed (a system seen from outside is ")
+		TEXT("one card, so these are the system's own); N draws only the N nearest (4 before: in a system of nine the others ")
+		TEXT("sat between rings that were not theirs)."));
 	TAutoConsoleVariable<int32> CVarSpeedFov(
 		TEXT("aps.Ship.SpeedFov"), 0,
 		TEXT("1 widens the flight camera's field of view with speed (up to +12 deg, the camera before 29.09). Every ")
@@ -2214,8 +2234,10 @@ void ASpaceship::ConfigurePilotFillLight()
 		if (IsValid(ShipMesh))
 		{
 			// Preserve normal world lighting and opt only this ship into the
-			// private camera-fill channel.
-			ShipMesh->SetLightingChannels(true, false, true);
+			// private camera-fill channel. Rio 04.10 ("ships are black from afar"): channel 1 is the object fill every
+			// ship shares (UAPSObjectLightingSubsystem); clearing it here left boarded and new ships unlit on their
+			// shadow side, so it is kept.
+			ShipMesh->SetLightingChannels(true, ShipMesh->LightingChannels.bChannel1, true);
 		}
 	}
 }
@@ -2660,9 +2682,21 @@ void ASpaceship::UpdateAdaptiveFlightCamera(float DeltaTime)
 	SpringArmComponent->bEnableCameraLag = false;
 	SpringArmComponent->CameraRotationLagSpeed = FMath::Lerp(7.0f, 12.0f, CameraAlpha);
 	SpringArmComponent->CameraLagMaxDistance = 0.0f;
+	UpdateMouseLook(DeltaTime);
 	if (IsGroundVehicle())
 	{
 		UpdateGroundVehicleCamera();
+	}
+	else if (bMouseLookApplied || !FMath::IsNearlyZero(MouseLookYaw, 0.01) || !FMath::IsNearlyZero(MouseLookPitch, 0.01))
+	{
+		// Rio 02.10: mouse look orbits the chase view about the ship's own up and the view's right; back at zero the arm
+		// stands exactly as the camera setup left it.
+		const FQuat Chase = (FRotationMatrix::MakeFromXZ(FlightForwardLocalAxis, FlightUpLocalAxis).Rotator()
+			+ FRotator(-12.0, 0.0, 0.0)).Quaternion();
+		SpringArmComponent->SetRelativeRotation((FQuat(FlightUpLocalAxis.GetSafeNormal(UE_SMALL_NUMBER, FVector::UpVector),
+			FMath::DegreesToRadians(MouseLookYaw)) * Chase
+			* FQuat(FVector::RightVector, FMath::DegreesToRadians(-MouseLookPitch))).GetNormalized());
+		bMouseLookApplied = !FMath::IsNearlyZero(MouseLookYaw, 0.01) || !FMath::IsNearlyZero(MouseLookPitch, 0.01);
 	}
 	if (CameraComponent)
 	{
@@ -3131,6 +3165,13 @@ void ASpaceship::ApplyRotationInput(float DeltaTime)
 	double ResponseScale = 1.0;
 	double DampingScale = 1.0;
 	FVector Steering(PitchInput, YawInput, RollInput);
+	// Rio 03.10 ("why do A and D not turn the ship left and right, as the mouse does?"): with the mouse on the camera (C)
+	// the keys turn the hull at the full rate instead of strafing (the flight model drops the strafe then).
+	if (IsMouseLookActive())
+	{
+		Steering.Y = FMath::Clamp(static_cast<double>(SideInput), -1.0, 1.0)
+			* FMath::Max(static_cast<double>(SteeringInputLimit), 0.05);
+	}
 	if (FlightModel && FlightModel->IsBandFlightActive())
 	{
 		FlightModel->GetSteeringFeel(RateScale, ResponseScale, DampingScale);
@@ -3659,6 +3700,12 @@ FVector ASpaceship::GetNavigationContactWorldAnchor(int32 ContactIndex) const
 	{
 		return Contact->GetWorldLocation();
 	}
+	// Rio 04.10 ("the planet's mark trembles while the ship moves"): a world's centre is its actor; its largest visible
+	// mesh changes as its surface streams (globe, terrain, clouds), and the mark jumped between their bounds.
+	if (Actor->IsA<APlanetaryBody>())
+	{
+		return Actor->GetActorLocation();
+	}
 
 	FVector VisualCenter = Actor->GetActorLocation();
 	double LargestVisualRadius = 0.0;
@@ -3765,7 +3812,9 @@ bool ASpaceship::ShouldShowNavigationMarker(int32 ContactIndex) const
 	}
 
 	const FShipNavigationContact* Contact = ShipNavigation->GetContact(ContactIndex);
-	if (Contact->Type == EShipNavigationContactType::Planet || Contact->bOwnColony)
+	// Rio 04.10: a star system seen from outside is one card, and the star-label mode labels the nearest stars.
+	if (Contact->Type == EShipNavigationContactType::Planet || Contact->bOwnColony || Contact->bSystemSummary
+		|| Contact->bStarLabel)
 	{
 		return true;
 	}
@@ -4015,49 +4064,201 @@ int32 ASpaceship::PaintNavigationOverlay(const FGeometry& AllottedGeometry, cons
 		DrawScreenLine(ContinuousSegment, Color, Thickness, DrawLayer);
 	};
 
+	// Rio 03.10 ("orbits vanish and show through planets"): a planet's orbit is AU-sized while the ship flies a few
+	// thousand kilometres from it, and 192 even samples drew million-kilometre chords straight across nearby worlds (only
+	// the samples were tested against bodies) and dropped whole pieces once a sample went behind the camera. Now the ring
+	// is sampled densely near the camera and coarsely far away, each piece is clipped at the camera plane and keeps only
+	// the parts no body hides (the generation menu's exact sphere test).
+	TArray<FAPSPreviewOccluder> OrbitOccluders;
+	// Rio 03.10 (perf: every ring segment tests every occluder, ~3 ms a frame at the edge of a standing system): a body
+	// under half a pixel on screen hides no part of a line, so only the bodies the camera resolves are tested.
+	const double OrbitPixelAngle = NavigationCameraManager && HudSize.X > 1.0
+		? 2.0 * FMath::Tan(FMath::DegreesToRadians(0.5 * FMath::Clamp(static_cast<double>(NavigationCameraManager->GetFOVAngle()),
+			1.0, 170.0))) / HudSize.X
+		: 0.0;
+	for (const FNavigationOccluder& Occluder : Occluders)
+	{
+		const FVector Relative = Occluder.Center - NavigationCameraLocation;
+		// Below a body's base radius (a valley) its ground still hides what lies under the horizon.
+		const double OccluderRadius = FMath::Min(Occluder.Radius, Relative.Size() - 100.0);
+		if (OccluderRadius > 0.0 && OccluderRadius >= 0.5 * OrbitPixelAngle * Relative.Size())
+		{
+			OrbitOccluders.Add({Relative, OccluderRadius});
+		}
+	}
+	const FVector NavigationCameraForward = NavigationCameraManager
+		? NavigationCameraManager->GetCameraRotation().Vector() : FVector::ForwardVector;
+
 	// Rio 02.10: orbits must read at a glance in flight. A soft glow under a firm line, brightest at the body and fading
 	// along the orbit away from it, so the ring also shows where its world is.
 	auto DrawOrbit = [&](const FVector& Center, const FVector& TowardBody, const FVector& Tangent, double Radius,
 		const FLinearColor& Color, bool bSelected, int32 DrawLayer)
 	{
-		if (Radius <= UE_DOUBLE_SMALL_NUMBER) return;
-		constexpr int32 SegmentCount = 192;
-		constexpr int32 ChunkPoints = 7;
+		if (Radius <= UE_DOUBLE_SMALL_NUMBER || !NavigationCameraManager) return;
+		constexpr int32 ChunkSegments = 7;
 		const float CoreWidth = bSelected ? 2.2f : 1.5f;
 		const float GlowWidth = bSelected ? 7.0f : 5.0f;
-		TArray<FVector2D> Chunk;
-		const auto Flush = [&](const int32 LastIndex)
+
+		// Rio 04.10 ("the orbits tremble while the ship moves"): the ring is sampled on angles fixed to the ring itself
+		// (from a world axis in its plane), not counted from the body or from the camera's nearest point: those moved every
+		// vertex of the polyline along the ring each frame, so its chords swam. Near the camera the steps are finer,
+		// each a power-of-two division of 1/192 of a turn, so a vertex stays where it is and only detail comes and goes.
+		const FVector RingNormal = FVector::CrossProduct(TowardBody, Tangent).GetSafeNormal();
+		FVector AxisX = FVector::VectorPlaneProject(FVector::ForwardVector, RingNormal).GetSafeNormal();
+		if (AxisX.IsNearlyZero()) AxisX = FVector::VectorPlaneProject(FVector::RightVector, RingNormal).GetSafeNormal();
+		const FVector AxisY = FVector::CrossProduct(RingNormal, AxisX).GetSafeNormal();
+		// The body's angle on that ring: the brightness falls off from it.
+		const double BodyAngle = FMath::Atan2(FVector::DotProduct(TowardBody, AxisY), FVector::DotProduct(TowardBody, AxisX));
+		const FVector CameraRelative = NavigationCameraLocation - Center;
+		const double InPlaneX = FVector::DotProduct(CameraRelative, AxisX);
+		const double InPlaneY = FVector::DotProduct(CameraRelative, AxisY);
+		const double OffPlane = FVector::DotProduct(CameraRelative, RingNormal);
+		const double NearestAngle = FMath::Atan2(InPlaneY, InPlaneX);
+		const double RingDistance = FMath::Sqrt(
+			FMath::Square(FMath::Sqrt(InPlaneX * InPlaneX + InPlaneY * InPlaneY) - Radius) + OffPlane * OffPlane);
+		const double MaxStep = UE_TWO_PI / 192.0;
+		const double FineStep = FMath::Clamp(0.3 * RingDistance / Radius, MaxStep / 1048576.0, MaxStep);
+		// The lattice step wanted at an angular distance from the camera's nearest point (it grows away from it).
+		const auto LatticeStep = [MaxStep, FineStep](const double Away)
 		{
-			if (Chunk.Num() >= 2)
+			const double Wanted = FMath::Clamp(FineStep + 0.18 * Away, FineStep, MaxStep);
+			const int32 Level = FMath::Clamp(FMath::CeilToInt(FMath::Log2(MaxStep / Wanted)), 0, 20);
+			return MaxStep / static_cast<double>(1 << Level);
+		};
+		// From the nearest point both ways to the far side, each next angle the next lattice point of its level (always
+		// moving on: a point the rounding lands on again is skipped).
+		TArray<double, TInlineAllocator<256>> Forward;
+		TArray<double, TInlineAllocator<256>> Backward;
+		for (double Angle = NearestAngle; Forward.Num() < 600;)
+		{
+			const double Lattice = LatticeStep(Angle - NearestAngle);
+			double Next = (FMath::FloorToDouble(Angle / Lattice) + 1.0) * Lattice;
+			if (Next <= Angle + Lattice * 1.0e-3) Next += Lattice;
+			Angle = Next;
+			if (Angle >= NearestAngle + UE_DOUBLE_PI) break;
+			Forward.Add(Angle);
+		}
+		for (double Angle = NearestAngle; Backward.Num() < 600;)
+		{
+			const double Lattice = LatticeStep(NearestAngle - Angle);
+			double Next = (FMath::CeilToDouble(Angle / Lattice) - 1.0) * Lattice;
+			if (Next >= Angle - Lattice * 1.0e-3) Next -= Lattice;
+			Angle = Next;
+			if (Angle <= NearestAngle - UE_DOUBLE_PI) break;
+			Backward.Add(Angle);
+		}
+		TArray<double, TInlineAllocator<512>> Angles;
+		for (int32 Index = Backward.Num() - 1; Index >= 0; --Index)
+		{
+			Angles.Add(Backward[Index]);
+		}
+		for (const double Each : Forward)
+		{
+			Angles.Add(Each);
+		}
+		// The body itself is a vertex too (it stands still on its orbit), so the line passes through it and not along a
+		// chord beside it (thousands of km off at 1 AU between lattice points).
+		if (!Angles.IsEmpty())
+		{
+			double BodyAt = BodyAngle;
+			while (BodyAt < Angles[0]) BodyAt += UE_DOUBLE_TWO_PI;
+			while (BodyAt >= Angles[0] + UE_DOUBLE_TWO_PI) BodyAt -= UE_DOUBLE_TWO_PI;
+			const int32 At = Algo::LowerBound(Angles, BodyAt);
+			if (!Angles.IsValidIndex(At) || !FMath::IsNearlyEqual(Angles[At], BodyAt, 1.0e-9))
 			{
-				// Angle 0 is the body (TowardBody points at it).
-				const double Middle = UE_TWO_PI * (LastIndex - 0.5 * (Chunk.Num() - 1)) / SegmentCount;
+				Angles.Insert(BodyAt, At);
+			}
+		}
+		// The far side closes on the farthest lattice point of the other side (a turn on), so no vertex follows the camera.
+		if (Angles.Num() >= 2)
+		{
+			Angles.Add(Angles[0] + UE_DOUBLE_TWO_PI);
+		}
+
+		TArray<FVector2D> Chunk;
+		double ChunkAngleSum = 0.0;
+		int32 ChunkCount = 0;
+		const auto Flush = [&]()
+		{
+			if (Chunk.Num() >= 2 && ChunkCount > 0)
+			{
+				const double Middle = ChunkAngleSum / ChunkCount - BodyAngle;
 				const float Near = FMath::Pow(0.5f + 0.5f * static_cast<float>(FMath::Cos(Middle)), 1.6f);
 				const float Alpha = Color.A * (0.38f + 0.62f * Near);
 				DrawScreenLine(Chunk, FLinearColor(Color.R, Color.G, Color.B, Alpha * 0.22f), GlowWidth, DrawLayer);
 				DrawScreenLine(Chunk, FLinearColor(Color.R, Color.G, Color.B, Alpha), CoreWidth, DrawLayer + 1);
 			}
 			Chunk.Reset();
+			ChunkAngleSum = 0.0;
+			ChunkCount = 0;
 		};
-		for (int32 Index = 0; Index <= SegmentCount; ++Index)
+		const auto RingPoint = [&](const double Angle)
 		{
-			const double Angle = UE_TWO_PI * static_cast<double>(Index) / SegmentCount;
-			const FVector WorldPoint = Center + TowardBody * (FMath::Cos(Angle) * Radius) + Tangent * (FMath::Sin(Angle) * Radius);
-			FVector2D ScreenPoint;
-			if (IsWorldPointOccluded(WorldPoint, nullptr, 1.0) || !ProjectWorldLocationToNavigationScreen(WorldPoint, ScreenPoint, false))
+			return Center + AxisX * (FMath::Cos(Angle) * Radius) + AxisY * (FMath::Sin(Angle) * Radius)
+				- NavigationCameraLocation;
+		};
+		TArray<FVector2D> Intervals;
+		FVector Previous = RingPoint(Angles[0]);
+		for (int32 Index = 1; Index < Angles.Num(); ++Index)
+		{
+			const FVector Current = RingPoint(Angles[Index]);
+			const double SegmentAngle = 0.5 * (Angles[Index - 1] + Angles[Index]);
+			FVector From = Previous;
+			FVector To = Current;
+			Previous = Current;
+			constexpr double NearPlaneCm = 10.0;
+			const double DepthFrom = FVector::DotProduct(From, NavigationCameraForward);
+			const double DepthTo = FVector::DotProduct(To, NavigationCameraForward);
+			if (DepthFrom <= NearPlaneCm && DepthTo <= NearPlaneCm)
 			{
-				Flush(Index - 1);
+				Flush();
 				continue;
 			}
-			Chunk.Add(ScreenPoint);
-			if (Chunk.Num() >= ChunkPoints)
+			if (DepthFrom <= NearPlaneCm)
 			{
-				// Each chunk carries its own brightness; the next one starts where this one ends.
-				Flush(Index);
-				Chunk.Add(ScreenPoint);
+				From = FMath::Lerp(From, To, (NearPlaneCm - DepthFrom) / (DepthTo - DepthFrom));
+			}
+			else if (DepthTo <= NearPlaneCm)
+			{
+				To = FMath::Lerp(From, To, (NearPlaneCm - DepthFrom) / (DepthTo - DepthFrom));
+			}
+			APSPreviewVisibility::VisibleIntervals(From, To, OrbitOccluders, Intervals);
+			if (Intervals.IsEmpty())
+			{
+				Flush();
+				continue;
+			}
+			for (const FVector2D& Interval : Intervals)
+			{
+				FVector2D Start;
+				FVector2D End;
+				if (!ProjectWorldLocationToNavigationScreen(NavigationCameraLocation + FMath::Lerp(From, To, Interval.X), Start, false)
+					|| !ProjectWorldLocationToNavigationScreen(NavigationCameraLocation + FMath::Lerp(From, To, Interval.Y), End, false))
+				{
+					Flush();
+					continue;
+				}
+				if (!Chunk.IsEmpty() && !Chunk.Last().Equals(Start, 0.5))
+				{
+					Flush();
+				}
+				if (Chunk.IsEmpty())
+				{
+					Chunk.Add(Start);
+				}
+				Chunk.Add(End);
+				ChunkAngleSum += SegmentAngle;
+				++ChunkCount;
+				if (ChunkCount >= ChunkSegments)
+				{
+					// Each chunk carries its own brightness; the next one starts where this one ends.
+					const FVector2D Joint = Chunk.Last();
+					Flush();
+					Chunk.Add(Joint);
+				}
 			}
 		}
-		Flush(SegmentCount);
+		Flush();
 	};
 
 	if (bNavigationGuidesVisible)
@@ -4086,7 +4287,8 @@ int32 ASpaceship::PaintNavigationOverlay(const FGeometry& AllottedGeometry, cons
 			bool bShouldPaintOrbit = bSelectedOrbit;
 			if (const APlanet* Planet = Cast<APlanet>(Body))
 			{
-				bShouldPaintOrbit |= Planet == SelectedPlanetFamily || PaintedPlanetCount < 4;
+				const int32 OrbitPlanets = APSShipPerf::CVarHudOrbitPlanets.GetValueOnGameThread();
+				bShouldPaintOrbit |= Planet == SelectedPlanetFamily || OrbitPlanets <= 0 || PaintedPlanetCount < OrbitPlanets;
 				if (bShouldPaintOrbit) ++PaintedPlanetCount;
 			}
 			else if (const AMoon* Moon = Cast<AMoon>(Body))
@@ -4435,7 +4637,7 @@ int32 ASpaceship::PaintNavigationOverlay(const FGeometry& AllottedGeometry, cons
 			// Rio 02.10 ("where did the indices of the planets and moons go"): the catalogue designation after the name,
 			// as in the generation menu.
 			Card.Designation = APSBodyDesignation::Of(ContactActor);
-			Card.ShortName = Card.Designation.IsEmpty() ? Contact->DisplayName : Contact->DisplayName + TEXT(" ") + Card.Designation;
+			Card.ShortName = Card.Designation.IsEmpty() ? Contact->DisplayName : Card.Designation + TEXT(" ") + Contact->DisplayName;
 			// Rio 02.10: a ring on the limb of the body instead of a cross. It hugs a resolved disc and gives way once the
 			// body fills a large part of the view.
 			double LimbPixels = 0.0;
@@ -4497,6 +4699,8 @@ int32 ASpaceship::PaintNavigationOverlay(const FGeometry& AllottedGeometry, cons
 				if (ShownUnits >= 12) break;
 				const ASpaceship* UnitShip = Marker.Unit->Ship.Get();
 				const FVector UnitWorld = UnitShip->GetActorLocation();
+				// Rio 04.10: ships in a star system seen from outside fold into its card with its worlds.
+				if (ShipNavigation && ShipNavigation->IsInFoldedSystem(UnitWorld)) continue;
 				FVector2D UnitScreen;
 				// On screen only: a card is never drawn for a ship beyond the edge.
 				if (IsWorldPointOccluded(UnitWorld, UnitShip)
@@ -4611,14 +4815,36 @@ int32 ASpaceship::PaintNavigationOverlay(const FGeometry& AllottedGeometry, cons
 				FMath::Lerp(Color.R, 0.93f, 0.55f),
 				FMath::Lerp(Color.G, 0.96f, 0.55f),
 				FMath::Lerp(Color.B, 0.99f, 0.55f), 1.0f);
-			DrawCardText(Card.DrawTitle, 0.0f, 5.0f, APSNavigationHud::MarkerFont(), TextColor);
-			if (!Card.Designation.IsEmpty())
+			// Rio 02.10 ("the index stands too far from the name: first the index, one space, then the name"): the
+			// designation goes in front of the name, in the marker colour ("PLANET  //  A5 FRAULHOLM").
+			int32 NameAt = Card.Designation.IsEmpty() ? INDEX_NONE : Card.DrawTitle.Find(TEXT("//"));
+			if (NameAt != INDEX_NONE)
 			{
-				// Rio 02.10: the designation follows the name, in the marker colour ("PLANET  //  REKESEA  A7").
-				const float TitleWidth = static_cast<float>(
-					FontMeasure->Measure(Card.DrawTitle + TEXT("  "), APSNavigationHud::MarkerFont()).X);
-				DrawCardText(Card.Designation, TitleWidth, 5.0f, APSNavigationHud::MarkerFont(),
+				NameAt += 2;
+				while (NameAt < Card.DrawTitle.Len() && Card.DrawTitle[NameAt] == TEXT(' '))
+				{
+					++NameAt;
+				}
+				const FString Prefix = Card.DrawTitle.Left(NameAt);
+				const float PrefixWidth = static_cast<float>(FontMeasure->Measure(Prefix, APSNavigationHud::MarkerFont()).X);
+				const float DesignationWidth = static_cast<float>(
+					FontMeasure->Measure(Card.Designation + TEXT(" "), APSNavigationHud::MarkerFont()).X);
+				DrawCardText(Prefix, 0.0f, 5.0f, APSNavigationHud::MarkerFont(), TextColor);
+				DrawCardText(Card.Designation, PrefixWidth, 5.0f, APSNavigationHud::MarkerFont(),
 					FLinearColor(Color.R, Color.G, Color.B, 1.0f));
+				DrawCardText(Card.DrawTitle.Mid(NameAt), PrefixWidth + DesignationWidth, 5.0f, APSNavigationHud::MarkerFont(),
+					TextColor);
+			}
+			else
+			{
+				DrawCardText(Card.DrawTitle, 0.0f, 5.0f, APSNavigationHud::MarkerFont(), TextColor);
+				if (!Card.Designation.IsEmpty())
+				{
+					const float TitleWidth = static_cast<float>(
+						FontMeasure->Measure(Card.DrawTitle + TEXT(" "), APSNavigationHud::MarkerFont()).X);
+					DrawCardText(Card.Designation, TitleWidth, 5.0f, APSNavigationHud::MarkerFont(),
+						FLinearColor(Color.R, Color.G, Color.B, 1.0f));
+				}
 			}
 			DrawCardText(Card.DrawDetail, 0.0f, 5.0f + ContactLine, APSNavigationHud::MarkerFont(), TextColor);
 			if (!Card.MergedLine.IsEmpty())
@@ -4827,6 +5053,10 @@ FLinearColor ASpaceship::GetNavigationMarkerColor(int32 ContactIndex) const
 	{
 		return FLinearColor(0.36f, 1.0f, 0.58f, 0.98f);
 	}
+	if (Contact->MarkerColour.A > 0.0f)
+	{
+		return Contact->MarkerColour;
+	}
 	FLinearColor BodyColor;
 	if (APSNavigationHud::BodyMarkerColor(Contact->Actor.Get(), BodyColor))
 	{
@@ -4979,9 +5209,28 @@ void ASpaceship::RefreshShipGravityZone()
 	}
 }
 
+namespace
+{
+	/** Rio 02.10: the mouse mode last chosen with C, for the session: a rover or a hover starts on the camera; the drone
+	 * and the ships start on steering. */
+	bool GMouseLookOnGround = true;
+	bool GMouseLookInAir = false;
+	/** Degrees of camera orbit per unit of the mouse axes, as the drone's mouse turns it. */
+	constexpr double MouseLookDegreesPerUnit = 1.6;
+
+	bool IsGroundMouseLookCraft(const ASpaceship& Ship)
+	{
+		return Ship.IsGroundVehicle() && Ship.GetGroundVehicleKind() != EAPSGroundVehicleKind::Drone;
+	}
+}
+
 void ASpaceship::PossessedBy(AController* NewController)
 {
 	Super::PossessedBy(NewController);
+	// Rio 02.10: the mouse mode last chosen for this kind of craft, the camera behind it.
+	bMouseLook = IsGroundMouseLookCraft(*this) ? GMouseLookOnGround : GMouseLookInAir;
+	MouseLookYaw = 0.0;
+	MouseLookPitch = 0.0;
 	// Boarding unparked the ship (APilotingVehicle detaches it from its world): its gravity holds aboard from now on.
 	RefreshShipGravityZone();
 	SetHullSceneLightingExcluded(true);
@@ -5073,7 +5322,11 @@ void ASpaceship::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent
 	PlayerInputComponent->BindKey(EKeys::M, IE_Pressed, this, &ASpaceship::ToggleNavigationPanel);
 	PlayerInputComponent->BindKey(EKeys::T, IE_Pressed, this, &ASpaceship::SelectNextNavigationTarget);
 	PlayerInputComponent->BindKey(EKeys::V, IE_Pressed, this, &ASpaceship::ToggleNavigationGuides);
+	// Rio 04.10: Y labels the nearest stars (name, class, distance, what is known).
+	PlayerInputComponent->BindKey(EKeys::Y, IE_Pressed, this, &ASpaceship::ToggleNearStarLabels);
 	PlayerInputComponent->BindKey(EKeys::Z, IE_Pressed, this, &ASpaceship::ToggleAutopilot);
+	// Rio 02.10: C switches the mouse between steering and the camera.
+	PlayerInputComponent->BindKey(EKeys::C, IE_Pressed, this, &ASpaceship::ToggleMouseLook);
 	// Rio 02.10: J toggles the star drive (spool, cruise, W/S faster/slower).
 	if (FlightModel)
 	{
@@ -5248,6 +5501,37 @@ void ASpaceship::ToggleNavigationPanel()
 void ASpaceship::ToggleNavigationGuides()
 {
 	bNavigationGuidesVisible = !bNavigationGuidesVisible;
+}
+
+void ASpaceship::ToggleNearStarLabels()
+{
+	if (ShipNavigation)
+	{
+		ShipNavigation->bShowNearStarLabels = !ShipNavigation->bShowNearStarLabels;
+		ShipNavigation->RefreshContacts(GetActorLocation(), true);
+		int32 Labels = 0;
+		for (const FShipNavigationContact& Contact : ShipNavigation->GetContacts())
+		{
+			Labels += Contact.bStarLabel ? 1 : 0;
+		}
+		UE_LOG(LogTemp, Log, TEXT("[APS.Nav] star labels %s: %d"), ShipNavigation->bShowNearStarLabels ? TEXT("on") : TEXT("off"),
+			Labels);
+	}
+}
+
+namespace APSShipNavigationCommands
+{
+	// The Y key from the console too (offscreen test runs hold no viewport focus for a key).
+	FAutoConsoleCommandWithWorld StarLabelsCommand(TEXT("aps.Nav.StarLabels"),
+		TEXT("Rio 04.10: the piloted ship's labels on the nearest stars on and off (the Y key)."),
+		FConsoleCommandWithWorldDelegate::CreateLambda([](UWorld* World)
+		{
+			const APlayerController* Controller = World ? World->GetFirstPlayerController() : nullptr;
+			if (ASpaceship* Ship = Controller ? Cast<ASpaceship>(Controller->GetPawn()) : nullptr)
+			{
+				Ship->ToggleNearStarLabels();
+			}
+		}));
 }
 
 void ASpaceship::SelectNextNavigationTarget()
@@ -5444,6 +5728,17 @@ void ASpaceship::ThrustVertical(float Value)
 
 void ASpaceship::ThrustYaw(float Value)
 {
+	// Rio 02.10: in mouse look the mouse orbits the camera and steers nothing.
+	if (IsMouseLookActive())
+	{
+		YawInput = 0.0f;
+		if (FMath::Abs(Value) > KINDA_SMALL_NUMBER)
+		{
+			MouseLookYaw = FRotator::NormalizeAxis(MouseLookYaw + Value * MouseLookDegreesPerUnit);
+			MouseLookIdleSeconds = 0.0;
+		}
+		return;
+	}
 	YawInput = Value;
 	#if 0 // Legacy per-axis rotation is intentionally replaced by ApplyRotationInput.
 	if (!bEngineRunning || !OnboardComputer || !SpaceshipHull || FMath::Abs(Value) < KINDA_SMALL_NUMBER) return;
@@ -5465,6 +5760,17 @@ void ASpaceship::ThrustYaw(float Value)
 
 void ASpaceship::ThrustPitch(float Value)
 {
+	if (IsMouseLookActive())
+	{
+		PitchInput = 0.0f;
+		if (FMath::Abs(Value) > KINDA_SMALL_NUMBER)
+		{
+			// ThrustPitch is the mouse's Y turned over (DefaultInput scale -1): the mouse up looks up.
+			MouseLookPitch = FMath::Clamp(MouseLookPitch - Value * MouseLookDegreesPerUnit, -40.0, 55.0);
+			MouseLookIdleSeconds = 0.0;
+		}
+		return;
+	}
 	PitchInput = Value;
 	#if 0 // Legacy per-axis rotation is intentionally replaced by ApplyRotationInput.
 	if (!bEngineRunning || !OnboardComputer || !SpaceshipHull || FMath::Abs(Value) < KINDA_SMALL_NUMBER) return;
@@ -5517,26 +5823,16 @@ USceneComponent* ASpaceship::GetPilotSeatComponent() const
 
 FTransform ASpaceship::GetPilotExitTransform() const
 {
-	// In flight (moving, or nothing under the authored exit) the pilot gets up behind the seat, aboard: the exit may be
-	// outside the hull (Rio 02.10: "walk about the flying ship"). Parked or landed, through the authored exit as before.
+	// A ship with an interior gets its pilot up behind the seat, aboard: in flight, docked or landed (Rio 02.10: "F and he
+	// is out at once, beside the ship: one cannot walk about the ship"); they leave it on foot through its ramp or door.
+	// A ship without one (and a ground vehicle) sets them down through its authored exit outside: only a modelled cabin
+	// counts (Rio 03.10, "if a ship has no interior yet, do not touch it"), not the class or its default flags.
 	const FTransform AuthoredExit = PilotExitPoint ? PilotExitPoint->GetComponentTransform() : Super::GetPilotExitTransform();
-	if (!PilotChair || !ProvidesShipGravity())
+	if (!PilotChair || !HasWalkableInterior())
 	{
 		return AuthoredExit;
 	}
 	const FVector Up = GetActorUpVector();
-	bool bInFlight = KinematicVelocity.Size() > 200.0;
-	if (!bInFlight && GetWorld())
-	{
-		FCollisionQueryParams Params(SCENE_QUERY_STAT(APSShipExitGround), false, this);
-		FHitResult Hit;
-		bInFlight = !GetWorld()->LineTraceSingleByChannel(Hit, AuthoredExit.GetLocation(),
-			AuthoredExit.GetLocation() - Up * 1500.0, ECC_Visibility, Params);
-	}
-	if (!bInFlight)
-	{
-		return AuthoredExit;
-	}
 	const FTransform Seat = PilotChair->GetComponentTransform();
 	const FVector Back = -FVector::VectorPlaneProject(Seat.GetUnitAxis(EAxis::X), Up).GetSafeNormal();
 	return FTransform(Seat.GetRotation(), Seat.GetLocation() + Back * 120.0 + Up * 60.0);
@@ -5667,6 +5963,74 @@ namespace APSSpaceshipGroundVehicle
 		{TEXT("VehicleTireBR"), FVector(-135.2, 139.8, 50.8), false, false}};
 	/** SM_Offroad_Tire: 51.2 cm radius around its centre, axle along Y, modelled as a right-side tyre. */
 	constexpr double OffroadTireRadius = 51.2;
+	/** The template's skeletal chassis: control arms, dampers, hubs and engine, skinned to its suspension bones. */
+	const TCHAR* const OffroadSuspensionPath = TEXT("/Game/Vehicles/OffroadCar/SKM_Offroad.SKM_Offroad");
+
+	/** Each tyre's suspension bones (FL, FR, BL, BR, the order of OffroadTires) at rest, parents first. */
+	void CollectSuspensionBones(UPoseableMeshComponent& Mesh, TArray<ASpaceship::FGroundVehicleSuspensionBone>& OutBones)
+	{
+		using FBone = ASpaceship::FGroundVehicleSuspensionBone;
+		OutBones.Reset();
+		const auto Find = [&Mesh](const FString& Name, FVector& OutLocation)
+		{
+			if (Mesh.GetBoneIndex(FName(*Name)) == INDEX_NONE)
+			{
+				return false;
+			}
+			OutLocation = Mesh.GetBoneLocationByName(FName(*Name), EBoneSpaces::ComponentSpace);
+			return true;
+		};
+		const TCHAR* const Suffixes[] = {TEXT("FL"), TEXT("FR"), TEXT("BL"), TEXT("BR")};
+		for (int32 Wheel = 0; Wheel < 4; ++Wheel)
+		{
+			const FString Side = Suffixes[Wheel];
+			FVector LowerRoot;
+			FVector LowerEnd;
+			const bool bLower = Find(TEXT("LowerControlArm_") + Side, LowerRoot) && Find(TEXT("LowerControlArm_End_") + Side, LowerEnd);
+			const auto Add = [&](const FString& Name, const FBone::ERole Role, const FVector& Target, const FVector& Pivot)
+			{
+				const FName BoneName(*Name);
+				const int32 Index = Mesh.GetBoneIndex(BoneName);
+				if (Index == INDEX_NONE)
+				{
+					return;
+				}
+				FBone& Bone = OutBones.AddDefaulted_GetRef();
+				Bone.Name = BoneName;
+				Bone.Index = Index;
+				Bone.Wheel = Wheel;
+				Bone.Role = Role;
+				Bone.bSteers = Wheel < 2 && Role == FBone::ERole::Hub;
+				Bone.Rest = Mesh.GetBoneTransformByName(BoneName, EBoneSpaces::ComponentSpace);
+				Bone.Target = Target;
+				Bone.Pivot = Pivot;
+				Bone.ArmRoot = LowerRoot;
+				Bone.ArmEnd = LowerEnd;
+			};
+			for (const TCHAR* Hub : {TEXT("HUB_"), TEXT("HUB_Upper_"), TEXT("HUB_Upper_Mnt_"), TEXT("LowerControlArm_End_"),
+				TEXT("UpperControlArm_End_"), TEXT("VisWheel_")})
+			{
+				Add(Hub + Side, FBone::ERole::Hub, FVector::ZeroVector, FVector::ZeroVector);
+			}
+			FVector UpperEnd;
+			if (bLower)
+			{
+				Add(TEXT("LowerControlArm_") + Side, FBone::ERole::Arm, LowerEnd, FVector::ZeroVector);
+			}
+			if (Find(TEXT("UpperControlArm_End_") + Side, UpperEnd))
+			{
+				Add(TEXT("UpperControlArm_") + Side, FBone::ERole::Arm, UpperEnd, FVector::ZeroVector);
+			}
+			FVector Top;
+			FVector Mount;
+			if (bLower && Find(TEXT("SpringDamper_") + Side, Top) && Find(TEXT("SpringDamper_End_") + Side, Mount))
+			{
+				Add(TEXT("SpringDamper_") + Side, FBone::ERole::Damper, Mount, Top);
+				Add(TEXT("SpringDamper_End_") + Side, FBone::ERole::DamperEnd, Mount, Top);
+			}
+		}
+		OutBones.Sort([](const FBone& A, const FBone& B) { return A.Index < B.Index; });
+	}
 }
 
 void ASpaceship::ConfigureAsGroundVehicle(const EAPSGroundVehicleKind Kind)
@@ -5674,6 +6038,12 @@ void ASpaceship::ConfigureAsGroundVehicle(const EAPSGroundVehicleKind Kind)
 	using namespace APSSpaceshipGroundVehicle;
 	GroundVehicleKind = Kind;
 	GroundVehicleWheels.Reset();
+	GroundVehicleSuspensionBones.Reset();
+	if (UPoseableMeshComponent* OldSuspension = GroundVehicleSuspension.Get())
+	{
+		OldSuspension->DestroyComponent();
+	}
+	GroundVehicleSuspension.Reset();
 	if (!IsGroundVehicle() || !SpaceshipHull)
 	{
 		return;
@@ -5771,9 +6141,38 @@ void ASpaceship::ConfigureAsGroundVehicle(const EAPSGroundVehicleKind Kind)
 			UE_LOG(LogTemp, Warning, TEXT("[APS.Vehicles] ROVER: tyre mesh %s is missing; the body drives without tyres"),
 				OffroadTirePath);
 		}
+		// Rio 03.10 ("the rover's wheels still hang in the air"): the template buggy keeps its control arms, dampers and
+		// hubs in the skeletal chassis, not in SM_Offroad_Body, so the tyres stood 30-55 cm off the body with nothing
+		// holding them. The chassis is posed after the tyres' travel and steering (UAPSShipFlightModel::PoseVehicle).
+		if (USkeletalMesh* Chassis = LoadObject<USkeletalMesh>(nullptr, OffroadSuspensionPath))
+		{
+			UPoseableMeshComponent* Suspension = NewObject<UPoseableMeshComponent>(this, TEXT("VehicleSuspension"), RF_Transient);
+			Suspension->SetupAttachment(SpaceshipHull);
+			Suspension->SetMobility(EComponentMobility::Movable);
+			Suspension->SetSkinnedAssetAndUpdate(Chassis);
+			Suspension->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			Suspension->SetCollisionResponseToAllChannels(ECR_Ignore);
+			Suspension->SetGenerateOverlapEvents(false);
+			Suspension->SetCanEverAffectNavigation(false);
+			AddInstanceComponent(Suspension);
+			Suspension->RegisterComponent();
+			GroundVehicleSuspension = Suspension;
+			CollectSuspensionBones(*Suspension, GroundVehicleSuspensionBones);
+		}
+		else
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[APS.Vehicles] ROVER: chassis %s is missing; the tyres stand without arms"),
+				OffroadSuspensionPath);
+		}
 	}
-	UE_LOG(LogTemp, Log, TEXT("[APS.Vehicles] %s configured: %s at scale %.2f, %d tyres"), *GetGroundVehicleName(),
-		*GetNameSafe(SpaceshipHull->GetStaticMesh()), SpaceshipHull->GetRelativeScale3D().X, GroundVehicleWheels.Num());
+	UE_LOG(LogTemp, Log, TEXT("[APS.Vehicles] %s configured: %s at scale %.2f, %d tyres, %d suspension bones"),
+		*GetGroundVehicleName(), *GetNameSafe(SpaceshipHull->GetStaticMesh()), SpaceshipHull->GetRelativeScale3D().X,
+		GroundVehicleWheels.Num(), GroundVehicleSuspensionBones.Num());
+}
+
+UPoseableMeshComponent* ASpaceship::GetGroundVehicleSuspension() const
+{
+	return GroundVehicleSuspension.Get();
 }
 
 FString ASpaceship::GetGroundVehicleName() const
@@ -5827,8 +6226,62 @@ void ASpaceship::UpdateGroundVehicleCamera()
 	}
 	// Behind the heading and level with the gravity, looking down 13 degrees (the drone's look pitch tilts it); the
 	// arm's rotation lag smooths the bumps of the ground.
-	const FQuat Frame = FRotationMatrix::MakeFromXZ(Forward, Up).ToQuat();
-	const FQuat Tilt(FVector::RightVector, FMath::DegreesToRadians(13.0 - PitchDegrees));
+	// Rio 02.10: mouse look turns the view about the gravity up and tilts it (looking up lifts it).
+	const FVector LookForward = FQuat(Up, FMath::DegreesToRadians(MouseLookYaw)).RotateVector(Forward);
+	const FQuat Frame = FRotationMatrix::MakeFromXZ(LookForward, Up).ToQuat();
+	const FQuat Tilt(FVector::RightVector, FMath::DegreesToRadians(13.0 - PitchDegrees - MouseLookPitch));
 	SpringArmComponent->SetWorldRotation((Frame * Tilt).GetNormalized());
 	SpringArmComponent->CameraRotationLagSpeed = 8.0f;
+}
+
+bool ASpaceship::HasWalkableInterior() const
+{
+	if (WalkableInteriorState < 0)
+	{
+		// An authored seat socket on a hull mesh marks a modelled cabin (the Blender interiors carry PilotSeat); the
+		// generic "Seat"/"DriverSeat" names are left out, a vehicle's or a prop's socket is no cabin.
+		static const FName SeatSockets[] = {TEXT("PilotSeat"), TEXT("PilotChair"), TEXT("CockpitSeat")};
+		bool bCabin = false;
+		if (!IsGroundVehicle())
+		{
+			TInlineComponentArray<UStaticMeshComponent*> Meshes(this);
+			for (const UStaticMeshComponent* Mesh : Meshes)
+			{
+				for (const FName Socket : SeatSockets)
+				{
+					bCabin |= IsValid(Mesh) && Mesh->GetStaticMesh() && Mesh->DoesSocketExist(Socket);
+				}
+			}
+		}
+		WalkableInteriorState = bCabin ? 1 : 0;
+	}
+	return WalkableInteriorState > 0;
+}
+
+bool ASpaceship::IsMouseLookActive() const
+{
+	return bMouseLook || (FlightModel && FlightModel->IsAutopilotEngaged());
+}
+
+void ASpaceship::ToggleMouseLook()
+{
+	bMouseLook = !bMouseLook;
+	(IsGroundMouseLookCraft(*this) ? GMouseLookOnGround : GMouseLookInAir) = bMouseLook;
+	YawInput = 0.0f;
+	PitchInput = 0.0f;
+	UE_LOG(LogTemp, Log, TEXT("[APS.Ship] %s: the mouse %s"), *GetNameSafe(this),
+		bMouseLook ? TEXT("turns the camera") : TEXT("steers"));
+}
+
+void ASpaceship::UpdateMouseLook(const float DeltaTime)
+{
+	MouseLookIdleSeconds += DeltaTime;
+	// Off, the camera eases back behind; on a rover or a hover driving on, it also comes back after the mouse rests.
+	const bool bRecentre = !IsMouseLookActive() || (IsGroundMouseLookCraft(*this) && MouseLookIdleSeconds > 2.5
+		&& KinematicVelocity.SizeSquared() > FMath::Square(500.0));
+	if (bRecentre)
+	{
+		MouseLookYaw = FMath::FInterpTo(MouseLookYaw, 0.0, static_cast<double>(DeltaTime), 2.5);
+		MouseLookPitch = FMath::FInterpTo(MouseLookPitch, 0.0, static_cast<double>(DeltaTime), 2.5);
+	}
 }

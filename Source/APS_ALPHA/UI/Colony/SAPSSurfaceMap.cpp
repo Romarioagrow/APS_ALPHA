@@ -10,6 +10,7 @@
 #include "APS_ALPHA/Core/Planetary/APSPlanetSurfaceProfile.h"
 #include "APS_ALPHA/Core/Planetary/APSPlanetSurfaceRadius.h"
 #include "APS_ALPHA/Gameplay/Civilizations/APSCivilizationIdentityComponent.h"
+#include "APS_ALPHA/Gameplay/Expansion/APSInfrastructure.h"
 #include "APS_ALPHA/Gameplay/Fleet/APSFleetCommand.h"
 #include "APS_ALPHA/Generation/APSWorldScapePlanetNoise.h"
 #include "APS_ALPHA/Pawns/Spaceships/Spaceship.h"
@@ -807,6 +808,24 @@ void SAPSSurfaceMap::RefreshMarkers()
 			}
 		}
 	}
+	// Rio 04.10 ("the new buildings show on the regular map, not on the surface map"): the infrastructure catalogue's
+	// structures at this world too (raised by ships or by hand in build mode), the civilization's own, so known without a
+	// survey; on the ground an outpost mark, in orbit a station mark, in their department's colour.
+	if (const FAPSInfrastructure* Infrastructure = APSInfrastructureFind(LiveWorld))
+	{
+		TArray<const FAPSBuiltStructure*> Here;
+		Infrastructure->GetAt(LiveBody, Here);
+		for (const FAPSBuiltStructure* Built : Here)
+		{
+			const AActor* Actor = Built ? Built->Actor.Get() : nullptr;
+			if (!Actor) continue;
+			const APSInfrastructure::FType* Type = APSInfrastructure::Find(Built->Type);
+			const bool bOrbital = FVector::Dist(Actor->GetActorLocation(), Centre) > RadiusCm * 1.02;
+			Add(bOrbital ? EMarker::Station : EMarker::Outpost, Actor->GetActorLocation(),
+				Type ? Type->Name.ToString().ToUpper() : FAPSFleetCommand::DisplayName(Actor).ToString().ToUpper(),
+				Type ? APSInfrastructure::DepartmentColour(Type->Department) : APSChrome::Cyan(), 50.0, Actor);
+		}
+	}
 	const APlayerController* Controller = LiveWorld->GetFirstPlayerController();
 	if (const APawn* Pawn = Controller ? Controller->GetPawn() : nullptr)
 	{
@@ -864,6 +883,12 @@ void SAPSSurfaceMap::Tick(const FGeometry& AllottedGeometry, const double InCurr
 {
 	using namespace APSSurfaceMapPrivate;
 	UploadJobs();
+	// Rio 04.10: what stands on and around the world changes while the map is open (a structure finished, a ship came).
+	if (InCurrentTime >= NextMarkerRefreshSeconds)
+	{
+		NextMarkerRefreshSeconds = InCurrentTime + 1.0;
+		RefreshMarkers();
+	}
 	// The world turns on its own only whole and untouched for a while (Rio 02.10).
 	if (!bDragging && Zoom <= 1.0f && FPlatformTime::Seconds() - LastInputSeconds > IdleSeconds)
 	{
@@ -1054,9 +1079,10 @@ void SAPSSurfaceMap::PaintNoSurvey(const FGeometry& Geometry, FSlateWindowElemen
 	const FVector2D TitleSize = Measure->Measure(Title, TitleFont);
 	FLinearColor TitleColor = APSChrome::Amber();
 	TitleColor.A = Pulse;
+	// Rio 03.10: centred by its capitals, not by the line box (the display face holds them 0.11 em high).
 	FSlateDrawElement::MakeText(Elements, LayerId + 2, Geometry.ToPaintGeometry(FVector2f(TitleSize),
-		FSlateLayoutTransform(FVector2f(Middle - TitleSize * 0.5 - FVector2D(0.0, bRoomy ? 8.0 : 0.0)))), Title, TitleFont,
-		ESlateDrawEffect::None, TitleColor);
+		FSlateLayoutTransform(FVector2f(Middle - TitleSize * 0.5 - FVector2D(0.0, (bRoomy ? 8.0 : 0.0) - APSChrome::CapsCenterOffset(TitleFont))))),
+		Title, TitleFont, ESlateDrawEffect::None, TitleColor);
 	if (bRoomy)
 	{
 		const FVector2D HintSize = Measure->Measure(Hint, HintFont);
@@ -1180,8 +1206,10 @@ int32 SAPSSurfaceMap::OnPaint(const FPaintArgs& Args, const FGeometry& Geometry,
 				FSlateDrawElement::MakeBox(Elements, LayerMarker + 1, Geometry.ToPaintGeometry(FVector2f(Box.GetSize()),
 					FSlateLayoutTransform(FVector2f(Box.Min))), White, ESlateDrawEffect::None,
 					Ask.Rank == 0 ? FLinearColor(0.03f, 0.10f, 0.12f, 0.9f) : FLinearColor(0.01f, 0.03f, 0.04f, 0.72f));
+				// The name on its plate by its capitals (Rio 03.10).
 				FSlateDrawElement::MakeText(Elements, LayerMarker + 2, Geometry.ToPaintGeometry(FVector2f(TextSize),
-					FSlateLayoutTransform(FVector2f(TextAt))), Marker.Label, LabelFont, ESlateDrawEffect::None, Marker.Color);
+					FSlateLayoutTransform(FVector2f(TextAt + FVector2D(0.0, APSChrome::CapsCenterOffset(LabelFont))))),
+					Marker.Label, LabelFont, ESlateDrawEffect::None, Marker.Color);
 				break;
 			}
 		}
@@ -1568,7 +1596,8 @@ int32 SAPSSurfaceMap::OnPaint(const FPaintArgs& Args, const FGeometry& Geometry,
 		const FVector2D NoteAt(MapBox.Max.X - NoteSize.X - 10.0, MapBox.Min.Y + 7.0);
 		FSlateDrawElement::MakeBox(Elements, LayerNote, Geometry.ToPaintGeometry(FVector2f(NoteSize.X + 8.0f, NoteSize.Y + 2.0f),
 			FSlateLayoutTransform(FVector2f(NoteAt - FVector2D(4.0, 1.0)))), White, ESlateDrawEffect::None, FLinearColor(0.01f, 0.03f, 0.04f, 0.78f));
-		FSlateDrawElement::MakeText(Elements, LayerNote + 1, Geometry.ToPaintGeometry(FVector2f(NoteSize), FSlateLayoutTransform(FVector2f(NoteAt))),
+		FSlateDrawElement::MakeText(Elements, LayerNote + 1, Geometry.ToPaintGeometry(FVector2f(NoteSize),
+			FSlateLayoutTransform(FVector2f(NoteAt + FVector2D(0.0, APSChrome::CapsCenterOffset(LabelFont))))),
 			Note, LabelFont, ESlateDrawEffect::None, APSChrome::Cyan());
 	}
 	FSlateDrawElement::MakeText(Elements, LayerNote, Geometry.ToPaintGeometry(FVector2f(GlobeRadius * 2.0f + 20.0f, 16.0f),

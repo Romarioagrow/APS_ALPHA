@@ -1,4 +1,5 @@
 #include "APSObjectLightingSubsystem.h"
+#include "APSStellarVisualSubsystem.h"
 
 #include "APS_ALPHA/Actors/Tech/SpaceStation.h"
 #include "APS_ALPHA/Pawns/Spaceships/Spaceship.h"
@@ -21,6 +22,10 @@ namespace APSObjectLighting
 	TAutoConsoleVariable<float> CVarObjectFill(
 		TEXT("aps.Lighting.ObjectFill"), 1.8f,
 		TEXT("Camera-aligned fill (lux) on lighting channel 1 for ships, stations and pilots, so their shadow side stays readable. 0 disables."));
+	TAutoConsoleVariable<float> CVarObjectFillBacklit(
+		TEXT("aps.Lighting.ObjectFillBacklit"), 3.0f,
+		TEXT("Rio 04.10: extra object fill while the camera faces the star (the hull's night side in view), as a multiple of the ")
+		TEXT("plain fill: 3 makes it four times as bright looking straight at the star. 0 keeps it even."));
 	TAutoConsoleVariable<float> CVarObjectFillInStation(
 		TEXT("aps.Lighting.ObjectFillInStation"), 0.0f,
 		TEXT("Object fill (lux) while the pawn is inside a station gravity volume; interiors have their own lamps."));
@@ -101,9 +106,20 @@ void UAPSObjectLightingSubsystem::Tick(float DeltaTime)
 void UAPSObjectLightingSubsystem::UpdateObjectFill(
 	const FVector& CameraLocation, const FRotator& CameraRotation, bool bInsideStation)
 {
-	const float Intensity = FMath::Max(0.0f, bInsideStation
+	float Intensity = FMath::Max(0.0f, bInsideStation
 		? APSObjectLighting::CVarObjectFillInStation.GetValueOnGameThread()
 		: APSObjectLighting::CVarObjectFill.GetValueOnGameThread());
+	// Rio 04.10 ("in a far system the ship turned black"): the key light comes from the star the ship flies into, so the
+	// chase camera sees the hull's night side, lit by the plain fill alone. Facing the star, the fill grows.
+	const UAPSStellarVisualSubsystem* Stellar = GetWorld() ? GetWorld()->GetSubsystem<UAPSStellarVisualSubsystem>() : nullptr;
+	FVector StarLocation;
+	FString StarIdentity;
+	if (!bInsideStation && Intensity > 0.0f && Stellar && Stellar->GetActiveStellarTarget(StarLocation, StarIdentity))
+	{
+		const float Backlit = FMath::Clamp(static_cast<float>(FVector::DotProduct(CameraRotation.Vector(),
+			(StarLocation - CameraLocation).GetSafeNormal())), 0.0f, 1.0f);
+		Intensity *= 1.0f + FMath::Max(APSObjectLighting::CVarObjectFillBacklit.GetValueOnGameThread(), 0.0f) * Backlit;
+	}
 	ADirectionalLight* Fill = ObjectFillLight.Get();
 	UDirectionalLightComponent* Component = Fill ? Cast<UDirectionalLightComponent>(Fill->GetLightComponent()) : nullptr;
 	if (Intensity <= 0.0f)
@@ -169,9 +185,12 @@ void UAPSObjectLightingSubsystem::RefreshObjects()
 			It.RemoveCurrent();
 		}
 	}
+	// Rio 04.10 ("ships are black from afar, light up close; lighting must not depend on the player"): every refresh
+	// checks every mesh again, not once per actor. A ship's own setup (boarding, its class, parts added later) could
+	// clear channel 1 after the first opt-in, leaving that ship without the fill for good.
 	const auto OptIn = [this](AActor* Actor)
 	{
-		if (!IsValid(Actor) || OptedInActors.Contains(Actor))
+		if (!IsValid(Actor))
 		{
 			return;
 		}

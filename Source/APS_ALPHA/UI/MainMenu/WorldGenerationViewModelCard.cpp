@@ -10,6 +10,7 @@
 #include "APS_ALPHA/Actors/Astro/StarSystem.h"
 #include "APS_ALPHA/Core/Enums/StarType.h"
 #include "APS_ALPHA/Core/Model/GeneratedWorld.h"
+#include "APS_ALPHA/Generation/APSGalaxyMorphology.h"
 #include "APS_ALPHA/Generation/AstroGenerator.h"
 
 #define LOCTEXT_NAMESPACE "WorldGenerationViewModelCard"
@@ -128,16 +129,22 @@ void UWorldGenerationViewModel::GetPreviewModelCard(FAPSModelCard& OutCard) cons
 		OutCard.Title = GalaxyName;
 		OutCard.Subtitle = FText::Format(LOCTEXT("GalaxySubtitle", "{0}  /  {1}"),
 			Enum(GeneratedWorld->GalaxyType), Enum(GeneratedWorld->GalaxyClass));
+		// Rio 03.10 ("MODELED 100 MILLION but visually few"): the card shows the placed stars (STARS slider); the
+		// catalogue size behind them stays internal (seeds and saves).
+		const int32 PlacedStars = Generator ? Generator->GetPreviewGalaxyRenderedStarCount()
+			: (GeneratedWorld->GalaxyPlacedStarCount > 0 ? GeneratedWorld->GalaxyPlacedStarCount
+				: APSGalaxyMorphology::PreviewReferenceBudget);
 		FText Value, Unit;
-		Count(static_cast<double>(Generator ? Generator->GetPreviewGalaxyModeledStarCount()
-			: static_cast<int64>(GeneratedWorld->GalaxyStarCount)), Value, Unit, LOCTEXT("StarsNoun", "STARS"));
-		Add(OutCard, EAPSModelGlyph::Star, LOCTEXT("ModeledStars", "MODELED"), Value, Unit, FText::GetEmpty(), true);
-		Add(OutCard, EAPSModelGlyph::Count, LOCTEXT("LiveSample", "LIVE SAMPLE"),
-			Number(Generator ? Generator->GetPreviewGalaxyRenderedStarCount() : 0), LOCTEXT("StarsUnit", "STARS"));
+		Count(static_cast<double>(PlacedStars), Value, Unit, LOCTEXT("StarsNoun", "STARS"));
+		Add(OutCard, EAPSModelGlyph::Star, LOCTEXT("PlacedStars", "STARS"), Value, Unit, FText::GetEmpty(), true);
 		Add(OutCard, EAPSModelGlyph::Galaxy, LOCTEXT("GalaxyType", "TYPE"), Enum(GeneratedWorld->GalaxyType));
 		Add(OutCard, EAPSModelGlyph::Type, LOCTEXT("GalaxyClass", "CLASS"), Enum(GeneratedWorld->GalaxyClass));
 		Add(OutCard, EAPSModelGlyph::Scale, LOCTEXT("GalaxySize", "SIZE"), Number(GeneratedWorld->GalaxySize));
 		Add(OutCard, EAPSModelGlyph::Cluster, LOCTEXT("GalaxyDensity", "DENSITY"), Number(GeneratedWorld->GalaxyStarDensity, 2));
+		// Rio 03.10: the galaxy's star sizes and spectral classes, as on the cluster card.
+		Add(OutCard, EAPSModelGlyph::Count, LOCTEXT("GalaxyPopulation", "POPULATION"), Enum(GeneratedWorld->GalaxyStarPopulation));
+		Add(OutCard, EAPSModelGlyph::Spectrum, LOCTEXT("GalaxyComposition", "COMPOSITION"),
+			Enum(GeneratedWorld->GalaxyStarComposition));
 		return;
 	}
 
@@ -300,7 +307,8 @@ void UWorldGenerationViewModel::GetPreviewModelCard(FAPSModelCard& OutCard) cons
 		OutCard.Subtitle = FText::Format(LOCTEXT("WorldSubtitle", "SEED {0}"), APSUINumber::Number(GeneratedWorld->GenerationSeed,
 			&FNumberFormattingOptions::DefaultNoGrouping()));
 		FText Value, Unit;
-		Count(GeneratedWorld->GalaxyStarCount, Value, Unit, LOCTEXT("OverviewStarsNoun", "STARS"));
+		Count(GeneratedWorld->GalaxyPlacedStarCount > 0 ? GeneratedWorld->GalaxyPlacedStarCount
+			: APSGalaxyMorphology::PreviewReferenceBudget, Value, Unit, LOCTEXT("OverviewStarsNoun", "STARS"));
 		Add(OutCard, EAPSModelGlyph::Galaxy, LOCTEXT("OverviewGalaxy", "GALAXY"), Value, Unit);
 		Add(OutCard, EAPSModelGlyph::Cluster, LOCTEXT("OverviewCluster", "CLUSTER"), ClusterName,
 			Enum(GeneratedWorld->StarClusterSize));

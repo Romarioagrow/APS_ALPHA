@@ -48,7 +48,7 @@ namespace APSBuildPaletteLocal
 	 * a dim red when the runtime refuses it. Never takes keyboard focus, so the keys keep going to the game.
 	 */
 	TSharedRef<SWidget> CardButton(const TSharedRef<SWidget>& Content, const FOnClicked& OnClicked,
-		const TAttribute<bool>& IsSelected, const bool bDimmed)
+		const TAttribute<bool>& IsSelected, const bool bDimmed, const float HorizontalPadding = 10.0f)
 	{
 		const TSharedRef<SButton> Button = SNew(SButton)
 			.ButtonStyle(FAppStyle::Get(), "NoBorder")
@@ -73,7 +73,7 @@ namespace APSBuildPaletteLocal
 				.ChamferTop(true)
 				.ChamferBottom(true)
 			]
-			+ SOverlay::Slot().Padding(FMargin(10.0f, 7.0f))
+			+ SOverlay::Slot().Padding(FMargin(HorizontalPadding, 7.0f))
 			[
 				Content
 			]
@@ -96,6 +96,15 @@ namespace APSBuildPaletteLocal
 				})
 			]);
 		return Button;
+	}
+
+	/** A label alone (the section tabs): centred both ways by its capitals, 14 each side (Rio 03.10). */
+	TSharedRef<SWidget> CardButton(const TSharedRef<STextBlock>& Label, const FOnClicked& OnClicked,
+		const TAttribute<bool>& IsSelected, const bool bDimmed)
+	{
+		Label->SetJustification(ETextJustify::Center);
+		Label->SetRenderTransform(CapsCenterShift(Label->GetFont()));
+		return CardButton(SNew(SBox).HAlign(HAlign_Center).VAlign(VAlign_Center)[Label], OnClicked, IsSelected, bDimmed, 14.0f);
 	}
 
 	TSharedRef<SWidget> Hint(const FText& Key, const FText& Label)
@@ -252,7 +261,7 @@ void SAPSBuildPalette::Construct(const FArguments& InArgs)
 										}), 0.1f, false);
 										return FReply::Handled();
 									}),
-									false, false)
+									false, false, 14.0f)
 							]
 							+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
 							[
@@ -274,7 +283,7 @@ void SAPSBuildPalette::Construct(const FArguments& InArgs)
 										}
 										return FReply::Handled();
 									}),
-									false, false)
+									false, false, 14.0f)
 							]
 						]
 						+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 9.0f, 0.0f, 0.0f)

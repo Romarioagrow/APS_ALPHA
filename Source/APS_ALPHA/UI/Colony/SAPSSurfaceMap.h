@@ -206,6 +206,8 @@ private:
 	double CentreLatitude{0.35};
 	float Zoom{1.0f};
 	double LastInputSeconds{-100.0};
+	/** Markers are read again once a second while the map is shown (Slate time). */
+	double NextMarkerRefreshSeconds{0.0};
 	double LastViewChangeSeconds{-100.0};
 	bool bDragging{false};
 	/** A press that has not moved yet may still be a click. */

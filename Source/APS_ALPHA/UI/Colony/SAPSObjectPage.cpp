@@ -18,12 +18,14 @@
 #include "APS_ALPHA/Gameplay/Fleet/APSFleetCommand.h"
 #include "APS_ALPHA/Generation/AstroGenerator.h"
 #include "APS_ALPHA/Pawns/Spaceships/Spaceship.h"
+#include "APS_ALPHA/UI/MainMenu/APSUIThumbnails.h"
 #include "APS_ALPHA/UI/Style/APSUINumber.h"
 #include "Brushes/SlateRoundedBoxBrush.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "Styling/AppStyle.h"
 #include "Styling/CoreStyle.h"
+#include "Widgets/Images/SImage.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/Layout/SBox.h"
@@ -146,7 +148,7 @@ TSharedRef<SWidget> APSInfrastructureUI::FrameButton(TSharedRef<SWidget> Content
 			.ChamferTop(true)
 			.ChamferBottom(true)
 		]
-		+ SOverlay::Slot().Padding(FMargin(12.0f, 9.0f))
+		+ SOverlay::Slot().Padding(FMargin(14.0f, 9.0f))
 		[
 			Content
 		]
@@ -161,6 +163,19 @@ TSharedRef<SWidget> APSInfrastructureUI::FrameButton(TSharedRef<SWidget> Content
 			})
 		]);
 	return Button;
+}
+
+TSharedRef<SWidget> APSInfrastructureUI::FrameButton(const TSharedRef<STextBlock>& Label, FOnClicked OnClicked,
+	TAttribute<bool> IsSelected, const FLinearColor& Accent)
+{
+	// As the terminal's ChromeButton: centred justification, and the capitals' middle on the box's middle.
+	Label->SetJustification(ETextJustify::Center);
+	if (!Label->GetRenderTransform().IsSet())
+	{
+		Label->SetRenderTransform(APSChrome::CapsCenterShift(Label->GetFont()));
+	}
+	return FrameButton(SNew(SBox).HAlign(HAlign_Center).VAlign(VAlign_Center)[Label], MoveTemp(OnClicked), MoveTemp(IsSelected),
+		Accent);
 }
 
 TSharedRef<SWidget> APSInfrastructureUI::FilledButton(const FText& Label, FOnClicked OnClicked, TAttribute<bool> CanClick,
@@ -191,9 +206,10 @@ TSharedRef<SWidget> APSInfrastructureUI::FilledButton(const FText& Label, FOnCli
 			.ChamferTop(true)
 			.ChamferBottom(true)
 		]
-		+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Center).Padding(FMargin(12.0f, 8.0f))
+		+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Center).Padding(FMargin(14.0f, 8.0f))
 		[
 			SNew(STextBlock).Text(Label).Font(Font("Bold", 10)).Justification(ETextJustify::Center).AutoWrapText(true)
+			.RenderTransform(CapsCenterShift(Font("Bold", 10)))
 			.ColorAndOpacity_Lambda([CanClick]()
 			{
 				return FSlateColor(CanClick.Get(true) ? FLinearColor(0.02f, 0.05f, 0.07f, 1.0f) : Muted());
@@ -207,6 +223,126 @@ TSharedRef<SWidget> APSInfrastructureUI::FilledButton(const FText& Label, FOnCli
 			.Color_Lambda([CanClick, Accent]() { return CanClick.Get(true) ? Accent : Accent.CopyWithNewOpacity(0.45f); })
 		]);
 	return Button;
+}
+
+TSharedRef<SWidget> APSInfrastructureUI::ActionCell(const FAPSObjectAction& Action, FOnClicked OnClicked, const bool bCanRun,
+	const float Width)
+{
+	using namespace APSChrome;
+	// What is under way is read once a frame and shared by the cell's parts.
+	struct FUnderwayState
+	{
+		uint64 Frame{MAX_uint64};
+		bool bUnderway{false};
+		float Progress{0.0f};
+		FText Status;
+		FText Who;
+	};
+	const TSharedRef<FUnderwayState> State = MakeShared<FUnderwayState>();
+	const TFunction<bool(float&, FText&, FText&)> Underway = Action.Underway;
+	const auto Read = [State, Underway]() -> const FUnderwayState&
+	{
+		if (State->Frame != GFrameCounter)
+		{
+			State->Frame = GFrameCounter;
+			State->bUnderway = Underway && Underway(State->Progress, State->Status, State->Who);
+		}
+		return *State;
+	};
+	const FText Label = Action.Label;
+	const FText Detail = Action.Detail;
+	const FLinearColor Accent = Action.Colour;
+	const FSlateFontInfo LabelFont = Font("Bold", 10);
+	// An order under way keeps the button lit (no disabled greying) but ignores clicks: the fill is the state.
+	const TSharedRef<SButton> Button = SNew(SButton)
+		.ButtonStyle(FAppStyle::Get(), "NoBorder")
+		.ContentPadding(0.0f)
+		.IsEnabled_Lambda([Read, bCanRun]() { return bCanRun || Read().bUnderway; })
+		.OnClicked_Lambda([Read, OnClicked]()
+		{
+			return Read().bUnderway || !OnClicked.IsBound() ? FReply::Handled() : OnClicked.Execute();
+		});
+	const TWeakPtr<SButton> WeakButton = Button;
+	Button->SetContent(
+		SNew(SAPSChamferedOverlay)
+		+ SOverlay::Slot()
+		[
+			SNew(SAPSChamferedSurface)
+			.Brush(FAppStyle::GetBrush("WhiteBrush"))
+			.Tint_Lambda([WeakButton, Read, bCanRun]()
+			{
+				if (Read().bUnderway)
+				{
+					return FLinearColor(0.03f, 0.08f, 0.10f, 0.97f);
+				}
+				if (!bCanRun)
+				{
+					return FLinearColor(0.07f, 0.13f, 0.16f, 0.95f);
+				}
+				const TSharedPtr<SButton> Pinned = WeakButton.Pin();
+				return Pinned && Pinned->IsHovered() ? FLinearColor(1.0f, 0.83f, 0.38f, 1.0f) : Amber();
+			})
+			.ChamferTop(true)
+			.ChamferBottom(true)
+		]
+		// The part done, in the action's colour, from the left.
+		+ SOverlay::Slot().HAlign(HAlign_Left)
+		[
+			SNew(SBox)
+			.WidthOverride_Lambda([Read, Width]()
+			{
+				return FOptionalSize(Read().bUnderway ? FMath::Max(Width * Read().Progress, 0.0f) : 0.0f);
+			})
+			.Visibility_Lambda([Read]() { return Read().bUnderway ? EVisibility::HitTestInvisible : EVisibility::Collapsed; })
+			[
+				SNew(SAPSChamferedSurface)
+				.Brush(FAppStyle::GetBrush("WhiteBrush"))
+				.Tint(Accent.CopyWithNewOpacity(0.62f))
+				.ChamferTop(true)
+				.ChamferBottom(true)
+			]
+		]
+		+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Center).Padding(FMargin(14.0f, 8.0f))
+		[
+			SNew(STextBlock).Font(LabelFont).Justification(ETextJustify::Center).AutoWrapText(true)
+			.RenderTransform(CapsCenterShift(LabelFont))
+			.Text_Lambda([Read, Label]()
+			{
+				return Read().bUnderway ? FText::Format(LOCTEXT("UnderwayLabel", "{0}  {1}%"), Label,
+					APSUINumber::Number(FMath::RoundToInt(Read().Progress * 100.0f))) : Label;
+			})
+			.ColorAndOpacity_Lambda([Read, bCanRun]()
+			{
+				return FSlateColor(Read().bUnderway ? FLinearColor(0.96f, 0.98f, 1.0f, 1.0f)
+					: bCanRun ? FLinearColor(0.02f, 0.05f, 0.07f, 1.0f) : Muted());
+			})
+		]
+		// The action's own colour on the edge: navigation blue, the fleet's gold, a department's colour.
+		+ SOverlay::Slot()
+		[
+			SNew(SAPSChamferedFrame)
+			.Thickness(1.5f)
+			.Color_Lambda([Read, bCanRun, Accent]() { return Read().bUnderway || bCanRun ? Accent : Accent.CopyWithNewOpacity(0.45f); })
+		]);
+	return SNew(SVerticalBox)
+		+ SVerticalBox::Slot().AutoHeight()
+		[
+			Button
+		]
+		// A dim button says why under it; an order under way says who is at it.
+		+ SVerticalBox::Slot().AutoHeight().Padding(2.0f, 4.0f, 0.0f, 0.0f)
+		[
+			SNew(STextBlock).AutoWrapText(true).Font(Font("Regular", 11))
+			.Text_Lambda([Read, Detail]()
+			{
+				return Read().bUnderway ? FText::Format(LOCTEXT("UnderwayDetail", "{0}: {1}."), Read().Who, Read().Status) : Detail;
+			})
+			.ColorAndOpacity_Lambda([Read, Accent]() { return FSlateColor(Read().bUnderway ? Accent : Muted()); })
+			.Visibility_Lambda([Read, bCanRun, Detail]()
+			{
+				return Read().bUnderway || (!bCanRun && !Detail.IsEmpty()) ? EVisibility::Visible : EVisibility::Collapsed;
+			})
+		];
 }
 
 TSharedRef<SWidget> APSInfrastructureUI::Chip(const TAttribute<FText>& Text, const TAttribute<FSlateColor>& TextColour,
@@ -239,6 +375,8 @@ EAPSChromeGlyph APSInfrastructureUI::CategoryGlyph(const APSInfrastructure::ECat
 	case ECategory::Relay: return EAPSChromeGlyph::Compass;
 	case ECategory::Transport: return EAPSChromeGlyph::Fleet;
 	case ECategory::Megastructure: return EAPSChromeGlyph::System;
+	// Rio 03.10: the huge hubs read as headquarters-class stations.
+	case ECategory::Hub: return EAPSChromeGlyph::Headquarters;
 	default: return EAPSChromeGlyph::Infrastructure;
 	}
 }
@@ -620,6 +758,26 @@ void SAPSObjectPage::UpdatePreview()
 	}
 	// Everything without a globe (a gas world, a star system, a station, a ship): its glyph large in its colour.
 	const FLinearColor Colour = APSInfrastructureUI::ColourOf(Actor);
+	// Rio 02.10 ("instead of this icon, the real look of our building, a snapshot like the menu's icons"): a station, a
+	// headquarters, a shipyard or a ship with a baked thumbnail shows it.
+	if (const FSlateBrush* Snapshot = Actor ? APSUIThumbnails::FindBrush(Actor->GetClass()) : nullptr)
+	{
+		GlyphBox->SetWidthOverride(236.0f);
+		GlyphBox->SetHeightOverride(236.0f);
+		GlyphBox->SetContent(
+			SNew(SOverlay)
+			+ SOverlay::Slot()
+			[
+				SNew(SBorder).BorderImage(RoundBrush()).BorderBackgroundColor(Colour.CopyWithNewOpacity(0.07f))
+			]
+			+ SOverlay::Slot()
+			[
+				SNew(SImage).Image(Snapshot)
+			]);
+		return;
+	}
+	GlyphBox->SetWidthOverride(170.0f);
+	GlyphBox->SetHeightOverride(170.0f);
 	GlyphBox->SetContent(
 		SNew(SOverlay)
 		+ SOverlay::Slot()
@@ -859,6 +1017,7 @@ void SAPSObjectPage::FillRows(const TSharedPtr<SVerticalBox>& Box, const TArray<
 					+ SVerticalBox::Slot().AutoHeight()
 					[
 						SNew(STextBlock).Text(Row.Name).Font(Font("Bold", 11)).ColorAndOpacity(White())
+						.RenderTransform(APSChrome::CapsCenterShift(Font("Bold", 11)))
 					]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 2.0f, 0.0f, 0.0f)
 					[
@@ -969,6 +1128,7 @@ void SAPSObjectPage::RefreshUnderWay()
 					+ SVerticalBox::Slot().AutoHeight()
 					[
 						SNew(STextBlock).Font(Font("Bold", 11)).ColorAndOpacity(White())
+						.RenderTransform(APSChrome::CapsCenterShift(Font("Bold", 11)))
 						.Text_Lambda([Unit]()
 						{
 							const FAPSFleetUnit* Found = Unit();
@@ -1081,22 +1241,14 @@ void SAPSObjectPage::RefreshActions()
 			++Total;
 			const bool bCanRun = Action.bEnabled && static_cast<bool>(Action.Execute);
 			Ready += bCanRun ? 1 : 0;
-			// A dim button says why under it; every button's tooltip says what it does.
+			// A dim button says why under it, one under way who is at it; every button's tooltip says what it does.
+			constexpr float CellWidth = 236.0f;
 			Cells->AddSlot()
 			[
-				SNew(SBox).WidthOverride(236.0f).ToolTipText(Action.Detail)
+				SNew(SBox).WidthOverride(CellWidth).ToolTipText(Action.Detail)
 				[
-					SNew(SVerticalBox)
-					+ SVerticalBox::Slot().AutoHeight()
-					[
-						APSInfrastructureUI::FilledButton(Action.Label, FOnClicked::CreateSP(this, &SAPSObjectPage::RunAction, Action.Id),
-							TAttribute<bool>(bCanRun), Action.Colour)
-					]
-					+ SVerticalBox::Slot().AutoHeight().Padding(2.0f, 4.0f, 0.0f, 0.0f)
-					[
-						SNew(STextBlock).Text(Action.Detail).AutoWrapText(true).Font(Font("Regular", 11)).ColorAndOpacity(Muted())
-						.Visibility(!bCanRun && !Action.Detail.IsEmpty() ? EVisibility::Visible : EVisibility::Collapsed)
-					]
+					APSInfrastructureUI::ActionCell(Action, FOnClicked::CreateSP(this, &SAPSObjectPage::RunAction, Action.Id), bCanRun,
+						CellWidth)
 				]
 			];
 		}

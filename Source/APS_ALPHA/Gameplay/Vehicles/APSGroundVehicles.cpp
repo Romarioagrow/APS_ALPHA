@@ -5,13 +5,17 @@
 #include "APS_ALPHA/Core/Model/SpawnParameters.h"
 #include "APS_ALPHA/Gameplay/Civilizations/APSCivilizationIdentityComponent.h"
 #include "APS_ALPHA/Gameplay/Civilizations/APSCivilizationMaterializationSubsystem.h"
+#include "APS_ALPHA/Gameplay/Civilizations/APSStarterDressing.h"
 #include "APS_ALPHA/Gameplay/Colony/APSColonyConstructionSubsystem.h"
 #include "APS_ALPHA/Gameplay/Colony/APSColonyModule.h"
 #include "APS_ALPHA/Gameplay/Spawn/APSSpawnPlacementSubsystem.h"
 #include "APS_ALPHA/Generation/PlanetarySurfaceGenerator.h"
 #include "APS_ALPHA/Pawns/Spaceships/APSShipFlightModel.h"
 #include "APS_ALPHA/Pawns/Spaceships/Spaceship.h"
+#include "Components/StaticMeshComponent.h"
 #include "Engine/AssetManager.h"
+#include "Engine/CollisionProfile.h"
+#include "Engine/StaticMesh.h"
 #include "Engine/Level.h"
 #include "Engine/OverlapResult.h"
 #include "Engine/StreamableManager.h"
@@ -74,6 +78,10 @@ namespace APSGroundVehiclesLocal
 		bool bPreloaded{false};
 		bool bWaitLogged{false};
 		bool bFailureLogged{false};
+		/** The motor pool (BuildMotorPool) and where it stands; the first vehicles park in its bays. */
+		TWeakObjectPtr<AActor> MotorPool;
+		FTransform PoolTransform{FTransform::Identity};
+		bool bPoolKnown{false};
 	};
 
 	TArray<FWorldVehicles>& Worlds()
@@ -237,8 +245,10 @@ namespace APSGroundVehiclesLocal
 		return State.bPreloaded;
 	}
 
-	/** What a new spot keeps clear of: the colony's pad and parked ship, its built modules, the other vehicles. */
-	void CollectObstacles(UWorld* World, const FWorldVehicles& State, FAPSSpawnRequest& Request, const AActor* Except)
+	/** What a new spot keeps clear of: the colony's pad and parked ship, its built modules, the other vehicles (unless the
+	 * motor pool's own spot is wanted, where they may already stand). */
+	void CollectObstacles(UWorld* World, const FWorldVehicles& State, FAPSSpawnRequest& Request, const AActor* Except,
+		const bool bIgnoreVehicles = false)
 	{
 		if (const UAPSColonyConstructionSubsystem* Construction = World->GetSubsystem<UAPSColonyConstructionSubsystem>())
 		{
@@ -267,7 +277,7 @@ namespace APSGroundVehiclesLocal
 		}
 		for (const TWeakObjectPtr<ASpaceship>& Vehicle : State.Vehicles)
 		{
-			if (Vehicle.IsValid() && Vehicle.Get() != Except)
+			if (!bIgnoreVehicles && Vehicle.IsValid() && Vehicle.Get() != Except)
 			{
 				Request.Obstacles.Add(Vehicle.Get());
 			}
@@ -285,7 +295,7 @@ namespace APSGroundVehiclesLocal
 
 	/** A dry, gentle spot of this size beside the base; a wider, steeper search if the first rings are full. */
 	bool ResolveSite(UWorld* World, FWorldVehicles& State, const FVector& SizeCm, FAPSSpawnPlacement& OutPlacement,
-		const AActor* Except = nullptr, AActor* ExtraObstacle = nullptr)
+		const AActor* Except = nullptr, AActor* ExtraObstacle = nullptr, const bool bIgnoreVehicles = false)
 	{
 		const UAPSSpawnPlacementSubsystem* Spawner = World->GetSubsystem<UAPSSpawnPlacementSubsystem>();
 		if (!Spawner || !State.Base.IsValid() || !State.Body.IsValid())
@@ -312,7 +322,7 @@ namespace APSGroundVehiclesLocal
 		Request.MaximumSlope = 0.2;
 		Request.MinimumDryMarginCm = 300.0;
 		Request.Seed = PoolSeed;
-		CollectObstacles(World, State, Request, Except);
+		CollectObstacles(World, State, Request, Except, bIgnoreVehicles);
 		if (ExtraObstacle)
 		{
 			Request.Obstacles.Add(ExtraObstacle);
@@ -375,6 +385,97 @@ namespace APSGroundVehiclesLocal
 		return Vehicle;
 	}
 
+	/** A solid box of the motor pool (engine cube, Size in centimetres): the vehicles and people stand on it. */
+	UStaticMeshComponent* SolidPart(AActor* Owner, USceneComponent* Root, const FVector& Center, const FVector& Size,
+		const FLinearColor& Color)
+	{
+		UStaticMesh* Mesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"), nullptr,
+			LOAD_NoWarn | LOAD_Quiet);
+		if (!Mesh || !Root)
+		{
+			return nullptr;
+		}
+		UStaticMeshComponent* Component = NewObject<UStaticMeshComponent>(Owner);
+		Component->SetupAttachment(Root);
+		Component->SetMobility(EComponentMobility::Movable);
+		Component->SetStaticMesh(Mesh);
+		Component->SetRelativeTransform(FTransform(FRotator::ZeroRotator, Center, Size / 100.0));
+		Component->SetCollisionProfileName(UCollisionProfile::BlockAll_ProfileName);
+		Component->SetGenerateOverlapEvents(false);
+		Component->SetCanEverAffectNavigation(false);
+		Component->SetMaterial(0, APSStarterDressing::Material(Owner, Color, 0.0f));
+		Component->RegisterComponent();
+		Owner->AddInstanceComponent(Component);
+		return Component;
+	}
+
+	/**
+	 * Rio 02.10 ("the rover's wheels hang in the air, and they all just stand on the ground: a parking spot or a garage"):
+	 * the motor pool on the pool spot (X toward the base, Y along the row). A solid slab from 5 cm over the spot's highest
+	 * ground down past its lowest, so the parked vehicles settle on one flat deck; bay lines, a hazard stripe on the
+	 * driving-out edge, and a carport over the rover's and the hover's bays. The drone's bay stays open to the sky, an H
+	 * on it. Built every session where the pool stood (the spot is found again without the vehicles in the way).
+	 */
+	AActor* BuildMotorPool(UWorld* World, const FWorldVehicles& State, const FAPSSpawnPlacement& Pool)
+	{
+		using namespace APSStarterDressing;
+		const FTransform Frame(Pool.Transform.GetRotation(), Pool.Transform.GetLocation());
+		AActor* MotorPool = World->SpawnActor<AActor>(AActor::StaticClass(), Frame);
+		if (!MotorPool)
+		{
+			return nullptr;
+		}
+		USceneComponent* Root = NewObject<USceneComponent>(MotorPool, TEXT("MotorPoolRoot"));
+		Root->SetMobility(EComponentMobility::Movable);
+		MotorPool->SetRootComponent(Root);
+		Root->RegisterComponent();
+		MotorPool->AddInstanceComponent(Root);
+		MotorPool->SetActorTransform(Frame);
+		MotorPool->Tags.Add(TEXT("APS.Colony.MotorPool"));
+
+		const double SizeX = PoolSizeCm.X + 350.0;
+		const double SizeY = PoolSizeCm.Y + 350.0;
+		constexpr double Top = 5.0;
+		const double Depth = FMath::Max(Pool.FoundationDepthCm, 0.0) + 80.0;
+		SolidPart(MotorPool, Root, FVector(0.0, 0.0, (Top - Depth) * 0.5), FVector(SizeX, SizeY, Top + Depth), Deck);
+		// Bay lines between the three bays, the hazard stripe where they drive out (-X, noses out), and the drone's H.
+		for (const double Y : {-0.5 * SlotSpacingCm, 0.5 * SlotSpacingCm})
+		{
+			Part(MotorPool, Root, EShape::Cube, FVector(0.0, Y, Top + 1.5), FVector(SizeX - 120.0, 14.0, 3.0), Marking);
+		}
+		Part(MotorPool, Root, EShape::Cube, FVector(-0.5 * SizeX + 30.0, 0.0, Top + 1.5), FVector(36.0, SizeY - 60.0, 3.0), Amber);
+		const double DroneY = SlotSpacingCm;
+		Part(MotorPool, Root, EShape::Cube, FVector(0.0, DroneY - 110.0, Top + 1.5), FVector(300.0, 40.0, 3.0), Marking);
+		Part(MotorPool, Root, EShape::Cube, FVector(0.0, DroneY + 110.0, Top + 1.5), FVector(300.0, 40.0, 3.0), Marking);
+		Part(MotorPool, Root, EShape::Cube, FVector(0.0, DroneY, Top + 1.5), FVector(40.0, 220.0, 3.0), Marking);
+		// The carport over the rover and the hover: six posts and a roof 4.8 m up, light strips and one lamp under it.
+		const double RoofBottom = Top + 480.0;
+		const double CoverMinY = -0.5 * SizeY;
+		const double CoverMaxY = 0.5 * SlotSpacingCm - 10.0;
+		for (const double X : {-0.5 * SizeX + 40.0, 0.5 * SizeX - 40.0})
+		{
+			for (const double Y : {CoverMinY + 40.0, -0.5 * SlotSpacingCm, CoverMaxY - 20.0})
+			{
+				SolidPart(MotorPool, Root, FVector(X, Y, Top + 240.0), FVector(30.0, 30.0, 480.0), Metal);
+			}
+		}
+		SolidPart(MotorPool, Root, FVector(0.0, 0.5 * (CoverMinY + CoverMaxY), RoofBottom + 15.0),
+			FVector(SizeX + 120.0, CoverMaxY - CoverMinY + 120.0, 30.0), Hull);
+		for (const double X : {-200.0, 200.0})
+		{
+			Part(MotorPool, Root, EShape::Cube, FVector(X, 0.5 * (CoverMinY + CoverMaxY), RoofBottom - 2.0),
+				FVector(36.0, CoverMaxY - CoverMinY - 160.0, 4.0), Warm, 5.0f);
+		}
+		Lamp(MotorPool, Root, FVector(0.0, 0.5 * (CoverMinY + CoverMaxY), RoofBottom - 40.0), Warm, 400.0f, 1600.0f);
+		if (APlanetaryBody* Body = State.Body.Get())
+		{
+			MotorPool->AttachToActor(Body, FAttachmentTransformRules::KeepWorldTransform);
+		}
+		UE_LOG(LogTemp, Log, TEXT("[APS.Vehicles] motor pool beside %s: %.0f x %.0f m deck, %.1f m foundation, carport over two bays"),
+			*GetNameSafe(State.Base.Get()), SizeX * 0.01, SizeY * 0.01, Depth * 0.01);
+		return MotorPool;
+	}
+
 	/** Parks the missing vehicles: the whole pool in one spot when all three are missing, else each in its own spot. */
 	void SpawnMissing(UWorld* World, FWorldVehicles& State)
 	{
@@ -390,8 +491,16 @@ namespace APSGroundVehiclesLocal
 		const FVector BaseLocation = State.Base->GetActorLocation();
 		if (Missing == KindCount)
 		{
+			// The motor pool's bays first (it stands before they park); without it, a spot as before.
 			FAPSSpawnPlacement Pool;
-			if (!ResolveSite(World, State, PoolSizeCm, Pool))
+			if (State.bPoolKnown)
+			{
+				// Rio 03.10 (the start's curtain hung on "PARKING THE VEHICLES"): the stored world transform goes stale when
+				// the world shifts between building the pool and parking (the colony arrival rebases the origin onto the
+				// pilot, 441 m): the vehicles stood 406 m off and never settled. The pool actor moved with the world.
+				Pool.Transform = State.MotorPool.IsValid() ? State.MotorPool->GetActorTransform() : State.PoolTransform;
+			}
+			else if (!ResolveSite(World, State, PoolSizeCm, Pool))
 			{
 				return;
 			}
@@ -478,7 +587,11 @@ namespace APSGroundVehiclesLocal
 			AActor* Actor = Overlap.GetActor();
 			// Its world's terrain and foliage, and people walking by, do not count.
 			if (Overlap.bBlockingHit && IsValid(Actor) && Actor != Vehicle && !IsOwnedByWorld(Actor, Body)
-				&& !Actor->IsA<ACharacter>() && !Actor->IsA<AWorldScapeRoot>() && !Actor->IsA<APlanetarySurfaceGenerator>())
+				&& !Actor->IsA<ACharacter>() && !Actor->IsA<AWorldScapeRoot>() && !Actor->IsA<APlanetarySurfaceGenerator>()
+				&& !Actor->ActorHasTag(TEXT("APS.Colony.MotorPool"))
+				// Rio 03.10 ("the hover touched the drone and the drone vanished, reappeared elsewhere"): another vehicle or a
+				// piloted craft only passes by; only what stays (a module, a parked ship) moves a vehicle aside.
+				&& !(Actor->IsA<ASpaceship>() && (Cast<ASpaceship>(Actor)->IsGroundVehicle() || Cast<APawn>(Actor)->IsPlayerControlled())))
 			{
 				return Actor;
 			}
@@ -672,6 +785,17 @@ void APSGroundVehicles::Tick(UWorld* World, const float DeltaSeconds)
 		if (FindColony(World, State))
 		{
 			RefreshVehicles(World, State);
+			// Rio 02.10: the motor pool stands before the vehicles park in it, and again each session where it stood.
+			if (!State.MotorPool.IsValid() && World->GetTimeSeconds() >= State.RetrySpotSeconds)
+			{
+				FAPSSpawnPlacement Pool;
+				if (ResolveSite(World, State, PoolSizeCm, Pool, nullptr, nullptr, true))
+				{
+					State.PoolTransform = Pool.Transform;
+					State.bPoolKnown = true;
+					State.MotorPool = BuildMotorPool(World, State, Pool);
+				}
+			}
 			if (HasMissing(State) && World->GetTimeSeconds() >= State.RetrySpotSeconds && AssetsReady(State))
 			{
 				SpawnMissing(World, State);

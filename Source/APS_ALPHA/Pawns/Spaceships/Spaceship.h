@@ -513,6 +513,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Ship|Flight")
 	double GetShipSpeedMetersPerSecond() const;
 
+	/** Read-only presentation input for engine audio; does not consume or change controls. */
+	FVector GetPilotTranslationInput() const { return FVector(ForwardInput, SideInput, VerticalInput); }
+
 	UFUNCTION(BlueprintPure, Category = "Ship|Flight")
 	double GetCurrentBoostMultiplier() const { return CurrentBoostMultiplier; }
 
@@ -572,6 +575,8 @@ public:
 	void ToggleNavigationMarkers();
 	void ToggleNavigationPanel();
 	void ToggleNavigationGuides();
+	/** Rio 04.10: labels on the nearest stars on and off (Y). */
+	void ToggleNearStarLabels();
 	void SelectNextNavigationTarget();
 	void SelectPreviousNavigationTarget();
 
@@ -722,6 +727,15 @@ private:
 	float YawInput{0.0f};
 	float PitchInput{0.0f};
 	float RollInput{0.0f};
+	/** Mouse look (IsMouseLookActive): the mode chosen with C, the camera's orbit from the chase view (degrees) and how
+	 * long the mouse has been still. */
+	bool bMouseLook{false};
+	double MouseLookYaw{0.0};
+	double MouseLookPitch{0.0};
+	double MouseLookIdleSeconds{0.0};
+	bool bMouseLookApplied{false};
+	/** HasWalkableInterior, found once: -1 not yet, 0 no cabin, 1 a modelled cabin. */
+	mutable int8 WalkableInteriorState{-1};
 	FVector CurrentAngularVelocityDegrees{FVector::ZeroVector};
 	EEngineMode PendingEngineMode{EEngineMode::Impulse};
 	float EngineModeTransitionElapsed{0.0f};
@@ -753,6 +767,20 @@ public:
 	AActor* GetGroundVehicleHomeBody() const { return GroundVehicleHomeBody.Get(); }
 	/** The actor rotation that points the flight nose along Forward and the flight up along Up, whatever the hull axes. */
 	FQuat GetActorRotationForFlightAxes(const FVector& Forward, const FVector& Up) const;
+	/**
+	 * Rio 02.10: the mouse orbits the camera instead of steering. C switches it; a rover or a hover starts so, the drone
+	 * and the ships steer. The autopilot always keeps it on, so a touch of the mouse never takes the helm back.
+	 */
+	bool IsMouseLookActive() const;
+	void ToggleMouseLook();
+	/**
+	 * Rio 03.10: the hull carries an authored pilot-seat socket (a modelled cabin, like S_P3_01's): its pilot walks in to
+	 * the seat and gets up behind it. Every other ship is boarded from anywhere beside it and left through its outside
+	 * exit ("if a ship has no interior yet, do not touch it").
+	 */
+	bool HasWalkableInterior() const;
+	/** The band and vehicle models' own velocity (the hull moves kinematically, so GetVelocity says little). */
+	const FVector& GetKinematicVelocity() const { return KinematicVelocity; }
 
 	/** A rover's visual tyre: its centre and radius in the hull's own (unscaled) space, its side and axle. */
 	struct FGroundVehicleWheel
@@ -765,14 +793,45 @@ public:
 	};
 	const TArray<FGroundVehicleWheel>& GetGroundVehicleWheels() const { return GroundVehicleWheels; }
 
+	/**
+	 * A bone of the buggy's suspension (SKM_Offroad: control arms, dampers, hubs; the body and the tyres are their own
+	 * meshes), at rest in the suspension mesh's component space. The flight model poses it after its tyre's travel.
+	 */
+	struct FGroundVehicleSuspensionBone
+	{
+		FName Name;
+		int32 Index{INDEX_NONE};
+		int32 Wheel{INDEX_NONE};
+		/** Hubs (and the arm ends, the wheel bones) ride with the tyre; arms turn about their root toward their moved
+		 * end; a damper turns about its top toward its mount on the lower arm, and its end sits on that mount. */
+		enum class ERole : uint8 { Hub, Arm, Damper, DamperEnd };
+		ERole Role{ERole::Hub};
+		bool bSteers{false};
+		FTransform Rest;
+		/** Arm: the end it reaches; damper and its end: the mount on the lower arm (component space, at rest). */
+		FVector Target{FVector::ZeroVector};
+		/** Damper and its end: the damper's top, which stays. */
+		FVector Pivot{FVector::ZeroVector};
+		/** Damper and its end: the lower arm's root and end, about which the mount turns with the arm. */
+		FVector ArmRoot{FVector::ZeroVector};
+		FVector ArmEnd{FVector::ZeroVector};
+	};
+	class UPoseableMeshComponent* GetGroundVehicleSuspension() const;
+	const TArray<FGroundVehicleSuspensionBone>& GetGroundVehicleSuspensionBones() const { return GroundVehicleSuspensionBones; }
+
 private:
 	/** A vehicle's driver steps out to the left of the nose, on the ground beside the hull (BeginPlay, after the
 	 * automatic interaction setup). */
 	void ConfigureGroundVehicleExit();
 	/** A vehicle's chase camera: level with the gravity and behind the heading (UpdateAdaptiveFlightCamera). */
 	void UpdateGroundVehicleCamera();
+	/** Mouse look: the orbit eases back behind when it is off, and behind a ground vehicle driving on with a still mouse. */
+	void UpdateMouseLook(float DeltaTime);
 
 	EAPSGroundVehicleKind GroundVehicleKind{};
 	TWeakObjectPtr<AActor> GroundVehicleHomeBody;
 	TArray<FGroundVehicleWheel> GroundVehicleWheels;
+	/** Owned by the actor as an instance component; the bones are sorted parents first (by bone index). */
+	TWeakObjectPtr<class UPoseableMeshComponent> GroundVehicleSuspension;
+	TArray<FGroundVehicleSuspensionBone> GroundVehicleSuspensionBones;
 };

@@ -27,6 +27,8 @@ public class APS_ALPHA : ModuleRules
 		}
 		
 		PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore", "DirGravity", "EnhancedInput", "AssetRegistry", "RenderCore" });
+		// Rio 03.10 (galaxy phase 3): GPU star points and galaxy glow (Plugins/APSStarRenderer, enabled in the .uproject).
+		PrivateDependencyModuleNames.Add("APSStarRenderer");
 
 		// Uncomment if you are using Slate UI
 		// PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });

@@ -24,6 +24,12 @@ struct APS_ALPHA_API FAPSObjectAction
 	bool bEnabled{true};
 	/** Runs the action; the screens refresh from the runtime revisions afterwards. Returns a message for the screen. */
 	TFunction<FText()> Execute;
+	/**
+	 * Rio 04.10 ("a button whose order is under way must show it, with a fill"): the order of this kind under way at the
+	 * object, read by the screens every frame. False when there is none; else the part done, 0..1 (the flight there, then
+	 * the work), what is happening ("EN ROUTE", "BUILDING") and who does it ("M-10 (CONSTRUCTION)").
+	 */
+	TFunction<bool(float& OutProgress, FText& OutStatus, FText& OutWho)> Underway;
 };
 
 namespace APSObjectActions

@@ -35,6 +35,47 @@ namespace APSChromePrivate
 			FLinearColor(0.035f, 0.23f, 0.31f, 0.88f), 1.0f);
 		return Brush;
 	}
+
+	/** Vertical metrics in font units, read 03.10 from the hhea and OS/2 tables of the two faces the UI uses: the
+	 * Orbitron TTF inside UI/Fonts/Orbitron_Bold (Medium has the same values) and the engine's Roboto. Neither sets
+	 * USE_TYPO_METRICS and both font assets use the default Metrics layout, so Slate lays them out on these hhea values.
+	 * XHeight is also the middle line of the symbols: Orbitron's < > + - v sit on 0.29 em, not on the capitals' 0.36. */
+	struct FFaceMetrics
+	{
+		float UnitsPerEm;
+		float Ascender;
+		float Descender;
+		float LineGap;
+		float CapHeight;
+		float XHeight;
+	};
+	constexpr FFaceMetrics OrbitronMetrics{1000.0f, 750.0f, -250.0f, 0.0f, 720.0f, 580.0f};
+	constexpr FFaceMetrics RobotoMetrics{2048.0f, 1900.0f, -500.0f, 0.0f, 1456.0f, 1082.0f};
+
+	/** How far below the line box's centre a glyph band of this height (from the baseline up) has its middle, in em:
+	 * the box spans Ascender + LineGap over the baseline and -Descender under it. */
+	constexpr float BandOffsetEm(const FFaceMetrics& Metrics, const float BandHeight)
+	{
+		return (BandHeight - (Metrics.Ascender + Metrics.LineGap + Metrics.Descender)) * 0.5f / Metrics.UnitsPerEm;
+	}
+
+	/** Slate sizes fonts in points at 96 DPI: one em is Size * 96 / 72 Slate units. */
+	float EmUnits(const FSlateFontInfo& Font)
+	{
+		return static_cast<float>(Font.Size) * 96.0f / 72.0f;
+	}
+
+	/** The display face is the Orbitron UFont of the menu and the in-game chrome; everything else is the engine font. */
+	bool IsDisplayFace(const FSlateFontInfo& Font)
+	{
+		const UObject* FontObject = Font.FontObject;
+		return FontObject && FontObject->GetName().Contains(TEXT("Orbitron"));
+	}
+
+	const FFaceMetrics& MetricsOf(const FSlateFontInfo& Font)
+	{
+		return IsDisplayFace(Font) ? OrbitronMetrics : RobotoMetrics;
+	}
 }
 
 FLinearColor APSChrome::Panel() { return APSChromePrivate::SRGB(8, 32, 42, 242); }
@@ -58,6 +99,42 @@ FSlateFontInfo APSChrome::Font(const FName Typeface, const int32 Size)
 		return Size >= 10 ? FAPSUIStyle::DisplayFont(Typeface, Size) : FCoreStyle::GetDefaultFontStyle(Typeface, Size + 1);
 	}
 	return FCoreStyle::GetDefaultFontStyle(Typeface, FMath::Max(Size, 11));
+}
+
+float APSChrome::CapsCenterOffset(const FSlateFontInfo& Font)
+{
+	using namespace APSChromePrivate;
+	const FFaceMetrics& Metrics = MetricsOf(Font);
+	return BandOffsetEm(Metrics, Metrics.CapHeight) * EmUnits(Font);
+}
+
+TOptional<FSlateRenderTransform> APSChrome::CapsCenterShift(const FSlateFontInfo& Font)
+{
+	return FSlateRenderTransform(FVector2f(0.0f, CapsCenterOffset(Font)));
+}
+
+float APSChrome::SymbolCenterOffset(const FSlateFontInfo& Font)
+{
+	using namespace APSChromePrivate;
+	const FFaceMetrics& Metrics = MetricsOf(Font);
+	return BandOffsetEm(Metrics, Metrics.XHeight) * EmUnits(Font);
+}
+
+TOptional<FSlateRenderTransform> APSChrome::SymbolCenterShift(const FSlateFontInfo& Font)
+{
+	return FSlateRenderTransform(FVector2f(0.0f, SymbolCenterOffset(Font)));
+}
+
+TSharedRef<STextBlock> APSChrome::CenteredLabel(const TAttribute<FText>& Text, const FSlateFontInfo& Font,
+	const TAttribute<FSlateColor>& Color)
+{
+	return SNew(STextBlock).Text(Text).Font(Font).ColorAndOpacity(Color)
+		.Justification(ETextJustify::Center).RenderTransform(CapsCenterShift(Font));
+}
+
+FMargin APSChrome::ButtonPadding(const FSlateFontInfo& Font, const float Horizontal)
+{
+	return FMargin(FMath::Max(Horizontal, 14.0f), FMath::RoundToFloat(APSChromePrivate::EmUnits(Font) * 0.45f) + 5.0f);
 }
 
 TSharedRef<SWidget> APSChrome::ChamferPanel(TSharedRef<SWidget> Content, const FMargin& Padding,
@@ -84,6 +161,7 @@ TSharedRef<SWidget> APSChrome::ChamferPanel(TSharedRef<SWidget> Content, const F
 
 TSharedRef<SWidget> APSChrome::Badge(const FText& Glyph, const FLinearColor& Accent, const float Size)
 {
+	const FSlateFontInfo GlyphFont = Font("Bold", FMath::RoundToInt(Size * 0.34f));
 	return SNew(SBox).WidthOverride(Size).HeightOverride(Size)
 	.HAlign(HAlign_Fill).VAlign(VAlign_Fill)
 	[
@@ -92,8 +170,7 @@ TSharedRef<SWidget> APSChrome::Badge(const FText& Glyph, const FLinearColor& Acc
 			SNew(SBorder).BorderImage(&APSChromePrivate::InsetBrush()).Padding(0.0f)
 			.HAlign(HAlign_Center).VAlign(VAlign_Center)
 			[
-				SNew(STextBlock).Text(Glyph).Justification(ETextJustify::Center)
-				.Font(Font("Bold", FMath::RoundToInt(Size * 0.34f))).ColorAndOpacity(Accent)
+				CenteredLabel(Glyph, GlyphFont, Accent)
 			]
 		]
 	];
@@ -146,10 +223,11 @@ TSharedRef<SWidget> APSChrome::IconSectionHeading(const EAPSChromeGlyph Glyph, c
 
 TSharedRef<SWidget> APSChrome::KeyChip(const FText& Key, const FLinearColor& Accent)
 {
-	return SNew(SBorder).BorderImage(&APSChromePrivate::InsetBrush()).Padding(FMargin(7.0f, 3.0f))
+	// Rio 03.10: the key centred both ways in its chip, by its capitals.
+	return SNew(SBorder).BorderImage(&APSChromePrivate::InsetBrush()).Padding(FMargin(8.0f, 3.0f))
 	.HAlign(HAlign_Center).VAlign(VAlign_Center)
 	[
-		SNew(STextBlock).Text(Key).Font(Font("Bold", 9)).ColorAndOpacity(Accent)
+		CenteredLabel(Key, Font("Bold", 9), Accent)
 	];
 }
 

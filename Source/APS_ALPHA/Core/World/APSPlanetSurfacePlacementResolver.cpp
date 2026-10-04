@@ -41,6 +41,9 @@ namespace APSPlanetSurfacePlacement
 	constexpr int32 RingDirections = 12;
 	constexpr int32 HeadingCount = 4;
 	constexpr int32 GlobalDirections = 96;
+	/** The search rings round the preferred site; with the site itself they come first among the directions. */
+	constexpr double SearchRadiiCm[] = {10000.0, 25000.0, 50000.0, 100000.0, 500000.0};
+	constexpr int32 NearDirections = 1 + RingDirections * static_cast<int32>(UE_ARRAY_COUNT(SearchRadiiCm));
 	constexpr int32 RouteProbeCount = 9;
 	constexpr double RouteHalfWidthCm = 150.0;
 	constexpr double TraceHalfLengthCm = 5000.0;
@@ -429,10 +432,8 @@ bool UAPSPlanetSurfacePlacementResolver::AdvanceCivilizationFootprint(
 			FVector::DotProduct(SeedForward, TangentB),
 			FVector::DotProduct(SeedForward, TangentA));
 
-		Directions.Reserve(1 + RingDirections * 5 + GlobalDirections);
+		Directions.Reserve(NearDirections + GlobalDirections);
 		Directions.Add(PreferredUp);
-		constexpr double SearchRadiiCm[] = {
-			10000.0, 25000.0, 50000.0, 100000.0, 500000.0};
 		for (const double SearchRadiusCm : SearchRadiiCm)
 		{
 			const double Angle = FMath::Clamp(SearchRadiusCm / RadiusCm, 1.0e-6, 0.35);
@@ -533,7 +534,12 @@ bool UAPSPlanetSurfacePlacementResolver::AdvanceCivilizationFootprint(
 					Candidate.Route.MaxSlope) * 20.0
 				- MaxDeviation / 5000.0
 				+ (bHasLiquid ? FMath::Clamp(DryMargin / 10000.0, 0.0, 2.0) : 1.0);
-			if (Candidate.Score > Best.Score)
+			// Rio 03.10: a caller-chosen site (a surface start) keeps the colony by the pilot. On flatness alone a
+			// planet-wide direction 26 degrees round won (3088 km): those count only while no ring site is valid.
+			const bool bNear = DirectionIndex < NearDirections;
+			const bool bBestNear = Best.bValid && Best.Ordinal / HeadingCount < NearDirections;
+			const bool bNearFirst = !Request.PreferredUp.IsNearlyZero() && Best.bValid && bNear != bBestNear;
+			if (bNearFirst ? bNear : Candidate.Score > Best.Score)
 			{
 				Best = Candidate;
 			}

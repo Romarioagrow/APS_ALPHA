@@ -2,6 +2,7 @@
 #include "APSGameplayStarAppearance.h"
 #include "APSPlanetSurfaceFill.h"
 
+#include "APS_ALPHA/Actors/Astro/APSBlackHoleVisual.h"
 #include "APS_ALPHA/Actors/Astro/Star.h"
 #include "APS_ALPHA/Actors/Astro/StarSystem.h"
 #include "APS_ALPHA/Actors/Astro/StarCluster.h"
@@ -39,6 +40,8 @@ namespace
 	constexpr float GameplayStationFillMaximumAttenuationRadiusCm = 30000.0f;
 	const FLinearColor GameplayStationFillLightColor(0.72f, 0.82f, 1.0f, 1.0f);
 	const FName GameplaySurfaceFillLightTag(TEXT("APSGameplaySurfaceFillLight"));
+	/** UAPSObjectLightingSubsystem's camera-aligned fill (APSObjectLighting::ObjectFillTag): never the star's key light. */
+	const FName ObjectFillLightTag(TEXT("APSObjectFillLight"));
 	// Keep the generated star as the dominant key. This fill only lifts the
 	// fixed-exposure floor enough to retain readable normals on the night side.
 	// The dry Frozen handoff still compressed the settled ground to a nine-level
@@ -250,6 +253,8 @@ bool UAPSStellarVisualSubsystem::GetActiveStellarTarget(
 
 void UAPSStellarVisualSubsystem::Deinitialize()
 {
+	FCoreDelegates::PostWorldOriginOffset.RemoveAll(this);
+	APSWorldShiftEvents::OnPostDoubleShift().RemoveAll(this);
 	ResetGameplayStellarView();
 	if (ADirectionalLight* FillLight = PreviewFillLight.Get())
 	{
@@ -297,9 +302,12 @@ void UAPSStellarVisualSubsystem::ResolveDirectionalLight()
 	for (TActorIterator<ADirectionalLight> It(World); It; ++It)
 	{
 		ADirectionalLight* Candidate = *It;
+		// Rio 04.10 ("the light in space lags, darker, then black"): the object fill is a directional light too; taken
+		// for the star's key, the two subsystems would turn and dim the same light against each other.
 		if (IsValid(Candidate)
 			&& (Candidate->ActorHasTag(PreviewFillLightTag)
-				|| Candidate->ActorHasTag(GameplaySurfaceFillLightTag)))
+				|| Candidate->ActorHasTag(GameplaySurfaceFillLightTag)
+				|| Candidate->ActorHasTag(ObjectFillLightTag)))
 		{
 			continue;
 		}
@@ -907,6 +915,17 @@ void UAPSStellarVisualSubsystem::ResolveNearestStar(const FVector& ObserverLocat
 	TargetLightColor.A = 1.0f;
 	TargetLightIntensity = 9.0f + FMath::Clamp(
 		FMath::LogX(10.0f, FMath::Max(BestLuminosity, 0.0f) + 1.0f) * 1.8f, 0.0f, 9.0f);
+	// Rio 03.10 (the black hole V2): a hole is no sun; its key is the accretion disc's dim warm glow.
+	if (IsValid(BestMaterializedStar) && BestMaterializedStar->StellarClass == EStellarType::BlackHole
+		&& APSBlackHoleVisual::IsEnabled())
+	{
+		float DiskIntensity = 3.0f;
+		float DiskKelvin = 4300.0f;
+		APSBlackHoleVisual::GetDiskKeyLight(DiskIntensity, DiskKelvin);
+		TargetLightTemperature = DiskKelvin;
+		TargetLightColor = FLinearColor::White;
+		TargetLightIntensity = DiskIntensity;
+	}
 
 	if (BestIdentity != ActiveStarIdentity)
 	{

@@ -18,6 +18,11 @@ class UWorld;
  * home system's ecliptic frame. Moves between foci fly the van Wijk-Nuij zoom-pan path, so a jump from a planet to the
  * cluster first rises and then descends instead of streaking at one height. It ticks after the actors and before the
  * camera manager, so a focused ship that moves this frame stays centred. Plain C++: no reflection needed.
+ *
+ * Rio 03.10 ("something freezes there"): the field of view never changes frame by frame. Every frame of a changing field
+ * of view re-sizes and re-uploads the whole full-scale star catalogue (APSGameplayStellarView, ~61k instances), which
+ * made the first flight out of the ship 2 s of 52-57 ms frames and the 0.3 s blend back as bad. The map keeps the
+ * pilot's lens; aps.Map.FieldOfView picks another one, switched once halfway through a flight and back once on close.
  */
 class FAPSStrategicMapCamera final : public FTickableGameObject
 {
@@ -35,8 +40,13 @@ public:
 
 	static constexpr double AstronomicalUnitCm = 1.495978707e13;
 	/** Rio's brief: from about 1.5 body radii up to some 300 AU from home. */
-	static constexpr double MaximumDistanceCm = 300.0 * AstronomicalUnitCm;
-	static constexpr float MapFieldOfView = 50.0f;
+	static constexpr double DefaultMaximumDistanceCm = 300.0 * AstronomicalUnitCm;
+	/** Rio 04.10 ("the map has no galaxy level"): how far out the camera goes, the galaxy's frame once the map knows it. */
+	void SetMaximumDistance(const double DistanceCm)
+	{
+		MaximumDistanceCm = FMath::IsFinite(DistanceCm) ? FMath::Max(DistanceCm, DefaultMaximumDistanceCm) : DefaultMaximumDistanceCm;
+	}
+	double GetMaximumDistance() const { return MaximumDistanceCm; }
 
 	FAPSStrategicMapCamera() = default;
 	virtual ~FAPSStrategicMapCamera() override;
@@ -110,7 +120,6 @@ private:
 		double EndYaw{0.0};
 		double EndPitch{0.0};
 		double EndDistance{0.0};
-		double StartFieldOfView{90.0};
 		double StartRegionWeight{1.0};
 		double Time{0.0};
 		double Duration{1.0};
@@ -151,7 +160,13 @@ private:
 	double Pitch{-35.0};
 	double Distance{2000.0};
 	double DesiredDistance{2000.0};
+	double MaximumDistanceCm{DefaultMaximumDistanceCm};
+	/** The field of view rendered now; it changes only in single steps (see the class comment). */
 	double FieldOfView{90.0};
+	/** The player's view at Begin, restored before the view returns to the pilot. */
+	double PilotFieldOfView{90.0};
+	/** The lens the map settles on: the pilot's unless aps.Map.FieldOfView asks for another. */
+	double LensFieldOfView{90.0};
 	FQuat Rotation{FQuat::Identity};
 	FVector LookLocation{FVector::ZeroVector};
 	FVector CameraLocation{FVector::ZeroVector};

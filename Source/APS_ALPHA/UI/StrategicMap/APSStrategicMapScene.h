@@ -31,7 +31,7 @@ namespace APSStrategicMap
  * What the strategic map shows, read from the live world (Rio 02.10: "every real object labelled: planets, moons,
  * surfaces, stations, outposts, ships"): stars, planets and moons with their orbits, stations, shipyards and
  * headquarters, outposts, colonies and built infrastructure, anomaly sites, the fleet's ships and the pilot, and the
- * catalogue star systems near the view plus every known or claimed one with the relay network. Re-read twice a second
+ * catalogue star systems near the view plus every known or claimed one with the relay network. Re-read every two seconds
  * and at once after a fleet, infrastructure or star-system revision; positions are read live by the view every frame.
  * Selection, hover and layers live here too, shared by the view and the side panels.
  */
@@ -120,6 +120,8 @@ private:
 	bool bCleanView{false};
 	bool bObjectsDirty{true};
 	bool bSystemsDirty{true};
+	/** The star catalogue changed (systems registered around a flying pilot, what is known): re-picked within 2 s. */
+	bool bStarsNews{false};
 	float ObjectsClock{0.0f};
 	float SystemsClock{0.0f};
 	FVector SystemsFocus{FVector::ZeroVector};

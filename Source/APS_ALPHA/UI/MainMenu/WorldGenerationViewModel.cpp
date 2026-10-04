@@ -1,5 +1,6 @@
 #include "WorldGenerationViewModel.h"
 #include "APSAtmosphereControlBounds.h"
+#include "APSWorldRoll.h"
 #include "APS_ALPHA/Core/Rendering/APSPlanetCloudComponent.h"
 #include "APS_ALPHA/Core/Planetary/APSPlanetCloudWeather.h"
 
@@ -23,6 +24,7 @@
 #include "APS_ALPHA/Actors/Astro/Star.h"
 #include "APS_ALPHA/Actors/Astro/StarCluster.h"
 #include "APS_ALPHA/Actors/Astro/StarSystem.h"
+#include "APS_ALPHA/Generation/APSGalaxyMorphology.h"
 #include "APS_ALPHA/Generation/AstroGenerator.h"
 #include "APS_ALPHA/Generation/PlanetarySurfaceGenerator.h"
 #include "APS_ALPHA/Generation/StarGenerator.h"
@@ -209,6 +211,13 @@ void UWorldGenerationViewModel::SetEnumValue(const UEnum* EnumClass, int32 Selec
 		}
 		return;
 	}
+	if (EnumClass == StaticEnum<EGalaxyType>())
+	{
+		// Rio 03.10: every type has its own subclasses. A class of another type falls to the type default, which
+		// keeps that type's historic look (Spiral + E4 becomes Sb: the same two-arm spiral).
+		GeneratedWorld->GalaxyClass = APSGalaxyMorphology::CoerceSubclass(
+			GeneratedWorld->GalaxyType, GeneratedWorld->GalaxyClass);
+	}
 	RequestPreview();
 }
 
@@ -219,7 +228,9 @@ void UWorldGenerationViewModel::SetGalaxySize(double Value)
 		return;
 	}
 
-	const int32 NewValue = FMath::RoundToInt(FMath::Clamp(Value, 1.0, 100000.0));
+	// Rio 03.10 ("SIZE 1: the galaxy as if collapsed"): physical star radii pile into each other below this size.
+	const int32 NewValue = FMath::RoundToInt(FMath::Clamp(Value,
+		static_cast<double>(APSGalaxyMorphology::MinGalaxySize), 100000.0));
 	if (GeneratedWorld->GalaxySize != NewValue)
 	{
 		GeneratedWorld->GalaxySize = NewValue;
@@ -556,6 +567,44 @@ void UWorldGenerationViewModel::SetGalaxyStarCount(double Value)
 		GeneratedWorld->GalaxyStarCount = NewValue;
 		RequestPreview();
 	}
+}
+
+void UWorldGenerationViewModel::SetGalaxyPlacedStarCount(const double Value)
+{
+	if (!GeneratedWorld || !FMath::IsFinite(Value))
+	{
+		return;
+	}
+	// A prefix of the fixed catalogue order: more stars only add to the same sky (StableIds stay). Not part of the
+	// canonical InputHash, so the preview rebuilds its render layer without a new dataset.
+	const int32 NewValue = FMath::RoundToInt(FMath::Clamp(Value,
+		static_cast<double>(APSGalaxyMorphology::PreviewReferenceBudget),
+		static_cast<double>(APSGalaxyMorphology::MaxPlacedStars)));
+	if (GeneratedWorld->GalaxyPlacedStarCount != NewValue)
+	{
+		GeneratedWorld->GalaxyPlacedStarCount = NewValue;
+		RequestPreview();
+	}
+}
+
+void UWorldGenerationViewModel::SetGalaxyStarPopulation(const int32 Value)
+{
+	// Rio 03.10: the cluster's POPULATION presets for the galaxy (sizes); the enum row cannot share SetEnumValue,
+	// which maps an enum type to the cluster's own property.
+	if (!GeneratedWorld || Value < 0 || Value >= static_cast<int32>(EStarClusterPopulation::Unknown)) return;
+	const EStarClusterPopulation NewValue = static_cast<EStarClusterPopulation>(Value);
+	if (GeneratedWorld->GalaxyStarPopulation == NewValue) return;
+	GeneratedWorld->GalaxyStarPopulation = NewValue;
+	RequestPreview();
+}
+
+void UWorldGenerationViewModel::SetGalaxyStarComposition(const int32 Value)
+{
+	if (!GeneratedWorld || Value < 0 || Value >= static_cast<int32>(EStarClusterComposition::Unknown)) return;
+	const EStarClusterComposition NewValue = static_cast<EStarClusterComposition>(Value);
+	if (GeneratedWorld->GalaxyStarComposition == NewValue) return;
+	GeneratedWorld->GalaxyStarComposition = NewValue;
+	RequestPreview();
 }
 
 void UWorldGenerationViewModel::SetGalaxyStarDensity(double Value)
@@ -1146,13 +1195,65 @@ void UWorldGenerationViewModel::RegeneratePreviewVariant()
 		GeneratedWorld->ClearPreviewSystemEditOverrides();
 		GeneratedWorld->ClearPreviewDisplayNameOverrides();
 		bSkipBodyOverrideSnapshotOnce = true;
-	}
-	if (AAstroGenerator* Generator = FindOrCreatePreviewGenerator())
-	{
-		Generator->AdvancePreviewGenerationSeed();
+		// Rio 03.10: every press a genuinely new world (stars, planets, start world, moons), not the next seed of a
+		// fixed sequence that left the recipe and the planet itself untouched. The roll owns the seed now.
+		RollWorld(TEXT("REGENERATE"));
 	}
 	bForceRefocusOnNextPreview = true;
 	RequestPreview();
+}
+
+void UWorldGenerationViewModel::RollFreshWorldOnce()
+{
+	if (bFreshWorldRollConsidered || !GeneratedWorld)
+	{
+		return;
+	}
+	bFreshWorldRollConsidered = true;
+	// Only an untouched model (the default seed, no edits): returning to the screen keeps what is there. Automation,
+	// the night bench and diagnostics keep the deterministic default world; load and continue never come here.
+	const UGeneratedWorld* Defaults = GetDefault<UGeneratedWorld>();
+	if (!APSWorldRoll::IsInteractiveSession() || GeneratedWorld->GenerationSeed != Defaults->GenerationSeed
+		|| !GeneratedWorld->PreviewBodyEditOverrides.IsEmpty() || !GeneratedWorld->PreviewPlanetOrbitEdits.IsEmpty()
+		|| !GeneratedWorld->PreviewStarEditOverrides.IsEmpty() || !GeneratedWorld->PreviewSystemEditOverrides.IsEmpty()
+		|| !GeneratedWorld->PreviewDisplayNameOverrides.IsEmpty())
+	{
+		return;
+	}
+	// The rolled buffer belongs to the new start world: never pin it onto a body of an earlier preview.
+	bSkipBodyOverrideSnapshotOnce = true;
+	bForceRefocusOnNextPreview = true;
+	RollWorld(TEXT("NEW WORLD"));
+}
+
+void UWorldGenerationViewModel::RollWorld(const TCHAR* Reason)
+{
+	if (!GeneratedWorld)
+	{
+		return;
+	}
+	// The PLANET route builds one body, so only the world itself is rolled there.
+	const bool bPlanetOnly = GenerationRoute == EAPSGenerationRoute::Planet
+		|| GeneratedWorld->AstroGenerationLevel == EAstroGenerationLevel::SinglePlanet
+		|| !GeneratedWorld->bGenerateHomeSystem;
+	// A person gets a seed nobody rolled before; scripted runs (menu shots, bench) a reproducible chain from the
+	// current world seed, so their frames stay comparable between runs.
+	const int32 RollSeed = APSWorldRoll::IsInteractiveSession() ? APSWorldRoll::MakeFreshSeed()
+		: (static_cast<int32>(HashCombineFast(GetTypeHash(GeneratedWorld->GenerationSeed), 0x52454745u) & 0x7fffffffu) | 1);
+	const APSWorldRoll::FResult Roll = APSWorldRoll::Apply(*GeneratedWorld, RollSeed,
+		bPlanetOnly ? APSWorldRoll::EScope::PlanetOnly : APSWorldRoll::EScope::System);
+	UE_LOG(LogTemp, Log, TEXT("[APS.WorldGeneration] %s roll %s"), Reason, *Roll.Summary);
+}
+
+void UWorldGenerationViewModel::SetPreviewMarksHidden(const bool bHidden)
+{
+	if (bPreviewMarksHidden == bHidden)
+	{
+		return;
+	}
+	bPreviewMarksHidden = bHidden;
+	UE_LOG(LogTemp, Log, TEXT("[APS.WorldGeneration] Marks %s: orbits, rings and labels %s"),
+		bHidden ? TEXT("OFF") : TEXT("ON"), bHidden ? TEXT("hidden") : TEXT("shown"));
 }
 
 void UWorldGenerationViewModel::SetPreviewFocus(EAstroPreviewFocus NewFocus)
@@ -1719,13 +1820,15 @@ FText UWorldGenerationViewModel::GetPreviewScopeSummary() const
 	switch (PreviewFocus)
 	{
 	case EAstroPreviewFocus::Galaxy:
+		// Rio 03.10 ("MODELED 100 MILLION but visually few"): show what is placed; the catalogue size stays internal.
 		return FText::FromString(FString::Printf(
-			TEXT("GALAXY TYPE  %s\nCLASS  %s\nMODELED STARS  %lld\nRENDERED SAMPLE  %d\nSIZE  %d  /  DENSITY  %.2f"),
+			TEXT("GALAXY TYPE  %s\nCLASS  %s\nSTARS  %d\nSIZE  %d  /  DENSITY  %.2f\nPOPULATION  %s\nCOMPOSITION  %s"),
 			*EnumText(GeneratedWorld->GalaxyType), *EnumText(GeneratedWorld->GalaxyClass),
-			Generator ? Generator->GetPreviewGalaxyModeledStarCount()
-				: static_cast<int64>(GeneratedWorld->GalaxyStarCount),
-			Generator ? Generator->GetPreviewGalaxyRenderedStarCount() : 0,
-			GeneratedWorld->GalaxySize, GeneratedWorld->GalaxyStarDensity));
+			Generator ? Generator->GetPreviewGalaxyRenderedStarCount()
+				: (GeneratedWorld->GalaxyPlacedStarCount > 0 ? GeneratedWorld->GalaxyPlacedStarCount
+					: APSGalaxyMorphology::PreviewReferenceBudget),
+			GeneratedWorld->GalaxySize, GeneratedWorld->GalaxyStarDensity,
+			*EnumText(GeneratedWorld->GalaxyStarPopulation), *EnumText(GeneratedWorld->GalaxyStarComposition)));
 
 	case EAstroPreviewFocus::StarCluster:
 		return FText::FromString(FString::Printf(
@@ -1832,7 +1935,8 @@ FText UWorldGenerationViewModel::GetPreviewScopeSummary() const
 				if (IsValid(Star) && IsValid(Star->PlanetarySystem)) HomePlanetCount += Star->PlanetarySystem->PlanetsActorsList.Num();
 		return FText::FromString(FString::Printf(
 			TEXT("GALAXY STARS  %d\nCLUSTER  %s / %s\nHOME SYSTEM PLANETS  %d\nHOME START PLANET  %d\nFULL SCALE  %s"),
-			GeneratedWorld->GalaxyStarCount, *EnumText(GeneratedWorld->StarClusterSize),
+			GeneratedWorld->GalaxyPlacedStarCount > 0 ? GeneratedWorld->GalaxyPlacedStarCount
+				: APSGalaxyMorphology::PreviewReferenceBudget, *EnumText(GeneratedWorld->StarClusterSize),
 			*EnumText(GeneratedWorld->StarClusterType), HomePlanetCount,
 			GeneratedWorld->StartPlanetIndex, GeneratedWorld->bGenerateFullScaledWorld ? TEXT("ON") : TEXT("OFF")));
 	}
