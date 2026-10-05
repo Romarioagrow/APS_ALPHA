@@ -61,7 +61,8 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAPSTerrainContinuityGateTest,
 bool FAPSTerrainContinuityGateTest::RunTest(const FString& Parameters)
 {
     auto* Switch=IConsoleManager::Get().FindConsoleVariable(TEXT("aps.Surface.TerrainContinuity"));
-    if(!TestNotNull(TEXT("Registered rollback switch"),Switch))return false;
+    if(!TestNotNull(TEXT("Registered compatibility marker"),Switch))return false;
+    TestTrue(TEXT("Interactive rollback is forbidden"), Switch->TestFlags(ECVF_ReadOnly));
     const int32 Previous=Switch->GetInt();
     const uint32 PreviousPriority=Switch->GetFlags() & ECVF_SetByMask;
     ON_SCOPE_EXIT{
@@ -71,8 +72,8 @@ bool FAPSTerrainContinuityGateTest::RunTest(const FString& Parameters)
     };
     for(int32 Enable:{0,1})
     {
-        // The harness may already have set the opt-in through ExecCmds. A
-        // lower SetByCode priority would not exercise the rollback branch.
+        // Direct C++ writes simulate an old config/launcher. Even a stale zero
+        // cannot change routing; restore its value/priority before leaving.
         Switch->Set(Enable,ECVF_SetByConsole);
         TestEqual(TEXT("Test switch actually changed"),Switch->GetInt(),Enable);
         for(int32 Value=0;Value<=255;++Value)
@@ -80,14 +81,12 @@ bool FAPSTerrainContinuityGateTest::RunTest(const FString& Parameters)
             FAPSResolvedPlanetSurfaceProfile P;
             P.PlanetType=static_cast<EPlanetType>(Value);
             P.Archetype=UAPSPlanetSurfaceProfileResolver::GetArchetypeForType(P.PlanetType);
-            const bool Expected=Enable && (P.PlanetType==EPlanetType::Terrestrial || P.PlanetType==EPlanetType::Frozen
-                || P.PlanetType==EPlanetType::Oasis || P.PlanetType==EPlanetType::Ice
-                || P.PlanetType==EPlanetType::Tundra || P.PlanetType==EPlanetType::Nordic
-                || P.PlanetType==EPlanetType::Rocky || P.PlanetType==EPlanetType::Desert
-                || P.PlanetType==EPlanetType::Sand || P.PlanetType==EPlanetType::HighMountain
-                || P.PlanetType==EPlanetType::Forest || P.PlanetType==EPlanetType::Savanna
-                || P.PlanetType==EPlanetType::SuperEarth || P.PlanetType==EPlanetType::Pangea);
-            TestEqual(FString::Printf(TEXT("Exact type gate/rollback enable%d type%d"),Enable,Value),
+            // Independent saved-ID boundary: 3 magmatic, 3 giants and Unknown
+            // stay outside ContinuousTerra; legacy Exoplanet=29 is resolvable.
+            const bool Expected=Value<=34 && Value!=3 && Value!=4 && Value!=5 && Value!=6
+                && Value!=12 && Value!=19 && Value!=30;
+            TestTrue(TEXT("Stale CVar cannot disable the original terrain"), APSTerrainContinuityMaterial::Enabled());
+            TestEqual(FString::Printf(TEXT("Original parent despite stale setting%d type%d"),Enable,Value),
                 FString(APSSharedTerrainMaterial::TemplatePath(P)),
                 FString(Expected?APSTerrainContinuityMaterial::TemplatePath:APSSharedTerrainMaterial::TemplatePath(P.Archetype)));
         }
@@ -136,10 +135,11 @@ bool FAPSTerrainContinuityAssetTest::RunTest(const FString& Parameters)
             UTexture* A=nullptr;UTexture* B=nullptr;
             TestTrue(*Info.Name.ToString(),Old->GetTextureParameterValue(Info,A) && New->GetTextureParameterValue(Info,B) && A==B);
         }
-        for(const TCHAR* Name:{TEXT("APS_OrbitalMacroMode"),TEXT("APS_NormalMacroWarpMode")})
-        {
-            float Mode=0;TestTrue(Name,New->GetScalarParameterValue(FHashedMaterialParameterInfo(Name),Mode) && Mode==1.0f);
-        }
+        float ColorMode=-1,NormalMode=-1;
+        TestTrue(TEXT("Original colour field is retained at every distance"),
+            New->GetScalarParameterValue(FHashedMaterialParameterInfo(TEXT("APS_OrbitalMacroMode")),ColorMode) && ColorMode==0.0f);
+        TestTrue(TEXT("Accepted normal-hex detail remains enabled"),
+            New->GetScalarParameterValue(FHashedMaterialParameterInfo(TEXT("APS_NormalMacroWarpMode")),NormalMode) && NormalMode==1.0f);
     }
     Root->SetWorldLocation(FVector(3.e13,-2.e12,9.e11));
     Root->SetWorldRotation(FRotator(17,31,-5));

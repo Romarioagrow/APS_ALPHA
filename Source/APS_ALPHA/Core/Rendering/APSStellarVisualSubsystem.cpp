@@ -1,6 +1,9 @@
 #include "APSStellarVisualSubsystem.h"
 #include "APSGameplayStarAppearance.h"
 #include "APSPlanetSurfaceFill.h"
+#include "APS_ALPHA/Core/World/APSPlaceholderGlobe.h"
+#include "APS_ALPHA/Core/World/APSWorldOriginSubsystem.h"
+#include "APS_ALPHA/Core/World/APSWorldShiftEvents.h"
 
 #include "APS_ALPHA/Actors/Astro/APSBlackHoleVisual.h"
 #include "APS_ALPHA/Actors/Astro/Star.h"
@@ -56,6 +59,23 @@ bool UAPSStellarVisualSubsystem::ShouldCreateSubsystem(UObject* Outer) const
 {
 	const UWorld* World = Cast<UWorld>(Outer);
 	return World && (World->WorldType == EWorldType::Game || World->WorldType == EWorldType::PIE);
+}
+
+void UAPSStellarVisualSubsystem::Initialize(FSubsystemCollectionBase& Collection)
+{
+	Super::Initialize(Collection);
+	Collection.InitializeDependency<UAPSWorldOriginSubsystem>();
+	APSWorldShiftEvents::BindPostShift(this, [this](UWorld* ShiftedWorld)
+	{
+		if (!ShiftedWorld || ShiftedWorld != GetWorld() || !bHasTargetStar) return;
+		if (const auto* Origin = ShiftedWorld->GetSubsystem<UAPSWorldOriginSubsystem>())
+		{
+			// Both barriers run after actors and the origin reach their final frame.
+			// Resolve from the canonical snapshot, so duplicate notices cannot add
+			// the shift twice. Selection and the existing light interpolation stay unchanged.
+			TargetStarLocation = Origin->FromGenerationFrame(TargetStarGenerationLocation);
+		}
+	});
 }
 
 void UAPSStellarVisualSubsystem::Tick(float DeltaTime)
@@ -635,7 +655,8 @@ void UAPSStellarVisualSubsystem::UpdateGameplaySurfaceFillLight(
 		for (TActorIterator<APlanetaryBody> It(World); It; ++It)
 		{
 			APlanetaryBody* Candidate = *It;
-			if (!IsValid(Candidate) || !Candidate->bWorldScapeSurfaceReady)
+			if (!IsValid(Candidate) || !APSPlanetSurfaceFill::IsEligible(
+				Candidate->bWorldScapeSurfaceReady, APSPlaceholderGlobe::Handles(Candidate)))
 			{
 				continue;
 			}
@@ -872,6 +893,8 @@ void UAPSStellarVisualSubsystem::ResolveNearestStar(const FVector& ObserverLocat
 		return;
 	}
 	TargetStarLocation = BestLocation;
+	const auto* Origin = World->GetSubsystem<UAPSWorldOriginSubsystem>();
+	TargetStarGenerationLocation = Origin ? Origin->ToGenerationFrame(BestLocation) : BestLocation;
 	const AAstroGenerator* GeneratedWorld = GameplayStellarGenerator.Get();
 	const AStarSystem* GeneratedHomeSystem = IsValid(GeneratedWorld)
 		? GeneratedWorld->GetPreviewHomeSystem() : nullptr;

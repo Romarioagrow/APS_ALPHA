@@ -36,7 +36,9 @@ enum class EAPSChromeGlyph : uint8
 	Fleet,
 	Infrastructure,
 	Divisions,
-	System
+	System,
+	/** Rio 05.10 (star map): the STAR level, three stars on a faint ring. */
+	Stars
 };
 
 /** Small code-native line icons keep the Slate-only menu readable before the
@@ -253,6 +255,21 @@ public:
 			Circle(Center, Radius * 0.20f, Radius * 0.20f);
 			Circle(Center, Radius * 0.72f, Radius * 0.46f, -0.28f);
 			Circle(Center + FVector2D(Radius * 0.68f, -Radius * 0.23f), Radius * 0.12f, Radius * 0.12f);
+			break;
+		case EAPSChromeGlyph::Stars:
+			Circle(Center, Radius * 0.95f, Radius * 0.95f);
+			for (const FVector3f& Spot : {FVector3f(-0.35f, -0.25f, 0.30f), FVector3f(0.42f, 0.05f, 0.22f),
+				FVector3f(-0.05f, 0.48f, 0.16f)})
+			{
+				TArray<FVector2D> Star;
+				for (int32 Index = 0; Index < 8; ++Index)
+				{
+					const float Angle = -UE_PI * 0.5f + UE_PI * static_cast<float>(Index) / 4.0f;
+					const float R = Radius * Spot.Z * (Index % 2 == 0 ? 1.0f : 0.35f);
+					Star.Add(Center + FVector2D(Spot.X * Radius + FMath::Cos(Angle) * R, Spot.Y * Radius + FMath::Sin(Angle) * R));
+				}
+				Draw(Star, true, 0.9f);
+			}
 			break;
 		}
 		return LayerId;

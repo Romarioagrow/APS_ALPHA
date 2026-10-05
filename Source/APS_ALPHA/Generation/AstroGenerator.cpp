@@ -14,6 +14,7 @@ CSV_DECLARE_CATEGORY_EXTERN(APSPreview);
 #include "Async/ParallelFor.h"
 #include <Kismet/GameplayStatics.h>
 #include "APSWorldScapePlanetNoise.h"
+#include "APSClosedGlobeMesh.h"
 #include "PlanetarySurfaceGenerator.h"
 #include "WorldScapePayloadValidation.h"
 #include "APS_ALPHA/Core/Planetary/APSPlanetSurfaceProfile.h"
@@ -40,8 +41,10 @@ CSV_DECLARE_CATEGORY_EXTERN(APSPreview);
 #include "APS_ALPHA/Core/Enums/StarClusterType.h"
 #include "APS_ALPHA/Core/Structs/GalaxyModel.h"
 #include "APS_ALPHA/Generation/APSGrandDesignGalaxy.h"
+#include "APS_ALPHA/Generation/APSGalaxyMorphology.h"
 #include "APS_ALPHA/Core/Structs/MoonGenerationModel.h"
 #include "APS_ALPHA/Core/Structs/PlanetarySystemGenerationModel.h"
+#include "APS_ALPHA/Core/Saves/APSWorldSaveSnapshot.h"
 #include "APS_ALPHA/Core/Structs/StarGenerationModel.h"
 #include "APS_ALPHA/Core/Structs/StarSystemGenerationModel.h"
 #include "APS_ALPHA/Pawns/Spaceships/Spaceship.h"
@@ -86,6 +89,7 @@ CSV_DECLARE_CATEGORY_EXTERN(APSPreview);
 #include "TimerManager.h"
 #include "UObject/ConstructorHelpers.h"
 #include "UObject/UObjectGlobals.h"
+#include "UObject/UObjectIterator.h"
 
 static TAutoConsoleVariable<int32> CVarAPSPreviewAtmosphereInterior(
 	TEXT("aps.Preview.AtmosphereInterior"), 1,
@@ -97,9 +101,25 @@ static TAutoConsoleVariable<int32> CVarAPSFullScaleProjectionTelemetry(
 	TEXT("Logs the immutable canonical stellar projection descriptor when a generation build finalizes."),
 	ECVF_Default);
 
-static TAutoConsoleVariable<int32> CVarAPSSharedTerrainLegacyDiagnosticFallback(
-	TEXT("aps.Surface.SharedTerrainLegacyDiagnosticFallback"), 0,
-	TEXT("DIAGNOSTIC ONLY: allow legacy split preview/ground materials when shared assets are unavailable. Logs errors; never represents shared-material success."),
+// Rio 03.10 ("the menu planet must be the fully loaded, maximally detailed planet"): A/B, the closed globe stays default.
+static void APSOnPreviewPlanetWorldScapeChanged(IConsoleVariable* Variable)
+{
+	UE_LOG(LogTemp, Display, TEXT("[APS.WorldGeneration] aps.Preview.PlanetWorldScape=%d"),
+		Variable ? Variable->GetInt() : -1);
+	// The preview generator sleeps between interactions: wake it so the switch happens without a mouse move.
+	for (TObjectIterator<AAstroGenerator> It; It; ++It)
+	{
+		const UWorld* GeneratorWorld = IsValid(*It) ? It->GetWorld() : nullptr;
+		if (GeneratorWorld && GeneratorWorld->IsGameWorld()) It->SetActorTickEnabled(true);
+	}
+}
+
+static TAutoConsoleVariable<int32> CVarAPSPreviewPlanetWorldScape(
+	TEXT("aps.Preview.PlanetWorldScape"), 0,
+	TEXT("Generation menu, PLANET scope. 0: closed procedural globe (accepted path). 1: the selected planet/moon is a live ")
+	TEXT("WorldScape terrain+ocean root with the gameplay ground budget, observer at the preview camera; the closed globe ")
+	TEXT("stays the loading/coverage fallback. Can be flipped live in the menu."),
+	FConsoleVariableDelegate::CreateStatic(&APSOnPreviewPlanetWorldScapeChanged),
 	ECVF_Default);
 
 namespace APSMainMenuHeroGalaxy
@@ -200,8 +220,6 @@ namespace APSPreviewGlobe
 	constexpr int32 ContextFaceResolution = 48;
 	constexpr const TCHAR* TerrainMaterialPath =
 		TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Shared/M_APS_SharedWorldScapeTerrain.M_APS_SharedWorldScapeTerrain");
-	constexpr const TCHAR* LegacyDiagnosticTerrainMaterialPath =
-		TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Preview/M_APS_OrbitalTerrain.M_APS_OrbitalTerrain");
 	constexpr const TCHAR* LiquidMaterialPath =
 		TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Preview/M_APS_OrbitalLiquid.M_APS_OrbitalLiquid");
 
@@ -244,91 +262,6 @@ namespace APSPreviewGlobe
 			&& ShaderMap->GetMeshShaderMap(&FLocalVertexFactory::StaticType);
 	}
 
-	UMaterialInstanceDynamic* CreateLegacyDiagnosticTerrainMaterial(
-		UObject* Outer, UMaterialInterface* ResolvedMaterial,
-		UMaterialInterface* OrbitalPresentationMaterial,
-		const FAPSResolvedPlanetSurfaceProfile& Profile)
-	{
-		if (!IsValid(ResolvedMaterial) || !IsValid(OrbitalPresentationMaterial)
-			|| ResolvedMaterial->GetBlendMode() != BLEND_Opaque
-			|| OrbitalPresentationMaterial->GetBlendMode() != BLEND_Opaque)
-		{
-			return nullptr;
-		}
-
-		// A closed hierarchy globe is not a second authored surface. It samples the same
-		// resolver/noise payload into vertex channels, but renders those channels through
-		// the dedicated orbital master. Parenting the full WorldScape master here made
-		// ActorPositionWS resolve to AAstroGenerator instead of the globe component and
-		// exposed patch/centre assumptions that only hold for the live root.
-		if (OrbitalPresentationMaterial->IsA<UMaterialInstanceDynamic>())
-		{
-			return nullptr;
-		}
-		UMaterialInstanceDynamic* Material = UMaterialInstanceDynamic::Create(
-			OrbitalPresentationMaterial, Outer);
-		if (!IsValid(Material))
-		{
-			return nullptr;
-		}
-		UMaterialInstance* ResolvedInstance = Cast<UMaterialInstance>(ResolvedMaterial);
-		if (ResolvedInstance)
-		{
-			// Copy only matching interpolatable profile parameters. Static/base properties
-			// stay owned by the deliberately opaque orbital master.
-			Material->CopyInterpParameters(ResolvedInstance);
-		}
-
-		UAPSPlanetSurfaceProfileResolver::ApplyMaterialParameters(Material, Profile);
-		Material->SetScalarParameterValue(TEXT("Roughness"),
-			FMath::Clamp(Profile.Roughness, 0.0f, 1.0f));
-		Material->SetScalarParameterValue(TEXT("Metallic"),
-			FMath::Clamp(Profile.Metallic, 0.0f, 1.0f));
-		Material->SetScalarParameterValue(TEXT("Specular"),
-			FMath::Lerp(0.24f, 0.72f, FMath::Clamp(Profile.Metallic, 0.0f, 1.0f)));
-		Material->SetScalarParameterValue(TEXT("ClimateBlend"),
-			FMath::Clamp(0.08f + Profile.ClimatePatchStrength * 0.17f,
-				0.08f, 0.25f));
-		// Compatibility parameters are harmless when an older orbital asset omits them;
-		// regenerated assets consume them explicitly.
-		Material->SetScalarParameterValue(TEXT("OrbitalPresentationBlend"), 1.0f);
-		Material->SetScalarParameterValue(TEXT("OrbitalNormalBlend"), 1.0f);
-		float TextureFrequency = 0.0f;
-		if (Material->GetScalarParameterValue(
-			FHashedMaterialParameterInfo(TEXT("OrbitalTextureFrequency")), TextureFrequency))
-		{
-			const bool bSnow = Profile.Archetype == EAPSPlanetSurfaceArchetype::Cryogenic;
-			const bool bSand = Profile.Archetype == EAPSPlanetSurfaceArchetype::Desert;
-			const TCHAR* AlbedoPath = bSnow ? TEXT("/WorldScape/Ressources/Textures/Snow/T_Snow_Albedo")
-				: bSand ? TEXT("/WorldScape/Ressources/Textures/Sand/T_Sable_D")
-				: TEXT("/WorldScape/Ressources/Textures/Rock/T_Desert_Albedo1");
-			const TCHAR* NormalPath = bSnow ? TEXT("/WorldScape/Ressources/Textures/Snow/T_Snow_N")
-				: bSand ? TEXT("/WorldScape/Ressources/Textures/Sand/T_Sable_N")
-				: TEXT("/WorldScape/Ressources/Textures/Rock/T_Desert_Normal");
-			UTexture2D* Albedo = LoadObject<UTexture2D>(nullptr, AlbedoPath);
-			UTexture2D* Normal = LoadObject<UTexture2D>(nullptr, NormalPath);
-			if (IsValid(Albedo) && IsValid(Normal))
-			{
-				Material->SetTextureParameterValue(TEXT("OrbitalPrimaryAlbedo"), Albedo);
-				Material->SetTextureParameterValue(TEXT("OrbitalPrimaryNormal"), Normal);
-				Material->SetScalarParameterValue(TEXT("OrbitalRockMix"), bSnow ? 0.22f : bSand ? 0.25f : 0.45f);
-				UE_LOG(LogTemp, Log,
-					TEXT("[APS.Preview.Material] Native texture detail primary=%s coordinates=component-local-angular samples=12"),
-					*GetNameSafe(Albedo));
-			}
-			else
-			{
-				UE_LOG(LogTemp, Warning, TEXT("[APS.Preview.Material] Missing type texture: keeping baked rock fallback"));
-			}
-		}
-		else
-		{
-			UE_LOG(LogTemp, Warning,
-				TEXT("[APS.Preview.Material] Orbital texture detail is not baked; run APSPlanetSurfaceAsset -OrbitalTerrainOnly after compiling the new source"));
-		}
-		return Material;
-	}
-
 	UMaterialInstanceDynamic* CreateTerrainMaterial(
 		USceneComponent* FrameComponent, UMaterialInterface* ResolvedMaterial,
 		UMaterialInterface* WarmedPresentationMaterial,
@@ -347,11 +280,9 @@ namespace APSPreviewGlobe
 			return nullptr;
 		}
 		UE_LOG(LogTemp, Error,
-			TEXT("[APS.SharedTerrain] PLANET source is not the shared native master: resolved=%s diagnosticFallback=%d"),
-			*GetPathNameSafe(ResolvedMaterial), APSSharedTerrainMaterial::AllowsLegacyDiagnosticFallback() ? 1 : 0);
-		if (!APSSharedTerrainMaterial::AllowsLegacyDiagnosticFallback()) return nullptr;
-		UMaterialInterface* Legacy = LoadObject<UMaterialInterface>(nullptr, LegacyDiagnosticTerrainMaterialPath);
-		return CreateLegacyDiagnosticTerrainMaterial(FrameComponent, ResolvedMaterial, Legacy, Profile);
+			TEXT("[APS.SharedTerrain] PLANET source is not the shared native master: resolved=%s; publication blocked, no material substitution"),
+			*GetPathNameSafe(ResolvedMaterial));
+		return nullptr;
 	}
 
 	UMaterialInstanceDynamic* CreateLiquidMaterial(
@@ -419,316 +350,6 @@ namespace APSPreviewGlobe
 		return Material;
 	}
 
-	struct FMeshData
-	{
-		TArray<FVector> TerrainVertices;
-		TArray<FVector> OceanVertices;
-		TArray<int32> Indices;
-		TArray<int32> OceanIndices;
-		TArray<FVector> Normals;
-		TArray<FVector> OceanNormals;
-		TArray<FVector2D> OceanDepthUV1;
-		TArray<FVector2D> UV0;
-		TArray<FLinearColor> VertexColors;
-		TArray<FProcMeshTangent> Tangents;
-	};
-
-	struct FCubeFace
-	{
-		FVector Normal;
-		FVector AxisU;
-		FVector AxisV;
-	};
-
-	bool BuildClosedCubeSphere(UAPSWorldScapePlanetNoise* Noise,
-		AWorldScapeRoot* ProfileRoot, const bool bBuildOcean,
-		const bool bWaterDepth, const double PresentationScale,
-		const double NormalReliefExaggeration, const int32 FaceResolution,
-		FMeshData& OutData)
-	{
-		if (!IsValid(Noise) || !IsValid(ProfileRoot)
-			|| !FMath::IsFinite(ProfileRoot->PlanetScale)
-			|| ProfileRoot->PlanetScale <= UE_SMALL_NUMBER
-			|| !FMath::IsFinite(PresentationScale) || PresentationScale <= 0.0
-			|| !FMath::IsFinite(NormalReliefExaggeration)
-			|| NormalReliefExaggeration <= 0.0
-			|| FaceResolution < 16 || FaceResolution > SelectedFaceResolution)
-		{
-			return false;
-		}
-
-		static const FCubeFace Faces[] =
-		{
-			{ FVector( 1, 0, 0), FVector( 0, 1, 0), FVector(0, 0, 1) },
-			{ FVector(-1, 0, 0), FVector( 0,-1, 0), FVector(0, 0, 1) },
-			{ FVector( 0, 1, 0), FVector(-1, 0, 0), FVector(0, 0, 1) },
-			{ FVector( 0,-1, 0), FVector( 1, 0, 0), FVector(0, 0, 1) },
-			{ FVector( 0, 0, 1), FVector( 1, 0, 0), FVector(0, 1, 0) },
-			{ FVector( 0, 0,-1), FVector(-1, 0, 0), FVector(0, 1, 0) }
-		};
-
-		const int32 VerticesPerFace = FMath::Square(FaceResolution + 1);
-		const int32 TotalVertices = UE_ARRAY_COUNT(Faces) * VerticesPerFace;
-		const int32 TotalIndices = UE_ARRAY_COUNT(Faces)
-			* FaceResolution * FaceResolution * 6;
-		OutData.TerrainVertices.Reserve(TotalVertices);
-		if (bBuildOcean) OutData.OceanVertices.Reserve(TotalVertices);
-		OutData.Indices.Reserve(TotalIndices);
-		if (bBuildOcean) OutData.OceanIndices.Reserve(TotalIndices);
-		OutData.Normals.Reserve(TotalVertices);
-		if (bBuildOcean) OutData.OceanNormals.Reserve(TotalVertices);
-		if (bBuildOcean) OutData.OceanDepthUV1.Reserve(TotalVertices);
-		OutData.UV0.Reserve(TotalVertices);
-		OutData.VertexColors.Reserve(TotalVertices);
-		OutData.Tangents.Reserve(TotalVertices);
-		TArray<FVector> NormalReferenceVertices;
-		NormalReferenceVertices.Reserve(TotalVertices);
-
-		const double Radius = ProfileRoot->PlanetScale;
-		const double OceanRadius = Radius + ProfileRoot->OceanHeight;
-		// Keep geometry physically faithful while exaggerating the same sampled height
-		// only for its lighting normal. At orbital distance the real displacement is
-		// sub-pixel; radial normals therefore made every detailed profile read as a
-		// blurred smooth ball. This costs no additional resolver/noise evaluations.
-		// The orbital globe is 1.2M cm across while the resolver's authored relief is
-		// commonly only a few dozen centimetres after presentation scaling.  A 7x
-		// reference surface still collapsed to an almost perfectly radial normal
-		// (and made otherwise distinct terrain read as a smooth sphere).  Keep the
-		// real vertices unchanged, but use enough bounded relief for stable orbital
-		// lighting across the full preset range.
-		constexpr double MaximumNormalReliefFraction = 0.015;
-		// Profile resolution dominates the first selected 128x128 build (~100k
-		// vertices). The six cube faces are independent, so sample them concurrently
-		// while retaining the exact selected topology and resolved surface values. Each
-		// worker owns its seeded noise state and receives a value snapshot of the
-		// resolved profile, so no UObject is read or written off the game thread.
-		TArray<FVector> SampleDirections;
-		SampleDirections.SetNumUninitialized(TotalVertices);
-		TArray<FNoiseData> SurfaceSamples;
-		SurfaceSamples.SetNumUninitialized(TotalVertices);
-		TArray<uint8> FaceSamplesValid;
-		FaceSamplesValid.SetNumZeroed(UE_ARRAY_COUNT(Faces));
-		FVector* DirectionData = SampleDirections.GetData();
-		FNoiseData* SurfaceData = SurfaceSamples.GetData();
-		uint8* FaceValidityData = FaceSamplesValid.GetData();
-		const CustomNoise SeededNoise = ProfileRoot->PlanetNoise;
-		const FAPSResolvedPlanetSurfaceProfile SurfaceProfile = Noise->SurfaceProfile;
-		const bool bCoastalReliefCandidate = Noise->UsesCoastalReliefCandidate();
-		const double NoiseScale = ProfileRoot->NoiseScale;
-		const double NoiseIntensity = ProfileRoot->NoiseIntensity;
-		ParallelFor(UE_ARRAY_COUNT(Faces), [Radius, FaceResolution,
-			VerticesPerFace, DirectionData, SurfaceData, FaceValidityData,
-			SeededNoise, &SurfaceProfile, NoiseScale, NoiseIntensity, bCoastalReliefCandidate](const int32 FaceIndex)
-		{
-			const FCubeFace& Face = Faces[FaceIndex];
-			CustomNoise FaceNoise = SeededNoise;
-			bool bFaceSamplesValid = true;
-			for (int32 Y = 0; Y <= FaceResolution; ++Y)
-			{
-				const double V = -1.0 + 2.0 * static_cast<double>(Y) / FaceResolution;
-				for (int32 X = 0; X <= FaceResolution; ++X)
-				{
-					const double U = -1.0 + 2.0 * static_cast<double>(X) / FaceResolution;
-					const int32 SampleIndex = FaceIndex * VerticesPerFace
-						+ Y * (FaceResolution + 1) + X;
-					const FVector Direction = (Face.Normal + Face.AxisU * U + Face.AxisV * V)
-						.GetSafeNormal();
-					DVector NoisePosition;
-					const FNoiseData Surface =
-						UAPSWorldScapePlanetNoise::SampleResolvedProfile(
-						SurfaceProfile, FaceNoise, DVector(Direction * Radius),
-						DVector(0.0, 0.0, 0.0),
-						NoiseScale, NoiseIntensity, Radius, Direction.Z, NoisePosition, bCoastalReliefCandidate);
-					DirectionData[SampleIndex] = Direction;
-					SurfaceData[SampleIndex] = Surface;
-					bFaceSamplesValid = bFaceSamplesValid
-						&& FMath::IsFinite(Surface.Height)
-						&& FMath::IsFinite(Surface.HeightNormalize)
-						&& FMath::IsFinite(Surface.Temperature)
-						&& FMath::IsFinite(Surface.Humidity)
-						&& FMath::IsFinite(Surface.WaterMask);
-				}
-			}
-			FaceValidityData[FaceIndex] = bFaceSamplesValid ? 1 : 0;
-		});
-		if (!Algo::AllOf(FaceSamplesValid,
-			[](const uint8 bFaceValid) { return bFaceValid != 0; }))
-		{
-			return false;
-		}
-
-		for (int32 FaceIndex = 0; FaceIndex < UE_ARRAY_COUNT(Faces); ++FaceIndex)
-		{
-			const FCubeFace& Face = Faces[FaceIndex];
-			const int32 FaceStart = OutData.TerrainVertices.Num();
-			for (int32 Y = 0; Y <= FaceResolution; ++Y)
-			{
-				for (int32 X = 0; X <= FaceResolution; ++X)
-				{
-					const int32 SampleIndex = FaceIndex * VerticesPerFace
-						+ Y * (FaceResolution + 1) + X;
-					const FVector& Direction = SampleDirections[SampleIndex];
-					const FNoiseData& Surface = SurfaceSamples[SampleIndex];
-
-					OutData.TerrainVertices.Add(Direction * (Radius + Surface.Height));
-					const double RawNormalReferenceHeight =
-						Surface.Height * NormalReliefExaggeration;
-					const double MaximumNormalRelief =
-						Radius * MaximumNormalReliefFraction;
-					// A smooth shoulder preserves small relief while preventing the broad hard
-					// plateaus that revealed the 64x64 cube topology at extreme compression.
-					const double NormalReferenceHeight = RawNormalReferenceHeight
-						/ (1.0 + FMath::Abs(RawNormalReferenceHeight)
-							/ FMath::Max(MaximumNormalRelief, 1.0));
-					NormalReferenceVertices.Add(Direction * (Radius + NormalReferenceHeight));
-					if (bBuildOcean)
-					{
-						OutData.OceanVertices.Add(Direction * OceanRadius);
-						OutData.OceanNormals.Add(Direction);
-						// Reuse the existing sample; signed physical kilometres, same
-						// channel contract as native ocean workers. No extra noise calls.
-						OutData.OceanDepthUV1.Add(bWaterDepth ? FVector2D(
-							(double(ProfileRoot->OceanHeight) - Surface.Height) / PresentationScale / 100000.0, 1.0)
-							: FVector2D::ZeroVector);
-					}
-					OutData.Normals.Add(FVector::ZeroVector);
-					OutData.UV0.Add(FVector2D(
-						0.5 + FMath::Atan2(Direction.Y, Direction.X) / (2.0 * UE_PI),
-						0.5 - FMath::Asin(Direction.Z) / UE_PI));
-					// Alpha carries the resolver noise's authoritative liquid mask. Preview
-					// water/lava and magmatic emissive consume the same mask, keeping orbital
-					// coastlines consistent with the full-scale WorldScape profile.
-					OutData.VertexColors.Add(FLinearColor(
-						Surface.HeightNormalize, Surface.Temperature,
-						Surface.Humidity, FMath::Clamp(Surface.WaterMask, 0.0f, 1.0f)));
-					FVector Tangent = FVector::CrossProduct(FVector::UpVector, Direction)
-						.GetSafeNormal();
-					if (Tangent.IsNearlyZero())
-					{
-						Tangent = FVector::CrossProduct(FVector::RightVector, Direction)
-							.GetSafeNormal();
-					}
-					OutData.Tangents.Add(FProcMeshTangent(Tangent, false));
-				}
-			}
-
-			for (int32 Y = 0; Y < FaceResolution; ++Y)
-			{
-				for (int32 X = 0; X < FaceResolution; ++X)
-				{
-					const int32 A = FaceStart + Y * (FaceResolution + 1) + X;
-					const int32 B = A + 1;
-					const int32 C = A + FaceResolution + 1;
-					const int32 D = C + 1;
-					// UProceduralMeshComponent renders the clockwise face as the front face.
-					// Keep the supplied vertex normals outward, but reverse the
-					// geometric cross-product winding so the globe is front-facing from
-					// outside rather than being culled as an inside-out shell.
-					OutData.Indices.Add(A);
-					OutData.Indices.Add(D);
-					OutData.Indices.Add(B);
-					OutData.Indices.Add(A);
-					OutData.Indices.Add(C);
-					OutData.Indices.Add(D);
-
-					if (bBuildOcean)
-					{
-						const int32 LocalA = Y * (FaceResolution + 1) + X;
-						const int32 LocalB = LocalA + 1;
-						const int32 LocalC = LocalA + FaceResolution + 1;
-						const int32 LocalD = LocalC + 1;
-						// The closed shell uses the authoritative smooth WaterMask carried in
-						// vertex alpha. Keeping complete topology avoids triangle-sized coast
-						// steps and pinholes; the shared liquid material applies that mask only
-						// in orbital presentation, never on the physical WorldScape ocean.
-						OutData.OceanIndices.Add(A);
-						OutData.OceanIndices.Add(D);
-						OutData.OceanIndices.Add(B);
-						OutData.OceanIndices.Add(A);
-						OutData.OceanIndices.Add(C);
-						OutData.OceanIndices.Add(D);
-					}
-				}
-			}
-		}
-
-		// Accumulate area-weighted normals from the exaggerated reference surface.
-		// The render indices intentionally use ProceduralMesh's clockwise front face,
-		// so orient the mathematical cross product back toward the radial direction.
-		TArray<FVector> AccumulatedNormals;
-		AccumulatedNormals.Init(FVector::ZeroVector, TotalVertices);
-		for (int32 Triangle = 0; Triangle + 2 < OutData.Indices.Num(); Triangle += 3)
-		{
-			const int32 I0 = OutData.Indices[Triangle];
-			const int32 I1 = OutData.Indices[Triangle + 1];
-			const int32 I2 = OutData.Indices[Triangle + 2];
-			const FVector& P0 = NormalReferenceVertices[I0];
-			const FVector& P1 = NormalReferenceVertices[I1];
-			const FVector& P2 = NormalReferenceVertices[I2];
-			FVector WeightedNormal = FVector::CrossProduct(P1 - P0, P2 - P0);
-			const FVector TriangleDirection = (P0 + P1 + P2).GetSafeNormal();
-			if (FVector::DotProduct(WeightedNormal, TriangleDirection) < 0.0)
-			{
-				WeightedNormal *= -1.0;
-			}
-			if (!WeightedNormal.ContainsNaN() && !WeightedNormal.IsNearlyZero())
-			{
-				AccumulatedNormals[I0] += WeightedNormal;
-				AccumulatedNormals[I1] += WeightedNormal;
-				AccumulatedNormals[I2] += WeightedNormal;
-			}
-		}
-
-		// Cube faces duplicate their edge/corner vertices. Weld the accumulated normal
-		// by quantized radial direction so lighting remains continuous across all six
-		// seams without changing the deliberately independent topology or UVs.
-		constexpr double NormalWeldQuantization = 1048576.0;
-		const auto MakeNormalWeldKey = [NormalWeldQuantization](const FVector& Position)
-		{
-			const FVector Direction = Position.GetSafeNormal();
-			return FIntVector(
-				FMath::RoundToInt(Direction.X * NormalWeldQuantization),
-				FMath::RoundToInt(Direction.Y * NormalWeldQuantization),
-				FMath::RoundToInt(Direction.Z * NormalWeldQuantization));
-		};
-		TMap<FIntVector, FVector> WeldedNormals;
-		WeldedNormals.Reserve(TotalVertices);
-		for (int32 VertexIndex = 0; VertexIndex < TotalVertices; ++VertexIndex)
-		{
-			WeldedNormals.FindOrAdd(MakeNormalWeldKey(
-				NormalReferenceVertices[VertexIndex])) += AccumulatedNormals[VertexIndex];
-		}
-		constexpr float DetailedNormalWeight = 0.42f;
-		for (int32 VertexIndex = 0; VertexIndex < TotalVertices; ++VertexIndex)
-		{
-			const FVector RadialNormal = OutData.TerrainVertices[VertexIndex].GetSafeNormal();
-			FVector DetailedNormal = WeldedNormals.FindRef(
-				MakeNormalWeldKey(NormalReferenceVertices[VertexIndex]));
-			if (!DetailedNormal.Normalize())
-			{
-				DetailedNormal = RadialNormal;
-			}
-			if (FVector::DotProduct(DetailedNormal, RadialNormal) < 0.0)
-			{
-				DetailedNormal *= -1.0;
-			}
-			FVector FinalNormal = DetailedNormal * DetailedNormalWeight
-				+ RadialNormal * (1.0f - DetailedNormalWeight);
-			if (!FinalNormal.Normalize())
-			{
-				FinalNormal = RadialNormal;
-			}
-			OutData.Normals[VertexIndex] = FinalNormal;
-		}
-
-		return OutData.TerrainVertices.Num() == TotalVertices
-			&& OutData.Indices.Num() == TotalIndices
-			&& OutData.Normals.Num() == TotalVertices
-			&& (!bBuildOcean || (OutData.OceanVertices.Num() == TotalVertices
-				&& OutData.OceanNormals.Num() == TotalVertices
-				&& OutData.OceanDepthUV1.Num() == TotalVertices
-				&& OutData.OceanIndices.Num() % 3 == 0));
-	}
 }
 
 namespace APSPreviewGuides
@@ -1068,7 +689,7 @@ bool AAstroGenerator::ArePreviewMaterialAssetsWarmed() const
 				APSSharedTerrainMaterial::TemplatePath(EAPSPlanetSurfaceArchetype::Magmatic)))
 			&& (!APSTerrainContinuityMaterial::Enabled() || APSSharedTerrainMaterial::IsSharedStack(
 				FindObject<UMaterialInterface>(nullptr, APSTerrainContinuityMaterial::TemplatePath)))
-		: APSSharedTerrainMaterial::AllowsLegacyDiagnosticFallback() && IsValid(PreviewTerrainBaseMaterial);
+		: false;
 	return bTerrainReady
 		&& (!APSShoreWaterMaterial::Enabled() || APSShoreWaterMaterial::IsInstance(
 			FindObject<UMaterialInterface>(nullptr, APSShoreWaterMaterial::TemplatePath)))
@@ -1096,13 +717,6 @@ bool AAstroGenerator::WarmPreviewMaterialAssets()
 	{
 		PreviewTerrainBaseMaterial = LoadObject<UMaterialInterface>(nullptr, APSPreviewGlobe::TerrainMaterialPath);
 		bPreviewMaterialPSOPrecacheRequested = false;
-		if (!IsValid(PreviewTerrainBaseMaterial) && APSSharedTerrainMaterial::AllowsLegacyDiagnosticFallback())
-		{
-			PreviewTerrainBaseMaterial = LoadObject<UMaterialInterface>(nullptr,
-				APSPreviewGlobe::LegacyDiagnosticTerrainMaterialPath);
-			UE_LOG(LogTemp, Error,
-				TEXT("[APS.SharedTerrain] DIAGNOSTIC LEGACY FALLBACK active: shared assets missing; single-material requirement is NOT met"));
-		}
 	}
 	UMaterialInterface* SharedTerra = LoadObject<UMaterialInterface>(nullptr,
 		APSSharedTerrainMaterial::TemplatePath(EAPSPlanetSurfaceArchetype::Rocky));
@@ -1294,6 +908,9 @@ void AAstroGenerator::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	StagingPreviewSurfaceGenerator.Reset();
 	PersistentPreviewWorldScapeRoot.Reset();
 	PersistentPreviewSurfaceGenerator.Reset();
+	// Rio 03.10 A/B: the live PLANET pair is detached as well; its root's EndPlay joins any running worker.
+	RetirePreviewLiveWorldScape(TEXT("end"), false);
+	DrainRetiredPreviewLiveWorldScape(true);
 
 	Super::EndPlay(EndPlayReason);
 }
@@ -1372,6 +989,8 @@ void AAstroGenerator::Tick(float DeltaSeconds)
 				*UEnum::GetValueAsString(PreviewFocus), bPreviewCameraOrbitDragging ? 1 : 0);
 		}
 	}
+	// Rio 03.10 A/B (aps.Preview.PlanetWorldScape): the live WorldScape surface of the selected PLANET body.
+	UpdatePreviewLiveWorldScape();
 	AWorldScapeRoot* PreviewSurface = PersistentPreviewWorldScapeRoot.Get();
 	AWorldScapeRoot* StagingSurface = StagingPreviewWorldScapeRoot.Get();
 	const bool bSurfaceJobsRunning = (IsValid(PreviewSurface)
@@ -1391,7 +1010,7 @@ void AAstroGenerator::Tick(float DeltaSeconds)
 		|| bPreviewSurfaceSwapInFlight
 		|| bSurfaceAwaitingReady || bPreviewCameraOrbitDragging
 		|| bPreviewSurfaceViewDirty || bPreviewSurfaceViewRefreshInFlight
-		|| bPreviewSurfaceRootInitializationPending;
+		|| bPreviewSurfaceRootInitializationPending || bPreviewLiveTickNeeded;
 	if (!bPreviewCameraTransitionActive || !PreviewCamera)
 	{
 		if (UsesContinuousPreviewFrame()) ApplyContinuousPreviewFrame();
@@ -1948,6 +1567,17 @@ bool AAstroGenerator::RegeneratePreview(
 	// only MID creation and mesh commit, never a synchronous package load.
 	WarmPreviewMaterialAssets();
 	PreviewFocus = RequestedFocus;
+	// Rio 03.10 (REGENERATE: "the orbits vanish, nothing highlights"): a new seed is a new universe. A selection or a
+	// highlight addressed by index in the old one (P0, Star B, cluster system N) names an unrelated object in the new
+	// one, so the new world starts from its root bodies instead of restoring them. Preview-only state.
+	if (PreviewGenerationSeed != FMath::Max(1, InGeneratedWorld->GenerationSeed))
+	{
+		HighlightedPreviewClusterSystemIndex = INDEX_NONE;
+		SelectedPreviewClusterSystemIndex = INDEX_NONE;
+		SelectedPreviewBodyActor.Reset();
+		ContinuousSelectedPlanet.Reset();
+		ContinuousSelectedStar.Reset();
+	}
 	PreviewGenerationSeed = FMath::Max(1, InGeneratedWorld->GenerationSeed);
 
 	// Actor pointers cannot survive a structural preview rebuild. Preserve the
@@ -2313,6 +1943,9 @@ void AAstroGenerator::ClearGeneratedPreview()
 {
 	ReleaseMainMenuHeroGalaxy();
 	SetPreviewWorldScapeBody(nullptr);
+	// Rio 03.10 A/B: hidden now, not one frame later over the rebuilt hierarchy.
+	RetirePreviewLiveWorldScape(TEXT("rebuild"), false);
+	DrainRetiredPreviewLiveWorldScape(false);
 	ClearContinuousPreviewPresentation();
 	SetPreviewGuideShellVisible(PreviewStarInfluenceWireGuide, false);
 	SetPreviewGuideShellVisible(PreviewSystemBoundaryWireGuide, false);
@@ -2359,6 +1992,30 @@ bool AAstroGenerator::IsCanonicalStellarProjectionEnabled() const
 	return bGenerateFullScaledWorld && !bIntegrateStartPlanet;
 }
 
+bool AAstroGenerator::UsesRealScale() const
+{
+	return bRealScale && IsCanonicalStellarProjectionEnabled();
+}
+
+bool AAstroGenerator::GetRealScaleSummary(double& OutGalaxyRadiusCm, double& OutClusterRadiusCm,
+	double& OutNeighbourSpacingCm) const
+{
+	OutGalaxyRadiusCm = OutClusterRadiusCm = OutNeighbourSpacingCm = 0.0;
+	if (!UsesRealScale() || !bCanonicalStellarProjectionComposed
+		|| !IsValid(GeneratedGalaxy) || !IsValid(GeneratedStarCluster))
+	{
+		return false;
+	}
+	const FAPSCanonicalStellarProjectionFrame& GalaxyFrame = GeneratedGalaxy->CanonicalProjectionFrame;
+	// The catalogue envelope is the nominal radius plus 5% (UGalaxyGenerator::GenerateGalaxyOctreeStars).
+	OutGalaxyRadiusCm = GeneratedGalaxy->StarCatalog.CatalogHalfExtent.GetAbsMax() / 1.05
+		* GalaxyFrame.LayerToRootPositionScale * GalaxyFrame.CanonicalCmPerUnit;
+	OutClusterRadiusCm = RealScaleClusterRadiusCm;
+	OutNeighbourSpacingCm = RealScaleNeighbourSpacingCm;
+	return FMath::IsFinite(OutGalaxyRadiusCm) && OutGalaxyRadiusCm > 0.0
+		&& FMath::IsFinite(OutClusterRadiusCm) && OutClusterRadiusCm > 0.0;
+}
+
 void AAstroGenerator::BeginCanonicalStellarProjectionBuild()
 {
 	GameplayStellarSuppression.Reset();
@@ -2369,6 +2026,7 @@ void AAstroGenerator::BeginCanonicalStellarProjectionBuild()
 	bConsumedFinalizedCanonicalStellarDataset = false;
 	bCanonicalStellarDatasetValidated = false;
 	bCanonicalStellarDatasetRejected = false;
+	RealScaleNeighbourSpacingCm = RealScaleClusterRadiusCm = 0.0;
 	if (IsCanonicalStellarProjectionEnabled())
 	{
 		// Canonical centimeters never enter an actor/component matrix. Both HISM
@@ -2389,7 +2047,29 @@ void AAstroGenerator::NoteCanonicalStellarProxyUpload()
 void AAstroGenerator::NoteCanonicalStellarProxyMutation(const bool bClassifiedGameplayWrite)
 {
 	++CanonicalStellarProjection.TransformMutationSerial;
+	++CanonicalStellarBatchMutationSerial;
 	if (!bClassifiedGameplayWrite) ++GameplayUnknownStellarMutationSerial;
+}
+
+void AAstroGenerator::NoteCanonicalStellarPointMutation(const FAPSGameplayStellarKey& Key)
+{
+	++CanonicalStellarProjection.TransformMutationSerial;
+	// A burst beyond this (a large system's sphere hiding many proxies) re-sizes the whole catalogue, as before.
+	constexpr int32 MaxPendingPoints = 256;
+	if (PendingStellarPointMutations.Num() < MaxPendingPoints)
+	{
+		PendingStellarPointMutations.AddUnique(Key);
+	}
+	else
+	{
+		++CanonicalStellarBatchMutationSerial;
+	}
+}
+
+void AAstroGenerator::ConsumeCanonicalStellarPointMutations(TArray<FAPSGameplayStellarKey>& OutKeys)
+{
+	OutKeys.Append(PendingStellarPointMutations);
+	PendingStellarPointMutations.Reset();
 }
 
 uint32 AAstroGenerator::BuildCanonicalStellarProjectionContextHash() const
@@ -2407,6 +2087,14 @@ uint32 AAstroGenerator::BuildCanonicalStellarProjectionContextHash() const
 		APSCanonicalStellarProjection::SystemProxyExclusionPadding, 1.0e-6));
 	Hash = HashCombine(Hash, APSCanonicalStellarProjection::HashQuantizedDouble(
 		APSCanonicalStellarProjection::SystemProxyMaximumSuppressedFraction, 1.0e-6));
+	// Rio 05.10 (real scale experiment): real-scale anchors (beyond 9.2e16 cm) and projection scales (below 1e-15) take
+	// a relative quantum; OFF hashes exactly the historic quanta.
+	const bool bRealScaleHash = UsesRealScale();
+	const auto HashScaled = [bRealScaleHash](const double Value, const double Quantum)
+	{
+		return bRealScaleHash ? APSCanonicalStellarProjection::HashRelativeDouble(Value)
+			: APSCanonicalStellarProjection::HashQuantizedDouble(Value, Quantum);
+	};
 	if (IsValid(GeneratedGalaxy))
 	{
 		Hash = HashCombine(Hash, GetTypeHash(GeneratedGalaxy->StarCatalog.GenerationSeed));
@@ -2414,13 +2102,13 @@ uint32 AAstroGenerator::BuildCanonicalStellarProjectionContextHash() const
 			GeneratedGalaxy->CanonicalProjectionFrame.CanonicalHalfExtentUnits));
 		Hash = HashCombine(Hash, APSCanonicalStellarProjection::HashQuantizedDouble(
 			GeneratedGalaxy->CanonicalProjectionFrame.MaxProxyCoordinateCm));
-		Hash = HashCombine(Hash, APSCanonicalStellarProjection::HashQuantizedDouble(
+		Hash = HashCombine(Hash, HashScaled(
 			GeneratedGalaxy->CanonicalProjectionFrame.PositionScale, 1.0e-15));
-		Hash = HashCombine(Hash, APSCanonicalStellarProjection::HashQuantizedDouble(
+		Hash = HashCombine(Hash, HashScaled(
 			GeneratedGalaxy->CanonicalProjectionFrame.CanonicalAnchorCm.X, 0.01));
-		Hash = HashCombine(Hash, APSCanonicalStellarProjection::HashQuantizedDouble(
+		Hash = HashCombine(Hash, HashScaled(
 			GeneratedGalaxy->CanonicalProjectionFrame.CanonicalAnchorCm.Y, 0.01));
-		Hash = HashCombine(Hash, APSCanonicalStellarProjection::HashQuantizedDouble(
+		Hash = HashCombine(Hash, HashScaled(
 			GeneratedGalaxy->CanonicalProjectionFrame.CanonicalAnchorCm.Z, 0.01));
 		Hash = HashCombine(Hash, APSCanonicalStellarProjection::HashQuantizedDouble(
 			GeneratedGalaxy->CanonicalProjectionFrame.VisualRadiusFloorFraction, 1.0e-9));
@@ -2452,6 +2140,23 @@ uint32 AAstroGenerator::BuildCanonicalStellarProjectionContextHash() const
 			GeneratedStarCluster->CanonicalProjectionFrame.VisualRadiusMinClassScale, 1.0e-9));
 		Hash = HashCombine(Hash, APSCanonicalStellarProjection::HashQuantizedDouble(
 			GeneratedStarCluster->CanonicalProjectionFrame.VisualRadiusMaxClassScale, 1.0e-9));
+	}
+	if (bRealScaleHash)
+	{
+		// The applied layout itself: the one root length unit and each layer's physical stretch.
+		Hash = HashCombine(Hash, 0x5245414cu); // "REAL"
+		if (IsValid(GeneratedGalaxy))
+		{
+			Hash = HashCombine(Hash, APSCanonicalStellarProjection::HashRelativeDouble(
+				GeneratedGalaxy->CanonicalProjectionFrame.CanonicalCmPerUnit));
+			Hash = HashCombine(Hash, APSCanonicalStellarProjection::HashRelativeDouble(
+				GeneratedGalaxy->CanonicalProjectionFrame.RealScaleLengthFactor));
+		}
+		if (IsValid(GeneratedStarCluster))
+		{
+			Hash = HashCombine(Hash, APSCanonicalStellarProjection::HashRelativeDouble(
+				GeneratedStarCluster->CanonicalProjectionFrame.RealScaleLengthFactor));
+		}
 	}
 	return Hash;
 }
@@ -2487,6 +2192,10 @@ uint32 AAstroGenerator::BuildCanonicalStellarDatasetInputHash() const
 		Hash = HashCombine(Hash, GeneratedWorldModel->GetPreviewStarEditHash());
 	if (IsValid(GeneratedWorldModel) && GeneratedWorldModel->GetPreviewSystemEditHash() != 0)
 		Hash = HashCombine(Hash, GeneratedWorldModel->GetPreviewSystemEditHash());
+	// Rio 05.10 (real scale experiment): a REAL SCALE world seals its own dataset (the same records, plus its measured
+	// layout); OFF leaves the input hash of every existing world as it was.
+	if (UsesRealScale())
+		Hash = HashCombine(Hash, 0x5245414cu); // "REAL"
 	return Hash != 0u ? Hash : 1u;
 }
 
@@ -2564,6 +2273,12 @@ uint32 AAstroGenerator::BuildCanonicalStellarManifestHash(
 			GetTypeHash(static_cast<uint8>(Record.SystemModel.StarSystemType)));
 		Hash = HashCombine(Hash, GetTypeHash(Record.SystemModel.PotentialPlanetCount));
 		Hash = HashCombine(Hash, GetTypeHash(Record.SystemModel.bHasPlanetarySystem));
+	}
+	// Rio 05.10 (real scale experiment): the sealed real-scale layout; zero (every legacy dataset) keeps the hash.
+	if (Dataset.RealScaleCmPerUnit != 0.0 || Dataset.RealScaleClusterToGalaxy != 0.0)
+	{
+		Hash = HashCombine(Hash, APSCanonicalStellarProjection::HashRelativeDouble(Dataset.RealScaleCmPerUnit));
+		Hash = HashCombine(Hash, APSCanonicalStellarProjection::HashRelativeDouble(Dataset.RealScaleClusterToGalaxy));
 	}
 	return Hash != 0u ? Hash : 1u;
 }
@@ -2651,6 +2366,191 @@ uint32 AAstroGenerator::BuildCanonicalStellarDatasetHash() const
 	return Hash;
 }
 
+namespace APSRealScaleLayout
+{
+	TAutoConsoleVariable<float> CVarSpacingPc(
+		TEXT("aps.Galaxy.RealScaleSpacingPc"), 1.3f,
+		TEXT("Rio 05.10 (REAL SCALE experiment): median distance in parsecs between neighbouring stars of a REAL SCALE ")
+		TEXT("world, in the galaxy and in the home cluster (the solar neighbourhood is ~1.2). Measured once and sealed when ")
+		TEXT("the world's dataset is built: switch REAL SCALE off and on to rebuild the preview with a new value."));
+
+	constexpr double ParsecCm = 3.0856775814913673e18;
+	/** Galaxy stars measured: the first ordinals of the nested render order, a uniform subsample of the catalogue. */
+	constexpr int32 GalaxySampleCount = 65536;
+	/** Query points per median: an evenly strided subset of the X-sorted points, deterministic for one input. */
+	constexpr int32 MedianQueryCount = 4096;
+	/** Comparisons per query and direction (a sparse halo point beside a dense core keeps its best distance so far). */
+	constexpr int32 MaxScanPerQuery = 65536;
+
+	/** Median nearest-neighbour distance in the points' units; 0 below two distinct points. Sorts Points. */
+	double MedianNeighbourDistance(TArray<FVector>& Points)
+	{
+		const int32 Count = Points.Num();
+		if (Count < 2)
+		{
+			return 0.0;
+		}
+		Points.Sort([](const FVector& A, const FVector& B)
+		{
+			return A.X < B.X || (A.X == B.X && (A.Y < B.Y || (A.Y == B.Y && A.Z < B.Z)));
+		});
+		const int32 Stride = FMath::Max(1, Count / MedianQueryCount);
+		TArray<double> Distances;
+		Distances.Reserve(Count / Stride + 1);
+		for (int32 Rank = 0; Rank < Count; Rank += Stride)
+		{
+			const FVector& Point = Points[Rank];
+			double BestSquared = TNumericLimits<double>::Max();
+			for (int32 Next = Rank + 1, Scanned = 0; Next < Count && Scanned < MaxScanPerQuery; ++Next, ++Scanned)
+			{
+				const FVector& Other = Points[Next];
+				if (FMath::Square(Other.X - Point.X) >= BestSquared) break;
+				const double DistanceSquared = FVector::DistSquared(Point, Other);
+				if (DistanceSquared > 0.0) BestSquared = FMath::Min(BestSquared, DistanceSquared);
+			}
+			for (int32 Previous = Rank - 1, Scanned = 0; Previous >= 0 && Scanned < MaxScanPerQuery; --Previous, ++Scanned)
+			{
+				const FVector& Other = Points[Previous];
+				if (FMath::Square(Point.X - Other.X) >= BestSquared) break;
+				const double DistanceSquared = FVector::DistSquared(Point, Other);
+				if (DistanceSquared > 0.0) BestSquared = FMath::Min(BestSquared, DistanceSquared);
+			}
+			if (BestSquared < TNumericLimits<double>::Max())
+			{
+				Distances.Add(FMath::Sqrt(BestSquared));
+			}
+		}
+		if (Distances.IsEmpty())
+		{
+			return 0.0;
+		}
+		Distances.Sort();
+		return Distances[Distances.Num() / 2];
+	}
+
+	/** The complete catalogue's median neighbour distance (galaxy units), from a subsample of the nested order. */
+	double MeasureGalaxySpacingUnits(const FGalaxyCatalogDescriptor& Catalog)
+	{
+		if (Catalog.ModeledStarCount < 2)
+		{
+			return 0.0;
+		}
+		const APSCanonicalStellarProjection::FNestedCatalogPermutation Order =
+			APSCanonicalStellarProjection::MakeNestedCatalogPermutation(
+				Catalog.GenerationSeed, Catalog.ModeledStarCount);
+		const int32 SampleCount = static_cast<int32>(FMath::Min<int64>(GalaxySampleCount, Catalog.ModeledStarCount));
+		TArray<FGalaxyCatalogStarRecord> Records;
+		APSGalaxyCatalogBatch::ResolveStars(Catalog, Order, 0, SampleCount, Records);
+		TArray<FVector> Points;
+		Points.Reserve(Records.Num());
+		for (const FGalaxyCatalogStarRecord& Record : Records)
+		{
+			if (Record.CatalogIndex != INDEX_NONE) Points.Add(Record.GalaxyLocalLocation);
+		}
+		const int32 Sampled = Points.Num();
+		const double SampleSpacing = MedianNeighbourDistance(Points);
+		// Thinning a population to the share p stretches its neighbour distances by p^-1/3.
+		return Sampled >= 2 ? SampleSpacing * FMath::Pow(
+			static_cast<double>(Sampled) / static_cast<double>(Catalog.ModeledStarCount), 1.0 / 3.0) : 0.0;
+	}
+}
+
+bool AAstroGenerator::ResolveRealScaleLayout(const double LegacyClusterToGalaxyScale,
+	double& OutCanonicalCmPerUnit, double& OutClusterToGalaxyScale)
+{
+	using namespace APSRealScaleLayout;
+	constexpr double LegacyCmPerUnit = APSCanonicalStellarProjection::FullScaleCanonicalCmPerUnit;
+	FAPSCanonicalStellarDataset* Dataset = IsValid(GeneratedWorldModel)
+		? &GeneratedWorldModel->CanonicalStellarDataset : nullptr;
+	// The complete sealed catalogue, never the menu's render prefix (a prefix of a stream formation is a slice of it).
+	const bool bDatasetMatches = Dataset && IsValid(GeneratedStarCluster)
+		&& Dataset->ClusterRecords.Num() >= 2
+		&& Dataset->ClusterRecords.Num() == GeneratedStarCluster->ModeledStarAmount;
+	TArray<FVector> ClusterPoints;
+	if (bDatasetMatches)
+	{
+		ClusterPoints.Reserve(Dataset->ClusterRecords.Num());
+		for (const FAPSCanonicalClusterSystemRecord& Record : Dataset->ClusterRecords)
+			ClusterPoints.Add(Record.ClusterLocalLocation);
+	}
+	else if (IsValid(GeneratedStarCluster))
+	{
+		for (const FClusterStarSystemRecord& Record : GeneratedStarCluster->PotentialStarSystems)
+			ClusterPoints.Add(Record.ClusterLocalLocation);
+	}
+	const double ClusterSpacingUnits = MedianNeighbourDistance(ClusterPoints);
+
+	const bool bSealed = bDatasetMatches && FMath::IsFinite(Dataset->RealScaleCmPerUnit)
+		&& FMath::IsFinite(Dataset->RealScaleClusterToGalaxy)
+		&& Dataset->RealScaleCmPerUnit > 0.0 && Dataset->RealScaleClusterToGalaxy > 0.0;
+	double CmPerUnit = 0.0;
+	double ClusterToGalaxy = 0.0;
+	double GalaxySpacingUnits = 0.0;
+	if (bSealed)
+	{
+		CmPerUnit = Dataset->RealScaleCmPerUnit;
+		ClusterToGalaxy = Dataset->RealScaleClusterToGalaxy;
+	}
+	else
+	{
+		// Both the galaxy and its home cluster take the target neighbour distance: the galaxy defines the root unit,
+		// the cluster its own share. A cluster sparser than the field keeps at most its legacy share of the galaxy.
+		const double TargetCm = FMath::Clamp(static_cast<double>(CVarSpacingPc.GetValueOnGameThread()), 0.01, 1000.0)
+			* ParsecCm;
+		GalaxySpacingUnits = IsValid(GeneratedGalaxy) ? MeasureGalaxySpacingUnits(GeneratedGalaxy->StarCatalog) : 0.0;
+		if (GalaxySpacingUnits > 0.0)
+		{
+			CmPerUnit = TargetCm / GalaxySpacingUnits;
+			ClusterToGalaxy = ClusterSpacingUnits > 0.0
+				? FMath::Clamp(GalaxySpacingUnits / ClusterSpacingUnits, 1.0e-9, LegacyClusterToGalaxyScale)
+				: LegacyClusterToGalaxyScale;
+		}
+		else if (ClusterSpacingUnits > 0.0)
+		{
+			ClusterToGalaxy = LegacyClusterToGalaxyScale;
+			CmPerUnit = TargetCm / (ClusterSpacingUnits * LegacyClusterToGalaxyScale);
+		}
+		// Never closer than the legacy layout, never beyond what one double frame still resolves.
+		if (FMath::IsFinite(CmPerUnit) && CmPerUnit > 0.0)
+		{
+			CmPerUnit = FMath::Clamp(CmPerUnit, LegacyCmPerUnit, LegacyCmPerUnit * 1.0e8);
+		}
+	}
+	if (!FMath::IsFinite(CmPerUnit) || CmPerUnit <= 0.0
+		|| !FMath::IsFinite(ClusterToGalaxy) || ClusterToGalaxy <= 0.0)
+	{
+		RealScaleNeighbourSpacingCm = RealScaleClusterRadiusCm = 0.0;
+		return false;
+	}
+	if (!bSealed && bDatasetMatches && !Dataset->bFinalized)
+	{
+		// Sealed with the dataset by InitGenerationLevel's manifest hash; gameplay and every rebuild reuse these values.
+		Dataset->RealScaleCmPerUnit = CmPerUnit;
+		Dataset->RealScaleClusterToGalaxy = ClusterToGalaxy;
+	}
+	OutCanonicalCmPerUnit = CmPerUnit;
+	OutClusterToGalaxyScale = ClusterToGalaxy;
+	RealScaleNeighbourSpacingCm = ClusterSpacingUnits * ClusterToGalaxy * CmPerUnit;
+	// The card's cluster size: the radius holding 90% of the systems (a globular's logical envelope is far wider).
+	TArray<double> ClusterRadii;
+	ClusterRadii.Reserve(ClusterPoints.Num());
+	for (const FVector& Point : ClusterPoints) ClusterRadii.Add(Point.Size());
+	ClusterRadii.Sort();
+	RealScaleClusterRadiusCm = ClusterRadii.IsEmpty() ? 0.0 : ClusterRadii[FMath::Min(ClusterRadii.Num() - 1,
+		FMath::FloorToInt32(0.9 * static_cast<double>(ClusterRadii.Num())))] * ClusterToGalaxy * CmPerUnit;
+	const double GalaxyRadiusUnits = IsValid(GeneratedGalaxy)
+		? GeneratedGalaxy->StarCatalog.CatalogHalfExtent.GetAbsMax() / 1.05 : 0.0;
+	UE_LOG(LogTemp, Log,
+		TEXT("[APS.RealScale] layout %s: cmPerUnit=%.6e (x%.4g) clusterToGalaxy=%.6e (legacy %.6e) galaxySpacing=%.4g "
+			"clusterSpacing=%.4g units -> cluster neighbours %.3f pc (%.2f ly), cluster R90 %.1f pc, galaxy radius %.0f pc, "
+			"records=%d"),
+		bSealed ? TEXT("sealed") : TEXT("measured"), CmPerUnit, CmPerUnit / LegacyCmPerUnit, ClusterToGalaxy,
+		LegacyClusterToGalaxyScale, GalaxySpacingUnits, ClusterSpacingUnits, RealScaleNeighbourSpacingCm / ParsecCm,
+		RealScaleNeighbourSpacingCm / 9.4607304725808e17, RealScaleClusterRadiusCm / ParsecCm,
+		GalaxyRadiusUnits * CmPerUnit / ParsecCm, ClusterPoints.Num());
+	return true;
+}
+
 bool AAstroGenerator::ComposeCanonicalStellarProjection(
 	const FVector& HomeClusterLocalUnits)
 {
@@ -2669,17 +2569,42 @@ bool AAstroGenerator::ComposeCanonicalStellarProjection(
 		GeneratedStarCluster->CanonicalProjectionFrame.CanonicalHalfExtentUnits, 1.0);
 	// Preserve the established compact-central cluster relationship as canonical
 	// hierarchy metadata rather than a preview-only actor scale.
-	const double ClusterToGalaxyScale = FMath::Clamp(
-		GalaxyHalfExtent * 0.16 / ClusterHalfExtent, 1.0e-9, 1.0);
+	// Rio 03.10: measured against the type's unscaled table extent, so a SIZE-scaled cluster occupies a
+	// proportionally larger or smaller share of the galaxy. Sealed datasets store exactly the table bounds,
+	// so their scale (and every root-space position) is unchanged.
+	const double ReferenceClusterHalfExtent = IsValid(StarClusterGenerator)
+		? FMath::Max(UStarClusterGenerator::GetLogicalHalfExtent(
+			StarClusterGenerator->GetStarClusterBoundsByRange(GeneratedStarCluster->ClusterType),
+			GeneratedStarCluster->ClusterType), 1.0)
+		: ClusterHalfExtent;
+	double ClusterToGalaxyScale = FMath::Clamp(
+		GalaxyHalfExtent * 0.16 / ReferenceClusterHalfExtent, 1.0e-9, 1.0);
+	// Rio 05.10 (real scale experiment): one measured root length unit (galaxy neighbours ~1.3 pc apart) and the
+	// cluster's own share (its neighbours as far apart). OFF keeps the historic 1e9 cm and share exactly.
+	const double LegacyClusterToGalaxyScale = ClusterToGalaxyScale;
+	double CanonicalCmPerUnit = APSCanonicalStellarProjection::FullScaleCanonicalCmPerUnit;
+	const bool bRealScaleLayout = UsesRealScale()
+		&& ResolveRealScaleLayout(LegacyClusterToGalaxyScale, CanonicalCmPerUnit, ClusterToGalaxyScale);
+	if (UsesRealScale() && !bRealScaleLayout)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[APS.RealScale] No measurable catalogue: this build keeps the legacy layout"));
+	}
 	FAPSCanonicalStellarProjectionFrame GalaxyFrame;
 	FAPSCanonicalStellarProjectionFrame ClusterFrame;
 	if (!APSCanonicalStellarProjection::ConfigureSharedHomeCentredFrames(
 		GalaxyHalfExtent, ClusterHalfExtent, ClusterToGalaxyScale,
-		HomeClusterLocalUnits, 0u, GalaxyFrame, ClusterFrame))
+		HomeClusterLocalUnits, 0u, GalaxyFrame, ClusterFrame, CanonicalCmPerUnit))
 	{
 		UE_LOG(LogTemp, Error,
 			TEXT("[APS.CanonicalProjection] Failed to compose shared home-centred frame"));
 		return false;
+	}
+	if (bRealScaleLayout)
+	{
+		GalaxyFrame.RealScaleLengthFactor =
+			CanonicalCmPerUnit / APSCanonicalStellarProjection::FullScaleCanonicalCmPerUnit;
+		ClusterFrame.RealScaleLengthFactor = GalaxyFrame.RealScaleLengthFactor
+			* ClusterToGalaxyScale / LegacyClusterToGalaxyScale;
 	}
 
 	GeneratedGalaxy->CanonicalProjectionFrame = GalaxyFrame;
@@ -2694,6 +2619,15 @@ bool AAstroGenerator::ComposeCanonicalStellarProjection(
 	const double LegacyVisualScaleCompensation =
 		APSCanonicalStellarProjection::FullScaleCanonicalCmPerUnit
 		* GalaxyFrame.PositionScale;
+	// Rio 05.10 (real scale, stage 2): UE reads an instance scale below 1e-4 back as exactly 0 (FMatrix::ExtractScaling),
+	// and the gameplay sky takes such a zero for someone else's suppression. At real scale these legacy physical sizes come
+	// out near 1e-5, so only the giants stayed (66 of 4905 cluster stars in Rio's 05.10 run). The base stays readable; the
+	// drawn point is sized from the physical radius, never from this scale. Every legacy world keeps its scales.
+	const double MinimumReadableScale = bRealScaleLayout && bUseLegacyGameplayStellarVisuals ? 2.0e-4 : 0.0;
+	const auto KeepReadable = [MinimumReadableScale](const double Scale)
+	{
+		return MinimumReadableScale > 0.0 && Scale < MinimumReadableScale ? MinimumReadableScale : Scale;
+	};
 
 	const UStaticMesh* GalaxyMesh = GeneratedGalaxy->StarMeshInstances->GetStaticMesh();
 	const double GalaxyMeshRadius = IsValid(GalaxyMesh)
@@ -2707,13 +2641,13 @@ bool AAstroGenerator::ComposeCanonicalStellarProjection(
 			continue;
 		}
 		const double PhysicalRadius =
-			APSCanonicalStellarProjection::GetCanonicalStellarRadiusSolar(Record.SpectralClass);
+			APSCanonicalStellarProjection::GetCanonicalStellarRadiusSolar(Record.SpectralClass) * Record.RadiusScale;
 		const double AppliedRadiusCm = APSCanonicalStellarProjection::GetAppliedVisualRadiusCm(
 			EAPSCanonicalStellarProxyLayer::Galaxy, GalaxyFrame, PhysicalRadius);
-		const double InstanceScale = bUseLegacyGameplayStellarVisuals
+		const double InstanceScale = KeepReadable(bUseLegacyGameplayStellarVisuals
 			? UStarGenerator::GetFarStarVisualRadius(PhysicalRadius)
 				* LegacyVisualScaleCompensation
-			: AppliedRadiusCm / GalaxyMeshRadius;
+			: AppliedRadiusCm / GalaxyMeshRadius);
 		FTransform Transform(FQuat::Identity,
 			GalaxyFrame.ProjectCanonicalUnits(Record.GalaxyLocalLocation),
 			FVector(InstanceScale));
@@ -2723,12 +2657,13 @@ bool AAstroGenerator::ComposeCanonicalStellarProjection(
 		}
 		GeneratedGalaxy->StarMeshInstances->UpdateInstanceTransform(
 			InstanceIndex, Transform, false, false, true);
-		const double AppliedRadiusSolar =
+		// Rio 05.10 (real scale experiment): the same light at real distances (factor 1 when OFF).
+		const double AppliedRadiusSolar = APSCanonicalStellarProjection::GetLegacyLayoutRadiusSolar(GalaxyFrame,
 			APSCanonicalStellarProjection::UnprojectPhysicalRadiusSolar(
-				GalaxyFrame, AppliedRadiusCm);
+				GalaxyFrame, AppliedRadiusCm));
 		const double PhysicalEmission = StarGenerator->CalculateEmission(static_cast<float>(
 			APSCanonicalStellarProjection::GetCanonicalStellarLuminositySolar(
-				Record.SpectralClass) * 25.0));
+				Record.SpectralClass) * APSGalaxyMorphology::GetRadiusScaleLuminosity(Record.RadiusScale) * 25.0));
 		const double Emission = UStarGenerator::GetFarStarVisualEmission(
 			PhysicalRadius, PhysicalEmission, AppliedRadiusSolar);
 		GeneratedGalaxy->StarMeshInstances->SetCustomDataValue(
@@ -2747,10 +2682,10 @@ bool AAstroGenerator::ComposeCanonicalStellarProjection(
 		const double AppliedRadiusCm = APSCanonicalStellarProjection::GetAppliedVisualRadiusCm(
 			EAPSCanonicalStellarProxyLayer::StarCluster, ClusterFrame,
 			Record.PrimaryStarModel.Radius);
-		const double InstanceScale = bUseLegacyGameplayStellarVisuals
+		const double InstanceScale = KeepReadable(bUseLegacyGameplayStellarVisuals
 			? UStarGenerator::GetFarStarVisualRadius(Record.PrimaryStarModel.Radius)
 				* LegacyVisualScaleCompensation
-			: AppliedRadiusCm / ClusterMeshRadius;
+			: AppliedRadiusCm / ClusterMeshRadius);
 		FTransform Transform(FQuat::Identity,
 			ClusterFrame.ProjectCanonicalUnits(Record.ClusterLocalLocation),
 			FVector(InstanceScale));
@@ -2760,9 +2695,9 @@ bool AAstroGenerator::ComposeCanonicalStellarProjection(
 		}
 		GeneratedStarCluster->StarMeshInstances->UpdateInstanceTransform(
 			Record.InstanceIndex, Transform, false, false, true);
-		const double AppliedRadiusSolar =
+		const double AppliedRadiusSolar = APSCanonicalStellarProjection::GetLegacyLayoutRadiusSolar(ClusterFrame,
 			APSCanonicalStellarProjection::UnprojectPhysicalRadiusSolar(
-				ClusterFrame, AppliedRadiusCm);
+				ClusterFrame, AppliedRadiusCm));
 		const double PhysicalEmission =
 			StarGenerator->CalculateEmission(Record.PrimaryStarModel.Luminosity * 25.0);
 		const double Emission = UStarGenerator::GetFarStarVisualEmission(
@@ -2813,9 +2748,11 @@ bool AAstroGenerator::RefreshCanonicalClusterProxy(const int32 InstanceIndex)
 	}
 	GeneratedStarCluster->StarMeshInstances->UpdateInstanceTransform(
 		InstanceIndex, BaseTransform, false, false, true);
-	NoteCanonicalStellarProxyMutation(true);
-	const double AppliedRadiusSolar = APSCanonicalStellarProjection::UnprojectPhysicalRadiusSolar(
-		GeneratedStarCluster->CanonicalProjectionFrame, AppliedRadiusCm);
+	NoteCanonicalStellarPointMutation(MakeGameplayStellarKey(GeneratedStarCluster->StarMeshInstances, InstanceIndex));
+	// Rio 05.10 (real scale experiment): the same light at real distances (factor 1 when OFF).
+	const double AppliedRadiusSolar = APSCanonicalStellarProjection::GetLegacyLayoutRadiusSolar(
+		GeneratedStarCluster->CanonicalProjectionFrame, APSCanonicalStellarProjection::UnprojectPhysicalRadiusSolar(
+			GeneratedStarCluster->CanonicalProjectionFrame, AppliedRadiusCm));
 	const double Emission = UStarGenerator::GetFarStarVisualEmission(
 		Record->PrimaryStarModel.Radius,
 		StarGenerator->CalculateEmission(Record->PrimaryStarModel.Luminosity * 25.0),
@@ -3220,7 +3157,7 @@ bool AAstroGenerator::GetCanonicalStellarProxyRecord(
 		OutRecord.CanonicalIndex = Record.CatalogIndex;
 		OutRecord.CanonicalPositionUnits = Record.GalaxyLocalLocation;
 		OutRecord.CanonicalPhysicalRadiusSolar =
-			APSCanonicalStellarProjection::GetCanonicalStellarRadiusSolar(Record.SpectralClass);
+			APSCanonicalStellarProjection::GetCanonicalStellarRadiusSolar(Record.SpectralClass) * Record.RadiusScale;
 	}
 	else
 	{
@@ -6361,6 +6298,14 @@ void AAstroGenerator::SetPreviewGlobeProxyVisible(const bool bVisible)
 	{
 		VisibleFamilyPlanet = FocusMoon->ParentPlanet;
 	}
+	// Rio 03.10 A/B (aps.Preview.PlanetWorldScape): a published live WorldScape replaces exactly its own body's
+	// closed globe, switched in this same call so the two solid layers never overlap.
+	const bool bLiveSurfacePresented = EvaluatePreviewLiveWorldScapePresentation();
+	const APlanetaryBody* LiveSurfaceBody = bLiveSurfacePresented ? PreviewLiveWorldScapeBody.Get() : nullptr;
+	if (AWorldScapeRoot* LiveSurfaceRoot = PreviewLiveWorldScapeRoot.Get(); IsValid(LiveSurfaceRoot))
+	{
+		LiveSurfaceRoot->SetActorHiddenInGame(!(bVisible && bLiveSurfacePresented));
+	}
 	for (TPair<FString, FAPSPreviewGlobeProxyState>& Pair : PreviewGlobeProxyStates)
 	{
 		FAPSPreviewGlobeProxyState& State = Pair.Value;
@@ -6374,7 +6319,7 @@ void AAstroGenerator::SetPreviewGlobeProxyVisible(const bool bVisible)
 			&& (Body == VisibleFamilyPlanet
 				|| (BodyMoon && BodyMoon->ParentPlanet == VisibleFamilyPlanet));
 		const bool bShowState = bVisible && (UsesContinuousPreviewFrame() || bBelongsToVisibleFamily)
-			&& IsValid(Body) && IsValid(ActiveTerrain);
+			&& IsValid(Body) && IsValid(ActiveTerrain) && Body != LiveSurfaceBody;
 		for (UProceduralMeshComponent* Terrain : {
 			State.TerrainA.Get(), State.TerrainB.Get() })
 		{
@@ -6414,7 +6359,8 @@ void AAstroGenerator::SetPreviewGlobeProxyVisible(const bool bVisible)
 			FindPreviewGlobeProxyState(SelectedBody);
 		const bool bSelectedProxyVisible = bVisible && SelectedState
 			&& SelectedState->ActiveBuffer != INDEX_NONE;
-		SetPreviewBodyBackingSphereVisible(SelectedBody, !bSelectedProxyVisible);
+		SetPreviewBodyBackingSphereVisible(SelectedBody, !bSelectedProxyVisible
+			&& !(bVisible && SelectedBody == LiveSurfaceBody));
 	}
 }
 
@@ -6481,6 +6427,8 @@ void AAstroGenerator::SyncPreviewGlobeProxyTransforms()
 			Ocean->UpdateBounds();
 		}
 	}
+	// Rio 03.10 A/B: the live WorldScape root follows the same presentation (and re-anchors its camera observer).
+	SyncPreviewLiveWorldScapeTransform();
 }
 
 void AAstroGenerator::UpdateActivePreviewGlobeCompatibilityState()
@@ -6671,11 +6619,44 @@ bool AAstroGenerator::BuildPreviewGlobeProxy(APlanetaryBody* Body,
 		1.0 / FMath::Sqrt(FMath::Max(
 			Body->WorldScapePresentationScale, 1.0e-9)), 1.0, 24.0);
 	const int32 FaceResolution = GetDesiredPreviewGlobeFaceResolution(Body);
-	APSPreviewGlobe::FMeshData MeshData;
-	if (!APSPreviewGlobe::BuildClosedCubeSphere(
-		SurfaceGenerator->ResolvedNoiseInstance, ProfileRoot, bHasOcean,
-		APSCoastalWaterMaterial::IsInstance(SurfaceGenerator->ResolvedOceanMaterialInstance), Body->WorldScapePresentationScale,
-		NormalReliefExaggeration, FaceResolution, MeshData))
+	bool bRefineCoast = false;
+#if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
+	// Default OFF until matched rendered and timing evidence exists. Only selected,
+	// generated shared Water/Ammonia: never Theon/lava, custom, dry or context globes.
+	if (FParse::Param(FCommandLine::Get(), TEXT("APSPreviewCoastalMeshCandidate"))
+		&& bHasOcean && FaceResolution == APSPreviewGlobe::SelectedFaceResolution)
+	{
+		const auto& Profile = SurfaceGenerator->ResolvedSurfaceProfile;
+		const APlanet* Planet = Cast<APlanet>(Body);
+		bRefineCoast = Profile.Archetype != EAPSPlanetSurfaceArchetype::Magmatic
+			&& Profile.MaterialFamily != EAPSPlanetSurfaceMaterialFamily::Magmatic
+			&& (Profile.LiquidType == EAPSPlanetLiquidType::Water || Profile.LiquidType == EAPSPlanetLiquidType::Ammonia)
+			&& APSSharedGeneratedLiquidMaterial::IsFamilyInstance(SurfaceGenerator->ResolvedOceanMaterialInstance, Profile.LiquidType)
+			&& APSSharedGeneratedLiquidMaterial::ShouldMigrate(
+				APSSharedGeneratedLiquidMaterial::ResolveSource(Profile, SurfaceGenerator->SurfaceProfileCatalog),
+				Profile, Planet && Planet->IsManual);
+	}
+#endif
+	// Capture the applied profile on the game thread; sampler workers own only values.
+	APSClosedGlobeMesh::FSamplingFrame SamplingFrame;
+	SamplingFrame.Profile = SurfaceGenerator->ResolvedNoiseInstance->SurfaceProfile;
+	SamplingFrame.SeededNoise = ProfileRoot->PlanetNoise;
+	SamplingFrame.Radius = ProfileRoot->PlanetScale;
+	SamplingFrame.OceanHeight = ProfileRoot->OceanHeight;
+	SamplingFrame.NoiseScale = ProfileRoot->NoiseScale;
+	SamplingFrame.NoiseIntensity = ProfileRoot->NoiseIntensity;
+	SamplingFrame.PresentationScale = Body->WorldScapePresentationScale;
+	SamplingFrame.bCoastalReliefCandidate = SurfaceGenerator->ResolvedNoiseInstance->UsesCoastalReliefCandidate();
+	SamplingFrame.bApplyNativeLavaEnvelope = false; // Preserve the existing menu surface.
+	APSClosedGlobeMesh::FBuildOptions MeshOptions;
+	MeshOptions.FaceResolution = FaceResolution;
+	MeshOptions.bBuildOcean = bHasOcean;
+	MeshOptions.bWaterDepth = APSCoastalWaterMaterial::IsInstance(SurfaceGenerator->ResolvedOceanMaterialInstance);
+	MeshOptions.bRefineCoast = bRefineCoast;
+	MeshOptions.NormalReliefExaggeration = NormalReliefExaggeration;
+	MeshOptions.NormalPolicy = APSClosedGlobeMesh::ENormalPolicy::PreviewReliefBlend;
+	APSClosedGlobeMesh::FMeshData MeshData;
+	if (!APSClosedGlobeMesh::BuildClosedCubeSphere(SamplingFrame, MeshOptions, MeshData))
 	{
 		UE_LOG(LogTemp, Error,
 			TEXT("[APS.WorldGeneration] Closed preview globe sampling failed body=%s signature=%u"),
@@ -7487,6 +7468,9 @@ bool AAstroGenerator::RefreshPreviewPlanetAppearance(
 bool AAstroGenerator::PreparePreviewForTravel()
 {
 	SetPreviewWorldScapeBody(nullptr);
+	// Rio 03.10 A/B: the live PLANET WorldScape leaves with the preview and drains like the resolver roots.
+	RetirePreviewLiveWorldScape(TEXT("travel"), false);
+	const bool bLiveSurfaceDrained = !DrainRetiredPreviewLiveWorldScape(false);
 	// Travel tears down the visible preview; unlike passive navigation, it must
 	// explicitly hide committed globes even in the continuous frame.
 	SetPreviewGlobeProxyVisible(false);
@@ -7494,7 +7478,7 @@ bool AAstroGenerator::PreparePreviewForTravel()
 	AWorldScapeRoot* StagingSurface = StagingPreviewWorldScapeRoot.Get();
 	if (!IsValid(PreviewSurface) && !IsValid(StagingSurface))
 	{
-		return true;
+		return bLiveSurfaceDrained;
 	}
 	// Also poll from the travel retry callback so teardown progress does not depend
 	// on actor tick order. The root stays frozen and therefore cannot start another
@@ -7502,7 +7486,8 @@ bool AAstroGenerator::PreparePreviewForTravel()
 	UpdatePreviewWorldScape();
 	// A draining queued build may commit a globe while being polled above.
 	SetPreviewGlobeProxyVisible(false);
-	return (!IsValid(PreviewSurface)
+	return bLiveSurfaceDrained
+		&& (!IsValid(PreviewSurface)
 			|| PreviewSurface->WorldScapeLodInGeneration.Num() == 0)
 		&& (!IsValid(StagingSurface)
 			|| StagingSurface->WorldScapeLodInGeneration.Num() == 0);
@@ -8692,6 +8677,559 @@ void AAstroGenerator::UpdatePreviewWorldScape()
 	StabilizePreviewAtmosphere(Body);
 }
 
+namespace APSPreviewLiveSurface
+{
+	// Generated gameplay ground (PlanetarySurfaceGeneratorStreaming): 1.2 m finest triangles grown by WorldScape's
+	// altitude multiplier over a 100 m anchor, terrain and liquid on one lattice. Converted into the root's
+	// compressed centimetres, so the rings sit on the body exactly as gameplay rings would from the same viewpoint.
+	constexpr double GroundTriangleSizeCm = 120.0;
+	constexpr double GroundHeightAnchorCm = 10000.0;
+	// 96 (gameplay 256) keeps one menu body cheap; 13 rings reach WorldScape's own outer-ring cap (half side ~32 R,
+	// ~88 deg around the nadir), so the default PLANET framing stays inside the clipmap.
+	constexpr int32 LodResolution = 96;
+	constexpr int32 MaxLod = 13;
+	// The observer is re-submitted after 15% of the altitude, and at most every 2 deg of arc while orbiting.
+	constexpr double ObserverAltitudeFraction = 0.15;
+	constexpr double ObserverMaxArcDegrees = 2.0;
+	// Relief past the geometric horizon and the ring borders.
+	constexpr double CoverageMarginDegrees = 1.5;
+	// WorldScape is idle once it had this many of its own ticks with one observer and queued nothing.
+	constexpr double QuietRootTicks = 3.0;
+	constexpr double BuildTimeoutSeconds = 30.0;
+	constexpr double RetryAfterFailureSeconds = 5.0;
+}
+
+bool AAstroGenerator::WantsPreviewLiveWorldScape() const
+{
+	// Continuous frame only: the legacy rollback frame keeps its fixed menu scale and moving camera.
+	return bIsPreviewGeneration && CVarAPSPreviewPlanetWorldScape.GetValueOnGameThread() != 0
+		&& UsesContinuousPreviewFrame();
+}
+
+void AAstroGenerator::SyncPreviewLiveWorldScapeTransform()
+{
+	AWorldScapeRoot* LiveRoot = PreviewLiveWorldScapeRoot.Get();
+	APlanetaryBody* LiveBody = PreviewLiveWorldScapeBody.Get();
+	if (!IsValid(LiveRoot) || !IsValid(LiveBody) || !IsValid(PreviewCamera)) return;
+	// The closed globe's own placement: presented centre and physical radius, planet-fixed frame. The root is never
+	// turned with the view (that exposed the ungenerated reverse hemisphere); the observer moves instead.
+	const TWeakObjectPtr<AActor> PresentationKey(LiveBody);
+	const FVector* PresentedCenter = PreviewBodyPresentationCenters.Find(PresentationKey);
+	const double* PresentedRadius = PreviewBodyPresentationRadii.Find(PresentationKey);
+	FVector Center = FVector::ZeroVector;
+	double Radius = 0.0;
+	if (PresentedCenter && PresentedRadius)
+	{
+		Center = *PresentedCenter;
+		Radius = *PresentedRadius;
+	}
+	else if (const UStaticMeshComponent* BodyMesh = Cast<UStaticMeshComponent>(
+		LiveBody->GetComponentByClass(UStaticMeshComponent::StaticClass())))
+	{
+		Center = BodyMesh->Bounds.Origin;
+		Radius = BodyMesh->Bounds.SphereRadius;
+	}
+	const double PlanetScale = LiveRoot->PlanetScale;
+	if (Center.ContainsNaN() || !FMath::IsFinite(Radius) || Radius <= UE_SMALL_NUMBER
+		|| !FMath::IsFinite(PlanetScale) || PlanetScale <= 1.0)
+	{
+		return;
+	}
+	const double RootScale = Radius / PlanetScale;
+	const FQuat Rotation = (GetPreviewPlanetPresentationRotation(LiveBody) * LiveBody->GetActorQuat()).GetNormalized();
+	LiveRoot->SetActorTransform(FTransform(Rotation, Center, FVector(RootScale)), false, nullptr,
+		ETeleportType::TeleportPhysics);
+	if (USceneComponent* LiveRootComponent = LiveRoot->GetRootComponent();
+		IsValid(LiveRootComponent) && LiveRootComponent->GetComponentScale() != FVector(RootScale))
+	{
+		// Same tolerance guard as the closed globe: propagate small presentation scales explicitly.
+		LiveRootComponent->UpdateComponentToWorld(EUpdateTransformFlags::None, ETeleportType::TeleportPhysics);
+	}
+	// WorldScape converts OverridedPlayerPosition without the actor scale (InverseTransformPositionNoScale). Keep the
+	// camera in the unscaled root frame and pre-divide it, so the plugin sees the real camera altitude.
+	const FVector CameraEcef = Rotation.UnrotateVector(PreviewCamera->GetComponentLocation() - Center) / RootScale;
+	if (CameraEcef.ContainsNaN()) return;
+	PreviewLiveCameraEcef = CameraEcef;
+	const double Altitude = FMath::Max(CameraEcef.Size() - PlanetScale, PlanetScale * 1.0e-4);
+	const double ResubmitDistance = FMath::Min(Altitude * APSPreviewLiveSurface::ObserverAltitudeFraction,
+		PlanetScale * FMath::DegreesToRadians(APSPreviewLiveSurface::ObserverMaxArcDegrees));
+	if (!bPreviewLiveObserverValid
+		|| FVector::DistSquared(CameraEcef, PreviewLiveObserverEcef) > FMath::Square(ResubmitDistance))
+	{
+		PreviewLiveObserverEcef = CameraEcef;
+		bPreviewLiveObserverValid = true;
+		bPreviewLiveValidationDirty = true;
+	}
+	LiveRoot->bOverridePlayerPosition = true;
+	LiveRoot->OverridedPlayerPosition = Center + Rotation.RotateVector(PreviewLiveObserverEcef);
+}
+
+bool AAstroGenerator::IsPreviewLiveWorldScapeCovered() const
+{
+	const AWorldScapeRoot* LiveRoot = PreviewLiveWorldScapeRoot.Get();
+	if (!IsValid(LiveRoot) || !bPreviewLiveCommitted || PreviewLiveCommittedTangent.IsNearlyZero()) return false;
+	const double PlanetScale = LiveRoot->PlanetScale;
+	const double CameraDistance = PreviewLiveCameraEcef.Size();
+	if (!FMath::IsFinite(PlanetScale) || PlanetScale <= 1.0 || CameraDistance <= UE_SMALL_NUMBER
+		|| PreviewLiveCommittedHalfSide <= 0.0)
+	{
+		return false;
+	}
+	// The sphere cap the camera can see (plus a margin) must project inside the outer ring. The gnomonic image of
+	// a cap in front of the ring plane is convex, so testing its rim against the ring's inscribed disc suffices.
+	const FVector Facing = PreviewLiveCameraEcef / CameraDistance;
+	const double CapRadians = (CameraDistance > PlanetScale ? FMath::Acos(FMath::Clamp(PlanetScale / CameraDistance, 0.0, 1.0)) : 0.0)
+		+ FMath::DegreesToRadians(APSPreviewLiveSurface::CoverageMarginDegrees);
+	if (CapRadians >= UE_DOUBLE_HALF_PI) return false;
+	FVector RimAxisA;
+	FVector RimAxisB;
+	Facing.FindBestAxisVectors(RimAxisA, RimAxisB);
+	constexpr int32 RimSamples = 24;
+	for (int32 Sample = 0; Sample < RimSamples; ++Sample)
+	{
+		const double Around = UE_DOUBLE_TWO_PI * Sample / RimSamples;
+		const FVector Rim = Facing * FMath::Cos(CapRadians)
+			+ (RimAxisA * FMath::Cos(Around) + RimAxisB * FMath::Sin(Around)) * FMath::Sin(CapRadians);
+		const double RimHeight = FVector::DotProduct(Rim, PreviewLiveCommittedTangent);
+		if (RimHeight <= 0.05
+			|| FVector::DistSquared(Rim / RimHeight, PreviewLiveCommittedRingCenter)
+				> FMath::Square(PreviewLiveCommittedHalfSide))
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
+bool AAstroGenerator::EvaluatePreviewLiveWorldScapePresentation()
+{
+	const APlanetaryBody* LiveBody = PreviewLiveWorldScapeBody.Get();
+	const AWorldScapeRoot* LiveRoot = PreviewLiveWorldScapeRoot.Get();
+	const TCHAR* Reason = TEXT("loading");
+	bool bCoverageLoss = false;
+	bool bPresent = false;
+	if (!WantsPreviewLiveWorldScape())
+	{
+		Reason = TEXT("cvar");
+	}
+	else if (PreviewFocus != EAstroPreviewFocus::HomePlanet || !IsValid(LiveBody)
+		|| ActivePreviewWorldScapeBody.Get() != LiveBody)
+	{
+		Reason = TEXT("focus");
+	}
+	else if (!IsValid(LiveRoot) || !bPreviewLiveCommitted)
+	{
+		Reason = TEXT("loading");
+	}
+	else if (!IsPreviewLiveWorldScapeCovered() || (!bPreviewLiveSurfacePresented && bPreviewLiveCoverageLost
+		&& (bPreviewCameraOrbitDragging || bPreviewLiveValidationDirty)))
+	{
+		// The view left the published clipmap: the globe covers the side WorldScape has not generated yet. After
+		// such a loss WorldScape returns once it is idle at the camera, not on every batch that briefly catches up
+		// during an RMB drag or a wheel zoom (each switch re-creates the ring render proxies).
+		Reason = TEXT("coverage");
+		bCoverageLoss = true;
+	}
+	else
+	{
+		bPresent = true;
+	}
+	if (bPresent != bPreviewLiveSurfacePresented)
+	{
+		bPreviewLiveSurfacePresented = bPresent;
+		bPreviewLiveCoverageLost = bCoverageLoss;
+		if (bPresent)
+		{
+			UE_LOG(LogTemp, Display,
+				TEXT("[APS.WorldGeneration] PLANET surface: WorldScape (observer=camera) body=%s altitude=%.4fR coverage=%.1fdeg rings=%d+%d"),
+				*GetNameSafe(LiveBody), PreviewLiveCameraEcef.Size() / FMath::Max(static_cast<double>(LiveRoot->PlanetScale), 1.0) - 1.0,
+				PreviewLiveCommittedCoverageDegrees, LiveRoot->WorldScapeLod.Num(), LiveRoot->WorldScapeLodOcean.Num());
+		}
+		else
+		{
+			UE_LOG(LogTemp, Display, TEXT("[APS.WorldGeneration] PLANET surface: closed globe body=%s reason=%s"),
+				*GetNameSafe(LiveBody), Reason);
+		}
+	}
+	return bPresent;
+}
+
+void AAstroGenerator::RetirePreviewLiveWorldScape(const TCHAR* Reason, const bool bRefreshGlobes)
+{
+	AWorldScapeRoot* LiveRoot = PreviewLiveWorldScapeRoot.Get();
+	APlanetarySurfaceGenerator* LiveGenerator = PreviewLiveSurfaceGenerator.Get();
+	const bool bWasPresented = bPreviewLiveSurfacePresented;
+	if (bWasPresented)
+	{
+		UE_LOG(LogTemp, Display, TEXT("[APS.WorldGeneration] PLANET surface: closed globe body=%s reason=%s"),
+			*GetNameSafe(PreviewLiveWorldScapeBody.Get()), Reason);
+	}
+	PreviewLiveSurfaceGenerator.Reset();
+	PreviewLiveWorldScapeRoot.Reset();
+	PreviewLiveWorldScapeBody.Reset();
+	bPreviewLiveConfigured = false;
+	bPreviewLiveObserverValid = false;
+	bPreviewLiveValidationDirty = false;
+	bPreviewLiveBatchInFlight = false;
+	bPreviewLiveCommitted = false;
+	bPreviewLiveSurfacePresented = false;
+	bPreviewLiveCoverageLost = false;
+	PreviewLiveQuietSince = -1.0;
+	PreviewLiveCommittedTangent = FVector::ZeroVector;
+	PreviewLiveCommittedRingCenter = FVector::ZeroVector;
+	PreviewLiveCommittedHalfSide = 0.0;
+	PreviewLiveCommittedCoverageDegrees = 0.0;
+	if (IsValid(LiveRoot) || IsValid(LiveGenerator))
+	{
+		if (IsValid(LiveRoot))
+		{
+			LiveRoot->SetActorHiddenInGame(true);
+			LiveRoot->SetActorEnableCollision(false);
+		}
+		// One retiring pair at a time: an older one goes now (AWorldScapeRoot::EndPlay joins its workers).
+		// The caller drains this one (DrainRetiredPreviewLiveWorldScape) outside EndPlay.
+		DrainRetiredPreviewLiveWorldScape(true);
+		RetiringPreviewLiveWorldScapeRoot = LiveRoot;
+		RetiringPreviewLiveSurfaceGenerator = LiveGenerator;
+		UE_LOG(LogTemp, Log, TEXT("[APS.WorldGeneration] PLANET WorldScape retired reason=%s"), Reason);
+	}
+	if (bRefreshGlobes && bWasPresented)
+	{
+		SetPreviewGlobeProxyVisible(UsesContinuousPreviewFrame() || PreviewFocus == EAstroPreviewFocus::HomePlanet);
+	}
+}
+
+bool AAstroGenerator::DrainRetiredPreviewLiveWorldScape(const bool bForce)
+{
+	AWorldScapeRoot* RetiredRoot = RetiringPreviewLiveWorldScapeRoot.Get();
+	APlanetarySurfaceGenerator* RetiredGenerator = RetiringPreviewLiveSurfaceGenerator.Get();
+	if (IsValid(RetiredRoot))
+	{
+		RetiredRoot->bFreezeGeneration = true;
+		RetiredRoot->SetActorTickEnabled(false);
+		if (!bForce && RetiredRoot->WorldScapeLodInGeneration.Num() > 0)
+		{
+			// Join the running batch on the game thread instead of blocking in EndPlay; nothing new is queued.
+			RetiredRoot->bGenerateWorldScape = true;
+			RetiredRoot->CheckForLodGeneration();
+			if (RetiredRoot->WorldScapeLodInGeneration.Num() > 0) return true;
+		}
+		RetiredRoot->bGenerateWorldScape = false;
+	}
+	if (IsValid(RetiredGenerator) && RetiredGenerator->WorldScapeRootInstance == RetiredRoot)
+	{
+		RetiredGenerator->WorldScapeRootInstance = nullptr;
+		RetiredGenerator->bOwnsWorldScapeRootInstance = false;
+	}
+	if (IsValid(RetiredRoot)) RetiredRoot->Destroy();
+	if (IsValid(RetiredGenerator)) RetiredGenerator->Destroy();
+	RetiringPreviewLiveWorldScapeRoot.Reset();
+	RetiringPreviewLiveSurfaceGenerator.Reset();
+	return false;
+}
+
+void AAstroGenerator::UpdatePreviewLiveWorldScape()
+{
+	CSV_SCOPED_TIMING_STAT(APSPreview, LiveWorldScape);
+	bPreviewLiveTickNeeded = DrainRetiredPreviewLiveWorldScape(false);
+	const bool bWanted = WantsPreviewLiveWorldScape();
+	APlanetaryBody* FocusBody = bWanted && PreviewFocus == EAstroPreviewFocus::HomePlanet
+		? ActivePreviewWorldScapeBody.Get() : nullptr;
+	if (IsValid(FocusBody) && !UAPSPlanetSurfaceProfileResolver::SupportsWorldScape(FocusBody->PlanetType))
+	{
+		FocusBody = nullptr;
+	}
+	AWorldScapeRoot* LiveRoot = PreviewLiveWorldScapeRoot.Get();
+	APlanetarySurfaceGenerator* LiveGenerator = PreviewLiveSurfaceGenerator.Get();
+	APlanetaryBody* LiveBody = PreviewLiveWorldScapeBody.Get();
+	if (IsValid(LiveRoot) || IsValid(LiveGenerator) || IsValid(LiveBody) || bPreviewLiveSurfacePresented)
+	{
+		// Another body, a type/seed/radius edit or the CVar rebuilds the pair from scratch: WorldScape 5.4 does not
+		// reliably regenerate a populated root for a new profile (see the preview resolver above).
+		const TCHAR* RetireReason = !bWanted ? TEXT("cvar")
+			: !IsValid(LiveRoot) || !IsValid(LiveGenerator) || !IsValid(LiveBody) ? TEXT("lost")
+			: IsValid(FocusBody) && FocusBody != LiveBody ? TEXT("body")
+			: !UAPSPlanetSurfaceProfileResolver::SupportsWorldScape(LiveBody->PlanetType) ? TEXT("type")
+			: bPreviewLiveConfigured && !LiveGenerator->IsSurfaceProfileApplyPending()
+				&& !LiveGenerator->IsSurfaceProfileCurrent(LiveBody) ? TEXT("profile") : nullptr;
+		if (RetireReason)
+		{
+			RetirePreviewLiveWorldScape(RetireReason, true);
+			bPreviewLiveTickNeeded |= DrainRetiredPreviewLiveWorldScape(false);
+			LiveRoot = nullptr;
+			LiveGenerator = nullptr;
+			LiveBody = nullptr;
+		}
+	}
+
+	const double Now = FPlatformTime::Seconds();
+	if (!IsValid(LiveRoot))
+	{
+		if (!IsValid(FocusBody) || Now < PreviewLiveRetryAfter) return;
+		if (bPreviewCameraTransitionActive)
+		{
+			// Build for the arrived camera. The transition keeps this actor ticking; ask for one tick after it.
+			bPreviewLiveTickNeeded = true;
+			return;
+		}
+		// The closed globe of this profile comes first: it is the loading fallback, and its build proves the shared
+		// materials are compiled. Its resolver also samples the moons, so wait until it is back on this body.
+		const FAPSPreviewGlobeProxyState* GlobeState = FindPreviewGlobeProxyState(FocusBody);
+		const APlanetarySurfaceGenerator* GlobeResolver = PersistentPreviewSurfaceGenerator.Get();
+		if (!GlobeState || GlobeState->ActiveBuffer == INDEX_NONE || PreviewSurfaceBuildBody.Get() == FocusBody
+			|| (IsValid(GlobeResolver) && !GlobeResolver->IsSurfaceProfileCurrent(FocusBody)))
+		{
+			return;
+		}
+		FActorSpawnParameters SpawnInfo;
+		SpawnInfo.Owner = this;
+		SpawnInfo.ObjectFlags |= RF_Transient;
+		SpawnInfo.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		LiveGenerator = GetWorld()->SpawnActor<APlanetarySurfaceGenerator>(
+			APlanetarySurfaceGenerator::StaticClass(), GetActorTransform(), SpawnInfo);
+		if (!IsValid(LiveGenerator) || !LiveGenerator->CreateRuntimeWorldScapeRoot(FocusBody)
+			|| !IsValid(LiveGenerator->WorldScapeRootInstance))
+		{
+			if (IsValid(LiveGenerator)) LiveGenerator->Destroy();
+			PreviewLiveRetryAfter = Now + APSPreviewLiveSurface::RetryAfterFailureSeconds;
+			UE_LOG(LogTemp, Error,
+				TEXT("[APS.WorldGeneration] PLANET WorldScape root could not be created body=%s; closed globe kept"),
+				*GetNameSafe(FocusBody));
+			return;
+		}
+		LiveGenerator->AttachToActor(this, FAttachmentTransformRules::KeepWorldTransform);
+		LiveGenerator->SetActorHiddenInGame(true);
+		LiveGenerator->SetActorEnableCollision(false);
+		LiveGenerator->SetActorTickEnabled(false);
+		LiveRoot = LiveGenerator->WorldScapeRootInstance;
+		// Detached like the resolver root: a body rebuild must never destroy a root with running workers.
+		LiveRoot->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+		LiveRoot->SetOwner(this);
+		LiveGenerator->bOwnsWorldScapeRootInstance = false;
+		LiveRoot->SetActorHiddenInGame(true);
+		LiveRoot->SetActorEnableCollision(false);
+		// One compressed bake for both resolvers of this body: the closed globe's own continuous-frame value, so
+		// the profile signature, noise and shared-material frame are those of the accepted globe.
+		const double BodyRadiusKm = FMath::Max(FocusBody->RadiusKM, static_cast<double>(FocusBody->PlanetRadiusKM));
+		FocusBody->WorldScapePresentationScale = FMath::Clamp(CalculatePreviewBodyPresentationRadius(BodyRadiusKm)
+			/ FMath::Max(BodyRadiusKm * 100000.0, 1.0), 1.0e-9, 1.0);
+		PreviewLiveSurfaceGenerator = LiveGenerator;
+		PreviewLiveWorldScapeRoot = LiveRoot;
+		PreviewLiveWorldScapeBody = FocusBody;
+		LiveBody = FocusBody;
+		bPreviewLiveConfigured = false;
+		bPreviewLiveObserverValid = false;
+		bPreviewLiveValidationDirty = true;
+		bPreviewLiveBatchInFlight = false;
+		bPreviewLiveCommitted = false;
+		bPreviewLiveSurfacePresented = false;
+		bPreviewLiveCoverageLost = false;
+		PreviewLiveQuietSince = -1.0;
+		PreviewLiveBuildStarted = Now;
+		LiveGenerator->PlanetaryBody = FocusBody;
+		LiveGenerator->ApplySurfaceProfile(FocusBody);
+	}
+	if (!IsValid(LiveRoot) || !IsValid(LiveGenerator) || !IsValid(LiveBody)) return;
+
+	if (!bPreviewLiveConfigured)
+	{
+		if (LiveGenerator->IsSurfaceProfileApplyPending())
+		{
+			bPreviewLiveTickNeeded = true;
+			return;
+		}
+		if (!LiveGenerator->IsSurfaceProfileCurrent(LiveBody))
+		{
+			UE_LOG(LogTemp, Error,
+				TEXT("[APS.WorldGeneration] PLANET WorldScape profile incomplete body=%s; closed globe kept"),
+				*GetNameSafe(LiveBody));
+			PreviewLiveRetryAfter = Now + APSPreviewLiveSurface::RetryAfterFailureSeconds;
+			RetirePreviewLiveWorldScape(TEXT("profile-failed"), true);
+			bPreviewLiveTickNeeded |= DrainRetiredPreviewLiveWorldScape(false);
+			return;
+		}
+		// Gameplay ground budget in the root's compressed centimetres. Collision, foliage, volumes, the grid and
+		// terrain shadows cannot reach a menu image; tangents stay off with the native coincident-normal weld, as
+		// on generated gameplay ground.
+		const double BodyRadiusCm = FMath::Max(
+			FMath::Max(LiveBody->RadiusKM, static_cast<double>(LiveBody->PlanetRadiusKM)) * 100000.0, 1.0);
+		const double RootCmPerCm = FMath::Max(static_cast<double>(LiveRoot->PlanetScale), 1.0) / BodyRadiusCm;
+		LiveRoot->MaxLod = APSPreviewLiveSurface::MaxLod;
+		LiveRoot->LodResolution = APSPreviewLiveSurface::LodResolution;
+		LiveRoot->TriangleSize = static_cast<float>(FMath::Max(
+			APSPreviewLiveSurface::GroundTriangleSizeCm * RootCmPerCm, 0.1));
+		LiveRoot->HeightAnchor = static_cast<float>(FMath::Max(
+			APSPreviewLiveSurface::GroundHeightAnchorCm * RootCmPerCm, 1.0));
+		LiveRoot->OceanMaxLod = LiveRoot->MaxLod;
+		LiveRoot->OceanLodResolution = LiveRoot->LodResolution;
+		LiveRoot->OceanTriangleSize = LiveRoot->TriangleSize;
+		LiveRoot->bGenerateCollision = false;
+		LiveRoot->bGenerateCollisionInEditor = false;
+		LiveRoot->bGenerateFoliages = false;
+		LiveRoot->bEnableVolumes = false;
+		LiveRoot->EnabledGrid = false;
+		LiveRoot->bGenerateTangents = false;
+		LiveRoot->Tags.AddUnique(FName(TEXT("APS.GeneratedTerrain.WeldCoincidentNormals")));
+		LiveRoot->TerrainContactShadow = false;
+		LiveRoot->TerrainCastStaticShadow = false;
+		LiveRoot->TerrainCastDynamicShadow = false;
+		LiveRoot->TerrainFarShadow = false;
+		// The editor-only freeze distance ignores bOverridePlayerPosition (see the preview root above).
+		LiveRoot->DistanceToFreezeGeneration = 0.0f;
+		LiveRoot->SetActorEnableCollision(false);
+		SyncPreviewLiveWorldScapeTransform();
+		// Fresh root: seed WorldScape's Prev_* snapshot so its first tick builds the base rings once.
+		LiveRoot->ForceRegenerate = false;
+		LiveRoot->CheckForRegenerate(true);
+		bPreviewLiveConfigured = true;
+		bPreviewLiveValidationDirty = true;
+		UE_LOG(LogTemp, Log,
+			TEXT("[APS.WorldGeneration] PLANET WorldScape build body=%s planetScale=%.0f terrain=%dx%d@%.4f heightAnchor=%.3f ocean=%d"),
+			*GetNameSafe(LiveBody), LiveRoot->PlanetScale, LiveRoot->MaxLod, LiveRoot->LodResolution,
+			LiveRoot->TriangleSize, LiveRoot->HeightAnchor, LiveRoot->bOcean ? 1 : 0);
+	}
+
+	// Reads worker-owned LOD data, so only while WorldScapeLodInGeneration is empty: CheckForLodGeneration publishes
+	// a whole batch in one game-thread call. Returns the ring plane and the cap it covers on the sphere.
+	const auto InspectPublishedClipmap = [this, LiveRoot](bool& bOutCentered) -> bool
+	{
+		bOutCentered = false;
+		const double RingPlanetScale = LiveRoot->PlanetScale;
+		const UWorldScapeLod* OuterRing = nullptr;
+		FVector RingNormal = FVector::ZeroVector;
+		const auto RingsComplete = [&OuterRing, &RingNormal](const TArray<UWorldScapeLod*>& Rings,
+			const int32 ExpectedRings, const bool bTerrainRings)
+		{
+			if (Rings.Num() < FMath::Max(1, ExpectedRings)) return false;
+			for (const UWorldScapeLod* Ring : Rings)
+			{
+				if (!APSWorldScapePayloadValidation::HasCompletePayload(Ring, bTerrainRings)) return false;
+				const FVector RingFacing = Ring->SnappedAngle.GetSafeNormal();
+				// Every ring of one published clipmap lies in one plane; mixed planes are a clipmap in transition.
+				if (RingFacing.IsNearlyZero() || (!RingNormal.IsNearlyZero() && !RingFacing.Equals(RingNormal, 1.0e-6)))
+				{
+					return false;
+				}
+				RingNormal = RingFacing;
+				if (bTerrainRings && (!OuterRing || Ring->LodSize > OuterRing->LodSize)) OuterRing = Ring;
+			}
+			return true;
+		};
+		if (!RingsComplete(LiveRoot->WorldScapeLod, LiveRoot->MaxLod, true)
+			|| (LiveRoot->bOcean && !RingsComplete(LiveRoot->WorldScapeLodOcean, LiveRoot->OceanMaxLod, false))
+			|| !OuterRing || !FMath::IsFinite(RingPlanetScale) || RingPlanetScale <= 1.0)
+		{
+			return false;
+		}
+		// WorldScape lays the rings in the plane tangent to the snapped normal, or on the cube face near a pole.
+		const FVector Tangent = FMath::Abs(RingNormal.Z) > 0.9
+			? FVector(0.0, 0.0, FMath::Sign(RingNormal.Z)) : RingNormal;
+		const FVector RingCenter = FVector(OuterRing->RelativePosition.X, OuterRing->RelativePosition.Y,
+			OuterRing->RelativePosition.Z).GetSafeNormal();
+		const double CenterCos = FVector::DotProduct(RingCenter, Tangent);
+		if (CenterCos <= 0.1) return false;
+		// Outer ring on its plane, in planet radii: centre and half side (LodGenerationThread::SetPointPosition).
+		const double HalfSide = 0.5 * OuterRing->LodSize * FMath::Max(LiveRoot->LodResolution - 1, 1)
+			/ FMath::Max(LiveRoot->LodResolution, 1) / RingPlanetScale;
+		const double CenterOffset = FMath::Sqrt(FMath::Max(1.0 - CenterCos * CenterCos, 0.0)) / CenterCos;
+		PreviewLiveCommittedTangent = Tangent;
+		PreviewLiveCommittedRingCenter = RingCenter / CenterCos;
+		PreviewLiveCommittedHalfSide = HalfSide;
+		PreviewLiveCommittedCoverageDegrees = FMath::RadiansToDegrees(FMath::Atan(FMath::Max(HalfSide - CenterOffset, 0.0)));
+		bOutCentered = FVector::DotProduct(RingNormal, PreviewLiveObserverEcef.GetSafeNormal()) >= 0.995;
+		return true;
+	};
+
+	const bool bOnScreenBody = FocusBody == LiveBody;
+	SyncPreviewLiveWorldScapeTransform();
+	const bool bWorkers = LiveRoot->WorldScapeLodInGeneration.Num() > 0;
+	if (bWorkers)
+	{
+		bPreviewLiveBatchInFlight = true;
+		bPreviewLiveValidationDirty = true;
+		PreviewLiveQuietSince = -1.0;
+	}
+	else if (bPreviewLiveBatchInFlight)
+	{
+		// A batch was just published in place (gameplay behaviour): describe what is on screen now.
+		bPreviewLiveBatchInFlight = false;
+		bool bPublishedCentered = false;
+		bPreviewLiveCommitted = InspectPublishedClipmap(bPublishedCentered);
+	}
+	if (!bOnScreenBody)
+	{
+		// Resident behind another scope: finish a running batch without queuing new ones, then sleep. Returning to
+		// PLANET re-validates against the camera of that moment.
+		LiveRoot->bFreezeGeneration = true;
+		LiveRoot->SetActorTickEnabled(false);
+		if (bWorkers)
+		{
+			LiveRoot->bGenerateWorldScape = true;
+			LiveRoot->CheckForLodGeneration();
+			bPreviewLiveTickNeeded = true;
+		}
+		PreviewLiveQuietSince = -1.0;
+		return;
+	}
+	const bool bWantsWork = bPreviewLiveValidationDirty && !bPreviewCameraTransitionActive;
+	if (!bWorkers && bWantsWork)
+	{
+		if (PreviewLiveQuietSince < 0.0 || PreviewLiveQuietObserverEcef != PreviewLiveObserverEcef)
+		{
+			PreviewLiveQuietSince = Now;
+			PreviewLiveQuietSinceFrame = GFrameCounter;
+			PreviewLiveQuietObserverEcef = PreviewLiveObserverEcef;
+		}
+		// The root ticks at most once per frame and at most TickPerSecond times a second: wait for both.
+		else if (GFrameCounter >= PreviewLiveQuietSinceFrame + static_cast<uint64>(APSPreviewLiveSurface::QuietRootTicks)
+			&& Now - PreviewLiveQuietSince >= APSPreviewLiveSurface::QuietRootTicks
+				/ FMath::Max(static_cast<double>(LiveRoot->TickPerSecond), 1.0))
+		{
+			// WorldScape had its own ticks with this observer and queued nothing: the published clipmap must now
+			// be complete and centred on the camera. Otherwise the globe stays and the pair is dropped.
+			bool bIdleCentered = false;
+			bPreviewLiveCommitted = InspectPublishedClipmap(bIdleCentered);
+			if (!bPreviewLiveCommitted || !bIdleCentered)
+			{
+				UE_LOG(LogTemp, Warning,
+					TEXT("[APS.WorldGeneration] PLANET WorldScape idle without a complete clipmap at the camera body=%s terrain=%d ocean=%d; closed globe kept"),
+					*GetNameSafe(LiveBody), LiveRoot->WorldScapeLod.Num(), LiveRoot->WorldScapeLodOcean.Num());
+				PreviewLiveRetryAfter = Now + APSPreviewLiveSurface::RetryAfterFailureSeconds;
+				RetirePreviewLiveWorldScape(TEXT("invalid"), true);
+				bPreviewLiveTickNeeded |= DrainRetiredPreviewLiveWorldScape(false);
+				return;
+			}
+			bPreviewLiveValidationDirty = false;
+			PreviewLiveQuietSince = -1.0;
+		}
+	}
+	else if (!bWorkers)
+	{
+		PreviewLiveQuietSince = -1.0;
+	}
+
+	// WorldScape works (ticks unfrozen) only while a batch runs or the camera moved past the resubmit distance.
+	const bool bActive = bWorkers || (bPreviewLiveValidationDirty && !bPreviewCameraTransitionActive);
+	if (bActive && !LiveRoot->IsActorTickEnabled() && !bPreviewLiveCommitted)
+	{
+		PreviewLiveBuildStarted = Now;
+	}
+	LiveRoot->bGenerateWorldScape = true;
+	LiveRoot->bFreezeGeneration = !bActive;
+	LiveRoot->SetActorTickEnabled(bActive);
+	bPreviewLiveTickNeeded |= bActive || bPreviewLiveValidationDirty;
+	if (bActive && !bPreviewLiveCommitted && Now - PreviewLiveBuildStarted > APSPreviewLiveSurface::BuildTimeoutSeconds)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[APS.WorldGeneration] PLANET WorldScape not ready after %.0f s body=%s terrain=%d ocean=%d; closed globe kept"),
+			APSPreviewLiveSurface::BuildTimeoutSeconds, *GetNameSafe(LiveBody),
+			LiveRoot->WorldScapeLod.Num(), LiveRoot->WorldScapeLodOcean.Num());
+		PreviewLiveRetryAfter = Now + APSPreviewLiveSurface::RetryAfterFailureSeconds;
+		RetirePreviewLiveWorldScape(TEXT("timeout"), true);
+		bPreviewLiveTickNeeded |= DrainRetiredPreviewLiveWorldScape(false);
+	}
+}
+
 void AAstroGenerator::GetPreviewBodyEntries(TArray<FAPSPreviewBodyEntry>& OutEntries) const
 {
 	OutEntries.Reset();
@@ -9641,6 +10179,8 @@ void AAstroGenerator::ApplyWorldModel()
 
 	// Copy values from NewGeneratedWorld to AAstroGenerator
 	bGenerateFullScaledWorld = GeneratedWorldModel->bGenerateFullScaledWorld;
+	// Rio 05.10 (real scale experiment): only the model switches it on (UsesRealScale also needs the canonical frame).
+	bRealScale = GeneratedWorldModel->bRealScale;
 	bGenerateHomeSystem = GeneratedWorldModel->bGenerateHomeSystem;
 	bStartWithHomePlanet = GeneratedWorldModel->bStartWithHomePlanet;
 	// The legacy generator exposed a second internal switch that was not copied
@@ -9666,6 +10206,7 @@ void AAstroGenerator::ApplyWorldModel()
 	HomeSystemPosition = GeneratedWorldModel->HomeSystemPosition;
 	GalaxySize = GeneratedWorldModel->GalaxySize;
 	GalaxyStarCount = GeneratedWorldModel->GalaxyStarCount;
+	GalaxyPlacedStarCount = GeneratedWorldModel->GalaxyPlacedStarCount;
 	PlanetsAmount = GeneratedWorldModel->PlanetsAmount;
 	StartPlanetNumber = GeneratedWorldModel->StartPlanetIndex;
 	PlanetsAmount = FMath::Max(1, PlanetsAmount);
@@ -9761,26 +10302,20 @@ void AAstroGenerator::GenerateStarCluster()
 	// the same sealed records, retaining its density without rerolling any stars.
 	if (bIsPreviewGeneration)
 	{
-		int32 FormationBudget = 1600;
-		switch (StarClusterModel->StarClusterSize)
-		{
-		case EStarClusterSize::Tiny: FormationBudget = 450; break;
-		case EStarClusterSize::Small: FormationBudget = 800; break;
-		case EStarClusterSize::Medium: FormationBudget = 1100; break;
-		case EStarClusterSize::Large: FormationBudget = 1400; break;
-		case EStarClusterSize::Giant: FormationBudget = 1600; break;
-		case EStarClusterSize::Unknown:
-		default: FormationBudget = 1000; break;
-		}
-		NewStarCluster->StarAmount = FMath::Min(NewStarCluster->StarAmount,
-			FMath::Min(PreviewMaxInstances, FormationBudget));
+		// Rio 03.10 ("Tiny 451 vs Colossal 93,884 look the same"): small clusters show every system, big ones a
+		// size-scaled sample (Giant 12k, Colossal 20k) instead of the old ~1,600 for every size.
+		const int32 FormationBudget = UStarClusterGenerator::GetPreviewFormationBudget(
+			StarClusterModel->StarClusterSize);
+		NewStarCluster->StarAmount = FMath::Min(NewStarCluster->StarAmount, FormationBudget);
 	}
 	NewStarCluster->StarDensity = bReuseFinalizedDataset
 		? CanonicalDataset->ClusterDensity
 		: StarClusterGenerator->GetStarClusterDensityByRange();
+	// Rio 03.10: a new cluster's extent follows its SIZE; a sealed dataset keeps its stored bounds.
 	NewStarCluster->ClusterBounds = bReuseFinalizedDataset
 		? CanonicalDataset->ClusterBounds
-		: StarClusterGenerator->GetStarClusterBoundsByRange(ClusterType);
+		: StarClusterGenerator->GetStarClusterBoundsByRange(ClusterType)
+			* UStarClusterGenerator::GetSizeExtentFactor(StarClusterModel->StarClusterSize);
 	NewStarCluster->ClusterType = ClusterType;
 	NewStarCluster->StarClusterComposition = StarClusterModel->StarClusterComposition;
 	NewStarCluster->StarClusterPopulation = StarClusterModel->StarClusterPopulation;
@@ -10174,7 +10709,7 @@ AStarSystem* AAstroGenerator::MaterializeClusterStarSystem(int32 InstanceIndex)
 		GeneratedStarCluster->StarMeshInstances->UpdateInstanceTransform(
 			InstanceIndex, HiddenTransform, false, true, true);
 		GeneratedStarCluster->StarMeshInstances->BuildTreeIfOutdated(true, true);
-		NoteCanonicalStellarProxyMutation(true);
+		NoteCanonicalStellarPointMutation(MakeGameplayStellarKey(GeneratedStarCluster->StarMeshInstances, InstanceIndex));
 	}
 	Record->bMaterialized = true;
 	Record->MaterializedSystem = StarSystem;
@@ -10220,7 +10755,7 @@ bool AAstroGenerator::DematerializeClusterStarSystem(int32 InstanceIndex)
 	GeneratedStarCluster->StarMeshInstances->UpdateInstanceTransform(
 		InstanceIndex, RestoredTransform, false, true, true);
 	GeneratedStarCluster->StarMeshInstances->BuildTreeIfOutdated(true, true);
-	NoteCanonicalStellarProxyMutation(true);
+	NoteCanonicalStellarPointMutation(RestoredKey);
 	return true;
 }
 
@@ -10287,7 +10822,8 @@ bool AAstroGenerator::AddGeneratedWorldModelData()
 
 	HomePlanet->FillPlanetData();
 	GeneratedWorldModel->HomePlanet = HomePlanet;
-	GeneratedWorldModel->InhabitedPlanets.Add(HomePlanet->PlanetData);
+	// A loaded world replays this: its home world is refreshed, not recorded once more per load (Rio 03.10, save audit).
+	APSWorldSaveSnapshot::RecordInhabitedPlanet(GeneratedWorldModel->InhabitedPlanets, HomePlanet->PlanetData);
 	return true;
 }
 
@@ -10832,8 +11368,9 @@ void AAstroGenerator::GenerateStarSystemByModel()
 			}
 			else PlanetarySystemGenerator->ClearGenerationSeed();
 			PlanetarySystemModel = MakeShared<FPlanetarySystemModel>();
+			// Rio 05.10 (real scale experiment): a REAL SCALE system keeps its real AU orbits.
 			const bool bCompactProceduralOrbits = IsCanonicalStellarProjectionEnabled()
-				&& (bIsPreviewGeneration || !bIntegrateStartPlanet);
+				&& (bIsPreviewGeneration || !bIntegrateStartPlanet) && !UsesRealScale();
 			// Same explicit-edit boundary as exact orbit replay below. Authored
 			// legacy SINGLE GAME continues to use its independent generator scale.
 			const FAPSPreviewStarEditOverride* StellarOrbitEdit =
@@ -11755,7 +12292,13 @@ void AAstroGenerator::GenerateGalaxy()
 	const int32 ModeledStarCount = FMath::Max(1, GalaxyModel->StarsCount);
 	// Gameplay extends the menu's nested LOD prefix within the same catalog;
 	// reusing that catalog must not impose the sparse menu-only render budget.
-	const int32 InstanceBudget = bIsPreviewGeneration
+	// Rio 03.10 (STARS slider): a placed count replaces both budgets; 0 keeps the historic ones. It is a prefix of
+	// the same catalogue order and never part of the dataset InputHash.
+	const int32 PlacedStarBudget = GalaxyPlacedStarCount > 0
+		? FMath::Clamp(GalaxyPlacedStarCount, APSGalaxyMorphology::PreviewReferenceBudget,
+			APSGalaxyMorphology::MaxPlacedStars) : 0;
+	const int32 InstanceBudget = PlacedStarBudget > 0 ? PlacedStarBudget
+		: bIsPreviewGeneration
 		? FMath::Min(FMath::Max(100, PreviewMaxInstances), 1800)
 		: FMath::Max(1000, RuntimeMaxGalaxyInstances);
 	const int32 RenderedStarCount = FMath::Min(ModeledStarCount, InstanceBudget);
@@ -11816,9 +12359,15 @@ void AAstroGenerator::GenerateGalaxy()
 			GalaxyCatalogHalfExtent,
 			APSCanonicalStellarProjection::GalaxyMaxProxyCoordinateCm,
 			GalaxyProjectionHash, IsCanonicalStellarProjectionEnabled());
+		// Rio 03.10: the galaxy POPULATION / COMPOSITION rows (0 = the historic mix; older saves never carry others).
+		NewGalaxy->StarCatalog.StarPopulation = IsValid(GeneratedWorldModel)
+			? static_cast<uint8>(GeneratedWorldModel->GalaxyStarPopulation) : 0;
+		NewGalaxy->StarCatalog.StarComposition = IsValid(GeneratedWorldModel)
+			? static_cast<uint8>(GeneratedWorldModel->GalaxyStarComposition) : 0;
 		GalaxyGenerator->GenerateGalaxyOctreeStars(
 			StarGenerator, NewGalaxy, GalaxyModel, RenderedStarCount, GalaxySeed,
-			bIsPreviewGeneration);
+			bIsPreviewGeneration, PlacedStarBudget > 0 ? (bIsPreviewGeneration
+				? APSGalaxyMorphology::PreviewReferenceBudget : APSGalaxyMorphology::GameplayReferenceBudget) : 0);
 		NewGalaxy->AttachToActor(this, FAttachmentTransformRules::KeepRelativeTransform);
 		if (IsCanonicalStellarProjectionEnabled())
 		{
@@ -13315,6 +13864,89 @@ namespace APSCivilizationSpawn
 		Actor->Tags.AddUnique(TEXT("APS.GeneratedCivilization"));
 		Actor->Tags.AddUnique(RoleTag);
 	}
+
+	/** The star that lights a body: its planet's (a moon's parent planet's) star, else the fallback. */
+	const AStar* ParentStarOf(const AActor* Body, const AStar* Fallback)
+	{
+		const APlanet* Planet = Cast<APlanet>(Body);
+		if (const AMoon* Moon = Cast<AMoon>(Body))
+		{
+			Planet = Moon->ParentPlanet;
+		}
+		return IsValid(Planet) && IsValid(Planet->ParentStar) ? Planet->ParentStar : Fallback;
+	}
+
+	/** Signed angle from A to B about Axis, in degrees (A and B perpendicular to Axis). */
+	double SignedAngleDegrees(const FVector& A, const FVector& B, const FVector& Axis)
+	{
+		return FMath::RadiansToDegrees(FMath::Atan2(
+			FVector::DotProduct(Axis, FVector::CrossProduct(A, B)), FVector::DotProduct(A, B)));
+	}
+
+	/**
+	 * Rio 04.10 evening ("again the night side: sunlit, the sun from the side, with the star in view too"): the turn
+	 * about the body's axis that brings the home complex from its old place (world +Y of the body) to where the ground
+	 * under it is lit from the side, on the side nearer the old place. The higher the orbit, the smaller the body looks,
+	 * so the nearer the terminator the complex stands for the lit limb and the star to share one view; never past it:
+	 * the ground under the complex keeps its day.
+	 */
+	double SunlitComplexTurnDegrees(const AActor& Body, const FVector& StarLocation, const double BodyRadiusCm,
+		const double ComplexDistanceCm)
+	{
+		const FVector Axis = Body.GetActorUpVector();
+		const FVector OldPlace = FVector::VectorPlaneProject(FVector(0.0, 1.0, 0.0), Axis).GetSafeNormal();
+		const FVector SubSolar = FVector::VectorPlaneProject(StarLocation - Body.GetActorLocation(), Axis).GetSafeNormal();
+		if (OldPlace.IsNearlyZero() || SubSolar.IsNearlyZero() || ComplexDistanceCm <= 0.0)
+		{
+			return 0.0;
+		}
+		const double BodyAngularRadius = FMath::RadiansToDegrees(
+			FMath::Asin(FMath::Clamp(BodyRadiusCm / ComplexDistanceCm, 0.0, 1.0)));
+		const double FromSubSolar = FMath::Clamp(130.0 - BodyAngularRadius, 50.0, 80.0);
+		double BestTurn = 0.0;
+		double BestDot = -2.0;
+		for (const double Side : {1.0, -1.0})
+		{
+			const FVector Place = FQuat(Axis, FMath::DegreesToRadians(Side * FromSubSolar)).RotateVector(SubSolar);
+			const double Dot = FVector::DotProduct(Place, OldPlace);
+			if (Dot > BestDot)
+			{
+				BestDot = Dot;
+				BestTurn = SignedAngleDegrees(OldPlace, Place, Axis);
+			}
+		}
+		return BestTurn;
+	}
+
+	/**
+	 * Rio 04.10 evening ("so the star is in view too"): from the body's centre the first view turns towards the star
+	 * until the lit limb and the star share the frame: midway between the near limb and the star, with the star at most
+	 * 28 degrees from the centre of the view. A star behind the body leaves the view on the body.
+	 */
+	FVector ViewWithStar(const FVector& ToBody, const FVector& ToStar, const double BodyRadiusCm, const FVector& Up)
+	{
+		const FVector BodyDirection = FVector::VectorPlaneProject(ToBody, Up).GetSafeNormal();
+		const FVector StarDirection = FVector::VectorPlaneProject(ToStar, Up).GetSafeNormal();
+		const double Distance = ToBody.Size();
+		if (BodyDirection.IsNearlyZero() || StarDirection.IsNearlyZero() || Distance <= BodyRadiusCm)
+		{
+			return ToBody;
+		}
+		const double Between = FMath::RadiansToDegrees(
+			FMath::Acos(FMath::Clamp(FVector::DotProduct(BodyDirection, StarDirection), -1.0, 1.0)));
+		const double Limb = FMath::RadiansToDegrees(FMath::Asin(FMath::Clamp(BodyRadiusCm / Distance, 0.0, 1.0)));
+		if (Between <= Limb + 5.0)
+		{
+			return ToBody;
+		}
+		const double Turn = FMath::Clamp(0.5 * (Limb + Between), Between - 28.0, Between);
+		FVector Axis = FVector::CrossProduct(BodyDirection, StarDirection).GetSafeNormal();
+		if (Axis.IsNearlyZero())
+		{
+			Axis = Up.GetSafeNormal(UE_DOUBLE_SMALL_NUMBER, FVector::UpVector);
+		}
+		return FQuat(Axis, FMath::DegreesToRadians(Turn)).RotateVector(BodyDirection);
+	}
 }
 
 void AAstroGenerator::DestroyConfiguredCivilizationAssets()
@@ -13635,7 +14267,41 @@ bool AAstroGenerator::SpawnStartInteractiveActors(TSharedPtr<FPlanetModel> Start
 	HomeSpaceHeadquarters->SetActorRelativeRotation(FRotator(0, 0, 0));
 
 	const double SpawnOffset = FMath::Max(StationOrbitRadiusCm, PlanetRadiusCm * 1.01);
-	FVector Offset = FVector(0, SpawnOffset, 0);
+	// Rio 04.10 evening ("again the night side: I asked for the sunlit side, the sun from the side, the star in view"):
+	// the home complex stands where the ground under it is lit from the side, its old place and layout turned about the
+	// body's axis. A new world picks the turn and its save keeps it; a saved world replays the turn it was founded with
+	// (none in older saves), since the complex anchors the frame its saved positions use.
+	double ComplexTurnDegrees = 0.0;
+	{
+		UMainGameplayInstance* TurnGameplay = World->GetGameInstance()
+			? World->GetGameInstance()->GetSubsystem<UMainGameplayInstance>() : nullptr;
+		USpawnParameters* TurnRecipe = TurnGameplay ? TurnGameplay->SpawnParameters : nullptr;
+		if (TurnGameplay && TurnGameplay->bPendingSavedWorldReplay)
+		{
+			ComplexTurnDegrees = TurnRecipe ? TurnRecipe->StarterComplexTurnDegrees : 0.0;
+		}
+		else
+		{
+			if (const AStar* Star = APSCivilizationSpawn::ParentStarOf(ComplexBody, HomeStar); IsValid(Star))
+			{
+				ComplexTurnDegrees = APSCivilizationSpawn::SunlitComplexTurnDegrees(
+					*ComplexBody, Star->GetActorLocation(), PlanetRadiusCm, SpawnOffset);
+			}
+			if (TurnRecipe)
+			{
+				TurnRecipe->StarterComplexTurnDegrees = ComplexTurnDegrees;
+			}
+		}
+		UE_LOG(LogTemp, Log, TEXT("[APS.Civilization] home complex turned %.1f deg about %s's axis (%s)"),
+			ComplexTurnDegrees, *GetNameSafe(ComplexBody),
+			TurnGameplay && TurnGameplay->bPendingSavedWorldReplay ? TEXT("as saved") : TEXT("sunlit from the side"));
+	}
+	const FQuat ComplexTurn(ComplexBody->GetActorUpVector(), FMath::DegreesToRadians(ComplexTurnDegrees));
+	if (!FMath::IsNearlyZero(ComplexTurnDegrees))
+	{
+		HomeSpaceHeadquarters->SetActorRotation(ComplexTurn * HomeSpaceHeadquarters->GetActorQuat());
+	}
+	FVector Offset = ComplexTurn.RotateVector(FVector(0, SpawnOffset, 0));
 	HomeSpaceHeadquarters->AddActorWorldOffset(Offset);
 
 	FVector HomeSpaceHeadquartersLocation = HomeSpaceHeadquarters->GetActorLocation();
@@ -13851,6 +14517,17 @@ bool AAstroGenerator::SpawnStartInteractiveActors(TSharedPtr<FPlanetModel> Start
 			CameraUp = NewHomeSpaceship->GetActorUpVector().GetSafeNormal(
 				UE_DOUBLE_SMALL_NUMBER, FVector::UpVector);
 			InitialViewDirection = NewHomeSpaceship->GetActorForwardVector();
+		}
+		else if (OrbitalStartStation)
+		{
+			// Rio 04.10 evening: the body's lit limb and its star in the first frame.
+			const APlanetaryBody* ViewedBody = Cast<APlanetaryBody>(OrbitedBody);
+			const AStar* ViewedStar = APSCivilizationSpawn::ParentStarOf(OrbitedBody, HomeStar);
+			if (IsValid(ViewedBody) && IsValid(ViewedStar))
+			{
+				InitialViewDirection = APSCivilizationSpawn::ViewWithStar(InitialViewDirection,
+					ViewedStar->GetActorLocation() - SpawnLocation, ViewedBody->GetWorldScapeBodyRadiusCm(), CameraUp);
+			}
 		}
 		if (InitialViewDirection.IsNearlyZero())
 		{

@@ -1,19 +1,19 @@
 # Dot-source only. These helpers do not launch Unreal or change project settings.
 function Get-APSCloudWeatherDiagnostic {
     param([string]$ProjectRoot,[switch]$Candidate,[switch]$LayeredCandidate)
-    if($Candidate -and $LayeredCandidate){throw 'Select one cloud candidate: weather V28 or layered V30'}
+    if($Candidate -and $LayeredCandidate){throw 'Select one cloud candidate: refined V31 or layered V30'}
     $header=Join-Path $ProjectRoot 'Source/APS_ALPHA/Core/Planetary/APSPlanetCloudWeather.h'
     $constant=if($LayeredCandidate){'LayeredMaterialPath'}elseif($Candidate){'CandidateMaterialPath'}else{'MaterialPath'}
     $match=[regex]::Match((Get-Content -LiteralPath $header -Raw),('(?m)^inline constexpr const TCHAR\* '+$constant+'=TEXT\("([^"]+)"\);'))
-    $version=if($LayeredCandidate){'CloudWeather20261002V30'}elseif($Candidate){'CloudWeather20261002V28'}else{'CloudWeather20261002V27'}
+    $version=if($LayeredCandidate){'CloudWeather20261002V30'}elseif($Candidate){'CloudWeather20261003V31'}else{'CloudWeather20261002V27'}
     $expected='/Game/APS/APS_ALPHA/WSC/PlanetSurface/Diagnostics/'+$version+'/M_APS_PlanetCloud.M_APS_PlanetCloud'
     if(!$match.Success -or $match.Groups[1].Value -cne $expected){throw 'Cloud diagnostic path differs from its constrained policy constant'}
     $sources=@('Core/Planetary/APSPlanetCloudWeather.h','Core/Planetary/APSPlanetCloudSettings.h',
         'Core/Planetary/APSPlanetCloudPolicy.h','Core/Planetary/APSPlanetCloudLayers.h','Core/Rendering/APSPlanetCloudComponent.cpp',
         'Core/Rendering/APSPlanetCloudComponent.h','Editor/APSPlanetCloudBuilder.h','Editor/APSPlanetCloudHlsl.h',
-        'Editor/APSPlanetCloudLayeredHlsl.h',
+        'Editor/APSPlanetCloudLayeredHlsl.h','Editor/APSPlanetCloudRefinedHlsl.h',
         'Editor/APSPlanetSurfaceAssetCommandlet.cpp','Tests/APSCloudFlightProbe.h',
-        'Tests/APSPlanetCloudWeatherTests.cpp','Tests/APSPlanetCloudLayersTests.cpp',
+        'Tests/APSPlanetCloudWeatherTests.cpp','Tests/APSPlanetCloudLayersTests.cpp','Tests/APSPlanetCloudRefinedTests.cpp',
         'Tests/APSPlanetRefinementRenderedTests.cpp','Tests/APSGeneratedGameplayHandoffSmokeTests.cpp') |
         ForEach-Object {Join-Path $ProjectRoot ('Source/APS_ALPHA/'+$_)}
     $dll=Get-Item -LiteralPath (Join-Path $ProjectRoot 'Binaries/Win64/UnrealEditor-APS_ALPHA.dll')
@@ -32,7 +32,7 @@ function Save-APSCloudWeatherDiagnostic {
         'Content/APS/APS_ALPHA/WSC/PlanetSurface/Diagnostics/CloudVolume20261001V24/M_APS_PlanetCloud.uasset') |
         ForEach-Object {Join-Path $ProjectRoot $_}
     # Keep independently baked candidates intact when testing a different one.
-    foreach($version in @('CloudWeather20261002V28','CloudWeather20261002V29','CloudWeather20261002V30')){
+    foreach($version in @('CloudWeather20261002V28','CloudWeather20261002V29','CloudWeather20261002V30','CloudWeather20261003V31')){
         $otherCandidate=Join-Path $ProjectRoot ('Content/APS/APS_ALPHA/WSC/PlanetSurface/Diagnostics/'+$version+'/M_APS_PlanetCloud.uasset')
         if($otherCandidate -ne $Selection.Asset -and (Test-Path -LiteralPath $otherCandidate)){$protected+=$otherCandidate}
     }

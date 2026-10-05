@@ -122,6 +122,18 @@ struct FAPSCanonicalStellarDataset
 	UPROPERTY()
 	bool bFinalized{false};
 
+	/**
+	 * Rio 05.10 (real scale experiment): canonical centimetres per catalogue unit and the cluster's layout scale inside
+	 * the galaxy of a REAL SCALE world, measured once from this catalogue and sealed with it, so a reload reproduces the
+	 * same layout. Zero (every legacy dataset) keeps the historic 1e9 cm and cluster share; the manifest hash mixes them
+	 * only when set.
+	 */
+	UPROPERTY()
+	double RealScaleCmPerUnit{0.0};
+
+	UPROPERTY()
+	double RealScaleClusterToGalaxy{0.0};
+
 	bool IsUsable(const uint32 ExpectedInputHash) const
 	{
 		if (!bFinalized || Version != CurrentVersion || InputHash != ExpectedInputHash

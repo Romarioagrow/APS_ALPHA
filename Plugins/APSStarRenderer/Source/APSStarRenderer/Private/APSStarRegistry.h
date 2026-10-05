@@ -57,6 +57,8 @@ namespace APSStarRenderer::Private
 		TArray<FPointSetRT> PointSets;
 		TArray<FGlowVolumeRT> GlowVolumes;
 		TMap<const FSceneInterface*, float> SceneVisibility;
+		/** Rio 04.10: scenes whose points fade over a bright scene (SetWorldSkyMask). */
+		TSet<const FSceneInterface*> SkyMaskScenes;
 		TStaticArray<FVector4f, 256> Palette;
 		TArray<FStatsReadback> Readbacks;
 

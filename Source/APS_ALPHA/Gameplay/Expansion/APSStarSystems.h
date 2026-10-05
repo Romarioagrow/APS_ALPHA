@@ -59,7 +59,7 @@ struct APS_ALPHA_API FAPSStarSystemInfo
 	FString Spectral;
 	int32 StarCount{1};
 	int32 PotentialPlanets{0};
-	/** Where the primary is in the world now (the home system's frame). */
+	/** Where the primary is in the world now (the home system's frame), as of reading it through Get or Find. */
 	FVector Location{FVector::ZeroVector};
 	/** Room among its neighbours: half the distance to the nearest other star, cm. */
 	double RoomCm{0.0};
@@ -117,7 +117,7 @@ public:
 	/** True once the cluster catalogue has been read. */
 	bool IsReady() const { return !Systems.IsEmpty(); }
 	int32 Num() const { return Systems.Num(); }
-	const FAPSStarSystemInfo* Get(int32 Index) const { return Systems.IsValidIndex(Index) ? &Systems[Index] : nullptr; }
+	const FAPSStarSystemInfo* Get(int32 Index) const { return Systems.IsValidIndex(Index) ? &Current(Index) : nullptr; }
 	const FAPSStarSystemInfo* Find(const FGuid& Id) const;
 	int32 IndexOf(const FGuid& Id) const;
 	const FAPSStarSystemInfo* GetHome() const { return Get(HomeIndex); }
@@ -204,6 +204,13 @@ private:
 	int32 FindContainingCluster(const FVector& Location, double* OutDistanceSquared = nullptr) const;
 	void UpdateVisit(float DeltaSeconds);
 	void FollowHome();
+	/** A system's world location now: the home's place plus its fixed offset. */
+	FVector LocationOf(int32 Index) const { return HomeLocation + FromHome[Index]; }
+	/**
+	 * Rio 05.10 afternoon (flight FPS: at drive speed the world shifts every frame, and rewriting all ~36k locations
+	 * took 0.45 ms a frame): a system's Location is brought to the home's place when it is read, not on every shift.
+	 */
+	const FAPSStarSystemInfo& Current(int32 Index) const;
 	FIntVector CellOf(const FVector& FromHome) const;
 	FAPSStarSystemState& EditState(const FGuid& Id);
 

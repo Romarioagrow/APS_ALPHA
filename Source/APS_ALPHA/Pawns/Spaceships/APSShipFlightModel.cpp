@@ -14,6 +14,7 @@
 #include "APS_ALPHA/Actors/Tech/SpaceStation.h"
 #include "APS_ALPHA/Core/Rendering/APSCanonicalStellarProjection.h"
 #include "APS_ALPHA/Core/Rendering/APSGalaxyGpuStars.h"
+#include "APS_ALPHA/Core/World/APSRealScale.h"
 #include "APS_ALPHA/Gameplay/Civilizations/APSCivilizationJournalSubsystem.h"
 #include "APS_ALPHA/Gameplay/Construction/APSShipBuildComponent.h"
 #include "APS_ALPHA/Gameplay/Vehicles/APSGroundVehicleTypes.h"
@@ -46,6 +47,43 @@ namespace APSShipFlightModelLocal
 	/** Charted space: the catalogue's bounding sphere times this, plus the margin. */
 	constexpr double ChartedSpaceScale = 1.25;
 	constexpr double ChartedSpaceMarginCm = 50.0 * AstronomicalUnitCm;
+
+	double StarRadiusCm(const AStar& Star)
+	{
+		return (Star.RadiusKM > 0.0 ? Star.RadiusKM : static_cast<double>(Star.StarRadiusKM)) * 100000.0;
+	}
+
+	/**
+	 * Rio 05.10: the largest star whose centre lies within three of its radii of a point (a star system's anchor stands
+	 * at its star's centre), and in OutRadiusCm the radius about the point of a sphere that holds that star; null, with
+	 * OutRadiusCm untouched, when no star is that near.
+	 */
+	const AStar* StarAround(const UWorld* World, const FVector& Point, double& OutRadiusCm)
+	{
+		const AStar* Best = nullptr;
+		double BestRadius = 0.0;
+		double BestHold = 0.0;
+		for (TActorIterator<AStar> It(World); It; ++It)
+		{
+			const double Radius = IsValid(*It) ? StarRadiusCm(**It) : 0.0;
+			if (!(Radius > 0.0))
+			{
+				continue;
+			}
+			const double Distance = FVector::Dist(It->GetActorLocation(), Point);
+			if (Distance <= Radius * 3.0 && Radius > BestRadius)
+			{
+				Best = *It;
+				BestRadius = Radius;
+				BestHold = Distance + Radius;
+			}
+		}
+		if (Best)
+		{
+			OutRadiusCm = BestHold;
+		}
+		return Best;
+	}
 
 	TAutoConsoleVariable<int32> CVarFlightModel(
 		TEXT("aps.Ship.FlightModel"), 1,
@@ -138,6 +176,91 @@ namespace APSShipFlightModelLocal
 	TAutoConsoleVariable<float> CVarAutopilotBank(TEXT("aps.Autopilot.Bank"), 25.0f,
 		TEXT("How far the autopilot banks into a turn, degrees (0 = level turns)."));
 
+	/**
+	 * Rio 05.10 (real scale, stage 2): in a REAL SCALE world neighbouring stars stand parsecs apart. A star's arrival sphere
+	 * is a share of the star spacing (not the legacy 0.05 AU), a near miss of it still counts on the course, CRUISE and
+	 * STELLAR reach far higher speeds (their distance and course limits still slow them), and charted space is the galaxy
+	 * alone (the floating origin keeps the pilot near 0,0,0). Every legacy world keeps every legacy value.
+	 */
+	TAutoConsoleVariable<float> CVarRealApproachShare(TEXT("aps.RealScale.ApproachShare"), 0.0025f,
+		TEXT("REAL SCALE: a star's arrival sphere (STELLAR and the star drive slow down for it, AUTO counts it as the star's ")
+		TEXT("system) as a share of the median star spacing (0.0025 of 1.3 pc is ~670 AU). Never below InterstellarDistanceAU."));
+	TAutoConsoleVariable<float> CVarRealMissScale(TEXT("aps.RealScale.CourseMissScale"), 4.0f,
+		TEXT("REAL SCALE: a course passing a star's arrival sphere counts as this many times the miss further away (legacy 1000)."));
+	TAutoConsoleVariable<float> CVarRealSystemSphereAu(TEXT("aps.RealScale.SystemSphereAU"), 20.0f,
+		TEXT("REAL SCALE: the system sphere of a star that stands as an actor (the home, a materialized system), AU, its ")
+		TEXT("planets reaching beyond it (legacy InterstellarDistanceAU): the drive leaves home within seconds."));
+	// Rio 05.10 ("we need hundreds of billions of c"): 10 000 ly/s is about 3e11 c (was 1000, 3e10 c).
+	TAutoConsoleVariable<float> CVarRealMaxLyPerSecond(TEXT("aps.RealScale.MaxLyPerSecond"), 10000.0f,
+		TEXT("REAL SCALE: the top speed of STELLAR and the star drive, light years a second (legacy ~1); their course, edge ")
+		TEXT("and growth limits still apply."));
+	TAutoConsoleVariable<float> CVarRealBrakeGain(TEXT("aps.RealScale.BrakeGain"), 0.33f,
+		TEXT("Rio 05.10 (\"braking from huge speeds takes very long\"): REAL SCALE: above aps.RealScale.BrakeFromC x light ")
+		TEXT("speed, S and Ctrl (and S in the star drive) brake harder by this share per e-fold of speed over it: from 3e11 c ")
+		TEXT("down to c in about 5 s instead of 18. Slower than that the brakes are as before. 0: as before at any speed."));
+	TAutoConsoleVariable<float> CVarRealBrakeFromC(TEXT("aps.RealScale.BrakeFromC"), 1.0f,
+		TEXT("REAL SCALE: the speed, in c, above which aps.RealScale.BrakeGain strengthens the brakes."));
+	// Rio 05.10 afternoon ("J takes fifty years to pick up speed": a minute from 12 000 km/s to 1e6 c in his log).
+	TAutoConsoleVariable<float> CVarRealDriveSystemScale(TEXT("aps.RealScale.DriveSystemScale"), 8.0f,
+		TEXT("REAL SCALE: inside a star system the star drive may fly this many times CRUISE's limit there (CRUISE alone ")
+		TEXT("allows 12% of the distance to the sun a second: x8 is about the whole distance a second). 1: as CRUISE."));
+	TAutoConsoleVariable<float> CVarRealDriveCourseFactor(TEXT("aps.RealScale.DriveCourseFactor"), 2.0f,
+		TEXT("REAL SCALE: the star drive slows for the star its course runs into to this share of the way left a second ")
+		TEXT("(CRUISE's own 0.5 before)."));
+	TAutoConsoleVariable<float> CVarRealDriveFollowScale(TEXT("aps.RealScale.DriveFollowScale"), 2.5f,
+		TEXT("REAL SCALE: the star drive's speed climbs to its set speed this many times faster (log space). 1: as before."));
+	TAutoConsoleVariable<float> CVarRealDriveDepartFactor(TEXT("aps.RealScale.DriveDepartFactor"), 3.0f,
+		TEXT("Rio 05.10 evening (\"J still takes fifty years\": 48 s from the home planet to 1 ly/s, all of it held by the ")
+		TEXT("body behind, the speed tied to its distance): a REAL SCALE star drive leaving the nearest body climbs this many ")
+		TEXT("times faster (the distance grows by e this many times as fast); closing in on one it keeps the old rate, so a ")
+		TEXT("surface still has its time to build. 1: as before."));
+	TAutoConsoleVariable<float> CVarRealCruiseScale(TEXT("aps.RealScale.CruiseScale"), 1000.0f,
+		TEXT("REAL SCALE: CRUISE's top speed times this (legacy 20 AU/s); in a star system the distance to its sun still rules."));
+	/**
+	 * Rio 05.10 (real scale, stage 2; "we have to accelerate for a long time"): as in Space Engine the speed between the
+	 * stars follows the way left: STELLAR and the star drive slow down for the star the course runs into at a share of the
+	 * distance to its arrival sphere a second (their course limit), so the speed itself may grow quickly and run high.
+	 */
+	TAutoConsoleVariable<float> CVarRealStellarGrowth(TEXT("aps.RealScale.StellarGrowth"), 2.0f,
+		TEXT("REAL SCALE: STELLAR's speed grows by at most e^(this x sqrt(boost)) a second (legacy 0.8)."));
+	TAutoConsoleVariable<float> CVarRealDriveStartMultiple(TEXT("aps.RealScale.DriveStartMultiple"), 40.0f,
+		TEXT("REAL SCALE: the star drive's set speed at engaging, times its cruise speed (legacy 1); the course limit still ")
+		TEXT("brings it down to a share of the way left to the star ahead."));
+	TAutoConsoleVariable<float> CVarRealDriveMaxMultiple(TEXT("aps.RealScale.DriveMaxMultiple"), 100000.0f,
+		TEXT("REAL SCALE: W raises the star drive's set speed up to this many times its cruise speed (legacy 40), never past ")
+		TEXT("aps.RealScale.MaxLyPerSecond."));
+	TAutoConsoleVariable<float> CVarRealDriveThrottleScale(TEXT("aps.RealScale.DriveThrottleScale"), 3.0f,
+		TEXT("REAL SCALE: W and S change the star drive's set speed this many times faster (legacy 1)."));
+
+	/** Rio 05.10: how much harder a brake works at this speed (aps.RealScale.BrakeGain); exactly 1 when it does not apply. */
+	double RealBrakeScale(const UWorld* World, const double SpeedCm)
+	{
+		constexpr double LightSpeedCm = 2.99792458e10;
+		const double Gain = CVarRealBrakeGain.GetValueOnGameThread();
+		const double FromCm = static_cast<double>(CVarRealBrakeFromC.GetValueOnGameThread()) * LightSpeedCm;
+		if (Gain <= 0.0 || FromCm <= 0.0 || SpeedCm <= FromCm || !APSRealScale::IsActive(World))
+		{
+			return 1.0;
+		}
+		return 1.0 + Gain * FMath::Loge(SpeedCm / FromCm);
+	}
+
+	/** A star's arrival sphere: the legacy one, or in a REAL SCALE world a share of the median star spacing. */
+	double ArrivalSphereCm(const bool bRealScale, const double LegacyCm, const double SpacingCm)
+	{
+		if (!bRealScale || !(SpacingCm > 0.0))
+		{
+			return LegacyCm;
+		}
+		return FMath::Max(LegacyCm,
+			SpacingCm * FMath::Max(static_cast<double>(CVarRealApproachShare.GetValueOnGameThread()), 0.0));
+	}
+
+	double CourseMissScaleFor(const bool bRealScale, const double LegacyScale)
+	{
+		return bRealScale ? FMath::Max(static_cast<double>(CVarRealMissScale.GetValueOnGameThread()), 1.0) : LegacyScale;
+	}
+
 	bool FeelEnabled()
 	{
 		return CVarFeel.GetValueOnGameThread() != 0;
@@ -149,7 +272,14 @@ namespace APSShipFlightModelLocal
 		if (MetersPerSecond < 1000.0) return FString::Printf(TEXT("%.0f m/s"), MetersPerSecond);
 		if (MetersPerSecond < 1000000.0) return FString::Printf(TEXT("%.2f km/s"), MetersPerSecond / 1000.0);
 		if (MetersPerSecond < 299792458.0) return FString::Printf(TEXT("%.2f Mm/s"), MetersPerSecond / 1000000.0);
-		return FString::Printf(TEXT("%.1f c"), MetersPerSecond / 299792458.0);
+		const double LightSpeeds = MetersPerSecond / 299792458.0;
+		// Rio 05.10 afternoon ("not these millions and billions of c"): past a million c the speed reads in light years a
+		// second.
+		if (LightSpeeds < 1.0e6) return FString::Printf(TEXT("%.1f c"), LightSpeeds);
+		const double LightYearsPerSecond = CmPerSecond / LightYearCm;
+		return LightYearsPerSecond < 10.0 ? FString::Printf(TEXT("%.3f ly/s"), LightYearsPerSecond)
+			: LightYearsPerSecond < 1000.0 ? FString::Printf(TEXT("%.1f ly/s"), LightYearsPerSecond)
+			: FString::Printf(TEXT("%.0f ly/s"), LightYearsPerSecond);
 	}
 
 	FString BodyName(const AActor* Actor)
@@ -607,13 +737,20 @@ void UAPSShipFlightModel::EngageAutopilot(AActor* Target)
 	}
 	else if (const AStar* Star = Cast<AStar>(Target))
 	{
-		RadiusCm = (Star->RadiusKM > 0.0 ? Star->RadiusKM : static_cast<double>(Star->StarRadiusKM)) * 100000.0;
+		RadiusCm = APSShipFlightModelLocal::StarRadiusCm(*Star);
 		ArrivalCm = RadiusCm * 3.0;
 	}
 	else if (Target->IsA<ASpaceStation>())
 	{
 		RadiusCm = 50000.0;
 		ArrivalCm = 150000.0;
+	}
+	else if (const AStar* Around = APSShipFlightModelLocal::StarAround(GetWorld(), Target->GetActorLocation(), RadiusCm))
+	{
+		// Rio 05.10 ("the autopilot to another system stopped practically inside the star, then the game froze"): a star
+		// system's anchor stands at its star's centre, and the 1 km stop of a small target was 1 km from that centre,
+		// deep inside the star. A target in or by a star is met like that star, three radii out.
+		ArrivalCm = APSShipFlightModelLocal::StarRadiusCm(*Around) * 3.0;
 	}
 	AutopilotTarget = Target;
 	AutopilotArrivalCm = ArrivalCm;
@@ -685,11 +822,22 @@ void UAPSShipFlightModel::UpdateAutopilot(const float DeltaTime)
 	}
 	else if (const AStar* Star = Cast<AStar>(Target))
 	{
-		RadiusCm = (Star->RadiusKM > 0.0 ? Star->RadiusKM : static_cast<double>(Star->StarRadiusKM)) * 100000.0;
+		RadiusCm = APSShipFlightModelLocal::StarRadiusCm(*Star);
 	}
 	else if (Target->IsA<ASpaceStation>())
 	{
 		RadiusCm = 50000.0;
+	}
+	else
+	{
+		// A star system's anchor: the stop sphere holds its star (see EngageAutopilot).
+		const AStar* Around = APSShipFlightModelLocal::StarAround(GetWorld(), Target->GetActorLocation(), RadiusCm);
+		// Rio 05.10 (real scale, stage 2): parsecs out a REAL SCALE system is a catalogue point and stands up only as the
+		// ship comes, after the 1 km stop of a bare anchor was set: its star is then met three radii out, as one that stood.
+		if (Around && APSRealScale::IsActive(GetWorld()))
+		{
+			AutopilotArrivalCm = FMath::Max(AutopilotArrivalCm, APSShipFlightModelLocal::StarRadiusCm(*Around) * 3.0);
+		}
 	}
 	const FVector ToTarget = Target->GetActorLocation() - Ship->GetActorLocation();
 	const double Distance = ToTarget.Size();
@@ -930,7 +1078,13 @@ void UAPSShipFlightModel::RefreshFlightBodies()
 		Entry.bStar = Body->IsA<AStar>();
 	}
 	// A star's system reaches a quarter beyond its outermost planet; a bare star is InterstellarDistanceAU across.
-	const double BareSystemCm = InterstellarDistanceAU * APSShipFlightModelLocal::AstronomicalUnitCm;
+	// Rio 05.10 (real scale, stage 2): in a REAL SCALE world a star that stands as an actor keeps a sphere of a system's own
+	// scale (aps.RealScale.SystemSphereAU; leaving home took half a minute inside a 1 000 AU catalogue sphere), while a
+	// catalogue point parsecs off takes a share of the star spacing (ArrivalSphereCm) to be aimed at.
+	const double BareSystemCm = APSRealScale::IsActive(World)
+		? FMath::Max(InterstellarDistanceAU, static_cast<double>(
+			APSShipFlightModelLocal::CVarRealSystemSphereAu.GetValueOnGameThread())) * APSShipFlightModelLocal::AstronomicalUnitCm
+		: InterstellarDistanceAU * APSShipFlightModelLocal::AstronomicalUnitCm;
 	for (FFlightBody& Entry : FlightBodies)
 	{
 		if (Entry.bStar)
@@ -1030,6 +1184,10 @@ bool UAPSShipFlightModel::RebuildStarCatalogue()
 	{
 		return true;
 	}
+	// Rio 04.10 (the ~80 ms hitch at every system cruise materialized or released): when only single proxies changed, the
+	// stars are re-read but the spacing statistics (64 samples over every star) and the log stay from the last full build.
+	const bool bPointsOnly = CatalogueHome.Get() == Home && CatalogueBuildSerial == Descriptor.ProxyBuildSerial
+		&& CatalogueBatchSerial == Generator->GetCanonicalStellarBatchMutationSerial() && !CatalogueFromHome.IsEmpty();
 	AStarCluster* Cluster = nullptr;
 	TArray<AActor*> Attached;
 	Generator->GetAttachedActors(Attached, true, true);
@@ -1085,6 +1243,14 @@ bool UAPSShipFlightModel::RebuildStarCatalogue()
 			}
 		}
 	}
+	if (bPointsOnly)
+	{
+		CatalogueFromHome = MoveTemp(FromHome);
+		CatalogueMutationSerial = Descriptor.TransformMutationSerial;
+		NearestCatalogueStars.Reset();
+		CourseCatalogueStar = INDEX_NONE;
+		return !CatalogueFromHome.IsEmpty();
+	}
 	// The catalogue's extent and spacing set the scale of star flight: charted space ends a little beyond its bounding
 	// sphere, and the log records how far apart the stars really are (a generated cluster spans hundreds of AU).
 	double NearestCm = TNumericLimits<double>::Max();
@@ -1137,8 +1303,21 @@ bool UAPSShipFlightModel::RebuildStarCatalogue()
 	CatalogueHome = Home;
 	CatalogueBuildSerial = Descriptor.ProxyBuildSerial;
 	CatalogueMutationSerial = Descriptor.TransformMutationSerial;
+	CatalogueBatchSerial = Generator->GetCanonicalStellarBatchMutationSerial();
 	NearestCatalogueStars.Reset();
 	CourseCatalogueStar = INDEX_NONE;
+	if (APSRealScale::IsActive(World))
+	{
+		// Rio 05.10 (real scale, stage 2): what the flight bands use in this REAL SCALE world.
+		UE_LOG(LogTemp, Log,
+			TEXT("[APS.RealScale] flight: star spacing %.3f pc, arrival sphere %.0f AU, course miss x%.1f, STELLAR up to %.0f ly/s, ")
+			TEXT("CRUISE x%.0f, edge: charted space only"),
+			CatalogueSpacingMedianCm / 3.0856775814913673e18, APSShipFlightModelLocal::ArrivalSphereCm(true,
+				InterstellarDistanceAU * AU, CatalogueSpacingMedianCm) / AU,
+			APSShipFlightModelLocal::CourseMissScaleFor(true, CourseMissScale),
+			APSShipFlightModelLocal::CVarRealMaxLyPerSecond.GetValueOnGameThread(),
+			APSShipFlightModelLocal::CVarRealCruiseScale.GetValueOnGameThread());
+	}
 	return !CatalogueFromHome.IsEmpty();
 }
 
@@ -1158,7 +1337,11 @@ void UAPSShipFlightModel::ScanStarCatalogue(const FVector& Location, const FVect
 	}
 	// One pass over the catalogue: the nearest few stars and the system the course runs into. No allocation, no sort.
 	const FVector ObserverFromHome = Location - CatalogueHome->GetActorLocation();
-	const double SystemRadiusCm = InterstellarDistanceAU * APSShipFlightModelLocal::AstronomicalUnitCm;
+	// Rio 05.10 (real scale, stage 2): a REAL SCALE world's arrival sphere and miss scale (the legacy values otherwise).
+	const bool bRealScale = APSRealScale::IsActive(GetWorld());
+	const double SystemRadiusCm = APSShipFlightModelLocal::ArrivalSphereCm(bRealScale,
+		InterstellarDistanceAU * APSShipFlightModelLocal::AstronomicalUnitCm, CatalogueSpacingMedianCm);
+	const double MissScale = APSShipFlightModelLocal::CourseMissScaleFor(bRealScale, CourseMissScale);
 	const bool bCourse = !Heading.IsNearlyZero();
 	double BestCourseCm = TNumericLimits<double>::Max();
 	TArray<TPair<double, int32>, TInlineAllocator<APSShipFlightModelLocal::NearestGeneratedStars>> Nearest;
@@ -1186,7 +1369,7 @@ void UAPSShipFlightModel::ScanStarCatalogue(const FVector& Location, const FVect
 		}
 		if (bCourse)
 		{
-			const double Clearance = APSFlightBandModel::CourseClearanceCm(ToStar, Heading, SystemRadiusCm, CourseMissScale);
+			const double Clearance = APSFlightBandModel::CourseClearanceCm(ToStar, Heading, SystemRadiusCm, MissScale);
 			if (Clearance >= 0.0 && Clearance < BestCourseCm)
 			{
 				BestCourseCm = Clearance;
@@ -1215,7 +1398,11 @@ void UAPSShipFlightModel::ScanGalaxyStars(const FVector& Location, const FVector
 	}
 	const AGalaxy* Galaxy = APSGalaxyGpuStars::GetIndexedGalaxy(GetWorld());
 	const FVector HomeLocation = Home->GetActorLocation();
-	const double SystemRadiusCm = InterstellarDistanceAU * APSShipFlightModelLocal::AstronomicalUnitCm;
+	// Rio 05.10 (real scale, stage 2): a REAL SCALE world's arrival sphere and miss scale (the legacy values otherwise).
+	const bool bRealScale = APSRealScale::IsActive(GetWorld());
+	const double SystemRadiusCm = APSShipFlightModelLocal::ArrivalSphereCm(bRealScale,
+		InterstellarDistanceAU * APSShipFlightModelLocal::AstronomicalUnitCm, CatalogueSpacingMedianCm);
+	const double MissScale = APSShipFlightModelLocal::CourseMissScaleFor(bRealScale, CourseMissScale);
 	const auto RadiusOf = [Galaxy](const APSGalaxyGpuStars::FNearStar& Star)
 	{
 		FGalaxyCatalogStarRecord Record;
@@ -1230,7 +1417,7 @@ void UAPSShipFlightModel::ScanGalaxyStars(const FVector& Location, const FVector
 		for (int32 Index = 0; Index < Near.Num(); ++Index)
 		{
 			const double Clearance = APSFlightBandModel::CourseClearanceCm(Near[Index].WorldLocation - Location, Heading,
-				SystemRadiusCm, CourseMissScale);
+				SystemRadiusCm, MissScale);
 			if (Clearance >= 0.0 && Clearance < BestCourseCm)
 			{
 				BestCourseCm = Clearance;
@@ -1381,7 +1568,11 @@ void UAPSShipFlightModel::UpdateNearestSurface(float DeltaTime)
 	{
 		return 1.0 + ExtraDeparture * FMath::Clamp(FVector::DotProduct(Heading, Outward), 0.0, 1.0);
 	};
-	const double BareSystemCm = InterstellarDistanceAU * APSShipFlightModelLocal::AstronomicalUnitCm;
+	// Rio 05.10 (real scale, stage 2): a REAL SCALE world's arrival sphere and miss scale (the legacy values otherwise).
+	const bool bRealScale = APSRealScale::IsActive(GetWorld());
+	const double BareSystemCm = APSShipFlightModelLocal::ArrivalSphereCm(bRealScale,
+		InterstellarDistanceAU * APSShipFlightModelLocal::AstronomicalUnitCm, CatalogueSpacingMedianCm);
+	const double MissScale = APSShipFlightModelLocal::CourseMissScaleFor(bRealScale, CourseMissScale);
 	double Nearest = -1.0;
 	double LimitDistance = -1.0;
 	double LimitLocal = -1.0;
@@ -1418,7 +1609,7 @@ void UAPSShipFlightModel::UpdateNearestSurface(float DeltaTime)
 			NearestStar = NearestStar < 0.0 ? Distance : FMath::Min(NearestStar, Distance);
 			SystemGap = FMath::Min(SystemGap, Offset.Size() - SystemRadiusCm);
 			const double Clearance = Heading.IsNearlyZero() ? -1.0
-				: APSFlightBandModel::CourseClearanceCm(-Offset, Heading, SystemRadiusCm, CourseMissScale);
+				: APSFlightBandModel::CourseClearanceCm(-Offset, Heading, SystemRadiusCm, MissScale);
 			if (Clearance >= 0.0)
 			{
 				Course = Course < 0.0 ? Clearance : FMath::Min(Course, Clearance);
@@ -1468,7 +1659,9 @@ void UAPSShipFlightModel::UpdateNearestSurface(float DeltaTime)
 	// world origin the renderer loses precision (the DoubleFloat ensure, 29.09). The ship slows for it and stops at it.
 	static const FString EdgeName(TEXT("EDGE OF CHARTED SPACE"));
 	FVector EdgeCenter = FVector::ZeroVector;
-	double EdgeRadiusCm = MaxTravelRadiusLightYears * APSShipFlightModelLocal::LightYearCm;
+	// Rio 05.10 (real scale, stage 2): a REAL SCALE world has no sphere around the world origin (the floating origin keeps
+	// the pilot near it, and the galaxy spans thousands of light years): its edge is charted space alone.
+	double EdgeRadiusCm = bRealScale ? 0.0 : MaxTravelRadiusLightYears * APSShipFlightModelLocal::LightYearCm;
 	if (const AActor* Home = CatalogueHome.Get(); Home && CatalogueRadiusCm > 0.0)
 	{
 		FVector ChartedCenter = Home->GetActorLocation() + CatalogueCenterFromHome;
@@ -1564,6 +1757,16 @@ double UAPSShipFlightModel::BandLimitCm(EAPSFlightBand InBand, double Alpha) con
 	const double FactorScale = FMath::Max(APSShipFlightModelLocal::CVarDistanceFactorScale.GetValueOnGameThread(), 0.0f);
 	Settings.DistanceSpeedFactor *= FactorScale;
 	Settings.StarDistanceSpeedFactor *= FactorScale;
+	// Rio 05.10 (real scale, stage 2): parsecs between the stars: STELLAR and CRUISE reach far higher speeds, and every
+	// distance, course and growth limit below still applies (a legacy world keeps the band's own top speed).
+	if ((InBand == EAPSFlightBand::Stellar || InBand == EAPSFlightBand::Cruise) && APSRealScale::IsActive(GetWorld()))
+	{
+		Settings.MaxSpeed = InBand == EAPSFlightBand::Stellar
+			? FMath::Max(Settings.MaxSpeed, static_cast<double>(APSShipFlightModelLocal::CVarRealMaxLyPerSecond
+				.GetValueOnGameThread()) * APSShipFlightModelLocal::LightYearCm / 100.0)
+			: Settings.MaxSpeed * FMath::Max(static_cast<double>(APSShipFlightModelLocal::CVarRealCruiseScale
+				.GetValueOnGameThread()), 1.0);
+	}
 	const float SurfaceFactorOverride = APSShipFlightModelLocal::CVarSurfaceSpeedFactor.GetValueOnGameThread();
 	APSFlightBandModel::FSpeedLimitInputs Inputs;
 	Inputs.SurfaceCm = LimitSurfaceDistanceCm;
@@ -1722,7 +1925,8 @@ FVector UAPSShipFlightModel::StepVelocity(const FAPSFlightBandSettings& Band, co
 	case EAPSFlightBandControl::Cruise:
 	{
 		const double Speed = APSFlightBandModel::CruiseSpeedStep(Velocity.Size(), LocalInput.X, Limit,
-			Band.CruiseResponse * Boost, BrakeRate, Drag, DeltaTime);
+			Band.CruiseResponse * Boost, BrakeRate * APSShipFlightModelLocal::RealBrakeScale(GetWorld(), Velocity.Size()),
+			Drag, DeltaTime);
 		// Cruise speed is a magnitude along the nose; the velocity always turns toward +Forward.
 		const FVector Heading = Velocity.IsNearlyZero() ? Forward : Velocity.GetSafeNormal();
 		const double Align = 1.0 - FMath::Exp(-FMath::Max(Band.AssistRate, 0.0) * DeltaTime);
@@ -1811,6 +2015,13 @@ bool UAPSShipFlightModel::ApplyTranslation(float DeltaTime)
 		Band.AssistRate *= 0.65;
 		Band.ReleaseDrag *= 0.75;
 	}
+	// Rio 05.10 (real scale, stage 2; "we have to accelerate for a long time"): between the stars of a REAL SCALE world
+	// STELLAR's speed may grow faster; its course limit still slows it for the star ahead.
+	if (FlightBand == EAPSFlightBand::Stellar && APSRealScale::IsActive(GetWorld()))
+	{
+		Band.MaxLogAcceleration = FMath::Max(Band.MaxLogAcceleration,
+			static_cast<double>(APSShipFlightModelLocal::CVarRealStellarGrowth.GetValueOnGameThread()));
+	}
 	const double Boost = BandBoost(FlightBand, BoostAlpha);
 	// What held W reaches now (boost included), crept up while W stays held at it (Rio 02.10: no ceiling, the ship
 	// keeps accelerating slowly). Releasing W or braking lets the creep fall back; a band change starts over.
@@ -1865,8 +2076,13 @@ bool UAPSShipFlightModel::ApplyTranslation(float DeltaTime)
 	}
 	if (Ship->bIsDecelerating)
 	{
+		// Rio 05.10: a REAL SCALE brake far above light speed works harder (RealBrakeScale), as a log-space rate so a
+		// long frame never stops the ship dead; below that the brake is the same as ever.
+		const double Scale = APSShipFlightModelLocal::RealBrakeScale(GetWorld(), Velocity.Size());
+		const double Rate = Scale > 1.0 && DeltaTime > 0.0f
+			? (1.0 - FMath::Exp(-BrakeRate * Scale * DeltaTime)) / DeltaTime : BrakeRate;
 		Velocity = APSFlightBandModel::BrakeStep(Velocity, Band.Acceleration * 100.0 * Boost * BrakeAccelerationScale,
-			BrakeRate, DeltaTime);
+			Rate, DeltaTime);
 	}
 	const double Speed = Velocity.Size();
 	if (Speed > KeptLimit && Speed > UE_DOUBLE_SMALL_NUMBER)
@@ -1990,7 +2206,14 @@ bool UAPSShipFlightModel::EngageStarDrive()
 	StarDriveSeconds = 0.0f;
 	StarDriveIdleSeconds = 0.0f;
 	StarDriveFromCm = Ship->KinematicVelocity.Size();
+	StarDrivePreviousLocalCm = -1.0;
 	StarDriveSetCm = StarDriveCruiseCm();
+	// Rio 05.10 (real scale, stage 2): a REAL SCALE drive sets off fast; its course limit brings it down for the star ahead.
+	if (APSRealScale::IsActive(GetWorld()))
+	{
+		StarDriveSetCm *= FMath::Max(static_cast<double>(
+			APSShipFlightModelLocal::CVarRealDriveStartMultiple.GetValueOnGameThread()), 1.0);
+	}
 	StarDriveHeldBy = nullptr;
 	// Engaged between the systems, the next one entered is an arrival; engaged in one, it has to be left first.
 	bStarDriveLeftSystem = !(bSystemGapKnown && NearestSystemGapCm <= 0.0);
@@ -2080,10 +2303,22 @@ bool UAPSShipFlightModel::ApplyStarDrive(const FVector& LocalInput, const float 
 	const double Cruise = StarDriveCruiseCm();
 	const double Agility = APSFlightBandModel::ClassAgility(static_cast<uint8>(Ship->SizeClass));
 	// W raises the set speed and S lowers it, in log space so a press feels alike at any speed; Shift doubles the rate.
+	// Rio 05.10 (real scale, stage 2; "we have to accelerate for a long time"): a REAL SCALE drive answers W and S faster and
+	// reaches far higher, up to the real top speed; the course limit still slows it for the star ahead.
+	const bool bRealScale = APSRealScale::IsActive(GetWorld());
+	// Rio 05.10 ("braking from huge speeds takes very long"): S far above light speed lowers the set speed harder too.
+	const double DriveBrakeScale = LocalInput.X < 0.0
+		? APSShipFlightModelLocal::RealBrakeScale(GetWorld(), Ship->KinematicVelocity.Size()) : 1.0;
 	const double Rate = FMath::Max(APSShipFlightModelLocal::CVarDriveThrottleRate.GetValueOnGameThread(), 0.0f)
-		* (Ship->bIsAccelerating ? 2.0 : 1.0);
+		* (Ship->bIsAccelerating ? 2.0 : 1.0) * (bRealScale ? FMath::Max(static_cast<double>(
+			APSShipFlightModelLocal::CVarRealDriveThrottleScale.GetValueOnGameThread()), 1.0) : 1.0) * DriveBrakeScale;
 	const double MinimumSet = 0.02 * Cruise;
-	const double MaximumSet = Cruise * FMath::Max(APSShipFlightModelLocal::CVarDriveMaxMultiple.GetValueOnGameThread(), 1.0f);
+	const double MaximumSet = bRealScale
+		? FMath::Max(MinimumSet, FMath::Min(Cruise * FMath::Max(static_cast<double>(
+			APSShipFlightModelLocal::CVarRealDriveMaxMultiple.GetValueOnGameThread()), 1.0),
+			static_cast<double>(APSShipFlightModelLocal::CVarRealMaxLyPerSecond.GetValueOnGameThread())
+				* APSShipFlightModelLocal::LightYearCm))
+		: Cruise * FMath::Max(APSShipFlightModelLocal::CVarDriveMaxMultiple.GetValueOnGameThread(), 1.0f);
 	StarDriveSetCm = FMath::Clamp(StarDriveSetCm * FMath::Exp(Rate * LocalInput.X * DeltaTime), MinimumSet, MaximumSet);
 	// S held at the bottom of the range for a second winds the drive down.
 	StarDriveIdleSeconds = LocalInput.X < -0.5 && StarDriveSetCm <= 1.01 * MinimumSet ? StarDriveIdleSeconds + DeltaTime : 0.0f;
@@ -2102,12 +2337,25 @@ bool UAPSShipFlightModel::ApplyStarDrive(const FVector& LocalInput, const float 
 	const TCHAR* HeldBy = nullptr;
 	if (LimitLocalDistanceCm >= 0.0)
 	{
-		Allowed = FMath::Max(Factor * LimitLocalDistanceCm, DistanceLimitFloor * 100.0);
+		// Rio 05.10 evening: leaving the body (its distance grew since the last frame) a REAL SCALE drive climbs faster.
+		const bool bDeparting = bRealScale && StarDrivePreviousLocalCm >= 0.0 && LimitLocalDistanceCm > StarDrivePreviousLocalCm;
+		const double Depart = bDeparting
+			? FMath::Max(static_cast<double>(APSShipFlightModelLocal::CVarRealDriveDepartFactor.GetValueOnGameThread()), 1.0) : 1.0;
+		Allowed = FMath::Max(Factor * Depart * LimitLocalDistanceCm, DistanceLimitFloor * 100.0);
 		HeldBy = TEXT("BODY NEAR");
 	}
+	StarDrivePreviousLocalCm = LimitLocalDistanceCm;
 	if (CourseClearanceCm >= 0.0)
 	{
-		const double CourseLimit = FMath::Max(Factor * CourseClearanceCm, BandLimitCm(EAPSFlightBand::Cruise, 0.0));
+		// Rio 05.10 afternoon ("J takes fifty years to pick up speed"; his log: a minute from 12 000 km/s to 1e6 c, held
+		// by CRUISE's 12%-of-the-sun's-distance inside the home system, then by the star ahead): a REAL SCALE drive leaves
+		// a system and closes on the next star several times faster; bodies near still hold it as before.
+		const double SystemScale = bRealScale
+			? FMath::Max(static_cast<double>(APSShipFlightModelLocal::CVarRealDriveSystemScale.GetValueOnGameThread()), 1.0) : 1.0;
+		const double CourseFactor = bRealScale
+			? FMath::Max(static_cast<double>(APSShipFlightModelLocal::CVarRealDriveCourseFactor.GetValueOnGameThread()), Factor)
+			: Factor;
+		const double CourseLimit = FMath::Max(CourseFactor * CourseClearanceCm, BandLimitCm(EAPSFlightBand::Cruise, 0.0) * SystemScale);
 		if (CourseLimit < Allowed)
 		{
 			Allowed = CourseLimit;
@@ -2134,9 +2382,13 @@ bool UAPSShipFlightModel::ApplyStarDrive(const FVector& LocalInput, const float 
 	{
 		// Momentum: the speed follows the target in log space, slower for heavy hulls; a body or a system ahead is
 		// followed at the bands' overspeed rate, so the drive never overshoots it.
+		// Rio 05.10 afternoon: a REAL SCALE drive also climbs to its set speed faster (aps.RealScale.DriveFollowScale).
+		const double RiseScale = bRealScale && Target > Speed
+			? FMath::Max(static_cast<double>(APSShipFlightModelLocal::CVarRealDriveFollowScale.GetValueOnGameThread()), 1.0) : 1.0;
 		const double FollowRate = StarDriveHeldBy && Target < Speed
 			? APSFlightBandModel::ShedRate(OverspeedShedRate, Factor)
-			: FMath::Max(APSShipFlightModelLocal::CVarDriveResponse.GetValueOnGameThread(), 0.05f) * Agility;
+			: FMath::Max(APSShipFlightModelLocal::CVarDriveResponse.GetValueOnGameThread(), 0.05f) * Agility
+				* (Target < Speed ? APSShipFlightModelLocal::RealBrakeScale(GetWorld(), Speed) : RiseScale);
 		const double LogTarget = FMath::Loge(Target);
 		NextSpeed = FMath::Exp(LogTarget
 			+ (FMath::Loge(FMath::Max(Speed, 1.0)) - LogTarget) * FMath::Exp(-FollowRate * DeltaTime));

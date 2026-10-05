@@ -296,13 +296,20 @@ void FAPSStarSystems::Tick(const float DeltaSeconds)
 		CatalogueRetry = 1.0f;
 		if (!ReadCatalogue()) return;
 	}
-	FollowHome();
-	ApplyPendingRestore();
-	UpdateGalaxyNeighbours(DeltaSeconds);
+	{
+		TRACE_CPUPROFILER_EVENT_SCOPE(APS_Stars_FollowHome);
+		FollowHome();
+		ApplyPendingRestore();
+	}
+	{
+		TRACE_CPUPROFILER_EVENT_SCOPE(APS_Stars_GalaxyNeighbours);
+		UpdateGalaxyNeighbours(DeltaSeconds);
+	}
 	// Every known or held system has its beacon in the world, so navigation and the maps chart it.
 	AnchorClock -= DeltaSeconds;
 	if (AnchorClock <= 0.0f)
 	{
+		TRACE_CPUPROFILER_EVENT_SCOPE(APS_Stars_Anchors);
 		AnchorClock = 5.0f;
 		TArray<FGuid> Wanted;
 		for (const TPair<FGuid, FAPSStarSystemState>& Pair : States)
@@ -319,11 +326,15 @@ void FAPSStarSystems::Tick(const float DeltaSeconds)
 	VisitClock += DeltaSeconds;
 	if (VisitClock >= 0.25f)
 	{
-		UpdateVisit(VisitClock);
+		{
+			TRACE_CPUPROFILER_EVENT_SCOPE(APS_Stars_Visit);
+			UpdateVisit(VisitClock);
+		}
 		if (!Materializer.IsValid())
 		{
 			Materializer = MakeUnique<FAPSSystemMaterializer>(World.Get());
 		}
+		TRACE_CPUPROFILER_EVENT_SCOPE(APS_Stars_Materializer);
 		Materializer->Update(*this, VisitClock);
 		VisitClock = 0.0f;
 	}
@@ -542,20 +553,24 @@ void FAPSStarSystems::FollowHome()
 	if (!HomeActor) return;
 	const FVector Now = HomeActor->GetActorLocation();
 	if (Now.Equals(HomeLocation, 1.0)) return;
-	// The home moved (an origin shift): every location and anchor follows it.
+	// The home moved (an origin shift): every location and anchor follows it (the locations as they are read, Current).
 	HomeLocation = Now;
-	for (int32 Index = 0; Index < Systems.Num(); ++Index)
-	{
-		Systems[Index].Location = HomeLocation + FromHome[Index];
-	}
 	for (const TPair<FGuid, TWeakObjectPtr<AActor>>& Pair : Anchors)
 	{
 		const int32 Index = IndexOf(Pair.Key);
 		if (AActor* Anchor = Pair.Value.Get(); Anchor && Systems.IsValidIndex(Index))
 		{
-			Anchor->SetActorLocation(Systems[Index].Location);
+			Anchor->SetActorLocation(LocationOf(Index));
 		}
 	}
+}
+
+const FAPSStarSystemInfo& FAPSStarSystems::Current(const int32 Index) const
+{
+	// A cache refresh, not a change of the catalogue: the record stays what it was, only seen from the home's place now.
+	FAPSStarSystemInfo& Info = const_cast<FAPSStarSystemInfo&>(Systems[Index]);
+	Info.Location = LocationOf(Index);
+	return Info;
 }
 
 const FAPSStarSystemInfo* FAPSStarSystems::Find(const FGuid& Id) const
@@ -580,7 +595,7 @@ void FAPSStarSystems::FindNearest(const FVector& Location, const int32 Count, TA
 	for (int32 Index = 0; Index < Systems.Num(); ++Index)
 	{
 		if (Systems[Index].bInsideHome) continue;
-		const double Distance = FVector::DistSquared(Location, Systems[Index].Location);
+		const double Distance = FVector::DistSquared(Location, LocationOf(Index));
 		if (Best.Num() == Count && Distance >= Best.Last().Key) continue;
 		int32 At = Best.Num();
 		while (At > 0 && Best[At - 1].Key > Distance) --At;
@@ -608,7 +623,7 @@ int32 FAPSStarSystems::FindContaining(const FVector& Location) const
 {
 	if (Systems.IsEmpty()) return INDEX_NONE;
 	if (Systems.IsValidIndex(HomeIndex)
-		&& FVector::DistSquared(Location, Systems[HomeIndex].Location) <= FMath::Square(Systems[HomeIndex].RoomCm))
+		&& FVector::DistSquared(Location, LocationOf(HomeIndex)) <= FMath::Square(Systems[HomeIndex].RoomCm))
 	{
 		return HomeIndex;
 	}
@@ -617,7 +632,7 @@ int32 FAPSStarSystems::FindContaining(const FVector& Location) const
 	// The galaxy systems near the pilot: outside the grid, since a sparse field's rooms may be wider than its cells.
 	for (const int32 Index : GalaxySystems)
 	{
-		const double Distance = FVector::DistSquared(Location, Systems[Index].Location);
+		const double Distance = FVector::DistSquared(Location, LocationOf(Index));
 		if (Distance <= FMath::Square(Systems[Index].RoomCm) && Distance < BestDistance)
 		{
 			BestDistance = Distance;
@@ -641,7 +656,7 @@ int32 FAPSStarSystems::FindContainingCluster(const FVector& Location, double* Ou
 			for (const int32 Index : *Members)
 			{
 				if (Systems[Index].bInsideHome) continue;
-				const double Distance = FVector::DistSquared(Location, Systems[Index].Location);
+				const double Distance = FVector::DistSquared(Location, LocationOf(Index));
 				if (Distance <= FMath::Square(Systems[Index].RoomCm) && Distance < BestDistance)
 				{
 					BestDistance = Distance;
@@ -678,7 +693,7 @@ int32 FAPSStarSystems::RegisterGalaxyStar(const int64 CatalogIndex)
 	}
 	// The home system's sphere hides its stars (the sky does too), and a star in a cluster system's room is that system's.
 	if (Systems.IsValidIndex(HomeIndex)
-		&& FVector::DistSquared(Location, Systems[HomeIndex].Location) < FMath::Square(Systems[HomeIndex].RoomCm * 1.1))
+		&& FVector::DistSquared(Location, LocationOf(HomeIndex)) < FMath::Square(Systems[HomeIndex].RoomCm * 1.1))
 	{
 		return INDEX_NONE;
 	}
@@ -715,7 +730,7 @@ int32 FAPSStarSystems::RegisterGalaxyStar(const int64 CatalogIndex)
 				{
 					if (!Systems[Member].bInsideHome)
 					{
-						NearestSquared = FMath::Min(NearestSquared, FVector::DistSquared(Systems[Member].Location, Location));
+						NearestSquared = FMath::Min(NearestSquared, FVector::DistSquared(LocationOf(Member), Location));
 					}
 				}
 			}
@@ -927,7 +942,7 @@ void FAPSStarSystems::GetNetwork(TArray<TPair<int32, int32>>& OutLinks) const
 		for (int32 B = A + 1; B < Claimed.Num(); ++B)
 		{
 			const double Reach = FMath::Max(ReachCm(Claimed[A]), ReachCm(Claimed[B]));
-			if (Reach > 0.0 && FVector::Dist(Systems[Claimed[A]].Location, Systems[Claimed[B]].Location) <= Reach)
+			if (Reach > 0.0 && FVector::Dist(LocationOf(Claimed[A]), LocationOf(Claimed[B])) <= Reach)
 			{
 				OutLinks.Emplace(Claimed[A], Claimed[B]);
 			}
@@ -945,7 +960,7 @@ bool FAPSStarSystems::IsInReach(const FGuid& Id) const
 		if (Index == INDEX_NONE || !Pair.Value.bClaimed) continue;
 		if (Index == Target) return true;
 		const double Reach = ReachCm(Index);
-		if (Reach > 0.0 && FVector::Dist(Systems[Index].Location, Systems[Target].Location) <= Reach) return true;
+		if (Reach > 0.0 && FVector::Dist(LocationOf(Index), LocationOf(Target)) <= Reach) return true;
 	}
 	return false;
 }
@@ -1115,7 +1130,7 @@ void FAPSStarSystems::LogNearest(const int32 Count) const
 		const FAPSStarSystemInfo& Info = Systems[Index];
 		const FAPSStarSystemState State = GetState(Info.Id);
 		UE_LOG(LogTemp, Log, TEXT("[APS.Stars]   %-14s %-6s %.2f AU away, room %.2f AU, %d star(s), %d planet(s), %s%s%s"),
-			*Info.Name, *Info.Spectral, FVector::Dist(From, Info.Location) / APSStars::AstronomicalUnitCm,
+			*Info.Name, *Info.Spectral, FVector::Dist(From, LocationOf(Index)) / APSStars::AstronomicalUnitCm,
 			Info.RoomCm / APSStars::AstronomicalUnitCm, Info.StarCount, Info.PotentialPlanets,
 			*APSStars::KnowledgeName(State.Knowledge).ToString(), State.bClaimed ? TEXT(", claimed") : TEXT(""),
 			Info.GalaxyIndex != INDEX_NONE ? TEXT(" [galaxy]") : TEXT(""));

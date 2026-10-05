@@ -64,4 +64,7 @@ private:
 	uint8 PilotMovementMode{0};
 	TArray<TWeakObjectPtr<USkeletalMeshComponent>> PilotSkeletalComponents;
 	TArray<bool> PilotSkeletalTickStates;
+	/** Rio 05.10 evening (flight FPS): the seated pilot's camera booms, and whether each probed for collision. */
+	TArray<TWeakObjectPtr<class USpringArmComponent>> PilotSpringArms;
+	TArray<bool> PilotSpringArmProbes;
 };

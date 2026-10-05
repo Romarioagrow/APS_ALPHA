@@ -11,6 +11,7 @@
 #include "APS_ALPHA/Actors/Astro/StarSystem.h"
 #include "APS_ALPHA/Core/Rendering/APSCanonicalStellarProjection.h"
 #include "APS_ALPHA/Core/Rendering/APSContinuousPreviewFrame.h"
+#include "APS_ALPHA/Core/World/APSRealScale.h"
 #include "APS_ALPHA/Core/World/APSWorldShiftEvents.h"
 #include "APS_ALPHA/Generation/APSGalaxyMorphology.h"
 #include "APS_ALPHA/Generation/StarGenerator.h"
@@ -18,6 +19,7 @@
 #include "APSStarRendererAPI.h"
 #include "Async/Async.h"
 #include "Async/ParallelFor.h"
+#include "Containers/Ticker.h"
 #include "Components/HierarchicalInstancedStaticMeshComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
@@ -35,6 +37,53 @@ namespace APSGalaxyGpuStars
 			TEXT("aps.Galaxy.GpuStars"), 8000000,
 			TEXT("Rio 03.10 (galaxy phase 3): catalogue stars drawn as GPU points after the menu's ISM prefix while ")
 			TEXT("aps.Stars.GpuPoints is on (8 bytes each, built on a background task; a change rebuilds the layer)."));
+
+		// Rio 04.10 evening ("the stars themselves must stay; only the glow drops"), then 5% / 5% / 1%, and 05.10 ("the orbits
+		// on SYSTEM still can't be read, with white stars it's all washed out ... the glow off completely on the system, star
+		// and planet maps, and everything else dimmed by half, the way the stars dim in a planet's daytime sky; but the star
+		// points themselves must not disappear"): share of the menu galaxy glow per screen.
+		TAutoConsoleVariable<float> CVarMenuGlowSystem(
+			TEXT("aps.Stars.MenuGlowSystem"), 0.0f,
+			TEXT("Share of the menu galaxy glow on the SYSTEM screen (1 = as on GALAXY and CLUSTER)."));
+		TAutoConsoleVariable<float> CVarMenuGlowStar(
+			TEXT("aps.Stars.MenuGlowStar"), 0.0f,
+			TEXT("Share of the menu galaxy glow on the STAR screen (1 = as on GALAXY and CLUSTER)."));
+		TAutoConsoleVariable<float> CVarMenuGlowPlanet(
+			TEXT("aps.Stars.MenuGlowPlanet"), 0.0f,
+			TEXT("Share of the menu galaxy glow on the PLANET screen (1 = as on GALAXY and CLUSTER)."));
+		// The GPU points' brightness per screen, eased with the camera like the glow. Every point GALAXY draws stays drawn:
+		// the brightness LOD drops with the share (aps.Stars.MenuMinPixel*), so dimming never removes a star.
+		TAutoConsoleVariable<float> CVarMenuPointsSystem(
+			TEXT("aps.Stars.MenuPointsSystem"), 0.5f,
+			TEXT("Brightness of the menu galaxy's GPU star points on the SYSTEM screen (1 = as on GALAXY and CLUSTER). Points never vanish."));
+		TAutoConsoleVariable<float> CVarMenuPointsStar(
+			TEXT("aps.Stars.MenuPointsStar"), 0.5f,
+			TEXT("Brightness of the menu galaxy's GPU star points on the STAR screen (1 = as on GALAXY and CLUSTER). Points never vanish."));
+		TAutoConsoleVariable<float> CVarMenuPointsPlanet(
+			TEXT("aps.Stars.MenuPointsPlanet"), 0.5f,
+			TEXT("Brightness of the menu galaxy's GPU star points on the PLANET screen (1 = as on GALAXY and CLUSTER). Points never vanish."));
+		// Optional, off by default: on top of that, a close screen may draw only the points bright enough to be seen one by
+		// one (times aps.Stars.GpuPointMinPixel); above 1 the faint millions that merge into a mat are skipped.
+		TAutoConsoleVariable<float> CVarMenuMinPixelSystem(
+			TEXT("aps.Stars.MenuMinPixelSystem"), 1.0f,
+			TEXT("SYSTEM screen: above 1 only GPU points this many times brighter than the GALAXY cut are drawn (1 = every point GALAXY draws)."));
+		TAutoConsoleVariable<float> CVarMenuMinPixelStar(
+			TEXT("aps.Stars.MenuMinPixelStar"), 1.0f,
+			TEXT("STAR screen: above 1 only GPU points this many times brighter than the GALAXY cut are drawn (1 = every point GALAXY draws)."));
+		TAutoConsoleVariable<float> CVarMenuMinPixelPlanet(
+			TEXT("aps.Stars.MenuMinPixelPlanet"), 1.0f,
+			TEXT("PLANET screen: above 1 only GPU points this many times brighter than the GALAXY cut are drawn (1 = every point GALAXY draws)."));
+
+		TAutoConsoleVariable<float> CVarMenuFadeInSeconds(
+			TEXT("aps.Stars.MenuFadeInSeconds"), 0.6f,
+			TEXT("Rio 04.10 (\"after Regenerate the GPU glow comes on with a jump\"): seconds over which a newly built menu ")
+			TEXT("galaxy layer fades in. 0: at once (the old way)."));
+
+		TAutoConsoleVariable<float> CVarPopulationNormalize(
+			TEXT("aps.Stars.PopulationNormalize"), 0.0f,
+			TEXT("Rio 04.10 (test only): exponent k pulling a very bright population's GPU layer (giants) back towards an ")
+			TEXT("ordinary one by (ordinary mean intensity / its mean)^k. 0: off. Takes effect at the next layer build."));
+		constexpr double OrdinaryMeanIntensity = 4.0;
 
 		TAutoConsoleVariable<int32> CVarGpuStarsFirst(
 			TEXT("aps.Galaxy.GpuStarsFirst"), -1,
@@ -154,6 +203,18 @@ namespace APSGalaxyGpuStars
 			/** Every point set of the layer (one in the menu, one per precision level in gameplay). */
 			TArray<APSStarRenderer::FHandle> PointSets;
 			TArray<APSStarRenderer::FPointSetDesc> PointDescs;
+			/** The points of every set (the menu card counts them with the ISM stars). */
+			int32 PointCount = 0;
+			/** Menu: when the layer was registered (its fade-in), the eased glow share of the screen and what was last sent. */
+			double ReadySeconds = 0.0;
+			double LastPresentSeconds = 0.0;
+			float GlowFocus = 1.0f;
+			float PointFocus = 1.0f;
+			float AppliedPointVisibility = 1.0f;
+			float AppliedGlowVisibility = 1.0f;
+			/** The screen's extra brightness LOD (aps.Stars.MenuMinPixel*), eased, and the scale last sent (with the share). */
+			float MinPixelFocus = 1.0f;
+			float AppliedMinPixelScale = 1.0f;
 			FTransform PushedTransform = FTransform::Identity;
 			FRequest Request;
 			uint32 CatalogKey = 0;
@@ -230,6 +291,75 @@ namespace APSGalaxyGpuStars
 		FPresentationInput GInput;
 		FGameplayInput GGameplay;
 		FLayerState GLayer;
+		/** The menu screen (SetMenuGlowScope), the share shown when the camera's flight to it began, and the flight's
+		 * eased progress; the screen's own share is read live from the CVars. */
+		EMenuGlowScope GMenuGlowScope = EMenuGlowScope::Far;
+		float GMenuGlowFrom = 1.0f;
+		float GMenuPointFrom = 1.0f;
+		float GMenuMinPixelFrom = 1.0f;
+		float GMenuGlowProgress = 1.0f;
+		FTSTicker::FDelegateHandle GMenuTicker;
+
+		float ScopeShare(const EMenuGlowScope Scope, const bool bPoints)
+		{
+			const float Share = bPoints
+				? (Scope == EMenuGlowScope::Planet ? CVarMenuPointsPlanet.GetValueOnGameThread()
+					: Scope == EMenuGlowScope::Star ? CVarMenuPointsStar.GetValueOnGameThread()
+					: Scope == EMenuGlowScope::System ? CVarMenuPointsSystem.GetValueOnGameThread() : 1.0f)
+				: (Scope == EMenuGlowScope::Planet ? CVarMenuGlowPlanet.GetValueOnGameThread()
+					: Scope == EMenuGlowScope::Star ? CVarMenuGlowStar.GetValueOnGameThread()
+					: Scope == EMenuGlowScope::System ? CVarMenuGlowSystem.GetValueOnGameThread() : 1.0f);
+			return FMath::Clamp(Share, 0.0f, 1.0f);
+		}
+
+		/** The share for this moment of the flight: geometric between the start and the screen's share (1, 0.56, 0.32,
+		 * 0.18, 0.1 from GALAXY to PLANET), so it eases like the camera's distance does. */
+		float FlightShare(const bool bPoints)
+		{
+			const float To = ScopeShare(GMenuGlowScope, bPoints);
+			if (GMenuGlowProgress >= 1.0f)
+			{
+				return To;
+			}
+			const float From = FMath::Clamp(bPoints ? GMenuPointFrom : GMenuGlowFrom, 1.0e-3f, 1.0f);
+			return FMath::Exp(FMath::Lerp(FMath::Loge(From), FMath::Loge(FMath::Max(To, 1.0e-3f)), GMenuGlowProgress));
+		}
+
+		float MenuGlowShare() { return FlightShare(false); }
+		float MenuPointShare() { return FlightShare(true); }
+
+		float ScopeMinPixel(const EMenuGlowScope Scope)
+		{
+			if (Scope == EMenuGlowScope::Far)
+			{
+				return 1.0f;
+			}
+			const float Scale = Scope == EMenuGlowScope::Planet ? CVarMenuMinPixelPlanet.GetValueOnGameThread()
+				: Scope == EMenuGlowScope::Star ? CVarMenuMinPixelStar.GetValueOnGameThread()
+				: CVarMenuMinPixelSystem.GetValueOnGameThread();
+			return FMath::IsFinite(Scale) ? FMath::Clamp(Scale, 1.0f, 1000.0f) : 1.0f;
+		}
+
+		/**
+		 * The scale sent with the points: the screen's extra cut times their brightness share, so a point dimmed by the
+		 * share is measured against a cut dimmed alike and stays drawn (Rio 05.10: "the points must not disappear").
+		 */
+		float PointMinPixelScale(const float ExtraCut, const float PointShare)
+		{
+			return FMath::Clamp(ExtraCut * FMath::Max(PointShare, 0.0f), 0.01f, 1000.0f);
+		}
+
+		/** The brightness LOD for this moment of the flight, geometric between the start and the screen's, like the shares. */
+		float MenuMinPixelScale()
+		{
+			const float To = ScopeMinPixel(GMenuGlowScope);
+			if (GMenuGlowProgress >= 1.0f)
+			{
+				return To;
+			}
+			const float From = FMath::Clamp(GMenuMinPixelFrom, 1.0f, 1000.0f);
+			return FMath::Exp(FMath::Lerp(FMath::Loge(From), FMath::Loge(To), GMenuGlowProgress));
+		}
 		/** The gameplay layer's nearest-star index and its galaxy (one at a time, like the layer). */
 		TSharedPtr<const FStarIndex, ESPMode::ThreadSafe> GIndex;
 		TWeakObjectPtr<AGalaxy> GIndexGalaxy;
@@ -322,7 +452,7 @@ namespace APSGalaxyGpuStars
 			return ELayerMode::None;
 		}
 
-		uint32 CatalogKeyOf(const FGalaxyCatalogDescriptor& Catalog)
+		uint32 CatalogKeyOf(const FGalaxyCatalogDescriptor& Catalog, const double RealScaleLengthFactor = 1.0)
 		{
 			uint32 Key = GetTypeHash(Catalog.GenerationSeed);
 			Key = HashCombine(Key, GetTypeHash(Catalog.ModeledStarCount));
@@ -333,7 +463,9 @@ namespace APSGalaxyGpuStars
 			Key = HashCombine(Key, GetTypeHash(Catalog.GalaxyClass));
 			Key = HashCombine(Key, GetTypeHash(Catalog.CatalogHalfExtent));
 			Key = HashCombine(Key, GetTypeHash(Catalog.StarPopulation));
-			return HashCombine(Key, GetTypeHash(Catalog.StarComposition));
+			Key = HashCombine(Key, GetTypeHash(Catalog.StarComposition));
+			// Rio 05.10 (real scale experiment): a REAL SCALE galaxy is another layer; 1 (every legacy world) keeps the key.
+			return RealScaleLengthFactor != 1.0 ? HashCombine(Key, GetTypeHash(RealScaleLengthFactor)) : Key;
 		}
 
 		/**
@@ -572,6 +704,12 @@ namespace APSGalaxyGpuStars
 			const FGalaxyCatalogDescriptor& Catalog = Spec.Catalog;
 			const FVector3f HalfExtent(Catalog.CatalogHalfExtent.GetAbs());
 			Result.Bounds = FBox3f(-HalfExtent, HalfExtent);
+			// Rio 04.10 evening (a polar-ring galaxy drew tall jagged "curtains" of glow above and below its host): the glow
+			// map keeps one vertical profile per column of the galaxy plane, and the polar ring (radius 0.62, upright) puts
+			// stars both above and below the host in the same columns, which that profile spreads into one tall sheet. Its
+			// stars farther than 0.15 galaxy radius from the host plane stay points only. Other classes are untouched.
+			const bool bPolarRing = Catalog.GalaxyClass == EGalaxyClass::PecPolarRing;
+			const float PolarRingGlowHalfHeight = 0.15f * HalfExtent.Z / 1.05f;
 
 			// Level 0: the catalogue box. Level k > 0: a cube around the home with half size HalfExtent / 2^k.
 			const int32 Levels = FMath::Clamp(Spec.Levels, 1, 16);
@@ -673,7 +811,8 @@ namespace APSGalaxyGpuStars
 						}
 						Result.Points[Level].Add(APSStarRenderer::PackStar(Position, Result.LevelBounds[Level], ColorIndex, Intensity));
 					}
-					if (Glow.IsValid() && Ordinal < Spec.GlowSamples)
+					if (Glow.IsValid() && Ordinal < Spec.GlowSamples
+						&& !(bPolarRing && FMath::Abs(Position.Z) > PolarRingGlowHalfHeight))
 					{
 						Glow->AddStar(Position, PaletteUnit[ColorIndex], Intensity, DustWeightFor(Record.SpectralClass));
 					}
@@ -774,6 +913,16 @@ namespace APSGalaxyGpuStars
 				BaseScale = ReferencePixelValue * FMath::Square(3.0 * RadiusLocal) * FMath::Square(ReferencePixelTangent);
 				Envelope = MakeEnvelope();
 			}
+			// Rio 04.10 ("a galaxy of only giants merges into one blinding blob; think about it, only test runs for now"): its
+			// stars average hundreds of times an ordinary population's brightness (layer mean intensity ~850-1800 against ~4).
+			// aps.Stars.PopulationNormalize k > 0 pulls such a layer back by (ordinary mean / its mean)^k, never brightening.
+			// 0 (default): the look as it is.
+			const double Normalize = FMath::Max(static_cast<double>(CVarPopulationNormalize.GetValueOnGameThread()), 0.0);
+			const double LayerMean = Result.bGlowMap ? Result.GlowMap.MeanIntensity : 0.0;
+			if (Normalize > 0.0 && LayerMean > OrdinaryMeanIntensity)
+			{
+				BaseScale *= FMath::Pow(OrdinaryMeanIntensity / LayerMean, Normalize);
+			}
 			if (Mode == ELayerMode::Gameplay)
 			{
 				GLayer.Exclusions = ScanGameplayExclusions(World, LocalToWorld);
@@ -794,6 +943,18 @@ namespace APSGalaxyGpuStars
 			GLayer.PointSets.Reset();
 			GLayer.PointDescs.Reset();
 			int32 PointCount = 0;
+			const bool bMenuFade = Mode == ELayerMode::Menu && CVarMenuFadeInSeconds.GetValueOnGameThread() > 0.0f;
+			const float StartVisibility = Mode == ELayerMode::Menu ? (bMenuFade ? 0.0f : MenuPointShare()) : 1.0f;
+			const float StartGlowVisibility = Mode == ELayerMode::Menu ? (bMenuFade ? 0.0f : MenuGlowShare()) : 1.0f;
+			GLayer.ReadySeconds = FPlatformTime::Seconds();
+			GLayer.LastPresentSeconds = 0.0;
+			GLayer.GlowFocus = MenuGlowShare();
+			GLayer.PointFocus = MenuPointShare();
+			GLayer.AppliedPointVisibility = StartVisibility;
+			GLayer.AppliedGlowVisibility = StartGlowVisibility;
+			GLayer.MinPixelFocus = Mode == ELayerMode::Menu ? MenuMinPixelScale() : 1.0f;
+			GLayer.AppliedMinPixelScale = Mode == ELayerMode::Menu
+				? PointMinPixelScale(GLayer.MinPixelFocus, GLayer.PointFocus) : 1.0f;
 			for (int32 Level = 0; Level < Result.Points.Num(); ++Level)
 			{
 				TArray<APSStarRenderer::FPackedStar>& Points = Result.Points[Level];
@@ -809,6 +970,8 @@ namespace APSGalaxyGpuStars
 				Desc.BrightnessFloorDistanceLocal = FloorLocal;
 				// Inner levels (nearest stars) first under aps.Stars.GpuPointBudget.
 				Desc.Priority = Level;
+				Desc.Visibility = StartVisibility;
+				Desc.MinPixelScale = GLayer.AppliedMinPixelScale;
 				Desc.Population = Catalog.ModeledStarCount;
 				Desc.DebugName = Mode == ELayerMode::Gameplay ? FString::Printf(TEXT("GameplayGalaxy L%d"), Level) : TEXT("MenuGalaxy");
 				if (Mode == ELayerMode::Gameplay)
@@ -827,6 +990,7 @@ namespace APSGalaxyGpuStars
 					GLayer.PointDescs.Add(Desc);
 				}
 			}
+			GLayer.PointCount = GLayer.PointSets.Num() > 0 ? PointCount : 0;
 			Galaxy->GpuPointSet = GLayer.PointSets.Num() > 0 ? GLayer.PointSets[0] : 0;
 			const double MeanIntensity = Result.bGlowMap ? Result.GlowMap.MeanIntensity : 0.0;
 			const double GlowTotal = GlowStars * MeanIntensity * BaseScale;
@@ -839,6 +1003,7 @@ namespace APSGalaxyGpuStars
 				GlowDesc.DustOpacity = DustOpacityFor(Catalog.GalaxyType);
 				GlowDesc.BrightnessFloorDistanceLocal = GlowFloorLocal >= 0.0f ? GlowFloorLocal : FloorLocal;
 				GlowDesc.DebugName = Mode == ELayerMode::Gameplay ? TEXT("GameplayGalaxy") : TEXT("MenuGalaxy");
+				GlowDesc.Visibility = StartGlowVisibility;
 				Galaxy->GpuGlowVolume = APSStarRenderer::RegisterGlowVolume(World, GlowDesc, MoveTemp(Result.GlowMap));
 			}
 			UE_LOG(LogTemp, Log,
@@ -885,6 +1050,87 @@ namespace APSGalaxyGpuStars
 				APSStarRenderer::SetTransform(Galaxy.GpuGlowVolume, LocalToPhysical);
 			}
 			GLayer.PushedTransform = LocalToPhysical;
+
+			// Rio 04.10: the fade-in of a new layer (Regenerate showed the base galaxy, then the glow with a jump), and in the
+			// evening ("the stars must stay, only the glow drops on the close screens") the screen's share of the glow alone,
+			// eased. The points never take a screen share. Sent on a 0.4% change and at the ends.
+			const double Now = FPlatformTime::Seconds();
+			const float DeltaSeconds = GLayer.LastPresentSeconds > 0.0
+				? static_cast<float>(FMath::Clamp(Now - GLayer.LastPresentSeconds, 0.0, 0.25)) : 0.0f;
+			GLayer.LastPresentSeconds = Now;
+			// The flight already eases the target; this only smooths a screen change without a flight (and frame steps).
+			const float GlowTarget = MenuGlowShare();
+			const float PointTarget = MenuPointShare();
+			GLayer.GlowFocus = FMath::FInterpTo(GLayer.GlowFocus, GlowTarget, DeltaSeconds, 8.0f);
+			GLayer.PointFocus = FMath::FInterpTo(GLayer.PointFocus, PointTarget, DeltaSeconds, 8.0f);
+			const double FadeSeconds = FMath::Max(static_cast<double>(CVarMenuFadeInSeconds.GetValueOnGameThread()), 0.0);
+			const float FadeIn = FadeSeconds > 0.0
+				? static_cast<float>(FMath::SmoothStep(0.0, FadeSeconds, Now - GLayer.ReadySeconds)) : 1.0f;
+			const float PointVisibility = FMath::Clamp(FadeIn * GLayer.PointFocus, 0.0f, 1.0f);
+			const float GlowVisibility = FMath::Clamp(FadeIn * GLayer.GlowFocus, 0.0f, 1.0f);
+			const bool bSettled = FadeIn >= 1.0f && FMath::IsNearlyEqual(GLayer.GlowFocus, GlowTarget, 1.0e-4f)
+				&& FMath::IsNearlyEqual(GLayer.PointFocus, PointTarget, 1.0e-4f);
+			const auto ShouldSend = [bSettled](const float Wanted, const float Applied)
+			{
+				return Wanted != Applied && (bSettled || FMath::Abs(Wanted - Applied) > 0.004f);
+			};
+			if (ShouldSend(PointVisibility, GLayer.AppliedPointVisibility))
+			{
+				for (int32 Index = 0; Index < GLayer.PointSets.Num(); ++Index)
+				{
+					APSStarRenderer::SetVisibility(GLayer.PointSets[Index], PointVisibility);
+					if (GLayer.PointDescs.IsValidIndex(Index))
+					{
+						GLayer.PointDescs[Index].Visibility = PointVisibility;
+					}
+				}
+				GLayer.AppliedPointVisibility = PointVisibility;
+			}
+			if (Galaxy.GpuGlowVolume != 0 && ShouldSend(GlowVisibility, GLayer.AppliedGlowVisibility))
+			{
+				APSStarRenderer::SetVisibility(Galaxy.GpuGlowVolume, GlowVisibility);
+				GLayer.AppliedGlowVisibility = GlowVisibility;
+			}
+			// Rio 05.10: the points' brightness LOD follows their share (a dimmed point keeps being drawn), times the
+			// screen's optional extra cut, eased the same way; sent on a 1% change and at the end.
+			const float MinPixelTarget = MenuMinPixelScale();
+			GLayer.MinPixelFocus = FMath::FInterpTo(GLayer.MinPixelFocus, MinPixelTarget, DeltaSeconds, 8.0f);
+			const bool bMinPixelSettled = FMath::IsNearlyEqual(GLayer.MinPixelFocus, MinPixelTarget, 1.0e-3f);
+			if (bMinPixelSettled)
+			{
+				GLayer.MinPixelFocus = MinPixelTarget;
+			}
+			const float MinPixelScale = PointMinPixelScale(GLayer.MinPixelFocus, GLayer.PointFocus);
+			if (MinPixelScale != GLayer.AppliedMinPixelScale
+				&& ((bSettled && bMinPixelSettled) || FMath::Abs(MinPixelScale / GLayer.AppliedMinPixelScale - 1.0f) > 0.01f))
+			{
+				for (int32 Index = 0; Index < GLayer.PointSets.Num(); ++Index)
+				{
+					APSStarRenderer::SetMinPixelScale(GLayer.PointSets[Index], MinPixelScale);
+					if (GLayer.PointDescs.IsValidIndex(Index))
+					{
+						GLayer.PointDescs[Index].MinPixelScale = MinPixelScale;
+					}
+				}
+				GLayer.AppliedMinPixelScale = MinPixelScale;
+			}
+		}
+
+		/**
+		 * Rio 04.10 evening ("the glow came on only after a few seconds"; "the stars faded only when I turned the camera"):
+		 * the preview generator stops ticking while its view is still, so the menu layer's fade-in and screen share are
+		 * driven from here every frame instead of from its applied frames.
+		 */
+		bool TickMenuPresentation(float)
+		{
+			if (GLayer.Mode == ELayerMode::Menu)
+			{
+				if (AGalaxy* Galaxy = GLayer.Galaxy.Get(); IsValid(Galaxy) && Galaxy->bGpuStarLayerActive)
+				{
+					PushMenuPresentation(*Galaxy);
+				}
+			}
+			return true;
 		}
 
 		/** Gameplay: transform from the component's final world transform; exclusions every ExclusionScanSeconds. */
@@ -1000,6 +1246,7 @@ namespace APSGalaxyGpuStars
 				return; // Plugin not loaded: nothing to drive.
 			}
 			GDelegatesBound = true;
+			GMenuTicker = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateStatic(&TickMenuPresentation), 0.0f);
 			GLastMenuRequest = CurrentRequest(ELayerMode::Menu);
 			GLastGameplayRequest = CurrentRequest(ELayerMode::Gameplay);
 			Points->OnChangedDelegate().AddStatic(&OnRequestChanged);
@@ -1054,6 +1301,27 @@ namespace APSGalaxyGpuStars
 		return GActiveLayers > 0;
 	}
 
+	void SetMenuGlowScope(const EMenuGlowScope Scope, const float FlightAlpha)
+	{
+		if (Scope != GMenuGlowScope)
+		{
+			const bool bMenuLayer = GLayer.Mode == ELayerMode::Menu;
+			GMenuGlowFrom = bMenuLayer ? GLayer.GlowFocus : ScopeShare(GMenuGlowScope, false);
+			GMenuPointFrom = bMenuLayer ? GLayer.PointFocus : ScopeShare(GMenuGlowScope, true);
+			GMenuMinPixelFrom = bMenuLayer ? GLayer.MinPixelFocus : ScopeMinPixel(GMenuGlowScope);
+			GMenuGlowScope = Scope;
+		}
+		// The camera's own easing (FAPSContinuousPreviewOrbit::Interpolate): smoothstep of the flight's progress.
+		const float T = FMath::Clamp(FlightAlpha, 0.0f, 1.0f);
+		GMenuGlowProgress = T * T * (3.0f - 2.0f * T);
+	}
+
+	int32 GetDrawnPointCount(const UWorld* World)
+	{
+		const AGalaxy* Galaxy = GLayer.Galaxy.Get();
+		return World && Galaxy && Galaxy->GetWorld() == World && Galaxy->bGpuStarLayerActive ? GLayer.PointCount : 0;
+	}
+
 	void ReleaseLayer(AGalaxy& Galaxy)
 	{
 		++Galaxy.GpuStarLayerSerial;
@@ -1071,6 +1339,7 @@ namespace APSGalaxyGpuStars
 			}
 			GLayer.PointSets.Reset();
 			GLayer.PointDescs.Reset();
+			GLayer.PointCount = 0;
 		}
 		if (Galaxy.GpuPointSet != 0)
 		{
@@ -1155,7 +1424,7 @@ namespace APSGalaxyGpuStars
 		GLayer.Mode = Mode;
 		GLayer.Galaxy = &Galaxy;
 		GLayer.Request = Request;
-		GLayer.CatalogKey = CatalogKeyOf(Catalog);
+		GLayer.CatalogKey = CatalogKeyOf(Catalog, Galaxy.CanonicalProjectionFrame.RealScaleLengthFactor);
 		const uint32 Serial = Galaxy.GpuStarLayerSerial;
 		UE_LOG(LogTemp, Log, TEXT("[APS.GalaxyGpu] building the %s layer: %d GPU points + %d glow samples from ordinal %d of %lld (%s)"),
 			Mode == ELayerMode::Gameplay ? TEXT("gameplay") : TEXT("menu"), PointCount, GlowSamples, FirstOrdinal,
@@ -1195,7 +1464,8 @@ namespace APSGalaxyGpuStars
 			return;
 		}
 		if (!Galaxy->bGpuStarLayerActive || GLayer.Galaxy.Get() != Galaxy || GLayer.Mode != ELayerMode::Menu
-			|| GLayer.Request != CurrentRequest(ELayerMode::Menu) || GLayer.CatalogKey != CatalogKeyOf(Galaxy->StarCatalog))
+			|| GLayer.Request != CurrentRequest(ELayerMode::Menu)
+			|| GLayer.CatalogKey != CatalogKeyOf(Galaxy->StarCatalog, Galaxy->CanonicalProjectionFrame.RealScaleLengthFactor))
 		{
 			Galaxy->RebuildGpuStarLayer();
 			return;
@@ -1231,7 +1501,8 @@ namespace APSGalaxyGpuStars
 			return;
 		}
 		if (!Galaxy->bGpuStarLayerActive || GLayer.Galaxy.Get() != Galaxy || GLayer.Mode != ELayerMode::Gameplay
-			|| GLayer.Request != CurrentRequest(ELayerMode::Gameplay) || GLayer.CatalogKey != CatalogKeyOf(Galaxy->StarCatalog))
+			|| GLayer.Request != CurrentRequest(ELayerMode::Gameplay)
+			|| GLayer.CatalogKey != CatalogKeyOf(Galaxy->StarCatalog, Galaxy->CanonicalProjectionFrame.RealScaleLengthFactor))
 		{
 			Galaxy->RebuildGpuStarLayer();
 			return;
@@ -1342,6 +1613,9 @@ namespace APSGalaxyGpuStars
 			Found.SetNum(MaxCount, EAllowShrinking::No);
 		}
 		OutStars.Reserve(Found.Num());
+		// Rio 05.10 (real scale, stage 2): the index keeps float positions, ~10 AU off at REAL SCALE; the stars found are
+		// placed exactly from their catalogue record (as RegisterGalaxyStar and the materializer place them), sorted again.
+		const bool bExact = APSRealScale::IsActive(World);
 		for (const TPair<double, int32>& Hit : Found)
 		{
 			FNearStar& Star = OutStars.AddDefaulted_GetRef();
@@ -1349,6 +1623,16 @@ namespace APSGalaxyGpuStars
 			Star.CatalogIndex = Index.Order.Resolve(Star.Ordinal);
 			Star.WorldLocation = LocalToWorld.TransformPosition(FVector(Index.Positions[Hit.Value]));
 			Star.DistanceCm = FMath::Sqrt(Hit.Key) * Scale;
+			FGalaxyCatalogStarRecord Record;
+			if (bExact && Galaxy->StarCatalog.ResolveStar(Star.CatalogIndex, Record))
+			{
+				Star.WorldLocation = LocalToWorld.TransformPosition(Record.GalaxyLocalLocation);
+				Star.DistanceCm = FVector::Dist(Star.WorldLocation, WorldLocation);
+			}
+		}
+		if (bExact)
+		{
+			OutStars.Sort([](const FNearStar& A, const FNearStar& B) { return A.DistanceCm < B.DistanceCm; });
 		}
 		return true;
 	}
@@ -1429,6 +1713,12 @@ namespace APSGalaxyGpuStars
 		OutStar.Ordinal = Index.Ordinals[Winner->Slot];
 		OutStar.CatalogIndex = Index.Order.Resolve(OutStar.Ordinal);
 		OutStar.WorldLocation = LocalToWorld.TransformPosition(FVector(Index.Positions[Winner->Slot]));
+		// Rio 05.10 (real scale, stage 2): placed exactly from its catalogue record at REAL SCALE (see FindNearStars).
+		FGalaxyCatalogStarRecord Record;
+		if (APSRealScale::IsActive(World) && Galaxy->StarCatalog.ResolveStar(OutStar.CatalogIndex, Record))
+		{
+			OutStar.WorldLocation = LocalToWorld.TransformPosition(Record.GalaxyLocalLocation);
+		}
 		OutStar.DistanceCm = FVector::Dist(OutStar.WorldLocation, RayOrigin);
 		return true;
 	}

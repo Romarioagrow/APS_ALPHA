@@ -10,6 +10,7 @@
 #include "APS_ALPHA/Actors/Astro/StarSystem.h"
 #include "APS_ALPHA/Core/Enums/StarType.h"
 #include "APS_ALPHA/Core/Model/GeneratedWorld.h"
+#include "APS_ALPHA/Core/Rendering/APSGalaxyGpuStars.h"
 #include "APS_ALPHA/Generation/APSGalaxyMorphology.h"
 #include "APS_ALPHA/Generation/AstroGenerator.h"
 
@@ -104,6 +105,14 @@ namespace APSModelCardPrivate
 		}
 		return Count;
 	}
+
+	/** Rio 05.10 (real scale experiment): a real distance read as 4.2 LY, 86 LY or 2.9 THOUSAND LY. */
+	void LightYears(const double Cm, FText& OutValue, FText& OutUnit)
+	{
+		const double Years = Cm / 9.4607304725808e17;
+		OutValue = Readable(Years >= 1000.0 ? Years / 1000.0 : Years);
+		OutUnit = Years >= 1000.0 ? LOCTEXT("ThousandLightYears", "THOUSAND LY") : LOCTEXT("LightYears", "LY");
+	}
 }
 
 void UWorldGenerationViewModel::GetPreviewModelCard(FAPSModelCard& OutCard) const
@@ -131,11 +140,15 @@ void UWorldGenerationViewModel::GetPreviewModelCard(FAPSModelCard& OutCard) cons
 			Enum(GeneratedWorld->GalaxyType), Enum(GeneratedWorld->GalaxyClass));
 		// Rio 03.10 ("MODELED 100 MILLION but visually few"): the card shows the placed stars (STARS slider); the
 		// catalogue size behind them stays internal (seeds and saves).
+		// Rio 04.10 ("the labels lie: no more than 47 thousand, and a million points on screen"): every drawn star, the
+		// placed ones and the GPU points beside them once that layer is built.
 		const int32 PlacedStars = Generator ? Generator->GetPreviewGalaxyRenderedStarCount()
 			: (GeneratedWorld->GalaxyPlacedStarCount > 0 ? GeneratedWorld->GalaxyPlacedStarCount
 				: APSGalaxyMorphology::PreviewReferenceBudget);
+		const double DrawnStars = static_cast<double>(PlacedStars)
+			+ (Generator ? APSGalaxyGpuStars::GetDrawnPointCount(Generator->GetWorld()) : 0);
 		FText Value, Unit;
-		Count(static_cast<double>(PlacedStars), Value, Unit, LOCTEXT("StarsNoun", "STARS"));
+		Count(DrawnStars, Value, Unit, LOCTEXT("StarsNoun", "STARS"));
 		Add(OutCard, EAPSModelGlyph::Star, LOCTEXT("PlacedStars", "STARS"), Value, Unit, FText::GetEmpty(), true);
 		Add(OutCard, EAPSModelGlyph::Galaxy, LOCTEXT("GalaxyType", "TYPE"), Enum(GeneratedWorld->GalaxyType));
 		Add(OutCard, EAPSModelGlyph::Type, LOCTEXT("GalaxyClass", "CLASS"), Enum(GeneratedWorld->GalaxyClass));
@@ -145,6 +158,15 @@ void UWorldGenerationViewModel::GetPreviewModelCard(FAPSModelCard& OutCard) cons
 		Add(OutCard, EAPSModelGlyph::Count, LOCTEXT("GalaxyPopulation", "POPULATION"), Enum(GeneratedWorld->GalaxyStarPopulation));
 		Add(OutCard, EAPSModelGlyph::Spectrum, LOCTEXT("GalaxyComposition", "COMPOSITION"),
 			Enum(GeneratedWorld->GalaxyStarComposition));
+		// Rio 05.10 (real scale experiment): the galaxy's real size while REAL SCALE applies.
+		double GalaxyRadiusCm = 0.0, ClusterRadiusCm = 0.0, NeighbourCm = 0.0;
+		if (IsRealScaleActive() && Generator && Generator->GetRealScaleSummary(GalaxyRadiusCm, ClusterRadiusCm, NeighbourCm))
+		{
+			FText Across, AcrossUnit;
+			LightYears(2.0 * GalaxyRadiusCm, Across, AcrossUnit);
+			Add(OutCard, EAPSModelGlyph::Scale, LOCTEXT("GalaxyAcross", "ACROSS"), Across, AcrossUnit,
+				LOCTEXT("RealScaleNote", "REAL SCALE"));
+		}
 		return;
 	}
 
@@ -163,6 +185,21 @@ void UWorldGenerationViewModel::GetPreviewModelCard(FAPSModelCard& OutCard) cons
 		Add(OutCard, EAPSModelGlyph::Count, LOCTEXT("ClusterPopulation", "POPULATION"), Enum(GeneratedWorld->StarClusterPopulation));
 		Add(OutCard, EAPSModelGlyph::Spectrum, LOCTEXT("ClusterComposition", "COMPOSITION"),
 			Enum(GeneratedWorld->StarClusterComposition));
+		// Rio 05.10 (real scale experiment): the cluster's real size and neighbour distance while REAL SCALE applies.
+		{
+			double GalaxyRadiusCm = 0.0, ClusterRadiusCm = 0.0, NeighbourCm = 0.0;
+			if (IsRealScaleActive() && Generator
+				&& Generator->GetRealScaleSummary(GalaxyRadiusCm, ClusterRadiusCm, NeighbourCm))
+			{
+				FText Across, AcrossUnit, Neighbours, NeighboursUnit;
+				LightYears(2.0 * ClusterRadiusCm, Across, AcrossUnit);
+				LightYears(NeighbourCm, Neighbours, NeighboursUnit);
+				Add(OutCard, EAPSModelGlyph::Scale, LOCTEXT("ClusterAcross", "ACROSS"), Across, AcrossUnit,
+					LOCTEXT("ClusterRealScaleNote", "REAL SCALE"));
+				Add(OutCard, EAPSModelGlyph::Star, LOCTEXT("ClusterNeighbours", "NEIGHBOURS"), Neighbours, NeighboursUnit,
+					LOCTEXT("ClusterNeighboursNote", "MEDIAN DISTANCE"), true);
+			}
+		}
 		return;
 
 	case EAstroPreviewFocus::HomeSystem:
@@ -307,8 +344,11 @@ void UWorldGenerationViewModel::GetPreviewModelCard(FAPSModelCard& OutCard) cons
 		OutCard.Subtitle = FText::Format(LOCTEXT("WorldSubtitle", "SEED {0}"), APSUINumber::Number(GeneratedWorld->GenerationSeed,
 			&FNumberFormattingOptions::DefaultNoGrouping()));
 		FText Value, Unit;
-		Count(GeneratedWorld->GalaxyPlacedStarCount > 0 ? GeneratedWorld->GalaxyPlacedStarCount
-			: APSGalaxyMorphology::PreviewReferenceBudget, Value, Unit, LOCTEXT("OverviewStarsNoun", "STARS"));
+		// Rio 04.10: the drawn stars, as on the galaxy card.
+		const double PlacedStars = GeneratedWorld->GalaxyPlacedStarCount > 0 ? GeneratedWorld->GalaxyPlacedStarCount
+			: APSGalaxyMorphology::PreviewReferenceBudget;
+		Count(PlacedStars + (Generator ? APSGalaxyGpuStars::GetDrawnPointCount(Generator->GetWorld()) : 0), Value, Unit,
+			LOCTEXT("OverviewStarsNoun", "STARS"));
 		Add(OutCard, EAPSModelGlyph::Galaxy, LOCTEXT("OverviewGalaxy", "GALAXY"), Value, Unit);
 		Add(OutCard, EAPSModelGlyph::Cluster, LOCTEXT("OverviewCluster", "CLUSTER"), ClusterName,
 			Enum(GeneratedWorld->StarClusterSize));
@@ -318,6 +358,19 @@ void UWorldGenerationViewModel::GetPreviewModelCard(FAPSModelCard& OutCard) cons
 			FText::GetEmpty(), FText::GetEmpty(), true);
 		Add(OutCard, EAPSModelGlyph::Scale, LOCTEXT("OverviewScale", "FULL SCALE"),
 			GeneratedWorld->bGenerateFullScaledWorld ? LOCTEXT("On", "ON") : LOCTEXT("Off", "OFF"));
+		// Rio 05.10 (real scale experiment): shown only while it applies, with the neighbour distance it produced.
+		if (IsRealScaleActive())
+		{
+			double GalaxyRadiusCm = 0.0, ClusterRadiusCm = 0.0, NeighbourCm = 0.0;
+			FText Neighbours, NeighboursUnit;
+			if (Generator && Generator->GetRealScaleSummary(GalaxyRadiusCm, ClusterRadiusCm, NeighbourCm))
+			{
+				LightYears(NeighbourCm, Neighbours, NeighboursUnit);
+			}
+			Add(OutCard, EAPSModelGlyph::Scale, LOCTEXT("OverviewRealScale", "REAL SCALE"), LOCTEXT("RealScaleOn", "ON"),
+				LOCTEXT("RealScaleExperimental", "EXPERIMENTAL"), Neighbours.IsEmpty() ? FText::GetEmpty()
+					: FText::Format(LOCTEXT("RealScaleNeighbours", "NEIGHBOURS ~{0} {1}"), Neighbours, NeighboursUnit), true);
+		}
 		return;
 	}
 	}

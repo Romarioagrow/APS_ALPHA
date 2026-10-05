@@ -7,6 +7,13 @@ namespace APSPlanetSurfaceFill
     constexpr double FadeStartCm = 1000000.0; // Preserve the accepted ground/low-flight light below 10 km.
     constexpr double MaximumAltitudeCm = 5000000.0;
 
+    inline bool IsEligible(bool bNativeSurfaceReady, bool bManagedSolidSurface)
+    {
+        // Illumination belongs to the body, not to its current LOD representation.
+        // Keep authored ready surfaces, and light managed solids while streaming.
+        return bNativeSurfaceReady || bManagedSolidSurface;
+    }
+
     inline float Weight(double AltitudeCm)
     {
         if (!FMath::IsFinite(AltitudeCm)) return 0.0f;

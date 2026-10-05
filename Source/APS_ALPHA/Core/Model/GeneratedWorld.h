@@ -250,6 +250,14 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Generation Params")
 	bool bGenerateFullScaledWorld{ true };
 
+	/**
+	 * Rio 05.10 (real scale experiment, stage 1 = menu only): the same seed, catalogue and StableIds laid out at real
+	 * distances (neighbouring stars ~1.3 pc apart, planetary orbits not compacted). Needs FULL-SCALE WORLD; a game cannot
+	 * start from it yet. Every older save loads OFF.
+	 */
+	UPROPERTY(EditAnywhere, Category = "Generation Params")
+	bool bRealScale{ false };
+
 	UPROPERTY(EditAnywhere, Category = "Generation Params")
 	bool bGenerateHomeSystem{ true };
 

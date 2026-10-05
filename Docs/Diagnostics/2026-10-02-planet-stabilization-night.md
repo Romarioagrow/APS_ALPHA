@@ -1,5 +1,155 @@
 # Planet stabilization night — 2026-10-02
 
+## V32 source-only handoff and checkpoint — 2026-10-03 02:04 local
+
+New APSPlanetCloudClusteredHlsl.h and APSPlanetCloudClusteredTests.cpp preserve
+the previous constructors and reuse the Meso lookup for a physical24km lattice,
+filtered with the existing footprint. Centered .65 cluster modulation changes
+body grouping without extra noise fetches or a higher march budget. It DOES
+change the cloud field/density distribution; centering does not prove conserved
+opacity. Far filtering and the frozen8km light-envelope approximation need real
+near/far frames. No new planet geography/seed/palette/sky or ship changes.
+
+V32 is NOT BUILT, BAKED OR CONNECTED. Repeated apply_patch writes to existing
+APSPlanetCloudBuilder.h failed, including escalated invocation. The one changed
+diagnostic path was reverted exactly to V31 to avoid a mismatched V32 bake.
+Read-only checks found no readonly bit, disk-full condition or exclusive write
+handle; root cause of tool write refusal remains unresolved. No ACL/permission
+changes, copy-over installation or access workaround attempted. Current helper,
+builder and CandidateMaterialPath agree on V31; ordinary default remains V27.
+The two new V32 tests are independent source/filter contracts, not a live route.
+
+13 source/runner files preserved with verified SHA256 manifest in
+checkpoint-cloud-v31-20261003/final-with-v32-source. Four PS parser checks and
+tracked-diff whitespace checks PASS. New V32 tests have not run in Unreal.
+Sampling audit JSON is in checkpoint-cloud-v31-20261003/sampling-audit.json;
+its V31 exact-splice/72transition/17near checks are CPU/source evidence only.
+Both successful menu runs protected all tracked material/config hashes.
+
+Claude released Offroad query01:49; Blender/Claude claimed the next engine slot
+01:56 for headquarters capsule checks. No new UE/build started by this pass.
+Resume only with a writable project path and a released shared engine window:
+connect V32 consistently, build, NEW-only bake, compare orbit/ground/far on the
+same seed, then measure cost if shape passes. Forest coast geometry remains open.
+
+## V31/V27 rendered decision — 2026-10-03 01:48 local
+
+The corrected lazy-shader guard was built (112.38s,25 actions,PASS). Sequential
+forest-cloud-v31-orbit-675-ready-20261003 (PID21968) and
+forest-cloud-v27-orbit-675-ready-20261003 (PID36060) both ended12clean+2warnings,
+0FAIL. Guard now requested the actual bound resource once and waited11.50s/7.27s
+for complete maps; all three captures followed LocalVF/fence readiness and
+actual675km camera presentation. Configs and protected material hashes unchanged.
+
+Viewed V31 all3 PNG and V27 views0/1: view0 is featureless at this location;
+view1 shows dense, nearly identical small white cloud pieces across the visible
+weather region in both. Thus V31 does NOT solve the reported orbital pattern and
+is NOT promoted. Source/CPU PASS and lower far-phase variance were insufficient.
+This is a menu field comparison, not acceptance of gameplay Forest shoreline,
+ground readability, temporal stability, layered V30 or cost. V27 stays default.
+
+The field currently jumps from planetary weather (~1350km) / meso(~211km at
+R6750) directly to3.1km/1.1km billows. Intermediate10–50km organizing shapes are
+absent. Next cloud hypothesis concerns clustered body/edge hierarchy, not another
+blind jitter or coverage increase. Source exploration only until rendered proof.
+Window released to Claude01:46; he claimed it01:47 for read-only Offroad query.
+
+## V31 anti-grain candidate and isolated shoreline cause — 2026-10-03 01:38 local
+
+Rio's 01:08:03 / 01:08:27 gameplay images separate two defects: white grain
+disappears after `aps.Surface.Clouds 0` (live log command at20:08:23.438 UTC),
+while angular wet/dry boundaries remain. These are not a pixel-exact camera pair.
+The active user material was V27, not the experimental layered V30. Editor4868
+was confirmed ended at01:20 after Rio's closure message; no user session killed.
+
+- NEW single-shell diagnostic V31 preserves the V27 weather/seed/coverage and
+  density field. It filters the represented two-tap light segment and smoothly
+  narrows common sample phase only beyond fully pixel-filtered billows. Same
+  16–32 view / two light sample budget. Baseline HLSL and V27/V30 assets untouched.
+- V31 is opt-in through APSCloudWeatherCandidate; ordinary default stays V27.
+  Exact three source splices fail closed if baseline changes. Source tests and
+  numerical audit are not visual evidence. Golden per-step phase and changing
+  octave weights were rejected by CPU comparisons and are NOT installed.
+- Build cloud-v31-build-20261003.log PASS, then NEW bake-clouds-refined-v31-20261003
+  saved1/errors0 (seven existing warnings), protected asset hashes unchanged.
+- forest-cloud-v31-orbit-675-20261003:13 passed /1 failed, no valid PNG. Correct
+  Forest seed1021823867, radius6750km, coverage.357, V31 parent and actual675km
+  camera were logged. The new readiness guard timed out at60s; this is a failed
+  test, not failed visual quality or a successful anti-grain fix.
+- Installed UE5.4 uses lazy shader compilation on editor PostLoad; the guard
+  required a complete map without requesting it. A bounded test-only follow-up
+  now submits once per bound MID/resource and distinguishes absent resource,
+  map, incomplete map and LocalVF. It retains compile-error/fence checks. A
+  second coordinated build/comparison is pending; no readiness requirement removed.
+
+Shore investigation: full-scale Forest binds ContinuousTerra + SharedWater;
+water coverage is geometric, not a high-resolution pixel coast mask. WorldScape
+uses HeightAnchor10000cm, base120cm, altitude multiplier capped999: at675km the
+finest step is1198.8m, LOD2 is4795.2m. Physical60m..18km height bands remain in
+the sampled full-scale field. Larger textures cannot repair these silhouettes.
+Do NOT raise HeightAnchor: it also widens collision activation and shifts ring
+coverage. Halving multiplier alone shifts distant points to another LOD and may
+not improve their spacing. Prior CoastalReliefV2 reduced fragmentation but was
+rejected for over-smoothed near coasts and remaining angular edges; not promoted.
+No terrain/geography/seed/sky/ship changes in this pass. Actual Forest coastline
+triangle/pixel measurements and a geometry fix remain open, as does cloud shape
+readability, layered quality and valid measured performance acceptance.
+
+Evidence root remains F:/ChatGPT/APOSFERA/work/planet_continuity_20260929;
+pre-edit checkpoint: checkpoint-cloud-v31-20261003/pre-edit. Full epic remains open.
+
+## V30 baked and rendered; gameplay ensure also without clouds — 2026-10-03 00:53 local
+
+After Claude released the build/icon window at00:38 and process preflight found
+no user UE, the shared DLL dated00:35:35 included V30 and both earlier test fixes.
+Own processes42168/27616/26588/42560 have all ended. New ordinary Editor4868
+started00:50:14; Rio explicitly answered "Да, не трогать". No new build, bake or
+UE run while this session is protected. The full epic is NOT completed.
+
+Evidence root: F:/ChatGPT/APOSFERA/work/planet_continuity_20260929.
+
+- bake-clouds-layered-v30-20261003: NEW V30 saved1, errors0, warnings7
+  (existing vendor/Python warnings). SHA256 of M_APS_PlanetCloud.uasset:
+  8DC0917408812E9EAB318037B39143E1CE181B828259AFDE7FED1B3818BE7EEF.
+  Protected assets/configs verified against this run's own preflight snapshot.
+  Runtime default remains V27; V29 and other accepted materials are preserved.
+- terrestrial-cloud-v30-orbit-20261003:14clean+2warnings,0FAIL/16 tests,
+  including8 weather/layer policy tests. Deferred camera fix now verifies all
+  three actual12000km views, observerErrorCm0, radiusRatio1, ordinary ticking.
+  Actual V30 parent bound. Viewed PNG00/01/02:01/02 are too densely fragmented;
+  00 is almost clear but displays shader preparation. The old probe only waited
+  for terrain shaders, so00 cannot establish a valid cloud-free weather result.
+  Test success does NOT constitute visual acceptance.
+- terrestrial-cloud-v30-ground-20261003:19clean+1warning+1FAIL. Route completed
+  with892 CSV frames and PNGs; actual three decks, crossings,2m ground clearance,
+  owner lifecycle and unchanged sky checks completed. Low3.422758818–5.063954353km,
+  middle5.781977177–8.859218597km, high10.090114594–10.602988243km. Viewed016/056:
+  horizon streaks/march noise and soft sparse ground clouds remain below reference.
+  Full report FAIL: handled Renderer/GPUScene.cpp367 ensure immediately after
+  a3309.471km world-origin float shift (19:42:37.890UTC shift /37.944 ensure).
+- terrestrial-cloud-v30-perf-off-20261003:3clean+1warning+1FAIL. Clouds explicitly
+  OFF, same layered route bounds,2148 CSV frames, no route screenshots. The SAME
+  GPUScene ensure follows the SAME3309.471km shift (19:46:07.842UTC /07.892).
+  Thus cloud actor enablement is not necessary for this error; ownership/root
+  cause not proven. Not a crash, not a valid performance acceptance. No ON timing
+  partner was launched; do not bypass the summarizer's failed-report guards.
+
+Source-only follow-up: APSPlanetTerrainLodABProbe.h now waits for the ACTUAL bound
+cloud MID/exact parent, current feature-level complete shader map and LocalVF,
+then an asynchronous render fence before ordinary light settling. Rechecked per
+view and before capture; bounded60s with explicit failures, no FinishAll, no
+material substitution, no production changes. Shader-wait frames excluded from
+GPU window. Backup: C:/Users/Rio/AppData/Local/Temp/
+aps-cloud-capture-readiness-20261003-005004-742/APSPlanetTerrainLodABProbe.h.
+This guard is NOT in DLL00:35:35 and has not run. V30 remains experimental; no
+further shader retuning/promoting based on the ambiguous first menu frame.
+
+Next authorized free window: coordinate shared origin-shift ensure with Claude;
+compile test-only readiness guard, repeat V30 exact-camera menu and known V27
+control, inspect daylight/ground/deck views. Only then adjust a demonstrated
+visual cause, extend affected-family coverage, and acquire a valid matched
+capture-free OFF/ON pair. Do not restart the older lava queue automatically.
+
 ## Layered timing-region correction prepared — 23:12 local
 
 The existing -Performance route already suppresses route screenshots and keeps

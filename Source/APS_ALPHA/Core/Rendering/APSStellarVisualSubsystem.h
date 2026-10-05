@@ -56,6 +56,7 @@ class APS_ALPHA_API UAPSStellarVisualSubsystem : public UTickableWorldSubsystem
 
 public:
 	virtual bool ShouldCreateSubsystem(UObject* Outer) const override;
+	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 	virtual void Tick(float DeltaTime) override;
 	virtual TStatId GetStatId() const override;
 	virtual void Deinitialize() override;
@@ -103,6 +104,10 @@ private:
 	int32 GameplayNativeLastPresentedCount{INDEX_NONE};
 	int32 GameplayNativeLastDemandCount{INDEX_NONE};
 	uint64 GameplayNativeMutationSerial{0};
+	/** Rio 04.10: the generator's batch mutation serial the catalogue was last sized for, and single points still to
+	 * re-size (a materialized or released system's proxy), kept until their source's tree build has landed. */
+	uint64 GameplayNativeBatchSerial{0};
+	TArray<FAPSGameplayStellarKey> GameplayPendingPointRefresh;
 	uint64 GameplayNativeUnknownMutationSerial{0};
 	uint32 GameplayNativeTopologyHash{0};
 	uint64 GameplayNativeBindFrame{MAX_uint64};
@@ -164,6 +169,8 @@ private:
 	TWeakObjectPtr<ADirectionalLight> GameplaySurfaceFillLight;
 	TWeakObjectPtr<APlanetaryBody> GameplayFillBody;
 	FVector TargetStarLocation{FVector::ZeroVector};
+	/** Same selected target in the persistent frame; world shifts must not rotate its lighting ray. */
+	FVector TargetStarGenerationLocation{FVector::ZeroVector};
 	FLinearColor TargetLightColor{FLinearColor::White};
 	FLinearColor SmoothedLightColor{FLinearColor::White};
 	/** Surface temperature of the target star (K) mapped for the key light; 6500 K is neutral. */

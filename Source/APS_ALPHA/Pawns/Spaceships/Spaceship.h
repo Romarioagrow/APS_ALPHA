@@ -621,6 +621,8 @@ private:
 	void UpdatePilotFillLightVisibility();
 	void ConfigureFlightReferenceFromHull(UPrimitiveComponent* Hull, const FVector& LocalExtent);
 	void UpdateAdaptiveFlightCamera(float DeltaTime);
+	/** Rio 05.10: the camera arm ticks every frame only while the player flies the ship (aps.Ship.IdleCameraTickSeconds). */
+	void UpdateCameraArmTicking();
 	void InitializeFlightPostProcess();
 	void RestoreFlightPostProcess();
 	/** While piloted, keeps the ship out of the distance-field and Lumen scene representations (see

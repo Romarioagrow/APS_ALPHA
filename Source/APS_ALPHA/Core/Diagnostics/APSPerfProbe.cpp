@@ -13,10 +13,11 @@ namespace APSPerfProbePrivate
 		TEXT("Seconds between [APS.Perf] lines in a game world (0 = off)."));
 	TAutoConsoleVariable<float> CVarHitchMs(TEXT("aps.Perf.HitchMs"), 50.0f,
 		TEXT("A frame whose game, render or GPU time is longer than this logs its own [APS.Perf] hitch line (0 = off)."));
-	TAutoConsoleVariable<int32> CVarAutoDump(TEXT("aps.Perf.AutoDumpHitches"), 1,
-		TEXT("1: the first hitch in a world (after its first 20 s) turns on 'stat dumphitches' for aps.Perf.DumpSeconds, ")
-		TEXT("once per world, so the log names what each hitch frame spent its time on. 0: off."));
-	TAutoConsoleVariable<float> CVarDumpSeconds(TEXT("aps.Perf.DumpSeconds"), 45.0f,
+	TAutoConsoleVariable<int32> CVarAutoDump(TEXT("aps.Perf.AutoDumpHitches"), 3,
+		TEXT("How many times per world a hitch (after the world's first 20 s, and 30 s after the last dump) turns on ")
+		TEXT("'stat dumphitches' for aps.Perf.DumpSeconds, so the log names what each hitch frame spent its time on. The ")
+		TEXT("editor going to the background ends a dump at once. 0: off."));
+	TAutoConsoleVariable<float> CVarDumpSeconds(TEXT("aps.Perf.DumpSeconds"), 20.0f,
 		TEXT("How long the automatic 'stat dumphitches' stays on."));
 
 	/** The editor out of focus throttles itself to a few frames per second with idle threads (Rio's log 02.10: frames of
@@ -56,10 +57,10 @@ namespace APSPerfProbePrivate
 
 	FWindow GWindow;
 	double GLastHitchLog = 0.0;
-	/** The world the probe has followed since WorldStart, whether its automatic dump was used, and when a running one ends. */
+	/** The world the probe has followed since WorldStart, how many automatic dumps it used, and when the last one ends(ed). */
 	TWeakObjectPtr<UWorld> GDumpWorld;
 	double GWorldStart = 0.0;
-	bool bGDumpUsed = false;
+	int32 GDumpsUsed = 0;
 	bool bGDumpRunning = false;
 	double GDumpEnd = 0.0;
 	/** The engine's AI logging flag before the dump: while stats collect, the engine draws a red "PROFILING WITH AI
@@ -101,7 +102,8 @@ void APSPerfProbe::Tick(UWorld* World, const float DeltaSeconds)
 		SetHitchDump(false, TEXT("new world"));
 		GDumpWorld = World;
 		GWorldStart = Now;
-		bGDumpUsed = false;
+		GDumpsUsed = 0;
+		GDumpEnd = 0.0;
 	}
 	if (bGDumpRunning && Now >= GDumpEnd)
 	{
@@ -123,6 +125,12 @@ void APSPerfProbe::Tick(UWorld* World, const float DeltaSeconds)
 	if (IsBackgroundFrame(FrameMs, BusiestMs))
 	{
 		GWindow.BackgroundSeconds += DeltaSeconds;
+		// Rio 05.10: out of focus the editor's idle 333 ms frames filled the dump; the flight's hitches never got in.
+		if (bGDumpRunning)
+		{
+			SetHitchDump(false, TEXT("editor in the background"));
+			GDumpEnd = Now;
+		}
 	}
 	else
 	{
@@ -140,13 +148,15 @@ void APSPerfProbe::Tick(UWorld* World, const float DeltaSeconds)
 				UE_LOG(LogTemp, Warning, TEXT("[APS.Perf] hitch %.0f ms: game %.1f, render %.1f, gpu %.1f"),
 					FrameMs, GameMs, RenderMs, GpuMs);
 			}
-			// Rio 02.10 (freezes in flight): once per world, past its loading, the next stretch of frames is dumped with
-			// the stat tree of every hitch frame, so the log says which system spent the time.
-			if (CVarAutoDump.GetValueOnGameThread() != 0 && !bGDumpUsed && Now - GWorldStart > 20.0)
+			// Rio 02.10 (freezes in flight): past a world's loading, the next stretch of frames is dumped with the stat
+			// tree of every hitch frame, so the log says which system spent the time. Rio 05.10 (the one dump was spent in
+			// the menu): up to aps.Perf.AutoDumpHitches times per world, 30 s apart.
+			const int32 MaxDumps = CVarAutoDump.GetValueOnGameThread();
+			if (MaxDumps > GDumpsUsed && !bGDumpRunning && Now - GWorldStart > 20.0 && Now - GDumpEnd > 30.0)
 			{
-				bGDumpUsed = true;
+				++GDumpsUsed;
 				GDumpEnd = Now + FMath::Max(CVarDumpSeconds.GetValueOnGameThread(), 5.0f);
-				SetHitchDump(true, TEXT("first hitch in this world"));
+				SetHitchDump(true, *FString::Printf(TEXT("hitch, dump %d of %d in this world"), GDumpsUsed, MaxDumps));
 			}
 		}
 	}

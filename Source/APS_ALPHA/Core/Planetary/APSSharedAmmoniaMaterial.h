@@ -39,8 +39,8 @@ namespace APSSharedAmmoniaMaterial
             {
                 WriteFrame(WeakMaterial.Get(), Updated, PresentationScale);
             });
-        FCoreDelegates::PostWorldOriginOffset.AddWeakLambda(Material,
-            [WeakMaterial, WeakFrame, PresentationScale](UWorld* World, FIntVector, FIntVector)
+        APSWorldShiftEvents::BindPostShift(Material,
+            [WeakMaterial, WeakFrame, PresentationScale](UWorld* World)
             {
                 USceneComponent* Current = WeakFrame.Get();
                 if (IsValid(Current) && Current->GetWorld() == World)

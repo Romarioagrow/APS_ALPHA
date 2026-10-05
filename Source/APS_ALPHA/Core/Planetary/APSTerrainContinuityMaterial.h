@@ -1,28 +1,18 @@
 #pragma once
 
-#include "APS_ALPHA/Core/Enums/PlanetType.h"
-#include "HAL/IConsoleManager.h"
-
-// Versioned rollout validated in menu and live gameplay on the listed types.
-// Unvalidated and future types keep the original stack; the cvar is a rollback.
+#include "APSPlanetSurfaceMaterialPolicy.h"
+// The original terrain is mandatory, not a switchable near/orbit presentation.
+// Broad routing does not by itself prove visual acceptance of every family.
 namespace APSTerrainContinuityMaterial
 {
-    inline constexpr const TCHAR* MasterPath = TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/ContinuityV1/M_APS_ContinuousTerrain.M_APS_ContinuousTerrain");
-    inline constexpr const TCHAR* TemplatePath = TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/ContinuityV1/MI_APS_ContinuousTerra.MI_APS_ContinuousTerra");
+    inline constexpr const TCHAR* MasterPath = APSPlanetSurfaceMaterialPolicy::ContinuousMasterPath;
+    inline constexpr const TCHAR* TemplatePath = APSPlanetSurfaceMaterialPolicy::ContinuousTemplatePath;
     inline bool Allows(EPlanetType Type)
     {
-        return Type == EPlanetType::Terrestrial || Type == EPlanetType::Frozen
-            || Type == EPlanetType::Oasis || Type == EPlanetType::Ice
-            || Type == EPlanetType::Tundra || Type == EPlanetType::Nordic
-            || Type == EPlanetType::Rocky || Type == EPlanetType::Desert
-            || Type == EPlanetType::Sand || Type == EPlanetType::HighMountain
-            || Type == EPlanetType::Forest || Type == EPlanetType::Savanna
-            || Type == EPlanetType::SuperEarth || Type == EPlanetType::Pangea;
+        return APSPlanetSurfaceMaterialPolicy::AllowsContinuousTerrain(Type, true);
     }
     inline bool Enabled()
     {
-        const IConsoleVariable* Variable = IConsoleManager::Get().FindConsoleVariable(
-            TEXT("aps.Surface.TerrainContinuity"));
-        return Variable && Variable->GetInt() != 0;
+        return true;
     }
 }

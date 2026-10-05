@@ -127,6 +127,7 @@ bool FAPSGeneratedWorldSaveSnapshotContractTest::RunTest(const FString& Paramete
 	SourceSpawn->CharacterSpawnPlace = ECharSpawnPlace::PlanetSurface;
 	SourceSpawn->BP_CharacterClass = APawn::StaticClass();
 	SourceSpawn->BP_HomeSpaceship = ASpaceship::StaticClass();
+	SourceSpawn->StarterComplexTurnDegrees = -63.25;
 	SourceSave->bHadGeneratedCivilization = true;
 	TestTrue(TEXT("civilization spawn recipe captures"),
 		APSWorldSaveSnapshot::CaptureSpawnParameters(
@@ -181,6 +182,74 @@ bool FAPSGeneratedWorldSaveSnapshotContractTest::RunTest(const FString& Paramete
 		ECharSpawnPlace::PlanetSurface);
 	TestEqual(TEXT("selected ship class survives"), RestoredSpawn->BP_HomeSpaceship.Get(),
 		ASpaceship::StaticClass());
+	// The home complex's turn sets the frame the saved positions use: the replay must stand it exactly where it stood.
+	TestEqual(TEXT("home complex turn survives"), RestoredSpawn->StarterComplexTurnDegrees, -63.25);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FAPSRealScaleWorldSaveContractTest,
+	"APS.World.Save.RealScaleFlagRoundTrip",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FAPSRealScaleWorldSaveContractTest::RunTest(const FString& Parameters)
+{
+	// Rio 05.10 (real scale experiment): REAL SCALE and its sealed layout survive the snapshot and the commit duplicate;
+	// a new or older model stays OFF with no sealed layout (zero keeps every legacy dataset hash).
+	TestFalse(TEXT("a new world starts with REAL SCALE off"), GetDefault<UGeneratedWorld>()->bRealScale);
+	const FAPSCanonicalStellarDataset LegacyDataset;
+	TestEqual(TEXT("a legacy dataset has no sealed real-scale unit"), LegacyDataset.RealScaleCmPerUnit, 0.0);
+	TestEqual(TEXT("a legacy dataset has no sealed cluster share"), LegacyDataset.RealScaleClusterToGalaxy, 0.0);
+
+	UGeneratedWorld* SourceModel = NewObject<UGeneratedWorld>();
+	SourceModel->GenerationSeed = 515253;
+	SourceModel->bRealScale = true;
+	SourceModel->CanonicalStellarDataset.RealScaleCmPerUnit = 3.3e14;
+	SourceModel->CanonicalStellarDataset.RealScaleClusterToGalaxy = 0.0625;
+
+	UGameSave* SourceSave = NewObject<UGameSave>();
+	SourceSave->SaveFormatVersion = APSWorldSaveSnapshot::LatestSaveFormatVersion;
+	SourceSave->SaveSlotName = TEXT("APS_REAL_SCALE_MEMORY_ONLY");
+	SourceSave->GeneratedWorldsDataArray.Add(SourceModel->SaveWorldData());
+	TestTrue(TEXT("real-scale world snapshot captures"),
+		APSWorldSaveSnapshot::Capture(SourceModel, SourceSave->GeneratedWorldModelData));
+	TArray<uint8> Bytes;
+	TestTrue(TEXT("save archive writes the real-scale snapshot"),
+		UGameplayStatics::SaveGameToMemory(SourceSave, Bytes));
+	UGameSave* RestoredSave = Cast<UGameSave>(UGameplayStatics::LoadGameFromMemory(Bytes));
+	if (!TestNotNull(TEXT("save archive restores the real-scale snapshot"), RestoredSave))
+	{
+		return false;
+	}
+	UGeneratedWorld* RestoredModel = APSWorldSaveSnapshot::Restore(
+		RestoredSave, GetTransientPackage(), RestoredSave->SaveSlotName);
+	if (!TestNotNull(TEXT("real-scale model restores"), RestoredModel))
+	{
+		return false;
+	}
+	TestTrue(TEXT("REAL SCALE survives the snapshot"), RestoredModel->bRealScale);
+	TestEqual(TEXT("sealed real-scale unit survives"),
+		RestoredModel->CanonicalStellarDataset.RealScaleCmPerUnit, 3.3e14);
+	TestEqual(TEXT("sealed cluster share survives"),
+		RestoredModel->CanonicalStellarDataset.RealScaleClusterToGalaxy, 0.0625);
+
+	// The menu commits a duplicate of its model into the GameInstance (UWorldGenerationViewModel::CommitAndOpenLevel).
+	const UGeneratedWorld* Committed = DuplicateObject<UGeneratedWorld>(SourceModel, GetTransientPackage());
+	TestTrue(TEXT("REAL SCALE survives the commit duplicate"), Committed && Committed->bRealScale);
+
+	// A save without the model snapshot (only the legacy summary, which never carried the flag) loads OFF.
+	UGameSave* LegacySave = NewObject<UGameSave>();
+	LegacySave->SaveSlotName = TEXT("APS_REAL_SCALE_LEGACY_MEMORY_ONLY");
+	LegacySave->GeneratedWorldsDataArray.Add(SourceModel->SaveWorldData());
+	UGeneratedWorld* LegacyModel = APSWorldSaveSnapshot::Restore(
+		LegacySave, GetTransientPackage(), LegacySave->SaveSlotName);
+	if (!TestNotNull(TEXT("legacy summary restores"), LegacyModel))
+	{
+		return false;
+	}
+	TestFalse(TEXT("a model without the flag loads with REAL SCALE off"), LegacyModel->bRealScale);
+	TestEqual(TEXT("a model without the flag has no sealed layout"),
+		LegacyModel->CanonicalStellarDataset.RealScaleCmPerUnit, 0.0);
 	return true;
 }
 

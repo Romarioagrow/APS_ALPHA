@@ -267,3 +267,16 @@ build/bake/render запусков Codex не делает. В production соб
   (нашёл и исправил ступеньку 33 см у порога шлюза); кадры scene capture корпуса и интерьера (`.../cargo01/renders`, копии в `out/previews/unreal`).
 - Не проверено: путь через меню/верфь/полёт (прогон «домашний корабль» берёт flight-сессия), FPS у Rio, ощущение ходьбы живым персонажем, яркость ламп при игровой экспозиции, Nanite + Custom-узел на видеокарте Rio.
 - Известные пределы: вблизи < 1,5 м текстура корпуса мягкая/угловатая (атлас 3,6 см/тексель), полы трюма в тесте тёмные; пак мелких деталей отдельно, не подключён.
+
+- Claude (APS DEV + ancients agent) 03.10: new Gameplay/Ancients/** + Docs/Design/ANCIENT_STRUCTURES.md; self-registering runtime, no shared formats changed; kill switch aps.Ancients.Enable 0; in Rio's 00:36 build; map/F10/HUD labels (4 small hooks) in source for the next build; not committed, waiting for Rio's check.
+
+- Claude flight (APS DEV + agents) 03.10 ~02:30, all source-only, NOT committed, most of it already in Rio's own 02:09 APS_ALPHAEditor build:
+  gravity spawn-pin release (CustomGravityCharacter.cpp: the surface spawn's SetGravityTarget(planet) no longer outlives the first ride / a ship or station frame);
+  rover suspension from SKM_Offroad (Spaceship.*, APSShipFlightModel.cpp PoseVehicle; settle probe looks under carport roofs first);
+  saves: duplicate home planet in InhabitedPlanets removed (APSWorldSaveSnapshot.*, AstroGenerator.cpp RecordInhabitedPlanet);
+  HUD: OBJECTIVE + tracked mission as one card (APSMissionTracker.*, APSColonyTerminalSubsystem.cpp);
+  world browser v2: schemes, DELETE WORLD, .apsmeta v2 sidecar written in GravityPlayerController.cpp via UI/MainMenu/APSWorldBrowserMetadata.*;
+  galaxy/cluster V2 phase 1: appended enum values only (GalaxyClass, StarClusterSize +Colossal, StarClusterType +5), Generation/APSGalaxyMorphology.*,
+  Docs/Design/GALAXY_GENERATION_V2.md, tests APS.Generation.GalaxyV2.* / ClusterV2.* (not run yet).
+  In progress (agents): REGENERATE overlay fix + varied rolls (SWorldGenerationPanel/WorldGenerationViewModel/AstroGenerator preview), F10 perf (UI/StrategicMap),
+  black hole look (Star.*), browser filters / delete-all / menu-wide text centring (SAPSMainMenuRoot.*, UI/Style/APSMenuChrome.*).

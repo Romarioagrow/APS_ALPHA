@@ -1082,7 +1082,9 @@ int32 SAPSStrategicMapView::OnPaint(const FPaintArgs& Args, const FGeometry& All
 		if (Map->Locate(Selected, Target) && View.ProjectSegment(Pilot->GetActorLocation(), Target, Size, From, To)
 			&& FVector2D::Distance(From, To) > 24.0)
 		{
-			HaloDashes(OutDrawElements, LayerGuides, Geometry, From, To, WithAlpha(APSChrome::White(), 0.55f), 3.0, 5.0, 1.0f);
+			// Rio 04.10 ("the line from the start planet to me is hard to see on a light background"): brighter, wider dashes
+			// on their dark halo.
+			HaloDashes(OutDrawElements, LayerGuides, Geometry, From, To, WithAlpha(APSChrome::White(), 0.92f), 4.0, 4.0, 1.6f);
 			PlatedText(OutDrawElements, LayerGuides, Geometry, FMath::Lerp(From, To, 0.55) + FVector2D(12.0, 4.0),
 				DistanceString(FVector::Dist(Pilot->GetActorLocation(), Target)), SmallFont, WithAlpha(APSChrome::White(), 0.9f));
 		}
@@ -1380,8 +1382,20 @@ FReply SAPSStrategicMapView::OnMouseMove(const FGeometry& MyGeometry, const FPoi
 	}
 	if (Scene.IsValid())
 	{
+		// Rio 04.10 ("the icons twitch when I hover over the stars"): a hovered mark is drawn on its own (no longer merged
+		// into its neighbour) with a wider ring, which could move the pick to the neighbour and back every frame. The
+		// hover stays while the cursor is still within reach of the hovered mark.
+		const APSStrategicMap::FSelection Current = Scene->Hover;
+		const bool bStillOver = Current.IsSet() && Painted.ContainsByPredicate([&Current, &Local](const FPainted& Entry)
+		{
+			return Entry.Target == Current && FVector2D::Distance(Entry.Position, Local)
+				<= FMath::Max(APSStrategicMapViewLocal::PickReach * 1.5, static_cast<double>(Entry.Radius));
+		});
 		APSStrategicMap::FSelection Under;
-		Scene->Hover = Pick(Local, Under) ? Under : APSStrategicMap::FSelection();
+		if (!bStillOver)
+		{
+			Scene->Hover = Pick(Local, Under) ? Under : APSStrategicMap::FSelection();
+		}
 	}
 	return FReply::Unhandled();
 }

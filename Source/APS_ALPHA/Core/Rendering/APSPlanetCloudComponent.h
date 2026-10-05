@@ -21,6 +21,7 @@ public:
     const APSPlanetCloudPolicy::FLayer& GetLayer() const { return Layer; }
     FVector GetWindRotation() const { return APSPlanetCloudWeather::RotationFromPhase(WindPhase); }
 private:
+    virtual void OnRegister() override;
     void UpdateFrame();
     APSPlanetCloudWeather::FWeather Layer;
     bool bWeatherMaterial = false;

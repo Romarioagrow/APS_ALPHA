@@ -38,6 +38,10 @@ constexpr int32 BindBudgetPerFrame = 6;
 TAutoConsoleVariable<float> CVarResolvePixels(TEXT("aps.Stars.ResolvePixels"), 1.0f,
 	TEXT("Pixel radius at which a catalogue point becomes the full star (photosphere and corona)."));
 double ResolvePixels() { return FMath::Max(static_cast<double>(CVarResolvePixels.GetValueOnGameThread()), 1.0); }
+// Rio 04.10 ("the very brightest are visible even by day"): a day sky still shows the stars resolved to at least this
+// radius (a nearby sun); the smaller ones go with the points' daylight fade as before.
+TAutoConsoleVariable<float> CVarDayResolvePixels(TEXT("aps.Stars.DayResolvePixels"), 3.0f,
+	TEXT("Pixel radius from which a resolved star (photosphere) stays visible in a day sky. 0: none stays (the old way)."));
 double KeepResolvedPixels() { return ResolvePixels() * 0.83; }
 double PreparePixels() { return FMath::Max(ResolvePixels() * 0.6, 0.5); }
 double RetainPixels() { return PreparePixels() * 0.65; }
@@ -540,10 +544,12 @@ void PresentResolvedStars(const UAPSStellarVisualSubsystem* Subsystem, AAstroGen
 	const bool bValidate = Serial != State.ValidatedSerial;
 	State.ValidatedSerial = Serial;
 
-	// Every demanded star of at least ResolvePixels (KeepResolvedPixels once drawn), in all directions; a day sky none.
+	// Every demanded star of at least ResolvePixels (KeepResolvedPixels once drawn), in all directions; a day sky only the
+	// ones of at least DayResolvePixels.
 	TSet<FAPSGameplayStellarKey> Wanted;
 	TArray<const FAPSGameplayNativeDemand*> ToAdd;
-	if (!bDaylightHidden)
+	const double DayResolve = static_cast<double>(CVarDayResolvePixels.GetValueOnGameThread());
+	if (!bDaylightHidden || DayResolve > 0.0)
 	{
 		Wanted.Reserve(Demands.Num());
 		for (FAPSGameplayNativeDemand& Demand : Demands)
@@ -555,7 +561,8 @@ void PresentResolvedStars(const UAPSStellarVisualSubsystem* Subsystem, AAstroGen
 			Demand.PixelRadius = PixelWorldRadius > 0.0 ? Demand.PhysicalRadiusCm / PixelWorldRadius : 0.0;
 			FResolvedSlot* Drawn = State.Slots.Find(Demand.Key);
 			const bool bDrawn = Drawn != nullptr;
-			if (!FMath::IsFinite(Demand.PixelRadius) || Demand.PixelRadius < (bDrawn ? KeepResolvedPixels() : ResolvePixels()))
+			const double Resolve = bDaylightHidden ? FMath::Max(DayResolve, ResolvePixels()) : ResolvePixels();
+			if (!FMath::IsFinite(Demand.PixelRadius) || Demand.PixelRadius < (bDrawn ? Resolve * 0.83 : Resolve))
 				continue;
 			if (Drawn) Drawn->Demand.PixelRadius = Demand.PixelRadius;
 			// Producer reasons (materialized, excluded, rebuilt) are read again when the catalogue changed, and for a new star.
@@ -741,13 +748,13 @@ int32 AAstroGenerator::SuppressClusterProxies(const TArray<int32>& InstanceIndic
 			Transform.SetScale3D(FVector::ZeroVector);
 			Component->UpdateInstanceTransform(InstanceIndex, Transform, false, false, true);
 		}
+		// The flight model and the stellar view read the catalogue again; the view re-sizes just these points.
+		NoteCanonicalStellarPointMutation(Key);
 		++Suppressed;
 	}
 	if (Suppressed > 0)
 	{
 		Component->BuildTreeIfOutdated(true, true);
-		// The flight model and the stellar view read the catalogue again.
-		NoteCanonicalStellarProxyMutation(true);
 	}
 	return Suppressed;
 }
@@ -776,8 +783,8 @@ bool AAstroGenerator::SetGalaxyProxyMaterialized(const int64 CatalogIndex, const
 	}
 	Component->UpdateInstanceTransform(InstanceIndex, Transform, false, true, true);
 	Component->BuildTreeIfOutdated(true, true);
-	// As for a materialized cluster system: the stellar view sizes its points again, the resolved stars re-validate.
-	NoteCanonicalStellarProxyMutation(true);
+	// As for a materialized cluster system: the stellar view sizes this point again, the resolved stars re-validate.
+	NoteCanonicalStellarPointMutation(Key);
 	return true;
 }
 
@@ -826,6 +833,8 @@ void UAPSStellarVisualSubsystem::ResetGameplayNativeStars()
 	bGameplayNativeDemandCandidatesValid = false;
 	GameplayNativeResizePasses.Reset();
 	GameplayNativeMutationSerial = 0;
+	GameplayNativeBatchSerial = 0;
+	GameplayPendingPointRefresh.Reset();
 	GameplayNativeUnknownMutationSerial = 0;
 	GameplayNativeTopologyHash = 0;
 	GameplayNativeOverflowResolved = 0;
@@ -873,6 +882,7 @@ void UAPSStellarVisualSubsystem::BeginGameplayNativeStars(AAstroGenerator* Gener
 	}
 	GameplayNativeUnknownMutationSerial = UnknownSerial;
 	GameplayNativeMutationSerial = Generator->GetCanonicalStellarProjectionDescriptor().TransformMutationSerial;
+	GameplayNativeBatchSerial = Generator->GetCanonicalStellarBatchMutationSerial();
 	bGameplayNativeInitialized = true;
 	if (bRefreshDemand)
 	{

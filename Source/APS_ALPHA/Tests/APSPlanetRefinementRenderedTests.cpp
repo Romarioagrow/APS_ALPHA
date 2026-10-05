@@ -73,6 +73,49 @@ static bool ResolveOrbitalBatch(const FString& Text, TArray<FString>& Out)
     return true;
 }
 
+// Optional fixture inputs, not a replay of an incident's climate or camera.
+static bool ResolveExplicitBodyFixture(const TCHAR* Args, double& RadiusKm, int32& Seed, bool& bExplicit)
+{
+    bExplicit = FCString::Strifind(Args, TEXT("APSPlanetProbeRadiusKm"))
+        || FCString::Strifind(Args, TEXT("APSPlanetProbeSurfaceSeed"));
+    // The extra marker belongs only to the paired fixture, including direct CLI.
+    if (!bExplicit) return !FParse::Param(Args, TEXT("APSProbeTerrainPublishedDefault"));
+    TSet<FString> Seen;
+    const TCHAR* Cursor = Args;
+    FString Token;
+    while (FParse::Token(Cursor, Token, true))
+    {
+        if (!Token.StartsWith(TEXT("-APS"), ESearchCase::IgnoreCase)) continue;
+        FString Key, Value;
+        if (!Token.Split(TEXT("="), &Key, &Value)) Key = Token;
+        bool bAllowed = false;
+        for (const TCHAR* Allowed : {TEXT("-APSPlanetProbeRadiusKm"), TEXT("-APSPlanetProbeSurfaceSeed"),
+            TEXT("-APSPlanetProbeFamily"), TEXT("-APSProbeTerrainNativeViews"), TEXT("-APSProbeTerrainPublishedViews"),
+            TEXT("-APSProbeTerrainPublishedDefault"), TEXT("-APSProbeTerrainBuffers"), TEXT("-APSPlanetProbeHeightKm"),
+            TEXT("-APSProbeViewportWidth"), TEXT("-APSProbeViewportHeight")}) bAllowed |= Key == Allowed;
+        if (!bAllowed || Seen.Contains(Key)) return false;
+        Seen.Add(Key);
+    }
+    FString RadiusText, SeedText, Family;
+    double HeightKm = 0.0;
+    if (!FParse::Value(Args, TEXT("APSPlanetProbeRadiusKm="), RadiusText)
+        || !FParse::Value(Args, TEXT("APSPlanetProbeSurfaceSeed="), SeedText)
+        || !FParse::Value(Args, TEXT("APSPlanetProbeFamily="), Family) || Family.IsEmpty()
+        || !FParse::Value(Args, TEXT("APSPlanetProbeHeightKm="), HeightKm)
+        || !FParse::Param(Args, TEXT("APSProbeTerrainNativeViews"))
+        || !FParse::Param(Args, TEXT("APSProbeTerrainPublishedViews"))
+        || !FParse::Param(Args, TEXT("APSProbeTerrainPublishedDefault"))
+        || !RadiusText.IsNumeric() || SeedText.IsEmpty() || SeedText.Len() > 10) return false;
+    for (TCHAR C : SeedText) if (C < TEXT('0') || C > TEXT('9')) return false;
+    const double RequestedRadius = FCString::Atod(*RadiusText);
+    const int64 RequestedSeed = FCString::Atoi64(*SeedText);
+    if (!FMath::IsFinite(RequestedRadius) || RequestedRadius < 100.0 || RequestedRadius > 25000.0
+        || RequestedSeed > MAX_int32 || !FMath::IsFinite(HeightKm)
+        || HeightKm < FMath::Max(70.0, RequestedRadius * 0.01) || HeightKm > 20000.0) return false;
+    RadiusKm = RequestedRadius; Seed = static_cast<int32>(RequestedSeed);
+    return true;
+}
+
 class FProbe final : public IAutomationLatentCommand
 {
     FAutomationTestBase* Test;
@@ -582,6 +625,11 @@ public:
             { Test->AddError(TEXT("Shared Ammonia candidate probe requires Ammonia")); return true; }
             if (bSharedLavaCandidate && Family != TEXT("Melted") && Family != TEXT("Volcanic") && Family != TEXT("Lava"))
             { Test->AddError(TEXT("Shared Lava candidate probe requires Melted, Volcanic or Lava")); return true; }
+            double FixtureRadiusKm = 6750.0;
+            int32 FixtureSeed = 1337;
+            bool bExplicitBodyFixture = false;
+            if (!ResolveExplicitBodyFixture(FCommandLine::Get(), FixtureRadiusKm, FixtureSeed, bExplicitBodyFixture))
+            { Test->AddError(TEXT("Explicit body fixture needs paired bounded radius/seed, one published-default fixed-height family, and no other APS modes")); return true; }
             UGeneratedWorld* Model = VM->GeneratedWorld;
             FString CloudFixtureError;
             if (!APSCloudFlightProbe::ConfigureFeatureScaleFixture(Model->CloudSettings, CloudFixtureError))
@@ -593,7 +641,10 @@ public:
             Model->bRandomHomeStar = false; Model->StellarType = EStellarType::MainSequence;
             Model->SpectralClass = ESpectralClass::G; Model->StarType = EStarType::SingleStar;
             Model->PlanetsAmount = 1; Model->MoonsAmount = 0; Model->StartPlanetIndex = 1;
-            Model->PlanetRadius = 6750; Model->PlanetSurfaceSeed = 1337;
+            Model->PlanetRadius = FixtureRadiusKm; Model->PlanetSurfaceSeed = FixtureSeed;
+            if (bExplicitBodyFixture) UE_LOG(LogTemp, Display,
+                TEXT("PLANET_PROBE_BODY_INPUTS requestedRadiusKm=%.9g requestedSeed=%d actualModelRadiusKm=%.9g actualModelSeed=%d; fixture climate/camera are not incident-exact"),
+                FixtureRadiusKm, FixtureSeed, Model->PlanetRadius, Model->PlanetSurfaceSeed);
             Model->PlanetType = RequestedType;
             if (APSWaterDepthRendered::Enabled()) Model->PlanetType = WaterDepthType;
             // Match the current generated-world default. The old diagnostic
@@ -843,6 +894,19 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAPSPlanetProbeFamilyContract,
     "APS.Contracts.PlanetSurface.RenderedProbeFamily", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 bool FAPSPlanetProbeFamilyContract::RunTest(const FString& Parameters)
 {
+    double FixtureRadius = 6750.0; int32 FixtureSeed = 1337; bool bExplicitFixture = false;
+    TestTrue(TEXT("Absent body inputs preserve default fixture"), APSPlanetRefinement::ResolveExplicitBodyFixture(TEXT("-unattended"), FixtureRadius, FixtureSeed, bExplicitFixture));
+    TestTrue(TEXT("Default radius/seed unchanged"), FixtureRadius == 6750.0 && FixtureSeed == 1337 && !bExplicitFixture);
+    const FString FixtureArgs = TEXT("-APSPlanetProbeFamily=SuperEarth -APSProbeTerrainNativeViews -APSProbeTerrainPublishedViews -APSProbeTerrainPublishedDefault -APSPlanetProbeHeightKm=2000 ");
+    TestFalse(TEXT("Explicit published marker without body inputs rejected"), APSPlanetRefinement::ResolveExplicitBodyFixture(*(FixtureArgs + TEXT("-APSProbeTerrainBuffers")), FixtureRadius, FixtureSeed, bExplicitFixture));
+    TestTrue(TEXT("Explicit bounded body inputs"), APSPlanetRefinement::ResolveExplicitBodyFixture(*(FixtureArgs + TEXT("-APSPlanetProbeRadiusKm=9689 -APSPlanetProbeSurfaceSeed=524155")), FixtureRadius, FixtureSeed, bExplicitFixture));
+    TestTrue(TEXT("Requested body inputs preserved"), FixtureRadius == 9689.0 && FixtureSeed == 524155 && bExplicitFixture);
+    TestTrue(TEXT("Read-only buffer views preserve explicit body fixture"), APSPlanetRefinement::ResolveExplicitBodyFixture(*(FixtureArgs + TEXT("-APSPlanetProbeRadiusKm=9689 -APSPlanetProbeSurfaceSeed=524155 -APSProbeTerrainBuffers")), FixtureRadius, FixtureSeed, bExplicitFixture));
+    for (const TCHAR* Bad : {TEXT("-APSPlanetProbeRadiusKm=9689"), TEXT("-APSPlanetProbeRadiusKm=NaN -APSPlanetProbeSurfaceSeed=524155"),
+        TEXT("-APSPlanetProbeRadiusKm=9689 -APSPlanetProbeSurfaceSeed=1.5"), TEXT("-APSPlanetProbeRadiusKm=9689 -APSPlanetProbeSurfaceSeed=2147483648"),
+        TEXT("-APSPlanetProbeRadiusKm=9689 -APSPlanetProbeSurfaceSeed=524155 -APSPlanetProbeSurfaceSeed=1"),
+        TEXT("-APSPlanetProbeRadiusKm=9689 -APSPlanetProbeSurfaceSeed=524155 -APSProbeTerrainWarpOnly")})
+        TestFalse(TEXT("Malformed or mixed explicit body inputs rejected"), APSPlanetRefinement::ResolveExplicitBodyFixture(*(FixtureArgs + Bad), FixtureRadius, FixtureSeed, bExplicitFixture));
     // Regression: a frozen candidate copies the native physical frame exactly,
     // including double-vector scale and float high/low rows. A real drift must
     // still fail, not be accepted by a relaxed numeric tolerance.

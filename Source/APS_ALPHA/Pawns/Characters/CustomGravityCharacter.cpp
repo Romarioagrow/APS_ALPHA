@@ -1678,7 +1678,7 @@ void ACustomGravityCharacter::LeaveShip()
 	UE_LOG(LogTemp, Log, TEXT("[APS.Gravity] left %s"), *Ship->GetName());
 }
 
-void ACustomGravityCharacter::SettleAfterVehicleExit(const FVector& Facing)
+void ACustomGravityCharacter::SettleAfterVehicleExit(const FVector& Facing, AActor* LeftVehicle)
 {
 	// F3 (Rio, 02.10: "disembarking on a planet ignores its gravity"): a zero-G toggled with G before boarding must
 	// not outlive the flight. The place of exit decides (A3); in empty space that is zero-G anyway.
@@ -1694,10 +1694,35 @@ void ACustomGravityCharacter::SettleAfterVehicleExit(const FVector& Facing)
 		UE_LOG(LogTemp, Warning, TEXT("[APS.Gravity] spawn pin to %s released on vehicle exit"), *GetNameSafe(GravityTarget));
 		bManualGravityOverride = false;
 	}
+	// Rio 05.10 (REAL SCALE: getting up at billions of c, "source=None" and the pilot was left light years behind): a
+	// seated pilot's cached overlaps are empty at such speeds, so the detector found no deck to stand on and the next
+	// world shift carried the free character away with the rest of the world. The ship just left is known: inside its
+	// gravity sphere the character goes aboard now (attached, it rides every shift with the ship); the detector below
+	// keeps it there by the same sphere, or lets it go for a better source as before.
+	ASpaceship* LeftShip = Cast<ASpaceship>(LeftVehicle);
+	if (LeftShip && LeftShip->ProvidesShipGravity() && LeftShip->SphereCollisionComponent
+		&& FVector::DistSquared(GetActorLocation(), LeftShip->SphereCollisionComponent->GetComponentLocation())
+			<= FMath::Square(LeftShip->SphereCollisionComponent->GetScaledSphereRadius()))
+	{
+		BoardShip(*LeftShip);
+	}
 	// While seated the character did not tick: its gravity frame is the one it boarded in, possibly another body.
 	if (GravityDetector)
 	{
 		GravityDetector->RunGravityCheckForActor(this);
+	}
+	// Rio 04.10 evening ("on autopilot I got up a second time and the ship flew off; the character was left in space"):
+	// at cruise a ship covers hundreds of thousands of km a frame, and boarding waited for the character's next tick,
+	// after the ship had moved on: the pilot was attached that far behind it and its gravity let go. A deck that holds
+	// the pilot now takes it along from the moment it stands up, at rest on the deck (the attachment brings the ship's
+	// own motion).
+	UpdateShipPassenger();
+	if (AboardShip.IsValid())
+	{
+		if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+		{
+			Movement->Velocity = FVector::ZeroVector;
+		}
 	}
 	bGravityDirectionInitialized = false;
 	UpdateGravityDirection(0.0f);

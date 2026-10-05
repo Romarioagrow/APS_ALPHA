@@ -75,6 +75,12 @@ namespace APSStarRenderer
 		float IntensityScale = 1.0f;
 		/** 0..1 (daylight etc.), multiplied with SetWorldVisibility. */
 		float Visibility = 1.0f;
+		/**
+		 * Rio 05.10: this set's brightness LOD as a multiple of aps.Stars.GpuPointMinPixel (0.01..1000). Below 1 it follows
+		 * a dimmed Visibility, so dimming a set never removes its stars ("the points must not disappear"); above 1 only
+		 * stars bright enough to be seen one by one are drawn. A drawn star's brightness is not touched by it.
+		 */
+		float MinPixelScale = 1.0f;
 		/** Stars inside this local sphere are not drawn (home system exclusion); radius <= 0 = off. */
 		FVector3f ExclusionCenterLocal = FVector3f::ZeroVector;
 		float ExclusionRadiusLocal = 0.0f;
@@ -167,6 +173,8 @@ namespace APSStarRenderer
 	APSSTARRENDERER_API void SetTransform(FHandle Handle, const FTransform& LocalToWorld);
 	APSSTARRENDERER_API void SetFarEnvelope(FHandle Handle, const FFarEnvelope& Envelope);
 	APSSTARRENDERER_API void SetVisibility(FHandle Handle, float Visibility);
+	/** Point sets: FPointSetDesc::MinPixelScale (clamped to 0.01..1000). */
+	APSSTARRENDERER_API void SetMinPixelScale(FHandle Handle, float Scale);
 	APSSTARRENDERER_API void SetEnabled(FHandle Handle, bool bEnabled);
 	APSSTARRENDERER_API void Remove(FHandle Handle);
 
@@ -176,6 +184,8 @@ namespace APSStarRenderer
 	APSSTARRENDERER_API void SetWorldFarEnvelope(const UWorld* World, const FFarEnvelope& Envelope);
 	/** 0..1 for the whole world (gameplay daylight: APSGameplayStellarDay::PointVisibility). */
 	APSSTARRENDERER_API void SetWorldVisibility(const UWorld* World, float Visibility);
+	/** Rio 04.10: the world's points fade over a bright scene (an atmosphere outshines the stars behind it; gameplay). */
+	APSSTARRENDERER_API void SetWorldSkyMask(const UWorld* World, bool bEnabled);
 
 	/** Up to 256 linear colours (normalised to unit luminance on upload). Default: black body 1500..40000 K. */
 	APSSTARRENDERER_API void SetColorPalette(TConstArrayView<FLinearColor> Colors);

@@ -1,5 +1,6 @@
 #include "APSPlanetCloudComponent.h"
 #include "APS_ALPHA/Core/Planetary/APSPlanetCloudLayers.h"
+#include "APS_ALPHA/Core/World/APSWorldShiftEvents.h"
 #include "APS_ALPHA/Actors/Astro/Planet.h"
 #include "APS_ALPHA/Actors/Astro/Star.h"
 #include "APS_ALPHA/Generation/PlanetarySurfaceGenerator.h"
@@ -47,6 +48,19 @@ UAPSPlanetCloudComponent::UAPSPlanetCloudComponent()
     SetMobility(EComponentMobility::Movable);
     SetAbsolute(false, false, true);
     TranslucencySortPriority = 1;
+}
+
+void UAPSPlanetCloudComponent::OnRegister()
+{
+    Super::OnRegister();
+    if (!APSWorldShiftEvents::OnPostDoubleShift().IsBoundToObject(this))
+        APSWorldShiftEvents::BindPostShift(this, [this](UWorld* World)
+        {
+            // CloudCenter is a material uniform, not a scene transform. A late
+            // floating-origin shift occurs after our tick; refresh after ALL
+            // actors/camera moved, without advancing wind or changing the model.
+            if (IsRegistered() && World == GetWorld()) UpdateFrame();
+        });
 }
 
 void UAPSPlanetCloudComponent::Refresh(APlanet* P)

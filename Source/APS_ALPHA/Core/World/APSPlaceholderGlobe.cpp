@@ -1,120 +1,374 @@
 #include "APSPlaceholderGlobe.h"
+#include "APS_ALPHA/Core/Planetary/APSPlanetReliefRuntime.h"
 
+#include "APS_ALPHA/Actors/Astro/Planet.h"
 #include "APS_ALPHA/Actors/Astro/PlanetaryBody.h"
-#include "APS_ALPHA/Core/Planetary/APSPlanetSurfaceProfile.h"
+#include "APS_ALPHA/Generation/APSNativeGlobeSnapshot.h"
+#include "APS_ALPHA/Generation/APSClosedGlobeMesh.h"
+#include "APS_ALPHA/Generation/PlanetarySurfaceGenerator.h"
+#include "Async/Async.h"
 #include "Components/StaticMeshComponent.h"
-#include "Engine/StaticMesh.h"
-#include "HAL/IConsoleManager.h"
-#include "Materials/MaterialInstanceDynamic.h"
-#include "UObject/Package.h"
+#include "Engine/World.h"
+#include "EngineUtils.h"
+#include "GameFramework/PlayerController.h"
+#include "GameFramework/Pawn.h"
+#include "RenderCommandFence.h"
 
-namespace APSPlaceholderGlobePrivate
+namespace APSNativeGlobePrivate
 {
-	TAutoConsoleVariable<int32> CVarTint(TEXT("aps.Surface.PlaceholderTint"), 1,
-		TEXT("1: a body without its WorldScape surface on screen wears its own palette colour instead of the authored ")
-		TEXT("prototype grid (Rio 02.10, grey balls). 0: bodies tinted from now on keep the authored look."));
-
-	const FName ColorParameter(TEXT("Color"));
-	const TCHAR* MaterialPrefix = TEXT("APS_PlaceholderGlobe");
-
-	/** Bodies already handled, so the per-update call costs a set lookup. */
-	TSet<TWeakObjectPtr<const APlanetaryBody>> GHandled;
-
-	UMaterialInterface* Parent()
+	using namespace APSClosedGlobeMesh;
+	struct FVisual
 	{
-		// A plain lit engine material with a Color parameter: always cooked, no shader of its own to compile.
-		static TWeakObjectPtr<UMaterialInterface> Cached;
-		if (!Cached.IsValid())
+		TWeakObjectPtr<USceneComponent> Frame;
+		TWeakObjectPtr<UProceduralMeshComponent> Terrain;
+		TWeakObjectPtr<UProceduralMeshComponent> Ocean;
+
+		void Show(bool bVisible) const
 		{
-			Cached = LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"));
+			for (auto* Mesh : {Terrain.Get(), Ocean.Get()})
+				if (IsValid(Mesh))
+				{
+					Mesh->SetVisibility(bVisible, false);
+					Mesh->SetHiddenInGame(!bVisible, false);
+				}
 		}
-		return Cached.Get();
-	}
-
-	/** The authored globe: the StarterContent material sphere of the planet and moon Blueprints (not clouds, not gas). */
-	bool IsAuthoredGlobe(const UStaticMeshComponent* Mesh)
+		void Destroy()
+		{
+			for (UActorComponent* Component : {static_cast<UActorComponent*>(Terrain.Get()),
+				static_cast<UActorComponent*>(Ocean.Get()), static_cast<UActorComponent*>(Frame.Get())})
+				if (IsValid(Component))
+				{
+					if (AActor* Owner = Component->GetOwner()) Owner->RemoveInstanceComponent(Component);
+					Component->DestroyComponent();
+				}
+			*this = FVisual{};
+		}
+	};
+	struct FJob
 	{
-		const UStaticMesh* Asset = Mesh ? Mesh->GetStaticMesh() : nullptr;
-		return Asset && !Mesh->ComponentHasTag(TEXT("APS.GasGiantVisual"))
-			&& Asset->GetPathName().Contains(TEXT("/StarterContent/Props/MaterialSphere"));
+		FSamplingFrame Frame;
+		FBuildOptions Options;
+		FMeshData Mesh;
+		TAtomic<bool> Done{false};
+		bool bSuccess = false; // Published by Done's release/acquire store/load.
+	};
+	struct FRecord
+	{
+		TWeakObjectPtr<APlanetaryBody> Body;
+		FVisual Ready;
+		FVisual Pending;
+		TSharedPtr<FJob, ESPMode::ThreadSafe> Job;
+		FRenderCommandFence CommitFence;
+		uint32 DesiredIdentity = 0, ReadyIdentity = 0, PendingIdentity = 0;
+		double IdentityCheckedAt = -1.0, RetryAt = 0.0, StartedAt = 0.0;
+		bool bRequestedVisible = true, bAwaitingFence = false;
+		FString LastError;
+	};
+	struct FWorldState
+	{
+		TMap<TWeakObjectPtr<APlanetaryBody>, TSharedPtr<FRecord>> Bodies;
+		TSharedPtr<FRecord> Running;
+	};
+	TMap<TWeakObjectPtr<UWorld>, TSharedPtr<FWorldState>> Worlds;
+
+	FWorldState& State(UWorld* World)
+	{
+		auto& Found = Worlds.FindOrAdd(World);
+		if (!Found) Found = MakeShared<FWorldState>();
+		return *Found;
+	}
+	void HideAuthoredGlobes(APlanetaryBody* Body)
+	{
+		TInlineComponentArray<UStaticMeshComponent*> Meshes(Body);
+		for (auto* Mesh : Meshes)
+			if (IsValid(Mesh) && !Mesh->ComponentHasTag(TEXT("APS.GasGiantVisual")))
+			{
+				Mesh->SetVisibility(false, false);
+				Mesh->SetHiddenInGame(true, false);
+				Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			}
+	}
+	bool Current(const FRecord& Record)
+	{
+		return Record.Ready.Frame.IsValid() && Record.Ready.Terrain.IsValid()
+			&& Record.ReadyIdentity == Record.DesiredIdentity;
+	}
+	FVisual CreateVisual(APlanetaryBody* Body, const AWorldScapeRoot* Root)
+	{
+		FVisual Result;
+		auto* Frame = NewObject<USceneComponent>(Body, NAME_None, RF_Transient);
+		Body->AddInstanceComponent(Frame);
+		Frame->SetUsingAbsoluteScale(true);
+		Frame->RegisterComponent();
+		Frame->AttachToComponent(Body->GetRootComponent(), FAttachmentTransformRules::KeepWorldTransform);
+		Frame->SetWorldTransform(FTransform(Root->GetActorQuat(), Root->GetActorLocation(), FVector::OneVector));
+		Result.Frame = Frame;
+		auto MakeMesh = [&](const FName Tag)
+		{
+			auto* Mesh = NewObject<UProceduralMeshComponent>(Body, NAME_None, RF_Transient);
+			Body->AddInstanceComponent(Mesh);
+			Mesh->SetupAttachment(Frame);
+			Mesh->SetRelativeTransform(FTransform::Identity);
+			Mesh->ComponentTags.Add(Tag);
+			Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			Mesh->SetGenerateOverlapEvents(false);
+			Mesh->SetCastShadow(false);
+			Mesh->bUseAsOccluder = false;
+			Mesh->SetVisibility(false);
+			Mesh->SetHiddenInGame(true);
+			Mesh->RegisterComponent();
+			return Mesh;
+		};
+		Result.Terrain = MakeMesh(TEXT("APS.NativeClosedTerrain"));
+		Result.Ocean = MakeMesh(TEXT("APS.NativeClosedOcean"));
+		return Result;
+	}
+	void Wait(FRecord& Record, const FString& Error)
+	{
+		Record.RetryAt = FPlatformTime::Seconds() + 0.25;
+		if (!Error.IsEmpty() && Error != Record.LastError)
+		{
+			Record.LastError = Error;
+			UE_LOG(LogTemp, Log, TEXT("[APS.NativeGlobe] pending body=%s reason=%s"),
+				*GetNameSafe(Record.Body.Get()), *Error);
+		}
+	}
+	bool Start(FRecord& Record)
+	{
+		auto* Body = Record.Body.Get();
+		if (!APSPlaceholderGlobe::Handles(Body)) return false;
+		auto* Generator = Body->EnsurePlanetaryEnvironmentGenerator();
+		if (!IsValid(Generator) || Generator->bPendingWorldScapeUnload) return false;
+		// Reuse the real factory, including catalog, liquid and UnifiedLava policy.
+		// A disabled root allocates no clipmaps, collision or foliage workers.
+		const bool bHadRoot = IsValid(Generator->WorldScapeRootInstance);
+		if (!Body->EnsureWorldScapeSurface()) return false;
+		auto* Root = Generator->WorldScapeRootInstance;
+		if (!Generator->IsSurfaceProfileCurrent(Body))
+			Generator->ApplySurfaceProfile(Body);
+		if (Generator->IsSurfaceProfileApplyPending() || !Generator->IsSurfaceProfileCurrent(Body))
+		{
+			Wait(Record, TEXT("native profile or material preparation"));
+			return false;
+		}
+		auto Job = MakeShared<FJob, ESPMode::ThreadSafe>();
+		uint32 Identity = 0;
+		FString Error;
+		if (!APSNativeGlobeSnapshot::Capture(Body, Generator, Job->Frame, Job->Options, Identity, Error))
+		{
+			Wait(Record, Error);
+			return false;
+		}
+		Job->Options.FaceResolution = 96;
+		Record.Pending = CreateVisual(Body, Root);
+		UMaterialInstanceDynamic* Terrain = nullptr;
+		UMaterialInstanceDynamic* Ocean = nullptr;
+		if (!APSNativeGlobeSnapshot::CloneMaterials(Record.Pending.Frame.Get(),
+			Record.Pending.Frame.Get(), Generator, Terrain, Ocean, Error))
+		{
+			Record.Pending.Destroy();
+			Wait(Record, Error);
+			return false;
+		}
+		// Subscribe before the lightweight root retires: copying overrides once
+		// cannot receive a field that finishes later. Same existing MID and frame.
+		if (APSPlanetReliefRuntime::IsEnabled())
+			APSPlanetReliefRuntime::Register(Body,Job->Frame,Identity,Terrain);
+		// The mesh references own these MIDs after the lightweight root is retired.
+		Record.Pending.Terrain->SetMaterial(0, Terrain);
+		if (Ocean) Record.Pending.Ocean->SetMaterial(0, Ocean);
+		Record.PendingIdentity = Record.DesiredIdentity = Identity;
+		Record.StartedAt = FPlatformTime::Seconds();
+		Record.Job = Job;
+		Record.LastError.Reset();
+		AsyncTask(ENamedThreads::AnyBackgroundThreadNormalTask, [Job]()
+		{
+			Job->bSuccess = BuildClosedCubeSphere(Job->Frame, Job->Options, Job->Mesh);
+			Job->Done.Store(true);
+		});
+		if (Body->GetWorldScapeStreamingState() == EWorldScapeSurfaceState::Unloaded
+			&& !Root->bGenerateWorldScape && Root->WorldScapeLod.IsEmpty()
+			&& Root->WorldScapeLodInGeneration.IsEmpty() && Generator->bOwnsWorldScapeRootInstance)
+		{
+			// Only a profile-only root: never destroy a published or building surface.
+			Generator->UnloadWorldScapeRoot();
+		}
+		UE_LOG(LogTemp, Log, TEXT("[APS.NativeGlobe] queued body=%s seed=%d rootAlreadyAllocated=%d parent=%s"),
+			*Body->GetName(), Body->WorldScapeSeed, int32(bHadRoot), *GetPathNameSafe(Terrain->Parent.Get()));
+		return true;
+	}
+	bool Finish(FRecord& Record)
+	{
+		auto* Body = Record.Body.Get();
+		if (IsValid(Body))
+		{
+			auto* Generator = Body->PlanetaryEnvironmentGenerator;
+			Record.DesiredIdentity = APSNativeGlobeSnapshot::Identity(Body,
+				IsValid(Generator) ? Generator->SurfaceProfileCatalog : nullptr);
+		}
+		if (!APSPlaceholderGlobe::Handles(Body) || Record.PendingIdentity != Record.DesiredIdentity)
+		{
+			if (Record.Job && !Record.Job->Done.Load()) return false;
+			Record.Pending.Destroy();
+			Record.Job.Reset();
+			Record.bAwaitingFence = false;
+			return true; // A changed profile never receives an old worker result.
+		}
+		if (Record.bAwaitingFence)
+		{
+			if (!Record.CommitFence.IsFenceComplete()) return false;
+			Record.Ready.Destroy();
+			Record.Ready = Record.Pending;
+			Record.Pending = FVisual{};
+			Record.ReadyIdentity = Record.PendingIdentity;
+			Record.bAwaitingFence = false;
+			Record.Job.Reset();
+			Record.Ready.Show(Record.bRequestedVisible && !Body->bWorldScapeSurfaceReady);
+			HideAuthoredGlobes(Body);
+			UE_LOG(LogTemp, Display, TEXT("[APS.NativeGlobe] published body=%s identity=%u seconds=%.3f terrain=%s sameNativeParent=1"),
+				*Body->GetName(), Record.ReadyIdentity, FPlatformTime::Seconds() - Record.StartedAt,
+				*GetPathNameSafe(Record.Ready.Terrain->GetMaterial(0)));
+			return true;
+		}
+		if (!Record.Job || !Record.Job->Done.Load()) return false;
+		if (!Record.Job->bSuccess || !Record.Pending.Terrain.IsValid())
+		{
+			Record.Pending.Destroy(); Record.Job.Reset();
+			Wait(Record, TEXT("closed native mesh build failed; keeping previous complete geometry"));
+			return true;
+		}
+		const auto& M = Record.Job->Mesh;
+		Record.Pending.Terrain->CreateMeshSection_LinearColor(0, M.TerrainVertices, M.Indices,
+			M.Normals, M.UV0, M.VertexColors, M.Tangents, false, false);
+		if (Record.Job->Options.bBuildOcean)
+			Record.Pending.Ocean->CreateMeshSection_LinearColor(0, M.OceanVertices, M.OceanIndices,
+				M.OceanNormals, M.UV0, M.OceanDepthUV1, TArray<FVector2D>(), TArray<FVector2D>(),
+				M.OceanVertexColors, M.Tangents, false, false);
+		Record.CommitFence.BeginFence();
+		Record.bAwaitingFence = true;
+		return false;
 	}
 }
 
-FLinearColor APSPlaceholderGlobe::ColorOf(const APlanetaryBody* Body)
+bool APSPlaceholderGlobe::Handles(const APlanetaryBody* Body)
 {
-	const FAPSResolvedPlanetSurfaceProfile Profile = UAPSPlanetSurfaceProfileResolver::ResolveForBody(Body);
-	const FAPSPlanetSurfacePalette& Palette = Profile.Palette;
-	// The land as seen from orbit: mostly lowlands and highlands, some dry ground and slopes, a touch of the peaks.
-	FLinearColor Color = Palette.Lowland * 0.25f + Palette.MidLowland * 0.25f + Palette.Highland * 0.2f
-		+ Palette.Dryland * 0.15f + Palette.Slope * 0.1f + Palette.Peak * 0.05f;
-	FLinearColor Liquid = FLinearColor::Black;
-	switch (Profile.LiquidType)
-	{
-	case EAPSPlanetLiquidType::Water:
-		Liquid = FLinearColor(0.02f, 0.07f, 0.16f);
-		break;
-	case EAPSPlanetLiquidType::Lava:
-		Liquid = FLinearColor(0.42f, 0.08f, 0.02f);
-		break;
-	case EAPSPlanetLiquidType::Ammonia:
-		Liquid = FLinearColor(0.08f, 0.20f, 0.18f);
-		break;
-	default:
-		break;
-	}
-	if (Profile.LiquidType != EAPSPlanetLiquidType::None)
-	{
-		Color = FMath::Lerp(Color, Liquid, FMath::Clamp(1.0f - Profile.LandCoverage, 0.15f, 0.85f));
-	}
-	Color.A = 1.0f;
-	return Color;
+	const auto* Planet = Cast<APlanet>(Body);
+	if (!IsValid(Body) || !Body->GetWorld() || !Body->GetWorld()->IsGameWorld()
+		|| !Body->bStreamWorldScapeSurface || (Planet && Planet->IsManual)
+		|| !FMath::IsNearlyEqual(Body->WorldScapePresentationScale, 1.0)
+		|| !UAPSPlanetSurfaceProfileResolver::SupportsWorldScape(Body->PlanetType)
+		|| APSNativeGlobeSnapshot::IsExplicitAuthoredOverride(Body)) return false;
+	for (const AActor* Parent = Body; IsValid(Parent); Parent = Parent->GetAttachParentActor())
+		if (Parent->ActorHasTag(TEXT("WorldGenerationPreview"))) return false;
+	return true;
 }
 
 void APSPlaceholderGlobe::Apply(APlanetaryBody* Body)
 {
-	using namespace APSPlaceholderGlobePrivate;
-	if (!IsValid(Body) || GHandled.Contains(Body) || CVarTint.GetValueOnGameThread() == 0
-		// Menu previews render a compressed root and their own globe proxies.
-		|| !FMath::IsNearlyEqual(Body->WorldScapePresentationScale, 1.0)
-		|| !UAPSPlanetSurfaceProfileResolver::SupportsWorldScape(Body->PlanetType))
+	using namespace APSNativeGlobePrivate;
+	if (!Handles(Body)) return;
+	auto& Record = State(Body->GetWorld()).Bodies.FindOrAdd(Body);
+	if (!Record) { Record = MakeShared<FRecord>(); Record->Body = Body; }
+	const double Now = FPlatformTime::Seconds();
+	if (Now - Record->IdentityCheckedAt >= 0.5)
 	{
-		return;
+		auto* Generator = Body->PlanetaryEnvironmentGenerator;
+		Record->DesiredIdentity = APSNativeGlobeSnapshot::Identity(Body,
+			IsValid(Generator) ? Generator->SurfaceProfileCatalog : nullptr);
+		Record->IdentityCheckedAt = Now;
 	}
-	if (GHandled.Num() > 4096)
+	HideAuthoredGlobes(Body);
+}
+
+bool APSPlaceholderGlobe::SetVisible(APlanetaryBody* Body, bool bVisible)
+{
+	using namespace APSNativeGlobePrivate;
+	if (!Handles(Body))
 	{
-		for (auto It = GHandled.CreateIterator(); It; ++It)
-		{
-			if (!It->IsValid()) It.RemoveCurrent();
-		}
+		if (IsValid(Body))
+			if (auto* WorldState = Worlds.Find(Body->GetWorld()))
+				if (auto* Previous = (*WorldState)->Bodies.Find(Body))
+				{
+					(*Previous)->Ready.Show(false);
+					(*Previous)->Pending.Show(false);
+				}
+		return false;
 	}
-	UMaterialInterface* Base = Parent();
-	if (!Base)
+	Apply(Body);
+	auto& Record = State(Body->GetWorld()).Bodies.FindChecked(Body);
+	Record->bRequestedVisible = bVisible;
+	// Preserve the last complete same-body surface during an explicit profile edit.
+	// Ordinary camera movement never invalidates this cache or its material.
+	Record->Ready.Show(bVisible);
+	return true;
+}
+
+bool APSPlaceholderGlobe::PrepareForUnload(APlanetaryBody* Body)
+{
+	using namespace APSNativeGlobePrivate;
+	if (!Handles(Body)) return true;
+	Apply(Body);
+	auto& Record = *State(Body->GetWorld()).Bodies.FindChecked(Body);
+	auto* Generator = Body->PlanetaryEnvironmentGenerator;
+	Record.DesiredIdentity = APSNativeGlobeSnapshot::Identity(Body,
+		IsValid(Generator) ? Generator->SurfaceProfileCatalog : nullptr);
+	return Current(Record);
+}
+
+void APSPlaceholderGlobe::Tick(UWorld* World)
+{
+	using namespace APSNativeGlobePrivate;
+	auto* Entry = Worlds.Find(World);
+	if (!Entry) return;
+	auto& S = **Entry;
+	for (auto It = S.Bodies.CreateIterator(); It; ++It)
+		if (!It.Key().IsValid() || !Handles(It.Key().Get()))
+		{
+			It.Value()->Ready.Destroy();
+			// Worker owns values only; no join or access to a destroyed body.
+			if (!S.Running || S.Running != It.Value()) It.Value()->Pending.Destroy();
+			It.RemoveCurrent();
+		}
+	if (S.Running)
 	{
-		return;
+		if (!Finish(*S.Running)) return;
+		S.Running.Reset();
 	}
-	GHandled.Add(Body);
-	TInlineComponentArray<UStaticMeshComponent*> Meshes(Body);
-	bool bResolved = false;
-	FLinearColor Color = FLinearColor::Gray;
-	for (UStaticMeshComponent* Mesh : Meshes)
+	APawn* Observer = World && World->GetFirstPlayerController() ? World->GetFirstPlayerController()->GetPawn() : nullptr;
+	const FVector ObserverPosition = Observer ? Observer->GetActorLocation() : FVector::ZeroVector;
+	TSharedPtr<FRecord> Next;
+	double BestScore = TNumericLimits<double>::Max();
+	const double Now = FPlatformTime::Seconds();
+	for (auto& Pair : S.Bodies)
 	{
-		if (!IsValid(Mesh) || !IsAuthoredGlobe(Mesh))
-		{
-			continue;
-		}
-		if (!bResolved)
-		{
-			Color = ColorOf(Body);
-			bResolved = true;
-		}
-		UMaterialInstanceDynamic* Material = UMaterialInstanceDynamic::Create(Base, Mesh,
-			MakeUniqueObjectName(Mesh, UMaterialInstanceDynamic::StaticClass(), FName(MaterialPrefix)));
-		Material->SetVectorParameterValue(ColorParameter, Color);
-		for (int32 Slot = 0; Slot < FMath::Max(Mesh->GetNumMaterials(), 1); ++Slot)
-		{
-			Mesh->SetMaterial(Slot, Material);
-		}
-		UE_LOG(LogTemp, Log, TEXT("[APS.Placeholder] %s globe %s wears %s"), *Body->GetName(), *Mesh->GetName(),
-			*Color.ToString());
+		const auto& R = Pair.Value;
+		if (Current(*R) || R->RetryAt > Now || !R->Body.IsValid()) continue;
+		auto* Body = R->Body.Get();
+		const double Score = FVector::DistSquared(ObserverPosition, Body->GetActorLocation())
+			/ FMath::Square(Body->GetWorldScapeBodyRadiusCm());
+		if (Score < BestScore) { BestScore = Score; Next = R; }
 	}
+	if (Next && Start(*Next)) S.Running = Next;
+}
+
+void APSPlaceholderGlobe::Release(UWorld* World)
+{
+	using namespace APSNativeGlobePrivate;
+	// Registered components are owned/destroyed by their bodies. Jobs retain only
+	// immutable value snapshots and discard their result after world teardown.
+	Worlds.Remove(World);
+}
+
+bool APSPlaceholderGlobe::HasInitialCoverage(UWorld* World)
+{
+	using namespace APSNativeGlobePrivate;
+	if (!World) return false;
+	bool bReady = true;
+	for (TActorIterator<APlanetaryBody> It(World); It; ++It)
+		if (Handles(*It) && !It->bWorldScapeSurfaceReady)
+		{
+			Apply(*It);
+			bReady &= Current(*State(World).Bodies.FindChecked(*It));
+		}
+	return bReady;
 }

@@ -11,9 +11,8 @@ namespace APSCoastalWaterMaterial
     inline constexpr const TCHAR* TemplatePath = TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/WaterV1/MI_APS_CoastalWater.MI_APS_CoastalWater");
     inline bool Allows(const FAPSResolvedPlanetSurfaceProfile& P)
     {
-        return P.LiquidType == EAPSPlanetLiquidType::Water
-            && (P.PlanetType == EPlanetType::Water || P.PlanetType == EPlanetType::Terrestrial || P.PlanetType == EPlanetType::Oasis)
-            && FMath::IsFinite(P.LandCoverage) && P.LandCoverage >= 0 && P.LandCoverage < .995f;
+        return APSPlanetSurfaceMaterialPolicy::AllowsCoastalWater(P,
+            APSPlanetSurfaceMaterialPolicy::UnifiedRoutesEnabled());
     }
     inline bool Enabled()
     {
@@ -47,7 +46,7 @@ namespace APSCoastalWaterMaterial
         const TWeakObjectPtr<USceneComponent> WeakFrame(Frame);
         Frame->TransformUpdated.AddWeakLambda(M, [WeakM, Scale](USceneComponent* F, EUpdateTransformFlags, ETeleportType)
         { WriteFrame(WeakM.Get(), F, Scale); });
-        FCoreDelegates::PostWorldOriginOffset.AddWeakLambda(M, [WeakM, WeakFrame, Scale](UWorld* World, FIntVector, FIntVector)
+        APSWorldShiftEvents::BindPostShift(M, [WeakM, WeakFrame, Scale](UWorld* World)
         {
             auto* F = WeakFrame.Get();
             if (IsValid(F) && F->GetWorld() == World) WriteFrame(WeakM.Get(), F, Scale);

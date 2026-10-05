@@ -2,6 +2,7 @@
 
 #include "Misc/AutomationTest.h"
 #include "APS_ALPHA/Core/Planetary/APSSharedGeneratedLiquidMaterial.h"
+#include "APS_ALPHA/Core/Planetary/APSOrbitalWaterAppearance.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Components/SceneComponent.h"
 #include "UObject/Package.h"
@@ -123,6 +124,37 @@ bool FAPSSharedGeneratedLiquidSelectionTest::RunTest(const FString& Parameters)
         TestEqual(Prefix + TEXT("closed globe shoreline alpha used"), OrbitMask, 1.0f);
         TestNull(Prefix + TEXT("manual factory refuses migration"), Create(GetTransientPackage(), Frame.Get(), 1.0, false, true, Profile, Source));
         TestNull(Prefix + TEXT("custom factory refuses migration"), Create(GetTransientPackage(), Frame.Get(), 1.0, false, false, Profile, Custom.Get()));
+        if (Types[I] == EAPSPlanetLiquidType::Water)
+        {
+            // Read the selected saved family MIC, never hardcode its optics.
+            for (const FName Name : {FName(TEXT("Specular")), FName(TEXT("Roughness"))})
+            {
+                float Saved = -1, GroundValue = -1, OrbitValue = -1;
+                const FHashedMaterialParameterInfo Info(Name);
+                TestTrue(TEXT("Saved Water optical scalar exists"), Ground->Parent->GetScalarParameterValue(Info, Saved));
+                Ground->GetScalarParameterValue(Info, GroundValue);
+                Orbit->GetScalarParameterValue(Info, OrbitValue);
+                TestEqual(Name.ToString() + TEXT(" ground inherits saved value"), GroundValue, Saved);
+                TestEqual(Name.ToString() + TEXT(" orbit inherits saved value"), OrbitValue, Saved);
+                Ground->SetScalarParameterValue(Name, Saved < 0.5f ? 1.0f : 0.0f);
+            }
+            TestTrue(TEXT("Water recovers from previous optical override"),
+                APSOrbitalWaterAppearance::RestoreAuthoredResponse(Ground.Get()));
+            TStrongObjectPtr<UMaterialInstanceDynamic> Closed(UMaterialInstanceDynamic::Create(Ground->Parent.Get(), GetTransientPackage()));
+            if (!TestNotNull(TEXT("Closed globe same-parent MID"), Closed.Get())) return false;
+            Closed->CopyParameterOverrides(Ground.Get());
+            TestTrue(TEXT("Closed globe retains exact saved parent"), Closed->Parent == Ground->Parent);
+            for (const FName Name : {FName(TEXT("Specular")), FName(TEXT("Roughness"))})
+            {
+                float Saved = -1, GroundValue = -1, ClosedValue = -1;
+                const FHashedMaterialParameterInfo Info(Name);
+                Ground->Parent->GetScalarParameterValue(Info, Saved);
+                Ground->GetScalarParameterValue(Info, GroundValue);
+                Closed->GetScalarParameterValue(Info, ClosedValue);
+                TestEqual(Name.ToString() + TEXT(" restored ground equals saved parent"), GroundValue, Saved);
+                TestEqual(Name.ToString() + TEXT(" copied globe equals saved parent"), ClosedValue, Saved);
+            }
+        }
         if (Types[I] == EAPSPlanetLiquidType::Lava)
         {
             float Saved = -1, GroundValue = -1, OrbitValue = -1;
@@ -153,8 +185,11 @@ bool FAPSCoastalWaterReleaseTest::RunTest(const FString& Parameters)
     for (auto Type:{EPlanetType::Water,EPlanetType::Terrestrial,EPlanetType::Oasis,EPlanetType::Frozen,EPlanetType::Forest,EPlanetType::Metallic})
     {
         P.PlanetType=Type;
-        TestEqual(TEXT("Bounded family rollout"),APSCoastalWaterMaterial::EnabledFor(P),
-            Type==EPlanetType::Water || Type==EPlanetType::Terrestrial || Type==EPlanetType::Oasis);
+        // These six concrete solids all have a valid Water profile in this
+        // fixture. Only the diagnostic process may expand the accepted three.
+        TestEqual(TEXT("Accepted rollout or explicit profile-capability trial"),APSCoastalWaterMaterial::EnabledFor(P),
+            Type==EPlanetType::Water || Type==EPlanetType::Terrestrial || Type==EPlanetType::Oasis
+                || APSPlanetSurfaceMaterialPolicy::UnifiedRoutesEnabled());
     }
     P.PlanetType=EPlanetType::Terrestrial;
     for (auto Type:{EAPSPlanetLiquidType::None,EAPSPlanetLiquidType::Lava,EAPSPlanetLiquidType::Ammonia})

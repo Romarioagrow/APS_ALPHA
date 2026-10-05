@@ -15,6 +15,7 @@
 #include "APS_ALPHA/Core/Rendering/APSCanonicalStellarProjection.h"
 #include "APS_ALPHA/Core/Rendering/APSGalaxyGpuStars.h"
 #include "APS_ALPHA/Core/Rendering/APSGalaxyNearStars.h"
+#include "APS_ALPHA/Core/World/APSRealScale.h"
 #include "APS_ALPHA/Core/Structs/MoonGenerationModel.h"
 #include "APS_ALPHA/Core/Structs/PlanetGenerationModel.h"
 #include "APS_ALPHA/Core/Structs/PlanetarySystemGenerationModel.h"
@@ -45,6 +46,14 @@ namespace APSSystemMaterializerLocal
 		TEXT("orbits drawn in to fit its room; it goes back to a catalogue point once the pilot is three rooms away. 0: points only."));
 	TAutoConsoleVariable<float> CVarRoomShare(TEXT("aps.Stars.MaterializeRoomShare"), 0.7f,
 		TEXT("The share of a system's room (half the distance to its nearest star) its outermost orbit may take."));
+	TAutoConsoleVariable<float> CVarRealSystemMaxAu(TEXT("aps.RealScale.SystemMaxAU"), 50.0f,
+		TEXT("Rio 05.10 (REAL SCALE, stage 2): in a REAL SCALE world a materialized system's worlds fit within this many AU ")
+		TEXT("of its star, whatever its room among the neighbours (rooms there are ~0.5 pc wide)."));
+	TAutoConsoleVariable<float> CVarRealMaterializeLy(TEXT("aps.RealScale.MaterializeLy"), 0.25f,
+		TEXT("Rio 05.10 (REAL SCALE, stage 2): in a REAL SCALE world a system comes no farther out than this many light years ")
+		TEXT("(two of its rooms would be parsecs: every star passed in the drive stood up and fell again, a hitch each), and ")
+		TEXT("goes once the pilot is half as far again away. Its glyph shows the star until then. 0: rooms as everywhere."));
+	constexpr double LightYearCm = 9.4607304725808e17;
 
 	constexpr double AstronomicalUnitCm = 1.495978707e13;
 	constexpr double EarthRadiusKm = 6371.0;
@@ -65,6 +74,17 @@ namespace APSSystemMaterializerLocal
 	 * over its approach (two rooms), so a flight through a dense field does not stand up every star it passes.
 	 */
 	constexpr double GalaxyApproachSeconds = 4.0;
+
+	/**
+	 * How near the pilot comes before a system stands up (Rooms = ApproachRooms) or how far before it goes (LeaveRooms):
+	 * that many of its rooms, and in a REAL SCALE world no more than aps.RealScale.MaterializeLy (half as far again to go).
+	 */
+	double ApproachCm(const FAPSStarSystemInfo& Info, const bool bRealScale, const double Rooms)
+	{
+		const double RoomsCm = Info.RoomCm * Rooms;
+		const double CapCm = bRealScale ? static_cast<double>(CVarRealMaterializeLy.GetValueOnGameThread()) * LightYearCm : 0.0;
+		return CapCm > 0.0 ? FMath::Min(RoomsCm, CapCm * (Rooms > ApproachRooms ? 1.5 : 1.0)) : RoomsCm;
+	}
 
 	/**
 	 * Rio 03.10 ("every star must be reachable"): a galaxy catalogue star stood up as AAstroGenerator::
@@ -295,8 +315,23 @@ void FAPSSystemMaterializer::Update(FAPSStarSystems& Systems, const float DeltaS
 	const APawn* Pilot = Controller ? Controller->GetPawn() : nullptr;
 	const FVector PilotLocation = Pilot ? Pilot->GetActorLocation() : FVector::ZeroVector;
 	const ASpaceship* PilotShip = Cast<ASpaceship>(Pilot);
-	const double PilotSpeedCm = PilotShip ? PilotShip->GetKinematicVelocity().Size() : Pilot ? Pilot->GetVelocity().Size() : 0.0;
+	double PilotSpeedCm = PilotShip ? PilotShip->GetKinematicVelocity().Size() : Pilot ? Pilot->GetVelocity().Size() : 0.0;
 	// The system the pilot is coming to: the nearest outside the home, within two of its rooms.
+	// Rio 05.10 (real scale, stage 2): in a REAL SCALE world no farther out than aps.RealScale.MaterializeLy (ApproachCm).
+	const bool bRealScale = APSRealScale::IsActive(LiveWorld);
+	if (bRealScale && !PilotShip && Pilot)
+	{
+		// Rio 05.10 (real scale, stage 2): someone walking aboard moves with the ship (Rio got up at 100 ly/s and every star
+		// passed within two rooms stood up behind him): the carrier's speed counts.
+		for (const AActor* Carrier = Pilot->GetAttachParentActor(); Carrier; Carrier = Carrier->GetAttachParentActor())
+		{
+			if (const ASpaceship* CarrierShip = Cast<ASpaceship>(Carrier))
+			{
+				PilotSpeedCm = FMath::Max(PilotSpeedCm, CarrierShip->GetKinematicVelocity().Size());
+				break;
+			}
+		}
+	}
 	int32 Wanted = INDEX_NONE;
 	if (bEnabled && Pilot)
 	{
@@ -309,8 +344,9 @@ void FAPSSystemMaterializer::Update(FAPSStarSystems& Systems, const float DeltaS
 			// Rio 04.10 (FPS dips in the star drive): the cluster's systems were built for a pass at any speed too, 9-16 a
 			// minute, most torn down within 3 s for the next one ahead, each build and teardown an ~80 ms hitch. Every
 			// system now waits, as the galaxy's did, until the ship would take a few seconds to cross its approach.
-			if (!Info->bHome && FVector::Dist(PilotLocation, Info->Location) <= Info->RoomCm * ApproachRooms
-				&& PilotSpeedCm * GalaxyApproachSeconds <= Info->RoomCm * ApproachRooms)
+			const double Approach = ApproachCm(*Info, bRealScale, ApproachRooms);
+			if (!Info->bHome && FVector::Dist(PilotLocation, Info->Location) <= Approach
+				&& PilotSpeedCm * GalaxyApproachSeconds <= Approach)
 			{
 				Wanted = Index;
 			}
@@ -321,7 +357,8 @@ void FAPSSystemMaterializer::Update(FAPSStarSystems& Systems, const float DeltaS
 	if (Stage == EStage::Ready)
 	{
 		const FAPSStarSystemInfo* Active = Systems.Get(ActiveIndex);
-		const bool bNear = Active && Pilot && FVector::Dist(PilotLocation, Active->Location) <= Active->RoomCm * LeaveRooms;
+		const bool bNear = Active && Pilot
+			&& FVector::Dist(PilotLocation, Active->Location) <= ApproachCm(*Active, bRealScale, LeaveRooms);
 		if (bEnabled && bNear && (Wanted == INDEX_NONE || Wanted == ActiveIndex))
 		{
 			AwaySeconds = 0.0f;
@@ -454,7 +491,9 @@ bool FAPSSystemMaterializer::Begin(FAPSStarSystems& Systems, const int32 Index)
 		Model->OrbitDistributionType = EOrbitDistributionType::Dense;
 		UPlanetarySystemGenerator* SystemGenerator = Gen->PlanetarySystemGenerator;
 		SystemGenerator->SetGenerationSeed(SystemSeed);
-		SystemGenerator->GenerateCustomPlanetarySystemModel(Model, StarModel, Gen->PlanetGenerator, Gen->MoonGenerator, nullptr, true);
+		// Rio 05.10 (real scale experiment): a REAL SCALE world keeps real AU orbits (no REAL SCALE gameplay before stage 2).
+		SystemGenerator->GenerateCustomPlanetarySystemModel(Model, StarModel, Gen->PlanetGenerator, Gen->MoonGenerator, nullptr,
+			!Gen->UsesRealScale());
 		SystemGenerator->ClearGenerationSeed();
 		UPlanetarySystemGenerator::EnforcePlanetSurfaceClearance(*Model);
 		SystemGenerator->ApplyModel(NewPlanetarySystem, Model);
@@ -470,7 +509,13 @@ bool FAPSSystemMaterializer::Begin(FAPSStarSystems& Systems, const int32 Index)
 	// Orbits drawn in to the room: one scale for all (their ratios stay), clear of the star and of each other; a planet
 	// that does not fit before the room's edge, and every one after it, is left out ("planets only where there is room").
 	const double StarRadiusCm = FMath::Max(static_cast<double>(NewStar->StarRadiusKM), 1.0) * 100000.0;
-	const double UsableCm = Info->RoomCm * FMath::Clamp(CVarRoomShare.GetValueOnGameThread(), 0.2f, 0.95f);
+	// Rio 05.10 (real scale, stage 2): a REAL SCALE room is ~0.5 pc wide, and its 2% gap between worlds put six of them 2 500
+	// AU apart (12 600 AU out in Rio's 05.10 run): there the worlds keep a star system's own size (aps.RealScale.SystemMaxAU).
+	const double RoomUsableCm = Info->RoomCm * FMath::Clamp(CVarRoomShare.GetValueOnGameThread(), 0.2f, 0.95f);
+	const double UsableCm = Gen->UsesRealScale()
+		? FMath::Min(RoomUsableCm, FMath::Max(static_cast<double>(CVarRealSystemMaxAu.GetValueOnGameThread()), 1.0)
+			* AstronomicalUnitCm)
+		: RoomUsableCm;
 	TArray<int32> Order;
 	double OutermostPhysicalCm = 0.0;
 	for (int32 PlanetIndex = 0; PlanetIndex < Model->PlanetsList.Num(); ++PlanetIndex)
@@ -788,7 +833,11 @@ bool FAPSSystemMaterializer::VisitForTest(const FAPSStarSystems& Systems, const 
 	{
 		FVector From = Pawn->GetActorLocation() - Info->Location;
 		if (From.IsNearlyZero()) From = FVector::ForwardVector;
-		Target = Info->Location + From.GetSafeNormal() * Info->RoomCm * 0.9;
+		// Rio 05.10 (real scale, stage 2): a REAL SCALE system stands up well inside its room: the visit starts inside that.
+		Target = APSRealScale::IsActive(LiveWorld)
+			? Info->Location + From.GetSafeNormal() * FMath::Min(Info->RoomCm * 0.9,
+				0.8 * APSSystemMaterializerLocal::ApproachCm(*Info, true, APSSystemMaterializerLocal::ApproachRooms))
+			: Info->Location + From.GetSafeNormal() * Info->RoomCm * 0.9;
 		LookAt = Info->Location;
 		What = TEXT("its edge");
 	}

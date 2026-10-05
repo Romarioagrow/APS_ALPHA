@@ -56,6 +56,10 @@ public:
 	/** Rio 03.10: the galaxy's POPULATION / COMPOSITION rows (EStarClusterPopulation / EStarClusterComposition values). */
 	void SetGalaxyStarPopulation(int32 Value);
 	void SetGalaxyStarComposition(int32 Value);
+	/** Rio 05.10: REAL SCALE (EXPERIMENTAL) row of OVERVIEW; rebuilds and refocuses the preview. */
+	void SetRealScale(bool bEnabled);
+	/** REAL SCALE is on and applies (FULL-SCALE WORLD on): stage 1 shows it in the menu only, no game starts from it. */
+	bool IsRealScaleActive() const;
 
 	UFUNCTION(BlueprintCallable, Category = "World Generation")
 	void SetGalaxyStarDensity(double Value);

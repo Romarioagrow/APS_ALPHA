@@ -1,0 +1,18 @@
+APOSFERA menu music
+
+Music by Scott Buckley - released under CC-BY 4.0.
+https://www.scottbuckley.com.au
+License: https://creativecommons.org/licenses/by/4.0/
+
+A Kind Of Hope
+https://www.scottbuckley.com.au/library/a-kind-of-hope/
+
+Tears in Rain
+https://www.scottbuckley.com.au/library/tears-in-rain/
+
+Celestial
+https://www.scottbuckley.com.au/library/celestial/
+
+Changes for APOSFERA: loudness normalization, quiet lead-in trimming, gentle fades,
+and a four-second overlap between tracks. The cycle repeats after all three compositions.
+No endorsement by the composer is implied.

@@ -67,6 +67,12 @@
 #include "APSPlanetCloudBuilder.h"
 #include "APSWaterDomainAuditBuilder.h"
 #include "APSSharedTerrainLodABBuilder.h"
+#include "APSContinuousWarpPixelABBuilder.h"
+#include "APSContinuousOriginalWarpPixelABBuilder.h"
+#include "APSContinuousWarpColdAudit.h"
+#include "APSContinuousOriginalColorUpdate.h"
+#include "APSOrbitalReliefLightingPublisher.h"
+#include "APSAtmosphereTailABBuilder.h"
 #include "APSSharedTerrainMacroABBuilder.h"
 #include "APSSharedTerrainFarNormalABBuilder.h"
 #include "APSSharedTerrainNormalUpdate.h"
@@ -2377,6 +2383,11 @@ UAPSPlanetSurfaceAssetCommandlet::UAPSPlanetSurfaceAssetCommandlet()
 int32 UAPSPlanetSurfaceAssetCommandlet::Main(const FString& Params)
 {
 	using namespace APSPlanetSurfaceAssets;
+	if (FParse::Param(*Params, TEXT("OnlyContinuousWarpColdAudit")))
+	{
+		// Read-only cold-load evidence; no rendering, AssetTools or publishing.
+		return APSContinuousWarpColdAudit::Run() ? 0 : 33;
+	}
 	if (!FParse::Param(FCommandLine::Get(), TEXT("AllowCommandletRendering")))
 	{
 		UE_LOG(LogTemp, Error,
@@ -2477,6 +2488,35 @@ int32 UAPSPlanetSurfaceAssetCommandlet::Main(const FString& Params)
 	{
 		// Diagnostic-only new graph; never selects or modifies production assets.
 		return APSLavaSamplingABBuilder::Build(AssetTools) ? 0 : 14;
+	}
+	if (FParse::Param(*Params, TEXT("OnlyContinuousWarpPixelAB")))
+	{
+		return APSContinuousWarpPixelABBuilder::Build(AssetTools) ? 0 : 31;
+	}
+	if (FParse::Param(*Params, TEXT("OnlyContinuousOriginalWarpPixelAB")))
+	{
+		return APSContinuousOriginalWarpPixelABBuilder::Build(AssetTools) ? 0 : 31;
+	}
+	if (FParse::Param(*Params, TEXT("OnlyAtmosphereTailProduction")))
+	{
+		return APSAtmosphereTailABBuilder::Build(AssetTools, true) ? 0 : 32;
+	}
+	if (FParse::Param(*Params, TEXT("OnlyContinuousOriginalColor")))
+	{
+		return APSContinuousOriginalColorUpdate::Update(AssetTools) ? 0 : 33;
+	}
+	if (FParse::Param(*Params, TEXT("OnlyContinuousOriginalColorColdCheck")))
+	{
+		return APSContinuousOriginalColorUpdate::ColdCheck() ? 0 : 34;
+	}
+	if (FParse::Param(*Params, TEXT("OnlyOrbitalReliefLighting")))
+	{
+		return APSOrbitalReliefLightingPublisher::Run(AssetTools,
+			FParse::Param(*Params, TEXT("APSReliefInspectOnly"))) ? 0 : 35;
+	}
+	if (FParse::Param(*Params, TEXT("OnlyAtmosphereTailAB")))
+	{
+		return APSAtmosphereTailABBuilder::Build(AssetTools) ? 0 : 32;
 	}
 	if (FParse::Param(*Params, TEXT("OnlySharedTerrainLodAB")))
 	{

@@ -213,9 +213,10 @@ public:
 	/**
 	 * Out of a vehicle (Rio, 01.10: odd turns and orientation on leaving the ship): the gravity of the place the
 	 * character now stands in, taken at once instead of blending from the frame it boarded in, upright on it and
-	 * facing Facing; flying in zero-G, falling to the ground under gravity.
+	 * facing Facing; flying in zero-G, falling to the ground under gravity. LeftVehicle: the vehicle just left (a ship
+	 * whose gravity sphere holds the character takes it aboard at once).
 	 */
-	void SettleAfterVehicleExit(const FVector& Facing);
+	void SettleAfterVehicleExit(const FVector& Facing, AActor* LeftVehicle = nullptr);
 	/**
 	 * Rio 02.10 ("landed, left the ship, and the character was pulled up into the sky"): for a few seconds after a
 	 * vehicle the G meant for the ship's engine does not toggle zero-G, and the rise away from the gravity source is

@@ -10,6 +10,8 @@
 class AAPSColonyModule;
 class SAPSCivilizationMap;
 class SAPSInfrastructurePanel;
+class SAPSStarMapPanel;
+class SAPSStarScheme;
 class SAPSSystemScheme;
 class SAPSSurfaceMap;
 class ASpaceship;
@@ -42,8 +44,8 @@ public:
 	virtual FReply OnKeyDown(const FGeometry& Geometry, const FKeyEvent& Event) override;
 	virtual void Tick(const FGeometry& AllottedGeometry, double InCurrentTime, float InDeltaTime) override;
 	/** 0 overview, 1 map, 2 infrastructure, 3 fleet orders, 4 divisions, 5 journal, 6 shipyard, 7 system scheme, 8 pilot,
-	 * 9 surface map (test captures, K). Map, fleet orders, scheme and surface are the modes of one MAP tab (Rio, 02.10). */
-	void ShowTab(int32 TabIndex) { SelectTab(static_cast<ETab>(FMath::Clamp(TabIndex, 0, 9))); }
+	 * 9 surface map, 10 star map (test captures, K). Stars, map, scheme and surface are the modes of one MAP tab (Rio, 02.10). */
+	void ShowTab(int32 TabIndex) { SelectTab(static_cast<ETab>(FMath::Clamp(TabIndex, 0, 10))); }
 	bool IsShowingTab(int32 TabIndex) const { return static_cast<int32>(ActiveTab) == TabIndex; }
 	/** Test captures: 1 the home planet's object page (INFRASTRUCTURE), 2 the construction catalogue, 0 neither. */
 	void ShowTestOverlay(int32 Overlay);
@@ -60,7 +62,9 @@ private:
 		Shipyard,
 		Scheme,
 		Pilot,
-		Surface
+		Surface,
+		/** Rio 05.10: the STAR level above the system map (appended: the indices above are the test captures'). */
+		Stars
 	};
 
 	FReply SelectTab(ETab Tab);
@@ -145,11 +149,11 @@ private:
 	 * to the home ship when the pilot is on foot. */
 	TSharedRef<SWidget> BuildMap();
 	void RefreshMap();
-	/** The mode bar shared by the MAP tab's three modes: strategic map, fleet orders, system scheme. */
+	/** The mode bar shared by the MAP tab's modes: system map, system scheme, surface (fleet orders have their own tab). */
 	TSharedRef<SWidget> BuildMapModes();
 	bool IsMapTab() const
 	{
-		return ActiveTab == ETab::Map || ActiveTab == ETab::Fleet || ActiveTab == ETab::Scheme || ActiveTab == ETab::Surface;
+		return ActiveTab == ETab::Map || ActiveTab == ETab::Scheme || ActiveTab == ETab::Surface || ActiveTab == ETab::Stars;
 	}
 	/** C6 (Rio, 02.10): the surface map of a world (SAPSSurfaceMap) with the worlds of the system to step through. */
 	TSharedRef<SWidget> BuildSurface();
@@ -163,27 +167,9 @@ private:
 	/** The INFRASTRUCTURE tab v2 (Rio 02.10): stocks, the network map, the construction catalogue, the holdings above and
 	 * the object page every OPEN lands on (SAPSInfrastructurePanel). */
 	TSharedPtr<SAPSInfrastructurePanel> InfrastructurePanel;
-	/** P1 (Rio, 02.10): the old personal widget (WBP_CurrentStatus_UI) as the PILOT tab: who and where the pilot is,
-	 * gravity and environment, telemetry, the course and the last journal lines, read four times a second. */
+	/** P1 (Rio, 02.10): the old personal widget (WBP_CurrentStatus_UI) as the PILOT tab. Rio 04.10: a dashboard like the
+	 * overview, read live four times a second while shown (SAPSPilotDashboard). */
 	TSharedRef<SWidget> BuildPilot();
-	void RefreshPilotStatus();
-	struct FPilotStatus
-	{
-		FText State;
-		FText Body;
-		FText BodyDetail;
-		FText Star;
-		FText Environment;
-		FText Altitude;
-		FText Gravity;
-		FText Speed;
-		FText Band;
-		FText Course;
-		FText CourseDistance;
-		FText Eta;
-		FText Journal;
-	};
-	FPilotStatus PilotStatus;
 	/** C5 (Rio, 02.10): construction as a catalogue window over the fleet map: cards with what each structure needs,
 	 * what it gives, whether the picked ships can raise it at the target, and the order. */
 	TSharedRef<SWidget> BuildConstructionCatalogue();
@@ -261,4 +247,19 @@ private:
 	FString MapListSignature;
 	FText CourseMessage;
 	bool bCourseIsError{false};
+
+	/** Rio 05.10 (star map): MAP > STAR MAP (SAPSStarMapPanel), above the system map. */
+	TSharedRef<SWidget> BuildStars();
+	/** The star map's drill-down: the system scheme pinned to a system that stands (home, the materialized one). */
+	void OpenSchemeOf(AActor* Star);
+	/** FLEET ORDERS with a star system's anchor as the target and the map on STARS. */
+	void OrderToSystem(const FGuid& SystemId);
+	TSharedPtr<SAPSStarMapPanel> StarMapPanel;
+	/** FLEET ORDERS' target map: the system (SYSTEM) or the stars around (STARS, the star scheme's picker style). */
+	TSharedPtr<SAPSStarScheme> FleetStars;
+	bool bFleetStars{false};
+	/** The MAP tab reopens the mode used last. */
+	ETab LastMapTab{ETab::Map};
+	/** The drill-down's pin survives its own SelectTab(Scheme); the mode button shows the player's system again. */
+	bool bKeepSchemePin{false};
 };

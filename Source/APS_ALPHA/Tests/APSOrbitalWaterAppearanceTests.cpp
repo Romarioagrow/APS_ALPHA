@@ -1,6 +1,10 @@
 #if WITH_DEV_AUTOMATION_TESTS
 #include "Misc/AutomationTest.h"
 #include "APS_ALPHA/Core/Planetary/APSOrbitalWaterAppearance.h"
+#include "APS_ALPHA/Core/Planetary/APSSharedWaterMaterial.h"
+#include "Materials/MaterialInstanceConstant.h"
+#include "UObject/Package.h"
+#include "UObject/StrongObjectPtr.h"
 #include <limits>
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAPSOrbitalWaterAppearanceTest,
@@ -18,33 +22,71 @@ bool FAPSOrbitalWaterAppearanceTest::RunTest(const FString& Parameters)
     TestFalse(TEXT("Scaled root preserved"), IsEligible(true, false, EAPSPlanetLiquidType::Water, 1.0, FVector(2.0)));
     for (const EAPSPlanetLiquidType Liquid : {EAPSPlanetLiquidType::None, EAPSPlanetLiquidType::Lava, EAPSPlanetLiquidType::Ammonia})
         TestFalse(TEXT("Other liquids untouched"), IsEligible(true, false, Liquid, 1.0, FVector::OneVector));
-    TestEqual(TEXT("Underwater keeps saved optics"), Weight(-100.0, 1.0f), 0.0f);
-    TestEqual(TEXT("Near flight keeps saved optics"), Weight(2000000.0, 1.0f), 0.0f);
-    TestEqual(TEXT("Midpoint blends continuously"), Weight(11000000.0, 1.0f), 0.5f);
-    TestEqual(TEXT("Orbit reaches target"), Weight(20000000.0, 1.0f), 1.0f);
-    TestEqual(TEXT("Disabled restores saved optics"), Weight(30000000.0, 0.0f), 0.0f);
-    TestEqual(TEXT("Negative strength clamps"), Weight(30000000.0, -1.0f), 0.0f);
-    TestEqual(TEXT("Excess strength clamps"), Weight(30000000.0, 2.0f), 1.0f);
-    TestEqual(TEXT("Invalid height fails closed"), Weight(std::numeric_limits<double>::quiet_NaN(), 1.0f), 0.0f);
-    TestEqual(TEXT("Infinite height fails closed"), Weight(std::numeric_limits<double>::infinity(), 1.0f), 0.0f);
-    TestEqual(TEXT("Invalid strength fails closed"), Weight(30000000.0, std::numeric_limits<float>::quiet_NaN()), 0.0f);
-    TestEqual(TEXT("Orbital specular target"), Specular(0.65f, 1.0f), 0.25f);
-    TestEqual(TEXT("Orbital roughness target"), Roughness(0.18f, 1.0f), 0.26f);
-    for (const float Saved : {0.0f, 0.1f, 0.18f, 0.25f, 0.26f, 0.65f, 1.0f})
+    TestFalse(TEXT("Invalid presentation scale rejected"),
+        IsEligible(true, false, EAPSPlanetLiquidType::Water, std::numeric_limits<double>::infinity(), FVector::OneVector));
+    TestFalse(TEXT("Missing material is not repaired"), RestoreAuthoredResponse(nullptr));
+
+#if WITH_EDITOR
+    TStrongObjectPtr<UMaterialInstance> SavedTemplate(LoadObject<UMaterialInstance>(nullptr, APSSharedWaterMaterial::TemplatePath()));
+    if (!TestNotNull(TEXT("Saved Water template exists"), SavedTemplate.Get())) return false;
+    // Synthetic parent overrides test guard boundaries without editing the asset.
+    // Actual saved-parent optics are tested by SharedGeneratedLiquidSelection.
+    TStrongObjectPtr<UMaterialInstanceConstant> Parent(NewObject<UMaterialInstanceConstant>(GetTransientPackage()));
+    if (!TestNotNull(TEXT("Transient parent created"), Parent.Get())) return false;
+    Parent->SetParentEditorOnly(SavedTemplate.Get());
+    TStrongObjectPtr<UMaterialInstanceDynamic> Child(UMaterialInstanceDynamic::Create(Parent.Get(), GetTransientPackage()));
+    if (!TestNotNull(TEXT("Transient parent created"), Parent.Get())
+        || !TestNotNull(TEXT("Transient child created"), Child.Get())) return false;
+    for (const float Saved : {0.0f, 0.18f, 0.25f, 0.26f, 0.65f, 1.0f})
     {
-        TestEqual(TEXT("Near specular is exactly authored"), Specular(Saved, 0.0f), Saved);
-        TestEqual(TEXT("Near roughness is exactly authored"), Roughness(Saved, 0.0f), Saved);
-        TestTrue(TEXT("Refinement never increases orbital reflectance"), Specular(Saved, 1.0f) <= Saved);
-        TestTrue(TEXT("Refinement never polishes an authored rough ocean"), Roughness(Saved, 1.0f) >= Saved);
+        Parent->SetScalarParameterValueEditorOnly(TEXT("Specular"), Saved);
+        Parent->SetScalarParameterValueEditorOnly(TEXT("Roughness"), Saved);
+        Child->SetScalarParameterValue(TEXT("Specular"), 1.0f - Saved);
+        Child->SetScalarParameterValue(TEXT("Roughness"), 0.5f);
+        // Inject invalid CPU fixture data directly; the setter's floating-point
+        // equality gate is not a reliable way to prepare NaN with /fp:fast.
+        auto* OldRoughness = Child->ScalarParameterValues.FindByPredicate([](const FScalarParameterValue& Value)
+            { return Value.ParameterInfo.Name == TEXT("Roughness"); });
+        if (!TestNotNull(TEXT("Old roughness override exists"), OldRoughness)) return false;
+        OldRoughness->ParameterValue = std::numeric_limits<float>::quiet_NaN();
+        float InvalidOldRoughness = 0;
+        Child->GetScalarParameterValue(FHashedMaterialParameterInfo(TEXT("Roughness")), InvalidOldRoughness);
+        TestFalse(TEXT("Old override readback is actually nonfinite"), FMath::IsFinite(InvalidOldRoughness));
+        TestTrue(TEXT("Previous finite/non-finite overrides restored"), RestoreAuthoredResponse(Child.Get()));
+        float Specular = -1, Roughness = -1;
+        Child->GetScalarParameterValue(FHashedMaterialParameterInfo(TEXT("Specular")), Specular);
+        Child->GetScalarParameterValue(FHashedMaterialParameterInfo(TEXT("Roughness")), Roughness);
+        TestEqual(TEXT("Specular exactly matches parent"), Specular, Saved);
+        TestEqual(TEXT("Roughness exactly matches parent"), Roughness, Saved);
+        const int32 OverrideCount = Child->ScalarParameterValues.Num();
+        TestTrue(TEXT("Repeat restoration remains valid"), RestoreAuthoredResponse(Child.Get()));
+        TestEqual(TEXT("Repeat restoration adds no override"), Child->ScalarParameterValues.Num(), OverrideCount);
     }
-    float Previous = 0.0f;
-    for (int32 Km = 0; Km <= 300; ++Km)
+    for (const float Invalid : {-0.01f, 1.01f, std::numeric_limits<float>::infinity(), std::numeric_limits<float>::quiet_NaN()})
+    for (const bool bInvalidSpecular : {false, true})
     {
-        const float Current = Weight(Km * 100000.0, 1.0f);
-        TestTrue(TEXT("Altitude response is bounded, monotonic and smooth"),
-            Current >= Previous && Current <= 1.0f && Current - Previous < 0.01f);
-        Previous = Current;
+        Parent->SetScalarParameterValueEditorOnly(TEXT("Specular"), 0.3f);
+        Parent->SetScalarParameterValueEditorOnly(TEXT("Roughness"), 0.7f);
+        const FName InvalidName = bInvalidSpecular ? TEXT("Specular") : TEXT("Roughness");
+        auto* InvalidParameter = Parent->ScalarParameterValues.FindByPredicate([InvalidName](const FScalarParameterValue& Value)
+            { return Value.ParameterInfo.Name == InvalidName; });
+        if (!TestNotNull(TEXT("Authored fixture override exists"), InvalidParameter)) return false;
+        InvalidParameter->ParameterValue = Invalid;
+        float ParentReadback = 0;
+        Parent->GetScalarParameterValue(FHashedMaterialParameterInfo(InvalidName), ParentReadback);
+        TestTrue(InvalidName.ToString() + TEXT(" parent readback is actually invalid"),
+            !FMath::IsFinite(ParentReadback) || ParentReadback < 0 || ParentReadback > 1);
+        Child->SetScalarParameterValue(TEXT("Specular"), 0.4f);
+        Child->SetScalarParameterValue(TEXT("Roughness"), 0.6f);
+        TestFalse(TEXT("Invalid authored response rejected before either write"), RestoreAuthoredResponse(Child.Get()));
+        float Specular = -1, Roughness = -1;
+        Child->GetScalarParameterValue(FHashedMaterialParameterInfo(TEXT("Specular")), Specular);
+        Child->GetScalarParameterValue(FHashedMaterialParameterInfo(TEXT("Roughness")), Roughness);
+        TestEqual(TEXT("Rejected response leaves specular untouched"), Specular, 0.4f);
+        TestEqual(TEXT("Rejected response leaves roughness untouched"), Roughness, 0.6f);
     }
+#endif
+    AddInfo(TEXT("Authored response has no camera/altitude/CVar input; transient parameter contracts only, not rendered acceptance."));
     return true;
 }
 #endif

@@ -51,7 +51,7 @@ void UAPSColonyTerminalSubsystem::Tick(float DeltaTime)
 		{
 			return;
 		}
-		if (ShotStage > 25)
+		if (ShotStage > 29)
 		{
 			CloseTerminal();
 			ShotStage = -1;
@@ -76,9 +76,10 @@ void UAPSColonyTerminalSubsystem::Tick(float DeltaTime)
 			// Two steps a tab: show it, then shoot it a moment later. A shot is taken with the next frame, so switching
 			// in the same tick as the request caught the next tab (01.10: the journal's shot showed the shipyard).
 			// Then the object window over the map and the construction catalogue (02.10, C4/C5).
+			// Rio 05.10 (star map): then MAP > STAR MAP and FLEET ORDERS with the STARS target picker.
 			static const TCHAR* TabNames[] = {TEXT("overview"), TEXT("map"), TEXT("colony"), TEXT("fleet"),
 				TEXT("divisions"), TEXT("journal"), TEXT("shipyard"), TEXT("scheme"), TEXT("pilot"), TEXT("surface"),
-				TEXT("object"), TEXT("construction")};
+				TEXT("object"), TEXT("construction"), TEXT("starmap"), TEXT("fleetstars")};
 			const int32 Tab = (ShotStage - 2) / 2;
 			if ((ShotStage - 2) % 2 == 0)
 			{
@@ -86,9 +87,13 @@ void UAPSColonyTerminalSubsystem::Tick(float DeltaTime)
 				{
 					TerminalWidget->ShowTab(Tab);
 				}
+				else if (Tab == 12)
+				{
+					TerminalWidget->ShowTab(10);
+				}
 				else
 				{
-					TerminalWidget->ShowTestOverlay(Tab - 9);
+					TerminalWidget->ShowTestOverlay(Tab == 13 ? 3 : Tab - 9);
 				}
 			}
 			else
@@ -96,7 +101,7 @@ void UAPSColonyTerminalSubsystem::Tick(float DeltaTime)
 				FScreenshotRequest::RequestScreenshot(FPaths::ScreenShotDir() / TEXT("ColonyTerminal")
 					/ FString::Printf(TEXT("%s_%s.png"), *FDateTime::Now().ToString(TEXT("%Y%m%d_%H%M%S")), TabNames[Tab]),
 					true, false);
-				if (Tab == 11)
+				if (Tab == 11 || Tab == 13)
 				{
 					TerminalWidget->ShowTestOverlay(0);
 				}

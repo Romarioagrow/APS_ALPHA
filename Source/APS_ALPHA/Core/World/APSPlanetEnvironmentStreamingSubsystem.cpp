@@ -1,5 +1,6 @@
 #include "APSPlanetEnvironmentStreamingSubsystem.h"
 #include "APS_ALPHA/Core/World/APSPlaceholderGlobe.h"
+#include "APS_ALPHA/Core/Planetary/APSPlanetReliefRuntime.h"
 
 #include "APS_ALPHA/Actors/Astro/Moon.h"
 #include "APS_ALPHA/Actors/Astro/Planet.h"
@@ -71,6 +72,8 @@ bool UAPSPlanetEnvironmentStreamingSubsystem::ShouldCreateSubsystem(UObject* Out
 
 void UAPSPlanetEnvironmentStreamingSubsystem::Deinitialize()
 {
+	APSPlanetReliefRuntime::Release(GetWorld());
+	APSPlaceholderGlobe::Release(GetWorld());
 	ClearGameplayCollisionAnchor();
 	WarmingBody.Reset();
 	PrewarmedBodies.Reset();
@@ -98,6 +101,8 @@ void UAPSPlanetEnvironmentStreamingSubsystem::Tick(float DeltaTime)
 	AdvanceFirstBuilds();
 	ProbeWorldScapeProxies();
 	UpdateFlightResidency(DeltaTime);
+	APSPlaceholderGlobe::Tick(GetWorld());
+	APSPlanetReliefRuntime::Tick(GetWorld(),ActiveBody.Get(),ArrivingBody.Get());
 }
 
 void UAPSPlanetEnvironmentStreamingSubsystem::RefreshVisibleLiquidAppearance()
@@ -342,7 +347,7 @@ void UAPSPlanetEnvironmentStreamingSubsystem::UpdateActiveEnvironment()
 				Body->SetWorldScapeStreamingState(EWorldScapeSurfaceState::Unloaded);
 			continue;
 		}
-		// Rio 02.10 (grey worlds): every body away from the resident family shows its globe in its own palette colour.
+		// Closed physical geometry uses the same native profile and material, not a palette-only sphere.
 		APSPlaceholderGlobe::Apply(Body);
 		StreamedBodies.Add(Body);
 		if (APlanet* Family = ResolveFamilyPlanet(Body); IsValid(Family))

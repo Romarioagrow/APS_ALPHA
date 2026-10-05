@@ -7,6 +7,7 @@ public class APS_ALPHA : ModuleRules
 	public APS_ALPHA(ReadOnlyTargetRules Target) : base(Target)
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
+        PrivateDependencyModuleNames.Add("Chaos"); // Opt-in fitted-hull spatial sweeps.
 	
 		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "PhysicsCore", "InputCore", "UMG", "ModelViewViewModel"
 			, "WorldScapeCore"

@@ -2,6 +2,7 @@
 #include "Widgets/Layout/SGridPanel.h"
 #include "APS_ALPHA/Core/Audio/APSAudioSubsystem.h"
 #include "APS_ALPHA/UI/Settings/SAPSAudioSettings.h"
+#include "APS_ALPHA/UI/Settings/APSAudioSettingsBridge.h"
 #include "Engine/World.h"
 #include "APS_ALPHA/UI/Style/APSUINumber.h"
 #include "SAPSChamferedOverlay.h"
@@ -1741,10 +1742,12 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildAuxiliaryPage(const FText& SectionTit
 
 	if (&WidgetClass == &SettingsPanelClass)
 	{
+		const bool bExistingAudioBound = RuntimeWidget && UAPSAudioSettingsBridge::Attach(RuntimeWidget);
 		Body = SNew(SVerticalBox)
-			+ SVerticalBox::Slot().AutoHeight().Padding(16.f, 8.f, 16.f, 16.f)
-			[SNew(SAPSAudioSettings).World(Controller.IsValid() ? Controller->GetWorld() : nullptr)]
-			+ SVerticalBox::Slot().FillHeight(1.f)[Body];
+			+ SVerticalBox::Slot().FillHeight(1.f)[Body]
+			+ SVerticalBox::Slot().AutoHeight().Padding(16.f, 4.f, 16.f, 8.f)
+			[SNew(SAPSAudioSettings).World(Controller.IsValid() ? Controller->GetWorld() : nullptr)
+				.CreditsOnly(bExistingAudioBound)];
 	}
 
 	return SNew(SOverlay)
@@ -3906,10 +3909,8 @@ void SAPSMainMenuRoot::RefreshSpawnThumbnails()
 					PC->HoldSlateResource(Texture);
 				}
 				Brush = MakeShared<FSlateBrush>();
-				Brush->SetResourceObject(Texture);
-				Brush->ImageSize = FVector2D(static_cast<float>(Texture->GetSizeX()),
-					static_cast<float>(Texture->GetSizeY()));
-				Brush->DrawAs = ESlateBrushDrawType::Image;
+				// Cropped to the object, so the card's picture fills with it (Rio 05.10).
+				APSUIThumbnails::InitBrush(*Brush, Texture);
 			}
 			SpawnThumbnailBrushCache.Add(Key, Brush);
 			Brushes.Add(Brush);
@@ -4232,7 +4233,9 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildSpawnCard(EAPSStartAssetSlot Slot, co
 						return GetSpawnClassThumbnail(Slot, CapturedIndex)
 							? EVisibility::HitTestInvisible : EVisibility::Collapsed;
 					})
-					[SNew(SImage).Image_Lambda([this, Slot, CapturedIndex]() { return GetSpawnClassThumbnail(Slot, CapturedIndex); })]
+					// Rio 05.10: icons may be wide (a long hull baked with -Wide); fit, never stretch.
+					[SNew(SScaleBox).Stretch(EStretch::ScaleToFit)
+						[SNew(SImage).Image_Lambda([this, Slot, CapturedIndex]() { return GetSpawnClassThumbnail(Slot, CapturedIndex); })]]
 				]
 				+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center).Padding(7.0f, 0.0f)
 				[

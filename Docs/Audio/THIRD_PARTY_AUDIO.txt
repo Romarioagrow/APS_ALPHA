@@ -1,5 +1,12 @@
 APOSFERA audio credits
 
+Ground vehicles: see Content/AudioCredits/VehicleAudio.txt for the full shipped credits.
+Rover: "racing car engine sound loops" by domasx2 and "Car engine start 01" by looneybits,
+both offered under CC0 1.0 on OpenGameArt:
+https://opengameart.org/content/racing-car-engine-sound-loops
+https://opengameart.org/content/car-engine-start-01
+Hover/drone edits use the already acquired Energy Fields SFX Pack.
+
 Footsteps Mini Sound Pack by Mechanics Mechanics
 Source: https://www.fab.com/listings/baf07baa-d485-4d37-bf73-dab6a50ed4bb
 License: Creative Commons Attribution 4.0 International (CC BY 4.0)
@@ -17,13 +24,13 @@ The following Fab assets are used under the license associated with the owner's 
   https://www.fab.com/listings/497d53e3-be95-4174-8786-433558a8a849
 - Mix Of Ambient Music — Evil Tiger
   https://www.fab.com/listings/2881af24-60ec-4486-96d5-5da80cae6ea6
-  Exploration_CalmSuite is an in-project edit of NewAge: four excerpts, EQ, fades and pauses.
+  Archived only: Exploration_CalmSuite is an edit of NewAge; it is no longer active.
   The marketplace source is unchanged; this edit remains subject to the source asset license.
 - Space Ambient Soundscapes Bundle — Magic Sound Effects
   https://www.fab.com/listings/00dcadc7-faaf-437b-b313-18ac6382b8fd
 
 
-APOSFERA main generation menu music
+APOSFERA menu music
 
 Music by Scott Buckley - released under CC-BY 4.0.
 https://www.scottbuckley.com.au
@@ -38,6 +45,48 @@ https://www.scottbuckley.com.au/library/tears-in-rain/
 Celestial
 https://www.scottbuckley.com.au/library/celestial/
 
-Changes for APOSFERA: level attenuation, gentle fades, and a six-second overlap
-between the complete tracks. The cycle repeats after all three compositions.
+Changes for APOSFERA: loudness normalization, lead-in trimming, gentle fades, and a four-second overlap
+between tracks. The cycle repeats after all three compositions.
 No endorsement by the composer is implied.
+
+
+APOSFERA gameplay music
+
+Music: Stellardrone (Edgaras Zakevicius)
+Album: Light Years (2013), released by Energostatic Records.
+Author: https://stellardrone.bandcamp.com/album/light-years
+Official download mirror linked by the author: https://archive.org/details/stasis017
+
+License on the author's current album page: Creative Commons Attribution 4.0 International.
+https://creativecommons.org/licenses/by/4.0/
+Original 2013 CC BY 3.0 notice is also retained:
+https://creativecommons.org/licenses/by/3.0/
+
+Airglow
+https://stellardrone.bandcamp.com/track/airglow
+
+Comet Halley
+https://stellardrone.bandcamp.com/track/comet-halley
+
+Ultra Deep Field
+https://stellardrone.bandcamp.com/track/ultra-deep-field
+
+Light Years
+https://stellardrone.bandcamp.com/track/light-years
+
+In Time
+https://stellardrone.bandcamp.com/track/in-time
+
+Cepheid
+https://stellardrone.bandcamp.com/track/cepheid
+
+Red Giant
+https://stellardrone.bandcamp.com/track/red-giant
+
+Messier 45
+https://stellardrone.bandcamp.com/track/messier-45
+
+Changes for APOSFERA: stereo 44.1 kHz conversion, fixed gain matching, gentle EQ,
+quiet intro/tail edits, fades and six-second crossfades between tracks.
+The cycle plays edited versions of all eight selected compositions before repeating.
+No endorsement by Stellardrone or Energostatic Records is implied.

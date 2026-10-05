@@ -1,23 +1,21 @@
 #pragma once
-
 #include "CoreMinimal.h"
 
 class APlanetaryBody;
+class UWorld;
 
-/**
- * Rio 02.10 ("no planet surfaces, grey balls"): a body whose WorldScape surface is not on screen showed the authored
- * globe of its Blueprint, a StarterContent sphere with the dark prototype grid. That happens while another family is
- * resident, and while its own first build settles. The globe now wears a flat colour from the body's own surface
- * palette and liquid, so a distant world reads as itself until its relief takes over.
- */
+// Closed physical geometry for bodies without resident WorldScape LODs.
+// Material, profile and planet-fixed coordinates are never substituted or baked.
 namespace APSPlaceholderGlobe
 {
-	/**
-	 * Tints the body's authored globe meshes once. Idempotent and cheap after the first call.
-	 * Only gameplay bodies are tinted: menu previews are skipped. aps.Surface.PlaceholderTint 0 keeps the authored look.
-	 */
+	APS_ALPHA_API bool Handles(const APlanetaryBody* Body);
 	APS_ALPHA_API void Apply(APlanetaryBody* Body);
-
-	/** The flat colour a body's globe wears: the palette's land tones, blended with its liquid by the ocean share. */
-	APS_ALPHA_API FLinearColor ColorOf(const APlanetaryBody* Body);
+	// True means this path owns visibility; do not enable the old authored spheres.
+	APS_ALPHA_API bool SetVisible(APlanetaryBody* Body, bool bVisible);
+	// Keep a published native root until its same-profile closed geometry is ready.
+	APS_ALPHA_API bool PrepareForUnload(APlanetaryBody* Body);
+	APS_ALPHA_API void Tick(UWorld* World);
+	APS_ALPHA_API void Release(UWorld* World);
+	// Initial loading curtain only; no new curtain during travel.
+	APS_ALPHA_API bool HasInitialCoverage(UWorld* World);
 }

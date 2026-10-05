@@ -167,6 +167,15 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Player Spawn")
 	EAPSStartStation StartStation{EAPSStartStation::Headquarters};
 
+	/**
+	 * Rio 04.10 evening ("again the night side: sunlit from the side, with the star in view"): how far, in degrees about
+	 * the home body's axis, the home complex stands turned from its old place (world +Y of the body). A new world picks
+	 * it and its save keeps it; loading replays it, so the generation frame of the saved positions stays exact. Saves
+	 * from before have none (0) and keep the old place.
+	 */
+	UPROPERTY()
+	double StarterComplexTurnDegrees{0.0};
+
 	UPROPERTY(EditAnywhere, Category = "Player Spawn")
 	TSubclassOf<APawn> BP_CharacterClass;
 

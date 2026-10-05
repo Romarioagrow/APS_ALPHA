@@ -105,7 +105,8 @@ bool AAstroGenerator::CapturePreviewStarOrbitLayout(FAPSPreviewStarEditOverride&
 		Edit.PlanetOrbitRangeMinAu = Star->MinOrbit;
 		Edit.PlanetOrbitRangeMaxAu = Star->MaxOrbit;
 	}
-	Edit.bCompactOrbitEnvelope = true;
+	// Rio 05.10 (real scale experiment): a REAL SCALE layout was captured uncompacted, so a later OFF build compacts it.
+	Edit.bCompactOrbitEnvelope = !UsesRealScale();
 	return true;
 }
 
@@ -199,7 +200,10 @@ bool AAstroGenerator::BuildContinuousPreviewSystemLayout(const FClusterStarSyste
 		Families->SetGenerationSeed(APSGeneratedBodyIdentity::Stream(Seed, StarAddress, TEXT("planets")).GetInitialSeed());
 		const FAPSPreviewStarEditOverride* StellarOrbitEdit = IsValid(GeneratedWorldModel)
 			? GeneratedWorldModel->FindPreviewStarEditOverride(StarAddress) : nullptr;
-		Families->GenerateCustomPlanetarySystemModel(FamilyModel, StarModel, PlanetGenerator, MoonGenerator, StellarOrbitEdit, true);
+		// Rio 05.10 (real scale experiment): REAL SCALE systems keep their real AU orbits (compacted when OFF, as before).
+		const bool bCompactOrbits = !UsesRealScale();
+		Families->GenerateCustomPlanetarySystemModel(FamilyModel, StarModel, PlanetGenerator, MoonGenerator, StellarOrbitEdit,
+			bCompactOrbits);
 		ApplyPreviewBodyEditOverridesToModels(GeneratedWorldModel, StarIndex, *FamilyModel, Address);
 		bool bEditedMoonHierarchy = false;
 		for (int32 PlanetIndex = 0; PlanetIndex < FamilyModel->PlanetsList.Num(); ++PlanetIndex)
@@ -221,7 +225,7 @@ bool AAstroGenerator::BuildContinuousPreviewSystemLayout(const FClusterStarSyste
 		// bodies which the newly sized star or neighbouring planet actually overlaps.
 		if (IsValid(GeneratedWorldModel))
 			if (const FAPSPreviewStarEditOverride* Edit = GeneratedWorldModel->FindPreviewStarEditOverride(StarAddress))
-				Edit->ApplyToPlanetOrbits(*FamilyModel, true, StarModel->Radius);
+				Edit->ApplyToPlanetOrbits(*FamilyModel, bCompactOrbits, StarModel->Radius);
 		if (IsValid(GeneratedWorldModel)) GeneratedWorldModel->ApplyPlanetOrbitEdits(*FamilyModel, StarAddress, StarModel->Radius);
 		UPlanetarySystemGenerator::EnforcePlanetSurfaceClearance(*FamilyModel);
 		double Envelope = StarModel->RadiusKM * 1.0e5 * 1.35;

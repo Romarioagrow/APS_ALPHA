@@ -10,8 +10,9 @@ enum class EAPSAudioChannel : uint8;
 class SAPSAudioSettings : public SCompoundWidget
 {
 public:
-	SLATE_BEGIN_ARGS(SAPSAudioSettings) {}
+	SLATE_BEGIN_ARGS(SAPSAudioSettings) : _CreditsOnly(false) {}
 		SLATE_ARGUMENT(UWorld*, World)
+		SLATE_ARGUMENT(bool, CreditsOnly)
 	SLATE_END_ARGS()
 	void Construct(const FArguments& Args);
 	virtual ~SAPSAudioSettings() override;

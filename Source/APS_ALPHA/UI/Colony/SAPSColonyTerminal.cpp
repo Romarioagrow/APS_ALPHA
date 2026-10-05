@@ -2,9 +2,12 @@
 #include "APS_ALPHA/UI/Style/APSUINumber.h"
 
 #include "SAPSCivilizationMap.h"
+#include "SAPSCivilizationOverview.h"
+#include "SAPSPilotDashboard.h"
 #include "SAPSDivisionsPanel.h"
 #include "SAPSInfrastructurePanel.h"
 #include "SAPSSystemScheme.h"
+#include "SAPSStarMapPanel.h"
 #include "SAPSSurfaceMap.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "APS_ALPHA/Pawns/Characters/CustomGravityCharacter.h"
@@ -118,7 +121,7 @@ namespace APSColonyUI
 				.ChamferTop(true)
 				.ChamferBottom(true)
 			]
-			+ SOverlay::Slot().Padding(FMargin(12.0f, 9.0f))
+			+ SOverlay::Slot().Padding(FMargin(14.0f, 9.0f))
 			[
 				Content
 			]
@@ -133,6 +136,21 @@ namespace APSColonyUI
 				})
 			]);
 		return Button;
+	}
+
+	/** A label alone (chips, CLOSE, BACK TO THE SYSTEM): centred both ways in the button by its capitals (Rio 03.10:
+	 * "everywhere the text strictly centred by height and width"). A label that brings its own render transform (a
+	 * symbol such as "<", shifted by SymbolCenterShift) keeps it. */
+	TSharedRef<SWidget> ChromeButton(const TSharedRef<STextBlock>& Label, FOnClicked OnClicked, TAttribute<bool> IsSelected,
+		const FLinearColor& Accent)
+	{
+		Label->SetJustification(ETextJustify::Center);
+		if (!Label->GetRenderTransform().IsSet())
+		{
+			Label->SetRenderTransform(CapsCenterShift(Label->GetFont()));
+		}
+		return ChromeButton(SNew(SBox).HAlign(HAlign_Center).VAlign(VAlign_Center)[Label], MoveTemp(OnClicked),
+			MoveTemp(IsSelected), Accent);
 	}
 
 	/** The one obvious action of a card or row: a filled amber button with dark text; dim when unavailable
@@ -166,6 +184,7 @@ namespace APSColonyUI
 			+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Center).Padding(FMargin(14.0f, 8.0f))
 			[
 				SNew(STextBlock).Text(Label).Font(Font("Bold", 11))
+				.Justification(ETextJustify::Center).RenderTransform(CapsCenterShift(Font("Bold", 11)))
 				.ColorAndOpacity_Lambda([CanClick]()
 				{
 					return FSlateColor(CanClick.Get(true) ? FLinearColor(0.02f, 0.05f, 0.07f, 1.0f) : Muted());
@@ -322,17 +341,23 @@ void SAPSColonyTerminal::Construct(const FArguments& InArgs)
 			]
 			+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center).Padding(10.0f, 0.0f, 0.0f, 0.0f)
 			[
+				// Rio 03.10: the title sits by its capitals, so the two lines centre on the badge.
 				SNew(SVerticalBox)
 				+ SVerticalBox::Slot().AutoHeight()
 				[
 					SNew(STextBlock).Text(Label).Font(Font("Bold", 12)).ColorAndOpacity(White())
+					.RenderTransform(CapsCenterShift(Font("Bold", 12)))
 				]
 				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 2.0f, 0.0f, 0.0f)
 				[
 					SNew(STextBlock).Text(Details).Font(Font("Regular", 10)).ColorAndOpacity(Muted())
 				]
 			],
-			FOnClicked::CreateSP(this, &SAPSColonyTerminal::SelectTab, Tab),
+			FOnClicked::CreateLambda([this, Tab]()
+			{
+				// Rio 05.10 (star map): MAP reopens the map mode used last (stars, system, scheme or surface).
+				return SelectTab(Tab == ETab::Map ? LastMapTab : Tab);
+			}),
 			TAttribute<bool>::CreateLambda([this, Tab]() { return ActiveTab == Tab || (Tab == ETab::Map && IsMapTab()); }),
 			Cyan());
 	};
@@ -345,6 +370,7 @@ void SAPSColonyTerminal::Construct(const FArguments& InArgs)
 				+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
 				[
 					SNew(STextBlock).Text(Label).Font(Font("Bold", 11)).ColorAndOpacity(Accent)
+					.RenderTransform(CapsCenterShift(Font("Bold", 11)))
 				]
 				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(8.0f, 0.0f, 0.0f, 0.0f)
 				[
@@ -417,13 +443,19 @@ void SAPSColonyTerminal::Construct(const FArguments& InArgs)
 						+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 8.0f)
 						[
 							TabButton(EAPSChromeGlyph::Pilot, LOCTEXT("PilotTab", "PILOT"),
-								LOCTEXT("PilotDetails", "Status, location, telemetry, journal"), ETab::Pilot)
+								LOCTEXT("PilotDetails", "Status, surroundings, current tasks"), ETab::Pilot)
 						]
 						+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 8.0f)
 						[
-							// One map with modes (Rio, 02.10): the strategic map, fleet orders and the system scheme.
+							// One map with modes (Rio, 02.10): the system map, the system scheme and the surface.
 							TabButton(EAPSChromeGlyph::Compass, LOCTEXT("MapTab", "MAP"),
-								LOCTEXT("MapDetails", "Map, fleet orders (K), system scheme"), ETab::Map)
+								LOCTEXT("MapDetails", "Stars, system, scheme, surface"), ETab::Map)
+						]
+						+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 8.0f)
+						[
+							// Rio 02.10: fleet orders back in the main menu, before the infrastructure.
+							TabButton(EAPSChromeGlyph::Fleet, LOCTEXT("FleetTab", "FLEET ORDERS"),
+								LOCTEXT("FleetTabDetails", "Pick ships, give orders (K)"), ETab::Fleet)
 						]
 						+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 8.0f)
 						[
@@ -460,7 +492,8 @@ void SAPSColonyTerminal::Construct(const FArguments& InArgs)
 						+ SWidgetSwitcher::Slot()[BuildShipyard()]
 						+ SWidgetSwitcher::Slot()[BuildScheme()]
 						+ SWidgetSwitcher::Slot()[BuildPilot()]
-						+ SWidgetSwitcher::Slot()[BuildSurface()],
+						+ SWidgetSwitcher::Slot()[BuildSurface()]
+						+ SWidgetSwitcher::Slot()[BuildStars()],
 						FMargin(22.0f, 18.0f), CyanDim())
 				]
 			]
@@ -492,106 +525,10 @@ SAPSColonyTerminal::~SAPSColonyTerminal()
 
 TSharedRef<SWidget> SAPSColonyTerminal::BuildOverview()
 {
-	using namespace APSColonyUI;
-	const UMainGameplayInstance* State = GameplayState(World.Get());
-	const UCivilization* Civilization = State ? State->CurrentCivilization.Get() : nullptr;
-	const USpawnParameters* Spawn = State ? State->SpawnParameters : nullptr;
-	const APlanet* Planet = HomePlanet(World.Get());
-	const AStar* Star = Planet ? Planet->ParentStar : nullptr;
-
-	TSharedRef<SUniformGridPanel> CivilizationGrid = SNew(SUniformGridPanel).SlotPadding(FMargin(4.0f));
-	int32 Cell = 0;
-	const auto AddTile = [&CivilizationGrid, &Cell](const FText& Label, const FText& Value, const FLinearColor& Accent)
-	{
-		CivilizationGrid->AddSlot(Cell % 3, Cell / 3)[MetricTile(Label, Value, Accent)];
-		++Cell;
-	};
-	if (Civilization)
-	{
-		AddTile(LOCTEXT("Archetype", "ARCHETYPE"), EnumText(Civilization->Archetype).ToUpper(), Cyan());
-		AddTile(LOCTEXT("Government", "GOVERNMENT"), EnumText(Civilization->Government).ToUpper(), Cyan());
-		AddTile(LOCTEXT("Economy", "ECONOMY"), EnumText(Civilization->Economy).ToUpper(), Cyan());
-		AddTile(LOCTEXT("Society", "SOCIETY"), EnumText(Civilization->Society).ToUpper(), Cyan());
-		AddTile(LOCTEXT("Population", "POPULATION"), APSUINumber::Number(Civilization->Population), Amber());
-		AddTile(LOCTEXT("Credits", "CREDITS"), APSUINumber::Number(Civilization->Credits), Amber());
-		AddTile(LOCTEXT("Tech", "TECH LEVEL"), APSUINumber::Number(Civilization->TechnologyLevel), Cyan());
-		AddTile(LOCTEXT("Fleet", "FLEET"), APSUINumber::Number(Civilization->FleetSize), Cyan());
-	}
-	else
-	{
-		AddTile(LOCTEXT("NoCivilization", "CIVILIZATION"), LOCTEXT("NoCivilizationValue", "NOT GENERATED"), Muted());
-	}
-
-	TSharedRef<SUniformGridPanel> HomeGrid = SNew(SUniformGridPanel).SlotPadding(FMargin(4.0f));
-	HomeGrid->AddSlot(0, 0)[MetricTile(LOCTEXT("Star", "HOME STAR"),
-		Star && !Star->AstroName.IsNone() ? FText::FromName(Star->AstroName) : LOCTEXT("Unknown", "UNKNOWN"), Amber())];
-	HomeGrid->AddSlot(1, 0)[MetricTile(LOCTEXT("Planet", "HOME PLANET"),
-		Planet && !Planet->AstroName.IsNone() ? FText::FromName(Planet->AstroName) : LOCTEXT("Unknown2", "UNKNOWN"), Cyan())];
-	TSharedRef<SUniformGridPanel> InfrastructureGrid = SNew(SUniformGridPanel).SlotPadding(FMargin(4.0f));
-	const FAPSCivilizationInfrastructure Infrastructure = Civilization
-		? Civilization->Infrastructure : FAPSCivilizationInfrastructure();
-	InfrastructureGrid->AddSlot(0, 0)[MetricTile(LOCTEXT("OrbitalStations", "ORBITAL STATIONS"),
-		APSUINumber::Number(Infrastructure.OrbitalStations), Cyan())];
-	InfrastructureGrid->AddSlot(1, 0)[MetricTile(LOCTEXT("GroundSettlements", "GROUND SETTLEMENTS"),
-		APSUINumber::Number(Infrastructure.GroundSettlements), Cyan())];
-	InfrastructureGrid->AddSlot(2, 0)[MetricTile(LOCTEXT("PlanetOutposts", "PLANET OUTPOSTS"),
-		TAttribute<FText>::CreateLambda([this]()
-		{
-			// Live: construction ships add to it (fleet command).
-			const UMainGameplayInstance* LiveState = GameplayState(World.Get());
-			const UCivilization* Live = LiveState ? LiveState->CurrentCivilization.Get() : nullptr;
-			return APSUINumber::Number(Live ? Live->Infrastructure.PlanetOutposts : 0);
-		}), Cyan())];
-	InfrastructureGrid->AddSlot(0, 1)[MetricTile(LOCTEXT("StarOutposts", "STAR OUTPOSTS"),
-		APSUINumber::Number(Infrastructure.StarOutposts), Cyan())];
-	HomeGrid->AddSlot(2, 0)[MetricTile(LOCTEXT("Start", "START"),
-		Spawn ? EnumText(Spawn->CharacterSpawnPlace).ToUpper() : LOCTEXT("Unknown3", "UNKNOWN"), Cyan())];
-	// How much of the system the civilization knows (surveys by fleet command).
-	HomeGrid->AddSlot(0, 1)[MetricTile(LOCTEXT("WorldsSurveyed", "WORLDS SURVEYED"),
-		TAttribute<FText>::CreateLambda([this]()
-		{
-			int32 Worlds = 0, Known = 0;
-			const FAPSFleetCommand* Fleet = GetFleet();
-			if (UWorld* LiveWorld = World.Get())
-			{
-				for (TActorIterator<APlanetaryBody> It(LiveWorld); It; ++It)
-				{
-					++Worlds;
-					Known += Fleet && Fleet->GetSurvey(*It) != APSFleet::ESurvey::Unknown ? 1 : 0;
-				}
-			}
-			return FText::Format(LOCTEXT("WorldsSurveyedValue", "{0} OF {1}"), APSUINumber::Number(Known), APSUINumber::Number(Worlds));
-		}), Amber())];
-
-	return SNew(SScrollBox)
-		+ SScrollBox::Slot().Padding(0.0f, 0.0f, 0.0f, 12.0f)
-		[
-			IconSectionHeading(EAPSChromeGlyph::Civilization,
-				FText::FromString(Civilization ? Civilization->Name.ToUpper() : FString(TEXT("CIVILIZATION"))),
-				LOCTEXT("CivilizationSubtitle", "Founding parameters of this world"))
-		]
-		+ SScrollBox::Slot().Padding(0.0f, 0.0f, 0.0f, 22.0f)
-		[
-			CivilizationGrid
-		]
-		+ SScrollBox::Slot().Padding(0.0f, 0.0f, 0.0f, 12.0f)
-		[
-			IconSectionHeading(EAPSChromeGlyph::System, LOCTEXT("HomeSection", "HOME"),
-				LOCTEXT("HomeSubtitle", "Star, planet and the start of this session"))
-		]
-		+ SScrollBox::Slot().Padding(0.0f, 0.0f, 0.0f, 22.0f)
-		[
-			HomeGrid
-		]
-		+ SScrollBox::Slot().Padding(0.0f, 0.0f, 0.0f, 12.0f)
-		[
-			IconSectionHeading(EAPSChromeGlyph::Infrastructure, LOCTEXT("InfrastructureSection", "INFRASTRUCTURE"),
-				LOCTEXT("InfrastructureSubtitle", "Stations, settlements and outposts founded with the civilization"))
-		]
-		+ SScrollBox::Slot()
-		[
-			InfrastructureGrid
-		];
+	// Rio 04.10 ("unreadable, ugly: improve all of it"): headline numbers with gauges and three cards that lead on to
+	// the map, fleet orders and infrastructure tabs, instead of sixteen equal tiles (SAPSCivilizationOverview).
+	return SNew(SAPSCivilizationOverview).World(World)
+		.OnOpenTab(FAPSOverviewOpenTab::CreateSP(this, &SAPSColonyTerminal::ShowTab));
 }
 
 TSharedRef<SWidget> SAPSColonyTerminal::BuildDivisions()
@@ -635,6 +572,7 @@ TSharedRef<SWidget> SAPSColonyTerminal::BuildColony()
 				+ SVerticalBox::Slot().AutoHeight()
 				[
 					SNew(STextBlock).Text(Label).Font(Font("Bold", 13)).ColorAndOpacity(White())
+					.RenderTransform(CapsCenterShift(Font("Bold", 13)))
 				]
 				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 3.0f, 0.0f, 0.0f)
 				[
@@ -653,7 +591,7 @@ TSharedRef<SWidget> SAPSColonyTerminal::BuildColony()
 				{
 					return FSlateColor(ColonyActors[RoleIndex].IsValid() ? Success() : Amber());
 				})
-				.Font(Font("Bold", 11))
+				.Font(Font("Bold", 11)).RenderTransform(CapsCenterShift(Font("Bold", 11)))
 			],
 			FOnClicked::CreateLambda([this, RoleIndex]()
 			{
@@ -906,11 +844,8 @@ TSharedRef<SWidget> SAPSColonyTerminal::BuildFleet()
 			];
 	};
 
+	// Rio 02.10: fleet orders are their own tab now, without the map's mode bar.
 	return SNew(SVerticalBox)
-		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 12.0f)
-		[
-			BuildMapModes()
-		]
 		+ SVerticalBox::Slot().FillHeight(1.0f)
 		[
 	SNew(SHorizontalBox)
@@ -941,6 +876,7 @@ TSharedRef<SWidget> SAPSColonyTerminal::BuildFleet()
 					+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center).Padding(10.0f, 0.0f, 0.0f, 0.0f)
 					[
 						SNew(STextBlock).Font(Font("Bold", 10)).ColorAndOpacity(Amber())
+						.RenderTransform(CapsCenterShift(Font("Bold", 10)))
 						.Text_Lambda([this]()
 						{
 							return FText::Format(LOCTEXT("PickedCount", "{0} PICKED  /  CTRL ADDS"), APSUINumber::Number(GetPickedShips().Num()));
@@ -965,23 +901,98 @@ TSharedRef<SWidget> SAPSColonyTerminal::BuildFleet()
 			[
 				SAssignNew(FleetMap, SAPSCivilizationMap)
 				.World(World)
+				.Visibility_Lambda([this]() { return bFleetStars ? EVisibility::Collapsed : EVisibility::Visible; })
 				.OnSelectionChanged_Lambda([this]() { HandleFleetMapSelection(); })
+			]
+			// Rio 05.10 (star map): the target among the stars around (the star scheme's picker): a click aims the order at a
+			// star system, a double click shows a system that stands on the system map.
+			+ SOverlay::Slot()
+			[
+				SAssignNew(FleetStars, SAPSStarScheme)
+				.World(World)
+				.Style(SAPSStarScheme::EStyle::Picker)
+				.Visibility_Lambda([this]() { return bFleetStars ? EVisibility::Visible : EVisibility::Collapsed; })
+				.OnPicked_Lambda([this](const FGuid& SystemId)
+				{
+					FAPSStarSystems* Stars = APSStarSystemsFind(World.Get());
+					if (AActor* Anchor = Stars ? Stars->GetAnchor(SystemId) : nullptr)
+					{
+						FleetTarget = Anchor;
+						FleetMessage = FText::GetEmpty();
+						RefreshFleet(false);
+						UpdateBodyPreview();
+					}
+				})
+				.OnOpened_Lambda([this](const FGuid& SystemId)
+				{
+					FAPSStarSystems* Stars = APSStarSystemsFind(World.Get());
+					if (Stars && APSStarMap::FindStarActor(World.Get(), *Stars, Stars->IndexOf(SystemId)))
+					{
+						bFleetStars = false;
+						if (FleetMap.IsValid())
+						{
+							FleetMap->Focus(nullptr);
+						}
+						return;
+					}
+					bFleetMessageIsError = true;
+					FleetMessage = LOCTEXT("FleetStarAway", "Its worlds show on the system map while the system stands: fly there in person.");
+				})
 			]
 			// The view's name and, in a planet's local view, the way back to the system.
 			+ SOverlay::Slot().HAlign(HAlign_Left).VAlign(VAlign_Top).Padding(8.0f)
 			[
 				SNew(SVerticalBox)
+				// Rio 05.10 (star map): what the target is picked on: the system (worlds, stations) or the stars around.
+				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 8.0f)
+				[
+					SNew(SHorizontalBox)
+					+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(2.0f, 0.0f, 10.0f, 0.0f)
+					[
+						SNew(STextBlock).Text(LOCTEXT("FleetTargetOn", "TARGET")).Font(Font("Regular", 9)).ColorAndOpacity(Muted())
+					]
+					+ SHorizontalBox::Slot().AutoWidth().Padding(0.0f, 0.0f, 6.0f, 0.0f)
+					[
+						ChromeButton(SNew(STextBlock).Text(LOCTEXT("FleetTargetSystem", "SYSTEM")).Font(Font("Bold", 10))
+							.ColorAndOpacity_Lambda([this]() { return FSlateColor(bFleetStars ? Muted() : Cyan()); }),
+							FOnClicked::CreateLambda([this]() { bFleetStars = false; return FReply::Handled(); }),
+							TAttribute<bool>::CreateLambda([this]() { return !bFleetStars; }), Cyan())
+					]
+					+ SHorizontalBox::Slot().AutoWidth().Padding(0.0f, 0.0f, 6.0f, 0.0f)
+					[
+						ChromeButton(SNew(STextBlock).Text(LOCTEXT("FleetTargetStars", "STARS")).Font(Font("Bold", 10))
+							.ColorAndOpacity_Lambda([this]() { return FSlateColor(bFleetStars ? Cyan() : Muted()); }),
+							FOnClicked::CreateLambda([this]()
+							{
+								bFleetStars = true;
+								RefreshFleet(false);
+								return FReply::Handled();
+							}),
+							TAttribute<bool>::CreateLambda([this]() { return bFleetStars; }), Cyan())
+					]
+					+ SHorizontalBox::Slot().AutoWidth()
+					[
+						SNew(SBox).Visibility_Lambda([this]() { return bFleetStars ? EVisibility::Visible : EVisibility::Collapsed; })
+						[
+							APSStarMapUI::LegendToggle()
+						]
+					]
+				]
 				+ SVerticalBox::Slot().AutoHeight()
 				[
 					SNew(STextBlock).Font(Font("Bold", 11)).ColorAndOpacity(Cyan())
-					.Text_Lambda([this]() { return FleetMap.IsValid() ? FleetMap->GetViewTitle() : FText::GetEmpty(); })
+					.Text_Lambda([this]()
+					{
+						return bFleetStars ? (FleetStars.IsValid() ? FleetStars->GetTitle() : FText::GetEmpty())
+							: FleetMap.IsValid() ? FleetMap->GetViewTitle() : FText::GetEmpty();
+					})
 				]
 				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 6.0f, 0.0f, 0.0f)
 				[
 					SNew(SBox)
 					.Visibility_Lambda([this]()
 					{
-						return FleetMap.IsValid() && FleetMap->IsLocalView() ? EVisibility::Visible : EVisibility::Collapsed;
+						return !bFleetStars && FleetMap.IsValid() && FleetMap->IsLocalView() ? EVisibility::Visible : EVisibility::Collapsed;
 					})
 					[
 						ChromeButton(SNew(STextBlock).Text(LOCTEXT("FleetSystemView", "BACK TO THE SYSTEM")).Font(Font("Bold", 9))
@@ -1075,7 +1086,14 @@ TSharedRef<SWidget> SAPSColonyTerminal::BuildFleet()
 									const AActor* Target = FleetTarget.Get();
 									if (!Target)
 									{
-										return LOCTEXT("TargetHelp", "Click a planet, moon, station or outpost on the map. Double-click a planet for its moons.");
+										return bFleetStars ? LOCTEXT("TargetHelpStars", "Click a star on the map: the order goes to its system.")
+											: LOCTEXT("TargetHelp", "Click a planet, moon, station or outpost on the map. Double-click a planet for its moons.");
+									}
+									// Rio 05.10 (star map): a star system picked among the stars.
+									FText SystemKind, SystemBody, SystemAnomaly;
+									if (APSStarMapUI::DescribeSystemTarget(World.Get(), Target, SystemKind, SystemBody, SystemAnomaly))
+									{
+										return SystemKind;
 									}
 									const FAPSFleetCommand* Fleet = GetFleet();
 									if (Target->IsA<APlanetaryBody>() && Fleet)
@@ -1097,6 +1115,11 @@ TSharedRef<SWidget> SAPSColonyTerminal::BuildFleet()
 								SNew(STextBlock).AutoWrapText(true).Font(Font("Regular", 11)).ColorAndOpacity(Muted())
 								.Text_Lambda([this]()
 								{
+									FText SystemKind, SystemBody, SystemAnomaly;
+									if (APSStarMapUI::DescribeSystemTarget(World.Get(), FleetTarget.Get(), SystemKind, SystemBody, SystemAnomaly))
+									{
+										return SystemBody;
+									}
 									const FAPSFleetCommand* Fleet = GetFleet();
 									const FAPSFleetBodyRecord* Record = Fleet ? Fleet->FindBody(FleetTarget.Get()) : nullptr;
 									if (!Record || Record->Findings.IsEmpty())
@@ -1114,17 +1137,41 @@ TSharedRef<SWidget> SAPSColonyTerminal::BuildFleet()
 								SNew(STextBlock).AutoWrapText(true).Font(Font("Bold", 11)).ColorAndOpacity(Amber())
 								.Text_Lambda([this]()
 								{
+									// Rio 05.10 (star map): a star system's anomaly as the star systems know it.
+									FText SystemKind, SystemBody, SystemAnomaly;
+									if (APSStarMapUI::DescribeSystemTarget(World.Get(), FleetTarget.Get(), SystemKind, SystemBody, SystemAnomaly))
+									{
+										return SystemAnomaly;
+									}
 									const FAPSFleetCommand* Fleet = GetFleet();
 									return Fleet ? Fleet->DescribeAnomaly(FleetTarget.Get()) : FText::GetEmpty();
 								})
 								.Visibility_Lambda([this]()
 								{
+									FText SystemKind, SystemBody, SystemAnomaly;
+									if (APSStarMapUI::DescribeSystemTarget(World.Get(), FleetTarget.Get(), SystemKind, SystemBody, SystemAnomaly))
+									{
+										return SystemAnomaly.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible;
+									}
 									const FAPSFleetCommand* Fleet = GetFleet();
 									return Fleet && !Fleet->DescribeAnomaly(FleetTarget.Get()).IsEmpty()
 										? EVisibility::Visible : EVisibility::Collapsed;
 								})
 							],
 							FMargin(14.0f, 12.0f), CyanDim())
+					]
+					// Rio 05.10 (star map): each picked ship's way to a star system target: from where, how far, about when.
+					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 10.0f, 0.0f, 0.0f)
+					[
+						SNew(SAPSStarRoutes)
+						.World(World)
+						.Ships([this]() { return GetPickedShips(); })
+						.Target([this]() { return FleetTarget.Get(); })
+						.Visibility_Lambda([this]()
+						{
+							return APSStarMapUI::SystemOf(FleetTarget.Get()).IsValid() && !PickedUnits.IsEmpty()
+								? EVisibility::Visible : EVisibility::Collapsed;
+						})
 					]
 					// Rio 02.10 ("OPEN should open a full page"): the target's object page in INFRASTRUCTURE, with every
 					// action for it (construction from the catalogue included).
@@ -1143,7 +1190,41 @@ TSharedRef<SWidget> SAPSColonyTerminal::BuildFleet()
 						]
 					]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 14.0f, 0.0f, 0.0f)[OrderButton(APSFleet::EOrder::Move)]
-					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 8.0f, 0.0f, 0.0f)[OrderButton(APSFleet::EOrder::Survey)]
+					// Rio 05.10 (star map): a star system target takes its own orders (a probe, a survey of the system) in
+					// place of a world's survey.
+					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 8.0f, 0.0f, 0.0f)
+					[
+						SNew(SBox)
+						.Visibility_Lambda([this]()
+						{
+							return APSStarMapUI::SystemOf(FleetTarget.Get()).IsValid() ? EVisibility::Collapsed : EVisibility::Visible;
+						})
+						[
+							OrderButton(APSFleet::EOrder::Survey)
+						]
+					]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 8.0f, 0.0f, 0.0f)
+					[
+						SNew(SBox)
+						.Visibility_Lambda([this]()
+						{
+							return APSStarMapUI::SystemOf(FleetTarget.Get()).IsValid() ? EVisibility::Visible : EVisibility::Collapsed;
+						})
+						[
+							OrderButton(APSFleet::EOrder::Probe)
+						]
+					]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 8.0f, 0.0f, 0.0f)
+					[
+						SNew(SBox)
+						.Visibility_Lambda([this]()
+						{
+							return APSStarMapUI::SystemOf(FleetTarget.Get()).IsValid() ? EVisibility::Visible : EVisibility::Collapsed;
+						})
+						[
+							OrderButton(APSFleet::EOrder::SurveySystem)
+						]
+					]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 8.0f, 0.0f, 0.0f)[OrderButton(APSFleet::EOrder::Expedition)]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 8.0f, 0.0f, 0.0f)[OrderButton(APSFleet::EOrder::Return)]
 					// Construction (Rio, 01.10: "after an outpost, a headquarters, a station, infrastructure"): what a
@@ -1253,6 +1334,13 @@ void SAPSColonyTerminal::RefreshFleet(const bool bForceRebuild)
 		// The order target wears the course brackets on this map.
 		FleetMap->SetCourseTargetId(FleetTarget.IsValid() ? FleetTarget->GetPathName() : FString());
 	}
+	// Rio 05.10 (star map): the STARS map marks the target system, where the picked ships are and their ways there.
+	if (FleetStars.IsValid())
+	{
+		FleetStars->SetSelected(APSStarMapUI::SystemOf(FleetTarget.Get()));
+		FleetStars->SetHighlightedShips(PickedUnits);
+		FleetStars->SetPlannedRoutes(APSStarMapUI::PlannedRoutes(World.Get(), GetPickedShips(), FleetTarget.Get()));
+	}
 	if (!FleetList.IsValid())
 	{
 		return;
@@ -1323,7 +1411,7 @@ TSharedRef<SWidget> SAPSColonyTerminal::BuildUnitCard(const TWeakObjectPtr<ASpac
 			SNew(SVerticalBox)
 			+ SVerticalBox::Slot().AutoHeight()
 			[
-				SNew(STextBlock).Font(Font("Bold", 12)).ColorAndOpacity(White())
+				SNew(STextBlock).Font(Font("Bold", 12)).ColorAndOpacity(White()).RenderTransform(CapsCenterShift(Font("Bold", 12)))
 				.Text_Lambda([Unit, Ship]()
 				{
 					const FAPSFleetUnit* Found = Unit();
@@ -1587,6 +1675,7 @@ TSharedRef<SWidget> SAPSColonyTerminal::BuildMapModes()
 			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(8.0f, 0.0f, 0.0f, 0.0f)
 			[
 				SNew(STextBlock).Text(Label).Font(Font("Bold", 10)).ColorAndOpacity(White())
+				.RenderTransform(CapsCenterShift(Font("Bold", 10)))
 			],
 			FOnClicked::CreateSP(this, &SAPSColonyTerminal::SelectTab, Tab),
 			TAttribute<bool>::CreateLambda([this, Tab]() { return ActiveTab == Tab; }), Cyan());
@@ -1594,12 +1683,13 @@ TSharedRef<SWidget> SAPSColonyTerminal::BuildMapModes()
 	return SNew(SHorizontalBox)
 		+ SHorizontalBox::Slot().AutoWidth().Padding(0.0f, 0.0f, 8.0f, 0.0f)
 		[
-			// "STRATEGIC MAP" is the F10 universe view (Rio 02.10); this mode is the system from above.
-			Mode(LOCTEXT("ModeStrategic", "SYSTEM MAP"), ETab::Map, EAPSChromeGlyph::Compass)
+			// Rio 05.10: the STAR level first, the system below it.
+			Mode(LOCTEXT("ModeStars", "STAR MAP"), ETab::Stars, EAPSChromeGlyph::Stars)
 		]
 		+ SHorizontalBox::Slot().AutoWidth().Padding(0.0f, 0.0f, 8.0f, 0.0f)
 		[
-			Mode(LOCTEXT("ModeFleet", "FLEET ORDERS  (K)"), ETab::Fleet, EAPSChromeGlyph::Fleet)
+			// "STRATEGIC MAP" is the F10 universe view (Rio 02.10); this mode is the system from above.
+			Mode(LOCTEXT("ModeStrategic", "SYSTEM MAP"), ETab::Map, EAPSChromeGlyph::Compass)
 		]
 		+ SHorizontalBox::Slot().AutoWidth().Padding(0.0f, 0.0f, 8.0f, 0.0f)
 		[
@@ -1692,6 +1782,17 @@ TSharedRef<SWidget> SAPSColonyTerminal::BuildScheme()
 						IconSectionHeading(EAPSChromeGlyph::System, LOCTEXT("SchemeSection", "SYSTEM SCHEME"),
 							LOCTEXT("SchemeSubtitle", "Stars, planets and moons in order, sizes to scale"))
 					]
+					// Rio 05.10 (star map): a system opened from the star map leads back to it.
+					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 10.0f, 0.0f, 0.0f)
+					[
+						SNew(SBox)
+						.Visibility_Lambda([this]() { return Scheme.IsValid() && Scheme->IsPinned() ? EVisibility::Visible : EVisibility::Collapsed; })
+						[
+							ChromeButton(SNew(STextBlock).Text(LOCTEXT("SchemeBackToStars", "<  BACK TO THE STAR MAP")).Font(Font("Bold", 10))
+								.ColorAndOpacity(Cyan()),
+								FOnClicked::CreateLambda([this]() { return SelectTab(ETab::Stars); }), TAttribute<bool>(false), Cyan())
+						]
+					]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 14.0f, 0.0f, 0.0f)
 					[
 						ChamferPanel(
@@ -1727,6 +1828,55 @@ TSharedRef<SWidget> SAPSColonyTerminal::BuildScheme()
 				]
 			]
 		];
+}
+
+TSharedRef<SWidget> SAPSColonyTerminal::BuildStars()
+{
+	// Rio 05.10 (star map): the STAR level with its card, actions and list (SAPSStarMapPanel); a system that stands opens
+	// its scheme, FLEET ORDERS takes a system as the target.
+	return SNew(SVerticalBox)
+		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 12.0f)
+		[
+			BuildMapModes()
+		]
+		+ SVerticalBox::Slot().FillHeight(1.0f)
+		[
+			SAssignNew(StarMapPanel, SAPSStarMapPanel)
+			.World(World)
+			.CourseShip([this]() { return GetCourseShip(); })
+			.OnOpenScheme_Lambda([this](AActor* Star) { OpenSchemeOf(Star); })
+			.OnFleetOrders_Lambda([this](const FGuid& SystemId) { OrderToSystem(SystemId); })
+		];
+}
+
+void SAPSColonyTerminal::OpenSchemeOf(AActor* Star)
+{
+	if (!Scheme.IsValid() || !Star)
+	{
+		return;
+	}
+	Scheme->ShowSystem(Star);
+	bKeepSchemePin = true;
+	SelectTab(ETab::Scheme);
+}
+
+void SAPSColonyTerminal::OrderToSystem(const FGuid& SystemId)
+{
+	FAPSStarSystems* Stars = APSStarSystemsFind(World.Get());
+	AActor* Anchor = Stars ? Stars->GetAnchor(SystemId) : nullptr;
+	if (!Anchor)
+	{
+		return;
+	}
+	FleetTarget = Anchor;
+	FleetMessage = FText::GetEmpty();
+	bFleetStars = true;
+	if (FleetStars.IsValid())
+	{
+		FleetStars->SetSelected(SystemId);
+	}
+	SelectTab(ETab::Fleet);
+	UpdateBodyPreview();
 }
 
 void SAPSColonyTerminal::RefreshInfrastructure(const bool bForceRebuild)
@@ -1836,6 +1986,7 @@ void SAPSColonyTerminal::RefreshInfrastructure(const bool bForceRebuild)
 					+ SVerticalBox::Slot().AutoHeight()
 					[
 						SNew(STextBlock).Text(Row.Name).Font(Font("Bold", 12)).ColorAndOpacity(White())
+						.RenderTransform(CapsCenterShift(Font("Bold", 12)))
 					]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 3.0f, 0.0f, 0.0f)
 					[
@@ -1847,6 +1998,7 @@ void SAPSColonyTerminal::RefreshInfrastructure(const bool bForceRebuild)
 				[
 					SNew(STextBlock).Text(Row.bBuilt ? LOCTEXT("InfraBuilt", "BUILT BY THE FLEET") : LOCTEXT("InfraFounded", "FOUNDED"))
 					.Font(Font("Bold", 10)).ColorAndOpacity(Row.bBuilt ? Success() : Cyan())
+					.RenderTransform(CapsCenterShift(Font("Bold", 10)))
 				],
 				FOnClicked::CreateLambda([this, Actor]()
 				{
@@ -2235,6 +2387,12 @@ void SAPSColonyTerminal::ShowTestOverlay(const int32 Overlay)
 {
 	bObjectWindowOpen = false;
 	bConstructionOpen = false;
+	// Rio 05.10 (star map): 3 is FLEET ORDERS with the target picked among the stars.
+	bFleetStars = Overlay == 3;
+	if (Overlay == 3)
+	{
+		SelectTab(ETab::Fleet);
+	}
 	if (Overlay == 1)
 	{
 		SelectTab(ETab::Map);
@@ -2273,7 +2431,9 @@ TSharedRef<SWidget> SAPSColonyTerminal::BuildSurface()
 	};
 	const auto StepButton = [this](const FText& Label, const int32 Step)
 	{
-		return ChromeButton(SNew(STextBlock).Text(Label).Font(Font("Bold", 11)).ColorAndOpacity(White()),
+		// "<" and ">" sit on the symbols' middle line, not the capitals'.
+		return ChromeButton(SNew(STextBlock).Text(Label).Font(Font("Bold", 11)).ColorAndOpacity(White())
+				.RenderTransform(SymbolCenterShift(Font("Bold", 11))),
 			FOnClicked::CreateSP(this, &SAPSColonyTerminal::StepSurfaceBody, Step), TAttribute<bool>(false), Cyan());
 	};
 	// Rio 02.10: the surface's looks - as it is, realistic, geology, anomalies.
@@ -2417,200 +2577,15 @@ FReply SAPSColonyTerminal::StepSurfaceBody(const int32 Step)
 
 TSharedRef<SWidget> SAPSColonyTerminal::BuildPilot()
 {
-	using namespace APSColonyUI;
-	const auto Row = [this](const FText& Label, FText FPilotStatus::* Field, const FLinearColor& Accent)
-	{
-		return SNew(SHorizontalBox)
-			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Top)
-			[SNew(SBox).WidthOverride(130.0f)[SNew(STextBlock).Text(Label).Font(Font("Bold", 9)).ColorAndOpacity(Muted())]]
-			+ SHorizontalBox::Slot().FillWidth(1.0f)
-			[
-				SNew(STextBlock).AutoWrapText(true).Font(Font("Bold", 12)).ColorAndOpacity(Accent)
-				.Text_Lambda([this, Field]() { return PilotStatus.*Field; })
-			];
-	};
-	const auto Card = [](EAPSChromeGlyph Glyph, const FText& Title, TSharedRef<SWidget> Body)
-	{
-		return ChamferPanel(
-			SNew(SVerticalBox)
-			+ SVerticalBox::Slot().AutoHeight()[IconSectionHeading(Glyph, Title)]
-			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 10.0f, 0.0f, 0.0f)[Body],
-			FMargin(16.0f, 14.0f), CyanDim());
-	};
-	return SNew(SScrollBox)
-		+ SScrollBox::Slot()
-		[
-			SNew(SHorizontalBox)
-			+ SHorizontalBox::Slot().FillWidth(1.0f).Padding(0.0f, 0.0f, 10.0f, 0.0f)
-			[
-				SNew(SVerticalBox)
-				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 10.0f)
-				[
-					Card(EAPSChromeGlyph::Pilot, LOCTEXT("PilotStatus", "PILOT"),
-						SNew(SVerticalBox)
-						+ SVerticalBox::Slot().AutoHeight()[Row(LOCTEXT("PilotState", "STATUS"), &FPilotStatus::State, White())])
-				]
-				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 10.0f)
-				[
-					Card(EAPSChromeGlyph::Planet, LOCTEXT("PilotWhere", "LOCATION"),
-						SNew(SVerticalBox)
-						+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 6.0f)[Row(LOCTEXT("PilotBody", "NEAREST WORLD"), &FPilotStatus::Body, White())]
-						+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 6.0f)[Row(LOCTEXT("PilotBodyType", "TYPE"), &FPilotStatus::BodyDetail, Cyan())]
-						+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 6.0f)[Row(LOCTEXT("PilotStar", "STAR"), &FPilotStatus::Star, Cyan())]
-						+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 6.0f)[Row(LOCTEXT("PilotAltitude", "ALTITUDE"), &FPilotStatus::Altitude, White())]
-						+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 6.0f)[Row(LOCTEXT("PilotEnvironment", "ENVIRONMENT"), &FPilotStatus::Environment, Cyan())]
-						+ SVerticalBox::Slot().AutoHeight()[Row(LOCTEXT("PilotGravity", "GRAVITY"), &FPilotStatus::Gravity, Amber())])
-				]
-				+ SVerticalBox::Slot().AutoHeight()
-				[
-					Card(EAPSChromeGlyph::Ship, LOCTEXT("PilotTelemetry", "TELEMETRY"),
-						SNew(SVerticalBox)
-						+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 6.0f)[Row(LOCTEXT("PilotSpeed", "SPEED"), &FPilotStatus::Speed, White())]
-						+ SVerticalBox::Slot().AutoHeight()[Row(LOCTEXT("PilotBand", "FLIGHT"), &FPilotStatus::Band, Cyan())])
-				]
-			]
-			+ SHorizontalBox::Slot().FillWidth(1.0f).Padding(10.0f, 0.0f, 0.0f, 0.0f)
-			[
-				SNew(SVerticalBox)
-				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 10.0f)
-				[
-					Card(EAPSChromeGlyph::Compass, LOCTEXT("PilotCourse", "COURSE"),
-						SNew(SVerticalBox)
-						+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 6.0f)[Row(LOCTEXT("PilotTarget", "TARGET"), &FPilotStatus::Course, Amber())]
-						+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 6.0f)[Row(LOCTEXT("PilotDistance", "DISTANCE"), &FPilotStatus::CourseDistance, White())]
-						+ SVerticalBox::Slot().AutoHeight()[Row(LOCTEXT("PilotEta", "ARRIVAL"), &FPilotStatus::Eta, White())])
-				]
-				+ SVerticalBox::Slot().AutoHeight()
-				[
-					Card(EAPSChromeGlyph::Recent, LOCTEXT("PilotJournal", "LATEST JOURNAL"),
-						SNew(STextBlock).AutoWrapText(true).Font(Font("Regular", 11)).ColorAndOpacity(White())
-						.Text_Lambda([this]() { return PilotStatus.Journal; }))
-				]
-			]
-		];
-}
-
-void SAPSColonyTerminal::RefreshPilotStatus()
-{
-	FPilotStatus Status;
-	UWorld* LiveWorld = World.Get();
-	const APlayerController* Controller = LiveWorld ? LiveWorld->GetFirstPlayerController() : nullptr;
-	APawn* Pawn = Controller ? Controller->GetPawn() : nullptr;
-	if (!Pawn)
-	{
-		Status.State = LOCTEXT("PilotNoPawn", "No pilot in the world.");
-		PilotStatus = Status;
-		return;
-	}
-	const FVector Location = Pawn->GetActorLocation();
-	ASpaceship* Ship = Cast<ASpaceship>(Pawn);
-	const ACustomGravityCharacter* Character = Cast<ACustomGravityCharacter>(Pawn);
-	const FAPSFleetCommand* Fleet = GetFleet();
-	if (Ship)
-	{
-		const FAPSFleetUnit* Unit = Fleet ? Fleet->FindUnit(Ship) : nullptr;
-		Status.State = FText::Format(LOCTEXT("PilotFlying", "Piloting {0}"),
-			FText::FromString(Unit ? Unit->CallSign : Ship->GetName()));
-		Status.Environment = FText::FromString(Ship->GetFlightEnvironmentName());
-		Status.Gravity = Ship->ActiveGravityAcceleration > 1.0
-			? FText::Format(LOCTEXT("PilotShipGravity", "{0} m/s2  from {1}"),
-				APSUINumber::Number(Ship->ActiveGravityAcceleration / 100.0, &FNumberFormattingOptions().SetMaximumFractionalDigits(2)),
-				FText::FromString(Ship->GetGravitySourceName()))
-			: LOCTEXT("PilotNoGravity", "None (free flight)");
-		if (Ship->FlightModel)
+	// Rio 04.10 ("like the overview dashboard: the character's status, the main parameters, what goes on around"):
+	// headline numbers, where the pilot is, what is near and what to do now (SAPSPilotDashboard).
+	return SNew(SAPSPilotDashboard).World(World)
+		.CourseShip([this]() { return GetCourseShip(); })
+		.ColonyActor([this](const int32 Role)
 		{
-			Status.Band = FText::FromString(Ship->FlightModel->GetBandSettings(Ship->FlightModel->GetFlightBand()).Name);
-		}
-	}
-	else if (Character)
-	{
-		Status.State = Character->bIsZeroG ? LOCTEXT("PilotZeroG", "On foot, weightless") : LOCTEXT("PilotOnFoot", "On foot");
-		const TCHAR* Where = Character->CurrentGravityType == EGravityType::OnPlanet ? TEXT("ON A WORLD")
-			: Character->CurrentGravityType == EGravityType::OnShip ? TEXT("ABOARD A SHIP")
-			: Character->CurrentGravityType == EGravityType::OnStation ? TEXT("ON A STATION") : TEXT("ZERO-G");
-		Status.Environment = FText::FromString(Where);
-		const double GravityZ = Character->GetCharacterMovement() ? FMath::Abs(Character->GetCharacterMovement()->GetGravityZ()) : 0.0;
-		Status.Gravity = Character->bIsZeroG || GravityZ < 1.0 ? LOCTEXT("PilotNoGravityFoot", "None")
-			: FText::Format(LOCTEXT("PilotFootGravity", "{0} m/s2{1}"),
-				APSUINumber::Number(GravityZ / 100.0, &FNumberFormattingOptions().SetMaximumFractionalDigits(2)),
-				Character->GravityTarget ? FText::FromString(TEXT("  from ") + FAPSFleetCommand::DisplayName(Character->GravityTarget).ToString())
-					: FText::GetEmpty());
-		Status.Band = LOCTEXT("PilotWalking", "Walking");
-	}
-	const double SpeedCm = Pawn->GetVelocity().Size();
-	Status.Speed = FText::FromString(SpeedCm >= 100000.0
-		? FString::Printf(TEXT("%s km/s"), *APSUINumber::Number(SpeedCm / 100000.0, &FNumberFormattingOptions().SetMaximumFractionalDigits(1)).ToString())
-		: FString::Printf(TEXT("%.0f m/s"), SpeedCm / 100.0));
-
-	// The nearest world: its surface distance is the altitude.
-	const APlanetaryBody* Nearest = nullptr;
-	double NearestSurface = TNumericLimits<double>::Max();
-	if (LiveWorld)
-	{
-		for (TActorIterator<APlanetaryBody> It(LiveWorld); It; ++It)
-		{
-			if (!IsValid(*It)) continue;
-			const double Surface = FVector::Dist(It->GetActorLocation(), Location) - It->GetWorldScapeBodyRadiusCm();
-			if (Surface < NearestSurface)
-			{
-				NearestSurface = Surface;
-				Nearest = *It;
-			}
-		}
-	}
-	if (Nearest)
-	{
-		const FString Designation = APSBodyDesignation::Of(Nearest);
-		Status.Body = FText::FromString(FString::Printf(TEXT("%s%s%s"), *Designation, Designation.IsEmpty() ? TEXT("") : TEXT("  "),
-			*Nearest->AstroName.ToString().ToUpper()));
-		FString Type = UEnum::GetDisplayValueAsText(Nearest->PlanetType).ToString().ToUpper();
-		Type.RemoveFromEnd(TEXT(" PLANET"));
-		Status.BodyDetail = FText::FromString(FString::Printf(TEXT("%s%s  /  %s KM"), Nearest->IsA<AMoon>() ? TEXT("MOON  /  ") : TEXT(""),
-			*Type, *APSUINumber::Number(Nearest->PlanetRadiusKM).ToString()));
-		Status.Altitude = FText::FromString(UShipNavigationComponent::FormatDistance(FMath::Max(NearestSurface, 0.0)));
-		const APlanet* Planet = Cast<APlanet>(Nearest);
-		if (const AMoon* Moon = Cast<AMoon>(Nearest)) Planet = Moon->ParentPlanet;
-		if (const AStar* Star = Planet ? Planet->ParentStar : nullptr)
-		{
-			Status.Star = FText::FromString(FString::Printf(TEXT("%s  %s  /  %s"), *APSBodyDesignation::Of(Star),
-				*Star->AstroName.ToString().ToUpper(), *Star->FullSpectralName.ToString().ToUpper()));
-		}
-	}
-
-	// The course of the piloted ship, or of the home ship while on foot.
-	if (const ASpaceship* CourseShip = Ship ? Ship : GetCourseShip(); CourseShip && CourseShip->ShipNavigation)
-	{
-		if (const FShipNavigationContact* Contact = CourseShip->ShipNavigation->GetSelectedContact(); Contact && Contact->Actor.IsValid())
-		{
-			const double Distance = FVector::Dist(Contact->Actor->GetActorLocation(), Location);
-			const FString Designation = APSBodyDesignation::Of(Contact->Actor.Get());
-			Status.Course = FText::FromString(FString::Printf(TEXT("%s%s%s"), *Designation, Designation.IsEmpty() ? TEXT("") : TEXT("  "),
-				*FAPSFleetCommand::DisplayName(Contact->Actor.Get()).ToString()));
-			Status.CourseDistance = FText::FromString(UShipNavigationComponent::FormatDistance(Distance));
-			const double Seconds = SpeedCm > 100.0 ? Distance / SpeedCm : -1.0;
-			Status.Eta = Seconds < 0.0 ? LOCTEXT("PilotEtaStopped", "Not moving")
-				: Seconds < 120.0 ? FText::Format(LOCTEXT("PilotEtaSeconds", "{0} s at this speed"), APSUINumber::Number(FMath::RoundToInt(Seconds)))
-				: Seconds < 7200.0 ? FText::Format(LOCTEXT("PilotEtaMinutes", "{0} min at this speed"), APSUINumber::Number(FMath::RoundToInt(Seconds / 60.0)))
-				: LOCTEXT("PilotEtaLong", "Hours at this speed");
-		}
-	}
-	if (Status.Course.IsEmpty())
-	{
-		Status.Course = LOCTEXT("PilotNoCourse", "No course: pick a target on the MAP");
-	}
-
-	if (const UAPSCivilizationJournalSubsystem* Journal = LiveWorld ? LiveWorld->GetSubsystem<UAPSCivilizationJournalSubsystem>() : nullptr)
-	{
-		const TArray<FAPSCivilizationJournalEntry>& Entries = Journal->GetEntries();
-		TArray<FText> Lines;
-		for (int32 Index = Entries.Num() - 1; Index >= 0 && Lines.Num() < 6; --Index)
-		{
-			Lines.Add(FText::Format(LOCTEXT("PilotJournalLine", "{0}:  {1}"),
-				FText::FromString(Entries[Index].Category.ToString().ToUpper()), Entries[Index].Text));
-		}
-		Status.Journal = Lines.IsEmpty() ? LOCTEXT("PilotJournalEmpty", "Nothing yet.") : FText::Join(FText::FromString(TEXT("\n")), Lines);
-	}
-	PilotStatus = Status;
+			return Role >= 0 && Role < static_cast<int32>(UE_ARRAY_COUNT(ColonyActors)) ? ColonyActors[Role].Get() : nullptr;
+		})
+		.OnOpenTab(FAPSOverviewOpenTab::CreateSP(this, &SAPSColonyTerminal::ShowTab));
 }
 
 TSharedRef<SWidget> SAPSColonyTerminal::BuildJournal()
@@ -2722,18 +2697,22 @@ void SAPSColonyTerminal::RebuildJournal()
 					SNew(SVerticalBox)
 					+ SVerticalBox::Slot().AutoHeight()
 					[
+						// Rio 03.10: the category (display face), its time and NEW (engine face) on one middle line.
 						SNew(SHorizontalBox)
-						+ SHorizontalBox::Slot().AutoWidth()
+						+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
 						[
 							SNew(STextBlock).Text(Style.Label).Font(Font("Bold", 10)).ColorAndOpacity(Style.Colour)
+							.RenderTransform(CapsCenterShift(Font("Bold", 10)))
 						]
-						+ SHorizontalBox::Slot().AutoWidth().Padding(12.0f, 0.0f, 0.0f, 0.0f)
+						+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(12.0f, 0.0f, 0.0f, 0.0f)
 						[
 							SNew(STextBlock).Text(Time).Font(Font("Regular", 10)).ColorAndOpacity(Muted())
+							.RenderTransform(CapsCenterShift(Font("Regular", 10)))
 						]
-						+ SHorizontalBox::Slot().AutoWidth().Padding(10.0f, 0.0f, 0.0f, 0.0f)
+						+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(10.0f, 0.0f, 0.0f, 0.0f)
 						[
 							SNew(STextBlock).Text(LOCTEXT("JournalNew", "NEW")).Font(FCoreStyle::GetDefaultFontStyle("Bold", 10))
+							.RenderTransform(CapsCenterShift(FCoreStyle::GetDefaultFontStyle("Bold", 10)))
 							.ColorAndOpacity(Success()).Visibility(bRecent ? EVisibility::Visible : EVisibility::Collapsed)
 						]
 					]
@@ -2829,6 +2808,10 @@ FReply SAPSColonyTerminal::SelectTab(const ETab Tab)
 	{
 		Switcher->SetActiveWidgetIndex(static_cast<int32>(Tab));
 	}
+	if (IsMapTab())
+	{
+		LastMapTab = Tab;
+	}
 	if (Tab == ETab::Journal)
 	{
 		RebuildJournal();
@@ -2842,11 +2825,16 @@ FReply SAPSColonyTerminal::SelectTab(const ETab Tab)
 	}
 	if (Tab == ETab::Scheme && Scheme.IsValid())
 	{
-		Scheme->Refresh();
-	}
-	if (Tab == ETab::Pilot)
-	{
-		RefreshPilotStatus();
+		// Rio 05.10 (star map): the mode button shows the player's own system again; the star map's drill-down keeps its pin.
+		if (bKeepSchemePin)
+		{
+			Scheme->Refresh();
+		}
+		else
+		{
+			Scheme->ShowSystem(nullptr);
+		}
+		bKeepSchemePin = false;
 	}
 	if (Tab == ETab::Surface && SurfaceMap.IsValid())
 	{
@@ -2947,7 +2935,7 @@ void SAPSColonyTerminal::Tick(const FGeometry& AllottedGeometry, const double In
 		}
 	}
 	if (ActiveTab != ETab::Colony && ActiveTab != ETab::Map && ActiveTab != ETab::Fleet && ActiveTab != ETab::Shipyard
-		&& ActiveTab != ETab::Scheme && ActiveTab != ETab::Pilot && ActiveTab != ETab::Surface)
+		&& ActiveTab != ETab::Scheme && ActiveTab != ETab::Surface)
 	{
 		return;
 	}
@@ -2967,10 +2955,6 @@ void SAPSColonyTerminal::Tick(const FGeometry& AllottedGeometry, const double In
 		else if (ActiveTab == ETab::Shipyard)
 		{
 			RefreshShipyard(false);
-		}
-		else if (ActiveTab == ETab::Pilot)
-		{
-			RefreshPilotStatus();
 		}
 		else if (ActiveTab == ETab::Surface && SurfaceMap.IsValid())
 		{
@@ -3209,25 +3193,81 @@ void SAPSColonyTerminal::RefreshMap()
 	}
 	MapListSignature = Signature;
 	MapList->ClearChildren();
+	// Rio 02.10 ("hard to find the objects you need: they are only text... icons, readable labels: where the HQ is, where
+	// a station, where just a building"): the list goes by what matters under headings (command, fleet, stations,
+	// settlements and sites, worlds), each row with the object's real look (its baked thumbnail) or its glyph.
+	const auto GroupOf = [](const SAPSCivilizationMap::FObject& Object) -> int32
+	{
+		switch (Object.Kind)
+		{
+		case SAPSCivilizationMap::EKind::Colony: return 0;
+		case SAPSCivilizationMap::EKind::Station:
+			return Object.Actor.IsValid() && Object.Actor->IsA<ASpaceHeadquarters>() ? 0 : 2;
+		case SAPSCivilizationMap::EKind::Ship: return 1;
+		case SAPSCivilizationMap::EKind::Settlement:
+		case SAPSCivilizationMap::EKind::Outpost: return 3;
+		default: return 4;
+		}
+	};
+	Shown.StableSort([&GroupOf](const SAPSCivilizationMap::FObject& A, const SAPSCivilizationMap::FObject& B)
+	{
+		return GroupOf(A) < GroupOf(B);
+	});
+	const FText GroupHeadings[] = {LOCTEXT("MapGroupCommand", "COMMAND"), LOCTEXT("MapGroupFleet", "FLEET"),
+		LOCTEXT("MapGroupStations", "STATIONS"), LOCTEXT("MapGroupSites", "SETTLEMENTS AND SITES"),
+		LOCTEXT("MapGroupWorlds", "WORLDS")};
+	int32 ShownGroup = INDEX_NONE;
 	for (const SAPSCivilizationMap::FObject* Object : Shown)
 	{
 		if (Object->Kind == SAPSCivilizationMap::EKind::Pilot)
 		{
 			continue;
 		}
+		const int32 Group = GroupOf(*Object);
+		if (Group != ShownGroup)
+		{
+			MapList->AddSlot().AutoHeight().Padding(2.0f, ShownGroup == INDEX_NONE ? 0.0f : 9.0f, 0.0f, 4.0f)
+			[
+				SNew(STextBlock).Text(GroupHeadings[Group]).Font(Font("Bold", 9))
+				.ColorAndOpacity(Group == 0 ? Amber() : Muted())
+			];
+			ShownGroup = Group;
+		}
 		const FString StableId = Object->StableId;
 		const TWeakObjectPtr<AActor> Actor = Object->Actor;
+		const FSlateBrush* Snapshot = Actor.IsValid() ? APSUIThumbnails::FindBrush(Actor->GetClass()) : nullptr;
+		const EAPSChromeGlyph Glyph = Object->Kind == SAPSCivilizationMap::EKind::Star ? EAPSChromeGlyph::System
+			: Object->Kind == SAPSCivilizationMap::EKind::Planet || Object->Kind == SAPSCivilizationMap::EKind::Moon
+				? EAPSChromeGlyph::Planet
+			: Object->Kind == SAPSCivilizationMap::EKind::Colony ? EAPSChromeGlyph::Civilization
+			: Object->Kind == SAPSCivilizationMap::EKind::Settlement ? EAPSChromeGlyph::Infrastructure
+			: Object->Kind == SAPSCivilizationMap::EKind::Outpost ? EAPSChromeGlyph::Compass
+			: APSInfrastructureUI::GlyphOf(Actor.Get());
+		const TSharedRef<SWidget> Icon = Snapshot
+			// A thumbnail may be wide (a long hull): fit it, never stretch it.
+			? StaticCastSharedRef<SWidget>(SNew(SScaleBox).Stretch(EStretch::ScaleToFit)[SNew(SImage).Image(Snapshot)])
+			: StaticCastSharedRef<SWidget>(SNew(SBox).Padding(8.0f)
+				[
+					SNew(SAPSVectorGlyph).Glyph(Glyph).Color(Object->Color).StrokeWidth(1.8f)
+				]);
 		MapList->AddSlot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 5.0f)
 		[
 			ChromeButton(
 				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.0f, 0.0f, 9.0f, 0.0f)
+				[
+					SNew(SBox).WidthOverride(42.0f).HeightOverride(42.0f)
+					[
+						Icon
+					]
+				]
 				+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
 				[
 					SNew(SVerticalBox)
 					+ SVerticalBox::Slot().AutoHeight()
 					[
 						SNew(STextBlock).Text(Object->Name).Font(Font("Bold", 10))
-						.ColorAndOpacity(FSlateColor(Object->Color))
+						.ColorAndOpacity(FSlateColor(Object->Color)).RenderTransform(CapsCenterShift(Font("Bold", 10)))
 					]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 1.0f, 0.0f, 0.0f)
 					[
@@ -3241,7 +3281,7 @@ void SAPSColonyTerminal::RefreshMap()
 					{
 						return FText::FromString(APSColonyUI::PawnDistance(World.Get(), Actor.Get()));
 					})
-					.Font(Font("Bold", 10)).ColorAndOpacity(Amber())
+					.Font(Font("Bold", 10)).ColorAndOpacity(Amber()).RenderTransform(CapsCenterShift(Font("Bold", 10)))
 				],
 				FOnClicked::CreateLambda([this, StableId]()
 				{
@@ -3336,6 +3376,7 @@ TSharedRef<SWidget> SAPSColonyTerminal::BuildConstruction()
 					+ SVerticalBox::Slot().AutoHeight()
 					[
 						SNew(STextBlock).Text(Label).Font(Font("Bold", 11)).ColorAndOpacity(White())
+						.RenderTransform(CapsCenterShift(Font("Bold", 11)))
 					]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 2.0f, 0.0f, 0.0f)
 					[
@@ -3665,7 +3706,7 @@ void SAPSColonyTerminal::RebuildQueue(const FAPSProductionSnapshot* Snapshot)
 				SNew(SBox).WidthOverride(190.0f)
 				[
 					SNew(STextBlock).Text(Spec ? Spec->Name : FText::FromName(Job->DefinitionId.PrimaryAssetName))
-					.Font(Font("Bold", 11)).ColorAndOpacity(White())
+					.Font(Font("Bold", 11)).ColorAndOpacity(White()).RenderTransform(CapsCenterShift(Font("Bold", 11)))
 				]
 			]
 			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.0f, 0.0f, 12.0f, 0.0f)
@@ -3673,6 +3714,7 @@ void SAPSColonyTerminal::RebuildQueue(const FAPSProductionSnapshot* Snapshot)
 				SNew(SBox).WidthOverride(290.0f)
 				[
 					SNew(STextBlock).Text(State).Font(Font("Bold", 10)).ColorAndOpacity(StateColor)
+					.RenderTransform(CapsCenterShift(Font("Bold", 10)))
 				]
 			]
 			+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
@@ -3706,7 +3748,7 @@ void SAPSColonyTerminal::RebuildQueue(const FAPSProductionSnapshot* Snapshot)
 						return FText::FromString(FString::Printf(TEXT("%d%%"),
 							FMath::RoundToInt(JobProgress(JobId) * 100.0f)));
 					})
-					.Font(Font("Bold", 10)).ColorAndOpacity(Muted())
+					.Font(Font("Bold", 10)).ColorAndOpacity(Muted()).RenderTransform(CapsCenterShift(Font("Bold", 10)))
 				]
 			]
 		];
@@ -3768,6 +3810,7 @@ void SAPSColonyTerminal::RebuildBuilt(const TArray<AAPSColonyModule*>& Modules)
 				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
 				[
 					SNew(STextBlock).Text(LOCTEXT("Standing", "STANDING")).Font(Font("Bold", 11)).ColorAndOpacity(Success())
+					.RenderTransform(CapsCenterShift(Font("Bold", 11)))
 				],
 				FMargin(14.0f, 9.0f), CyanDim())
 		];
@@ -3791,9 +3834,8 @@ const FSlateBrush* SAPSColonyTerminal::ShipThumbnail(const TSubclassOf<ASpaceshi
 	{
 		ShipThumbnailTextures.Emplace(Texture);
 		Brush = MakeShared<FSlateBrush>();
-		Brush->SetResourceObject(Texture);
-		Brush->ImageSize = FVector2D(static_cast<float>(Texture->GetSizeX()), static_cast<float>(Texture->GetSizeY()));
-		Brush->DrawAs = ESlateBrushDrawType::Image;
+		// Cropped to the hull, so the card's box fills with the ship (Rio 05.10: "the ship icons are too small").
+		APSUIThumbnails::InitBrush(*Brush, Texture);
 	}
 	ShipThumbnails.Add(Package, Brush);
 	return Brush.Get();
@@ -3944,9 +3986,10 @@ void SAPSColonyTerminal::RebuildShipyardCatalogue()
 		[
 			ChamferPanel(
 				SNew(SVerticalBox)
-				+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center)
+				// Rio 05.10 ("the ship icons are too small"): the cropped icon fits the card's whole width, this high.
+				+ SVerticalBox::Slot().AutoHeight()
 				[
-					SNew(SBox).WidthOverride(150.0f).HeightOverride(84.0f)
+					SNew(SBox).WidthOverride(300.0f).HeightOverride(112.0f)
 					[
 						Thumbnail
 							? StaticCastSharedRef<SWidget>(SNew(SScaleBox).Stretch(EStretch::ScaleToFit)[SNew(SImage).Image(Thumbnail)])
@@ -4061,15 +4104,18 @@ void SAPSColonyTerminal::RefreshShipyard(const bool bForceRebuild)
 						SNew(SVerticalBox)
 						+ SVerticalBox::Slot().AutoHeight()
 						[
+							// The name (display face) and its tag (engine face) on one middle line (Rio 03.10).
 							SNew(SHorizontalBox)
-							+ SHorizontalBox::Slot().FillWidth(1.0f)
+							+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
 							[
 								SNew(STextBlock).Text(FAPSFleetCommand::DisplayName(Each)).Font(Font("Bold", 11)).ColorAndOpacity(White())
+								.RenderTransform(CapsCenterShift(Font("Bold", 11)))
 							]
 							+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(8.0f, 0.0f, 0.0f, 0.0f)
 							[
 								SNew(STextBlock).Text(bHome ? LOCTEXT("YardHome", "HOME") : LOCTEXT("YardBuilt", "BUILT"))
 								.Font(Font("Bold", 9)).ColorAndOpacity(bHome ? Amber() : Success())
+								.RenderTransform(CapsCenterShift(Font("Bold", 9)))
 							]
 						]
 						+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 2.0f, 0.0f, 0.0f)

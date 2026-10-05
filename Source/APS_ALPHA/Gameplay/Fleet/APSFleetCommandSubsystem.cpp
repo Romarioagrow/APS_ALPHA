@@ -48,27 +48,41 @@ void UAPSFleetCommandSubsystem::Deinitialize()
 
 void UAPSFleetCommandSubsystem::Tick(const float DeltaTime)
 {
+	// Rio 05.10 afternoon (flight FPS): this tick grows from 0.03 to 0.45 ms a frame at drive speed; each part is traced.
 	if (Stars.IsValid())
 	{
+		TRACE_CPUPROFILER_EVENT_SCOPE(APS_Fleet_Stars);
 		Stars->Tick(DeltaTime);
 	}
 	if (Infrastructure.IsValid())
 	{
+		TRACE_CPUPROFILER_EVENT_SCOPE(APS_Fleet_Infrastructure);
 		Infrastructure->Tick(DeltaTime);
 	}
 	if (Missions.IsValid())
 	{
+		TRACE_CPUPROFILER_EVENT_SCOPE(APS_Fleet_Missions);
 		Missions->Tick(DeltaTime);
 	}
 	if (Fleet.IsValid())
 	{
+		TRACE_CPUPROFILER_EVENT_SCOPE(APS_Fleet_Fleet);
 		Fleet->Tick(DeltaTime);
 	}
-	APSMemoryProbe::Tick(GetWorld());
-	APSPerfProbe::Tick(GetWorld(), DeltaTime);
-	APSGroundVehicles::Tick(GetWorld(), DeltaTime);
-	APSSurfaceDiag::Tick(GetWorld(), DeltaTime);
-	APSMissionTracker::Tick(GetWorld());
+	{
+		TRACE_CPUPROFILER_EVENT_SCOPE(APS_Fleet_Probes);
+		APSMemoryProbe::Tick(GetWorld());
+		APSPerfProbe::Tick(GetWorld(), DeltaTime);
+	}
+	{
+		TRACE_CPUPROFILER_EVENT_SCOPE(APS_Fleet_GroundVehicles);
+		APSGroundVehicles::Tick(GetWorld(), DeltaTime);
+	}
+	{
+		TRACE_CPUPROFILER_EVENT_SCOPE(APS_Fleet_SurfaceDiagAndTracker);
+		APSSurfaceDiag::Tick(GetWorld(), DeltaTime);
+		APSMissionTracker::Tick(GetWorld());
+	}
 }
 
 TStatId UAPSFleetCommandSubsystem::GetStatId() const

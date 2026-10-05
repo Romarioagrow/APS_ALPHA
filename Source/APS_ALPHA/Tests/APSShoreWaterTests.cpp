@@ -1,5 +1,7 @@
 #if WITH_DEV_AUTOMATION_TESTS
 #include "Misc/AutomationTest.h"
+#include "Misc/CommandLine.h"
+#include "Misc/Parse.h"
 #include "Misc/ScopeExit.h"
 #include "MaterialDomain.h"
 #include "APS_ALPHA/Core/Planetary/APSSharedGeneratedLiquidMaterial.h"
@@ -20,11 +22,22 @@ bool FAPSShoreWaterFactoryTest::RunTest(const FString&)
     using namespace APSSharedGeneratedLiquidMaterial;
     FAPSResolvedPlanetSurfaceProfile P; P.PlanetType=EPlanetType::Terrestrial;
     P.LiquidType=EAPSPlanetLiquidType::Water; P.LandCoverage=.5f;
-    for (auto T:{EPlanetType::Terrestrial,EPlanetType::Water,EPlanetType::Oasis,EPlanetType::Frozen,EPlanetType::Forest,EPlanetType::Volcanic})
+    // Independent saved IDs: all concrete solid Water profiles are eligible in
+    // the unified default. This fixture does not add water to native dry/lava presets.
+    const TArray<int32> UnifiedWaterTypes={0,1,2,3,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,31,32,33,34};
+    const TArray<int32> LegacyWaterTypes={1,9,25};
+    TestEqual(TEXT("explicit shore fixture covers the current preset enum"),int32(APSPlanetTypes::LastValue),34);
+#if WITH_EDITOR
+    const bool bExpectUnified=!FParse::Param(FCommandLine::Get(),TEXT("APSLegacySurfacePipelineControl"));
+#else
+    const bool bExpectUnified=true;
+#endif
+    for (int32 TypeId=0;TypeId<=34;++TypeId)
     {
-        P.PlanetType=T;
-        TestEqual(TEXT("only existing coastal families"),FString(TemplatePath(P))==APSShoreWaterMaterial::TemplatePath,
-            T==EPlanetType::Terrestrial || T==EPlanetType::Water || T==EPlanetType::Oasis);
+        P.PlanetType=static_cast<EPlanetType>(TypeId);
+        const bool bExpectShore=(bExpectUnified ? UnifiedWaterTypes : LegacyWaterTypes).Contains(TypeId);
+        TestEqual(FString::Printf(TEXT("Water-profile shore route type %d unified %d"),TypeId,bExpectUnified),
+            FString(TemplatePath(P))==APSShoreWaterMaterial::TemplatePath,bExpectShore);
     }
     P.PlanetType=EPlanetType::Terrestrial;
     for (auto T:{EAPSPlanetLiquidType::Lava,EAPSPlanetLiquidType::Ammonia})
@@ -38,6 +51,23 @@ bool FAPSShoreWaterFactoryTest::RunTest(const FString&)
     TestTrue(TEXT("same saved shore template"),Ground->Parent==Orbit->Parent && APSShoreWaterMaterial::IsInstance(Ground.Get()));
     TestTrue(TEXT("native depth admits shore stack"),APSCoastalWaterMaterial::IsInstance(Ground.Get()));
     TestNull(TEXT("manual source unchanged"),Create(GetTransientPackage(),Frame.Get(),1.,false,true,P,Source.Get()));
+    FAPSResolvedPlanetSurfaceProfile Dry=P;
+    Dry.PlanetType=EPlanetType::Frozen; Dry.Archetype=EAPSPlanetSurfaceArchetype::Cryogenic;
+    Dry.LiquidType=EAPSPlanetLiquidType::None;
+    TestNull(TEXT("Frozen without liquid has no liquid template"),TemplatePath(Dry));
+    TestFalse(TEXT("Frozen without liquid cannot enter the coastal route"),APSCoastalWaterMaterial::Allows(Dry));
+    TestNull(TEXT("Frozen without liquid cannot create an ocean from a Water source"),
+        Create(GetTransientPackage(),Frame.Get(),1.,false,false,Dry,Source.Get()));
+    FAPSResolvedPlanetSurfaceProfile Magmatic=P;
+    Magmatic.Archetype=EAPSPlanetSurfaceArchetype::Magmatic; Magmatic.LiquidType=EAPSPlanetLiquidType::Lava;
+    for (auto Type:{EPlanetType::Melted,EPlanetType::Volcanic,EPlanetType::Lava})
+    {
+        Magmatic.PlanetType=Type;
+        TestEqual(FString::Printf(TEXT("magmatic Lava template preserved type %d"),int32(Type)),
+            FString(TemplatePath(Magmatic)),FString(APSSharedLavaMaterial::TemplatePath()));
+        TestFalse(FString::Printf(TEXT("magmatic Lava never enters coastal Water type %d"),int32(Type)),
+            APSCoastalWaterMaterial::Allows(Magmatic));
+    }
     float Opacity=-1; Ground->GetScalarParameterValue(FHashedMaterialParameterInfo(TEXT("APS_ShoreOpaqueDepthM")),Opacity);
     TestEqual(TEXT("saved metre feather"),Opacity,3.f);
     Trial->Set(0,ECVF_SetByCode);

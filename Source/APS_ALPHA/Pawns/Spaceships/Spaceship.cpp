@@ -1,4 +1,5 @@
 #include "Spaceship.h"
+#include "APSM5HullSweepComponent.h"
 #include "APS_ALPHA/Core/Controllers/GravityPlayerController.h"
 #include "APS_ALPHA/Core/Rendering/APSPreviewVisibility.h"
 #include "APS_ALPHA/UI/Style/APSUINumber.h"
@@ -18,6 +19,7 @@
 #include "APS_ALPHA/Core/Interfaces/NavigatableBody.h"
 #include "APS_ALPHA/Core/Structs/StarGenerationModel.h"
 #include "APS_ALPHA/Core/World/APSPlanetEnvironmentStreamingSubsystem.h"
+#include "APS_ALPHA/Core/World/APSWorldOriginSubsystem.h"
 #include "APS_ALPHA/Generation/AstroGenerator.h"
 #include "APS_ALPHA/Generation/PlanetarySurfaceGenerator.h"
 #include "APS_ALPHA/Pawns/Characters/GravityCharacterPawn.h"
@@ -69,6 +71,8 @@
 #include "APS_ALPHA/Gameplay/Vehicles/APSGroundVehicleTypes.h"
 #include "APS_ALPHA/Gameplay/Construction/APSShipBuildComponent.h"
 #include "Engine/CollisionProfile.h"
+#include "Containers/Ticker.h"
+#include "Misc/DelayedAutoRegister.h"
 
 class SAPSShipNavigationOverlay final : public SLeafWidget
 {
@@ -1042,10 +1046,96 @@ namespace APSShipPerf
 		TEXT("1 removes the piloted kinematic ship's primitives from the renderer's velocity data every frame (the behaviour ")
 		TEXT("before 29.09): TSR and Lumen then reproject the hull as static world geometry while the camera flies with it. ")
 		TEXT("0 leaves the engine's own motion vectors (A/B for the hull shimmer at speed)."));
+	TAutoConsoleVariable<int32> CVarTsrHistoryInFlight(
+		TEXT("aps.Ship.TsrHistoryInFlight"), 1,
+		TEXT("Rio 05.10 (\"the edges still ripple at speed, walking aboard too\"): above ~6 km/s the camera moves over 100 m ")
+		TEXT("a frame and the renderer dropped TSR's history every frame (r.CameraCutTranslationThreshold; r.TSR.Visualize 0 ")
+		TEXT("showed nothing accumulated), so edges and noise flickered anew each frame. 1 (default since the evening's A/B) ")
+		TEXT("keeps the history while the view rides a ship (flown or walked in; the strategic map and taking or leaving the ")
+		TEXT("seat still cut): that threshold goes up, and the piloted hull keeps its own motion vectors (aps.Ship.")
+		TEXT("ResetHullVelocity is skipped). 0: as before."));
+	TAutoConsoleVariable<float> CVarTsrHistoryMaxStepKm(
+		TEXT("aps.Ship.TsrHistoryMaxStepKm"), 500.0f,
+		TEXT("Rio 05.10 night: with aps.Ship.TsrHistoryInFlight, TSR keeps its history up to this camera step a frame, km ")
+		TEXT("(r.CameraCutTranslationThreshold); beyond it the reprojection is too coarse and history would smear."));
+	/**
+	 * Raises r.CameraCutTranslationThreshold while aps.Ship.TsrHistoryInFlight is on and the player's view rides a ship
+	 * (flown, or walked in), and gives the saved value back otherwise. Rio 05.10 evening: a camera moving more than the
+	 * threshold in a frame (UE 5.4 SceneVisibility.cpp: in a REAL SCALE flow the renderer even moves the previous view
+	 * by the frame's whole world shift) gets a fresh previous view, so TSR loses its history every frame and the edges
+	 * alias anew with each jitter. A ship's view moves with the ship and its motion vectors are right. On a core ticker,
+	 * so the value comes back even when no ship ticks (the player on foot, a level change).
+	 */
+	bool TickTsrHistory(float)
+	{
+		static IConsoleVariable* const Threshold =
+			IConsoleManager::Get().FindConsoleVariable(TEXT("r.CameraCutTranslationThreshold"));
+		static float Saved = -1.0f;
+		if (!Threshold || !GEngine)
+		{
+			return true;
+		}
+		bool bRidesShip = false;
+		if (CVarTsrHistoryInFlight.GetValueOnGameThread() != 0)
+		{
+			for (const FWorldContext& Context : GEngine->GetWorldContexts())
+			{
+				const UWorld* World = Context.World();
+				const APlayerController* Controller = World
+					&& (Context.WorldType == EWorldType::Game || Context.WorldType == EWorldType::PIE)
+					? World->GetFirstPlayerController() : nullptr;
+				// The view itself must ride the ship: the strategic map's camera (and its blend back) jumps hundreds of AU
+				// and still needs the renderer's own cut.
+				const AActor* ViewTarget = Controller && Controller->PlayerCameraManager
+					? Controller->PlayerCameraManager->GetViewTarget() : nullptr;
+				for (const AActor* Link = ViewTarget; Link && !bRidesShip; Link = Link->GetAttachParentActor())
+				{
+					bRidesShip = Link->IsA<ASpaceship>();
+				}
+			}
+		}
+		// Rio 05.10 night (the hull's texture smeared at legacy-scale cruise speeds): past ~500 km a frame the float maths
+		// of TSR's reprojection is off by more than a tenth of a pixel at the hull's distance, and kept history smears; above
+		// that the renderer's own cut (and its edge ripple) is the lesser evil. A REAL SCALE flow keeps the view still, so
+		// there the cut never comes.
+		const float KeptStepCm = FMath::Max(CVarTsrHistoryMaxStepKm.GetValueOnGameThread(), 0.0f) * 1.0e5f;
+		if (bRidesShip && (Saved < 0.0f || Threshold->GetFloat() != KeptStepCm))
+		{
+			if (Saved < 0.0f)
+			{
+				Saved = Threshold->GetFloat();
+			}
+			Threshold->Set(KeptStepCm, ECVF_SetByCode);
+		}
+		else if (!bRidesShip && Saved >= 0.0f)
+		{
+			Threshold->Set(Saved, ECVF_SetByCode);
+			Saved = -1.0f;
+		}
+		return true;
+	}
+	FDelayedAutoRegisterHelper GTsrHistoryRegister(EDelayedRegisterRunPhase::EndOfEngineInit, []
+	{
+		FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateStatic(&TickTsrHistory), 0.0f);
+	});
+	TAutoConsoleVariable<float> CVarIdleCameraTickSeconds(
+		TEXT("aps.Ship.IdleCameraTickSeconds"), 0.5f,
+		TEXT("Rio 05.10 (night optimisation; a trace at drive speed: the camera arms of six pawns cost 1.5 ms a frame, the ")
+		TEXT("ground vehicles' with a collision sweep each): the camera arm of a ship the player does not fly ticks this often, ")
+		TEXT("s (its camera shows nothing); the piloted one every frame. 0: every frame, as before."));
 	TAutoConsoleVariable<int32> CVarProxySweep(
 		TEXT("aps.Ship.ProxySweep"), 1,
 		TEXT("1 sweeps the flight proxy boxes of detailed hulls (M3 and similar) so they collide with stations, ships and ")
 		TEXT("terrain; 0 restores the collision-free root move of those ships (before 29.09)."));
+	TAutoConsoleVariable<int32> CVarDetailedHullFlightProxy(
+		TEXT("aps.Ship.DetailedHullFlightProxy"), 0,
+		TEXT("Rio 05.10 evening (flight FPS, an A/B for now): 1 flies a piloted ship whose hull has more collision shapes ")
+		TEXT("than aps.Ship.DetailedHullShapes on the flight proxy boxes, as the M3 does, and takes the hull's own body out ")
+		TEXT("of the physics scene until the pilot gets up (the M5's 13.5k convex shapes cost ~6 ms a frame in any flight: ")
+		TEXT("every move of the hull and every query near it walks them all). 0: as the ship is authored."));
+	TAutoConsoleVariable<int32> CVarDetailedHullShapes(
+		TEXT("aps.Ship.DetailedHullShapes"), 512,
+		TEXT("Collision shapes from which aps.Ship.DetailedHullFlightProxy treats a hull as detailed."));
 	TAutoConsoleVariable<int32> CVarHullSceneLightingInFlight(
 		TEXT("aps.Ship.HullSceneLightingInFlight"), 2,
 		TEXT("2 (default since Rio's check on 29.09) takes a piloted ship out of the global distance field: that copy ")
@@ -1291,6 +1381,7 @@ void ASpaceship::BeginPlay()
 
 	// Parked fleet actors do not scan the universe. The possessed ship's navigation component owns that work.
 	SetActorTickEnabled(IsValid(Pilot) || bEngineRunning);
+	UpdateCameraArmTicking();
 
 	//ComputeProximity();
 }
@@ -2832,7 +2923,8 @@ void ASpaceship::SetHullSceneLightingExcluded(bool bExcluded)
 void ASpaceship::StabilizeFullScaleVisualVelocity()
 {
 	if (!IsValid(Pilot) || (SpaceshipHull && SpaceshipHull->IsSimulatingPhysics())
-		|| APSShipPerf::CVarResetHullVelocity.GetValueOnGameThread() == 0)
+		|| APSShipPerf::CVarResetHullVelocity.GetValueOnGameThread() == 0
+		|| APSShipPerf::CVarTsrHistoryInFlight.GetValueOnGameThread() != 0)
 	{
 		return;
 	}
@@ -2852,12 +2944,17 @@ void ASpaceship::StabilizeFullScaleVisualVelocity()
 void ASpaceship::SetFlightCollisionOptimization(bool bEnabled)
 {
 	UPrimitiveComponent* PrimaryHull = GetPrimaryHullComponent();
-	if (!bOptimizeCollisionWhilePiloted || bGenerateSimpleHullCollision || !PrimaryHull)
+	if (bGenerateSimpleHullCollision || !PrimaryHull)
 	{
 		return;
 	}
-
-	if (bEnabled && !bFlightCollisionOptimizationActive)
+	// Rio 05.10 evening (flight FPS, A/B): a detailed hull flies on the proxy even when authored without it, and its own
+	// body leaves the physics scene meanwhile (aps.Ship.DetailedHullFlightProxy).
+	const UBodySetup* HullBodySetup = PrimaryHull->GetBodySetup();
+	const bool bDetailedHullProxy = !bOptimizeCollisionWhilePiloted
+		&& APSShipPerf::CVarDetailedHullFlightProxy.GetValueOnGameThread() != 0 && HullBodySetup
+		&& HullBodySetup->AggGeom.GetElementCount() > APSShipPerf::CVarDetailedHullShapes.GetValueOnGameThread();
+	if (bEnabled && !bFlightCollisionOptimizationActive && (bOptimizeCollisionWhilePiloted || bDetailedHullProxy))
 	{
 		OriginalHullCollisionProfile = PrimaryHull->GetCollisionProfileName();
 		OriginalHullCollisionEnabled = PrimaryHull->GetCollisionEnabled();
@@ -2871,9 +2968,18 @@ void ASpaceship::SetFlightCollisionOptimization(bool bEnabled)
 		ActiveClassPreset.bUsesPhysicalImpulse = false;
 		bFlightCollisionOptimizationActive = true;
 		ApplyEngineState();
+		if (bDetailedHullProxy && PrimaryHull->IsPhysicsStateCreated())
+		{
+			// Without collision the body stays in the scene, and so does the walk over its shapes on every move.
+			PrimaryHull->DestroyPhysicsState();
+			UE_LOG(LogTemp, Log, TEXT("[APS.Ships] %s flies on %d proxy boxes; its hull's %d collision shapes leave the scene"),
+				*GetName(), GeneratedCollisionBoxes.Num(), HullBodySetup->AggGeom.GetElementCount());
+		}
 	}
 	else if (!bEnabled && bFlightCollisionOptimizationActive)
 	{
+		const double RestoreStart = FPlatformTime::Seconds();
+		const bool bHullBodyWasOut = !PrimaryHull->IsPhysicsStateCreated();
 		for (UBoxComponent* Box : GeneratedCollisionBoxes)
 		{
 			if (IsValid(Box))
@@ -2886,9 +2992,18 @@ void ASpaceship::SetFlightCollisionOptimization(bool bEnabled)
 		PrimaryHull->SetCollisionEnabled(OriginalHullCollisionEnabled);
 		PrimaryHull->SetCollisionResponseToChannels(OriginalHullCollisionResponses);
 		PrimaryHull->SetSimulatePhysics(false);
+		if (!PrimaryHull->IsPhysicsStateCreated())
+		{
+			PrimaryHull->RecreatePhysicsState();
+		}
 		bFlightCollisionOptimizationActive = false;
 		ConfigureFromHull();
 		ApplyEngineState();
+		if (bHullBodyWasOut)
+		{
+			UE_LOG(LogTemp, Log, TEXT("[APS.Ships] %s: the hull's own collision is back (%.1f ms, body %s)"), *GetName(),
+				(FPlatformTime::Seconds() - RestoreStart) * 1000.0, PrimaryHull->IsPhysicsStateCreated() ? TEXT("in") : TEXT("OUT"));
+		}
 	}
 }
 
@@ -2938,6 +3053,23 @@ bool ASpaceship::MoveShipKinematic(const FVector& Delta, bool bSweep, FHitResult
 	{
 		return false;
 	}
+	// Rio 05.10 (REAL SCALE: at billions of c the hull, the camera and the pilot walking aboard jumped by metres every
+	// frame, "the Deep Space Kraken"): an unswept step of the player's fast ship goes into the world shift by whole
+	// grains (KSP's Krakensbane); the ship and its riders move by the small rest only. Same speed, same flight.
+	if (!bSweep)
+	{
+		UWorld* World = GetWorld();
+		if (UAPSWorldOriginSubsystem* Origin = World ? World->GetSubsystem<UAPSWorldOriginSubsystem>() : nullptr)
+		{
+			const FVector Rest = Origin->FlowPastShip(*this, Delta, KinematicVelocity.Size());
+			if (Rest != Delta)
+			{
+				AddActorWorldOffset(Rest, false, nullptr, ETeleportType::None);
+				Origin->FinishFlowMove(*this);
+				return false;
+			}
+		}
+	}
 	UPrimitiveComponent* RootPrimitive = Cast<UPrimitiveComponent>(GetRootComponent());
 	if (bSweep && RootPrimitive && !RootPrimitive->IsQueryCollisionEnabled() && !GeneratedCollisionBoxes.IsEmpty()
 		&& APSShipPerf::CVarProxySweep.GetValueOnGameThread() != 0)
@@ -2950,6 +3082,13 @@ bool ASpaceship::MoveShipKinematic(const FVector& Delta, bool bSweep, FHitResult
 	{
 		// MoveComponent sweeps only the root body; without query collision the move is a plain offset anyway.
 		bSweep = false;
+	}
+	if (bSweep && RootPrimitive)
+	{
+		if (UAPSM5HullSweepComponent* FittedSweep = FindComponentByClass<UAPSM5HullSweepComponent>())
+		{
+			if (FittedSweep->TryMoveHull(Cast<UStaticMeshComponent>(RootPrimitive), Delta, OutHit)) return OutHit.bBlockingHit;
+		}
 	}
 	if (bSweep && APSShipPerf::CVarSweepPrecheck.GetValueOnGameThread() != 0 && GetWorld())
 	{
@@ -5250,6 +5389,17 @@ void ASpaceship::PossessedBy(AController* NewController)
 	SetFlightCollisionOptimization(true);
 	SetActorTickEnabled(true);
 	CreateShipHud();
+	UpdateCameraArmTicking();
+}
+
+void ASpaceship::UpdateCameraArmTicking()
+{
+	if (!SpringArmComponent)
+	{
+		return;
+	}
+	SpringArmComponent->SetComponentTickInterval(IsPlayerControlled() ? 0.0f
+		: FMath::Max(APSShipPerf::CVarIdleCameraTickSeconds.GetValueOnGameThread(), 0.0f));
 }
 
 void ASpaceship::UnPossessed()
@@ -5283,6 +5433,7 @@ void ASpaceship::UnPossessed()
 	Super::UnPossessed();
 	// A ground vehicle keeps ticking until it has come to rest and parked itself (UAPSShipFlightModel::ParkVehicle).
 	SetActorTickEnabled(bEngineRunning || IsGroundVehicle());
+	UpdateCameraArmTicking();
 }
 
 void ASpaceship::EndPlay(const EEndPlayReason::Type EndPlayReason)

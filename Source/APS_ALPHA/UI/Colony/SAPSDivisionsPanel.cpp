@@ -468,9 +468,11 @@ TSharedRef<SWidget> SAPSDivisionsPanel::BuildMission(const FAPSMission& Mission)
 	const TWeakObjectPtr<UWorld> WeakWorld = World;
 	const auto Button = [](const FText& Label, const FLinearColor& Colour, TFunction<void()> OnClick)
 	{
-		return SNew(SButton).ContentPadding(FMargin(10.0f, 3.0f)).OnClicked_Lambda([OnClick]() { OnClick(); return FReply::Handled(); })
+		// Rio 03.10: the label centred both ways, 14 each side.
+		return SNew(SButton).ContentPadding(FMargin(14.0f, 4.0f)).HAlign(HAlign_Center).VAlign(VAlign_Center)
+			.OnClicked_Lambda([OnClick]() { OnClick(); return FReply::Handled(); })
 			[
-				SNew(STextBlock).Text(Label).Font(Font("Bold", 10)).ColorAndOpacity(Colour)
+				CenteredLabel(Label, Font("Bold", 10), Colour)
 			];
 	};
 	FString Rewards = APSInfrastructure::DescribeAmounts(Mission.Reward).ToString();
@@ -526,6 +528,7 @@ TSharedRef<SWidget> SAPSDivisionsPanel::BuildMission(const FAPSMission& Mission)
 					+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
 					[
 						SNew(STextBlock).Text(Mission.Title).Font(Font("Bold", 12)).ColorAndOpacity(bActive ? Amber() : White())
+						.RenderTransform(CapsCenterShift(Font("Bold", 12)))
 					]
 					+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
 					[
@@ -545,7 +548,7 @@ TSharedRef<SWidget> SAPSDivisionsPanel::BuildMission(const FAPSMission& Mission)
 					[
 						SNew(STextBlock).Text(FText::Format(LOCTEXT("MissionObjective", "{0}  {1} / {2}"),
 							APSMissions::ObjectiveName(Mission.Objective), APSUINumber::Number(Mission.Progress), APSUINumber::Number(Mission.Count)))
-						.Font(Font("Bold", 10)).ColorAndOpacity(White())
+						.Font(Font("Bold", 10)).ColorAndOpacity(White()).RenderTransform(CapsCenterShift(Font("Bold", 10)))
 					]
 					+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center).Padding(10.0f, 0.0f, 0.0f, 0.0f)
 					[
@@ -605,6 +608,7 @@ TSharedRef<SWidget> SAPSDivisionsPanel::BuildCard(const int32 Card)
 					+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center).Padding(10.0f, 0.0f, 0.0f, 0.0f)
 					[
 						SNew(STextBlock).Text(Spec.Name).Font(Font("Bold", 14)).ColorAndOpacity(White())
+						.RenderTransform(CapsCenterShift(Font("Bold", 14)))
 					]
 				]
 				// The description stays one quiet line; the numbers below carry the card.
@@ -700,6 +704,7 @@ TSharedRef<SWidget> SAPSDivisionsPanel::BuildLegend(const int32 Card)
 			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(6.0f, 0.0f, 0.0f, 0.0f)
 			[
 				SNew(STextBlock).Text(Value).Font(Font("Bold", 11)).ColorAndOpacity(ValueColour)
+				.RenderTransform(CapsCenterShift(Font("Bold", 11)))
 			]
 			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(5.0f, 0.0f, 0.0f, 0.0f)
 			[
@@ -857,7 +862,7 @@ TSharedRef<SWidget> SAPSDivisionsPanel::BuildGrowth(const int32 Card)
 		];
 		Row->AddSlot().AutoWidth().VAlign(VAlign_Center).Padding(12.0f, 0.0f, 0.0f, 0.0f)
 		[
-			SNew(STextBlock).Font(Font("Bold", 13)).ColorAndOpacity(White())
+			SNew(STextBlock).Font(Font("Bold", 13)).ColorAndOpacity(White()).RenderTransform(CapsCenterShift(Font("Bold", 13)))
 			.Text_Lambda([this, Card, Step]()
 			{
 				return FText::Format(LOCTEXT("GrowthFraction", "{0} / {1}"), APSUINumber::Number(GrowthDone(Card)),
@@ -920,7 +925,7 @@ TSharedRef<SWidget> SAPSDivisionsPanel::BuildShips(const int32 Card, const FLine
 			]
 			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(10.0f, 0.0f, 0.0f, 0.0f)
 			[
-				SNew(STextBlock).Font(Font("Bold", 13)).ColorAndOpacity(White())
+				SNew(STextBlock).Font(Font("Bold", 13)).ColorAndOpacity(White()).RenderTransform(CapsCenterShift(Font("Bold", 13)))
 				.Text_Lambda([this, Card]() { return APSUINumber::Number(State(Card).Ships); })
 			]
 			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(6.0f, 0.0f, 0.0f, 0.0f)
@@ -930,7 +935,7 @@ TSharedRef<SWidget> SAPSDivisionsPanel::BuildShips(const int32 Card, const FLine
 			]
 			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(16.0f, 0.0f, 0.0f, 0.0f)
 			[
-				SNew(STextBlock).Font(Font("Bold", 13)).ColorAndOpacity(Accent)
+				SNew(STextBlock).Font(Font("Bold", 13)).ColorAndOpacity(Accent).RenderTransform(CapsCenterShift(Font("Bold", 13)))
 				.Text_Lambda([this, Card]() { return APSUINumber::Number(State(Card).UnderOrders); })
 			]
 			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(6.0f, 0.0f, 0.0f, 0.0f)

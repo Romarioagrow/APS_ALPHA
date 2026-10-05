@@ -6,6 +6,7 @@
 #include "APSLivingBiomeTransfer.h"
 #include "APSOrbitalMacroVariation.h"
 #include "APSTerrainContinuityMaterial.h"
+#include "APS_ALPHA/Core/World/APSWorldShiftEvents.h"
 #include "HAL/IConsoleManager.h"
 #include "Components/SceneComponent.h"
 #include "Misc/CoreDelegates.h"
@@ -97,8 +98,8 @@ namespace APSNativeTerrainMaterial
         // TransformUpdated. Read the final root location after an origin shift,
         // not the offset itself (the hierarchy has already applied it once).
         const TWeakObjectPtr<USceneComponent> WeakRoot(PlanetRoot);
-        FCoreDelegates::PostWorldOriginOffset.AddWeakLambda(Material,
-            [WeakMaterial, WeakRoot](UWorld* World, FIntVector, FIntVector)
+        APSWorldShiftEvents::BindPostShift(Material,
+            [WeakMaterial, WeakRoot](UWorld* World)
             {
                 USceneComponent* LiveRoot = WeakRoot.Get();
                 if (IsValid(LiveRoot) && LiveRoot->GetWorld() == World)
@@ -169,15 +170,15 @@ namespace APSNativeTerrainMaterial
 		// weights fully active across coarse orbital rings, exposing a square LOD0.
 		// Finish that filter before orbit, identically in menu and gameplay. Ground
 		// shading below 2 km, displaced geometry and collision are unchanged.
-		const UMaterial* Master = Material->GetMaterial();
-		const bool bContinuous = IsValid(Master) && Master->GetPathName() == APSTerrainContinuityMaterial::MasterPath;
-		if (IsValid(Master) && (bContinuous || Master->GetPathName() ==
-			TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Shared/M_APS_SharedWorldScapeTerrain.M_APS_SharedWorldScapeTerrain")))
+		const auto Graph = APSPlanetSurfaceMaterialPolicy::TerrainGraph(Material);
+		const bool bContinuous = Graph == APSPlanetSurfaceMaterialPolicy::ETerrainGraph::Continuous;
+		if (bContinuous || Graph == APSPlanetSurfaceMaterialPolicy::ETerrainGraph::Shared)
 		{
-			Material->SetScalarParameterValue(TEXT("APS_FarNormalStartCm"), 200000.0f);
-			Material->SetScalarParameterValue(TEXT("APS_FarNormalEndCm"), 2000000.0f);
-			Material->SetScalarParameterValue(TEXT("APS_OrbitalMacroMode"),
-				(bContinuous || APSOrbitalMacroVariation::Allows(Profile.PlanetType)) ? 1.0f : 0.0f);
+			APSPlanetSurfaceMaterialPolicy::ApplyFarNormalPolicy(Material);
+			// One authored colour field from ground to orbit. Mode1 substitutes a
+			// different procedural albedo pattern between 5 and 50 km; distance may
+			// filter detail, but must not change the surface's identity.
+			Material->SetScalarParameterValue(TEXT("APS_OrbitalMacroMode"), 0.0f);
 			if (bContinuous) Material->SetScalarParameterValue(TEXT("APS_NormalMacroWarpMode"), 1.0f);
 		}
         // Retain template texture sizes and all other layer/normal transfers.

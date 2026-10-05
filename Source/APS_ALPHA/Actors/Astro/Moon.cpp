@@ -1,4 +1,5 @@
 #include "Moon.h"
+#include "APS_ALPHA/Core/World/APSPlaceholderGlobe.h"
 #include "Components/StaticMeshComponent.h"
 
 AMoon::AMoon()
@@ -49,6 +50,7 @@ void AMoon::DisableSphereMesh()
 
 void AMoon::EnableSphereMesh()
 {
+	if (APSPlaceholderGlobe::SetVisible(this, !bWorldScapeSurfaceReady)) return;
 	TInlineComponentArray<UStaticMeshComponent*> SphereMeshes;
 	GetComponents(SphereMeshes);
 	if (SphereMeshes.IsEmpty())

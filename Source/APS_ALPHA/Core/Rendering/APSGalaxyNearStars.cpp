@@ -43,6 +43,12 @@ namespace
 		return Variable ? FMath::Max(static_cast<double>(Variable->GetFloat()), 1.0) : 1.0;
 	}
 
+	double DayResolvePixels()
+	{
+		static IConsoleVariable* Variable = IConsoleManager::Get().FindConsoleVariable(TEXT("aps.Stars.DayResolvePixels"));
+		return Variable ? FMath::Max(static_cast<double>(Variable->GetFloat()), 0.0) : 0.0;
+	}
+
 	bool SurfaceReady(UMaterial* Surface, const UWorld* World)
 	{
 		if (!World || !APSStellarMaterialContract::HasExactBase(Surface, APSStellarMaterialContract::ActorBaseObjectPath))
@@ -162,7 +168,10 @@ namespace APSGalaxyNearStars
 			DestroyMesh(State);
 			State.Galaxy = Galaxy;
 		}
-		if (CVarNearStars.GetValueOnGameThread() == 0 || !Galaxy || bDaylightHidden || !(PixelTangent > 0.0))
+		// Rio 04.10: a day sky keeps the largest photospheres (aps.Stars.DayResolvePixels, as the catalogue's resolved stars).
+		const double DayResolve = DayResolvePixels();
+		if (CVarNearStars.GetValueOnGameThread() == 0 || !Galaxy || (bDaylightHidden && !(DayResolve > 0.0))
+			|| !(PixelTangent > 0.0))
 		{
 			ClearInstances(State);
 			return;
@@ -190,7 +199,7 @@ namespace APSGalaxyNearStars
 			}
 		}
 		const int32 Prefix = IsValid(Galaxy->StarMeshInstances) ? Galaxy->StarMeshInstances->GetInstanceCount() : 0;
-		const double Resolve = ResolvePixels();
+		const double Resolve = bDaylightHidden ? FMath::Max(DayResolve, ResolvePixels()) : ResolvePixels();
 		TSet<int64> Wanted;
 		for (const APSGalaxyGpuStars::FNearStar& Star : Stars)
 		{

@@ -226,6 +226,57 @@ namespace APSFleetPrivate
 	{
 		return FMath::Max(Value, 1);
 	}
+
+	/** Rio 05.10 (star map): a distance as the maps write it: km near the worlds, AU between the stars, light years beyond. */
+	FText DistanceText(const double Cm)
+	{
+		constexpr double LightYearCm = 9.4607304725808e17;
+		FNumberFormattingOptions Two;
+		Two.SetMaximumFractionalDigits(2);
+		if (Cm >= 0.1 * LightYearCm)
+		{
+			return FText::Format(LOCTEXT("TransitLy", "{0} LY"), APSUINumber::Number(Cm / LightYearCm, &Two));
+		}
+		if (Cm >= 0.01 * APSStars::AstronomicalUnitCm)
+		{
+			return FText::Format(LOCTEXT("TransitAu", "{0} AU"), APSUINumber::Number(Cm / APSStars::AstronomicalUnitCm, &Two));
+		}
+		return FText::Format(LOCTEXT("TransitKm", "{0} KM"), APSUINumber::Number(FMath::RoundToInt64(Cm / 100000.0)));
+	}
+
+	/**
+	 * Rio 05.10 (star map): seconds to fly DistanceCm from Speed by StepSpeed's profile: the speed grows 2.5 times a second
+	 * up to the cap, then 0.8 of the way left each second closes in until 100 m are left (Arrive). Departure and the
+	 * near-body limit are left out: an estimate for the screens.
+	 */
+	double FlightSeconds(const double DistanceCm, const double SpeedCm, const double CapCm)
+	{
+		constexpr double Approach = 0.8;
+		constexpr double ArriveCm = 10000.0;
+		const double LnGain = FMath::Loge(2.5);
+		if (DistanceCm <= ArriveCm)
+		{
+			return 0.0;
+		}
+		const double Cap = FMath::Max(CapCm, 5000.0);
+		// From rest StepSpeed first adds 50 m/s a second, then the growth takes over.
+		const double Start = FMath::Clamp(SpeedCm, 5000.0, Cap);
+		if (Start >= Approach * DistanceCm)
+		{
+			// Already as fast as the approach allows: only the closing in is left.
+			return FMath::Loge(DistanceCm / ArriveCm) / Approach;
+		}
+		const double RampCm = (Cap - Start) / LnGain;
+		const double ApproachCm = Cap / Approach;
+		if (RampCm + ApproachCm <= DistanceCm)
+		{
+			return FMath::Loge(Cap / Start) / LnGain + (DistanceCm - RampCm - ApproachCm) / Cap
+				+ FMath::Loge(ApproachCm / ArriveCm) / Approach;
+		}
+		// The cap is never reached: the growth meets the approach at Peak, (Peak - Start) / ln 2.5 + Peak / 0.8 = Distance.
+		const double Peak = FMath::Clamp((DistanceCm + Start / LnGain) / (1.0 / LnGain + 1.0 / Approach), Start, Cap);
+		return FMath::Loge(Peak / Start) / LnGain + FMath::Loge(FMath::Max(Peak / Approach, ArriveCm) / ArriveCm) / Approach;
+	}
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -1792,9 +1843,10 @@ FText FAPSFleetCommand::DescribeState(const FAPSFleetUnit& Unit) const
 	case EPhase::Departing:
 		return FText::Format(LOCTEXT("StateDeparting", "{0} {1}: LEAVING THE BERTH"), OrderName(Unit.Order), Target);
 	case EPhase::Transit:
-		return FText::Format(LOCTEXT("StateTransit", "{0} {1}: {2} KM TO GO"), OrderName(Unit.Order),
+		// Rio 05.10 (star map): the way left in AU between the stars (light years beyond), in km only near a world.
+		return FText::Format(LOCTEXT("StateTransit", "{0} {1}: {2} TO GO"), OrderName(Unit.Order),
 			Unit.Order == EOrder::Return ? LOCTEXT("ToBerth", "TO THE BERTH") : Target,
-			APSUINumber::Number(FMath::RoundToInt64(Unit.RemainingCm / 100000.0)));
+			APSFleetPrivate::DistanceText(Unit.RemainingCm));
 	case EPhase::Working:
 		return FText::Format(LOCTEXT("StateWorking", "{0} {1}: {2}%"), OrderName(Unit.Order), Target,
 			APSUINumber::Number(FMath::RoundToInt(Unit.Progress * 100.0f)));
@@ -1804,6 +1856,44 @@ FText FAPSFleetCommand::DescribeState(const FAPSFleetUnit& Unit) const
 	default:
 		return Unit.bHasBerth ? LOCTEXT("StateIdleSpace", "IDLE, HOLDING POSITION") : LOCTEXT("StateIdle", "IDLE AT THE BERTH");
 	}
+}
+
+double FAPSFleetCommand::EstimateArrivalSeconds(const ASpaceship* Ship, const AActor* Target) const
+{
+	using namespace APSFleet;
+	const FAPSFleetUnit* Unit = FindUnit(Ship);
+	if (!Unit || !IsValid(Target))
+	{
+		return -1.0;
+	}
+	// The reach CheckOrder allows: without SpaceWrap neither another star nor another planet's neighbourhood.
+	FGuid SystemId;
+	const bool bSystem = FAPSInfrastructure::SiteSystem(World.Get(), Target, SystemId) && !Target->IsA<APlanetaryBody>();
+	if (!Ship->ActiveClassPreset.bSupportsSpaceWrap
+		&& (bSystem || HomeBodyOf(Target->GetActorLocation()) != HomeBodyOf(Ship->GetActorLocation())))
+	{
+		return -1.0;
+	}
+	const double Cap = ClassCap(Ship->ActiveClassPreset) * SpeedScale() * GetDivisionSpeedFactor(Unit->Division);
+	if (Unit->Target.Get() == Target && Unit->Order != EOrder::None && Unit->Order != EOrder::Return)
+	{
+		if (Unit->Phase == EPhase::Transit)
+		{
+			return APSFleetPrivate::FlightSeconds(Unit->RemainingCm, Unit->Speed, Cap);
+		}
+		if (Unit->Phase == EPhase::Working || Unit->Phase == EPhase::Holding)
+		{
+			return 0.0;
+		}
+	}
+	// From rest where it is: a few seconds to clear the berth, then to the slot SlotLocation gives (a star system's edge of
+	// glare, a world's orbit).
+	const double Radius = APSFleetPrivate::BodyRadiusCm(Target);
+	const double Slot = bSystem ? FMath::Max(0.06 * APSStars::AstronomicalUnitCm, Radius * 40.0)
+		: Radius > 0.0 ? SlotRadius(Radius) : 150000.0;
+	constexpr double DepartSeconds = 4.0;
+	return DepartSeconds + APSFleetPrivate::FlightSeconds(
+		FMath::Max(FVector::Dist(Ship->GetActorLocation(), Target->GetActorLocation()) - Slot, 0.0), 0.0, Cap);
 }
 
 void FAPSFleetCommand::LogUnits() const

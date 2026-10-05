@@ -65,6 +65,8 @@ namespace APSGenerationShotsPrivate
 		FString GalaxyClass;
 		double GalaxySize{-1.0};
 		double GalaxyDensity{-1.0};
+		/** Rio 05.10: realscale=1 turns the REAL SCALE (EXPERIMENTAL) row on before the shots. */
+		bool bRealScale{false};
 		bool bWorldApplied{false};
 		int32 Step{0};
 		bool bStepRequested{false};
@@ -232,6 +234,12 @@ namespace APSGenerationShotsPrivate
 				VM->SetGalaxyStarComposition(static_cast<int32>(Value));
 				bChanged = true;
 			}
+			if (GShots.bRealScale)
+			{
+				VM->SetRealScale(true);
+				UE_LOG(LogTemp, Log, TEXT("[APS.MenuShots] REAL SCALE on (active=%d)"), VM->IsRealScaleActive() ? 1 : 0);
+				bChanged = true;
+			}
 			if (bChanged)
 			{
 				UE_LOG(LogTemp, Log, TEXT("[APS.MenuShots] world: stars=%.0f cluster size=%s type=%s population=%s; galaxy population=%s composition=%s"),
@@ -384,6 +392,7 @@ static FAutoConsoleCommand GAPSGenerationShotsCommand(
 			else if (Key.Equals(TEXT("gsize"), ESearchCase::IgnoreCase)) GShots.GalaxySize = FCString::Atod(*Value);
 			else if (Key.Equals(TEXT("gdens"), ESearchCase::IgnoreCase)) GShots.GalaxyDensity = FCString::Atod(*Value);
 			else if (Key.Equals(TEXT("gcomp"), ESearchCase::IgnoreCase)) GShots.GalaxyComposition = Value;
+			else if (Key.Equals(TEXT("realscale"), ESearchCase::IgnoreCase)) GShots.bRealScale = FCString::Atoi(*Value) != 0;
 		}
 		GShots.Ticker = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateStatic(&Tick), 0.0f);
 		UE_LOG(LogTemp, Log, TEXT("[APS.MenuShots] armed label=%s planets=%d moons=%d quit=%d"), *GShots.Label,

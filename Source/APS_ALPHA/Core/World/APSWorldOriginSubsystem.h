@@ -37,7 +37,18 @@ public:
 	 * UWorld::SetNewWorldOrigin's own steps but past its FIntVector origin (about 21 000 km a side), and folds the shift
 	 * into the generation frame the saves use. The VSM clipmap panning is switched off for the jump first.
 	 */
-	bool ShiftWorldBy(const FVector& Offset, const TCHAR* Reason);
+	bool ShiftWorldBy(const FVector& Offset, const TCHAR* Reason, bool bQuiet = false, AActor* Carrier = nullptr);
+	/**
+	 * Rio 05.10 (REAL SCALE: at billions of c the hull, the camera and the pilot walking aboard jumped by metres every
+	 * frame): a fast ship carrying the player used to move by its whole step (up to 4e18 cm a frame, where a double's step
+	 * is 5 m) before the world shifted back, so its parts, the camera and the passengers were placed with metres of
+	 * rounding. Here the whole grains of the step go straight into the world shift, the ship and what rides it staying
+	 * put; the ship then moves by the returned remainder only. The speed, the physics and the drawn flight are the same.
+	 * Returns Delta unchanged when the step is short or the ship is not the player's fast REAL SCALE ship.
+	 */
+	FVector FlowPastShip(AActor& Ship, const FVector& Delta, double SpeedCmPerS);
+	/** Rio 05.10 evening: after the ship's own step that followed a flow, its riders' velocity state forgets the shift. */
+	void FinishFlowMove(AActor& Ship);
 	/** The floating origin, once a frame: far from 0,0,0 at a calm moment (a slow ship, or on foot), the world shifts so
 	 * the player stands at 0,0,0 again; a fast ship shifts once it is farther out than a few seconds of its flight. */
 	void UpdateFloatingOrigin(float DeltaSeconds);
@@ -51,6 +62,8 @@ public:
 
 	FVector ToGenerationFrame(const FVector& WorldLocation) const { return WorldLocation + GetOriginOffset(); }
 	FVector FromGenerationFrame(const FVector& GenerationLocation) const { return GenerationLocation - GetOriginOffset(); }
+	/** Rio 05.10 evening: the world flowed past a fast REAL SCALE ship within the last Seconds (it shifts every frame). */
+	bool IsWorldFlowing(const double Seconds = 0.5) const { return SinceFlowShiftSeconds < Seconds; }
 
 protected:
 	virtual bool DoesSupportWorldType(const EWorldType::Type WorldType) const override;
@@ -77,6 +90,15 @@ private:
 	bool bMapShifted{false};
 	/** Shifts the world to the map's far view; a pilot not in open space holds still meanwhile. True when it shifted. */
 	bool TryMapShift();
+	/** Rio 05.10 afternoon (flight FPS): re-creates the render state of the Nanite meshes (the culling grid files them anew),
+	 * all of them or only those near NearOnly; the carried actors' meshes never moved. Returns how many. */
+	int32 RefileNanite(const FVector* NearOnly, const TArray<AActor*>& Carried);
+	/** Far Nanite meshes skipped by flow shifts; re-filed once the flow has stopped for a moment. */
+	bool bNaniteRefileOwed{false};
+	double SinceFlowShiftSeconds{1000.0};
+	/** The last flow told the renderer its view stayed with the ship (aps.RealScale.FlowViewStill); FinishFlowMove resets. */
+	bool bFlowViewStill{false};
+	double LastFlowViewLogSeconds{0.0};
 	/** The pilot (and its components) whose ticks the map paused, given back once the origin is the pilot's again. */
 	TWeakObjectPtr<APawn> MapHeldPawn;
 	TArray<TWeakObjectPtr<UObject>> MapHeldTicks;

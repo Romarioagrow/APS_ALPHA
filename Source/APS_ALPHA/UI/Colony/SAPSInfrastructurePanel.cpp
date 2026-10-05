@@ -1677,8 +1677,28 @@ TSharedRef<SWidget> SAPSInfrastructurePanel::BuildCard(const FName TypeId)
 		return Missions && Missions->IsUnlocked(TypeId);
 	};
 
-	// The category, a megastructure, a mission's unlock, giants only, a claim.
+	// Rio 04.10 ("too much text, everything runs into each other; the same information, but readable, like OVERVIEW and
+	// PILOT"): the place and the tags as chips under the name, the build time large in the corner, the needs as a list,
+	// what it costs and what it gives as two columns of lines instead of chip clouds, the chain as dotted steps, and how
+	// many places take it beside BUILD. Lines in the readable face; the long rules stay as tooltips.
+	const FSlateFontInfo LineFont = FCoreStyle::GetDefaultFontStyle("Regular", 12);
+	const FSlateFontInfo StrongFont = FCoreStyle::GetDefaultFontStyle("Bold", 12);
+	const FSlateFontInfo LabelFont = FCoreStyle::GetDefaultFontStyle("Bold", 10);
+	const auto CardDot = [](const TAttribute<FSlateColor>& Colour, const float Size)
+	{
+		return SNew(SBox).WidthOverride(Size).HeightOverride(Size)
+			[
+				SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(Colour)
+			];
+	};
+	const auto CardLabel = [&LabelFont](const FText& Text)
+	{
+		return SNew(STextBlock).Text(Text).Font(LabelFont).ColorAndOpacity(Muted());
+	};
+
+	// Where it stands first, then the category, a megastructure, a mission's unlock, giants only, a claim.
 	const TSharedRef<SWrapBox> Badges = SNew(SWrapBox).UseAllottedSize(true).InnerSlotPadding(FVector2D(5.0f, 5.0f));
+	Badges->AddSlot()[Chip(APSInfrastructure::PlacementName(Type->Placement), FSlateColor(Cyan()), Cyan())];
 	Badges->AddSlot()[Chip(APSInfrastructure::CategoryName(Type->Category), FSlateColor(Accent), Accent)];
 	if (Type->bMegastructure)
 	{
@@ -1711,21 +1731,18 @@ TSharedRef<SWidget> SAPSInfrastructurePanel::BuildCard(const FName TypeId)
 	// What it needs: what the place must be known to, the ground, a structure there first, the department's level
 	// against its level now, a mission's unlock.
 	const TSharedRef<SVerticalBox> Needs = SNew(SVerticalBox);
-	const auto Need = [&Needs](const TAttribute<FText>& Text, const TAttribute<FSlateColor>& Colour)
+	const auto Need = [&Needs, &LineFont, &CardDot](const TAttribute<FText>& Text, const TAttribute<FSlateColor>& Colour)
 	{
-		Needs->AddSlot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 3.0f)
+		Needs->AddSlot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 4.0f)
 		[
 			SNew(SHorizontalBox)
-			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.0f, 0.0f, 7.0f, 0.0f)
+			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Top).Padding(0.0f, 6.0f, 9.0f, 0.0f)
 			[
-				SNew(SBox).WidthOverride(5.0f).HeightOverride(5.0f)
-				[
-					SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(Colour)
-				]
+				CardDot(Colour, 6.0f)
 			]
 			+ SHorizontalBox::Slot().FillWidth(1.0f)
 			[
-				SNew(STextBlock).Text(Text).AutoWrapText(true).Font(Font("Regular", 11)).ColorAndOpacity(Colour)
+				SNew(STextBlock).Text(Text).AutoWrapText(true).Font(LineFont).ColorAndOpacity(Colour)
 			]
 		];
 	};
@@ -1771,43 +1788,54 @@ TSharedRef<SWidget> SAPSInfrastructurePanel::BuildCard(const FName TypeId)
 			TAttribute<FSlateColor>::CreateLambda([Unlocked]() { return FSlateColor(Unlocked() ? Success() : Amber()); }));
 	}
 
-	// What it costs (amber while the stocks do not cover it), what it yields and what it changes while it stands.
-	const TSharedRef<SWrapBox> Costs = SNew(SWrapBox).UseAllottedSize(true).InnerSlotPadding(FVector2D(5.0f, 5.0f));
+	// What it costs (amber while the stocks do not cover it) and what it yields and changes while it stands: one line
+	// each, a swatch in the resource's or the effect's colour in front.
+	const auto CardLine = [&StrongFont, &CardDot](const TSharedRef<SVerticalBox>& Box, const TAttribute<FText>& Text,
+		const TAttribute<FSlateColor>& Colour, const FLinearColor& Swatch)
+	{
+		Box->AddSlot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 5.0f)
+		[
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Top).Padding(0.0f, 5.0f, 8.0f, 0.0f)
+			[
+				CardDot(FSlateColor(Swatch), 8.0f)
+			]
+			+ SHorizontalBox::Slot().FillWidth(1.0f)
+			[
+				SNew(STextBlock).Text(Text).AutoWrapText(true).Font(StrongFont).ColorAndOpacity(Colour)
+			]
+		];
+	};
+	const TSharedRef<SVerticalBox> Costs = SNew(SVerticalBox);
 	for (const APSInfrastructure::FAmount& Amount : Type->Cost)
 	{
 		const APSInfrastructure::EResource Resource = Amount.Resource;
 		const float Value = Amount.Value;
-		Costs->AddSlot()
-		[
-			Chip(FText::Format(LOCTEXT("CostAmount", "{0} {1}"), APSUINumber::Number(FMath::RoundToInt(Value)), APSInfrastructure::ResourceName(Resource)),
-				TAttribute<FSlateColor>::CreateLambda([this, Resource, Value]()
-				{
-					const FAPSInfrastructure* Infrastructure = APSInfrastructureFind(World.Get());
-					return FSlateColor(!Infrastructure || Infrastructure->GetStock(Resource) + 0.001f >= Value
-						? APSInfrastructure::ResourceColour(Resource) : Amber());
-				}),
-				APSInfrastructure::ResourceColour(Resource))
-		];
+		CardLine(Costs, FText::Format(LOCTEXT("CostAmount", "{0} {1}"), APSUINumber::Number(FMath::RoundToInt(Value)), APSInfrastructure::ResourceName(Resource)),
+			TAttribute<FSlateColor>::CreateLambda([this, Resource, Value]()
+			{
+				const FAPSInfrastructure* Infrastructure = APSInfrastructureFind(World.Get());
+				return FSlateColor(!Infrastructure || Infrastructure->GetStock(Resource) + 0.001f >= Value
+					? APSInfrastructure::ResourceColour(Resource) : Amber());
+			}),
+			APSInfrastructure::ResourceColour(Resource));
 	}
 	if (Type->Cost.IsEmpty())
 	{
-		Costs->AddSlot()[Chip(LOCTEXT("CostNothing", "NOTHING"), FSlateColor(Muted()), Muted())];
+		CardLine(Costs, LOCTEXT("CostNothing", "NOTHING"), FSlateColor(Muted()), Muted());
 	}
-	const TSharedRef<SWrapBox> Gives = SNew(SWrapBox).UseAllottedSize(true).InnerSlotPadding(FVector2D(5.0f, 5.0f));
+	const TSharedRef<SVerticalBox> Gives = SNew(SVerticalBox);
 	int32 GiveCount = 0;
 	for (const APSInfrastructure::FAmount& Amount : Type->Yield)
 	{
 		const FLinearColor Colour = APSInfrastructure::ResourceColour(Amount.Resource);
-		Gives->AddSlot()
-		[
-			Chip(FText::Format(LOCTEXT("YieldAmount", "+{0} {1} / MIN"), APSUINumber::Number(FMath::RoundToInt(Amount.Value)),
-				APSInfrastructure::ResourceName(Amount.Resource)), FSlateColor(Colour), Colour)
-		];
+		CardLine(Gives, FText::Format(LOCTEXT("YieldAmount", "+{0} {1} / MIN"), APSUINumber::Number(FMath::RoundToInt(Amount.Value)),
+			APSInfrastructure::ResourceName(Amount.Resource)), FSlateColor(Colour), Colour);
 		++GiveCount;
 	}
-	const auto Effect = [&Gives, &GiveCount](const FText& Text)
+	const auto Effect = [&CardLine, &Gives, &GiveCount](const FText& Text)
 	{
-		Gives->AddSlot()[APSInfrastructureUI::Chip(Text, FSlateColor(APSChrome::Cyan()), APSChrome::Cyan())];
+		CardLine(Gives, Text, FSlateColor(APSChrome::Cyan()), APSChrome::Cyan());
 		++GiveCount;
 	};
 	FNumberFormattingOptions OneDecimal;
@@ -1846,18 +1874,18 @@ TSharedRef<SWidget> SAPSInfrastructurePanel::BuildCard(const FName TypeId)
 	}
 	if (GiveCount == 0)
 	{
-		Gives->AddSlot()[Chip(LOCTEXT("GivesGuard", "GUARDS THE PLACE"), FSlateColor(Muted()), Muted())];
+		CardLine(Gives, LOCTEXT("GivesGuard", "GUARDS THE PLACE"), FSlateColor(Muted()), Muted());
 	}
 	if (Type->LimitPerSite > 1)
 	{
-		Gives->AddSlot()[Chip(FText::Format(LOCTEXT("EffectLimit", "UP TO {0} PER PLACE"), APSUINumber::Number(Type->LimitPerSite)),
-			FSlateColor(Muted()), Muted())];
+		CardLine(Gives, FText::Format(LOCTEXT("EffectLimit", "UP TO {0} PER PLACE"), APSUINumber::Number(Type->LimitPerSite)),
+			FSlateColor(Muted()), Muted());
 	}
 
 	// The chain it belongs to (Rio 03.10: "buildable in chains, a space elevator, then a space ring, one after another";
 	// the locked steps say what they require): the station it starts from, then every step with how far the civilization
 	// is: standing, under construction, ready somewhere, waiting (its needs stand, an unlock, a level or the stocks do
-	// not), or locked and why.
+	// not), or locked and why. A dot in the step's state colour in front; this card's own step in bold.
 	TArray<FName> ChainSteps;
 	const bool bInChain = APSInfrastructure::GetChain(TypeId, ChainSteps);
 	const TSharedRef<SVerticalBox> Chain = SNew(SVerticalBox);
@@ -1885,14 +1913,23 @@ TSharedRef<SWidget> SAPSInfrastructurePanel::BuildCard(const FName TypeId)
 			}
 			return Count;
 		};
-		const auto Step = [&Chain](const TAttribute<FText>& Text, const TAttribute<FSlateColor>& Colour, const bool bCurrent)
+		const auto Step = [&Chain, &LineFont, &StrongFont, &CardDot](const TAttribute<FText>& Text, const TAttribute<FSlateColor>& Colour,
+			const bool bCurrent)
 		{
-			Chain->AddSlot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 3.0f)
+			Chain->AddSlot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 4.0f)
 			[
-				SNew(STextBlock).Text(Text).AutoWrapText(true).Font(Font(bCurrent ? "Bold" : "Regular", 11)).ColorAndOpacity(Colour)
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Top).Padding(0.0f, 6.0f, 9.0f, 0.0f)
+				[
+					CardDot(Colour, 6.0f)
+				]
+				+ SHorizontalBox::Slot().FillWidth(1.0f)
+				[
+					SNew(STextBlock).Text(Text).AutoWrapText(true).Font(bCurrent ? StrongFont : LineFont).ColorAndOpacity(Colour)
+				]
 			];
 		};
-		Step(LOCTEXT("ChainStation", "1. AN ORBITAL STATION OVER THE WORLD (THE HOME COMPLEX COUNTS)"), FSlateColor(Success()), false);
+		Step(LOCTEXT("ChainStation", "1. An orbital station over the world (the home complex counts)"), FSlateColor(Success()), false);
 		for (int32 Index = 0; Index < ChainSteps.Num(); ++Index)
 		{
 			const FName StepId = ChainSteps[Index];
@@ -1901,10 +1938,10 @@ TSharedRef<SWidget> SAPSInfrastructurePanel::BuildCard(const FName TypeId)
 			{
 				continue;
 			}
-			const FText Label = FText::Format(LOCTEXT("ChainStepName", "{0}. {1}"), APSUINumber::Number(Index + 2), StepType->Name);
+			const FText StepLabel = FText::Format(LOCTEXT("ChainStepName", "{0}. {1}"), APSUINumber::Number(Index + 2), StepType->Name);
 			TArray<FText> StepNeeds;
 			APSInfrastructure::DescribeRequirements(*StepType, StepNeeds);
-			const FText Lock = StepNeeds.IsEmpty() ? LOCTEXT("ChainLockedPlace", "NO KNOWN PLACE TAKES IT YET") : StepNeeds[0];
+			const FText Lock = StepNeeds.IsEmpty() ? LOCTEXT("ChainLockedPlace", "no known place takes it yet") : StepNeeds[0];
 			// What it stands on: the step before at one place (as many as it wants), or the ring somewhere in the system.
 			const FName Before = !StepType->RequiresAtSite.IsNone() ? StepType->RequiresAtSite : StepType->RequiresInSystem;
 			const int32 BeforeWanted = !StepType->RequiresAtSite.IsNone() ? FMath::Max(StepType->RequiresAtSiteCount, 1) : 1;
@@ -1929,16 +1966,16 @@ TSharedRef<SWidget> SAPSInfrastructurePanel::BuildCard(const FName TypeId)
 				const bool bBeforeStands = Before.IsNone() || (Standing(Before, BeforeMost) > 0 && BeforeMost >= BeforeWanted);
 				return bBeforeStands ? EState::Waiting : EState::Locked;
 			};
-			Step(TAttribute<FText>::CreateLambda([StateOf, Label, Lock]()
+			Step(TAttribute<FText>::CreateLambda([StateOf, StepLabel, Lock]()
 				{
 					int32 Count = 0;
 					switch (StateOf(Count))
 					{
-					case EState::Standing: return FText::Format(LOCTEXT("ChainStanding", "{0}: STANDS ({1})"), Label, APSUINumber::Number(Count));
-					case EState::Building: return FText::Format(LOCTEXT("ChainBuilding", "{0}: UNDER CONSTRUCTION"), Label);
-					case EState::Ready: return FText::Format(LOCTEXT("ChainReady", "{0}: READY TO BUILD"), Label);
-					case EState::Waiting: return FText::Format(LOCTEXT("ChainWaiting", "{0}: ITS NEEDS STAND; AN UNLOCK, A LEVEL OR THE STOCKS ARE MISSING (BUILD... SAYS WHICH)"), Label);
-					default: return FText::Format(LOCTEXT("ChainLocked", "{0}: LOCKED, {1}"), Label, Lock);
+					case EState::Standing: return FText::Format(LOCTEXT("ChainStanding", "{0}: stands ({1})"), StepLabel, APSUINumber::Number(Count));
+					case EState::Building: return FText::Format(LOCTEXT("ChainBuilding", "{0}: under construction"), StepLabel);
+					case EState::Ready: return FText::Format(LOCTEXT("ChainReady", "{0}: ready to build"), StepLabel);
+					case EState::Waiting: return FText::Format(LOCTEXT("ChainWaiting", "{0}: its needs stand; an unlock, a level or the stocks are missing (BUILD... says which)"), StepLabel);
+					default: return FText::Format(LOCTEXT("ChainLocked", "{0}: locked, {1}"), StepLabel, Lock);
 					}
 				}),
 				TAttribute<FSlateColor>::CreateLambda([StateOf]()
@@ -1957,93 +1994,134 @@ TSharedRef<SWidget> SAPSInfrastructurePanel::BuildCard(const FName TypeId)
 		}
 	}
 
-	const auto Row = [](const FText& Caption, const TSharedRef<SWidget>& Content)
-	{
-		return SNew(SHorizontalBox)
-			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Top).Padding(0.0f, 3.0f, 0.0f, 0.0f)
-			[
-				SNew(SBox).WidthOverride(64.0f)
-				[
-					SNew(STextBlock).Text(Caption).Font(Font("Bold", 9)).ColorAndOpacity(Muted())
-				]
-			]
-			+ SHorizontalBox::Slot().FillWidth(1.0f)
-			[
-				Content
-			];
-	};
+	const FText WorkRule = FText::Format(LOCTEXT("WorkTime", "{0} for a construction ship; less with its level and the building bonuses"),
+		Duration(Type->BuildSeconds));
 	return SNew(SBox).WidthOverride(440.0f)
 	[
 		ChamferPanel(
 			SNew(SVerticalBox)
+			// The name with its department, and the build time in the corner.
 			+ SVerticalBox::Slot().AutoHeight()
 			[
 				SNew(SHorizontalBox)
 				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
 				[
-					IconBadge(APSInfrastructureUI::CategoryGlyph(Type->Category), Accent, 40.0f)
+					IconBadge(APSInfrastructureUI::CategoryGlyph(Type->Category), Accent, 42.0f)
 				]
-				+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center).Padding(12.0f, 0.0f, 0.0f, 0.0f)
+				+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center).Padding(12.0f, 0.0f, 10.0f, 0.0f)
 				[
 					SNew(SVerticalBox)
 					+ SVerticalBox::Slot().AutoHeight()
 					[
-						SNew(STextBlock).Text(Type->Name).Font(Font("Bold", 13)).ColorAndOpacity(White()).AutoWrapText(true)
+						SNew(STextBlock).Text(Type->Name).Font(Font("Bold", 14)).ColorAndOpacity(White()).AutoWrapText(true)
 					]
-					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 2.0f, 0.0f, 0.0f)
+					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 3.0f, 0.0f, 0.0f)
 					[
-						SNew(STextBlock).Text(APSInfrastructure::DepartmentName(Department)).Font(Font("Bold", 9)).ColorAndOpacity(Accent)
+						SNew(STextBlock).Text(APSInfrastructure::DepartmentName(Department)).Font(LabelFont).ColorAndOpacity(Accent)
+					]
+				]
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+				[
+					SNew(SVerticalBox).ToolTipText(WorkRule)
+					+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Right)
+					[
+						CardLabel(LOCTEXT("BuildTime", "BUILD TIME"))
+					]
+					+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Right).Padding(0.0f, 2.0f, 0.0f, 0.0f)
+					[
+						SNew(STextBlock).Text(Duration(Type->BuildSeconds)).Font(Font("Bold", 15)).ColorAndOpacity(White())
 					]
 				]
 			]
-			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 8.0f, 0.0f, 0.0f)
+			// What it does, then where and what kind as chips.
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 12.0f, 0.0f, 0.0f)
 			[
-				Badges
-			]
-			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 8.0f, 0.0f, 0.0f)
-			[
-				SNew(STextBlock).Text(Type->Role).AutoWrapText(true).Font(Font("Regular", 11)).ColorAndOpacity(Muted())
+				SNew(STextBlock).Text(Type->Role).AutoWrapText(true).Font(LineFont).ColorAndOpacity(White().CopyWithNewOpacity(0.9f))
 			]
 			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 10.0f, 0.0f, 0.0f)
 			[
-				Row(LOCTEXT("RowWhere", "WHERE"), SNew(STextBlock).Text(APSInfrastructure::PlacementName(Type->Placement))
-					.Font(Font("Bold", 9)).ColorAndOpacity(Cyan()))
+				Badges
 			]
-			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 6.0f, 0.0f, 0.0f)
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 14.0f, 0.0f, 6.0f)
 			[
-				Row(LOCTEXT("RowNeeds", "NEEDS"), Needs)
+				CardLabel(LOCTEXT("RowNeeds", "NEEDS"))
 			]
-			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 6.0f, 0.0f, 0.0f)
+			+ SVerticalBox::Slot().AutoHeight()
 			[
-				SNew(SBox).Visibility(bInChain ? EVisibility::Visible : EVisibility::Collapsed)
+				Needs
+			]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 10.0f, 0.0f, 0.0f)
+			[
+				SNew(SVerticalBox).Visibility(bInChain ? EVisibility::Visible : EVisibility::Collapsed)
+				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 6.0f)
 				[
-					Row(LOCTEXT("RowChain", "CHAIN"), Chain)
+					CardLabel(LOCTEXT("RowChain", "CHAIN"))
+				]
+				+ SVerticalBox::Slot().AutoHeight()
+				[
+					Chain
 				]
 			]
-			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 3.0f, 0.0f, 0.0f)
-			[
-				Row(LOCTEXT("RowWork", "WORK"), SNew(STextBlock).AutoWrapText(true).Font(Font("Regular", 11)).ColorAndOpacity(White())
-					.Text(FText::Format(LOCTEXT("WorkTime", "{0} for a construction ship; less with its level and the building bonuses"),
-						Duration(Type->BuildSeconds))))
-			]
-			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 6.0f, 0.0f, 0.0f)
-			[
-				Row(LOCTEXT("RowCosts", "COSTS"), Costs)
-			]
-			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 6.0f, 0.0f, 0.0f)
-			[
-				Row(LOCTEXT("RowGives", "GIVES"), Gives)
-			]
-			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 12.0f, 0.0f, 0.0f)
+			// Costs and gives side by side.
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 8.0f, 0.0f, 0.0f)
 			[
 				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot().FillWidth(1.0f).Padding(0.0f, 0.0f, 12.0f, 0.0f)
+				[
+					SNew(SVerticalBox)
+					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 6.0f)
+					[
+						CardLabel(LOCTEXT("RowCosts", "COSTS"))
+					]
+					+ SVerticalBox::Slot().AutoHeight()
+					[
+						Costs
+					]
+				]
+				+ SHorizontalBox::Slot().AutoWidth()
+				[
+					SNew(SBox).WidthOverride(1.0f)
+					[
+						SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(CyanDim())
+					]
+				]
+				+ SHorizontalBox::Slot().FillWidth(1.3f).Padding(12.0f, 0.0f, 0.0f, 0.0f)
+				[
+					SNew(SVerticalBox)
+					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 6.0f)
+					[
+						CardLabel(LOCTEXT("RowGives", "GIVES"))
+					]
+					+ SVerticalBox::Slot().AutoHeight()
+					[
+						Gives
+					]
+				]
+			]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 12.0f, 0.0f, 12.0f)
+			[
+				SNew(SBox).HeightOverride(1.0f)
+				[
+					SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(CyanDim())
+				]
+			]
+			// How many known places take it now (the tooltip names them), and BUILD.
+			+ SVerticalBox::Slot().AutoHeight()
+			[
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.0f, 0.0f, 9.0f, 0.0f)
+				[
+					CardDot(TAttribute<FSlateColor>::CreateLambda([this, TypeId]()
+					{
+						return FSlateColor(PlacesNow.FindRef(TypeId) > 0 ? Success() : Amber());
+					}), 8.0f)
+				]
 				+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
 				[
 					SNew(SVerticalBox)
 					+ SVerticalBox::Slot().AutoHeight()
 					[
-						// How many known places take it now (the tooltip names them).
-						SNew(STextBlock).Font(Font("Bold", 10)).AutoWrapText(true)
+						SNew(STextBlock).Font(StrongFont).AutoWrapText(true)
 						.Text_Lambda([this, TypeId]()
 						{
 							const int32 Places = PlacesNow.FindRef(TypeId);
@@ -2060,7 +2138,7 @@ TSharedRef<SWidget> SAPSInfrastructurePanel::BuildCard(const FName TypeId)
 					]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 2.0f, 0.0f, 0.0f)
 					[
-						SNew(STextBlock).Font(Font("Regular", 11)).ColorAndOpacity(Amber())
+						SNew(STextBlock).Font(FCoreStyle::GetDefaultFontStyle("Regular", 11)).ColorAndOpacity(Amber())
 						.Text_Lambda([this, TypeId]()
 						{
 							return FText::Format(LOCTEXT("UnderWayCount", "{0} under way"), APSUINumber::Number(BuildsUnderWay.FindRef(TypeId)));
@@ -2070,14 +2148,14 @@ TSharedRef<SWidget> SAPSInfrastructurePanel::BuildCard(const FName TypeId)
 				]
 				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(10.0f, 0.0f, 0.0f, 0.0f)
 				[
-					SNew(SBox).WidthOverride(150.0f)
+					SNew(SBox).WidthOverride(140.0f)
 					[
 						APSInfrastructureUI::FilledButton(LOCTEXT("BuildEllipsis", "BUILD..."),
 							FOnClicked::CreateSP(this, &SAPSInfrastructurePanel::OpenPicker, TypeId), TAttribute<bool>(true), Accent)
 					]
 				]
 			],
-			FMargin(16.0f, 14.0f), Accent.CopyWithNewOpacity(0.5f))
+			FMargin(18.0f, 16.0f), Accent.CopyWithNewOpacity(0.5f))
 	];
 }
 

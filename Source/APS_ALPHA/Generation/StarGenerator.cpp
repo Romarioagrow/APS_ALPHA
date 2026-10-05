@@ -2,6 +2,7 @@
 #include "APS_ALPHA/Actors/Astro/Star.h"
 #include "APS_ALPHA/Actors/Astro/StarCluster.h"
 #include "APS_ALPHA/Core/Structs/StarGenerationModel.h"
+#include "HAL/IConsoleManager.h"
 
 namespace APSStellarSurface
 {
@@ -325,6 +326,12 @@ FLinearColor UStarGenerator::TemperatureToColor(double temperature)
 	return WavelengthToRGB(wavelength);
 }
 
+namespace APSStarColours
+{
+	TAutoConsoleVariable<int32> CVarVioletO(TEXT("aps.Stars.VioletO"), 1,
+		TEXT("1: O stars lean violet (periwinkle toward B) so they read apart from B and A (Rio 02.10). 0: the earlier blue."));
+}
+
 FLinearColor UStarGenerator::GetStarColor(ESpectralClass SpectralClass, int Subclass)
 {
 	const FLinearColor OColor(0.56f, 0.70f, 1.00f);
@@ -339,7 +346,12 @@ FLinearColor UStarGenerator::GetStarColor(ESpectralClass SpectralClass, int Subc
 	FLinearColor CoolColor;
 	switch (SpectralClass)
 	{
-	case ESpectralClass::O: HotColor = OColor; CoolColor = BColor; break;
+	case ESpectralClass::O:
+		// Rio 02.10 ("O: a little violet, so it differs from A and B"): periwinkle, red level with green under a dominant
+		// blue, toward B's sky blue; green stays above red, so it never crosses into magenta.
+		HotColor = APSStarColours::CVarVioletO.GetValueOnAnyThread() != 0 ? FLinearColor(0.61f, 0.62f, 1.00f) : OColor;
+		CoolColor = APSStarColours::CVarVioletO.GetValueOnAnyThread() != 0 ? FLinearColor(0.64f, 0.71f, 1.00f) : BColor;
+		break;
 	case ESpectralClass::B: HotColor = BColor; CoolColor = AColor; break;
 	case ESpectralClass::A: HotColor = AColor; CoolColor = FColor; break;
 	case ESpectralClass::F: HotColor = FColor; CoolColor = GColor; break;

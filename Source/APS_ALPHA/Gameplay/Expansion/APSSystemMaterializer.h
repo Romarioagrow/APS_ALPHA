@@ -60,6 +60,8 @@ private:
 	EStage Stage{EStage::Idle};
 	int32 ActiveIndex{INDEX_NONE};
 	int32 ActiveInstance{INDEX_NONE};
+	/** Rio 03.10: the galaxy catalogue star that stands (a galaxy system; ActiveInstance is then INDEX_NONE). */
+	int64 ActiveGalaxyIndex{INDEX_NONE};
 	FString ActiveName;
 	TWeakObjectPtr<AAstroGenerator> Generator;
 	TWeakObjectPtr<AStarSystem> System;

@@ -7,6 +7,7 @@ param(
 # Real default gameplay binding. The existing observer captures five settled
 # heights and a near-datum collision trace; it is not a continuous-flight test.
 $ErrorActionPreference='Stop'
+if($DetailCandidate){throw 'Retired material-substitution experiment. Capture must use the original saved UnifiedLava material.'}
 if(!$DetailCandidate -and $DetailStrength -ne 1.0){throw 'DetailStrength requires explicit DetailCandidate'}
 $projectRoot=(Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '../..')).Path
 if(Get-Process UnrealEditor,UnrealEditor-Cmd,cl,link,ShaderCompileWorker -ErrorAction SilentlyContinue){

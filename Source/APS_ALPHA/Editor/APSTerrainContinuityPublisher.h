@@ -2,12 +2,13 @@
 
 #if WITH_EDITOR
 #include "APSSharedTerrainLodABBuilder.h"
+#include "APSContinuousOriginalColorUpdate.h"
 #include "HAL/FileManager.h"
 #include "Misc/FileHelper.h"
 #include "Misc/SecureHash.h"
 
-// Copy the exact rendered candidate into an immutable release location. This
-// command never changes a selector, existing Shared package or material graph.
+// Copy the protected source into a release, retaining its original colour
+// samples at every distance. Never overwrite existing release/source packages.
 namespace APSTerrainContinuityPublisher
 {
     inline bool Build(IAssetTools& Tools)
@@ -65,6 +66,7 @@ namespace APSTerrainContinuityPublisher
                 if(auto* Call=Cast<UMaterialExpressionMaterialFunctionCall>(E);Call && Call->MaterialFunction
                     && Call->MaterialFunction->GetPathName().Contains(TEXT("/Diagnostics/")))
                     return Refuse(TEXT("Release still references a diagnostic function"));
+        if(!APSContinuousOriginalColorUpdate::Patch(B,Master))return Refuse(B.Error);
         Instance->SetParentEditorOnly(Master,false);
         Instance->CopyMaterialUniformParametersEditorOnly(SourceInstance,true);
         Instance->PostEditChange();Master->PostEditChange();

@@ -22,6 +22,8 @@ namespace APSStarRenderer::Private
 	extern TAutoConsoleVariable<float> CVarGpuPointCoreSigma;
 	extern TAutoConsoleVariable<float> CVarGpuPointHalo;
 	extern TAutoConsoleVariable<int32> CVarGpuPointPsfRadius;
+	extern TAutoConsoleVariable<float> CVarSkyMaskLuminance;
+	extern TAutoConsoleVariable<float> CVarGpuPointCoreGrow;
 	extern TAutoConsoleVariable<int32> CVarGpuPointAtomic64;
 	extern TAutoConsoleVariable<int32> CVarGpuUploadPointsPerFrame;
 	extern TAutoConsoleVariable<int32> CVarGalaxyGlow;

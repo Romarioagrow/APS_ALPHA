@@ -49,6 +49,20 @@ namespace APSGameplayStellarOptics
 		TEXT("Seconds between full star-catalogue demand walks while the observer moves fast (0 = every frame, the old way)."));
 	TAutoConsoleVariable<float> CVarFastResizeInterval(TEXT("aps.Stars.FastResizeInterval"), 0.5f,
 		TEXT("Seconds between resize passes of one star source while the observer moves fast (0 = aps.Stars.ResizeInterval)."));
+	TAutoConsoleVariable<int32> CVarResizeChunk(TEXT("aps.Stars.ResizeChunk"), 4096,
+		TEXT("Rio 05.10 afternoon (flight FPS: a resize pass took 17 ms, four times a second at drive speed): points of a star ")
+		TEXT("source checked per frame; a pass spreads over frames. 0: a whole source in one frame, as before."));
+	/** A resize pass split over frames (aps.Stars.ResizeChunk): the next point to check, the observer at its start and
+	 * what it has found so far; no entry while no pass of the source is under way. */
+	struct FResizeRun
+	{
+		int32 Cursor{0};
+		FVector Observer{FVector::ZeroVector};
+		double SlackCm{TNumericLimits<double>::Max()};
+		double NearestCm{TNumericLimits<double>::Max()};
+		bool bChanged{false};
+	};
+	TMap<TWeakObjectPtr<const UObject>, FResizeRun> GResizeRuns;
 	constexpr double FastObserverPerSecond = 0.5;
 	struct FObserverMotion
 	{
@@ -250,11 +264,8 @@ void UAPSStellarVisualSubsystem::UpdateGameplayDaylightStars(const FVector& Came
 	// faintest visible star, back once those show. Each return rescans the catalogue, so a hysteresis band and three
 	// seconds between changes keep a climb through that band from flipping them (six flips in 13 s beside a moon,
 	// Rio's playtest 01.10). Without the material fade the old switch-off curve stays.
-	// Rio 04.10 ("the big ones pop in one after another while the rest is still faint"): the resolved stars and the near
-	// photospheres have no fade of their own, so they come back only once the points are nearly full (and go below
-	// three quarters); until then the points, which fade, carry those stars too.
 	const bool bHide = APSGameplayStellarDay::CVarDayFade.GetValueOnGameThread() != 0
-		? APSGameplayStellarDay::PointVisibility(GameplayDaylightFactor) < (bGameplayDaylightStarsHidden ? 0.9f : 0.75f)
+		? APSGameplayStellarDay::PointVisibility(GameplayDaylightFactor) < (bGameplayDaylightStarsHidden ? 0.006f : 0.002f)
 		: (bGameplayDaylightStarsHidden ? HideFactor > 0.5f : HideFactor > 0.8f);
 	const double Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
 	if (bHide != bGameplayDaylightStarsHidden && Now - GameplayDaylightHideChangeSeconds >= 3.0)
@@ -392,11 +403,16 @@ void UAPSStellarVisualSubsystem::UpdateGameplayStellarView()
 		// Rio 03.10 (galaxy phase 3, gameplay sky): GPU points + glow of the galaxy catalogue after this sky's ISM prefix,
 		// in the same catalogue frame; inert while aps.Stars.GameplayGpu or the plugin CVars are 0.
 		APSGalaxyGpuStars::PresentGameplayFrame(World, Home, Attached);
+		// Rio 04.10 (the ~80 ms hitch at every system cruise materialized or released): single proxies hidden or shown
+		// again re-size only their own points (GameplayPendingPointRefresh, below); a batch change re-sizes everything.
+		Generator->ConsumeCanonicalStellarPointMutations(GameplayPendingPointRefresh);
 		const bool bGeometryChanged = bNewBuild
 			|| TopologyHash != GameplayNativeTopologyHash
-			|| GameplayNativeMutationSerial != Descriptor.TransformMutationSerial;
+			|| GameplayNativeBatchSerial != Generator->GetCanonicalStellarBatchMutationSerial()
+			|| GameplayPendingPointRefresh.Num() > 1024;
 		if (bGeometryChanged)
 		{
+			GameplayPendingPointRefresh.Reset();
 			GameplayNativePhysicalRadii.Reset();
 			GameplayNativeSizedDistances.Reset();
 			GameplayNativeDemandCandidates.Reset();
@@ -443,8 +459,12 @@ void UAPSStellarVisualSubsystem::UpdateGameplayStellarView()
 		const double MotionCm = FVector::Distance(ObserverFromHome, Motion.Observer);
 		Motion.Observer = ObserverFromHome;
 		Motion.Seconds = NowSeconds;
-		const bool bFastObserver = MotionSeconds > 0.0 && ClosestNowCm > 0.0 && ClosestNowCm < TNumericLimits<double>::Max()
-			&& MotionCm / MotionSeconds > ClosestNowCm * APSGameplayStellarOptics::FastObserverPerSecond;
+		// Rio 05.10 afternoon (flight FPS): a bound at or below zero means the observer has travelled more than the
+		// nearest distance since the last pass, i.e. it is fast by this very test. Read as "not fast", it switched the
+		// spacing off at drive speed once passes were split over frames (their bound is older): 30-90 full walks a
+		// second instead of 10, +1 ms a frame.
+		const bool bFastObserver = MotionSeconds > 0.0 && MotionCm > 0.0 && ClosestNowCm < TNumericLimits<double>::Max()
+			&& MotionCm / MotionSeconds > FMath::Max(ClosestNowCm, 0.0) * APSGameplayStellarOptics::FastObserverPerSecond;
 		const FQuat ViewRotation = Rotation.Quaternion();
 		const double TanHalfHorizontal = FMath::Tan(FMath::DegreesToRadians(
 			Controller->PlayerCameraManager->GetFOVAngle() * 0.5));
@@ -514,13 +534,25 @@ void UAPSStellarVisualSubsystem::UpdateGameplayStellarView()
 				Source->SetHiddenInGame(bHidden, false);
 			}
 			if (!IsValid(Source) || !BaseTransforms || !IsValid(Source->GetStaticMesh())) continue;
+			TArray<int32> RefreshIndices;
+			for (const FAPSGameplayStellarKey& Key : GameplayPendingPointRefresh)
+			{
+				if (Key.Source.Get() == Source)
+				{
+					RefreshIndices.Add(Key.Index);
+				}
+			}
 			FAPSGameplayStellarResizePass& Pass = GameplayNativeResizePasses.FindOrAdd(Source);
 			const double ResizeInterval = FMath::Max(APSGameplayStellarDay::CVarResizeInterval.GetValueOnGameThread(),
 				bFastObserver ? APSGameplayStellarOptics::CVarFastResizeInterval.GetValueOnGameThread() : 0.0f);
-			const bool bResizeTravelled = !bUpdatePointSizes && !bResizePassTaken
+			// Rio 05.10 afternoon (flight FPS: a pass took 17 ms, four times a second at drive speed, where every point of a
+			// source runs out of its size budget at once): a pass under way goes on where the last frame left it.
+			APSGameplayStellarOptics::FResizeRun* Run = APSGameplayStellarOptics::GResizeRuns.Find(Source);
+			const bool bResumePass = !bUpdatePointSizes && !bResizePassTaken && Run;
+			const bool bResizeTravelled = bResumePass || (!bUpdatePointSizes && !bResizePassTaken
 				&& FVector::Distance(ObserverFromHome, Pass.Observer) > FMath::Max(Pass.SlackCm, 1.0)
-				&& NowSeconds - Pass.Seconds >= FMath::Max(ResizeInterval, 0.0);
-			if (!bRefreshDemand && !bResizeTravelled) continue;
+				&& NowSeconds - Pass.Seconds >= FMath::Max(ResizeInterval, 0.0));
+			if (!bRefreshDemand && !bResizeTravelled && RefreshIndices.IsEmpty()) continue;
 			if (!APSStellarOpticalSupport::EnsureLayout(Source)) continue;
 
 			// Work inside the existing affine frame: no enormous per-instance
@@ -599,6 +631,32 @@ void UAPSStellarVisualSubsystem::UpdateGameplayStellarView()
 			};
 			if (!bUpdatePointSizes)
 			{
+				// The single points first, once the tree build their change started has landed (any instance change
+				// during an async build restarts it): sized like every other point for the current observer.
+				if (!RefreshIndices.IsEmpty() && SizedDistances.Num() == Source->GetInstanceCount() && !Source->IsAsyncBuilding())
+				{
+					TRACE_CPUPROFILER_EVENT_SCOPE(APS_GameplayStellarPointRefresh);
+					bool bChanged = false;
+					for (const int32 Index : RefreshIndices)
+					{
+						FTransform Transform;
+						if (BaseTransforms->IsValidIndex(Index) && SizedDistances.IsValidIndex(Index)
+							&& Source->GetInstanceTransform(Index, Transform, false)
+							&& SizePoint(Index, Transform, false, SizedDistances[Index]))
+						{
+							Source->UpdateInstanceTransform(Index, Transform, false, false, true);
+							bChanged = true;
+						}
+					}
+					GameplayPendingPointRefresh.RemoveAll([Source](const FAPSGameplayStellarKey& Key)
+					{
+						return Key.Source.Get() == Source;
+					});
+					if (bChanged)
+					{
+						Source->BuildTreeIfOutdated(true, false);
+					}
+				}
 				if (bRefreshDemand)
 				{
 					// A camera turn changes selection, not HISM size or geometry. Avoid
@@ -635,6 +693,12 @@ void UAPSStellarVisualSubsystem::UpdateGameplayStellarView()
 						}
 					}
 				}
+				if (Run && SizedDistances.Num() != Source->GetInstanceCount())
+				{
+					// The source changed under a split pass: the next one starts over.
+					APSGameplayStellarOptics::GResizeRuns.Remove(Source);
+					Run = nullptr;
+				}
 				if (bResizeTravelled && SizedDistances.Num() == Source->GetInstanceCount())
 				{
 					if (Source->IsAsyncBuilding())
@@ -646,15 +710,22 @@ void UAPSStellarVisualSubsystem::UpdateGameplayStellarView()
 					TRACE_CPUPROFILER_EVENT_SCOPE(APS_GameplayStellarResizePass);
 					// Only points whose own size error reached the budget are re-sized and re-uploaded.
 					bResizePassTaken = true;
-					bool bChanged = false;
-					double SlackCm = TNumericLimits<double>::Max();
-					double NearestCm = TNumericLimits<double>::Max();
-					for (int32 Index = 0; Index < SizedDistances.Num(); ++Index)
+					// Rio 05.10 afternoon (flight FPS): aps.Stars.ResizeChunk points a frame; the pass's findings carry over
+					// in Pass until its last point, and its observer is the one at its start (the next pass comes earlier
+					// rather than later). 0: the whole source in one frame, as before.
+					if (!Run)
+					{
+						Run = &APSGameplayStellarOptics::GResizeRuns.Add(Source);
+						Run->Observer = ObserverFromHome;
+					}
+					const int32 Chunk = APSGameplayStellarOptics::CVarResizeChunk.GetValueOnGameThread();
+					const int32 End = Chunk > 0 ? FMath::Min(Run->Cursor + Chunk, SizedDistances.Num()) : SizedDistances.Num();
+					for (int32 Index = Run->Cursor; Index < End; ++Index)
 					{
 						if (SizedDistances[Index] <= 0.0 || !BaseTransforms->IsValidIndex(Index)) continue;
 						const double DistanceCm = FVector::Distance((*BaseTransforms)[Index].GetLocation(), LocalCamera)
 							* ComponentScale;
-						NearestCm = FMath::Min(NearestCm, DistanceCm);
+						Run->NearestCm = FMath::Min(Run->NearestCm, DistanceCm);
 						if (!APSGameplayStellarProjection::CanReusePointSize(DistanceCm, SizedDistances[Index]))
 						{
 							FTransform Transform;
@@ -662,21 +733,28 @@ void UAPSStellarVisualSubsystem::UpdateGameplayStellarView()
 								&& SizePoint(Index, Transform, false, SizedDistances[Index]))
 							{
 								Source->UpdateInstanceTransform(Index, Transform, false, false, true);
-								bChanged = true;
+								Run->bChanged = true;
 							}
 						}
 						if (SizedDistances[Index] > 0.0)
 						{
-							SlackCm = FMath::Min(SlackCm,
+							Run->SlackCm = FMath::Min(Run->SlackCm,
 								APSGameplayStellarProjection::PointSizeSlackCm(DistanceCm, SizedDistances[Index]));
 						}
 					}
+					Run->Cursor = End;
+					if (End < SizedDistances.Num())
+					{
+						continue;
+					}
 					// The next pass waits until the observer has travelled the smallest slack found now.
-					Pass.Observer = ObserverFromHome;
-					Pass.SlackCm = SlackCm < TNumericLimits<double>::Max() ? FMath::Max(SlackCm, 0.0) : 0.0;
-					Pass.NearestCm = NearestCm;
+					const APSGameplayStellarOptics::FResizeRun Done = *Run;
+					APSGameplayStellarOptics::GResizeRuns.Remove(Source);
+					Pass.Observer = Done.Observer;
+					Pass.SlackCm = Done.SlackCm < TNumericLimits<double>::Max() ? FMath::Max(Done.SlackCm, 0.0) : 0.0;
+					Pass.NearestCm = Done.NearestCm;
 					Pass.Seconds = NowSeconds;
-					if (bChanged)
+					if (Done.bChanged)
 					{
 						// A legacy-mode HISM reaches the GPU through its tree: ApplyBuildTree recreates the
 						// render state when the build lands, so no extra proxy rebuild here.
@@ -705,6 +783,7 @@ void UAPSStellarVisualSubsystem::UpdateGameplayStellarView()
 						APSGameplayStellarProjection::PointSizeSlackCm(SizedDistances[Index], SizedDistances[Index]));
 				}
 			}
+			APSGameplayStellarOptics::GResizeRuns.Remove(Source);
 			Pass.Observer = ObserverFromHome;
 			Pass.SlackCm = SlackCm < TNumericLimits<double>::Max() ? FMath::Max(SlackCm, 0.0) : 0.0;
 			Pass.NearestCm = NearestCm;

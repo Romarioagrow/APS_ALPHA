@@ -1,4 +1,6 @@
 #include "PlanetarySurfaceGenerator.h"
+#include "APSNativeGlobeSnapshot.h"
+#include "APS_ALPHA/Core/Planetary/APSPlanetReliefRuntime.h"
 
 #include "APS_ALPHA/Actors/Astro/Moon.h"
 #include "APS_ALPHA/Actors/Astro/Planet.h"
@@ -15,8 +17,6 @@
 #include "APS_ALPHA/Core/Planetary/APSUnifiedLavaSurface.h"
 #include "APS_ALPHA/Core/Planetary/APSUnifiedLavaMaterialPreparation.h"
 #include "APS_ALPHA/Core/Planetary/APSOrbitalWaterAppearance.h"
-#include "Camera/PlayerCameraManager.h"
-#include "GameFramework/PlayerController.h"
 #include "APSWorldScapePlanetNoise.h"
 #include "Engine/World.h"
 #include "HAL/IConsoleManager.h"
@@ -49,9 +49,7 @@ namespace APSWorldScapeProfiles
         TEXT("Generated Shared/Continuous Terra only; no exposure/geometry changes. Read on profile recreation."), ECVF_Default);
     TAutoConsoleVariable<int32> CVarTerrainContinuity(
         TEXT("aps.Surface.TerrainContinuity"), 1,
-        TEXT("Versioned detiled terrain on explicitly validated generated solid presets only. ")
-        TEXT("0 restores the unchanged Shared material on profile recreation; restart PIE. ")
-        TEXT("No geometry, height, collision, liquid, authored or other-family changes."), ECVF_Default);
+        TEXT("Read-only compatibility marker. Generated nonmagmatic terrain always uses the original continuous material; no rollback parent."), ECVF_ReadOnly);
     TAutoConsoleVariable<float> CVarLivingPaletteDetail(
         TEXT("aps.Surface.LivingPaletteDetail"), 1.0f,
         TEXT("0..1 restores the distinct cool dryland palette endpoint on generated SharedTerra water worlds. ")
@@ -62,14 +60,12 @@ namespace APSWorldScapeProfiles
         TEXT("0 keeps aps.Surface.MeshResolution (default 256). Read at profile creation; restart PIE. ")
         TEXT("No new surface, collision change or material bake. Higher vertex cost; FPS needs validation."), ECVF_Default);
     TAutoConsoleVariable<float> CVarOrbitalWaterContrast(
-        TEXT("aps.Surface.OrbitalWaterContrast"), 1.0f,
-        TEXT("0..1 optical refinement of shared Water above 20 km, full at 200 km. ")
-        TEXT("0 restores saved roughness/specular. No palette, near-water, Lava or Ammonia changes."), ECVF_Default);
+        TEXT("aps.Surface.OrbitalWaterContrast"), 0.0f,
+        TEXT("Read-only compatibility marker; ignored by rendering. Water retains its saved ")
+        TEXT("roughness/specular at every camera height. Lava and Ammonia are unchanged."), ECVF_ReadOnly);
     TAutoConsoleVariable<int32> CVarUnifiedLavaSurface(
-        TEXT("aps.Surface.UnifiedLavaSurface"), 0,
-        TEXT("Candidate: one opaque lava/rock WorldScape surface and matching collision. ")
-        TEXT("Requires the protected UnifiedLava material bake. Stop PIE before changing. ")
-        TEXT("Off until rendered validation; no effect on water, ammonia, dry or authored worlds."), ECVF_Default);
+        TEXT("aps.Surface.UnifiedLavaSurface"), 1,
+        TEXT("Read-only compatibility marker. Eligible generated lava retains its original unified surface; no split-material rollback."), ECVF_ReadOnly);
     TAutoConsoleVariable<int32> CVarSurfaceMeshResolution(
         TEXT("aps.Surface.MeshResolution"), APSWorldScapeLiquidLattice::DefaultTerrainResolution,
         TEXT("Generated full-scale WorldScape ring resolution, 96..256 in multiples of four. ")
@@ -77,13 +73,6 @@ namespace APSWorldScapeProfiles
         TEXT("Read only when creating a surface profile: stop PIE before changing. ")
         TEXT("Terrain and liquid stay on matching lattices; collision and PLANET previews are unchanged."),
         ECVF_Default);
-
-	TAutoConsoleVariable<int32> CVarNativeTerrainMaterial(
-		TEXT("aps.Surface.UseNativeTerrainMaterial"), 1,
-		TEXT("Use the SinglePlay WorldScape texture/normal stack for generated full-scale terrain. ")
-		TEXT("0 restores the APS ground parent on the next profile creation. Stop PIE before switching. ")
-		TEXT("Does not alter noise, manual planets, custom catalog materials or the PLANET globe."),
-		ECVF_Default);
 
 	struct FSurfaceProfile
 	{
@@ -145,31 +134,9 @@ void APlanetarySurfaceGenerator::UpdateOrbitalWaterAppearance()
 		|| !APSOrbitalWaterAppearance::IsEligible(bOwnsWorldScapeRootInstance, Planet && Planet->IsManual,
 			ResolvedSurfaceProfile.LiquidType, Body->WorldScapePresentationScale, Root->GetActorScale3D())
 		|| !APSSharedGeneratedLiquidMaterial::IsFamilyInstance(Material, EAPSPlanetLiquidType::Water)) return;
-	UWorld* World = GetWorld();
-	APlayerController* Controller = World && World->IsGameWorld() ? World->GetFirstPlayerController() : nullptr;
-	if (!IsValid(Controller) || !IsValid(Controller->PlayerCameraManager)) return;
-	const FVector Camera = Controller->PlayerCameraManager->GetCameraLocation();
-	if (Camera.ContainsNaN()) return;
-	// Root conversion accounts for rebase/rotation; camera height is above this
-	// planet's sea datum, not distance from origin or from a LOD component.
-	const double Height = Root->WorldToECEF(Camera).Lenght() - Root->PlanetScale - Root->OceanHeight;
-	const float Blend = APSOrbitalWaterAppearance::Weight(Height,
-		APSWorldScapeProfiles::CVarOrbitalWaterContrast.GetValueOnGameThread());
-	float SavedSpecular = 0, SavedRoughness = 0, ActualSpecular = 0, ActualRoughness = 0;
-	if (!Material->Parent->GetScalarParameterValue(FHashedMaterialParameterInfo(TEXT("Specular")), SavedSpecular)
-		|| !Material->Parent->GetScalarParameterValue(FHashedMaterialParameterInfo(TEXT("Roughness")), SavedRoughness)
-		|| !Material->GetScalarParameterValue(FHashedMaterialParameterInfo(TEXT("Specular")), ActualSpecular)
-		|| !Material->GetScalarParameterValue(FHashedMaterialParameterInfo(TEXT("Roughness")), ActualRoughness)
-		|| !FMath::IsFinite(SavedSpecular) || !FMath::IsFinite(SavedRoughness)
-		|| SavedSpecular < 0 || SavedSpecular > 1 || SavedRoughness < 0 || SavedRoughness > 1) return;
-	const float Specular = APSOrbitalWaterAppearance::Specular(SavedSpecular, Blend);
-	const float Roughness = APSOrbitalWaterAppearance::Roughness(SavedRoughness, Blend);
-	// Near/disabled must return EXACTLY to the saved state, not accumulate lerps
-	// from the previously overridden MID. Avoid steady-state render commands.
-	if ((Blend == 0 && ActualSpecular != SavedSpecular) || !FMath::IsNearlyEqual(ActualSpecular, Specular, 0.0001f))
-		Material->SetScalarParameterValue(TEXT("Specular"), Specular);
-	if ((Blend == 0 && ActualRoughness != SavedRoughness) || !FMath::IsNearlyEqual(ActualRoughness, Roughness, 0.0001f))
-		Material->SetScalarParameterValue(TEXT("Roughness"), Roughness);
+	// Native rings and the body-owned closed globe must inherit the same saved
+	// response. Do not reintroduce a camera-dependent override via stale config.
+	APSOrbitalWaterAppearance::RestoreAuthoredResponse(Material);
 }
 
 bool APlanetarySurfaceGenerator::FinalizeStableWaterMaterial()
@@ -562,7 +529,6 @@ bool APlanetarySurfaceGenerator::DeferProfileForLavaMaterial(APlanetaryBody* Bod
 	using namespace APSUnifiedLavaSurface;
 	const APlanet* Planet = Cast<APlanet>(Body);
 	if (!IsValid(Body) || !IsValid(WorldScapeRootInstance) || !GetWorld()
-		|| APSWorldScapeProfiles::CVarUnifiedLavaSurface.GetValueOnGameThread() == 0
 		|| !UAPSPlanetSurfaceProfileResolver::SupportsWorldScape(Body->PlanetType))
 	{
 		CancelLavaMaterialPreparation();
@@ -585,8 +551,7 @@ bool APlanetarySurfaceGenerator::DeferProfileForLavaMaterial(APlanetaryBody* Bod
 	if (IsValid(SurfaceProfileCatalog))
 		if (const auto* Definition = SurfaceProfileCatalog->Archetypes.Find(Requested.Archetype))
 			if (UMaterialInstance* Terrain = Definition->TerrainMaterial.LoadSynchronous())
-				if (!APSSharedTerrainMaterial::IsGeneratedCatalogStack(Terrain)
-					&& !APSSharedTerrainMaterial::IsSharedStack(Terrain))
+				if (!APSSharedTerrainMaterial::IsStockGeneratedTemplate(Terrain))
 				{
 					CancelLavaMaterialPreparation();
 					return false;
@@ -612,6 +577,10 @@ bool APlanetarySurfaceGenerator::DeferProfileForLavaMaterial(APlanetaryBody* Bod
 				: WorldScapeRootInstance->bGenerateWorldScape && !WorldScapeRootInstance->IsHidden()
 					? EDeferredWorldScapeRootState::FrozenVisible : EDeferredWorldScapeRootState::Preloaded;
 	}
+	// A terminal failure is a publication block, not permission to select another
+	// terrain/ocean pair. Keep the existing pending guard visible to lifecycle
+	// callers, but never restart a timer or shader poll for this body/root attempt.
+	if (bLavaMaterialFailureLogged) return true;
 	EPreparationState State = bLavaMaterialTimedOut ? EPreparationState::Failed
 		: LavaMaterialPreparation->Poll(GetWorld()->GetFeatureLevel());
 	if (State == EPreparationState::Pending && FPlatformTime::Seconds() - LavaMaterialRequestTime > 180.0)
@@ -624,11 +593,13 @@ bool APlanetarySurfaceGenerator::DeferProfileForLavaMaterial(APlanetaryBody* Bod
 	{
 		const bool bWasPending = bPendingLavaMaterial;
 		StopLavaMaterialPolling();
-		if (State == EPreparationState::Failed && !bLavaMaterialFailureLogged)
+		if (State == EPreparationState::Failed)
 		{
+			bPendingLavaMaterial = true;
 			bLavaMaterialFailureLogged = true;
-			UE_LOG(LogTemp, Warning, TEXT("[APS.UnifiedLava.Prepare] body=%s failed=%s; strict factory/fallback retained"),
+			UE_LOG(LogTemp, Error, TEXT("[APS.UnifiedLava.Prepare] body=%s failed=%s; publication blocked, existing profile retained, no material substitution or automatic retry"),
 				*GetNameSafe(Body), bLavaMaterialTimedOut ? TEXT("Timeout180s") : LavaMaterialPreparation->GetFailureReason());
+			return true;
 		}
 		else if (bWasPending && State == EPreparationState::Ready)
 			UE_LOG(LogTemp, Display, TEXT("[APS.UnifiedLava.Prepare] body=%s ready elapsed=%.3fs (shader readiness, not visual acceptance)"),
@@ -789,6 +760,29 @@ void APlanetarySurfaceGenerator::ApplySurfaceProfileNow(APlanetaryBody* Body)
 		return;
 	}
 	if (DeferProfileForLavaMaterial(Body)) return;
+	// Validate/create the authoritative material before changing any Resolved
+	// member. Even a failure after preparation reported Ready must retain the
+	// published profile, rather than commit SharedMagma plus a separate lava mesh.
+	TStrongObjectPtr<UMaterialInstanceDynamic> PreparedUnified;
+	if (LavaMaterialPreparation && LavaMaterialBody.Get() == Body
+		&& LavaMaterialRoot.Get() == WorldScapeRootInstance)
+	{
+		const double Radius = APSPlanetSurfaceRadius::Kilometres(Body->RadiusKM, Body->PlanetRadiusKM) * 100000.0;
+		APSUnifiedLavaSurface::ECreateFailure Failure = APSUnifiedLavaSurface::ECreateFailure::None;
+		PreparedUnified.Reset(APSUnifiedLavaSurface::Create(WorldScapeRootInstance,
+			WorldScapeRootInstance->GetRootComponent(), RequestedProfile, Radius,
+			GetWorld()->GetFeatureLevel(), &Failure));
+		if (!PreparedUnified.IsValid())
+		{
+			StopLavaMaterialPolling();
+			bPendingLavaMaterial = true;
+			bLavaMaterialFailureLogged = true;
+			UE_LOG(LogTemp, Error,
+				TEXT("[APS.UnifiedLava.Prepare] body=%s failed=Create:%s; publication blocked before profile mutation, existing profile retained, no material substitution or automatic retry"),
+				*GetNameSafe(Body), APSUnifiedLavaSurface::FailureName(Failure));
+			return;
+		}
+	}
 	FinalizedWaterMaterialRoot.Reset();
 	FinalizedWaterMaterialProfileSignature = 0;
 	ResolvedSurfaceProfile = RequestedProfile;
@@ -830,11 +824,11 @@ void APlanetarySurfaceGenerator::ApplySurfaceProfileNow(APlanetaryBody* Body)
 
 		const APlanet* Planet = Cast<APlanet>(Body);
 		if (!(Planet && Planet->IsManual)
-			&& APSSharedTerrainMaterial::IsGeneratedCatalogStack(BaseTerrainMaterial))
+			&& APSSharedTerrainMaterial::IsStockGeneratedTemplate(BaseTerrainMaterial))
 		{
 			const TCHAR* SharedPath = APSSharedTerrainMaterial::TemplatePath(ResolvedSurfaceProfile);
 			UMaterialInstance* SharedTemplate = LoadObject<UMaterialInstance>(nullptr, SharedPath);
-			if (APSSharedTerrainMaterial::IsSharedStack(SharedTemplate))
+			if (APSSharedTerrainMaterial::IsExactTemplate(SharedTemplate, ResolvedSurfaceProfile))
 			{
 				BaseTerrainMaterial = SharedTemplate;
 				UE_LOG(LogTemp, Display,
@@ -844,30 +838,9 @@ void APlanetarySurfaceGenerator::ApplySurfaceProfileNow(APlanetaryBody* Body)
 			else
 			{
 				UE_LOG(LogTemp, Error,
-					TEXT("[APS.SharedTerrain] Required template missing/invalid body=%s path=%s diagnosticFallback=%d; single-material requirement is NOT met"),
-					*GetNameSafe(Body), SharedPath, APSSharedTerrainMaterial::AllowsLegacyDiagnosticFallback() ? 1 : 0);
-				if (!APSSharedTerrainMaterial::AllowsLegacyDiagnosticFallback()) return;
-			}
-		}
-		if (APSNativeTerrainMaterial::ShouldReplace(BaseTerrainMaterial,
-			Body->WorldScapePresentationScale, Planet && Planet->IsManual,
-			CVarNativeTerrainMaterial.GetValueOnGameThread() != 0))
-		{
-			const TCHAR* NativePath = APSNativeTerrainMaterial::TemplatePath(ResolvedSurfaceProfile.Archetype);
-			UMaterialInstance* NativeTemplate = LoadObject<UMaterialInstance>(nullptr, NativePath);
-			if (APSNativeTerrainMaterial::IsNativeStack(NativeTemplate))
-			{
-				BaseTerrainMaterial = NativeTemplate;
-				UE_LOG(LogTemp, Display,
-					TEXT("[APS.Surface.NativeStack] body=%s template=%s palette=APS noise=unchanged"),
-					*GetNameSafe(Body), NativePath);
-			}
-			else
-			{
-				// A missing/changed reference must not turn the planet into checkerboard.
-				UE_LOG(LogTemp, Warning,
-					TEXT("[APS.Surface.NativeStack] Keeping APS fallback: invalid template=%s body=%s"),
-					NativePath, *GetNameSafe(Body));
+					TEXT("[APS.SharedTerrain] Required template missing/invalid body=%s path=%s; publication blocked, no material substitution"),
+					*GetNameSafe(Body), SharedPath);
+				return;
 			}
 		}
 
@@ -1004,18 +977,9 @@ void APlanetarySurfaceGenerator::ApplySurfaceProfileNow(APlanetaryBody* Body)
 			&& ResolvedSurfaceProfile.LandCoverage < 0.995f
 			&& IsValid(Profile.OceanMaterial);
 		Profile.OceanHeight = ResolvedSurfaceProfile.OceanLevel * ResolvedSurfaceProfile.NoiseIntensity;
-		if (APSWorldScapeProfiles::CVarUnifiedLavaSurface.GetValueOnGameThread() != 0
-			&& APSWorldScapeSurfaceEnvelope::Eligible(
-				ResolvedSurfaceProfile.LiquidType == EAPSPlanetLiquidType::Lava,
-				Profile.bOcean, Planet && Planet->IsManual, Body->WorldScapePresentationScale)
-			&& APSSharedTerrainMaterial::IsSharedStack(ResolvedTerrainMaterialInstance)
-			&& APSSharedLavaMaterial::IsSharedStack(ResolvedOceanMaterialInstance)
-			&& IsValid(ResolvedNoiseInstance))
+		if (PreparedUnified.IsValid() && IsValid(ResolvedNoiseInstance))
 		{
-			const double Radius = APSPlanetSurfaceRadius::Kilometres(Body->RadiusKM, Body->PlanetRadiusKM) * 100000.0;
-			UMaterialInstanceDynamic* Unified = APSUnifiedLavaSurface::Create(
-				WorldScapeRootInstance, WorldScapeRootInstance->GetRootComponent(), ResolvedSurfaceProfile,
-				Radius, GetWorld()->GetFeatureLevel());
+			UMaterialInstanceDynamic* Unified = PreparedUnified.Get();
 			if (IsValid(Unified))
 			{
 				// Publish all three parts together, before any new worker starts. A
@@ -1256,6 +1220,17 @@ void APlanetarySurfaceGenerator::ApplySurfaceProfileNow(APlanetaryBody* Body)
 		: 10000.0f;
 	bSurfaceProfileApplied = true;
 	AppliedSurfaceProfileSignature = BuildSurfaceProfileSignature(Body);
+
+	// Candidate owner survives root retirement. No material is selected/replaced;
+	// the disabled-by-default path subscribes this already-created native MID.
+	if (APSPlanetReliefRuntime::IsEnabled())
+	{
+		APSClosedGlobeMesh::FSamplingFrame ReliefFrame;
+		APSClosedGlobeMesh::FBuildOptions ReliefOptions;
+		uint32 ReliefIdentity=0; FString ReliefError;
+		if (APSNativeGlobeSnapshot::Capture(Body,this,ReliefFrame,ReliefOptions,ReliefIdentity,ReliefError))
+			APSPlanetReliefRuntime::Register(Body,ReliefFrame,ReliefIdentity,ResolvedTerrainMaterialInstance);
+	}
 
 	const FString SurfaceSubtype = UEnum::GetValueAsString(Body->PlanetType);
 	const FString SurfaceArchetype = UEnum::GetValueAsString(ResolvedSurfaceProfile.Archetype);

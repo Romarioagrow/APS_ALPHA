@@ -29,6 +29,7 @@
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/Layout/SBox.h"
+#include "Widgets/Layout/SScaleBox.h"
 #include "Widgets/Layout/SScrollBox.h"
 #include "Widgets/Layout/SWrapBox.h"
 #include "Widgets/SBoxPanel.h"
@@ -770,9 +771,13 @@ void SAPSObjectPage::UpdatePreview()
 			[
 				SNew(SBorder).BorderImage(RoundBrush()).BorderBackgroundColor(Colour.CopyWithNewOpacity(0.07f))
 			]
+			// A thumbnail may be wide (a long hull baked with -Wide): fit it, never stretch it.
 			+ SOverlay::Slot()
 			[
-				SNew(SImage).Image(Snapshot)
+				SNew(SScaleBox).Stretch(EStretch::ScaleToFit)
+				[
+					SNew(SImage).Image(Snapshot)
+				]
 			]);
 		return;
 	}

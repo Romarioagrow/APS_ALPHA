@@ -2,6 +2,7 @@
 #include "Moon.h"
 #include "APS_ALPHA/Core/Enums/PlanetType.h"
 #include "APS_ALPHA/Core/Planetary/APSGasGiantMaterial.h"
+#include "APS_ALPHA/Core/World/APSPlaceholderGlobe.h"
 #include "APS_ALPHA/Generation/PlanetarySurfaceGenerator.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
@@ -138,7 +139,7 @@ APlanet::APlanet()
 	GasGiantVisualComponent->SetCollisionResponseToAllChannels(ECR_Ignore);
 	GasGiantVisualComponent->SetGenerateOverlapEvents(false);
 	GasGiantVisualComponent->SetCanEverAffectNavigation(false);
-	GasGiantVisualComponent->CastShadow = true;
+	GasGiantVisualComponent->CastShadow = false;
 	GasGiantVisualComponent->SetVisibility(false);
 	GasGiantVisualComponent->SetHiddenInGame(true);
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> GasGiantMesh(
@@ -180,6 +181,14 @@ void APlanet::SetPlanetType(EPlanetType NewPlanetType)
 
 void APlanet::RefreshGasGiantVisual()
 {
+	if (IsValid(GasGiantVisualComponent))
+	{
+		// Like closed solid globes, astronomical gas spheres must not enter the
+		// finite local shadow maps: their projection is clipped into bright/dark
+		// squares on nearby moons. Planetary eclipses need a separate analytic
+		// solution, not a scene-scale mesh shadow. Reassert after Blueprint loads.
+		GasGiantVisualComponent->SetCastShadow(false);
+	}
 	if (!IsValid(GasGiantVisualComponent)
 		|| !IsValid(GasGiantVisualComponent->GetStaticMesh()))
 	{
@@ -414,6 +423,7 @@ void APlanet::RemoveAllChildrenRecursively(AActor* ParentActor)
 
 void APlanet::EnableSphereMesh()
 {
+	if (APSPlaceholderGlobe::SetVisible(this, !bWorldScapeSurfaceReady)) return;
 	TInlineComponentArray<UStaticMeshComponent*> SphereMeshes;
 	GetComponents(SphereMeshes);
 	if (SphereMeshes.IsEmpty())

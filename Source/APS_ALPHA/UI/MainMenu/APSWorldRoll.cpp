@@ -348,7 +348,7 @@ namespace APSWorldRollPrivate
 	/** The compact range, layout and habitable-zone rule of GenerateCustomPlanetarySystemModel. The layout is exact
 	 * for every recipe except Chaotic, whose jitter comes from the system's own stream. */
 	FFamilyForecast ForecastFamily(const FStarModel& Star, const int32 PlanetCount,
-		const EOrbitDistributionType Distribution, const int32 LayoutSeed)
+		const EOrbitDistributionType Distribution, const int32 LayoutSeed, const bool bCompactOrbits = true)
 	{
 		FFamilyForecast Forecast;
 		const double Mass = FMath::IsFinite(Star.Mass) && Star.Mass > 0.0 ? Star.Mass : 1.0;
@@ -358,7 +358,8 @@ namespace APSWorldRollPrivate
 			: Star.StellarType == EStellarType::SuperGiant ? 6.0 : 10.0;
 		double MinOrbit = Mass;
 		double MaxOrbit = Mass * MaxScaling;
-		UPlanetarySystemGenerator::CompactPlanetOrbitRange(MinOrbit, MaxOrbit, RadiusSolar);
+		// Rio 05.10 (real scale experiment): a REAL SCALE world does not compact its orbits; neither does this forecast.
+		if (bCompactOrbits) UPlanetarySystemGenerator::CompactPlanetOrbitRange(MinOrbit, MaxOrbit, RadiusSolar);
 		FRandomStream LayoutRandom(LayoutSeed);
 		Forecast.OrbitsAu = UPlanetarySystemGenerator::BuildPlanetOrbitLayout(
 			PlanetCount, Distribution, MinOrbit, MaxOrbit, RadiusSolar, LayoutRandom);
@@ -964,16 +965,128 @@ bool APSWorldRoll::IsInteractiveSession()
 		&& FCString::Stristr(CommandLine, TEXT("APSProbe")) == nullptr;
 }
 
-APSWorldRoll::FResult APSWorldRoll::Apply(UGeneratedWorld& World, const int32 RollSeed, const EScope Scope)
+APSWorldRoll::FResult APSWorldRoll::Apply(UGeneratedWorld& World, const int32 RollSeed, const EScope Scope,
+	const FScopeTarget& Target)
 {
 	using namespace APSWorldRollPrivate;
 	const FRandomStream Random(RollSeed);
 	FResult Result;
 	Result.RollSeed = RollSeed;
-	// A new canonical world: galaxy, cluster, home record and every body identity follow this seed.
-	Result.WorldSeed = 1 + static_cast<int32>(HashCombineFast(GetTypeHash(RollSeed), 0x574f524cu)
-		% static_cast<uint32>(MAX_int32 - 1));
-	World.GenerationSeed = Result.WorldSeed;
+	if (Scope == EScope::System || Scope == EScope::PlanetOnly)
+	{
+		// A new canonical world: galaxy, cluster, home record and every body identity follow this seed.
+		Result.WorldSeed = 1 + static_cast<int32>(HashCombineFast(GetTypeHash(RollSeed), 0x574f524cu)
+			% static_cast<uint32>(MAX_int32 - 1));
+		World.GenerationSeed = Result.WorldSeed;
+	}
+	else
+	{
+		// Rio 04.10 evening: a scoped roll keeps the world seed (EScope), so nothing outside its scope moves.
+		Result.WorldSeed = World.GenerationSeed;
+	}
+	const auto RollAnyZone = [&Random]()
+	{
+		return PickWeighted<EPlanetaryZoneType>(Random, {
+			{EPlanetaryZoneType::HabitableZone, 50.0f}, {EPlanetaryZoneType::WarmZone, 15.0f},
+			{EPlanetaryZoneType::ColdZone, 20.0f}, {EPlanetaryZoneType::IceZone, 10.0f},
+			{EPlanetaryZoneType::HotZone, 5.0f}});
+	};
+
+	if (Scope == EScope::GalaxyOnly || Scope == EScope::ClusterOnly)
+	{
+		// The sky roll writes the galaxy and the cluster together (now and then as a paired archetype); the other half is
+		// put back, so only this scope changes.
+		const auto GalaxyType = World.GalaxyType;
+		const auto GalaxyClass = World.GalaxyClass;
+		const auto GalaxySize = World.GalaxySize;
+		const auto GalaxyDensity = World.GalaxyStarDensity;
+		const auto PlacedStars = World.GalaxyPlacedStarCount;
+		const auto GalaxyPopulation = World.GalaxyStarPopulation;
+		const auto GalaxyComposition = World.GalaxyStarComposition;
+		const auto ClusterType = World.StarClusterType;
+		const auto ClusterSize = World.StarClusterSize;
+		const auto ClusterPopulation = World.StarClusterPopulation;
+		const auto ClusterComposition = World.StarClusterComposition;
+		RollSky(World, RollSeed);
+		const bool bGalaxy = Scope == EScope::GalaxyOnly;
+		if (bGalaxy)
+		{
+			World.StarClusterType = ClusterType;
+			World.StarClusterSize = ClusterSize;
+			World.StarClusterPopulation = ClusterPopulation;
+			World.StarClusterComposition = ClusterComposition;
+		}
+		else
+		{
+			World.GalaxyType = GalaxyType;
+			World.GalaxyClass = GalaxyClass;
+			World.GalaxySize = GalaxySize;
+			World.GalaxyStarDensity = GalaxyDensity;
+			World.GalaxyPlacedStarCount = PlacedStars;
+			World.GalaxyStarPopulation = GalaxyPopulation;
+			World.GalaxyStarComposition = GalaxyComposition;
+		}
+		Result.Archetype = bGalaxy ? TEXT("galaxy") : TEXT("cluster");
+		Result.Summary = bGalaxy
+			? FString::Printf(TEXT("seed=%d world=%d kept, galaxy only: %s/%s size=%d density=%.1f stars=%d gpop=%s gcomp=%s"),
+				RollSeed, Result.WorldSeed, *EnumName(StaticEnum<EGalaxyType>(), static_cast<int64>(World.GalaxyType)),
+				*EnumName(StaticEnum<EGalaxyClass>(), static_cast<int64>(World.GalaxyClass)), World.GalaxySize,
+				World.GalaxyStarDensity, World.GalaxyPlacedStarCount,
+				*EnumName(StaticEnum<EStarClusterPopulation>(), static_cast<int64>(World.GalaxyStarPopulation)),
+				*EnumName(StaticEnum<EStarClusterComposition>(), static_cast<int64>(World.GalaxyStarComposition)))
+			: FString::Printf(TEXT("seed=%d world=%d kept, cluster only: %s/%s pop=%s comp=%s"),
+				RollSeed, Result.WorldSeed, *EnumName(StaticEnum<EStarClusterType>(), static_cast<int64>(World.StarClusterType)),
+				*EnumName(StaticEnum<EStarClusterSize>(), static_cast<int64>(World.StarClusterSize)),
+				*EnumName(StaticEnum<EStarClusterPopulation>(), static_cast<int64>(World.StarClusterPopulation)),
+				*EnumName(StaticEnum<EStarClusterComposition>(), static_cast<int64>(World.StarClusterComposition)));
+		return Result;
+	}
+
+	if (Scope == EScope::StarOnly)
+	{
+		// One sun of the home system as a star edit of the panel; its planets keep their edits and slots. A pick equal to
+		// the current one is drawn again (a few times), so a press visibly changes the star.
+		const int32 StarIndex = FMath::Max(Target.StarIndex, 0);
+		const FString Address = FString::Printf(TEXT("SYS0/S%d"), StarIndex);
+		const FAPSPreviewStarEditOverride* Current = World.FindPreviewStarEditOverride(Address);
+		FStarPick Pick = StarIndex == 0 ? RollPrimary(Random) : RollCompanion(Random);
+		for (int32 Attempt = 0; Attempt < 4 && Current && Current->Model.StellarType == Pick.Type
+			&& Current->Model.SpectralClass == Pick.Class; ++Attempt)
+		{
+			Pick = StarIndex == 0 ? RollPrimary(Random) : RollCompanion(Random);
+		}
+		UStarGenerator* Stars = NewObject<UStarGenerator>(GetTransientPackage());
+		FAPSPreviewStarEditOverride Edit;
+		Edit.AutomaticModel = Edit.Model = MakeStar(*Stars, Pick, Result.WorldSeed, Address);
+		World.SetPreviewStarEditOverride(Address, Edit);
+		if (StarIndex == 0)
+		{
+			World.StellarType = Edit.Model.StellarType;
+			World.SpectralClass = Edit.Model.SpectralClass;
+			World.HomeStarRadiusOverrideSolar = 0.0;
+		}
+		Result.Archetype = TEXT("star");
+		Result.Summary = FString::Printf(TEXT("seed=%d world=%d kept, star only: %s %s %s"), RollSeed, Result.WorldSeed,
+			*Address, *EnumName(StaticEnum<EStellarType>(), static_cast<int64>(Edit.Model.StellarType)),
+			*EnumName(StaticEnum<ESpectralClass>(), static_cast<int64>(Edit.Model.SpectralClass)));
+		return Result;
+	}
+
+	if (Scope == EScope::BodyOnly)
+	{
+		// The selected body's type, size and moons for the zone of its orbit, written into the editor buffer.
+		const bool bKnownZone = Target.Zone.IsSet() && (Target.Zone.GetValue() == EPlanetaryZoneType::HabitableZone
+			|| Target.Zone.GetValue() == EPlanetaryZoneType::WarmZone || Target.Zone.GetValue() == EPlanetaryZoneType::ColdZone
+			|| Target.Zone.GetValue() == EPlanetaryZoneType::IceZone || Target.Zone.GetValue() == EPlanetaryZoneType::HotZone);
+		const EPlanetaryZoneType Zone = bKnownZone ? Target.Zone.GetValue() : RollAnyZone();
+		WriteStartWorld(World, Random, RollStartWorldType(Random, Zone), Zone, RollStartWorldMoons(Random));
+		Result.Archetype = TEXT("body");
+		Result.Summary = FString::Printf(TEXT("seed=%d world=%d kept, body only: %s %.0fkm (%s) moons=%d"),
+			RollSeed, Result.WorldSeed, *EnumName(StaticEnum<EPlanetType>(), static_cast<int64>(World.PlanetType)),
+			World.PlanetRadius, *EnumName(StaticEnum<EPlanetaryZoneType>(), static_cast<int64>(Zone)), World.MoonsAmount);
+		return Result;
+	}
+
 	// The recipe is explicit: the legacy RANDOM switches would replace parts of it with the generator's own draws.
 	World.bRandomHomeSystem = false;
 	World.bRandomHomeSystemType = false;
@@ -983,10 +1096,7 @@ APSWorldRoll::FResult APSWorldRoll::Apply(UGeneratedWorld& World, const int32 Ro
 
 	if (Scope == EScope::PlanetOnly)
 	{
-		const EPlanetaryZoneType Zone = PickWeighted<EPlanetaryZoneType>(Random, {
-			{EPlanetaryZoneType::HabitableZone, 50.0f}, {EPlanetaryZoneType::WarmZone, 15.0f},
-			{EPlanetaryZoneType::ColdZone, 20.0f}, {EPlanetaryZoneType::IceZone, 10.0f},
-			{EPlanetaryZoneType::HotZone, 5.0f}});
+		const EPlanetaryZoneType Zone = RollAnyZone();
 		WriteStartWorld(World, Random, RollStartWorldType(Random, Zone), Zone, RollStartWorldMoons(Random));
 		Result.Archetype = TEXT("planet");
 		Result.Summary = FString::Printf(TEXT("seed=%d world=%d planet=%s %.0fkm (%s) moons=%d archetype=%s"),
@@ -1094,7 +1204,8 @@ APSWorldRoll::FResult APSWorldRoll::Apply(UGeneratedWorld& World, const int32 Ro
 	// The home star's share of the total, exactly as FAPSPreviewSystemEditOverride::ApplyToFamily splits it.
 	const int32 HomeFamilyCount = TotalPlanets / StarCount + (TotalPlanets % StarCount > 0 ? 1 : 0);
 	const FFamilyForecast Forecast = ForecastFamily(PrimaryModel, HomeFamilyCount, Distribution,
-		static_cast<int32>(HashCombineFast(GetTypeHash(RollSeed), 0x4c41594fu) & 0x7fffffffu));
+		static_cast<int32>(HashCombineFast(GetTypeHash(RollSeed), 0x4c41594fu) & 0x7fffffffu),
+		!(World.bRealScale && World.bGenerateFullScaledWorld));
 
 	// Archetype planets other than the start world, by orbit slot.
 	TSet<int32> ReservedSlots;
@@ -1203,8 +1314,9 @@ APSWorldRoll::FResult APSWorldRoll::Apply(UGeneratedWorld& World, const int32 Ro
 	SystemEdit.bOverrideOrbitInclination = true;
 	SystemEdit.MaxOrbitInclinationDegrees = FMath::RoundToDouble(Inclination * 10.0) / 10.0;
 	World.SetPreviewSystemEditOverride(TEXT("SYS0"), SystemEdit);
-	// Rio 03.10: the galaxy and the home cluster are rolled too (own stream: the draws above are unchanged).
-	const FString SkySummary = RollSky(World, RollSeed);
+	// Rio 03.10: the galaxy and the home cluster are rolled too (own stream: the draws above are unchanged); a SYSTEM-level
+	// roll (Rio 04.10 evening) keeps them.
+	const FString SkySummary = Scope == EScope::System ? RollSky(World, RollSeed) : FString(TEXT("sky kept"));
 
 	Result.Archetype = ArchetypeName(Archetype);
 	Result.Summary = FString::Printf(

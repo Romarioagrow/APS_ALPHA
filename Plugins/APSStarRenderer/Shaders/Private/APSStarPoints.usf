@@ -131,10 +131,11 @@ void RasterCS(uint3 GroupThreadId : SV_GroupThreadID, uint3 DispatchThreadId : S
 		const uint2 Pixel = min(uint2(Screen), TargetSize - 1u);
 		const float2 Sub = saturate(Screen - float2(Pixel));
 
-		// Reverse Z: a larger device Z is nearer. Planets, ships and stations in front hide the star; Rio 04.10: so does one
-		// within a render pixel of it (the jittered edge used to let it through every other frame).
+		// Reverse Z: a larger device Z is nearer. Planets, ships and stations in front hide the star. Rio 04.10 evening ("a
+		// black rim around every planet"): only the scene under the star's own pixel decides here; a nearer object within a
+		// render pixel no longer drops it, the composite fades its light over the edge instead.
 		const float StarDeviceZ = Clip.z / Clip.w;
-		const float SceneDeviceZ = ApsNearestDeviceZ(SceneDepthTexture, DepthRect, ViewportUV);
+		const float SceneDeviceZ = ApsSceneDeviceZ(SceneDepthTexture, DepthRect, ViewportUV);
 		if (SceneDeviceZ > StarDeviceZ)
 		{
 			continue;

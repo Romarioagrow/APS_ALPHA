@@ -10,6 +10,10 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAPSPlanetSurfaceFillTest,
 bool FAPSPlanetSurfaceFillTest::RunTest(const FString& Parameters)
 {
     using namespace APSPlanetSurfaceFill;
+    TestTrue(TEXT("Managed solid stays lit before native LOD readiness"), IsEligible(false, true));
+    TestTrue(TEXT("Managed solid stays lit after native LOD readiness"), IsEligible(true, true));
+    TestTrue(TEXT("Existing authored ready surface unchanged"), IsEligible(true, false));
+    TestFalse(TEXT("Unmanaged unready body does not acquire fill"), IsEligible(false, false));
     for (double Altitude : {-100.0, 0.0, 200.0, 100000.0, FadeStartCm})
         TestEqual(TEXT("Accepted ground intensity unchanged"), Weight(Altitude), 1.0f);
     TestEqual(TEXT("Fade midpoint"), Weight(3000000.0), 0.5f);

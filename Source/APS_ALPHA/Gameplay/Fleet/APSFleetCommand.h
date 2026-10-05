@@ -369,6 +369,12 @@ public:
 	uint32 GetRevision() const { return Revision; }
 	/** One line for the list: the order, its phase and progress or distance. */
 	FText DescribeState(const FAPSFleetUnit& Unit) const;
+	/**
+	 * Rio 05.10 (star map): about how many seconds the ship's autopilot needs to the target's slot (the flight, not the work
+	 * there), by StepSpeed's profile at its class cap: from its order's state when it already flies there, else from rest
+	 * where it is. Negative when it cannot fly there (not a unit of the fleet; no SpaceWrap for another star or planet).
+	 */
+	double EstimateArrivalSeconds(const ASpaceship* Ship, const AActor* Target) const;
 
 	/** Console: aps.Fleet.* (list, order, speed scale). */
 	void LogUnits() const;

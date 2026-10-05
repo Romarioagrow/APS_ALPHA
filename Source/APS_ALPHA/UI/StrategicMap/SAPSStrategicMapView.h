@@ -72,6 +72,8 @@ private:
 	};
 
 	bool Pick(const FVector2D& LocalPosition, APSStrategicMap::FSelection& OutTarget) const;
+	/** Away from every mark: the galaxy star the click points at, made a star system (Rio 04.10, far courses). */
+	bool PickGalaxyStar(const FGeometry& Geometry, const FVector2D& LocalPosition, APSStrategicMap::FSelection& OutTarget) const;
 
 	TWeakObjectPtr<APlayerController> Controller;
 	TSharedPtr<FAPSStrategicMapScene> Scene;

@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 
 class UGeneratedWorld;
+enum class EPlanetaryZoneType : uint8;
 
 /**
  * REGENERATE world roll (Rio 03.10: "every press unique by count, by type, by moons ... adequate, never nonsense, yet
@@ -21,7 +22,25 @@ namespace APSWorldRoll
 		/** The complete home system: stars, planets and the start world. */
 		System,
 		/** The PLANET route builds one body: only the world itself is rolled. */
-		PlanetOnly
+		PlanetOnly,
+		/** Rio 04.10 evening ("on every level REGENERATE rolls only its own; on OVERVIEW everything, as now"): the scopes
+		 * below keep the world seed, so the galaxy, the cluster, the home record and every body outside them stay. */
+		GalaxyOnly,
+		ClusterOnly,
+		/** The home recipe (stars, planets, orbits, the start world) in its place in the cluster; the sky stays. */
+		HomeSystemOnly,
+		/** One star of the home system; its planets stay. */
+		StarOnly,
+		/** The selected body: the panel's editor buffer, which the view model then saves onto that body. */
+		BodyOnly
+	};
+
+	/** What a scoped roll aims at: StarOnly the home system's star (0 = the primary), BodyOnly the orbit zone of the
+	 * selected body (unset: rolled as on the PLANET route). */
+	struct FScopeTarget
+	{
+		int32 StarIndex{0};
+		TOptional<EPlanetaryZoneType> Zone;
 	};
 
 	struct FResult
@@ -36,8 +55,9 @@ namespace APSWorldRoll
 	/** A seed nobody rolled before: wall clock, CPU cycles, a press counter and the global stream, mixed. */
 	int32 MakeFreshSeed();
 
-	/** Rolls a new world into World from RollSeed. The caller has already cleared the explicit edit maps. */
-	FResult Apply(UGeneratedWorld& World, int32 RollSeed, EScope Scope);
+	/** Rolls a new world into World from RollSeed. For System and HomeSystemOnly the caller has already cleared the explicit
+	 * edit maps; the other scoped rolls overwrite only their own fields. */
+	FResult Apply(UGeneratedWorld& World, int32 RollSeed, EScope Scope, const FScopeTarget& Target = FScopeTarget());
 
 	/** A person drives the menu: no -unattended, commandlet, automation test, -ExecCmds script, APSBench, APSDiagnostic
 	 * or APSProbe switch, nor the -APSNoWorldRoll opt-out. */

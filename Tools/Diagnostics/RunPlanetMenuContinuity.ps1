@@ -10,6 +10,9 @@ param(
     [switch]$Combined,
     [switch]$Published,
     [switch]$PublishedDefault,
+    [ValidateSet('Control','Candidate')][string]$SurfaceUnification,
+    [ValidateSet('Control','Candidate')][string]$CoastalMesh,
+    [switch]$CryogenicPreviewRegression,
     [switch]$WaterRelease,
     [switch]$ShoreWaterFactory,
     [switch]$Clouds,
@@ -29,13 +32,46 @@ param(
     [switch]$Volumes,
     [switch]$AllFields,
     [switch]$FixedHeight,
+    [ValidateRange(100,25000)][double]$PlanetRadiusKm,
+    [ValidateRange(0,2147483647)][int]$SurfaceSeed,
     [ValidateRange(640,3840)][int]$Width=1920,
     [ValidateRange(480,2160)][int]$Height=1080,
     [switch]$RouteRegression,
     [ValidateRange(70,20000)][double]$HeightKm=2000
 )
 $ErrorActionPreference='Stop'
-if($CloudWeatherCandidate -and $CloudLayeredCandidate){throw 'Select one cloud candidate: weather V28 or layered V30'}
+$explicitBodyFixture=$PSBoundParameters.ContainsKey('PlanetRadiusKm') -or $PSBoundParameters.ContainsKey('SurfaceSeed')
+if($explicitBodyFixture){
+    if(!$PSBoundParameters.ContainsKey('PlanetRadiusKm') -or !$PSBoundParameters.ContainsKey('SurfaceSeed') -or
+        !$Published -or !$PublishedDefault -or !$FixedHeight -or [double]::IsNaN($PlanetRadiusKm) -or [double]::IsInfinity($PlanetRadiusKm)){
+        throw 'PlanetRadiusKm and SurfaceSeed require a paired Published + PublishedDefault + FixedHeight fixture'
+    }
+    foreach($key in $PSBoundParameters.Keys){
+        if($key -notin @('PlanetRadiusKm','SurfaceSeed','Family','Label','Published','PublishedDefault','FixedHeight','HeightKm','Width','Height','Buffers')){
+            throw 'Explicit body inputs require one clean family, without candidates, batches, or other modes'
+        }
+    }
+    if([double]::IsNaN($HeightKm) -or [double]::IsInfinity($HeightKm) -or $HeightKm -lt [Math]::Max(70,0.01*$PlanetRadiusKm)){
+        throw 'HeightKm must remain above this body radius-dependent preview zoom limit'
+    }
+}
+if($CoastalMesh){
+    if(!$Published -or !$CloudOff){throw 'Coastal mesh pair requires Published + CloudOff for unobscured shore geometry'}
+    foreach($key in $PSBoundParameters.Keys){
+        if($key -notin @('CoastalMesh','Family','Label','Published','CloudOff','FamilyScaleAB','FixedHeight','HeightKm','Width','Height')){
+            throw 'Coastal mesh pair is isolated; no other material/cloud/legacy/unification experiments or batches permitted'
+        }
+    }
+}
+if($SurfaceUnification -and (!$Published -or $PublishedDefault -or $CloudWeatherCandidate -or $CloudLayeredCandidate -or $TerrestrialPaletteMode -ge 0)){throw 'Surface unification requires Published, with no other material candidate or default-acceptance label'}
+if($CryogenicPreviewRegression){
+    if(!$SurfaceUnification -or !$Published){throw 'Cryogenic preview regression requires Published and an explicit SurfaceUnification Control/Candidate leg'}
+    foreach($key in $PSBoundParameters.Keys){
+        if($key -notin @('Label','Published','SurfaceUnification','CryogenicPreviewRegression')){throw 'Cryogenic preview regression is a separate process; no other probe parameters are permitted'}
+    }
+    $Family='Cryogenic'
+}
+if($CloudWeatherCandidate -and $CloudLayeredCandidate){throw 'Select one cloud candidate: refined V31 or layered V30'}
 if($CloudWeatherCandidate -and (!$CloudWeather -or $PublishedDefault)){throw 'CloudWeatherCandidate requires explicit CloudWeather; not a default-acceptance run'}
 if($CloudLayeredCandidate -and (!$CloudWeather -or $PublishedDefault)){throw 'CloudLayeredCandidate requires explicit CloudWeather; not a default-acceptance run'}
 if($CloudLayeredCandidate -and $CloudDebug -eq 4){throw 'Layered V30 does not implement numeric CloudDebug 4; magenta is unsupported, not probe evidence'}
@@ -46,6 +82,21 @@ if($CloudOff -and ($Clouds -or $CloudNoFog -or $CloudDebug -ne 0)){throw 'Explic
 if($CloudNoFog -and !$Clouds){throw 'Fog isolation requires the cloud diagnostic'}
 if($WaterRelease -and !$Published){throw 'Water release needs published terrain without material replacements'}
 $projectRoot='F:/Rio/Projects/Unreal Projects/APS/APS_ALPHA'
+if($CoastalMesh){
+    . (Join-Path $PSScriptRoot 'SurfaceUnificationDiagnostic.ps1')
+    # Both legs use the same accepted unified default; only coastal topology differs.
+    # The shared preflight captures sources, DLL and protected material/config hashes.
+    $coastSelection=[pscustomobject]@{
+        SchemaVersion=1; Mode=$CoastalMesh
+        Flag=$(if($CoastalMesh -eq 'Candidate'){'-APSPreviewCoastalMeshCandidate'}else{''})
+        Base=(Get-APSSurfaceUnificationDiagnostic -ProjectRoot $projectRoot -Mode Candidate)
+        Acceptance='Unverified coastal topology experiment; compare actual same-camera shores, liquid coverage, seams and timings. Not a gameplay LOD fix.'
+    }
+}
+if($SurfaceUnification){
+    . (Join-Path $PSScriptRoot 'SurfaceUnificationDiagnostic.ps1')
+    $surfaceSelection=Get-APSSurfaceUnificationDiagnostic -ProjectRoot $projectRoot -Mode $SurfaceUnification
+}
 if($CloudWeather){
     . (Join-Path $PSScriptRoot 'CloudWeatherDiagnostic.ps1')
     $cloudSelection=Get-APSCloudWeatherDiagnostic -ProjectRoot $projectRoot -Candidate:$CloudWeatherCandidate -LayeredCandidate:$CloudLayeredCandidate
@@ -73,7 +124,7 @@ if ($TerrestrialPaletteMode -ge 0) {
         if ((Get-Item -LiteralPath ($projectRoot+'/'+$paletteSource)).LastWriteTimeUtc -gt (Get-Item -LiteralPath ($projectRoot+'/Binaries/Win64/UnrealEditor-APS_ALPHA.dll')).LastWriteTimeUtc) { throw 'Palette source newer than DLL: build first' }
     }
 }
-if ($Published -and ($Combined -or $WarpAB -or $SlopeSideAB -or $OrbitalFieldsAB -or $Buffers -or $Patterns -or $Volumes -or $AllFields -or $MacroMode -ne -1)) { throw 'Published route cannot mix with material diagnostics' }
+if ($Published -and ($Combined -or $WarpAB -or $SlopeSideAB -or $OrbitalFieldsAB -or ($Buffers -and !$explicitBodyFixture) -or $Patterns -or $Volumes -or $AllFields -or $MacroMode -ne -1)) { throw 'Published route cannot mix with material diagnostics; read-only buffers require the explicit body fixture' }
 foreach ($probePath in @('Source/APS_ALPHA/Tests/APSPlanetTerrainLodABProbe.h','Source/APS_ALPHA/Tests/APSPlanetRefinementRenderedTests.cpp')) {
     if ((Get-Item -LiteralPath ($projectRoot+'/'+$probePath)).LastWriteTimeUtc -gt (Get-Item -LiteralPath ($projectRoot+'/Binaries/Win64/UnrealEditor-APS_ALPHA.dll')).LastWriteTimeUtc) {
         throw 'Known newer menu probe source: build before launch'
@@ -134,6 +185,8 @@ if (Get-Process UnrealEditor,UnrealEditor-Cmd,ShaderCompileWorker,cl,link -Error
 $runDir='F:/ChatGPT/APOSFERA/work/planet_continuity_20260929/'+$Family.ToLowerInvariant()+'-'+$Label
 if (Test-Path -LiteralPath $runDir) { throw 'Evidence exists; use a fresh label' }
 New-Item -ItemType Directory -Path $runDir | Out-Null
+if($CoastalMesh){$coastSelection | ConvertTo-Json -Depth 7 | Out-File -LiteralPath ($runDir+'/coastal-mesh.json') -Encoding utf8}
+if($SurfaceUnification){Save-APSSurfaceUnificationDiagnostic -Selection $surfaceSelection -RunDir $runDir}
 if($CloudWeather){Save-APSCloudWeatherDiagnostic -ProjectRoot $projectRoot -RunDir $runDir -Selection $cloudSelection -FeatureScale $CloudFeatureScale}
 $protected=Get-ChildItem -LiteralPath ($projectRoot+'/Content/APS/APS_ALPHA/WSC/PlanetSurface/Shared') -File -Recurse -Filter '*.uasset' |
     Get-FileHash -Algorithm SHA256 | Select-Object Path,Hash
@@ -143,6 +196,7 @@ Get-FileHash -LiteralPath ($projectRoot+'/Binaries/Win64/UnrealEditor-APS_ALPHA.
 $tests='APS.Contracts.PlanetSurface.RenderedProbeFamily+APS.Preview.Editor.PlanetWheelContinuity+APS.Preview.Editor.PlanetMoonZoomBounds+APS.Rendered.PlanetRefinement.CausalLayers'
 $tests+='+APS.Preview.Atmosphere.InsideOutsideShell+APS.Materials.SharedTerrain.LivingBiomeTransfer'
 if ($Published) { $tests+='+APS.Contracts.PlanetSurface.TerrainContinuity' }
+if($SurfaceUnification){$tests+='+APS.Contracts.PlanetSurface.MaterialPolicy+APS.Gameplay.World.PlanetSurface.CryogenicGeometry'}
 if ($CloudWeather) { $tests+='+APS.Gameplay.World.PlanetSurface.Clouds.Weather' }
 if ($CloudLayeredCandidate) { $tests+='+APS.Gameplay.World.PlanetSurface.Clouds.Layers' }
 if($ShoreWaterFactory){$tests+='+APS.Gameplay.World.PlanetSurface.ShoreWater'}
@@ -153,6 +207,10 @@ if ($FamilyBatch.Count) {
 }
 if ($FoliageRegression) { $tests+='+APS.Gameplay.World.PlanetSurface.Foliage' }
 if ($RouteRegression) { $tests+='+APS.Rendered.MainMenu.ContinuousPhysicalRoute' }
+if($CryogenicPreviewRegression){
+    # The mesh/UI regression owns map teardown and is the only map test here.
+    $tests='APS.Contracts.PlanetSurface.MaterialPolicy+APS.Gameplay.World.PlanetSurface.CryogenicGeometry+APS.Rendered.PlanetSurface.CryogenicPreview.PublishedGeometryRoundTrip'
+}
 $arguments=@(
     ('"'+$projectRoot+'/APS_ALPHA.uproject"'), '/Game/APS/APS_ALPHA/Menu/L_APS_MainMenu_Alpha',
     '-ddc=InstalledNoZenLocalFallback','-unattended','-nop4','-nosplash','-nosound','-NoLiveCoding',
@@ -178,6 +236,9 @@ if ($MacroMode -ge 0) { $arguments+=('-APSProbeTerrainMacroMode='+$MacroMode) }
 if ($FamilyScaleAB) { $arguments+='-APSProbeTerrainFamilyScaleAB' }
 if ($Combined) { $arguments+='-APSProbeTerrainCombined' }
 if ($Published) { $arguments+='-APSProbeTerrainPublishedViews' }
+if($explicitBodyFixture){
+    $arguments+=@('-APSProbeTerrainPublishedDefault',('-APSPlanetProbeRadiusKm='+$PlanetRadiusKm.ToString([Globalization.CultureInfo]::InvariantCulture)),('-APSPlanetProbeSurfaceSeed='+$SurfaceSeed))
+}
 if ($FamilyBatch.Count) {
     $arguments+=@('-APSProbeTerrainFamilyBatch',('-APSProbeTerrainBatchFamilies='+($FamilyBatch -join ',')))
 }
@@ -200,6 +261,9 @@ if($Clouds){
     $arguments=@($arguments | ForEach-Object { if($_.StartsWith('-ExecCmds="')){$_.Replace('-ExecCmds="',('-ExecCmds="aps.Surface.CloudDebug '+$CloudDebug+','))}else{$_} })
 }
 if($CloudNoFog){$arguments=@($arguments|ForEach-Object{if($_.StartsWith('-ExecCmds="')){$_.Replace('-ExecCmds="','-ExecCmds="ShowFlag.Fog 0,')}else{$_}})}
+if($SurfaceUnification -and $surfaceSelection.Flag){$arguments+=$surfaceSelection.Flag}
+if($CryogenicPreviewRegression){$arguments+='-APSProbeCryogenicPreview'}
+if($CoastalMesh -eq 'Candidate'){$arguments+='-APSPreviewCoastalMeshCandidate'}
 $arguments -join ' ' | Out-File -LiteralPath ($runDir+'/command.txt') -Encoding utf8
 $process=Start-Process -FilePath 'C:/Program Files/Epic Games/UE/UE_5.4/Engine/Binaries/Win64/UnrealEditor.exe' -ArgumentList $arguments -WindowStyle Hidden -PassThru -RedirectStandardOutput ($runDir+'/stdout.txt') -RedirectStandardError ($runDir+'/stderr.txt')
 [PSCustomObject]@{Id=$process.Id;StartTime=$process.StartTime;Evidence=$runDir;MacroMode=$MacroMode} | ConvertTo-Json

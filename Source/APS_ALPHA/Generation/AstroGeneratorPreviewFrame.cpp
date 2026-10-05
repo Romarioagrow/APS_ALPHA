@@ -139,6 +139,12 @@ TAutoConsoleVariable<int32> CVarResolvedStarCap(
 	TEXT("aps.Preview.ResolvedStarCap"), 48,
 	TEXT("Most catalogue stars drawn as photosphere + corona pairs at once (largest on screen first; the rest stay points)."));
 
+TAutoConsoleVariable<float> CVarFarStarDetail(
+	TEXT("aps.Preview.FarStarDetail"), 0.2f,
+	TEXT("Rio 04.10 evening (\"far stars: no prominences or sunspots, a smoother surface\"): share of the surface variation, ")
+	TEXT("granulation and spots a neighbour star of the menu preview keeps (1 = the full close-up surface). Applies to ")
+	TEXT("stars resolved after the change."));
+
 /** Pairs newly shown per applied frame (taken from the pool or allocated); the rest resolve over the next frames. */
 constexpr int32 ResolvedStarRevealsPerFrame = 16;
 /** After the first few reveals of a frame, further ones only while this much of the frame is left (seconds). */
@@ -529,10 +535,14 @@ bool AAstroGenerator::GetContinuousPreviewPhysicalFocus(const EAstroPreviewFocus
 		CenterCm = Frame.GetCanonicalRootPositionCm(FVector::ZeroVector) - Frame.CanonicalAnchorCm;
 		// Rio 03.10 ("SIZE must show"): CLUSTER frames every size against its type's Giant extent, so a Tiny
 		// cluster reads small and a Colossal one fills past the frame. Historic clusters have exactly that extent.
-		const double FramedHalfExtentUnits = Focus == EAstroPreviewFocus::StarCluster && IsValid(StarClusterGenerator)
+		// Rio 04.10 evening ("on CLUSTER the camera goes too far"): halfway in scale between its own extent and the
+		// Giant one, so a smaller cluster still reads smaller but no longer sits small in an empty frame.
+		const double GiantHalfExtentUnits = Focus == EAstroPreviewFocus::StarCluster && IsValid(StarClusterGenerator)
 			? UStarClusterGenerator::GetLogicalHalfExtent(StarClusterGenerator->GetStarClusterBoundsByRange(
 				GeneratedStarCluster->ClusterType), GeneratedStarCluster->ClusterType)
 			: Frame.CanonicalHalfExtentUnits;
+		const double FramedHalfExtentUnits = GiantHalfExtentUnits > 0.0 && Frame.CanonicalHalfExtentUnits > 0.0
+			? FMath::Sqrt(GiantHalfExtentUnits * Frame.CanonicalHalfExtentUnits) : GiantHalfExtentUnits;
 		RadiusCm = FramedHalfExtentUnits * Frame.LayerToRootPositionScale * Frame.CanonicalCmPerUnit;
 	}
 	else if (Focus == EAstroPreviewFocus::HomeSystem && IsValid(GetContinuousPreviewActiveSystem()))
@@ -561,6 +571,20 @@ bool AAstroGenerator::GetContinuousPreviewPhysicalFocus(const EAstroPreviewFocus
 		RadiusCm = PhysicalBodyRadiusCm(Body);
 	}
 	return !CenterCm.ContainsNaN() && FMath::IsFinite(RadiusCm) && RadiusCm > 0.0;
+}
+
+bool AAstroGenerator::GetPreviewFocusPhysicalDistance(const EAstroPreviewFocus Focus, double& OutDistanceCm) const
+{
+	OutDistanceCm = 0.0;
+	FVector CenterCm;
+	double RadiusCm = 0.0;
+	if (!UsesContinuousPreviewFrame() || !ContinuousPreviewFrame.IsValid()
+		|| !GetContinuousPreviewPhysicalFocus(Focus, CenterCm, RadiusCm))
+	{
+		return false;
+	}
+	OutDistanceCm = FVector::Distance(CenterCm, ContinuousPreviewFrame.ObserverCm);
+	return FMath::IsFinite(OutDistanceCm) && OutDistanceCm > 0.0;
 }
 
 double AAstroGenerator::GetContinuousPreviewFocusEnvelopeCm() const
@@ -748,7 +772,9 @@ void AAstroGenerator::EnsureContinuousPreviewPresentation()
 				const FLinearColor Color = Stars->GetStarColor(Model.SpectralClass, Model.SpectralSubclass);
 				const double VisualRadiusCm = APSCanonicalStellarProjection::GetAppliedVisualRadiusCm(
 					EAPSCanonicalStellarProxyLayer::StarCluster, Frame, Model.Radius);
-				const double VisualRadiusSolar = APSCanonicalStellarProjection::UnprojectPhysicalRadiusSolar(Frame, VisualRadiusCm);
+				// Rio 05.10 (real scale experiment): the same light at real distances (factor 1 when OFF).
+				const double VisualRadiusSolar = APSCanonicalStellarProjection::GetLegacyLayoutRadiusSolar(Frame,
+					APSCanonicalStellarProjection::UnprojectPhysicalRadiusSolar(Frame, VisualRadiusCm));
 				// Primary and companion points use the same existing catalog material
 				// convention. Slot creation never depends on whether a system was visited.
 				const double Emission = UStarGenerator::GetFarStarVisualEmission(Model.Radius,
@@ -1125,6 +1151,29 @@ void AAstroGenerator::PresentContinuousResolvedStars(const double PixelTangent)
 	const FQuat CameraRotation = PreviewCamera->GetComponentQuat();
 	TArray<TPair<const FAPSContinuousPreviewPoint*, FAPSPreviewProjectedSphere>> Required;
 	TSet<int32> RequiredIndices;
+	// Rio 04.10 evening ("stars still spawn inside the system: hide the ones inside its sphere"): the catalogue points inside
+	// the home system's extent were hidden (ApplyContinuousPreviewFrame), but a near one still resolved into a photosphere
+	// pair there. The same sphere: the farthest home body plus its radius, with the system exclusion padding.
+	FVector HomeCenterCm = FVector::ZeroVector;
+	double HomeRadiusCm = 0.0;
+	const FGuid HomeId = IsValid(GeneratedHomeStarSystem) ? GeneratedHomeStarSystem->StableSystemId : FGuid();
+	if (IsValid(GeneratedHomeStarSystem))
+	{
+		HomeCenterCm = GetContinuousPreviewSystemCenter(GeneratedHomeStarSystem);
+		for (const TWeakObjectPtr<AActor>& WeakBody : ContinuousPreviewBodies)
+		{
+			const AActor* Body = WeakBody.Get();
+			if (!IsValid(Body) || GetContinuousPreviewOwningSystem(Body) != GeneratedHomeStarSystem) continue;
+			HomeRadiusCm = FMath::Max(HomeRadiusCm,
+				(Body->GetActorLocation() - GeneratedHomeStarSystem->GetActorLocation()).Size() + PhysicalBodyRadiusCm(Body));
+		}
+		HomeRadiusCm *= APSCanonicalStellarProjection::SystemProxyExclusionPadding;
+	}
+	const auto InsideHome = [&HomeCenterCm, HomeRadiusCm, &HomeId](const FAPSContinuousPreviewPoint& Point)
+	{
+		return HomeRadiusCm > 0.0 && Point.StableId != HomeId
+			&& FVector::DistSquared(Point.CenterCm, HomeCenterCm) <= FMath::Square(HomeRadiusCm + Point.RadiusCm);
+	};
 	// Rio 03.10 04:30 (fps while moving): the test runs in parallel over every cluster point; only its candidates and the
 	// few materialized stars are tested again here, in catalogue order, so the result equals the serial loop.
 	TArray<uint8> Candidates;
@@ -1136,6 +1185,7 @@ void AAstroGenerator::PresentContinuousResolvedStars(const double PixelTangent)
 		{
 			const FAPSContinuousPreviewPoint& Point = ContinuousClusterPoints[Index];
 			if (!Point.MaterializedStar.IsExplicitlyNull()) { Candidates[Index] = 1; return; }
+			if (InsideHome(Point)) return;
 			FAPSPreviewProjectedSphere Sphere;
 			Candidates[Index] = NeedsResolvedStarView(Point, Frame, CameraRotation, PixelTangent, TanHalfHorizontal,
 				TanHalfVertical, ContinuousResolvedStarViews.Contains(Point.SourceInstanceIndex), Sphere) ? 1 : 0;
@@ -1145,6 +1195,7 @@ void AAstroGenerator::PresentContinuousResolvedStars(const double PixelTangent)
 	{
 		if (!Candidates.IsEmpty() && !Candidates[Index]) continue;
 		const FAPSContinuousPreviewPoint& Point = ContinuousClusterPoints[Index];
+		if (InsideHome(Point)) continue;
 		FAPSPreviewProjectedSphere Sphere;
 		if (!NeedsResolvedStarView(Point, ContinuousPreviewFrame, CameraRotation, PixelTangent,
 			TanHalfHorizontal, TanHalfVertical, ContinuousResolvedStarViews.Contains(Point.SourceInstanceIndex), Sphere)) continue;
@@ -1249,6 +1300,18 @@ void AAstroGenerator::PresentContinuousResolvedStars(const double PixelTangent)
 			UMaterialInstanceDynamic* SurfaceMaterial = Cast<UMaterialInstanceDynamic>(Photosphere->GetMaterial(0));
 			UMaterialInstanceDynamic* CoronaMaterial = Cast<UMaterialInstanceDynamic>(Corona->GetMaterial(0));
 			const FAPSStellarMaterialParameters Parameters = StarGenerator->ApplySpectralMaterialParameters(SurfaceMaterial, Point.StarModel);
+			// A neighbour star is a far disc: it keeps only a share of the close-up surface detail.
+			if (const float Detail = FMath::Clamp(CVarFarStarDetail.GetValueOnGameThread(), 0.0f, 1.0f); Detail < 1.0f)
+			{
+				for (const TCHAR* Name : {TEXT("SurfaceVariation"), TEXT("GranulationStrength"), TEXT("SpotStrength")})
+				{
+					float Value = 0.0f;
+					if (SurfaceMaterial->GetScalarParameterValue(FMaterialParameterInfo(Name), Value))
+					{
+						SurfaceMaterial->SetScalarParameterValue(Name, Value * Detail);
+					}
+				}
+			}
 			AStar::ConfigureStellarPresentationComponents(Photosphere, Corona, CoronaMaterial, nullptr,
 				Parameters.Color, Parameters.Emission, Parameters.SurfaceSeed, Point.StarModel->StellarType);
 			PresentPhysicalMesh(Photosphere, Sphere, FQuat::Identity);
@@ -1592,6 +1655,15 @@ void AAstroGenerator::ApplyContinuousPreviewFrame()
 		CSV_SCOPED_TIMING_STAT(APSPreview, GalaxyCatalog);
 		PresentCatalog(ContinuousGalaxyView, ContinuousGalaxyPoints);
 		// Rio 03.10 (galaxy phase 3): GPU points + glow beyond the ISM prefix; inert while aps.Stars.GpuPoints/GalaxyGlow are 0.
+		// Rio 04.10 evening ("the stars stay; only the glow drops on the system, star and planet screens").
+		// Rio: "smoothly, exponentially, together with the camera": the share follows the camera's flight to the screen.
+		using APSGalaxyGpuStars::EMenuGlowScope;
+		const EAstroPreviewFocus GpuFocus = GetCurrentPreviewFocus();
+		const float FlightAlpha = bPreviewCameraTransitionActive && PreviewCameraTransitionDuration > 0.0f
+			? FMath::Clamp(PreviewCameraTransitionElapsed / PreviewCameraTransitionDuration, 0.0f, 1.0f) : 1.0f;
+		APSGalaxyGpuStars::SetMenuGlowScope(GpuFocus == EAstroPreviewFocus::HomePlanet ? EMenuGlowScope::Planet
+			: GpuFocus == EAstroPreviewFocus::HomeStar ? EMenuGlowScope::Star
+			: GpuFocus == EAstroPreviewFocus::HomeSystem ? EMenuGlowScope::System : EMenuGlowScope::Far, FlightAlpha);
 		APSGalaxyGpuStars::PresentContinuousFrame(GeneratedGalaxy, ContinuousPreviewFrame, HomeExclusionCenterCm,
 			HomeExclusionRadiusCm);
 	}
@@ -1724,7 +1796,11 @@ void AAstroGenerator::StartContinuousPreviewTransition(APlayerController* Player
 		? ContinuousPreviewFramingTangent : FallbackTangent, 0.001);
 	// A sphere's limb subtends asin(R/D), not atan(R/D). One common margin also
 	// leaves room for atmosphere/corona without altering any physical body radius.
-	const double FrameRatio = 1.20 * FMath::Sqrt(1.0 + 1.0 / FMath::Square(FitTangent));
+	// Rio 04.10 evening ("GALAXY and CLUSTER leave too much space, 20% closer, but it must fit"): their spheres are
+	// catalogue envelopes the stars never fill, so they frame without the margin.
+	const double FrameMargin = PreviewFocus == EAstroPreviewFocus::Galaxy || PreviewFocus == EAstroPreviewFocus::StarCluster
+		? 1.0 : 1.20;
+	const double FrameRatio = FrameMargin * FMath::Sqrt(1.0 + 1.0 / FMath::Square(FitTangent));
 	if (DistanceRatio <= 0.0) bContinuousPreviewAutoFraming = true;
 	FAPSContinuousPreviewOrbit Target = ContinuousPreviewOrbit;
 	Target.CenterCm = CenterCm;

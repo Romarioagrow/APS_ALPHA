@@ -17,6 +17,17 @@ namespace APSPlanetArrivalPrivate
 		TEXT("present course and speed, beyond the distance-based preload radius (0 = off). Surfaces take about 2-11 s ")
 		TEXT("to build."),
 		ECVF_Default);
+	/**
+	 * Rio 05.10 evening (flight FPS, the way home from 2 ly): a ship whose speed is tied to its distance always has the
+	 * same few seconds to go at its present speed, so the forecast held from a light year out. The surface then built
+	 * around a root ~1e13 km from the world origin, and WorldScape rebuilt all its LODs for ~30 s, 3-7 hitches of
+	 * 40-60 ms a second, until ~6e7 km. Within 16 activation radii such an approach still gives the surface ~6 s more.
+	 */
+	TAutoConsoleVariable<float> CVarArrivalReachFactor(
+		TEXT("aps.Surface.ArrivalReachFactor"), 16.0f,
+		TEXT("Rio 05.10: the arrival forecast starts only the surface of a body within this many of its activation radii ")
+		TEXT("(0 = any distance, the old way)."),
+		ECVF_Default);
 }
 
 APlanetaryBody* UAPSPlanetEnvironmentStreamingSubsystem::UpdateArrivalForecast(APawn* Observer,
@@ -67,6 +78,7 @@ APlanetaryBody* UAPSPlanetEnvironmentStreamingSubsystem::UpdateArrivalForecast(A
 	FResult BestResult;
 	APlanetaryBody* BestOfConfirmed = nullptr;
 	double BestOfConfirmedSeconds = TNumericLimits<double>::Max();
+	const double ReachFactor = APSPlanetArrivalPrivate::CVarArrivalReachFactor.GetValueOnGameThread();
 	for (APlanetaryBody* Body : Bodies)
 	{
 		const FVector* Previous = Before.Find(Body);
@@ -74,9 +86,13 @@ APlanetaryBody* UAPSPlanetEnvironmentStreamingSubsystem::UpdateArrivalForecast(A
 		{
 			continue;
 		}
-		const FResult Result = Evaluate(ForecastRelative.FindChecked(Body), *Previous, Step,
-			Body->GetWorldScapeBodyRadiusCm());
+		const FVector& Relative = ForecastRelative.FindChecked(Body);
 		const double Reach = Body->GetWorldScapeActivationRadiusCm();
+		if (ReachFactor > 0.0 && Relative.SizeSquared() > FMath::Square(ReachFactor * Reach))
+		{
+			continue;
+		}
+		const FResult Result = Evaluate(Relative, *Previous, Step, Body->GetWorldScapeBodyRadiusCm());
 		if (ConfirmedFamily && FamilyOf(Body) == ConfirmedFamily && IsArriving(Result, Lead, Reach, true))
 		{
 			bConfirmedHolds = true;

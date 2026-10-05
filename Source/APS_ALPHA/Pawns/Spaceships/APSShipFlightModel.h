@@ -465,6 +465,7 @@ private:
 	TWeakObjectPtr<AAstroGenerator> CatalogueGenerator;
 	TWeakObjectPtr<AActor> CatalogueHome;
 	uint64 CatalogueBuildSerial{0};
+	uint64 CatalogueBatchSerial{0};
 	uint64 CatalogueMutationSerial{0};
 	TArray<FVector> CatalogueFromHome;
 	/** Bounding sphere of the catalogue around its centroid: charted space ends a little beyond it. */
@@ -518,6 +519,8 @@ private:
 	/** The speed the pilot set (W/S), and the speed the spool started from, cm/s. */
 	double StarDriveSetCm{0.0};
 	double StarDriveFromCm{0.0};
+	/** The drive's nearest-body distance last frame (-1: none): a growing one is a departure (aps.RealScale.DriveDepartFactor). */
+	double StarDrivePreviousLocalCm{-1.0};
 	/** Outside every star system since engaging: entering one now is an arrival and drops the drive. */
 	bool bStarDriveLeftSystem{false};
 	/** What holds the drive below the set speed (a body near, a system ahead or around), for the HUD; null: nothing. */

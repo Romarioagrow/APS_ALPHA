@@ -8,7 +8,7 @@ namespace APSPlanetCloudWeather
 {
 // Separate package: never overwrite the accepted V24 cloud/sky assets.
 inline constexpr const TCHAR* MaterialPath=TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Diagnostics/CloudWeather20261002V27/M_APS_PlanetCloud.M_APS_PlanetCloud");
-inline constexpr const TCHAR* CandidateMaterialPath=TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Diagnostics/CloudWeather20261002V28/M_APS_PlanetCloud.M_APS_PlanetCloud");
+inline constexpr const TCHAR* CandidateMaterialPath=TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Diagnostics/CloudWeather20261003V31/M_APS_PlanetCloud.M_APS_PlanetCloud");
 inline constexpr const TCHAR* LayeredMaterialPath=TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Diagnostics/CloudWeather20261002V30/M_APS_PlanetCloud.M_APS_PlanetCloud");
 // Process-only diagnostic selection. The accepted path and saved settings stay V27.
 inline bool CandidateRequested()

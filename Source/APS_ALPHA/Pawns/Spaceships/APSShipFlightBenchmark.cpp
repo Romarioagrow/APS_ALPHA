@@ -1,5 +1,6 @@
 #include "APSShipFlightBenchmark.h"
 #include "APS_ALPHA/Core/Controllers/GravityPlayerController.h"
+#include "APS_ALPHA/Core/World/APSWorldOriginSubsystem.h"
 #include "APS_ALPHA/Pawns/Characters/CustomGravityCharacter.h"
 
 #include "Spaceship.h"
@@ -453,6 +454,19 @@ namespace APSShipBenchmark
 		double JumpKm{0.0};
 		/** exit=1: at the minimum altitude the pilot leaves the ship (gravity and orientation after an exit, 01.10). */
 		bool bExitAtEnd{false};
+		/** walk=1 (Rio 05.10, "the pilot walking aboard at speed shakes and falls through the floor"): once the pilot gets
+		 * up (aps.Test.Key F) the ship flies on with the held controls (the flight model's test drive) and the run keeps
+		 * its shots and logs; [APS.ShipWalk] logs the walker's place on the deck every second (a fall shows as a drop). */
+		bool bWalk{false};
+		/** walk=2: the walker also walks the deck, two seconds forward and two back, again and again. */
+		bool bWalkAround{false};
+		bool bWalking{false};
+		double WalkSince{0.0};
+		bool bWalkSampled{false};
+		FVector WalkOffset{FVector::ZeroVector};
+		double WalkStepMax{0.0};
+		double WalkUpMin{TNumericLimits<double>::Max()};
+		double WalkUpMax{-TNumericLimits<double>::Max()};
 		TWeakObjectPtr<AWorldScapeRoot> Terrain;
 		int32 Power{3};
 		float Forward{1.0f};
@@ -526,6 +540,7 @@ namespace APSShipBenchmark
 		int32 Taken{0};
 	};
 	FExitShots GExitShots;
+	bool LookAtNearestShip(UWorld* World, APawn* Pawn, bool bLog);
 
 	double AltitudeKm(const ASpaceship& Ship, const APlanetaryBody* Planet)
 	{
@@ -559,6 +574,10 @@ namespace APSShipBenchmark
 		if (ASpaceship* Ship = GDrive.Ship.Get())
 		{
 			FAPSShipFlightBenchmark::SetPilotControls(*Ship, GDrive.Power, 0.0f, false, false);
+			if (GDrive.bWalking && Ship->FlightModel)
+			{
+				Ship->FlightModel->SetDebugDrive(false, 0.0f, false);
+			}
 		}
 		UE_LOG(LogTemp, Log,
 			TEXT("[APS.ShipDrive] finished (%s) after %.1f s: frames=%d frame avg %.2f p95 %.2f p99 %.2f max %.2f ms hitches(>33 ms)=%d | top speed %.2f km/s, lowest altitude %.1f km"),
@@ -693,10 +712,33 @@ namespace APSShipBenchmark
 
 	void TickDrive(ASpaceship& Ship, float DeltaTime)
 	{
+		const APlayerController* Player = Ship.GetWorld() ? Ship.GetWorld()->GetFirstPlayerController() : nullptr;
+		APawn* Walker = Player ? Player->GetPawn() : nullptr;
+		const bool bAboard = Walker && Walker->GetAttachParentActor() == &Ship;
 		if (!Ship.HasPilot())
 		{
-			StopDrive(TEXT("pilot left the ship"));
-			return;
+			if (!GDrive.bWalk)
+			{
+				StopDrive(TEXT("pilot left the ship"));
+				return;
+			}
+			if (!GDrive.bWalking)
+			{
+				GDrive.bWalking = true;
+				GDrive.WalkSince = GDrive.Elapsed;
+				if (Ship.FlightModel)
+				{
+					Ship.FlightModel->SetDebugDrive(true, GDrive.Forward, GDrive.bBoost);
+				}
+				UE_LOG(LogTemp, Log, TEXT("[APS.ShipDrive] the pilot got up (%s): the ship flies on with the held controls"),
+					*GetNameSafe(Walker));
+			}
+			// Getting up takes a few frames (a new pawn, then it settles on the deck).
+			if (!bAboard && GDrive.Elapsed - GDrive.WalkSince > 3.0)
+			{
+				StopDrive(TEXT("the pilot got up but is not aboard 3 s later"));
+				return;
+			}
 		}
 		if (!GDrive.bAimed)
 		{
@@ -744,7 +786,28 @@ namespace APSShipBenchmark
 			GDrive.bAimed = true;
 			BeginDriveRegion();
 		}
-		FAPSShipFlightBenchmark::SetPilotControls(Ship, GDrive.Power, GDrive.Forward, GDrive.bBoost, false, GDrive.Yaw);
+		if (!GDrive.bWalking)
+		{
+			FAPSShipFlightBenchmark::SetPilotControls(Ship, GDrive.Power, GDrive.Forward, GDrive.bBoost, false, GDrive.Yaw);
+		}
+		else if (bAboard)
+		{
+			if (GDrive.bWalkAround)
+			{
+				const bool bForward = FMath::Fmod(GDrive.Elapsed - GDrive.WalkSince, 4.0) < 2.0;
+				Walker->AddMovementInput(Walker->GetActorForwardVector(), bForward ? 1.0f : -1.0f);
+			}
+			// The walker in the ship's own frame: standing still it should not move at all, whatever the speed.
+			const FVector Offset = Ship.GetActorTransform().InverseTransformPosition(Walker->GetActorLocation());
+			if (GDrive.bWalkSampled)
+			{
+				GDrive.WalkStepMax = FMath::Max(GDrive.WalkStepMax, (Offset - GDrive.WalkOffset).Size());
+			}
+			GDrive.WalkOffset = Offset;
+			GDrive.bWalkSampled = true;
+			GDrive.WalkUpMin = FMath::Min(GDrive.WalkUpMin, Offset.Z);
+			GDrive.WalkUpMax = FMath::Max(GDrive.WalkUpMax, Offset.Z);
+		}
 
 		// The engine publishes the previous frame's thread times.
 		const float FrameMs = DeltaTime * 1000.0f;
@@ -861,6 +924,15 @@ namespace APSShipBenchmark
 					GDrive.Second + 1, GDrive.CameraDistanceMin / 100.0, GDrive.CameraDistanceMax / 100.0,
 					GDrive.CameraStepMax, GDrive.CameraJerkMax, GDrive.CameraTurnMax);
 			}
+			if (GDrive.bWalking && GDrive.bWalkSampled)
+			{
+				UE_LOG(LogTemp, Log, TEXT("[APS.ShipWalk] t=%3d s on deck at %s m | ship-local z %.2f..%.2f m | step max %.3f cm | attached=%d"),
+					GDrive.Second + 1, *(GDrive.WalkOffset / 100.0).ToCompactString(), GDrive.WalkUpMin / 100.0,
+					GDrive.WalkUpMax / 100.0, GDrive.WalkStepMax, bAboard ? 1 : 0);
+				GDrive.WalkStepMax = 0.0;
+				GDrive.WalkUpMin = TNumericLimits<double>::Max();
+				GDrive.WalkUpMax = -TNumericLimits<double>::Max();
+			}
 			GDrive.CameraDistanceMin = TNumericLimits<double>::Max();
 			GDrive.CameraDistanceMax = GDrive.CameraStepMax = GDrive.CameraJerkMax = GDrive.CameraTurnMax = 0.0;
 			EndDriveRegion();
@@ -938,6 +1010,12 @@ namespace APSShipBenchmark
 			{
 				Drive.bExitAtEnd = FCString::Atoi(*Arg.RightChop(5)) != 0;
 			}
+			else if (Arg.StartsWith(TEXT("walk="), ESearchCase::IgnoreCase))
+			{
+				const int32 Walk = FCString::Atoi(*Arg.RightChop(5));
+				Drive.bWalk = Walk != 0;
+				Drive.bWalkAround = Walk >= 2;
+			}
 			else if (Arg.StartsWith(TEXT("yaw="), ESearchCase::IgnoreCase))
 			{
 				Drive.Yaw = FMath::Clamp(FCString::Atof(*Arg.RightChop(4)), -1.0f, 1.0f);
@@ -1003,6 +1081,8 @@ namespace APSShipBenchmark
 		int32 Planets{-1};
 		bool bMoonsApplied{false};
 		bool bPlanetsApplied{false};
+		/** Rio 05.10 (real scale, stage 2): REAL SCALE was switched on for this start (aps.Galaxy.RealScaleStart). */
+		bool bRealScaleApplied{false};
 		/** C19 ground start as "package/pad/vehicles" (0-2 / 0-1 / 0-7), empty: the menu's own. */
 		FString Ground;
 		/** The headquarters Blueprint (C20 HQ Alpha checks), empty: the menu's own. */
@@ -1014,6 +1094,11 @@ namespace APSShipBenchmark
 		FTSTicker::FDelegateHandle Ticker;
 	};
 	FGeneratedStart GGeneratedStart;
+
+	TAutoConsoleVariable<int32> CVarRealScaleStart(
+		TEXT("aps.Galaxy.RealScaleStart"), 0,
+		TEXT("Rio 05.10 (REAL SCALE, stage 2; test runs): 1 makes aps.Ship.StartGenerated switch REAL SCALE on in the menu and ")
+		TEXT("wait for the rebuilt preview before it starts the game. 0: the menu's own setting."));
 
 	AMainMenuController* FindMenuController()
 	{
@@ -1075,6 +1160,16 @@ namespace APSShipBenchmark
 		// A player spends a few seconds on the page; the preview keeps settling meanwhile.
 		if (Now - GGeneratedStart.ReadySeconds < 5.0)
 		{
+			return true;
+		}
+		if (CVarRealScaleStart.GetValueOnGameThread() != 0 && !GGeneratedStart.bRealScaleApplied)
+		{
+			// Rio 05.10 (real scale, stage 2): the same world at real distances; the preview rebuilds before anything else.
+			GGeneratedStart.bRealScaleApplied = true;
+			ViewModel->SetRealScale(true);
+			GGeneratedStart.ReadySeconds = 0.0;
+			UE_LOG(LogTemp, Log, TEXT("[APS.ShipBench] generated start: REAL SCALE on (aps.Galaxy.RealScaleStart), active=%d"),
+				ViewModel->IsRealScaleActive() ? 1 : 0);
 			return true;
 		}
 		if (GGeneratedStart.Planets > 0 && !GGeneratedStart.bPlanetsApplied)
@@ -1320,9 +1415,14 @@ namespace APSShipBenchmark
 			}
 			if (!GDrive.bActive)
 			{
-				// After an exit (exit=1): the pilot's own view 2, 5 and 9 s later, then finish.
+				// After an exit (exit=1): the pilot's own view 2 s later, then (Rio 04.10) at the ship 5 and 9 s later: its
+				// hull must still be drawn after the exit's world shift. Then finish.
 				if (GExitShots.ExitSeconds >= 0.0 && GExitShots.Taken < 3)
 				{
+					if (GExitShots.Taken >= 1)
+					{
+						LookAtNearestShip(Pawn ? Pawn->GetWorld() : nullptr, Pawn, false);
+					}
 					static const double Offsets[] = {2.0, 5.0, 9.0};
 					if (Now - GExitShots.ExitSeconds >= Offsets[GExitShots.Taken])
 					{
@@ -1439,6 +1539,7 @@ namespace APSShipBenchmark
 				|| Args[Index].StartsWith(TEXT("startly="), ESearchCase::IgnoreCase)
 				|| Args[Index].StartsWith(TEXT("jump="), ESearchCase::IgnoreCase)
 				|| Args[Index].StartsWith(TEXT("exit="), ESearchCase::IgnoreCase)
+				|| Args[Index].StartsWith(TEXT("walk="), ESearchCase::IgnoreCase)
 				|| Args[Index].StartsWith(TEXT("yaw="), ESearchCase::IgnoreCase)
 				|| Args[Index].StartsWith(TEXT("engine="), ESearchCase::IgnoreCase)
 				|| Args[Index].StartsWith(TEXT("shots="), ESearchCase::IgnoreCase)
@@ -1566,6 +1667,36 @@ namespace APSShipBenchmark
 					FRotator::ZeroRotator, Spawn);
 			}
 		}
+		else if (Args[0].Equals(TEXT("system"), ESearchCase::IgnoreCase))
+		{
+			// Rio 05.10 (real scale, stage 2): a catalogue system by name, or the nearest one outside the home (system nearest),
+			// through its anchor (spawned on demand), as a fleet order or the HUD's nav target aims at it.
+			if (FAPSStarSystems* Systems = APSStarSystemsFind(World))
+			{
+				const FString Name = Args.Num() > 1 ? Args[1] : FString(TEXT("nearest"));
+				TArray<int32> Found;
+				if (Name.Equals(TEXT("nearest"), ESearchCase::IgnoreCase))
+				{
+					Systems->FindNearest(Ship->GetActorLocation(), 4, Found);
+					Found.RemoveAll([Systems](const int32 Index)
+					{
+						const FAPSStarSystemInfo* Info = Systems->Get(Index);
+						return !Info || Info->bHome || Info->bInsideHome;
+					});
+				}
+				else
+				{
+					Systems->Search(Name, 1, Found);
+				}
+				if (const FAPSStarSystemInfo* Info = Found.IsEmpty() ? nullptr : Systems->Get(Found[0]))
+				{
+					Target = Systems->GetAnchor(Info->Id);
+					UE_LOG(LogTemp, Log, TEXT("[APS.Test] autopilot system %s (%s), %.4f ly from home, room %.0f AU"), *Info->Name,
+						Info->GalaxyIndex != INDEX_NONE ? TEXT("galaxy") : TEXT("cluster"), Info->HomeDistanceCm / 9.4607304725808e17,
+						Info->RoomCm / 1.495978707e13);
+				}
+			}
+		}
 		else
 		{
 			double BestSquared = TNumericLimits<double>::Max();
@@ -1637,6 +1768,42 @@ namespace APSShipBenchmark
 	};
 	FTestPose GTestPose;
 
+	/** Rio 04.10 ("jumped out of the ship and it vanished"): a walker looks at the nearest ship, to shoot its hull after the
+	 * exit's world shift (aps.Test.Pose ship, and the exit run's later shots). */
+	bool LookAtNearestShip(UWorld* World, APawn* Pawn, const bool bLog)
+	{
+		ACustomGravityCharacter* Walker = Cast<ACustomGravityCharacter>(Pawn);
+		if (!World || !Walker)
+		{
+			return false;
+		}
+		const ASpaceship* Nearest = nullptr;
+		double NearestDistance = TNumericLimits<double>::Max();
+		for (TActorIterator<ASpaceship> It(World); It; ++It)
+		{
+			const double Distance = FVector::DistSquared(It->GetActorLocation(), Walker->GetActorLocation());
+			if (Distance < NearestDistance)
+			{
+				NearestDistance = Distance;
+				Nearest = *It;
+			}
+		}
+		if (!Nearest)
+		{
+			return false;
+		}
+		// Up or down to it too: after a jump from a hovering ship it is overhead.
+		const FVector Direction = (Nearest->GetActorLocation() - Walker->GetActorLocation()).GetSafeNormal();
+		const double PitchUp = FMath::RadiansToDegrees(FMath::Asin(FMath::Clamp(
+			FVector::DotProduct(Direction, Walker->GetActorUpVector()), -1.0, 1.0)));
+		Walker->SetViewDirection(Direction, static_cast<float>(FMath::Clamp(PitchUp, -80.0, 80.0)));
+		if (bLog)
+		{
+			UE_LOG(LogTemp, Log, TEXT("[APS.Test] looking at %s, %.1f m away"), *Nearest->GetName(), FMath::Sqrt(NearestDistance) / 100.0);
+		}
+		return true;
+	}
+
 	void TestPose(const TArray<FString>& Args, UWorld* World)
 	{
 		APlayerController* Controller = World ? World->GetFirstPlayerController() : nullptr;
@@ -1646,7 +1813,10 @@ namespace APSShipBenchmark
 			UE_LOG(LogTemp, Warning, TEXT("[APS.Test] aps.Test.Pose save | load | turn <yaw deg>: no pawn or no argument"));
 			return;
 		}
-		const FVector Origin(World->OriginLocation);
+		// Rio 05.10: the whole generation frame (the engine origin and the floating origin's double shifts), so a pose
+		// saved before a far jump comes back to the same place after the world has shifted under it.
+		const UAPSWorldOriginSubsystem* OriginSubsystem = World->GetSubsystem<UAPSWorldOriginSubsystem>();
+		const FVector Origin = OriginSubsystem ? OriginSubsystem->GetOriginOffset() : FVector(World->OriginLocation);
 		if (Args[0].Equals(TEXT("save"), ESearchCase::IgnoreCase))
 		{
 			GTestPose.bSaved = true;
@@ -1734,6 +1904,64 @@ namespace APSShipBenchmark
 					TargetRadiusKm, Aside, FVector::Dist(Target, Pawn->GetActorLocation()) / 1.495978707e13);
 			}
 		}
+		else if (Args[0].Equals(TEXT("goto"), ESearchCase::IgnoreCase) && Args.Num() > 1)
+		{
+			// Rio 05.10: the ship at rest this many km (goto <name> [km], default 20 000) from a catalogue system's point,
+			// so the system materializes around it as on arrival (its star stands at that point).
+			const FAPSStarSystems* Systems = APSStarSystemsFind(World);
+			TArray<int32> Found;
+			if (Systems)
+			{
+				Systems->Search(Args[1], 1, Found);
+			}
+			if (const FAPSStarSystemInfo* Info = Systems && !Found.IsEmpty() ? Systems->Get(Found[0]) : nullptr)
+			{
+				const double FromPointKm = Args.Num() > 2 ? FCString::Atod(*Args[2]) : 20000.0;
+				const FVector Out = (Pawn->GetActorLocation() - Info->Location).GetSafeNormal(UE_DOUBLE_SMALL_NUMBER, FVector::ForwardVector);
+				if (ASpaceship* Ship = Cast<ASpaceship>(Pawn))
+				{
+					FAPSShipFlightBenchmark::SetKinematicVelocity(*Ship, FVector::ZeroVector);
+				}
+				Pawn->SetActorLocation(Info->Location + Out * FromPointKm * 1.0e5, false, nullptr, ETeleportType::TeleportPhysics);
+				Controller->SetControlRotation((-Out).Rotation());
+				UE_LOG(LogTemp, Log, TEXT("[APS.Test] goto %s: %.0f km from its point"), *Info->Name, FromPointKm);
+			}
+			else
+			{
+				UE_LOG(LogTemp, Warning, TEXT("[APS.Test] goto: no system matches %s"), *Args[1]);
+			}
+		}
+		else if (Args[0].Equals(TEXT("into"), ESearchCase::IgnoreCase))
+		{
+			// Rio 05.10 (the autopilot stopped inside a star and the game froze at 2.7 s a frame): the ship at rest this
+			// many km from the nearest star's centre (into [km], default half its radius), facing that centre.
+			const AStar* Nearest = nullptr;
+			double NearestDistance = TNumericLimits<double>::Max();
+			for (TActorIterator<AStar> It(World); It; ++It)
+			{
+				const double Distance = FVector::DistSquared(It->GetActorLocation(), Pawn->GetActorLocation());
+				if (IsValid(*It) && Distance < NearestDistance)
+				{
+					NearestDistance = Distance;
+					Nearest = *It;
+				}
+			}
+			if (Nearest)
+			{
+				const double RadiusKm = Nearest->RadiusKM > 0.0 ? Nearest->RadiusKM : static_cast<double>(Nearest->StarRadiusKM);
+				const double FromCentreKm = Args.Num() > 1 ? FCString::Atod(*Args[1]) : 0.5 * RadiusKm;
+				const FVector Centre = Nearest->GetActorLocation();
+				const FVector Out = (Pawn->GetActorLocation() - Centre).GetSafeNormal(UE_DOUBLE_SMALL_NUMBER, FVector::ForwardVector);
+				if (ASpaceship* Ship = Cast<ASpaceship>(Pawn))
+				{
+					FAPSShipFlightBenchmark::SetKinematicVelocity(*Ship, FVector::ZeroVector);
+				}
+				Pawn->SetActorLocation(Centre + Out * FromCentreKm * 1.0e5, false, nullptr, ETeleportType::TeleportPhysics);
+				Controller->SetControlRotation((-Out).Rotation());
+				UE_LOG(LogTemp, Log, TEXT("[APS.Test] into %s: %.0f km from its centre (radius %.0f km)"), *Nearest->GetName(),
+					FromCentreKm, RadiusKm);
+			}
+		}
 		else if (Args[0].Equals(TEXT("turn"), ESearchCase::IgnoreCase) && Args.Num() > 1)
 		{
 			// About the pawn's own up: the hull and the view turn together.
@@ -1741,6 +1969,10 @@ namespace APSShipBenchmark
 			const FQuat Turn(Pawn->GetActorUpVector(), FMath::DegreesToRadians(Degrees));
 			Pawn->SetActorRotation(Turn * Pawn->GetActorQuat(), ETeleportType::TeleportPhysics);
 			Controller->SetControlRotation((Turn * Controller->GetControlRotation().Quaternion()).Rotator());
+		}
+		else if (Args[0].Equals(TEXT("ship"), ESearchCase::IgnoreCase))
+		{
+			LookAtNearestShip(World, Pawn, true);
 		}
 		UE_LOG(LogTemp, Log, TEXT("[APS.Test] pose %s: %s at %s"), *Args[0], *Pawn->GetName(),
 			*(Origin + Pawn->GetActorLocation()).ToCompactString());

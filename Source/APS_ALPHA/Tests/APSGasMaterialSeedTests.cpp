@@ -36,6 +36,8 @@ bool FAPSGasMaterialSeedRoundtripTest::RunTest(const FString& Parameters)
     AAstroGenerator* Generator = World->SpawnActor<AAstroGenerator>();
     APlanet* Planet = World->SpawnActor<APlanet>();
     if (!TestTrue(TEXT("Public body fixture actors"), Generator && Planet)) return false;
+    if (!TestNotNull(TEXT("Gas globe component"), Planet->GasGiantVisualComponent)) return false;
+    TestFalse(TEXT("Astronomical gas globe defaults to no local-map shadow"), Planet->GasGiantVisualComponent->CastShadow);
     Generator->HomePlanet = Planet;
     const FString StableKey = Generator->GetPreviewBodyStableKey(Planet);
     if (!TestEqual(TEXT("Stable home body key"), StableKey, FString(TEXT("SYS0/S0/P0")))) return false;
@@ -69,6 +71,7 @@ bool FAPSGasMaterialSeedRoundtripTest::RunTest(const FString& Parameters)
             TestTrue(Step + TEXT(" reuses existing MID"), MID == OriginalMID);
             TestTrue(Step + TEXT(" MID is bound to the real gas mesh"),
                 IsValid(Planet->GasGiantVisualComponent) && Planet->GasGiantVisualComponent->GetMaterial(0) == MID);
+            TestFalse(Step + TEXT(" refresh rejects authored local-shadow override"), Planet->GasGiantVisualComponent->CastShadow);
             if (!TestTrue(Step + TEXT(" GasPatternSeed uniform exists"),
                 MID->GetScalarParameterValue(FMaterialParameterInfo(TEXT("GasPatternSeed")), PatternSeed))) return false;
             const uint32 StableHash = HashCombine(GetTypeHash(ExpectedSeed), GetTypeHash(static_cast<uint8>(Type)));
@@ -80,6 +83,7 @@ bool FAPSGasMaterialSeedRoundtripTest::RunTest(const FString& Parameters)
         for (const int32 Seed : {1, 2, 1})
         {
             const FString Step = FString::Printf(TEXT("%s edit%d seed%d"), *Label, EditIndex, Seed);
+            Planet->GasGiantVisualComponent->SetCastShadow(true); // Simulate a serialized Blueprint override.
             VM->SetPlanetSurfaceSeed(Seed);
             TestEqual(Step + TEXT(" public setter updates editor buffer"), Model->PlanetSurfaceSeed, Seed);
             if (!TestTrue(Step + TEXT(" saves per-body override"), Generator->SavePreviewBodyEditOverride(Model, Planet))) return false;

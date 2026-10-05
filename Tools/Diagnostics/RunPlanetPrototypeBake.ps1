@@ -11,7 +11,7 @@ param(
     [switch]$CloudLayeredCandidate
 )
 $ErrorActionPreference='Stop'
-if($CloudWeatherCandidate -and $CloudLayeredCandidate){throw 'Select one cloud candidate: weather V28 or layered V30'}
+if($CloudWeatherCandidate -and $CloudLayeredCandidate){throw 'Select one cloud candidate: refined V31 or layered V30'}
 if($CloudWeatherCandidate -and $Candidate -ne 'Clouds'){throw 'CloudWeatherCandidate requires Candidate Clouds'}
 if($CloudLayeredCandidate -and $Candidate -ne 'Clouds'){throw 'CloudLayeredCandidate requires Candidate Clouds'}
 if($WaterShoreTransmission -and ($Candidate -ne 'WaterAnalytic' -or $WaterRelease -or $AnchorSplit -or $AnchorNoise)){throw 'ShoreTransmission uses only published WaterV1'}
@@ -40,7 +40,7 @@ if($WaterShoreTransmission){$destination=$projectRoot+'/Content/APS/APS_ALPHA/WS
 if($Candidate -eq 'FoliageLeaf') { $destination=$projectRoot+'/Content/APS/APS_ALPHA/WSC/PlanetSurface/Diagnostics/FoliageLeaf20260930' }
 if($Candidate -eq 'SurfaceScatter') { $destination=$projectRoot+'/Content/APS/APS_ALPHA/WSC/PlanetSurface/Diagnostics/SurfaceScatter20260930V2' }
 if($Candidate -eq 'Clouds'){$destination=$projectRoot+'/Content/APS/APS_ALPHA/WSC/PlanetSurface/Diagnostics/CloudWeather20261002V27'}
-if($CloudWeatherCandidate){$destination=$projectRoot+'/Content/APS/APS_ALPHA/WSC/PlanetSurface/Diagnostics/CloudWeather20261002V28'}
+if($CloudWeatherCandidate){$destination=$projectRoot+'/Content/APS/APS_ALPHA/WSC/PlanetSurface/Diagnostics/CloudWeather20261003V31'}
 if($CloudLayeredCandidate){$destination=$projectRoot+'/Content/APS/APS_ALPHA/WSC/PlanetSurface/Diagnostics/CloudWeather20261002V30'}
 if($Candidate -eq 'GasGiant'){$destination=$projectRoot+'/Content/APS/APS_ALPHA/Diagnostics/GasCloudBelts20261002V2'}
 if($Candidate -eq 'ScatterMaterial'){$destination=$projectRoot+'/Content/APS/APS_ALPHA/WSC/PlanetSurface/Diagnostics/ScatterMaterial20260930V1'}

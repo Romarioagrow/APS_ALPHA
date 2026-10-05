@@ -2,6 +2,7 @@
 
 #if WITH_EDITOR
 #include "APS_ALPHA/Core/Audio/APSAudioBank.h"
+#include "APS_ALPHA/Core/Audio/APSVehicleAudioPolicy.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "HAL/FileManager.h"
 #include "Misc/PackageName.h"
@@ -36,8 +37,8 @@ namespace APSAudioAssets
 			{TEXT("SC_UI_Hover"), TEXT("/Game/Interface_And_Item_Sounds/WAV/Click_03"), 4, 0.25f, false},
 			{TEXT("SC_UI_Confirm"), TEXT("/Game/EnergyFieldsSFX/WAV/A_PF_UI_apply"), 4, 0.25f, false},
 			{TEXT("SC_UI_Back"), TEXT("/Game/Interface_And_Item_Sounds/WAV/Back_Click_03"), 4, 0.55f, false},
-			{TEXT("SC_Music_Menu"), TEXT("/Game/APS/APS_ALPHA/Audio/Waves/SW_Menu_MelodicPlaylist"), 1, 0.55f, true},
-			{TEXT("SC_Music_Exploration"), TEXT("/Game/APS/APS_ALPHA/Audio/Waves/SW_Exploration_CalmSuite"), 1, 0.65f, true},
+			{TEXT("SC_Music_Menu"), TEXT("/Game/APS/APS_ALPHA/Audio/Waves/SW_MelodicMusic_v2"), 1, 0.67f, true},
+			{TEXT("SC_Music_Exploration"), TEXT("/Game/APS/APS_ALPHA/Audio/Waves/SW_Gameplay_CosmicJourney_v1"), 1, 0.65f, true},
 			{TEXT("SC_Ambience_Space"), TEXT("/Game/SpaceAmbBundle/wavs/Space_1/Soundscapes/space_amb_v1_low1_loop"), 2, 0.14f, true},
 			{TEXT("SC_Ambience_Interior"), TEXT("/Game/SpaceAmbBundle/wavs/Space_1/Soundscapes/space_amb_v1_base1_loop"), 2, 0.14f, true},
 			{TEXT("SC_Ship_Idle"), TEXT("/Game/EnergyFieldsSFX/WAV/A_PF_LowField_Loop"), 3, 0.40f, true},
@@ -53,7 +54,7 @@ namespace APSAudioAssets
 			Result.Add({FString::Printf(TEXT("SC_Step_Dirt_%02d"), I),
 				FString::Printf(TEXT("/Game/FootstepsMiniPack/SoundWav/DirtRoad_Mono_%02d"), I), 3, 2.2f, false});
 			Result.Add({FString::Printf(TEXT("SC_Step_Metal_%02d"), I),
-				FString::Printf(TEXT("/Game/FootstepsMiniPack/SoundWav/MetalSteps_%02d"), I), 3, 0.50f, false});
+				FString::Printf(TEXT("/Game/APS/APS_ALPHA/Audio/Footsteps/SW_Step_Metal_%02d"), I), 3, 1.0f, false});
 		}
 		return Result;
 	}
@@ -102,7 +103,21 @@ namespace APSAudioAssets
 			}
 		}
 		if (Bank->DefaultFootsteps.Sounds.Num() != 5 || Bank->MetalFootsteps.Sounds.Num() != 5) return 1;
+		for (const APSVehicleAudio::FProfile& Profile : APSVehicleAudio::Profiles)
+		{
+			for (const TCHAR* Name : {Profile.Idle, Profile.Drive, Profile.Start})
+			{
+				if (!Name) continue;
+				const USoundWave* Wave = LoadObject<USoundWave>(nullptr, *APSVehicleAudio::AssetPath(Name));
+				if (!Wave || Wave->IsLooping() != (Name != Profile.Start) || Wave->Duration <= 0.f)
+				{
+					UE_LOG(LogTemp, Error, TEXT("[APS.Audio] Invalid vehicle recording: %s"), Name);
+					return 1;
+				}
+			}
+		}
 		UE_LOG(LogTemp, Display, TEXT("[APS.Audio] Bank validation passed: 25 cues, 5 classes, music/ambience/ship/steps/UI."));
+		UE_LOG(LogTemp, Display, TEXT("[APS.Audio] Vehicle validation passed: 6 loops and 1 starter."));
 		return 0;
 	}
 }
@@ -122,6 +137,7 @@ int32 UAPSAudioAssetCommandlet::Main(const FString& Params)
 	using namespace APSAudioAssets;
 	if (FParse::Param(*Params, TEXT("Validate"))) return Validate();
 	const TArray<FCueSpec> Recipe = Specs();
+	// Vehicle waves are imported by Tools/Audio/Import-VehicleAudio.py and cooked with the Audio folder.
 	const TArray<FString> ClassNames { TEXT("SCL_Master"), TEXT("SCL_Music"), TEXT("SCL_Ambience"), TEXT("SCL_Effects"), TEXT("SCL_UI") };
 	TArray<FString> Targets = ClassNames;
 	Targets.Append({TEXT("SM_APS"), TEXT("Concurrency_UI"), TEXT("Concurrency_Steps"), TEXT("DA_APSAudioBank")});
@@ -156,6 +172,9 @@ int32 UAPSAudioAssetCommandlet::Main(const FString& Params)
 	for (const FString& Name : ClassNames) Classes.Add(Make<USoundClass>(Name, Assets));
 	for (int32 I = 1; I < Classes.Num(); ++I) Classes[I]->SetParentClass(Classes[0]);
 	Classes[4]->Properties.bIsUISound = true;
+	Classes[1]->Properties.bIsMusic = true;
+	Classes[1]->Properties.bAlwaysPlay = true;
+	Classes[1]->Properties.LoadingBehavior = ESoundWaveLoadingBehavior::RetainOnLoad;
 	USoundMix* Mix = Make<USoundMix>(TEXT("SM_APS"), Assets);
 	Mix->Duration = -1.f;
 	Mix->FadeInTime = 0.25f;
@@ -220,6 +239,20 @@ int32 UAPSAudioAssetCommandlet::Main(const FString& Params)
 		Bank->DefaultFootsteps.Sounds.Add(Cues[FString::Printf(TEXT("SC_Step_Dirt_%02d"), I)]);
 		Bank->MetalFootsteps.Sounds.Add(Cues[FString::Printf(TEXT("SC_Step_Metal_%02d"), I)]);
 	}
+	Bank->SurfaceFootsteps.Add(SurfaceType1, Bank->DefaultFootsteps);
+	Bank->SurfaceFootsteps.Add(SurfaceType2, Bank->MetalFootsteps);
+	const TCHAR* ExtraSurfaces[] = {TEXT("Plastic"), TEXT("Stone"), TEXT("Wood"), TEXT("Snow")};
+	for (int32 SurfaceIndex = 0; SurfaceIndex < UE_ARRAY_COUNT(ExtraSurfaces); ++SurfaceIndex)
+	{
+		FAPSAudioFootsteps Set;
+		for (int32 I = 1; I <= 5; ++I)
+		{
+			const FString Path = FString::Printf(TEXT("/Game/APS/APS_ALPHA/Audio/Footsteps/SW_Step_%s_%02d"), ExtraSurfaces[SurfaceIndex], I);
+			if (USoundBase* Sound = LoadObject<USoundBase>(nullptr, *Path)) Set.Sounds.Add(Sound);
+		}
+		if (!Set.Sounds.IsEmpty()) Bank->SurfaceFootsteps.Add(static_cast<EPhysicalSurface>(SurfaceIndex + 3), Set);
+	}
+
 	for (UObject* Asset : Assets)
 	{
 		if (!Save(Asset))

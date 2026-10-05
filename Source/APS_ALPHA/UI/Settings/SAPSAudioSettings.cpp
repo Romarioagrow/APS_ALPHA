@@ -16,26 +16,31 @@ void SAPSAudioSettings::Construct(const FArguments& Args)
 	World = Args._World;
 	const FAPSUIColorPalette Palette = FAPSUIStyle::GetPalette();
 	SliderStyle = FAPSUIStyle::MakeSliderStyle(Palette);
-	ChildSlot
-	[
-		SNew(SVerticalBox)
-		+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 0.f, 0.f, 12.f)
+	TSharedRef<SVerticalBox> Rows = SNew(SVerticalBox);
+	if (!Args._CreditsOnly)
+	{
+		Rows->AddSlot().AutoHeight().Padding(0.f, 0.f, 0.f, 12.f)
 		[SNew(STextBlock).Text(LOCTEXT("Audio", "AUDIO"))
-			.Font(FAPSUIStyle::DisplayFont("Bold", 20)).ColorAndOpacity(Palette.TextPrimary)]
-		+ SVerticalBox::Slot().AutoHeight()[MakeRow(EAPSAudioChannel::Master, LOCTEXT("Master", "Master volume"))]
-		+ SVerticalBox::Slot().AutoHeight()[MakeRow(EAPSAudioChannel::Music, LOCTEXT("Music", "Music"))]
-		+ SVerticalBox::Slot().AutoHeight()[MakeRow(EAPSAudioChannel::Ambience, LOCTEXT("Ambience", "Ambience"))]
-		+ SVerticalBox::Slot().AutoHeight()[MakeRow(EAPSAudioChannel::Effects, LOCTEXT("Effects", "Sound effects"))]
-		+ SVerticalBox::Slot().AutoHeight()[MakeRow(EAPSAudioChannel::Interface, LOCTEXT("Interface", "Interface"))]
-		+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 8.f, 0.f, 0.f)
+			.Font(FAPSUIStyle::DisplayFont("Bold", 20)).ColorAndOpacity(Palette.TextPrimary)];
+		Rows->AddSlot().AutoHeight()[MakeRow(EAPSAudioChannel::Master, LOCTEXT("Master", "Master volume"))];
+		Rows->AddSlot().AutoHeight()[MakeRow(EAPSAudioChannel::Music, LOCTEXT("Music", "Music"))];
+		Rows->AddSlot().AutoHeight()[MakeRow(EAPSAudioChannel::Ambience, LOCTEXT("Ambience", "Ambience"))];
+		Rows->AddSlot().AutoHeight()[MakeRow(EAPSAudioChannel::Effects, LOCTEXT("Effects", "Sound effects"))];
+		Rows->AddSlot().AutoHeight()[MakeRow(EAPSAudioChannel::Interface, LOCTEXT("Interface", "Interface"))];
+	}
+	Rows->AddSlot().AutoHeight().Padding(0.f, 8.f, 0.f, 0.f)
 		[SNew(STextBlock).Text(LOCTEXT("Credits", "Footsteps Mini Sound Pack — Mechanics Mechanics · CC BY 4.0"))
 			.ToolTipText(LOCTEXT("CreditDetails", "Source: fab.com/listings/baf07baa-d485-4d37-bf73-dab6a50ed4bb\nLicense: creativecommons.org/licenses/by/4.0/\nVolume and playback pitch adjusted."))
-			.Font(FAPSUIStyle::BodyFont("Regular", 11)).ColorAndOpacity(Palette.TextSecondary)]
-		+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 5.f, 0.f, 0.f)
+			.Font(FAPSUIStyle::BodyFont("Regular", 11)).ColorAndOpacity(Palette.TextSecondary)];
+	Rows->AddSlot().AutoHeight().Padding(0.f, 5.f, 0.f, 0.f)
 		[SNew(STextBlock).Text(LOCTEXT("MenuMusicCredits", "Menu music — Scott Buckley · CC BY 4.0"))
 			.ToolTipText(LOCTEXT("MenuMusicCreditDetails", "A Kind Of Hope; Tears in Rain; Celestial\nMusic by Scott Buckley — released under CC-BY 4.0.\nSource: www.scottbuckley.com.au/library/\nLicense: creativecommons.org/licenses/by/4.0/\nPlayback level and transitions adjusted."))
-			.Font(FAPSUIStyle::BodyFont("Regular", 11)).ColorAndOpacity(Palette.TextSecondary)]
-	];
+			.Font(FAPSUIStyle::BodyFont("Regular", 11)).ColorAndOpacity(Palette.TextSecondary)];
+	Rows->AddSlot().AutoHeight().Padding(0.f, 5.f, 0.f, 0.f)
+		[SNew(STextBlock).Text(LOCTEXT("GameplayMusicCredits", "Gameplay music — Stellardrone · CC BY"))
+			.ToolTipText(LOCTEXT("GameplayMusicCreditDetails", "Light Years (2013) — Stellardrone / Energostatic Records\nAirglow; Comet Halley; Ultra Deep Field; Light Years; In Time; Cepheid; Red Giant; Messier 45\nSource: stellardrone.bandcamp.com/album/light-years\nCC BY 4.0: creativecommons.org/licenses/by/4.0/\nOriginal CC BY 3.0 notice: creativecommons.org/licenses/by/3.0/\nLevel, EQ, padding and transitions adjusted."))
+			.Font(FAPSUIStyle::BodyFont("Regular", 11)).ColorAndOpacity(Palette.TextSecondary)];
+	ChildSlot[Rows];
 }
 
 TSharedRef<SWidget> SAPSAudioSettings::MakeRow(EAPSAudioChannel Channel, const FText& Label)

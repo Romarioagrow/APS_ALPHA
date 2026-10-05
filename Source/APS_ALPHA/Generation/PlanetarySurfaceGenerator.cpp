@@ -1,5 +1,7 @@
 #include "PlanetarySurfaceGenerator.h"
 #include "APSAtmosphereGeneration.h"
+#include "APS_ALPHA/Core/Rendering/APSAtmosphereTailMaterial.h"
+#include "Materials/MaterialInterface.h"
 #include "APS_ALPHA/Core/Planetary/APSWorldScapeFoliagePolicy.h"
 #include "APS_ALPHA/Core/Rendering/APSPlanetCloudComponent.h"
 #include "APS_ALPHA/Actors/Astro/Moon.h"
@@ -18,6 +20,8 @@ APlanetarySurfaceGenerator::APlanetarySurfaceGenerator()
 	PrimaryActorTick.bCanEverTick = true;
 	PrimaryActorTick.bStartWithTickEnabled = false;
 	RootComponent = CreateDefaultSubobject<USceneComponent>(TEXT("RuntimeSurfaceGeneratorRoot"));
+	ContinuousAtmosphereMaterial = LoadObject<UMaterialInterface>(nullptr,
+		APSAtmosphereTailMaterial::MasterPath, nullptr, LOAD_NoWarn | LOAD_Quiet);
 
     /*MoonLikeNoise = LoadObject<UWorldScapeNoiseClass>(nullptr, TEXT("/WorldScape/Ressources/Noise/MoonLike.MoonLike"));
     LavaWorldNoise = LoadObject<UWorldScapeNoiseClass>(nullptr, TEXT("/WorldScape/Ressources/Noise/LavaWorld.LavaWorld"));
@@ -208,10 +212,50 @@ void APlanetarySurfaceGenerator::InitAtmoScape(UWorld* World, double PlanetaryRa
 	// InitEnvironment is reached by both generated and editor-authored integration
 	// paths. Re-entering it must update the same shell, not stack another opaque
 	// atmosphere over the first one.
+	const APlanet* AtmospherePlanet = Cast<APlanet>(NewPlanetaryBody);
+	const AMoon* AtmosphereMoon = Cast<AMoon>(NewPlanetaryBody);
+	const bool bUseContinuousAtmosphere = (AtmospherePlanet
+		&& APSAtmosphereTailMaterial::EnabledFor(AtmospherePlanet->PlanetType))
+		|| (AtmosphereMoon && APSAtmosphereTailMaterial::EnabledFor(AtmosphereMoon->MoonType));
 	if (!IsValid(PlanetAtmosphere))
 	{
-		PlanetAtmosphere = World->SpawnActor<AAtmoScape>(AAtmoScape::StaticClass(), FTransform());
+		PlanetAtmosphere = World->SpawnActorDeferred<AAtmoScape>(AAtmoScape::StaticClass(), FTransform());
+		if (PlanetAtmosphere)
+		{
+			if (bUseContinuousAtmosphere && ContinuousAtmosphereMaterial)
+			{
+				PlanetAtmosphere->Atmo_Material = ContinuousAtmosphereMaterial;
+				PlanetAtmosphere->SpaceAtmo_Material = ContinuousAtmosphereMaterial;
+			}
+			PlanetAtmosphere->FinishSpawning(FTransform());
+		}
 	}
+	else
+	{
+		// Explicit model/type re-initialization only, never a camera/altitude rule.
+		// Preserve authored custom parents. An ordinary revisit keeps both MIDs.
+		const AAtmoScape* Defaults = GetDefault<AAtmoScape>();
+		UMaterialInterface* Inside = bUseContinuousAtmosphere && ContinuousAtmosphereMaterial
+			? ContinuousAtmosphereMaterial.Get() : Defaults->Atmo_Material;
+		UMaterialInterface* Outside = bUseContinuousAtmosphere && ContinuousAtmosphereMaterial
+			? ContinuousAtmosphereMaterial.Get() : Defaults->SpaceAtmo_Material;
+		const bool bManagedInside = PlanetAtmosphere->Atmo_Material == Defaults->Atmo_Material
+			|| (ContinuousAtmosphereMaterial && PlanetAtmosphere->Atmo_Material == ContinuousAtmosphereMaterial);
+		const bool bManagedOutside = PlanetAtmosphere->SpaceAtmo_Material == Defaults->SpaceAtmo_Material
+			|| (ContinuousAtmosphereMaterial && PlanetAtmosphere->SpaceAtmo_Material == ContinuousAtmosphereMaterial);
+		if (bManagedInside && bManagedOutside && (PlanetAtmosphere->Atmo_Material != Inside
+			|| PlanetAtmosphere->SpaceAtmo_Material != Outside))
+		{
+			PlanetAtmosphere->Atmo_Material = Inside;
+			PlanetAtmosphere->SpaceAtmo_Material = Outside;
+			// Construction refreshes the plugin's private MID pointers. The authored
+			// settings and duplicate-pass suppression below are reapplied before draw.
+			PlanetAtmosphere->OnConstruction(PlanetAtmosphere->GetActorTransform());
+		}
+	}
+	if (bUseContinuousAtmosphere && !ContinuousAtmosphereMaterial)
+		UE_LOG(LogTemp, Warning, TEXT("[APS.AtmosphereTail] Missing installed master; preserving native atmosphere for %s"),
+			*GetNameSafe(NewPlanetaryBody));
 
     if (PlanetAtmosphere)
     {

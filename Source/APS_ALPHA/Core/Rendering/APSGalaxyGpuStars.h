@@ -41,6 +41,18 @@ namespace APSGalaxyGpuStars
 	 */
 	void PresentGameplayFrame(UWorld* World, AStarSystem* HomeSystem, TConstArrayView<AActor*> AttachedActors);
 
+	/** Rio 04.10 ("the labels lie: a million points are drawn"): the GPU points the world's galaxy layer draws now, beside its
+	 * ISM stars (0 while it has none built). */
+	int32 GetDrawnPointCount(const UWorld* World);
+
+	/** Rio 04.10 evening ("every visible star must stay exactly as it is; only the glow must drop on the system, star and
+	 * planet screens: by half on SYSTEM, by 90% on PLANET"): the menu screen, for the share of the galaxy glow it shows. The
+	 * points are never dimmed by a screen. */
+	enum class EMenuGlowScope : uint8 { Far, System, Star, Planet };
+	/** The screen and how far the camera is along its flight to it (0..1; 1 = arrived). Rio: "not at once, exponentially,
+	 * together with the camera": the share follows the flight in log space from the share shown when the flight began. */
+	void SetMenuGlowScope(EMenuGlowScope Scope, float FlightAlpha = 1.0f);
+
 	/** Gameplay daylight: a GPU layer of the world fades like the catalogue points (no-op without a layer). */
 	void SetWorldDaylightVisibility(const UWorld* World, float Visibility);
 

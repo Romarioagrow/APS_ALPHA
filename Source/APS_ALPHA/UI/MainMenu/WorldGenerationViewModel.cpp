@@ -607,6 +607,23 @@ void UWorldGenerationViewModel::SetGalaxyStarComposition(const int32 Value)
 	RequestPreview();
 }
 
+void UWorldGenerationViewModel::SetRealScale(const bool bEnabled)
+{
+	// Rio 05.10 (real scale experiment): the same seed, catalogue and StableIds at real distances. Every scope changes
+	// its size by orders of magnitude, so the camera refits the current screen instead of keeping its old distance.
+	if (!GeneratedWorld || GeneratedWorld->bRealScale == bEnabled) return;
+	GeneratedWorld->bRealScale = bEnabled;
+	bForceRefocusOnNextPreview = true;
+	UE_LOG(LogTemp, Log, TEXT("[APS.RealScale] REAL SCALE %s (full scale %d; experimental)"),
+		bEnabled ? TEXT("ON") : TEXT("OFF"), GeneratedWorld->bGenerateFullScaledWorld ? 1 : 0);
+	RequestPreview();
+}
+
+bool UWorldGenerationViewModel::IsRealScaleActive() const
+{
+	return GeneratedWorld && GeneratedWorld->bRealScale && GeneratedWorld->bGenerateFullScaledWorld;
+}
+
 void UWorldGenerationViewModel::SetGalaxyStarDensity(double Value)
 {
 	if (!GeneratedWorld || !FMath::IsFinite(Value))
@@ -1190,14 +1207,82 @@ void UWorldGenerationViewModel::RegeneratePreviewVariant()
 {
 	if (GeneratedWorld)
 	{
-		GeneratedWorld->ClearPreviewBodyEditOverrides();
-		GeneratedWorld->ClearPreviewStarEditOverrides();
-		GeneratedWorld->ClearPreviewSystemEditOverrides();
-		GeneratedWorld->ClearPreviewDisplayNameOverrides();
-		bSkipBodyOverrideSnapshotOnce = true;
-		// Rio 03.10: every press a genuinely new world (stars, planets, start world, moons), not the next seed of a
-		// fixed sequence that left the recipe and the planet itself untouched. The roll owns the seed now.
-		RollWorld(TEXT("REGENERATE"));
+		// Rio 04.10 evening ("on every level REGENERATE rolls only its own: the planet on PLANET, the star on STAR, the
+		// system on SYSTEM, the cluster and the galaxy alike; on OVERVIEW everything, as now"). The PLANET route builds
+		// one body, so it keeps its whole roll.
+		const bool bPlanetRoute = GenerationRoute == EAPSGenerationRoute::Planet
+			|| GeneratedWorld->AstroGenerationLevel == EAstroGenerationLevel::SinglePlanet
+			|| !GeneratedWorld->bGenerateHomeSystem;
+		APSWorldRoll::EScope Scope = APSWorldRoll::EScope::System;
+		APSWorldRoll::FScopeTarget Target;
+		const AAstroGenerator* Generator = PreviewGenerator.Get();
+		if (!bPlanetRoute && bPreviewReady && IsValid(Generator))
+		{
+			switch (PreviewFocus)
+			{
+			case EAstroPreviewFocus::Galaxy:
+				Scope = APSWorldRoll::EScope::GalaxyOnly;
+				break;
+			case EAstroPreviewFocus::StarCluster:
+				Scope = APSWorldRoll::EScope::ClusterOnly;
+				break;
+			case EAstroPreviewFocus::HomeSystem:
+				Scope = APSWorldRoll::EScope::HomeSystemOnly;
+				break;
+			case EAstroPreviewFocus::HomeStar:
+			{
+				Scope = APSWorldRoll::EScope::StarOnly;
+				const AStar* Star = Cast<AStar>(SelectedPreviewBody.Get());
+				const AStarSystem* Home = Generator->GetPreviewHomeSystem();
+				if (Star && IsValid(Home))
+				{
+					Target.StarIndex = FMath::Max(Home->GetStars().IndexOfByKey(Star), 0);
+				}
+				break;
+			}
+			case EAstroPreviewFocus::HomePlanet:
+			{
+				Scope = APSWorldRoll::EScope::BodyOnly;
+				const APlanet* Planet = Cast<APlanet>(IsValid(Generator->GetActivePreviewWorldScapeBody())
+					? Generator->GetActivePreviewWorldScapeBody() : SelectedPreviewBody.Get());
+				if (IsValid(Planet))
+				{
+					Target.Zone = Planet->PlanetZone;
+				}
+				break;
+			}
+			default:
+				break;
+			}
+		}
+		if (Scope == APSWorldRoll::EScope::System || Scope == APSWorldRoll::EScope::HomeSystemOnly)
+		{
+			GeneratedWorld->ClearPreviewBodyEditOverrides();
+			GeneratedWorld->ClearPreviewStarEditOverrides();
+			GeneratedWorld->ClearPreviewSystemEditOverrides();
+			if (Scope == APSWorldRoll::EScope::System)
+			{
+				GeneratedWorld->ClearPreviewDisplayNameOverrides();
+			}
+			bSkipBodyOverrideSnapshotOnce = true;
+		}
+		if (Scope == APSWorldRoll::EScope::System)
+		{
+			// Rio 03.10: every press a genuinely new world (stars, planets, start world, moons), not the next seed of a
+			// fixed sequence that left the recipe and the planet itself untouched. The roll owns the seed now.
+			RollWorld(TEXT("REGENERATE"));
+		}
+		else
+		{
+			// A scoped roll keeps the world seed. Scripted runs chain from it, the scope and a press counter, so their
+			// presses still differ and stay reproducible.
+			static uint32 ScopedPresses = 0;
+			const int32 RollSeed = APSWorldRoll::IsInteractiveSession() ? APSWorldRoll::MakeFreshSeed()
+				: (static_cast<int32>(HashCombineFast(GetTypeHash(GeneratedWorld->GenerationSeed),
+					0x53434f50u ^ static_cast<uint32>(Scope) ^ (++ScopedPresses << 8)) & 0x7fffffffu) | 1);
+			const APSWorldRoll::FResult Roll = APSWorldRoll::Apply(*GeneratedWorld, RollSeed, Scope, Target);
+			UE_LOG(LogTemp, Log, TEXT("[APS.WorldGeneration] REGENERATE %s roll %s"), *Roll.Archetype.ToUpper(), *Roll.Summary);
+		}
 	}
 	bForceRefocusOnNextPreview = true;
 	RequestPreview();
@@ -1816,6 +1901,17 @@ FText UWorldGenerationViewModel::GetPreviewScopeSummary() const
 	{
 		return UEnum::GetDisplayValueAsText(Value).ToString().ToUpper();
 	};
+	// Rio 05.10 (real scale experiment): real sizes in light years while REAL SCALE applies; OFF texts are unchanged.
+	double RealGalaxyRadiusCm = 0.0, RealClusterRadiusCm = 0.0, RealNeighbourCm = 0.0;
+	const bool bRealScale = IsRealScaleActive();
+	const bool bRealScaleSizes = bRealScale && Generator
+		&& Generator->GetRealScaleSummary(RealGalaxyRadiusCm, RealClusterRadiusCm, RealNeighbourCm);
+	const auto LightYears = [](const double Cm)
+	{
+		const double Years = Cm / 9.4607304725808e17;
+		return Years >= 1000.0 ? FString::Printf(TEXT("%.1f THOUSAND LY"), Years / 1000.0)
+			: Years >= 10.0 ? FString::Printf(TEXT("%.0f LY"), Years) : FString::Printf(TEXT("%.1f LY"), Years);
+	};
 
 	switch (PreviewFocus)
 	{
@@ -1828,7 +1924,8 @@ FText UWorldGenerationViewModel::GetPreviewScopeSummary() const
 				: (GeneratedWorld->GalaxyPlacedStarCount > 0 ? GeneratedWorld->GalaxyPlacedStarCount
 					: APSGalaxyMorphology::PreviewReferenceBudget),
 			GeneratedWorld->GalaxySize, GeneratedWorld->GalaxyStarDensity,
-			*EnumText(GeneratedWorld->GalaxyStarPopulation), *EnumText(GeneratedWorld->GalaxyStarComposition)));
+			*EnumText(GeneratedWorld->GalaxyStarPopulation), *EnumText(GeneratedWorld->GalaxyStarComposition))
+			+ (bRealScaleSizes ? TEXT("\nREAL SCALE  ") + LightYears(2.0 * RealGalaxyRadiusCm) + TEXT(" ACROSS") : FString()));
 
 	case EAstroPreviewFocus::StarCluster:
 		return FText::FromString(FString::Printf(
@@ -1836,7 +1933,9 @@ FText UWorldGenerationViewModel::GetPreviewScopeSummary() const
 			*EnumText(GeneratedWorld->StarClusterType), *EnumText(GeneratedWorld->StarClusterSize),
 			*EnumText(GeneratedWorld->StarClusterPopulation), *EnumText(GeneratedWorld->StarClusterComposition),
 			Generator ? Generator->GetPreviewClusterModeledSystemCount() : 0,
-			Generator ? Generator->GetPreviewClusterRenderedStarCount() : 0));
+			Generator ? Generator->GetPreviewClusterRenderedStarCount() : 0)
+			+ (bRealScaleSizes ? TEXT("\nREAL SCALE  ") + LightYears(2.0 * RealClusterRadiusCm) + TEXT(" ACROSS  /  NEIGHBOURS ~")
+				+ LightYears(RealNeighbourCm) : FString()));
 
 	case EAstroPreviewFocus::HomeSystem:
 	{
@@ -1938,7 +2037,11 @@ FText UWorldGenerationViewModel::GetPreviewScopeSummary() const
 			GeneratedWorld->GalaxyPlacedStarCount > 0 ? GeneratedWorld->GalaxyPlacedStarCount
 				: APSGalaxyMorphology::PreviewReferenceBudget, *EnumText(GeneratedWorld->StarClusterSize),
 			*EnumText(GeneratedWorld->StarClusterType), HomePlanetCount,
-			GeneratedWorld->StartPlanetIndex, GeneratedWorld->bGenerateFullScaledWorld ? TEXT("ON") : TEXT("OFF")));
+			GeneratedWorld->StartPlanetIndex, GeneratedWorld->bGenerateFullScaledWorld ? TEXT("ON") : TEXT("OFF"))
+			+ (!bRealScale ? FString() : bRealScaleSizes
+				? TEXT("\nREAL SCALE  ON (EXPERIMENTAL)  /  GALAXY ") + LightYears(2.0 * RealGalaxyRadiusCm)
+					+ TEXT("  /  NEIGHBOURS ~") + LightYears(RealNeighbourCm)
+				: FString(TEXT("\nREAL SCALE  ON (EXPERIMENTAL)"))));
 	}
 	}
 }
@@ -2097,8 +2200,11 @@ void UWorldGenerationViewModel::ExecutePreview()
 		GeneratedWorld ? GeneratedWorld->PlanetsAmount : 0, GeneratedWorld ? GeneratedWorld->MoonsAmount : 0,
 		GeneratedWorld ? GeneratedWorld->PlanetRadius : 0.0);
 	// Keep the failure text accurate for missing targets and rejected projection data.
+	// Rio 05.10 (real scale experiment): a REAL SCALE preview says so.
 	SetPreviewStatus(
-		bGenerated ? LOCTEXT("PreviewReady", "LIVE FULL-SCALE PREVIEW") : LOCTEXT("PreviewFailed", "PREVIEW GENERATION INCOMPLETE"),
+		!bGenerated ? LOCTEXT("PreviewFailed", "PREVIEW GENERATION INCOMPLETE")
+			: IsRealScaleActive() ? LOCTEXT("PreviewReadyRealScale", "LIVE REAL-SCALE PREVIEW  /  EXPERIMENTAL")
+			: LOCTEXT("PreviewReady", "LIVE FULL-SCALE PREVIEW"),
 		bGenerated);
 	bPreserveCameraOnNextPreview = false;
 	bForceRefocusOnNextPreview = false;
@@ -2221,6 +2327,13 @@ void UWorldGenerationViewModel::CommitAndOpenLevel(FName LevelName)
 	{
 		UE_LOG(LogTemp, Error, TEXT("[APS.WorldGeneration] Commit rejected: world context or generated model is missing"));
 		return;
+	}
+	// Rio 05.10 ("we only made the distances bigger and the world shift works: connect it and we test how it goes"): a
+	// REAL SCALE world travels into the game like any other, as an experiment (the floating origin keeps the player
+	// near 0,0,0; flight and far-sky refinements follow).
+	if (IsRealScaleActive())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[APS.RealScale] gameplay start (experimental): the world travels at real scale"));
 	}
 	// Flush the final selected body's debounced UI buffer before duplicating the
 	// model into GameInstance. Otherwise the last slider movement exists only in

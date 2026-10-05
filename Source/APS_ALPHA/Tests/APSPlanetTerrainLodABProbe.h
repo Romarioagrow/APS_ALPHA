@@ -5,7 +5,9 @@
 #include "APS_ALPHA/Core/Planetary/APSShoreWaterMaterial.h"
 #include "APS_ALPHA/Actors/Astro/PlanetaryBody.h"
 #include "APS_ALPHA/Actors/Astro/Planet.h"
+#include "APS_ALPHA/Actors/Astro/Star.h"
 #include "APS_ALPHA/Core/Rendering/APSStellarVisualSubsystem.h"
+#include "APS_ALPHA/Core/Rendering/APSPlanetCloudComponent.h"
 #include "APS_ALPHA/Core/Rendering/APSPreviewCameraBounds.h"
 #include "APS_ALPHA/Generation/AstroGenerator.h"
 #include "APS_ALPHA/UI/MainMenu/WorldGenerationViewModel.h"
@@ -13,10 +15,13 @@
 #include "Components/LightComponent.h"
 #include "EngineUtils.h"
 #include "EngineGlobals.h"
+#include "HAL/IConsoleManager.h"
 #include "LocalVertexFactory.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "MaterialShared.h"
 #include "Misc/Crc.h"
 #include "ProceduralMeshComponent.h"
+#include "RenderCommandFence.h"
 #include "UObject/StrongObjectPtr.h"
 #include "APSTundraLayerTransferProbe.h"
 #include "APSPlanetBufferViewsProbe.h"
@@ -97,6 +102,13 @@ namespace APSPlanetTerrainLodAB
         bool bPresentationPending = false, bRequireOrbitMovement = false;
         double PresentationStarted = 0.0, PresentationSettleDelay = 0.0;
         uint64 PresentationRequestFrame = 0, PresentationMatchedFrame = MAX_uint64;
+        double CloudWaitStarted = 0.0, CloudWaitLastLog = 0.0;
+        TWeakObjectPtr<UMaterialInstanceDynamic> CloudCompileRequestedMID;
+        const FMaterialResource* CloudCompileRequestedResource = nullptr;
+        TWeakObjectPtr<UMaterialInstanceDynamic> CloudReadyMID;
+        const FMaterialShaderMap* CloudReadyMap = nullptr;
+        FRenderCommandFence CloudReadyFence;
+        bool bCloudReadyLogged = false;
         FVector BeforePresentationObserver = FVector::ZeroVector;
         FTransform BeforePresentationBody = FTransform::Identity;
         static constexpr double SweepHeightsKm[] = {20000, 10000, 5000, 2000, 1000, 500, 300, 200, 120, 90, 70};
@@ -224,6 +236,103 @@ namespace APSPlanetTerrainLodAB
             return Ready ? EResult::Finished : EResult::Pending;
         }
 
+        EResult PollCloudMaterial(AAstroGenerator* G, double Now, FString& Error)
+        {
+            auto* Planet = Cast<APlanet>(G->GetActivePreviewWorldScapeBody());
+            if (!Planet) return EResult::Finished;
+            UAPSPlanetCloudComponent* Cloud = nullptr;
+            int32 Count = 0;
+            TArray<AActor*> Attached;
+            Planet->GetAttachedActors(Attached);
+            for (auto* Actor : Attached)
+                if (IsValid(Actor) && !Actor->IsActorBeingDestroyed() && Actor->GetOwner() == Planet)
+                    if (auto* Component = Actor->FindComponentByClass<UAPSPlanetCloudComponent>())
+                    { Cloud = Component; ++Count; }
+            const bool bWeather = UAPSPlanetCloudComponent::WeatherModelEnabled();
+            const bool bDiagnostic = APSPlanetCloudWeather::CandidateRequested() || APSPlanetCloudWeather::LayeredRequested()
+                || FParse::Param(FCommandLine::Get(), TEXT("APSCloudDiagnostics"));
+            const auto* CloudMode = IConsoleManager::Get().FindConsoleVariable(TEXT("aps.Surface.Clouds"));
+            const bool bExpected = bDiagnostic && CloudMode && CloudMode->GetInt() == 1 && IsValid(Planet->ParentStar)
+                && (bWeather ? UAPSPlanetCloudComponent::Describe(Planet).Enabled
+                    : APSPlanetCloudPolicy::Resolve(UAPSPlanetSurfaceProfileResolver::ResolveForBody(Planet),
+                        Planet->AtmosphereHeight, Planet->IsManual).Enabled);
+            if (!Count && !bExpected) return EResult::Finished; // OFF or legitimately ineligible; no substitute.
+            if (Count > 1)
+            { Error = TEXT("PLANET cloud readiness found duplicate bound volumes"); return EResult::Failed; }
+            const TCHAR* ExpectedParent = bWeather ? APSPlanetCloudWeather::SelectedMaterialPath() : APSPlanetCloudPolicy::MaterialPath;
+            if (CloudWaitStarted <= 0.0) CloudWaitStarted = Now;
+            const auto Pending = [&](const TCHAR* Reason)
+            {
+                if (Now - CloudWaitStarted >= 60.0)
+                {
+                    Error = FString::Printf(TEXT("PLANET cloud readiness timeout: view=%d reason=%s expectedParent=%s component=%s; capture rejected"),
+                        View, Reason, ExpectedParent, *GetPathNameSafe(Cloud));
+                    return EResult::Failed;
+                }
+                if (CloudWaitLastLog <= 0.0 || Now - CloudWaitLastLog >= 5.0)
+                {
+                    CloudWaitLastLog = Now;
+                    UE_LOG(LogTemp, Display, TEXT("PLANET_CLOUD_SHADER_PENDING view=%d reason=%s expectedParent=%s component=%s elapsed=%.2f"),
+                        View, Reason, ExpectedParent, *GetPathNameSafe(Cloud), Now - CloudWaitStarted);
+                }
+                return EResult::Pending;
+            };
+            if (!Cloud || !Cloud->IsRegistered()) return Pending(TEXT("component"));
+            auto* MID = Cast<UMaterialInstanceDynamic>(Cloud->GetMaterial(0));
+            if (!MID || !MID->Parent || MID->Parent->GetPathName() != ExpectedParent)
+            {
+                Error = FString::Printf(TEXT("PLANET cloud readiness binding mismatch: expectedParent=%s actualMaterial=%s actualParent=%s"),
+                    ExpectedParent, *GetPathNameSafe(Cloud->GetMaterial(0)), MID ? *GetPathNameSafe(MID->Parent.Get()) : TEXT("none"));
+                return EResult::Failed;
+            }
+            const auto FeatureLevel = G->GetWorld()->GetFeatureLevel();
+            auto* Resource = MID->GetMaterialResource(FeatureLevel);
+            if (Resource && Resource->GetCompileErrors().Num())
+            {
+                Error = FString::Printf(TEXT("PLANET cloud shader compile failed: material=%s errors=%s"),
+                    *MID->GetPathName(), *FString::Join(Resource->GetCompileErrors(), TEXT(" | ")));
+                return EResult::Failed;
+            }
+            const auto* Map = Resource ? Resource->GetGameThreadShaderMap() : nullptr;
+#if WITH_EDITOR
+            // Editor PostLoad may leave a lazy map with only the shaders used so far.
+            // Request the complete map once for this binding before waiting for it.
+            if (Resource && Map && !Resource->IsGameThreadShaderMapComplete()
+                && (CloudCompileRequestedMID.Get() != MID || CloudCompileRequestedResource != Resource))
+            {
+                CloudCompileRequestedMID = MID; CloudCompileRequestedResource = Resource;
+                Resource->SubmitCompileJobs_GameThread(EShaderCompileJobPriority::ForceLocal);
+                UE_LOG(LogTemp, Display, TEXT("PLANET_CLOUD_SHADER_REQUEST material=%s featureLevel=%d oncePerBinding=1"),
+                    *MID->GetPathName(), int32(FeatureLevel));
+            }
+#endif
+            const TCHAR* ShaderPendingReason = !Resource ? TEXT("no feature-level resource")
+                : !Map ? TEXT("no shader map")
+                : !Resource->IsGameThreadShaderMapComplete() ? TEXT("incomplete shader map")
+                : !Map->GetMeshShaderMap(&FLocalVertexFactory::StaticType) ? TEXT("missing LocalVF") : nullptr;
+            if (ShaderPendingReason)
+            {
+                CloudReadyMID.Reset(); CloudReadyMap = nullptr; bCloudReadyLogged = false;
+                return Pending(ShaderPendingReason);
+            }
+            if (CloudReadyMID.Get() != MID || CloudReadyMap != Map)
+            {
+                CloudReadyMID = MID; CloudReadyMap = Map; bCloudReadyLogged = false;
+                // Wait asynchronously for the queued shader-map publication. No
+                // FinishAllCompilation, material replacement, bounds or tick edits.
+                CloudReadyFence.BeginFence();
+                return Pending(TEXT("render publication"));
+            }
+            if (!CloudReadyFence.IsFenceComplete()) return Pending(TEXT("render publication"));
+            if (!bCloudReadyLogged)
+            {
+                UE_LOG(LogTemp, Display, TEXT("PLANET_CLOUD_SHADER_READY view=%d material=%s parent=%s featureLevel=%d complete=1 LocalVF=1 renderFence=1 elapsed=%.2f"),
+                    View, *MID->GetPathName(), ExpectedParent, int32(FeatureLevel), Now - CloudWaitStarted);
+                bCloudReadyLogged = true;
+            }
+            return EResult::Finished;
+        }
+
         void SnapshotView()
         {
             MeshFrame = Terrain->GetComponentTransform();
@@ -251,6 +360,8 @@ namespace APSPlanetTerrainLodAB
             PresentationRequestFrame = GFrameCounter; PresentationMatchedFrame = MAX_uint64;
             bPresentationPending = true; bRequireOrbitMovement = bRequireMovement;
             bViewSettled = false; GpuMs.Reset(); Next = Now;
+            CloudWaitStarted = 0.0; CloudWaitLastLog = 0.0;
+            CloudReadyMID.Reset(); CloudReadyMap = nullptr; bCloudReadyLogged = false;
             Generator->SetActorTickEnabled(true);
         }
 
@@ -430,7 +541,8 @@ namespace APSPlanetTerrainLodAB
             float FramedHeightKm = -1.0f;
             const bool bFramedHeight = FParse::Value(FCommandLine::Get(), TEXT("APSPlanetProbeHeightKm="), FramedHeightKm);
             if (UsesPublishedViews() && (!bNativeViews || !APSTerrainContinuityMaterial::Enabled()
-                || bBuffers || bPatterns || APSTundraLayerTransfer::Requested()))
+                || (bBuffers && !FParse::Param(FCommandLine::Get(), TEXT("APSProbeTerrainPublishedDefault")))
+                || bPatterns || APSTundraLayerTransfer::Requested()))
             { Error = TEXT("Published views require the enabled production route without diagnostic material overrides"); return EResult::Failed; }
             if (UsesFamilyScaleAB() && (!(UsesOrbitalFields() || UsesPublishedViews()) || !bFramedHeight || FramedHeightKm != 20000.0f))
             { Error = TEXT("Family scale A/B requires OrbitalFields and the 20000km initial view"); return EResult::Failed; }
@@ -476,6 +588,7 @@ namespace APSPlanetTerrainLodAB
                     if (!Planet || bContinuous != APSTerrainContinuityMaterial::Allows(Planet->PlanetType))
                     { Error=TEXT("Published material family gate did not select the intended stack");return EResult::Failed; }
                     UE_LOG(LogTemp,Display,TEXT("PLANET_TERRAIN_PUBLISHED type=%d parent=%s noTestSubstitution=1"),int32(Planet->PlanetType),*NativeParent);
+                    if (bBuffers) UE_LOG(LogTemp, Display, TEXT("PLANET_TERRAIN_PUBLISHED_BUFFER_INSPECTION materialUnchanged=1 normalLitAcceptance=0; original MID retained through lit/base-color/world-normal/roughness/lit-restored"));
                 }
                 // Select by the real bound material, not by a requested family
                 // label. Static/texture compatibility is still required below.
@@ -552,6 +665,14 @@ namespace APSPlanetTerrainLodAB
                 return EResult::Pending;
             }
             if (bPresentationPending) return PollPresentation(Now, Error);
+            const auto CloudReady = PollCloudMaterial(G, Now, Error);
+            if (CloudReady != EResult::Finished)
+            {
+                // Re-enter the ordinary light/render settle after cloud readiness;
+                // do not include shader-wait frames in the GPU sample window.
+                bViewSettled = false; GpuMs.Reset();
+                return CloudReady;
+            }
             // Production preview lighting is updated by the world subsystem,
             // independently of the frozen generator. Let it settle after an
             // orbit before taking the paired baseline; never resnapshot it

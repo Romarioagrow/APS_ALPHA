@@ -94,11 +94,9 @@ namespace APSUnifiedLavaSurface
         UAPSPlanetSurfaceProfileResolver::ApplyMaterialParameters(Result, Profile);
         if (APSUnifiedLavaAssets::DetailCandidate())
             Result->SetScalarParameterValue(TEXT("APS_UnifiedDetailStrength"), APSUnifiedLavaAssets::DetailStrength());
-        // This cloned master is not in ApplyPalette's shared-master normal
-        // gate. Retain the accepted rock-side filter instead of its saved
-        // 200..700 km defaults; no lava field, palette or coast weight changes.
-        Result->SetScalarParameterValue(TEXT("APS_FarNormalStartCm"), 200000.0f);
-        Result->SetScalarParameterValue(TEXT("APS_FarNormalEndCm"), 2000000.0f);
+        // Same accepted rock-side filter as shared terrain, without introducing
+        // its orbital/warp overrides or changing lava, palette or coast weights.
+        APSPlanetSurfaceMaterialPolicy::ApplyFarNormalPolicy(Result);
         Result->SetScalarParameterValue(TEXT("APS_UnifiedSeaRadiusCm"),
             static_cast<float>(RadiusCm + static_cast<double>(Profile.OceanLevel) * Profile.NoiseIntensity));
         // Covers radial float quantization; metre-scale coast feather, not a

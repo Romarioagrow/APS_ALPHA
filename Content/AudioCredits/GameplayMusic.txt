@@ -1,0 +1,40 @@
+APOSFERA gameplay music
+
+Music: Stellardrone (Edgaras Zakevicius)
+Album: Light Years (2013), released by Energostatic Records.
+Author: https://stellardrone.bandcamp.com/album/light-years
+Official download mirror linked by the author: https://archive.org/details/stasis017
+
+License on the author's current album page: Creative Commons Attribution 4.0 International.
+https://creativecommons.org/licenses/by/4.0/
+Original 2013 CC BY 3.0 notice is also retained:
+https://creativecommons.org/licenses/by/3.0/
+
+Airglow
+https://stellardrone.bandcamp.com/track/airglow
+
+Comet Halley
+https://stellardrone.bandcamp.com/track/comet-halley
+
+Ultra Deep Field
+https://stellardrone.bandcamp.com/track/ultra-deep-field
+
+Light Years
+https://stellardrone.bandcamp.com/track/light-years
+
+In Time
+https://stellardrone.bandcamp.com/track/in-time
+
+Cepheid
+https://stellardrone.bandcamp.com/track/cepheid
+
+Red Giant
+https://stellardrone.bandcamp.com/track/red-giant
+
+Messier 45
+https://stellardrone.bandcamp.com/track/messier-45
+
+Changes for APOSFERA: stereo 44.1 kHz conversion, fixed gain matching, gentle EQ,
+quiet intro/tail edits, fades and six-second crossfades between tracks.
+The cycle plays edited versions of all eight selected compositions before repeating.
+No endorsement by Stellardrone or Energostatic Records is implied.

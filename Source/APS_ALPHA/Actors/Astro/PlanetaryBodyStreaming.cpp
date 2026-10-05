@@ -288,10 +288,7 @@ void APlanetaryBody::SetWorldScapeStreamingState(EWorldScapeSurfaceState NewStat
 
 	auto SetPlaceholderVisible = [this](bool bVisible)
 	{
-		if (bVisible)
-		{
-			APSPlaceholderGlobe::Apply(this);
-		}
+		if (APSPlaceholderGlobe::SetVisible(this, bVisible)) return;
 		if (APlanet* Planet = Cast<APlanet>(this))
 		{
 			bVisible ? Planet->EnableSphereMesh() : Planet->DisableSphereMesh();
@@ -304,6 +301,16 @@ void APlanetaryBody::SetWorldScapeStreamingState(EWorldScapeSurfaceState NewStat
 
 	if (NewState == EWorldScapeSurfaceState::Unloaded)
 	{
+		// Keep the published native surface until the same-profile closed geometry
+		// is ready. Never expose the authored flat sphere during a residency change.
+		if (bWorldScapeSurfaceReady && IsValid(PlanetaryEnvironmentGenerator)
+			&& IsValid(PlanetaryEnvironmentGenerator->WorldScapeRootInstance)
+			&& !APSPlaceholderGlobe::PrepareForUnload(this))
+		{
+			PlanetaryEnvironmentGenerator->FreezeWorldScapeRoot();
+			WorldScapeSurfaceState = EWorldScapeSurfaceState::FrozenVisible;
+			return;
+		}
 		if (IsValid(PlanetaryEnvironmentGenerator))
 		{
 			PlanetaryEnvironmentGenerator->UnloadWorldScapeRoot();
@@ -444,10 +451,7 @@ bool APlanetaryBody::RefreshWorldScapeSurfaceVisibility()
 {
 	auto SetPlaceholderVisible = [this](bool bVisible)
 	{
-		if (bVisible)
-		{
-			APSPlaceholderGlobe::Apply(this);
-		}
+		if (APSPlaceholderGlobe::SetVisible(this, bVisible)) return;
 		if (APlanet* Planet = Cast<APlanet>(this))
 		{
 			bVisible ? Planet->EnableSphereMesh() : Planet->DisableSphereMesh();

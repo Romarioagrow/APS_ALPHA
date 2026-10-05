@@ -206,6 +206,10 @@ public:
 	UPROPERTY(VisibleAnywhere, Category = "Atmo Scape")
 	AAtmoScape* PlanetAtmosphere;
 
+	// Hard reference keeps the immutable atmosphere master in packaged builds.
+	UPROPERTY()
+	TObjectPtr<UMaterialInterface> ContinuousAtmosphereMaterial;
+
 	UPROPERTY(VisibleAnywhere, Category = "World Scape")
 	double RadiusKM;
 

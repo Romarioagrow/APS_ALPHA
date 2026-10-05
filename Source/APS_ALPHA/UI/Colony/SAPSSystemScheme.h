@@ -27,6 +27,9 @@ public:
 	void Refresh();
 	AActor* GetPicked() const { return Picked.Get(); }
 	void SetPicked(AActor* Actor) { Picked = Actor; }
+	/** Rio 05.10 (star map): pins the scheme to this star's system (the star map's drill-down); null follows the player again. */
+	void ShowSystem(AActor* Star);
+	bool IsPinned() const { return PinnedStar.IsValid(); }
 
 	virtual FVector2D ComputeDesiredSize(float) const override { return FVector2D(640.0, 420.0); }
 	virtual int32 OnPaint(const FPaintArgs& Args, const FGeometry& Geometry, const FSlateRect& CullingRect,
@@ -77,4 +80,20 @@ private:
 	mutable double PixelsPerKm{0.0};
 	/** Per lane: where the planets' labels start (one row under the largest disc, Rio 02.10: "even paddings"). */
 	mutable TArray<double> LabelRows;
+	/** Rio 04.10 evening ("zoomed in they lie on each other, zoomed out the star never shows whole"): per lane its top and
+	 * height in the last layout. A lane is at least its share of the widget and grows with its largest disc, labels and
+	 * moon column, so zooming in never stacks one lane onto the next; the scheme then also pans vertically. */
+	mutable TArray<double> LaneTops;
+	mutable TArray<double> LaneHeights;
+	/** The size of everything laid out, for the pan limits, and the pan the last layout used (within those limits). */
+	mutable FVector2D ContentSize{FVector2D::ZeroVector};
+	mutable FVector2D LaidOutPan{FVector2D::ZeroVector};
+	/** The wheel's limits: zoomed out, the system's largest star fits its lane whole and to scale; zoomed in, the largest
+	 * planet still fits the view. */
+	mutable double MinZoom{0.25};
+	mutable double MaxZoom{60.0};
+	/** Pan clamped so the scheme never leaves the view: not right of its left edge, never all of it off to the left or up. */
+	FVector2D ClampPan(const FVector2D& Wanted, const FVector2D& Size) const;
+	/** Rio 05.10 (star map): the star whose system the scheme shows instead of the one nearest the player. */
+	TWeakObjectPtr<AActor> PinnedStar;
 };

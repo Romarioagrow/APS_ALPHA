@@ -109,6 +109,7 @@ namespace APSStarRenderer::Private
 		PointSets.Empty();
 		GlowVolumes.Empty();
 		SceneVisibility.Empty();
+		SkyMaskScenes.Empty();
 		Readbacks.Empty();
 	}
 
@@ -523,6 +524,25 @@ namespace APSStarRenderer
 		});
 	}
 
+	void SetMinPixelScale(const FHandle Handle, const float Scale)
+	{
+		if (Handle == 0)
+		{
+			return;
+		}
+		const float Clamped = FMath::IsFinite(Scale) ? FMath::Clamp(Scale, 0.01f, 1000.0f) : 1.0f;
+		RunOnGameThread([Handle, Clamped]()
+		{
+			FRegistry::Get().EnqueueRenderUpdate([Handle, Clamped](FRenderState& State)
+			{
+				if (FPointSetRT* Set = State.FindPointSet(Handle))
+				{
+					Set->Desc.MinPixelScale = Clamped;
+				}
+			});
+		});
+	}
+
 	void SetEnabled(const FHandle Handle, const bool bEnabled)
 	{
 		if (Handle == 0)
@@ -594,6 +614,7 @@ namespace APSStarRenderer
 				if (Scene != nullptr)
 				{
 					State.SceneVisibility.Remove(Scene);
+					State.SkyMaskScenes.Remove(Scene);
 				}
 			});
 		});
@@ -651,6 +672,34 @@ namespace APSStarRenderer
 			FRegistry::Get().EnqueueRenderUpdate([Scene, Clamped](FRenderState& State)
 			{
 				State.SceneVisibility.Add(Scene, Clamped);
+			});
+		});
+	}
+
+	void SetWorldSkyMask(const UWorld* World, const bool bEnabled)
+	{
+		if (World == nullptr)
+		{
+			return;
+		}
+		RunOnGameThread([WeakWorld = MakeWeakWorld(World), bEnabled]()
+		{
+			const UWorld* GameWorld = WeakWorld.Get();
+			const FSceneInterface* Scene = GameWorld ? GameWorld->Scene : nullptr;
+			if (Scene == nullptr)
+			{
+				return;
+			}
+			FRegistry::Get().EnqueueRenderUpdate([Scene, bEnabled](FRenderState& State)
+			{
+				if (bEnabled)
+				{
+					State.SkyMaskScenes.Add(Scene);
+				}
+				else
+				{
+					State.SkyMaskScenes.Remove(Scene);
+				}
 			});
 		});
 	}

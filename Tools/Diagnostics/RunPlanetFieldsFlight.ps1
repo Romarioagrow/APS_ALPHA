@@ -1,7 +1,10 @@
 param(
-    [ValidateSet('Water','Frozen','Terrestrial','Oasis','Ice','Tundra','Nordic','Rocky','Desert','Sand','HighMountain','Forest','Savanna','SuperEarth','Pangea','Volcanic','Metallic','Crystal')][string]$Family='Terrestrial',
+    [ValidateSet('Water','Frozen','Terrestrial','Oasis','Ice','Tundra','Nordic','Rocky','Desert','Sand','HighMountain','Forest','Savanna','SuperEarth','Pangea','Volcanic','Metallic','Crystal','Greenhouse','Dwarf','Ocean','Ammonia','Metal','Carbon','Archipelago','Rogue','Basalt','Sulfur')][string]$Family='Terrestrial',
     [ValidateSet('Fields','Atmosphere','KeyShadow','StarShadow','NormalHex','Combined','Published')][string]$Isolation='Fields',
+    [ValidateSet('Control','Candidate')][string]$SurfaceUnification,
     [switch]$DefaultAtmosphere,
+    [switch]$Daylight,
+    [switch]$CanonicalNormalBandwidth,
     [switch]$Clouds,
     [switch]$CloudWeather,
     [switch]$CloudWeatherCandidate,
@@ -59,7 +62,12 @@ param(
     [Parameter(Mandatory)][ValidatePattern('^[a-z0-9-]+$')][string]$Label
 )
 $ErrorActionPreference='Stop'
-if($CloudWeatherCandidate -and $CloudLayeredCandidate){throw 'Select one cloud candidate: weather V28 or layered V30'}
+if($CanonicalNormalBandwidth -and ($SurfaceUnification -ne 'Candidate' -or $Isolation -ne 'Published' -or $Performance)){throw 'CanonicalNormalBandwidth requires original Published UnifiedDefault, not a timing comparison'}
+if($Daylight -and (!$SurfaceUnification -or $Isolation -ne 'Published')){throw 'Daylight requires an explicit generic SurfaceUnification Published route'}
+if($Family -in @('Greenhouse','Dwarf','Ocean','Ammonia','Metal','Carbon','Archipelago','Rogue','Basalt','Sulfur') -and !$SurfaceUnification){throw 'Expanded terrain families require explicit SurfaceUnification Control/Candidate'}
+if($SurfaceUnification -and ($Isolation -ne 'Published' -or $CloudWeatherCandidate -or $CloudLayeredCandidate -or $WaterMaterial -or $WaterPayload -or $WaterShoreTransmission -or $PSBoundParameters.ContainsKey('TerrestrialPalette'))){throw 'Surface unification requires Published and no other material/payload candidate'}
+if($SurfaceUnification -and ($WaterFlight -or $NativeLavaFlight -or $CloudFlight -or $FoliageFlight -or $FlightResidency)){throw 'Surface unification uses the generic terrain route; run named liquid/cloud/foliage/residency probes separately'}
+if($CloudWeatherCandidate -and $CloudLayeredCandidate){throw 'Select one cloud candidate: refined V31 or layered V30'}
 if($CloudWeatherCandidate -and (!$CloudWeather -or $CloudDefault)){throw 'CloudWeatherCandidate requires explicit CloudWeather; not a default-acceptance run'}
 if($CloudLayeredCandidate -and (!$CloudWeather -or $CloudDefault)){throw 'CloudLayeredCandidate requires explicit CloudWeather; not a default-acceptance run'}
 if($PSBoundParameters.ContainsKey('CloudFeatureScale') -and (!$CloudWeather -or $CloudDefault -or $CloudAerialOff -or $Performance)){throw 'CloudFeatureScale requires a visual weather fixture without default/aerial/timing experiments'}
@@ -118,6 +126,10 @@ if($CpuTrace -and -not $Performance){throw 'CpuTrace requires Performance; timin
 if($WaterFlight -and ($Isolation -ne 'Published' -or ($Family -notin @('Water','Terrestrial','Oasis') -and !$NativeLavaFlight) -or $LodBoundary -or $GroundHold -or $FoliagePrototype)){throw 'Liquid flight needs explicit wet Published family without other experiments'}
 if($LodBoundary -and ($Isolation -ne 'Published' -or $GroundHold -or $FoliagePrototype)){throw 'LOD boundary requires Published with no other experiment'}
 $projectRoot='F:/Rio/Projects/Unreal Projects/APS/APS_ALPHA'
+if($SurfaceUnification){
+    . (Join-Path $PSScriptRoot 'SurfaceUnificationDiagnostic.ps1')
+    $surfaceSelection=Get-APSSurfaceUnificationDiagnostic -ProjectRoot $projectRoot -Mode $SurfaceUnification
+}
 if($PSBoundParameters.ContainsKey('CollisionHeightOnly') -and
     (Get-Content -Raw -LiteralPath ($projectRoot+'/Source/APS_ALPHA/Generation/APSWorldScapePlanetNoise.h')) -notmatch '#define APS_COLLISION_HEIGHT_HOOK 1') {
     throw 'Height-only native/APS candidate is not installed; cannot produce a valid ON/OFF comparison'
@@ -135,6 +147,7 @@ if($WaterSurfaceAnchored -and -not(Test-Path -LiteralPath ($projectRoot+'/Conten
 if($WaterAnchorNoise -and -not(Test-Path -LiteralPath ($projectRoot+'/Content/APS/APS_ALPHA/WSC/PlanetSurface/Diagnostics/WaterAnchoredNoise20260930/MI_APS_WaterAnalytic.uasset'))){throw 'Bake anchored noise first'}
 if($Isolation -in @('NormalHex','Combined','Published') -and $FoliagePrototype -and !$FoliageFlight){throw 'Terrain flight must not activate unrelated foliage'}
 $dll=Get-Item -LiteralPath ($projectRoot+'/Binaries/Win64/UnrealEditor-APS_ALPHA.dll')
+if($CanonicalNormalBandwidth -and (Get-Item -LiteralPath ($projectRoot+'/Source/APS_ALPHA/Tests/APSPublishedNormalBandwidthProbe.h')).LastWriteTimeUtc -gt $dll.LastWriteTimeUtc){throw 'Canonical normal measurement newer than DLL; build first'}
 foreach($p in @('Source/APS_ALPHA/Core/Planetary/APSShoreWaterMaterial.h','Source/APS_ALPHA/Core/Planetary/APSWaterLightingSubsystem.h','Source/APS_ALPHA/Core/Planetary/APSWaterLightingSubsystem.cpp','Source/APS_ALPHA/Tests/APSShoreWaterTests.cpp')) {
     if((Get-Item -LiteralPath ($projectRoot+'/'+$p)).LastWriteTimeUtc -gt $dll.LastWriteTimeUtc){throw 'Shore factory/binder newer than DLL'}
 }
@@ -210,6 +223,8 @@ foreach($source in @('Source/APS_ALPHA/Core/Planetary/APSPlanetSurfaceProfile.cp
     if((Get-Item -LiteralPath ($projectRoot+'/'+$source)).LastWriteTimeUtc -gt $dll.LastWriteTimeUtc){throw 'Newer Terrestrial vegetation source; build first'}
 }
 New-Item -ItemType Directory -Path $runDir | Out-Null
+if($SurfaceUnification){Save-APSSurfaceUnificationDiagnostic -Selection $surfaceSelection -RunDir $runDir}
+if($CanonicalNormalBandwidth){Get-FileHash -LiteralPath ($projectRoot+'/Source/APS_ALPHA/Tests/APSPublishedNormalBandwidthProbe.h') | Select-Object Path,Hash | ConvertTo-Json | Out-File ($runDir+'/normal-bandwidth-source.json') -Encoding utf8}
 if($CloudWeather){Save-APSCloudWeatherDiagnostic -ProjectRoot $projectRoot -RunDir $runDir -Selection $cloudSelection -FeatureScale $CloudFeatureScale}
 Get-ChildItem -LiteralPath ($projectRoot+'/Content/APS/APS_ALPHA/WSC/PlanetSurface/Shared') -Recurse -File -Filter '*.uasset' |
     Get-FileHash | Select-Object Path,Hash | ConvertTo-Json | Out-File ($runDir+'/assets-before.json') -Encoding utf8
@@ -225,6 +240,7 @@ if($Clouds -or $CloudFlight) {
         ConvertTo-Json | Out-File ($runDir+'/cloud-asset.json') -Encoding utf8
 }
 $tests='APS.Gameplay.Generation.EmissivePhotosphereShadowPolicy+APS.Rendered.Gameplay.GeneratedSurfaceLightingDiagnostics'
+if($SurfaceUnification){$tests+='+APS.Contracts.PlanetSurface.MaterialPolicy+APS.Gameplay.World.PlanetSurface.CryogenicGeometry+APS.Gameplay.World.PlanetSurface.OrbitalWaterAppearance+APS.Gameplay.World.PlanetSurface.SharedGeneratedLiquidSelection+APS.Gameplay.World.PlanetSurface.CoastalWater.ReleaseContract'}
 if($Isolation -eq 'Published'){$tests+='+APS.Contracts.PlanetSurface.TerrainContinuity+APS.Gameplay.World.PlanetSurface.SurfaceFillContinuity'}
 if($TerrestrialPalette){$tests+='+APS.Gameplay.World.PlanetSurface.TerrestrialMaterialPalette'}
 if($FoliageFlight){$tests+='+APS.Gameplay.World.PlanetSurface.Foliage+APS.Gameplay.World.PlanetSurface.LandingReliefRecovery'}
@@ -269,7 +285,7 @@ $arguments=@(
     '-d3d12','-sm6','-RenderOffscreen','-Windowed','-ForceRes','-ResX=1600','-ResY=1000',
     ('-APSDiagnosticPlanet='+$Family),'-APSDiagnosticOrbitOverview',$(if($LodBoundary){'-APSDiagnosticOrbitHeightKm=2.36'}else{'-APSDiagnosticOrbitHeightKm=100'}),
     '-APSProbeOrbitalFieldsFlight',
-    ('-ExecCmds="'+$publicationCVars+'aps.Surface.TerrainContinuity '+$(if($Isolation -eq 'Published'){'1'}else{'0'})+','+$(if($FoliagePrototype){'aps.WorldScapeFoliage.Enable 1,aps.WorldScapeFoliage.Prototype 1,'}else{''})+'Automation RunTests '+$tests+'"'),
+    ('-ExecCmds="'+$publicationCVars+$(if($FoliagePrototype){'aps.WorldScapeFoliage.Enable 1,aps.WorldScapeFoliage.Prototype 1,'}else{''})+'Automation RunTests '+$tests+'"'),
     '-TestExit="Automation Test Queue Empty"',('-ReportExportPath="'+$runDir+'/report"'),
     ('-UserDir="'+$runDir+'"'),('-abslog="'+$runDir+'/gameplay.log"')
 )
@@ -285,6 +301,8 @@ elseif($Isolation -in @('NormalHex','Combined')){
 if($Isolation -ne 'Published'){$arguments+='-APSDiagnosticTerrainLodAB'}
 if($Isolation -eq 'Combined'){$arguments+='-APSProbeContinuityCombined'}
 if($DefaultAtmosphere){$arguments+='-APSProbeDefaultAtmosphere'}
+if($Daylight){$arguments+='-APSProbeFlightDaylight'}
+if($CanonicalNormalBandwidth){$arguments+='-APSProbeCanonicalNormalBandwidth'}
 if(($Clouds -or $CloudDefault) -and !$Performance){$arguments+='-APSCloudDiagnostics'}
 if($CloudFlight){$arguments+='-APSProbeCloudFlight'}
 if($CloudWeatherCandidate){$arguments+='-APSCloudWeatherCandidate'}
@@ -331,6 +349,10 @@ if($WaterAnchorNoise){$arguments+='-APSWaterAnchorNoise'}
 if($WaterSurfacePass){$arguments+=@('-APSProbeWaterSurfacePass','-ini:Engine:[SystemSettings]:r.Water.SingleLayer.ShadersSupportVSMFiltering=1,r.Water.SingleLayer.VSMFiltering=1')}
 if($Performance -and $WaterFlight){$arguments+='-APSProbeWaterFlightPerf'}
 if($CpuTrace){$arguments+=@('-trace=cpu,frame,bookmark,region,loadtime','-statnamedevents',('-tracefile="'+$runDir+'/water-flight.utrace"'))}
+if($SurfaceUnification){
+    $arguments+='-APSProbeSurfaceUnificationFlight'
+    if($surfaceSelection.Flag){$arguments+=$surfaceSelection.Flag}
+}
 $arguments -join ' ' | Out-File ($runDir+'/command.txt') -Encoding utf8
 $process=Start-Process -FilePath 'C:/Program Files/Epic Games/UE/UE_5.4/Engine/Binaries/Win64/UnrealEditor.exe' -ArgumentList $arguments -WindowStyle Hidden -PassThru -RedirectStandardOutput ($runDir+'/stdout.txt') -RedirectStandardError ($runDir+'/stderr.txt')
 [PSCustomObject]@{Id=$process.Id;StartTime=$process.StartTime;Evidence=$runDir;Isolation=$Isolation;DefaultAtmosphere=[bool]$DefaultAtmosphere;FoliagePrototype=[bool]$FoliagePrototype} | ConvertTo-Json

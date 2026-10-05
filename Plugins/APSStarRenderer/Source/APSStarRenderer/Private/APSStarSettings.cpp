@@ -53,6 +53,18 @@ namespace APSStarRenderer::Private
 		TEXT("Largest halo share of a bright point (its halo widens from 0.9 to 1.6 px with brightness)."),
 		ECVF_RenderThreadSafe);
 
+	TAutoConsoleVariable<float> CVarSkyMaskLuminance(
+		TEXT("aps.Stars.SkyMaskLuminance"), 0.03f,
+		TEXT("Rio 04.10: in a world with the sky mask (gameplay), the points fade over a bright scene, by one e-fold per this ")
+		TEXT("pre-exposed luminance (an atmosphere outshines the stars behind it). 0: off."),
+		ECVF_RenderThreadSafe);
+
+	TAutoConsoleVariable<float> CVarGpuPointCoreGrow(
+		TEXT("aps.Stars.GpuPointCoreGrow"), 0.0f,
+		TEXT("Rio 04.10 (\"look closely: the big stars are square\"): how much the core of the brightest points widens (their ")
+		TEXT("saturated centre becomes a small round disc instead of a 3x3 block). 0: off, the accepted look; 1: up to twice."),
+		ECVF_RenderThreadSafe);
+
 	TAutoConsoleVariable<int32> CVarGpuPointPsfRadius(
 		TEXT("aps.Stars.GpuPointPsfRadius"), 2,
 		TEXT("Gather radius of the point PSF in pixels (1..3)."),

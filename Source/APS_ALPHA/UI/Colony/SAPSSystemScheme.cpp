@@ -122,6 +122,19 @@ void SAPSSystemScheme::Construct(const FArguments& InArgs)
 	Refresh();
 }
 
+void SAPSSystemScheme::ShowSystem(AActor* Star)
+{
+	// Rio 05.10 (star map): another system opens whole, at the default zoom.
+	if (PinnedStar.Get() != Star)
+	{
+		PinnedStar = Star;
+		Picked = nullptr;
+		Zoom = 1.0;
+		Pan = FVector2D::ZeroVector;
+	}
+	Refresh();
+}
+
 void SAPSSystemScheme::Refresh()
 {
 	using namespace APSSystemSchemePrivate;
@@ -135,10 +148,12 @@ void SAPSSystemScheme::Refresh()
 	const APlayerController* Controller = LiveWorld->GetFirstPlayerController();
 	const APawn* Pawn = Controller ? Controller->GetPawn() : nullptr;
 	const FVector Origin = Pawn ? Pawn->GetActorLocation() : FVector::ZeroVector;
-	// The current system: the star nearest the player, with every star of its system.
-	const AStar* Nearest = nullptr;
+	// The current system: the star nearest the player, with every star of its system (Rio 05.10: or the system the star
+	// map's drill-down pinned).
+	const AStar* Nearest = Cast<AStar>(PinnedStar.Get());
+	const bool bPinned = Nearest != nullptr;
 	double NearestDistance = TNumericLimits<double>::Max();
-	for (TActorIterator<AStar> It(LiveWorld); It; ++It)
+	for (TActorIterator<AStar> It(LiveWorld); It && !bPinned; ++It)
 	{
 		if (!IsValid(*It) || !IsValid(It->PlanetarySystem)) continue;
 		const double Distance = FVector::DistSquared(It->GetActorLocation(), Origin);
@@ -219,9 +234,13 @@ void SAPSSystemScheme::Layout(const FVector2D& Size) const
 	Centres.SetNumZeroed(Bodies.Num());
 	Radii.SetNumZeroed(Bodies.Num());
 	LabelRows.SetNumZeroed(FMath::Max(Lanes, 1));
+	LaneTops.SetNumZeroed(FMath::Max(Lanes, 1));
+	LaneHeights.SetNumZeroed(FMath::Max(Lanes, 1));
 	LaidOutSize = Size;
 	if (Bodies.IsEmpty() || Lanes == 0)
 	{
+		ContentSize = FVector2D::ZeroVector;
+		LaidOutPan = FVector2D::ZeroVector;
 		return;
 	}
 	double LargestPlanetKm = 1.0;
@@ -232,7 +251,7 @@ void SAPSSystemScheme::Layout(const FVector2D& Size) const
 		else LargestStarKm = FMath::Max(LargestStarKm, Body.RadiusKm);
 	}
 	PixelsPerKm = LargestPlanetPixels / LargestPlanetKm * Zoom;
-	const double LaneHeight = Size.Y / Lanes;
+	const double BaseLaneHeight = Size.Y / Lanes;
 	// First pass: each lane's largest planet disc (the axis and the label row follow it) and each planet's moon column.
 	TArray<double> LaneLargest;
 	LaneLargest.Init(MinimumPlanetPixels, Lanes);
@@ -267,33 +286,66 @@ void SAPSSystemScheme::Layout(const FVector2D& Size) const
 			LaneBelow[Body.Lane] = FMath::Max(LaneBelow[Body.Lane], MoonGapPixels + MoonHeights[Index]);
 		}
 	}
-	// Rio 04.10: the axis sits mid-lane when the labels and moons fit under it, so the star is as tall as its lane allows.
+	// Rio 04.10 evening ("zoomed in, the bodies lie on each other"): a lane is its share of the widget, or taller when its
+	// star labels, largest disc, label row and moons need more, so lanes stack instead of overlapping (and the scheme
+	// pans vertically). The axis sits mid-lane when the labels and moons fit under it, so the star is as tall as its lane
+	// allows.
+	const auto LaneShape = [BaseLaneHeight](const double Largest, const double MoonsBelow, double& OutHeight, double& OutOffset)
+	{
+		const double Below = Largest + LabelGapPixels + LabelRowPixels + MoonsBelow + LaneMarginPixels;
+		OutHeight = FMath::Max(BaseLaneHeight, LaneHeaderPixels + Largest + Below);
+		OutOffset = FMath::Max(LaneHeaderPixels + Largest, FMath::Min(OutHeight * 0.5, OutHeight - Below));
+	};
+	const auto RoomOf = [](const double Height, const double Offset, const double Largest)
+	{
+		// Never smaller than the lane's largest planet.
+		return FMath::Max3(FMath::Min(Offset, Height - Offset) - StarMarginPixels, 1.3 * Largest, 8.0);
+	};
 	TArray<double> Axes;
 	Axes.SetNumZeroed(Lanes);
 	TArray<double> StarRoom;
 	StarRoom.SetNumZeroed(Lanes);
+	double Top = 0.0;
 	for (int32 Lane = 0; Lane < Lanes; ++Lane)
 	{
-		const double Below = LaneLargest[Lane] + LabelGapPixels + LabelRowPixels + LaneBelow[Lane] + LaneMarginPixels;
-		const double Offset = FMath::Max(LaneHeaderPixels + LaneLargest[Lane], FMath::Min(LaneHeight * 0.5, LaneHeight - Below));
-		Axes[Lane] = LaneHeight * Lane + Offset;
-		// Never smaller than the lane's largest planet (zoomed far in, the planets outgrow the lanes anyway).
-		StarRoom[Lane] = FMath::Max3(FMath::Min(Offset, LaneHeight - Offset) - StarMarginPixels, 1.3 * LaneLargest[Lane], 8.0);
-		LabelRows[Lane] = Axes[Lane] + LaneLargest[Lane] + LabelGapPixels + Pan.Y;
+		double Height = 0.0;
+		double Offset = 0.0;
+		LaneShape(LaneLargest[Lane], LaneBelow[Lane], Height, Offset);
+		LaneTops[Lane] = Top;
+		LaneHeights[Lane] = Height;
+		Axes[Lane] = Top + Offset;
+		StarRoom[Lane] = RoomOf(Height, Offset, LaneLargest[Lane]);
+		Top += Height;
+	}
+	// Rio 04.10 evening ("I cannot zoom out far enough to see the star whole"): the wheel's lower limit is the zoom at
+	// which every star fits its lane whole and to scale, with its planets at their smallest dots; the upper limit keeps
+	// the largest planet within about 40% of the view's height.
+	MaxZoom = FMath::Max(1.0, 0.4 * Size.Y / LargestPlanetPixels);
+	MinZoom = 0.25;
+	for (const FBody& Body : Bodies)
+	{
+		if (!Body.bStar || Body.RadiusKm <= 0.0 || Body.Lane >= Lanes) continue;
+		double Height = 0.0;
+		double Offset = 0.0;
+		LaneShape(MinimumPlanetPixels, LaneBelow[Body.Lane], Height, Offset);
+		const double Fit = 0.97 * RoomOf(Height, Offset, MinimumPlanetPixels) * LargestPlanetKm / (LargestPlanetPixels * Body.RadiusKm);
+		MinZoom = FMath::Min(MinZoom, FMath::Max(Fit, 1.0e-5));
 	}
 	double Along = 0.0;
 	double MoonY = 0.0;
 	double MoonLeft = 0.0;
+	double Right = 0.0;
 	for (int32 Index = 0; Index < Bodies.Num(); ++Index)
 	{
 		const FBody& Body = Bodies[Index];
-		const double AxisY = Axes[FMath::Clamp(Body.Lane, 0, Lanes - 1)];
+		const int32 Lane = FMath::Clamp(Body.Lane, 0, Lanes - 1);
+		const double AxisY = Axes[Lane];
 		const double Radius = Body.RadiusKm * PixelsPerKm;
 		if (Body.bStar)
 		{
 			// Whole and to scale up to the lane's room; then the whole disc slides off the left edge until half of it is in
 			// view; then its edge flattens to the round cap whose chord at the left edge is the room's height again.
-			const double Room = StarRoom[FMath::Clamp(Body.Lane, 0, Lanes - 1)];
+			const double Room = StarRoom[Lane];
 			const double Scale = Radius / Room;
 			double DrawnRadius = FMath::Max(Radius, 6.0);
 			double RightEdge = 24.0 + 2.0 * DrawnRadius;
@@ -309,8 +361,9 @@ void SAPSSystemScheme::Layout(const FVector2D& Size) const
 				RightEdge = FMath::Lerp(24.0 + 2.0 * Room, Room, FMath::SmoothStep(StarSlideFrom, StarSlideTo, Scale));
 			}
 			Radii[Index] = static_cast<float>(DrawnRadius);
-			Centres[Index] = FVector2D(RightEdge - DrawnRadius, AxisY) + Pan;
+			Centres[Index] = FVector2D(RightEdge - DrawnRadius, AxisY);
 			Along = RightEdge + 48.0;
+			Right = FMath::Max(Right, RightEdge);
 			continue;
 		}
 		if (!Body.bMoon)
@@ -319,18 +372,39 @@ void SAPSSystemScheme::Layout(const FVector2D& Size) const
 			const double Labels = FMath::Max3(Measure(Body.Designation, DesignationFont()).X,
 				Measure(Body.Name, NameFont()).X, Measure(Body.Detail, DetailFont()).X);
 			const double Slot = FMath::Max3(2.0 * Radii[Index], Labels, MoonColumns[Index]) + SlotGapPixels;
-			Centres[Index] = FVector2D(Along + Slot * 0.5, AxisY) + Pan;
+			Centres[Index] = FVector2D(Along + Slot * 0.5, AxisY);
 			Along += Slot;
+			Right = FMath::Max(Right, Along);
 			// The moon column sits centred under the planet's labels.
-			MoonY = AxisY + LaneLargest[FMath::Clamp(Body.Lane, 0, Lanes - 1)] + LabelGapPixels + LabelRowPixels + MoonGapPixels;
-			MoonLeft = Centres[Index].X - Pan.X - MoonColumns[Index] * 0.5;
+			MoonY = AxisY + LaneLargest[Lane] + LabelGapPixels + LabelRowPixels + MoonGapPixels;
+			MoonLeft = Centres[Index].X - MoonColumns[Index] * 0.5;
 			continue;
 		}
 		Radii[Index] = FMath::Max(static_cast<float>(Radius), MinimumMoonPixels);
 		const double Row = FMath::Max(2.0 * Radii[Index], MoonRowPixels);
-		Centres[Index] = FVector2D(MoonLeft + Radii[Index], MoonY + Row * 0.5) + Pan;
+		Centres[Index] = FVector2D(MoonLeft + Radii[Index], MoonY + Row * 0.5);
 		MoonY += Row + 4.0;
 	}
+	// The pan is applied last, within limits for this content (a zoom can change the content under a stored pan).
+	ContentSize = FVector2D(Right, Top);
+	LaidOutPan = ClampPan(Pan, Size);
+	for (FVector2D& Centre : Centres)
+	{
+		Centre += LaidOutPan;
+	}
+	for (int32 Lane = 0; Lane < Lanes; ++Lane)
+	{
+		LabelRows[Lane] = Axes[Lane] + LaneLargest[Lane] + LabelGapPixels + LaidOutPan.Y;
+	}
+}
+
+FVector2D SAPSSystemScheme::ClampPan(const FVector2D& Wanted, const FVector2D& Size) const
+{
+	// Never right of the scheme's left edge; to the left only until half the view still shows the scheme; vertically
+	// within the lanes (no pan while they fit).
+	const double MinX = FMath::Min(0.0, Size.X * 0.5 - ContentSize.X);
+	const double MinY = FMath::Min(0.0, Size.Y - ContentSize.Y);
+	return FVector2D(FMath::Clamp(Wanted.X, MinX, 0.0), FMath::Clamp(Wanted.Y, MinY, 0.0));
 }
 
 int32 SAPSSystemScheme::HitTest(const FVector2D& Local) const
@@ -378,12 +452,12 @@ int32 SAPSSystemScheme::OnPaint(const FPaintArgs&, const FGeometry& Geometry, co
 		Text(LOCTEXT("NoSystem", "NO STAR SYSTEM NEARBY"), Size * 0.5, NameFont, APSChrome::Muted(), true);
 		return LayerId + 4;
 	}
-	const double LaneHeight = Size.Y / FMath::Max(Lanes, 1);
-	for (int32 Lane = 1; Lane < Lanes; ++Lane)
+	for (int32 Lane = 1; Lane < Lanes && Lane < LaneTops.Num(); ++Lane)
 	{
+		const double Y = LaneTops[Lane] + LaidOutPan.Y;
+		if (Y <= 0.0 || Y >= Size.Y) continue;
 		FSlateDrawElement::MakeLines(Elements, LayerId + 1, Geometry.ToPaintGeometry(),
-			TArray<FVector2D>{FVector2D(0.0, Lane * LaneHeight), FVector2D(Size.X, Lane * LaneHeight)},
-			ESlateDrawEffect::None, APSChrome::CyanDim(), true, 1.0f);
+			TArray<FVector2D>{FVector2D(0.0, Y), FVector2D(Size.X, Y)}, ESlateDrawEffect::None, APSChrome::CyanDim(), true, 1.0f);
 	}
 	const AActor* PickedActor = Picked.Get();
 	for (int32 Index = 0; Index < Bodies.Num(); ++Index)
@@ -428,6 +502,7 @@ int32 SAPSSystemScheme::OnPaint(const FPaintArgs&, const FGeometry& Geometry, co
 			const double PlateWidth = FMath::Max(FMath::Max3(Measure(Body.Designation, DesignationFont).X,
 				Measure(Body.Name, NameFont).X, Measure(Body.Detail, DetailFont).X), Measure(ScaleNote, DetailFont).X) + 20.0;
 			FVector2D LabelAt;
+			const double LaneHeight = LaneHeights.IsValidIndex(Body.Lane) ? LaneHeights[Body.Lane] : Size.Y;
 			if (2.0 * Radius < LaneHeight * 0.5)
 			{
 				LabelAt = FVector2D(Centre.X - PlateWidth * 0.5 + 10.0, Centre.Y + Radius + LabelGapPixels);
@@ -491,11 +566,14 @@ int32 SAPSSystemScheme::OnPaint(const FPaintArgs&, const FGeometry& Geometry, co
 FReply SAPSSystemScheme::OnMouseWheel(const FGeometry& Geometry, const FPointerEvent& Event)
 {
 	const double Previous = Zoom;
-	Zoom = FMath::Clamp(Zoom * FMath::Pow(1.2, Event.GetWheelDelta()), 0.25, 60.0);
-	// Keep the point under the cursor roughly in place: horizontal positions scale with the discs. Rio 04.10: never past
-	// the left edge, where only empty space was left after zooming out with the cursor on the right.
+	// Rio 04.10 evening: zoomed out far enough, every star of the system shows whole and to scale (MinZoom).
+	Zoom = FMath::Clamp(Zoom * FMath::Pow(1.2, Event.GetWheelDelta()), FMath::Min(MinZoom, 0.25), FMath::Max(MaxZoom, 1.0));
+	// Keep the point under the cursor roughly in place (discs, slots and the lanes that grow with them follow the zoom);
+	// the next layout keeps the pan within the scheme (ClampPan).
 	const FVector2D Pointer = Geometry.AbsoluteToLocal(Event.GetScreenSpacePosition());
-	Pan.X = FMath::Min(Pointer.X - (Pointer.X - Pan.X) * (Zoom / Previous), 0.0);
+	const double Ratio = Zoom / Previous;
+	Pan = FVector2D(FMath::Min(Pointer.X - (Pointer.X - LaidOutPan.X) * Ratio, 0.0),
+		FMath::Min(Pointer.Y - (Pointer.Y - LaidOutPan.Y) * Ratio, 0.0));
 	return FReply::Handled();
 }
 
@@ -508,7 +586,7 @@ FReply SAPSSystemScheme::OnMouseButtonDown(const FGeometry& Geometry, const FPoi
 	bDragging = true;
 	bDragged = false;
 	DragStart = Geometry.AbsoluteToLocal(Event.GetScreenSpacePosition());
-	PanStart = Pan;
+	PanStart = LaidOutPan;
 	return FReply::Handled().CaptureMouse(SharedThis(this));
 }
 
@@ -522,8 +600,7 @@ FReply SAPSSystemScheme::OnMouseMove(const FGeometry& Geometry, const FPointerEv
 	bDragged |= FVector2D::Distance(Local, DragStart) > 4.0;
 	if (bDragged)
 	{
-		Pan = PanStart + (Local - DragStart);
-		Pan.X = FMath::Min(Pan.X, 0.0);
+		Pan = ClampPan(PanStart + (Local - DragStart), Geometry.GetLocalSize());
 	}
 	return FReply::Handled();
 }

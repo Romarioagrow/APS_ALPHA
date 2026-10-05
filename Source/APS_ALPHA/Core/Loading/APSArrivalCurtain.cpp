@@ -3,6 +3,7 @@
 #include "APS_ALPHA/Core/Enums/CharSpawnPlace.h"
 #include "APS_ALPHA/Core/Instances/MainGameplayInstance.h"
 #include "APS_ALPHA/Core/Model/SpawnParameters.h"
+#include "APS_ALPHA/Core/World/APSPlaceholderGlobe.h"
 #include "APS_ALPHA/Gameplay/Civilizations/APSCivilizationMaterializationSubsystem.h"
 #include "APS_ALPHA/Gameplay/Colony/APSColonyConstructionSubsystem.h"
 #include "APS_ALPHA/Gameplay/Vehicles/APSGroundVehicles.h"
@@ -227,6 +228,8 @@ namespace APSArrivalCurtainLocal
 			const APlayerController* Controller = GameWorld ? GameWorld->GetFirstPlayerController() : nullptr;
 			const APawn* Pawn = Controller ? Controller->GetPawn() : nullptr;
 			Need(Pawn != nullptr, LOCTEXT("StagePilot", "PREPARING THE PILOT"), TEXT("pilot"));
+			Need(APSPlaceholderGlobe::HasInitialCoverage(GameWorld),
+				LOCTEXT("StageNativeSurfaces", "PREPARING PLANET SURFACES"), TEXT("native planet surfaces"));
 			if (bNewCivilization)
 			{
 				Need(Generator.IsValid() && Generator->IsStarterHierarchySpawned(),

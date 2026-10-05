@@ -3,6 +3,7 @@
 #include "APSSharedTerrainMaterialBuilder.h"
 #include "APSPlanetCloudHlsl.h"
 #include "APSPlanetCloudLayeredHlsl.h"
+#include "APSPlanetCloudRefinedHlsl.h"
 #include "APS_ALPHA/Core/Planetary/APSPlanetCloudPolicy.h"
 #include "APS_ALPHA/Core/Planetary/APSPlanetCloudWeather.h"
 #include "Factories/MaterialFactoryNew.h"
@@ -23,6 +24,12 @@ inline bool Build(IAssetTools& Tools)
     const FString Name = FPackageName::GetShortName(PackagePath);
     if (!IsRunningCommandlet() || FPackageName::DoesPackageExist(PackagePath))
     { UE_LOG(LogTemp,Error,TEXT("[APS.CloudBake] Offline NEW output only")); return false; }
+    const bool Layered=APSPlanetCloudWeather::LayeredRequested();
+    const bool Refined=APSPlanetCloudWeather::CandidateRequested();
+    const FString Shader=Layered?APSPlanetCloudLayeredHlsl::Code()
+        :(Refined?APSPlanetCloudRefinedHlsl::Code():APSPlanetCloudHlsl::Code());
+    if(Shader.IsEmpty())
+    { UE_LOG(LogTemp,Error,TEXT("[APS.CloudBake] Refined shader anchors changed; no asset created")); return false; }
     FCore B(Tools,*Folder);
     auto* M=Cast<UMaterial>(Tools.CreateAsset(Name,Folder,UMaterial::StaticClass(),NewObject<UMaterialFactoryNew>()));
     if (!M) return false;
@@ -30,8 +37,7 @@ inline bool Build(IAssetTools& Tools)
     M->SetShadingModel(MSM_Unlit); M->TwoSided=true; M->bDisableDepthTest=true;
     M->TranslucencyPass=MTP_BeforeDOF;
     auto* C=B.Add<UMaterialExpressionCustom>(M); C->Inputs.Empty();
-    const bool Layered=APSPlanetCloudWeather::LayeredRequested();
-    C->OutputType=CMOT_Float4; C->Code=Layered?APSPlanetCloudLayeredHlsl::Code():APSPlanetCloudHlsl::Code();
+    C->OutputType=CMOT_Float4; C->Code=Shader;
     C->Description=TEXT("Bounded spherical cloud volume; shared orbit/ground field; adaptive16-32 samples");
     const auto Input=[&](const TCHAR* Key,UMaterialExpression* Node)
     { FCustomInput I; I.InputName=Key; I.Input.Connect(0,Node); C->Inputs.Add(I); };
@@ -71,8 +77,9 @@ inline bool Build(IAssetTools& Tools)
         Vector(TEXT("MidDeck"),TEXT("CloudMidDeck"),FLinearColor::Black);
         Vector(TEXT("HighDeck"),TEXT("CloudHighDeck"),FLinearColor::Black);
         Vector(TEXT("DeckCoverage"),TEXT("CloudDeckCoverage"),FLinearColor::Black);
-        C->Description=TEXT("Isolated V29 three-shell clouds; one32-tap budget, ordered compositing");
+        C->Description=TEXT("Isolated V30 three-shell clouds; one32-tap budget, ordered compositing");
     }
+    if(Refined) C->Description=TEXT("Isolated V31: filtered light taps and far-only phase stability; unchanged V27 cloud field");
     Scalar(TEXT("Visibility"),TEXT("CloudVisibility"),1);
     Scalar(TEXT("Debug"),TEXT("CloudDebug"),0);
     Scalar(TEXT("Aerial"),TEXT("CloudAerial"),1);

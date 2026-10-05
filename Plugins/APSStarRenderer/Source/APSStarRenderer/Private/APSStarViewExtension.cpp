@@ -542,9 +542,11 @@ namespace APSStarRenderer::Private
 					Parameters->BoundsMin = Set->Desc.LocalBounds.Min;
 					Parameters->SetBrightness = static_cast<float>(Brightness);
 					Parameters->BoundsStep = BoundsSize / 65535.0f;
-					Parameters->MinPixelValue = MinPixel;
+					// The set's own brightness LOD (Rio 05.10: a menu screen dims its points without losing any).
+					const float SetMinPixel = MinPixel * FMath::Clamp(Set->Desc.MinPixelScale, 0.01f, 1000.0f);
+					Parameters->MinPixelValue = SetMinPixel;
 					Parameters->CameraLocal = Presentation.CameraLocal;
-					Parameters->MaxPixelValue = MaxPixel;
+					Parameters->MaxPixelValue = FMath::Max(MaxPixel, SetMinPixel);
 					Parameters->ObserverTranslated = Presentation.ObserverTranslated;
 					// Distances below one quantisation step are not resolvable: clamp the inverse square there, or at the
 					// set's brightness floor (gameplay sky, Rio 03.10) when that is farther.
@@ -700,6 +702,7 @@ namespace APSStarRenderer::Private
 			const float MinPixel = FMath::Max(CVarGpuPointMinPixel.GetValueOnRenderThread(), 1.0e-7f);
 
 			FAPSStarCompositeCS::FParameters* Parameters = GraphBuilder.AllocParameters<FAPSStarCompositeCS::FParameters>();
+			Parameters->View = View.ViewUniformBuffer;
 			for (int32 Index = 0; Index < 256; ++Index)
 			{
 				Parameters->StarPalette[Index] = State.Palette[Index];
@@ -714,11 +717,15 @@ namespace APSStarRenderer::Private
 				FMath::Clamp(CVarGalaxyGlowDustOnScene.GetValueOnRenderThread(), 0.0f, 1.0f),
 				FMath::Clamp(CVarGalaxyGlowDustOnPoints.GetValueOnRenderThread(), 0.0f, 1.0f),
 				FMath::Max(CVarGalaxyGlowMax.GetValueOnRenderThread(), 0.0f));
+			Parameters->MaskParams = FVector4f(State.SkyMaskScenes.Contains(Scene)
+				? FMath::Max(CVarSkyMaskLuminance.GetValueOnRenderThread(), 0.0f) : 0.0f,
+				FMath::Clamp(CVarGpuPointCoreGrow.GetValueOnRenderThread(), 0.0f, 2.0f), 0.0f, 0.0f);
 			Parameters->bHasStars = bHasStars ? 1u : 0u;
 			Parameters->bHasGlow = GlowTexture != nullptr ? 1u : 0u;
 			Parameters->DebugMode = static_cast<uint32>(FMath::Clamp(CVarGpuDebugView.GetValueOnRenderThread(), 0, 3));
 			Parameters->PsfRadius = FMath::Clamp(CVarGpuPointPsfRadius.GetValueOnRenderThread(), 1, 3);
 			Parameters->SceneColorTexture = SceneColor.Texture;
+			Parameters->SceneDepthTexture = SceneDepth;
 			if (bComposite64)
 			{
 				Parameters->StarBuffer64 = StarBuffer;

@@ -1,5 +1,42 @@
 # Планеты: непрерывный реалистичный вид и безопасное наполнение
 
+## 3 октября 01:48 — V31 сравнен с V27; мелкая пятнистость остаётся
+
+Кадры Rio01:08:03/01:08:27 и команда Cloud OFF в01:08:23 отделили облачное
+зерно от угловатого берега: зерно ушло, грани остались. Это не pixel-exact A/B.
+Редактор4868 после сообщения Rio о закрытии действительно завершён к01:20.
+V31 отдельно собран/запечён: только light-footprint и плавное ограничение фазы
+выборки вдали, без изменения V27 поля/seed/coverage, без роста числа отсчётов.
+DefaultV27 и layeredV30 не заменены. Первый675км Forest capture остановился
+на readiness timeout, PNG нет; исправлен test-only запрос lazy-компиляции UE5.4.
+Повторная общая сборка112.38с PASS. Пара V31/V27: каждый12clean+2warnings/0FAIL,
+реальные shader-ready кадры в3ракурсах. Вдоль облачной массы остаётся одинаковая
+мелкая пятнистость; V31 НЕ принят и НЕ опубликован. Menu не является проверкой
+gameplay Coast/LOD. Доказательства: night.md и forest-cloud-v31/v27-orbit-675-ready-20261003.
+
+Берег не считать только низким разрешением текстуры: gameplay Forest использует
+пересечение terrain/ocean, finest grid около1.2км на этой высоте. Мелкие физические
+октавы остаются в height field. HeightAnchor/география не менялись; старый V2
+не включён из-за доказанного чрезмерного сглаживания вблизи и оставшихся углов.
+Нужны измерения видимых треугольников Forest и отдельное исправление геометрии.
+Читаемость форм облаков, слоистый референс, поверхность и performance открыты.
+После пары окно передано Claude для его read-only Offroad query.
+
+## 3 октября 00:53 — V30 проверен частично; пользовательский редактор защищён
+
+V30 собран и отдельно запечён после окна Claude, defaultV27 не заменён. Menu:
+14clean+2warnings/0FAIL, исправленная камера действительно показывает12000км
+в3ракурсах. Но визуально V30 пока не принят: плотные дробные пятна, внизу слабые
+полосы/мягкие облака. Первый menu кадр мог опередить готовность cloud shader;
+подготовлен bounded test-only guard, ещё НЕ собран/не проверен в runtime.
+Ground route892frames выполнил3слоя/переходы/lifecycle/sky checks, но итог FAIL
+из-за GPUScene.cpp367 ensure после сдвига мира3309.471км. Контроль clouds OFF
+2148frames воспроизвёл ту же ошибку; причина не сводится к включению облаков.
+Парного валидного performance результата нет. Доказательства: night.md00:53.
+С00:50 обычный Editor4868; Rio явно «Да, не трогать». Свои процессы завершены,
+новых UE/сборок нет. Claude уведомлён через окно координации. Полный epic открыт;
+ничего в кораблях, аудиоинтеграции, принятом небе/палитрах не менялось этим проходом.
+
 ## 2 октября 22:59 — трёхслойные облака проверены, визуальная цель ещё не достигнута
 
 После сборки Claude22:26 отдельно запечён V29. Weather/Layers:8PASS; gameplay
@@ -2434,3 +2471,1268 @@ Foliage остаётся выключенным. Детали: `2026-09-29-folia
 производительность, обратимые контрольные точки и оставшиеся ограничения. Достигнув
 принятой базы, завершить визуальный спринт и перейти к игровому контенту, не расширяя
 полировку бесконечно.
+
+## 03.10 — унификация принятых улучшений, текущий проход
+
+Запрос Rio: общий уровень цельности поверхности, плавных переходов и детализации
+на всех твёрдых мирах, с сохранением их разных палитр, географии и атмосферы.
+Theon — контроль лавовой ветки, а не палитра или геометрия для всех планет:
+Volcanic, seed793597, radius679.0638km; принятые кадры03.10 02:42–02:43.
+
+Сделано в исходниках (пока НЕ новая проверенная игровая версия):
+
+- Выбор Continuous/Coastal и общий фильтр дальних нормалей сведены в
+  `APSPlanetSurfaceMaterialPolicy.h`. Native и UnifiedLava используют прежние
+  физические границы2–20km; лаве не добавлены orbital/warp overrides.
+- Обычный запуск сохраняет принятую таблицу14 terrain / 3 coastal types.
+  Единый редакторский opt-in `-APSUnifiedSurfacePipelineCandidate` открывает
+  общий Continuous для28 конкретных немагматических ID (включая legacy29).
+  Water определяется фактической жидкостью и допустимой долей суши; аммиак,
+  лава, газовые гиганты, Unknown и несуществующие ID не подменяются.
+- Добавлены routing/MID contracts и проверки физических высот Ice/Frozen/
+  Tundra/Rogue при3seed,2радиусах, native/saved catalog. Отличие HeightNormalize
+  или цвета больше не считается доказательством отличия физического рельефа.
+- Menu/flight runners имеют пару `-SurfaceUnification Control|Candidate`,
+  запрет смешивания material experiments, проверку свежести DLL и запись SHA
+  защищённых Shared/Continuity/UnifiedLava/Water/Shore assets и Config.
+
+Порядок принятия: общая сборка в свободное согласованное окно; CPU/MID contracts;
+реальное переключение Ice→Frozen→Ice с проверкой опубликованных вершин; парные
+кадры для каждого расширяемого семейства, затем поверхность/берег/LOD в движении
+и измерение времени кадра. Проверенный кандидат переносится в обычный маршрут
+только после этой проверки, не на основании успешной компиляции.
+
+На момент записи выполнены только статический review, diff/PowerShell parser и
+негативные preflight checks (включая отказ старой DLL). Новые C++ tests ещё не
+исполнены; визуальная унификация всех семей НЕ заявлена. Окно UE занято Claude
+с03:20; параллельные запуски не делаются. Source-only checkpoint/backup:
+`F:/ChatGPT/APOSFERA/work/planet_continuity_20260929/unification-20261003`.
+
+Дополнение03:39: отдельный тест
+`APS.Rendered.PlanetSurface.CryogenicPreview.PublishedGeometryRoundTrip` готов:
+через тот же SetEnumValue проверяет реальные активные vertex/index buffers,
+Ice→Frozen→Ice, неизменные seed/radius, возврат каждого radial height<=1cm.
+Если исходный тип Ice, сначала делает штатный Frozen priming. Нужен отдельный
+изолированный процесс с `-APSProbeCryogenicPreview`; без него test отказывается
+открывать map. Это не сравнение скриншотов и не проверка gameplay collision.
+Optional-подключение к Menu runner пока НЕ записано: apply_patch повторно
+отказал в записи этого существующего файла; ограничения доступа не обходились.
+Обычные Control/Candidate флаги двух runners записаны и проверены раньше.
+
+Проверено без UE: parser3PS,4mixed-mode rejection, stale DLL rejection,
+postflight-helper mock: совпавшая пара принята,5подмен (DLL/source/assets/camera/
+послепрогонный asset) отклонены. Это тесты harness, НЕ planet automation PASS.
+После завершения обоих собственных процессов обязательно вызвать
+`Assert-APSSurfaceUnificationPair -ControlRunDir ... -CandidateRunDir ...`:
+asynchronous runners сами postflight не выполняют. Затем отдельно прочитать
+automation report и проверить кадры/тайминги.
+
+Сохранён и SHA-проверен source-only checkpoint13файлов:
+`unification-20261003/source-checkpoint-0336/manifest.json` (путь относительно
+diagnostics work выше). UnifiedLava assets и Config/DefaultEngine.ini чисты
+относительно HEAD; палитры/география/seed/атмосфера не перезаписаны.
+Новый код ещё не в DLL (текущая DLL03:00:18), candidate НЕ promoted.
+
+### Дополнение 03.10 04:03 — сборка и защищённая ручная проверка
+
+Это обновление статуса выше, а не визуальное принятие. Общая сборка Claude
+`F:/ChatGPT/APOSFERA/work/flight/build-0310-3.log` прошла (82.53s); начальная
+policy и три новых C++ test-файла скомпилированы. Последняя наблюдаемая DLL:
+03:50:54, 19882496bytes. Собственный старт тестов остановлен process guard
+до создания UE-процесса/папки0350. Rio подтвердил: «Проверяю сам — сессию не
+трогать». Обычный UnrealEditor40972 (03:50:55) защищён; сборок/UE от Codex нет.
+
+Без запуска UE завершена подготовка недостающей проверки всех27 selectable
+немагматических terrain families. Поздняя правка только в automation fixture:
+`APSGeneratedGameplayHandoffSmokeTests.cpp`, explicit process flag
+`APSProbeSurfaceUnificationFlight`. Проверяется фактический опубликованный MID,
+parent по реальному профилю, shader/LocalVF и LOD sections, без подмены материала.
+Она ещё НЕ скомпилирована и НЕ исполнена. Именованные liquid/cloud/foliage/
+residency сценарии оставлены отдельными; их смешивание с новым terrain probe
+отклоняется. Это не расширение доказанного покрытия воды/коллизий/производительности.
+
+Предыдущая проблема записи PS решена обычным разрешённым apply_patch, без обхода
+доступа: Menu runner теперь принимает `-CryogenicPreviewRegression` только с
+Published + явным SurfaceUnification Control/Candidate и без иных экспериментов.
+Он запускает только contracts/physical heights/actual preview mesh round-trip.
+Fields runner получил явный generic process flag и проверку свежести test source.
+Статически: parser3PS PASS,5named-route rejection PASS, diff check PASS;
+независимый read-only C++ review не выявил новых ошибок. Это НЕ runtime PASS.
+
+Контрольная точка14файлов SHA-verified:
+`F:/ChatGPT/APOSFERA/work/planet_continuity_20260929/unification-20261003/source-checkpoint-0403/manifest.json`.
+Все23 защищённых UnifiedLava assets совпадают с checkpoint0336. Theon остаётся
+Volcanic/AMoon, seed793597, radius679.0638km; точный визуальный replay ещё не выполнен.
+Обычная таблица14terrain/3water сохранена. Полное обновление пока НЕ готово к
+объявлению: после освобождения окна нужны сборка позднего fixture, CPU/MID и
+Ice→Frozen→Ice tests, затем парные rendered/LOD/performance проверки по семействам
+и отдельная проверка liquid-веток. Лишь после этого можно принять новые маршруты
+по умолчанию; текущая ручная сессия ещё не содержит полного расширения.
+
+Дополнение04:12: общая сборка из Rider уже включила поздний generic gameplay
+fixture (UBT action34/61) и cryogenic preview (3/61), PASS137.99s.
+DLL04:10:12,19904000bytes, SHA256
+`7CC3464AF847CC814B6B0630AD55B7DAD32D6B630FEAAE5834A245B08036A4D8`.
+Get-APSSurfaceUnificationDiagnostic Control: source freshness PASS.
+UBT log сохранён как `unification-20261003/ubt-build-0410.log`.
+После сборки Rider открыл ordinary UE43564 в04:10:15. Rio явно запретил закрывать
+его: сейчас проверяет сам. Новых автоматических/визуальных прогонов от Codex нет;
+материалы не перепекаются, расширение по-прежнему только diagnostic candidate.
+Остались исполнение контрактов/геометрии и поочерёдная rendered/LOD/performance
+приёмка; повторная сборка не нужна, пока не изменятся исходники.
+
+### 03.10 04:33 — пользователь запросил включение default
+
+На прямое «давай включай» unified routing включён в обычном режиме, в том числе
+в non-editor builds. Только editor/dev-automation аргумент
+`-APSLegacySurfacePipelineControl` возвращает контрольную таблицу14/3.
+Diagnostic Candidate теперь не передаёт никакого enabling-флага и испытывает
+реальный default; metadata schema2 не принимает старые opt-in evidence за новый
+default. Continuous разрешён28 nonmagmatic IDs (включая legacy29); coastal shader
+зависит от фактической Water chemistry/coverage, а не только типа. Gas/Unknown,
+магматический veto, авторские/custom gates не изменены. География/seed/палитры/
+атмосфера и UnifiedLava ассеты не переписаны. Это включение, не обещание одинаково
+готового качества каждого семейства.
+
+Свободное окно подтверждено после Claude04:20. Сборка PASS66.33s:
+`unification-20261003/build-default-0424.log`, DLL04:25:34,19909632bytes.
+Первый собственный UE41600 завершён штатно: 6 success,0 failed (2 success с
+предупреждениями), report `cryogenic-unified-default-0426/report/index.json`.
+Включены routing0..255, real MID/far-normal preservation, generic fixture family,
+physical CryogenicGeometry и настоящий menu Ice→Frozen→Ice published mesh.
+На фиксированных seed1337/radius6750km опубликованы99846 vertices: Ice/Frozen
+radial RMS34042.7508cm, changedFraction0.999980, normalized shapeRMS0.42638736;
+возврат Ice прошёл. Это доказывает изменение геометрии в этой fixture, а не
+достаточную визуальную разницу любых ледяных планет. В логе есть задержки при
+смене типа (включая ~87–91ms surface update); performance acceptance не заявлена.
+
+Все43 защищённых surface/config файла первого прогона сохранили SHA. Контрольная
+копия14файлов: `unification-20261003/source-checkpoint-default-0433/manifest.json`.
+Все23 UnifiedLava assets равны ранее принятой контрольной точке.
+Идёт один последовательный orbital matrix13новых типов, UE9820,
+`matrix-unified-default-all13-0428`. Уже визуально подтверждён оставшийся дефект:
+угловатый берег и плоская зелёная жидкость Ammonia в приближении; не объявлять
+его исправленным общей material policy. Полная наземная/LOD/performance приёмка
+и отдельные liquid-ветки по-прежнему не закрыты.
+
+Дополнение04:38: menu matrix завершён штатно (UE9820 больше не жив):25success,
+0failed,0notRun, из них14сwarnings; report
+`matrix-unified-default-all13-0428/report/index.json`. Все13типов получили по6PNG
+(три20000km и три2000km), всего78. По2кадра каждого типа реально просмотрены
+root/двумя read-only reviewers; дополнительные Archipelago04/05 тоже просмотрены.
+Прогон не заменяет игровую посадку, берег, движение междуLOD или FPS acceptance.
+43protected surface/config SHA после прогона неизменны. Собственных UE/UBT нет,
+окно освобождено, обычный запуск использует unified default без спецфлагов.
+
+Буквальные визуальные остатки, без заявления о причине/регрессии (парного legacy
+rendered прогона в этом окне не было):
+- Ammonia: резкие полигональные берега, плоская зелёная жидкость.
+- Water: полигональная береговая линия; слабая прямоугольная клетчатость в океане
+  на `Saved/Automation/PlanetRefinement/Water/TerrainNativeViews/03-close-2000km-published.png`.
+- Archipelago/Ocean: издалека разные синие океаны/зелёные острова; часть ближних
+  берегов закрыта облаками или слабо различима, местами ломаные контуры.
+- Basalt/Carbon/Dwarf/Metal/Metallic/Crystal: близкая фактура малоконтрастная либо
+  зернистая и слишком однородная, крупный рельеф с орбитального ракурса слабый.
+- Rogue: контрастный бело-серый рисунок, вблизи преимущественно плоская фактура.
+- Greenhouse/Sulfur: тёплые индивидуальные палитры сохранены, близкие кадры всё
+  ещё почти однотонны либо равномерно зернисты.
+Явной fallback-шахматки отсутствующего материала не обнаружено. До уровня
+принятого Theon все планеты этим включением НЕ доведены; задача по качеству остаётся.
+
+### 03.10 06:56 — продолжение: ограниченная береговая сетка, пока default OFF
+
+По запросу Rio «продолжи, какой статус» перепроверены исходники, результаты04:26/
+04:28, координация и процессы. Unified routing остаётся включённым по умолчанию.
+Ранее получены6+25 success,0failed и78кадров13типов; это не наземная/LOD/perf
+приёмка. Более поздняя общая DLL Claude06:27:36 (20036608bytes) заменяет проверенную
+DLL04:25; результаты старого прогона не выдавать за повторный тест новой DLL.
+
+Причина углов в закрытом menu globe:128x128 на грань, профиль/WaterMask/depth
+только на вершинах; жёсткая граница интерполированного маскированного материала
+следует большим треугольникам. Это не доказательство причины ВСЕХ игровых углов.
+
+Подготовлен отдельный `-APSPreviewCoastalMeshCandidate`, только WITH_EDITOR и
+WITH_DEV_AUTOMATION_TESTS. Обычный запуск НЕ включает его. Область: выбранный
+closed globe128, generated shared Water/Ammonia; context48, dry, manual/custom,
+magmatic и Theon/lava исключены. Не включается новый live WorldScape preview
+Claude (`aps.Preview.PlanetWorldScape`), не меняются корабли/HQ/галактика.
+
+Алгоритм: максимум2 conforming edge-split прохода возле нулевой глубины и
+порогового WaterMask; полный проход либо принимается целиком, либо отказывается
+по бюджету. Максимум32768 дополнительных вершин, включая дубликаты швов.
+Weld IDs передают разбиение через дублированные кубические границы; UV вершины
+не склеиваются. Новые высоты/влажность/температура/маска берутся тем же физическим
+sampler с прежним seed. Terrain/ocean имеют одну новую топологию; все каналы и
+нормали учитывают фактическое число вершин. Материалы/палитры/профили не записаны.
+
+Проверено без UE/UBT:
+- standalone MSVC /W4 /WX PASS:8edge masks, оба winding/площадь, shared edges,
+  seam duplicates, closed cube sphere2passes, синтетические радиальные samples
+  на швах, детерминизм, exact32768cap, atomic rejection, invalid input/overflow;
+- `CheckCoastalMeshCandidate.ps1 -SyntaxOnly`: AstroGenerator+новая интеграция
+  /Zs PASS, без object/PCH/DLL; предупреждения сторонних/прежних headers остаются;
+- независимый source review без блокирующих замечаний; baseline mapping совпадает
+  с backup по выражениям/порядку, runtime bitwise parity ещё не измерена;
+- parser3PS PASS,3mixed/incomplete-mode отказа и2stale-DLL отказа PASS;
+-43protected surface/config SHA совпадают с matrix04:28, включая UnifiedLava.
+
+Бэкап общей исходной AstroGenerator.cpp до правки:
+`F:/ChatGPT/APOSFERA/work/planet_continuity_20260929/coast-mesh-20261003/pre-edit-0642/`.
+Тестовые свидетельства: соседняя `checks/`, контрольная копия7исходников —
+`source-checkpoint-0656/manifest.json`. Не восстанавливать общий AstroGenerator
+целиком поверх последующей работы Claude; откатывать только собственные hunks.
+
+Новая правка НЕ собрана в DLL, НЕ запускалась в Unreal и НЕ принята визуально.
+Ordinary UE21464 с06:27:40 не тронут; headroom ранее отказал при6.44GiB свободной
+RAM/26.51GiB commit/6.72GiB VRAM/GPU59%. Не запускать параллельный UE или UBT.
+Следующий шаг после согласованного свободного окна: общая сборка, затем по одному
+Control/Candidate для Water,Ammonia и остальных затронутых береговых семейств;
+отрицательный контроль Volcanic/Theon/dry, сравнение швов/берега/времени построения.
+Пример каждой последовательной ноги:
+`RunPlanetMenuContinuity.ps1 -Family Water -Label coast-control-NEW -Published -CloudOff -FamilyScaleAB -CoastalMesh Control`
+и то же с новым Label + `-CoastalMesh Candidate`. Нельзя запускать одновременно.
+В `coastal-mesh.json` записаны Mode/Flag/общие source,DLL,protected SHA. Обе ноги
+используют unified default (НЕ legacy control), единственное смысловое отличие —
+coastal processflag. Clouds выключены одинаково для видимого берега; после A/B
+нужен обычный cloud-on sanity pass. Новые helper headers включены в freshness gate.
+
+Открытые ограничения: этот кандидат не повышает разрешение игрового WorldScape,
+не исправляет облака/блеск воды/слабый контраст и не обнаруживает остров целиком
+между исходными samples. Если берег столь дробный, что первый проход превышает
+cap, остаётся исходная сетка с budgetLimited=1; это не считается исправлением.
+Полная наземная/LOD/perf приёмка всех семейств остаётся отдельной незакрытой работой.
+
+### 03.10 07:16 — P0: восстановить принятый непрерывный игровой подлёт
+
+Rio отклонил текущий Frozen gameplay: кадры06:54:16/24/29/32/51 и06:56:29,
+подмена вида при приближении, моргание, крупный прямоугольный стык у34м и резкое
+обрезание атмосферы. По прямому запросу «возвращай как было хорошо ... для всех
+планет; цель поставь и делай» создана активная цель восстановления. Coast polish
+отложен; source-only кандидат остаётся выключенным. Меню-тесты04:26/04:28 НЕ
+доказали игровой спуск/возврат и НЕ закрывают эту жалобу.
+
+Сохранён исходный лог: frozen-descent-20261003-0701/APS_ALPHA-0658.snapshot.log,
+SHA256 C89966569B726C051E501AC8DDD94F26FFCC38A1819DD269428C0611B7BE3C24.
+В этом поколении Lidim=BP_Moon_C_5, Frozen14, seed257455, R1280.896km;
+Jaim=BP_Moon_C_8, Frozen14, seed597932, R500.3573km. Обоим ocean=false.
+Снимок06:56:29 относится к Jaim, хотя навигационная цель ещё Lidim.
+В sampled логах Lidim06:54:04/19 proxy скрыт, terrain LOD0–2 имеют один
+MID_MI_APS_ContinuousTerra_0, root3 остаётся активен. Это не исключает transient
+между sampled точками и НЕ опровергает визуальную подмену, о которой говорит Rio.
+
+Найдены конкретные проверяемые механизмы, пока НЕ доказанный единственный root cause:
+- Continuous shader сохраняет ближние Legacy fields и меняет слой/макрорисунок
+  по расстоянию5–50km; это не только albedo: маски участвуют и в normal/roughness.
+- Native/radial normal+slope blend2–20km меняет вид рельефа. Нельзя лечить
+  подмену принудительной radial normal у земли или просто размытием поверхности.
+- Native WorldScape меняет AltitudeMultiplier дискретно, без geomorph;
+  normals соседних LOD не сшиваются тем же способом, что patch внутри одного LOD.
+  Сопоставить фактический PlayerDistanceToGround, публикации и кадры; не считать
+  совпадение примерного порога9.1km доказательством причины.
+- World-origin shifts происходили06:54:16 и06:54:27. Материал имеет обработчик
+  PostWorldOriginOffset; отсутствие callback не подтверждено, timing ещё проверить.
+- Atmosphere inside/outside переключает mesh у границы; резкость перехода
+  проверять отдельно, не смешивать с состоянием поверхности.
+
+Принятый Theon найден в Saved/Logs/APS_ALPHA-backup-2026.10.02-21.48.17.log:
+Volcanic12, seed793597, R679.0638km, noiseScale378, intensity1415594;
+UnifiedLava, ocean=false,10x256@120,heightAnchor10000. Контрольные25assets
+preacceptance SHA и три Continuous release SHA совпадают с сохранёнными.
+Это доказывает сохранность файлов, НЕ хороший вид Frozen. Engine native
+WorldScape файлы старше принятого Theon, поэтому blanket rollback не обоснован.
+Не пересаживать на Frozen лавовую палитру или sea-height envelope.
+
+Порядок: восстановить точные seed/radius/profile для repro, записать игровой
+спуск30km→9km→3km→100m→ground, остановки до/после LOD, подъём и возврат;
+разделить layer/basecolor и mesh normals на одном baseline. Затем узкая правка,
+тот же маршрут и контроль Theon; остальные затронутые семьи по очереди.
+Стабильный FPS/готовность/compile не заменяют принятие отсутствия вспышек.
+Rio разрешил save+graceful close, но UE21464 уже завершился к проверке07:16.
+Codex не закрывал/не сохранял его через UI. Окно Claude07:10 соблюдается,
+запрос следующего окна записан; новых сборок/UE/визуальных правок пока нет.
+
+### 03.10 08:41 — narrow floating-origin material frame recovery, not full acceptance
+
+Confirmed code defect: SceneComponent ApplyWorldOffset skips TransformUpdated,
+and APS double-precision ShiftWorldBy does not use engine integer-origin events.
+Native/shared terrain, lava, ammonia/water and coastal binders relied on those
+events; cloud center was refreshed only on tick. Added APSWorldShiftEvents
+PostDoubleShift, broadcast after all actors/camera and FloatOrigin move; five
+material adapters and cloud component reread their final physical frame. Existing
+engine event/ordinary transform support remains. No palette, texture, geography,
+normal function or production material asset changed. Claude confirmed ownership
+and event placement08:28; his ISM/flight changes are preserved.
+
+Source checkpoint: frozen-descent-20261003-0701/frame-shift-0814. Fresh original
+origin subsystem backup before event: SHA256
+A329E21BA47B8113FD8EA3C9E1E8CEF0916C4219D4323369774D8974300A135C.
+Build08:27 PASS33.94s. Lidim framesync0828 recorded705 frames, full94s radial
+descent/ascent 30.5km→2m→30.5km with11holds. Orbital fixture, NOT a natural
+landing/site success or an exact replay of user atmosphere/camera/ship dynamics.
+
+Pre-fix Lidim0753 frame673 had a large one-frame cloud-size flash at world rebase.
+Post-fix0828 frame675 rebase20.066km: main inspected674/675/676; that flash absent.
+Material centerErrorCm=0 on every recorded physical-frame sample. Eight material
+parent DoubleShift contracts PASS. Stationary adjacent RGB pairs (same logged
+camera height) old316/new317: MAE median0.193→0.181, p99 1.078→0.597,
+max7.869→1.082 on scale0–255. This ranking is NOT a full visual PASS.
+New609→610 max aligns with LOD publication180; 470→471 high MAE is moving camera
+24.741m, no new publication or material binding change, no proved material pop.
+Viewed near/far frames still do not establish the accepted identity/seam contract.
+
+Overall rendered automation FAIL: real starter rejection314 candidates/walkable0
+and GPUScene367 ensure at startup remain. Did not suppress either; reported the
+ensure to Claude. WeakLifetime contract also initially failed because test used
+abstract UObject; fixed only test receiver to concrete transient USceneComponent.
+08:34 relink attempt failed on in-progress parallel APSStarRenderer source, then
+stopped/released; after explicit ready08:39 build08:41 PASS9.55s. Jaim control
+PID27020 now running, evidence frozen-descent-jaim-framesync-0842 (label, not
+exact launch time). No simultaneous UE/bake. 43 protected hashes remain identical
+to Lidim0753 checkpoint (last verified08:35).
+
+Separate SOURCE-ONLY diagnostic candidate ContinuousWarpPixel20261003V1 clones
+current exact Continuous master/MIC and bypasses five master warp interpolators;
+does not change shared slope function or2–20km normal /5–50km orbital transitions.
+It is not baked/published/default-enabled. Build success is not acceptance.
+Full goal stays ACTIVE: surface identity/LOD/atmosphere boundary, Theon control,
+then other solid families and measured lateral-flight performance remain open.
+
+### 03.10 09:09 — completed frame-sync controls; failed candidate remains isolated
+
+Jaim0842 finished680 captured frames/94.1095s. Five contracts PASS: three Frozen
+fixture/route checks plus DoubleShift and WeakLifetime. All sampled material
+center errors0. Main viewed0030/0170/0275/0340/0645. Overall rendered automation
+still FAIL: starter rejection314/walkable0 and GPUScene367 at startup. These
+failures were not suppressed; no assertion of visual completion across families.
+Current source+DLL checkpoint framesync-verified-source-0849 has20 verified files.
+43 protected source assets/config hashes unchanged again09:00. Theon preserved.
+
+ContinuousWarpPixel bake0845 PID13292 exited08:55 result31 BEFORE saving any
+candidate asset; destination does not exist. Master final strict gate passed,
+MIC compound gate failed. That message does NOT prove missing LocalVF specifically.
+Initial MIC had transient unset function input; source audit finds UE retains old
+CompileErrors when joining an incomplete master map. Builder now compiles/finishes/
+gates master before final MIC recompile, logs individual conditions and errors;
+all strict gates and source-closure guards retained. Correction is source-only
+until next build/bake. No production material changes or failed candidate rollout.
+
+Atmosphere control gap: fixture used height100km, whereas incident moon generation
+uses float RadiusKM/30 (Jaim16.6786km, Lidim42.6965km). Old30.5km route did not
+cross Jaim fixture outer shell. Separate opt-in APSProbeFrozenAtmosphereBoundary
+is being prepared: actual shell-relative down/up route incl34.5km, ±50m/±2km,
+15deg limb-facing view, readback of physical shell/pass/uniforms. Only fixture
+height differs; no production atmosphere edit. It is NOT exact incident moon
+climate/tint/camera/ship/save replay. Old Frozen control route remains unchanged.
+Window released08:56, Claude GPU-star check completed09:05; reclaimed09:09.
+
+### 03.10 09:24 — cold reload rejected; real atmosphere edge reproduced
+
+Build labelled0913 PASS21.52s. Serial bake0915 (actual09:11:20–09:12:19)
+passed master and MIC: resource1/complete1/errors0/map1/LocalVF1. Two V1
+diagnostic assets saved; all source closure hashes unchanged. However separate
+Lidim0913 process failed before any candidate route frame or BEGIN binding:
+SharedSlope→CheapContrastNoClamp input0 unset again on load. 8 contracts PASS,
+rendered FAIL. Therefore V1 is not deployable and not visually evaluated.
+
+Root cause of cold reload confirmed in source/export: SharedSlope has reachable
+APS_FarSlopePixel function-call nodes outside its serialized ExpressionCollection.
+Builder RestoreTransientFunctionPins repairs transient input/output pointers only;
+saving master+MIC cannot persist that repair in referenced source functions.
+Do not hide this with DDC copying or runtime pin repair. Diagnostic V2 is being
+prepared with isolated required function clones and complete serialized collection,
+identical math/edges and unchanged production functions. V1 remains immutable.
+
+Jaim atmosphere-boundary0916 (PID27928, ended09:18:39) completed the94s route.
+Actual outer radius516.035877228km; shell height above sampled ground15.170480704km.
+Actual shader EarthRadius49935728cm, AtmosRadius51603588cm, ScaleHeight_R800000cm,
+ScaleHeight_M8824.80859cm, AtmosOpacity6.81812191. Concentric center error0.
+Main inspected frame0000 and257/258/259 +467/468/469. Hard colored sky edge is
+present on BOTH sides of the inside/outside shell switch (258 descent/468 ascent),
+not only a swap flash. Needs physical/material boundary investigation; no optics
+change applied. This fixture does not claim incident moon subtype/tint replay.
+8 contracts PASS; overall automation FAIL (starter rejection); visual criterion FAIL.
+No GPUScene ensure recorded in THIS boundary route. That does not close the
+separate startup/rebase ensure seen in earlier Lidim/Jaim controls.
+
+Checkpoint boundary-verified-source-0924 saves5 verified source/runner/DLL files.
+43 protected assets/config SHA unchanged09:24. UE/GPU released09:22 for others,
+source-only V2 work in progress, no second live process. Main goal remains ACTIVE.
+
+### 03.10 10:05 — complete portable-closure audit; two isolated diagnostics source-ready
+
+Build portable-v2-0940 PASS22.09s. The first V2 bake0942 (PID29080, actual
+09:41:11–09:41:24) correctly refused BEFORE save: WorldAlignedTexture also has
+38 serialized versus93 reachable nodes. Slope-only diagnosis was incomplete.
+No V2 asset was saved; 43 protected assets/config still match before/after.
+
+Full source/export audit now bounds four private function copies: WAT38→93,
+PlanetMap22→51, Slope49→145, OrbitalMacro85→85 (ancestor of WAT×3). Exactly180
+registrations and6 output assets expected. Twenty live source SHA1 pins match.
+The remaining NormalCoordinates103/103 count is derived from builder/provenance,
+not claimed as a fresh UE-load result; full preflight logs all closure/topology
+entries and must verify it before duplication. Math, native slope, parameter
+defaults, edges/GUIDs, normal/distance policies remain; five coordinate warp VIs
+are the only intended rendered A/B difference. Cold reload is still REQUIRED.
+
+Atmosphere audit found active Custom_0 clipped to outer shell with nonzero
+Rayleigh density (~0.124 at Jaim edge), plus a separate unmasked float4→Opacity
+connection whose W is transmittance. Neither is proven the sole visible-edge
+cause; do not combine an alpha rewrite with the density comparison. New isolated
+AtmosphereTail20261003V1 builder changes ONLY four camera/light density terms:
+parameter0 keeps source, parameter1 fades upper20% using smoothstep. Same source
+geometry, scale heights, coefficients, palette and output wiring. Seven source
+SHA1 pins; complete-function preflight, clone parity, strict compile/LocalVF and
+default0 gates. No production atmosphere edits or candidate asset writes yet.
+
+Runtime diagnostic binds the same cloned master to both existing native-pass
+MIDs, copies/checks all native uniforms, sets only diagnostic scalar, keeps actor
+MID fields in sync with normal UpdateScale, and validates/restores original slots.
+Explicit -APSProbeAtmosphereTail=0|1 requires the separate Frozen boundary route;
+new parser tests added. Existing initial settlement remains; no in-flight waits.
+Per-frame scalar and first-frame mesh topology readbacks added. These last changes
+are SOURCE READY but NOT BUILT/BAKED/RELOADED/RENDERED as of this checkpoint.
+
+Source checkpoint portable-tail-source-ready-unbuilt-1000 contains9 files+SHA256.
+Actual latest DLL is still09:40. Build attempts09:59/10:02 were cancelled BEFORE
+launch after elevated CIM found M5 import29208 then validation28356; no process
+was stopped. M5 validation owns UE/GPU; next12-minute planet window requested
+through coordination file, not claimed over their live process. After release:
+one build → V2 bake/cold Lidim route → tail bake/control0/candidate1 Jaim routes,
+strictly sequential. Theon, production materials, accepted palettes/seeds and
+parallel ships remain protected. All-family visual acceptance is still OPEN.
+
+### 03.10 10:26 — diagnostic build repaired; live closure refuses V2 before save
+
+Build1010 FAILED18.12s: main diagnostic lease used private AAtmoScape members;
+geometry readback used auto* with TObjectPtr. Both were diagnostic source mistakes,
+not production shader failures. Repaired only tests: checked UPROPERTY reflection
+(exact owner/name/type/ArrayDim), no plugin API change; explicit UStaticMesh*.
+Actor and mesh MID bindings remain synchronized, component identities validated,
+cleanup restores only owned bindings. Rebuild1021 PASS17.72s. Source checkpoint
+tail-runtime-built-1026 records7 verified source copies and actual DLL hash.
+
+V2 bake1021 PID28784 ran10:22:10–10:22:38 and refused BEFORE duplication/save.
+Complete live closure: WAT38/93, NormalCoordinates38/103, Slope47/143,
+PlanetMap21/50, Orbital85/85. Earlier exported counts and especially the inferred
+NormalCoordinates103/103 were wrong. All remaining functions are complete in
+the logged closure; existing topology counts pass. Need fifth private function,
+245 registrations total, 7 outputs, not the former4/180/6. All20 pinned source
+hashes still match, and43 protected assets/config unchanged. No V2 candidate
+assets or rendered candidate frames exist yet. Do not claim this diagnostic
+asset portability defect is the cause of the user's in-game material changes.
+
+Atmosphere tail builder and lease are now compiled; bake/cold-load/both rendered
+modes still untested. Production terrain/atmosphere assets remain unchanged.
+RELEASE UE/GPU10:24; M5 window takes precedence, builder source-only work continues.
+Main goal ACTIVE: frame-shift partial repair is not a seamless-surface PASS.
+
+### 03.10 10:45 — first rendered atmosphere-edge improvement; terrain candidate still refused on cold load
+
+Build portable-full1028 PASS19.21s. V2 bake1029 PID22308 ended10:29:50:
+all live closure/topology gates passed; 245 registrations,5 private functions,
+7 saved assets; both master/MIC shader gates complete/errors0/LocalVF1. Immutable
+master SHA1 D6AEB2601BF772299588741CCE1CCAC5921EA760,
+MIC2B170E8BBBFD5EC212F2CBF9E75F85C0773805E8. However cold Lidim1030 PID29212
+failed before lease BEGIN/route/frames: privateSlope -> CheapContrastNoClamp
+input0 unset. NO rendered terrain candidate acceptance, no promotion, no DDC
+copying/runtime pin repair. Stop speculative bakes. Read-only engine audit rules
+out deprecated collection API; competing EditorOnlyData siblings are a concrete
+suspect (Serialize changes owner's active pointer, PostLoad copies current data
+into canonical sibling). V2 name tables show two EOD names per function, but
+exact sibling payload/selected pointer still unverified. Next bounded cold audit
+must enumerate all owned EOD collections before any repair/export/save.
+
+Atmosphere bake1032 PID8952 ended10:33:22 PASS, one isolated asset SHA1
+D6F29D5DAF44D0842CE24DEE7DFB9C8EFB4526CA. Source master linked93/serialized90
+(three nested reroutes); all6 referenced functions complete. Both new-process
+routes loaded it successfully and bound two native-pass MIDs, scalar0 vs1 only:
+control1034 PID29536 ended10:36:51,726frames; candidate1037 PID29384 ended10:39:58,
+730frames. Each94s, same DLL/source hashes/protected43/commands except scalar and
+output paths. Each9 contracts PASS / rendered suite FAIL from starter hierarchy
+rejection; neither records GPUScene ensure. Both have unrelated startup warning
+MM_StarfieldScape missing TextureObject; no candidate-atmosphere shader error.
+
+Main VIEWED far frame0 both; descent holds +50m control208/candidate210,
+-50m277/279; ascent holds -50m446/448 and+50m516/519, plus near crossing258.
+Actual outer516.035877228km; centerError0, optical scalar inputs/mesh assets same.
+Hard black-sky boundary in control becomes visibly gradual in candidate on
+BOTH sides and BOTH directions. This is a local rendered improvement, not all-
+family/ground validation or a full seam-free PASS. Candidate NOT production.
+Ground, thicker atmospheres/radii and Theon protection still require acceptance
+coverage before any promotion. pair-review.json saved in candidate1037 evidence.
+
+Native shells measured: inside4514vertices/9024triangles, outside3926/7680,
+both3LODs; no shell/alpha/scale-height rewrite combined with density experiment.
+All43 protected asset/config hashes unchanged through10:41; UE/GPU released to
+M5 after verified own processes ended. Active goal remains incomplete; terrain
+appearance transitions, LOD/return/full-family/freeze measurements remain OPEN.
+
+10:54 checkpoint: main additionally viewed candidate switch-neighbor frames
+259/260 descending and468/469 ascending; no former hard sky edge on these
+sampled frames. Seven pinned production atmosphere source SHA1 also unchanged.
+No claim of uncaptured-frame continuity, ground optics or all-family coverage.
+
+Read-only cold audit source READY, not built/run: new Editor/APSContinuousWarpColdAudit.h
+SHA2562F8F53AAF2787FA3B4E06910FA093779CA1AC904859FBCC8C3C02FA189DAA9A4;
+commandlet early -OnlyContinuousWarpColdAudit invokes Run before AssetTools or
+AllowCommandletRendering publication guard. MIC-first normal runtime load,
+FindObject-only initial dependencies, log all owned EOD siblings/collections and
+GUID/transient pins before any explicit missing-function loads. No export/archive,
+force compile, repair, update or save;7candidate+20source hash/dirty guards before
+and after. NullRHI is appropriate for CPU EOD/PostLoad readback, NOT shader/render
+acceptance. M5 CLAIM10:50 owns UE; no build or audit started during it. After
+actual RELEASE/free CIM: build once, then one read-only audit; no further terrain
+bake until the persisted-selection mechanism is established. Active goal stays OPEN.
+
+### 2026-10-03 11:05 — cold V2 under-hydration established, production unchanged
+
+Read-only audit build PASS19.02s (build-cold-audit-1100.log); the earlier1059
+invocation had a path typo and launched no build. DLL SHA256
+DC3BF87048C3A1177800DD1776E8212E9ADB5B60E5D57400ABF55E121F6CFE3B.
+Own NullRHI commandlet26364 ran11:02:12–11:04:09, normal MIC-first LoadObject,
+no extra function loads, no export/repair/save. Evidence:
+`F:/ChatGPT/APOSFERA/work/planet_continuity_20260929/cold-warp-audit-1101/audit.log`.
+END auditComplete=1 protected=1; all54 before/after candidate+source hash checks
+match and packages clean;43 surface/config hashes independently unchanged.
+
+Exact failed chain at1105–1108: private Slope active EOD47 registered versus143
+reachable, missing96; APS_FarSlopePixel_1 reachable=1 but activeMember=0. Its
+two inputs and one output retain correct GUIDs, expected CheapContrast objects
+and serialized edges, but transient pointers=None. Other342/345 pointers match;
+all63 call interface counts match. Both Slope siblings contain the incomplete47.
+WAT both38/93; PlanetMap both21/50; Orbital85/85; NormalCoordinates active103/103,
+inactive source-named38/103. This establishes candidate cold hydration failure,
+NOT the cause of every user gameplay material transition or visual recovery.
+The exact save-versus-PostLoad overwrite instant remains an engine-source-based
+inference; duplicate EOD count alone is not evidence of failure.
+
+Next narrow source-only diagnostic correction: full verified ordered expression
+collections in every expected direct EOD sibling of five private functions;
+retain comments/other fields and all math/GUID/edge/default parity; validate
+before compile/save and after saves. New immutable V3, keep V2 forensic assets.
+No production family selection or accepted Theon assets changed. M5 next UE
+window after our verified RELEASE11:05. Main goal ACTIVE/incomplete.
+
+11:15 SOURCE READY/FROZEN correction saved, not built/baked/runtime-tested:
+Editor/APSContinuousWarpPixelABBuilder.h SHA256
+3E6D8B34588B0FC6EAAD54493383EAAA3C95A53950A609423B2E8536204F53B8;
+Tests/APSContinuousWarpPixelAssets.h
+104741E6905C2B04550AF468E263ECB2565CC6B299975E95E39A30F1FE56C47B;
+Editor/APSContinuousWarpColdAudit.h
+9A1DEE3F683DD5CA5F0210F198797D6C3A063ECEBD32E20B4B233CC788E603EC.
+Checkpoint `F:/ChatGPT/APOSFERA/work/planet_continuity_20260929/warp-v3-source-ready-1115`
+contains these plus commandlet with verified copies/manifest. Prior3headers at
+warp-v3-source-pre-1110. ColdAudit uses literal V2 paths so its pinned hashes
+and forensic MIC-first experiment cannot silently follow new Assets destination.
+Exactly5functions/10expected siblings, one normalization before saves; only
+assertions thereafter. VI math block unchanged; comments/exec preserved, all
+old parity/source guards retained. V3 destination still absent.
+
+Main inspected0828 control frames609/610: no large whole-field replacement,
+only local/fine change visible there. They are useful fixed-pose LOD-publication
+candidates, not proof of the entire user's artifact. At609–612 actual camera
+unchanged, worldShift0;610 publishes geometry/layer changes while workers10->0.
+Do NOT use470->471 as static evidence (camera moves24.74m). Prefer freshControl
+andV3 on same DLL, ordinary route with no AtmosphereTail/Boundary flag; compare
+actual pose/waypoint/LOD events, not frame numbers. Older0828 shares43protected,
+21/22surface source hashes and native WorldScape hashes, but harness/diagnostics
+differ; that is not a strict same-binary A/B.
+
+CLAIM11:14 after M5 RELEASE11:13 was not used: final elevatedCIM found new M5
+game24988+shader workers, so command exited44 before UBT. RELEASE11:15 recorded.
+DLL remains11:01 cold-audit build; no V3 asset or production promotion. Next:
+after M5 explicit RELEASE plus free elevatedCIM, one build/bake; then fresh cold
+control/V3 rendered pair, inspect fixed holds/descent/ascent/rebase. Keep old
+evidence and fail closed on registration/cold shader defects. Goal still ACTIVE.
+
+### 2026-10-03 11:26 — V3 built and persisted; cold rendered comparison pending
+
+Previous continuation made progress: read-only cold V2 evidence isolated one
+unhydrated call and source correction was saved. At11:18 current source hashes
+matched checkpoint, M5 RELEASE11:16 and elevatedCIM empty allowed CLAIM11:19.
+Build1119 failed LNK2019 after21.80s: UE5.4 base EOD class is NO_API. Narrow
+helper fix gets reflected base via exported concrete class GetSuperClass; exact
+sibling/class/name/ownership checks retained. Build1121 PASS13.62s, DLL restored
+SHA2561C4C12AE6E50C4306385FC74569951E94EDAC0DEC7E3FCA8D33271A29EBE6883.
+Current builder SHA256B307FD559792B4618095BCA3B107420938DC8DBB27C3FB0C83DC0CD68D6EC6C8.
+Checkpoint warp-v3-built-1124 contains4verified source copies+DLLhash.
+
+Own bake23116 11:23:33–11:24:33:
+`F:/ChatGPT/APOSFERA/work/planet_continuity_20260929/bake-continuouswarppixel-v3-1122`.
+Master/MIC final complete=1/errors=0/map=1/LocalVF=1. Exactly5warp VI bypasses,
+5consumers,245new registrations,10EOD siblings full through before/after each
+save and after-all-saves. Output7immutable V3 assets (SHA1):
+- WAT AD3E15E26D8AD822811F0102C85DE4F824DE9BB2
+- PlanetMap A1E969A3E044BCFF970996384C084022C291B12F
+- Slope 63B0C09E670269E86BB532431D59E9D75EAA9C07
+- Orbital E0B31F2B54EF08E9248ECFEF96536953ED7F19BF
+- NormalCoordinates F7941CC98E5A35772220800EF1C7534778338DEB
+- Master 8EB6BF1D3131A8D801A8FFDC79F6D5C370508FEA
+- MIC AF131C339FF2A68DF7D4C891C16D979AD9289A0F
+
+During initial duplication the unchanged source's transient-pin warnings were
+logged; final candidate gates pass. Do not label the whole log warning-free.
+All43 protected asset/config hashes unchanged after completion; source/DLL
+Frozen runner CheckOnly passes, which is NOT cold load/render acceptance.
+RELEASE11:25 honored for M5 next shared-resource step; SOURCE READY/FROZEN,
+their isolated ship component may enter their build. Requested next5minute
+window for fresh coldV3 + Control on same DLL, no intervening build. V3 remains
+opt-in diagnostics, no production promotion. Surface recovery/all families
+still unproven; goal ACTIVE. Current next action is live-process/coord recheck,
+then sequential render pair, not another bake.
+
+11:37 update: actual saved-state review confirms70/70 after-save and10/10
+after-all EOD checks. During Slope save the active pointer really switched
+candidate-named -> source-named (bake1097–1110), both lists stayed143. This
+directly supports all-sibling repair rather than just a hypothesized cold copy.
+All7 disk hashes match bake;20source+7oldV2 unchanged.
+
+First fresh-process V3 runtime1128 PID28852 started11:28:47 after free finalCIM.
+M5 completed its isolated helper relink11:28:34 before our start; runner manifest
+and disk agree DLL09F6FF990AA63BA3998727AC8AB7DC1CEA55380C056E3601F813A99AD159680E,
+not old1121DLL. No concurrent UBT was observed at our launch. M5 BP opt-in ran
+only after our own process ended; no user session touched.
+The run ended11:30:33:9contractsPASS/1renderedFAIL, no candidate BEGIN/noframes.
+Exact failure: Warp-pixel candidate shader preparation pending at existing40s
+step-relative gate; real shader workers were running during preparation. No V3
+function-input or material compile error logged; that absence is NOT cold PASS.
+Known starter314/walkable0 errors and unrelated Starfield compile warning remain.
+Do not copy DDC, force ready, disable error/LocalVF guards or rebakeV3.
+
+Narrow TEST-ONLY correction being prepared: preparation-owned timer starts at
+first valid Prepare, capped120s and never reset by polling; bounded progress and
+ready/timeout logs. Fixed+120s whole-test allowance only for explicit WarpPixel;
+normal tests/routes and production untouched. Retain strict shader/source/
+uniform/LocalVF gates. Pure budget contract will check first-start and cap.
+RELEASE11:33 reconfirmed11:37; no Control launched, next pair must use new same
+DLL after test-only rebuild. Goal ACTIVE; still no V3 rendered acceptance.
+### 2026-10-03 12:03 — first complete V3/control pair; no visual promotion
+
+Preparation-only source changes reviewed/frozen in three test files; build1145
+PASS21.34s. Same DLL EA6A76164B84F751BFD2C08D51AEEF08AA489C9C1E641EE43969D4D3984E09F5
+for both runs, no bake. V3 fresh process22004 ran11:47:07–11:49:36;
+control23996 ran11:50:23–11:52:36. Explicit RELEASE11:53 after empty elevatedCIM.
+Evidence root F:/ChatGPT/APOSFERA/work/planet_continuity_20260929:
+`frozen-descent-lidim-warppixel-v3-1146`, `frozen-descent-lidim-control-1150`.
+V3 preparation14.887s, complete1/errors0/LocalVF1, actual lease BEGIN confirmed.
+686/693 captured frames, full94s descent/ascent; ten contracts PASS in each.
+Both rendered automation FAIL: retained starter314/walkable0 + GPUScene367
+startup ensure. Neither errors nor failed test status were suppressed.
+Manifests: same22source/43protected/17probe/4native hashes;43disk guards unchanged.
+
+Read-only image ranking:309/307 adjacent exact-logged-pose hold pairs.
+Control598->599,9.1km ascent, t81.1763->81.3021, lowerROI MAE1.6829/255:
+LOD0–2 geometry/layer publish, binding unchanged. First equal-camera pair only;
+GPU temporal history not established. V3 publication594 occurs atfirststableview,
+previousframe moving. Thus unmatched event timing cannot prove pop elimination.
+Settled maxima V3 461->462 ROI0.8331 vscontrol464->465 ROI0.6273 at2.7km,
+no sampledgeometry/layer change. Smaller overall max is NOT a fix claim.
+Exact late-hold V3/control pairs:0015/0015(30.5km),0079/0083(9.1km),
+0211/0212(2.7km),0273/0275(34m),0340/0342(2m). Camera-root matches0.001cm
+rounded, rotation/FOV/aspect and sampledLOD0–2geometry/layer match.
+Main viewed9.1/2.7km exactpairs; near265/270 and350/350; control598/599;
+ascent9.1km596/610. No material identity improvement visible. V3 stays diagnostic,
+no new production assets/routing, no more bake/repeat of this same inconclusivepair.
+
+Focused source audit:2–20km overrides already in NativeTerrain checkpoint
+20261001-2338-pre-polish,20261002-0548,pre-edit-policy with identical SHA256
+7209BD8B9E5AB8C0D9812E948EC635D858EC0F2EE707B7818177E2FF17D848F7.
+Not introduced by03:36unification; do not blindly roll these thresholds back.
+Remaining hypothesis: native slope VertexInterpolator below2km feeds BaseColor
+blend, so mesh-normal publication can change snow/dark-rock mask without MIDswap.
+V3 warp bypass does NOT address this. Distance is camera->pixel, not altitude.
+Need near-ground fixed-pose publication bracket or bounded slope-isolation proof;
+not another full-material replacement. Protected Theon remains unchanged.
+
+Next independent ready check: existing AtmosphereTail control/candidate on larger
+Lidim42km shell, then surface-sky preservation before any production promotion.
+Attempt12:02 refused beforeclaim/launch by liveM527520 and CLAIM12:00; no process
+touched and no new ownUE. Jaim15km boundary A/B already reviewed earlier.
+Goal ACTIVE; recovery and all-family acceptance NOT complete.
+### 2026-10-03 12:13 — Lidim atmosphere boundary A/B confirms local edge improvement
+
+After M5 RELEASE12:01, CLAIM12:04 and empty elevatedCIM: existing immutable
+AtmosphereTailV1, no build/bake/new source. Control25068 actual12:04:20–12:06:34,
+candidate10836 actual12:07:34–12:09:47. Evidence directories below same workroot:
+`frozen-descent-lidim-tail-control-1205`, `frozen-descent-lidim-tail-candidate-1207`.
+719/728frames,94s routes. Ten contractsPASS/one renderedFAIL each: retained
+starter314/walkable0; GPUScene367ensure control1/candidate0, do NOT attribute
+that unrelated difference to density taper. Identical DLL EA6A...09F5,22source,
+43protected,17probe,4native hashes. Disk43unchanged again after both runs.
+Window explicitly RELEASED12:11 after both process exits and empty realCIM.
+
+Actual outer radius1322.592533112km, shell above sampled ground40.659436940km;
+model thickness42.6965km. Uniform EarthRadius127989600cm, AtmosRadius132259256cm,
+ScaleHeightR800000, ScaleHeightM23482.2383, Opacity7.62989473. Same nativegeometry,
+only Tail=0/1 on private-copy inside/outside MIDs; ordinary source parent intact.
+Main visually compared control/candidate154(+50m above shell),224(-50m): hard
+top blue-to-black line becomes soft fade, lower limb/terrain identity retained
+in these views. Camera world coordinates differ18.939cm from rebase; compare
+physical shell offset/angle, not raw world positions. Main also viewed candidate
+188/189 descent pass switch and538/539 ascent pass switch: no visible hard pop
+in these sampled pairs. This extends prior Jaim15km boundary evidence, NOT
+global acceptance, not frame-complete proof, and not an exact user-save replay.
+Folders: Control FrozenDescent_Lidim_6AFB30354CFD6A2B9BCB489A0CB39B67;
+Candidate FrozenDescent_Lidim_D5AB91AA4170809B77967D8696F4B72E.
+
+Remaining safety gate is explicit ground-sky A/B34m/2m with production-height
+model. Local density below0.8H unchanged is NOT proof sky unchanged: camera and
+sun rays still integrate altered upper layer. Existing Tail parser/lease require
+Boundary and therefore cannot test ground unchanged by just removing the flag.
+Next narrow test-only step: separate ground route while retaining same physical
+model/two MIDs and only Tail0/1; no new material candidate/bake needed. Then
+protected Theon and affected-family evidence before production enablement.
+Surface slope/LOD hypothesis remains open as above. Source checkpoint of built
+three prep files +DLLhash saved `warp-preparation-verified-1204`. Goal ACTIVE.
+### 2026-10-03 12:38 — preserved actual Khoax save; ground-tail source ready
+
+Near-ground audit of completed1146/1150 pairs did NOT reproduce stationary
+square/material pop. Sole <100m publication in each run was still on moving
+camera: control252->253 (80.429->68.722m), V3 251->252 (77.895->64.529m).
+LOD0-2 geometry/layer hashes changed together; binding unchanged. Holds34m/2m
+had workers0/incomplete0 and stable hashes. No claim that original user defect
+is absent: fixture does not replay user's multi-body flight/site/camera.
+
+Actual original Saved/SaveGames/Jeqiwoga Cluster 1212.sav found and checkpointed,
+with .apsmeta, under workroot/user-world-khoax-1236 (copy made12:33:53; directory
+suffix is only a unique label). Original user files unmodified. Save SHA256
+B0D5856DDE70D83ABB2FE4A39067C27925556E61A203A107ABA600202131986F;
+metadata478EAB11030C6D3E4375AD859EEABEF0CEDB553E816751EFAC23F734552AECE0.
+Khoax cluster seed121288183. Autosave01:56:31UTC is already at JAIM, piloted
+BP_Spaceship_M_P2_01_C, fleet ReferenceKey BODY:Jaim, NOT Lidim34m pose.
+Original incident log19847/19908 gives rounded generation-frame pawn anchors
+at01:54:16.802 and01:54:27.637 near Lidim; exact near camera/rotation missing.
+Ordinary LoadWorldSlot restores hierarchy, then pilot, then asynchronous ship
+boarding; player-restored log alone is not possession/camera readiness.
+No existing arbitrary-slot automation hook: Frozen fixture flags must NOT be
+used for save replay (their model replacement and smoke-slot cleanup differ).
+Next exact-world test should use isolated saved-dir copy, normal LoadWorldSlot,
+confirmed possessed ship/HasPilot/BODY:Jaim, read-only terrain observer, and
+explicit bounded capture. No touching original slot; no whole-repo rollback.
+
+Four-file TEST-ONLY ground-tail extension reviewed: Parse opt-in, parser tests,
+route/pitch hooks, runner. -AtmosphereGround requires Boundary+Tail0/1 and noWarp;
+retains production-height model, dual-MID lease, telemetry and94s ordinary route,
+pitch0deg. Existing boundary15deg unchanged. Backup/hash manifest in
+atmo-ground-pre-1217/source-hashes.json. PowerShell guards/AST PASS; new C++
+contract/render not yet run. Shared Claude DLL12:28:40 passes source-freshness;
+own build not started because finalCIM found already-running Claude UBT4888.
+Claude CLAIM12:28 respected; planet unusedclaim explicitly released12:32 after
+two transient coordination-file write failures (subsequent apply_patch verified).
+Await explicit shared-resource release, then Jaim ground Control/Candidate;
+no rebake or production promotion. Goal ACTIVE; surface recovery not complete.
+### 2026-10-03 12:53 — Jaim ground-tail rendered pair completed; surface-mask lead retained
+
+Claude RELEASE actual12:40 (their initially written12:52 corrected incoord).
+Ownclaim12:43 after empty elevatedCIM. No ownbuild/bake: sharedDLL12:37:52
+1987177DBBC53EB1F4F43FF959E48E7F713C9B7CDB367EE2F2506BDA45CD5D74.
+Control10472 ran12:42:43.567–12:45:01.501; candidate27776
+12:46:10.636–12:48:27.545. RELEASE12:49:44, no ownprocess left.
+Evidence workroot/frozen-descent-jaim-ground-control-1243 and
+frozen-descent-jaim-ground-candidate-1246;727/714frames,94seconds each.
+11contractsPASS/1renderedFAIL both. GroundParser compiled andPASS.
+Same6startererrors remain. Candidateextra23errorrecords are ONEhandled
+GPUScene.cpp367ensure plusstack, not23independentfailures; no suppression.
+Exact22source/43protected/17probe/4nativehashes match;43diskguards unchanged.
+BothnativeMID actualTail0/1; radius51603588cm/opacity6.81812191 retained.
+
+Main visually reviewed exact lateholdpairs Control/Candidate:
+34m down0301/0289(t38.9723/38.9955),2m0371/0359(t48.0174/48.0451),
+34m up0440/0428(t56.9582/56.9921). Camera-root within0.001cm rounded,
+rotation/FOV/aspect andsampledLOD0-2geometry/layer/ECEF agree. Controlshotfolder
+FrozenDescent_Jaim_5FBD473A4783A4771A7A8B8C8C3B4D51; candidate
+FrozenDescent_Jaim_62BEA2B64D771D8C066D7585904ED2C8 (each ownSaved/Screenshots/Windows).
+Groundappearance/horizon retained in theseviews, no sky disappearance. Small
+visible skyhue/brightness change: upperROI x64:1216,y36:216 MAERGB2.431/2.410/2.430
+per255; mean luminance candidate+3.80..3.83. Same-pose adjacentwithinrun~0.12.
+Thus NOT pixel-invariant groundsky; local test supports no gross regression,
+not all-familyorproductionacceptance. LargerLidim groundcheck andprotectedTheon
+remain before anypromotion. No productionatmoasset/routing changed.
+Fourbuiltground-routefiles checkpointed atmo-ground-verified-1252 actual12:51:28.
+
+Surface source lead: geometric slopefeeds actualBaseColor mask (notonlylighting):
+exported Slope.Custom9 ->Call36.Output1 ->Add14/Multiply8/Lerp16/Clamp2 ->BaseColor.Lerp9.
+2..20km smoother continuous (w2.7km=.004419,9.1km=.344019,20km=1), so nohard
+threshold identified. Nevertheless nativeLODnormals andcamera-distance change
+colourclassification; nearpublishedangles5.57deg/30.59deg can drive different
+native slopevalues while both converge to radialfarvalue. This remains a
+source-supported causecandidate, NOT renderedrootcauseproof of user'ssquare.
+OldSlopeSide test onlyreplaced twoMountainSide texturelookups, notthisscalar.
+If isolatingnext, freezeonlygeometricalcolor-slope inprivateFrozenclone; don't
+repeatWarpV3 orreplacefullmaterial. Eventualstablecolor-slope can derivefrom
+CPUcanonical SampleHeightResolvedProfile fixedphysicalstep but requires a
+planet-fixed pixel map/cache; vertex-only newattribute stillLOD-interpolated.
+CurrentVertexColor.R is macroheightpalette, notthatphysicalgradient. Respect
+volume/heightmapoverrideguards; neverregenerate geography tohideartifact.
+Next priority is bounded isolatedactual-save replay (normalLoadWorldSlot, after
+HasPilot/possessionready), retaining terrainobserver and originalsavecheckpoint.
+Do NOT runFrozenfixture flags against user-save oruseits smoke-slotcleanup.
+Goal ACTIVE; recoveredworldwide seamlessness stillNOTproved.
+### 2026-10-03 13:24 — actual-save observer installed, not built or rendered
+
+Independent review of the isolated saved-world replay found one broad-suite
+regression in the draft: missing opt-in would fail ordinary Automation RunTests
+APS. Fixed before installation: no replay flags -> explicit SKIP/no load/no
+capture; incomplete APSSavedPlanet flags -> FAIL; explicit valid opt-in retains
+private SavedDir, exact slot and SHA1 guards. Existing engine errors are retained
+as FAIL but do not alone suppress passive evidence. Explicit replay/readiness/
+identity/audit failures still stop. No fallback or frame success from errors.
+
+Added only Source/APS_ALPHA/Tests/APSExistingWorldPlanetReplayTests.cpp and
+Tools/Diagnostics/RunSavedWorldPlanetReplay.ps1, no existing production CPP or
+asset changes. CPP SHA25621E593BC61DFE203F34630C8EF10701EDE38578B807D152CA8B954CE1559AF87;
+runner FDCC4136B6860751ED9838F43466C5810D85060E8D6BACDA738C07090F9D59E2.
+AST PASS and deliberate stale-DLL preflight refusal PASS; no run directory or
+process created. Source READY/FROZEN. Source installation occurred with no UBT
+process; Claude's live g5 Cmd488 and CLAIM12:52 untouched. Await explicit RELEASE
+for one additive build and ordinary private-save replay. No own UE/build here.
+
+Replay uses normal LoadWorldSlot exactly once, expected Khoax model seed,
+possessed BP_Spaceship_M_P2_01_C with HasPilot, current/nonpending Frozen Jaim
+profile/root and nearest body Jaim; not an assertion of exact incident camera or
+private serialized fleet identity. Bounded hierarchy185s/pilot30s/passive20s,
+total255s; camera+generation+ECEF telemetry and target8Hz audit/4Hz PNG capture.
+Synchronous readback is not a performance benchmark. Original save is never
+loaded; private copies and original hashes must be rechecked after exit.
+
+Focused native-normal audit confirms mesh-derived rather than canonical normals:
+triangle step varies by LOD and camera altitude multiplier; existing same-LOD
+Main/A/B seam weld does not unify independent LOD0/1/2. Ground UV1 is available
+transport in ordinary/prepared paths (ocean uses it for depth), but fixed-step
+canonical slope would require four additional height samples per vertex and
+still interpolate differently across coarse/fine meshes. CPU profile sampler
+also omits native heightmap/noise-volume overrides and lava envelope. Therefore
+do NOT install speculative canonical normals/UV changes as a universal fix.
+Color-slope dependency remains a source-supported hypothesis, not yet exact
+user incident proof. Theon/geometry/palettes/seed remain protected. Goal ACTIVE.
+### 2026-10-03 13:46 — replay representation coverage completed; shared process still live
+
+Previous turn changed authoritative state (installed reviewed opt-in observer).
+This turn revalidated shared Cmd PID488, creation13:04:47, repeatedly; g5 advances
+through named tests under NullRHI, not terminal. Claude CLAIM12:52 remains.
+No own UE/build launched. 13:28 protected43/43 and original .sav/.apsmeta hashes
+match the saved baseline exactly. Not a rendered acceptance result.
+
+Added read-only GT representation snapshots to the NEW test cpp only: Jaim and
+Lidim streaming state, surface/root IDs, actor hidden flags, all body-owned static
+mesh shells with visibility/mesh/material-slot paths and IDs/parent, all existing
+ground LOD published meshes/sections with visible flags/counts/material bindings.
+Bounds32 shells/32 LOD/16 slots-or-sections, explicit truncation; no vertex buffer
+copy, worker buffers, Ensure, visibility setter or shader/resource operation.
+Snapshots on changes at target8Hz before readiness/identity early exits, plus
+unthrottled final snapshot before Finish to retain a terminating transition.
+This is GT evidence, NOT GPU visibility/occlusion or all same-MID uniform values.
+
+Independent source review found no compile/API/safety issue; final-read gap
+addressed. CPP final SHA256167B2D6192815765D31F0EF43C9D374558C24CCCB7A64BD7DA6251EBC12E4E28.
+Runner unchanged FDCC4136B6860751ED9838F43466C5810D85060E8D6BACDA738C07090F9D59E2.
+SOURCE READY/FROZEN13:45, current DLL13:03 predates this code. Do not extend the
+diagnostic again before actual build/replay evidence. Next action remains one
+coordinated additive build then RunSavedWorldPlanetReplay with a fresh label;
+wait for explicit shared release and verify real processes before both starts.
+Goal ACTIVE; surface recovery and affected-family validation still incomplete.
+
+### 2026-10-03 14:26 — first actual-save replay; false ship expectation corrected
+
+Claude shared build14:06 included replay cpp (standalone obj14:06:25; DLL14:06:46
+SHA25624DC271004C088B40A9D1BFF35E0B012B1A38D6FD572BF17860AC45122CBF596).
+After explicit RELEASE14:13 and empty elevated CIM, own26684 started14:15:32;
+saved-world-replay-khoax-1416 finished normally14:16:41, report FAIL1/33.673s,
+zero audits/captures. Normal LoadWorldSlot restored exact model121288183 and
+Jaim/Lidim. Failure was test expectation of a piloted ship, NOT missing terrain.
+
+Independent sequential parse of exact SHA1 checkpoint: CIVS v5 PilotVehicleKey
+(actual field PilotedVehicleKey) is empty, length0 at absolute offset1562233.
+Fleet M-01 bPiloted=1 at1559870 and Reference=BODY:Jaim do not queue seating.
+PlayerPawnClass is BP_CustomGravityCharacter_SpeedModes_C. Restore.cpp only
+queues PendingSeat with nonempty CIVS key; original snapshot20803 already lacks
+'pilot back to'. Therefore more timeout/forced boarding is not appropriate.
+Potential lifecycle-save inconsistency is separate, not edited in terrain task.
+
+Actual GT representation evidence: Jaim surface ready4.648s then placeholder
+hidden; Lidim standby ready5.608s then placeholder hidden. Ten Jaim LODs bind
+one ContinuousTerra MID; no repeated root/material replacement observed during
+this stationary setup. This is NOT rendered proof or descent reproduction.
+Protected43/43 and original/private sav+meta hashes unchanged after exit.
+Window released, no process restarted.
+
+Only new opt-in replay test corrected to exact restored character/nearestJaim,
+same model/SHA/profile/root guards, no input/movement/boarding. Explicit APawn
+include and runner Scope metadata corrected. Independent narrow review PASS.
+CPP SHA25667A16BBAA7003A6A63779E393EE162A80CC3B50D508BF4F9DDACD8CA3AE57CEF;
+runner386E0AB4DFA07A6E2D3F76BD9CE0208A2527AA0A9F752F2CC62E1C6A1F793251.
+Previous CPP preserved in saved-replay-test-pre-character-1423. Production and
+ships untouched. Next: shared-slot rebuild and actual private-save capture,
+not another diagnostic expansion. Goal ACTIVE; visual restoration incomplete.
+
+### 2026-10-03 14:39 — actual checkpoint rendered successfully; recovery not yet accepted
+
+After M5 RELEASE14:28, one narrow rebuild compiled only corrected replay CPP:
+14.21s PASS, DLL14:30:34 SHA256C5DD570B65A4355642AD21274BD1D47262654CCBC1927ADD55841AFB6C4D4C85.
+Own25564 (14:31:11..14:32:11) ran saved-world-replay-khoax-character-1431.
+Normal menu LoadWorldSlot of private exact checkpoint -> restored character near
+actual Jaim (R500.357294880km, seed597932, terrainSeed147337078), no fixture or
+input override. Report succeededWithWarnings1/errors0/warnings239; diagnostic
+completed20s,130audits,78PNGs. Shared window RELEASE14:33. All43 protected hashes
+and both original/private sav+meta hashes unchanged. No gameplay material edit.
+
+Main visually inspected PNG0,1,20,40,67,68,77 in SavedWorldPlanetReplay_
+7D5F7191485896E65C63CE8B8C62FBB7. Snow surface is visible, no obvious full-surface
+flash or rectangular material switch in those samples, but the start is not a
+warmed comparison: Jaim ready/shell->terrain at same GT frame1217 as capture0;
+gameplay surface fill enabled~52ms earlier. Character falls naturally, moving
+out of bottom of frame. Camera sphere-height11.2353->10.4600km across captured
+frames (not terrain AGL), travel785.16m; not complete descent/ascent/return.
+
+Independent trace review: sole rebase2.655s beforeBEGIN, none during observation.
+Jaim root, MID76741 and parent ContinuousTerra constant across10LOD bindings;
+material-center error0cm. No Jaim root/shell switch afterBEGIN. Separate Lidim
+standby shell->terrain nearPNG5/6. Sampled geometry/layer hashes forLOD0..2
+unchanged until17.148s; at17.275s LOD0+1 changed, LOD2same. PNG67/68 bracket this
+update; main sees no abrupt rectangle in that pair. Observed incompleteAll=2
+at17.022 returned0 by17.275. Hash samples and GT bindings are not all GPU state.
+
+Earlier PNG0->40 pattern refinement precedes that registered mesh update;
+therefore do not blame it on a proven MID swap/rebase/LOD rebuild. Movement,
+distance-dependent shader fields, startup temporal/mip residency remain
+unseparated. No visual-success claim or terrain rollback follows this replay.
+Do not repeat the same passive20s test or add more telemetry without a concrete
+decision: next visual reproduction must cover the missing low-altitude descent
+and ascent in the affected location, then isolate the color-slope dependency
+only if the actual defect is captured. Preserve Theon and all actual saved inputs.
+AtmosphereTail candidate still private; groundLidim/Theon/family acceptance open.
+Goal ACTIVE; this turn made runtime-evidence progress, not a blocked/complete state.
+
+### 2026-10-03 15:24 — actual-save native character roundtrip completed; fast Lidim incident still open
+
+Added opt-in test-only APSSavedCharacterRoundTrip.h and extended the existing
+own replay test/runner with -CharacterRoundTrip. No production terrain, shader,
+material, save or ship code changed. Independent review passed. Helper uses
+the restored character's native falling, manual ZeroG and owned native sprint
+input; no teleport, velocity/speed assignment, camera move or fixture planet.
+It validates pawn/root identity and two walkable native WorldScape collision
+contacts, each stable for ten seconds. Default passive replay remains unchanged.
+Pre-change test/runner/DLL preserved in saved-replay-before-roundtrip-1454.
+
+Source SHA256 at run:
+- APSSavedCharacterRoundTrip.h: 8863CEFB092B0350B86EA4B4CB0AFB420E53D3846309A164EFFD84A6071C91C5
+- APSExistingWorldPlanetReplayTests.cpp: 90A01F538D668DE34B15F13CCF239FBA8D954400FABABBF1E33F0A160C12E620
+- RunSavedWorldPlanetReplay.ps1: 8E05862227725E424CE16B17CECB72F80BC84060BF23AC9FBC302CDDA9AFE0CA
+
+After shared release and real-process checks, one test CPP build passed in9.56s.
+Run DLL15:02:54 SHA256229648B3C302331F81A54612FB7293A808F21A1B89DBF8A6552E996661891FBA.
+Own UE22500 started15:04:00.524, finished by15:17:53; elevated CIM15:18 empty.
+Shared window RELEASE15:19, subsequently taken by M5. SOURCE READY/FROZEN.
+No user editor was closed by this run.
+
+Evidence: F:/ChatGPT/APOSFERA/work/planet_continuity_20260929/
+saved-world-replay-khoax-native-roundtrip-1504. Ordinary LoadWorldSlot of the
+exact private Khoax checkpoint restored character at actual Jaim, R500.357294880km,
+seed597932, terrainSeed147337078. Initial character sphere-height11.220133450km.
+Route777.652s: first contact278.939, landing1 confirmed289.011 (hold10.072s,
+speed0, Root1.Lod18 collision); native ascent to initial radius ended477.664;
+second contact767.649, landing2 confirmed777.652 (hold10.004s, speed0,
+Root1.Lod21 collision). Ground sphere-heights0.112452072/0.158925470km are NOT AGL.
+Native lateral drift means the landings are not a fixed-position A/B comparison.
+No origin shift during captured route; initial shift preceded BEGIN by3.186s.
+
+Diagnostic report succeededWithWarnings1, failed0, errors0, warnings1721;
+3026 audits and1539 actual 1280x720 viewport frames, target2Hz readback.
+Warnings include1546 perf events; readback run is NOT a performance benchmark.
+Four material warnings refer to missing Nanite usage on StarterContent/M5 ship
+materials, not a demonstrated terrain defect; unrelated assets left untouched.
+Protected43/43 plus original/private save and metadata hashes unchanged at15:18.
+Original save SHA256B0D5856DDE70D83ABB2FE4A39067C27925556E61A203A107ABA600202131986F.
+
+Main visually inspected frames0,99,100,150,250,325,326,350,500,530,541,542,550,
+560,900,1450,1500,1538. Same coherent snow terrain; no obvious full-surface
+material swap/large rectangular replacement in these samples. First-descent
+telemetry review found constant Root1/ContinuousTerra MID, center error0cm,
+layerOnlyChangeSuspect0. This does not prove all GPU state or the full route.
+Image differences99->100 and325->326 bracket LOD publications; largest examined
+541->542 pair is close-ground perspective movement, not an isolated palette pop.
+Capture at2Hz cannot exclude single-frame flicker. Native character speeds
+(~40m/s fall, up to60m/s ascent) do not reproduce the user's fast ship approach,
+30km+ atmosphere crossing or exact Lidim seam. Do not mark visual recovery done.
+
+Recovered original Lidim incident anchors from frozen-descent-20261003-0701/
+APS_ALPHA-0658.snapshot.log, lines19847/19908: generation-frame ship cm at
+06:54:16.802 (-9292423239211.45,-61775603144007.87,-1898397529769.63), and
+06:54:27.637 (-9292427771778.64,-61775602211342.40,-1898399424007.86).
+Chord50.002169km, direction(-.906474122,.186525004,-.378831215), NOT radial or
+camera direction. Original Lidim center/rotation, camera and06:54:51 seam pose
+remain missing. Current checkpoint is later Jaim, not that exact Lidim approach.
+
+Next priority: use actual saved world/Lidim incident anchors to reproduce the
+fast approach and material-looking switch before any further shader promotion.
+Do not repeat this slow Jaim route or expand generic diagnostics without a
+specific discriminating hypothesis. AtmosphereTail remains private; Lidim
+ground, Theon protection and affected-family rendered acceptance remain open.
+Goal ACTIVE. This is a completed control route, not restored universal visuals.
+### 2026-10-03 16:18 — actual saved Lidim fast anchored route captured; no blanket visual PASS
+
+Recovered Lidim generation center from actual-save shell transform plus origin:
+(-9292517532596.043,-61775688543308.523,-1898367764327.960)cm. This matches
+original incident gravity direction. Runtime root rotation quaternion
+(-.378389023,.056653373,-.923910445,.001277390), radius1280.895520km.
+Original logged anchors A/B produce25.636701/4.116077km sphere height,
+50.002169km chord over10.835s. Original camera and post-B path are unknown.
+
+New opt-in test-only APSSavedLidimApproach.h drives a transient camera plus
+restored character along that chord, then B->native sampled ground+34m and
+reverse. It is controlled kinematic movement, NOT native ship acceptance;
+camera25deg down, original FOV90, pawn10m behind lens. Source guard requires
+actual saved Lidim seed257455, live Active/unfrozen native generation and
+stable first3 published LODs before route; no fixture/profile/material edits.
+Own replay cpp/runner extended with mutually exclusive LidimApproach flag.
+Final reviewed source checkpoint: lidim-anchored-route-1535/verified-source-1614.
+Helper SHA2561065D97BABF596B2C8B2560543CC66480CB2200C841BD8906ED354D2FDACE302;
+CPP159E615C1CFDF90356D38B219040885EF57AB51262B5A5DC0A85F2588A003C9B;
+runnerFA9A0C8BE38AB7570A9E6E87AD7072135974BC8735C18322D1C514952DE0E2B5.
+
+First run anchored-1553 failed before capture because test checked root scale
+during native initialization (unready Preloaded state). Fixed only initial
+readiness wait, retained numeric profile checks and added their error values.
+One test CPP build8.80s PASS; final run DLL SHA256
+43623B75123CD15CF2667450E35898B455BE703EAE2D2DA9173023D4BAA576DC.
+Retry1556 was prevented by foreign live22548; no own UE launched, no rundir.
+Waited for foreign exit and explicit RELEASE; own14032 started15:59:59.095,
+ended16:01:31.689; elevatedCIM16:01:50 empty; shared RELEASE16:03.
+
+Evidence: work/planet_continuity_20260929/
+saved-world-replay-khoax-lidim-ready-1559 (same absolute workroot as prior entries).
+Ordinary private-copy LoadWorldSlot; complete route50.732s after4.043s warmup,
+358 audit calls/388 PNG. Report FAIL:23 error records from one handled
+GPUScene.cpp367 ensure+stack,377 warnings. Not23 independent failures.
+Native shift20.328km at16:00:52.128 then ensure+28ms (frame432), primitive13.
+After END, restore-to-Jaim relocation produced another mismatch primitive12.
+IDs are persistent scene indices, not LOD numbers; component identity unknown.
+Three instanced meshes were resent on every shift. Shared owner Claude notified
+through coordination file16:14; WorldOrigin/ship code not changed by this turn.
+The ensure adds~1.55s hitch; controlled route uses wall clock, so this interval
+skips camera height8.04->4.80km. Do not call it a clean motion/performance test.
+
+All125 published terrain samples: centerError0, constant ContinuousTerra MID,
+same binding hashes/rootHidden0. Main viewed frames30,80,110..116,165,166,170,
+180..184,210,215,260,387. No obvious full-surface replacement/large rectangular
+material boundary in those views. This does not reproduce exact user camera.
+Ground fixed-pose frames180..183 bracket new LOD0-2 geometry/layer publication,
+incomplete10->0, with identical camera/root/rotation and no rebase. No visible
+tile colour replacement there; terrainROI(y>=110) adjacent MAE0.414/0.393/0.354
+per255, p99=3. Initial/final identical A pose30/387: MAE0.334,p99=2. These numeric
+checks supplement inspected pixels, not all-route/all-family acceptance.
+Current far view is mostly white snow; near has black/blue slopes. Source shows
+camera-to-pixel-distance slope blend2..20km can change actual colour masks;
+this predates unification and remains a separate one-variable isolation lead.
+Existing LodSlopePreserve asset is based on Shared, not actual Continuous:
+do not substitute it as a supposedly clean A/B. Do not change common normal
+distance MID values to isolate colour: those also alter WAT/normal paths.
+
+After own exit, all43 protected surface/config hashes and original/private
+sav+metadata hashes unchanged. Original save remainsB0D5856D...1986F.
+No production material, atmosphere, geography, ship or saved state edited.
+Goal ACTIVE: GPU instance mismatch identification, distance-dependent material
+appearance, atmosphere-tail acceptance on remaining controls and affected
+solid-family rendered coverage remain. Avoid another identical diagnostic
+route without a discriminating change. Accepted Theon remains protected.
+Next isolation design review (not implemented): prefer process-local existing
+SlopeBlock.Custom.Code -> return NativeSlope over another cloned asset tree.
+Only inside explicit private replay guard, only after exact source SHA and
+clean-package/unique-six-input-original-code checks; disable editor asset
+autosave in memory and never SavePackage/config. UE5.4 UpdateMaterialFunction
+changes StateId and recompiles ALL loaded dependent materials, so this is
+process isolation, not per-Lidim isolation; Theon/shared dependents may change
+in memory and must NOT be accepted/tested as production in that process.
+RecompileMaterial marks packages dirty/streaming metadata but need not save.
+Validate actual Continuous permutation complete/errors0/LocalVF and render
+fence before fixed-pose captures. Restore Code alone does not restore shader:
+either rebuild original after last capture or terminate isolated process with
+no further tests. Disk SHA guards after exit mandatory. Do not manually restore
+StateId; do not use common normal-distance scalars (confounded experiment).
+Main has not yet implemented or run this proposed next diagnostic.
+### 2026-10-03 17:02 — slope isolation completed, no demonstrated visual improvement; stop repeating this branch
+
+Implemented opt-in APSSavedSlopeIsolation.h, replay slope0/1 guard and runner
+SlopeIsolation Control/Native. Production defaults/material assets unchanged.
+Private one-test process only; exact source hashes/MID/function-Code guards,
+package-save veto and autosave OFF until exit, actual shader/LocalVF/fence gates.
+SourceCode only difference is original blend versus return NativeSlope; no
+normal-distance scalar changes, palette/geometry/UV/MID substitution.
+
+First Control29632 (saved-world-replay-khoax-lidim-slope-control-1643) failed
+before captures: CheapContrast call input0 unset. UE error means transient
+ExpressionInput pointer NULL, NOT disconnected serialized wire. Known reachable
+APS_FarSlopePixel_1 absent from flat expression list; exact2input/1output GUIDs
+and wires verified against export and engine. Narrow TEST-only preparation now
+hydrates precisely3 transient pointers after complete checks in BOTH modes;
+no registered collections or serialized wires modified. They remain hydrated
+until private process exit; original Code/shader restore does not undo that.
+No production runtime repair or cold-load success claim from this test.
+
+Builds16.18s then16.77s PASS (test translation unit only). Final helper SHA256
+F032F1D456B2BE4FE1C87C7512998966ACE49700FF7D7D361201E09512900E0F;
+DLL FCF5D4386F5E95E9F281882CDA0C7D792E90932181B55F53D1D93E692154351F.
+Control path saved-world-replay-khoax-lidim-slope-control-1657, actual13948
+16:54:12..16:55:49, ready0.584s,400PNG/373audits. Native path
+saved-world-replay-khoax-lidim-slope-native-1656,27212 actual16:56:54..16:59:05,
+ready34.307s,402PNG/376audits. Both restored original shader before exit.
+Both reports FAIL due handled GPUScene367+stack/RHI breadcrumbs; not shader
+failure. No clean motion/performance/full-route visual PASS. Preparation uses
+synchronous UE compilation, so polling limits are not hard wallclock deadlines.
+
+Pair source/save/native/stellar/protected hashes and DLL match. Exact registered
+GT pose/root/pawn/LOD0-2 geometry+layer matching pairs Control/Native:
+A0039/0038, B-down0130/0144, ground0206/0220, B-up0283/0297, A-return0388/0390.
+Readback remains unfenced; settled holds support comparison, not exact render
+pose guarantee. Main viewed fixedA30 both, B130/144, ground206/220: no visible
+improvement in these comparisons. Native slope bypass is NOT a justified fix;
+do not promote or repeat unchanged. Main also viewed1559 A30/ground182;
+old1559 versus hydratedControl A30 terrainROI y>=240 MAE0.2818/255,p99=2,
+supporting unchanged baseline appearance at that hold only.
+
+All43 protected surface/config hashes and original/private sav+apsmeta identical
+after each process. Original save B0D5856D...1986F. Elevated CIM empty17:00;
+shared RELEASE17:00. No more heavy launches in this pass. User objected that
+9–10hours of diagnostics had not restored the requested visuals: valid delivery
+failure, not an invitation to expand another diagnostic framework. Main goal
+remains incomplete/ACTIVE, not falsely complete or user-paused. Actual production
+change remains earlier material-frame refresh after double-origin shift; full
+surface/atmosphere recovery and affected-family proof still missing. Next work
+must prioritize a bounded recovery from accepted checkpoints, not repeat warp
+or slope A/B loops. Preserve Theon and shared ship changes; no broad dirty reset.
+
+### 2026-10-03 17:29 — bounded atmosphere production patch; not yet built/baked
+
+Read-only checkpoint audit found Frozen used the same Continuous parent/parameters
+before unification. Reverting the unified-route selector does not restore this
+incident; a whole-header rollback would also remove the post-origin frame fix.
+Theon protected assets matched its accepted checkpoint. Native-slope A/B remains
+rejected, no repeat or promotion.
+
+Prepared actual ordinary-game integration of the rendered AtmosphereTailV1 math:
+new immutable production destination PlanetSurface/Atmosphere/M_APS_AtmosphereTail,
+default APS_AtmosphereTail=1; original plugin and diagnostic master untouched.
+Builder reuses its full graph parity/source pin/shader completion checks; only
+destination/scalar name/default differ. Commandlet flag OnlyAtmosphereTailProduction.
+The NEW ASSET DOES NOT EXIST YET. No build/bake/run in this continuation.
+
+Factory has a UPROPERTY hard reference and deferred spawn assigning both atmosphere
+base parents before MID construction. Scope is Frozen planets and Icy moons ONLY,
+not all frozen-looking families; Theon/Volcanic and custom parents stay native.
+Explicit subtype reinitialization may change managed parents before authored setup;
+same-parent revisit is a no-op, no camera/height-triggered material switching.
+Current ordinary-game DLL remains old; missing asset falls back to native with warning.
+This does NOT fix terrain/material flicker or claim it solved.
+
+New narrow production contract tests route IDs, Theon exclusion, scalar default,
+native untouched scalar and generator CDO hard reference. Existing ground runner
+can now observe ordinary production without the diagnostic lease; output requires
+both live shell MIDs to resolve installed production master/default1. Tests not run.
+Old explicit Tail Control/Candidate lease guards still pin the native parent and
+must not be silently relaxed after promotion. Production checks OMIT AtmosphereTail.
+
+Backup of four edited production/builder sources:
+work/planet_continuity_20260929/atmosphere-tail-production-1721/pre-edit.
+Main source files: PlanetarySurfaceGenerator.cpp/.h, APSAtmosphereTailMaterial.h,
+APSAtmosphereTailABBuilder.h, commandlet narrow flag; test helper/runner changes
+are own files. No surface uassets, ship sources, save bytes or plugin asset edits.
+
+BLOCKING CURRENT WINDOW: elevated CIM17:26 found new ordinary Unreal3788,
+start17:24:36, project APS_ALPHA -skipcompile. Not an owned test; no close/kill,
+build or second UE performed. Requested user permission for this NEW session;
+old permission was for the earlier06:27 session. No heavy resource claim held.
+Next authorized sequence: confirm release/processes; build; bake new master once;
+fresh-process production contract + Jaim ground and Lidim boundary sequentially;
+compare with existing TailV1 frames, verify original assets/saves unchanged.
+Full goal remains ACTIVE/incomplete. Do not call this restoration delivered until
+production shader/binding/frames actually verified. Source frozen pending review.
+
+### 2026-10-03 18:52 - original colour fields installed; not universal completion
+
+17:29 atmosphere checkpoint superseded: production AtmosphereTail baked, SHA1
+6128966FFCE5CC2A7D1B8F6489A9A02838309DC9. Jaim ground production run1745 captured
+both intended parents, 12 contracts passed; whole report failed starter dry-patch
+and GPUScene checks. Original atmosphere stayed byte-identical. Not all-boundary proof.
+
+Found actual alternate albedo INSIDE the single terrain master: five original
+colour-volume samples switched to different unwarped noise at 5..50km; three macro
+fields also switched at that range. Restored original five samples/nine links and
+set Shared/Continuous runtime APS_OrbitalMacroMode=0. Normal-hex remains1; Noise1,
+coordinate warp, seed, terrain geometry and palette preserved. Publisher invokes
+the exact guarded patch too, preventing regeneration of this substitution.
+
+Existing ContinuityV1/M_APS_ContinuousTerrain master installed SHA1:
+9541C8FB506D3F95E277D97C2FB1E7D626A420B0. Original backup0CDF09601BCCB751D2FE3A1CA3B28F980829F0C3:
+work/planet_continuity_20260929/original-surface-1752/M_APS_ContinuousTerrain.uasset.
+Only this master differs out of43 protected assets/configs; other42, including
+UnifiedLava/Theon, match pre-bake manifest. No new altitude-selected parent.
+
+Evidence: bake18232 completed18:05:50, only owned master saved. First Lidim replay
+24744 (original-color-1807) showed checkerboard, GPUScene367 failure; rejected and
+original restored. Cold readback26168 loaded candidate MIC first without shader
+finish/recompile/hydration/save: GT/RT complete, LocalVF, no fallback. This DOES NOT
+prove the first checkerboard cause; serialization failure is unproven.
+
+Second saved Lidim replay5372 (runtime-resource-1832) ended18:34:32: one success
+with warnings, zero failures,386 captures. Actual bound MID GT/RT was Continuous;
+read-only resource logging, no forced compilation/material lease. Viewed held
+frames0030 (25.637km),0130 (lower approach),0200 (ground),0383 (return). Ground
+matches prior native control visually; initial/return terrain agree. Saved-world
+anchored camera/pawn route, NOT exact user ship input/camera, NOT all-frame or
+all-family certification. Starfield differences are concurrent work, not this fix.
+Wrapper restored original after run; exact rendered candidate was then deliberately
+promoted with hash/backup/empty-process guards. Do not repeat cold checks or install
+speculative readiness workarounds for the still-unproven first checkerboard cause.
+
+Two stale production flight assertions in APSGeneratedGameplayHandoffSmokeTests
+changed macro1/normal1 to macro0/normal1. Diagnostic candidate probes unchanged.
+Build status of this test-only correction is recorded in the next checkpoint.
+
+Remaining P0: APSPlaceholderGlobe still applies BasicShape material on unloaded/
+first-loading solid bodies. User's universal no-substitute requirement is NOT met.
+Turning tint off restores authored grid; hiding worlds or retaining every heavy
+root is not a fix. Native globe must cover first visit, prepare-before-unload,
+both visibility hooks, exact physical sampling/frame and UnifiedLava envelope,
+with bounded preparation. No partial proxy/menu refactor installed this pass.
+Accepted distance normal/slope and lava fine-detail filtering remain; do not
+promise pixel-identical colour at every distance. All-family proof pending.
+Main goal ACTIVE/incomplete. Heavy window RELEASE18:42; no foreign session touched.
+
+### 2026-10-03 19:44 - remove flat unloaded globe, first runtime pass
+
+Installed source: APSPlaceholderGlobe now prepares a body-owned closed physical
+mesh from the actual fully applied native factory snapshot. Same saved MIC parent,
+copied overrides and bound unit physical frame; no BasicShape colour material and
+no baked orbital texture. Shared pure sampler extracted mechanically from the
+existing menu generator (menu options preserved). Physical native normals, native
+Hole alpha, separate ocean WaterMask/depth, exact UnifiedLava envelope retained.
+One value-only background job per world; registered component ownership retains
+MIDs after profile-only root unload. Fresh identity check before publishing.
+
+Both streaming visibility hooks and direct Planet/Moon EnableSphereMesh route to
+this geometry for generated full-scale solid bodies. Published native root stays
+visible until same-profile closed geometry is ready before unload. Initial arrival
+curtain waits for closed/native coverage. Authored/manual custom overrides retain
+their own existing path; missing/broken standard assets do NOT become opt-outs.
+No ship/star changes, no material asset rebake, no changes to accepted seed/palette.
+
+Build 19:31 PASS (23.84s). Actual private saved Khoax/Lidim replay process26000,
+19:32:03..19:33:47; report 1 successWithWarnings/0 failed,
+381 audit samples/410 frames. Eleven solid bodies prepared native globes in the
+first3.35s of body preparation, not a frame-time benchmark. Viewed0030 orbit,
+0200 ground and0400 return: same native-looking ground as prior accepted control;
+initial/return view agrees. This route never left the resident family and therefore
+does NOT prove unload/return. Original/private save checks unchanged; Continuous
+master still9541C8FB506D3F95E277D97C2FB1E7D626A420B0. No GPUScene ensure in this run.
+
+Added opt-in NativeGlobeRoundTrip to existing guarded saved replay, test-only
+rebuild19:43 PASS. Process25284 started19:43:53: moves observer/camera outside all
+real unload radii then back to Lidim AnchorA; no root/state/material setters.
+Process25284 ended19:44:40: lifecycle PASS, rendered FAIL (return frames28..30
+blue/partial surface,31 fully populated). This is not seamless visual acceptance.
+Repeat14088 at19:59 with read-only PMC audit confirms registered/visible closed
+mesh at the correct GT frame while native root is still hidden. Checking own PMC
+render transform resubmission after double origin shift; no material retuning.
+All-family rendered acceptance remains OPEN.
+Evidence root: work/planet_continuity_20260929/native-globe-1905 and
+saved-world-replay-khoax-native-globe-1932 / native-globe-return-1943.
