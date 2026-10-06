@@ -19,16 +19,19 @@ void SAPSAudioSettings::Construct(const FArguments& Args)
 	TSharedRef<SVerticalBox> Rows = SNew(SVerticalBox);
 	if (!Args._CreditsOnly)
 	{
-		Rows->AddSlot().AutoHeight().Padding(0.f, 0.f, 0.f, 12.f)
-		[SNew(STextBlock).Text(LOCTEXT("Audio", "AUDIO"))
-			.Font(FAPSUIStyle::DisplayFont("Bold", 20)).ColorAndOpacity(Palette.TextPrimary)];
-		Rows->AddSlot().AutoHeight()[MakeRow(EAPSAudioChannel::Master, LOCTEXT("Master", "Master volume"))];
-		Rows->AddSlot().AutoHeight()[MakeRow(EAPSAudioChannel::Music, LOCTEXT("Music", "Music"))];
-		Rows->AddSlot().AutoHeight()[MakeRow(EAPSAudioChannel::Ambience, LOCTEXT("Ambience", "Ambience"))];
-		Rows->AddSlot().AutoHeight()[MakeRow(EAPSAudioChannel::Effects, LOCTEXT("Effects", "Sound effects"))];
-		Rows->AddSlot().AutoHeight()[MakeRow(EAPSAudioChannel::Interface, LOCTEXT("Interface", "Interface"))];
+		if (Args._ShowTitle)
+		{
+			Rows->AddSlot().AutoHeight().Padding(0.f, 0.f, 0.f, 12.f)
+			[SNew(STextBlock).Text(LOCTEXT("Audio", "AUDIO"))
+				.Font(FAPSUIStyle::DisplayFont("Bold", 20)).ColorAndOpacity(Palette.TextPrimary)];
+		}
+		Rows->AddSlot().AutoHeight()[MakeRow(EAPSAudioChannel::Master, LOCTEXT("Master", "MASTER"))];
+		Rows->AddSlot().AutoHeight()[MakeRow(EAPSAudioChannel::Music, LOCTEXT("Music", "MUSIC"))];
+		Rows->AddSlot().AutoHeight()[MakeRow(EAPSAudioChannel::Ambience, LOCTEXT("Ambience", "AMBIENCE"))];
+		Rows->AddSlot().AutoHeight()[MakeRow(EAPSAudioChannel::Effects, LOCTEXT("Effects", "SOUND EFFECTS"))];
+		Rows->AddSlot().AutoHeight()[MakeRow(EAPSAudioChannel::Interface, LOCTEXT("Interface", "INTERFACE"))];
 	}
-	Rows->AddSlot().AutoHeight().Padding(0.f, 8.f, 0.f, 0.f)
+	Rows->AddSlot().AutoHeight().Padding(0.f, 22.f, 0.f, 0.f)
 		[SNew(STextBlock).Text(LOCTEXT("Credits", "Footsteps Mini Sound Pack — Mechanics Mechanics · CC BY 4.0"))
 			.ToolTipText(LOCTEXT("CreditDetails", "Source: fab.com/listings/baf07baa-d485-4d37-bf73-dab6a50ed4bb\nLicense: creativecommons.org/licenses/by/4.0/\nVolume and playback pitch adjusted."))
 			.Font(FAPSUIStyle::BodyFont("Regular", 11)).ColorAndOpacity(Palette.TextSecondary)];
@@ -48,8 +51,8 @@ TSharedRef<SWidget> SAPSAudioSettings::MakeRow(EAPSAudioChannel Channel, const F
 	const FAPSUIColorPalette Palette = FAPSUIStyle::GetPalette();
 	return SNew(SHorizontalBox)
 		+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.f, 4.f, 20.f, 4.f)
-		[SNew(SBox).WidthOverride(160.f)
-			[SNew(STextBlock).Text(Label).Font(FAPSUIStyle::BodyFont("Regular", 15)).ColorAndOpacity(Palette.TextPrimary)]]
+		[SNew(SBox).WidthOverride(200.f)
+			[SNew(STextBlock).Text(Label).Font(FAPSUIStyle::DisplayFont("Bold", 14)).ColorAndOpacity(Palette.TextPrimary)]]
 		+ SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center)
 		[SNew(SBox).HeightOverride(32.f)
 			[SNew(SSlider).Style(&SliderStyle).StepSize(0.01f)
@@ -71,7 +74,7 @@ TSharedRef<SWidget> SAPSAudioSettings::MakeRow(EAPSAudioChannel Channel, const F
 		+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(16.f, 0.f, 0.f, 0.f)
 		[SNew(SBox).WidthOverride(45.f)
 			[SNew(STextBlock).Justification(ETextJustify::Right)
-				.Font(FAPSUIStyle::BodyFont("Regular", 14)).ColorAndOpacity(Palette.TextSecondary)
+				.Font(FAPSUIStyle::DisplayFont("Bold", 14)).ColorAndOpacity(Palette.TextSecondary)
 				.Text_Lambda([Channel]()
 				{
 					return FText::FromString(FString::Printf(TEXT("%d%%"),

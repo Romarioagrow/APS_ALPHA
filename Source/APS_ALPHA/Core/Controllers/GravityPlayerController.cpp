@@ -87,7 +87,9 @@ void AGravityPlayerController::CapturePlayerStateForSave()
 	// Saves stay in the generation frame (headquarters at 0,0,0) after the world origin moved to the player.
 	if (const UAPSWorldOriginSubsystem* WorldOrigin = GetWorld() ? GetWorld()->GetSubsystem<UAPSWorldOriginSubsystem>() : nullptr)
 	{
-		CachedPlayerPawnTransform.SetLocation(WorldOrigin->ToGenerationFrame(CachedPlayerPawnTransform.GetLocation()));
+		// Rio 06.10 (still ship): riding a ship that owes its travel, the player is truly that much further on.
+		CachedPlayerPawnTransform.SetLocation(WorldOrigin->ToGenerationFrame(CachedPlayerPawnTransform.GetLocation())
+			- WorldOrigin->GetSkyOffset());
 	}
 	CachedPlayerControlRotation = GetControlRotation();
 	bHasCachedPlayerState = true;
@@ -246,6 +248,12 @@ bool AGravityPlayerController::SaveWorldToSlot(const FString& SlotName,
 		return false;
 	}
 
+	// Rio 06.10 (still ship): a ship owing its travel pays it first, so every saved place is in one frame.
+	if (UAPSWorldOriginSubsystem* WorldOrigin = GetWorld()->GetSubsystem<UAPSWorldOriginSubsystem>())
+	{
+		WorldOrigin->SettleDeferredTravel(TEXT("a save"));
+	}
+
 	UGameSave* SaveGameInstance = Cast<UGameSave>(
 		UGameplayStatics::CreateSaveGameObject(UGameSave::StaticClass()));
 	if (!SaveGameInstance)
@@ -386,6 +394,11 @@ void AGravityPlayerController::LoadWorld()
 {
 	if (UWorld* World = GetWorld())
 	{
+		// Rio 06.10 (still ship): saved places are restored into a world that owes nothing.
+		if (UAPSWorldOriginSubsystem* WorldOrigin = World->GetSubsystem<UAPSWorldOriginSubsystem>())
+		{
+			WorldOrigin->SettleDeferredTravel(TEXT("a load"));
+		}
 		UMainGameplayInstance* GameplayState = World->GetGameInstance()
 			? World->GetGameInstance()->GetSubsystem<UMainGameplayInstance>() : nullptr;
 		if (GameplayState && GameplayState->bPendingSavedWorldReplay

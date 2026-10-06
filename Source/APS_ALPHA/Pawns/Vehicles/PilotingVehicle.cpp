@@ -2,6 +2,7 @@
 
 
 #include "PilotingVehicle.h"
+#include "APS_ALPHA/Core/World/APSWorldOriginSubsystem.h"
 #include "APS_ALPHA/Pawns/Characters/CustomGravityCharacter.h"
 
 #include "Components/PrimitiveComponent.h"
@@ -161,6 +162,12 @@ bool APilotingVehicle::EndVehicleControl()
 	if (!IsValid(Pilot))
 	{
 		return false;
+	}
+	// Rio 06.10 (still ship): a ship owing its travel pays it while the pilot is still in its seat; out of it (a hull without
+	// a walkable deck sets them down outside) the pilot would be left the owed travel behind.
+	if (UAPSWorldOriginSubsystem* Origin = GetWorld() ? GetWorld()->GetSubsystem<UAPSWorldOriginSubsystem>() : nullptr)
+	{
+		Origin->SettleDeferredTravel(TEXT("the pilot leaves the seat"));
 	}
 
 	APawn* PreviousPilot = Pilot;

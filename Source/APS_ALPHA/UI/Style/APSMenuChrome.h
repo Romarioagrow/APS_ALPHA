@@ -449,6 +449,11 @@ namespace APSChrome
 	APS_ALPHA_API FLinearColor Muted();
 	APS_ALPHA_API FLinearColor Success();
 	APS_ALPHA_API FLinearColor Scrim();
+	/** Rio 06.10 themes: Amber on hover, text on a solid Amber fill, and the shared metric tile (dark inset, quiet
+	 * rim) the terminal's pages drew from their own static brushes. */
+	APS_ALPHA_API FLinearColor AmberBright();
+	APS_ALPHA_API FLinearColor OnAmber();
+	APS_ALPHA_API const FSlateBrush* MetricTileBrush();
 
 	/** Orbitron for "Bold" display text, the engine font for body text, as in the menu. */
 	APS_ALPHA_API FSlateFontInfo Font(FName Typeface, int32 Size);

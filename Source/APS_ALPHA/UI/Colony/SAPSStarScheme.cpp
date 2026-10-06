@@ -1,4 +1,5 @@
 #include "SAPSStarScheme.h"
+#include "APS_ALPHA/UI/Style/APSUITheme.h"
 
 #include "APS_ALPHA/Pawns/Spaceships/Spaceship.h"
 #include "APS_ALPHA/UI/StrategicMap/APSStrategicMapScene.h"
@@ -29,20 +30,20 @@ namespace APSStarSchemePrivate
 	bool GLegendShown = true;
 
 	// The terminal's palette (APSMenuChrome) and the maps' own: the scheme's ground, the rings' edge, the relay teal.
-	FLinearColor SchemeBackground() { return FLinearColor(0.002f, 0.010f, 0.018f, 0.92f); }
-	FLinearColor EdgeColour(const float Opacity) { return FLinearColor(0.26f, 0.84f, 0.93f, Opacity); }
+	FLinearColor SchemeBackground() { return APSUITheme::Retint(FLinearColor(0.002f, 0.010f, 0.018f, 0.92f)); }
+	FLinearColor EdgeColour(const float Opacity) { return APSUITheme::RetintHighlight(FLinearColor(0.26f, 0.84f, 0.93f, Opacity)); }
 	FLinearColor LinkColour() { return FLinearColor(0.35f, 0.95f, 0.95f, 1.0f); }
 	FLinearColor ColonyColour() { return FLinearColor(0.36f, 1.0f, 0.58f, 1.0f); }
 	FLinearColor HeadquartersColour() { return FLinearColor(1.0f, 0.85f, 0.38f, 1.0f); }
-	FLinearColor PlateColour() { return FLinearColor(0.002f, 0.014f, 0.026f, 0.94f); }
-	FLinearColor SoftColour() { return FLinearColor(0.64f, 0.75f, 0.80f, 1.0f); }
+	FLinearColor PlateColour() { return APSUITheme::Retint(FLinearColor(0.002f, 0.014f, 0.026f, 0.94f)); }
+	FLinearColor SoftColour() { return APSUITheme::Retint(FLinearColor(0.64f, 0.75f, 0.80f, 1.0f)); }
 	FLinearColor CompanionColour() { return FLinearColor::FromSRGBColor(FColor(255, 140, 90)); }
 	FLinearColor WithAlpha(const FLinearColor& Colour, const float Opacity) { return FLinearColor(Colour.R, Colour.G, Colour.B, Opacity); }
 
-	FSlateFontInfo ChipFont() { return FCoreStyle::GetDefaultFontStyle("Bold", 10); }
-	FSlateFontInfo NameFont() { return FCoreStyle::GetDefaultFontStyle("Bold", 10); }
-	FSlateFontInfo MarkFont() { return FCoreStyle::GetDefaultFontStyle("Bold", 9); }
-	FSlateFontInfo BangFont() { return FCoreStyle::GetDefaultFontStyle("Bold", 8); }
+	FSlateFontInfo ChipFont() { return APSUITheme::BodyFont("Bold", 10); }
+	FSlateFontInfo NameFont() { return APSUITheme::BodyFont("Bold", 10); }
+	FSlateFontInfo MarkFont() { return APSUITheme::BodyFont("Bold", 9); }
+	FSlateFontInfo BangFont() { return APSUITheme::BodyFont("Bold", 8); }
 	/** Captions, the legend and the hints: the chrome's regular 9 (11 pt, Rio 02.10: never smaller). */
 	FSlateFontInfo SmallFont() { return APSChrome::Font(TEXT("Regular"), 9); }
 

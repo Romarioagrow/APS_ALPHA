@@ -1,4 +1,5 @@
 #include "SAPSColonyTerminal.h"
+#include "APS_ALPHA/UI/Style/APSUITheme.h"
 #include "APS_ALPHA/UI/Style/APSUINumber.h"
 
 #include "SAPSCivilizationMap.h"
@@ -116,7 +117,7 @@ namespace APSColonyUI
 				.Brush(FAppStyle::GetBrush("WhiteBrush"))
 				.Tint_Lambda([IsSelected]()
 				{
-					return IsSelected.Get(false) ? FLinearColor(0.02f, 0.13f, 0.17f, 0.97f) : Panel();
+					return IsSelected.Get(false) ? APSUITheme::Retint(FLinearColor(0.02f, 0.13f, 0.17f, 0.97f)) : Panel();
 				})
 				.ChamferTop(true)
 				.ChamferBottom(true)
@@ -173,10 +174,10 @@ namespace APSColonyUI
 				{
 					if (!CanClick.Get(true))
 					{
-						return FLinearColor(0.07f, 0.13f, 0.16f, 0.95f);
+						return APSUITheme::Retint(FLinearColor(0.07f, 0.13f, 0.16f, 0.95f));
 					}
 					const TSharedPtr<SButton> Pinned = WeakButton.Pin();
-					return Pinned && Pinned->IsHovered() ? FLinearColor(1.0f, 0.83f, 0.38f, 1.0f) : Amber();
+					return Pinned && Pinned->IsHovered() ? APSChrome::AmberBright() : Amber();
 				})
 				.ChamferTop(true)
 				.ChamferBottom(true)
@@ -187,7 +188,7 @@ namespace APSColonyUI
 				.Justification(ETextJustify::Center).RenderTransform(CapsCenterShift(Font("Bold", 11)))
 				.ColorAndOpacity_Lambda([CanClick]()
 				{
-					return FSlateColor(CanClick.Get(true) ? FLinearColor(0.02f, 0.05f, 0.07f, 1.0f) : Muted());
+					return FSlateColor(CanClick.Get(true) ? APSChrome::OnAmber() : Muted());
 				})
 			]);
 		return Button;
@@ -2677,7 +2678,7 @@ void SAPSColonyTerminal::RebuildJournal()
 			SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).Padding(0.0f)
 			// One background for every row: the lighter rows of the last minute read as a selection (Rio 02.10);
 			// fresh entries carry a NEW tag beside their time instead.
-			.BorderBackgroundColor(FLinearColor(0.02f, 0.06f, 0.08f, 0.82f))
+			.BorderBackgroundColor(APSUITheme::Retint(FLinearColor(0.02f, 0.06f, 0.08f, 0.82f)))
 			[
 				SNew(SHorizontalBox)
 				// The category's colour down the left edge.
@@ -2711,8 +2712,8 @@ void SAPSColonyTerminal::RebuildJournal()
 						]
 						+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(10.0f, 0.0f, 0.0f, 0.0f)
 						[
-							SNew(STextBlock).Text(LOCTEXT("JournalNew", "NEW")).Font(FCoreStyle::GetDefaultFontStyle("Bold", 10))
-							.RenderTransform(CapsCenterShift(FCoreStyle::GetDefaultFontStyle("Bold", 10)))
+							SNew(STextBlock).Text(LOCTEXT("JournalNew", "NEW")).Font(APSUITheme::BodyFont("Bold", 10))
+							.RenderTransform(CapsCenterShift(APSUITheme::BodyFont("Bold", 10)))
 							.ColorAndOpacity(Success()).Visibility(bRecent ? EVisibility::Visible : EVisibility::Collapsed)
 						]
 					]

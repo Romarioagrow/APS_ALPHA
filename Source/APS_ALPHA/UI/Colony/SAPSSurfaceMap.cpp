@@ -1,4 +1,5 @@
 #include "SAPSSurfaceMap.h"
+#include "APS_ALPHA/UI/Style/APSUITheme.h"
 #include "APS_ALPHA/UI/Style/APSUINumber.h"
 
 #include "APS_ALPHA/Actors/Astro/APSBodyDesignation.h"
@@ -1088,7 +1089,7 @@ void SAPSSurfaceMap::PaintNoSurvey(const FGeometry& Geometry, FSlateWindowElemen
 		const FVector2D HintSize = Measure->Measure(Hint, HintFont);
 		FSlateDrawElement::MakeText(Elements, LayerId + 2, Geometry.ToPaintGeometry(FVector2f(HintSize),
 			FSlateLayoutTransform(FVector2f(Middle + FVector2D(-HintSize.X * 0.5, TitleSize.Y * 0.5 - 4.0)))), Hint, HintFont,
-			ESlateDrawEffect::None, FLinearColor(0.7f, 0.8f, 0.86f, 0.85f));
+			ESlateDrawEffect::None, APSUITheme::Retint(FLinearColor(0.7f, 0.8f, 0.86f, 0.85f)));
 	}
 }
 
@@ -1205,7 +1206,7 @@ int32 SAPSSurfaceMap::OnPaint(const FPaintArgs& Args, const FGeometry& Geometry,
 				ShipLabels += Marker.Kind == EMarker::Ship ? 1 : 0;
 				FSlateDrawElement::MakeBox(Elements, LayerMarker + 1, Geometry.ToPaintGeometry(FVector2f(Box.GetSize()),
 					FSlateLayoutTransform(FVector2f(Box.Min))), White, ESlateDrawEffect::None,
-					Ask.Rank == 0 ? FLinearColor(0.03f, 0.10f, 0.12f, 0.9f) : FLinearColor(0.01f, 0.03f, 0.04f, 0.72f));
+					Ask.Rank == 0 ? APSUITheme::Retint(FLinearColor(0.03f, 0.10f, 0.12f, 0.9f)) : APSUITheme::Retint(FLinearColor(0.01f, 0.03f, 0.04f, 0.72f)));
 				// The name on its plate by its capitals (Rio 03.10).
 				FSlateDrawElement::MakeText(Elements, LayerMarker + 2, Geometry.ToPaintGeometry(FVector2f(TextSize),
 					FSlateLayoutTransform(FVector2f(TextAt + FVector2D(0.0, APSChrome::CapsCenterOffset(LabelFont))))),
@@ -1394,7 +1395,7 @@ int32 SAPSSurfaceMap::OnPaint(const FPaintArgs& Args, const FGeometry& Geometry,
 		// No surface yet (sampling) or none at all (gas world): a plain disc.
 		for (int32 Ring = 1; Ring <= 12; ++Ring)
 		{
-			Circle(GlobeCentre, ScreenRadius * Ring / 12.0f, FLinearColor(0.2f, 0.5f, 0.6f, 0.05f + (Ring == 12 ? 0.25f : 0.0f)), 1.0f, LayerSurface);
+			Circle(GlobeCentre, ScreenRadius * Ring / 12.0f, APSUITheme::Retint(FLinearColor(0.2f, 0.5f, 0.6f, 0.05f + (Ring == 12 ? 0.25f : 0.0f))), 1.0f, LayerSurface);
 		}
 	}
 	// The visible runs of the parallels and meridians, sampled over the visible cap only.
@@ -1456,7 +1457,7 @@ int32 SAPSSurfaceMap::OnPaint(const FPaintArgs& Args, const FGeometry& Geometry,
 			}, FMath::Max(-UE_HALF_PI, CentreLatitude - Reach), FMath::Min(UE_HALF_PI, CentreLatitude + Reach), GridColor);
 		}
 	}
-	Circle(GlobeCentre, ScreenRadius, FLinearColor(0.45f, 0.75f, 0.9f, 0.55f), 1.2f, LayerFrame);
+	Circle(GlobeCentre, ScreenRadius, APSUITheme::RetintHighlight(FLinearColor(0.45f, 0.75f, 0.9f, 0.55f)), 1.2f, LayerFrame);
 	{
 		TArray<FLabelAsk> Asks;
 		for (int32 Index = 0; Index < Markers.Num(); ++Index)
@@ -1534,10 +1535,10 @@ int32 SAPSSurfaceMap::OnPaint(const FPaintArgs& Args, const FGeometry& Geometry,
 	else
 	{
 		FSlateDrawElement::MakeBox(Elements, LayerSurface, Geometry.ToPaintGeometry(FVector2f(MapSize), FSlateLayoutTransform(FVector2f(MapBox.Min))),
-			White, ESlateDrawEffect::None, FLinearColor(0.02f, 0.05f, 0.07f, 0.9f));
+			White, ESlateDrawEffect::None, APSUITheme::Retint(FLinearColor(0.02f, 0.05f, 0.07f, 0.9f)));
 		FSlateDrawElement::MakeText(Elements, LayerDetail, Geometry.ToPaintGeometry(FVector2f(MapSize.X - 24.0f, 20.0f),
 			FSlateLayoutTransform(FVector2f(MapBox.Min + FVector2D(12.0, MapSize.Y * 0.5 - 10.0)))), GetStatusText(), HintFont,
-			ESlateDrawEffect::None, FLinearColor(0.7f, 0.8f, 0.86f, 0.9f));
+			ESlateDrawEffect::None, APSUITheme::Retint(FLinearColor(0.7f, 0.8f, 0.86f, 0.9f)));
 	}
 	// Graticule, finer as the view closes in; the equator brighter.
 	for (int32 Latitude = -90 + GridStep; Latitude < 90; Latitude += GridStep)
@@ -1584,7 +1585,7 @@ int32 SAPSSurfaceMap::OnPaint(const FPaintArgs& Args, const FGeometry& Geometry,
 	if (bClip) Elements.PopClip();
 	FSlateDrawElement::MakeLines(Elements, LayerFrame, Geometry.ToPaintGeometry(),
 		TArray<FVector2D>{MapBox.Min, FVector2D(MapBox.Max.X, MapBox.Min.Y), MapBox.Max, FVector2D(MapBox.Min.X, MapBox.Max.Y), MapBox.Min},
-		ESlateDrawEffect::None, FLinearColor(0.45f, 0.75f, 0.9f, 0.55f), true, 1.2f);
+		ESlateDrawEffect::None, APSUITheme::RetintHighlight(FLinearColor(0.45f, 0.75f, 0.9f, 0.55f)), true, 1.2f);
 	// How close the view is, and whether finer data is on its way.
 	if (bClip && !bUnknown)
 	{
@@ -1595,14 +1596,14 @@ int32 SAPSSurfaceMap::OnPaint(const FPaintArgs& Args, const FGeometry& Geometry,
 		const FVector2D NoteSize = Measure->Measure(Note, LabelFont);
 		const FVector2D NoteAt(MapBox.Max.X - NoteSize.X - 10.0, MapBox.Min.Y + 7.0);
 		FSlateDrawElement::MakeBox(Elements, LayerNote, Geometry.ToPaintGeometry(FVector2f(NoteSize.X + 8.0f, NoteSize.Y + 2.0f),
-			FSlateLayoutTransform(FVector2f(NoteAt - FVector2D(4.0, 1.0)))), White, ESlateDrawEffect::None, FLinearColor(0.01f, 0.03f, 0.04f, 0.78f));
+			FSlateLayoutTransform(FVector2f(NoteAt - FVector2D(4.0, 1.0)))), White, ESlateDrawEffect::None, APSUITheme::Retint(FLinearColor(0.01f, 0.03f, 0.04f, 0.78f)));
 		FSlateDrawElement::MakeText(Elements, LayerNote + 1, Geometry.ToPaintGeometry(FVector2f(NoteSize),
 			FSlateLayoutTransform(FVector2f(NoteAt + FVector2D(0.0, APSChrome::CapsCenterOffset(LabelFont))))),
 			Note, LabelFont, ESlateDrawEffect::None, APSChrome::Cyan());
 	}
 	FSlateDrawElement::MakeText(Elements, LayerNote, Geometry.ToPaintGeometry(FVector2f(GlobeRadius * 2.0f + 20.0f, 16.0f),
 		FSlateLayoutTransform(FVector2f(GlobeCentre + FVector2D(-GlobeRadius, GlobeRadius + 6.0)))),
-		LOCTEXT("GlobeHint", "Drag to turn, wheel to zoom"), HintFont, ESlateDrawEffect::None, FLinearColor(0.6f, 0.7f, 0.76f, 0.7f));
+		LOCTEXT("GlobeHint", "Drag to turn, wheel to zoom"), HintFont, ESlateDrawEffect::None, APSUITheme::Retint(FLinearColor(0.6f, 0.7f, 0.76f, 0.7f)));
 	return LayerId + 10;
 }
 

@@ -1,4 +1,5 @@
 #include "SAPSStarMapPanel.h"
+#include "APS_ALPHA/UI/Style/APSUITheme.h"
 
 #include "APSStarMapModel.h"
 #include "APS_ALPHA/Gameplay/Expansion/APSStarSystems.h"
@@ -33,8 +34,8 @@ namespace APSStarMapPanelPrivate
 	constexpr double TwoPi = 6.28318530717958647692;
 
 	FLinearColor TealColour() { return FLinearColor(0.35f, 0.95f, 0.95f, 1.0f); }
-	FLinearColor RowColour() { return FLinearColor(0.0f, 0.016f, 0.026f, 0.6f); }
-	FLinearColor PickedRowColour() { return FLinearColor(0.02f, 0.13f, 0.17f, 0.97f); }
+	FLinearColor RowColour() { return APSUITheme::Retint(FLinearColor(0.0f, 0.016f, 0.026f, 0.6f)); }
+	FLinearColor PickedRowColour() { return APSUITheme::Retint(FLinearColor(0.02f, 0.13f, 0.17f, 0.97f)); }
 
 	/** A star's dot with its knowledge ring, as the map draws it (the ring dashed while only catalogued); also the LEGEND dot. */
 	class SAPSStarDot final : public SLeafWidget
@@ -128,10 +129,10 @@ namespace APSStarMapPanelPrivate
 				{
 					if (!CanClick.Get(true))
 					{
-						return FLinearColor(0.07f, 0.13f, 0.16f, 0.95f);
+						return APSUITheme::Retint(FLinearColor(0.07f, 0.13f, 0.16f, 0.95f));
 					}
 					const TSharedPtr<SButton> Pinned = WeakButton.Pin();
-					return Pinned && Pinned->IsHovered() ? FLinearColor(1.0f, 0.83f, 0.38f, 1.0f) : Amber();
+					return Pinned && Pinned->IsHovered() ? APSChrome::AmberBright() : Amber();
 				})
 				.ChamferTop(true)
 				.ChamferBottom(true)
@@ -142,7 +143,7 @@ namespace APSStarMapPanelPrivate
 				.Justification(ETextJustify::Center).RenderTransform(CapsCenterShift(Font("Bold", 11)))
 				.ColorAndOpacity_Lambda([CanClick]()
 				{
-					return FSlateColor(CanClick.Get(true) ? FLinearColor(0.02f, 0.05f, 0.07f, 1.0f) : Muted());
+					return FSlateColor(CanClick.Get(true) ? APSChrome::OnAmber() : Muted());
 				})
 			]);
 		return Button;
@@ -320,7 +321,7 @@ void SAPSStarMapPanel::Construct(const FArguments& InArgs)
 			[
 				SNew(SBox).WidthOverride(78.0f)
 				[
-					SNew(STextBlock).Text(Label).Font(FCoreStyle::GetDefaultFontStyle("Bold", 9)).ColorAndOpacity(Muted())
+					SNew(STextBlock).Text(Label).Font(APSUITheme::BodyFont("Bold", 9)).ColorAndOpacity(Muted())
 				]
 			]
 			+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Top)
@@ -862,7 +863,7 @@ void SAPSStarMapPanel::RebuildList()
 						]
 						+ SHorizontalBox::Slot().FillWidth(0.36f).VAlign(VAlign_Center)
 						[
-							SNew(STextBlock).Text(FText::FromString(System.Name)).Font(FCoreStyle::GetDefaultFontStyle("Bold", 10))
+							SNew(STextBlock).Text(FText::FromString(System.Name)).Font(APSUITheme::BodyFont("Bold", 10))
 							.ColorAndOpacity_Lambda([IsPicked]() { return FSlateColor(IsPicked() ? Amber() : White()); })
 						]
 						+ SHorizontalBox::Slot().FillWidth(0.2f).VAlign(VAlign_Center)
@@ -1049,7 +1050,7 @@ void SAPSStarRoutes::Rebuild()
 					[
 						SNew(SBox).WidthOverride(54.0f)
 						[
-							SNew(STextBlock).Text(FText::FromString(Unit->CallSign)).Font(FCoreStyle::GetDefaultFontStyle("Bold", 10))
+							SNew(STextBlock).Text(FText::FromString(Unit->CallSign)).Font(APSUITheme::BodyFont("Bold", 10))
 							.ColorAndOpacity(Colour)
 						]
 					]
@@ -1073,7 +1074,7 @@ void SAPSStarRoutes::Rebuild()
 					]
 					+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(6.0f, 0.0f, 10.0f, 0.0f)
 					[
-						SNew(STextBlock).Font(FCoreStyle::GetDefaultFontStyle("Bold", 10))
+						SNew(STextBlock).Font(APSUITheme::BodyFont("Bold", 10))
 						.Text_Lambda([WeakShip, WeakGoal, WeakWorld]()
 						{
 							const FAPSFleetCommand* Command = APSFleetFind(WeakWorld.Get());

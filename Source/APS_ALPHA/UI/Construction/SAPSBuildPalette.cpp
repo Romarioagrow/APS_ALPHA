@@ -1,4 +1,5 @@
 #include "SAPSBuildPalette.h"
+#include "APS_ALPHA/UI/Style/APSUITheme.h"
 
 #include "APS_ALPHA/Gameplay/Construction/APSConstructionMode.h"
 #include "APS_ALPHA/Gameplay/Expansion/APSInfrastructureCatalog.h"
@@ -66,9 +67,9 @@ namespace APSBuildPaletteLocal
 				{
 					if (IsSelected.Get(false))
 					{
-						return FLinearColor(0.11f, 0.08f, 0.02f, 0.97f);
+						return APSUITheme::RetintAction(FLinearColor(0.11f, 0.08f, 0.02f, 0.97f));
 					}
-					return bDimmed ? FLinearColor(0.03f, 0.045f, 0.055f, 0.94f) : Panel();
+					return bDimmed ? APSUITheme::Retint(FLinearColor(0.03f, 0.045f, 0.055f, 0.94f)) : Panel();
 				})
 				.ChamferTop(true)
 				.ChamferBottom(true)

@@ -1,4 +1,5 @@
 #include "SAPSCivilizationMap.h"
+#include "APS_ALPHA/UI/Style/APSUITheme.h"
 #include "APS_ALPHA/UI/Style/APSUINumber.h"
 
 #include "APS_ALPHA/Actors/Astro/CelestialBody.h"
@@ -38,6 +39,19 @@
 namespace APSCivilizationMapPrivate
 {
 	using namespace APSChrome;
+
+	/**
+	 * Rio 06.10 ("the system map moves with the ship in flight; it is 2D, why?"): Refresh() keeps every object's place
+	 * for a few frames, but under a fast ship the floating origin shifts the whole world every frame, while the
+	 * projection measures from the live centre (the star or the focused planet). The kept places slid with the ship and
+	 * jumped back at the next refresh. Every object is read where it is now; the kept place only stands in for an actor
+	 * that went away.
+	 */
+	FVector LivePlace(const SAPSCivilizationMap::FObject& Object)
+	{
+		const AActor* Actor = Object.Actor.Get();
+		return Actor ? Actor->GetActorLocation() : Object.Location;
+	}
 
 	const FSlateBrush* Disc()
 	{
@@ -192,7 +206,7 @@ namespace APSCivilizationMapPrivate
 		FSlateDrawElement::MakeBox(Out, Layer, Geometry.ToPaintGeometry(
 			FVector2f(static_cast<float>(Size.X), static_cast<float>(Size.Y)),
 			FSlateLayoutTransform(FVector2f(static_cast<float>(TopLeft.X), static_cast<float>(TopLeft.Y)))),
-			&Brush, ESlateDrawEffect::None, FLinearColor(0.0f, 0.014f, 0.024f, 0.74f));
+			&Brush, ESlateDrawEffect::None, APSUITheme::Retint(FLinearColor(0.0f, 0.014f, 0.024f, 0.74f)));
 	}
 
 	/** Four corner brackets around a point, as the ship HUD marks its course target. */
@@ -482,7 +496,7 @@ void SAPSCivilizationMap::Focus(AActor* Planet)
 			if (Object.Anchor.Get() == Planet && Object.Actor.Get() != Planet
 				&& (Object.Kind != EKind::Ship || Object.Actor.Get() == FollowedShip))
 			{
-				Farthest = FMath::Max(Farthest, InPlane(Object.Location));
+				Farthest = FMath::Max(Farthest, InPlane(APSCivilizationMapPrivate::LivePlace(Object)));
 			}
 		}
 		RangeCm = Farthest * 1.12;
@@ -497,7 +511,7 @@ void SAPSCivilizationMap::Focus(AActor* Planet)
 		{
 			if (Object.Kind == EKind::Planet)
 			{
-				const double Distance = InPlane(Object.Location);
+				const double Distance = InPlane(APSCivilizationMapPrivate::LivePlace(Object));
 				Nearest = FMath::Min(Nearest, Distance);
 				Farthest = FMath::Max(Farthest, Distance);
 			}
@@ -632,7 +646,7 @@ int32 SAPSCivilizationMap::OnPaint(const FPaintArgs& Args, const FGeometry& Allo
 			if (bOrbit)
 			{
 				Circle(OutDrawElements, LayerId + 1, AllottedGeometry, Centre,
-					ProjectRadius(InPlaneDistance(Object.Location), PixelRadius),
+					ProjectRadius(InPlaneDistance(LivePlace(Object)), PixelRadius),
 					FLinearColor(Object.Color.R, Object.Color.G, Object.Color.B, 0.22f), 1.0f);
 			}
 		}
@@ -690,7 +704,7 @@ int32 SAPSCivilizationMap::OnPaint(const FPaintArgs& Args, const FGeometry& Allo
 	{
 		if (Object.Kind == EKind::Pilot && IsShown(Object))
 		{
-			PlaceLabel(Project(Object.Location, Centre, PixelRadius) + FVector2D(14.0, -20.0), Object.Name, 1.0);
+			PlaceLabel(Project(LivePlace(Object), Centre, PixelRadius) + FVector2D(14.0, -20.0), Object.Name, 1.0);
 		}
 	}
 	for (int32 Index = 0; Index < Objects.Num(); ++Index)
@@ -700,7 +714,7 @@ int32 SAPSCivilizationMap::OnPaint(const FPaintArgs& Args, const FGeometry& Allo
 		{
 			continue;
 		}
-		const FVector2D Position = Project(Object.Location, Centre, PixelRadius);
+		const FVector2D Position = Project(LivePlace(Object), Centre, PixelRadius);
 		PaintedPositions[Index] = Position;
 		const FLinearColor& Colour = Object.Color;
 		switch (Object.Kind)
@@ -828,7 +842,7 @@ int32 SAPSCivilizationMap::OnPaint(const FPaintArgs& Args, const FGeometry& Allo
 				const APSFleet::ESurvey Survey = Fleet->GetSurvey(Object.Actor.Get());
 				Label(OutDrawElements, LayerId + 6, AllottedGeometry, Position + FVector2D(-30.0, LineTop(SmallFont, Below + 22.0)),
 					APSFleet::SurveyName(Survey), SmallFont, Survey == APSFleet::ESurvey::Unknown
-						? FLinearColor(0.55f, 0.62f, 0.66f, 0.7f) : Survey == APSFleet::ESurvey::Surveyed ? Cyan()
+						? APSUITheme::Retint(FLinearColor(0.55f, 0.62f, 0.66f, 0.7f)) : Survey == APSFleet::ESurvey::Surveyed ? Cyan()
 						: APSFleet::DivisionColour(APSFleet::EDivision::Science));
 			}
 		}
@@ -1062,7 +1076,7 @@ FReply SAPSCivilizationMap::OnMouseButtonUp(const FGeometry& MyGeometry, const F
 				List->AddSlot().AutoHeight().Padding(0.0f, 1.0f)
 				[
 					SNew(SButton)
-					.ButtonColorAndOpacity(FLinearColor(0.03f, 0.10f, 0.13f, 1.0f))
+					.ButtonColorAndOpacity(APSUITheme::Retint(FLinearColor(0.03f, 0.10f, 0.13f, 1.0f)))
 					.ContentPadding(FMargin(14.0f, 5.0f))
 					.OnClicked_Lambda([WeakMap, Id]()
 					{
@@ -1084,14 +1098,14 @@ FReply SAPSCivilizationMap::OnMouseButtonUp(const FGeometry& MyGeometry, const F
 						+ SVerticalBox::Slot().AutoHeight()
 						[
 							SNew(STextBlock).Text(Object.Detail).Font(APSChrome::Font(TEXT("Regular"), 9))
-							.ColorAndOpacity(FSlateColor(FLinearColor(0.64f, 0.75f, 0.80f, 1.0f)))
+							.ColorAndOpacity(FSlateColor(APSUITheme::Retint(FLinearColor(0.64f, 0.75f, 0.80f, 1.0f))))
 						]
 					]
 				];
 			}
 			FSlateApplication::Get().PushMenu(SharedThis(this), FWidgetPath(),
 				SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush"))
-				.BorderBackgroundColor(FLinearColor(0.0f, 0.016f, 0.026f, 0.96f)).Padding(6.0f)
+				.BorderBackgroundColor(APSUITheme::Retint(FLinearColor(0.0f, 0.016f, 0.026f, 0.96f))).Padding(6.0f)
 				[
 					SNew(SBox).MinDesiredWidth(220.0f)
 					[

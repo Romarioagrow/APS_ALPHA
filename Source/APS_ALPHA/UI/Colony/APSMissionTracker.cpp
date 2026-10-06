@@ -1,4 +1,6 @@
 #include "APSMissionTracker.h"
+#include "APS_ALPHA/UI/Style/APSUITheme.h"
+#include "APS_ALPHA/UI/Hud/APSHudKit.h"
 
 #include "APSColonyTerminalSubsystem.h"
 #include "APS_ALPHA/Core/Controllers/GravityPlayerController.h"
@@ -33,8 +35,9 @@ namespace APSMissionTrackerPrivate
 	 * ship's markers, under the colony terminal (890), the F10 map (900) and the menu (1000).
 	 */
 	constexpr int32 ZOrder = 880;
-	/** Fixed, as both former panels were: auto-wrapped text gives a self-sizing card no stable width. */
-	constexpr float CardWidth = 420.0f;
+	/** Fixed, as both former panels were: auto-wrapped text gives a self-sizing card no stable width. Rio 06.10: 30 %
+	 * smaller than the 420 it was. */
+	constexpr float CardWidth = 300.0f;
 
 	struct FEntry
 	{
@@ -135,7 +138,8 @@ namespace APSMissionTrackerPrivate
 	/** The progress bar: a thin cyan line on a dim track (the default style's black trough read as a hole). */
 	const FSlateBrush* BarTrack()
 	{
-		static const FSlateColorBrush Brush(APSChrome::CyanDim());
+		static FSlateColorBrush Brush(FLinearColor::White);
+		Brush.TintColor = APSChrome::CyanDim();
 		return &Brush;
 	}
 
@@ -146,41 +150,40 @@ namespace APSMissionTrackerPrivate
 	}
 
 	/**
-	 * Rio 04.10 ("the design is off, too much plain text, readability"): no round icon badges (their glyphs read as
-	 * crosses) and fewer sentences. A section is a coloured bar down its left side, a small spaced label, a title in the
-	 * readable face, and short lines under it.
+	 * Rio 06.10 ("Flight HUD v4", the TASKS card): the HUD's instrument family (APSHud). A small TASKS header with the
+	 * TAB key, the objective with an action-coloured box, then the tracked mission: a dot in the department's colour,
+	 * the count, the title, its step and its place as a chip. No reward line (Rio: "+20 research" did not belong there).
 	 */
-	FSlateFontInfo LabelFont()
+	const FAPSUIThemePalette& P()
 	{
-		FSlateFontInfo Font = FCoreStyle::GetDefaultFontStyle("Bold", 10);
-		Font.LetterSpacing = 70;
-		return Font;
+		return APSUITheme::Palette();
+	}
+
+	TAttribute<FSlateColor> Themed(TFunction<FLinearColor()> Pick)
+	{
+		return TAttribute<FSlateColor>::CreateLambda([Pick]() { return FSlateColor(Pick()); });
 	}
 
 	FSlateFontInfo TitleFont()
 	{
-		return FCoreStyle::GetDefaultFontStyle("Bold", 14);
+		return APSHud::TextFont(13, TEXT("Bold"));
 	}
 
 	FSlateFontInfo BodyFont()
 	{
-		return FCoreStyle::GetDefaultFontStyle("Regular", 11);
+		return APSHud::TextFont(11);
 	}
 
-	/** The section's colour as a thin bar the height of its text. */
-	TSharedRef<SWidget> AccentBar(const TAttribute<FSlateColor>& Colour)
-	{
-		return SNew(SBox)
-			.WidthOverride(3.0f)
-			[
-				SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(Colour)
-			];
-	}
-
-	/** The mission's step as a checklist box, outlined in the department's colour. */
+	/** A checklist box outlined in its colour. */
 	const FSlateBrush* StepBox()
 	{
-		static const FSlateRoundedBoxBrush Brush(FLinearColor::Transparent, 2.0f, FLinearColor::White, 1.5f);
+		static const FSlateRoundedBoxBrush Brush(FLinearColor::Transparent, 1.0f, FLinearColor::White, 1.5f);
+		return &Brush;
+	}
+
+	const FSlateBrush* Dot()
+	{
+		static const FSlateRoundedBoxBrush Brush(FLinearColor::White, 3.0f);
 		return &Brush;
 	}
 
@@ -189,10 +192,17 @@ namespace APSMissionTrackerPrivate
 		return Text.IsEmpty() ? EVisibility::Collapsed : EVisibility::HitTestInvisible;
 	}
 
-	/** The onboarding objective: amber bar, OBJECTIVE, the task as the title and how to do it under it. */
+	TSharedRef<SWidget> Box(const float Size, const TAttribute<FSlateColor>& Colour)
+	{
+		return SNew(SBox).WidthOverride(Size).HeightOverride(Size)
+		[
+			SNew(SImage).Image(StepBox()).ColorAndOpacity(Colour)
+		];
+	}
+
+	/** The onboarding objective: an action-coloured box, the task as the title and how to do it under it. */
 	TSharedRef<SWidget> ObjectiveSection(const TWeakObjectPtr<UWorld>& World)
 	{
-		using namespace APSChrome;
 		const auto Read = [World](const bool bTitle)
 		{
 			FText ObjectiveTitle;
@@ -201,39 +211,30 @@ namespace APSMissionTrackerPrivate
 			return bTitle ? ObjectiveTitle : ObjectiveBody;
 		};
 		return SNew(SHorizontalBox)
-			+ SHorizontalBox::Slot().AutoWidth()
+			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Top).Padding(0.0f, 3.0f, 10.0f, 0.0f)
 			[
-				AccentBar(Amber())
+				Box(10.0f, Themed([]() { return P().Action; }))
 			]
-			+ SHorizontalBox::Slot().FillWidth(1.0f).Padding(12.0f, 1.0f, 0.0f, 2.0f)
+			+ SHorizontalBox::Slot().FillWidth(1.0f)
 			[
 				SNew(SVerticalBox)
 				+ SVerticalBox::Slot().AutoHeight()
 				[
-					SNew(STextBlock).Text(LOCTEXT("ObjectiveLabel", "OBJECTIVE")).Font(LabelFont()).ColorAndOpacity(Amber())
-				]
-				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 3.0f, 0.0f, 0.0f)
-				[
-					SNew(STextBlock).Font(TitleFont()).ColorAndOpacity(White()).AutoWrapText(true)
+					SNew(STextBlock).Font(TitleFont()).ColorAndOpacity(Themed([]() { return P().Text; })).AutoWrapText(true)
 					.Text_Lambda([Read]() { return Read(true); })
 				]
-				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 3.0f, 0.0f, 0.0f)
+				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 2.0f, 0.0f, 0.0f)
 				[
-					SNew(STextBlock).Font(BodyFont()).ColorAndOpacity(Muted()).AutoWrapText(true)
+					SNew(STextBlock).Font(BodyFont()).ColorAndOpacity(Themed([]() { return P().TextSoft; })).AutoWrapText(true)
 					.Text_Lambda([Read]() { return Read(false); })
 					.Visibility_Lambda([Read]() { return CollapsedIfEmpty(Read(false)); })
 				]
 			];
 	}
 
-	/**
-	 * The tracked mission: a bar and "SCIENCE MISSION" in the department's colour with the count on the right, the title,
-	 * the objective as a checklist step with its place under it in spaced capitals, a bar only for counts above one, and
-	 * the reward.
-	 */
+	/** The tracked mission: department dot and name with the count, the title, the step and its place as a chip. */
 	TSharedRef<SWidget> MissionSection(const TWeakObjectPtr<UWorld>& World)
 	{
-		using namespace APSChrome;
 		const TAttribute<FSlateColor> Accent = TAttribute<FSlateColor>::CreateLambda([World]()
 		{
 			return FSlateColor(DepartmentColour(World));
@@ -243,147 +244,128 @@ namespace APSMissionTrackerPrivate
 			const FAPSMission* Mission = Tracked(World);
 			return Mission ? Mission->SubjectName : FText::GetEmpty();
 		};
-		return SNew(SHorizontalBox)
-			+ SHorizontalBox::Slot().AutoWidth()
+		return SNew(SVerticalBox)
+			+ SVerticalBox::Slot().AutoHeight()
 			[
-				AccentBar(Accent)
-			]
-			+ SHorizontalBox::Slot().FillWidth(1.0f).Padding(12.0f, 1.0f, 0.0f, 2.0f)
-			[
-				SNew(SVerticalBox)
-				+ SVerticalBox::Slot().AutoHeight()
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.0f, 0.0f, 7.0f, 0.0f)
 				[
-					SNew(SHorizontalBox)
-					+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
-					[
-						SNew(STextBlock).Font(LabelFont()).ColorAndOpacity(Accent)
-						.Text_Lambda([World]()
-						{
-							const FAPSMission* Mission = Tracked(World);
-							return Mission ? FText::Format(LOCTEXT("MissionLabel", "{0} MISSION"),
-								APSInfrastructure::DepartmentName(Mission->Department)) : FText::GetEmpty();
-						})
-					]
-					+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(10.0f, 0.0f, 0.0f, 0.0f)
-					[
-						SNew(STextBlock).Font(Font("Bold", 10)).ColorAndOpacity(White())
-						.Text_Lambda([World]()
-						{
-							const FAPSMission* Mission = Tracked(World);
-							return Mission ? FText::Format(LOCTEXT("Count", "{0} / {1}"), APSUINumber::Number(Mission->Progress),
-								APSUINumber::Number(Mission->Count)) : FText::GetEmpty();
-						})
-					]
+					SNew(SBox).WidthOverride(6.0f).HeightOverride(6.0f)[SNew(SImage).Image(Dot()).ColorAndOpacity(Accent)]
 				]
-				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 3.0f, 0.0f, 0.0f)
+				+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
 				[
-					SNew(STextBlock).Font(TitleFont()).ColorAndOpacity(White()).AutoWrapText(true)
+					SNew(STextBlock).Font(APSHud::LabelFont()).ColorAndOpacity(Themed([]() { return P().TextQuiet; }))
 					.Text_Lambda([World]()
 					{
 						const FAPSMission* Mission = Tracked(World);
-						return Mission ? SentenceCase(Mission->Title) : FText::GetEmpty();
+						return Mission ? FText::Format(LOCTEXT("MissionLabel", "{0} MISSION"),
+							APSInfrastructure::DepartmentName(Mission->Department)) : FText::GetEmpty();
 					})
 				]
-				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 7.0f, 0.0f, 0.0f)
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(10.0f, 0.0f, 0.0f, 0.0f)
 				[
-					SNew(SHorizontalBox)
-					+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Top).Padding(1.0f, 4.0f, 9.0f, 0.0f)
-					[
-						SNew(SBox).WidthOverride(10.0f).HeightOverride(10.0f)
-						[
-							SNew(SImage).Image(StepBox()).ColorAndOpacity(Accent)
-						]
-					]
-					+ SHorizontalBox::Slot().FillWidth(1.0f)
-					[
-						SNew(SVerticalBox)
-						+ SVerticalBox::Slot().AutoHeight()
-						[
-							SNew(STextBlock).Font(FCoreStyle::GetDefaultFontStyle("Regular", 12)).ColorAndOpacity(White())
-							.AutoWrapText(true)
-							.Text_Lambda([World]()
-							{
-								const FAPSMission* Mission = Tracked(World);
-								return Mission ? SentenceCase(APSMissions::ObjectiveName(Mission->Objective)) : FText::GetEmpty();
-							})
-						]
-						// Where: the site and its world, as the catalogue writes them, in the label's capitals.
-						+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 2.0f, 0.0f, 0.0f)
-						[
-							SNew(STextBlock).Font(LabelFont()).ColorAndOpacity(Cyan()).AutoWrapText(true)
-							.Text_Lambda([Subject]() { return Subject(); })
-							.Visibility_Lambda([Subject]() { return CollapsedIfEmpty(Subject()); })
-						]
-					]
-				]
-				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 8.0f, 0.0f, 0.0f)
-				[
-					// A bar only where it tells something: a single target is either done or not, the count says it.
-					SNew(SBox)
-					.HeightOverride(4.0f)
-					.Visibility_Lambda([World]()
+					SNew(STextBlock).Font(APSHud::ValueFont(10)).ColorAndOpacity(Themed([]() { return P().Text; }))
+					.Text_Lambda([World]()
 					{
 						const FAPSMission* Mission = Tracked(World);
-						return Mission && Mission->Count > 1 ? EVisibility::HitTestInvisible : EVisibility::Collapsed;
+						return Mission ? FText::Format(LOCTEXT("Count", "{0} / {1}"), APSUINumber::Number(Mission->Progress),
+							APSUINumber::Number(Mission->Count)) : FText::GetEmpty();
 					})
-					[
-						SNew(SProgressBar)
-						.BackgroundImage(BarTrack())
-						.FillImage(BarFill())
-						.FillColorAndOpacity(Accent)
-						.Percent_Lambda([World]() -> TOptional<float>
-						{
-							const FAPSMission* Mission = Tracked(World);
-							return Mission ? FMath::Clamp(float(Mission->Progress) / float(FMath::Max(Mission->Count, 1)), 0.0f, 1.0f)
-								: 0.0f;
-						})
-					]
 				]
-				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 8.0f, 0.0f, 0.0f)
+			]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 4.0f, 0.0f, 0.0f)
+			[
+				SNew(STextBlock).Font(TitleFont()).ColorAndOpacity(Themed([]() { return P().Text; })).AutoWrapText(true)
+				.Text_Lambda([World]()
+				{
+					const FAPSMission* Mission = Tracked(World);
+					return Mission ? SentenceCase(Mission->Title) : FText::GetEmpty();
+				})
+			]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 5.0f, 0.0f, 0.0f)
+			[
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Top).Padding(0.0f, 3.0f, 9.0f, 0.0f)
 				[
-					SNew(SHorizontalBox)
-					.Visibility_Lambda([World]()
+					Box(8.0f, Themed([]() { return P().Highlight; }))
+				]
+				+ SHorizontalBox::Slot().FillWidth(1.0f)
+				[
+					SNew(STextBlock).Font(BodyFont()).ColorAndOpacity(Themed([]() { return P().TextSoft; })).AutoWrapText(true)
+					.Text_Lambda([World]()
 					{
 						const FAPSMission* Mission = Tracked(World);
-						return Mission && !RewardText(*Mission).IsEmpty() ? EVisibility::HitTestInvisible : EVisibility::Collapsed;
+						return Mission ? SentenceCase(APSMissions::ObjectiveName(Mission->Objective)) : FText::GetEmpty();
 					})
-					+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+				]
+			]
+			// Where: the site and its world, as the catalogue writes them, on a chip.
+			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Left).Padding(17.0f, 6.0f, 0.0f, 0.0f)
+			[
+				SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).Padding(1.0f)
+				.BorderBackgroundColor(Themed([]() { return APSUITheme::Fade(P().Frame, 1.2f); }))
+				.Visibility_Lambda([Subject]() { return CollapsedIfEmpty(Subject()); })
+				[
+					SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).Padding(FMargin(7.0f, 2.0f))
+					.BorderBackgroundColor(Themed([]() { return P().Panel.CopyWithNewOpacity(1.0f); }))
 					[
-						SNew(STextBlock).Text(LOCTEXT("RewardLabel", "REWARD")).Font(LabelFont()).ColorAndOpacity(Muted())
+						SNew(STextBlock).Font(APSHud::LabelFont(9)).ColorAndOpacity(Themed([]() { return P().Highlight; }))
+						.Text_Lambda([Subject]() { return Subject(); })
 					]
-					+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center).Padding(9.0f, 0.0f, 0.0f, 0.0f)
-					[
-						SNew(STextBlock).Font(Font("Bold", 10)).ColorAndOpacity(Amber()).AutoWrapText(true)
-						.Text_Lambda([World]()
-						{
-							const FAPSMission* Mission = Tracked(World);
-							return Mission ? RewardText(*Mission) : FText::GetEmpty();
-						})
-					]
+				]
+			]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 8.0f, 0.0f, 0.0f)
+			[
+				// A bar only where it tells something: a single target is either done or not, the count says it.
+				SNew(SBox)
+				.HeightOverride(3.0f)
+				.Visibility_Lambda([World]()
+				{
+					const FAPSMission* Mission = Tracked(World);
+					return Mission && Mission->Count > 1 ? EVisibility::HitTestInvisible : EVisibility::Collapsed;
+				})
+				[
+					SNew(SProgressBar)
+					.BackgroundImage(BarTrack())
+					.FillImage(BarFill())
+					.FillColorAndOpacity(Accent)
+					.Percent_Lambda([World]() -> TOptional<float>
+					{
+						const FAPSMission* Mission = Tracked(World);
+						return Mission ? FMath::Clamp(float(Mission->Progress) / float(FMath::Max(Mission->Count, 1)), 0.0f, 1.0f)
+							: 0.0f;
+					})
 				]
 			];
 	}
 
 	/**
 	 * Rio 03.10: the objective and the tracked mission as one card from one corner, so they stack and never overlap
-	 * (two panels at fixed offsets did once the objective wrapped). A divider shows only while both sections do.
+	 * (two panels at fixed offsets did once the objective wrapped). A rule shows only while both sections do.
 	 */
 	TSharedRef<SWidget> Build(const TWeakObjectPtr<UWorld> World)
 	{
-		using namespace APSChrome;
 		return SNew(SBox)
 			.HAlign(HAlign_Left)
 			.VAlign(VAlign_Top)
-			// The objective panel's corner: the ship HUD holds the top right (navigation) and the bottom left (flight), the
-			// pilot's HUD the bottom left.
-			.Padding(FMargin(24.0f, 96.0f, 0.0f, 0.0f))
+			// The objective panel's corner: the ship HUD holds the top right (navigation) and the bottom (flight).
+			.Padding(FMargin(22.0f, 22.0f, 0.0f, 0.0f))
 			.Visibility_Lambda([World]() { return VisibleIf(IsObjectiveShown(World) || IsMissionShown(World)); })
 			[
 				SNew(SBox)
 				.WidthOverride(CardWidth)
 				[
-					ChamferPanel(
+					APSHud::Card(
 						SNew(SVerticalBox)
+						+ SVerticalBox::Slot().AutoHeight()
+						[
+							SNew(SHorizontalBox)
+							+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
+							[APSHud::Label(LOCTEXT("Tasks", "TASKS"), Themed([]() { return P().TextQuiet; }))]
+							+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+							[APSChrome::KeyChip(LOCTEXT("TasksKey", "TAB"), P().TextQuiet)]
+						]
+						+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 8.0f, 0.0f, 10.0f)[APSHud::Rule()]
 						+ SVerticalBox::Slot().AutoHeight()
 						[
 							SNew(SBox)
@@ -392,13 +374,12 @@ namespace APSMissionTrackerPrivate
 								ObjectiveSection(World)
 							]
 						]
-						+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 11.0f)
+						+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 10.0f)
 						[
 							SNew(SBox)
-							.HeightOverride(1.0f)
 							.Visibility_Lambda([World]() { return VisibleIf(IsObjectiveShown(World) && IsMissionShown(World)); })
 							[
-								SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(CyanDim())
+								APSHud::Rule()
 							]
 						]
 						+ SVerticalBox::Slot().AutoHeight()
@@ -409,7 +390,7 @@ namespace APSMissionTrackerPrivate
 								MissionSection(World)
 							]
 						],
-						FMargin(14.0f, 12.0f), CyanDim())
+						APSHud::EEdge::Left)
 				]
 			];
 	}

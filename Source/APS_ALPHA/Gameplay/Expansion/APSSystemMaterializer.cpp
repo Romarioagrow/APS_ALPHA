@@ -16,6 +16,7 @@
 #include "APS_ALPHA/Core/Rendering/APSGalaxyGpuStars.h"
 #include "APS_ALPHA/Core/Rendering/APSGalaxyNearStars.h"
 #include "APS_ALPHA/Core/World/APSRealScale.h"
+#include "APS_ALPHA/Core/World/APSWorldOriginSubsystem.h"
 #include "APS_ALPHA/Core/Structs/MoonGenerationModel.h"
 #include "APS_ALPHA/Core/Structs/PlanetGenerationModel.h"
 #include "APS_ALPHA/Core/Structs/PlanetarySystemGenerationModel.h"
@@ -91,6 +92,8 @@ namespace APSSystemMaterializerLocal
 	 * MaterializeClusterStarSystem stands a cluster record: a star system actor and its primary at the catalogue position,
 	 * from the star's class, size and seed. The sky stops drawing it: its GPU point inside the system's sphere (its room
 	 * holds no other drawn star), its near photosphere, and an ISM-prefix point through the generator's suppression.
+	 * Rio 05.10 night: in a REAL SCALE world its GPU point is an approach point by then (APSGalaxyGpuStars::
+	 * UpdateApproachPoints, outside the system's sphere), which stays and crossfades into this star as its disc grows.
 	 */
 	AStarSystem* MaterializeGalaxyStar(UWorld& World, AAstroGenerator& Gen, const FAPSStarSystemInfo& Info,
 		TSharedPtr<FStarModel>& OutStarModel, uint32& OutSeedHash)
@@ -391,6 +394,17 @@ bool FAPSSystemMaterializer::Begin(FAPSStarSystems& Systems, const int32 Index)
 {
 	using namespace APSSystemMaterializerLocal;
 	UWorld* LiveWorld = World.Get();
+	// Rio 06.10 (still ship): far from every system a fast REAL SCALE ship owes its travel and only the sky moves. A system
+	// stood up meanwhile spawns at its sky place and rides with the sky from then on (AddSkyMember below), so the ship
+	// brakes into it while the far world stays still. Where systems do not ride with the sky (aps.RealScale.DeferBodyClearRadii
+	// 0, a legacy world) the debt is paid first, so the catalogue's places are world places again.
+	UAPSWorldOriginSubsystem* Origin = LiveWorld ? LiveWorld->GetSubsystem<UAPSWorldOriginSubsystem>() : nullptr;
+	static IConsoleVariable* const BodyClearRadii = IConsoleManager::Get().FindConsoleVariable(TEXT("aps.RealScale.DeferBodyClearRadii"));
+	const bool bRidesWithSky = Origin && APSRealScale::IsActive(LiveWorld) && BodyClearRadii && BodyClearRadii->GetFloat() > 0.0f;
+	if (Origin && !bRidesWithSky)
+	{
+		Origin->SettleDeferredTravel(TEXT("a star system materializes"));
+	}
 	AAstroGenerator* Gen = Systems.GetGenerator();
 	AStarCluster* Cluster = Systems.GetCluster();
 	const FAPSStarSystemInfo* Info = Systems.Get(Index);
@@ -421,6 +435,7 @@ bool FAPSSystemMaterializer::Begin(FAPSStarSystems& Systems, const int32 Index)
 				AAstroGenerator::DestroyActorTree(NewSystem);
 				Gen->SetGalaxyProxyMaterialized(Info->GalaxyIndex, false);
 				APSGalaxyNearStars::SetMaterialized(LiveWorld, Info->GalaxyIndex, false);
+				APSGalaxyGpuStars::RescanExclusions(LiveWorld);
 			}
 			return false;
 		}
@@ -450,6 +465,14 @@ bool FAPSSystemMaterializer::Begin(FAPSStarSystems& Systems, const int32 Index)
 		SeedHash = HashCombineFast(GetTypeHash(Record->StableId), static_cast<uint32>(Record->SystemModel.GenerationSeed));
 		NewAddress = FString::Printf(TEXT("C%d"), Info->Record);
 	}
+	// Rio 05.10 night: the GPU layer takes the new system's sphere in this frame, not at its next half-second scan
+	// (REAL SCALE with aps.Stars.ApproachPoint; legacy worlds keep the scan).
+	// The system rides with the sky before the GPU layer takes its sphere (the review: the order mattered for its place).
+	if (bRidesWithSky)
+	{
+		Origin->AddSkyMember(NewSystem);
+	}
+	APSGalaxyGpuStars::RescanExclusions(LiveWorld);
 	AStar* NewStar = NewSystem->MainStar;
 	ActiveIndex = Index;
 	ActiveInstance = Instance;
@@ -760,6 +783,14 @@ bool FAPSSystemMaterializer::IsDrained(const float DeltaSeconds)
 
 void FAPSSystemMaterializer::Finish()
 {
+	// Rio 06.10 (still ship): the system no longer rides with the sky.
+	if (UWorld* LiveWorld = World.Get(); LiveWorld && System.IsValid())
+	{
+		if (UAPSWorldOriginSubsystem* Origin = LiveWorld->GetSubsystem<UAPSWorldOriginSubsystem>())
+		{
+			Origin->RemoveSkyMember(System.Get());
+		}
+	}
 	if (ActiveGalaxyIndex != INDEX_NONE)
 	{
 		// A galaxy star: its actors go and the sky draws it again.
@@ -778,6 +809,11 @@ void FAPSSystemMaterializer::Finish()
 	{
 		Gen->DematerializeClusterStarSystem(ActiveInstance);
 		UE_LOG(LogTemp, Log, TEXT("[APS.Stars] %s is a catalogue point again"), *ActiveName);
+	}
+	// Rio 05.10 night: and the GPU layer drops its sphere in this frame (REAL SCALE with aps.Stars.ApproachPoint).
+	if (UWorld* LiveWorld = World.Get())
+	{
+		APSGalaxyGpuStars::RescanExclusions(LiveWorld);
 	}
 	Stage = EStage::Idle;
 	ActiveIndex = INDEX_NONE;

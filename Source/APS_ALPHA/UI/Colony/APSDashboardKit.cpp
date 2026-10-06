@@ -1,4 +1,5 @@
 #include "APSDashboardKit.h"
+#include "APS_ALPHA/UI/Style/APSUITheme.h"
 
 #include "APS_ALPHA/Actors/Astro/PlanetaryBody.h"
 #include "APS_ALPHA/Actors/Astro/Star.h"
@@ -43,12 +44,12 @@ namespace APSDashboardPrivate
 
 FLinearColor APSDashboard::CardFill()
 {
-	return FLinearColor(0.004f, 0.02f, 0.032f, 0.94f);
+	return APSUITheme::Retint(FLinearColor(0.004f, 0.02f, 0.032f, 0.94f));
 }
 
 FSlateFontInfo APSDashboard::CaptionFont()
 {
-	return FCoreStyle::GetDefaultFontStyle("Bold", 10);
+	return APSUITheme::BodyFont("Bold", 10);
 }
 
 FLinearColor APSDashboard::StarColour(const AStar* Star)
@@ -139,7 +140,7 @@ TSharedRef<SWidget> APSDashboard::LinkButton(const FText& Label, FOnClicked OnCl
 		+ SOverlay::Slot()
 		[
 			SNew(SAPSChamferedSurface).Brush(FAppStyle::GetBrush("WhiteBrush"))
-			.Tint_Lambda([Hovered]() { return Hovered() ? FLinearColor(0.02f, 0.13f, 0.17f, 0.97f) : Panel(); })
+			.Tint_Lambda([Hovered]() { return Hovered() ? APSUITheme::Retint(FLinearColor(0.02f, 0.13f, 0.17f, 0.97f)) : Panel(); })
 			.ChamferTop(true).ChamferBottom(true)
 		]
 		+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Center).Padding(ButtonPadding(LabelFont, 16.0f))
@@ -190,7 +191,7 @@ TSharedRef<SWidget> APSDashboard::BigValue(const TAttribute<FText>& Value, const
 		// The unit in the readable face: the display font is for digits and capitals.
 		+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Bottom).Padding(7.0f, 0.0f, 0.0f, Size >= 22 ? 4.0f : 2.0f)
 		[
-			SNew(STextBlock).Text(Unit).Font(FCoreStyle::GetDefaultFontStyle("Bold", 13)).ColorAndOpacity(APSChrome::Muted())
+			SNew(STextBlock).Text(Unit).Font(APSUITheme::BodyFont("Bold", 13)).ColorAndOpacity(APSChrome::Muted())
 		];
 }
 
@@ -252,7 +253,7 @@ TSharedRef<SWidget> APSDashboard::LegendItem(const FLinearColor& Colour, const F
 		]
 		+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(6.0f, 0.0f, 0.0f, 0.0f)
 		[
-			SNew(STextBlock).Text(Count).Font(FCoreStyle::GetDefaultFontStyle("Bold", 12)).ColorAndOpacity(APSChrome::White())
+			SNew(STextBlock).Text(Count).Font(APSUITheme::BodyFont("Bold", 12)).ColorAndOpacity(APSChrome::White())
 		];
 }
 

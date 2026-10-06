@@ -5,6 +5,7 @@
 #include "APS_ALPHA/Actors/Astro/Galaxy.h"
 #include "APS_ALPHA/Actors/Astro/StarSystem.h"
 #include "APS_ALPHA/Core/Rendering/APSCanonicalStellarProjection.h"
+#include "APS_ALPHA/Core/World/APSWorldOriginSubsystem.h"
 #include "APS_ALPHA/Generation/StarGenerator.h"
 #include "Components/HierarchicalInstancedStaticMeshComponent.h"
 #include "Components/InstancedStaticMeshComponent.h"
@@ -125,6 +126,12 @@ namespace
 		State.Keys.Pop(EAllowShrinking::No);
 	}
 
+	/** Rio 05.10 night: the GPU layer's approach points crossfade into these photospheres (APSGalaxyGpuStars). */
+	void Report(const FNearState& State, const UWorld* World)
+	{
+		APSGalaxyGpuStars::SetNearPhotospheres(World, State.Keys);
+	}
+
 	bool AddInstance(FNearState& State, AGalaxy& Galaxy, const FGalaxyCatalogStarRecord& Record, const double RadiusCm)
 	{
 		UInstancedStaticMeshComponent* Mesh = EnsureMesh(State, Galaxy);
@@ -173,7 +180,12 @@ namespace APSGalaxyNearStars
 		if (CVarNearStars.GetValueOnGameThread() == 0 || !Galaxy || (bDaylightHidden && !(DayResolve > 0.0))
 			|| !(PixelTangent > 0.0))
 		{
+			const bool bHadAny = State.Keys.Num() > 0;
 			ClearInstances(State);
+			if (bHadAny)
+			{
+				Report(State, World);
+			}
 			return;
 		}
 		const double Now = FPlatformTime::Seconds();
@@ -189,12 +201,14 @@ namespace APSGalaxyNearStars
 			return;
 		}
 		// The GPU layer hides its points inside the home and the materialized systems: so are their photospheres.
+		// Rio 06.10 (still ship): where the sky draws those systems (their actors keep their world place while a deferred
+		// travel moves only the sky, and the stars found here are the sky's): SkyPlace.
 		TArray<FVector4> Hidden;
 		for (TActorIterator<AStarSystem> It(World); It; ++It)
 		{
 			if (IsValid(*It) && It->StarSystemRadius > 0.0)
 			{
-				Hidden.Add(FVector4(It->GetActorLocation(),
+				Hidden.Add(FVector4(UAPSWorldOriginSubsystem::SkyPlace(**It),
 					It->StarSystemRadius * APSCanonicalStellarProjection::SystemProxyExclusionPadding));
 			}
 		}
@@ -231,6 +245,7 @@ namespace APSGalaxyNearStars
 		{
 			RemoveInstance(State, CatalogIndex);
 		}
+		Report(State, World);
 		if (State.InstanceOf.Num() != State.LoggedCount)
 		{
 			State.LoggedCount = State.InstanceOf.Num();
@@ -244,6 +259,7 @@ namespace APSGalaxyNearStars
 		if (FNearState* State = GStates.Find(TWeakObjectPtr<const UWorld>(World)))
 		{
 			DestroyMesh(*State);
+			Report(*State, World);
 			GStates.Remove(TWeakObjectPtr<const UWorld>(World));
 		}
 	}
@@ -255,6 +271,7 @@ namespace APSGalaxyNearStars
 		{
 			State.Materialized.Add(CatalogIndex);
 			RemoveInstance(State, CatalogIndex);
+			Report(State, World);
 		}
 		else
 		{

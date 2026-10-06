@@ -1,4 +1,5 @@
 #include "APSShipFlightModel.h"
+#include "APS_ALPHA/UI/Hud/APSFlightReadout.h"
 #include "APSShipFlightBenchmark.h"
 #include "Components/MeshComponent.h"
 
@@ -15,6 +16,8 @@
 #include "APS_ALPHA/Core/Rendering/APSCanonicalStellarProjection.h"
 #include "APS_ALPHA/Core/Rendering/APSGalaxyGpuStars.h"
 #include "APS_ALPHA/Core/World/APSRealScale.h"
+#include "APS_ALPHA/Core/World/APSWorldOriginSubsystem.h"
+#include "APS_ALPHA/Gameplay/Expansion/APSStarSystems.h"
 #include "APS_ALPHA/Gameplay/Civilizations/APSCivilizationJournalSubsystem.h"
 #include "APS_ALPHA/Gameplay/Construction/APSShipBuildComponent.h"
 #include "APS_ALPHA/Gameplay/Vehicles/APSGroundVehicleTypes.h"
@@ -58,19 +61,20 @@ namespace APSShipFlightModelLocal
 	 * at its star's centre), and in OutRadiusCm the radius about the point of a sphere that holds that star; null, with
 	 * OutRadiusCm untouched, when no star is that near.
 	 */
-	const AStar* StarAround(const UWorld* World, const FVector& Point, double& OutRadiusCm)
+	const AStar* StarAround(const AActor& Observer, const FVector& Point, double& OutRadiusCm)
 	{
 		const AStar* Best = nullptr;
 		double BestRadius = 0.0;
 		double BestHold = 0.0;
-		for (TActorIterator<AStar> It(World); It; ++It)
+		for (TActorIterator<AStar> It(Observer.GetWorld()); It; ++It)
 		{
 			const double Radius = IsValid(*It) ? StarRadiusCm(**It) : 0.0;
 			if (!(Radius > 0.0))
 			{
 				continue;
 			}
-			const double Distance = FVector::Dist(It->GetActorLocation(), Point);
+			// Rio 06.10 (still ship): Point and the stars as the observing ship sees them (PlaceFor).
+			const double Distance = FVector::Dist(UAPSWorldOriginSubsystem::PlaceFor(&Observer, **It), Point);
 			if (Distance <= Radius * 3.0 && Radius > BestRadius)
 			{
 				Best = *It;
@@ -214,6 +218,13 @@ namespace APSShipFlightModelLocal
 		TEXT("body behind, the speed tied to its distance): a REAL SCALE star drive leaving the nearest body climbs this many ")
 		TEXT("times faster (the distance grows by e this many times as fast); closing in on one it keeps the old rate, so a ")
 		TEXT("surface still has its time to build. 1: as before."));
+	// Rio 06.10 ("J is the way between the stars; I pressed W for 30 s to reach a light year a second; the conditions
+	// come later"): his S hull has no offset engine, so J and STELLAR were refused and only CRUISE was left. In REAL
+	// SCALE every ship with a space-wrap (CRUISE) engine flies STELLAR and the star drive; the atmosphere, engine and
+	// pilot conditions stay. Off by default: Rio then saw the S hull was the reason and went to test a class M ship.
+	TAutoConsoleVariable<int32> CVarRealDriveAnyHull(TEXT("aps.RealScale.DriveAnyHull"), 0,
+		TEXT("REAL SCALE: 1 lets every ship with CRUISE fly STELLAR and the star drive (J); 0 keeps them for offset engines ")
+		TEXT("(class M and up)."));
 	TAutoConsoleVariable<float> CVarRealCruiseScale(TEXT("aps.RealScale.CruiseScale"), 1000.0f,
 		TEXT("REAL SCALE: CRUISE's top speed times this (legacy 20 AU/s); in a star system the distance to its sun still rules."));
 	/**
@@ -231,6 +242,31 @@ namespace APSShipFlightModelLocal
 		TEXT("aps.RealScale.MaxLyPerSecond."));
 	TAutoConsoleVariable<float> CVarRealDriveThrottleScale(TEXT("aps.RealScale.DriveThrottleScale"), 3.0f,
 		TEXT("REAL SCALE: W and S change the star drive's set speed this many times faster (legacy 1)."));
+	/**
+	 * Rio 05.10 night ("the speed goes faster, slower, faster again" flying light years a second, the star drive and
+	 * STELLAR): a star the course passed outside its arrival sphere dropped out of the course limit at its abeam point, and
+	 * the limit jumped from the miss scale x the miss to whatever came next. A REAL SCALE course keeps it past that point.
+	 */
+	TAutoConsoleVariable<float> CVarRealCoursePassFade(TEXT("aps.RealScale.CoursePassFade"), 1.0f,
+		TEXT("REAL SCALE: a star the course passes stays in the course limit past its abeam point, its clearance growing on ")
+		TEXT("from the value there, and fades out over this many misses of further travel, so the limit rises continuously ")
+		TEXT("after it. 0: the star drops out at its abeam point, as before."));
+	/**
+	 * Rio 05.10 night: the closing guard (a frame closes at most a quarter of the gap to a solid surface) treated every star
+	 * the scans found as a wall and divided by the frame time, so a hitch or a frame with the editor in the background
+	 * (0.2-0.3 s) cut the drive's speed by the stars light years off its course, with a sideways kick.
+	 */
+	TAutoConsoleVariable<int32> CVarRealCourseGuard(TEXT("aps.RealScale.CourseGuard"), 1,
+		TEXT("REAL SCALE star drive and STELLAR: 1 guards a star only while the course crosses its arrival sphere (or the ship ")
+		TEXT("is inside it), and that guard and the edge of charted space's keep the speed of a frame no longer than ")
+		TEXT("aps.RealScale.GuardMaxFrameSeconds (a longer frame only moves less); planets, moons and the ground keep the ")
+		TEXT("guard as before. 0: every solid surface as before."));
+	TAutoConsoleVariable<float> CVarRealGuardMaxFrameSeconds(TEXT("aps.RealScale.GuardMaxFrameSeconds"), 1.0f / 30.0f,
+		TEXT("aps.RealScale.CourseGuard: the longest frame the star and edge guard count for the speed they keep, s."));
+	TAutoConsoleVariable<int32> CVarRealDriveDepartLatch(TEXT("aps.RealScale.DriveDepartLatch"), 1,
+		TEXT("Rio 05.10 night: 1 latches the REAL SCALE drive's departure (aps.RealScale.DriveDepartFactor) on the course's ")
+		TEXT("share along the way out of the limiting body, with a margin, and blends the factor in over half a second (out ")
+		TEXT("again within a sixth); 0: a departure is any frame the nearest-body distance grew (as before)."));
 
 	/** Rio 05.10: how much harder a brake works at this speed (aps.RealScale.BrakeGain); exactly 1 when it does not apply. */
 	double RealBrakeScale(const UWorld* World, const double SpeedCm)
@@ -259,6 +295,55 @@ namespace APSShipFlightModelLocal
 	double CourseMissScaleFor(const bool bRealScale, const double LegacyScale)
 	{
 		return bRealScale ? FMath::Max(static_cast<double>(CVarRealMissScale.GetValueOnGameThread()), 1.0) : LegacyScale;
+	}
+
+	/**
+	 * A star's course clearance (APSFlightBandModel::CourseClearanceCm). Rio 05.10 night (aps.RealScale.CoursePassFade): a
+	 * REAL SCALE course that passes the arrival sphere keeps the star past its abeam point instead of dropping it there. Its
+	 * clearance grows on from the abeam value (the miss scale x the miss) at the miss scale per unit of the way past it, and
+	 * runs out of bounds as the star fades over the fade's misses, so the limit it sets rises continuously, never jumps.
+	 * Ahead of the abeam point, through the sphere and with no fade (a legacy world): CourseClearanceCm as it was.
+	 */
+	double StarCourseClearanceCm(const FVector& ToCenter, const FVector& Direction, const double RadiusCm, const double MissScale,
+		const double FadeMisses)
+	{
+		const double Clearance = APSFlightBandModel::CourseClearanceCm(ToCenter, Direction, RadiusCm, MissScale);
+		if (Clearance >= 0.0 || !(FadeMisses > 0.0))
+		{
+			return Clearance;
+		}
+		// Behind the abeam point, outside the sphere: how far past it, and how far off the course the star stands (most of a
+		// catalogue pass is behind and long faded: no square root for those).
+		const double Past = -FVector::DotProduct(ToCenter, Direction);
+		const double MissSquared = FMath::Max(ToCenter.SizeSquared() - Past * Past, 0.0);
+		if (MissSquared <= RadiusCm * RadiusCm || Past * Past >= FadeMisses * FadeMisses * MissSquared)
+		{
+			return -1.0;
+		}
+		const double Miss = FMath::Sqrt(MissSquared);
+		const double Fade = Past / (FadeMisses * Miss);
+		if (Fade >= 1.0)
+		{
+			return -1.0;
+		}
+		const double Scale = FMath::Max(MissScale, 1.0);
+		return (Miss - RadiusCm + Past) * Scale / FMath::Max(1.0 - FMath::SmoothStep(0.0, 1.0, Fade), 1.0e-6);
+	}
+
+	/** The fade StarCourseClearanceCm takes here: aps.RealScale.CoursePassFade in a REAL SCALE world, none in a legacy one. */
+	double CoursePassFadeFor(const bool bRealScale)
+	{
+		return bRealScale ? FMath::Max(static_cast<double>(CVarRealCoursePassFade.GetValueOnGameThread()), 0.0) : 0.0;
+	}
+
+	/**
+	 * Rio 06.10 (still ship): where an actor stands for this ship. The still ship (owing its travel) sees a star system's
+	 * anchor and a system riding with the sky where they are and any other actor at its world place + the sky offset; any
+	 * other ship lives in the world's frame (UAPSWorldOriginSubsystem::PlaceFor). The world place while nothing is owed.
+	 */
+	FVector ShipFramePlace(const AActor* Observer, const AActor& Actor)
+	{
+		return UAPSWorldOriginSubsystem::PlaceFor(Observer, Actor);
 	}
 
 	bool FeelEnabled()
@@ -621,7 +706,9 @@ bool UAPSShipFlightModel::IsBandAvailable(EAPSFlightBand Band) const
 	switch (Band)
 	{
 	case EAPSFlightBand::Cruise: return Ship->ActiveClassPreset.bSupportsSpaceWrap;
-	case EAPSFlightBand::Stellar: return Ship->ActiveClassPreset.bSupportsOffset;
+	case EAPSFlightBand::Stellar: return Ship->ActiveClassPreset.bSupportsOffset
+		|| (Ship->ActiveClassPreset.bSupportsSpaceWrap && APSShipFlightModelLocal::CVarRealDriveAnyHull.GetValueOnGameThread() != 0
+			&& APSRealScale::IsActive(GetWorld()));
 	default: return true;
 	}
 }
@@ -745,7 +832,8 @@ void UAPSShipFlightModel::EngageAutopilot(AActor* Target)
 		RadiusCm = 50000.0;
 		ArrivalCm = 150000.0;
 	}
-	else if (const AStar* Around = APSShipFlightModelLocal::StarAround(GetWorld(), Target->GetActorLocation(), RadiusCm))
+	else if (const AStar* Around = GetOwner() ? APSShipFlightModelLocal::StarAround(*GetOwner(),
+		APSShipFlightModelLocal::ShipFramePlace(GetOwner(), *Target), RadiusCm) : nullptr)
 	{
 		// Rio 05.10 ("the autopilot to another system stopped practically inside the star, then the game froze"): a star
 		// system's anchor stands at its star's centre, and the 1 km stop of a small target was 1 km from that centre,
@@ -815,6 +903,8 @@ void UAPSShipFlightModel::UpdateAutopilot(const float DeltaTime)
 		DisengageAutopilot(TEXT("helm input"));
 		return;
 	}
+	// Rio 06.10 (still ship): the target and the worlds on the way as the ship sees them while its travel is owed.
+	const FVector TargetPlace = APSShipFlightModelLocal::ShipFramePlace(GetOwner(), *Target);
 	double RadiusCm = 0.0;
 	if (const APlanetaryBody* Body = Cast<APlanetaryBody>(Target))
 	{
@@ -831,7 +921,7 @@ void UAPSShipFlightModel::UpdateAutopilot(const float DeltaTime)
 	else
 	{
 		// A star system's anchor: the stop sphere holds its star (see EngageAutopilot).
-		const AStar* Around = APSShipFlightModelLocal::StarAround(GetWorld(), Target->GetActorLocation(), RadiusCm);
+		const AStar* Around = GetOwner() ? APSShipFlightModelLocal::StarAround(*GetOwner(), TargetPlace, RadiusCm) : nullptr;
 		// Rio 05.10 (real scale, stage 2): parsecs out a REAL SCALE system is a catalogue point and stands up only as the
 		// ship comes, after the 1 km stop of a bare anchor was set: its star is then met three radii out, as one that stood.
 		if (Around && APSRealScale::IsActive(GetWorld()))
@@ -839,7 +929,7 @@ void UAPSShipFlightModel::UpdateAutopilot(const float DeltaTime)
 			AutopilotArrivalCm = FMath::Max(AutopilotArrivalCm, APSShipFlightModelLocal::StarRadiusCm(*Around) * 3.0);
 		}
 	}
-	const FVector ToTarget = Target->GetActorLocation() - Ship->GetActorLocation();
+	const FVector ToTarget = TargetPlace - Ship->GetActorLocation();
 	const double Distance = ToTarget.Size();
 	AutopilotRemainingCm = FMath::Max(Distance - RadiusCm - AutopilotArrivalCm, 0.0);
 	const double Speed = Ship->KinematicVelocity.Size();
@@ -867,9 +957,9 @@ void UAPSShipFlightModel::UpdateAutopilot(const float DeltaTime)
 	// Rio 02.10 ("an object behind a planet: the autopilot tries to fly straight through it"): a world on the way is flown
 	// round through a point beside its limb, clear of its air, recomputed every frame until the target is in sight.
 	const FVector ShipLocation = Ship->GetActorLocation();
-	const FVector Segment = Target->GetActorLocation() - ShipLocation;
+	const FVector Segment = TargetPlace - ShipLocation;
 	const double SegmentSquared = Segment.SizeSquared();
-	FVector Aim = Target->GetActorLocation();
+	FVector Aim = TargetPlace;
 	double NearestBlock = TNumericLimits<double>::Max();
 	for (const FFlightBody& Body : FlightBodies)
 	{
@@ -878,7 +968,8 @@ void UAPSShipFlightModel::UpdateAutopilot(const float DeltaTime)
 		{
 			continue;
 		}
-		const FVector Centre = Body.bFixedLocation ? Body.Center : BodyActor->GetActorTransform().TransformPosition(Body.Center);
+		const FVector Centre = Body.bFixedLocation ? Body.Center : BodyActor->GetActorTransform().TransformPosition(Body.Center)
+			+ (UAPSWorldOriginSubsystem::PlaceFor(GetOwner(), *BodyActor) - BodyActor->GetActorLocation());
 		const double Along = FVector::DotProduct(Centre - ShipLocation, Segment) / SegmentSquared;
 		const FVector Closest = ShipLocation + Segment * FMath::Clamp(Along, 0.0, 1.0);
 		// Through the solid sphere a hair inside its surface: a target on a world's near side is not behind it.
@@ -911,7 +1002,7 @@ void UAPSShipFlightModel::UpdateAutopilot(const float DeltaTime)
 		if (FVector::Distance(ShipLocation + Leg * LegAlong, Centre) < Body.RadiusCm * 1.01)
 		{
 			const FVector Radial = (ShipLocation - Centre).GetSafeNormal(UE_SMALL_NUMBER, Out);
-			FVector Lean = FVector::VectorPlaneProject(Target->GetActorLocation() - ShipLocation, Radial).GetSafeNormal();
+			FVector Lean = FVector::VectorPlaneProject(TargetPlace - ShipLocation, Radial).GetSafeNormal();
 			if (Lean.IsNearlyZero())
 			{
 				Lean = FVector::VectorPlaneProject(Ship->GetShipForwardVector(), Radial).GetSafeNormal();
@@ -1204,7 +1295,9 @@ bool UAPSShipFlightModel::RebuildStarCatalogue()
 		return false;
 	}
 
-	const FVector HomeLocation = Home->GetActorLocation();
+	// Rio 06.10 (still ship): the catalogue is drawn in the sky, so the offsets are taken from the home's place there (its
+	// world place + the sky offset of the travel owed far from the systems; the world place itself while none is owed).
+	const FVector HomeLocation = Home->GetActorLocation() + UAPSWorldOriginSubsystem::SkyOffsetFor(GetShip());
 	TArray<FVector> FromHome;
 	FromHome.Reserve(Cluster->PotentialStarSystems.Num());
 	if (Descriptor.bConsumedFinalizedDataset)
@@ -1336,12 +1429,16 @@ void UAPSShipFlightModel::ScanStarCatalogue(const FVector& Location, const FVect
 		return;
 	}
 	// One pass over the catalogue: the nearest few stars and the system the course runs into. No allocation, no sort.
-	const FVector ObserverFromHome = Location - CatalogueHome->GetActorLocation();
+	// Rio 06.10 (still ship): the ship's place among the stars, from the home's place in the sky.
+	const FVector ObserverFromHome = Location - (CatalogueHome->GetActorLocation()
+		+ UAPSWorldOriginSubsystem::SkyOffsetFor(GetShip()));
 	// Rio 05.10 (real scale, stage 2): a REAL SCALE world's arrival sphere and miss scale (the legacy values otherwise).
 	const bool bRealScale = APSRealScale::IsActive(GetWorld());
 	const double SystemRadiusCm = APSShipFlightModelLocal::ArrivalSphereCm(bRealScale,
 		InterstellarDistanceAU * APSShipFlightModelLocal::AstronomicalUnitCm, CatalogueSpacingMedianCm);
 	const double MissScale = APSShipFlightModelLocal::CourseMissScaleFor(bRealScale, CourseMissScale);
+	// Rio 05.10 night: a REAL SCALE course keeps the star it passes until it fades out (StarCourseClearanceCm).
+	const double PassFade = APSShipFlightModelLocal::CoursePassFadeFor(bRealScale);
 	const bool bCourse = !Heading.IsNearlyZero();
 	double BestCourseCm = TNumericLimits<double>::Max();
 	TArray<TPair<double, int32>, TInlineAllocator<APSShipFlightModelLocal::NearestGeneratedStars>> Nearest;
@@ -1369,7 +1466,8 @@ void UAPSShipFlightModel::ScanStarCatalogue(const FVector& Location, const FVect
 		}
 		if (bCourse)
 		{
-			const double Clearance = APSFlightBandModel::CourseClearanceCm(ToStar, Heading, SystemRadiusCm, MissScale);
+			const double Clearance = APSShipFlightModelLocal::StarCourseClearanceCm(ToStar, Heading, SystemRadiusCm, MissScale,
+				PassFade);
 			if (Clearance >= 0.0 && Clearance < BestCourseCm)
 			{
 				BestCourseCm = Clearance;
@@ -1389,6 +1487,7 @@ void UAPSShipFlightModel::ScanGalaxyStars(const FVector& Location, const FVector
 	// Rio 03.10 ("every star must be reachable"): the drawn galaxy stars are stars to fly to as the cluster's are: the
 	// nearest few limit the speed, and the one the course runs into slows the drive for its arrival.
 	NearestGalaxyStars.Reset();
+	NearestGalaxyStarIds.Reset();
 	GalaxySpacingCm = 0.0;
 	const AActor* Home = CatalogueHome.Get();
 	TArray<APSGalaxyGpuStars::FNearStar> Near;
@@ -1397,12 +1496,15 @@ void UAPSShipFlightModel::ScanGalaxyStars(const FVector& Location, const FVector
 		return;
 	}
 	const AGalaxy* Galaxy = APSGalaxyGpuStars::GetIndexedGalaxy(GetWorld());
-	const FVector HomeLocation = Home->GetActorLocation();
+	// Rio 06.10 (still ship): FindNearStars places the stars in the sky; kept from the home's place there, they move with
+	// the sky between scans.
+	const FVector HomeLocation = Home->GetActorLocation() + UAPSWorldOriginSubsystem::SkyOffsetFor(GetShip());
 	// Rio 05.10 (real scale, stage 2): a REAL SCALE world's arrival sphere and miss scale (the legacy values otherwise).
 	const bool bRealScale = APSRealScale::IsActive(GetWorld());
 	const double SystemRadiusCm = APSShipFlightModelLocal::ArrivalSphereCm(bRealScale,
 		InterstellarDistanceAU * APSShipFlightModelLocal::AstronomicalUnitCm, CatalogueSpacingMedianCm);
 	const double MissScale = APSShipFlightModelLocal::CourseMissScaleFor(bRealScale, CourseMissScale);
+	const double PassFade = APSShipFlightModelLocal::CoursePassFadeFor(bRealScale);
 	const auto RadiusOf = [Galaxy](const APSGalaxyGpuStars::FNearStar& Star)
 	{
 		FGalaxyCatalogStarRecord Record;
@@ -1416,8 +1518,8 @@ void UAPSShipFlightModel::ScanGalaxyStars(const FVector& Location, const FVector
 	{
 		for (int32 Index = 0; Index < Near.Num(); ++Index)
 		{
-			const double Clearance = APSFlightBandModel::CourseClearanceCm(Near[Index].WorldLocation - Location, Heading,
-				SystemRadiusCm, MissScale);
+			const double Clearance = APSShipFlightModelLocal::StarCourseClearanceCm(Near[Index].WorldLocation - Location, Heading,
+				SystemRadiusCm, MissScale, PassFade);
 			if (Clearance >= 0.0 && Clearance < BestCourseCm)
 			{
 				BestCourseCm = Clearance;
@@ -1430,6 +1532,7 @@ void UAPSShipFlightModel::ScanGalaxyStars(const FVector& Location, const FVector
 		if (Index < APSShipFlightModelLocal::NearestGeneratedStars || Index == Course)
 		{
 			NearestGalaxyStars.Add(FVector4(Near[Index].WorldLocation - HomeLocation, RadiusOf(Near[Index])));
+			NearestGalaxyStarIds.Add(Near[Index].CatalogIndex);
 		}
 	}
 	// The field's local spacing: the median of the nearest few stars' distances to their own nearest neighbour.
@@ -1497,6 +1600,8 @@ double UAPSShipFlightModel::MeasureTerrainClearanceCm(const FVector& Location) c
 	// Its height noise (the canonical surface the placement resolver also samples) gives the terrain, and the sea
 	// level of a liquid world, at any altitude.
 	double Best = -1.0;
+	// Rio 06.10 (still ship): the distance is taken from where the planet stands for this ship (PlaceFor: the still ship
+	// sees a home planet the sky offset away from its world place); the noise is still sampled in the root's frame.
 	for (const FFlightBody& Body : FlightBodies)
 	{
 		const APlanetaryBody* Planet = Cast<APlanetaryBody>(Body.Actor.Get());
@@ -1507,7 +1612,7 @@ double UAPSShipFlightModel::MeasureTerrainClearanceCm(const FVector& Location) c
 			continue;
 		}
 		const FVector Center = Root->GetActorLocation();
-		const FVector Offset = Location - Center;
+		const FVector Offset = Location - UAPSWorldOriginSubsystem::PlaceFor(GetOwner(), *Root);
 		const double Distance = Offset.Size();
 		if (Distance <= UE_DOUBLE_SMALL_NUMBER
 			|| Distance - Root->PlanetScale > APSShipFlightModelLocal::TerrainQueryAltitudeCm
@@ -1547,6 +1652,11 @@ void UAPSShipFlightModel::UpdateNearestSurface(float DeltaTime)
 	{
 		Heading = Ship->GetShipForwardVector() * (Ship->ForwardInput < 0.0f ? -1.0 : 1.0);
 	}
+	// Rio 06.10 (still ship): far from the systems a fast REAL SCALE ship's travel is owed, the ship stays put and only the
+	// sky moves. The stars (catalogue offsets from the home's sky place, the galaxy's from FindNearStars) are in the sky
+	// already; the bodies read from their actors (planets, moons, stations, star actors) and the home actor itself stay at
+	// their world place, so they are compared with the ship at that place + the sky offset. Zero while nothing is owed.
+	const FVector Sky = UAPSWorldOriginSubsystem::SkyOffsetFor(GetShip());
 
 	// The star catalogue: every 0.1 s in the fast bands, and in STELLAR soon after the course turns, since it slows
 	// for the system its course runs into. A scan is one pass over ~36k points.
@@ -1573,6 +1683,7 @@ void UAPSShipFlightModel::UpdateNearestSurface(float DeltaTime)
 	const double BareSystemCm = APSShipFlightModelLocal::ArrivalSphereCm(bRealScale,
 		InterstellarDistanceAU * APSShipFlightModelLocal::AstronomicalUnitCm, CatalogueSpacingMedianCm);
 	const double MissScale = APSShipFlightModelLocal::CourseMissScaleFor(bRealScale, CourseMissScale);
+	const double PassFade = APSShipFlightModelLocal::CoursePassFadeFor(bRealScale);
 	double Nearest = -1.0;
 	double LimitDistance = -1.0;
 	double LimitLocal = -1.0;
@@ -1582,8 +1693,22 @@ void UAPSShipFlightModel::UpdateNearestSurface(float DeltaTime)
 	double Course = -1.0;
 	FVector SolidOutward = FVector::ZeroVector;
 	const FString* Name = nullptr;
+	// Rio 05.10 night: where the course limit comes from (the flight log), the guard's two parts (aps.RealScale.CourseGuard)
+	// and the body the local distance limit comes from (aps.RealScale.DriveDepartLatch). None of them changes a limit.
+	const TCHAR* CourseKind = nullptr;
+	int64 CourseId = INDEX_NONE;
+	const AActor* CourseActor = nullptr;
+	double CourseAlong = 0.0;
+	double CourseMiss = 0.0;
+	double GuardBody = -1.0;
+	FVector GuardBodyOut = FVector::ZeroVector;
+	double GuardCourse = -1.0;
+	FVector GuardCourseOut = FVector::ZeroVector;
+	const TCHAR* GuardKind = nullptr;
+	const void* LocalKey = nullptr;
+	FVector LocalOutward = FVector::ZeroVector;
 	const auto AddBody = [&](const FVector& Center, double RadiusCm, const FString& BodyName, bool bSolid, bool bStar,
-		double SystemRadiusCm)
+		double SystemRadiusCm, const AActor* Actor, const TCHAR* Kind, int64 Id)
 	{
 		const FVector Offset = Location - Center;
 		const double Distance = FMath::Max(Offset.Size() - RadiusCm, 0.0);
@@ -1597,6 +1722,11 @@ void UAPSShipFlightModel::UpdateNearestSurface(float DeltaTime)
 		LimitDistance = LimitDistance < 0.0 ? Scaled : FMath::Min(LimitDistance, Scaled);
 		if (!bStar)
 		{
+			if (LimitLocal < 0.0 || Scaled < LimitLocal)
+			{
+				LocalKey = Actor;
+				LocalOutward = Outward;
+			}
 			LimitLocal = LimitLocal < 0.0 ? Scaled : FMath::Min(LimitLocal, Scaled);
 		}
 		if (bSolid && (Solid < 0.0 || Distance < Solid))
@@ -1604,54 +1734,84 @@ void UAPSShipFlightModel::UpdateNearestSurface(float DeltaTime)
 			Solid = Distance;
 			SolidOutward = Outward;
 		}
+		if (bSolid && !bStar && (GuardBody < 0.0 || Distance < GuardBody))
+		{
+			GuardBody = Distance;
+			GuardBodyOut = Outward;
+		}
 		if (bStar)
 		{
 			NearestStar = NearestStar < 0.0 ? Distance : FMath::Min(NearestStar, Distance);
 			SystemGap = FMath::Min(SystemGap, Offset.Size() - SystemRadiusCm);
 			const double Clearance = Heading.IsNearlyZero() ? -1.0
-				: APSFlightBandModel::CourseClearanceCm(-Offset, Heading, SystemRadiusCm, MissScale);
+				: APSShipFlightModelLocal::StarCourseClearanceCm(-Offset, Heading, SystemRadiusCm, MissScale, PassFade);
+			const double Along = -FVector::DotProduct(Offset, Heading);
+			const double MissSquared = FMath::Max(Offset.SizeSquared() - Along * Along, 0.0);
 			if (Clearance >= 0.0)
 			{
+				if (Course < 0.0 || Clearance < Course)
+				{
+					CourseKind = Kind;
+					CourseId = Id;
+					CourseActor = Actor;
+					CourseAlong = Along;
+					CourseMiss = FMath::Sqrt(MissSquared);
+				}
 				Course = Course < 0.0 ? Clearance : FMath::Min(Course, Clearance);
+			}
+			// The guard sees a star only inside its arrival sphere or while the course crosses it ahead.
+			const double SphereSquared = SystemRadiusCm * SystemRadiusCm;
+			if (bSolid && (Offset.SizeSquared() <= SphereSquared
+				|| (!Heading.IsNearlyZero() && Along > 0.0 && MissSquared < SphereSquared))
+				&& (GuardCourse < 0.0 || Distance < GuardCourse))
+			{
+				GuardCourse = Distance;
+				GuardCourseOut = Outward;
+				GuardKind = Kind;
 			}
 		}
 	};
 	for (const FFlightBody& Body : FlightBodies)
 	{
 		FVector Center = Body.Center;
+		const AActor* Actor = Body.Actor.Get();
 		if (!Body.bFixedLocation)
 		{
-			const AActor* Actor = Body.Actor.Get();
 			if (!Actor)
 			{
 				continue;
 			}
-			Center = Actor->GetActorTransform().TransformPosition(Body.Center);
+			// Where the body stands for this ship (PlaceFor: zero shift without a debt or for a ship in the world's frame).
+			Center = Actor->GetActorTransform().TransformPosition(Body.Center)
+				+ (UAPSWorldOriginSubsystem::PlaceFor(GetOwner(), *Actor) - Actor->GetActorLocation());
 		}
-		AddBody(Center, Body.RadiusCm, Body.Name, Body.bSolid, Body.bStar, Body.SystemRadiusCm);
+		AddBody(Center, Body.RadiusCm, Body.Name, Body.bSolid, Body.bStar, Body.SystemRadiusCm, Actor, TEXT("STAR"),
+			INDEX_NONE);
 	}
 	if (const AActor* Home = CatalogueHome.Get())
 	{
-		// Catalogue stars from the last scan, placed from the home system's current location.
+		// Catalogue stars from the last scan, placed from the home system's current location (in the sky).
 		static const FString StarName(TEXT("STAR"));
-		const FVector HomeLocation = Home->GetActorLocation();
+		const FVector HomeLocation = Sky.IsZero() ? Home->GetActorLocation() : Home->GetActorLocation() + Sky;
 		for (const int32 Index : NearestCatalogueStars)
 		{
 			if (CatalogueFromHome.IsValidIndex(Index))
 			{
 				AddBody(HomeLocation + CatalogueFromHome[Index], APSShipFlightModelLocal::SolarRadiusCm, StarName, true, true,
-					BareSystemCm);
+					BareSystemCm, nullptr, TEXT("CLUSTER"), Index);
 			}
 		}
 		if (CatalogueFromHome.IsValidIndex(CourseCatalogueStar) && !NearestCatalogueStars.Contains(CourseCatalogueStar))
 		{
 			AddBody(HomeLocation + CatalogueFromHome[CourseCatalogueStar], APSShipFlightModelLocal::SolarRadiusCm, StarName,
-				true, true, BareSystemCm);
+				true, true, BareSystemCm, nullptr, TEXT("CLUSTER"), CourseCatalogueStar);
 		}
 		// The galaxy's drawn stars from the last scan (a giant's system starts a few of its radii out).
-		for (const FVector4& Star : NearestGalaxyStars)
+		for (int32 Index = 0; Index < NearestGalaxyStars.Num(); ++Index)
 		{
-			AddBody(HomeLocation + FVector(Star), Star.W, StarName, true, true, FMath::Max(BareSystemCm, Star.W * 3.0));
+			const FVector4& Star = NearestGalaxyStars[Index];
+			AddBody(HomeLocation + FVector(Star), Star.W, StarName, true, true, FMath::Max(BareSystemCm, Star.W * 3.0), nullptr,
+				TEXT("GALAXY"), NearestGalaxyStarIds.IsValidIndex(Index) ? NearestGalaxyStarIds[Index] : INDEX_NONE);
 		}
 	}
 	// The edge of charted space is a surface too: the star field ends a little beyond the catalogue's bounding sphere
@@ -1664,7 +1824,7 @@ void UAPSShipFlightModel::UpdateNearestSurface(float DeltaTime)
 	double EdgeRadiusCm = bRealScale ? 0.0 : MaxTravelRadiusLightYears * APSShipFlightModelLocal::LightYearCm;
 	if (const AActor* Home = CatalogueHome.Get(); Home && CatalogueRadiusCm > 0.0)
 	{
-		FVector ChartedCenter = Home->GetActorLocation() + CatalogueCenterFromHome;
+		FVector ChartedCenter = (Sky.IsZero() ? Home->GetActorLocation() : Home->GetActorLocation() + Sky) + CatalogueCenterFromHome;
 		double ChartedRadiusCm = CatalogueRadiusCm * APSShipFlightModelLocal::ChartedSpaceScale
 			+ APSShipFlightModelLocal::ChartedSpaceMarginCm;
 		// Rio 03.10 ("every star must be reachable"): with the galaxy's stars charted, charted space is the galaxy.
@@ -1687,8 +1847,8 @@ void UAPSShipFlightModel::UpdateNearestSurface(float DeltaTime)
 	CatalogueGapCm = 0.0;
 	if (const AActor* Home = CatalogueHome.Get(); Home && CatalogueRadiusCm > 0.0)
 	{
-		CatalogueGapCm = FMath::Max(FVector::Dist(Location, Home->GetActorLocation() + CatalogueCenterFromHome)
-			- CatalogueRadiusCm, 0.0);
+		CatalogueGapCm = FMath::Max(FVector::Dist(Location, (Sky.IsZero() ? Home->GetActorLocation() : Home->GetActorLocation() + Sky)
+			+ CatalogueCenterFromHome) - CatalogueRadiusCm, 0.0);
 	}
 	const FVector FromEdgeCenter = Location - EdgeCenter;
 	const double FromCenter = FromEdgeCenter.Size();
@@ -1707,9 +1867,23 @@ void UAPSShipFlightModel::UpdateNearestSurface(float DeltaTime)
 				Solid = Gap;
 				SolidOutward = Inward;
 			}
+			if (GuardCourse < 0.0 || Gap < GuardCourse)
+			{
+				GuardCourse = Gap;
+				GuardCourseOut = Inward;
+				GuardKind = TEXT("EDGE");
+			}
 			if (!Heading.IsNearlyZero())
 			{
 				const double Exit = APSFlightBandModel::CourseExitCm(FromEdgeCenter, Heading, EdgeRadiusCm);
+				if (Course < 0.0 || Exit < Course)
+				{
+					CourseKind = TEXT("EDGE");
+					CourseId = INDEX_NONE;
+					CourseActor = nullptr;
+					CourseAlong = Exit;
+					CourseMiss = 0.0;
+				}
 				Course = Course < 0.0 ? Exit : FMath::Min(Course, Exit);
 			}
 		}
@@ -1730,11 +1904,21 @@ void UAPSShipFlightModel::UpdateNearestSurface(float DeltaTime)
 		const FVector Up = Ship ? -Ship->ActiveGravityDirection.GetSafeNormal() : FVector::ZeroVector;
 		GroundLimitClearanceCm = GroundClearanceCm * DepartureScale(Up);
 		LimitDistance = LimitDistance < 0.0 ? GroundLimitClearanceCm : FMath::Min(LimitDistance, GroundLimitClearanceCm);
+		if (LimitLocal < 0.0 || GroundLimitClearanceCm < LimitLocal)
+		{
+			LocalKey = this;
+			LocalOutward = Up;
+		}
 		LimitLocal = LimitLocal < 0.0 ? GroundLimitClearanceCm : FMath::Min(LimitLocal, GroundLimitClearanceCm);
 		if (!Up.IsNearlyZero() && (Solid < 0.0 || GroundClearanceCm < Solid))
 		{
 			Solid = GroundClearanceCm;
 			SolidOutward = Up;
+		}
+		if (!Up.IsNearlyZero() && (GuardBody < 0.0 || GroundClearanceCm < GuardBody))
+		{
+			GuardBody = GroundClearanceCm;
+			GuardBodyOut = Up;
 		}
 	}
 	NearestSurfaceDistanceCm = Nearest;
@@ -1744,6 +1928,18 @@ void UAPSShipFlightModel::UpdateNearestSurface(float DeltaTime)
 	SolidSurfaceDistanceCm = Solid;
 	SolidSurfaceOutward = SolidOutward;
 	NearestBodyName = Name ? *Name : FString();
+	CourseSourceKind = Course >= 0.0 ? CourseKind : nullptr;
+	CourseSourceId = CourseId;
+	CourseSourceActor = CourseActor;
+	CourseSourceAlongCm = CourseAlong;
+	CourseSourceMissCm = CourseMiss;
+	GuardBodyCm = GuardBody;
+	GuardBodyOutward = GuardBodyOut;
+	GuardCourseCm = GuardCourse;
+	GuardCourseOutward = GuardCourseOut;
+	GuardCourseKind = GuardKind;
+	LimitLocalKey = LocalKey;
+	LimitLocalOutward = LocalOutward;
 }
 
 double UAPSShipFlightModel::BandBoost(EAPSFlightBand InBand, double Alpha) const
@@ -2110,14 +2306,27 @@ bool UAPSShipFlightModel::ApplyTranslation(float DeltaTime)
 		if (Now - LastLogSeconds >= 1.0)
 		{
 			LastLogSeconds = Now;
+			// Rio 05.10 night: whether the course holds the band's limit (COURSE), the band below's floor does (BELOW), or
+			// neither (-); then its source, the guard and the pilot's input.
+			const TCHAR* Held = TEXT("-");
+			double CourseLimitCm = -1.0;
+			if (Band.bCourseLimit && CourseClearanceCm >= 0.0)
+			{
+				CourseLimitCm = Band.DistanceSpeedFactor * Boost * CourseClearanceCm
+					* FMath::Max(APSShipFlightModelLocal::CVarDistanceFactorScale.GetValueOnGameThread(), 0.0f);
+				Held = CourseLimitCm > BaseLimit * 1.001 ? TEXT("-") : CourseLimitCm >= BaseLimit * 0.999 ? TEXT("COURSE")
+					: TEXT("BELOW");
+			}
 			UE_LOG(LogTemp, Log,
-				TEXT("[APS.Flight] %s band=%s env=%s speed=%s limit=%s nearest=%s %.0f m ground=%.0f m star=%.4g AU system=%.4g AU course=%.4g AU boost=%.2f drag=%.2f"),
+				TEXT("[APS.Flight] %s band=%s env=%s speed=%s limit=%s held=%s course limit=%s nearest=%s %.0f m ground=%.0f m star=%.4g AU system=%.4g AU course=%.4g AU boost=%.2f drag=%.2f %s"),
 				*Ship->GetName(), *Band.Name, *Ship->GetFlightEnvironmentName(),
 				*APSShipFlightModelLocal::FormatSpeed(Ship->KinematicVelocity.Size()),
-				*APSShipFlightModelLocal::FormatSpeed(Limit), *NearestBodyName, NearestSurfaceDistanceCm / 100.0,
+				*APSShipFlightModelLocal::FormatSpeed(Limit), Held,
+				CourseLimitCm >= 0.0 ? *APSShipFlightModelLocal::FormatSpeed(CourseLimitCm) : TEXT("-"),
+				*NearestBodyName, NearestSurfaceDistanceCm / 100.0,
 				GroundClearanceCm / 100.0, NearestStarDistanceCm / APSShipFlightModelLocal::AstronomicalUnitCm,
 				NearestSystemGapCm / APSShipFlightModelLocal::AstronomicalUnitCm,
-				CourseClearanceCm / APSShipFlightModelLocal::AstronomicalUnitCm, Boost, Drag);
+				CourseClearanceCm / APSShipFlightModelLocal::AstronomicalUnitCm, Boost, Drag, *FlightLogDetails(LocalInput));
 		}
 	}
 	return true;
@@ -2126,23 +2335,83 @@ bool UAPSShipFlightModel::ApplyTranslation(float DeltaTime)
 void UAPSShipFlightModel::MoveShip(FVector Velocity, const bool bSweepBand, const float DeltaTime)
 {
 	ASpaceship* Ship = GetShip();
-	if (SolidSurfaceDistanceCm >= 0.0 && !SolidSurfaceOutward.IsNearlyZero())
+	// The flight log counts every cut and keeps the strongest since its last line (the guard itself is not changed by it).
+	const auto NoteGuard = [this, DeltaTime](const double Closing, const double Kept, const TCHAR* Source)
 	{
-		// Whatever the limits and the frame time, a frame closes at most a quarter of the gap to a planet, moon, star
-		// or the ground: a hitch at interstellar speed cannot carry the ship through a body. Sideways motion is free.
-		const double Closing = -FVector::DotProduct(Velocity, SolidSurfaceOutward);
-		const double Kept = APSFlightBandModel::GuardClosingSpeed(Closing, SolidSurfaceDistanceCm, DeltaTime);
-		if (Kept < Closing)
+		++GuardTriggers;
+		const double Share = Closing > 0.0 ? Kept / Closing : 1.0;
+		if (Share < GuardWorstShare)
 		{
-			Velocity += SolidSurfaceOutward * (Closing - Kept);
+			GuardWorstShare = Share;
+			GuardWorstClosingCm = Closing;
+			GuardWorstKeptCm = Kept;
+			GuardWorstDeltaTime = DeltaTime;
+			GuardWorstSource = Source;
+		}
+	};
+	// Rio 05.10 night (aps.RealScale.CourseGuard; "faster, slower, faster again" in the REAL SCALE star drive and STELLAR):
+	// the guard below saw every star the scans found, light years off the course, and divided by the frame time, so each
+	// hitch or background frame cut the speed with a sideways kick. In these two planets, moons and the ground keep it as it
+	// was; a star counts only while the course crosses its arrival sphere, and it and the edge of charted space keep the
+	// speed of a frame no longer than aps.RealScale.GuardMaxFrameSeconds, a longer frame only moving less (see below).
+	const bool bCourseGuard = (bStarDrive || FlightBand == EAPSFlightBand::Stellar)
+		&& APSShipFlightModelLocal::CVarRealCourseGuard.GetValueOnGameThread() != 0 && APSRealScale::IsActive(GetWorld());
+	if (!bCourseGuard)
+	{
+		if (SolidSurfaceDistanceCm >= 0.0 && !SolidSurfaceOutward.IsNearlyZero())
+		{
+			// Whatever the limits and the frame time, a frame closes at most a quarter of the gap to a planet, moon, star
+			// or the ground: a hitch at interstellar speed cannot carry the ship through a body. Sideways motion is free.
+			const double Closing = -FVector::DotProduct(Velocity, SolidSurfaceOutward);
+			const double Kept = APSFlightBandModel::GuardClosingSpeed(Closing, SolidSurfaceDistanceCm, DeltaTime);
+			if (Kept < Closing)
+			{
+				Velocity += SolidSurfaceOutward * (Closing - Kept);
+				NoteGuard(Closing, Kept, TEXT("SOLID"));
+			}
+		}
+	}
+	else
+	{
+		if (GuardBodyCm >= 0.0 && !GuardBodyOutward.IsNearlyZero())
+		{
+			const double Closing = -FVector::DotProduct(Velocity, GuardBodyOutward);
+			const double Kept = APSFlightBandModel::GuardClosingSpeed(Closing, GuardBodyCm, DeltaTime);
+			if (Kept < Closing)
+			{
+				Velocity += GuardBodyOutward * (Closing - Kept);
+				NoteGuard(Closing, Kept, TEXT("BODY"));
+			}
+		}
+		if (GuardCourseCm >= 0.0 && !GuardCourseOutward.IsNearlyZero())
+		{
+			const double Closing = -FVector::DotProduct(Velocity, GuardCourseOutward);
+			const double Kept = APSFlightBandModel::GuardClosingSpeed(Closing, GuardCourseCm, FMath::Min(static_cast<double>(DeltaTime),
+				FMath::Max(static_cast<double>(APSShipFlightModelLocal::CVarRealGuardMaxFrameSeconds.GetValueOnGameThread()), 0.001)));
+			if (Kept < Closing)
+			{
+				Velocity += GuardCourseOutward * (Closing - Kept);
+				NoteGuard(Closing, Kept, GuardCourseKind ? GuardCourseKind : TEXT("COURSE"));
+			}
 		}
 	}
 	Ship->KinematicVelocity = Velocity;
+	FVector Delta = Velocity * DeltaTime;
+	if (bCourseGuard && GuardCourseCm >= 0.0 && !GuardCourseOutward.IsNearlyZero())
+	{
+		// A long frame keeps that speed but still closes at most a quarter of the gap to the star or the edge.
+		const double ClosingMove = -FVector::DotProduct(Delta, GuardCourseOutward);
+		const double MaxMove = 0.25 * GuardCourseCm;
+		if (ClosingMove > MaxMove)
+		{
+			Delta += GuardCourseOutward * (ClosingMove - MaxMove);
+		}
+	}
 
 	// Fast bands skip the sweep, but a slow frame in them (near a station) still collides.
 	const bool bSweep = bSweepBand || Velocity.Size() * DeltaTime < APSShipFlightModelLocal::ShortMoveSweepCm;
 	FHitResult Hit;
-	Ship->MoveShipKinematic(Velocity * DeltaTime, bSweep, Hit);
+	Ship->MoveShipKinematic(Delta, bSweep, Hit);
 	if (Hit.bBlockingHit)
 	{
 		// Same contact rule as the power-step model: drop only the velocity into the obstacle.
@@ -2165,6 +2434,38 @@ void UAPSShipFlightModel::MoveShip(FVector Velocity, const bool bSweepBand, cons
 			}
 		}
 	}
+}
+
+FString UAPSShipFlightModel::FlightLogDetails(const FVector& LocalInput)
+{
+	// Rio 05.10 night ("faster, slower, faster again"): the course limit's source, the closing guard since the last line and
+	// the pilot's input, so the next run tells the course, the guard and the pilot's own S or Ctrl apart.
+	constexpr double LightYear = APSShipFlightModelLocal::LightYearCm;
+	FString Source(TEXT("-"));
+	if (CourseSourceKind && FCString::Strcmp(CourseSourceKind, TEXT("EDGE")) == 0)
+	{
+		Source = FString::Printf(TEXT("EDGE (exit %.4g ly)"), CourseSourceAlongCm / LightYear);
+	}
+	else if (CourseSourceKind)
+	{
+		const AActor* Actor = CourseSourceActor.Get();
+		Source = FString::Printf(TEXT("%s %s (along %.4g ly, miss %.4g ly)"), CourseSourceKind,
+			Actor ? *APSShipFlightModelLocal::BodyName(Actor) : *FString::Printf(TEXT("#%lld"), static_cast<long long>(CourseSourceId)),
+			CourseSourceAlongCm / LightYear, CourseSourceMissCm / LightYear);
+	}
+	FString Guard = FString::Printf(TEXT("%d"), GuardTriggers);
+	if (GuardTriggers > 0)
+	{
+		Guard += FString::Printf(TEXT(" (worst %s: closing %s kept %s dt %.0f ms)"), GuardWorstSource ? GuardWorstSource : TEXT("?"),
+			*APSShipFlightModelLocal::FormatSpeed(GuardWorstClosingCm), *APSShipFlightModelLocal::FormatSpeed(GuardWorstKeptCm),
+			GuardWorstDeltaTime * 1000.0f);
+	}
+	GuardTriggers = 0;
+	GuardWorstShare = 1.0;
+	GuardWorstSource = nullptr;
+	const ASpaceship* Ship = GetShip();
+	return FString::Printf(TEXT("src=%s guard=%s input=%.2f brake=%d boost=%.2f"), *Source, *Guard, LocalInput.X,
+		Ship && Ship->bIsDecelerating ? 1 : 0, BoostAlpha);
 }
 
 void UAPSShipFlightModel::ToggleStarDrive()
@@ -2207,6 +2508,9 @@ bool UAPSShipFlightModel::EngageStarDrive()
 	StarDriveIdleSeconds = 0.0f;
 	StarDriveFromCm = Ship->KinematicVelocity.Size();
 	StarDrivePreviousLocalCm = -1.0;
+	StarDriveDepartKey = nullptr;
+	bStarDriveDeparting = false;
+	StarDriveDepartBlend = 0.0;
 	StarDriveSetCm = StarDriveCruiseCm();
 	// Rio 05.10 (real scale, stage 2): a REAL SCALE drive sets off fast; its course limit brings it down for the star ahead.
 	if (APSRealScale::IsActive(GetWorld()))
@@ -2335,16 +2639,44 @@ bool UAPSShipFlightModel::ApplyStarDrive(const FVector& LocalInput, const float 
 		* FMath::Max(APSShipFlightModelLocal::CVarDistanceFactorScale.GetValueOnGameThread(), 0.0f);
 	double Allowed = TNumericLimits<double>::Max();
 	const TCHAR* HeldBy = nullptr;
+	// Rio 05.10 night (aps.RealScale.DriveDepartLatch): a departure compared the nearest-body distance with the last frame's,
+	// so a ground probe's resample or a change of the nearest body flipped the factor, and the drive's target with it,
+	// threefold in a frame. It is latched on the course's share along the way out of the body the distance limit comes from
+	// (on at +0.1, off at -0.1, decided afresh for a new body), and the factor blends in over half a second, out within a sixth.
+	const double DepartFactor = bRealScale
+		? FMath::Max(static_cast<double>(APSShipFlightModelLocal::CVarRealDriveDepartFactor.GetValueOnGameThread()), 1.0) : 1.0;
+	const bool bDepartLatch = bRealScale && APSShipFlightModelLocal::CVarRealDriveDepartLatch.GetValueOnGameThread() != 0;
+	if (bDepartLatch)
+	{
+		const FVector Course = Ship->KinematicVelocity.GetSafeNormal();
+		const double Radial = LimitLocalDistanceCm >= 0.0 ? FVector::DotProduct(Course, LimitLocalOutward) : 0.0;
+		if (LimitLocalKey != StarDriveDepartKey)
+		{
+			StarDriveDepartKey = LimitLocalKey;
+			bStarDriveDeparting = Radial > 0.0;
+		}
+		else if (bStarDriveDeparting ? Radial < -0.1 : Radial > 0.1)
+		{
+			bStarDriveDeparting = !bStarDriveDeparting;
+		}
+		StarDriveDepartBlend = FMath::FInterpConstantTo(StarDriveDepartBlend, bStarDriveDeparting ? 1.0 : 0.0,
+			static_cast<double>(DeltaTime), bStarDriveDeparting ? 2.0 : 6.0);
+	}
+	double DepartUsed = 1.0;
 	if (LimitLocalDistanceCm >= 0.0)
 	{
 		// Rio 05.10 evening: leaving the body (its distance grew since the last frame) a REAL SCALE drive climbs faster.
 		const bool bDeparting = bRealScale && StarDrivePreviousLocalCm >= 0.0 && LimitLocalDistanceCm > StarDrivePreviousLocalCm;
-		const double Depart = bDeparting
-			? FMath::Max(static_cast<double>(APSShipFlightModelLocal::CVarRealDriveDepartFactor.GetValueOnGameThread()), 1.0) : 1.0;
+		const double Depart = bDepartLatch ? 1.0 + (DepartFactor - 1.0) * StarDriveDepartBlend
+			: bDeparting ? DepartFactor : 1.0;
+		DepartUsed = Depart;
 		Allowed = FMath::Max(Factor * Depart * LimitLocalDistanceCm, DistanceLimitFloor * 100.0);
 		HeldBy = TEXT("BODY NEAR");
 	}
 	StarDrivePreviousLocalCm = LimitLocalDistanceCm;
+	// For the flight log: what the bodies near and the course allow on their own (-1: nothing).
+	const double BodyAllowedCm = Allowed < TNumericLimits<double>::Max() ? Allowed : -1.0;
+	double CourseAllowedCm = -1.0;
 	if (CourseClearanceCm >= 0.0)
 	{
 		// Rio 05.10 afternoon ("J takes fifty years to pick up speed"; his log: a minute from 12 000 km/s to 1e6 c, held
@@ -2356,6 +2688,7 @@ bool UAPSShipFlightModel::ApplyStarDrive(const FVector& LocalInput, const float 
 			? FMath::Max(static_cast<double>(APSShipFlightModelLocal::CVarRealDriveCourseFactor.GetValueOnGameThread()), Factor)
 			: Factor;
 		const double CourseLimit = FMath::Max(CourseFactor * CourseClearanceCm, BandLimitCm(EAPSFlightBand::Cruise, 0.0) * SystemScale);
+		CourseAllowedCm = CourseLimit;
 		if (CourseLimit < Allowed)
 		{
 			Allowed = CourseLimit;
@@ -2411,13 +2744,18 @@ bool UAPSShipFlightModel::ApplyStarDrive(const FVector& LocalInput, const float 
 		if (Now - LastLogSeconds >= 1.0)
 		{
 			LastLogSeconds = Now;
+			// Rio 05.10 night: what held the speed (the bodies near, the course and its source), the guard, the pilot's input.
 			UE_LOG(LogTemp, Log,
-				TEXT("[APS.Drive] %s t=%.1f s speed=%s set=%s allowed=%s held=%s system=%.4g AU course=%.4g AU slip=%.1f deg"),
+				TEXT("[APS.Drive] %s t=%.1f s speed=%s set=%s allowed=%s held=%s body=%s course=%s (%.4g AU) depart=%.2f system=%.4g AU slip=%.1f deg %s"),
 				*Ship->GetName(), StarDriveSeconds, *APSShipFlightModelLocal::FormatSpeed(Ship->KinematicVelocity.Size()),
 				*APSShipFlightModelLocal::FormatSpeed(StarDriveSetCm), *APSShipFlightModelLocal::FormatSpeed(Target),
-				StarDriveHeldBy ? StarDriveHeldBy : TEXT("-"), NearestSystemGapCm / APSShipFlightModelLocal::AstronomicalUnitCm,
-				CourseClearanceCm / APSShipFlightModelLocal::AstronomicalUnitCm,
-				FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(FVector::DotProduct(Direction, Forward), -1.0, 1.0))));
+				StarDriveHeldBy ? StarDriveHeldBy : TEXT("-"),
+				BodyAllowedCm >= 0.0 ? *APSShipFlightModelLocal::FormatSpeed(BodyAllowedCm) : TEXT("-"),
+				CourseAllowedCm >= 0.0 ? *APSShipFlightModelLocal::FormatSpeed(CourseAllowedCm) : TEXT("-"),
+				CourseClearanceCm / APSShipFlightModelLocal::AstronomicalUnitCm, DepartUsed,
+				NearestSystemGapCm / APSShipFlightModelLocal::AstronomicalUnitCm,
+				FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(FVector::DotProduct(Direction, Forward), -1.0, 1.0))),
+				*FlightLogDetails(LocalInput));
 		}
 	}
 	return true;
@@ -2551,6 +2889,59 @@ FString UAPSShipFlightModel::GetStatusText() const
 		: FString(TEXT("OPEN SPACE"));
 	return FString::Printf(TEXT("%s\n%s   |   %s"), *Line, *Nearest,
 		APSShipFlightModelLocal::ControlLabel(Band.Control, IsInAtmosphere()));
+}
+
+FAPSFlightReadout UAPSShipFlightModel::GetHudReadout() const
+{
+	// Rio 06.10 HUD (Claude UI): the same fields and formatting as GetStatusText, without the text layout.
+	FAPSFlightReadout Readout;
+	const ASpaceship* Ship = GetShip();
+	if (!Ship || Ship->IsGroundVehicle() || !IsBandFlightActive())
+	{
+		return Readout;
+	}
+	Readout.bValid = true;
+	const FAPSFlightBandSettings& Band = GetBandSettings(FlightBand);
+	const double Speed = Ship->KinematicVelocity.Size();
+	Readout.Speed = APSShipFlightModelLocal::FormatSpeed(Speed);
+	Readout.bEngineRunning = Ship->bEngineRunning;
+	Readout.bAutoBand = IsAutoBandActive();
+	Readout.BandName = Band.Name;
+	Readout.Control = APSShipFlightModelLocal::ControlLabel(Band.Control, IsInAtmosphere());
+	if (FPlatformTime::Seconds() < StarDriveNoticeUntil)
+	{
+		Readout.Notice = StarDriveNotice;
+	}
+	if (NearestSurfaceDistanceCm >= 0.0)
+	{
+		Readout.NearestBody = NearestBodyName.IsEmpty() ? FString(TEXT("Surface")) : NearestBodyName;
+		Readout.NearestDistance = UShipNavigationComponent::FormatDistance(NearestSurfaceDistanceCm);
+	}
+	if (bStarDrive)
+	{
+		Readout.bStarDrive = true;
+		const float Spool = FMath::Max(APSShipFlightModelLocal::CVarDriveSpoolSeconds.GetValueOnGameThread(), 0.1f);
+		Readout.DriveSpool = FMath::Clamp(StarDriveSeconds / Spool, 0.0f, 1.0f);
+		Readout.DriveSet = APSShipFlightModelLocal::FormatSpeed(StarDriveSetCm);
+		Readout.DriveCruise = APSShipFlightModelLocal::FormatSpeed(StarDriveCruiseCm());
+		Readout.DriveHeldBy = StarDriveHeldBy ? FString(StarDriveHeldBy) : FString();
+		Readout.SpeedLimit = Readout.DriveSet;
+		Readout.SpeedFraction = StarDriveSetCm > 1.0 ? static_cast<float>(Speed / StarDriveSetCm) : 0.0f;
+		return Readout;
+	}
+	Readout.SpeedLimit = APSShipFlightModelLocal::FormatSpeed(CurrentSpeedLimitCm);
+	Readout.SpeedFraction = CurrentSpeedLimitCm > 1.0 ? static_cast<float>(Speed / CurrentSpeedLimitCm) : 0.0f;
+	if (BoostAlpha > 0.05)
+	{
+		Readout.Boost = static_cast<float>(FMath::RoundToDouble(BandBoost(FlightBand, BoostAlpha) * 10.0) / 10.0);
+	}
+	if (const AActor* Target = AutopilotTarget.Get())
+	{
+		Readout.bAutopilot = true;
+		Readout.AutopilotTarget = APSShipFlightModelLocal::BodyName(Target);
+		Readout.AutopilotRemaining = UShipNavigationComponent::FormatDistance(FMath::Max(AutopilotRemainingCm, 0.0));
+	}
+	return Readout;
 }
 
 FString UAPSShipFlightModel::GetHintText() const

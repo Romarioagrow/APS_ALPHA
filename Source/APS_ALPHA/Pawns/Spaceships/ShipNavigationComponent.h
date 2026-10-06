@@ -43,10 +43,10 @@ struct FShipNavigationContact
 	/** The card's own colour (a star's spectral colour); transparent: the colour of its kind. */
 	FLinearColor MarkerColour{FLinearColor::Transparent};
 
-	FVector GetWorldLocation() const
-	{
-		return Actor.IsValid() ? Actor->GetActorLocation() : FixedWorldLocation;
-	}
+	/**
+	 * Where the marker and the autopilot aim: an actor's place as the still ship sees it (Rio 06.10), or the fixed one.
+	 */
+	FVector GetWorldLocation() const;
 };
 
 /**

@@ -4,6 +4,7 @@
 #include "APS_ALPHA/Core/Instances/MainGameplayInstance.h"
 #include "APS_ALPHA/Core/Model/SpawnParameters.h"
 #include "APS_ALPHA/Core/World/APSPlaceholderGlobe.h"
+#include "APS_ALPHA/UI/Style/APSUITheme.h"
 #include "APS_ALPHA/Gameplay/Civilizations/APSCivilizationMaterializationSubsystem.h"
 #include "APS_ALPHA/Gameplay/Colony/APSColonyConstructionSubsystem.h"
 #include "APS_ALPHA/Gameplay/Vehicles/APSGroundVehicles.h"
@@ -45,11 +46,26 @@ namespace APSArrivalCurtainLocal
 	constexpr int32 SmoothFramesNeeded = 20;
 	constexpr double SmoothFrameSeconds = 0.05;
 
-	const FLinearColor Night(0.004f, 0.008f, 0.014f, 1.0f);
-	const FLinearColor Title(0.78f, 0.92f, 1.0f, 1.0f);
-	const FLinearColor Muted(0.42f, 0.55f, 0.64f, 1.0f);
-	const FLinearColor Track(0.42f, 0.55f, 0.64f, 0.25f);
-	const FLinearColor Accent(0.30f, 0.82f, 1.0f, 1.0f);
+	// Rio 06.10: the curtain follows the interface theme (ApplyTheme at its construction); these are Classic's.
+	static FLinearColor Night(0.004f, 0.008f, 0.014f, 1.0f);
+	static FLinearColor Title(0.78f, 0.92f, 1.0f, 1.0f);
+	static FLinearColor Muted(0.42f, 0.55f, 0.64f, 1.0f);
+	static FLinearColor Track(0.42f, 0.55f, 0.64f, 0.25f);
+	static FLinearColor Accent(0.30f, 0.82f, 1.0f, 1.0f);
+
+	void ApplyTheme()
+	{
+		if (APSUITheme::Current() == EAPSUITheme::Classic)
+		{
+			return;
+		}
+		const FAPSUIThemePalette& P = APSUITheme::Palette();
+		Night = P.InsetFill.CopyWithNewOpacity(1.0f);
+		Title = P.Text;
+		Muted = P.TextQuiet;
+		Track = APSUITheme::Fade(P.Frame, 0.6f);
+		Accent = P.Action;
+	}
 
 	/** The curtain: night, the game's name, the stage being waited for and a thin progress line. */
 	class SCurtain final : public SCompoundWidget
@@ -60,9 +76,10 @@ namespace APSArrivalCurtainLocal
 
 		void Construct(const FArguments&)
 		{
-			FSlateFontInfo TitleFont = FCoreStyle::GetDefaultFontStyle("Bold", 30);
+			ApplyTheme();
+			FSlateFontInfo TitleFont = APSUITheme::DisplayFont("Bold", 30);
 			TitleFont.LetterSpacing = 600;
-			FSlateFontInfo StageFont = FCoreStyle::GetDefaultFontStyle("Regular", 11);
+			FSlateFontInfo StageFont = APSUITheme::BodyFont("Regular", 12);
 			StageFont.LetterSpacing = 200;
 			const FSlateBrush* White = FCoreStyle::Get().GetBrush("WhiteBrush");
 			ChildSlot

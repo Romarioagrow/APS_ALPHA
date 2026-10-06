@@ -165,7 +165,7 @@ void UWorldGenerationViewModel::GetPreviewModelCard(FAPSModelCard& OutCard) cons
 			FText Across, AcrossUnit;
 			LightYears(2.0 * GalaxyRadiusCm, Across, AcrossUnit);
 			Add(OutCard, EAPSModelGlyph::Scale, LOCTEXT("GalaxyAcross", "ACROSS"), Across, AcrossUnit,
-				LOCTEXT("RealScaleNote", "REAL SCALE"));
+				LOCTEXT("RealScaleNote", "REAL DISTANCES"));
 		}
 		return;
 	}
@@ -195,7 +195,7 @@ void UWorldGenerationViewModel::GetPreviewModelCard(FAPSModelCard& OutCard) cons
 				LightYears(2.0 * ClusterRadiusCm, Across, AcrossUnit);
 				LightYears(NeighbourCm, Neighbours, NeighboursUnit);
 				Add(OutCard, EAPSModelGlyph::Scale, LOCTEXT("ClusterAcross", "ACROSS"), Across, AcrossUnit,
-					LOCTEXT("ClusterRealScaleNote", "REAL SCALE"));
+					LOCTEXT("ClusterRealScaleNote", "REAL DISTANCES"));
 				Add(OutCard, EAPSModelGlyph::Star, LOCTEXT("ClusterNeighbours", "NEIGHBOURS"), Neighbours, NeighboursUnit,
 					LOCTEXT("ClusterNeighboursNote", "MEDIAN DISTANCE"), true);
 			}
@@ -367,8 +367,8 @@ void UWorldGenerationViewModel::GetPreviewModelCard(FAPSModelCard& OutCard) cons
 			{
 				LightYears(NeighbourCm, Neighbours, NeighboursUnit);
 			}
-			Add(OutCard, EAPSModelGlyph::Scale, LOCTEXT("OverviewRealScale", "REAL SCALE"), LOCTEXT("RealScaleOn", "ON"),
-				LOCTEXT("RealScaleExperimental", "EXPERIMENTAL"), Neighbours.IsEmpty() ? FText::GetEmpty()
+			Add(OutCard, EAPSModelGlyph::Scale, LOCTEXT("OverviewRealScale", "REAL DISTANCES"), LOCTEXT("RealScaleOn", "ON"),
+				FText::GetEmpty(), Neighbours.IsEmpty() ? FText::GetEmpty()
 					: FText::Format(LOCTEXT("RealScaleNeighbours", "NEIGHBOURS ~{0} {1}"), Neighbours, NeighboursUnit), true);
 		}
 		return;

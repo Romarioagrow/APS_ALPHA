@@ -1,6 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "CustomGravityCharacter.h"
+#include "APS_ALPHA/Core/World/APSWorldOriginSubsystem.h"
 
 #include "Animation/AnimInstance.h"
 #include "Camera/CameraComponent.h"
@@ -16,6 +17,7 @@
 #include "APS_ALPHA/Pawns/Characters/GravityDetectorComponent.h"
 #include "APS_ALPHA/Pawns/Spaceships/Spaceship.h"
 #include "APS_ALPHA/UI/Colony/APSColonyTerminalSubsystem.h"
+#include "APS_ALPHA/UI/Hud/SAPSWalkerHud.h"
 #include "Components/InputComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/PlayerController.h"
@@ -610,9 +612,9 @@ void ACustomGravityCharacter::CreateInteractionPrompt()
 		+ SOverlay::Slot()
 		.HAlign(HAlign_Center)
 		.VAlign(VAlign_Bottom)
-		.Padding(0.0f, 0.0f, 0.0f, 72.0f)
+		.Padding(0.0f, 0.0f, 0.0f, 132.0f)
 		[
-			SNew(SBorder)
+			SNew(SBox)
 			.Visibility_Lambda([WeakThis]()
 			{
 				const ACustomGravityCharacter* Character = WeakThis.Get();
@@ -622,19 +624,21 @@ void ACustomGravityCharacter::CreateInteractionPrompt()
 					? EVisibility::HitTestInvisible
 					: EVisibility::Collapsed;
 			})
-			.BorderBackgroundColor(FLinearColor(0.01f, 0.025f, 0.045f, 0.9f))
-			.Padding(FMargin(18.0f, 9.0f))
 			[
-				SNew(STextBlock)
-				.Text_Lambda([WeakThis]()
+				// Rio 06.10 (Claude UI): a HUD card in the interface theme, naming the craft rather than its actor.
+				SNew(SAPSTakeControlPrompt)
+				.Subject_Lambda([WeakThis]()
 				{
 					const ACustomGravityCharacter* Character = WeakThis.Get();
 					const AActor* Vehicle = Character ? Character->CurrentInteractableActor.Get() : nullptr;
-					return Vehicle
-						? FText::Format(NSLOCTEXT("APSInteraction", "TakeControl", "F  TAKE CONTROL  /  {0}"), FText::FromString(Vehicle->GetName()))
-						: FText::GetEmpty();
+					if (const ASpaceship* Craft = Cast<ASpaceship>(Vehicle))
+					{
+						return Craft->IsGroundVehicle()
+							? NSLOCTEXT("APSInteraction", "GroundVehicle", "Ground vehicle")
+							: FText::Format(NSLOCTEXT("APSInteraction", "ShipClass", "Ship, class {0}"), FText::FromString(Craft->GetSizeClassName()));
+					}
+					return Vehicle ? NSLOCTEXT("APSInteraction", "Vehicle", "Vehicle") : FText::GetEmpty();
 				})
-				.ColorAndOpacity(FLinearColor(0.2f, 0.82f, 1.0f, 1.0f))
 			]
 		];
 
@@ -670,74 +674,35 @@ void ACustomGravityCharacter::CreateTraversalHud()
 			const AGravityPlayerController* Controller = Character ? Cast<AGravityPlayerController>(Character->GetController()) : nullptr;
 			const UAPSColonyTerminalSubsystem* Terminal = Character && Character->GetWorld()
 				? Character->GetWorld()->GetSubsystem<UAPSColonyTerminalSubsystem>() : nullptr;
-			return (Controller && Controller->IsStrategicMapOpen()) || (Terminal && Terminal->IsTerminalOpen())
+			// Rio 06.10: also while the pilot sits in a craft (not controlled): the ship's bar holds the bottom centre then.
+			return !Character || !Character->IsLocallyControlled()
+				|| (Controller && Controller->IsStrategicMapOpen()) || (Terminal && Terminal->IsTerminalOpen())
 				? EVisibility::Collapsed : EVisibility::SelfHitTestInvisible;
 		})
+		// Rio 06.10 (Claude UI): the HUD's instrument family (UI/Hud/SAPSWalkerHud) instead of the text panel.
 		+ SOverlay::Slot()
-		.HAlign(HAlign_Left)
-		.VAlign(VAlign_Bottom)
-		.Padding(28.0f, 0.0f, 0.0f, 28.0f)
 		[
-			SNew(SBackgroundBlur)
-			.BlurRadius(TOptional<int32>(8))
-			.BlurStrength(6.0f)
-			.bApplyAlphaToBlur(true)
-			[
-				SNew(SBorder)
-				.BorderBackgroundColor(FLinearColor(0.004f, 0.012f, 0.024f, 0.94f))
-				.Padding(FMargin(16.0f, 11.0f))
-				[
-					SNew(SVerticalBox)
-					+ SVerticalBox::Slot()
-					.AutoHeight()
-					[
-						SNew(STextBlock)
-						.Text_Lambda([WeakThis]()
-						{
-							const ACustomGravityCharacter* Character = WeakThis.Get();
-							return Character ? Character->GetTraversalStatusText() : FText::GetEmpty();
-						})
-						.ColorAndOpacity_Lambda([WeakThis]()
-						{
-							const ACustomGravityCharacter* Character = WeakThis.Get();
-							return Character && Character->bManualZeroGOverride
-								? FSlateColor(FLinearColor(1.0f, 0.55f, 0.18f, 1.0f))
-								: FSlateColor(FLinearColor(0.2f, 0.82f, 1.0f, 1.0f));
-						})
-					]
-					+ SVerticalBox::Slot()
-					.AutoHeight()
-					.Padding(0.0f, 5.0f, 0.0f, 0.0f)
-					[
-						SNew(STextBlock)
-						.Text_Lambda([WeakThis]()
-						{
-							const ACustomGravityCharacter* Character = WeakThis.Get();
-							return Character ? Character->GetTraversalHintText() : FText::GetEmpty();
-						})
-						.ColorAndOpacity(FLinearColor(0.82f, 0.87f, 0.92f, 1.0f))
-					]
-					// Build mode (Rio 02.10): where it can start, and for a moment why it could not.
-					+ SVerticalBox::Slot()
-					.AutoHeight()
-					.Padding(0.0f, 5.0f, 0.0f, 0.0f)
-					[
-						SNew(STextBlock)
-						.Text_Lambda([WeakThis]()
-						{
-							const ACustomGravityCharacter* Character = WeakThis.Get();
-							return Character ? Character->GetBuildHintText() : FText::GetEmpty();
-						})
-						.Visibility_Lambda([WeakThis]()
-						{
-							const ACustomGravityCharacter* Character = WeakThis.Get();
-							return Character && !Character->GetBuildHintText().IsEmpty()
-								? EVisibility::HitTestInvisible : EVisibility::Collapsed;
-						})
-						.ColorAndOpacity(FLinearColor(0.95f, 0.71f, 0.11f, 1.0f))
-					]
-				]
-			]
+			SNew(SAPSWalkerHud)
+			.StatusText_Lambda([WeakThis]()
+			{
+				const ACustomGravityCharacter* Character = WeakThis.Get();
+				return Character ? Character->GetTraversalStatusText() : FText::GetEmpty();
+			})
+			.HintText_Lambda([WeakThis]()
+			{
+				const ACustomGravityCharacter* Character = WeakThis.Get();
+				return Character ? Character->GetTraversalHintText() : FText::GetEmpty();
+			})
+			.BuildText_Lambda([WeakThis]()
+			{
+				const ACustomGravityCharacter* Character = WeakThis.Get();
+				return Character ? Character->GetBuildHintText() : FText::GetEmpty();
+			})
+			.Alert_Lambda([WeakThis]()
+			{
+				const ACustomGravityCharacter* Character = WeakThis.Get();
+				return Character && Character->bManualZeroGOverride;
+			})
 		];
 
 	GEngine->GameViewport->AddViewportWidgetContent(TraversalHudWidget.ToSharedRef(), 40);
@@ -1656,6 +1621,14 @@ void ACustomGravityCharacter::BoardShip(ASpaceship& Ship)
 
 void ACustomGravityCharacter::LeaveShip()
 {
+	// Rio 06.10 (still ship): a ship owing its travel pays it while the walker is still aboard.
+	if (AboardShip.IsValid())
+	{
+		if (UAPSWorldOriginSubsystem* Origin = GetWorld() ? GetWorld()->GetSubsystem<UAPSWorldOriginSubsystem>() : nullptr)
+		{
+			Origin->SettleDeferredTravel(TEXT("a walker leaves the ship"));
+		}
+	}
 	ASpaceship* Ship = AboardShip.Get();
 	AboardShip.Reset();
 	if (!Ship)

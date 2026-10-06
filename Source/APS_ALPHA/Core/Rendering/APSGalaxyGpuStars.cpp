@@ -8,10 +8,12 @@
 
 #include "APSGameplayStarAppearance.h"
 #include "APS_ALPHA/Actors/Astro/Galaxy.h"
+#include "APS_ALPHA/Actors/Astro/Star.h"
 #include "APS_ALPHA/Actors/Astro/StarSystem.h"
 #include "APS_ALPHA/Core/Rendering/APSCanonicalStellarProjection.h"
 #include "APS_ALPHA/Core/Rendering/APSContinuousPreviewFrame.h"
 #include "APS_ALPHA/Core/World/APSRealScale.h"
+#include "APS_ALPHA/Core/World/APSWorldOriginSubsystem.h"
 #include "APS_ALPHA/Core/World/APSWorldShiftEvents.h"
 #include "APS_ALPHA/Generation/APSGalaxyMorphology.h"
 #include "APS_ALPHA/Generation/StarGenerator.h"
@@ -116,6 +118,39 @@ namespace APSGalaxyGpuStars
 			TEXT("light nearer than this share of the galaxy radius (by distance squared), so the local core does not fill ")
 			TEXT("every direction and the disk reads as a band. 0: none. A change rebuilds."));
 
+		// Rio 05.10 night ("when I fly to a star in REAL SCALE the hand-over from the GPU point to the real star must be strict
+		// and simultaneous, visually no difference at all: the star keeps growing as I come closer and just becomes the real
+		// one"). Before: the point stood at its 16-bit quantized place (thousands of AU off at hundreds of parsecs, 8-16
+		// degrees at 0.25 ly), and at materialization a far glyph of other photometry took over at the exact place.
+		TAutoConsoleVariable<int32> CVarApproachPoint(
+			TEXT("aps.Stars.ApproachPoint"), 1,
+			TEXT("Rio 05.10 night: 1 draws the GPU stars near the camera in a REAL SCALE world as exact points of their own (the ")
+			TEXT("level's photometry, no quantization), taken over where the quantized point stands, eased to the exact place on ")
+			TEXT("the way in and crossfaded into the star's sphere at aps.Stars.FarGlyphPixels; a materialized system's far glyph ")
+			TEXT("is then only a fallback. 0: the quantized point and, once the system stands, the far glyph (05.10 evening). ")
+			TEXT("Legacy worlds never use it."));
+		TAutoConsoleVariable<float> CVarApproachPointLy(
+			TEXT("aps.Stars.ApproachPointLy"), 3.0f,
+			TEXT("Rio 05.10 night: light years from the camera within which a drawn GPU star gets its approach point (it goes ")
+			TEXT("back to its quantized point 10% farther out, where it stands on it again)."));
+		TAutoConsoleVariable<float> CVarApproachPointFade(
+			TEXT("aps.Stars.ApproachPointFade"), 0.6f,
+			TEXT("Rio 05.10 night: the approach point's crossfade into the star's sphere starts when the disc radius reaches this ")
+			TEXT("share of aps.Stars.FarGlyphPixels and ends at aps.Stars.FarGlyphPixels."));
+		constexpr int32 MaxApproachPoints = 8;
+		/** A new approach point only for a camera that takes at least this long to cross the take radius (the drive passes
+		 * stars by the dozen a second; a point taken already stays until it is back on its twin). */
+		constexpr double ApproachTakeSeconds = 1.0;
+		constexpr double ApproachReleaseFactor = 1.1;
+		constexpr double ApproachScanSeconds = 0.25;
+		constexpr double ApproachLogSeconds = 0.5;
+		/** The crossfade's fastest step per second: a sphere that shows up late still takes over within a quarter second. */
+		constexpr float ApproachFadeRate = 4.0f;
+		/** The one-point set's packing box (local units, ~0.05 AU): its quantization step never reaches the inverse square. */
+		constexpr float ApproachBoxLocal = 1.0e-3f;
+		constexpr double LightYearCm = 9.4607304725808e17;
+		constexpr double AstronomicalUnitCm = 1.495978707e13;
+
 		/** Glow statistics need a few million samples at most (the first ones of the layer: a uniform sample). */
 		constexpr int32 GlowSampleLimit = 2000000;
 		constexpr int32 GlowMapResolution = 256;
@@ -195,6 +230,40 @@ namespace APSGalaxyGpuStars
 			bool bValid = false;
 		};
 
+		/** Rio 05.10 night: how an approach star is drawn now (logged when it changes). */
+		enum class EApproachLook : uint8
+		{
+			Point,
+			Crossfade,
+			Sphere
+		};
+
+		/** Rio 05.10 night: a drawn GPU star near the camera with a one-point set of its own (UpdateApproachPoints). */
+		struct FApproachPoint
+		{
+			int64 CatalogIndex = INDEX_NONE;
+			int32 Ordinal = INDEX_NONE;
+			int32 Level = 0;
+			/** The level set that draws its quantized twin (index into PointSets) and the twin as that set's shader places it. */
+			int32 TwinSet = INDEX_NONE;
+			FVector3f TwinLocal = FVector3f::ZeroVector;
+			float TwinRadiusLocal = 0.0f;
+			APSStarRenderer::FHandle Handle = 0;
+			FVector ExactLocal = FVector::ZeroVector;
+			/** Where the way in from the twin to the exact place began (the take radius, or nearer for a late take), local units. */
+			double GlideFromLocal = 1.0;
+			double RadiusCm = 0.0;
+			float Intensity = 0.0f;
+			/** The crossfade into the star's sphere (1: the point alone) and the visibility last sent. */
+			float Fade = 1.0f;
+			float AppliedVisibility = 1.0f;
+			/** Where it was last placed (catalogue-local; origin shifts re-place it with the layer) and the transform sent. */
+			FVector DrawLocal = FVector::ZeroVector;
+			FTransform PushedTransform = FTransform::Identity;
+			EApproachLook Look = EApproachLook::Point;
+			bool bRelease = false;
+		};
+
 		/** What the plugin currently holds for the active galaxy (one layer at a time). */
 		struct FLayerState
 		{
@@ -220,6 +289,24 @@ namespace APSGalaxyGpuStars
 			uint32 CatalogKey = 0;
 			/** Gameplay: home system first, then the nearest other materialized systems (local centre xyz, radius w). */
 			TArray<FVector4f> Exclusions;
+			/**
+			 * Gameplay (Rio 05.10 night, approach points): each set's precision level, the levels' half sizes around the home,
+			 * the GPU ordinals, and the palette luminances and G0 reference the points were packed with (BuildOnWorker).
+			 */
+			TArray<int32> PointLevels;
+			TArray<float> LevelHalf;
+			FVector3f HomeLocal = FVector3f::ZeroVector;
+			int32 FirstOrdinal = 0;
+			int32 PointOrdinals = 0;
+			TArray<float> PaletteLuminance;
+			float G0Intensity = 1.0f;
+			/** Rio 05.10 night: the approach points, the last scan for new ones and the camera's last place (its speed). */
+			TArray<FApproachPoint> Approach;
+			FVector LastApproachScanLocal = FVector::ZeroVector;
+			double LastApproachScanSeconds = 0.0;
+			FVector LastApproachCameraLocal = FVector::ZeroVector;
+			double LastApproachCameraSeconds = 0.0;
+			double NextApproachLogSeconds = 0.0;
 		};
 
 		/**
@@ -278,6 +365,9 @@ namespace APSGalaxyGpuStars
 			/** One array and packing box per precision level (the menu: one, the catalogue box). */
 			TArray<TArray<APSStarRenderer::FPackedStar>> Points;
 			TArray<FBox3f> LevelBounds;
+			/** Rio 05.10 night (approach points): the levels' half sizes and their centre, to find a star's level again. */
+			TArray<float> LevelHalf;
+			FVector3f HomeLocal = FVector3f::ZeroVector;
 			APSStarRenderer::FGlowMap GlowMap;
 			TArray<FLinearColor> Palette;
 			FBox3f Bounds = FBox3f(ForceInit);
@@ -366,6 +456,8 @@ namespace APSGalaxyGpuStars
 		int32 GActiveLayers = 0;
 		bool GDelegatesBound = false;
 		bool GShiftBound = false;
+		/** Rio 06.10 (still ship): the sky moved this frame (re-read after the actors' ticks). */
+		bool GSkyMoved = false;
 		bool GLoggedShadersOff = false;
 		FRequest GLastMenuRequest;
 		FRequest GLastGameplayRequest;
@@ -550,6 +642,9 @@ namespace APSGalaxyGpuStars
 		/**
 		 * Gameplay: the home system and the nearest other materialized systems (AStarSystem actors), each hidden like the
 		 * menu's home exclusion: its sphere (StarSystemRadius) with SystemProxyExclusionPadding, in local units.
+		 * Rio 05.10 night: these spheres act on the level sets only. An approach point (UpdateApproachPoints) is a set of its
+		 * own without them: its star stays a point inside its own system until the disc takes over, and its twin in the level
+		 * set is hidden by a small sphere of its own (ApplySetExclusions).
 		 */
 		TArray<FVector4f> ScanGameplayExclusions(UWorld* World, const FTransform& LocalToWorld)
 		{
@@ -561,6 +656,9 @@ namespace APSGalaxyGpuStars
 			}
 			const AStarSystem* Home = GGameplay.Home.Get();
 			const FVector HomeLocation = IsValid(Home) ? Home->GetActorLocation() : FVector::ZeroVector;
+			// Rio 06.10 (still ship): while a fast REAL SCALE ship owes its travel only the sky moves (the galaxy component, so
+			// LocalToWorld): a system's sphere goes where the sky draws it (SkyPlace: a system riding with the sky where it is,
+			// any other at its world place + the sky offset).
 			TArray<TPair<double, FVector4f>> Found;
 			for (TActorIterator<AStarSystem> It(World); It; ++It)
 			{
@@ -569,7 +667,7 @@ namespace APSGalaxyGpuStars
 				{
 					continue;
 				}
-				const FVector Center = LocalToWorld.InverseTransformPosition(System->GetActorLocation());
+				const FVector Center = LocalToWorld.InverseTransformPosition(UAPSWorldOriginSubsystem::SkyPlace(*System));
 				const double Radius = System->StarSystemRadius * APSCanonicalStellarProjection::SystemProxyExclusionPadding / Scale;
 				const double Order = System == Home ? -1.0 : FVector::DistSquared(System->GetActorLocation(), HomeLocation);
 				Found.Emplace(Order, FVector4f(FVector3f(Center), static_cast<float>(Radius)));
@@ -611,6 +709,50 @@ namespace APSGalaxyGpuStars
 			for (int32 Index = 1; Index < Spheres.Num(); ++Index)
 			{
 				Desc.ExtraExclusionSpheresLocal.Add(Spheres[Index]);
+			}
+		}
+
+		/**
+		 * Rio 05.10 night: one level set's spheres: the scan's (home first) with the quantized twins of the set's approach
+		 * points right after the home, so the cap (MaxExclusionSpheres) drops a far system rather than a twin.
+		 */
+		void ApplySetExclusions(const int32 SetIndex, APSStarRenderer::FPointSetDesc& Desc)
+		{
+			TArray<FVector4f> Spheres = GLayer.Exclusions;
+			int32 Slot = FMath::Min(Spheres.Num(), 1);
+			for (const FApproachPoint& Point : GLayer.Approach)
+			{
+				if (Point.TwinSet == SetIndex && Point.Handle != 0)
+				{
+					Spheres.Insert(FVector4f(Point.TwinLocal, Point.TwinRadiusLocal), Slot++);
+				}
+			}
+			if (Spheres.Num() > APSStarRenderer::MaxExclusionSpheres)
+			{
+				Spheres.SetNum(APSStarRenderer::MaxExclusionSpheres);
+			}
+			ApplyGameplayExclusions(Spheres, Desc);
+		}
+
+		void PushSetExclusions(const int32 SetIndex)
+		{
+			if (GLayer.PointSets.IsValidIndex(SetIndex) && GLayer.PointDescs.IsValidIndex(SetIndex))
+			{
+				ApplySetExclusions(SetIndex, GLayer.PointDescs[SetIndex]);
+				APSStarRenderer::UpdatePointSet(GLayer.PointSets[SetIndex], GLayer.PointDescs[SetIndex]);
+			}
+		}
+
+		/** Rio 05.10 night: the approach points follow the layer (origin shifts, the sky offset) from where they stand. */
+		void PushApproachTransforms(const FTransform& LocalToWorld)
+		{
+			for (FApproachPoint& Point : GLayer.Approach)
+			{
+				if (Point.Handle != 0)
+				{
+					Point.PushedTransform = FTransform(FQuat::Identity, Point.DrawLocal) * LocalToWorld;
+					APSStarRenderer::SetTransform(Point.Handle, Point.PushedTransform);
+				}
 			}
 		}
 
@@ -725,6 +867,8 @@ namespace APSGalaxyGpuStars
 			}
 			Result.Points.SetNum(Levels);
 			Result.Points[0].Reserve(Spec.PointCount);
+			Result.LevelHalf = LevelHalf;
+			Result.HomeLocal = Spec.HomeLocal;
 
 			// The plugin normalises palette colours to unit luminance; the colour's luminance moves into the intensity.
 			TArray<float> PaletteLuminance;
@@ -942,6 +1086,20 @@ namespace APSGalaxyGpuStars
 			GLayer.PushedTransform = LocalToWorld;
 			GLayer.PointSets.Reset();
 			GLayer.PointDescs.Reset();
+			// Rio 05.10 night: what an approach point needs to find its star's twin and to shine exactly like it.
+			GLayer.PointLevels.Reset();
+			GLayer.LevelHalf = Result.LevelHalf;
+			GLayer.HomeLocal = Result.HomeLocal;
+			GLayer.FirstOrdinal = Result.FirstOrdinal;
+			GLayer.PointOrdinals = Result.PointOrdinals;
+			GLayer.PaletteLuminance.Reset();
+			for (const FLinearColor& Color : Result.Palette)
+			{
+				GLayer.PaletteLuminance.Add(Luminance(Color));
+			}
+			const int32 G0Index = static_cast<int32>(ESpectralClass::G) * 10;
+			GLayer.G0Intensity = APSGameplayStarAppearance::GetLuminosityGain(1.0)
+				* (GLayer.PaletteLuminance.IsValidIndex(G0Index) ? GLayer.PaletteLuminance[G0Index] : 1.0f);
 			int32 PointCount = 0;
 			const bool bMenuFade = Mode == ELayerMode::Menu && CVarMenuFadeInSeconds.GetValueOnGameThread() > 0.0f;
 			const float StartVisibility = Mode == ELayerMode::Menu ? (bMenuFade ? 0.0f : MenuPointShare()) : 1.0f;
@@ -988,6 +1146,7 @@ namespace APSGalaxyGpuStars
 				{
 					GLayer.PointSets.Add(Handle);
 					GLayer.PointDescs.Add(Desc);
+					GLayer.PointLevels.Add(Level);
 				}
 			}
 			GLayer.PointCount = GLayer.PointSets.Num() > 0 ? PointCount : 0;
@@ -1154,6 +1313,7 @@ namespace APSGalaxyGpuStars
 				{
 					APSStarRenderer::SetTransform(Galaxy.GpuGlowVolume, LocalToWorld);
 				}
+				PushApproachTransforms(LocalToWorld);
 				GLayer.PushedTransform = LocalToWorld;
 			}
 			if (!bScanExclusions)
@@ -1174,9 +1334,8 @@ namespace APSGalaxyGpuStars
 			GLayer.Exclusions = MoveTemp(Spheres);
 			for (int32 Index = 0; Index < GLayer.PointSets.Num() && Index < GLayer.PointDescs.Num(); ++Index)
 			{
-				APSStarRenderer::FPointSetDesc& Desc = GLayer.PointDescs[Index];
-				ApplyGameplayExclusions(GLayer.Exclusions, Desc);
-				APSStarRenderer::UpdatePointSet(GLayer.PointSets[Index], Desc);
+				// Rio 05.10 night: with the twins of the set's approach points.
+				PushSetExclusions(Index);
 			}
 		}
 
@@ -1196,6 +1355,22 @@ namespace APSGalaxyGpuStars
 			{
 				GShiftBound = true;
 				APSWorldShiftEvents::BindPostShift(GetTransientPackage(), [](UWorld* World) { OnWorldShifted(World); });
+				// Rio 06.10 (still ship): a deferred travel moves only the sky (the generator carrying the galaxy component):
+				// the same re-read, at once and again once every actor has ticked, since the generator may be moved by a
+				// listener called after this one.
+				UAPSWorldOriginSubsystem::OnSkyOffsetChanged().AddLambda([](UWorld* World, const FVector&)
+				{
+					OnWorldShifted(World);
+					GSkyMoved = true;
+				});
+				FWorldDelegates::OnWorldPostActorTick.AddLambda([](UWorld* World, ELevelTick, float)
+				{
+					if (GSkyMoved)
+					{
+						GSkyMoved = false;
+						OnWorldShifted(World);
+					}
+				});
 			}
 		}
 
@@ -1337,8 +1512,15 @@ namespace APSGalaxyGpuStars
 			{
 				APSStarRenderer::Remove(Handle);
 			}
+			// Rio 05.10 night: and the approach points with their layer.
+			for (const FApproachPoint& Point : GLayer.Approach)
+			{
+				APSStarRenderer::Remove(Point.Handle);
+			}
+			GLayer.Approach.Reset();
 			GLayer.PointSets.Reset();
 			GLayer.PointDescs.Reset();
+			GLayer.PointLevels.Reset();
 			GLayer.PointCount = 0;
 		}
 		if (Galaxy.GpuPointSet != 0)
@@ -1409,11 +1591,13 @@ namespace APSGalaxyGpuStars
 			{
 				return;
 			}
-			Spec.HomeLocal = FVector3f(LocalToWorld.InverseTransformPosition(Home->GetActorLocation()));
+			// Rio 06.10 (still ship): the home actor keeps its world place while a deferred travel moves the sky; the levels
+			// centre on the home as the sky draws it.
+			const FVector HomeInSky = Home->GetActorLocation() + UAPSWorldOriginSubsystem::SkyOffsetOf(Galaxy.GetWorld());
+			Spec.HomeLocal = FVector3f(LocalToWorld.InverseTransformPosition(HomeInSky));
 			Spec.Levels = GameplayLevels;
 			Spec.bIndex = true;
-			LogGameplayMappingCheck(Galaxy,
-				Galaxy.StarMeshInstances->GetComponentTransform().InverseTransformPosition(Home->GetActorLocation()));
+			LogGameplayMappingCheck(Galaxy, Galaxy.StarMeshInstances->GetComponentTransform().InverseTransformPosition(HomeInSky));
 			EnsureShiftBound();
 		}
 
@@ -1756,5 +1940,442 @@ namespace APSGalaxyGpuStars
 		GVisibilityWorld = World;
 		GVisibility = Visibility;
 		APSStarRenderer::SetWorldVisibility(World, Visibility);
+	}
+
+	namespace
+	{
+		/** Rio 05.10 night: the catalogue stars APSGalaxyNearStars shows as photospheres now (one world at a time). */
+		TSet<int64> GNearPhotospheres;
+		TWeakObjectPtr<const UWorld> GNearPhotosphereWorld;
+
+		float ConsoleFloat(IConsoleVariable*& Cache, const TCHAR* Name, const float Fallback)
+		{
+			const IConsoleVariable* Variable = FindVariable(Cache, Name);
+			return Variable ? Variable->GetFloat() : Fallback;
+		}
+
+		const TCHAR* LookName(const EApproachLook Look)
+		{
+			return Look == EApproachLook::Point ? TEXT("point") : Look == EApproachLook::Crossfade ? TEXT("crossfade") : TEXT("sphere");
+		}
+
+		/** The angle between two directions from the camera, in pixels of the view. */
+		double PixelsApart(const FVector& A, const FVector& B, const double PixelTangent)
+		{
+			return FMath::Atan2((A ^ B).Size(), A | B) / FMath::Max(PixelTangent, 1.0e-12);
+		}
+
+		/** Rio 05.10 night: a system that stands now, in the frame the sky is drawn in. */
+		struct FStandingSystem
+		{
+			FVector CentreInSky = FVector::ZeroVector;
+			double ExclusionRadiusCm = 0.0;
+			bool bHome = false;
+			/** Its star: where the sky has it, where its sphere is drawn, its radius (0: no star) and whether it is shown. */
+			FVector StarInSky = FVector::ZeroVector;
+			FVector StarDrawn = FVector::ZeroVector;
+			double StarRadiusCm = 0.0;
+			bool bStarShown = false;
+		};
+		using FStandingSystems = TArray<FStandingSystem, TInlineAllocator<4>>;
+
+		/** Rio 06.10 (still ship): the system actors keep their world place while a deferred travel moves only the sky. */
+		void GatherStandingSystems(UWorld* World, FStandingSystems& OutSystems)
+		{
+			const AStarSystem* Home = GGameplay.Home.Get();
+			for (TActorIterator<AStarSystem> It(World); It; ++It)
+			{
+				const AStarSystem* System = *It;
+				if (!IsValid(System) || !(System->StarSystemRadius > 0.0) || !FMath::IsFinite(System->StarSystemRadius))
+				{
+					continue;
+				}
+				FStandingSystem& Entry = OutSystems.AddDefaulted_GetRef();
+				Entry.CentreInSky = UAPSWorldOriginSubsystem::SkyPlace(*System);
+				Entry.ExclusionRadiusCm = System->StarSystemRadius * APSCanonicalStellarProjection::SystemProxyExclusionPadding;
+				Entry.bHome = System == Home;
+				if (const AStar* Star = System->MainStar; IsValid(Star))
+				{
+					Entry.StarDrawn = Star->GetActorLocation();
+					Entry.StarInSky = UAPSWorldOriginSubsystem::SkyPlace(*Star);
+					Entry.StarRadiusCm = FMath::Max(static_cast<double>(Star->StarRadiusKM), 1.0) * 100000.0;
+					Entry.bStarShown = !Star->IsHidden();
+				}
+			}
+		}
+
+		/** The system this star stands up as (APSSystemMaterializer puts its star exactly at the catalogue place), or null. */
+		const FStandingSystem* OwnSystemOf(const FStandingSystems& Systems, const FVector& ExactInSky)
+		{
+			for (const FStandingSystem& System : Systems)
+			{
+				if (System.StarRadiusCm > 0.0 && FVector::DistSquared(System.StarInSky, ExactInSky)
+					<= FMath::Square(FMath::Max(System.StarRadiusCm, 1.0e10) * 3.0))
+				{
+					return &System;
+				}
+			}
+			return nullptr;
+		}
+
+		/** Inside the sphere of the home or of a system that is not its own: the level sets hide it, so no approach point. */
+		bool InForeignSystem(const FStandingSystems& Systems, const FVector& ExactInSky, const FStandingSystem* Own)
+		{
+			for (const FStandingSystem& System : Systems)
+			{
+				if ((&System != Own || System.bHome)
+					&& FVector::DistSquared(System.CentreInSky, ExactInSky) <= FMath::Square(System.ExclusionRadiusCm))
+				{
+					return true;
+				}
+			}
+			return false;
+		}
+
+		/**
+		 * Rio 05.10 night: where an approach point stands this frame (catalogue-local). From where its twin is drawn (the
+		 * raster shader's float maths: the twin's decoded place minus the camera's place rounded to float, so taking over and
+		 * handing back do not move it), eased to the exact place by (d / d0)^2: its angle off the exact direction shrinks
+		 * linearly with the distance, so it never runs ahead of the twin's own error. Lifted two radii towards the camera, in
+		 * front of its own sphere, whose depth would otherwise drop it pixel by pixel while the disc is still sub-pixel.
+		 */
+		FVector PlaceApproachPoint(const FApproachPoint& Point, const FVector& CameraLocal, const double Scale, double& OutGlide,
+			FVector& OutTwinDrawn)
+		{
+			const FVector3f CameraLocalF(CameraLocal);
+			OutTwinDrawn = CameraLocal + FVector(Point.TwinLocal - CameraLocalF);
+			const double Distance = FVector::Dist(CameraLocal, Point.ExactLocal);
+			OutGlide = FMath::Clamp(FMath::Square(Distance / FMath::Max(Point.GlideFromLocal, 1.0e-12)), 0.0, 1.0);
+			const FVector Glided = Point.ExactLocal + (OutTwinDrawn - Point.ExactLocal) * OutGlide;
+			const double Lift = FMath::Min(2.0 * Point.RadiusCm / FMath::Max(Scale, 1.0e-30), 0.25 * Distance);
+			return Glided + (CameraLocal - Glided).GetSafeNormal() * Lift;
+		}
+
+		/** Rio 05.10 night: an approach point for a drawn GPU star, taken over where its twin stands now. */
+		bool TakeApproachPoint(UWorld* World, const AGalaxy& Galaxy, const FTransform& LocalToWorld, const FVector& CameraLocal,
+			const FNearStar& Star, const double TakeLocal, const double PixelTangent)
+		{
+			FGalaxyCatalogStarRecord Record;
+			if (!Galaxy.StarCatalog.ResolveStar(Star.CatalogIndex, Record) || Record.CatalogIndex == INDEX_NONE)
+			{
+				return false;
+			}
+			const double Scale = LocalToWorld.GetMaximumAxisScale();
+			const FVector3f Position(Record.GalaxyLocalLocation);
+			// Its level as BuildOnWorker chose it: the innermost cube around the home that holds it.
+			int32 Level = 0;
+			if (GLayer.LevelHalf.Num() > 1)
+			{
+				const FVector3f FromHome = (Position - GLayer.HomeLocal).GetAbs();
+				const float Chebyshev = FromHome.GetMax();
+				for (int32 Candidate = GLayer.LevelHalf.Num() - 1; Candidate >= 1; --Candidate)
+				{
+					if (Chebyshev <= GLayer.LevelHalf[Candidate])
+					{
+						Level = Candidate;
+						break;
+					}
+				}
+			}
+			const int32 TwinSet = GLayer.PointLevels.IndexOfByKey(Level);
+			if (!GLayer.PointDescs.IsValidIndex(TwinSet) || !GLayer.PointSets.IsValidIndex(TwinSet))
+			{
+				return false;
+			}
+			const APSStarRenderer::FPointSetDesc& LevelDesc = GLayer.PointDescs[TwinSet];
+			const uint8 ColorIndex = ColorIndexFor(Record);
+			const float Intensity = GameplayIntensityFor(Record,
+				GLayer.PaletteLuminance.IsValidIndex(ColorIndex) ? GLayer.PaletteLuminance[ColorIndex] : 1.0f, GLayer.G0Intensity);
+			const APSStarRenderer::FPackedStar Twin = APSStarRenderer::PackStar(Position, LevelDesc.LocalBounds, ColorIndex, Intensity);
+			if ((Twin.ZColorIntensity >> 24) == 0u)
+			{
+				return false; // A dark code: the layer does not draw it either.
+			}
+			FApproachPoint Point;
+			Point.CatalogIndex = Record.CatalogIndex;
+			Point.Ordinal = Star.Ordinal;
+			Point.Level = Level;
+			Point.TwinSet = TwinSet;
+			Point.TwinLocal = APSStarRenderer::UnpackStarPosition(Twin, LevelDesc.LocalBounds);
+			// Its own lattice point only: half the finest step, never below a few float steps of the shader's decode.
+			const FVector3f Step = (LevelDesc.LocalBounds.Max - LevelDesc.LocalBounds.Min) / 65535.0f;
+			Point.TwinRadiusLocal = FMath::Max(0.5f * Step.GetMin(), 4.8e-7f * FMath::Max(Point.TwinLocal.GetAbsMax(), 1.0f));
+			Point.ExactLocal = Record.GalaxyLocalLocation;
+			Point.RadiusCm = APSCanonicalStellarProjection::GetCanonicalStellarRadiusSolar(Record.SpectralClass)
+				* FMath::Max(static_cast<double>(Record.RadiusScale), 0.0) * APSCanonicalStellarProjection::SolarRadiusCm;
+			Point.Intensity = Intensity;
+			const double DistanceLocal = FVector::Dist(CameraLocal, Point.ExactLocal);
+			Point.GlideFromLocal = FMath::Max(FMath::Min(DistanceLocal, TakeLocal), 1.0e-9);
+			double Glide = 1.0;
+			FVector TwinDrawn;
+			Point.DrawLocal = PlaceApproachPoint(Point, CameraLocal, Scale, Glide, TwinDrawn);
+
+			APSStarRenderer::FPointSetDesc Desc = LevelDesc;
+			Desc.LocalToWorld = FTransform(FQuat::Identity, Point.DrawLocal) * LocalToWorld;
+			Desc.LocalBounds = FBox3f(FVector3f::ZeroVector, FVector3f(ApproachBoxLocal));
+			Desc.ExclusionCenterLocal = FVector3f::ZeroVector;
+			Desc.ExclusionRadiusLocal = 0.0f;
+			Desc.ExtraExclusionSpheresLocal.Reset();
+			// Ahead of every level under aps.Stars.GpuPointBudget.
+			Desc.Priority = GameplayLevels + 1;
+			Desc.Population = 1;
+			Desc.DebugName = FString::Printf(TEXT("GameplayApproach %lld"), Record.CatalogIndex);
+			TArray<APSStarRenderer::FPackedStar> Points;
+			Points.Add(APSStarRenderer::PackStar(FVector3f::ZeroVector, Desc.LocalBounds, ColorIndex, Intensity));
+			Point.Handle = APSStarRenderer::RegisterPointSet(World, Desc, MoveTemp(Points));
+			if (Point.Handle == 0)
+			{
+				return false;
+			}
+			Point.PushedTransform = Desc.LocalToWorld;
+			Point.AppliedVisibility = Desc.Visibility;
+			GLayer.Approach.Add(Point);
+			// The twin goes in the same frame the point comes (both reach the render thread before it draws).
+			PushSetExclusions(TwinSet);
+			UE_LOG(LogTemp, Log,
+				TEXT("[APS.Stars] approach point %lld (ordinal %d, L%d) takes over from its quantized point at %.4g ly: the twin is ")
+				TEXT("%.0f AU off the exact place (%.2f px now), taken over %.3f px from where it is drawn; the way in eases it ")
+				TEXT("to the exact place"),
+				Point.CatalogIndex, Point.Ordinal, Level, DistanceLocal * Scale / LightYearCm,
+				FVector::Dist(FVector(Point.TwinLocal), Point.ExactLocal) * Scale / AstronomicalUnitCm,
+				PixelsApart(TwinDrawn - CameraLocal, Point.ExactLocal - CameraLocal, PixelTangent),
+				PixelsApart(Point.DrawLocal - CameraLocal, TwinDrawn - CameraLocal, PixelTangent));
+			return true;
+		}
+
+		/** Removes approach points (their twins come back in the same frame). Index INDEX_NONE: all of them. */
+		void ReleaseApproachPoints(const int32 Only, const TCHAR* Reason, const double DistanceCm = -1.0)
+		{
+			TArray<int32, TInlineAllocator<4>> Sets;
+			for (int32 Index = GLayer.Approach.Num() - 1; Index >= 0; --Index)
+			{
+				if (Only != INDEX_NONE && Index != Only)
+				{
+					continue;
+				}
+				const FApproachPoint& Point = GLayer.Approach[Index];
+				APSStarRenderer::Remove(Point.Handle);
+				Sets.AddUnique(Point.TwinSet);
+				UE_LOG(LogTemp, Log, TEXT("[APS.Stars] approach point %lld (ordinal %d) back to its quantized point (%s%s)"),
+					Point.CatalogIndex, Point.Ordinal, Reason,
+					DistanceCm >= 0.0 ? *FString::Printf(TEXT(", %.4g ly out"), DistanceCm / LightYearCm) : TEXT(""));
+				GLayer.Approach.RemoveAt(Index);
+			}
+			for (const int32 Set : Sets)
+			{
+				PushSetExclusions(Set);
+			}
+		}
+	}
+
+	bool AreApproachPointsActive(const UWorld* World)
+	{
+		return World != nullptr && CVarApproachPoint.GetValueOnGameThread() != 0 && APSRealScale::IsActive(World);
+	}
+
+	bool DrawsApproachPoint(const UWorld* World, const int64 CatalogIndex)
+	{
+		const AGalaxy* Galaxy = GLayer.Galaxy.Get();
+		return World != nullptr && IsValid(Galaxy) && Galaxy->GetWorld() == World
+			&& GLayer.Approach.ContainsByPredicate([CatalogIndex](const FApproachPoint& Point)
+			{
+				return Point.CatalogIndex == CatalogIndex && Point.Handle != 0;
+			});
+	}
+
+	void SetNearPhotospheres(const UWorld* World, const TConstArrayView<int64> CatalogIndices)
+	{
+		GNearPhotosphereWorld = World;
+		GNearPhotospheres.Reset();
+		for (const int64 CatalogIndex : CatalogIndices)
+		{
+			GNearPhotospheres.Add(CatalogIndex);
+		}
+	}
+
+	void RescanExclusions(UWorld* World)
+	{
+		AGalaxy* Galaxy = GLayer.Galaxy.Get();
+		if (!AreApproachPointsActive(World) || GLayer.Mode != ELayerMode::Gameplay || !IsValid(Galaxy) || Galaxy->GetWorld() != World)
+		{
+			return;
+		}
+		// Before: up to ExclusionScanSeconds (0.5 s) with the old spheres, the point and the new star both drawn, or neither.
+		GGameplay.NextExclusionScanSeconds = 0.0;
+		PushGameplayPresentation(*Galaxy, true);
+		UE_LOG(LogTemp, Log, TEXT("[APS.GalaxyGpu] exclusions scanned again at once (a system stood up or went): %d sphere(s)"),
+			GLayer.Exclusions.Num());
+	}
+
+	void UpdateApproachPoints(UWorld* World, const FVector& Camera, const double PixelTangent)
+	{
+		AGalaxy* Galaxy = GLayer.Galaxy.Get();
+		FTransform LocalToWorld;
+		const bool bActive = AreApproachPointsActive(World) && GLayer.Mode == ELayerMode::Gameplay && IsValid(Galaxy)
+			&& Galaxy->GetWorld() == World && GLayer.PointSets.Num() > 0 && GLayer.PointLevels.Num() == GLayer.PointSets.Num()
+			&& GetIndexedGalaxy(World) == Galaxy && FMath::IsFinite(PixelTangent) && PixelTangent > 0.0
+			&& MakeGameplayLocalToWorld(*Galaxy, LocalToWorld);
+		if (!bActive)
+		{
+			if (GLayer.Approach.Num() > 0 && (!IsValid(Galaxy) || Galaxy->GetWorld() == World))
+			{
+				ReleaseApproachPoints(INDEX_NONE, TEXT("approach points off"));
+			}
+			return;
+		}
+		const double Scale = LocalToWorld.GetMaximumAxisScale();
+		const FVector CameraLocal = LocalToWorld.InverseTransformPosition(Camera);
+		const double Now = FPlatformTime::Seconds();
+		const float DeltaSeconds = FMath::Clamp(World->GetDeltaSeconds(), 0.0f, 0.25f);
+		const double TakeCm = FMath::Max(static_cast<double>(CVarApproachPointLy.GetValueOnGameThread()), 0.01) * LightYearCm;
+		const double TakeLocal = TakeCm / Scale;
+		// The camera's speed through the sky (an origin shift moves camera and sky alike; the still ship's sky offset moves
+		// the sky under a camera that stays).
+		const double Since = Now - GLayer.LastApproachCameraSeconds;
+		const double SpeedCm = GLayer.LastApproachCameraSeconds > 0.0 && Since > 1.0e-4
+			? FVector::Dist(CameraLocal, GLayer.LastApproachCameraLocal) * Scale / Since : 0.0;
+		GLayer.LastApproachCameraLocal = CameraLocal;
+		GLayer.LastApproachCameraSeconds = Now;
+
+		// New approach points: the drawn GPU stars within the take radius, four times a second (and each tenth of it travelled).
+		const bool bMayTake = SpeedCm * ApproachTakeSeconds <= TakeCm;
+		const bool bScan = (bMayTake || GLayer.Approach.Num() > 0) && (Now - GLayer.LastApproachScanSeconds >= ApproachScanSeconds
+			|| FVector::Dist(CameraLocal, GLayer.LastApproachScanLocal) >= 0.1 * TakeLocal);
+		if (!bScan && GLayer.Approach.Num() == 0)
+		{
+			return; // Nothing near: no actor walk, no index query.
+		}
+		FStandingSystems Systems;
+		GatherStandingSystems(World, Systems);
+		if (bScan)
+		{
+			GLayer.LastApproachScanSeconds = Now;
+			GLayer.LastApproachScanLocal = CameraLocal;
+			TArray<FNearStar> Near;
+			FindNearStars(World, Camera, MaxApproachPoints, TakeCm * ApproachReleaseFactor, Near);
+			for (const FNearStar& Star : Near)
+			{
+				// The sky's ISM prefix is drawn by the galaxy HISM, not by the GPU layer.
+				const int64 GpuOrdinal = static_cast<int64>(Star.Ordinal) - GLayer.FirstOrdinal;
+				if (GpuOrdinal < 0 || GpuOrdinal >= GLayer.PointOrdinals)
+				{
+					continue;
+				}
+				const bool bForeign = InForeignSystem(Systems, Star.WorldLocation, OwnSystemOf(Systems, Star.WorldLocation));
+				if (FApproachPoint* Existing = GLayer.Approach.FindByPredicate([&Star](const FApproachPoint& Point)
+					{
+						return Point.CatalogIndex == Star.CatalogIndex;
+					}))
+				{
+					Existing->bRelease = Existing->bRelease || bForeign;
+					continue;
+				}
+				if (!bForeign && bMayTake && Star.DistanceCm <= TakeCm && GLayer.Approach.Num() < MaxApproachPoints)
+				{
+					TakeApproachPoint(World, *Galaxy, LocalToWorld, CameraLocal, Star, TakeLocal, PixelTangent);
+				}
+			}
+		}
+
+		// Every frame: place each point, crossfade it into its sphere, hand it back past the take radius (on its twin again).
+		static IConsoleVariable* GlyphPixelsVariable = nullptr;
+		static IConsoleVariable* PointIntensityVariable = nullptr;
+		static IConsoleVariable* MaxPixelVariable = nullptr;
+		const float GlyphPixels = ConsoleFloat(GlyphPixelsVariable, TEXT("aps.Stars.FarGlyphPixels"), 2.2f);
+		const double FadeEnd = GlyphPixels > 0.0f ? GlyphPixels : 2.2;
+		const double FadeStart = FadeEnd * FMath::Clamp(static_cast<double>(CVarApproachPointFade.GetValueOnGameThread()), 0.05, 1.0);
+		const bool bLog = Now >= GLayer.NextApproachLogSeconds;
+		int64 Nearest = INDEX_NONE;
+		double NearestCm = TNumericLimits<double>::Max();
+		struct FSample
+		{
+			FVector TwinDrawn = FVector::ZeroVector;
+			double Glide = 1.0;
+			double DiscPixels = 0.0;
+			bool bSphere = false;
+		} NearestSample;
+		for (int32 Index = GLayer.Approach.Num() - 1; Index >= 0; --Index)
+		{
+			FApproachPoint& Point = GLayer.Approach[Index];
+			const double DistanceCm = FVector::Dist(CameraLocal, Point.ExactLocal) * Scale;
+			if (Point.bRelease || DistanceCm > TakeCm * ApproachReleaseFactor)
+			{
+				ReleaseApproachPoints(Index, Point.bRelease ? TEXT("inside another system's sphere") : TEXT("past the take radius"),
+					DistanceCm);
+				continue;
+			}
+			FSample Sample;
+			Point.DrawLocal = PlaceApproachPoint(Point, CameraLocal, Scale, Sample.Glide, Sample.TwinDrawn);
+			const FTransform Transform = FTransform(FQuat::Identity, Point.DrawLocal) * LocalToWorld;
+			if (!Transform.Equals(Point.PushedTransform, 0.0))
+			{
+				APSStarRenderer::SetTransform(Point.Handle, Transform);
+				Point.PushedTransform = Transform;
+			}
+			// Its sphere: a materialized star drawn at its sky place (no travel owed), or a near photosphere.
+			const FVector ExactInSky = LocalToWorld.TransformPosition(Point.ExactLocal);
+			const FStandingSystem* Own = OwnSystemOf(Systems, ExactInSky);
+			const bool bOwnSphere = Own && Own->bStarShown && FVector::DistSquared(Own->StarDrawn, ExactInSky)
+				<= FMath::Square(FMath::Max(Own->StarRadiusCm, 1.0e10) * 3.0);
+			const bool bNearSphere = GNearPhotosphereWorld.Get() == World && GNearPhotospheres.Contains(Point.CatalogIndex);
+			Sample.bSphere = bOwnSphere || bNearSphere;
+			Sample.DiscPixels = (bOwnSphere ? Own->StarRadiusCm : Point.RadiusCm) / FMath::Max(DistanceCm * PixelTangent, 1.0e-30);
+			// The point while the disc is smaller than the far glyph's threshold (B7), the sphere from there on: a crossfade
+			// over the last stretch of disc growth, never faster than ApproachFadeRate.
+			const float Target = Sample.bSphere ? static_cast<float>(1.0 - FMath::SmoothStep(FadeStart, FadeEnd, Sample.DiscPixels)) : 1.0f;
+			Point.Fade = FMath::Clamp(FMath::FInterpConstantTo(Point.Fade, Target, DeltaSeconds, ApproachFadeRate), 0.0f, 1.0f);
+			const float LevelVisibility = GLayer.PointDescs.IsValidIndex(Point.TwinSet) ? GLayer.PointDescs[Point.TwinSet].Visibility : 1.0f;
+			const float Visibility = LevelVisibility * Point.Fade;
+			if (Visibility != Point.AppliedVisibility
+				&& (FMath::Abs(Visibility - Point.AppliedVisibility) > 0.002f || Point.Fade <= 0.0f || Point.Fade >= 1.0f))
+			{
+				APSStarRenderer::SetVisibility(Point.Handle, Visibility);
+				Point.AppliedVisibility = Visibility;
+			}
+			const EApproachLook Look = Point.Fade >= 1.0f ? EApproachLook::Point
+				: Point.Fade <= 0.0f ? EApproachLook::Sphere : EApproachLook::Crossfade;
+			if (Look != Point.Look)
+			{
+				UE_LOG(LogTemp, Log, TEXT("[APS.Stars] approach point %lld at %.4g AU: %s -> %s (disc %.3f px, %s)"),
+					Point.CatalogIndex, DistanceCm / AstronomicalUnitCm, LookName(Point.Look), LookName(Look), Sample.DiscPixels,
+					bOwnSphere ? TEXT("its materialized star") : bNearSphere ? TEXT("its near photosphere") : TEXT("no sphere"));
+				Point.Look = Look;
+			}
+			if (DistanceCm < NearestCm)
+			{
+				NearestCm = DistanceCm;
+				Nearest = Point.CatalogIndex;
+				NearestSample = Sample;
+			}
+		}
+
+		// Rio 05.10 night: the nearest approach point twice a second, so a hand-over can be checked from the log alone.
+		// (Found by its star: a release in the loop above moves the ones after it.)
+		const FApproachPoint* NearestPoint = Nearest != INDEX_NONE ? GLayer.Approach.FindByPredicate(
+			[Nearest](const FApproachPoint& Point) { return Point.CatalogIndex == Nearest; }) : nullptr;
+		if (bLog && NearestPoint)
+		{
+			GLayer.NextApproachLogSeconds = Now + ApproachLogSeconds;
+			const FApproachPoint& Point = *NearestPoint;
+			const APSStarRenderer::FPointSetDesc* LevelDesc = GLayer.PointDescs.IsValidIndex(Point.TwinSet)
+				? &GLayer.PointDescs[Point.TwinSet] : nullptr;
+			const double DistanceLocal = FMath::Max(FVector::Dist(CameraLocal, Point.ExactLocal),
+				LevelDesc ? static_cast<double>(LevelDesc->BrightnessFloorDistanceLocal) : 0.0);
+			// The raster shader's value before its clamp (APSStarPoints.usf), still to be multiplied by the view's pre-exposure.
+			const double PreClamp = APSStarRenderer::DecodeIntensity(APSStarRenderer::EncodeIntensity(Point.Intensity))
+				* (LevelDesc ? LevelDesc->IntensityScale : 0.0f) * Point.AppliedVisibility * (GVisibility >= 0.0f ? GVisibility : 1.0f)
+				* ConsoleFloat(PointIntensityVariable, TEXT("aps.Stars.GpuPointIntensity"), 1.0f)
+				/ FMath::Max(FMath::Square(PixelTangent) * FMath::Square(DistanceLocal), 1.0e-300);
+			UE_LOG(LogTemp, Log,
+				TEXT("[APS.Stars] approach %lld (ordinal %d, L%d, %d point(s)): exact %.4g ly = %.4g AU, twin %.4g ly (%.2f px off the ")
+				TEXT("exact direction), drawn %.3f px off it, glide %.4f | pre-clamp %.4g x pre-exposure (clamp %.3g) | disc %.3f px ")
+				TEXT("(crossfade %.2f-%.2f px), point %.3f, %s, sphere %s"),
+				Point.CatalogIndex, Point.Ordinal, Point.Level, GLayer.Approach.Num(), NearestCm / LightYearCm,
+				NearestCm / AstronomicalUnitCm, FVector::Dist(NearestSample.TwinDrawn, CameraLocal) * Scale / LightYearCm,
+				PixelsApart(NearestSample.TwinDrawn - CameraLocal, Point.ExactLocal - CameraLocal, PixelTangent),
+				PixelsApart(Point.DrawLocal - CameraLocal, Point.ExactLocal - CameraLocal, PixelTangent), NearestSample.Glide,
+				PreClamp, ConsoleFloat(MaxPixelVariable, TEXT("aps.Stars.GpuPointMaxPixel"), 16.0f), NearestSample.DiscPixels,
+				FadeStart, FadeEnd, Point.Fade, LookName(Point.Look), NearestSample.bSphere ? TEXT("yes") : TEXT("no"));
+		}
 	}
 }

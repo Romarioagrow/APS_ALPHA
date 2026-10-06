@@ -1,4 +1,5 @@
 #include "SAPSPilotDashboard.h"
+#include "APS_ALPHA/UI/Style/APSUITheme.h"
 
 #include "APSDashboardKit.h"
 #include "APS_ALPHA/Actors/Astro/APSBodyDesignation.h"
@@ -44,8 +45,8 @@ namespace APSPilotDashboardPrivate
 	constexpr double OneG = 980.665;
 	const FLinearColor AncientColour(0.78f, 0.62f, 1.0f, 1.0f);
 
-	FSlateFontInfo TitleFont() { return FCoreStyle::GetDefaultFontStyle("Bold", 13); }
-	FSlateFontInfo BodyFont() { return FCoreStyle::GetDefaultFontStyle("Regular", 11); }
+	FSlateFontInfo TitleFont() { return APSUITheme::BodyFont("Bold", 13); }
+	FSlateFontInfo BodyFont() { return APSUITheme::BodyFont("Regular", 11); }
 
 	FText DistanceText(const double Cm)
 	{
@@ -500,7 +501,7 @@ void SAPSPilotDashboard::RebuildNearby()
 				SNew(SVerticalBox)
 				+ SVerticalBox::Slot().AutoHeight()
 				[
-					SNew(STextBlock).Text(Entry.Name).Font(FCoreStyle::GetDefaultFontStyle("Bold", 12)).ColorAndOpacity(White())
+					SNew(STextBlock).Text(Entry.Name).Font(APSUITheme::BodyFont("Bold", 12)).ColorAndOpacity(White())
 				]
 				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 1.0f, 0.0f, 0.0f)
 				[

@@ -122,11 +122,58 @@ static TAutoConsoleVariable<int32> CVarAPSPreviewPlanetWorldScape(
 	FConsoleVariableDelegate::CreateStatic(&APSOnPreviewPlanetWorldScapeChanged),
 	ECVF_Default);
 
+static void APSOnMainMenuHeroGalaxyChanged(IConsoleVariable* Variable)
+{
+	// The landing galaxy rebuilds at once, so its looks can be compared live from the console.
+	for (TObjectIterator<AAstroGenerator> It; It; ++It)
+	{
+		const UWorld* GeneratorWorld = IsValid(*It) ? It->GetWorld() : nullptr;
+		if (GeneratorWorld && GeneratorWorld->IsGameWorld() && It->IsMainMenuHeroGalaxyActive())
+		{
+			It->GenerateMainMenuHeroGalaxy(nullptr);
+		}
+	}
+}
+
+// Rio 06.10 ("the menu galaxy is still the old ugly one: generate a beautiful one and replace it, about the same
+// pattern"): the title galaxy is resolved through the player's own galaxy catalogue (FGalaxyCatalogDescriptor::
+// ResolveStar: GALAXY_GENERATION_V2 morphology, spectral mix, young arms and an old bulge) from a curated seed and
+// subclass, so it is a galaxy the game itself generates. 0 restores the hand-made composition.
+static TAutoConsoleVariable<int32> CVarAPSMenuHeroGalaxyV2(
+	TEXT("aps.Menu.HeroGalaxyV2"), 1,
+	TEXT("Title galaxy. 1: a curated galaxy resolved through the gameplay catalogue (V2 morphology, spectral colours). ")
+	TEXT("0: the hand-made 9,200-point composition. Rebuilds the landing galaxy live."),
+	FConsoleVariableDelegate::CreateStatic(&APSOnMainMenuHeroGalaxyChanged), ECVF_Default);
+static TAutoConsoleVariable<int32> CVarAPSMenuHeroGalaxyStyle(
+	TEXT("aps.Menu.HeroGalaxyStyle"), 0,
+	TEXT("Title galaxy subclass (aps.Menu.HeroGalaxyV2 1): 0 Sc, three open arms with star-forming knots; 1 Sd, four ")
+	TEXT("loose arms; 2 SBc, barred; 3 Sbc, two arms. Rebuilds live."),
+	FConsoleVariableDelegate::CreateStatic(&APSOnMainMenuHeroGalaxyChanged), ECVF_Default);
+static TAutoConsoleVariable<int32> CVarAPSMenuHeroGalaxySeed(
+	TEXT("aps.Menu.HeroGalaxySeed"), 0x41A05F3,
+	TEXT("Title galaxy catalogue seed (aps.Menu.HeroGalaxyV2 1). Rebuilds live."),
+	FConsoleVariableDelegate::CreateStatic(&APSOnMainMenuHeroGalaxyChanged), ECVF_Default);
+static TAutoConsoleVariable<int32> CVarAPSMenuHeroGalaxyStars(
+	TEXT("aps.Menu.HeroGalaxyStars"), 60000,
+	TEXT("Title galaxy points (aps.Menu.HeroGalaxyV2 1), 5,000-200,000; the light per point falls as the count grows. ")
+	TEXT("A fixed tree built once per landing, nothing per frame. Rebuilds live."),
+	FConsoleVariableDelegate::CreateStatic(&APSOnMainMenuHeroGalaxyChanged), ECVF_Default);
+static TAutoConsoleVariable<float> CVarAPSMenuHeroGalaxyPointSize(
+	TEXT("aps.Menu.HeroGalaxyPointSize"), 1.0f,
+	TEXT("Title galaxy point size multiplier (aps.Menu.HeroGalaxyV2 1). Rebuilds live."),
+	FConsoleVariableDelegate::CreateStatic(&APSOnMainMenuHeroGalaxyChanged), ECVF_Default);
+static TAutoConsoleVariable<float> CVarAPSMenuHeroGalaxyGlow(
+	TEXT("aps.Menu.HeroGalaxyGlow"), 1.0f,
+	TEXT("Title galaxy brightness multiplier (aps.Menu.HeroGalaxyV2 1). Rebuilds live."),
+	FConsoleVariableDelegate::CreateStatic(&APSOnMainMenuHeroGalaxyChanged), ECVF_Default);
+
 namespace APSMainMenuHeroGalaxy
 {
 	// This catalogue is deliberately independent from FGalaxyCatalogDescriptor.  It
 	// is a fixed-cost title-screen composition, not a second model of the player's
-	// generated universe.
+	// generated universe. Rio 06.10: by default (aps.Menu.HeroGalaxyV2 1) the title galaxy
+	// is resolved through FGalaxyCatalogDescriptor from a fixed curated seed instead; still
+	// decorative, never the player's world. This composition stays as the 0 path.
 	constexpr int32 SpiralStarCount = 7200;
 	constexpr int32 BulgeStarCount = 1500;
 	constexpr int32 HaloStarCount = 500;
@@ -158,6 +205,56 @@ namespace APSMainMenuHeroGalaxy
 	{
 		return FMath::Lerp(A, B, static_cast<float>(FMath::Clamp(Alpha, 0.0, 1.0)));
 	}
+
+	/** Catalogue subclasses offered for the title galaxy (aps.Menu.HeroGalaxyStyle). */
+	struct FCatalogueStyle
+	{
+		EGalaxyType Type;
+		EGalaxyClass Class;
+	};
+	constexpr FCatalogueStyle CatalogueStyles[] = {
+		{EGalaxyType::Spiral, EGalaxyClass::SpiralSc},
+		{EGalaxyType::Spiral, EGalaxyClass::SpiralSd},
+		{EGalaxyType::BarredSpiral, EGalaxyClass::BarredSBc},
+		{EGalaxyType::Spiral, EGalaxyClass::SpiralSbc},
+	};
+	/** GALAXY SIZE / STAR DENSITY of the hero catalogue: ResolveStar returns positions in this radius. */
+	constexpr int32 CatalogueGalaxySize = 50;
+	constexpr double CatalogueStarDensity = 10.0;
+
+	bool UsesCatalogue()
+	{
+		return CVarAPSMenuHeroGalaxyV2.GetValueOnGameThread() != 0;
+	}
+
+	const FCatalogueStyle& CurrentStyle()
+	{
+		const int32 Index = FMath::Clamp(CVarAPSMenuHeroGalaxyStyle.GetValueOnGameThread(), 0,
+			static_cast<int32>(UE_ARRAY_COUNT(CatalogueStyles)) - 1);
+		return CatalogueStyles[Index];
+	}
+
+	int32 ExpectedStarCount()
+	{
+		return UsesCatalogue()
+			? FMath::Clamp(CVarAPSMenuHeroGalaxyStars.GetValueOnGameThread(), 5000, 200000) : TotalStarCount;
+	}
+
+	/** Every setting the built galaxy depends on; a change rebuilds it. */
+	uint32 SettingsKey()
+	{
+		uint32 Key = UsesCatalogue() ? 1u : 0u;
+		if (UsesCatalogue())
+		{
+			Key = HashCombine(Key, GetTypeHash(static_cast<int32>(CurrentStyle().Class)));
+			Key = HashCombine(Key, GetTypeHash(CVarAPSMenuHeroGalaxySeed.GetValueOnGameThread()));
+			Key = HashCombine(Key, GetTypeHash(ExpectedStarCount()));
+			Key = HashCombine(Key, GetTypeHash(CVarAPSMenuHeroGalaxyPointSize.GetValueOnGameThread()));
+			Key = HashCombine(Key, GetTypeHash(CVarAPSMenuHeroGalaxyGlow.GetValueOnGameThread()));
+		}
+		return Key;
+	}
+	static uint32 BuiltSettingsKey = 0;
 }
 
 namespace APSGeneratedBodyIdentity
@@ -1323,7 +1420,8 @@ bool AAstroGenerator::GenerateMainMenuHeroGalaxy(APlayerController* PlayerContro
 	PreviewCamera->bOverrideAspectRatioAxisConstraint = true;
 	PreviewCamera->SetAspectRatioAxisConstraint(AspectRatio_MaintainYFOV);
 	if (bMainMenuHeroGalaxyActive
-		&& GetMainMenuHeroGalaxyInstanceCount() == APSMainMenuHeroGalaxy::TotalStarCount
+		&& GetMainMenuHeroGalaxyInstanceCount() == APSMainMenuHeroGalaxy::ExpectedStarCount()
+		&& APSMainMenuHeroGalaxy::BuiltSettingsKey == APSMainMenuHeroGalaxy::SettingsKey()
 		&& GetMainMenuDeepSpaceInstanceCount() == APSMainMenuHeroGalaxy::DeepSpaceStarCount
 		&& GetMainMenuNebulaInstanceCount() == APSMainMenuHeroGalaxy::NebulaSheetCount)
 	{
@@ -1396,7 +1494,7 @@ bool AAstroGenerator::GenerateMainMenuHeroGalaxy(APlayerController* PlayerContro
 	MainMenuHeroGalaxyHISM->bUseTranslatedInstanceSpace = false;
 	MainMenuHeroGalaxyHISM->NumCustomDataFloats = 6;
 	MainMenuHeroGalaxyHISM->PreAllocateInstancesMemory(
-		APSMainMenuHeroGalaxy::TotalStarCount);
+		APSMainMenuHeroGalaxy::ExpectedStarCount());
 	MainMenuHeroGalaxyHISM->SetRelativeTransform(FTransform::Identity);
 
 	const double MeshRadius = FMath::Max(
@@ -1422,9 +1520,49 @@ bool AAstroGenerator::GenerateMainMenuHeroGalaxy(APlayerController* PlayerContro
 		MainMenuHeroGalaxyHISM->SetCustomDataValue(InstanceIndex, 5, 0.0f, false);
 	};
 
+	if (APSMainMenuHeroGalaxy::UsesCatalogue())
+	{
+		// Rio 06.10: the player's own catalogue, curated. Each point is a resolved star: its colour is its spectral
+		// class, its light grows with the class luminosity on a log scale (hot young arm stars carry the arms, the old
+		// bulge stays warm), and the whole galaxy's light grows only as N^0.4 with the point count.
+		const APSMainMenuHeroGalaxy::FCatalogueStyle& Style = APSMainMenuHeroGalaxy::CurrentStyle();
+		const int32 HeroStarCount = APSMainMenuHeroGalaxy::ExpectedStarCount();
+		FGalaxyCatalogDescriptor Catalog;
+		Catalog.GenerationSeed = CVarAPSMenuHeroGalaxySeed.GetValueOnGameThread();
+		Catalog.GalaxyType = Style.Type;
+		Catalog.GalaxyClass = Style.Class;
+		Catalog.GalaxySize = APSMainMenuHeroGalaxy::CatalogueGalaxySize;
+		Catalog.StarDensity = APSMainMenuHeroGalaxy::CatalogueStarDensity;
+		Catalog.ModeledStarCount = HeroStarCount;
+		// ResolveStar's own radius for these inputs (Galaxy.cpp).
+		const double CatalogueRadius = FMath::Max(50000.0, APSMainMenuHeroGalaxy::CatalogueGalaxySize * 50000.0)
+			* FMath::Sqrt(10.0 / APSMainMenuHeroGalaxy::CatalogueStarDensity);
+		const double SizeScale = FMath::Clamp(
+			static_cast<double>(CVarAPSMenuHeroGalaxyPointSize.GetValueOnGameThread()), 0.1, 10.0);
+		const double GlowScale = FMath::Clamp(static_cast<double>(CVarAPSMenuHeroGalaxyGlow.GetValueOnGameThread()),
+			0.0, 20.0) * FMath::Pow(static_cast<double>(APSMainMenuHeroGalaxy::TotalStarCount) / HeroStarCount, 0.6);
+		FGalaxyCatalogStarRecord Record;
+		for (int32 Index = 0; Index < HeroStarCount; ++Index)
+		{
+			if (!Catalog.ResolveStar(Index, Record)) continue;
+			const double Luminosity = APSCanonicalStellarProjection::GetCanonicalStellarLuminositySolar(
+				Record.SpectralClass) * APSGalaxyMorphology::GetRadiusScaleLuminosity(Record.RadiusScale);
+			const double LogLuminosity = FMath::LogX(10.0, FMath::Max(Luminosity, 1.0e-3));
+			const double Loudness = FMath::Clamp((LogLuminosity + 1.5) / 6.3, 0.0, 1.0);
+			const float PointSeed = static_cast<float>((Record.GenerationSeed & 0xffff) / 65535.0);
+			const double Emission = Luminosity > 0.0
+				? FMath::Clamp(0.42 + 0.30 * LogLuminosity, 0.18, 2.6) : 0.10;
+			AddHeroStar(Record.GalaxyLocalLocation / CatalogueRadius * APSMainMenuHeroGalaxy::RadiusCm,
+				APSMainMenuHeroGalaxy::RadiusCm * FMath::Lerp(0.0022, 0.0060, Loudness) * SizeScale,
+				UStarGenerator::GetStarColor(Record.SpectralClass, Record.SpectralSubclass),
+				static_cast<float>(Emission * GlowScale * (0.85 + 0.30 * PointSeed)), PointSeed);
+		}
+	}
+	const bool bHandMadeComposition = !APSMainMenuHeroGalaxy::UsesCatalogue();
+
 	// Four logarithmic arms. Angular scatter grows toward the edge, producing
 	// feathered branches while the bounded Z curve preserves an unmistakable disc.
-	for (int32 Index = 0; Index < APSMainMenuHeroGalaxy::SpiralStarCount; ++Index)
+	for (int32 Index = 0; bHandMadeComposition && Index < APSMainMenuHeroGalaxy::SpiralStarCount; ++Index)
 	{
 		const APSGrandDesignGalaxy::FSample Sample = APSGrandDesignGalaxy::SampleSpiral(
 			APSMainMenuHeroGalaxy::CompositionSeed, Index);
@@ -1446,7 +1584,7 @@ bool AAstroGenerator::GenerateMainMenuHeroGalaxy(APlayerController* PlayerContro
 
 	// A warm, vertically thicker bulge gives the composition a readable focal core
 	// instead of a uniform cloud of equally loud points.
-	for (int32 Index = 0; Index < APSMainMenuHeroGalaxy::BulgeStarCount; ++Index)
+	for (int32 Index = 0; bHandMadeComposition && Index < APSMainMenuHeroGalaxy::BulgeStarCount; ++Index)
 	{
 		const APSGrandDesignGalaxy::FSample Sample = APSGrandDesignGalaxy::SampleBulge(
 			APSMainMenuHeroGalaxy::CompositionSeed, Index);
@@ -1460,7 +1598,7 @@ bool AAstroGenerator::GenerateMainMenuHeroGalaxy(APlayerController* PlayerContro
 	}
 
 	// Sparse halo points keep the silhouette soft and create depth beyond the arms.
-	for (int32 Index = 0; Index < APSMainMenuHeroGalaxy::HaloStarCount; ++Index)
+	for (int32 Index = 0; bHandMadeComposition && Index < APSMainMenuHeroGalaxy::HaloStarCount; ++Index)
 	{
 		const APSGrandDesignGalaxy::FSample Sample = APSGrandDesignGalaxy::SampleHalo(
 			APSMainMenuHeroGalaxy::CompositionSeed, Index);
@@ -1479,6 +1617,7 @@ bool AAstroGenerator::GenerateMainMenuHeroGalaxy(APlayerController* PlayerContro
 	MainMenuHeroGalaxyHISM->SetHiddenInGame(false, true);
 	MainMenuHeroGalaxyHISM->SetVisibility(true, true);
 	bMainMenuHeroGalaxyActive = true;
+	APSMainMenuHeroGalaxy::BuiltSettingsKey = APSMainMenuHeroGalaxy::SettingsKey();
 	bIsPreviewGeneration = true;
 	PreviewFocus = EAstroPreviewFocus::Galaxy;
 
@@ -1509,9 +1648,10 @@ bool AAstroGenerator::GenerateMainMenuHeroGalaxy(APlayerController* PlayerContro
 	const FVector CameraRight = CameraBasis.GetUnitAxis(EAxis::Y);
 	const FVector CameraUp = CameraBasis.GetUnitAxis(EAxis::Z);
 	const FVector HeroCenter = GetActorLocation();
-	const double HeroAnchorX = FMath::Max(0.47, 0.92 / Aspect + 0.035);
-	// Offset is expressed in angular screen space so 16:9, 21:9 and 32:9 keep the
-	// enlarged galaxy close to the navigation rail without clipping either edge.
+	// Rio 06.10, the Observatory menu (Docs/Design/MAIN_MENU_OBSERVATORY.md): the galaxy sits in the middle under the
+	// title, with the buttons in a row below it; the old left navigation rail and its offset are gone. The offset stays
+	// expressed in angular screen space, so another anchor keeps 16:9, 21:9 and 32:9 alike.
+	const double HeroAnchorX = 0.5;
 	const FVector AimPoint = HeroCenter
 		- CameraRight * (Distance * HalfTanH
 			* (HeroAnchorX * 2.0 - 1.0))
@@ -1545,13 +1685,14 @@ bool AAstroGenerator::GenerateMainMenuHeroGalaxy(APlayerController* PlayerContro
 	}
 
 	UE_LOG(LogTemp, Log,
-		TEXT("[APS.MainMenuHero] Generated decorative HISM scene galaxy=%d deepSpace=%d nebula=%d D/R=%.2f aspect=%.3f"),
-		GetMainMenuHeroGalaxyInstanceCount(),
+		TEXT("[APS.MainMenuHero] Generated decorative HISM scene galaxy=%d (catalogue=%d class=%d seed=%d) deepSpace=%d nebula=%d D/R=%.2f aspect=%.3f"),
+		GetMainMenuHeroGalaxyInstanceCount(), APSMainMenuHeroGalaxy::UsesCatalogue() ? 1 : 0,
+		static_cast<int32>(APSMainMenuHeroGalaxy::CurrentStyle().Class), CVarAPSMenuHeroGalaxySeed.GetValueOnGameThread(),
 		GetMainMenuDeepSpaceInstanceCount(),
 		GetMainMenuNebulaInstanceCount(),
 		APSMainMenuHeroGalaxy::CameraDistanceRatio, Aspect);
 	return bDeepSpaceReady && bNebulaReady
-		&& GetMainMenuHeroGalaxyInstanceCount() == APSMainMenuHeroGalaxy::TotalStarCount;
+		&& GetMainMenuHeroGalaxyInstanceCount() == APSMainMenuHeroGalaxy::ExpectedStarCount();
 }
 
 bool AAstroGenerator::RegeneratePreview(

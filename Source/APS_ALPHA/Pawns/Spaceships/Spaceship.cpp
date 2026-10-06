@@ -1,4 +1,6 @@
 #include "Spaceship.h"
+#include "APS_ALPHA/UI/Hud/SAPSShipHud.h"
+#include "APS_ALPHA/UI/Style/APSUITheme.h"
 #include "APSM5HullSweepComponent.h"
 #include "APS_ALPHA/Core/Controllers/GravityPlayerController.h"
 #include "APS_ALPHA/Core/Rendering/APSPreviewVisibility.h"
@@ -112,11 +114,11 @@ namespace APSNavigationHud
 	constexpr float MarkerMinimumWidth = 120.0f;
 	constexpr float MarkerHeight = 42.0f;
 	constexpr float MarkerMaximumWidth = 320.0f;
-	inline FSlateFontInfo MarkerFont() { return FCoreStyle::GetDefaultFontStyle("Bold", 9); }
-	inline FSlateFontInfo UnitTitleFont() { return FCoreStyle::GetDefaultFontStyle("Bold", 8); }
-	inline FSlateFontInfo UnitLineFont() { return FCoreStyle::GetDefaultFontStyle("Regular", 8); }
+	inline FSlateFontInfo MarkerFont() { return APSUITheme::BodyFont("Bold", 9); }
+	inline FSlateFontInfo UnitTitleFont() { return APSUITheme::BodyFont("Bold", 8); }
+	inline FSlateFontInfo UnitLineFont() { return APSUITheme::BodyFont("Regular", 8); }
 	/** The line of a card that lists the other objects it stands for. */
-	inline FSlateFontInfo MergedFont() { return FCoreStyle::GetDefaultFontStyle("Bold", 8); }
+	inline FSlateFontInfo MergedFont() { return APSUITheme::BodyFont("Bold", 8); }
 	constexpr float MarkerGap = 5.0f;
 	constexpr float FlagHorizontalShift = 0.62f;
 	/** Pole from the edge of an object's mark to its flag. */
@@ -1127,15 +1129,26 @@ namespace APSShipPerf
 		TEXT("aps.Ship.ProxySweep"), 1,
 		TEXT("1 sweeps the flight proxy boxes of detailed hulls (M3 and similar) so they collide with stations, ships and ")
 		TEXT("terrain; 0 restores the collision-free root move of those ships (before 29.09)."));
+	// Rio 06.10 ("20 fps in flight, unplayable"): on by default. Same flight, same build (p1-far-b/-h): near the planet
+	// 68 -> 112 fps (game thread 17.3 -> 5.3 ms, hitches 23 -> 1), CRUISE 68 -> 96, STELLAR 90 -> 109; nothing drawn changes.
 	TAutoConsoleVariable<int32> CVarDetailedHullFlightProxy(
-		TEXT("aps.Ship.DetailedHullFlightProxy"), 0,
-		TEXT("Rio 05.10 evening (flight FPS, an A/B for now): 1 flies a piloted ship whose hull has more collision shapes ")
+		TEXT("aps.Ship.DetailedHullFlightProxy"), 1,
+		TEXT("Rio 05.10 evening (flight FPS; on by default since 06.10): 1 flies a piloted ship whose hull has more collision shapes ")
 		TEXT("than aps.Ship.DetailedHullShapes on the flight proxy boxes, as the M3 does, and takes the hull's own body out ")
 		TEXT("of the physics scene until the pilot gets up (the M5's 13.5k convex shapes cost ~6 ms a frame in any flight: ")
 		TEXT("every move of the hull and every query near it walks them all). 0: as the ship is authored."));
 	TAutoConsoleVariable<int32> CVarDetailedHullShapes(
 		TEXT("aps.Ship.DetailedHullShapes"), 512,
 		TEXT("Collision shapes from which aps.Ship.DetailedHullFlightProxy treats a hull as detailed."));
+	// Rio 06.10 ("20 fps in flight", and he hates freezes): with the flight proxy on by default, every time the pilot gets up
+	// the M5's 13.5k-shape body is built again in one frame (~300 ms in the restore log line). It must be built exactly once,
+	// already carrying its final profile and responses, and not at all for a world or a ship that is going away.
+	TAutoConsoleVariable<int32> CVarHullRestoreOnce(
+		TEXT("aps.Ship.HullRestoreOnce"), 1,
+		TEXT("Rio 06.10 (freeze when the pilot gets up): 1 gives a hull whose body left the scene in flight its profile, ")
+		TEXT("responses and kinematic state while it is still out, then builds the body once with them; a world being torn ")
+		TEXT("down or a ship being destroyed gets no body back at all. 0 restores profile, type and responses one call ")
+		TEXT("after another (each may build or re-filter the body), as before 06.10."));
 	TAutoConsoleVariable<int32> CVarHullSceneLightingInFlight(
 		TEXT("aps.Ship.HullSceneLightingInFlight"), 2,
 		TEXT("2 (default since Rio's check on 29.09) takes a piloted ship out of the global distance field: that copy ")
@@ -3056,18 +3069,17 @@ bool ASpaceship::MoveShipKinematic(const FVector& Delta, bool bSweep, FHitResult
 	// Rio 05.10 (REAL SCALE: at billions of c the hull, the camera and the pilot walking aboard jumped by metres every
 	// frame, "the Deep Space Kraken"): an unswept step of the player's fast ship goes into the world shift by whole
 	// grains (KSP's Krakensbane); the ship and its riders move by the small rest only. Same speed, same flight.
+	// Rio 05.10 night: every unswept step goes this way (the plain offset below, without a sweep, is the same move), so a
+	// long step the view rides between flows gets its riders' previous transforms too (FlowPastShip, "flow ride").
 	if (!bSweep)
 	{
 		UWorld* World = GetWorld();
 		if (UAPSWorldOriginSubsystem* Origin = World ? World->GetSubsystem<UAPSWorldOriginSubsystem>() : nullptr)
 		{
 			const FVector Rest = Origin->FlowPastShip(*this, Delta, KinematicVelocity.Size());
-			if (Rest != Delta)
-			{
-				AddActorWorldOffset(Rest, false, nullptr, ETeleportType::None);
-				Origin->FinishFlowMove(*this);
-				return false;
-			}
+			AddActorWorldOffset(Rest, false, nullptr, ETeleportType::None);
+			Origin->FinishFlowMove(*this);
+			return false;
 		}
 	}
 	UPrimitiveComponent* RootPrimitive = Cast<UPrimitiveComponent>(GetRootComponent());
@@ -3839,11 +3851,14 @@ FVector ASpaceship::GetNavigationContactWorldAnchor(int32 ContactIndex) const
 	{
 		return Contact->GetWorldLocation();
 	}
+	// Rio 06.10 (still ship): a ship owing its travel sees the world's actors at their sky place (a system riding with the
+	// sky where it is, any other at its place + the sky offset).
+	const FVector Sky = UAPSWorldOriginSubsystem::SkyPlace(*Actor) - Actor->GetActorLocation();
 	// Rio 04.10 ("the planet's mark trembles while the ship moves"): a world's centre is its actor; its largest visible
 	// mesh changes as its surface streams (globe, terrain, clouds), and the mark jumped between their bounds.
 	if (Actor->IsA<APlanetaryBody>())
 	{
-		return Actor->GetActorLocation();
+		return Actor->GetActorLocation() + Sky;
 	}
 
 	FVector VisualCenter = Actor->GetActorLocation();
@@ -3862,7 +3877,7 @@ FVector ASpaceship::GetNavigationContactWorldAnchor(int32 ContactIndex) const
 			VisualCenter = MeshComponent->Bounds.Origin;
 		}
 	}
-	return VisualCenter;
+	return VisualCenter + Sky;
 }
 
 const APlanet* ASpaceship::GetNavigationFocusPlanet() const
@@ -4438,7 +4453,9 @@ int32 ASpaceship::PaintNavigationOverlay(const FGeometry& AllottedGeometry, cons
 			if (!bShouldPaintOrbit) continue;
 			PaintedOrbits.Add(Orbit);
 
-			const FVector OrbitCenter = Orbit->GetActorLocation();
+			// Rio 06.10 (still ship): the orbit's centre where the ship sees it, like the body's (the review: a ring of light
+			// years while owing).
+			const FVector OrbitCenter = UAPSWorldOriginSubsystem::SkyPlace(*Orbit);
 			const FVector BodyCenter = GetNavigationContactWorldAnchor(ContactIndex);
 			const FVector RadialVector = BodyCenter - OrbitCenter;
 			const double OrbitRadius = RadialVector.Size();
@@ -4468,14 +4485,16 @@ int32 ASpaceship::PaintNavigationOverlay(const FGeometry& AllottedGeometry, cons
 			if (const APlanet* Planet = Cast<APlanet>(SelectedBody);
 				Planet && Planet->GravityCollisionZone && Planet->GravityCollisionZone->GetScaledSphereRadius() > 0.0f)
 			{
-				DrawProjectedRing(Planet->GravityCollisionZone->GetComponentLocation(), CameraRight, CameraUp,
+				DrawProjectedRing(Planet->GravityCollisionZone->GetComponentLocation()
+					+ (UAPSWorldOriginSubsystem::SkyPlace(*Planet) - Planet->GetActorLocation()), CameraRight, CameraUp,
 					Planet->GravityCollisionZone->GetScaledSphereRadius(),
 					FLinearColor(0.28f, 1.0f, 0.58f, 0.34f), 0.9f, true, LayerId + 1);
 			}
 			if (ParentStar && ParentStar->PlanetarySystemZone
 				&& ParentStar->PlanetarySystemZone->GetScaledSphereRadius() > 0.0f)
 			{
-				DrawProjectedRing(ParentStar->PlanetarySystemZone->GetComponentLocation(), CameraRight, CameraUp,
+				DrawProjectedRing(ParentStar->PlanetarySystemZone->GetComponentLocation()
+					+ (UAPSWorldOriginSubsystem::SkyPlace(*ParentStar) - ParentStar->GetActorLocation()), CameraRight, CameraUp,
 					ParentStar->PlanetarySystemZone->GetScaledSphereRadius(),
 					FLinearColor(0.22f, 0.65f, 1.0f, 0.16f), 0.7f, true, LayerId);
 			}
@@ -4485,7 +4504,8 @@ int32 ASpaceship::PaintNavigationOverlay(const FGeometry& AllottedGeometry, cons
 			if (const AStarSystem* System = Cast<AStarSystem>(Ancestor);
 				System && System->StarSystemZone && System->StarSystemZone->GetScaledSphereRadius() > 0.0f)
 			{
-				DrawProjectedRing(System->StarSystemZone->GetComponentLocation(), CameraRight, CameraUp,
+				DrawProjectedRing(System->StarSystemZone->GetComponentLocation()
+					+ (UAPSWorldOriginSubsystem::SkyPlace(*System) - System->GetActorLocation()), CameraRight, CameraUp,
 					System->StarSystemZone->GetScaledSphereRadius(),
 					FLinearColor(0.65f, 0.42f, 1.0f, 0.13f), 0.65f, true, LayerId);
 			}
@@ -4686,8 +4706,9 @@ int32 ASpaceship::PaintNavigationOverlay(const FGeometry& AllottedGeometry, cons
 		// the cards, which keep clear of the brackets, the arrow and the caption.
 		const int32 TargetIndex = ShipNavigation->GetSelectedContactIndex();
 		const FShipNavigationContact* Target = ShipNavigation->GetSelectedContact();
-		const FSlateFontInfo CaptionFont = FCoreStyle::GetDefaultFontStyle("Bold", 8);
-		const FLinearColor TargetColor(1.0f, 0.74f, 0.18f, 0.78f + 0.22f * static_cast<float>(FMath::Sin(NowSeconds * 3.0)));
+		const FSlateFontInfo CaptionFont = APSUITheme::BodyFont("Bold", 8);
+		const FLinearColor TargetColor = (APSUITheme::Current() == EAPSUITheme::Classic ? FLinearColor(1.0f, 0.74f, 0.18f, 1.0f)
+			: APSUITheme::Palette().ActionPeak).CopyWithNewOpacity(0.78f + 0.22f * static_cast<float>(FMath::Sin(NowSeconds * 3.0)));
 		FString Caption;
 		FVector2D TargetScreen = FVector2D::ZeroVector;
 		FVector2D ArrowTip = FVector2D::ZeroVector;
@@ -4821,7 +4842,7 @@ int32 ASpaceship::PaintNavigationOverlay(const FGeometry& AllottedGeometry, cons
 				const ASpaceship* UnitShip = Unit.Ship.Get();
 				if (UnitShip && UnitShip != this)
 				{
-					UnitMarkers.Add({&Unit, FVector::Distance(UnitShip->GetActorLocation(), GetActorLocation())});
+					UnitMarkers.Add({&Unit, FVector::Distance(UAPSWorldOriginSubsystem::SkyPlace(*UnitShip), GetActorLocation())});
 				}
 			}
 			UnitMarkers.Sort([](const FUnitMarker& A, const FUnitMarker& B) { return A.Distance < B.Distance; });
@@ -4837,7 +4858,8 @@ int32 ASpaceship::PaintNavigationOverlay(const FGeometry& AllottedGeometry, cons
 			{
 				if (ShownUnits >= 12) break;
 				const ASpaceship* UnitShip = Marker.Unit->Ship.Get();
-				const FVector UnitWorld = UnitShip->GetActorLocation();
+				// Rio 06.10 (still ship): a fleet unit where the ship sees it (its world place + the sky offset while owing).
+				const FVector UnitWorld = UAPSWorldOriginSubsystem::SkyPlace(*UnitShip);
 				// Rio 04.10: ships in a star system seen from outside fold into its card with its worlds.
 				if (ShipNavigation && ShipNavigation->IsInFoldedSystem(UnitWorld)) continue;
 				FVector2D UnitScreen;
@@ -5028,11 +5050,13 @@ int32 ASpaceship::PaintNavigationOverlay(const FGeometry& AllottedGeometry, cons
 		const float PanelY = AltimeterRect.Top;
 		const float PanelWidth = AltimeterRect.Right - AltimeterRect.Left;
 		const float PanelHeight = AltimeterRect.Bottom - AltimeterRect.Top;
-		const FLinearColor Calm(0.18f, 0.84f, 1.0f, 1.0f);
+		// Rio 06.10: the chrome tones follow the interface theme; caution and danger keep their meaning.
+		const bool bClassicTheme = APSUITheme::Current() == EAPSUITheme::Classic;
+		const FLinearColor Calm = bClassicTheme ? FLinearColor(0.18f, 0.84f, 1.0f, 1.0f) : APSUITheme::Palette().Highlight;
 		const FLinearColor Caution(1.0f, 0.68f, 0.16f, 1.0f);
 		const FLinearColor Danger(1.0f, 0.24f, 0.12f, 1.0f);
-		const FLinearColor Bright(0.93f, 0.96f, 0.99f, 1.0f);
-		const FLinearColor Muted(0.62f, 0.76f, 0.86f, 1.0f);
+		const FLinearColor Bright = bClassicTheme ? FLinearColor(0.93f, 0.96f, 0.99f, 1.0f) : APSUITheme::Palette().Text;
+		const FLinearColor Muted = bClassicTheme ? FLinearColor(0.62f, 0.76f, 0.86f, 1.0f) : APSUITheme::Palette().TextSoft;
 		const float Alarm = FMath::Clamp(Altimeter.Severity, 0.0f, 1.0f);
 		const FLinearColor State = FMath::Lerp(FMath::Lerp(Calm, Caution, Alarm), Danger,
 			FMath::Clamp(Altimeter.Severity - 1.0f, 0.0f, 1.0f));
@@ -5060,13 +5084,13 @@ int32 ASpaceship::PaintNavigationOverlay(const FGeometry& AllottedGeometry, cons
 				String, Font, ESlateDrawEffect::None, Tone);
 		};
 		const TSharedRef<FSlateFontMeasure> PlateMeasure = FSlateApplication::Get().GetRenderer()->GetFontMeasureService();
-		const FSlateFontInfo LabelFont = FCoreStyle::GetDefaultFontStyle("Bold", 8);
-		const FSlateFontInfo LineFont = FCoreStyle::GetDefaultFontStyle("Bold", 9);
-		const FSlateFontInfo ReadoutFont = FCoreStyle::GetDefaultFontStyle("Bold", 20);
-		const FSlateFontInfo ScaleFont = FCoreStyle::GetDefaultFontStyle("Regular", 8);
-		const FSlateFontInfo SmallFont = FCoreStyle::GetDefaultFontStyle("Bold", 7);
+		const FSlateFontInfo LabelFont = APSUITheme::BodyFont("Bold", 8);
+		const FSlateFontInfo LineFont = APSUITheme::BodyFont("Bold", 9);
+		const FSlateFontInfo ReadoutFont = APSUITheme::BodyFont("Bold", 20);
+		const FSlateFontInfo ScaleFont = APSUITheme::BodyFont("Regular", 8);
+		const FSlateFontInfo SmallFont = APSUITheme::BodyFont("Bold", 7);
 
-		Fill(PanelX, PanelY, PanelWidth, PanelHeight, Tint(FLinearColor(0.005f, 0.018f, 0.035f, 1.0f), 0.84f), LayerId + 3);
+		Fill(PanelX, PanelY, PanelWidth, PanelHeight, Tint(APSUITheme::Retint(FLinearColor(0.005f, 0.018f, 0.035f, 1.0f)), 0.84f), LayerId + 3);
 		Fill(PanelX, PanelY, 3.0f, PanelHeight, Tint(State, 0.95f * Pulse), LayerId + 4);
 		Write(TEXT("ALTITUDE"), PanelX + 13.0f, PanelY + 8.0f, LabelFont, Tint(Muted, 0.9f));
 		const FString DesignationSuffix = Altimeter.Designation.IsEmpty() ? FString() : TEXT("  ") + Altimeter.Designation;
@@ -5184,7 +5208,7 @@ FLinearColor ASpaceship::GetNavigationMarkerColor(int32 ContactIndex) const
 {
 	if (ShipNavigation && ContactIndex == ShipNavigation->GetSelectedContactIndex())
 	{
-		return FLinearColor(1.0f, 0.68f, 0.16f, 1.0f);
+		return APSUITheme::Current() == EAPSUITheme::Classic ? FLinearColor(1.0f, 0.68f, 0.16f, 1.0f) : APSUITheme::Palette().ActionPeak;
 	}
 	const FShipNavigationContact* Contact = ShipNavigation ? ShipNavigation->GetContact(ContactIndex) : nullptr;
 	if (!Contact) return FLinearColor::Transparent;
@@ -5234,79 +5258,19 @@ void ASpaceship::CreateShipHud()
 		.Ship(WeakThis)
 	];
 
-	// The navigation cards keep clear of both panels (their real size, whatever the text in them).
-	TSharedPtr<SBackgroundBlur> NavigationPanel;
-	TSharedPtr<SBackgroundBlur> StatusPanel;
+	// Rio 06.10 (Claude UI, "Flight HUD v4"): the navigation card and the flight bar in the interface theme
+	// (UI/Hud/SAPSShipHud) instead of the two text panels. The navigation cards keep clear of both (their real size).
+	const TSharedRef<SAPSShipHud> Instruments = SNew(SAPSShipHud)
+		.Ship(WeakThis)
+		.ShowNavigation_Lambda([WeakThis]() { return WeakThis.IsValid() && WeakThis->bNavigationPanelVisible; })
+		.StatusText_Lambda([WeakThis]() { return WeakThis.IsValid() ? WeakThis->GetShipStatusText() : FText::GetEmpty(); })
+		.HintText_Lambda([WeakThis]() { return WeakThis.IsValid() ? WeakThis->GetShipHintText() : FText::GetEmpty(); });
 	RootOverlay->AddSlot()
-		.HAlign(HAlign_Right)
-		.VAlign(VAlign_Top)
-		.Padding(0.0f, 38.0f, 36.0f, 0.0f)
-		[
-			SAssignNew(NavigationPanel, SBackgroundBlur)
-			.Visibility_Lambda([WeakThis]()
-			{
-				return WeakThis.IsValid() && WeakThis->bNavigationPanelVisible
-					? EVisibility::HitTestInvisible : EVisibility::Collapsed;
-			})
-			.BlurStrength(10.0f)
-			.BlurRadius(8)
-			.LowQualityFallbackBrush(FCoreStyle::Get().GetBrush("WhiteBrush"))
-			[
-				SNew(SBorder)
-				.BorderBackgroundColor(FLinearColor(0.005f, 0.018f, 0.035f, 0.86f))
-				.Padding(FMargin(18.0f, 13.0f))
-				[
-					SNew(STextBlock)
-					.Text_Lambda([WeakThis]()
-					{
-						return WeakThis.IsValid() ? WeakThis->GetNavigationPanelText() : FText::GetEmpty();
-					})
-					.ColorAndOpacity(FLinearColor(0.72f, 0.9f, 1.0f, 0.96f))
-				]
-			]
-		];
-
-	RootOverlay->AddSlot()
-		.HAlign(HAlign_Left)
-		.VAlign(VAlign_Bottom)
-		.Padding(36.0f, 0.0f, 0.0f, 34.0f)
-		[
-			SAssignNew(StatusPanel, SBackgroundBlur)
-			.BlurStrength(12.0f)
-			.BlurRadius(10)
-			.LowQualityFallbackBrush(FCoreStyle::Get().GetBrush("WhiteBrush"))
-			[
-				SNew(SBorder)
-				.BorderBackgroundColor(FLinearColor(0.005f, 0.018f, 0.035f, 0.88f))
-				.Padding(FMargin(20.0f, 14.0f))
-				[
-					SNew(SVerticalBox)
-					+ SVerticalBox::Slot()
-					.AutoHeight()
-					[
-						SNew(STextBlock)
-						.Text_Lambda([WeakThis]()
-						{
-							return WeakThis.IsValid() ? WeakThis->GetShipStatusText() : FText::GetEmpty();
-						})
-						.ColorAndOpacity(FLinearColor(0.18f, 0.84f, 1.0f, 1.0f))
-					]
-					+ SVerticalBox::Slot()
-					.AutoHeight()
-					.Padding(0.0f, 7.0f, 0.0f, 0.0f)
-					[
-						SNew(STextBlock)
-						.Text_Lambda([WeakThis]()
-						{
-							return WeakThis.IsValid() ? WeakThis->GetShipHintText() : FText::GetEmpty();
-						})
-						.ColorAndOpacity(FLinearColor(0.78f, 0.86f, 0.92f, 0.95f))
-					]
-				]
-			]
-		];
-	APSNavigationHud::GNavigationPanel = NavigationPanel;
-	APSNavigationHud::GStatusPanel = StatusPanel;
+	[
+		Instruments
+	];
+	APSNavigationHud::GNavigationPanel = Instruments->GetNavigationCard();
+	APSNavigationHud::GStatusPanel = Instruments->GetFlightBar();
 	// The F10 map holds the view with its own camera: the ship's cards and panels would show through it (02.10).
 	RootOverlay->SetVisibility(TAttribute<EVisibility>::CreateLambda([WeakThis]()
 	{

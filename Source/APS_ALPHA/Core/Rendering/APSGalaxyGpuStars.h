@@ -90,4 +90,31 @@ namespace APSGalaxyGpuStars
 	 */
 	bool PickAlongRay(const UWorld* World, const FVector& RayOrigin, const FVector& RayDirection, double MaxAngleRadians,
 		FNearStar& OutStar);
+
+	/**
+	 * Rio 05.10 night ("flying to a star in REAL SCALE the point must become the real star strictly and at once, no
+	 * difference at all: it just keeps growing"): in a REAL SCALE world each drawn GPU star within aps.Stars.ApproachPointLy
+	 * of the camera gets a one-point set of its own with its level's photometry (the same 1/d^2 law, clamp and PSF) and its
+	 * 16-bit quantized twin is hidden by a small sphere. It is taken over where the twin is drawn and eased to the exact
+	 * catalogue place on the way in, so neither end of it jumps, and it crossfades into the star's sphere (a materialized
+	 * system's star or a near photosphere) while that disc grows to aps.Stars.FarGlyphPixels. Each frame from the gameplay
+	 * stellar view (APSFarStarGlyphs::Update, after PresentGameplayFrame). Nothing in legacy worlds or with
+	 * aps.Stars.ApproachPoint 0.
+	 */
+	void UpdateApproachPoints(UWorld* World, const FVector& Camera, double PixelTangent);
+
+	/** Rio 05.10 night: aps.Stars.ApproachPoint is on and the world is a REAL SCALE one. */
+	bool AreApproachPointsActive(const UWorld* World);
+
+	/** Rio 05.10 night: an approach point draws this catalogue star now (it needs no far glyph). */
+	bool DrawsApproachPoint(const UWorld* World, int64 CatalogIndex);
+
+	/** Rio 05.10 night: the catalogue stars APSGalaxyNearStars shows as photospheres now (an approach point fades into one). */
+	void SetNearPhotospheres(const UWorld* World, TConstArrayView<int64> CatalogIndices);
+
+	/**
+	 * Rio 05.10 night: a system stood up or went (APSSystemMaterializer): the exclusion spheres are scanned again in this
+	 * frame instead of at the next half-second scan. REAL SCALE with aps.Stars.ApproachPoint only.
+	 */
+	void RescanExclusions(UWorld* World);
 }

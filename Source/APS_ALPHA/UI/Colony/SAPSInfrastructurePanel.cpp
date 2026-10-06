@@ -1,4 +1,5 @@
 #include "SAPSInfrastructurePanel.h"
+#include "APS_ALPHA/UI/Style/APSUITheme.h"
 
 #include "APS_ALPHA/Actors/Astro/APSBodyDesignation.h"
 #include "APS_ALPHA/Actors/Astro/Moon.h"
@@ -64,9 +65,8 @@ namespace APSInfrastructurePanelPrivate
 	const FSlateBrush* TileBrush()
 	{
 		// The terminal's metric tile: a dark inset with a quiet rim.
-		static const FSlateRoundedBoxBrush Brush(FLinearColor(0.005f, 0.028f, 0.044f, 0.98f), 6.0f,
-			FLinearColor(0.035f, 0.23f, 0.31f, 0.88f), 1.0f);
-		return &Brush;
+		// Rio 06.10: the shared tile follows the interface theme.
+		return APSChrome::MetricTileBrush();
 	}
 
 	const FSlateBrush* Disc()
@@ -696,7 +696,7 @@ int32 SAPSInfrastructureMap::OnPaint(const FPaintArgs& Args, const FGeometry& Al
 	const FSlateFontInfo LabelFont = Font(TEXT("Bold"), 9);
 	const FSlateFontInfo SmallFont = Font(TEXT("Regular"), 9);
 	const FLinearColor Link = LinkColour();
-	const FLinearColor Edge(0.26f, 0.84f, 0.93f, 0.28f);
+	const FLinearColor Edge = APSUITheme::RetintHighlight(FLinearColor(0.26f, 0.84f, 0.93f, 0.28f));
 	NodePixels.SetNum(Nodes.Num());
 	for (int32 Index = 0; Index < Nodes.Num(); ++Index)
 	{
@@ -899,7 +899,7 @@ int32 SAPSInfrastructureMap::OnPaint(const FPaintArgs& Args, const FGeometry& Al
 		BoxAt.Y = FMath::Max(4.0, FMath::Min(BoxAt.Y, Size.Y - BoxSize.Y - 4.0));
 		FSlateDrawElement::MakeBox(OutDrawElements, LayerId + 8, AllottedGeometry.ToPaintGeometry(FVector2f(BoxSize),
 			FSlateLayoutTransform(FVector2f(BoxAt))), FAppStyle::GetBrush("WhiteBrush"), ESlateDrawEffect::None,
-			FLinearColor(0.01f, 0.035f, 0.05f, 0.94f));
+			APSUITheme::Retint(FLinearColor(0.01f, 0.035f, 0.05f, 0.94f)));
 		// Each line by its capitals' middle on the plate (Rio 03.10), not by Slate's line box.
 		FSlateDrawElement::MakeText(OutDrawElements, LayerId + 9, AllottedGeometry.ToPaintGeometry(FVector2f(NameSize),
 			FSlateLayoutTransform(FVector2f(BoxAt + FVector2D(9.0, 5.0 + CapsCenterOffset(TipFont))))), TipName, TipFont,
@@ -1681,9 +1681,9 @@ TSharedRef<SWidget> SAPSInfrastructurePanel::BuildCard(const FName TypeId)
 	// PILOT"): the place and the tags as chips under the name, the build time large in the corner, the needs as a list,
 	// what it costs and what it gives as two columns of lines instead of chip clouds, the chain as dotted steps, and how
 	// many places take it beside BUILD. Lines in the readable face; the long rules stay as tooltips.
-	const FSlateFontInfo LineFont = FCoreStyle::GetDefaultFontStyle("Regular", 12);
-	const FSlateFontInfo StrongFont = FCoreStyle::GetDefaultFontStyle("Bold", 12);
-	const FSlateFontInfo LabelFont = FCoreStyle::GetDefaultFontStyle("Bold", 10);
+	const FSlateFontInfo LineFont = APSUITheme::BodyFont("Regular", 12);
+	const FSlateFontInfo StrongFont = APSUITheme::BodyFont("Bold", 12);
+	const FSlateFontInfo LabelFont = APSUITheme::BodyFont("Bold", 10);
 	const auto CardDot = [](const TAttribute<FSlateColor>& Colour, const float Size)
 	{
 		return SNew(SBox).WidthOverride(Size).HeightOverride(Size)
@@ -2138,7 +2138,7 @@ TSharedRef<SWidget> SAPSInfrastructurePanel::BuildCard(const FName TypeId)
 					]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 2.0f, 0.0f, 0.0f)
 					[
-						SNew(STextBlock).Font(FCoreStyle::GetDefaultFontStyle("Regular", 11)).ColorAndOpacity(Amber())
+						SNew(STextBlock).Font(APSUITheme::BodyFont("Regular", 11)).ColorAndOpacity(Amber())
 						.Text_Lambda([this, TypeId]()
 						{
 							return FText::Format(LOCTEXT("UnderWayCount", "{0} under way"), APSUINumber::Number(BuildsUnderWay.FindRef(TypeId)));

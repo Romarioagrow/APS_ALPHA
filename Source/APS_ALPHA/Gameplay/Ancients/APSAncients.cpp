@@ -1630,6 +1630,11 @@ bool FAPSAncients::Teleport(const int32 Index)
 	{
 		return false;
 	}
+	// Rio 06.10 (still ship): the target is a world place; a ship owing its travel pays it first.
+	if (UAPSWorldOriginSubsystem* Origin = LiveWorld->GetSubsystem<UAPSWorldOriginSubsystem>())
+	{
+		Origin->SettleDeferredTravel(TEXT("an ancients teleport"));
+	}
 	const FSite& Site = Sites[Index];
 	ACustomGravityCharacter* Character = Cast<ACustomGravityCharacter>(Pawn);
 	FVector Target;

@@ -1925,7 +1925,7 @@ FText UWorldGenerationViewModel::GetPreviewScopeSummary() const
 					: APSGalaxyMorphology::PreviewReferenceBudget),
 			GeneratedWorld->GalaxySize, GeneratedWorld->GalaxyStarDensity,
 			*EnumText(GeneratedWorld->GalaxyStarPopulation), *EnumText(GeneratedWorld->GalaxyStarComposition))
-			+ (bRealScaleSizes ? TEXT("\nREAL SCALE  ") + LightYears(2.0 * RealGalaxyRadiusCm) + TEXT(" ACROSS") : FString()));
+			+ (bRealScaleSizes ? TEXT("\nREAL DISTANCES  ") + LightYears(2.0 * RealGalaxyRadiusCm) + TEXT(" ACROSS") : FString()));
 
 	case EAstroPreviewFocus::StarCluster:
 		return FText::FromString(FString::Printf(
@@ -1934,7 +1934,7 @@ FText UWorldGenerationViewModel::GetPreviewScopeSummary() const
 			*EnumText(GeneratedWorld->StarClusterPopulation), *EnumText(GeneratedWorld->StarClusterComposition),
 			Generator ? Generator->GetPreviewClusterModeledSystemCount() : 0,
 			Generator ? Generator->GetPreviewClusterRenderedStarCount() : 0)
-			+ (bRealScaleSizes ? TEXT("\nREAL SCALE  ") + LightYears(2.0 * RealClusterRadiusCm) + TEXT(" ACROSS  /  NEIGHBOURS ~")
+			+ (bRealScaleSizes ? TEXT("\nREAL DISTANCES  ") + LightYears(2.0 * RealClusterRadiusCm) + TEXT(" ACROSS  /  NEIGHBOURS ~")
 				+ LightYears(RealNeighbourCm) : FString()));
 
 	case EAstroPreviewFocus::HomeSystem:
@@ -2039,9 +2039,9 @@ FText UWorldGenerationViewModel::GetPreviewScopeSummary() const
 			*EnumText(GeneratedWorld->StarClusterType), HomePlanetCount,
 			GeneratedWorld->StartPlanetIndex, GeneratedWorld->bGenerateFullScaledWorld ? TEXT("ON") : TEXT("OFF"))
 			+ (!bRealScale ? FString() : bRealScaleSizes
-				? TEXT("\nREAL SCALE  ON (EXPERIMENTAL)  /  GALAXY ") + LightYears(2.0 * RealGalaxyRadiusCm)
+				? TEXT("\nREAL DISTANCES  ON  /  GALAXY ") + LightYears(2.0 * RealGalaxyRadiusCm)
 					+ TEXT("  /  NEIGHBOURS ~") + LightYears(RealNeighbourCm)
-				: FString(TEXT("\nREAL SCALE  ON (EXPERIMENTAL)"))));
+				: FString(TEXT("\nREAL DISTANCES  ON"))));
 	}
 	}
 }
@@ -2203,7 +2203,7 @@ void UWorldGenerationViewModel::ExecutePreview()
 	// Rio 05.10 (real scale experiment): a REAL SCALE preview says so.
 	SetPreviewStatus(
 		!bGenerated ? LOCTEXT("PreviewFailed", "PREVIEW GENERATION INCOMPLETE")
-			: IsRealScaleActive() ? LOCTEXT("PreviewReadyRealScale", "LIVE REAL-SCALE PREVIEW  /  EXPERIMENTAL")
+			: IsRealScaleActive() ? LOCTEXT("PreviewReadyRealScale", "LIVE PREVIEW  /  REAL DISTANCES")
 			: LOCTEXT("PreviewReady", "LIVE FULL-SCALE PREVIEW"),
 		bGenerated);
 	bPreserveCameraOnNextPreview = false;

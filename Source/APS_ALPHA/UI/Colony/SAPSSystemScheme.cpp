@@ -1,4 +1,5 @@
 #include "SAPSSystemScheme.h"
+#include "APS_ALPHA/UI/Style/APSUITheme.h"
 #include "APS_ALPHA/UI/Style/APSUINumber.h"
 
 #include "APS_ALPHA/Actors/Astro/APSBodyDesignation.h"
@@ -41,10 +42,10 @@ namespace APSSystemSchemePrivate
 	constexpr double MoonTextGapPixels = 7.0;
 
 	FSlateFontInfo DesignationFont() { return APSChrome::Font(TEXT("Bold"), 10); }
-	FSlateFontInfo NameFont() { return FCoreStyle::GetDefaultFontStyle(TEXT("Bold"), 12); }
-	FSlateFontInfo DetailFont() { return FCoreStyle::GetDefaultFontStyle(TEXT("Regular"), 10); }
+	FSlateFontInfo NameFont() { return APSUITheme::BodyFont(TEXT("Bold"), 12); }
+	FSlateFontInfo DetailFont() { return APSUITheme::BodyFont(TEXT("Regular"), 10); }
 	/** Secondary text, brighter than the chrome's muted grey: readable on the dark scheme. */
-	FLinearColor Soft() { return FLinearColor(0.64f, 0.75f, 0.80f, 1.0f); }
+	FLinearColor Soft() { return APSUITheme::Retint(FLinearColor(0.64f, 0.75f, 0.80f, 1.0f)); }
 
 	FVector2D Measure(const FText& Text, const FSlateFontInfo& Font)
 	{
@@ -446,7 +447,7 @@ int32 SAPSSystemScheme::OnPaint(const FPaintArgs&, const FGeometry& Geometry, co
 			Value, Font, ESlateDrawEffect::None, Color);
 	};
 	FSlateDrawElement::MakeBox(Elements, LayerId, Geometry.ToPaintGeometry(), FAppStyle::GetBrush("WhiteBrush"),
-		ESlateDrawEffect::None, FLinearColor(0.002f, 0.010f, 0.018f, 0.92f));
+		ESlateDrawEffect::None, APSUITheme::Retint(FLinearColor(0.002f, 0.010f, 0.018f, 0.92f)));
 	if (Bodies.IsEmpty())
 	{
 		Text(LOCTEXT("NoSystem", "NO STAR SYSTEM NEARBY"), Size * 0.5, NameFont, APSChrome::Muted(), true);
@@ -517,7 +518,7 @@ int32 SAPSSystemScheme::OnPaint(const FPaintArgs&, const FGeometry& Geometry, co
 			{
 				FSlateDrawElement::MakeBox(Elements, LayerId + 3, Geometry.ToPaintGeometry(FVector2D(PlateWidth, ScaleNote.IsEmpty() ? 56.0 : 73.0),
 					FSlateLayoutTransform(LabelAt - FVector2D(10.0, 6.0))), FAppStyle::GetBrush("WhiteBrush"), ESlateDrawEffect::None,
-					FLinearColor(0.004f, 0.016f, 0.026f, 0.82f));
+					APSUITheme::Retint(FLinearColor(0.004f, 0.016f, 0.026f, 0.82f)));
 			}
 			Text(Body.Designation, LabelAt, DesignationFont, bPicked ? APSChrome::Amber() : Body.Color, false);
 			Text(Body.Name, LabelAt + FVector2D(0.0, 16.0), NameFont, bPicked ? APSChrome::Amber() : APSChrome::White(), false);

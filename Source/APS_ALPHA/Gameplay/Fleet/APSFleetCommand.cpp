@@ -1,4 +1,5 @@
 #include "APSFleetCommand.h"
+#include "APS_ALPHA/Core/World/APSWorldOriginSubsystem.h"
 #include "APS_ALPHA/UI/Style/APSUINumber.h"
 #include "APSShipPlacement.h"
 
@@ -58,6 +59,19 @@ namespace APSFleetPrivate
 		TEXT("1 logs every unit under orders once a second: phase, distance, speed."));
 	TAutoConsoleVariable<float> CVarBuildScale(TEXT("aps.Fleet.BuildScale"), 1.0f,
 		TEXT("Multiplies how fast the shipyard builds (tests)."));
+	TAutoConsoleVariable<int32> CVarHoldLaunchInFlight(TEXT("aps.Fleet.HoldLaunchInFlight"), 1,
+		TEXT("1: a finished slipway job waits at 100% while the world flows past the player's fast ship or its travel is ")
+		TEXT("owed to the sky, and launches once that has been calm for aps.Fleet.HoldLaunchCalmSeconds (the hull spawn froze ")
+		TEXT("single frames mid-flight). 0 restores the launch on the very frame the job finishes."));
+	TAutoConsoleVariable<float> CVarHoldLaunchCalmSeconds(TEXT("aps.Fleet.HoldLaunchCalmSeconds"), 1.0f,
+		TEXT("Seconds without a world flow before a held slipway launch goes ahead (aps.Fleet.HoldLaunchInFlight)."));
+	/** Rio 06.10 (flight FPS): per fleet command, the shipyards whose finished job waits for a calm flight and since when
+	 * (world seconds), so the hold is logged once per job and the launch says how long it waited. */
+	TMap<const FAPSFleetCommand*, TMap<TWeakObjectPtr<ASpaceShipyard>, double>>& HeldLaunches()
+	{
+		static TMap<const FAPSFleetCommand*, TMap<TWeakObjectPtr<ASpaceShipyard>, double>> Held;
+		return Held;
+	}
 	const FName BuiltTag(TEXT("APS.Fleet.Built"));
 	const FName CivilizationTag(TEXT("APS.GeneratedCivilization"));
 	/** Stations, shipyards and HQs the construction ships raised (the generated home complex has no such tag). */
@@ -555,7 +569,11 @@ FAPSFleetCommand::FAPSFleetCommand(UWorld* InWorld)
 {
 }
 
-FAPSFleetCommand::~FAPSFleetCommand() = default;
+FAPSFleetCommand::~FAPSFleetCommand()
+{
+	// Rio 06.10: a later fleet command at the same address must not inherit this one's held launches.
+	APSFleetPrivate::HeldLaunches().Remove(this);
+}
 
 UCivilization* FAPSFleetCommand::Civilization() const
 {
@@ -780,7 +798,7 @@ AActor* FAPSFleetCommand::NearestBody(const FVector& Location, double& OutSurfac
 		{
 			continue;
 		}
-		const double Surface = FVector::Distance(Location, It->GetActorLocation()) - Radius;
+		const double Surface = FVector::Distance(Location, UAPSWorldOriginSubsystem::WorldPlace(**It)) - Radius;
 		if (Surface < OutSurfaceDistanceCm)
 		{
 			OutSurfaceDistanceCm = Surface;
@@ -800,7 +818,7 @@ APlanetaryBody* FAPSFleetCommand::HomeBodyOf(const FVector& Location) const
 	{
 		for (TActorIterator<APlanet> It(LiveWorld); It; ++It)
 		{
-			const double Ratio = FVector::Distance(Location, It->GetActorLocation())
+			const double Ratio = FVector::Distance(Location, UAPSWorldOriginSubsystem::WorldPlace(**It))
 				/ FMath::Max(It->GetWorldScapeBodyRadiusCm(), 1.0);
 			if (Ratio < BestRatio)
 			{
@@ -1055,7 +1073,7 @@ bool FAPSFleetCommand::PilotWorkRange(const ASpaceship* Ship, const APSFleet::EO
 	{
 		return false;
 	}
-	OutDistanceCm = FVector::Dist(Ship->GetActorLocation(), Target->GetActorLocation());
+	OutDistanceCm = FVector::Dist(Ship->GetActorLocation(), UAPSWorldOriginSubsystem::WorldPlace(*Target));
 	if (Target->IsA<APlanetaryBody>())
 	{
 		// A survey reads the world from a near approach (four of its radii and 20,000 km); building and an expedition's
@@ -1072,7 +1090,7 @@ bool FAPSFleetCommand::PilotWorkRange(const ASpaceship* Ship, const APSFleet::EO
 		const FAPSStarSystemInfo* Info = Stars ? Stars->Find(SystemId) : nullptr;
 		if (Info)
 		{
-			OutDistanceCm = FVector::Dist(Ship->GetActorLocation(), Info->Location);
+			OutDistanceCm = FVector::Dist(Ship->GetActorLocation(), Info->Location - UAPSWorldOriginSubsystem::SkyOffsetOf(World.Get()));
 		}
 		OutRangeCm = FMath::Max(Info ? Info->RoomCm : 0.0, APSStars::AstronomicalUnitCm);
 		return true;
@@ -1148,7 +1166,7 @@ FText FAPSFleetCommand::IssuePilotOrder(ASpaceship* Ship, const APSFleet::EOrder
 	Unit->StructureType = Order == EOrder::BuildStructure ? StructureType : NAME_None;
 	Unit->Target = Target;
 	Unit->bPilotWork = true;
-	Unit->SlotDirection = (Ship->GetActorLocation() - Target->GetActorLocation()).GetSafeNormal();
+	Unit->SlotDirection = (Ship->GetActorLocation() - UAPSWorldOriginSubsystem::WorldPlace(*Target)).GetSafeNormal();
 	if (Unit->SlotDirection.IsNearlyZero()) Unit->SlotDirection = FVector::UpVector;
 	Unit->Speed = 0.0;
 	Unit->RemainingCm = 0.0;
@@ -1278,7 +1296,7 @@ ASpaceship* FAPSFleetCommand::PickShipFor(const APSFleet::EOrder Order, const AA
 			if (OutRefusal.IsEmpty()) OutRefusal = FText::Format(LOCTEXT("PickRefused", "{0}: {1}"), UnitName(Unit), Refusal);
 			continue;
 		}
-		const double Distance = Target ? FVector::DistSquared(Ship->GetActorLocation(), Target->GetActorLocation()) : 0.0;
+		const double Distance = Target ? FVector::DistSquared(Ship->GetActorLocation(), UAPSWorldOriginSubsystem::WorldPlace(*Target)) : 0.0;
 		if (Distance < BestDistance)
 		{
 			BestDistance = Distance;
@@ -1330,15 +1348,22 @@ int32 FAPSFleetCommand::IssueOrder(const TArray<ASpaceship*>& Ships, const APSFl
 			Unit->bHasBerth = true;
 			Unit->bBerthParked = Ship->ActorHasTag(ParkedTag);
 		}
+		// Rio 06.10 (still ship, the review): a unit berthed on something the still frame holds (a system riding with the
+		// sky, a catalogue anchor) leaves it at its world place: once detached it lives in the world's frame.
+		const FVector UnitWorldPlace = UAPSWorldOriginSubsystem::WorldPlace(*Ship);
 		Ship->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+		if (!UnitWorldPlace.Equals(Ship->GetActorLocation(), 1.0))
+		{
+			Ship->SetActorLocation(UnitWorldPlace, false, nullptr, ETeleportType::TeleportPhysics);
+		}
 		Ship->Tags.Remove(ParkedTag);
 		// Clear the berth first: straight out from the nearest body, a few ship lengths.
 		double Surface = 0.0, Radius = 0.0;
 		AActor* Near = NearestBody(Ship->GetActorLocation(), Surface, Radius);
-		const FVector Out = Near ? (Ship->GetActorLocation() - Near->GetActorLocation()).GetSafeNormal() : Ship->GetShipUpVector();
+		const FVector Out = Near ? (Ship->GetActorLocation() - UAPSWorldOriginSubsystem::WorldPlace(*Near)).GetSafeNormal() : Ship->GetShipUpVector();
 		const double Clearance = FMath::Max(300000.0, Ship->GetComponentsBoundingBox().GetExtent().GetMax() * 6.0);
 		Unit->DepartFrom = Near;
-		Unit->DepartOffset = Ship->GetActorLocation() + Out * Clearance - (Near ? Near->GetActorLocation() : FVector::ZeroVector);
+		Unit->DepartOffset = Ship->GetActorLocation() + Out * Clearance - (Near ? UAPSWorldOriginSubsystem::WorldPlace(*Near) : FVector::ZeroVector);
 		if (Unit->bPilotWork && Unit->Order == EOrder::BuildStructure && Unit->Phase == EPhase::Working)
 		{
 			if (FAPSInfrastructure* Infrastructure = APSInfrastructureFind(World.Get())) Infrastructure->Refund(Unit->StructureType);
@@ -1355,7 +1380,7 @@ int32 FAPSFleetCommand::IssueOrder(const TArray<ASpaceship*>& Ships, const APSFl
 		// A slot on the side of the target the ship comes from, fanned out so a group does not stack.
 		if (Order != EOrder::Return)
 		{
-			FVector Side = (Ship->GetActorLocation() - Target->GetActorLocation()).GetSafeNormal();
+			FVector Side = (Ship->GetActorLocation() - UAPSWorldOriginSubsystem::WorldPlace(*Target)).GetSafeNormal();
 			if (Side.IsNearlyZero())
 			{
 				Side = FVector::UpVector;
@@ -1430,9 +1455,9 @@ FVector FAPSFleetCommand::SlotLocation(const FAPSFleetUnit& Unit) const
 	if (FGuid SystemId; Target->IsA<AStar>() || FAPSStarSystems::AnchorSystem(Target, SystemId))
 	{
 		// In a star system the ships hold at its edge of glare, not a few hundred kilometres over the photosphere.
-		return Target->GetActorLocation() + Unit.SlotDirection * FMath::Max(0.06 * APSStars::AstronomicalUnitCm, Radius * 40.0);
+		return UAPSWorldOriginSubsystem::WorldPlace(*Target) + Unit.SlotDirection * FMath::Max(0.06 * APSStars::AstronomicalUnitCm, Radius * 40.0);
 	}
-	return Target->GetActorLocation() + Unit.SlotDirection * (Radius > 0.0 ? APSFleet::SlotRadius(Radius) : 150000.0);
+	return UAPSWorldOriginSubsystem::WorldPlace(*Target) + Unit.SlotDirection * (Radius > 0.0 ? APSFleet::SlotRadius(Radius) : 150000.0);
 }
 
 void FAPSFleetCommand::Tick(const float DeltaSeconds)
@@ -1505,7 +1530,7 @@ void FAPSFleetCommand::TickUnit(FAPSFleetUnit& Unit, const float DeltaSeconds)
 	case EPhase::Departing:
 	{
 		const AActor* From = Unit.DepartFrom.Get();
-		const FVector Goal = (From ? From->GetActorLocation() : FVector::ZeroVector) + Unit.DepartOffset;
+		const FVector Goal = (From ? UAPSWorldOriginSubsystem::WorldPlace(*From) : FVector::ZeroVector) + Unit.DepartOffset;
 		double Remaining = 0.0;
 		Fly(Unit, Ship, Goal, 0.0, DeltaSeconds, Remaining);
 		Unit.RemainingCm = FVector::Distance(Ship->GetActorLocation(), SlotLocation(Unit));
@@ -1529,13 +1554,13 @@ void FAPSFleetCommand::TickUnit(FAPSFleetUnit& Unit, const float DeltaSeconds)
 			{
 				FVector Point;
 				const double Radius = APSFleetPrivate::BodyRadiusCm(*It);
-				if (APSFleet::Detour(Ship->GetActorLocation(), Slot, It->GetActorLocation(), Radius, Point))
+				if (APSFleet::Detour(Ship->GetActorLocation(), Slot, UAPSWorldOriginSubsystem::WorldPlace(**It), Radius, Point))
 				{
 					const double Distance = FVector::DistSquared(Ship->GetActorLocation(), Point);
 					if (Distance < BestDistance)
 					{
 						BestDistance = Distance;
-						Goal = APSFleet::RoundBody(Ship->GetActorLocation(), Slot, It->GetActorLocation(), Radius);
+						Goal = APSFleet::RoundBody(Ship->GetActorLocation(), Slot, UAPSWorldOriginSubsystem::WorldPlace(**It), Radius);
 					}
 				}
 			}
@@ -1588,7 +1613,7 @@ void FAPSFleetCommand::Fly(FAPSFleetUnit& Unit, ASpaceship* Ship, const FVector&
 		Unit.Heading = Wanted;
 	}
 	const double Step = FMath::Min(Unit.Speed * DeltaSeconds, Distance);
-	const FVector UpHint = Near ? (Location - Near->GetActorLocation()).GetSafeNormal() : Ship->GetShipUpVector();
+	const FVector UpHint = Near ? (Location - UAPSWorldOriginSubsystem::WorldPlace(*Near)).GetSafeNormal() : Ship->GetShipUpVector();
 	const FQuat Facing = APSFleetPrivate::ShipFacing(Ship->GetActorQuat(), Ship->GetShipForwardVector(),
 		Ship->GetShipUpVector(), Unit.Heading, UpHint);
 	Ship->SetActorLocationAndRotation(Location + Unit.Heading * Step,
@@ -1893,7 +1918,7 @@ double FAPSFleetCommand::EstimateArrivalSeconds(const ASpaceship* Ship, const AA
 		: Radius > 0.0 ? SlotRadius(Radius) : 150000.0;
 	constexpr double DepartSeconds = 4.0;
 	return DepartSeconds + APSFleetPrivate::FlightSeconds(
-		FMath::Max(FVector::Dist(Ship->GetActorLocation(), Target->GetActorLocation()) - Slot, 0.0), 0.0, Cap);
+		FMath::Max(FVector::Dist(Ship->GetActorLocation(), UAPSWorldOriginSubsystem::WorldPlace(*Target)) - Slot, 0.0), 0.0, Cap);
 }
 
 void FAPSFleetCommand::LogUnits() const
@@ -2574,6 +2599,19 @@ void FAPSFleetCommand::TickShipyard(const float DeltaSeconds)
 			Job.Yard = Home;
 		}
 	}
+	// Rio 06.10 (flight FPS: single frames of 923, 216 and 76 ms in his log while he flew): a finished job spawns its hull,
+	// sweeps a clear spot for it and refreshes the units on the game thread, all in one frame. While the world flows past
+	// his fast ship, or its travel is owed to the sky, the job waits at 100% on the slipway (it stays in the queue, so a
+	// save keeps it) and launches once the flight has been calm for aps.Fleet.HoldLaunchCalmSeconds. Parked, on foot or
+	// at a speed without a flow nothing waits, as before.
+	UWorld* LiveWorld = World.Get();
+	const UAPSWorldOriginSubsystem* Origin = LiveWorld ? LiveWorld->GetSubsystem<UAPSWorldOriginSubsystem>() : nullptr;
+	bool bHoldLaunch = false;
+	if (Origin && APSFleetPrivate::CVarHoldLaunchInFlight.GetValueOnGameThread() != 0)
+	{
+		bHoldLaunch = (Origin->IsTravelDeferred()
+			|| Origin->IsWorldFlowing(FMath::Max(APSFleetPrivate::CVarHoldLaunchCalmSeconds.GetValueOnGameThread(), 0.0f)));
+	}
 	// Every shipyard builds the first ship of its own queue.
 	const float Rate = FMath::Max(APSFleetPrivate::CVarBuildScale.GetValueOnGameThread(), 0.0f);
 	TArray<const ASpaceShipyard*, TInlineAllocator<8>> Busy;
@@ -2590,6 +2628,27 @@ void FAPSFleetCommand::TickShipyard(const float DeltaSeconds)
 		if (Job.Progress < 1.0f)
 		{
 			continue;
+		}
+		if (bHoldLaunch)
+		{
+			TMap<TWeakObjectPtr<ASpaceShipyard>, double>& Held = APSFleetPrivate::HeldLaunches().FindOrAdd(this);
+			if (!Held.Contains(Shipyard))
+			{
+				Held.Add(Shipyard, LiveWorld->GetTimeSeconds());
+				UE_LOG(LogTemp, Log, TEXT("[APS.Fleet] %s: %s finished, launch held while the world flows past the player ")
+					TEXT("(aps.Fleet.HoldLaunchInFlight, travel deferred=%d)"), *DisplayName(Shipyard).ToString(), *Job.Name.ToString(),
+					Origin->IsTravelDeferred() ? 1 : 0);
+			}
+			continue;
+		}
+		if (TMap<TWeakObjectPtr<ASpaceShipyard>, double>* Held = APSFleetPrivate::HeldLaunches().Find(this))
+		{
+			double HeldSince = 0.0;
+			if (Held->RemoveAndCopyValue(Shipyard, HeldSince))
+			{
+				UE_LOG(LogTemp, Log, TEXT("[APS.Fleet] %s: launching %s, held %.1f s for a calm flight"),
+					*DisplayName(Shipyard).ToString(), *Job.Name.ToString(), LiveWorld ? LiveWorld->GetTimeSeconds() - HeldSince : 0.0);
+			}
 		}
 		// Above the shipyard, four abreast, a row per four ships.
 		const int32 Slot = LaunchedAt.FindRef(Shipyard);

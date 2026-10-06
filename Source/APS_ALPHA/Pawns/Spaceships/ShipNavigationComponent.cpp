@@ -1,5 +1,6 @@
 #include "ShipNavigationComponent.h"
 
+#include "APS_ALPHA/Core/World/APSWorldOriginSubsystem.h"
 #include "APS_ALPHA/Actors/Astro/CelestialBody.h"
 #include "APS_ALPHA/Actors/Astro/Moon.h"
 #include "APS_ALPHA/Actors/Astro/Planet.h"
@@ -123,6 +124,14 @@ void UShipNavigationComponent::RefreshContacts(const FVector& ObserverLocation, 
 	RestoreSelection(PreviousStableId);
 }
 
+FVector FShipNavigationContact::GetWorldLocation() const
+{
+	// Rio 06.10 (still ship): a ship owing its travel stays put and the world's actors stay where they were; seen from the
+	// ship they are at their place + the sky offset (zero without a debt). Catalogue places are given that way already.
+	const AActor* Live = Actor.Get();
+	return Live ? UAPSWorldOriginSubsystem::SkyPlace(*Live) : FixedWorldLocation;
+}
+
 void UShipNavigationComponent::AddActorContact(AActor* Actor, const FVector& ObserverLocation)
 {
 	if (!IsValid(Actor))
@@ -135,7 +144,7 @@ void UShipNavigationComponent::AddActorContact(AActor* Actor, const FVector& Obs
 	Contact.FixedWorldLocation = Actor->GetActorLocation();
 	Contact.StableId = Actor->GetPathName();
 	Contact.DisplayName = APSShipNavigation::SanitizeObjectName(Actor->GetName());
-	Contact.DistanceCentimeters = FVector::Distance(ObserverLocation, Actor->GetActorLocation());
+	Contact.DistanceCentimeters = FVector::Distance(ObserverLocation, Contact.GetWorldLocation());
 
 	if (const ACelestialBody* Body = Cast<ACelestialBody>(Actor); Body && !Body->AstroName.IsNone())
 	{
@@ -407,7 +416,8 @@ void UShipNavigationComponent::FoldDistantSystems(const FVector& ObserverLocatio
 	const FAPSStarSystems* Stars = APSStarSystemsFind(World);
 	for (const FSystem& System : Systems)
 	{
-		const FVector StarLocation = System.Star->GetActorLocation();
+		// Rio 06.10 (still ship): the star where the ship sees it (the review: folded cards and labels used raw places).
+		const FVector StarLocation = UAPSWorldOriginSubsystem::SkyPlace(*System.Star);
 		const double Distance = FVector::Dist(ObserverLocation, StarLocation);
 		// Folded once its worlds lie within a few degrees; it unfolds a fifth nearer, so the cards never flicker at the edge.
 		const bool bWasFolded = Before.ContainsByPredicate([&System](const FFoldedSystem& Each) { return Each.Root.Get() == System.Root; });
@@ -434,7 +444,7 @@ void UShipNavigationComponent::FoldDistantSystems(const FVector& ObserverLocatio
 					return true;
 				}
 			}
-			return FVector::DistSquared(Actor->GetActorLocation(), StarLocation) < FMath::Square(RadiusCm);
+			return FVector::DistSquared(UAPSWorldOriginSubsystem::SkyPlace(*Actor), StarLocation) < FMath::Square(RadiusCm);
 		});
 		// The card: the system's catalogue name (as on the maps), its class and its worlds; the star's own contact (a
 		// course to it) becomes the card.
@@ -481,7 +491,7 @@ void UShipNavigationComponent::AddNearStarLabels(const FVector& ObserverLocation
 	{
 		if (IsValid(*It))
 		{
-			Standing.Add(It->GetActorLocation());
+			Standing.Add(UAPSWorldOriginSubsystem::SkyPlace(**It));
 		}
 	}
 	TArray<int32> Nearest;
@@ -521,7 +531,7 @@ bool UShipNavigationComponent::IsInFoldedSystem(const FVector& WorldLocation) co
 	for (const FFoldedSystem& System : FoldedSystems)
 	{
 		const AActor* Star = System.Star.Get();
-		if (Star && FVector::DistSquared(WorldLocation, Star->GetActorLocation()) < FMath::Square(System.RadiusCm))
+		if (Star && FVector::DistSquared(WorldLocation, UAPSWorldOriginSubsystem::SkyPlace(*Star)) < FMath::Square(System.RadiusCm))
 		{
 			return true;
 		}

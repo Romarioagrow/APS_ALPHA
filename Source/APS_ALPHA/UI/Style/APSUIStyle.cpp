@@ -1,32 +1,37 @@
 #include "APSUIStyle.h"
 
+#include "APSUITheme.h"
+
 #include "Engine/Font.h"
 #include "Styling/CoreStyle.h"
 
 namespace APSUIStylePrivate
 {
-	TWeakObjectPtr<UFont> DisplayFont;
-	TWeakObjectPtr<UFont> DisplayMediumFont;
-
-	UFont* LoadDisplayFont(const FName Typeface)
+	/** Rio 06.10: every theme but Classic builds the generation chrome from its own palette; the display profiles
+	 * keep their meaning as a darker (Cinematic 2.4) or lighter (Bright 2.0) panel. */
+	FAPSUIColorPalette ThemedPalette(const FAPSUIThemePalette& T, const EAPSUIDisplayProfile Profile)
 	{
-		TWeakObjectPtr<UFont>& FontSlot = Typeface == TEXT("Bold") ? DisplayFont : DisplayMediumFont;
-		if (!FontSlot.IsValid())
-		{
-			const TCHAR* FontPath = Typeface == TEXT("Bold")
-				? TEXT("/Game/APS/APS_ALPHA/UI/Fonts/Orbitron_Bold_Font.Orbitron_Bold_Font")
-				: TEXT("/Game/APS/APS_ALPHA/UI/Fonts/Orbitron_Medium_Font.Orbitron_Medium_Font");
-			// Rooted for the session: an STextBlock keeps FSlateFontInfo::FontObject as a plain pointer that GC never
-			// sees, so a font held only by the menu controller was collected after the level change and the next
-			// re-shape of the objective overlay's text read freed memory (a4-trace-2, 02.10).
-			UFont* Font = LoadObject<UFont>(nullptr, FontPath);
-			if (Font)
-			{
-				Font->AddToRoot();
-			}
-			FontSlot = Font;
-		}
-		return FontSlot.Get();
+		FAPSUIColorPalette Palette;
+		Palette.RootTransparent = FLinearColor::Transparent;
+		Palette.Scrim = APSUITheme::Fade(T.Scrim, 199.0f / 150.0f);
+		const FLinearColor ProfilePanel = Profile == EAPSUIDisplayProfile::Cinematic24 ? T.Panel * 0.8f
+			: Profile == EAPSUIDisplayProfile::Bright20 ? FMath::Lerp(T.Panel, T.Raised, 0.35f) : T.Panel;
+		Palette.Panel = ProfilePanel.CopyWithNewOpacity(240.0f / 255.0f);
+		Palette.PanelRaised = T.Raised;
+		Palette.Control = FMath::Lerp(T.Panel, T.Raised, 0.5f).CopyWithNewOpacity(247.0f / 255.0f);
+		Palette.HierarchyRow = T.Raised;
+		Palette.HierarchyHover = FMath::Lerp(T.Raised, T.Text, 0.06f).CopyWithNewOpacity(1.0f);
+		Palette.BorderQuiet = T.Frame.CopyWithNewOpacity(1.0f);
+		Palette.FocusCyan = T.Highlight;
+		Palette.ActionAmber = T.Action;
+		Palette.TextPrimary = T.Text;
+		Palette.TextSecondary = T.TextSoft;
+		Palette.Success = T.Success;
+		Palette.Warning = T.ActionPeak;
+		Palette.Danger = T.Danger;
+		Palette.ActionFill = T.ActionFill.CopyWithNewOpacity(0.98f);
+		Palette.ActionHoverFill = FMath::Lerp(T.ActionFill, T.Action, 0.22f).CopyWithNewOpacity(1.0f);
+		return Palette;
 	}
 
 	FSlateRoundedBoxBrush FillBrush(const FLinearColor& Fill, const float Radius, const FVector2D ImageSize = FVector2D::ZeroVector)
@@ -52,6 +57,10 @@ EAPSUIDisplayProfile FAPSUIStyle::GetRecommendedDisplayProfile()
 
 FAPSUIColorPalette FAPSUIStyle::GetPalette(const EAPSUIDisplayProfile Profile)
 {
+	if (APSUITheme::Current() != EAPSUITheme::Classic)
+	{
+		return APSUIStylePrivate::ThemedPalette(APSUITheme::Palette(), Profile);
+	}
 	FAPSUIColorPalette Palette;
 	Palette.RootTransparent = FLinearColor::Transparent;
 
@@ -110,6 +119,10 @@ FAPSUIColorPalette FAPSUIStyle::GetPalette(const EAPSUIDisplayProfile Profile)
 		break;
 	}
 
+	Palette.ActionFill = FLinearColor(Palette.ActionAmber.R * 0.30f, Palette.ActionAmber.G * 0.18f,
+		Palette.ActionAmber.B * 0.08f, 0.98f);
+	Palette.ActionHoverFill = FLinearColor(Palette.ActionAmber.R * 0.48f, Palette.ActionAmber.G * 0.28f,
+		Palette.ActionAmber.B * 0.10f, 1.0f);
 	return Palette;
 }
 
@@ -130,16 +143,14 @@ FAPSUIMotionMetrics FAPSUIStyle::Motion(const bool bReduceMotion)
 
 FSlateFontInfo FAPSUIStyle::DisplayFont(const FName Typeface, const int32 Size)
 {
-	if (UFont* FontObject = APSUIStylePrivate::LoadDisplayFont(Typeface))
-	{
-		return FSlateFontInfo(FontObject, Size, Typeface);
-	}
-	return FCoreStyle::GetDefaultFontStyle(Typeface, Size);
+	// Rio 06.10: Chakra Petch (Orbitron with aps.UI.LegacyFonts 1).
+	return APSUITheme::DisplayFont(Typeface, Size);
 }
 
 FSlateFontInfo FAPSUIStyle::BodyFont(const FName Typeface, const int32 Size)
 {
-	return FCoreStyle::GetDefaultFontStyle(Typeface, Size);
+	// Rio 06.10: Exo 2 (Roboto with aps.UI.LegacyFonts 1).
+	return APSUITheme::BodyFont(Typeface, Size);
 }
 
 FSlateRoundedBoxBrush FAPSUIStyle::MakePanelBrush(const FAPSUIColorPalette& Palette)
@@ -174,10 +185,8 @@ FButtonStyle FAPSUIStyle::MakeSecondaryButtonStyle(const FAPSUIColorPalette& Pal
 FButtonStyle FAPSUIStyle::MakePrimaryButtonStyle(const FAPSUIColorPalette& Palette)
 {
 	const FAPSUILayoutMetrics& Layout = Metrics();
-	const FLinearColor NormalFill(Palette.ActionAmber.R * 0.30f, Palette.ActionAmber.G * 0.18f,
-		Palette.ActionAmber.B * 0.08f, 0.98f);
-	const FLinearColor HoverFill(Palette.ActionAmber.R * 0.48f, Palette.ActionAmber.G * 0.28f,
-		Palette.ActionAmber.B * 0.10f, 1.0f);
+	const FLinearColor NormalFill = Palette.ActionFill;
+	const FLinearColor HoverFill = Palette.ActionHoverFill;
 	return FButtonStyle()
 		.SetNormal(FSlateRoundedBoxBrush(NormalFill, Layout.ControlRadius, Palette.ActionAmber, 1.5f))
 		.SetHovered(FSlateRoundedBoxBrush(HoverFill, Layout.ControlRadius, Palette.Warning, Layout.FocusBorder))

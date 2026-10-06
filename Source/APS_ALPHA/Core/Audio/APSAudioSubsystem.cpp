@@ -160,11 +160,15 @@ void UAPSAudioSubsystem::ApplyMix()
 	const UAPSAudioPreferences* Settings = GetDefault<UAPSAudioPreferences>();
 	const bool bEnabled = AudioEnabled.GetValueOnGameThread() != 0;
 	USoundClass* Classes[] = {Bank->MasterClass, Bank->MusicClass, Bank->AmbienceClass, Bank->EffectsClass, Bank->UIClass};
+	// Rio 06.10 ("make the sound settings work"): MASTER did nothing. SCL_Master lists no child classes
+	// (SetParentClass in the asset commandlet does not add the child), so its override never reached a sound. Each
+	// channel now carries MASTER itself; the master class keeps its own level for anything routed to it directly.
+	const float Master = bEnabled ? Settings->Get(EAPSAudioChannel::Master) : 0.f;
 	for (int32 Index = 0; Index < UE_ARRAY_COUNT(Classes); ++Index)
 	{
-		const float Level = Index == 0 && !bEnabled ? 0.f : Settings->Get(static_cast<EAPSAudioChannel>(Index));
+		const float Level = Index == 0 ? Master : Settings->Get(static_cast<EAPSAudioChannel>(Index)) * Master;
 		UGameplayStatics::SetSoundMixClassOverride(this, Bank->Mix, Classes[Index],
-			Level, 1.f, 0.1f, Index == 0);
+			Level, 1.f, 0.1f, false);
 	}
 }
 

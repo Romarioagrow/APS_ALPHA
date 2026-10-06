@@ -73,7 +73,17 @@ void UAPSStellarVisualSubsystem::Initialize(FSubsystemCollectionBase& Collection
 			// Both barriers run after actors and the origin reach their final frame.
 			// Resolve from the canonical snapshot, so duplicate notices cannot add
 			// the shift twice. Selection and the existing light interpolation stay unchanged.
-			TargetStarLocation = Origin->FromGenerationFrame(TargetStarGenerationLocation);
+			TargetStarLocation = Origin->FromGenerationFrame(TargetStarGenerationLocation) + Origin->GetSkyOffset();
+		}
+	});
+	// Rio 06.10 (still ship): the key light's star follows the sky every owed step and comes back with it on a pay (the
+	// same snapshot: its true place, shown at the sky offset).
+	UAPSWorldOriginSubsystem::OnSkyOffsetChanged().AddWeakLambda(this, [this](UWorld* ShiftedWorld, const FVector&)
+	{
+		if (!ShiftedWorld || ShiftedWorld != GetWorld() || !bHasTargetStar) return;
+		if (const auto* Origin = ShiftedWorld->GetSubsystem<UAPSWorldOriginSubsystem>())
+		{
+			TargetStarLocation = Origin->FromGenerationFrame(TargetStarGenerationLocation) + Origin->GetSkyOffset();
 		}
 	});
 }
@@ -816,6 +826,9 @@ void UAPSStellarVisualSubsystem::ResolveNearestStar(const FVector& ObserverLocat
 	for (TActorIterator<AAstroGenerator> It(World); It; ++It)
 		if (It->UsesContinuousPreviewFrame()) { PreviewSystem = It->GetContinuousPreviewActiveSystem(); break; }
 
+	// Rio 06.10 (still ship): a ship owing its travel stays put; a star actor lights it from where it is relative to the
+	// ship truly, its sky place (a system riding with the sky where it is, any other at its place + the sky offset).
+	const FVector SkyOffset = UAPSWorldOriginSubsystem::SkyOffsetOf(World);
 	for (TActorIterator<AStar> It(World); It; ++It)
 	{
 		const AStar* Star = *It;
@@ -824,11 +837,12 @@ void UAPSStellarVisualSubsystem::ResolveNearestStar(const FVector& ObserverLocat
 			continue;
 		}
 		bHasMaterializedStar = true;
-		const double DistanceSquared = FVector::DistSquared(ObserverLocation, Star->GetActorLocation());
+		const FVector StarPlace = UAPSWorldOriginSubsystem::SkyPlace(*Star);
+		const double DistanceSquared = FVector::DistSquared(ObserverLocation, StarPlace);
 		if (DistanceSquared < BestDistanceSquared)
 		{
 			BestDistanceSquared = DistanceSquared;
-			BestLocation = Star->GetActorLocation();
+			BestLocation = StarPlace;
 			BestColor = UStarGenerator::GetStarColor(Star->SpectralClass, Star->SpectralSubclass);
 			BestTemperature = Star->SurfaceTemperature;
 			BestLuminosity = Star->Luminosity;
@@ -894,7 +908,7 @@ void UAPSStellarVisualSubsystem::ResolveNearestStar(const FVector& ObserverLocat
 	}
 	TargetStarLocation = BestLocation;
 	const auto* Origin = World->GetSubsystem<UAPSWorldOriginSubsystem>();
-	TargetStarGenerationLocation = Origin ? Origin->ToGenerationFrame(BestLocation) : BestLocation;
+	TargetStarGenerationLocation = Origin ? Origin->ToGenerationFrame(BestLocation - SkyOffset) : BestLocation;
 	const AAstroGenerator* GeneratedWorld = GameplayStellarGenerator.Get();
 	const AStarSystem* GeneratedHomeSystem = IsValid(GeneratedWorld)
 		? GeneratedWorld->GetPreviewHomeSystem() : nullptr;

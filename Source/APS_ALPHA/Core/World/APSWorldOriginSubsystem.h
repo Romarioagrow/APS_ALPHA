@@ -37,7 +37,8 @@ public:
 	 * UWorld::SetNewWorldOrigin's own steps but past its FIntVector origin (about 21 000 km a side), and folds the shift
 	 * into the generation frame the saves use. The VSM clipmap panning is switched off for the jump first.
 	 */
-	bool ShiftWorldBy(const FVector& Offset, const TCHAR* Reason, bool bQuiet = false, AActor* Carrier = nullptr);
+	bool ShiftWorldBy(const FVector& Offset, const TCHAR* Reason, bool bQuiet = false, AActor* Carrier = nullptr,
+		const TArray<AActor*>* AlsoCarried = nullptr);
 	/**
 	 * Rio 05.10 (REAL SCALE: at billions of c the hull, the camera and the pilot walking aboard jumped by metres every
 	 * frame): a fast ship carrying the player used to move by its whole step (up to 4e18 cm a frame, where a double's step
@@ -64,6 +65,55 @@ public:
 	FVector FromGenerationFrame(const FVector& GenerationLocation) const { return GenerationLocation - GetOriginOffset(); }
 	/** Rio 05.10 evening: the world flowed past a fast REAL SCALE ship within the last Seconds (it shifts every frame). */
 	bool IsWorldFlowing(const double Seconds = 0.5) const { return SinceFlowShiftSeconds < Seconds; }
+
+	/**
+	 * Rio 06.10 (still ship: "move our whole high-speed travel onto this system"): far from every star system the world no
+	 * longer flows past a fast REAL SCALE ship carrying the player. The ship, its riders and the camera stay where they are;
+	 * the ship's travel is owed here in exact grains, and only the sky moves: the star catalogue (its HISM and GPU points),
+	 * the star systems' places and the far glyphs are presented at their world place + GetSkyOffset(). Everything else (the
+	 * home system, stations, other ships) keeps its world place and is light years away meanwhile. The debt is paid with one
+	 * flow shift on the way into a system's bubble, below flow speed, under the map, before a save or a materialization.
+	 * aps.RealScale.FlowDefer (0: the world flows every frame, as on 05.10).
+	 */
+	FVector GetSkyOffset() const { return -(OwedGrains + OwedRest); }
+	bool IsTravelDeferred() const { return bTravelDeferred; }
+	/** Pays the owed travel back now with one flow shift (no-op without a debt). */
+	void SettleDeferredTravel(const TCHAR* Reason);
+	/** The sky offset of World's origin subsystem (zero without one or without a debt). */
+	static FVector SkyOffsetOf(const UWorld* World);
+	/** Fires when the sky offset changes (every owed step, and back on a settle) with the change, after it is applied. */
+	DECLARE_MULTICAST_DELEGATE_TwoParams(FSkyOffsetChanged, UWorld*, const FVector&);
+	static FSkyOffsetChanged& OnSkyOffsetChanged();
+	/**
+	 * Rio 06.10 (still ship while braking: "optimise the braking too"): a star system stood up away from home (the
+	 * materializer's) rides with the sky: its actors stand at their sky place and move with every owed step, so the ship
+	 * can brake into its bubble while the far world (the home system, its stations, hundreds of bodies) stays still. Only
+	 * near its bodies (aps.RealScale.DeferBodyClearRadii of their radius) is the debt paid and the world used as it is.
+	 */
+	void AddSkyMember(AActor* Root);
+	void RemoveSkyMember(AActor* Root);
+	/** The actor, or the tree it is attached to, rides with the sky. */
+	bool IsSkyMember(const AActor* Actor) const;
+	/** While owing: the actor (with its attachment tree) is held in the still frame: the still ship and its riders, a sky
+	 * member, a catalogue anchor or the sky (the gameplay AstroGenerator's tree). */
+	bool IsInStillFrame(const AActor* Actor) const;
+	/** Where an actor stands for the still ship: a sky member where it is, any other at its place + the sky offset. */
+	FVector SkyPlaceOf(const AActor& Actor) const;
+	/** SkyPlaceOf through the actor's world (its own place without an origin subsystem). */
+	static FVector SkyPlace(const AActor& Actor);
+	/**
+	 * Rio 06.10 ("the other ships must not break on their flights: their places relative to the main world"): only the ship
+	 * owing its travel and what rides it see from the still frame; every other ship lives in the world's frame. Observer
+	 * frames: SkyOffsetFor is the sky offset for the still ship (and its riders), zero for anyone else; PlaceFor is where
+	 * Target stands for Observer (SkyPlace for the still ship; for anyone else its world place: a system riding with the sky
+	 * and a star system's anchor less the sky offset); CataloguePlaceFor turns a catalogue (sky) place into Observer's frame.
+	 */
+	static bool IsStillObserver(const AActor* Observer);
+	static FVector SkyOffsetFor(const AActor* Observer);
+	static FVector PlaceFor(const AActor* Observer, const AActor& Target);
+	static FVector CataloguePlaceFor(const AActor* Observer, const FVector& SkyPlace);
+	/** The world's frame place of Target (PlaceFor an observer that is not the still ship). */
+	static FVector WorldPlace(const AActor& Target);
 
 protected:
 	virtual bool DoesSupportWorldType(const EWorldType::Type WorldType) const override;
@@ -99,6 +149,28 @@ private:
 	/** The last flow told the renderer its view stayed with the ship (aps.RealScale.FlowViewStill); FinishFlowMove resets. */
 	bool bFlowViewStill{false};
 	double LastFlowViewLogSeconds{0.0};
+	/** Rio 06.10 (still ship): the owed travel (whole grains + the rest) of DeferredCarrier, and its bookkeeping. */
+	FVector OwedGrains{FVector::ZeroVector};
+	FVector OwedRest{FVector::ZeroVector};
+	bool bTravelDeferred{false};
+	TWeakObjectPtr<AActor> DeferredCarrier;
+	double LastDeferLogSeconds{0.0};
+	int32 DeferredSteps{0};
+	/** Far enough from every star system (the catalogue as the sky shows it) to keep owing this step. */
+	bool CanDeferTravel(const AActor& Ship, const FVector& Delta);
+	/** The owed travel at the last full check and the margin it found beyond the clear distance (cm, < 0: none): until
+	 * the ship has flown that far no system can have come near, so the catalogue is not searched every frame. */
+	FVector DeferCheckOwed{FVector::ZeroVector};
+	double DeferCheckMarginCm{-1.0};
+	/** Star systems riding with the sky (their root actors). */
+	TArray<TWeakObjectPtr<AActor>> SkyMembers;
+	/** Adds the step to the debt; the sky moves by -Delta. */
+	void OweTravel(AActor& Ship, const FVector& Delta);
+	/** One flow shift by the grains of the carrier's place + Delta + the debt: the debt is paid, the sky comes back to
+	 * the world, the view stays with the carrier. False when the world could not shift now (the debt stays). */
+	bool PayDebt(AActor& Carrier, const FVector& Delta, FVector& OutRest, const TCHAR* Reason);
+	/** The sky's things follow an offset change; the still ship's flight model's fixed star centres with them. */
+	void MoveSky(const FVector& Change, AActor& StillShip);
 	/** The pilot (and its components) whose ticks the map paused, given back once the origin is the pilot's again. */
 	TWeakObjectPtr<APawn> MapHeldPawn;
 	TArray<TWeakObjectPtr<UObject>> MapHeldTicks;

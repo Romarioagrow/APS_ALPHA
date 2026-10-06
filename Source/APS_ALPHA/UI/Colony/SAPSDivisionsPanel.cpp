@@ -1,4 +1,5 @@
 #include "SAPSDivisionsPanel.h"
+#include "APS_ALPHA/UI/Style/APSUITheme.h"
 
 #include "APS_ALPHA/Core/Instances/MainGameplayInstance.h"
 #include "APS_ALPHA/Gameplay/Civilizations/Civilization.h"
@@ -305,9 +306,8 @@ namespace APSDivisionsPanelPrivate
 	const FSlateBrush* ChipBrush()
 	{
 		// The overview's metric tile (APSChrome::MetricTile): a dark inset with a quiet rim.
-		static const FSlateRoundedBoxBrush Brush(FLinearColor(0.005f, 0.028f, 0.044f, 0.98f), 6.0f,
-			FLinearColor(0.035f, 0.23f, 0.31f, 0.88f), 1.0f);
-		return &Brush;
+		// Rio 06.10: the shared tile follows the interface theme.
+		return APSChrome::MetricTileBrush();
 	}
 
 	TSharedRef<SWidget> RowLabel(const FText& Label)
@@ -346,7 +346,7 @@ namespace APSDivisionsPanelPrivate
 					// The unit in the readable face: the display font is for digits and capitals.
 					+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Bottom).Padding(3.0f, 0.0f, 0.0f, 2.0f)
 					[
-						SNew(STextBlock).Text(Unit).Font(FCoreStyle::GetDefaultFontStyle("Bold", 12)).ColorAndOpacity(Accent)
+						SNew(STextBlock).Text(Unit).Font(APSUITheme::BodyFont("Bold", 12)).ColorAndOpacity(Accent)
 						.Visibility(Unit.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible)
 					]
 				]
@@ -509,7 +509,7 @@ TSharedRef<SWidget> SAPSDivisionsPanel::BuildMission(const FAPSMission& Mission)
 		];
 	}
 	return SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush"))
-		.BorderBackgroundColor(FLinearColor(0.012f, 0.035f, 0.05f, bActive ? 0.95f : 0.75f)).Padding(0.0f)
+		.BorderBackgroundColor(APSUITheme::Retint(FLinearColor(0.012f, 0.035f, 0.05f, bActive ? 0.95f : 0.75f))).Padding(0.0f)
 		[
 			SNew(SHorizontalBox)
 			+ SHorizontalBox::Slot().AutoWidth()

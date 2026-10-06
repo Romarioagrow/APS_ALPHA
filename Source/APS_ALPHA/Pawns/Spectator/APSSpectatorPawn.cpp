@@ -1,4 +1,6 @@
 #include "APSSpectatorPawn.h"
+#include "APS_ALPHA/UI/Hud/APSHudKit.h"
+#include "APS_ALPHA/UI/Style/APSUITheme.h"
 
 #include "APS_ALPHA/Actors/Astro/Planet.h"
 #include "APS_ALPHA/Actors/Astro/PlanetaryBody.h"
@@ -1338,54 +1340,47 @@ void AAPSSpectatorPawn::CreateHud()
 			const AAPSSpectatorPawn* Self = WeakThis.Get();
 			return Self && Self->IsHudShown() ? EVisibility::SelfHitTestInvisible : EVisibility::Collapsed;
 		})
+		// Rio 06.10 (Claude UI): the HUD's instrument family: a card at the bottom centre and the key hints under it.
 		+ SOverlay::Slot()
-		.HAlign(HAlign_Left)
+		.HAlign(HAlign_Center)
 		.VAlign(VAlign_Bottom)
-		.Padding(28.0f, 0.0f, 0.0f, 28.0f)
+		.Padding(0.0f, 0.0f, 0.0f, 48.0f)
 		[
-			SNew(SBackgroundBlur)
-			.BlurRadius(TOptional<int32>(8))
-			.BlurStrength(6.0f)
-			.bApplyAlphaToBlur(true)
-			[
-				SNew(SBorder)
-				.BorderBackgroundColor(FLinearColor(0.004f, 0.012f, 0.024f, 0.94f))
-				.Padding(FMargin(16.0f, 11.0f))
+			APSHud::Card(
+				SNew(SVerticalBox)
+				+ SVerticalBox::Slot()
+				.AutoHeight()
 				[
-					SNew(SVerticalBox)
-					+ SVerticalBox::Slot()
-					.AutoHeight()
-					[
-						SNew(STextBlock)
-						.Text_Lambda([WeakThis]()
-						{
-							const AAPSSpectatorPawn* Self = WeakThis.Get();
-							return Self ? Self->HudStatus : FText::GetEmpty();
-						})
-						.ColorAndOpacity(FLinearColor(0.2f, 0.82f, 1.0f, 1.0f))
-					]
-					+ SVerticalBox::Slot()
-					.AutoHeight()
-					.Padding(0.0f, 5.0f, 0.0f, 0.0f)
-					[
-						SNew(STextBlock)
-						.Text_Lambda([WeakThis]()
-						{
-							const AAPSSpectatorPawn* Self = WeakThis.Get();
-							return Self ? Self->HudNearest : FText::GetEmpty();
-						})
-						.ColorAndOpacity(FLinearColor(0.72f, 0.9f, 1.0f, 0.96f))
-					]
-					+ SVerticalBox::Slot()
-					.AutoHeight()
-					.Padding(0.0f, 5.0f, 0.0f, 0.0f)
-					[
-						SNew(STextBlock)
-						.Text(Hint)
-						.ColorAndOpacity(FLinearColor(0.82f, 0.87f, 0.92f, 1.0f))
-					]
+					SNew(STextBlock)
+					.Font(APSHud::ValueFont(13))
+					.Text_Lambda([WeakThis]()
+					{
+						const AAPSSpectatorPawn* Self = WeakThis.Get();
+						return Self ? Self->HudStatus : FText::GetEmpty();
+					})
+					.ColorAndOpacity_Lambda([]() { return FSlateColor(APSUITheme::Palette().Text); })
 				]
-			]
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				.Padding(0.0f, 4.0f, 0.0f, 0.0f)
+				[
+					SNew(STextBlock)
+					.Font(APSHud::TextFont(12))
+					.Text_Lambda([WeakThis]()
+					{
+						const AAPSSpectatorPawn* Self = WeakThis.Get();
+						return Self ? Self->HudNearest : FText::GetEmpty();
+					})
+					.ColorAndOpacity_Lambda([]() { return FSlateColor(APSUITheme::Palette().TextSoft); })
+				],
+				APSHud::EEdge::Centre, FMargin(18.0f, 11.0f, 18.0f, 12.0f))
+		]
+		+ SOverlay::Slot()
+		.HAlign(HAlign_Fill)
+		.VAlign(VAlign_Bottom)
+		.Padding(60.0f, 0.0f, 60.0f, 14.0f)
+		[
+			SNew(SAPSHudKeyHints).Text(Hint)
 		];
 	GEngine->GameViewport->AddViewportWidgetContent(HudWidget.ToSharedRef(), 40);
 }

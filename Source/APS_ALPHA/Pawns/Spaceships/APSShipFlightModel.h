@@ -5,7 +5,7 @@
 #include "APSShipFlightModel.generated.h"
 
 class AAstroGenerator;
-class ASpaceship;
+class ASpaceship; struct FAPSFlightReadout;
 
 /** Speed class of the band flight model; keys 1-5 select it directly, Right Shift / Right Ctrl step through it. */
 UENUM(BlueprintType)
@@ -249,6 +249,8 @@ public:
 
 	FString GetStatusText() const;
 	FString GetHintText() const;
+	/** Rio 06.10 HUD (Claude UI): GetStatusText's fields for the flight bar (UI/Hud/SAPSShipHud), read only. */
+	FAPSFlightReadout GetHudReadout() const;
 
 	/** Called by the ship when a pilot takes it: kinematic hull, fresh body and ground data. */
 	void OnPossessed();
@@ -444,6 +446,38 @@ private:
 	double LimitLocalDistanceCm{-1.0};
 	/** How far the course runs into a star system or out of charted space (CourseClearanceCm); -1 unknown. */
 	double CourseClearanceCm{-1.0};
+	/**
+	 * Rio 05.10 night ("faster, slower, faster again" at light years a second): what CourseClearanceCm came from, for the
+	 * flight log: "STAR" (an actor), "CLUSTER" or "GALAXY" (a catalogue index), "EDGE" (charted space), null for none; and
+	 * where the course passes it, cm (along the course, negative once past it, and off the course).
+	 */
+	const TCHAR* CourseSourceKind{nullptr};
+	int64 CourseSourceId{INDEX_NONE};
+	TWeakObjectPtr<const AActor> CourseSourceActor;
+	double CourseSourceAlongCm{0.0};
+	double CourseSourceMissCm{0.0};
+	/**
+	 * Rio 05.10 night (aps.RealScale.CourseGuard, the REAL SCALE star drive and STELLAR): the closing guard in two parts.
+	 * Planets, moons and the ground as before (GuardBody); stars only where the course crosses their arrival sphere, and the
+	 * edge of charted space, with a frame time of at most aps.RealScale.GuardMaxFrameSeconds (GuardCourse). -1: none.
+	 */
+	double GuardBodyCm{-1.0};
+	FVector GuardBodyOutward{FVector::ZeroVector};
+	double GuardCourseCm{-1.0};
+	FVector GuardCourseOutward{FVector::ZeroVector};
+	const TCHAR* GuardCourseKind{nullptr};
+	/** Flight log: how often a guard cut the closing speed since the last line, and its strongest cut (kept / closing). */
+	int32 GuardTriggers{0};
+	double GuardWorstShare{1.0};
+	double GuardWorstClosingCm{0.0};
+	double GuardWorstKeptCm{0.0};
+	float GuardWorstDeltaTime{0.0f};
+	const TCHAR* GuardWorstSource{nullptr};
+	/** The body LimitLocalDistanceCm comes from (its actor; the ground: this component) and the way out of it. */
+	const void* LimitLocalKey{nullptr};
+	FVector LimitLocalOutward{FVector::ZeroVector};
+	/** The flight log's shared tail: the course source, the guard since the last line (reset here), input and boost. */
+	FString FlightLogDetails(const FVector& LocalInput);
 	FString NearestBodyName;
 	double GroundClearanceCm{-1.0};
 	/** Ground clearance after the departure factor: what the surface limit sees. */
@@ -484,6 +518,8 @@ private:
 	int32 CourseCatalogueStar{INDEX_NONE};
 	/** Rio 03.10: the galaxy stars of the last scan, as offsets from the home system (xyz) and drawn radius (w), cm. */
 	TArray<FVector4, TInlineAllocator<10>> NearestGalaxyStars;
+	/** Their catalogue indices, in the same order (the flight log's course source). */
+	TArray<int64, TInlineAllocator<10>> NearestGalaxyStarIds;
 	/** Their local spacing (the star drive's cruise past the cluster's edge), cm; 0 unknown. */
 	double GalaxySpacingCm{0.0};
 	float CatalogueScanElapsed{TNumericLimits<float>::Max()};
@@ -521,6 +557,13 @@ private:
 	double StarDriveFromCm{0.0};
 	/** The drive's nearest-body distance last frame (-1: none): a growing one is a departure (aps.RealScale.DriveDepartFactor). */
 	double StarDrivePreviousLocalCm{-1.0};
+	/**
+	 * Rio 05.10 night (aps.RealScale.DriveDepartLatch): the departure latched on the body the drive's distance limit comes
+	 * from (the course's share along the way out of it, with a margin), and the departure factor's blend toward it (0..1).
+	 */
+	const void* StarDriveDepartKey{nullptr};
+	bool bStarDriveDeparting{false};
+	double StarDriveDepartBlend{0.0};
 	/** Outside every star system since engaging: entering one now is an arrival and drops the drive. */
 	bool bStarDriveLeftSystem{false};
 	/** What holds the drive below the set speed (a body near, a system ahead or around), for the HUD; null: nothing. */

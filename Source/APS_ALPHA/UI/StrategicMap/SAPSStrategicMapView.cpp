@@ -1,4 +1,5 @@
 #include "SAPSStrategicMapView.h"
+#include "APS_ALPHA/UI/Style/APSUITheme.h"
 
 #include "APSStrategicMapCamera.h"
 #include "APSStrategicMapScene.h"
@@ -317,7 +318,7 @@ namespace APSStrategicMapViewLocal
 	void HaloDashes(FSlateWindowElementList& Out, const int32 Layer, const FGeometry& Geometry, const FVector2D& From,
 		const FVector2D& To, const FLinearColor& Colour, const double Dash, const double Gap, const float Thickness)
 	{
-		Dashes(Out, Layer, Geometry, From, To, FLinearColor(0.0f, 0.006f, 0.012f, 0.72f * Colour.A), Dash, Gap, Thickness + 3.0f);
+		Dashes(Out, Layer, Geometry, From, To, APSUITheme::Retint(FLinearColor(0.0f, 0.006f, 0.012f, 0.72f * Colour.A)), Dash, Gap, Thickness + 3.0f);
 		Dashes(Out, Layer, Geometry, From, To, Colour, Dash, Gap, Thickness);
 	}
 
@@ -330,7 +331,7 @@ namespace APSStrategicMapViewLocal
 		const FVector2D PlateSize(Measured.X + 14.0, Measured.Y + 6.0);
 		const FSlateBrush* White = FAppStyle::GetBrush("WhiteBrush");
 		FSlateDrawElement::MakeBox(Out, Layer, Geometry.ToPaintGeometry(PlateSize, FSlateLayoutTransform(PlateAt)), White,
-			ESlateDrawEffect::None, FLinearColor(0.002f, 0.014f, 0.026f, 0.9f));
+			ESlateDrawEffect::None, APSUITheme::Retint(FLinearColor(0.002f, 0.014f, 0.026f, 0.9f)));
 		FSlateDrawElement::MakeBox(Out, Layer, Geometry.ToPaintGeometry(FVector2D(3.0, PlateSize.Y), FSlateLayoutTransform(PlateAt)),
 			White, ESlateDrawEffect::None, Colour);
 		Text(Out, Layer + 1, Geometry, Position, String, Font, Colour);
@@ -470,8 +471,8 @@ int32 SAPSStrategicMapView::OnPaint(const FPaintArgs& Args, const FGeometry& All
 	const int32 LayerPlateText = LayerId + 5;
 	const int32 LayerTop = LayerId + 6;
 	const FSlateBrush* WhiteBrush = FAppStyle::GetBrush("WhiteBrush");
-	const FSlateFontInfo SmallFont = FCoreStyle::GetDefaultFontStyle("Bold", 9);
-	const FSlateFontInfo NoteFont = FCoreStyle::GetDefaultFontStyle("Regular", 10);
+	const FSlateFontInfo SmallFont = APSUITheme::BodyFont("Bold", 9);
+	const FSlateFontInfo NoteFont = APSUITheme::BodyFont("Regular", 10);
 	const FLinearColor Amber = APSChrome::Amber();
 	const FLinearColor Cyan = APSChrome::Cyan();
 	const FLinearColor Muted = APSChrome::Muted();
@@ -1131,7 +1132,7 @@ int32 SAPSStrategicMapView::OnPaint(const FPaintArgs& Args, const FGeometry& All
 			}
 		}
 		FSlateDrawElement::MakeBox(OutDrawElements, LayerPlates, Geometry.ToPaintGeometry(PlateSize,
-			FSlateLayoutTransform(Position)), WhiteBrush, ESlateDrawEffect::None, FLinearColor(0.002f, 0.014f, 0.026f, 0.94f));
+			FSlateLayoutTransform(Position)), WhiteBrush, ESlateDrawEffect::None, APSUITheme::Retint(FLinearColor(0.002f, 0.014f, 0.026f, 0.94f)));
 		FSlateDrawElement::MakeBox(OutDrawElements, LayerPlateText, Geometry.ToPaintGeometry(FVector2D(PlateBar, PlateSize.Y),
 			FSlateLayoutTransform(Position)), WhiteBrush, ESlateDrawEffect::None, Marker);
 		if (Label.bSelected)

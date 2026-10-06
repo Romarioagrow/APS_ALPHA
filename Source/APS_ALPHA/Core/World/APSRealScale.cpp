@@ -195,6 +195,8 @@ namespace APSRealScaleLocal
 				continue;
 			}
 			const FVector Centre = System->GetActorLocation();
+			// Rio 06.10 (still ship, the review): measured from where the pilot sees the system while a debt is owed.
+			const FVector SeenCentre = UAPSWorldOriginSubsystem::SkyPlace(*System);
 			System->GetAttachedActors(Tree, true, true);
 			// The system's own extent: its bodies, stations and ships. A surface generator kept where it was spawned (the
 			// world origin, by the pilot then) once made the extent the pilot's own distance (Rio's 05.10 run, "line 2.7 ly").
@@ -206,7 +208,7 @@ namespace APSRealScaleLocal
 					Extent = FMath::Max(Extent, FVector::Dist(Member->GetActorLocation(), Centre));
 				}
 			}
-			const double Distance = FVector::Dist(Pilot, Centre);
+			const double Distance = FVector::Dist(Pilot, SeenCentre);
 			const bool bWasFrozen = GFreeze.Systems.Contains(System);
 			const double Line = FreezeCm + Extent;
 			// Rio 05.10 evening (flight FPS, the way home): thawed while the world still flowed past the ship, the base's
@@ -217,7 +219,7 @@ namespace APSRealScaleLocal
 			for (AActor* Member : Tree)
 			{
 				if (bHoldFrozen && IsValid(Member) && GFreeze.Actors.Contains(Member)
-					&& FVector::DistSquared(Pilot, Member->GetActorLocation()) < FMath::Square(ThawNearCm))
+					&& FVector::DistSquared(Pilot, UAPSWorldOriginSubsystem::SkyPlace(*Member)) < FMath::Square(ThawNearCm))
 				{
 					bHoldFrozen = false;
 				}

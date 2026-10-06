@@ -28,16 +28,13 @@ enum class EAPSMenuPage : uint8
 	Settings
 };
 
-/** Code-native visual language for the Choose Your Path cards.  Keeping the
- * motif explicit avoids coupling navigation semantics to localized card text. */
-enum class EAPSPathVisual : uint8
+/** Rio 06.10: NEW WORLD's paths (Docs/Design/MAIN_MENU_OBSERVATORY.md section 3.4); PLANET waits for Planet Lab. */
+enum class EAPSNewWorldPath : uint8
 {
-	LiveSystem,
-	WorldArchive,
-	CivilizationNetwork,
-	GalaxySynthesis,
-	PlanetLaboratory,
-	StoryArchive
+	SingleGame,
+	Civilization,
+	Space,
+	Planet
 };
 
 enum class EAPSGenerationSurfaceControl : uint8;
@@ -96,6 +93,8 @@ struct FAPSWorldFilterOption
 	int32 Count{0};
 };
 
+enum class EAPSSettingsTab : uint8;
+
 class SAPSMainMenuRoot final : public SCompoundWidget
 {
 public:
@@ -105,9 +104,15 @@ public:
 	SLATE_END_ARGS()
 
 	SAPSMainMenuRoot();
+	virtual ~SAPSMainMenuRoot() override;
 	void Construct(const FArguments& InArgs);
 	virtual bool SupportsKeyboardFocus() const override { return true; }
+	/** Rio 06.10: the Observatory landing page's letter keys (C N W P S, Q twice, Enter). */
+	virtual FReply OnKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent) override;
 	void ApplyExistingWorldMetadata(const FString& SlotName, const UGameSave* Save);
+	/** Rio 06.10 checks (aps.Menu.Open, aps.Menu.ThemeShots): opens a page by name (Landing, NewWorld, Worlds, Settings,
+	 * Profile) and, for Settings, a tab (Video, Graphics, Audio, Interface). False for an unknown name. */
+	bool OpenPageByName(const FString& Page, const FString& Tab);
 
 #if WITH_DEV_AUTOMATION_TESTS
 	/** Opens and inspects the real Choose Your Path page for rendered UI tests. */
@@ -133,6 +138,17 @@ public:
 
 private:
 	void Navigate(EAPSMenuPage NewPage);
+	/** Rio 06.10: the button styles from the active interface theme (APSMenu::ApplyTheme first). */
+	void BuildButtonStyles();
+	/** Rio 06.10: a theme switch (SETTINGS / INTERFACE) recolours the menu at once: palette, styles, this page. */
+	void HandleThemeChanged();
+	void RebuildCurrentPage();
+	FDelegateHandle ThemeChangedHandle;
+	/** Rio 06.10: SINGLE GAME's maps as a grid of cards with a rendered preview (Content/Slate/MapPreviews). */
+	TSharedRef<SWidget> BuildAuthoredMapGrid();
+	TSharedPtr<FSlateBrush> MapPreviewBrush;
+	/** Rio 06.10: the SETTINGS page's open tab, kept while a theme switch rebuilds the page. */
+	EAPSSettingsTab SettingsTab{};
 	TSharedRef<SWidget> BuildLandingPage();
 	TSharedRef<SWidget> BuildChoosePathPage();
 	TSharedRef<SWidget> BuildExistingWorldsPage();
@@ -143,11 +159,13 @@ private:
 		TSoftClassPtr<UUserWidget>& WidgetClass, TWeakObjectPtr<UUserWidget>& WidgetInstance,
 		const FText& LoadingText);
 	TSharedRef<SWidget> BuildHeader(const FText& SectionTitle, bool bShowBack = true);
-	/** A non-empty ComingSoonTip keeps the card in place but dimmed and inert, its badge reading SOON. */
-	TSharedRef<SWidget> BuildPathCard(const FText& Title, const FText& Description,
-		EAPSPathVisual Visual, const FLinearColor& Accent, FSimpleDelegate Action,
-		bool bLarge = false, bool bEnabled = true, const FText& ComingSoonTip = FText::GetEmpty());
 	TSharedRef<SWidget> BuildSpawnCard(EAPSStartAssetSlot Slot, const FText& Label);
+	/** Rio 06.10: a card's classes as a grid of large cards over the page (the CLASS button opens it, Esc closes). */
+	void OpenSpawnPicker(EAPSStartAssetSlot Slot);
+	void CloseSpawnPicker();
+	TSharedRef<SWidget> BuildSpawnPicker(EAPSStartAssetSlot Slot);
+	TSharedPtr<SBox> SpawnPickerHost;
+	bool bSpawnPickerOpen{false};
 
 	void LoadVisualResources();
 	void BeginAuxiliaryMenuLoad();
@@ -211,6 +229,13 @@ private:
 
 	FReply Back();
 	FReply OpenChoosePath();
+	/** CONTINUE: opens the newest world (LatestWorld). */
+	FReply ContinueLatestWorld();
+	/** NEW WORLD: picks a path card (PLANET is not ready and is never picked), and runs the picked path. */
+	FReply PickNewWorldPath(EAPSNewWorldPath Path);
+	FReply RunNewWorldPath();
+	bool IsSplashVisible() const;
+	EActiveTimerReturnType TickSplash(double InCurrentTime, float InDeltaTime);
 	FReply StartSingleGame();
 	FReply OpenExistingWorlds();
 	FReply OpenAstronomicalGeneration(EAstroPreviewFocus Focus, EAPSGenerationRoute Route);
@@ -243,6 +268,17 @@ private:
 	TSharedPtr<SBox> ExistingWorldDetailsHost;
 	TArray<TSharedPtr<FAPSExistingWorldEntry>> ExistingWorlds;
 	TSharedPtr<FAPSExistingWorldEntry> SelectedWorld;
+	/** Rio 06.10: the newest world, CONTINUE's target; set whenever the landing page is built. */
+	TSharedPtr<FAPSExistingWorldEntry> LatestWorld;
+	/** The start-up title screen over the menu, and its lift (TickSplash). */
+	TSharedPtr<SWidget> Splash;
+	double SplashShownAt{-1.0};
+	double SplashLiftStarted{-1.0};
+	int32 SplashCalmFrames{0};
+	/** The landing page's Q: the first press arms it, a second one before this time quits. */
+	double QuitArmedUntil{0.0};
+	/** NEW WORLD's picked path, kept while the menu stays open. */
+	EAPSNewWorldPath NewWorldPath{EAPSNewWorldPath::Civilization};
 	/** The world the delete confirmation asks about; the modal is open while it is set. */
 	TSharedPtr<FAPSExistingWorldEntry> PendingDeleteWorld;
 	/** One line in the details panel: "... was deleted", or why a deletion failed; cleared by the next selection. */

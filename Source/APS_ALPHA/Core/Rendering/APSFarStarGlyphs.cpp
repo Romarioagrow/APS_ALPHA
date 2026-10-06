@@ -9,6 +9,7 @@
 #include "APS_ALPHA/Actors/Astro/StarSystem.h"
 #include "APS_ALPHA/Core/Rendering/APSCanonicalStellarProjection.h"
 #include "APS_ALPHA/Core/World/APSRealScale.h"
+#include "APS_ALPHA/Core/World/APSWorldOriginSubsystem.h"
 #include "APS_ALPHA/Gameplay/Expansion/APSStarSystems.h"
 #include "APS_ALPHA/Gameplay/Expansion/APSSystemMaterializer.h"
 #include "APS_ALPHA/Generation/APSGalaxyMorphology.h"
@@ -19,6 +20,7 @@
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "HAL/IConsoleManager.h"
+#include "HAL/PlatformTime.h"
 
 namespace APSFarStarGlyphsLocal
 {
@@ -36,6 +38,10 @@ namespace APSFarStarGlyphsLocal
 		double Carrier{0.0};
 		/** Rio 05.10 (real scale, stage 2): a galaxy star's own row of per-star data (empty: the catalogue point's, Index). */
 		TArray<float> Row;
+		/** Rio 05.10 night: a galaxy star's glyph logs its hand-over to the sphere (shown last frame, next periodic line). */
+		bool bGalaxy{false};
+		bool bShown{false};
+		double NextLogSeconds{0.0};
 	};
 	TMap<TWeakObjectPtr<const UWorld>, TArray<FGlyph>> GGlyphs;
 
@@ -74,8 +80,12 @@ namespace APSFarStarGlyphsLocal
 	}
 
 	/**
-	 * Rio 05.10 (real scale, stage 2): a REAL SCALE galaxy star stands up as a system half a parsec out, where its sphere is
-	 * far below a pixel and its catalogue point and GPU point are already hidden: its glyph stays, from its record.
+	 * Rio 05.10 (real scale, stage 2): a REAL SCALE galaxy star stands up as a system a quarter of a light year out, where
+	 * its sphere is far below a pixel; its catalogue point (ISM prefix) is suppressed and its GPU point hidden by the
+	 * system's sphere: its glyph stays, from its record.
+	 * Rio 05.10 night: only the fallback now. A star the GPU layer draws keeps its approach point (APSGalaxyGpuStars::
+	 * UpdateApproachPoints: the same photometry as before, the exact place, a crossfade into this sphere at the same disc
+	 * size), so the glyph is made only for a star of the ISM prefix, without a GPU layer, or with aps.Stars.ApproachPoint 0.
 	 */
 	void AddGalaxyGlyph(UWorld& World, const AStarCluster& Cluster, const int32 Stride, TArray<FGlyph>& Glyphs,
 		TSet<const AStar*>& Present)
@@ -85,16 +95,19 @@ namespace APSFarStarGlyphsLocal
 		const FAPSStarSystemInfo* Info = Materializer ? Systems->Get(Materializer->GetActiveIndex()) : nullptr;
 		const AGalaxy* Galaxy = APSGalaxyGpuStars::GetIndexedGalaxy(&World);
 		FGalaxyCatalogStarRecord Record;
-		if (!Info || Info->GalaxyIndex == INDEX_NONE || !Galaxy || !Galaxy->StarCatalog.ResolveStar(Info->GalaxyIndex, Record))
+		if (!Info || Info->GalaxyIndex == INDEX_NONE || !Galaxy || !Galaxy->StarCatalog.ResolveStar(Info->GalaxyIndex, Record)
+			|| APSGalaxyGpuStars::DrawsApproachPoint(&World, Info->GalaxyIndex))
 		{
 			return;
 		}
-		// The system's star stands at its catalogue point (APSSystemMaterializer's MaterializeGalaxyStar).
+		// The system's star stands at its catalogue point (APSSystemMaterializer's MaterializeGalaxyStar). Rio 06.10 (still
+		// ship): the catalogue's places are the sky's; a star actor stands at its sky place (SkyPlace: a system riding with
+		// the sky where it is, any other at its world place + the sky offset).
 		AStar* Star = nullptr;
 		double BestSquared = TNumericLimits<double>::Max();
 		for (TActorIterator<AStar> It(&World); It; ++It)
 		{
-			const double DistanceSquared = FVector::DistSquared(It->GetActorLocation(), Info->Location);
+			const double DistanceSquared = FVector::DistSquared(UAPSWorldOriginSubsystem::SkyPlace(**It), Info->Location);
 			if (IsValid(*It) && DistanceSquared < BestSquared)
 			{
 				BestSquared = DistanceSquared;
@@ -111,6 +124,19 @@ namespace APSFarStarGlyphsLocal
 			FGlyph& Glyph = Glyphs.AddDefaulted_GetRef();
 			Glyph.Star = Star;
 			Glyph.Row = MakeGalaxyRow(Cluster, Record, Stride);
+			Glyph.bGalaxy = true;
+			// Rio 05.10 night (with aps.Stars.ApproachPoint): a star of the galaxy's ISM prefix keeps the row its own catalogue
+			// point drew with (made in the galaxy's frame), not one made again in the cluster's: the same light at the hand-over.
+			const UHierarchicalInstancedStaticMeshComponent* GalaxyPoints = Galaxy->StarMeshInstances;
+			const int32 Instance = Galaxy->RenderedCatalogIndices.Find(Info->GalaxyIndex);
+			if (APSGalaxyGpuStars::AreApproachPointsActive(&World) && IsValid(GalaxyPoints) && Instance != INDEX_NONE
+				&& GalaxyPoints->NumCustomDataFloats == Stride
+				&& GalaxyPoints->PerInstanceSMCustomData.IsValidIndex((Instance + 1) * Stride - 1))
+			{
+				Glyph.Row = TArray<float>(GalaxyPoints->PerInstanceSMCustomData.GetData() + Instance * Stride, Stride);
+				UE_LOG(LogTemp, Log, TEXT("[APS.Stars] far glyph for %s takes its ISM point's own row (instance %d)"),
+					*Info->Name, Instance);
+			}
 		}
 	}
 
@@ -196,6 +222,9 @@ void APSFarStarGlyphs::Update(UWorld* World, const TArray<AActor*>& Attached, co
 	{
 		return;
 	}
+	// Rio 05.10 night: the GPU stars near the camera in a REAL SCALE world first (their approach points), so the galaxy
+	// glyph below knows whether its star still needs it. After PresentGameplayFrame, in the same frame.
+	APSGalaxyGpuStars::UpdateApproachPoints(World, Camera, PixelTangent);
 	for (auto It = GGlyphs.CreateIterator(); It; ++It)
 	{
 		if (!It.Key().IsValid())
@@ -252,14 +281,26 @@ void APSFarStarGlyphs::Update(UWorld* World, const TArray<AActor*>& Attached, co
 	});
 
 	const double MeshRadius = FMath::Max(Source->GetStaticMesh()->GetBounds().BoxExtent.GetMax(), 0.001);
+	// Rio 06.10 (still ship): while a fast REAL SCALE ship owes its travel only the sky moves; a glyph stands where the sky
+	// has its star (SkyPlace) and is sized from there.
+	const double NowSeconds = FPlatformTime::Seconds();
 	for (FGlyph& Glyph : Glyphs)
 	{
 		const AStar* Star = Glyph.Star.Get();
+		const FVector StarInSky = UAPSWorldOriginSubsystem::SkyPlace(*Star);
 		const double RadiusCm = FMath::Max(static_cast<double>(Star->StarRadiusKM), 1.0) * 100000.0;
-		const double PixelWorldRadius = FVector::Distance(Camera, Star->GetActorLocation()) * PixelTangent;
+		const double PixelWorldRadius = FVector::Distance(Camera, StarInSky) * PixelTangent;
 		const double ApparentPixels = PixelWorldRadius > 0.0 ? RadiusCm / PixelWorldRadius : TNumericLimits<double>::Max();
 		// The glyph while the disc is smaller than it; from there on the sphere itself (photosphere and corona).
 		const bool bShow = !bDaylightHidden && ApparentPixels < GlyphPixels && !Star->IsHidden();
+		// Rio 05.10 night: a galaxy star's glyph (the fallback without an approach point) logs its hand-over to the sphere.
+		if (Glyph.bGalaxy && bShow != Glyph.bShown)
+		{
+			UE_LOG(LogTemp, Log, TEXT("[APS.Stars] far glyph for %s: %s at %.4g AU (disc %.3f px, threshold %.2f px)"),
+				*Star->AstroName.ToString(), bShow ? TEXT("sphere -> glyph") : TEXT("glyph -> sphere"),
+				PixelWorldRadius / PixelTangent / 1.495978707e13, ApparentPixels, GlyphPixels);
+			Glyph.bShown = bShow;
+		}
 		if (!bShow)
 		{
 			if (UInstancedStaticMeshComponent* Mesh = Glyph.Mesh.Get(); Mesh && Mesh->IsVisible())
@@ -285,9 +326,16 @@ void APSFarStarGlyphs::Update(UWorld* World, const TArray<AActor*>& Attached, co
 		// moved by a percent, a hundredth of a pixel at these sizes.
 		APSStellarOpticalSupport::Publish(Mesh, 0, APSStellarOpticalSupport::CoreScale(Core, Carrier),
 			APSStellarOpticalSupport::ResolvedRayStrength(Profile, RadiusCm, PixelWorldRadius));
-		if (!Glyph.Actor->GetActorLocation().Equals(Star->GetActorLocation(), 1.0))
+		if (Glyph.bGalaxy && NowSeconds >= Glyph.NextLogSeconds)
 		{
-			Glyph.Actor->SetActorLocation(Star->GetActorLocation(), false, nullptr, ETeleportType::TeleportPhysics);
+			Glyph.NextLogSeconds = NowSeconds + 0.5;
+			UE_LOG(LogTemp, Log, TEXT("[APS.Stars] far glyph for %s (fallback): %.4g AU, disc %.3f px, core %.2f px, carrier %.2f px, emission %.4g"),
+				*Star->AstroName.ToString(), PixelWorldRadius / PixelTangent / 1.495978707e13, ApparentPixels,
+				Core / PixelWorldRadius, Carrier / PixelWorldRadius, Glyph.Row.IsValidIndex(3) ? Glyph.Row[3] : -1.0f);
+		}
+		if (!Glyph.Actor->GetActorLocation().Equals(StarInSky, 1.0))
+		{
+			Glyph.Actor->SetActorLocation(StarInSky, false, nullptr, ETeleportType::TeleportPhysics);
 		}
 		if (!FMath::IsNearlyEqual(Glyph.Carrier, Carrier, Carrier * 0.01))
 		{

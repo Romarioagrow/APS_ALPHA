@@ -34,6 +34,9 @@ struct FAPSUIColorPalette
 	FLinearColor Success;
 	FLinearColor Warning;
 	FLinearColor Danger;
+	/** Rio 06.10 themes: the primary button's fill at rest and on hover. */
+	FLinearColor ActionFill;
+	FLinearColor ActionHoverFill;
 };
 
 struct FAPSUILayoutMetrics

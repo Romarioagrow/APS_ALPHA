@@ -40,6 +40,13 @@ TAutoConsoleVariable<int32> CVarContinuousPreviewFrame(
 	TEXT("aps.Preview.ContinuousFrame"), 1,
 	TEXT("Use the common physical observer for every generation-menu scope (new preview required)."));
 
+// Rio 06.10 ("120 FPS on the galaxy, 90 while I turn it"): every moving frame the catalogue views re-sent their
+// instances, and an ISM without conservative bounds walks all of them for its bounds each time. The gameplay
+// stellar view already runs this way (APSGameplayStellarView). 0 restores the old views (new preview required).
+TAutoConsoleVariable<int32> CVarPreviewViewConservativeBounds(
+	TEXT("aps.Preview.ViewConservativeBounds"), 1,
+	TEXT("Generation-menu catalogue views keep conservative bounds and skip lighting/WPO work they never use."));
+
 // Rio 02.10: FPS fell hard while the cluster camera turned. Each orbit step re-sent every catalogue point to the GPU.
 TAutoConsoleVariable<int32> CVarCatalogDeltaUpload(
 	TEXT("aps.Preview.CatalogDeltaUpload"), 1,
@@ -700,6 +707,16 @@ void AAstroGenerator::EnsureContinuousPreviewPresentation()
 		// a fresh ISM otherwise audits/substitutes the material on every update.
 		View->bDisallowNanite = true;
 		View->SetForceDisableNanite(true);
+		if (CVarPreviewViewConservativeBounds.GetValueOnGameThread() != 0)
+		{
+			// Camera-following transforms must not rescan the complete catalogue for bounds (as the gameplay view).
+			View->SetUseConservativeBounds(true);
+			View->bAffectDynamicIndirectLighting = false;
+			View->bAffectDistanceFieldLighting = false;
+			View->bEvaluateWorldPositionOffset = false;
+			View->bWorldPositionOffsetWritesVelocity = false;
+			View->SetReceivesDecals(false);
+		}
 		View->SetStaticMesh(Source->GetStaticMesh());
 		for (int32 Index = 0; Index < Source->GetNumMaterials(); ++Index) View->SetMaterial(Index, Source->GetMaterial(Index));
 		View->SetNumCustomDataFloats(Source->NumCustomDataFloats);

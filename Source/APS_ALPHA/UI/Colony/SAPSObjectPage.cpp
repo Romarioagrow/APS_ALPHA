@@ -1,4 +1,5 @@
 #include "SAPSObjectPage.h"
+#include "APS_ALPHA/UI/Style/APSUITheme.h"
 
 #include "SAPSSurfaceMap.h"
 #include "APS_ALPHA/Actors/Astro/APSBodyDesignation.h"
@@ -45,9 +46,8 @@ namespace APSObjectPagePrivate
 	const FSlateBrush* ChipBrush()
 	{
 		// The terminal's metric tile: a dark inset with a quiet rim.
-		static const FSlateRoundedBoxBrush Brush(FLinearColor(0.005f, 0.028f, 0.044f, 0.98f), 6.0f,
-			FLinearColor(0.035f, 0.23f, 0.31f, 0.88f), 1.0f);
-		return &Brush;
+		// Rio 06.10: the shared tile follows the interface theme.
+		return APSChrome::MetricTileBrush();
 	}
 
 	const FSlateBrush* RoundBrush()
@@ -144,7 +144,7 @@ TSharedRef<SWidget> APSInfrastructureUI::FrameButton(TSharedRef<SWidget> Content
 			.Brush(FAppStyle::GetBrush("WhiteBrush"))
 			.Tint_Lambda([IsSelected]()
 			{
-				return IsSelected.Get(false) ? FLinearColor(0.02f, 0.13f, 0.17f, 0.97f) : Panel();
+				return IsSelected.Get(false) ? APSUITheme::Retint(FLinearColor(0.02f, 0.13f, 0.17f, 0.97f)) : Panel();
 			})
 			.ChamferTop(true)
 			.ChamferBottom(true)
@@ -199,10 +199,10 @@ TSharedRef<SWidget> APSInfrastructureUI::FilledButton(const FText& Label, FOnCli
 			{
 				if (!CanClick.Get(true))
 				{
-					return FLinearColor(0.07f, 0.13f, 0.16f, 0.95f);
+					return APSUITheme::Retint(FLinearColor(0.07f, 0.13f, 0.16f, 0.95f));
 				}
 				const TSharedPtr<SButton> Pinned = WeakButton.Pin();
-				return Pinned && Pinned->IsHovered() ? FLinearColor(1.0f, 0.83f, 0.38f, 1.0f) : Amber();
+				return Pinned && Pinned->IsHovered() ? APSChrome::AmberBright() : Amber();
 			})
 			.ChamferTop(true)
 			.ChamferBottom(true)
@@ -213,7 +213,7 @@ TSharedRef<SWidget> APSInfrastructureUI::FilledButton(const FText& Label, FOnCli
 			.RenderTransform(CapsCenterShift(Font("Bold", 10)))
 			.ColorAndOpacity_Lambda([CanClick]()
 			{
-				return FSlateColor(CanClick.Get(true) ? FLinearColor(0.02f, 0.05f, 0.07f, 1.0f) : Muted());
+				return FSlateColor(CanClick.Get(true) ? APSChrome::OnAmber() : Muted());
 			})
 		]
 		// The action's own colour on the edge: navigation blue, the fleet's gold, a department's colour.
@@ -274,14 +274,14 @@ TSharedRef<SWidget> APSInfrastructureUI::ActionCell(const FAPSObjectAction& Acti
 			{
 				if (Read().bUnderway)
 				{
-					return FLinearColor(0.03f, 0.08f, 0.10f, 0.97f);
+					return APSUITheme::Retint(FLinearColor(0.03f, 0.08f, 0.10f, 0.97f));
 				}
 				if (!bCanRun)
 				{
-					return FLinearColor(0.07f, 0.13f, 0.16f, 0.95f);
+					return APSUITheme::Retint(FLinearColor(0.07f, 0.13f, 0.16f, 0.95f));
 				}
 				const TSharedPtr<SButton> Pinned = WeakButton.Pin();
-				return Pinned && Pinned->IsHovered() ? FLinearColor(1.0f, 0.83f, 0.38f, 1.0f) : Amber();
+				return Pinned && Pinned->IsHovered() ? APSChrome::AmberBright() : Amber();
 			})
 			.ChamferTop(true)
 			.ChamferBottom(true)
@@ -315,7 +315,7 @@ TSharedRef<SWidget> APSInfrastructureUI::ActionCell(const FAPSObjectAction& Acti
 			.ColorAndOpacity_Lambda([Read, bCanRun]()
 			{
 				return FSlateColor(Read().bUnderway ? FLinearColor(0.96f, 0.98f, 1.0f, 1.0f)
-					: bCanRun ? FLinearColor(0.02f, 0.05f, 0.07f, 1.0f) : Muted());
+					: bCanRun ? APSChrome::OnAmber() : Muted());
 			})
 		]
 		// The action's own colour on the edge: navigation blue, the fleet's gold, a department's colour.
@@ -362,7 +362,7 @@ TSharedRef<SWidget> APSInfrastructureUI::Chip(const TAttribute<FText>& Text, con
 		+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(6.0f, 0.0f, 0.0f, 0.0f)
 		[
 			// The readable face: chips carry numbers and units, small.
-			SNew(STextBlock).Text(Text).Font(FCoreStyle::GetDefaultFontStyle("Bold", 10)).ColorAndOpacity(TextColour)
+			SNew(STextBlock).Text(Text).Font(APSUITheme::BodyFont("Bold", 10)).ColorAndOpacity(TextColour)
 		]
 	];
 }

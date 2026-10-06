@@ -200,6 +200,8 @@ private:
 	bool ReadCatalogue();
 	void ApplyPendingRestore();
 	void UpdateGalaxyNeighbours(float DeltaSeconds);
+	/** RegisterGalaxyStar, timed for the galaxy-systems log line. */
+	int32 RegisterGalaxyStarTimed(int64 CatalogIndex);
 	/** The cluster system (the grid's) whose room holds a location, nearest first; INDEX_NONE if none. */
 	int32 FindContainingCluster(const FVector& Location, double* OutDistanceSquared = nullptr) const;
 	void UpdateVisit(float DeltaSeconds);
@@ -238,6 +240,24 @@ private:
 	TMap<FGuid, TPair<int64, FAPSStarSystemState>> HeldGalaxyStates;
 	float GalaxyClock{0.0f};
 	double GalaxyLogSeconds{0.0};
+	/**
+	 * Rio 05.10 night (a 50-107 ms hitch every half second at drive speed): the galaxy stars the last neighbour scan found
+	 * unregistered, nearest first, registered a few a frame (aps.Stars.GalaxyAddsPerFrame, aps.Stars.GalaxyAddBudgetMs).
+	 */
+	TArray<int64> PendingGalaxyStars;
+	/** Systems registered since the revision last changed: it changes at the half-second scan, as before. */
+	int32 GalaxyAddsSinceRevision{0};
+	/** For the log line, since the last one: registrations tried, their time, the slowest one and its parts, the worst frame. */
+	int32 GalaxyTriesLogged{0};
+	int32 GalaxyAddsLogged{0};
+	double GalaxyAddSeconds{0.0};
+	double GalaxyAddWorstSeconds{0.0};
+	double GalaxyAddWorstNearSeconds{0.0};
+	double GalaxyAddWorstRingSeconds{0.0};
+	double GalaxyAddWorstFrameSeconds{0.0};
+	/** RegisterGalaxyStar's last call: its nearest-star query and its search of the cluster grid, seconds. */
+	double LastRegisterNearSeconds{0.0};
+	double LastRegisterRingSeconds{0.0};
 	/** The system the pilot is in and for how long (a visit counts after a few seconds). */
 	int32 VisitIndex{INDEX_NONE};
 	float VisitSeconds{0.0f};

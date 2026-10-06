@@ -1,4 +1,5 @@
 #include "SAPSStrategicMapPanel.h"
+#include "APS_ALPHA/UI/Style/APSUITheme.h"
 
 #include "APSStrategicMapCamera.h"
 #include "APSStrategicMapScene.h"
@@ -74,14 +75,13 @@ namespace APSStrategicMapPanelLocal
 
 	FSlateFontInfo Readable(const FName Typeface, const int32 Size)
 	{
-		return FCoreStyle::GetDefaultFontStyle(Typeface, Size);
+		return APSUITheme::BodyFont(Typeface, Size);
 	}
 
 	const FSlateBrush* TileBrush()
 	{
-		static const FSlateRoundedBoxBrush Brush(FLinearColor(0.005f, 0.028f, 0.044f, 0.98f), 6.0f,
-			FLinearColor(0.035f, 0.23f, 0.31f, 0.88f), 1.0f);
-		return &Brush;
+		// Rio 06.10: the shared tile follows the interface theme.
+		return APSChrome::MetricTileBrush();
 	}
 
 	/**
@@ -111,9 +111,9 @@ namespace APSStrategicMapPanelLocal
 				{
 					if (!IsEnabled.Get(true))
 					{
-						return FLinearColor(0.02f, 0.05f, 0.065f, 0.92f);
+						return APSUITheme::Retint(FLinearColor(0.02f, 0.05f, 0.065f, 0.92f));
 					}
-					return IsSelected.Get(false) ? FLinearColor(0.02f, 0.13f, 0.17f, 0.97f) : APSChrome::Panel();
+					return IsSelected.Get(false) ? APSUITheme::Retint(FLinearColor(0.02f, 0.13f, 0.17f, 0.97f)) : APSChrome::Panel();
 				})
 				.ChamferTop(true)
 				.ChamferBottom(true)
@@ -131,7 +131,7 @@ namespace APSStrategicMapPanelLocal
 					const TSharedPtr<SButton> Pinned = WeakButton.Pin();
 					if (!IsEnabled.Get(true))
 					{
-						return FLinearColor(0.1f, 0.18f, 0.21f, 0.8f);
+						return APSUITheme::Retint(FLinearColor(0.1f, 0.18f, 0.21f, 0.8f));
 					}
 					return IsSelected.Get(false) || (Pinned && Pinned->IsHovered()) ? Accent : APSChrome::CyanDim();
 				})
@@ -273,8 +273,8 @@ void SAPSStrategicMapPanel::Construct(const FArguments& InArgs)
 	Camera->Begin(PlayerController, Scene->GetReference(), Scene->GetFrameUp());
 
 	SearchStyle = MakeShared<FEditableTextBoxStyle>(FCoreStyle::Get().GetWidgetStyle<FEditableTextBoxStyle>("NormalEditableTextBox"));
-	const FSlateRoundedBoxBrush Field(FLinearColor(0.003f, 0.016f, 0.028f, 0.96f), 6.0f, APSChrome::CyanDim(), 1.0f);
-	const FSlateRoundedBoxBrush FieldActive(FLinearColor(0.006f, 0.032f, 0.048f, 0.98f), 6.0f, APSChrome::Cyan(), 1.2f);
+	const FSlateRoundedBoxBrush Field(APSUITheme::Retint(FLinearColor(0.003f, 0.016f, 0.028f, 0.96f)), 6.0f, APSChrome::CyanDim(), 1.0f);
+	const FSlateRoundedBoxBrush FieldActive(APSUITheme::Retint(FLinearColor(0.006f, 0.032f, 0.048f, 0.98f)), 6.0f, APSChrome::Cyan(), 1.2f);
 	SearchStyle->SetBackgroundImageNormal(Field)
 		.SetBackgroundImageHovered(FieldActive)
 		.SetBackgroundImageFocused(FieldActive)
@@ -282,7 +282,7 @@ void SAPSStrategicMapPanel::Construct(const FArguments& InArgs)
 		.SetForegroundColor(FSlateColor(APSChrome::White()))
 		.SetFocusedForegroundColor(FSlateColor(APSChrome::White()))
 		.SetBackgroundColor(FSlateColor(FLinearColor::White))
-		.SetFont(FCoreStyle::GetDefaultFontStyle("Bold", 12))
+		.SetFont(APSUITheme::BodyFont("Bold", 12))
 		.SetPadding(FMargin(10.0f, 7.0f));
 
 	ChildSlot
@@ -819,7 +819,7 @@ TSharedRef<SWidget> SAPSStrategicMapPanel::LayerToggle(const APSStrategicMap::EL
 				SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush"))
 				.BorderBackgroundColor_Lambda([IsOn, Swatch]()
 				{
-					return IsOn() ? FSlateColor(Swatch) : FSlateColor(FLinearColor(0.05f, 0.1f, 0.12f, 1.0f));
+					return IsOn() ? FSlateColor(Swatch) : FSlateColor(APSUITheme::Retint(FLinearColor(0.05f, 0.1f, 0.12f, 1.0f)));
 				})
 			]
 		]

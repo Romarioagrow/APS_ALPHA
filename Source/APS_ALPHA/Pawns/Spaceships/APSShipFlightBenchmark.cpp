@@ -1675,14 +1675,24 @@ namespace APSShipBenchmark
 			{
 				const FString Name = Args.Num() > 1 ? Args[1] : FString(TEXT("nearest"));
 				TArray<int32> Found;
-				if (Name.Equals(TEXT("nearest"), ESearchCase::IgnoreCase))
+				// Rio 06.10 (still ship): "system 40", the 40th nearest, for a long flight between the stars.
+				const int32 Rank = Name.IsNumeric() ? FMath::Max(FCString::Atoi(*Name), 1) : 1;
+				if (Name.Equals(TEXT("nearest"), ESearchCase::IgnoreCase) || Name.IsNumeric())
 				{
-					Systems->FindNearest(Ship->GetActorLocation(), 4, Found);
+					Systems->FindNearest(Ship->GetActorLocation(), Rank + 4, Found);
 					Found.RemoveAll([Systems](const int32 Index)
 					{
 						const FAPSStarSystemInfo* Info = Systems->Get(Index);
 						return !Info || Info->bHome || Info->bInsideHome;
 					});
+					if (Found.Num() >= Rank)
+					{
+						Found.RemoveAt(0, Rank - 1);
+					}
+					else if (!Found.IsEmpty())
+					{
+						Found.RemoveAt(0, Found.Num() - 1);
+					}
 				}
 				else
 				{

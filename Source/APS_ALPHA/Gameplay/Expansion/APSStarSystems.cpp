@@ -12,6 +12,7 @@
 #include "APS_ALPHA/Core/Rendering/APSGalaxyGpuStars.h"
 #include "APS_ALPHA/Core/Structs/StarGenerationModel.h"
 #include "APS_ALPHA/Core/Structs/StarSystemGenerationModel.h"
+#include "APS_ALPHA/Core/World/APSWorldOriginSubsystem.h"
 #include "APS_ALPHA/Gameplay/Civilizations/APSCivilizationJournalSubsystem.h"
 #include "APS_ALPHA/Generation/APSBodyNames.h"
 #include "APS_ALPHA/Generation/AstroGenerator.h"
@@ -45,6 +46,16 @@ namespace APSStarSystemsLocal
 		TEXT("How many of the drawn galaxy stars nearest the pilot aps.Stars.GalaxyReach registers (twice a second)."));
 	/** Registrations per update (a fast flight through a dense field spreads them over a few updates). */
 	constexpr int32 GalaxyAddsPerUpdate = 32;
+	/**
+	 * Rio 05.10 night (flying light years a second: a 50-107 ms hitch every half second, +17 to +32 galaxy systems each
+	 * time): the half-second scan only queues the stars it finds; they are registered a few a frame.
+	 */
+	TAutoConsoleVariable<int32> CVarGalaxyAddsPerFrame(TEXT("aps.Stars.GalaxyAddsPerFrame"), 4,
+		TEXT("The galaxy stars the half-second scan finds near the pilot are registered at most this many a frame, the first ")
+		TEXT("always and more while aps.Stars.GalaxyAddBudgetMs lasts. 0: up to 32 at once at the scan, as before."));
+	TAutoConsoleVariable<float> CVarGalaxyAddBudgetMs(TEXT("aps.Stars.GalaxyAddBudgetMs"), 1.0f,
+		TEXT("aps.Stars.GalaxyAddsPerFrame: after a frame's first galaxy registration, more only while that frame has spent ")
+		TEXT("less than this on them, ms (0: the count alone)."));
 
 	FString Digits(const FGuid& Id)
 	{
@@ -388,7 +399,8 @@ bool FAPSStarSystems::ReadCatalogue()
 	}
 
 	Home = HomeSystem;
-	HomeLocation = HomeSystem->GetActorLocation();
+	// Rio 06.10 (still ship): the home's place in the sky the catalogue is drawn in (its world place while no travel is owed).
+	HomeLocation = HomeSystem->GetActorLocation() + UAPSWorldOriginSubsystem::SkyOffsetOf(LiveWorld);
 	ClusterSeed = Cluster->GenerationSeed;
 	CatalogueGenerator = Generator;
 	CatalogueCluster = Cluster;
@@ -551,9 +563,13 @@ void FAPSStarSystems::FollowHome()
 {
 	const AActor* HomeActor = Home.Get();
 	if (!HomeActor) return;
-	const FVector Now = HomeActor->GetActorLocation();
+	// Rio 06.10 (still ship): far from the systems a fast ship's travel is owed and only the sky moves; every location here
+	// is the sky's (the home's world place + the sky offset), as FindNearStars places the galaxy's stars and the cluster's
+	// HISM draws its own, so the systems and their anchors move with the sky every owed frame.
+	const FVector Now = HomeActor->GetActorLocation() + UAPSWorldOriginSubsystem::SkyOffsetOf(HomeActor->GetWorld());
 	if (Now.Equals(HomeLocation, 1.0)) return;
-	// The home moved (an origin shift): every location and anchor follows it (the locations as they are read, Current).
+	// The home moved (an origin shift, or the sky): every location and anchor follows it (the locations as they are read,
+	// Current).
 	HomeLocation = Now;
 	for (const TPair<FGuid, TWeakObjectPtr<AActor>>& Pair : Anchors)
 	{
@@ -592,11 +608,16 @@ void FAPSStarSystems::FindNearest(const FVector& Location, const int32 Count, TA
 	// Keep the best Count by insertion: Count is small (a list on a screen), the catalogue a few tens of thousands.
 	TArray<TPair<double, int32>> Best;
 	Best.Reserve(Count + 1);
+	// Rio 06.10 (flight FPS, Insights): the scan read every system's whole record (~150 B apart: ~5 MB a call over the
+	// ~36k cluster systems and the galaxy ones, a few calls a frame in flight) only for bInsideHome, before the distance.
+	// The distance comes first now, from the packed offsets (24 B apart), and the record is read only for a system near
+	// enough to enter the list. The list is exactly the same: one inside the home's sphere is still never entered, and
+	// the cut-off is the last of that same list.
 	for (int32 Index = 0; Index < Systems.Num(); ++Index)
 	{
-		if (Systems[Index].bInsideHome) continue;
 		const double Distance = FVector::DistSquared(Location, LocationOf(Index));
 		if (Best.Num() == Count && Distance >= Best.Last().Key) continue;
+		if (Systems[Index].bInsideHome) continue;
 		int32 At = Best.Num();
 		while (At > 0 && Best[At - 1].Key > Distance) --At;
 		Best.Insert(TPair<double, int32>(Distance, Index), At);
@@ -681,6 +702,11 @@ int32 FAPSStarSystems::RegisterGalaxyStar(const int64 CatalogIndex)
 	{
 		return *Existing;
 	}
+	// Rio 05.10 night: under Insights and in the galaxy-systems log line, the nearest-star query and the cluster grid's
+	// rings (suspected near the cluster) are timed apart.
+	TRACE_CPUPROFILER_EVENT_SCOPE(APS_Stars_RegisterGalaxyStar);
+	LastRegisterNearSeconds = 0.0;
+	LastRegisterRingSeconds = 0.0;
 	UWorld* LiveWorld = World.Get();
 	const AGalaxy* Galaxy = APSGalaxyGpuStars::GetIndexedGalaxy(LiveWorld);
 	FGalaxyCatalogStarRecord Record;
@@ -697,14 +723,25 @@ int32 FAPSStarSystems::RegisterGalaxyStar(const int64 CatalogIndex)
 	{
 		return INDEX_NONE;
 	}
-	if (FindContainingCluster(Location) != INDEX_NONE)
+	double GridStart = FPlatformTime::Seconds();
 	{
-		return INDEX_NONE;
+		TRACE_CPUPROFILER_EVENT_SCOPE(APS_Stars_RegisterGalaxyStar_Containing);
+		if (FindContainingCluster(Location) != INDEX_NONE)
+		{
+			LastRegisterRingSeconds = FPlatformTime::Seconds() - GridStart;
+			return INDEX_NONE;
+		}
 	}
+	LastRegisterRingSeconds = FPlatformTime::Seconds() - GridStart;
 	// Room: half the distance to the nearest drawn star, of the galaxy or of the cluster, so no two systems overlap.
 	double NearestSquared = TNumericLimits<double>::Max();
 	TArray<APSGalaxyGpuStars::FNearStar> Near;
-	APSGalaxyGpuStars::FindNearStars(LiveWorld, Location, 3, 1.0e30, Near);
+	const double NearStart = FPlatformTime::Seconds();
+	{
+		TRACE_CPUPROFILER_EVENT_SCOPE(APS_Stars_RegisterGalaxyStar_Near);
+		APSGalaxyGpuStars::FindNearStars(LiveWorld, Location, 3, 1.0e30, Near);
+	}
+	LastRegisterNearSeconds = FPlatformTime::Seconds() - NearStart;
 	for (const APSGalaxyGpuStars::FNearStar& Star : Near)
 	{
 		if (Star.CatalogIndex != CatalogIndex)
@@ -714,28 +751,33 @@ int32 FAPSStarSystems::RegisterGalaxyStar(const int64 CatalogIndex)
 	}
 	// The cluster's nearest, from the grid in rings (a dense cluster holds tens of thousands of systems): a ring of cells
 	// Ring away is at least Ring - 1 cells off, so the rings stop once that is beyond the nearest found.
-	const FIntVector Cell = CellOf(Location - HomeLocation);
-	const double CellSize = FMath::Max(CellCm, 1.0);
-	for (int32 Ring = 0; Ring <= 8; ++Ring)
+	GridStart = FPlatformTime::Seconds();
 	{
-		if (Ring >= 2 && FMath::Square((Ring - 1) * CellSize) > NearestSquared) break;
-		for (int32 X = -Ring; X <= Ring; ++X)
-		for (int32 Y = -Ring; Y <= Ring; ++Y)
-		for (int32 Z = -Ring; Z <= Ring; ++Z)
+		TRACE_CPUPROFILER_EVENT_SCOPE(APS_Stars_RegisterGalaxyStar_Rings);
+		const FIntVector Cell = CellOf(Location - HomeLocation);
+		const double CellSize = FMath::Max(CellCm, 1.0);
+		for (int32 Ring = 0; Ring <= 8; ++Ring)
 		{
-			if (FMath::Max3(FMath::Abs(X), FMath::Abs(Y), FMath::Abs(Z)) != Ring) continue;
-			if (const TArray<int32>* Members = Grid.Find(Cell + FIntVector(X, Y, Z)))
+			if (Ring >= 2 && FMath::Square((Ring - 1) * CellSize) > NearestSquared) break;
+			for (int32 X = -Ring; X <= Ring; ++X)
+			for (int32 Y = -Ring; Y <= Ring; ++Y)
+			for (int32 Z = -Ring; Z <= Ring; ++Z)
 			{
-				for (const int32 Member : *Members)
+				if (FMath::Max3(FMath::Abs(X), FMath::Abs(Y), FMath::Abs(Z)) != Ring) continue;
+				if (const TArray<int32>* Members = Grid.Find(Cell + FIntVector(X, Y, Z)))
 				{
-					if (!Systems[Member].bInsideHome)
+					for (const int32 Member : *Members)
 					{
-						NearestSquared = FMath::Min(NearestSquared, FVector::DistSquared(LocationOf(Member), Location));
+						if (!Systems[Member].bInsideHome)
+						{
+							NearestSquared = FMath::Min(NearestSquared, FVector::DistSquared(LocationOf(Member), Location));
+						}
 					}
 				}
 			}
 		}
 	}
+	LastRegisterRingSeconds += FPlatformTime::Seconds() - GridStart;
 	if (!(NearestSquared > 0.0) || NearestSquared == TNumericLimits<double>::Max())
 	{
 		return INDEX_NONE;
@@ -767,25 +809,74 @@ int32 FAPSStarSystems::RegisterGalaxyStar(const int64 CatalogIndex)
 	return Index;
 }
 
+int32 FAPSStarSystems::RegisterGalaxyStarTimed(const int64 CatalogIndex)
+{
+	const int32 Before = Systems.Num();
+	const double Start = FPlatformTime::Seconds();
+	const int32 Index = RegisterGalaxyStar(CatalogIndex);
+	const double Spent = FPlatformTime::Seconds() - Start;
+	++GalaxyTriesLogged;
+	GalaxyAddsLogged += Systems.Num() - Before;
+	GalaxyAddsSinceRevision += Systems.Num() - Before;
+	GalaxyAddSeconds += Spent;
+	if (Spent > GalaxyAddWorstSeconds)
+	{
+		GalaxyAddWorstSeconds = Spent;
+		GalaxyAddWorstNearSeconds = LastRegisterNearSeconds;
+		GalaxyAddWorstRingSeconds = LastRegisterRingSeconds;
+	}
+	return Index;
+}
+
 void FAPSStarSystems::UpdateGalaxyNeighbours(const float DeltaSeconds)
 {
+	UWorld* LiveWorld = World.Get();
+	const int32 PerFrame = APSStarSystemsLocal::CVarGalaxyAddsPerFrame.GetValueOnGameThread();
+	// Rio 05.10 night (a 50-107 ms hitch every half second at drive speed): the stars the last scan queued, a few a frame
+	// (the first always, more while the frame's budget lasts), nearest first.
+	if (PerFrame > 0 && !PendingGalaxyStars.IsEmpty())
+	{
+		TRACE_CPUPROFILER_EVENT_SCOPE(APS_Stars_GalaxyRegisterQueue);
+		const double BudgetSeconds = FMath::Max(APSStarSystemsLocal::CVarGalaxyAddBudgetMs.GetValueOnGameThread(), 0.0f) / 1000.0;
+		const double FrameStart = FPlatformTime::Seconds();
+		int32 Taken = 0;
+		int32 Tried = 0;
+		while (Taken < PendingGalaxyStars.Num() && Tried < PerFrame)
+		{
+			if (Tried > 0 && BudgetSeconds > 0.0 && FPlatformTime::Seconds() - FrameStart >= BudgetSeconds)
+			{
+				break;
+			}
+			const int64 CatalogIndex = PendingGalaxyStars[Taken++];
+			if (!IndexByGalaxy.Contains(CatalogIndex))
+			{
+				RegisterGalaxyStarTimed(CatalogIndex);
+				++Tried;
+			}
+		}
+		PendingGalaxyStars.RemoveAt(0, Taken);
+		GalaxyAddWorstFrameSeconds = FMath::Max(GalaxyAddWorstFrameSeconds, FPlatformTime::Seconds() - FrameStart);
+	}
+	else if (PerFrame <= 0)
+	{
+		PendingGalaxyStars.Reset();
+	}
 	GalaxyClock -= DeltaSeconds;
 	if (GalaxyClock > 0.0f)
 	{
 		return;
 	}
 	GalaxyClock = 0.5f;
-	UWorld* LiveWorld = World.Get();
 	if (APSStarSystemsLocal::CVarGalaxyReach.GetValueOnGameThread() == 0 || !APSGalaxyGpuStars::GetIndexedGalaxy(LiveWorld))
 	{
+		PendingGalaxyStars.Reset();
 		return;
 	}
-	const int32 Before = Systems.Num();
 	// A load's galaxy systems first: their states wait for them.
 	int32 Restored = 0;
 	for (auto It = HeldGalaxyStates.CreateIterator(); It; ++It)
 	{
-		const int32 Index = RegisterGalaxyStar(It.Value().Key);
+		const int32 Index = RegisterGalaxyStarTimed(It.Value().Key);
 		if (Systems.IsValidIndex(Index) && Systems[Index].Id == It.Key())
 		{
 			States.FindOrAdd(It.Key()) = It.Value().Value;
@@ -799,22 +890,51 @@ void FAPSStarSystems::UpdateGalaxyNeighbours(const float DeltaSeconds)
 	if (Pilot && APSGalaxyGpuStars::FindNearStars(LiveWorld, Pilot->GetActorLocation(),
 		FMath::Clamp(APSStarSystemsLocal::CVarGalaxyReachCount.GetValueOnGameThread(), 1, 512), 1.0e30, Near))
 	{
-		int32 Added = 0;
-		for (const APSGalaxyGpuStars::FNearStar& Star : Near)
+		if (PerFrame > 0)
 		{
-			if (Added >= APSStarSystemsLocal::GalaxyAddsPerUpdate) break;
-			if (!IndexByGalaxy.Contains(Star.CatalogIndex) && RegisterGalaxyStar(Star.CatalogIndex) != INDEX_NONE) ++Added;
+			// The queue starts over from this scan: stars an earlier one found and the ship has since left are dropped.
+			PendingGalaxyStars.Reset();
+			for (const APSGalaxyGpuStars::FNearStar& Star : Near)
+			{
+				if (!IndexByGalaxy.Contains(Star.CatalogIndex))
+				{
+					PendingGalaxyStars.Add(Star.CatalogIndex);
+				}
+			}
+		}
+		else
+		{
+			const double FrameStart = FPlatformTime::Seconds();
+			int32 Added = 0;
+			for (const APSGalaxyGpuStars::FNearStar& Star : Near)
+			{
+				if (Added >= APSStarSystemsLocal::GalaxyAddsPerUpdate) break;
+				if (!IndexByGalaxy.Contains(Star.CatalogIndex) && RegisterGalaxyStarTimed(Star.CatalogIndex) != INDEX_NONE) ++Added;
+			}
+			GalaxyAddWorstFrameSeconds = FMath::Max(GalaxyAddWorstFrameSeconds, FPlatformTime::Seconds() - FrameStart);
 		}
 	}
-	if (Systems.Num() != Before || Restored > 0)
+	if (GalaxyAddsSinceRevision > 0 || Restored > 0)
 	{
 		++Revision;
+		GalaxyAddsSinceRevision = 0;
 		const double Now = FPlatformTime::Seconds();
 		if (Restored > 0 || Now >= GalaxyLogSeconds)
 		{
 			GalaxyLogSeconds = Now + 5.0;
-			UE_LOG(LogTemp, Log, TEXT("[APS.Stars] galaxy systems: %d registered (+%d now, %d saved states restored, %d waiting)"),
-				GalaxySystems.Num(), Systems.Num() - Before, Restored, HeldGalaxyStates.Num());
+			// Rio 05.10 night: what the registrations since the last line cost, the slowest one's parts and the worst frame.
+			UE_LOG(LogTemp, Log,
+				TEXT("[APS.Stars] galaxy systems: %d registered (+%d since the last line, %d tried in %.1f ms, slowest %.2f ms: near-star query %.2f, cluster grid %.2f; worst frame %.2f ms; %d queued; %d saved states restored, %d waiting)"),
+				GalaxySystems.Num(), GalaxyAddsLogged, GalaxyTriesLogged, GalaxyAddSeconds * 1000.0, GalaxyAddWorstSeconds * 1000.0,
+				GalaxyAddWorstNearSeconds * 1000.0, GalaxyAddWorstRingSeconds * 1000.0, GalaxyAddWorstFrameSeconds * 1000.0,
+				PendingGalaxyStars.Num(), Restored, HeldGalaxyStates.Num());
+			GalaxyTriesLogged = 0;
+			GalaxyAddsLogged = 0;
+			GalaxyAddSeconds = 0.0;
+			GalaxyAddWorstSeconds = 0.0;
+			GalaxyAddWorstNearSeconds = 0.0;
+			GalaxyAddWorstRingSeconds = 0.0;
+			GalaxyAddWorstFrameSeconds = 0.0;
 		}
 	}
 }

@@ -1,4 +1,5 @@
 #include "APSStrategicMapScene.h"
+#include "APS_ALPHA/UI/Style/APSUITheme.h"
 
 #include "APS_ALPHA/Actors/Astro/APSBodyDesignation.h"
 #include "APS_ALPHA/Actors/Astro/Moon.h"
@@ -178,12 +179,12 @@ namespace APSStrategicMapSceneLocal
 
 FSlateFontInfo APSStrategicMap::PlateTypeFont()
 {
-	return FCoreStyle::GetDefaultFontStyle("Bold", 9);
+	return APSUITheme::BodyFont("Bold", 9);
 }
 
 FSlateFontInfo APSStrategicMap::PlateNameFont()
 {
-	return FCoreStyle::GetDefaultFontStyle("Bold", 11);
+	return APSUITheme::BodyFont("Bold", 11);
 }
 
 FSlateFontInfo APSStrategicMap::PlateDesignationFont()

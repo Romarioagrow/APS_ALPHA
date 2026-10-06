@@ -7,6 +7,7 @@
 #include "APSGalaxyGpuStars.h"
 #include "APSStellarViewOptics.h"
 #include "APS_ALPHA/Core/Planetary/APSAtmosphereModel.h"
+#include "APS_ALPHA/Core/World/APSWorldOriginSubsystem.h"
 #include "APS_ALPHA/Actors/Astro/Galaxy.h"
 #include "APS_ALPHA/Actors/Astro/StarCluster.h"
 #include "APS_ALPHA/Actors/Astro/StarSystem.h"
@@ -107,6 +108,15 @@ namespace APSGameplayStellarDay
 	TAutoConsoleVariable<float> CVarAtmosphereDensityGain(TEXT("aps.Sky.AtmosphereDensityGain"), 12.0f,
 		TEXT("How much denser an Earth-like or thicker atmosphere is drawn than its generated base, from the ground and from ")
 		TEXT("space alike (1 = the base). Thin air gets less of it, an airless body none."));
+	// Rio 06.10 ("why are the stars visible by day? it was all fine"): on the Iron moon Zevyar (0.05 of Earth's air) the
+	// sky is still drawn blue with clouds, and a starry day over it reads as broken. The stars' day masking keeps at
+	// least this much under any drawn atmosphere shell; the sky's own look does not change. 0: the 01.10 rule (a thin
+	// sky hides fewer stars by day).
+	TAutoConsoleVariable<int32> CVarDayFromLocalGround(TEXT("aps.Stars.DayFromLocalGround"), 1,
+		TEXT("1: the day sky thins with height above the ground under the observer; 0: above the body's base radius."));
+	TAutoConsoleVariable<float> CVarDaySkyMaskingFloor(TEXT("aps.Stars.DaySkyMaskingFloor"), 0.85f,
+		TEXT("Least day masking of the stars under a drawn atmosphere, whatever its air (0..1). 0.85 hides them at the ")
+		TEXT("ground in daylight; 0 lets thin air show them (the 01.10 rule)."));
 
 	/**
 	 * Raises the plugin's AtmosOpacity on the sky seen from inside and on the shell seen from space, by the same gain,
@@ -246,9 +256,24 @@ void UAPSStellarVisualSubsystem::UpdateGameplayDaylightStars(const FVector& Came
 			}
 			const double SunSine = FVector::DotProduct(FromCentre.GetSafeNormal(),
 				(TargetStarLocation - CameraLocation).GetSafeNormal());
-			const double Height = FMath::Clamp(FMath::Max(Altitude, 0.0) / (0.95 * AtmosphereCm), 0.0, 1.0);
+			// Rio 06.10 (Zevyar: 13 km relief under a ~17 km shell): the air thins from the ground under the observer,
+			// not from the base radius, or a high plateau already counts as the top of the sky by day.
+			double GroundCm = 0.0;
+			AWorldScapeRoot* Root = IsValid(Body->PlanetaryEnvironmentGenerator)
+				? Body->PlanetaryEnvironmentGenerator->WorldScapeRootInstance : nullptr;
+			if (APSGameplayStellarDay::CVarDayFromLocalGround.GetValueOnGameThread() != 0 && IsValid(Root)
+				&& IsValid(Root->WorldScapeNoise) && Root->PlanetScale > 0.0
+				&& Body->PlanetaryEnvironmentGenerator->IsSurfaceProfileCurrent(Body))
+			{
+				const FVector Up = FromCentre.GetSafeNormal();
+				GroundCm = FMath::Clamp(Root->GetGroundHeight(Root->GetActorLocation() + Up * Root->PlanetScale, false),
+					0.0, 0.8 * AtmosphereCm);
+			}
+			const double Height = FMath::Clamp(FMath::Max(Altitude - GroundCm, 0.0) / (0.95 * (AtmosphereCm - GroundCm)),
+				0.0, 1.0);
 			// A thin sky hides fewer stars by day; an airless one none (Rio, 01.10: dark starless skies on weak air).
-			const double Masking = APSAtmosphereModel::DaySkyMasking(APSAtmosphereModel::Density(Body));
+			const double Masking = FMath::Max(APSAtmosphereModel::DaySkyMasking(APSAtmosphereModel::Density(Body)),
+				FMath::Clamp(static_cast<double>(APSGameplayStellarDay::CVarDaySkyMaskingFloor.GetValueOnGameThread()), 0.0, 1.0));
 			Factor = FMath::Max(Factor, static_cast<float>(FMath::SmoothStep(-0.05, 0.12, SunSine) * (1.0 - Height)
 				* Masking));
 			HideFactor = FMath::Max(HideFactor, static_cast<float>(FMath::SmoothStep(-0.05, 0.12, SunSine)
@@ -364,7 +389,22 @@ void UAPSStellarVisualSubsystem::UpdateGameplayStellarView()
 
 		const bool bNewBuild = GameplayStellarBuildSerial != Descriptor.ProxyBuildSerial;
 		if (bNewBuild) ResetGameplayNativeStars();
-		const FVector HomeLocation = Home->GetActorLocation();
+		// Rio 06.10 (still ship): the sky is shown at its world place + the owed travel's sky offset (zero without a
+		// debt): the ship stays, the catalogue moves past it.
+		const FVector HomeLocation = Home->GetActorLocation() + UAPSWorldOriginSubsystem::SkyOffsetOf(World);
+		if (!UAPSWorldOriginSubsystem::OnSkyOffsetChanged().IsBoundToObject(this))
+		{
+			// Every owed step moves the sky at once, so whatever reads the catalogue later in the frame (the flight model,
+			// the GPU points, the systems) finds it where the ship flies among it, not where it was one update ago.
+			UAPSWorldOriginSubsystem::OnSkyOffsetChanged().AddWeakLambda(this, [this](UWorld* ShiftedWorld, const FVector& Change)
+			{
+				AAstroGenerator* Sky = GameplayStellarGenerator.Get();
+				if (ShiftedWorld == GetWorld() && IsValid(Sky))
+				{
+					Sky->AddActorWorldOffset(Change, false, nullptr, ETeleportType::TeleportPhysics);
+				}
+			});
+		}
 		if (!Generator->GetActorLocation().Equals(HomeLocation, 0.01))
 		{
 			Generator->SetActorLocation(HomeLocation, false, nullptr,
@@ -927,6 +967,8 @@ void UAPSStellarVisualSubsystem::UpdateGameplayStellarView()
 		2.0 * FMath::Tan(FMath::DegreesToRadians(
 			Controller->PlayerCameraManager->GetFOVAngle() * 0.5)) / FMath::Max(Width, 320));
 	const FVector HomeLocation = Home->GetActorLocation();
+	// Rio 06.10 (still ship): the camera-relative layers see the catalogue from where the ship truly is.
+	const FVector SkyHomeLocation = HomeLocation + UAPSWorldOriginSubsystem::SkyOffsetOf(GetWorld());
 	TArray<FAPSPreviewOccluder> Occluders;
 	TArray<AActor*> Bodies;
 	Home->GetAttachedActors(Bodies, true, true);
@@ -958,7 +1000,7 @@ void UAPSStellarVisualSubsystem::UpdateGameplayStellarView()
 		Occluder.Center = Center - Camera;
 		Occluder.Radius = Radius;
 	}
-	const FVector ObserverFromHome = Camera - HomeLocation;
+	const FVector ObserverFromHome = Camera - SkyHomeLocation;
 	// UE 5.4 marks ALL instance transforms dirty on a component translation.
 	// Keep the render anchor stationary until its own accumulated screen error
 	// reaches the same sub-pixel budget. Never move an entire ISM on a cache hit.
